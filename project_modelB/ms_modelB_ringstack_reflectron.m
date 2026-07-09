@@ -1851,8 +1851,15 @@ histogram(m_app, 'Normalization', 'count');
 xlabel('apparent mass [Da]'); ylabel('intensity [counts]'); grid on;
 title(sprintf('mass peak (R=%.0f, N=%d)', R_resolution, nDet));
 
-sgtitle({sprintf('Model B (idealized-grid ring-stack reflectron): %s', label), ...
-    sprintf('%gamu +1 ion, 5eV in x, three-grid focusing accelerator (KE0=2000eV), V_mirror=4551.15V, 5-ring graded reflectron', mass_amu)}, 'Interpreter','none');
+% !!! Title now includes N (statistical sample size, nP -- NOT the N_plot=50
+% trajectory-rendering subset) and field_mode, per doc convention (always
+% show sample size so a reader can't mistake an N=100 result for N=1000,
+% see COMSOL_调试方法论.md 统计陷阱一节). Also dropped the hardcoded
+% "V_mirror=4551.15V" that was stale (V_mirror is now computed dynamically
+% per d1_mm/d2_margin_frac and no longer a fixed literal) in favor of the
+% actual computed value.
+sgtitle({sprintf('Model B (idealized-grid ring-stack reflectron): %s (N=%d, field_mode=%s)', label, nP, field_mode), ...
+    sprintf('%gamu +1 ion, 5eV in x, three-grid accelerator (KE0=2000eV), d1=%gmm, V_mirror=%.2fV, R=%.1f', mass_amu, d1_mm, V_mirror_V, R_resolution)}, 'Interpreter','none');
 print(fh, fullfile(resultsDir, sprintf('ms_modelB_ringstack_%s.png', strrep(label,' ','_'))), '-dpng', '-r150');
 fprintf('[%s] SUCCESS: trajectory + mass-spectrum plot saved.\n', label);
 

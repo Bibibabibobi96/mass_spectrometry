@@ -414,6 +414,11 @@ t1.feature('fc1').set('linsolver','dDef');
 | `pg3.create('traj1','ParticleTrajectories')` | 轨迹图层，`data`指向`pdset1`。 |
 | `model.result.export.create(tag,'Image')` + `.set('plotgroup',...)` + `.set('pngfilename',...)` + `.run` | 图片导出。**批处理模式下`ParticleTrajectories`导出有已知稳定性风险，见`COMSOL_调试方法论.md`**；普通Slice/Surface图没有这个问题。 |
 | `.label('自定义字符串')` | 几乎所有Java API对象（geometry feature、selection、material、physics接口及子特征、mesh、study、solver、result dataset、plot group）都支持，跟tag完全独立，且会持久化进.mph文件。**应该在写`create(tag,type)`之后顺手加一行，成本几乎为零**——否则COMSOL Desktop的Model Builder树里全是"Cylinder 1"这类无信息量的默认名。 |
+| `pg1.set('titletype','manual')` + `pg1.set('title', '<自定义字符串>')` | 原生COMSOL结果图默认标题是"Particle trajectories"这种通用文本，必须显式设`titletype='manual'`才能覆盖成有信息量的标题（`titletype`合法值`auto`(默认)/`manual`）。MATLAB端`title`/`sgtitle`支持cell数组传入实现多行标题，如`title({'第一行','第二行'})`。 |
+
+> **画图的"应该长什么样"规范（标题必须含哪些信息、颜色约定等）不在这里**——那是为了
+> 防止review结果时被小样本噪声/图与图之间颜色语义不一致误导，属于调试严谨性问题，见
+> `COMSOL_调试方法论.md`。这里只收录"怎么调用API让标题长成想要的样子"这类机械调用事实。
 
 ### 7.10 数值提取函数：mpheval / mphinterp / mphparticle 该怎么选
 | 需求 | 用哪个 | 关键点 |
