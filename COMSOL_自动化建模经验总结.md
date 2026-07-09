@@ -10,8 +10,11 @@
 |---|---|
 | 通用COMSOL/MATLAB API调用速查、已验证部件库 | [`COMSOL_MATLAB_API手册.md`](COMSOL_MATLAB_API手册.md) |
 | 通用调试方法论（分辨率排查流程、崩溃恢复、几何/选择集通用陷阱） | [`COMSOL_调试方法论.md`](COMSOL_调试方法论.md) |
-| oa-TOF正交加速+双级环栈反射镜项目（Model B）的当前参数与项目专属教训 | [`项目_oaTOF环栈反射镜_ModelB.md`](项目_oaTOF环栈反射镜_ModelB.md) |
-| 电子枪（螺旋灯丝+Wehnelt）项目的物理结论 | [`项目_电子枪.md`](项目_电子枪.md) |
+| oa-TOF正交加速+双级环栈反射镜项目（Model B）的当前参数与项目专属教训 | [`project_modelB/项目_oaTOF环栈反射镜_ModelB.md`](project_modelB/项目_oaTOF环栈反射镜_ModelB.md) |
+| 电子枪（螺旋灯丝+Wehnelt）项目的物理结论 | [`project_eGun/项目_电子枪.md`](project_eGun/项目_电子枪.md) |
+
+> 脚本目录也按项目分了子目录：`common/`(可复用组件验证脚本) / `project_modelB/`(Model A+B
+> 正式脚本) / `project_eGun/`(电子枪phase*脚本)，规则见`README_文档使用指南.md`。
 
 原始未拆分版本（含完整的逐帧调试叙事，供交叉核对细节用）存档于
 [`COMSOL_自动化建模经验总结_旧版存档.md`](COMSOL_自动化建模经验总结_旧版存档.md)。
