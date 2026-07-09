@@ -17,8 +17,8 @@
 > E1/E2/U1/d2_min闭式解，2026-07-09已修正d2_min公式错误，原文件备份为
 > `_修正前备份.docx`）、`三栅加速器总长度符号推导.docx`（三栅加速器精确时间聚焦设计，
 > 注意这份文档里的d1/d2指栅极间距，跟反射镜的d1/d2是同名但完全不同的两组变量，不要
-> 混淆）。配套的`reflectron_dual_stage_solver.py`目前仍在仓库根目录
-> (`PythonProject/reflectron_dual_stage_solver.py`)，没有跟着这两份docx一起搬过来。
+> 混淆）。配套的`reflectron_dual_stage_solver.py`（双级反射镜闭式解，含`d2_min`公式
+> 修正）现在也在本目录下，与两份docx放在一起。
 
 ## 0. 项目定位与整体架构
 
