@@ -1,0 +1,5 @@
+# COMSOL binary models are stored outside this source repository.
+*.mph
+
+# Official manuals are local reference material, not normal repository history.
+official_docs/*.pdf
