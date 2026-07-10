@@ -1,10 +1,11 @@
-# 项目笔记：电子枪（螺旋灯丝 + Wehnelt）
+# 项目笔记：螺旋灯丝 Wehnelt 电子枪
 
 > 本文件只记录**这个项目特有**的物理结论/参数选择，通用的COMSOL/MATLAB API写法见
 > `COMSOL_MATLAB_API手册.md`（尤其是§7.14磁场/Coil特征、§8磁场调试叙事，本项目的螺旋
 > 线圈几何`Helix`被复用于那部分的螺线管测试）。参考脚本：电子枪 phase1-5 系列脚本。
 
-> **当前正式模型：尚未理清，待办**。`comsol_models/`下有`ElectronGun*.mph`（早期
+> **当前正式模型：尚未理清，待办**。`comsol_models/project_eGun/`下（2026-07-09起
+> `comsol_models/`按项目拆分为子目录，见`README.md`）有`ElectronGun*.mph`（早期
 > 实心圆柱阴极版）、`ElectronGun_Coil*.mph`（轴向螺旋线圈版）、`ElectronGun_CoilT*.mph`
 > （横置螺旋线圈版，§2验证收集效率更高）三条并存的谱系，哪些是"最终该用的"、哪些是
 > 被取代的中间版本，从未系统整理过（对应任务清单里长期挂着的"检查电子枪phase*脚本是否

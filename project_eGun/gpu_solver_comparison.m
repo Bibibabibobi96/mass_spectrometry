@@ -9,7 +9,7 @@ mphstart(2036);
 import com.comsol.model.*
 import com.comsol.model.util.*
 
-modelPath = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\ElectronGun_ES.mph';
+modelPath = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\project_eGun\ElectronGun_ES.mph';
 
 %% (a) Regular / default solver (CPU, iterative i1)
 if any(strcmp(cell(ModelUtil.tags()), 'ModelRegular'))

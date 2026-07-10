@@ -10,8 +10,8 @@ mphstart(2036);
 import com.comsol.model.*
 import com.comsol.model.util.*
 
-modelPath = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\ElectronGun_CoilT_ES.mph';
-savePath  = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\ElectronGun_CoilT_Thermal_CPT.mph';
+modelPath = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\project_eGun\ElectronGun_CoilT_ES.mph';
+savePath  = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\project_eGun\ElectronGun_CoilT_Thermal_CPT.mph';
 if any(strcmp(cell(ModelUtil.tags()), 'Model'))
     ModelUtil.remove('Model');
 end

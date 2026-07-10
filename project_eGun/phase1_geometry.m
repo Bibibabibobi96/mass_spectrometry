@@ -163,7 +163,7 @@ gi = mphgeominfo(model, 'geom1');
 fprintf('Geometry build complete.\n');
 disp(gi);
 
-model.save('C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\ElectronGun.mph');
+model.save('C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\project_eGun\ElectronGun.mph');
 fprintf('SUCCESS: model saved.\n');
 end
 
