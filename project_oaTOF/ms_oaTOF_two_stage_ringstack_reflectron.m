@@ -1660,6 +1660,10 @@ Tsim_full = 2*t_flight_oneway*8.0 + 1e-6;
 Tsim = Tsim_short;
 std2 = model.study.create('std2');
 std2.label(sprintf('Time-dependent: oa-TOF ring-stack %s', label));
+% Keep the Result tree stable when this study is recomputed in the GUI.
+% The explicit pg_traj group created below is the sole trajectory view;
+% otherwise COMSOL creates a separate default CPT plot group on Compute.
+std2.set('genplots', false);
 tstep = std2.create('time1', 'Transient');
 tstep.label('Transient solver');
 % !!! Post-pulse grid coarsened 10x (50ns->500ns): with L_flight
