@@ -18,20 +18,16 @@
 `official_docs/`目录存放COMSOL官方PDF手册，作为离线原始参考，不属于"经验文档"，一般不要全文阅读。
 遇到本地经验手册没有覆盖的问题时，先看`official_docs/README.md`里的索引，再按问题类型查对应PDF。
 
-## COMSOL MCP 工具
+## COMSOL 直连执行路径（默认）
 
-当前机器已为 Codex 的**新会话**自动注册本地`comsol` MCP。新开会话后，在`/mcp`中确认它列出
-`comsol_start`、`comsol_connect`、`model_load`等工具；`Auth: Unsupported`对本地stdio服务正常，
-表示它依赖本机COMSOL安装与许可证，不使用网络令牌认证。Claude Code 的项目配置在仓库父目录的
-`.mcp.json`，Codex 使用用户级`~/.codex/config.toml`中的等价配置，两者不会自动互相读取。
+当前项目默认使用`matlab.exe -batch`驱动的MATLAB LiveLink/Java API直连COMSOL，不把MCP当作正式执行路径。
+标准形态是先单独启动`comsolmphserver.exe`，再由每个阶段脚本用`mphstart(2036)`连接同一个服务端，
+然后按项目脚本里的专用判据完成加载、求解和后处理。
 
-MCP适合服务端连接/状态、加载和检查`.mph`、参数与几何/网格/物理场的标准操作、异步求解进度、
-通用结果评估与导出。调用长时间计算时优先使用`study_solve_async`→`study_get_progress`→`study_wait`，
-以便记录阶段耗时并允许取消。
+这条路径是当前项目的权威实现。涉及复杂已验证几何、项目专属检测判据或粒子到达时刻插值时，
+仍以对应`ms_*.m`/`phase*.m`脚本为准，不要把任何“通用工具读取到的离散结果”替代专用判据。
 
-MCP不替代正式MATLAB LiveLink脚本：涉及复杂已验证几何、项目专属检测判据或粒子到达时刻插值时，
-仍以对应`ms_*.m`/`phase*.m`脚本为权威实现。新版本MCP首次使用某个工具时，先做最小连通性测试；
-它的工具能力和参数会随服务版本变化，以`/mcp`显示的当前清单为准，不在本指南维护冗长的静态工具列表。
+如果后续某个会话里恰好还保留了`comsol` MCP，它也只适合作为临时检查手段，不作为默认工作流。
 
 ## 目录结构
 

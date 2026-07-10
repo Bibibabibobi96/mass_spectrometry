@@ -7,18 +7,13 @@
 
 ---
 
-## 0. 技术路线：MCP负责会话编排，MATLAB LiveLink负责正式复杂脚本
+## 0. 技术路线：MATLAB LiveLink/Java API 直连 COMSOL
 
-本机`comsol` MCP用于服务端连接/状态、`.mph`加载与检查、通用参数/几何/网格/物理场操作、异步求解
-进度和结果导出。它适合作为Agent的会话编排接口；长时间计算优先走`study_solve_async`→
-`study_get_progress`→`study_wait`，而不是阻塞等待。
+本手册默认把`matlab.exe -batch`驱动的MATLAB LiveLink/Java API作为正式执行路径。标准流程是先单独
+启动`comsolmphserver.exe`，再由脚本用`mphstart(2036)`连接同一个服务端，最后按项目脚本里的专用判据
+完成加载、求解和后处理。
 
-**首次使用某个MCP工具时先做最小连通性测试**（例如加载模型或建最简组件/几何），不要假设工具实现
-永远可靠。历史版本的`model_create_component`曾存在代码级bug（内部按3参数重载调用
-`ModelNodeListClient.create()`，但COMSOL Java API该方法只有1/2参数重载）；当前版本是否仍受影响，
-以实际最小测试为准。
-
-**正式、复杂或需要精确项目专属后处理的实现仍使用MATLAB LiveLink，直接调用底层Java API**：
+**正式、复杂或需要精确项目专属后处理的实现都走这条直连路径**：
 ```matlab
 addpath('D:\COMSOL 6.4\COMSOL64\Multiphysics\mli');
 mphstart(2036);           % 连接到已启动的 COMSOL 服务端
@@ -34,8 +29,8 @@ model = ModelUtil.create('Model');
 - 每个"阶段"脚本用 `matlab.exe -batch "cd(...); 脚本函数名"` 非交互调用，脚本内部自己 `mphstart` 连接。
 - 这条路径不依赖 MATLAB 图形界面/许可证之外的东西，比"COMSOL Java 源码 + comsolcompile +
   comsolbatch"更适合迭代调试。
-- MCP读取到的离散结果不应替代正式脚本的专用后处理。例如oa-TOF分辨率必须沿用项目脚本的
-  探测器交叉时刻插值与`R=mean(t)/(2*std(t))`判据；仅直接读取粗`tlist`网格点会引入时间量化误差。
+- 项目里的专用后处理必须由正式脚本完成。例如oa-TOF分辨率必须沿用项目脚本的探测器交叉时刻插值
+  与`R=mean(t)/(2*std(t))`判据；仅直接读取粗`tlist`网格点会引入时间量化误差。
 
 ---
 
