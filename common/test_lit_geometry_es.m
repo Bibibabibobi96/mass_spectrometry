@@ -229,6 +229,6 @@ for ci = 1:numel(candidates)
     end
 end
 
-model.save('C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\LinearIonTrap.mph');
+model.save('C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\common\LinearIonTrap.mph');
 fprintf('SUCCESS: model saved.\n');
 end

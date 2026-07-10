@@ -14,7 +14,7 @@ import com.comsol.model.*
 import com.comsol.model.util.*
 
 tag = sprintf('ModelPole%d', Npoles);
-modelPath = sprintf('C:\\Users\\Liao\\PycharmProjects\\PythonProject\\comsol_models\\Multipole%d.mph', Npoles);
+modelPath = sprintf('C:\\Users\\Liao\\PycharmProjects\\PythonProject\\comsol_models\\common\\Multipole%d.mph', Npoles);
 if any(strcmp(cell(ModelUtil.tags()), tag))
     ModelUtil.remove(tag);
 end

@@ -334,7 +334,7 @@ trj1 = pg1.create('trj1', 'ParticleTrajectories');
 trj1.label(sprintf('Ion trajectories (%s)', label));
 pg1.run;
 
-modelsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models';
+modelsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\common';
 if ~exist(modelsDir, 'dir'), mkdir(modelsDir); end
 model.save(fullfile(modelsDir, sprintf('CollisionCell_%s.mph', strrep(label,' ','_'))));
 fprintf('[%s] SUCCESS: native trajectory plot created and model saved.\n', label);

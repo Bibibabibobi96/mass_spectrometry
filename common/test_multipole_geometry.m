@@ -100,5 +100,5 @@ if ~exist(outdir,'dir'), mkdir(outdir); end
 print(f, fullfile(outdir, sprintf('multipole_%d_geom.png', Npoles)), '-dpng', '-r150');
 fprintf('SUCCESS: geometry image saved.\n');
 
-model.save(sprintf('C:\\Users\\Liao\\PycharmProjects\\PythonProject\\comsol_models\\Multipole%d.mph', Npoles));
+model.save(sprintf('C:\\Users\\Liao\\PycharmProjects\\PythonProject\\comsol_models\\common\\Multipole%d.mph', Npoles));
 end

@@ -115,7 +115,7 @@ pg1.set('title', sprintf('Cyclotron motion: electron, v_{perp}=%.2g m/s, B_z=%.3
 trj1 = pg1.create('trj1', 'ParticleTrajectories');
 trj1.label('Electron trajectories (uniform Bz)');
 pg1.run;
-modelsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models';
+modelsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\common';
 if ~exist(modelsDir, 'dir'), mkdir(modelsDir); end
 model.save(fullfile(modelsDir, 'CyclotronMotion.mph'));
 fprintf('SUCCESS: native trajectory plot created and model saved.\n');

@@ -269,6 +269,6 @@ trj1 = pg1.create('trj1', 'ParticleTrajectories');
 trj1.label('Trapped ion trajectory');
 pg1.run;
 
-model.save('C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\ICRCell.mph');
+model.save('C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\common\ICRCell.mph');
 fprintf('SUCCESS: native trajectory plot created and model saved.\n');
 end

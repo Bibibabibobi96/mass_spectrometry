@@ -164,6 +164,6 @@ imgV.set('plotgroup','pg_V'); imgV.set('pngfilename', fullfile(resultsDir,'einze
 imgV.set('width',1200); imgV.set('height',700); imgV.run;
 fprintf('SUCCESS: potential image exported.\n');
 
-model.save('C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\EinzelLens.mph');
+model.save('C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\common\EinzelLens.mph');
 fprintf('SUCCESS: model saved.\n');
 end

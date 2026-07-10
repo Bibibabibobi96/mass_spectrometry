@@ -19,7 +19,7 @@ import com.comsol.model.util.*
 if any(strcmp(cell(ModelUtil.tags()), 'ModelEinzel'))
     ModelUtil.remove('ModelEinzel');
 end
-model = ModelUtil.load('ModelEinzel', 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\EinzelLens.mph');
+model = ModelUtil.load('ModelEinzel', 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\common\EinzelLens.mph');
 comp1 = model.component('comp1');
 
 cpt = comp1.physics.create('cpt', 'ChargedParticleTracing', 'geom1');
@@ -138,6 +138,6 @@ pg1.set('title', sprintf('Einzel lens: transmitted ions, 100amu +1, KE=%g eV, V_
 trj1 = pg1.create('trj1', 'ParticleTrajectories');
 trj1.label(sprintf('Transmitted ions (KE=%g eV)', KE_eV));
 pg1.run;
-model.save('C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\EinzelLens.mph');
+model.save('C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\common\EinzelLens.mph');
 fprintf('SUCCESS: native trajectory plot created and model saved.\n');
 end

@@ -17,7 +17,7 @@ import com.comsol.model.util.*
 if any(strcmp(cell(ModelUtil.tags()), 'ModelLIT'))
     ModelUtil.remove('ModelLIT');
 end
-model = ModelUtil.load('ModelLIT', 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\LinearIonTrap.mph');
+model = ModelUtil.load('ModelLIT', 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\common\LinearIonTrap.mph');
 comp1 = model.component('comp1');
 
 cpt = comp1.physics.create('cpt', 'ChargedParticleTracing', 'geom1');
@@ -137,6 +137,6 @@ trj1.label('Confined near-center ions');
 pg1.run;
 fprintf('SUCCESS: native particle trajectory plot created.\n');
 
-model.save('C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\LinearIonTrap.mph');
+model.save('C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\common\LinearIonTrap.mph');
 fprintf('SUCCESS: model (incl. CPT physics/solution/plot) saved to disk.\n');
 end

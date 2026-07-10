@@ -154,8 +154,7 @@ cex1 = coll1.create('cex1', 'ResonantChargeExchange');
 cex1.label('Resonant charge exchange (constant cross section)');
 cex1.set('CountCollisions', true);
 % xsec left at COMSOL default -- matches the same realistic ion-neutral
-% cross-section scale used for the Elastic test (see COMSOL_自动化
-% 建模经验总结.md §7.22).
+% cross-section scale used for the Elastic test (see COMSOL_自动�?% 建模经验总结.md §7.22).
 
 Tsim = 200e-6;
 dtstep = 1e-6;
@@ -239,7 +238,7 @@ trj1 = pg1.create('trj1', 'ParticleTrajectories');
 trj1.label(sprintf('Ion trajectories (%s)', label));
 pg1.run;
 
-modelsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models';
+modelsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\common';
 if ~exist(modelsDir, 'dir'), mkdir(modelsDir); end
 model.save(fullfile(modelsDir, sprintf('CEX_%s.mph', strrep(label,' ','_'))));
 fprintf('[%s] SUCCESS: native trajectory plot created and model saved.\n', label);

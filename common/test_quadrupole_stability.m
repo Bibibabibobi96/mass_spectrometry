@@ -24,7 +24,7 @@ import com.comsol.model.*
 import com.comsol.model.util.*
 
 tag = 'ModelPole4';
-modelPath = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\Multipole4.mph';
+modelPath = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\common\Multipole4.mph';
 if any(strcmp(cell(ModelUtil.tags()), tag))
     ModelUtil.remove(tag);
 end
@@ -151,7 +151,7 @@ fprintf('SUCCESS: native particle trajectory plot created.\n');
 % this function runs once per stability case (stable/unstable), and both
 % share the same on-disk source model, so saving to the shared path would
 % let the second run silently overwrite the first run's CPT results.
-savePath = sprintf('C:\\Users\\Liao\\PycharmProjects\\PythonProject\\comsol_models\\Multipole4_CPT_%s.mph', strrep(label,' ','_'));
+savePath = sprintf('C:\\Users\\Liao\\PycharmProjects\\PythonProject\\comsol_models\\common\\Multipole4_CPT_%s.mph', strrep(label,' ','_'));
 model.save(savePath);
 fprintf('SUCCESS: model (incl. CPT physics/solution/plot) saved to %s\n', savePath);
 end

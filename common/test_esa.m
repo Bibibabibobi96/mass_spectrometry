@@ -234,7 +234,7 @@ pg1.set('title', sprintf('ESA: 100amu +1 ion, KE=%g eV (design KE=1000eV), R1=40
 trj1 = pg1.create('trj1', 'ParticleTrajectories');
 trj1.label(sprintf('%s ion trajectory', label));
 pg1.run;
-modelsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models';
+modelsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\common';
 if ~exist(modelsDir, 'dir'), mkdir(modelsDir); end
 model.save(fullfile(modelsDir, sprintf('ESA_%s.mph', strrep(label,' ','_'))));
 fprintf('[%s] SUCCESS: native trajectory plot created and model saved.\n', label);
