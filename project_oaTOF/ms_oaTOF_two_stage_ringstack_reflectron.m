@@ -1,4 +1,4 @@
-function result = ms_oaTOF_two_stage_ringstack_reflectron(mass_amu, label, solver_mode, field_mode, d1_mm, n_rings2, mesh_hmax_refl_mm, bore_r_mm, ring_thickness_mm)
+function result = ms_oaTOF_two_stage_ringstack_reflectron(mass_amu, label, solver_mode, field_mode, d1_mm, n_rings2, mesh_hmax_refl_mm, bore_r_mm, ring_thickness_mm, n_particles)
 % !!! d1_mm (doc §7.49, per explicit request -- corrected from an
 % earlier d2-scan plan to a d1 scan): optional 5th argument, the
 % reflectron's stage1 physical depth in mm (default 200, matching the
@@ -61,6 +61,9 @@ end
 % established 5mm baseline. Previously a hardcoded literal.
 if nargin < 9 || isempty(ring_thickness_mm)
     ring_thickness_mm = 5;
+end
+if nargin < 10 || isempty(n_particles)
+    n_particles = 1000;
 end
 % !!! d2 made ADAPTIVE (doc §7.50, per explicit request): previously a
 % fixed 300mm regardless of d1, which is WAY more than the ion's actual
@@ -1557,7 +1560,7 @@ rel1.set('v0', {sprintf('sqrt(2*abs(E_mean_eV+E_std_eV*sqrt(-2*log(random(1)))*c
 % total particle count instead, sampled within the release domain.
 % Raised to 500 to test dispersion statistics with a large ensemble.
 rel1.set('InitialPosition', 'Density');
-rel1.set('N', '100');
+rel1.set('N', num2str(n_particles));
 
 % !!! Simplified per explicit request: no pulsing needed anymore -- ALL
 % electrodes (reflectron rings/grids AND the accelerator's repeller/
@@ -2042,7 +2045,7 @@ if ~exist(resultsDir,'dir'), mkdir(resultsDir); end
 % (5000-10000) statistical-confirmation runs mentioned throughout this
 % project's docs.
 t_replot_start = tic;
-PLOT_RESOLVE_THRESHOLD = 500; % particles; above this, re-solve at small N instead of holding the full trajectory array
+PLOT_RESOLVE_THRESHOLD = 2000; % particles; above this, re-solve at small N to cap MATLAB memory
 if nP > PLOT_RESOLVE_THRESHOLD
     % --- Small dedicated re-solve (N_plot particles) for full 3D
     % trajectories, reusing the same static 'es' field -- keeps memory
@@ -2098,9 +2101,14 @@ title('z position vs time');
 subplot(1,3,3);
 detected_t = detTimes(~isnan(detTimes));
 m_app = mass_amu*(detected_t/meanT).^2;
-histogram(m_app, 'Normalization', 'count');
+mass_sigma = std(m_app);
+mass_grid = linspace(mean(m_app)-4*mass_sigma, mean(m_app)+4*mass_sigma, 201);
+mass_bandwidth = max(1.06*mass_sigma*numel(m_app)^(-1/5), 1e-6);
+mass_density = mean(exp(-0.5*((mass_grid(:)-m_app(:).')/mass_bandwidth).^2), 2) ./ (sqrt(2*pi)*mass_bandwidth);
+mass_intensity = mass_density * numel(m_app) * mean(diff(mass_grid));
+plot(mass_grid, mass_intensity, '-');
 xlabel('apparent mass [Da]'); ylabel('intensity [counts]'); grid on;
-title(sprintf('mass peak (R=%.0f, N=%d)', R_resolution, nDet));
+title(sprintf('mass peak (Gaussian KDE, R=%.0f, N=%d)', R_resolution, nDet));
 
 % !!! Title now includes N (statistical sample size, nP -- NOT the N_plot=50
 % trajectory-rendering subset) and field_mode, per doc convention (always
@@ -2196,12 +2204,10 @@ catch ME
     fprintf('[%s] WARNING: full-domain field heatmap failed (%s).\n', label, ME.message);
 end
 try
-    [counts_ms, edges_ms] = histcounts(m_app);
-    centers_ms = (edges_ms(1:end-1) + edges_ms(2:end))/2;
     tbl_ms = model.result.table.create('tbl_massspec', 'Table');
     tbl_ms.label(sprintf('Mass spectrum data: %s', label));
-    tbl_ms.comments(sprintf('%s: apparent mass [Da] vs detected-ion count, R=%.1f, N=%d', label, R_resolution, nDet));
-    tbl_ms.setTableData([centers_ms(:), counts_ms(:)]);
+    tbl_ms.comments(sprintf('%s: Gaussian-KDE apparent-mass intensity, R=%.1f, N=%d, bandwidth=%.6gDa', label, R_resolution, nDet, mass_bandwidth));
+    tbl_ms.setTableData([mass_grid(:), mass_intensity(:)]);
     pg_ms = model.result.create('pg_massspec', 'PlotGroup1D');
     pg_ms.label(sprintf('Mass spectrum: %s', label));
     pg_ms.set('titletype', 'manual');
@@ -2250,17 +2256,11 @@ t_save1 = toc(t_save1_start);
 fprintf('[%s] SUCCESS: model saved.\n', label);
 fprintf('[TIMING] first model.save (.mph write): %.2fs\n', t_save1);
 t_native_start = tic;
-try
-    pg1.run;
-    model.save(fullfile(modelsDir, sprintf('MS_oaTOF_TwoStageRingStackReflectron_%s.mph', strrep(label,' ','_'))));
-    t_native = toc(t_native_start);
-    fprintf('[%s] SUCCESS: native trajectory plot created and model re-saved with plot.\n', label);
-    fprintf('[TIMING] native 3D trajectory plot (pg1.run) + re-save: %.2fs\n', t_native);
-catch ME
-    t_native = toc(t_native_start);
-    fprintf('[%s] WARNING: native trajectory plot failed (%s) -- model already saved without it.\n', label, ME.message);
-    fprintf('[TIMING] native 3D trajectory plot (pg1.run, FAILED) attempt: %.2fs\n', t_native);
-end
+% pg1.run mutates the stored particle solution to the plot subset in
+% batch mode. Keep the N-statistics solution intact; Desktop renders this
+% already-configured plot group on demand.
+t_native = toc(t_native_start);
+fprintf('[%s] native trajectory plot configured for GUI rendering; batch render skipped to preserve N=%d statistics solution.\n', label, nP);
 
 t_total = toc(t_total_start);
 fprintf('\n===== [TIMING SUMMARY: %s, N=%d] =====\n', label, nP);
