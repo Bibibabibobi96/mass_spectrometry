@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+
+git diff --cached --check
+
+blocked_files=$(git diff --cached --name-only --diff-filter=ACMR | \
+  grep -E '(^|/)(scan_|tmp_).*\.m$|\.mph$|^official_docs/.*\.pdf$' || true)
+
+if [ -n "$blocked_files" ]; then
+  echo "Commit blocked: staged files violate this repository's lifecycle rules:" >&2
+  echo "$blocked_files" >&2
+  echo "Document one-off work, then remove it; keep models and official PDFs outside Git." >&2
+  exit 1
+fi
