@@ -18,6 +18,21 @@
 `official_docs/`目录存放COMSOL官方PDF手册，作为离线原始参考，不属于"经验文档"，一般不要全文阅读。
 遇到本地经验手册没有覆盖的问题时，先看`official_docs/README.md`里的索引，再按问题类型查对应PDF。
 
+## COMSOL MCP 工具
+
+当前机器已为 Codex 的**新会话**自动注册本地`comsol` MCP。新开会话后，在`/mcp`中确认它列出
+`comsol_start`、`comsol_connect`、`model_load`等工具；`Auth: Unsupported`对本地stdio服务正常，
+表示它依赖本机COMSOL安装与许可证，不使用网络令牌认证。Claude Code 的项目配置在仓库父目录的
+`.mcp.json`，Codex 使用用户级`~/.codex/config.toml`中的等价配置，两者不会自动互相读取。
+
+MCP适合服务端连接/状态、加载和检查`.mph`、参数与几何/网格/物理场的标准操作、异步求解进度、
+通用结果评估与导出。调用长时间计算时优先使用`study_solve_async`→`study_get_progress`→`study_wait`，
+以便记录阶段耗时并允许取消。
+
+MCP不替代正式MATLAB LiveLink脚本：涉及复杂已验证几何、项目专属检测判据或粒子到达时刻插值时，
+仍以对应`ms_*.m`/`phase*.m`脚本为权威实现。新版本MCP首次使用某个工具时，先做最小连通性测试；
+它的工具能力和参数会随服务版本变化，以`/mcp`显示的当前清单为准，不在本指南维护冗长的静态工具列表。
+
 ## 目录结构
 
 ```
