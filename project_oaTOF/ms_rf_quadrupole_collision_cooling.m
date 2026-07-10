@@ -1,5 +1,5 @@
-function result = ms_modelA_collisional_cooling(Nd_val, E_push, label)
-% Model A: collisional cooling of ions in an RF-only quadrupole guide --
+function result = ms_rf_quadrupole_collision_cooling(Nd_val, E_push, label)
+% RF quadrupole collision-cooling ion guide --
 % demonstrates the real physical mechanism (used in essentially all
 % commercial oa-TOF/Q-TOF instruments) by which a continuous ion beam
 % arriving with some initial injection energy (~10-30eV from an upstream
@@ -246,10 +246,10 @@ for i = 1:min(30,nP)
 end
 xlabel('t [\mus]'); ylabel('kinetic energy [eV]'); grid on;
 title('ion KE vs time');
-sgtitle({sprintf('Model A: collisional cooling in RF quadrupole, %s', label), ...
+sgtitle({sprintf('RF quadrupole collision cooling, %s', label), ...
     sprintf('100amu +1 ion, KE0=%geV, Nd=%.2g/m^3, E_{push}=%gV/m, mean KE_{end}=%.2feV', ...
     KE0_eV, Nd_val, E_push, result.meanKE_end)}, 'Interpreter','none');
-print(fh, fullfile(resultsDir, sprintf('ms_modelA_cooling_%s.png', strrep(label,' ','_'))), '-dpng', '-r150');
+print(fh, fullfile(resultsDir, sprintf('ms_rf_quadrupole_collision_cooling_%s.png', strrep(label,' ','_'))), '-dpng', '-r150');
 fprintf('[%s] SUCCESS: cooling trend plot saved.\n', label);
 
 pg1 = model.result.create('pg_traj', 'PlotGroup3D');
@@ -261,8 +261,8 @@ trj1 = pg1.create('trj1', 'ParticleTrajectories');
 trj1.label('Ion trajectories (cooling guide)');
 pg1.run;
 
-modelsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models';
+modelsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\project_oaTOF';
 if ~exist(modelsDir, 'dir'), mkdir(modelsDir); end
-model.save(fullfile(modelsDir, sprintf('MS_ModelA_Cooling_%s.mph', strrep(label,' ','_'))));
+model.save(fullfile(modelsDir, sprintf('MS_RFQuadrupoleCollisionCooling_%s.mph', strrep(label,' ','_'))));
 fprintf('[%s] SUCCESS: native trajectory plot created and model saved.\n', label);
 end

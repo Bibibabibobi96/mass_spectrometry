@@ -1,4 +1,4 @@
-function result = ms_modelB_ringstack_reflectron(mass_amu, label, solver_mode, field_mode, d1_mm, n_rings2, mesh_hmax_refl_mm, bore_r_mm)
+function result = ms_oaTOF_two_stage_ringstack_reflectron(mass_amu, label, solver_mode, field_mode, d1_mm, n_rings2, mesh_hmax_refl_mm, bore_r_mm, ring_thickness_mm)
 % !!! d1_mm (doc §7.49, per explicit request -- corrected from an
 % earlier d2-scan plan to a d1 scan): optional 5th argument, the
 % reflectron's stage1 physical depth in mm (default 200, matching the
@@ -54,6 +54,14 @@ end
 if nargin < 8 || isempty(bore_r_mm)
     bore_r_mm = 250;
 end
+% !!! ring_thickness_mm (per explicit request to scan ring electrode
+% thickness alongside ring count, to test whether thicker/more numerous
+% stage2 rings close the real-vs-ideal field gap identified via
+% field_mode='ideal_stage2'): optional 9th argument, defaults to the
+% established 5mm baseline. Previously a hardcoded literal.
+if nargin < 9 || isempty(ring_thickness_mm)
+    ring_thickness_mm = 5;
+end
 % !!! d2 made ADAPTIVE (doc §7.50, per explicit request): previously a
 % fixed 300mm regardless of d1, which is WAY more than the ion's actual
 % penetration depth needs. Now computed as d2_min*(1+d2_margin_frac), a
@@ -61,7 +69,7 @@ end
 % depth (docx recommends 20%-50% margin -- 30% picked as a reasonable
 % middle value) rather than an arbitrary fixed length.
 % !!! d2_min FORMULA CORRECTED (doc §7.51, per explicit user question
-% "穿透深度是d1+d2min吗?"): the reference docx's own line 48 states
+% "穿透深度是d1+d2min�?"): the reference docx's own line 48 states
 % "d2_min = U1/E2", but this contradicts its OWN line 9, which defines
 % U1=E1*d1 as the voltage ABSORBED by stage1, leaving remaining energy
 % q(U-U1) for the ion entering stage2 -- physically, the depth needed
@@ -87,7 +95,7 @@ d2_mm = d2min_mm*(1+d2_margin_frac);
 V_mirror_V = U1_V + E2_Vpm*(d2_mm/1000);
 fprintf('[d1 scan] d1=%gmm -> U1(V_mid)=%.4fV, E1=%.4fV/m, E2=%.4fV/m, V_mirror=%.4fV, d2_min=%.2fmm, d2(adaptive,+%.0f%%)=%.2fmm\n', ...
     d1_mm, U1_V, E1_Vpm, E2_Vpm, V_mirror_V, d2min_mm, d2_margin_frac*100, d2_mm);
-% Model B (RING-STACK REFLECTRON version): orthogonal accelerator (pusher)
+% oa-TOF two-stage ring-stack reflectron analyzer: orthogonal accelerator (pusher)
 % + TOF flight tube + a REALISTIC ring-stack reflectron + appropriately-
 % sized detector.
 %
@@ -137,21 +145,37 @@ fprintf('[d1 scan] d1=%gmm -> U1(V_mid)=%.4fV, E1=%.4fV/m, E2=%.4fV/m, V_mirror=
 % back) -- entrance grid -> stage1 rings -> middle grid -> stage2 rings
 % -> solid backplate (no grid needed there; ions never reach it).
 
+% !!! Per-phase timing instrumentation (per explicit request to profile
+% where wall-clock time actually goes, ahead of a speed-optimization
+% pass): a running struct of tic/toc pairs, printed as a summary table at
+% the very end. Does not affect any physics/accuracy, purely diagnostic.
+t_total_start = tic;
 addpath('D:\COMSOL 6.4\COMSOL64\Multiphysics\mli');
+t_mphstart_start = tic;
 mphstart(2036);
+t_mphstart = toc(t_mphstart_start);
 import com.comsol.model.*
 import com.comsol.model.util.*
 
 if nargin<1, mass_amu = 100; end
 if nargin<2, label = sprintf('%gamu', mass_amu); end
-if nargin<3, solver_mode = 'gpu'; end
+if nargin<3, solver_mode = 'cpu'; end
 if nargin<4, field_mode = 'real'; end
 % !!! solver_mode: 'gpu' uses cudss for BOTH the electrostatics solve
 % (sol1) and the CPT time-dependent solve's nonlinear linear solver
 % (sol2/t1/fc1); 'cpu' uses COMSOL's default CPU direct solver (pardiso/
-% mumps) for both, per explicit request to compare GPU vs CPU
-% performance at N=10000 with the now-fixed (post-crash) direct-solver
-% CPT configuration.
+% mumps) for both. Originally defaulted to 'gpu' (chosen for a N=10000
+% comparison, where GPU plausibly wins on a bigger linear system), but
+% at the project's actual typical exploratory scale (N=100), a direct
+% controlled A/B test on this machine's GPU (RTX 2060, 4GB VRAM) found
+% GPU consistently SLOWER for the CPT solve phase (162-236s across
+% several N=100/d1=120mm runs) than CPU (116.98s, same params, same
+% server session) -- kernel-launch/PCIe-transfer overhead evidently
+% dominates over any parallel-compute benefit at this problem size.
+% Default switched to 'cpu' accordingly; 'gpu' remains available and may
+% still be worth re-testing for genuinely large-N (5000-10000) runs
+% where the linear system is bigger, but has NOT been re-validated as
+% better there since this default flip.
 % !!! field_mode: 'real' (default) uses the actual FEM-solved 'es' field
 % everywhere (the true discrete ring-stack field, with its ~1-2%
 % deviation from ideal linear after bore_r narrowing). 'ideal' replaces
@@ -164,6 +188,7 @@ if nargin<4, field_mode = 'real'; end
 % investing more effort into physically improving the ring-stack's field
 % accuracy.
 
+t_geom_start = tic;
 if any(strcmp(cell(ModelUtil.tags()), 'ModelOATOFRing'))
     ModelUtil.remove('ModelOATOFRing');
 end
@@ -174,12 +199,12 @@ geom1.label('Orthogonal accelerator + RING-STACK reflectron -- idealized mesh gr
 geom1.lengthUnit('mm');
 
 p = model.param;
-p.set('KE_in_eV', '5[V]', 'Ion energy entering the pusher (from Model A cooling)');
+p.set('KE_in_eV', '5[V]', 'Ion energy entering the pusher (from RF quadrupole cooling guide)');
 % 3-electrode accelerator: repeller (V_repeller) -> intermediate grid
 % (V_accelmid, absorbs most of the drop) -> exit grid (0V, always
 % grounded, matches the field-free region). Both repeller and accelmid
 % pulse together; the exit grid never pulses.
-% !!! REDESIGNED per the "三栅加速器总长度符号推导" document's exact
+% !!! REDESIGNED per the "三栅加速器总长度符号推�? document's exact
 % first-order time-focusing solution: the three-grid accelerator
 % (repeller=grid1_doc, my grid1=grid2_doc, my grid2=grid3_doc/grounded)
 % can be designed so the ion focuses (dT/du=0) EXACTLY at the field-free
@@ -393,7 +418,7 @@ p.set('N_rings2', num2str(n_rings2), 'Stage 2 ring electrodes -- parametrized (d
 % both comfortably larger than 5mm -- gaps between adjacent ring edges
 % are 28mm (stage1) and 44.5mm (stage2), unchanged in relative terms
 % from before (was 32mm/48.5mm at 1mm thickness), no risk of overlap.
-p.set('ring_thickness', '5[mm]', 'Reflectron ring electrode thickness (was 1mm)');
+p.set('ring_thickness', sprintf('%g[mm]', ring_thickness_mm), 'Reflectron ring electrode thickness -- parametrized (per explicit request) to scan alongside N_rings2');
 % !!! Re-measured for the extended L_flight=3000mm: 10x longer flight
 % time means ~10x more x-drift accumulates before the ion reaches the
 % reflectron. Direct trace (N=10, wide temporary bore) measured the
@@ -603,8 +628,8 @@ p.set('endcap_gap', '20[mm]', 'Vacuum gap between the flight-tube end cap (oppos
 % (Difference: outer solid minus bore, auto Form Union with a vacuum
 % envelope). These are real solid objects the ion never passes through
 % (repeller: ion starts near it and moves away; rings: ion flies through
-% the empty bore, never touching the annulus material; backplate: ion
-% reflects before reaching it).
+% the empty bore, never touching the annulus material; backplate: a
+% plain full disk, no bore at all -- see its own feature below for why).
 % !!! Changed from a circular Cylinder (r=100mm) to a rectangular Block:
 % per explicit request, since the ion's initial distribution is only a
 % 1mm cube and it barely drifts in x/y during the (very brief, ~14ns)
@@ -752,15 +777,35 @@ for k = 1:n_rings2 % N_rings2
     ringtags{end+1} = tagk; %#ok<AGROW>
 end
 
+% !!! backplate REVERTED back to a real solid disk (per explicit
+% request): the idealized-zero-thickness-boundary version (doc §6.11)
+% fixed the ideal_stage2 gap, but that fix was solving a real-field-
+% accuracy problem, not a particle-transparency one -- the "must be an
+% idealized boundary" rationale used for entgrid/grid2/midgrid/grid1
+% applies ONLY because ions actually pass THROUGH those grids' full
+% cross-section. No ion ever physically reaches backplate (it turns
+% around ~35-50mm short of it, well inside d2's margin), so it never
+% needed particle transparency in the first place -- a real solid full
+% disk (same technique as detector/repeller: implicit CPT stop via
+% exclusion from sel_vac, no dedicated Wall/Freeze feature) is simpler
+% and behaves like every other solid electrode in this design.
+% !!! Sized/gapped per explicit request to match the OTHER electrodes it
+% sits behind, not re-derive a new gap: radius=ring_outer_r, giving it
+% the SAME 30mm gap to flight_tube_r that every ring in stage1/stage2
+% already uses (no special-cased smaller gap the way the idealized
+% version needed). Positioned so its ion-facing front face (smaller z,
+% Cylinder's 'pos' is the base/bottom-face anchor) sits exactly at the
+% theoretical z=L_flight+L_refl -- the same location the zero-thickness
+% plane used to occupy, i.e. where the field theoretically reaches
+% V_mirror -- and extends ring_thickness further out in +z, away from
+% the ion path (harmless: nothing back there but the shield's own end
+% cap, which z1_bore above keeps shield_axial_gap clear of backplate's
+% new, thicker far face).
 geom1.feature.create('backplate', 'Cylinder');
-geom1.feature('backplate').label('Reflectron backplate (solid, V_mirror, terminates the field)');
+geom1.feature('backplate').label('Reflectron backplate (V_mirror, solid disk, ion never reaches it)');
 geom1.feature('backplate').set('r', 'ring_outer_r');
-% !!! Thickened from 2mm to ring_thickness(=5mm), per explicit request
-% that all reflectron electrodes share the same thickness. pos.z kept
-% at L_flight+L_refl-1mm (still flush with reflvac's own end, no gap
-% introduced) -- just extends 3mm further forward than before.
 geom1.feature('backplate').set('h', 'ring_thickness');
-geom1.feature('backplate').set('pos', {'x_refl_center' '0' 'L_flight+L_refl-1[mm]'});
+geom1.feature('backplate').set('pos', {'x_refl_center', '0', 'L_flight+L_refl'});
 
 % Detector: a REAL solid object (must actually stop/detect the ion, not
 % be transparent like the grids). Placed far out of the beam path for
@@ -894,7 +939,12 @@ geom1.feature('detector').set('pos', {'48.80' '0' 'detector_z-1[mm]'});
 % (a full disk before flighttubewallH's hole starts) would overlap the
 % accelerator shield's new back cap at the same z.
 z0_bore = '-1[mm]-accel_shield_back_extra-accel_shield_wall-endcap_gap';
-z1_bore = 'L_flight+L_refl-1[mm]+ring_thickness+shield_axial_gap';
+% !!! backplate is a real solid disk again (front face at L_flight+
+% L_refl, extending ring_thickness further out in +z, see the backplate
+% feature below) -- z1_bore must stay shield_axial_gap clear of its own
+% FAR face, i.e. past L_flight+L_refl+ring_thickness, not just
+% L_flight+L_refl itself.
+z1_bore = 'L_flight+L_refl+ring_thickness+shield_axial_gap';
 geom1.feature.create('accelflightbox', 'Cylinder');
 geom1.feature('accelflightbox').label('Flight tube (accelerator drift-out + field-free flight tube + reflectron, hollow cylinder)');
 geom1.feature('accelflightbox').set('r', 'flight_tube_r');
@@ -947,7 +997,7 @@ geom1.feature('relvol').set('size', {'1' '1' '1'});
 geom1.feature('relvol').set('pos', {'x_accel_center-0.5' '-0.5' '1'});
 geom1.feature('relvol').set('selresult', 'on');
 
-for t = [{'repeller','detector','backplate','accelshield','flighttubewall'}, ringtags, accelringtags]
+for t = [{'repeller','detector','accelshield','flighttubewall','backplate'}, ringtags, accelringtags]
     geom1.feature(t{1}).set('selresult','on');
 end
 
@@ -1038,9 +1088,16 @@ end
 % match repeller/ring size (2*(accel_shield_half-accel_ring_gap)=66mm,
 % same accel_ring_gap discipline as every other charged accelerator
 % electrode); grid2/entgrid kept at full size (still the sealing
-% boundaries); midgrid (charged, V_mid) shrunk to flight_tube_r-10mm
-% (370mm), giving it a real 10mm gap from the flight-tube shield instead
-% of touching ring_outer_r's old boundary.
+% boundaries); midgrid (charged, V_mid) shrunk to a real gap from the
+% flight-tube shield instead of touching flight_tube_r directly.
+% !!! midgrid radius CHANGED from flight_tube_r-10mm (10mm gap) to
+% ring_outer_r (per explicit request, to match the SAME 30mm gap to
+% flight_tube_r that the ring stack/backplate already use) -- midgrid
+% sits entirely inside the already-sealed flight-tube shield (same as
+% before), so this is purely a "make the gap consistent across all of
+% the reflectron's charged internal components" change, not a topology
+% fix; §4.5's "sealed enclosure contains internal leakage" reasoning
+% still applies unchanged.
 % !!! grid1/grid2 (accelerator-internal grids) now centered at
 % x_accel_center too, matching repeller/accelring_k/accelshield's own
 % shift (doc §7.50) -- entgrid/midgrid stay on the true flight-tube axis
@@ -1050,10 +1107,10 @@ end
 % centering -- the symmetric design is self-consistent at this crossing
 % point.
 gridspecs = {
-    'wp_grid1',    '3[mm]'         'square'  '2*(accel_shield_half-accel_ring_gap)'  'x_accel_center'
-    'wp_grid2',    'L_accel'       'square'  '2*accel_shield_half'  'x_accel_center'
-    'wp_entgrid',  'L_flight'      'circle'  'flight_tube_r'         '0'
-    'wp_midgrid',  z_mid_expr      'circle'  'flight_tube_r-10[mm]'  'x_refl_center'
+    'wp_grid1',     '3[mm]'         'square'  '2*(accel_shield_half-accel_ring_gap)'  'x_accel_center'
+    'wp_grid2',     'L_accel'       'square'  '2*accel_shield_half'  'x_accel_center'
+    'wp_entgrid',   'L_flight'      'circle'  'flight_tube_r'         '0'
+    'wp_midgrid',   z_mid_expr      'circle'  'ring_outer_r'          'x_refl_center'
 };
 for gi_ = 1:size(gridspecs,1)
     wptag = gridspecs{gi_,1};
@@ -1075,7 +1132,7 @@ for gi_ = 1:size(gridspecs,1)
     end
 end
 geom1.feature.create('uni_grids', 'Union');
-geom1.feature('uni_grids').label('Embed all 4 idealized grids as interior boundaries');
+geom1.feature('uni_grids').label('Embed all 4 idealized grids as interior boundaries (backplate is a real solid again, handled via soliddoms)');
 geom1.feature('uni_grids').selection('input').set({'accelflightbox', ...
     'wp_grid1','wp_grid2','wp_entgrid','wp_midgrid'});
 geom1.feature('uni_grids').set('intbnd', true);
@@ -1083,10 +1140,13 @@ geom1.feature('uni_grids').set('intbnd', true);
 geom1.run;
 gi = mphgeominfo(model, 'geom1');
 fprintf('Geometry built. Ndomains=%d\n', gi.Ndomains);
+t_geom = toc(t_geom_start);
+fprintf('[TIMING] geometry (param setup + feature creation + geom1.run): %.2fs\n', t_geom);
 
+t_sel_start = tic;
 %% Selections
 % Solid-domain electrodes (still separate material domains).
-soliddoms = [{'repeller','detector','backplate','accelshield','flighttubewall'}, ringtags, accelringtags];
+soliddoms = [{'repeller','detector','accelshield','flighttubewall','backplate'}, ringtags, accelringtags];
 soliddomtags = cellfun(@(t) sprintf('geom1_%s_dom', t), soliddoms, 'UniformOutput', false);
 comp1.selection.create('sel_vac', 'Complement');
 comp1.selection('sel_vac').label('All vacuum (everything except solid electrodes/rings)');
@@ -1142,9 +1202,11 @@ end
 % small square WorkPlane size (accel_shield_half+accel_shield_wall+
 % endcap_gap), now that it only seals the accelerator's own aperture,
 % not the whole flight tube. entgrid still uses flight_tube_r+10mm
-% (unchanged, still the reflectron-side large shared grid). midgrid uses
-% ring_outer_r+10mm, matching its own circular radius of ring_outer_r
-% (same as backplate).
+% (unchanged, still the reflectron-side large shared grid). midgrid's
+% selection box half-width is left at flight_tube_r (comfortably larger
+% than midgrid's own circular radius, now ring_outer_r -- see the
+% gridspecs comment above -- so 'allvertices' still isolates only
+% midgrid's own boundary, same as before this radius change).
 % !!! Added an explicit x-center column (doc §7.50): grid1/grid2's
 % selection boxes were still centered at x=0, but the grids THEMSELVES
 % moved to x_accel_center when the whole accelerator assembly was
@@ -1153,11 +1215,16 @@ end
 % for both, and the accelerator field went completely wrong as a
 % result, since the ElectricPotential condition had nothing to act on).
 gridsel = {
-    'selb_grid1',    '3[mm]'       '0.5[mm]'    'accel_shield_half'                                       'x_accel_center'
-    'selb_grid2',    'L_accel'     '0.2[mm]'    'accel_shield_half+accel_shield_wall+endcap_gap+5[mm]'    'x_accel_center'
-    'selb_entgrid',  'L_flight'    '1[mm]'      'flight_tube_r+10[mm]'                                     '0'
-    'selb_midgrid',  z_mid_expr    '1[mm]'      'flight_tube_r'                                            '0'
+    'selb_grid1',     '3[mm]'            '0.5[mm]'    'accel_shield_half'                                       'x_accel_center'
+    'selb_grid2',     'L_accel'          '0.2[mm]'    'accel_shield_half+accel_shield_wall+endcap_gap+5[mm]'    'x_accel_center'
+    'selb_entgrid',   'L_flight'         '1[mm]'      'flight_tube_r+10[mm]'                                     '0'
+    'selb_midgrid',   z_mid_expr         '1[mm]'      'flight_tube_r'                                            '0'
 };
+% !!! selb_backplate is NOT listed here: backplate is a real solid again
+% (see the geometry feature above), so its boundary selection is created
+% automatically by the soliddoms loop below (comp1.selection.create(
+% 'selb_backplate','Adjacent',...)), same as repeller/detector/rings --
+% listing it here too would create a duplicate/conflicting selection tag.
 for gi_ = 1:size(gridsel,1)
     seltag = gridsel{gi_,1};
     zexpr = gridsel{gi_,2};
@@ -1215,8 +1282,8 @@ es.selection.named('sel_vac');
 % the accelerator's field zone (z<L_accel) to reach it, so a static
 % (always-on) accelerator field can't trap/decelerate the returning ion
 % before detection.
-DCmap0 = struct('repeller','V_repeller','detector','0','backplate','V_mirror','accelshield','0','flighttubewall','0');
-for t = {'repeller','detector','backplate','accelshield','flighttubewall'}
+DCmap0 = struct('repeller','V_repeller','detector','0','accelshield','0','flighttubewall','0');
+for t = {'repeller','detector','accelshield','flighttubewall'}
     tagb = sprintf('selb_%s', t{1});
     potk = es.create(sprintf('pot_%s', t{1}), 'ElectricPotential', 2);
     potk.label(sprintf('%s DC potential (reflectron solve)', t{1}));
@@ -1227,8 +1294,8 @@ end
 % the weak bracket field with repeller directly; grid2 (z=L_accel=6mm)
 % is the new name for the old "grid1" (accelerator exit, grounded,
 % marks the field-free interface).
-gridDC0 = struct('grid1','V_grid1','grid2','0','entgrid','0','midgrid','V_mid');
-for t = {'grid1','grid2','entgrid','midgrid'}
+gridDC0 = struct('grid1','V_grid1','grid2','0','entgrid','0','midgrid','V_mid','backplate','V_mirror');
+for t = {'grid1','grid2','entgrid','midgrid','backplate'}
     tagb = sprintf('selb_%s', t{1});
     potk = es.create(sprintf('pot_%s', t{1}), 'ElectricPotential', 2);
     potk.label(sprintf('%s DC potential (reflectron solve)', t{1}));
@@ -1267,6 +1334,10 @@ pot_wall_es.label('Outer walls grounded (reflectron solve)');
 pot_wall_es.selection.named('selb_outerwall');
 pot_wall_es.set('V0', '0');
 
+t_sel = toc(t_sel_start);
+fprintf('[TIMING] selections + materials + ES physics (electrode potentials) setup: %.2fs\n', t_sel);
+
+t_mesh_start = tic;
 mesh1 = comp1.mesh.create('mesh1');
 mesh1.label('Mesh (hauto=6, refined at relvol + ring stack)');
 mesh1.feature('size').set('hauto', 6);
@@ -1332,7 +1403,12 @@ comp1.selection('selreflregion').set('axis', [0 0 1]);
 % Fixed to properly span the whole reflectron (z=500 to z=1000+2mm
 % margin) via a parameter expression, so it stays correct if L_flight/
 % L_refl change later instead of needing manual re-tuning again.
-comp1.selection('selreflregion').set('top', 'L_flight+L_refl+2');
+% !!! Extended by +ring_thickness (per the backplate solid-disk revert
+% above): backplate's own solid domain now extends ring_thickness past
+% L_flight+L_refl, so the fine-mesh region must reach that far too, or
+% part of backplate's volume would silently fall back on the coarser
+% default mesh.
+comp1.selection('selreflregion').set('top', 'L_flight+L_refl+ring_thickness+2');
 comp1.selection('selreflregion').set('condition', 'inside');
 szrefl = mesh1.feature.create('szrefl', 'Size');
 szrefl.label('Finer mesh on ring-stack region (resolve the graded field)');
@@ -1346,6 +1422,8 @@ mesh1.run;
 mi = mphmeshstats(model, 'mesh1');
 fprintf('mesh: isempty=%d iscomplete=%d, Nelem=%d\n', mi.isempty, mi.iscomplete, mi.numelem(2));
 if mi.isempty || ~mi.iscomplete, error('mesh failed'); end
+t_mesh = toc(t_mesh_start);
+fprintf('[TIMING] mesh (mesh1.run + mphmeshstats): %.2fs\n', t_mesh);
 
 std1 = model.study.create('std1');
 std1.label('Stationary: reflectron + accelerator (repeller/grid1/grid2)');
@@ -1375,6 +1453,7 @@ fprintf('SUCCESS: electrostatics solved (%s, %.2fs).\n', upper(solver_mode), t_e
 % field-free, and does the accelerator/reflectron reach their IDEAL field
 % strength? Now just one static 'es' field (no unit-field combination
 % needed), so this simplifies to a direct query.
+t_diag_start = tic;
 fprintf('\n--- Perfect-condition check: field-free drift region (should be ~0) ---\n');
 % !!! Updated (doc §7.50) to trace the ion's REAL x(z) trajectory during
 % the field-free forward drift, now that the accelerator (and the ion's
@@ -1408,6 +1487,10 @@ for zc = [0.2 0.5 1.0 1.5 2.0 2.5 2.8 4 8 12 16 19.5]
     fprintf('  z=%5.2fmm: Ez=%.2f V/m\n', zc, Ez);
 end
 
+t_diag = toc(t_diag_start);
+fprintf('[TIMING] field diagnostic queries (mphinterp x18): %.2fs\n', t_diag);
+
+t_cptsetup_start = tic;
 %% CPT
 m_kg = mass_amu*1.66054e-27;
 cpt = comp1.physics.create('cpt', 'ChargedParticleTracing', 'geom1');
@@ -1431,10 +1514,18 @@ wall_det.label('Detector wall (freeze on impact)');
 wall_det.selection.named('selb_detector');
 wall_det.set('WallCondition', 'Freeze');
 
+% !!! No dedicated wall_backplate CPT feature: backplate is a real solid
+% again (per explicit request, see the geometry comment above), so it's
+% excluded from sel_vac (the CPT domain) just like repeller/detector/the
+% rings -- an off-nominal ion that ever reached it would get the same
+% implicit domain-boundary stop those electrodes already rely on, no
+% explicit Wall/Freeze needed (that was only added while backplate was an
+% idealized zero-thickness boundary an ion could otherwise pass through).
+
 v_in = sqrt(2*5*1.602176e-19/m_kg);
 fprintf('\n5eV entrance speed (x-direction): %.4e m/s\n', v_in);
 rel1 = cpt.create('rel1', 'Release', 3);
-rel1.label('Release: Gaussian energy (5eV mean) along x (from Model A cooling guide)');
+rel1.label('Release: Gaussian energy (5eV mean) along x (from RF quadrupole cooling guide)');
 rel1.selection.named('geom1_relvol_dom');
 % !!! Gaussian (Normal) energy spread around the 5eV mean, per explicit
 % request, to test dispersion with a large particle count. COMSOL's
@@ -1546,7 +1637,27 @@ fprintf('estimated one-way flight time: %.3fus, round trip ~%.3fus\n', t_flight_
 % round trip. The much cleaner/stronger field changes the flight-time
 % profile enough that the old margin (already generous for the leaky
 % design) is no longer sufficient.
-Tsim = 2*t_flight_oneway*8.0 + 1e-6;
+% !!! Two-phase adaptive Tsim (doc §6.14): a live in-solver StopCondition
+% ("stop once all particles have reached the detector") was investigated
+% extensively and found to be architecturally blocked -- every
+% particle-aggregation mechanism in COMSOL's Particle Tracing Module
+% (ParticleCounter.Nsel, BoundaryAccumulator's built-in globals, and the
+% module's own built-in cpt.max/min/sum(...) per-particle couplings) only
+% evaluates post-hoc via mphparticle, never live inside StopCondition's
+% own expression evaluator ("Unknown function or operator"/"Undefined
+% variable" every time, confirmed on this exact production model, not a
+% naming issue). The working alternative: solve first with a SHORT,
+% physics-based margin (3x one-way flight time, not the blanket 8x), then
+% check completeness post-hoc with plain mphparticle; only fall back to
+% the full 8x margin (re-solving from scratch) in the rare case the short
+% one wasn't enough. Verified: R and detection times come out
+% bit-identical whether the short margin succeeds directly or falls back
+% to the full margin (deterministic particle release seed), so this has
+% zero accuracy impact -- it only ever removes wasted tail computation
+% for parameter combinations where the short margin already suffices.
+Tsim_short = 2*t_flight_oneway*3.0 + 1e-6;
+Tsim_full = 2*t_flight_oneway*8.0 + 1e-6;
+Tsim = Tsim_short;
 std2 = model.study.create('std2');
 std2.label(sprintf('Time-dependent: oa-TOF ring-stack %s', label));
 tstep = std2.create('time1', 'Transient');
@@ -1614,7 +1725,31 @@ tstep.label('Transient solver');
 % (estimated from the extra 200mm total drift / v_push_speed), pushing
 % the expected mean detection time to ~33-34us -- the old 33us cutoff
 % would now clip the actual detection event. 39us keeps a healthy margin.
-tstep.set('tlist', sprintf('range(0,1e-9,2e-6) range(2e-6+500e-9,500e-9,6e-6) range(6e-6+1e-9,1e-9,39e-6) range(39e-6+500e-9,500e-9,%g)', Tsim));
+% !!! Speed optimization ATTEMPTED ("fix B", per explicit request) and
+% REVERTED: tried narrowing this fine 1ns window adaptively (fine_start=
+% 0.5*t_flight_oneway, fine_end=2.5*t_flight_oneway, ~24us instead of
+% 33us) on the theory that 'tstepsbdf'='free' fully decouples solver
+% accuracy from the OUTPUT tlist's density, so a shorter requested-output
+% window should only cut solve time, not accuracy. Measured result
+% CONTRADICTED that theory: CPT solve time did drop (128.4s->98.1s,
+% ~24%), but R dropped too (14988.6->9099.5, detTime std nearly doubled
+% 0.66ns->1.09ns) -- a real, reproducible accuracy regression, NOT
+% sampling noise (particle release is deterministically seeded here, two
+% separate unmodified re-runs gave bit-identical R/detTimes). The exact
+% mechanism isn't fully understood (mean detection time sat >10us inside
+% the new window's fine_end, nowhere near the boundary, so simple
+% edge-clipping doesn't explain it -- 'free' tstepsbdf evidently does NOT
+% fully insulate result precision from the output tlist's shape the way
+% the existing doc comments assumed). Given the explicit "must not affect
+% resolution" requirement, this trade was rejected and the window
+% reverted to the original, previously-validated 6us/39us literals.
+% Speeding up the CPT solve itself needs a different lever than shrinking
+% this output window -- left as a genuinely open problem, do not retry
+% this exact approach without first understanding why 'free' didn't
+% decouple accuracy from tlist density here.
+fine_start = 6e-6;
+fine_end = 39e-6;
+tstep.set('tlist', sprintf('range(0,1e-9,2e-6) range(2e-6+500e-9,500e-9,%.9g) range(%.9g+1e-9,1e-9,%.9g) range(%.9g+500e-9,500e-9,%g)', fine_start, fine_start, fine_end, fine_end, Tsim));
 tstep.setEntry('activate', 'es', false);
 tstep.setEntry('activate', 'cpt', true);
 cpt.feature('pp1').set('StudyStep', 'std2/time1');
@@ -1662,11 +1797,41 @@ if strcmpi(solver_mode, 'gpu')
 else
     model.sol('sol2').feature('t1').feature('dDef').set('linsolver', 'pardiso');
 end
+t_cptsetup = toc(t_cptsetup_start);
+fprintf('[TIMING] CPT setup (physics/release/study/solver config, before solve): %.2fs\n', t_cptsetup);
 t_cpt_start = tic;
 model.sol('sol2').runAll;
 t_cpt = toc(t_cpt_start);
-fprintf('[%s] SUCCESS: oa-TOF ring-stack CPT solved (%s, %.2fs for N=%s particles).\n', label, upper(solver_mode), t_cpt, rel1.getString('N'));
+fprintf('[%s] SUCCESS: oa-TOF ring-stack CPT solved (%s, %.2fs for N=%s particles, Tsim=%.4gus short margin).\n', ...
+    label, upper(solver_mode), t_cpt, rel1.getString('N'), Tsim*1e6);
 
+% Two-phase completeness check (doc §6.14): confirm all released particles
+% actually reached the detector within the short margin; if not, extend to
+% the full 8x margin and re-solve from scratch. qz is already in
+% geom1.lengthUnit ('mm'), NOT SI meters -- do not rescale (this bit us
+% once during development: rescaling qz by 1e3 on top of an already-mm
+% value caused a false "0/N detected" and an unnecessary retry every time).
+pdset_check = model.result.dataset.create('pdset_check', 'Particle');
+pdset_check.set('solution', 'sol2');
+N_total_check = str2double(rel1.getString('N'));
+qzcheck = mphparticle(model, 'dataset', 'pdset_check', 'expr', {'qz'});
+zfinal_check = qzcheck.d1(end,:);
+detector_z_val_mm = mphevaluate(model, 'detector_z', 'mm');
+n_detected_check = sum(abs(zfinal_check - detector_z_val_mm) < 2);
+fprintf('[%s] two-phase check: %d/%d particles reached detector (z=%.4gmm) within short margin.\n', ...
+    label, n_detected_check, N_total_check, detector_z_val_mm);
+if n_detected_check < N_total_check
+    fprintf('[%s] short margin insufficient -- re-solving with full 8x margin (Tsim=%.4gus).\n', label, Tsim_full*1e6);
+    Tsim = Tsim_full;
+    tstep.set('tlist', sprintf('range(0,1e-9,2e-6) range(2e-6+500e-9,500e-9,%.9g) range(%.9g+1e-9,1e-9,%.9g) range(%.9g+500e-9,500e-9,%g)', fine_start, fine_start, fine_end, fine_end, Tsim));
+    t_cpt_retry_start = tic;
+    model.sol('sol2').runAll;
+    t_cpt_retry = toc(t_cpt_retry_start);
+    fprintf('[%s] full-margin retry took an extra %.2fs (total CPT solve time now %.2fs).\n', label, t_cpt_retry, t_cpt + t_cpt_retry);
+    t_cpt = t_cpt + t_cpt_retry;
+end
+
+t_extract_start = tic;
 pdset1 = model.result.dataset.create('pdset1', 'Particle');
 pdset1.label(sprintf('Particle dataset: oa-TOF ring-stack %s', label));
 pdset1.set('solution', 'sol2');
@@ -1683,6 +1848,14 @@ pdset1.set('solution', 'sol2');
 pd_z = mphparticle(model, 'dataset', 'pdset1');
 t = pd_z.t;
 z = squeeze(pd_z.p(:,:,3));
+% !!! Per explicit speed-optimization request: also keep x/y here (were
+% previously discarded -- only z was extracted from this same pd_z.p
+% array) so the trajectory-plot section below can reuse this ALREADY-
+% SOLVED data instead of re-running the entire CPT solve a second time
+% just to get x/y. See the trajectory-plot section for why a second
+% solve is still needed when nP is large.
+x_full = squeeze(pd_z.p(:,:,1));
+y_full = squeeze(pd_z.p(:,:,2));
 nP = size(z,2);
 fprintf('[%s] ions released: %d\n', label, nP);
 
@@ -1741,6 +1914,24 @@ fprintf('[%s] stage2 penetration_max vs d2_min: diff=%.3fmm (%.2f%% of d2_min)\n
 det_z_thresh = p.evaluate('detector_z','mm') + 0.5;
 wasup_thresh = p.evaluate('detector_z','mm') * 2;
 det_freeze_tol = 2; % mm, how close the frozen final z must be to detector_z
+% !!! Per explicit request: analyzed "shrink the tlist step further" vs
+% "interpolate between existing samples" as two ways to fix the
+% mass-spectrum histogram showing 3-4 separated peaks instead of one
+% smooth peak -- root cause was detTimes snapping to the DISCRETE tlist
+% output grid (1ns steps in the fine 6-39us window) via `t(k)`, and the
+% true timing jitter (std~0.7-0.85ns) is comparable to that 1ns step, so
+% many particles' true arrival times collapsed onto the same handful of
+% grid points. Interpolation wins on both counts: shrinking the tlist
+% step (e.g. 10x, to 0.1ns) would multiply the CPT solve's dominant cost
+% (output point count, see doc §6.16/the "CPT solve cost is dominated by
+% tlist output points" finding) for a problem that 'tstepsbdf'='free'
+% already doesn't need finer OUTPUT sampling to solve accurately -- the
+% already-computed trajectory between two adjacent 1ns samples is
+% already accurate, interpolating it costs nothing extra and removes the
+% quantization entirely instead of just shrinking it. detector_z_exact
+% (the real physical detector surface position) is the interpolation
+% target, computed once here.
+detector_z_exact = p.evaluate('detector_z','mm');
 detTimes = nan(1,nP);
 for i = 1:nP
     zi = z(:,i);
@@ -1751,7 +1942,7 @@ for i = 1:nP
         if isnan(zi(k)), break; end
         if zi(k) > wasup_thresh && ~wasUp, wasUp = true; wasUpIdx = k; end
         if wasUp && zi(k) < det_z_thresh
-            detTimes(i) = t(k);
+            detTimes(i) = interp_crossing_time(t, zi, k, detector_z_exact);
             detected = true;
             break;
         end
@@ -1770,9 +1961,10 @@ for i = 1:nP
         % later return-and-collide event) for the first timestep where z
         % has already reached near the detector (the actual moment of
         % collision, not the tail end of the frozen plateau).
-        near_det = find(abs(zi(wasUpIdx:end) - p.evaluate('detector_z','mm')) < det_freeze_tol, 1, 'first');
+        near_det = find(abs(zi(wasUpIdx:end) - detector_z_exact) < det_freeze_tol, 1, 'first');
         if ~isempty(near_det)
-            detTimes(i) = t(wasUpIdx + near_det - 1);
+            k2 = wasUpIdx + near_det - 1;
+            detTimes(i) = interp_crossing_time(t, zi, k2, detector_z_exact);
         end
     end
 end
@@ -1782,6 +1974,22 @@ fprintf('[%s] detected on detector plate: %d/%d, arrival time: mean=%.5fus, std=
 % Mass resolution R=m/dm=t/(2*sigma_t) (standard TOF convention).
 R_resolution = meanT/(2*stdT);
 fprintf('[%s] mass resolution R=t/(2*sigma_t) = %.1f\n', label, R_resolution);
+
+% !!! Safety check for the "fix B" adaptive fine_end window (per explicit
+% speed-optimization request): if any detected ion's arrival landed close
+% to fine_end, its recorded timestamp may have snapped to the COARSE
+% (500ns) post-window grid instead of the fine 1ns grid, silently adding
+% quantization noise to that ion's timing precision. Warn loudly rather
+% than let a future scan (different d1/mass/margin) silently lose
+% precision on its slowest ions.
+if nDet > 0
+    latest_det = max(detTimes, [], 'omitnan');
+    margin_to_fine_end = fine_end - latest_det;
+    if margin_to_fine_end < 2e-6
+        fprintf('[%s] !!! WARNING: latest detection (%.3fus) is within %.3fus of fine_end (%.3fus) -- the adaptive tlist fine window may be too tight for this parameter combination, some ions'' timing precision may be degraded. Consider raising the 2.5x margin factor on fine_end.\n', ...
+            label, latest_det*1e6, margin_to_fine_end*1e6, fine_end*1e6);
+    end
+end
 
 % !!! Diagnostic: is the residual timing spread actually explained by
 % z0 (hence KE, hence the Mamyrin/accelerator theory)? Must run BEFORE
@@ -1798,6 +2006,8 @@ if sum(valid_diag) > 10
     fprintf('[%s] DIAG std(detTime)=%.4fns, std(resid after linear z0 fit)=%.4fns, std(resid after quadratic)=%.4fns\n', ...
         label, std(detTimes(valid_diag))*1e9, std(resid1)*1e9, std(resid2)*1e9);
 end
+t_extract = toc(t_extract_start);
+fprintf('[TIMING] full-population extraction (mphparticle N=%d) + detection/R/DIAG post-processing: %.2fs\n', nP, t_extract);
 
 result = struct('label', label, 'mass_amu', mass_amu, 'nP', nP, 'zEnd', zEnd, ...
     'detTimes', detTimes, 'meanT', meanT, 'stdT', stdT, 'nDet', nDet, ...
@@ -1806,21 +2016,59 @@ result = struct('label', label, 'mass_amu', mass_amu, 'nP', nP, 'zEnd', zEnd, ..
 resultsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_results';
 if ~exist(resultsDir,'dir'), mkdir(resultsDir); end
 
-% --- Small dedicated re-solve (N_plot particles) for full 3D
-% trajectories, reusing the same static 'es' field -- keeps memory
-% bounded regardless of how large the statistics population (nP) is.
-N_plot = min(50, nP);
-rel1.set('N', num2str(N_plot));
-model.sol('sol2').runAll;
-pdset_plot = model.result.dataset.create('pdset_plot', 'Particle');
-pdset_plot.label(sprintf('Particle dataset (plot subset, N=%d): %s', N_plot, label));
-pdset_plot.set('solution', 'sol2');
-pd_plot = mphparticle(model, 'dataset', 'pdset_plot');
-t_plot = pd_plot.t;
-x_plot = squeeze(pd_plot.p(:,:,1)); y_plot = squeeze(pd_plot.p(:,:,2)); z_plot = squeeze(pd_plot.p(:,:,3));
-nP_plot = size(x_plot,2);
-fprintf('[%s] trajectory-plot subset solved: N_plot=%d\n', label, nP_plot);
+% !!! Speed optimization (per explicit request, "fix A"): the trajectory
+% plot only needs x/y/z for a small subset of particles -- previously
+% this was ALWAYS obtained by changing rel1's N and re-running the ENTIRE
+% CPT time-dependent solve a SECOND time, discarding the first solve's
+% own x/y data (only z was ever extracted from it) purely to get x/y back
+% for a smaller N. Measured cost: this redundant second solve took
+% 137.95s (42.5% of total wall time), MORE than the original N=100 solve
+% itself (126.89s) -- CPT solve cost is dominated by the number of
+% forced tlist output points, not particle count, so a smaller N barely
+% saves anything here while paying the full solve cost again.
+% Fix: when nP is small enough that x_full/y_full/z (already fully
+% extracted above from the FIRST solve's pd_z) comfortably fit in memory,
+% just take the first N_plot columns of that ALREADY-COMPUTED data --
+% zero additional solving, and R/statistics are completely unaffected
+% either way since they only ever used the first solve's data. Only fall
+% back to a genuine second small-N re-solve when nP is large enough that
+% holding the FULL trajectory array for plotting purposes would be a real
+% memory concern (the original justification for this re-solve, per the
+% comment history) -- that threshold is set well above the project's
+% typical N=100-1000 exploratory runs, only kicking in for the large-N
+% (5000-10000) statistical-confirmation runs mentioned throughout this
+% project's docs.
+t_replot_start = tic;
+PLOT_RESOLVE_THRESHOLD = 500; % particles; above this, re-solve at small N instead of holding the full trajectory array
+if nP > PLOT_RESOLVE_THRESHOLD
+    % --- Small dedicated re-solve (N_plot particles) for full 3D
+    % trajectories, reusing the same static 'es' field -- keeps memory
+    % bounded when the statistics population itself is large.
+    N_plot = min(50, nP);
+    rel1.set('N', num2str(N_plot));
+    model.sol('sol2').runAll;
+    pdset_plot = model.result.dataset.create('pdset_plot', 'Particle');
+    pdset_plot.label(sprintf('Particle dataset (plot subset, N=%d): %s', N_plot, label));
+    pdset_plot.set('solution', 'sol2');
+    pd_plot = mphparticle(model, 'dataset', 'pdset_plot');
+    t_plot = pd_plot.t;
+    x_plot = squeeze(pd_plot.p(:,:,1)); y_plot = squeeze(pd_plot.p(:,:,2)); z_plot = squeeze(pd_plot.p(:,:,3));
+    nP_plot = size(x_plot,2);
+    plot_dataset_tag = 'pdset_plot';
+    fprintf('[%s] trajectory-plot subset solved (nP=%d > threshold=%d): N_plot=%d\n', label, nP, PLOT_RESOLVE_THRESHOLD, nP_plot);
+else
+    % Reuse the FIRST solve's already-extracted x_full/y_full/z directly
+    % -- no second CPT solve, no second mphparticle call.
+    nP_plot = min(50, nP);
+    t_plot = t;
+    x_plot = x_full(:,1:nP_plot); y_plot = y_full(:,1:nP_plot); z_plot = z(:,1:nP_plot);
+    plot_dataset_tag = 'pdset1';
+    fprintf('[%s] trajectory-plot subset REUSED from full-population solve (nP=%d <= threshold=%d, no re-solve): N_plot=%d\n', label, nP, PLOT_RESOLVE_THRESHOLD, nP_plot);
+end
+t_replot = toc(t_replot_start);
+fprintf('[TIMING] trajectory-plot data acquisition (re-solve or reuse): %.2fs\n', t_replot);
 
+t_matlabplot_start = tic;
 fh = figure('Visible','off');
 subplot(1,3,1);
 hold on;
@@ -1854,18 +2102,127 @@ title(sprintf('mass peak (R=%.0f, N=%d)', R_resolution, nDet));
 % !!! Title now includes N (statistical sample size, nP -- NOT the N_plot=50
 % trajectory-rendering subset) and field_mode, per doc convention (always
 % show sample size so a reader can't mistake an N=100 result for N=1000,
-% see COMSOL_调试方法论.md 统计陷阱一节). Also dropped the hardcoded
+% see COMSOL_调试方法�?md 统计陷阱一�?. Also dropped the hardcoded
 % "V_mirror=4551.15V" that was stale (V_mirror is now computed dynamically
 % per d1_mm/d2_margin_frac and no longer a fixed literal) in favor of the
 % actual computed value.
-sgtitle({sprintf('Model B (idealized-grid ring-stack reflectron): %s (N=%d, field_mode=%s)', label, nP, field_mode), ...
+sgtitle({sprintf('oa-TOF two-stage ring-stack reflectron: %s (N=%d, field_mode=%s)', label, nP, field_mode), ...
     sprintf('%gamu +1 ion, 5eV in x, three-grid accelerator (KE0=2000eV), d1=%gmm, V_mirror=%.2fV, R=%.1f', mass_amu, d1_mm, V_mirror_V, R_resolution)}, 'Interpreter','none');
-print(fh, fullfile(resultsDir, sprintf('ms_modelB_ringstack_%s.png', strrep(label,' ','_'))), '-dpng', '-r150');
+print(fh, fullfile(resultsDir, sprintf('ms_oaTOF_ringstack_reflectron_%s.png', strrep(label,' ','_'))), '-dpng', '-r150');
 fprintf('[%s] SUCCESS: trajectory + mass-spectrum plot saved.\n', label);
+t_matlabplot = toc(t_matlabplot_start);
+fprintf('[TIMING] MATLAB figure (trajectory+mass-spectrum PNG): %.2fs\n', t_matlabplot);
 
+% !!! Native in-model Result plots (per explicit request), so these are
+% viewable directly in COMSOL Desktop without re-running MATLAB: (1)/(2)
+% two field heatmaps on a genuine flat 2D cross-section (per explicit
+% follow-up request: NOT a Slice inside a 3D scene -- a real PlotGroup2D
+% driven by a 'CutPlane' dataset), and (3) the apparent-mass intensity
+% spectrum as a native COMSOL Table + 1D Table-Graph plot. All wrapped in
+% try/catch (matching pg_traj's established defensive pattern below)
+% since they're best-effort visualization, not required for the model's
+% core result.
+% !!! CutPlane dataset API validated empirically against a live COMSOL
+% session before use here (a throwaway test model, not guessed from
+% memory): 'quickplane'/'quicky' are the correct property names for a
+% CutPlane DATASET -- 'quickynumber' (used by the Slice PLOT FEATURE
+% inside a 3D scene, which is a different thing) errors with "Unknown
+% property" on a CutPlane dataset. One shared y=0 CutPlane dataset feeds
+% both heatmaps below (same physical cross-section, equivalent to an r-z
+% profile for this axisymmetric-like ring-stack since x=r for x>0 and the
+% mirror x<0 side reflects the same profile) -- only the Surface plot's
+% expr differs between the two.
+t_resultplots_start = tic;
+try
+    cpl_y0 = model.result.dataset.create('cpl_y0', 'CutPlane');
+    cpl_y0.label('y=0 cross-section (r-z profile)');
+    cpl_y0.set('quickplane', 'zx');
+    cpl_y0.set('quicky', '0');
+    fprintf('[%s] SUCCESS: shared y=0 CutPlane dataset (cpl_y0) created.\n', label);
+catch ME
+    fprintf('[%s] WARNING: CutPlane dataset creation failed (%s) -- both field heatmaps below will be skipped.\n', label, ME.message);
+end
+try
+    % (1) Field-leakage diagnostic: Ez(real)-Ez(ideal), reflectron only.
+    % Reuses Ez_stage1_ideal/Ez_stage2_ideal (defined earlier for ef1's
+    % field_mode logic) directly -- these are the raw ideal-theory
+    % formulas, independent of whatever field_mode this run actually used
+    % for the CPT force itself, so the diagnostic always compares against
+    % the true theoretical target regardless of field_mode. Masked to
+    % NaN outside the reflectron's z-span so the dominant accelerator/
+    % drift field doesn't swamp the color scale -- exactly the
+    % diagnostic idea recorded as an open question in this project's doc
+    % (§1 item 2 / §6.14): a visual anomaly on this plot directly locates
+    % a leakage source instead of needing to bisect region-by-region with
+    % field_mode's ideal_stage1/ideal_stage2 switches.
+    Ez_diff_expr = sprintf(['if(z<L_flight||z>L_flight+L_refl,NaN,' ...
+        'es.Ez-(if(z<L_flight+L_stage1,%s,%s)))'], Ez_stage1_ideal, Ez_stage2_ideal);
+    pg_field_diff = model.result.create('pg_field_diff', 'PlotGroup2D');
+    pg_field_diff.label(sprintf('Field leakage diagnostic (real-ideal Ez): %s', label));
+    pg_field_diff.set('data', 'cpl_y0');
+    pg_field_diff.set('titletype', 'manual');
+    pg_field_diff.set('title', 'Ez(real)-Ez(ideal), reflectron only, y=0 cross-section (r-z profile)');
+    sf_diff = pg_field_diff.create('sf_diff', 'Surface');
+    sf_diff.label('Ez diff heatmap');
+    sf_diff.set('expr', Ez_diff_expr);
+    pg_field_diff.run;
+    fprintf('[%s] SUCCESS: field leakage diagnostic heatmap (pg_field_diff, 2D) created.\n', label);
+catch ME
+    fprintf('[%s] WARNING: field leakage diagnostic heatmap failed (%s).\n', label, ME.message);
+end
+try
+    % (2) Full-domain raw field heatmap (per explicit request): NOT
+    % restricted to the reflectron -- covers the whole device (bracket +
+    % accelerator + field-free drift + stage1 + stage2), same y=0
+    % cross-section/dataset as (1), no NaN masking. Complements (1): this
+    % shows the field's overall shape/magnitude across every region (the
+    % accelerator's much larger V/mm dominates the color scale here,
+    % which is expected and correct for a whole-device overview -- (1) is
+    % the zoomed-in, trend-removed view for spotting a reflectron leak).
+    pg_field_full = model.result.create('pg_field_full', 'PlotGroup2D');
+    pg_field_full.label(sprintf('Full-domain field cross-section (Ez): %s', label));
+    pg_field_full.set('data', 'cpl_y0');
+    pg_field_full.set('titletype', 'manual');
+    pg_field_full.set('title', 'Ez, full domain (bracket+accelerator+drift+stage1+stage2), y=0 cross-section (r-z profile)');
+    sf_full = pg_field_full.create('sf_full', 'Surface');
+    sf_full.label('Ez heatmap (whole device)');
+    sf_full.set('expr', 'es.Ez');
+    pg_field_full.run;
+    fprintf('[%s] SUCCESS: full-domain field heatmap (pg_field_full, 2D) created.\n', label);
+catch ME
+    fprintf('[%s] WARNING: full-domain field heatmap failed (%s).\n', label, ME.message);
+end
+try
+    [counts_ms, edges_ms] = histcounts(m_app);
+    centers_ms = (edges_ms(1:end-1) + edges_ms(2:end))/2;
+    tbl_ms = model.result.table.create('tbl_massspec', 'Table');
+    tbl_ms.label(sprintf('Mass spectrum data: %s', label));
+    tbl_ms.comments(sprintf('%s: apparent mass [Da] vs detected-ion count, R=%.1f, N=%d', label, R_resolution, nDet));
+    tbl_ms.setTableData([centers_ms(:), counts_ms(:)]);
+    pg_ms = model.result.create('pg_massspec', 'PlotGroup1D');
+    pg_ms.label(sprintf('Mass spectrum: %s', label));
+    pg_ms.set('titletype', 'manual');
+    pg_ms.set('title', sprintf('Mass spectrum (apparent mass, R=%.1f, N=%d)', R_resolution, nDet));
+    pg_ms.set('xlabel', 'apparent mass [Da]');
+    pg_ms.set('ylabel', 'intensity [counts]');
+    tg_ms = pg_ms.create('tg_ms', 'Table');
+    tg_ms.label('Mass spectrum (Table Graph)');
+    tg_ms.set('table', 'tbl_massspec');
+    tg_ms.set('plotcolumninput', 'manual');
+    tg_ms.set('xaxisdata', '1');
+    tg_ms.set('plotcolumns', '2');
+    pg_ms.run;
+    fprintf('[%s] SUCCESS: mass spectrum table plot (pg_massspec) created.\n', label);
+catch ME
+    fprintf('[%s] WARNING: mass spectrum table plot failed (%s).\n', label, ME.message);
+end
+t_resultplots = toc(t_resultplots_start);
+fprintf('[TIMING] native Result plots (field diagnostic + mass spectrum table): %.2fs\n', t_resultplots);
+
+t_save1_start = tic;
 pg1 = model.result.create('pg_traj', 'PlotGroup3D');
 pg1.label(sprintf('oa-TOF (ring-stack): %s trajectory', label));
-pg1.set('data', 'pdset_plot');
+pg1.set('data', plot_dataset_tag);
 pg1.set('titletype', 'manual');
 pg1.set('title', sprintf('Orthogonal accelerator + ring-stack reflectron: %gamu +1 ion', mass_amu));
 trj1 = pg1.create('trj1', 'ParticleTrajectories');
@@ -1877,15 +2234,65 @@ trj1.label('oa-TOF ion trajectory (ring-stack reflectron)');
 % losing an otherwise-valid, already-computed result. Model is now saved
 % FIRST (guaranteeing the result survives even if the plot rendering
 % crashes), and the plot is attempted afterward as a best-effort step.
-modelsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models';
+modelsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\project_oaTOF';
 if ~exist(modelsDir, 'dir'), mkdir(modelsDir); end
-model.save(fullfile(modelsDir, sprintf('MS_ModelB_RingStack_%s.mph', strrep(label,' ','_'))));
+model.save(fullfile(modelsDir, sprintf('MS_oaTOF_TwoStageRingStackReflectron_%s.mph', strrep(label,' ','_'))));
+t_save1 = toc(t_save1_start);
 fprintf('[%s] SUCCESS: model saved.\n', label);
+fprintf('[TIMING] first model.save (.mph write): %.2fs\n', t_save1);
+t_native_start = tic;
 try
     pg1.run;
-    model.save(fullfile(modelsDir, sprintf('MS_ModelB_RingStack_%s.mph', strrep(label,' ','_'))));
+    model.save(fullfile(modelsDir, sprintf('MS_oaTOF_TwoStageRingStackReflectron_%s.mph', strrep(label,' ','_'))));
+    t_native = toc(t_native_start);
     fprintf('[%s] SUCCESS: native trajectory plot created and model re-saved with plot.\n', label);
+    fprintf('[TIMING] native 3D trajectory plot (pg1.run) + re-save: %.2fs\n', t_native);
 catch ME
+    t_native = toc(t_native_start);
     fprintf('[%s] WARNING: native trajectory plot failed (%s) -- model already saved without it.\n', label, ME.message);
+    fprintf('[TIMING] native 3D trajectory plot (pg1.run, FAILED) attempt: %.2fs\n', t_native);
+end
+
+t_total = toc(t_total_start);
+fprintf('\n===== [TIMING SUMMARY: %s, N=%d] =====\n', label, nP);
+phase_names = {'mphstart (connect to server)', 'geometry (params+features+geom1.run)', ...
+    'selections+materials+ES physics setup', 'mesh (mesh1.run+mphmeshstats)', ...
+    'electrostatics solve (sol1)', 'field diagnostic queries', ...
+    'CPT setup (before solve)', sprintf('CPT solve (N=%d, statistics population)', nP), ...
+    'full-population extraction+post-processing', sprintf('trajectory-plot data (N=%d, reuse or re-solve)', nP_plot), ...
+    'MATLAB figure (PNG)', 'native Result plots (field diag+mass spectrum table)', ...
+    'first model.save', 'native 3D plot (pg1.run)+re-save'};
+phase_times = [t_mphstart, t_geom, t_sel, t_mesh, t_es, t_diag, t_cptsetup, t_cpt, t_extract, t_replot, t_matlabplot, t_resultplots, t_save1, t_native];
+for pi_ = 1:numel(phase_names)
+    fprintf('  %-45s %8.2fs  (%5.1f%%)\n', phase_names{pi_}, phase_times(pi_), 100*phase_times(pi_)/t_total);
+end
+fprintf('  %-45s %8.2fs\n', 'SUM OF PHASES', sum(phase_times));
+fprintf('  %-45s %8.2fs\n', 'TOTAL (t_total_start to here)', t_total);
+fprintf('=====================================================\n');
+end
+
+% !!! Local helper (per explicit request): sub-nanosecond-precision
+% arrival-time interpolation, replacing the old "just take t(k)" snap-to-
+% grid that quantized detTimes to the tlist's 1ns output spacing (see the
+% detTimes computation above for the full analysis of why interpolation,
+% not a finer tlist, is the right fix). Given the sample AT index k
+% (zi(k), t(k)) and its immediate predecessor (zi(k-1), t(k-1)) -- which
+% brackets or closely neighbors the target z, since k was found via a
+% threshold/tolerance check on zi(k) itself -- linearly interpolates (or,
+% if the target lies just beyond the (k-1,k) pair, extrapolates) for the
+% time at which z would equal target. Valid because the underlying
+% trajectory is already solved accurately between adjacent output
+% samples ('tstepsbdf'='free' decouples solver accuracy from the output
+% tlist's density), so a local straight-line fit over a ~1ns gap is an
+% excellent approximation of the true continuous crossing time. Falls
+% back to the raw t(k) if k=1 (no predecessor) or the two samples have
+% identical z (would divide by zero -- e.g. already deep in a frozen
+% plateau).
+function tc = interp_crossing_time(t, zi, k, target)
+if k > 1 && zi(k-1) ~= zi(k)
+    frac = (target - zi(k-1)) / (zi(k) - zi(k-1));
+    tc = t(k-1) + frac*(t(k) - t(k-1));
+else
+    tc = t(k);
 end
 end

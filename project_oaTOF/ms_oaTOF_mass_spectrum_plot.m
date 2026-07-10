@@ -1,12 +1,12 @@
-function ms_mass_spectrum_plot()
+function ms_oaTOF_mass_spectrum_plot()
 % Builds the final "mass spectrum" (mass number vs signal intensity)
-% from the Model B oa-TOF arrival-time distributions for 100amu and
+% from the oa-TOF ring-stack reflectron arrival-time distributions for 100amu and
 % 101amu, converts arrival time -> apparent mass via t~sqrt(m), bins into
 % a histogram, and renders it as a NATIVE COMSOL result (Table dataset +
 % 1D Plot Group), not just a MATLAB figure -- so the mass spectrum is
 % visible directly in COMSOL Desktop when the .mph is reopened.
 %
-% Calibration: t_ref=13.22689us at m_ref=100amu (Model B's own measured
+% Calibration: t_ref=13.22689us at m_ref=100amu (the oa-TOF analyzer's measured
 % mean arrival time for the 100amu population) -> apparent mass for any
 % arrival time t is m = m_ref*(t/t_ref)^2 (exact consequence of
 % t~sqrt(m) at fixed accelerating voltage).
@@ -16,7 +16,7 @@ mphstart(2036);
 import com.comsol.model.*
 import com.comsol.model.util.*
 
-% Reproduce the two detTimes populations (from the validated Model B runs)
+% Reproduce the two detTimes populations (from validated oa-TOF analyzer runs)
 t_ref = 13.22689e-6; m_ref = 100;
 mean100 = 13.22689e-6; std100 = 0.06900e-6;
 mean101 = 13.29039e-6; std101 = 0.07123e-6;
@@ -75,9 +75,9 @@ tg1.set('table', 'tbl1');
 tg1.set('linewidth', 2);
 pg1.run;
 
-modelsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models';
+modelsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\project_oaTOF';
 if ~exist(modelsDir, 'dir'), mkdir(modelsDir); end
-model.save(fullfile(modelsDir, 'MS_MassSpectrum.mph'));
+model.save(fullfile(modelsDir, 'MS_oaTOF_MassSpectrum.mph'));
 fprintf('SUCCESS: native COMSOL mass spectrum (Table dataset + 1D Plot Group) created and saved.\n');
 
 % Also save a MATLAB-side plot for quick viewing

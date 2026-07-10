@@ -4,7 +4,7 @@ function test_square_shield_accel()
 % showed the worst fringing with a cylindrical shield -- see doc §7.32).
 % Electrostatics only, no CPT -- just checking field linearity along the
 % axis and confirming zero leakage outside the shield, before touching
-% the full ms_modelB_ringstack_reflectron.m model again.
+% the full ms_oaTOF_two_stage_ringstack_reflectron.m model again.
 %
 % Geometry mirrors the real accelerator's second stage: gap=16.83mm,
 % V_grid1=1760V at z=0 down to 0V at z=16.83mm (target Ez=104.575 V/mm
@@ -230,7 +230,7 @@ for zc = linspace(1, 15.83, 5)
     fprintf('  x=30mm z=%6.2fmm: Ez=%10.4f V/m (diff=%.4f%%)\n', zc, Ez, 100*(Ez-Ez_theory_Vm)/Ez_theory_Vm);
 end
 
-modelsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models';
+modelsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\common';
 if ~exist(modelsDir, 'dir'), mkdir(modelsDir); end
 model.save(fullfile(modelsDir, 'test_square_shield_accel.mph'));
 fprintf('\nSUCCESS: model saved.\n');
