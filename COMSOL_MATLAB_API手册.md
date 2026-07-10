@@ -306,7 +306,7 @@ t1.feature('fc1').set('linsolver','dDef');
 
 | 部件 | 核心物理机制 | 关键验证结果 | 参考脚本 | 详见 |
 |---|---|---|---|---|
-| 电子枪（螺旋灯丝+Wehnelt） | 热发射(`Thermal`)+Wehnelt偏压聚焦 | 横置线圈收集效率34.18% > 轴向线圈27.71%；Wehnelt偏压存在非单调最优点 | 电子枪 phase1-5 系列脚本 | `项目_电子枪.md` |
+| 电子枪（螺旋灯丝+Wehnelt） | 热发射(`Thermal`)+Wehnelt偏压聚焦 | 横置线圈收集效率34.18% > 轴向线圈27.71%；Wehnelt偏压存在非单调最优点 | 电子枪 phase1-5 系列脚本 | `项目_螺旋灯丝Wehnelt电子枪.md` |
 | 螺线管线圈 | `InductionCurrents`+`Coil`(Numeric) | 中心磁场/无限长理论值比值0.85 | `test_magnetic_coil.m` | §7.14, §8 |
 | 均匀磁场回旋运动(裸测试) | 均匀Bz+`MagneticForce` | 回旋半径0.58mm vs理论0.57mm(2%误差)，轨迹为正圆 | `test_cpt_magnetic_force.m` | §7.15, §8.5 |
 | 四极/六极/八极杆 | RF交替电位；仅四极有严格马蒂厄稳定性 | on-axis电位幂律`r^(N/2)`吻合4位有效数字；四极q=0.5稳定/q=1.2发散；六极/八极是"离子导管"而非质量滤波器 | `test_multipole_geometry.m` / `test_multipole_es.m` / `test_quadrupole_stability.m` | §7.16 |
@@ -321,7 +321,7 @@ t1.feature('fc1').set('linsolver','dDef');
 | 空间电荷/库仑排斥 | `ParticleParticleInteraction`(`InteractionForce='Coulomb'`) | 有vs无相互作用，径向扩散标准差相差33倍 | `test_space_charge.m` | §7.24 |
 | FTICR/ICR离子回旋共振池 | 均匀B场回旋+DC端盖组合捕集 | 出现真实磁控漂移(magnetron drift)现象 | `test_icr_cell.m` | §7.26 |
 | 简单质谱仪整机(EI源→引出→多极杆→TOF→反射器→检测器) | 电子撞击电离+引出加速+RF多极杆+TOF | 电离产率与理论吻合 | `ms_stage1_ei_source.m` | §7.27 |
-| oa-TOF环栈反射镜（正交加速+双级Mamyrin反射镜） | 见项目文件 | 见项目文件 | `ms_modelB_ringstack_reflectron.m` | `项目_oaTOF环栈反射镜_ModelB.md` |
+| oa-TOF双级环栈反射镜分析器（正交加速+双级Mamyrin反射镜） | 见项目文件 | 见项目文件 | `ms_oaTOF_two_stage_ringstack_reflectron.m` | `项目_oaTOF双级环栈反射镜.md` |
 
 ### 7内容分类索引
 - **环境/会话管理**：§7.1, §7.13
@@ -361,13 +361,16 @@ t1.feature('fc1').set('linsolver','dDef');
 | `geom1.feature.create(tag,'Helix')` + `.set('rmaj',...)/.set('rmin',...)/.set('axialpitch',...)/.set('turns',...)/.set('pos',{'0' '0' 'z0'})` | 原生螺旋线圈实体图元，不需要额外Sweep。`type`默认`'solid'`，`rmaj`=线圈半径，`rmin`=线材截面半径，`axialpitch`=每匝轴向间距，`turns`=匝数。 |
 | `hel1.set('axistype','x')`（或`'y'`/`'z'`/`'cartesian'`/`'spherical'`） | 螺旋轴朝向；默认`'z'`。改成`'x'`后`pos`是螺旋沿x轴的起点。 |
 | `mphgeom(model,'geom1', 'facealpha',0.5)` + MATLAB `print(fig,'file.png','-dpng')` | 验证复杂几何最可靠的可视化方式：MATLAB自己的图形引擎（`figure('Visible','off')`），完全不经过comsolmphserver图形导出管线，不受渲染卡死风险影响。 |
+| **同一个部件尽量一次布尔运算成型，不要拼多个独立特征** | 一个大外形减一个小外形（`Difference`）做出"侧壁+端盖"这类一体结构，比"侧壁特征+端盖特征"分开搭建更好：后者两个特征的z范围/半径容易在边界处产生真实几何重叠或缝隙（例如曾经的`endcap`+`flighttubewall`各自独立时，两者在同一半径段有重叠的z范围），前者从构造上就不可能重叠。副作用：COMSOL里选中一个部件只需点一个特征，代码更短，三维图里辨认这个部件也更直接。 |
+| **不同图元类型的`pos`锚点约定不同，混用时会产生系统性偏移** | `Block`的`pos`是角点；`Cylinder`/`Cone`的`pos`是**底面**中心，不是几何中心（几何中心在`pos.z+h/2`）。如果某个电压表达式是按"几何中心"的z值算出来的，建几何时却直接把`pos.z`设成那个z值，会产生固定`h/2`的系统性错位。**每次新建部件前，先确认这个图元类型的锚点约定和自己后续公式的假设是否一致**，加厚某个部件的厚度参数时尤其要重新检查这个偏移量是否需要同步更新（如`pos.z`里的`-thickness/2`修正项）。 |
 
 ### 7.3 选择集 (Selection)
 | 调用 | 说明 |
 |---|---|
 | `comp1.selection.create(tag,'Adjacent')` + `.set('input',{'geom1_xxx_dom'})` | 组件级"相邻边界"选择，从域选择拿到该域的边界面。 |
 | `feature.selection.named('tag')` | 材料/物理场特征引用命名选择的标准写法。 |
-| `sel.entities()` | 返回该选择实际解析到的实体编号数组，排查选择是否解析对了的关键手段，不要只看名字。 |
+| `sel.entities()` | 返回该选择实际解析到的实体编号数组，排查选择是否解析对了的关键手段，不要只看名字。**任何"应该恰好是一个面"的选择集，建完立刻打印`numel(entities())`跟预期值比对**，不要等到结果异常才回头查——本项目多次靠这一步在几秒内定位选择框跟相邻边界意外重叠的问题。 |
+| **⚠️陷阱：基于绝对坐标的`Box`选择集不会跟着几何体移动自动更新** | 如果某个部件的位置由参数表达式定义（如`x_center`），后续因为设计调整（对称化布局等）整体平移了这个参数，所有**引用绝对坐标**构造的`Box`型选择集（而不是引用几何体本身域/边界的`Adjacent`/`Complement`型选择集）都必须跟着手动同步——COMSOL不会自动跟随。改一个部件的位置参数后，第一反应应该是搜索还有哪些选择集用了同一批坐标，逐一检查是否还需要联动。 |
 
 ### 7.4 材料
 | 调用 | 说明 |
@@ -434,11 +437,130 @@ t1.feature('fc1').set('linsolver','dDef');
 ### 7.11 GPU 求解器 (cuDSS)
 见本文件§4。
 
+### 7.30 官方PDF文档研究成果（COMSOL 6.4 Programming Reference Manual / Particle Tracing
+Module Users Guide / LiveLink for MATLAB Users Guide，本地`comsol_scripts/*.pdf`）
+
+> 以下条目来自官方PDF文本（用`pymupdf`提取全文后按关键词定位，而不是逐页通读——PDF
+> 有300~1200页/份，直接读不现实），**未在活体COMSOL上重新实测**，标注来源页码供以后
+> 需要时核对。跟本文件其他小节（都是活体实测）的可信度定位不同，引用前如果有实际影响
+> （比如要接入生产脚本），建议先用`tmp_*.m`一次性脚本核实一遍。
+
+**A. `tout`属性解释了"Fix B"疑案（tlist收窄为何在`tstepsbdf='free'`下仍拖累精度）**
+（Programming Reference Manual §6, "Solvers and Study Steps"原文）：
+- `tstepsbdf`（`free`/`intermediate`/`strict`/`manual`，默认`free`）控制的是**求解器内部
+  自己怎么选步长**："If set to free, the solver selects the time steps according to its
+  own logic, disregarding the intermediate times in the tlist vector."——这跟本项目已经
+  确认的认知一致。
+- 但**真正决定"输出/存储哪些时刻的解"的是另一个独立属性`tout`**（默认值就是`tlist`！）：
+  "If tout=tlist, then the output contains **interpolated solutions** for the times in
+  the tlist property." 也就是说：即使内部积分步长已经是free、完全不受tlist稀疏影响，
+  **只要`tout`还是默认的`tlist`，最终存下来给你读的解仍然只在tlist那些点上（插值得到），
+  跟tlist的疏密直接挂钩**。
+- 若想要"内部自由步进 + 输出也用求解器真实步长（不再被tlist插值精度卡住）"，需要显式
+  设置：`model.sol('sol2').feature('t1').set('tout','tsteps')`（`tsteps`=每N个求解器
+  真实步存一次，N由`tstepsstore`控制，默认1=每步都存；还有`tstepsclosest`=存离tlist
+  请求时刻最近的真实步）。这是APG/参考手册里给出的官方例句：
+  `model.sol("sol1").feature("t1").set("tout", "tsteps");`
+- **推论（尚未在本项目重新实测，仅是文档层面的解释假说）**：上次"Fix B把tlist收窄导致
+  分辨率R下降"的现象，很可能不是"缩短tlist真的让内部计算变粗"，而是**tlist收窄直接
+  降低了输出解的插值密度，从而降低了下游探测时间(detTime)的插值精度**——因为
+  `tstepsbdf=free`只保证内部积分本身准，不保证输出跟着一样密。换句话说，**当初"缩短
+  tlist来提速"这个思路本身可能就没有实际提速效果**（内部步进本来就已经是free/自适应，
+  不受tlist疏密支配），代价却是白白牺牲了输出精度。如果以后要重新对这个方向下手，
+  正确做法应该是保持`tout='tlist'`不变但**不收窄tlist**（收窄tlist对求解速度没什么
+  帮助），或者改成`tout='tsteps'`来获取真实自适应步长的输出，两者都不需要以牺牲精度
+  为代价。
+
+**B. Nonlocal Coupling（`model.cpl`/`Maximum`/`Average`/`Integration`）的正确创建路径**
+（Programming Reference Manual §2, "About General Commands"原文语法块）：
+- 正确语法是`model.component(<ctag>).cpl().create(<tag>,type)`——**必须挂在具体的
+  component下面**（如`model.component('comp1').cpl.create(...)`），**不是**
+  `model.cpl.create(...)`（模型根节点下没有这个東西的正确落点）。上次调试
+  `Maximum` component coupling一直卡住（`cop1.set('expr',...)`报"Unknown property"，
+  `maxop1(expr)`调用报"不能超过0个参数"），根源大概率就是当时代码写的是
+  `model.cpl.create('maxop1','Maximum','geom1')`——**挂错了节点**，不是属性名猜错。
+- 官方标准用法确认：**创建对了之后，聚合表达式是作为调用参数传的，不是属性**：
+  `oper(e)`（如`maxop1(cpt.vx^2+cpt.vy^2+cpt.vz^2)`），这跟直觉一致，只是必须先在
+  正确的`component.cpl()`节点下创建。
+- 支持的`type`：`GeneralExtrusion`/`LinearExtrusion`/`BoundarySimilarity`/
+  `IdentityMapping`/`GeneralProjection`/`Integration`/`Average`/`Maximum`/`Minimum`。
+- **如果以后要重新捡起"用Maximum聚合cpt速度做自动停止条件"这个思路**：先只改这一处
+  （`model.cpl`→`model.component('comp1').cpl`），用`tmp_*.m`重新验证一遍，大概率能
+  直接解决之前的卡点。
+
+**C. `Particle Counter`官方暴露的全局变量（正是当初找不到的"全部粒子已到达/停止"信号）**
+（Particle Tracing Module Users Guide §2, "Particle Counters"原文）：
+一个`ParticleCounter`（`cpt.create('pc1','ParticleCounter',<dim>)`）特征，tag设为`<tag>`
+时提供以下**官方文档明确列出**的变量（当初逐个猜的`cpt.status`/`cpt.freeze`/`cpt.dead`
+等全部是瞎猜，官方正确名字是这些）：
+- `<tag>.Nsel`——**到达该counter的粒子数（累计传输数）**。这正是当初想找的"多少粒子已
+  经到达/停止"的信号，可以用`pc1.Nsel>=N_total`作为"全部粒子已到达"的判据。
+- `<tag>.Nfin`——仅Particle Beam释放特征场景下，末时刻传输的粒子数。
+- `<tag>.alpha`——传输概率（`Nsel`/释放总数）。
+- `<tag>.rL`——一个逻辑表达式，标记"这个粒子是否属于从某release到这个counter的路径"，
+  设计用来喂给Particle Trajectories绘图的Filter节点。
+- `<tag>.It`（仅CPT接口且释放方式为Specify current时）——传输到counter的电流。
+- 文档特别提示：**Particle Counter只创建变量，不影响求解**，加了之后不需要重新solve，
+  在Study节点右键"Update Solution"更新一下变量即可读取——如果以后真的要用，这是个
+  比重新跑整个CPT快得多的验证捷径。
+- **已实测证伪**：`Nsel`**不能**被`StopCondition`的表达式引用——直接报"Undefined
+  variable"。原因是"Particle Counter只创建变量，不影响求解"这句话的准确含义是"它是
+  从已经存好的完整轨迹历史事后算出来的，不是求解过程中每一步实时可读的活变量"，
+  `StopCondition`每步都要实时求值，天生用不了这类事后变量。
+- **进一步实测（另两轮会话）**：理论上的实时替代——`Wall`节点下的`BoundaryAccumulator`
+  子特征（`wall_det.create('bacc1','BoundaryAccumulator')`，这是官方文档里"每次粒子
+  撞边界就递增"的真ODE自由度）——特征创建和属性设置（`AccumulatorType='Count'`+
+  `R='1'`+`StudyStep`）全部正常。第一次读取尝试用裸`rpb`（`cpt.wall_det.bacc1.rpb`）
+  全部失败，一度误判为"PDF没记录这条路"——**这个判断后来被证明是错的**：
+  `ParticleTracingModuleUsersGuide.pdf`第146页**确实有一张"BUILT-IN GLOBAL
+  VARIABLES"表格**（Table 3-4/3-5），只是表格内容本身在`pymupdf`文本提取时被打散成
+  乱码（原因是COMSOL PDF把这类表格用特殊排版渲染，纯文本抽取抽不出来），第一轮
+  用纯文本Grep检索时因此完全没发现，**这是本次调研方法本身的一个漏洞：文本抽取遇到
+  明显乱码/公式碎片时，应该把那一页额外渲染成图片直接读，而不是当作"没有记录"直接
+  放弃**。渲染成图后确认：裸`rpb`是**逐边界网格单元、不连续的field变量**（本来就不该
+  指望它能被当标量读出来），真正对应的是自动生成的**全局标量**变量，命名规则是
+  `<scope>.<name>_sum`（"Sum of accumulated variable over elements"，正是我们要的
+  "总撞击数"）——示例`pt.wall1.bacc1.rpb_ave`，其中`_sum`/`_ave`/`_int`/`_max`/`_min`
+  是COMSOL自动通过一组"非局部耦合(nonlocal coupling)"生成的现成聚合量，理论上不需要
+  自己手工建`Integration`算子。CPT章节（Chapter 4）明确交叉引用了这同一套理论
+  （"Specialized Boundary Accumulators"一节直接说"variables...are described in detail
+  in Accumulator Theory: Boundaries in Theory for the Mathematical Particle Tracing
+  Interface"），确认这套机制对`cpt`接口同样适用，不是"pt"专属。**但即使用文档给的
+  精确写法`cpt.wall_det.bacc_det.rpb_sum`在生产物理模型上实测，依然报"Undefined
+  variable"（COMSOL自己在"Global scope"这一级都确认找不到这个符号，不是选择集/读取
+  方式的问题）**——说明PDF记录的理论机制是真实存在的，但要么触发这些自动生成的
+  非局部耦合还需要某个本次没试出来的额外步骤/设置，要么装的COMSOL 6.4版本在这个
+  细节上跟PDF描述的版本（封面标注6.3）有出入。**当前判定**：不是"文档没记录"，而是
+  "文档记录的机制真实存在但实测复现不了，原因超出了这5份PDF能回答的范围"——下次要
+  继续查，优先级应该是先确认COMSOL 6.4桌面版GUI里手动加一个这样的Accumulator后，
+  右键Results能不能在Add/Replace Expression菜单里真的看到`rpb_sum`这个建议项（如果
+  GUI里都找不到，说明确实是版本行为差异；如果GUI里有但脚本读不到，说明是脚本调用
+  方式的问题）。`mphgetexpressions`试过，帮不上忙，它只覆盖`model.param`/
+  `model.variable`这类用户自定义节点，不覆盖物理场内部编译的DOF/耦合变量。
+  详见项目文档`项目_oaTOF双级环栈反射镜.md`§6.13完整记录。
+
+**D. `StopCondition`的官方"多条件"标准写法**
+（Programming Reference Manual §6, "StopCondition"原文语法块）：
+- 官方给的标准语法是先创建，再用`setIndex`按下标设置每一条：
+  ```matlab
+  model.sol(sname).feature(fname).feature(pname).create(ocname,"StopCondition");
+  model.sol("sol1").feature("t1").feature("st1").setIndex("stopcondarr", "(1/timestep)<200", 1);
+  ```
+  即真正的官方推荐属性名是**`stopcondarr`**（字符串数组，逐条设置用`setIndex`+下标），
+  不一定是直接`.set('stopcond',...)`（后者若能用，大概率是内部/兼容层的简化别名，不是
+  文档推荐写法）。另外文档提到一个已废弃的旧属性`stopcondition`（单个字符串，deprecated），
+  不要跟`stopcondarr`搞混。
+- `stopcondterminateon`：`"true"`表示对应`stopcondarr`条目求值**≥0**时停（不是"变为负数"，
+  是"变为非负"！），`"negative"`表示条目求值**<0**时停。要用`t-2[us]`（表达式本身在
+  越过2us时刻变为非负）而不是`t>2[us]`（返回布尔0/1，虽然实测中0/1恰好也能落在"非负
+  即停"的判定里凑巧工作，但不是文档描述的本意用法，语义上更规范的写法是前者）。
+
 ### 7.12 已确认无效/错误的调用（黑名单，不要重试）
 - `model.multiphysics.create('epf1','ElectricForce', ...)` → "Unknown multiphysics coupling"（正确见§7.7）。
 - `geom1.getNEdge(tag)` → 方法不存在（正确见§7.2 `mphgeominfo`）。
 - `geom1.feature.create('fil1','Fillet')` / `'Chamfer'` → 许可证限制（正确见§7.2 Cone−Cylinder手工倒角）。
-- `cpt.Ep`/`Ek`/`KE`/`kin_en`/`Ekin`/`speed`/`U`、`comp1.qx`/`cpt.qx`/`cpt.vx` → "Undefined variable"（正确见§7.10能量守恒法）。
+- `cpt.Ep`/`Ek`/`KE`/`kin_en`/`Ekin`/`speed`/`U`、`comp1.qx`/`cpt.qx` → "Undefined variable"（正确见§7.10能量守恒法）。**勘误**：`cpt.vx`/`cpt.vy`/`cpt.vz`（带`cpt.`前缀）实测通过
+  `mphparticle(model,'dataset','pdset1','expr',{'cpt.vx'})`**可以**查到值，跟本条目之前的说法相反；失效的是不带前缀的裸`vx`/`vy`/`vz`。`cpt.`前缀对不同变量名的有效性没有统一规律（`qx`反过来是裸的才有效、带`cpt.`前缀反而失效），每个变量都要单独试，不能类推。
 - `mpheval(...,'dataset','dset2','edim',0)`取粒子坐标 → 不报错但语义错误，返回FEM网格顶点数据（正确见§7.10 `mphparticle`）。
 - `mpheval(...,'dataset','pdset1','edim',0)` → 卡死（正确见§7.10 `mphparticle`，不要传`edim`）。
 - `model.sol('sol2').feature('v1').set('notsolnum', 'sol1')` → 报错（正确属性名见§7.8 `notsol`）。
@@ -459,6 +581,7 @@ t1.feature('fc1').set('linsolver','dDef');
 - `ppi1.set('InteractionType'/'ForceType'/'Interaction', ...)` → "Unknown parameter"，正确属性名是`InteractionForce`（见§7.15）。
 - `MagneticForce`/`ElectricForce`等力特征忘记`.selection` → 不报错，静默让力处处为零，容易被误判成"物理是对的"（见§7.15/§8.5）。
 - 同一component里创建第二个同类型物理场时用自定义tag引用变量（如`'es_rf.Ex'`） → "Undefined variable"，COMSOL变量命名空间不跟着自定义tag走，按类型自动编号`es`/`es2`（见§7.18）。
+- 为避免理想化边界跟不同电压实体接触，随手设一个"看起来很小"的间隙（如0.1mm）而不参照局部网格尺寸 → `FreeTet`报"Failed to constrain a mesh vertex to its geometric entity"，网格生成直接失败（正确做法见§7.29，间隙量级要跟`hmax`相当）。
 
 ### 7.13 服务端启动命令
 ```powershell
@@ -616,6 +739,31 @@ t1.feature('fc1').set('linsolver','dDef');
 | **`InitialKineticEnergy`是模式选择器枚举，不是自由表达式字段** | 合法值`"Expression","ConstantSpeedSpherical","ConstantSpeedHemisphere","ConstantSpeedCone","ConstantSpeedLambertian"`。**`v0`才是真正的自由表达式字段**，需要能量分布随机化时把能量公式换算成速度写进`v0`。 |
 | **⚠️`randnormal()`不是COMSOL函数——用`random()`(均匀分布)手动Box-Muller构造高斯分布** | `sqrt(2*abs(E_mean_eV+E_std_eV*sqrt(-2*log(random(1)))*cos(2*pi*random(2)))*1.602176e-19[C]/m_kg)`。**单位陷阱**：基本电荷常数必须显式标`[C]`。`SamplingFromDistribution`需设`'Random'`，否则每个粒子拿到同一个值。 |
 | **粒子数量大时的内存教训** | 电场求解耗时与粒子数无关，只跟网格规模有关；CPT求解本身可行到数万粒子，但`mphparticle`取回完整轨迹数据在极大N时会"Out of memory on server"。**教训**：只提取需要的统计量，或放宽CPT输出tlist的时间步密度（脉冲/快速动态段保留精细步长，纯漂移段可以粗化），不要囫囵吞枣地拉全部时间步×全部粒子的数据。 |
+| **⚠️理想化零厚度边界依然不能跟不同电压的实体接触** | "必须跨越真空域整个截面"（避免留一圈没被电位覆盖的缝隙）和"不能碰不同电压的实体"是两条独立的规则，不要因为满足了前者就忘了后者。如果这个理想化边界恰好跟另一个不同电位的固体导体在同一半径/位置相接（比如它俩恰好共享屏蔽壳内壁的同一个半径值），必须留一个显式小间隙，跟真实固体导体之间"不同电位必须留间隙"是同一条规则，理想化边界并不豁免。**间隙大小要参照局部网格尺寸(`hmax`)来选，不能脱离网格分辨率盲目取"越小越好"**——实测取0.1mm（远小于15mm的局部网格尺寸）直接导致`FreeTet`网格生成失败（"Failed to constrain a mesh vertex to its geometric entity"，网格没法在这么薄的楔形区域收敛），改用量级接近网格尺寸的间隙（如2mm）后网格/求解都正常。 |
+
+### 7.31 官方PDF资料速查索引（本地 `comsol_scripts/*.pdf`，共5份）
+
+> 目录下有5份COMSOL官方PDF手册，单份300~1200页、4.5~13.3MB，**不要试图逐页通读**——
+> 用`python`+`pymupdf`把全文抽成纯文本（每份几秒钟）存到临时目录，再用Grep按关键词
+> 定位到具体页码，最后按需读那几页原文确认上下文。示例：
+> ```python
+> import fitz
+> d = fitz.open('COMSOL_ProgrammingReferenceManual.pdf')
+> with open('out.txt','w',encoding='utf-8') as out:
+>     for i, page in enumerate(d):
+>         out.write(f'\n===PAGE {i+1}===\n' + page.get_text())
+> ```
+> 抽出的文本文件本身也很大（参考手册那份抽完约10万行），不要直接整份Read，同样只用
+> Grep定位关键词后读命中行附近的片段。这5份是COMSOL 6.3/6.4版本文档，个别措辞可能跟
+> 已装的6.4版本有细微出入，但API命令语法基本稳定，可以直接当权威参考。
+
+| 文件名 | 页数 | 章节结构 | 主要内容 / 什么时候查 |
+|---|---|---|---|
+| `COMSOL_ProgrammingReferenceManual.pdf` | 1234（5份里最厚，最权威） | 1 Introduction / 2 General Commands / 3 Geometry / 4 Mesh / 5 Elements and Shape Function Programming / 6 Solvers and Study Steps / 7 Results / 8 Graphical User Interfaces / 9 The COMSOL File Formats | **最底层、最权威的Java Model Object API参考**——任何`model.xxx().yyy()`调用的精确语法、每个feature类型的合法属性名/取值/默认值表都在这里查（比如`StopCondition`/`cpl`非局部耦合/求解器`tout`/`tstepsbdf`等属性就是从这里查到的，见§7.30）。**遇到"这个属性到底叫什么名字/合法值有哪些"就先查这份**，比瞎猜/逐个试快得多。 |
+| `LiveLinkForMATLABUsersGuide.pdf` | 400 | 1 Introduction / 2 Getting Started / 3 Building Models / 4 Working with Models / 5 Calling External Functions / 6 Command Reference | **MATLAB这一侧的脚本手册**——`mphparticle`/`mphglobal`/`mphinterp`/`mpheval`/`mphmax`/`mphmean`等所有`mph*`辅助函数的参数、属性、返回结构体字段说明都在这里（第4章"Working with Models"里的"Extracting Results"一节，第6章是按字母排的完整命令索引）。**遇到"这个mph*函数支持哪些option/返回结构体里有哪些字段"就查这份**，不要跟`ProgrammingReferenceManual`（那份是Java API，不含`mph*`函数）搞混。 |
+| `ParticleTracingModuleUsersGuide.pdf` | 414 | 1 Introduction / 2 Particle Tracing Modeling / 3 Mathematical Particle Tracing / 4 Charged Particle Tracing / 5 Particle Tracing for Fluid Flow / 6 Multiphysics Interfaces | **CPT（带电粒子追踪）物理场的官方说明书**——本项目核心物理场。`Release`/`Wall`/`Particle Counter`/`Force`等每个子特征的作用、暴露的变量名（比如`<tag>.Nsel`/`.Nfin`/`.alpha`，见§7.30C）、Formulation选择（Newtonian等）都在第2、3、4章。**遇到"CPT某个子特征到底暴露什么变量/该怎么配置"就查这份**。 |
+| `ACDCModuleUsersGuide.pdf` | 540 | 1 Introduction / 2 Theory for the AC/DC Module / 3 Modeling with the AC/DC Module / 4 Electric Field and Current Interfaces / 5 Magnetic Field Interfaces / 6 The Electrical Circuit Interface / 7 Multiphysics Interfaces and Couplings | **静电场/磁场物理场（ES/`mf`磁场/电路）的官方说明书**——本项目加速器/反射镜的`Electrostatics`边界条件类型、磁场`Coil`特征（对应§7.14/§8的磁场调试记录）的理论背景和配置选项在这里查。偏理论+GUI操作说明，Java API精确语法仍以`ProgrammingReferenceManual`为准。 |
+| `ApplicationProgrammingGuide.pdf` | 326 | Syntax Primer / Model Object（Java）/ The Application Object（COMSOL Desktop内置的Application Builder：表单、GUI、方法库）/ Programming Examples | **跟本项目关系最弱的一份**——这是COMSOL Desktop内部"Method Editor"/"Application Builder"的编程指南（用于在COMSOL桌面里做交互式GUI应用/自定义方法，不是外部MATLAB LiveLink脚本）。本项目走的是纯MATLAB外部脚本路线，用不上Application Builder那部分；但其中"Model Object"一章（Java API对象结构、`get`/`set`方法约定）跟`ProgrammingReferenceManual`第2章内容有重叠，可以作为补充交叉印证。**除非要在COMSOL Desktop里做GUI插件，否则很少需要查这份**。 |
 
 ---
 
