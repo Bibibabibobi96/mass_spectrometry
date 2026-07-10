@@ -172,6 +172,18 @@ mphinterp(model, 'es.normE', 'coord', coords, 'dataset', 'dset2')  % 应与dset1
 ```
 如果 `dset2` 上处处为0而`dset1`不为0，就是这个"未求解变量"配置问题。
 
+### 2.4.1 GUI 对等性验收（所有 COMSOL 模型）
+MATLAB/Java API 不是独立的隐藏求解环境；它创建的模型必须能由 COMSOL Desktop 完整接管。
+所有影响物理或数值结果的对象必须作为 Model Builder 中可见、可编辑、可保存的节点或属性
+持久化，包括几何、材料、网格、选择集、参数/变量/函数/耦合算子、物理场及其域/边界/点
+条件、Study、Solver、解引用、数据集和 Result。边界条件、电势/磁场、粒子释放/初始条件、
+力、碰撞和壁面条件尤其不得只存在于 MATLAB 运行时。
+
+验收不能只运行`model.sol(...).runAll`：应重新加载保存的 MPH，在与用户 GUI 操作对应的
+`model.study(...).run`路径上验证，并检查该 Study 附着的是预期 Solver、数据集和绘图组引用的
+是预期解。生成的 MPH 必须允许用户在 GUI 修改任一上述设置，再点击对应 Study 的 Compute 获得
+由新设置驱动的结果；不得依赖未持久化 Server 状态或外部脚本后处理来维持关键行为。
+
 时间步长估算：非相对论电子末速度 `v=sqrt(2*E_eV*1.602e-19/9.11e-31)`，除以渡越距离得到
 量级，留30-50%余量。
 
