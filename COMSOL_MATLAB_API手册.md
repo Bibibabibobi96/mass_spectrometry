@@ -157,8 +157,14 @@ model.sol.create('sol2'); model.sol('sol2').study('std2');
 model.sol('sol2').createAutoSequence('std2');
 model.sol('sol2').feature('v1').set('notsolmethod', 'sol');  % 'sol'=用存储解
 model.sol('sol2').feature('v1').set('notsol', 'sol1');       % 属性名是notsol，不是notsolnum！
+model.sol('sol2').attach('std2');                             % 让 GUI Study Compute 实际使用 sol2
 model.sol('sol2').runAll;
 ```
+**GUI 对等性补充**：`.study('std2')`只记录求解器关联，不等同于把该求解器附着到 Desktop
+里的 Study。若缺少`.attach('std2')`，GUI 对`std2`点击 Compute 可能自动生成一个新的默认
+Solver（未求解ES变量回退到零），即使脚本直接运行`sol2.runAll`完全正确。应在 GUI 或等价的
+`model.study('std2').run`路径上验证，并让 Particle 数据集和轨迹图都绑定该已附着的`sol2`。
+
 **排查方法**：怀疑粒子没有真正受力/运动时，直接对比同一坐标下 `es.normE` 在 `dset2`（CPT
 study的解）和 `dset1`（纯静电场解）里的取值：
 ```matlab

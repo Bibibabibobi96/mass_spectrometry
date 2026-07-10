@@ -11,6 +11,7 @@
 - 删除任何文件，尤其`.mph`模型和计算结果前，必须先取得用户确认。
 - 修改项目脚本时同步更新对应项目文档；新增通用 API 经验更新`COMSOL_MATLAB_API手册.md`，仅跨项目验证过的调试策略才更新`COMSOL_调试方法论.md`。
 - 当前会话默认使用`matlab.exe -batch`驱动的MATLAB LiveLink/Java API直连COMSOL完成服务端状态、模型加载/检查、标准操作与求解；首次使用某个直连脚本先做最小测试。若MCP恰好可用，也只作为临时检查手段，不得替代正式脚本和项目专属后处理判据。
+- **GUI 对等性是 COMSOL 模型的硬性约束**：脚本创建或修改的物理场、Study、Solver、数据集、Result 和依赖关系必须持久化为 COMSOL Desktop Model Builder 中可见、可编辑的节点。对需要在 GUI 点击 Study Compute 的模型，必须验证该操作复用预期 Solver/解，而非只验证`model.sol(...).runAll`；不得依赖仅在 MATLAB 会话中存在的隐式状态。
 
 ## Git 约束
 

@@ -1660,10 +1660,6 @@ Tsim_full = 2*t_flight_oneway*8.0 + 1e-6;
 Tsim = Tsim_short;
 std2 = model.study.create('std2');
 std2.label(sprintf('Time-dependent: oa-TOF ring-stack %s', label));
-% Keep the Result tree stable when this study is recomputed in the GUI.
-% The explicit pg_traj group created below is the sole trajectory view;
-% otherwise COMSOL creates a separate default CPT plot group on Compute.
-std2.set('genplots', false);
 tstep = std2.create('time1', 'Transient');
 tstep.label('Transient solver');
 % !!! Post-pulse grid coarsened 10x (50ns->500ns): with L_flight
@@ -1767,6 +1763,9 @@ model.sol('sol2').study('std2');
 model.sol('sol2').createAutoSequence('std2');
 model.sol('sol2').feature('v1').set('notsolmethod', 'sol');
 model.sol('sol2').feature('v1').set('notsol', es_sol_tag);
+% Attach the configured solver so the Study's GUI Compute reuses sol2
+% instead of creating a default zero-field CPT solver.
+model.sol('sol2').attach('std2');
 % !!! FIXED root cause of the compact-design resolution failure: 'strict'
 % forces the BDF solver to use EXACTLY the tlist steps as its OWN
 % internal integration steps (not just for output) -- with the old
@@ -2231,6 +2230,12 @@ pg1.set('titletype', 'manual');
 pg1.set('title', sprintf('Orthogonal accelerator + ring-stack reflectron: %gamu +1 ion', mass_amu));
 trj1 = pg1.create('trj1', 'ParticleTrajectories');
 trj1.label('oa-TOF ion trajectory (ring-stack reflectron)');
+col_time = trj1.create('col_time', 'Color');
+col_time.set('expr', 't');
+col_time.set('descr', 'Time');
+col_time.set('unit', 's');
+col_time.set('colortable', 'Thermal');
+col_time.set('colorlegend', 'on');
 
 % !!! Reordered (per repeated crash pattern this session): the native
 % 3D trajectory rendering (pg1.run) has repeatedly crashed MATLAB/COMSOL
