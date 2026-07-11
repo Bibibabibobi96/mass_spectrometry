@@ -1,8 +1,8 @@
 function result = ms_oaTOF_two_stage_ringstack_reflectron(mass_amu, label, solver_mode, field_mode, d1_mm, n_rings2, mesh_hmax_refl_mm, bore_r_mm, ring_thickness_mm, n_particles)
 % !!! d1_mm (doc §7.49, per explicit request -- corrected from an
 % earlier d2-scan plan to a d1 scan): optional 5th argument, the
-% reflectron's stage1 physical depth in mm (default 200, matching the
-% established baseline). UNLIKE d2 (a pure geometric constraint that
+% reflectron's stage1 physical depth in mm (default 120, matching the
+% current formal-model baseline). UNLIKE d2 (a pure geometric constraint that
 % doesn't appear in the focusing equations at all -- see doc's §6),
 % d1 DIRECTLY determines E1/E2/U1 via the closed-form solution:
 % U1=2*U0*(L+2*d1)/(3*L), E1=U1/d1, and a more complex E2 formula
@@ -13,7 +13,7 @@ function result = ms_oaTOF_two_stage_ringstack_reflectron(mass_amu, label, solve
 % d2's (d2 only has a LOWER bound, d2>=d2_min=U1/E2, no upper bound).
 % d2 stays FIXED at the established 300mm baseline throughout this scan.
 if nargin < 5 || isempty(d1_mm)
-    d1_mm = 200;
+    d1_mm = 120;
 end
 % !!! n_rings2 (doc §7.53, per explicit request to test whether more
 % stage2 ring electrodes reduce the real-vs-ideal field discrepancy
