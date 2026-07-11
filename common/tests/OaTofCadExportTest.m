@@ -40,7 +40,7 @@ classdef OaTofCadExportTest < matlab.unittest.TestCase
     end
 
     methods (Test, TestTags = {'Integration', 'SolidWorks'})
-        function testImportsStepToNativePart(testCase)
+        function testImportsPartsAndCreatesAssembly(testCase)
             modelPath = "C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\project_oaTOF\MS_oaTOF_TwoStageRingStackReflectron_Final.mph";
             outputDir = string(tempname);
             mkdir(outputDir);
@@ -48,12 +48,20 @@ classdef OaTofCadExportTest < matlab.unittest.TestCase
 
             testCase.assertTrue(isfile(modelPath));
             exportResult = export_oatof_cad_step(modelPath, outputDir);
-            solidWorksResult = import_step_to_solidworks(exportResult.stepPath, ...
-                fullfile(outputDir, "oaTOF_test.sldprt"), false);
+            partStepPaths = string(exportResult.partStepPaths);
+            [~, partBases, ~] = fileparts(partStepPaths);
+            partPaths = fullfile(outputDir, "parts", partBases + ".sldprt");
+            assemblyPath = fullfile(outputDir, "oaTOF_test.sldasm");
+            solidWorksResult = import_step_to_solidworks( ...
+                partStepPaths, partPaths, false, assemblyPath);
 
-            testCase.verifyTrue(isfile(solidWorksResult.sldprtPath));
-            testCase.verifyGreaterThan(dir(solidWorksResult.sldprtPath).bytes, 0);
-            testCase.verifyGreaterThanOrEqual(solidWorksResult.importDiagnosisCode, -1);
+            testCase.verifyEqual(solidWorksResult.partCount, numel(partPaths));
+            testCase.verifyTrue(all(isfile(partPaths)));
+            testCase.verifyTrue(isfile(assemblyPath));
+            testCase.verifyGreaterThan(dir(assemblyPath).bytes, 0);
+            testCase.verifyEqual(solidWorksResult.assembly.componentCount, numel(partPaths));
+            testCase.verifyEqual([solidWorksResult.parts.loadErrors], zeros(1, numel(partPaths)));
+            testCase.verifyEqual([solidWorksResult.parts.saveErrors], zeros(1, numel(partPaths)));
         end
     end
 end

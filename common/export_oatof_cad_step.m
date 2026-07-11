@@ -23,6 +23,7 @@ function result = export_oatof_cad_step(modelPath, outputDir)
     geom = model.component('comp1').geom('geom1');
     manifest = oatof_cad_export_manifest();
 
+    [~, modelBase, ~] = fileparts(modelPath);
     objectNames = strings(0,1);
     objectFeatureTags = strings(0,1);
     for k = 1:height(manifest)
@@ -36,9 +37,12 @@ function result = export_oatof_cad_step(modelPath, outputDir)
         objectFeatureTags = [objectFeatureTags; repmat(manifest.FeatureTag(k), numel(featureObjects), 1)]; %#ok<AGROW>
     end
 
-    [~, modelBase, ~] = fileparts(modelPath);
     stepPath = fullfile(outputDir, modelBase + "_physical_components.step");
     csvPath = fullfile(outputDir, modelBase + "_physical_components_manifest.csv");
+    partStepDir = fullfile(outputDir, modelBase + "_individual_steps");
+    if ~isfolder(partStepDir)
+        mkdir(partStepDir);
+    end
 
     exportFeature = geom.export();
     exportFeature.selection().init();
@@ -47,8 +51,16 @@ function result = export_oatof_cad_step(modelPath, outputDir)
     exportFeature.setLengthUnitSTEP('mm');
     geom.export(char(stepPath));
 
-    exportedObjects = table(objectFeatureTags, objectNames, ...
-        'VariableNames', {'FeatureTag', 'ObjectName'});
+    partStepPaths = strings(numel(objectNames), 1);
+    for k = 1:numel(objectNames)
+        partStepPaths(k) = fullfile(partStepDir, ...
+            sprintf('%02d_%s.step', k, objectFeatureTags(k)));
+        exportFeature.selection().set({char(objectNames(k))});
+        geom.export(char(partStepPaths(k)));
+    end
+
+    exportedObjects = table(objectFeatureTags, objectNames, partStepPaths, ...
+        'VariableNames', {'FeatureTag', 'ObjectName', 'PartStepPath'});
     writetable(exportedObjects, csvPath);
 
     result = struct( ...
@@ -59,6 +71,7 @@ function result = export_oatof_cad_step(modelPath, outputDir)
         'unit', 'mm', ...
         'bodyFeatureCount', height(manifest), ...
         'exportedObjectCount', height(exportedObjects), ...
+        'partStepPaths', {cellstr(partStepPaths)}, ...
         'excluded', {{'vacuum domains', 'grid1/grid2/entgrid/midgrid ideal internal boundaries', 'physics, mesh, studies, and results'}});
 end
 

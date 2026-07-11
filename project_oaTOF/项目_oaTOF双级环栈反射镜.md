@@ -649,13 +649,16 @@ function result = ms_oaTOF_two_stage_ringstack_reflectron(mass_amu, label, solve
 
 正式入口为`ms_export_oatof_to_solidworks.m`。它只加载当前唯一正式模型
 `MS_oaTOF_TwoStageRingStackReflectron_Final.mph`，不重求解、不会保存或覆盖源 MPH；输出写入
-同级工作区的`cad_exports/project_oaTOF/`，不纳入 Git。
+同级工作区的`cad_exports/project_oaTOF/`，不纳入 Git。正式交付为 20 个独立`.sldprt`与一个
+引用这些零件的`.sldasm`，而不是单一多实体零件。
 
 - COMSOL 端仅导出实际实体：repeller、加速器屏蔽壳/五个环电极、飞行管屏蔽壳、两级反射镜
   环电极、实体背板和探测器；真空域、物理场/网格/结果全部排除。
 - `grid1`、`grid2`、`entgrid`和`midgrid`是零厚度理想化内部边界，代表仿真中的细网格电极，
   不是可制造实体，因此不导出；若未来需要机械丝网，必须另行给出丝径和节距。
-- 中间格式固定为`STEP AP203`、单位`mm`。COMSOL 6.4 的 Parasolid 输出是 v37，而本机
+- 中间格式固定为`STEP AP203`、单位`mm`。除保留全部实体的总 STEP 外，脚本还按实体白名单
+  分别导出 20 个单实体 STEP；每个零件导入时保留 COMSOL 全局坐标，装配体以`(0,0,0)`插入
+  全部零件，因此恢复原始相对位置。COMSOL 6.4 的 Parasolid 输出是 v37，而本机
   SolidWorks 2013 对该版本的兼容性不可靠。
 - SolidWorks 端由 Python/pywin32 连接版本专用的`SldWorks.Application.30`；冷启动时直接激活
   COM服务器而非普通交互式`SLDWORKS.exe`启动路径。用`LoadFile4`
@@ -672,7 +675,8 @@ function result = ms_oaTOF_two_stage_ringstack_reflectron(mass_amu, label, solve
 - `common/export_oatof_cad_step.m`：通过 LiveLink 只读加载 MPH，导出 STEP AP203（mm）及 CSV
   实体清单；
 - `common/import_step_to_solidworks.m`与同名`.py`：MATLAB 调用Python/pywin32，复用已运行实例或
-  激活 SolidWorks 2022 COM服务器，再导入并保存`.sldprt`；
+  激活 SolidWorks 2022 COM服务器，批量导入并保存独立`.sldprt`，再用本机 2022 的有效装配模板
+  `gb_assembly.asmdot`创建/保存`.sldasm`；
 - `ms_export_oatof_to_solidworks.m`：项目正式总入口；
 - `common/tests/OaTofCadExportTest.m`：Unit、COMSOL、SolidWorks 三类测试。
 
@@ -690,10 +694,13 @@ function result = ms_oaTOF_two_stage_ringstack_reflectron(mass_amu, label, solve
   出现此类弹窗时，Agent 必须及时提醒用户点击相应按钮；不得将其误报为 STEP 几何、COMSOL 导出
   或 SolidWorks 转换失败。**后续应在 SolidWorks 的“工具→选项→默认模板”中配置有效的零件、
   装配体和工程图模板路径，或进一步实现无需交互的配置修复。
-- 恢复后，`OaTofCadExportTest`的 SolidWorks 集成测试通过（51.13 s）；正式入口随后成功生成
-  `MS_oaTOF_TwoStageRingStackReflectron_Final_physical_components.sldprt`（`loadErrors=0`、
-  `saveErrors=0`、`saveWarnings=0`）和`oaTOF_solidworks_export_report.json`。源 MPH 未重求解、
-  未覆盖。旧版2013在新版正式产物确认后仍不自动删除。
+- 初版单一多实体 SLDPRT 验证后，按“实体部件为零件、整体为装配体”的要求扩展：SolidWorks
+  集成测试通过（106.83 s），20 个独立零件均为`loadErrors=0`、`saveErrors=0`、`saveWarnings=0`，
+  装配体含 20 个组件且保存零错误、零警告。正式入口生成
+  `MS_oaTOF_TwoStageRingStackReflectron_Final_parts/`、
+  `MS_oaTOF_TwoStageRingStackReflectron_Final_physical_components.sldasm`和
+  `oaTOF_solidworks_export_report.json`。源 MPH 未重求解、未覆盖。旧版2013在新版正式产物
+  确认后仍不自动删除。
 
 ## 附录：时间线（按日期，用于快速定位"上次做到哪了"，正文按主题组织不按时间）
 
