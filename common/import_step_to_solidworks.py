@@ -46,14 +46,28 @@ def document_title(document) -> str:
     return str(member() if callable(member) else member)
 
 
+def create_transform(math_utility, array_data: list[float]):
+    """Create an IMathTransform through SolidWorks' indexed property API."""
+    transform_data = win32com.client.VARIANT(
+        pythoncom.VT_ARRAY | pythoncom.VT_R8, array_data
+    )
+    dispid = math_utility._oleobj_.GetIDsOfNames("CreateTransform")
+    transform_dispatch = math_utility._oleobj_.Invoke(
+        dispid, 0, pythoncom.DISPATCH_PROPERTYGET, True, transform_data
+    )
+    return win32com.client.Dispatch(transform_dispatch)
+
+
 def import_steps(
     step_paths: list[Path], sldprt_paths: list[Path], assembly_path: Path | None,
-    visible: bool,
+    translations_mm: list[tuple[float, float, float]], visible: bool,
 ) -> dict:
     if len(step_paths) != len(sldprt_paths):
         raise ValueError("--step and --sldprt must be supplied in matching counts")
     if not step_paths:
         raise ValueError("At least one STEP file is required")
+    if len(translations_mm) != len(step_paths):
+        raise ValueError("One --translation is required for every STEP file")
     for step_path in step_paths:
         if not step_path.is_file():
             raise FileNotFoundError(f"STEP file not found: {step_path}")
@@ -92,7 +106,9 @@ def import_steps(
 
         part_results = []
         diagnosis_code = -1
-        for step_path, sldprt_path in zip(step_paths, sldprt_paths, strict=True):
+        for step_path, sldprt_path, translation_mm in zip(
+            step_paths, sldprt_paths, translations_mm, strict=True
+        ):
             load_errors = win32com.client.VARIANT(
                 pythoncom.VT_BYREF | pythoncom.VT_I4, 0
             )
@@ -117,6 +133,7 @@ def import_steps(
                 "importDiagnosisCode": diagnosis_code,
                 "saveErrors": save_errors,
                 "saveWarnings": save_warnings,
+                "translationMm": translation_mm,
             })
 
         assembly_result = None
@@ -126,25 +143,52 @@ def import_steps(
             )
             if assembly is None:
                 raise RuntimeError("SolidWorks could not create the assembly document")
-            for sldprt_path in sldprt_paths:
+            # pywin32 exposes ISldWorks::GetMathUtility as a dispatch
+            # property in this SolidWorks 2022 installation, not a callable.
+            math_utility = sw.GetMathUtility
+            component_translations_m = []
+            for sldprt_path, translation_mm in zip(
+                sldprt_paths, translations_mm, strict=True
+            ):
+                translation_m = tuple(value / 1000.0 for value in translation_mm)
                 component = assembly.AddComponent5(
                     str(sldprt_path),
                     SW_ADD_COMPONENT_CURRENT_CONFIGURATION,
                     "",
                     False,
                     "",
-                    0.0,
-                    0.0,
-                    0.0,
+                    *translation_m,
                 )
                 if component is None:
                     raise RuntimeError(
                         f"SolidWorks could not add component {sldprt_path}"
                     )
+                if component.IsFixed:
+                    assembly.ClearSelection2(True)
+                    null_selection_data = win32com.client.VARIANT(
+                        pythoncom.VT_DISPATCH, None
+                    )
+                    component.Select4(False, null_selection_data, False)
+                    assembly.UnfixComponent()
+                transform = create_transform(math_utility, [
+                    1.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0,
+                    0.0, 0.0, 1.0,
+                    *translation_m,
+                    1.0,
+                    0.0, 0.0, 0.0,
+                ])
+                component.Transform2 = transform
+                transform_data = component.Transform2.ArrayData
+                component_translations_m.append(tuple(transform_data[9:12]))
+            # The dynamic pywin32 wrapper invokes this COM member on access
+            # and returns its Boolean result.
+            _ = assembly.EditRebuild3
             save_errors, save_warnings = save_native_document(assembly, assembly_path)
             assembly_result = {
                 "sldasmPath": str(assembly_path),
                 "componentCount": len(sldprt_paths),
+                "componentTranslationsM": component_translations_m,
                 "saveErrors": save_errors,
                 "saveWarnings": save_warnings,
             }
@@ -180,10 +224,19 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--step", required=True, type=Path, action="append")
     parser.add_argument("--sldprt", required=True, type=Path, action="append")
+    parser.add_argument("--translation", required=True, action="append")
     parser.add_argument("--assembly", type=Path)
     parser.add_argument("--visible", action="store_true")
     args = parser.parse_args()
-    print(json.dumps(import_steps(args.step, args.sldprt, args.assembly, args.visible)))
+    translations_mm = []
+    for translation in args.translation:
+        values = tuple(float(value) for value in translation.split(","))
+        if len(values) != 3:
+            raise ValueError("--translation must be comma-separated x,y,z in mm")
+        translations_mm.append(values)
+    print(json.dumps(import_steps(
+        args.step, args.sldprt, args.assembly, translations_mm, args.visible
+    )))
 
 
 if __name__ == "__main__":

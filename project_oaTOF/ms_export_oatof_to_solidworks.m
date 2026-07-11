@@ -23,7 +23,8 @@ function result = ms_export_oatof_to_solidworks(modelPath, outputDir, visibleSol
     partPaths = fullfile(partsDir, partBases + ".sldprt");
     assemblyPath = fullfile(outputDir, string(modelBase) + "_physical_components.sldasm");
     solidWorksResult = import_step_to_solidworks( ...
-        partStepPaths, partPaths, visibleSolidWorks, assemblyPath);
+        partStepPaths, partPaths, visibleSolidWorks, assemblyPath, ...
+        exportResult.partTranslationsMm);
 
     result = struct('export', exportResult, 'solidWorks', solidWorksResult);
     reportPath = fullfile(outputDir, "oaTOF_solidworks_export_report.json");

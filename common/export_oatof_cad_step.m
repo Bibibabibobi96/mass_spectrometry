@@ -52,15 +52,19 @@ function result = export_oatof_cad_step(modelPath, outputDir)
     geom.export(char(stepPath));
 
     partStepPaths = strings(numel(objectNames), 1);
+    partTranslationsMm = zeros(numel(objectNames), 3);
     for k = 1:numel(objectNames)
         partStepPaths(k) = fullfile(partStepDir, ...
             sprintf('%02d_%s.step', k, objectFeatureTags(k)));
         exportFeature.selection().set({char(objectNames(k))});
         geom.export(char(partStepPaths(k)));
+        partTranslationsMm(k, :) = export_feature_center_mm( ...
+            model, geom, char(objectFeatureTags(k)));
     end
 
     exportedObjects = table(objectFeatureTags, objectNames, partStepPaths, ...
-        'VariableNames', {'FeatureTag', 'ObjectName', 'PartStepPath'});
+        partTranslationsMm(:, 1), partTranslationsMm(:, 2), partTranslationsMm(:, 3), ...
+        'VariableNames', {'FeatureTag', 'ObjectName', 'PartStepPath', 'CenterX_mm', 'CenterY_mm', 'CenterZ_mm'});
     writetable(exportedObjects, csvPath);
 
     result = struct( ...
@@ -72,7 +76,56 @@ function result = export_oatof_cad_step(modelPath, outputDir)
         'bodyFeatureCount', height(manifest), ...
         'exportedObjectCount', height(exportedObjects), ...
         'partStepPaths', {cellstr(partStepPaths)}, ...
+        'partTranslationsMm', partTranslationsMm, ...
         'excluded', {{'vacuum domains', 'grid1/grid2/entgrid/midgrid ideal internal boundaries', 'physics, mesh, studies, and results'}});
+end
+
+function centerMm = export_feature_center_mm(model, geom, featureTag)
+    anchorTag = featureTag;
+    if strcmp(featureTag, 'accelshield')
+        anchorTag = 'accelshieldO';
+    elseif strcmp(featureTag, 'flighttubewall')
+        anchorTag = 'flighttubewallO';
+    elseif startsWith(featureTag, 'accelring_') || ...
+            startsWith(featureTag, 'ring1_') || startsWith(featureTag, 'ring2_')
+        anchorTag = [featureTag 'O'];
+    end
+
+    feature = geom.feature(anchorTag);
+    posExpr = feature.getStringArray('pos');
+    posMm = zeros(1, 3);
+    for d = 1:3
+        posMm(d) = evaluate_geometry_length_mm(model, posExpr(d));
+    end
+
+    featureType = char(feature.getType());
+    switch featureType
+        case 'Block'
+            sizeExpr = feature.getStringArray('size');
+            sizeMm = zeros(1, 3);
+            for d = 1:3
+                sizeMm(d) = evaluate_geometry_length_mm(model, sizeExpr(d));
+            end
+            centerMm = posMm + sizeMm/2;
+        case 'Cylinder'
+            heightMm = evaluate_geometry_length_mm(model, feature.getString('h'));
+            centerMm = posMm + [0, 0, heightMm/2];
+        otherwise
+            error('oatofCadExport:UnsupportedPlacementFeature', ...
+                'Feature "%s" has unsupported placement type "%s".', anchorTag, featureType);
+    end
+end
+
+function valueMm = evaluate_geometry_length_mm(model, expression)
+    expression = char(expression);
+    literalValue = str2double(expression);
+    if ~isnan(literalValue)
+        % Geometry features interpret unitless literal coordinates and sizes
+        % in the geometry length unit (mm for this model).
+        valueMm = literalValue;
+    else
+        valueMm = model.param.evaluate(expression, 'mm');
+    end
 end
 
 function remove_model_if_present(modelTag)

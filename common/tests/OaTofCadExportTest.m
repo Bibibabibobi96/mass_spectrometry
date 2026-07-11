@@ -48,12 +48,16 @@ classdef OaTofCadExportTest < matlab.unittest.TestCase
 
             testCase.assertTrue(isfile(modelPath));
             exportResult = export_oatof_cad_step(modelPath, outputDir);
-            partStepPaths = string(exportResult.partStepPaths);
+            partIndex = find(any(abs(exportResult.partTranslationsMm) > 0, 2), 1, 'first');
+            testCase.assertNotEmpty(partIndex, ...
+                'The placement test requires a part with a nonzero COMSOL center.');
+            partStepPaths = string(exportResult.partStepPaths(partIndex));
             [~, partBases, ~] = fileparts(partStepPaths);
             partPaths = fullfile(outputDir, "parts", partBases + ".sldprt");
             assemblyPath = fullfile(outputDir, "oaTOF_test.sldasm");
             solidWorksResult = import_step_to_solidworks( ...
-                partStepPaths, partPaths, false, assemblyPath);
+                partStepPaths, partPaths, false, assemblyPath, ...
+                exportResult.partTranslationsMm(partIndex, :));
 
             testCase.verifyEqual(solidWorksResult.partCount, numel(partPaths));
             testCase.verifyTrue(all(isfile(partPaths)));
@@ -62,6 +66,13 @@ classdef OaTofCadExportTest < matlab.unittest.TestCase
             testCase.verifyEqual(solidWorksResult.assembly.componentCount, numel(partPaths));
             testCase.verifyEqual([solidWorksResult.parts.loadErrors], zeros(1, numel(partPaths)));
             testCase.verifyEqual([solidWorksResult.parts.saveErrors], zeros(1, numel(partPaths)));
+            actualTranslationsMm = reshape([solidWorksResult.parts.translationMm], 3, []).';
+            testCase.verifyEqual(actualTranslationsMm, ...
+                exportResult.partTranslationsMm(partIndex, :), 'AbsTol', 1e-9);
+            actualAssemblyTranslationsMm = ...
+                solidWorksResult.assembly.componentTranslationsM * 1000;
+            testCase.verifyEqual(actualAssemblyTranslationsMm, ...
+                exportResult.partTranslationsMm(partIndex, :), 'AbsTol', 1e-6);
         end
     end
 end
