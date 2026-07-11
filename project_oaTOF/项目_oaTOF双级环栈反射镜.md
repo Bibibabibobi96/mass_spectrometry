@@ -704,16 +704,19 @@ function result = ms_oaTOF_two_stage_ringstack_reflectron(mass_amu, label, solve
 
 **空间定位修复与正式交付（2026-07-12，完成）**：`IAssemblyDoc.AddComponent5`在本机虽能
 插入零件却会忽略其`X/Y/Z`实参，导致旧装配体全部组件原点重合。COMSOL 导出端现按每个实体的
-锚定外形（实体本身；差集环/壳取其`*O`外形）写出`partTranslationsMm`（mm）；SolidWorks
-导入端在插入后解除首件的自动固定，并以`IMathTransform`显式赋给`component.Transform2`
-（SolidWorks m）。本机 pywin32 将若干 SolidWorks COM 成员暴露为属性，且
+锚定外形（实体本身；差集环/壳取其`*O`外形）写出目标中心`partTranslationsMm`（mm）；
+SolidWorks 导入端读取每个 SLDPRT 的本地包围盒中心，并以**三轴统一公式**
+`component translation = target COMSOL center - imported part local center`构造
+`IMathTransform`后显式赋给`component.Transform2`（SolidWorks m）。这避免了 STEP 已保留
+全局坐标时再次叠加平移、尤其在Z方向产生的重复偏移。本机 pywin32 将若干 SolidWorks COM 成员暴露为属性，且
 `MathUtility.CreateTransform`需要底层 IDispatch property-get 调用；兼容处理已固化到正式
 Python 桥接脚本。
 
 用户要求避免20零件测试的交互/耗时，因此`OaTofCadExportTest`的`SolidWorks`标签只挑选一个
 非零 COMSOL 中心的实体，验证变换赋值、单位换算和读回链路；2026-07-12实测通过（50.03s）。
 随后运行正式入口重新生成全量交付：20个`.sldprt`、一个20组件`.sldasm`及JSON报告。报告的
-20×3读回位移与`partTranslationsMm`最大绝对误差为`3.41e-13 mm`，且20个零件的
+20个实体的**世界中心 XYZ**与`partTranslationsMm`逐项比较：最大绝对误差为
+X=`2.13e-14 mm`、Y=`0 mm`、Z=`4.55e-13 mm`，且20个零件的
 `loadErrors`、`saveErrors`和`saveWarnings`均为0；源 MPH 未重求解、未覆盖。当前
 `MS_oaTOF_TwoStageRingStackReflectron_Final_physical_components.sldasm`可视为具有正确
 空间关系的正式交付。

@@ -58,6 +58,11 @@ def create_transform(math_utility, array_data: list[float]):
     return win32com.client.Dispatch(transform_dispatch)
 
 
+def part_box_center_m(document) -> tuple[float, float, float]:
+    box = document.GetPartBox(True)
+    return tuple((box[axis] + box[axis + 3]) / 2.0 for axis in range(3))
+
+
 def import_steps(
     step_paths: list[Path], sldprt_paths: list[Path], assembly_path: Path | None,
     translations_mm: list[tuple[float, float, float]], visible: bool,
@@ -125,6 +130,7 @@ def import_steps(
                 )
             opened_parts.append(part)
             save_errors, save_warnings = save_native_document(part, sldprt_path)
+            local_center_m = part_box_center_m(part)
             part_results.append({
                 "stepPath": str(step_path),
                 "sldprtPath": str(sldprt_path),
@@ -134,6 +140,7 @@ def import_steps(
                 "saveErrors": save_errors,
                 "saveWarnings": save_warnings,
                 "translationMm": translation_mm,
+                "localCenterM": local_center_m,
             })
 
         assembly_result = None
@@ -147,10 +154,16 @@ def import_steps(
             # property in this SolidWorks 2022 installation, not a callable.
             math_utility = sw.GetMathUtility
             component_translations_m = []
-            for sldprt_path, translation_mm in zip(
-                sldprt_paths, translations_mm, strict=True
+            component_world_centers_m = []
+            for sldprt_path, target_center_mm, part_result in zip(
+                sldprt_paths, translations_mm, part_results, strict=True
             ):
-                translation_m = tuple(value / 1000.0 for value in translation_mm)
+                target_center_m = tuple(value / 1000.0 for value in target_center_mm)
+                local_center_m = tuple(part_result["localCenterM"])
+                translation_m = tuple(
+                    target - local
+                    for target, local in zip(target_center_m, local_center_m, strict=True)
+                )
                 component = assembly.AddComponent5(
                     str(sldprt_path),
                     SW_ADD_COMPONENT_CURRENT_CONFIGURATION,
@@ -180,7 +193,14 @@ def import_steps(
                 ])
                 component.Transform2 = transform
                 transform_data = component.Transform2.ArrayData
-                component_translations_m.append(tuple(transform_data[9:12]))
+                actual_translation_m = tuple(transform_data[9:12])
+                component_translations_m.append(actual_translation_m)
+                component_world_centers_m.append(tuple(
+                    local + translation
+                    for local, translation in zip(
+                        local_center_m, actual_translation_m, strict=True
+                    )
+                ))
             # The dynamic pywin32 wrapper invokes this COM member on access
             # and returns its Boolean result.
             _ = assembly.EditRebuild3
@@ -189,6 +209,7 @@ def import_steps(
                 "sldasmPath": str(assembly_path),
                 "componentCount": len(sldprt_paths),
                 "componentTranslationsM": component_translations_m,
+                "componentWorldCentersM": component_world_centers_m,
                 "saveErrors": save_errors,
                 "saveWarnings": save_warnings,
             }
