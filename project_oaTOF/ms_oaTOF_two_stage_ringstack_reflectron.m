@@ -1,4 +1,4 @@
-function result = ms_oaTOF_two_stage_ringstack_reflectron(mass_amu, label, solver_mode, field_mode, d1_mm, n_rings2, mesh_hmax_refl_mm, bore_r_mm, ring_thickness_mm, n_particles)
+function result = ms_oaTOF_two_stage_ringstack_reflectron(mass_amu, label, solver_mode, field_mode, d1_mm, n_rings2, mesh_hmax_refl_mm, bore_r_mm, ring_thickness_mm, n_particles, n_rings1)
 % !!! d1_mm (doc §7.49, per explicit request -- corrected from an
 % earlier d2-scan plan to a d1 scan): optional 5th argument, the
 % reflectron's stage1 physical depth in mm (default 120, matching the
@@ -64,6 +64,18 @@ if nargin < 9 || isempty(ring_thickness_mm)
 end
 if nargin < 10 || isempty(n_particles)
     n_particles = 1000;
+end
+% !!! n_rings1 is the stage-1 ring count (11th optional argument).  It is
+% kept after n_particles for backward compatibility with the established
+% ten-argument signature; n_rings2 remains the 6th argument.
+if nargin < 11 || isempty(n_rings1)
+    n_rings1 = 5;
+end
+if ~(isscalar(n_rings1) && n_rings1 >= 1 && n_rings1 == fix(n_rings1))
+    error('n_rings1 must be a positive integer.');
+end
+if ~(isscalar(n_rings2) && n_rings2 >= 1 && n_rings2 == fix(n_rings2))
+    error('n_rings2 must be a positive integer.');
 end
 % !!! d2 made ADAPTIVE (doc §7.50, per explicit request): previously a
 % fixed 300mm regardless of d1, which is WAY more than the ion's actual
@@ -413,14 +425,14 @@ p.set('V_mid', sprintf('%.4f[V]', U1_V), 'U1 = 2*U0*(L+2*d1)/(3*L), the dual-sta
 % UNCHANGED (~1.3-2% swing either way, R=820 vs 834 -- within N=10
 % noise). Ring count is NOT the limiting factor -- reverted to 5 for
 % faster mesh/solve.
-p.set('N_rings1', '5', 'Stage 1 ring electrodes (200mm long)');
+p.set('N_rings1', num2str(n_rings1), 'Stage 1 ring electrodes -- parametrized (11th function argument)');
 p.set('N_rings2', num2str(n_rings2), 'Stage 2 ring electrodes -- parametrized (doc §7.53) to test ring-count vs field-discretization-error tradeoff at the shorter, margin-corrected d2');
-% !!! Reflectron ring electrode thickness, per explicit request:
-% thickened from 1mm to 5mm. Ring pitch is (L_stage1-2mm)/(N_rings1+1)=
-% 33mm (stage1) and (L_refl-L_stage1-3mm)/(N_rings2+1)=49.5mm (stage2),
-% both comfortably larger than 5mm -- gaps between adjacent ring edges
-% are 28mm (stage1) and 44.5mm (stage2), unchanged in relative terms
-% from before (was 32mm/48.5mm at 1mm thickness), no risk of overlap.
+% !!! Reflectron ring geometry is parameterized consistently for both
+% stages: common annular thickness ring_thickness, common bore radius
+% bore_r (inner diameter = 2*bore_r), and independent stage ring counts
+% N_rings1/N_rings2. Ring centers are uniformly spaced between the two
+% bounding grids/backplate, so equal thickness gives equal solid-to-solid
+% axial gaps, including the final stage2-ring/backplate gap.
 p.set('ring_thickness', sprintf('%g[mm]', ring_thickness_mm), 'Reflectron ring electrode thickness -- parametrized (per explicit request) to scan alongside N_rings2');
 % !!! Re-measured for the extended L_flight=3000mm: 10x longer flight
 % time means ~10x more x-drift accumulates before the ion reaches the
@@ -727,9 +739,11 @@ for k = 1:5
 end
 z_mid_expr = 'L_flight+L_stage1';
 ringtags = {};
-for k = 1:5 % N_rings1
+for k = 1:n_rings1
     tagk = sprintf('ring1_%d', k);
-    zk_expr = sprintf('L_flight+1[mm]+%d*(L_stage1-2[mm])/(N_rings1+1)', k);
+    % Equal center pitch from entgrid to midgrid.  With equal thickness,
+    % this also makes all axial solid-to-solid gaps equal.
+    zk_expr = sprintf('L_flight+%d*L_stage1/(N_rings1+1)', k);
     Vk_expr = sprintf('%d*V_mid/(N_rings1+1)', k);
     % !!! FIXED center-alignment bug: COMSOL's Cylinder 'pos' is the
     % BASE (bottom face) center, not the ring's own center -- with
@@ -760,7 +774,10 @@ for k = 1:5 % N_rings1
 end
 for k = 1:n_rings2 % N_rings2
     tagk = sprintf('ring2_%d', k);
-    zk_expr = sprintf('L_flight+L_stage1+1[mm]+%d*(L_refl-L_stage1-3[mm])/(N_rings2+1)', k);
+    % Equal center pitch from midgrid to the solid backplate.  In
+    % particular, the last-ring/backplate gap equals the ring-to-ring gap;
+    % d2 and the backplate-to-shield clearance remain unchanged.
+    zk_expr = sprintf('L_flight+L_stage1+%d*(L_refl-L_stage1)/(N_rings2+1)', k);
     Vk_expr = sprintf('V_mid+%d*(V_mirror-V_mid)/(N_rings2+1)', k);
     % !!! Same center-alignment fix as stage1 rings above.
     geom1.feature.create([tagk 'O'], 'Cylinder');
@@ -1316,7 +1333,7 @@ for k = 1:5
     potk.selection.named(tagb);
     potk.set('V0', sprintf('V_grid1*(1-%d/6)', k));
 end
-for k = 1:5
+for k = 1:n_rings1
     tagk = sprintf('ring1_%d', k);
     tagb = sprintf('selb_%s', tagk);
     potk = es.create(sprintf('pot_%s', tagk), 'ElectricPotential', 2);
