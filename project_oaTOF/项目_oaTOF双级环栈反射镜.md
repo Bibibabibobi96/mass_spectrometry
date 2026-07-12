@@ -684,15 +684,18 @@ function result = ms_oaTOF_two_stage_ringstack_reflectron(mass_amu, label, solve
 
 在 §6.21 的基础上进一步收紧控制变量：`ring_outer_r` 不再跟随 `bore_r` 联动，而是固定 300mm；`flight_tube_r` 默认改为 `ring_outer_r+50mm=350mm`；`shield_axial_gap=50mm` 保持不变。这样 `bore_r` 扫描只改变孔径本身，不再把环外径和飞行管半径一起带动。脚本注释也同步澄清：`d2` 的几何含义是反射镜入口栅网到背板的距离，不是到外部屏蔽罩端盖的距离。
 
-固定条件：100 amu，`solver_mode='cpu'`，`field_mode='real'`，`d1=120mm`，`d2=86.8328mm`（自适应 `d2_min` +100% margin），`mesh_hmax=15mm`，`ring_thickness=5mm`，`N1/N2=5/5`，`N=100`。结果如下：
+固定条件：100 amu，`solver_mode='cpu'`，`field_mode='real'`，`d1=120mm`，`d2=86.8328mm`（自适应 `d2_min` +100% margin），`mesh_hmax=15mm`，`ring_thickness=5mm`，`N1/N2=5/5`。先做 `N=100` 探索，再做 `N=1000` 正式复核：
 
-| 扫描项 | bore 内径 (mm) | bore_r (mm) | ring_outer_r (mm) | flight_tube_r (mm) | shield_axial_gap (mm) | R | 到达 |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| 基线 | 500 | 250 | 300 | 350 | 50 | 15932.1 | 100/100 |
-| bore 收窄 | 400 | 200 | 300 | 350 | 50 | 18555.7 | 100/100 |
-| bore 放宽 | 600 | 300 | 300 | 350 | 50 | 17630.0 | 100/100 |
+| 样本 | 扫描项 | bore 内径 (mm) | bore_r (mm) | ring_outer_r (mm) | flight_tube_r (mm) | shield_axial_gap (mm) | R | 到达 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| N=100 | 基线 | 500 | 250 | 300 | 350 | 50 | 15932.1 | 100/100 |
+| N=100 | bore 收窄 | 400 | 200 | 300 | 350 | 50 | 18555.7 | 100/100 |
+| N=100 | bore 放宽 | 600 | 300 | 300 | 350 | 50 | 17630.0 | 100/100 |
+| N=1000 | 基线 | 500 | 250 | 300 | 350 | 50 | 17595.3 | 1000/1000 |
+| N=1000 | bore 收窄 | 400 | 200 | 300 | 350 | 50 | 16958.3 | 1000/1000 |
+| N=1000 | bore 放宽 | 600 | 300 | 300 | 350 | 50 | 17402.1 | 1000/1000 |
 
-这组结果和 §6.21 不同，原因不是统计波动，而是控制变量方式变了：上一轮 `bore_r` 变化时，`ring_outer_r` 与 `flight_tube_r` 也一起变了；本轮固定外径后，400mm 内径反而优于 500mm 基线，而 600mm 内径次之。若要正式定版，应先基于这套“固定 `ring_outer_r`”定义做 `N=1000` 复核，而不是继续参考旧的联动扫描。
+这组结果和 §6.21 不同，原因不是统计波动，而是控制变量方式变了：上一轮 `bore_r` 变化时，`ring_outer_r` 与 `flight_tube_r` 也一起变了。本轮固定外径后，`N=100` 一度显示 400mm 内径最好，但 `N=1000` 正式复核后结论翻转：500mm 基线最高，600mm 次之，400mm 最低。因此固定 `ring_outer_r=300mm` 的当前正式 bore 结论应以 `bore_r=250mm`（内径500mm）为准，不应沿用 `N=100` 的临时领先项。
 
 **§6.11新增（backplate结构性修复）**：`backplate`不再是`soliddoms`里的实心导体，
 改为跟`entgrid`/`grid2`/`midgrid`/`grid1`同一构造的理想化零厚度内部边界（`gridspecs`/
