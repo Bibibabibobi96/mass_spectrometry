@@ -398,7 +398,7 @@ p.set('L_flight', 'L_accel+600[mm]', 'Entrance-grid z-position (accelerator orig
 % asymmetry test). Both the geometry and the detection logic now read
 % this SAME parameter, so they can never drift apart again.
 p.set('detector_z', 'L_accel', 'Detector z-position -- exactly L_accel gives L2=L_flight-detector_z=500.00mm exactly (matching L1). Referenced by BOTH the detector geometry and the detection z-threshold below (was two independent hardcoded values before, a latent bug found during the §7.41 L1/L2 asymmetry test)');
-p.set('L_refl', sprintf('%g[mm]', d1_mm+d2_mm), 'Ring-stack reflectron total length (d1 from the d1_mm function argument + fixed d2=300mm, doc §7.49)');
+p.set('L_refl', sprintf('%g[mm]', d1_mm+d2_mm), 'Ring-stack reflectron total length (d1 from the d1_mm function argument + adaptive d2 from the turnaround-depth calculation; geometrically this is the entrance-grid to backplate distance)');
 p.set('L_stage1', sprintf('%g[mm]', d1_mm), 'Stage 1 length (entrance grid to middle grid) = d1, from the d1_mm function argument (doc §7.49, was fixed 200mm)');
 % !!! CORRECTED: the first attempt used K0=V_repeller=4500eV, but the
 % ion actually enters the REFLECTRON with KE = the LOCAL potential at
@@ -535,9 +535,10 @@ p.set('x_refl_center', '0[mm]', 'Reflectron bore axis x-offset -- unified with t
 % fixes; it does not carry over now that those larger errors are gone
 % -- with this much smaller remaining error budget, a different
 % mechanism (not aperture-scaled boundary settling) may now dominate.
-% Reverted to the well-established 250mm/350mm cost/benefit point.
+% Reverted to the current fixed-outer-radius baseline: bore_r=250mm,
+% ring_outer_r=300mm.
 p.set('bore_r', sprintf('%g[mm]', bore_r_mm), 'Ring bore (aperture) radius -- parametrized (doc §7.53) to re-test the bore_r/R relationship under the current, much shorter adaptive-d2 stage2 geometry');
-p.set('ring_outer_r', sprintf('%g[mm]', bore_r_mm+100), 'Ring outer radius -- kept at bore_r+100mm (the established 250/350mm ring-wall margin)');
+p.set('ring_outer_r', '300[mm]', 'Ring outer radius -- fixed default, decoupled from bore_r so bore scans change only the aperture radius');
 % !!! Flight tube redesigned as a hollow CYLINDER (was a square Block),
 % per explicit request: entgrid/grid2 (flight-tube boundary grids) are
 % circular, matching the cylinder; grid1/accelring_k (INSIDE the
@@ -546,7 +547,7 @@ p.set('ring_outer_r', sprintf('%g[mm]', bore_r_mm+100), 'Ring outer radius -- ke
 % drift path reaches ~80mm off-axis) AND the charged grids (entgrid/
 % grid2 themselves), giving genuine vacuum clearance between the tube's
 % own grounded wall and anything at a different potential inside it.
-p.set('flight_tube_r', 'ring_outer_r+30[mm]', 'Flight tube (field-free drift region) inner radius -- larger than ring_outer_r so grid2/entgrid have clearance from the tube wall');
+p.set('flight_tube_r', 'ring_outer_r+50[mm]', 'Flight tube (field-free drift region) inner radius -- larger than ring_outer_r so grid2/entgrid have clearance from the tube wall');
 % !!! Added an EXPLICIT solid wall for the flight tube (doc §7.43), per
 % explicit request -- previously accelflightbox's own outer surface was
 % just an implicit grounded boundary condition (selb_outerwall), no
@@ -558,12 +559,12 @@ p.set('flight_tube_wall', '10[mm]', 'Flight tube wall thickness (explicit solid 
 % !!! Added for doc §7.44, per explicit request: the flight tube's own
 % shield is extended to ALSO enclose the reflectron region (previously
 % only wrapped the field-free drift section) -- both ends of this now-
-% longer shield are closed. flight_tube_r=ring_outer_r+30mm already
-% gives 30mm radial clearance from the rings/backplate (>=15mm
-% required); shield_axial_gap enforces the same >=15mm minimum
+% longer shield are closed. flight_tube_r=ring_outer_r+50mm already
+% gives 50mm radial clearance from the rings/backplate; shield_axial_gap
+% enforces a 50mm minimum axial clearance in the current scan
 % clearance in the AXIAL direction between the backplate's own far face
 % and the new far-end cap.
-p.set('shield_axial_gap', '15[mm]', 'Minimum axial clearance between the flight-tube shield''s end caps and the nearest internal component (backplate)');
+p.set('shield_axial_gap', '50[mm]', 'Minimum axial clearance between the flight-tube shield''s end caps and the nearest internal component (backplate), per current scan request');
 % !!! Added for doc §7.50, per explicit request: the ENTIRE accelerator
 % assembly (repeller, accelshield, grid1, grid2, accelring_k, relvol)
 % is shifted off-axis by -x_accel_center, and the detector by
@@ -811,7 +812,7 @@ end
 % and behaves like every other solid electrode in this design.
 % !!! Sized/gapped per explicit request to match the OTHER electrodes it
 % sits behind, not re-derive a new gap: radius=ring_outer_r, giving it
-% the SAME 30mm gap to flight_tube_r that every ring in stage1/stage2
+% the SAME 50mm gap to flight_tube_r that every ring in stage1/stage2
 % already uses (no special-cased smaller gap the way the idealized
 % version needed). Positioned so its ion-facing front face (smaller z,
 % Cylinder's 'pos' is the base/bottom-face anchor) sits exactly at the
@@ -950,7 +951,7 @@ geom1.feature('detector').set('pos', {'48.80' '0' 'detector_z-1[mm]'});
 % ends here ONCE avoids the two features drifting out of sync.
 % z0_bore: endcap_gap(3mm) past the (extended) accelerator shield's own
 % back edge (z=-1-accel_shield_back_extra). z1_bore: shield_axial_gap
-% (15mm) past backplate's own far face.
+% (50mm) past backplate's own far face.
 % !!! Extended by accel_shield_wall (doc §7.47): the accelerator shield
 % now has an INTEGRATED back cap (built into the same accelshieldO/H
 % Difference, see above) whose own back face is at -1-
@@ -1005,7 +1006,7 @@ geom1.feature('flighttubewall').selection('input2').set({'flighttubewallH'});
 % radius=ring_outer_r(350mm) -- entirely a SUBSET of accelflightbox's
 % own region, which (since §7.44/§7.46) already spans z0_bore..z1_bore
 % (comfortably containing reflvac's whole z-range with margin on both
-% sides) at a LARGER radius (flight_tube_r=380mm). Both features
+% sides) at a LARGER radius (flight_tube_r=350mm by default). Both features
 % supplied the exact same material (vacuum) over the exact same 3D
 % region -- reflvac was pure redundancy left over from when the
 % reflectron had its own separate, smaller vacuum envelope (before
@@ -1111,7 +1112,7 @@ end
 % boundaries); midgrid (charged, V_mid) shrunk to a real gap from the
 % flight-tube shield instead of touching flight_tube_r directly.
 % !!! midgrid radius CHANGED from flight_tube_r-10mm (10mm gap) to
-% ring_outer_r (per explicit request, to match the SAME 30mm gap to
+% ring_outer_r (per explicit request, to match the SAME 50mm gap to
 % flight_tube_r that the ring stack/backplate already use) -- midgrid
 % sits entirely inside the already-sealed flight-tube shield (same as
 % before), so this is purely a "make the gap consistent across all of
