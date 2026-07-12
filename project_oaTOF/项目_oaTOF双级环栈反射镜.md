@@ -660,8 +660,8 @@ function result = ms_oaTOF_two_stage_ringstack_reflectron(mass_amu, label, solve
 
 这些是N=100的探索性结果，不能替代N=1000正式基线。当前样本下，5mm厚度和500mm内径
 表现最好；内径400mm明显下降，600mm与基线接近；3/3环的R最高但7/7降低，方向仍可能
-受随机统计噪声影响，需N=1000复核后才能形成正式优化结论。扫描临时模型标签为
-`scan_n7`（保存在`comsol_models/project_oaTOF/`），未覆盖`Final.mph`。
+受随机统计噪声影响，需N=1000复核后才能形成正式优化结论。扫描临时模型和扫描图已在结果
+归档后删除，未覆盖`Final.mph`。
 
 **§6.11新增（backplate结构性修复）**：`backplate`不再是`soliddoms`里的实心导体，
 改为跟`entgrid`/`grid2`/`midgrid`/`grid1`同一构造的理想化零厚度内部边界（`gridspecs`/
