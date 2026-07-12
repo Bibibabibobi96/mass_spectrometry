@@ -18,7 +18,7 @@
 > 从"离散多峰"变成基本连续的分布，见§6.19；比更早的N=100测量值21956.5低约14.7%，
 > 历史上反复出现的"N=100偏乐观、N=1000才是可信数字"模式再次被验证，见§6.18）。
 > 函数签名第9个可选参数`ring_thickness_mm`（默认5，之前是硬编码），第11个可选参数
-> `n_rings1`（一级环数，默认5；二级环数为第6个参数`n_rings2`），并已将两级环中心按
+> `n_rings1`（一级环数，默认10；二级环数为第6个参数`n_rings2`），并已将两级环中心按
 > 入口—边界等分，使末环—背板间隙与环间隙一致。模型现在自带
 > 四个原生Result：`pg_field_diff`（反射镜区域Ez(实际-理想)差值热力图，真正的2D图非
 > 3D切片）、`pg_field_full`（全域Ez热力图，含加速器/无场区/stage1/stage2，同一y=0
@@ -636,7 +636,7 @@ function result = ms_oaTOF_two_stage_ringstack_reflectron(mass_amu, label, solve
   （之前是硬编码字面量，现在参数化以支持扫描）
 - `n_particles`：统计粒子数（第10个可选参数），默认1000；直接映射到CPT `Release`节点的
   `N`属性。探索性试验可显式传较小值，但不得用小样本质量谱替代正式基线。
-- `n_rings1`：第一级反射区环数（第11个可选参数），默认5；与`n_rings2`独立参数化。
+- `n_rings1`：第一级反射区环数（第11个可选参数），默认10；与`n_rings2`独立参数化。
 
 ### 6.20 环端部间距统一与厚度/内径/环数扫描（2026-07-12）
 
@@ -732,6 +732,12 @@ function result = ms_oaTOF_two_stage_ringstack_reflectron(mass_amu, label, solve
 **局部网格策略与PNG诊断（2026-07-12）**：曾先尝试用内部圆柱域选择细化孔径，单元数仅从247945变为258146，说明贯通真空域没有被该`condition=inside`选择真正切分；改成“相交边界”后又把过多的贯通真空表面带入，数分钟内无法完成。代码保留仅针对环内圆柱壁`bore_r±1.5mm`的窄带边界细化算法，但以`use_local_edge_refinement=false`默认关闭，须先通过独立网格收敛测试才可启用，不能影响常规粒子扫描。
 
 为避免未收敛细网格使正式MPH数据量膨胀，已从正式静电解导出PNG诊断到`comsol_results/`：`oaTOF_Final_actual_Ez_signedlog.png`、`oaTOF_Final_Ez_real_minus_ideal_signedlog.png`、`oaTOF_Final_drift_residual_field.png`，以及反射镜局部高分辨率图`oaTOF_Final_reflectron_actual_Ez_crop.png`、`oaTOF_Final_reflectron_Ez_error_crop.png`。另有带legend的原始细虚线与平滑粗实线对比图：`oaTOF_Final_axial_error_raw_vs_smooth.png`、`oaTOF_Final_radial_error_raw_vs_smooth.png`。这些图表明：`r/bore≤0.4`误差近零，主要起伏从约0.55开始、集中在环内缘附近，符合边缘场与有限元梯度离散共同作用的特征。
+
+### 6.25 一级10环正式模型与CAD交付（2026-07-12）
+
+按用户要求，一级反射区环数改为`N1=10`（函数第11参数及默认值同步改为10），二级保持`N2=5`。正式`Final.mph`以100 amu、CPU、真实场、`d1=120mm`、`bore_r=250mm`、环厚5mm、网格15mm、`N=1000`重新求解：网格283321单元，建网15.42s，静电9.07s，CPT 171.88s；1000/1000到达，`R=17590.9`。五张原生电场诊断图、原始/平滑曲线表和质量谱均成功保存。
+
+CAD导出器原本把环白名单固定为5/5，会静默遗漏新增一级环；现改为从实际几何中动态发现并按编号自然排序`ring1_<n>`和`ring2_<n>`。同时，25个零件超过Windows单命令行长度限制，SolidWorks桥改为临时JSON清单传递全部STEP、SLDPRT和坐标。为保留旧5环交付，本次10环产物写入`cad_exports/project_oaTOF/N1_10/`：25个STEP、25个SLDPRT和25组件SLDASM均完成，所有零件加载/保存错误和警告均为0，装配体保存错误和警告均为0，世界中心相对COMSOL目标最大误差`5.80e-13mm`。
 
 **§6.11新增（backplate结构性修复）**：`backplate`不再是`soliddoms`里的实心导体，
 改为跟`entgrid`/`grid2`/`midgrid`/`grid1`同一构造的理想化零厚度内部边界（`gridspecs`/

@@ -69,7 +69,7 @@ end
 % kept after n_particles for backward compatibility with the established
 % ten-argument signature; n_rings2 remains the 6th argument.
 if nargin < 11 || isempty(n_rings1)
-    n_rings1 = 5;
+    n_rings1 = 10;
 end
 if ~(isscalar(n_rings1) && n_rings1 >= 1 && n_rings1 == fix(n_rings1))
     error('n_rings1 must be a positive integer.');

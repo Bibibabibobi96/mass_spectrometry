@@ -43,19 +43,33 @@ function result = import_step_to_solidworks(stepPaths, sldprtPaths, visible, ass
     if visible
         visibleArg = " --visible";
     end
-    command = sprintf('python "%s"', scriptPath);
-    for k = 1:numel(stepPaths)
-        command = sprintf('%s --step "%s" --sldprt "%s" --translation "%.15g,%.15g,%.15g"', ...
-            command, stepPaths(k), sldprtPaths(k), translationsMm(k, 1), ...
-            translationsMm(k, 2), translationsMm(k, 3));
-    end
-    if strlength(assemblyPath) > 0
-        command = sprintf('%s --assembly "%s"', command, assemblyPath);
-    end
-    command = sprintf('%s%s', command, visibleArg);
+    % A five-ring model fit on one command line, but parameterized ring
+    % counts can exceed Windows' command-length limit. Pass the complete
+    % import manifest through a temporary JSON file instead of repeating
+    % every STEP/SLDPRT path as a command-line option.
+    payload = struct();
+    payload.stepPaths = cellstr(stepPaths);
+    payload.sldprtPaths = cellstr(sldprtPaths);
+    payload.translationsMm = translationsMm;
+    payload.assemblyPath = char(assemblyPath);
+    manifestPath = string([tempname '.json']);
+    fid = fopen(manifestPath, 'w');
+    assert(fid ~= -1, 'oatofCadExport:ManifestWriteFailed', ...
+        'Cannot write temporary SolidWorks import manifest "%s".', manifestPath);
+    cleanupManifest = onCleanup(@() delete_if_present(manifestPath));
+    fwrite(fid, jsonencode(payload), 'char');
+    fclose(fid);
+    command = sprintf('python "%s" --manifest "%s"%s', ...
+        scriptPath, manifestPath, visibleArg);
     [status, output] = system(command);
     if status ~= 0
         error('oatofCadExport:SolidWorksImportFailed', '%s', output);
     end
     result = jsondecode(output);
+end
+
+function delete_if_present(pathValue)
+    if isfile(pathValue)
+        delete(pathValue);
+    end
 end

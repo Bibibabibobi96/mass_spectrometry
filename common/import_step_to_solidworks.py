@@ -243,20 +243,36 @@ def import_steps(
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--step", required=True, type=Path, action="append")
-    parser.add_argument("--sldprt", required=True, type=Path, action="append")
-    parser.add_argument("--translation", required=True, action="append")
+    parser.add_argument("--manifest", type=Path,
+                        help="JSON manifest used for large parameterized assemblies")
+    parser.add_argument("--step", type=Path, action="append")
+    parser.add_argument("--sldprt", type=Path, action="append")
+    parser.add_argument("--translation", action="append")
     parser.add_argument("--assembly", type=Path)
     parser.add_argument("--visible", action="store_true")
     args = parser.parse_args()
-    translations_mm = []
-    for translation in args.translation:
-        values = tuple(float(value) for value in translation.split(","))
-        if len(values) != 3:
-            raise ValueError("--translation must be comma-separated x,y,z in mm")
-        translations_mm.append(values)
+    if args.manifest is not None:
+        payload = json.loads(args.manifest.read_text(encoding="utf-8"))
+        step_paths = [Path(value) for value in payload["stepPaths"]]
+        sldprt_paths = [Path(value) for value in payload["sldprtPaths"]]
+        translations_mm = [tuple(float(value) for value in row)
+                           for row in payload["translationsMm"]]
+        assembly_value = payload.get("assemblyPath", "")
+        assembly_path = Path(assembly_value) if assembly_value else None
+    else:
+        if not (args.step and args.sldprt and args.translation):
+            parser.error("--manifest or matching --step/--sldprt/--translation options are required")
+        translations_mm = []
+        for translation in args.translation:
+            values = tuple(float(value) for value in translation.split(","))
+            if len(values) != 3:
+                raise ValueError("--translation must be comma-separated x,y,z in mm")
+            translations_mm.append(values)
+        step_paths = args.step
+        sldprt_paths = args.sldprt
+        assembly_path = args.assembly
     print(json.dumps(import_steps(
-        args.step, args.sldprt, args.assembly, translations_mm, args.visible
+        step_paths, sldprt_paths, assembly_path, translations_mm, args.visible
     )))
 
 
