@@ -1668,7 +1668,8 @@ fprintf('estimated one-way flight time: %.3fus, round trip ~%.3fus\n', t_flight_
 % own expression evaluator ("Unknown function or operator"/"Undefined
 % variable" every time, confirmed on this exact production model, not a
 % naming issue). The working alternative: solve first with a SHORT,
-% physics-based margin (3x one-way flight time, not the blanket 8x), then
+% physics-based margin (1.5x estimated round-trip time, not the blanket
+% 8x), then
 % check completeness post-hoc with plain mphparticle; only fall back to
 % the full 8x margin (re-solving from scratch) in the rare case the short
 % one wasn't enough. Verified: R and detection times come out
@@ -1676,7 +1677,7 @@ fprintf('estimated one-way flight time: %.3fus, round trip ~%.3fus\n', t_flight_
 % to the full margin (deterministic particle release seed), so this has
 % zero accuracy impact -- it only ever removes wasted tail computation
 % for parameter combinations where the short margin already suffices.
-Tsim_short = 2*t_flight_oneway*3.0 + 1e-6;
+Tsim_short = 2*t_flight_oneway*1.5 + 1e-6;
 Tsim_full = 2*t_flight_oneway*8.0 + 1e-6;
 Tsim = Tsim_short;
 std2 = model.study.create('std2');
@@ -2142,10 +2143,11 @@ fprintf('[%s] SUCCESS: trajectory + mass-spectrum plot saved.\n', label);
 t_matlabplot = toc(t_matlabplot_start);
 fprintf('[TIMING] MATLAB figure (trajectory+mass-spectrum PNG): %.2fs\n', t_matlabplot);
 
-% !!! Native in-model field diagnostics are deliberately limited to FOUR
+% !!! Native in-model field diagnostics are deliberately limited to FIVE
 % plots: (1) signed-log full-domain Ez, (2) signed-log full-domain
 % real-ideal Ez, (3) log residual |E| in the nominally field-free drift,
-% and (4) real-ideal Ez along three radii inside the reflectron bore. The
+% (4) real-ideal Ez versus z at six radii, and (5) real-ideal Ez versus
+% radius at six representative z positions inside the reflectron. The
 % apparent-mass spectrum remains a separate result plot. All are wrapped
 % in try/catch because visualization is not required for the core solve.
 % !!! CutPlane dataset API validated empirically against a live COMSOL
@@ -2230,7 +2232,7 @@ catch ME
     fprintf('[%s] WARNING: drift residual-field heatmap failed (%s).\n', label, ME.message);
 end
 try
-    % (4) Quantitative profiles at r/bore=0, 0.5, 0.8. They deliberately
+    % (4) Quantitative axial profiles at six radii. They deliberately
     % cover only the reflectron: the off-axis accelerator has a different
     % physical axis, so a single fixed-x full-device line is misleading.
     % Stay 0.1 mm off the grids/plate to avoid material-boundary samples.
@@ -2239,7 +2241,7 @@ try
     bore_mm_plot = p.evaluate('bore_r', 'mm');
     xr_mm_plot = p.evaluate('x_refl_center', 'mm');
     zprof_mm = linspace(Lf_mm_plot+0.1, Lf_mm_plot+Lr_mm_plot-0.1, 801);
-    rfrac = [0, 0.5, 0.8];
+    rfrac = [0, 0.2, 0.4, 0.6, 0.8, 0.95];
     dEz_prof = NaN(numel(zprof_mm), numel(rfrac));
     for ir = 1:numel(rfrac)
         coord_prof = [repmat(xr_mm_plot+rfrac(ir)*bore_mm_plot, 1, numel(zprof_mm)); ...
@@ -2248,25 +2250,80 @@ try
             'dataset', 'dset1', 'matherr', 'off').';
     end
     tbl_fieldprof = model.result.table.create('tbl_fieldprof', 'Table');
-    tbl_fieldprof.label(sprintf('Reflectron radial Ez-error profiles: %s', label));
-    tbl_fieldprof.comments('Columns: z [mm], dEz at r/bore = 0, 0.5, 0.8 [V/m]');
+    tbl_fieldprof.label(sprintf('Reflectron axial Ez-error profiles: %s', label));
+    tbl_fieldprof.comments('Columns: z [mm], dEz at r/bore = 0, 0.2, 0.4, 0.6, 0.8, 0.95 [V/m]');
     tbl_fieldprof.setTableData([zprof_mm(:), dEz_prof]);
+    tbl_fieldprof.setColumnHeaders({'z [mm]', 'r/bore=0', 'r/bore=0.2', 'r/bore=0.4', ...
+        'r/bore=0.6', 'r/bore=0.8', 'r/bore=0.95'});
     pg_fieldprof = model.result.create('pg_fieldprof', 'PlotGroup1D');
-    pg_fieldprof.label(sprintf('4 Reflectron Ez error at three radii: %s', label));
+    pg_fieldprof.label(sprintf('4 Reflectron axial Ez error at six radii: %s', label));
     pg_fieldprof.set('titletype', 'manual');
-    pg_fieldprof.set('title', 'Ez(real)-Ez(ideal) through reflectron bore: r/bore=0, 0.5, 0.8');
+    pg_fieldprof.set('title', 'Ez(real)-Ez(ideal) versus z at six radii in the reflectron bore');
     pg_fieldprof.set('xlabel', 'z [mm]');
     pg_fieldprof.set('ylabel', 'Ez(real)-Ez(ideal) [V/m]');
     tg_fieldprof = pg_fieldprof.create('tg_fieldprof', 'Table');
-    tg_fieldprof.label('Three radial Ez-error profiles');
+    tg_fieldprof.label('Six axial Ez-error profiles');
     tg_fieldprof.set('table', 'tbl_fieldprof');
     tg_fieldprof.set('plotcolumninput', 'manual');
     tg_fieldprof.set('xaxisdata', '1');
-    tg_fieldprof.set('plotcolumns', '2,3,4');
+    tg_fieldprof.set('plotcolumns', '2,3,4,5,6,7');
+    % Multi-curve plots must carry an explicit, physically meaningful
+    % legend (COMSOL defaults this Table Graph to legend=off and generic
+    % generic column labels, which violates the project plotting rules).
+    tg_fieldprof.set('legend', 'on');
+    tg_fieldprof.set('legendmethod', 'manual');
+    tg_fieldprof.set('legends', {'r/bore=0', 'r/bore=0.2', 'r/bore=0.4', ...
+        'r/bore=0.6', 'r/bore=0.8', 'r/bore=0.95'});
     pg_fieldprof.run;
-    fprintf('[%s] SUCCESS: three-radius reflectron Ez-error profile plot created.\n', label);
+    fprintf('[%s] SUCCESS: six-radius axial Ez-error profile plot created.\n', label);
 catch ME
-    fprintf('[%s] WARNING: three-radius field-error profile failed (%s).\n', label, ME.message);
+    fprintf('[%s] WARNING: six-radius axial field-error profile failed (%s).\n', label, ME.message);
+end
+try
+    % (5) Complementary radial profiles at three depths in each stage.
+    % This makes the z-dependence explicit without mixing z and r on one
+    % horizontal axis. Normalize r by bore_r so future bore scans remain
+    % directly comparable; stop at 0.95*bore_r to avoid edge singularities.
+    L1_mm_plot = p.evaluate('L_stage1', 'mm');
+    L2_mm_plot = Lr_mm_plot-L1_mm_plot;
+    stagefrac = [0.25, 0.50, 0.75];
+    zslice_mm = [Lf_mm_plot+stagefrac*L1_mm_plot, ...
+        Lf_mm_plot+L1_mm_plot+stagefrac*L2_mm_plot];
+    rn_prof = linspace(0, 0.95, 301);
+    dEz_radial = NaN(numel(rn_prof), numel(zslice_mm));
+    for iz = 1:numel(zslice_mm)
+        coord_radial = [xr_mm_plot+rn_prof*bore_mm_plot; ...
+                        zeros(1, numel(rn_prof)); ...
+                        repmat(zslice_mm(iz), 1, numel(rn_prof))];
+        dEz_radial(:,iz) = mphinterp(model, Ez_diff_full_expr, 'coord', coord_radial, ...
+            'dataset', 'dset1', 'matherr', 'off').';
+    end
+    radial_legends = {'stage1 z/L1=0.25', 'stage1 z/L1=0.50', 'stage1 z/L1=0.75', ...
+        'stage2 z/L2=0.25', 'stage2 z/L2=0.50', 'stage2 z/L2=0.75'};
+    tbl_fieldradial = model.result.table.create('tbl_fieldradial', 'Table');
+    tbl_fieldradial.label(sprintf('Reflectron radial Ez-error profiles at six z positions: %s', label));
+    tbl_fieldradial.comments('Columns: r/bore, dEz at stage1 and stage2 fractional depths [V/m]');
+    tbl_fieldradial.setTableData([rn_prof(:), dEz_radial]);
+    tbl_fieldradial.setColumnHeaders([{'r/bore'}, radial_legends]);
+    pg_fieldradial = model.result.create('pg_fieldradial', 'PlotGroup1D');
+    pg_fieldradial.label(sprintf('5 Reflectron radial Ez error at six z positions: %s', label));
+    pg_fieldradial.set('titletype', 'manual');
+    pg_fieldradial.set('title', 'Ez(real)-Ez(ideal) versus r/bore at six reflectron depths');
+    pg_fieldradial.set('xlabel', 'r/bore');
+    pg_fieldradial.set('ylabel', 'Ez(real)-Ez(ideal) [V/m]');
+    tg_fieldradial = pg_fieldradial.create('tg_fieldradial', 'Table');
+    tg_fieldradial.label('Six z-position radial Ez-error profiles');
+    tg_fieldradial.set('table', 'tbl_fieldradial');
+    tg_fieldradial.set('plotcolumninput', 'manual');
+    tg_fieldradial.set('xaxisdata', '1');
+    tg_fieldradial.set('plotcolumns', '2,3,4,5,6,7');
+    tg_fieldradial.set('legend', 'on');
+    tg_fieldradial.set('legendmethod', 'manual');
+    tg_fieldradial.set('legends', radial_legends);
+    pg_fieldradial.run;
+    fprintf('[%s] SUCCESS: six-z-position radial Ez-error profile plot created.\n', label);
+catch ME
+    fprintf('[%s] WARNING: six-z-position radial field-error profile failed (%s).\n', label, ME.message);
 end
 try
     tbl_ms = model.result.table.create('tbl_massspec', 'Table');
@@ -2291,7 +2348,7 @@ catch ME
     fprintf('[%s] WARNING: mass spectrum table plot failed (%s).\n', label, ME.message);
 end
 t_resultplots = toc(t_resultplots_start);
-fprintf('[TIMING] native Result plots (4 field diagnostics + mass spectrum table): %.2fs\n', t_resultplots);
+fprintf('[TIMING] native Result plots (5 field diagnostics + mass spectrum table): %.2fs\n', t_resultplots);
 
 t_save1_start = tic;
 pg1 = model.result.create('pg_traj', 'PlotGroup3D');
