@@ -720,7 +720,7 @@ function result = ms_oaTOF_two_stage_ringstack_reflectron(mass_amu, label, solve
 3. 漂移区残余场：只显示 `L_accel<=z<=L_flight`，绘制 `log10(1+|E|/(1[V/m]))`。使用总场模而非仅 `Ez`，以免漏掉屏蔽罩端部产生的横向泄漏。
 4. 反射镜三半径定量曲线：在 `r/bore=0、0.5、0.8` 上绘制线性单位的 `Ez(real)-Ez(ideal)`；采样范围避开两端边界0.1mm，并随 MPH 保存为原生 COMSOL Table/PlotGroup1D。该图只覆盖反射镜，因为加速器中心位于 `x_accel_center`，与反射镜轴不同，固定 `x` 的全机曲线会混淆物理含义。
 
-前三张图共用经实机验证的 `y=0` CutPlane。压缩图标题明确写出变换公式，不能把色标数字误读成 V/m；第4张曲线保留 V/m，负责定量。用 `N=10`、`N1/N2=3/3` 的 `viz4_smoke` 完整模型实测，四个结果节点及质量谱节点全部创建成功，模型也成功保存。测试临时 MPH/PNG 随后删除，COMSOL Server 已停止。
+前三张图共用经实机验证的 `y=0` CutPlane。压缩图标题明确写出变换公式，不能把色标数字误读成 V/m；第4张曲线保留 V/m，负责定量。用 `N=10`、`N1/N2=3/3` 的 `viz4_smoke` 完整模型实测，四个结果节点及质量谱节点全部创建成功，模型也成功保存。测试临时 MPH/PNG 随后删除。之后使用正式基线 `N=1000`、`N1/N2=5/5` 重新生成并覆盖 `MS_oaTOF_TwoStageRingStackReflectron_Final.mph`，四图均创建成功，1000/1000粒子到达，`R=17595.3`；正式文件修改时间为2026-07-12 11:32:04，大小1816568405字节。COMSOL Server 已停止并释放文件句柄。
 
 **§6.11新增（backplate结构性修复）**：`backplate`不再是`soliddoms`里的实心导体，
 改为跟`entgrid`/`grid2`/`midgrid`/`grid1`同一构造的理想化零厚度内部边界（`gridspecs`/
