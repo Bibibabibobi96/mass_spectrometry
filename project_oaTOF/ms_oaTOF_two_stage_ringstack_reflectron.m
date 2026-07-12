@@ -1438,6 +1438,40 @@ szrefl.selection.named('selreflregion');
 szrefl.set('custom', 'on');
 szrefl.set('hmaxactive', true);
 szrefl.set('hmax', sprintf('%g[mm]', mesh_hmax_refl_mm));
+% Layered local refinement for field diagnostics: uniformly setting the
+% full r=ring_outer_r cylinder to 5mm creates millions of elements and
+% makes every particle scan prohibitively expensive. The useful field
+% curves are controlled by the ring inner edge. A connected vacuum volume
+% cannot be partially selected as a domain. Do NOT select the whole bore
+% boundary either: it touches large connected vacuum faces and becomes as
+% expensive as global refinement. Select only the narrow physical inner
+% cylindrical walls of the annular rings; FreeTet then grades their
+% adjacent vacuum cells locally.
+local_rim_hmax_mm = max(3, mesh_hmax_refl_mm/3);
+% The narrow boundary method is retained as an opt-in experiment. On the
+% current connected-vacuum geometry it was still too expensive for a
+% routine particle scan; enable only after a mesh-only convergence run by
+% setting the environment variable OATOF_LOCAL_EDGE_MESH to a nonempty
+% value. It is disabled by default for all ordinary calls.
+use_local_edge_refinement = ~isempty(getenv('OATOF_LOCAL_EDGE_MESH'));
+if use_local_edge_refinement
+    comp1.selection.create('selreflrimmesh', 'Cylinder');
+    comp1.selection('selreflrimmesh').label('Reflectron ring-inner-edge boundaries (local mesh)');
+    comp1.selection('selreflrimmesh').set('entitydim', '2');
+    comp1.selection('selreflrimmesh').set('r', 'bore_r+1.5[mm]');
+    comp1.selection('selreflrimmesh').set('rin', 'bore_r-1.5[mm]');
+    comp1.selection('selreflrimmesh').set('pos', [p.evaluate('x_refl_center','mm') 0 p.evaluate('L_flight','mm')]);
+    comp1.selection('selreflrimmesh').set('axis', [0 0 1]);
+    comp1.selection('selreflrimmesh').set('top', 'L_flight+L_refl+ring_thickness+2');
+    comp1.selection('selreflrimmesh').set('condition', 'intersects');
+    szreflrim = mesh1.feature.create('szreflrim', 'Size');
+    szreflrim.label(sprintf('Fine mesh at reflectron ring inner edge (%.3gmm)', local_rim_hmax_mm));
+    szreflrim.selection.geom('geom1', 2);
+    szreflrim.selection.named('selreflrimmesh');
+    szreflrim.set('custom', 'on');
+    szreflrim.set('hmaxactive', true);
+    szreflrim.set('hmax', sprintf('%g[mm]', local_rim_hmax_mm));
+end
 mesh1.feature.create('ftet1', 'FreeTet');
 mesh1.run;
 mi = mphmeshstats(model, 'mesh1');

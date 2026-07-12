@@ -729,6 +729,10 @@ function result = ms_oaTOF_two_stage_ringstack_reflectron(mass_amu, label, solve
 
 曲线显示改用小窗口Savitzky-Golay局部多项式：轴向窗口约2.1mm、径向约4.0mm，均显著小于最短环间距，目标是去除单元面高频跳变而保留真实环栈纹波。未平滑数据分别保存在`tbl_fieldprof_raw`和`tbl_fieldradial_raw`中，不能用平滑曲线代替网格收敛审计；两张显示曲线线宽设为2。
 
+**局部网格策略与PNG诊断（2026-07-12）**：曾先尝试用内部圆柱域选择细化孔径，单元数仅从247945变为258146，说明贯通真空域没有被该`condition=inside`选择真正切分；改成“相交边界”后又把过多的贯通真空表面带入，数分钟内无法完成。代码保留仅针对环内圆柱壁`bore_r±1.5mm`的窄带边界细化算法，但以`use_local_edge_refinement=false`默认关闭，须先通过独立网格收敛测试才可启用，不能影响常规粒子扫描。
+
+为避免未收敛细网格使正式MPH数据量膨胀，已从正式静电解导出PNG诊断到`comsol_results/`：`oaTOF_Final_actual_Ez_signedlog.png`、`oaTOF_Final_Ez_real_minus_ideal_signedlog.png`、`oaTOF_Final_drift_residual_field.png`，以及反射镜局部高分辨率图`oaTOF_Final_reflectron_actual_Ez_crop.png`、`oaTOF_Final_reflectron_Ez_error_crop.png`。另有带legend的原始细虚线与平滑粗实线对比图：`oaTOF_Final_axial_error_raw_vs_smooth.png`、`oaTOF_Final_radial_error_raw_vs_smooth.png`。这些图表明：`r/bore≤0.4`误差近零，主要起伏从约0.55开始、集中在环内缘附近，符合边缘场与有限元梯度离散共同作用的特征。
+
 **§6.11新增（backplate结构性修复）**：`backplate`不再是`soliddoms`里的实心导体，
 改为跟`entgrid`/`grid2`/`midgrid`/`grid1`同一构造的理想化零厚度内部边界（`gridspecs`/
 `gridsel`表新增`wp_backplate`/`selb_backplate`行，半径`flight_tube_r-2[mm]`——**不是**
