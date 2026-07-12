@@ -2142,22 +2142,19 @@ fprintf('[%s] SUCCESS: trajectory + mass-spectrum plot saved.\n', label);
 t_matlabplot = toc(t_matlabplot_start);
 fprintf('[TIMING] MATLAB figure (trajectory+mass-spectrum PNG): %.2fs\n', t_matlabplot);
 
-% !!! Native in-model Result plots (per explicit request), so these are
-% viewable directly in COMSOL Desktop without re-running MATLAB: (1)/(2)
-% two field heatmaps on a genuine flat 2D cross-section (per explicit
-% follow-up request: NOT a Slice inside a 3D scene -- a real PlotGroup2D
-% driven by a 'CutPlane' dataset), and (3) the apparent-mass intensity
-% spectrum as a native COMSOL Table + 1D Table-Graph plot. All wrapped in
-% try/catch (matching pg_traj's established defensive pattern below)
-% since they're best-effort visualization, not required for the model's
-% core result.
+% !!! Native in-model field diagnostics are deliberately limited to FOUR
+% plots: (1) signed-log full-domain Ez, (2) signed-log full-domain
+% real-ideal Ez, (3) log residual |E| in the nominally field-free drift,
+% and (4) real-ideal Ez along three radii inside the reflectron bore. The
+% apparent-mass spectrum remains a separate result plot. All are wrapped
+% in try/catch because visualization is not required for the core solve.
 % !!! CutPlane dataset API validated empirically against a live COMSOL
 % session before use here (a throwaway test model, not guessed from
 % memory): 'quickplane'/'quicky' are the correct property names for a
 % CutPlane DATASET -- 'quickynumber' (used by the Slice PLOT FEATURE
 % inside a 3D scene, which is a different thing) errors with "Unknown
 % property" on a CutPlane dataset. One shared y=0 CutPlane dataset feeds
-% both heatmaps below (same physical cross-section, equivalent to an r-z
+% all three heatmaps below (same physical cross-section, equivalent to an r-z
 % profile for this axisymmetric-like ring-stack since x=r for x>0 and the
 % mirror x<0 side reflects the same profile) -- only the Surface plot's
 % expr differs between the two.
@@ -2169,57 +2166,107 @@ try
     cpl_y0.set('quicky', '0');
     fprintf('[%s] SUCCESS: shared y=0 CutPlane dataset (cpl_y0) created.\n', label);
 catch ME
-    fprintf('[%s] WARNING: CutPlane dataset creation failed (%s) -- both field heatmaps below will be skipped.\n', label, ME.message);
+    fprintf('[%s] WARNING: CutPlane dataset creation failed (%s) -- field heatmaps below will be skipped.\n', label, ME.message);
 end
+
+% Full-device theoretical target, independent of field_mode. This fixes
+% the old diagnostic's blind spot at z<L_flight: both accelerator stages
+% and the zero-field drift are now included with the two reflectron stages.
+Ez_ideal_full_expr = sprintf(['if(z<0||z>L_flight+L_refl,NaN,' ...
+    'if(z<L_accel,%s,if(z<L_flight,%s,' ...
+    'if(z<L_flight+L_stage1,%s,%s))))'], ...
+    Ez_accel_ideal, Ez_drift_ideal, Ez_stage1_ideal, Ez_stage2_ideal);
+Ez_diff_full_expr = sprintf('es.Ez-(%s)', Ez_ideal_full_expr);
+Ez_signedlog_expr = 'sign(es.Ez)*log10(1+abs(es.Ez)/(1[V/m]))';
+Ez_diff_signedlog_expr = sprintf('sign(%s)*log10(1+abs(%s)/(1[V/m]))', ...
+    Ez_diff_full_expr, Ez_diff_full_expr);
+Eres_drift_log_expr = ['if(z<L_accel||z>L_flight,NaN,' ...
+    'log10(1+sqrt(es.Ex^2+es.Ey^2+es.Ez^2)/(1[V/m])))'];
 try
-    % (1) Field-leakage diagnostic: Ez(real)-Ez(ideal), reflectron only.
-    % Reuses Ez_stage1_ideal/Ez_stage2_ideal (defined earlier for ef1's
-    % field_mode logic) directly -- these are the raw ideal-theory
-    % formulas, independent of whatever field_mode this run actually used
-    % for the CPT force itself, so the diagnostic always compares against
-    % the true theoretical target regardless of field_mode. Masked to
-    % NaN outside the reflectron's z-span so the dominant accelerator/
-    % drift field doesn't swamp the color scale -- exactly the
-    % diagnostic idea recorded as an open question in this project's doc
-    % (§1 item 2 / §6.14): a visual anomaly on this plot directly locates
-    % a leakage source instead of needing to bisect region-by-region with
-    % field_mode's ideal_stage1/ideal_stage2 switches.
-    Ez_diff_expr = sprintf(['if(z<L_flight||z>L_flight+L_refl,NaN,' ...
-        'es.Ez-(if(z<L_flight+L_stage1,%s,%s)))'], Ez_stage1_ideal, Ez_stage2_ideal);
+    % (1) Full-domain real-ideal difference. Signed-log compression keeps
+    % weak leakage visible beside strong edge fields and retains its sign.
     pg_field_diff = model.result.create('pg_field_diff', 'PlotGroup2D');
-    pg_field_diff.label(sprintf('Field leakage diagnostic (real-ideal Ez): %s', label));
+    pg_field_diff.label(sprintf('1 Field error, full domain, signed log: %s', label));
     pg_field_diff.set('data', 'cpl_y0');
     pg_field_diff.set('titletype', 'manual');
-    pg_field_diff.set('title', 'Ez(real)-Ez(ideal), reflectron only, y=0 cross-section (r-z profile)');
+    pg_field_diff.set('title', 'signed log10(1+|Ez(real)-Ez(ideal)|/1V/m), full device; sign retained');
     sf_diff = pg_field_diff.create('sf_diff', 'Surface');
-    sf_diff.label('Ez diff heatmap');
-    sf_diff.set('expr', Ez_diff_expr);
+    sf_diff.label('signed-log full-domain Ez error');
+    sf_diff.set('expr', Ez_diff_signedlog_expr);
     pg_field_diff.run;
-    fprintf('[%s] SUCCESS: field leakage diagnostic heatmap (pg_field_diff, 2D) created.\n', label);
+    fprintf('[%s] SUCCESS: full-domain signed-log field-error heatmap created.\n', label);
 catch ME
     fprintf('[%s] WARNING: field leakage diagnostic heatmap failed (%s).\n', label, ME.message);
 end
 try
-    % (2) Full-domain raw field heatmap (per explicit request): NOT
-    % restricted to the reflectron -- covers the whole device (bracket +
-    % accelerator + field-free drift + stage1 + stage2), same y=0
-    % cross-section/dataset as (1), no NaN masking. Complements (1): this
-    % shows the field's overall shape/magnitude across every region (the
-    % accelerator's much larger V/mm dominates the color scale here,
-    % which is expected and correct for a whole-device overview -- (1) is
-    % the zoomed-in, trend-removed view for spotting a reflectron leak).
+    % (2) Full-domain actual Ez with the same signed-log convention.
     pg_field_full = model.result.create('pg_field_full', 'PlotGroup2D');
-    pg_field_full.label(sprintf('Full-domain field cross-section (Ez): %s', label));
+    pg_field_full.label(sprintf('2 Actual Ez, full domain, signed log: %s', label));
     pg_field_full.set('data', 'cpl_y0');
     pg_field_full.set('titletype', 'manual');
-    pg_field_full.set('title', 'Ez, full domain (bracket+accelerator+drift+stage1+stage2), y=0 cross-section (r-z profile)');
+    pg_field_full.set('title', 'signed log10(1+|Ez|/1V/m), full device; sign retained');
     sf_full = pg_field_full.create('sf_full', 'Surface');
-    sf_full.label('Ez heatmap (whole device)');
-    sf_full.set('expr', 'es.Ez');
+    sf_full.label('signed-log actual Ez');
+    sf_full.set('expr', Ez_signedlog_expr);
     pg_field_full.run;
-    fprintf('[%s] SUCCESS: full-domain field heatmap (pg_field_full, 2D) created.\n', label);
+    fprintf('[%s] SUCCESS: full-domain signed-log actual-field heatmap created.\n', label);
 catch ME
     fprintf('[%s] WARNING: full-domain field heatmap failed (%s).\n', label, ME.message);
+end
+try
+    % (3) Total residual magnitude in the nominally field-free drift. This
+    % catches transverse shield/end leakage that an Ez-only plot misses.
+    pg_field_drift = model.result.create('pg_field_drift', 'PlotGroup2D');
+    pg_field_drift.label(sprintf('3 Drift residual field magnitude, log: %s', label));
+    pg_field_drift.set('data', 'cpl_y0');
+    pg_field_drift.set('titletype', 'manual');
+    pg_field_drift.set('title', 'log10(1+|E|/1V/m), nominally field-free drift only');
+    sf_drift = pg_field_drift.create('sf_drift', 'Surface');
+    sf_drift.label('log residual total field in drift');
+    sf_drift.set('expr', Eres_drift_log_expr);
+    pg_field_drift.run;
+    fprintf('[%s] SUCCESS: drift residual-field heatmap created.\n', label);
+catch ME
+    fprintf('[%s] WARNING: drift residual-field heatmap failed (%s).\n', label, ME.message);
+end
+try
+    % (4) Quantitative profiles at r/bore=0, 0.5, 0.8. They deliberately
+    % cover only the reflectron: the off-axis accelerator has a different
+    % physical axis, so a single fixed-x full-device line is misleading.
+    % Stay 0.1 mm off the grids/plate to avoid material-boundary samples.
+    Lf_mm_plot = p.evaluate('L_flight', 'mm');
+    Lr_mm_plot = p.evaluate('L_refl', 'mm');
+    bore_mm_plot = p.evaluate('bore_r', 'mm');
+    xr_mm_plot = p.evaluate('x_refl_center', 'mm');
+    zprof_mm = linspace(Lf_mm_plot+0.1, Lf_mm_plot+Lr_mm_plot-0.1, 801);
+    rfrac = [0, 0.5, 0.8];
+    dEz_prof = NaN(numel(zprof_mm), numel(rfrac));
+    for ir = 1:numel(rfrac)
+        coord_prof = [repmat(xr_mm_plot+rfrac(ir)*bore_mm_plot, 1, numel(zprof_mm)); ...
+                      zeros(1, numel(zprof_mm)); zprof_mm];
+        dEz_prof(:,ir) = mphinterp(model, Ez_diff_full_expr, 'coord', coord_prof, ...
+            'dataset', 'dset1', 'matherr', 'off').';
+    end
+    tbl_fieldprof = model.result.table.create('tbl_fieldprof', 'Table');
+    tbl_fieldprof.label(sprintf('Reflectron radial Ez-error profiles: %s', label));
+    tbl_fieldprof.comments('Columns: z [mm], dEz at r/bore = 0, 0.5, 0.8 [V/m]');
+    tbl_fieldprof.setTableData([zprof_mm(:), dEz_prof]);
+    pg_fieldprof = model.result.create('pg_fieldprof', 'PlotGroup1D');
+    pg_fieldprof.label(sprintf('4 Reflectron Ez error at three radii: %s', label));
+    pg_fieldprof.set('titletype', 'manual');
+    pg_fieldprof.set('title', 'Ez(real)-Ez(ideal) through reflectron bore: r/bore=0, 0.5, 0.8');
+    pg_fieldprof.set('xlabel', 'z [mm]');
+    pg_fieldprof.set('ylabel', 'Ez(real)-Ez(ideal) [V/m]');
+    tg_fieldprof = pg_fieldprof.create('tg_fieldprof', 'Table');
+    tg_fieldprof.label('Three radial Ez-error profiles');
+    tg_fieldprof.set('table', 'tbl_fieldprof');
+    tg_fieldprof.set('plotcolumninput', 'manual');
+    tg_fieldprof.set('xaxisdata', '1');
+    tg_fieldprof.set('plotcolumns', '2,3,4');
+    pg_fieldprof.run;
+    fprintf('[%s] SUCCESS: three-radius reflectron Ez-error profile plot created.\n', label);
+catch ME
+    fprintf('[%s] WARNING: three-radius field-error profile failed (%s).\n', label, ME.message);
 end
 try
     tbl_ms = model.result.table.create('tbl_massspec', 'Table');
@@ -2244,7 +2291,7 @@ catch ME
     fprintf('[%s] WARNING: mass spectrum table plot failed (%s).\n', label, ME.message);
 end
 t_resultplots = toc(t_resultplots_start);
-fprintf('[TIMING] native Result plots (field diagnostic + mass spectrum table): %.2fs\n', t_resultplots);
+fprintf('[TIMING] native Result plots (4 field diagnostics + mass spectrum table): %.2fs\n', t_resultplots);
 
 t_save1_start = tic;
 pg1 = model.result.create('pg_traj', 'PlotGroup3D');
