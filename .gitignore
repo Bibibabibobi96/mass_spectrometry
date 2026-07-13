@@ -3,3 +3,8 @@
 
 # Official manuals are local reference material, not normal repository history.
 official_docs/*.pdf
+
+# Local runtime caches and machine-specific launchers are not source assets.
+__pycache__/
+*.py[cod]
+run_comsol_mcp.cmd
