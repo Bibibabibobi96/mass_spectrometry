@@ -9,6 +9,9 @@ function test_lit_cpt()
 % the second), regardless of the custom tag. Confirmed by direct probing
 % (see COMSOL_自动化建模经验总结.md §7.17/§10).
 
+commonDir = fileparts(mfilename('fullpath'));
+addpath(commonDir);
+paths = common_artifact_paths();
 addpath('D:\COMSOL 6.4\COMSOL64\Multiphysics\mli');
 mphstart(2036);
 import com.comsol.model.*
@@ -17,7 +20,7 @@ import com.comsol.model.util.*
 if any(strcmp(cell(ModelUtil.tags()), 'ModelLIT'))
     ModelUtil.remove('ModelLIT');
 end
-model = ModelUtil.load('ModelLIT', 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\common\LinearIonTrap.mph');
+model = ModelUtil.load('ModelLIT', fullfile(paths.modelsDir, 'LinearIonTrap.mph'));
 comp1 = model.component('comp1');
 
 cpt = comp1.physics.create('cpt', 'ChargedParticleTracing', 'geom1');
@@ -105,7 +108,7 @@ fprintf('escaped past end caps: %d / %d (%.1f%%)\n', sum(escaped), numel(idx), 1
 fprintf('z range among near-center subset: min=%.2f max=%.2f mm (cap positions ~ -3/+22mm)\n', ...
     min(zc(:)), max(zc(:)));
 
-resultsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_results';
+resultsDir = paths.resultsDir;
 if ~exist(resultsDir,'dir'), mkdir(resultsDir); end
 fh = figure('Visible','off');
 tvals = pd.t*1e6; % us
@@ -137,6 +140,6 @@ trj1.label('Confined near-center ions');
 pg1.run;
 fprintf('SUCCESS: native particle trajectory plot created.\n');
 
-model.save('C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\common\LinearIonTrap.mph');
+model.save(fullfile(paths.modelsDir, 'LinearIonTrap.mph'));
 fprintf('SUCCESS: model (incl. CPT physics/solution/plot) saved to disk.\n');
 end

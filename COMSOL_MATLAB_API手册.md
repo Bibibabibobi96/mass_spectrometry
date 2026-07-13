@@ -445,7 +445,7 @@ t1.feature('fc1').set('linsolver','dDef');
 见本文件§4。
 
 ### 7.30 官方PDF文档研究成果（COMSOL 6.4 Programming Reference Manual / Particle Tracing
-Module Users Guide / LiveLink for MATLAB Users Guide，本地`comsol_scripts/*.pdf`）
+Module Users Guide / LiveLink for MATLAB Users Guide，本地`official_docs/*.pdf`）
 
 > 以下条目来自官方PDF文本（用`pymupdf`提取全文后按关键词定位，而不是逐页通读——PDF
 > 有300~1200页/份，直接读不现实），**未在活体COMSOL上重新实测**，标注来源页码供以后
@@ -748,7 +748,7 @@ Module Users Guide / LiveLink for MATLAB Users Guide，本地`comsol_scripts/*.p
 | **粒子数量大时的内存教训** | 电场求解耗时与粒子数无关，只跟网格规模有关；CPT求解本身可行到数万粒子，但`mphparticle`取回完整轨迹数据在极大N时会"Out of memory on server"。**教训**：只提取需要的统计量，或放宽CPT输出tlist的时间步密度（脉冲/快速动态段保留精细步长，纯漂移段可以粗化），不要囫囵吞枣地拉全部时间步×全部粒子的数据。 |
 | **⚠️理想化零厚度边界依然不能跟不同电压的实体接触** | "必须跨越真空域整个截面"（避免留一圈没被电位覆盖的缝隙）和"不能碰不同电压的实体"是两条独立的规则，不要因为满足了前者就忘了后者。如果这个理想化边界恰好跟另一个不同电位的固体导体在同一半径/位置相接（比如它俩恰好共享屏蔽壳内壁的同一个半径值），必须留一个显式小间隙，跟真实固体导体之间"不同电位必须留间隙"是同一条规则，理想化边界并不豁免。**间隙大小要参照局部网格尺寸(`hmax`)来选，不能脱离网格分辨率盲目取"越小越好"**——实测取0.1mm（远小于15mm的局部网格尺寸）直接导致`FreeTet`网格生成失败（"Failed to constrain a mesh vertex to its geometric entity"，网格没法在这么薄的楔形区域收敛），改用量级接近网格尺寸的间隙（如2mm）后网格/求解都正常。 |
 
-### 7.31 官方PDF资料速查索引（本地 `comsol_scripts/*.pdf`，共5份）
+### 7.31 官方PDF资料速查索引（本地 `official_docs/*.pdf`，共5份）
 
 > 目录下有5份COMSOL官方PDF手册，单份300~1200页、4.5~13.3MB，**不要试图逐页通读**——
 > 用`python`+`pymupdf`把全文抽成纯文本（每份几秒钟）存到临时目录，再用Grep按关键词

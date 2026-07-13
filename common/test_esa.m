@@ -9,6 +9,9 @@ function result = test_esa(KE_eV, label)
 % independent of mass -- the defining property of an ESA vs a magnetic
 % sector).
 
+commonDir = fileparts(mfilename('fullpath'));
+addpath(commonDir);
+paths = common_artifact_paths();
 addpath('D:\COMSOL 6.4\COMSOL64\Multiphysics\mli');
 mphstart(2036);
 import com.comsol.model.*
@@ -209,7 +212,7 @@ result.escaped = any(r_valid < 40.05 | r_valid > 49.95);
 fprintf('[%s] r range: [%.3f, %.3f] mm (R1=40, R2=50, R0=45); hit an electrode: %d\n', ...
     label, result.r_min, result.r_max, result.escaped);
 
-resultsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_results';
+resultsDir = paths.resultsDir;
 if ~exist(resultsDir,'dir'), mkdir(resultsDir); end
 fh = figure('Visible','off');
 theta = linspace(0,2*pi,200);
@@ -234,7 +237,7 @@ pg1.set('title', sprintf('ESA: 100amu +1 ion, KE=%g eV (design KE=1000eV), R1=40
 trj1 = pg1.create('trj1', 'ParticleTrajectories');
 trj1.label(sprintf('%s ion trajectory', label));
 pg1.run;
-modelsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\common';
+modelsDir = paths.modelsDir;
 if ~exist(modelsDir, 'dir'), mkdir(modelsDir); end
 model.save(fullfile(modelsDir, sprintf('ESA_%s.mph', strrep(label,' ','_'))));
 fprintf('[%s] SUCCESS: native trajectory plot created and model saved.\n', label);

@@ -1,0 +1,20 @@
+; geometry file for fast adjust demo
+; save as fast.pa# and refine
+
+pa_define(76,51,1,c,y,e)    ;76x, 51y, 1z 2D cylindrical array
+                            ;y mirrored electrostatic array
+
+e(1)                        ;left electrode of one volt
+    {
+    fill{within{box(0,0,1,50)}}
+    }
+
+e(2)                        ;center electrode of two volts
+    {
+    fill{within{box(34,16,41,50)}}
+    }
+
+e(3)                        ;right electrode of three volts
+    {
+    fill{within{box(74,0,75,50)}}
+    }

@@ -9,6 +9,9 @@ function result = test_collision_cell(Nd_val, KE_eV, label)
 % Nd_val: background gas number density [1/m^3] (COMSOL default 1e20).
 % KE_eV: ion injection kinetic energy [eV].
 
+commonDir = fileparts(mfilename('fullpath'));
+addpath(commonDir);
+paths = common_artifact_paths();
 addpath('D:\COMSOL 6.4\COMSOL64\Multiphysics\mli');
 mphstart(2036);
 import com.comsol.model.*
@@ -302,7 +305,7 @@ result = struct('label', label, 'Nd', Nd_val, 'KE_eV', KE_eV, 'nP', nP, ...
     'transmitted_frac', sum(transmitted)/nP, 'lost_frac', sum(lostToWall)/nP, ...
     'mean_collisions', meanNc, 'nu_theory', nu_theory);
 
-resultsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_results';
+resultsDir = paths.resultsDir;
 if ~exist(resultsDir,'dir'), mkdir(resultsDir); end
 fh = figure('Visible','off');
 subplot(1,2,1);
@@ -334,7 +337,7 @@ trj1 = pg1.create('trj1', 'ParticleTrajectories');
 trj1.label(sprintf('Ion trajectories (%s)', label));
 pg1.run;
 
-modelsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\common';
+modelsDir = paths.modelsDir;
 if ~exist(modelsDir, 'dir'), mkdir(modelsDir); end
 model.save(fullfile(modelsDir, sprintf('CollisionCell_%s.mph', strrep(label,' ','_'))));
 fprintf('[%s] SUCCESS: native trajectory plot created and model saved.\n', label);

@@ -1,0 +1,11 @@
+; oa-TOF field-free drift tube: 2D cylindrical, grounded outer shield only.
+; Local x=0 is the accelerator exit (global z=19.83 mm); local x=600 mm
+; is the reflectron entrance (global z=619.83 mm).  There are no end caps.
+; The interior r<350 mm is vacuum and should have E=0 apart from the
+; separately represented accelerator/reflectron fringe fields.
+
+# local L_drift = 600
+# local r_bore = 350
+# local wall = 4
+pa_define($(L_drift+1), $(r_bore+wall+1), 1, cylindrical,none,electrostatic,, 1)
+e(1) { fill { within { box(0,$(r_bore), $(L_drift),$(r_bore+wall)) } } }

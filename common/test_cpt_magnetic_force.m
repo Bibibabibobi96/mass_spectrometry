@@ -11,6 +11,9 @@ function test_cpt_magnetic_force()
 % producing a perfectly straight-line trajectory that looks like "no
 % error, but no curving" instead of a hard failure.
 
+commonDir = fileparts(mfilename('fullpath'));
+addpath(commonDir);
+paths = common_artifact_paths();
 addpath('D:\COMSOL 6.4\COMSOL64\Multiphysics\mli');
 mphstart(2036);
 import com.comsol.model.*
@@ -94,7 +97,7 @@ r_theory = me_*vperp/(qe*B0);
 T_theory = 2*pi*me_/(qe*B0);
 fprintf('Theory: gyroradius = %.4f mm, cyclotron period = %.4f ns\n', r_theory*1e3, T_theory*1e9);
 
-resultsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_results';
+resultsDir = paths.resultsDir;
 if ~exist(resultsDir, 'dir'), mkdir(resultsDir); end
 f = figure('Visible','off');
 plot(px, py, '-o', 'MarkerSize',2);
@@ -115,7 +118,7 @@ pg1.set('title', sprintf('Cyclotron motion: electron, v_{perp}=%.2g m/s, B_z=%.3
 trj1 = pg1.create('trj1', 'ParticleTrajectories');
 trj1.label('Electron trajectories (uniform Bz)');
 pg1.run;
-modelsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\common';
+modelsDir = paths.modelsDir;
 if ~exist(modelsDir, 'dir'), mkdir(modelsDir); end
 model.save(fullfile(modelsDir, 'CyclotronMotion.mph'));
 fprintf('SUCCESS: native trajectory plot created and model saved.\n');

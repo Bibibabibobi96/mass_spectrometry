@@ -13,6 +13,9 @@ function result = test_space_charge(useInteraction, label)
 % observable, not meant to represent a specific real instrument's beam
 % density.
 
+commonDir = fileparts(mfilename('fullpath'));
+addpath(commonDir);
+paths = common_artifact_paths();
 addpath('D:\COMSOL 6.4\COMSOL64\Multiphysics\mli');
 mphstart(2036);
 import com.comsol.model.*
@@ -108,7 +111,7 @@ fprintf('[%s] final radial spread (z~100mm): mean=%.5fmm, std=%.5fmm, max=%.5fmm
 result = struct('label', label, 'useInteraction', useInteraction, 'nP', nP, ...
     'r0_std', std(r0), 'rEnd_std', std(rEnd), 'rEnd_max', max(rEnd));
 
-resultsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_results';
+resultsDir = paths.resultsDir;
 if ~exist(resultsDir,'dir'), mkdir(resultsDir); end
 fh = figure('Visible','off');
 hold on;
@@ -130,7 +133,7 @@ trj1 = pg1.create('trj1', 'ParticleTrajectories');
 trj1.label(sprintf('Ion cluster trajectories (%s)', label));
 pg1.run;
 
-modelsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\common';
+modelsDir = paths.modelsDir;
 if ~exist(modelsDir, 'dir'), mkdir(modelsDir); end
 model.save(fullfile(modelsDir, sprintf('SpaceCharge_%s.mph', strrep(label,' ','_'))));
 fprintf('[%s] SUCCESS: native trajectory plot created and model saved.\n', label);

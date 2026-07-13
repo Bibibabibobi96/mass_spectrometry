@@ -9,6 +9,9 @@ function test_multipole_geometry(Npoles)
 if nargin < 1
     Npoles = 4;
 end
+commonDir = fileparts(mfilename('fullpath'));
+addpath(commonDir);
+paths = common_artifact_paths();
 addpath('D:\COMSOL 6.4\COMSOL64\Multiphysics\mli');
 mphstart(2036);
 import com.comsol.model.*
@@ -95,10 +98,10 @@ mphgeom(model, 'geom1', 'facealpha', 0.4);
 view(2); axis equal;
 xlabel('x [mm]'); ylabel('y [mm]');
 title({sprintf('%d-pole rod array (top view)', Npoles), sprintf('r0=4mm, V_{rf}=100V (unit test amplitude)')});
-outdir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_results';
+outdir = paths.resultsDir;
 if ~exist(outdir,'dir'), mkdir(outdir); end
 print(f, fullfile(outdir, sprintf('multipole_%d_geom.png', Npoles)), '-dpng', '-r150');
 fprintf('SUCCESS: geometry image saved.\n');
 
-model.save(sprintf('C:\\Users\\Liao\\PycharmProjects\\PythonProject\\comsol_models\\common\\Multipole%d.mph', Npoles));
+model.save(fullfile(paths.modelsDir, sprintf('Multipole%d.mph', Npoles)));
 end

@@ -1,0 +1,53 @@
+pa_define(401,121,121,p,yz)    ;3d square mesh grid
+
+locate(200,0,0,2000)
+{
+locate(-0.1)		;left end grid
+	{
+	e(1)
+		{
+		fill{within{box(0,-10,0,10)}}
+		}
+	}
+
+locate(0.1) 		;right end grid
+	{
+	e(3)
+		{
+		fill{within{box(0,-10,0,10)}}
+		}
+	}
+
+e(2)
+	{
+	fill{				;four horizontal grid bars
+		within{
+			  circle(0,0,0.001)
+			  }
+		within{
+			  circle(0,0.020,0.001)
+			  }
+		within{
+			  circle(0,0.040,0.001)
+			  }
+		within{
+			  circle(0,0.060,0.001)
+			  }
+		locate(0,0,0,1,0,0,90)		;four vertical grid bars
+			{
+			within{
+				  circle(0,0,0.001)
+				  }
+			within{
+				  circle(0,0.020,0.001)
+				  }
+			within{
+				  circle(0,0.040,0.001)
+				  }
+			within{
+				  circle(0,0.060,0.001)
+				  }
+			}
+		}
+	}
+}

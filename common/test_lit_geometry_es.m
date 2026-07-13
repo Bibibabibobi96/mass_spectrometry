@@ -16,6 +16,9 @@ function test_lit_geometry_es()
 % + scale_dc*es_dc.Ex). This generalizes to any number of independently-
 % driven electrode groups.
 
+commonDir = fileparts(mfilename('fullpath'));
+addpath(commonDir);
+paths = common_artifact_paths();
 addpath('D:\COMSOL 6.4\COMSOL64\Multiphysics\mli');
 mphstart(2036);
 import com.comsol.model.*
@@ -229,6 +232,7 @@ for ci = 1:numel(candidates)
     end
 end
 
-model.save('C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\common\LinearIonTrap.mph');
+if ~exist(paths.modelsDir, 'dir'), mkdir(paths.modelsDir); end
+model.save(fullfile(paths.modelsDir, 'LinearIonTrap.mph'));
 fprintf('SUCCESS: model saved.\n');
 end

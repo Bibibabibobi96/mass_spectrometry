@@ -14,6 +14,9 @@ function result = test_wien_filter(mass_amu, KE_eV, label)
 % B0=0.01T (matches the already-validated cyclotron/mag-sector tests),
 % E0 = v_resonant*B0.
 
+commonDir = fileparts(mfilename('fullpath'));
+addpath(commonDir);
+paths = common_artifact_paths();
 addpath('D:\COMSOL 6.4\COMSOL64\Multiphysics\mli');
 mphstart(2036);
 import com.comsol.model.*
@@ -128,7 +131,7 @@ fprintf('[%s] at z_end=%.3fmm: x_start=%.4fmm x_end=%.4fmm, deflection=%.4fmm (z
 result = struct('label', label, 'mass_amu', mass_amu, 'KE_eV', KE_eV, ...
     'v_over_vresonant', v_beam/v_design, 'x_deflect_mm', xDeflect, 'z_end_mm', zEnd);
 
-resultsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_results';
+resultsDir = paths.resultsDir;
 if ~exist(resultsDir,'dir'), mkdir(resultsDir); end
 fh = figure('Visible','off');
 plot(zTraj, xTraj, '-o', 'MarkerSize', 2);
@@ -147,7 +150,7 @@ trj1 = pg1.create('trj1', 'ParticleTrajectories');
 trj1.label(sprintf('Ion trajectory (%s)', label));
 pg1.run;
 
-modelsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\common';
+modelsDir = paths.modelsDir;
 if ~exist(modelsDir, 'dir'), mkdir(modelsDir); end
 model.save(fullfile(modelsDir, sprintf('WienFilter_%s.mph', strrep(label,' ','_'))));
 fprintf('[%s] SUCCESS: native trajectory plot created and model saved.\n', label);

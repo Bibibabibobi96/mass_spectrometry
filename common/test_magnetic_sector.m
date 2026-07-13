@@ -7,6 +7,9 @@ function result = test_magnetic_sector(mass_amu, KE_eV, label)
 % gyroradius r=m*v/(q*B)=sqrt(2*m*KE)/(q*B) scales as sqrt(mass) for
 % fixed KE and B -- the core principle that separates ions by m/z.
 
+commonDir = fileparts(mfilename('fullpath'));
+addpath(commonDir);
+paths = common_artifact_paths();
 addpath('D:\COMSOL 6.4\COMSOL64\Multiphysics\mli');
 mphstart(2036);
 import com.comsol.model.*
@@ -107,7 +110,7 @@ fprintf('[%s] measured gyroradius (x-extent/2) = %.4f mm (theory %.4f mm, ratio 
 
 result = struct('label', label, 'mass_amu', mass_amu, 'r_theory_mm', r_theory*1e3, 'r_num_mm', r_num);
 
-resultsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_results';
+resultsDir = paths.resultsDir;
 if ~exist(resultsDir,'dir'), mkdir(resultsDir); end
 fh = figure('Visible','off');
 plot(x, y, '-o', 'MarkerSize', 2); axis equal; grid on;
@@ -127,7 +130,7 @@ pg1.set('title', sprintf('Magnetic sector: %gamu +1 ion, KE=%g eV, B_z=%.3gT', m
 trj1 = pg1.create('trj1', 'ParticleTrajectories');
 trj1.label(sprintf('%s gyro-orbit', label));
 pg1.run;
-modelsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\common';
+modelsDir = paths.modelsDir;
 if ~exist(modelsDir, 'dir'), mkdir(modelsDir); end
 model.save(fullfile(modelsDir, sprintf('MagSector_%s.mph', strrep(label,' ','_'))));
 fprintf('[%s] SUCCESS: native trajectory plot created and model saved.\n', label);

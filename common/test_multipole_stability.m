@@ -22,13 +22,16 @@ function test_multipole_stability(Npoles, Vamp, label)
 % For N=4 specifically: q = 4*e*Vamp/(m*Omega^2*r0^2); at Omega=2*pi*1MHz,
 % r0=4mm, m=100amu: Vamp(q=0.5)=~82V (stable), Vamp(q=1.2)=~196V (unstable).
 
+commonDir = fileparts(mfilename('fullpath'));
+addpath(commonDir);
+paths = common_artifact_paths();
 addpath('D:\COMSOL 6.4\COMSOL64\Multiphysics\mli');
 mphstart(2036);
 import com.comsol.model.*
 import com.comsol.model.util.*
 
 tag = sprintf('ModelPole%d', Npoles);
-modelPath = sprintf('C:\\Users\\Liao\\PycharmProjects\\PythonProject\\comsol_models\\common\\Multipole%d.mph', Npoles);
+modelPath = fullfile(paths.modelsDir, sprintf('Multipole%d.mph', Npoles));
 if any(strcmp(cell(ModelUtil.tags()), tag))
     ModelUtil.remove(tag);
 end
@@ -117,7 +120,7 @@ fprintf('max radial excursion / r0: median=%.3f  90th pct=%.3f  max=%.3f\n', ...
 fprintf('fraction with max r > 1.0*r0 (would have hit inscribed circle): %.1f%%\n', ...
     100*sum(maxr_frac>1.0)/numel(maxr_frac));
 
-resultsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_results';
+resultsDir = paths.resultsDir;
 if ~exist(resultsDir, 'dir'), mkdir(resultsDir); end
 fh = figure('Visible','off');
 idxPlot = 1:min(15,nP);
@@ -150,7 +153,8 @@ fprintf('SUCCESS: native particle trajectory plot created.\n');
 % this function runs once per stability case (stable/unstable), and both
 % share the same on-disk source model, so saving to the shared path would
 % let the second run silently overwrite the first run's CPT results.
-savePath = sprintf('C:\\Users\\Liao\\PycharmProjects\\PythonProject\\comsol_models\\common\\Multipole%d_CPT_%s.mph', Npoles, strrep(label,' ','_'));
+savePath = fullfile(paths.modelsDir, ...
+    sprintf('Multipole%d_CPT_%s.mph', Npoles, strrep(label,' ','_')));
 model.save(savePath);
 fprintf('SUCCESS: model (incl. CPT physics/solution/plot) saved to %s\n', savePath);
 end

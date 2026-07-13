@@ -11,6 +11,9 @@ function result = test_resonant_charge_exchange(Nd_val, KE_eV, label)
 % should show up as a near-INSTANTANEOUS drop in the tracked ion's speed
 % to nearly zero -- a qualitatively different signature.
 
+commonDir = fileparts(mfilename('fullpath'));
+addpath(commonDir);
+paths = common_artifact_paths();
 addpath('D:\COMSOL 6.4\COMSOL64\Multiphysics\mli');
 mphstart(2036);
 import com.comsol.model.*
@@ -154,7 +157,7 @@ cex1 = coll1.create('cex1', 'ResonantChargeExchange');
 cex1.label('Resonant charge exchange (constant cross section)');
 cex1.set('CountCollisions', true);
 % xsec left at COMSOL default -- matches the same realistic ion-neutral
-% cross-section scale used for the Elastic test (see COMSOL_自动�?% 建模经验总结.md §7.22).
+% cross-section scale used for the Elastic test (see COMSOL_自动�?% 建模经验总结.md §7.22).
 
 Tsim = 200e-6;
 dtstep = 1e-6;
@@ -207,7 +210,7 @@ fprintf('[%s] particles showing a >90%% single-step speed drop (CEX signature): 
 result = struct('label', label, 'Nd', Nd_val, 'KE_eV', KE_eV, 'nP', nP, ...
     'mean_cex_events', meanNc, 'n_bigdrop_particles', sum(nBigDrops>0));
 
-resultsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_results';
+resultsDir = paths.resultsDir;
 if ~exist(resultsDir,'dir'), mkdir(resultsDir); end
 fh = figure('Visible','off');
 subplot(1,2,1);
@@ -238,7 +241,7 @@ trj1 = pg1.create('trj1', 'ParticleTrajectories');
 trj1.label(sprintf('Ion trajectories (%s)', label));
 pg1.run;
 
-modelsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\common';
+modelsDir = paths.modelsDir;
 if ~exist(modelsDir, 'dir'), mkdir(modelsDir); end
 model.save(fullfile(modelsDir, sprintf('CEX_%s.mph', strrep(label,' ','_'))));
 fprintf('[%s] SUCCESS: native trajectory plot created and model saved.\n', label);

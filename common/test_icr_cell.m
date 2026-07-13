@@ -9,6 +9,9 @@ function test_icr_cell()
 % End caps are SOLID disks (no aperture) since ions are released directly
 % inside the trap and never need to physically pass through an electrode.
 
+commonDir = fileparts(mfilename('fullpath'));
+addpath(commonDir);
+paths = common_artifact_paths();
 addpath('D:\COMSOL 6.4\COMSOL64\Multiphysics\mli');
 mphstart(2036);
 import com.comsol.model.*
@@ -241,7 +244,7 @@ fprintf('axial z range over full sim: min=%.3fmm max=%.3fmm (end caps at 0/%gmm)
 escaped = any(zTraj < -0.5 | zTraj > 40.5);
 fprintf('escaped past end caps: %d\n', escaped);
 
-resultsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_results';
+resultsDir = paths.resultsDir;
 if ~exist(resultsDir,'dir'), mkdir(resultsDir); end
 fh = figure('Visible','off');
 subplot(1,3,1);
@@ -269,6 +272,6 @@ trj1 = pg1.create('trj1', 'ParticleTrajectories');
 trj1.label('Trapped ion trajectory');
 pg1.run;
 
-model.save('C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\common\ICRCell.mph');
+model.save(fullfile(paths.modelsDir, 'ICRCell.mph'));
 fprintf('SUCCESS: native trajectory plot created and model saved.\n');
 end

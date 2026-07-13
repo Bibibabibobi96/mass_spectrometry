@@ -6,6 +6,9 @@ function test_einzel_lens()
 % exits at the same energy. Tests whether a beam of ions released at a
 % spread of radii converges (focuses) after passing through.
 
+commonDir = fileparts(mfilename('fullpath'));
+addpath(commonDir);
+paths = common_artifact_paths();
 addpath('D:\COMSOL 6.4\COMSOL64\Multiphysics\mli');
 mphstart(2036);
 import com.comsol.model.*
@@ -148,7 +151,7 @@ for i=1:numel(zvals)
     fprintf('  z=%6.2fmm  V=%9.3fV\n', zvals(i), Vq(i));
 end
 
-resultsDir = 'C:\Users\Liao\PycharmProjects\PythonProject\comsol_results';
+resultsDir = paths.resultsDir;
 if ~exist(resultsDir,'dir'), mkdir(resultsDir); end
 pg1 = model.result.create('pg_V', 'PlotGroup3D');
 pg1.label('Einzel lens: potential slice plot');
@@ -164,6 +167,6 @@ imgV.set('plotgroup','pg_V'); imgV.set('pngfilename', fullfile(resultsDir,'einze
 imgV.set('width',1200); imgV.set('height',700); imgV.run;
 fprintf('SUCCESS: potential image exported.\n');
 
-model.save('C:\Users\Liao\PycharmProjects\PythonProject\comsol_models\common\EinzelLens.mph');
+model.save(fullfile(paths.modelsDir, 'EinzelLens.mph'));
 fprintf('SUCCESS: model saved.\n');
 end

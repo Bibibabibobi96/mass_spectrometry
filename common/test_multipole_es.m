@@ -8,13 +8,16 @@ function test_multipole_es(Npoles)
 if nargin < 1
     Npoles = 4;
 end
+commonDir = fileparts(mfilename('fullpath'));
+addpath(commonDir);
+paths = common_artifact_paths();
 addpath('D:\COMSOL 6.4\COMSOL64\Multiphysics\mli');
 mphstart(2036);
 import com.comsol.model.*
 import com.comsol.model.util.*
 
 tag = sprintf('ModelPole%d', Npoles);
-modelPath = sprintf('C:\\Users\\Liao\\PycharmProjects\\PythonProject\\comsol_models\\common\\Multipole%d.mph', Npoles);
+modelPath = fullfile(paths.modelsDir, sprintf('Multipole%d.mph', Npoles));
 if any(strcmp(cell(ModelUtil.tags()), tag))
     ModelUtil.remove(tag);
 end

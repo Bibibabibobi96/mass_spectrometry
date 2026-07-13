@@ -1,0 +1,42 @@
+; oa-TOF two-stage reflectron, ideal-grid baseline for SIMION 8.2.
+; Coordinate system: x=axial depth from entgrid [mm], y=radius [mm].
+; Array scale: 1 mm/gu.  This is intentionally 2D cylindrical for the
+; first field validation; the orthogonal accelerator is built separately.
+; Save/compile as oatof_reflectron_ideal_10_5.pa# then Refine.
+
+pa_define(213,356,1,cylindrical,y,electrostatic,,1,surface=fractional)
+
+; e1: entgrid, ideal transparent one-grid-point electrode sheet, 0 V.
+e(1) { fill{within{box(0,0,0,350)}} }
+
+; Stage 1: 10 rings, thickness 5 mm, bore 250 mm, outer radius 300 mm.
+; Their Fast Adjust voltages are in 00_reference/reflectron_ring_table_10_5.csv.
+e(2)  { fill{within{box( 8.409,250,13.409,300)}} }
+e(3)  { fill{within{box(19.318,250,24.318,300)}} }
+e(4)  { fill{within{box(30.227,250,35.227,300)}} }
+e(5)  { fill{within{box(41.136,250,46.136,300)}} }
+e(6)  { fill{within{box(52.045,250,57.045,300)}} }
+e(7)  { fill{within{box(62.955,250,67.955,300)}} }
+e(8)  { fill{within{box(73.864,250,78.864,300)}} }
+e(9)  { fill{within{box(84.773,250,89.773,300)}} }
+e(10) { fill{within{box(95.682,250,100.682,300)}} }
+e(11) { fill{within{box(106.591,250,111.591,300)}} }
+
+; e12: midgrid, ideal transparent sheet at x=120 mm, radius 300 mm.
+e(12) { fill{within{box(120,0,120,300)}} }
+
+; Stage 2: 5 rings, thickness 5 mm, bore 250 mm, outer radius 300 mm.
+e(13) { fill{within{box(131.972,250,136.972,300)}} }
+e(14) { fill{within{box(146.444,250,151.444,300)}} }
+e(15) { fill{within{box(160.746,250,165.746,300)}} }
+e(16) { fill{within{box(175.389,250,180.389,300)}} }
+e(17) { fill{within{box(189.861,250,194.861,300)}} }
+
+; e18: backplate.  Its front face is at x=L_refl=206.8328 mm.
+e(18) { fill{within{box(206.833,0,211.833,300)}} }
+
+; e19: grounded 5 mm shield wall and end closures.
+e(19) {
+  fill{within{box(0,350,212,355)}}
+  fill{within{box(211.833,300,212,355)}}
+}
