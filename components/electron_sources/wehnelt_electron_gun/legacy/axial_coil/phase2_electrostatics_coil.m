@@ -3,7 +3,8 @@ function phase2_electrostatics_coil()
 % electrostatics solve, potential/field result plots and key on-axis
 % value summary, for the coil-filament electron gun geometry.
 
-componentRoot = fileparts(mfilename('fullpath'));
+scriptDir = fileparts(mfilename('fullpath'));
+componentRoot = fileparts(fileparts(scriptDir));
 addpath(componentRoot);
 paths = egun_paths();
 addpath('D:\COMSOL 6.4\COMSOL64\Multiphysics\mli');

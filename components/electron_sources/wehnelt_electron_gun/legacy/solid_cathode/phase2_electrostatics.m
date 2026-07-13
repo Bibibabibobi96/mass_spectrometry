@@ -2,7 +2,8 @@ function phase2_electrostatics()
 % Phase 2: materials, voltage boundary conditions, electrostatics solve,
 % potential/field result plots and key on-axis value summary.
 
-componentRoot = fileparts(mfilename('fullpath'));
+scriptDir = fileparts(mfilename('fullpath'));
+componentRoot = fileparts(fileparts(scriptDir));
 addpath(componentRoot);
 paths = egun_paths();
 addpath('D:\COMSOL 6.4\COMSOL64\Multiphysics\mli');

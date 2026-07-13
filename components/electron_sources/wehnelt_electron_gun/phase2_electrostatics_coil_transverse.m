@@ -122,7 +122,7 @@ sl2 = pg2.create('slice2', 'Slice');
 sl2.set('quickplane', 'zx'); sl2.set('quickznumber', '1'); sl2.set('quickxnumber', '1'); sl2.set('quickynumber', '1');
 sl2.set('expr', 'es.normE');
 
-resultsDir = paths.resultsDir;
+resultsDir = paths.resultsFormalDir;
 if ~exist(resultsDir, 'dir'), mkdir(resultsDir); end
 imgV = model.result.export.create('imgV', 'Image');
 imgV.set('plotgroup', 'pg_V'); imgV.set('pngfilename', fullfile(resultsDir, 'potential_distribution_coilT.png'));

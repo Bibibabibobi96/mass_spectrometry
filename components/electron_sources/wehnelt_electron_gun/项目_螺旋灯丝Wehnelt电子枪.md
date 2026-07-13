@@ -2,15 +2,37 @@
 
 > 本文件只记录**这个项目特有**的物理结论/参数选择，通用的COMSOL/MATLAB API写法见
 > `COMSOL_MATLAB_API手册.md`（尤其是§7.14磁场/Coil特征、§8磁场调试叙事，本项目的螺旋
-> 线圈几何`Helix`被复用于那部分的螺线管测试）。参考脚本：电子枪 phase1-5 系列脚本。
+> 线圈几何`Helix`被复用于那部分的螺线管测试）。正式参考脚本是横置灯丝 phase1/2/4
+> 三阶段流水线；其他`phase*`脚本已归入历史谱系。
 
-> **当前正式模型：尚未理清，待办**。现有`ElectronGun*.mph`已集中到工作区
-> `artifacts/components/electron_sources/wehnelt_electron_gun/models/comsol/workspace/`（不宣称为正式基线），其中包含早期
-> 实心圆柱阴极版）、`ElectronGun_Coil*.mph`（轴向螺旋线圈版）、`ElectronGun_CoilT*.mph`
-> （横置螺旋线圈版，§2验证收集效率更高）三条并存的谱系，哪些是"最终该用的"、哪些是
-> 被取代的中间版本，从未系统整理过（对应任务清单里长期挂着的"检查电子枪phase*脚本是否
-> 需要加标签"仍是pending状态）。下次碰这个项目时应该先做这个梳理，而不是假设某个是
-> "final"。
+> **当前正式基线：横置螺旋灯丝 Wehnelt 电子枪**。正式脚本链为
+> `phase1_geometry_coil_transverse.m` → `phase2_electrostatics_coil_transverse.m` →
+> `phase4_thermal_emission_coil_transverse.m`；最终 GUI 模型是工作区
+> `artifacts/components/electron_sources/wehnelt_electron_gun/models/comsol/formal/ElectronGun_CoilT_Thermal_CPT.mph`。
+> 选择依据是同条件 2700 K 热发射对照中横置灯丝收集效率 34.18%，高于轴向灯丝 27.71%，
+> 且本项目面向质谱 EI 离子源，优先电子利用率而非成像级轴对称性。实心阴极和轴向线圈
+> 已降级为`legacy/`与`archive/lineages/`历史谱系。
+
+## 0. 正式基线与产物职责（2026-07-13）
+
+| 层级 | 权威对象 | 职责 |
+|---|---|---|
+| 正式源代码 | 三份`*_coil_transverse.m`脚本 | 唯一允许继续维护的电子枪物理流水线 |
+| 中间模型 | `workspace/ElectronGun_CoilT.mph`、`ElectronGun_CoilT_ES.mph` | 可由 phase1/2 重建，不是最终交付 |
+| 正式模型 | `formal/ElectronGun_CoilT_Thermal_CPT.mph` | 含横置几何、静电 Study、2700 K CPT Study 和原生轨迹结果节点 |
+| 正式结果 | `results/comsol/formal/`中的`*coilT.png`和`electron_trajectories_transverse.png` | 与当前正式横置模型对应的可视化 |
+| 历史谱系 | `legacy/{solid_cathode,axial_coil}/`及对应`archive/lineages/` | 只用于追溯，不作为新模型起点 |
+
+当前基线参数：5 匝横置 Helix，线圈半径 0.3 mm、钨丝半径 0.05 mm、节距 0.2 mm；
+`V_cathode=0 V`、`V_wehnelt=-0.5 V`、`V_anode=70 V`，Wehnelt/阳极孔径半径分别为
+1.0/1.5 mm，灯丝温度 2700 K。正式 MPH 大小 509,436,548 字节，SHA-256 为
+`83D216A9B4CC4FBE3E9DFF1934900FE533FE895D1C3B835EFBAADC13D56F0BDF`。
+
+**验收限制**：本次整理没有改动物理参数，也没有重新生成 MPH。2026-07-13 的最小
+`matlab.exe -batch`测试在 MATLAB MCOS 初始化阶段崩溃，使用隔离 preferences 仍失败，
+因此无法在本次会话重新加载模型或验证 GUI Compute。横置基线的选择依赖此前已归档的
+34.18%结果；MATLAB 运行时修复后，必须先打开正式 MPH，核对 Helix `axis=x`、ES/CPT
+物理节点、两个 Study、初值引用、粒子数据集和原生结果图，并分别用 GUI Compute 复算。
 
 ## 背景
 建好静电场之后、正式做粒子追踪之前，先花一分钟沿电子实际飞行路径（轴线）算一遍电位
@@ -45,8 +67,9 @@
 轴线上，牺牲发射面积换取对称性。选哪种朝向应该先问"这个电子枪的下游需求是效率还是
 对称性"，而不是默认套用同轴设计。
 
-## 3. Wehnelt 偏压存在"最优点"，不是越负越好也不是不加最好
-对Wehnelt孔径和偏压做网格扫描时（3×3），观察到收集效率关于偏压**非单调**：偏压比基线
+## 3. 历史轴向谱系：Wehnelt 偏压存在非单调最优点
+旧`legacy/axial_coil/phase5_wehnelt_sweep.m`对Wehnelt孔径和偏压做3×3网格扫描时，观察到
+收集效率关于偏压**非单调**：偏压比基线
 更负（抑制过强）和偏压为0（没有聚焦）时收集效率都比一个适中的负偏压更低，每种孔径下
 都是同一个中间值最优。这和电子光学教科书里Wehnelt极"负偏压既截止电流、又同时充当聚焦
 透镜"的经典结论一致——不是简单的"越负越安全/电流越小"，负偏压太小会缺乏聚焦、太大会
@@ -55,12 +78,18 @@
 **教训**：做这类参数扫描时不要只测两三个极端值就下结论，扫描出的非单调关系本身可能就
 是需要报告的核心结果。
 
+**适用范围修正**：旧 phase5 在 Helix 上没有设置`axistype='x'`，实际扫描的是轴向灯丝。
+因此“存在中间最优点”可保留为物理假设和历史观察，但具体最优孔径/偏压不能直接写入横置
+正式基线；横置谱系必须另做参数扫描并保存 GUI 可重跑的正式 MPH 后才能升级结论。
+
 ## 附录：时间线
 
 - **phase1-3（早期）**：实心圆柱阴极版本（`ElectronGun*.mph`），建几何→静电场→CPT
   粒子追踪的基础流程打通。
 - **phase1-4（螺旋线圈版）**：换成真实螺旋灯丝几何，分轴向(`*_Coil*`)和横置
   (`*_CoilT*`)两条线，发现§1的匝间自吸收效应和§2的横置效率优势。
-- **phase5**：Wehnelt孔径×偏压3×3网格扫描，发现§3的非单调最优点。
-- **之后未再深入**：三个几何谱系（实心/轴向线圈/横置线圈）哪个是"最终定型"版本，没有
-  收尾梳理，见文件顶部的待办说明。
+- **phase5（历史轴向谱系）**：Wehnelt孔径×偏压3×3网格扫描，发现§3的非单调趋势；具体
+  参数不再作为横置基线结论。
+- **2026-07-13基线定型**：采用横置螺旋灯丝；正式脚本、最终模型和结果进入formal层，
+  实心/轴向谱系移入legacy/archive。因MATLAB启动崩溃，本轮完成的是资产与知识基线定型，
+  GUI Compute复验列为运行时修复后的第一项工作。

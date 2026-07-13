@@ -13,7 +13,8 @@ function phase4_thermal_emission_coil()
 % Maxwellian at temperature T -- this is used here instead of hand-picking
 % a single equivalent speed.
 
-componentRoot = fileparts(mfilename('fullpath'));
+scriptDir = fileparts(mfilename('fullpath'));
+componentRoot = fileparts(fileparts(scriptDir));
 addpath(componentRoot);
 paths = egun_paths();
 addpath('D:\COMSOL 6.4\COMSOL64\Multiphysics\mli');

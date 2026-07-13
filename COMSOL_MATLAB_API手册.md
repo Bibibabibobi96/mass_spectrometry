@@ -313,7 +313,7 @@ t1.feature('fc1').set('linsolver','dDef');
 
 | 部件 | 核心物理机制 | 关键验证结果 | 参考脚本 | 详见 |
 |---|---|---|---|---|
-| 电子枪（螺旋灯丝+Wehnelt） | 热发射(`Thermal`)+Wehnelt偏压聚焦 | 横置线圈收集效率34.18% > 轴向线圈27.71%；Wehnelt偏压存在非单调最优点 | 电子枪 phase1-5 系列脚本 | `项目_螺旋灯丝Wehnelt电子枪.md` |
+| 电子枪（横置螺旋灯丝+Wehnelt） | 热发射(`Thermal`)+Wehnelt偏压聚焦 | 横置线圈收集效率34.18% > 轴向线圈27.71%；旧Wehnelt非单调扫描属于轴向谱系，横置参数待重扫 | `phase1_geometry_coil_transverse.m` / `phase2_electrostatics_coil_transverse.m` / `phase4_thermal_emission_coil_transverse.m` | `项目_螺旋灯丝Wehnelt电子枪.md` |
 | 螺线管线圈 | `InductionCurrents`+`Coil`(Numeric) | 中心磁场/无限长理论值比值0.85 | `test_magnetic_coil.m` | §7.14, §8 |
 | 均匀磁场回旋运动(裸测试) | 均匀Bz+`MagneticForce` | 回旋半径0.58mm vs理论0.57mm(2%误差)，轨迹为正圆 | `test_cpt_magnetic_force.m` | §7.15, §8.5 |
 | 四极/六极/八极杆 | RF交替电位；仅四极有严格马蒂厄稳定性 | on-axis电位幂律`r^(N/2)`吻合4位有效数字；四极q=0.5稳定/q=1.2发散；六极/八极是"离子导管"而非质量滤波器 | `test_multipole_geometry.m` / `test_multipole_es.m` / `test_quadrupole_stability.m` | §7.16 |

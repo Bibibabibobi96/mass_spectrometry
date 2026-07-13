@@ -9,7 +9,8 @@ function phase5_wehnelt_sweep()
 % drift-region exit as a divergence proxy. Numeric results only (no
 % per-run trajectory image export) to keep the sweep tractable.
 
-componentRoot = fileparts(mfilename('fullpath'));
+scriptDir = fileparts(mfilename('fullpath'));
+componentRoot = fileparts(fileparts(scriptDir));
 addpath(componentRoot);
 paths = egun_paths();
 addpath('D:\COMSOL 6.4\COMSOL64\Multiphysics\mli');

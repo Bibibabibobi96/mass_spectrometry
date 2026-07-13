@@ -14,7 +14,7 @@ import com.comsol.model.*
 import com.comsol.model.util.*
 
 modelPath = fullfile(paths.modelWorkspaceDir, 'ElectronGun_CoilT_ES.mph');
-savePath  = fullfile(paths.modelWorkspaceDir, 'ElectronGun_CoilT_Thermal_CPT.mph');
+savePath  = fullfile(paths.modelFormalDir, 'ElectronGun_CoilT_Thermal_CPT.mph');
 if any(strcmp(cell(ModelUtil.tags()), 'Model'))
     ModelUtil.remove('Model');
 end
@@ -51,7 +51,7 @@ model.sol('sol2').feature('v1').set('notsol', 'sol1');
 model.sol('sol2').runAll;
 fprintf('SUCCESS: Particle tracing (thermal, transverse coil) solved.\n');
 
-resultsDir = paths.resultsDir;
+resultsDir = paths.resultsFormalDir;
 if ~exist(resultsDir, 'dir'), mkdir(resultsDir); end
 try
     pdset1 = model.result.dataset.create('pdset1', 'Particle');
@@ -91,6 +91,7 @@ KEv = KE_eV(valid);
 fprintf('KE[eV] among valid: min=%.4f max=%.4f mean=%.4f median=%.4f\n', ...
     min(KEv), max(KEv), mean(KEv), median(KEv));
 
+if ~exist(paths.modelFormalDir, 'dir'), mkdir(paths.modelFormalDir); end
 model.save(savePath);
 fprintf('\nSUCCESS: model saved to %s\n', savePath);
 end

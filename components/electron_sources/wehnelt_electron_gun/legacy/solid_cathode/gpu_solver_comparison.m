@@ -4,7 +4,8 @@ function gpu_solver_comparison()
 %   (b) the direct solver switched to NVIDIA cuDSS (GPU)
 % No plotting/rendering is done - numeric solve + timing only.
 
-componentRoot = fileparts(mfilename('fullpath'));
+scriptDir = fileparts(mfilename('fullpath'));
+componentRoot = fileparts(fileparts(scriptDir));
 addpath(componentRoot);
 paths = egun_paths();
 addpath('D:\COMSOL 6.4\COMSOL64\Multiphysics\mli');
