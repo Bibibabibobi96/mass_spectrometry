@@ -55,6 +55,7 @@ comsol_scripts/
   project_eGun/                      # 电子枪 phase*.m 系列脚本+项目文档
 ```
 `comsol_models/`（.mph模型）和`comsol_results/`（图片/数据）是同级的独立目录。
+根目录下的`simion_oatof/`是oa-TOF的SIMION交叉验证工作区，保留其可由SIMION GUI直接打开的PA/IOB/Lua源文件；SIMION专属流程、透明性规则和验证日志以该目录内文档为准，结论性摘要归档到`project_oaTOF/项目_oaTOF双级环栈反射镜.md`，不在两处复制整套二进制模型。
 **2026-07-09起，`comsol_models/`按项目拆成子目录**（`common/`/`project_eGun/`/
 `project_oaTOF/`，跟`comsol_scripts/`下的项目目录一一对应）——此前曾因"体积大、含
 二进制文件，拆分收益不明显"而保持扁平，靠文件名前缀区分项目，但随着文件数量增多，
