@@ -30,12 +30,14 @@
 如果后续某个会话里恰好还保留了`comsol` MCP，它也只适合作为临时检查手段，不作为默认工作流。
 
 **本机连接状态（2026-07-13）**：MATLAB R2025b 位于
-`C:\Program Files\MATLAB\R2025b\MatlabR2025b`，独立`matlab.exe -batch`启动和版本查询
-已通过。默认端口2036当前由PyCharm监听，不能再仅凭“端口可连接”判定COMSOL Server就绪；
-测试应改用空闲端口并核对监听进程路径确为`comsolmphserver.exe`。本轮在2037端口使用COMSOL
-官方启动器`comsolmphserver matlab -mlroot <R2025b根目录>`已成功进入LiveLink 6.4.0.293；
-手工启动Server后再调用`mphstart(2037)`虽然建立了TCP会话，但120秒内未完成API初始化，
-因此R2025b的正式batch直连仍需另行验证，当前不得据此运行生产求解。
+`C:\Program Files\MATLAB\R2025b\MatlabR2025b`。默认端口2036当前由PyCharm监听，不能再仅凭
+“端口可连接”判定COMSOL Server就绪；测试应改用空闲端口并核对监听进程路径确为
+`comsolmphserver.exe`。R2025b外层`matlab.exe -batch`可启动，但该模式下Java未启用；手工
+`mphstart(2037)`虽建立TCP会话，120秒内未完成API初始化。当前已验证的自动路径是COMSOL
+官方启动器`comsolmphserver matlab -mlroot <R2025b根目录>`，通过进程级`MATLABPATH`加载
+`comsolstartup.m`：已在2037端口完成LiveLink 6.4.0.293连接、94.8 MB MPH加载、GUI节点检查、
+`model.study('std1').run`重算和`mphinterp`后处理。正式生产脚本切换到R2025b前，仍需把这条
+启动方式封装成项目入口，或继续解决外层`-batch`的Java问题。
 
 ## COMSOL 模型的 GUI 对等性
 

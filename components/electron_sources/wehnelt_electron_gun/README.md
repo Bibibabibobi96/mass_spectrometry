@@ -30,7 +30,9 @@ Wehnelt 参数扫描需要以后重新建立和验证。
 
 ## 运行依赖与当前验证限制
 
-脚本依赖 MATLAB、COMSOL 6.4 LiveLink 以及本机`D:\COMSOL 6.4\...\mli`路径。2026-07-13
-整理时，MATLAB R2022b 在执行最小`-batch`命令前发生 MCOS 启动崩溃，因此本次只依据此前
-已完成的横置/轴向同条件对照选择基线，没有重新求解或完成 GUI Compute 复验。修复 MATLAB
-运行时后，第一次电子枪工作应先打开正式 MPH，核对 GUI 节点并重新执行两个 Study。
+脚本依赖 MATLAB 和 COMSOL 6.4 LiveLink。R2022b 曾在MCOS初始化阶段崩溃；改用R2025b后，
+COMSOL官方MATLAB启动器已完成自动链路测试：成功加载`ElectronGun_CoilT_ES.mph`，确认
+Helix `axis=x`、`es`物理场、`std1` Study及`pg_V`/`pg_E`原生结果节点存在，并通过
+`model.study('std1').run`重算静电场。z=8 mm轴上复核值为`V=40.0917301067 V`、
+`|E|=5300.60566114 V/m`。最终`ElectronGun_CoilT_Thermal_CPT.mph`及其CPT Study尚未在
+R2025b下复算，因此34.18%收集效率仍沿用此前归档结果。

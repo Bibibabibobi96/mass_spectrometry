@@ -28,11 +28,13 @@
 1.0/1.5 mm，灯丝温度 2700 K。正式 MPH 大小 509,436,548 字节，SHA-256 为
 `83D216A9B4CC4FBE3E9DFF1934900FE533FE895D1C3B835EFBAADC13D56F0BDF`。
 
-**验收限制**：本次整理没有改动物理参数，也没有重新生成 MPH。2026-07-13 的最小
-`matlab.exe -batch`测试在 MATLAB MCOS 初始化阶段崩溃，使用隔离 preferences 仍失败，
-因此无法在本次会话重新加载模型或验证 GUI Compute。横置基线的选择依赖此前已归档的
-34.18%结果；MATLAB 运行时修复后，必须先打开正式 MPH，核对 Helix `axis=x`、ES/CPT
-物理节点、两个 Study、初值引用、粒子数据集和原生结果图，并分别用 GUI Compute 复算。
+**验收状态**：基线整理没有改动物理参数或重新生成MPH。R2022b的MCOS启动故障已通过安装
+R2025b绕开；2026-07-13使用COMSOL官方MATLAB启动器完成自动完整链路，成功加载
+`workspace/ElectronGun_CoilT_ES.mph`，确认Helix `axis=x`、`es`、`std1`及
+`pg_V`/`pg_E`均为GUI可见节点。调用`model.study('std1').run`重算耗时21.281603 s，
+z=8 mm轴上得到`V=40.0917301067 V`、`|E|=5300.60566114 V/m`。该测试没有保存或覆盖模型。
+最终`formal/ElectronGun_CoilT_Thermal_CPT.mph`尚未在R2025b下加载和复算，因此CPT节点、
+初值引用、粒子数据集、原生轨迹图及34.18%收集效率仍需单独复验。
 
 ## 背景
 建好静电场之后、正式做粒子追踪之前，先花一分钟沿电子实际飞行路径（轴线）算一遍电位
