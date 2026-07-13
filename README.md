@@ -29,6 +29,14 @@
 
 如果后续某个会话里恰好还保留了`comsol` MCP，它也只适合作为临时检查手段，不作为默认工作流。
 
+**本机连接状态（2026-07-13）**：MATLAB R2025b 位于
+`C:\Program Files\MATLAB\R2025b\MatlabR2025b`，独立`matlab.exe -batch`启动和版本查询
+已通过。默认端口2036当前由PyCharm监听，不能再仅凭“端口可连接”判定COMSOL Server就绪；
+测试应改用空闲端口并核对监听进程路径确为`comsolmphserver.exe`。本轮在2037端口使用COMSOL
+官方启动器`comsolmphserver matlab -mlroot <R2025b根目录>`已成功进入LiveLink 6.4.0.293；
+手工启动Server后再调用`mphstart(2037)`虽然建立了TCP会话，但120秒内未完成API初始化，
+因此R2025b的正式batch直连仍需另行验证，当前不得据此运行生产求解。
+
 ## COMSOL 模型的 GUI 对等性
 
 生成的 MPH 必须可由 COMSOL Desktop 完整接管：任何影响物理或数值结果的内容都必须作为
