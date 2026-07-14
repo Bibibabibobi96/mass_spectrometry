@@ -36,13 +36,23 @@
 
 ## 阶段 C：加速器 PA#
 
-已建立`01_accelerator/oatof_accelerator_3d.pa#`，用3D Cartesian PA，标尺`0.5 mm/gu`。这是先用于验证电极映射与全三维场拓扑的可运行基线；若轴线场误差不能接受，再将局部加密到`0.25 mm/gu`，不在尚未验证时直接加大全域数组。
+正式加速器使用3D Cartesian、各轴`0.25 mm/gu`、`361×361×141`的PA。GEM的物理几何
+只有一份；`mmgu_xy`、`mmgu_z`和`xy_span`仅控制数值网格与接地屏蔽外部真空包围范围，
+不得借诊断变体修改电极尺寸、电极间隙或电极—屏蔽间隙。
 
 包含repeller、grid1、grid2、5个加速器环和接地屏蔽罩。grid1/grid2同样是一网格点厚的透明等势面。
 
 基准电压：repeller=2240 V，grid1=1760 V，grid2=0 V；加速器环电压依据当前COMSOL脚本的线性规则。
 
 当前电极编号与 fast-adjust：1=repeller，2=grid1，3..7=五个加速器环，8=grid2，9=grounded shield；对应电位为2240、1760、1466.666667、1173.333333、880、586.666667、293.333333、0、0 V。`build_accelerator_3d.cmd`可无GUI重建全部PA并应用这些电位。
+
+网格闭合使用`build_accelerator_variant.lua`。构建器必须先打印尺寸和10阵列容量估算，并
+设置可接受的GiB硬上限。已验证的受控方案为：xy仍0.25 mm、只把z降至0.125 mm，并把
+xy包围范围从90 mm裁至接地屏蔽外宽78 mm；所得`313×313×281`数组保留全部物理几何。
+完整基阵存于artifacts用于复现，飞行时只用已fast-adjust的PA0，通过
+`OATOF_ACCELERATOR_PA_OVERRIDE`、`pa:load()`和`_debug_update_size()`替换正式IOB中的
+加速器实例，同时设`accelerator_fast_adjust_enable=0`。禁止为大PA反复保存变体IOB或
+每次启动重新组合9个基阵。
 
 ## 阶段 D：Workbench 与初始验证
 
@@ -71,3 +81,5 @@
 - 图标题写明PA标尺、栅网模式、粒子数和Fast Adjust电压集。
 - 理想栅网与真实丝网结果不得混在同一基线表。
 - 首次比较必须保留COMSOL与SIMION的轴线`V(z)`、`Ez(z)`和单粒子轨迹PNG。
+- 加密测试必须先做同网格裁边控制，再做单离子、N=100、N=1000；否则不能把裁边效应、
+  统计波动和网格收敛混为同一结论。

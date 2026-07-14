@@ -17,6 +17,10 @@ SIMION程序位置：`C:\Program Files\SIMION-2020\simion.exe`（SIMION 8.2.0.11
   理想场矩阵；`-AnalyzeOnly`可按当前探测器口径重算已有完整过面日志。
 - `tests/cross_solver/verify_geometry_contract.ps1`：联动测试硬门禁，任一共享尺寸、正式
   Lua、IOB实例或PA尺寸/网格不一致即失败。
+- `accelerator/build_accelerator_variant.lua`：从同一正式GEM生成各向异性诊断PA；构建前
+  估算10个电位数组连同PA#/表面元数据的实际总容量并按调用参数设置硬上限。
+- `accelerator/verify_accelerator_variant.lua`与`verify_accelerator_override_field.lua`：
+  分别核对PA头和运行时替换后的实例原点/场点，不保存或改写正式IOB。
 
 ## 分阶段目标
 
@@ -39,8 +43,13 @@ SIMION程序位置：`C:\Program Files\SIMION-2020\simion.exe`（SIMION 8.2.0.11
   `R=t/(2σ)=17513.8102`。
 - 最大二级穿透约`51.07 mm`；真实丝网敏感性分析不得使用二级75%深度作为离子采样截面。
 
-## 已完成的 SIMION 基线（2026-07-13）
+## 已完成的 SIMION 基线与网格闭合（更新至2026-07-14）
 
 - `02_reflectron/oatof_reflectron_ideal_10_5.pa0`：2D cylindrical、1 mm/gu、19个电极，已按COMSOL正式电位 fast-adjust。
-- `01_accelerator/oatof_accelerator_3d.pa0`：完整3D Cartesian、0.5 mm/gu、9个电极，已按COMSOL正式电位 fast-adjust。
-- 后者的独立 Refine 实测约 7.7 s；此值仅用于本机基线，不能替代包含粒子统计的总耗时估计。
+- 正式加速器GUI基线为3D Cartesian、`361×361×141`、0.25 mm/gu、9个电极；与COMSOL
+  几何门禁、IOB持久化原点和7个场点保持联动。
+- 数值闭合诊断使用同一GEM，裁掉78 mm接地屏蔽外部真空且只把z加密至0.125 mm，得到
+  `313×313×281`、`dx/dy/dz=0.25/0.25/0.125 mm`的PA。N=1000为1000/1000命中，
+  `sigma=0.834246 ns`、`R=t/(2sigma)=18849.4`，与COMSOL的0.897802 ns、17513.8分别
+  相差-7.08%和+7.63%。同源N=100裁边控制证明xy裁剪只改变sigma约0.1%—0.2%，收敛
+  来自z网格而非几何缩小。完整数据见`VALIDATION_LOG.md`。

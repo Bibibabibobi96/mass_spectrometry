@@ -4,6 +4,7 @@ adjustable V_grid1=1760
 adjustable V_mid=1600
 adjustable V_backplate=2400
 adjustable ideal_grid_epsilon_mm=0.005
+adjustable accelerator_fast_adjust_enable=1
 adjustable ideal_accel_enable=0
 adjustable ideal_refl_stage1_enable=0
 adjustable ideal_refl_stage2_enable=0
@@ -26,9 +27,13 @@ adjustable accelerator_instance_z_mm=-15
 local TP=simion.import 'testplanelib.lua'
 local detector_plane
 local detector_x_mm,detector_y_mm,detector_z_mm
+local accelerator_pa_override=os.getenv('OATOF_ACCELERATOR_PA_OVERRIDE')
+local accelerator_pa_override_loaded=false
 local function configure_linked_geometry()
  local ai=simion.wb.instances[2]
- ai.x,ai.y,ai.z=accelerator_axis_x_mm-45,accelerator_axis_y_mm-45,accelerator_instance_z_mm
+ local half_x=(ai.pa.nx-1)*ai.pa.dx_mm*ai.scale/2
+ local half_y=(ai.pa.ny-1)*ai.pa.dy_mm*ai.scale/2
+ ai.x,ai.y,ai.z=accelerator_axis_x_mm-half_x,accelerator_axis_y_mm-half_y,accelerator_instance_z_mm
  detector_x_mm=-accelerator_axis_x_mm+detector_mirror_offset_x_mm
  detector_y_mm=-accelerator_axis_y_mm+detector_mirror_offset_y_mm
  detector_z_mm=accelerator_grid2_z_mm
@@ -40,15 +45,24 @@ local function configure_linked_geometry()
   end
  end)
  detector_plane.draw(1)
- print(string.format('TRACE: linked_geometry accelerator_axis=(%.12g,%.12g) accelerator_instance=(%.12g,%.12g,%.12g) detector=(%.12g,%.12g,%.12g) radius=%.12g',accelerator_axis_x_mm,accelerator_axis_y_mm,ai.x,ai.y,ai.z,detector_x_mm,detector_y_mm,detector_z_mm,detector_radius_mm))
+ print(string.format('TRACE: linked_geometry accelerator_axis=(%.12g,%.12g) accelerator_instance=(%.12g,%.12g,%.12g) accelerator_cell=(%.12g,%.12g,%.12g) detector=(%.12g,%.12g,%.12g) radius=%.12g',accelerator_axis_x_mm,accelerator_axis_y_mm,ai.x,ai.y,ai.z,ai.pa.dx_mm,ai.pa.dy_mm,ai.pa.dz_mm,detector_x_mm,detector_y_mm,detector_z_mm,detector_radius_mm))
 end
 function segment.initialize_run()
- local r,a,t=simion.wb.instances[1].pa,simion.wb.instances[2].pa,simion.wb.instances[3].pa
+ local ai=simion.wb.instances[2]
+ if accelerator_pa_override and accelerator_pa_override~='' and not accelerator_pa_override_loaded then
+  ai.pa:load(accelerator_pa_override)
+  ai:_debug_update_size()
+  accelerator_pa_override_loaded=true
+  print(string.format('TRACE: accelerator_pa_override=%s dimensions=%dx%dx%d cell=(%.12g,%.12g,%.12g)',accelerator_pa_override,ai.pa.nx,ai.pa.ny,ai.pa.nz,ai.pa.dx_mm,ai.pa.dy_mm,ai.pa.dz_mm))
+ end
+ local r,a,t=simion.wb.instances[1].pa,ai.pa,simion.wb.instances[3].pa
  configure_linked_geometry()
- a:fast_adjust{[1]=V_repeller,[2]=V_grid1,[3]=V_grid1*5/6,[4]=V_grid1*4/6,[5]=V_grid1/2,[6]=V_grid1*2/6,[7]=V_grid1/6,[8]=0,[9]=0}
+ if accelerator_fast_adjust_enable~=0 then
+  a:fast_adjust{[1]=V_repeller,[2]=V_grid1,[3]=V_grid1*5/6,[4]=V_grid1*4/6,[5]=V_grid1/2,[6]=V_grid1*2/6,[7]=V_grid1/6,[8]=0,[9]=0}
+ end
  r:fast_adjust{[1]=0,[2]=V_mid/11,[3]=2*V_mid/11,[4]=3*V_mid/11,[5]=4*V_mid/11,[6]=5*V_mid/11,[7]=6*V_mid/11,[8]=7*V_mid/11,[9]=8*V_mid/11,[10]=9*V_mid/11,[11]=10*V_mid/11,[12]=V_mid,[13]=V_mid+(V_backplate-V_mid)/6,[14]=V_mid+2*(V_backplate-V_mid)/6,[15]=V_mid+3*(V_backplate-V_mid)/6,[16]=V_mid+4*(V_backplate-V_mid)/6,[17]=V_mid+5*(V_backplate-V_mid)/6,[18]=V_backplate,[19]=0}
  t:fast_adjust{[1]=0}
- print(string.format('TRACE: field_mode ideal_accel=%d ideal_stage1=%d ideal_stage2=%d',ideal_accel_enable,ideal_refl_stage1_enable,ideal_refl_stage2_enable))
+ print(string.format('TRACE: field_mode accelerator_fast_adjust=%d ideal_accel=%d ideal_stage1=%d ideal_stage2=%d',accelerator_fast_adjust_enable,ideal_accel_enable,ideal_refl_stage1_enable,ideal_refl_stage2_enable))
 end
 local function grid_planes()
  return {
@@ -77,7 +91,8 @@ function segment.efield_adjust()
   ion_dvoltsx_gu=0
   ion_dvoltsy_gu=0
   ion_dvoltsz_gu=0
-  if axis=='x' then ion_dvoltsx_gu=-E*ion_mm_per_grid_unit else ion_dvoltsz_gu=-E*ion_mm_per_grid_unit end
+  local pi=simion.wb.instances[ion_instance]
+  if axis=='x' then ion_dvoltsx_gu=-E*pi.pa.dx_mm*pi.scale else ion_dvoltsz_gu=-E*pi.pa.dz_mm*pi.scale end
  end
 end
 local last_z,jumped={},{}
