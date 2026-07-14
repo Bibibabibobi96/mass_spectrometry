@@ -29,15 +29,17 @@
 
 如果后续某个会话里恰好还保留了`comsol` MCP，它也只适合作为临时检查手段，不作为默认工作流。
 
-**本机连接状态（2026-07-13）**：MATLAB R2025b 位于
-`C:\Program Files\MATLAB\R2025b\MatlabR2025b`。默认端口2036当前由PyCharm监听，不能再仅凭
-“端口可连接”判定COMSOL Server就绪；测试应改用空闲端口并核对监听进程路径确为
-`comsolmphserver.exe`。R2025b外层`matlab.exe -batch`可启动，但该模式下Java未启用；手工
-`mphstart(2037)`虽建立TCP会话，120秒内未完成API初始化。当前已验证的自动路径是COMSOL
-官方启动器`comsolmphserver matlab -mlroot <R2025b根目录>`，通过进程级`MATLABPATH`加载
-`comsolstartup.m`：已在2037端口完成LiveLink 6.4.0.293连接、94.8 MB MPH加载、GUI节点检查、
-`model.study('std1').run`重算和`mphinterp`后处理。正式生产脚本切换到R2025b前，仍需把这条
-启动方式封装成项目入口，或继续解决外层`-batch`的Java问题。
+**本机连接状态（2026-07-14，已完成）**：MATLAB R2025b位于
+`C:\Program Files\MATLAB\R2025b\MatlabR2025b`，COMSOL 6.4 LiveLink由项目入口
+`common/run_comsol_r2025b.ps1`通过官方`comsolmphserver.exe`启动。入口使用
+`common/livelink_r2025b/comsolstartup.m`接收任务脚本和报告路径，不再依赖外层
+`matlab.exe -batch`的无Java会话，也不依赖固定端口。冒烟测试已核对MATLAB R2025b、JVM、
+COMSOL 6.4.0.293并返回`STATUS=PASS`；oa-TOF正式MPH还完成了`std1`静电场、`std2`粒子追踪、
+1000粒子后处理和保存后求解器附着状态复核。用法：
+
+```powershell
+.\common\run_comsol_r2025b.ps1 -TaskScript <任务脚本.m> -ReportPath <报告.txt>
+```
 
 ## COMSOL 模型的 GUI 对等性
 

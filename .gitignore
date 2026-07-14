@@ -8,3 +8,6 @@ official_docs/*.pdf
 __pycache__/
 *.py[cod]
 run_comsol_mcp.cmd
+
+# SIMION gem2pa compiler intermediate; reproducible from the tracked GEM source.
+*.processed.gem

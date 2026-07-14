@@ -1,7 +1,7 @@
 ; oa-TOF 3D accelerator potential array (SIMION 8.2 / 2020).
 ; Coordinates are local to the accelerator: z=0 is the repeller/grid-1 gap
-; reference used by the COMSOL model.  The PA covers x,y = +/-39 mm and
-; z = -10..30 mm.  Electrode voltages are assigned later with fastadj.
+; reference used by the COMSOL model.  The PA covers x,y = +/-45 mm and
+; z = -15..20 mm.  Electrode voltages are assigned later with fastadj.
 ;
 ; Electrode map
 ;   1 repeller; 2 grid 1 (ideal transparent sheet); 3..7 extraction rings
@@ -22,18 +22,16 @@ pa_define($(xy_span/mmgu+1), $(xy_span/mmgu+1), $(z_span/mmgu+1), planar,none,el
 
 locate($(cx),$(cy),$(cz)) {
   ; GEM coordinates are millimetres; pa_define converts them to grid units.
-  ; Grounded 4 mm-thick C-shaped wall. Its rear edge is flush with the
-  ; rear cap at global z=-9 mm, and its front edge is coplanar with grid2
-  ; at global z=19.83 mm (local center 5.415, length 28.83 mm).
+  ; Grounded 4 mm-thick C-shaped wall. This exactly matches the formal
+  ; COMSOL baseline: inner opening 70 mm, outer width 78 mm, rear edge
+  ; z=-15 mm, and front edge coplanar with grid2 at z=19.83 mm.
   e(9) { fill {
-    within { centered_box3D(0,0,5.415, 78,78,28.83) }
-    notin  { centered_box3D(0,0,5.415, 74,74,28.83) }
+    within { centered_box3D(0,0,2.415, 78,78,34.83) }
+    notin  { centered_box3D(0,0,2.415, 70,70,34.83) }
   } }
-  ; Grounded rear closure matching the COMSOL accelerator shield back cap.
-  ; It is behind the repeller and does not obstruct the ion path.
-  ; Rear cap front face is global z=-5 mm. Repeller rear face is -1 mm,
-  ; giving the same 4 mm axial gap as the (74-66)/2 radial shield gap.
-  e(9) { fill { within { centered_box3D(0,0,-7, 78,78,4) } } }
+  ; Grounded rear closure matching accel_shield_back_extra=10 mm in COMSOL.
+  ; The cap occupies z=-15..-11 mm; the repeller rear face is z=-1 mm.
+  e(9) { fill { within { centered_box3D(0,0,-13, 78,78,4) } } }
 
   ; 66 x 66 x 1 mm repeller plate at z=-0.5 mm.
   e(1) { fill { within { centered_box3D(0,0,-0.5, 66,66,1) } } }
@@ -49,6 +47,6 @@ locate($(cx),$(cy),$(cz)) {
   e(7) { fill { within { centered_box3D(0,0,17.025,66,66,1) } notin { centered_box3D(0,0,17.025, 30,30,1.5) } } }
 
   ; Second ideal grid at COMSOL z=L_accel=19.83 mm, covering the full
-  ; 74 mm shield opening.
-  e(8) { fill { within { centered_box3D(0,0,19.83, 74,74,$(mmgu)) } } }
+  ; 70 mm shield opening.
+  e(8) { fill { within { centered_box3D(0,0,19.83, 70,70,$(mmgu)) } } }
 }

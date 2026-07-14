@@ -12,6 +12,9 @@
 - CAD 导出入口：
   [`cad/ms_export_oatof_to_solidworks.m`](cad/ms_export_oatof_to_solidworks.m)
 - SIMION 实施与验证记录：[`simion/docs/README.md`](simion/docs/README.md)
+- MATLAB R2025b LiveLink静态/全链路测试：
+  [`tests/comsol/verify_oatof_comsol_sync.m`](tests/comsol/verify_oatof_comsol_sync.m)、
+  [`tests/comsol/test_oatof_r2025b_full_chain.m`](tests/comsol/test_oatof_r2025b_full_chain.m)
 - 路径解析契约：[`oatof_paths.m`](oatof_paths.m)
 
 修改正式脚本前必须先读项目主文档。`oatof_paths.m`从本文件夹位置推导工作区，不得在

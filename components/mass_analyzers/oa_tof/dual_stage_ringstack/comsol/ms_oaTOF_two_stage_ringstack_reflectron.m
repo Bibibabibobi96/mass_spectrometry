@@ -615,10 +615,10 @@ p.set('x_accel_center', '-48.80[mm]', 'Accelerator assembly x-offset (symmetric 
 % repeller-grid1, doesn't need rings -- its 3mm gap vs 35mm half-width
 % ratio already gave clean uniformity even in the failed cylindrical
 % attempt).
-p.set('accel_shield_half', '35[mm]', 'Accelerator square shield tube half-width (repeller fits inside: repeller half-width=20mm < 35mm, no corner-overshoot issue since both are square)');
+p.set('accel_shield_half', '35[mm]', 'Accelerator square shield tube half-width; formal COMSOL/SIMION baseline has a 70 mm inner opening');
 p.set('accel_shield_wall', '4[mm]', 'Accelerator shield wall thickness (thickened from 2mm to 4mm, per explicit request for more realistic/robust shield walls)');
 p.set('accel_ring_gap', '2[mm]', 'Vacuum gap between accelerator ring electrodes and the shield inner wall (different-voltage conductors must not touch)');
-p.set('accel_ring_bore_half', '15[mm]', 'Accelerator ring electrode bore half-width (square hole)');
+p.set('accel_ring_bore_half', '15[mm]', 'Accelerator ring electrode bore half-width (30 mm square clear aperture)');
 % !!! Added for the flight-tube end-cap redesign (doc §7.42, simplified
 % per follow-up request): the flight tube (accelflightbox, a cylinder)
 % has TWO ends -- the reflectron side (z=L_flight, separated by the
@@ -1490,6 +1490,10 @@ model.sol.create('sol1');
 model.sol('sol1').label('Solution: ES (reflectron+accelerator)');
 model.sol('sol1').study('std1');
 model.sol('sol1').createAutoSequence('std1');
+% Persist the customized ES solver as the Study's GUI Compute sequence.
+% Without attach(), std1.run creates sol3 after reopening the MPH while
+% sol2 still references the stale sol1 electrostatic field.
+model.sol('sol1').attach('std1');
 % !!! GPU (cuDSS) enabled for the electrostatics linear solve, per
 % explicit request to fold GPU into the large-particle-count test. Per
 % the already-established finding (doc §7.29), this only affects the

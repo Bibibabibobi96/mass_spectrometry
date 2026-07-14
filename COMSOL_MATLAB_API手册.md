@@ -101,6 +101,7 @@ std1.create('stat1','Stationary');
 model.sol.create('sol1');
 model.sol('sol1').study('std1');
 model.sol('sol1').createAutoSequence('std1');
+model.sol('sol1').attach('std1');  % 让 GUI Study Compute 复用该序列，不另生 sol3
 model.sol('sol1').runAll;
 ```
 
@@ -160,10 +161,11 @@ model.sol('sol2').feature('v1').set('notsol', 'sol1');       % 属性名是notso
 model.sol('sol2').attach('std2');                             % 让 GUI Study Compute 实际使用 sol2
 model.sol('sol2').runAll;
 ```
-**GUI 对等性补充**：`.study('std2')`只记录求解器关联，不等同于把该求解器附着到 Desktop
-里的 Study。若缺少`.attach('std2')`，GUI 对`std2`点击 Compute 可能自动生成一个新的默认
-Solver（未求解ES变量回退到零），即使脚本直接运行`sol2.runAll`完全正确。应在 GUI 或等价的
-`model.study('std2').run`路径上验证，并让 Particle 数据集和轨迹图都绑定该已附着的`sol2`。
+**GUI 对等性补充**：`.study('stdN')`只记录求解器关联，不等同于把该求解器附着到 Desktop
+里的 Study。每个自定义序列都要显式`.attach('stdN')`；这不仅适用于`sol2/std2`，也适用于
+`sol1/std1`。若缺少附着，GUI或`model.study('stdN').run`可能自动生成`sol3`之类的新默认
+Solver，原有数据集仍引用旧解，形成“计算成功但显示旧结果”。验收必须通过Study路径运行，
+并断言运行前后`model.sol.tags()`没有新增求解器；需要阻止自动生成时可用`study.runNoGen`。
 
 **排查方法**：怀疑粒子没有真正受力/运动时，直接对比同一坐标下 `es.normE` 在 `dset2`（CPT
 study的解）和 `dset1`（纯静电场解）里的取值：
@@ -398,7 +400,7 @@ t1.feature('fc1').set('linsolver','dDef');
 | **`mesh1.feature.create('ftet1','FreeTet')`（域填充网格特征）** | **【高优先级坑】必须显式加**，不要假设`mesh.create()+size+run()`会自动补域填充网格！否则可能静默生成空网格，`mesh1.run()`不报错，后续求解也"成功"跑完但结果毫无意义（域级`mpheval`查询返回0个点，`mphinterp`对任意坐标都报"Cannot evaluate expression"）。**这是判断"网格其实是空的"的关键信号**：连远离精细几何的普通坐标点插值都失败，先怀疑网格没建好。 |
 | `meshinfo = mphmeshstats(model,'mesh1')` + 检查 `meshinfo.isempty`/`.hasproblems`/`.iscomplete` | 网格建完后必须显式检查这三个字段再往下走，不要只看`mesh1.run`有没有抛异常。 |
 | `model.study.create('std1')` + `.create('stat1','Stationary')` | 稳态study。 |
-| `model.sol.create('sol1')` + `.study('std1')` + `.createAutoSequence('std1')` + `.runAll` | 标准求解四步。 |
+| `model.sol.create('sol1')` + `.study('std1')` + `.createAutoSequence('std1')` + `.attach('std1')` + `.runAll` | 标准求解五步；自定义序列必须附着到Study，保证GUI Compute不另生求解器。 |
 
 ### 7.7 带电粒子追踪 (CPT) 物理场
 | 调用 | 说明 |
