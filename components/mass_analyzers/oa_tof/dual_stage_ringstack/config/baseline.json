@@ -13,6 +13,7 @@
     "L_stage1": 120.0,
     "L_stage2": 86.8328,
     "L_reflectron": 206.8328,
+    "detector_radius": 40.0,
     "bore_r": 250.0,
     "ring_outer_r": 300.0,
     "flight_tube_r": 350.0,
@@ -41,9 +42,14 @@
     "mass_amu": 100.0,
     "particles": 1000,
     "arrival_fraction": "1000/1000",
-    "mean_arrival_time_us": 31.44793,
-    "resolution_R": 17590.9,
+    "mean_arrival_time_us": 31.4478763926,
+    "arrival_time_sigma_ns": 0.897802250264,
+    "resolution_R": 17513.8102,
     "max_stage2_penetration_mm": 51.07
+  },
+  "runtime_contract": {
+    "verified_on": "2026-07-14",
+    "comsol_formal_mph_sha256": "14C11E9AE8C05B1A508239C3C81DC64BAEAA52B39DA9851CAC118880D3B3765D"
   },
   "grid_policy": {
     "baseline": "one-grid-unit-thick full-aperture transparent ideal electrode sheet",

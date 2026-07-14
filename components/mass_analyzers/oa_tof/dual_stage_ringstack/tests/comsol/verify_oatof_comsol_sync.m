@@ -70,6 +70,20 @@ assert(~contains(meshFeatureTags, 'szbracket'), ...
     'Obsolete whole-accelerator submillimetre mesh feature still exists.');
 fprintf(fid, 'MESH_FEATURE_TAGS=%s\n', meshFeatureTags);
 
+detectorFeature = model.component('comp1').geom('geom1').feature('detector');
+detectorRadiusExpr = char(detectorFeature.getString('r'));
+detectorPositionExpr = detectorFeature.getStringArray('pos');
+assert(any(strcmp(detectorRadiusExpr, {'40[mm]', 'detector_radius'})), ...
+    'Detector radius is not the synchronized 40 mm geometry: %s', detectorRadiusExpr);
+assert(any(strcmp(char(detectorPositionExpr(1)), {'48.80', 'detector_x'})), ...
+    'Detector x is not linked/equivalent to +48.80 mm: %s', char(detectorPositionExpr(1)));
+assert(strcmp(char(detectorPositionExpr(3)), 'detector_z-1[mm]'), ...
+    'Detector z no longer follows detector_z: %s', char(detectorPositionExpr(3)));
+fprintf(fid, 'DETECTOR_RADIUS_EXPR=%s\n', detectorRadiusExpr);
+fprintf(fid, 'DETECTOR_POSITION_EXPR=%s,%s,%s\n', ...
+    char(detectorPositionExpr(1)), char(detectorPositionExpr(2)), ...
+    char(detectorPositionExpr(3)));
+
 tSolve = tic;
 model.study('std1').run;
 fprintf(fid, 'STD1_RUN_SECONDS=%.6f\n', toc(tSolve));

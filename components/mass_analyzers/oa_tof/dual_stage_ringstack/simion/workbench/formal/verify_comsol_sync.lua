@@ -13,9 +13,9 @@ local wb = simion.wb
 assert(#wb.instances == 3, 'formal IOB must contain exactly three PA instances')
 
 local expected = {
-  {name='reflectron.pa0', x=0, y=0, z=619.83, az=-90},
-  {name='accelerator.pa0', x=-93.8, y=-45, z=-15, az=0},
-  {name='flight_tube_ground.pa0', x=0, y=0, z=19.83, az=-90},
+  {name='reflectron.pa0', x=0, y=0, z=619.83, az=-90, nx=213, ny=356, nz=1, dx=1},
+  {name='accelerator.pa0', x=-93.8, y=-45, z=-15, az=0, nx=361, ny=361, nz=141, dx=0.25},
+  {name='flight_tube_ground.pa0', x=0, y=0, z=19.83, az=-90, nx=601, ny=355, nz=1, dx=1},
 }
 for index, target in ipairs(expected) do
   local instance = wb.instances[index]
@@ -26,8 +26,13 @@ for index, target in ipairs(expected) do
          math.abs(instance.z-target.z) < 1e-9 and
          math.abs(instance.az-target.az) < 1e-9,
     string.format('instance %d transform mismatch', index))
+  assert(instance.pa.nx==target.nx and instance.pa.ny==target.ny and
+         instance.pa.nz==target.nz and math.abs(instance.pa.dx_mm-target.dx)<1e-12,
+    string.format('instance %d PA dimensions/grid mismatch', index))
   record('INSTANCE_%d=%s,%.9g,%.9g,%.9g,%.9g', index,
     target.name, instance.x, instance.y, instance.z, instance.az)
+  record('INSTANCE_%d_PA=%d,%d,%d,%.9g', index,
+    instance.pa.nx, instance.pa.ny, instance.pa.nz, instance.pa.dx_mm)
 end
 
 local points = {

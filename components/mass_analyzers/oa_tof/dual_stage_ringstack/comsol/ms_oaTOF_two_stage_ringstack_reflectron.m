@@ -584,6 +584,8 @@ p.set('shield_axial_gap', '50[mm]', 'Minimum axial clearance between the flight-
 % T is taken from the CURRENT setup's measured flight time (not
 % re-derived iteratively for a self-consistent fixed point).
 p.set('x_accel_center', '-48.80[mm]', 'Accelerator assembly x-offset (symmetric placement, doc §7.50): -v_x*(T/2), so the ion''s release point and detection point sit symmetrically about the flight tube''s true axis (detector at +48.80mm)');
+p.set('detector_x', '-x_accel_center', 'Detector x-center linked as the mirror image of the accelerator axis; moving the accelerator cannot leave the detector behind');
+p.set('detector_radius', '40[mm]', 'Physical detector radius shared with the SIMION geometry contract');
 % !!! TRIED (doc §7.47) shrinking grid1/grid2/entgrid away from their
 % shield's own bore, matching the accel_ring_gap discipline used for
 % real solid conductors -- but idealized zero-thickness grids MUST span
@@ -859,7 +861,7 @@ geom1.feature('detector').label('Detector (grounded, solid, real physical stop)'
 % somewhat from point to point -- a larger radius gives comfortable
 % tolerance across the scan range without needing to recompute the
 % detector's exact x-position for every d2 value.
-geom1.feature('detector').set('r', '40[mm]');
+geom1.feature('detector').set('r', 'detector_radius');
 geom1.feature('detector').set('h', '1[mm]');
 % !!! Repositioned to the measured landing spot (x=27.45-28.05mm at
 % z~22mm, measured directly after the accelflightbox/reflvac gap fix --
@@ -933,7 +935,7 @@ geom1.feature('detector').set('h', '1[mm]');
 % (x=0) -- rather than the ion starting exactly on-axis and drifting
 % one-sided to an off-axis detector as before. Detector radius kept at
 % 40mm for tolerance margin.
-geom1.feature('detector').set('pos', {'48.80' '0' 'detector_z-1[mm]'});
+geom1.feature('detector').set('pos', {'detector_x' '0' 'detector_z-1[mm]'});
 
 %% Vacuum envelope: ONE continuous cylinder spanning accel+drift, plus
 % the ring-stack's own envelope (auto Form Union merges everything, same

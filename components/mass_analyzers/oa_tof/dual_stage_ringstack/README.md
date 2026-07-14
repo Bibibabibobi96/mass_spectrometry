@@ -15,6 +15,10 @@
 - MATLAB R2025b LiveLink静态/全链路测试：
   [`tests/comsol/verify_oatof_comsol_sync.m`](tests/comsol/verify_oatof_comsol_sync.m)、
   [`tests/comsol/test_oatof_r2025b_full_chain.m`](tests/comsol/test_oatof_r2025b_full_chain.m)
+- 跨求解器几何门禁：
+  [`tests/cross_solver/verify_geometry_contract.ps1`](tests/cross_solver/verify_geometry_contract.ps1)。
+  COMSOL/SIMION联动统计前必须先通过；它检查共享基线、参数派生、正式Lua哈希、IOB实例
+  位置以及PA尺寸/网格。
 - 路径解析契约：[`oatof_paths.m`](oatof_paths.m)
 
 当前唯一正式COMSOL基线（2026-07-14，MATLAB R2025b/COMSOL 6.4）：N=1000、1000/1000到达，
