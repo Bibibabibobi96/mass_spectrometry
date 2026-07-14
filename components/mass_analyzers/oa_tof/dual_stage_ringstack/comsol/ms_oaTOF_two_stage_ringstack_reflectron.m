@@ -1372,28 +1372,31 @@ sz1.selection.named('geom1_relvol_dom');
 sz1.set('custom', 'on');
 sz1.set('hmaxactive', true);
 sz1.set('hmax', '0.1[mm]');
-% Fine mesh on the gridA/gridB bracket region (z=0 to 3mm): the field
-% here is now a weak gradient sandwiched between two much steeper
-% transitions (repeller->gridA, gridB->accelmid) all within a few mm --
-% needs finer resolution than the general hauto=6 default to be resolved
-% accurately.
-% !!! Widened from the old [0,3]mm (gridA/gridB bracket only) to [0,6]mm
-% (the WHOLE new accelerator: repeller-grid1 bracket AND grid1-grid2
-% gap), since the grid1-grid2 segment now has a steep field
-% (~1477 V/mm) needing fine mesh resolution too.
+% GUI-visible whole-accelerator selection for diagnostics and migration
+% regression checks.  All bounds are expressions tied to the accelerator
+% parameters: the old hardcoded x=[-50,50] box stopped following the
+% assembly when x_accel_center moved to -48.8mm and silently selected only
+% the release-volume domain.  Do not attach a domain-wide submillimetre
+% mesh Size to this selection: a 2026-07-14 R2025b test showed that 1mm
+% refinement over all six accelerator domains did not improve the already
+% <0.03% bracket-field deviation, while 0.3mm would be unnecessarily
+% expensive.  The source volume remains explicitly refined to 0.1mm by
+% sz1 through geom1_relvol_dom, which moves with the geometry by design.
 comp1.selection.create('selbracket', 'Box');
-comp1.selection('selbracket').label('Accelerator region (repeller-grid1-grid2, for mesh refinement)');
-comp1.selection('selbracket').set('xmin', -50); comp1.selection('selbracket').set('xmax', 50);
-comp1.selection('selbracket').set('ymin', -50); comp1.selection('selbracket').set('ymax', 50);
-comp1.selection('selbracket').set('zmin', 0); comp1.selection('selbracket').set('zmax', 20);
+comp1.selection('selbracket').label('Whole accelerator region (parameter-linked, diagnostics)');
+comp1.selection('selbracket').set('xmin', 'x_accel_center-accel_shield_half');
+comp1.selection('selbracket').set('xmax', 'x_accel_center+accel_shield_half');
+comp1.selection('selbracket').set('ymin', '-accel_shield_half');
+comp1.selection('selbracket').set('ymax', 'accel_shield_half');
+comp1.selection('selbracket').set('zmin', '0');
+comp1.selection('selbracket').set('zmax', 'L_accel');
 comp1.selection('selbracket').set('condition', 'inside');
-szbracket = mesh1.feature.create('szbracket', 'Size');
-szbracket.label('Fine mesh on accelerator region (repeller-grid1-grid2)');
-szbracket.selection.geom('geom1', 3);
-szbracket.selection.named('selbracket');
-szbracket.set('custom', 'on');
-szbracket.set('hmaxactive', true);
-szbracket.set('hmax', '0.3[mm]');
+bracketDomainIds = comp1.selection('selbracket').entities(3);
+assert(numel(bracketDomainIds) >= 6, ...
+    'Parameter-linked accelerator selection resolved to only %d domains.', ...
+    numel(bracketDomainIds));
+fprintf('Parameter-linked accelerator selection: %d domains.\n', ...
+    numel(bracketDomainIds));
 comp1.selection.create('selreflregion', 'Cylinder');
 comp1.selection('selreflregion').label('Ring-stack region (geometric, for mesh refinement)');
 % !!! Changed from a hardcoded 210 (already smaller than ring_outer_r=

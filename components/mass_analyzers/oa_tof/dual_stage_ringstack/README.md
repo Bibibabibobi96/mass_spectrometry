@@ -17,6 +17,10 @@
   [`tests/comsol/test_oatof_r2025b_full_chain.m`](tests/comsol/test_oatof_r2025b_full_chain.m)
 - 路径解析契约：[`oatof_paths.m`](oatof_paths.m)
 
+当前唯一正式COMSOL基线（2026-07-14，MATLAB R2025b/COMSOL 6.4）：N=1000、1000/1000到达，
+平均TOF 31.4478763926 µs、σ=0.897802250264 ns、`R=t/(2σ)=17513.8102`。详细条件和历史值
+边界见项目主文档§6.26；不得用旧几何的18741.7或一级5环的17595.3替代当前基线。
+
 修改正式脚本前必须先读项目主文档。`oatof_paths.m`从本文件夹位置推导工作区，不得在
 MATLAB 正式入口中重新加入用户目录硬编码。
 

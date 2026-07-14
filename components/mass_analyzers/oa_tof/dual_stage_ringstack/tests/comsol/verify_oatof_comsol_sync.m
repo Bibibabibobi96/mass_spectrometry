@@ -54,6 +54,22 @@ fprintf(fid, 'SOLUTION_TAGS=%s\n', joinJavaStrings(model.sol.tags));
 fprintf(fid, 'DATASET_TAGS=%s\n', joinJavaStrings(model.result.dataset.tags));
 fprintf(fid, 'PLOTGROUP_TAGS=%s\n', joinJavaStrings(model.result.tags));
 
+acceleratorSelection = model.component('comp1').selection('selbracket');
+assert(strcmp(char(acceleratorSelection.getString('xmin')), ...
+    'x_accel_center-accel_shield_half'), ...
+    'selbracket xmin is not linked to x_accel_center.');
+assert(strcmp(char(acceleratorSelection.getString('xmax')), ...
+    'x_accel_center+accel_shield_half'), ...
+    'selbracket xmax is not linked to x_accel_center.');
+acceleratorDomains = acceleratorSelection.entities(3);
+assert(numel(acceleratorDomains) >= 6, ...
+    'selbracket resolved to only %d domains.', numel(acceleratorDomains));
+fprintf(fid, 'SELBRACKET_DOMAIN_COUNT=%d\n', numel(acceleratorDomains));
+meshFeatureTags = joinJavaStrings(model.component('comp1').mesh('mesh1').feature.tags);
+assert(~contains(meshFeatureTags, 'szbracket'), ...
+    'Obsolete whole-accelerator submillimetre mesh feature still exists.');
+fprintf(fid, 'MESH_FEATURE_TAGS=%s\n', meshFeatureTags);
+
 tSolve = tic;
 model.study('std1').run;
 fprintf(fid, 'STD1_RUN_SECONDS=%.6f\n', toc(tSolve));
