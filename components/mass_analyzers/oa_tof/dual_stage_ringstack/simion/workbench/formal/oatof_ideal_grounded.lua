@@ -19,33 +19,33 @@ adjustable accelerator_axis_y_mm=0
 adjustable detector_mirror_offset_x_mm=0
 adjustable detector_mirror_offset_y_mm=0
 adjustable detector_radius_mm=40
+adjustable detector_thickness_mm=1
 adjustable diagnostic_return_plane_z_mm=20.5
 adjustable diagnostic_max_tof_us=35
 adjustable trajectory_log_enable=1
 adjustable trajectory_log_stride=1000
 adjustable accelerator_instance_z_mm=-15
-local TP=simion.import 'testplanelib.lua'
-local detector_plane
 local detector_x_mm,detector_y_mm,detector_z_mm
 local accelerator_pa_override=os.getenv('OATOF_ACCELERATOR_PA_OVERRIDE')
 local accelerator_pa_override_loaded=false
 local function configure_linked_geometry()
  local ai=simion.wb.instances[2]
+ local di=simion.wb.instances[4]
  local half_x=(ai.pa.nx-1)*ai.pa.dx_mm*ai.scale/2
  local half_y=(ai.pa.ny-1)*ai.pa.dy_mm*ai.scale/2
  ai.x,ai.y,ai.z=accelerator_axis_x_mm-half_x,accelerator_axis_y_mm-half_y,accelerator_instance_z_mm
  detector_x_mm=-accelerator_axis_x_mm+detector_mirror_offset_x_mm
  detector_y_mm=-accelerator_axis_y_mm+detector_mirror_offset_y_mm
  detector_z_mm=accelerator_grid2_z_mm
- detector_plane=TP(detector_x_mm,detector_y_mm,detector_z_mm,0,0,1,function()
-  if ion_vz_mm<0 then
-   local dx,dy=ion_px_mm-detector_x_mm,ion_py_mm-detector_y_mm
-   print(string.format('TRACE: detector_plane t=%.12g x=%.12g y=%.12g r=%.12g',ion_time_of_flight,ion_px_mm,ion_py_mm,math.sqrt(dx*dx+dy*dy)))
-   if dx*dx+dy*dy<=detector_radius_mm*detector_radius_mm then ion_splat=1; print('TRACE: detector_hit') end
-  end
- end)
- detector_plane.draw(1)
- print(string.format('TRACE: linked_geometry accelerator_axis=(%.12g,%.12g) accelerator_instance=(%.12g,%.12g,%.12g) accelerator_cell=(%.12g,%.12g,%.12g) detector=(%.12g,%.12g,%.12g) radius=%.12g',accelerator_axis_x_mm,accelerator_axis_y_mm,ai.x,ai.y,ai.z,ai.pa.dx_mm,ai.pa.dy_mm,ai.pa.dz_mm,detector_x_mm,detector_y_mm,detector_z_mm,detector_radius_mm))
+ local detector_half_x=(di.pa.nx-1)*di.pa.dx_mm*di.scale/2
+ local detector_half_y=(di.pa.ny-1)*di.pa.dy_mm*di.scale/2
+ local detector_span_z=(di.pa.nz-1)*di.pa.dz_mm*di.scale
+ local detector_margin_z=(detector_span_z-detector_thickness_mm)/2
+ assert(detector_margin_z>=0, 'detector PA is thinner than the physical detector')
+ di.x=detector_x_mm-detector_half_x
+ di.y=detector_y_mm-detector_half_y
+ di.z=detector_z_mm-detector_thickness_mm-detector_margin_z
+ print(string.format('TRACE: linked_geometry accelerator_axis=(%.12g,%.12g) accelerator_instance=(%.12g,%.12g,%.12g) accelerator_cell=(%.12g,%.12g,%.12g) detector=(%.12g,%.12g,%.12g) radius=%.12g thickness=%.12g detector_instance=(%.12g,%.12g,%.12g)',accelerator_axis_x_mm,accelerator_axis_y_mm,ai.x,ai.y,ai.z,ai.pa.dx_mm,ai.pa.dy_mm,ai.pa.dz_mm,detector_x_mm,detector_y_mm,detector_z_mm,detector_radius_mm,detector_thickness_mm,di.x,di.y,di.z))
 end
 function segment.initialize_run()
  local ai=simion.wb.instances[2]
@@ -55,22 +55,29 @@ function segment.initialize_run()
   accelerator_pa_override_loaded=true
   print(string.format('TRACE: accelerator_pa_override=%s dimensions=%dx%dx%d cell=(%.12g,%.12g,%.12g)',accelerator_pa_override,ai.pa.nx,ai.pa.ny,ai.pa.nz,ai.pa.dx_mm,ai.pa.dy_mm,ai.pa.dz_mm))
  end
- local r,a,t=simion.wb.instances[1].pa,ai.pa,simion.wb.instances[3].pa
+ assert(#simion.wb.instances==4, 'formal workbench must contain four PA instances')
+ local r,a,t,d=simion.wb.instances[1].pa,ai.pa,simion.wb.instances[3].pa,simion.wb.instances[4].pa
  configure_linked_geometry()
  if accelerator_fast_adjust_enable~=0 then
   a:fast_adjust{[1]=V_repeller,[2]=V_grid1,[3]=V_grid1*5/6,[4]=V_grid1*4/6,[5]=V_grid1/2,[6]=V_grid1*2/6,[7]=V_grid1/6,[8]=0,[9]=0}
  end
  r:fast_adjust{[1]=0,[2]=V_mid/11,[3]=2*V_mid/11,[4]=3*V_mid/11,[5]=4*V_mid/11,[6]=5*V_mid/11,[7]=6*V_mid/11,[8]=7*V_mid/11,[9]=8*V_mid/11,[10]=9*V_mid/11,[11]=10*V_mid/11,[12]=V_mid,[13]=V_mid+(V_backplate-V_mid)/6,[14]=V_mid+2*(V_backplate-V_mid)/6,[15]=V_mid+3*(V_backplate-V_mid)/6,[16]=V_mid+4*(V_backplate-V_mid)/6,[17]=V_mid+5*(V_backplate-V_mid)/6,[18]=V_backplate,[19]=0}
  t:fast_adjust{[1]=0}
+ d:fast_adjust{[1]=0}
  print(string.format('TRACE: field_mode accelerator_fast_adjust=%d ideal_accel=%d ideal_stage1=%d ideal_stage2=%d',accelerator_fast_adjust_enable,ideal_accel_enable,ideal_refl_stage1_enable,ideal_refl_stage2_enable))
 end
 local function grid_planes()
  return {
-  {name='grid1',z=accelerator_grid1_z_mm},
-  {name='grid2',z=accelerator_grid2_z_mm},
-  {name='entgrid',z=reflectron_entgrid_z_mm},
-  {name='midgrid',z=reflectron_midgrid_z_mm}
+  {name='grid1',z=accelerator_grid1_z_mm,shape='square',cx=accelerator_axis_x_mm,cy=accelerator_axis_y_mm,half=33},
+  {name='grid2',z=accelerator_grid2_z_mm,shape='square',cx=accelerator_axis_x_mm,cy=accelerator_axis_y_mm,half=35},
+  {name='entgrid',z=reflectron_entgrid_z_mm,shape='circle',cx=0,cy=0,radius=350},
+  {name='midgrid',z=reflectron_midgrid_z_mm,shape='circle',cx=0,cy=0,radius=300}
  }
+end
+local function inside_grid(g,x,y)
+ local dx,dy=x-g.cx,y-g.cy
+ if g.shape=='square' then return math.abs(dx)<=g.half and math.abs(dy)<=g.half end
+ return dx*dx+dy*dy<=g.radius*g.radius
 end
 function segment.efield_adjust()
  local z,E,axis=ion_pz_mm,nil,nil
@@ -95,14 +102,17 @@ function segment.efield_adjust()
   if axis=='x' then ion_dvoltsx_gu=-E*pi.pa.dx_mm*pi.scale else ion_dvoltsz_gu=-E*pi.pa.dz_mm*pi.scale end
  end
 end
-local last_z,jumped={},{}
+local last_z,last_x,last_y,last_t,jumped={},{},{},{},{}
 local diagnostic_plane_hit={}
 local detector_crossed={}
+local timed_out={}
 local grid_jump_count={}
 local max_z={}
 local step_count={}
 function segment.initialize()
- last_z[ion_number]=ion_pz_mm; max_z[ion_number]=ion_pz_mm; step_count[ion_number]=0; diagnostic_plane_hit[ion_number]=false; detector_crossed[ion_number]=false; grid_jump_count[ion_number]={}
+ local n=ion_number
+ last_z[n],last_x[n],last_y[n],last_t[n]=ion_pz_mm,ion_px_mm,ion_py_mm,ion_time_of_flight
+ max_z[n]=ion_pz_mm; step_count[n]=0; diagnostic_plane_hit[n]=false; detector_crossed[n]=false; timed_out[n]=false; grid_jump_count[n]={}
  if trajectory_log_enable~=0 then print('TRACE: ion,t_us,x_mm,y_mm,z_mm,vx_mm_us,vy_mm_us,vz_mm_us,instance,event') end
 end
 function segment.other_actions()
@@ -117,42 +127,34 @@ function segment.other_actions()
   diagnostic_plane_hit[n]=true
   print(string.format('TRACE: diagnostic_return_plane ion=%d t=%.12g x=%.12g y=%.12g z=%.12g vz=%.12g zmax=%.12g',n,ion_time_of_flight,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vz_mm,max_z[n]))
  end
- if not detector_crossed[n] and zp>detector_z_mm and z<=detector_z_mm and vz<0 then
-  detector_crossed[n]=true
-  local dt=(detector_z_mm-z)/vz
-  local xc=ion_px_mm+ion_vx_mm*dt
-  local yc=ion_py_mm+ion_vy_mm*dt
-  local dx,dy=xc-detector_x_mm,yc-detector_y_mm
-  print(string.format('TRACE: detector_crossing ion=%d t=%.12g x=%.12g y=%.12g z=%.12g r=%.12g zmax=%.12g',n,ion_time_of_flight+dt,xc,yc,detector_z_mm,math.sqrt(dx*dx+dy*dy),max_z[n]))
-  if dx*dx+dy*dy<=detector_radius_mm*detector_radius_mm then ion_splat=1; print(string.format('TRACE: detector_hit_interpolated ion=%d',n)) end
- end
  for _,g in ipairs(grid_planes()) do
   local k=tostring(n)..':'..g.name; local d=vz>=0 and 1 or -1
   local pre,post=g.z-d*eps,g.z+d*eps
   if jumped[k] and math.abs(z-g.z)>4*eps then jumped[k]=nil end
-  if not jumped[k] and ((d>0 and zp<pre and z>=pre) or (d<0 and zp>pre and z<=pre)) then
+  if inside_grid(g,ion_px_mm,ion_py_mm) and not jumped[k] and ((d>0 and zp<pre and z>=pre) or (d<0 and zp>pre and z<=pre)) then
    if math.abs(vz)<1e-12 then error('grid jump with zero axial velocity') end
    ion_time_of_flight=ion_time_of_flight+math.abs(post-z)/math.abs(vz)
-   if g.name=='grid2' and d<0 and not detector_crossed[n] and post<detector_z_mm and detector_z_mm<=pre then
-    detector_crossed[n]=true
-    local dt_to_post=(post-detector_z_mm)/vz
-    local xc=ion_px_mm-ion_vx_mm*dt_to_post
-    local yc=ion_py_mm-ion_vy_mm*dt_to_post
-    local dx,dy=xc-detector_x_mm,yc-detector_y_mm
-    print(string.format('TRACE: detector_crossing ion=%d t=%.12g x=%.12g y=%.12g z=%.12g r=%.12g zmax=%.12g',n,ion_time_of_flight-dt_to_post,xc,yc,detector_z_mm,math.sqrt(dx*dx+dy*dy),max_z[n]))
-    if dx*dx+dy*dy<=detector_radius_mm*detector_radius_mm then
-     ion_splat=1
-     local gc=grid_jump_count[n] or {}
-     print(string.format('TRACE: detector_hit_interpolated ion=%d jumps grid1=%d grid2=%d entgrid=%d midgrid=%d',n,gc.grid1 or 0,gc.grid2 or 0,gc.entgrid or 0,gc.midgrid or 0))
-    end
-   end
    grid_jump_count[n]=grid_jump_count[n] or {}
    grid_jump_count[n][g.name]=(grid_jump_count[n][g.name] or 0)+1
    ion_pz_mm=post; jumped[k]=true; break
   end
  end
- last_z[n]=ion_pz_mm
- detector_plane.other_actions()
- if ion_time_of_flight>=diagnostic_max_tof_us then ion_splat=1; print(string.format('TRACE: timeout ion=%d zmax=%.12g',n,max_z[n])) end
+ last_z[n],last_x[n],last_y[n],last_t[n]=ion_pz_mm,ion_px_mm,ion_py_mm,ion_time_of_flight
+ if ion_time_of_flight>=diagnostic_max_tof_us then timed_out[n]=true; ion_splat=1; print(string.format('TRACE: timeout ion=%d zmax=%.12g',n,max_z[n])) end
 end
-function segment.tstep_adjust() detector_plane.tstep_adjust() end
+function segment.terminate()
+ local n=ion_number
+ if ion_instance~=4 or timed_out[n] or detector_crossed[n] then return end
+ detector_crossed[n]=true
+ local dt=0
+ if math.abs(ion_vz_mm)>1e-12 then dt=(detector_z_mm-ion_pz_mm)/ion_vz_mm end
+ local tc=ion_time_of_flight+dt
+ local xc=ion_px_mm+ion_vx_mm*dt
+ local yc=ion_py_mm+ion_vy_mm*dt
+ local dx,dy=xc-detector_x_mm,yc-detector_y_mm
+ local radius=math.sqrt(dx*dx+dy*dy)
+ local gc=grid_jump_count[n] or {}
+ print(string.format('TRACE: detector_crossing ion=%d t=%.12g x=%.12g y=%.12g z=%.12g r=%.12g zmax=%.12g',n,tc,xc,yc,detector_z_mm,radius,max_z[n] or ion_pz_mm))
+ assert(radius<=detector_radius_mm+simion.wb.instances[4].pa.dx_mm, 'detector PA splat lies outside the physical disk')
+ print(string.format('TRACE: detector_hit_entity ion=%d instance=4 jumps grid1=%d grid2=%d entgrid=%d midgrid=%d',n,gc.grid1 or 0,gc.grid2 or 0,gc.entgrid or 0,gc.midgrid or 0))
+end

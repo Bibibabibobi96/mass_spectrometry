@@ -14,6 +14,7 @@
     "L_stage2": 86.8328,
     "L_reflectron": 206.8328,
     "detector_radius": 40.0,
+    "detector_thickness": 1.0,
     "bore_r": 250.0,
     "ring_outer_r": 300.0,
     "flight_tube_r": 350.0,

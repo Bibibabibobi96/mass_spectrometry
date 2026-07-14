@@ -1,14 +1,22 @@
-simion.command('"template_bender\\bend.iob"')
+local source=debug.getinfo(1,'S').source
+local script_path=source:sub(1,1)=='@' and source:sub(2) or source
+local script_dir=script_path:match('^(.*[\\/])') or ''
+local template = os.getenv('OATOF_FOUR_INSTANCE_TEMPLATE_IOB') or
+  script_dir..[[template_four_instance\mag_halbach_cylinder_2dp.iob]]
+local output = os.getenv('OATOF_FORMAL_IOB_OUTPUT') or
+  script_dir..[[formal/oatof_ideal_grounded.iob]]
+local f=os.getenv('OATOF_FORMAL_PA_DIR') or script_dir..[[formal/]]
+if not f:match('[\\/]$') then f=f..'/' end
+simion.command('"' .. template .. '"')
 local wb=simion.wb
-local f=[[formal/]]
-local r,a,t=wb.instances[1],wb.instances[2],wb.instances[3]
-r.pa:fast_adjust{[1]=0,[2]=145.454545,[3]=290.909091,[4]=436.363636,[5]=581.818182,[6]=727.272727,[7]=872.727273,[8]=1018.181818,[9]=1163.636364,[10]=1309.090909,[11]=1454.545455,[12]=1600,[13]=1733.333333,[14]=1866.666667,[15]=2000,[16]=2133.333333,[17]=2266.666667,[18]=2400,[19]=0}
-a.pa:fast_adjust{[1]=2240,[2]=1760,[3]=1466.666667,[4]=1173.333333,[5]=880,[6]=586.666667,[7]=293.333333,[8]=0,[9]=0}
-t.pa:fast_adjust{[1]=0}
-r.pa.filename=f..'reflectron.pa0'
-a.pa.filename=f..'accelerator.pa0'
-t.pa.filename=f..'flight_tube_ground.pa0'
+assert(#wb.instances == 4, 'formal template must contain exactly four PA instances')
+local r,a,t,d=wb.instances[1],wb.instances[2],wb.instances[3],wb.instances[4]
+r.pa:load(f..'reflectron.pa0'); r:_debug_update_size()
+a.pa:load(f..'accelerator.pa0'); a:_debug_update_size()
+t.pa:load(f..'flight_tube_ground.pa0'); t:_debug_update_size()
+d.pa:load(f..'detector_ground.pa0'); d:_debug_update_size()
 r.x,r.y,r.z=0,0,619.83; r.az,r.el,r.rt,r.scale=-90,0,0,1
 a.x,a.y,a.z=-93.8,-45,-15; a.az,a.el,a.rt,a.scale=0,0,0,1
 t.x,t.y,t.z=0,0,19.83; t.az,t.el,t.rt,t.scale=-90,0,0,1
-wb:save(f..'oatof_ideal_grounded.iob')
+d.x,d.y,d.z=7.8,-41,17.83; d.az,d.el,d.rt,d.scale=0,0,0,1
+wb:save(output)

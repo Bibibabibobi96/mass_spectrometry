@@ -8,14 +8,17 @@ local function record(fmt, ...)
   print(line)
 end
 
-simion.command('"oatof_ideal_grounded.iob"')
+local iob_path = os.getenv('OATOF_FORMAL_IOB_PATH') or
+  [[oatof_ideal_grounded.iob]]
+simion.command('"' .. iob_path .. '"')
 local wb = simion.wb
-assert(#wb.instances == 3, 'formal IOB must contain exactly three PA instances')
+assert(#wb.instances == 4, 'formal IOB must contain exactly four PA instances')
 
 local expected = {
   {name='reflectron.pa0', x=0, y=0, z=619.83, az=-90, nx=213, ny=356, nz=1, dx=1},
   {name='accelerator.pa0', x=-93.8, y=-45, z=-15, az=0, nx=361, ny=361, nz=141, dx=0.25},
   {name='flight_tube_ground.pa0', x=0, y=0, z=19.83, az=-90, nx=601, ny=355, nz=1, dx=1},
+  {name='detector_ground.pa0', x=7.8, y=-41, z=17.83, az=0, nx=329, ny=329, nz=13, dx=0.25},
 }
 for index, target in ipairs(expected) do
   local instance = wb.instances[index]

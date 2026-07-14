@@ -1,3 +1,6 @@
+-- HISTORICAL ONLY: legacy three-PA/virtual-detector validation script.
+-- Do not use as the formal GUI model. Use oatof_ideal_grounded.iob and its
+-- same-name oatof_ideal_grounded.lua, which contain the physical detector PA.
 simion.workbench_program()
 adjustable V_repeller=2240
 adjustable V_grid1=1760

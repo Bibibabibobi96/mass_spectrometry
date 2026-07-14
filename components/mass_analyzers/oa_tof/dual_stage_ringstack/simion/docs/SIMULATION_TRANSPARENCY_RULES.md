@@ -8,7 +8,7 @@
 
 ## SIMION 正式交付要求
 
-1. 正式 Workbench 使用有物理含义的 PA 文件名和实例标签：`accelerator`、`flight_tube_ground`、`reflectron`；不得保留示例模板名（如`bend_x`、`bend_y`）。
+1. 正式 Workbench 使用有物理含义的 PA 文件名和实例标签：`accelerator`、`flight_tube_ground`、`reflectron`、`detector_ground`；不得保留示例模板名（如`bend_x`、`bend_y`）。检测器必须是GUI可见的实体PA，禁止以Lua测试面代替实体并直接终止粒子。
 2. 每个正式 PA 的`PA#`、`PA0`和必要的电极解`PA1...`都位于项目工作区，并能从 GUI 的 PAs 面板查看与 Fast Adjust 修改。
 3. 所有电极电压保存于正式 PA0/PA 解及 GUI 可见的 Fast Adjust 表；不得把`--restore-potentials 0`、临时 Lua 赋值或未保存的内存电位作为正式状态。
 4. Workbench 的实例位置、旋转、比例、优先级、ION/FLY2、REC、轨迹质量和用户程序都必须保存在正式 IOB 或其同名关联文件中。
@@ -18,4 +18,4 @@
 
 ## 当前状态处理
 
-现有`template_bender/`、`template_bngrid/`及其 IOB 仅用于 API 调试，不能视为正式模型，也不能作为 GUI 交付物。后续将从这些调试产物中重建命名清晰的正式 Workbench；在完成前，不报告其飞行时间或分辨率为 oa-TOF 正式结果。
+现有`template_bender/`、`template_bngrid/`及其 IOB 仅用于 API 调试，不能视为正式模型，也不能作为 GUI 交付物。正式 Workbench 已重建为 `formal/oatof_ideal_grounded.iob`，包含 `reflectron`、`accelerator`、`flight_tube_ground`、`detector_ground` 四个实体 PA；正式飞行时间与分辨率只允许由该模型及其同名 Lua/FLY2 报告。

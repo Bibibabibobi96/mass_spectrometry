@@ -1,3 +1,5 @@
+-- HISTORICAL DEBUG BUILDER ONLY: this creates the obsolete three-instance model.
+-- The formal four-instance GUI model is built by build_formal_iob.lua.
 -- Three-instance oa-TOF workbench: accelerator, reflectron, grounded tube.
 -- The bender filenames are private PA copies in template_bender/.
 simion.command('"template_bender\\bend.iob"')

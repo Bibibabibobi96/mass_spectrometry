@@ -48,6 +48,12 @@ SIMION程序位置：`C:\Program Files\SIMION-2020\simion.exe`（SIMION 8.2.0.11
 - `02_reflectron/oatof_reflectron_ideal_10_5.pa0`：2D cylindrical、1 mm/gu、19个电极，已按COMSOL正式电位 fast-adjust。
 - 正式加速器GUI基线为3D Cartesian、`361×361×141`、0.25 mm/gu、9个电极；与COMSOL
   几何门禁、IOB持久化原点和7个场点保持联动。
+- 正式Workbench现为四个可见PA实例：reflectron、accelerator、flight-tube和接地实体
+  detector。detector为`329×329×13`、0.25 mm/gu，圆盘半径40 mm、厚1 mm，实体范围
+  `z=18.83…19.83 mm`；命中只由第4实例电极splat触发，不再用Lua虚拟平面终止。
+- 同名`oatof_ideal_grounded.fly2`在GUI中显式给出1000个100 amu、+1离子，释放体
+  `x=-49.3…-48.3 mm`、`y=-0.5…0.5 mm`、`z=1…2 mm`，能量`N(5,1²) eV`且截断负值，
+  固定种子20260713。跨求解器正式统计仍用归档ION逐粒子表，确保样本严格固定。
 - 数值闭合诊断使用同一GEM，裁掉78 mm接地屏蔽外部真空且只把z加密至0.125 mm，得到
   `313×313×281`、`dx/dy/dz=0.25/0.25/0.125 mm`的PA。N=1000为1000/1000命中，
   `sigma=0.834246 ns`、`R=t/(2sigma)=18849.4`，与COMSOL的0.897802 ns、17513.8分别
