@@ -19,6 +19,17 @@
   审计/峰形分析时才显式设为1。
 - 当前候选尚待COMSOL 524 amu闭合，不能单独提升为正式项目模型。
 
+稳定实现入口以`config/simion_stable_entry.json`冻结：0.05mm是日常候选，0.025mm仅作轴向
+网格收敛参考。该清单只记录外部工作区资产的路径、大小和SHA-256，不重复维护物理参数；物理
+参数仍以`config/baseline.json`为唯一来源。每次移动、重建或打包SIMION资产后运行：
+
+```powershell
+.\projects\oa_tof\tests\simion\verify_stable_entry.ps1
+```
+
+脚本先逐项验证IOB、CON、Program、Fly2和四个PA的大小/哈希，再实际加载每个IOB并检查4实例与
+T.Qual=8。任一项改变都必须重新验证并有意识地更新清单，禁止只替换PA或手工改IOB后继续称为稳定入口。
+
 ## GUI对等原则
 
 正式IOB必须让用户直接看到并修改reflectron、accelerator、flight-tube和detector四个PA实例、

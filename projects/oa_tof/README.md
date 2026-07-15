@@ -36,6 +36,8 @@
 ## 权威入口
 
 - 统一机器契约：[`config/baseline.json`](config/baseline.json)
+- SIMION候选实现冻结清单：[`config/simion_stable_entry.json`](config/simion_stable_entry.json)。它只冻结
+  IOB/PA/Program/Fly2的实现资产与哈希，不定义或替代统一物理baseline。
 - 正式COMSOL生产脚本：
   [`comsol/ms_oaTOF_two_stage_ringstack_reflectron.m`](comsol/ms_oaTOF_two_stage_ringstack_reflectron.m)
 - SIMION正式文本入口：
