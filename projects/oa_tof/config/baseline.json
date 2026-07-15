@@ -1,0 +1,86 @@
+{
+  "source": "COMSOL Final model, 2026-07-12, formal N=1000 result",
+  "coordinate_convention": {
+    "units": "mm",
+    "reflectron_axis": [0, 0],
+    "accelerator_axis_x": -48.8,
+    "detector_x": 48.8,
+    "z_axis": "repeller-to-reflectron direction"
+  },
+  "geometry_mm": {
+    "L_accel": 19.83,
+    "L_flight": 619.83,
+    "L_stage1": 120.0,
+    "L_stage2": 86.8328,
+    "L_reflectron": 206.8328,
+    "detector_radius": 40.0,
+    "detector_thickness": 1.0,
+    "bore_r": 250.0,
+    "ring_outer_r": 300.0,
+    "flight_tube_r": 350.0,
+    "ring_thickness": 5.0,
+    "shield_axial_gap": 50.0
+  },
+  "electrodes_V": {
+    "repeller": 2240.0,
+    "grid1": 1760.0,
+    "grid2": 0.0,
+    "entgrid": 0.0,
+    "midgrid": 1600.0,
+    "backplate": 2400.0,
+    "shield": 0.0
+  },
+  "rings": {
+    "accelerator_count": 5,
+    "stage1_count": 10,
+    "stage2_count": 5,
+    "stage1_voltage_rule": "V_mid*k/(N1+1), k=1..N1",
+    "stage2_voltage_rule": "V_mid+(V_mirror-V_mid)*k/(N2+1), k=1..N2",
+    "stage1_center_rule_mm": "L_flight+k*L_stage1/(N1+1), k=1..N1",
+    "stage2_center_rule_mm": "L_flight+L_stage1+k*L_stage2/(N2+1), k=1..N2"
+  },
+  "validation_target": {
+    "mass_amu": 524.0,
+    "particles": 1000,
+    "initial_energy_mean_ev": 5.0,
+    "initial_energy_sigma_ev": 0.4,
+    "status": "pending_524amu_recompute",
+    "arrival_fraction": null,
+    "mean_arrival_time_us": null,
+    "arrival_time_sigma_ns": null,
+    "arrival_time_fwhm_ns": null,
+    "resolution_definition": "R=m/delta_m, delta_m=FWHM; TOF equivalent R=mean_t/(2*FWHM_t), FWHM_t=2*sqrt(2*ln(2))*sigma_t",
+    "resolution_R_fwhm": null,
+    "max_stage2_penetration_mm": null,
+    "historical_100amu_reference": {
+      "arrival_fraction": "1000/1000",
+      "mean_arrival_time_us": 31.4478763926,
+      "arrival_time_sigma_ns": 0.897802250264,
+      "arrival_time_fwhm_ns": 2.1141627354,
+      "resolution_R_fwhm": 7437.4304,
+      "max_stage2_penetration_mm": 51.07
+    }
+  },
+  "runtime_contract": {
+    "verified_on": "2026-07-14",
+    "standard_mass_updated_on": "2026-07-15",
+    "comsol_formal_mph_sha256": "14C11E9AE8C05B1A508239C3C81DC64BAEAA52B39DA9851CAC118880D3B3765D"
+  },
+  "simion_detector_marker": {
+    "role": "GUI-visible numerical absorber marking the detector active plane; not the mechanical detector body",
+    "active_plane_z_mm": 19.83,
+    "active_radius_mm": 40.0,
+    "absorber_thickness_mm": 0.05,
+    "front_margin_z_mm": 0.2,
+    "back_margin_z_mm": 0.05,
+    "cell_xy_mm": 0.5,
+    "cell_z_mm": 0.01,
+    "near_plane_tstep_default_enabled": false,
+    "near_plane_max_step_z_mm": 0.002
+  },
+  "grid_policy": {
+    "baseline": "one-grid-unit-thick full-aperture transparent ideal electrode sheet",
+    "nonideal_grid": "separate high-resolution local wire-cell model plus transmission/kick map",
+    "forbidden_baseline_approximation": "solid plate with a large aperture"
+  }
+}

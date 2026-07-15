@@ -1,0 +1,71 @@
+; oa-TOF 3D accelerator potential array (SIMION 8.2 / 2020).
+; Coordinates are local to the accelerator: z=0 is the repeller/grid-1 gap
+; reference used by the COMSOL model. Lateral dimensions are derived from
+; the clear bore, fixed ring width, fixed insulation gap and shield wall.
+; Electrode voltages are assigned later with fastadj.
+;
+; Electrode map
+;   1 repeller; 2 grid 1 (ideal transparent sheet); 3..7 extraction rings
+;   8 grid 2 (ideal transparent sheet); 9 grounded square shield.
+
+# local var = _G.var or {}
+# local mmgu_xy = var.mmgu_xy or 0.25
+# local mmgu_z = var.mmgu_z or mmgu_xy
+# local bore_half = var.bore_half or 5
+# local ring_width = var.ring_width or 5
+# local insulation_gap = var.insulation_gap or 5
+# local shield_wall = var.shield_wall or 4
+# local rear_gap = var.rear_gap or 5
+# local bore_width = 2*bore_half
+# local electrode_width = 2*(bore_half+ring_width)
+# local shield_inner_width = electrode_width+2*insulation_gap
+# local shield_outer_width = shield_inner_width+2*shield_wall
+# local repeller_rear_z = -1
+# local shield_back_z = repeller_rear_z-rear_gap-shield_wall
+# local shield_front_z = 19.83
+# local shield_z_span = shield_front_z-shield_back_z
+# local shield_z_center = (shield_front_z+shield_back_z)/2
+# local rear_cap_center_z = shield_back_z+shield_wall/2
+# local xy_span = var.xy_span or shield_outer_width
+# local z_min = var.z_min or shield_back_z
+# local z_span = var.z_span or (20-z_min)
+# local cx = xy_span/2
+# local cy = xy_span/2
+# local cz = -z_min
+# local nx = math.floor(xy_span/mmgu_xy + 0.5) + 1
+# local ny = nx
+# local nz = math.floor(z_span/mmgu_z + 0.5) + 1
+
+; Fractional surfaces locate the numerical electrode interface at the actual
+; physical plane. This is required before the ideal-grid particle jump can use
+; a sub-grid numerical buffer without treating 0.5 mm as physical thickness.
+pa_define($(nx), $(ny), $(nz), planar,none,electrostatic,,
+          $(mmgu_xy),$(mmgu_xy),$(mmgu_z), surface=fractional)
+
+locate($(cx),$(cy),$(cz)) {
+  ; GEM coordinates are millimetres; pa_define converts them to grid units.
+  ; Grounded C-shaped wall; every dimension is linked to the bore family.
+  e(9) { fill {
+    within { centered_box3D(0,0,$(shield_z_center), $(shield_outer_width),$(shield_outer_width),$(shield_z_span)) }
+    notin  { centered_box3D(0,0,$(shield_z_center), $(shield_inner_width),$(shield_inner_width),$(shield_z_span)) }
+  } }
+  ; Rear closure: its front face stays rear_gap behind the repeller rear face.
+  e(9) { fill { within { centered_box3D(0,0,$(rear_cap_center_z), $(shield_outer_width),$(shield_outer_width),$(shield_wall)) } } }
+
+  ; Repeller and grid1 share the charged-electrode outer width.
+  e(1) { fill { within { centered_box3D(0,0,-0.5, $(electrode_width),$(electrode_width),1) } } }
+
+  ; SIMION one-grid-point electrode sheets: fields see the grids, ions pass through.
+  e(2) { fill { within { centered_box3D(0,0,3, $(electrode_width),$(electrode_width),$(mmgu_z)) } } }
+
+  ; Five square extraction rings; ring_width is invariant during bore scans.
+  e(3) { fill { within { centered_box3D(0,0,5.805, $(electrode_width),$(electrode_width),1) } notin { centered_box3D(0,0,5.805, $(bore_width),$(bore_width),1.5) } } }
+  e(4) { fill { within { centered_box3D(0,0,8.610, $(electrode_width),$(electrode_width),1) } notin { centered_box3D(0,0,8.610, $(bore_width),$(bore_width),1.5) } } }
+  e(5) { fill { within { centered_box3D(0,0,11.415,$(electrode_width),$(electrode_width),1) } notin { centered_box3D(0,0,11.415,$(bore_width),$(bore_width),1.5) } } }
+  e(6) { fill { within { centered_box3D(0,0,14.220,$(electrode_width),$(electrode_width),1) } notin { centered_box3D(0,0,14.220,$(bore_width),$(bore_width),1.5) } } }
+  e(7) { fill { within { centered_box3D(0,0,17.025,$(electrode_width),$(electrode_width),1) } notin { centered_box3D(0,0,17.025,$(bore_width),$(bore_width),1.5) } } }
+
+  ; Second ideal grid at COMSOL z=L_accel=19.83 mm, covering the full
+  ; Grounded exit grid covers the derived shield opening.
+  e(8) { fill { within { centered_box3D(0,0,19.83, $(shield_inner_width),$(shield_inner_width),$(mmgu_z)) } } }
+}

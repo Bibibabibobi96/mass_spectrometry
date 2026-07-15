@@ -1,8 +1,0 @@
-pa_define(601, 355, 1, cylindrical, none, electrostatic,, 1)
-e(1) {
-  fill {
-    within {
-      box(0, 350, 600, 354) ; x1=0, y1=350, z1=0,  x2=600, y2=354, z2=0
-    }
-  }
-}

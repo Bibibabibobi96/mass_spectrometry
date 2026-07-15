@@ -1,0 +1,141 @@
+# oa-TOF SIMION 实施与验证
+
+本文件只记录SIMION实现、GUI操作和独立验证。统一几何、粒子、FWHM定义、正式状态和下一步
+由[`PROJECT.md`](PROJECT.md)定义。历史过程由项目 README 路由，日常任务不从本文件跳转读取。
+
+## 当前入口与状态
+
+- 正式文本入口：`../simion/workbench/formal/oatof_ideal_grounded.lua/.fly2`。
+- 当前 GUI 候选 IOB：工作区
+  `artifacts/projects/oa_tof/models/simion/workspace/diagnostics/accelerator_compact_scan/workbenches/grid_xy025_z0050_refaxial0250/oatof_accz0050_refz0250.iob`。
+- `models/simion/workspace/` 暂时保留，因为 IOB 使用相对 PA 路径；只有重建并验证四个实例后才能扁平化。
+- 当前标准：524 amu、+1、`5±0.4 eV`；GUI常规统计N=5000。
+- 日常候选网格：加速器`xy=0.25mm,z=0.05mm`；收敛参考`z=0.025mm`。
+- 检测器第4实例是GUI可见数值终止层，不是机械检测器实体。
+- Program和Data Recording必须同时开启；关闭Program窗口不等于禁用Program。
+- 当前候选尚待COMSOL 524 amu闭合，不能单独提升为正式项目模型。
+
+## GUI对等原则
+
+正式IOB必须让用户直接看到并修改reflectron、accelerator、flight-tube和detector四个PA实例、
+Fast Adjust电压、实例坐标、Fly2粒子和同名Program。命令行只允许改变线程、无GUI模式和输出
+路径，不能覆盖GUI不可见的物理参数。检测器必须显示有效面和口径，禁止只用Lua虚拟平面终止。
+
+原生Data Recording复核至少记录Ion Number、TOF、X/Y/Z和Event；只有一列TOF不能证明所有
+记录都来自第4实例终止层。
+
+## 实施流程
+
+## 阶段 A：确认安装与可写工作区
+
+程序：`C:\Program Files\SIMION-2020\simion.exe`。
+
+工作文件必须保存在本目录，不能保存在Program Files。先在SIMION中打开
+`examples_reference/simion_fast_adjust_demo.gem`，另存为
+`01_accelerator/smoke_fast_adjust.pa#`，并完成：GEM处理、Refine、Fast Adjust和保存PA0。
+这一步通过的标准是：生成`smoke_fast_adjust.pa0/.pa1/.pa2/.pa3`，且可改变某个电极电压而不重新Refine。
+
+随后只读打开`examples_reference/simion_nonideal_grid_demo.gem`，观察真实细丝grid的网格尺度；不要把该示例直接放大到oa-TOF全孔径。
+
+## 阶段 B：理想栅网反射镜 PA#
+
+已建立`02_reflectron/oatof_reflectron_ideal_10_5.pa#`，使用2D cylindrical PA，标尺`1 mm/gu`。这是与COMSOL轴对称理想栅网反射镜场比较的正式第一基线；在它通过轴线场和转向深度比较前，不扩展成全尺寸3D阵列。
+
+几何包含：接地圆柱屏蔽壳、入口栅网、10个一级环、级间栅网、5个二级环、背板。每个环单独为一个Fast Adjust电极；准确位置/电压见：
+
+- `00_reference/oatof_final_10_5_baseline.json`
+- `00_reference/reflectron_ring_table_10_5.csv`
+
+栅网规则：`entgrid`和`midgrid`是与有效截面等大的、一网格点厚的电极面。它们是理想透明等势面，**不是**带大孔的实体板。这样才与COMSOL内部边界基线一致。
+
+建议编号：
+
+| electrode | SIMION fast-adjust号 |
+|---|---:|
+| entgrid | 1 |
+| stage1 ring 1..10 | 2..11 |
+| midgrid | 12 |
+| stage2 ring 1..5 | 13..17 |
+| backplate | 18 |
+
+地屏蔽罩保持普通0 V电极，不需要单独Fast Adjust。
+
+## 阶段 C：加速器 PA#
+
+加速器使用3D Cartesian PA。正式固化前的稳定候选为孔半宽5mm、环单边宽5mm、
+带电电极到接地屏蔽内壁每侧5mm、repeller后表面到后盖前表面5mm、屏蔽壁4mm；
+PA物理范围为`38×38×30 mm³`（z=`-10..20mm`）。常态快速网格为
+`xy=0.25mm、z=0.05mm`（`153×153×601`）；跨求解器闭合/收敛参考为
+`xy=0.25mm、z=0.025mm`（`153×153×1201`）。GEM物理几何只有一份；数值网格参数不得
+借诊断变体修改电极尺寸、厚度、轴向位置或绝缘间隙。
+
+包含repeller、grid1、grid2、5个加速器环和接地屏蔽罩。grid1/grid2同样是一网格点厚的透明等势面。
+
+基准电压：repeller=2240 V，grid1=1760 V，grid2=0 V；加速器环电压依据当前COMSOL脚本的线性规则。
+
+当前电极编号与 fast-adjust：1=repeller，2=grid1，3..7=五个加速器环，8=grid2，9=grounded shield；对应电位为2240、1760、1466.666667、1173.333333、880、586.666667、293.333333、0、0 V。唯一参数化重建入口为`build_accelerator_variant.lua`。
+
+网格闭合使用`build_accelerator_variant.lua`。构建器必须先打印尺寸和完整PA家族容量估算，
+并设置可接受的GiB硬上限。各向同性/分区对照已证明横向0.25mm足够，误差主要来自z向。
+`z=0.05mm`相对`z=0.025mm`的FWHM仍宽约23.6%（反向表述为0.025比0.05低19.1%），
+故0.05mm只作常态快速网格，0.025mm作收敛参考；当前不再继续加密。正式或稳定结论必须把选定PA保存
+进独立四实例IOB，使GUI可直接看到实际网格和实例坐标；运行时PA覆盖只允许短期诊断，不能
+作为正式交付。已fast-adjust的PA0飞行时设置`accelerator_fast_adjust_enable=0`，避免重复
+组合9个基阵。
+
+## 阶段 D：Workbench 与初始验证
+
+正式IOB必须有四个GUI可见PA实例：reflectron、accelerator、flight-tube和detector。
+IOB目录还必须包含同 basename 的完整`.lua`和`.fly2`；`.fly2`至少要有可编辑的
+`standard_beam`，不得只保存空`particles { coordinates=0 }`，否则GUI的Define Particles
+会报`attempt to index a nil value`。`build_formal_iob.lua`在保存IOB前预读正式Fly2，保存后
+自动恢复到输出basename，防止SIMION生成的最小Fly2覆盖GUI粒子定义。
+加速器轴放在`x=-48.8 mm`，反射镜轴放在`x=0`；接地detector示意PA的中心位于
+`x=+48.8 mm`，有效半径40 mm，迎离子面位于`z=L_accel`。它不是机械探测器形状；数值
+吸收层厚度、前后余量和各向异性网格由独立参数控制，不能回写为COMSOL或SolidWorks实体
+厚度。禁止只用不可见Lua测试面代替GUI示意PA；Lua只在第4实例电极splat后的
+`segment.terminate`中记录、审计命中。当前推荐`xy=0.5 mm、z=0.01 mm、吸收层0.05 mm`。
+
+原生Data Recording复现时必须保持Program开启，因为电压fast-adjust和四个理想栅网跳转
+属于模型本身。细z检测器PA已使`TOF at ion's splat`与`z=19.83 mm`参考面逐粒子闭合；
+检测器邻域`tstep_adjust`仅为可选诊断，正式默认关闭。
+
+这里的“关闭Program窗口”和“禁用Program”必须区分：关闭设置对话框不会停用程序，可以继续
+打开Data Recording；取消Program复选框或选择Disable Program会停用fast-adjust、理想栅网
+跨越、几何联动、命中分类和超时保护，结果不再属于本基线。Program与Data Recording必须
+同时启用。GUI原生复核建议至少同时记录Ion Number、TOF、X/Y/Z和Event；只有TOF一列时不能
+证明全部记录均来自第4实例检测器终止层。
+
+同名正式Fly2必须在GUI中显示524 amu、+1、N=5000、1×1×1 mm³释放体和`5±0.4 eV`
+能量分布。需要与COMSOL严格比较时使用固定归档ION文件，并在结果中注明ION路径。
+
+SIMION常规统计自2026-07-15起使用N=5000；命令行必须同步传入
+`--default-num-particles 5000`，否则SIMION默认1000容量会拒绝读取完整ION表。COMSOL快速闭合
+可保留较小N，不因SIMION提速而强制同步增加计算量。
+
+第一轮只飞固定单粒子，记录：
+
+1. 到达entgrid时刻；
+2. 最大反射深度；
+3. 返回探测面时刻；
+4. 横向位置和速度。
+
+524 amu SIMION 0.05mm日常网格当前到达时间约71.99023 us；正式COMSOL 524 amu基准尚待
+重算。31.44793 us和二级最大穿透51.07mm只属于100 amu历史COMSOL模型，不得用于524 amu验收。
+
+## 阶段 E：真实丝网局部单元
+
+仅在理想栅网版本通过后，建立`03_grid_cell/`中的高分辨率3D网孔单元。输入真实丝径、节距、材料和两侧电压；输出透过率、撞丝概率、横向kick查表。
+
+主Workbench不显式铺满细丝。用Lua在粒子通过栅网平面时按局部表施加损失/偏转，或采用SIMION的非理想grid单元重复/跳转技术。
+
+优先顺序：先`entgrid`、再`midgrid`、最后才评估grid1/grid2。
+
+## 结果纪律
+
+- 每次曲线含多条线必须有legend。
+- 图标题写明PA标尺、栅网模式、粒子数和Fast Adjust电压集。
+- 理想栅网与真实丝网结果不得混在同一基线表。
+- 首次比较必须保留COMSOL与SIMION的轴线`V(z)`、`Ez(z)`和单粒子轨迹PNG。
+- 加密测试必须先做同网格裁边控制，再做单离子、N=100、N=1000；否则不能把裁边效应、
+  统计波动和网格收敛混为同一结论。

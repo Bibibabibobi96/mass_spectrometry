@@ -11,3 +11,19 @@ run_comsol_mcp.cmd
 
 # SIMION gem2pa compiler intermediate; reproducible from the tracked GEM source.
 *.processed.gem
+
+# SIMION runtime arrays/workbenches are stored in artifacts, not source.
+*.pa
+*.pa#
+*.pa[0-9]*
+*.iob
+trj*.tmp
+
+# CAD binaries are generated into artifacts/cad.
+*.sldprt
+*.sldasm
+*.step
+*.stp
+
+# Runtime logs belong under artifacts/runs.
+*.log

@@ -1,0 +1,33 @@
+; oa-TOF GUI-visible detector-position marker and numerical absorber.
+; This is not the mechanical detector body.  Only its active-plane position
+; and radius are physical contracts.  The thin grounded layer and asymmetric
+; z margins minimize PA size while permitting a fine z cell for accurate
+; native splat timing.  The Workbench places the incoming face at z=19.83 mm.
+
+# local var = _G.var or {}
+# local mmgu_xy = var.mmgu_xy or 0.5
+# local mmgu_z = var.mmgu_z or 0.01
+# local radius = var.radius or 40
+# local absorber_thickness = var.absorber_thickness or 0.05
+# local margin_xy = var.margin_xy or 1
+# local front_margin_z = var.front_margin_z or 0.2
+# local back_margin_z = var.back_margin_z or 0.05
+# local xy_span = 2*(radius+margin_xy)
+# local z_span = front_margin_z+absorber_thickness+back_margin_z
+# local nx = math.floor(xy_span/mmgu_xy + 0.5) + 1
+# local ny = nx
+# local nz = math.floor(z_span/mmgu_z + 0.5) + 1
+# local cx = xy_span/2
+# local cy = xy_span/2
+# local incoming_face_z = back_margin_z+absorber_thickness
+
+pa_define($(nx),$(ny),$(nz),planar,none,electrostatic,,
+          $(mmgu_xy),$(mmgu_xy),$(mmgu_z),surface=fractional)
+
+e(1) {
+  ; The SIMION cylinder extends toward negative local z.  Its anchor is the
+  ; incoming active face; the numerical layer remains at least five z cells.
+  locate($(cx),$(cy),$(incoming_face_z)) {
+    fill { within { cylinder(0,0,0,$(radius),,$(absorber_thickness)) } }
+  }
+}
