@@ -25,6 +25,7 @@ function paths = oatof_paths()
     paths.artifactRoot = fullfile(workspaceRoot, 'artifacts', 'projects', 'oa_tof');
     paths.comsolModelRoot = fullfile(paths.artifactRoot, 'models', 'comsol');
     paths.comsolFormalDir = fullfile(paths.comsolModelRoot, 'formal');
+    paths.comsolCandidateDir = fullfile(paths.comsolModelRoot, 'candidates');
     paths.comsolArchiveDir = fullfile(paths.comsolModelRoot, 'archive');
     paths.comsolScratchDir = fullfile(paths.artifactRoot, 'scratch', 'comsol');
     paths.comsolResultsDir = fullfile(paths.artifactRoot, 'results', 'comsol');

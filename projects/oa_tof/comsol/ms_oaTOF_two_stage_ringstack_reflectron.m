@@ -1,4 +1,4 @@
-function result = ms_oaTOF_two_stage_ringstack_reflectron(mass_amu, label, solver_mode, field_mode, d1_mm, n_rings2, mesh_hmax_refl_mm, bore_r_mm, ring_thickness_mm, n_particles, n_rings1, accel_bore_half_mm)
+function result = ms_oaTOF_two_stage_ringstack_reflectron(mass_amu, label, solver_mode, field_mode, d1_mm, n_rings2, mesh_hmax_refl_mm, bore_r_mm, ring_thickness_mm, n_particles, n_rings1, accel_bore_half_mm, fixed_particle_table, fine_tstep_ns)
 % !!! d1_mm (doc §7.49, per explicit request -- corrected from an
 % earlier d2-scan plan to a d1 scan): optional 5th argument, the
 % reflectron's stage1 physical depth in mm (default 120, matching the
@@ -80,6 +80,14 @@ end
 if ~(isscalar(accel_bore_half_mm) && accel_bore_half_mm > 0)
     error('accel_bore_half_mm must be positive.');
 end
+if nargin < 13 || isempty(fixed_particle_table)
+    fixed_particle_table = '';
+end
+use_fixed_particle_table = ~isempty(fixed_particle_table);
+if nargin < 14 || isempty(fine_tstep_ns)
+    fine_tstep_ns = 1;
+end
+assert(isscalar(fine_tstep_ns) && fine_tstep_ns > 0, 'fine_tstep_ns must be positive.');
 if ~(isscalar(n_rings1) && n_rings1 >= 1 && n_rings1 == fix(n_rings1))
     error('n_rings1 must be a positive integer.');
 end
@@ -179,7 +187,13 @@ addpath(componentRoot);
 paths = oatof_paths();
 addpath('D:\COMSOL 6.4\COMSOL64\Multiphysics\mli');
 t_mphstart_start = tic;
-mphstart(2036);
+try
+    mphstart(2036);
+catch exception
+    if ~contains(exception.message, 'Already connected to a server')
+        rethrow(exception)
+    end
+end
 t_mphstart = toc(t_mphstart_start);
 import com.comsol.model.*
 import com.comsol.model.util.*
@@ -1601,9 +1615,40 @@ wall_det.set('WallCondition', 'Freeze');
 
 v_in = sqrt(2*5*1.602176e-19/m_kg);
 fprintf('\n5eV entrance speed (x-direction): %.4e m/s\n', v_in);
-rel1 = cpt.create('rel1', 'Release', 3);
-rel1.label('Release: Gaussian energy (5eV mean, 0.4eV sigma) along x');
-rel1.selection.named('geom1_relvol_dom');
+if use_fixed_particle_table
+    assert(isfile(fixed_particle_table), 'Fixed particle table not found: %s', fixed_particle_table);
+    fixed_particles = readmatrix(fixed_particle_table, 'FileType', 'text', 'Delimiter', ',');
+    assert(size(fixed_particles,2) >= 9 && size(fixed_particles,1) == n_particles, ...
+        'Fixed particle table must have N=%d rows and at least 9 columns.', n_particles);
+    assert(all(abs(fixed_particles(:,2) - mass_amu) < 1e-6) && all(fixed_particles(:,3) == 1), ...
+        'Fixed particle table mass or charge does not match %g amu, +1.', mass_amu);
+    energy_eV = fixed_particles(:,9);
+    assert(all(isfinite(energy_eV) & energy_eV > 0), 'Fixed particle table contains invalid energies.');
+    azimuth = deg2rad(fixed_particles(:,7)); elevation = deg2rad(fixed_particles(:,8));
+    speed = sqrt(2*energy_eV*1.602176e-19/m_kg);
+    velocity = [speed.*cos(elevation).*cos(azimuth), speed.*cos(elevation).*sin(azimuth), speed.*sin(elevation)];
+    % Release-from-file coordinates are interpreted in the component
+    % geometry length unit. geom1 uses mm, matching SIMION .ion columns
+    % 4:6, so do not convert positions to SI metres. Velocity remains SI
+    % m/s, as required by the particle interface.
+    fixed_release_data = [fixed_particles(:,4:6), velocity];
+    fixed_release_dir = fullfile(paths.comsolScratchDir, 'fixed_particle_tables');
+    if ~exist(fixed_release_dir, 'dir'), mkdir(fixed_release_dir); end
+    fixed_release_path = fullfile(fixed_release_dir, sprintf('%s_release_from_data_file.txt', strrep(label,' ','_')));
+    writematrix(fixed_release_data, fixed_release_path, 'Delimiter', 'tab');
+    rel1 = cpt.create('rel1', 'ReleaseFromDataFile', -1);
+    rel1.label(sprintf('Release from fixed SIMION particle table (N=%d)', n_particles));
+    rel1.set('Filename', fixed_release_path);
+    rel1.set('icolp', '0');
+    rel1.set('VelocitySpecification', 'SpecifyVelocity');
+    rel1.set('InitialVelocity', 'FromFile');
+    rel1.set('icolv', '3');
+    rel1.importData();
+    fprintf('[%s] fixed particle table imported: %s (N=%d)\n', label, fixed_particle_table, n_particles);
+else
+    rel1 = cpt.create('rel1', 'Release', 3);
+    rel1.label('Release: Gaussian energy (5eV mean, 0.4eV sigma) along x');
+    rel1.selection.named('geom1_relvol_dom');
 % !!! Gaussian (Normal) energy spread around the 5eV mean, per explicit
 % request, to test dispersion with a large particle count. COMSOL's
 % InitialKineticEnergy property turned out to be a MODE-SELECTOR enum
@@ -1635,6 +1680,7 @@ rel1.set('v0', {sprintf('sqrt(2*abs(E_mean_eV+E_std_eV*sqrt(-2*log(random(1)))*c
 % Raised to 500 to test dispersion statistics with a large ensemble.
 rel1.set('InitialPosition', 'Density');
 rel1.set('N', num2str(n_particles));
+end
 
 % !!! Simplified per explicit request: no pulsing needed anymore -- ALL
 % electrodes (reflectron rings/grids AND the accelerator's repeller/
@@ -1826,8 +1872,17 @@ tstep.label('Transient solver');
 % this exact approach without first understanding why 'free' didn't
 % decouple accuracy from tlist density here.
 fine_start = 6e-6;
-fine_end = 39e-6;
-tstep.set('tlist', sprintf('range(0,1e-9,2e-6) range(2e-6+500e-9,500e-9,%.9g) range(%.9g+1e-9,1e-9,%.9g) range(%.9g+500e-9,500e-9,%g)', fine_start, fine_start, fine_end, fine_end, Tsim));
+% The former 39 us end was validated only around the historical 100 amu
+% baseline (~31.45 us).  TOF scales as sqrt(m), so 524 amu arrives near
+% 72 us; leaving it in the 500 ns output region creates artificial peak
+% splitting and destroys ns-scale FWHM.  Scale the validated reference
+% arrival time with mass and keep a 5 us post-arrival margin.
+expected_tof = 31.4478763926e-6*sqrt(mass_amu/100);
+fine_end = max(39e-6, expected_tof + 5e-6);
+fprintf('[%s] output-time window: fine %.3gns from %.3f to %.3fus (mass-scaled expected TOF %.3fus).\n', ...
+    label, fine_tstep_ns, fine_start*1e6, fine_end*1e6, expected_tof*1e6);
+fine_tstep = fine_tstep_ns*1e-9;
+tstep.set('tlist', sprintf('range(0,%.9g,2e-6) range(2e-6+500e-9,500e-9,%.9g) range(%.9g+%.9g,%.9g,%.9g) range(%.9g+500e-9,500e-9,%g)', fine_tstep, fine_start, fine_start, fine_tstep, fine_tstep, fine_end, fine_end, Tsim));
 tstep.setEntry('activate', 'es', false);
 tstep.setEntry('activate', 'cpt', true);
 cpt.feature('pp1').set('StudyStep', 'std2/time1');
@@ -1884,7 +1939,7 @@ t_cpt_start = tic;
 model.sol('sol2').runAll;
 t_cpt = toc(t_cpt_start);
 fprintf('[%s] SUCCESS: oa-TOF ring-stack CPT solved (%s, %.2fs for N=%s particles, Tsim=%.4gus short margin).\n', ...
-    label, upper(solver_mode), t_cpt, rel1.getString('N'), Tsim*1e6);
+    label, upper(solver_mode), t_cpt, num2str(n_particles), Tsim*1e6);
 
 % Two-phase completeness check (doc §6.14): confirm all released particles
 % actually reached the detector within the short margin; if not, extend to
@@ -1894,8 +1949,12 @@ fprintf('[%s] SUCCESS: oa-TOF ring-stack CPT solved (%s, %.2fs for N=%s particle
 % value caused a false "0/N detected" and an unnecessary retry every time).
 pdset_check = model.result.dataset.create('pdset_check', 'Particle');
 pdset_check.set('solution', 'sol2');
-N_total_check = str2double(rel1.getString('N'));
-qzcheck = mphparticle(model, 'dataset', 'pdset_check', 'expr', {'qz'});
+N_total_check = n_particles;
+% Only the final position is needed here.  Without an explicit `t`,
+% mphparticle returns every stored time step; at sub-nanosecond output
+% spacing that unnecessary payload can exhaust the MATLAB client JVM.
+qzcheck = mphparticle(model, 'dataset', 'pdset_check', 'expr', {'qz'}, ...
+    't', Tsim, 'dataonly', 'on');
 zfinal_check = qzcheck.d1(end,:);
 detector_z_val_mm = mphevaluate(model, 'detector_z', 'mm');
 n_detected_check = sum(abs(zfinal_check - detector_z_val_mm) < 2);
@@ -1904,7 +1963,7 @@ fprintf('[%s] two-phase check: %d/%d particles reached detector (z=%.4gmm) withi
 if n_detected_check < N_total_check
     fprintf('[%s] short margin insufficient -- re-solving with full 8x margin (Tsim=%.4gus).\n', label, Tsim_full*1e6);
     Tsim = Tsim_full;
-    tstep.set('tlist', sprintf('range(0,1e-9,2e-6) range(2e-6+500e-9,500e-9,%.9g) range(%.9g+1e-9,1e-9,%.9g) range(%.9g+500e-9,500e-9,%g)', fine_start, fine_start, fine_end, fine_end, Tsim));
+    tstep.set('tlist', sprintf('range(0,%.9g,2e-6) range(2e-6+500e-9,500e-9,%.9g) range(%.9g+%.9g,%.9g,%.9g) range(%.9g+500e-9,500e-9,%g)', fine_tstep, fine_start, fine_start, fine_tstep, fine_tstep, fine_end, fine_end, Tsim));
     t_cpt_retry_start = tic;
     model.sol('sol2').runAll;
     t_cpt_retry = toc(t_cpt_retry_start);
@@ -1917,26 +1976,31 @@ pdset1 = model.result.dataset.create('pdset1', 'Particle');
 pdset1.label(sprintf('Particle dataset: oa-TOF ring-stack %s', label));
 pdset1.set('solution', 'sol2');
 
-% !!! ATTEMPTED to reduce the N=10000 mphparticle() OOM (server ran out
-% of memory serializing the full qx,qy,qz trajectory) by requesting only
-% 'qz' via the 'expr' option -- but verified this does NOT actually
-% reduce transferred data: pd_z.p still comes back as [ntime x nP x 3]
-% regardless (checked directly: size stayed [11086 50 3] instead of
-% shrinking to 2D). So 'expr' only affects what MATLAB is TOLD to look
-% at, not what the server sends -- the real fix has to be reducing N or
-% timesteps instead. Extracting the z-component explicitly here (index
-% 3) since the array is still 3D despite requesting just 'qz'.
-pd_z = mphparticle(model, 'dataset', 'pdset1');
+% COMSOL 6.4 documents that dataonly='on' suppresses the default p/v
+% trajectory payload and that the `t` property limits evaluation to an
+% explicit time vector.  Both are required here: requesting every stored
+% time at sub-nanosecond spacing can exhaust the client JVM even for N=100.
+% Keep a sparse whole-flight trace for penetration/plot diagnostics and the
+% exact fine output spacing in a generous window around the expected return.
+% The latter preserves detector-crossing interpolation and therefore the
+% direct FWHM, while omitting output points irrelevant to detector arrival.
+arrival_half_window = 200e-9;
+arrival_times = (expected_tof-arrival_half_window):fine_tstep: ...
+    (expected_tof+arrival_half_window);
+trajectory_times = linspace(0, Tsim, 2001);
+extract_times = unique([trajectory_times, arrival_times, Tsim]);
+pd_z = mphparticle(model, 'dataset', 'pdset1', ...
+    'expr', {'qx','qy','qz'}, 't', extract_times, 'dataonly', 'on');
 t = pd_z.t;
-z = squeeze(pd_z.p(:,:,3));
+z = squeeze(pd_z.d3);
 % !!! Per explicit speed-optimization request: also keep x/y here (were
 % previously discarded -- only z was extracted from this same pd_z.p
 % array) so the trajectory-plot section below can reuse this ALREADY-
 % SOLVED data instead of re-running the entire CPT solve a second time
 % just to get x/y. See the trajectory-plot section for why a second
 % solve is still needed when nP is large.
-x_full = squeeze(pd_z.p(:,:,1));
-y_full = squeeze(pd_z.p(:,:,2));
+x_full = squeeze(pd_z.d1);
+y_full = squeeze(pd_z.d2);
 nP = size(z,2);
 fprintf('[%s] ions released: %d\n', label, nP);
 
@@ -2097,7 +2161,7 @@ fprintf('[TIMING] full-population extraction (mphparticle N=%d) + detection/R/DI
 
 result = struct('label', label, 'mass_amu', mass_amu, 'nP', nP, 'zEnd', zEnd, ...
     'detTimes', detTimes, 'meanT', meanT, 'stdT', stdT, 'fwhmT', fwhmT, ...
-    'R_fwhm', R_resolution, 'nDet', nDet, ...
+    'R_fwhm_sigma_proxy', R_resolution, 'nDet', nDet, ...
     'penetration_max_mm', penetration_max_mm, 'd2min_mm', d2min_mm, 'd2_mm', d2_mm);
 
 resultsDir = paths.comsolResultsDir;
@@ -2181,15 +2245,39 @@ title('z position vs time');
 % width directly visualizes the resolution R computed above.
 subplot(1,3,3);
 detected_t = detTimes(~isnan(detTimes));
-m_app = mass_amu*(detected_t/meanT).^2;
+assert(~isempty(detected_t), ...
+    'No detector hits are available for mass-spectrum/FWHM analysis.');
+detected_t = double(detected_t(:));
+m_app = double(mass_amu*(detected_t./meanT).^2);
+m_app = m_app(:);
 mass_sigma = std(m_app);
-mass_grid = linspace(mean(m_app)-4*mass_sigma, mean(m_app)+4*mass_sigma, 201);
+mass_min = min(m_app);
+mass_max = max(m_app);
+mass_span = mass_max - mass_min;
+mass_padding = double(max([0.20*mass_span; 4*mass_sigma; 1e-6]));
+assert(isscalar(mass_min) && isscalar(mass_max) && isscalar(mass_padding), ...
+    'Mass-spectrum bounds must be scalar (sizes: min=%s max=%s padding=%s).', ...
+    mat2str(size(mass_min)), mat2str(size(mass_max)), mat2str(size(mass_padding)));
+mass_grid = linspace(mass_min-mass_padding, mass_max+mass_padding, 1001);
 mass_bandwidth = max(1.06*mass_sigma*numel(m_app)^(-1/5), 1e-6);
 mass_density = mean(exp(-0.5*((mass_grid(:)-m_app(:).')/mass_bandwidth).^2), 2) ./ (sqrt(2*pi)*mass_bandwidth);
 mass_intensity = mass_density * numel(m_app) * mean(diff(mass_grid));
+peak_index = find(mass_intensity == max(mass_intensity), 1, 'first');
+half_max = mass_intensity(peak_index)/2;
+left_index = find(mass_intensity(1:peak_index) < half_max, 1, 'last');
+right_offset = find(mass_intensity(peak_index:end) < half_max, 1, 'first');
+assert(~isempty(left_index) && ~isempty(right_offset), 'Direct FWHM could not be bracketed on mass grid.');
+right_index = peak_index + right_offset - 1;
+left_mass = interp1(mass_intensity(left_index:left_index+1), mass_grid(left_index:left_index+1), half_max, 'linear');
+right_mass = interp1(mass_intensity(right_index-1:right_index), mass_grid(right_index-1:right_index), half_max, 'linear');
+mass_fwhm_direct = right_mass - left_mass;
+R_direct = mass_amu/mass_fwhm_direct;
+fprintf('[%s] direct KDE mass FWHM = %.9g Da; R=m/FWHM_m = %.6g\n', label, mass_fwhm_direct, R_direct);
+result.mass_fwhm_direct_Da = mass_fwhm_direct;
+result.R_fwhm_direct = R_direct;
 plot(mass_grid, mass_intensity, '-');
 xlabel('apparent mass [Da]'); ylabel('intensity [counts]'); grid on;
-title(sprintf('mass peak (Gaussian KDE, R_{FWHM}=%.0f, N=%d)', R_resolution, nDet));
+title(sprintf('mass peak (direct FWHM R=%.0f, N=%d)', R_direct, nDet));
 
 % !!! Title now includes N (statistical sample size, nP -- NOT the N_plot=50
 % trajectory-rendering subset) and field_mode, per doc convention (always
@@ -2199,7 +2287,7 @@ title(sprintf('mass peak (Gaussian KDE, R_{FWHM}=%.0f, N=%d)', R_resolution, nDe
 % per d1_mm/d2_margin_frac and no longer a fixed literal) in favor of the
 % actual computed value.
 sgtitle({sprintf('oa-TOF two-stage ring-stack reflectron: %s (N=%d, field_mode=%s)', label, nP, field_mode), ...
-    sprintf('%gamu +1 ion, 5eV in x, three-grid accelerator (KE0=2000eV), d1=%gmm, V_mirror=%.2fV, R_FWHM=%.1f', mass_amu, d1_mm, V_mirror_V, R_resolution)}, 'Interpreter','none');
+    sprintf('%gamu +1 ion, fixed 5±0.4eV source when selected, d1=%gmm, V_mirror=%.2fV, direct R=%.1f', mass_amu, d1_mm, V_mirror_V, R_direct)}, 'Interpreter','none');
 print(fh, fullfile(resultsDir, sprintf('ms_oaTOF_ringstack_reflectron_%s.png', strrep(label,' ','_'))), '-dpng', '-r150');
 fprintf('[%s] SUCCESS: trajectory + mass-spectrum plot saved.\n', label);
 t_matlabplot = toc(t_matlabplot_start);
@@ -2467,6 +2555,8 @@ col_time.set('colorlegend', 'on');
 % crashes), and the plot is attempted afterward as a best-effort step.
 if strcmpi(strtrim(label), 'Final')
     modelsDir = paths.comsolFormalDir;
+elseif use_fixed_particle_table
+    modelsDir = paths.comsolCandidateDir;
 else
     modelsDir = paths.comsolScratchDir;
 end
