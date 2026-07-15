@@ -65,6 +65,7 @@ foreach ($d in $distributions) {
       '--adjustable', ("ideal_accel_enable={0}" -f $m.A),
       '--adjustable', ("ideal_refl_stage1_enable={0}" -f $m.S1),
       '--adjustable', ("ideal_refl_stage2_enable={0}" -f $m.S2),
+      '--adjustable', 'trajectory_log_enable=1',
       $iob
     )
     if (-not $AnalyzeOnly) {

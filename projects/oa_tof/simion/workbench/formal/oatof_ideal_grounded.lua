@@ -32,7 +32,7 @@ adjustable detector_tstep_window_mm=0.2
 adjustable detector_tstep_max_dz_mm=0.002
 adjustable diagnostic_return_plane_z_mm=20.5
 adjustable diagnostic_max_tof_us=90
-adjustable trajectory_log_enable=1
+adjustable trajectory_log_enable=0
 adjustable trajectory_log_stride=1000
 adjustable accelerator_instance_z_mm=-10
 local detector_x_mm,detector_y_mm,detector_z_mm
@@ -61,7 +61,9 @@ local function configure_linked_geometry()
  di.y=detector_y_mm-detector_half_y
  di.z=detector_z_mm-detector_marker_back_margin_z_mm-
    detector_marker_absorber_thickness_mm
- print(string.format('TRACE: linked_geometry accelerator_axis=(%.12g,%.12g) accelerator_instance=(%.12g,%.12g,%.12g) accelerator_cell=(%.12g,%.12g,%.12g) detector_active_plane=(%.12g,%.12g,%.12g) radius=%.12g marker_thickness=%.12g marker_margins_front_back=(%.12g,%.12g) detector_instance=(%.12g,%.12g,%.12g)',accelerator_axis_x_mm,accelerator_axis_y_mm,ai.x,ai.y,ai.z,ai.pa.dx_mm,ai.pa.dy_mm,ai.pa.dz_mm,detector_x_mm,detector_y_mm,detector_z_mm,detector_radius_mm,detector_marker_absorber_thickness_mm,detector_marker_front_margin_z_mm,detector_marker_back_margin_z_mm,di.x,di.y,di.z))
+ if trajectory_log_enable~=0 then
+  print(string.format('TRACE: linked_geometry accelerator_axis=(%.12g,%.12g) accelerator_instance=(%.12g,%.12g,%.12g) accelerator_cell=(%.12g,%.12g,%.12g) detector_active_plane=(%.12g,%.12g,%.12g) radius=%.12g marker_thickness=%.12g marker_margins_front_back=(%.12g,%.12g) detector_instance=(%.12g,%.12g,%.12g)',accelerator_axis_x_mm,accelerator_axis_y_mm,ai.x,ai.y,ai.z,ai.pa.dx_mm,ai.pa.dy_mm,ai.pa.dz_mm,detector_x_mm,detector_y_mm,detector_z_mm,detector_radius_mm,detector_marker_absorber_thickness_mm,detector_marker_front_margin_z_mm,detector_marker_back_margin_z_mm,di.x,di.y,di.z))
+ end
 end
 function segment.initialize_run()
  local ai=simion.wb.instances[2]
@@ -69,7 +71,9 @@ function segment.initialize_run()
   ai.pa:load(accelerator_pa_override)
   ai:_debug_update_size()
   accelerator_pa_override_loaded=true
-  print(string.format('TRACE: accelerator_pa_override=%s dimensions=%dx%dx%d cell=(%.12g,%.12g,%.12g)',accelerator_pa_override,ai.pa.nx,ai.pa.ny,ai.pa.nz,ai.pa.dx_mm,ai.pa.dy_mm,ai.pa.dz_mm))
+  if trajectory_log_enable~=0 then
+   print(string.format('TRACE: accelerator_pa_override=%s dimensions=%dx%dx%d cell=(%.12g,%.12g,%.12g)',accelerator_pa_override,ai.pa.nx,ai.pa.ny,ai.pa.nz,ai.pa.dx_mm,ai.pa.dy_mm,ai.pa.dz_mm))
+  end
  end
  assert(#simion.wb.instances==4, 'formal workbench must contain four PA instances')
  local r,a,t,d=simion.wb.instances[1].pa,ai.pa,simion.wb.instances[3].pa,simion.wb.instances[4].pa
@@ -80,8 +84,10 @@ function segment.initialize_run()
  r:fast_adjust{[1]=0,[2]=V_mid/11,[3]=2*V_mid/11,[4]=3*V_mid/11,[5]=4*V_mid/11,[6]=5*V_mid/11,[7]=6*V_mid/11,[8]=7*V_mid/11,[9]=8*V_mid/11,[10]=9*V_mid/11,[11]=10*V_mid/11,[12]=V_mid,[13]=V_mid+(V_backplate-V_mid)/6,[14]=V_mid+2*(V_backplate-V_mid)/6,[15]=V_mid+3*(V_backplate-V_mid)/6,[16]=V_mid+4*(V_backplate-V_mid)/6,[17]=V_mid+5*(V_backplate-V_mid)/6,[18]=V_backplate,[19]=0}
  t:fast_adjust{[1]=0}
  d:fast_adjust{[1]=0}
- print(string.format('TRACE: pa_mesh reflectron=%dx%dx%d@(%.12g,%.12g,%.12g) accelerator=%dx%dx%d@(%.12g,%.12g,%.12g) flight_tube=%dx%dx%d@(%.12g,%.12g,%.12g) detector=%dx%dx%d@(%.12g,%.12g,%.12g)',r.nx,r.ny,r.nz,r.dx_mm,r.dy_mm,r.dz_mm,a.nx,a.ny,a.nz,a.dx_mm,a.dy_mm,a.dz_mm,t.nx,t.ny,t.nz,t.dx_mm,t.dy_mm,t.dz_mm,d.nx,d.ny,d.nz,d.dx_mm,d.dy_mm,d.dz_mm))
- print(string.format('TRACE: field_mode accelerator_fast_adjust=%d ideal_accel=%d ideal_stage1=%d ideal_stage2=%d',accelerator_fast_adjust_enable,ideal_accel_enable,ideal_refl_stage1_enable,ideal_refl_stage2_enable))
+ if trajectory_log_enable~=0 then
+  print(string.format('TRACE: pa_mesh reflectron=%dx%dx%d@(%.12g,%.12g,%.12g) accelerator=%dx%dx%d@(%.12g,%.12g,%.12g) flight_tube=%dx%dx%d@(%.12g,%.12g,%.12g) detector=%dx%dx%d@(%.12g,%.12g,%.12g)',r.nx,r.ny,r.nz,r.dx_mm,r.dy_mm,r.dz_mm,a.nx,a.ny,a.nz,a.dx_mm,a.dy_mm,a.dz_mm,t.nx,t.ny,t.nz,t.dx_mm,t.dy_mm,t.dz_mm,d.nx,d.ny,d.nz,d.dx_mm,d.dy_mm,d.dz_mm))
+  print(string.format('TRACE: field_mode accelerator_fast_adjust=%d ideal_accel=%d ideal_stage1=%d ideal_stage2=%d',accelerator_fast_adjust_enable,ideal_accel_enable,ideal_refl_stage1_enable,ideal_refl_stage2_enable))
+ end
 end
 local function grid_planes()
  local electrode_half=accelerator_bore_half_mm+accelerator_ring_width_mm
@@ -156,7 +162,9 @@ function segment.other_actions()
  end
  if not diagnostic_plane_hit[n] and zp>diagnostic_return_plane_z_mm and z<=diagnostic_return_plane_z_mm and vz<0 then
   diagnostic_plane_hit[n]=true
-  print(string.format('TRACE: diagnostic_return_plane ion=%d t=%.12g x=%.12g y=%.12g z=%.12g vz=%.12g zmax=%.12g',n,ion_time_of_flight,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vz_mm,max_z[n]))
+  if trajectory_log_enable~=0 then
+   print(string.format('TRACE: diagnostic_return_plane ion=%d t=%.12g x=%.12g y=%.12g z=%.12g vz=%.12g zmax=%.12g',n,ion_time_of_flight,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vz_mm,max_z[n]))
+  end
  end
  for _,g in ipairs(grid_planes()) do
   local k=tostring(n)..':'..g.name; local d=vz>=0 and 1 or -1
@@ -171,7 +179,10 @@ function segment.other_actions()
   end
  end
  last_z[n],last_x[n],last_y[n],last_t[n]=ion_pz_mm,ion_px_mm,ion_py_mm,ion_time_of_flight
- if ion_time_of_flight>=diagnostic_max_tof_us then timed_out[n]=true; ion_splat=1; print(string.format('TRACE: timeout ion=%d zmax=%.12g',n,max_z[n])) end
+ if ion_time_of_flight>=diagnostic_max_tof_us then
+  timed_out[n]=true; ion_splat=1
+  if trajectory_log_enable~=0 then print(string.format('TRACE: timeout ion=%d zmax=%.12g',n,max_z[n])) end
+ end
 end
 function segment.terminate()
  local n=ion_number
@@ -186,8 +197,12 @@ function segment.terminate()
  local dx,dy=xc-detector_x_mm,yc-detector_y_mm
  local radius=math.sqrt(dx*dx+dy*dy)
  local gc=grid_jump_count[n] or {}
- print(string.format('TRACE: detector_splat_raw ion=%d t=%.12g x=%.12g y=%.12g z=%.12g vz=%.12g correction_ns=%.12g',n,raw_t,raw_x,raw_y,raw_z,ion_vz_mm,dt*1000))
- print(string.format('TRACE: detector_crossing ion=%d t=%.12g x=%.12g y=%.12g z=%.12g r=%.12g zmax=%.12g',n,tc,xc,yc,detector_z_mm,radius,max_z[n] or ion_pz_mm))
+ if trajectory_log_enable~=0 then
+  print(string.format('TRACE: detector_splat_raw ion=%d t=%.12g x=%.12g y=%.12g z=%.12g vz=%.12g correction_ns=%.12g',n,raw_t,raw_x,raw_y,raw_z,ion_vz_mm,dt*1000))
+  print(string.format('TRACE: detector_crossing ion=%d t=%.12g x=%.12g y=%.12g z=%.12g r=%.12g zmax=%.12g',n,tc,xc,yc,detector_z_mm,radius,max_z[n] or ion_pz_mm))
+ end
  assert(radius<=detector_radius_mm+simion.wb.instances[4].pa.dx_mm, 'detector PA splat lies outside the physical disk')
- print(string.format('TRACE: detector_hit_entity ion=%d instance=4 jumps grid1=%d grid2=%d entgrid=%d midgrid=%d',n,gc.grid1 or 0,gc.grid2 or 0,gc.entgrid or 0,gc.midgrid or 0))
+ if trajectory_log_enable~=0 then
+  print(string.format('TRACE: detector_hit_entity ion=%d instance=4 jumps grid1=%d grid2=%d entgrid=%d midgrid=%d',n,gc.grid1 or 0,gc.grid2 or 0,gc.entgrid or 0,gc.midgrid or 0))
+ end
 end
