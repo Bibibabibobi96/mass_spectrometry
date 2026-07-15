@@ -1,5 +1,10 @@
 function summary = analyze_simion_mass_spectrum(logFile, outputDir, nominalMassAmu, detectorCenterXmm, detectorCenterYmm, detectorRadiusMm)
 %ANALYZE_SIMION_MASS_SPECTRUM Build mass/time spectra and detector maps.
+%   Legacy MATLAB GUI/presentation implementation. Canonical cross-solver
+%   metrics are defined by config/analysis_contract.json and computed by
+%   analysis/reference_analysis.py. This function remains for MATLAB FIG
+%   output and historical parity, but its robust KDE bandwidth is not the
+%   formal cross-solver reference.
 %   Converts each detected TOF to apparent mass with
 %       m_app = nominalMassAmu * (tof / mean(tof))^2
 %   and writes particle, mass/time histogram, smooth-spectrum, detector-plane

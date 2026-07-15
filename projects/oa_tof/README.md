@@ -46,6 +46,8 @@
 - CAD正式入口：[`cad/ms_export_oatof_to_solidworks.m`](cad/ms_export_oatof_to_solidworks.m)
 - 跨求解器门禁：
   [`tests/cross_solver/verify_geometry_contract.ps1`](tests/cross_solver/verify_geometry_contract.ps1)
+- 统一分析契约：[`config/analysis_contract.json`](config/analysis_contract.json)
+- Python参考分析：[`analysis/README.md`](analysis/README.md)
 - 路径解析：[`oatof_paths.m`](oatof_paths.m)
 
 ## 当前状态速览
@@ -55,6 +57,7 @@
 - SIMION常规统计使用N=5000；COMSOL快速闭合可使用较小但固定的同源粒子表。
 - 紧凑加速器和细z检测器数值终止层是稳定候选，尚未成为正式COMSOL/CAD几何。
 - 当前科学优先级是用全三维COMSOL在524 amu下闭合SIMION，不继续无目的压缩SIMION网格。
+- 求解器无关峰形和FWHM已固定到Python 3.11参考入口；MATLAB旧结果保留作迁移对照。
 
 精确数值、候选/正式边界和开放任务以`docs/PROJECT.md`为准。
 
@@ -63,6 +66,7 @@
 本项目所有MATLAB/COMSOL脚本只允许通过MATLAB **R2025b**运行；所有STEP、零件和装配操作只允许
 使用**SolidWorks 2022**。不为MATLAB R2022或SolidWorks 2013保留兼容入口。现有正式CAD导出报告
 已记录SolidWorks revision `30.5.0`（2022）；候选几何转正时仍须在同一版本重新完成装配门禁。
+求解器无关分析只使用仓库`.venv`中的**Python 3.11**；不得使用本机默认Python 3.14或旧Python 3.8。
 
 ## 目录职责
 
@@ -98,6 +102,7 @@ oa_tof/
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -File .\tests\cross_solver\verify_geometry_contract.ps1 -SkipRuntime
+.\analysis\verify_reference_analysis.ps1
 git diff --check
 git status --short --branch
 ```

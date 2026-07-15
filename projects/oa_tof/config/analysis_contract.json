@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "status": "formal_analysis_contract",
+  "nominal_mass_Da": 524.0,
+  "canonical_columns": {
+    "particle_id": "dimensionless integer unique within one run",
+    "tof_us": "positive detector arrival time in microseconds",
+    "hit": "boolean; only true detector hits enter peak metrics",
+    "detector_x_mm": "detector-local x coordinate in millimetres",
+    "detector_y_mm": "detector-local y coordinate in millimetres",
+    "initial_x_mm": "initial global x coordinate in millimetres",
+    "initial_y_mm": "initial global y coordinate in millimetres",
+    "initial_z_mm": "initial global z coordinate in millimetres",
+    "initial_energy_eV": "initial kinetic energy in electronvolts"
+  },
+  "definitions": {
+    "apparent_mass_Da": "nominal_mass_Da*(tof_us/mean(tof_us))^2",
+    "mass_resolution": "R=nominal_mass_Da/FWHM_mass_Da",
+    "time_equivalent_resolution": "R=mean_tof_us/(2*FWHM_tof_us)",
+    "gaussian_fwhm_proxy": "FWHM=2*sqrt(2*ln(2))*sample_standard_deviation; proxy only",
+    "reported_primary_fwhm": "direct half-height width of the canonical Gaussian KDE around its global maximum"
+  },
+  "kde": {
+    "kernel": "Gaussian",
+    "bandwidth_multiplier": 1.06,
+    "bandwidth": "1.06*sample_standard_deviation*N^(-1/5)",
+    "grid_points": 4001,
+    "padding": "max(20 percent of sample range, 4 sample standard deviations)",
+    "half_height_interpolation": "linear between bracketing grid points",
+    "significant_mode_threshold_fraction": 0.1,
+    "known_smoothing_effect": "The direct KDE FWHM includes Gaussian-kernel smoothing and is therefore slightly wider than 2.3548 sigma even for a Gaussian sample; both values must be reported."
+  },
+  "input_policy": {
+    "formal_machine_sources": ["CSV", "JSON"],
+    "accepted_human_import": ["XLSX"],
+    "excel_is_source_of_truth": false,
+    "particle_ids_must_be_unique": true,
+    "generated_sequential_particle_ids": "allowed only for unpaired single-spectrum human imports; forbidden for paired cross-solver validation",
+    "nonfinite_or_nonpositive_tof": "reject for hit=true; missing TOF is allowed for hit=false",
+    "duplicate_particle_id": "reject"
+  },
+  "provenance_required": [
+    "input_sha256",
+    "analysis_contract_sha256",
+    "python_version",
+    "numpy_version",
+    "scipy_version",
+    "pandas_version",
+    "matplotlib_version",
+    "nominal_mass_Da",
+    "row_count"
+  ]
+}

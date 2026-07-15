@@ -1,3 +1,8 @@
+% MATLAB parity/reference implementation for the same fixed N=100 ions.
+% The versioned canonical cross-solver definitions now live in
+% config/analysis_contract.json and analysis/peak_metrics.py. Keep this
+% script as an independent parity check; do not change its KDE/FWHM rules
+% without intentionally updating the contract and Python regression values.
 % Compare peak shape, not absolute resolution, for the same fixed N=100 ions.
 % This intentionally uses the exported arrival tables only; no COMSOL re-solve.
 testDir = fileparts(mfilename('fullpath'));
