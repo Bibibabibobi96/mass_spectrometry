@@ -33,6 +33,7 @@ function Assert-NotContains([string]$Text, [string]$Needle, [string]$Label) {
 }
 
 $contract = Get-Content -LiteralPath $contractPath -Raw -Encoding UTF8 | ConvertFrom-Json
+if (-not [bool]$contract.simion_runtime.program_required) { throw 'SIMION formal runtime must require Program.' }
 $lua = Get-Content -LiteralPath $simionLua -Raw -Encoding UTF8
 $fly2 = Get-Content -LiteralPath $simionFly2 -Raw -Encoding UTF8
 $ionGenerator = Get-Content -LiteralPath $ionGeneratorPath -Raw -Encoding UTF8
@@ -51,6 +52,8 @@ Assert-Near (Get-Adjustable $lua 'detector_marker_absorber_thickness_mm') $contr
 Assert-Near (Get-Adjustable $lua 'detector_marker_front_margin_z_mm') $contract.simion_detector_marker.front_margin_z_mm 'SIMION detector marker front margin'
 Assert-Near (Get-Adjustable $lua 'detector_marker_back_margin_z_mm') $contract.simion_detector_marker.back_margin_z_mm 'SIMION detector marker back margin'
 Assert-Near (Get-Adjustable $lua 'detector_tstep_enable') 0 'SIMION detector default time-step control'
+Assert-Near (Get-Adjustable $lua 'trajectory_quality') $contract.simion_runtime.trajectory_quality 'SIMION trajectory quality'
+Assert-Near (Get-Adjustable $lua 'trajectory_log_enable') ([int]$contract.simion_runtime.trajectory_log_default_enabled) 'SIMION trajectory log default'
 Assert-Near (Get-Adjustable $lua 'detector_tstep_max_dz_mm') $contract.simion_detector_marker.near_plane_max_step_z_mm 'SIMION detector near-plane step'
 Assert-Near (Get-Adjustable $lua 'accelerator_grid2_z_mm') $contract.geometry_mm.L_accel 'SIMION grid2/L_accel'
 Assert-Near (Get-Adjustable $lua 'accelerator_grid2_z_mm') $contract.simion_detector_marker.active_plane_z_mm 'SIMION detector active plane z'
@@ -73,6 +76,8 @@ Assert-Contains $lua "if ion_instance~=4 or timed_out[n] or detector_crossed[n] 
 Assert-Contains $lua 'function segment.tstep_adjust()' 'SIMION detector time-step control'
 Assert-Contains $lua 'local dt_to_plane=dz/speed_z' 'SIMION detector exact-plane step'
 Assert-Contains $lua 'TRACE: detector_splat_raw' 'SIMION native splat audit'
+Assert-Contains $lua 'function segment.load()' 'SIMION load-time settings'
+Assert-Contains $lua 'sim_trajectory_quality=trajectory_quality' 'SIMION persisted trajectory quality'
 Assert-Contains $lua 'inside_grid(g,ion_px_mm,ion_py_mm)' 'SIMION finite grid footprint gate'
 Assert-NotContains $lua 'detector_plane' 'SIMION detector implementation'
 Assert-NotContains $lua 'detector_hit_interpolated' 'SIMION detector implementation'
@@ -82,7 +87,7 @@ Assert-Contains $detector '# local mmgu_xy = var.mmgu_xy or 0.5' 'SIMION detecto
 Assert-Contains $detector '# local mmgu_z = var.mmgu_z or 0.01' 'SIMION detector GEM z cell'
 Assert-Contains $detector '# local absorber_thickness = var.absorber_thickness or 0.05' 'SIMION detector GEM marker thickness'
 Assert-Contains $fly2 'seed(20260713)' 'SIMION GUI particle seed'
-Assert-Contains $fly2 'n = 5000' 'SIMION GUI particle count'
+Assert-Contains $fly2 ("n = {0}" -f $contract.simion_runtime.routine_particles) 'SIMION GUI particle count'
 Assert-Contains $fly2 'mass = 524' 'SIMION GUI particle mass'
 Assert-Contains $fly2 'charge = 1' 'SIMION GUI particle charge'
 Assert-Contains $fly2 'energy = 5 + 0.4*normal' 'SIMION GUI energy distribution'

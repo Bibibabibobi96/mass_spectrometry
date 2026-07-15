@@ -66,6 +66,12 @@
     "standard_mass_updated_on": "2026-07-15",
     "comsol_formal_mph_sha256": "14C11E9AE8C05B1A508239C3C81DC64BAEAA52B39DA9851CAC118880D3B3765D"
   },
+  "simion_runtime": {
+    "trajectory_quality": 8,
+    "routine_particles": 5000,
+    "program_required": true,
+    "trajectory_log_default_enabled": false
+  },
   "simion_detector_marker": {
     "role": "GUI-visible numerical absorber marking the detector active plane; not the mechanical detector body",
     "active_plane_z_mm": 19.83,

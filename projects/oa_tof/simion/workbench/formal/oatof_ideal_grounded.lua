@@ -32,12 +32,25 @@ adjustable detector_tstep_window_mm=0.2
 adjustable detector_tstep_max_dz_mm=0.002
 adjustable diagnostic_return_plane_z_mm=20.5
 adjustable diagnostic_max_tof_us=90
+adjustable trajectory_quality=8
 adjustable trajectory_log_enable=0
 adjustable trajectory_log_stride=1000
 adjustable accelerator_instance_z_mm=-10
 local detector_x_mm,detector_y_mm,detector_z_mm
 local accelerator_pa_override=os.getenv('OATOF_ACCELERATOR_PA_OVERRIDE')
 local accelerator_pa_override_loaded=false
+local function write_load_contract_report()
+ local path=os.getenv('OATOF_SIMION_PROGRAM_LOAD_REPORT')
+ if not path or path=='' then return end
+ local report=assert(io.open(path,'w'))
+ report:write(string.format('TRAJECTORY_QUALITY=%g\n',sim_trajectory_quality))
+ report:write('STATUS=PASS\n')
+ report:close()
+end
+function segment.load()
+ sim_trajectory_quality=trajectory_quality
+ write_load_contract_report()
+end
 local function configure_linked_geometry()
  local ai=simion.wb.instances[2]
  local di=simion.wb.instances[4]
@@ -66,6 +79,7 @@ local function configure_linked_geometry()
  end
 end
 function segment.initialize_run()
+ sim_trajectory_quality=trajectory_quality
  local ai=simion.wb.instances[2]
  if accelerator_pa_override and accelerator_pa_override~='' and not accelerator_pa_override_loaded then
   ai.pa:load(accelerator_pa_override)
@@ -86,7 +100,7 @@ function segment.initialize_run()
  d:fast_adjust{[1]=0}
  if trajectory_log_enable~=0 then
   print(string.format('TRACE: pa_mesh reflectron=%dx%dx%d@(%.12g,%.12g,%.12g) accelerator=%dx%dx%d@(%.12g,%.12g,%.12g) flight_tube=%dx%dx%d@(%.12g,%.12g,%.12g) detector=%dx%dx%d@(%.12g,%.12g,%.12g)',r.nx,r.ny,r.nz,r.dx_mm,r.dy_mm,r.dz_mm,a.nx,a.ny,a.nz,a.dx_mm,a.dy_mm,a.dz_mm,t.nx,t.ny,t.nz,t.dx_mm,t.dy_mm,t.dz_mm,d.nx,d.ny,d.nz,d.dx_mm,d.dy_mm,d.dz_mm))
-  print(string.format('TRACE: field_mode accelerator_fast_adjust=%d ideal_accel=%d ideal_stage1=%d ideal_stage2=%d',accelerator_fast_adjust_enable,ideal_accel_enable,ideal_refl_stage1_enable,ideal_refl_stage2_enable))
+  print(string.format('TRACE: field_mode accelerator_fast_adjust=%d ideal_accel=%d ideal_stage1=%d ideal_stage2=%d trajectory_quality=%d',accelerator_fast_adjust_enable,ideal_accel_enable,ideal_refl_stage1_enable,ideal_refl_stage2_enable,sim_trajectory_quality))
  end
 end
 local function grid_planes()
