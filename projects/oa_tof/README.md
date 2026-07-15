@@ -58,6 +58,12 @@
 
 精确数值、候选/正式边界和开放任务以`docs/PROJECT.md`为准。
 
+## 工具链基线
+
+本项目所有MATLAB/COMSOL脚本只允许通过MATLAB **R2025b**运行；所有STEP、零件和装配操作只允许
+使用**SolidWorks 2022**。不为MATLAB R2022或SolidWorks 2013保留兼容入口。现有正式CAD导出报告
+已记录SolidWorks revision `30.5.0`（2022）；候选几何转正时仍须在同一版本重新完成装配门禁。
+
 ## 目录职责
 
 ```text

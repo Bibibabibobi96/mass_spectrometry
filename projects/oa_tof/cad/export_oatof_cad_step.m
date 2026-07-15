@@ -3,7 +3,7 @@ function result = export_oatof_cad_step(modelPath, outputDir)
 %
 % The source MPH is opened read-only in COMSOL server memory and is never
 % saved.  STEP AP203 is used because COMSOL 6.4 emits Parasolid v37, which
-% is not a dependable interchange target for the installed SolidWorks 2013.
+% is not a dependable interchange target for the formal SolidWorks 2022 workflow.
 
     arguments
         modelPath (1,1) string {mustBeFile}

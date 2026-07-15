@@ -30,7 +30,8 @@ Wehnelt 参数扫描需要以后重新建立和验证。
 
 ## 运行依赖与当前验证限制
 
-脚本依赖 MATLAB 和 COMSOL 6.4 LiveLink。R2022b 曾在MCOS初始化阶段崩溃；改用R2025b后，
+脚本依赖 MATLAB R2025b 和 COMSOL 6.4 LiveLink。R2022b 的MCOS初始化故障只保留为历史背景，
+不再是可用环境；改用R2025b后，
 COMSOL官方MATLAB启动器已完成自动链路测试：成功加载`ElectronGun_CoilT_ES.mph`，确认
 Helix `axis=x`、`es`物理场、`std1` Study及`pg_V`/`pg_E`原生结果节点存在，并通过
 `model.study('std1').run`重算静电场。z=8 mm轴上复核值为`V=40.0917301067 V`、
@@ -39,3 +40,8 @@ R2025b下复算，因此34.18%收集效率仍沿用此前归档结果。
 
 当前项目专属知识仍集中在本 README 和上述项目文档；不要把它拆成多个按阶段排列的说明文件。
 新增跨项目 API 或调试经验时按仓库根 README 写入根 `docs/`，不是追加到本项目历史。
+
+## 工具链基线
+
+本项目的正式及候选MATLAB/COMSOL任务只使用MATLAB **R2025b**；未来引入STEP、零件或装配时只使用
+**SolidWorks 2022**。不再支持MATLAB R2022或SolidWorks 2013。

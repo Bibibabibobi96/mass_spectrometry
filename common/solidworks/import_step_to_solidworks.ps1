@@ -15,10 +15,9 @@ if (-not (Test-Path -LiteralPath $outDir -PathType Container)) {
     New-Item -ItemType Directory -Path $outDir -Force | Out-Null
 }
 
-# PowerShell's late-bound COM dispatch reads the registered TypeLib.  This
-# machine retains an incompatible SolidWorks 2013 registration, which causes
-# TYPE_E_ELEMENTNOTFOUND even though SolidWorks 2022 is the active COM server.
-# Load the installed 2022 PIA and use its strongly typed COM coclass instead.
+# Do not use late-bound dispatch through whichever TypeLib happens to be
+# registered.  Load the installed SolidWorks 2022 PIA explicitly so every
+# import uses the repository's formal CAD baseline.
 $interopPath = 'D:\SW2022\SOLIDWORKS Corp2022\SOLIDWORKS\SolidWorks.Interop.sldworks.dll'
 $constantsPath = 'D:\SW2022\SOLIDWORKS Corp2022\SOLIDWORKS\SolidWorks.Interop.swconst.dll'
 if (-not (Test-Path -LiteralPath $interopPath -PathType Leaf)) {

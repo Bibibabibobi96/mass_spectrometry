@@ -7,3 +7,8 @@
 本项目目前只有一个软件实现，因此当前参数、状态和项目专属错误直接维护在本 README；COMSOL
 调用事实和跨项目方法按仓库根 README 路由。引入第二个求解器或 CAD 后，再建立
 `docs/PROJECT.md`与对应软件文档，不创建空占位文件。
+
+## 工具链基线
+
+本项目的MATLAB/COMSOL任务只使用MATLAB **R2025b**；未来引入STEP、零件或装配时只使用
+**SolidWorks 2022**。不再支持MATLAB R2022或SolidWorks 2013。
