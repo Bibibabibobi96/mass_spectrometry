@@ -3,19 +3,62 @@
 reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
 outputCsv = getenv('OATOF_COMSOL_OUTPUT_CSV');
 hmaxText = getenv('OATOF_ACCELERATOR_HMAX_MM');
+particleIdsText = getenv('OATOF_PARTICLE_IDS');
+sourceModelPath = getenv('OATOF_SOURCE_MODEL_PATH');
+fineStepText = getenv('OATOF_FINE_TSTEP_NS');
+driftStepText = getenv('OATOF_DRIFT_TSTEP_NS');
+reuseExistingField = strcmp(getenv('OATOF_REUSE_EXISTING_FIELD'), '1');
+useParticleStopTime = strcmp(getenv('OATOF_USE_PARTICLE_STOP_TIME'), '1');
+useSegmentedOutput = strcmp(getenv('OATOF_SEGMENTED_OUTPUT'), '1');
 assert(~isempty(outputCsv), 'OATOF_COMSOL_OUTPUT_CSV is not set.');
 if isempty(hmaxText), hmaxText = '0.5'; end
 hmaxMm = str2double(hmaxText);
 assert(isfinite(hmaxMm) && hmaxMm > 0, 'Invalid accelerator hmax.');
+if isempty(fineStepText)
+    fineStepNs = NaN;
+else
+    fineStepNs = str2double(fineStepText);
+    assert(isfinite(fineStepNs) && fineStepNs > 0, ...
+        'OATOF_FINE_TSTEP_NS must be a positive number.');
+end
+if isempty(driftStepText)
+    driftStepNs = 50;
+else
+    driftStepNs = str2double(driftStepText);
+    assert(isfinite(driftStepNs) && driftStepNs > 0, ...
+        'OATOF_DRIFT_TSTEP_NS must be a positive number.');
+end
 
 testDir = fileparts(mfilename('fullpath'));
 projectDir = fileparts(fileparts(testDir));
 addpath(projectDir);
+addpath(fullfile(projectDir, 'comsol'));
 paths = oatof_paths();
-modelPath = fullfile(paths.comsolFormalDir, ...
-    'MS_oaTOF_TwoStageRingStackReflectron_Final.mph');
+if isempty(sourceModelPath)
+    modelPath = fullfile(paths.comsolFormalDir, ...
+        'MS_oaTOF_TwoStageRingStackReflectron_Final.mph');
+else
+    modelPath = sourceModelPath;
+end
 ionTable = fullfile(paths.simionFormalDir, ...
     'oatof_comsol_524amu_gaussian_N100.ion');
+ion = readmatrix(ionTable, 'FileType', 'text', 'Delimiter', ',');
+if isempty(particleIdsText)
+    particleIds = (1:size(ion,1)).';
+else
+    particleIds = str2double(split(string(particleIdsText), ','));
+    assert(all(isfinite(particleIds) & particleIds == floor(particleIds)), ...
+        'OATOF_PARTICLE_IDS must contain comma-separated integers.');
+    assert(all(particleIds >= 1 & particleIds <= size(ion,1)), ...
+        'OATOF_PARTICLE_IDS contains an out-of-range ID.');
+    assert(numel(unique(particleIds)) == numel(particleIds), ...
+        'OATOF_PARTICLE_IDS contains duplicates.');
+end
+selectedIon = ion(particleIds, :);
+outputDir = fileparts(outputCsv);
+if ~isfolder(outputDir), mkdir(outputDir); end
+releasePath = fullfile(outputDir, sprintf( ...
+    'comsol_fixedN%d_selected_release_from_data_file.txt', numel(particleIds)));
 
 fid = fopen(reportPath, 'w');
 assert(fid >= 0, 'Could not open report: %s', reportPath);
@@ -23,73 +66,190 @@ cleanup = onCleanup(@() fclose(fid));
 fprintf(fid, 'MODEL=%s\nION_TABLE=%s\nOUTPUT_CSV=%s\n', ...
     modelPath, ionTable, outputCsv);
 fprintf(fid, 'ACCELERATOR_HMAX_MM=%.12g\n', hmaxMm);
+fprintf(fid, 'PARTICLE_IDS=%s\n', join(string(particleIds), ','));
+fprintf(fid, 'REUSE_EXISTING_FIELD=%d\n', reuseExistingField);
+fprintf(fid, 'USE_PARTICLE_STOP_TIME=%d\n', useParticleStopTime);
+fprintf(fid, 'USE_SEGMENTED_OUTPUT=%d\n', useSegmentedOutput);
+fprintf(fid, 'REQUESTED_DRIFT_TSTEP_NS=%.12g\n', driftStepNs);
+if isfinite(fineStepNs)
+    fprintf(fid, 'REQUESTED_FINE_TSTEP_NS=%.12g\n', fineStepNs);
+else
+    fprintf(fid, 'REQUESTED_FINE_TSTEP_NS=UNCHANGED\n');
+end
 
 try
     model = mphopen(modelPath);
     mesh = model.component('comp1').mesh('mesh1');
-    tag = 'szaccelconv';
-    sizeFeature = mesh.feature().create(tag, 'Size');
-    sizeFeature.label('DIAGNOSTIC accelerator-domain particle candidate');
-    sizeFeature.selection().geom('geom1', 3);
-    sizeFeature.selection().named('selbracket');
-    sizeFeature.set('custom', 'on');
-    sizeFeature.set('hmaxactive', true);
-    sizeFeature.set('hmax', sprintf('%.12g[mm]', hmaxMm));
-    tagsBefore = string(cell(mesh.feature.tags()));
-    ftetIndex = find(tagsBefore == "ftet1", 1);
-    assert(~isempty(ftetIndex), 'Formal mesh does not contain ftet1.');
-    mesh.feature.move(tag, ftetIndex-1);
-    tagsAfter = string(cell(mesh.feature.tags()));
-    assert(find(tagsAfter == tag, 1) < find(tagsAfter == "ftet1", 1), ...
-        'Diagnostic Size is not before ftet1.');
-    fprintf(fid, 'MESH_FEATURES=%s\n', join(tagsAfter, ','));
+    if reuseExistingField
+        tagsAfter = string(cell(mesh.feature.tags()));
+        fprintf(fid, 'MESH_FEATURES_REUSED=%s\n', join(tagsAfter, ','));
+    else
+        tag = 'szaccelconv';
+        sizeFeature = mesh.feature().create(tag, 'Size');
+        sizeFeature.label('DIAGNOSTIC accelerator-domain particle candidate');
+        sizeFeature.selection().geom('geom1', 3);
+        sizeFeature.selection().named('selbracket');
+        sizeFeature.set('custom', 'on');
+        sizeFeature.set('hmaxactive', true);
+        sizeFeature.set('hmax', sprintf('%.12g[mm]', hmaxMm));
+        tagsBefore = string(cell(mesh.feature.tags()));
+        ftetIndex = find(tagsBefore == "ftet1", 1);
+        assert(~isempty(ftetIndex), 'Formal mesh does not contain ftet1.');
+        mesh.feature.move(tag, ftetIndex-1);
+        tagsAfter = string(cell(mesh.feature.tags()));
+        assert(find(tagsAfter == tag, 1) < find(tagsAfter == "ftet1", 1), ...
+            'Diagnostic Size is not before ftet1.');
+        fprintf(fid, 'MESH_FEATURES=%s\n', join(tagsAfter, ','));
+    end
+
+    % Both controls below are persisted GUI settings: Study > Time
+    % Dependent > Output times, and Solver > Time-Dependent Solver >
+    % Times to store / Steps taken by solver. No hidden solver option is
+    % used by this diagnostic.
+    timeStudy = model.study('std2').feature('time1');
+    oldTlist = char(timeStudy.getString('tlist'));
+    if useSegmentedOutput
+        assert(isfinite(fineStepNs), ...
+            'Segmented output requires OATOF_FINE_TSTEP_NS.');
+        configure_oatof_segmented_output( ...
+            model, 524, fineStepNs, driftStepNs);
+    elseif isfinite(fineStepNs)
+        oldFineToken = regexp(oldTlist, ...
+            'range\(0,([^,]+),2e-6\)', 'tokens', 'once');
+        assert(~isempty(oldFineToken), ...
+            'Could not identify the fine step in GUI Output times.');
+        newFineStep = sprintf('%.12g', fineStepNs*1e-9);
+        newTlist = strrep(oldTlist, oldFineToken{1}, newFineStep);
+        assert(~strcmp(newTlist, oldTlist), ...
+            'Requested fine step did not change GUI Output times.');
+        timeStudy.set('tlist', newTlist);
+    end
+    solverTime = model.sol('sol2').feature('t1');
+    solverTime.set('tstepsbdf', 'free');
+    solverTime.set('tout', 'tlist');
+    cpt = model.component('comp1').physics('cpt');
+    cpt.prop('StoreExtra').set('StoreExtra', false);
+    cpt.prop('StoreParticleStatusData').set( ...
+        'StoreParticleStatusData', useParticleStopTime);
+    fprintf(fid, 'GUI_STUDY_OUTPUT_TIMES_BEFORE=%s\n', oldTlist);
+    fprintf(fid, 'GUI_STUDY_OUTPUT_TIMES_AFTER=%s\n', ...
+        char(timeStudy.getString('tlist')));
+    fprintf(fid, 'GUI_SOLVER_STEPS_TAKEN=%s\n', ...
+        char(solverTime.getString('tstepsbdf')));
+    fprintf(fid, 'GUI_SOLVER_TIMES_TO_STORE=%s\n', ...
+        char(solverTime.getString('tout')));
+    fprintf(fid, 'GUI_CPT_STORE_EXTRA_WALL_TIMES=%d\n', ...
+        cpt.prop('StoreExtra').getBoolean('StoreExtra'));
+    fprintf(fid, 'GUI_CPT_STORE_PARTICLE_STATUS=%d\n', ...
+        cpt.prop('StoreParticleStatusData').getBoolean( ...
+        'StoreParticleStatusData'));
+    if useSegmentedOutput
+        eventNames = {'t_accel_exit_ref','t_refl_entry_ref', ...
+            't_refl_exit_ref','t_detector_ref','cpt_t_accel_end', ...
+            'cpt_t_refl_start','cpt_t_refl_end', ...
+            'cpt_t_detector_start','cpt_t_detector_end','cpt_t_end'};
+        for eventIndex = 1:numel(eventNames)
+            fprintf(fid, 'GUI_%s_US=%.12g\n', upper(eventNames{eventIndex}), ...
+                mphevaluate(model, eventNames{eventIndex}, 'us'));
+        end
+    end
+
+    massKg = 524*1.66053906660e-27;
+    energyEv = selectedIon(:,9);
+    azimuth = deg2rad(selectedIon(:,7));
+    elevation = deg2rad(selectedIon(:,8));
+    speed = sqrt(2*energyEv*1.602176e-19/massKg);
+    velocity = [speed.*cos(elevation).*cos(azimuth), ...
+        speed.*cos(elevation).*sin(azimuth), speed.*sin(elevation)];
+    writematrix([selectedIon(:,4:6), velocity], releasePath, 'Delimiter', 'tab');
+    rel1 = model.component('comp1').physics('cpt').feature('rel1');
+    rel1.label(sprintf('DIAGNOSTIC fixed particle subset (N=%d)', numel(particleIds)));
+    rel1.set('Filename', releasePath);
+    rel1.importData();
+    fprintf(fid, 'RELEASE_FILE=%s\n', releasePath);
 
     meshStart = tic;
-    mesh.run;
-    meshSeconds = toc(meshStart);
+    if reuseExistingField
+        meshSeconds = 0;
+    else
+        mesh.run;
+        meshSeconds = toc(meshStart);
+    end
     meshInfo = mphmeshstats(model, 'mesh1');
     esStart = tic;
-    model.study('std1').run;
-    esSeconds = toc(esStart);
+    if reuseExistingField
+        esSeconds = 0;
+    else
+        model.study('std1').run;
+        esSeconds = toc(esStart);
+    end
     particleStart = tic;
     model.study('std2').run;
     particleSeconds = toc(particleStart);
+    solutionInfo = mphsolinfo(model, 'soltag', 'sol2', 'NU', 'on');
+    fprintf(fid, 'SOLUTION_SIZES=%s\n', mat2str(solutionInfo.sizes));
 
-    ion = readmatrix(ionTable, 'FileType', 'text', 'Delimiter', ',');
     p0 = mphparticle(model, 'dataset', 'pdset1', 't', 0);
     releasedPositionMm = squeeze(p0.p);
     releasedVelocityMS = squeeze(p0.v);
-    expectedPositionMm = ion(:,4:6);
-    expectedSpeedMS = sqrt(2*ion(:,9)*1.602176e-19/(524*1.66053906660e-27));
+    expectedPositionMm = selectedIon(:,4:6);
+    expectedSpeedMS = sqrt(2*selectedIon(:,9)*1.602176e-19/massKg);
     positionErrorMm = max(abs(releasedPositionMm(:)-expectedPositionMm(:)));
     speedErrorMS = max(abs(sqrt(sum(releasedVelocityMS.^2,2))-expectedSpeedMS));
 
-    expectedTof = 31.4478763926e-6*sqrt(524/100);
-    evalTimes = expectedTof + (-200e-9:0.2e-9:200e-9);
-    pd = mphparticle(model, 'dataset', 'pdset1', ...
-        'expr', {'qx','qy','qz'}, 't', evalTimes, 'dataonly', 'on');
-    t = pd.t(:);
-    x = orient_time_by_particle(squeeze(pd.d1), numel(t));
-    y = orient_time_by_particle(squeeze(pd.d2), numel(t));
-    z = orient_time_by_particle(squeeze(pd.d3), numel(t));
     detectorZ = mphevaluate(model, 'detector_z', 'mm');
-    detectorTimes = nan(size(z,2), 1);
-    detectorX = nan(size(z,2), 1);
-    detectorY = nan(size(z,2), 1);
-    for particle = 1:size(z,2)
-        crossingIndex = find(z(:,particle) < detectorZ+0.5, 1, 'first');
-        if isempty(crossingIndex), continue; end
-        [detectorTimes(particle), detectorX(particle), detectorY(particle)] = ...
-            interpolate_crossing(t, x(:,particle), y(:,particle), ...
-            z(:,particle), crossingIndex, detectorZ);
+    if useSegmentedOutput
+        expectedTof = mphevaluate(model, 't_detector_ref', 's');
+    else
+        expectedTof = 31.4478763926e-6*sqrt(524/100);
+    end
+    arrivalHalfWindow = 200e-9;
+    if useParticleStopTime
+        % Store particle status data is a GUI checkbox on the CPT physics
+        % interface. cpt.st is the solver-computed wall stop time, so no
+        % hidden time correction or trajectory-grid inference is needed.
+        pdStop = mphparticle(model, 'dataset', 'pdset1', ...
+            'expr', {'cpt.st','qx','qy','qz'}, ...
+            't', expectedTof+arrivalHalfWindow, 'dataonly', 'on');
+        detectorTimes = squeeze(pdStop.d1);
+        detectorX = squeeze(pdStop.d2);
+        detectorY = squeeze(pdStop.d3);
+        detectorFinalZ = squeeze(pdStop.d4);
+        detectorTimes = detectorTimes(:);
+        detectorX = detectorX(:);
+        detectorY = detectorY(:);
+        detectorFinalZ = detectorFinalZ(:);
+        assert(numel(detectorTimes) == numel(particleIds), ...
+            'Stored stop-time particle count does not match the subset.');
+        assert(all(abs(detectorFinalZ-detectorZ) < 2), ...
+            'Stored stop-time particles are not frozen at the detector.');
+    else
+        evalTimes = expectedTof + (-arrivalHalfWindow:0.2e-9:arrivalHalfWindow);
+        pd = mphparticle(model, 'dataset', 'pdset1', ...
+            'expr', {'qx','qy','qz'}, 't', evalTimes, 'dataonly', 'on');
+        t = pd.t(:);
+        x = orient_time_by_particle(squeeze(pd.d1), numel(t));
+        y = orient_time_by_particle(squeeze(pd.d2), numel(t));
+        z = orient_time_by_particle(squeeze(pd.d3), numel(t));
+        assert(size(z,2) == numel(particleIds), ...
+            'Solved particle count does not match the selected fixed subset.');
+        detectorTimes = nan(size(z,2), 1);
+        detectorX = nan(size(z,2), 1);
+        detectorY = nan(size(z,2), 1);
+        for particle = 1:size(z,2)
+            crossingIndex = find(z(:,particle) < detectorZ+0.5, 1, 'first');
+            if isempty(crossingIndex), continue; end
+            [detectorTimes(particle), detectorX(particle), detectorY(particle)] = ...
+                interpolate_crossing(t, x(:,particle), y(:,particle), ...
+                z(:,particle), crossingIndex, detectorZ);
+        end
     end
     assert(all(isfinite(detectorTimes)), 'Expected all fixed particles to hit.');
-    result = table((1:size(z,2)).', detectorTimes*1e6, detectorX, detectorY, ...
-        true(size(z,2),1), ion(:,4), ion(:,5), ion(:,6), ion(:,9), ...
+    result = table(particleIds, detectorTimes*1e6, detectorX, detectorY, ...
+        true(numel(detectorTimes),1), selectedIon(:,4), selectedIon(:,5), ...
+        selectedIon(:,6), selectedIon(:,9), ...
         'VariableNames', {'Ion','TofUs','XMm','YMm','Hit', ...
         'X0Mm','Y0Mm','Z0Mm','EnergyEv'});
-    outputDir = fileparts(outputCsv);
-    if ~isfolder(outputDir), mkdir(outputDir); end
     writetable(result, outputCsv);
 
     fprintf(fid, 'MESH_ELEMENTS=%d\nMESH_SECONDS=%.6f\n', ...

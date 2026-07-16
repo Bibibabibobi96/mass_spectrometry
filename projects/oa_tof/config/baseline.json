@@ -90,7 +90,7 @@
     "verified_on": "2026-07-16",
     "standard_mass_updated_on": "2026-07-15",
     "comsol_formal_geometry_status": "synchronized",
-    "comsol_formal_mph_sha256": "CF9B4F7733D8E348346F0A6E1D51F1427B46078CDD5619047E2D7537D6B4E4B2",
+    "comsol_formal_mph_sha256": "2581D7A0C2797CE80CB8E1C6C7EE5DB0A1CD66CE6A1D65A7E7B85A8363DD20EB",
     "solidworks_formal_geometry_status": "synchronized",
     "solidworks_revision": "30.5.0",
     "solidworks_formal_component_count": 25,
@@ -101,6 +101,21 @@
     "routine_particles": 5000,
     "program_required": true,
     "trajectory_log_default_enabled": false
+  },
+  "comsol_runtime": {
+    "routine_accelerator_hmax_mm": 1.0,
+    "convergence_accelerator_hmax_mm": 0.5,
+    "fine_output_step_ns": 0.2,
+    "field_free_output_step_ns": 50.0,
+    "accelerator_window_margin_us": 0.5,
+    "reflectron_window_margin_us": 2.0,
+    "detector_window_margin_us": 0.5,
+    "global_fine_step_phase_alignment_required": true,
+    "store_extra_wall_times": false,
+    "store_particle_status_data": false,
+    "solver_steps": "free",
+    "times_to_store": "tlist",
+    "policy": "Routine runs use parameter-derived, GUI-visible segmented output windows. High-precision convergence uses the 0.5 mm accelerator mesh and the validated dense 0.2 ns reference output. Formal conclusions require a paired convergence check after material physics or geometry changes."
   },
   "simion_detector_marker": {
     "role": "GUI-visible numerical absorber marking the detector active plane; not the mechanical detector body",

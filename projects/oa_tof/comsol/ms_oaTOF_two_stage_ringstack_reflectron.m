@@ -1,4 +1,4 @@
-function result = ms_oaTOF_two_stage_ringstack_reflectron(mass_amu, label, solver_mode, field_mode, d1_mm, n_rings2, mesh_hmax_refl_mm, bore_r_mm, ring_thickness_mm, n_particles, n_rings1, accel_bore_half_mm, fixed_particle_table, fine_tstep_ns)
+function result = ms_oaTOF_two_stage_ringstack_reflectron(mass_amu, label, solver_mode, field_mode, d1_mm, n_rings2, mesh_hmax_refl_mm, bore_r_mm, ring_thickness_mm, n_particles, n_rings1, accel_bore_half_mm, fixed_particle_table, fine_tstep_ns, mesh_hmax_accel_mm, drift_tstep_ns)
 % !!! d1_mm (doc §7.49, per explicit request -- corrected from an
 % earlier d2-scan plan to a d1 scan): optional 5th argument, the
 % reflectron's stage1 physical depth in mm (default 120, matching the
@@ -88,6 +88,16 @@ if nargin < 14 || isempty(fine_tstep_ns)
     fine_tstep_ns = 1;
 end
 assert(isscalar(fine_tstep_ns) && fine_tstep_ns > 0, 'fine_tstep_ns must be positive.');
+if nargin < 15 || isempty(mesh_hmax_accel_mm)
+    mesh_hmax_accel_mm = 1;
+end
+assert(isscalar(mesh_hmax_accel_mm) && mesh_hmax_accel_mm > 0, ...
+    'mesh_hmax_accel_mm must be positive.');
+if nargin < 16 || isempty(drift_tstep_ns)
+    drift_tstep_ns = 50;
+end
+assert(isscalar(drift_tstep_ns) && drift_tstep_ns > 0, ...
+    'drift_tstep_ns must be positive.');
 if ~(isscalar(n_rings1) && n_rings1 >= 1 && n_rings1 == fix(n_rings1))
     error('n_rings1 must be a positive integer.');
 end
@@ -647,6 +657,8 @@ p.set('accel_ring_width', '5[mm]', 'Square-ring radial width from clear bore edg
 p.set('accel_shield_wall', '4[mm]', 'Accelerator shield wall thickness (thickened from 2mm to 4mm, per explicit request for more realistic/robust shield walls)');
 p.set('accel_ring_gap', '5[mm]', 'Vacuum gap between accelerator charged electrodes and grounded shield inner wall');
 p.set('accel_ring_bore_half', sprintf('%.12g[mm]', accel_bore_half_mm), 'Accelerator square clear-aperture half-width');
+p.set('mesh_hmax_accel', sprintf('%.12g[mm]', mesh_hmax_accel_mm), ...
+    'Maximum tetrahedral element size in the whole accelerator region');
 p.set('accel_shield_half', 'accel_ring_bore_half+accel_ring_width+accel_ring_gap', 'Derived grounded-shield inner half-width');
 % !!! Added for the flight-tube end-cap redesign (doc §7.42, simplified
 % per follow-up request): the flight tube (accelflightbox, a cylinder)
@@ -1392,7 +1404,7 @@ fprintf('[TIMING] selections + materials + ES physics (electrode potentials) set
 
 t_mesh_start = tic;
 mesh1 = comp1.mesh.create('mesh1');
-mesh1.label('Mesh (hauto=6, refined at relvol + ring stack)');
+mesh1.label('Mesh (hauto=6, refined at release, accelerator + ring stack)');
 mesh1.feature('size').set('hauto', 6);
 sz1 = mesh1.feature.create('sz1', 'Size');
 sz1.label('Fine mesh on release volume');
@@ -1405,12 +1417,10 @@ sz1.set('hmax', '0.1[mm]');
 % regression checks.  All bounds are expressions tied to the accelerator
 % parameters: the old hardcoded x=[-50,50] box stopped following the
 % assembly when x_accel_center moved to -48.8mm and silently selected only
-% the release-volume domain.  Do not attach a domain-wide submillimetre
-% mesh Size to this selection: a 2026-07-14 R2025b test showed that 1mm
-% refinement over all six accelerator domains did not improve the already
-% <0.03% bracket-field deviation, while 0.3mm would be unnecessarily
-% expensive.  The source volume remains explicitly refined to 0.1mm by
-% sz1 through geom1_relvol_dom, which moves with the geometry by design.
+% the release-volume domain.  The ordered 2026-07-16 convergence test
+% showed that the earlier apparent 1mm no-op was caused by appending Size
+% after ftet1.  A GUI-visible 1mm Size before ftet1 removes the transverse
+% field/landing artifact at much lower cost than the 0.5mm reference.
 comp1.selection.create('selbracket', 'Box');
 comp1.selection('selbracket').label('Whole accelerator region (parameter-linked, diagnostics)');
 comp1.selection('selbracket').set('xmin', 'x_accel_center-accel_shield_half');
@@ -1507,9 +1517,32 @@ if use_local_edge_refinement
     szreflrim.set('hmaxactive', true);
     szreflrim.set('hmax', sprintf('%g[mm]', local_rim_hmax_mm));
 end
+% COMSOL resolves overlapping Size features in feature-tree order.  The
+% accelerator selection overlaps the broad ring-stack/drift sizing region,
+% so szaccel must be the last Size before FreeTet.  Creating it earlier made
+% the GUI show 1 mm while the built mesh silently remained the old coarse
+% 274576-element mesh.  Keep this order as a numerical-geometry gate.
+szaccel = mesh1.feature.create('szaccel', 'Size');
+szaccel.label(sprintf('Accelerator convergence mesh (hmax %.3g mm)', ...
+    mesh_hmax_accel_mm));
+szaccel.selection.geom('geom1', 3);
+szaccel.selection.named('selbracket');
+szaccel.set('custom', 'on');
+szaccel.set('hmaxactive', true);
+szaccel.set('hmax', 'mesh_hmax_accel');
 mesh1.feature.create('ftet1', 'FreeTet');
 mesh1.run;
 mi = mphmeshstats(model, 'mesh1');
+meshFeatureTags = string(cell(mesh1.feature.tags()));
+assert(find(meshFeatureTags == "szaccel", 1) < ...
+    find(meshFeatureTags == "ftet1", 1), ...
+    'Accelerator Size must precede FreeTet in the persisted GUI tree.');
+if abs(mesh_hmax_accel_mm-1) < 1e-12
+    assert(mi.numelem(2) > 300000, ...
+        ['Accelerator hmax=1 mm did not materially refine the built mesh ' ...
+         '(only %d tetrahedra); check overlapping Size-feature order.'], ...
+        mi.numelem(2));
+end
 fprintf('mesh: isempty=%d iscomplete=%d, Nelem=%d\n', mi.isempty, mi.iscomplete, mi.numelem(2));
 if mi.isempty || ~mi.iscomplete, error('mesh failed'); end
 t_mesh = toc(t_mesh_start);
@@ -1782,9 +1815,7 @@ fprintf('estimated one-way flight time: %.3fus, round trip ~%.3fus\n', t_flight_
 % to the full margin (deterministic particle release seed), so this has
 % zero accuracy impact -- it only ever removes wasted tail computation
 % for parameter combinations where the short margin already suffices.
-Tsim_short = 2*t_flight_oneway*1.5 + 1e-6;
 Tsim_full = 2*t_flight_oneway*8.0 + 1e-6;
-Tsim = Tsim_short;
 std2 = model.study.create('std2');
 std2.label(sprintf('Time-dependent: oa-TOF ring-stack %s', label));
 tstep = std2.create('time1', 'Transient');
@@ -1874,18 +1905,24 @@ tstep.label('Transient solver');
 % this output window -- left as a genuinely open problem, do not retry
 % this exact approach without first understanding why 'free' didn't
 % decouple accuracy from tlist density here.
-fine_start = 6e-6;
-% The former 39 us end was validated only around the historical 100 amu
-% baseline (~31.45 us).  TOF scales as sqrt(m), so 524 amu arrives near
-% 72 us; leaving it in the 500 ns output region creates artificial peak
-% splitting and destroys ns-scale FWHM.  Scale the validated reference
-% arrival time with mass and keep a 5 us post-arrival margin.
-expected_tof = 31.4478763926e-6*sqrt(mass_amu/100);
-fine_end = max(39e-6, expected_tof + 5e-6);
-fprintf('[%s] output-time window: fine %.3gns from %.3f to %.3fus (mass-scaled expected TOF %.3fus).\n', ...
-    label, fine_tstep_ns, fine_start*1e6, fine_end*1e6, expected_tof*1e6);
+% Production segmented output policy. All physics/numerical settings are
+% persisted as GUI-visible Global Parameters and Study Output times. Event
+% predictions follow mass, voltage and geometry parameters; fine-window
+% boundaries are outward-rounded to one global fine-step lattice. N=20 and
+% N=100 fixed-particle convergence tests proved 50 ns field-free output to
+% be numerically identical to the high-precision reference while reducing
+% the particle solve by 2.89x and 1.77x (relative to the 1 ns segmented run).
+timing = configure_oatof_segmented_output( ...
+    model, mass_amu, fine_tstep_ns, drift_tstep_ns);
+expected_tof = timing.expected_tof_s;
+fine_start = timing.t_refl_start_s;
+fine_end = timing.t_detector_end_s;
+Tsim = timing.t_end_s;
+fprintf(['[%s] parameter-linked output windows: fine %.3gns, drift %.3gns; ' ...
+    'reflectron %.4f-%.4fus; detector fine end %.4fus; predicted TOF %.4fus.\n'], ...
+    label, fine_tstep_ns, drift_tstep_ns, fine_start*1e6, ...
+    timing.t_refl_end_s*1e6, fine_end*1e6, expected_tof*1e6);
 fine_tstep = fine_tstep_ns*1e-9;
-tstep.set('tlist', sprintf('range(0,%.9g,2e-6) range(2e-6+500e-9,500e-9,%.9g) range(%.9g+%.9g,%.9g,%.9g) range(%.9g+500e-9,500e-9,%g)', fine_tstep, fine_start, fine_start, fine_tstep, fine_tstep, fine_end, fine_end, Tsim));
 tstep.setEntry('activate', 'es', false);
 tstep.setEntry('activate', 'cpt', true);
 cpt.feature('pp1').set('StudyStep', 'std2/time1');
@@ -1916,6 +1953,7 @@ model.sol('sol2').attach('std2');
 % (z_max=362mm matching theory almost exactly, was 409mm/backplate) and
 % recover R=75.6 (was 14.7) with 100% detection (was 80.7%).
 model.sol('sol2').feature('t1').set('tstepsbdf', 'free');
+model.sol('sol2').feature('t1').set('tout', 'tlist');
 % !!! FIX for the N>=20 crash ("NaN or Inf found when solving linear
 % system using GMRES", t=6.38us, deterministic regardless of N):
 % inspection showed the Time-Dependent solver's FullyCoupled nonlinear
@@ -1966,7 +2004,9 @@ fprintf('[%s] two-phase check: %d/%d particles reached detector (z=%.4gmm) withi
 if n_detected_check < N_total_check
     fprintf('[%s] short margin insufficient -- re-solving with full 8x margin (Tsim=%.4gus).\n', label, Tsim_full*1e6);
     Tsim = Tsim_full;
-    tstep.set('tlist', sprintf('range(0,%.9g,2e-6) range(2e-6+500e-9,500e-9,%.9g) range(%.9g+%.9g,%.9g,%.9g) range(%.9g+500e-9,500e-9,%g)', fine_tstep, fine_start, fine_start, fine_tstep, fine_tstep, fine_end, fine_end, Tsim));
+    p.set('cpt_t_end', sprintf('%.12g[s]', Tsim), ...
+        'Extended GUI-visible end time after completeness gate retry');
+    tstep.set('tlist', timing.tlist);
     t_cpt_retry_start = tic;
     model.sol('sol2').runAll;
     t_cpt_retry = toc(t_cpt_retry_start);
@@ -2119,6 +2159,44 @@ end
 meanT = mean(detTimes,'omitnan'); stdT = std(detTimes,'omitnan');
 nDet = sum(~isnan(detTimes));
 fprintf('[%s] detected on detector plate: %d/%d, arrival time: mean=%.5fus, std=%.5fus\n', label, nDet, nP, meanT*1e6, stdT*1e6);
+% Parameter-link gate: actual events must remain safely inside the predicted
+% fine windows. This catches future mass/voltage/length/source changes that
+% invalidate the one-dimensional reference formulas instead of silently
+% degrading resolution in a coarse output segment.
+L_accel_gate_mm = p.evaluate('L_accel', 'mm');
+L_flight_gate_mm = p.evaluate('L_flight', 'mm');
+t_accel_gate = nan(1,nP);
+t_refl_entry_gate = nan(1,nP);
+t_refl_exit_gate = nan(1,nP);
+for i = 1:nP
+    zi = z(:,i);
+    accel_idx = find(zi >= L_accel_gate_mm, 1, 'first');
+    refl_entry_idx = find(zi >= L_flight_gate_mm, 1, 'first');
+    [~, turn_idx] = max(zi);
+    refl_exit_rel = find(zi(turn_idx:end) <= L_flight_gate_mm, 1, 'first');
+    if ~isempty(accel_idx), t_accel_gate(i) = t(accel_idx); end
+    if ~isempty(refl_entry_idx), t_refl_entry_gate(i) = t(refl_entry_idx); end
+    if ~isempty(refl_exit_rel)
+        t_refl_exit_gate(i) = t(turn_idx+refl_exit_rel-1);
+    end
+end
+assert(all(isfinite(t_accel_gate)) && all(isfinite(t_refl_entry_gate)) && ...
+    all(isfinite(t_refl_exit_gate)) && nDet == nP, ...
+    'Event-window gate could not identify every accelerator/reflectron/detector event.');
+assert(max(t_accel_gate) < timing.t_accel_end_s-0.1e-6, ...
+    'Accelerator exit is too close to/outside the fine-window end.');
+assert(min(t_refl_entry_gate) > timing.t_refl_start_s+0.25e-6, ...
+    'Reflectron entry is too close to/outside the fine-window start.');
+assert(max(t_refl_exit_gate) < timing.t_refl_end_s-0.25e-6, ...
+    'Reflectron return exit is too close to/outside the fine-window end.');
+assert(min(detTimes) > timing.t_detector_start_s+0.1e-6 && ...
+    max(detTimes) < timing.t_detector_end_s-0.1e-6, ...
+    'Detector arrivals are too close to/outside the fine detector window.');
+fprintf(['[%s] event-window gate PASS: accel exit <=%.4fus; reflectron ' ...
+    'entry %.4f-%.4fus, exit %.4f-%.4fus; detector %.4f-%.4fus.\n'], ...
+    label, max(t_accel_gate)*1e6, min(t_refl_entry_gate)*1e6, ...
+    max(t_refl_entry_gate)*1e6, min(t_refl_exit_gate)*1e6, ...
+    max(t_refl_exit_gate)*1e6, min(detTimes)*1e6, max(detTimes)*1e6);
 % Unified mass resolving-power convention (2026-07-15): R=m/FWHM_m.
 % Since m is proportional to t^2, the narrow-peak TOF-equivalent form is
 % R=t/(2*FWHM_t), with FWHM_t=2*sqrt(2*ln(2))*sample_std(t).

@@ -1,9 +1,9 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "status": "formal_cross_solver_validation",
   "validated_on": "2026-07-16",
   "physical_contract": "baseline.json",
-  "physical_contract_sha256": "17E13D6558E89F896DE56809880BE3B7FB9949FBAF4586505F35AE191929E8AC",
+  "physical_contract_sha256": "694620963991CBCC3830A0BAD9850A80390AF2E61A1DA65332F31007DFE63D6B",
   "analysis_contract": "analysis_contract.json",
   "analysis_contract_sha256": "A22F16DCE188A2C2D80D192D740058EB85888DDCB7270B1FF4FFE36D8912A56F",
   "shared_particles": {
@@ -19,20 +19,27 @@
   "comsol": {
     "model_role": "formal",
     "field_mode": "real",
+    "formal_mph_artifact_relative_path": "models/comsol/formal/MS_oaTOF_TwoStageRingStackReflectron_Final.mph",
+    "formal_mph_bytes": 1002787314,
+    "formal_mph_sha256": "2581D7A0C2797CE80CB8E1C6C7EE5DB0A1CD66CE6A1D65A7E7B85A8363DD20EB",
+    "accelerator_hmax_mm": 1.0,
+    "mesh_tetrahedra": 336077,
     "fine_output_step_ns": 0.2,
-    "particle_csv_artifact_relative_path": "runs/comsol_fixed_particle_closure/2026-07-16/formal_synced/comsol_formal_fixedN100_real_dt0p2ns_particles.csv",
-    "particle_csv_sha256": "5131CF17DCD1D63EA763FC2E1E534F02429496D6A6162EEE26C917CF4CDD040D",
+    "field_free_output_step_ns": 50.0,
+    "global_fine_step_phase_aligned": true,
+    "particle_csv_artifact_relative_path": "runs/comsol_time_output_convergence/2026-07-16/comsol_fixedN100_hmax1_segmented_phasealigned_fine0.2ns_drift50ns_particles.csv",
+    "particle_csv_sha256": "5FAA8E870D52B0E434B73122B0A8EFDA875871EF83F23F0BB27605B2ECE52C39",
     "hit_fraction": "100/100",
-    "mean_tof_us": 71.98688029588676,
-    "direct_fwhm_tof_ns": 1.2302817024192336,
-    "direct_fwhm_mass_Da": 0.017910731135884816,
-    "mass_resolution": 29256.203782220062,
-    "tof_skewness": 1.495830632859815,
-    "hwhm_asymmetry_right_over_left": 1.2528143242497152,
+    "mean_tof_us": 71.98709074559798,
+    "direct_fwhm_tof_ns": 1.1705638197412327,
+    "direct_fwhm_mass_Da": 0.01704131576468626,
+    "mass_resolution": 30748.79940232403,
+    "tof_skewness": 1.4910286751050195,
+    "hwhm_asymmetry_right_over_left": 1.2092528125603887,
     "significant_kde_modes": 2,
-    "impact_centroid_x_mm": -1.5649043543537318,
-    "impact_centroid_y_mm": -1.8736906452240214,
-    "impact_rms_radius_mm": 4.422642373850613
+    "impact_centroid_x_mm": 0.14555287311636583,
+    "impact_centroid_y_mm": -0.03377990843156572,
+    "impact_rms_radius_mm": 3.594488762113782
   },
   "simion": {
     "model_role": "formal",
@@ -54,35 +61,35 @@
     "impact_rms_radius_mm": 3.573556508148612
   },
   "comparison": {
-    "comsol_resolution_higher_than_simion_pct": 9.84369379911667,
-    "mean_tof_difference_simion_minus_comsol_ns": 3.25477668224039,
-    "standardized_kde_overlap": 0.8600369227159297,
-    "standardized_ks_distance": 0.12,
-    "standardized_ks_pvalue": 0.469506448503778,
-    "paired_standardized_tof_correlation": 0.35305335267452526,
-    "bootstrap_absolute_resolution_difference_pct_p2p5": 0.745204061025088,
-    "bootstrap_absolute_resolution_difference_pct_median": 16.416507523673538,
-    "bootstrap_absolute_resolution_difference_pct_p97p5": 90.60577673879723,
+    "comsol_resolution_higher_than_simion_pct": 15.447709189529084,
+    "mean_tof_difference_simion_minus_comsol_ns": 3.04432697102186,
+    "standardized_kde_overlap": 0.8544774738660011,
+    "standardized_ks_distance": 0.14,
+    "standardized_ks_pvalue": 0.2819416298082479,
+    "paired_standardized_tof_correlation": 0.3729616299396464,
+    "bootstrap_absolute_resolution_difference_pct_p2p5": 0.8633951289188133,
+    "bootstrap_absolute_resolution_difference_pct_median": 18.851697879074585,
+    "bootstrap_absolute_resolution_difference_pct_p97p5": 95.87744172617134,
     "bootstrap_resamples": 5000,
-    "bootstrap_seed": 20260715,
-    "detector_centroid_distance_mm": 2.457859251928349,
-    "paired_mean_landing_distance_mm": 2.6281601258114127,
-    "paired_rms_landing_distance_mm": 2.6966733886408174,
-    "paired_max_landing_distance_mm": 3.646359170332302,
-    "interpretation": "The point estimates are close enough for the current solver-closure goal, but N=100 gives a very wide resolution-difference interval. The remaining deterministic discrepancy is peak structure: COMSOL has a stronger shoulder and two significant KDE modes, while SIMION has one."
+    "bootstrap_seed": 20260716,
+    "detector_centroid_distance_mm": 0.08993192650719448,
+    "paired_mean_landing_distance_mm": 0.1375346676199344,
+    "paired_rms_landing_distance_mm": 0.15754430587341656,
+    "paired_max_landing_distance_mm": 0.39994985242493913,
+    "interpretation": "The routine COMSOL tier is parameter-linked and phase-aligned, and its N=100 result is numerically identical between 1 ns and 50 ns field-free output. The 0.5 mm convergence tier remains the accuracy reference. Both COMSOL tiers retain a two-mode shoulder while SIMION has one significant KDE mode."
   },
-  "comparison_artifact_relative_path": "results/reference_analysis/formal_synced_2026-07-16/fixedN100_cross_solver/comparison_metrics.json",
-  "comparison_artifact_sha256": "60E183C8726357C3C5A5A37E5F57BFBF07C4C6B770ACFBA178FC5D6368F20FDB",
+  "comparison_artifact_relative_path": "results/reference_analysis/formal_segmented_2026-07-16/routine_hmax1_drift50ns_vs_simion/comparison_metrics.json",
+  "comparison_artifact_sha256": "EBA028C01C285EDC760F83D1E49986BDBA96440811F1937B358BFE88F6B8F5CF",
   "diagnostics": {
     "status": "peak_shoulder_source_localized",
     "source_mapping": {
-      "comsol_time_focus_vertex_z_mm": 1.5879679014290158,
+      "comsol_time_focus_vertex_z_mm": 1.5820411467052276,
       "simion_time_focus_vertex_z_mm": 1.4031610735875202,
-      "vertex_difference_mm": 0.1848068278414956,
-      "comsol_z_quadratic_r_squared": 0.9387332534968557,
+      "vertex_difference_mm": 0.1788800731177074,
+      "comsol_z_quadratic_r_squared": 0.9322123602139802,
       "simion_z_quadratic_r_squared": 0.8820025123669873,
-      "artifact_relative_path": "results/reference_analysis/formal_synced_2026-07-16/fixedN100_cross_solver/source_mapping_fits.csv",
-      "artifact_sha256": "75E6966CCCE59D516ECB99161503C3AEB5DF052ABC8836E2AD97B4703AF9322C"
+      "artifact_relative_path": "results/reference_analysis/formal_segmented_2026-07-16/routine_hmax1_drift50ns_vs_simion/source_mapping_fits.csv",
+      "artifact_sha256": "2BC47C96FD7203D6E2476AB4F1161F49E5A9F5904F954BDF6D3CE2249DD09B8E"
     },
     "axis_field": {
       "accelerator_source_simion_minus_comsol_mean_pct": 0.8396084857556473,
@@ -106,7 +113,7 @@
     },
     "accelerator_mesh_convergence": {
       "status": "PASS",
-      "formal_mesh_elements_approx": 274576,
+      "formal_mesh_elements_approx": 336077,
       "hmax_1mm_mesh_elements": 336077,
       "hmax_0p5mm_mesh_elements": 659685,
       "hmax_0p5mm_vs_simion_Ex_rms_V_per_m": 61.9002470881849,
@@ -116,7 +123,7 @@
       "artifact_sha256": "0FCC6F725112573E75226E46216EB4B19F8BD9A377A80ADD62F460A0F68ABA38"
     },
     "accelerator_mesh_particle_candidate": {
-      "status": "diagnostic_not_promoted",
+      "status": "convergence_reference",
       "accelerator_hmax_mm": 0.5,
       "particles": 100,
       "mass_resolution": 28837.88214704433,
@@ -128,7 +135,12 @@
       "particle_csv_artifact_relative_path": "runs/accelerator_mesh_convergence/2026-07-16/comsol_fixedN100_accel_hmax0p5_particles.csv",
       "particle_csv_artifact_sha256": "84AC0E37862C172B859332E8CDCAA770259BF829B6A4B23EDC1AF5DC5482DE92",
       "comparison_artifact_relative_path": "results/reference_analysis/formal_synced_2026-07-16/accelerator_hmax0p5_vs_simion/comparison_metrics.json",
-      "comparison_artifact_sha256": "A9E4DD014ABB912CF000C3F692C3AC10BB5AE8BC65D517640AC2C2008B12E5B1"
+      "comparison_artifact_sha256": "A9E4DD014ABB912CF000C3F692C3AC10BB5AE8BC65D517640AC2C2008B12E5B1",
+      "routine_hmax1_mass_resolution": 30748.79940232403,
+      "routine_vs_convergence_resolution_difference_pct": 6.626413290462652,
+      "routine_vs_convergence_standardized_kde_overlap": 0.9676601739318598,
+      "routine_vs_convergence_comparison_artifact_relative_path": "results/reference_analysis/formal_segmented_2026-07-16/convergence_hmax0p5_vs_routine_hmax1_drift50ns/comparison_metrics.json",
+      "routine_vs_convergence_comparison_artifact_sha256": "209925C79EDEC7E155FF30C86555ACEBCA4733BE305C74F14F27AF11762B0A38"
     }
   }
 }

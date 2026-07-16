@@ -15,16 +15,23 @@ fprintf(fid, 'MODE=candidate_3d_fixed_particle_table\n');
 fieldMode = getenv('OATOF_FIELD_MODE');
 if isempty(fieldMode), fieldMode = 'real'; end
 fineStepText = getenv('OATOF_FINE_TSTEP_NS');
-if isempty(fineStepText), fineStepText = '1'; end
+if isempty(fineStepText), fineStepText = '0.2'; end
 fineStepNs = str2double(fineStepText);
 assert(isfinite(fineStepNs) && fineStepNs > 0, 'Invalid OATOF_FINE_TSTEP_NS.');
+driftStepText = getenv('OATOF_DRIFT_TSTEP_NS');
+if isempty(driftStepText), driftStepText = '50'; end
+driftStepNs = str2double(driftStepText);
+assert(isfinite(driftStepNs) && driftStepNs > 0, ...
+    'Invalid OATOF_DRIFT_TSTEP_NS.');
 label = sprintf('Candidate_524amu_FixedN100_%s_dt%gns', fieldMode, fineStepNs);
 fprintf(fid, 'FIELD_MODE=%s\n', fieldMode);
 fprintf(fid, 'FINE_TSTEP_NS=%.12g\n', fineStepNs);
+fprintf(fid, 'DRIFT_TSTEP_NS=%.12g\n', driftStepNs);
 
 try
     result = ms_oaTOF_two_stage_ringstack_reflectron(524, ...
-        label, 'cpu', fieldMode, 120, 5, 15, 250, 5, 100, 10, 5, ionTable, fineStepNs);
+        label, 'cpu', fieldMode, 120, 5, 15, 250, 5, 100, 10, 5, ...
+        ionTable, fineStepNs, 1, driftStepNs);
     fprintf(fid, 'DETECTED=%d/%d\n', result.nDet, result.nP);
     fprintf(fid, 'MEAN_TOF_US=%.12g\n', result.meanT*1e6);
     fprintf(fid, 'MASS_FWHM_DIRECT_DA=%.12g\n', result.mass_fwhm_direct_Da);
