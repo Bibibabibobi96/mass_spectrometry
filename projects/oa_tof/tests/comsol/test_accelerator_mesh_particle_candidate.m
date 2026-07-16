@@ -1,10 +1,11 @@
-% Test an in-memory N=100 particle candidate with a locally refined accelerator.
+% Test an in-memory fixed-particle candidate with a selected accelerator mesh.
 
 reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
 outputCsv = getenv('OATOF_COMSOL_OUTPUT_CSV');
 hmaxText = getenv('OATOF_ACCELERATOR_HMAX_MM');
 particleIdsText = getenv('OATOF_PARTICLE_IDS');
 sourceModelPath = getenv('OATOF_SOURCE_MODEL_PATH');
+ionTablePath = getenv('OATOF_ION_TABLE');
 fineStepText = getenv('OATOF_FINE_TSTEP_NS');
 driftStepText = getenv('OATOF_DRIFT_TSTEP_NS');
 reuseExistingField = strcmp(getenv('OATOF_REUSE_EXISTING_FIELD'), '1');
@@ -40,8 +41,13 @@ if isempty(sourceModelPath)
 else
     modelPath = sourceModelPath;
 end
-ionTable = fullfile(paths.simionFormalDir, ...
-    'oatof_comsol_524amu_gaussian_N100.ion');
+if isempty(ionTablePath)
+    ionTable = fullfile(paths.simionFormalDir, ...
+        'oatof_comsol_524amu_gaussian_N100.ion');
+else
+    ionTable = ionTablePath;
+end
+assert(isfile(ionTable), 'Fixed SIMION particle table not found: %s', ionTable);
 ion = readmatrix(ionTable, 'FileType', 'text', 'Delimiter', ',');
 if isempty(particleIdsText)
     particleIds = (1:size(ion,1)).';
