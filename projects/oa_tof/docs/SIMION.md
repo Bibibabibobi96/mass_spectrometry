@@ -37,6 +37,12 @@ T.Qual=8。任一项改变都必须重新验证并有意识地更新清单，禁
 该样本的粒子传递。正式跨求解器比较和峰结构解释见`PROJECT.md`，机器记录见
 `config/formal_validation.json`。
 
+正式场诊断表明，SIMION释放区轴向Ez平均比COMSOL高`0.8396%`，而反射器内部相对RMS差仅
+`0.000528%`。代表轨迹显示该小差异在出射漂移中累计、在反射器中反向补偿，最终只留下数ns
+TOF差。SIMION加速器离轴Ex/Ey比COMSOL平滑且较弱；在COMSOL完成加速器域网格收敛前，禁止
+仅凭该差异修改SIMION正式PA几何或电压。场采样入口位于`tests/simion/export_axis_field_profiles.lua`
+和`export_accelerator_vector_field_samples.lua`。
+
 ## GUI对等原则
 
 正式IOB必须让用户直接看到并修改reflectron、accelerator、flight-tube和detector四个PA实例、
@@ -272,8 +278,9 @@ SIMION常规统计自2026-07-15起使用N=5000；命令行必须同步传入
 3. 返回探测面时刻；
 4. 横向位置和速度。
 
-524 amu SIMION 0.05mm日常网格当前到达时间约71.99023 us；正式COMSOL 524 amu基准尚待
-重算。31.44793 us和二级最大穿透51.07mm只属于100 amu历史COMSOL模型，不得用于524 amu验收。
+524 amu SIMION正式N=100、quality=8平均到达时间为`71.9901350726 us`；同步后的COMSOL正式
+N=100平均值为`71.9868802959 us`。31.44793 us和二级最大穿透51.07mm只属于100 amu历史COMSOL
+模型，不得用于524 amu验收。
 
 ## 阶段 E：真实丝网局部单元
 

@@ -90,6 +90,17 @@ Program Off只允许作为诊断组，可用`single`和对应`.1`列导入；它
 `--bootstrap-resamples 5000 --bootstrap-seed 20260715`；bootstrap与主指标使用同一KDE和直接FWHM
 定义，不另设快速近似算法。
 
+## 跨求解器诊断
+
+- `compare_field_profiles.py`比较同坐标轴向场，并把电极边界插值点与反射器内部指标分开。
+- `compare_particle_trajectories.py`比较代表粒子的同时间位置、同z横向路径、转向深度和关键平面
+  到达时间；SIMION输入必须是启用稀疏TRACE的正式quality=8日志。
+- `compare_vector_field_samples.py`比较两侧在完全相同加速段坐标上的Ex/Ey/Ez。
+
+这些入口只读取MATLAB/Lua导出的CSV，不直接解析MPH或PA。正式2026-07-16诊断产物统一位于
+`artifacts/projects/oa_tof/results/reference_analysis/formal_synced_2026-07-16/`，身份和关键结论
+由`config/formal_validation.json`冻结。
+
 ## 维护规则
 
 1. `R=m/FWHM_m`和直接半高宽只在`peak_metrics.py`维护一份。

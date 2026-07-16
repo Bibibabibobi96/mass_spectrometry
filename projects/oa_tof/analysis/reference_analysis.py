@@ -463,6 +463,97 @@ def _plot_source_mapping(
     plt.close(figure)
 
 
+def _plot_source_mapping_comparison(
+    left_frame: pd.DataFrame,
+    right_frame: pd.DataFrame,
+    source_frame: pd.DataFrame,
+    left_arrays: dict[str, np.ndarray],
+    right_arrays: dict[str, np.ndarray],
+    left_metrics: dict[str, Any],
+    right_metrics: dict[str, Any],
+    left_label: str,
+    right_label: str,
+    output: Path,
+) -> None:
+    figure, axes = plt.subplots(1, 2, figsize=(13.5, 5.8), constrained_layout=True)
+    z = source_frame["initial_z_mm"].to_numpy()
+    energy = source_frame["initial_energy_eV"].to_numpy()
+    left_tof = left_frame["tof_us"].to_numpy()
+    right_tof = right_frame["tof_us"].to_numpy()
+    left_mean = float(np.mean(left_tof))
+    right_mean = float(np.mean(right_tof))
+
+    axes[0].scatter(
+        z,
+        1.0e3 * (left_tof - left_mean),
+        c=energy,
+        cmap="viridis",
+        marker="o",
+        s=22,
+        alpha=0.45,
+        label=f"{left_label} particles",
+    )
+    axes[0].scatter(
+        z,
+        1.0e3 * (right_tof - right_mean),
+        c=energy,
+        cmap="viridis",
+        marker="x",
+        s=24,
+        alpha=0.55,
+        label=f"{right_label} particles",
+    )
+    axes[0].plot(
+        left_arrays["z_plot_mm"],
+        1.0e3 * (left_arrays["z_quadratic_fit_tof_us"] - left_mean),
+        linewidth=2.2,
+        label=f"{left_label} quadratic fit",
+    )
+    axes[0].plot(
+        right_arrays["z_plot_mm"],
+        1.0e3 * (right_arrays["z_quadratic_fit_tof_us"] - right_mean),
+        linewidth=2.2,
+        label=f"{right_label} quadratic fit",
+    )
+    axes[0].set(
+        xlabel="Initial z [mm]",
+        ylabel="TOF - solver mean [ns]",
+        title=(
+            "Initial-z transfer mapping\n"
+            f"vertices: {left_label}={left_metrics['quadratic_vertex_z_mm']:.4f} mm, "
+            f"{right_label}={right_metrics['quadratic_vertex_z_mm']:.4f} mm"
+        ),
+    )
+    axes[0].legend(fontsize=8)
+    axes[0].grid(True, alpha=0.3)
+
+    difference_ns = 1.0e3 * (right_tof - left_tof)
+    fit_difference_ns = 1.0e3 * (
+        right_arrays["z_quadratic_fit_tof_us"]
+        - left_arrays["z_quadratic_fit_tof_us"]
+    )
+    points = axes[1].scatter(z, difference_ns, c=energy, cmap="viridis", s=24, alpha=0.65)
+    axes[1].plot(
+        left_arrays["z_plot_mm"],
+        fit_difference_ns,
+        color="black",
+        linewidth=2.2,
+        label=f"quadratic fit: {right_label} - {left_label}",
+    )
+    axes[1].axhline(float(np.mean(difference_ns)), color="red", linestyle="--", label="mean difference")
+    axes[1].set(
+        xlabel="Initial z [mm]",
+        ylabel=f"{right_label} - {left_label} TOF [ns]",
+        title="Paired solver TOF difference",
+    )
+    axes[1].legend(fontsize=8)
+    axes[1].grid(True, alpha=0.3)
+    figure.colorbar(points, ax=axes[1], label="Initial energy [eV]")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(output, dpi=220, facecolor="white")
+    plt.close(figure)
+
+
 def audit_simion_recording(
     frame: pd.DataFrame,
     import_metadata: dict[str, Any],
@@ -800,6 +891,8 @@ def analyze_comparison(
         source_frame = right_frame
     elif paired_particle_ids_required and SOURCE_COLUMNS.issubset(left_frame.columns):
         source_frame = left_frame
+    left_source_arrays: dict[str, np.ndarray] | None = None
+    right_source_arrays: dict[str, np.ndarray] | None = None
     if source_frame is not None:
         source_arguments = (
             source_frame["initial_x_mm"].to_numpy(),
@@ -807,10 +900,10 @@ def analyze_comparison(
             source_frame["initial_z_mm"].to_numpy(),
             source_frame["initial_energy_eV"].to_numpy(),
         )
-        left_source, _ = compute_source_mapping_metrics(
+        left_source, left_source_arrays = compute_source_mapping_metrics(
             left_frame["tof_us"].to_numpy(), *source_arguments
         )
-        right_source, _ = compute_source_mapping_metrics(
+        right_source, right_source_arrays = compute_source_mapping_metrics(
             right_frame["tof_us"].to_numpy(), *source_arguments
         )
         comparison["source_mapping"] = {
@@ -828,6 +921,8 @@ def analyze_comparison(
             f"{right_label}_source_z2_energy_xy_fit_r_squared": right_source[
                 "source_z2_energy_xy_fit_r_squared"
             ],
+            f"{left_label}_metrics": left_source,
+            f"{right_label}_metrics": right_source,
         }
         comparison.update(
             {
@@ -916,6 +1011,55 @@ def analyze_comparison(
         right_label,
         output_dir / "peak_shape_comparison.png",
     )
+    if (
+        source_frame is not None
+        and left_source_arrays is not None
+        and right_source_arrays is not None
+    ):
+        pd.DataFrame(
+            {
+                "particle_id": left_frame["particle_id"].to_numpy(),
+                "initial_x_mm": source_frame["initial_x_mm"].to_numpy(),
+                "initial_y_mm": source_frame["initial_y_mm"].to_numpy(),
+                "initial_z_mm": source_frame["initial_z_mm"].to_numpy(),
+                "initial_energy_eV": source_frame["initial_energy_eV"].to_numpy(),
+                f"{left_label}_tof_us": left_frame["tof_us"].to_numpy(),
+                f"{right_label}_tof_us": right_frame["tof_us"].to_numpy(),
+                f"{right_label}_minus_{left_label}_tof_ns": 1.0e3
+                * (
+                    right_frame["tof_us"].to_numpy()
+                    - left_frame["tof_us"].to_numpy()
+                ),
+            }
+        ).to_csv(output_dir / "source_mapping_particles.csv", index=False)
+        pd.DataFrame(
+            {
+                "initial_z_mm": left_source_arrays["z_plot_mm"],
+                f"{left_label}_quadratic_fit_tof_us": left_source_arrays[
+                    "z_quadratic_fit_tof_us"
+                ],
+                f"{right_label}_quadratic_fit_tof_us": right_source_arrays[
+                    "z_quadratic_fit_tof_us"
+                ],
+                f"{right_label}_minus_{left_label}_fit_tof_ns": 1.0e3
+                * (
+                    right_source_arrays["z_quadratic_fit_tof_us"]
+                    - left_source_arrays["z_quadratic_fit_tof_us"]
+                ),
+            }
+        ).to_csv(output_dir / "source_mapping_fits.csv", index=False)
+        _plot_source_mapping_comparison(
+            left_frame,
+            right_frame,
+            source_frame,
+            left_source_arrays,
+            right_source_arrays,
+            left_source,
+            right_source,
+            left_label,
+            right_label,
+            output_dir / "source_mapping_comparison.png",
+        )
     return result
 
 

@@ -61,5 +61,37 @@
     "bootstrap_seed": 20260715,
     "interpretation": "The point estimates are close enough for the current solver-closure goal, but N=100 gives a very wide resolution-difference interval. The remaining deterministic discrepancy is peak structure: COMSOL has a stronger shoulder and two significant KDE modes, while SIMION has one."
   },
-  "comparison_artifact_relative_path": "results/reference_analysis/formal_synced_2026-07-16/fixedN100_cross_solver/comparison_metrics.json"
+  "comparison_artifact_relative_path": "results/reference_analysis/formal_synced_2026-07-16/fixedN100_cross_solver/comparison_metrics.json",
+  "diagnostics": {
+    "status": "peak_shoulder_source_localized",
+    "source_mapping": {
+      "comsol_time_focus_vertex_z_mm": 1.5879679014290158,
+      "simion_time_focus_vertex_z_mm": 1.4031610735875202,
+      "vertex_difference_mm": 0.1848068278414956,
+      "comsol_z_quadratic_r_squared": 0.9387332534968557,
+      "simion_z_quadratic_r_squared": 0.8820025123669873,
+      "artifact_relative_path": "results/reference_analysis/formal_synced_2026-07-16/fixedN100_cross_solver/source_mapping_fits.csv",
+      "artifact_sha256": "75E6966CCCE59D516ECB99161503C3AEB5DF052ABC8836E2AD97B4703AF9322C"
+    },
+    "axis_field": {
+      "accelerator_source_simion_minus_comsol_mean_pct": 0.8396084857556473,
+      "reflectron_interior_relative_rms_difference_pct": 0.0005279298594910095,
+      "reflectron_boundary_exclusion_mm": 0.3,
+      "artifact_relative_path": "results/reference_analysis/formal_synced_2026-07-16/axis_field_comparison/axis_field_metrics.json",
+      "artifact_sha256": "72B05DB6ABBC0E99BA1A7E142272999A0F3C1733EC4C815EA929AC14C1E7D9BD"
+    },
+    "representative_trajectories": {
+      "particle_ids": [18, 52, 97],
+      "accelerator_exit_simion_minus_comsol_ns_range": [0.2877166638, 2.1132360632],
+      "reflectron_outbound_simion_minus_comsol_ns_range": [16.5653978003, 22.8438406024],
+      "detector_simion_minus_comsol_ns_range": [1.9414698969, 5.0658818557],
+      "artifact_relative_path": "results/reference_analysis/formal_synced_2026-07-16/trajectory_comparison/trajectory_metrics.json",
+      "artifact_sha256": "2723BED8438D191F53142E1803FCEE298221650055F0D0906D5D6DAB5AC397E1"
+    },
+    "accelerator_vector_field": {
+      "interpretation": "COMSOL off-axis Ex/Ey is stronger and shows element-scale gradient jitter; treat this as an accelerator-mesh convergence risk, not a physical geometry difference, until refined.",
+      "artifact_relative_path": "results/reference_analysis/formal_synced_2026-07-16/accelerator_vector_field_comparison/accelerator_vector_field_metrics.json",
+      "artifact_sha256": "23DD9A2F41BADE7494C31F3406F6BDD1618E5D950C5EB15DF942E55CC274DA81"
+    }
+  }
 }

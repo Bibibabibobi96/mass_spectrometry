@@ -60,6 +60,16 @@ def main() -> None:
             ARTIFACT_ROOT / section[f"{stem}_artifact_relative_path"],
             section[f"{stem}_sha256"],
         )
+    diagnostics = record.get("diagnostics", {})
+    if diagnostics.get("status") != "peak_shoulder_source_localized":
+        raise ValueError("Formal peak-shoulder diagnostic is not localized")
+    for diagnostic in diagnostics.values():
+        if not isinstance(diagnostic, dict) or "artifact_relative_path" not in diagnostic:
+            continue
+        require_hash(
+            ARTIFACT_ROOT / diagnostic["artifact_relative_path"],
+            diagnostic["artifact_sha256"],
+        )
 
     comparison_path = ARTIFACT_ROOT / record["comparison_artifact_relative_path"]
     comparison = json.loads(comparison_path.read_text(encoding="utf-8"))
