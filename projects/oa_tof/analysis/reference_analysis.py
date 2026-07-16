@@ -127,6 +127,8 @@ def read_particle_table(
     path: Path,
     detector_center_x_mm: float = 48.8,
     detector_center_y_mm: float = 0.0,
+    column_overrides: dict[str, str] | None = None,
+    declared_event: str | None = None,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Normalize supported COMSOL/SIMION CSV or GUI XLSX columns."""
 
@@ -137,13 +139,29 @@ def read_particle_table(
     if source.empty:
         raise ValueError(f"Input table is empty: {path}")
 
-    ion_column = _find_column(
-        source, ("particleid", "ion", "ionnumber", "ionno", "particlenumber")
+    overrides = column_overrides or {}
+
+    def source_column(
+        canonical: str, aliases: tuple[str, ...], required: bool = False
+    ) -> str | None:
+        if canonical in overrides:
+            selected = overrides[canonical]
+            if selected not in source.columns:
+                raise ValueError(
+                    f"Configured {canonical} column {selected!r} is absent; "
+                    f"columns={list(source.columns)}"
+                )
+            return selected
+        return _find_column(source, aliases, required)
+
+    ion_column = source_column(
+        "particle_id",
+        ("particleid", "ion", "ionnumber", "ionno", "particlenumber"),
     )
-    tof_column = _find_column(
-        source, ("tofus", "timeofflightus", "tof", "timeofflight"), True
+    tof_column = source_column(
+        "tof_us", ("tofus", "timeofflightus", "tof", "timeofflight"), True
     )
-    hit_column = _find_column(source, ("hit", "detected", "arrived"))
+    hit_column = source_column("hit", ("hit", "detected", "arrived"))
 
     particle_id_generated = ion_column is None
     particle_id = (
@@ -162,14 +180,16 @@ def read_particle_table(
     else:
         normalized["hit"] = True
 
-    local_x = _find_column(
-        source, ("detectorlocalxmm", "localxmm", "impactlocalxmm")
+    local_x = source_column(
+        "detector_local_x_mm",
+        ("detectorlocalxmm", "localxmm", "impactlocalxmm"),
     )
-    local_y = _find_column(
-        source, ("detectorlocalymm", "localymm", "impactlocalymm")
+    local_y = source_column(
+        "detector_local_y_mm",
+        ("detectorlocalymm", "localymm", "impactlocalymm"),
     )
-    global_x = _find_column(source, ("detectorxmm", "xmm", "x"))
-    global_y = _find_column(source, ("detectorymm", "ymm", "y"))
+    global_x = source_column("detector_x_mm", ("detectorxmm", "xmm", "x"))
+    global_y = source_column("detector_y_mm", ("detectorymm", "ymm", "y"))
     if local_x is not None and local_y is not None:
         normalized["detector_x_mm"] = pd.to_numeric(source[local_x], errors="coerce")
         normalized["detector_y_mm"] = pd.to_numeric(source[local_y], errors="coerce")
@@ -191,16 +211,27 @@ def read_particle_table(
         "initial_energy_eV": ("energyev", "initialenergyev"),
     }
     for canonical, aliases in optional_columns.items():
-        source_column = _find_column(source, aliases)
-        if source_column is not None:
+        selected_column = source_column(canonical, aliases)
+        if selected_column is not None:
             normalized[canonical] = pd.to_numeric(
-                source[source_column], errors="coerce"
+                source[selected_column], errors="coerce"
             )
-    event_column = _find_column(source, ("event", "eventname", "eventtype"))
+    event_column = source_column("event", ("event", "eventname", "eventtype"))
     if event_column is not None:
         normalized["event"] = (
             source[event_column].astype("string").fillna("").str.strip().astype(str)
         )
+        event_provenance = "source_column"
+    elif declared_event is not None and declared_event.strip():
+        normalized["event"] = declared_event.strip()
+        event_provenance = "operator_declared_from_data_recording_event_selection"
+    else:
+        event_provenance = "absent"
+    if declared_event is not None and event_column is not None:
+        declared = declared_event.strip().lower()
+        recorded = normalized["event"].astype(str).str.strip().str.lower()
+        if bool((recorded != declared).any()):
+            raise ValueError("Declared event conflicts with values in the event column")
 
     if bool(normalized["particle_id"].isna().any()):
         raise ValueError("particle_id contains missing or nonnumeric values")
@@ -240,8 +271,10 @@ def read_particle_table(
         "hit_assumed_from_detector_export": hit_column is None,
         "particle_id_generated": particle_id_generated,
         "event_column_present": event_column is not None,
+        "event_provenance": event_provenance,
         "pa_instance_column_present": "pa_instance" in normalized,
         "detector_z_column_present": "detector_z_mm" in normalized,
+        "column_overrides": overrides,
         "source_columns": [str(column) for column in source.columns],
     }
     return detected.reset_index(drop=True), metadata
@@ -437,6 +470,7 @@ def audit_simion_recording(
     expected_pa_instance: int,
     expected_detector_z_mm: float,
     detector_radius_mm: float,
+    program_state: str = "on",
     tolerance_mm: float = 1.0e-9,
 ) -> dict[str, Any]:
     """Strictly verify a GUI Data Recording export and its detector provenance."""
@@ -471,6 +505,7 @@ def audit_simion_recording(
         has_event and (~event_text.isin({"", "nan", "none", "null"})).all()
     )
     checks = {
+        "program_was_enabled": program_state.strip().lower() == "on",
         "source_row_count_matches": import_metadata["source_rows"]
         == expected_particles,
         "detected_row_count_matches": len(frame) == expected_particles,
@@ -503,6 +538,7 @@ def audit_simion_recording(
             "tolerance_mm": float(tolerance_mm),
         },
         "observed": {
+            "operator_declared_program_state": program_state.strip().lower(),
             "source_rows": int(import_metadata["source_rows"]),
             "detected_rows": int(len(frame)),
             "particle_id_min": int(np.min(identifiers)),
@@ -530,10 +566,16 @@ def analyze_single(
     detector_center_x_mm: float = 48.8,
     detector_center_y_mm: float = 0.0,
     contract_path: Path = DEFAULT_CONTRACT,
+    column_overrides: dict[str, str] | None = None,
+    declared_event: str | None = None,
 ) -> dict[str, Any]:
     contract, settings = load_contract(contract_path)
     frame, import_metadata = read_particle_table(
-        input_path, detector_center_x_mm, detector_center_y_mm
+        input_path,
+        detector_center_x_mm,
+        detector_center_y_mm,
+        column_overrides=column_overrides,
+        declared_event=declared_event,
     )
     metrics, spectra = compute_peak_metrics(
         frame["tof_us"].to_numpy(), nominal_mass_Da, settings
@@ -609,6 +651,9 @@ def analyze_simion_recording(
     detector_radius_mm: float,
     detector_center_x_mm: float = 48.8,
     detector_center_y_mm: float = 0.0,
+    column_overrides: dict[str, str] | None = None,
+    declared_event: str | None = None,
+    program_state: str = "on",
 ) -> dict[str, Any]:
     result = analyze_single(
         input_path,
@@ -617,9 +662,15 @@ def analyze_simion_recording(
         label="SIMION GUI Data Recording",
         detector_center_x_mm=detector_center_x_mm,
         detector_center_y_mm=detector_center_y_mm,
+        column_overrides=column_overrides,
+        declared_event=declared_event,
     )
     frame, import_metadata = read_particle_table(
-        input_path, detector_center_x_mm, detector_center_y_mm
+        input_path,
+        detector_center_x_mm,
+        detector_center_y_mm,
+        column_overrides=column_overrides,
+        declared_event=declared_event,
     )
     audit = audit_simion_recording(
         frame,
@@ -628,6 +679,7 @@ def analyze_simion_recording(
         expected_pa_instance,
         expected_detector_z_mm,
         detector_radius_mm,
+        program_state,
     )
     write_json(output_dir / "recording_audit.json", audit)
     result["recording_audit"] = audit
@@ -679,17 +731,23 @@ def _plot_comparison(
     axes[1, 1].scatter(right_quantiles, left_quantiles, s=12)
     axes[1, 1].plot([-3, 3], [-3, 3], "k--")
     axes[1, 1].set_aspect("equal", adjustable="box")
+    paired_correlation = comparison["paired_standardized_tof_correlation"]
+    relationship_text = (
+        f"paired r={paired_correlation:.4f}"
+        if paired_correlation is not None
+        else "independent samples"
+    )
     axes[1, 1].set(
         xlim=(-3, 3),
         ylim=(-3, 3),
         xlabel=f"{right_label} standardized TOF quantile",
         ylabel=f"{left_label} standardized TOF quantile",
-        title=f"KS={comparison['standardized_ks_distance']:.3f}; paired r={comparison['paired_standardized_tof_correlation']:.4f}",
+        title=f"KS={comparison['standardized_ks_distance']:.3f}; {relationship_text}",
     )
     for axis in axes.flat:
         axis.grid(True, alpha=0.3)
     figure.suptitle(
-        f"Cross-solver comparison: R={left_metrics['mass_resolution']:.1f} vs {right_metrics['mass_resolution']:.1f}"
+        f"Peak comparison: R={left_metrics['mass_resolution']:.1f} vs {right_metrics['mass_resolution']:.1f}"
     )
     output.parent.mkdir(parents=True, exist_ok=True)
     figure.savefig(output, dpi=200, facecolor="white")
@@ -732,10 +790,15 @@ def analyze_comparison(
     paired_ids = np.array_equal(
         left_frame["particle_id"].to_numpy(), right_frame["particle_id"].to_numpy()
     )
+    comparison["sample_relationship"] = (
+        "paired_fixed_particles" if paired_particle_ids_required else "independent_runs"
+    )
+    if not paired_particle_ids_required:
+        comparison["paired_standardized_tof_correlation"] = None
     source_frame: pd.DataFrame | None = None
-    if paired_ids and SOURCE_COLUMNS.issubset(right_frame.columns):
+    if paired_particle_ids_required and SOURCE_COLUMNS.issubset(right_frame.columns):
         source_frame = right_frame
-    elif paired_ids and SOURCE_COLUMNS.issubset(left_frame.columns):
+    elif paired_particle_ids_required and SOURCE_COLUMNS.issubset(left_frame.columns):
         source_frame = left_frame
     if source_frame is not None:
         source_arguments = (
@@ -1017,6 +1080,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    def add_column_mapping_arguments(command_parser: argparse.ArgumentParser) -> None:
+        command_parser.add_argument("--particle-id-column")
+        command_parser.add_argument("--tof-column")
+        command_parser.add_argument("--event-column")
+        command_parser.add_argument("--pa-instance-column")
+        command_parser.add_argument("--x-column")
+        command_parser.add_argument("--y-column")
+        command_parser.add_argument("--z-column")
+        command_parser.add_argument("--declared-event")
+
     single = subparsers.add_parser("single", help="Analyze one CSV or XLSX particle table")
     single.add_argument("input", type=Path)
     single.add_argument("--mass", type=float, required=True, dest="nominal_mass_Da")
@@ -1024,6 +1097,7 @@ def build_parser() -> argparse.ArgumentParser:
     single.add_argument("--label")
     single.add_argument("--detector-center-x-mm", type=float, default=48.8)
     single.add_argument("--detector-center-y-mm", type=float, default=0.0)
+    add_column_mapping_arguments(single)
 
     recording = subparsers.add_parser(
         "simion-recording", help="Analyze and strictly audit a SIMION GUI export"
@@ -1037,6 +1111,8 @@ def build_parser() -> argparse.ArgumentParser:
     recording.add_argument("--detector-radius-mm", type=float, required=True)
     recording.add_argument("--detector-center-x-mm", type=float, default=48.8)
     recording.add_argument("--detector-center-y-mm", type=float, default=0.0)
+    recording.add_argument("--program-state", choices=("on", "off"), default="on")
+    add_column_mapping_arguments(recording)
 
     compare = subparsers.add_parser("compare", help="Compare two solver particle tables")
     compare.add_argument("left", type=Path)
@@ -1057,6 +1133,19 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     arguments = build_parser().parse_args(argv)
+    column_overrides = {
+        canonical: value
+        for canonical, value in {
+            "particle_id": getattr(arguments, "particle_id_column", None),
+            "tof_us": getattr(arguments, "tof_column", None),
+            "event": getattr(arguments, "event_column", None),
+            "pa_instance": getattr(arguments, "pa_instance_column", None),
+            "detector_x_mm": getattr(arguments, "x_column", None),
+            "detector_y_mm": getattr(arguments, "y_column", None),
+            "detector_z_mm": getattr(arguments, "z_column", None),
+        }.items()
+        if value is not None
+    }
     try:
         if arguments.command == "single":
             result = analyze_single(
@@ -1066,6 +1155,8 @@ def main(argv: list[str] | None = None) -> int:
                 arguments.label,
                 arguments.detector_center_x_mm,
                 arguments.detector_center_y_mm,
+                column_overrides=column_overrides,
+                declared_event=arguments.declared_event,
             )
         elif arguments.command == "simion-recording":
             result = analyze_simion_recording(
@@ -1078,6 +1169,9 @@ def main(argv: list[str] | None = None) -> int:
                 arguments.detector_radius_mm,
                 arguments.detector_center_x_mm,
                 arguments.detector_center_y_mm,
+                column_overrides=column_overrides,
+                declared_event=arguments.declared_event,
+                program_state=arguments.program_state,
             )
         elif arguments.command == "compare":
             result = analyze_comparison(

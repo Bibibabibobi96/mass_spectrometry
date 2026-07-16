@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "status": "formal_analysis_contract",
   "nominal_mass_Da": 524.0,
   "canonical_columns": {
@@ -15,7 +15,7 @@
     "detector_z_mm": "global detector crossing z coordinate in millimetres",
     "logged_radius_mm": "optional SIMION detector-local radius recorded in the TRACE event",
     "pa_instance": "SIMION PA instance number recorded at the detector event",
-    "event": "SIMION Data Recording event label"
+    "event": "SIMION Data Recording event code or label"
   },
   "definitions": {
     "apparent_mass_Da": "nominal_mass_Da*(tof_us/mean(tof_us))^2",
@@ -41,7 +41,8 @@
     "particle_ids_must_be_unique": true,
     "generated_sequential_particle_ids": "allowed only for unpaired single-spectrum human imports; forbidden for paired cross-solver validation",
     "nonfinite_or_nonpositive_tof": "reject for hit=true; missing TOF is allowed for hit=false",
-    "duplicate_particle_id": "reject"
+    "duplicate_particle_id": "reject",
+    "side_by_side_gui_export": "requires explicit column mapping; repeated Excel headers such as TOF.1 must never be inferred"
   },
   "source_mapping": {
     "required_columns": ["initial_x_mm", "initial_y_mm", "initial_z_mm", "initial_energy_eV"],
@@ -64,6 +65,7 @@
   "simion_gui_recording_audit": {
     "required": [
       "expected row count",
+      "operator-declared Program state is on",
       "unique sequential ion numbers 1 to N",
       "nonempty event column",
       "expected PA instance for every record",

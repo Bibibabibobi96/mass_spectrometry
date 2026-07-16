@@ -19,7 +19,11 @@ from peak_metrics import (
     compute_peak_metrics,
     compute_source_mapping_metrics,
 )
-from reference_analysis import audit_simion_recording, read_particle_table
+from reference_analysis import (
+    analyze_comparison,
+    audit_simion_recording,
+    read_particle_table,
+)
 
 
 class PeakMetricsTest(unittest.TestCase):
@@ -121,6 +125,34 @@ class ParticleImportTest(unittest.TestCase):
         self.assertEqual(normalized["particle_id"].tolist(), [1, 2, 3])
         self.assertTrue(metadata["particle_id_generated"])
 
+    def test_side_by_side_gui_export_uses_explicit_column_mapping(self) -> None:
+        source = pd.DataFrame(
+            {
+                "program on": [1, 2, 3],
+                "event": [4, 4, 4],
+                "TOF": [71.9, 72.0, 72.1],
+                "program off": [1, 2, 3],
+                "event.1": [4, 4, 4],
+                "TOF.1": [70.9, 71.0, 71.1],
+            }
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "side_by_side.xlsx"
+            source.to_excel(path, index=False)
+            normalized, metadata = read_particle_table(
+                path,
+                column_overrides={
+                    "particle_id": "program off",
+                    "event": "event.1",
+                    "tof_us": "TOF.1",
+                },
+            )
+
+        self.assertEqual(normalized["particle_id"].tolist(), [1, 2, 3])
+        self.assertEqual(normalized["event"].tolist(), ["4", "4", "4"])
+        np.testing.assert_allclose(normalized["tof_us"], [70.9, 71.0, 71.1])
+        self.assertEqual(metadata["column_overrides"]["tof_us"], "TOF.1")
+
     def test_missing_tof_is_allowed_only_for_missed_particle(self) -> None:
         source = pd.DataFrame(
             {
@@ -180,8 +212,54 @@ class ParticleImportTest(unittest.TestCase):
         self.assertEqual(audit["status"], "FAIL")
         self.assertFalse(audit["checks"]["event_column_present_and_nonempty"])
 
+    def test_strict_gui_recording_audit_rejects_program_off(self) -> None:
+        source = pd.DataFrame(
+            {
+                "Ion": [1, 2, 3],
+                "TofUs": [71.9, 72.0, 72.1],
+                "X": [48.8, 48.8, 48.8],
+                "Y": [0.0, 0.0, 0.0],
+                "Z": [19.83, 19.83, 19.83],
+                "PA Instance": [4, 4, 4],
+                "Event": [4, 4, 4],
+            }
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "recording.csv"
+            source.to_csv(path, index=False)
+            normalized, metadata = read_particle_table(path)
+            audit = audit_simion_recording(
+                normalized, metadata, 3, 4, 19.83, 40.0, program_state="off"
+            )
+
+        self.assertEqual(audit["status"], "FAIL")
+        self.assertFalse(audit["checks"]["program_was_enabled"])
+
 
 class SourceMappingAndBootstrapTest(unittest.TestCase):
+    def test_independent_comparison_does_not_report_paired_correlation(self) -> None:
+        left = pd.DataFrame({"Ion": [1, 2, 3], "TofUs": [71.9, 72.0, 72.1]})
+        right = pd.DataFrame({"Ion": [1, 2, 3], "TofUs": [72.1, 71.9, 72.0]})
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary_path = Path(temporary)
+            left_path = temporary_path / "left.csv"
+            right_path = temporary_path / "right.csv"
+            left.to_csv(left_path, index=False)
+            right.to_csv(right_path, index=False)
+            result = analyze_comparison(
+                left_path,
+                right_path,
+                temporary_path / "result",
+                524.0,
+            )
+
+        self.assertEqual(
+            result["comparison"]["sample_relationship"], "independent_runs"
+        )
+        self.assertIsNone(
+            result["comparison"]["paired_standardized_tof_correlation"]
+        )
+
     def test_quadratic_z_mapping_is_recovered(self) -> None:
         z = np.linspace(1.0, 2.0, 101)
         x = np.sin(z * 10.0) * 0.1

@@ -120,6 +120,55 @@ Ion Number，并记录PA instance、X/Y/Z和Event。
 外部T.Qual值不会污染正式运行。单粒子ION测试不要传`--default-num-particles 1`，SIMION会报
 容量参数越界；省略该容量参数即可。
 
+### 2026-07-16 GUI Program On/Off配对审计闭合
+
+桌面同名工作簿再次更新为5000行、左右两组并排记录。冻结副本位于
+`artifacts/projects/oa_tof/runs/simion_gui_recording/2026-07-16_program_on_off/raw/`，文件
+462631字节，SHA-256为
+`132640A666B5C861D3DA9B0834B2C300DD2C61478331206B1079A2017692A988`。Program On列为
+`program on/event/TOF/PA instance/x/y/z`，Program Off列被Excel读为
+`program off/event.1/TOF.1/PA instance.1/x.1/y.1/z.1`。两组Event均为用户所选ion splat事件的
+数值码4，PA实例均为4，z均为19.83 mm。On组5000个连续离子的严格Recording审计全部通过，
+最大检测器局部半径15.343 mm，小于40 mm。
+
+本次来源是日常候选`oatof_accz0050_refz0250.iob`（SHA-256
+`BD39757D2A8DC3BFF8DD052A8BBAFF570498E3A520C9A38D0EF7F91C86BDC203`）。稳定入口运行门禁再次
+实际加载四个PA实例并得到`TRAJECTORY_QUALITY=8/STATUS=PASS`。XLSX本身仍不保存T.Qual；这里的
+quality证据来自同名Program加载契约和用户记录的Program On状态，不得从TOF列反推。
+
+统一Python直接FWHM结果为：
+
+| 组别 | 平均TOF (us) | 标准差 (ns) | 直接TOF FWHM (ns) | 直接质量FWHM (Da) | R |
+|---|---:|---:|---:|---:|---:|
+| Program On（正式） | 71.99028682 | 0.806483 | 1.526591 | 0.02222238 | 23579.83 |
+| Program Off（仅诊断） | 71.98789634 | 0.697827 | 0.723979 | 0.01053960 | 49717.24 |
+
+该XLSX中的TOF实际只保留到`0.0001 us=0.1 ns`，不是Excel单元格显示格式造成的隐藏截断。因此
+它适合闭合GUI和比较同精度的On/Off组，但直接FWHM仍会受0.1 ns量化影响；正式跨求解器数值比较
+优先使用保留更多有效位的命令行TRACE/CSV，不用本表替换高精度基线。
+
+同名Fly2固定执行`seed(20260713)`，所以两组是同一初始粒子的配对A/B，不是随机重抽样。Off-On
+平均TOF为`-2.39048 ns`，逐粒子标准化TOF相关仅`0.05164`；标准化峰形KDE重叠`0.90727`、KS距离
+`0.1122`（p约`8.1e-28`）。关闭Program后，初始粒子到TOF的排序几乎被重排，差异不是5000粒子
+统计波动。
+
+R的两倍差距不能按“整体展宽两倍”解释。On组非高斯右肩略高于50%峰高，直接FWHM跨过整个
+肩部；Off组肩部略低于50%，FWHM只覆盖主峰。标准差只相差约15%，而半高阈值把峰肩的小变化
+放大成R约111%的变化。比较图和机器结果位于同一run目录的`comparison/`。
+
+Program代码逐项排查后的主因是透明栅网跨越。正式粒子每次飞行经过grid1一次、grid2一次、
+entgrid往返两次、midgrid往返两次，共6次；既有TRACE逐粒子均记录为`1/1/2/2`。每次跨越把粒子
+从栅网前`0.005 mm`移到后`0.005 mm`并补偿飞行时间，按约25--30 mm/us轴向速度估算，6次约
+2--2.4 ns，与实测均值差`2.39048 ns`同量级。跨界位置重置还改变PA边界处的场积分和TOF映射，
+从而移动右肩。默认`ideal_accel/stage1/stage2=0`，故`efield_adjust`不生效；
+`detector_tstep_enable=0`，故时间步窗口不生效；约72 us未触发90 us超时；`segment.terminate()`只在
+局部变量中算检测面修正，不改Data Recording的splat值。Fast Adjust和几何联动仍是正式可复现
+所必需，但若在同一已初始化会话中由On切到Off，现有PA电势和实例位置可能被继承，XLSX不能证明
+它们的状态。因此Off组只能用于说明禁用Program会破坏数值契约，不能作为更高R的替代基线。
+
+结论：GUI人工复现链已闭合，正式结果只认Program On组；以后并排XLSX必须显式映射`.1`列，
+Program Off门禁必须失败。
+
 ## 实施流程
 
 ## 阶段 A：确认安装与可写工作区
