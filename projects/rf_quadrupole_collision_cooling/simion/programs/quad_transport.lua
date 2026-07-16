@@ -21,9 +21,21 @@ local max_radius = {}
 local hits = 0
 local crossings = 0
 local particle_file
+local trajectory_file
+local previous_state = {}
+local next_axial_plane = {}
+local trajectory_plane_step_mm = 0.2
 
 local function radial_mm()
   return math.sqrt(ion_py_mm^2 + ion_pz_mm^2)
+end
+
+local function write_trajectory(particle, time_us, wb_x, wb_y, wb_z)
+  if not trajectory_file then return end
+  -- IOB basis: PA x -> wb z, PA y -> -wb y, PA z -> wb x.
+  local pa_x, pa_y, pa_z = wb_z, -wb_y, wb_x
+  trajectory_file:write(string.format('%d,%.12g,%.12g,%.12g,%.12g,%.12g\n',
+    particle, time_us, pa_z, pa_x, pa_y, math.sqrt(pa_x^2 + pa_y^2)))
 end
 
 function segment.initialize_run()
@@ -32,10 +44,19 @@ function segment.initialize_run()
   max_radius = {}
   hits = 0
   crossings = 0
+  previous_state = {}
+  next_axial_plane = {}
   local path = os.getenv('RFQUAD_SIMION_PARTICLE_CSV')
   assert(path and path ~= '', 'RFQUAD_SIMION_PARTICLE_CSV is not set')
   particle_file = assert(io.open(path, 'w'))
   particle_file:write('particle_id,crossed_detector_plane,hit,arrival_time_us,detector_plane_radius_mm,max_rod_radius_mm,max_radius_mm,terminate_x_mm,terminate_y_mm,terminate_z_mm\n')
+  local trajectory_path = os.getenv('RFQUAD_SIMION_TRAJECTORY_CSV')
+  if trajectory_path and trajectory_path ~= '' then
+    trajectory_file = assert(io.open(trajectory_path, 'w'))
+    trajectory_file:write('particle_id,time_us,axial_z_mm,transverse_x_mm,transverse_y_mm,r_mm\n')
+  else
+    trajectory_file = nil
+  end
 end
 
 function segment.init_p_values()
@@ -56,12 +77,37 @@ function segment.tstep_adjust()
 end
 
 function segment.initialize()
-  birth_time[ion_number] = ion_time_of_flight
-  max_rod_radius[ion_number] = radial_mm()
-  max_radius[ion_number] = radial_mm()
+  -- SIMION calls this once for a Fly'm, not once per ion.  Per-ion state
+  -- is therefore initialized on that ion's first other_actions callback.
 end
 
 function segment.other_actions()
+  local previous = previous_state[ion_number]
+  local current_t, current_x, current_y, current_z = ion_time_of_flight, ion_px_mm, ion_py_mm, ion_pz_mm
+  if not previous then
+    local radius = radial_mm()
+    birth_time[ion_number] = current_t
+    max_rod_radius[ion_number] = radius
+    max_radius[ion_number] = radius
+    write_trajectory(ion_number, current_t, current_x, current_y, current_z)
+    previous_state[ion_number] = {t=current_t, x=current_x, y=current_y, z=current_z}
+    next_axial_plane[ion_number] = math.floor(current_x / trajectory_plane_step_mm + 1) * trajectory_plane_step_mm
+    return
+  end
+  local plane = next_axial_plane[ion_number]
+  if previous and current_x > previous.x and plane then
+    while plane <= current_x do
+      local fraction = (plane - previous.x) / (current_x - previous.x)
+      write_trajectory(ion_number,
+        previous.t + fraction * (current_t - previous.t),
+        plane,
+        previous.y + fraction * (current_y - previous.y),
+        previous.z + fraction * (current_z - previous.z))
+      plane = plane + trajectory_plane_step_mm
+    end
+    next_axial_plane[ion_number] = plane
+  end
+  previous_state[ion_number] = {t=current_t, x=current_x, y=current_y, z=current_z}
   local radius = radial_mm()
   max_radius[ion_number] = math.max(max_radius[ion_number] or radius, radius)
   if ion_px_mm >= 5.8 and ion_px_mm <= 85.4 then
@@ -87,10 +133,12 @@ function segment.terminate()
     hit and ion_time_of_flight or 0/0, crossed and radius or 0/0,
     max_rod_radius[ion_number] or 0/0, max_radius[ion_number] or radius,
     ion_px_mm, ion_py_mm, ion_pz_mm))
+  write_trajectory(ion_number, ion_time_of_flight, ion_px_mm, ion_py_mm, ion_pz_mm)
 end
 
 function segment.terminate_run()
   if particle_file then particle_file:close() end
+  if trajectory_file then trajectory_file:close() end
   local summary_path = os.getenv('RFQUAD_SIMION_SUMMARY_JSON')
   assert(summary_path and summary_path ~= '', 'RFQUAD_SIMION_SUMMARY_JSON is not set')
   local summary = assert(io.open(summary_path, 'w'))

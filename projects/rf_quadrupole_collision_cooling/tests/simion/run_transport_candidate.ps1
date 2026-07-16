@@ -35,6 +35,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'SIMION refine failed.' }
 
     $env:RFQUAD_SIMION_PARTICLE_CSV = Join-Path $resultDir "transport_no_collision_particles_$RunLabel.csv"
+    $env:RFQUAD_SIMION_TRAJECTORY_CSV = Join-Path $resultDir "transport_no_collision_trajectory_samples_$RunLabel.csv"
     $env:RFQUAD_SIMION_SUMMARY_JSON = Join-Path $resultDir "transport_no_collision_summary_$RunLabel.json"
     $env:RFQUAD_SIMION_IOB = Join-Path $candidateDir 'quad_monolithic.iob'
     $env:RFQUAD_SIMION_FLY2 = $flyPath
@@ -46,6 +47,7 @@ try {
 }
 finally {
     Remove-Item Env:RFQUAD_SIMION_PARTICLE_CSV -ErrorAction SilentlyContinue
+    Remove-Item Env:RFQUAD_SIMION_TRAJECTORY_CSV -ErrorAction SilentlyContinue
     Remove-Item Env:RFQUAD_SIMION_SUMMARY_JSON -ErrorAction SilentlyContinue
     Remove-Item Env:RFQUAD_SIMION_IOB -ErrorAction SilentlyContinue
     Remove-Item Env:RFQUAD_SIMION_FLY2 -ErrorAction SilentlyContinue

@@ -196,5 +196,17 @@ summaryPath=fullfile(paths.comsolResultsDir,['transport_no_collision_summary' su
 particleTable=table((1:nP)',crossedDetectorPlane',hit',arrival',arrivalRadius',maxRodRadius',maxRadius',terminalX',terminalY',terminalZ','VariableNames', ...
     {'particle_id','crossed_detector_plane','hit','arrival_time_us','detector_plane_radius_mm','max_rod_radius_mm','max_radius_mm', ...
     'terminal_x_mm','terminal_y_mm','terminal_z_mm'}); writetable(particleTable,fullfile(paths.comsolResultsDir,['transport_no_collision_particles' suffix '.csv']));
+trajectoryPath=fullfile(paths.comsolResultsDir,['transport_no_collision_trajectory_samples' suffix '.csv']);
+trajectoryFile=fopen(trajectoryPath,'w'); assert(trajectoryFile>=0,'Could not open trajectory CSV.');
+fprintf(trajectoryFile,'particle_id,time_us,axial_z_mm,transverse_x_mm,transverse_y_mm,r_mm\n');
+for i=1:nP
+    valid=find(isfinite(x(:,i)) & isfinite(y(:,i)) & isfinite(z(:,i)));
+    sampled=valid(1:5:end);
+    if sampled(end)~=valid(end), sampled=[sampled;valid(end)]; end
+    for sample=sampled'
+        fprintf(trajectoryFile,'%d,%.12g,%.12g,%.12g,%.12g,%.12g\n',i,pd.t(sample)*1e6,z(sample,i),x(sample,i),y(sample,i),radial(sample,i));
+    end
+end
+fclose(trajectoryFile);
 fprintf('STATUS=PASS\n');
 end
