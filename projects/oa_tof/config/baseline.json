@@ -7,6 +7,17 @@
     "detector_x": 48.8,
     "z_axis": "repeller-to-reflectron direction"
   },
+  "geometry_derivation": {
+    "reflectron": {
+      "incident_energy_eV": 2000.0,
+      "total_field_free_length_mm": 1200.0,
+      "stage1_length_mm": 120.0,
+      "stage2_margin_fraction": 1.0,
+      "engineering_length_decimals_mm": 4,
+      "engineering_voltage_decimals_V": 4,
+      "rule": "U1=2*U0*(L+2*d1)/(3*L); E2=12*U0*(sqrt(3)*sqrt(L)+sqrt(L-4*d1))/(sqrt(3)*L^1.5+8*sqrt(3)*sqrt(L)*d1+3*L*sqrt(L-4*d1)); d2min=(U0-U1)/E2; d2_raw=d2min*(1+margin); V_mirror=U1+E2*d2_raw; L_reflectron_raw=d1+d2_raw; only after all physics values are derived, round engineering lengths and voltages to their declared precisions"
+    }
+  },
   "geometry_mm": {
     "L_accel": 19.83,
     "L_flight": 619.83,
@@ -18,8 +29,22 @@
     "bore_r": 250.0,
     "ring_outer_r": 300.0,
     "flight_tube_r": 350.0,
+    "flight_tube_wall": 10.0,
+    "shield_endcap_thickness": 10.0,
+    "shield_near_endcap_gap": 20.0,
     "ring_thickness": 5.0,
-    "shield_axial_gap": 50.0
+    "shield_axial_gap": 50.0,
+    "accelerator_shield_wall": 4.0,
+    "accelerator_rear_clearance": 5.0,
+    "accelerator_repeller_thickness": 1.0,
+    "accelerator_bore_half": 5.0,
+    "accelerator_ring_width": 5.0,
+    "accelerator_insulation_gap": 5.0,
+    "accelerator_exit_grid_half_width": 15.0,
+    "shield_bore_z_min": -30.0,
+    "shield_bore_z_max": 881.6628,
+    "shield_outer_z_min": -40.0,
+    "shield_outer_z_max": 891.6628
   },
   "electrodes_V": {
     "repeller": 2240.0,
@@ -64,6 +89,7 @@
   "runtime_contract": {
     "verified_on": "2026-07-14",
     "standard_mass_updated_on": "2026-07-15",
+    "comsol_formal_geometry_status": "legacy_stale_pending_baseline_regeneration",
     "comsol_formal_mph_sha256": "14C11E9AE8C05B1A508239C3C81DC64BAEAA52B39DA9851CAC118880D3B3765D"
   },
   "simion_runtime": {

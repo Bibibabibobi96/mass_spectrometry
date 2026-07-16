@@ -1,11 +1,34 @@
-; oa-TOF field-free drift tube: 2D cylindrical, grounded outer shield only.
-; Local x=0 is the accelerator exit (global z=19.83 mm); local x=600 mm
-; is the reflectron entrance (global z=619.83 mm).  There are no end caps.
-; The interior r<350 mm is vacuum and should have E=0 apart from the
-; separately represented accelerator/reflectron fringe fields.
+; oa-TOF grounded one-piece shield, near-end and field-free segment.
+; This 2D cylindrical PA contains the 10 mm near end cap and the
+; continuous 10 mm side wall up to the reflectron entrance.  The matching
+; reflectron PA continues the same r=350..360 mm wall and supplies the far
+; 10 mm end cap.  Together they reproduce the authoritative COMSOL shell.
+;
+; Global defaults:
+;   outer start / near cap rear face  z=-40 mm
+;   vacuum bore start / cap front     z=-30 mm
+;   reflectron interface              z=619.83 mm
+; The Workbench places local x=0 at global z=-40 mm.
 
-# local L_drift = 600
-# local r_bore = 350
-# local wall = 4
-pa_define($(L_drift+1), $(r_bore+wall+1), 1, cylindrical,none,electrostatic,, 1)
-e(1) { fill { within { box(0,$(r_bore), $(L_drift),$(r_bore+wall)) } } }
+# local var = _G.var or {}
+# local mmgu_axial = var.mmgu_axial or 1
+# local mmgu_radial = var.mmgu_radial or 1
+# local inner_radius = var.inner_radius or 350
+# local wall = var.wall or 10
+# local near_cap_thickness = var.near_cap_thickness or 10
+# local near_outer_z = var.near_outer_z or -40
+# local reflectron_interface_z = var.reflectron_interface_z or 619.83
+# local outer_radius = inner_radius+wall
+# local axial_span = reflectron_interface_z-near_outer_z
+# local side_start = near_cap_thickness
+# local side_end = axial_span
+# local nx = math.ceil(axial_span/mmgu_axial) + 1
+# local ny = math.ceil(outer_radius/mmgu_radial) + 1
+pa_define($(nx),$(ny),1,cylindrical,none,electrostatic,,
+          $(mmgu_axial),$(mmgu_radial),1,surface=fractional)
+
+; e1 is a single 0 V conductor: near end cap plus continuous side wall.
+e(1) {
+  fill { within { box(0,0,$(near_cap_thickness),$(outer_radius)) } }
+  fill { within { box($(side_start),$(inner_radius),$(side_end),$(outer_radius)) } }
+}

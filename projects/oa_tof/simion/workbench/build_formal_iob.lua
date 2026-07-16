@@ -15,6 +15,15 @@ local detector_pa=os.getenv('OATOF_DETECTOR_PA') or f..'detector_ground.pa0'
 local detector_active_plane_z=tonumber(os.getenv('OATOF_DETECTOR_ACTIVE_PLANE_Z') or '19.83')
 local detector_marker_thickness=tonumber(os.getenv('OATOF_DETECTOR_MARKER_THICKNESS') or '0.05')
 local detector_marker_back_margin=tonumber(os.getenv('OATOF_DETECTOR_MARKER_BACK_MARGIN_Z') or '0.05')
+local reflectron_entgrid_z=tonumber(os.getenv('OATOF_REFLECTRON_ENTGRID_Z') or '619.83')
+local accelerator_repeller_thickness=tonumber(os.getenv('OATOF_ACCELERATOR_REPELLER_THICKNESS') or '1')
+local accelerator_rear_gap=tonumber(os.getenv('OATOF_ACCELERATOR_REAR_GAP') or '5')
+local accelerator_shield_wall=tonumber(os.getenv('OATOF_ACCELERATOR_SHIELD_WALL') or '4')
+local shield_near_gap=tonumber(os.getenv('OATOF_SHIELD_NEAR_ENDCAP_GAP') or '20')
+local shield_endcap_thickness=tonumber(os.getenv('OATOF_SHIELD_ENDCAP_THICKNESS') or '10')
+local shield_near_bore_z=-accelerator_repeller_thickness-accelerator_rear_gap-
+  accelerator_shield_wall-shield_near_gap
+local shield_near_outer_z=shield_near_bore_z-shield_endcap_thickness
 local function read_file(path,label)
   local input=assert(io.open(path,'rb'),'cannot open '..label..': '..path)
   local content=input:read('*a')
@@ -51,15 +60,15 @@ r.pa:load(reflectron_pa); r:_debug_update_size()
 a.pa:load(accelerator_pa); a:_debug_update_size()
 t.pa:load(flight_tube_pa); t:_debug_update_size()
 d.pa:load(detector_pa); d:_debug_update_size()
-r.x,r.y,r.z=0,0,619.83; r.az,r.el,r.rt,r.scale=-90,0,0,1
+r.x,r.y,r.z=0,0,reflectron_entgrid_z; r.az,r.el,r.rt,r.scale=-90,0,0,1
 local accelerator_axis_x,accelerator_axis_y=-48.8,0
 local accelerator_half_x=(a.pa.nx-1)*a.pa.dx_mm/2
 local accelerator_half_y=(a.pa.ny-1)*a.pa.dy_mm/2
-local accelerator_rear_gap,accelerator_shield_wall=5,4
 a.x,a.y,a.z=accelerator_axis_x-accelerator_half_x,
-  accelerator_axis_y-accelerator_half_y,-1-accelerator_rear_gap-accelerator_shield_wall
+  accelerator_axis_y-accelerator_half_y,-accelerator_repeller_thickness-
+  accelerator_rear_gap-accelerator_shield_wall
 a.az,a.el,a.rt,a.scale=0,0,0,1
-t.x,t.y,t.z=0,0,19.83; t.az,t.el,t.rt,t.scale=-90,0,0,1
+t.x,t.y,t.z=0,0,shield_near_outer_z; t.az,t.el,t.rt,t.scale=-90,0,0,1
 local detector_half_x=(d.pa.nx-1)*d.pa.dx_mm/2
 local detector_half_y=(d.pa.ny-1)*d.pa.dy_mm/2
 d.x,d.y,d.z=-accelerator_axis_x-detector_half_x,

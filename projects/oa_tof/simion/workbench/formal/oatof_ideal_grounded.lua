@@ -21,6 +21,13 @@ adjustable accelerator_ring_width_mm=5
 adjustable accelerator_insulation_gap_mm=5
 adjustable accelerator_shield_wall_mm=4
 adjustable accelerator_rear_insulation_gap_mm=5
+adjustable accelerator_repeller_thickness_mm=1
+adjustable flight_tube_inner_radius_mm=350
+adjustable flight_tube_shield_wall_mm=10
+adjustable flight_tube_near_endcap_gap_mm=20
+adjustable flight_tube_far_endcap_gap_mm=50
+adjustable flight_tube_endcap_thickness_mm=10
+adjustable reflectron_backplate_thickness_mm=5
 adjustable detector_mirror_offset_x_mm=0
 adjustable detector_mirror_offset_y_mm=0
 adjustable detector_radius_mm=40
@@ -52,14 +59,38 @@ function segment.load()
  write_load_contract_report()
 end
 local function configure_linked_geometry()
+ local ri=simion.wb.instances[1]
  local ai=simion.wb.instances[2]
+ local ti=simion.wb.instances[3]
  local di=simion.wb.instances[4]
  local half_x=(ai.pa.nx-1)*ai.pa.dx_mm*ai.scale/2
  local half_y=(ai.pa.ny-1)*ai.pa.dy_mm*ai.scale/2
- local expected_z=-1-accelerator_rear_insulation_gap_mm-accelerator_shield_wall_mm
+ local expected_z=-accelerator_repeller_thickness_mm-
+   accelerator_rear_insulation_gap_mm-accelerator_shield_wall_mm
  assert(math.abs(accelerator_instance_z_mm-expected_z)<1e-12,
    'accelerator instance z must follow repeller rear gap and shield wall')
  ai.x,ai.y,ai.z=accelerator_axis_x_mm-half_x,accelerator_axis_y_mm-half_y,accelerator_instance_z_mm
+ local near_bore_z=expected_z-flight_tube_near_endcap_gap_mm
+ local near_outer_z=near_bore_z-flight_tube_endcap_thickness_mm
+ local far_bore_z=reflectron_backplate_z_mm+
+   reflectron_backplate_thickness_mm+flight_tube_far_endcap_gap_mm
+ local far_outer_z=far_bore_z+flight_tube_endcap_thickness_mm
+ local expected_radius=flight_tube_inner_radius_mm+flight_tube_shield_wall_mm
+ local tube_axial_span=(ti.pa.nx-1)*ti.pa.dx_mm*ti.scale
+ local tube_radial_span=(ti.pa.ny-1)*ti.pa.dy_mm*ti.scale
+ local refl_axial_span=(ri.pa.nx-1)*ri.pa.dx_mm*ri.scale
+ local refl_radial_span=(ri.pa.ny-1)*ri.pa.dy_mm*ri.scale
+ assert(tube_axial_span+1e-9>=reflectron_entgrid_z_mm-near_outer_z,
+   'flight-tube PA does not reach the reflectron interface')
+ assert(refl_axial_span+1e-9>=far_outer_z-reflectron_entgrid_z_mm,
+   'reflectron PA does not contain the far shield end cap')
+ assert(tube_radial_span+1e-9>=expected_radius and
+        refl_radial_span+1e-9>=expected_radius,
+   'shield PA radial span is smaller than the linked outer radius')
+ ri.x,ri.y,ri.z=0,0,reflectron_entgrid_z_mm
+ ri.az,ri.el,ri.rt,ri.scale=-90,0,0,1
+ ti.x,ti.y,ti.z=0,0,near_outer_z
+ ti.az,ti.el,ti.rt,ti.scale=-90,0,0,1
  detector_x_mm=-accelerator_axis_x_mm+detector_mirror_offset_x_mm
  detector_y_mm=-accelerator_axis_y_mm+detector_mirror_offset_y_mm
  detector_z_mm=accelerator_grid2_z_mm
@@ -75,7 +106,18 @@ local function configure_linked_geometry()
  di.z=detector_z_mm-detector_marker_back_margin_z_mm-
    detector_marker_absorber_thickness_mm
  if trajectory_log_enable~=0 then
-  print(string.format('TRACE: linked_geometry accelerator_axis=(%.12g,%.12g) accelerator_instance=(%.12g,%.12g,%.12g) accelerator_cell=(%.12g,%.12g,%.12g) detector_active_plane=(%.12g,%.12g,%.12g) radius=%.12g marker_thickness=%.12g marker_margins_front_back=(%.12g,%.12g) detector_instance=(%.12g,%.12g,%.12g)',accelerator_axis_x_mm,accelerator_axis_y_mm,ai.x,ai.y,ai.z,ai.pa.dx_mm,ai.pa.dy_mm,ai.pa.dz_mm,detector_x_mm,detector_y_mm,detector_z_mm,detector_radius_mm,detector_marker_absorber_thickness_mm,detector_marker_front_margin_z_mm,detector_marker_back_margin_z_mm,di.x,di.y,di.z))
+  print(string.format('TRACE: linked_geometry accelerator_axis=(%.12g,%.12g) accelerator_instance=(%.12g,%.12g,%.12g) accelerator_cell=(%.12g,%.12g,%.12g) shield_inner_outer_radius=(%.12g,%.12g) shield_bore_z=(%.12g,%.12g) shield_outer_z=(%.12g,%.12g) detector_active_plane=(%.12g,%.12g,%.12g) radius=%.12g marker_thickness=%.12g marker_margins_front_back=(%.12g,%.12g) detector_instance=(%.12g,%.12g,%.12g)',accelerator_axis_x_mm,accelerator_axis_y_mm,ai.x,ai.y,ai.z,ai.pa.dx_mm,ai.pa.dy_mm,ai.pa.dz_mm,flight_tube_inner_radius_mm,expected_radius,near_bore_z,far_bore_z,near_outer_z,far_outer_z,detector_x_mm,detector_y_mm,detector_z_mm,detector_radius_mm,detector_marker_absorber_thickness_mm,detector_marker_front_margin_z_mm,detector_marker_back_margin_z_mm,di.x,di.y,di.z))
+ end
+end
+-- Instance 3 contains the continuous grounded shell, but its cylindrical
+-- bounding box overlaps the orthogonal accelerator and the reflectron.
+-- Suppress it there so SIMION falls through to the corresponding detailed PA.
+function segment.instance_adjust()
+ if type(ion_pz_mm)~='number' or type(ion_instance)~='number' then return end
+ if ion_instance==3 and
+    (ion_pz_mm<=accelerator_grid2_z_mm or
+     ion_pz_mm>=reflectron_entgrid_z_mm) then
+  ion_instance=0
  end
 end
 function segment.initialize_run()
@@ -109,7 +151,7 @@ local function grid_planes()
  return {
   {name='grid1',z=accelerator_grid1_z_mm,shape='square',cx=accelerator_axis_x_mm,cy=accelerator_axis_y_mm,half=electrode_half},
   {name='grid2',z=accelerator_grid2_z_mm,shape='square',cx=accelerator_axis_x_mm,cy=accelerator_axis_y_mm,half=shield_inner_half},
-  {name='entgrid',z=reflectron_entgrid_z_mm,shape='circle',cx=0,cy=0,radius=350},
+  {name='entgrid',z=reflectron_entgrid_z_mm,shape='circle',cx=0,cy=0,radius=flight_tube_inner_radius_mm},
   {name='midgrid',z=reflectron_midgrid_z_mm,shape='circle',cx=0,cy=0,radius=300}
  }
 end

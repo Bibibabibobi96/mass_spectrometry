@@ -8,10 +8,17 @@
 # local var = _G.var or {}
 # local mmgu_axial = var.mmgu_axial or var.mmgu or 1
 # local mmgu_radial = var.mmgu_radial or var.mmgu or mmgu_axial
-# local axial_span = 212
-# local radial_span = 355
-# local nx = math.floor(axial_span/mmgu_axial + 0.5) + 1
-# local ny = math.floor(radial_span/mmgu_radial + 0.5) + 1
+# local inner_radius = var.inner_radius or 350
+# local wall = var.wall or 10
+# local backplate_front = var.backplate_front or 206.8328
+# local backplate_thickness = var.backplate_thickness or 5
+# local far_clearance = var.far_clearance or 50
+# local far_cap_thickness = var.far_cap_thickness or 10
+# local bore_end = backplate_front+backplate_thickness+far_clearance
+# local outer_end = bore_end+far_cap_thickness
+# local outer_radius = inner_radius+wall
+# local nx = math.ceil(outer_end/mmgu_axial) + 1
+# local ny = math.ceil(outer_radius/mmgu_radial) + 1
 pa_define($(nx),$(ny),1,cylindrical,y,electrostatic,,
           $(mmgu_axial),$(mmgu_radial),1,surface=fractional)
 
@@ -44,8 +51,10 @@ e(17) { fill{within{box(189.861,250,194.861,300)}} }
 ; e18: backplate.  Its front face is at x=L_refl=206.8328 mm.
 e(18) { fill{within{box(206.833,0,211.833,300)}} }
 
-; e19: grounded 5 mm shield wall and end closures.
+; e19: grounded 10 mm side wall plus the full 10 mm far end cap.
+; The side wall starts at the reflectron entrance and joins the matching
+; field-free shield PA without an axial gap.
 e(19) {
-  fill{within{box(0,350,212,355)}}
-  fill{within{box(211.833,300,212,355)}}
+  fill{within{box(0,$(inner_radius),$(bore_end),$(outer_radius))}}
+  fill{within{box($(bore_end),0,$(outer_end),$(outer_radius))}}
 }

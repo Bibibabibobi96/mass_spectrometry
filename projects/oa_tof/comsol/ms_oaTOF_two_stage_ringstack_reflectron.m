@@ -123,8 +123,11 @@ E1_Vpm = U1_V/d1_m;
 E2_Vpm = 12*U0_eV*(sqrt(3)*sqrt(L_total_m)+sqrt(L_total_m-4*d1_m)) / ...
     (sqrt(3)*L_total_m^1.5 + 8*sqrt(3)*sqrt(L_total_m)*d1_m + 3*L_total_m*sqrt(L_total_m-4*d1_m));
 d2min_mm = ((U0_eV-U1_V)/E2_Vpm)*1000;
-d2_mm = d2min_mm*(1+d2_margin_frac);
-V_mirror_V = U1_V + E2_Vpm*(d2_mm/1000);
+% Derive all physical quantities from the unrounded value first.  Only the
+% resulting engineering geometry is rounded to baseline.json precision.
+d2_raw_mm = d2min_mm*(1+d2_margin_frac);
+V_mirror_V = U1_V + E2_Vpm*(d2_raw_mm/1000);
+d2_mm = round(d2_raw_mm, 4);
 fprintf('[d1 scan] d1=%gmm -> U1(V_mid)=%.4fV, E1=%.4fV/m, E2=%.4fV/m, V_mirror=%.4fV, d2_min=%.2fmm, d2(adaptive,+%.0f%%)=%.2fmm\n', ...
     d1_mm, U1_V, E1_Vpm, E2_Vpm, V_mirror_V, d2min_mm, d2_margin_frac*100, d2_mm);
 % oa-TOF two-stage ring-stack reflectron analyzer: orthogonal accelerator (pusher)
@@ -424,7 +427,7 @@ p.set('L_flight', 'L_accel+600[mm]', 'Entrance-grid z-position (accelerator orig
 % asymmetry test). Both the geometry and the detection logic now read
 % this SAME parameter, so they can never drift apart again.
 p.set('detector_z', 'L_accel', 'Detector z-position -- exactly L_accel gives L2=L_flight-detector_z=500.00mm exactly (matching L1). Referenced by BOTH the detector geometry and the detection z-threshold below (was two independent hardcoded values before, a latent bug found during the §7.41 L1/L2 asymmetry test)');
-p.set('L_refl', sprintf('%g[mm]', d1_mm+d2_mm), 'Ring-stack reflectron total length (d1 from the d1_mm function argument + adaptive d2 from the turnaround-depth calculation; geometrically this is the entrance-grid to backplate distance)');
+p.set('L_refl', sprintf('%.12g[mm]', d1_mm+d2_mm), 'Ring-stack reflectron total length (physics-derived d1+d2, rounded to the shared 0.0001mm engineering precision in baseline.json)');
 p.set('L_stage1', sprintf('%g[mm]', d1_mm), 'Stage 1 length (entrance grid to middle grid) = d1, from the d1_mm function argument (doc §7.49, was fixed 200mm)');
 % !!! CORRECTED: the first attempt used K0=V_repeller=4500eV, but the
 % ion actually enters the REFLECTRON with KE = the LOCAL potential at

@@ -80,6 +80,21 @@ simulation_repo/
 - `projects/rf_quadrupole_collision_cooling`：多级杆碰撞冷却与传输。
 - `projects/wehnelt_electron_gun`：螺旋灯丝 Wehnelt 电子枪。
 
+## 参数权威与单向派生
+
+所有项目必须遵循同一条不可逆的数据流：
+
+`物理输入参数 + 公式 + 明确精度规则 → 项目config中的baseline工程参数 → COMSOL / SIMION / CAD`
+
+- `baseline`不是任一软件当前文件的抄录，而是物理输入经公式计算后的唯一工程参数契约。
+- 公式、输入量、单位和工程舍入位数必须机器可读并接受门禁；不得只把最终尺寸散写在代码或文档中。
+- COMSOL、SIMION、CAD及SolidWorks只能读取、生成或验证baseline，不得因网格、格式化、GUI显示、
+  旧模型或某个求解器的现有数值而反向改写baseline。
+- 扫描参数也必须先形成候选契约，再联动生成各实现；禁止分别手改多个软件后凭肉眼判断一致。
+- 序列化精度不得低于baseline精度。`%g`、Excel显示位数或GUI四舍五入不能充当工程参数定义。
+- 若实现与baseline冲突，实现一律判为失效候选；在重新生成、跨软件门禁和正式CAD同步全部通过前，
+  不得转正。AI和人均无权为了迁就某一现有文件而擅自改变派生结果。
+
 ## 语言职责
 
 - MATLAB R2025b只负责COMSOL模型树、求解、GUI结果节点、MPH和正式STEP导出。

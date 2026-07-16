@@ -3,6 +3,8 @@ testDir = fileparts(mfilename('fullpath'));
 componentDir = fileparts(fileparts(testDir));
 addpath(componentDir);
 paths = oatof_paths();
+contract = jsondecode(fileread(fullfile(componentDir, 'config', 'baseline.json')));
+g = contract.geometry_mm;
 modelPath = fullfile(paths.comsolFormalDir, ...
     'MS_oaTOF_TwoStageRingStackReflectron_Final.mph');
 
@@ -21,18 +23,22 @@ model = mphload(modelPath, 'OaTofSyncVerify');
 fprintf(fid, 'LOAD_SECONDS=%.6f\n', toc(tLoad));
 
 expected = {
-    'x_accel_center',        -48.80e-3;
-    'L_accel',                19.83e-3;
-    'accel_shield_half',      35e-3;
-    'accel_shield_wall',       4e-3;
-    'accel_ring_gap',          2e-3;
-    'accel_ring_bore_half',   15e-3;
-    'accel_shield_back_extra',10e-3;
-    'bore_r',                250e-3;
-    'ring_outer_r',          300e-3;
-    'flight_tube_r',         350e-3;
-    'L_flight',              619.83e-3;
-    'L_refl',                206.833e-3;
+    'x_accel_center',        contract.coordinate_convention.accelerator_axis_x*1e-3;
+    'L_accel',               g.L_accel*1e-3;
+    'accel_shield_half',     g.accelerator_exit_grid_half_width*1e-3;
+    'accel_shield_wall',     g.accelerator_shield_wall*1e-3;
+    'accel_ring_gap',        g.accelerator_insulation_gap*1e-3;
+    'accel_ring_bore_half',  g.accelerator_bore_half*1e-3;
+    'accel_shield_back_extra',g.accelerator_rear_clearance*1e-3;
+    'endcap_gap',            g.shield_near_endcap_gap*1e-3;
+    'bore_r',                g.bore_r*1e-3;
+    'ring_outer_r',          g.ring_outer_r*1e-3;
+    'flight_tube_r',         g.flight_tube_r*1e-3;
+    'flight_tube_wall',      g.flight_tube_wall*1e-3;
+    'shield_axial_gap',      g.shield_axial_gap*1e-3;
+    'ring_thickness',        g.ring_thickness*1e-3;
+    'L_flight',              g.L_flight*1e-3;
+    'L_refl',                g.L_reflectron*1e-3;
     'V_repeller',           2240;
     'V_grid1',              1760;
     'V_mid',                1600;
@@ -47,6 +53,33 @@ for k = 1:size(expected, 1)
     fprintf(fid, 'PARAM_%s_EXPR=%s\n', name, char(model.param.get(name)));
     fprintf(fid, 'PARAM_%s_SI=%.15g\n', name, value);
 end
+
+geom1 = model.component('comp1').geom('geom1');
+shieldOuter = geom1.feature('flighttubewallO');
+shieldBore = geom1.feature('flighttubewallH');
+shield = geom1.feature('flighttubewall');
+assert(strcmp(char(shieldOuter.getString('r')), ...
+    'flight_tube_r+flight_tube_wall'), ...
+    'Shield outer radius is not linked to the 10 mm wall.');
+assert(strcmp(char(shieldOuter.getString('h')), ...
+    'L_flight+L_refl+ring_thickness+shield_axial_gap-(-1[mm]-accel_shield_back_extra-accel_shield_wall-endcap_gap)+2*flight_tube_wall'), ...
+    'Shield outer axial span no longer includes both end caps.');
+assert(strcmp(char(shieldBore.getString('r')), 'flight_tube_r'), ...
+    'Shield bore radius no longer matches the flight-tube vacuum.');
+assert(contains(char(shield.label), 'one-piece shell with both ends closed'), ...
+    'Shield feature is not the authoritative one-piece closed shell.');
+fprintf(fid, 'SHIELD_OUTER_R_EXPR=%s\n', char(shieldOuter.getString('r')));
+fprintf(fid, 'SHIELD_OUTER_H_EXPR=%s\n', char(shieldOuter.getString('h')));
+fprintf(fid, 'SHIELD_BORE_R_EXPR=%s\n', char(shieldBore.getString('r')));
+fprintf(fid, 'SHIELD_LABEL=%s\n', char(shield.label));
+
+grid2Rectangle = geom1.feature('wp_grid2').geom.feature('r1');
+grid2Size = grid2Rectangle.getStringArray('size');
+assert(strcmp(char(grid2Size(1)), '2*accel_shield_half') && ...
+    strcmp(char(grid2Size(2)), '2*accel_shield_half'), ...
+    'Accelerator exit grid is not the linked 30 x 30 mm square.');
+fprintf(fid, 'GRID2_SIZE_EXPR=%s,%s\n', ...
+    char(grid2Size(1)), char(grid2Size(2)));
 
 fprintf(fid, 'COMPONENT_TAGS=%s\n', joinJavaStrings(model.component.tags));
 fprintf(fid, 'STUDY_TAGS=%s\n', joinJavaStrings(model.study.tags));
