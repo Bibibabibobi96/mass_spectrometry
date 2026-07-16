@@ -5,8 +5,12 @@ addpath(componentDir);
 paths = oatof_paths();
 contract = jsondecode(fileread(fullfile(componentDir, 'config', 'baseline.json')));
 g = contract.geometry_mm;
-modelPath = fullfile(paths.comsolFormalDir, ...
-    'MS_oaTOF_TwoStageRingStackReflectron_Final.mph');
+modelPath = getenv('OATOF_COMSOL_MODEL_PATH');
+if isempty(modelPath)
+    modelPath = fullfile(paths.comsolFormalDir, ...
+        'MS_oaTOF_TwoStageRingStackReflectron_Final.mph');
+end
+assert(isfile(modelPath), 'COMSOL model to verify is missing: %s', modelPath);
 
 fid = fopen(reportPath, 'w');
 assert(fid >= 0, 'Could not open report: %s', reportPath);

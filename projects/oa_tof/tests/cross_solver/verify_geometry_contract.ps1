@@ -21,6 +21,8 @@ $reflectronGemPath = Join-Path $componentDir 'simion\reflectron\oatof_reflectron
 $reflectronBuilderPath = Join-Path $componentDir 'simion\reflectron\build_reflectron_variant.lua'
 $formalDir = Join-Path $projectRoot 'artifacts\projects\oa_tof\models\simion\workspace\04_workbench\formal'
 $formalMph = Join-Path $projectRoot 'artifacts\projects\oa_tof\models\comsol\formal\MS_oaTOF_TwoStageRingStackReflectron_Final.mph'
+$formalCadAssembly = Join-Path $projectRoot 'artifacts\projects\oa_tof\cad\formal\MS_oaTOF_TwoStageRingStackReflectron_Final_physical_components.sldasm'
+$formalCadReport = Join-Path $projectRoot 'artifacts\projects\oa_tof\cad\formal\oaTOF_solidworks_export_report.json'
 
 function Assert-Near([double]$Actual, [double]$Expected, [string]$Label, [double]$Tolerance = 1e-9) {
   if ([Math]::Abs($Actual - $Expected) -gt $Tolerance) { throw "$Label mismatch: actual=$Actual expected=$Expected" }
@@ -191,10 +193,23 @@ if (-not $SkipRuntime) {
   if ($contract.runtime_contract.comsol_formal_geometry_status -ne 'synchronized') {
     throw "Formal COMSOL geometry is not synchronized to baseline: $($contract.runtime_contract.comsol_formal_geometry_status). Use -SkipRuntime only for candidate/source validation."
   }
+  if ($contract.runtime_contract.solidworks_formal_geometry_status -ne 'synchronized') {
+    throw "Formal SolidWorks geometry is not synchronized to baseline: $($contract.runtime_contract.solidworks_formal_geometry_status)."
+  }
   if (-not (Test-Path -LiteralPath $formalDir)) { throw "Formal SIMION runtime workspace missing: $formalDir" }
   if (-not (Test-Path -LiteralPath $formalMph)) { throw "Formal COMSOL MPH missing: $formalMph" }
+  if (-not (Test-Path -LiteralPath $formalCadAssembly)) { throw "Formal SolidWorks assembly missing: $formalCadAssembly" }
+  if (-not (Test-Path -LiteralPath $formalCadReport)) { throw "Formal SolidWorks export report missing: $formalCadReport" }
   $mphHash = (Get-FileHash -LiteralPath $formalMph -Algorithm SHA256).Hash
   if ($mphHash -ne $contract.runtime_contract.comsol_formal_mph_sha256) { throw 'Formal COMSOL MPH differs from the verified geometry contract.' }
+  $cadHash = (Get-FileHash -LiteralPath $formalCadAssembly -Algorithm SHA256).Hash
+  if ($cadHash -ne $contract.runtime_contract.solidworks_formal_assembly_sha256) { throw 'Formal SolidWorks assembly differs from the verified geometry contract.' }
+  $cadReport = Get-Content -LiteralPath $formalCadReport -Raw -Encoding UTF8 | ConvertFrom-Json
+  if ($cadReport.solidWorks.solidWorksRevision -ne $contract.runtime_contract.solidworks_revision) { throw 'Formal SolidWorks revision differs from the verified geometry contract.' }
+  if ($cadReport.solidWorks.partCount -ne $contract.runtime_contract.solidworks_formal_component_count) { throw 'Formal SolidWorks part count differs from the verified geometry contract.' }
+  if ($cadReport.solidWorks.assembly.componentCount -ne $contract.runtime_contract.solidworks_formal_component_count) { throw 'Formal SolidWorks assembly component count differs from the verified geometry contract.' }
+  if ($cadReport.solidWorks.assembly.saveErrors -ne 0 -or $cadReport.solidWorks.assembly.saveWarnings -ne 0) { throw 'Formal SolidWorks assembly report contains save errors or warnings.' }
+  if (($cadReport.solidWorks.parts | Measure-Object -Property saveErrors -Maximum).Maximum -ne 0 -or ($cadReport.solidWorks.parts | Measure-Object -Property saveWarnings -Maximum).Maximum -ne 0) { throw 'Formal SolidWorks part report contains save errors or warnings.' }
   $runtimeLua = Join-Path $formalDir 'oatof_ideal_grounded.lua'
   if ((Get-FileHash -LiteralPath $simionLua -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $runtimeLua -Algorithm SHA256).Hash) { throw 'Formal SIMION runtime Lua differs from source.' }
   $runtimeFly2 = Join-Path $formalDir 'oatof_ideal_grounded.fly2'
@@ -219,4 +234,8 @@ Write-Output ("ACCELERATOR_AXIS_X_MM={0}" -f $axisX)
 Write-Output ("DETECTOR_X_MM={0}" -f (-$axisX + $detectorOffsetX))
 Write-Output ("DETECTOR_RADIUS_MM={0}" -f $contract.geometry_mm.detector_radius)
 $derivationOutput | Write-Output
-if (-not $SkipRuntime) { Write-Output ("COMSOL_FORMAL_MPH_SHA256={0}" -f $mphHash) }
+if (-not $SkipRuntime) {
+  Write-Output ("COMSOL_FORMAL_MPH_SHA256={0}" -f $mphHash)
+  Write-Output ("SOLIDWORKS_FORMAL_ASSEMBLY_SHA256={0}" -f $cadHash)
+  Write-Output ("SOLIDWORKS_FORMAL_COMPONENT_COUNT={0}" -f $cadReport.solidWorks.assembly.componentCount)
+}

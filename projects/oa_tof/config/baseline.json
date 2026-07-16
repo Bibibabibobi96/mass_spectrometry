@@ -1,5 +1,5 @@
 {
-  "source": "COMSOL Final model, 2026-07-12, formal N=1000 result",
+  "source": "Physics-derived oa-TOF project baseline; solver and CAD implementations must conform to this contract",
   "coordinate_convention": {
     "units": "mm",
     "reflectron_axis": [0, 0],
@@ -87,10 +87,14 @@
     }
   },
   "runtime_contract": {
-    "verified_on": "2026-07-14",
+    "verified_on": "2026-07-16",
     "standard_mass_updated_on": "2026-07-15",
-    "comsol_formal_geometry_status": "legacy_stale_pending_baseline_regeneration",
-    "comsol_formal_mph_sha256": "14C11E9AE8C05B1A508239C3C81DC64BAEAA52B39DA9851CAC118880D3B3765D"
+    "comsol_formal_geometry_status": "synchronized",
+    "comsol_formal_mph_sha256": "CF9B4F7733D8E348346F0A6E1D51F1427B46078CDD5619047E2D7537D6B4E4B2",
+    "solidworks_formal_geometry_status": "synchronized",
+    "solidworks_revision": "30.5.0",
+    "solidworks_formal_component_count": 25,
+    "solidworks_formal_assembly_sha256": "80BFFEA54CD2C29C9A03399722B764FA26C0E44C8C2EB4936DCDC4802F048E03"
   },
   "simion_runtime": {
     "trajectory_quality": 8,
