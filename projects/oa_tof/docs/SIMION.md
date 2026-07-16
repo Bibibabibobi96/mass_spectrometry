@@ -2,6 +2,7 @@
 
 本文件只记录SIMION实现、GUI操作和独立验证。统一几何、粒子、FWHM定义、正式状态和下一步
 由[`PROJECT.md`](PROJECT.md)定义。历史过程由项目 README 路由，日常任务不从本文件跳转读取。
+发送给同事的独立参数交接单见[`SIMION_REPRODUCTION_PARAMETERS.md`](SIMION_REPRODUCTION_PARAMETERS.md)。
 
 ## 当前入口与状态
 
