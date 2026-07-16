@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "status": "formal_cross_solver_validation",
   "validated_on": "2026-07-16",
   "physical_contract": "baseline.json",
@@ -21,7 +21,7 @@
     "field_mode": "real",
     "fine_output_step_ns": 0.2,
     "particle_csv_artifact_relative_path": "runs/comsol_fixed_particle_closure/2026-07-16/formal_synced/comsol_formal_fixedN100_real_dt0p2ns_particles.csv",
-    "particle_csv_sha256": "DA1F1E7307BE74F772A088DD7E258A896DA13C7B3FEC677742DB8D361B0E31FB",
+    "particle_csv_sha256": "5131CF17DCD1D63EA763FC2E1E534F02429496D6A6162EEE26C917CF4CDD040D",
     "hit_fraction": "100/100",
     "mean_tof_us": 71.98688029588676,
     "direct_fwhm_tof_ns": 1.2302817024192336,
@@ -29,7 +29,10 @@
     "mass_resolution": 29256.203782220062,
     "tof_skewness": 1.495830632859815,
     "hwhm_asymmetry_right_over_left": 1.2528143242497152,
-    "significant_kde_modes": 2
+    "significant_kde_modes": 2,
+    "impact_centroid_x_mm": -1.5649043543537318,
+    "impact_centroid_y_mm": -1.8736906452240214,
+    "impact_rms_radius_mm": 4.422642373850613
   },
   "simion": {
     "model_role": "formal",
@@ -45,7 +48,10 @@
     "mass_resolution": 26634.39544897691,
     "tof_skewness": 0.7284295691524887,
     "hwhm_asymmetry_right_over_left": 1.7082173248583223,
-    "significant_kde_modes": 1
+    "significant_kde_modes": 1,
+    "impact_centroid_x_mm": 0.05595626892300281,
+    "impact_centroid_y_mm": -0.0260210475413787,
+    "impact_rms_radius_mm": 3.573556508148612
   },
   "comparison": {
     "comsol_resolution_higher_than_simion_pct": 9.84369379911667,
@@ -59,9 +65,14 @@
     "bootstrap_absolute_resolution_difference_pct_p97p5": 90.60577673879723,
     "bootstrap_resamples": 5000,
     "bootstrap_seed": 20260715,
+    "detector_centroid_distance_mm": 2.457859251928349,
+    "paired_mean_landing_distance_mm": 2.6281601258114127,
+    "paired_rms_landing_distance_mm": 2.6966733886408174,
+    "paired_max_landing_distance_mm": 3.646359170332302,
     "interpretation": "The point estimates are close enough for the current solver-closure goal, but N=100 gives a very wide resolution-difference interval. The remaining deterministic discrepancy is peak structure: COMSOL has a stronger shoulder and two significant KDE modes, while SIMION has one."
   },
   "comparison_artifact_relative_path": "results/reference_analysis/formal_synced_2026-07-16/fixedN100_cross_solver/comparison_metrics.json",
+  "comparison_artifact_sha256": "60E183C8726357C3C5A5A37E5F57BFBF07C4C6B770ACFBA178FC5D6368F20FDB",
   "diagnostics": {
     "status": "peak_shoulder_source_localized",
     "source_mapping": {
@@ -89,9 +100,35 @@
       "artifact_sha256": "2723BED8438D191F53142E1803FCEE298221650055F0D0906D5D6DAB5AC397E1"
     },
     "accelerator_vector_field": {
-      "interpretation": "COMSOL off-axis Ex/Ey is stronger and shows element-scale gradient jitter; treat this as an accelerator-mesh convergence risk, not a physical geometry difference, until refined.",
+      "interpretation": "The original COMSOL off-axis Ex/Ey jitter is a coarse-tetrahedral-mesh artifact. Local 0.5 mm refinement removes most transverse-field and landing disagreement, while the longitudinal focus vertex and two-mode shoulder remain.",
       "artifact_relative_path": "results/reference_analysis/formal_synced_2026-07-16/accelerator_vector_field_comparison/accelerator_vector_field_metrics.json",
       "artifact_sha256": "23DD9A2F41BADE7494C31F3406F6BDD1618E5D950C5EB15DF942E55CC274DA81"
+    },
+    "accelerator_mesh_convergence": {
+      "status": "PASS",
+      "formal_mesh_elements_approx": 274576,
+      "hmax_1mm_mesh_elements": 336077,
+      "hmax_0p5mm_mesh_elements": 659685,
+      "hmax_0p5mm_vs_simion_Ex_rms_V_per_m": 61.9002470881849,
+      "hmax_0p5mm_vs_simion_Ey_rms_V_per_m": 42.615685825451706,
+      "hmax_0p5mm_vs_simion_Ez_rms_V_per_m": 781.7015152576992,
+      "artifact_relative_path": "results/reference_analysis/formal_synced_2026-07-16/accelerator_mesh_convergence/accelerator_mesh_convergence_metrics.json",
+      "artifact_sha256": "0FCC6F725112573E75226E46216EB4B19F8BD9A377A80ADD62F460A0F68ABA38"
+    },
+    "accelerator_mesh_particle_candidate": {
+      "status": "diagnostic_not_promoted",
+      "accelerator_hmax_mm": 0.5,
+      "particles": 100,
+      "mass_resolution": 28837.88214704433,
+      "time_focus_vertex_z_mm": 1.5889488596604713,
+      "significant_kde_modes": 2,
+      "impact_rms_radius_mm": 3.5643763132865147,
+      "vs_simion_centroid_distance_mm": 0.10412121227113616,
+      "vs_simion_paired_mean_landing_distance_mm": 0.2320437378457357,
+      "particle_csv_artifact_relative_path": "runs/accelerator_mesh_convergence/2026-07-16/comsol_fixedN100_accel_hmax0p5_particles.csv",
+      "particle_csv_artifact_sha256": "84AC0E37862C172B859332E8CDCAA770259BF829B6A4B23EDC1AF5DC5482DE92",
+      "comparison_artifact_relative_path": "results/reference_analysis/formal_synced_2026-07-16/accelerator_hmax0p5_vs_simion/comparison_metrics.json",
+      "comparison_artifact_sha256": "A9E4DD014ABB912CF000C3F692C3AC10BB5AE8BC65D517640AC2C2008B12E5B1"
     }
   }
 }

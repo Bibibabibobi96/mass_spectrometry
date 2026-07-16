@@ -237,6 +237,43 @@ class ParticleImportTest(unittest.TestCase):
 
 
 class SourceMappingAndBootstrapTest(unittest.TestCase):
+    def test_paired_comparison_writes_detector_landing_outputs(self) -> None:
+        left = pd.DataFrame(
+            {
+                "Ion": [1, 2, 3, 4],
+                "TofUs": [71.9, 72.0, 72.1, 72.2],
+                "XMm": [48.8, 49.8, 47.8, 48.8],
+                "YMm": [0.0, 0.0, 0.0, 1.0],
+            }
+        )
+        right = left.copy()
+        right["XMm"] += [0.1, 0.0, -0.1, 0.0]
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary_path = Path(temporary)
+            left_path = temporary_path / "left.csv"
+            right_path = temporary_path / "right.csv"
+            output_path = temporary_path / "result"
+            left.to_csv(left_path, index=False)
+            right.to_csv(right_path, index=False)
+            result = analyze_comparison(
+                left_path,
+                right_path,
+                output_path,
+                524.0,
+                left_label="left",
+                right_label="right",
+                paired_particle_ids_required=True,
+            )
+
+            self.assertTrue((output_path / "detector_landing_comparison.png").is_file())
+            self.assertTrue((output_path / "detector_landing_particles.csv").is_file())
+
+        detector = result["comparison"]["detector_landing"]
+        self.assertAlmostEqual(detector["centroid_distance_mm"], 0.0, places=12)
+        self.assertAlmostEqual(
+            detector["paired_mean_landing_distance_mm"], 0.05, places=12
+        )
+
     def test_independent_comparison_does_not_report_paired_correlation(self) -> None:
         left = pd.DataFrame({"Ion": [1, 2, 3], "TofUs": [71.9, 72.0, 72.1]})
         right = pd.DataFrame({"Ion": [1, 2, 3], "TofUs": [72.1, 71.9, 72.0]})

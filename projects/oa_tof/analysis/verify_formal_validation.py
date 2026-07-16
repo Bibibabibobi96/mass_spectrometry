@@ -36,6 +36,30 @@ def require_close(label: str, actual: float, expected: float) -> None:
         raise ValueError(f"{label} mismatch: {actual} != {expected}")
 
 
+def require_artifact_references(node: object) -> None:
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key.endswith("artifact_relative_path"):
+                hash_candidates = (
+                    key[: -len("_relative_path")] + "_sha256",
+                    key[: -len("_artifact_relative_path")] + "_sha256",
+                )
+                hash_key = next(
+                    (candidate for candidate in hash_candidates if candidate in node),
+                    None,
+                )
+                if hash_key is None:
+                    raise ValueError(
+                        f"Missing one of {hash_candidates} beside {key}"
+                    )
+                require_hash(ARTIFACT_ROOT / str(value), str(node[hash_key]))
+            else:
+                require_artifact_references(value)
+    elif isinstance(node, list):
+        for value in node:
+            require_artifact_references(value)
+
+
 def main() -> None:
     record = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     if record["status"] != "formal_cross_solver_validation":
@@ -49,28 +73,10 @@ def main() -> None:
         PROJECT_DIR / "config" / record["analysis_contract"],
         record["analysis_contract_sha256"],
     )
-    artifact_entries = (
-        (record["shared_particles"], "ion_table"),
-        (record["comsol"], "particle_csv"),
-        (record["simion"], "iob"),
-        (record["simion"], "particle_csv"),
-    )
-    for section, stem in artifact_entries:
-        require_hash(
-            ARTIFACT_ROOT / section[f"{stem}_artifact_relative_path"],
-            section[f"{stem}_sha256"],
-        )
+    require_artifact_references(record)
     diagnostics = record.get("diagnostics", {})
     if diagnostics.get("status") != "peak_shoulder_source_localized":
         raise ValueError("Formal peak-shoulder diagnostic is not localized")
-    for diagnostic in diagnostics.values():
-        if not isinstance(diagnostic, dict) or "artifact_relative_path" not in diagnostic:
-            continue
-        require_hash(
-            ARTIFACT_ROOT / diagnostic["artifact_relative_path"],
-            diagnostic["artifact_sha256"],
-        )
-
     comparison_path = ARTIFACT_ROOT / record["comparison_artifact_relative_path"]
     comparison = json.loads(comparison_path.read_text(encoding="utf-8"))
     if comparison["status"] != "PASS":
@@ -88,6 +94,14 @@ def main() -> None:
             "significant_kde_modes",
         ):
             require_close(f"{solver}.{key}", metrics[key], record[solver][key])
+        for key in (
+            "impact_centroid_x_mm",
+            "impact_centroid_y_mm",
+            "impact_rms_radius_mm",
+        ):
+            require_close(
+                f"{solver}.{key}", metrics["detector"][key], record[solver][key]
+            )
 
     canonical_comparison = comparison["comparison"]
     for key in (
@@ -108,6 +122,18 @@ def main() -> None:
         require_close(
             f"comparison.{key}",
             canonical_comparison[key],
+            record["comparison"][record_key],
+        )
+    detector_comparison = canonical_comparison["detector_landing"]
+    for result_key, record_key in (
+        ("centroid_distance_mm", "detector_centroid_distance_mm"),
+        ("paired_mean_landing_distance_mm", "paired_mean_landing_distance_mm"),
+        ("paired_rms_landing_distance_mm", "paired_rms_landing_distance_mm"),
+        ("paired_max_landing_distance_mm", "paired_max_landing_distance_mm"),
+    ):
+        require_close(
+            f"comparison.detector_landing.{result_key}",
+            detector_comparison[result_key],
             record["comparison"][record_key],
         )
 

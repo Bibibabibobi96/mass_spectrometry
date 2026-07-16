@@ -88,7 +88,8 @@ Program Off只允许作为诊断组，可用`single`和对应`.1`列导入；它
 当粒子表含`initial_x/y/z_mm`和`initial_energy_eV`时，`single`自动输出
 `source_mapping_bins.csv`和`initial_z_tof_mapping.png`。配对跨求解器比较可增加
 `--bootstrap-resamples 5000 --bootstrap-seed 20260715`；bootstrap与主指标使用同一KDE和直接FWHM
-定义，不另设快速近似算法。
+定义，不另设快速近似算法。若两侧同时包含检测器X/Y，`compare`还会自动输出
+`detector_landing_comparison.png`、逐粒子落点CSV，以及质心距离、RMS半径差和配对落点距离指标。
 
 ## 跨求解器诊断
 

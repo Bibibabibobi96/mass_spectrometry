@@ -845,6 +845,98 @@ def _plot_comparison(
     plt.close(figure)
 
 
+def _plot_detector_comparison(
+    left_frame: pd.DataFrame,
+    right_frame: pd.DataFrame,
+    left_metrics: dict[str, float],
+    right_metrics: dict[str, float],
+    left_label: str,
+    right_label: str,
+    paired: bool,
+    output: Path,
+) -> None:
+    left_x = left_frame["detector_x_mm"].to_numpy(dtype=float)
+    left_y = left_frame["detector_y_mm"].to_numpy(dtype=float)
+    right_x = right_frame["detector_x_mm"].to_numpy(dtype=float)
+    right_y = right_frame["detector_y_mm"].to_numpy(dtype=float)
+    extent = 1.08 * max(
+        1.0,
+        float(np.max(np.abs(np.concatenate((left_x, left_y, right_x, right_y))))),
+    )
+
+    figure, axes = plt.subplots(1, 3, figsize=(15.5, 5.2), constrained_layout=True)
+    datasets = (
+        (axes[0], left_x, left_y, left_metrics, left_label, "tab:blue"),
+        (axes[1], right_x, right_y, right_metrics, right_label, "tab:orange"),
+    )
+    for axis, x, y, metrics, label, color in datasets:
+        axis.scatter(x, y, s=22, alpha=0.75, color=color, edgecolors="none")
+        axis.scatter(
+            metrics["impact_centroid_x_mm"],
+            metrics["impact_centroid_y_mm"],
+            marker="x",
+            s=90,
+            linewidths=2.0,
+            color="black",
+            label="centroid",
+        )
+        axis.set_title(
+            f"{label}\nRMS radius={metrics['impact_rms_radius_mm']:.3f} mm"
+        )
+        axis.legend(loc="upper right")
+
+    axes[2].scatter(
+        left_x,
+        left_y,
+        s=26,
+        alpha=0.65,
+        color="tab:blue",
+        label=left_label,
+    )
+    axes[2].scatter(
+        right_x,
+        right_y,
+        s=24,
+        alpha=0.65,
+        facecolors="none",
+        edgecolors="tab:orange",
+        linewidths=1.0,
+        label=right_label,
+    )
+    if paired:
+        for left_x_value, left_y_value, right_x_value, right_y_value in zip(
+            left_x, left_y, right_x, right_y, strict=True
+        ):
+            axes[2].plot(
+                (left_x_value, right_x_value),
+                (left_y_value, right_y_value),
+                color="0.65",
+                linewidth=0.35,
+                alpha=0.55,
+                zorder=0,
+            )
+        axes[2].set_title("Paired landing displacement")
+    else:
+        axes[2].set_title("Landing overlay")
+    axes[2].legend(loc="upper right")
+
+    for axis in axes:
+        axis.axhline(0.0, color="0.75", linewidth=0.8)
+        axis.axvline(0.0, color="0.75", linewidth=0.8)
+        axis.set(
+            xlim=(-extent, extent),
+            ylim=(-extent, extent),
+            xlabel="Detector local x [mm]",
+            ylabel="Detector local y [mm]",
+        )
+        axis.set_aspect("equal", adjustable="box")
+        axis.grid(True, alpha=0.25)
+    figure.suptitle("Detector-plane landing comparison")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(output, dpi=200, facecolor="white")
+    plt.close(figure)
+
+
 def analyze_comparison(
     left_path: Path,
     right_path: Path,
@@ -881,6 +973,58 @@ def analyze_comparison(
     paired_ids = np.array_equal(
         left_frame["particle_id"].to_numpy(), right_frame["particle_id"].to_numpy()
     )
+    paired_landing = paired_particle_ids_required and paired_ids
+    detector_columns = {"detector_x_mm", "detector_y_mm"}
+    detector_comparison: dict[str, Any] | None = None
+    if detector_columns.issubset(left_frame.columns) and detector_columns.issubset(
+        right_frame.columns
+    ):
+        left_detector = compute_detector_metrics(
+            left_frame["detector_x_mm"].to_numpy(),
+            left_frame["detector_y_mm"].to_numpy(),
+        )
+        right_detector = compute_detector_metrics(
+            right_frame["detector_x_mm"].to_numpy(),
+            right_frame["detector_y_mm"].to_numpy(),
+        )
+        left_metrics["detector"] = left_detector
+        right_metrics["detector"] = right_detector
+        centroid_distance = float(
+            np.hypot(
+                right_detector["impact_centroid_x_mm"]
+                - left_detector["impact_centroid_x_mm"],
+                right_detector["impact_centroid_y_mm"]
+                - left_detector["impact_centroid_y_mm"],
+            )
+        )
+        detector_comparison = {
+            "centroid_distance_mm": centroid_distance,
+            "rms_radius_right_minus_left_mm": right_detector[
+                "impact_rms_radius_mm"
+            ]
+            - left_detector["impact_rms_radius_mm"],
+        }
+        if paired_landing:
+            paired_distance = np.hypot(
+                right_frame["detector_x_mm"].to_numpy()
+                - left_frame["detector_x_mm"].to_numpy(),
+                right_frame["detector_y_mm"].to_numpy()
+                - left_frame["detector_y_mm"].to_numpy(),
+            )
+            detector_comparison.update(
+                {
+                    "paired_mean_landing_distance_mm": float(
+                        np.mean(paired_distance)
+                    ),
+                    "paired_rms_landing_distance_mm": float(
+                        np.sqrt(np.mean(paired_distance**2))
+                    ),
+                    "paired_max_landing_distance_mm": float(
+                        np.max(paired_distance)
+                    ),
+                }
+            )
+        comparison["detector_landing"] = detector_comparison
     comparison["sample_relationship"] = (
         "paired_fixed_particles" if paired_particle_ids_required else "independent_runs"
     )
@@ -1011,6 +1155,54 @@ def analyze_comparison(
         right_label,
         output_dir / "peak_shape_comparison.png",
     )
+    if detector_comparison is not None:
+        if paired_landing:
+            detector_particles = pd.DataFrame(
+                {
+                    "particle_id": left_frame["particle_id"].to_numpy(),
+                    f"{left_label}_detector_x_mm": left_frame[
+                        "detector_x_mm"
+                    ].to_numpy(),
+                    f"{left_label}_detector_y_mm": left_frame[
+                        "detector_y_mm"
+                    ].to_numpy(),
+                    f"{right_label}_detector_x_mm": right_frame[
+                        "detector_x_mm"
+                    ].to_numpy(),
+                    f"{right_label}_detector_y_mm": right_frame[
+                        "detector_y_mm"
+                    ].to_numpy(),
+                }
+            )
+            detector_particles["paired_landing_distance_mm"] = np.hypot(
+                right_frame["detector_x_mm"].to_numpy()
+                - left_frame["detector_x_mm"].to_numpy(),
+                right_frame["detector_y_mm"].to_numpy()
+                - left_frame["detector_y_mm"].to_numpy(),
+            )
+        else:
+            detector_particles = pd.concat(
+                (
+                    left_frame[["particle_id", "detector_x_mm", "detector_y_mm"]]
+                    .assign(solver=left_label),
+                    right_frame[["particle_id", "detector_x_mm", "detector_y_mm"]]
+                    .assign(solver=right_label),
+                ),
+                ignore_index=True,
+            )
+        detector_particles.to_csv(
+            output_dir / "detector_landing_particles.csv", index=False
+        )
+        _plot_detector_comparison(
+            left_frame,
+            right_frame,
+            left_metrics["detector"],
+            right_metrics["detector"],
+            left_label,
+            right_label,
+            paired_landing,
+            output_dir / "detector_landing_comparison.png",
+        )
     if (
         source_frame is not None
         and left_source_arrays is not None
