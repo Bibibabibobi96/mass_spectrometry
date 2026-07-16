@@ -22,7 +22,8 @@ py -3.11 -m venv .venv
 - 机器数据定义：`../config/analysis_contract.json`。
 - 迁移基准身份与旧MATLAB参考：`../config/analysis_baselines.json`。
 - 数值算法：`peak_metrics.py`。
-- CSV/XLSX导入、出图和CLI：`reference_analysis.py`。
+- CSV/XLSX/SIMION TRACE导入、严格Recording审计、source mapping、bootstrap、出图和CLI：
+  `reference_analysis.py`。
 - 回归门禁：`verify_reference_analysis.ps1`。
 
 正式机器输入优先使用CSV/JSON。XLSX只用于接收SIMION GUI人工导出；读取后立即输出
@@ -48,9 +49,34 @@ COMSOL/SIMION峰形对比。结果写入仓库外
   <input.csv-or-xlsx> --mass 524 --output <artifact-output-directory>
 ```
 
+SIMION命令行TRACE可以直接作为`single`输入，不再先经MATLAB转表：
+
+```powershell
+.\.venv\Scripts\python.exe `
+  .\projects\oa_tof\analysis\reference_analysis.py single `
+  <simion-flight.log> --mass 524 --output <artifact-output-directory>
+```
+
+需要证明GUI Data Recording来源时，必须使用严格入口并记录Event、PA instance、X/Y/Z；只有TOF
+一列的Excel只能分析峰，不能通过来源审计：
+
+```powershell
+.\.venv\Scripts\python.exe `
+  .\projects\oa_tof\analysis\reference_analysis.py simion-recording `
+  <recording.csv-or-xlsx> --mass 524 --output <artifact-output-directory> `
+  --expected-particles 5000 --expected-pa-instance 4 `
+  --expected-detector-z-mm 19.83 --detector-radius-mm 40
+```
+
+当粒子表含`initial_x/y/z_mm`和`initial_energy_eV`时，`single`自动输出
+`source_mapping_bins.csv`和`initial_z_tof_mapping.png`。配对跨求解器比较可增加
+`--bootstrap-resamples 5000 --bootstrap-seed 20260715`；bootstrap与主指标使用同一KDE和直接FWHM
+定义，不另设快速近似算法。
+
 ## 维护规则
 
 1. `R=m/FWHM_m`和直接半高宽只在`peak_metrics.py`维护一份。
 2. 修改KDE带宽、网格点数或半高交点算法时，先提升契约版本，再更新基准；不得只调图形使结果接近。
 3. MATLAB中为COMSOL/SIMION GUI保留的结果是软件内展示层，必须用冻结数据与本参考实现核对。
 4. 本目录的通用代码只有在第二个项目实际复用后才能上移`common/`。
+5. 已删除的MATLAB后处理脚本不得恢复；COMSOL MPH提取入口只导出逐粒子CSV，正式统计仍由本目录完成。

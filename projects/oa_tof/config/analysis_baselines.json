@@ -109,6 +109,7 @@
       "left": "comsol_524amu_fixedN100_real_dt0p2ns",
       "right": "simion_524amu_fixedN100_quality8",
       "paired_particle_ids_required": true,
+      "bootstrap": {"resamples": 5000, "seed": 20260715},
       "legacy_matlab_reference": {
         "standardized_kde_overlap": 0.869098549853,
         "standardized_ks_distance": 0.14,
@@ -118,7 +119,16 @@
         "mean_tof_difference_right_minus_left_ns": 3.2876967178623318,
         "standardized_kde_overlap": 0.8690985498508559,
         "standardized_ks_distance": 0.14,
-        "paired_standardized_tof_correlation": 0.3461569982998846
+        "paired_standardized_tof_correlation": 0.3461569982998846,
+        "left_corr_tof_initial_z": -0.6912248976263492,
+        "right_corr_tof_initial_z": 0.3732940656648091,
+        "left_corr_tof_initial_energy": -0.06901101037100446,
+        "right_corr_tof_initial_energy": 0.10495421777097816,
+        "left_source_z2_energy_xy_fit_r_squared": 0.9309286138709915,
+        "right_source_z2_energy_xy_fit_r_squared": 0.8866236064696675,
+        "bootstrap_absolute_resolution_difference_pct_p2p5": 0.6272582367757368,
+        "bootstrap_absolute_resolution_difference_pct_median": 16.296181694903225,
+        "bootstrap_absolute_resolution_difference_pct_p97p5": 90.465220024167
       }
     }
   ]

@@ -81,6 +81,16 @@ KS距离`0.14`、配对相关`0.346157`均复现。
 继续保留为迁移参考，不得与新值无标注混用。参考产物位于
 `artifacts/projects/oa_tof/results/reference_analysis/baseline/`。
 
+纯后处理迁移已闭合：Python现在直接读取SIMION`detector_crossing` TRACE，严格审计GUI Recording
+的Event/PA instance/固定z面/有效半径，自动分析初始x/y/z/能量到TOF映射，并负责配对bootstrap。
+原来的三个SIMION MATLAB分析器和跨求解器MATLAB峰形脚本已删除；COMSOL MPH脚本缩减并改名为
+`export_fixed_particle_arrivals_from_mph.m`，只保留MPH读取、释放核对、检测面插值和CSV导出。
+
+固定N=100、5000次配对bootstrap（seed 20260715）在统一直接KDE FWHM口径下给出的绝对R差异
+2.5%/中位数/97.5%分位为`0.6273%/16.2962%/90.4652%`。旧MATLAB口径相应为
+`0.7298%/17.1724%/93.0698%`，结构一致；区间很宽说明N=100不足以精确量化R差异，不能据此把
+11.75%的观测差强判为确定的场差异。峰形、平均TOF和z-to-TOF映射证据仍用于定位确定性传递差异。
+
 ## 正式化门禁
 
 候选几何只有同时满足以下条件才能转正：

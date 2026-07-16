@@ -45,7 +45,8 @@ SolidWorks装配体必须保持“尚未转正”标记。
 0.2 ns时会使客户端JVM在提取`qz`时耗尽堆空间。生产脚本现明确对最终位置和轨迹提取传入`t`，保留
 全程稀疏诊断点和预计到达附近的细采样点；这不改变求解或FWHM插值，只缩小LiveLink传输负载。
 
-`tests/comsol/analyze_fixed_particle_closure_from_mph.m`可只读打开已保存候选MPH，重新导出到达时间并核对
+`tests/comsol/export_fixed_particle_arrivals_from_mph.m`可只读打开已保存候选MPH，重新导出到达时间并核对
 释放。结果证明`ReleaseFromDataFile`的位置列在本模型中按mm解释，`t=0`位置误差仅`7.1e-15 mm`，
-速度模长误差仅`4.2e-4 m/s`；禁止再对ION表位置额外乘`1e-3`。峰形跨求解器比较属于项目级结论，
-统一记录于`PROJECT.md`，本文件不重复维护SIMION数值。
+速度模长误差仅`4.2e-4 m/s`；禁止再对ION表位置额外乘`1e-3`。该脚本不再读取SIMION结果或计算
+FWHM/bootstrap；跨求解器统计统一由`analysis/reference_analysis.py compare`完成。峰形比较属于
+项目级结论，统一记录于`PROJECT.md`，本文件不重复维护SIMION数值。

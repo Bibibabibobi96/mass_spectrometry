@@ -57,7 +57,8 @@
 - SIMION常规统计使用N=5000；COMSOL快速闭合可使用较小但固定的同源粒子表。
 - 紧凑加速器和细z检测器数值终止层是稳定候选，尚未成为正式COMSOL/CAD几何。
 - 当前科学优先级是用全三维COMSOL在524 amu下闭合SIMION，不继续无目的压缩SIMION网格。
-- 求解器无关峰形和FWHM已固定到Python 3.11参考入口；MATLAB旧结果保留作迁移对照。
+- 求解器无关峰形、FWHM、source mapping、Recording审计和bootstrap已固定到Python 3.11参考入口；
+  四个纯MATLAB后处理入口已删除，旧数值只在历史/冻结基准中保留作迁移对照。
 
 精确数值、候选/正式边界和开放任务以`docs/PROJECT.md`为准。
 

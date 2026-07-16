@@ -33,9 +33,11 @@ from scipy import stats
 
 from peak_metrics import (
     AnalysisSettings,
+    bootstrap_resolution_difference,
     compare_peak_shapes,
     compute_detector_metrics,
     compute_peak_metrics,
+    compute_source_mapping_metrics,
 )
 
 
@@ -85,6 +87,42 @@ def _parse_hit(values: pd.Series) -> pd.Series:
     return normalized.isin(truthy)
 
 
+def _read_source_table(path: Path) -> tuple[pd.DataFrame, str]:
+    if path.suffix.lower() in {".xlsx", ".xlsm"}:
+        return pd.read_excel(path, engine="openpyxl"), "Excel human import"
+    if path.suffix.lower() == ".csv":
+        return pd.read_csv(path), "CSV machine source"
+    if path.suffix.lower() in {".log", ".txt"}:
+        pattern = re.compile(
+            r"^TRACE:\s*detector_crossing\s+ion=(\d+)\s+"
+            r"t=([-+0-9.eE]+)\s+x=([-+0-9.eE]+)\s+"
+            r"y=([-+0-9.eE]+)\s+z=([-+0-9.eE]+)\s+"
+            r"r=([-+0-9.eE]+)\s+zmax=([-+0-9.eE]+)"
+        )
+        records: list[dict[str, float | int | str]] = []
+        with path.open("r", encoding="utf-8", errors="replace") as stream:
+            for line in stream:
+                match = pattern.match(line.strip())
+                if match is None:
+                    continue
+                records.append(
+                    {
+                        "Ion": int(match.group(1)),
+                        "TofUs": float(match.group(2)),
+                        "DetectorXmm": float(match.group(3)),
+                        "DetectorYmm": float(match.group(4)),
+                        "DetectorZmm": float(match.group(5)),
+                        "RadiusMm": float(match.group(6)),
+                        "ZMaxMm": float(match.group(7)),
+                        "Event": "detector_crossing",
+                    }
+                )
+        if not records:
+            raise ValueError(f"No SIMION detector_crossing TRACE records found: {path}")
+        return pd.DataFrame.from_records(records), "SIMION detector_crossing TRACE"
+    raise ValueError(f"Unsupported input extension: {path.suffix}")
+
+
 def read_particle_table(
     path: Path,
     detector_center_x_mm: float = 48.8,
@@ -95,14 +133,7 @@ def read_particle_table(
     path = path.resolve()
     if not path.is_file():
         raise FileNotFoundError(path)
-    if path.suffix.lower() in {".xlsx", ".xlsm"}:
-        source = pd.read_excel(path, engine="openpyxl")
-        source_format = "Excel human import"
-    elif path.suffix.lower() == ".csv":
-        source = pd.read_csv(path)
-        source_format = "CSV machine source"
-    else:
-        raise ValueError(f"Unsupported input extension: {path.suffix}")
+    source, source_format = _read_source_table(path)
     if source.empty:
         raise ValueError(f"Input table is empty: {path}")
 
@@ -151,6 +182,9 @@ def read_particle_table(
         )
 
     optional_columns = {
+        "detector_z_mm": ("detectorzmm", "zmm", "z"),
+        "logged_radius_mm": ("radiusmm", "rmm", "r"),
+        "pa_instance": ("painstance", "painstanceno", "instance", "instanceid"),
         "initial_x_mm": ("x0mm", "initialxmm"),
         "initial_y_mm": ("y0mm", "initialymm"),
         "initial_z_mm": ("z0mm", "initialzmm"),
@@ -162,6 +196,11 @@ def read_particle_table(
             normalized[canonical] = pd.to_numeric(
                 source[source_column], errors="coerce"
             )
+    event_column = _find_column(source, ("event", "eventname", "eventtype"))
+    if event_column is not None:
+        normalized["event"] = (
+            source[event_column].astype("string").fillna("").str.strip().astype(str)
+        )
 
     if bool(normalized["particle_id"].isna().any()):
         raise ValueError("particle_id contains missing or nonnumeric values")
@@ -185,6 +224,11 @@ def read_particle_table(
     for coordinate in ("detector_x_mm", "detector_y_mm"):
         if coordinate in detected and bool(detected[coordinate].isna().any()):
             raise ValueError(f"{coordinate} contains missing values")
+    for numeric in ("detector_z_mm", "logged_radius_mm", "pa_instance"):
+        if numeric in detected and bool(
+            detected[numeric].isna().any() | (~np.isfinite(detected[numeric])).any()
+        ):
+            raise ValueError(f"{numeric} contains missing or non-finite values")
 
     metadata = {
         "source_format": source_format,
@@ -195,6 +239,9 @@ def read_particle_table(
         "hit_column_present": hit_column is not None,
         "hit_assumed_from_detector_export": hit_column is None,
         "particle_id_generated": particle_id_generated,
+        "event_column_present": event_column is not None,
+        "pa_instance_column_present": "pa_instance" in normalized,
+        "detector_z_column_present": "detector_z_mm" in normalized,
         "source_columns": [str(column) for column in source.columns],
     }
     return detected.reset_index(drop=True), metadata
@@ -334,6 +381,147 @@ def _plot_single(
     plt.close(figure)
 
 
+SOURCE_COLUMNS = {
+    "initial_x_mm",
+    "initial_y_mm",
+    "initial_z_mm",
+    "initial_energy_eV",
+}
+
+
+def _plot_source_mapping(
+    frame: pd.DataFrame,
+    arrays: dict[str, np.ndarray],
+    metrics: dict[str, Any],
+    output: Path,
+) -> None:
+    figure, axis = plt.subplots(figsize=(10.5, 6.5), constrained_layout=True)
+    points = axis.scatter(
+        frame["initial_z_mm"],
+        frame["tof_us"],
+        c=frame["initial_energy_eV"],
+        s=14,
+        alpha=0.45,
+        cmap="viridis",
+    )
+    axis.plot(
+        arrays["z_plot_mm"],
+        arrays["z_quadratic_fit_tof_us"],
+        color="black",
+        linewidth=2.0,
+        label="z-only quadratic fit",
+    )
+    vertex = metrics["quadratic_vertex_z_mm"]
+    if metrics["vertex_inside_source"] and vertex is not None:
+        axis.axvline(vertex, color="red", linestyle="--", label="quadratic vertex")
+    figure.colorbar(points, ax=axis, label="Initial energy [eV]")
+    axis.set(
+        xlabel="Initial z [mm]",
+        ylabel="Detector TOF [us]",
+        title=(
+            "Initial-z to TOF mapping: "
+            f"quadratic R²={metrics['z_only_quadratic_r_squared']:.4f}"
+        ),
+    )
+    axis.grid(True, alpha=0.3)
+    axis.legend()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(output, dpi=220, facecolor="white")
+    plt.close(figure)
+
+
+def audit_simion_recording(
+    frame: pd.DataFrame,
+    import_metadata: dict[str, Any],
+    expected_particles: int,
+    expected_pa_instance: int,
+    expected_detector_z_mm: float,
+    detector_radius_mm: float,
+    tolerance_mm: float = 1.0e-9,
+) -> dict[str, Any]:
+    """Strictly verify a GUI Data Recording export and its detector provenance."""
+
+    if expected_particles <= 0 or detector_radius_mm <= 0 or tolerance_mm <= 0:
+        raise ValueError("Recording expectations must be positive")
+    identifiers = frame["particle_id"].to_numpy(dtype=np.int64)
+    sequential = np.array_equal(
+        np.sort(identifiers), np.arange(1, expected_particles + 1, dtype=np.int64)
+    )
+    has_detector_xy = {"detector_x_mm", "detector_y_mm"}.issubset(frame.columns)
+    radius = (
+        np.hypot(frame["detector_x_mm"], frame["detector_y_mm"])
+        if has_detector_xy
+        else np.asarray([], dtype=float)
+    )
+    has_z = "detector_z_mm" in frame
+    z = frame["detector_z_mm"].to_numpy(dtype=float) if has_z else np.asarray([])
+    has_instance = "pa_instance" in frame
+    instances = (
+        frame["pa_instance"].to_numpy(dtype=float)
+        if has_instance
+        else np.asarray([])
+    )
+    has_event = "event" in frame
+    event_text = (
+        frame["event"].astype(str).str.strip().str.lower()
+        if has_event
+        else pd.Series(dtype=str)
+    )
+    events_nonempty = bool(
+        has_event and (~event_text.isin({"", "nan", "none", "null"})).all()
+    )
+    checks = {
+        "source_row_count_matches": import_metadata["source_rows"]
+        == expected_particles,
+        "detected_row_count_matches": len(frame) == expected_particles,
+        "particle_ids_are_unique_sequential_1_to_n": sequential,
+        "event_column_present_and_nonempty": events_nonempty,
+        "pa_instance_column_present": has_instance,
+        "all_pa_instances_match": bool(
+            has_instance and np.all(instances == expected_pa_instance)
+        ),
+        "detector_z_column_present": has_z,
+        "detector_plane_is_constant": bool(
+            has_z and np.ptp(z) <= tolerance_mm
+        ),
+        "detector_plane_matches_expected": bool(
+            has_z and np.all(np.abs(z - expected_detector_z_mm) <= tolerance_mm)
+        ),
+        "detector_xy_columns_present": has_detector_xy,
+        "all_impacts_inside_detector_radius": bool(
+            has_detector_xy and np.all(radius <= detector_radius_mm + tolerance_mm)
+        ),
+    }
+    return {
+        "status": "PASS" if all(checks.values()) else "FAIL",
+        "checks": checks,
+        "expected": {
+            "particles": int(expected_particles),
+            "pa_instance": int(expected_pa_instance),
+            "detector_z_mm": float(expected_detector_z_mm),
+            "detector_radius_mm": float(detector_radius_mm),
+            "tolerance_mm": float(tolerance_mm),
+        },
+        "observed": {
+            "source_rows": int(import_metadata["source_rows"]),
+            "detected_rows": int(len(frame)),
+            "particle_id_min": int(np.min(identifiers)),
+            "particle_id_max": int(np.max(identifiers)),
+            "detector_z_min_mm": float(np.min(z)) if has_z else None,
+            "detector_z_max_mm": float(np.max(z)) if has_z else None,
+            "maximum_impact_radius_mm": float(np.max(radius))
+            if has_detector_xy
+            else None,
+            "events": sorted(event_text.unique().tolist())
+            if has_event
+            else [],
+            "pa_instances": sorted(np.unique(instances).tolist())
+            if has_instance
+            else [],
+        },
+    }
+
+
 def analyze_single(
     input_path: Path,
     output_dir: Path,
@@ -354,6 +542,16 @@ def analyze_single(
         metrics["detector"] = compute_detector_metrics(
             frame["detector_x_mm"].to_numpy(), frame["detector_y_mm"].to_numpy()
         )
+    source_arrays: dict[str, np.ndarray] | None = None
+    if SOURCE_COLUMNS.issubset(frame.columns):
+        source_metrics, source_arrays = compute_source_mapping_metrics(
+            frame["tof_us"].to_numpy(),
+            frame["initial_x_mm"].to_numpy(),
+            frame["initial_y_mm"].to_numpy(),
+            frame["initial_z_mm"].to_numpy(),
+            frame["initial_energy_eV"].to_numpy(),
+        )
+        metrics["source_mapping"] = source_metrics
 
     output_dir.mkdir(parents=True, exist_ok=True)
     result = {
@@ -383,6 +581,58 @@ def analyze_single(
         }
     ).to_csv(output_dir / "spectra.csv", index=False)
     _plot_single(frame, metrics, spectra, result["label"], output_dir / "peak_overview.png")
+    if source_arrays is not None:
+        pd.DataFrame(
+            {
+                "initial_z_bin_center_mm": source_arrays["z_bin_center_mm"],
+                "particle_count": source_arrays["z_bin_particle_count"],
+                "mean_tof_us": source_arrays["z_bin_mean_tof_us"],
+                "std_tof_ns": source_arrays["z_bin_std_tof_ns"],
+            }
+        ).to_csv(output_dir / "source_mapping_bins.csv", index=False)
+        _plot_source_mapping(
+            frame,
+            source_arrays,
+            metrics["source_mapping"],
+            output_dir / "initial_z_tof_mapping.png",
+        )
+    return result
+
+
+def analyze_simion_recording(
+    input_path: Path,
+    output_dir: Path,
+    nominal_mass_Da: float,
+    expected_particles: int,
+    expected_pa_instance: int,
+    expected_detector_z_mm: float,
+    detector_radius_mm: float,
+    detector_center_x_mm: float = 48.8,
+    detector_center_y_mm: float = 0.0,
+) -> dict[str, Any]:
+    result = analyze_single(
+        input_path,
+        output_dir,
+        nominal_mass_Da,
+        label="SIMION GUI Data Recording",
+        detector_center_x_mm=detector_center_x_mm,
+        detector_center_y_mm=detector_center_y_mm,
+    )
+    frame, import_metadata = read_particle_table(
+        input_path, detector_center_x_mm, detector_center_y_mm
+    )
+    audit = audit_simion_recording(
+        frame,
+        import_metadata,
+        expected_particles,
+        expected_pa_instance,
+        expected_detector_z_mm,
+        detector_radius_mm,
+    )
+    write_json(output_dir / "recording_audit.json", audit)
+    result["recording_audit"] = audit
+    result["status"] = audit["status"]
+    write_json(output_dir / "metrics.json", result)
     return result
 
 
@@ -454,6 +704,8 @@ def analyze_comparison(
     left_label: str = "left",
     right_label: str = "right",
     paired_particle_ids_required: bool = False,
+    bootstrap_resamples: int = 0,
+    bootstrap_seed: int = 20260715,
     contract_path: Path = DEFAULT_CONTRACT,
 ) -> dict[str, Any]:
     contract, settings = load_contract(contract_path)
@@ -477,6 +729,86 @@ def analyze_comparison(
     comparison, comparison_spectra = compare_peak_shapes(
         left_frame["tof_us"].to_numpy(), right_frame["tof_us"].to_numpy(), settings
     )
+    paired_ids = np.array_equal(
+        left_frame["particle_id"].to_numpy(), right_frame["particle_id"].to_numpy()
+    )
+    source_frame: pd.DataFrame | None = None
+    if paired_ids and SOURCE_COLUMNS.issubset(right_frame.columns):
+        source_frame = right_frame
+    elif paired_ids and SOURCE_COLUMNS.issubset(left_frame.columns):
+        source_frame = left_frame
+    if source_frame is not None:
+        source_arguments = (
+            source_frame["initial_x_mm"].to_numpy(),
+            source_frame["initial_y_mm"].to_numpy(),
+            source_frame["initial_z_mm"].to_numpy(),
+            source_frame["initial_energy_eV"].to_numpy(),
+        )
+        left_source, _ = compute_source_mapping_metrics(
+            left_frame["tof_us"].to_numpy(), *source_arguments
+        )
+        right_source, _ = compute_source_mapping_metrics(
+            right_frame["tof_us"].to_numpy(), *source_arguments
+        )
+        comparison["source_mapping"] = {
+            f"{left_label}_corr_tof_initial_z": left_source["corr_tof_initial_z"],
+            f"{right_label}_corr_tof_initial_z": right_source["corr_tof_initial_z"],
+            f"{left_label}_corr_tof_initial_energy": left_source[
+                "corr_tof_initial_energy"
+            ],
+            f"{right_label}_corr_tof_initial_energy": right_source[
+                "corr_tof_initial_energy"
+            ],
+            f"{left_label}_source_z2_energy_xy_fit_r_squared": left_source[
+                "source_z2_energy_xy_fit_r_squared"
+            ],
+            f"{right_label}_source_z2_energy_xy_fit_r_squared": right_source[
+                "source_z2_energy_xy_fit_r_squared"
+            ],
+        }
+        comparison.update(
+            {
+                "left_corr_tof_initial_z": left_source["corr_tof_initial_z"],
+                "right_corr_tof_initial_z": right_source["corr_tof_initial_z"],
+                "left_corr_tof_initial_energy": left_source[
+                    "corr_tof_initial_energy"
+                ],
+                "right_corr_tof_initial_energy": right_source[
+                    "corr_tof_initial_energy"
+                ],
+                "left_source_z2_energy_xy_fit_r_squared": left_source[
+                    "source_z2_energy_xy_fit_r_squared"
+                ],
+                "right_source_z2_energy_xy_fit_r_squared": right_source[
+                    "source_z2_energy_xy_fit_r_squared"
+                ],
+            }
+        )
+    if bootstrap_resamples > 0:
+        if not paired_ids:
+            raise ValueError("Bootstrap comparison requires identical ordered particle_id values")
+        bootstrap = bootstrap_resolution_difference(
+            left_frame["tof_us"].to_numpy(),
+            right_frame["tof_us"].to_numpy(),
+            nominal_mass_Da,
+            resamples=bootstrap_resamples,
+            seed=bootstrap_seed,
+            settings=settings,
+        )
+        comparison["paired_bootstrap"] = bootstrap
+        comparison.update(
+            {
+                "bootstrap_absolute_resolution_difference_pct_p2p5": bootstrap[
+                    "absolute_resolution_difference_pct_p2p5"
+                ],
+                "bootstrap_absolute_resolution_difference_pct_median": bootstrap[
+                    "absolute_resolution_difference_pct_median"
+                ],
+                "bootstrap_absolute_resolution_difference_pct_p97p5": bootstrap[
+                    "absolute_resolution_difference_pct_p97p5"
+                ],
+            }
+        )
     result = {
         "schema_version": int(contract["schema_version"]),
         "status": "PASS",
@@ -636,6 +968,12 @@ def verify_baselines(
             left_label=left_entry["solver"],
             right_label=right_entry["solver"],
             paired_particle_ids_required=bool(comparison["paired_particle_ids_required"]),
+            bootstrap_resamples=int(
+                comparison.get("bootstrap", {}).get("resamples", 0)
+            ),
+            bootstrap_seed=int(
+                comparison.get("bootstrap", {}).get("seed", 20260715)
+            ),
             contract_path=contract_path,
         )
         legacy = comparison.get("legacy_matlab_reference", {})
@@ -687,6 +1025,19 @@ def build_parser() -> argparse.ArgumentParser:
     single.add_argument("--detector-center-x-mm", type=float, default=48.8)
     single.add_argument("--detector-center-y-mm", type=float, default=0.0)
 
+    recording = subparsers.add_parser(
+        "simion-recording", help="Analyze and strictly audit a SIMION GUI export"
+    )
+    recording.add_argument("input", type=Path)
+    recording.add_argument("--mass", type=float, required=True, dest="nominal_mass_Da")
+    recording.add_argument("--output", type=Path, required=True)
+    recording.add_argument("--expected-particles", type=int, required=True)
+    recording.add_argument("--expected-pa-instance", type=int, required=True)
+    recording.add_argument("--expected-detector-z-mm", type=float, required=True)
+    recording.add_argument("--detector-radius-mm", type=float, required=True)
+    recording.add_argument("--detector-center-x-mm", type=float, default=48.8)
+    recording.add_argument("--detector-center-y-mm", type=float, default=0.0)
+
     compare = subparsers.add_parser("compare", help="Compare two solver particle tables")
     compare.add_argument("left", type=Path)
     compare.add_argument("right", type=Path)
@@ -695,6 +1046,8 @@ def build_parser() -> argparse.ArgumentParser:
     compare.add_argument("--left-label", default="left")
     compare.add_argument("--right-label", default="right")
     compare.add_argument("--require-paired-particle-ids", action="store_true")
+    compare.add_argument("--bootstrap-resamples", type=int, default=0)
+    compare.add_argument("--bootstrap-seed", type=int, default=20260715)
 
     baselines = subparsers.add_parser("verify-baselines", help="Verify frozen migration baselines")
     baselines.add_argument("--manifest", type=Path, default=DEFAULT_BASELINES)
@@ -714,6 +1067,18 @@ def main(argv: list[str] | None = None) -> int:
                 arguments.detector_center_x_mm,
                 arguments.detector_center_y_mm,
             )
+        elif arguments.command == "simion-recording":
+            result = analyze_simion_recording(
+                arguments.input,
+                arguments.output,
+                arguments.nominal_mass_Da,
+                arguments.expected_particles,
+                arguments.expected_pa_instance,
+                arguments.expected_detector_z_mm,
+                arguments.detector_radius_mm,
+                arguments.detector_center_x_mm,
+                arguments.detector_center_y_mm,
+            )
         elif arguments.command == "compare":
             result = analyze_comparison(
                 arguments.left,
@@ -723,6 +1088,8 @@ def main(argv: list[str] | None = None) -> int:
                 arguments.left_label,
                 arguments.right_label,
                 arguments.require_paired_particle_ids,
+                arguments.bootstrap_resamples,
+                arguments.bootstrap_seed,
             )
         else:
             result = verify_baselines(arguments.manifest, arguments.output)

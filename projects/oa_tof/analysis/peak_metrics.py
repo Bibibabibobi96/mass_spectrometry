@@ -281,3 +281,210 @@ def compare_peak_shapes(
         "right_standardized_tof": right_standardized,
     }
     return comparison, spectra
+
+
+def _r_squared(observed: np.ndarray, fitted: np.ndarray) -> float:
+    residual = float(np.sum((observed - fitted) ** 2))
+    total = float(np.sum((observed - np.mean(observed)) ** 2))
+    if total <= 0:
+        raise ValueError("R-squared requires a nonconstant response")
+    return 1.0 - residual / total
+
+
+def _correlation(a: np.ndarray, b: np.ndarray) -> float | None:
+    if np.std(a, ddof=1) <= 0 or np.std(b, ddof=1) <= 0:
+        return None
+    return float(np.corrcoef(a, b)[0, 1])
+
+
+def compute_source_mapping_metrics(
+    tof_us: np.ndarray,
+    initial_x_mm: np.ndarray,
+    initial_y_mm: np.ndarray,
+    initial_z_mm: np.ndarray,
+    initial_energy_eV: np.ndarray,
+    z_bins: int = 10,
+) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
+    """Quantify initial-condition to TOF mapping without solver-specific APIs."""
+
+    tof = _as_valid_sample(tof_us, "tof_us")
+    predictors = {
+        "initial_x_mm": np.asarray(initial_x_mm, dtype=float).reshape(-1),
+        "initial_y_mm": np.asarray(initial_y_mm, dtype=float).reshape(-1),
+        "initial_z_mm": np.asarray(initial_z_mm, dtype=float).reshape(-1),
+        "initial_energy_eV": np.asarray(initial_energy_eV, dtype=float).reshape(-1),
+    }
+    for name, values in predictors.items():
+        if values.size != tof.size:
+            raise ValueError(f"{name} length differs from tof_us")
+        if not np.all(np.isfinite(values)):
+            raise ValueError(f"{name} contains non-finite values")
+    if z_bins < 2:
+        raise ValueError("z_bins must be at least 2")
+
+    x = predictors["initial_x_mm"]
+    y = predictors["initial_y_mm"]
+    z = predictors["initial_z_mm"]
+    energy = predictors["initial_energy_eV"]
+    xc, yc = x - np.mean(x), y - np.mean(y)
+    zc, ec = z - np.mean(z), energy - np.mean(energy)
+
+    linear_design = np.column_stack((np.ones(tof.size), xc, yc, zc, ec))
+    linear_fit = linear_design @ np.linalg.lstsq(linear_design, tof, rcond=None)[0]
+    quadratic_design = np.column_stack((linear_design, zc**2))
+    quadratic_fit = quadratic_design @ np.linalg.lstsq(
+        quadratic_design, tof, rcond=None
+    )[0]
+    z_only_design = np.column_stack((np.ones(tof.size), zc, zc**2))
+    z_only_coefficients = np.linalg.lstsq(z_only_design, tof, rcond=None)[0]
+    z_only_fit = z_only_design @ z_only_coefficients
+
+    curvature = float(z_only_coefficients[2])
+    vertex_z_mm = (
+        float(np.mean(z) - z_only_coefficients[1] / (2.0 * curvature))
+        if abs(curvature) > np.finfo(float).eps
+        else None
+    )
+    vertex_inside = bool(
+        vertex_z_mm is not None and np.min(z) <= vertex_z_mm <= np.max(z)
+    )
+
+    source_design = np.column_stack((np.ones(tof.size), z, z**2, energy, x, y))
+    source_fit = source_design @ np.linalg.lstsq(source_design, tof, rcond=None)[0]
+    metrics = {
+        "particles": int(tof.size),
+        "linear_all_predictors_r_squared": _r_squared(tof, linear_fit),
+        "quadratic_z_plus_linear_predictors_r_squared": _r_squared(
+            tof, quadratic_fit
+        ),
+        "z_only_quadratic_r_squared": _r_squared(tof, z_only_fit),
+        "source_z2_energy_xy_fit_r_squared": _r_squared(tof, source_fit),
+        "z_curvature_us_per_mm2": curvature,
+        "quadratic_vertex_z_mm": vertex_z_mm,
+        "vertex_inside_source": vertex_inside,
+        "corr_tof_initial_x": _correlation(tof, x),
+        "corr_tof_initial_y": _correlation(tof, y),
+        "corr_tof_initial_z": _correlation(tof, z),
+        "corr_tof_initial_energy": _correlation(tof, energy),
+    }
+
+    edges = np.linspace(float(np.min(z)), float(np.max(z)), z_bins + 1)
+    indices = np.searchsorted(edges, z, side="right") - 1
+    indices[z == edges[-1]] = z_bins - 1
+    counts = np.zeros(z_bins, dtype=int)
+    means = np.full(z_bins, np.nan)
+    standard_deviations_ns = np.full(z_bins, np.nan)
+    for index in range(z_bins):
+        selected = tof[indices == index]
+        counts[index] = selected.size
+        if selected.size:
+            means[index] = float(np.mean(selected))
+        if selected.size > 1:
+            standard_deviations_ns[index] = float(np.std(selected, ddof=1) * 1.0e3)
+
+    z_plot = np.linspace(float(np.min(z)), float(np.max(z)), 401)
+    zc_plot = z_plot - np.mean(z)
+    arrays = {
+        "z_bin_center_mm": 0.5 * (edges[:-1] + edges[1:]),
+        "z_bin_particle_count": counts,
+        "z_bin_mean_tof_us": means,
+        "z_bin_std_tof_ns": standard_deviations_ns,
+        "z_plot_mm": z_plot,
+        "z_quadratic_fit_tof_us": z_only_coefficients[0]
+        + z_only_coefficients[1] * zc_plot
+        + z_only_coefficients[2] * zc_plot**2,
+    }
+    return metrics, arrays
+
+
+def _bootstrap_resolution_batch(
+    tof_batch_us: np.ndarray,
+    nominal_mass_Da: float,
+    settings: AnalysisSettings,
+) -> np.ndarray:
+    """Vectorized canonical direct-FWHM resolution for bootstrap batches."""
+
+    means = np.mean(tof_batch_us, axis=1, keepdims=True)
+    apparent_mass = nominal_mass_Da * (tof_batch_us / means) ** 2
+    sample_std = np.std(apparent_mass, axis=1, ddof=1)
+    sample_range = np.ptp(apparent_mass, axis=1)
+    padding = np.maximum(0.20 * sample_range, 4.0 * sample_std)
+    padding = np.maximum(padding, np.finfo(float).eps)
+    lower = np.min(apparent_mass, axis=1) - padding
+    upper = np.max(apparent_mass, axis=1) + padding
+    fractions = np.linspace(0.0, 1.0, settings.grid_points)
+    grids = lower[:, None] + (upper - lower)[:, None] * fractions[None, :]
+    bandwidth = (
+        settings.bandwidth_multiplier
+        * sample_std
+        * apparent_mass.shape[1] ** (-1.0 / 5.0)
+    )
+    result = np.full(apparent_mass.shape[0], np.nan)
+    valid = np.isfinite(bandwidth) & (bandwidth > 0)
+    valid_rows = np.flatnonzero(valid)
+    if valid_rows.size == 0:
+        return result
+    scaled = (
+        grids[valid_rows, :, None] - apparent_mass[valid_rows, None, :]
+    ) / bandwidth[valid_rows, None, None]
+    np.square(scaled, out=scaled)
+    scaled *= -0.5
+    np.exp(scaled, out=scaled)
+    densities = np.mean(scaled, axis=2) / (
+        np.sqrt(2.0 * np.pi) * bandwidth[valid_rows, None]
+    )
+    for local_row, row in enumerate(valid_rows):
+        try:
+            width, _, _, _ = half_height_width(grids[row], densities[local_row])
+        except ValueError:
+            continue
+        result[row] = nominal_mass_Da / width
+    return result
+
+
+def bootstrap_resolution_difference(
+    left_tof_us: np.ndarray,
+    right_tof_us: np.ndarray,
+    nominal_mass_Da: float,
+    resamples: int = 5000,
+    seed: int = 20260715,
+    settings: AnalysisSettings | None = None,
+    batch_size: int = 16,
+) -> dict[str, Any]:
+    """Paired bootstrap CI for absolute cross-solver R difference percentage."""
+
+    settings = settings or AnalysisSettings()
+    left = _as_valid_sample(left_tof_us, "left_tof_us")
+    right = _as_valid_sample(right_tof_us, "right_tof_us")
+    if left.size != right.size:
+        raise ValueError("Paired bootstrap requires equal particle counts")
+    if resamples <= 0 or batch_size <= 0:
+        raise ValueError("resamples and batch_size must be positive")
+
+    rng = np.random.default_rng(seed)
+    differences = np.full(resamples, np.nan)
+    for start in range(0, resamples, batch_size):
+        stop = min(start + batch_size, resamples)
+        indices = rng.integers(0, left.size, size=(stop - start, left.size))
+        left_resolution = _bootstrap_resolution_batch(left[indices], nominal_mass_Da, settings)
+        right_resolution = _bootstrap_resolution_batch(
+            right[indices], nominal_mass_Da, settings
+        )
+        differences[start:stop] = (
+            np.abs(left_resolution - right_resolution) / right_resolution * 100.0
+        )
+    finite = differences[np.isfinite(differences)]
+    if finite.size < 0.95 * resamples:
+        raise ValueError(
+            f"Only {finite.size}/{resamples} finite bootstrap replicates were obtained"
+        )
+    percentiles = np.percentile(finite, [2.5, 50.0, 97.5])
+    return {
+        "method": "paired particle-index bootstrap using canonical direct KDE FWHM",
+        "seed": int(seed),
+        "resamples_requested": int(resamples),
+        "resamples_valid": int(finite.size),
+        "absolute_resolution_difference_pct_p2p5": float(percentiles[0]),
+        "absolute_resolution_difference_pct_median": float(percentiles[1]),
+        "absolute_resolution_difference_pct_p97p5": float(percentiles[2]),
+    }

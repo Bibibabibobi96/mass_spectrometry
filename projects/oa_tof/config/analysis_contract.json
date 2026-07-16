@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "status": "formal_analysis_contract",
   "nominal_mass_Da": 524.0,
   "canonical_columns": {
@@ -11,7 +11,11 @@
     "initial_x_mm": "initial global x coordinate in millimetres",
     "initial_y_mm": "initial global y coordinate in millimetres",
     "initial_z_mm": "initial global z coordinate in millimetres",
-    "initial_energy_eV": "initial kinetic energy in electronvolts"
+    "initial_energy_eV": "initial kinetic energy in electronvolts",
+    "detector_z_mm": "global detector crossing z coordinate in millimetres",
+    "logged_radius_mm": "optional SIMION detector-local radius recorded in the TRACE event",
+    "pa_instance": "SIMION PA instance number recorded at the detector event",
+    "event": "SIMION Data Recording event label"
   },
   "definitions": {
     "apparent_mass_Da": "nominal_mass_Da*(tof_us/mean(tof_us))^2",
@@ -31,13 +35,41 @@
     "known_smoothing_effect": "The direct KDE FWHM includes Gaussian-kernel smoothing and is therefore slightly wider than 2.3548 sigma even for a Gaussian sample; both values must be reported."
   },
   "input_policy": {
-    "formal_machine_sources": ["CSV", "JSON"],
+    "formal_machine_sources": ["CSV", "JSON", "SIMION detector_crossing TRACE"],
     "accepted_human_import": ["XLSX"],
     "excel_is_source_of_truth": false,
     "particle_ids_must_be_unique": true,
     "generated_sequential_particle_ids": "allowed only for unpaired single-spectrum human imports; forbidden for paired cross-solver validation",
     "nonfinite_or_nonpositive_tof": "reject for hit=true; missing TOF is allowed for hit=false",
     "duplicate_particle_id": "reject"
+  },
+  "source_mapping": {
+    "required_columns": ["initial_x_mm", "initial_y_mm", "initial_z_mm", "initial_energy_eV"],
+    "models": [
+      "linear x/y/z/energy to TOF",
+      "linear x/y/z/energy plus z squared to TOF",
+      "z-only quadratic to TOF",
+      "z, z squared, energy, x, y multivariable fit"
+    ],
+    "z_bins": 10
+  },
+  "paired_bootstrap": {
+    "quantity": "absolute percent difference of direct mass resolution",
+    "resampling_unit": "paired particle index",
+    "resamples": 5000,
+    "seed": 20260715,
+    "confidence_interval_percentiles": [2.5, 50.0, 97.5],
+    "fwhm_algorithm": "same canonical Gaussian KDE and half-height interpolation as primary metrics"
+  },
+  "simion_gui_recording_audit": {
+    "required": [
+      "expected row count",
+      "unique sequential ion numbers 1 to N",
+      "nonempty event column",
+      "expected PA instance for every record",
+      "constant expected detector z plane",
+      "impact inside detector radius"
+    ]
   },
   "provenance_required": [
     "input_sha256",
