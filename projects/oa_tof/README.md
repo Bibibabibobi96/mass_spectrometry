@@ -27,7 +27,8 @@
 |STEP、SolidWorks零件/装配体、坐标和保存验证|`docs/CAD.md`|
 |已经失效但仍需追溯的长过程|`docs/history/`|
 |换一个项目仍成立的API或方法|仓库根`docs/`对应通用文档|
-|机器必须读取的统一参数|`config/baseline.json`|
+|机器必须读取的统一物理参数|`config/baseline.json`|
+|分析算法、冻结迁移基准和当前正式闭合结果|`config/analysis_contract.json`、`config/analysis_baselines.json`、`config/formal_validation.json`|
 
 软件文档之间不建立横向引用。COMSOL、SIMION和CAD文档都只返回引用`PROJECT.md`；只有完成
 输入对齐和交叉验证的结论，才能从软件文档提升到`PROJECT.md`。同一参数不得在多个文档中
@@ -47,6 +48,7 @@
 - 跨求解器门禁：
   [`tests/cross_solver/verify_geometry_contract.ps1`](tests/cross_solver/verify_geometry_contract.ps1)
 - 统一分析契约：[`config/analysis_contract.json`](config/analysis_contract.json)
+- 当前正式跨求解器验证：[`config/formal_validation.json`](config/formal_validation.json)
 - Python参考分析：[`analysis/README.md`](analysis/README.md)
 - 路径解析：[`oatof_paths.m`](oatof_paths.m)
 
@@ -55,8 +57,10 @@
 - 自2026-07-15起标准质量为524 amu，+1电荷，初始能量`5±0.4 eV`。
 - 质量分辨率只按`R=m/FWHM_m`定义；窄峰时间域等价式为`R=T/(2*FWHM_t)`。
 - SIMION常规统计使用N=5000；COMSOL快速闭合可使用较小但固定的同源粒子表。
-- 紧凑加速器和细z检测器数值终止层是稳定候选，尚未成为正式COMSOL/CAD几何。
-- 当前科学优先级是用全三维COMSOL在524 amu下闭合SIMION，不继续无目的压缩SIMION网格。
+- 紧凑加速器、10 mm封闭屏蔽罩、正式COMSOL MPH和SolidWorks 2022装配体已同步；细z检测器
+  终止层仍只属于SIMION数值实现，不复制为机械厚度。
+- 正式同源N=100比较为COMSOL `R=29256.20`、SIMION `R=26634.40`，点估计差`9.84%`；当前科学
+  优先级是定位COMSOL双模态右肩与SIMION单模态峰的传递映射差异，不继续无目的压缩网格或强调R。
 - 求解器无关峰形、FWHM、source mapping、Recording审计和bootstrap已固定到Python 3.11参考入口；
   四个纯MATLAB后处理入口已删除，旧数值只在历史/冻结基准中保留作迁移对照。
 

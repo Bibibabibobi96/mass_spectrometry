@@ -21,10 +21,14 @@ py -3.11 -m venv .venv
 
 - 机器数据定义：`../config/analysis_contract.json`。
 - 迁移基准身份与旧MATLAB参考：`../config/analysis_baselines.json`。
+- 当前正式COMSOL/SIMION同源闭合记录：`../config/formal_validation.json`。
 - 数值算法：`peak_metrics.py`。
 - CSV/XLSX/SIMION TRACE导入、严格Recording审计、source mapping、bootstrap、出图和CLI：
   `reference_analysis.py`。
 - 回归门禁：`verify_reference_analysis.ps1`。
+
+回归门禁同时验证冻结迁移基准和当前`formal_validation.json`：后者会核对物理/分析契约哈希、
+固定ION表、正式IOB、两侧逐粒子CSV以及Python比较指标，防止正式结果与外部artifacts静默漂移。
 
 正式机器输入优先使用CSV/JSON。XLSX只用于接收SIMION GUI人工导出；读取后立即输出
 `particles_normalized.csv`，Excel本身不是指标真值。

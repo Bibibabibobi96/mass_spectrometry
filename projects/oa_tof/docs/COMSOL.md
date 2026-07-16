@@ -19,9 +19,14 @@ Desktop查看、修改和Compute；仅脚本内存状态通过不算验收。
 
 2026-07-16已从baseline重新生成并验证524 amu、固定N=100、真实场、0.2 ns正式MPH。模型包含
 紧凑加速器、`L_refl=206.8328 mm`、10 mm一体式封闭屏蔽罩和参数化出口栅网；100/100命中，
-平均TOF为`71.9868802959 us`，直接质量FWHM为`0.017911007662 Da`，`R=29255.7521`。
+平均TOF为`71.9868802959 us`，统一Python直接质量FWHM为`0.017910731136 Da`，`R=29256.2038`。
 COMSOL同步验证器已支持用`OATOF_COMSOL_MODEL_PATH`先验证候选，禁止为验证而提前覆盖正式模型。
 正式MPH已在同一任务同步到SolidWorks 2022装配体。历史100 amu性能值只保留作历史参考。
+
+正式MPH逐粒子CSV可由`tests/comsol/export_fixed_particle_arrivals_from_mph.m`导出。默认仍指向历史
+候选以保持旧回归可复现；正式验证必须用`OATOF_COMSOL_MODEL_PATH`和
+`OATOF_COMSOL_OUTPUT_CSV`显式指定输入/输出，避免覆盖冻结数据。2026-07-16正式同源N=100结果及
+跨求解器峰形结论统一记录于`PROJECT.md`和`config/formal_validation.json`。
 
 ## 524 amu闭合要求
 

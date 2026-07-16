@@ -8,14 +8,22 @@ projectDir = fileparts(fileparts(testDir));
 addpath(projectDir);
 paths = oatof_paths();
 
-modelPath = fullfile(paths.comsolCandidateDir, ...
-    'MS_oaTOF_TwoStageRingStackReflectron_Candidate_524amu_FixedN100_real_dt0.2ns.mph');
+modelPath = getenv('OATOF_COMSOL_MODEL_PATH');
+if isempty(modelPath)
+    modelPath = fullfile(paths.comsolCandidateDir, ...
+        'MS_oaTOF_TwoStageRingStackReflectron_Candidate_524amu_FixedN100_real_dt0.2ns.mph');
+end
 ionTable = fullfile(paths.simionFormalDir, 'oatof_comsol_524amu_gaussian_N100.ion');
-outputCsv = fullfile(paths.artifactRoot, 'runs', ...
-    'comsol_fixed_particle_closure', '2026-07-15', ...
-    'candidate_524amu_fixedN100_real_dt0p2ns_particles.csv');
-assert(isfile(modelPath), 'Candidate MPH not found: %s', modelPath);
+outputCsv = getenv('OATOF_COMSOL_OUTPUT_CSV');
+if isempty(outputCsv)
+    outputCsv = fullfile(paths.artifactRoot, 'runs', ...
+        'comsol_fixed_particle_closure', '2026-07-15', ...
+        'candidate_524amu_fixedN100_real_dt0p2ns_particles.csv');
+end
+assert(isfile(modelPath), 'COMSOL MPH not found: %s', modelPath);
 assert(isfile(ionTable), 'Fixed ION table not found: %s', ionTable);
+outputDir = fileparts(outputCsv);
+if ~isfolder(outputDir), mkdir(outputDir); end
 
 fid = fopen(reportPath, 'w');
 assert(fid >= 0, 'Could not open report: %s', reportPath);

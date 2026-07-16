@@ -42,4 +42,8 @@ if (-not [string]::IsNullOrWhiteSpace($OutputDir)) {
 if ($LASTEXITCODE -ne 0) {
     throw "Reference analysis gate failed with exit code $LASTEXITCODE."
 }
+& $PythonExe (Join-Path $PSScriptRoot 'verify_formal_validation.py')
+if ($LASTEXITCODE -ne 0) {
+    throw "Formal cross-solver validation gate failed with exit code $LASTEXITCODE."
+}
 Write-Host 'REFERENCE_ANALYSIS_STATUS=PASS'

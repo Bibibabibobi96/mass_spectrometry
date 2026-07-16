@@ -17,7 +17,8 @@
 - Program和Data Recording必须同时开启；关闭Program窗口不等于禁用Program。
 - `trajectory_log_enable`默认必须为0，使GUI Data Recording不被逐粒子TRACE淹没；只有命令行
   审计/峰形分析时才显式设为1。
-- 当前候选尚待COMSOL 524 amu闭合，不能单独提升为正式项目模型。
+- 当前日常IOB、正式COMSOL MPH和SolidWorks装配体已经通过共享几何门禁；SIMION网格收敛参考仍
+  保持候选角色，不得误写成第二套正式几何。
 
 稳定实现入口以`config/simion_stable_entry.json`冻结：0.05mm是日常候选，0.025mm仅作轴向
 网格收敛参考。该清单只记录外部工作区资产的路径、大小和SHA-256，不重复维护物理参数；物理
@@ -29,6 +30,12 @@
 
 脚本先逐项验证IOB、CON、Program、Fly2和四个PA的大小/哈希，再实际加载每个IOB并检查4实例与
 T.Qual=8。任一项改变都必须重新验证并有意识地更新清单，禁止只替换PA或手工改IOB后继续称为稳定入口。
+
+2026-07-16在正式几何同步后，用同一524 amu固定N=100 ION表重跑quality=8真实PA场，100/100
+命中，平均TOF为`71.9901350726 us`。统一Python直接质量FWHM为`0.019673808666 Da`，
+`R=26634.3954`；与同步前固定N=100结果只存在数值尾差，证明补齐10 mm封闭屏蔽罩没有实质改变
+该样本的粒子传递。正式跨求解器比较和峰结构解释见`PROJECT.md`，机器记录见
+`config/formal_validation.json`。
 
 ## GUI对等原则
 
