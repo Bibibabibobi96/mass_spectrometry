@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "status": "candidate_no_collision_cross_solver_baseline_simion_builtin_quad_geometry",
+  "geometry_authority": {
+    "source": "SIMION 2020 built-in examples/quad monolithic reference",
+    "files": ["quad_include.gem", "quad_monolithic.gem"],
+    "policy": "COMSOL and project SIMION sources must reproduce this geometry; RF-only physics remains project-defined"
+  },
+  "coordinate_convention": {
+    "units": "mm",
+    "axis": "z",
+    "entrance_z_mm": 0.0,
+    "detector_plane_z_mm": 95.2,
+    "simion_workbench_to_pa_and_comsol": {
+      "comsol_x": "simion_workbench_z",
+      "comsol_y": "-simion_workbench_y",
+      "comsol_z": "simion_workbench_x"
+    },
+    "verified_iob_basis": {
+      "pa_x_in_workbench": [0, 0, 1],
+      "pa_y_in_workbench": [0, -1, 0],
+      "pa_z_in_workbench": [1, 0, 0]
+    }
+  },
+  "geometry_mm": {
+    "field_radius_r0": 4.0,
+    "rod_radius_ratio": 1.148,
+    "rod_radius": 4.592,
+    "rod_center_radius": 8.592,
+    "rod_z_min": 5.8,
+    "rod_z_max": 85.4,
+    "rod_length": 79.6,
+    "model_z_span": 95.2,
+    "entrance_plate_z_min": 1.0,
+    "entrance_plate_z_max": 1.8,
+    "entrance_aperture_radius": 1.2,
+    "exit_enclosure_z_min": 89.4,
+    "exit_enclosure_z_max": 95.2,
+    "exit_enclosure_outer_half_width": 7.6,
+    "exit_enclosure_inner_half_width": 7.2,
+    "exit_enclosure_front_wall_end_z": 90.2,
+    "exit_aperture_radius": 3.6,
+    "detector_radius": 3.6,
+    "simion_cell_mm": 0.2,
+    "simion_fractional_surface": true,
+    "simion_mirror_planes": ["x", "y"],
+    "release_radius": 0.05,
+    "release_z": 0.0
+  },
+  "contracts": {
+    "official_particle_source": "official_particle_source.json",
+    "active_mode": "modes/transport_no_collision.json",
+    "future_mass_filter_mode": "modes/mass_filter_reference.json"
+  }
+}

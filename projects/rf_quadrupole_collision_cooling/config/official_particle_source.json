@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "status": "authoritative_simion_builtin_quad_initial_distribution",
+  "source": "SIMION 2020 examples/quad/quad.fly2 and quad_monolithic.fly2",
+  "coordinate_mapping": {
+    "simion_workbench_axis": "positive x",
+    "simion_pa_local_axis": "positive z",
+    "project_and_comsol_axis": "positive z"
+  },
+  "particles": 25,
+  "mass_amu": 100.0,
+  "charge_state": 1,
+  "time_of_birth_us": {
+    "distribution": "uniform",
+    "min": 0.0,
+    "max": 0.909091,
+    "meaning": "one complete RF cycle at the official 1.1 MHz frequency"
+  },
+  "position_mm": {
+    "axial": 0.0,
+    "transverse_1": {"distribution": "uniform", "min": -0.05, "max": 0.05},
+    "transverse_2": {"distribution": "uniform", "min": -0.05, "max": 0.05}
+  },
+  "kinetic_energy_eV": {"distribution": "uniform", "min": 1.8, "max": 2.2},
+  "direction": {
+    "distribution": "filled_cone",
+    "axis": [0.0, 0.0, 1.0],
+    "half_angle_deg": 5.0
+  },
+  "cwf": 1,
+  "color": 3,
+  "paired_cross_solver_policy": "A versioned fixed 25-particle realization sampled from these distributions is used by both solvers; the distribution contract remains GUI-visible."
+}

@@ -1,0 +1,7 @@
+; Project reproduction of the SIMION 2020 built-in monolithic quadrupole.
+
+# local mmgu = 0.2
+
+pa_define($(7.6/mmgu+1), $(7.6/mmgu+1), $(95.2/mmgu+1), planar,xy, electric,, $(mmgu), surface=fractional)
+
+include(quad_include.gem)

@@ -30,7 +30,11 @@ componentRoot = fileparts(fileparts(mfilename('fullpath')));
 addpath(componentRoot);
 paths = rf_quadrupole_paths();
 addpath('D:\COMSOL 6.4\COMSOL64\Multiphysics\mli');
-mphstart(2036);
+try
+    mphstart(2036);
+catch ME
+    if ~contains(ME.message, 'Already connected'), rethrow(ME); end
+end
 import com.comsol.model.*
 import com.comsol.model.util.*
 

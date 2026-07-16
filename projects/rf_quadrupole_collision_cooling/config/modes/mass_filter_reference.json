@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "mode": "mass_filter_reference",
+  "status": "frozen_future_mode_not_yet_validated",
+  "source": "SIMION 2020 examples/quad/quad.lua defaults",
+  "rf": {
+    "frequency_Hz": 1100000.0,
+    "phase_deg": 0.0,
+    "effective_radius_cm": 0.4,
+    "tune_mass_amu_per_charge": 100.0,
+    "percent_tune": 97.0,
+    "rf_amplitude_V_peak": 139.81792,
+    "dc_differential_V": 22.763014939677756,
+    "axis_offset_V": -8.0
+  },
+  "static_electrodes_V": {
+    "entrance_plate": 0.0,
+    "exit_enclosure": -100.0,
+    "detector": -1500.0
+  },
+  "execution_policy": "Do not run or promote in the current transport-only task."
+}

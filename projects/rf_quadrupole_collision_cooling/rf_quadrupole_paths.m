@@ -1,13 +1,24 @@
 function paths = rf_quadrupole_paths()
-%RF_QUADRUPOLE_PATHS Resolve RF-quadrupole source and artifact paths.
+%RF_QUADRUPOLE_PATHS Resolve RF-quadrupole project source and artifact paths.
 
     componentRoot = fileparts(mfilename('fullpath'));
     repoRoot = fileparts(fileparts(componentRoot));
     workspaceRoot = fileparts(repoRoot);
     paths = struct();
-    paths.componentRoot = componentRoot;
+    paths.projectRoot = componentRoot;
     paths.artifactRoot = fullfile(workspaceRoot, 'artifacts', 'projects', ...
         'rf_quadrupole_collision_cooling');
-    paths.modelsDir = fullfile(paths.artifactRoot, 'scratch', 'comsol');
-    paths.resultsDir = fullfile(paths.artifactRoot, 'results', 'comsol');
+    paths.modelsRoot = fullfile(paths.artifactRoot, 'models');
+    paths.resultsRoot = fullfile(paths.artifactRoot, 'results');
+    paths.comsolCandidateDir = fullfile(paths.modelsRoot, 'comsol', 'candidates');
+    paths.simionCandidateDir = fullfile(paths.modelsRoot, 'simion', 'candidates');
+    paths.comsolResultsDir = fullfile(paths.resultsRoot, 'comsol');
+    paths.simionResultsDir = fullfile(paths.resultsRoot, 'simion');
+    paths.crossSolverResultsDir = fullfile(paths.resultsRoot, 'cross_solver');
+    paths.scratchDir = fullfile(paths.artifactRoot, 'scratch');
+    % Backward-compatible destinations used by the pre-contract collision
+    % script.  Keep its lifecycle unchanged until that separate mode is
+    % migrated rather than silently redirecting old production outputs.
+    paths.modelsDir = fullfile(paths.scratchDir, 'comsol');
+    paths.resultsDir = paths.comsolResultsDir;
 end

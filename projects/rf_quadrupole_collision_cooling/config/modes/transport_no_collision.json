@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "mode": "transport_no_collision",
+  "status": "candidate_cross_solver_mode",
+  "description": "RF-only radial confinement and axial transmission; no mass-filter DC component and no collision or drag model",
+  "rf": {
+    "frequency_Hz": 1100000.0,
+    "phase_rad": 0.0,
+    "amplitude_rule": "effective_radius_cm^2 * frequency_Hz^2 * 7.222e-12 * tune_mass_amu_per_charge",
+    "amplitude_V_peak": 139.81792,
+    "tune_mass_amu_per_charge": 100.0,
+    "mathieu_q_expected": 0.706,
+    "rod_dc_differential_V": 0.0,
+    "axis_offset_V": 0.0
+  },
+  "static_electrodes_V": {
+    "entrance_plate": 0.0,
+    "exit_enclosure": 0.0,
+    "detector": 0.0
+  },
+  "gas": {"number_density_m3": 0.0, "collision_model": "none"},
+  "numerics": {
+    "comsol_rf_steps_per_period": 80,
+    "comsol_mesh_auto_level": 1,
+    "simion_rf_steps_per_period": 40,
+    "simion_trajectory_quality": 10,
+    "maximum_time_us": 80.0,
+    "minimum_expected_transmission": 0.8,
+    "maximum_allowed_radius_fraction_r0": 1.0,
+    "cross_solver_relative_mean_tof_tolerance": 0.1,
+    "cross_solver_transmission_absolute_tolerance": 0.1
+  }
+}
