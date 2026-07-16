@@ -1,0 +1,132 @@
+"""Render comparable terminal-position diagnostics for COMSOL and SIMION."""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import math
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+from matplotlib.colors import Normalize
+from matplotlib.patches import Circle
+
+
+def load_rows(path: Path) -> list[dict[str, str]]:
+    with path.open(encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    if len(rows) != 25:
+        raise ValueError(f"{path} has {len(rows)} rows; expected 25")
+    return rows
+
+
+def number(row: dict[str, str], key: str) -> float:
+    return float(row[key])
+
+
+def terminal_coordinates(solver: str, row: dict[str, str]) -> tuple[float, float, float]:
+    if solver == "COMSOL":
+        return number(row, "terminal_x_mm"), number(row, "terminal_y_mm"), number(row, "terminal_z_mm")
+    # SIMION records workbench coordinates.  The IOB mapping is PA x -> wb z,
+    # PA y -> -wb y, PA z -> wb x, so return the common PA/COMSOL frame.
+    return number(row, "terminate_z_mm"), -number(row, "terminate_y_mm"), number(row, "terminate_x_mm")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--workspace", type=Path, required=True)
+    args = parser.parse_args()
+    artifact = args.workspace / "artifacts/projects/rf_quadrupole_collision_cooling"
+    result_dir = artifact / "results"
+    inputs = {
+        "COMSOL": result_dir / "comsol/transport_no_collision_particles.csv",
+        "SIMION": result_dir / "simion/transport_no_collision_particles_baseline.csv",
+    }
+    detector_radius = 3.6
+    data = {solver: load_rows(path) for solver, path in inputs.items()}
+    endpoints = {
+        solver: [terminal_coordinates(solver, row) for row in rows]
+        for solver, rows in data.items()
+    }
+    axial = [point[2] for points in endpoints.values() for point in points]
+    norm = Normalize(vmin=min(axial), vmax=max(axial))
+    cmap = plt.get_cmap("viridis")
+    figure, axes = plt.subplots(2, 2, figsize=(11, 9), constrained_layout=True)
+    endpoint_axes = [axes[0, 0], axes[0, 1]]
+
+    summary: dict[str, object] = {"detector_radius_mm": detector_radius, "solvers": {}}
+    for axis, (solver, rows) in zip(endpoint_axes, data.items(), strict=True):
+        points = endpoints[solver]
+        transverse_x = [point[0] for point in points]
+        transverse_y = [point[1] for point in points]
+        terminal_axial = [point[2] for point in points]
+        hits = [int(row["hit"]) == 1 for row in rows]
+        colors = [cmap(norm(value)) for value in terminal_axial]
+        for index, (x, y, color, hit) in enumerate(zip(transverse_x, transverse_y, colors, hits), start=1):
+            axis.scatter(x, y, s=52, c=[color], marker="o" if hit else "x", linewidths=1.3, zorder=3)
+            axis.annotate(str(index), (x, y), xytext=(4, 4), textcoords="offset points", fontsize=7)
+        axis.add_patch(Circle((0, 0), detector_radius, fill=False, color="black", linestyle="--", linewidth=1.1))
+        axis.axhline(0, color="0.8", linewidth=0.7, zorder=0)
+        axis.axvline(0, color="0.8", linewidth=0.7, zorder=0)
+        axis.set_aspect("equal", adjustable="box")
+        axis.set_xlim(-4.0, 4.0)
+        axis.set_ylim(-4.0, 4.0)
+        axis.set_title(f"{solver}: terminal transverse position")
+        axis.set_xlabel("PA / COMSOL x (mm)")
+        axis.set_ylabel("PA / COMSOL y (mm)")
+        summary["solvers"][solver] = {
+            "particles": len(rows),
+            "hits": sum(hits),
+            "terminal_axial_min_mm": min(terminal_axial),
+            "terminal_axial_max_mm": max(terminal_axial),
+            "max_terminal_radius_mm": max((x * x + y * y) ** 0.5 for x, y in zip(transverse_x, transverse_y)),
+        }
+
+    comsol_points = endpoints["COMSOL"]
+    simion_points = endpoints["SIMION"]
+    dx = [c[0] - s[0] for c, s in zip(comsol_points, simion_points, strict=True)]
+    dy = [c[1] - s[1] for c, s in zip(comsol_points, simion_points, strict=True)]
+    paired_distance = [math.hypot(x, y) for x, y in zip(dx, dy, strict=True)]
+    vector_axis = axes[1, 0]
+    vector_axis.add_patch(Circle((0, 0), detector_radius, fill=False, color="black", linestyle="--", linewidth=1.1))
+    vector_axis.scatter([point[0] for point in simion_points], [point[1] for point in simion_points],
+                        c="tab:blue", s=26, label="SIMION terminal", zorder=2)
+    vector_axis.quiver([point[0] for point in simion_points], [point[1] for point in simion_points], dx, dy,
+                       angles="xy", scale_units="xy", scale=1, color="tab:red", width=0.004, label="SIMION → COMSOL")
+    vector_axis.axhline(0, color="0.8", linewidth=0.7, zorder=0)
+    vector_axis.axvline(0, color="0.8", linewidth=0.7, zorder=0)
+    vector_axis.set(xlim=(-4, 4), ylim=(-4, 4), aspect="equal", title="Paired terminal displacement",
+                    xlabel="PA / COMSOL x (mm)", ylabel="PA / COMSOL y (mm)")
+    vector_axis.legend(loc="upper right")
+
+    error_axis = axes[1, 1]
+    particle_ids = list(range(1, len(paired_distance) + 1))
+    error_axis.scatter(particle_ids, paired_distance, color="tab:red", s=34)
+    error_axis.plot(particle_ids, paired_distance, color="tab:red", alpha=0.45)
+    error_axis.axhline(sum(paired_distance) / len(paired_distance), color="0.3", linestyle="--", label="mean")
+    error_axis.set(title="Paired transverse terminal difference", xlabel="fixed particle ID",
+                   ylabel="|COMSOL − SIMION| (mm)")
+    error_axis.grid(True, alpha=0.3)
+    error_axis.legend()
+
+    colorbar = figure.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=endpoint_axes, shrink=0.86)
+    colorbar.set_label("terminal axial position, PA / COMSOL z (mm)")
+    figure.suptitle("RF quadrupole no-collision terminal diagnostics\n○ detector hit; × non-detector termination; dashed circle = detector aperture")
+    summary["comparison"] = {
+        "paired_terminal_distance_mean_mm": sum(paired_distance) / len(paired_distance),
+        "paired_terminal_distance_max_mm": max(paired_distance),
+    }
+
+    output_dir = result_dir / "cross_solver"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    image_path = output_dir / "transport_no_collision_terminal_distribution.png"
+    summary_path = output_dir / "transport_no_collision_terminal_distribution.json"
+    figure.savefig(image_path, dpi=180)
+    plt.close(figure)
+    summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    print(f"STATUS=PASS IMAGE={image_path} SUMMARY={summary_path}")
+
+
+if __name__ == "__main__":
+    main()

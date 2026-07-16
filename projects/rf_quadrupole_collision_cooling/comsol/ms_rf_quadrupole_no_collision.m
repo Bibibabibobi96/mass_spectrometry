@@ -159,7 +159,11 @@ nP=size(z,2); assert(nP==size(ions,1),'Solved particle count mismatch.');
 arrival=nan(1,nP); arrivalRadius=nan(1,nP); crossedDetectorPlane=false(1,nP); hit=false(1,nP); maxRadius=max(radial,[],1,'omitnan'); threshold=detectorZ-1e-6;
 rodRadial=radial; rodRadial(z<g.rod_z_min | z>g.rod_z_max)=NaN;
 maxRodRadius=max(rodRadial,[],1,'omitnan');
+terminalX=nan(1,nP); terminalY=nan(1,nP); terminalZ=nan(1,nP);
 for i=1:nP
+    finalSample=find(isfinite(x(:,i)) & isfinite(y(:,i)) & isfinite(z(:,i)),1,'last');
+    assert(~isempty(finalSample),'Particle %d has no finite terminal coordinate.',i);
+    terminalX(i)=x(finalSample,i); terminalY(i)=y(finalSample,i); terminalZ(i)=z(finalSample,i);
     k=find(z(:,i)>=threshold,1,'first');
     if ~isempty(k)
         crossedDetectorPlane(i)=true;
@@ -189,7 +193,8 @@ else
 end
 modelPath=fullfile(paths.comsolCandidateDir,modelName); model.save(modelPath);
 summaryPath=fullfile(paths.comsolResultsDir,['transport_no_collision_summary' suffix '.json']); fid=fopen(summaryPath,'w'); fprintf(fid,'%s',jsonencode(result,'PrettyPrint',true)); fclose(fid);
-particleTable=table((1:nP)',crossedDetectorPlane',hit',arrival',arrivalRadius',maxRodRadius',maxRadius','VariableNames', ...
-    {'particle_id','crossed_detector_plane','hit','arrival_time_us','detector_plane_radius_mm','max_rod_radius_mm','max_radius_mm'}); writetable(particleTable,fullfile(paths.comsolResultsDir,['transport_no_collision_particles' suffix '.csv']));
+particleTable=table((1:nP)',crossedDetectorPlane',hit',arrival',arrivalRadius',maxRodRadius',maxRadius',terminalX',terminalY',terminalZ','VariableNames', ...
+    {'particle_id','crossed_detector_plane','hit','arrival_time_us','detector_plane_radius_mm','max_rod_radius_mm','max_radius_mm', ...
+    'terminal_x_mm','terminal_y_mm','terminal_z_mm'}); writetable(particleTable,fullfile(paths.comsolResultsDir,['transport_no_collision_particles' suffix '.csv']));
 fprintf('STATUS=PASS\n');
 end

@@ -14,6 +14,9 @@
 TOF 变化 0.05%、最大杆区半径变化 0.89%。因此冻结 mesh1、80 步/周期。
 最终结果为 25/25、50.1673 us、最大杆区半径 0.4944 mm、`q=0.7060233`。
 
+逐粒子 CSV 除到达时间和径向统计外还写入最终有限样本的 `terminal_x/y/z_mm`，供跨求解器终点诊断图
+保留探测器命中与任何半路终止的位置。
+
 `tests/comsol/verify_nocollision_comsol.m` 重开 MPH，检查参数、25 个 GUI release 节点、无碰撞、
 选择集和 Solver attach，并分别调用 `model.study('std1').run`、`std2.run`；结果 25/25，且 Solver
 标签始终为 `sol1,sol2`。先前 150 mm 简化直杆 MPH 仅是失效候选。

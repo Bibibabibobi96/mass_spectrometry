@@ -38,6 +38,12 @@ COMSOL MPH 重开后，`std1`/`std2` 通过 Study GUI Compute 路径复算仍为
 `sol1,sol2`。SIMION IOB 重开确认单实例、变换 `(az=-90, el=0, rt=180)`、PA 为
 `39×39×477`、单元 `0.2 mm`，项目本地 Lua/Fly2 生效。
 
+终点诊断图由 `analysis/plot_terminal_distribution.py` 生成到
+`artifacts/.../results/cross_solver/transport_no_collision_terminal_distribution.png`：上排两栏使用同一
+PA/COMSOL 横向坐标与颜色尺度，虚线圈表示 3.6 mm 探测器口径，圆点是探测器命中、叉号是非探测器
+终止，颜色表示终止轴向位置；下排按相同粒子 ID 给出 SIMION→COMSOL 终点差矢量和逐粒子横向差。
+当前两端均为 25 个命中；未来撞杆、出口壳体或超时离子会保留在同一图中。
+
 ## 产物与边界
 
 - COMSOL 候选：`artifacts/.../models/comsol/candidates/rf_quadrupole_transport_no_collision_simion_reference.mph`
