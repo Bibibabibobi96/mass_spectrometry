@@ -1,0 +1,52 @@
+{
+  "status": "candidate_not_formal",
+  "purpose": "Constrain every internal accelerator axial dimension to 0.1 mm while preserving the existing global first-order time-focus plane exactly",
+  "theory_source": "docs/theory/三栅加速器总长度符号推导.docx",
+  "reference_implementation": "analysis/accelerator_time_focus.py",
+  "design": {
+    "reference_geometry": {
+      "assembly_translation_z_mm": 0.0,
+      "d1_mm": 3.0,
+      "d2_mm": 16.83,
+      "electrodes_V": {
+        "repeller": 2240.0,
+        "grid1": 1760.0
+      }
+    },
+    "geometry_quantum_mm": 0.1,
+    "local_geometry_mm": {
+      "d1": 3.0,
+      "d2": 16.8,
+      "ring_count": 5,
+      "ring_pitch": 2.8,
+      "ring_thickness": 1.0,
+      "release_z_min": 1.0,
+      "release_z_max": 2.0
+    },
+    "electrodes_V": {
+      "repeller": 2240.0,
+      "grid1": 1760.0,
+      "grid2": 0.0
+    },
+    "invariants": [
+      "d1 remains exactly 3.0 mm",
+      "six grid1-to-grid2 intervals remain exactly equal",
+      "all rings remain concentric and transversely centered",
+      "ring thickness remains exactly 1.0 mm",
+      "accelerator voltages remain unchanged",
+      "the whole accelerator and source translate as one rigid assembly",
+      "the new global first-order time-focus plane exactly equals the focus derived from the current 16.83 mm engineering baseline"
+    ]
+  },
+  "expected_derived": {
+    "ring_centers_local_mm": [5.8, 8.6, 11.4, 14.2, 17.0],
+    "grid2_local_z_mm": 19.8,
+    "focus_drift_after_grid2_mm": 0.12918680341102995,
+    "focus_local_z_mm": 19.92918680341103,
+    "reference_focus_drift_after_grid2_mm": 0.0005446661872985914,
+    "reference_global_focus_z_mm": 19.8305446661873,
+    "assembly_translation_z_mm": -0.09864213722372406,
+    "grid2_global_z_mm": 19.701357862776277,
+    "focus_global_z_mm": 19.8305446661873
+  }
+}

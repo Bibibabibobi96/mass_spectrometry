@@ -22,6 +22,8 @@ py -3.11 -m venv .venv
 - 机器数据定义：`../config/analysis_contract.json`。
 - 迁移基准身份与旧MATLAB参考：`../config/analysis_baselines.json`。
 - 当前正式COMSOL/SIMION同源闭合记录：`../config/formal_validation.json`。
+- 三栅加速器一阶时间聚焦公式：`accelerator_time_focus.py`；输入为候选或正式JSON契约，公式来源为
+  `../docs/theory/三栅加速器总长度符号推导.docx`。
 - 数值算法：`peak_metrics.py`。
 - CSV/XLSX/SIMION TRACE导入、严格Recording审计、source mapping、bootstrap、出图和CLI：
   `reference_analysis.py`。
@@ -109,3 +111,5 @@ Program Off只允许作为诊断组，可用`single`和对应`.1`列导入；它
 3. MATLAB中为COMSOL/SIMION GUI保留的结果是软件内展示层，必须用冻结数据与本参考实现核对。
 4. 本目录的通用代码只有在第二个项目实际复用后才能上移`common/`。
 5. 已删除的MATLAB后处理脚本不得恢复；COMSOL MPH提取入口只导出逐粒子CSV，正式统计仍由本目录完成。
+6. 修改三栅电压、间距或全局安装位置时，必须先通过`accelerator_time_focus.py`验证漂移距离和全局
+   聚焦面；不得只复制文档中的旧示例数值。
