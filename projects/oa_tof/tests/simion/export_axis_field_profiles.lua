@@ -4,6 +4,17 @@ local report_path = assert(os.getenv('OATOF_SIMION_FIELD_REPORT'),
   'OATOF_SIMION_FIELD_REPORT is not set')
 local output = assert(io.open(output_path, 'w'))
 local report = assert(io.open(report_path, 'w'))
+local function required_number(name)
+  return assert(tonumber(os.getenv(name)), name .. ' is not set')
+end
+local accelerator_axis_x = required_number('OATOF_ACCELERATOR_AXIS_X_MM')
+local reflectron_axis_x = required_number('OATOF_REFLECTRON_AXIS_X_MM')
+local source_z_min = required_number('OATOF_SOURCE_Z_MIN_MM')
+local source_z_max = required_number('OATOF_SOURCE_Z_MAX_MM')
+local accelerator_z_min = required_number('OATOF_ACCELERATOR_SAMPLE_Z_MIN_MM')
+local accelerator_z_max = required_number('OATOF_ACCELERATOR_SAMPLE_Z_MAX_MM')
+local reflectron_z_min = required_number('OATOF_REFLECTRON_SAMPLE_Z_MIN_MM')
+local reflectron_z_max = required_number('OATOF_REFLECTRON_SAMPLE_Z_MAX_MM')
 
 local iob_path = os.getenv('OATOF_FORMAL_IOB_PATH') or 'oatof_ideal_grounded.iob'
 simion.command('"' .. iob_path .. '"')
@@ -23,7 +34,8 @@ local function global_ez_vpm(instance_index, x_mm, y_mm, z_mm, local_component)
   return 1000*values[local_component]
 end
 
-local function sample(region, instance_index, x_mm, z_start, z_step, count, component)
+local function sample(region, instance_index, x_mm, z_start, z_end, z_step, component)
+  local count=math.floor((z_end-z_start)/z_step+0.5)+1
   local minimum,maximum
   for index=1,count do
     local z_mm = z_start+(index-1)*z_step
@@ -38,9 +50,9 @@ local function sample(region, instance_index, x_mm, z_start, z_step, count, comp
     string.upper(region),minimum,maximum))
 end
 
-sample('accelerator_source',2,-48.8,0.2,0.01,261,3)
-sample('accelerator_full',2,-48.8,3.2,0.05,329,3)
-sample('reflectron',1,0,620.08,0.25,827,1)
+sample('accelerator_source',2,accelerator_axis_x,source_z_min,source_z_max,0.01,3)
+sample('accelerator_full',2,accelerator_axis_x,accelerator_z_min,accelerator_z_max,0.05,3)
+sample('reflectron',1,reflectron_axis_x,reflectron_z_min,reflectron_z_max,0.25,1)
 report:write('STATUS=PASS\n')
 output:close()
 report:close()

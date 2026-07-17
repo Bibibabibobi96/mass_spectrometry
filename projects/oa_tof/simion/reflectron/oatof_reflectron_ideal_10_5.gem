@@ -14,47 +14,46 @@
 # local backplate_thickness = var.backplate_thickness or 5
 # local far_clearance = var.far_clearance or 50
 # local far_cap_thickness = var.far_cap_thickness or 10
+# local stage1_length = var.stage1_length or 120
+# local stage2_length = var.stage2_length or (backplate_front-stage1_length)
+# local bore_radius = var.bore_radius or 250
+# local ring_outer_radius = var.ring_outer_radius or 300
+# local ring_thickness = backplate_thickness
+# local stage1_ring_count = var.stage1_ring_count or 10
+# local stage2_ring_count = var.stage2_ring_count or 5
+# local stage1_pitch = stage1_length/(stage1_ring_count+1)
+# local stage2_pitch = stage2_length/(stage2_ring_count+1)
 # local bore_end = backplate_front+backplate_thickness+far_clearance
 # local outer_end = bore_end+far_cap_thickness
 # local outer_radius = inner_radius+wall
 # local nx = math.ceil(outer_end/mmgu_axial) + 1
 # local ny = math.ceil(outer_radius/mmgu_radial) + 1
 pa_define($(nx),$(ny),1,cylindrical,y,electrostatic,,
-          $(mmgu_axial),$(mmgu_radial),1,surface=fractional)
+          $(mmgu_axial),$(mmgu_radial),$(mmgu_radial),surface=fractional)
 
 ; e1: entgrid, ideal transparent one-grid-point electrode sheet, 0 V.
-e(1) { fill{within{box(0,0,0,350)}} }
+e(1) { fill{within{box(0,0,0,$(inner_radius))}} }
 
-; Stage 1: 10 rings, thickness 5 mm, bore 250 mm, outer radius 300 mm.
-; Their Fast Adjust voltages are in 00_reference/reflectron_ring_table_10_5.csv.
-e(2)  { fill{within{box( 8.409,250,13.409,300)}} }
-e(3)  { fill{within{box(19.318,250,24.318,300)}} }
-e(4)  { fill{within{box(30.227,250,35.227,300)}} }
-e(5)  { fill{within{box(41.136,250,46.136,300)}} }
-e(6)  { fill{within{box(52.045,250,57.045,300)}} }
-e(7)  { fill{within{box(62.955,250,67.955,300)}} }
-e(8)  { fill{within{box(73.864,250,78.864,300)}} }
-e(9)  { fill{within{box(84.773,250,89.773,300)}} }
-e(10) { fill{within{box(95.682,250,100.682,300)}} }
-e(11) { fill{within{box(106.591,250,111.591,300)}} }
+; Stage-1 rings are centered at equal pitch and share one thickness/radius family.
+# for ring_index=1,stage1_ring_count do
+e($(1+ring_index)) { fill{within{box($(ring_index*stage1_pitch-ring_thickness/2),$(bore_radius),$(ring_index*stage1_pitch+ring_thickness/2),$(ring_outer_radius))}} }
+# end
 
-; e12: midgrid, ideal transparent sheet at x=120 mm, radius 300 mm.
-e(12) { fill{within{box(120,0,120,300)}} }
+; Midgrid electrode number follows stage-1 ring count.
+e($(2+stage1_ring_count)) { fill{within{box($(stage1_length),0,$(stage1_length),$(ring_outer_radius))}} }
 
-; Stage 2: 5 rings, thickness 5 mm, bore 250 mm, outer radius 300 mm.
-e(13) { fill{within{box(131.972,250,136.972,300)}} }
-e(14) { fill{within{box(146.444,250,151.444,300)}} }
-e(15) { fill{within{box(160.746,250,165.746,300)}} }
-e(16) { fill{within{box(175.389,250,180.389,300)}} }
-e(17) { fill{within{box(189.861,250,194.861,300)}} }
+; Stage-2 rings use the same construction and are linked to stage-2 length.
+# for ring_index=1,stage2_ring_count do
+e($(2+stage1_ring_count+ring_index)) { fill{within{box($(stage1_length+ring_index*stage2_pitch-ring_thickness/2),$(bore_radius),$(stage1_length+ring_index*stage2_pitch+ring_thickness/2),$(ring_outer_radius))}} }
+# end
 
-; e18: backplate.  Its front face is at x=L_refl=206.8328 mm.
-e(18) { fill{within{box(206.833,0,211.833,300)}} }
+; Backplate front is the exact derived reflectron length.
+e($(3+stage1_ring_count+stage2_ring_count)) { fill{within{box($(backplate_front),0,$(backplate_front+backplate_thickness),$(ring_outer_radius))}} }
 
 ; e19: grounded 10 mm side wall plus the full 10 mm far end cap.
 ; The side wall starts at the reflectron entrance and joins the matching
 ; field-free shield PA without an axial gap.
-e(19) {
+e($(4+stage1_ring_count+stage2_ring_count)) {
   fill{within{box(0,$(inner_radius),$(bore_end),$(outer_radius))}}
   fill{within{box($(bore_end),0,$(outer_end),$(outer_radius))}}
 }

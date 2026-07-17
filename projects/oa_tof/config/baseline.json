@@ -1,5 +1,7 @@
 {
+  "schema_version": 2,
   "source": "Physics-derived oa-TOF project baseline; solver and CAD implementations must conform to this contract",
+  "naming_convention": "Code variables use <component>_<feature>_<quantity>_<unit>; global positions include the axis (for example accelerator_grid2_z_mm), local coordinates include local, counts end in _count, voltages end in _v. Keys inside geometry_mm inherit millimetres from the section name.",
   "coordinate_convention": {
     "units": "mm",
     "origin": "detector active-plane center and exact first-order accelerator time-focus plane",
@@ -27,6 +29,8 @@
     "reflectron": {
       "incident_energy_eV": 2000.0,
       "total_field_free_length_mm": 1200.0,
+      "outbound_field_free_length_mm": 600.0,
+      "return_field_free_length_mm": 600.0,
       "stage1_length_mm": 120.0,
       "stage2_margin_fraction": 1.0,
       "engineering_length_decimals_mm": 4,
@@ -58,6 +62,8 @@
     "accelerator_shield_wall": 4.0,
     "accelerator_rear_clearance": 5.0,
     "accelerator_repeller_thickness": 1.0,
+    "accelerator_ring_thickness": 1.0,
+    "accelerator_front_vacuum_margin": 0.2,
     "accelerator_bore_half": 5.0,
     "accelerator_ring_width": 5.0,
     "accelerator_insulation_gap": 5.0,
@@ -66,6 +72,19 @@
     "shield_bore_z_max": 861.8328,
     "shield_outer_z_min": -59.92918680341103,
     "shield_outer_z_max": 871.8328
+  },
+  "particle_source": {
+    "seed": 20260713,
+    "center_x_mm": -48.8,
+    "center_y_mm": 0.0,
+    "center_z_mm": -18.42918680341103,
+    "center_z_rule": "accelerator_repeller_z + accelerator_stage1_length_mm/2",
+    "size_x_mm": 1.0,
+    "size_y_mm": 1.0,
+    "size_z_mm": 1.0,
+    "direction_x": 1.0,
+    "direction_y": 0.0,
+    "direction_z": 0.0
   },
   "electrodes_V": {
     "repeller": 2240.0,
@@ -84,85 +103,6 @@
     "stage2_voltage_rule": "V_mid+(V_mirror-V_mid)*k/(N2+1), k=1..N2",
     "stage1_center_rule_mm": "L_flight+k*L_stage1/(N1+1), k=1..N1",
     "stage2_center_rule_mm": "L_flight+L_stage1+k*L_stage2/(N2+1), k=1..N2"
-  },
-  "validation_target": {
-    "mass_amu": 524.0,
-    "particles": 1000,
-    "initial_energy_mean_ev": 5.0,
-    "initial_energy_sigma_ev": 0.4,
-    "status": "formal_cross_solver_validation",
-    "sample_role": "paired_same-particle large-sample formal statistical closure",
-    "arrival_fraction": "1000/1000",
-    "mean_arrival_time_us": 71.99017440079987,
-    "arrival_time_sigma_ns": 0.7639845214527199,
-    "arrival_time_fwhm_ns": 0.895450275848475,
-    "direct_mass_fwhm_Da": 0.013035531521495614,
-    "resolution_definition": "R=m/direct_FWHM_m; narrow-peak TOF equivalent R=mean_t/(2*direct_FWHM_t); 2*sqrt(2*ln(2))*sigma_t is only a Gaussian proxy",
-    "resolution_R_fwhm": 40197.82385826946,
-    "simion_mean_arrival_time_us": 71.99101660431639,
-    "simion_arrival_time_sigma_ns": 0.7026959865797383,
-    "simion_direct_mass_fwhm_Da": 0.011756020528082445,
-    "simion_resolution_R_fwhm": 44572.90617588527,
-    "cross_solver_mean_tof_gap_ns": 0.842203516512541,
-    "cross_solver_paired_rms_ns": 1.123826654416,
-    "cross_solver_centered_rms_ns": 0.744096489677231,
-    "cross_solver_max_abs_ns": 2.59594240620231,
-    "cross_solver_landing_centroid_distance_mm": 0.0705165579274504,
-    "cross_solver_paired_landing_rms_mm": 0.144656277293449,
-    "max_stage2_penetration_mm": null,
-    "historical_100amu_reference": {
-      "arrival_fraction": "1000/1000",
-      "mean_arrival_time_us": 31.4478763926,
-      "arrival_time_sigma_ns": 0.897802250264,
-      "arrival_time_fwhm_ns": 2.1141627354,
-      "resolution_R_fwhm": 7437.4304,
-      "max_stage2_penetration_mm": 51.07
-    }
-  },
-  "runtime_contract": {
-    "verified_on": "2026-07-17",
-    "standard_mass_updated_on": "2026-07-15",
-    "comsol_formal_geometry_status": "synchronized",
-    "comsol_formal_mph_sha256": "CB8297390064F672428178DB6C92C035CE0C1ECD03FD5C87E2338E545BEBEDFE",
-    "solidworks_formal_geometry_status": "synchronized",
-    "solidworks_revision": "30.5.0",
-    "solidworks_formal_component_count": 25,
-    "solidworks_formal_assembly_sha256": "F07D690B9E9B2AB627A11A41FC0BB688061A9128BDFA8EFE859B1A88C333298E"
-  },
-  "simion_runtime": {
-    "trajectory_quality": 8,
-    "routine_particles": 5000,
-    "accelerator_grid_epsilon_mm": 0.0001,
-    "reflectron_grid_epsilon_mm": 0.0001,
-    "program_required": true,
-    "trajectory_log_default_enabled": false
-  },
-  "comsol_runtime": {
-    "routine_accelerator_hmax_mm": 1.0,
-    "convergence_accelerator_hmax_mm": 0.5,
-    "fine_output_step_ns": 0.2,
-    "field_free_output_step_ns": 50.0,
-    "accelerator_window_margin_us": 0.5,
-    "reflectron_window_margin_us": 2.0,
-    "detector_window_margin_us": 0.5,
-    "global_fine_step_phase_alignment_required": true,
-    "store_extra_wall_times": false,
-    "store_particle_status_data": false,
-    "solver_steps": "free",
-    "times_to_store": "tlist",
-    "policy": "Routine runs use parameter-derived, GUI-visible segmented output windows. High-precision convergence uses the 0.5 mm accelerator mesh and the validated dense 0.2 ns reference output. Formal conclusions require a paired convergence check after material physics or geometry changes."
-  },
-  "simion_detector_marker": {
-    "role": "GUI-visible numerical absorber marking the detector active plane; not the mechanical detector body",
-    "active_plane_z_mm": 0.0,
-    "active_radius_mm": 40.0,
-    "absorber_thickness_mm": 0.05,
-    "front_margin_z_mm": 0.2,
-    "back_margin_z_mm": 0.05,
-    "cell_xy_mm": 0.5,
-    "cell_z_mm": 0.01,
-    "near_plane_tstep_default_enabled": false,
-    "near_plane_max_step_z_mm": 0.002
   },
   "grid_policy": {
     "baseline": "one-grid-unit-thick full-aperture transparent ideal electrode sheet",

@@ -8,6 +8,8 @@ param(
   [double]$HalfWidthXmm = -1,
   [double]$HalfWidthYmm = -1,
   [double]$HalfWidthZmm = -1,
+  [double]$CenterXmm = -48.8,
+  [double]$CenterYmm = 0.0,
   [double]$CenterZmm = -18.42918680341103,
   [int]$Seed = 20260713,
   [string]$Output = 'oatof_comsol_524amu_gaussian_N100.ion'
@@ -20,8 +22,8 @@ $hz = if ($HalfWidthZmm -ge 0) { $HalfWidthZmm } else { $HalfWidthMm }
 $m = $MassAmu * 1.66054e-27
 $lines = [System.Collections.Generic.List[string]]::new()
 for ($i = 0; $i -lt $N; $i++) {
-  $x = -48.8 + (2*$rng.NextDouble() - 1)*$hx
-  $y = 0.0 + (2*$rng.NextDouble() - 1)*$hy
+  $x = $CenterXmm + (2*$rng.NextDouble() - 1)*$hx
+  $y = $CenterYmm + (2*$rng.NextDouble() - 1)*$hy
   $z = $CenterZmm + (2*$rng.NextDouble() - 1)*$hz
   do {
     $u1 = [Math]::Max($rng.NextDouble(), 1e-15)

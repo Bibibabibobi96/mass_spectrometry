@@ -1,5 +1,7 @@
-local report_path = assert(os.getenv('OATOF_SIMION_SYNC_REPORT'),
-  'OATOF_SIMION_SYNC_REPORT is not set')
+local report_path = assert(arg[1], 'report path is required')
+local iob_path = assert(arg[2], 'IOB path is required')
+local resolved_path = assert(arg[3], 'resolved Lua contract is required')
+local contract = assert(dofile(resolved_path), 'resolved contract did not return a table')
 local report = assert(io.open(report_path, 'w'))
 
 local function record(fmt, ...)
@@ -8,48 +10,40 @@ local function record(fmt, ...)
   print(line)
 end
 
-local iob_path = os.getenv('OATOF_FORMAL_IOB_PATH') or
-  [[oatof_ideal_grounded.iob]]
 simion.command('"' .. iob_path .. '"')
 local wb = simion.wb
 assert(#wb.instances == 4, 'formal IOB must contain exactly four PA instances')
-
-local expected = {
-  {name='reflectron.pa0', x=0, y=0, z=600, az=-90, nx=1089, ny=361, nz=1, dx=0.25},
-  {name='accelerator.pa0', x=-67.8, y=-19, z=-29.92918680341103, az=0, nx=153, ny=153, nz=601, dx=0.25},
-  {name='flight_tube_ground.pa0', x=0, y=0, z=-59.92918680341103, az=-90, nx=661, ny=361, nz=1, dx=1},
-  {name='detector_ground.pa0', x=7.8, y=-41, z=-0.1, az=0, nx=165, ny=165, nz=31, dx=0.5},
-}
+local expected = contract.derived.simion_instances
 for index, target in ipairs(expected) do
   local instance = wb.instances[index]
   assert(instance.filename:match(target.name .. '$'),
     string.format('instance %d file mismatch: %s', index, instance.filename))
-  assert(math.abs(instance.x-target.x) < 1e-9 and
-         math.abs(instance.y-target.y) < 1e-9 and
-         math.abs(instance.z-target.z) < 1e-9 and
-         math.abs(instance.az-target.az) < 1e-9,
+  assert(math.abs(instance.x-target.x_mm) < 1e-9 and
+         math.abs(instance.y-target.y_mm) < 1e-9 and
+         math.abs(instance.z-target.z_mm) < 1e-9 and
+         math.abs(instance.az-target.az_deg) < 1e-9,
     string.format('instance %d transform mismatch: actual=(%.12g,%.12g,%.12g,%.12g) expected=(%.12g,%.12g,%.12g,%.12g)',
       index,instance.x,instance.y,instance.z,instance.az,
-      target.x,target.y,target.z,target.az))
+      target.x_mm,target.y_mm,target.z_mm,target.az_deg))
   assert(instance.pa.nx==target.nx and instance.pa.ny==target.ny and
-         instance.pa.nz==target.nz and math.abs(instance.pa.dx_mm-target.dx)<1e-12,
+         instance.pa.nz==target.nz and math.abs(instance.pa.dx_mm-target.cell_mm)<1e-12,
     string.format('instance %d PA dimensions/grid mismatch: actual=%dx%dx%d@%.12g expected=%dx%dx%d@%.12g',
       index,instance.pa.nx,instance.pa.ny,instance.pa.nz,instance.pa.dx_mm,
-      target.nx,target.ny,target.nz,target.dx))
+      target.nx,target.ny,target.nz,target.cell_mm))
   record('INSTANCE_%d=%s,%.9g,%.9g,%.9g,%.9g', index,
     target.name, instance.x, instance.y, instance.z, instance.az)
   record('INSTANCE_%d_PA=%d,%d,%d,%.9g', index,
     instance.pa.nx, instance.pa.ny, instance.pa.nz, instance.pa.dx_mm)
 end
 
+local p=contract.derived.field_sample_points_mm
 local points = {
-  {'src_center', 2, -48.8, 0, -18.42918680341103},
-  {'accel_mid', 2, -48.8, 0, -10},
-  {'accel_exit', 2, -48.8, 0, -0.2},
-  {'drift_300', 3, 0, 0, 300},
-  {'drift_500', 3, 0, 0, 500},
-  {'refl_650', 1, 0, 0, 650},
-  {'refl_760', 1, 0, 0, 760},
+  {'src_center', 2, p.source_center[1],p.source_center[2],p.source_center[3]},
+  {'accel_mid', 2, p.accelerator_mid[1],p.accelerator_mid[2],p.accelerator_mid[3]},
+  {'accel_exit', 2, p.accelerator_exit[1],p.accelerator_exit[2],p.accelerator_exit[3]},
+  {'drift_mid', 3, p.drift_mid[1],p.drift_mid[2],p.drift_mid[3]},
+  {'refl_stage1', 1, p.reflectron_stage1[1],p.reflectron_stage1[2],p.reflectron_stage1[3]},
+  {'refl_stage2', 1, p.reflectron_stage2[1],p.reflectron_stage2[2],p.reflectron_stage2[3]},
 }
 for _, point in ipairs(points) do
   -- Query the PA directly.  Static workbench field APIs invoke instance

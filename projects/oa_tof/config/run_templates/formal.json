@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "role": "oa_tof_run_config_template",
+  "project": "oa_tof",
+  "mode": "formal",
+  "inputs": {
+    "baseline": "config/baseline.json",
+    "resolved_geometry": "config/resolved_geometry.json",
+    "mode": "config/modes/formal.json"
+  },
+  "output_policy": {
+    "lifecycle": "candidate_until_formal_gate_passes",
+    "overwrite": false,
+    "manifest_required": true
+  }
+}

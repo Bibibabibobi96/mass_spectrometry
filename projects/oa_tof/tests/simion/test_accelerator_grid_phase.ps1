@@ -27,6 +27,10 @@ $logAnalyzer = Join-Path $projectRoot 'simion\workbench\analyze_ideal_field_log.
 $pythonAnalyzer = Join-Path $projectRoot 'analysis\analyze_accelerator_grid_phase.py'
 $pythonExe = Join-Path $repoRoot '.venv\Scripts\python.exe'
 $fixedN100 = Join-Path $formalDir 'oatof_comsol_524amu_gaussian_N100.ion'
+$contract = Get-Content -LiteralPath (Join-Path $projectRoot 'config\resolved_geometry.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+$geometry = $contract.geometry_mm
+$accelerator = $contract.geometry_derivation.accelerator
+$build = $contract.simion_geometry_build.accelerator
 
 foreach ($path in @($SimionExe,$builder,$gem,$program,$fieldExporter,$logAnalyzer,$pythonAnalyzer,$pythonExe,$fixedN100)) {
   if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Required file is missing: $path" }
@@ -36,28 +40,7 @@ foreach ($extension in @('iob','con','fly2')) {
   Copy-Item -LiteralPath (Join-Path $formalDir ("oatof_ideal_grounded.{0}" -f $extension)) -Destination $workbenchDir -Force
 }
 $runtimeProgram = Join-Path $workbenchDir 'oatof_ideal_grounded.lua'
-$programText = Get-Content -LiteralPath $program -Raw -Encoding UTF8
-$adjustableNeedle = 'adjustable accelerator_instance_z_mm=-10'
-$transformNeedle = ' ai.x,ai.y,ai.z=accelerator_axis_x_mm-half_x,accelerator_axis_y_mm-half_y,accelerator_instance_z_mm'
-if (-not $programText.Contains($adjustableNeedle) -or -not $programText.Contains($transformNeedle)) {
-  throw 'Formal Program no longer matches the grid-phase diagnostic patch contract.'
-}
-$programText = $programText.Replace($adjustableNeedle, @'
-adjustable accelerator_instance_z_mm=-10
-adjustable accelerator_pa_back_margin_mm=0
-adjustable accelerator_pa_grid_phase_z_mm=0
-'@.TrimEnd())
-$programText = $programText.Replace($transformNeedle, @'
- assert(accelerator_pa_back_margin_mm>=0,
-   'accelerator PA back margin must be nonnegative')
- assert(accelerator_pa_grid_phase_z_mm>=0 and
-        accelerator_pa_grid_phase_z_mm<ai.pa.dz_mm,
-   'accelerator PA grid phase must be in [0,dz)')
- ai.x,ai.y,ai.z=accelerator_axis_x_mm-half_x,accelerator_axis_y_mm-half_y,
-   accelerator_instance_z_mm-accelerator_pa_back_margin_mm-
-   accelerator_pa_grid_phase_z_mm
-'@.TrimEnd())
-Set-Content -LiteralPath $runtimeProgram -Value $programText -Encoding UTF8
+Copy-Item -LiteralPath $program -Destination $runtimeProgram -Force
 # The copied IOB uses package-relative PA names.  Copy only the arrays needed
 # for initial loading and the non-accelerator Fast Adjust operations; the tested
 # accelerator is loaded from its case directory through the explicit override.
@@ -94,8 +77,16 @@ foreach ($case in $cases) {
     $case.Pa = Join-Path $caseModelDir 'accelerator.pa0'
     if (-not $ReuseExisting -or -not (Test-Path -LiteralPath $case.Pa)) {
       Write-Host ("Building {0}: phase={1} mm, margins=({2},{3}) mm" -f $case.Name,$case.Phase,$case.Back,$case.Front)
-      Invoke-SimionProcess @('--nogui','lua',$builder,$gem,$paSharp,'0.25','0.05','5','5','5','5','4','0','3.5',
-        ([string]$case.Back),([string]$case.Front),([string]$case.Phase)) $caseModelDir `
+      Invoke-SimionProcess @('--nogui','lua',$builder,$gem,$paSharp,
+        ([string]$build.cell_xy_mm),([string]$build.cell_z_mm),
+        ([string]$geometry.accelerator_bore_half),([string]$geometry.accelerator_ring_width),
+        ([string]$geometry.accelerator_insulation_gap),([string]$geometry.accelerator_rear_clearance),
+        ([string]$geometry.accelerator_shield_wall),([string]$build.vacuum_margin_mm),([string]$build.max_gib),
+        ([string]$case.Back),([string]$case.Front),([string]$case.Phase),
+        ([string]$accelerator.d1_mm),([string]$accelerator.d2_mm),([string]$contract.rings.accelerator_count),
+        ([string]$geometry.accelerator_repeller_thickness),([string]$geometry.accelerator_ring_thickness),
+        ([string]$geometry.accelerator_front_vacuum_margin),([string]$contract.electrodes_V.repeller),
+        ([string]$contract.electrodes_V.grid1)) $caseModelDir `
         (Join-Path $caseRunDir 'build.log') (Join-Path $caseRunDir 'build.stderr.log')
     }
   }
@@ -104,10 +95,21 @@ foreach ($case in $cases) {
   $oldOverride = $env:OATOF_ACCELERATOR_PA_OVERRIDE
   $oldBack = $env:OATOF_ACCELERATOR_PA_BACK_MARGIN_MM
   $oldPhase = $env:OATOF_ACCELERATOR_PA_GRID_PHASE_Z_MM
+  $oldAxisX = $env:OATOF_ACCELERATOR_AXIS_X_MM
+  $oldAxisY = $env:OATOF_ACCELERATOR_AXIS_Y_MM
+  $oldInstanceZ = $env:OATOF_ACCELERATOR_INSTANCE_Z_MM
+  $oldSampleStart = $env:OATOF_ACCELERATOR_SAMPLE_Z_START_MM
+  $oldSampleEnd = $env:OATOF_ACCELERATOR_SAMPLE_Z_END_MM
   try {
     $env:OATOF_ACCELERATOR_PA_OVERRIDE = $case.Pa
     $env:OATOF_ACCELERATOR_PA_BACK_MARGIN_MM = [string]$case.Back
     $env:OATOF_ACCELERATOR_PA_GRID_PHASE_Z_MM = [string]$case.Phase
+    $env:OATOF_ACCELERATOR_AXIS_X_MM = [string]$contract.coordinate_convention.accelerator_axis_x
+    $env:OATOF_ACCELERATOR_AXIS_Y_MM = '0'
+    $env:OATOF_ACCELERATOR_INSTANCE_Z_MM = [string]($geometry.accelerator_repeller_z-
+      $geometry.accelerator_repeller_thickness-$geometry.accelerator_rear_clearance-$geometry.accelerator_shield_wall)
+    $env:OATOF_ACCELERATOR_SAMPLE_Z_START_MM = [string]($geometry.accelerator_repeller_z+0.2)
+    $env:OATOF_ACCELERATOR_SAMPLE_Z_END_MM = [string]($geometry.accelerator_grid2_z-0.2)
     $fieldCsv = Join-Path $caseRunDir 'axis_field.csv'
     $env:OATOF_FORMAL_IOB_PATH = $fieldIob
     $env:OATOF_SIMION_FIELD_CSV = $fieldCsv
@@ -140,6 +142,11 @@ foreach ($case in $cases) {
     $env:OATOF_ACCELERATOR_PA_OVERRIDE = $oldOverride
     $env:OATOF_ACCELERATOR_PA_BACK_MARGIN_MM = $oldBack
     $env:OATOF_ACCELERATOR_PA_GRID_PHASE_Z_MM = $oldPhase
+    $env:OATOF_ACCELERATOR_AXIS_X_MM = $oldAxisX
+    $env:OATOF_ACCELERATOR_AXIS_Y_MM = $oldAxisY
+    $env:OATOF_ACCELERATOR_INSTANCE_Z_MM = $oldInstanceZ
+    $env:OATOF_ACCELERATOR_SAMPLE_Z_START_MM = $oldSampleStart
+    $env:OATOF_ACCELERATOR_SAMPLE_Z_END_MM = $oldSampleEnd
   }
   $manifestCases.Add([pscustomobject]@{
     name=$case.Name; phase_mm=$case.Phase; back_margin_mm=$case.Back; front_margin_mm=$case.Front

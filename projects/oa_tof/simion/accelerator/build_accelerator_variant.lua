@@ -4,7 +4,9 @@
 --     [xy_mm] [z_mm] [bore_half_mm] [ring_width_mm] [gap_mm]
 --     [rear_gap_mm] [wall_mm] [vacuum_margin_mm] [max_GiB]
 --     [back_domain_margin_mm] [front_domain_margin_mm] [grid_phase_z_mm]
---     [stage1_length_mm] [stage2_length_mm]
+--     [stage1_length_mm] [stage2_length_mm] [ring_count]
+--     [repeller_thickness_mm] [ring_thickness_mm] [front_vacuum_margin_mm]
+--     [repeller_voltage_v] [grid1_voltage_v]
 
 local source = assert(arg[1], 'missing source GEM')
 local output = assert(arg[2], 'missing output PA#')
@@ -22,11 +24,17 @@ local front_domain_margin = tonumber(arg[13] or '0')
 local grid_phase_z = tonumber(arg[14] or '0')
 local stage1_length = tonumber(arg[15] or '3')
 local stage2_length = tonumber(arg[16] or '16.8')
+local ring_count = tonumber(arg[17] or '5')
+local repeller_thickness = tonumber(arg[18] or '1')
+local ring_thickness = tonumber(arg[19] or '1')
+local front_vacuum_margin = tonumber(arg[20] or '0.2')
+local repeller_voltage = tonumber(arg[21] or '2240')
+local grid1_voltage = tonumber(arg[22] or '1760')
 local shield_outer_width = 2*(bore_half+ring_width+insulation_gap+shield_wall)
 local xy_span = shield_outer_width+2*vacuum_margin
-local geometry_z_min = -1-rear_gap-shield_wall
+local geometry_z_min = -repeller_thickness-rear_gap-shield_wall
 local z_min = geometry_z_min-back_domain_margin
-local z_max = 20+front_domain_margin
+local z_max = stage1_length+stage2_length+front_vacuum_margin+front_domain_margin
 local z_span = z_max-z_min
 assert(source:match('^%a:[/\\]') or source:match('^/'), 'source GEM path must be absolute')
 assert(output:match('^%a:[/\\]') or output:match('^/'), 'output PA# path must be absolute')
@@ -48,6 +56,14 @@ assert(grid_phase_z and grid_phase_z >= 0 and grid_phase_z < mmgu_z,
   'grid_phase_z must be in [0, mmgu_z)')
 assert(stage1_length and stage1_length > 0, 'stage1_length must be positive')
 assert(stage2_length and stage2_length > 0, 'stage2_length must be positive')
+assert(ring_count and ring_count >= 1 and ring_count == math.floor(ring_count),
+  'ring_count must be a positive integer')
+assert(repeller_thickness and repeller_thickness > 0,
+  'repeller_thickness must be positive')
+assert(ring_thickness and ring_thickness > 0,
+  'ring_thickness must be positive')
+assert(front_vacuum_margin and front_vacuum_margin > 0,
+  'front_vacuum_margin must be positive')
 assert(stage1_length+stage2_length < z_max,
   'grid2 must remain inside the PA domain; increase front_domain_margin')
 
@@ -64,16 +80,26 @@ print(string.format('BUILD: dimensions=%dx%dx%d cell_mm=(%.12g,%.12g,%.12g) span
   nx,ny,nz,mmgu_xy,mmgu_xy,mmgu_z,xy_span,z_span,z_min,estimated_gib,max_gib))
 print(string.format('BUILD: domain_margin_back_front_mm=(%.12g,%.12g) grid_phase_z_mm=%.12g compensated_instance_z_mm=%.12g',
   back_domain_margin,front_domain_margin,grid_phase_z,z_min-grid_phase_z))
-print(string.format('BUILD: accelerator_stage_lengths_mm=(%.12g,%.12g) ring_pitch_mm=%.12g grid2_local_z_mm=%.12g',
-  stage1_length,stage2_length,stage2_length/6,stage1_length+stage2_length))
+print(string.format('BUILD: accelerator_stage_lengths_mm=(%.12g,%.12g) ring_count=%d ring_pitch_mm=%.12g grid2_local_z_mm=%.12g',
+  stage1_length,stage2_length,ring_count,stage2_length/(ring_count+1),stage1_length+stage2_length))
 assert(estimated_gib <= max_gib, string.format('estimated PA set %.3f GiB exceeds limit %.3f GiB',estimated_gib,max_gib))
 
 _G.var={mmgu_xy=mmgu_xy,mmgu_z=mmgu_z,xy_span=xy_span,z_min=z_min,z_span=z_span,
   bore_half=bore_half,ring_width=ring_width,insulation_gap=insulation_gap,
   rear_gap=rear_gap,shield_wall=shield_wall,grid_phase_z=grid_phase_z,
-  stage1_length=stage1_length,stage2_length=stage2_length}
+  stage1_length=stage1_length,stage2_length=stage2_length,
+  ring_count=ring_count,repeller_thickness=repeller_thickness,
+  ring_thickness=ring_thickness,front_vacuum_margin=front_vacuum_margin}
 simion.command(string.format('gem2pa %q %q',source,output))
 _G.var=nil
 simion.command(string.format('refine --resume=0 --convergence=5e-7 %q',output))
-simion.command(string.format('fastadj %q 1=2240,2=1760,3=1466.666667,4=1173.333333,5=880,6=586.666667,7=293.333333,8=0,9=0',output:gsub('#$','0')))
+local voltage_assignments={string.format('1=%.12g',repeller_voltage),
+  string.format('2=%.12g',grid1_voltage)}
+for ring_index=1,ring_count do
+  voltage_assignments[#voltage_assignments+1]=string.format('%d=%.12g',2+ring_index,
+    grid1_voltage*(ring_count+1-ring_index)/(ring_count+1))
+end
+voltage_assignments[#voltage_assignments+1]=string.format('%d=0',3+ring_count)
+voltage_assignments[#voltage_assignments+1]=string.format('%d=0',4+ring_count)
+simion.command(string.format('fastadj %q %s',output:gsub('#$','0'),table.concat(voltage_assignments,',')))
 print('BUILD: PASS')

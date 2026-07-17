@@ -1,11 +1,14 @@
 # oa-TOF 当前项目状态
 
-本文件是oa-TOF项目的人类可读权威源。机器参数以
-[`../config/baseline.json`](../config/baseline.json)为准；COMSOL、SIMION和CAD文档只能记录
+本文件是oa-TOF项目的人类可读权威源。人工设计以
+[`../config/baseline.json`](../config/baseline.json)为准，程序统一读取自动生成的
+`../config/resolved_geometry.json`并按`../config/modes/`运行；COMSOL、SIMION和CAD文档只能记录
 各自实现，不能在本文件之外另行定义项目参数。
 
 ## 当前统一定义
 
+- 2026-07-17 已验证`baseline → resolved → 自包含SIMION候选包`构建链：正式网格PA、四实例IOB、
+  同名Lua/Fly2、哈希与manifest均生成并通过运行时几何/关键场核验；候选尚未替换正式包。
 - 方案：正交加速飞行时间质谱，双级环栈反射镜，一级10环、二级5环。
 - 标准离子：524 amu、+1电荷。
 - 初始能量：均值5 eV、标准差0.4 eV，负能量重采样。

@@ -23,12 +23,16 @@ function paths = oatof_paths()
     paths.testsDir = fullfile(projectRoot, 'tests');
 
     paths.artifactRoot = fullfile(workspaceRoot, 'artifacts', 'projects', 'oa_tof');
+    paths.modelsRoot = fullfile(paths.artifactRoot, 'models');
+    paths.runsRoot = fullfile(paths.artifactRoot, 'runs');
+    paths.resultsRoot = fullfile(paths.artifactRoot, 'results');
+    paths.scratchRoot = fullfile(paths.artifactRoot, 'scratch');
     paths.comsolModelRoot = fullfile(paths.artifactRoot, 'models', 'comsol');
     paths.comsolFormalDir = fullfile(paths.comsolModelRoot, 'formal');
     paths.comsolCandidateDir = fullfile(paths.comsolModelRoot, 'candidates');
     paths.comsolArchiveDir = fullfile(paths.comsolModelRoot, 'archive');
-    paths.comsolScratchDir = fullfile(paths.artifactRoot, 'scratch', 'comsol');
-    paths.comsolResultsDir = fullfile(paths.artifactRoot, 'results', 'comsol');
+    paths.comsolScratchDir = fullfile(paths.scratchRoot, 'comsol');
+    paths.comsolResultsDir = fullfile(paths.resultsRoot, 'comsol');
     paths.cadFormalDir = fullfile(paths.artifactRoot, 'cad', 'formal');
     paths.cadArchiveDir = fullfile(paths.artifactRoot, 'cad', 'archive');
     paths.cadScratchDir = fullfile(paths.artifactRoot, 'scratch', 'cad');
@@ -40,5 +44,5 @@ function paths = oatof_paths()
         'simion', 'workspace');
     paths.simionCandidateDir = fullfile(paths.simionWorkspaceDir, ...
         'diagnostics', 'accelerator_compact_scan', 'workbenches');
-    paths.simionScratchDir = fullfile(paths.artifactRoot, 'scratch', 'simion');
+    paths.simionScratchDir = fullfile(paths.scratchRoot, 'simion');
 end

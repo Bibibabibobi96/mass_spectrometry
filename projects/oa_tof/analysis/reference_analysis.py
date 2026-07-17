@@ -45,6 +45,12 @@ ANALYSIS_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = ANALYSIS_DIR.parent
 REPO_ROOT = PROJECT_DIR.parents[1]
 DEFAULT_CONTRACT = PROJECT_DIR / "config" / "analysis_contract.json"
+PHYSICAL_CONTRACT = PROJECT_DIR / "config" / "resolved_geometry.json"
+_physical_geometry = json.loads(PHYSICAL_CONTRACT.read_text(encoding="utf-8"))
+DEFAULT_DETECTOR_CENTER_X_MM = float(
+    _physical_geometry["coordinate_convention"]["detector_x"]
+)
+DEFAULT_DETECTOR_CENTER_Y_MM = 0.0
 DEFAULT_BASELINES = PROJECT_DIR / "config" / "analysis_baselines.json"
 
 
@@ -125,8 +131,8 @@ def _read_source_table(path: Path) -> tuple[pd.DataFrame, str]:
 
 def read_particle_table(
     path: Path,
-    detector_center_x_mm: float = 48.8,
-    detector_center_y_mm: float = 0.0,
+    detector_center_x_mm: float = DEFAULT_DETECTOR_CENTER_X_MM,
+    detector_center_y_mm: float = DEFAULT_DETECTOR_CENTER_Y_MM,
     column_overrides: dict[str, str] | None = None,
     declared_event: str | None = None,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
@@ -654,8 +660,8 @@ def analyze_single(
     output_dir: Path,
     nominal_mass_Da: float,
     label: str | None = None,
-    detector_center_x_mm: float = 48.8,
-    detector_center_y_mm: float = 0.0,
+    detector_center_x_mm: float = DEFAULT_DETECTOR_CENTER_X_MM,
+    detector_center_y_mm: float = DEFAULT_DETECTOR_CENTER_Y_MM,
     contract_path: Path = DEFAULT_CONTRACT,
     column_overrides: dict[str, str] | None = None,
     declared_event: str | None = None,
@@ -740,8 +746,8 @@ def analyze_simion_recording(
     expected_pa_instance: int,
     expected_detector_z_mm: float,
     detector_radius_mm: float,
-    detector_center_x_mm: float = 48.8,
-    detector_center_y_mm: float = 0.0,
+    detector_center_x_mm: float = DEFAULT_DETECTOR_CENTER_X_MM,
+    detector_center_y_mm: float = DEFAULT_DETECTOR_CENTER_Y_MM,
     column_overrides: dict[str, str] | None = None,
     declared_event: str | None = None,
     program_state: str = "on",
@@ -1445,8 +1451,8 @@ def build_parser() -> argparse.ArgumentParser:
     single.add_argument("--mass", type=float, required=True, dest="nominal_mass_Da")
     single.add_argument("--output", type=Path, required=True)
     single.add_argument("--label")
-    single.add_argument("--detector-center-x-mm", type=float, default=48.8)
-    single.add_argument("--detector-center-y-mm", type=float, default=0.0)
+    single.add_argument("--detector-center-x-mm", type=float, default=DEFAULT_DETECTOR_CENTER_X_MM)
+    single.add_argument("--detector-center-y-mm", type=float, default=DEFAULT_DETECTOR_CENTER_Y_MM)
     add_column_mapping_arguments(single)
 
     recording = subparsers.add_parser(
@@ -1459,8 +1465,8 @@ def build_parser() -> argparse.ArgumentParser:
     recording.add_argument("--expected-pa-instance", type=int, required=True)
     recording.add_argument("--expected-detector-z-mm", type=float, required=True)
     recording.add_argument("--detector-radius-mm", type=float, required=True)
-    recording.add_argument("--detector-center-x-mm", type=float, default=48.8)
-    recording.add_argument("--detector-center-y-mm", type=float, default=0.0)
+    recording.add_argument("--detector-center-x-mm", type=float, default=DEFAULT_DETECTOR_CENTER_X_MM)
+    recording.add_argument("--detector-center-y-mm", type=float, default=DEFAULT_DETECTOR_CENTER_Y_MM)
     recording.add_argument("--program-state", choices=("on", "off"), default="on")
     add_column_mapping_arguments(recording)
 

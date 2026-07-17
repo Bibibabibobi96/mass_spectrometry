@@ -15,6 +15,7 @@ $scratchDir = Join-Path $artifactRoot "scratch\simion\accelerator_geometry_candi
 $runDir = Join-Path $artifactRoot "runs\accelerator_geometry_candidate\$RunId"
 $resultDir = Join-Path $artifactRoot "results\simion\accelerator_geometry_candidate\$RunId"
 $contractPath = Join-Path $projectRoot 'config\candidates\accelerator_grid_aligned_strict_focus.json'
+$baselinePath = Join-Path $projectRoot 'config\resolved_geometry.json'
 $derivedPath = Join-Path $runDir 'derived_geometry.json'
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 $theory = Join-Path $projectRoot 'analysis\accelerator_time_focus.py'
@@ -30,32 +31,36 @@ New-Item -ItemType Directory -Force -Path $scratchDir,$runDir,$resultDir | Out-N
 & $python $theory $contractPath --write-derived $derivedPath | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Accelerator focus derivation failed.' }
 $derived = Get-Content -LiteralPath $derivedPath -Raw -Encoding UTF8 | ConvertFrom-Json
-$contract = Get-Content -LiteralPath $contractPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$candidateContract = Get-Content -LiteralPath $contractPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$baseline = Get-Content -LiteralPath $baselinePath -Raw -Encoding UTF8 | ConvertFrom-Json
 $translation = [double]$derived.assembly_translation_z_mm
 $d1 = [double]$derived.d1_mm
 $d2 = [double]$derived.d2_mm
 $repellerZ = [double]$derived.repeller_global_z_mm
 $grid1Z = [double]$derived.grid1_global_z_mm
 $grid2Z = [double]$derived.grid2_global_z_mm
-$instanceZ = -10.0 + $translation
-$sourceCenterZ = 1.5 + $translation
+$instanceZ = $translation-$baseline.geometry_mm.accelerator_repeller_thickness-
+  $baseline.geometry_mm.accelerator_rear_clearance-$baseline.geometry_mm.accelerator_shield_wall
+$sourceCenterZ = $translation+$d1/2
 
 $smokeIob = Join-Path $scratchDir 'strict_focus_runtime.iob'
 Copy-Item -LiteralPath (Join-Path $formalDir 'oatof_ideal_grounded.iob') -Destination $smokeIob -Force
 $candidateProgram = Get-Content -LiteralPath $program -Raw -Encoding UTF8
-$candidateDefaults = [ordered]@{
-  'accelerator_assembly_translation_z_mm=0' = ('accelerator_assembly_translation_z_mm={0:R}' -f $translation)
-  'accelerator_stage1_length_mm=3' = ('accelerator_stage1_length_mm={0:R}' -f $d1)
-  'accelerator_stage2_length_mm=16.83' = ('accelerator_stage2_length_mm={0:R}' -f $d2)
-  'accelerator_repeller_front_z_mm=0' = ('accelerator_repeller_front_z_mm={0:R}' -f $repellerZ)
-  'accelerator_grid1_z_mm=3' = ('accelerator_grid1_z_mm={0:R}' -f $grid1Z)
-  'accelerator_grid2_z_mm=19.83' = ('accelerator_grid2_z_mm={0:R}' -f $grid2Z)
-  'accelerator_instance_z_mm=-10' = ('accelerator_instance_z_mm={0:R}' -f $instanceZ)
+function Set-Adjustable([string]$Text, [string]$Name, [double]$Value) {
+  $pattern = "(?m)^adjustable\s+$([regex]::Escape($Name))=[-+0-9.eE]+\s*$"
+  if (-not [regex]::IsMatch($Text, $pattern)) { throw "Candidate Program adjustable is absent: $Name" }
+  return [regex]::Replace($Text, $pattern, ('adjustable {0}={1:R}' -f $Name,$Value), 1)
 }
-foreach ($entry in $candidateDefaults.GetEnumerator()) {
-  $needle = 'adjustable ' + $entry.Key
-  if (-not $candidateProgram.Contains($needle)) { throw "Candidate Program default is absent: $needle" }
-  $candidateProgram = $candidateProgram.Replace($needle, 'adjustable ' + $entry.Value)
+foreach ($entry in ([ordered]@{
+  accelerator_assembly_translation_z_mm=$translation
+  accelerator_stage1_length_mm=$d1
+  accelerator_stage2_length_mm=$d2
+  accelerator_repeller_front_z_mm=$repellerZ
+  accelerator_grid1_z_mm=$grid1Z
+  accelerator_grid2_z_mm=$grid2Z
+  accelerator_instance_z_mm=$instanceZ
+}).GetEnumerator()) {
+  $candidateProgram = Set-Adjustable $candidateProgram $entry.Key ([double]$entry.Value)
 }
 Set-Content -LiteralPath (Join-Path $scratchDir 'strict_focus_runtime.lua') -Value $candidateProgram -Encoding UTF8
 Copy-Item -LiteralPath $fly2 -Destination (Join-Path $scratchDir 'strict_focus_runtime.fly2') -Force
@@ -69,9 +74,17 @@ function Invoke-Simion([string[]]$Arguments,[string]$Stdout,[string]$Stderr) {
 $candidatePaSharp = Join-Path $scratchDir 'accelerator.pa#'
 $candidatePa0 = Join-Path $scratchDir 'accelerator.pa0'
 if (-not $ReuseExisting -or -not (Test-Path -LiteralPath $candidatePa0 -PathType Leaf)) {
+  $g = $baseline.geometry_mm
+  $b = $baseline.simion_geometry_build.accelerator
   Invoke-Simion @('--nogui','lua',$builder,$gem,$candidatePaSharp,
-    '0.25','0.05','5','5','5','5','4','0','3.5','0','0','0',
-    ([string]$d1),([string]$d2)) (Join-Path $runDir 'build.log') (Join-Path $runDir 'build.stderr.log')
+    ([string]$b.cell_xy_mm),([string]$b.cell_z_mm),([string]$g.accelerator_bore_half),
+    ([string]$g.accelerator_ring_width),([string]$g.accelerator_insulation_gap),
+    ([string]$g.accelerator_rear_clearance),([string]$g.accelerator_shield_wall),
+    ([string]$b.vacuum_margin_mm),([string]$b.max_gib),'0','0','0',
+    ([string]$d1),([string]$d2),([string]$baseline.rings.accelerator_count),
+    ([string]$g.accelerator_repeller_thickness),([string]$g.accelerator_ring_thickness),
+    ([string]$g.accelerator_front_vacuum_margin),([string]$baseline.electrodes_V.repeller),
+    ([string]$baseline.electrodes_V.grid1)) (Join-Path $runDir 'build.log') (Join-Path $runDir 'build.stderr.log')
 }
 if (-not (Test-Path -LiteralPath $candidatePa0 -PathType Leaf)) { throw 'Candidate accelerator PA0 is absent.' }
 
@@ -101,8 +114,14 @@ try {
   }
 }
 $ionPath = Join-Path $runDir 'candidate_fixedN100.ion'
-& $ionGenerator -N 100 -MassAmu 524 -Charge 1 -EnergyMeanEv 5 -EnergyStdEv 0.4 `
-  -HalfWidthMm 0.5 -CenterZmm $sourceCenterZ -Seed 20260713 -Output $ionPath | Out-Null
+& $ionGenerator -N 100 -MassAmu $baseline.validation_target.mass_amu -Charge 1 `
+  -EnergyMeanEv $baseline.validation_target.initial_energy_mean_ev `
+  -EnergyStdEv $baseline.validation_target.initial_energy_sigma_ev `
+  -HalfWidthXmm ($baseline.particle_source.size_x_mm/2) `
+  -HalfWidthYmm ($baseline.particle_source.size_y_mm/2) `
+  -HalfWidthZmm ($baseline.particle_source.size_z_mm/2) `
+  -CenterXmm $baseline.particle_source.center_x_mm -CenterYmm $baseline.particle_source.center_y_mm `
+  -CenterZmm $sourceCenterZ -Seed $baseline.particle_source.seed -Output $ionPath | Out-Null
 
 $oldOverride = $env:OATOF_ACCELERATOR_PA_OVERRIDE
 try {

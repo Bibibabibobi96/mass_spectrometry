@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "role": "oa_tof_formal_run_mode",
+  "mode": "formal",
+  "particle": {
+    "mass_amu": 524.0,
+    "charge_state": 1,
+    "routine_count": 5000,
+    "paired_validation_count": 1000,
+    "initial_energy_mean_ev": 5.0,
+    "initial_energy_sigma_ev": 0.4
+  },
+  "simion": {
+    "trajectory_quality": 8,
+    "accelerator_grid_epsilon_mm": 0.0001,
+    "reflectron_grid_epsilon_mm": 0.0001,
+    "program_required": true,
+    "trajectory_log_default_enabled": false,
+    "geometry_build": {
+      "accelerator": {"cell_xy_mm": 0.25, "cell_z_mm": 0.05, "vacuum_margin_mm": 0.0, "back_domain_margin_mm": 0.0, "front_domain_margin_mm": 0.0, "grid_phase_z_mm": 0.0, "max_gib": 3.5},
+      "reflectron": {"cell_axial_mm": 0.25, "cell_radial_mm": 1.0, "max_gib": 0.5},
+      "flight_tube": {"cell_axial_mm": 1.0, "cell_radial_mm": 1.0, "max_gib": 0.1},
+      "detector": {"margin_xy_mm": 1.0, "max_mib": 64.0}
+    },
+    "detector_marker": {
+      "role": "GUI-visible numerical absorber marking the detector active plane; not the mechanical detector body",
+      "active_plane_z_mm": 0.0,
+      "active_radius_mm": 40.0,
+      "absorber_thickness_mm": 0.05,
+      "front_margin_z_mm": 0.2,
+      "back_margin_z_mm": 0.05,
+      "cell_xy_mm": 0.5,
+      "cell_z_mm": 0.01,
+      "near_plane_tstep_default_enabled": false,
+      "near_plane_max_step_z_mm": 0.002
+    }
+  },
+  "comsol": {
+    "routine_reflectron_hmax_mm": 15.0,
+    "routine_accelerator_hmax_mm": 1.0,
+    "convergence_accelerator_hmax_mm": 0.5,
+    "fine_output_step_ns": 0.2,
+    "field_free_output_step_ns": 50.0,
+    "accelerator_window_margin_us": 0.5,
+    "reflectron_window_margin_us": 2.0,
+    "detector_window_margin_us": 0.5,
+    "global_fine_step_phase_alignment_required": true,
+    "store_extra_wall_times": false,
+    "store_particle_status_data": false,
+    "solver_steps": "free",
+    "times_to_store": "tlist"
+  }
+}

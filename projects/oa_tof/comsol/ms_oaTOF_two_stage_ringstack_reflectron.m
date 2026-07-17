@@ -1,4 +1,13 @@
 function result = ms_oaTOF_two_stage_ringstack_reflectron(mass_amu, label, solver_mode, field_mode, d1_mm, n_rings2, mesh_hmax_refl_mm, bore_r_mm, ring_thickness_mm, n_particles, n_rings1, accel_bore_half_mm, fixed_particle_table, fine_tstep_ns, mesh_hmax_accel_mm, drift_tstep_ns)
+projectRoot = fileparts(fileparts(mfilename('fullpath')));
+addpath(projectRoot);
+contract = load_oatof_contract();
+geometryMm = contract.geometry_mm;
+acceleratorDesign = contract.geometry_derivation.accelerator;
+reflectronDesign = contract.geometry_derivation.reflectron;
+sourceDesign = contract.particle_source;
+voltageV = contract.electrodes_V;
+ringDesign = contract.rings;
 % !!! d1_mm (doc §7.49, per explicit request -- corrected from an
 % earlier d2-scan plan to a d1 scan): optional 5th argument, the
 % reflectron's stage1 physical depth in mm (default 120, matching the
@@ -13,7 +22,7 @@ function result = ms_oaTOF_two_stage_ringstack_reflectron(mass_amu, label, solve
 % d2's (d2 only has a LOWER bound, d2>=d2_min=U1/E2, no upper bound).
 % d2 stays FIXED at the established 300mm baseline throughout this scan.
 if nargin < 5 || isempty(d1_mm)
-    d1_mm = 120;
+    d1_mm = geometryMm.L_stage1;
 end
 % !!! n_rings2 (doc §7.53, per explicit request to test whether more
 % stage2 ring electrodes reduce the real-vs-ideal field discrepancy
@@ -25,7 +34,7 @@ end
 % corrected d2 is much shorter (~87mm at 100% margin, pitch~14mm), a
 % very different regime, so re-testing ring count here is warranted.
 if nargin < 6 || isempty(n_rings2)
-    n_rings2 = 5;
+    n_rings2 = ringDesign.stage2_count;
 end
 % !!! mesh_hmax_refl_mm (doc §7.53, per explicit request to try methods
 % to reduce the real-vs-ideal error in stage2): optional 7th argument,
@@ -37,7 +46,7 @@ end
 % (the exact failure mode the code's own §7.4x-era comments already
 % flagged once before, at the old geometry, for a different reason).
 if nargin < 7 || isempty(mesh_hmax_refl_mm)
-    mesh_hmax_refl_mm = 15;
+    mesh_hmax_refl_mm = contract.comsol_runtime.routine_reflectron_hmax_mm;
 end
 % !!! bore_r_mm (doc §7.53, per explicit request): optional 8th argument,
 % defaults to the established 250mm. Prior sessions (§7.31 era, at the
@@ -52,7 +61,7 @@ end
 % shorter stage2 depth) is warranted -- the old conclusion may not carry
 % over, same as the ring-count finding needed re-validation.
 if nargin < 8 || isempty(bore_r_mm)
-    bore_r_mm = 250;
+    bore_r_mm = geometryMm.bore_r;
 end
 % !!! ring_thickness_mm (per explicit request to scan ring electrode
 % thickness alongside ring count, to test whether thicker/more numerous
@@ -60,22 +69,22 @@ end
 % field_mode='ideal_stage2'): optional 9th argument, defaults to the
 % established 5mm baseline. Previously a hardcoded literal.
 if nargin < 9 || isempty(ring_thickness_mm)
-    ring_thickness_mm = 5;
+    ring_thickness_mm = geometryMm.ring_thickness;
 end
 if nargin < 10 || isempty(n_particles)
-    n_particles = 1000;
+    n_particles = contract.validation_target.particles;
 end
 % !!! n_rings1 is the stage-1 ring count (11th optional argument).  It is
 % kept after n_particles for backward compatibility with the established
 % ten-argument signature; n_rings2 remains the 6th argument.
 if nargin < 11 || isempty(n_rings1)
-    n_rings1 = 10;
+    n_rings1 = ringDesign.stage1_count;
 end
 % Accelerator lateral family: the clear-aperture half-width is the only
 % scanned dimension. Ring width, charged-to-ground clearance and wall
 % thickness remain fixed and drive every outer width parametrically.
 if nargin < 12 || isempty(accel_bore_half_mm)
-    accel_bore_half_mm = 5;
+    accel_bore_half_mm = geometryMm.accelerator_bore_half;
 end
 if ~(isscalar(accel_bore_half_mm) && accel_bore_half_mm > 0)
     error('accel_bore_half_mm must be positive.');
@@ -85,16 +94,16 @@ if nargin < 13 || isempty(fixed_particle_table)
 end
 use_fixed_particle_table = ~isempty(fixed_particle_table);
 if nargin < 14 || isempty(fine_tstep_ns)
-    fine_tstep_ns = 1;
+    fine_tstep_ns = contract.comsol_runtime.fine_output_step_ns;
 end
 assert(isscalar(fine_tstep_ns) && fine_tstep_ns > 0, 'fine_tstep_ns must be positive.');
 if nargin < 15 || isempty(mesh_hmax_accel_mm)
-    mesh_hmax_accel_mm = 1;
+    mesh_hmax_accel_mm = contract.comsol_runtime.routine_accelerator_hmax_mm;
 end
 assert(isscalar(mesh_hmax_accel_mm) && mesh_hmax_accel_mm > 0, ...
     'mesh_hmax_accel_mm must be positive.');
 if nargin < 16 || isempty(drift_tstep_ns)
-    drift_tstep_ns = 50;
+    drift_tstep_ns = contract.comsol_runtime.field_free_output_step_ns;
 end
 assert(isscalar(drift_tstep_ns) && drift_tstep_ns > 0, ...
     'drift_tstep_ns must be positive.');
@@ -123,23 +132,29 @@ end
 % by only ~17%, plausible real-3D-field vs ideal-1D-field discrepancy).
 % This confirms the docx formula (d2_min=U1/E2) is an error; using the
 % energy-conservation-correct (U0-U1)/E2 here instead.
-d2_margin_frac = 1.0;
-U0_eV = 2000; L_total_m = 1.2; d1_m = d1_mm/1000;
-if ~(d1_m > 0 && d1_m < L_total_m/4)
-    error('d1_mm=%g violates 0<d1<L/4=%gmm', d1_mm, L_total_m/4*1000);
+d2_margin_fraction = reflectronDesign.stage2_margin_fraction;
+reflectron_incident_energy_ev = reflectronDesign.incident_energy_eV;
+reflectron_total_drift_m = reflectronDesign.total_field_free_length_mm/1000;
+reflectron_stage1_m = d1_mm/1000;
+if ~(reflectron_stage1_m > 0 && reflectron_stage1_m < reflectron_total_drift_m/4)
+    error('d1_mm=%g violates 0<d1<L/4=%gmm', d1_mm, reflectron_total_drift_m/4*1000);
 end
-U1_V = 2*U0_eV*(L_total_m+2*d1_m)/(3*L_total_m);
-E1_Vpm = U1_V/d1_m;
-E2_Vpm = 12*U0_eV*(sqrt(3)*sqrt(L_total_m)+sqrt(L_total_m-4*d1_m)) / ...
-    (sqrt(3)*L_total_m^1.5 + 8*sqrt(3)*sqrt(L_total_m)*d1_m + 3*L_total_m*sqrt(L_total_m-4*d1_m));
-d2min_mm = ((U0_eV-U1_V)/E2_Vpm)*1000;
+reflectron_midgrid_voltage_v = 2*reflectron_incident_energy_ev* ...
+    (reflectron_total_drift_m+2*reflectron_stage1_m)/(3*reflectron_total_drift_m);
+reflectron_stage1_field_vpm = reflectron_midgrid_voltage_v/reflectron_stage1_m;
+reflectron_stage2_field_vpm = 12*reflectron_incident_energy_ev* ...
+    (sqrt(3)*sqrt(reflectron_total_drift_m)+sqrt(reflectron_total_drift_m-4*reflectron_stage1_m)) / ...
+    (sqrt(3)*reflectron_total_drift_m^1.5 + 8*sqrt(3)*sqrt(reflectron_total_drift_m)*reflectron_stage1_m + ...
+     3*reflectron_total_drift_m*sqrt(reflectron_total_drift_m-4*reflectron_stage1_m));
+reflectron_stage2_min_mm = ((reflectron_incident_energy_ev-reflectron_midgrid_voltage_v)/reflectron_stage2_field_vpm)*1000;
 % Derive all physical quantities from the unrounded value first.  Only the
 % resulting engineering geometry is rounded to baseline.json precision.
-d2_raw_mm = d2min_mm*(1+d2_margin_frac);
-V_mirror_V = U1_V + E2_Vpm*(d2_raw_mm/1000);
-d2_mm = round(d2_raw_mm, 4);
+d2_raw_mm = reflectron_stage2_min_mm*(1+d2_margin_fraction);
+reflectron_backplate_voltage_v = reflectron_midgrid_voltage_v + reflectron_stage2_field_vpm*(d2_raw_mm/1000);
+d2_mm = round(d2_raw_mm, reflectronDesign.engineering_length_decimals_mm);
 fprintf('[d1 scan] d1=%gmm -> U1(V_mid)=%.4fV, E1=%.4fV/m, E2=%.4fV/m, V_mirror=%.4fV, d2_min=%.2fmm, d2(adaptive,+%.0f%%)=%.2fmm\n', ...
-    d1_mm, U1_V, E1_Vpm, E2_Vpm, V_mirror_V, d2min_mm, d2_margin_frac*100, d2_mm);
+    d1_mm, reflectron_midgrid_voltage_v, reflectron_stage1_field_vpm, reflectron_stage2_field_vpm, ...
+    reflectron_backplate_voltage_v, reflectron_stage2_min_mm, d2_margin_fraction*100, d2_mm);
 % oa-TOF two-stage ring-stack reflectron analyzer: orthogonal accelerator (pusher)
 % + TOF flight tube + a REALISTIC ring-stack reflectron + appropriately-
 % sized detector.
@@ -195,8 +210,6 @@ fprintf('[d1 scan] d1=%gmm -> U1(V_mid)=%.4fV, E1=%.4fV/m, E2=%.4fV/m, V_mirror=
 % pass): a running struct of tic/toc pairs, printed as a summary table at
 % the very end. Does not affect any physics/accuracy, purely diagnostic.
 t_total_start = tic;
-componentRoot = fileparts(fileparts(mfilename('fullpath')));
-addpath(componentRoot);
 paths = oatof_paths();
 addpath('D:\COMSOL 6.4\COMSOL64\Multiphysics\mli');
 t_mphstart_start = tic;
@@ -211,7 +224,7 @@ t_mphstart = toc(t_mphstart_start);
 import com.comsol.model.*
 import com.comsol.model.util.*
 
-if nargin<1, mass_amu = 524; end
+if nargin<1, mass_amu = contract.validation_target.mass_amu; end
 if nargin<2, label = sprintf('%gamu', mass_amu); end
 if nargin<3, solver_mode = 'cpu'; end
 if nargin<4, field_mode = 'real'; end
@@ -253,7 +266,8 @@ geom1.label('Orthogonal accelerator + RING-STACK reflectron -- idealized mesh gr
 geom1.lengthUnit('mm');
 
 p = model.param;
-p.set('KE_in_eV', '5[V]', 'Ion energy entering the pusher (from RF quadrupole cooling guide)');
+p.set('KE_in_eV', sprintf('%.12g[V]', contract.validation_target.initial_energy_mean_ev), ...
+    'Ion energy entering the pusher, from baseline.json');
 % 3-electrode accelerator: repeller (V_repeller) -> intermediate grid
 % (V_accelmid, absorbs most of the drop) -> exit grid (0V, always
 % grounded, matches the field-free region). Both repeller and accelmid
@@ -270,7 +284,8 @@ p.set('KE_in_eV', '5[V]', 'Ion energy entering the pusher (from RF quadrupole co
 % problem found earlier: the accelerator ITSELF now compensates for the
 % z0-dependent timing spread, before the ion even reaches the field-free
 % region).
-p.set('V_repeller', '2240[V]', 'U1 in the three-grid focusing design (KE0=2000eV, dKE=80eV, dx0=1mm, d1=3mm)');
+p.set('V_repeller', sprintf('%.12g[V]', voltageV.repeller), ...
+    'Accelerator repeller voltage from baseline.json');
 % !!! Attempted a Wiley-McLaren "space focusing" scan (per explicit
 % request to reduce the z-direction KE spread WITHOUT changing the
 % release volume): the accelerator's own two-stage split (repeller->
@@ -302,7 +317,8 @@ p.set('V_repeller', '2240[V]', 'U1 in the three-grid focusing design (KE0=2000eV
 % grid1-to-grid2 gap is ALSO set to 3mm per explicit request, giving
 % L_accel=6mm total. K0 (nominal, release cube center z0=1.5mm) =
 % V_repeller - 22.7*1.5 = 4465.95V.
-p.set('V_grid1', '1760[V]', 'U2 in the three-grid focusing design -- forms E1=160V/mm bracket with repeller(U1), release cube centered at u0=d1/2=1.5mm gives KE0=2000eV, dKE=+-80eV');
+p.set('V_grid1', sprintf('%.12g[V]', voltageV.grid1), ...
+    'Accelerator first-grid voltage from baseline.json');
 % !!! Quick V_mirror scan (N=30 each) found 1.4x gave the best timing
 % resolution among tested factors (1.0/1.1/1.2/1.3/1.4 -> R=11.7/24.5/
 % 18.2/20.7/28.1). The dominant timing-spread source is a real, accepted
@@ -353,16 +369,27 @@ p.set('V_grid1', '1760[V]', 'U2 in the three-grid focusing design -- forms E1=16
 % Now recomputed dynamically at the top of this function from d1_mm
 % (see the d1-scan block above) instead of a fixed literal, to support
 % scanning different d1 values (doc §7.49).
-p.set('V_mirror', sprintf('%.4f[V]', V_mirror_V), 'Reflectron backplate -- derived from the dual-stage closed-form solution (U1+E2*d2), L_total=1200mm (L1=L2=600mm), d1 from the d1_mm function argument (doc §7.49)');
+p.set('V_mirror', sprintf('%.4f[V]', reflectron_backplate_voltage_v), ...
+    'Reflectron backplate derived from the baseline dual-stage design');
 % !!! L_accel now derived from the three-grid focusing solution:
 % d1+d2=3+16.83=19.83mm, with D=0 (no extra drift needed for
 % first-order time focus -- ion focuses exactly at grid2/field-free
 % boundary).
-p.set('z_accel_origin', '-19.92918680341103[mm]', 'Canonical global repeller front; detector/time-focus plane is z=0');
-p.set('L_accel', '19.8[mm]', 'Local acceleration depth = d1(3.0mm)+d2(16.8mm), aligned to the 0.1mm geometry quantum');
-p.set('z_accel_grid1', 'z_accel_origin+3[mm]', 'Canonical global grid1 plane');
+p.set('z_accel_origin', sprintf('%.17g[mm]', geometryMm.accelerator_repeller_z), ...
+    'Canonical global repeller front from baseline.json');
+p.set('accel_stage1_length', sprintf('%.17g[mm]', acceleratorDesign.d1_mm), ...
+    'Accelerator repeller-to-grid1 length from baseline.json');
+p.set('accel_stage2_length', sprintf('%.17g[mm]', acceleratorDesign.d2_mm), ...
+    'Accelerator grid1-to-grid2 length from baseline.json');
+p.set('L_accel', 'accel_stage1_length+accel_stage2_length', ...
+    'Derived accelerator total length');
+p.set('z_accel_grid1', 'z_accel_origin+accel_stage1_length', ...
+    'Derived canonical global grid1 plane');
 p.set('z_accel_grid2', 'z_accel_origin+L_accel', 'Canonical global grid2 plane');
-p.set('accel_focus_drift', '0.12918680341102995[mm]', 'First-order focus drift downstream of grid2 for d1=3.0mm, d2=16.8mm and retained voltages');
+p.set('source_center_z', sprintf('%.17g[mm]', sourceDesign.center_z_mm), ...
+    'Particle-source global z center from baseline.json');
+p.set('accel_focus_drift', sprintf('%.17g[mm]', acceleratorDesign.focus_drift_after_grid2_mm), ...
+    'First-order focus drift derived by accelerator_time_focus.py');
 % !!! Extended 10x (300->3000mm) per explicit request to test whether a
 % longer flight path improves mass resolution -- for a system where the
 % dominant timing spread comes from geometric/spatial effects that don't
@@ -431,7 +458,10 @@ p.set('accel_focus_drift', '0.12918680341102995[mm]', 'First-order focus drift d
 % !!! Extended from L_accel+500mm to L_accel+600mm (doc §7.49, per
 % explicit request): gives true field-free length L1=L_flight-L_accel=
 % 600.00mm exactly (detector_z=L_accel unchanged, so L2=600mm too).
-p.set('L_flight', 'detector_z+600[mm]', 'Canonical reflectron entrance: exactly 600mm downstream of detector/time-focus datum');
+p.set('flight_length_from_detector', sprintf('%.17g[mm]', geometryMm.L_flight-geometryMm.detector_z), ...
+    'Detector/focus plane to reflectron entrance distance from baseline.json');
+p.set('L_flight', 'detector_z+flight_length_from_detector', ...
+    'Derived canonical reflectron entrance global z');
 % !!! Added a named parameter for the detector's z-position, instead of
 % only setting it inline in the geometry command -- the detection
 % z-threshold in the post-processing code below previously used a bare
@@ -462,7 +492,8 @@ p.set('L_stage1', sprintf('%g[mm]', d1_mm), 'Stage 1 length (entrance grid to mi
 % k1 leaves 1375eV of margin before the ion would fail to clear stage1
 % (vs the earlier fragile design's 13eV margin), directly satisfying the
 % "V_mid <= 0.8*K0" safety constraint with room to spare.
-p.set('V_mid', sprintf('%.4f[V]', U1_V), 'U1 = 2*U0*(L+2*d1)/(3*L), the dual-stage solver''s closed-form solution (U0=2000eV, d1 from the d1_mm function argument, L=1200mm exactly -- L1=L2=600mm, doc §7.49)');
+p.set('V_mid', sprintf('%.4f[V]', reflectron_midgrid_voltage_v), ...
+    'Dual-stage reflectron midgrid voltage derived from baseline physical inputs');
 % !!! Ring count reduced from 15 to 5 per stage, per explicit request.
 % !!! Tested 15 rings vs 5: field deviation and R were essentially
 % UNCHANGED (~1.3-2% swing either way, R=820 vs 834 -- within N=10
@@ -497,7 +528,8 @@ p.set('ring_thickness', sprintf('%g[mm]', ring_thickness_mm), 'Reflectron ring e
 % remaining reason for a SEPARATE reflectron axis -- unifying everything
 % on x=0 makes the whole accelerator+flight-tube+reflectron system
 % share one consistent axis of symmetry.
-p.set('x_refl_center', '0[mm]', 'Reflectron bore axis x-offset -- unified with the accelerator/flight-tube axis (x=0) now that bore_r comfortably exceeds the ion''s off-axis drift');
+p.set('x_refl_center', sprintf('%.17g[mm]', contract.coordinate_convention.reflectron_axis(1)), ...
+    'Reflectron global x-axis from baseline.json');
 % Rings are STILL solid annulus electrodes (ions fly through the empty
 % bore, not through conductor material) -- the interior-boundary
 % technique doesn't apply to them, only to the flat grids. bore_r/
@@ -581,7 +613,8 @@ p.set('x_refl_center', '0[mm]', 'Reflectron bore axis x-offset -- unified with t
 % Reverted to the current fixed-outer-radius baseline: bore_r=250mm,
 % ring_outer_r=300mm.
 p.set('bore_r', sprintf('%g[mm]', bore_r_mm), 'Ring bore (aperture) radius -- parametrized (doc §7.53) to re-test the bore_r/R relationship under the current, much shorter adaptive-d2 stage2 geometry');
-p.set('ring_outer_r', '300[mm]', 'Ring outer radius -- fixed default, decoupled from bore_r so bore scans change only the aperture radius');
+p.set('ring_outer_r', sprintf('%.12g[mm]', geometryMm.ring_outer_r), ...
+    'Reflectron ring outer radius from baseline.json');
 % !!! Flight tube redesigned as a hollow CYLINDER (was a square Block),
 % per explicit request: entgrid/grid2 (flight-tube boundary grids) are
 % circular, matching the cylinder; grid1/accelring_k (INSIDE the
@@ -590,7 +623,8 @@ p.set('ring_outer_r', '300[mm]', 'Ring outer radius -- fixed default, decoupled 
 % drift path reaches ~80mm off-axis) AND the charged grids (entgrid/
 % grid2 themselves), giving genuine vacuum clearance between the tube's
 % own grounded wall and anything at a different potential inside it.
-p.set('flight_tube_r', 'ring_outer_r+50[mm]', 'Flight tube (field-free drift region) inner radius -- larger than ring_outer_r so grid2/entgrid have clearance from the tube wall');
+p.set('flight_tube_r', sprintf('%.12g[mm]', geometryMm.flight_tube_r), ...
+    'Grounded flight-tube inner radius from baseline.json');
 % !!! Added an EXPLICIT solid wall for the flight tube (doc §7.43), per
 % explicit request -- previously accelflightbox's own outer surface was
 % just an implicit grounded boundary condition (selb_outerwall), no
@@ -598,7 +632,8 @@ p.set('flight_tube_r', 'ring_outer_r+50[mm]', 'Flight tube (field-free drift reg
 % shell (radius flight_tube_r to flight_tube_r+flight_tube_wall) wraps
 % around it, grounded (0V), matching the same technique used for the
 % accelerator's own shield.
-p.set('flight_tube_wall', '10[mm]', 'Flight tube wall thickness (explicit solid shell around the vacuum, minimum 10mm per explicit request)');
+p.set('flight_tube_wall', sprintf('%.12g[mm]', geometryMm.flight_tube_wall), ...
+    'Flight-tube and end-cap thickness from baseline.json');
 % !!! Added for doc §7.44, per explicit request: the flight tube's own
 % shield is extended to ALSO enclose the reflectron region (previously
 % only wrapped the field-free drift section) -- both ends of this now-
@@ -607,7 +642,8 @@ p.set('flight_tube_wall', '10[mm]', 'Flight tube wall thickness (explicit solid 
 % enforces a 50mm minimum axial clearance in the current scan
 % clearance in the AXIAL direction between the backplate's own far face
 % and the new far-end cap.
-p.set('shield_axial_gap', '50[mm]', 'Minimum axial clearance between the flight-tube shield''s end caps and the nearest internal component (backplate), per current scan request');
+p.set('shield_axial_gap', sprintf('%.12g[mm]', geometryMm.shield_axial_gap), ...
+    'Backplate-to-far-endcap clearance from baseline.json');
 % !!! Added for doc §7.50, per explicit request: the ENTIRE accelerator
 % assembly (repeller, accelshield, grid1, grid2, accelring_k, relvol)
 % is shifted off-axis by -x_accel_center, and the detector by
@@ -623,9 +659,11 @@ p.set('shield_axial_gap', '50[mm]', 'Minimum axial clearance between the flight-
 % +x_accel_center, symmetric about the true axis. Per explicit request,
 % T is taken from the CURRENT setup's measured flight time (not
 % re-derived iteratively for a self-consistent fixed point).
-p.set('x_accel_center', '-48.80[mm]', 'Accelerator assembly x-offset (symmetric placement, doc §7.50): -v_x*(T/2), so the ion''s release point and detection point sit symmetrically about the flight tube''s true axis (detector at +48.80mm)');
+p.set('x_accel_center', sprintf('%.17g[mm]', contract.coordinate_convention.accelerator_axis_x), ...
+    'Accelerator global x-axis from baseline.json');
 p.set('detector_x', '-x_accel_center', 'Detector x-center linked as the mirror image of the accelerator axis; moving the accelerator cannot leave the detector behind');
-p.set('detector_radius', '40[mm]', 'Physical detector radius shared with the SIMION geometry contract');
+p.set('detector_radius', sprintf('%.12g[mm]', geometryMm.detector_radius), ...
+    'Physical detector radius from baseline.json');
 % !!! TRIED (doc §7.47) shrinking grid1/grid2/entgrid away from their
 % shield's own bore, matching the accel_ring_gap discipline used for
 % real solid conductors -- but idealized zero-thickness grids MUST span
@@ -657,9 +695,16 @@ p.set('detector_radius', '40[mm]', 'Physical detector radius shared with the SIM
 % repeller-grid1, doesn't need rings -- its 3mm gap vs 35mm half-width
 % ratio already gave clean uniformity even in the failed cylindrical
 % attempt).
-p.set('accel_ring_width', '5[mm]', 'Square-ring radial width from clear bore edge to charged outer edge');
-p.set('accel_shield_wall', '4[mm]', 'Accelerator shield wall thickness (thickened from 2mm to 4mm, per explicit request for more realistic/robust shield walls)');
-p.set('accel_ring_gap', '5[mm]', 'Vacuum gap between accelerator charged electrodes and grounded shield inner wall');
+p.set('accel_ring_width', sprintf('%.12g[mm]', geometryMm.accelerator_ring_width), ...
+    'Accelerator square-ring width from baseline.json');
+p.set('accel_shield_wall', sprintf('%.12g[mm]', geometryMm.accelerator_shield_wall), ...
+    'Accelerator grounded-shield wall from baseline.json');
+p.set('accel_ring_gap', sprintf('%.12g[mm]', geometryMm.accelerator_insulation_gap), ...
+    'Charged-electrode-to-ground clearance from baseline.json');
+p.set('accel_repeller_thickness', sprintf('%.12g[mm]', geometryMm.accelerator_repeller_thickness), ...
+    'Accelerator repeller thickness from baseline.json');
+p.set('accel_ring_thickness', sprintf('%.12g[mm]', geometryMm.accelerator_ring_thickness), ...
+    'Accelerator extraction-ring thickness from baseline.json');
 p.set('accel_ring_bore_half', sprintf('%.12g[mm]', accel_bore_half_mm), 'Accelerator square clear-aperture half-width');
 p.set('mesh_hmax_accel', sprintf('%.12g[mm]', mesh_hmax_accel_mm), ...
     'Maximum tetrahedral element size in the whole accelerator region');
@@ -684,9 +729,11 @@ p.set('accel_shield_half', 'accel_ring_bore_half+accel_ring_width+accel_ring_gap
 % and detector-side field-free lengths) are entirely unaffected: this
 % only adds vacuum/structure BEHIND the accelerator, nothing forward of
 % z=0 changes.
-p.set('accel_shield_back_extra', '5[mm]', 'Insulating clearance from repeller rear face to grounded rear-closure front face');
+p.set('accel_shield_back_extra', sprintf('%.12g[mm]', geometryMm.accelerator_rear_clearance), ...
+    'Repeller rear-face clearance from baseline.json');
 % !!! Widened from 3mm to 20mm (doc §7.50, per explicit request).
-p.set('endcap_gap', '20[mm]', 'Vacuum gap between the flight-tube end cap (opposite the acceleration direction) and the (extended) accelerator shield''s own back edge -- kept separate even though both are grounded (0V), per the "different objects need a real gap" discipline used throughout this design');
+p.set('endcap_gap', sprintf('%.12g[mm]', geometryMm.shield_near_endcap_gap), ...
+    'Accelerator shield to near flight-tube end-cap clearance from baseline.json');
 
 %% Solid electrodes (repeller, rings, backplate) -- unchanged technique
 % (Difference: outer solid minus bore, auto Form Union with a vacuum
@@ -710,8 +757,8 @@ p.set('endcap_gap', '20[mm]', 'Vacuum gap between the flight-tube end cap (oppos
 % accelerator's charged solid electrodes.
 geom1.feature.create('repeller', 'Block');
 geom1.feature('repeller').label('Repeller (pulses 0->V_repeller, solid, rectangular, ion never passes through it)');
-geom1.feature('repeller').set('size', {'2*(accel_shield_half-accel_ring_gap)', '2*(accel_shield_half-accel_ring_gap)', '1'});
-geom1.feature('repeller').set('pos', {'x_accel_center-(accel_shield_half-accel_ring_gap)', '-(accel_shield_half-accel_ring_gap)', 'z_accel_origin-1[mm]'});
+geom1.feature('repeller').set('size', {'2*(accel_shield_half-accel_ring_gap)', '2*(accel_shield_half-accel_ring_gap)', 'accel_repeller_thickness'});
+geom1.feature('repeller').set('pos', {'x_accel_center-(accel_shield_half-accel_ring_gap)', '-(accel_shield_half-accel_ring_gap)', 'z_accel_origin-accel_repeller_thickness'});
 
 % !!! Square shield tube around the accelerator (repeller to grid2): a
 % thin grounded square-annular wall (Block-minus-Block, same technique
@@ -738,12 +785,12 @@ geom1.feature('repeller').set('pos', {'x_accel_center-(accel_shield_half-accel_r
 % still ends exactly at z=L_accel (grid2's position), unaffected.
 geom1.feature.create('accelshieldO', 'Block');
 geom1.feature('accelshieldO').label('Accelerator shield outer solid (includes integrated back cap)');
-geom1.feature('accelshieldO').set('size', {'2*(accel_shield_half+accel_shield_wall)', '2*(accel_shield_half+accel_shield_wall)', 'L_accel+1[mm]+accel_shield_back_extra+accel_shield_wall'});
-geom1.feature('accelshieldO').set('pos', {'x_accel_center-(accel_shield_half+accel_shield_wall)', '-(accel_shield_half+accel_shield_wall)', 'z_accel_origin-1[mm]-accel_shield_back_extra-accel_shield_wall'});
+geom1.feature('accelshieldO').set('size', {'2*(accel_shield_half+accel_shield_wall)', '2*(accel_shield_half+accel_shield_wall)', 'L_accel+accel_repeller_thickness+accel_shield_back_extra+accel_shield_wall'});
+geom1.feature('accelshieldO').set('pos', {'x_accel_center-(accel_shield_half+accel_shield_wall)', '-(accel_shield_half+accel_shield_wall)', 'z_accel_origin-accel_repeller_thickness-accel_shield_back_extra-accel_shield_wall'});
 geom1.feature.create('accelshieldH', 'Block');
 geom1.feature('accelshieldH').label('Accelerator shield bore (stops accel_shield_wall short of the outer solid''s back face, leaving the integrated back cap)');
-geom1.feature('accelshieldH').set('size', {'2*accel_shield_half', '2*accel_shield_half', 'L_accel+1[mm]+accel_shield_back_extra'});
-geom1.feature('accelshieldH').set('pos', {'x_accel_center-accel_shield_half', '-accel_shield_half', 'z_accel_origin-1[mm]-accel_shield_back_extra'});
+geom1.feature('accelshieldH').set('size', {'2*accel_shield_half', '2*accel_shield_half', 'L_accel+accel_repeller_thickness+accel_shield_back_extra'});
+geom1.feature('accelshieldH').set('pos', {'x_accel_center-accel_shield_half', '-accel_shield_half', 'z_accel_origin-accel_repeller_thickness-accel_shield_back_extra'});
 geom1.feature.create('accelshield', 'Difference');
 geom1.feature('accelshield').label('Accelerator shield (grounded, one-piece: side walls + integrated back cap)');
 geom1.feature('accelshield').selection('input').set({'accelshieldO'});
@@ -774,12 +821,12 @@ for k = 1:5
     outer_half = 'accel_shield_half-accel_ring_gap';
     geom1.feature.create([tagk 'O'], 'Block');
     geom1.feature([tagk 'O']).label(sprintf('Accelerator ring %d outer solid', k));
-    geom1.feature([tagk 'O']).set('size', {['2*(' outer_half ')'], ['2*(' outer_half ')'], '1[mm]'});
-    geom1.feature([tagk 'O']).set('pos', {['x_accel_center-(' outer_half ')'], ['-(' outer_half ')'], [zk_expr '-0.5[mm]']});
+    geom1.feature([tagk 'O']).set('size', {['2*(' outer_half ')'], ['2*(' outer_half ')'], 'accel_ring_thickness'});
+    geom1.feature([tagk 'O']).set('pos', {['x_accel_center-(' outer_half ')'], ['-(' outer_half ')'], [zk_expr '-accel_ring_thickness/2']});
     geom1.feature.create([tagk 'H'], 'Block');
     geom1.feature([tagk 'H']).label(sprintf('Accelerator ring %d bore', k));
-    geom1.feature([tagk 'H']).set('size', {'2*accel_ring_bore_half', '2*accel_ring_bore_half', '1[mm]'});
-    geom1.feature([tagk 'H']).set('pos', {'x_accel_center-accel_ring_bore_half', '-accel_ring_bore_half', [zk_expr '-0.5[mm]']});
+    geom1.feature([tagk 'H']).set('size', {'2*accel_ring_bore_half', '2*accel_ring_bore_half', 'accel_ring_thickness'});
+    geom1.feature([tagk 'H']).set('pos', {'x_accel_center-accel_ring_bore_half', '-accel_ring_bore_half', [zk_expr '-accel_ring_thickness/2']});
     geom1.feature.create(tagk, 'Difference');
     geom1.feature(tagk).label(sprintf('Accelerator ring %d (V=%s)', k, Vk_expr));
     geom1.feature(tagk).selection('input').set({[tagk 'O']});
@@ -905,7 +952,7 @@ geom1.feature('detector').label('Detector (grounded, solid, real physical stop)'
 % tolerance across the scan range without needing to recompute the
 % detector's exact x-position for every d2 value.
 geom1.feature('detector').set('r', 'detector_radius');
-geom1.feature('detector').set('h', '1[mm]');
+geom1.feature('detector').set('h', sprintf('%.12g[mm]', geometryMm.detector_thickness));
 % !!! Repositioned to the measured landing spot (x=27.45-28.05mm at
 % z~22mm, measured directly after the accelflightbox/reflvac gap fix --
 % the ion now genuinely completes a clean round trip). r=10mm centered
@@ -978,7 +1025,7 @@ geom1.feature('detector').set('h', '1[mm]');
 % (x=0) -- rather than the ion starting exactly on-axis and drifting
 % one-sided to an off-axis detector as before. Detector radius kept at
 % 40mm for tolerance margin.
-geom1.feature('detector').set('pos', {'detector_x' '0' 'detector_z-1[mm]'});
+geom1.feature('detector').set('pos', {'detector_x' '0' sprintf('detector_z-%.12g[mm]', geometryMm.detector_thickness)});
 
 %% Vacuum envelope: ONE continuous cylinder spanning accel+drift, plus
 % the ring-stack's own envelope (auto Form Union merges everything, same
@@ -1007,7 +1054,7 @@ geom1.feature('detector').set('pos', {'detector_x' '0' 'detector_z-1[mm]'});
 % tube's own vacuum bore begins) must stay behind THAT, or flighttubewallO
 % (a full disk before flighttubewallH's hole starts) would overlap the
 % accelerator shield's new back cap at the same z.
-z0_bore = 'z_accel_origin-1[mm]-accel_shield_back_extra-accel_shield_wall-endcap_gap';
+z0_bore = 'z_accel_origin-accel_repeller_thickness-accel_shield_back_extra-accel_shield_wall-endcap_gap';
 % !!! backplate is a real solid disk again (front face at L_flight+
 % L_refl, extending ring_thickness further out in +z, see the backplate
 % feature below) -- z1_bore must stay shield_axial_gap clear of its own
@@ -1062,8 +1109,12 @@ geom1.feature('flighttubewall').selection('input2').set({'flighttubewallH'});
 
 geom1.feature.create('relvol', 'Block');
 geom1.feature('relvol').label('Release volume (ion entering pusher at 5eV, 1mm cube)');
-geom1.feature('relvol').set('size', {'1' '1' '1'});
-geom1.feature('relvol').set('pos', {'x_accel_center-0.5' '-0.5' 'z_accel_origin+1[mm]'});
+geom1.feature('relvol').set('size', {sprintf('%.12g', sourceDesign.size_x_mm), ...
+    sprintf('%.12g', sourceDesign.size_y_mm), sprintf('%.12g', sourceDesign.size_z_mm)});
+geom1.feature('relvol').set('pos', { ...
+    sprintf('%.17g[mm]-%.17g[mm]', sourceDesign.center_x_mm, sourceDesign.size_x_mm/2), ...
+    sprintf('%.17g[mm]-%.17g[mm]', sourceDesign.center_y_mm, sourceDesign.size_y_mm/2), ...
+    sprintf('%.17g[mm]-%.17g[mm]', sourceDesign.center_z_mm, sourceDesign.size_z_mm/2)});
 geom1.feature('relvol').set('selresult', 'on');
 
 for t = [{'repeller','detector','accelshield','flighttubewall','backplate'}, ringtags, accelringtags]
@@ -1705,8 +1756,10 @@ else
 % released particle draw an independent sample (not the same value
 % repeated for all).
 rel1.set('SamplingFromDistribution', 'Random');
-p.set('E_mean_eV', '5[V]', 'Mean ion kinetic energy entering the pusher');
-p.set('E_std_eV', '0.4[V]', 'Ion kinetic energy spread (Gaussian stdev)');
+p.set('E_mean_eV', sprintf('%.12g[V]', contract.validation_target.initial_energy_mean_ev), ...
+    'Mean ion kinetic energy from baseline.json');
+p.set('E_std_eV', sprintf('%.12g[V]', contract.validation_target.initial_energy_sigma_ev), ...
+    'Ion kinetic-energy standard deviation from baseline.json');
 % !!! randnormal() is NOT a recognized COMSOL function (confirmed via
 % solve-time error "Unknown function or operator: randnormal") -- built a
 % standard-normal sample manually via the Box-Muller transform using
@@ -1752,7 +1805,7 @@ ef1.set('E_src', 'userdef');
 % field's own measured sign (z=0.2mm: Ez=+159532 V/m). The reflectron
 % region has V INCREASING with z (entgrid 0 -> backplate high) as the
 % ion decelerates, so Ez=-dV/dz is NEGATIVE there.
-Ez_accel_ideal = ['if(z<z_accel_grid1,(V_repeller-V_grid1)/3[mm],V_grid1/(L_accel-3[mm]))'];
+Ez_accel_ideal = 'if(z<z_accel_grid1,(V_repeller-V_grid1)/accel_stage1_length,V_grid1/accel_stage2_length)';
 Ez_drift_ideal = '0';
 Ez_stage1_ideal = '-V_mid/L_stage1';
 Ez_stage2_ideal = '-(V_mirror-V_mid)/(L_refl-L_stage1)';
@@ -2070,9 +2123,10 @@ penetration_stage2_mm = penetration_total_mm - d1_mm; % per-ion depth past the M
 penetration_max_mm = max(penetration_total_mm);
 penetration_stage2_max_mm = max(penetration_stage2_mm);
 fprintf('[%s] reflectron penetration: total max=%.3fmm, stage2-only max=%.3fmm, over %d ions (theory d2_min=(U0-U1)/E2=%.3fmm, adaptive d2=%.3fmm [+%.0f%% margin])\n', ...
-    label, penetration_max_mm, penetration_stage2_max_mm, nP, d2min_mm, d2_mm, d2_margin_frac*100);
+    label, penetration_max_mm, penetration_stage2_max_mm, nP, reflectron_stage2_min_mm, d2_mm, d2_margin_fraction*100);
 fprintf('[%s] stage2 penetration_max vs d2_min: diff=%.3fmm (%.2f%% of d2_min)\n', ...
-    label, penetration_stage2_max_mm-d2min_mm, 100*(penetration_stage2_max_mm-d2min_mm)/d2min_mm);
+    label, penetration_stage2_max_mm-reflectron_stage2_min_mm, ...
+    100*(penetration_stage2_max_mm-reflectron_stage2_min_mm)/reflectron_stage2_min_mm);
 
 % !!! Detection logic simplified to z-only (no x,y window check): this
 % was already validated earlier in this project to give IDENTICAL
@@ -2251,7 +2305,8 @@ fprintf('[TIMING] full-population extraction (mphparticle N=%d) + detection/R/DI
 result = struct('label', label, 'mass_amu', mass_amu, 'nP', nP, 'zEnd', zEnd, ...
     'detTimes', detTimes, 'meanT', meanT, 'stdT', stdT, 'fwhmT', fwhmT, ...
     'R_fwhm_sigma_proxy', R_resolution, 'nDet', nDet, ...
-    'penetration_max_mm', penetration_max_mm, 'd2min_mm', d2min_mm, 'd2_mm', d2_mm);
+    'penetration_max_mm', penetration_max_mm, ...
+    'd2min_mm', reflectron_stage2_min_mm, 'd2_mm', d2_mm);
 
 resultsDir = paths.comsolResultsDir;
 if ~exist(resultsDir,'dir'), mkdir(resultsDir); end
@@ -2376,7 +2431,8 @@ title(sprintf('mass peak (direct FWHM R=%.0f, N=%d)', R_direct, nDet));
 % per d1_mm/d2_margin_frac and no longer a fixed literal) in favor of the
 % actual computed value.
 sgtitle({sprintf('oa-TOF two-stage ring-stack reflectron: %s (N=%d, field_mode=%s)', label, nP, field_mode), ...
-    sprintf('%gamu +1 ion, fixed 5±0.4eV source when selected, d1=%gmm, V_mirror=%.2fV, direct R=%.1f', mass_amu, d1_mm, V_mirror_V, R_direct)}, 'Interpreter','none');
+    sprintf('%gamu +1 ion, baseline source when selected, d1=%gmm, V_mirror=%.2fV, direct R=%.1f', ...
+    mass_amu, d1_mm, reflectron_backplate_voltage_v, R_direct)}, 'Interpreter','none');
 print(fh, fullfile(resultsDir, sprintf('ms_oaTOF_ringstack_reflectron_%s.png', strrep(label,' ','_'))), '-dpng', '-r150');
 fprintf('[%s] SUCCESS: trajectory + mass-spectrum plot saved.\n', label);
 t_matlabplot = toc(t_matlabplot_start);

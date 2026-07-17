@@ -8,7 +8,9 @@ $ErrorActionPreference = 'Stop'
 $componentDir = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $repoRoot = (Resolve-Path (Join-Path $componentDir '..\..')).Path
 $projectRoot = Split-Path -Parent $repoRoot
-$contractPath = Join-Path $componentDir 'config\baseline.json'
+$baselinePath = Join-Path $componentDir 'config\baseline.json'
+$contractPath = Join-Path $componentDir 'config\resolved_geometry.json'
+$resolvedLuaPath = Join-Path $componentDir 'simion\workbench\formal\oatof_resolved.lua'
 $comsolSource = Join-Path $componentDir 'comsol\ms_oaTOF_two_stage_ringstack_reflectron.m'
 $simionLua = Join-Path $componentDir 'simion\workbench\formal\oatof_ideal_grounded.lua'
 $simionFly2 = Join-Path $componentDir 'simion\workbench\formal\oatof_ideal_grounded.fly2'
@@ -40,12 +42,18 @@ function Assert-NotContains([string]$Text, [string]$Needle, [string]$Label) {
 }
 
 $contract = Get-Content -LiteralPath $contractPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$formalAssets = Get-Content -LiteralPath (Join-Path $componentDir 'config\formal_assets.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 $derivationGate = Join-Path $PSScriptRoot 'verify_geometry_derivation.py'
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 project runtime missing: $python" }
-$derivationOutput = & $python $derivationGate $contractPath
+$derivationOutput = & $python $derivationGate $baselinePath
 if ($LASTEXITCODE -ne 0 -or $derivationOutput -notcontains 'GEOMETRY_DERIVATION_STATUS=PASS') {
   throw 'Physics-input to engineering-geometry derivation gate failed.'
+}
+$syncScript = Join-Path $componentDir 'analysis\sync_geometry_contract.py'
+$syncOutput = & $python $syncScript --check
+if ($LASTEXITCODE -ne 0 -or $syncOutput -notcontains 'GEOMETRY_TEXT_SYNC=PASS') {
+  throw 'Resolved geometry or generated SIMION inputs are stale.'
 }
 if (-not [bool]$contract.simion_runtime.program_required) { throw 'SIMION formal runtime must require Program.' }
 $lua = Get-Content -LiteralPath $simionLua -Raw -Encoding UTF8
@@ -79,8 +87,11 @@ Assert-Near (Get-Adjustable $lua 'accelerator_repeller_front_z_mm') $contract.ge
 Assert-Near (Get-Adjustable $lua 'accelerator_grid1_z_mm') $contract.geometry_mm.accelerator_grid1_z 'SIMION grid1 global z'
 Assert-Near (Get-Adjustable $lua 'accelerator_grid2_z_mm') $contract.geometry_mm.accelerator_grid2_z 'SIMION grid2 global z'
 Assert-Near (Get-Adjustable $lua 'accelerator_assembly_translation_z_mm') $contract.geometry_mm.accelerator_repeller_z 'SIMION formal accelerator translation'
-Assert-Near (Get-Adjustable $lua 'accelerator_stage1_length_mm') 3 'SIMION formal accelerator stage1 length'
-Assert-Near (Get-Adjustable $lua 'accelerator_stage2_length_mm') ($contract.geometry_mm.L_accel - 3) 'SIMION formal accelerator stage2 length'
+Assert-Near (Get-Adjustable $lua 'accelerator_stage1_length_mm') $contract.geometry_derivation.accelerator.d1_mm 'SIMION formal accelerator stage1 length'
+Assert-Near (Get-Adjustable $lua 'accelerator_stage2_length_mm') $contract.geometry_derivation.accelerator.d2_mm 'SIMION formal accelerator stage2 length'
+Assert-Near (Get-Adjustable $lua 'accelerator_ring_count') $contract.rings.accelerator_count 'SIMION accelerator ring count'
+Assert-Near (Get-Adjustable $lua 'reflectron_stage1_ring_count') $contract.rings.stage1_count 'SIMION reflectron stage1 ring count'
+Assert-Near (Get-Adjustable $lua 'reflectron_stage2_ring_count') $contract.rings.stage2_count 'SIMION reflectron stage2 ring count'
 Assert-Near (Get-Adjustable $lua 'accelerator_grid_epsilon_mm') $contract.simion_runtime.accelerator_grid_epsilon_mm 'SIMION accelerator grid jump default'
 Assert-Near (Get-Adjustable $lua 'reflectron_grid_epsilon_mm') $contract.simion_runtime.reflectron_grid_epsilon_mm 'SIMION reflectron grid jump default'
 Assert-Near ((Get-Adjustable $lua 'accelerator_grid2_z_mm') + (Get-Adjustable $lua 'accelerator_focus_drift_mm')) $contract.simion_detector_marker.active_plane_z_mm 'SIMION detector/focus plane linkage'
@@ -124,7 +135,8 @@ Assert-Near (Get-Adjustable $lua 'V_backplate') $contract.electrodes_V.backplate
 
 Assert-Contains $lua 'local half_x=(ai.pa.nx-1)*ai.pa.dx_mm*ai.scale/2' 'SIMION accelerator x half-span linkage'
 Assert-Contains $lua 'local half_y=(ai.pa.ny-1)*ai.pa.dy_mm*ai.scale/2' 'SIMION accelerator y half-span linkage'
-Assert-Contains $lua 'ai.x,ai.y,ai.z=accelerator_axis_x_mm-half_x,accelerator_axis_y_mm-half_y,accelerator_instance_z_mm' 'SIMION accelerator transform'
+Assert-Contains $lua 'ai.x,ai.y,ai.z=accelerator_axis_x_mm-half_x,accelerator_axis_y_mm-half_y,' 'SIMION accelerator lateral transform'
+Assert-Contains $lua 'accelerator_instance_z_mm-accelerator_pa_back_margin_mm-' 'SIMION accelerator axial transform'
 Assert-Contains $lua 'detector_x_mm=-accelerator_axis_x_mm+detector_mirror_offset_x_mm' 'SIMION detector x'
 Assert-Contains $lua 'detector_z_mm=detector_active_plane_z_mm' 'SIMION detector z'
 Assert-Contains $lua 'di.x=detector_x_mm-detector_half_x' 'SIMION detector PA x transform'
@@ -150,11 +162,12 @@ Assert-Contains $detector '# local mmgu_z = var.mmgu_z or 0.01' 'SIMION detector
 Assert-Contains $detector '# local absorber_thickness = var.absorber_thickness or 0.05' 'SIMION detector GEM marker thickness'
 Assert-Contains $acceleratorGem '# local shield_inner_width = electrode_width+2*insulation_gap' 'SIMION linked shield opening'
 Assert-Contains $acceleratorGem '# local ring_pitch = stage2_length/(ring_count+1)' 'SIMION equal accelerator ring pitch'
-Assert-Contains $acceleratorGem 'centered_box3D(0,0,$(stage1_length+3*ring_pitch)' 'SIMION center accelerator ring linkage'
-Assert-Contains $acceleratorGem 'e(8) { fill { within { centered_box3D(0,0,$(stage1_length+stage2_length), $(shield_inner_width),$(shield_inner_width),$(mmgu_z)) } } }' 'SIMION accelerator exit grid entity'
+Assert-Contains $acceleratorGem '# for ring_index=1,ring_count do' 'SIMION parameterized accelerator ring loop'
+Assert-Contains $acceleratorGem 'e($(3+ring_count)) { fill { within { centered_box3D(0,0,$(stage1_length+stage2_length)' 'SIMION parameterized accelerator exit grid entity'
+Assert-Contains $acceleratorGem 'e($(4+ring_count)) { fill {' 'SIMION parameterized accelerator shield electrode'
 Assert-Contains $flightTubeGem '# local wall = var.wall or 10' 'SIMION field-free shield wall'
 Assert-Contains $flightTubeGem '# local near_cap_thickness = var.near_cap_thickness or 10' 'SIMION near end-cap thickness'
-Assert-Contains $flightTubeGem '# local near_outer_z = var.near_outer_z or -59.92918680341103' 'SIMION shield near outer face'
+Assert-Contains $flightTubeGem '# local near_outer_z = var.near_outer_z or ' 'SIMION shield near outer-face parameter interface'
 Assert-Contains $flightTubeGem 'box(0,0,$(near_cap_thickness),$(outer_radius))' 'SIMION full near end cap'
 Assert-Contains $flightTubeGem 'box($(side_start),$(inner_radius),$(side_end),$(outer_radius))' 'SIMION continuous field-free side wall'
 Assert-Contains $flightTubeBuilder "local wall = tonumber(arg[7] or '10')" 'SIMION field-free builder wall default'
@@ -162,64 +175,58 @@ Assert-Contains $reflectronGem '# local wall = var.wall or 10' 'SIMION reflectro
 Assert-Contains $reflectronGem '# local far_clearance = var.far_clearance or 50' 'SIMION far clearance'
 Assert-Contains $reflectronGem '# local far_cap_thickness = var.far_cap_thickness or 10' 'SIMION far end-cap thickness'
 Assert-Contains $reflectronGem 'box($(bore_end),0,$(outer_end),$(outer_radius))' 'SIMION full far end cap'
+Assert-Contains $reflectronGem '# for ring_index=1,stage1_ring_count do' 'SIMION parameterized stage1 ring loop'
+Assert-Contains $reflectronGem '# for ring_index=1,stage2_ring_count do' 'SIMION parameterized stage2 ring loop'
+Assert-Contains $reflectronGem 'e($(3+stage1_ring_count+stage2_ring_count))' 'SIMION parameterized backplate electrode'
 Assert-Contains $reflectronBuilder "local wall = tonumber(arg[7] or '10')" 'SIMION reflectron builder wall default'
 Assert-Contains $reflectronBuilder "local far_clearance = tonumber(arg[10] or '50')" 'SIMION reflectron builder clearance default'
-Assert-Contains $fly2 'seed(20260713)' 'SIMION GUI particle seed'
-Assert-Contains $fly2 ("n = {0}" -f $contract.simion_runtime.routine_particles) 'SIMION GUI particle count'
-Assert-Contains $fly2 'mass = 524' 'SIMION GUI particle mass'
+Assert-Contains $fly2 'Generated by analysis/sync_geometry_contract.py' 'SIMION GUI particle generator identity'
+Assert-Contains $fly2 'standard_beam {' 'SIMION GUI particle definition'
 Assert-Contains $fly2 'charge = 1' 'SIMION GUI particle charge'
-Assert-Contains $fly2 'energy = 5 + 0.4*normal' 'SIMION GUI energy distribution'
-Assert-Contains $fly2 'x = uniform_distribution { min = -49.3, max = -48.3 }' 'SIMION GUI source x extent'
-Assert-Contains $fly2 'z = uniform_distribution { min = -18.92918680341103, max = -17.92918680341103 }' 'SIMION GUI source z extent'
 Assert-Contains $comsol "p.set('detector_x', '-x_accel_center'" 'COMSOL detector x parameter'
-Assert-Contains $comsol "p.set('detector_radius', '40[mm]'" 'COMSOL detector radius parameter'
-Assert-Contains $comsol "p.set('E_mean_eV', '5[V]'" 'COMSOL mean initial energy'
-Assert-Contains $comsol "p.set('E_std_eV', '0.4[V]'" 'COMSOL initial energy sigma'
-Assert-Contains $comsol "p.set('flight_tube_wall', '10[mm]'" 'COMSOL shield wall thickness'
-Assert-Contains $comsol "p.set('shield_axial_gap', '50[mm]'" 'COMSOL far-end clearance'
-Assert-Contains $comsol "p.set('accel_shield_wall', '4[mm]'" 'COMSOL accelerator shield wall'
-Assert-Contains $comsol "p.set('accel_ring_gap', '5[mm]'" 'COMSOL accelerator insulation gap'
-Assert-Contains $comsol "p.set('accel_shield_back_extra', '5[mm]'" 'COMSOL accelerator rear clearance'
-Assert-Contains $comsol "p.set('endcap_gap', '20[mm]'" 'COMSOL near-end clearance'
-Assert-Contains $comsol 'd2_raw_mm = d2min_mm*(1+d2_margin_frac);' 'COMSOL unrounded physical stage2 derivation'
-Assert-Contains $comsol 'V_mirror_V = U1_V + E2_Vpm*(d2_raw_mm/1000);' 'COMSOL voltage derivation before engineering rounding'
-Assert-Contains $comsol 'd2_mm = round(d2_raw_mm, 4);' 'COMSOL baseline engineering-length precision'
+Assert-Contains $comsol 'contract = load_oatof_contract();' 'COMSOL resolved-contract loader'
+Assert-Contains $comsol "p.set('detector_radius', sprintf('%.12g[mm]', geometryMm.detector_radius)" 'COMSOL detector radius parameter'
+Assert-Contains $comsol "p.set('E_mean_eV', sprintf('%.12g[V]', contract.validation_target.initial_energy_mean_ev)" 'COMSOL mean initial energy'
+Assert-Contains $comsol "p.set('flight_tube_wall', sprintf('%.12g[mm]', geometryMm.flight_tube_wall)" 'COMSOL shield wall thickness'
+Assert-Contains $comsol 'd2_raw_mm = reflectron_stage2_min_mm*(1+d2_margin_fraction);' 'COMSOL unrounded physical stage2 derivation'
+Assert-Contains $comsol 'reflectron_backplate_voltage_v = reflectron_midgrid_voltage_v + reflectron_stage2_field_vpm*(d2_raw_mm/1000);' 'COMSOL voltage derivation before engineering rounding'
+Assert-Contains $comsol 'd2_mm = round(d2_raw_mm, reflectronDesign.engineering_length_decimals_mm);' 'COMSOL baseline engineering-length precision'
 Assert-Contains $comsol "p.set('L_refl', sprintf('%.12g[mm]', d1_mm+d2_mm)" 'COMSOL reflectron serialization precision'
 Assert-Contains $comsol "if nargin < 9 || isempty(ring_thickness_mm)" 'COMSOL backplate-thickness default branch'
-Assert-Contains $comsol "ring_thickness_mm = 5;" 'COMSOL backplate-thickness default'
+Assert-Contains $comsol "ring_thickness_mm = geometryMm.ring_thickness;" 'COMSOL backplate-thickness default'
 Assert-Contains $comsol "if nargin < 12 || isempty(accel_bore_half_mm)" 'COMSOL accelerator-bore default branch'
-Assert-Contains $comsol "accel_bore_half_mm = 5;" 'COMSOL accelerator-bore default'
-Assert-Contains $comsol "z0_bore = 'z_accel_origin-1[mm]-accel_shield_back_extra-accel_shield_wall-endcap_gap';" 'COMSOL linked near bore face'
+Assert-Contains $comsol "accel_bore_half_mm = geometryMm.accelerator_bore_half;" 'COMSOL accelerator-bore default'
+Assert-Contains $comsol "z0_bore = 'z_accel_origin-accel_repeller_thickness-accel_shield_back_extra-accel_shield_wall-endcap_gap';" 'COMSOL linked near bore face'
 Assert-Contains $comsol "z1_bore = 'L_flight+L_refl+ring_thickness+shield_axial_gap';" 'COMSOL linked far bore face'
 Assert-Contains $comsol "geom1.feature('flighttubewallO').set('h', [z1_bore '-(' z0_bore ')+2*flight_tube_wall']);" 'COMSOL two end-cap thicknesses'
 Assert-Contains $comsol "Flight tube shield (grounded, one-piece shell with both ends closed -- encloses field-free tube + reflectron)" 'COMSOL authoritative closed shield'
 Assert-Contains $comsol "'wp_grid2',     'z_accel_grid2' 'square'  '2*accel_shield_half'" 'COMSOL accelerator exit grid geometry'
-Assert-Contains $ionGenerator '[double]$EnergyMeanEv = 5' 'SIMION ION mean initial energy'
-Assert-Contains $ionGenerator '[double]$EnergyStdEv = 0.4' 'SIMION ION initial energy sigma'
-Assert-Contains $ionGenerator '[double]$MassAmu = 524' 'SIMION ION standard mass'
-Assert-Contains $comsol 'if nargin<1, mass_amu = 524; end' 'COMSOL standard mass'
+Assert-Contains $ionGenerator '[double]$CenterXmm' 'SIMION ION parameterized source x center'
+Assert-Contains $ionGenerator '[double]$CenterYmm' 'SIMION ION parameterized source y center'
+Assert-Contains $ionGenerator '[double]$CenterZmm' 'SIMION ION parameterized source z center'
+Assert-Contains $comsol 'if nargin<1, mass_amu = contract.validation_target.mass_amu; end' 'COMSOL standard mass'
 Assert-Contains $comsol "geom1.feature('detector').set('r', 'detector_radius')" 'COMSOL detector radius geometry'
-Assert-Contains $comsol "geom1.feature('detector').set('pos', {'detector_x' '0' 'detector_z-1[mm]'})" 'COMSOL detector position geometry'
+Assert-Contains $comsol "geometryMm.detector_thickness" 'COMSOL detector thickness/position linkage'
 
 if (-not $SkipRuntime) {
-  if ($contract.runtime_contract.comsol_formal_geometry_status -ne 'synchronized') {
-    throw "Formal COMSOL geometry is not synchronized to baseline: $($contract.runtime_contract.comsol_formal_geometry_status). Use -SkipRuntime only for candidate/source validation."
+  if ($formalAssets.comsol.geometry_status -ne 'synchronized') {
+    throw "Formal COMSOL geometry is not synchronized: $($formalAssets.comsol.geometry_status). Use -SkipRuntime only for candidate/source validation."
   }
-  if ($contract.runtime_contract.solidworks_formal_geometry_status -ne 'synchronized') {
-    throw "Formal SolidWorks geometry is not synchronized to baseline: $($contract.runtime_contract.solidworks_formal_geometry_status)."
+  if ($formalAssets.solidworks.geometry_status -ne 'synchronized') {
+    throw "Formal SolidWorks geometry is not synchronized: $($formalAssets.solidworks.geometry_status)."
   }
   if (-not (Test-Path -LiteralPath $formalDir)) { throw "Formal SIMION runtime workspace missing: $formalDir" }
   if (-not (Test-Path -LiteralPath $formalMph)) { throw "Formal COMSOL MPH missing: $formalMph" }
   if (-not (Test-Path -LiteralPath $formalCadAssembly)) { throw "Formal SolidWorks assembly missing: $formalCadAssembly" }
   if (-not (Test-Path -LiteralPath $formalCadReport)) { throw "Formal SolidWorks export report missing: $formalCadReport" }
   $mphHash = (Get-FileHash -LiteralPath $formalMph -Algorithm SHA256).Hash
-  if ($mphHash -ne $contract.runtime_contract.comsol_formal_mph_sha256) { throw 'Formal COMSOL MPH differs from the verified geometry contract.' }
+  if ($mphHash -ne $formalAssets.comsol.sha256) { throw 'Formal COMSOL MPH differs from the verified asset manifest.' }
   $cadHash = (Get-FileHash -LiteralPath $formalCadAssembly -Algorithm SHA256).Hash
-  if ($cadHash -ne $contract.runtime_contract.solidworks_formal_assembly_sha256) { throw 'Formal SolidWorks assembly differs from the verified geometry contract.' }
+  if ($cadHash -ne $formalAssets.solidworks.assembly_sha256) { throw 'Formal SolidWorks assembly differs from the verified asset manifest.' }
   $cadReport = Get-Content -LiteralPath $formalCadReport -Raw -Encoding UTF8 | ConvertFrom-Json
-  if ($cadReport.solidWorks.solidWorksRevision -ne $contract.runtime_contract.solidworks_revision) { throw 'Formal SolidWorks revision differs from the verified geometry contract.' }
-  if ($cadReport.solidWorks.partCount -ne $contract.runtime_contract.solidworks_formal_component_count) { throw 'Formal SolidWorks part count differs from the verified geometry contract.' }
-  if ($cadReport.solidWorks.assembly.componentCount -ne $contract.runtime_contract.solidworks_formal_component_count) { throw 'Formal SolidWorks assembly component count differs from the verified geometry contract.' }
+  if ($cadReport.solidWorks.solidWorksRevision -ne $formalAssets.solidworks.revision) { throw 'Formal SolidWorks revision differs from the verified asset manifest.' }
+  if ($cadReport.solidWorks.partCount -ne $formalAssets.solidworks.component_count) { throw 'Formal SolidWorks part count differs from the verified asset manifest.' }
+  if ($cadReport.solidWorks.assembly.componentCount -ne $formalAssets.solidworks.component_count) { throw 'Formal SolidWorks assembly component count differs from the verified asset manifest.' }
   if ($cadReport.solidWorks.assembly.saveErrors -ne 0 -or $cadReport.solidWorks.assembly.saveWarnings -ne 0) { throw 'Formal SolidWorks assembly report contains save errors or warnings.' }
   if (($cadReport.solidWorks.parts | Measure-Object -Property saveErrors -Maximum).Maximum -ne 0 -or ($cadReport.solidWorks.parts | Measure-Object -Property saveWarnings -Maximum).Maximum -ne 0) { throw 'Formal SolidWorks part report contains save errors or warnings.' }
   $runtimeLua = Join-Path $formalDir 'oatof_ideal_grounded.lua'
@@ -228,16 +235,13 @@ if (-not $SkipRuntime) {
   if ((Get-FileHash -LiteralPath $simionFly2 -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $runtimeFly2 -Algorithm SHA256).Hash) { throw 'Formal SIMION runtime Fly2 differs from source.' }
   $verifyLua = Join-Path $componentDir 'tests\simion\verify_formal_runtime.lua'
   $report = Join-Path $env:TEMP 'oatof_geometry_contract_simion.txt'
-  $oldReport = $env:OATOF_SIMION_SYNC_REPORT
   try {
-    $env:OATOF_SIMION_SYNC_REPORT = $report
     Push-Location $formalDir
-    & $SimionExe --nogui lua $verifyLua
+    & $SimionExe --nogui lua $verifyLua $report (Join-Path $formalDir 'oatof_ideal_grounded.iob') $resolvedLuaPath
     if ($LASTEXITCODE -ne 0) { throw "SIMION runtime geometry verification failed with exit code $LASTEXITCODE" }
     if (-not (Select-String -LiteralPath $report -Pattern '^STATUS=PASS$' -Quiet)) { throw 'SIMION runtime geometry report did not pass.' }
   } finally {
     Pop-Location
-    $env:OATOF_SIMION_SYNC_REPORT = $oldReport
   }
 }
 

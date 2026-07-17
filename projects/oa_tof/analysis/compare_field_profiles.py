@@ -13,6 +13,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+DEFAULT_CONTRACT = Path(__file__).resolve().parents[1] / "config" / "resolved_geometry.json"
+
 
 def region_metrics(frame: pd.DataFrame) -> dict[str, float | int]:
     comsol = frame["COMSOL_Ez_V_per_m"].to_numpy()
@@ -39,7 +41,10 @@ def main() -> None:
     parser.add_argument("comsol", type=Path)
     parser.add_argument("simion", type=Path)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--contract", type=Path, default=DEFAULT_CONTRACT)
     args = parser.parse_args()
+    contract = json.loads(args.contract.read_text(encoding="utf-8"))
+    geometry = contract["geometry_mm"]
 
     comsol = pd.read_csv(args.comsol)
     simion = pd.read_csv(args.simion)
@@ -86,7 +91,13 @@ def main() -> None:
     source = merged[merged["region"] == "accelerator_source"]
     accelerator = merged[merged["region"] == "accelerator_full"]
     reflectron = merged[merged["region"] == "reflectron"]
-    reflectron_boundaries_mm = np.asarray([619.83, 739.83, 826.6628])
+    reflectron_boundaries_mm = np.asarray(
+        [
+            geometry["L_flight"],
+            geometry["L_flight"] + geometry["L_stage1"],
+            geometry["L_flight"] + geometry["L_reflectron"],
+        ]
+    )
     boundary_distance = np.min(
         np.abs(
             reflectron["z_mm"].to_numpy()[:, None]

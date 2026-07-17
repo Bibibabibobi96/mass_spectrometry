@@ -25,7 +25,7 @@
 # local nx = math.ceil(axial_span/mmgu_axial) + 1
 # local ny = math.ceil(outer_radius/mmgu_radial) + 1
 pa_define($(nx),$(ny),1,cylindrical,none,electrostatic,,
-          $(mmgu_axial),$(mmgu_radial),1,surface=fractional)
+          $(mmgu_axial),$(mmgu_radial),$(mmgu_radial),surface=fractional)
 
 ; e1 is a single 0 V conductor: near end cap plus continuous side wall.
 e(1) {

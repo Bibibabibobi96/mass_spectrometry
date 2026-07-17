@@ -30,7 +30,9 @@
 |STEP、SolidWorks零件/装配体、坐标和保存验证|`docs/CAD.md`|
 |已经失效但仍需追溯的长过程|`docs/history/`|
 |换一个项目仍成立的API或方法|仓库根`docs/`对应通用文档|
-|机器必须读取的统一物理参数|`config/baseline.json`|
+|人工维护的统一物理设计|`config/baseline.json`|
+|程序读取的完整派生契约|`config/resolved_geometry.json`（自动生成）|
+|数值与运行模式|`config/modes/`|
 |分析算法、冻结迁移基准和当前正式闭合结果|`config/analysis_contract.json`、`config/analysis_baselines.json`、`config/formal_validation.json`|
 
 软件文档之间不建立横向引用。COMSOL、SIMION和CAD文档都只返回引用`PROJECT.md`；只有完成
@@ -39,11 +41,14 @@
 
 ## 权威入口
 
-- 统一机器契约：[`config/baseline.json`](config/baseline.json)
+- 人工设计入口：[`config/baseline.json`](config/baseline.json)；程序入口为自动生成的
+  [`config/resolved_geometry.json`](config/resolved_geometry.json)，禁止手改。
+- 全项目门禁：`verify_project.ps1 -Level Static|Candidate|Formal`。
 - SIMION正式交付与收敛参考冻结清单：[`config/simion_stable_entry.json`](config/simion_stable_entry.json)。
   它冻结IOB、完整PA家族、Program、Fly2和粒子表的实现身份，不定义或替代统一物理baseline。
 - 正式COMSOL生产脚本：
-  [`comsol/ms_oaTOF_two_stage_ringstack_reflectron.m`](comsol/ms_oaTOF_two_stage_ringstack_reflectron.m)
+  [`comsol/run_oatof_model.m`](comsol/run_oatof_model.m)（具名参数稳定入口）；底层模型树构建器为
+  `comsol/ms_oaTOF_two_stage_ringstack_reflectron.m`。
 - SIMION正式文本入口：
   [`simion/workbench/formal/oatof_ideal_grounded.lua`](simion/workbench/formal/oatof_ideal_grounded.lua)和
   [`simion/workbench/formal/oatof_ideal_grounded.fly2`](simion/workbench/formal/oatof_ideal_grounded.fly2)

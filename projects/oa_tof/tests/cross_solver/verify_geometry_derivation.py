@@ -30,7 +30,7 @@ def main() -> int:
         "accelerator_grid2_z": repeller_z + accel_d1 + accel_d2,
         "accelerator_focus_z": grid2_z + focus_drift,
         "detector_z": focus_z,
-        "L_flight": focus_z + 600.0,
+        "L_flight": focus_z + float(source["outbound_field_free_length_mm"]),
     }
     for name, target in accelerator_expected.items():
         actual = float(geometry[name])
@@ -40,11 +40,24 @@ def main() -> int:
         raise AssertionError("canonical grid1 coordinate is not linked to d1")
     if not math.isclose(grid2_z, grid1_z + accel_d2, rel_tol=0.0, abs_tol=1e-12):
         raise AssertionError("canonical grid2 coordinate is not linked to d2")
-    if not math.isclose(accel_d2 / 6.0, 2.8, rel_tol=0.0, abs_tol=1e-12):
-        raise AssertionError("accelerator ring pitch is not exactly 2.8 mm")
+    accelerator_ring_count = int(contract["rings"]["accelerator_count"])
+    accelerator_ring_pitch = accel_d2 / (accelerator_ring_count + 1)
+    quantum = float(accelerator["geometry_quantum_mm"])
+    if not math.isclose(
+        accelerator_ring_pitch / quantum,
+        round(accelerator_ring_pitch / quantum),
+        rel_tol=0.0,
+        abs_tol=1e-12,
+    ):
+        raise AssertionError("accelerator ring pitch is not aligned to geometry quantum")
 
     u0 = float(source["incident_energy_eV"])
     length_m = float(source["total_field_free_length_mm"]) / 1000.0
+    split_length_mm = float(source["outbound_field_free_length_mm"]) + float(
+        source["return_field_free_length_mm"]
+    )
+    if not math.isclose(split_length_mm / 1000.0, length_m, rel_tol=0.0, abs_tol=1e-12):
+        raise AssertionError("outbound+return field-free lengths do not equal total")
     d1_mm = float(source["stage1_length_mm"])
     d1_m = d1_mm / 1000.0
     margin = float(source["stage2_margin_fraction"])

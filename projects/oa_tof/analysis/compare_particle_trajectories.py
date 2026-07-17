@@ -19,6 +19,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+DEFAULT_CONTRACT = Path(__file__).resolve().parents[1] / "config" / "resolved_geometry.json"
+
 
 TRACE_PATTERN = re.compile(
     r"^TRACE: (?P<particle_id>\d+),(?P<time_us>[-+0-9.eE]+),"
@@ -76,14 +78,19 @@ def parse_simion_log(path: Path, particle_ids: set[int]) -> pd.DataFrame:
     return frame.sort_values(["particle_id", "time_us"]).reset_index(drop=True)
 
 
-def _phase_labels(time_us: np.ndarray, z_mm: np.ndarray) -> np.ndarray:
+def _phase_labels(
+    time_us: np.ndarray,
+    z_mm: np.ndarray,
+    accelerator_exit_z_mm: float,
+    reflectron_entrance_z_mm: float,
+) -> np.ndarray:
     turn_index = int(np.argmax(z_mm))
     before_turn = np.arange(len(z_mm)) <= turn_index
     phases = np.full(len(z_mm), "reflectron", dtype=object)
-    phases[before_turn & (z_mm <= 20.23)] = "accelerator"
-    phases[before_turn & (z_mm > 20.23) & (z_mm < 619.83)] = "outbound_drift"
-    phases[(~before_turn) & (z_mm < 619.83) & (z_mm > 20.23)] = "return_drift"
-    phases[(~before_turn) & (z_mm <= 20.23)] = "detector_leg"
+    phases[before_turn & (z_mm <= accelerator_exit_z_mm)] = "accelerator"
+    phases[before_turn & (z_mm > accelerator_exit_z_mm) & (z_mm < reflectron_entrance_z_mm)] = "outbound_drift"
+    phases[(~before_turn) & (z_mm < reflectron_entrance_z_mm) & (z_mm > accelerator_exit_z_mm)] = "return_drift"
+    phases[(~before_turn) & (z_mm <= accelerator_exit_z_mm)] = "detector_leg"
     return phases
 
 
@@ -143,7 +150,10 @@ def main() -> None:
     parser.add_argument("--arrivals", type=Path, required=True)
     parser.add_argument("--particle-ids", default="18,52,97")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--contract", type=Path, default=DEFAULT_CONTRACT)
     args = parser.parse_args()
+    contract = json.loads(args.contract.read_text(encoding="utf-8"))
+    geometry = contract["geometry_mm"]
 
     particle_ids = [int(value) for value in args.particle_ids.split(",")]
     selected = set(particle_ids)
@@ -202,7 +212,8 @@ def main() -> None:
             + dynamic["delta_z_mm"] ** 2
         )
         dynamic["phase"] = _phase_labels(
-            dynamic["time_us"].to_numpy(), dynamic["z_mm"].to_numpy()
+            dynamic["time_us"].to_numpy(), dynamic["z_mm"].to_numpy(),
+            geometry["accelerator_grid2_z"], geometry["L_flight"]
         )
         merged_outputs.append(dynamic)
 
@@ -224,10 +235,10 @@ def main() -> None:
         c_dynamic = c[c["time_us"] <= comsol_arrival]
         milestones = {}
         for name, target, direction in (
-            ("accelerator_exit_outbound", 20.23, 1),
-            ("reflectron_entrance_outbound", 619.83, 1),
-            ("reflectron_entrance_return", 619.83, -1),
-            ("detector_plane", 19.83, -1),
+            ("accelerator_exit_outbound", geometry["accelerator_grid2_z"], 1),
+            ("reflectron_entrance_outbound", geometry["L_flight"], 1),
+            ("reflectron_entrance_return", geometry["L_flight"], -1),
+            ("detector_plane", geometry["detector_z"], -1),
         ):
             c_time = _crossing_time(
                 c_dynamic["time_us"].to_numpy(), c_dynamic["z_mm"].to_numpy(),

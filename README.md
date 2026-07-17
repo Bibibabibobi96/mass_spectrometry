@@ -95,6 +95,14 @@ simulation_repo/
 - 若实现与baseline冲突，实现一律判为失效候选；在重新生成、跨软件门禁和正式CAD同步全部通过前，
   不得转正。AI和人均无权为了迁就某一现有文件而擅自改变派生结果。
 
+### 跨项目几何参数化标准
+
+- 人工只维护`baseline`物理设计；项目解析器单向生成`resolved`，各软件不得重复推导或反写。
+- 数值模式与物理设计分层；一次运行使用显式`run_config`并生成含输入哈希和产物状态的manifest。
+- 开发入口读取统一契约；SIMION等正式交付包可由该契约生成自包含文件，并接受过期门禁。
+- 正式入口不得以缺失配置时回退到旧物理硬数字；候选覆盖不得反写baseline。
+- 每项目提供`Static/Candidate/Formal`三级总门禁；正式几何仍须完成COMSOL GUI与SolidWorks同步。
+
 ## 语言职责
 
 - MATLAB R2025b只负责COMSOL模型树、求解、GUI结果节点、MPH和正式STEP导出。
