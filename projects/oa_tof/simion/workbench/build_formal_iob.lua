@@ -19,6 +19,7 @@ local reflectron_entgrid_z=tonumber(os.getenv('OATOF_REFLECTRON_ENTGRID_Z') or '
 local accelerator_repeller_thickness=tonumber(os.getenv('OATOF_ACCELERATOR_REPELLER_THICKNESS') or '1')
 local accelerator_rear_gap=tonumber(os.getenv('OATOF_ACCELERATOR_REAR_GAP') or '5')
 local accelerator_shield_wall=tonumber(os.getenv('OATOF_ACCELERATOR_SHIELD_WALL') or '4')
+local accelerator_translation_z=tonumber(os.getenv('OATOF_ACCELERATOR_TRANSLATION_Z') or '0')
 local shield_near_gap=tonumber(os.getenv('OATOF_SHIELD_NEAR_ENDCAP_GAP') or '20')
 local shield_endcap_thickness=tonumber(os.getenv('OATOF_SHIELD_ENDCAP_THICKNESS') or '10')
 local shield_near_bore_z=-accelerator_repeller_thickness-accelerator_rear_gap-
@@ -66,7 +67,7 @@ local accelerator_half_x=(a.pa.nx-1)*a.pa.dx_mm/2
 local accelerator_half_y=(a.pa.ny-1)*a.pa.dy_mm/2
 a.x,a.y,a.z=accelerator_axis_x-accelerator_half_x,
   accelerator_axis_y-accelerator_half_y,-accelerator_repeller_thickness-
-  accelerator_rear_gap-accelerator_shield_wall
+  accelerator_rear_gap-accelerator_shield_wall+accelerator_translation_z
 a.az,a.el,a.rt,a.scale=0,0,0,1
 t.x,t.y,t.z=0,0,shield_near_outer_z; t.az,t.el,t.rt,t.scale=-90,0,0,1
 local detector_half_x=(d.pa.nx-1)*d.pa.dx_mm/2

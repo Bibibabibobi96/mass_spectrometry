@@ -8,6 +8,9 @@ adjustable accelerator_fast_adjust_enable=1
 adjustable ideal_accel_enable=0
 adjustable ideal_refl_stage1_enable=0
 adjustable ideal_refl_stage2_enable=0
+adjustable accelerator_assembly_translation_z_mm=0
+adjustable accelerator_stage1_length_mm=3
+adjustable accelerator_stage2_length_mm=16.83
 adjustable accelerator_repeller_front_z_mm=0
 adjustable accelerator_grid1_z_mm=3
 adjustable accelerator_grid2_z_mm=19.83
@@ -30,6 +33,7 @@ adjustable flight_tube_endcap_thickness_mm=10
 adjustable reflectron_backplate_thickness_mm=5
 adjustable detector_mirror_offset_x_mm=0
 adjustable detector_mirror_offset_y_mm=0
+adjustable detector_active_plane_z_mm=19.83
 adjustable detector_radius_mm=40
 adjustable detector_marker_absorber_thickness_mm=0.05
 adjustable detector_marker_front_margin_z_mm=0.2
@@ -65,12 +69,24 @@ local function configure_linked_geometry()
  local di=simion.wb.instances[4]
  local half_x=(ai.pa.nx-1)*ai.pa.dx_mm*ai.scale/2
  local half_y=(ai.pa.ny-1)*ai.pa.dy_mm*ai.scale/2
- local expected_z=-accelerator_repeller_thickness_mm-
-   accelerator_rear_insulation_gap_mm-accelerator_shield_wall_mm
- assert(math.abs(accelerator_instance_z_mm-expected_z)<1e-12,
+ local accelerator_expected_z=-accelerator_repeller_thickness_mm-
+   accelerator_rear_insulation_gap_mm-accelerator_shield_wall_mm+
+   accelerator_assembly_translation_z_mm
+ assert(math.abs(accelerator_repeller_front_z_mm-
+   accelerator_assembly_translation_z_mm)<1e-12,
+   'repeller front must follow accelerator assembly translation')
+ assert(math.abs(accelerator_grid1_z_mm-accelerator_repeller_front_z_mm-
+   accelerator_stage1_length_mm)<1e-12,
+   'grid1 must follow accelerator stage1 length')
+ assert(math.abs(accelerator_grid2_z_mm-accelerator_grid1_z_mm-
+   accelerator_stage2_length_mm)<1e-12,
+   'grid2 must follow accelerator stage2 length')
+ assert(math.abs(accelerator_instance_z_mm-accelerator_expected_z)<1e-12,
    'accelerator instance z must follow repeller rear gap and shield wall')
  ai.x,ai.y,ai.z=accelerator_axis_x_mm-half_x,accelerator_axis_y_mm-half_y,accelerator_instance_z_mm
- local near_bore_z=expected_z-flight_tube_near_endcap_gap_mm
+ local near_bore_z=-accelerator_repeller_thickness_mm-
+   accelerator_rear_insulation_gap_mm-accelerator_shield_wall_mm-
+   flight_tube_near_endcap_gap_mm
  local near_outer_z=near_bore_z-flight_tube_endcap_thickness_mm
  local far_bore_z=reflectron_backplate_z_mm+
    reflectron_backplate_thickness_mm+flight_tube_far_endcap_gap_mm
@@ -93,7 +109,7 @@ local function configure_linked_geometry()
  ti.az,ti.el,ti.rt,ti.scale=-90,0,0,1
  detector_x_mm=-accelerator_axis_x_mm+detector_mirror_offset_x_mm
  detector_y_mm=-accelerator_axis_y_mm+detector_mirror_offset_y_mm
- detector_z_mm=accelerator_grid2_z_mm
+ detector_z_mm=detector_active_plane_z_mm
  local detector_half_x=(di.pa.nx-1)*di.pa.dx_mm*di.scale/2
  local detector_half_y=(di.pa.ny-1)*di.pa.dy_mm*di.scale/2
  local detector_span_z=(di.pa.nz-1)*di.pa.dz_mm*di.scale
@@ -115,7 +131,7 @@ end
 function segment.instance_adjust()
  if type(ion_pz_mm)~='number' or type(ion_instance)~='number' then return end
  if ion_instance==3 and
-    (ion_pz_mm<=accelerator_grid2_z_mm or
+    (ion_pz_mm<=math.max(accelerator_grid2_z_mm,detector_active_plane_z_mm) or
      ion_pz_mm>=reflectron_entgrid_z_mm) then
   ion_instance=0
  end

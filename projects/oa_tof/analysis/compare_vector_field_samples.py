@@ -24,7 +24,27 @@ def main() -> None:
     c = pd.read_csv(args.comsol)
     s = pd.read_csv(args.simion)
     merged = c.merge(s, on=keys, suffixes=("_COMSOL", "_SIMION"), validate="one_to_one")
-    metrics: dict[str, object] = {"status": "PASS", "particles": {}}
+    metrics: dict[str, object] = {
+        "status": "PASS",
+        "sample_points": int(len(merged)),
+        "aggregate": {},
+        "particles": {},
+    }
+    for component in ("Ex", "Ey", "Ez"):
+        cv = merged[f"{component}_V_per_m_COMSOL"].to_numpy()
+        sv = merged[f"{component}_V_per_m_SIMION"].to_numpy()
+        delta = sv - cv
+        comsol_rms = float(np.sqrt(np.mean(cv**2)))
+        simion_rms = float(np.sqrt(np.mean(sv**2)))
+        difference_rms = float(np.sqrt(np.mean(delta**2)))
+        metrics["aggregate"][component] = {
+            "COMSOL_rms_V_per_m": comsol_rms,
+            "SIMION_rms_V_per_m": simion_rms,
+            "difference_rms_V_per_m": difference_rms,
+            "difference_relative_to_COMSOL_rms_pct": 100 * difference_rms / comsol_rms,
+            "difference_mean_V_per_m": float(np.mean(delta)),
+            "difference_max_abs_V_per_m": float(np.max(np.abs(delta))),
+        }
     figure, axes = plt.subplots(3, 3, figsize=(15, 11), constrained_layout=True)
     for column, particle_id in enumerate(sorted(merged["particle_id"].unique())):
         group = merged[merged["particle_id"] == particle_id].sort_values("z_mm")

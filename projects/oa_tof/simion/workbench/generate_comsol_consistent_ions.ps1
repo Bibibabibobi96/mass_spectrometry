@@ -8,6 +8,7 @@ param(
   [double]$HalfWidthXmm = -1,
   [double]$HalfWidthYmm = -1,
   [double]$HalfWidthZmm = -1,
+  [double]$CenterZmm = 1.5,
   [int]$Seed = 20260713,
   [string]$Output = 'oatof_comsol_524amu_gaussian_N100.ion'
 )
@@ -21,7 +22,7 @@ $lines = [System.Collections.Generic.List[string]]::new()
 for ($i = 0; $i -lt $N; $i++) {
   $x = -48.8 + (2*$rng.NextDouble() - 1)*$hx
   $y = 0.0 + (2*$rng.NextDouble() - 1)*$hy
-  $z = 1.5 + (2*$rng.NextDouble() - 1)*$hz
+  $z = $CenterZmm + (2*$rng.NextDouble() - 1)*$hz
   do {
     $u1 = [Math]::Max($rng.NextDouble(), 1e-15)
     $u2 = $rng.NextDouble()
@@ -31,4 +32,4 @@ for ($i = 0; $i -lt $N; $i++) {
   $lines.Add(('0,{0:E8},{1},{2:E8},{3:E8},{4:E8},0,0,{5:E8},1,0' -f $MassAmu,$Charge,$x,$y,$z,$energy))
 }
 Set-Content -LiteralPath $Output -Value $lines -Encoding ASCII
-Write-Output ("generated={0} N={1} mass_amu={2} charge={3} energy_mean_eV={4} energy_std_eV={5} seed={6}" -f (Resolve-Path $Output),$N,$MassAmu,$Charge,$EnergyMeanEv,$EnergyStdEv,$Seed)
+Write-Output ("generated={0} N={1} mass_amu={2} charge={3} energy_mean_eV={4} energy_std_eV={5} center_z_mm={6} seed={7}" -f (Resolve-Path $Output),$N,$MassAmu,$Charge,$EnergyMeanEv,$EnergyStdEv,$CenterZmm,$Seed)

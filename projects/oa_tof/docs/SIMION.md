@@ -53,6 +53,14 @@ TOF差。SIMION加速器离轴Ex/Ey比COMSOL平滑且较弱；在COMSOL完成加
 仅凭该差异修改SIMION正式PA几何或电压。场采样入口位于`tests/simion/export_axis_field_profiles.lua`
 和`export_accelerator_vector_field_samples.lua`。
 
+### 2026-07-17 严格聚焦几何候选
+
+候选构建器按`d1=3.0 mm,d2=16.8 mm`生成独立PA家族，并通过四实例候选IOB、同名Program、
+固定`z=19.83 mm`检测器和整体平移后的N=100粒子表完成真实PA场飞行。候选100/100命中，平均
+TOF`71.9932152462 us`，统一直接质量R为`26146.18`；全局grid2与解析焦点分别为
+`19.7013578627763/19.8305446661873 mm`。与COMSOL的平均TOF差及同点场差没有相对正式几何
+显著改善，因此该PA/IOB仍位于scratch/candidate生命周期，不替换稳定正式入口。
+
 ## GUI对等原则
 
 正式IOB必须让用户直接看到并修改reflectron、accelerator、flight-tube和detector四个PA实例、

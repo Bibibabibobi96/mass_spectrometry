@@ -16,13 +16,17 @@
 # local insulation_gap = var.insulation_gap or 5
 # local shield_wall = var.shield_wall or 4
 # local rear_gap = var.rear_gap or 5
+# local stage1_length = var.stage1_length or 3
+# local stage2_length = var.stage2_length or 16.83
+# local ring_count = 5
+# local ring_pitch = stage2_length/(ring_count+1)
 # local bore_width = 2*bore_half
 # local electrode_width = 2*(bore_half+ring_width)
 # local shield_inner_width = electrode_width+2*insulation_gap
 # local shield_outer_width = shield_inner_width+2*shield_wall
 # local repeller_rear_z = -1
 # local shield_back_z = repeller_rear_z-rear_gap-shield_wall
-# local shield_front_z = 19.83
+# local shield_front_z = stage1_length+stage2_length
 # local shield_z_span = shield_front_z-shield_back_z
 # local shield_z_center = (shield_front_z+shield_back_z)/2
 # local rear_cap_center_z = shield_back_z+shield_wall/2
@@ -60,16 +64,16 @@ locate($(cx),$(cy),$(cz)) {
   e(1) { fill { within { centered_box3D(0,0,-0.5, $(electrode_width),$(electrode_width),1) } } }
 
   ; SIMION one-grid-point electrode sheets: fields see the grids, ions pass through.
-  e(2) { fill { within { centered_box3D(0,0,3, $(electrode_width),$(electrode_width),$(mmgu_z)) } } }
+  e(2) { fill { within { centered_box3D(0,0,$(stage1_length), $(electrode_width),$(electrode_width),$(mmgu_z)) } } }
 
   ; Five square extraction rings; ring_width is invariant during bore scans.
-  e(3) { fill { within { centered_box3D(0,0,5.805, $(electrode_width),$(electrode_width),1) } notin { centered_box3D(0,0,5.805, $(bore_width),$(bore_width),1.5) } } }
-  e(4) { fill { within { centered_box3D(0,0,8.610, $(electrode_width),$(electrode_width),1) } notin { centered_box3D(0,0,8.610, $(bore_width),$(bore_width),1.5) } } }
-  e(5) { fill { within { centered_box3D(0,0,11.415,$(electrode_width),$(electrode_width),1) } notin { centered_box3D(0,0,11.415,$(bore_width),$(bore_width),1.5) } } }
-  e(6) { fill { within { centered_box3D(0,0,14.220,$(electrode_width),$(electrode_width),1) } notin { centered_box3D(0,0,14.220,$(bore_width),$(bore_width),1.5) } } }
-  e(7) { fill { within { centered_box3D(0,0,17.025,$(electrode_width),$(electrode_width),1) } notin { centered_box3D(0,0,17.025,$(bore_width),$(bore_width),1.5) } } }
+  e(3) { fill { within { centered_box3D(0,0,$(stage1_length+1*ring_pitch), $(electrode_width),$(electrode_width),1) } notin { centered_box3D(0,0,$(stage1_length+1*ring_pitch), $(bore_width),$(bore_width),1.5) } } }
+  e(4) { fill { within { centered_box3D(0,0,$(stage1_length+2*ring_pitch), $(electrode_width),$(electrode_width),1) } notin { centered_box3D(0,0,$(stage1_length+2*ring_pitch), $(bore_width),$(bore_width),1.5) } } }
+  e(5) { fill { within { centered_box3D(0,0,$(stage1_length+3*ring_pitch),$(electrode_width),$(electrode_width),1) } notin { centered_box3D(0,0,$(stage1_length+3*ring_pitch),$(bore_width),$(bore_width),1.5) } } }
+  e(6) { fill { within { centered_box3D(0,0,$(stage1_length+4*ring_pitch),$(electrode_width),$(electrode_width),1) } notin { centered_box3D(0,0,$(stage1_length+4*ring_pitch),$(bore_width),$(bore_width),1.5) } } }
+  e(7) { fill { within { centered_box3D(0,0,$(stage1_length+5*ring_pitch),$(electrode_width),$(electrode_width),1) } notin { centered_box3D(0,0,$(stage1_length+5*ring_pitch),$(bore_width),$(bore_width),1.5) } } }
 
-  ; Second ideal grid at COMSOL z=L_accel=19.83 mm, covering the full
+  ; Second ideal grid at local z=stage1_length+stage2_length.
   ; Grounded exit grid covers the derived shield opening.
-  e(8) { fill { within { centered_box3D(0,0,19.83, $(shield_inner_width),$(shield_inner_width),$(mmgu_z)) } } }
+  e(8) { fill { within { centered_box3D(0,0,$(stage1_length+stage2_length), $(shield_inner_width),$(shield_inner_width),$(mmgu_z)) } } }
 }

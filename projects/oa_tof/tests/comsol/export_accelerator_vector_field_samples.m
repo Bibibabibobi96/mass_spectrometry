@@ -11,8 +11,12 @@ testDir = fileparts(mfilename('fullpath'));
 projectDir = fileparts(fileparts(testDir));
 addpath(projectDir);
 paths = oatof_paths();
-modelPath = fullfile(paths.comsolFormalDir, ...
-    'MS_oaTOF_TwoStageRingStackReflectron_Final.mph');
+modelPath = getenv('OATOF_COMSOL_MODEL_PATH');
+if isempty(modelPath)
+    modelPath = fullfile(paths.comsolFormalDir, ...
+        'MS_oaTOF_TwoStageRingStackReflectron_Final.mph');
+end
+assert(isfile(modelPath), 'COMSOL model is absent: %s', modelPath);
 
 fid = fopen(reportPath, 'w');
 assert(fid >= 0, 'Could not open report: %s', reportPath);

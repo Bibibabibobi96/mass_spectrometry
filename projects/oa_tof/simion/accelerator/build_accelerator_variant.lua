@@ -4,6 +4,7 @@
 --     [xy_mm] [z_mm] [bore_half_mm] [ring_width_mm] [gap_mm]
 --     [rear_gap_mm] [wall_mm] [vacuum_margin_mm] [max_GiB]
 --     [back_domain_margin_mm] [front_domain_margin_mm] [grid_phase_z_mm]
+--     [stage1_length_mm] [stage2_length_mm]
 
 local source = assert(arg[1], 'missing source GEM')
 local output = assert(arg[2], 'missing output PA#')
@@ -19,6 +20,8 @@ local max_gib = tonumber(arg[11] or '3.5')
 local back_domain_margin = tonumber(arg[12] or '0')
 local front_domain_margin = tonumber(arg[13] or '0')
 local grid_phase_z = tonumber(arg[14] or '0')
+local stage1_length = tonumber(arg[15] or '3')
+local stage2_length = tonumber(arg[16] or '16.83')
 local shield_outer_width = 2*(bore_half+ring_width+insulation_gap+shield_wall)
 local xy_span = shield_outer_width+2*vacuum_margin
 local geometry_z_min = -1-rear_gap-shield_wall
@@ -43,6 +46,10 @@ assert(front_domain_margin and front_domain_margin >= 0,
   'front_domain_margin must be nonnegative')
 assert(grid_phase_z and grid_phase_z >= 0 and grid_phase_z < mmgu_z,
   'grid_phase_z must be in [0, mmgu_z)')
+assert(stage1_length and stage1_length > 0, 'stage1_length must be positive')
+assert(stage2_length and stage2_length > 0, 'stage2_length must be positive')
+assert(stage1_length+stage2_length < z_max,
+  'grid2 must remain inside the PA domain; increase front_domain_margin')
 
 local nx = math.floor(xy_span/mmgu_xy + 0.5) + 1
 local ny = nx
@@ -57,11 +64,14 @@ print(string.format('BUILD: dimensions=%dx%dx%d cell_mm=(%.12g,%.12g,%.12g) span
   nx,ny,nz,mmgu_xy,mmgu_xy,mmgu_z,xy_span,z_span,z_min,estimated_gib,max_gib))
 print(string.format('BUILD: domain_margin_back_front_mm=(%.12g,%.12g) grid_phase_z_mm=%.12g compensated_instance_z_mm=%.12g',
   back_domain_margin,front_domain_margin,grid_phase_z,z_min-grid_phase_z))
+print(string.format('BUILD: accelerator_stage_lengths_mm=(%.12g,%.12g) ring_pitch_mm=%.12g grid2_local_z_mm=%.12g',
+  stage1_length,stage2_length,stage2_length/6,stage1_length+stage2_length))
 assert(estimated_gib <= max_gib, string.format('estimated PA set %.3f GiB exceeds limit %.3f GiB',estimated_gib,max_gib))
 
 _G.var={mmgu_xy=mmgu_xy,mmgu_z=mmgu_z,xy_span=xy_span,z_min=z_min,z_span=z_span,
   bore_half=bore_half,ring_width=ring_width,insulation_gap=insulation_gap,
-  rear_gap=rear_gap,shield_wall=shield_wall,grid_phase_z=grid_phase_z}
+  rear_gap=rear_gap,shield_wall=shield_wall,grid_phase_z=grid_phase_z,
+  stage1_length=stage1_length,stage2_length=stage2_length}
 simion.command(string.format('gem2pa %q %q',source,output))
 _G.var=nil
 simion.command(string.format('refine --resume=0 --convergence=5e-7 %q',output))
