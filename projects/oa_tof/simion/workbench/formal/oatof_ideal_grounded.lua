@@ -4,6 +4,8 @@ adjustable V_grid1=1760
 adjustable V_mid=1600
 adjustable V_backplate=2400
 adjustable ideal_grid_epsilon_mm=0.005
+adjustable accelerator_grid_epsilon_mm=-1
+adjustable reflectron_grid_epsilon_mm=-1
 adjustable accelerator_fast_adjust_enable=1
 adjustable ideal_accel_enable=0
 adjustable ideal_refl_stage1_enable=0
@@ -165,10 +167,10 @@ local function grid_planes()
  local electrode_half=accelerator_bore_half_mm+accelerator_ring_width_mm
  local shield_inner_half=electrode_half+accelerator_insulation_gap_mm
  return {
-  {name='grid1',z=accelerator_grid1_z_mm,shape='square',cx=accelerator_axis_x_mm,cy=accelerator_axis_y_mm,half=electrode_half},
-  {name='grid2',z=accelerator_grid2_z_mm,shape='square',cx=accelerator_axis_x_mm,cy=accelerator_axis_y_mm,half=shield_inner_half},
-  {name='entgrid',z=reflectron_entgrid_z_mm,shape='circle',cx=0,cy=0,radius=flight_tube_inner_radius_mm},
-  {name='midgrid',z=reflectron_midgrid_z_mm,shape='circle',cx=0,cy=0,radius=300}
+  {name='grid1',group='accelerator',z=accelerator_grid1_z_mm,shape='square',cx=accelerator_axis_x_mm,cy=accelerator_axis_y_mm,half=electrode_half},
+  {name='grid2',group='accelerator',z=accelerator_grid2_z_mm,shape='square',cx=accelerator_axis_x_mm,cy=accelerator_axis_y_mm,half=shield_inner_half},
+  {name='entgrid',group='reflectron',z=reflectron_entgrid_z_mm,shape='circle',cx=0,cy=0,radius=flight_tube_inner_radius_mm},
+  {name='midgrid',group='reflectron',z=reflectron_midgrid_z_mm,shape='circle',cx=0,cy=0,radius=300}
  }
 end
 local function inside_grid(g,x,y)
@@ -226,7 +228,7 @@ function segment.tstep_adjust()
 end
 function segment.other_actions()
  local n,z,vz=ion_number,ion_pz_mm,ion_vz_mm
- local zp,eps=last_z[n] or z,ideal_grid_epsilon_mm
+ local zp=last_z[n] or z
  max_z[n]=math.max(max_z[n] or z,z)
  step_count[n]=(step_count[n] or 0)+1
  if trajectory_log_enable~=0 and step_count[n]%math.max(1,trajectory_log_stride)==0 then
@@ -239,6 +241,8 @@ function segment.other_actions()
   end
  end
  for _,g in ipairs(grid_planes()) do
+  local override=g.group=='accelerator' and accelerator_grid_epsilon_mm or reflectron_grid_epsilon_mm
+  local eps=override>0 and override or ideal_grid_epsilon_mm
   local k=tostring(n)..':'..g.name; local d=vz>=0 and 1 or -1
   local pre,post=g.z-d*eps,g.z+d*eps
   if jumped[k] and math.abs(z-g.z)>4*eps then jumped[k]=nil end

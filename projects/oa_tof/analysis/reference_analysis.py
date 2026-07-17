@@ -1028,7 +1028,21 @@ def analyze_comparison(
     comparison["sample_relationship"] = (
         "paired_fixed_particles" if paired_particle_ids_required else "independent_runs"
     )
-    if not paired_particle_ids_required:
+    if paired_particle_ids_required:
+        paired_tof_delta_ns = 1000.0 * (
+            right_frame["tof_us"].to_numpy()
+            - left_frame["tof_us"].to_numpy()
+        )
+        centered_delta_ns = paired_tof_delta_ns - np.mean(paired_tof_delta_ns)
+        comparison["paired_tof_difference"] = {
+            "mean_right_minus_left_ns": float(np.mean(paired_tof_delta_ns)),
+            "rms_ns": float(np.sqrt(np.mean(paired_tof_delta_ns**2))),
+            "mean_removed_rms_ns": float(
+                np.sqrt(np.mean(centered_delta_ns**2))
+            ),
+            "max_abs_ns": float(np.max(np.abs(paired_tof_delta_ns))),
+        }
+    else:
         comparison["paired_standardized_tof_correlation"] = None
     source_frame: pd.DataFrame | None = None
     if paired_particle_ids_required and SOURCE_COLUMNS.issubset(right_frame.columns):

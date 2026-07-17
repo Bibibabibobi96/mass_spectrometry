@@ -92,6 +92,8 @@ Program Off只允许作为诊断组，可用`single`和对应`.1`列导入；它
 `--bootstrap-resamples 5000 --bootstrap-seed 20260715`；bootstrap与主指标使用同一KDE和直接FWHM
 定义，不另设快速近似算法。若两侧同时包含检测器X/Y，`compare`还会自动输出
 `detector_landing_comparison.png`、逐粒子落点CSV，以及质心距离、RMS半径差和配对落点距离指标。
+严格配对时还输出右侧减左侧TOF的均值、RMS、去均值RMS和最大绝对差；均值衡量整体时移，
+去均值RMS衡量不能通过统一平移消除的逐粒子映射差异。
 
 ## 跨求解器诊断
 
