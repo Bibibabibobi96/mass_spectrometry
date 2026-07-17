@@ -16,6 +16,10 @@
 插值导出逐粒子 `time_us,axial_z_mm,transverse_x_mm,transverse_y_mm,r_mm`，并保留终止样本。此导出与 SIMION 内置 retained trajectories 无关，
 用于与 COMSOL 的 `r(z)`、同 ID 差异和关键平面束斑作可重复比较。
 
+Fly2 `standard_beam` 的 `az/el` 是在 IOB 放置前的局部束流角度，不等同于把 IOB 的位置变换直接
+施加到速度分量。通过导出轨迹在入口的 `x(z),y(z)` 斜率已将这一定义固定为 COMSOL 的
+`(-vSim_y,-vSim_z,vSim_x)` 映射；未来改动 IOB 或粒子生成器时必须重做该斜率审计。
+
 `tests/simion/inspect_builtin_quad_reference.lua` 只加载已构建候选，不触发交互 refine；验证 IOB 单实例、
 `quad_monolithic.pa0`、`39×39×477`、0.2 mm 单元及 PA→workbench 三轴基向量。候选可直接在 SIMION
 GUI 中打开检查 Program、Adjustables、粒子定义和 PA 实例。

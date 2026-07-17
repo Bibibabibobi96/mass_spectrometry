@@ -133,11 +133,13 @@ for i=1:size(ions,1)
     speed=sqrt(2*ions(i,9)*1.602176634e-19/(source.mass_amu*1.66053906660e-27));
     az=deg2rad(ions(i,7)); el=deg2rad(ions(i,8));
     vSim=[speed*cos(el)*cos(az),speed*cos(el)*sin(az),speed*sin(el)];
-    % The copied built-in IOB persists this basis mapping:
-    % PA x -> workbench z, PA y -> -workbench y, PA z -> workbench x.
-    % COMSOL x/y/z reproduce PA x/y/z, so apply the exact inverse mapping
-    % to both position and velocity rather than only aligning the axis.
-    releaseData=[ions(i,6),-ions(i,5),ions(i,4),vSim(3),-vSim(2),vSim(1)];
+    % Positions follow the copied IOB basis: PA x -> wb z, PA y -> -wb y,
+    % PA z -> wb x.  SIMION applies FLY2 standard_beam az/el in its local
+    % beam basis before the IOB placement, so a direct trajectory-slope
+    % audit gives physical PA velocity [-vSim(2),-vSim(3),vSim(1)] rather
+    % than the position-basis inverse.  Preserve this empirically verified
+    % distinction; it aligns the fixed source's x(z), y(z) with SIMION.
+    releaseData=[ions(i,6),-ions(i,5),ions(i,4),-vSim(2),-vSim(3),vSim(1)];
     releasePath=fullfile(scratch,sprintf('particle_%03d.txt',i)); writematrix(releaseData,releasePath,'Delimiter','tab');
     rel=cpt.create(sprintf('rel%03d',i),'ReleaseFromDataFile',-1); rel.label(sprintf('Official fixed particle %03d, birth %.9g us',i,ions(i,1)));
     rel.set('Filename',releasePath); rel.set('icolp','0'); rel.set('VelocitySpecification','SpecifyVelocity'); rel.set('InitialVelocity','FromFile'); rel.set('icolv','3'); rel.set('rt',sprintf('%.12g[us]',ions(i,1))); rel.importData();

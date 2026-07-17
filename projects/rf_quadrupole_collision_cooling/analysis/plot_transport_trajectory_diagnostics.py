@@ -23,11 +23,12 @@ def load_tracks(path: Path) -> dict[int, dict[str, np.ndarray]]:
     for particle_id, rows in grouped.items():
         rows.sort(key=lambda row: float(row["axial_z_mm"]))
         z = np.array([float(row["axial_z_mm"]) for row in rows])
+        time = np.array([float(row["time_us"]) for row in rows])
         x = np.array([float(row["transverse_x_mm"]) for row in rows])
         y = np.array([float(row["transverse_y_mm"]) for row in rows])
         r = np.array([float(row["r_mm"]) for row in rows])
         unique, indices = np.unique(z, return_index=True)
-        tracks[particle_id] = {"z": unique, "x": x[indices], "y": y[indices], "r": r[indices]}
+        tracks[particle_id] = {"z": unique, "time": time[indices], "x": x[indices], "y": y[indices], "r": r[indices]}
     return tracks
 
 
@@ -43,19 +44,25 @@ def at_plane(track: dict[str, np.ndarray], plane_mm: float) -> tuple[float, floa
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", type=Path, required=True)
+    parser.add_argument("--comsol-trajectory", type=Path)
+    parser.add_argument("--simion-trajectory", type=Path)
+    parser.add_argument("--output-label", default="baseline", help="Suffix for a non-baseline comparison output.")
     args = parser.parse_args()
     artifact = args.workspace / "artifacts/projects/rf_quadrupole_collision_cooling"
     result_dir = artifact / "results"
-    tracks = {
-        "COMSOL": load_tracks(result_dir / "comsol/transport_no_collision_trajectory_samples.csv"),
-        "SIMION": load_tracks(result_dir / "simion/transport_no_collision_trajectory_samples_baseline.csv"),
-    }
+    comsol_trajectory = args.comsol_trajectory or result_dir / "comsol/transport_no_collision_trajectory_samples.csv"
+    simion_trajectory = args.simion_trajectory or result_dir / "simion/transport_no_collision_trajectory_samples_baseline.csv"
+    tracks = {"COMSOL": load_tracks(comsol_trajectory), "SIMION": load_tracks(simion_trajectory)}
     output_dir = result_dir / "cross_solver"
     output_dir.mkdir(parents=True, exist_ok=True)
+    suffix = "" if args.output_label == "baseline" else f"_{args.output_label}"
+    def output_path(stem: str) -> Path:
+        return output_dir / f"{stem}{suffix}.png"
     r0 = 4.0
     rod_start, rod_end = 5.8, 85.4
     detector_plane = 94.8  # SIMION fractional-surface terminal plane
     common_z = np.arange(0.2, detector_plane + 1e-9, 0.2)
+    rf_period_us = 1e6 / 1.1e6
 
     # 1. r(z) envelope, in identical axes for the two solvers.
     figure, axes = plt.subplots(1, 2, figsize=(12, 4.8), constrained_layout=True, sharex=True, sharey=True)
@@ -68,7 +75,7 @@ def main() -> None:
         axis.set(title=f"{solver}: radial trajectory envelope", xlabel="axial z (mm)", ylabel="r (mm)", ylim=(0, r0 * 1.08))
         axis.grid(True, alpha=0.25)
     axes[0].legend(loc="upper left", fontsize=8)
-    figure.savefig(output_dir / "transport_no_collision_r_vs_z.png", dpi=190)
+    figure.savefig(output_path("transport_no_collision_r_vs_z"), dpi=190)
     plt.close(figure)
 
     # 2. Same-ID Delta r(z), evaluated on the common PA/COMSOL axial grid.
@@ -87,10 +94,30 @@ def main() -> None:
     axis.set(title="Same-ID transverse-radius discrepancy along transport axis", xlabel="common axial z (mm)", ylabel="|r_COMSOL − r_SIMION| (mm)")
     axis.grid(True, alpha=0.25)
     axis.legend()
-    figure.savefig(output_dir / "transport_no_collision_delta_r_vs_z.png", dpi=190)
+    figure.savefig(output_path("transport_no_collision_delta_r_vs_z"), dpi=190)
     plt.close(figure)
 
-    # 3. Comparable transverse distributions at four physical planes.
+    # 3. Same-ID time/phase offset at the same physical axial plane.
+    delta_time = []
+    for particle_id in range(1, 26):
+        comsol_time = np.interp(common_z, tracks["COMSOL"][particle_id]["z"], tracks["COMSOL"][particle_id]["time"])
+        simion_time = np.interp(common_z, tracks["SIMION"][particle_id]["z"], tracks["SIMION"][particle_id]["time"])
+        delta_time.append(comsol_time - simion_time)
+    delta_time_array = np.array(delta_time)
+    figure, axis = plt.subplots(figsize=(9.5, 4.8), constrained_layout=True)
+    for values in delta_time_array:
+        axis.plot(common_z, values, color="tab:blue", alpha=0.24, linewidth=0.8)
+    mean_delta_time = np.mean(delta_time_array, axis=0)
+    axis.plot(common_z, mean_delta_time, color="tab:red", linewidth=2.0, label="mean Δt (COMSOL − SIMION)")
+    axis.axhline(0, color="black", linewidth=0.8)
+    axis.axvspan(rod_start, rod_end, color="0.9", label="rod section")
+    axis.set(title="Same-ID time offset at common axial planes", xlabel="common axial z (mm)", ylabel="Δt (µs)")
+    axis.grid(True, alpha=0.25)
+    axis.legend()
+    figure.savefig(output_path("transport_no_collision_delta_time_vs_z"), dpi=190)
+    plt.close(figure)
+
+    # 4. Comparable transverse distributions at four physical planes.
     # 0.2 mm is the first common sampling plane: COMSOL stores release at
     # z=0.0100 mm whereas SIMION's source is exactly z=0.
     planes = [(0.2, "entrance"), (45.6, "rod midpoint"), (85.4, "rod exit"), (detector_plane, "detector front")]
@@ -115,7 +142,7 @@ def main() -> None:
         }
     axes[0, 0].legend(loc="upper right")
     figure.suptitle("Comparable transverse distributions at transport milestones\ndashed circle = r0 in rod region, detector aperture at final plane")
-    figure.savefig(output_dir / "transport_no_collision_key_plane_distributions.png", dpi=190)
+    figure.savefig(output_path("transport_no_collision_key_plane_distributions"), dpi=190)
     plt.close(figure)
 
     summary = {
@@ -124,9 +151,13 @@ def main() -> None:
         "common_axial_grid_step_mm": 0.2,
         "delta_r_mean_max_mm": float(np.max(np.mean(delta_r_array, axis=0))),
         "delta_r_p95_max_mm": float(np.max(np.percentile(delta_r_array, 95, axis=0))),
+        "rf_period_us": rf_period_us,
+        "detector_delta_time_us_mean": float(np.mean(delta_time_array[:, -1])),
+        "detector_delta_time_us_max_abs": float(np.max(np.abs(delta_time_array[:, -1]))),
+        "detector_mean_phase_offset_deg": float((np.mean(delta_time_array[:, -1]) / rf_period_us * 360) % 360),
         "key_planes": plane_metrics,
     }
-    summary_path = output_dir / "transport_no_collision_trajectory_diagnostics.json"
+    summary_path = output_dir / f"transport_no_collision_trajectory_diagnostics{suffix}.json"
     summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     print(f"STATUS=PASS OUTPUT={output_dir} SUMMARY={summary_path}")
 
