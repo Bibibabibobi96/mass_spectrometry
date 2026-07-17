@@ -28,6 +28,7 @@
 - 跨求解器门禁：[`analysis/verify_cross_solver_transport.py`](analysis/verify_cross_solver_transport.py)
 - 终点分布诊断图：[`analysis/plot_terminal_distribution.py`](analysis/plot_terminal_distribution.py)
 - 轴向轨迹诊断图：[`analysis/plot_transport_trajectory_diagnostics.py`](analysis/plot_transport_trajectory_diagnostics.py)
+- 相位--轨迹差诊断图：[`analysis/plot_transport_phase_diagnostics.py`](analysis/plot_transport_phase_diagnostics.py)
 - 路径解析：[`rf_quadrupole_paths.m`](rf_quadrupole_paths.m)
 
 大型 MPH、PA、IOB、Fly'm 输出和图像一律放在
