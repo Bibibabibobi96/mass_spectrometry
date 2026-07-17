@@ -15,6 +15,23 @@ COMSOL 6.4通过MATLAB R2025b LiveLink/Java API运行。影响物理或数值结
 参数、材料、网格、物理场、Study、Solver、数据集和结果节点必须持久化到MPH并能由COMSOL
 Desktop查看、修改和Compute；仅脚本内存状态通过不算验收。
 
+所有任务只通过`../../../common/comsol/run_comsol_r2025b.ps1`建立连接，任务脚本禁止自行
+`mphstart`。同一构建/验收任务复用一次连接；Compute后的大粒子数据提取使用第二个干净任务。
+启动器只对报告创建前的MATLAB/COMSOL启动崩溃重试一次，业务失败不自动重算。
+
+### 2026-07-18 模块化正式构建器
+
+底层入口保留`ms_oaTOF_two_stage_ringstack_reflectron.m`，几何、网格、粒子物理和结果节点已拆为
+八个稳定模块：加速器、反射器、检测器、漂移区、栅网、网格、粒子模型和结果节点。具名入口
+`run_oatof_model.m`新增`OutputModelPath`，候选必须显式写入COMSOL模型根目录内的`.mph`，不再
+依赖脚本内部固定正式路径。
+
+模块化候选先以N=5冒烟，再用固定N=100完整构建并从保存后的MPH执行`std1/std2` GUI Compute。
+重开检查确认`sol1/sol2`及`dset1/pdset1`关联；参数、几何、选择集、335972个四面体、5个数据集
+和7个绘图组通过同步门禁。相对拆分前正式MPH，两边100/100命中，平均TOF差`1.30 ps`，逐粒子
+TOF RMS/最大差`0.208/0.644 ns`，落点RMS/最大差`0.0137/0.0329 mm`，已转为固定正式MPH。
+几何合同未改变，因此沿用已验证的25组件SolidWorks 2022装配，不重新导出机械几何。
+
 ## 当前状态
 
 2026-07-16已从baseline重新生成并验证524 amu、固定N=100、真实场正式MPH。模型包含紧凑

@@ -20,6 +20,7 @@ arguments
     options.FineTimestepNs (1,1) double = NaN
     options.AcceleratorMeshHmaxMm (1,1) double = NaN
     options.DriftTimestepNs (1,1) double = NaN
+    options.OutputModelPath (1,1) string = ""
 end
 
 projectRoot = fileparts(fileparts(mfilename('fullpath')));
@@ -40,6 +41,16 @@ mustBeInteger(options.ReflectronStage2RingCount);
 if strlength(options.Label) == 0
     options.Label = compose("%gamu", options.MassAmu);
 end
+if strlength(options.OutputModelPath) > 0
+    paths = oatof_paths();
+    outputPath = string(java.io.File(char(options.OutputModelPath)).getCanonicalPath());
+    modelRoot = string(java.io.File(paths.comsolModelRoot).getCanonicalPath());
+    assert(startsWith(lower(outputPath), lower(modelRoot + filesep)), ...
+        'OutputModelPath must remain under %s.', paths.comsolModelRoot);
+    [~,~,extension] = fileparts(outputPath);
+    assert(strcmpi(extension, '.mph'), 'OutputModelPath must end in .mph.');
+    options.OutputModelPath = outputPath;
+end
 
 result = ms_oaTOF_two_stage_ringstack_reflectron( ...
     options.MassAmu, char(options.Label), char(options.SolverMode), ...
@@ -48,7 +59,8 @@ result = ms_oaTOF_two_stage_ringstack_reflectron( ...
     options.BoreRadiusMm, options.RingThicknessMm, options.ParticleCount, ...
     options.ReflectronStage1RingCount, options.AcceleratorBoreHalfMm, ...
     char(options.FixedParticleTable), options.FineTimestepNs, ...
-    options.AcceleratorMeshHmaxMm, options.DriftTimestepNs);
+    options.AcceleratorMeshHmaxMm, options.DriftTimestepNs, ...
+    char(options.OutputModelPath));
 end
 
 function options = apply_defaults(options, contract)

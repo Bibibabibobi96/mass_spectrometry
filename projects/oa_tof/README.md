@@ -44,11 +44,14 @@
 - 人工设计入口：[`config/baseline.json`](config/baseline.json)；程序入口为自动生成的
   [`config/resolved_geometry.json`](config/resolved_geometry.json)，禁止手改。
 - 全项目门禁：`verify_project.ps1 -Level Static|Candidate|Formal`。
+  `Candidate`用`-CandidateTarget SIMION|COMSOL|CAD`只启动目标软件；COMSOL还需
+  `-CandidateModelPath`，CAD需候选装配和导出报告路径。`Formal`单命令包含工具链、正式MPH重开与
+  静电Compute、SIMION/CAD/COMSOL资产合同和Python正式分析；2026-07-18实测`166.159 s`。
 - SIMION正式交付与收敛参考冻结清单：[`config/simion_stable_entry.json`](config/simion_stable_entry.json)。
   它冻结IOB、完整PA家族、Program、Fly2和粒子表的实现身份，不定义或替代统一物理baseline。
 - 正式COMSOL生产脚本：
   [`comsol/run_oatof_model.m`](comsol/run_oatof_model.m)（具名参数稳定入口）；底层模型树构建器为
-  `comsol/ms_oaTOF_two_stage_ringstack_reflectron.m`。
+  `comsol/ms_oaTOF_two_stage_ringstack_reflectron.m`，物理组件实现位于同目录`oatof_*.m`模块。
 - SIMION正式文本入口：
   [`simion/workbench/formal/oatof_ideal_grounded.lua`](simion/workbench/formal/oatof_ideal_grounded.lua)和
   [`simion/workbench/formal/oatof_ideal_grounded.fly2`](simion/workbench/formal/oatof_ideal_grounded.fly2)
@@ -122,7 +125,8 @@ oa_tof/
 - SIMION第4实例是GUI可见的数值终止层，只表示有效面和口径，不等于机械检测器厚度。
 - Program与Data Recording必须同时开启；关闭Program对话框不等于禁用Program。
 - 影响物理或数值结果的设置必须能在目标软件GUI中查看、修改、保存和重算。
-- 删除MPH、PA、IOB、CAD或结果前必须取得明确许可；一次性源码只在结论已写入文档后删除。
+- 明确属于仓库清理规则允许删除的失败、临时或可再生产物可自动删除；用途或可重算性不确定时才
+  请求用户确认。一次性源码只在结论已写入文档后删除。
 
 ## 修改后的最低检查
 
@@ -135,3 +139,5 @@ git status --short --branch
 ```
 
 正式COMSOL、SIMION或SolidWorks入口发生变化时，还必须执行对应软件文档规定的运行时验收。
+完整N=100/1000粒子重算和SolidWorks装配重建仍是按变更类型触发的转正专项门禁，不纳入每次
+`Formal`，避免日常检查膨胀到20分钟以上。

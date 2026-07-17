@@ -11,7 +11,11 @@ $projectRoot = Split-Path -Parent $repoRoot
 $baselinePath = Join-Path $componentDir 'config\baseline.json'
 $contractPath = Join-Path $componentDir 'config\resolved_geometry.json'
 $resolvedLuaPath = Join-Path $componentDir 'simion\workbench\formal\oatof_resolved.lua'
-$comsolSource = Join-Path $componentDir 'comsol\ms_oaTOF_two_stage_ringstack_reflectron.m'
+$comsolSourceDir = Join-Path $componentDir 'comsol'
+$comsolSources = @(
+  (Join-Path $comsolSourceDir 'ms_oaTOF_two_stage_ringstack_reflectron.m')
+) + @(Get-ChildItem -LiteralPath $comsolSourceDir -Filter 'oatof_*.m' -File |
+  Select-Object -ExpandProperty FullName)
 $simionLua = Join-Path $componentDir 'simion\workbench\formal\oatof_ideal_grounded.lua'
 $simionFly2 = Join-Path $componentDir 'simion\workbench\formal\oatof_ideal_grounded.fly2'
 $ionGeneratorPath = Join-Path $componentDir 'simion\workbench\generate_comsol_consistent_ions.ps1'
@@ -65,7 +69,9 @@ $flightTubeGem = Get-Content -LiteralPath $flightTubeGemPath -Raw -Encoding UTF8
 $flightTubeBuilder = Get-Content -LiteralPath $flightTubeBuilderPath -Raw -Encoding UTF8
 $reflectronGem = Get-Content -LiteralPath $reflectronGemPath -Raw -Encoding UTF8
 $reflectronBuilder = Get-Content -LiteralPath $reflectronBuilderPath -Raw -Encoding UTF8
-$comsol = Get-Content -LiteralPath $comsolSource -Raw -Encoding UTF8
+$comsol = ($comsolSources | ForEach-Object {
+  Get-Content -LiteralPath $_ -Raw -Encoding UTF8
+}) -join "`n"
 $axisX = Get-Adjustable $lua 'accelerator_axis_x_mm'
 $axisY = Get-Adjustable $lua 'accelerator_axis_y_mm'
 $detectorOffsetX = Get-Adjustable $lua 'detector_mirror_offset_x_mm'

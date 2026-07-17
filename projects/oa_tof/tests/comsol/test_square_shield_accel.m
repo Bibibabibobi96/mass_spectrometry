@@ -15,7 +15,6 @@ addpath('D:\COMSOL 6.4\COMSOL64\Multiphysics\mli');
 componentRoot = fileparts(fileparts(fileparts(mfilename('fullpath'))));
 addpath(componentRoot);
 paths = oatof_paths();
-mphstart(2036);
 import com.comsol.model.*
 import com.comsol.model.util.*
 

@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "role": "oa_tof_formal_model_and_cad_asset_identity",
-  "verified_on": "2026-07-17",
+  "verified_on": "2026-07-18",
   "comsol": {
     "geometry_status": "synchronized",
     "artifact_relative_path": "models/comsol/formal/MS_oaTOF_TwoStageRingStackReflectron_Final.mph",
-    "sha256": "CB8297390064F672428178DB6C92C035CE0C1ECD03FD5C87E2338E545BEBEDFE"
+    "sha256": "6EF392C5F66A9CBD51CD968ABC0831A87097F73FCCE6B72F871949C0E4D535EE"
   },
   "solidworks": {
     "geometry_status": "synchronized",

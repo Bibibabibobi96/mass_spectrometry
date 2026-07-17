@@ -3,7 +3,6 @@ testDir = fileparts(mfilename('fullpath'));
 componentDir = fileparts(fileparts(testDir));
 addpath(componentDir);
 paths = oatof_paths();
-mphstart(2036);
 contract = jsondecode(fileread(fullfile(componentDir, 'config', 'resolved_geometry.json')));
 g = contract.geometry_mm;
 

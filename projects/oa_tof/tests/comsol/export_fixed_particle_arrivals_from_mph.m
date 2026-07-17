@@ -7,7 +7,6 @@ testDir = fileparts(mfilename('fullpath'));
 projectDir = fileparts(fileparts(testDir));
 addpath(projectDir);
 paths = oatof_paths();
-mphstart(2036);
 import com.comsol.model.util.*
 
 modelPath = getenv('OATOF_COMSOL_MODEL_PATH');
