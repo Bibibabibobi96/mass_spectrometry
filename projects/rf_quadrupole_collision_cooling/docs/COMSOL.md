@@ -26,4 +26,8 @@ TOF 变化 0.05%、最大杆区半径变化 0.89%。因此冻结 mesh1、80 步/
 
 `tests/comsol/verify_nocollision_comsol.m` 重开 MPH，检查参数、25 个 GUI release 节点、无碰撞、
 选择集和 Solver attach，并分别调用 `model.study('std1').run`、`std2.run`；结果 25/25，且 Solver
-标签始终为 `sol1,sol2`。先前 150 mm 简化直杆 MPH 仅是失效候选。
+标签始终为 `sol1,sol2`。先前 150 mm 简化直杆 MPH 已删除。
+
+`tests/comsol/export_fem_unit_rf_field.m` 只从候选 MPH 的 `dset1` 采样 COMSOL 自己的
+`es.Ex/Ey/Ez`，采样坐标取自 SIMION 导出的公共格点；它不创建插值函数、不写入 Electric Force，
+输出仅供 `analysis/compare_unit_rf_field.py` 与独立 PA 场比较。
