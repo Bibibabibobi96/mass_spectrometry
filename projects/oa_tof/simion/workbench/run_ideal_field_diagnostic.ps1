@@ -13,7 +13,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
 $projectRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $projectRoot 'artifacts\projects\oa_tof'
-$formalDir = Join-Path $artifactRoot 'models\simion\workspace\04_workbench\formal'
+$formalDir = Join-Path $artifactRoot 'models\simion\formal\oatof_524amu'
 if (-not $OutputDir) {
   $OutputDir = Join-Path $artifactRoot 'runs\simion_ideal_field_diagnostic\2026-07-14'
 }
@@ -61,6 +61,7 @@ foreach ($d in $distributions) {
       '--default-num-particles', [string]$N,
       '--nogui','fly',
       '--trajectory-quality', [string]$TrajectoryQuality,
+      '--retain-trajectories','0',
       '--particles', $ionFiles[$d.Name],
       '--adjustable', ("trajectory_quality={0}" -f $TrajectoryQuality),
       '--adjustable', ("ideal_accel_enable={0}" -f $m.A),

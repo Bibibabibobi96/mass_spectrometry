@@ -12,7 +12,7 @@
     "particles": 1000,
     "initial_energy_mean_eV": 5.0,
     "initial_energy_sigma_eV": 0.4,
-    "ion_table_artifact_relative_path": "models/simion/workspace/04_workbench/formal/oatof_comsol_524amu_gaussian_N1000.ion",
+    "ion_table_artifact_relative_path": "models/simion/formal/oatof_524amu/oatof_comsol_524amu_gaussian_N1000.ion",
     "ion_table_bytes": 94515,
     "ion_table_sha256": "051E96F28DB911B0D528F496A62B7F4AAF2C727167269ED0F5501D122B6C3562"
   },
@@ -44,8 +44,9 @@
   "simion": {
     "model_role": "formal",
     "trajectory_quality": 8,
-    "iob_artifact_relative_path": "models/simion/workspace/04_workbench/formal/oatof_ideal_grounded.iob",
-    "iob_sha256": "D0CBE3319CFEBCB881D58CB5C0F079DA82E3EA43DE309A94186C4F2E8D69AE10",
+    "iob_artifact_relative_path": "models/simion/formal/oatof_524amu/oatof_ideal_grounded.iob",
+    "iob_sha256": "79F5DBE40ACA1AA3D9A99818AF82C38B8E77C0F1DDCFCDBFBADA09727DB47769",
+    "delivery_promoted_on": "2026-07-17",
     "particle_csv_artifact_relative_path": "runs/formal_large_sample_closure/2026-07-16/simion_formal_fixedN1000_quality8_particles.csv",
     "particle_csv_sha256": "85A1C2D5BE72528C141BD06DEEF45E76CFA935AF1A0A88777DCF2AFBB46BF163",
     "hit_fraction": "1000/1000",

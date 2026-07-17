@@ -37,13 +37,14 @@
 ## 权威入口
 
 - 统一机器契约：[`config/baseline.json`](config/baseline.json)
-- SIMION候选实现冻结清单：[`config/simion_stable_entry.json`](config/simion_stable_entry.json)。它只冻结
-  IOB/PA/Program/Fly2的实现资产与哈希，不定义或替代统一物理baseline。
+- SIMION正式交付与收敛参考冻结清单：[`config/simion_stable_entry.json`](config/simion_stable_entry.json)。
+  它冻结IOB、完整PA家族、Program、Fly2和粒子表的实现身份，不定义或替代统一物理baseline。
 - 正式COMSOL生产脚本：
   [`comsol/ms_oaTOF_two_stage_ringstack_reflectron.m`](comsol/ms_oaTOF_two_stage_ringstack_reflectron.m)
 - SIMION正式文本入口：
   [`simion/workbench/formal/oatof_ideal_grounded.lua`](simion/workbench/formal/oatof_ideal_grounded.lua)和
   [`simion/workbench/formal/oatof_ideal_grounded.fly2`](simion/workbench/formal/oatof_ideal_grounded.fly2)
+- SIMION正式交付构建：[`simion/workbench/build_formal_delivery.ps1`](simion/workbench/build_formal_delivery.ps1)
 - CAD正式入口：[`cad/ms_export_oatof_to_solidworks.m`](cad/ms_export_oatof_to_solidworks.m)
 - 跨求解器门禁：
   [`tests/cross_solver/verify_geometry_contract.ps1`](tests/cross_solver/verify_geometry_contract.ps1)
@@ -59,6 +60,8 @@
 - SIMION常规统计使用N=5000；COMSOL快速闭合可使用较小但固定的同源粒子表。
 - 紧凑加速器、10 mm封闭屏蔽罩、正式COMSOL MPH和SolidWorks 2022装配体已同步；细z检测器
   终止层仍只属于SIMION数值实现，不复制为机械厚度。
+- SIMION正式运行资产已集中到`artifacts/projects/oa_tof/models/simion/formal/oatof_524amu/`；
+  IOB只引用同目录四套PA，可将整个目录作为同事复现包交付。
 - 正式COMSOL日常档为真实加速器`hmax=1 mm`、敏感窗口`0.2 ns`、无场区`50 ns`，全部窗口由
   质量/电压/长度公式计算并在GUI中可见；N=100与`1 ns`分段档逐粒子等价，粒子阶段快`1.77x`。
 - 同源N=1000正式统计比较为COMSOL `R=38550.49`、SIMION `R=27961.26`；两边均1000/1000命中，

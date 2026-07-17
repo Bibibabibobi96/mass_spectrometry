@@ -32,12 +32,12 @@ function paths = oatof_paths()
     paths.cadFormalDir = fullfile(paths.artifactRoot, 'cad', 'formal');
     paths.cadArchiveDir = fullfile(paths.artifactRoot, 'cad', 'archive');
     paths.cadScratchDir = fullfile(paths.artifactRoot, 'scratch', 'cad');
-    % SIMION keeps the legacy workspace layer until its relative PA links are
-    % rebuilt and validated.  Do not flatten this path with a file-only move.
+    paths.simionModelRoot = fullfile(paths.artifactRoot, 'models', 'simion');
+    paths.simionFormalDir = fullfile(paths.simionModelRoot, 'formal', 'oatof_524amu');
+    % Retained only as the source/archive tree for older diagnostics and the
+    % convergence reference.  Formal runtime assets no longer depend on it.
     paths.simionWorkspaceDir = fullfile(paths.artifactRoot, 'models', ...
         'simion', 'workspace');
-    paths.simionFormalDir = fullfile(paths.simionWorkspaceDir, ...
-        '04_workbench', 'formal');
     paths.simionCandidateDir = fullfile(paths.simionWorkspaceDir, ...
         'diagnostics', 'accelerator_compact_scan', 'workbenches');
     paths.simionScratchDir = fullfile(paths.artifactRoot, 'scratch', 'simion');

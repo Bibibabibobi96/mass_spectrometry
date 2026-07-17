@@ -1,23 +1,20 @@
 {
-  "schema_version": 1,
-  "frozen_on": "2026-07-16",
-  "role": "Implementation hash manifest for the current SIMION candidates; it does not define physical baseline parameters.",
-  "artifact_workspace_relative": "models/simion/workspace",
+  "schema_version": 2,
+  "frozen_on": "2026-07-17",
+  "role": "Implementation hash manifest for the formal SIMION delivery and the retained convergence reference.",
+  "artifact_workspace_relative": "models/simion",
   "entries": [
     {
-      "id": "daily_xy025_z0050_refaxial0250",
-      "role": "Daily 524 amu GUI/production candidate",
+      "id": "formal_524amu_xy025_z0050_refaxial0250",
+      "role": "Formal portable 524 amu GUI and production delivery",
       "trajectory_quality": 8,
       "expected_instances": 4,
       "assets": [
-        {"role": "iob", "relative_path": "diagnostics/accelerator_compact_scan/workbenches/grid_xy025_z0050_refaxial0250/oatof_accz0050_refz0250.iob", "bytes": 21055, "sha256": "4002A3769B5FEB1B777248C5E950D72491E8068F3EE07BD9F85C5ED1BD4BB55F"},
-        {"role": "con", "relative_path": "diagnostics/accelerator_compact_scan/workbenches/grid_xy025_z0050_refaxial0250/oatof_accz0050_refz0250.con", "bytes": 2170, "sha256": "D8DA212B73B7D7A70E591C452811B13377AAF93B1E4E627301B71BEE5EBA4B80"},
-        {"role": "program", "relative_path": "diagnostics/accelerator_compact_scan/workbenches/grid_xy025_z0050_refaxial0250/oatof_accz0050_refz0250.lua", "bytes": 14328, "sha256": "620F6C996330AB4B6C75769F453D422FD9BA715E57E55AF102B56D5FAB1A01FB"},
-        {"role": "fly2", "relative_path": "diagnostics/accelerator_compact_scan/workbenches/grid_xy025_z0050_refaxial0250/oatof_accz0050_refz0250.fly2", "bytes": 871, "sha256": "2E2361D2220ADAF3A0BD1D329EB9F1E969D00B23C372A0F8A35F1C81E385B4E0"},
-        {"role": "reflectron_pa0", "relative_path": "diagnostics/reflectron_mesh_scan/axial0250_radial1000/reflectron.pa0", "bytes": 3145228, "sha256": "65AAE6C50A98D1D26733568CF234EDE96B38E4F10F12C9E41E324EDA4FD0D2B1"},
-        {"role": "accelerator_pa0", "relative_path": "diagnostics/accelerator_compact_scan/borehalf5/grid_xy025_z0050/accelerator.pa0", "bytes": 112550668, "sha256": "721C40D2A4145976F4A21A6BDE46CBE770C2DA45091176E58DD004F35D13053C"},
-        {"role": "flight_tube_pa0", "relative_path": "04_workbench/formal/flight_tube_ground.pa0", "bytes": 1909140, "sha256": "F431FAAC1293A88240D0B97CDCB71A9029FADFB865E773BB2528EBC062E644E8"},
-        {"role": "detector_pa0", "relative_path": "diagnostics/detector_marker/xy050_z0010/detector_ground.pa0", "bytes": 6751996, "sha256": "0C4DDCDABD4C61FECEECCC94741B5C4F973EC34483097FE0DCBDE04F34980C3D"}
+        {"role":"iob","relative_path":"formal/oatof_524amu/oatof_ideal_grounded.iob","bytes":20902,"sha256":"79F5DBE40ACA1AA3D9A99818AF82C38B8E77C0F1DDCFCDBFBADA09727DB47769"},
+        {"role":"con","relative_path":"formal/oatof_524amu/oatof_ideal_grounded.con","bytes":2170,"sha256":"D8DA212B73B7D7A70E591C452811B13377AAF93B1E4E627301B71BEE5EBA4B80"},
+        {"role":"program","relative_path":"formal/oatof_524amu/oatof_ideal_grounded.lua","bytes":14328,"sha256":"620F6C996330AB4B6C75769F453D422FD9BA715E57E55AF102B56D5FAB1A01FB"},
+        {"role":"fly2","relative_path":"formal/oatof_524amu/oatof_ideal_grounded.fly2","bytes":871,"sha256":"2E2361D2220ADAF3A0BD1D329EB9F1E969D00B23C372A0F8A35F1C81E385B4E0"},
+        {"role":"sha256_manifest","relative_path":"formal/oatof_524amu/SHA256SUMS.csv","bytes":4872,"sha256":"198B261DE90352D922B0E3E50F00624B67EBA1CF614BB6130A749A96485C5A63"}
       ]
     },
     {
@@ -26,14 +23,14 @@
       "trajectory_quality": 8,
       "expected_instances": 4,
       "assets": [
-        {"role": "iob", "relative_path": "diagnostics/accelerator_compact_scan/workbenches/grid_xy025_z0025_refaxial0250/oatof_accz0025_refz0250.iob", "bytes": 21055, "sha256": "FC4F55CBFFB3BC6FB0D5C858ED6FD24C1EE037FD78E1D710DF0E64A6333F310C"},
-        {"role": "con", "relative_path": "diagnostics/accelerator_compact_scan/workbenches/grid_xy025_z0025_refaxial0250/oatof_accz0025_refz0250.con", "bytes": 2170, "sha256": "D8DA212B73B7D7A70E591C452811B13377AAF93B1E4E627301B71BEE5EBA4B80"},
-        {"role": "program", "relative_path": "diagnostics/accelerator_compact_scan/workbenches/grid_xy025_z0025_refaxial0250/oatof_accz0025_refz0250.lua", "bytes": 14328, "sha256": "620F6C996330AB4B6C75769F453D422FD9BA715E57E55AF102B56D5FAB1A01FB"},
-        {"role": "fly2", "relative_path": "diagnostics/accelerator_compact_scan/workbenches/grid_xy025_z0025_refaxial0250/oatof_accz0025_refz0250.fly2", "bytes": 871, "sha256": "2E2361D2220ADAF3A0BD1D329EB9F1E969D00B23C372A0F8A35F1C81E385B4E0"},
-        {"role": "reflectron_pa0", "relative_path": "diagnostics/reflectron_mesh_scan/axial0250_radial1000/reflectron.pa0", "bytes": 3145228, "sha256": "65AAE6C50A98D1D26733568CF234EDE96B38E4F10F12C9E41E324EDA4FD0D2B1"},
-        {"role": "accelerator_pa0", "relative_path": "diagnostics/accelerator_compact_scan/borehalf5/grid_xy025_z0025/accelerator.pa0", "bytes": 224913868, "sha256": "2C1311BFB0C15C9CA4E8A098FE32AF64FF4961DC8A078267FF1383FFC4502ABD"},
-        {"role": "flight_tube_pa0", "relative_path": "04_workbench/formal/flight_tube_ground.pa0", "bytes": 1909140, "sha256": "F431FAAC1293A88240D0B97CDCB71A9029FADFB865E773BB2528EBC062E644E8"},
-        {"role": "detector_pa0", "relative_path": "diagnostics/detector_marker/xy050_z0010/detector_ground.pa0", "bytes": 6751996, "sha256": "0C4DDCDABD4C61FECEECCC94741B5C4F973EC34483097FE0DCBDE04F34980C3D"}
+        {"role":"iob","relative_path":"workspace/diagnostics/accelerator_compact_scan/workbenches/grid_xy025_z0025_refaxial0250/oatof_accz0025_refz0250.iob","bytes":21055,"sha256":"FC4F55CBFFB3BC6FB0D5C858ED6FD24C1EE037FD78E1D710DF0E64A6333F310C"},
+        {"role":"con","relative_path":"workspace/diagnostics/accelerator_compact_scan/workbenches/grid_xy025_z0025_refaxial0250/oatof_accz0025_refz0250.con","bytes":2170,"sha256":"D8DA212B73B7D7A70E591C452811B13377AAF93B1E4E627301B71BEE5EBA4B80"},
+        {"role":"program","relative_path":"workspace/diagnostics/accelerator_compact_scan/workbenches/grid_xy025_z0025_refaxial0250/oatof_accz0025_refz0250.lua","bytes":14328,"sha256":"620F6C996330AB4B6C75769F453D422FD9BA715E57E55AF102B56D5FAB1A01FB"},
+        {"role":"fly2","relative_path":"workspace/diagnostics/accelerator_compact_scan/workbenches/grid_xy025_z0025_refaxial0250/oatof_accz0025_refz0250.fly2","bytes":871,"sha256":"2E2361D2220ADAF3A0BD1D329EB9F1E969D00B23C372A0F8A35F1C81E385B4E0"},
+        {"role":"reflectron_pa0","relative_path":"workspace/diagnostics/reflectron_mesh_scan/axial0250_radial1000/reflectron.pa0","bytes":3145228,"sha256":"65AAE6C50A98D1D26733568CF234EDE96B38E4F10F12C9E41E324EDA4FD0D2B1"},
+        {"role":"accelerator_pa0","relative_path":"workspace/diagnostics/accelerator_compact_scan/borehalf5/grid_xy025_z0025/accelerator.pa0","bytes":224913868,"sha256":"2C1311BFB0C15C9CA4E8A098FE32AF64FF4961DC8A078267FF1383FFC4502ABD"},
+        {"role":"flight_tube_pa0","relative_path":"workspace/04_workbench/formal/flight_tube_ground.pa0","bytes":1909140,"sha256":"F431FAAC1293A88240D0B97CDCB71A9029FADFB865E773BB2528EBC062E644E8"},
+        {"role":"detector_pa0","relative_path":"workspace/diagnostics/detector_marker/xy050_z0010/detector_ground.pa0","bytes":6751996,"sha256":"0C4DDCDABD4C61FECEECCC94741B5C4F973EC34483097FE0DCBDE04F34980C3D"}
       ]
     }
   ]

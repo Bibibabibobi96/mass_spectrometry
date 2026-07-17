@@ -7,13 +7,13 @@
 ## 当前入口与状态
 
 - 正式文本入口：`../simion/workbench/formal/oatof_ideal_grounded.lua/.fly2`。
-- 当前 GUI 候选 IOB：工作区
-  `artifacts/projects/oa_tof/models/simion/workspace/diagnostics/accelerator_compact_scan/workbenches/grid_xy025_z0050_refaxial0250/oatof_accz0050_refz0250.iob`。
-- `models/simion/workspace/` 暂时保留，因为 IOB 使用相对 PA 路径；只有重建并验证四个实例后才能扁平化。
+- 正式GUI/交付目录：`artifacts/projects/oa_tof/models/simion/formal/oatof_524amu/`；IOB、CON、
+  同名Program/Fly2、四套完整PA家族和固定ION均集中于此。
+- `models/simion/workspace/`仅保留收敛参考、构建源和待审计历史；正式IOB不再引用其中PA。
 - 当前标准：524 amu、+1、`5±0.4 eV`；GUI常规统计N=5000。
 - 正式轨迹积分档位是`trajectory quality=8`；同名Program在IOB加载和每次Fly前自动写入，
   GUI Fly和命令行必须一致，低档只允许显式诊断。
-- 日常候选网格：加速器`xy=0.25mm,z=0.05mm`；收敛参考`z=0.025mm`。
+- 正式日常网格：加速器`xy=0.25mm,z=0.05mm`；收敛参考`z=0.025mm`。
 - 检测器第4实例是GUI可见数值终止层，不是机械检测器实体。
 - Program和Data Recording必须同时开启；关闭Program窗口不等于禁用Program。
 - `trajectory_log_enable`默认必须为0，使GUI Data Recording不被逐粒子TRACE淹没；只有命令行
@@ -21,16 +21,21 @@
 - 当前日常IOB、正式COMSOL MPH和SolidWorks装配体已经通过共享几何门禁；SIMION网格收敛参考仍
   保持候选角色，不得误写成第二套正式几何。
 
-稳定实现入口以`config/simion_stable_entry.json`冻结：0.05mm是日常候选，0.025mm仅作轴向
-网格收敛参考。该清单只记录外部工作区资产的路径、大小和SHA-256，不重复维护物理参数；物理
+稳定实现入口以`config/simion_stable_entry.json`冻结：0.05mm是正式可移植交付，0.025mm仅作轴向
+网格收敛参考。该清单记录外部资产路径、大小和SHA-256，不重复维护物理参数；物理
 参数仍以`config/baseline.json`为唯一来源。每次移动、重建或打包SIMION资产后运行：
 
 ```powershell
 .\projects\oa_tof\tests\simion\verify_stable_entry.ps1
 ```
 
-脚本先逐项验证IOB、CON、Program、Fly2和四个PA的大小/哈希，再实际加载每个IOB并检查4实例与
-T.Qual=8。任一项改变都必须重新验证并有意识地更新清单，禁止只替换PA或手工改IOB后继续称为稳定入口。
+脚本先验证正式包SHA256清单覆盖的49个文件，再实际加载IOB并检查4实例与T.Qual=8；收敛参考仍按
+独立资产哈希检查。任一项改变都必须重新验证并有意识地更新清单，禁止只替换PA或手工改IOB后
+继续称为稳定入口。
+
+`simion/workbench/build_formal_delivery.ps1`从已验证组件源复制四套完整PA家族，以同目录PA重建IOB，
+部署同名Program/Fly2、N=100/N=1000固定ION和复现说明，并生成`SHA256SUMS.csv`。2026-07-17构建后
+四实例/关键场门禁PASS；固定N=100实际飞行为100/100命中，平均TOF `71.990135072569 us`。
 
 2026-07-16在正式几何同步后，用同一524 amu固定N=100 ION表重跑quality=8真实PA场，100/100
 命中，平均TOF为`71.9901350726 us`。统一Python直接质量FWHM为`0.019673808666 Da`，

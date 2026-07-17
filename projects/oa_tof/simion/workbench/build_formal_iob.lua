@@ -1,7 +1,7 @@
 local source=debug.getinfo(1,'S').source
 local script_path=source:sub(1,1)=='@' and source:sub(2) or source
 local script_dir=script_path:match('^(.*[\\/])') or ''
-local artifact_formal=script_dir..[[../../../../../artifacts/projects/oa_tof/models/simion/workspace/04_workbench/formal/]]
+local artifact_formal=script_dir..[[../../../../../artifacts/projects/oa_tof/models/simion/formal/oatof_524amu/]]
 local template = os.getenv('OATOF_FOUR_INSTANCE_TEMPLATE_IOB') or
   script_dir..[[../../../../../artifacts/projects/oa_tof/models/simion/workspace/04_workbench/template_four_instance/mag_halbach_cylinder_2dp.iob]]
 local output = os.getenv('OATOF_FORMAL_IOB_OUTPUT') or

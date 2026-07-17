@@ -101,7 +101,7 @@ Refine后必须保留完整PA家族及`.pa-surf`：加速器需要`pa0…pa9`，
 精确复现当前正式跨求解器N=100结果时，在SIMION Define Particles中直接加载：
 
 ```text
-models/simion/workspace/04_workbench/formal/oatof_comsol_524amu_gaussian_N100.ion
+models/simion/formal/oatof_524amu/oatof_comsol_524amu_gaussian_N100.ion
 ```
 
 该ION文件固定了100个粒子的质量、电荷、逐粒子初始位置和能量：
@@ -114,14 +114,14 @@ models/simion/workspace/04_workbench/formal/oatof_comsol_524amu_gaussian_N100.io
 GUI常规N=5000分布定义位于：
 
 ```text
-models/simion/workspace/04_workbench/formal/oatof_ideal_grounded.fly2
+models/simion/formal/oatof_524amu/oatof_ideal_grounded.fly2
 ```
 
 正式工作台和Program分别为：
 
 ```text
-models/simion/workspace/04_workbench/formal/oatof_ideal_grounded.iob
-models/simion/workspace/04_workbench/formal/oatof_ideal_grounded.lua
+models/simion/formal/oatof_524amu/oatof_ideal_grounded.iob
+models/simion/formal/oatof_524amu/oatof_ideal_grounded.lua
 ```
 
 N=100 ION文件SHA-256：
@@ -129,7 +129,7 @@ N=100 ION文件SHA-256：
 
 ## 7. 运行检查
 
-1. 保持IOB、Lua、Fly2、ION及所有PA家族的相对目录关系；若改变目录，必须在GUI中逐一重新链接。
+1. 复制整个`models/simion/formal/oatof_524amu/`目录，不要只挑选PA0或单独移动IOB；IOB引用同目录PA。
 2. IOB加载后确认恰好有4个实例：reflectron、accelerator、flight-tube、detector。
 3. Program必须开启；关闭Program设置窗口可以，Disable Program不可以。
 4. `trajectory quality=8`。
