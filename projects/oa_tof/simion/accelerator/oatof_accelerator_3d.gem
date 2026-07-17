@@ -29,9 +29,10 @@
 # local xy_span = var.xy_span or shield_outer_width
 # local z_min = var.z_min or shield_back_z
 # local z_span = var.z_span or (20-z_min)
+# local grid_phase_z = var.grid_phase_z or 0
 # local cx = xy_span/2
 # local cy = xy_span/2
-# local cz = -z_min
+# local cz = -z_min+grid_phase_z
 # local nx = math.floor(xy_span/mmgu_xy + 0.5) + 1
 # local ny = nx
 # local nz = math.floor(z_span/mmgu_z + 0.5) + 1
@@ -44,6 +45,9 @@ pa_define($(nx), $(ny), $(nz), planar,none,electrostatic,,
 
 locate($(cx),$(cy),$(cz)) {
   ; GEM coordinates are millimetres; pa_define converts them to grid units.
+  ; grid_phase_z shifts the physical geometry inside a diagnostic PA.  The
+  ; workbench must shift the PA instance by the opposite amount so that the
+  ; global mechanical coordinates remain unchanged.
   ; Grounded C-shaped wall; every dimension is linked to the bore family.
   e(9) { fill {
     within { centered_box3D(0,0,$(shield_z_center), $(shield_outer_width),$(shield_outer_width),$(shield_z_span)) }
