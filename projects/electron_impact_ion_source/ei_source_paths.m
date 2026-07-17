@@ -5,9 +5,18 @@ function paths = ei_source_paths()
     repoRoot = fileparts(fileparts(componentRoot));
     workspaceRoot = fileparts(repoRoot);
     paths = struct();
+    paths.projectRoot = componentRoot;
     paths.componentRoot = componentRoot;
     paths.artifactRoot = fullfile(workspaceRoot, 'artifacts', 'projects', ...
         'electron_impact_ion_source');
-    paths.modelsDir = fullfile(paths.artifactRoot, 'scratch', 'comsol');
-    paths.resultsDir = fullfile(paths.artifactRoot, 'results', 'comsol');
+    paths.modelsRoot = fullfile(paths.artifactRoot, 'models');
+    paths.runsRoot = fullfile(paths.artifactRoot, 'runs');
+    paths.resultsRoot = fullfile(paths.artifactRoot, 'results');
+    paths.scratchRoot = fullfile(paths.artifactRoot, 'scratch');
+    paths.comsolFormalDir = fullfile(paths.modelsRoot, 'comsol', 'formal');
+    paths.comsolCandidateDir = fullfile(paths.modelsRoot, 'comsol', 'candidates');
+    paths.comsolResultsDir = fullfile(paths.resultsRoot, 'comsol');
+    paths.comsolScratchDir = fullfile(paths.scratchRoot, 'comsol');
+    paths.modelsDir = paths.comsolScratchDir; % Legacy collision-script alias.
+    paths.resultsDir = paths.comsolResultsDir;
 end

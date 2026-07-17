@@ -3,6 +3,10 @@
 
 simion.workbench_program()
 
+local run_config_path = assert(os.getenv('RFQUAD_RUN_CONFIG_LUA'),
+  'RFQUAD_RUN_CONFIG_LUA is not set')
+local run_config = assert(dofile(run_config_path), 'run config did not return a table')
+
 adjustable transport_rf_peak_v = 139.81792
 adjustable transport_frequency_hz = 1.1E6
 adjustable transport_phase_deg = 0.0
@@ -26,6 +30,18 @@ local previous_state = {}
 local next_axial_plane = {}
 local trajectory_plane_step_mm = 0.2
 
+function segment.load()
+  transport_rf_peak_v = assert(run_config.rf_peak_v)
+  transport_frequency_hz = assert(run_config.frequency_hz)
+  transport_phase_deg = assert(run_config.phase_deg)
+  transport_axis_voltage_v = assert(run_config.axis_voltage_v)
+  transport_entrance_voltage_v = assert(run_config.entrance_voltage_v)
+  transport_exit_voltage_v = assert(run_config.exit_voltage_v)
+  transport_detector_voltage_v = assert(run_config.detector_voltage_v)
+  transport_rf_steps_per_period = assert(run_config.rf_steps_per_period)
+  transport_max_elapsed_us = assert(run_config.maximum_time_us)
+end
+
 local function radial_mm()
   return math.sqrt(ion_py_mm^2 + ion_pz_mm^2)
 end
@@ -46,11 +62,10 @@ function segment.initialize_run()
   crossings = 0
   previous_state = {}
   next_axial_plane = {}
-  local path = os.getenv('RFQUAD_SIMION_PARTICLE_CSV')
-  assert(path and path ~= '', 'RFQUAD_SIMION_PARTICLE_CSV is not set')
+  local path = assert(run_config.particle_csv, 'run config particle_csv is missing')
   particle_file = assert(io.open(path, 'w'))
   particle_file:write('particle_id,crossed_detector_plane,hit,arrival_time_us,detector_plane_radius_mm,max_rod_radius_mm,max_radius_mm,terminate_x_mm,terminate_y_mm,terminate_z_mm\n')
-  local trajectory_path = os.getenv('RFQUAD_SIMION_TRAJECTORY_CSV')
+  local trajectory_path = run_config.trajectory_csv
   if trajectory_path and trajectory_path ~= '' then
     trajectory_file = assert(io.open(trajectory_path, 'w'))
     trajectory_file:write('particle_id,time_us,axial_z_mm,transverse_x_mm,transverse_y_mm,r_mm\n')
@@ -139,8 +154,7 @@ end
 function segment.terminate_run()
   if particle_file then particle_file:close() end
   if trajectory_file then trajectory_file:close() end
-  local summary_path = os.getenv('RFQUAD_SIMION_SUMMARY_JSON')
-  assert(summary_path and summary_path ~= '', 'RFQUAD_SIMION_SUMMARY_JSON is not set')
+  local summary_path = assert(run_config.summary_json, 'run config summary_json is missing')
   local summary = assert(io.open(summary_path, 'w'))
   summary:write(string.format(
     '{\n  "solver": "SIMION",\n  "mode": "transport_no_collision",\n  "collision_model": "none",\n  "particles": %d,\n  "detector_plane_crossings": %d,\n  "hits": %d,\n  "transmission": %.12g,\n  "rf_peak_V": %.12g,\n  "frequency_Hz": %.12g,\n  "rf_steps_per_period": %.12g\n}\n',

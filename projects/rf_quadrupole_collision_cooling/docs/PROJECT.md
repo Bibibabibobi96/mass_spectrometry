@@ -4,9 +4,11 @@
 
 `transport_no_collision` 候选已在 COMSOL 6.4 与 SIMION 2020 闭合并通过 GUI 资产复验。它证明的是
 RF-only 径向约束和轴向传输，不是碰撞冷却或质量过滤，也还不是需要 SolidWorks 同步的机械正式模型。
+2026-07-17 新单一运行配置与manifest链已用SIMION固定25粒子复验，25/25命中、传输率1.0。
 
 统一参数分为共享硬件、共享粒子源和功能模式三层：`../config/baseline.json`、
-`../config/official_particle_source.json`、`../config/modes/*.json`。以后在集成仪器中，传输四极杆与质量
+`../config/official_particle_source.json`、`../config/modes/*.json`；程序统一读取自动生成的
+`../config/resolved_geometry.json`，全项目门禁为`../verify_project.ps1`。以后在集成仪器中，传输四极杆与质量
 过滤四极杆实例化同一硬件模板，分别绑定 `transport_no_collision` 与 `mass_filter_reference` 配置和空间
 变换；不复制两套近似几何。质量过滤配置目前只冻结官方参考值，尚未验证。
 

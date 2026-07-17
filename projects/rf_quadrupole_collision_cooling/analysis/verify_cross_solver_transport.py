@@ -43,8 +43,9 @@ def main() -> None:
 
     comsol_summary = json.loads(comsol_summary_path.read_text(encoding="utf-8"))
     simion_summary = json.loads(simion_summary_path.read_text(encoding="utf-8"))
-    mode = json.loads((args.project / "config/modes/transport_no_collision.json").read_text(encoding="utf-8"))
-    geometry = json.loads((args.project / "config/baseline.json").read_text(encoding="utf-8"))["geometry_mm"]
+    resolved = json.loads((args.project / "config/resolved_geometry.json").read_text(encoding="utf-8"))
+    mode = resolved["mode"]
+    geometry = resolved["geometry_mm"]
     comsol_rows = load_csv(comsol_particles_path)
     simion_rows = load_csv(simion_particles_path)
 

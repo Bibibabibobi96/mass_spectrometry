@@ -4,21 +4,30 @@ function result = ms_rf_quadrupole_no_collision()
 projectRoot = fileparts(fileparts(mfilename('fullpath')));
 addpath(projectRoot);
 paths = rf_quadrupole_paths();
-baseline = jsondecode(fileread(fullfile(projectRoot,'config','baseline.json')));
-source = jsondecode(fileread(fullfile(projectRoot,'config','official_particle_source.json')));
-mode = jsondecode(fileread(fullfile(projectRoot,'config','modes','transport_no_collision.json')));
-runLabel = getenv('RFQUAD_COMSOL_RUN_LABEL');
-if isempty(runLabel), runLabel = 'baseline'; end
-stepsOverride = str2double(getenv('RFQUAD_COMSOL_RF_STEPS'));
-if isfinite(stepsOverride) && stepsOverride > 0
-    mode.numerics.comsol_rf_steps_per_period = stepsOverride;
+resolved = jsondecode(fileread(fullfile(projectRoot,'config','resolved_geometry.json')));
+baseline = resolved;
+source = resolved.particle_source;
+mode = resolved.mode;
+runLabel = 'baseline';
+meshAuto = mode.numerics.comsol_mesh_auto_level;
+meshHmaxMm = NaN;
+sourceAxialOffsetMm = 0;
+runConfigPath = getenv('RFQUAD_RUN_CONFIG');
+if ~isempty(runConfigPath)
+    runConfig = jsondecode(fileread(runConfigPath));
+    assert(strcmp(runConfig.project, 'rf_quadrupole_collision_cooling') && ...
+        strcmp(runConfig.mode, 'transport_no_collision'), ...
+        'RF quadrupole run-config project or mode mismatch.');
+    if isfield(runConfig, 'run_id'), runLabel = runConfig.run_id; end
+    if isfield(runConfig, 'comsol_rf_steps_per_period')
+        mode.numerics.comsol_rf_steps_per_period = runConfig.comsol_rf_steps_per_period;
+    end
+    if isfield(runConfig, 'comsol_mesh_auto_level'), meshAuto = runConfig.comsol_mesh_auto_level; end
+    if isfield(runConfig, 'comsol_hmax_mm'), meshHmaxMm = runConfig.comsol_hmax_mm; end
+    if isfield(runConfig, 'source_axial_offset_mm'), sourceAxialOffsetMm = runConfig.source_axial_offset_mm; end
 end
-meshAuto = str2double(getenv('RFQUAD_COMSOL_MESH_AUTO'));
-if ~isfinite(meshAuto) || meshAuto <= 0, meshAuto = mode.numerics.comsol_mesh_auto_level; end
-meshHmaxMm = str2double(getenv('RFQUAD_COMSOL_HMAX_MM'));
-if ~isfinite(meshHmaxMm) || meshHmaxMm <= 0, meshHmaxMm = NaN; end
-sourceAxialOffsetMm = str2double(getenv('RFQUAD_SOURCE_AXIAL_OFFSET_MM'));
-if ~isfinite(sourceAxialOffsetMm), sourceAxialOffsetMm = 0; end
+assert(meshAuto > 0 && isfinite(meshAuto), 'COMSOL mesh-auto level must be positive.');
+if ~(meshHmaxMm > 0 && isfinite(meshHmaxMm)), meshHmaxMm = NaN; end
 ionPath = fullfile(projectRoot,'config','particles','official_fixed_25.ion');
 ions = readmatrix(ionPath,'FileType','text','Delimiter',',');
 assert(size(ions,1)==source.particles && size(ions,2)==11, 'Fixed ION table shape mismatch.');
@@ -215,8 +224,7 @@ trajectoryFile=fopen(trajectoryPath,'w'); assert(trajectoryFile>=0,'Could not op
 fprintf(trajectoryFile,'particle_id,time_us,axial_z_mm,transverse_x_mm,transverse_y_mm,r_mm\n');
 for i=1:nP
     valid=find(isfinite(x(:,i)) & isfinite(y(:,i)) & isfinite(z(:,i)));
-    sampled=valid(1:5:end);
-    if sampled(end)~=valid(end), sampled=[sampled;valid(end)]; end
+    sampled=unique([valid(1:5:end); valid(end)]);
     for sample=sampled'
         fprintf(trajectoryFile,'%d,%.12g,%.12g,%.12g,%.12g,%.12g\n',i,pd.t(sample)*1e6,z(sample,i),x(sample,i),y(sample,i),radial(sample,i));
     end

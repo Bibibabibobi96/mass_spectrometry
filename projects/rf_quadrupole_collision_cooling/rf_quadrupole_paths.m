@@ -10,12 +10,16 @@ function paths = rf_quadrupole_paths()
         'rf_quadrupole_collision_cooling');
     paths.modelsRoot = fullfile(paths.artifactRoot, 'models');
     paths.resultsRoot = fullfile(paths.artifactRoot, 'results');
+    paths.runsRoot = fullfile(paths.artifactRoot, 'runs');
+    paths.scratchRoot = fullfile(paths.artifactRoot, 'scratch');
+    paths.comsolFormalDir = fullfile(paths.modelsRoot, 'comsol', 'formal');
     paths.comsolCandidateDir = fullfile(paths.modelsRoot, 'comsol', 'candidates');
+    paths.simionFormalDir = fullfile(paths.modelsRoot, 'simion', 'formal');
     paths.simionCandidateDir = fullfile(paths.modelsRoot, 'simion', 'candidates');
     paths.comsolResultsDir = fullfile(paths.resultsRoot, 'comsol');
     paths.simionResultsDir = fullfile(paths.resultsRoot, 'simion');
     paths.crossSolverResultsDir = fullfile(paths.resultsRoot, 'cross_solver');
-    paths.scratchDir = fullfile(paths.artifactRoot, 'scratch');
+    paths.scratchDir = paths.scratchRoot;
     % Backward-compatible destinations used by the pre-contract collision
     % script.  Keep its lifecycle unchanged until that separate mode is
     % migrated rather than silently redirecting old production outputs.

@@ -16,6 +16,8 @@
 ## 权威入口
 
 - 共享几何契约：[`config/baseline.json`](config/baseline.json)
+- 程序统一入口：[`config/resolved_geometry.json`](config/resolved_geometry.json)，由
+  `analysis/resolve_contract.py`生成，禁止手改。
 - 官方粒子源：[`config/official_particle_source.json`](config/official_particle_source.json)
 - 当前传输模式：[`config/modes/transport_no_collision.json`](config/modes/transport_no_collision.json)
 - 预留质量过滤模式：[`config/modes/mass_filter_reference.json`](config/modes/mass_filter_reference.json)
@@ -26,6 +28,7 @@
 - SIMION 构建/验证入口：[`tests/simion/run_transport_candidate.ps1`](tests/simion/run_transport_candidate.ps1)
 - SIMION IOB 结构门禁：[`tests/simion/inspect_builtin_quad_reference.lua`](tests/simion/inspect_builtin_quad_reference.lua)
 - 跨求解器门禁：[`analysis/verify_cross_solver_transport.py`](analysis/verify_cross_solver_transport.py)
+- 全项目门禁：`verify_project.ps1 -Level Static|Candidate|Formal`
 - 终点分布诊断图：[`analysis/plot_terminal_distribution.py`](analysis/plot_terminal_distribution.py)
 - 轴向轨迹诊断图：[`analysis/plot_transport_trajectory_diagnostics.py`](analysis/plot_transport_trajectory_diagnostics.py)
 - 相位--轨迹差诊断图：[`analysis/plot_transport_phase_diagnostics.py`](analysis/plot_transport_phase_diagnostics.py)
