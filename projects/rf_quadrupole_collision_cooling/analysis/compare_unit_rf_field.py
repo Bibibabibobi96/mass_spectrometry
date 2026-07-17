@@ -18,8 +18,11 @@ def load(path: Path) -> np.ndarray:
 
 def metrics(fem: np.ndarray, pa: np.ndarray, mask: np.ndarray) -> dict[str, float]:
     delta = fem[mask, 3:] - pa[mask, 3:]
-    return {"points": int(mask.sum()), "vector_rms_difference_V_per_m": float(np.sqrt(np.mean(np.sum(delta**2, axis=1)))),
-            "vector_relative_rms": float(np.sqrt(np.mean(np.sum(delta**2, axis=1))) / np.sqrt(np.mean(np.sum(pa[mask, 3:]**2, axis=1))))}
+    result = {"points": int(mask.sum()), "vector_rms_difference_V_per_m": float(np.sqrt(np.mean(np.sum(delta**2, axis=1)))),
+              "vector_relative_rms": float(np.sqrt(np.mean(np.sum(delta**2, axis=1))) / np.sqrt(np.mean(np.sum(pa[mask, 3:]**2, axis=1))))}
+    for index, component in enumerate(("Ex", "Ey", "Ez")):
+        result[f"{component}_rms_difference_V_per_m"] = float(np.sqrt(np.mean(delta[:, index] ** 2)))
+    return result
 
 
 def main() -> None:
@@ -36,9 +39,15 @@ def main() -> None:
     rod = (pa[:, 2] >= 5.8) & (pa[:, 2] <= 85.4)
     output = root / "cross_solver"
     output.mkdir(parents=True, exist_ok=True)
-    summary = {"status": "PASS", "all_grid": metrics(fem, pa, np.ones(len(pa), dtype=bool)), "rod_region": metrics(fem, pa, rod)}
-    (output / "unit_rf_field_comparison.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     mid = np.isclose(pa[:, 2], 45.6) & np.isclose(pa[:, 1], 0.0)
+    if np.count_nonzero(mid) < 5:
+        raise ValueError("Midpoint transverse line has too few common field samples")
+    pa_gradient = np.polyfit(pa[mid, 0], pa[mid, 3], 1)[0]
+    fem_gradient = np.polyfit(fem[mid, 0], fem[mid, 3], 1)[0]
+    summary = {"status": "PASS", "all_grid": metrics(fem, pa, np.ones(len(pa), dtype=bool)), "rod_region": metrics(fem, pa, rod),
+               "midpoint_y0_Ex_gradient_V_per_m_per_mm": {"SIMION_PA": float(pa_gradient), "COMSOL_FEM": float(fem_gradient),
+                                                             "relative_difference": float(abs(fem_gradient-pa_gradient)/abs(pa_gradient))}}
+    (output / "unit_rf_field_comparison.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     figure, axis = plt.subplots(figsize=(8, 4.5), constrained_layout=True)
     axis.plot(pa[mid, 0], pa[mid, 3] / 1e3, label="SIMION PA")
     axis.plot(fem[mid, 0], fem[mid, 3] / 1e3, linestyle="--", label="COMSOL FEM")
