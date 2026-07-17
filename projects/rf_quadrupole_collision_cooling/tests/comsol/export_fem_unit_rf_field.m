@@ -7,9 +7,18 @@ try
     projectRoot = fileparts(fileparts(testDir));
     addpath(projectRoot);
     paths = rf_quadrupole_paths();
-    modelPath = fullfile(paths.comsolCandidateDir, 'rf_quadrupole_transport_no_collision_simion_reference.mph');
+    modelPath = getenv('RFQUAD_COMSOL_FIELD_MODEL_PATH');
+    if isempty(modelPath)
+        modelPath = fullfile(paths.comsolCandidateDir, 'rf_quadrupole_transport_no_collision_simion_reference.mph');
+    end
     inputPath = fullfile(paths.simionResultsDir, 'unit_rf_field_pa_grid.csv');
-    outputPath = fullfile(paths.comsolResultsDir, 'unit_rf_field_fem_grid.csv');
+    outputLabel = getenv('RFQUAD_COMSOL_FIELD_OUTPUT_LABEL');
+    if isempty(outputLabel), outputLabel = 'baseline'; end
+    if strcmp(outputLabel,'baseline')
+        outputPath = fullfile(paths.comsolResultsDir, 'unit_rf_field_fem_grid.csv');
+    else
+        outputPath = fullfile(paths.comsolResultsDir, ['unit_rf_field_fem_grid_' outputLabel '.csv']);
+    end
     assert(isfile(modelPath) && isfile(inputPath), 'FEM model or SIMION coordinate grid is missing.');
 
     import com.comsol.model.util.*
