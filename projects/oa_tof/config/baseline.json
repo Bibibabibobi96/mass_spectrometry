@@ -2,12 +2,28 @@
   "source": "Physics-derived oa-TOF project baseline; solver and CAD implementations must conform to this contract",
   "coordinate_convention": {
     "units": "mm",
+    "origin": "detector active-plane center and exact first-order accelerator time-focus plane",
     "reflectron_axis": [0, 0],
     "accelerator_axis_x": -48.8,
     "detector_x": 48.8,
-    "z_axis": "repeller-to-reflectron direction"
+    "z_axis": "positive from accelerator toward reflectron",
+    "software_contract": "COMSOL and CAD use this global frame directly; SIMION PA files may use local coordinates only when their IOB instance transforms map exactly into this frame"
   },
   "geometry_derivation": {
+    "accelerator": {
+      "geometry_quantum_mm": 0.1,
+      "reference_d1_mm": 3.0,
+      "reference_d2_mm": 16.83,
+      "d1_mm": 3.0,
+      "d2_mm": 16.8,
+      "reference_frame_translation_z_mm": -0.09864213722372406,
+      "canonical_repeller_z_mm": -19.92918680341103,
+      "canonical_grid1_z_mm": -16.92918680341103,
+      "canonical_grid2_z_mm": -0.12918680341102995,
+      "canonical_focus_z_mm": 0.0,
+      "focus_drift_after_grid2_mm": 0.12918680341102995,
+      "rule": "Keep d1=3.0 mm; set d2=16.8 mm so all six grid1-to-grid2 pitches are 2.8 mm; retain voltages; translate the accelerator and source rigidly so the derived first-order global focus exactly matches the former 16.83 mm engineering baseline"
+    },
     "reflectron": {
       "incident_energy_eV": 2000.0,
       "total_field_free_length_mm": 1200.0,
@@ -19,8 +35,13 @@
     }
   },
   "geometry_mm": {
-    "L_accel": 19.83,
-    "L_flight": 619.83,
+    "L_accel": 19.8,
+    "accelerator_repeller_z": -19.92918680341103,
+    "accelerator_grid1_z": -16.92918680341103,
+    "accelerator_grid2_z": -0.12918680341102995,
+    "accelerator_focus_z": 0.0,
+    "detector_z": 0.0,
+    "L_flight": 600.0,
     "L_stage1": 120.0,
     "L_stage2": 86.8328,
     "L_reflectron": 206.8328,
@@ -41,10 +62,10 @@
     "accelerator_ring_width": 5.0,
     "accelerator_insulation_gap": 5.0,
     "accelerator_exit_grid_half_width": 15.0,
-    "shield_bore_z_min": -30.0,
-    "shield_bore_z_max": 881.6628,
-    "shield_outer_z_min": -40.0,
-    "shield_outer_z_max": 891.6628
+    "shield_bore_z_min": -49.92918680341103,
+    "shield_bore_z_max": 861.8328,
+    "shield_outer_z_min": -59.92918680341103,
+    "shield_outer_z_max": 871.8328
   },
   "electrodes_V": {
     "repeller": 2240.0,
@@ -72,12 +93,22 @@
     "status": "formal_cross_solver_validation",
     "sample_role": "paired_same-particle large-sample formal statistical closure",
     "arrival_fraction": "1000/1000",
-    "mean_arrival_time_us": 71.98704572162426,
-    "arrival_time_sigma_ns": 0.7650961118321269,
-    "arrival_time_fwhm_ns": 0.933674901887116,
-    "direct_mass_fwhm_Da": 0.013592564430268794,
+    "mean_arrival_time_us": 71.99017440079987,
+    "arrival_time_sigma_ns": 0.7639845214527199,
+    "arrival_time_fwhm_ns": 0.895450275848475,
+    "direct_mass_fwhm_Da": 0.013035531521495614,
     "resolution_definition": "R=m/direct_FWHM_m; narrow-peak TOF equivalent R=mean_t/(2*direct_FWHM_t); 2*sqrt(2*ln(2))*sigma_t is only a Gaussian proxy",
-    "resolution_R_fwhm": 38550.488591624635,
+    "resolution_R_fwhm": 40197.82385826946,
+    "simion_mean_arrival_time_us": 71.99101660431639,
+    "simion_arrival_time_sigma_ns": 0.7026959865797383,
+    "simion_direct_mass_fwhm_Da": 0.011756020528082445,
+    "simion_resolution_R_fwhm": 44572.90617588527,
+    "cross_solver_mean_tof_gap_ns": 0.842203516512541,
+    "cross_solver_paired_rms_ns": 1.123826654416,
+    "cross_solver_centered_rms_ns": 0.744096489677231,
+    "cross_solver_max_abs_ns": 2.59594240620231,
+    "cross_solver_landing_centroid_distance_mm": 0.0705165579274504,
+    "cross_solver_paired_landing_rms_mm": 0.144656277293449,
     "max_stage2_penetration_mm": null,
     "historical_100amu_reference": {
       "arrival_fraction": "1000/1000",
@@ -89,18 +120,20 @@
     }
   },
   "runtime_contract": {
-    "verified_on": "2026-07-16",
+    "verified_on": "2026-07-17",
     "standard_mass_updated_on": "2026-07-15",
     "comsol_formal_geometry_status": "synchronized",
-    "comsol_formal_mph_sha256": "2581D7A0C2797CE80CB8E1C6C7EE5DB0A1CD66CE6A1D65A7E7B85A8363DD20EB",
+    "comsol_formal_mph_sha256": "CB8297390064F672428178DB6C92C035CE0C1ECD03FD5C87E2338E545BEBEDFE",
     "solidworks_formal_geometry_status": "synchronized",
     "solidworks_revision": "30.5.0",
     "solidworks_formal_component_count": 25,
-    "solidworks_formal_assembly_sha256": "80BFFEA54CD2C29C9A03399722B764FA26C0E44C8C2EB4936DCDC4802F048E03"
+    "solidworks_formal_assembly_sha256": "F07D690B9E9B2AB627A11A41FC0BB688061A9128BDFA8EFE859B1A88C333298E"
   },
   "simion_runtime": {
     "trajectory_quality": 8,
     "routine_particles": 5000,
+    "accelerator_grid_epsilon_mm": 0.0001,
+    "reflectron_grid_epsilon_mm": 0.0001,
     "program_required": true,
     "trajectory_log_default_enabled": false
   },
@@ -121,7 +154,7 @@
   },
   "simion_detector_marker": {
     "role": "GUI-visible numerical absorber marking the detector active plane; not the mechanical detector body",
-    "active_plane_z_mm": 19.83,
+    "active_plane_z_mm": 0.0,
     "active_radius_mm": 40.0,
     "absorber_thickness_mm": 0.05,
     "front_margin_z_mm": 0.2,

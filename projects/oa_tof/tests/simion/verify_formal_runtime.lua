@@ -15,10 +15,10 @@ local wb = simion.wb
 assert(#wb.instances == 4, 'formal IOB must contain exactly four PA instances')
 
 local expected = {
-  {name='reflectron.pa0', x=0, y=0, z=619.83, az=-90, nx=1089, ny=361, nz=1, dx=0.25},
-  {name='accelerator.pa0', x=-67.8, y=-19, z=-10, az=0, nx=153, ny=153, nz=601, dx=0.25},
-  {name='flight_tube_ground.pa0', x=0, y=0, z=-40, az=-90, nx=661, ny=361, nz=1, dx=1},
-  {name='detector_ground.pa0', x=7.8, y=-41, z=19.73, az=0, nx=165, ny=165, nz=31, dx=0.5},
+  {name='reflectron.pa0', x=0, y=0, z=600, az=-90, nx=1089, ny=361, nz=1, dx=0.25},
+  {name='accelerator.pa0', x=-67.8, y=-19, z=-29.92918680341103, az=0, nx=153, ny=153, nz=601, dx=0.25},
+  {name='flight_tube_ground.pa0', x=0, y=0, z=-59.92918680341103, az=-90, nx=661, ny=361, nz=1, dx=1},
+  {name='detector_ground.pa0', x=7.8, y=-41, z=-0.1, az=0, nx=165, ny=165, nz=31, dx=0.5},
 }
 for index, target in ipairs(expected) do
   local instance = wb.instances[index]
@@ -43,9 +43,9 @@ for index, target in ipairs(expected) do
 end
 
 local points = {
-  {'src_1p5', 2, -48.8, 0, 1.5},
-  {'src_10', 2, -48.8, 0, 10},
-  {'src_19', 2, -48.8, 0, 19},
+  {'src_center', 2, -48.8, 0, -18.42918680341103},
+  {'accel_mid', 2, -48.8, 0, -10},
+  {'accel_exit', 2, -48.8, 0, -0.2},
   {'drift_300', 3, 0, 0, 300},
   {'drift_500', 3, 0, 0, 500},
   {'refl_650', 1, 0, 0, 650},

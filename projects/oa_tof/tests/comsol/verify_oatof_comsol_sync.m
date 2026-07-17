@@ -3,6 +3,7 @@ testDir = fileparts(mfilename('fullpath'));
 componentDir = fileparts(fileparts(testDir));
 addpath(componentDir);
 paths = oatof_paths();
+mphstart(2036);
 contract = jsondecode(fileread(fullfile(componentDir, 'config', 'baseline.json')));
 g = contract.geometry_mm;
 modelPath = getenv('OATOF_COMSOL_MODEL_PATH');
@@ -29,6 +30,10 @@ fprintf(fid, 'LOAD_SECONDS=%.6f\n', toc(tLoad));
 expected = {
     'x_accel_center',        contract.coordinate_convention.accelerator_axis_x*1e-3;
     'L_accel',               g.L_accel*1e-3;
+    'z_accel_origin',        g.accelerator_repeller_z*1e-3;
+    'z_accel_grid1',         g.accelerator_grid1_z*1e-3;
+    'z_accel_grid2',         g.accelerator_grid2_z*1e-3;
+    'detector_z',             g.detector_z*1e-3;
     'accel_shield_half',     g.accelerator_exit_grid_half_width*1e-3;
     'accel_shield_wall',     g.accelerator_shield_wall*1e-3;
     'accel_ring_gap',        g.accelerator_insulation_gap*1e-3;
@@ -66,7 +71,7 @@ assert(strcmp(char(shieldOuter.getString('r')), ...
     'flight_tube_r+flight_tube_wall'), ...
     'Shield outer radius is not linked to the 10 mm wall.');
 assert(strcmp(char(shieldOuter.getString('h')), ...
-    'L_flight+L_refl+ring_thickness+shield_axial_gap-(-1[mm]-accel_shield_back_extra-accel_shield_wall-endcap_gap)+2*flight_tube_wall'), ...
+    'L_flight+L_refl+ring_thickness+shield_axial_gap-(z_accel_origin-1[mm]-accel_shield_back_extra-accel_shield_wall-endcap_gap)+2*flight_tube_wall'), ...
     'Shield outer axial span no longer includes both end caps.');
 assert(strcmp(char(shieldBore.getString('r')), 'flight_tube_r'), ...
     'Shield bore radius no longer matches the flight-tube vacuum.');
@@ -177,8 +182,8 @@ fprintf(fid, 'STD1_RUN_SECONDS=%.6f\n', toc(tSolve));
 coords = [
     -48.8, -48.8, -48.8, 0, 0, 0, 0;
      0,     0,     0,    0, 0, 0, 0;
-     1.5,  10.0,  19.0, 300, 500, 650, 760];
-labels = {'src_1p5', 'src_10', 'src_19', 'drift_300', ...
+    -18.42918680341103, -10.0, -0.2, 300, 500, 650, 760];
+labels = {'src_center', 'accel_mid', 'accel_exit', 'drift_300', ...
     'drift_500', 'refl_650', 'refl_760'};
 [V, Ex, Ey, Ez] = mphinterp(model, {'V','es.Ex','es.Ey','es.Ez'}, ...
     'coord', coords, 'dataset', 'dset1');

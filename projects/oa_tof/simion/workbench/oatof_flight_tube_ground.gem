@@ -5,10 +5,10 @@
 ; 10 mm end cap.  Together they reproduce the authoritative COMSOL shell.
 ;
 ; Global defaults:
-;   outer start / near cap rear face  z=-40 mm
-;   vacuum bore start / cap front     z=-30 mm
-;   reflectron interface              z=619.83 mm
-; The Workbench places local x=0 at global z=-40 mm.
+;   detector/time-focus plane          z=0 mm
+;   reflectron interface               z=600 mm
+;   outer start / near cap rear face   z=-59.92918680341103 mm
+; The Workbench maps local x=0 to that canonical global outer-start plane.
 
 # local var = _G.var or {}
 # local mmgu_axial = var.mmgu_axial or 1
@@ -16,8 +16,8 @@
 # local inner_radius = var.inner_radius or 350
 # local wall = var.wall or 10
 # local near_cap_thickness = var.near_cap_thickness or 10
-# local near_outer_z = var.near_outer_z or -40
-# local reflectron_interface_z = var.reflectron_interface_z or 619.83
+# local near_outer_z = var.near_outer_z or -59.92918680341103
+# local reflectron_interface_z = var.reflectron_interface_z or 600
 # local outer_radius = inner_radius+wall
 # local axial_span = reflectron_interface_z-near_outer_z
 # local side_start = near_cap_thickness

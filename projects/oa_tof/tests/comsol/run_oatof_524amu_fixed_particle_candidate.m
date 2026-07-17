@@ -5,7 +5,11 @@ addpath(projectDir);
 addpath(fullfile(projectDir, 'comsol'));
 paths = oatof_paths();
 
-ionTable = fullfile(paths.simionFormalDir, 'oatof_comsol_524amu_gaussian_N100.ion');
+ionTable = getenv('OATOF_ION_TABLE');
+if isempty(ionTable)
+    ionTable = fullfile(paths.simionFormalDir, ...
+        'oatof_comsol_524amu_gaussian_N100.ion');
+end
 assert(isfile(ionTable), 'Fixed SIMION particle table not found: %s', ionTable);
 fid = fopen(reportPath, 'w');
 assert(fid >= 0, 'Could not open report: %s', reportPath);

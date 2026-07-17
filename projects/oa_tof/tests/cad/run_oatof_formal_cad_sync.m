@@ -4,6 +4,8 @@ projectDir = fileparts(fileparts(testDir));
 addpath(projectDir);
 paths = oatof_paths();
 addpath(paths.cadDir, paths.commonSolidWorksDir);
+mphstart(2036);
+import com.comsol.model.util.*
 
 modelPath = fullfile(paths.comsolFormalDir, ...
     'MS_oaTOF_TwoStageRingStackReflectron_Final.mph');

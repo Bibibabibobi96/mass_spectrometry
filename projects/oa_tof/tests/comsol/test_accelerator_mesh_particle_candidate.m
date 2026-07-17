@@ -35,6 +35,8 @@ projectDir = fileparts(fileparts(testDir));
 addpath(projectDir);
 addpath(fullfile(projectDir, 'comsol'));
 paths = oatof_paths();
+mphstart(2036);
+import com.comsol.model.util.*
 if isempty(sourceModelPath)
     modelPath = fullfile(paths.comsolFormalDir, ...
         'MS_oaTOF_TwoStageRingStackReflectron_Final.mph');

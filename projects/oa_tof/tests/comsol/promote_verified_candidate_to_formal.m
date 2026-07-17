@@ -3,6 +3,7 @@ testDir = fileparts(mfilename('fullpath'));
 componentDir = fileparts(fileparts(testDir));
 addpath(componentDir);
 paths = oatof_paths();
+mphstart(2036);
 contract = jsondecode(fileread(fullfile(componentDir, 'config', 'baseline.json')));
 g = contract.geometry_mm;
 
@@ -23,6 +24,10 @@ model = mphload(candidatePath, 'OaTofPromotion');
 expected = {
     'x_accel_center',         contract.coordinate_convention.accelerator_axis_x*1e-3;
     'L_accel',                g.L_accel*1e-3;
+    'z_accel_origin',         g.accelerator_repeller_z*1e-3;
+    'z_accel_grid1',          g.accelerator_grid1_z*1e-3;
+    'z_accel_grid2',          g.accelerator_grid2_z*1e-3;
+    'detector_z',             g.detector_z*1e-3;
     'accel_shield_half',      g.accelerator_exit_grid_half_width*1e-3;
     'accel_shield_wall',      g.accelerator_shield_wall*1e-3;
     'accel_ring_gap',         g.accelerator_insulation_gap*1e-3;

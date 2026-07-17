@@ -1,5 +1,5 @@
 {
-  "status": "candidate_not_formal",
+  "status": "promoted_to_formal_baseline_2026-07-17",
   "purpose": "Constrain every internal accelerator axial dimension to 0.1 mm while preserving the existing global first-order time-focus plane exactly",
   "theory_source": "docs/theory/三栅加速器总长度符号推导.docx",
   "reference_implementation": "analysis/accelerator_time_focus.py",
@@ -47,6 +47,11 @@
     "reference_global_focus_z_mm": 19.8305446661873,
     "assembly_translation_z_mm": -0.09864213722372406,
     "grid2_global_z_mm": 19.701357862776277,
-    "focus_global_z_mm": 19.8305446661873
+    "focus_global_z_mm": 19.8305446661873,
+    "canonical_origin_shift_z_mm": -19.8305446661873,
+    "canonical_repeller_z_mm": -19.92918680341103,
+    "canonical_grid1_z_mm": -16.92918680341103,
+    "canonical_grid2_z_mm": -0.12918680341102995,
+    "canonical_focus_and_detector_z_mm": 0.0
   }
 }

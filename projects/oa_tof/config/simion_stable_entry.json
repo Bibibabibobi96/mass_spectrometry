@@ -10,11 +10,11 @@
       "trajectory_quality": 8,
       "expected_instances": 4,
       "assets": [
-        {"role":"iob","relative_path":"formal/oatof_524amu/oatof_ideal_grounded.iob","bytes":20902,"sha256":"79F5DBE40ACA1AA3D9A99818AF82C38B8E77C0F1DDCFCDBFBADA09727DB47769"},
+        {"role":"iob","relative_path":"formal/oatof_524amu/oatof_ideal_grounded.iob","bytes":20902,"sha256":"D4B96CACF209D846693B2E87B04105200D029888D65C7B0ECAA39E44221E291B"},
         {"role":"con","relative_path":"formal/oatof_524amu/oatof_ideal_grounded.con","bytes":2170,"sha256":"D8DA212B73B7D7A70E591C452811B13377AAF93B1E4E627301B71BEE5EBA4B80"},
-        {"role":"program","relative_path":"formal/oatof_524amu/oatof_ideal_grounded.lua","bytes":14328,"sha256":"620F6C996330AB4B6C75769F453D422FD9BA715E57E55AF102B56D5FAB1A01FB"},
-        {"role":"fly2","relative_path":"formal/oatof_524amu/oatof_ideal_grounded.fly2","bytes":871,"sha256":"2E2361D2220ADAF3A0BD1D329EB9F1E969D00B23C372A0F8A35F1C81E385B4E0"},
-        {"role":"sha256_manifest","relative_path":"formal/oatof_524amu/SHA256SUMS.csv","bytes":4872,"sha256":"198B261DE90352D922B0E3E50F00624B67EBA1CF614BB6130A749A96485C5A63"}
+        {"role":"program","relative_path":"formal/oatof_524amu/oatof_ideal_grounded.lua","bytes":16419,"sha256":"9E1E3A27C3A5C66F092E93EDE98970471D9576A71B4973CF61DCA2AC9F4EAF90"},
+        {"role":"fly2","relative_path":"formal/oatof_524amu/oatof_ideal_grounded.fly2","bytes":901,"sha256":"425A90CAB47276A8FB6B069E5096FE9EFAE5E9C4A927FD8F4B57E38DAD97DC5C"},
+        {"role":"sha256_manifest","relative_path":"formal/oatof_524amu/SHA256SUMS.csv","bytes":4871,"sha256":"2463484F0CB7C61D66D645277FE12E469B9A07BC0A61361F4769A924A9AF7479"}
       ]
     },
     {

@@ -17,7 +17,7 @@
 # local shield_wall = var.shield_wall or 4
 # local rear_gap = var.rear_gap or 5
 # local stage1_length = var.stage1_length or 3
-# local stage2_length = var.stage2_length or 16.83
+# local stage2_length = var.stage2_length or 16.8
 # local ring_count = 5
 # local ring_pitch = stage2_length/(ring_count+1)
 # local bore_width = 2*bore_half

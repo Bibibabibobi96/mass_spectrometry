@@ -7,13 +7,19 @@ testDir = fileparts(mfilename('fullpath'));
 projectDir = fileparts(fileparts(testDir));
 addpath(projectDir);
 paths = oatof_paths();
+mphstart(2036);
+import com.comsol.model.util.*
 
 modelPath = getenv('OATOF_COMSOL_MODEL_PATH');
 if isempty(modelPath)
     modelPath = fullfile(paths.comsolCandidateDir, ...
         'MS_oaTOF_TwoStageRingStackReflectron_Candidate_524amu_FixedN100_real_dt0.2ns.mph');
 end
-ionTable = fullfile(paths.simionFormalDir, 'oatof_comsol_524amu_gaussian_N100.ion');
+ionTable = getenv('OATOF_ION_TABLE');
+if isempty(ionTable)
+    ionTable = fullfile(paths.simionFormalDir, ...
+        'oatof_comsol_524amu_gaussian_N100.ion');
+end
 outputCsv = getenv('OATOF_COMSOL_OUTPUT_CSV');
 if isempty(outputCsv)
     outputCsv = fullfile(paths.artifactRoot, 'runs', ...

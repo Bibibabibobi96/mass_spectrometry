@@ -75,13 +75,15 @@ Assert-Near (Get-Adjustable $lua 'detector_tstep_enable') 0 'SIMION detector def
 Assert-Near (Get-Adjustable $lua 'trajectory_quality') $contract.simion_runtime.trajectory_quality 'SIMION trajectory quality'
 Assert-Near (Get-Adjustable $lua 'trajectory_log_enable') ([int]$contract.simion_runtime.trajectory_log_default_enabled) 'SIMION trajectory log default'
 Assert-Near (Get-Adjustable $lua 'detector_tstep_max_dz_mm') $contract.simion_detector_marker.near_plane_max_step_z_mm 'SIMION detector near-plane step'
-Assert-Near (Get-Adjustable $lua 'accelerator_grid2_z_mm') $contract.geometry_mm.L_accel 'SIMION grid2/L_accel'
-Assert-Near (Get-Adjustable $lua 'accelerator_assembly_translation_z_mm') 0 'SIMION formal accelerator translation'
+Assert-Near (Get-Adjustable $lua 'accelerator_repeller_front_z_mm') $contract.geometry_mm.accelerator_repeller_z 'SIMION repeller global z'
+Assert-Near (Get-Adjustable $lua 'accelerator_grid1_z_mm') $contract.geometry_mm.accelerator_grid1_z 'SIMION grid1 global z'
+Assert-Near (Get-Adjustable $lua 'accelerator_grid2_z_mm') $contract.geometry_mm.accelerator_grid2_z 'SIMION grid2 global z'
+Assert-Near (Get-Adjustable $lua 'accelerator_assembly_translation_z_mm') $contract.geometry_mm.accelerator_repeller_z 'SIMION formal accelerator translation'
 Assert-Near (Get-Adjustable $lua 'accelerator_stage1_length_mm') 3 'SIMION formal accelerator stage1 length'
 Assert-Near (Get-Adjustable $lua 'accelerator_stage2_length_mm') ($contract.geometry_mm.L_accel - 3) 'SIMION formal accelerator stage2 length'
-Assert-Near (Get-Adjustable $lua 'accelerator_grid_epsilon_mm') -1 'SIMION accelerator grid jump override default'
-Assert-Near (Get-Adjustable $lua 'reflectron_grid_epsilon_mm') -1 'SIMION reflectron grid jump override default'
-Assert-Near (Get-Adjustable $lua 'accelerator_grid2_z_mm') $contract.simion_detector_marker.active_plane_z_mm 'SIMION detector active plane z'
+Assert-Near (Get-Adjustable $lua 'accelerator_grid_epsilon_mm') $contract.simion_runtime.accelerator_grid_epsilon_mm 'SIMION accelerator grid jump default'
+Assert-Near (Get-Adjustable $lua 'reflectron_grid_epsilon_mm') $contract.simion_runtime.reflectron_grid_epsilon_mm 'SIMION reflectron grid jump default'
+Assert-Near ((Get-Adjustable $lua 'accelerator_grid2_z_mm') + (Get-Adjustable $lua 'accelerator_focus_drift_mm')) $contract.simion_detector_marker.active_plane_z_mm 'SIMION detector/focus plane linkage'
 Assert-Near (Get-Adjustable $lua 'reflectron_entgrid_z_mm') $contract.geometry_mm.L_flight 'SIMION entgrid/L_flight'
 Assert-Near (Get-Adjustable $lua 'reflectron_midgrid_z_mm') ($contract.geometry_mm.L_flight + $contract.geometry_mm.L_stage1) 'SIMION midgrid'
 Assert-Near (Get-Adjustable $lua 'reflectron_backplate_z_mm') ($contract.geometry_mm.L_flight + $contract.geometry_mm.L_reflectron) 'SIMION backplate'
@@ -101,7 +103,8 @@ $exitGridHalf = (Get-Adjustable $lua 'accelerator_bore_half_mm') +
   (Get-Adjustable $lua 'accelerator_ring_width_mm') +
   (Get-Adjustable $lua 'accelerator_insulation_gap_mm')
 Assert-Near $exitGridHalf $contract.geometry_mm.accelerator_exit_grid_half_width 'SIMION accelerator exit-grid half-width'
-$shieldNearBore = -(Get-Adjustable $lua 'accelerator_repeller_thickness_mm') -
+$shieldNearBore = (Get-Adjustable $lua 'accelerator_repeller_front_z_mm') -
+  (Get-Adjustable $lua 'accelerator_repeller_thickness_mm') -
   (Get-Adjustable $lua 'accelerator_rear_insulation_gap_mm') -
   (Get-Adjustable $lua 'accelerator_shield_wall_mm') -
   (Get-Adjustable $lua 'flight_tube_near_endcap_gap_mm')
@@ -151,7 +154,7 @@ Assert-Contains $acceleratorGem 'centered_box3D(0,0,$(stage1_length+3*ring_pitch
 Assert-Contains $acceleratorGem 'e(8) { fill { within { centered_box3D(0,0,$(stage1_length+stage2_length), $(shield_inner_width),$(shield_inner_width),$(mmgu_z)) } } }' 'SIMION accelerator exit grid entity'
 Assert-Contains $flightTubeGem '# local wall = var.wall or 10' 'SIMION field-free shield wall'
 Assert-Contains $flightTubeGem '# local near_cap_thickness = var.near_cap_thickness or 10' 'SIMION near end-cap thickness'
-Assert-Contains $flightTubeGem '# local near_outer_z = var.near_outer_z or -40' 'SIMION shield near outer face'
+Assert-Contains $flightTubeGem '# local near_outer_z = var.near_outer_z or -59.92918680341103' 'SIMION shield near outer face'
 Assert-Contains $flightTubeGem 'box(0,0,$(near_cap_thickness),$(outer_radius))' 'SIMION full near end cap'
 Assert-Contains $flightTubeGem 'box($(side_start),$(inner_radius),$(side_end),$(outer_radius))' 'SIMION continuous field-free side wall'
 Assert-Contains $flightTubeBuilder "local wall = tonumber(arg[7] or '10')" 'SIMION field-free builder wall default'
@@ -167,7 +170,7 @@ Assert-Contains $fly2 'mass = 524' 'SIMION GUI particle mass'
 Assert-Contains $fly2 'charge = 1' 'SIMION GUI particle charge'
 Assert-Contains $fly2 'energy = 5 + 0.4*normal' 'SIMION GUI energy distribution'
 Assert-Contains $fly2 'x = uniform_distribution { min = -49.3, max = -48.3 }' 'SIMION GUI source x extent'
-Assert-Contains $fly2 'z = uniform_distribution { min = 1.0, max = 2.0 }' 'SIMION GUI source z extent'
+Assert-Contains $fly2 'z = uniform_distribution { min = -18.92918680341103, max = -17.92918680341103 }' 'SIMION GUI source z extent'
 Assert-Contains $comsol "p.set('detector_x', '-x_accel_center'" 'COMSOL detector x parameter'
 Assert-Contains $comsol "p.set('detector_radius', '40[mm]'" 'COMSOL detector radius parameter'
 Assert-Contains $comsol "p.set('E_mean_eV', '5[V]'" 'COMSOL mean initial energy'
@@ -186,11 +189,11 @@ Assert-Contains $comsol "if nargin < 9 || isempty(ring_thickness_mm)" 'COMSOL ba
 Assert-Contains $comsol "ring_thickness_mm = 5;" 'COMSOL backplate-thickness default'
 Assert-Contains $comsol "if nargin < 12 || isempty(accel_bore_half_mm)" 'COMSOL accelerator-bore default branch'
 Assert-Contains $comsol "accel_bore_half_mm = 5;" 'COMSOL accelerator-bore default'
-Assert-Contains $comsol "z0_bore = '-1[mm]-accel_shield_back_extra-accel_shield_wall-endcap_gap';" 'COMSOL linked near bore face'
+Assert-Contains $comsol "z0_bore = 'z_accel_origin-1[mm]-accel_shield_back_extra-accel_shield_wall-endcap_gap';" 'COMSOL linked near bore face'
 Assert-Contains $comsol "z1_bore = 'L_flight+L_refl+ring_thickness+shield_axial_gap';" 'COMSOL linked far bore face'
 Assert-Contains $comsol "geom1.feature('flighttubewallO').set('h', [z1_bore '-(' z0_bore ')+2*flight_tube_wall']);" 'COMSOL two end-cap thicknesses'
 Assert-Contains $comsol "Flight tube shield (grounded, one-piece shell with both ends closed -- encloses field-free tube + reflectron)" 'COMSOL authoritative closed shield'
-Assert-Contains $comsol "'wp_grid2',     'L_accel'       'square'  '2*accel_shield_half'" 'COMSOL accelerator exit grid geometry'
+Assert-Contains $comsol "'wp_grid2',     'z_accel_grid2' 'square'  '2*accel_shield_half'" 'COMSOL accelerator exit grid geometry'
 Assert-Contains $ionGenerator '[double]$EnergyMeanEv = 5' 'SIMION ION mean initial energy'
 Assert-Contains $ionGenerator '[double]$EnergyStdEv = 0.4' 'SIMION ION initial energy sigma'
 Assert-Contains $ionGenerator '[double]$MassAmu = 524' 'SIMION ION standard mass'

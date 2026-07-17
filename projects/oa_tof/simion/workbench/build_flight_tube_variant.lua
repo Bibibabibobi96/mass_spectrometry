@@ -13,8 +13,8 @@ local max_gib = tonumber(arg[5] or '0.1')
 local inner_radius = tonumber(arg[6] or '350')
 local wall = tonumber(arg[7] or '10')
 local near_cap_thickness = tonumber(arg[8] or '10')
-local near_outer_z = tonumber(arg[9] or '-40')
-local reflectron_interface_z = tonumber(arg[10] or '619.83')
+local near_outer_z = tonumber(arg[9] or '-59.92918680341103')
+local reflectron_interface_z = tonumber(arg[10] or '600')
 local outer_radius = inner_radius+wall
 local axial_span = reflectron_interface_z-near_outer_z
 

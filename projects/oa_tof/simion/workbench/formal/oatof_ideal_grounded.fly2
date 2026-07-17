@@ -23,7 +23,7 @@ particles {
     charge = 1,
     x = uniform_distribution { min = -49.3, max = -48.3 },
     y = uniform_distribution { min = -0.5, max = 0.5 },
-    z = uniform_distribution { min = 1.0, max = 2.0 },
+    z = uniform_distribution { min = -18.92918680341103, max = -17.92918680341103 },
     ke = distribution(positive_gaussian_energy),
     cwf = 1,
     color = 1,

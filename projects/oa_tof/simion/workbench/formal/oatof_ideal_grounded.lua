@@ -3,22 +3,25 @@ adjustable V_repeller=2240
 adjustable V_grid1=1760
 adjustable V_mid=1600
 adjustable V_backplate=2400
-adjustable ideal_grid_epsilon_mm=0.005
-adjustable accelerator_grid_epsilon_mm=-1
-adjustable reflectron_grid_epsilon_mm=-1
+adjustable ideal_grid_epsilon_mm=0.0001
+adjustable accelerator_grid_epsilon_mm=0.0001
+adjustable reflectron_grid_epsilon_mm=0.0001
 adjustable accelerator_fast_adjust_enable=1
 adjustable ideal_accel_enable=0
 adjustable ideal_refl_stage1_enable=0
 adjustable ideal_refl_stage2_enable=0
-adjustable accelerator_assembly_translation_z_mm=0
+adjustable accelerator_assembly_translation_z_mm=-19.92918680341103
 adjustable accelerator_stage1_length_mm=3
-adjustable accelerator_stage2_length_mm=16.83
-adjustable accelerator_repeller_front_z_mm=0
-adjustable accelerator_grid1_z_mm=3
-adjustable accelerator_grid2_z_mm=19.83
-adjustable reflectron_entgrid_z_mm=619.83
-adjustable reflectron_midgrid_z_mm=739.83
-adjustable reflectron_backplate_z_mm=826.6628
+adjustable accelerator_stage2_length_mm=16.8
+adjustable accelerator_repeller_front_z_mm=-19.92918680341103
+adjustable accelerator_grid1_z_mm=-16.92918680341103
+adjustable accelerator_grid2_z_mm=-0.12918680341102995
+adjustable accelerator_focus_drift_mm=0.12918680341102995
+adjustable reflectron_entgrid_z_mm=600
+adjustable reflectron_stage1_length_mm=120
+adjustable reflectron_stage2_length_mm=86.8328
+adjustable reflectron_midgrid_z_mm=720
+adjustable reflectron_backplate_z_mm=806.8328
 adjustable accelerator_axis_x_mm=-48.8
 adjustable accelerator_axis_y_mm=0
 adjustable accelerator_bore_half_mm=5
@@ -35,7 +38,7 @@ adjustable flight_tube_endcap_thickness_mm=10
 adjustable reflectron_backplate_thickness_mm=5
 adjustable detector_mirror_offset_x_mm=0
 adjustable detector_mirror_offset_y_mm=0
-adjustable detector_active_plane_z_mm=19.83
+adjustable detector_active_plane_z_mm=0
 adjustable detector_radius_mm=40
 adjustable detector_marker_absorber_thickness_mm=0.05
 adjustable detector_marker_front_margin_z_mm=0.2
@@ -48,7 +51,7 @@ adjustable diagnostic_max_tof_us=90
 adjustable trajectory_quality=8
 adjustable trajectory_log_enable=0
 adjustable trajectory_log_stride=1000
-adjustable accelerator_instance_z_mm=-10
+adjustable accelerator_instance_z_mm=-29.92918680341103
 local detector_x_mm,detector_y_mm,detector_z_mm
 local accelerator_pa_override=os.getenv('OATOF_ACCELERATOR_PA_OVERRIDE')
 local accelerator_pa_override_loaded=false
@@ -83,10 +86,21 @@ local function configure_linked_geometry()
  assert(math.abs(accelerator_grid2_z_mm-accelerator_grid1_z_mm-
    accelerator_stage2_length_mm)<1e-12,
    'grid2 must follow accelerator stage2 length')
+ assert(math.abs(detector_active_plane_z_mm-accelerator_grid2_z_mm-
+   accelerator_focus_drift_mm)<1e-12,
+   'detector active plane must equal the derived accelerator time-focus plane')
+ assert(math.abs(reflectron_entgrid_z_mm-detector_active_plane_z_mm-600)<1e-12,
+   'reflectron entrance must remain exactly 600 mm from the detector/focus datum')
+ assert(math.abs(reflectron_midgrid_z_mm-reflectron_entgrid_z_mm-
+   reflectron_stage1_length_mm)<1e-12,
+   'reflectron middle grid must follow stage1 length')
+ assert(math.abs(reflectron_backplate_z_mm-reflectron_midgrid_z_mm-
+   reflectron_stage2_length_mm)<1e-12,
+   'reflectron backplate must follow stage2 length')
  assert(math.abs(accelerator_instance_z_mm-accelerator_expected_z)<1e-12,
    'accelerator instance z must follow repeller rear gap and shield wall')
  ai.x,ai.y,ai.z=accelerator_axis_x_mm-half_x,accelerator_axis_y_mm-half_y,accelerator_instance_z_mm
- local near_bore_z=-accelerator_repeller_thickness_mm-
+ local near_bore_z=accelerator_repeller_front_z_mm-accelerator_repeller_thickness_mm-
    accelerator_rear_insulation_gap_mm-accelerator_shield_wall_mm-
    flight_tube_near_endcap_gap_mm
  local near_outer_z=near_bore_z-flight_tube_endcap_thickness_mm

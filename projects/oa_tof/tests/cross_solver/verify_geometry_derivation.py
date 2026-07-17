@@ -15,6 +15,34 @@ def main() -> int:
     source = contract["geometry_derivation"]["reflectron"]
     geometry = contract["geometry_mm"]
 
+    accelerator = contract["geometry_derivation"]["accelerator"]
+    accel_d1 = float(accelerator["d1_mm"])
+    accel_d2 = float(accelerator["d2_mm"])
+    repeller_z = float(accelerator["canonical_repeller_z_mm"])
+    grid1_z = float(accelerator["canonical_grid1_z_mm"])
+    grid2_z = float(accelerator["canonical_grid2_z_mm"])
+    focus_z = float(accelerator["canonical_focus_z_mm"])
+    focus_drift = float(accelerator["focus_drift_after_grid2_mm"])
+    accelerator_expected = {
+        "L_accel": accel_d1 + accel_d2,
+        "accelerator_repeller_z": repeller_z,
+        "accelerator_grid1_z": repeller_z + accel_d1,
+        "accelerator_grid2_z": repeller_z + accel_d1 + accel_d2,
+        "accelerator_focus_z": grid2_z + focus_drift,
+        "detector_z": focus_z,
+        "L_flight": focus_z + 600.0,
+    }
+    for name, target in accelerator_expected.items():
+        actual = float(geometry[name])
+        if not math.isclose(actual, target, rel_tol=0.0, abs_tol=1e-12):
+            raise AssertionError(f"{name}={actual} but accelerator linkage requires {target}")
+    if not math.isclose(grid1_z, repeller_z + accel_d1, rel_tol=0.0, abs_tol=1e-12):
+        raise AssertionError("canonical grid1 coordinate is not linked to d1")
+    if not math.isclose(grid2_z, grid1_z + accel_d2, rel_tol=0.0, abs_tol=1e-12):
+        raise AssertionError("canonical grid2 coordinate is not linked to d2")
+    if not math.isclose(accel_d2 / 6.0, 2.8, rel_tol=0.0, abs_tol=1e-12):
+        raise AssertionError("accelerator ring pitch is not exactly 2.8 mm")
+
     u0 = float(source["incident_energy_eV"])
     length_m = float(source["total_field_free_length_mm"]) / 1000.0
     d1_mm = float(source["stage1_length_mm"])

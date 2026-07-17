@@ -12,17 +12,17 @@ local reflectron_pa=os.getenv('OATOF_REFLECTRON_PA') or f..'reflectron.pa0'
 local accelerator_pa=os.getenv('OATOF_ACCELERATOR_PA') or f..'accelerator.pa0'
 local flight_tube_pa=os.getenv('OATOF_FLIGHT_TUBE_PA') or f..'flight_tube_ground.pa0'
 local detector_pa=os.getenv('OATOF_DETECTOR_PA') or f..'detector_ground.pa0'
-local detector_active_plane_z=tonumber(os.getenv('OATOF_DETECTOR_ACTIVE_PLANE_Z') or '19.83')
+local detector_active_plane_z=tonumber(os.getenv('OATOF_DETECTOR_ACTIVE_PLANE_Z') or '0')
 local detector_marker_thickness=tonumber(os.getenv('OATOF_DETECTOR_MARKER_THICKNESS') or '0.05')
 local detector_marker_back_margin=tonumber(os.getenv('OATOF_DETECTOR_MARKER_BACK_MARGIN_Z') or '0.05')
-local reflectron_entgrid_z=tonumber(os.getenv('OATOF_REFLECTRON_ENTGRID_Z') or '619.83')
+local reflectron_entgrid_z=tonumber(os.getenv('OATOF_REFLECTRON_ENTGRID_Z') or '600')
 local accelerator_repeller_thickness=tonumber(os.getenv('OATOF_ACCELERATOR_REPELLER_THICKNESS') or '1')
 local accelerator_rear_gap=tonumber(os.getenv('OATOF_ACCELERATOR_REAR_GAP') or '5')
 local accelerator_shield_wall=tonumber(os.getenv('OATOF_ACCELERATOR_SHIELD_WALL') or '4')
-local accelerator_translation_z=tonumber(os.getenv('OATOF_ACCELERATOR_TRANSLATION_Z') or '0')
+local accelerator_translation_z=tonumber(os.getenv('OATOF_ACCELERATOR_TRANSLATION_Z') or '-19.92918680341103')
 local shield_near_gap=tonumber(os.getenv('OATOF_SHIELD_NEAR_ENDCAP_GAP') or '20')
 local shield_endcap_thickness=tonumber(os.getenv('OATOF_SHIELD_ENDCAP_THICKNESS') or '10')
-local shield_near_bore_z=-accelerator_repeller_thickness-accelerator_rear_gap-
+local shield_near_bore_z=accelerator_translation_z-accelerator_repeller_thickness-accelerator_rear_gap-
   accelerator_shield_wall-shield_near_gap
 local shield_near_outer_z=shield_near_bore_z-shield_endcap_thickness
 local function read_file(path,label)

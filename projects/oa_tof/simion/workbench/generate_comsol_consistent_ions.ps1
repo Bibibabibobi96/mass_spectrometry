@@ -8,7 +8,7 @@ param(
   [double]$HalfWidthXmm = -1,
   [double]$HalfWidthYmm = -1,
   [double]$HalfWidthZmm = -1,
-  [double]$CenterZmm = 1.5,
+  [double]$CenterZmm = -18.42918680341103,
   [int]$Seed = 20260713,
   [string]$Output = 'oatof_comsol_524amu_gaussian_N100.ion'
 )

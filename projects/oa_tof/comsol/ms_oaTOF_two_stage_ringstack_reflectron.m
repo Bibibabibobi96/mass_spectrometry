@@ -358,7 +358,11 @@ p.set('V_mirror', sprintf('%.4f[V]', V_mirror_V), 'Reflectron backplate -- deriv
 % d1+d2=3+16.83=19.83mm, with D=0 (no extra drift needed for
 % first-order time focus -- ion focuses exactly at grid2/field-free
 % boundary).
-p.set('L_accel', '19.83[mm]', 'Acceleration region depth (repeller to grid2) = d1(3mm)+d2(16.83mm), D=0 per the three-grid focusing solution');
+p.set('z_accel_origin', '-19.92918680341103[mm]', 'Canonical global repeller front; detector/time-focus plane is z=0');
+p.set('L_accel', '19.8[mm]', 'Local acceleration depth = d1(3.0mm)+d2(16.8mm), aligned to the 0.1mm geometry quantum');
+p.set('z_accel_grid1', 'z_accel_origin+3[mm]', 'Canonical global grid1 plane');
+p.set('z_accel_grid2', 'z_accel_origin+L_accel', 'Canonical global grid2 plane');
+p.set('accel_focus_drift', '0.12918680341102995[mm]', 'First-order focus drift downstream of grid2 for d1=3.0mm, d2=16.8mm and retained voltages');
 % !!! Extended 10x (300->3000mm) per explicit request to test whether a
 % longer flight path improves mass resolution -- for a system where the
 % dominant timing spread comes from geometric/spatial effects that don't
@@ -427,7 +431,7 @@ p.set('L_accel', '19.83[mm]', 'Acceleration region depth (repeller to grid2) = d
 % !!! Extended from L_accel+500mm to L_accel+600mm (doc §7.49, per
 % explicit request): gives true field-free length L1=L_flight-L_accel=
 % 600.00mm exactly (detector_z=L_accel unchanged, so L2=600mm too).
-p.set('L_flight', 'L_accel+600[mm]', 'Entrance-grid z-position (accelerator origin to reflectron entrance) -- set so true field-free length L1=L_flight-L_accel=600.00mm exactly (doc §7.49, was 500mm)');
+p.set('L_flight', 'detector_z+600[mm]', 'Canonical reflectron entrance: exactly 600mm downstream of detector/time-focus datum');
 % !!! Added a named parameter for the detector's z-position, instead of
 % only setting it inline in the geometry command -- the detection
 % z-threshold in the post-processing code below previously used a bare
@@ -436,7 +440,7 @@ p.set('L_flight', 'L_accel+600[mm]', 'Entrance-grid z-position (accelerator orig
 % the detector moved (exactly what happened during the §7.41 L1/L2
 % asymmetry test). Both the geometry and the detection logic now read
 % this SAME parameter, so they can never drift apart again.
-p.set('detector_z', 'L_accel', 'Detector z-position -- exactly L_accel gives L2=L_flight-detector_z=500.00mm exactly (matching L1). Referenced by BOTH the detector geometry and the detection z-threshold below (was two independent hardcoded values before, a latent bug found during the §7.41 L1/L2 asymmetry test)');
+p.set('detector_z', 'z_accel_grid2+accel_focus_drift', 'Detector active plane is the exact derived first-order time-focus plane and canonical z=0 datum');
 p.set('L_refl', sprintf('%.12g[mm]', d1_mm+d2_mm), 'Ring-stack reflectron total length (physics-derived d1+d2, rounded to the shared 0.0001mm engineering precision in baseline.json)');
 p.set('L_stage1', sprintf('%g[mm]', d1_mm), 'Stage 1 length (entrance grid to middle grid) = d1, from the d1_mm function argument (doc §7.49, was fixed 200mm)');
 % !!! CORRECTED: the first attempt used K0=V_repeller=4500eV, but the
@@ -707,7 +711,7 @@ p.set('endcap_gap', '20[mm]', 'Vacuum gap between the flight-tube end cap (oppos
 geom1.feature.create('repeller', 'Block');
 geom1.feature('repeller').label('Repeller (pulses 0->V_repeller, solid, rectangular, ion never passes through it)');
 geom1.feature('repeller').set('size', {'2*(accel_shield_half-accel_ring_gap)', '2*(accel_shield_half-accel_ring_gap)', '1'});
-geom1.feature('repeller').set('pos', {'x_accel_center-(accel_shield_half-accel_ring_gap)', '-(accel_shield_half-accel_ring_gap)', '-1'});
+geom1.feature('repeller').set('pos', {'x_accel_center-(accel_shield_half-accel_ring_gap)', '-(accel_shield_half-accel_ring_gap)', 'z_accel_origin-1[mm]'});
 
 % !!! Square shield tube around the accelerator (repeller to grid2): a
 % thin grounded square-annular wall (Block-minus-Block, same technique
@@ -735,11 +739,11 @@ geom1.feature('repeller').set('pos', {'x_accel_center-(accel_shield_half-accel_r
 geom1.feature.create('accelshieldO', 'Block');
 geom1.feature('accelshieldO').label('Accelerator shield outer solid (includes integrated back cap)');
 geom1.feature('accelshieldO').set('size', {'2*(accel_shield_half+accel_shield_wall)', '2*(accel_shield_half+accel_shield_wall)', 'L_accel+1[mm]+accel_shield_back_extra+accel_shield_wall'});
-geom1.feature('accelshieldO').set('pos', {'x_accel_center-(accel_shield_half+accel_shield_wall)', '-(accel_shield_half+accel_shield_wall)', '-1[mm]-accel_shield_back_extra-accel_shield_wall'});
+geom1.feature('accelshieldO').set('pos', {'x_accel_center-(accel_shield_half+accel_shield_wall)', '-(accel_shield_half+accel_shield_wall)', 'z_accel_origin-1[mm]-accel_shield_back_extra-accel_shield_wall'});
 geom1.feature.create('accelshieldH', 'Block');
 geom1.feature('accelshieldH').label('Accelerator shield bore (stops accel_shield_wall short of the outer solid''s back face, leaving the integrated back cap)');
 geom1.feature('accelshieldH').set('size', {'2*accel_shield_half', '2*accel_shield_half', 'L_accel+1[mm]+accel_shield_back_extra'});
-geom1.feature('accelshieldH').set('pos', {'x_accel_center-accel_shield_half', '-accel_shield_half', '-1[mm]-accel_shield_back_extra'});
+geom1.feature('accelshieldH').set('pos', {'x_accel_center-accel_shield_half', '-accel_shield_half', 'z_accel_origin-1[mm]-accel_shield_back_extra'});
 geom1.feature.create('accelshield', 'Difference');
 geom1.feature('accelshield').label('Accelerator shield (grounded, one-piece: side walls + integrated back cap)');
 geom1.feature('accelshield').selection('input').set({'accelshieldO'});
@@ -765,7 +769,7 @@ geom1.feature('accelshield').selection('input2').set({'accelshieldH'});
 accelringtags = {};
 for k = 1:5
     tagk = sprintf('accelring_%d', k);
-    zk_expr = sprintf('3[mm]+%d*(L_accel-3[mm])/6', k);
+    zk_expr = sprintf('z_accel_origin+3[mm]+%d*(L_accel-3[mm])/6', k);
     Vk_expr = sprintf('V_grid1*(1-%d/6)', k);
     outer_half = 'accel_shield_half-accel_ring_gap';
     geom1.feature.create([tagk 'O'], 'Block');
@@ -1003,7 +1007,7 @@ geom1.feature('detector').set('pos', {'detector_x' '0' 'detector_z-1[mm]'});
 % tube's own vacuum bore begins) must stay behind THAT, or flighttubewallO
 % (a full disk before flighttubewallH's hole starts) would overlap the
 % accelerator shield's new back cap at the same z.
-z0_bore = '-1[mm]-accel_shield_back_extra-accel_shield_wall-endcap_gap';
+z0_bore = 'z_accel_origin-1[mm]-accel_shield_back_extra-accel_shield_wall-endcap_gap';
 % !!! backplate is a real solid disk again (front face at L_flight+
 % L_refl, extending ring_thickness further out in +z, see the backplate
 % feature below) -- z1_bore must stay shield_axial_gap clear of its own
@@ -1059,7 +1063,7 @@ geom1.feature('flighttubewall').selection('input2').set({'flighttubewallH'});
 geom1.feature.create('relvol', 'Block');
 geom1.feature('relvol').label('Release volume (ion entering pusher at 5eV, 1mm cube)');
 geom1.feature('relvol').set('size', {'1' '1' '1'});
-geom1.feature('relvol').set('pos', {'x_accel_center-0.5' '-0.5' '1'});
+geom1.feature('relvol').set('pos', {'x_accel_center-0.5' '-0.5' 'z_accel_origin+1[mm]'});
 geom1.feature('relvol').set('selresult', 'on');
 
 for t = [{'repeller','detector','accelshield','flighttubewall','backplate'}, ringtags, accelringtags]
@@ -1172,8 +1176,8 @@ end
 % centering -- the symmetric design is self-consistent at this crossing
 % point.
 gridspecs = {
-    'wp_grid1',     '3[mm]'         'square'  '2*(accel_shield_half-accel_ring_gap)'  'x_accel_center'
-    'wp_grid2',     'L_accel'       'square'  '2*accel_shield_half'  'x_accel_center'
+    'wp_grid1',     'z_accel_grid1' 'square'  '2*(accel_shield_half-accel_ring_gap)'  'x_accel_center'
+    'wp_grid2',     'z_accel_grid2' 'square'  '2*accel_shield_half'  'x_accel_center'
     'wp_entgrid',   'L_flight'      'circle'  'flight_tube_r'         '0'
     'wp_midgrid',   z_mid_expr      'circle'  'ring_outer_r'          'x_refl_center'
 };
@@ -1280,8 +1284,8 @@ end
 % for both, and the accelerator field went completely wrong as a
 % result, since the ElectricPotential condition had nothing to act on).
 gridsel = {
-    'selb_grid1',     '3[mm]'            '0.5[mm]'    'accel_shield_half'                                       'x_accel_center'
-    'selb_grid2',     'L_accel'          '0.2[mm]'    'accel_shield_half+accel_shield_wall+endcap_gap+5[mm]'    'x_accel_center'
+    'selb_grid1',     'z_accel_grid1'    '0.5[mm]'    'accel_shield_half'                                       'x_accel_center'
+    'selb_grid2',     'z_accel_grid2'    '0.05[mm]'   'accel_shield_half+0.01[mm]'    'x_accel_center'
     'selb_entgrid',   'L_flight'         '1[mm]'      'flight_tube_r+10[mm]'                                     '0'
     'selb_midgrid',   z_mid_expr         '1[mm]'      'flight_tube_r'                                            '0'
 };
@@ -1428,7 +1432,8 @@ comp1.selection('selbracket').set('xmax', 'x_accel_center+accel_shield_half');
 comp1.selection('selbracket').set('ymin', '-accel_shield_half');
 comp1.selection('selbracket').set('ymax', 'accel_shield_half');
 comp1.selection('selbracket').set('zmin', '0');
-comp1.selection('selbracket').set('zmax', 'L_accel');
+comp1.selection('selbracket').set('zmin', 'z_accel_origin');
+comp1.selection('selbracket').set('zmax', 'z_accel_grid2');
 comp1.selection('selbracket').set('condition', 'inside');
 bracketDomainIds = comp1.selection('selbracket').entities(3);
 assert(numel(bracketDomainIds) >= 6, ...
@@ -1592,7 +1597,7 @@ fprintf('\n--- Perfect-condition check: field-free drift region (should be ~0) -
 % hardcoded '41.2*zc/500' formula (which assumed the ion started at x=0
 % and only worked for the pre-§7.50 one-sided placement).
 x_accel_center_mm_ffcheck = p.evaluate('x_accel_center','mm');
-L_accel_mm = p.evaluate('L_accel','mm');
+L_accel_mm = p.evaluate('z_accel_grid2','mm');
 v_x_ffcheck = sqrt(2*5*1.602176e-19/(mass_amu*1.66054e-27));
 v_push_ffcheck = sqrt(2*2000*1.602176e-19/(mass_amu*1.66054e-27));
 zcheck = [25 100 200 300 400 480];
@@ -1601,14 +1606,15 @@ for zc = zcheck
     Ez = mphinterp(model, 'es.Ez', 'coord', coord, 'dataset', 'dset1', 'matherr', 'off');
     fprintf('  z=%5.0fmm: Ez=%.4f V/m\n', zc, Ez);
 end
-fprintf('--- Accelerator field check (bracket region z=0-3mm: target 160 V/mm between repeller/grid1; grid1-grid2 z=3-19.83mm: target 104.57 V/mm) ---\n');
+fprintf('--- Accelerator field check in canonical coordinates: repeller->grid1 target 160 V/mm; grid1->grid2 target 104.76 V/mm ---\n');
 % !!! x updated from 0 to x_accel_center (doc §7.50): the whole
 % accelerator assembly moved off-axis, so querying at x=0 now probes
 % the field-free flight tube (correctly showing ~0), not the
 % accelerator's own internal field. Must query at the accelerator's
 % OWN axis to see its real internal field.
 x_accel_center_mm = p.evaluate('x_accel_center','mm');
-for zc = [0.2 0.5 1.0 1.5 2.0 2.5 2.8 4 8 12 16 19.5]
+z_accel_origin_mm_diag = p.evaluate('z_accel_origin','mm');
+for zc = z_accel_origin_mm_diag + [0.2 0.5 1.0 1.5 2.0 2.5 2.8 4 8 12 16 19.5]
     coord = [x_accel_center_mm; 0; zc];
     Ez = mphinterp(model, 'es.Ez', 'coord', coord, 'dataset', 'dset1', 'matherr', 'off');
     fprintf('  z=%5.2fmm: Ez=%.2f V/m\n', zc, Ez);
@@ -1746,7 +1752,7 @@ ef1.set('E_src', 'userdef');
 % field's own measured sign (z=0.2mm: Ez=+159532 V/m). The reflectron
 % region has V INCREASING with z (entgrid 0 -> backplate high) as the
 % ion decelerates, so Ez=-dV/dz is NEGATIVE there.
-Ez_accel_ideal = ['if(z<3[mm],(V_repeller-V_grid1)/3[mm],V_grid1/(L_accel-3[mm]))'];
+Ez_accel_ideal = ['if(z<z_accel_grid1,(V_repeller-V_grid1)/3[mm],V_grid1/(L_accel-3[mm]))'];
 Ez_drift_ideal = '0';
 Ez_stage1_ideal = '-V_mid/L_stage1';
 Ez_stage2_ideal = '-(V_mirror-V_mid)/(L_refl-L_stage1)';
@@ -1759,13 +1765,13 @@ if use_ideal_accel || use_ideal_drift || use_ideal_stage1 || use_ideal_stage2
     if use_ideal_drift, drift_piece = Ez_drift_ideal; else, drift_piece = 'es.Ez'; end
     if use_ideal_stage1, stage1_piece = Ez_stage1_ideal; else, stage1_piece = 'es.Ez'; end
     if use_ideal_stage2, stage2_piece = Ez_stage2_ideal; else, stage2_piece = 'es.Ez'; end
-    Ez_ideal = sprintf('if(z<L_accel,%s,if(z<L_flight,%s,if(z<L_flight+L_stage1,%s,if(z<L_flight+L_refl,%s,es.Ez))))', ...
+    Ez_ideal = sprintf('if(z<z_accel_grid2,%s,if(z<L_flight,%s,if(z<L_flight+L_stage1,%s,if(z<L_flight+L_refl,%s,es.Ez))))', ...
         accel_piece, drift_piece, stage1_piece, stage2_piece);
     % Ex/Ey: zero within whichever region(s) use the ideal (pure-1D)
     % theory; real es.Ex/es.Ey everywhere else.
     ex_conditions = {};
-    if use_ideal_accel,  ex_conditions{end+1} = 'z<L_accel'; end
-    if use_ideal_drift,  ex_conditions{end+1} = '(z>=L_accel&&z<L_flight)'; end
+    if use_ideal_accel,  ex_conditions{end+1} = 'z<z_accel_grid2'; end
+    if use_ideal_drift,  ex_conditions{end+1} = '(z>=z_accel_grid2&&z<L_flight)'; end
     if use_ideal_stage1, ex_conditions{end+1} = '(z>=L_flight&&z<L_flight+L_stage1)'; end
     if use_ideal_stage2, ex_conditions{end+1} = '(z>=L_flight+L_stage1&&z<L_flight+L_refl)'; end
     ex_cond_str = strjoin(ex_conditions, '||');
@@ -2100,7 +2106,6 @@ fprintf('[%s] stage2 penetration_max vs d2_min: diff=%.3fmm (%.2f%% of d2_min)\n
 % det_freeze_tol of the detector's own z -- the latter is the actual
 % physical-collision case that now applies.
 det_z_thresh = p.evaluate('detector_z','mm') + 0.5;
-wasup_thresh = p.evaluate('detector_z','mm') * 2;
 det_freeze_tol = 2; % mm, how close the frozen final z must be to detector_z
 % !!! Per explicit request: analyzed "shrink the tlist step further" vs
 % "interpolate between existing samples" as two ways to fix the
@@ -2123,19 +2128,22 @@ detector_z_exact = p.evaluate('detector_z','mm');
 detTimes = nan(1,nP);
 for i = 1:nP
     zi = z(:,i);
-    wasUp = false;
-    wasUpIdx = NaN;
+    lastValid = find(isfinite(zi), 1, 'last');
+    if isempty(lastValid), continue; end
+    [~, turnIdx] = max(zi(1:lastValid));
     detected = false;
-    for k = 1:numel(zi)
-        if isnan(zi(k)), break; end
-        if zi(k) > wasup_thresh && ~wasUp, wasUp = true; wasUpIdx = k; end
-        if wasUp && zi(k) < det_z_thresh
+    % The physical detector event is the first downward crossing after
+    % the trajectory's maximum-z turning point.  This definition is
+    % invariant under any rigid global-coordinate translation and cannot
+    % confuse the outbound accelerator pass with the return detection.
+    for k = turnIdx+1:lastValid
+        if zi(k) < det_z_thresh
             detTimes(i) = interp_crossing_time(t, zi, k, detector_z_exact);
             detected = true;
             break;
         end
     end
-    if ~detected && wasUp
+    if ~detected
         % Trajectory never cleanly crossed det_z_thresh -- COMSOL
         % doesn't set z to NaN after a physical collision, it FREEZES
         % the last valid position for all remaining timesteps (confirmed
@@ -2149,9 +2157,9 @@ for i = 1:nP
         % later return-and-collide event) for the first timestep where z
         % has already reached near the detector (the actual moment of
         % collision, not the tail end of the frozen plateau).
-        near_det = find(abs(zi(wasUpIdx:end) - detector_z_exact) < det_freeze_tol, 1, 'first');
+        near_det = find(abs(zi(turnIdx:end) - detector_z_exact) < det_freeze_tol, 1, 'first');
         if ~isempty(near_det)
-            k2 = wasUpIdx + near_det - 1;
+            k2 = turnIdx + near_det - 1;
             detTimes(i) = interp_crossing_time(t, zi, k2, detector_z_exact);
         end
     end
@@ -2163,7 +2171,7 @@ fprintf('[%s] detected on detector plate: %d/%d, arrival time: mean=%.5fus, std=
 % fine windows. This catches future mass/voltage/length/source changes that
 % invalidate the one-dimensional reference formulas instead of silently
 % degrading resolution in a coarse output segment.
-L_accel_gate_mm = p.evaluate('L_accel', 'mm');
+L_accel_gate_mm = p.evaluate('z_accel_grid2', 'mm');
 L_flight_gate_mm = p.evaluate('L_flight', 'mm');
 t_accel_gate = nan(1,nP);
 t_refl_entry_gate = nan(1,nP);
@@ -2406,14 +2414,14 @@ end
 % the old diagnostic's blind spot at z<L_flight: both accelerator stages
 % and the zero-field drift are now included with the two reflectron stages.
 Ez_ideal_full_expr = sprintf(['if(z<0||z>L_flight+L_refl,NaN,' ...
-    'if(z<L_accel,%s,if(z<L_flight,%s,' ...
+    'if(z<z_accel_grid2,%s,if(z<L_flight,%s,' ...
     'if(z<L_flight+L_stage1,%s,%s))))'], ...
     Ez_accel_ideal, Ez_drift_ideal, Ez_stage1_ideal, Ez_stage2_ideal);
 Ez_diff_full_expr = sprintf('es.Ez-(%s)', Ez_ideal_full_expr);
 Ez_signedlog_expr = 'sign(es.Ez)*log10(1+abs(es.Ez)/(1[V/m]))';
 Ez_diff_signedlog_expr = sprintf('sign(%s)*log10(1+abs(%s)/(1[V/m]))', ...
     Ez_diff_full_expr, Ez_diff_full_expr);
-Eres_drift_log_expr = ['if(z<L_accel||z>L_flight,NaN,' ...
+Eres_drift_log_expr = ['if(z<z_accel_grid2||z>L_flight,NaN,' ...
     'log10(1+sqrt(es.Ex^2+es.Ey^2+es.Ez^2)/(1[V/m])))'];
 try
     % (1) Full-domain real-ideal difference. Signed-log compression keeps
