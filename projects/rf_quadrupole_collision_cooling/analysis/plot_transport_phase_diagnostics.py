@@ -63,7 +63,9 @@ def main() -> None:
     wrapped_phase_deg = (phase_deg + 180.0) % 360.0 - 180.0
     rod = (z >= 5.8) & (z <= 85.4)
     plane_metrics: dict[str, dict[str, float]] = {}
-    for name, plane in (("entrance", 0.2), ("rod_midpoint", 45.6), ("rod_exit", 85.4), ("detector_front", 94.8)):
+    for name, plane in (("first_common_plane", 0.2), ("rod_entry", 5.8), ("rod_midpoint", 45.6),
+                        ("rod_exit", 85.4), ("exit_enclosure_front", 90.2),
+                        ("pre_detector", 94.0), ("detector_front", 94.8)):
         index = int(round((plane - 0.2) / 0.2))
         plane_metrics[name] = {
             "axial_z_mm": plane,
@@ -73,6 +75,11 @@ def main() -> None:
         }
     abs_phase = np.abs(wrapped_phase_deg[:, rod]).ravel()
     rod_distance = distance[:, rod].ravel()
+    mean_distance = np.mean(distance, axis=0)
+    onset: dict[str, float | None] = {}
+    for threshold in (0.01, 0.05, 0.1, 0.2):
+        indices = np.flatnonzero(mean_distance >= threshold)
+        onset[f"mean_distance_ge_{threshold:g}_mm_z_mm"] = float(z[indices[0]]) if indices.size else None
     summary = {
         "status": "PASS",
         "rf_period_us": period_us,
@@ -80,6 +87,7 @@ def main() -> None:
         "rod_abs_wrapped_phase_deg_mean": float(np.mean(abs_phase)),
         "rod_abs_wrapped_phase_deg_p95": float(np.percentile(abs_phase, 95)),
         "rod_phase_distance_pearson_r": float(np.corrcoef(abs_phase, rod_distance)[0, 1]),
+        "transverse_difference_onset": onset,
         "plane_metrics": plane_metrics,
         "interpretation": "Correlation is descriptive only; this diagnostic does not alter either field or trajectory.",
     }
