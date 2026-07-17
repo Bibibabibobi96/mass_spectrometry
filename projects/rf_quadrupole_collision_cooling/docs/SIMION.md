@@ -20,6 +20,10 @@ Fly2 `standard_beam` 的 `az/el` 是在 IOB 放置前的局部束流角度，不
 施加到速度分量。通过导出轨迹在入口的 `x(z),y(z)` 斜率已将这一定义固定为 COMSOL 的
 `(-vSim_y,-vSim_z,vSim_x)` 映射；未来改动 IOB 或粒子生成器时必须重做该斜率审计。
 
+`tests/simion/export_unit_rf_field.lua` 在已 refine 的官方 PA 上施加 `e1=+100 V,e2=-100 V`，以
+PA/COMSOL 坐标导出三维单位 RF 场；`analysis/split_simion_unit_field.py` 将其拆为 COMSOL 的三个
+标量插值表。它们是连续 FEM 与离散 PA 场匹配测试的输入，尚不改变正式传输基线。
+
 `tests/simion/inspect_builtin_quad_reference.lua` 只加载已构建候选，不触发交互 refine；验证 IOB 单实例、
 `quad_monolithic.pa0`、`39×39×477`、0.2 mm 单元及 PA→workbench 三轴基向量。候选可直接在 SIMION
 GUI 中打开检查 Program、Adjustables、粒子定义和 PA 实例。
