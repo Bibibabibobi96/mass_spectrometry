@@ -1,7 +1,9 @@
 param(
     [int]$RfStepsPerPeriod = 40,
     [int]$TrajectoryQuality = 10,
-    [string]$RunLabel = 'baseline'
+    [string]$RunLabel = 'baseline',
+    [double]$SourceAxialOffsetMm = 0.0,
+    [string]$CandidateSubdir = 'quad_transport'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -9,7 +11,7 @@ $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $repoRoot = Split-Path -Parent (Split-Path -Parent $projectRoot)
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling'
-$candidateDir = Join-Path $artifactRoot 'models\simion\candidates\quad_transport'
+$candidateDir = Join-Path $artifactRoot "models\simion\candidates\$CandidateSubdir"
 $resultDir = Join-Path $artifactRoot 'results\simion'
 $runDir = Join-Path $artifactRoot "runs\transport_no_collision\simion_$RunLabel"
 $simion = 'C:\Program Files\SIMION-2020\simion.exe'
@@ -24,7 +26,8 @@ Copy-Item -LiteralPath $officialIob -Destination (Join-Path $candidateDir 'quad_
 $ionPath = Join-Path $projectRoot 'config\particles\official_fixed_25.ion'
 $flyPath = Join-Path $candidateDir 'quad_monolithic.fly2'
 & (Join-Path $repoRoot '.venv\Scripts\python.exe') `
-    (Join-Path $projectRoot 'analysis\generate_fixed_fly2.py') $ionPath $flyPath
+    (Join-Path $projectRoot 'analysis\generate_fixed_fly2.py') $ionPath $flyPath `
+    --axial-offset-mm $SourceAxialOffsetMm
 if ($LASTEXITCODE -ne 0) { throw 'Fixed FLY2 generation failed.' }
 
 Push-Location $candidateDir

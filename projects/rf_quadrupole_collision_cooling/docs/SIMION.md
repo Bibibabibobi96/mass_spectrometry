@@ -24,7 +24,15 @@ Fly2 `standard_beam` 的 `az/el` 是在 IOB 放置前的局部束流角度，不
 `tests/simion/export_unit_rf_field.lua` 在已 refine 的官方 PA 上施加 `e1=+100 V,e2=-100 V`，以
 PA/COMSOL 坐标导出 SIMION 自己求得的三维单位 RF 场。该文件只提供公共采样点和待比较数据，
 不得导入 COMSOL、不得替代任一求解器的受力场；独立 FEM--PA 场差由
-`analysis/compare_unit_rf_field.py` 计算。
+`analysis/compare_unit_rf_field.py` 计算。导出器可由 `RFQUAD_SIMION_PA_PATH` 直接打开隔离 PA；该路径
+已与基线 IOB 路径在 192 个稀疏公共点逐分量验证，最大差 `3e-10 V/m`。
+
+`tests/simion/test_pa_field_convergence.ps1` 只在运行时副本中把 GEM 单元由 0.2 mm 改为 0.1 mm，
+生成 `77×77×953` PA 并独立 refine、导场。0.2→0.1 mm 自身场差在入口/杆区/出口分别为
+3.396%/0.0467%/0.280%；说明官方 0.2 mm PA 的杆区场已收敛，但边缘区仍有明显离散敏感性。
+
+`run_transport_candidate.ps1` 的 `SourceAxialOffsetMm` 仅用于隔离诊断：它把同一 25 粒子源沿 workbench
+轴向平移，默认值 0 不改变权威基线；`CandidateSubdir` 保证候选 PA/IOB 不覆盖正式目录。
 
 `tests/simion/inspect_builtin_quad_reference.lua` 只加载已构建候选，不触发交互 refine；验证 IOB 单实例、
 `quad_monolithic.pa0`、`39×39×477`、0.2 mm 单元及 PA→workbench 三轴基向量。候选可直接在 SIMION

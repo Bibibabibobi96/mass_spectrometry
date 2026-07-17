@@ -30,10 +30,13 @@ def metrics(fem: np.ndarray, pa: np.ndarray, mask: np.ndarray) -> dict[str, floa
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", type=Path, required=True)
+    parser.add_argument("--simion-field", type=Path)
+    parser.add_argument("--comsol-field", type=Path)
+    parser.add_argument("--output-label", default="baseline")
     args = parser.parse_args()
     root = args.workspace / "artifacts/projects/rf_quadrupole_collision_cooling/results"
-    pa = load(root / "simion/unit_rf_field_pa_grid.csv")
-    fem = load(root / "comsol/unit_rf_field_fem_grid.csv")
+    pa = load(args.simion_field or root / "simion/unit_rf_field_pa_grid.csv")
+    fem = load(args.comsol_field or root / "comsol/unit_rf_field_fem_grid.csv")
     keys = {tuple(row) for row in fem[:, :3]}
     pa = np.array([row for row in pa if tuple(row[:3]) in keys])
     fem_index = {tuple(row[:3]): row for row in fem}
@@ -41,6 +44,7 @@ def main() -> None:
     rod = (pa[:, 2] >= 5.8) & (pa[:, 2] <= 85.4)
     output = root / "cross_solver"
     output.mkdir(parents=True, exist_ok=True)
+    suffix = "" if args.output_label == "baseline" else f"_{args.output_label}"
     mid = np.isclose(pa[:, 2], 45.6) & np.isclose(pa[:, 1], 0.0)
     if np.count_nonzero(mid) < 5:
         raise ValueError("Midpoint transverse line has too few common field samples")
@@ -60,7 +64,7 @@ def main() -> None:
     axis.plot(fem[mid, 0], fem[mid, 3] / 1e3, linestyle="--", label="COMSOL FEM")
     axis.set(title="Independent unit RF field: rod midpoint y=0", xlabel="x (mm)", ylabel="Ex (kV/m)")
     axis.grid(True, alpha=0.3); axis.legend()
-    figure.savefig(output / "unit_rf_field_midplane_comparison.png", dpi=190)
+    figure.savefig(output / f"unit_rf_field_midplane_comparison{suffix}.png", dpi=190)
     plt.close(figure)
 
     axial_z = np.unique(pa[:, 2])
@@ -79,7 +83,9 @@ def main() -> None:
         "max_finite_relative_rms_percent": float(np.nanmax(relative_array)),
         "max_finite_relative_rms_z_mm": float(axial_z[np.nanargmax(relative_array)]),
     }
-    (output / "unit_rf_field_comparison.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    summary["simion_field_source"] = str(args.simion_field) if args.simion_field else "baseline_0.2_mm_PA"
+    summary["comsol_field_source"] = str(args.comsol_field) if args.comsol_field else "baseline_mesh1_FEM"
+    (output / f"unit_rf_field_comparison{suffix}.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     figure, axes = plt.subplots(2, 1, figsize=(9, 6.5), constrained_layout=True, sharex=True)
     axes[0].plot(axial_z, absolute, color="tab:blue")
     axes[0].set(ylabel="vector RMS difference (V/m)", title="Independent FEM–PA field difference along the transport axis")
@@ -89,9 +95,9 @@ def main() -> None:
         axis.axvspan(5.8, 85.4, color="0.9", label="rod region")
         axis.grid(True, alpha=0.3)
     axes[0].legend()
-    figure.savefig(output / "unit_rf_field_axial_error.png", dpi=190)
+    figure.savefig(output / f"unit_rf_field_axial_error{suffix}.png", dpi=190)
     plt.close(figure)
-    print(f"STATUS=PASS SUMMARY={output / 'unit_rf_field_comparison.json'}")
+    print(f"STATUS=PASS SUMMARY={output / f'unit_rf_field_comparison{suffix}.json'}")
 
 
 if __name__ == "__main__":

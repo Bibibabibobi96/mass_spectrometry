@@ -17,6 +17,8 @@ meshAuto = str2double(getenv('RFQUAD_COMSOL_MESH_AUTO'));
 if ~isfinite(meshAuto) || meshAuto <= 0, meshAuto = mode.numerics.comsol_mesh_auto_level; end
 meshHmaxMm = str2double(getenv('RFQUAD_COMSOL_HMAX_MM'));
 if ~isfinite(meshHmaxMm) || meshHmaxMm <= 0, meshHmaxMm = NaN; end
+sourceAxialOffsetMm = str2double(getenv('RFQUAD_SOURCE_AXIAL_OFFSET_MM'));
+if ~isfinite(sourceAxialOffsetMm), sourceAxialOffsetMm = 0; end
 ionPath = fullfile(projectRoot,'config','particles','official_fixed_25.ion');
 ions = readmatrix(ionPath,'FileType','text','Delimiter',',');
 assert(size(ions,1)==source.particles && size(ions,2)==11, 'Fixed ION table shape mismatch.');
@@ -148,7 +150,7 @@ for i=1:size(ions,1)
     % audit gives physical PA velocity [-vSim(2),-vSim(3),vSim(1)] rather
     % than the position-basis inverse.  Preserve this empirically verified
     % distinction; it aligns the fixed source's x(z), y(z) with SIMION.
-    releaseData=[ions(i,6),-ions(i,5),ions(i,4),-vSim(2),-vSim(3),vSim(1)];
+    releaseData=[ions(i,6),-ions(i,5),ions(i,4)+sourceAxialOffsetMm,-vSim(2),-vSim(3),vSim(1)];
     releasePath=fullfile(scratch,sprintf('particle_%03d.txt',i)); writematrix(releaseData,releasePath,'Delimiter','tab');
     rel=cpt.create(sprintf('rel%03d',i),'ReleaseFromDataFile',-1); rel.label(sprintf('Official fixed particle %03d, birth %.9g us',i,ions(i,1)));
     rel.set('Filename',releasePath); rel.set('icolp','0'); rel.set('VelocitySpecification','SpecifyVelocity'); rel.set('InitialVelocity','FromFile'); rel.set('icolv','3'); rel.set('rt',sprintf('%.12g[us]',ions(i,1))); rel.importData();
@@ -190,7 +192,8 @@ featureTags=cell(cpt.feature.tags()); collisionPresent=any(contains(lower(string
 result=struct('solver','COMSOL','mode','transport_no_collision','collision_feature_present',collisionPresent,'q_mathieu',mphglobal(model,'q_mathieu','dataset','dset1'), ...
     'particles',nP,'hits',sum(hit),'transmission',mean(hit),'max_radius_mm',max(maxRadius),'max_hit_rod_radius_mm',maxHitRodRadius, ...
     'detector_plane_crossings',sum(crossedDetectorPlane),'max_detector_hit_radius_mm',max(arrivalRadius(hit),[],'omitnan'), ...
-    'mean_detector_time_us',mean(arrival,'omitnan'),'rf_steps_per_period',mode.numerics.comsol_rf_steps_per_period,'mesh_auto_level',meshAuto,'mesh_hmax_mm',meshHmaxMm,'run_label',runLabel);
+    'mean_detector_time_us',mean(arrival,'omitnan'),'rf_steps_per_period',mode.numerics.comsol_rf_steps_per_period,'mesh_auto_level',meshAuto,'mesh_hmax_mm',meshHmaxMm, ...
+    'source_axial_offset_mm',sourceAxialOffsetMm,'run_label',runLabel);
 if collisionPresent || result.transmission<mode.numerics.minimum_expected_transmission || result.max_hit_rod_radius_mm>=mode.numerics.maximum_allowed_radius_fraction_r0*g.field_radius_r0
     error('COMSOL transport/confinement gate failed: transmission=%.6g maxHitRodRadius=%.6g',result.transmission,result.max_hit_rod_radius_mm);
 end
