@@ -33,13 +33,17 @@
 独立资产哈希检查。任一项改变都必须重新验证并有意识地更新清单，禁止只替换PA或手工改IOB后
 继续称为稳定入口。
 
-`simion/workbench/build_formal_delivery.ps1`从已验证组件源复制四套完整PA家族，以同目录PA重建IOB，
-部署同名Program/Fly2、N=100/N=1000固定ION和复现说明，并生成`SHA256SUMS.csv`。2026-07-17构建后
-四实例/关键场门禁PASS；固定N=100实际飞行为100/100命中，平均TOF `71.990135072569 us`。
+`simion/workbench/build_formal_delivery.ps1`已从统一baseline/resolved契约和四份版本化GEM独立生成
+全部PA家族，在输出目录的私有布局副本上重建四实例IOB，并部署同名Program/Fly2、N=100/N=1000
+固定ION、复现说明、运行manifest和`SHA256SUMS.csv`。构建过程不读取
+`workspace/diagnostics`中的PA；正式IOB布局只作为四实例GUI容器模板，打开前先复制到新PA同目录，
+因此模板的旧PA路径不会参与新模型。`.con`GUI视图配置显式随新basename部署。
 
-当前交付物已摆脱旧路径，但构建脚本仍把旧`workspace/diagnostics`中的已验证PA和模板作为输入。
-后续任务是改为由版本化GEM在scratch中从头生成全部PA家族、使用独立正式构建模板或直接创建Workbench，
-门禁后再转正，并增加按需ZIP+独立SHA-256发布入口；该重构暂不实施，不影响当前正式包交付。
+2026-07-17源码重建v3经固定N=1000转正门禁：两边均1000/1000命中，关键非零场矢量最大相对差
+`7.92e-8`，新包减旧包的平均TOF为`-0.001014 ns`，逐粒子TOF RMS/最大绝对差为
+`0.001874/0.008660 ns`，落点RMS/最大距离为`0.0000240/0.0001011 mm`，标准化KDE重叠
+`0.9998405`。源码重建包已提升到正式目录，旧正式包整体归档；转正门禁入口为
+`tests/simion/test_formal_delivery_source_build_equivalence.ps1`。
 
 2026-07-16在正式几何同步后，用同一524 amu固定N=100 ION表重跑quality=8真实PA场，100/100
 命中，平均TOF为`71.9901350726 us`。统一Python直接质量FWHM为`0.019673808666 Da`，

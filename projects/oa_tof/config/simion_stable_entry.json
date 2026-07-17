@@ -5,16 +5,17 @@
   "artifact_workspace_relative": "models/simion",
   "entries": [
     {
-      "id": "formal_524amu_xy025_z0050_refaxial0250",
-      "role": "Formal portable 524 amu GUI and production delivery",
+      "id": "formal_524amu_source_built_xy025_z0050_refaxial0250",
+      "role": "Formal portable 524 amu GUI and production delivery rebuilt from baseline, resolved contract and GEM sources",
       "trajectory_quality": 8,
       "expected_instances": 4,
       "assets": [
         {"role":"iob","relative_path":"formal/oatof_524amu/oatof_ideal_grounded.iob","bytes":20902,"sha256":"D4B96CACF209D846693B2E87B04105200D029888D65C7B0ECAA39E44221E291B"},
         {"role":"con","relative_path":"formal/oatof_524amu/oatof_ideal_grounded.con","bytes":2170,"sha256":"D8DA212B73B7D7A70E591C452811B13377AAF93B1E4E627301B71BEE5EBA4B80"},
-        {"role":"program","relative_path":"formal/oatof_524amu/oatof_ideal_grounded.lua","bytes":16419,"sha256":"9E1E3A27C3A5C66F092E93EDE98970471D9576A71B4973CF61DCA2AC9F4EAF90"},
-        {"role":"fly2","relative_path":"formal/oatof_524amu/oatof_ideal_grounded.fly2","bytes":901,"sha256":"425A90CAB47276A8FB6B069E5096FE9EFAE5E9C4A927FD8F4B57E38DAD97DC5C"},
-        {"role":"sha256_manifest","relative_path":"formal/oatof_524amu/SHA256SUMS.csv","bytes":4871,"sha256":"2463484F0CB7C61D66D645277FE12E469B9A07BC0A61361F4769A924A9AF7479"}
+        {"role":"program","relative_path":"formal/oatof_524amu/oatof_ideal_grounded.lua","bytes":18066,"sha256":"0A4902FAFA48B83B752BC8B29578151F7B81306E98E0A5F0B7AF21CAF5B2F277"},
+        {"role":"fly2","relative_path":"formal/oatof_524amu/oatof_ideal_grounded.fly2","bytes":868,"sha256":"A7BCDECD99F11FB65FD8389D012B494520471E1935A8F7C7AE394813F4756DD3"},
+        {"role":"sha256_manifest","relative_path":"formal/oatof_524amu/SHA256SUMS.csv","bytes":5344,"sha256":"5FB46DF4A6436B653DB3F06ACEA6CC8E744C4BA48260515D4E0BF1CD82645807"},
+        {"role":"run_manifest","relative_path":"formal/oatof_524amu/run_manifest.json","bytes":2671,"sha256":"71F1C6F86535681500786F1CD3A125D4C6AB865F52D814F1BE5B73C65B9E0F47"}
       ]
     },
     {

@@ -1,6 +1,7 @@
 param(
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
-  [string]$OutputDir = ''
+  [string]$OutputDir = '',
+  [string]$TemplateIob = ''
 )
 
 Set-StrictMode -Version Latest
@@ -117,32 +118,54 @@ $runConfig = [ordered]@{
 }
 $runConfig | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $runConfigPath -Encoding UTF8
 
-$template = Join-Path $artifactRoot 'models\simion\formal\oatof_524amu\oatof_ideal_grounded.iob'
+$template = $TemplateIob
+if ([string]::IsNullOrWhiteSpace($template)) {
+  $template = Join-Path $artifactRoot 'models\simion\formal\oatof_524amu\oatof_ideal_grounded.iob'
+}
 if (-not (Test-Path -LiteralPath $template -PathType Leaf)) {
   throw "Four-instance template IOB is unavailable: $template"
 }
+$template = (Resolve-Path -LiteralPath $template).Path
+$templateCon = [IO.Path]::ChangeExtension($template, '.con')
+if (-not (Test-Path -LiteralPath $templateCon -PathType Leaf)) {
+  throw "Four-instance template GUI configuration is unavailable: $templateCon"
+}
+# Open a private template copy beside the freshly generated PA files.  This
+# makes all relative PA references resolve to this build, not to the template's
+# source directory, before build_formal_iob replaces each instance explicitly.
+$privateTemplate = Join-Path $outputFull '_layout_template.iob'
+$privateTemplateCon = Join-Path $outputFull '_layout_template.con'
+Copy-Item -LiteralPath $template -Destination $privateTemplate
+Copy-Item -LiteralPath $templateCon -Destination $privateTemplateCon
 $iobOutput = Join-Path $outputFull 'oatof_ideal_grounded.iob'
 Invoke-SimionLua (Join-Path $PSScriptRoot 'build_formal_iob.lua') @(
-  (Join-Path $outputFull 'oatof_resolved.lua'), $iobOutput, $template,
+  (Join-Path $outputFull 'oatof_resolved.lua'), $iobOutput, $privateTemplate,
   (Join-Path $projectRoot 'simion\workbench\formal\oatof_ideal_grounded.lua'),
   (Join-Path $projectRoot 'simion\workbench\formal\oatof_ideal_grounded.fly2')
 )
+Remove-Item -LiteralPath $privateTemplate -Force
+Remove-Item -LiteralPath $privateTemplateCon -Force
+Copy-Item -LiteralPath $templateCon -Destination (Join-Path $outputFull 'oatof_ideal_grounded.con')
 
 foreach ($required in @('oatof_ideal_grounded.iob','oatof_ideal_grounded.con','oatof_ideal_grounded.lua','oatof_ideal_grounded.fly2')) {
   if (-not (Test-Path -LiteralPath (Join-Path $outputFull $required) -PathType Leaf)) {
     throw "Delivery is missing $required"
   }
 }
+$manifestScript = Join-Path $repoRoot 'common\contracts\write_run_manifest.py'
+$shaPath = Join-Path $outputFull 'SHA256SUMS.csv'
+# The build manifest records the checksum file, so the checksum file cannot in
+# turn include the manifest without a circular hash dependency.  Write the
+# delivery checksum first, then the provenance manifest.
 $hashes = Get-ChildItem -LiteralPath $outputFull -File | Where-Object {
-  $_.Name -ne 'SHA256SUMS.csv' -and $_.Name -notlike 'trj*.tmp'
+  $_.Name -notin @('SHA256SUMS.csv','run_manifest.json') -and $_.Name -notlike 'trj*.tmp'
 } | Sort-Object Name | ForEach-Object {
   [pscustomobject]@{file=$_.Name; bytes=$_.Length; sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash}
 }
-$hashes | Export-Csv -LiteralPath (Join-Path $outputFull 'SHA256SUMS.csv') -NoTypeInformation -Encoding UTF8
-$manifestScript = Join-Path $repoRoot 'common\contracts\write_run_manifest.py'
+$hashes | Export-Csv -LiteralPath $shaPath -NoTypeInformation -Encoding UTF8
 & $python $manifestScript --run-config $runConfigPath --status success --software 'SIMION 2020' `
   --output $iobOutput --output (Join-Path $outputFull 'oatof_ideal_grounded.lua') `
   --output (Join-Path $outputFull 'oatof_ideal_grounded.fly2') `
-  --output (Join-Path $outputFull 'SHA256SUMS.csv')
+  --output $shaPath
 if ($LASTEXITCODE -ne 0) { throw 'Run-manifest generation failed.' }
 "STATUS=PASS OUTPUT_DIR=$outputFull FILES=$($hashes.Count)"

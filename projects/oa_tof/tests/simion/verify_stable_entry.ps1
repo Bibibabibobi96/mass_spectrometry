@@ -40,7 +40,7 @@ foreach ($entry in $manifest.entries) {
         Write-Warning "$($entry.id): ignoring $($runtimeTemps.Count) SIMION runtime trajectory temp file(s); delete them before packaging."
       }
       $actual = @(Get-ChildItem -LiteralPath $familyRoot -File | Where-Object {
-        $_.Name -ne (Split-Path -Leaf $path) -and $_.Name -notlike 'trj*.tmp'
+        $_.Name -notin @((Split-Path -Leaf $path),'run_manifest.json') -and $_.Name -notlike 'trj*.tmp'
       })
       if ($listed.Count -ne $actual.Count) {
         throw "$($entry.id): delivery file-count mismatch: manifest=$($listed.Count) actual=$($actual.Count)"
