@@ -3,7 +3,13 @@ param(
     [string]$TaskScript,
 
     [Parameter(Mandatory = $true)]
-    [string]$ReportPath
+    [string]$ReportPath,
+
+    [ValidateRange(1, 3)]
+    [int]$StartupAttempts = 2,
+
+    [ValidateRange(1, 30)]
+    [int]$StartupRetryDelaySeconds = 5
 )
 
 $ErrorActionPreference = 'Stop'
@@ -32,12 +38,31 @@ try {
     $env:COMSOL_MATLAB_TASK = $task
     $env:COMSOL_BOOTSTRAP_REPORT = $report
 
-    & $launcher -login auto matlab `
-        -mlroot $matlabRoot `
-        -nodesktop `
-        -mlnosplash `
-        -mlstartdir $repoRoot
-    $launcherExit = $LASTEXITCODE
+    for ($attempt = 1; $attempt -le $StartupAttempts; $attempt++) {
+        Remove-Item -LiteralPath $report -Force -ErrorAction SilentlyContinue
+        & $launcher -login auto matlab `
+            -mlroot $matlabRoot `
+            -nodesktop `
+            -mlnosplash `
+            -mlstartdir $repoRoot
+        $launcherExit = $LASTEXITCODE
+
+        if (Test-Path -LiteralPath $report -PathType Leaf) {
+            $reportText = Get-Content -LiteralPath $report -Raw -Encoding UTF8
+            $reportText
+            if ($launcherExit -eq 0 -and $reportText -match '(?m)^STATUS=PASS$') {
+                return
+            }
+            throw "R2025b LiveLink task failed (launcher exit $launcherExit)."
+        }
+
+        if ($attempt -lt $StartupAttempts) {
+            Write-Warning ("COMSOL/MATLAB exited before the task report was created; " +
+                "retrying clean startup in $StartupRetryDelaySeconds s " +
+                "(attempt $($attempt + 1)/$StartupAttempts).")
+            Start-Sleep -Seconds $StartupRetryDelaySeconds
+        }
+    }
 }
 finally {
     $env:MATLABPATH = $oldMatlabPath
@@ -45,11 +70,4 @@ finally {
     Remove-Item Env:COMSOL_BOOTSTRAP_REPORT -ErrorAction SilentlyContinue
 }
 
-if (-not (Test-Path -LiteralPath $report -PathType Leaf)) {
-    throw "LiveLink task did not create its report: $report"
-}
-$reportText = Get-Content -LiteralPath $report -Raw -Encoding UTF8
-$reportText
-if ($launcherExit -ne 0 -or $reportText -notmatch '(?m)^STATUS=PASS$') {
-    throw "R2025b LiveLink task failed (launcher exit $launcherExit)."
-}
+throw "LiveLink task did not create its report after $StartupAttempts clean startup attempts: $report"

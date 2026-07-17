@@ -8,6 +8,7 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $matlabExe = 'C:\Program Files\MATLAB\R2025b\MatlabR2025b\bin\matlab.exe'
+$solidWorksExe = 'D:\SW2022\SOLIDWORKS Corp2022\SOLIDWORKS\SLDWORKS.exe'
 $swInterop = 'D:\SW2022\SOLIDWORKS Corp2022\SOLIDWORKS\SolidWorks.Interop.sldworks.dll'
 $swConstants = 'D:\SW2022\SOLIDWORKS Corp2022\SOLIDWORKS\SolidWorks.Interop.swconst.dll'
 
@@ -21,25 +22,69 @@ if (-not $SkipMatlabProbe) {
     }
 }
 
-if (-not (Test-Path -LiteralPath $swInterop -PathType Leaf) -or -not (Test-Path -LiteralPath $swConstants -PathType Leaf)) {
+if (-not (Test-Path -LiteralPath $solidWorksExe -PathType Leaf) -or
+    -not (Test-Path -LiteralPath $swInterop -PathType Leaf) -or
+    -not (Test-Path -LiteralPath $swConstants -PathType Leaf)) {
     throw 'SolidWorks 2022 PIA assemblies are unavailable.'
 }
 $revision = 'UNPROBED'
+$solidWorksProbeMode = 'SKIPPED'
 if (-not $SkipSolidWorksProbe) {
     Add-Type -Path $swInterop
     Add-Type -Path $swConstants
     $sw = $null
+    $existingSolidWorksIds = @(Get-Process -Name SLDWORKS -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
     try {
         $sw = New-Object -TypeName 'SolidWorks.Interop.sldworks.SldWorksClass'
-        $revision = [string]$sw.RevisionNumber()
+        $revisionError = $null
+        foreach ($attempt in 1..10) {
+            try {
+                $revision = [string]$sw.RevisionNumber()
+                $revisionError = $null
+                break
+            }
+            catch {
+                $revisionError = $_
+                Start-Sleep -Milliseconds 500
+            }
+        }
+        if ($null -ne $revisionError) {
+            $revision = [string](Get-Item -LiteralPath $solidWorksExe).VersionInfo.ProductVersion
+            $solidWorksProbeMode = 'FILE_VERSION_FALLBACK'
+            Write-Warning ("SolidWorks live COM revision probe failed; verified the installed " +
+                "executable/PIA baseline instead. Actual CAD changes still require the project " +
+                "SolidWorks export gate. COM error: $($revisionError.Exception.Message)")
+        }
+        else {
+            $solidWorksProbeMode = 'LIVE_COM'
+        }
         if ($revision -notmatch '^30\.') {
             throw "Expected SolidWorks 2022 revision 30.x, got $revision"
         }
     }
     finally {
         if ($null -ne $sw) {
-            $sw.ExitApp()
-            [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($sw)
+            try {
+                $sw.ExitApp()
+            }
+            catch {
+                Write-Warning "SolidWorks probe instance was already unavailable during ExitApp: $($_.Exception.Message)"
+            }
+            try {
+                [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($sw)
+            }
+            catch {
+                Write-Warning "SolidWorks probe COM release was already complete: $($_.Exception.Message)"
+            }
+            $newSolidWorks = @(Get-Process -Name SLDWORKS -ErrorAction SilentlyContinue | Where-Object {
+                $_.Id -notin $existingSolidWorksIds
+            })
+            foreach ($process in $newSolidWorks) {
+                if (-not $process.HasExited) {
+                    Write-Warning "Stopping orphan SolidWorks probe process $($process.Id)."
+                    Stop-Process -Id $process.Id -Force
+                }
+            }
         }
     }
 }
@@ -59,6 +104,7 @@ foreach ($readme in $readmes) {
     MATLABProbe = -not $SkipMatlabProbe
     SolidWorks = $revision
     SolidWorksProbe = -not $SkipSolidWorksProbe
+    SolidWorksProbeMode = $solidWorksProbeMode
     ProjectReadmes = $readmes.Count
     STATUS = 'PASS'
 } | Format-List

@@ -9,24 +9,21 @@
 
 ## 0. 技术路线：MATLAB LiveLink/Java API 直连 COMSOL
 
-本手册默认把`matlab.exe -batch`驱动的MATLAB LiveLink/Java API作为正式执行路径。标准流程是先单独
-启动`comsolmphserver.exe`，再由脚本用`mphstart(2036)`连接同一个服务端，最后按项目脚本里的专用判据
-完成加载、求解和后处理。
+本手册默认把`common/comsol/run_comsol_r2025b.ps1`驱动的MATLAB LiveLink/Java API作为正式
+执行路径。入口负责启动COMSOL/MATLAB、建立唯一连接、注入任务脚本和回收进程；任务脚本只使用
+已经建立的连接，不得再次调用`mphstart`。
 
 **正式、复杂或需要精确项目专属后处理的实现都走这条直连路径**：
 ```matlab
-addpath('D:\COMSOL 6.4\COMSOL64\Multiphysics\mli');
-mphstart(2036);           % 连接到已启动的 COMSOL 服务端
 import com.comsol.model.*
 import com.comsol.model.util.*
 model = ModelUtil.create('Model');
 ```
-- 服务端需要先单独、持久化地启动（不要每次都重新拉起，代价是几十秒）：
-  ```powershell
-  & "D:\COMSOL 6.4\COMSOL64\Multiphysics\bin\win64\comsolmphserver.exe" -port 2036 -multi on -silent
-  ```
-  用后台进程方式启动一次，整个建模会话（多阶段脚本）共用同一个服务端，只在真正需要时重启。
-- 每个"阶段"脚本用 `matlab.exe -batch "cd(...); 脚本函数名"` 非交互调用，脚本内部自己 `mphstart` 连接。
+- 每个完整任务通过标准PowerShell入口非交互调用；同一任务内连续完成相关阶段，避免为小检查频繁
+  重启MATLAB/COMSOL。
+- 不跨独立任务长期复用服务端。长期会话会积累模型标签、Java内存和客户端状态；大粒子结果读取
+  可单独使用第二个干净任务，避免Compute后立即大传输触发客户端崩溃。
+- 标准入口仅在任务报告尚未创建时对启动崩溃自动重试一次；业务脚本开始后的失败不得自动重算。
 - 这条路径不依赖 MATLAB 图形界面/许可证之外的东西，比"COMSOL Java 源码 + comsolcompile +
   comsolbatch"更适合迭代调试。
 - 项目里的专用后处理必须由正式脚本完成。例如oa-TOF分辨率必须沿用项目脚本的探测器交叉时刻插值
@@ -245,10 +242,9 @@ tr1 = pg3.create('traj1', 'ParticleTrajectories');
 exists"。**约定：每个阶段脚本只从上一阶段产出、不会被本阶段覆盖的文件里读，本阶段新增
 内容另存为新文件名，保证阶段脚本可以反复重跑。**
 
-### 3.2 `ModelUtil` 模型标签会跨客户端进程残留
-comsolmphserver 是持久进程，不同的 `matlab -batch` 调用只是不同的客户端连接，之前调用
-创建的模型标签会一直存在服务端内存里，直到显式`ModelUtil.remove(...)`。**每次载入模型
-前先检查并清理同名标签**：
+### 3.2 同一任务内的`ModelUtil`模型标签必须显式回收
+标准入口不跨任务长期复用服务端，但同一任务内的多个阶段仍共享服务端内存。之前阶段创建的模型
+标签会一直存在，直到显式`ModelUtil.remove(...)`。**每次载入模型前先检查并清理同名标签**：
 ```matlab
 if any(strcmp(cell(ModelUtil.tags()), 'Model'))
     ModelUtil.remove('Model');
@@ -346,7 +342,7 @@ t1.feature('fc1').set('linsolver','dDef');
 ### 7.1 会话 / 模型管理
 | 调用 | 说明 |
 |---|---|
-| `mphstart(2036)` | 连接本机已启动的comsolmphserver。每个`matlab -batch`脚本开头都要单独调用一次。 |
+| `mphstart(2036)` | 仅供人工诊断手动启动的服务端；标准任务脚本禁止调用，连接由`run_comsol_r2025b.ps1`建立。 |
 | `ModelUtil.create('Model')` | 新建空模型，tag='Model'。 |
 | `ModelUtil.load('Model', path)` | 从.mph文件加载模型到tag='Model'。 |
 | `ModelUtil.remove('Model')` | 删除服务端内存里的模型tag。载入前先检查并清理同名tag（见§3.2）。 |
