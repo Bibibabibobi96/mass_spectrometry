@@ -85,6 +85,9 @@
 - 五点宽质量N=40候选已完成，COMSOL/SIMION两端各物种40/40命中并通过标定与manifest；该候选只
   评价峰位、传输率和质心差，不替代524 Da正式分辨率。COMSOL build 293的N=3原生崩溃已用N=40
   稳定绕开但保留为开放诊断，精确矩阵见`docs/COMSOL.md`。
+- 500 Da的N=100/300/1000计时标定表明COMSOL固定开销占主导、SIMION约线性且N=1000也只需约
+  31 s；后续N=40只作冒烟测试，常规五质量候选用N=300，峰宽/分辨率正式统计继续用N=1000。
+  可复算入口为`tests/performance/run_single_mass_scaling_benchmark.ps1`，精确口径见`docs/PROJECT.md`。
 
 精确数值、候选/正式边界和开放任务以`docs/PROJECT.md`为准。
 
