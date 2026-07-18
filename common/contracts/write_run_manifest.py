@@ -44,7 +44,10 @@ def main() -> None:
     args = parser.parse_args()
 
     run_config_path = args.run_config.resolve()
-    run_config = json.loads(run_config_path.read_text(encoding="utf-8"))
+    # Windows PowerShell 5.1 writes a UTF-8 BOM by default, while PowerShell 7
+    # does not.  Accept both so the provenance gate is independent of which
+    # supported launcher produced run_config.json.
+    run_config = json.loads(run_config_path.read_text(encoding="utf-8-sig"))
     project_root_value = run_config.get("project_root")
     project_root = Path(project_root_value).resolve() if project_root_value else None
     base = run_config_path.parent

@@ -66,7 +66,7 @@ else {
     if ($apiInfo.Length -gt 30000) {
         Add-DocError "docs/COMSOL_API.md: $($apiInfo.Length) bytes exceeds the 30000-byte focused-reference limit"
     }
-    if ($apiRaw -match '(?m)^#{2,6}\s+\d+(?:\.\d+)*[.、]?\s') {
+    if ($apiRaw -match '(?m)^#{2,6}\s+\d+(?:\.\d+)*(?:\.|\s)') {
         Add-DocError 'docs/COMSOL_API.md: numbered headings are forbidden; use stable semantic headings'
     }
     if ($apiRaw -match '(?i)oa[-_ ]?tof|rf_quadrupole|wehnelt_electron_gun|electron_impact_ion_source') {
