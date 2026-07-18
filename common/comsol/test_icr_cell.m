@@ -103,7 +103,7 @@ end
 % ZERO axial field and NO actual trapping at all). A real ICR cell's
 % cylindrical bore wall is grounded, creating the potential gradient that
 % makes the end caps into a genuine trapping barrier. Same fix pattern as
-% the TOF drift tube wall (§7.19): compute "all vacuum boundaries MINUS
+% the validated TOF drift-tube pattern: compute "all vacuum boundaries MINUS
 % the cap boundaries MINUS relvol's own internal boundary" via MATLAB
 % setdiff, then ground it explicitly.
 comp1.selection.create('sel_vac_allbnd', 'Adjacent');

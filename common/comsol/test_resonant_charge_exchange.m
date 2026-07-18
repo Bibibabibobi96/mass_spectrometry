@@ -157,7 +157,7 @@ cex1 = coll1.create('cex1', 'ResonantChargeExchange');
 cex1.label('Resonant charge exchange (constant cross section)');
 cex1.set('CountCollisions', true);
 % xsec left at COMSOL default -- matches the same realistic ion-neutral
-% cross-section scale used for the Elastic test (see COMSOL_自动�?% 建模经验总结.md §7.22).
+% cross-section scale used for the sibling Elastic-collision test.
 
 Tsim = 200e-6;
 dtstep = 1e-6;

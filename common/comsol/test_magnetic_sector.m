@@ -35,7 +35,7 @@ geom1.feature('cyl1').set('pos', {'0' '0' '-1[mm]'});
 % ones whose full gyro-orbit is guaranteed to fit within the 200mm
 % domain regardless of orbit size, instead of MeshBased scattering across
 % the whole domain (most of which would clip the boundary and freeze
-% early, as documented in COMSOL_API.md §7.21).
+% early; see this file's domain-size validation below).
 geom1.feature.create('relvol', 'Cylinder');
 geom1.feature('relvol').label('Release volume (central, r<5mm)');
 geom1.feature('relvol').set('r', '5[mm]');

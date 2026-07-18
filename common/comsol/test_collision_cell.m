@@ -189,7 +189,7 @@ coll1.set('Nd', sprintf('%.6e[1/m^3]', Nd_val));
 coll1.set('CollisionDetection', 'NullCollisionMethodColdGasApproximation');
 coll1.set('CountAllCollisions', true);
 % mg/T left at COMSOL defaults (Ar mass, 293.15K) -- see
-% COMSOL_API.md §7.22.
+% COMSOL_API.md under wall, termination, and collisions.
 
 % !!! CRITICAL FIX: 'Collisions' is just a container (Nd/T/detection
 % method) -- it has ZERO effect on particle motion unless at least one

@@ -8,6 +8,7 @@ $markdownFiles = @(Get-ChildItem -LiteralPath $repoRoot -Recurse -File -Filter '
     Where-Object { $_.FullName -notmatch '[\\/](\.git|artifacts|\.venv)[\\/]' } |
     Sort-Object FullName)
 $utf8 = New-Object System.Text.UTF8Encoding($false, $true)
+$comsolApiPath = Join-Path $repoRoot 'docs\COMSOL_API.md'
 
 function Add-DocError {
     param([string]$Message)
@@ -56,6 +57,36 @@ foreach ($file in $markdownFiles) {
     }
 }
 
+if (-not (Test-Path -LiteralPath $comsolApiPath -PathType Leaf)) {
+    Add-DocError 'missing docs/COMSOL_API.md'
+}
+else {
+    $apiInfo = Get-Item -LiteralPath $comsolApiPath
+    $apiRaw = [System.IO.File]::ReadAllText($comsolApiPath, $utf8)
+    if ($apiInfo.Length -gt 30000) {
+        Add-DocError "docs/COMSOL_API.md: $($apiInfo.Length) bytes exceeds the 30000-byte focused-reference limit"
+    }
+    if ($apiRaw -match '(?m)^#{2,6}\s+\d+(?:\.\d+)*[.、]?\s') {
+        Add-DocError 'docs/COMSOL_API.md: numbered headings are forbidden; use stable semantic headings'
+    }
+    if ($apiRaw -match '(?i)oa[-_ ]?tof|rf_quadrupole|wehnelt_electron_gun|electron_impact_ion_source') {
+        Add-DocError 'docs/COMSOL_API.md: project-specific names belong in project documentation'
+    }
+}
+
+$activeTextFiles = @(Get-ChildItem -LiteralPath $repoRoot -Recurse -File |
+    Where-Object {
+        $_.FullName -notmatch '[\\/](\.git|artifacts|\.venv|history|legacy)[\\/]' -and
+        $_.Extension -in @('.md', '.m', '.py', '.ps1', '.lua')
+    })
+foreach ($file in $activeTextFiles) {
+    $raw = [System.IO.File]::ReadAllText($file.FullName, $utf8)
+    if ($raw -match '(?i)COMSOL_(?:API|DEBUGGING)\.md[^\r\n]{0,80}§\s*\d') {
+        $relative = $file.FullName.Substring($repoRoot.Length + 1)
+        Add-DocError "$relative`: root COMSOL references must use semantic headings, not numeric sections"
+    }
+}
+
 $historyFiles = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'projects') -Recurse -File -Filter '*.md' |
     Where-Object { $_.FullName -match '[\\/]docs[\\/]history[\\/]' })
 foreach ($file in $historyFiles) {
@@ -96,5 +127,6 @@ if ($errors.Count -gt 0) {
     MarkdownFiles = $markdownFiles.Count
     HistoryArchives = $historyFiles.Count
     AuthorityEntries = 3
+    ComsolReferenceBytes = if (Test-Path -LiteralPath $comsolApiPath) { (Get-Item $comsolApiPath).Length } else { 0 }
     STATUS = 'PASS'
 } | Format-List

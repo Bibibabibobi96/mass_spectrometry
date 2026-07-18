@@ -11,7 +11,7 @@ function result = ms_rf_quadrupole_collision_cooling(Nd_val, E_push, label)
 %      residence time.
 %   2. A light buffer gas (few mTorr scale, Nd~1e20-1e21/m^3) fills the
 %      guide -- the CPT `Collisions`+`Elastic` mechanism (validated in
-%      COMSOL_API.md §7.22) makes the ion undergo MANY
+%      COMSOL_API.md under Wall, termination, and collisions) makes the ion undergo MANY
 %      momentum-exchange collisions with the (implicitly near-stationary,
 %      "cold gas approximation") background gas over the guide length,
 %      damping its kinetic energy down from the initial value.
@@ -57,7 +57,7 @@ p.set('rod_ratio', '1.1468', 'Ideal quadrupole rod-radius ratio');
 p.set('r_rod', 'rod_ratio*r0');
 p.set('R_center', 'r0+r_rod');
 p.set('L_guide', '150[mm]', 'Guide length (realistic commercial RF-only ion-guide scale)');
-p.set('V_rf', '82[V]', 'RF amplitude (validated q~0.5 stable point, see §7.16)');
+p.set('V_rf', '82[V]', 'RF amplitude from the validated quadrupole stability test');
 p.set('f_rf', '1[MHz]');
 
 rodtags = {};
@@ -172,7 +172,7 @@ ef1.set('E', { ...
     sprintf('(V_rf/100)*es.Ez*cos(2*pi*f_rf*t)+%g[V/m]', E_push) });
 % NOTE: only one Electrostatics interface exists in this model (tagged
 % 'es2' at the API level), so per COMSOL's type+creation-order namespace
-% rule (§7.18) it's actually namespaced 'es' (the first/only interface of
+% rule documented in COMSOL_API.md, it's actually namespaced 'es' (the first/only interface of
 % its type), not 'es2' -- the API tag and the expression namespace are
 % independent.
 

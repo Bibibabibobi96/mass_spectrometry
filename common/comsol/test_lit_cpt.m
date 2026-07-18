@@ -7,7 +7,7 @@ function test_lit_cpt()
 % to its own default incrementing shortcut based on physics TYPE +
 % creation order ('es' for the first Electrostatics interface, 'es2' for
 % the second), regardless of the custom tag. Confirmed by direct probing
-% (see COMSOL_API.md §7.17).
+% (see the sibling Einzel-lens component test).
 
 commonDir = fileparts(mfilename('fullpath'));
 addpath(commonDir);

@@ -4,7 +4,8 @@ function test_cpt_magnetic_force()
 % Releases an electron with pure transverse velocity into a uniform Bz
 % and checks the resulting circular (cyclotron) motion against theory
 % (r = m*v_perp/(q*B), T = 2*pi*m/(q*B)). See COMSOL_API.md
-% §7.15 for the validated API notes -- the one bug that took real debugging was
+% COMSOL_API.md under magnetic fields and coils for the validated API notes --
+% the one bug that took real debugging was
 % forgetting to call `.selection` on the MagneticForce feature at all:
 % it does NOT error at compile time the way Release/Inlet with no
 % selection does, it just silently applies zero force everywhere,

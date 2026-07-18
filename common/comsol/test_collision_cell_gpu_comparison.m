@@ -5,7 +5,7 @@ function test_collision_cell_gpu_comparison(Nd_val, KE_eV)
 %       BDF with default iterative linear solver, i1)
 %   (b) the direct solver switched to NVIDIA cuDSS (GPU), same pattern
 %       validated for the stationary ES solve in gpu_solver_comparison.m
-%       (see COMSOL_API.md §4/§7.11) -- applied here to the
+%       (see COMSOL_API.md under GPU solvers) -- applied here to the
 %       nested Direct solver under the TIME solver (t1.feature('dDef')),
 %       which has the same dDef/fc1 structure as the stationary case.
 % Also verifies the two solves give IDENTICAL particle trajectories

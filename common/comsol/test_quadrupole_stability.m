@@ -7,7 +7,7 @@ function test_quadrupole_stability(Vamp, label)
 % to the desired peak RF amplitude Vamp and time-modulated -- an
 % alternative to ElectricForce's native 'TimeHarmonic' mode (also
 % available: TimeDependenceOfField='TimeHarmonic' + FrequencySpecification
-% + omega, see COMSOL_API.md §7.15), chosen here for
+% + omega, documented by the magnetic-force component test), chosen here for
 % direct control over Vamp without re-solving electrostatics per case.
 %
 % Ion: 100 amu, +1 charge, released near-center with ~0 initial velocity
@@ -72,7 +72,7 @@ tmax = nCycles*Tper;
 % The electrostatics stationary solve (from test_multipole_es.m) already
 % exists in this loaded model as some 'solN' tag -- find it before
 % creating our own CPT solution, per the notsolmethod/notsol reuse
-% pattern (see COMSOL_API.md §2.4/§7.8).
+% pattern (see COMSOL_API.md under Study, Solver, and stored-solution reuse).
 soltags = cell(model.sol.tags());
 fprintf('Existing sol tags before CPT solve: %s\n', strjoin(soltags, ', '));
 es_sol_tag = soltags{1};
@@ -103,7 +103,7 @@ r0 = 4; % mm, field radius
 % 'Release' (MeshBased, whole vacuum domain) scatters particles across
 % the ENTIRE domain, heavily weighted toward mesh nodes near the curved
 % rod surfaces (not concentrated near the axis) -- there is no "release
-% from a sub-region" option (see COMSOL_API.md §7.15), so
+% from a sub-region" option, so
 % filter in post-processing to only particles that STARTED near the axis
 % (within the region where the ideal quadrupole approximation and the
 % Mathieu-stability comparison are actually meaningful).

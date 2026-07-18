@@ -20,8 +20,8 @@ function result = ms_stage1_ei_source(Nd_val, label)
 % tube is filled with background neutral gas (Nd) and a native CPT
 % `Collisions` + `Ionization` Attribute counts ionizing collisions along
 % each electron's trajectory (same family as the validated Elastic/
-% ResonantChargeExchange attributes, see COMSOL_API.md
-% §7.22/7.25).
+% ResonantChargeExchange attributes; see COMSOL_API.md under wall,
+% termination, and collisions).
 %
 % IMPORTANT SIMPLIFICATION: COMSOL's CPT physics interface only allows
 % ONE ParticleProperties feature (pp1) per interface, and Ionization's

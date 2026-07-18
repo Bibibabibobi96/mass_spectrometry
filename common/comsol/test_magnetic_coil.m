@@ -4,7 +4,8 @@ function test_magnetic_coil()
 % Magnetic Fields interface (internal tag 'InductionCurrents') + a
 % 'Numeric' Coil domain feature, and checks the result against a rough
 % infinite-solenoid Biot-Savart estimate (mu0*N*I/L). See
-% COMSOL_API.md §8 for the full narrative of what took several
+% COMSOL_DEBUGGING.md under magnetic fields, coils, and magnetic force for the
+% diagnostic summary of what took several
 % iterations to figure out (correct physics tag, coil terminal boundary,
 % required material conductivity, and the CoilCurrentCalculation study
 % step that must precede the Stationary step).
@@ -40,7 +41,7 @@ geom1.feature('hel1').set('selresult', 'on');
 geom1.run;
 
 % cyl1 spatially contains hel1 -> its own selresult would resolve to ALL
-% domains (same trap as the electron-gun vacuum-domain case, §7.2) --
+% domains (the same complement-selection trap as the electron-gun vacuum domain) --
 % use Complement instead.
 comp1.selection.create('sel_air', 'Complement');
 comp1.selection('sel_air').set('input', {'geom1_hel1_dom'});
@@ -92,7 +93,7 @@ coil1.feature('ccc1').feature('ct1').selection.set(ents(1));  % first adjacent b
 
 mesh1 = comp1.mesh.create('mesh1');
 mesh1.feature('size').set('hauto', 4);
-mesh1.feature.create('ftet1', 'FreeTet');   % see §7.6: never rely on implicit domain-fill
+mesh1.feature.create('ftet1', 'FreeTet');   % never rely on implicit domain fill
 mesh1.run;
 mi = mphmeshstats(model, 'mesh1');
 if mi.isempty || mi.hasproblems || ~mi.iscomplete

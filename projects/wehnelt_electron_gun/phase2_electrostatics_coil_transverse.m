@@ -4,7 +4,7 @@ function phase2_electrostatics_coil_transverse()
 % electron gun geometry with the filament coil's own axis PERPENDICULAR
 % to the beam axis (see phase1_geometry_coil_transverse.m). Same
 % Complement-selection / FreeTet-mesh fixes as phase2_electrostatics_coil.m
-% (see COMSOL_API.md §7.2/§7.6) applied from the start.
+% documented in COMSOL_API.md under Geometry, Selections, and Mesh.
 
 componentRoot = fileparts(mfilename('fullpath'));
 addpath(componentRoot);
