@@ -3,8 +3,9 @@ testDir = fileparts(mfilename('fullpath'));
 projectRoot = fileparts(fileparts(testDir));
 addpath(projectRoot);
 paths = rf_quadrupole_paths();
-modelPath = fullfile(paths.comsolCandidateDir, ...
-    'rf_quadrupole_transport_no_collision_simion_reference.mph');
+modelPath = getenv('RFQUAD_COMSOL_MODEL_PATH');
+assert(~isempty(modelPath) && isfile(modelPath), ...
+    'RFQUAD_COMSOL_MODEL_PATH must name an existing candidate MPH.');
 
 fid = fopen(reportPath, 'w');
 assert(fid >= 0, 'Could not open report: %s', reportPath);
@@ -26,6 +27,12 @@ assert(abs(model.param.evaluate('V_rf') - 139.81792) < 1e-8, ...
     'Persisted RF amplitude moved from the transport contract.');
 assert(abs(model.param.evaluate('f_rf') - 1.1e6) < 1e-6, ...
     'Persisted RF frequency moved from the transport contract.');
+assert(abs(model.param.evaluate('z_rod_exit')*1e3 - 85.4) < 1e-9, ...
+    'Persisted rod-exit plane moved from the interface contract.');
+assert(abs(model.param.evaluate('z_handoff')*1e3 - 90.2) < 1e-9, ...
+    'Persisted handoff plane moved from the interface contract.');
+assert(abs(model.param.evaluate('z_acceptance')*1e3 - 95.2) < 1e-9, ...
+    'Persisted acceptance plane moved from the interface contract.');
 
 cpt = model.component('comp1').physics('cpt');
 featureTags = cell(cpt.feature.tags());
@@ -36,6 +43,9 @@ assert(~any(contains(lower(string(featureTags)), 'coll')), ...
 assert(any(strcmp(featureTags, 'ef1')), 'GUI-visible RF Electric Force is absent.');
 assert(numel(model.component('comp1').selection('sel_vac').entities()) > 0, ...
     'Persisted vacuum selection is empty.');
+exportTags = cell(model.result.export.tags());
+assert(any(strcmp(exportTags, 'exp_phase_raw')), ...
+    'GUI-visible raw particle phase-space export is absent.');
 
 initialSolutions = joinJavaStrings(model.sol.tags);
 assert(model.sol('sol1').isAttached(), 'sol1 is not attached to std1.');

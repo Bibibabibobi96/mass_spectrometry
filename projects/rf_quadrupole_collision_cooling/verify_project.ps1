@@ -1,13 +1,14 @@
 param(
   [ValidateSet('Static','Candidate','Formal')][string]$Level = 'Static',
-  [string]$RunLabel = ''
+  [string]$ComsolRunLabel = '',
+  [string]$SimionRunLabel = '',
+  [string]$ComparisonLabel = ''
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
-$workspaceRoot = Split-Path -Parent $repoRoot
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 
 & $python (Join-Path $projectRoot 'analysis\resolve_contract.py') --check
@@ -19,16 +20,16 @@ if ($LASTEXITCODE -ne 0) { throw 'Interface-readiness contract gate failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Paired-particle identity gate failed.' }
 
 if ($Level -eq 'Candidate') {
-  if ([string]::IsNullOrWhiteSpace($RunLabel)) { $RunLabel = 'gate_' + (Get-Date -Format 'yyyyMMdd_HHmmss') }
-  & (Join-Path $projectRoot 'tests\simion\run_transport_candidate.ps1') -RunLabel $RunLabel
-  if ($LASTEXITCODE -ne 0) { throw 'SIMION transport candidate gate failed.' }
+  if ([string]::IsNullOrWhiteSpace($ComsolRunLabel) -or [string]::IsNullOrWhiteSpace($SimionRunLabel) -or
+      [string]::IsNullOrWhiteSpace($ComparisonLabel)) {
+    throw 'Candidate gate requires explicit ComsolRunLabel, SimionRunLabel, and ComparisonLabel.'
+  }
+  & (Join-Path $projectRoot 'tests\cross_solver\verify_transport_candidate.ps1') `
+    -ComsolRunLabel $ComsolRunLabel -SimionRunLabel $SimionRunLabel -ComparisonLabel $ComparisonLabel
+  if ($LASTEXITCODE -ne 0) { throw 'Cross-solver transport candidate gate failed.' }
 }
 elseif ($Level -eq 'Formal') {
-  & (Join-Path $repoRoot 'common\verify_toolchain.ps1')
-  if ($LASTEXITCODE -ne 0) { throw 'Toolchain gate failed.' }
-  & $python (Join-Path $projectRoot 'analysis\verify_cross_solver_transport.py') `
-    --workspace $workspaceRoot --project $projectRoot
-  if ($LASTEXITCODE -ne 0) { throw 'Formal cross-solver transport gate failed.' }
+  throw 'Formal gate is intentionally unavailable until the component geometry and SolidWorks assembly are selected and synchronized.'
 }
 
 "PROJECT_GATE=PASS PROJECT=rf_quadrupole_collision_cooling LEVEL=$Level"

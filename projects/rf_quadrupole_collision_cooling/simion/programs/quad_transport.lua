@@ -6,6 +6,7 @@ simion.workbench_program()
 local run_config_path = assert(os.getenv('RFQUAD_RUN_CONFIG_LUA'),
   'RFQUAD_RUN_CONFIG_LUA is not set')
 local run_config = assert(dofile(run_config_path), 'run config did not return a table')
+local source_states = assert(run_config.source_states, 'run config source_states is missing')
 
 adjustable transport_rf_peak_v = 139.81792
 adjustable transport_frequency_hz = 1.1E6
@@ -24,11 +25,16 @@ local max_rod_radius = {}
 local max_radius = {}
 local hits = 0
 local crossings = 0
-local particle_file
 local trajectory_file
+local particle_state_file
 local previous_state = {}
 local next_axial_plane = {}
+local crossed_rod_exit = {}
+local crossed_handoff = {}
+local timed_out = {}
 local trajectory_plane_step_mm = 0.2
+local rod_exit_plane_mm = 85.4
+local handoff_plane_mm = 90.2
 
 function segment.load()
   transport_rf_peak_v = assert(run_config.rf_peak_v)
@@ -54,6 +60,39 @@ local function write_trajectory(particle, time_us, wb_x, wb_y, wb_z)
     particle, time_us, pa_z, pa_x, pa_y, math.sqrt(pa_x^2 + pa_y^2)))
 end
 
+local function divergence_deg(v_axial, v_x, v_y)
+  local radial = math.sqrt(v_x^2 + v_y^2)
+  if v_axial > 0 then return math.atan(radial / v_axial) * 180 / math.pi end
+  if v_axial < 0 then return (math.pi - math.atan(radial / -v_axial)) * 180 / math.pi end
+  return 90
+end
+
+local function write_particle_state(particle, event, status, terminal_reason, state)
+  if not particle_state_file then return end
+  -- SIMION velocity components are mm/us; 1 mm/us = 1000 m/s.
+  -- IOB basis: component z=wb x, component x=wb z, component y=-wb y.
+  local v_axial = state.vx * 1000
+  local v_x = state.vz * 1000
+  local v_y = -state.vy * 1000
+  local radial = math.sqrt(state.y^2 + state.z^2)
+  local rf_phase = (state.t * omega + phase) % (2 * math.pi)
+  particle_state_file:write(string.format(
+    '%d,%s,%s,%s,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g\n',
+    particle, event, status, terminal_reason, state.t,
+    state.t - (birth_time[particle] or state.t), rf_phase,
+    state.x, state.z, -state.y, v_axial, v_x, v_y, state.ke,
+    radial, divergence_deg(v_axial, v_x, v_y), max_rod_radius[particle] or radial))
+end
+
+local function interpolate_state(previous, current, plane)
+  local fraction = (plane - previous.x) / (current.x - previous.x)
+  local function lerp(a, b) return a + fraction * (b - a) end
+  return {t=lerp(previous.t,current.t), x=plane,
+    y=lerp(previous.y,current.y), z=lerp(previous.z,current.z),
+    vx=lerp(previous.vx,current.vx), vy=lerp(previous.vy,current.vy),
+    vz=lerp(previous.vz,current.vz), ke=lerp(previous.ke,current.ke)}
+end
+
 function segment.initialize_run()
   birth_time = {}
   max_rod_radius = {}
@@ -62,15 +101,22 @@ function segment.initialize_run()
   crossings = 0
   previous_state = {}
   next_axial_plane = {}
-  local path = assert(run_config.particle_csv, 'run config particle_csv is missing')
-  particle_file = assert(io.open(path, 'w'))
-  particle_file:write('particle_id,crossed_detector_plane,hit,arrival_time_us,detector_plane_radius_mm,max_rod_radius_mm,max_radius_mm,terminate_x_mm,terminate_y_mm,terminate_z_mm\n')
+  crossed_rod_exit = {}
+  crossed_handoff = {}
+  timed_out = {}
   local trajectory_path = run_config.trajectory_csv
   if trajectory_path and trajectory_path ~= '' then
     trajectory_file = assert(io.open(trajectory_path, 'w'))
     trajectory_file:write('particle_id,time_us,axial_z_mm,transverse_x_mm,transverse_y_mm,r_mm\n')
   else
     trajectory_file = nil
+  end
+  local particle_state_path = run_config.particle_state_csv
+  if particle_state_path and particle_state_path ~= '' then
+    particle_state_file = assert(io.open(particle_state_path, 'w'))
+    particle_state_file:write('particle_id,event,status,terminal_reason,time_us,elapsed_time_us,rf_phase_rad,axial_z_mm,transverse_x_mm,transverse_y_mm,velocity_axial_m_s,velocity_x_m_s,velocity_y_m_s,kinetic_energy_eV,radial_position_mm,divergence_angle_deg,max_rod_radius_mm\n')
+  else
+    particle_state_file = nil
   end
 end
 
@@ -99,14 +145,18 @@ end
 function segment.other_actions()
   local previous = previous_state[ion_number]
   local current_t, current_x, current_y, current_z = ion_time_of_flight, ion_px_mm, ion_py_mm, ion_pz_mm
+  local current = {t=current_t, x=current_x, y=current_y, z=current_z,
+    vx=ion_vx_mm, vy=ion_vy_mm, vz=ion_vz_mm, ke=ion_ke}
   if not previous then
-    local radius = radial_mm()
-    birth_time[ion_number] = current_t
+    local source = assert(source_states[ion_number], 'authoritative source state is missing')
+    local radius = math.sqrt(source.y^2 + source.z^2)
+    birth_time[ion_number] = source.t
     max_rod_radius[ion_number] = radius
     max_radius[ion_number] = radius
     write_trajectory(ion_number, current_t, current_x, current_y, current_z)
-    previous_state[ion_number] = {t=current_t, x=current_x, y=current_y, z=current_z}
+    previous_state[ion_number] = current
     next_axial_plane[ion_number] = math.floor(current_x / trajectory_plane_step_mm + 1) * trajectory_plane_step_mm
+    write_particle_state(ion_number, 'source', 'alive', 'none', source)
     return
   end
   local plane = next_axial_plane[ion_number]
@@ -122,13 +172,26 @@ function segment.other_actions()
     end
     next_axial_plane[ion_number] = plane
   end
-  previous_state[ion_number] = {t=current_t, x=current_x, y=current_y, z=current_z}
   local radius = radial_mm()
   max_radius[ion_number] = math.max(max_radius[ion_number] or radius, radius)
   if ion_px_mm >= 5.8 and ion_px_mm <= 85.4 then
     max_rod_radius[ion_number] = math.max(max_rod_radius[ion_number] or radius, radius)
   end
+  if current_x > previous.x then
+    if not crossed_rod_exit[ion_number] and previous.x < rod_exit_plane_mm and current_x >= rod_exit_plane_mm then
+      write_particle_state(ion_number, 'rod_exit', 'alive', 'none',
+        interpolate_state(previous, current, rod_exit_plane_mm))
+      crossed_rod_exit[ion_number] = true
+    end
+    if not crossed_handoff[ion_number] and previous.x < handoff_plane_mm and current_x >= handoff_plane_mm then
+      write_particle_state(ion_number, 'handoff', 'transmitted', 'none',
+        interpolate_state(previous, current, handoff_plane_mm))
+      crossed_handoff[ion_number] = true
+    end
+  end
+  previous_state[ion_number] = current
   if ion_time_of_flight - (birth_time[ion_number] or 0) >= transport_max_elapsed_us then
+    timed_out[ion_number] = true
     ion_splat = -4
   end
 end
@@ -143,17 +206,21 @@ function segment.terminate()
   local hit = crossed and radius <= 3.6
   if crossed then crossings = crossings + 1 end
   if hit then hits = hits + 1 end
-  particle_file:write(string.format('%d,%d,%d,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g\n',
-    ion_number, crossed and 1 or 0, hit and 1 or 0,
-    hit and ion_time_of_flight or 0/0, crossed and radius or 0/0,
-    max_rod_radius[ion_number] or 0/0, max_radius[ion_number] or radius,
-    ion_px_mm, ion_py_mm, ion_pz_mm))
+  local status, reason = 'lost', 'electrode'
+  if timed_out[ion_number] then status, reason = 'timeout', 'timeout'
+  elseif hit then status, reason = 'transmitted', 'acceptance_detector'
+  elseif ion_px_mm < 0 then reason = 'backward_escape'
+  elseif radius > 7.6 then reason = 'radial_escape'
+  end
+  write_particle_state(ion_number, 'terminal', status, reason,
+    {t=ion_time_of_flight, x=ion_px_mm, y=ion_py_mm, z=ion_pz_mm,
+     vx=ion_vx_mm, vy=ion_vy_mm, vz=ion_vz_mm, ke=ion_ke})
   write_trajectory(ion_number, ion_time_of_flight, ion_px_mm, ion_py_mm, ion_pz_mm)
 end
 
 function segment.terminate_run()
-  if particle_file then particle_file:close() end
   if trajectory_file then trajectory_file:close() end
+  if particle_state_file then particle_state_file:close() end
   local summary_path = assert(run_config.summary_json, 'run config summary_json is missing')
   local summary = assert(io.open(summary_path, 'w'))
   summary:write(string.format(

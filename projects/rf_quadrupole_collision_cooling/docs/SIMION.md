@@ -5,7 +5,7 @@
 同目录绑定项目生成的 PA、Fly2 和 `quad_monolithic.lua`。
 
 `simion/programs/quad_transport.lua` 只实现 RF-only Fast Adjust、静态电极、RF 步长上限、80 us
-最长飞行及 CSV/JSON 统计；没有 collision、drag、pressure 或 buffer-gas 逻辑。两组杆为
+最长飞行及统一particle-state/轨迹/JSON统计；没有 collision、drag、pressure 或 buffer-gas 逻辑。两组杆为
 ±139.81792 V peak、1.1 MHz，其余电极 0 V。
 
 `tests/simion/run_transport_candidate.ps1` 执行 Fly2 生成、GEM 编译、PA refine 和独立无界面 fly；
@@ -17,7 +17,12 @@
 目录生成完整`SHA256SUMS.csv`，并在独立run目录生成含输入/输出身份的`run_manifest.json`。
 2026-07-18固定25粒子复验为25/25，候选哈希14/14通过；manifest保持candidate，不冒充正式资产。
 
-运行器同时设置 `RFQUAD_SIMION_TRAJECTORY_CSV`；Lua 在 PA/COMSOL 坐标的每 0.2 mm 轴向平面线性
+新运行以权威ION表生成无BOM的`source_states.lua`，因此source事件是积分前的精确初始状态，而不是
+第一次`other_actions`回调后已前进的坐标。Lua在85.4和90.2 mm处对时间、位置、速度与能量插值，
+并在terminal事件记录统一终止原因；`analysis/verify_particle_state_contract.py`强制检查25个粒子的
+source身份、事件唯一性、平面坐标、RF相位和物理数值范围。旧solver-specific终点表不再生成。
+
+运行配置显式给出轨迹CSV；Lua 在 PA/COMSOL 坐标的每 0.2 mm 轴向平面线性
 插值导出逐粒子 `time_us,axial_z_mm,transverse_x_mm,transverse_y_mm,r_mm`，并保留终止样本。此导出与 SIMION 内置 retained trajectories 无关，
 用于与 COMSOL 的 `r(z)`、同 ID 差异和关键平面束斑作可重复比较。
 

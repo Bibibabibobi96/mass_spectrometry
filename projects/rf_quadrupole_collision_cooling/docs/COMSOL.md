@@ -23,17 +23,24 @@ Fly2 `standard_beam` 的角度在 IOB 放置前按局部束流基向量解释，
 （0.47%）；故当前 80 步/周期已通过时间步收敛，继续冻结 mesh1、80 步/周期。
 修正后的最终结果为 25/25、50.1155 us、最大杆区半径 0.5414 mm、`q=0.7060233`。
 
-逐粒子 CSV 除到达时间和径向统计外还写入最终有限样本的 `terminal_x/y/z_mm`，供跨求解器终点诊断图
-保留探测器命中与任何半路终止的位置。
+`tests/comsol/run_transport_candidate.ps1`是唯一候选运行入口：生成显式run config，调用统一LiveLink
+启动器，随后重开MPH并通过GUI `Study -> Compute`复算，最后写入并复验manifest。MPH中持久化
+`z_rod_exit=85.4 mm`、`z_handoff=90.2 mm`、`z_acceptance=95.2 mm`及GUI可见
+`exp_phase_raw`数据导出节点。
+
+标准逐粒子结果为`transport_no_collision_particle_state_<run>.csv`，每个粒子写出精确source、杆端、
+交接面和terminal事件，包含位置、SI速度、能量、发散角、RF相位及终止原因。跨面状态由同一COMSOL
+粒子数据集线性插值，原始轨迹由MPH内Export节点导出；旧solver-specific终点表不再由新运行生成。
 
 同一次生产运行还导出 `results/comsol/transport_no_collision_trajectory_samples.csv`：每个粒子每 5 个
 已存储时间点取一个有限样本，并始终包含最后一个有限样本；列为统一 PA/COMSOL 坐标的
 `particle_id,time_us,axial_z_mm,transverse_x_mm,transverse_y_mm,r_mm`。它只用于求解器无关的轨迹诊断，
 不承载任何未持久化的 COMSOL 物理或数值逻辑。
 
-`tests/comsol/verify_nocollision_comsol.m` 重开 MPH，检查参数、25 个 GUI release 节点、无碰撞、
-选择集和 Solver attach，并分别调用 `model.study('std1').run`、`std2.run`；结果 25/25，且 Solver
-标签始终为 `sol1,sol2`。先前 150 mm 简化直杆 MPH 已删除。
+`tests/comsol/verify_nocollision_comsol.m`只接受显式`RFQUAD_COMSOL_MODEL_PATH`，重开MPH后检查接口
+平面参数、25个GUI release节点、无碰撞、选择集、Export和Solver attach，并分别调用
+`model.study('std1').run`、`std2.run`。2026-07-18相空间候选复验为25/25、平均检测时间
+50.1154545 us、`q=0.706023302`，Solver标签保持`sol1,sol2`。
 
 `tests/comsol/export_fem_unit_rf_field.m` 只从候选 MPH 的 `dset1` 采样 COMSOL 自己的
 `es.Ex/Ey/Ez`，采样坐标取自 SIMION 导出的公共格点；它不创建插值函数、不写入 Electric Force，

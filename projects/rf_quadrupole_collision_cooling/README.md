@@ -31,11 +31,12 @@
   连接和未验证碰撞模型不得恢复为当前入口。未来碰撞模式必须从共享契约重新建立。
 - SIMION 几何入口：[`simion/geometry/quad_monolithic.gem`](simion/geometry/quad_monolithic.gem)
 - SIMION 传输程序：[`simion/programs/quad_transport.lua`](simion/programs/quad_transport.lua)
-- COMSOL 验证门禁：[`tests/comsol/verify_nocollision_comsol.m`](tests/comsol/verify_nocollision_comsol.m)
+- COMSOL 构建/GUI复验入口：[`tests/comsol/run_transport_candidate.ps1`](tests/comsol/run_transport_candidate.ps1)
 - SIMION 构建/验证入口：[`tests/simion/run_transport_candidate.ps1`](tests/simion/run_transport_candidate.ps1)
 - SIMION IOB 结构门禁：[`tests/simion/inspect_builtin_quad_reference.lua`](tests/simion/inspect_builtin_quad_reference.lua)
-- 跨求解器门禁：[`analysis/verify_cross_solver_transport.py`](analysis/verify_cross_solver_transport.py)
-- 全项目门禁：`verify_project.ps1 -Level Static|Candidate|Formal`
+- 跨求解器门禁：[`tests/cross_solver/verify_transport_candidate.ps1`](tests/cross_solver/verify_transport_candidate.ps1)
+- 全项目门禁：`verify_project.ps1 -Level Static|Candidate|Formal`；Candidate必须显式给出COMSOL、SIMION
+  和比较运行标签，Formal在机械几何与SolidWorks同步前固定拒绝执行。
 - 终点分布诊断图：[`analysis/plot_terminal_distribution.py`](analysis/plot_terminal_distribution.py)
 - 轴向轨迹诊断图：[`analysis/plot_transport_trajectory_diagnostics.py`](analysis/plot_transport_trajectory_diagnostics.py)
 - 相位--轨迹差诊断图：[`analysis/plot_transport_phase_diagnostics.py`](analysis/plot_transport_phase_diagnostics.py)
@@ -63,6 +64,8 @@ rf_quadrupole_collision_cooling/
 
 - 两求解器必须从 `config/` 的共享几何、粒子源与 mode 契约派生同一输入；无碰撞基线不得创建或启用任何碰撞/阻尼模型。
 - 官方回归与集成就绪验证严格分离：不得覆盖`official_fixed_25.ion`或借新增工况改写已闭合的 N25 结果。
+- 新运行只以统一`particle_state.csv`、`summary.json`、稀疏轨迹和manifest为权威结果；不再生成旧版
+  solver-specific粒子终点表。每份manifest在比较前必须重新计算全部文件哈希。
 - 未来部件交接面为出口孔口`z=90.2 mm`；`z=85.4 mm`只作杆端/边缘场诊断，`z=95.2 mm`
   检测器只作独立传输验收，不能当作集成接口。
 - 本阶段只验证候选物理与数值实现；未完成 SolidWorks 同步前不得声称机械正式完成。

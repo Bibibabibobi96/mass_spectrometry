@@ -14,10 +14,11 @@ from matplotlib.patches import Circle
 
 
 def load_rows(path: Path) -> list[dict[str, str]]:
-    with path.open(encoding="utf-8", newline="") as handle:
-        rows = list(csv.DictReader(handle))
-    if len(rows) != 25:
-        raise ValueError(f"{path} has {len(rows)} rows; expected 25")
+    with path.open(encoding="utf-8-sig", newline="") as handle:
+        rows = [row for row in csv.DictReader(handle) if row["event"] == "terminal"]
+    rows.sort(key=lambda row: int(row["particle_id"]))
+    if not rows or len({int(row["particle_id"]) for row in rows}) != len(rows):
+        raise ValueError(f"{path} has missing or duplicate terminal events")
     return rows
 
 
@@ -25,28 +26,35 @@ def number(row: dict[str, str], key: str) -> float:
     return float(row[key])
 
 
-def terminal_coordinates(solver: str, row: dict[str, str]) -> tuple[float, float, float]:
-    if solver == "COMSOL":
-        return number(row, "terminal_x_mm"), number(row, "terminal_y_mm"), number(row, "terminal_z_mm")
-    # SIMION records workbench coordinates.  The IOB mapping is PA x -> wb z,
-    # PA y -> -wb y, PA z -> wb x, so return the common PA/COMSOL frame.
-    return number(row, "terminate_z_mm"), -number(row, "terminate_y_mm"), number(row, "terminate_x_mm")
+def terminal_coordinates(row: dict[str, str]) -> tuple[float, float, float]:
+    return (
+        number(row, "transverse_x_mm"),
+        number(row, "transverse_y_mm"),
+        number(row, "axial_z_mm"),
+    )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--workspace", type=Path, required=True)
+    parser.add_argument("--comsol-state", type=Path, required=True)
+    parser.add_argument("--simion-state", type=Path, required=True)
+    parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--label", required=True)
     args = parser.parse_args()
-    artifact = args.workspace / "artifacts/projects/rf_quadrupole_collision_cooling"
-    result_dir = artifact / "results"
     inputs = {
-        "COMSOL": result_dir / "comsol/transport_no_collision_particles.csv",
-        "SIMION": result_dir / "simion/transport_no_collision_particles_baseline.csv",
+        "COMSOL": args.comsol_state,
+        "SIMION": args.simion_state,
     }
     detector_radius = 3.6
     data = {solver: load_rows(path) for solver, path in inputs.items()}
+    ids = {
+        solver: [int(row["particle_id"]) for row in rows]
+        for solver, rows in data.items()
+    }
+    if ids["COMSOL"] != ids["SIMION"]:
+        raise ValueError("COMSOL and SIMION terminal particle IDs differ")
     endpoints = {
-        solver: [terminal_coordinates(solver, row) for row in rows]
+        solver: [terminal_coordinates(row) for row in rows]
         for solver, rows in data.items()
     }
     axial = [point[2] for points in endpoints.values() for point in points]
@@ -61,7 +69,7 @@ def main() -> None:
         transverse_x = [point[0] for point in points]
         transverse_y = [point[1] for point in points]
         terminal_axial = [point[2] for point in points]
-        hits = [int(row["hit"]) == 1 for row in rows]
+        hits = [row["status"] == "transmitted" and row["terminal_reason"] == "acceptance_detector" for row in rows]
         colors = [cmap(norm(value)) for value in terminal_axial]
         for index, (x, y, color, hit) in enumerate(zip(transverse_x, transverse_y, colors, hits), start=1):
             axis.scatter(x, y, s=52, c=[color], marker="o" if hit else "x", linewidths=1.3, zorder=3)
@@ -101,7 +109,7 @@ def main() -> None:
     vector_axis.legend(loc="upper right")
 
     error_axis = axes[1, 1]
-    particle_ids = list(range(1, len(paired_distance) + 1))
+    particle_ids = [int(row["particle_id"]) for row in data["COMSOL"]]
     error_axis.scatter(particle_ids, paired_distance, color="tab:red", s=34)
     error_axis.plot(particle_ids, paired_distance, color="tab:red", alpha=0.45)
     error_axis.axhline(sum(paired_distance) / len(paired_distance), color="0.3", linestyle="--", label="mean")
@@ -118,10 +126,10 @@ def main() -> None:
         "paired_terminal_distance_max_mm": max(paired_distance),
     }
 
-    output_dir = result_dir / "cross_solver"
+    output_dir = args.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
-    image_path = output_dir / "transport_no_collision_terminal_distribution.png"
-    summary_path = output_dir / "transport_no_collision_terminal_distribution.json"
+    image_path = output_dir / f"transport_no_collision_terminal_distribution_{args.label}.png"
+    summary_path = output_dir / f"transport_no_collision_terminal_distribution_{args.label}.json"
     figure.savefig(image_path, dpi=180)
     plt.close(figure)
     summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")

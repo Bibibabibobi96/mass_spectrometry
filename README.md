@@ -132,7 +132,8 @@ simulation_repo/
 ### 跨项目几何参数化标准
 
 - 人工只维护`baseline`物理设计；项目解析器单向生成`resolved`，各软件不得重复推导或反写。
-- 数值模式与物理设计分层；一次运行使用显式`run_config`并生成含输入哈希和产物状态的manifest。
+- 数值模式与物理设计分层；一次运行使用显式`run_config`，用`common/contracts/write_run_manifest.py`
+  生成含输入/输出哈希和产物状态的manifest，并用`verify_run_manifest.py`重新计算全部记录后才能引用。
 - 开发入口读取统一契约；SIMION等正式交付包可由该契约生成自包含文件，并接受过期门禁。
 - 正式入口不得以缺失配置时回退到旧物理硬数字；候选覆盖不得反写baseline。
 - 每项目提供`Static/Candidate/Formal`三级总门禁；正式几何仍须完成COMSOL GUI与SolidWorks同步。

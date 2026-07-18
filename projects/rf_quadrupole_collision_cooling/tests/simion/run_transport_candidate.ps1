@@ -29,24 +29,26 @@ Copy-Item -LiteralPath $officialIob -Destination (Join-Path $candidateDir 'quad_
 
 $ionPath = Join-Path $projectRoot 'config\particles\official_fixed_25.ion'
 $flyPath = Join-Path $candidateDir 'quad_monolithic.fly2'
+$sourceStatesLua = Join-Path $runDir 'source_states.lua'
 & (Join-Path $repoRoot '.venv\Scripts\python.exe') `
     (Join-Path $projectRoot 'analysis\generate_fixed_fly2.py') $ionPath $flyPath `
-    --axial-offset-mm $SourceAxialOffsetMm
+    --axial-offset-mm $SourceAxialOffsetMm --source-states-lua $sourceStatesLua
 if ($LASTEXITCODE -ne 0) { throw 'Fixed FLY2 generation failed.' }
 
 $resolvedPath = Join-Path $projectRoot 'config\resolved_geometry.json'
 $resolved = Get-Content -LiteralPath $resolvedPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $mode = $resolved.mode
-$particleCsv = Join-Path $resultDir "transport_no_collision_particles_$RunLabel.csv"
+$particleStateCsv = Join-Path $resultDir "transport_no_collision_particle_state_$RunLabel.csv"
 $trajectoryCsv = Join-Path $resultDir "transport_no_collision_trajectory_samples_$RunLabel.csv"
 $summaryJson = Join-Path $resultDir "transport_no_collision_summary_$RunLabel.json"
 $runConfigPath = Join-Path $runDir 'run_config.json'
 $runConfigLua = Join-Path $runDir 'run_config.lua'
 $iobReport = Join-Path $runDir 'simion_iob_contract.txt'
+$stateContractReport = Join-Path $runDir 'particle_state_contract.json'
 $runConfig = [ordered]@{
     schema_version=1; role='rf_quadrupole_simion_run_config'; run_id="simion_$RunLabel"
     project='rf_quadrupole_collision_cooling'; mode='transport_no_collision'; project_root=$projectRoot
-    inputs=[ordered]@{baseline='config/baseline.json'; resolved_geometry='config/resolved_geometry.json'; mode='config/modes/transport_no_collision.json'; particle_table='config/particles/official_fixed_25.ion'}
+    inputs=[ordered]@{baseline='config/baseline.json'; resolved_geometry='config/resolved_geometry.json'; mode='config/modes/transport_no_collision.json'; particle_table='config/particles/official_fixed_25.ion'; source_states=$sourceStatesLua}
     output_dir=$resultDir; candidate_dir=$candidateDir; run_dir=$runDir
     rf_steps_per_period=$RfStepsPerPeriod; trajectory_quality=$TrajectoryQuality
     source_axial_offset_mm=$SourceAxialOffsetMm
@@ -55,7 +57,8 @@ $runConfig | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $runConfigPath -
 $luaConfig = @"
 return {
   iob=[[$(Join-Path $candidateDir 'quad_monolithic.iob')]], fly2=[[$flyPath]],
-  particle_csv=[[$particleCsv]], trajectory_csv=[[$trajectoryCsv]], summary_json=[[$summaryJson]],
+  source_states=dofile([[$sourceStatesLua]]),
+  particle_state_csv=[[$particleStateCsv]], trajectory_csv=[[$trajectoryCsv]], summary_json=[[$summaryJson]],
   trajectory_quality=$TrajectoryQuality, rf_steps_per_period=$RfStepsPerPeriod,
   rf_peak_v=$($mode.rf.amplitude_V_peak), frequency_hz=$($mode.rf.frequency_Hz), phase_deg=$($mode.rf.phase_rad*180/[Math]::PI),
   axis_voltage_v=$($mode.rf.axis_offset_V), entrance_voltage_v=$($mode.static_electrodes_V.entrance_plate),
@@ -63,7 +66,9 @@ return {
   maximum_time_us=$($mode.numerics.maximum_time_us)
 }
 "@
-$luaConfig | Set-Content -LiteralPath $runConfigLua -Encoding UTF8
+# Windows PowerShell 5.1 writes a BOM for -Encoding UTF8; SIMION's Lua 5.1
+# parser treats that BOM as source text.  This generated table is ASCII-only.
+$luaConfig | Set-Content -LiteralPath $runConfigLua -Encoding ASCII
 
 Push-Location $candidateDir
 try {
@@ -96,6 +101,11 @@ if ($summary.particles -ne 25 -or $summary.collision_model -ne 'none' -or $summa
     throw "SIMION transport gate failed: $($summary | ConvertTo-Json -Compress)"
 }
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+& $python (Join-Path $projectRoot 'analysis\verify_particle_state_contract.py') `
+    --state $particleStateCsv --particles $ionPath --interface (Join-Path $projectRoot 'config\interface_contract.json') `
+    --axial-offset-mm $SourceAxialOffsetMm --frequency-hz $mode.rf.frequency_Hz --phase-rad $mode.rf.phase_rad `
+    --solver SIMION --output $stateContractReport
+if ($LASTEXITCODE -ne 0) { throw 'Particle-state contract gate failed.' }
 $shaPath = Join-Path $candidateDir 'SHA256SUMS.csv'
 $hashes = Get-ChildItem -LiteralPath $candidateDir -File | Where-Object {
     $_.Name -ne 'SHA256SUMS.csv' -and $_.Name -notlike 'trj*.tmp'
@@ -104,7 +114,9 @@ $hashes = Get-ChildItem -LiteralPath $candidateDir -File | Where-Object {
 }
 $hashes | Export-Csv -LiteralPath $shaPath -NoTypeInformation -Encoding UTF8
 & $python (Join-Path $repoRoot 'common\contracts\write_run_manifest.py') --run-config $runConfigPath `
-    --status success --software 'SIMION 2020' --output $particleCsv --output $trajectoryCsv --output $summaryJson `
+    --status success --software 'SIMION 2020' --output $trajectoryCsv --output $summaryJson `
+    --output $particleStateCsv `
+    --output $stateContractReport `
     --output (Join-Path $candidateDir 'quad_monolithic.iob') --output (Join-Path $candidateDir 'quad_monolithic.pa0') `
     --output $flyPath --output $iobReport --output $shaPath
 if ($LASTEXITCODE -ne 0) { throw 'Run-manifest generation failed.' }
