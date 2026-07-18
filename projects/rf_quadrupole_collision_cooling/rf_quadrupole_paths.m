@@ -20,9 +20,4 @@ function paths = rf_quadrupole_paths()
     paths.simionResultsDir = fullfile(paths.resultsRoot, 'simion');
     paths.crossSolverResultsDir = fullfile(paths.resultsRoot, 'cross_solver');
     paths.scratchDir = paths.scratchRoot;
-    % Backward-compatible destinations used by the pre-contract collision
-    % script.  Keep its lifecycle unchanged until that separate mode is
-    % migrated rather than silently redirecting old production outputs.
-    paths.modelsDir = fullfile(paths.scratchDir, 'comsol');
-    paths.resultsDir = paths.comsolResultsDir;
 end

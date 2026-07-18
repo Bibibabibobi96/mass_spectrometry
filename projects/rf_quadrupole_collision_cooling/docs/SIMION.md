@@ -13,6 +13,10 @@
 变化 0.00030%；40→80 步时平均 TOF 仅变化 `1.05e-6`、最大杆区半径变化 0.030%，最大逐粒子
 到达时间变化 0.000157 us。最终为 25/25、49.7386 us、最大杆区半径 0.4729 mm、最大探测半径 1.4472 mm。
 
+运行器在Fly前实际加载候选IOB，检查单实例、本地PA、放置变换、尺寸和0.2 mm单元；成功后为候选
+目录生成完整`SHA256SUMS.csv`，并在独立run目录生成含输入/输出身份的`run_manifest.json`。
+2026-07-18固定25粒子复验为25/25，候选哈希14/14通过；manifest保持candidate，不冒充正式资产。
+
 运行器同时设置 `RFQUAD_SIMION_TRAJECTORY_CSV`；Lua 在 PA/COMSOL 坐标的每 0.2 mm 轴向平面线性
 插值导出逐粒子 `time_us,axial_z_mm,transverse_x_mm,transverse_y_mm,r_mm`，并保留终止样本。此导出与 SIMION 内置 retained trajectories 无关，
 用于与 COMSOL 的 `r(z)`、同 ID 差异和关键平面束斑作可重复比较。

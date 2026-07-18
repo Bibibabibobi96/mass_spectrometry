@@ -22,6 +22,8 @@
 - 当前传输模式：[`config/modes/transport_no_collision.json`](config/modes/transport_no_collision.json)
 - 预留质量过滤模式：[`config/modes/mass_filter_reference.json`](config/modes/mass_filter_reference.json)
 - COMSOL 候选生产入口：[`comsol/ms_rf_quadrupole_no_collision.m`](comsol/ms_rf_quadrupole_no_collision.m)
+- 旧`comsol/ms_rf_quadrupole_collision_cooling.m`现为拒绝执行的兼容短桩；其150 mm旧几何、硬编码
+  连接和未验证碰撞模型不得恢复为当前入口。未来碰撞模式必须从共享契约重新建立。
 - SIMION 几何入口：[`simion/geometry/quad_monolithic.gem`](simion/geometry/quad_monolithic.gem)
 - SIMION 传输程序：[`simion/programs/quad_transport.lua`](simion/programs/quad_transport.lua)
 - COMSOL 验证门禁：[`tests/comsol/verify_nocollision_comsol.m`](tests/comsol/verify_nocollision_comsol.m)

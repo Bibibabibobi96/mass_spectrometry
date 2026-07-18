@@ -6,6 +6,7 @@ param(
     [string]$CandidateSubdir = 'quad_transport'
 )
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $repoRoot = Split-Path -Parent (Split-Path -Parent $projectRoot)
@@ -41,11 +42,13 @@ $trajectoryCsv = Join-Path $resultDir "transport_no_collision_trajectory_samples
 $summaryJson = Join-Path $resultDir "transport_no_collision_summary_$RunLabel.json"
 $runConfigPath = Join-Path $runDir 'run_config.json'
 $runConfigLua = Join-Path $runDir 'run_config.lua'
+$iobReport = Join-Path $runDir 'simion_iob_contract.txt'
 $runConfig = [ordered]@{
     schema_version=1; role='rf_quadrupole_simion_run_config'; run_id="simion_$RunLabel"
     project='rf_quadrupole_collision_cooling'; mode='transport_no_collision'; project_root=$projectRoot
     inputs=[ordered]@{baseline='config/baseline.json'; resolved_geometry='config/resolved_geometry.json'; mode='config/modes/transport_no_collision.json'; particle_table='config/particles/official_fixed_25.ion'}
-    output_dir=$resultDir; rf_steps_per_period=$RfStepsPerPeriod; trajectory_quality=$TrajectoryQuality
+    output_dir=$resultDir; candidate_dir=$candidateDir; run_dir=$runDir
+    rf_steps_per_period=$RfStepsPerPeriod; trajectory_quality=$TrajectoryQuality
     source_axial_offset_mm=$SourceAxialOffsetMm
 }
 $runConfig | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $runConfigPath -Encoding UTF8
@@ -64,18 +67,27 @@ $luaConfig | Set-Content -LiteralPath $runConfigLua -Encoding UTF8
 
 Push-Location $candidateDir
 try {
-    & $simion --nogui gem2pa quad_monolithic.gem quad_monolithic.pa#
+    & $simion --nogui --noprompt gem2pa quad_monolithic.gem quad_monolithic.pa#
     if ($LASTEXITCODE -ne 0) { throw 'SIMION gem2pa failed.' }
-    & $simion --nogui refine quad_monolithic.pa#
+    & $simion --nogui --noprompt refine quad_monolithic.pa#
     if ($LASTEXITCODE -ne 0) { throw 'SIMION refine failed.' }
 
+    # Loading the IOB immediately loads its same-basename Program, which
+    # validates this run configuration before the structural report runs.
     $env:RFQUAD_RUN_CONFIG_LUA = $runConfigLua
-    & $simion --nogui lua (Join-Path $PSScriptRoot 'run_fly.lua') 2>&1 |
+    $env:RFQUAD_SIMION_REFERENCE_REPORT = $iobReport
+    $env:RFQUAD_SIMION_REFERENCE_IOB = Join-Path $candidateDir 'quad_monolithic.iob'
+    & $simion --nogui --noprompt lua (Join-Path $PSScriptRoot 'inspect_builtin_quad_reference.lua')
+    if ($LASTEXITCODE -ne 0) { throw 'SIMION IOB runtime contract failed.' }
+
+    & $simion --nogui --noprompt lua (Join-Path $PSScriptRoot 'run_fly.lua') 2>&1 |
         Tee-Object -FilePath (Join-Path $runDir 'simion_stdout.txt')
     if ($LASTEXITCODE -ne 0) { throw 'SIMION fly failed.' }
 }
 finally {
     Remove-Item Env:RFQUAD_RUN_CONFIG_LUA -ErrorAction SilentlyContinue
+    Remove-Item Env:RFQUAD_SIMION_REFERENCE_REPORT -ErrorAction SilentlyContinue
+    Remove-Item Env:RFQUAD_SIMION_REFERENCE_IOB -ErrorAction SilentlyContinue
     Pop-Location
 }
 
@@ -84,9 +96,16 @@ if ($summary.particles -ne 25 -or $summary.collision_model -ne 'none' -or $summa
     throw "SIMION transport gate failed: $($summary | ConvertTo-Json -Compress)"
 }
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+$shaPath = Join-Path $candidateDir 'SHA256SUMS.csv'
+$hashes = Get-ChildItem -LiteralPath $candidateDir -File | Where-Object {
+    $_.Name -ne 'SHA256SUMS.csv' -and $_.Name -notlike 'trj*.tmp'
+} | Sort-Object Name | ForEach-Object {
+    [pscustomobject]@{file=$_.Name; bytes=$_.Length; sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash}
+}
+$hashes | Export-Csv -LiteralPath $shaPath -NoTypeInformation -Encoding UTF8
 & $python (Join-Path $repoRoot 'common\contracts\write_run_manifest.py') --run-config $runConfigPath `
     --status success --software 'SIMION 2020' --output $particleCsv --output $trajectoryCsv --output $summaryJson `
     --output (Join-Path $candidateDir 'quad_monolithic.iob') --output (Join-Path $candidateDir 'quad_monolithic.pa0') `
-    --output $flyPath
+    --output $flyPath --output $iobReport --output $shaPath
 if ($LASTEXITCODE -ne 0) { throw 'Run-manifest generation failed.' }
 "STATUS=PASS LABEL=$RunLabel HITS=$($summary.hits) TRANSMISSION=$($summary.transmission)"

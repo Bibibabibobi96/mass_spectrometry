@@ -4,7 +4,10 @@
 
 `transport_no_collision` 候选已在 COMSOL 6.4 与 SIMION 2020 闭合并通过 GUI 资产复验。它证明的是
 RF-only 径向约束和轴向传输，不是碰撞冷却或质量过滤，也还不是需要 SolidWorks 同步的机械正式模型。
-2026-07-17 新单一运行配置与manifest链已用SIMION固定25粒子复验，25/25命中、传输率1.0。
+2026-07-18 单一运行配置、IOB运行时结构、候选SHA与manifest链已用SIMION固定25粒子复验：
+IOB加载本地PA，单实例变换和`39×39×477 @ 0.2 mm`通过，25/25命中、传输率1.0；候选清单
+14/14哈希通过，manifest状态为success且保持candidate身份。
+旧碰撞脚本现仅保留拒绝执行短桩；其150 mm几何、硬编码LiveLink和未验证碰撞参数不属于当前契约。
 
 统一参数分为共享硬件、共享粒子源和功能模式三层：`../config/baseline.json`、
 `../config/official_particle_source.json`、`../config/modes/*.json`；程序统一读取自动生成的

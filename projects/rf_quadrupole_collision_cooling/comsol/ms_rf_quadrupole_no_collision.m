@@ -32,12 +32,6 @@ ionPath = fullfile(projectRoot,'config','particles','official_fixed_25.ion');
 ions = readmatrix(ionPath,'FileType','text','Delimiter',',');
 assert(size(ions,1)==source.particles && size(ions,2)==11, 'Fixed ION table shape mismatch.');
 
-addpath('D:\COMSOL 6.4\COMSOL64\Multiphysics\mli');
-try
-    mphstart(2036);
-catch ME
-    if ~contains(ME.message,'Already connected'), rethrow(ME); end
-end
 import com.comsol.model.*
 import com.comsol.model.util.*
 
