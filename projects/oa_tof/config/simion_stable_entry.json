@@ -1,37 +1,35 @@
 {
   "schema_version": 2,
-  "frozen_on": "2026-07-17",
+  "frozen_on": "2026-07-18",
   "role": "Implementation hash manifest for the formal SIMION delivery and the retained convergence reference.",
   "artifact_workspace_relative": "models/simion",
   "entries": [
     {
-      "id": "formal_524amu_source_built_xy025_z0050_refaxial0250",
-      "role": "Formal portable 524 amu GUI and production delivery rebuilt from baseline, resolved contract and GEM sources",
+      "id": "formal_524amu_event_capture_xy025_z0050_refaxial0250",
+      "role": "Formal portable 524 amu GUI and production delivery with static PA priority and detector event capture",
       "trajectory_quality": 8,
       "expected_instances": 4,
       "assets": [
-        {"role":"iob","relative_path":"formal/oatof_524amu/oatof_ideal_grounded.iob","bytes":20902,"sha256":"D4B96CACF209D846693B2E87B04105200D029888D65C7B0ECAA39E44221E291B"},
+        {"role":"iob","relative_path":"formal/oatof_524amu/oatof_ideal_grounded.iob","bytes":20902,"sha256":"9720E40F862CA7B74DF6E6CB72CDFC2254B07337D8904F180C58DE38EA859FFD"},
         {"role":"con","relative_path":"formal/oatof_524amu/oatof_ideal_grounded.con","bytes":2170,"sha256":"D8DA212B73B7D7A70E591C452811B13377AAF93B1E4E627301B71BEE5EBA4B80"},
-        {"role":"program","relative_path":"formal/oatof_524amu/oatof_ideal_grounded.lua","bytes":18066,"sha256":"0A4902FAFA48B83B752BC8B29578151F7B81306E98E0A5F0B7AF21CAF5B2F277"},
+        {"role":"program","relative_path":"formal/oatof_524amu/oatof_ideal_grounded.lua","bytes":19168,"sha256":"106C012375E3505875560D5BC657B5D02CF224C18940E0FCC4ECF6C2B6A2E3CB"},
         {"role":"fly2","relative_path":"formal/oatof_524amu/oatof_ideal_grounded.fly2","bytes":868,"sha256":"A7BCDECD99F11FB65FD8389D012B494520471E1935A8F7C7AE394813F4756DD3"},
-        {"role":"sha256_manifest","relative_path":"formal/oatof_524amu/SHA256SUMS.csv","bytes":5344,"sha256":"5FB46DF4A6436B653DB3F06ACEA6CC8E744C4BA48260515D4E0BF1CD82645807"},
-        {"role":"run_manifest","relative_path":"formal/oatof_524amu/run_manifest.json","bytes":2671,"sha256":"71F1C6F86535681500786F1CD3A125D4C6AB865F52D814F1BE5B73C65B9E0F47"}
+        {"role":"sha256_manifest","relative_path":"formal/oatof_524amu/SHA256SUMS.csv","bytes":5345,"sha256":"DC7E056F13FB6AA899EB82BD3417DB713584381512D96CFA68DFE0207246A540"},
+        {"role":"run_manifest","relative_path":"formal/oatof_524amu/run_manifest.json","bytes":2680,"sha256":"9EC5E45DAEB16239FE48B4C56EDA13A4D1A9261418BB69C8A856AD34B48A7448"}
       ]
     },
     {
       "id": "reference_xy025_z0025_refaxial0250",
-      "role": "Axial-grid convergence reference only; not the routine production entry",
+      "role": "Self-contained axial-grid convergence reference only; not the routine production entry",
       "trajectory_quality": 8,
       "expected_instances": 4,
       "assets": [
-        {"role":"iob","relative_path":"workspace/diagnostics/accelerator_compact_scan/workbenches/grid_xy025_z0025_refaxial0250/oatof_accz0025_refz0250.iob","bytes":21055,"sha256":"FC4F55CBFFB3BC6FB0D5C858ED6FD24C1EE037FD78E1D710DF0E64A6333F310C"},
-        {"role":"con","relative_path":"workspace/diagnostics/accelerator_compact_scan/workbenches/grid_xy025_z0025_refaxial0250/oatof_accz0025_refz0250.con","bytes":2170,"sha256":"D8DA212B73B7D7A70E591C452811B13377AAF93B1E4E627301B71BEE5EBA4B80"},
-        {"role":"program","relative_path":"workspace/diagnostics/accelerator_compact_scan/workbenches/grid_xy025_z0025_refaxial0250/oatof_accz0025_refz0250.lua","bytes":14328,"sha256":"620F6C996330AB4B6C75769F453D422FD9BA715E57E55AF102B56D5FAB1A01FB"},
-        {"role":"fly2","relative_path":"workspace/diagnostics/accelerator_compact_scan/workbenches/grid_xy025_z0025_refaxial0250/oatof_accz0025_refz0250.fly2","bytes":871,"sha256":"2E2361D2220ADAF3A0BD1D329EB9F1E969D00B23C372A0F8A35F1C81E385B4E0"},
-        {"role":"reflectron_pa0","relative_path":"workspace/diagnostics/reflectron_mesh_scan/axial0250_radial1000/reflectron.pa0","bytes":3145228,"sha256":"65AAE6C50A98D1D26733568CF234EDE96B38E4F10F12C9E41E324EDA4FD0D2B1"},
-        {"role":"accelerator_pa0","relative_path":"workspace/diagnostics/accelerator_compact_scan/borehalf5/grid_xy025_z0025/accelerator.pa0","bytes":224913868,"sha256":"2C1311BFB0C15C9CA4E8A098FE32AF64FF4961DC8A078267FF1383FFC4502ABD"},
-        {"role":"flight_tube_pa0","relative_path":"workspace/04_workbench/formal/flight_tube_ground.pa0","bytes":1909140,"sha256":"F431FAAC1293A88240D0B97CDCB71A9029FADFB865E773BB2528EBC062E644E8"},
-        {"role":"detector_pa0","relative_path":"workspace/diagnostics/detector_marker/xy050_z0010/detector_ground.pa0","bytes":6751996,"sha256":"0C4DDCDABD4C61FECEECCC94741B5C4F973EC34483097FE0DCBDE04F34980C3D"}
+        {"role":"iob","relative_path":"references/oatof_524amu_xy025_z0025_refaxial0250/oatof_ideal_grounded.iob","bytes":20902,"sha256":"94E8D0327CE08F707D98F9C70FEEB51C6E896D7AF00CF331FF97E407D5CBEF24"},
+        {"role":"con","relative_path":"references/oatof_524amu_xy025_z0025_refaxial0250/oatof_ideal_grounded.con","bytes":2170,"sha256":"D8DA212B73B7D7A70E591C452811B13377AAF93B1E4E627301B71BEE5EBA4B80"},
+        {"role":"program","relative_path":"references/oatof_524amu_xy025_z0025_refaxial0250/oatof_ideal_grounded.lua","bytes":19168,"sha256":"106C012375E3505875560D5BC657B5D02CF224C18940E0FCC4ECF6C2B6A2E3CB"},
+        {"role":"fly2","relative_path":"references/oatof_524amu_xy025_z0025_refaxial0250/oatof_ideal_grounded.fly2","bytes":868,"sha256":"A7BCDECD99F11FB65FD8389D012B494520471E1935A8F7C7AE394813F4756DD3"},
+        {"role":"sha256_manifest","relative_path":"references/oatof_524amu_xy025_z0025_refaxial0250/SHA256SUMS.csv","bytes":5346,"sha256":"FCB919A53760B255015D00CCE6D9FDD2675A316CF1EBCC8FC9CC74DE952AD989"},
+        {"role":"run_manifest","relative_path":"references/oatof_524amu_xy025_z0025_refaxial0250/run_manifest.json","bytes":2835,"sha256":"AFCE21C6E439CBBB9D7FD065BDB1292A308DC3C676B59B40AE5E34B09F22DF08"}
       ]
     }
   ]

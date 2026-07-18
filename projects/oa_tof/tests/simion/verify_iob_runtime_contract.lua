@@ -17,6 +17,18 @@ simion.command('"'..iob_path..'"')
 assert(#simion.wb.instances==expected_instances,
   string.format('IOB instance count mismatch: actual=%d expected=%d',
     #simion.wb.instances,expected_instances))
+local expected_order={
+  'flight_tube_ground%.pa0$',
+  'reflectron%.pa0$',
+  'accelerator%.pa0$',
+  'detector_ground%.pa0$',
+}
+for index,pattern in ipairs(expected_order) do
+  local filename=simion.wb.instances[index].filename
+  assert(filename:match(pattern),
+    string.format('unsafe PA priority at instance %d: %s',index,filename))
+  record('INSTANCE_%d=%s',index,filename)
+end
 local program_report_file=assert(io.open(program_report_path,'r'),
   'Program segment.load report was not created; Program may be disabled')
 local program_report=program_report_file:read('*a')

@@ -8,7 +8,7 @@
 # local mmgu_xy = var.mmgu_xy or 0.5
 # local mmgu_z = var.mmgu_z or 0.01
 # local radius = var.radius or 40
-# local absorber_thickness = var.absorber_thickness or 0.05
+# local absorber_thickness = var.absorber_thickness or 0.1
 # local margin_xy = var.margin_xy or 1
 # local front_margin_z = var.front_margin_z or 0.2
 # local back_margin_z = var.back_margin_z or 0.05

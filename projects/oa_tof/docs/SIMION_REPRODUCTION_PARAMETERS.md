@@ -78,14 +78,19 @@ backplate为半径`300`、厚度`5`的实心圆盘。外部一体式封闭屏蔽
 
 ## 5. 正式PA网格与Refine精度
 
-当前正式IOB实际加载的四个PA如下。
+当前正式IOB实际加载的四个PA如下。GUI priority number越大越优先；Lua/Data Recording槽位是
+另一类标识，但本IOB模板中两者编号一致，必须分别核对后再实飞确认。
 
-| PA实例 | 类型 | 网格数 | 每网格尺寸 | 说明 |
-|---|---|---:|---:|---|
-| reflectron | 2D cylindrical | `1089×361×1` | 轴向`0.25`、径向`1.0` | 轴对称反射器和远端屏蔽罩 |
-| accelerator | 3D Cartesian | `153×153×601` | `dx=0.25, dy=0.25, dz=0.05` | 日常正式加速器 |
-| flight_tube | 2D cylindrical | `661×361×1` | 轴向`1.0`、径向`1.0` | 连续接地无场管和近端盖 |
-| detector | 3D Cartesian | `165×165×31` | `dx=0.5, dy=0.5, dz=0.01` | GUI可见数值终止层 |
+| Workbench槽位 / `PA instance` | GUI优先级 | PA角色 | 类型 | 网格数 | 每网格尺寸 | 说明 |
+|---:|---:|---|---|---:|---:|---|
+| 1 | 1 | flight_tube | 2D cylindrical | `661×361×1` | 轴向`1.0`、径向`1.0` | 最低优先级的连续接地无场管和近端盖 |
+| 2 | 2 | reflectron | 2D cylindrical | `1089×361×1` | 轴向`0.25`、径向`1.0` | 高于飞行管屏蔽罩的反射场 |
+| 3 | 3 | accelerator | 3D Cartesian | `153×153×601` | `dx=0.25, dy=0.25, dz=0.05` | 日常正式加速器，不得被无场管遮蔽 |
+| 4 | 4 | detector | 3D Cartesian | `165×165×36` | `dx=0.5, dy=0.5, dz=0.01` | 0.1 mm后向吸收层；最高优先级的GUI可见终止层 |
+
+检测器有效前表面固定在`z=0`，前/背PA余量为`0.2/0.05 mm`。正式Program参数为
+`detector_tstep_enable=1`、`detector_capture_arm_distance_mm=100`、
+`detector_capture_depth_mm=0.02`；它只截短真正跨面的单步，不采用连续细步进。
 
 所有GEM均使用`surface=fractional`。每个PA从头Refine，不续算旧结果：
 
@@ -135,11 +140,12 @@ N=100 ION文件SHA-256：
 ## 7. 运行检查
 
 1. 复制整个`models/simion/formal/oatof_524amu/`目录，不要只挑选PA0或单独移动IOB；IOB引用同目录PA。
-2. IOB加载后确认恰好有4个实例：reflectron、accelerator、flight-tube、detector。
+2. IOB加载后确认恰好有4个槽位，依次为：`1 flight_tube`、`2 reflectron`、`3 accelerator`、
+   `4 detector`；对应GUI优先级也依次为`1、2、3、4`。
 3. Program必须开启；关闭Program设置窗口可以，Disable Program不可以。
 4. `trajectory quality=8`。
 5. 精确对比使用上述固定N=100 ION文件；常规统计才使用Fly2的N=5000随机分布。
-6. 记录结果时至少保存Ion Number、TOF、X/Y/Z、PA instance和Event；正式命中应来自第4实例。
+6. 记录结果时至少保存Ion Number、TOF、X/Y/Z、PA instance和Event；当前正式运行命中应来自槽位4。
 7. 当前正式SIMION N=100参考：100/100命中，平均TOF`71.9901350726 us`，直接质量FWHM
    `0.019673808666 Da`，`R=26634.3954`。
 

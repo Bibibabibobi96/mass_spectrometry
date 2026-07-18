@@ -26,13 +26,14 @@
       "role": "GUI-visible numerical absorber marking the detector active plane; not the mechanical detector body",
       "active_plane_z_mm": 0.0,
       "active_radius_mm": 40.0,
-      "absorber_thickness_mm": 0.05,
+      "absorber_thickness_mm": 0.1,
       "front_margin_z_mm": 0.2,
       "back_margin_z_mm": 0.05,
       "cell_xy_mm": 0.5,
       "cell_z_mm": 0.01,
-      "near_plane_tstep_default_enabled": false,
-      "near_plane_max_step_z_mm": 0.002
+      "crossing_step_control_enabled": true,
+      "capture_arm_distance_mm": 100.0,
+      "capture_depth_mm": 0.02
     }
   },
   "comsol": {

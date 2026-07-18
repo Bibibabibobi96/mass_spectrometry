@@ -40,7 +40,12 @@ $source = $contract.particle_source
 $voltage = $contract.electrodes_V
 
 function Invoke-SimionLua([string]$Script, [object[]]$Arguments) {
-  & $SimionExe --nogui lua $Script @Arguments
+  # A parameterized rebuild may intentionally change PA dimensions relative
+  # to the seed IOB.  In --nogui mode SIMION otherwise waits indefinitely at
+  # the interactive "Continue loading anyway?" prompt.  --noprompt accepts
+  # the default continuation; the runtime contract still verifies every PA
+  # filename, dimension, grid, transform, and priority after the save.
+  & $SimionExe --nogui --noprompt lua $Script @Arguments
   if ($LASTEXITCODE -ne 0) {
     throw "SIMION Lua failed with exit code ${LASTEXITCODE}: $Script"
   }
@@ -130,22 +135,19 @@ $templateCon = [IO.Path]::ChangeExtension($template, '.con')
 if (-not (Test-Path -LiteralPath $templateCon -PathType Leaf)) {
   throw "Four-instance template GUI configuration is unavailable: $templateCon"
 }
-# Open a private template copy beside the freshly generated PA files.  This
-# makes all relative PA references resolve to this build, not to the template's
-# source directory, before build_formal_iob replaces each instance explicitly.
-$privateTemplate = Join-Path $outputFull '_layout_template.iob'
-$privateTemplateCon = Join-Path $outputFull '_layout_template.con'
-Copy-Item -LiteralPath $template -Destination $privateTemplate
-Copy-Item -LiteralPath $templateCon -Destination $privateTemplateCon
 $iobOutput = Join-Path $outputFull 'oatof_ideal_grounded.iob'
+# Seed the final IOB/CON themselves from the GUI layout template.  Opening the
+# copy beside the new PA files makes relative references resolve locally; the
+# Lua builder then rewrites all four instances and saves back to the same IOB.
+# This avoids disposable _layout_template sidecars and makes the build
+# deletion-free.
+Copy-Item -LiteralPath $template -Destination $iobOutput
+Copy-Item -LiteralPath $templateCon -Destination ([IO.Path]::ChangeExtension($iobOutput, '.con'))
 Invoke-SimionLua (Join-Path $PSScriptRoot 'build_formal_iob.lua') @(
-  (Join-Path $outputFull 'oatof_resolved.lua'), $iobOutput, $privateTemplate,
+  (Join-Path $outputFull 'oatof_resolved.lua'), $iobOutput, $iobOutput,
   (Join-Path $projectRoot 'simion\workbench\formal\oatof_ideal_grounded.lua'),
   (Join-Path $projectRoot 'simion\workbench\formal\oatof_ideal_grounded.fly2')
 )
-Remove-Item -LiteralPath $privateTemplate -Force
-Remove-Item -LiteralPath $privateTemplateCon -Force
-Copy-Item -LiteralPath $templateCon -Destination (Join-Path $outputFull 'oatof_ideal_grounded.con')
 
 foreach ($required in @('oatof_ideal_grounded.iob','oatof_ideal_grounded.con','oatof_ideal_grounded.lua','oatof_ideal_grounded.fly2')) {
   if (-not (Test-Path -LiteralPath (Join-Path $outputFull $required) -PathType Leaf)) {

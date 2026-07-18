@@ -102,7 +102,8 @@ oa_tof/
 
 - COMSOL与SIMION联动时必须使用同一几何、坐标、有效探测面、粒子表和FWHM定义。
 - 正式或候选的几何尺寸必须参数化联动，禁止手工移动一个器件后遗漏相关选择集、屏蔽件或探测面。
-- SIMION第4实例是GUI可见的数值终止层，只表示有效面和口径，不等于机械检测器厚度。
+- SIMION检测器PA是高于飞行管屏蔽罩的GUI可见数值终止层，只表示有效面和口径，不等于机械
+  检测器厚度；当前正式契约中的Lua/Data Recording槽位与GUI优先级均为4。
 - Program与Data Recording必须同时开启；关闭Program对话框不等于禁用Program。
 
 通用GUI对等、SolidWorks同步、清理和参数单向派生规则不在本项目重复，直接适用根README与

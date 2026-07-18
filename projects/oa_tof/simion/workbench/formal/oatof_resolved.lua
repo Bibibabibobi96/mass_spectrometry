@@ -6,7 +6,7 @@ return {
     baseline="config/baseline.json",
     baseline_sha256="AE9645CF5C482952A0ED2CEEFE93986485FB37FF76812ED79ED1286ADE8C8731",
     mode="config/modes/formal.json",
-    mode_sha256="A3925C9EC106276E88C5BF7311D66042618CBC6F0F9C525A50BA57A98F181548"
+    mode_sha256="7CAD5B45B4403741063C75E15FBE7177D2CC5BB8701646405FD26D9C4F17A5A5"
   },
   coordinate_convention={
     units="mm",
@@ -155,13 +155,14 @@ return {
       role="GUI-visible numerical absorber marking the detector active plane; not the mechanical detector body",
       active_plane_z_mm=0.0,
       active_radius_mm=40.0,
-      absorber_thickness_mm=0.05,
+      absorber_thickness_mm=0.1,
       front_margin_z_mm=0.2,
       back_margin_z_mm=0.05,
       cell_xy_mm=0.5,
       cell_z_mm=0.01,
-      near_plane_tstep_default_enabled=false,
-      near_plane_max_step_z_mm=0.002
+      crossing_step_control_enabled=true,
+      capture_arm_distance_mm=100.0,
+      capture_depth_mm=0.02
     },
     routine_particles=5000
   },
@@ -209,13 +210,14 @@ return {
     role="GUI-visible numerical absorber marking the detector active plane; not the mechanical detector body",
     active_plane_z_mm=0.0,
     active_radius_mm=40.0,
-    absorber_thickness_mm=0.05,
+    absorber_thickness_mm=0.1,
     front_margin_z_mm=0.2,
     back_margin_z_mm=0.05,
     cell_xy_mm=0.5,
     cell_z_mm=0.01,
-    near_plane_tstep_default_enabled=false,
-    near_plane_max_step_z_mm=0.002
+    crossing_step_control_enabled=true,
+    capture_arm_distance_mm=100.0,
+    capture_depth_mm=0.02
   },
   grid_policy={
     baseline="one-grid-unit-thick full-aperture transparent ideal electrode sheet",
@@ -225,28 +227,9 @@ return {
   derived={
     simion_instances={
       {
-        name="reflectron.pa0",
-        x_mm=0,
-        y_mm=0,
-        z_mm=600.0,
-        az_deg=-90.0,
-        nx=1089,
-        ny=361,
-        nz=1,
-        cell_mm=0.25
-      },
-      {
-        name="accelerator.pa0",
-        x_mm=-67.8,
-        y_mm=-19.0,
-        z_mm=-29.92918680341103,
-        az_deg=0.0,
-        nx=153,
-        ny=153,
-        nz=601,
-        cell_mm=0.25
-      },
-      {
+        role="flight_tube_shield",
+        workbench_index=1,
+        priority_number=1,
         name="flight_tube_ground.pa0",
         x_mm=0,
         y_mm=0,
@@ -258,14 +241,45 @@ return {
         cell_mm=1.0
       },
       {
+        role="reflectron",
+        workbench_index=2,
+        priority_number=2,
+        name="reflectron.pa0",
+        x_mm=0,
+        y_mm=0,
+        z_mm=600.0,
+        az_deg=-90.0,
+        nx=1089,
+        ny=361,
+        nz=1,
+        cell_mm=0.25
+      },
+      {
+        role="accelerator",
+        workbench_index=3,
+        priority_number=3,
+        name="accelerator.pa0",
+        x_mm=-67.8,
+        y_mm=-19.0,
+        z_mm=-29.92918680341103,
+        az_deg=0.0,
+        nx=153,
+        ny=153,
+        nz=601,
+        cell_mm=0.25
+      },
+      {
+        role="detector",
+        workbench_index=4,
+        priority_number=4,
         name="detector_ground.pa0",
         x_mm=7.799999999999997,
         y_mm=-41.0,
-        z_mm=-0.1,
+        z_mm=-0.15000000000000002,
         az_deg=0.0,
         nx=165,
         ny=165,
-        nz=31,
+        nz=36,
         cell_mm=0.5
       }
     },

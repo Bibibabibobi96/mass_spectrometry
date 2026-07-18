@@ -20,13 +20,12 @@ if (Test-Path -LiteralPath $runDir) { throw "Run directory already exists: $runD
 if (Test-Path -LiteralPath $resultDir) { throw "Result directory already exists: $resultDir" }
 New-Item -ItemType Directory -Path $runDir,$resultDir | Out-Null
 
-$resolvedLua = Join-Path $candidate 'oatof_resolved.lua'
 $ion = Join-Path $reference ("oatof_comsol_524amu_gaussian_N{0}.ion" -f $ParticleCount)
 $fieldVerifier = Join-Path $PSScriptRoot 'verify_formal_runtime.lua'
 $logAnalyzer = Join-Path $projectRoot 'simion\workbench\analyze_ideal_field_log.ps1'
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 $referenceAnalysis = Join-Path $projectRoot 'analysis\reference_analysis.py'
-foreach ($path in @($SimionExe,$resolvedLua,$ion,$fieldVerifier,$logAnalyzer,$python,$referenceAnalysis)) {
+foreach ($path in @($SimionExe,$ion,$fieldVerifier,$logAnalyzer,$python,$referenceAnalysis)) {
   if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Required input is absent: $path" }
 }
 
@@ -34,17 +33,18 @@ function Invoke-Simion([string[]]$Arguments,[string]$WorkingDirectory,[string]$S
   $process = Start-Process -FilePath $SimionExe -ArgumentList $Arguments -WorkingDirectory $WorkingDirectory `
     -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput $Stdout -RedirectStandardError $Stderr
   if ($process.ExitCode -ne 0) { throw "SIMION failed with exit code $($process.ExitCode): $Stderr" }
-  if ((Test-Path -LiteralPath $Stderr) -and (Get-Item -LiteralPath $Stderr).Length -eq 0) {
-    Remove-Item -LiteralPath $Stderr -Force
-  }
 }
 
 $cases = [ordered]@{ reference=$reference; source_built=$candidate }
 foreach ($entry in $cases.GetEnumerator()) {
   $name = $entry.Key; $dir = $entry.Value
   $iob = Join-Path $dir 'oatof_ideal_grounded.iob'
+  $resolvedLua = Join-Path $dir 'oatof_resolved.lua'
+  if (-not (Test-Path -LiteralPath $resolvedLua -PathType Leaf)) { throw "$name resolved contract is absent: $resolvedLua" }
   $fieldReport = Join-Path $runDir ($name + '_field.txt')
-  Invoke-Simion @('--nogui','lua',$fieldVerifier,$fieldReport,$iob,$resolvedLua) $dir `
+  $fieldArguments = @('--nogui','lua',$fieldVerifier,$fieldReport,$iob,$resolvedLua)
+  if ($name -eq 'reference') { $fieldArguments += 'allow_legacy_order' }
+  Invoke-Simion $fieldArguments $dir `
     (Join-Path $runDir ($name + '_field_stdout.log')) (Join-Path $runDir ($name + '_field_stderr.log'))
   if (-not (Select-String -LiteralPath $fieldReport -Pattern '^STATUS=PASS$' -Quiet)) {
     throw "$name field/runtime verification did not pass."

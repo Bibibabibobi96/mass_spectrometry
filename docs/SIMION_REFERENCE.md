@@ -13,6 +13,28 @@ IOB 路径写入该项目 `docs/SIMION.md` 或 `docs/PROJECT.md`。
 - IOB 可能保存相对或绝对 PA 路径。迁移前先检查，迁移后必须在 GUI 中确认所有实例并实际飞行；
   仅看到 IOB 文件存在不能证明可复现。
 
+### 重叠电场 PA 的实例优先级
+
+- 同一点若落入多个电场 PA 实例，粒子只使用**优先级最高**的那个实例；电场不会自动叠加。
+  SIMION View PAs页显示的priority number越大，优先级越高，可用`L-` / `L+`调整。
+- 不得把GUI priority number、PAs列表槽位、Lua的`wb.instances[n]`和Data Recording的
+  `PA instance`混为同一编号。构建契约应分别记录Workbench槽位和GUI优先级，并用一个重叠点
+  实际飞行确认哪个PA生效；仅凭数组下标推断优先级不可靠。
+- 该遮蔽不只影响场值：低优先级实例的电极碰撞/终止面也可能不可见。因此局部功能器件、检测器
+  或 stopper 必须高于与其重叠的包络、屏蔽罩或粗网格背景 PA。
+- 默认把全局包络/屏蔽设为最低优先级，局部功能器件必须高于与其实际重叠的背景PA；检测器/
+  stopper也必须高于覆盖其终止面的背景PA，但没有重叠依据时不要求它成为全局最高优先级。无场管
+  或屏蔽罩应作为回退场，不得覆盖加速器、反射器等功能区。
+- `segment.instance_adjust()`可在运行时抑制当前高优先级实例并回落到下一个实例，但只适合明确的
+  空间分区例外，不能用来掩盖静态 IOB 排序错误，否则 GUI 场查看、Program Off 和其他调用路径
+  会得到不同物理。
+- 正式门禁必须同时检查实例文件名、Workbench槽位和GUI优先级，并在每个重叠区验证实际选中的
+  PA；只检查实例数量不足。
+
+依据：[SIMION Particle Trajectory Calculations](https://simion.com/info/particle_trajectory_calculation.html)、
+[Multiple PAs](https://simion.com/info/multiple_pas.html)、
+[Trajectory Programming Techniques](https://simion.com/info/trajectory_programming.html)。
+
 ## GUI 对等
 
 正式基线应让用户在 GUI 中检查 PA 实例、位置、旋转、缩放、Fast Adjust 电压、Fly2 粒子和

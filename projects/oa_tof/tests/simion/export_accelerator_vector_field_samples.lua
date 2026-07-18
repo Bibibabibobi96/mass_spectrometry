@@ -4,7 +4,7 @@ local report_path = assert(os.getenv('OATOF_SIMION_VECTOR_FIELD_REPORT'))
 local iob_path = assert(os.getenv('OATOF_FORMAL_IOB_PATH'))
 
 simion.command('"' .. iob_path .. '"')
-local instance = assert(simion.wb.instances[2], 'accelerator instance is absent')
+local instance = assert(simion.wb.instances[3], 'accelerator instance is absent')
 local input = assert(io.open(input_path, 'r'))
 local output = assert(io.open(output_path, 'w'))
 local report = assert(io.open(report_path, 'w'))

@@ -16,7 +16,7 @@ local sample_z_step=0.01
 local sample_count=math.floor((sample_z_end-sample_z_start)/sample_z_step+0.5)+1
 
 simion.command('"'..iob_path..'"')
-local instance=assert(simion.wb.instances[2], 'accelerator instance is absent')
+local instance=assert(simion.wb.instances[3], 'accelerator instance is absent')
 instance.pa:load(pa_path)
 instance:_debug_update_size()
 instance.x=accelerator_axis_x-(instance.pa.nx-1)*instance.pa.dx_mm/2

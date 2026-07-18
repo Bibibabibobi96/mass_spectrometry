@@ -49,12 +49,12 @@ adjustable detector_mirror_offset_x_mm=0.0
 adjustable detector_mirror_offset_y_mm=0.0
 adjustable detector_active_plane_z_mm=0.0
 adjustable detector_radius_mm=40.0
-adjustable detector_marker_absorber_thickness_mm=0.05
+adjustable detector_marker_absorber_thickness_mm=0.1
 adjustable detector_marker_front_margin_z_mm=0.2
 adjustable detector_marker_back_margin_z_mm=0.05
-adjustable detector_tstep_enable=0.0
-adjustable detector_tstep_window_mm=0.2
-adjustable detector_tstep_max_dz_mm=0.002
+adjustable detector_tstep_enable=1.0
+adjustable detector_capture_arm_distance_mm=100.0
+adjustable detector_capture_depth_mm=0.02
 adjustable diagnostic_return_plane_z_mm=20.5
 adjustable diagnostic_max_tof_us=90.0
 adjustable trajectory_quality=8.0
@@ -66,6 +66,10 @@ adjustable accelerator_instance_z_mm=-29.92918680341103
 adjustable accelerator_pa_back_margin_mm=0
 adjustable accelerator_pa_grid_phase_z_mm=0
 local detector_x_mm,detector_y_mm,detector_z_mm
+local INSTANCE_FLIGHT_TUBE=1
+local INSTANCE_REFLECTRON=2
+local INSTANCE_ACCELERATOR=3
+local INSTANCE_DETECTOR=4
 local accelerator_pa_override=os.getenv('OATOF_ACCELERATOR_PA_OVERRIDE')
 local accelerator_pa_override_loaded=false
 local function write_load_contract_report()
@@ -81,10 +85,10 @@ function segment.load()
  write_load_contract_report()
 end
 local function configure_linked_geometry()
- local ri=simion.wb.instances[1]
- local ai=simion.wb.instances[2]
- local ti=simion.wb.instances[3]
- local di=simion.wb.instances[4]
+ local ti=simion.wb.instances[INSTANCE_FLIGHT_TUBE]
+ local ri=simion.wb.instances[INSTANCE_REFLECTRON]
+ local ai=simion.wb.instances[INSTANCE_ACCELERATOR]
+ local di=simion.wb.instances[INSTANCE_DETECTOR]
  local half_x=(ai.pa.nx-1)*ai.pa.dx_mm*ai.scale/2
  local half_y=(ai.pa.ny-1)*ai.pa.dy_mm*ai.scale/2
  local accelerator_expected_z=-accelerator_repeller_thickness_mm-
@@ -162,20 +166,18 @@ local function configure_linked_geometry()
   print(string.format('TRACE: linked_geometry accelerator_axis=(%.12g,%.12g) accelerator_instance=(%.12g,%.12g,%.12g) accelerator_cell=(%.12g,%.12g,%.12g) shield_inner_outer_radius=(%.12g,%.12g) shield_bore_z=(%.12g,%.12g) shield_outer_z=(%.12g,%.12g) detector_active_plane=(%.12g,%.12g,%.12g) radius=%.12g marker_thickness=%.12g marker_margins_front_back=(%.12g,%.12g) detector_instance=(%.12g,%.12g,%.12g)',accelerator_axis_x_mm,accelerator_axis_y_mm,ai.x,ai.y,ai.z,ai.pa.dx_mm,ai.pa.dy_mm,ai.pa.dz_mm,flight_tube_inner_radius_mm,expected_radius,near_bore_z,far_bore_z,near_outer_z,far_outer_z,detector_x_mm,detector_y_mm,detector_z_mm,detector_radius_mm,detector_marker_absorber_thickness_mm,detector_marker_front_margin_z_mm,detector_marker_back_margin_z_mm,di.x,di.y,di.z))
  end
 end
--- Instance 3 contains the continuous grounded shell, but its cylindrical
--- bounding box overlaps the orthogonal accelerator and the reflectron.
--- Suppress it there so SIMION falls through to the corresponding detailed PA.
-function segment.instance_adjust()
- if type(ion_pz_mm)~='number' or type(ion_instance)~='number' then return end
- if ion_instance==3 and
-    (ion_pz_mm<=math.max(accelerator_grid2_z_mm,detector_active_plane_z_mm) or
-     ion_pz_mm>=reflectron_entgrid_z_mm) then
-  ion_instance=0
- end
-end
 function segment.initialize_run()
  sim_trajectory_quality=trajectory_quality
- local ai=simion.wb.instances[2]
+ assert(#simion.wb.instances==4, 'formal workbench must contain four PA instances')
+ assert(simion.wb.instances[INSTANCE_FLIGHT_TUBE].filename:match('flight_tube_ground%.pa0$'),
+   'workbench slot 1 must be the lowest-priority flight-tube shield')
+ assert(simion.wb.instances[INSTANCE_REFLECTRON].filename:match('reflectron%.pa0$'),
+   'workbench slot 2 must be the reflectron above the background shield')
+ assert(simion.wb.instances[INSTANCE_ACCELERATOR].filename:match('accelerator%.pa0$'),
+   'workbench slot 3 must be the accelerator')
+ assert(simion.wb.instances[INSTANCE_DETECTOR].filename:match('detector_ground%.pa0$'),
+   'workbench slot 4 must be the highest-priority detector')
+ local ai=simion.wb.instances[INSTANCE_ACCELERATOR]
  if accelerator_pa_override and accelerator_pa_override~='' and not accelerator_pa_override_loaded then
   ai.pa:load(accelerator_pa_override)
   ai:_debug_update_size()
@@ -184,8 +186,8 @@ function segment.initialize_run()
    print(string.format('TRACE: accelerator_pa_override=%s dimensions=%dx%dx%d cell=(%.12g,%.12g,%.12g)',accelerator_pa_override,ai.pa.nx,ai.pa.ny,ai.pa.nz,ai.pa.dx_mm,ai.pa.dy_mm,ai.pa.dz_mm))
   end
  end
- assert(#simion.wb.instances==4, 'formal workbench must contain four PA instances')
- local r,a,t,d=simion.wb.instances[1].pa,ai.pa,simion.wb.instances[3].pa,simion.wb.instances[4].pa
+ local r,a,t,d=simion.wb.instances[INSTANCE_REFLECTRON].pa,ai.pa,
+   simion.wb.instances[INSTANCE_FLIGHT_TUBE].pa,simion.wb.instances[INSTANCE_DETECTOR].pa
  configure_linked_geometry()
  if accelerator_fast_adjust_enable~=0 then
   local accelerator_voltages={[1]=V_repeller,[2]=V_grid1}
@@ -272,14 +274,18 @@ end
 function segment.tstep_adjust()
  if detector_tstep_enable==0 or not detector_z_mm or ion_vz_mm>=-1e-12 then return end
  local dz=ion_pz_mm-detector_z_mm
- if dz<=0 or dz>detector_tstep_window_mm then return end
- local dx,dy=ion_px_mm-detector_x_mm,ion_py_mm-detector_y_mm
- local radial_limit=detector_radius_mm+simion.wb.instances[4].pa.dx_mm
- if dx*dx+dy*dy>radial_limit*radial_limit then return end
+ if dz<=0 or dz>detector_capture_arm_distance_mm then return end
  local speed_z=-ion_vz_mm
  local dt_to_plane=dz/speed_z
- local dt_max_dz=detector_tstep_max_dz_mm/speed_z
- ion_time_step=math.min(ion_time_step,dt_to_plane,dt_max_dz)
+ local dx=ion_px_mm+ion_vx_mm*dt_to_plane-detector_x_mm
+ local dy=ion_py_mm+ion_vy_mm*dt_to_plane-detector_y_mm
+ local radial_limit=detector_radius_mm+simion.wb.instances[INSTANCE_DETECTOR].pa.dx_mm
+ if dx*dx+dy*dy>radial_limit*radial_limit then return end
+ assert(detector_capture_depth_mm>0 and
+        detector_capture_depth_mm<detector_marker_absorber_thickness_mm,
+   'detector capture depth must lie inside the numerical absorber')
+ local dt_to_capture=(dz+detector_capture_depth_mm)/speed_z
+ if ion_time_step>dt_to_capture then ion_time_step=dt_to_capture end
 end
 function segment.other_actions()
  local n,z,vz=ion_number,ion_pz_mm,ion_vz_mm
@@ -317,7 +323,16 @@ function segment.other_actions()
 end
 function segment.terminate()
  local n=ion_number
- if ion_instance~=4 or timed_out[n] or detector_crossed[n] then return end
+ if timed_out[n] or detector_crossed[n] then return end
+ if ion_instance~=INSTANCE_DETECTOR then
+  if trajectory_log_enable~=0 then
+   local gc=grid_jump_count[n] or {}
+   print(string.format('TRACE: non_detector_splat ion=%d instance=%d t=%.12g x=%.12g y=%.12g z=%.12g zmax=%.12g jumps grid1=%d grid2=%d entgrid=%d midgrid=%d',
+    n,ion_instance,ion_time_of_flight,ion_px_mm,ion_py_mm,ion_pz_mm,max_z[n] or ion_pz_mm,
+    gc.grid1 or 0,gc.grid2 or 0,gc.entgrid or 0,gc.midgrid or 0))
+  end
+  return
+ end
  detector_crossed[n]=true
  local raw_t,raw_x,raw_y,raw_z=ion_time_of_flight,ion_px_mm,ion_py_mm,ion_pz_mm
  local dt=0
@@ -332,8 +347,8 @@ function segment.terminate()
   print(string.format('TRACE: detector_splat_raw ion=%d t=%.12g x=%.12g y=%.12g z=%.12g vz=%.12g correction_ns=%.12g',n,raw_t,raw_x,raw_y,raw_z,ion_vz_mm,dt*1000))
   print(string.format('TRACE: detector_crossing ion=%d t=%.12g x=%.12g y=%.12g z=%.12g r=%.12g zmax=%.12g',n,tc,xc,yc,detector_z_mm,radius,max_z[n] or ion_pz_mm))
  end
- assert(radius<=detector_radius_mm+simion.wb.instances[4].pa.dx_mm, 'detector PA splat lies outside the physical disk')
+ assert(radius<=detector_radius_mm+simion.wb.instances[INSTANCE_DETECTOR].pa.dx_mm, 'detector PA splat lies outside the physical disk')
  if trajectory_log_enable~=0 then
-  print(string.format('TRACE: detector_hit_entity ion=%d instance=4 jumps grid1=%d grid2=%d entgrid=%d midgrid=%d',n,gc.grid1 or 0,gc.grid2 or 0,gc.entgrid or 0,gc.midgrid or 0))
+  print(string.format('TRACE: detector_hit_entity ion=%d instance=%d jumps grid1=%d grid2=%d entgrid=%d midgrid=%d',n,INSTANCE_DETECTOR,gc.grid1 or 0,gc.grid2 or 0,gc.entgrid or 0,gc.midgrid or 0))
  end
 end

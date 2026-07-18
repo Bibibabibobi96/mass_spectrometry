@@ -1,4 +1,5 @@
 local resolved_path=assert(arg[1], 'usage: build_formal_iob.lua RESOLVED_LUA OUTPUT_IOB TEMPLATE_IOB PROGRAM FLY2')
+io.stdout:setvbuf('no')
 local output=assert(arg[2], 'output IOB is required')
 local template=assert(arg[3], 'template IOB is required')
 local program_source=assert(arg[4], 'formal Program is required')
@@ -35,21 +36,35 @@ assert(program_content:match('function%s+segment%.load%s*%(') and
   'formal Program must set GUI T.Qual during segment.load')
 assert(fly2_content:match('standard_beam%s*{'),
   'GUI particle definition must contain standard_beam')
+print('IOB_BUILD_STAGE=load_template_begin')
 simion.command('"' .. template .. '"')
+print('IOB_BUILD_STAGE=load_template_end')
 local wb=simion.wb
 assert(#wb.instances == 4, 'formal template must contain exactly four PA instances')
-local r,a,t,d=wb.instances[1],wb.instances[2],wb.instances[3],wb.instances[4]
-r.pa:load(reflectron_pa); r:_debug_update_size()
-a.pa:load(accelerator_pa); a:_debug_update_size()
-t.pa:load(flight_tube_pa); t:_debug_update_size()
-d.pa:load(detector_pa); d:_debug_update_size()
-local wb_instances={r,a,t,d}
-for index,instance in ipairs(wb_instances) do
+local pa_by_role={
+  flight_tube_shield=flight_tube_pa,
+  reflectron=reflectron_pa,
+  accelerator=accelerator_pa,
+  detector=detector_pa,
+}
+for index=1,#wb.instances do
+  local instance=wb.instances[index]
   local expected=instances[index]
+  assert(expected.workbench_index==index and expected.priority_number==index,
+    string.format('resolved slot/priority mismatch for %s: slot=%s priority=%s index=%d',
+      expected.role,tostring(expected.workbench_index),tostring(expected.priority_number),index))
+  print(string.format('IOB_BUILD_STAGE=instance_%d_load_begin role=%s',index,expected.role))
+  instance.pa:load(assert(pa_by_role[expected.role],'unknown SIMION instance role: '..tostring(expected.role)))
+  print(string.format('IOB_BUILD_STAGE=instance_%d_load_end role=%s',index,expected.role))
+  print(string.format('IOB_BUILD_STAGE=instance_%d_size_begin role=%s',index,expected.role))
+  instance:_debug_update_size()
+  print(string.format('IOB_BUILD_STAGE=instance_%d_size_end role=%s',index,expected.role))
   instance.x,instance.y,instance.z=expected.x_mm,expected.y_mm,expected.z_mm
   instance.az,instance.el,instance.rt,instance.scale=expected.az_deg,0,0,1
 end
+print('IOB_BUILD_STAGE=save_begin')
 wb:save(output)
+print('IOB_BUILD_STAGE=save_end')
 local program_output=output:gsub('%.[iI][oO][bB]$','.lua')
 local fly2_output=output:gsub('%.[iI][oO][bB]$','.fly2')
 assert(fly2_output~=output,'formal IOB output must end in .iob')
