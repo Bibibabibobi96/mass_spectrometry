@@ -363,3 +363,18 @@ N=100平均值为`71.9868802959 us`。31.44793 us和二级最大穿透51.07mm只
 - 首次比较必须保留COMSOL与SIMION的轴线`V(z)`、`Ez(z)`和单粒子轨迹PNG。
 - 加密测试必须先做同网格裁边控制，再做单离子、N=100、N=1000；否则不能把裁边效应、
   统计波动和网格收敛混为同一结论。
+
+## 混合质荷比候选
+
+`simion/workbench/analyze_ideal_field_log.ps1`在逐粒子CSV中保留ION表的`MassAmu`和`ChargeState`，
+支持一次Fly后按物种拆分，不再只能分析单一524 amu粒子。宽质量候选入口
+`tests/cross_solver/run_mass_spectrum_candidate.ps1`把五份共享初始条件的ION表合并为一个200粒子表，
+正式Program、四PA优先级和quality=8均保持不变。只有COMSOL五个分批结果也成功并通过统一分析、
+manifest复核后，这次SIMION混合Fly才构成完整跨求解器候选；不得单独提升或覆盖524 amu正式包。
+
+首次混合Fly仍沿用524 Da正式Program的`diagnostic_max_tof_us=90`，因此10/100/500 Da共120粒子
+全部到达，而1000/2000 Da共80粒子在90 us被主动timeout；这不是传输损失。宽质量入口现按
+`90*sqrt(max_mass/524)`向上取整生成运行时GUI adjustable，本次为176 us。复用五份已通过COMSOL
+报告后重跑SIMION，200/200均穿过检测面并位于40 mm有效半径内，最大落点半径`8.0922 mm`；旧
+90 us失败日志保留为`simion_mixed_timeout90.failed.log`。入口支持`-ResumeAfterComsol`，但只有五份
+CSV和报告都存在且各自命中门禁通过时才允许跳过COMSOL，最终仍必须重新生成并复核manifest。

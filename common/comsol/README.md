@@ -9,6 +9,14 @@
 `run_comsol_r2025b.ps1`是当前MATLAB R2025b + COMSOL 6.4 LiveLink任务入口。项目脚本不得再次
 调用`mphstart`，也不得绕过入口维护另一套长期服务连接。
 
+入口的`-ProcessorCount`是可选共享内存线程上限；默认`0`表示沿用COMSOL自动选择，日常结果不变。
+只有排查本地并发库崩溃或项目已验证固定线程数时才显式设置，例如`-ProcessorCount 1`。线程数属于
+运行环境证据，不能借此改变物理、网格或求解器定义。
+
+`-Allocator`可选`auto/scalable/native`，默认`auto`保持COMSOL设置。Windows上若崩溃栈明确落在
+COMSOL自带`tbbmalloc.dll`，可用`-Allocator native`绕过TBB scalable allocator；必须记录该运行
+环境差异，并用同一物理输入核对结果，不得把分配器变化解释成物理或数值参数变化。
+
 ## 测试分组
 
 |主题|测试入口|证明范围|

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
 import unittest
@@ -14,6 +15,7 @@ sys.path.insert(0, str(ANALYSIS_DIR))
 
 from peak_metrics import (
     AnalysisSettings,
+    bootstrap_resolution_distribution,
     bootstrap_resolution_difference,
     compare_peak_shapes,
     compute_peak_metrics,
@@ -24,6 +26,8 @@ from reference_analysis import (
     audit_simion_recording,
     read_particle_table,
 )
+from mass_spectrum import analyze_mass_spectrum, fit_calibration
+from truncation_diagnostics import _common_intersection_masks
 
 
 class PeakMetricsTest(unittest.TestCase):
@@ -237,6 +241,66 @@ class ParticleImportTest(unittest.TestCase):
 
 
 class SourceMappingAndBootstrapTest(unittest.TestCase):
+    def test_wide_mass_calibration_recovers_time_offset(self) -> None:
+        mz = np.array([10.0, 100.0, 524.0, 1000.0, 2000.0])
+        tof = 0.25 + 3.1 * np.sqrt(mz)
+        fit = fit_calibration(tof, mz)
+
+        self.assertAlmostEqual(fit["time_offset_us"], 0.25, places=12)
+        self.assertLess(fit["residual_max_abs_mz"], 1e-9)
+
+    def test_radius_intersection_uses_same_particles(self) -> None:
+        left = [("r <= 5 mm", 5.0, np.array([True, True, False]))]
+        right = [("r <= 5 mm", 5.0, np.array([True, False, True]))]
+        result = _common_intersection_masks(left, right)
+
+        np.testing.assert_array_equal(result[0][2], [True, False, False])
+
+    def test_wide_mass_spectrum_analysis_writes_candidate_outputs(self) -> None:
+        mode_path = ANALYSIS_DIR.parent / "config" / "modes" / "mass_spectrum.json"
+        mode = json.loads(mode_path.read_text(encoding="utf-8"))
+        species = mode["species"]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            comsol_dir = root / "comsol"
+            comsol_dir.mkdir()
+            simion_rows = []
+            global_id = 0
+            for item in species:
+                mass = float(item["mass_amu"])
+                mean = 0.25 + 3.1 * np.sqrt(float(item["mz"]))
+                tof = mean + np.array([-1.0, 0.0, 1.0]) * 1e-4
+                frame = pd.DataFrame(
+                    {
+                        "Ion": [1, 2, 3], "TofUs": tof,
+                        "XMm": [0.0, 0.1, -0.1], "YMm": [0.0, 0.0, 0.0],
+                        "Hit": [True, True, True], "X0Mm": [0.0] * 3,
+                        "Y0Mm": [0.0] * 3, "Z0Mm": [0.0] * 3,
+                        "EnergyEv": [5.0] * 3,
+                    }
+                )
+                frame.to_csv(comsol_dir / f"{item['species_id']}.csv", index=False)
+                for local_id, value in enumerate(tof, start=1):
+                    global_id += 1
+                    simion_rows.append(
+                        {
+                            "Ion": global_id, "MassAmu": mass,
+                            "ChargeState": int(item["charge_state"]), "TofUs": value,
+                            "XMm": 0.0, "YMm": 0.0, "Hit": True,
+                            "X0Mm": 0.0, "Y0Mm": 0.0, "Z0Mm": 0.0,
+                            "EnergyEv": 5.0,
+                        }
+                    )
+            simion_path = root / "simion.csv"
+            pd.DataFrame(simion_rows).to_csv(simion_path, index=False)
+            output = root / "output"
+            result = analyze_mass_spectrum(mode_path, comsol_dir, simion_path, output)
+
+            self.assertEqual(result["status"], "PASS")
+            self.assertFalse(result["resolution_claim_allowed"])
+            self.assertTrue((output / "mass_spectrum_comparison.png").is_file())
+            self.assertEqual(len(pd.read_csv(output / "mass_spectrum_summary.csv")), 10)
+
     def test_paired_comparison_writes_detector_landing_outputs(self) -> None:
         left = pd.DataFrame(
             {
@@ -322,6 +386,22 @@ class SourceMappingAndBootstrapTest(unittest.TestCase):
 
         self.assertEqual(first, second)
         self.assertEqual(first["resamples_valid"], 20)
+
+    def test_matched_size_resolution_bootstrap_is_deterministic(self) -> None:
+        tof = 72.0 + np.linspace(-0.001, 0.001, 41) ** 3 * 1.0e5
+        settings = AnalysisSettings(grid_points=401)
+        first = bootstrap_resolution_distribution(
+            tof, 524.0, resamples=20, seed=11, sample_size=31,
+            replace=False, settings=settings, batch_size=4
+        )
+        second = bootstrap_resolution_distribution(
+            tof, 524.0, resamples=20, seed=11, sample_size=31,
+            replace=False, settings=settings, batch_size=4
+        )
+
+        self.assertEqual(first, second)
+        self.assertEqual(first["sample_size"], 31)
+        self.assertFalse(first["replacement"])
 
 
 if __name__ == "__main__":

@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "role": "oa_tof_candidate_mass_spectrum_mode",
+  "mode": "mass_spectrum_candidate",
+  "purpose": "Wide-range m/z calibration, transmission and cross-solver centroid comparison; not a replacement for the 524 Da formal resolution baseline",
+  "particle_source": {
+    "initial_energy_mean_ev": 5.0,
+    "initial_energy_sigma_ev": 0.4,
+    "shared_seed": 20260713,
+    "paired_initial_conditions_across_species": true
+  },
+  "species": [
+    {"species_id": "mz10_z1", "mass_amu": 10.0, "charge_state": 1, "mz": 10.0, "particle_count": 40, "relative_abundance": 1.0},
+    {"species_id": "mz100_z1", "mass_amu": 100.0, "charge_state": 1, "mz": 100.0, "particle_count": 40, "relative_abundance": 1.0},
+    {"species_id": "mz500_z1", "mass_amu": 500.0, "charge_state": 1, "mz": 500.0, "particle_count": 40, "relative_abundance": 1.0},
+    {"species_id": "mz1000_z1", "mass_amu": 1000.0, "charge_state": 1, "mz": 1000.0, "particle_count": 40, "relative_abundance": 1.0},
+    {"species_id": "mz2000_z1", "mass_amu": 2000.0, "charge_state": 1, "mz": 2000.0, "particle_count": 40, "relative_abundance": 1.0}
+  ],
+  "analysis": {
+    "calibration_model": "sqrt(mz)=slope*tof_us+intercept",
+    "primary_outputs": [
+      "emitted_and_detected_count_by_species",
+      "mean_tof_us_by_species",
+      "global_calibration_residual",
+      "calibrated_mz_spectrum",
+      "cross_solver_centroid_difference"
+    ],
+    "resolution_claim_allowed": false,
+    "reason": "Forty particles per species are intentionally economical and are insufficient for a precision FWHM claim"
+  },
+  "truncation_diagnostic": {
+    "source_dataset": "current formal paired N=1000 result",
+    "bootstrap_resamples": 200,
+    "bootstrap_seed": 20260718,
+    "energy_windows_ev": [[null, null], [4.0, 6.0], [4.2, 5.8]],
+    "active_radius_limits_mm": [40.0, 15.0, 10.0, 7.5, 5.0],
+    "source_z_widths_mm": [1.0, 0.8, 0.6, 0.4],
+    "source_z_gate_center": "resolved_geometry.particle_source.center_z_mm",
+    "comparison_policy": "Use the same retained sample count within each cut family; radius cuts report solver-specific acceptance and the paired intersection separately"
+  }
+}

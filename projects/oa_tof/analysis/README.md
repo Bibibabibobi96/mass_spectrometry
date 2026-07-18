@@ -106,6 +106,11 @@ Program Off只允许作为诊断组，可用`single`和对应`.1`列导入；它
 - `compare_particle_trajectories.py`比较代表粒子的同时间位置、同z横向路径、转向深度和关键平面
   到达时间；SIMION输入必须是启用稀疏TRACE的正式quality=8日志。
 - `compare_vector_field_samples.py`比较两侧在完全相同加速段坐标上的Ex/Ey/Ez。
+- `mass_spectrum.py`按`config/modes/mass_spectrum.json`拟合
+  `sqrt(m/z)=slope*TOF+intercept`，输出五点宽质量谱、标定残差、传输率和跨求解器质心差；经济样本
+  禁止用于精确FWHM声明。
+- `truncation_diagnostics.py`在正式配对粒子上比较能量窗、检测器有效半径和共享轴向释放宽度。每类
+  截断统一重采样粒子数，半径另报告两求解器共同保留的配对交集，避免样本数变化被误判为峰宽改善。
 
 这些入口只读取MATLAB/Lua导出的CSV，不直接解析MPH或PA。正式2026-07-16诊断产物统一位于
 `artifacts/projects/oa_tof/results/reference_analysis/formal_synced_2026-07-16/`，身份和关键结论

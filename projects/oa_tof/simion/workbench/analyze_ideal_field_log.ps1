@@ -51,6 +51,8 @@ foreach ($line in Get-Content -LiteralPath $IonFile) {
   $c = $line.Split(',')
   if ($c.Count -lt 9) { throw "Malformed ION line $ionNumber in $IonFile" }
   $initial[$ionNumber] = [pscustomobject]@{
+    MassAmu = Convert-InvariantDouble $c[1]
+    ChargeState = [int](Convert-InvariantDouble $c[2])
     X0Mm = Convert-InvariantDouble $c[3]
     Y0Mm = Convert-InvariantDouble $c[4]
     Z0Mm = Convert-InvariantDouble $c[5]
@@ -69,6 +71,7 @@ foreach ($line in Get-Content -LiteralPath $Log) {
   $r = Convert-InvariantDouble $Matches[6]
   $rows.Add([pscustomobject]@{
     Mode = $Mode; Distribution = $Distribution; Ion = $n
+    MassAmu = $p.MassAmu; ChargeState = $p.ChargeState
     X0Mm = $p.X0Mm; Y0Mm = $p.Y0Mm; Z0Mm = $p.Z0Mm; EnergyEv = $p.EnergyEv
     TofUs = Convert-InvariantDouble $Matches[2]
     XMm = Convert-InvariantDouble $Matches[3]

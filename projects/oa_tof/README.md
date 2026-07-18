@@ -53,6 +53,8 @@
   [`tests/cross_solver/verify_geometry_contract.ps1`](tests/cross_solver/verify_geometry_contract.ps1)
 - 统一分析契约：[`config/analysis_contract.json`](config/analysis_contract.json)
 - 当前正式跨求解器验证：[`config/formal_validation.json`](config/formal_validation.json)
+- 宽质量标定候选模式：[`config/modes/mass_spectrum.json`](config/modes/mass_spectrum.json)；只评价
+  峰位、标定和传输率，不替代524 Da正式分辨率基线。
 - 当前正式N=1000直接重算与发布入口：
   [`tests/cross_solver/run_formal_validation.ps1`](tests/cross_solver/run_formal_validation.ps1)；发布器只在
   两端1000/1000、统一比较PASS且当前资产/结果SHA齐全时更新机器契约。
@@ -80,6 +82,9 @@
   单一R而改动求解器精度。
 - 求解器无关峰形、FWHM、source mapping、Recording审计和bootstrap已固定到Python 3.11参考入口；
   四个纯MATLAB后处理入口已删除，旧数值只在历史/冻结基准中保留作迁移对照。
+- 五点宽质量N=40候选已完成，COMSOL/SIMION两端各物种40/40命中并通过标定与manifest；该候选只
+  评价峰位、传输率和质心差，不替代524 Da正式分辨率。COMSOL build 293的N=3原生崩溃已用N=40
+  稳定绕开但保留为开放诊断，精确矩阵见`docs/COMSOL.md`。
 
 精确数值、候选/正式边界和开放任务以`docs/PROJECT.md`为准。
 

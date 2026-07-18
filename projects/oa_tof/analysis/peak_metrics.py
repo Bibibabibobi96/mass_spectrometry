@@ -442,6 +442,73 @@ def _bootstrap_resolution_batch(
     return result
 
 
+def bootstrap_resolution_distribution(
+    tof_us: np.ndarray,
+    nominal_mass_Da: float,
+    resamples: int = 200,
+    seed: int = 20260718,
+    sample_size: int | None = None,
+    replace: bool = True,
+    settings: AnalysisSettings | None = None,
+    batch_size: int = 16,
+) -> dict[str, Any]:
+    """Bootstrap direct-KDE resolution with an optional matched sample size.
+
+    ``replace=False`` is intended for acceptance-cut diagnostics.  Every cut
+    in one family can then be evaluated at the same retained particle count,
+    preventing the canonical N-dependent KDE bandwidth from masquerading as
+    a physical peak-width change.
+    """
+
+    settings = settings or AnalysisSettings()
+    sample = _as_valid_sample(tof_us, "tof_us")
+    if resamples <= 0 or batch_size <= 0:
+        raise ValueError("resamples and batch_size must be positive")
+    if sample_size is None:
+        sample_size = sample.size
+    if sample_size < 3:
+        raise ValueError("sample_size must be at least three")
+    if not replace and sample_size > sample.size:
+        raise ValueError("sample_size cannot exceed the sample without replacement")
+
+    rng = np.random.default_rng(seed)
+    resolutions = np.full(resamples, np.nan)
+    for start in range(0, resamples, batch_size):
+        stop = min(start + batch_size, resamples)
+        count = stop - start
+        if replace:
+            indices = rng.integers(0, sample.size, size=(count, sample_size))
+        else:
+            indices = np.empty((count, sample_size), dtype=np.int64)
+            for row in range(count):
+                indices[row] = rng.choice(sample.size, sample_size, replace=False)
+        resolutions[start:stop] = _bootstrap_resolution_batch(
+            sample[indices], nominal_mass_Da, settings
+        )
+
+    finite = resolutions[np.isfinite(resolutions)]
+    if finite.size < 0.95 * resamples:
+        raise ValueError(
+            f"Only {finite.size}/{resamples} finite bootstrap replicates were obtained"
+        )
+    percentiles = np.percentile(finite, [2.5, 50.0, 97.5])
+    return {
+        "method": (
+            "canonical direct KDE FWHM; matched-size subsampling without replacement"
+            if not replace
+            else "canonical direct KDE FWHM bootstrap with replacement"
+        ),
+        "seed": int(seed),
+        "resamples_requested": int(resamples),
+        "resamples_valid": int(finite.size),
+        "sample_size": int(sample_size),
+        "replacement": bool(replace),
+        "resolution_p2p5": float(percentiles[0]),
+        "resolution_median": float(percentiles[1]),
+        "resolution_p97p5": float(percentiles[2]),
+    }
+
+
 def bootstrap_resolution_difference(
     left_tof_us: np.ndarray,
     right_tof_us: np.ndarray,

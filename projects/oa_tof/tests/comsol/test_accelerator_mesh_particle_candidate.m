@@ -11,6 +11,10 @@ driftStepText = getenv('OATOF_DRIFT_TSTEP_NS');
 reuseExistingField = strcmp(getenv('OATOF_REUSE_EXISTING_FIELD'), '1');
 useParticleStopTime = strcmp(getenv('OATOF_USE_PARTICLE_STOP_TIME'), '1');
 useSegmentedOutput = strcmp(getenv('OATOF_SEGMENTED_OUTPUT'), '1');
+clearParticleSolutionData = strcmp( ...
+    getenv('OATOF_CLEAR_PARTICLE_SOLUTION_DATA'), '1');
+applyParticleProperties = ~strcmp( ...
+    getenv('OATOF_APPLY_PARTICLE_PROPERTIES'), '0');
 assert(~isempty(outputCsv), 'OATOF_COMSOL_OUTPUT_CSV is not set.');
 if isempty(hmaxText), hmaxText = '0.5'; end
 hmaxMm = str2double(hmaxText);
@@ -62,6 +66,15 @@ else
         'OATOF_PARTICLE_IDS contains duplicates.');
 end
 selectedIon = ion(particleIds, :);
+massValues = unique(selectedIon(:,2));
+chargeValues = unique(selectedIon(:,3));
+assert(numel(massValues) == 1 && isfinite(massValues(1)) && massValues(1) > 0, ...
+    'Selected fixed-particle table must contain one positive ion mass.');
+assert(numel(chargeValues) == 1 && isfinite(chargeValues(1)) && ...
+    chargeValues(1) == floor(chargeValues(1)) && chargeValues(1) ~= 0, ...
+    'Selected fixed-particle table must contain one nonzero integer charge state.');
+massAmu = massValues(1);
+chargeState = chargeValues(1);
 outputDir = fileparts(outputCsv);
 if ~isfolder(outputDir), mkdir(outputDir); end
 releasePath = fullfile(outputDir, sprintf( ...
@@ -74,9 +87,12 @@ fprintf(fid, 'MODEL=%s\nION_TABLE=%s\nOUTPUT_CSV=%s\n', ...
     modelPath, ionTable, outputCsv);
 fprintf(fid, 'ACCELERATOR_HMAX_MM=%.12g\n', hmaxMm);
 fprintf(fid, 'PARTICLE_IDS=%s\n', join(string(particleIds), ','));
+fprintf(fid, 'MASS_AMU=%.12g\nCHARGE_STATE=%d\n', massAmu, chargeState);
 fprintf(fid, 'REUSE_EXISTING_FIELD=%d\n', reuseExistingField);
 fprintf(fid, 'USE_PARTICLE_STOP_TIME=%d\n', useParticleStopTime);
 fprintf(fid, 'USE_SEGMENTED_OUTPUT=%d\n', useSegmentedOutput);
+fprintf(fid, 'CLEAR_PARTICLE_SOLUTION_DATA=%d\n', clearParticleSolutionData);
+fprintf(fid, 'APPLY_PARTICLE_PROPERTIES=%d\n', applyParticleProperties);
 fprintf(fid, 'REQUESTED_DRIFT_TSTEP_NS=%.12g\n', driftStepNs);
 if isfinite(fineStepNs)
     fprintf(fid, 'REQUESTED_FINE_TSTEP_NS=%.12g\n', fineStepNs);
@@ -118,8 +134,10 @@ try
     if useSegmentedOutput
         assert(isfinite(fineStepNs), ...
             'Segmented output requires OATOF_FINE_TSTEP_NS.');
+        assert(chargeState == 1, ...
+            'Segmented-output formulas currently support singly charged ions only.');
         configure_oatof_segmented_output( ...
-            model, 524, fineStepNs, driftStepNs);
+            model, massAmu, fineStepNs, driftStepNs);
     elseif isfinite(fineStepNs)
         oldFineToken = regexp(oldTlist, ...
             'range\(0,([^,]+),2e-6\)', 'tokens', 'once');
@@ -161,7 +179,7 @@ try
         end
     end
 
-    massKg = 524*1.66053906660e-27;
+    massKg = massAmu*1.66053906660e-27;
     energyEv = selectedIon(:,9);
     azimuth = deg2rad(selectedIon(:,7));
     elevation = deg2rad(selectedIon(:,8));
@@ -173,6 +191,13 @@ try
     rel1.label(sprintf('DIAGNOSTIC fixed particle subset (N=%d)', numel(particleIds)));
     rel1.set('Filename', releasePath);
     rel1.importData();
+    if applyParticleProperties
+        particleProperties = model.component('comp1').physics('cpt').feature('pp1');
+        particleProperties.label(sprintf( ...
+            'Particle properties: %.12g amu, charge %+d', massAmu, chargeState));
+        particleProperties.set('mp', sprintf('%.15g[kg]', massKg));
+        particleProperties.set('Z', sprintf('%d', chargeState));
+    end
     fprintf(fid, 'RELEASE_FILE=%s\n', releasePath);
 
     meshStart = tic;
@@ -190,6 +215,15 @@ try
         model.study('std1').run;
         esSeconds = toc(esStart);
     end
+    % The historical 524 Da path let Study Compute replace the old particle
+    % solution.  Keep explicit clearing as an opt-in diagnostic because
+    % COMSOL 6.4 build 293 has crashed while reinitializing the cleared
+    % solution mesh.
+    if clearParticleSolutionData
+        model.sol('sol2').clearSolutionData();
+    end
+    fprintf(fid, 'PARTICLE_SOLUTION_DATA_CLEARED=%d\n', ...
+        clearParticleSolutionData);
     particleStart = tic;
     model.study('std2').run;
     particleSeconds = toc(particleStart);
@@ -208,7 +242,7 @@ try
     if useSegmentedOutput
         expectedTof = mphevaluate(model, 't_detector_ref', 's');
     else
-        expectedTof = 31.4478763926e-6*sqrt(524/100);
+        expectedTof = 31.4478763926e-6*sqrt(massAmu/100);
     end
     arrivalHalfWindow = 200e-9;
     if useParticleStopTime

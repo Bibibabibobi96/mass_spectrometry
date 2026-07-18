@@ -9,7 +9,13 @@ param(
     [int]$StartupAttempts = 2,
 
     [ValidateRange(1, 30)]
-    [int]$StartupRetryDelaySeconds = 5
+    [int]$StartupRetryDelaySeconds = 5,
+
+    [ValidateRange(0, 64)]
+    [int]$ProcessorCount = 0,
+
+    [ValidateSet('auto', 'scalable', 'native')]
+    [string]$Allocator = 'auto'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -40,11 +46,21 @@ try {
 
     for ($attempt = 1; $attempt -le $StartupAttempts; $attempt++) {
         Remove-Item -LiteralPath $report -Force -ErrorAction SilentlyContinue
-        & $launcher -login auto matlab `
-            -mlroot $matlabRoot `
-            -nodesktop `
-            -mlnosplash `
-            -mlstartdir $repoRoot
+        $launcherArguments = @()
+        if ($ProcessorCount -gt 0) {
+            $launcherArguments += @('-np', [string]$ProcessorCount)
+        }
+        if ($Allocator -ne 'auto') {
+            $launcherArguments += @('-alloc', $Allocator)
+        }
+        $launcherArguments += @(
+            '-login', 'auto', 'matlab',
+            '-mlroot', $matlabRoot,
+            '-nodesktop',
+            '-mlnosplash',
+            '-mlstartdir', $repoRoot
+        )
+        & $launcher @launcherArguments
         $launcherExit = $LASTEXITCODE
 
         if (Test-Path -LiteralPath $report -PathType Leaf) {
