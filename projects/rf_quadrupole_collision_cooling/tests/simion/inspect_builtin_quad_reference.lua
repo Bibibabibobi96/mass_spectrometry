@@ -4,6 +4,9 @@ local report_path = assert(os.getenv('RFQUAD_SIMION_REFERENCE_REPORT'),
   'RFQUAD_SIMION_REFERENCE_REPORT is not set')
 local iob_path = assert(os.getenv('RFQUAD_SIMION_REFERENCE_IOB'),
   'RFQUAD_SIMION_REFERENCE_IOB is not set')
+local run_config_path = assert(os.getenv('RFQUAD_RUN_CONFIG_LUA'),
+  'RFQUAD_RUN_CONFIG_LUA is not set')
+local expected = assert(dofile(run_config_path), 'run config did not return a table')
 
 simion.command('"' .. iob_path .. '"')
 local report = assert(io.open(report_path, 'w'))
@@ -31,12 +34,13 @@ for index = 1, #simion.wb.instances do
   record('INSTANCE_%d_PA_X_IN_WB=%.15g,%.15g,%.15g', index, xx,xy,xz)
   record('INSTANCE_%d_PA_Y_IN_WB=%.15g,%.15g,%.15g', index, yx,yy,yz)
   record('INSTANCE_%d_PA_Z_IN_WB=%.15g,%.15g,%.15g', index, zx,zy,zz)
-  assert(pa.nx == 39 and pa.ny == 39 and pa.nz == 477,
-    'candidate PA dimensions moved from the built-in reference')
-  assert(math.abs(pa.dx_mm - 0.2) < 1e-12 and
-         math.abs(pa.dy_mm - 0.2) < 1e-12 and
-         math.abs(pa.dz_mm - 0.2) < 1e-12,
-    'candidate PA cell size moved from 0.2 mm')
+  assert(pa.nx == expected.expected_pa_nx and pa.ny == expected.expected_pa_ny and
+         pa.nz == expected.expected_pa_nz,
+    'candidate PA dimensions differ from the resolved geometry contract')
+  assert(math.abs(pa.dx_mm - expected.expected_pa_cell_mm) < 1e-12 and
+         math.abs(pa.dy_mm - expected.expected_pa_cell_mm) < 1e-12 and
+         math.abs(pa.dz_mm - expected.expected_pa_cell_mm) < 1e-12,
+    'candidate PA cell size differs from the resolved geometry contract')
 end
 record('STATUS=PASS')
 report:close()

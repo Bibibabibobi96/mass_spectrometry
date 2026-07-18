@@ -4,7 +4,7 @@
   "geometry_authority": {
     "source": "SIMION 2020 built-in examples/quad monolithic reference",
     "files": ["quad_include.gem", "quad_monolithic.gem"],
-    "policy": "COMSOL and project SIMION sources must reproduce this geometry; RF-only physics remains project-defined"
+    "policy": "Reference provenance only. This baseline is the sole editable project design source; COMSOL, SIMION and future CAD consume generated releases."
   },
   "coordinate_convention": {
     "units": "mm",
@@ -41,6 +41,7 @@
     "exit_enclosure_front_wall_end_z": 90.2,
     "exit_aperture_radius": 3.6,
     "detector_radius": 3.6,
+    "detector_thickness": 0.4,
     "simion_cell_mm": 0.2,
     "simion_fractional_surface": true,
     "simion_mirror_planes": ["x", "y"],

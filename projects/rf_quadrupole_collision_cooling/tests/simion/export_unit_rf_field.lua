@@ -8,18 +8,17 @@ assert((iob_path and iob_path ~= '') or (pa_path and pa_path ~= ''),
 local output_path = assert(os.getenv('RFQUAD_SIMION_UNIT_RF_FIELD_CSV'), 'RFQUAD_SIMION_UNIT_RF_FIELD_CSV is not set')
 local report_path = assert(os.getenv('RFQUAD_SIMION_UNIT_RF_FIELD_REPORT'), 'RFQUAD_SIMION_UNIT_RF_FIELD_REPORT is not set')
 
-local function range_from_env(name, fallback)
-  local value = tonumber(os.getenv(name))
-  return value or fallback
+local function required_number(name)
+  return assert(tonumber(os.getenv(name)), name .. ' must be set to a number')
 end
 
-local x_min = range_from_env('RFQUAD_FIELD_X_MIN_MM', -2.0)
-local x_max = range_from_env('RFQUAD_FIELD_X_MAX_MM', 2.0)
-local y_min = range_from_env('RFQUAD_FIELD_Y_MIN_MM', -2.0)
-local y_max = range_from_env('RFQUAD_FIELD_Y_MAX_MM', 2.0)
-local z_min = range_from_env('RFQUAD_FIELD_Z_MIN_MM', 0.2)
-local z_max = range_from_env('RFQUAD_FIELD_Z_MAX_MM', 94.8)
-local step = range_from_env('RFQUAD_FIELD_STEP_MM', 0.2)
+local x_min = required_number('RFQUAD_FIELD_X_MIN_MM')
+local x_max = required_number('RFQUAD_FIELD_X_MAX_MM')
+local y_min = required_number('RFQUAD_FIELD_Y_MIN_MM')
+local y_max = required_number('RFQUAD_FIELD_Y_MAX_MM')
+local z_min = required_number('RFQUAD_FIELD_Z_MIN_MM')
+local z_max = required_number('RFQUAD_FIELD_Z_MAX_MM')
+local step = required_number('RFQUAD_FIELD_STEP_MM')
 assert(step > 0, 'RFQUAD_FIELD_STEP_MM must be positive')
 
 local pa, instance

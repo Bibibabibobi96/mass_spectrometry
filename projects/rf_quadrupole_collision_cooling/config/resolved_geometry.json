@@ -3,7 +3,7 @@
   "role": "rf_quadrupole_resolved_official_contract_do_not_edit",
   "inputs": {
     "baseline": "config/baseline.json",
-    "baseline_sha256": "656981990CA4E027E0CA6B98250292517932273E8EAA4FA0EE1E6836ECC8A421",
+    "baseline_sha256": "A43DDB306DD35919D6EE5BDBBDC12FCAC7D72261D3A4772B750CFB3C92B70443",
     "mode": "config/modes/transport_no_collision.json",
     "mode_sha256": "111C7DCEB54E5106024B79A66F65BB780F434AD0816B439CB74C7919783AED95",
     "particle_source": "config/official_particle_source.json",
@@ -56,6 +56,7 @@
     "exit_enclosure_front_wall_end_z": 90.2,
     "exit_aperture_radius": 3.6,
     "detector_radius": 3.6,
+    "detector_thickness": 0.4,
     "simion_cell_mm": 0.2,
     "simion_fractional_surface": true,
     "simion_mirror_planes": [

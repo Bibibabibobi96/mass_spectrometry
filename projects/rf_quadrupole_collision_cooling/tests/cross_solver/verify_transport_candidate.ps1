@@ -1,7 +1,10 @@
 param(
     [Parameter(Mandatory = $true)][string]$ComsolRunLabel,
     [Parameter(Mandatory = $true)][string]$SimionRunLabel,
-    [Parameter(Mandatory = $true)][string]$ComparisonLabel
+    [Parameter(Mandatory = $true)][string]$ComparisonLabel,
+    [string]$ParticleTablePath = '',
+    [double]$FrequencyHz = [double]::NaN,
+    [double]$PhaseRad = 0.0
 )
 
 Set-StrictMode -Version Latest
@@ -30,7 +33,10 @@ if ($LASTEXITCODE -ne 0) { throw 'SIMION run-manifest verification failed.' }
 
 $resolvedPath = Join-Path $projectRoot 'config\resolved_geometry.json'
 $resolved = Get-Content -LiteralPath $resolvedPath -Raw -Encoding UTF8 | ConvertFrom-Json
-$particlePath = Join-Path $projectRoot 'config\particles\official_fixed_25.ion'
+$particlePath = if ([string]::IsNullOrWhiteSpace($ParticleTablePath)) {
+    Join-Path $projectRoot 'config\particles\official_fixed_25.ion'
+} else { [IO.Path]::GetFullPath($ParticleTablePath) }
+if ([double]::IsNaN($FrequencyHz) -or [double]::IsInfinity($FrequencyHz)) { $FrequencyHz = $resolved.mode.rf.frequency_Hz }
 $interfacePath = Join-Path $projectRoot 'config\interface_contract.json'
 $entries = @(
     [pscustomobject]@{Solver='COMSOL'; Path=$comsolState},
@@ -39,7 +45,7 @@ $entries = @(
 foreach ($entry in $entries) {
     & $python (Join-Path $projectRoot 'analysis\verify_particle_state_contract.py') `
         --state $entry.Path --particles $particlePath --interface $interfacePath `
-        --frequency-hz $resolved.mode.rf.frequency_Hz --phase-rad $resolved.mode.rf.phase_rad --solver $entry.Solver
+        --frequency-hz $FrequencyHz --phase-rad $PhaseRad --solver $entry.Solver
     if ($LASTEXITCODE -ne 0) { throw "$($entry.Solver) particle-state contract failed." }
 }
 
@@ -47,7 +53,10 @@ foreach ($entry in $entries) {
     --comsol $comsolState --simion $simionState --resolved $resolvedPath `
     --interface-mode (Join-Path $projectRoot 'config\modes\transport_interface_readiness.json') `
     --output $comparison --paired-output $paired
-if ($LASTEXITCODE -ne 0) { throw 'Cross-solver particle-state comparison failed.' }
+$comparisonExit = $LASTEXITCODE
+if ($comparisonExit -ne 0 -and -not (Test-Path -LiteralPath $comparison -PathType Leaf)) {
+    throw 'Cross-solver particle-state comparison failed before writing a report.'
+}
 
 $runConfigPath = Join-Path $runDir 'run_config.json'
 $runConfig = [ordered]@{
@@ -57,6 +66,7 @@ $runConfig = [ordered]@{
     inputs=[ordered]@{
         comsol_manifest=$comsolManifest; simion_manifest=$simionManifest
         comsol_particle_state=$comsolState; simion_particle_state=$simionState
+        particle_table=$particlePath
         resolved_geometry='config/resolved_geometry.json'; interface_contract='config/interface_contract.json'
     }
 }
@@ -64,4 +74,5 @@ $runConfig | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $runConfigPath -
 & $python (Join-Path $repoRoot 'common\contracts\write_run_manifest.py') --run-config $runConfigPath `
     --status success --software 'COMSOL 6.4' --software 'SIMION 2020' --output $comparison --output $paired
 if ($LASTEXITCODE -ne 0) { throw 'Cross-solver manifest generation failed.' }
+if ($comparisonExit -ne 0) { throw "Cross-solver comparison completed but did not meet acceptance targets: $comparison" }
 "STATUS=PASS COMPARISON=$ComparisonLabel"

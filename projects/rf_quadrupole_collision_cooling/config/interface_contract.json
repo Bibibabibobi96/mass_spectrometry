@@ -57,5 +57,9 @@
       "mean_kinetic_energy",
       "paired_position_velocity_and_rf_phase_residuals"
     ]
+  },
+  "solver_numerics": {
+    "simion_terminal_surface_backoff_cells": 2.5,
+    "policy": "Numerical classification only; the physical detector plane remains acceptance_detector.z_mm."
   }
 }

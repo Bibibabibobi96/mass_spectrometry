@@ -1,8 +1,8 @@
-; Project copy of SIMION 2020 examples/quad/quad_include.gem.
-; Geometry values intentionally remain identical to the installed reference.
+; Generated from config/resolved_geometry.json; do not edit.
+; resolved_geometry_sha256=E96D5104B5ED9984EF3D8611961B4B7EC62387677199684CFB67CAFB6B175316
 
 # local r0 = 4
-# local rrod = r0*1.148
+# local rrod = 4.592
 
 locate(0,0,85.4) {
   e(1) {
@@ -27,8 +27,8 @@ locate(0,0,1) {
 locate(0,0,89.4) {
   e(4) {
     fill {
-      within       { box3d(7.6,7.6,0,   -7.6,-7.6,5.8) }
-      notin_inside { box3d(7.2,7.2,0.8, -7.2,-7.2,1E+6) }
+      within       { box3d(7.6,7.6,0, -7.6,-7.6,5.8) }
+      notin_inside { box3d(7.2,7.2,0.799999999999997, -7.2,-7.2,1E+6) }
       notin_inside { circle(0,0, 3.6) }
     }
   }

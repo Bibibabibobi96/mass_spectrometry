@@ -143,11 +143,15 @@ def main() -> None:
         "confinement": max(c_aggregate["max_rod_radius_mm"], s_aggregate["max_rod_radius_mm"]) < resolved["geometry_mm"]["field_radius_r0"],
     }
     minimum = interface_mode["numerics"]["minimum_diagnostic_particles"]
+    interface_evaluated = particles >= minimum
+    accepted = all(regression_gates.values()) and (
+        not interface_evaluated or all(diagnostic_targets.values())
+    )
     result = {
-        "status": "PASS" if all(regression_gates.values()) else "FAIL",
-        "scope": "official_n25_phase_space_regression",
+        "status": "PASS" if accepted else "FAIL",
+        "scope": "interface_readiness" if interface_evaluated else "official_n25_phase_space_regression",
         "particles": particles,
-        "interface_acceptance_formally_evaluated": particles >= minimum,
+        "interface_acceptance_formally_evaluated": interface_evaluated,
         "minimum_interface_diagnostic_particles": minimum,
         "inputs": {
             "comsol_particle_state_sha256": sha256(args.comsol),

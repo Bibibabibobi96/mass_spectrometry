@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from plot_transport_phase_diagnostics import interpolate, load_tracks
+from rfquad_contract import diagnostic_planes, load as load_contract
 
 
 def main() -> None:
@@ -19,23 +20,31 @@ def main() -> None:
     parser.add_argument("--simion-trajectory", type=Path, required=True)
     parser.add_argument("--output-label", default="internal_z20")
     parser.add_argument("--source-axial-offset-mm", type=float, default=20.0)
+    parser.add_argument("--internal-window-end-mm", type=float, default=70.0)
     args = parser.parse_args()
 
     comsol = load_tracks(args.comsol_trajectory)
     simion = load_tracks(args.simion_trajectory)
+    particle_ids = sorted(comsol)
+    if particle_ids != sorted(simion):
+        raise ValueError("COMSOL and SIMION trajectory particle IDs differ")
+    resolved, interface = load_contract()
+    geometry = resolved["geometry_mm"]
+    planes = diagnostic_planes(resolved, interface)
+    step = geometry["simion_cell_mm"]
     common_start = max(max(track["z"][0] for track in comsol.values()),
                        max(track["z"][0] for track in simion.values()))
     common_end = min(min(track["z"][-1] for track in comsol.values()),
                      min(track["z"][-1] for track in simion.values()))
-    z_start = np.ceil(common_start * 5.0) / 5.0
-    z_end = np.floor(common_end * 5.0) / 5.0
-    z = np.arange(z_start, z_end + 1e-9, 0.2)
+    z_start = np.ceil(common_start / step) * step
+    z_end = np.floor(common_end / step) * step
+    z = np.arange(z_start, z_end + 1e-9, step)
     if z.size < 2:
         raise ValueError(f"insufficient common axial interval: {common_start:g}..{common_end:g} mm")
 
     distances = []
     delta_time = []
-    for particle_id in range(1, 26):
+    for particle_id in particle_ids:
         c = comsol[particle_id]
         s = simion[particle_id]
         dx = interpolate(c, z, "x") - interpolate(s, z, "x")
@@ -47,10 +56,10 @@ def main() -> None:
 
     requested_planes = {
         "first_common_plane": z_start,
-        "rod_midpoint": 45.6,
-        "internal_window_end": 70.0,
-        "rod_exit": 85.4,
-        "pre_detector": 94.0,
+        "rod_midpoint": planes["rod_midpoint"],
+        "internal_window_end": args.internal_window_end_mm,
+        "rod_exit": planes["rod_exit"],
+        "pre_detector": planes["pre_detector"],
     }
     plane_metrics = {}
     for name, plane in requested_planes.items():
@@ -74,7 +83,7 @@ def main() -> None:
     summary = {
         "status": "PASS",
         "common_axial_interval_mm": [float(z_start), float(z_end)],
-        "particles": 25,
+        "particles": len(particle_ids),
         "plane_metrics": plane_metrics,
         "transverse_difference_onset": onset,
         "interpretation": (
@@ -92,8 +101,8 @@ def main() -> None:
     axis.plot(z, mean_distance, label="mean", color="tab:blue")
     axis.fill_between(z, *np.percentile(distances, [5, 95], axis=0),
                       color="tab:blue", alpha=0.18, label="5–95%")
-    axis.axvline(70.0, color="0.35", linestyle="--", linewidth=1, label="internal test window end")
-    axis.axvline(85.4, color="tab:red", linestyle=":", linewidth=1, label="rod exit")
+    axis.axvline(args.internal_window_end_mm, color="0.35", linestyle="--", linewidth=1, label="internal test window end")
+    axis.axvline(planes["rod_exit"], color="tab:red", linestyle=":", linewidth=1, label="rod exit")
     axis.set(title="Independent-solver trajectory difference: internal release",
              xlabel="axial z (mm)", ylabel="same-ID transverse distance (mm)")
     axis.grid(True, alpha=0.3)

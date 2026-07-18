@@ -4,22 +4,30 @@ function result = ms_rf_quadrupole_no_collision()
 projectRoot = fileparts(fileparts(mfilename('fullpath')));
 addpath(projectRoot);
 paths = rf_quadrupole_paths();
-resolved = jsondecode(fileread(fullfile(projectRoot,'config','resolved_geometry.json')));
+resolved = load_rf_quadrupole_contract();
 interface = jsondecode(fileread(fullfile(projectRoot,'config','interface_contract.json')));
 baseline = resolved;
 source = resolved.particle_source;
 mode = resolved.mode;
 runLabel = 'baseline';
+runMode = 'transport_no_collision';
+operatingPoint = 'official_100amu_2eV';
 meshAuto = mode.numerics.comsol_mesh_auto_level;
 meshHmaxMm = NaN;
 sourceAxialOffsetMm = 0;
+ionPath = fullfile(projectRoot,'config','particles','official_fixed_25.ion');
 runConfigPath = getenv('RFQUAD_RUN_CONFIG');
 if ~isempty(runConfigPath)
     runConfig = jsondecode(fileread(runConfigPath));
     assert(strcmp(runConfig.project, 'rf_quadrupole_collision_cooling') && ...
-        strcmp(runConfig.mode, 'transport_no_collision'), ...
+        any(strcmp(runConfig.mode, {'transport_no_collision','transport_interface_readiness'})), ...
         'RF quadrupole run-config project or mode mismatch.');
+    runMode = runConfig.mode;
     if isfield(runConfig, 'run_id'), runLabel = runConfig.run_id; end
+    if isfield(runConfig, 'operating_point'), operatingPoint = runConfig.operating_point; end
+    if isfield(runConfig, 'particle_table_path'), ionPath = runConfig.particle_table_path; end
+    if isfield(runConfig, 'rf_peak_v'), mode.rf.amplitude_V_peak = runConfig.rf_peak_v; end
+    if isfield(runConfig, 'frequency_hz'), mode.rf.frequency_Hz = runConfig.frequency_hz; end
     if isfield(runConfig, 'comsol_rf_steps_per_period')
         mode.numerics.comsol_rf_steps_per_period = runConfig.comsol_rf_steps_per_period;
     end
@@ -29,9 +37,11 @@ if ~isempty(runConfigPath)
 end
 assert(meshAuto > 0 && isfinite(meshAuto), 'COMSOL mesh-auto level must be positive.');
 if ~(meshHmaxMm > 0 && isfinite(meshHmaxMm)), meshHmaxMm = NaN; end
-ionPath = fullfile(projectRoot,'config','particles','official_fixed_25.ion');
 ions = readmatrix(ionPath,'FileType','text','Delimiter',',');
-assert(size(ions,1)==source.particles && size(ions,2)==11, 'Fixed ION table shape mismatch.');
+assert(size(ions,1)>0 && size(ions,2)==11, 'Fixed ION table shape mismatch.');
+assert(all(abs(ions(:,2)-ions(1,2))<1e-12) && all(abs(ions(:,3)-ions(1,3))<1e-12), ...
+    'One run requires a single particle mass and charge state.');
+source.particles=size(ions,1); source.mass_amu=ions(1,2); source.charge_state=ions(1,3);
 
 import com.comsol.model.*
 import com.comsol.model.util.*
@@ -108,7 +118,7 @@ geom.feature('exit_enclosure').set('selresult','on');
 geom.feature.create('detector','Cylinder');
 geom.feature('detector').label('Reference detector plate');
 geom.feature('detector').set('r',sprintf('%.12g[mm]',g.detector_radius));
-geom.feature('detector').set('h','0.4[mm]');
+geom.feature('detector').set('h',sprintf('%.12g[mm]',g.detector_thickness));
 detectorZ=baseline.coordinate_convention.detector_plane_z_mm;
 geom.feature('detector').set('pos',{'0','0',sprintf('%.12g[mm]',detectorZ)});
 geom.feature('detector').set('selresult','on');
@@ -174,8 +184,8 @@ for i=1:size(ions,1), cpt.feature(sprintf('rel%03d',i)).set('StudyStep','std2/ti
 cpt.feature('pp1').set('StudyStep','std2/time1');
 sol2=model.sol.create('sol2'); sol2.study('std2'); sol2.createAutoSequence('std2'); sol2.feature('v1').set('notsolmethod','sol'); sol2.feature('v1').set('notsol','sol1'); sol2.attach('std2'); sol2.runAll;
 
-pdset=model.result.dataset.create('pdset1','Particle'); pdset.label('Official fixed 25 particle trajectories'); pdset.set('solution','sol2');
-pg=model.result.create('pg_traj','PlotGroup3D'); pg.label('RF-only transport trajectories'); pg.set('data','pdset1'); pg.set('titletype','manual'); pg.set('title','SIMION reference quadrupole: RF-only transport (N=25)'); pg.create('traj1','ParticleTrajectories');
+pdset=model.result.dataset.create('pdset1','Particle'); pdset.label(sprintf('Fixed paired particle trajectories (N=%d)',source.particles)); pdset.set('solution','sol2');
+pg=model.result.create('pg_traj','PlotGroup3D'); pg.label('RF-only transport trajectories'); pg.set('data','pdset1'); pg.set('titletype','manual'); pg.set('title',sprintf('SIMION reference quadrupole: RF-only transport (N=%d)',source.particles)); pg.create('traj1','ParticleTrajectories');
 pd=mphparticle(model,'dataset','pdset1'); x=squeeze(pd.p(:,:,1)); y=squeeze(pd.p(:,:,2)); z=squeeze(pd.p(:,:,3));
 vx=squeeze(pd.v(:,:,1)); vy=squeeze(pd.v(:,:,2)); vz=squeeze(pd.v(:,:,3)); radial=sqrt(x.^2+y.^2);
 nP=size(z,2); assert(nP==size(ions,1),'Solved particle count mismatch.');
@@ -201,7 +211,7 @@ for i=1:nP
 end
 hitRodRadius=maxRodRadius(hit); if isempty(hitRodRadius), maxHitRodRadius=NaN; else, maxHitRodRadius=max(hitRodRadius); end
 featureTags=cell(cpt.feature.tags()); collisionPresent=any(contains(lower(string(featureTags)),'coll'));
-result=struct('solver','COMSOL','mode','transport_no_collision','collision_feature_present',collisionPresent,'q_mathieu',mphglobal(model,'q_mathieu','dataset','dset1'), ...
+result=struct('solver','COMSOL','mode',runMode,'operating_point',operatingPoint,'collision_feature_present',collisionPresent,'q_mathieu',mphglobal(model,'q_mathieu','dataset','dset1'), ...
     'particles',nP,'hits',sum(hit),'transmission',mean(hit),'max_radius_mm',max(maxRadius),'max_hit_rod_radius_mm',maxHitRodRadius, ...
     'detector_plane_crossings',sum(crossedDetectorPlane),'max_detector_hit_radius_mm',max(arrivalRadius(hit),[],'omitnan'), ...
     'mean_detector_time_us',mean(arrival,'omitnan'),'rf_steps_per_period',mode.numerics.comsol_rf_steps_per_period,'mesh_auto_level',meshAuto,'mesh_hmax_mm',meshHmaxMm, ...

@@ -90,7 +90,8 @@ def main() -> None:
         args.source_states_lua.write_text(
             render_source_states(args.source, args.axial_offset_mm), encoding="utf-8", newline="\n"
         )
-    print(f"STATUS=PASS PARTICLES=25 OUTPUT={args.destination}")
+    particles = len(args.source.read_text(encoding="utf-8").splitlines())
+    print(f"STATUS=PASS PARTICLES={particles} OUTPUT={args.destination}")
 
 
 if __name__ == "__main__":

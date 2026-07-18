@@ -11,6 +11,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
 from matplotlib.patches import Circle
+from rfquad_contract import load as load_contract
 
 
 def load_rows(path: Path) -> list[dict[str, str]]:
@@ -45,7 +46,9 @@ def main() -> None:
         "COMSOL": args.comsol_state,
         "SIMION": args.simion_state,
     }
-    detector_radius = 3.6
+    resolved, _ = load_contract()
+    detector_radius = resolved["geometry_mm"]["detector_radius"]
+    plot_limit = max(resolved["geometry_mm"]["field_radius_r0"], detector_radius) * 1.05
     data = {solver: load_rows(path) for solver, path in inputs.items()}
     ids = {
         solver: [int(row["particle_id"]) for row in rows]
@@ -78,8 +81,8 @@ def main() -> None:
         axis.axhline(0, color="0.8", linewidth=0.7, zorder=0)
         axis.axvline(0, color="0.8", linewidth=0.7, zorder=0)
         axis.set_aspect("equal", adjustable="box")
-        axis.set_xlim(-4.0, 4.0)
-        axis.set_ylim(-4.0, 4.0)
+        axis.set_xlim(-plot_limit, plot_limit)
+        axis.set_ylim(-plot_limit, plot_limit)
         axis.set_title(f"{solver}: terminal transverse position")
         axis.set_xlabel("PA / COMSOL x (mm)")
         axis.set_ylabel("PA / COMSOL y (mm)")
@@ -104,7 +107,7 @@ def main() -> None:
                        angles="xy", scale_units="xy", scale=1, color="tab:red", width=0.004, label="SIMION → COMSOL")
     vector_axis.axhline(0, color="0.8", linewidth=0.7, zorder=0)
     vector_axis.axvline(0, color="0.8", linewidth=0.7, zorder=0)
-    vector_axis.set(xlim=(-4, 4), ylim=(-4, 4), aspect="equal", title="Paired terminal displacement",
+    vector_axis.set(xlim=(-plot_limit, plot_limit), ylim=(-plot_limit, plot_limit), aspect="equal", title="Paired terminal displacement",
                     xlabel="PA / COMSOL x (mm)", ylabel="PA / COMSOL y (mm)")
     vector_axis.legend(loc="upper right")
 

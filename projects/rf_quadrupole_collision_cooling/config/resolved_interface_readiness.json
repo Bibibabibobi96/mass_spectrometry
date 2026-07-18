@@ -3,13 +3,13 @@
   "role": "rf_quadrupole_resolved_interface_contract_do_not_edit",
   "inputs": {
     "baseline": "config/baseline.json",
-    "baseline_sha256": "656981990CA4E027E0CA6B98250292517932273E8EAA4FA0EE1E6836ECC8A421",
+    "baseline_sha256": "A43DDB306DD35919D6EE5BDBBDC12FCAC7D72261D3A4772B750CFB3C92B70443",
     "mode": "config/modes/transport_interface_readiness.json",
     "mode_sha256": "0106E528F5B12A6D4EBEC653DF7598D1B0DC0926A4ECF288618CE047B2025C33",
     "particle_source": "config/interface_readiness_particle_source.json",
     "particle_source_sha256": "C5DEEA4B0E9D0245A78EA213D69702A47A3500793CFD79A4EEFA537CD3465D12",
     "interface_contract": "config/interface_contract.json",
-    "interface_contract_sha256": "8CD4C169596543B765E9A23FC0F89DD68F00319E2A9CBA5F28F83C78ECB85D16"
+    "interface_contract_sha256": "DDCF3BC650D648F543E93520E1A93AF417432C19DA575712A6DB26F5FD33A24E"
   },
   "coordinate_convention": {
     "units": "mm",
@@ -58,6 +58,7 @@
     "exit_enclosure_front_wall_end_z": 90.2,
     "exit_aperture_radius": 3.6,
     "detector_radius": 3.6,
+    "detector_thickness": 0.4,
     "simion_cell_mm": 0.2,
     "simion_fractional_surface": true,
     "simion_mirror_planes": [
@@ -237,6 +238,10 @@
         "mean_kinetic_energy",
         "paired_position_velocity_and_rf_phase_residuals"
       ]
+    },
+    "solver_numerics": {
+      "simion_terminal_surface_backoff_cells": 2.5,
+      "policy": "Numerical classification only; the physical detector plane remains acceptance_detector.z_mm."
     }
   }
 }

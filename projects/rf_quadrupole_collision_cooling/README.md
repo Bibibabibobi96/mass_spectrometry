@@ -18,6 +18,9 @@
 - 共享几何契约：[`config/baseline.json`](config/baseline.json)
 - 程序统一入口：[`config/resolved_geometry.json`](config/resolved_geometry.json)，由
   `analysis/resolve_contract.py`生成，禁止手改；它只代表官方 100 amu/N25 回归。
+- MATLAB/COMSOL 契约加载器：[`load_rf_quadrupole_contract.m`](load_rf_quadrupole_contract.m)；
+  SIMION GEM 发布器：[`analysis/sync_simion_geometry.py`](analysis/sync_simion_geometry.py)。两者都只消费
+  `resolved_geometry.json`，GEM 是生成文件，禁止作为第二参数源手改。
 - 官方粒子源：[`config/official_particle_source.json`](config/official_particle_source.json)
 - 当前传输模式：[`config/modes/transport_no_collision.json`](config/modes/transport_no_collision.json)
 - 集成就绪解析入口：[`config/resolved_interface_readiness.json`](config/resolved_interface_readiness.json)，
@@ -25,6 +28,8 @@
 - 求解器无关相空间接口：[`config/interface_contract.json`](config/interface_contract.json)
 - 集成就绪粒子族与模式：[`config/interface_readiness_particle_source.json`](config/interface_readiness_particle_source.json)、
   [`config/modes/transport_interface_readiness.json`](config/modes/transport_interface_readiness.json)
+- 命名粒子表生成器：[`analysis/generate_interface_particle_table.py`](analysis/generate_interface_particle_table.py)，
+  用固定种子生成任意 N 的可追溯 ION 表与元数据；求解器不得各自随机生成接口粒子。
 - 预留质量过滤模式：[`config/modes/mass_filter_reference.json`](config/modes/mass_filter_reference.json)
 - COMSOL 候选生产入口：[`comsol/ms_rf_quadrupole_no_collision.m`](comsol/ms_rf_quadrupole_no_collision.m)
 - 旧`comsol/ms_rf_quadrupole_collision_cooling.m`现为拒绝执行的兼容短桩；其150 mm旧几何、硬编码
@@ -63,6 +68,8 @@ rf_quadrupole_collision_cooling/
 ## 项目特有硬规则
 
 - 两求解器必须从 `config/` 的共享几何、粒子源与 mode 契约派生同一输入；无碰撞基线不得创建或启用任何碰撞/阻尼模型。
+- 参数链固定为 `baseline + source + mode + interface -> resolved -> COMSOL/SIMION生成资产`。安装目录中的
+  SIMION官方例程只提供来源依据，不再是运行时权威；任何下游硬编码或反向抄写都视为失效实现。
 - 官方回归与集成就绪验证严格分离：不得覆盖`official_fixed_25.ion`或借新增工况改写已闭合的 N25 结果。
 - 新运行只以统一`particle_state.csv`、`summary.json`、稀疏轨迹和manifest为权威结果；不再生成旧版
   solver-specific粒子终点表。每份manifest在比较前必须重新计算全部文件哈希。

@@ -9,6 +9,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+from rfquad_contract import load as load_contract
 
 
 def load(path: Path) -> np.ndarray:
@@ -34,6 +35,10 @@ def main() -> None:
     parser.add_argument("--comsol-field", type=Path)
     parser.add_argument("--output-label", default="baseline")
     args = parser.parse_args()
+    resolved, _ = load_contract()
+    geometry = resolved["geometry_mm"]
+    rod_start, rod_end = geometry["rod_z_min"], geometry["rod_z_max"]
+    rod_midpoint = (rod_start + rod_end) / 2
     root = args.workspace / "artifacts/projects/rf_quadrupole_collision_cooling/results"
     pa = load(args.simion_field or root / "simion/unit_rf_field_pa_grid.csv")
     fem = load(args.comsol_field or root / "comsol/unit_rf_field_fem_grid.csv")
@@ -41,19 +46,19 @@ def main() -> None:
     pa = np.array([row for row in pa if tuple(row[:3]) in keys])
     fem_index = {tuple(row[:3]): row for row in fem}
     fem = np.array([fem_index[tuple(row[:3])] for row in pa])
-    rod = (pa[:, 2] >= 5.8) & (pa[:, 2] <= 85.4)
+    rod = (pa[:, 2] >= rod_start) & (pa[:, 2] <= rod_end)
     output = root / "cross_solver"
     output.mkdir(parents=True, exist_ok=True)
     suffix = "" if args.output_label == "baseline" else f"_{args.output_label}"
-    mid = np.isclose(pa[:, 2], 45.6) & np.isclose(pa[:, 1], 0.0)
+    mid = np.isclose(pa[:, 2], rod_midpoint) & np.isclose(pa[:, 1], 0.0)
     if np.count_nonzero(mid) < 5:
         raise ValueError("Midpoint transverse line has too few common field samples")
     pa_gradient = np.polyfit(pa[mid, 0], pa[mid, 3], 1)[0]
     fem_gradient = np.polyfit(fem[mid, 0], fem[mid, 3], 1)[0]
     axial_regions = {
-        "entrance_fringe": metrics(fem, pa, pa[:, 2] < 5.8),
+        "entrance_fringe": metrics(fem, pa, pa[:, 2] < rod_start),
         "rod_region": metrics(fem, pa, rod),
-        "exit_fringe_and_detector": metrics(fem, pa, pa[:, 2] > 85.4),
+        "exit_fringe_and_detector": metrics(fem, pa, pa[:, 2] > rod_end),
     }
     summary = {"status": "PASS", "all_grid": metrics(fem, pa, np.ones(len(pa), dtype=bool)),
                "rod_region": axial_regions["rod_region"], "axial_regions": axial_regions,
@@ -92,7 +97,7 @@ def main() -> None:
     axes[1].plot(axial_z, relative, color="tab:orange")
     axes[1].set(xlabel="axial z (mm)", ylabel="relative vector RMS (%)")
     for axis in axes:
-        axis.axvspan(5.8, 85.4, color="0.9", label="rod region")
+        axis.axvspan(rod_start, rod_end, color="0.9", label="rod region")
         axis.grid(True, alpha=0.3)
     axes[0].legend()
     figure.savefig(output / f"unit_rf_field_axial_error{suffix}.png", dpi=190)

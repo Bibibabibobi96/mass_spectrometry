@@ -4,8 +4,10 @@
 `../comsol/ms_rf_quadrupole_no_collision.m`，只通过根目录 `common/comsol/run_comsol_r2025b.ps1`
 与 MATLAB R2025b 启动。
 
-脚本持久化四根圆杆、入口孔板、出口壳体、检测器、真空选择、材料、ES/CPT、25 个
-`ReleaseFromDataFile` 节点、RF `ElectricForce`、两个 Study/已 attach Solver、粒子数据集和轨迹图。
+脚本通过`../load_rf_quadrupole_contract.m`读取解析发布，持久化四根圆杆、入口孔板、出口壳体、
+检测器、真空选择、材料、ES/CPT、按粒子表行数生成的`ReleaseFromDataFile`节点、RF
+`ElectricForce`、两个Study/已attach Solver、粒子数据集和轨迹图。几何、检测层厚度、RF和接口平面
+不得在脚本中另设第二份数值。
 静态 ES 使用杆组 ±100 V 单位场，CPT 乘 `V_rf/100[V]` 的正弦波；模型内不存在 Collisions 特征。
 固定源位置按候选 IOB 实测基向量映射到 PA/COMSOL 坐标；速度则以 SIMION 实际轨迹的入口斜率为准：
 Fly2 `standard_beam` 的角度在 IOB 放置前按局部束流基向量解释，故 `vSim=(vx,vy,vz)` 必须写为
@@ -37,10 +39,14 @@ Fly2 `standard_beam` 的角度在 IOB 放置前按局部束流基向量解释，
 `particle_id,time_us,axial_z_mm,transverse_x_mm,transverse_y_mm,r_mm`。它只用于求解器无关的轨迹诊断，
 不承载任何未持久化的 COMSOL 物理或数值逻辑。
 
-`tests/comsol/verify_nocollision_comsol.m`只接受显式`RFQUAD_COMSOL_MODEL_PATH`，重开MPH后检查接口
-平面参数、25个GUI release节点、无碰撞、选择集、Export和Solver attach，并分别调用
+`tests/comsol/verify_nocollision_comsol.m`只接受显式`RFQUAD_COMSOL_MODEL_PATH`，重开MPH后按输入粒子
+表检查GUI release节点数量、接口平面参数、无碰撞、选择集、Export和Solver attach，并分别调用
 `model.study('std1').run`、`std2.run`。2026-07-18相空间候选复验为25/25、平均检测时间
 50.1154545 us、`q=0.706023302`，Solver标签保持`sol1,sol2`。
+
+N=100接口候选重开后GUI Compute仍为100/100，`std1/std2`分别约9.43/23.35 s，平均检测时间
+50.43318 us、`q=0.706023302`。该复验只证明MPH自包含和GUI等价，不把未通过的跨求解器相空间目标
+改写为PASS。
 
 `tests/comsol/export_fem_unit_rf_field.m` 只从候选 MPH 的 `dset1` 采样 COMSOL 自己的
 `es.Ex/Ey/Ez`，采样坐标取自 SIMION 导出的公共格点；它不创建插值函数、不写入 Electric Force，

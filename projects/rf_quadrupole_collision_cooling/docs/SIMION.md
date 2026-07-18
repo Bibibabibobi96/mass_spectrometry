@@ -1,11 +1,20 @@
 # SIMION：RF 四极杆无碰撞候选
 
-返回项目统一状态：[`PROJECT.md`](PROJECT.md)。项目 GEM 是内置 `examples/quad` 单体参考的受控副本；
-`analysis/generate_fixed_fly2.py` 把共享 ION 表转换为显式 25 束 Fly2，候选 IOB 沿用官方文件并在
+返回项目统一状态：[`PROJECT.md`](PROJECT.md)。项目GEM由内置`examples/quad`单体参考派生；
+`analysis/generate_fixed_fly2.py`按共享ION表的实际行数生成显式Fly2，候选IOB沿用官方文件并在
 同目录绑定项目生成的 PA、Fly2 和 `quad_monolithic.lua`。
 
-`simion/programs/quad_transport.lua` 只实现 RF-only Fast Adjust、静态电极、RF 步长上限、80 us
-最长飞行及统一particle-state/轨迹/JSON统计；没有 collision、drag、pressure 或 buffer-gas 逻辑。两组杆为
+两份GEM由`analysis/sync_simion_geometry.py`从`config/resolved_geometry.json`生成，并嵌入解析发布
+SHA-256；`verify_project.ps1 -Level Static`会拒绝过期GEM。官方`examples/quad`只保留来源依据，运行时
+几何不再从安装目录复制，也不允许手改生成GEM形成第二权威源。
+
+`simion/programs/quad_transport.lua`只实现RF-only Fast Adjust、静态电极、RF步长上限、最长飞行及
+统一particle-state/轨迹/JSON统计；运行器必须显式传入几何、数值和工况配置。SIMION没有
+`segment.load()`回调，配置在程序加载阶段读取，依赖配置的RF派生量必须在赋值后计算。此前N=25因
+默认值与正式输入完全相同而未改变物理结果，但该缺陷会使新增非默认工况失效，现已修正。物理默认值
+现为零占位并带正值断言；`official_config_authority_n25_20260718`在此条件下仍为25/25且manifest PASS。
+
+Lua没有 collision、drag、pressure 或 buffer-gas 逻辑。两组杆为
 ±139.81792 V peak、1.1 MHz，其余电极 0 V。
 
 `tests/simion/run_transport_candidate.ps1` 执行 Fly2 生成、GEM 编译、PA refine 和独立无界面 fly；
@@ -19,8 +28,12 @@
 
 新运行以权威ION表生成无BOM的`source_states.lua`，因此source事件是积分前的精确初始状态，而不是
 第一次`other_actions`回调后已前进的坐标。Lua在85.4和90.2 mm处对时间、位置、速度与能量插值，
-并在terminal事件记录统一终止原因；`analysis/verify_particle_state_contract.py`强制检查25个粒子的
-source身份、事件唯一性、平面坐标、RF相位和物理数值范围。旧solver-specific终点表不再生成。
+并在terminal事件记录统一终止原因；`analysis/verify_particle_state_contract.py`按输入表实际粒子数
+强制检查source身份、事件唯一性、平面坐标、RF相位和物理数值范围。旧solver-specific终点表不再生成。
+
+2026-07-18命名N=100工况重新编译、refine并加载`39×39×477 @ 0.2 mm`候选，100/100命中、400条
+事件、源身份/平面/manifest均PASS。它与COMSOL独立场的接口比较整体FAIL，故只作为有效负结果，
+不能提升为正式接口模型。
 
 运行配置显式给出轨迹CSV；Lua 在 PA/COMSOL 坐标的每 0.2 mm 轴向平面线性
 插值导出逐粒子 `time_us,axial_z_mm,transverse_x_mm,transverse_y_mm,r_mm`，并保留终止样本。此导出与 SIMION 内置 retained trajectories 无关，

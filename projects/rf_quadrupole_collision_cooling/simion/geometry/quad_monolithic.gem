@@ -1,4 +1,5 @@
-; Project reproduction of the SIMION 2020 built-in monolithic quadrupole.
+; Generated from config/resolved_geometry.json; do not edit.
+; resolved_geometry_sha256=E96D5104B5ED9984EF3D8611961B4B7EC62387677199684CFB67CAFB6B175316
 
 # local mmgu = 0.2
 

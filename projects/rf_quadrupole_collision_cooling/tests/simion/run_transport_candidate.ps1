@@ -3,7 +3,12 @@ param(
     [int]$TrajectoryQuality = 10,
     [string]$RunLabel = 'baseline',
     [double]$SourceAxialOffsetMm = 0.0,
-    [string]$CandidateSubdir = 'quad_transport'
+    [string]$CandidateSubdir = 'quad_transport',
+    [string]$ParticleTablePath = '',
+    [ValidateSet('transport_no_collision','transport_interface_readiness')][string]$Mode = 'transport_no_collision',
+    [string]$OperatingPoint = 'official_100amu_2eV',
+    [double]$RfPeakV = [double]::NaN,
+    [double]$FrequencyHz = [double]::NaN
 )
 
 Set-StrictMode -Version Latest
@@ -27,7 +32,11 @@ Copy-Item -LiteralPath (Join-Path $projectRoot 'simion\geometry\quad_monolithic.
 Copy-Item -LiteralPath (Join-Path $projectRoot 'simion\programs\quad_transport.lua') -Destination (Join-Path $candidateDir 'quad_monolithic.lua') -Force
 Copy-Item -LiteralPath $officialIob -Destination (Join-Path $candidateDir 'quad_monolithic.iob') -Force
 
-$ionPath = Join-Path $projectRoot 'config\particles\official_fixed_25.ion'
+$ionPath = if ([string]::IsNullOrWhiteSpace($ParticleTablePath)) {
+    Join-Path $projectRoot 'config\particles\official_fixed_25.ion'
+} else { [IO.Path]::GetFullPath($ParticleTablePath) }
+if (-not (Test-Path -LiteralPath $ionPath -PathType Leaf)) { throw "Particle table is missing: $ionPath" }
+$expectedParticles = @(Get-Content -LiteralPath $ionPath -Encoding UTF8 | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count
 $flyPath = Join-Path $candidateDir 'quad_monolithic.fly2'
 $sourceStatesLua = Join-Path $runDir 'source_states.lua'
 & (Join-Path $repoRoot '.venv\Scripts\python.exe') `
@@ -37,7 +46,12 @@ if ($LASTEXITCODE -ne 0) { throw 'Fixed FLY2 generation failed.' }
 
 $resolvedPath = Join-Path $projectRoot 'config\resolved_geometry.json'
 $resolved = Get-Content -LiteralPath $resolvedPath -Raw -Encoding UTF8 | ConvertFrom-Json
-$mode = $resolved.mode
+$physicalMode = $resolved.mode
+$geometry = $resolved.geometry_mm
+$interface = Get-Content -LiteralPath (Join-Path $projectRoot 'config\interface_contract.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+if ([double]::IsNaN($RfPeakV) -or [double]::IsInfinity($RfPeakV)) { $RfPeakV = $physicalMode.rf.amplitude_V_peak }
+if ([double]::IsNaN($FrequencyHz) -or [double]::IsInfinity($FrequencyHz)) { $FrequencyHz = $physicalMode.rf.frequency_Hz }
+$modeInput = if ($Mode -eq 'transport_no_collision') { 'config/modes/transport_no_collision.json' } else { 'config/modes/transport_interface_readiness.json' }
 $particleStateCsv = Join-Path $resultDir "transport_no_collision_particle_state_$RunLabel.csv"
 $trajectoryCsv = Join-Path $resultDir "transport_no_collision_trajectory_samples_$RunLabel.csv"
 $summaryJson = Join-Path $resultDir "transport_no_collision_summary_$RunLabel.json"
@@ -47,23 +61,32 @@ $iobReport = Join-Path $runDir 'simion_iob_contract.txt'
 $stateContractReport = Join-Path $runDir 'particle_state_contract.json'
 $runConfig = [ordered]@{
     schema_version=1; role='rf_quadrupole_simion_run_config'; run_id="simion_$RunLabel"
-    project='rf_quadrupole_collision_cooling'; mode='transport_no_collision'; project_root=$projectRoot
-    inputs=[ordered]@{baseline='config/baseline.json'; resolved_geometry='config/resolved_geometry.json'; mode='config/modes/transport_no_collision.json'; particle_table='config/particles/official_fixed_25.ion'; source_states=$sourceStatesLua}
+    project='rf_quadrupole_collision_cooling'; mode=$Mode; project_root=$projectRoot
+    inputs=[ordered]@{baseline='config/baseline.json'; resolved_geometry='config/resolved_geometry.json'; mode=$modeInput; particle_table=$ionPath; source_states=$sourceStatesLua}
     output_dir=$resultDir; candidate_dir=$candidateDir; run_dir=$runDir
     rf_steps_per_period=$RfStepsPerPeriod; trajectory_quality=$TrajectoryQuality
-    source_axial_offset_mm=$SourceAxialOffsetMm
+    source_axial_offset_mm=$SourceAxialOffsetMm; operating_point=$OperatingPoint
+    rf_peak_v=$RfPeakV; frequency_hz=$FrequencyHz; particles=$expectedParticles
 }
 $runConfig | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $runConfigPath -Encoding UTF8
 $luaConfig = @"
 return {
+  mode=[[$Mode]], operating_point=[[$OperatingPoint]],
   iob=[[$(Join-Path $candidateDir 'quad_monolithic.iob')]], fly2=[[$flyPath]],
   source_states=dofile([[$sourceStatesLua]]),
   particle_state_csv=[[$particleStateCsv]], trajectory_csv=[[$trajectoryCsv]], summary_json=[[$summaryJson]],
   trajectory_quality=$TrajectoryQuality, rf_steps_per_period=$RfStepsPerPeriod,
-  rf_peak_v=$($mode.rf.amplitude_V_peak), frequency_hz=$($mode.rf.frequency_Hz), phase_deg=$($mode.rf.phase_rad*180/[Math]::PI),
-  axis_voltage_v=$($mode.rf.axis_offset_V), entrance_voltage_v=$($mode.static_electrodes_V.entrance_plate),
-  exit_voltage_v=$($mode.static_electrodes_V.exit_enclosure), detector_voltage_v=$($mode.static_electrodes_V.detector),
-  maximum_time_us=$($mode.numerics.maximum_time_us)
+  rf_peak_v=$RfPeakV, frequency_hz=$FrequencyHz, phase_deg=$($physicalMode.rf.phase_rad*180/[Math]::PI),
+  axis_voltage_v=$($physicalMode.rf.axis_offset_V), entrance_voltage_v=$($physicalMode.static_electrodes_V.entrance_plate),
+  exit_voltage_v=$($physicalMode.static_electrodes_V.exit_enclosure), detector_voltage_v=$($physicalMode.static_electrodes_V.detector),
+  maximum_time_us=$($physicalMode.numerics.maximum_time_us),
+  trajectory_plane_step_mm=$($geometry.simion_cell_mm), rod_z_min_mm=$($geometry.rod_z_min), rod_z_max_mm=$($geometry.rod_z_max),
+  rod_exit_plane_mm=$($interface.planes.rod_exit.z_mm), handoff_plane_mm=$($interface.planes.handoff.z_mm),
+  detector_crossing_threshold_mm=$($resolved.coordinate_convention.detector_plane_z_mm-$interface.solver_numerics.simion_terminal_surface_backoff_cells*$geometry.simion_cell_mm),
+  detector_radius_mm=$($geometry.detector_radius), radial_escape_radius_mm=$($geometry.exit_enclosure_outer_half_width),
+  expected_pa_nx=$([int][Math]::Round($geometry.exit_enclosure_outer_half_width/$geometry.simion_cell_mm)+1),
+  expected_pa_ny=$([int][Math]::Round($geometry.exit_enclosure_outer_half_width/$geometry.simion_cell_mm)+1),
+  expected_pa_nz=$([int][Math]::Round($geometry.model_z_span/$geometry.simion_cell_mm)+1), expected_pa_cell_mm=$($geometry.simion_cell_mm)
 }
 "@
 # Windows PowerShell 5.1 writes a BOM for -Encoding UTF8; SIMION's Lua 5.1
@@ -85,9 +108,14 @@ try {
     & $simion --nogui --noprompt lua (Join-Path $PSScriptRoot 'inspect_builtin_quad_reference.lua')
     if ($LASTEXITCODE -ne 0) { throw 'SIMION IOB runtime contract failed.' }
 
-    & $simion --nogui --noprompt lua (Join-Path $PSScriptRoot 'run_fly.lua') 2>&1 |
-        Tee-Object -FilePath (Join-Path $runDir 'simion_stdout.txt')
-    if ($LASTEXITCODE -ne 0) { throw 'SIMION fly failed.' }
+    $stdoutPath = Join-Path $runDir 'simion_stdout.txt'
+    $stderrPath = Join-Path $runDir 'simion_stderr.txt'
+    $flyProcess = Start-Process -FilePath $simion -ArgumentList @(
+        '--nogui','--noprompt','lua',(Join-Path $PSScriptRoot 'run_fly.lua')
+    ) -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
+    Get-Content -LiteralPath $stdoutPath -Encoding UTF8
+    if ((Get-Item -LiteralPath $stderrPath).Length -gt 0) { Get-Content -LiteralPath $stderrPath -Encoding UTF8 }
+    if ($flyProcess.ExitCode -ne 0) { throw "SIMION fly failed with exit code $($flyProcess.ExitCode)." }
 }
 finally {
     Remove-Item Env:RFQUAD_RUN_CONFIG_LUA -ErrorAction SilentlyContinue
@@ -97,13 +125,13 @@ finally {
 }
 
 $summary = Get-Content -LiteralPath $summaryJson -Raw | ConvertFrom-Json
-if ($summary.particles -ne 25 -or $summary.collision_model -ne 'none' -or $summary.transmission -lt 0.8) {
+if ($summary.particles -ne $expectedParticles -or $summary.collision_model -ne 'none' -or $summary.transmission -lt 0.8) {
     throw "SIMION transport gate failed: $($summary | ConvertTo-Json -Compress)"
 }
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 & $python (Join-Path $projectRoot 'analysis\verify_particle_state_contract.py') `
     --state $particleStateCsv --particles $ionPath --interface (Join-Path $projectRoot 'config\interface_contract.json') `
-    --axial-offset-mm $SourceAxialOffsetMm --frequency-hz $mode.rf.frequency_Hz --phase-rad $mode.rf.phase_rad `
+    --axial-offset-mm $SourceAxialOffsetMm --frequency-hz $FrequencyHz --phase-rad $physicalMode.rf.phase_rad `
     --solver SIMION --output $stateContractReport
 if ($LASTEXITCODE -ne 0) { throw 'Particle-state contract gate failed.' }
 $shaPath = Join-Path $candidateDir 'SHA256SUMS.csv'
@@ -117,6 +145,7 @@ $hashes | Export-Csv -LiteralPath $shaPath -NoTypeInformation -Encoding UTF8
     --status success --software 'SIMION 2020' --output $trajectoryCsv --output $summaryJson `
     --output $particleStateCsv `
     --output $stateContractReport `
+    --output (Join-Path $runDir 'simion_stdout.txt') --output (Join-Path $runDir 'simion_stderr.txt') `
     --output (Join-Path $candidateDir 'quad_monolithic.iob') --output (Join-Path $candidateDir 'quad_monolithic.pa0') `
     --output $flyPath --output $iobReport --output $shaPath
 if ($LASTEXITCODE -ne 0) { throw 'Run-manifest generation failed.' }
