@@ -18,8 +18,8 @@
 6. 只有追溯旧结论时才进入`docs/history/`；历史文件不能覆盖当前项目结论。
 
 历史入口仅由本文件提供：`docs/history/PROJECT_HISTORY.md`、
-`docs/history/SIMION_VALIDATION.md`和`docs/history/SUPERSEDED_RESULTS.md`。四份日常文档不再
-横向链接历史。
+`docs/history/SIMION_VALIDATION.md`、`docs/history/SUPERSEDED_RESULTS.md`和
+`docs/history/NUMERICAL_VALIDATION_20260716_18.md`。四份日常文档不再横向链接历史。
 
 ## 本项目的知识边界
 
@@ -72,9 +72,9 @@
   等价门禁，可将整个目录作为同事复现包交付。
 - 正式COMSOL日常档为真实加速器`hmax=1 mm`、敏感窗口`0.2 ns`、无场区`50 ns`，全部窗口由
   质量/电压/长度公式计算并在GUI中可见；N=100与`1 ns`分段档逐粒子等价，粒子阶段快`1.77x`。
-- 同源N=1000正式统计比较为COMSOL `R=38550.49`、SIMION `R=27961.26`；两边均1000/1000命中，
-  bootstrap绝对R差异的2.5%分位为`15.60%`。同源N=100仍作为网格/时间步收敛集，`0.5 mm`
-  高精度收敛档为`R=28837.88`；不为追平单一R而改动求解器精度。
+- 同源N=1000正式统计、严格聚焦资产提升和N=100网格/时间步收敛均已有记录；入口不再重复易漂移的
+  性能数字，精确值和身份分别以`docs/PROJECT.md`与`config/formal_validation.json`为准。不为追平
+  单一R而改动求解器精度。
 - 求解器无关峰形、FWHM、source mapping、Recording审计和bootstrap已固定到Python 3.11参考入口；
   四个纯MATLAB后处理入口已删除，旧数值只在历史/冻结基准中保留作迁移对照。
 
