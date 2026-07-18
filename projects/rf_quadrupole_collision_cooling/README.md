@@ -52,16 +52,10 @@ rf_quadrupole_collision_cooling/
 └─ tests/     # 可复用 COMSOL、SIMION、跨求解器门禁
 ```
 
-## 工具链基线
-
-本项目的 MATLAB/COMSOL 任务只使用 MATLAB **R2025b**；未来引入 STEP、零件或装配时只使用
-**SolidWorks 2022**。不再支持 MATLAB R2022 或 SolidWorks 2013。求解器无关分析固定使用
-仓库 `.venv` 的 Python 3.11。
-
-## 硬规则
+## 项目特有硬规则
 
 - 两求解器必须从 `config/` 的共享几何、粒子源与 mode 契约派生同一输入；无碰撞基线不得创建或启用任何碰撞/阻尼模型。
-- COMSOL 的几何、选择、物理、Study、Solver、数据集和结果节点必须持久化到候选 MPH，并以 Study Compute 路径复核。
-- SIMION 的 PA/IOB、Program、Fast Adjust 电压、粒子定义和检测记录必须可在 GUI 中检查。
 - 本阶段只验证候选物理与数值实现；未完成 SolidWorks 同步前不得声称机械正式完成。
 - 集成仪器中，传输四极杆和质量过滤四极杆是同一硬件模板的两个实例；共享几何/粒子接口，分别绑定 mode 配置和空间变换，不复制成两套几何源。
+
+通用GUI对等、参数单向派生、产物清理和SolidWorks同步规则直接适用根README与仓库`AGENTS.md`。

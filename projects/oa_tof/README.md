@@ -17,27 +17,16 @@
 5. 操作STEP/SolidWorks时再读[`docs/CAD.md`](docs/CAD.md)。
 6. 只有追溯旧结论时才进入`docs/history/`；历史文件不能覆盖当前项目结论。
 
-历史入口仅由本文件提供：`docs/history/PROJECT_HISTORY.md`和
-`docs/history/SIMION_VALIDATION.md`。四份日常文档不再横向链接历史。
+历史入口仅由本文件提供：`docs/history/PROJECT_HISTORY.md`、
+`docs/history/SIMION_VALIDATION.md`和`docs/history/SUPERSEDED_RESULTS.md`。四份日常文档不再
+横向链接历史。
 
-## 新知识写到哪里
+## 本项目的知识边界
 
-|新信息的性质|写入位置|
-|---|---|
-|当前统一几何、粒子源、质量、FWHM定义、正式状态、跨软件结论、下一步|`docs/PROJECT.md`|
-|COMSOL节点、网格、求解器、LiveLink、COMSOL独立验证和错误|`docs/COMSOL.md`|
-|SIMION PA/GEM、Program、GUI、Fly2、网格、SIMION独立验证和错误|`docs/SIMION.md`|
-|STEP、SolidWorks零件/装配体、坐标和保存验证|`docs/CAD.md`|
-|已经失效但仍需追溯的长过程|`docs/history/`|
-|换一个项目仍成立的API或方法|仓库根`docs/`对应通用文档|
-|人工维护的统一物理设计|`config/baseline.json`|
-|程序读取的完整派生契约|`config/resolved_geometry.json`（自动生成）|
-|数值与运行模式|`config/modes/`|
-|分析算法、冻结迁移基准和当前正式闭合结果|`config/analysis_contract.json`、`config/analysis_baselines.json`、`config/formal_validation.json`|
-
-软件文档之间不建立横向引用。COMSOL、SIMION和CAD文档都只返回引用`PROJECT.md`；只有完成
-输入对齐和交叉验证的结论，才能从软件文档提升到`PROJECT.md`。同一参数不得在多个文档中
-分别维护不同数值。
+知识归属、提升条件和星形引用规则以仓库根[`README.md`](../../README.md)为唯一权威。本项目只补充：
+人工设计写入`config/baseline.json`，程序读取自动生成且禁止手改的`config/resolved_geometry.json`；
+分析契约、迁移基准和正式闭合结果分别写入`config/analysis_contract.json`、
+`config/analysis_baselines.json`和`config/formal_validation.json`。当前统一结论只写`docs/PROJECT.md`。
 
 ## 权威入口
 
@@ -91,13 +80,6 @@
 
 精确数值、候选/正式边界和开放任务以`docs/PROJECT.md`为准。
 
-## 工具链基线
-
-本项目所有MATLAB/COMSOL脚本只允许通过MATLAB **R2025b**运行；所有STEP、零件和装配操作只允许
-使用**SolidWorks 2022**。不为MATLAB R2022或SolidWorks 2013保留兼容入口。现有正式CAD导出报告
-已记录SolidWorks revision `30.5.0`（2022）；候选几何转正时仍须在同一版本重新完成装配门禁。
-求解器无关分析只使用仓库`.venv`中的**Python 3.11**；不得使用本机默认Python 3.14或旧Python 3.8。
-
 ## 目录职责
 
 ```text
@@ -116,17 +98,15 @@ oa_tof/
 运行记录、提升后的结果和临时文件必须分别进入`models/`、`runs/`、`results/`和`scratch/`，
 不得重新创建旧的`artifacts/components/...`路径。
 
-## 项目硬规则
+## 项目特有硬规则
 
 - COMSOL与SIMION联动时必须使用同一几何、坐标、有效探测面、粒子表和FWHM定义。
 - 正式或候选的几何尺寸必须参数化联动，禁止手工移动一个器件后遗漏相关选择集、屏蔽件或探测面。
-- 正式机械几何一旦确认，必须在同一任务更新COMSOL正式MPH和SolidWorks零件/装配体；未完成CAD
-  保存与坐标验证前不得称为正式完成。
 - SIMION第4实例是GUI可见的数值终止层，只表示有效面和口径，不等于机械检测器厚度。
 - Program与Data Recording必须同时开启；关闭Program对话框不等于禁用Program。
-- 影响物理或数值结果的设置必须能在目标软件GUI中查看、修改、保存和重算。
-- 明确属于仓库清理规则允许删除的失败、临时或可再生产物可自动删除；用途或可重算性不确定时才
-  请求用户确认。一次性源码只在结论已写入文档后删除。
+
+通用GUI对等、SolidWorks同步、清理和参数单向派生规则不在本项目重复，直接适用根README与
+仓库`AGENTS.md`。
 
 ## 修改后的最低检查
 

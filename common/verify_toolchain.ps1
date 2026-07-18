@@ -89,22 +89,11 @@ if (-not $SkipSolidWorksProbe) {
     }
 }
 
-$readmes = Get-ChildItem -LiteralPath (Join-Path $repoRoot 'projects') -Directory | ForEach-Object {
-    Join-Path $_.FullName 'README.md'
-}
-foreach ($readme in $readmes) {
-    $text = Get-Content -LiteralPath $readme -Raw -Encoding UTF8
-    if ($text -notmatch 'MATLAB \*\*R2025b\*\*' -or $text -notmatch 'SolidWorks 2022') {
-        throw "Project README lacks the formal R2025b/SolidWorks 2022 baseline: $readme"
-    }
-}
-
 [PSCustomObject]@{
     MATLAB = 'R2025b'
     MATLABProbe = -not $SkipMatlabProbe
     SolidWorks = $revision
     SolidWorksProbe = -not $SkipSolidWorksProbe
     SolidWorksProbeMode = $solidWorksProbeMode
-    ProjectReadmes = $readmes.Count
     STATUS = 'PASS'
 } | Format-List

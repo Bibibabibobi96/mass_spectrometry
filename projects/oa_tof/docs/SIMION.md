@@ -219,7 +219,7 @@ Program Off门禁必须失败。
 
 ## 实施流程
 
-## 阶段 A：确认安装与可写工作区
+### 阶段 A：确认安装与可写工作区
 
 程序：`C:\Program Files\SIMION-2020\simion.exe`。
 
@@ -230,7 +230,7 @@ Program Off门禁必须失败。
 
 随后只读打开`examples_reference/simion_nonideal_grid_demo.gem`，观察真实细丝grid的网格尺度；不要把该示例直接放大到oa-TOF全孔径。
 
-## 阶段 B：理想栅网反射镜 PA#
+### 阶段 B：理想栅网反射镜 PA#
 
 已建立`02_reflectron/oatof_reflectron_ideal_10_5.pa#`，使用2D cylindrical PA，标尺`1 mm/gu`。这是与COMSOL轴对称理想栅网反射镜场比较的正式第一基线；在它通过轴线场和转向深度比较前，不扩展成全尺寸3D阵列。
 
@@ -253,7 +253,7 @@ Program Off门禁必须失败。
 
 地屏蔽罩保持普通0 V电极，不需要单独Fast Adjust。
 
-## 阶段 C：加速器 PA#
+### 阶段 C：加速器 PA#
 
 加速器使用3D Cartesian PA。正式固化前的稳定候选为孔半宽5mm、环单边宽5mm、
 带电电极到接地屏蔽内壁每侧5mm、repeller后表面到后盖前表面5mm、屏蔽壁4mm；
@@ -286,7 +286,7 @@ PA物理范围为`38×38×30 mm³`（z=`-10..20mm`）。常态快速网格为
 栅网损失。以后若要求亚ns逐粒子闭合，必须先实现按实际数值电极层自适应的透明跨越并同时验证
 相位/缓冲收敛；不得把电极尺寸改成网格整数倍，也不得用本次诊断PA替换正式交付。
 
-## 阶段 D：Workbench 与初始验证
+### 阶段 D：Workbench 与初始验证
 
 正式IOB必须有四个GUI可见PA实例：reflectron、accelerator、flight-tube和detector。
 IOB目录还必须包含同 basename 的完整`.lua`和`.fly2`；`.fly2`至少要有可编辑的
@@ -327,7 +327,7 @@ SIMION常规统计自2026-07-15起使用N=5000；命令行必须同步传入
 N=100平均值为`71.9868802959 us`。31.44793 us和二级最大穿透51.07mm只属于100 amu历史COMSOL
 模型，不得用于524 amu验收。
 
-## 阶段 E：真实丝网局部单元
+### 阶段 E：真实丝网局部单元
 
 仅在理想栅网版本通过后，建立`03_grid_cell/`中的高分辨率3D网孔单元。输入真实丝径、节距、材料和两侧电压；输出透过率、撞丝概率、横向kick查表。
 
