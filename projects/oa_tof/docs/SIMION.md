@@ -52,19 +52,21 @@
 该样本的粒子传递。正式跨求解器比较和峰结构解释见`PROJECT.md`，机器记录见
 `config/formal_validation.json`。
 
+2026-07-18以当前正式IOB、PA、同名Program和正式N=1000 ION表直接重算，1000/1000命中，平均TOF
+`71.9910151844 us`，统一直接KDE质量FWHM为`0.0117728715881 Da`、`R=44509.11`。该CSV、运行摘要、
+当前IOB和交付manifest的SHA均由新版`config/formal_validation.json`冻结。
+
 正式场诊断表明，SIMION释放区轴向Ez平均比COMSOL高`0.8396%`，而反射器内部相对RMS差仅
 `0.000528%`。代表轨迹显示该小差异在出射漂移中累计、在反射器中反向补偿，最终只留下数ns
 TOF差。SIMION加速器离轴Ex/Ey比COMSOL平滑且较弱；在COMSOL完成加速器域网格收敛前，禁止
 仅凭该差异修改SIMION正式PA几何或电压。场采样入口位于`tests/simion/export_axis_field_profiles.lua`
 和`export_accelerator_vector_field_samples.lua`。
 
-### 2026-07-17 严格聚焦几何候选
+### 2026-07-17 严格聚焦几何提升
 
-候选构建器按`d1=3.0 mm,d2=16.8 mm`生成独立PA家族，并通过四实例候选IOB、同名Program、
-固定`z=19.83 mm`检测器和整体平移后的N=100粒子表完成真实PA场飞行。候选100/100命中，平均
-TOF`71.9932152462 us`，统一直接质量R为`26146.18`；全局grid2与解析焦点分别为
-`19.7013578627763/19.8305446661873 mm`。与COMSOL的平均TOF差及同点场差没有相对正式几何
-显著改善，因此该PA/IOB仍位于scratch/candidate生命周期，不替换稳定正式入口。
+候选构建器按`d1=3.0 mm,d2=16.8 mm`生成独立PA家族，并通过四实例IOB、同名Program、解析焦点、
+同源粒子和CAD同步门禁后提升为正式几何。后续源码构建链重建和检测终止升级均通过N=1000数值
+等价门禁；当前正式目录已由`simion_stable_entry.json`冻结，早期scratch/candidate不再是运行依赖。
 
 ### 2026-07-17 透明栅网跳转距离分组诊断
 

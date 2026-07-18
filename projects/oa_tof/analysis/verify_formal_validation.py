@@ -74,9 +74,12 @@ def main() -> None:
         record["analysis_contract_sha256"],
     )
     require_artifact_references(record)
-    diagnostics = record.get("diagnostics", {})
-    if diagnostics.get("status") != "peak_shoulder_source_localized":
-        raise ValueError("Formal peak-shoulder diagnostic is not localized")
+    if record.get("schema_version", 0) < 4:
+        diagnostics = record.get("diagnostics", {})
+        if diagnostics.get("status") != "peak_shoulder_source_localized":
+            raise ValueError("Formal peak-shoulder diagnostic is not localized")
+    elif record.get("validation_scope") != "direct_rerun_of_current_formal_comsol_and_simion_assets":
+        raise ValueError("Formal validation is not a direct current-asset rerun")
     comparison_path = ARTIFACT_ROOT / record["comparison_artifact_relative_path"]
     comparison = json.loads(comparison_path.read_text(encoding="utf-8"))
     if comparison["status"] != "PASS":

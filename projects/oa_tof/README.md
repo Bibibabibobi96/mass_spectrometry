@@ -53,6 +53,9 @@
   [`tests/cross_solver/verify_geometry_contract.ps1`](tests/cross_solver/verify_geometry_contract.ps1)
 - 统一分析契约：[`config/analysis_contract.json`](config/analysis_contract.json)
 - 当前正式跨求解器验证：[`config/formal_validation.json`](config/formal_validation.json)
+- 当前正式N=1000直接重算与发布入口：
+  [`tests/cross_solver/run_formal_validation.ps1`](tests/cross_solver/run_formal_validation.ps1)；发布器只在
+  两端1000/1000、统一比较PASS且当前资产/结果SHA齐全时更新机器契约。
 - 三栅加速器时间聚焦参考实现：
   [`analysis/accelerator_time_focus.py`](analysis/accelerator_time_focus.py)
 - 二级反射器闭式解参考实现：
