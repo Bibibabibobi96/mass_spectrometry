@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "role": "rf_quadrupole_resolved_contract_do_not_edit",
+  "role": "rf_quadrupole_resolved_official_contract_do_not_edit",
   "inputs": {
     "baseline": "config/baseline.json",
-    "baseline_sha256": "287BCFC5B4D72BD073720F01733C1235690655177CB779911538D8F107EC520B",
+    "baseline_sha256": "656981990CA4E027E0CA6B98250292517932273E8EAA4FA0EE1E6836ECC8A421",
     "mode": "config/modes/transport_no_collision.json",
     "mode_sha256": "111C7DCEB54E5106024B79A66F65BB780F434AD0816B439CB74C7919783AED95",
     "particle_source": "config/official_particle_source.json",

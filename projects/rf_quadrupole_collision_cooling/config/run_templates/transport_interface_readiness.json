@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "role": "rf_quadrupole_interface_readiness_run_template",
+  "project": "rf_quadrupole_collision_cooling",
+  "mode": "transport_interface_readiness",
+  "inputs": {
+    "baseline": "config/baseline.json",
+    "resolved_contract": "config/resolved_interface_readiness.json",
+    "mode": "config/modes/transport_interface_readiness.json",
+    "interface_contract": "config/interface_contract.json",
+    "particle_source_family": "config/interface_readiness_particle_source.json",
+    "operating_point": "required",
+    "particle_table": "required",
+    "rf_peak_V": "required"
+  },
+  "output_policy": {
+    "lifecycle": "candidate",
+    "overwrite": false,
+    "manifest_required": true,
+    "particle_state_required": true,
+    "formal_eligible": false
+  }
+}

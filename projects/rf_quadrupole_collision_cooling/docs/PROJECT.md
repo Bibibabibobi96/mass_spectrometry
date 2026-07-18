@@ -9,11 +9,21 @@ IOB加载本地PA，单实例变换和`39×39×477 @ 0.2 mm`通过，25/25命中
 14/14哈希通过，manifest状态为success且保持candidate身份。
 旧碰撞脚本现仅保留拒绝执行短桩；其150 mm几何、硬编码LiveLink和未验证碰撞参数不属于当前契约。
 
+2026-07-18 起，已闭合的官方回归和面向未来集成的验证分为两条互不覆盖的链：
+`transport_no_collision + official_fixed_25.ion`继续作为不可变的100 amu/N25回归；
+`transport_interface_readiness`使用独立解析契约、命名工况和粒子表，当前仍是尚未双求解器闭合的候选。
+本阶段不连接oa-TOF、不修改其正式资产，也不引入碰撞或质量过滤物理。
+
 统一参数分为共享硬件、共享粒子源和功能模式三层：`../config/baseline.json`、
 `../config/official_particle_source.json`、`../config/modes/*.json`；程序统一读取自动生成的
 `../config/resolved_geometry.json`，全项目门禁为`../verify_project.ps1`。以后在集成仪器中，传输四极杆与质量
 过滤四极杆实例化同一硬件模板，分别绑定 `transport_no_collision` 与 `mass_filter_reference` 配置和空间
 变换；不复制两套近似几何。质量过滤配置目前只冻结官方参考值，尚未验证。
+
+求解器无关接口由`../config/interface_contract.json`定义。`z=85.4 mm`是杆端边缘场诊断面，
+`z=90.2 mm`是出口孔口处的部件交接面，`z=95.2 mm`仍是独立部件验收检测器而不是集成边界。
+两端必须在相同物理平面插值得到位置、速度、能量、发散角和RF相位，并保留所有粒子的终止原因；
+不得拿求解器的电极表面回退坐标代替接口状态。
 
 ## 权威基线
 

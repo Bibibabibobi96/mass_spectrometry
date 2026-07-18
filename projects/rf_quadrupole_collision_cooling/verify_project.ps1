@@ -12,6 +12,8 @@ $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 
 & $python (Join-Path $projectRoot 'analysis\resolve_contract.py') --check
 if ($LASTEXITCODE -ne 0) { throw 'Resolved-contract gate failed.' }
+& $python (Join-Path $projectRoot 'analysis\resolve_contract.py') --profile interface --check
+if ($LASTEXITCODE -ne 0) { throw 'Interface-readiness contract gate failed.' }
 & $python (Join-Path $projectRoot 'analysis\generate_official_particle_table.py') --check `
   (Join-Path $projectRoot 'config\particles\official_fixed_25.ion')
 if ($LASTEXITCODE -ne 0) { throw 'Paired-particle identity gate failed.' }

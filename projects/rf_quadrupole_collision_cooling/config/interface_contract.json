@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "role": "solver_independent_component_phase_space_contract",
+  "status": "candidate_until_cross_solver_validation",
+  "coordinate_system": {
+    "name": "rf_quadrupole_component",
+    "units": {"position": "mm", "velocity": "m/s", "time": "us", "energy": "eV", "angle": "deg"},
+    "axial_axis": "+z",
+    "transverse_axes": ["+x", "+y"],
+    "origin": "entrance reference plane on the mechanical and electric axis"
+  },
+  "planes": {
+    "source": {"z_mm": 0.0, "purpose": "paired initial state"},
+    "rod_exit": {"z_mm": 85.4, "purpose": "fringe-field diagnostic reference"},
+    "handoff": {"z_mm": 90.2, "purpose": "downstream component interface at the exit aperture plane"},
+    "acceptance_detector": {"z_mm": 95.2, "purpose": "standalone transport acceptance only; not an integration interface"}
+  },
+  "required_artifacts": {
+    "particle_state_csv": "one row per particle event; source and terminal are mandatory, rod_exit and handoff are written when crossed",
+    "summary_json": "run identity, input hashes, solver, operating point, counts, aggregate metrics and gate results",
+    "run_manifest_json": "lifecycle, command-independent inputs and outputs with SHA-256"
+  },
+  "particle_state_columns": [
+    "particle_id",
+    "event",
+    "status",
+    "terminal_reason",
+    "time_us",
+    "elapsed_time_us",
+    "rf_phase_rad",
+    "axial_z_mm",
+    "transverse_x_mm",
+    "transverse_y_mm",
+    "velocity_axial_m_s",
+    "velocity_x_m_s",
+    "velocity_y_m_s",
+    "kinetic_energy_eV",
+    "radial_position_mm",
+    "divergence_angle_deg",
+    "max_rod_radius_mm"
+  ],
+  "enums": {
+    "event": ["source", "rod_exit", "handoff", "terminal"],
+    "status": ["alive", "transmitted", "lost", "timeout"],
+    "terminal_reason": ["none", "acceptance_detector", "electrode", "radial_escape", "backward_escape", "timeout", "solver_stop", "unknown"]
+  },
+  "comparison_policy": {
+    "paired_identity_required": true,
+    "compare_at_equal_physical_planes": true,
+    "interpolate_crossings_in_time_and_state": true,
+    "do_not_compare_solver_surface_backoff_coordinates_as_interface_states": true,
+    "required_metrics": [
+      "transmission",
+      "mean_and_p95_time_of_flight",
+      "rms_and_p95_output_radius",
+      "rms_and_p95_divergence_angle",
+      "mean_kinetic_energy",
+      "paired_position_velocity_and_rf_phase_residuals"
+    ]
+  }
+}

@@ -17,9 +17,14 @@
 
 - 共享几何契约：[`config/baseline.json`](config/baseline.json)
 - 程序统一入口：[`config/resolved_geometry.json`](config/resolved_geometry.json)，由
-  `analysis/resolve_contract.py`生成，禁止手改。
+  `analysis/resolve_contract.py`生成，禁止手改；它只代表官方 100 amu/N25 回归。
 - 官方粒子源：[`config/official_particle_source.json`](config/official_particle_source.json)
 - 当前传输模式：[`config/modes/transport_no_collision.json`](config/modes/transport_no_collision.json)
+- 集成就绪解析入口：[`config/resolved_interface_readiness.json`](config/resolved_interface_readiness.json)，
+  由`analysis/resolve_contract.py --profile interface`生成，禁止手改。
+- 求解器无关相空间接口：[`config/interface_contract.json`](config/interface_contract.json)
+- 集成就绪粒子族与模式：[`config/interface_readiness_particle_source.json`](config/interface_readiness_particle_source.json)、
+  [`config/modes/transport_interface_readiness.json`](config/modes/transport_interface_readiness.json)
 - 预留质量过滤模式：[`config/modes/mass_filter_reference.json`](config/modes/mass_filter_reference.json)
 - COMSOL 候选生产入口：[`comsol/ms_rf_quadrupole_no_collision.m`](comsol/ms_rf_quadrupole_no_collision.m)
 - 旧`comsol/ms_rf_quadrupole_collision_cooling.m`现为拒绝执行的兼容短桩；其150 mm旧几何、硬编码
@@ -57,6 +62,9 @@ rf_quadrupole_collision_cooling/
 ## 项目特有硬规则
 
 - 两求解器必须从 `config/` 的共享几何、粒子源与 mode 契约派生同一输入；无碰撞基线不得创建或启用任何碰撞/阻尼模型。
+- 官方回归与集成就绪验证严格分离：不得覆盖`official_fixed_25.ion`或借新增工况改写已闭合的 N25 结果。
+- 未来部件交接面为出口孔口`z=90.2 mm`；`z=85.4 mm`只作杆端/边缘场诊断，`z=95.2 mm`
+  检测器只作独立传输验收，不能当作集成接口。
 - 本阶段只验证候选物理与数值实现；未完成 SolidWorks 同步前不得声称机械正式完成。
 - 集成仪器中，传输四极杆和质量过滤四极杆是同一硬件模板的两个实例；共享几何/粒子接口，分别绑定 mode 配置和空间变换，不复制成两套几何源。
 

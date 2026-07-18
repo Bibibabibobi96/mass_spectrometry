@@ -50,6 +50,9 @@
   "contracts": {
     "official_particle_source": "official_particle_source.json",
     "active_mode": "modes/transport_no_collision.json",
+    "interface_contract": "interface_contract.json",
+    "interface_readiness_mode": "modes/transport_interface_readiness.json",
+    "interface_readiness_source": "interface_readiness_particle_source.json",
     "future_mass_filter_mode": "modes/mass_filter_reference.json"
   }
 }

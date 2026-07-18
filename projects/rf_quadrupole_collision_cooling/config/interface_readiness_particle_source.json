@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "role": "parameterized_interface_readiness_source_family",
+  "status": "candidate",
+  "distribution_shape_authority": "official_particle_source.json",
+  "paired_sampling": {
+    "method": "deterministic fixed tables shared by COMSOL and SIMION",
+    "base_seed": 20260716,
+    "minimum_diagnostic_particles": 100,
+    "production_particle_count": "set by a versioned run config after convergence"
+  },
+  "operating_points": {
+    "official_100amu_2eV": {
+      "purpose": "immutable official-reference regression",
+      "mass_amu": 100.0,
+      "charge_state": 1,
+      "kinetic_energy_eV": {"distribution": "uniform", "min": 1.8, "max": 2.2}
+    },
+    "oa_tof_readiness_524amu_5eV": {
+      "purpose": "future integration-readiness candidate; does not create a coupled model",
+      "mass_amu": 524.0,
+      "charge_state": 1,
+      "kinetic_energy_eV": {"distribution": "fixed", "value": 5.0}
+    }
+  },
+  "inherited_distributions": ["birth_time_over_one_rf_period", "transverse_position", "filled_cone_direction"],
+  "policy": "New masses or energies are added as named operating points; official_particle_source.json and official_fixed_25.ion are never overwritten."
+}
