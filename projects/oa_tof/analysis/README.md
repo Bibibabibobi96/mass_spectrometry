@@ -25,6 +25,8 @@ py -3.11 -m venv .venv
 - 三栅加速器一阶时间聚焦公式：`accelerator_time_focus.py`；输入为候选或正式JSON契约，公式来源为
   `../docs/theory/三栅加速器总长度符号推导.docx`。
 - 数值算法：`peak_metrics.py`。
+- 五质量标定、逐峰COMSOL/SIMION局部密度叠加和质心差汇总图：`mass_spectrum.py`。主图使用2×3布局，
+  五个峰各自缩放局部质量偏差轴且共享各峰分箱，第六格只汇总跨求解器平均TOF差。
 - CSV/XLSX/SIMION TRACE导入、严格Recording审计、source mapping、bootstrap、出图和CLI：
   `reference_analysis.py`。
 - 回归门禁：`verify_reference_analysis.ps1`。

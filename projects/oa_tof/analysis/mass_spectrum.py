@@ -1,7 +1,7 @@
 """Wide-range oa-TOF candidate mass-spectrum analysis.
 
-This workflow intentionally reports calibration centroids and transmission,
-not precision FWHM.  The economical per-species samples are too small to
+This workflow reports calibration centroids, transmission and diagnostic local
+peak overlays.  It does not promote those overlays to precision FWHM claims or
 replace the dedicated 524 Da formal resolution baseline.
 """
 
@@ -209,43 +209,72 @@ def analyze_mass_spectrum(
     summary.to_csv(output_dir / "mass_spectrum_summary.csv", index=False)
 
     colors = {"COMSOL": "#1f77b4", "SIMION": "#d62728"}
-    fig, axes = plt.subplots(2, 1, figsize=(10, 8), constrained_layout=True)
-    for solver in ("COMSOL", "SIMION"):
-        selected = summary[summary["solver"] == solver]
-        intensity = selected["relative_abundance"] * selected["transmission"]
-        axes[0].vlines(
-            selected["calibrated_centroid_mz"], 0, intensity,
-            color=colors[solver], linewidth=2, alpha=0.75, label=solver,
-        )
-        axes[0].scatter(selected["calibrated_centroid_mz"], intensity, color=colors[solver], s=24)
-        axes[1].plot(
-            selected["mz"], selected["calibration_residual_ppm"], "o-",
-            color=colors[solver], label=solver,
-        )
-    axes[0].set(xlabel="calibrated m/z", ylabel="relative detected intensity", title="oa-TOF wide-range candidate mass spectrum")
-    axes[0].legend()
-    axes[1].axhline(0, color="0.4", linewidth=1)
-    axes[1].set(xlabel="nominal m/z", ylabel="calibration residual (ppm)", title="Five-point calibration residual")
-    axes[1].legend()
-    fig.savefig(output_dir / "mass_spectrum_comparison.png", dpi=180)
-    plt.close(fig)
-
-    fig, axes = plt.subplots(1, len(mode["species"]), figsize=(16, 3.5), constrained_layout=True)
-    for axis, item in zip(axes, mode["species"], strict=True):
+    species_count = len(mode["species"])
+    column_count = min(3, species_count)
+    row_count = int(np.ceil(species_count / column_count))
+    fig, grid = plt.subplots(
+        row_count, column_count, figsize=(5.4 * column_count, 4.0 * row_count),
+        constrained_layout=True, squeeze=False,
+    )
+    axes = grid.ravel()
+    for axis, item in zip(axes, mode["species"], strict=False):
         species_id = str(item["species_id"])
         nominal = float(item["mz"])
+        peak = particles.loc[particles["species_id"] == species_id]
+        offsets = peak["calibrated_mz"].to_numpy(dtype=float) - nominal
+        bin_edges = np.histogram_bin_edges(offsets, bins="auto")
         for solver in ("COMSOL", "SIMION"):
-            values = particles.loc[
-                (particles["solver"] == solver) & (particles["species_id"] == species_id),
-                "calibrated_mz",
-            ]
-            axis.hist(values - nominal, bins="auto", density=True, histtype="step", linewidth=1.5, color=colors[solver], label=solver)
+            values = peak.loc[peak["solver"] == solver, "calibrated_mz"] - nominal
+            axis.hist(
+                values, bins=bin_edges, density=True, histtype="step", linewidth=1.7,
+                color=colors[solver], label=solver,
+            )
+            axis.axvline(
+                float(values.mean()), color=colors[solver], linewidth=1.1,
+                linestyle="--", alpha=0.9,
+            )
+        peak_summary = summary.loc[summary["species_id"] == species_id].set_index("solver")
+        centroid_delta_ns = float(peak_summary["simion_minus_comsol_mean_tof_ns"].iloc[0])
+        comsol_std_ns = float(peak_summary.loc["COMSOL", "std_tof_ns"])
+        simion_std_ns = float(peak_summary.loc["SIMION", "std_tof_ns"])
+        axis.text(
+            0.03, 0.97,
+            f"Δμ_TOF={centroid_delta_ns:.3f} ns\n"
+            f"σt C/S={comsol_std_ns:.3f}/{simion_std_ns:.3f} ns\n"
+            f"N={len(peak) // 2}",
+            transform=axis.transAxes, ha="left", va="top", fontsize=8,
+        )
         axis.axvline(0, color="0.4", linewidth=1)
         axis.set_title(f"m/z {nominal:g}")
-        axis.set_xlabel("calibrated m/z - nominal")
-    axes[0].set_ylabel("density")
-    axes[-1].legend()
-    fig.savefig(output_dir / "mass_peak_local_comparison.png", dpi=180)
+        axis.set_xlabel("calibrated m/z - nominal (Da)")
+        axis.set_ylabel("density")
+        axis.grid(alpha=0.2)
+    unused_axes = axes[species_count:]
+    if len(unused_axes) > 0:
+        centroid_axis = unused_axes[0]
+        centroid_summary = (
+            summary.loc[summary["solver"] == "COMSOL"]
+            .sort_values("mz")
+        )
+        centroid_axis.plot(
+            centroid_summary["mz"],
+            centroid_summary["simion_minus_comsol_mean_tof_ns"],
+            "o-", color="#6a3d9a", linewidth=1.5,
+        )
+        centroid_axis.axhline(0, color="0.4", linewidth=1)
+        centroid_axis.set_title("cross-solver centroid closure")
+        centroid_axis.set_xlabel("nominal m/z")
+        centroid_axis.set_ylabel("SIMION - COMSOL mean TOF (ns)")
+        centroid_axis.grid(alpha=0.25)
+    for axis in unused_axes[1:]:
+        axis.set_axis_off()
+    handles, labels = axes[0].get_legend_handles_labels()
+    if len(unused_axes) > 0:
+        unused_axes[0].legend(handles, labels, loc="lower right", title="peak overlays")
+    else:
+        fig.legend(handles, labels, loc="upper center", ncol=2)
+    fig.suptitle("oa-TOF mass peaks: COMSOL and SIMION")
+    fig.savefig(output_dir / "mass_spectrum_comparison.png", dpi=180)
     plt.close(fig)
 
     result = {

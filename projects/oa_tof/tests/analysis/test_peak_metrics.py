@@ -299,6 +299,7 @@ class SourceMappingAndBootstrapTest(unittest.TestCase):
             self.assertEqual(result["status"], "PASS")
             self.assertFalse(result["resolution_claim_allowed"])
             self.assertTrue((output / "mass_spectrum_comparison.png").is_file())
+            self.assertFalse((output / "mass_peak_local_comparison.png").exists())
             self.assertEqual(len(pd.read_csv(output / "mass_spectrum_summary.csv")), 10)
 
     def test_paired_comparison_writes_detector_landing_outputs(self) -> None:

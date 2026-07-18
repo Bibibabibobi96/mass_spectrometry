@@ -368,7 +368,7 @@ N=100平均值为`71.9868802959 us`。31.44793 us和二级最大穿透51.07mm只
 
 `simion/workbench/analyze_ideal_field_log.ps1`在逐粒子CSV中保留ION表的`MassAmu`和`ChargeState`，
 支持一次Fly后按物种拆分，不再只能分析单一524 amu粒子。宽质量候选入口
-`tests/cross_solver/run_mass_spectrum_candidate.ps1`把五份共享初始条件的ION表合并为一个200粒子表，
+`tests/cross_solver/run_mass_spectrum_candidate.ps1`把五份共享初始条件的ION表合并为一个混合粒子表，
 正式Program、四PA优先级和quality=8均保持不变。只有COMSOL五个分批结果也成功并通过统一分析、
 manifest复核后，这次SIMION混合Fly才构成完整跨求解器候选；不得单独提升或覆盖524 amu正式包。
 
@@ -376,10 +376,14 @@ manifest复核后，这次SIMION混合Fly才构成完整跨求解器候选；不
 全部到达，而1000/2000 Da共80粒子在90 us被主动timeout；这不是传输损失。宽质量入口现按
 `90*sqrt(max_mass/524)`向上取整生成运行时GUI adjustable，本次为176 us。复用五份已通过COMSOL
 报告后重跑SIMION，200/200均穿过检测面并位于40 mm有效半径内，最大落点半径`8.0922 mm`；旧
-90 us失败日志保留为`simion_mixed_timeout90.failed.log`。入口支持`-ResumeAfterComsol`，但只有五份
-CSV和报告都存在且各自命中门禁通过时才允许跳过COMSOL，最终仍必须重新生成并复核manifest。
+90 us失败日志保留为`simion_mixed_timeout90.failed.log`。入口支持`-Resume`；逐物种CSV和报告完整时
+跳过该COMSOL物种，不完整时保全旧失败报告并只重跑该物种，最终仍重新生成并复核manifest。
 
-2026-07-19以同一500 Da ION前缀完成N=100/300/1000时间标定，每档独立Fly三次且日志分析不计入
-墙钟。三档中位数分别为`4.056/10.077/31.297 s`，九个样本的工程拟合为
-`T=1.014+0.030283*N s`，`R^2=0.999997`。SIMION近似线性但绝对成本很低，N=1000仍只需约31.3 s，
+2026-07-19以同一500 Da ION前缀完成N=100/300/1000/5000时间标定，每档独立Fly三次且日志分析不计入
+墙钟。四档中位数分别为`4.056/10.077/31.297/151.444 s`，十二个样本的工程拟合为
+`T=1.088+0.030113*N s`，`R^2=0.999920`。SIMION近似线性且绝对成本较低，N=5000仍约151 s，
 所以跨求解器批次不应为了节省SIMION时间降低粒子数；粒子数选择由COMSOL成本和统计目标决定。
+
+五质量各N=1000候选随后以一次5000粒子混合Fly完成，`diagnostic_max_tof_us=176`，总计5000/5000
+到达，最大落点半径`13.4690 mm`，未触发timeout。分析图不再用10–2000 Da公共横轴画五根尖线，
+而是在五个局部质量偏差面板中用公共分箱叠加两端峰形，第六面板显示质心TOF差随m/z变化。

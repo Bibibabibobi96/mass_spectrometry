@@ -2,6 +2,9 @@
 param(
   [string]$RunId = ('wide_mz_candidate_' + (Get-Date -Format 'yyyyMMdd_HHmmss')),
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
+  [ValidateRange(0,1000000)]
+  [int]$ParticleCountOverride = 0,
+  [Alias('Resume')]
   [switch]$ResumeAfterComsol
 )
 
@@ -31,6 +34,12 @@ if ($ResumeAfterComsol) {
 
 $modePath = Join-Path $projectRoot 'config\modes\mass_spectrum.json'
 $mode = Get-Content -LiteralPath $modePath -Raw | ConvertFrom-Json
+$effectiveModePath = $modePath
+if ($ParticleCountOverride -gt 0) {
+  foreach ($species in $mode.species) { $species.particle_count = $ParticleCountOverride }
+  $effectiveModePath = Join-Path $runDir 'effective_mode.json'
+  $mode | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $effectiveModePath -Encoding UTF8
+}
 $formalMph = Join-Path $artifactRoot 'models\comsol\formal\MS_oaTOF_TwoStageRingStackReflectron_Final.mph'
 $formalSimion = Join-Path $artifactRoot 'models\simion\formal\oatof_524amu'
 $formalIob = Join-Path $formalSimion 'oatof_ideal_grounded.iob'
@@ -92,12 +101,14 @@ foreach ($species in $mode.species) {
   $reportPath = Join-Path $comsolDir "$speciesId.report.txt"
   $expected = "DETECTED={0}/{0}" -f [int]$species.particle_count
   if ($ResumeAfterComsol) {
-    if (-not (Test-Path -LiteralPath $csvPath -PathType Leaf) -or
-        -not (Test-Path -LiteralPath $reportPath -PathType Leaf) -or
-        -not (Select-String -LiteralPath $reportPath -Pattern ("^" + [regex]::Escape($expected) + '$') -Quiet)) {
-      throw "Resume COMSOL evidence is incomplete for $speciesId."
+    $complete = (Test-Path -LiteralPath $csvPath -PathType Leaf) -and
+      (Test-Path -LiteralPath $reportPath -PathType Leaf) -and
+      (Select-String -LiteralPath $reportPath -Pattern ("^" + [regex]::Escape($expected) + '$') -Quiet)
+    if ($complete) { continue }
+    if (Test-Path -LiteralPath $reportPath -PathType Leaf) {
+      $failedReport = $reportPath + '.failed.' + (Get-Date -Format 'yyyyMMdd_HHmmss')
+      Move-Item -LiteralPath $reportPath -Destination $failedReport
     }
-    continue
   }
   $old = @{}
   $variables = @{
@@ -154,7 +165,7 @@ if ([int]$summary.Hit -ne $totalParticles) {
 }
 
 & $python (Join-Path $projectRoot 'analysis\mass_spectrum.py') `
-  --mode-config $modePath --comsol-dir $comsolDir --simion-csv $simionCsv --output $resultDir
+  --mode-config $effectiveModePath --comsol-dir $comsolDir --simion-csv $simionCsv --output $resultDir
 if ($LASTEXITCODE -ne 0) { throw 'Candidate mass-spectrum analysis failed.' }
 
 $runConfigPath = Join-Path $runDir 'run_config.json'
@@ -167,7 +178,8 @@ $runConfig = [ordered]@{
   mode = 'mass_spectrum_candidate'
   formal_gate_passed = $false
   inputs = [ordered]@{
-    mode_config = $modePath
+    base_mode_config = $modePath
+    effective_mode_config = $effectiveModePath
     resolved_geometry = (Join-Path $projectRoot 'config\resolved_geometry.json')
     formal_comsol_mph = $formalMph
     formal_simion_iob = $formalIob
@@ -177,19 +189,20 @@ $runConfig = [ordered]@{
     simion = 'one mixed-species fly'
     comsol = 'one particle-tracing solve per species; formal electrostatic solution reused'
     resumed_after_comsol = [bool]$ResumeAfterComsol
+    particle_count_override = $ParticleCountOverride
     simion_max_tof_us = $simionMaxTofUs
   }
 }
 $runConfig | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $runConfigPath -Encoding UTF8
 $manifestPath = Join-Path $runDir 'run_manifest.json'
 $outputs = @($combinedIon,$simionCsv,$simionSummary)
+if ($effectiveModePath -ne $modePath) { $outputs += $effectiveModePath }
 $outputs += @($mode.species | ForEach-Object { Join-Path $comsolDir ("{0}.csv" -f $_.species_id) })
 $outputs += @(
   (Join-Path $resultDir 'mass_spectrum_particles.csv'),
   (Join-Path $resultDir 'mass_spectrum_summary.csv'),
   (Join-Path $resultDir 'mass_spectrum_metrics.json'),
-  (Join-Path $resultDir 'mass_spectrum_comparison.png'),
-  (Join-Path $resultDir 'mass_peak_local_comparison.png')
+  (Join-Path $resultDir 'mass_spectrum_comparison.png')
 )
 $manifestArgs = @(
   (Join-Path $repoRoot 'common\contracts\write_run_manifest.py'),
