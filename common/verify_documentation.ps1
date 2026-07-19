@@ -10,6 +10,7 @@ $markdownFiles = @(Get-ChildItem -LiteralPath $repoRoot -Recurse -File -Filter '
     Sort-Object FullName)
 $utf8 = New-Object System.Text.UTF8Encoding($false, $true)
 $comsolApiPath = Join-Path $repoRoot 'docs\COMSOL_API.md'
+$rootReadmePath = Join-Path $repoRoot 'README.md'
 
 function Add-DocError {
     param([string]$Message)
@@ -113,6 +114,47 @@ foreach ($required in @('AGENTS.md', 'README.md', 'CLAUDE.md')) {
     if (-not (Test-Path -LiteralPath (Join-Path $repoRoot $required) -PathType Leaf)) {
         Add-DocError "missing repository authority entry: $required"
     }
+}
+
+$requiredRootReadmeHeadings = @(
+    '## 如何使用仓库',
+    '## 固定阅读顺序',
+    '## 知识权威与写入路由',
+    '### 文档权威和冲突优先级',
+    '### 新知识写入表',
+    '### 跨项目知识提升条件',
+    '## 总体目录与项目边界',
+    '## 参数权威与单向派生',
+    '## 语言职责',
+    '## 产物与运行生命周期',
+    '### Git / artifacts 边界',
+    '### artifacts 目录职责',
+    '### run_config / summary / manifest',
+    '### success / failed / interrupted / superseded',
+    '### 故障调查状态转换',
+    '### history 冻结条件',
+    '### 保留与清理策略',
+    '## 脚本生命周期',
+    '## GUI 与 CAD 门禁',
+    '## 通用验证口径',
+    '## 工具链与执行入口',
+    '## Git 规则',
+    '## 任务完成定义'
+)
+$rootReadmeLines = @(Get-Content -LiteralPath $rootReadmePath -Encoding UTF8)
+$lastHeadingIndex = -1
+foreach ($heading in $requiredRootReadmeHeadings) {
+    $headingIndices = @(for ($index = 0; $index -lt $rootReadmeLines.Count; $index++) {
+        if ($rootReadmeLines[$index] -ceq $heading) { $index }
+    })
+    if ($headingIndices.Count -ne 1) {
+        Add-DocError "README.md: expected exactly one required heading '$heading', found $($headingIndices.Count)"
+        continue
+    }
+    if ($headingIndices[0] -le $lastHeadingIndex) {
+        Add-DocError "README.md: required heading is out of order: '$heading'"
+    }
+    $lastHeadingIndex = $headingIndices[0]
 }
 
 $projectDirs = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'projects') -Directory)
