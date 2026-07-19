@@ -179,6 +179,21 @@ foreach ($projectDir in $projectDirs) {
     if ($projectReadmeRaw -match '(?m)^##\s+当前(?:状态|结论|进展)') {
         Add-DocError "$($projectDir.Name): current-state sections belong in docs/PROJECT.md, not README.md"
     }
+
+    $softwareDocNames = @('COMSOL.md', 'SIMION.md', 'CAD.md')
+    foreach ($softwareDocName in $softwareDocNames) {
+        $softwareDocPath = Join-Path $projectDir.FullName (Join-Path 'docs' $softwareDocName)
+        if (-not (Test-Path -LiteralPath $softwareDocPath -PathType Leaf)) { continue }
+        $softwareDocRaw = [System.IO.File]::ReadAllText($softwareDocPath, $utf8)
+        if ($softwareDocRaw -notmatch '\]\(PROJECT\.md(?:#[^)]*)?\)') {
+            Add-DocError "$($projectDir.Name)/docs/$softwareDocName`: software document does not return to PROJECT.md"
+        }
+        foreach ($siblingName in @($softwareDocNames | Where-Object { $_ -ne $softwareDocName })) {
+            if ($softwareDocRaw -match ('\]\([^)]*' + [regex]::Escape($siblingName) + '(?:#[^)]*)?\)')) {
+                Add-DocError "$($projectDir.Name)/docs/$softwareDocName`: forbidden lateral link to $siblingName"
+            }
+        }
+    }
 }
 
 if ($errors.Count -gt 0) {
