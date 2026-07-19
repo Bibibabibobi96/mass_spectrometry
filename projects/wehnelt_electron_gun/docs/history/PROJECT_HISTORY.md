@@ -1,5 +1,8 @@
 # 项目笔记：螺旋灯丝 Wehnelt 电子枪
 
+> **DOC_STATUS: ARCHIVED_READ_ONLY**。本文冻结2026-07-13以前的选型依据、实验结果和时间线；当前
+> 正式资格、验证范围和开放任务只以[`../PROJECT.md`](../PROJECT.md)为准，本文不再更新“当前”。
+
 > 本文件只记录**这个项目特有**的物理结论/参数选择，通用的COMSOL/MATLAB API写法见
 > `../../docs/COMSOL_API.md`的“磁场与线圈”和`../../docs/COMSOL_DEBUGGING.md`的“磁场、线圈和磁力的
 > 分层排查”（本项目的螺旋

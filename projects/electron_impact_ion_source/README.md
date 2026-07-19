@@ -1,9 +1,10 @@
 # 电子轰击离子源项目
 
-正式源脚本位于`comsol/`，通过[`ei_source_paths.m`](ei_source_paths.m)把新生成的试验 MPH
-写入项目 artifact 的`scratch/comsol/`，结果写入`results/comsol/`。迁移前位于通用模型
-目录的三个`MS_Stage1_EISource_*`模型已归入本项目`models/comsol/archive/`。
+开始任务先读仓库根[`README.md`](../../README.md)，再读本项目当前状态
+[`docs/PROJECT.md`](docs/PROJECT.md)。只有实际修改模型时才进入`comsol/`；本项目目前没有独立
+软件实施文档，已确认的软件事实暂记在PROJECT，达到足够规模后再拆分`docs/COMSOL.md`。
 
-本项目目前只有一个软件实现，因此当前参数、状态和项目专属错误直接维护在本 README；COMSOL
-调用事实和跨项目方法按仓库根 README 路由。引入第二个求解器或 CAD 后，再建立
-`docs/PROJECT.md`与对应软件文档，不创建空占位文件。
+当前实现入口是[`comsol/ms_stage1_ei_source.m`](comsol/ms_stage1_ei_source.m)，路径解析器为
+[`ei_source_paths.m`](ei_source_paths.m)。大型模型与结果位于
+`artifacts/projects/electron_impact_ion_source/`，不进入Git。当前正式/候选资格、已知限制和下一步
+只以PROJECT为准，本入口不复制具体参数或运行结论。

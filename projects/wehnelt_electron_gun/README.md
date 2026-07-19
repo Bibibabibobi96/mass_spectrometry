@@ -1,10 +1,11 @@
 # Wehnelt 电子枪项目
 
 本项目的正式基线是**横置螺旋灯丝 Wehnelt 电子枪**，面向质谱 EI 离子源中优先提高电子
-利用率、无需成像级轴对称束斑的应用。运行前先读
-[`项目_螺旋灯丝Wehnelt电子枪.md`](项目_螺旋灯丝Wehnelt电子枪.md)。
+利用率、无需成像级轴对称束斑的应用。开始任务先读仓库根[`README.md`](../../README.md)，再读
+当前权威状态[`docs/PROJECT.md`](docs/PROJECT.md)。需要追溯选型依据和旧实验时才读冻结背景
+[`docs/history/PROJECT_HISTORY.md`](docs/history/PROJECT_HISTORY.md)。
 
-## 正式流水线
+## 基线源码流水线
 
 按下列顺序运行，三份脚本均通过[`egun_paths.m`](egun_paths.m)定位产物：
 
@@ -17,9 +18,9 @@
 
 ## 产物位置
 
-- 正式模型：`artifacts/projects/wehnelt_electron_gun/models/comsol/formal/ElectronGun_CoilT_Thermal_CPT.mph`
+- 基线模型路径：`artifacts/projects/wehnelt_electron_gun/models/comsol/formal/ElectronGun_CoilT_Thermal_CPT.mph`；现行正式资格以PROJECT为准
 - 可重建的中间模型：同项目的`models/comsol/workspace/`
-- 正式结果图：同项目的`results/comsol/formal/`
+- 基线结果图：同项目的`results/comsol/formal/`
 - 历史模型和结果：对应`archive/lineages/solid_cathode/`、`archive/lineages/axial_coil/`
 
 ## 历史脚本
@@ -28,15 +29,10 @@
 旧`phase5_wehnelt_sweep.m`实际使用轴向 Helix，因此其扫描结果不是横置基线参数结论；横置
 Wehnelt 参数扫描需要以后重新建立和验证。
 
-## 运行依赖与当前验证限制
+## 运行依赖
 
-脚本依赖 MATLAB R2025b 和 COMSOL 6.4 LiveLink。R2022b 的MCOS初始化故障只保留为历史背景，
-不再是可用环境；改用R2025b后，
-COMSOL官方MATLAB启动器已完成自动链路测试：成功加载`ElectronGun_CoilT_ES.mph`，确认
-Helix `axis=x`、`es`物理场、`std1` Study及`pg_V`/`pg_E`原生结果节点存在，并通过
-`model.study('std1').run`重算静电场。z=8 mm轴上复核值为`V=40.0917301067 V`、
-`|E|=5300.60566114 V/m`。最终`ElectronGun_CoilT_Thermal_CPT.mph`及其CPT Study尚未在
-R2025b下复算，因此34.18%收集效率仍沿用此前归档结果。
+脚本依赖 MATLAB R2025b 和 COMSOL 6.4 LiveLink。当前验证范围、正式资格和未闭合事项只写入
+PROJECT；本入口不保存容易漂移的复算数值。
 
-当前项目专属知识仍集中在本 README 和上述项目文档；不要把它拆成多个按阶段排列的说明文件。
-新增跨项目 API 或调试经验时按仓库根 README 写入根 `docs/`，不是追加到本项目历史。
+新增跨项目API或调试经验按仓库根README路由到根`docs/`，项目特有当前事实写PROJECT，不创建
+按阶段排列的活跃说明文件。

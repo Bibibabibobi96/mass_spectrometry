@@ -6,10 +6,11 @@
 
 ## 固定阅读顺序
 
-1. 先读[`docs/PROJECT.md`](docs/PROJECT.md)。
-2. 操作 COMSOL 时读[`docs/COMSOL.md`](docs/COMSOL.md)。
-3. 操作 SIMION 时读[`docs/SIMION.md`](docs/SIMION.md)。
-4. 只有引入机械正式几何时才读/创建 CAD 文档。
+1. 先读仓库根[`README.md`](../../README.md)，确认通用规则和知识路由。
+2. 再读[`docs/PROJECT.md`](docs/PROJECT.md)。
+3. 操作 COMSOL 时读[`docs/COMSOL.md`](docs/COMSOL.md)。
+4. 操作 SIMION 时读[`docs/SIMION.md`](docs/SIMION.md)。
+5. 只有引入机械正式几何时才读/创建 CAD 文档。
 
 软件细节不相互横向引用；统一参数与跨求解器结论只写入 `PROJECT.md`。
 

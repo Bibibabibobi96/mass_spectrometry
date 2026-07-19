@@ -160,14 +160,21 @@ foreach ($heading in $requiredRootReadmeHeadings) {
 $projectDirs = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'projects') -Directory)
 foreach ($projectDir in $projectDirs) {
     $projectState = Join-Path $projectDir.FullName 'docs\PROJECT.md'
-    if (Test-Path -LiteralPath $projectState -PathType Leaf) {
-        $projectReadme = Join-Path $projectDir.FullName 'README.md'
-        if (-not (Test-Path -LiteralPath $projectReadme -PathType Leaf)) {
-            Add-DocError "$($projectDir.Name): docs/PROJECT.md exists without project README.md"
-        }
-        elseif ([System.IO.File]::ReadAllText($projectReadme, $utf8) -notmatch 'docs/PROJECT\.md') {
-            Add-DocError "$($projectDir.Name): README.md does not route to docs/PROJECT.md"
-        }
+    $projectReadme = Join-Path $projectDir.FullName 'README.md'
+    if (-not (Test-Path -LiteralPath $projectReadme -PathType Leaf)) {
+        Add-DocError "$($projectDir.Name): missing project README.md"
+        continue
+    }
+    if (-not (Test-Path -LiteralPath $projectState -PathType Leaf)) {
+        Add-DocError "$($projectDir.Name): missing docs/PROJECT.md current-state authority"
+        continue
+    }
+    $projectReadmeRaw = [System.IO.File]::ReadAllText($projectReadme, $utf8)
+    if ($projectReadmeRaw -notmatch 'docs/PROJECT\.md') {
+        Add-DocError "$($projectDir.Name): README.md does not route to docs/PROJECT.md"
+    }
+    if ($projectReadmeRaw -notmatch '\.\./\.\./README\.md') {
+        Add-DocError "$($projectDir.Name): README.md does not route to the repository README authority"
     }
 }
 
