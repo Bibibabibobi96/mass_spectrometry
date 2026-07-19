@@ -6,7 +6,7 @@ return {
     baseline="config/baseline.json",
     baseline_sha256="AE9645CF5C482952A0ED2CEEFE93986485FB37FF76812ED79ED1286ADE8C8731",
     mode="config/modes/formal.json",
-    mode_sha256="7CAD5B45B4403741063C75E15FBE7177D2CC5BB8701646405FD26D9C4F17A5A5"
+    mode_sha256="1DF0704256FE0F6761353AACF5466C5E003216572CC6F52A304CD6183BBEB916"
   },
   coordinate_convention={
     units="mm",
@@ -120,6 +120,11 @@ return {
     initial_energy_mean_ev=5.0,
     initial_energy_sigma_ev=0.4
   },
+  particle_count_policy={
+    default_check_count=100,
+    statistical_count=1000,
+    specialty_counts_require_explicit_purpose=true
+  },
   simion_runtime={
     trajectory_quality=8,
     accelerator_grid_epsilon_mm=0.0001,
@@ -164,7 +169,7 @@ return {
       capture_arm_distance_mm=100.0,
       capture_depth_mm=0.02
     },
-    routine_particles=5000
+    routine_particles=1000
   },
   simion_geometry_build={
     accelerator={

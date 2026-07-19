@@ -10,11 +10,11 @@
     "paired_initial_conditions_across_species": true
   },
   "species": [
-    {"species_id": "mz10_z1", "mass_amu": 10.0, "charge_state": 1, "mz": 10.0, "particle_count": 40, "relative_abundance": 1.0},
-    {"species_id": "mz100_z1", "mass_amu": 100.0, "charge_state": 1, "mz": 100.0, "particle_count": 40, "relative_abundance": 1.0},
-    {"species_id": "mz500_z1", "mass_amu": 500.0, "charge_state": 1, "mz": 500.0, "particle_count": 40, "relative_abundance": 1.0},
-    {"species_id": "mz1000_z1", "mass_amu": 1000.0, "charge_state": 1, "mz": 1000.0, "particle_count": 40, "relative_abundance": 1.0},
-    {"species_id": "mz2000_z1", "mass_amu": 2000.0, "charge_state": 1, "mz": 2000.0, "particle_count": 40, "relative_abundance": 1.0}
+    {"species_id": "mz10_z1", "mass_amu": 10.0, "charge_state": 1, "mz": 10.0, "particle_count": 100, "relative_abundance": 1.0},
+    {"species_id": "mz100_z1", "mass_amu": 100.0, "charge_state": 1, "mz": 100.0, "particle_count": 100, "relative_abundance": 1.0},
+    {"species_id": "mz500_z1", "mass_amu": 500.0, "charge_state": 1, "mz": 500.0, "particle_count": 100, "relative_abundance": 1.0},
+    {"species_id": "mz1000_z1", "mass_amu": 1000.0, "charge_state": 1, "mz": 1000.0, "particle_count": 100, "relative_abundance": 1.0},
+    {"species_id": "mz2000_z1", "mass_amu": 2000.0, "charge_state": 1, "mz": 2000.0, "particle_count": 100, "relative_abundance": 1.0}
   ],
   "analysis": {
     "calibration_model": "sqrt(mz)=slope*tof_us+intercept",
@@ -26,7 +26,7 @@
       "cross_solver_centroid_difference"
     ],
     "resolution_claim_allowed": false,
-    "reason": "Forty particles per species are intentionally economical and are insufficient for a precision FWHM claim"
+    "reason": "The default N=100 check tier supports centroid and transmission checks; peak shape, tails, FWHM and resolution require the explicit N=1000 statistical tier"
   },
   "truncation_diagnostic": {
     "source_dataset": "current formal paired N=1000 result",

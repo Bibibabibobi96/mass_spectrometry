@@ -112,18 +112,12 @@ ef1 = cpt.create('ef1', 'ElectricForce', 3);
 ef1.label('Electric Force: combined static field (reflectron + accelerator, all electrodes always on)');
 ef1.selection.named('sel_vac');
 ef1.set('E_src', 'userdef');
-% !!! field_mode now supports independent per-zone theory overrides (doc
-% §7.52, per explicit request to localize the resolution bottleneck to
-% ONE of: accelerator / field-free drift / stage1 reflectron / stage2
-% reflectron): 'real' (everything from the solved FEM field), 'ideal'
-% (everything theoretical), 'ideal_accel', 'ideal_drift', 'ideal_stage1',
-% 'ideal_stage2' (each replaces ONLY that one zone with its closed-form
-% theory value, all other zones stay real -- isolates that zone's own
-% contribution to R), and 'ideal_reflectron' (both stage1+stage2
-% replaced, accelerator+drift stay real -- kept for backward
-% compatibility with §7.35/7.50 runs). Built by choosing, per z-region,
-% whether to use the real es.E* or the ideal piecewise-constant theory
-% value.
+% field_mode is a composable idealization mask. The canonical syntax is
+% ideal:<region>.<component>[+...], for example
+% ideal:accel.ez+stage2.ex+stage2.ey. Regions and components may use
+% 'all'; legacy ideal/ideal_accel/... names remain compatible. The 12
+% GUI-visible flags below are the persisted model truth, so a saved MPH
+% exposes every active replacement instead of hiding it in MATLAB state.
 % !!! SIGN: the accelerator region has V DECREASING with z (repeller
 % high -> grid2 low), so Ez=-dV/dz is POSITIVE there (pushing the
 % positive ion forward, +z) -- confirmed against the real solved
@@ -134,31 +128,31 @@ Ez_accel_ideal = 'if(z<z_accel_grid1,(V_repeller-V_grid1)/accel_stage1_length,V_
 Ez_drift_ideal = '0';
 Ez_stage1_ideal = '-V_mid/L_stage1';
 Ez_stage2_ideal = '-(V_mirror-V_mid)/(L_refl-L_stage1)';
-use_ideal_accel  = any(strcmpi(field_mode, {'ideal','ideal_accel'}));
-use_ideal_drift  = any(strcmpi(field_mode, {'ideal','ideal_drift'}));
-use_ideal_stage1 = any(strcmpi(field_mode, {'ideal','ideal_reflectron','ideal_stage1'}));
-use_ideal_stage2 = any(strcmpi(field_mode, {'ideal','ideal_reflectron','ideal_stage2'}));
-if use_ideal_accel || use_ideal_drift || use_ideal_stage1 || use_ideal_stage2
-    if use_ideal_accel, accel_piece = Ez_accel_ideal; else, accel_piece = 'es.Ez'; end
-    if use_ideal_drift, drift_piece = Ez_drift_ideal; else, drift_piece = 'es.Ez'; end
-    if use_ideal_stage1, stage1_piece = Ez_stage1_ideal; else, stage1_piece = 'es.Ez'; end
-    if use_ideal_stage2, stage2_piece = Ez_stage2_ideal; else, stage2_piece = 'es.Ez'; end
-    Ez_ideal = sprintf('if(z<z_accel_grid2,%s,if(z<L_flight,%s,if(z<L_flight+L_stage1,%s,if(z<L_flight+L_refl,%s,es.Ez))))', ...
-        accel_piece, drift_piece, stage1_piece, stage2_piece);
-    % Ex/Ey: zero within whichever region(s) use the ideal (pure-1D)
-    % theory; real es.Ex/es.Ey everywhere else.
-    ex_conditions = {};
-    if use_ideal_accel,  ex_conditions{end+1} = 'z<z_accel_grid2'; end
-    if use_ideal_drift,  ex_conditions{end+1} = '(z>=z_accel_grid2&&z<L_flight)'; end
-    if use_ideal_stage1, ex_conditions{end+1} = '(z>=L_flight&&z<L_flight+L_stage1)'; end
-    if use_ideal_stage2, ex_conditions{end+1} = '(z>=L_flight+L_stage1&&z<L_flight+L_refl)'; end
-    ex_cond_str = strjoin(ex_conditions, '||');
-    Ex_ideal = sprintf('if(%s,0,es.Ex)', ex_cond_str);
-    Ey_ideal = sprintf('if(%s,0,es.Ey)', ex_cond_str);
-    ef1.set('E', {Ex_ideal, Ey_ideal, Ez_ideal});
-else
-    ef1.set('E', {'es.Ex', 'es.Ey', 'es.Ez'});
+idealization = oatof_parse_field_idealization(field_mode);
+region_names = {'accel', 'drift', 'stage1', 'stage2'};
+component_names = {'ex', 'ey', 'ez'};
+for region_index = 1:4
+    for component_index = 1:3
+        flag_name = sprintf('ideal_%s_%s', region_names{region_index}, component_names{component_index});
+        model.param.set(flag_name, sprintf('%d', idealization.mask(region_index, component_index)), ...
+            sprintf('Field diagnostic mask: idealize %s %s', region_names{region_index}, upper(component_names{component_index})));
+    end
 end
+accel_cond = '(z<z_accel_grid2)';
+drift_cond = '(z>=z_accel_grid2&&z<L_flight)';
+stage1_cond = '(z>=L_flight&&z<L_flight+L_stage1)';
+stage2_cond = '(z>=L_flight+L_stage1&&z<L_flight+L_refl)';
+Ex_ideal = sprintf(['if(ideal_accel_ex&&%s,0,if(ideal_drift_ex&&%s,0,' ...
+    'if(ideal_stage1_ex&&%s,0,if(ideal_stage2_ex&&%s,0,es.Ex))))'], ...
+    accel_cond, drift_cond, stage1_cond, stage2_cond);
+Ey_ideal = sprintf(['if(ideal_accel_ey&&%s,0,if(ideal_drift_ey&&%s,0,' ...
+    'if(ideal_stage1_ey&&%s,0,if(ideal_stage2_ey&&%s,0,es.Ey))))'], ...
+    accel_cond, drift_cond, stage1_cond, stage2_cond);
+Ez_ideal = sprintf(['if(ideal_accel_ez&&%s,%s,if(ideal_drift_ez&&%s,%s,' ...
+    'if(ideal_stage1_ez&&%s,%s,if(ideal_stage2_ez&&%s,%s,es.Ez))))'], ...
+    accel_cond, Ez_accel_ideal, drift_cond, Ez_drift_ideal, ...
+    stage1_cond, Ez_stage1_ideal, stage2_cond, Ez_stage2_ideal);
+ef1.set('E', {Ex_ideal, Ey_ideal, Ez_ideal});
 
 % !!! Distance estimate updated to match the extended L_flight=3000mm
 % (was hardcoded 0.36m = 0.3+0.03 margin for the old 300mm flight tube;
@@ -364,6 +358,7 @@ state = struct();
 state.cpt = cpt; state.rel1 = rel1; state.tstep = tstep;
 state.Ez_accel_ideal = Ez_accel_ideal; state.Ez_drift_ideal = Ez_drift_ideal;
 state.Ez_stage1_ideal = Ez_stage1_ideal; state.Ez_stage2_ideal = Ez_stage2_ideal;
+state.field_idealization = idealization;
 state.Tsim = Tsim; state.Tsim_full = Tsim_full; state.timing = timing;
 state.expected_tof = expected_tof; state.fine_tstep = fine_tstep;
 state.fine_end = fine_end; state.t_cptsetup = t_cptsetup;

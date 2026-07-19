@@ -5,8 +5,8 @@
   "particle": {
     "mass_amu": 524.0,
     "charge_state": 1,
-    "routine_count": 5000,
-    "paired_validation_count": 1000,
+    "default_check_count": 100,
+    "statistical_count": 1000,
     "initial_energy_mean_ev": 5.0,
     "initial_energy_sigma_ev": 0.4
   },

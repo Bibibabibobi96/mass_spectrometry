@@ -16,7 +16,7 @@ end
 particles {
   coordinates = 0,
   standard_beam {
-    n = 5000,
+    n = 1000,
     tob = 0,
     mass = 524.0,
     charge = 1,

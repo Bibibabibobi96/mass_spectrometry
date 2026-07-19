@@ -237,17 +237,12 @@ if nargin<4, field_mode = 'real'; end
 % still be worth re-testing for genuinely large-N (5000-10000) runs
 % where the linear system is bigger, but has NOT been re-validated as
 % better there since this default flip.
-% !!! field_mode: 'real' (default) uses the actual FEM-solved 'es' field
-% everywhere (the true discrete ring-stack field, with its ~1-2%
-% deviation from ideal linear after bore_r narrowing). 'ideal' replaces
-% ONLY the reflectron region's (entgrid to backplate) field with the
-% mathematically perfect piecewise-constant E1/E2 (per the dual-stage
-% solver's theory), while KEEPING the accelerator's real field unchanged
-% (already validated as essentially perfect via the tGrid2=0-variance
-% measurement) -- a diagnostic to test whether the ~1-2% real-field
-% deviation in the reflectron is what's still capping resolution, before
-% investing more effort into physically improving the ring-stack's field
-% accuracy.
+% field_mode selects diagnostic idealization without changing the solved
+% electrostatic field. 'real' is production. The composable syntax is
+% ideal:<region>.<component>[+...], with region accel/drift/stage1/stage2/
+% reflectron/all and component ex/ey/ez/all. Legacy ideal_* names remain
+% accepted. The selected flags and final E expressions are persisted in
+% the Model Builder for GUI inspection and controlled Compute reruns.
 
 t_geom_start = tic;
 if any(strcmp(cell(ModelUtil.tags()), 'ModelOATOFRing'))
@@ -1286,7 +1281,8 @@ result = struct('label', label, 'mass_amu', mass_amu, 'nP', nP, 'zEnd', zEnd, ..
     'detTimes', detTimes, 'meanT', meanT, 'stdT', stdT, 'fwhmT', fwhmT, ...
     'R_fwhm_sigma_proxy', R_resolution, 'nDet', nDet, ...
     'penetration_max_mm', penetration_max_mm, ...
-    'd2min_mm', reflectron_stage2_min_mm, 'd2_mm', d2_mm);
+    'd2min_mm', reflectron_stage2_min_mm, 'd2_mm', d2_mm, ...
+    'field_idealization', particle.field_idealization);
 
 resultsDir = paths.comsolResultsDir;
 if ~exist(resultsDir,'dir'), mkdir(resultsDir); end

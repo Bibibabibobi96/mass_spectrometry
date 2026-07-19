@@ -25,6 +25,20 @@ $fieldVerifier = Join-Path $PSScriptRoot 'verify_formal_runtime.lua'
 $logAnalyzer = Join-Path $projectRoot 'simion\workbench\analyze_ideal_field_log.ps1'
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 $referenceAnalysis = Join-Path $projectRoot 'analysis\reference_analysis.py'
+$runConfigPath = Join-Path $runDir 'run_config.json'
+$runConfig = [ordered]@{
+  schema_version=1; role='oa_tof_simion_source_build_equivalence_run_config'
+  run_id=$RunId; project='oa_tof'; mode='simion_source_build_equivalence'
+  project_root=$projectRoot
+  inputs=[ordered]@{
+    reference_iob=(Join-Path $reference 'oatof_ideal_grounded.iob')
+    candidate_iob=(Join-Path $candidate 'oatof_ideal_grounded.iob')
+    fixed_ion=$ion
+  }
+  particle_count=$ParticleCount; trajectory_quality=8
+  output_dir=$runDir; result_dir=$resultDir; formal_gate_passed=$false
+}
+$runConfig | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $runConfigPath -Encoding UTF8
 foreach ($path in @($SimionExe,$ion,$fieldVerifier,$logAnalyzer,$python,$referenceAnalysis)) {
   if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Required input is absent: $path" }
 }
@@ -109,4 +123,17 @@ $promotion = [ordered]@{
 }
 $promotion | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $resultDir 'promotion_summary.json') -Encoding UTF8
 if ($failed.Count) { throw "Source-built delivery equivalence failed: $($failed.Key -join ', ')" }
+$manifestScript = Join-Path $repoRoot 'common\contracts\write_run_manifest.py'
+$manifestArguments = @(
+  $manifestScript
+  '--run-config'; $runConfigPath
+  '--status'; 'success'
+  '--software'; 'SIMION 2020'
+)
+$manifestOutputs = @(
+  Get-ChildItem -LiteralPath $runDir -File | Where-Object { $_.Name -notin @('run_config.json','run_manifest.json') }
+) + @(Get-ChildItem -LiteralPath $resultDir -File)
+foreach ($output in $manifestOutputs) { $manifestArguments += @('--output', $output.FullName) }
+& $python @manifestArguments
+if ($LASTEXITCODE -ne 0) { throw 'Source-build equivalence manifest generation failed.' }
 Write-Output "SIMION_SOURCE_BUILD_EQUIVALENCE=PASS RESULT=$resultDir"

@@ -121,7 +121,7 @@ models/simion/formal/oatof_524amu/oatof_comsol_524amu_gaussian_N100.ion
 - 初始能量：均值`5`、标准差`0.4`的正值高斯样本；
 - 初始方向：`+x`，ION表中的azimuth/elevation均为`0/0`。
 
-GUI常规N=5000分布定义位于：
+GUI正式统计N=1000分布定义位于：
 
 ```text
 models/simion/formal/oatof_524amu/oatof_ideal_grounded.fly2
@@ -144,7 +144,8 @@ N=100 ION文件SHA-256：
    `4 detector`；对应GUI优先级也依次为`1、2、3、4`。
 3. Program必须开启；关闭Program设置窗口可以，Disable Program不可以。
 4. `trajectory quality=8`。
-5. 精确对比使用上述固定N=100 ION文件；常规统计才使用Fly2的N=5000随机分布。
+5. 日常检查使用固定N=100 ION文件；峰形、FWHM和正式统计使用同源N=1000，N=100可由其确定性
+   前缀复用。N=5000只用于明确的性能或统计收敛专项。
 6. 记录结果时至少保存Ion Number、TOF、X/Y/Z、PA instance和Event；当前正式运行命中应来自槽位4。
 7. 当前正式SIMION N=100参考：100/100命中，平均TOF`71.9901350726 us`，直接质量FWHM
    `0.019673808666 Da`，`R=26634.3954`。

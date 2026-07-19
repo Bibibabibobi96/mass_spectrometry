@@ -90,11 +90,19 @@ def resolve_contract() -> dict[str, Any]:
         "validation_target": {
             "mass_amu": particle["mass_amu"],
             "charge_state": particle["charge_state"],
-            "particles": particle["paired_validation_count"],
+            "particles": particle["statistical_count"],
             "initial_energy_mean_ev": particle["initial_energy_mean_ev"],
             "initial_energy_sigma_ev": particle["initial_energy_sigma_ev"],
         },
-        "simion_runtime": {**mode["simion"], "routine_particles": particle["routine_count"]},
+        "particle_count_policy": {
+            "default_check_count": particle["default_check_count"],
+            "statistical_count": particle["statistical_count"],
+            "specialty_counts_require_explicit_purpose": True,
+        },
+        "simion_runtime": {
+            **mode["simion"],
+            "routine_particles": particle["statistical_count"],
+        },
         "simion_geometry_build": build,
         "comsol_runtime": mode["comsol"],
         "simion_detector_marker": marker,

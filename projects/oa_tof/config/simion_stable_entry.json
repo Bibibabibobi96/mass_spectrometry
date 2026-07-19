@@ -1,21 +1,21 @@
 {
   "schema_version": 2,
-  "frozen_on": "2026-07-18",
+  "frozen_on": "2026-07-19",
   "role": "Implementation hash manifest for the formal SIMION delivery and the retained convergence reference.",
   "artifact_workspace_relative": "models/simion",
   "entries": [
     {
       "id": "formal_524amu_event_capture_xy025_z0050_refaxial0250",
-      "role": "Formal portable 524 amu GUI and production delivery with static PA priority and detector event capture",
+      "role": "Formal portable 524 amu GUI and production delivery with N=1000 statistical Fly2, static PA priority and detector event capture",
       "trajectory_quality": 8,
       "expected_instances": 4,
       "assets": [
         {"role":"iob","relative_path":"formal/oatof_524amu/oatof_ideal_grounded.iob","bytes":20902,"sha256":"9720E40F862CA7B74DF6E6CB72CDFC2254B07337D8904F180C58DE38EA859FFD"},
         {"role":"con","relative_path":"formal/oatof_524amu/oatof_ideal_grounded.con","bytes":2170,"sha256":"D8DA212B73B7D7A70E591C452811B13377AAF93B1E4E627301B71BEE5EBA4B80"},
         {"role":"program","relative_path":"formal/oatof_524amu/oatof_ideal_grounded.lua","bytes":19168,"sha256":"106C012375E3505875560D5BC657B5D02CF224C18940E0FCC4ECF6C2B6A2E3CB"},
-        {"role":"fly2","relative_path":"formal/oatof_524amu/oatof_ideal_grounded.fly2","bytes":868,"sha256":"A7BCDECD99F11FB65FD8389D012B494520471E1935A8F7C7AE394813F4756DD3"},
-        {"role":"sha256_manifest","relative_path":"formal/oatof_524amu/SHA256SUMS.csv","bytes":5345,"sha256":"DC7E056F13FB6AA899EB82BD3417DB713584381512D96CFA68DFE0207246A540"},
-        {"role":"run_manifest","relative_path":"formal/oatof_524amu/run_manifest.json","bytes":2680,"sha256":"9EC5E45DAEB16239FE48B4C56EDA13A4D1A9261418BB69C8A856AD34B48A7448"}
+        {"role":"fly2","relative_path":"formal/oatof_524amu/oatof_ideal_grounded.fly2","bytes":868,"sha256":"56A5B2E86EA861F048EEBAD68A4132A321F1CE1909AAE1A46386CFF40DBC74FD"},
+        {"role":"sha256_manifest","relative_path":"formal/oatof_524amu/SHA256SUMS.csv","bytes":5345,"sha256":"79328DF87D530C670F47CB9608E4F5AB1F2C4E63BFB91809808752B75FD5AF91"},
+        {"role":"run_manifest","relative_path":"formal/oatof_524amu/run_manifest.json","bytes":2679,"sha256":"62FCB91887A19F401AE70C455FE06F4CCF56D5B010A2FDB6345E2D7959921F6A"}
       ]
     },
     {

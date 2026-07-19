@@ -2,7 +2,7 @@
 param(
   [double]$MassAmu = 500.0,
   [int]$ChargeState = 1,
-  [string]$ParticleCounts = '100,300,1000',
+  [string]$ParticleCounts = '100,1000,5000',
   [ValidateRange(1,20)]
   [int]$SimionRepeats = 3,
   [int]$Seed = 20260713,
