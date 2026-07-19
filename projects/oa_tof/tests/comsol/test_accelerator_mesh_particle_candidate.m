@@ -77,8 +77,10 @@ massAmu = massValues(1);
 chargeState = chargeValues(1);
 outputDir = fileparts(outputCsv);
 if ~isfolder(outputDir), mkdir(outputDir); end
+[~, outputStem] = fileparts(outputCsv);
 releasePath = fullfile(outputDir, sprintf( ...
-    'comsol_fixedN%d_selected_release_from_data_file.txt', numel(particleIds)));
+    '%s_fixedN%d_selected_release_from_data_file.txt', ...
+    outputStem, numel(particleIds)));
 
 fid = fopen(reportPath, 'w');
 assert(fid >= 0, 'Could not open report: %s', reportPath);

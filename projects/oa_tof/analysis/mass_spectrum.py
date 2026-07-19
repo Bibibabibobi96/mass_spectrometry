@@ -22,6 +22,7 @@ from matplotlib.lines import Line2D
 import numpy as np
 import pandas as pd
 
+from peak_metrics import AnalysisSettings, compare_peak_shapes
 from reference_analysis import read_particle_table
 
 
@@ -124,6 +125,7 @@ def analyze_mass_spectrum(
     simion = _normalized_simion_rows(simion_csv)
     combined_frames: list[pd.DataFrame] = []
     summary_rows: list[dict[str, Any]] = []
+    peak_shape_rows: list[dict[str, Any]] = []
     input_hashes = {
         "mode_config": sha256_file(mode_path),
         "simion_csv": sha256_file(simion_csv),
@@ -149,6 +151,31 @@ def analyze_mass_spectrum(
                 & simion["hit"]
             ].copy(),
         }
+        comparison, _ = compare_peak_shapes(
+            solver_frames["COMSOL"]["tof_us"].to_numpy(dtype=float),
+            solver_frames["SIMION"]["tof_us"].to_numpy(dtype=float),
+            AnalysisSettings(),
+        )
+        peak_shape_rows.append(
+            {
+                "species_id": species_id,
+                "mz": mz,
+                "comsol_particles": comparison["left_particles"],
+                "simion_particles": comparison["right_particles"],
+                "simion_minus_comsol_mean_tof_ns": comparison[
+                    "mean_tof_difference_right_minus_left_ns"
+                ],
+                "standardized_kde_overlap": comparison[
+                    "standardized_kde_overlap"
+                ],
+                "standardized_ks_distance": comparison[
+                    "standardized_ks_distance"
+                ],
+                "standardized_ks_pvalue": comparison[
+                    "standardized_ks_pvalue"
+                ],
+            }
+        )
         for solver, frame in solver_frames.items():
             if len(frame) < 3:
                 raise ValueError(f"{solver} {species_id} has fewer than three hits")
@@ -182,6 +209,7 @@ def analyze_mass_spectrum(
 
     particles = pd.concat(combined_frames, ignore_index=True, sort=False)
     summary = pd.DataFrame(summary_rows)
+    peak_shapes = pd.DataFrame(peak_shape_rows).sort_values("mz").reset_index(drop=True)
     calibrations: dict[str, Any] = {}
     for solver in ("COMSOL", "SIMION"):
         selected = summary[summary["solver"] == solver].sort_values("mz")
@@ -208,6 +236,7 @@ def analyze_mass_spectrum(
     summary = summary.sort_values(["mz", "solver"]).reset_index(drop=True)
     particles.to_csv(output_dir / "mass_spectrum_particles.csv", index=False)
     summary.to_csv(output_dir / "mass_spectrum_summary.csv", index=False)
+    peak_shapes.to_csv(output_dir / "mass_peak_shape_comparison.csv", index=False)
 
     colors = {"COMSOL": "#1f77b4", "SIMION": "#d62728"}
     species_count = len(mode["species"])
@@ -238,10 +267,13 @@ def analyze_mass_spectrum(
         centroid_delta_ns = float(peak_summary["simion_minus_comsol_mean_tof_ns"].iloc[0])
         comsol_std_ns = float(peak_summary.loc["COMSOL", "std_tof_ns"])
         simion_std_ns = float(peak_summary.loc["SIMION", "std_tof_ns"])
+        shape = peak_shapes.loc[peak_shapes["species_id"] == species_id].iloc[0]
         axis.text(
             0.03, 0.97,
             f"Δmean TOF={centroid_delta_ns:.3f} ns\n"
             f"σt COMSOL/SIMION={comsol_std_ns:.3f}/{simion_std_ns:.3f} ns\n"
+            f"shape overlap={shape['standardized_kde_overlap']:.3f}; "
+            f"KS={shape['standardized_ks_distance']:.3f}\n"
             f"N/solver={len(peak) // 2}",
             transform=axis.transAxes, ha="left", va="top", fontsize=8,
         )
@@ -297,6 +329,7 @@ def analyze_mass_spectrum(
         "python": platform.python_version(),
         "inputs": input_hashes,
         "calibration": calibrations,
+        "peak_shape_comparisons": peak_shapes.to_dict(orient="records"),
         "species": summary.to_dict(orient="records"),
     }
     (output_dir / "mass_spectrum_metrics.json").write_text(

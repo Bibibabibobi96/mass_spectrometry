@@ -216,11 +216,22 @@ $runConfig = [ordered]@{
 $runConfig | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $runConfigPath -Encoding UTF8
 $manifestPath = Join-Path $runDir 'run_manifest.json'
 $outputs = @($combinedIon,$simionCsv,$simionSummary)
+$outputs += @($individualIonPaths)
 if ($effectiveModePath -ne $modePath) { $outputs += $effectiveModePath }
-$outputs += @($mode.species | ForEach-Object { Join-Path $comsolDir ("{0}.csv" -f $_.species_id) })
+$outputs += @($mode.species | ForEach-Object {
+  Join-Path $comsolDir ("{0}.csv" -f $_.species_id)
+})
+$optionalEvidence = @($simionLog,$simionStderr)
+$optionalEvidence += @($mode.species | ForEach-Object {
+  Join-Path $comsolDir ("{0}.report.txt" -f $_.species_id)
+})
+$optionalEvidence += @(Get-ChildItem -LiteralPath $comsolDir -File -Filter '*_selected_release_from_data_file.txt' |
+  ForEach-Object { $_.FullName })
+$outputs += @($optionalEvidence | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf })
 $outputs += @(
   (Join-Path $resultDir 'mass_spectrum_particles.csv'),
   (Join-Path $resultDir 'mass_spectrum_summary.csv'),
+  (Join-Path $resultDir 'mass_peak_shape_comparison.csv'),
   (Join-Path $resultDir 'mass_spectrum_metrics.json'),
   (Join-Path $resultDir 'mass_spectrum_comparison.png')
 )

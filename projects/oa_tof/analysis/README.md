@@ -27,7 +27,8 @@ py -3.11 -m venv .venv
 - 数值算法：`peak_metrics.py`。
 - 五质量标定、逐峰COMSOL/SIMION局部密度叠加和质心差汇总图：`mass_spectrum.py`。主图使用2×3布局，
   五个峰各自缩放局部质量偏差轴且共享各峰分箱，第六格只汇总跨求解器平均TOF差；全图图例明确
-  区分两端密度、求解器峰均值、标称质量零偏差和质心差曲线。该图不作Gaussian峰形拟合。
+  区分两端密度、求解器峰均值、标称质量零偏差和质心差曲线。逐质量标准化KDE重叠和KS距离写入
+  `mass_peak_shape_comparison.csv`并标在对应面板；该图不作Gaussian峰形拟合。
 - CSV/XLSX/SIMION TRACE导入、严格Recording审计、source mapping、bootstrap、出图和CLI：
   `reference_analysis.py`。
 - 回归门禁：`verify_reference_analysis.ps1`。
@@ -110,8 +111,8 @@ Program Off只允许作为诊断组，可用`single`和对应`.1`列导入；它
   到达时间；SIMION输入必须是启用稀疏TRACE的正式quality=8日志。
 - `compare_vector_field_samples.py`比较两侧在完全相同加速段坐标上的Ex/Ey/Ez。
 - `mass_spectrum.py`按`config/modes/mass_spectrum.json`拟合
-  `sqrt(m/z)=slope*TOF+intercept`，输出五点宽质量谱、标定残差、传输率和跨求解器质心差；经济样本
-  禁止用于精确FWHM声明。
+  `sqrt(m/z)=slope*TOF+intercept`，输出五点宽质量谱、标定残差、传输率、跨求解器质心差以及逐质量
+  标准化KDE重叠/KS距离；经济样本禁止用于精确FWHM声明。
 - `truncation_diagnostics.py`在正式配对粒子上比较能量窗、检测器有效半径和共享轴向释放宽度。每类
   截断统一重采样粒子数，半径另报告两求解器共同保留的配对交集，避免样本数变化被误判为峰宽改善。
 
