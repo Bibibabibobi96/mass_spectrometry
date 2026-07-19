@@ -64,6 +64,10 @@ TOF差。SIMION加速器离轴Ex/Ey比COMSOL平滑且较弱；在COMSOL完成加
 
 ### 可组合Ez替换诊断
 
+本节只记录SIMION实现与独立验证；通用方法见根
+[`VALIDATION_METHODS.md`](../../../docs/VALIDATION_METHODS.md#受控理想化场替换与原因隔离)，跨求解器
+能力与统一结论见[`PROJECT.md`](PROJECT.md#场方向归因实例)。
+
 正式Program源码保留旧`ideal_accel_enable/ideal_refl_stage1_enable/ideal_refl_stage2_enable`整区域
 兼容开关，并新增`ideal_accel_ez_enable`、`ideal_drift_ez_enable`、
 `ideal_refl_stage1_ez_enable`和`ideal_refl_stage2_ez_enable`。新开关只覆盖对应全局轴向场在PA局部
