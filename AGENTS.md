@@ -32,11 +32,8 @@
 
 ## Git 约束
 
-- 每次提交只包含一个可审阅主题。使用明确路径或`git add -p`暂存，不使用习惯性的`git add .`。
-- 提交信息格式遵守根README的“Git规则”；Agent不得用聊天记录代替复杂提交所需的正文。
-- 提交前运行`git status --short --branch`、`git diff --check`和`git diff --stat`，确认暂存区没有`.mph`、结果文件、日志或一次性脚本。
-- 提交前运行`common/verify_repository_hygiene.ps1`；发现仓库根工具崩溃日志时，按根README归档到
-  对应运行目录并写入manifest，不得仅因其未跟踪而忽略。
+- 主题拆分、明确暂存、提交正文和提交前检查遵守根README的“Git规则”；Agent不得用聊天记录
+  代替复杂提交所需正文，也不得因文件未跟踪而忽略仓库根工具崩溃日志的归属与manifest责任。
 - 不覆盖、回退或夹带已有未提交改动；修改同一文件前先检查现有差异。
 
 ## Agent 自主提交
