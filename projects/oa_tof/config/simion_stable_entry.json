@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
   "frozen_on": "2026-07-19",
-  "role": "Implementation hash manifest for the formal SIMION delivery and the retained convergence reference.",
-  "artifact_workspace_relative": "models/simion",
+  "role": "Implementation hash manifest for the current formal SIMION delivery.",
+  "artifact_workspace_relative": "formal/simion",
   "entries": [
     {
       "id": "formal_524amu_event_capture_xy025_z0050_refaxial0250",
@@ -10,26 +10,12 @@
       "trajectory_quality": 8,
       "expected_instances": 4,
       "assets": [
-        {"role":"iob","relative_path":"formal/oatof_524amu/oatof_ideal_grounded.iob","bytes":20902,"sha256":"9720E40F862CA7B74DF6E6CB72CDFC2254B07337D8904F180C58DE38EA859FFD"},
-        {"role":"con","relative_path":"formal/oatof_524amu/oatof_ideal_grounded.con","bytes":2170,"sha256":"D8DA212B73B7D7A70E591C452811B13377AAF93B1E4E627301B71BEE5EBA4B80"},
-        {"role":"program","relative_path":"formal/oatof_524amu/oatof_ideal_grounded.lua","bytes":19168,"sha256":"106C012375E3505875560D5BC657B5D02CF224C18940E0FCC4ECF6C2B6A2E3CB"},
-        {"role":"fly2","relative_path":"formal/oatof_524amu/oatof_ideal_grounded.fly2","bytes":868,"sha256":"56A5B2E86EA861F048EEBAD68A4132A321F1CE1909AAE1A46386CFF40DBC74FD"},
-        {"role":"sha256_manifest","relative_path":"formal/oatof_524amu/SHA256SUMS.csv","bytes":5345,"sha256":"79328DF87D530C670F47CB9608E4F5AB1F2C4E63BFB91809808752B75FD5AF91"},
-        {"role":"run_manifest","relative_path":"formal/oatof_524amu/run_manifest.json","bytes":2679,"sha256":"62FCB91887A19F401AE70C455FE06F4CCF56D5B010A2FDB6345E2D7959921F6A"}
-      ]
-    },
-    {
-      "id": "reference_xy025_z0025_refaxial0250",
-      "role": "Self-contained axial-grid convergence reference only; not the routine production entry",
-      "trajectory_quality": 8,
-      "expected_instances": 4,
-      "assets": [
-        {"role":"iob","relative_path":"references/oatof_524amu_xy025_z0025_refaxial0250/oatof_ideal_grounded.iob","bytes":20902,"sha256":"94E8D0327CE08F707D98F9C70FEEB51C6E896D7AF00CF331FF97E407D5CBEF24"},
-        {"role":"con","relative_path":"references/oatof_524amu_xy025_z0025_refaxial0250/oatof_ideal_grounded.con","bytes":2170,"sha256":"D8DA212B73B7D7A70E591C452811B13377AAF93B1E4E627301B71BEE5EBA4B80"},
-        {"role":"program","relative_path":"references/oatof_524amu_xy025_z0025_refaxial0250/oatof_ideal_grounded.lua","bytes":19168,"sha256":"106C012375E3505875560D5BC657B5D02CF224C18940E0FCC4ECF6C2B6A2E3CB"},
-        {"role":"fly2","relative_path":"references/oatof_524amu_xy025_z0025_refaxial0250/oatof_ideal_grounded.fly2","bytes":868,"sha256":"A7BCDECD99F11FB65FD8389D012B494520471E1935A8F7C7AE394813F4756DD3"},
-        {"role":"sha256_manifest","relative_path":"references/oatof_524amu_xy025_z0025_refaxial0250/SHA256SUMS.csv","bytes":5346,"sha256":"FCB919A53760B255015D00CCE6D9FDD2675A316CF1EBCC8FC9CC74DE952AD989"},
-        {"role":"run_manifest","relative_path":"references/oatof_524amu_xy025_z0025_refaxial0250/run_manifest.json","bytes":2835,"sha256":"AFCE21C6E439CBBB9D7FD065BDB1292A308DC3C676B59B40AE5E34B09F22DF08"}
+        {"role":"iob","relative_path":"oatof_ideal_grounded.iob","bytes":20902,"sha256":"9720E40F862CA7B74DF6E6CB72CDFC2254B07337D8904F180C58DE38EA859FFD"},
+        {"role":"con","relative_path":"oatof_ideal_grounded.con","bytes":2170,"sha256":"D8DA212B73B7D7A70E591C452811B13377AAF93B1E4E627301B71BEE5EBA4B80"},
+        {"role":"program","relative_path":"oatof_ideal_grounded.lua","bytes":19997,"sha256":"5231A1AEA9C574C89015893F674DDAB72DEEA5C006C79A1247D19F09D1D08367"},
+        {"role":"fly2","relative_path":"oatof_ideal_grounded.fly2","bytes":868,"sha256":"56A5B2E86EA861F048EEBAD68A4132A321F1CE1909AAE1A46386CFF40DBC74FD"},
+        {"role":"sha256_manifest","relative_path":"SHA256SUMS.csv","bytes":5345,"sha256":"E91D9C3333FF266CF9B039601EE4F1D5C09FB432229F9610E741C39F42C3312D"},
+        {"role":"run_manifest","relative_path":"run_manifest.json","bytes":2582,"sha256":"A4864FFB7BA20418EA11E6B45E8FBC9DCDD65FC4393143BA6866F9C53A70A0B1"}
       ]
     }
   ]

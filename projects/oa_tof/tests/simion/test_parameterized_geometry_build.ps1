@@ -1,17 +1,30 @@
 param(
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
-  [Parameter(Mandatory=$true)][string]$OutputDir
+  [string]$OutputDir = '',
+  [string]$RunId = ''
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
+$workspaceRoot = Split-Path -Parent $repoRoot
+$artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\oa_tof'
+$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+if ([string]::IsNullOrWhiteSpace($RunId)) {
+  $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__test__simion__parameterized-geometry__smoke'
+}
+& $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
+if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
+if ([string]::IsNullOrWhiteSpace($OutputDir)) {
+  $OutputDir = Join-Path $artifactRoot "runs\$RunId\simion"
+}
 $contract = Get-Content -LiteralPath (Join-Path $projectRoot 'config\resolved_geometry.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $geometry = $contract.geometry_mm
 $accelerator = $contract.geometry_derivation.accelerator
 $voltage = $contract.electrodes_V
 $outputFull = [IO.Path]::GetFullPath($OutputDir)
+$runDir = Split-Path -Parent $outputFull
 if (Test-Path -LiteralPath $outputFull) { throw "Smoke output already exists: $outputFull" }
 New-Item -ItemType Directory -Path $outputFull | Out-Null
 
@@ -51,19 +64,21 @@ if ($acceleratorFiles.Count -ne $expectedAcceleratorElectrodes + 3) {
 if ($reflectronFiles.Count -ne $expectedReflectronElectrodes + 3) {
   throw "Reflectron PA family mismatch: $($reflectronFiles.Count)"
 }
-$runConfigPath = Join-Path $outputFull 'run_config.json'
+$runConfigPath = Join-Path $runDir 'run_config.json'
 $runConfig = [ordered]@{
   schema_version=1; role='oa_tof_parameterized_geometry_smoke_run_config'
-  run_id=(Split-Path -Leaf $outputFull); project='oa_tof'; mode='parameterized_geometry_smoke'
+  run_id=$RunId; project='oa_tof'; mode='parameterized_geometry_smoke'
   project_root=$projectRoot
   inputs=[ordered]@{baseline='config/baseline.json'; resolved_geometry='config/resolved_geometry.json'; mode='config/modes/formal.json'}
   output_dir=$outputFull
 }
 $runConfig | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $runConfigPath -Encoding UTF8
-$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
-& $python (Join-Path $repoRoot 'common\contracts\write_run_manifest.py') --run-config $runConfigPath `
+$summaryPath = Join-Path $runDir 'summary.json'
+[ordered]@{schema_version=1;role='oa_tof_parameterized_geometry_summary';status='success';accelerator_electrodes=$expectedAcceleratorElectrodes;reflectron_electrodes=$expectedReflectronElectrodes} |
+  ConvertTo-Json -Depth 3 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
+& $python (Join-Path $repoRoot 'common\contracts\write_run_manifest.py') --run-config $runConfigPath --manifest (Join-Path $runDir 'run_manifest.json') `
   --status success --software 'SIMION 2020' --output (Join-Path $outputFull 'accelerator_smoke.pa0') `
-  --output (Join-Path $outputFull 'reflectron_smoke.pa0')
+  --output (Join-Path $outputFull 'reflectron_smoke.pa0') --output $summaryPath
 if ($LASTEXITCODE -ne 0) { throw 'Run-manifest generation failed.' }
 "PARAMETERIZED_GEOMETRY_BUILD_STATUS=PASS"
 "OUTPUT_DIR=$outputFull"

@@ -9,15 +9,18 @@ try
     paths = rf_quadrupole_paths();
     modelPath = getenv('RFQUAD_COMSOL_FIELD_MODEL_PATH');
     if isempty(modelPath)
-        modelPath = fullfile(paths.comsolCandidateDir, 'rf_quadrupole_transport_no_collision_simion_reference.mph');
+        error('RFQUAD_COMSOL_MODEL_PATH is required; select a source runs/<run_id>/comsol model.');
     end
-    inputPath = fullfile(paths.simionResultsDir, 'unit_rf_field_pa_grid.csv');
+    inputPath = getenv('RFQUAD_SIMION_FIELD_CSV');
+    assert(~isempty(inputPath), 'RFQUAD_SIMION_FIELD_CSV is required.');
     outputLabel = getenv('RFQUAD_COMSOL_FIELD_OUTPUT_LABEL');
     if isempty(outputLabel), outputLabel = 'baseline'; end
     if strcmp(outputLabel,'baseline')
-        outputPath = fullfile(paths.comsolResultsDir, 'unit_rf_field_fem_grid.csv');
+        outputPath = getenv('RFQUAD_COMSOL_FIELD_CSV');
+        assert(~isempty(outputPath), 'RFQUAD_COMSOL_FIELD_CSV is required.');
     else
-        outputPath = fullfile(paths.comsolResultsDir, ['unit_rf_field_fem_grid_' outputLabel '.csv']);
+        outputPath = getenv('RFQUAD_COMSOL_FIELD_CSV');
+        assert(~isempty(outputPath), 'RFQUAD_COMSOL_FIELD_CSV is required.');
     end
     assert(isfile(modelPath) && isfile(inputPath), 'FEM model or SIMION coordinate grid is missing.');
 

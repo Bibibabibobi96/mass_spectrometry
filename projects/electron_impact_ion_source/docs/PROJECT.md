@@ -6,8 +6,8 @@
 ## 当前状态
 
 项目目前只有COMSOL实现，尚无正式或可提升候选资产。现存三个MPH与三张结果图均位于项目
-`models/comsol/archive/`和`results/comsol/archive/`，只能作为旧试验证据。当前脚本仍会把新模型
-写入`scratch/comsol/`、结果写入`results/comsol/`；未形成run config、summary和已复核manifest前，
+旧模型和结果已冻结在`archive/20260719_212436__migration-snapshot__repo__pre-v2-layout/legacy-layout/`，
+只能作为旧试验证据。新模型与结果必须统一写入`runs/<run_id>/{comsol,results,logs}`；未形成run config、summary和已复核manifest前，
 不得从scratch提升或声明正式完成。
 
 ## 当前物理边界
@@ -34,4 +34,4 @@
 ## 产物边界
 
 项目产物根为`artifacts/projects/electron_impact_ion_source/`。archive继续保留旧试验；新运行进入
-`runs/`，可提升模型进入`models/comsol/candidates/`，正式目录只有通过上述门禁后才能建立。
+`runs/<run_id>/`；候选模型留在来源run，正式目录只有通过上述门禁后才能建立。

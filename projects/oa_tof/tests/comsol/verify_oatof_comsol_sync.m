@@ -8,7 +8,7 @@ g = contract.geometry_mm;
 modelPath = getenv('OATOF_COMSOL_MODEL_PATH');
 if isempty(modelPath)
     modelPath = fullfile(paths.comsolFormalDir, ...
-        'MS_oaTOF_TwoStageRingStackReflectron_Final.mph');
+        'oa_tof__model.mph');
 end
 assert(isfile(modelPath), 'COMSOL model to verify is missing: %s', modelPath);
 

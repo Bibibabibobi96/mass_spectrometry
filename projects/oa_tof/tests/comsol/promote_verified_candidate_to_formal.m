@@ -6,10 +6,10 @@ paths = oatof_paths();
 contract = jsondecode(fileread(fullfile(componentDir, 'config', 'resolved_geometry.json')));
 g = contract.geometry_mm;
 
-candidatePath = fullfile(paths.comsolCandidateDir, ...
-    'MS_oaTOF_TwoStageRingStackReflectron_Candidate_524amu_FixedN100_real_dt0.2ns.mph');
+candidatePath = getenv('OATOF_CANDIDATE_MODEL_PATH');
+assert(~isempty(candidatePath), 'OATOF_CANDIDATE_MODEL_PATH is required.');
 formalPath = fullfile(paths.comsolFormalDir, ...
-    'MS_oaTOF_TwoStageRingStackReflectron_Final.mph');
+    'oa_tof__model.mph');
 assert(isfile(candidatePath), 'Verified candidate is missing: %s', candidatePath);
 
 fid = fopen(reportPath, 'w');
@@ -125,7 +125,7 @@ fprintf(fid, 'GUI_PREDICTED_TOF_US=%.12g\n', ...
     model.param.evaluate('t_detector_ref')*1e6);
 
 if ~isfolder(paths.comsolFormalDir), mkdir(paths.comsolFormalDir); end
-model.label('MS_oaTOF_TwoStageRingStackReflectron_Final.mph');
+model.label('oa_tof__model.mph');
 model.save(formalPath);
 assert(isfile(formalPath), 'Formal MPH was not written: %s', formalPath);
 fprintf(fid, 'STATUS=PASS\n');

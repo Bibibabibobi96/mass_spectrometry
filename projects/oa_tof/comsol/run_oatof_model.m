@@ -44,9 +44,13 @@ end
 if strlength(options.OutputModelPath) > 0
     paths = oatof_paths();
     outputPath = string(java.io.File(char(options.OutputModelPath)).getCanonicalPath());
-    modelRoot = string(java.io.File(paths.comsolModelRoot).getCanonicalPath());
-    assert(startsWith(lower(outputPath), lower(modelRoot + filesep)), ...
-        'OutputModelPath must remain under %s.', paths.comsolModelRoot);
+    allowedRoots = string({paths.comsolFormalDir, paths.runsRoot, paths.scratchRoot});
+    allowed = false;
+    for root = allowedRoots
+        canonicalRoot = string(java.io.File(char(root)).getCanonicalPath());
+        allowed = allowed || startsWith(lower(outputPath), lower(canonicalRoot + filesep));
+    end
+    assert(allowed, 'OutputModelPath must remain under formal/comsol, runs, or scratch.');
     [~,~,extension] = fileparts(outputPath);
     assert(strcmpi(extension, '.mph'), 'OutputModelPath must end in .mph.');
     options.OutputModelPath = outputPath;

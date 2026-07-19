@@ -1,9 +1,8 @@
 param(
     [int]$RfStepsPerPeriod = 40,
     [int]$TrajectoryQuality = 10,
-    [string]$RunLabel = 'baseline',
+    [string]$RunId = '',
     [double]$SourceAxialOffsetMm = 0.0,
-    [string]$CandidateSubdir = 'quad_transport',
     [string]$ParticleTablePath = '',
     [ValidateSet('transport_no_collision','transport_interface_readiness')][string]$Mode = 'transport_no_collision',
     [string]$OperatingPoint = 'official_100amu_2eV',
@@ -17,14 +16,21 @@ $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $repoRoot = Split-Path -Parent (Split-Path -Parent $projectRoot)
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling'
-$candidateDir = Join-Path $artifactRoot "models\simion\candidates\$CandidateSubdir\$Mode\$RunLabel"
-$resultDir = Join-Path $artifactRoot 'results\simion'
-$runDir = Join-Path $artifactRoot "runs\$Mode\simion_$RunLabel"
+$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+if ([string]::IsNullOrWhiteSpace($RunId)) {
+    $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + "__sim__simion__rf-transport__$($Mode.Replace('_','-'))"
+}
+& $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
+if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
+$runDir = Join-Path $artifactRoot "runs\$RunId"
+$candidateDir = Join-Path $runDir 'simion'
+$resultDir = Join-Path $runDir 'results'
+$logDir = Join-Path $runDir 'logs'
 $simion = 'C:\Program Files\SIMION-2020\simion.exe'
 $officialIob = 'C:\Program Files\SIMION-2020\examples\quad\quad_monolithic.iob'
 
-if ((Test-Path -LiteralPath $runDir) -or (Test-Path -LiteralPath $candidateDir)) {
-    throw "Run or candidate directory already exists; choose a new RunLabel: $RunLabel"
+if (Test-Path -LiteralPath $runDir) {
+    throw "Run directory already exists: $RunId"
 }
 
 $ionPath = if ([string]::IsNullOrWhiteSpace($ParticleTablePath)) {
@@ -43,7 +49,7 @@ if ($Mode -eq 'transport_interface_readiness') {
     }
 }
 
-New-Item -ItemType Directory -Path $candidateDir,$resultDir,$runDir -Force | Out-Null
+New-Item -ItemType Directory -Path $candidateDir,$resultDir,$runDir,$logDir -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $projectRoot 'simion\geometry\quad_include.gem') -Destination $candidateDir -Force
 Copy-Item -LiteralPath (Join-Path $projectRoot 'simion\geometry\quad_monolithic.gem') -Destination $candidateDir -Force
 Copy-Item -LiteralPath (Join-Path $projectRoot 'simion\programs\quad_transport.lua') -Destination (Join-Path $candidateDir 'quad_monolithic.lua') -Force
@@ -63,15 +69,15 @@ $interface = Get-Content -LiteralPath (Join-Path $projectRoot 'config\interface_
 if ([double]::IsNaN($RfPeakV) -or [double]::IsInfinity($RfPeakV)) { $RfPeakV = $physicalMode.rf.amplitude_V_peak }
 if ([double]::IsNaN($FrequencyHz) -or [double]::IsInfinity($FrequencyHz)) { $FrequencyHz = $physicalMode.rf.frequency_Hz }
 $modeInput = if ($Mode -eq 'transport_no_collision') { 'config/modes/transport_no_collision.json' } else { 'config/modes/transport_interface_readiness.json' }
-$particleStateCsv = Join-Path $resultDir "${Mode}_particle_state_$RunLabel.csv"
-$trajectoryCsv = Join-Path $resultDir "${Mode}_trajectory_samples_$RunLabel.csv"
-$summaryJson = Join-Path $resultDir "${Mode}_summary_$RunLabel.json"
+$particleStateCsv = Join-Path $resultDir 'particle_state.csv'
+$trajectoryCsv = Join-Path $resultDir 'trajectory_samples.csv'
+$summaryJson = Join-Path $resultDir 'solver_summary.json'
 $runConfigPath = Join-Path $runDir 'run_config.json'
 $runConfigLua = Join-Path $runDir 'run_config.lua'
-$iobReport = Join-Path $runDir 'simion_iob_contract.txt'
-$stateContractReport = Join-Path $runDir 'particle_state_contract.json'
+$iobReport = Join-Path $logDir 'simion_iob_contract.txt'
+$stateContractReport = Join-Path $resultDir 'particle_state_contract.json'
 $runConfig = [ordered]@{
-    schema_version=1; role='rf_quadrupole_simion_run_config'; run_id="simion_$RunLabel"
+    schema_version=1; role='rf_quadrupole_simion_run_config'; run_id=$RunId
     project='rf_quadrupole_collision_cooling'; mode=$Mode; project_root=$projectRoot
     inputs=[ordered]@{baseline='config/baseline.json'; resolved_geometry='config/resolved_geometry.json'; resolved_contract=$resolvedContractInput; mode=$modeInput; particle_table=$ionPath; source_states=$sourceStatesLua}
     output_dir=$resultDir; candidate_dir=$candidateDir; run_dir=$runDir
@@ -119,8 +125,8 @@ try {
     & $simion --nogui --noprompt lua (Join-Path $PSScriptRoot 'inspect_builtin_quad_reference.lua')
     if ($LASTEXITCODE -ne 0) { throw 'SIMION IOB runtime contract failed.' }
 
-    $stdoutPath = Join-Path $runDir 'simion_stdout.txt'
-    $stderrPath = Join-Path $runDir 'simion_stderr.txt'
+    $stdoutPath = Join-Path $logDir 'simion_stdout.txt'
+    $stderrPath = Join-Path $logDir 'simion_stderr.txt'
     $flyProcess = Start-Process -FilePath $simion -ArgumentList @(
         '--nogui','--noprompt','lua',(Join-Path $PSScriptRoot 'run_fly.lua')
     ) -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
@@ -139,7 +145,6 @@ $summary = Get-Content -LiteralPath $summaryJson -Raw | ConvertFrom-Json
 if ($summary.particles -ne $expectedParticles -or $summary.collision_model -ne 'none' -or $summary.transmission -lt 0.8) {
     throw "SIMION transport gate failed: $($summary | ConvertTo-Json -Compress)"
 }
-$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 & $python (Join-Path $projectRoot 'analysis\verify_particle_state_contract.py') `
     --state $particleStateCsv --particles $ionPath --interface (Join-Path $projectRoot 'config\interface_contract.json') `
     --axial-offset-mm $SourceAxialOffsetMm --frequency-hz $FrequencyHz --phase-rad $physicalMode.rf.phase_rad `
@@ -152,12 +157,15 @@ $hashes = Get-ChildItem -LiteralPath $candidateDir -File | Where-Object {
     [pscustomobject]@{file=$_.Name; bytes=$_.Length; sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash}
 }
 $hashes | Export-Csv -LiteralPath $shaPath -NoTypeInformation -Encoding UTF8
+$runSummary = Join-Path $runDir 'summary.json'
+[ordered]@{schema_version=1;role='rf_quadrupole_transport_summary';status='success';mode=$Mode;particles=$expectedParticles;hits=$summary.hits;transmission=$summary.transmission} |
+    ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $runSummary -Encoding UTF8
 & $python (Join-Path $repoRoot 'common\contracts\write_run_manifest.py') --run-config $runConfigPath `
     --status success --software 'SIMION 2020' --output $trajectoryCsv --output $summaryJson `
     --output $particleStateCsv `
     --output $stateContractReport `
-    --output (Join-Path $runDir 'simion_stdout.txt') --output (Join-Path $runDir 'simion_stderr.txt') `
+    --output (Join-Path $logDir 'simion_stdout.txt') --output (Join-Path $logDir 'simion_stderr.txt') `
     --output (Join-Path $candidateDir 'quad_monolithic.iob') --output (Join-Path $candidateDir 'quad_monolithic.pa0') `
-    --output $flyPath --output $iobReport --output $shaPath
+    --output $flyPath --output $iobReport --output $shaPath --output $runSummary
 if ($LASTEXITCODE -ne 0) { throw 'Run-manifest generation failed.' }
-"STATUS=PASS LABEL=$RunLabel HITS=$($summary.hits) TRANSMISSION=$($summary.transmission)"
+"STATUS=PASS RUN_ID=$RunId HITS=$($summary.hits) TRANSMISSION=$($summary.transmission)"

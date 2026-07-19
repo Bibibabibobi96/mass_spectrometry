@@ -39,12 +39,12 @@ def interpolate(track: dict[str, np.ndarray], z: np.ndarray, key: str) -> np.nda
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--workspace", type=Path, required=True)
+    parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--comsol-trajectory", type=Path, required=True)
     parser.add_argument("--simion-trajectory", type=Path, required=True)
     parser.add_argument("--output-label", required=True)
     args = parser.parse_args()
-    results = args.workspace / "artifacts/projects/rf_quadrupole_collision_cooling/results"
+    results = args.run_dir.resolve() / "results"
     resolved, interface = load_contract()
     geometry = resolved["geometry_mm"]
     planes = diagnostic_planes(resolved, interface)

@@ -1,6 +1,6 @@
 param(
     [double]$CellMm = 0.1,
-    [string]$RunLabel = 'cell010'
+    [string]$RunId = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -8,16 +8,23 @@ $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $repoRoot = Split-Path -Parent (Split-Path -Parent $projectRoot)
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling'
-$candidateDir = Join-Path $artifactRoot "models\simion\candidates\quad_field_$RunLabel"
-$resultDir = Join-Path $artifactRoot 'results\simion'
-$runDir = Join-Path $artifactRoot "runs\pa_field_convergence\$RunLabel"
+$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+if ([string]::IsNullOrWhiteSpace($RunId)) {
+    $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__test__simion__pa-field-convergence__cell010'
+}
+& $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
+if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
+$runDir = Join-Path $artifactRoot "runs\$RunId"
+$candidateDir = Join-Path $runDir 'simion'
+$resultDir = Join-Path $runDir 'results'
+$logDir = Join-Path $runDir 'logs'
 $simion = 'C:\Program Files\SIMION-2020\simion.exe'
 $officialIob = 'C:\Program Files\SIMION-2020\examples\quad\quad_monolithic.iob'
 $resolved = Get-Content -LiteralPath (Join-Path $projectRoot 'config\resolved_geometry.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $baselineCellMm = [double]$resolved.geometry_mm.simion_cell_mm
 if ($CellMm -le 0 -or $CellMm -gt $baselineCellMm) { throw "CellMm must be in (0, $baselineCellMm]." }
 
-New-Item -ItemType Directory -Path $candidateDir,$resultDir,$runDir -Force | Out-Null
+New-Item -ItemType Directory -Path $candidateDir,$resultDir,$runDir,$logDir -Force | Out-Null
 $sourceGem = Join-Path $projectRoot 'simion\geometry\quad_monolithic.gem'
 $gemText = Get-Content -LiteralPath $sourceGem -Raw -Encoding UTF8
 $expected = '# local mmgu = {0:R}' -f $baselineCellMm
@@ -34,8 +41,8 @@ try {
     & $simion --nogui refine quad_monolithic.pa#
     if ($LASTEXITCODE -ne 0) { throw 'SIMION refine failed.' }
     $env:RFQUAD_SIMION_PA_PATH = Join-Path $candidateDir 'quad_monolithic.pa0'
-    $env:RFQUAD_SIMION_UNIT_RF_FIELD_CSV = Join-Path $resultDir "unit_rf_field_pa_grid_$RunLabel.csv"
-    $env:RFQUAD_SIMION_UNIT_RF_FIELD_REPORT = Join-Path $runDir 'field_export.txt'
+    $env:RFQUAD_SIMION_UNIT_RF_FIELD_CSV = Join-Path $resultDir 'unit_rf_field_pa_grid.csv'
+    $env:RFQUAD_SIMION_UNIT_RF_FIELD_REPORT = Join-Path $logDir 'field_export.txt'
     $env:RFQUAD_FIELD_X_MIN_MM = [string](-$resolved.geometry_mm.field_radius_r0/2)
     $env:RFQUAD_FIELD_X_MAX_MM = [string]($resolved.geometry_mm.field_radius_r0/2)
     $env:RFQUAD_FIELD_Y_MIN_MM = [string](-$resolved.geometry_mm.field_radius_r0/2)
@@ -54,6 +61,16 @@ finally {
     Pop-Location
 }
 
-$report = Get-Content -LiteralPath (Join-Path $runDir 'field_export.txt') -Raw
+$reportPath = Join-Path $logDir 'field_export.txt'
+$report = Get-Content -LiteralPath $reportPath -Raw
 if ($report -notmatch 'STATUS=PASS') { throw "SIMION field export gate failed: $report" }
-"STATUS=PASS LABEL=$RunLabel CELL_MM=$CellMm"
+$runConfigPath = Join-Path $runDir 'run_config.json'
+[ordered]@{schema_version=1;run_id=$RunId;project='rf_quadrupole_collision_cooling';mode='pa_field_convergence';project_root=$projectRoot;inputs=[ordered]@{resolved_geometry='config/resolved_geometry.json'};formal_gate_passed=$false;cell_mm=$CellMm} |
+    ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $runConfigPath -Encoding UTF8
+$summaryPath = Join-Path $runDir 'summary.json'
+[ordered]@{schema_version=1;role='rf_quadrupole_pa_field_summary';status='success';cell_mm=$CellMm} |
+    ConvertTo-Json -Depth 3 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
+& $python (Join-Path $repoRoot 'common\contracts\write_run_manifest.py') --run-config $runConfigPath --status success --software 'SIMION 2020' `
+    --output (Join-Path $candidateDir 'quad_monolithic.pa0') --output (Join-Path $resultDir 'unit_rf_field_pa_grid.csv') --output $reportPath --output $summaryPath
+if ($LASTEXITCODE -ne 0) { throw 'Run-manifest generation failed.' }
+"STATUS=PASS RUN_ID=$RunId CELL_MM=$CellMm"

@@ -16,7 +16,8 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
 $projectRoot = Join-Path $repoRoot 'projects\oa_tof'
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\oa_tof'
-$formalDir = Join-Path $artifactRoot 'models\simion\formal\oatof_524amu'
+$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+$formalDir = Join-Path $artifactRoot 'formal\simion'
 if (-not $CaseConfig) { $CaseConfig = Join-Path $projectRoot 'config\diagnostics\field_idealization_feasibility.json' }
 
 function Convert-Selector([string]$Selector) {
@@ -51,10 +52,12 @@ if ($ValidateConfigOnly) {
 }
 if (-not $OutputDir) {
   $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
-  $OutputDir = Join-Path $artifactRoot "runs\field_idealization_sweep\simion_ez_n${N}_$stamp"
+  $OutputDir = Join-Path $artifactRoot "runs\${stamp}__test__simion__field-idealization__n${N}"
 }
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 $OutputDir = (Resolve-Path -LiteralPath $OutputDir).Path
+& $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run (Split-Path -Leaf $OutputDir)
+if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $(Split-Path -Leaf $OutputDir)" }
 $runtimeDir = if ($RuntimePackage) { (Resolve-Path -LiteralPath $RuntimePackage).Path } else { Join-Path $OutputDir 'runtime_package' }
 if ($N -ne [int]$configuration.particle_count) {
   Write-Warning "N=$N overrides the feasibility-plan particle_count=$($configuration.particle_count)."
@@ -170,7 +173,6 @@ $summary = [ordered]@{
 $summaryPath = Join-Path $OutputDir 'summary.json'
 $summary | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
 
-$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 $manifestWriter = Join-Path $repoRoot 'common\contracts\write_run_manifest.py'
 $manifestVerifier = Join-Path $repoRoot 'common\contracts\verify_run_manifest.py'
 $manifestArguments = @($manifestWriter,'--run-config',$runConfigPath,'--manifest',(Join-Path $OutputDir 'run_manifest.json'),'--status','success','--software','SIMION 2020','--output',$summaryPath,'--output',$summaryCsv,'--output',$ionFile,'--output',(Join-Path $runtimeDir 'oatof_ideal_grounded.iob'),'--output',(Join-Path $runtimeDir 'oatof_ideal_grounded.lua'),'--output',(Join-Path $runtimeDir 'source_formal_run_manifest.json'),'--output',(Join-Path $runtimeDir 'source_formal_SHA256SUMS.csv'))

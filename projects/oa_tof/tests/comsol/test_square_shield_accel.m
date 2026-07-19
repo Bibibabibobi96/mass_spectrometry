@@ -232,7 +232,8 @@ for zc = linspace(1, 15.83, 5)
     fprintf('  x=30mm z=%6.2fmm: Ez=%10.4f V/m (diff=%.4f%%)\n', zc, Ez, 100*(Ez-Ez_theory_Vm)/Ez_theory_Vm);
 end
 
-modelsDir = paths.comsolScratchDir;
+modelsDir = getenv('OATOF_RUNTIME_DIR');
+assert(~isempty(modelsDir), 'OATOF_RUNTIME_DIR is required.');
 if ~exist(modelsDir, 'dir'), mkdir(modelsDir); end
 model.save(fullfile(modelsDir, 'test_square_shield_accel.mph'));
 fprintf('\nSUCCESS: model saved.\n');

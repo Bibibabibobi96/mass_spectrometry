@@ -7,9 +7,10 @@
 ## 当前入口与状态
 
 - 正式文本入口：`../simion/workbench/formal/oatof_ideal_grounded.lua/.fly2`。
-- 正式GUI/交付目录：`artifacts/projects/oa_tof/models/simion/formal/oatof_524amu/`；IOB、CON、
+- 正式GUI/交付目录：`artifacts/projects/oa_tof/formal/simion/`；IOB、CON、
   同名Program/Fly2、四套完整PA家族和固定ION均集中于此。
-- `models/simion/workspace/`仅保留收敛参考、构建源和待审计历史；正式IOB不再引用其中PA。
+- 迁移前的收敛参考、构建源和待审计历史已冻结在本项目archive的`legacy-layout/models/simion/`；
+  正式IOB不引用archive中的PA。
 - 当前标准：524 amu、+1、`5±0.4 eV`；GUI检查档N=100、正式统计档N=1000。
 - 正式轨迹积分档位是`trajectory quality=8`；同名Program在IOB加载和每次Fly前自动写入，
   GUI Fly和命令行必须一致，低档只允许显式诊断。

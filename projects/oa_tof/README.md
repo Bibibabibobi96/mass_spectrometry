@@ -81,9 +81,10 @@ oa_tof/
 └─ tests/             # COMSOL、SIMION、CAD和跨求解器长期门禁
 ```
 
-大型模型和结果位于工作区同级的`artifacts/projects/oa_tof/`，不进入Git。正式模型、候选模型、
-运行记录、提升后的结果和临时文件必须分别进入`models/`、`runs/`、`results/`和`scratch/`，
-不得重新创建旧的`artifacts/components/...`路径。
+大型模型和结果位于工作区同级的`artifacts/projects/oa_tof/`，不进入Git。正式资产进入`formal/`；
+候选模型、运行结果和日志统一进入来源`runs/<run_id>/`；冻结证据进入`archive/<archive_id>/`；
+临时任务进入`scratch/<task_id>/`。不得重建顶层`models/`、`results/`、`cad/`、`logs/`或旧的
+`artifacts/components/...`路径。
 
 ## 项目特有硬规则
 

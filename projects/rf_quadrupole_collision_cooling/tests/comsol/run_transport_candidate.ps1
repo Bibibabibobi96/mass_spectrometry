@@ -1,5 +1,5 @@
 param(
-    [string]$RunLabel = ('phase_space_' + (Get-Date -Format 'yyyyMMdd_HHmmss')),
+    [string]$RunId = '',
     [int]$RfStepsPerPeriod = 80,
     [int]$MeshAutoLevel = 1,
     [double]$MeshHmaxMm = [double]::NaN,
@@ -17,10 +17,19 @@ $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $repoRoot = Split-Path -Parent (Split-Path -Parent $projectRoot)
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling'
-$runDir = Join-Path $artifactRoot "runs\$Mode\comsol_$RunLabel"
-$resultDir = Join-Path $artifactRoot 'results\comsol'
-$candidateDir = Join-Path $artifactRoot 'models\comsol\candidates'
-if (Test-Path -LiteralPath $runDir) { throw "Run directory already exists; choose a new RunLabel: $RunLabel" }
+$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+if ([string]::IsNullOrWhiteSpace($RunId)) {
+    $detail = $Mode.Replace('_','-')
+    $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + "__sim__comsol__rf-transport__$detail"
+}
+& $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
+if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
+$runDir = Join-Path $artifactRoot "runs\$RunId"
+$resultDir = Join-Path $runDir 'results'
+$candidateDir = Join-Path $runDir 'comsol'
+$logDir = Join-Path $runDir 'logs'
+$runtimeDir = Join-Path $runDir 'runtime'
+if (Test-Path -LiteralPath $runDir) { throw "Run directory already exists: $RunId" }
 
 $particleTable = if ([string]::IsNullOrWhiteSpace($ParticleTablePath)) {
     Join-Path $projectRoot 'config\particles\official_fixed_25.ion'
@@ -42,21 +51,21 @@ if ([double]::IsNaN($RfPeakV) -or [double]::IsInfinity($RfPeakV)) { $RfPeakV = $
 if ([double]::IsNaN($FrequencyHz) -or [double]::IsInfinity($FrequencyHz)) { $FrequencyHz = $resolved.mode.rf.frequency_Hz }
 $modeInput = if ($Mode -eq 'transport_no_collision') { 'config/modes/transport_no_collision.json' } else { 'config/modes/transport_interface_readiness.json' }
 
-New-Item -ItemType Directory -Path $runDir,$resultDir,$candidateDir -Force | Out-Null
+New-Item -ItemType Directory -Path $runDir,$resultDir,$candidateDir,$logDir,$runtimeDir -Force | Out-Null
 
 $runConfigPath = Join-Path $runDir 'run_config.json'
-$bootstrapReport = Join-Path $runDir 'comsol_bootstrap_report.txt'
-$guiVerifyReport = Join-Path $runDir 'comsol_gui_compute_report.txt'
-$stateContractReport = Join-Path $runDir 'particle_state_contract.json'
+$bootstrapReport = Join-Path $logDir 'comsol_bootstrap_report.txt'
+$guiVerifyReport = Join-Path $logDir 'comsol_gui_compute_report.txt'
+$stateContractReport = Join-Path $resultDir 'particle_state_contract.json'
 $runConfig = [ordered]@{
-    schema_version=1; role='rf_quadrupole_comsol_run_config'; run_id=$RunLabel
+    schema_version=1; role='rf_quadrupole_comsol_run_config'; run_id=$RunId
     project='rf_quadrupole_collision_cooling'; mode=$Mode; project_root=$projectRoot
     inputs=[ordered]@{
         baseline='config/baseline.json'; resolved_geometry='config/resolved_geometry.json'; resolved_contract=$resolvedContractInput
         mode=$modeInput; particle_table=$particleTable
         interface_contract='config/interface_contract.json'
     }
-    output_dir=$resultDir; candidate_dir=$candidateDir; run_dir=$runDir
+    results_dir=$resultDir; comsol_dir=$candidateDir; logs_dir=$logDir; runtime_dir=$runtimeDir; run_dir=$runDir
     comsol_rf_steps_per_period=$RfStepsPerPeriod; comsol_mesh_auto_level=$MeshAutoLevel
     comsol_hmax_mm=$MeshHmaxMm; source_axial_offset_mm=$SourceAxialOffsetMm
     particle_table_path=$particleTable; operating_point=$OperatingPoint
@@ -78,12 +87,11 @@ finally {
     Remove-Item Env:RFQUAD_RUN_CONFIG -ErrorAction SilentlyContinue
 }
 
-$suffix = "_$RunLabel"
-$modelPath = Join-Path $candidateDir "rf_quadrupole_${Mode}_simion_reference_$RunLabel.mph"
-$summaryPath = Join-Path $resultDir "${Mode}_summary$suffix.json"
-$trajectoryPath = Join-Path $resultDir "${Mode}_trajectory_samples$suffix.csv"
-$particleStatePath = Join-Path $resultDir "${Mode}_particle_state$suffix.csv"
-$rawPhaseSpacePath = Join-Path $resultDir "${Mode}_particle_raw$suffix.csv"
+$modelPath = Join-Path $candidateDir 'rf_quadrupole_collision_cooling__model.mph'
+$summaryPath = Join-Path $resultDir 'solver_summary.json'
+$trajectoryPath = Join-Path $resultDir 'trajectory_samples.csv'
+$particleStatePath = Join-Path $resultDir 'particle_state.csv'
+$rawPhaseSpacePath = Join-Path $resultDir 'particle_raw.csv'
 $summary = Get-Content -LiteralPath $summaryPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $env:RFQUAD_COMSOL_MODEL_PATH = $modelPath
 $env:RFQUAD_EXPECTED_PARTICLES = [string]$expectedParticles
@@ -108,7 +116,6 @@ $expected = @($modelPath,$summaryPath,$trajectoryPath,$particleStatePath,$rawPha
 $missing = @($expected | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) })
 if ($missing.Count -gt 0) { throw "COMSOL candidate outputs are missing: $($missing -join ', ')" }
 
-$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 & $python (Join-Path $projectRoot 'analysis\verify_particle_state_contract.py') `
     --state $particleStatePath --particles $particleTable `
     --interface (Join-Path $projectRoot 'config\interface_contract.json') --axial-offset-mm $SourceAxialOffsetMm `
@@ -116,9 +123,16 @@ $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
     --solver COMSOL --output $stateContractReport
 if ($LASTEXITCODE -ne 0) { throw 'Particle-state contract gate failed.' }
 
+$runSummary = Join-Path $runDir 'summary.json'
+[ordered]@{
+    schema_version=1; role='rf_quadrupole_transport_summary'; status='success'; mode=$Mode
+    particles=$expectedParticles; hits=$summary.hits; transmission=$summary.transmission
+    solver_summary='results/solver_summary.json'
+} | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $runSummary -Encoding UTF8
+
 & $python (Join-Path $repoRoot 'common\contracts\write_run_manifest.py') --run-config $runConfigPath `
     --status success --software 'COMSOL 6.4' --software 'MATLAB R2025b' `
     --output $modelPath --output $summaryPath --output $trajectoryPath `
-    --output $particleStatePath --output $rawPhaseSpacePath --output $bootstrapReport --output $guiVerifyReport --output $stateContractReport
+    --output $particleStatePath --output $rawPhaseSpacePath --output $bootstrapReport --output $guiVerifyReport --output $stateContractReport --output $runSummary
 if ($LASTEXITCODE -ne 0) { throw 'Run-manifest generation failed.' }
-"STATUS=PASS LABEL=$RunLabel HITS=$($summary.hits) TRANSMISSION=$($summary.transmission)"
+"STATUS=PASS RUN_ID=$RunId HITS=$($summary.hits) TRANSMISSION=$($summary.transmission)"

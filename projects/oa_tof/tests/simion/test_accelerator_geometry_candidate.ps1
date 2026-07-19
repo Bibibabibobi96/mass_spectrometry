@@ -1,6 +1,6 @@
 param(
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
-  [string]$RunId = '2026-07-17_strict_focus',
+  [string]$RunId = '',
   [switch]$ReuseExisting
 )
 
@@ -10,14 +10,20 @@ $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\oa_tof'
-$formalDir = Join-Path $artifactRoot 'models\simion\formal\oatof_524amu'
-$scratchDir = Join-Path $artifactRoot "scratch\simion\accelerator_geometry_candidate\$RunId"
-$runDir = Join-Path $artifactRoot "runs\accelerator_geometry_candidate\$RunId"
-$resultDir = Join-Path $artifactRoot "results\simion\accelerator_geometry_candidate\$RunId"
+$formalDir = Join-Path $artifactRoot 'formal\simion'
+$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+if ([string]::IsNullOrWhiteSpace($RunId)) {
+  $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__test__simion__accelerator-geometry__strict-focus'
+}
+& $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
+if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
+$runDir = Join-Path $artifactRoot "runs\$RunId"
+$scratchDir = Join-Path $runDir 'runtime'
+$resultDir = Join-Path $runDir 'results'
+$logDir = Join-Path $runDir 'logs'
 $contractPath = Join-Path $projectRoot 'config\candidates\accelerator_grid_aligned_strict_focus.json'
 $baselinePath = Join-Path $projectRoot 'config\resolved_geometry.json'
-$derivedPath = Join-Path $runDir 'derived_geometry.json'
-$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+$derivedPath = Join-Path $resultDir 'derived_geometry.json'
 $theory = Join-Path $projectRoot 'analysis\accelerator_time_focus.py'
 $builder = Join-Path $projectRoot 'simion\accelerator\build_accelerator_variant.lua'
 $gem = Join-Path $projectRoot 'simion\accelerator\oatof_accelerator_3d.gem'
@@ -27,7 +33,7 @@ $iobBuilder = Join-Path $projectRoot 'simion\workbench\build_formal_iob.lua'
 $ionGenerator = Join-Path $projectRoot 'simion\workbench\generate_comsol_consistent_ions.ps1'
 $logAnalyzer = Join-Path $projectRoot 'simion\workbench\analyze_ideal_field_log.ps1'
 
-New-Item -ItemType Directory -Force -Path $scratchDir,$runDir,$resultDir | Out-Null
+New-Item -ItemType Directory -Force -Path $scratchDir,$runDir,$resultDir,$logDir | Out-Null
 & $python $theory $contractPath --write-derived $derivedPath | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Accelerator focus derivation failed.' }
 $derived = Get-Content -LiteralPath $derivedPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -107,13 +113,13 @@ try {
     $oldBuildEnvironment[$item.Key] = [Environment]::GetEnvironmentVariable($item.Key, 'Process')
     [Environment]::SetEnvironmentVariable($item.Key, $item.Value, 'Process')
   }
-  Invoke-Simion @('--nogui','lua',$iobBuilder) (Join-Path $runDir 'iob_build.log') (Join-Path $runDir 'iob_build.stderr.log')
+  Invoke-Simion @('--nogui','lua',$iobBuilder) (Join-Path $logDir 'iob_build.log') (Join-Path $logDir 'iob_build.stderr.log')
 } finally {
   foreach ($item in $buildEnvironment.GetEnumerator()) {
     [Environment]::SetEnvironmentVariable($item.Key, $oldBuildEnvironment[$item.Key], 'Process')
   }
 }
-$ionPath = Join-Path $runDir 'candidate_fixedN100.ion'
+$ionPath = Join-Path $scratchDir 'candidate_fixedN100.ion'
 & $ionGenerator -N 100 -MassAmu $baseline.validation_target.mass_amu -Charge 1 `
   -EnergyMeanEv $baseline.validation_target.initial_energy_mean_ev `
   -EnergyStdEv $baseline.validation_target.initial_energy_sigma_ev `
@@ -126,9 +132,9 @@ $ionPath = Join-Path $runDir 'candidate_fixedN100.ion'
 $oldOverride = $env:OATOF_ACCELERATOR_PA_OVERRIDE
 try {
   $env:OATOF_ACCELERATOR_PA_OVERRIDE = $candidatePa0
-  $stdout = Join-Path $runDir 'fixedN100.log'
-  $stderr = Join-Path $runDir 'fixedN100.stderr.log'
-  $particleCsv = Join-Path $runDir 'fixedN100_particles.csv'
+  $stdout = Join-Path $logDir 'fixedN100.log'
+  $stderr = Join-Path $logDir 'fixedN100.stderr.log'
+  $particleCsv = Join-Path $resultDir 'fixedN100_particles.csv'
   $args = @('--default-num-particles','100','--nogui','fly','--trajectory-quality','8',
     '--retain-trajectories','0','--particles',$ionPath,
     '--adjustable','trajectory_quality=8','--adjustable','trajectory_log_enable=1',
@@ -141,7 +147,7 @@ try {
   $summary = & $logAnalyzer -Log $stdout -IonFile $ionPath -Mode 'strict_focus_geometry_candidate' `
     -Distribution 'fixedN100' -ParticleCsv $particleCsv
   if ($LASTEXITCODE -ne 0) { throw 'Candidate log analysis failed.' }
-  $summary | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $resultDir 'summary.json') -Encoding UTF8
+  $summary | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $resultDir 'solver_summary.json') -Encoding UTF8
   if ([int]$summary.Hit -ne 100) { throw "Candidate hit count is $($summary.Hit), expected 100." }
 } finally {
   $env:OATOF_ACCELERATOR_PA_OVERRIDE = $oldOverride
@@ -153,9 +159,20 @@ try {
   translation_z_mm=$translation; grid2_global_z_mm=$grid2Z
   reference_focus_global_z_mm=[double]$derived.reference_global_focus_z_mm
   candidate_focus_global_z_mm=[double]$derived.focus_global_z_mm
-  particle_csv=(Join-Path $runDir 'fixedN100_particles.csv')
-  summary=(Join-Path $resultDir 'summary.json')
+  particle_csv=(Join-Path $resultDir 'fixedN100_particles.csv')
+  summary=(Join-Path $resultDir 'solver_summary.json')
 } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $resultDir 'manifest.json') -Encoding UTF8
+
+$runConfig = Join-Path $runDir 'run_config.json'
+[ordered]@{schema_version=1;run_id=$RunId;project='oa_tof';mode='accelerator_geometry_candidate';project_root=$projectRoot;inputs=[ordered]@{candidate_contract=$contractPath;resolved_geometry=$baselinePath;formal_iob=(Join-Path $formalDir 'oatof_ideal_grounded.iob')};formal_gate_passed=$false;particles=100} |
+  ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $runConfig -Encoding UTF8
+$runSummary = Join-Path $runDir 'summary.json'
+[ordered]@{schema_version=1;role='oa_tof_accelerator_geometry_candidate_summary';status='success';particles=100;results='results/manifest.json'} |
+  ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $runSummary -Encoding UTF8
+$manifestArgs=@((Join-Path $repoRoot 'common\contracts\write_run_manifest.py'),'--run-config',$runConfig,'--status','success','--software','SIMION 2020','--output',$runSummary)
+foreach($file in Get-ChildItem -LiteralPath $resultDir,$logDir,$scratchDir -Recurse -File){$manifestArgs+=@('--output',$file.FullName)}
+& $python @manifestArgs
+if($LASTEXITCODE -ne 0){throw 'Accelerator-geometry manifest failed.'}
 
 Write-Host 'SIMION_ACCELERATOR_GEOMETRY_CANDIDATE_STATUS=PASS'
 Write-Host "Results: $resultDir"

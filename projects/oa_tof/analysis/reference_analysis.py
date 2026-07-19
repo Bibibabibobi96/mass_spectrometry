@@ -1489,7 +1489,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     baselines = subparsers.add_parser("verify-baselines", help="Verify frozen migration baselines")
     baselines.add_argument("--manifest", type=Path, default=DEFAULT_BASELINES)
-    baselines.add_argument("--output", type=Path)
+    baselines.add_argument("--output", type=Path, required=True)
     return parser
 
 

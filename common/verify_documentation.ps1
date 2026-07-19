@@ -129,6 +129,7 @@ $requiredRootReadmeHeadings = @(
     '## 产物与运行生命周期',
     '### Git / artifacts 边界',
     '### artifacts 目录职责',
+    '### artifact标识与文件命名',
     '### run_config / summary / manifest',
     '### success / failed / interrupted / superseded',
     '### 故障调查状态转换',

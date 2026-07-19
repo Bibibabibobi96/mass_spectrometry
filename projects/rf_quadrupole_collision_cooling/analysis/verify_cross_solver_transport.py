@@ -31,14 +31,20 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", type=Path, required=True)
     parser.add_argument("--project", type=Path, required=True)
+    parser.add_argument("--comsol-run-id", required=True)
+    parser.add_argument("--simion-run-id", required=True)
+    parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
 
     artifact = args.workspace / "artifacts/projects/rf_quadrupole_collision_cooling"
-    comsol_summary_path = artifact / "results/comsol/transport_no_collision_summary.json"
-    comsol_particles_path = artifact / "results/comsol/transport_no_collision_particles.csv"
-    simion_summary_path = artifact / "results/simion/transport_no_collision_summary_baseline.json"
-    simion_particles_path = artifact / "results/simion/transport_no_collision_particles_baseline.csv"
-    output_dir = artifact / "results/cross_solver"
+    comsol_results = artifact / "runs" / args.comsol_run_id / "results"
+    simion_results = artifact / "runs" / args.simion_run_id / "results"
+    comsol_summary_path = comsol_results / "solver_summary.json"
+    comsol_particles_path = comsol_results / "particles.csv"
+    simion_summary_path = simion_results / "solver_summary.json"
+    simion_particles_path = simion_results / "particles.csv"
+    output_dir = args.output_dir.resolve()
+    output_dir.relative_to((artifact / "runs").resolve())
     output_dir.mkdir(parents=True, exist_ok=True)
 
     comsol_summary = json.loads(comsol_summary_path.read_text(encoding="utf-8"))

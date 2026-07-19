@@ -34,12 +34,12 @@ def regional(reference: np.ndarray, candidate: np.ndarray, rod_start: float, rod
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--workspace", type=Path, required=True)
+    parser.add_argument("--run-dir", type=Path, required=True)
     args = parser.parse_args()
     resolved, _ = load_contract()
     rod_start = resolved["geometry_mm"]["rod_z_min"]
     rod_end = resolved["geometry_mm"]["rod_z_max"]
-    results = args.workspace / "artifacts/projects/rf_quadrupole_collision_cooling/results"
+    results = args.run_dir.resolve() / "results"
     summary = {
         "status": "PASS",
         "SIMION_0p2_to_0p1": regional(

@@ -25,6 +25,8 @@ if ($LASTEXITCODE -ne 0 -or $pythonVersion -ne '3.11') {
 }
 
 & (Join-Path $PSScriptRoot 'verify_documentation.ps1')
+& $PythonExe -m unittest discover -s (Join-Path $PSScriptRoot 'contracts') -p 'test_*.py'
+if ($LASTEXITCODE -ne 0) { throw 'Common contract tests failed.' }
 & (Join-Path $repoRoot 'projects\oa_tof\verify_project.ps1') -Level Static -PythonExe $PythonExe
 & (Join-Path $repoRoot 'projects\rf_quadrupole_collision_cooling\verify_project.ps1') -Level Static -PythonExe $PythonExe
 

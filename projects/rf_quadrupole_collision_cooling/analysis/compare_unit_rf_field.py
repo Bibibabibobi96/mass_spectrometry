@@ -30,7 +30,7 @@ def metrics(fem: np.ndarray, pa: np.ndarray, mask: np.ndarray) -> dict[str, floa
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--workspace", type=Path, required=True)
+    parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--simion-field", type=Path)
     parser.add_argument("--comsol-field", type=Path)
     parser.add_argument("--output-label", default="baseline")
@@ -39,7 +39,7 @@ def main() -> None:
     geometry = resolved["geometry_mm"]
     rod_start, rod_end = geometry["rod_z_min"], geometry["rod_z_max"]
     rod_midpoint = (rod_start + rod_end) / 2
-    root = args.workspace / "artifacts/projects/rf_quadrupole_collision_cooling/results"
+    root = args.run_dir.resolve() / "results"
     pa = load(args.simion_field or root / "simion/unit_rf_field_pa_grid.csv")
     fem = load(args.comsol_field or root / "comsol/unit_rf_field_fem_grid.csv")
     keys = {tuple(row) for row in fem[:, :3]}

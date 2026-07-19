@@ -1,7 +1,8 @@
 param(
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$OutputDir = '',
-  [string]$TemplateIob = ''
+  [string]$TemplateIob = '',
+  [string]$RunId = ''
 )
 
 Set-StrictMode -Version Latest
@@ -15,13 +16,15 @@ $modePath = Join-Path $projectRoot 'config\modes\formal.json'
 $contractPath = Join-Path $projectRoot 'config\resolved_geometry.json'
 
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
-  $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
-  $OutputDir = Join-Path $artifactRoot "models\simion\candidates\oatof_524amu_$stamp"
+  if ([string]::IsNullOrWhiteSpace($RunId)) {
+    $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__build__simion__formal-delivery__n1000'
+  }
+  $OutputDir = Join-Path $artifactRoot "runs\$RunId\simion"
 }
 $outputFull = [IO.Path]::GetFullPath($OutputDir)
-$allowedRoot = [IO.Path]::GetFullPath((Join-Path $artifactRoot 'models\simion'))
-if (-not $outputFull.StartsWith($allowedRoot, [StringComparison]::OrdinalIgnoreCase)) {
-  throw "OutputDir must remain under $allowedRoot"
+$runsRoot = [IO.Path]::GetFullPath((Join-Path $artifactRoot 'runs'))
+if (-not $outputFull.StartsWith($runsRoot, [StringComparison]::OrdinalIgnoreCase)) {
+  throw 'OutputDir must remain under runs; promotion to formal is a separate gate.'
 }
 if (Test-Path -LiteralPath $outputFull) {
   throw "Output directory already exists; no automatic overwrite is allowed: $outputFull"
@@ -112,11 +115,14 @@ Copy-Item -LiteralPath $contractPath -Destination (Join-Path $outputFull 'resolv
 $resolvedLua = Join-Path $projectRoot 'simion\workbench\formal\oatof_resolved.lua'
 Copy-Item -LiteralPath $resolvedLua -Destination (Join-Path $outputFull 'oatof_resolved.lua')
 
-$runId = Split-Path -Leaf $outputFull
-$runConfigPath = Join-Path $outputFull 'run_config.json'
+$runRoot = if ((Split-Path -Leaf $outputFull) -eq 'simion') { Split-Path -Parent $outputFull } else { $outputFull }
+if ([string]::IsNullOrWhiteSpace($RunId)) { $RunId = Split-Path -Leaf $runRoot }
+& $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
+if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
+$runConfigPath = Join-Path $runRoot 'run_config.json'
 $runConfig = [ordered]@{
   schema_version = 1; role = 'oa_tof_simion_delivery_run_config'
-  run_id = $runId; project = 'oa_tof'; mode = 'formal_delivery_candidate'
+  run_id = $RunId; project = 'oa_tof'; mode = 'formal_delivery_candidate'
   project_root = $projectRoot
   inputs = [ordered]@{baseline='config/baseline.json'; resolved_geometry='config/resolved_geometry.json'; mode='config/modes/formal.json'}
   output_dir = $outputFull; overwrite = $false
@@ -125,7 +131,7 @@ $runConfig | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $runConfigPath -
 
 $template = $TemplateIob
 if ([string]::IsNullOrWhiteSpace($template)) {
-  $template = Join-Path $artifactRoot 'models\simion\formal\oatof_524amu\oatof_ideal_grounded.iob'
+  $template = Join-Path $artifactRoot 'formal\simion\oatof_ideal_grounded.iob'
 }
 if (-not (Test-Path -LiteralPath $template -PathType Leaf)) {
   throw "Four-instance template IOB is unavailable: $template"
@@ -165,9 +171,12 @@ $hashes = Get-ChildItem -LiteralPath $outputFull -File | Where-Object {
   [pscustomobject]@{file=$_.Name; bytes=$_.Length; sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash}
 }
 $hashes | Export-Csv -LiteralPath $shaPath -NoTypeInformation -Encoding UTF8
-& $python $manifestScript --run-config $runConfigPath --status success --software 'SIMION 2020' `
+$summaryPath = Join-Path $runRoot 'summary.json'
+[ordered]@{schema_version=1;role='oa_tof_simion_delivery_summary';status='success';delivery_dir='simion'} |
+  ConvertTo-Json -Depth 3 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
+& $python $manifestScript --run-config $runConfigPath --manifest (Join-Path $runRoot 'run_manifest.json') --status success --software 'SIMION 2020' `
   --output $iobOutput --output (Join-Path $outputFull 'oatof_ideal_grounded.lua') `
   --output (Join-Path $outputFull 'oatof_ideal_grounded.fly2') `
-  --output $shaPath
+  --output $shaPath --output $summaryPath
 if ($LASTEXITCODE -ne 0) { throw 'Run-manifest generation failed.' }
 "STATUS=PASS OUTPUT_DIR=$outputFull FILES=$($hashes.Count)"

@@ -16,8 +16,8 @@
 
 ## 资产与验证状态
 
-正式资产路径为`models/comsol/formal/ElectronGun_CoilT_Thermal_CPT.mph`，中间静电模型位于
-`models/comsol/workspace/`，结果图位于`results/comsol/formal/`。R2025b已重算静电中间模型并
+当前没有通过现行门禁的formal资产。旧模型和结果冻结在
+`archive/20260719_212436__migration-snapshot__repo__pre-v2-layout/legacy-layout/`。R2025b曾重算静电中间模型并
 确认横置Helix、静电Study和原生场结果节点；最终CPT模型尚未在R2025b下重开和GUI Compute复算。
 因此历史34.18%收集效率仍是待复验结果，不能作为当前已闭合性能门禁。
 

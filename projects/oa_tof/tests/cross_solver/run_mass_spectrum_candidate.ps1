@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-  [string]$RunId = ('wide_mz_candidate_' + (Get-Date -Format 'yyyyMMdd_HHmmss')),
+  [string]$RunId = ((Get-Date -Format 'yyyyMMdd_HHmmss') + '__sim__cross__mass-spectrum__five-mass'),
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [ValidateRange(0,1000000)]
   [int]$ParticleCountOverride = 0,
@@ -15,8 +15,12 @@ $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\oa_tof'
-$runDir = Join-Path $artifactRoot "runs\mass_spectrum\$RunId"
-$resultDir = Join-Path $artifactRoot "results\cross_solver\mass_spectrum\$RunId"
+$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+& $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
+if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
+$runDir = Join-Path $artifactRoot "runs\$RunId"
+$resultDir = Join-Path $runDir 'results'
+$logDir = Join-Path $runDir 'logs'
 $resumeExisting = $ResumeAfterComsol -or $ReanalyzeOnly
 if ($ResumeAfterComsol -and $ReanalyzeOnly) {
   throw 'ResumeAfterComsol and ReanalyzeOnly are mutually exclusive.'
@@ -32,7 +36,7 @@ if ($resumeExisting) {
   if ((Test-Path -LiteralPath $runDir) -or (Test-Path -LiteralPath $resultDir)) {
     throw "Candidate mass-spectrum run already exists: $RunId"
   }
-  New-Item -ItemType Directory -Path $runDir,$resultDir | Out-Null
+  New-Item -ItemType Directory -Path $runDir,$resultDir,$logDir | Out-Null
   $ionDir = New-Item -ItemType Directory -Path (Join-Path $runDir 'ions')
   $comsolDir = New-Item -ItemType Directory -Path (Join-Path $runDir 'comsol')
 }
@@ -45,10 +49,9 @@ if ($ParticleCountOverride -gt 0) {
   $effectiveModePath = Join-Path $runDir 'effective_mode.json'
   $mode | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $effectiveModePath -Encoding UTF8
 }
-$formalMph = Join-Path $artifactRoot 'models\comsol\formal\MS_oaTOF_TwoStageRingStackReflectron_Final.mph'
-$formalSimion = Join-Path $artifactRoot 'models\simion\formal\oatof_524amu'
+$formalMph = Join-Path $artifactRoot 'formal\comsol\oa_tof__model.mph'
+$formalSimion = Join-Path $artifactRoot 'formal\simion'
 $formalIob = Join-Path $formalSimion 'oatof_ideal_grounded.iob'
-$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 $ionGenerator = Join-Path $projectRoot 'simion\workbench\generate_comsol_consistent_ions.ps1'
 $simionAnalyzer = Join-Path $projectRoot 'simion\workbench\analyze_ideal_field_log.ps1'
 $requiredPaths = @($modePath,$formalMph,$formalIob,$python,$ionGenerator,$simionAnalyzer)
@@ -97,15 +100,15 @@ if (-not $resumeExisting) {
 }
 if ($combinedLines.Count -ne $totalParticles) { throw 'Combined ION row count is incorrect.' }
 
-$simionLog = Join-Path $runDir 'simion_mixed.log'
-$simionStderr = Join-Path $runDir 'simion_mixed.stderr.log'
-$simionCsv = Join-Path $runDir 'simion_mixed_particles.csv'
-$simionSummary = Join-Path $runDir 'simion_mixed_summary.json'
+$simionLog = Join-Path $logDir 'simion_stdout.log'
+$simionStderr = Join-Path $logDir 'simion_stderr.log'
+$simionCsv = Join-Path $resultDir 'simion_particles.csv'
+$simionSummary = Join-Path $resultDir 'simion_summary.json'
 foreach ($species in $mode.species) {
   $speciesId = [string]$species.species_id
   $ionPath = Join-Path $ionDir "$speciesId.ion"
   $csvPath = Join-Path $comsolDir "$speciesId.csv"
-  $reportPath = Join-Path $comsolDir "$speciesId.report.txt"
+  $reportPath = Join-Path $logDir "$speciesId.report.txt"
   $expected = "DETECTED={0}/{0}" -f [int]$species.particle_count
   if ($resumeExisting) {
     $complete = (Test-Path -LiteralPath $csvPath -PathType Leaf) -and
@@ -125,6 +128,8 @@ foreach ($species in $mode.species) {
     OATOF_SOURCE_MODEL_PATH=$formalMph
     OATOF_ION_TABLE=$ionPath
     OATOF_COMSOL_OUTPUT_CSV=$csvPath
+    OATOF_RUNTIME_DIR=$comsolDir
+    OATOF_RESULTS_DIR=$resultDir
     OATOF_ACCELERATOR_HMAX_MM='1'
     OATOF_REUSE_EXISTING_FIELD='1'
     OATOF_FINE_TSTEP_NS='0.2'
@@ -214,8 +219,12 @@ $runConfig = [ordered]@{
   }
 }
 $runConfig | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $runConfigPath -Encoding UTF8
+$summaryPath = Join-Path $runDir 'summary.json'
+$summaryRecord = Get-Content -LiteralPath (Join-Path $resultDir 'mass_spectrum_metrics.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+$summaryRecord | Add-Member -NotePropertyName status -NotePropertyValue 'success' -Force
+$summaryRecord | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
 $manifestPath = Join-Path $runDir 'run_manifest.json'
-$outputs = @($combinedIon,$simionCsv,$simionSummary)
+$outputs = @($combinedIon,$simionCsv,$simionSummary,$summaryPath)
 $outputs += @($individualIonPaths)
 if ($effectiveModePath -ne $modePath) { $outputs += $effectiveModePath }
 $outputs += @($mode.species | ForEach-Object {
@@ -223,7 +232,7 @@ $outputs += @($mode.species | ForEach-Object {
 })
 $optionalEvidence = @($simionLog,$simionStderr)
 $optionalEvidence += @($mode.species | ForEach-Object {
-  Join-Path $comsolDir ("{0}.report.txt" -f $_.species_id)
+  Join-Path $logDir ("{0}.report.txt" -f $_.species_id)
 })
 $optionalEvidence += @(Get-ChildItem -LiteralPath $comsolDir -File -Filter '*_selected_release_from_data_file.txt' |
   ForEach-Object { $_.FullName })

@@ -29,7 +29,7 @@ classdef OaTofCadExportTest < matlab.unittest.TestCase
         function testExportsFinalModelToTemporaryStep(testCase)
             paths = oatof_paths();
             modelPath = fullfile(paths.comsolFormalDir, ...
-                "MS_oaTOF_TwoStageRingStackReflectron_Final.mph");
+                "oa_tof__model.mph");
             outputDir = string(tempname);
             mkdir(outputDir);
             testCase.addTeardown(@() rmdir(outputDir, 's'));
@@ -49,7 +49,7 @@ classdef OaTofCadExportTest < matlab.unittest.TestCase
         function testImportsPartsAndCreatesAssembly(testCase)
             paths = oatof_paths();
             modelPath = fullfile(paths.comsolFormalDir, ...
-                "MS_oaTOF_TwoStageRingStackReflectron_Final.mph");
+                "oa_tof__model.mph");
             outputDir = string(tempname);
             mkdir(outputDir);
             testCase.addTeardown(@() rmdir(outputDir, 's'));

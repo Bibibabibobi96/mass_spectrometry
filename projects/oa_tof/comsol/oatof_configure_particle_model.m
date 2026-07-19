@@ -50,7 +50,9 @@ if use_fixed_particle_table
     % 4:6, so do not convert positions to SI metres. Velocity remains SI
     % m/s, as required by the particle interface.
     fixed_release_data = [fixed_particles(:,4:6), velocity];
-    fixed_release_dir = fullfile(paths.comsolScratchDir, 'fixed_particle_tables');
+    fixed_release_dir = getenv('OATOF_RUNTIME_DIR');
+    assert(~isempty(fixed_release_dir), ...
+        'OATOF_RUNTIME_DIR is required for fixed-particle run evidence.');
     if ~exist(fixed_release_dir, 'dir'), mkdir(fixed_release_dir); end
     fixed_release_path = fullfile(fixed_release_dir, sprintf('%s_release_from_data_file.txt', strrep(label,' ','_')));
     writematrix(fixed_release_data, fixed_release_path, 'Delimiter', 'tab');

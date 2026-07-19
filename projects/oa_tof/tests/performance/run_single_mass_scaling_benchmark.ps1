@@ -6,7 +6,7 @@ param(
   [ValidateRange(1,20)]
   [int]$SimionRepeats = 3,
   [int]$Seed = 20260713,
-  [string]$RunId = ('mz500_scaling_' + (Get-Date -Format 'yyyyMMdd_HHmmss')),
+  [string]$RunId = ((Get-Date -Format 'yyyyMMdd_HHmmss') + '__benchmark__cross__particle-scaling__mz500'),
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [switch]$Resume
 )
@@ -54,8 +54,11 @@ $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\oa_tof'
-$runDir = Join-Path $artifactRoot "runs\performance\single_mass_scaling\$RunId"
-$resultDir = Join-Path $artifactRoot "results\performance\single_mass_scaling\$RunId"
+$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+& $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
+if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
+$runDir = Join-Path $artifactRoot "runs\$RunId"
+$resultDir = Join-Path $runDir 'results'
 if ($Resume) {
   foreach ($directory in @($runDir,$resultDir)) {
     if (-not (Test-Path -LiteralPath $directory -PathType Container)) {
@@ -69,14 +72,13 @@ if ($Resume) {
   New-Item -ItemType Directory -Path $runDir,$resultDir | Out-Null
 }
 
-$formalMph = Join-Path $artifactRoot 'models\comsol\formal\MS_oaTOF_TwoStageRingStackReflectron_Final.mph'
-$formalSimion = Join-Path $artifactRoot 'models\simion\formal\oatof_524amu'
+$formalMph = Join-Path $artifactRoot 'formal\comsol\oa_tof__model.mph'
+$formalSimion = Join-Path $artifactRoot 'formal\simion'
 $formalIob = Join-Path $formalSimion 'oatof_ideal_grounded.iob'
 $ionGenerator = Join-Path $projectRoot 'simion\workbench\generate_comsol_consistent_ions.ps1'
 $simionAnalyzer = Join-Path $projectRoot 'simion\workbench\analyze_ideal_field_log.ps1'
 $comsolLauncher = Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1'
 $comsolTask = Join-Path $projectRoot 'tests\comsol\test_accelerator_mesh_particle_candidate.m'
-$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 foreach ($path in @($formalMph,$formalIob,$ionGenerator,$simionAnalyzer,$comsolLauncher,$comsolTask,$python,$SimionExe)) {
   if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Required input is absent: $path" }
 }
@@ -132,6 +134,8 @@ foreach ($particleCount in $countValues) {
       OATOF_SOURCE_MODEL_PATH=$formalMph
       OATOF_ION_TABLE=$ionPath
       OATOF_COMSOL_OUTPUT_CSV=$comsolCsv
+      OATOF_RUNTIME_DIR=$caseDir
+      OATOF_RESULTS_DIR=$resultDir
       OATOF_ACCELERATOR_HMAX_MM='1'
       OATOF_REUSE_EXISTING_FIELD='1'
       OATOF_FINE_TSTEP_NS='0.2'
@@ -230,6 +234,9 @@ $metrics = [ordered]@{
 }
 $metricsPath = Join-Path $resultDir 'timing_metrics.json'
 $metrics | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $metricsPath -Encoding UTF8
+$summaryPath = Join-Path $runDir 'summary.json'
+$summary = [ordered]@{ schema_version=1; role='oa_tof_single_mass_scaling_summary'; status='success'; metrics='results/timing_metrics.json'; particle_counts=@($countValues) }
+$summary | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
 $runConfigPath = Join-Path $runDir 'run_config.json'
 [ordered]@{
   schema_version = 1
@@ -256,7 +263,7 @@ $manifestArgs = @(
   (Join-Path $repoRoot 'common\contracts\write_run_manifest.py'),
   '--run-config',$runConfigPath,'--manifest',$manifestPath,'--status','success',
   '--software','SIMION 2020','--software','COMSOL 6.4 via MATLAB R2025b',
-  '--output',$sampleCsv,'--output',$metricsPath
+  '--output',$sampleCsv,'--output',$metricsPath,'--output',$summaryPath
 )
 foreach ($output in $manifestOutputs) { $manifestArgs += @('--output',$output) }
 & $python @manifestArgs

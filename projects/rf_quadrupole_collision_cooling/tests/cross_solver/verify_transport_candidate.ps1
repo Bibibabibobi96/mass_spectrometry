@@ -1,7 +1,7 @@
 param(
-    [Parameter(Mandatory = $true)][string]$ComsolRunLabel,
-    [Parameter(Mandatory = $true)][string]$SimionRunLabel,
-    [Parameter(Mandatory = $true)][string]$ComparisonLabel,
+    [Parameter(Mandatory = $true)][string]$ComsolRunId,
+    [Parameter(Mandatory = $true)][string]$SimionRunId,
+    [string]$RunId = '',
     [ValidateSet('transport_no_collision','transport_interface_readiness')]
     [string]$Mode = 'transport_no_collision',
     [string]$PythonExe = '',
@@ -16,32 +16,24 @@ $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $repoRoot = Split-Path -Parent (Split-Path -Parent $projectRoot)
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling'
-$runDir = Join-Path $artifactRoot "runs\cross_solver\$Mode\$ComparisonLabel"
-$resultDir = Join-Path $artifactRoot 'results\cross_solver'
-if (Test-Path -LiteralPath $runDir) { throw "Cross-solver run already exists: $ComparisonLabel" }
-
-$comsolManifest = Join-Path $artifactRoot "runs\$Mode\comsol_$ComsolRunLabel\run_manifest.json"
-$simionManifest = Join-Path $artifactRoot "runs\$Mode\simion_$SimionRunLabel\run_manifest.json"
-$comsolState = Join-Path $artifactRoot "results\comsol\${Mode}_particle_state_$ComsolRunLabel.csv"
-$simionState = Join-Path $artifactRoot "results\simion\${Mode}_particle_state_$SimionRunLabel.csv"
-$newInputs = @($comsolManifest,$simionManifest,$comsolState,$simionState)
-if ($Mode -eq 'transport_interface_readiness' -and @($newInputs | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) }).Count -gt 0) {
-    # Compatibility is read-only: interface runs created before mode isolation
-    # retain transport_no_collision paths, but their run-config mode must still
-    # pass the explicit identity checks below.  New runs never write here.
-    $legacyComsolManifest = Join-Path $artifactRoot "runs\transport_no_collision\comsol_$ComsolRunLabel\run_manifest.json"
-    $legacySimionManifest = Join-Path $artifactRoot "runs\transport_no_collision\simion_$SimionRunLabel\run_manifest.json"
-    $legacyComsolState = Join-Path $artifactRoot "results\comsol\transport_no_collision_particle_state_$ComsolRunLabel.csv"
-    $legacySimionState = Join-Path $artifactRoot "results\simion\transport_no_collision_particle_state_$SimionRunLabel.csv"
-    $legacyInputs = @($legacyComsolManifest,$legacySimionManifest,$legacyComsolState,$legacySimionState)
-    if (@($legacyInputs | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) }).Count -eq 0) {
-        $comsolManifest,$simionManifest = $legacyComsolManifest,$legacySimionManifest
-        $comsolState,$simionState = $legacyComsolState,$legacySimionState
-    }
-}
-$comparison = Join-Path $resultDir "${Mode}_phase_space_$ComparisonLabel.json"
-$paired = Join-Path $resultDir "${Mode}_phase_space_paired_$ComparisonLabel.csv"
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
+if ([string]::IsNullOrWhiteSpace($RunId)) {
+    $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + "__analysis__cross__rf-transport__$($Mode.Replace('_','-'))"
+}
+& $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
+if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
+$runDir = Join-Path $artifactRoot "runs\$RunId"
+$resultDir = Join-Path $runDir 'results'
+if (Test-Path -LiteralPath $runDir) { throw "Cross-solver run already exists: $RunId" }
+
+$comsolRun = Join-Path $artifactRoot "runs\$ComsolRunId"
+$simionRun = Join-Path $artifactRoot "runs\$SimionRunId"
+$comsolManifest = Join-Path $comsolRun 'run_manifest.json'
+$simionManifest = Join-Path $simionRun 'run_manifest.json'
+$comsolState = Join-Path $comsolRun 'results\particle_state.csv'
+$simionState = Join-Path $simionRun 'results\particle_state.csv'
+$comparison = Join-Path $resultDir 'comparison.json'
+$paired = Join-Path $resultDir 'paired_particle_state.csv'
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python runtime missing: $python" }
 
 & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $comsolManifest
@@ -101,7 +93,7 @@ if ($comparisonExit -ne 0 -and -not (Test-Path -LiteralPath $comparison -PathTyp
 
 $runConfigPath = Join-Path $runDir 'run_config.json'
 $runConfig = [ordered]@{
-    schema_version=1; role='rf_quadrupole_cross_solver_run_config'; run_id=$ComparisonLabel
+    schema_version=1; role='rf_quadrupole_cross_solver_run_config'; run_id=$RunId
     project='rf_quadrupole_collision_cooling'; mode="${Mode}_phase_space_comparison"
     project_root=$projectRoot; formal_gate_passed=$false
     inputs=[ordered]@{
@@ -113,8 +105,12 @@ $runConfig = [ordered]@{
     }
 }
 $runConfig | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $runConfigPath -Encoding ASCII
+$summaryPath = Join-Path $runDir 'summary.json'
+[ordered]@{schema_version=1;role='rf_quadrupole_cross_solver_summary';status=$(if ($comparisonExit -eq 0) {'success'} else {'failed'});comparison='results/comparison.json'} |
+    ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
+$manifestStatus = if ($comparisonExit -eq 0) { 'success' } else { 'failed' }
 & $python (Join-Path $repoRoot 'common\contracts\write_run_manifest.py') --run-config $runConfigPath `
-    --status success --software 'COMSOL 6.4' --software 'SIMION 2020' --output $comparison --output $paired
+    --status $manifestStatus --software 'COMSOL 6.4' --software 'SIMION 2020' --output $comparison --output $paired --output $summaryPath
 if ($LASTEXITCODE -ne 0) { throw 'Cross-solver manifest generation failed.' }
 if ($comparisonExit -ne 0) { throw "Cross-solver comparison completed but did not meet acceptance targets: $comparison" }
-"STATUS=PASS COMPARISON=$ComparisonLabel"
+"STATUS=PASS RUN_ID=$RunId"

@@ -9,14 +9,13 @@ function paths = ei_source_paths()
     paths.componentRoot = componentRoot;
     paths.artifactRoot = fullfile(workspaceRoot, 'artifacts', 'projects', ...
         'electron_impact_ion_source');
-    paths.modelsRoot = fullfile(paths.artifactRoot, 'models');
+    paths.formalRoot = fullfile(paths.artifactRoot, 'formal');
     paths.runsRoot = fullfile(paths.artifactRoot, 'runs');
-    paths.resultsRoot = fullfile(paths.artifactRoot, 'results');
+    paths.archiveRoot = fullfile(paths.artifactRoot, 'archive');
     paths.scratchRoot = fullfile(paths.artifactRoot, 'scratch');
-    paths.comsolFormalDir = fullfile(paths.modelsRoot, 'comsol', 'formal');
-    paths.comsolCandidateDir = fullfile(paths.modelsRoot, 'comsol', 'candidates');
-    paths.comsolResultsDir = fullfile(paths.resultsRoot, 'comsol');
-    paths.comsolScratchDir = fullfile(paths.scratchRoot, 'comsol');
-    paths.modelsDir = paths.comsolScratchDir; % Legacy collision-script alias.
-    paths.resultsDir = paths.comsolResultsDir;
+    paths.runId = getenv('EI_SOURCE_RUN_ID');
+    assert(~isempty(paths.runId), 'EI_SOURCE_RUN_ID is required for a traceable run.');
+    paths.runDir = fullfile(paths.runsRoot, paths.runId);
+    paths.modelsDir = fullfile(paths.runDir, 'comsol');
+    paths.resultsDir = fullfile(paths.runDir, 'results');
 end

@@ -29,8 +29,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Python analysis tests failed.' }
 if ($Level -eq 'Candidate') {
   if ($CandidateTarget -eq 'SIMION') {
     $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
-    $output = Join-Path $workspaceRoot "artifacts\projects\oa_tof\scratch\simion\parameterized_geometry_gate_$stamp"
-    & (Join-Path $projectRoot 'tests\simion\test_parameterized_geometry_build.ps1') -SimionExe $SimionExe -OutputDir $output
+    $runId = "${stamp}__gate__simion__parameterized-geometry__smoke"
+    $output = Join-Path $workspaceRoot "artifacts\projects\oa_tof\runs\$runId\simion"
+    & (Join-Path $projectRoot 'tests\simion\test_parameterized_geometry_build.ps1') -SimionExe $SimionExe -OutputDir $output -RunId $runId
     if ($LASTEXITCODE -ne 0) { throw 'Candidate SIMION geometry build failed.' }
   }
   elseif ($CandidateTarget -eq 'COMSOL') {
@@ -40,7 +41,12 @@ if ($Level -eq 'Candidate') {
         [IO.Path]::GetExtension($candidateModel) -ne '.mph') {
       throw "COMSOL candidate MPH is invalid: $candidateModel"
     }
-    $report = Join-Path $workspaceRoot 'artifacts\projects\oa_tof\runs\candidate_gate\comsol_sync_report.txt'
+    $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+    $runId = "${stamp}__gate__comsol__candidate-sync"
+    $runDir = Join-Path $workspaceRoot "artifacts\projects\oa_tof\runs\$runId"
+    $logDir = Join-Path $runDir 'logs'
+    New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+    $report = Join-Path $logDir 'comsol_sync_report.txt'
     $oldModelPath = $env:OATOF_COMSOL_MODEL_PATH
     try {
       $env:OATOF_COMSOL_MODEL_PATH = $candidateModel
@@ -53,6 +59,14 @@ if ($Level -eq 'Candidate') {
       if ($null -eq $oldModelPath) { Remove-Item Env:OATOF_COMSOL_MODEL_PATH -ErrorAction SilentlyContinue }
       else { $env:OATOF_COMSOL_MODEL_PATH = $oldModelPath }
     }
+    $runConfig = Join-Path $runDir 'run_config.json'
+    [ordered]@{schema_version=1;run_id=$runId;project='oa_tof';mode='comsol_candidate_sync_gate';project_root=$projectRoot;inputs=[ordered]@{candidate_model=$candidateModel};formal_gate_passed=$false} |
+      ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $runConfig -Encoding UTF8
+    $summary = Join-Path $runDir 'summary.json'
+    [ordered]@{schema_version=1;role='oa_tof_comsol_candidate_gate_summary';status='success'} |
+      ConvertTo-Json | Set-Content -LiteralPath $summary -Encoding UTF8
+    & $python (Join-Path $repoRoot 'common\contracts\write_run_manifest.py') --run-config $runConfig --status success --software 'COMSOL 6.4 via MATLAB R2025b' --output $report --output $summary
+    if ($LASTEXITCODE -ne 0) { throw 'COMSOL candidate gate manifest failed.' }
   }
   else {
     if (-not $CandidateCadAssemblyPath -or -not $CandidateCadReportPath) {
@@ -79,8 +93,13 @@ elseif ($Level -eq 'Formal') {
   & (Join-Path $repoRoot 'common\verify_toolchain.ps1')
   if ($LASTEXITCODE -ne 0) { throw 'Toolchain gate failed.' }
 
-  $formalModel = Join-Path $workspaceRoot 'artifacts\projects\oa_tof\models\comsol\formal\MS_oaTOF_TwoStageRingStackReflectron_Final.mph'
-  $comsolReport = Join-Path $workspaceRoot 'artifacts\projects\oa_tof\runs\formal_gate\comsol_sync_report.txt'
+  $formalModel = Join-Path $workspaceRoot 'artifacts\projects\oa_tof\formal\comsol\oa_tof__model.mph'
+  $formalStamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+  $formalRunId = "${formalStamp}__gate__comsol__formal-sync"
+  $formalRunDir = Join-Path $workspaceRoot "artifacts\projects\oa_tof\runs\$formalRunId"
+  $formalLogDir = Join-Path $formalRunDir 'logs'
+  New-Item -ItemType Directory -Path $formalLogDir -Force | Out-Null
+  $comsolReport = Join-Path $formalLogDir 'comsol_sync_report.txt'
   $oldModelPath = $env:OATOF_COMSOL_MODEL_PATH
   try {
     $env:OATOF_COMSOL_MODEL_PATH = $formalModel
@@ -93,6 +112,14 @@ elseif ($Level -eq 'Formal') {
     if ($null -eq $oldModelPath) { Remove-Item Env:OATOF_COMSOL_MODEL_PATH -ErrorAction SilentlyContinue }
     else { $env:OATOF_COMSOL_MODEL_PATH = $oldModelPath }
   }
+  $formalRunConfig = Join-Path $formalRunDir 'run_config.json'
+  [ordered]@{schema_version=1;run_id=$formalRunId;project='oa_tof';mode='comsol_formal_sync_gate';project_root=$projectRoot;inputs=[ordered]@{formal_model=$formalModel};formal_gate_passed=$true} |
+    ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $formalRunConfig -Encoding UTF8
+  $formalSummary = Join-Path $formalRunDir 'summary.json'
+  [ordered]@{schema_version=1;role='oa_tof_comsol_formal_gate_summary';status='success'} |
+    ConvertTo-Json | Set-Content -LiteralPath $formalSummary -Encoding UTF8
+  & $python (Join-Path $repoRoot 'common\contracts\write_run_manifest.py') --run-config $formalRunConfig --status success --software 'COMSOL 6.4 via MATLAB R2025b' --output $comsolReport --output $formalSummary
+  if ($LASTEXITCODE -ne 0) { throw 'COMSOL formal gate manifest failed.' }
 
   & (Join-Path $projectRoot 'tests\cross_solver\verify_geometry_contract.ps1') -SimionExe $SimionExe
   if ($LASTEXITCODE -ne 0) { throw 'Formal runtime/CAD/COMSOL gate failed.' }

@@ -4,6 +4,7 @@ param(
   [int]$TrajectoryQuality = 8,
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$OutputDir = '',
+  [string]$RunId = '',
   [switch]$AnalyzeOnly
 )
 
@@ -13,16 +14,26 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
 $projectRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $projectRoot 'artifacts\projects\oa_tof'
-$formalDir = Join-Path $artifactRoot 'models\simion\formal\oatof_524amu'
+$formalDir = Join-Path $artifactRoot 'formal\simion'
 if (-not $OutputDir) {
-  $OutputDir = Join-Path $artifactRoot 'runs\simion_ideal_field_diagnostic\2026-07-14'
+  if (-not $RunId) { $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + "__test__simion__ideal-field-matrix__n${N}" }
+  $OutputDir = Join-Path $artifactRoot "runs\$RunId"
 }
-New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
+if (-not $RunId) { $RunId = Split-Path -Leaf $OutputDir }
+$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+& $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
+if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
+$resultDir = Join-Path $OutputDir 'results'
+$logDir = Join-Path $OutputDir 'logs'
+$simionDir = Join-Path $OutputDir 'simion'
+New-Item -ItemType Directory -Force -Path $OutputDir,$resultDir,$logDir,$simionDir | Out-Null
 
 $sourceLua = Join-Path $PSScriptRoot 'formal\oatof_ideal_grounded.lua'
 $runtimeLua = Join-Path $formalDir 'oatof_ideal_grounded.lua'
 $iob = Join-Path $formalDir 'oatof_ideal_grounded.iob'
-Copy-Item -LiteralPath $sourceLua -Destination $runtimeLua -Force
+if ((Get-FileHash $sourceLua -Algorithm SHA256).Hash -ne (Get-FileHash $runtimeLua -Algorithm SHA256).Hash) {
+  throw 'Formal SIMION Lua differs from source; rebuild the formal delivery before diagnosis.'
+}
 $geometryGate = Join-Path $repoRoot 'projects\oa_tof\tests\cross_solver\verify_geometry_contract.ps1'
 & $geometryGate -SimionExe $SimionExe | ForEach-Object { Write-Host $_ }
 
@@ -45,7 +56,7 @@ $modes = @(
 
 $ionFiles = @{}
 foreach ($d in $distributions) {
-  $ion = Join-Path $OutputDir ("ions_{0}_N{1}.ion" -f $d.Name,$N)
+  $ion = Join-Path $simionDir ("ions_{0}_N{1}.ion" -f $d.Name,$N)
   & $generator -N $N -Seed $Seed -HalfWidthXmm $d.HX -HalfWidthYmm $d.HY -HalfWidthZmm $d.HZ -EnergyStdEv $d.ES -Output $ion | Out-Null
   $ionFiles[$d.Name] = $ion
 }
@@ -54,9 +65,9 @@ $summaries = [Collections.Generic.List[object]]::new()
 foreach ($d in $distributions) {
   foreach ($m in $modes) {
     $stem = "{0}__{1}" -f $d.Name,$m.Name
-    $stdout = Join-Path $OutputDir ($stem + '.log')
-    $stderr = Join-Path $OutputDir ($stem + '.stderr.log')
-    $particleCsv = Join-Path $OutputDir ($stem + '_particles.csv')
+    $stdout = Join-Path $logDir ($stem + '.log')
+    $stderr = Join-Path $logDir ($stem + '.stderr.log')
+    $particleCsv = Join-Path $resultDir ($stem + '_particles.csv')
     $args = @(
       '--default-num-particles', [string]$N,
       '--nogui','fly',
@@ -82,7 +93,17 @@ foreach ($d in $distributions) {
   }
 }
 
-$summaryCsv = Join-Path $OutputDir 'ideal_field_matrix_summary.csv'
+$summaryCsv = Join-Path $resultDir 'ideal_field_matrix_summary.csv'
 $summaries | Export-Csv -LiteralPath $summaryCsv -NoTypeInformation -Encoding UTF8
+$runConfig = Join-Path $OutputDir 'run_config.json'
+[ordered]@{schema_version=1;run_id=$RunId;project='oa_tof';mode='simion_ideal_field_matrix';project_root=(Join-Path $repoRoot 'projects\oa_tof');inputs=[ordered]@{formal_iob=$iob};formal_gate_passed=$false;particles=$N;seed=$Seed} |
+  ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $runConfig -Encoding UTF8
+$summaryPath = Join-Path $OutputDir 'summary.json'
+[ordered]@{schema_version=1;role='oa_tof_ideal_field_matrix_summary';status='success';cases=$summaries.Count;results='results/ideal_field_matrix_summary.csv'} |
+  ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
+$manifestArgs=@((Join-Path $repoRoot 'common\contracts\write_run_manifest.py'),'--run-config',$runConfig,'--status','success','--software','SIMION 2020','--output',$summaryPath)
+foreach($file in Get-ChildItem -LiteralPath $resultDir,$logDir,$simionDir -Recurse -File){$manifestArgs+=@('--output',$file.FullName)}
+& $python @manifestArgs
+if($LASTEXITCODE -ne 0){throw 'Ideal-field diagnostic manifest failed.'}
 $summaries | Sort-Object Distribution,Mode | Format-Table Distribution,Mode,Hit,EfficiencyPct,MeanTofUs,StdTofNs,FwhmTofNs,ResolutionFwhm,MaxCrossingRadiusMm -AutoSize
 Write-Host "Summary: $summaryCsv"

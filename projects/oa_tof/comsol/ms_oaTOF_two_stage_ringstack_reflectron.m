@@ -1284,7 +1284,17 @@ result = struct('label', label, 'mass_amu', mass_amu, 'nP', nP, 'zEnd', zEnd, ..
     'd2min_mm', reflectron_stage2_min_mm, 'd2_mm', d2_mm, ...
     'field_idealization', particle.field_idealization);
 
-resultsDir = paths.comsolResultsDir;
+resultsDir = getenv('OATOF_RESULTS_DIR');
+if isempty(resultsDir)
+    if strcmpi(strtrim(label), 'Final')
+        resultsDir = fullfile(paths.formalRoot, 'results');
+    elseif ~isempty(output_model_path)
+        modelDir = fileparts(char(output_model_path));
+        resultsDir = fullfile(fileparts(modelDir), 'results');
+    else
+        error('OATOF_RESULTS_DIR or OutputModelPath is required for non-formal runs.');
+    end
+end
 if ~exist(resultsDir,'dir'), mkdir(resultsDir); end
 
 % !!! Speed optimization (per explicit request, "fix A"): the trajectory
@@ -1461,13 +1471,10 @@ if ~isempty(output_model_path)
 else
     if strcmpi(strtrim(label), 'Final')
         modelsDir = paths.comsolFormalDir;
-    elseif use_fixed_particle_table
-        modelsDir = paths.comsolCandidateDir;
     else
-        modelsDir = paths.comsolScratchDir;
+        error('OutputModelPath is required for every non-formal run.');
     end
-    modelPath = fullfile(modelsDir, sprintf( ...
-        'MS_oaTOF_TwoStageRingStackReflectron_%s.mph', strrep(label,' ','_')));
+    modelPath = fullfile(modelsDir, 'oa_tof__model.mph');
 end
 if ~exist(modelsDir, 'dir'), mkdir(modelsDir); end
 model.save(modelPath);

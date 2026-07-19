@@ -4,14 +4,14 @@
   "verified_on": "2026-07-18",
   "comsol": {
     "geometry_status": "synchronized",
-    "artifact_relative_path": "models/comsol/formal/MS_oaTOF_TwoStageRingStackReflectron_Final.mph",
+    "artifact_relative_path": "formal/comsol/oa_tof__model.mph",
     "sha256": "6EF392C5F66A9CBD51CD968ABC0831A87097F73FCCE6B72F871949C0E4D535EE"
   },
   "solidworks": {
     "geometry_status": "synchronized",
     "revision": "30.5.0",
     "component_count": 25,
-    "assembly_artifact_relative_path": "cad/formal/MS_oaTOF_TwoStageRingStackReflectron_Final_physical_components.sldasm",
+    "assembly_artifact_relative_path": "formal/cad/oa_tof__assembly.SLDASM",
     "assembly_sha256": "F07D690B9E9B2AB627A11A41FC0BB688061A9128BDFA8EFE859B1A88C333298E"
   },
   "simion_manifest": "simion_stable_entry.json"

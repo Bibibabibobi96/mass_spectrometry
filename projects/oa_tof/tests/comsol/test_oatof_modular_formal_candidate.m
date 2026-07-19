@@ -7,8 +7,8 @@ paths = oatof_paths();
 
 ionPath = fullfile(paths.simionFormalDir, ...
     'oatof_comsol_524amu_gaussian_N100.ion');
-modelPath = fullfile(paths.comsolCandidateDir, ...
-    'MS_oaTOF_TwoStageRingStackReflectron_ModularCandidate.mph');
+modelPath = getenv('OATOF_CANDIDATE_MODEL_PATH');
+assert(~isempty(modelPath), 'OATOF_CANDIDATE_MODEL_PATH is required.');
 assert(isfile(ionPath), 'Formal fixed N=100 ion table is missing: %s', ionPath);
 
 fid = fopen(reportPath, 'w');

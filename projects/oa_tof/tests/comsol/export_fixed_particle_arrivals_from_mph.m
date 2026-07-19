@@ -11,8 +11,7 @@ import com.comsol.model.util.*
 
 modelPath = getenv('OATOF_COMSOL_MODEL_PATH');
 if isempty(modelPath)
-    modelPath = fullfile(paths.comsolCandidateDir, ...
-        'MS_oaTOF_TwoStageRingStackReflectron_Candidate_524amu_FixedN100_real_dt0.2ns.mph');
+    error('OATOF_COMSOL_MODEL_PATH is required; select a source runs/<run_id>/comsol model.');
 end
 ionTable = getenv('OATOF_ION_TABLE');
 if isempty(ionTable)
@@ -21,9 +20,7 @@ if isempty(ionTable)
 end
 outputCsv = getenv('OATOF_COMSOL_OUTPUT_CSV');
 if isempty(outputCsv)
-    outputCsv = fullfile(paths.artifactRoot, 'runs', ...
-        'comsol_fixed_particle_closure', '2026-07-15', ...
-        'candidate_524amu_fixedN100_real_dt0p2ns_particles.csv');
+    error('OATOF_COMSOL_OUTPUT_CSV is required; write inside the current run results directory.');
 end
 assert(isfile(modelPath), 'COMSOL MPH not found: %s', modelPath);
 assert(isfile(ionTable), 'Fixed ION table not found: %s', ionTable);

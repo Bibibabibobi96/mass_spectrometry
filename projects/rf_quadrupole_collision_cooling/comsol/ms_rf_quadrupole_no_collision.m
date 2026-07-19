@@ -17,6 +17,7 @@ meshHmaxMm = NaN;
 sourceAxialOffsetMm = 0;
 ionPath = fullfile(projectRoot,'config','particles','official_fixed_25.ion');
 runConfigPath = getenv('RFQUAD_RUN_CONFIG');
+assert(~isempty(runConfigPath), 'RFQUAD_RUN_CONFIG is required for a traceable run.');
 if ~isempty(runConfigPath)
     runConfig = jsondecode(fileread(runConfigPath));
     assert(strcmp(runConfig.project, 'rf_quadrupole_collision_cooling') && ...
@@ -34,6 +35,8 @@ if ~isempty(runConfigPath)
     if isfield(runConfig, 'comsol_mesh_auto_level'), meshAuto = runConfig.comsol_mesh_auto_level; end
     if isfield(runConfig, 'comsol_hmax_mm'), meshHmaxMm = runConfig.comsol_hmax_mm; end
     if isfield(runConfig, 'source_axial_offset_mm'), sourceAxialOffsetMm = runConfig.source_axial_offset_mm; end
+    comsolOutputDir = runConfig.comsol_dir;
+    resultsOutputDir = runConfig.results_dir;
 end
 assert(meshAuto > 0 && isfinite(meshAuto), 'COMSOL mesh-auto level must be positive.');
 if ~(meshHmaxMm > 0 && isfinite(meshHmaxMm)), meshHmaxMm = NaN; end
@@ -156,7 +159,7 @@ sol1=model.sol.create('sol1'); sol1.study('std1'); sol1.createAutoSequence('std1
 
 cpt=comp.physics.create('cpt','ChargedParticleTracing','geom1'); cpt.label('RF-only transport - no collisions'); cpt.selection.named('sel_vac');
 cpt.feature('pp1').set('mp','m_ion'); cpt.feature('pp1').set('Z',sprintf('%d',source.charge_state));
-scratch=fullfile(paths.scratchDir,'comsol','fixed_particles'); if ~exist(scratch,'dir'),mkdir(scratch);end
+scratch=runConfig.runtime_dir; if ~exist(scratch,'dir'),mkdir(scratch);end
 initialPositionMm=zeros(size(ions,1),3); initialVelocityMS=zeros(size(ions,1),3);
 for i=1:size(ions,1)
     speed=sqrt(2*ions(i,9)*1.602176634e-19/(source.mass_amu*1.66053906660e-27));
@@ -220,15 +223,11 @@ if collisionPresent || result.transmission<mode.numerics.minimum_expected_transm
     error('COMSOL transport/confinement gate failed: transmission=%.6g maxHitRodRadius=%.6g',result.transmission,result.max_hit_rod_radius_mm);
 end
 
-if ~exist(paths.comsolCandidateDir,'dir'),mkdir(paths.comsolCandidateDir);end
-if ~exist(paths.comsolResultsDir,'dir'),mkdir(paths.comsolResultsDir);end
-if strcmp(runLabel,'baseline')
-    suffix=''; modelName='rf_quadrupole_transport_no_collision_simion_reference.mph';
-else
-    suffix=['_' runLabel]; modelName=['rf_quadrupole_' runMode '_simion_reference_' runLabel '.mph'];
-end
-particleStatePath=fullfile(paths.comsolResultsDir,[runMode '_particle_state' suffix '.csv']);
-rawPhaseSpacePath=fullfile(paths.comsolResultsDir,[runMode '_particle_raw' suffix '.csv']);
+if ~exist(comsolOutputDir,'dir'),mkdir(comsolOutputDir);end
+if ~exist(resultsOutputDir,'dir'),mkdir(resultsOutputDir);end
+modelName='rf_quadrupole_collision_cooling__model.mph';
+particleStatePath=fullfile(resultsOutputDir,'particle_state.csv');
+rawPhaseSpacePath=fullfile(resultsOutputDir,'particle_raw.csv');
 
 % Persist a GUI-visible raw export node.  The standardized crossing table
 % below is derived from this solved particle dataset by solver-independent
@@ -276,9 +275,9 @@ stateNames={'particle_id','event','status','terminal_reason','time_us','elapsed_
 assert(isequal(stateNames(:),cellstr(string(interface.particle_state_columns(:)))),'Interface column contract mismatch.');
 writetable(cell2table(stateRows,'VariableNames',stateNames),particleStatePath);
 
-modelPath=fullfile(paths.comsolCandidateDir,modelName); model.save(modelPath);
-summaryPath=fullfile(paths.comsolResultsDir,[runMode '_summary' suffix '.json']); fid=fopen(summaryPath,'w'); fprintf(fid,'%s',jsonencode(result,'PrettyPrint',true)); fclose(fid);
-trajectoryPath=fullfile(paths.comsolResultsDir,[runMode '_trajectory_samples' suffix '.csv']);
+modelPath=fullfile(comsolOutputDir,modelName); model.save(modelPath);
+summaryPath=fullfile(resultsOutputDir,'solver_summary.json'); fid=fopen(summaryPath,'w'); fprintf(fid,'%s',jsonencode(result,'PrettyPrint',true)); fclose(fid);
+trajectoryPath=fullfile(resultsOutputDir,'trajectory_samples.csv');
 trajectoryFile=fopen(trajectoryPath,'w'); assert(trajectoryFile>=0,'Could not open trajectory CSV.');
 fprintf(trajectoryFile,'particle_id,time_us,axial_z_mm,transverse_x_mm,transverse_y_mm,r_mm\n');
 for i=1:nP

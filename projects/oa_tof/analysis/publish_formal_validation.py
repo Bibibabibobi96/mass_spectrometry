@@ -85,10 +85,10 @@ def main() -> None:
 
     baseline = CONFIG / "baseline.json"
     analysis_contract = CONFIG / "analysis_contract.json"
-    ion = ARTIFACTS / "models/simion/formal/oatof_524amu/oatof_comsol_524amu_gaussian_N1000.ion"
-    mph = ARTIFACTS / "models/comsol/formal/MS_oaTOF_TwoStageRingStackReflectron_Final.mph"
-    iob = ARTIFACTS / "models/simion/formal/oatof_524amu/oatof_ideal_grounded.iob"
-    simion_manifest = ARTIFACTS / "models/simion/formal/oatof_524amu/run_manifest.json"
+    ion = ARTIFACTS / "formal/simion/oatof_comsol_524amu_gaussian_N1000.ion"
+    mph = ARTIFACTS / "formal/comsol/oa_tof__model.mph"
+    iob = ARTIFACTS / "formal/simion/oatof_ideal_grounded.iob"
+    simion_manifest = ARTIFACTS / "formal/simion/run_manifest.json"
     for path in (baseline, analysis_contract, ion, mph, iob, simion_manifest,
                  args.comsol_csv, args.comsol_report, args.simion_csv,
                  args.simion_summary, args.comparison):

@@ -19,7 +19,7 @@ function result = ms_export_oatof_to_solidworks(modelPath, outputDir, visibleSol
     addpath(thisDir, paths.commonDir);
     if strlength(modelPath) == 0
         modelPath = fullfile(paths.comsolFormalDir, ...
-            "MS_oaTOF_TwoStageRingStackReflectron_Final.mph");
+            "oa_tof__model.mph");
     end
     if strlength(outputDir) == 0
         outputDir = paths.cadFormalDir;

@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from artifact_naming import validate_run_id
+
 
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
@@ -48,6 +50,10 @@ def main() -> None:
     # does not.  Accept both so the provenance gate is independent of which
     # supported launcher produced run_config.json.
     run_config = json.loads(run_config_path.read_text(encoding="utf-8-sig"))
+    run_id = run_config.get("run_id")
+    if not isinstance(run_id, str):
+        raise SystemExit("run_config.json must contain a string run_id")
+    validate_run_id(run_id)
     project_root_value = run_config.get("project_root")
     project_root = Path(project_root_value).resolve() if project_root_value else None
     base = run_config_path.parent
@@ -65,7 +71,7 @@ def main() -> None:
     manifest = {
         "schema_version": 1,
         "role": "simulation_run_manifest",
-        "run_id": run_config.get("run_id"),
+        "run_id": run_id,
         "project": run_config.get("project"),
         "mode": run_config.get("mode"),
         "status": args.status,

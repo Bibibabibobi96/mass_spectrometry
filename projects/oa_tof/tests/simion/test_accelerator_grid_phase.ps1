@@ -1,7 +1,6 @@
 param(
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
-  [string]$RunId = '2026-07-17_eps0030',
-  [string]$ModelRunId = '2026-07-17',
+  [string]$RunId = '',
   [double]$IdealGridEpsilonMm = 0.03,
   [switch]$ReuseExisting,
   [switch]$ForceFlights
@@ -14,10 +13,14 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
 $projectRoot = Join-Path $repoRoot 'projects\oa_tof'
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\oa_tof'
-$formalDir = Join-Path $artifactRoot 'models\simion\formal\oatof_524amu'
-$modelScratch = Join-Path $artifactRoot ("scratch\simion\accelerator_grid_phase\{0}" -f $ModelRunId)
-$runDir = Join-Path $artifactRoot ("runs\accelerator_grid_phase\{0}" -f $RunId)
-$resultDir = Join-Path $artifactRoot ("results\reference_analysis\accelerator_grid_phase_{0}" -f $RunId)
+$formalDir = Join-Path $artifactRoot 'formal\simion'
+$pythonExe = Join-Path $repoRoot '.venv\Scripts\python.exe'
+if (-not $RunId) { $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__test__simion__accelerator-grid-phase__eps0030' }
+& $pythonExe (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
+if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
+$runDir = Join-Path $artifactRoot "runs\$RunId"
+$modelScratch = Join-Path $runDir 'runtime'
+$resultDir = Join-Path $runDir 'results'
 $workbenchDir = Join-Path $modelScratch 'workbench'
 $builder = Join-Path $projectRoot 'simion\accelerator\build_accelerator_variant.lua'
 $gem = Join-Path $projectRoot 'simion\accelerator\oatof_accelerator_3d.gem'
@@ -25,7 +28,6 @@ $program = Join-Path $projectRoot 'simion\workbench\formal\oatof_ideal_grounded.
 $fieldExporter = Join-Path $PSScriptRoot 'export_accelerator_grid_phase_field.lua'
 $logAnalyzer = Join-Path $projectRoot 'simion\workbench\analyze_ideal_field_log.ps1'
 $pythonAnalyzer = Join-Path $projectRoot 'analysis\analyze_accelerator_grid_phase.py'
-$pythonExe = Join-Path $repoRoot '.venv\Scripts\python.exe'
 $fixedN100 = Join-Path $formalDir 'oatof_comsol_524amu_gaussian_N100.ion'
 $contract = Get-Content -LiteralPath (Join-Path $projectRoot 'config\resolved_geometry.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $geometry = $contract.geometry_mm
@@ -50,7 +52,7 @@ foreach ($pattern in @('reflectron.pa*','flight_tube_ground.pa*','detector_groun
 }
 $candidateIob = Join-Path $workbenchDir 'oatof_ideal_grounded.iob'
 $fieldIob = Join-Path $formalDir 'oatof_ideal_grounded.iob'
-$singleIon = Join-Path $runDir 'fixed_single_particle.ion'
+$singleIon = Join-Path $modelScratch 'fixed_single_particle.ion'
 Get-Content -LiteralPath $fixedN100 -TotalCount 1 | Set-Content -LiteralPath $singleIon -Encoding ascii
 
 $cases = @(
@@ -70,7 +72,7 @@ function Invoke-SimionProcess([string[]]$Arguments,[string]$WorkingDirectory,[st
 $manifestCases = [Collections.Generic.List[object]]::new()
 foreach ($case in $cases) {
   $caseModelDir = Join-Path $modelScratch $case.Name
-  $caseRunDir = Join-Path $runDir $case.Name
+  $caseRunDir = Join-Path $resultDir (Join-Path 'cases' $case.Name)
   New-Item -ItemType Directory -Force -Path $caseModelDir,$caseRunDir | Out-Null
   if ($case.Build) {
     $paSharp = Join-Path $caseModelDir 'accelerator.pa#'
@@ -166,6 +168,17 @@ $manifestPath = Join-Path $runDir 'grid_phase_manifest.json'
 $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $manifestPath -Encoding utf8
 & $pythonExe $pythonAnalyzer $manifestPath --output $resultDir
 if ($LASTEXITCODE -ne 0) { throw "Grid-phase Python analysis failed with exit code $LASTEXITCODE" }
+$runConfig = Join-Path $runDir 'run_config.json'
+[ordered]@{schema_version=1;run_id=$RunId;project='oa_tof';mode='accelerator_grid_phase';project_root=$projectRoot;inputs=[ordered]@{formal_iob=(Join-Path $formalDir 'oatof_ideal_grounded.iob');resolved_geometry='config/resolved_geometry.json'};formal_gate_passed=$false;ideal_grid_epsilon_mm=$IdealGridEpsilonMm} |
+  ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $runConfig -Encoding UTF8
+$summaryPath = Join-Path $runDir 'summary.json'
+[ordered]@{schema_version=1;role='oa_tof_accelerator_grid_phase_summary';status='success';case_count=$manifestCases.Count;results='results'} |
+  ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
+$manifestArgs=@((Join-Path $repoRoot 'common\contracts\write_run_manifest.py'),'--run-config',$runConfig,'--status','success','--software','SIMION 2020','--output',$summaryPath,'--output',$manifestPath)
+foreach($file in Get-ChildItem -LiteralPath $resultDir -Recurse -File){$manifestArgs+=@('--output',$file.FullName)}
+foreach($file in Get-ChildItem -LiteralPath $modelScratch -Recurse -File){$manifestArgs+=@('--output',$file.FullName)}
+& $pythonExe @manifestArgs
+if($LASTEXITCODE -ne 0){throw 'Grid-phase manifest failed.'}
 Write-Host "GRID_PHASE_DIAGNOSTIC_STATUS=PASS"
 Write-Host "Manifest: $manifestPath"
 Write-Host "Results: $resultDir"

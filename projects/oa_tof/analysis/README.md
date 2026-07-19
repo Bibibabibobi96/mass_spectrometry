@@ -55,8 +55,8 @@ py -3.11 -m venv .venv
 ```
 
 默认验证四个冻结数据集的文件大小、行数和SHA-256，然后生成统一指标、谱图、落点图和固定粒子
-COMSOL/SIMION峰形对比。结果写入仓库外
-`artifacts/projects/oa_tof/results/reference_analysis/baseline/`。
+COMSOL/SIMION峰形对比。每次结果写入仓库外独立的
+`artifacts/projects/oa_tof/runs/<run_id>/results/`，并同时生成三件套。
 
 分析单个CSV或GUI导出的XLSX：
 
@@ -120,9 +120,9 @@ Program Off只允许作为诊断组，可用`single`和对应`.1`列导入；它
 - `truncation_diagnostics.py`在正式配对粒子上比较能量窗、检测器有效半径和共享轴向释放宽度。每类
   截断统一重采样粒子数，半径另报告两求解器共同保留的配对交集，避免样本数变化被误判为峰宽改善。
 
-这些入口只读取MATLAB/Lua导出的CSV，不直接解析MPH或PA。正式2026-07-16诊断产物统一位于
-`artifacts/projects/oa_tof/results/reference_analysis/formal_synced_2026-07-16/`，身份和关键结论
-由`config/formal_validation.json`冻结。
+这些入口只读取MATLAB/Lua导出的CSV，不直接解析MPH或PA。2026-07-16旧诊断产物位于oa-TOF
+迁移快照的`legacy-layout/results/reference_analysis/formal_synced_2026-07-16/`；身份和关键结论由
+`config/formal_validation.json`冻结。
 
 ## 维护规则
 

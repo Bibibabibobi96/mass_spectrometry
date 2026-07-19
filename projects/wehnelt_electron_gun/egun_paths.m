@@ -10,16 +10,13 @@ function paths = egun_paths()
     paths.repoRoot = repoRoot;
     paths.artifactRoot = fullfile(workspaceRoot, 'artifacts', 'projects', ...
         'wehnelt_electron_gun');
-    paths.modelsRoot = fullfile(paths.artifactRoot, 'models');
+    paths.formalRoot = fullfile(paths.artifactRoot, 'formal');
     paths.runsRoot = fullfile(paths.artifactRoot, 'runs');
-    paths.resultsRoot = fullfile(paths.artifactRoot, 'results');
+    paths.archiveRoot = fullfile(paths.artifactRoot, 'archive');
     paths.scratchRoot = fullfile(paths.artifactRoot, 'scratch');
-    paths.modelFormalDir = fullfile(paths.artifactRoot, 'models', 'comsol', 'formal');
-    paths.modelWorkspaceDir = fullfile(paths.artifactRoot, 'models', 'comsol', 'workspace');
-    paths.modelArchiveDir = fullfile(paths.artifactRoot, 'models', 'comsol', 'archive');
-    paths.resultsDir = fullfile(paths.resultsRoot, 'comsol');
-    paths.resultsFormalDir = fullfile(paths.resultsDir, 'formal');
-    paths.resultsWorkspaceDir = fullfile(paths.resultsDir, 'workspace');
-    paths.resultsArchiveDir = fullfile(paths.resultsDir, 'archive');
-    paths.scratchDir = fullfile(paths.scratchRoot, 'comsol');
+    paths.runId = getenv('WEHNELT_RUN_ID');
+    assert(~isempty(paths.runId), 'WEHNELT_RUN_ID is required for a traceable run.');
+    paths.runDir = fullfile(paths.runsRoot, paths.runId);
+    paths.modelWorkspaceDir = fullfile(paths.runDir, 'comsol');
+    paths.resultsDir = fullfile(paths.runDir, 'results');
 end

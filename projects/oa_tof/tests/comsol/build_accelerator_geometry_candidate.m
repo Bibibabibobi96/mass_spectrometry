@@ -12,7 +12,7 @@ projectDir = fileparts(fileparts(testDir));
 addpath(projectDir);
 paths = oatof_paths();
 formalPath = fullfile(paths.comsolFormalDir, ...
-    'MS_oaTOF_TwoStageRingStackReflectron_Final.mph');
+    'oa_tof__model.mph');
 assert(isfile(formalPath), 'Formal source MPH is absent: %s', formalPath);
 contract = jsondecode(fileread(contractPath));
 expected = contract.expected_derived;

@@ -1,7 +1,7 @@
 param(
   [Parameter(Mandatory = $true)][string]$ReferenceDir,
   [Parameter(Mandatory = $true)][string]$CandidateDir,
-  [string]$RunId = (Get-Date -Format 'yyyyMMdd_HHmmss'),
+  [string]$RunId = ((Get-Date -Format 'yyyyMMdd_HHmmss') + '__test__simion__delivery-equivalence__n1000'),
   [int]$ParticleCount = 1000,
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe'
 )
@@ -14,8 +14,11 @@ $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\oa_tof'
 $reference = (Resolve-Path -LiteralPath $ReferenceDir).Path
 $candidate = (Resolve-Path -LiteralPath $CandidateDir).Path
-$runDir = Join-Path $artifactRoot "runs\simion_source_build_promotion\$RunId"
-$resultDir = Join-Path $artifactRoot "results\simion\source_build_promotion\$RunId"
+$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+& $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
+if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
+$runDir = Join-Path $artifactRoot "runs\$RunId"
+$resultDir = Join-Path $runDir 'results'
 if (Test-Path -LiteralPath $runDir) { throw "Run directory already exists: $runDir" }
 if (Test-Path -LiteralPath $resultDir) { throw "Result directory already exists: $resultDir" }
 New-Item -ItemType Directory -Path $runDir,$resultDir | Out-Null
@@ -23,7 +26,6 @@ New-Item -ItemType Directory -Path $runDir,$resultDir | Out-Null
 $ion = Join-Path $reference ("oatof_comsol_524amu_gaussian_N{0}.ion" -f $ParticleCount)
 $fieldVerifier = Join-Path $PSScriptRoot 'verify_formal_runtime.lua'
 $logAnalyzer = Join-Path $projectRoot 'simion\workbench\analyze_ideal_field_log.ps1'
-$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 $referenceAnalysis = Join-Path $projectRoot 'analysis\reference_analysis.py'
 $runConfigPath = Join-Path $runDir 'run_config.json'
 $runConfig = [ordered]@{
@@ -122,6 +124,8 @@ $promotion = [ordered]@{
   standardized_kde_overlap=[double]$comparison.standardized_kde_overlap; checks=$checks
 }
 $promotion | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $resultDir 'promotion_summary.json') -Encoding UTF8
+$promotion | Add-Member -NotePropertyName status -NotePropertyValue 'success' -Force
+$promotion | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $runDir 'summary.json') -Encoding UTF8
 if ($failed.Count) { throw "Source-built delivery equivalence failed: $($failed.Key -join ', ')" }
 $manifestScript = Join-Path $repoRoot 'common\contracts\write_run_manifest.py'
 $manifestArguments = @(

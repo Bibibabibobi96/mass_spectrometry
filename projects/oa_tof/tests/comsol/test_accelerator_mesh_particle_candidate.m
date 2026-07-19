@@ -42,7 +42,7 @@ paths = oatof_paths();
 import com.comsol.model.util.*
 if isempty(sourceModelPath)
     modelPath = fullfile(paths.comsolFormalDir, ...
-        'MS_oaTOF_TwoStageRingStackReflectron_Final.mph');
+        'oa_tof__model.mph');
 else
     modelPath = sourceModelPath;
 end

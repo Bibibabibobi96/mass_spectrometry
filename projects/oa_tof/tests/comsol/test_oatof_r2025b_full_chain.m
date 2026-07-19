@@ -4,7 +4,7 @@ componentDir = fileparts(fileparts(testDir));
 addpath(componentDir);
 paths = oatof_paths();
 modelPath = fullfile(paths.comsolFormalDir, ...
-    'MS_oaTOF_TwoStageRingStackReflectron_Final.mph');
+    'oa_tof__model.mph');
 
 fid = fopen(reportPath, 'w');
 assert(fid >= 0, 'Could not open report: %s', reportPath);

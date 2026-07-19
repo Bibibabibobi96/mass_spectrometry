@@ -26,10 +26,10 @@ $flightTubeGemPath = Join-Path $componentDir 'simion\workbench\oatof_flight_tube
 $flightTubeBuilderPath = Join-Path $componentDir 'simion\workbench\build_flight_tube_variant.lua'
 $reflectronGemPath = Join-Path $componentDir 'simion\reflectron\oatof_reflectron_ideal_10_5.gem'
 $reflectronBuilderPath = Join-Path $componentDir 'simion\reflectron\build_reflectron_variant.lua'
-$formalDir = Join-Path $projectRoot 'artifacts\projects\oa_tof\models\simion\formal\oatof_524amu'
-$formalMph = Join-Path $projectRoot 'artifacts\projects\oa_tof\models\comsol\formal\MS_oaTOF_TwoStageRingStackReflectron_Final.mph'
-$formalCadAssembly = Join-Path $projectRoot 'artifacts\projects\oa_tof\cad\formal\MS_oaTOF_TwoStageRingStackReflectron_Final_physical_components.sldasm'
-$formalCadReport = Join-Path $projectRoot 'artifacts\projects\oa_tof\cad\formal\oaTOF_solidworks_export_report.json'
+$formalDir = Join-Path $projectRoot 'artifacts\projects\oa_tof\formal\simion'
+$formalMph = Join-Path $projectRoot 'artifacts\projects\oa_tof\formal\comsol\oa_tof__model.mph'
+$formalCadAssembly = Join-Path $projectRoot 'artifacts\projects\oa_tof\formal\cad\oa_tof__assembly.SLDASM'
+$formalCadReport = Join-Path $projectRoot 'artifacts\projects\oa_tof\formal\cad\export_report.json'
 
 function Assert-Near([double]$Actual, [double]$Expected, [string]$Label, [double]$Tolerance = 1e-9) {
   if ([Math]::Abs($Actual - $Expected) -gt $Tolerance) { throw "$Label mismatch: actual=$Actual expected=$Expected" }

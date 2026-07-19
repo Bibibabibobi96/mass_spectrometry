@@ -7,7 +7,7 @@
 - CAD导出：`../cad/ms_export_oatof_to_solidworks.m`
 - 几何构造：`../cad/oatof_cad_geometry.m`
 - CAD测试：`../tests/cad/OaTofCadExportTest.m`
-- 正式产物：工作区`artifacts/projects/oa_tof/cad/formal/`
+- 正式产物：工作区`artifacts/projects/oa_tof/formal/cad/`；主装配为`oa_tof__assembly.SLDASM`
 
 ## 硬性规则
 
@@ -34,5 +34,5 @@
 2026-07-16已从通过门禁的正式COMSOL MPH重新导出CAD，并用SolidWorks 2022（revision 30.5.0）
 生成25个SLDPRT和25组件SLDASM。组件世界中心相对COMSOL导出目标的最大误差为
 `5.68e-13 mm`，所有STEP加载、零件保存和装配体保存错误/警告均为0。旧正式CAD目录整体归档为
-`cad/archive/formal_pre_baseline_sync_20260716/`，没有与新正式零件混放。可重复门禁入口为
+迁移快照的`legacy-layout/cad/archive/formal_pre_baseline_sync_20260716/`，没有与新正式零件混放。可重复门禁入口为
 `../tests/cad/run_oatof_formal_cad_sync.m`。

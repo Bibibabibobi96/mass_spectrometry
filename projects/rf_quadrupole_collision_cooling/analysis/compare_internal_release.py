@@ -15,9 +15,9 @@ from rfquad_contract import diagnostic_planes, load as load_contract
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--workspace", type=Path, required=True)
     parser.add_argument("--comsol-trajectory", type=Path, required=True)
     parser.add_argument("--simion-trajectory", type=Path, required=True)
+    parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--output-label", default="internal_z20")
     parser.add_argument("--source-axial-offset-mm", type=float, default=20.0)
     parser.add_argument("--internal-window-end-mm", type=float, default=70.0)
@@ -91,7 +91,7 @@ def main() -> None:
             f"{args.source_axial_offset_mm:g} mm downstream to bypass the entrance fringe."
         ),
     }
-    output = args.workspace / "artifacts/projects/rf_quadrupole_collision_cooling/results/cross_solver"
+    output = args.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=True)
     json_path = output / f"transport_no_collision_{args.output_label}_diagnostics.json"
     png_path = output / f"transport_no_collision_{args.output_label}_diagnostics.png"

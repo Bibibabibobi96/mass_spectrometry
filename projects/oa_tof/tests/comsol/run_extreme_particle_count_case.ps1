@@ -5,7 +5,7 @@ param(
   [int]$ParticleCount,
   [double]$MassAmu = 500.0,
   [int]$Seed = 20260713,
-  [string]$RunId = 'extreme_n_threshold_20260719'
+  [string]$RunId = ''
 )
 
 Set-StrictMode -Version Latest
@@ -14,18 +14,25 @@ $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\oa_tof'
-$caseDir = Join-Path $artifactRoot ("runs\candidate_gate\{0}\N{1}" -f $RunId,$ParticleCount)
+$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+if ([string]::IsNullOrWhiteSpace($RunId)) {
+  $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + "__test__comsol__particle-count__n$ParticleCount"
+}
+& $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
+if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
+$caseDir = Join-Path $artifactRoot "runs\$RunId"
+$resultDir = Join-Path $caseDir 'results'
+$logDir = Join-Path $caseDir 'logs'
 if (Test-Path -LiteralPath $caseDir) {
   throw "Extreme-N case already exists: $caseDir"
 }
-New-Item -ItemType Directory -Path $caseDir -Force | Out-Null
+New-Item -ItemType Directory -Path $caseDir,$resultDir,$logDir -Force | Out-Null
 
 $ionGenerator = Join-Path $projectRoot 'simion\workbench\generate_comsol_consistent_ions.ps1'
 $launcher = Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1'
 $task = Join-Path $projectRoot 'tests\comsol\test_accelerator_mesh_particle_candidate.m'
-$formalMph = Join-Path $artifactRoot 'models\comsol\formal\MS_oaTOF_TwoStageRingStackReflectron_Final.mph'
+$formalMph = Join-Path $artifactRoot 'formal\comsol\oa_tof__model.mph'
 $geometryPath = Join-Path $projectRoot 'config\resolved_geometry.json'
-$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 foreach ($path in @($ionGenerator,$launcher,$task,$formalMph,$geometryPath,$python)) {
   if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
     throw "Required input is absent: $path"
@@ -34,10 +41,10 @@ foreach ($path in @($ionGenerator,$launcher,$task,$formalMph,$geometryPath,$pyth
 
 $geometry = Get-Content -LiteralPath $geometryPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $source = $geometry.particle_source
-$ionPath = Join-Path $caseDir ("mz{0:g}_N{1}.ion" -f $MassAmu,$ParticleCount)
-$csvPath = Join-Path $caseDir 'comsol_particles.csv'
-$reportPath = Join-Path $caseDir 'comsol_report.txt'
-$summaryPath = Join-Path $caseDir 'case_summary.json'
+$ionPath = Join-Path $resultDir ("mz{0:g}_N{1}.ion" -f $MassAmu,$ParticleCount)
+$csvPath = Join-Path $resultDir 'comsol_particles.csv'
+$reportPath = Join-Path $logDir 'comsol_report.txt'
+$summaryPath = Join-Path $caseDir 'summary.json'
 if (-not (Test-Path -LiteralPath $ionPath -PathType Leaf)) {
   & $ionGenerator -N $ParticleCount -MassAmu $MassAmu -Charge 1 `
     -EnergyMeanEv 5 -EnergyStdEv 0.4 `
@@ -57,6 +64,8 @@ $variables = @{
   OATOF_SOURCE_MODEL_PATH=$formalMph
   OATOF_ION_TABLE=$ionPath
   OATOF_COMSOL_OUTPUT_CSV=$csvPath
+  OATOF_RUNTIME_DIR=$resultDir
+  OATOF_RESULTS_DIR=$resultDir
   OATOF_ACCELERATOR_HMAX_MM='1'
   OATOF_REUSE_EXISTING_FIELD='1'
   OATOF_FINE_TSTEP_NS='0.2'
@@ -90,12 +99,12 @@ try {
 $newCrashLogs = [Collections.Generic.List[string]]::new()
 foreach ($log in @(Get-ChildItem -LiteralPath $repoRoot -File -Filter 'hs_err_pid*.log')) {
   if ($knownCrashLogs -notcontains $log.FullName) {
-    $destination = Join-Path $caseDir $log.Name
+    $destination = Join-Path $logDir $log.Name
     Move-Item -LiteralPath $log.FullName -Destination $destination
     $newCrashLogs.Add($destination)
   }
 }
-$launcherLogs = @(Get-ChildItem -LiteralPath $caseDir -File -Filter 'comsol_report.txt.launcher.attempt*.log' |
+$launcherLogs = @(Get-ChildItem -LiteralPath $logDir -File -Filter 'comsol_report.txt.launcher.attempt*.log' |
   ForEach-Object { $_.FullName })
 
 $reportText = if (Test-Path -LiteralPath $reportPath -PathType Leaf) {
@@ -150,7 +159,7 @@ $manifestPath = Join-Path $caseDir 'run_manifest.json'
 [ordered]@{
   schema_version = 1
   role = 'oa_tof_comsol_extreme_particle_count_run_config'
-  run_id = "$RunId-N$ParticleCount"
+  run_id = $RunId
   project = 'oa_tof'
   project_root = $projectRoot
   mode = 'comsol_extreme_particle_count_threshold'
@@ -167,7 +176,7 @@ $outputs = @($ionPath,$summaryPath)
 foreach ($path in @($reportPath,$csvPath) + @($newCrashLogs) + @($launcherLogs)) {
   if (Test-Path -LiteralPath $path -PathType Leaf) { $outputs += $path }
 }
-$outputs += @(Get-ChildItem -LiteralPath $caseDir -File -Filter '*_selected_release_from_data_file.txt' |
+$outputs += @(Get-ChildItem -LiteralPath $resultDir -File -Filter '*_selected_release_from_data_file.txt' |
   ForEach-Object { $_.FullName })
 $manifestStatus = if ($passed) { 'success' } else { 'failed' }
 $manifestArgs = @((Join-Path $repoRoot 'common\contracts\write_run_manifest.py'),

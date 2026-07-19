@@ -7,7 +7,7 @@ addpath(paths.cadDir, paths.commonSolidWorksDir);
 import com.comsol.model.util.*
 
 modelPath = fullfile(paths.comsolFormalDir, ...
-    'MS_oaTOF_TwoStageRingStackReflectron_Final.mph');
+    'oa_tof__model.mph');
 outputDir = paths.cadFormalDir;
 assert(isfile(modelPath), 'Formal COMSOL model is missing: %s', modelPath);
 
