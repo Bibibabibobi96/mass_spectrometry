@@ -33,6 +33,24 @@ if (-not (Test-Path -LiteralPath $matlabRoot -PathType Container)) {
 }
 . $failureClassifier
 
+function Get-ComsolServerProcessIds {
+    return @(Get-Process -Name 'comsolmphserver' -ErrorAction SilentlyContinue |
+        ForEach-Object { [int]$_.Id })
+}
+
+function Stop-ComsolAttemptServers {
+    param([int[]]$Before, [string]$Reason)
+    $after = @(Get-ComsolServerProcessIds)
+    $attemptIds = @(Get-ComsolAttemptServerIds -Before $Before -After $after)
+    foreach ($processId in $attemptIds) {
+        $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
+        if ($null -ne $process -and $process.ProcessName -eq 'comsolmphserver') {
+            Stop-Process -Id $processId -Force
+            Write-Warning "Stopped attempt-local COMSOL server PID $processId after $Reason."
+        }
+    }
+}
+
 $task = (Resolve-Path -LiteralPath $TaskScript).Path
 $report = [System.IO.Path]::GetFullPath($ReportPath)
 $reportDir = Split-Path -Parent $report
@@ -62,6 +80,7 @@ try {
             '-mlnosplash',
             '-mlstartdir', $repoRoot
         )
+        $serversBeforeAttempt = @(Get-ComsolServerProcessIds)
         & $launcher @launcherArguments
         $launcherExit = $LASTEXITCODE
 
@@ -71,6 +90,7 @@ try {
             if ($launcherExit -eq 0 -and $reportText -match '(?m)^STATUS=PASS$') {
                 return
             }
+            Stop-ComsolAttemptServers -Before $serversBeforeAttempt -Reason 'task failure'
             if ($attempt -lt $StartupAttempts -and
                 (Test-ComsolRetryableStartupReport -ReportText $reportText)) {
                 $archivedReport = $report + '.startup_retry.' + $attempt + '.' +
@@ -85,6 +105,7 @@ try {
             throw "R2025b LiveLink task failed (launcher exit $launcherExit)."
         }
 
+        Stop-ComsolAttemptServers -Before $serversBeforeAttempt -Reason 'startup without a task report'
         if ($attempt -lt $StartupAttempts) {
             Write-Warning ("COMSOL/MATLAB exited before the task report was created; " +
                 "retrying clean startup in $StartupRetryDelaySeconds s " +

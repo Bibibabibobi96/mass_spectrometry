@@ -27,4 +27,8 @@ if (Test-ComsolRetryableStartupReport $taskNullPointer) {
 if (Test-ComsolRetryableStartupReport $computeDisconnect) {
     throw 'A Study Compute disconnect must not be classified as retryable startup failure.'
 }
+$attemptIds = @(Get-ComsolAttemptServerIds -Before @(10,20) -After @(10,20,30,30,40))
+if ($attemptIds.Count -ne 2 -or $attemptIds[0] -ne 30 -or $attemptIds[1] -ne 40) {
+    throw 'Attempt-local COMSOL server PID classification is incorrect.'
+}
 Write-Output 'LIVELINK_FAILURE_CLASSIFICATION=PASS'
