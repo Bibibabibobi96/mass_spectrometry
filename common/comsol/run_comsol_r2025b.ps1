@@ -11,6 +11,9 @@ param(
     [ValidateRange(1, 30)]
     [int]$StartupRetryDelaySeconds = 5,
 
+    [ValidateRange(10, 600)]
+    [int]$StartupReportTimeoutSeconds = 120,
+
     [ValidateRange(0, 64)]
     [int]$ProcessorCount = 0,
 
@@ -51,6 +54,16 @@ function Stop-ComsolAttemptServers {
     }
 }
 
+function Start-ComsolLauncherProcess {
+    param([string]$FilePath, [string[]]$Arguments)
+    $startInfo = [Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $FilePath
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    foreach ($argument in $Arguments) { [void]$startInfo.ArgumentList.Add($argument) }
+    return [Diagnostics.Process]::Start($startInfo)
+}
+
 $task = (Resolve-Path -LiteralPath $TaskScript).Path
 $report = [System.IO.Path]::GetFullPath($ReportPath)
 $reportDir = Split-Path -Parent $report
@@ -81,8 +94,29 @@ try {
             '-mlstartdir', $repoRoot
         )
         $serversBeforeAttempt = @(Get-ComsolServerProcessIds)
-        & $launcher @launcherArguments
-        $launcherExit = $LASTEXITCODE
+        $launcherProcess = Start-ComsolLauncherProcess -FilePath $launcher `
+            -Arguments $launcherArguments
+        $reportDeadline = [DateTime]::UtcNow.AddSeconds($StartupReportTimeoutSeconds)
+        while (-not $launcherProcess.HasExited -and
+               -not (Test-Path -LiteralPath $report -PathType Leaf) -and
+               [DateTime]::UtcNow -lt $reportDeadline) {
+            Start-Sleep -Milliseconds 500
+            $launcherProcess.Refresh()
+        }
+        $startupTimedOut = -not $launcherProcess.HasExited -and
+            -not (Test-Path -LiteralPath $report -PathType Leaf)
+        if ($startupTimedOut) {
+            try { $launcherProcess.Kill($true) } catch {
+                Stop-Process -Id $launcherProcess.Id -Force -ErrorAction SilentlyContinue
+            }
+            $launcherProcess.WaitForExit()
+            $launcherExit = 124
+            Write-Warning ("COMSOL/MATLAB did not create the task report within " +
+                "$StartupReportTimeoutSeconds seconds (attempt $attempt/$StartupAttempts).")
+        } else {
+            if (-not $launcherProcess.HasExited) { $launcherProcess.WaitForExit() }
+            $launcherExit = $launcherProcess.ExitCode
+        }
 
         if (Test-Path -LiteralPath $report -PathType Leaf) {
             $reportText = Get-Content -LiteralPath $report -Raw -Encoding UTF8
@@ -105,7 +139,9 @@ try {
             throw "R2025b LiveLink task failed (launcher exit $launcherExit)."
         }
 
-        Stop-ComsolAttemptServers -Before $serversBeforeAttempt -Reason 'startup without a task report'
+        $noReportReason = if ($startupTimedOut) { 'startup report timeout' } `
+            else { 'startup without a task report' }
+        Stop-ComsolAttemptServers -Before $serversBeforeAttempt -Reason $noReportReason
         if ($attempt -lt $StartupAttempts) {
             Write-Warning ("COMSOL/MATLAB exited before the task report was created; " +
                 "retrying clean startup in $StartupRetryDelaySeconds s " +

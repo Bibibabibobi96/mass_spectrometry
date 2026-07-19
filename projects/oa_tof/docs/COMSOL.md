@@ -149,6 +149,12 @@ COMSOL 6.4 build 293在当前模型的极小N Study Compute路径存在可重复
 N=3和N=21失败，N=40及以上已测样本成功；N>=40是当前绕行，不是内部根因。最小成功整数和区间
 单调性仍待独立N目录验证。详细时间线与排除过程已冻结到项目history，原始证据只在artifacts。
 
+首次N=30阈值尝试在任务报告创建前被会话中断；随后两次干净尝试均停在MATLAB/LiveLink启动阶段，
+没有进入项目脚本或Study Compute，故不属于N=30数值结果。共享启动器现以首份任务报告为启动门禁：
+默认120秒超时后只终止本次进程树、清理本次新增服务器并有限重试。受控`retry3`两次超时后服务器
+残留数为0，失败manifest标记`failure_stage=launcher_startup`和`threshold_result_eligible=false`。
+在获得任务报告前，阈值边界仍只能写作N=21失败、N=40成功。
+
 最小失效阈值复核使用`tests/comsol/run_extreme_particle_count_case.ps1`。该入口固定500 Da、正式
 `sol1`、同源种子和正式分段输出，每个N使用独立目录与干净LiveLink进程；成功和失败都写
 `case_summary.json`，原生失败报告不被后续案例覆盖。阈值搜索先二分，再补测边界相邻整数，不把

@@ -15,6 +15,9 @@
 原生崩溃均立即失败，不得用自动重试掩盖。分类回归入口为`test_livelink_failure_classification.ps1`。
 每次启动前记录已有`comsolmphserver` PID；失败或未创建报告时只终止该次新增PID，再进入重试，
 不得遗留孤立服务器，也不得终止启动前已存在的其他会话。
+`-StartupReportTimeoutSeconds`默认120秒，只限制MATLAB/LiveLink创建首份任务报告的启动阶段；报告
+创建后不限制Study Compute的正常长运行。超时会终止本次进程树、清理本次新增服务器并进入有限
+重试，不能被记录为项目求解器或物理模型失败。
 
 入口的`-ProcessorCount`是可选共享内存线程上限；默认`0`表示沿用COMSOL自动选择，日常结果不变。
 只有排查本地并发库崩溃或项目已验证固定线程数时才显式设置，例如`-ProcessorCount 1`。线程数属于

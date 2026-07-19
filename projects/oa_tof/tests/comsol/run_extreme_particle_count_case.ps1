@@ -102,6 +102,7 @@ $reportText = if (Test-Path -LiteralPath $reportPath -PathType Leaf) {
 $expectedDetection = "DETECTED={0}/{0}" -f $ParticleCount
 $passed = ($reportText -match '(?m)^STATUS=PASS$') -and
   ($reportText -match ("(?m)^" + [regex]::Escape($expectedDetection) + '$'))
+$reportCreated = [bool](Test-Path -LiteralPath $reportPath -PathType Leaf)
 $summary = [ordered]@{
   schema_version = 1
   role = 'oa_tof_comsol_extreme_particle_count_case'
@@ -111,7 +112,9 @@ $summary = [ordered]@{
   seed = $Seed
   wall_seconds = $watch.Elapsed.TotalSeconds
   launcher_failure = $failure
-  report_created = [bool](Test-Path -LiteralPath $reportPath -PathType Leaf)
+  failure_stage = if ($passed) { $null } elseif ($reportCreated) { 'task' } else { 'launcher_startup' }
+  threshold_result_eligible = $reportCreated
+  report_created = $reportCreated
   output_csv_created = [bool](Test-Path -LiteralPath $csvPath -PathType Leaf)
   expected_detection = $expectedDetection
   ion_file = $ionPath
