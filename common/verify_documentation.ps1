@@ -3,6 +3,7 @@ param()
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
+& (Join-Path $PSScriptRoot 'verify_repository_hygiene.ps1')
 $errors = New-Object System.Collections.Generic.List[string]
 $markdownFiles = @(Get-ChildItem -LiteralPath $repoRoot -Recurse -File -Filter '*.md' |
     Where-Object { $_.FullName -notmatch '[\\/](\.git|artifacts|\.venv)[\\/]' } |
@@ -95,6 +96,16 @@ foreach ($file in $historyFiles) {
     if (-not $hasArchiveBanner) {
         $relative = $file.FullName.Substring($repoRoot.Length + 1)
         Add-DocError "$relative`: missing read-only archive banner"
+    }
+    $marker = [regex]::Escape([IO.Path]::DirectorySeparatorChar + 'docs' +
+        [IO.Path]::DirectorySeparatorChar + 'history' + [IO.Path]::DirectorySeparatorChar)
+    $projectPath = ($file.FullName -split $marker, 2)[0]
+    $projectReadme = Join-Path $projectPath 'README.md'
+    $historyEntry = 'docs/history/' + $file.Name
+    if (-not (Test-Path -LiteralPath $projectReadme -PathType Leaf) -or
+        [System.IO.File]::ReadAllText($projectReadme, $utf8) -notmatch [regex]::Escape($historyEntry)) {
+        $relative = $file.FullName.Substring($repoRoot.Length + 1)
+        Add-DocError "$relative`: project README does not index '$historyEntry'"
     }
 }
 

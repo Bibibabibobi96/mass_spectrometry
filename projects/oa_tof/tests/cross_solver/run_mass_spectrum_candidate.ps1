@@ -227,6 +227,8 @@ $optionalEvidence += @($mode.species | ForEach-Object {
 })
 $optionalEvidence += @(Get-ChildItem -LiteralPath $comsolDir -File -Filter '*_selected_release_from_data_file.txt' |
   ForEach-Object { $_.FullName })
+$optionalEvidence += @(Get-ChildItem -LiteralPath $comsolDir -Recurse -File -Filter 'hs_err_pid*.log' |
+  ForEach-Object { $_.FullName })
 $outputs += @($optionalEvidence | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf })
 $outputs += @(
   (Join-Path $resultDir 'mass_spectrum_particles.csv'),
