@@ -1,6 +1,7 @@
 param(
   [ValidateSet('Static','Candidate','Formal')][string]$Level = 'Static',
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
+  [string]$PythonExe = '',
   [ValidateSet('SIMION','COMSOL','CAD')][string]$CandidateTarget = 'SIMION',
   [string]$CandidateModelPath,
   [string]$CandidateCadAssemblyPath,
@@ -12,14 +13,15 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
-$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
+if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 runtime missing: $python" }
 $gateTimer = [Diagnostics.Stopwatch]::StartNew()
 
 & $python (Join-Path $projectRoot 'analysis\resolve_geometry.py') --check
 if ($LASTEXITCODE -ne 0) { throw 'Resolved-geometry gate failed.' }
 & $python (Join-Path $projectRoot 'analysis\sync_geometry_contract.py') --check
 if ($LASTEXITCODE -ne 0) { throw 'Generated-input freshness gate failed.' }
-& (Join-Path $projectRoot 'tests\cross_solver\verify_geometry_contract.ps1') -SkipRuntime -SimionExe $SimionExe
+& (Join-Path $projectRoot 'tests\cross_solver\verify_geometry_contract.ps1') -SkipRuntime -SimionExe $SimionExe -PythonExe $python
 if ($LASTEXITCODE -ne 0) { throw 'Static cross-solver geometry gate failed.' }
 & $python -m unittest discover -s (Join-Path $projectRoot 'tests\analysis') -p 'test_*.py'
 if ($LASTEXITCODE -ne 0) { throw 'Python analysis tests failed.' }

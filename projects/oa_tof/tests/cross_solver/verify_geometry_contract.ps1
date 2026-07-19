@@ -1,5 +1,6 @@
 param(
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
+  [string]$PythonExe = '',
   [switch]$SkipRuntime
 )
 
@@ -47,7 +48,7 @@ function Assert-NotContains([string]$Text, [string]$Needle, [string]$Label) {
 
 $contract = Get-Content -LiteralPath $contractPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $formalAssets = Get-Content -LiteralPath (Join-Path $componentDir 'config\formal_assets.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 $derivationGate = Join-Path $PSScriptRoot 'verify_geometry_derivation.py'
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 project runtime missing: $python" }
 $derivationOutput = & $python $derivationGate $baselinePath
