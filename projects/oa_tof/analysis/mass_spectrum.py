@@ -18,6 +18,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 import numpy as np
 import pandas as pd
 
@@ -239,9 +240,9 @@ def analyze_mass_spectrum(
         simion_std_ns = float(peak_summary.loc["SIMION", "std_tof_ns"])
         axis.text(
             0.03, 0.97,
-            f"Δμ_TOF={centroid_delta_ns:.3f} ns\n"
-            f"σt C/S={comsol_std_ns:.3f}/{simion_std_ns:.3f} ns\n"
-            f"N={len(peak) // 2}",
+            f"Δmean TOF={centroid_delta_ns:.3f} ns\n"
+            f"σt COMSOL/SIMION={comsol_std_ns:.3f}/{simion_std_ns:.3f} ns\n"
+            f"N/solver={len(peak) // 2}",
             transform=axis.transAxes, ha="left", va="top", fontsize=8,
         )
         axis.axvline(0, color="0.4", linewidth=1)
@@ -268,13 +269,24 @@ def analyze_mass_spectrum(
         centroid_axis.grid(alpha=0.25)
     for axis in unused_axes[1:]:
         axis.set_axis_off()
-    handles, labels = axes[0].get_legend_handles_labels()
-    if len(unused_axes) > 0:
-        unused_axes[0].legend(handles, labels, loc="lower right", title="peak overlays")
-    else:
-        fig.legend(handles, labels, loc="upper center", ncol=2)
+    legend_handles = [
+        Line2D([0], [0], color=colors["COMSOL"], linewidth=1.7,
+               label="COMSOL peak density"),
+        Line2D([0], [0], color=colors["SIMION"], linewidth=1.7,
+               label="SIMION peak density"),
+        Line2D([0], [0], color="0.2", linewidth=1.1, linestyle="--",
+               label="solver peak mean"),
+        Line2D([0], [0], color="0.4", linewidth=1.0,
+               label="nominal mass (Δm=0)"),
+        Line2D([0], [0], color="#6a3d9a", linewidth=1.5, marker="o",
+               label="SIMION − COMSOL mean TOF"),
+    ]
+    fig.legend(
+        handles=legend_handles, loc="lower center", bbox_to_anchor=(0.5, -0.065),
+        ncol=5, frameon=True, borderaxespad=0,
+    )
     fig.suptitle("oa-TOF mass peaks: COMSOL and SIMION")
-    fig.savefig(output_dir / "mass_spectrum_comparison.png", dpi=180)
+    fig.savefig(output_dir / "mass_spectrum_comparison.png", dpi=180, bbox_inches="tight")
     plt.close(fig)
 
     result = {

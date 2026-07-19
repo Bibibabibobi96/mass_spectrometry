@@ -5,7 +5,8 @@ param(
   [ValidateRange(0,1000000)]
   [int]$ParticleCountOverride = 0,
   [Alias('Resume')]
-  [switch]$ResumeAfterComsol
+  [switch]$ResumeAfterComsol,
+  [switch]$ReanalyzeOnly
 )
 
 Set-StrictMode -Version Latest
@@ -16,7 +17,11 @@ $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\oa_tof'
 $runDir = Join-Path $artifactRoot "runs\mass_spectrum\$RunId"
 $resultDir = Join-Path $artifactRoot "results\cross_solver\mass_spectrum\$RunId"
-if ($ResumeAfterComsol) {
+$resumeExisting = $ResumeAfterComsol -or $ReanalyzeOnly
+if ($ResumeAfterComsol -and $ReanalyzeOnly) {
+  throw 'ResumeAfterComsol and ReanalyzeOnly are mutually exclusive.'
+}
+if ($resumeExisting) {
   if (-not (Test-Path -LiteralPath $runDir -PathType Container) -or
       -not (Test-Path -LiteralPath $resultDir -PathType Container)) {
     throw "Resume requires the existing run and result directories: $RunId"
@@ -46,7 +51,9 @@ $formalIob = Join-Path $formalSimion 'oatof_ideal_grounded.iob'
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 $ionGenerator = Join-Path $projectRoot 'simion\workbench\generate_comsol_consistent_ions.ps1'
 $simionAnalyzer = Join-Path $projectRoot 'simion\workbench\analyze_ideal_field_log.ps1'
-foreach ($path in @($modePath,$formalMph,$formalIob,$python,$ionGenerator,$simionAnalyzer,$SimionExe)) {
+$requiredPaths = @($modePath,$formalMph,$formalIob,$python,$ionGenerator,$simionAnalyzer)
+if (-not $ReanalyzeOnly) { $requiredPaths += $SimionExe }
+foreach ($path in $requiredPaths) {
   if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Required input is absent: $path" }
 }
 
@@ -56,7 +63,7 @@ $individualIonPaths = [Collections.Generic.List[string]]::new()
 $totalParticles = 0
 foreach ($species in $mode.species) {
   $ionPath = Join-Path $ionDir ("{0}.ion" -f $species.species_id)
-  if ($ResumeAfterComsol) {
+  if ($resumeExisting) {
     if (-not (Test-Path -LiteralPath $ionPath -PathType Leaf)) {
       throw "Resume input is absent: $ionPath"
     }
@@ -83,7 +90,7 @@ $combinedLines = [Collections.Generic.List[string]]::new()
 foreach ($path in $individualIonPaths) {
   foreach ($line in Get-Content -LiteralPath $path) { $combinedLines.Add($line) }
 }
-if (-not $ResumeAfterComsol) {
+if (-not $resumeExisting) {
   Set-Content -LiteralPath $combinedIon -Value $combinedLines -Encoding ASCII
 } elseif (-not (Test-Path -LiteralPath $combinedIon -PathType Leaf)) {
   throw "Resume combined ION is absent: $combinedIon"
@@ -100,11 +107,14 @@ foreach ($species in $mode.species) {
   $csvPath = Join-Path $comsolDir "$speciesId.csv"
   $reportPath = Join-Path $comsolDir "$speciesId.report.txt"
   $expected = "DETECTED={0}/{0}" -f [int]$species.particle_count
-  if ($ResumeAfterComsol) {
+  if ($resumeExisting) {
     $complete = (Test-Path -LiteralPath $csvPath -PathType Leaf) -and
       (Test-Path -LiteralPath $reportPath -PathType Leaf) -and
       (Select-String -LiteralPath $reportPath -Pattern ("^" + [regex]::Escape($expected) + '$') -Quiet)
     if ($complete) { continue }
+    if ($ReanalyzeOnly) {
+      throw "ReanalyzeOnly requires complete COMSOL evidence for $speciesId."
+    }
     if (Test-Path -LiteralPath $reportPath -PathType Leaf) {
       $failedReport = $reportPath + '.failed.' + (Get-Date -Format 'yyyyMMdd_HHmmss')
       Move-Item -LiteralPath $reportPath -Destination $failedReport
@@ -147,19 +157,28 @@ foreach ($species in $mode.species) {
 $maximumMassAmu = [double](($mode.species | Measure-Object -Property mass_amu -Maximum).Maximum)
 $referenceMassAmu = [double]$contract.validation_target.mass_amu
 $simionMaxTofUs = [Math]::Ceiling(90.0 * [Math]::Sqrt($maximumMassAmu / $referenceMassAmu))
-$process = Start-Process -FilePath $SimionExe -WorkingDirectory $formalSimion `
-  -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput $simionLog `
-  -RedirectStandardError $simionStderr -ArgumentList @(
-    '--default-num-particles',[string]$totalParticles,'--nogui','fly',
-    '--trajectory-quality','8','--retain-trajectories','0','--particles',$combinedIon,
-    '--programs','1','--adjustable','trajectory_quality=8','--adjustable',
-    'trajectory_log_enable=1','--adjustable',
-    ("diagnostic_max_tof_us={0}" -f $simionMaxTofUs),$formalIob)
-if ($process.ExitCode -ne 0) { throw "SIMION mixed-species fly failed: $simionStderr" }
-$summary = & $simionAnalyzer -Log $simionLog -IonFile $combinedIon `
-  -Mode 'mass_spectrum_candidate' -Distribution 'five_species_shared_source' `
-  -ParticleCsv $simionCsv
-$summary | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $simionSummary -Encoding UTF8
+if ($ReanalyzeOnly) {
+  foreach ($path in @($simionCsv,$simionSummary)) {
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+      throw "ReanalyzeOnly input is absent: $path"
+    }
+  }
+  $summary = Get-Content -LiteralPath $simionSummary -Raw -Encoding UTF8 | ConvertFrom-Json
+} else {
+  $process = Start-Process -FilePath $SimionExe -WorkingDirectory $formalSimion `
+    -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput $simionLog `
+    -RedirectStandardError $simionStderr -ArgumentList @(
+      '--default-num-particles',[string]$totalParticles,'--nogui','fly',
+      '--trajectory-quality','8','--retain-trajectories','0','--particles',$combinedIon,
+      '--programs','1','--adjustable','trajectory_quality=8','--adjustable',
+      'trajectory_log_enable=1','--adjustable',
+      ("diagnostic_max_tof_us={0}" -f $simionMaxTofUs),$formalIob)
+  if ($process.ExitCode -ne 0) { throw "SIMION mixed-species fly failed: $simionStderr" }
+  $summary = & $simionAnalyzer -Log $simionLog -IonFile $combinedIon `
+    -Mode 'mass_spectrum_candidate' -Distribution 'five_species_shared_source' `
+    -ParticleCsv $simionCsv
+  $summary | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $simionSummary -Encoding UTF8
+}
 if ([int]$summary.Hit -ne $totalParticles) {
   throw "SIMION detected $($summary.Hit)/$totalParticles mixed-species ions."
 }
@@ -189,6 +208,7 @@ $runConfig = [ordered]@{
     simion = 'one mixed-species fly'
     comsol = 'one particle-tracing solve per species; formal electrostatic solution reused'
     resumed_after_comsol = [bool]$ResumeAfterComsol
+    reanalyze_only = [bool]$ReanalyzeOnly
     particle_count_override = $ParticleCountOverride
     simion_max_tof_us = $simionMaxTofUs
   }

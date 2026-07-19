@@ -377,7 +377,9 @@ manifest复核后，这次SIMION混合Fly才构成完整跨求解器候选；不
 `90*sqrt(max_mass/524)`向上取整生成运行时GUI adjustable，本次为176 us。复用五份已通过COMSOL
 报告后重跑SIMION，200/200均穿过检测面并位于40 mm有效半径内，最大落点半径`8.0922 mm`；旧
 90 us失败日志保留为`simion_mixed_timeout90.failed.log`。入口支持`-Resume`；逐物种CSV和报告完整时
-跳过该COMSOL物种，不完整时保全旧失败报告并只重跑该物种，最终仍重新生成并复核manifest。
+跳过该COMSOL物种，不完整时保全旧失败报告并只重跑该物种，最终仍重新生成并复核manifest。仅修改
+分析或绘图时必须用`-ReanalyzeOnly`：它验证已有COMSOL/SIMION CSV和命中汇总，完全不启动两端
+求解器，只重建分析与manifest。
 
 2026-07-19以同一500 Da ION前缀完成N=100/300/1000/5000时间标定，每档独立Fly三次且日志分析不计入
 墙钟。四档中位数分别为`4.056/10.077/31.297/151.444 s`，十二个样本的工程拟合为

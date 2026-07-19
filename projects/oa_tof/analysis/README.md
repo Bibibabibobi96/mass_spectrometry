@@ -26,7 +26,8 @@ py -3.11 -m venv .venv
   `../docs/theory/三栅加速器总长度符号推导.docx`。
 - 数值算法：`peak_metrics.py`。
 - 五质量标定、逐峰COMSOL/SIMION局部密度叠加和质心差汇总图：`mass_spectrum.py`。主图使用2×3布局，
-  五个峰各自缩放局部质量偏差轴且共享各峰分箱，第六格只汇总跨求解器平均TOF差。
+  五个峰各自缩放局部质量偏差轴且共享各峰分箱，第六格只汇总跨求解器平均TOF差；全图图例明确
+  区分两端密度、求解器峰均值、标称质量零偏差和质心差曲线。该图不作Gaussian峰形拟合。
 - CSV/XLSX/SIMION TRACE导入、严格Recording审计、source mapping、bootstrap、出图和CLI：
   `reference_analysis.py`。
 - 回归门禁：`verify_reference_analysis.ps1`。
