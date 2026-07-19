@@ -10,6 +10,8 @@ $markdownFiles = @(Get-ChildItem -LiteralPath $repoRoot -Recurse -File -Filter '
     Sort-Object FullName)
 $utf8 = New-Object System.Text.UTF8Encoding($false, $true)
 $comsolApiPath = Join-Path $repoRoot 'docs\COMSOL_API.md'
+$visionPath = Join-Path $repoRoot 'docs\VISION.md'
+$roadmapPath = Join-Path $repoRoot 'docs\ROADMAP.md'
 $rootReadmePath = Join-Path $repoRoot 'README.md'
 
 function Add-DocError {
@@ -73,6 +75,34 @@ else {
     }
     if ($apiRaw -match '(?i)oa[-_ ]?tof|rf_quadrupole|wehnelt_electron_gun|electron_impact_ion_source') {
         Add-DocError 'docs/COMSOL_API.md: project-specific names belong in project documentation'
+    }
+}
+
+$strategyDocs = @(
+    @{
+        Path = $visionPath
+        Label = 'docs/VISION.md'
+        Headings = @('## 使命', '## 目标闭环', '## 核心能力', '## 正式交付定义', '## 边界与非承诺')
+    },
+    @{
+        Path = $roadmapPath
+        Label = 'docs/ROADMAP.md'
+        Headings = @('## 规划原则', '## 设计族与未来项目', '## 阶段一：需求与项目注册',
+            '## 阶段二：OA-TOF性能驱动闭环', '## 阶段三：多极杆功能设计',
+            '## 阶段四：离子源与电子枪自动化', '## 阶段五：部件集成与仪器级优化',
+            '## 阶段六：受控自然语言自治')
+    }
+)
+foreach ($strategyDoc in $strategyDocs) {
+    if (-not (Test-Path -LiteralPath $strategyDoc.Path -PathType Leaf)) {
+        Add-DocError "missing $($strategyDoc.Label)"
+        continue
+    }
+    $strategyLines = @(Get-Content -LiteralPath $strategyDoc.Path -Encoding UTF8)
+    foreach ($heading in $strategyDoc.Headings) {
+        if (@($strategyLines | Where-Object { $_ -ceq $heading }).Count -ne 1) {
+            Add-DocError "$($strategyDoc.Label): expected exactly one heading '$heading'"
+        }
     }
 }
 
@@ -143,6 +173,12 @@ $requiredRootReadmeHeadings = @(
     '## 任务完成定义'
 )
 $rootReadmeLines = @(Get-Content -LiteralPath $rootReadmePath -Encoding UTF8)
+$rootReadmeRaw = [System.IO.File]::ReadAllText($rootReadmePath, $utf8)
+foreach ($strategyLink in @('docs/VISION.md', 'docs/ROADMAP.md')) {
+    if ($rootReadmeRaw -notmatch [regex]::Escape($strategyLink)) {
+        Add-DocError "README.md: missing strategy-document route '$strategyLink'"
+    }
+}
 $lastHeadingIndex = -1
 foreach ($heading in $requiredRootReadmeHeadings) {
     $headingIndices = @(for ($index = 0; $index -lt $rootReadmeLines.Count; $index++) {
