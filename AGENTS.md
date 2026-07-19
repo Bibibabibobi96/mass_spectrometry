@@ -15,7 +15,8 @@
 - 新增或修改规范前，先按根README的权威表确定唯一写入位置，并用全文搜索检查是否已有同义规则；
   非权威入口只链接或简述适用范围，不复制规范正文。
 - 不建立 COMSOL、SIMION、CAD 文档之间的横向网状引用；项目 README 负责导航，统一结论写入 `docs/PROJECT.md`。
-- 当前会话默认使用`matlab.exe -batch`驱动的MATLAB LiveLink/Java API直连COMSOL完成服务端状态、模型加载/检查、标准操作与求解；首次使用某个直连脚本先做最小测试。若MCP恰好可用，也只作为临时检查手段，不得替代正式脚本和项目专属后处理判据。
+- MATLAB、COMSOL、Python和SolidWorks的版本及启动方式只以根README的
+  [“工具链与执行入口”](README.md#工具链与执行入口)为准；Agent不得另建连接生命周期或把临时检查工具当作正式入口。
 - GUI对等与CAD同步的技术判据只由根README的“GUI 与 CAD 门禁”定义；Agent必须按变更类型执行该
   门禁，未完成适用验收时不得报告正式模型或正式几何已经完成。
 
