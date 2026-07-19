@@ -36,7 +36,7 @@
 - 全项目门禁：`verify_project.ps1 -Level Static|Candidate|Formal`。
   `Candidate`用`-CandidateTarget SIMION|COMSOL|CAD`只启动目标软件；COMSOL还需
   `-CandidateModelPath`，CAD需候选装配和导出报告路径。`Formal`单命令包含工具链、正式MPH重开与
-  静电Compute、SIMION/CAD/COMSOL资产合同和Python正式分析；2026-07-18实测`166.159 s`。
+  静电Compute、SIMION/CAD/COMSOL资产合同和Python正式分析。
 - SIMION正式交付与收敛参考冻结清单：[`config/simion_stable_entry.json`](config/simion_stable_entry.json)。
   它冻结IOB、完整PA家族、Program、Fly2和粒子表的实现身份，不定义或替代统一物理baseline。
 - 正式COMSOL生产脚本：
@@ -55,47 +55,16 @@
 - 统一分析契约：[`config/analysis_contract.json`](config/analysis_contract.json)
 - 当前正式跨求解器验证：[`config/formal_validation.json`](config/formal_validation.json)
 - 宽质量标定候选模式：[`config/modes/mass_spectrum.json`](config/modes/mass_spectrum.json)；只评价
-  峰位、标定和传输率，不替代524 Da正式分辨率基线。
-- 当前正式N=1000直接重算与发布入口：
+  峰位、标定和传输率，不替代正式分辨率基线。
+- 正式跨求解器直接重算与发布入口：
   [`tests/cross_solver/run_formal_validation.ps1`](tests/cross_solver/run_formal_validation.ps1)；发布器只在
-  两端1000/1000、统一比较PASS且当前资产/结果SHA齐全时更新机器契约。
+  两端达到机器契约样本量、统一比较PASS且当前资产/结果SHA齐全时更新机器契约。
 - 三栅加速器时间聚焦参考实现：
   [`analysis/accelerator_time_focus.py`](analysis/accelerator_time_focus.py)
 - 二级反射器闭式解参考实现：
   [`analysis/reflectron_dual_stage_solver.py`](analysis/reflectron_dual_stage_solver.py)
 - Python参考分析：[`analysis/README.md`](analysis/README.md)
 - 路径解析：[`oatof_paths.m`](oatof_paths.m)
-
-## 当前状态速览
-
-- 自2026-07-15起标准质量为524 amu，+1电荷，初始能量`5±0.4 eV`。
-- 质量分辨率只按`R=m/FWHM_m`定义；窄峰时间域等价式为`R=T/(2*FWHM_t)`。
-- 粒子数统一为两档：N=100用于日常检查、质心和传输率，N=1000用于峰形、尾部、FWHM、分辨率及
-  正式跨求解器统计；两端优先复用同源N=1000轨迹，N=100可取其确定性前缀。
-- 紧凑加速器、10 mm封闭屏蔽罩、正式COMSOL MPH和SolidWorks 2022装配体已同步；细z检测器
-  终止层仍只属于SIMION数值实现，不复制为机械厚度。
-- SIMION正式运行资产已集中到`artifacts/projects/oa_tof/models/simion/formal/oatof_524amu/`；
-  IOB只引用同目录四套PA；PA家族现由baseline/resolved契约和版本化GEM独立重建并通过N=1000
-  等价门禁，可将整个目录作为同事复现包交付。
-- 正式COMSOL日常档为真实加速器`hmax=1 mm`、敏感窗口`0.2 ns`、无场区`50 ns`，全部窗口由
-  质量/电压/长度公式计算并在GUI中可见；N=100与`1 ns`分段档逐粒子等价，粒子阶段快`1.77x`。
-- 同源N=1000正式统计、严格聚焦资产提升和N=100网格/时间步收敛均已有记录；入口不再重复易漂移的
-  性能数字，精确值和身份分别以`docs/PROJECT.md`与`config/formal_validation.json`为准。不为追平
-  单一R而改动求解器精度。
-- 求解器无关峰形、FWHM、source mapping、Recording审计和bootstrap已固定到Python 3.11参考入口；
-  四个纯MATLAB后处理入口已删除，旧数值只在历史/冻结基准中保留作迁移对照。
-- 五点宽质量N=40候选已完成，COMSOL/SIMION两端各物种40/40命中并通过标定与manifest；该候选只
-  评价峰位、传输率和质心差，不替代524 Da正式分辨率。COMSOL build 293的最低实测全链路成功点
-  是N=30，日常检查统一使用N=100；N=29两次在不同阶段失败，故不把30写成确定的内部阈值，
-  精确矩阵见`docs/COMSOL.md`。
-- 五质量各N=1000候选已完成，两端每种1000/1000命中；主图现为五个逐峰COMSOL/SIMION局部叠加
-  子图和一个质心差汇总子图，峰形差异保留为诊断，不提升为正式分辨率结论。
-- 500 Da的N=100/300/1000/5000历史计时标定表明COMSOL固定开销占主导、SIMION近似线性且
-  N=5000约151 s。当前新运行只使用N=100检查档和N=1000统计档；N=40、N=300退出日常选择，
-  N=5000仅在明确的性能或统计收敛专项中使用。
-  可复算入口为`tests/performance/run_single_mass_scaling_benchmark.ps1`，精确口径见`docs/PROJECT.md`。
-
-精确数值、候选/正式边界和开放任务以`docs/PROJECT.md`为准。
 
 ## 目录职责
 
@@ -120,7 +89,7 @@ oa_tof/
 - COMSOL与SIMION联动时必须使用同一几何、坐标、有效探测面、粒子表和FWHM定义。
 - 正式或候选的几何尺寸必须参数化联动，禁止手工移动一个器件后遗漏相关选择集、屏蔽件或探测面。
 - SIMION检测器PA是高于飞行管屏蔽罩的GUI可见数值终止层，只表示有效面和口径，不等于机械
-  检测器厚度；当前正式契约中的Lua/Data Recording槽位与GUI优先级均为4。
+  检测器厚度；Lua/Data Recording槽位与GUI优先级必须匹配当前机器契约。
 - Program与Data Recording必须同时开启；关闭Program对话框不等于禁用Program。
 
 通用GUI对等、SolidWorks同步、清理和参数单向派生规则不在本项目重复，直接适用根README与
@@ -137,5 +106,4 @@ git status --short --branch
 ```
 
 正式COMSOL、SIMION或SolidWorks入口发生变化时，还必须执行对应软件文档规定的运行时验收。
-完整N=100/1000粒子重算和SolidWorks装配重建仍是按变更类型触发的转正专项门禁，不纳入每次
-`Formal`，避免日常检查膨胀到20分钟以上。
+完整粒子重算和SolidWorks装配重建仍按变更类型及当前机器契约触发，不纳入每次`Formal`身份检查。

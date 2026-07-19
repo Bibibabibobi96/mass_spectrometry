@@ -176,6 +176,9 @@ foreach ($projectDir in $projectDirs) {
     if ($projectReadmeRaw -notmatch '\.\./\.\./README\.md') {
         Add-DocError "$($projectDir.Name): README.md does not route to the repository README authority"
     }
+    if ($projectReadmeRaw -match '(?m)^##\s+当前(?:状态|结论|进展)') {
+        Add-DocError "$($projectDir.Name): current-state sections belong in docs/PROJECT.md, not README.md"
+    }
 }
 
 if ($errors.Count -gt 0) {

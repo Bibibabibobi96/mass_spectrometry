@@ -1,8 +1,8 @@
 # RF 四极杆无碰撞传输与碰撞冷却项目
 
 本项目以SIMION 2020自带`examples/quad`为共享硬件模板，验证三种运行模式：无背景气体的RF
-约束与传输、RF+DC质量过滤，以及后续碰撞冷却。当前只闭合`transport_no_collision`，不能称为
-冷却结果、质量过滤结果或正式机械几何。
+约束与传输、RF+DC质量过滤，以及后续碰撞冷却。各模式当前闭合状态、候选/正式资格和开放任务
+只以[`docs/PROJECT.md`](docs/PROJECT.md)为准。
 
 ## 固定阅读顺序
 
@@ -18,7 +18,7 @@
 
 - 共享几何契约：[`config/baseline.json`](config/baseline.json)
 - 程序统一入口：[`config/resolved_geometry.json`](config/resolved_geometry.json)，由
-  `analysis/resolve_contract.py`生成，禁止手改；它只代表官方 100 amu/N25 回归。
+  `analysis/resolve_contract.py`生成，禁止手改；它只代表官方回归profile。
 - MATLAB/COMSOL 契约加载器：[`load_rf_quadrupole_contract.m`](load_rf_quadrupole_contract.m)；
   SIMION GEM 发布器：[`analysis/sync_simion_geometry.py`](analysis/sync_simion_geometry.py)。两者都只消费
   `resolved_geometry.json`，GEM 是生成文件，禁止作为第二参数源手改。
@@ -76,9 +76,8 @@ rf_quadrupole_collision_cooling/
 - 官方回归与集成就绪验证严格分离：不得覆盖`official_fixed_25.ion`或借新增工况改写已闭合的 N25 结果。
 - 新运行只以统一`particle_state.csv`、`summary.json`、稀疏轨迹和manifest为权威结果；不再生成旧版
   solver-specific粒子终点表。每份manifest在比较前必须重新计算全部文件哈希。
-- 未来部件交接面为出口孔口`z=90.2 mm`；`z=85.4 mm`只作杆端/边缘场诊断，`z=95.2 mm`
-  检测器只作独立传输验收，不能当作集成接口。
-- 本阶段只验证候选物理与数值实现；未完成 SolidWorks 同步前不得声称机械正式完成。
+- 部件交接面、杆端诊断面和独立传输检测面必须分别读取接口机器契约，不得相互替代。
+- 机械正式资格适用根README的SolidWorks同步门禁；当前项目状态只查PROJECT。
 - 集成仪器中，传输四极杆和质量过滤四极杆是同一硬件模板的两个实例；共享几何/粒子接口，分别绑定 mode 配置和空间变换，不复制成两套几何源。
 
 通用GUI对等、参数单向派生、产物清理和SolidWorks同步规则直接适用根README与仓库`AGENTS.md`。
