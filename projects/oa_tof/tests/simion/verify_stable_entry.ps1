@@ -1,5 +1,6 @@
 param(
   [string]$ManifestPath = '',
+  [string]$EntryId = '',
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe'
 )
 
@@ -17,7 +18,12 @@ if ($manifest.schema_version -notin @(1,2)) { throw "Unsupported SIMION stable-e
 $artifactWorkspace = Join-Path $workspaceRoot ('artifacts\projects\oa_tof\' + $manifest.artifact_workspace_relative.Replace('/','\'))
 $runtimeVerifier = Join-Path $PSScriptRoot 'verify_iob_runtime_contract.ps1'
 
-foreach ($entry in $manifest.entries) {
+$entries = @($manifest.entries)
+if ($EntryId) {
+  $entries = @($entries | Where-Object id -eq $EntryId)
+  if ($entries.Count -ne 1) { throw "Stable-entry manifest does not contain exactly one entry named $EntryId." }
+}
+foreach ($entry in $entries) {
   $iobPath = $null
   foreach ($asset in $entry.assets) {
     $path = Join-Path $artifactWorkspace $asset.relative_path.Replace('/','\')

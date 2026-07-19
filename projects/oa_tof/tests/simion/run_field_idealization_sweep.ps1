@@ -3,8 +3,10 @@ param(
   [int]$Seed = 20260713,
   [string]$CaseConfig = '',
   [string]$OutputDir = '',
+  [string]$RuntimePackage = '',
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
-  [switch]$AnalyzeOnly
+  [switch]$AnalyzeOnly,
+  [switch]$ValidateConfigOnly
 )
 
 Set-StrictMode -Version Latest
@@ -16,13 +18,6 @@ $projectRoot = Join-Path $repoRoot 'projects\oa_tof'
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\oa_tof'
 $formalDir = Join-Path $artifactRoot 'models\simion\formal\oatof_524amu'
 if (-not $CaseConfig) { $CaseConfig = Join-Path $projectRoot 'config\diagnostics\field_idealization_feasibility.json' }
-if (-not $OutputDir) {
-  $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
-  $OutputDir = Join-Path $artifactRoot "runs\field_idealization_sweep\simion_ez_n${N}_$stamp"
-}
-New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
-$OutputDir = (Resolve-Path -LiteralPath $OutputDir).Path
-$runtimeDir = Join-Path $OutputDir 'runtime_package'
 
 function Convert-Selector([string]$Selector) {
   $flags = [ordered]@{ A=0; D=0; S1=0; S2=0 }
@@ -49,6 +44,18 @@ function Convert-Selector([string]$Selector) {
 }
 
 $configuration = Get-Content -LiteralPath $CaseConfig -Raw -Encoding UTF8 | ConvertFrom-Json
+if ($ValidateConfigOnly) {
+  foreach ($case in $configuration.cases) { $null = Convert-Selector $case.selector }
+  Write-Host "SIMION_FIELD_SELECTOR_CONFIG=PASS cases=$(@($configuration.cases).Count)"
+  return
+}
+if (-not $OutputDir) {
+  $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+  $OutputDir = Join-Path $artifactRoot "runs\field_idealization_sweep\simion_ez_n${N}_$stamp"
+}
+New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
+$OutputDir = (Resolve-Path -LiteralPath $OutputDir).Path
+$runtimeDir = if ($RuntimePackage) { (Resolve-Path -LiteralPath $RuntimePackage).Path } else { Join-Path $OutputDir 'runtime_package' }
 if ($N -ne [int]$configuration.particle_count) {
   Write-Warning "N=$N overrides the feasibility-plan particle_count=$($configuration.particle_count)."
 }
@@ -56,28 +63,56 @@ $sourceLua = Join-Path $projectRoot 'simion\workbench\formal\oatof_ideal_grounde
 $generator = Join-Path $projectRoot 'simion\workbench\generate_comsol_consistent_ions.ps1'
 $analyzer = Join-Path $projectRoot 'simion\workbench\analyze_ideal_field_log.ps1'
 $ionFile = Join-Path $OutputDir "oatof_N${N}.ion"
+$stableManifestPath = Join-Path $projectRoot 'config\simion_stable_entry.json'
+$stableManifest = Get-Content -LiteralPath $stableManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$formalEntry = @($stableManifest.entries | Where-Object { @($_.assets.relative_path) -match '^formal/' })
+if ($formalEntry.Count -ne 1) { throw 'Could not identify exactly one formal SIMION stable-entry record.' }
+$stableGate = Join-Path $projectRoot 'tests\simion\verify_stable_entry.ps1'
+& $stableGate -ManifestPath $stableManifestPath -EntryId $formalEntry[0].id -SimionExe $SimionExe
+
+function Assert-DiagnosticPackage([string]$PackagePath) {
+  $pairs = @(
+    @((Join-Path $PackagePath 'oatof_ideal_grounded.iob'),(Join-Path $formalDir 'oatof_ideal_grounded.iob')),
+    @((Join-Path $PackagePath 'source_formal_run_manifest.json'),(Join-Path $formalDir 'run_manifest.json')),
+    @((Join-Path $PackagePath 'source_formal_SHA256SUMS.csv'),(Join-Path $formalDir 'SHA256SUMS.csv')),
+    @((Join-Path $PackagePath 'oatof_ideal_grounded.lua'),$sourceLua)
+  )
+  foreach ($pair in $pairs) {
+    if (-not (Test-Path -LiteralPath $pair[0] -PathType Leaf)) { throw "Diagnostic package file is missing: $($pair[0])" }
+    if ((Get-FileHash -LiteralPath $pair[0] -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $pair[1] -Algorithm SHA256).Hash) {
+      throw "Diagnostic package provenance mismatch: $($pair[0])"
+    }
+  }
+}
 
 if (-not $AnalyzeOnly) {
-  if (Test-Path -LiteralPath $runtimeDir) { throw "Runtime package already exists: $runtimeDir" }
-  Copy-Item -LiteralPath $formalDir -Destination $runtimeDir -Recurse
-  Move-Item -LiteralPath (Join-Path $runtimeDir 'run_manifest.json') -Destination (Join-Path $runtimeDir 'source_formal_run_manifest.json')
-  Move-Item -LiteralPath (Join-Path $runtimeDir 'SHA256SUMS.csv') -Destination (Join-Path $runtimeDir 'source_formal_SHA256SUMS.csv')
-  Copy-Item -LiteralPath $sourceLua -Destination (Join-Path $runtimeDir 'oatof_ideal_grounded.lua') -Force
+  if (-not $RuntimePackage) {
+    if (Test-Path -LiteralPath $runtimeDir) { throw "Runtime package already exists: $runtimeDir" }
+    Copy-Item -LiteralPath $formalDir -Destination $runtimeDir -Recurse
+    Move-Item -LiteralPath (Join-Path $runtimeDir 'run_manifest.json') -Destination (Join-Path $runtimeDir 'source_formal_run_manifest.json')
+    Move-Item -LiteralPath (Join-Path $runtimeDir 'SHA256SUMS.csv') -Destination (Join-Path $runtimeDir 'source_formal_SHA256SUMS.csv')
+    Copy-Item -LiteralPath $sourceLua -Destination (Join-Path $runtimeDir 'oatof_ideal_grounded.lua') -Force
+  }
+  Assert-DiagnosticPackage $runtimeDir
   & $generator -N $N -Seed $Seed -Output $ionFile | Out-Null
 }
 $iob = Join-Path $runtimeDir 'oatof_ideal_grounded.iob'
 if (-not (Test-Path -LiteralPath $iob)) { throw "Runtime IOB is missing: $iob" }
 if (-not (Test-Path -LiteralPath $ionFile)) { throw "ION file is missing: $ionFile" }
+Assert-DiagnosticPackage $runtimeDir
 
 $runConfig = [ordered]@{
-  schema_version=1; project='oa_tof'; purpose='simion_field_idealization_feasibility'
-  status='configured'; formal_eligible=$false; particle_count=$N; seed=$Seed
+  schema_version=1; run_id=(Split-Path -Leaf $OutputDir); project='oa_tof'
+  mode='simion_field_idealization_feasibility'; purpose='simion_field_idealization_feasibility'
+  status='configured'; formal_gate_passed=$false; particle_count=$N; seed=$Seed
   inputs=[ordered]@{
     case_config=(Resolve-Path -LiteralPath $CaseConfig).Path
     source_program=(Resolve-Path -LiteralPath $sourceLua).Path
     formal_iob=(Resolve-Path -LiteralPath (Join-Path $formalDir 'oatof_ideal_grounded.iob')).Path
+    stable_entry_manifest=(Resolve-Path -LiteralPath $stableManifestPath).Path
   }
   runtime_package=(Resolve-Path -LiteralPath $runtimeDir).Path
+  runtime_package_reused=[bool]$RuntimePackage
   capability_scope='composable Ez by region; Ex/Ey unsupported in current SIMION PA representation'
 }
 $runConfigPath = Join-Path $OutputDir 'run_config.json'

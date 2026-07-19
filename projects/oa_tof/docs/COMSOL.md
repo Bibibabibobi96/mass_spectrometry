@@ -80,6 +80,12 @@ N=100 MPH出发，只改变12个`ideal_<region>_<component>`参数并重算`sol2
 manifest复核。方法结论是Ez控制理想化时间端点、加速区控制主要均值响应，且加速区与二级反射区的
 峰宽响应非加性；本轮不继续做N=1000精确贡献率或无目标组合扫描。
 
+扫掠入口现从保存解和MPH参数读取实际粒子数与`ion_mass_amu`，配置中的N/质量只作一致性断言，因而
+不再把524 Da、N=100藏成工具常数。检测事件由`comsol/oatof_extract_detector_arrivals.m`统一提取：
+先要求转向后的真实向下跨面，或在1 um容差内确认稳定Wall/Freeze平台；后者再用检测面前0.5 mm内
+的碰撞前运动段外推到精确平面，避免直接取Freeze输出时刻造成约0.8 ns采样量化。合成轨迹4项测试和
+保存N=100 MPH只读复核均PASS，后者100/100均分类为`frozen_on_detector`，未运行Study。
+
 ### 2026-07-16 场与代表轨迹诊断
 
 `tests/comsol/export_axis_field_profiles.m`从正式MPH导出轴向场；
