@@ -25,6 +25,41 @@ def pct(value: float) -> float:
     return 100.0 * value
 
 
+def integration_contract_complete(contract: dict[str, Any] | None) -> bool:
+    """Return true only for a frozen contract with all integration sections."""
+    if not contract or contract.get("status") != "frozen":
+        return False
+    required = ("coordinate_transform", "timing_contract", "acceptance_criteria")
+    return all(bool(contract.get(name)) for name in required)
+
+
+def decide_gate(
+    regression_pass: bool,
+    strict_interface_pass: bool,
+    contract_complete: bool,
+    functional_status: str,
+) -> tuple[str, list[str], str]:
+    """Evaluate the integration gate without conflating missing evidence and FAIL."""
+    blockers: list[str] = []
+    if not regression_pass:
+        blockers.append("component_regression_failed")
+    if not strict_interface_pass:
+        blockers.append("strict_interface_failed")
+    if not contract_complete:
+        blockers.append("missing_integration_contract")
+    if not regression_pass or not contract_complete:
+        return "FAIL", blockers, blockers[0]
+    if strict_interface_pass:
+        return "PASS", blockers, "none"
+    if functional_status == "PASS":
+        return "CONDITIONAL_PASS", blockers, "strict_interface_failed_but_functional_acceptance_passed"
+    if functional_status == "FAIL":
+        blockers.append("functional_acceptance_failed")
+        return "FAIL", blockers, "functional_acceptance_failed"
+    blockers.append("functional_acceptance_not_evaluated")
+    return "FAIL", blockers, "functional_acceptance_not_evaluated"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--interface", required=True, type=Path)
@@ -32,6 +67,8 @@ def main() -> None:
     parser.add_argument("--phase-diagnostics", required=True, type=Path)
     parser.add_argument("--internal-release", required=True, type=Path)
     parser.add_argument("--mode", required=True, type=Path)
+    parser.add_argument("--integration-contract", type=Path)
+    parser.add_argument("--functional-result", type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
     args = parser.parse_args()
 
@@ -40,6 +77,8 @@ def main() -> None:
     phase = load(args.phase_diagnostics)
     internal = load(args.internal_release)
     mode = load(args.mode)
+    integration_contract = load(args.integration_contract) if args.integration_contract else None
+    functional_result = load(args.functional_result) if args.functional_result else None
     targets = mode["candidate_acceptance_targets"]
     if int(interface["particles"]) < int(mode["numerics"]["minimum_diagnostic_particles"]):
         raise ValueError("Interface sample is below the configured diagnostic minimum.")
@@ -54,9 +93,12 @@ def main() -> None:
             "comsol_self_change_pct": pct(comsol[region]["vector_relative_rms"]),
         })
 
+    edge_evidence_complete = all(
+        payload.get("status") == "PASS" for payload in (convergence, phase, internal)
+    )
     edge = {
         "schema_version": 1,
-        "status": "PASS",
+        "status": "PASS" if edge_evidence_complete else "FAIL",
         "purpose": "evidence synthesis and localization, not model acceptance",
         "field_spatial_convergence": region_rows,
         "baseline_trajectory": {
@@ -88,6 +130,7 @@ def main() -> None:
     }
     budget = {
         "schema_version": 1,
+        "role": "interface_discrepancy_assessment",
         "status": "PASS" if all(target_checks.values()) else "FAIL",
         "particles": interface["particles"],
         "observed_interface_differences": {
@@ -109,28 +152,38 @@ def main() -> None:
             "usable_conclusion": "The present discrepancy is larger than the configured interface targets and remains edge-sensitive; it cannot be waived by subtracting mesh percentages.",
         },
         "alternative_functional_criterion": {
-            "status": "NOT_EVALUATED",
+            "status": functional_result.get("status", "NOT_EVALUATED") if functional_result else "NOT_EVALUATED",
             "required_test": "Propagate both exported handoff phase-space ensembles through the same frozen downstream oa-TOF acceptance model and compare downstream transmission and performance against predeclared tolerances.",
-            "why_not_available": "No frozen RF-to-oa-TOF transform and downstream acceptance contract currently exists.",
+            "why_not_available": None if functional_result else "No functional-acceptance result was supplied.",
+            "source": str(args.functional_result.resolve()) if args.functional_result else None,
         },
     }
 
+    regression_pass = all(interface["regression_gates"].values())
     strict_pass = all(target_checks.values())
-    functional_pass = budget["alternative_functional_criterion"]["status"] == "PASS"
-    verdict = "PASS" if strict_pass else ("CONDITIONAL_PASS" if functional_pass else "FAIL")
+    contract_complete = integration_contract_complete(integration_contract)
+    functional_status = budget["alternative_functional_criterion"]["status"]
+    verdict, blockers, failure_class = decide_gate(
+        regression_pass, strict_pass, contract_complete, functional_status
+    )
     gate = {
         "schema_version": 1,
         "status": verdict,
         "gate": "rf_quadrupole_to_oa_tof_integration_candidate",
-        "regression_status": "PASS" if all(interface["regression_gates"].values()) else "FAIL",
+        "regression_status": "PASS" if regression_pass else "FAIL",
         "strict_interface_status": "PASS" if strict_pass else "FAIL",
-        "functional_alternative_status": budget["alternative_functional_criterion"]["status"],
+        "integration_contract_status": "COMPLETE" if contract_complete else "MISSING_OR_INCOMPLETE",
+        "integration_contract_source": str(args.integration_contract.resolve()) if args.integration_contract else None,
+        "functional_alternative_status": functional_status,
+        "blockers": blockers,
+        "failure_class": failure_class,
         "package_generation_allowed": verdict in {"PASS", "CONDITIONAL_PASS"},
         "decision": "Do not generate or connect an oa-TOF integration package yet." if verdict == "FAIL" else "Candidate packaging may proceed within the stated scope.",
         "closure_path": [
             "Keep the existing component regression unchanged.",
             "If strict phase-space agreement is required, refine or redesign the entrance/exit edge representation and rerun the same N=100 gate.",
-            "If downstream function is the real requirement, first freeze the transform and oa-TOF acceptance contract, then evaluate the alternative criterion without tuning either solver to match.",
+            "Freeze the RF-to-oa-TOF coordinate, timing, and acceptance contract before any integration PASS.",
+            "If downstream function is the real requirement, evaluate the alternative criterion without tuning either solver to match.",
         ],
     }
 
