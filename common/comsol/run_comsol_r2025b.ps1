@@ -21,6 +21,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $bootstrapDir = Join-Path $PSScriptRoot 'livelink_r2025b'
+$failureClassifier = Join-Path $PSScriptRoot 'livelink_failure_classification.ps1'
 $launcher = 'D:\COMSOL 6.4\COMSOL64\Multiphysics\bin\win64\comsolmphserver.exe'
 $matlabRoot = 'C:\Program Files\MATLAB\R2025b\MatlabR2025b'
 
@@ -30,6 +31,7 @@ if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
 if (-not (Test-Path -LiteralPath $matlabRoot -PathType Container)) {
     throw "MATLAB R2025b root not found: $matlabRoot"
 }
+. $failureClassifier
 
 $task = (Resolve-Path -LiteralPath $TaskScript).Path
 $report = [System.IO.Path]::GetFullPath($ReportPath)
@@ -68,6 +70,17 @@ try {
             $reportText
             if ($launcherExit -eq 0 -and $reportText -match '(?m)^STATUS=PASS$') {
                 return
+            }
+            if ($attempt -lt $StartupAttempts -and
+                (Test-ComsolRetryableStartupReport -ReportText $reportText)) {
+                $archivedReport = $report + '.startup_retry.' + $attempt + '.' +
+                    (Get-Date -Format 'yyyyMMdd_HHmmss')
+                Move-Item -LiteralPath $report -Destination $archivedReport
+                Write-Warning ("COMSOL server was disconnected during the first model open; " +
+                    "archived the report at $archivedReport and retrying a clean startup in " +
+                    "$StartupRetryDelaySeconds s (attempt $($attempt + 1)/$StartupAttempts).")
+                Start-Sleep -Seconds $StartupRetryDelaySeconds
+                continue
             }
             throw "R2025b LiveLink task failed (launcher exit $launcherExit)."
         }

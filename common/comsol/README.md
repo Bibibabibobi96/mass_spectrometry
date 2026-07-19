@@ -9,6 +9,11 @@
 `run_comsol_r2025b.ps1`是当前MATLAB R2025b + COMSOL 6.4 LiveLink任务入口。项目脚本不得再次
 调用`mphstart`，也不得绕过入口维护另一套长期服务连接。
 
+入口只对白名单中的启动瞬态进行有限重试：报告必须同时包含首次模型打开链路中的
+`mphload`、`mphopen`和`Not connected to a server`。重试前失败报告以
+`.startup_retry.<attempt>.<timestamp>`归档；进入配置、Study Compute或求解器后的空指针、断连和
+原生崩溃均立即失败，不得用自动重试掩盖。分类回归入口为`test_livelink_failure_classification.ps1`。
+
 入口的`-ProcessorCount`是可选共享内存线程上限；默认`0`表示沿用COMSOL自动选择，日常结果不变。
 只有排查本地并发库崩溃或项目已验证固定线程数时才显式设置，例如`-ProcessorCount 1`。线程数属于
 运行环境证据，不能借此改变物理、网格或求解器定义。
