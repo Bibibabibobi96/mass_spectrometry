@@ -37,6 +37,7 @@ from peak_metrics import (
     compare_peak_shapes,
     compute_detector_metrics,
     compute_peak_metrics,
+    compute_paired_tof_delta_source_metrics,
     compute_source_mapping_metrics,
 )
 
@@ -1088,6 +1089,11 @@ def analyze_comparison(
             f"{left_label}_metrics": left_source,
             f"{right_label}_metrics": right_source,
         }
+        comparison["paired_tof_difference"]["source_mapping"] = (
+            compute_paired_tof_delta_source_metrics(
+                paired_tof_delta_ns, *source_arguments
+            )
+        )
         comparison.update(
             {
                 "left_corr_tof_initial_z": left_source["corr_tof_initial_z"],

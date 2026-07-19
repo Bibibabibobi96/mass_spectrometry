@@ -84,6 +84,15 @@ KS距离`0.07`且`p=0.9684`，峰结构一致。两档同粒子落点平均/RMS/
 `0.2309/0.2695/0.7115 mm`。结论是1 mm适合日常计算，0.5 mm保留为正式收敛项；本轮没有
 几何变化，故无需更新SolidWorks装配体。
 
+2026-07-19用保存的轴线场与当前正式N=1000配对结果补做纵向闭合，不重跑求解器。释放区
+COMSOL由电势数值导数得到的Ez与直接`es.Ez`内点RMS差为`7.206 V/m`，而同坐标SIMION-COMSOL
+Ez RMS为`1344.091 V/m`，前者只占`0.536%`，故COMSOL场梯度读取不是释放区差异主因。逐粒子
+`SIMION-COMSOL TOF`与初始z的相关系数为`0.97150`；z二次项解释`94.9506%`差值方差，加入能量、
+x和y只增至`94.9564%`。统一baseline已排除有意的电极位置/电压差，剩余证据与两端对栅网、边界
+和局部场的数值表示不同一致，并通过z-to-TOF映射放大；保存数据不能唯一指认某个闭源内部插值
+实现。可复算入口为`analysis/analyze_longitudinal_closure.py`，结果与11项输出manifest位于
+`artifacts/projects/oa_tof/results/cross_solver/longitudinal_closure/current_assets_n1000_20260719/`。
+
 ### 2026-07-16 参数化分段时间输出
 
 `comsol/configure_oatof_segmented_output.m`用质量、电荷、加速电压、`L_accel/L_flight`和两级

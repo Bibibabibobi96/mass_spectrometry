@@ -110,6 +110,8 @@ Program Off只允许作为诊断组，可用`single`和对应`.1`列导入；它
 - `compare_particle_trajectories.py`比较代表粒子的同时间位置、同z横向路径、转向深度和关键平面
   到达时间；SIMION输入必须是启用稀疏TRACE的正式quality=8日志。
 - `compare_vector_field_samples.py`比较两侧在完全相同加速段坐标上的Ex/Ey/Ez。
+- `analyze_longitudinal_closure.py`复用保存的轴线电势/Ez和配对比较JSON，量化COMSOL电势梯度与
+  `es.Ez`差、跨求解器Ez差及初始z对逐粒子TOF差的解释率；它不启动求解器，也不替代正式重算。
 - `mass_spectrum.py`按`config/modes/mass_spectrum.json`拟合
   `sqrt(m/z)=slope*TOF+intercept`，输出五点宽质量谱、标定残差、传输率、跨求解器质心差以及逐质量
   标准化KDE重叠/KS距离；经济样本禁止用于精确FWHM声明。

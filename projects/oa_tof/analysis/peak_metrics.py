@@ -291,6 +291,14 @@ def _r_squared(observed: np.ndarray, fitted: np.ndarray) -> float:
     return 1.0 - residual / total
 
 
+def _optional_r_squared(
+    observed: np.ndarray, fitted: np.ndarray
+) -> float | None:
+    if float(np.sum((observed - np.mean(observed)) ** 2)) <= 0:
+        return None
+    return _r_squared(observed, fitted)
+
+
 def _correlation(a: np.ndarray, b: np.ndarray) -> float | None:
     if np.std(a, ddof=1) <= 0 or np.std(b, ddof=1) <= 0:
         return None
@@ -395,6 +403,71 @@ def compute_source_mapping_metrics(
         + z_only_coefficients[2] * zc_plot**2,
     }
     return metrics, arrays
+
+
+def compute_paired_tof_delta_source_metrics(
+    delta_tof_ns: np.ndarray,
+    initial_x_mm: np.ndarray,
+    initial_y_mm: np.ndarray,
+    initial_z_mm: np.ndarray,
+    initial_energy_eV: np.ndarray,
+) -> dict[str, Any]:
+    """Explain a paired cross-solver TOF difference from shared source coordinates."""
+
+    delta = np.asarray(delta_tof_ns, dtype=float).reshape(-1)
+    if delta.size < 3:
+        raise ValueError("delta_tof_ns requires at least three samples")
+    if not np.all(np.isfinite(delta)):
+        raise ValueError("delta_tof_ns contains non-finite values")
+    predictors = {
+        "initial_x_mm": np.asarray(initial_x_mm, dtype=float).reshape(-1),
+        "initial_y_mm": np.asarray(initial_y_mm, dtype=float).reshape(-1),
+        "initial_z_mm": np.asarray(initial_z_mm, dtype=float).reshape(-1),
+        "initial_energy_eV": np.asarray(initial_energy_eV, dtype=float).reshape(-1),
+    }
+    for name, values in predictors.items():
+        if values.size != delta.size:
+            raise ValueError(f"{name} length differs from delta_tof_ns")
+        if not np.all(np.isfinite(values)):
+            raise ValueError(f"{name} contains non-finite values")
+
+    x = predictors["initial_x_mm"]
+    y = predictors["initial_y_mm"]
+    z = predictors["initial_z_mm"]
+    energy = predictors["initial_energy_eV"]
+    xc, yc = x - np.mean(x), y - np.mean(y)
+    zc, ec = z - np.mean(z), energy - np.mean(energy)
+
+    z_linear_design = np.column_stack((np.ones(delta.size), zc))
+    z_linear_coefficients = np.linalg.lstsq(
+        z_linear_design, delta, rcond=None
+    )[0]
+    z_quadratic_design = np.column_stack((z_linear_design, zc**2))
+    z_quadratic_coefficients = np.linalg.lstsq(
+        z_quadratic_design, delta, rcond=None
+    )[0]
+    full_design = np.column_stack(
+        (np.ones(delta.size), zc, zc**2, ec, xc, yc)
+    )
+
+    return {
+        "particles": int(delta.size),
+        "mean_delta_tof_ns": float(np.mean(delta)),
+        "sample_std_delta_tof_ns": float(np.std(delta, ddof=1)),
+        "corr_delta_tof_initial_z": _correlation(delta, z),
+        "z_linear_r_squared": _optional_r_squared(
+            delta, z_linear_design @ z_linear_coefficients
+        ),
+        "z_quadratic_r_squared": _optional_r_squared(
+            delta, z_quadratic_design @ z_quadratic_coefficients
+        ),
+        "z2_energy_xy_r_squared": _optional_r_squared(
+            delta,
+            full_design @ np.linalg.lstsq(full_design, delta, rcond=None)[0],
+        ),
+        "z_linear_slope_ns_per_mm": float(z_linear_coefficients[1]),
+        "z_quadratic_curvature_ns_per_mm2": float(z_quadratic_coefficients[2]),
+    }
 
 
 def _bootstrap_resolution_batch(

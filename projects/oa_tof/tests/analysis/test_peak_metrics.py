@@ -19,6 +19,7 @@ from peak_metrics import (
     bootstrap_resolution_difference,
     compare_peak_shapes,
     compute_peak_metrics,
+    compute_paired_tof_delta_source_metrics,
     compute_source_mapping_metrics,
 )
 from reference_analysis import (
@@ -71,6 +72,39 @@ class PeakMetricsTest(unittest.TestCase):
         self.assertAlmostEqual(
             comparison["paired_standardized_tof_correlation"], 1.0, places=12
         )
+
+    def test_paired_tof_delta_source_mapping_identifies_longitudinal_term(
+        self,
+    ) -> None:
+        z = np.linspace(-0.5, 0.5, 101)
+        x = np.sin(np.arange(z.size))
+        y = np.cos(np.arange(z.size))
+        energy = 5.0 + 0.1 * np.sin(2.0 * np.arange(z.size))
+        delta_ns = 0.8 + 2.5 * z + 0.7 * z**2
+
+        metrics = compute_paired_tof_delta_source_metrics(
+            delta_ns, x, y, z, energy
+        )
+
+        self.assertGreater(metrics["corr_delta_tof_initial_z"], 0.99)
+        self.assertGreater(metrics["z_linear_r_squared"], 0.98)
+        self.assertAlmostEqual(metrics["z_quadratic_r_squared"], 1.0, places=12)
+        self.assertAlmostEqual(metrics["z2_energy_xy_r_squared"], 1.0, places=12)
+        self.assertAlmostEqual(metrics["z_linear_slope_ns_per_mm"], 2.5, places=12)
+        self.assertAlmostEqual(
+            metrics["z_quadratic_curvature_ns_per_mm2"], 0.7, places=12
+        )
+
+    def test_constant_paired_tof_delta_has_undefined_mapping_r_squared(self) -> None:
+        z = np.linspace(-0.5, 0.5, 11)
+        metrics = compute_paired_tof_delta_source_metrics(
+            np.ones(z.size), z, z, z, 5.0 + z
+        )
+
+        self.assertIsNone(metrics["corr_delta_tof_initial_z"])
+        self.assertIsNone(metrics["z_linear_r_squared"])
+        self.assertIsNone(metrics["z_quadratic_r_squared"])
+        self.assertIsNone(metrics["z2_energy_xy_r_squared"])
 
 
 class ParticleImportTest(unittest.TestCase):
