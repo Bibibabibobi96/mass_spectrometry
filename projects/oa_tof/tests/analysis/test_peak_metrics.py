@@ -23,6 +23,7 @@ from peak_metrics import (
     compute_source_mapping_metrics,
 )
 from reference_analysis import (
+    DEFAULT_DETECTOR_CENTER_X_MM,
     analyze_comparison,
     audit_simion_recording,
     read_particle_table,
@@ -307,7 +308,8 @@ class SourceMappingAndBootstrapTest(unittest.TestCase):
                 frame = pd.DataFrame(
                     {
                         "Ion": [1, 2, 3], "TofUs": tof,
-                        "XMm": [0.0, 0.1, -0.1], "YMm": [0.0, 0.0, 0.0],
+                        "XMm": DEFAULT_DETECTOR_CENTER_X_MM + np.array([0.0, 0.1, -0.1]),
+                        "YMm": [0.0, 0.0, 0.0],
                         "Hit": [True, True, True], "X0Mm": [0.0] * 3,
                         "Y0Mm": [0.0] * 3, "Z0Mm": [0.0] * 3,
                         "EnergyEv": [5.0] * 3,
@@ -320,7 +322,8 @@ class SourceMappingAndBootstrapTest(unittest.TestCase):
                         {
                             "Ion": global_id, "MassAmu": mass,
                             "ChargeState": int(item["charge_state"]), "TofUs": value,
-                            "XMm": 0.0, "YMm": 0.0, "Hit": True,
+                            "XMm": DEFAULT_DETECTOR_CENTER_X_MM,
+                            "YMm": 0.0, "Hit": True,
                             "X0Mm": 0.0, "Y0Mm": 0.0, "Z0Mm": 0.0,
                             "EnergyEv": 5.0,
                         }
@@ -333,6 +336,9 @@ class SourceMappingAndBootstrapTest(unittest.TestCase):
             self.assertEqual(result["status"], "PASS")
             self.assertFalse(result["resolution_claim_allowed"])
             self.assertTrue((output / "mass_spectrum_comparison.png").is_file())
+            self.assertTrue(
+                (output / "mass_detector_landing_comparison.png").is_file()
+            )
             self.assertTrue((output / "mass_peak_shape_comparison.csv").is_file())
             self.assertFalse((output / "mass_peak_local_comparison.png").exists())
             self.assertEqual(len(pd.read_csv(output / "mass_spectrum_summary.csv")), 10)
@@ -340,6 +346,16 @@ class SourceMappingAndBootstrapTest(unittest.TestCase):
             self.assertEqual(len(shapes), len(species))
             np.testing.assert_allclose(shapes["standardized_kde_overlap"], 1.0)
             self.assertEqual(len(result["peak_shape_comparisons"]), len(species))
+            summary = pd.read_csv(output / "mass_spectrum_summary.csv")
+            self.assertTrue(
+                {
+                    "impact_centroid_x_mm", "impact_centroid_y_mm",
+                    "impact_rms_radius_mm", "cross_solver_centroid_distance_mm",
+                }.issubset(summary.columns)
+            )
+            np.testing.assert_allclose(
+                summary["cross_solver_centroid_distance_mm"], 0.0, atol=1e-12
+            )
 
     def test_paired_comparison_writes_detector_landing_outputs(self) -> None:
         left = pd.DataFrame(

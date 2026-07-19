@@ -235,7 +235,8 @@ $outputs += @(
   (Join-Path $resultDir 'mass_spectrum_summary.csv'),
   (Join-Path $resultDir 'mass_peak_shape_comparison.csv'),
   (Join-Path $resultDir 'mass_spectrum_metrics.json'),
-  (Join-Path $resultDir 'mass_spectrum_comparison.png')
+  (Join-Path $resultDir 'mass_spectrum_comparison.png'),
+  (Join-Path $resultDir 'mass_detector_landing_comparison.png')
 )
 $manifestArgs = @(
   (Join-Path $repoRoot 'common\contracts\write_run_manifest.py'),

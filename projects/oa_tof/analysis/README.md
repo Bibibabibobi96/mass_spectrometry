@@ -28,7 +28,9 @@ py -3.11 -m venv .venv
 - 五质量标定、逐峰COMSOL/SIMION局部密度叠加和质心差汇总图：`mass_spectrum.py`。主图使用2×3布局，
   五个峰各自缩放局部质量偏差轴且共享各峰分箱，第六格只汇总跨求解器平均TOF差；全图图例明确
   区分两端密度、求解器峰均值、标称质量零偏差和质心差曲线。逐质量标准化KDE重叠和KS距离写入
-  `mass_peak_shape_comparison.csv`并标在对应面板；该图不作Gaussian峰形拟合。
+  `mass_peak_shape_comparison.csv`并标在对应面板；该图不作Gaussian峰形拟合。同一入口另输出
+  `mass_detector_landing_comparison.png`：五个质量各占一个等比例、共坐标范围子图，在每个子图中
+  叠加COMSOL实心落点、SIMION空心落点、两端质心、RMS半径和质心间距。
 - CSV/XLSX/SIMION TRACE导入、严格Recording审计、source mapping、bootstrap、出图和CLI：
   `reference_analysis.py`。
 - 回归门禁：`verify_reference_analysis.ps1`。

@@ -22,8 +22,12 @@ from matplotlib.lines import Line2D
 import numpy as np
 import pandas as pd
 
-from peak_metrics import AnalysisSettings, compare_peak_shapes
-from reference_analysis import read_particle_table
+from peak_metrics import AnalysisSettings, compare_peak_shapes, compute_detector_metrics
+from reference_analysis import (
+    DEFAULT_DETECTOR_CENTER_X_MM,
+    DEFAULT_DETECTOR_CENTER_Y_MM,
+    read_particle_table,
+)
 
 
 def sha256_file(path: Path) -> str:
@@ -91,8 +95,14 @@ def _normalized_simion_rows(path: Path) -> pd.DataFrame:
             "mass_amu": pd.to_numeric(raw["MassAmu"], errors="raise"),
             "charge_state": pd.to_numeric(raw["ChargeState"], errors="raise").astype(int),
             "tof_us": pd.to_numeric(raw["TofUs"], errors="coerce"),
-            "detector_x_mm": pd.to_numeric(raw["XMm"], errors="coerce"),
-            "detector_y_mm": pd.to_numeric(raw["YMm"], errors="coerce"),
+            "detector_x_mm": (
+                pd.to_numeric(raw["XMm"], errors="coerce")
+                - DEFAULT_DETECTOR_CENTER_X_MM
+            ),
+            "detector_y_mm": (
+                pd.to_numeric(raw["YMm"], errors="coerce")
+                - DEFAULT_DETECTOR_CENTER_Y_MM
+            ),
             "hit": hit,
         }
     )
@@ -112,6 +122,104 @@ def _normalized_simion_rows(path: Path) -> pd.DataFrame:
 def _normalized_comsol_rows(path: Path) -> pd.DataFrame:
     result, _ = read_particle_table(path)
     return result.copy()
+
+
+def _plot_mass_detector_landings(
+    particles: pd.DataFrame,
+    summary: pd.DataFrame,
+    species: list[dict[str, Any]],
+    output: Path,
+) -> None:
+    """Overlay COMSOL/SIMION detector impacts in one panel per mass."""
+
+    coordinates = particles[["detector_x_mm", "detector_y_mm"]].to_numpy(dtype=float)
+    if not np.all(np.isfinite(coordinates)):
+        raise ValueError("Mass-spectrum detector coordinates contain non-finite values")
+    extent = 1.08 * max(1.0, float(np.max(np.abs(coordinates))))
+    column_count = min(3, len(species))
+    row_count = int(np.ceil(len(species) / column_count))
+    figure, grid = plt.subplots(
+        row_count,
+        column_count,
+        figsize=(5.4 * column_count, 4.5 * row_count),
+        constrained_layout=True,
+        squeeze=False,
+    )
+    axes = grid.ravel()
+    colors = {"COMSOL": "#1f77b4", "SIMION": "#d62728"}
+    for axis, item in zip(axes, species, strict=False):
+        species_id = str(item["species_id"])
+        nominal = float(item["mz"])
+        peak = particles.loc[particles["species_id"] == species_id]
+        peak_summary = summary.loc[summary["species_id"] == species_id].set_index("solver")
+        for solver in ("COMSOL", "SIMION"):
+            solver_peak = peak.loc[peak["solver"] == solver]
+            if solver == "COMSOL":
+                axis.scatter(
+                    solver_peak["detector_x_mm"], solver_peak["detector_y_mm"],
+                    s=13, alpha=0.42, color=colors[solver], edgecolors="none",
+                )
+                centroid_marker = "X"
+            else:
+                axis.scatter(
+                    solver_peak["detector_x_mm"], solver_peak["detector_y_mm"],
+                    s=13, alpha=0.55, facecolors="none", edgecolors=colors[solver],
+                    linewidths=0.65,
+                )
+                centroid_marker = "P"
+            axis.scatter(
+                peak_summary.loc[solver, "impact_centroid_x_mm"],
+                peak_summary.loc[solver, "impact_centroid_y_mm"],
+                marker=centroid_marker, s=75, linewidths=1.3,
+                color=colors[solver], edgecolors="white", zorder=5,
+            )
+        axis.axhline(0.0, color="0.55", linewidth=0.8, linestyle="-.")
+        axis.axvline(0.0, color="0.55", linewidth=0.8, linestyle="-.")
+        axis.text(
+            0.03, 0.97,
+            f"RMS r C/S="
+            f"{peak_summary.loc['COMSOL', 'impact_rms_radius_mm']:.3f}/"
+            f"{peak_summary.loc['SIMION', 'impact_rms_radius_mm']:.3f} mm\n"
+            f"centroid distance="
+            f"{peak_summary['cross_solver_centroid_distance_mm'].iloc[0]:.3f} mm\n"
+            f"N C/S={int(peak_summary.loc['COMSOL', 'detected'])}/"
+            f"{int(peak_summary.loc['SIMION', 'detected'])}",
+            transform=axis.transAxes, ha="left", va="top", fontsize=8,
+            bbox={"facecolor": "white", "alpha": 0.72, "edgecolor": "none", "pad": 2},
+        )
+        axis.set(
+            title=f"m/z {nominal:g}",
+            xlim=(-extent, extent), ylim=(-extent, extent),
+            xlabel="Detector local x (mm)", ylabel="Detector local y (mm)",
+        )
+        axis.set_aspect("equal", adjustable="box")
+        axis.grid(True, alpha=0.2)
+    for axis in axes[len(species):]:
+        axis.set_axis_off()
+    legend_handles = [
+        Line2D([0], [0], marker="o", linestyle="none", markersize=6,
+               markerfacecolor=colors["COMSOL"], markeredgecolor="none",
+               label="COMSOL impacts"),
+        Line2D([0], [0], marker="o", linestyle="none", markersize=6,
+               markerfacecolor="none", markeredgecolor=colors["SIMION"],
+               label="SIMION impacts"),
+        Line2D([0], [0], marker="X", linestyle="none", markersize=8,
+               markerfacecolor=colors["COMSOL"], markeredgecolor="white",
+               label="COMSOL centroid"),
+        Line2D([0], [0], marker="P", linestyle="none", markersize=8,
+               markerfacecolor=colors["SIMION"], markeredgecolor="white",
+               label="SIMION centroid"),
+        Line2D([0], [0], color="0.55", linewidth=0.8, linestyle="-.",
+               label="detector axes (x=0 or y=0)"),
+    ]
+    figure.legend(
+        handles=legend_handles, loc="lower center", bbox_to_anchor=(0.5, -0.055),
+        ncol=5, frameon=True, borderaxespad=0,
+    )
+    figure.suptitle("oa-TOF detector landing: COMSOL and SIMION")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(output, dpi=180, bbox_inches="tight", facecolor="white")
+    plt.close(figure)
 
 
 def analyze_mass_spectrum(
@@ -204,6 +312,10 @@ def analyze_mass_spectrum(
                     "std_tof_ns": 1000.0 * std_tof,
                     "centroid_standard_error_ns": 1000.0 * std_tof / np.sqrt(len(frame)),
                     "relative_abundance": abundance,
+                    **compute_detector_metrics(
+                        frame["detector_x_mm"].to_numpy(dtype=float),
+                        frame["detector_y_mm"].to_numpy(dtype=float),
+                    ),
                 }
             )
 
@@ -232,6 +344,19 @@ def analyze_mass_spectrum(
     pivot = summary.pivot(index="species_id", columns="solver", values="mean_tof_us")
     summary["simion_minus_comsol_mean_tof_ns"] = summary["species_id"].map(
         1000.0 * (pivot["SIMION"] - pivot["COMSOL"])
+    )
+    centroid_x = summary.pivot(
+        index="species_id", columns="solver", values="impact_centroid_x_mm"
+    )
+    centroid_y = summary.pivot(
+        index="species_id", columns="solver", values="impact_centroid_y_mm"
+    )
+    centroid_distance = np.hypot(
+        centroid_x["SIMION"] - centroid_x["COMSOL"],
+        centroid_y["SIMION"] - centroid_y["COMSOL"],
+    )
+    summary["cross_solver_centroid_distance_mm"] = summary["species_id"].map(
+        centroid_distance
     )
     summary = summary.sort_values(["mz", "solver"]).reset_index(drop=True)
     particles.to_csv(output_dir / "mass_spectrum_particles.csv", index=False)
@@ -321,8 +446,13 @@ def analyze_mass_spectrum(
     fig.savefig(output_dir / "mass_spectrum_comparison.png", dpi=180, bbox_inches="tight")
     plt.close(fig)
 
+    _plot_mass_detector_landings(
+        particles, summary, mode["species"],
+        output_dir / "mass_detector_landing_comparison.png",
+    )
+
     result = {
-        "schema_version": 1,
+        "schema_version": 2,
         "status": "PASS",
         "role": "oa_tof_candidate_mass_spectrum_analysis",
         "resolution_claim_allowed": False,
