@@ -12,6 +12,10 @@ adjustable accelerator_fast_adjust_enable=1.0
 adjustable ideal_accel_enable=0.0
 adjustable ideal_refl_stage1_enable=0.0
 adjustable ideal_refl_stage2_enable=0.0
+adjustable ideal_accel_ez_enable=0.0
+adjustable ideal_drift_ez_enable=0.0
+adjustable ideal_refl_stage1_ez_enable=0.0
+adjustable ideal_refl_stage2_ez_enable=0.0
 adjustable accelerator_assembly_translation_z_mm=-19.92918680341103
 adjustable accelerator_stage1_length_mm=3.0
 adjustable accelerator_stage2_length_mm=16.8
@@ -217,7 +221,7 @@ function segment.initialize_run()
  d:fast_adjust{[1]=0}
  if trajectory_log_enable~=0 then
   print(string.format('TRACE: pa_mesh reflectron=%dx%dx%d@(%.12g,%.12g,%.12g) accelerator=%dx%dx%d@(%.12g,%.12g,%.12g) flight_tube=%dx%dx%d@(%.12g,%.12g,%.12g) detector=%dx%dx%d@(%.12g,%.12g,%.12g)',r.nx,r.ny,r.nz,r.dx_mm,r.dy_mm,r.dz_mm,a.nx,a.ny,a.nz,a.dx_mm,a.dy_mm,a.dz_mm,t.nx,t.ny,t.nz,t.dx_mm,t.dy_mm,t.dz_mm,d.nx,d.ny,d.nz,d.dx_mm,d.dy_mm,d.dz_mm))
-  print(string.format('TRACE: field_mode accelerator_fast_adjust=%d ideal_accel=%d ideal_stage1=%d ideal_stage2=%d trajectory_quality=%d',accelerator_fast_adjust_enable,ideal_accel_enable,ideal_refl_stage1_enable,ideal_refl_stage2_enable,sim_trajectory_quality))
+  print(string.format('TRACE: field_mode accelerator_fast_adjust=%d ideal_accel=%d ideal_stage1=%d ideal_stage2=%d ideal_accel_ez=%d ideal_drift_ez=%d ideal_stage1_ez=%d ideal_stage2_ez=%d trajectory_quality=%d',accelerator_fast_adjust_enable,ideal_accel_enable,ideal_refl_stage1_enable,ideal_refl_stage2_enable,ideal_accel_ez_enable,ideal_drift_ez_enable,ideal_refl_stage1_ez_enable,ideal_refl_stage2_ez_enable,sim_trajectory_quality))
  end
 end
 local function grid_planes()
@@ -236,24 +240,34 @@ local function inside_grid(g,x,y)
  return dx*dx+dy*dy<=g.radius*g.radius
 end
 function segment.efield_adjust()
- local z,E,axis=ion_pz_mm,nil,nil
- if ideal_accel_enable~=0 then
-  if z>=accelerator_repeller_front_z_mm and z<accelerator_grid1_z_mm then
+ local z,E,axis,replace_all=ion_pz_mm,nil,nil,false
+ if ideal_accel_enable~=0 or ideal_accel_ez_enable~=0 then
+   if z>=accelerator_repeller_front_z_mm and z<accelerator_grid1_z_mm then
    E=(V_repeller-V_grid1)/(accelerator_grid1_z_mm-accelerator_repeller_front_z_mm); axis='z'
-  elseif z>=accelerator_grid1_z_mm and z<accelerator_grid2_z_mm then
+   elseif z>=accelerator_grid1_z_mm and z<accelerator_grid2_z_mm then
    E=V_grid1/(accelerator_grid2_z_mm-accelerator_grid1_z_mm); axis='z'
-  end
+   end
+  replace_all=ideal_accel_enable~=0
  end
- if ideal_refl_stage1_enable~=0 and z>=reflectron_entgrid_z_mm and z<reflectron_midgrid_z_mm then
+ if ideal_drift_ez_enable~=0 and z>=accelerator_grid2_z_mm and z<reflectron_entgrid_z_mm then
+  E=0
+  axis=(ion_instance==INSTANCE_FLIGHT_TUBE or ion_instance==INSTANCE_REFLECTRON) and 'x' or 'z'
+  replace_all=false
+ end
+ if (ideal_refl_stage1_enable~=0 or ideal_refl_stage1_ez_enable~=0) and z>=reflectron_entgrid_z_mm and z<reflectron_midgrid_z_mm then
   E=-V_mid/(reflectron_midgrid_z_mm-reflectron_entgrid_z_mm); axis='x'
+  replace_all=ideal_refl_stage1_enable~=0
  end
- if ideal_refl_stage2_enable~=0 and z>=reflectron_midgrid_z_mm and z<reflectron_backplate_z_mm then
+ if (ideal_refl_stage2_enable~=0 or ideal_refl_stage2_ez_enable~=0) and z>=reflectron_midgrid_z_mm and z<reflectron_backplate_z_mm then
   E=-(V_backplate-V_mid)/(reflectron_backplate_z_mm-reflectron_midgrid_z_mm); axis='x'
+  replace_all=ideal_refl_stage2_enable~=0
  end
- if E then
+ if E~=nil then
+  if replace_all then
   ion_dvoltsx_gu=0
   ion_dvoltsy_gu=0
   ion_dvoltsz_gu=0
+  end
   local pi=simion.wb.instances[ion_instance]
   if axis=='x' then ion_dvoltsx_gu=-E*pi.pa.dx_mm*pi.scale else ion_dvoltsz_gu=-E*pi.pa.dz_mm*pi.scale end
  end

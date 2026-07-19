@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "purpose": "Low-cost feasibility check for composable field interventions; not a formal performance claim.",
+  "particle_count": 100,
+  "seed": 20260713,
+  "cases": [
+    {"id": "real", "selector": "real"},
+    {"id": "ideal_ez", "selector": "ideal:all.ez"},
+    {"id": "ideal_accel_ez", "selector": "ideal:accel.ez"},
+    {"id": "ideal_accel_stage2_ez", "selector": "ideal:accel.ez+stage2.ez"}
+  ],
+  "capabilities": {
+    "comsol": {
+      "regions": ["accel", "drift", "stage1", "stage2"],
+      "components": ["ex", "ey", "ez"],
+      "composition": true
+    },
+    "simion": {
+      "regions": ["accel", "drift", "stage1", "stage2"],
+      "components": ["ez"],
+      "composition": true,
+      "limitation": "The current rotated 2D cylindrical flight-tube/reflectron PAs do not expose independent global Ex/Ey components."
+    }
+  }
+}

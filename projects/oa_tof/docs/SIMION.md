@@ -62,6 +62,21 @@ TOF差。SIMION加速器离轴Ex/Ey比COMSOL平滑且较弱；在COMSOL完成加
 仅凭该差异修改SIMION正式PA几何或电压。场采样入口位于`tests/simion/export_axis_field_profiles.lua`
 和`export_accelerator_vector_field_samples.lua`。
 
+### 可组合Ez替换诊断
+
+正式Program源码保留旧`ideal_accel_enable/ideal_refl_stage1_enable/ideal_refl_stage2_enable`整区域
+兼容开关，并新增`ideal_accel_ez_enable`、`ideal_drift_ez_enable`、
+`ideal_refl_stage1_ez_enable`和`ideal_refl_stage2_ez_enable`。新开关只覆盖对应全局轴向场在PA局部
+坐标中的导数，不清零其他局部分量；多个区域可以同时启用。诊断运行复制正式自包含包到独立运行
+目录并替换同名Program，不修改正式资产或`simion_stable_entry.json`。
+
+长期入口为`tests/simion/run_field_idealization_sweep.ps1`，公共案例配置为
+`config/diagnostics/field_idealization_feasibility.json`。选择器沿用`ideal:<region>.ez[+...]`；若请求
+Ex/Ey，入口明确拒绝，因为当前flight-tube/reflectron采用旋转二维圆柱PA，不能独立表示全局横向
+分量。N=100的real、all.ez、accel.ez和accel.ez+stage2.ez四例均100/100到达并通过17项输出manifest；
+首轮相对WorkingDirectory导致的`chdir error`发生在Program加载前，已作为编排失败单独归档，修复为
+启动前解析绝对输出路径。该测试只证明工具和区域组合可行，不要求与COMSOL干预数值精确一致。
+
 ### 2026-07-17 严格聚焦几何提升
 
 候选构建器按`d1=3.0 mm,d2=16.8 mm`生成独立PA家族，并通过四实例IOB、同名Program、解析焦点、
