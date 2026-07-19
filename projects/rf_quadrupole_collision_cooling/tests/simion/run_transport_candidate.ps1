@@ -17,26 +17,37 @@ $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $repoRoot = Split-Path -Parent (Split-Path -Parent $projectRoot)
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling'
-$candidateDir = Join-Path $artifactRoot "models\simion\candidates\$CandidateSubdir\$RunLabel"
+$candidateDir = Join-Path $artifactRoot "models\simion\candidates\$CandidateSubdir\$Mode\$RunLabel"
 $resultDir = Join-Path $artifactRoot 'results\simion'
-$runDir = Join-Path $artifactRoot "runs\transport_no_collision\simion_$RunLabel"
+$runDir = Join-Path $artifactRoot "runs\$Mode\simion_$RunLabel"
 $simion = 'C:\Program Files\SIMION-2020\simion.exe'
 $officialIob = 'C:\Program Files\SIMION-2020\examples\quad\quad_monolithic.iob'
 
 if ((Test-Path -LiteralPath $runDir) -or (Test-Path -LiteralPath $candidateDir)) {
     throw "Run or candidate directory already exists; choose a new RunLabel: $RunLabel"
 }
-New-Item -ItemType Directory -Path $candidateDir,$resultDir,$runDir -Force | Out-Null
-Copy-Item -LiteralPath (Join-Path $projectRoot 'simion\geometry\quad_include.gem') -Destination $candidateDir -Force
-Copy-Item -LiteralPath (Join-Path $projectRoot 'simion\geometry\quad_monolithic.gem') -Destination $candidateDir -Force
-Copy-Item -LiteralPath (Join-Path $projectRoot 'simion\programs\quad_transport.lua') -Destination (Join-Path $candidateDir 'quad_monolithic.lua') -Force
-Copy-Item -LiteralPath $officialIob -Destination (Join-Path $candidateDir 'quad_monolithic.iob') -Force
 
 $ionPath = if ([string]::IsNullOrWhiteSpace($ParticleTablePath)) {
     Join-Path $projectRoot 'config\particles\official_fixed_25.ion'
 } else { [IO.Path]::GetFullPath($ParticleTablePath) }
 if (-not (Test-Path -LiteralPath $ionPath -PathType Leaf)) { throw "Particle table is missing: $ionPath" }
 $expectedParticles = @(Get-Content -LiteralPath $ionPath -Encoding UTF8 | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count
+$resolvedContractInput = if ($Mode -eq 'transport_no_collision') { 'config/resolved_geometry.json' } else { 'config/resolved_interface_readiness.json' }
+if ($Mode -eq 'transport_interface_readiness') {
+    $minimumParticles = (Get-Content -LiteralPath (Join-Path $projectRoot 'config\modes\transport_interface_readiness.json') -Raw -Encoding UTF8 | ConvertFrom-Json).numerics.minimum_diagnostic_particles
+    if ([string]::IsNullOrWhiteSpace($ParticleTablePath) -or $expectedParticles -lt $minimumParticles) {
+        throw "Interface-readiness mode requires an explicit particle table with at least $minimumParticles particles."
+    }
+    if ([double]::IsNaN($RfPeakV) -or [double]::IsInfinity($RfPeakV)) {
+        throw 'Interface-readiness mode requires an explicit RfPeakV.'
+    }
+}
+
+New-Item -ItemType Directory -Path $candidateDir,$resultDir,$runDir -Force | Out-Null
+Copy-Item -LiteralPath (Join-Path $projectRoot 'simion\geometry\quad_include.gem') -Destination $candidateDir -Force
+Copy-Item -LiteralPath (Join-Path $projectRoot 'simion\geometry\quad_monolithic.gem') -Destination $candidateDir -Force
+Copy-Item -LiteralPath (Join-Path $projectRoot 'simion\programs\quad_transport.lua') -Destination (Join-Path $candidateDir 'quad_monolithic.lua') -Force
+Copy-Item -LiteralPath $officialIob -Destination (Join-Path $candidateDir 'quad_monolithic.iob') -Force
 $flyPath = Join-Path $candidateDir 'quad_monolithic.fly2'
 $sourceStatesLua = Join-Path $runDir 'source_states.lua'
 & (Join-Path $repoRoot '.venv\Scripts\python.exe') `
@@ -52,9 +63,9 @@ $interface = Get-Content -LiteralPath (Join-Path $projectRoot 'config\interface_
 if ([double]::IsNaN($RfPeakV) -or [double]::IsInfinity($RfPeakV)) { $RfPeakV = $physicalMode.rf.amplitude_V_peak }
 if ([double]::IsNaN($FrequencyHz) -or [double]::IsInfinity($FrequencyHz)) { $FrequencyHz = $physicalMode.rf.frequency_Hz }
 $modeInput = if ($Mode -eq 'transport_no_collision') { 'config/modes/transport_no_collision.json' } else { 'config/modes/transport_interface_readiness.json' }
-$particleStateCsv = Join-Path $resultDir "transport_no_collision_particle_state_$RunLabel.csv"
-$trajectoryCsv = Join-Path $resultDir "transport_no_collision_trajectory_samples_$RunLabel.csv"
-$summaryJson = Join-Path $resultDir "transport_no_collision_summary_$RunLabel.json"
+$particleStateCsv = Join-Path $resultDir "${Mode}_particle_state_$RunLabel.csv"
+$trajectoryCsv = Join-Path $resultDir "${Mode}_trajectory_samples_$RunLabel.csv"
+$summaryJson = Join-Path $resultDir "${Mode}_summary_$RunLabel.json"
 $runConfigPath = Join-Path $runDir 'run_config.json'
 $runConfigLua = Join-Path $runDir 'run_config.lua'
 $iobReport = Join-Path $runDir 'simion_iob_contract.txt'
@@ -62,7 +73,7 @@ $stateContractReport = Join-Path $runDir 'particle_state_contract.json'
 $runConfig = [ordered]@{
     schema_version=1; role='rf_quadrupole_simion_run_config'; run_id="simion_$RunLabel"
     project='rf_quadrupole_collision_cooling'; mode=$Mode; project_root=$projectRoot
-    inputs=[ordered]@{baseline='config/baseline.json'; resolved_geometry='config/resolved_geometry.json'; mode=$modeInput; particle_table=$ionPath; source_states=$sourceStatesLua}
+    inputs=[ordered]@{baseline='config/baseline.json'; resolved_geometry='config/resolved_geometry.json'; resolved_contract=$resolvedContractInput; mode=$modeInput; particle_table=$ionPath; source_states=$sourceStatesLua}
     output_dir=$resultDir; candidate_dir=$candidateDir; run_dir=$runDir
     rf_steps_per_period=$RfStepsPerPeriod; trajectory_quality=$TrajectoryQuality
     source_axial_offset_mm=$SourceAxialOffsetMm; operating_point=$OperatingPoint

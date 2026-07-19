@@ -26,7 +26,9 @@ Lua没有 collision、drag、pressure 或 buffer-gas 逻辑。两组杆为
 目录生成完整`SHA256SUMS.csv`，并在独立run目录生成含输入/输出身份的`run_manifest.json`。
 2026-07-18固定25粒子复验为25/25，候选哈希14/14通过；manifest保持candidate，不冒充正式资产。
 
-新运行以权威ION表生成无BOM的`source_states.lua`，因此source事件是积分前的精确初始状态，而不是
+新运行按mode隔离run目录，并输出`<mode>_particle_state_<run>.csv`、轨迹CSV和summary。接口mode
+必须显式给出不少于100行的ION表及RF峰值，不能退回N25默认工况。权威ION表生成无BOM的
+`source_states.lua`，因此source事件是积分前的精确初始状态，而不是
 第一次`other_actions`回调后已前进的坐标。Lua在85.4和90.2 mm处对时间、位置、速度与能量插值，
 并在terminal事件记录统一终止原因；`analysis/verify_particle_state_contract.py`按输入表实际粒子数
 强制检查source身份、事件唯一性、平面坐标、RF相位和物理数值范围。旧solver-specific终点表不再生成。

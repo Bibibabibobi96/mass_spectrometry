@@ -225,10 +225,10 @@ if ~exist(paths.comsolResultsDir,'dir'),mkdir(paths.comsolResultsDir);end
 if strcmp(runLabel,'baseline')
     suffix=''; modelName='rf_quadrupole_transport_no_collision_simion_reference.mph';
 else
-    suffix=['_' runLabel]; modelName=['rf_quadrupole_transport_no_collision_simion_reference_' runLabel '.mph'];
+    suffix=['_' runLabel]; modelName=['rf_quadrupole_' runMode '_simion_reference_' runLabel '.mph'];
 end
-particleStatePath=fullfile(paths.comsolResultsDir,['transport_no_collision_particle_state' suffix '.csv']);
-rawPhaseSpacePath=fullfile(paths.comsolResultsDir,['transport_no_collision_particle_raw' suffix '.csv']);
+particleStatePath=fullfile(paths.comsolResultsDir,[runMode '_particle_state' suffix '.csv']);
+rawPhaseSpacePath=fullfile(paths.comsolResultsDir,[runMode '_particle_raw' suffix '.csv']);
 
 % Persist a GUI-visible raw export node.  The standardized crossing table
 % below is derived from this solved particle dataset by solver-independent
@@ -277,8 +277,8 @@ assert(isequal(stateNames(:),cellstr(string(interface.particle_state_columns(:))
 writetable(cell2table(stateRows,'VariableNames',stateNames),particleStatePath);
 
 modelPath=fullfile(paths.comsolCandidateDir,modelName); model.save(modelPath);
-summaryPath=fullfile(paths.comsolResultsDir,['transport_no_collision_summary' suffix '.json']); fid=fopen(summaryPath,'w'); fprintf(fid,'%s',jsonencode(result,'PrettyPrint',true)); fclose(fid);
-trajectoryPath=fullfile(paths.comsolResultsDir,['transport_no_collision_trajectory_samples' suffix '.csv']);
+summaryPath=fullfile(paths.comsolResultsDir,[runMode '_summary' suffix '.json']); fid=fopen(summaryPath,'w'); fprintf(fid,'%s',jsonencode(result,'PrettyPrint',true)); fclose(fid);
+trajectoryPath=fullfile(paths.comsolResultsDir,[runMode '_trajectory_samples' suffix '.csv']);
 trajectoryFile=fopen(trajectoryPath,'w'); assert(trajectoryFile>=0,'Could not open trajectory CSV.');
 fprintf(trajectoryFile,'particle_id,time_us,axial_z_mm,transverse_x_mm,transverse_y_mm,r_mm\n');
 for i=1:nP

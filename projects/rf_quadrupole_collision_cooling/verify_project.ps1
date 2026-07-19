@@ -3,7 +3,9 @@ param(
   [string]$PythonExe = '',
   [string]$ComsolRunLabel = '',
   [string]$SimionRunLabel = '',
-  [string]$ComparisonLabel = ''
+  [string]$ComparisonLabel = '',
+  [ValidateSet('transport_no_collision','transport_interface_readiness')]
+  [string]$CandidateMode = 'transport_no_collision'
 )
 
 Set-StrictMode -Version Latest
@@ -24,14 +26,26 @@ if ($LASTEXITCODE -ne 0) { throw 'SIMION geometry publication gate failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Paired-particle identity gate failed.' }
 & $python -m unittest discover -s (Join-Path $projectRoot 'tests\analysis') -p 'test_*.py'
 if ($LASTEXITCODE -ne 0) { throw 'Python analysis tests failed.' }
+$parseErrors = @()
+Get-ChildItem -LiteralPath $projectRoot -Recurse -Filter '*.ps1' | ForEach-Object {
+  $tokens = $null
+  $fileErrors = $null
+  [System.Management.Automation.Language.Parser]::ParseFile($_.FullName,[ref]$tokens,[ref]$fileErrors) | Out-Null
+  if ($fileErrors) { $parseErrors += $fileErrors }
+}
+if ($parseErrors.Count -gt 0) { throw "PowerShell syntax gate failed: $($parseErrors -join '; ')" }
 
 if ($Level -eq 'Candidate') {
+  if (-not $PSBoundParameters.ContainsKey('CandidateMode')) {
+    throw 'Candidate gate requires an explicit CandidateMode.'
+  }
   if ([string]::IsNullOrWhiteSpace($ComsolRunLabel) -or [string]::IsNullOrWhiteSpace($SimionRunLabel) -or
       [string]::IsNullOrWhiteSpace($ComparisonLabel)) {
     throw 'Candidate gate requires explicit ComsolRunLabel, SimionRunLabel, and ComparisonLabel.'
   }
   & (Join-Path $projectRoot 'tests\cross_solver\verify_transport_candidate.ps1') `
-    -ComsolRunLabel $ComsolRunLabel -SimionRunLabel $SimionRunLabel -ComparisonLabel $ComparisonLabel
+    -ComsolRunLabel $ComsolRunLabel -SimionRunLabel $SimionRunLabel -ComparisonLabel $ComparisonLabel `
+    -Mode $CandidateMode -PythonExe $python
   if ($LASTEXITCODE -ne 0) { throw 'Cross-solver transport candidate gate failed.' }
 }
 elseif ($Level -eq 'Formal') {

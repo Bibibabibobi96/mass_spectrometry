@@ -30,11 +30,12 @@ Fly2 `standard_beam` 的角度在 IOB 放置前按局部束流基向量解释，
 `z_rod_exit=85.4 mm`、`z_handoff=90.2 mm`、`z_acceptance=95.2 mm`及GUI可见
 `exp_phase_raw`数据导出节点。
 
-标准逐粒子结果为`transport_no_collision_particle_state_<run>.csv`，每个粒子写出精确source、杆端、
+标准逐粒子结果为`<mode>_particle_state_<run>.csv`；官方回归的mode仍为`transport_no_collision`。
+每个粒子写出精确source、杆端、
 交接面和terminal事件，包含位置、SI速度、能量、发散角、RF相位及终止原因。跨面状态由同一COMSOL
 粒子数据集线性插值，原始轨迹由MPH内Export节点导出；旧solver-specific终点表不再由新运行生成。
 
-同一次生产运行还导出 `results/comsol/transport_no_collision_trajectory_samples.csv`：每个粒子每 5 个
+同一次生产运行还导出 `results/comsol/<mode>_trajectory_samples_<run>.csv`：每个粒子每 5 个
 已存储时间点取一个有限样本，并始终包含最后一个有限样本；列为统一 PA/COMSOL 坐标的
 `particle_id,time_us,axial_z_mm,transverse_x_mm,transverse_y_mm,r_mm`。它只用于求解器无关的轨迹诊断，
 不承载任何未持久化的 COMSOL 物理或数值逻辑。

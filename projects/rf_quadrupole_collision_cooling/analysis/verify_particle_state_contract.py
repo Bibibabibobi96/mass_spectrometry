@@ -9,17 +9,6 @@ import math
 from pathlib import Path
 
 
-COLUMNS = [
-    "particle_id", "event", "status", "terminal_reason", "time_us", "elapsed_time_us",
-    "rf_phase_rad", "axial_z_mm", "transverse_x_mm", "transverse_y_mm",
-    "velocity_axial_m_s", "velocity_x_m_s", "velocity_y_m_s", "kinetic_energy_eV",
-    "radial_position_mm", "divergence_angle_deg", "max_rod_radius_mm",
-]
-EVENTS = {"source", "rod_exit", "handoff", "terminal"}
-STATUSES = {"alive", "transmitted", "lost", "timeout"}
-REASONS = {"none", "acceptance_detector", "electrode", "radial_escape", "backward_escape", "timeout", "solver_stop", "unknown"}
-
-
 def close(actual: float, expected: float, tolerance: float, label: str) -> None:
     if not math.isfinite(actual) or abs(actual - expected) > tolerance:
         raise AssertionError(f"{label}: actual={actual:.15g} expected={expected:.15g}")
@@ -59,24 +48,31 @@ def main() -> None:
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
+    interface = json.loads(args.interface.read_text(encoding="utf-8"))
+    columns = interface["particle_state_columns"]
+    enums = interface["enums"]
+    event_values = enums["event"]
+    events = set(event_values)
+    statuses = set(enums["status"])
+    reasons = set(enums["terminal_reason"])
+
     with args.state.open(encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
-        if reader.fieldnames != COLUMNS:
+        if reader.fieldnames != columns:
             raise AssertionError(f"particle-state columns differ: {reader.fieldnames}")
         rows = list(reader)
     particles = [list(map(float, row)) for row in csv.reader(args.particles.read_text(encoding="utf-8").splitlines())]
-    interface = json.loads(args.interface.read_text(encoding="utf-8"))
     planes = interface["planes"]
     by_id: dict[int, dict[str, dict[str, str]]] = {}
     for row in rows:
         particle_id = int(row["particle_id"])
         event = row["event"]
-        if event not in EVENTS or row["status"] not in STATUSES or row["terminal_reason"] not in REASONS:
+        if event not in events or row["status"] not in statuses or row["terminal_reason"] not in reasons:
             raise AssertionError(f"invalid event/status/reason for particle {particle_id}")
         if event in by_id.setdefault(particle_id, {}):
             raise AssertionError(f"duplicate event {event} for particle {particle_id}")
         by_id[particle_id][event] = row
-        numeric = [float(row[name]) for name in COLUMNS[4:]]
+        numeric = [float(row[name]) for name in columns[4:]]
         if not all(math.isfinite(value) for value in numeric):
             raise AssertionError(f"non-finite state value for particle {particle_id} event {event}")
         if not 0 <= float(row["rf_phase_rad"]) < 2 * math.pi + 1e-12:
@@ -87,7 +83,7 @@ def main() -> None:
     expected_ids = list(range(1, len(particles) + 1))
     if sorted(by_id) != expected_ids:
         raise AssertionError("particle IDs do not match the input table")
-    counts = {event: 0 for event in EVENTS}
+    counts = {event: 0 for event in event_values}
     for particle_id, particle in zip(expected_ids, particles):
         events = by_id[particle_id]
         if "source" not in events or "terminal" not in events:

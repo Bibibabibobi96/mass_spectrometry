@@ -27,6 +27,9 @@
 - 集成就绪解析入口：[`config/resolved_interface_readiness.json`](config/resolved_interface_readiness.json)，
   由`analysis/resolve_contract.py --profile interface`生成，禁止手改。
 - 求解器无关相空间接口：[`config/interface_contract.json`](config/interface_contract.json)
+- `particle_state.csv`的列、枚举和平面语义只以上述接口契约为准；
+  [`analysis/verify_particle_state_contract.py`](analysis/verify_particle_state_contract.py)运行时读取该契约，
+  不维护第二份列名或枚举。
 - 集成就绪粒子族与模式：[`config/interface_readiness_particle_source.json`](config/interface_readiness_particle_source.json)、
   [`config/modes/transport_interface_readiness.json`](config/modes/transport_interface_readiness.json)
 - 命名粒子表生成器：[`analysis/generate_interface_particle_table.py`](analysis/generate_interface_particle_table.py)，
@@ -41,8 +44,8 @@
 - SIMION 构建/验证入口：[`tests/simion/run_transport_candidate.ps1`](tests/simion/run_transport_candidate.ps1)
 - SIMION IOB 结构门禁：[`tests/simion/inspect_builtin_quad_reference.lua`](tests/simion/inspect_builtin_quad_reference.lua)
 - 跨求解器门禁：[`tests/cross_solver/verify_transport_candidate.ps1`](tests/cross_solver/verify_transport_candidate.ps1)
-- 全项目门禁：`verify_project.ps1 -Level Static|Candidate|Formal`；Candidate必须显式给出COMSOL、SIMION
-  和比较运行标签，Formal在机械几何与SolidWorks同步前固定拒绝执行。
+- 全项目门禁：`verify_project.ps1 -Level Static|Candidate|Formal`；Candidate必须显式给出 mode、COMSOL、
+  SIMION和比较运行标签，Formal在机械几何与SolidWorks同步前固定拒绝执行。
 - 终点分布诊断图：[`analysis/plot_terminal_distribution.py`](analysis/plot_terminal_distribution.py)
 - 轴向轨迹诊断图：[`analysis/plot_transport_trajectory_diagnostics.py`](analysis/plot_transport_trajectory_diagnostics.py)
 - 相位--轨迹差诊断图：[`analysis/plot_transport_phase_diagnostics.py`](analysis/plot_transport_phase_diagnostics.py)
@@ -53,7 +56,7 @@
   [`analysis/assess_interface_integration_gate.py`](analysis/assess_interface_integration_gate.py)
 - 路径解析：[`rf_quadrupole_paths.m`](rf_quadrupole_paths.m)
 
-大型 MPH、PA、IOB、Fly'm 输出和图像一律放在
+大型 MPH、PA、IOB、Fly2 输出和图像一律放在
 `artifacts/projects/rf_quadrupole_collision_cooling/`，不进入 Git。历史 `test3` 仅保留在
 artifact archive，不能作为候选或正式基线。
 
@@ -61,12 +64,29 @@ artifact archive，不能作为候选或正式基线。
 
 ```text
 rf_quadrupole_collision_cooling/
-├─ config/    # 同源机器可读基线
-├─ docs/      # PROJECT、COMSOL、SIMION
-├─ comsol/    # MATLAB LiveLink 生产脚本
-├─ simion/    # GEM、Lua、Fly2/PA 构建入口
-└─ tests/     # 可复用 COMSOL、SIMION、跨求解器门禁
+├─ config/                       # 人工源配置、解析发布、模式和运行模板
+├─ analysis/                     # 契约解析、校验、比较和诊断工具
+├─ docs/                         # PROJECT、COMSOL、SIMION；需要时才建history/CAD
+├─ comsol/                       # MATLAB LiveLink 生产实现
+├─ simion/                       # 生成GEM、Lua和Fly2/PA构建入口
+├─ tests/                        # COMSOL、SIMION、跨求解器复验入口
+├─ load_rf_quadrupole_contract.m # MATLAB解析契约加载器
+├─ rf_quadrupole_paths.m         # 工作区与artifact路径解析
+└─ verify_project.ps1            # Static/Candidate/Formal统一门禁
 ```
+
+三层门禁职责固定如下；高层包含低层，不互相替代：
+
+| 层级 | 回答的问题 | 当前状态 |
+|---|---|---|
+| Static | 源配置与解析发布是否同步、GEM是否同步、固定粒子表、分析测试和PowerShell入口语法是否通过 | 可执行 |
+| Candidate | 指定mode的两份成功manifest、统一事件表和跨求解器功能指标是否通过 | 可执行；接口N=100已有有效FAIL证据 |
+| Formal | 机械正式几何、SolidWorks装配与求解器资产是否同任务同步并复验 | 固定阻断，直到正式机械几何被选定 |
+
+`transport_no_collision`与`transport_interface_readiness`共享硬件和RF-only基础物理，但运行目录、输出文件
+和比较报告按mode隔离。接口mode还必须显式给出不少于100行的粒子表和RF峰值，不能靠N25默认值伪装成
+接口候选。隔离规则落地前已经存在的接口运行可由跨求解器门禁只读复验；门禁仍检查其run config中的
+真实mode，不要求重跑，也不再向旧路径写入新结果。
 
 ## 项目特有硬规则
 
@@ -74,6 +94,8 @@ rf_quadrupole_collision_cooling/
 - 参数链固定为 `baseline + source + mode + interface -> resolved -> COMSOL/SIMION生成资产`。安装目录中的
   SIMION官方例程只提供来源依据，不再是运行时权威；任何下游硬编码或反向抄写都视为失效实现。
 - 官方回归与集成就绪验证严格分离：不得覆盖`official_fixed_25.ion`或借新增工况改写已闭合的 N25 结果。
+- 所有run config都同时记录共享硬件解析发布和本次mode解析发布；接口mode是对已闭合RF-only基础物理的
+  资格叠加，不得隐式继承未记录的运行参数。
 - 新运行只以统一`particle_state.csv`、`summary.json`、稀疏轨迹和manifest为权威结果；不再生成旧版
   solver-specific粒子终点表。每份manifest在比较前必须重新计算全部文件哈希。
 - 部件交接面、杆端诊断面和独立传输检测面必须分别读取接口机器契约，不得相互替代。

@@ -11,9 +11,31 @@ IOB加载本地PA，单实例变换和`39×39×477 @ 0.2 mm`通过，25/25命中
 14/14哈希通过，manifest状态为success且保持candidate身份。
 旧碰撞脚本现仅保留拒绝执行短桩；其150 mm几何、硬编码LiveLink和未验证碰撞参数不属于当前契约。
 
+## 系统架构与资格边界
+
+项目链路固定为：人工维护的`baseline + particle source + mode + interface`，经解析器生成只读发布，
+COMSOL与SIMION分别求场和推进，再以统一事件表、manifest和跨求解器比较闭合。任何GEM、Lua、MATLAB
+脚本、MPH、PA或结果CSV都不是参数反写入口。`interface_contract.json`同时是事件表列名、枚举、参考平面
+和比较语义的唯一机器权威，校验器运行时读取它，不另存一份常量。
+
+`transport_no_collision`是不可变N25官方回归；`transport_interface_readiness`是在同一RF-only基础物理上的
+接口资格叠加，不是第二套硬件。两者的run目录、结果文件和跨求解器报告按mode隔离。接口运行必须显式
+指定粒子表、至少100个粒子和RF峰值；项目级Candidate门禁也必须显式选择mode，防止把N25回归产物
+误当作N100接口证据。
+
+Static只校验配置派生、生成资产与纯分析代码；Candidate追加指定mode的两端manifest、事件契约和功能
+比较；Formal再追加机械正式几何和SolidWorks同步。当前Static可用，Candidate可执行且允许形成可追溯的
+FAIL，Formal因尚未选定机械正式几何而有意拒绝。当前仍在演化的调查保留在本文件；只有结论已冻结且
+正文影响阅读时才创建`docs/history/`快照，不创建空目录或空文档。
+
+已闭合的运行器生命周期改进是：所有mode先完成粒子表、N和显式RF参数预检，再创建run/candidate目录，
+因此输入拒绝不会留下无状态空壳。尚未闭合的实现项是求解器启动后的异常退出仍未统一补写
+`failed/interrupted` manifest；这需要给两端生产入口增加共同的异常收尾协议，属于后续小型软件任务，
+不影响现有success manifest和本轮静态门禁，但在它完成前不能把异常运行目录误认成可比较产物。
+
 2026-07-18 起，已闭合的官方回归和面向未来集成的验证分为两条互不覆盖的链：
 `transport_no_collision + official_fixed_25.ion`继续作为不可变的100 amu/N25回归；
-`transport_interface_readiness`使用独立解析契约、命名工况和粒子表，当前仍是尚未双求解器闭合的候选。
+`transport_interface_readiness`使用接口叠加解析契约、命名工况和粒子表，当前仍是尚未双求解器闭合的候选。
 本阶段不连接oa-TOF、不修改其正式资产，也不引入碰撞或质量过滤物理。
 
 同日新增的统一相空间链已由独立COMSOL/SIMION场实际复验。两端各25个粒子均产生100条合法事件，

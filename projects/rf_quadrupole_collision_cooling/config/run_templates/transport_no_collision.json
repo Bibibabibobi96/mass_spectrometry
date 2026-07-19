@@ -13,6 +13,7 @@
   "output_policy": {
     "lifecycle": "candidate",
     "overwrite": false,
-    "manifest_required": true
+    "manifest_required": true,
+    "particle_state_required": true
   }
 }

@@ -17,11 +17,10 @@ $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $repoRoot = Split-Path -Parent (Split-Path -Parent $projectRoot)
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling'
-$runDir = Join-Path $artifactRoot "runs\transport_no_collision\comsol_$RunLabel"
+$runDir = Join-Path $artifactRoot "runs\$Mode\comsol_$RunLabel"
 $resultDir = Join-Path $artifactRoot 'results\comsol'
 $candidateDir = Join-Path $artifactRoot 'models\comsol\candidates'
 if (Test-Path -LiteralPath $runDir) { throw "Run directory already exists; choose a new RunLabel: $RunLabel" }
-New-Item -ItemType Directory -Path $runDir,$resultDir,$candidateDir -Force | Out-Null
 
 $particleTable = if ([string]::IsNullOrWhiteSpace($ParticleTablePath)) {
     Join-Path $projectRoot 'config\particles\official_fixed_25.ion'
@@ -29,9 +28,21 @@ $particleTable = if ([string]::IsNullOrWhiteSpace($ParticleTablePath)) {
 if (-not (Test-Path -LiteralPath $particleTable -PathType Leaf)) { throw "Particle table is missing: $particleTable" }
 $expectedParticles = @(Get-Content -LiteralPath $particleTable -Encoding UTF8 | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count
 $resolved = Get-Content -LiteralPath (Join-Path $projectRoot 'config\resolved_geometry.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+$resolvedContractInput = if ($Mode -eq 'transport_no_collision') { 'config/resolved_geometry.json' } else { 'config/resolved_interface_readiness.json' }
+if ($Mode -eq 'transport_interface_readiness') {
+    $minimumParticles = (Get-Content -LiteralPath (Join-Path $projectRoot 'config\modes\transport_interface_readiness.json') -Raw -Encoding UTF8 | ConvertFrom-Json).numerics.minimum_diagnostic_particles
+    if ([string]::IsNullOrWhiteSpace($ParticleTablePath) -or $expectedParticles -lt $minimumParticles) {
+        throw "Interface-readiness mode requires an explicit particle table with at least $minimumParticles particles."
+    }
+    if ([double]::IsNaN($RfPeakV) -or [double]::IsInfinity($RfPeakV)) {
+        throw 'Interface-readiness mode requires an explicit RfPeakV.'
+    }
+}
 if ([double]::IsNaN($RfPeakV) -or [double]::IsInfinity($RfPeakV)) { $RfPeakV = $resolved.mode.rf.amplitude_V_peak }
 if ([double]::IsNaN($FrequencyHz) -or [double]::IsInfinity($FrequencyHz)) { $FrequencyHz = $resolved.mode.rf.frequency_Hz }
 $modeInput = if ($Mode -eq 'transport_no_collision') { 'config/modes/transport_no_collision.json' } else { 'config/modes/transport_interface_readiness.json' }
+
+New-Item -ItemType Directory -Path $runDir,$resultDir,$candidateDir -Force | Out-Null
 
 $runConfigPath = Join-Path $runDir 'run_config.json'
 $bootstrapReport = Join-Path $runDir 'comsol_bootstrap_report.txt'
@@ -41,7 +52,7 @@ $runConfig = [ordered]@{
     schema_version=1; role='rf_quadrupole_comsol_run_config'; run_id=$RunLabel
     project='rf_quadrupole_collision_cooling'; mode=$Mode; project_root=$projectRoot
     inputs=[ordered]@{
-        baseline='config/baseline.json'; resolved_geometry='config/resolved_geometry.json'
+        baseline='config/baseline.json'; resolved_geometry='config/resolved_geometry.json'; resolved_contract=$resolvedContractInput
         mode=$modeInput; particle_table=$particleTable
         interface_contract='config/interface_contract.json'
     }
@@ -68,11 +79,11 @@ finally {
 }
 
 $suffix = "_$RunLabel"
-$modelPath = Join-Path $candidateDir "rf_quadrupole_transport_no_collision_simion_reference_$RunLabel.mph"
-$summaryPath = Join-Path $resultDir "transport_no_collision_summary$suffix.json"
-$trajectoryPath = Join-Path $resultDir "transport_no_collision_trajectory_samples$suffix.csv"
-$particleStatePath = Join-Path $resultDir "transport_no_collision_particle_state$suffix.csv"
-$rawPhaseSpacePath = Join-Path $resultDir "transport_no_collision_particle_raw$suffix.csv"
+$modelPath = Join-Path $candidateDir "rf_quadrupole_${Mode}_simion_reference_$RunLabel.mph"
+$summaryPath = Join-Path $resultDir "${Mode}_summary$suffix.json"
+$trajectoryPath = Join-Path $resultDir "${Mode}_trajectory_samples$suffix.csv"
+$particleStatePath = Join-Path $resultDir "${Mode}_particle_state$suffix.csv"
+$rawPhaseSpacePath = Join-Path $resultDir "${Mode}_particle_raw$suffix.csv"
 $summary = Get-Content -LiteralPath $summaryPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $env:RFQUAD_COMSOL_MODEL_PATH = $modelPath
 $env:RFQUAD_EXPECTED_PARTICLES = [string]$expectedParticles
@@ -101,7 +112,7 @@ $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 & $python (Join-Path $projectRoot 'analysis\verify_particle_state_contract.py') `
     --state $particleStatePath --particles $particleTable `
     --interface (Join-Path $projectRoot 'config\interface_contract.json') --axial-offset-mm $SourceAxialOffsetMm `
-    --frequency-hz $resolved.mode.rf.frequency_Hz --phase-rad $resolved.mode.rf.phase_rad `
+    --frequency-hz $FrequencyHz --phase-rad $resolved.mode.rf.phase_rad `
     --solver COMSOL --output $stateContractReport
 if ($LASTEXITCODE -ne 0) { throw 'Particle-state contract gate failed.' }
 
