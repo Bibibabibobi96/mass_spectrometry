@@ -18,6 +18,11 @@
 `-StartupReportTimeoutSeconds`默认120秒，只限制MATLAB/LiveLink创建首份任务报告的启动阶段；报告
 创建后不限制Study Compute的正常长运行。超时会终止本次进程树、清理本次新增服务器并进入有限
 重试，不能被记录为项目求解器或物理模型失败。
+只有未创建任务报告时，入口才保存`.launcher.attemptN.stdout/stderr.log`供启动诊断；正常任务不生成
+这组冗余日志。项目运行器必须把实际产生的launcher日志纳入失败manifest。
+受限执行环境还必须允许COMSOL写入用户目录下的`.comsol`配置与Tomcat日志；出现
+`Invalid Configuration Location`或该目录`Access denied`时先核对编排沙箱权限，不能直接归因于
+COMSOL配置损坏、项目脚本或Study失败。
 
 入口的`-ProcessorCount`是可选共享内存线程上限；默认`0`表示沿用COMSOL自动选择，日常结果不变。
 只有排查本地并发库崩溃或项目已验证固定线程数时才显式设置，例如`-ProcessorCount 1`。线程数属于

@@ -227,12 +227,15 @@ try
     fprintf(fid, 'PARTICLE_SOLUTION_DATA_CLEARED=%d\n', ...
         clearParticleSolutionData);
     particleStart = tic;
+    fprintf(fid, 'STUDY_STARTED=1\n');
     model.study('std2').run;
     particleSeconds = toc(particleStart);
+    fprintf(fid, 'STUDY_COMPLETED=1\n');
     solutionInfo = mphsolinfo(model, 'soltag', 'sol2', 'NU', 'on');
     fprintf(fid, 'SOLUTION_SIZES=%s\n', mat2str(solutionInfo.sizes));
 
     p0 = mphparticle(model, 'dataset', 'pdset1', 't', 0);
+    fprintf(fid, 'INITIAL_RELEASE_READ=PASS\n');
     releasedPositionMm = squeeze(p0.p);
     releasedVelocityMS = squeeze(p0.v);
     expectedPositionMm = selectedIon(:,4:6);

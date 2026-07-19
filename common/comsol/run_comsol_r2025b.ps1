@@ -60,6 +60,8 @@ function Start-ComsolLauncherProcess {
     $startInfo.FileName = $FilePath
     $startInfo.UseShellExecute = $false
     $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
     foreach ($argument in $Arguments) { [void]$startInfo.ArgumentList.Add($argument) }
     return [Diagnostics.Process]::Start($startInfo)
 }
@@ -96,6 +98,8 @@ try {
         $serversBeforeAttempt = @(Get-ComsolServerProcessIds)
         $launcherProcess = Start-ComsolLauncherProcess -FilePath $launcher `
             -Arguments $launcherArguments
+        $standardOutputRead = $launcherProcess.StandardOutput.ReadToEndAsync()
+        $standardErrorRead = $launcherProcess.StandardError.ReadToEndAsync()
         $reportDeadline = [DateTime]::UtcNow.AddSeconds($StartupReportTimeoutSeconds)
         while (-not $launcherProcess.HasExited -and
                -not (Test-Path -LiteralPath $report -PathType Leaf) -and
@@ -117,6 +121,8 @@ try {
             if (-not $launcherProcess.HasExited) { $launcherProcess.WaitForExit() }
             $launcherExit = $launcherProcess.ExitCode
         }
+        $launcherStandardOutput = $standardOutputRead.GetAwaiter().GetResult()
+        $launcherStandardError = $standardErrorRead.GetAwaiter().GetResult()
 
         if (Test-Path -LiteralPath $report -PathType Leaf) {
             $reportText = Get-Content -LiteralPath $report -Raw -Encoding UTF8
@@ -139,6 +145,9 @@ try {
             throw "R2025b LiveLink task failed (launcher exit $launcherExit)."
         }
 
+        $launcherLogStem = $report + '.launcher.attempt' + $attempt
+        [IO.File]::WriteAllText($launcherLogStem + '.stdout.log', $launcherStandardOutput)
+        [IO.File]::WriteAllText($launcherLogStem + '.stderr.log', $launcherStandardError)
         $noReportReason = if ($startupTimedOut) { 'startup report timeout' } `
             else { 'startup without a task report' }
         Stop-ComsolAttemptServers -Before $serversBeforeAttempt -Reason $noReportReason

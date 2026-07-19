@@ -95,6 +95,8 @@ foreach ($log in @(Get-ChildItem -LiteralPath $repoRoot -File -Filter 'hs_err_pi
     $newCrashLogs.Add($destination)
   }
 }
+$launcherLogs = @(Get-ChildItem -LiteralPath $caseDir -File -Filter 'comsol_report.txt.launcher.attempt*.log' |
+  ForEach-Object { $_.FullName })
 
 $reportText = if (Test-Path -LiteralPath $reportPath -PathType Leaf) {
   Get-Content -LiteralPath $reportPath -Raw -Encoding UTF8
@@ -103,6 +105,22 @@ $expectedDetection = "DETECTED={0}/{0}" -f $ParticleCount
 $passed = ($reportText -match '(?m)^STATUS=PASS$') -and
   ($reportText -match ("(?m)^" + [regex]::Escape($expectedDetection) + '$'))
 $reportCreated = [bool](Test-Path -LiteralPath $reportPath -PathType Leaf)
+$studyStarted = $reportText -match '(?m)^(?:STUDY_STARTED=1|PARTICLE_SOLUTION_DATA_CLEARED=)'
+$studyCompleted = $reportText -match '(?m)^(?:STUDY_COMPLETED=1|SOLUTION_SIZES=)'
+$initialReleaseRead = $reportText -match '(?m)^INITIAL_RELEASE_READ=PASS$'
+$failureStage = if ($passed) {
+  $null
+} elseif (-not $reportCreated) {
+  'launcher_startup'
+} elseif (-not $studyStarted) {
+  'task_configuration'
+} elseif (-not $studyCompleted) {
+  'study_compute'
+} elseif (-not $initialReleaseRead) {
+  'result_extraction'
+} else {
+  'task_postprocess'
+}
 $summary = [ordered]@{
   schema_version = 1
   role = 'oa_tof_comsol_extreme_particle_count_case'
@@ -112,8 +130,11 @@ $summary = [ordered]@{
   seed = $Seed
   wall_seconds = $watch.Elapsed.TotalSeconds
   launcher_failure = $failure
-  failure_stage = if ($passed) { $null } elseif ($reportCreated) { 'task' } else { 'launcher_startup' }
-  threshold_result_eligible = $reportCreated
+  failure_stage = $failureStage
+  threshold_result_eligible = $studyStarted
+  study_started = $studyStarted
+  study_completed = $studyCompleted
+  initial_release_read_completed = $initialReleaseRead
   report_created = $reportCreated
   output_csv_created = [bool](Test-Path -LiteralPath $csvPath -PathType Leaf)
   expected_detection = $expectedDetection
@@ -121,6 +142,7 @@ $summary = [ordered]@{
   report_file = $reportPath
   output_csv = $csvPath
   crash_logs = @($newCrashLogs)
+  launcher_logs = @($launcherLogs)
 }
 $summary | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
 $runConfigPath = Join-Path $caseDir 'run_config.json'
@@ -142,7 +164,7 @@ $manifestPath = Join-Path $caseDir 'run_manifest.json'
   variables = [ordered]@{ particle_count=$ParticleCount; mass_amu=$MassAmu; seed=$Seed }
 } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $runConfigPath -Encoding UTF8
 $outputs = @($ionPath,$summaryPath)
-foreach ($path in @($reportPath,$csvPath) + @($newCrashLogs)) {
+foreach ($path in @($reportPath,$csvPath) + @($newCrashLogs) + @($launcherLogs)) {
   if (Test-Path -LiteralPath $path -PathType Leaf) { $outputs += $path }
 }
 $outputs += @(Get-ChildItem -LiteralPath $caseDir -File -Filter '*_selected_release_from_data_file.txt' |
