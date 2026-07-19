@@ -48,6 +48,8 @@
 - 场分辨率收敛：[`tests/simion/test_pa_field_convergence.ps1`](tests/simion/test_pa_field_convergence.ps1)、
   [`analysis/compare_field_resolution_convergence.py`](analysis/compare_field_resolution_convergence.py)
 - 杆内释放诊断：[`analysis/compare_internal_release.py`](analysis/compare_internal_release.py)
+- 边缘定位、接口误差预算与oa-TOF集成门禁：
+  [`analysis/assess_interface_integration_gate.py`](analysis/assess_interface_integration_gate.py)
 - 路径解析：[`rf_quadrupole_paths.m`](rf_quadrupole_paths.m)
 
 大型 MPH、PA、IOB、Fly'm 输出和图像一律放在
