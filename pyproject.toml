@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Solver-independent analysis tools for the mass spectrometry projects"
 requires-python = ">=3.11,<3.12"
 dependencies = [
+  "jsonschema>=4.26,<5",
   "numpy>=2,<3",
   "scipy>=1.14,<2",
   "pandas>=2.2,<4",

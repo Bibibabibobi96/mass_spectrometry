@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "project_id": "wehnelt_electron_gun",
+  "family_id": "electron_guns",
+  "display_name": "横置螺旋灯丝Wehnelt电子枪",
+  "purpose": "面向EI离子源的热电子发射、收集和电子束传输设计",
+  "lifecycle_status": "prototype",
+  "toolchains": ["comsol", "matlab"],
+  "contracts": {
+    "baseline": null,
+    "resolved": null,
+    "analysis": null,
+    "interface": null
+  },
+  "capabilities": [
+    {
+      "capability_id": "wehnelt_thermal_electron_transport",
+      "function": "electron_transport",
+      "status": "prototype",
+      "modes": [],
+      "metrics": ["collection_efficiency", "beam_current", "loss_fraction"],
+      "design_variables": []
+    }
+  ],
+  "formal_assets": {
+    "status": "none",
+    "types": [],
+    "identity_contract": null
+  },
+  "known_gaps": [
+    "Geometry, voltage, temperature, particle, and numerical parameters remain embedded in MATLAB",
+    "No baseline or resolved machine contract",
+    "Final particle model is not reopened and recomputed under the current GUI gate",
+    "Historical collection efficiency is not a current formal result"
+  ]
+}

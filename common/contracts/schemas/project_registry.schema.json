@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/project_registry.schema.json",
+  "title": "Generated mass spectrometry project registry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "role", "generated_from", "projects"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "generated_project_capability_registry_do_not_edit"},
+    "generated_from": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["descriptor", "sha256"],
+        "properties": {
+          "descriptor": {"type": "string", "pattern": "^projects/.+/config/project\\.json$"},
+          "sha256": {"type": "string", "pattern": "^[A-F0-9]{64}$"}
+        }
+      }
+    },
+    "projects": {
+      "type": "array",
+      "items": {"$ref": "https://mass-spectrometry.local/schemas/project.schema.json"}
+    }
+  }
+}

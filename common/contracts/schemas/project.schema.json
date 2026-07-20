@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/project.schema.json",
+  "title": "Mass spectrometry project capability descriptor",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "project_id",
+    "family_id",
+    "display_name",
+    "purpose",
+    "lifecycle_status",
+    "toolchains",
+    "contracts",
+    "capabilities",
+    "formal_assets",
+    "known_gaps"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "project_id": {"$ref": "#/$defs/identifier"},
+    "family_id": {"$ref": "#/$defs/identifier"},
+    "display_name": {"type": "string", "minLength": 1},
+    "purpose": {"type": "string", "minLength": 1},
+    "lifecycle_status": {"$ref": "#/$defs/maturity"},
+    "toolchains": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": ["comsol", "simion", "matlab", "python", "solidworks"]
+      }
+    },
+    "contracts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["baseline", "resolved", "analysis", "interface"],
+      "properties": {
+        "baseline": {"$ref": "#/$defs/nullablePath"},
+        "resolved": {"$ref": "#/$defs/nullablePath"},
+        "analysis": {"$ref": "#/$defs/nullablePath"},
+        "interface": {"$ref": "#/$defs/nullablePath"}
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "capability_id",
+          "function",
+          "status",
+          "modes",
+          "metrics",
+          "design_variables"
+        ],
+        "properties": {
+          "capability_id": {"$ref": "#/$defs/identifier"},
+          "function": {"$ref": "#/$defs/identifier"},
+          "status": {"$ref": "#/$defs/maturity"},
+          "modes": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"$ref": "#/$defs/identifier"}
+          },
+          "metrics": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"$ref": "#/$defs/identifier"}
+          },
+          "design_variables": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"$ref": "#/$defs/identifier"}
+          }
+        }
+      }
+    },
+    "formal_assets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "types", "identity_contract"],
+      "properties": {
+        "status": {"enum": ["none", "candidate", "formal"]},
+        "types": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"enum": ["comsol_model", "simion_package", "cad", "results"]}
+        },
+        "identity_contract": {"$ref": "#/$defs/nullablePath"}
+      }
+    },
+    "known_gaps": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+    },
+    "maturity": {
+      "enum": ["prototype", "static", "candidate", "formal"]
+    },
+    "nullablePath": {
+      "type": ["string", "null"],
+      "minLength": 1
+    }
+  }
+}

@@ -1,0 +1,265 @@
+{
+  "schema_version": 1,
+  "role": "generated_project_capability_registry_do_not_edit",
+  "generated_from": [
+    {
+      "descriptor": "projects/electron_impact_ion_source/config/project.json",
+      "sha256": "5978B92CE23DECAD1424FD7A80AD8A13EA2998A71B52B54429D231AF59C16255"
+    },
+    {
+      "descriptor": "projects/oa_tof/config/project.json",
+      "sha256": "47F7F544DFC99B04C08D55A8B6D3443C4EE5A21C14C8A3FC27807E2A66756A6E"
+    },
+    {
+      "descriptor": "projects/rf_quadrupole_collision_cooling/config/project.json",
+      "sha256": "B660DE571AB5AC8FA34437CD772A1D4309997DB724A1E03BB9D013B715BFD657"
+    },
+    {
+      "descriptor": "projects/wehnelt_electron_gun/config/project.json",
+      "sha256": "0DFC333B8410507802315BD6B61010998FDFE05F7CD490546AE64C393491B0F6"
+    }
+  ],
+  "projects": [
+    {
+      "schema_version": 1,
+      "project_id": "electron_impact_ion_source",
+      "family_id": "ion_sources",
+      "display_name": "电子轰击离子源",
+      "purpose": "电子束电离产额可行性以及未来重离子出生接口设计",
+      "lifecycle_status": "prototype",
+      "toolchains": [
+        "comsol",
+        "matlab"
+      ],
+      "contracts": {
+        "baseline": null,
+        "resolved": null,
+        "analysis": null,
+        "interface": null
+      },
+      "capabilities": [
+        {
+          "capability_id": "electron_impact_ionization_feasibility",
+          "function": "ionization_yield_feasibility",
+          "status": "prototype",
+          "modes": [],
+          "metrics": [
+            "ionization_event_count",
+            "ionization_yield"
+          ],
+          "design_variables": []
+        }
+      ],
+      "formal_assets": {
+        "status": "none",
+        "types": [],
+        "identity_contract": null
+      },
+      "known_gaps": [
+        "Physical and numerical parameters remain embedded in MATLAB",
+        "No baseline or resolved machine contract",
+        "No independent heavy-ion tracking or frozen downstream interface",
+        "COMSOL launcher and GUI result gate are not modernized"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "project_id": "oa_tof",
+      "family_id": "tof_mass_analyzers",
+      "display_name": "正交加速飞行时间质量分析器",
+      "purpose": "单次折返oa-TOF的质量分析、离子传输和正式跨求解器设计",
+      "lifecycle_status": "formal",
+      "toolchains": [
+        "comsol",
+        "simion",
+        "matlab",
+        "python",
+        "solidworks"
+      ],
+      "contracts": {
+        "baseline": "config/baseline.json",
+        "resolved": "config/resolved_geometry.json",
+        "analysis": "config/analysis_contract.json",
+        "interface": null
+      },
+      "capabilities": [
+        {
+          "capability_id": "single_reflection_mass_analysis",
+          "function": "mass_analysis",
+          "status": "formal",
+          "modes": [
+            "formal",
+            "mass_spectrum"
+          ],
+          "metrics": [
+            "mass_resolving_power",
+            "transmission_fraction",
+            "tof_centroid",
+            "detector_landing"
+          ],
+          "design_variables": [
+            "accelerator_ring_thickness",
+            "accelerator_ring_width",
+            "accelerator_insulation_gap",
+            "flight_length",
+            "reflectron_bore_radius",
+            "reflectron_ring_outer_radius",
+            "reflectron_ring_thickness",
+            "reflectron_shield_axial_gap",
+            "electrode_voltages"
+          ]
+        }
+      ],
+      "formal_assets": {
+        "status": "formal",
+        "types": [
+          "comsol_model",
+          "simion_package",
+          "cad",
+          "results"
+        ],
+        "identity_contract": "config/formal_assets.json"
+      },
+      "known_gaps": [
+        "RF upstream interface contract is not frozen",
+        "Axisymmetric circular accelerator is deferred",
+        "Manufacturing and assembly tolerance budget is not established"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "project_id": "rf_quadrupole_collision_cooling",
+      "family_id": "rf_multipole_ion_optics",
+      "display_name": "RF四极杆碰撞冷却与传输",
+      "purpose": "四极杆无碰撞传输、接口相空间和未来碰撞冷却功能验证",
+      "lifecycle_status": "candidate",
+      "toolchains": [
+        "comsol",
+        "simion",
+        "matlab",
+        "python"
+      ],
+      "contracts": {
+        "baseline": "config/baseline.json",
+        "resolved": "config/resolved_geometry.json",
+        "analysis": null,
+        "interface": "config/interface_contract.json"
+      },
+      "capabilities": [
+        {
+          "capability_id": "quadrupole_ion_transport",
+          "function": "ion_transport",
+          "status": "candidate",
+          "modes": [
+            "transport_no_collision",
+            "transport_interface_readiness"
+          ],
+          "metrics": [
+            "transmission_fraction",
+            "mean_tof",
+            "rms_beam_radius",
+            "rms_divergence",
+            "mean_kinetic_energy"
+          ],
+          "design_variables": [
+            "rf_amplitude",
+            "rf_frequency",
+            "dc_differential",
+            "axis_offset"
+          ]
+        },
+        {
+          "capability_id": "quadrupole_collision_cooling",
+          "function": "collision_cooling",
+          "status": "prototype",
+          "modes": [],
+          "metrics": [
+            "transmission_fraction",
+            "cooling_time",
+            "exit_energy",
+            "collision_count"
+          ],
+          "design_variables": [
+            "rf_amplitude",
+            "rf_frequency",
+            "gas_pressure",
+            "gas_species"
+          ]
+        },
+        {
+          "capability_id": "quadrupole_mass_filter_reference",
+          "function": "mass_filtering",
+          "status": "prototype",
+          "modes": [
+            "mass_filter_reference"
+          ],
+          "metrics": [
+            "mass_resolving_power",
+            "transmission_fraction",
+            "mass_peak_centroid"
+          ],
+          "design_variables": [
+            "rf_amplitude",
+            "rf_frequency",
+            "dc_differential",
+            "axis_offset"
+          ]
+        }
+      ],
+      "formal_assets": {
+        "status": "none",
+        "types": [],
+        "identity_contract": null
+      },
+      "known_gaps": [
+        "No current formal mechanical geometry or SolidWorks assembly",
+        "N=100 strict interface phase-space gate remains failed",
+        "Collision physics is not implemented in the current validated chain",
+        "Mass-filter mode is a frozen unvalidated reference only"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "project_id": "wehnelt_electron_gun",
+      "family_id": "electron_guns",
+      "display_name": "横置螺旋灯丝Wehnelt电子枪",
+      "purpose": "面向EI离子源的热电子发射、收集和电子束传输设计",
+      "lifecycle_status": "prototype",
+      "toolchains": [
+        "comsol",
+        "matlab"
+      ],
+      "contracts": {
+        "baseline": null,
+        "resolved": null,
+        "analysis": null,
+        "interface": null
+      },
+      "capabilities": [
+        {
+          "capability_id": "wehnelt_thermal_electron_transport",
+          "function": "electron_transport",
+          "status": "prototype",
+          "modes": [],
+          "metrics": [
+            "collection_efficiency",
+            "beam_current",
+            "loss_fraction"
+          ],
+          "design_variables": []
+        }
+      ],
+      "formal_assets": {
+        "status": "none",
+        "types": [],
+        "identity_contract": null
+      },
+      "known_gaps": [
+        "Geometry, voltage, temperature, particle, and numerical parameters remain embedded in MATLAB",
+        "No baseline or resolved machine contract",
+        "Final particle model is not reopened and recomputed under the current GUI gate",
+        "Historical collection efficiency is not a current formal result"
+      ]
+    }
+  ]
+}

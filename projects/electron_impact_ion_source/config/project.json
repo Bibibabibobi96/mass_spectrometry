@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "project_id": "electron_impact_ion_source",
+  "family_id": "ion_sources",
+  "display_name": "电子轰击离子源",
+  "purpose": "电子束电离产额可行性以及未来重离子出生接口设计",
+  "lifecycle_status": "prototype",
+  "toolchains": ["comsol", "matlab"],
+  "contracts": {
+    "baseline": null,
+    "resolved": null,
+    "analysis": null,
+    "interface": null
+  },
+  "capabilities": [
+    {
+      "capability_id": "electron_impact_ionization_feasibility",
+      "function": "ionization_yield_feasibility",
+      "status": "prototype",
+      "modes": [],
+      "metrics": ["ionization_event_count", "ionization_yield"],
+      "design_variables": []
+    }
+  ],
+  "formal_assets": {
+    "status": "none",
+    "types": [],
+    "identity_contract": null
+  },
+  "known_gaps": [
+    "Physical and numerical parameters remain embedded in MATLAB",
+    "No baseline or resolved machine contract",
+    "No independent heavy-ion tracking or frozen downstream interface",
+    "COMSOL launcher and GUI result gate are not modernized"
+  ]
+}

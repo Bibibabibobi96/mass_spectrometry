@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "project_id": "rf_quadrupole_collision_cooling",
+  "family_id": "rf_multipole_ion_optics",
+  "display_name": "RF四极杆碰撞冷却与传输",
+  "purpose": "四极杆无碰撞传输、接口相空间和未来碰撞冷却功能验证",
+  "lifecycle_status": "candidate",
+  "toolchains": ["comsol", "simion", "matlab", "python"],
+  "contracts": {
+    "baseline": "config/baseline.json",
+    "resolved": "config/resolved_geometry.json",
+    "analysis": null,
+    "interface": "config/interface_contract.json"
+  },
+  "capabilities": [
+    {
+      "capability_id": "quadrupole_ion_transport",
+      "function": "ion_transport",
+      "status": "candidate",
+      "modes": ["transport_no_collision", "transport_interface_readiness"],
+      "metrics": ["transmission_fraction", "mean_tof", "rms_beam_radius", "rms_divergence", "mean_kinetic_energy"],
+      "design_variables": ["rf_amplitude", "rf_frequency", "dc_differential", "axis_offset"]
+    },
+    {
+      "capability_id": "quadrupole_collision_cooling",
+      "function": "collision_cooling",
+      "status": "prototype",
+      "modes": [],
+      "metrics": ["transmission_fraction", "cooling_time", "exit_energy", "collision_count"],
+      "design_variables": ["rf_amplitude", "rf_frequency", "gas_pressure", "gas_species"]
+    },
+    {
+      "capability_id": "quadrupole_mass_filter_reference",
+      "function": "mass_filtering",
+      "status": "prototype",
+      "modes": ["mass_filter_reference"],
+      "metrics": ["mass_resolving_power", "transmission_fraction", "mass_peak_centroid"],
+      "design_variables": ["rf_amplitude", "rf_frequency", "dc_differential", "axis_offset"]
+    }
+  ],
+  "formal_assets": {
+    "status": "none",
+    "types": [],
+    "identity_contract": null
+  },
+  "known_gaps": [
+    "No current formal mechanical geometry or SolidWorks assembly",
+    "N=100 strict interface phase-space gate remains failed",
+    "Collision physics is not implemented in the current validated chain",
+    "Mass-filter mode is a frozen unvalidated reference only"
+  ]
+}

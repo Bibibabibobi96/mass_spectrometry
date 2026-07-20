@@ -5,6 +5,9 @@
 当前权威状态[`docs/PROJECT.md`](docs/PROJECT.md)。需要追溯选型依据和旧实验时才读冻结背景
 [`docs/history/PROJECT_HISTORY.md`](docs/history/PROJECT_HISTORY.md)。
 
+机器身份、能力边界和当前`prototype`成熟度由[`config/project.json`](config/project.json)声明；
+它用于项目发现，不改变PROJECT记录的正式资格。
+
 ## 基线源码流水线
 
 按下列顺序运行，三份脚本均通过[`egun_paths.m`](egun_paths.m)定位产物：
