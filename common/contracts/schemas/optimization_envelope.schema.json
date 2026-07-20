@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/optimization_envelope.schema.json",
+  "title": "Expandable project optimization envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "role", "project_id", "envelope_id", "status", "policy", "reference", "tof_limits"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "project_optimization_envelope"},
+    "project_id": {"$ref": "#/$defs/identifier"},
+    "envelope_id": {"$ref": "#/$defs/identifier"},
+    "status": {"enum": ["candidate", "approved", "retired"]},
+    "policy": {"const": "Candidates may move bidirectionally within this envelope. Exceeding it requires explicit envelope review; an approved expansion does not automatically modify the formal baseline."},
+    "reference": {
+      "type": "object", "additionalProperties": false,
+      "required": ["baseline", "baseline_sha256"],
+      "properties": {
+        "baseline": {"type": "string", "minLength": 1},
+        "baseline_sha256": {"type": "string", "pattern": "^[A-F0-9]{64}$"}
+      }
+    },
+    "tof_limits": {
+      "type": "object", "additionalProperties": false,
+      "required": ["max_flight_length_mm", "max_positive_axial_extent_mm", "max_outer_radius_mm", "max_stage1_electrode_count", "max_stage2_electrode_count"],
+      "properties": {
+        "max_flight_length_mm": {"type": "number", "exclusiveMinimum": 0},
+        "max_positive_axial_extent_mm": {"type": "number", "exclusiveMinimum": 0},
+        "max_outer_radius_mm": {"type": "number", "exclusiveMinimum": 0},
+        "max_stage1_electrode_count": {"type": "integer", "minimum": 1},
+        "max_stage2_electrode_count": {"type": "integer", "minimum": 1}
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"}
+  }
+}

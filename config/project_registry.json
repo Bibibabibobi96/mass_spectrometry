@@ -4,19 +4,19 @@
   "generated_from": [
     {
       "descriptor": "projects/electron_impact_ion_source/config/project.json",
-      "sha256": "A275A28F51053E64CB9BA12CAB19874AEB0C66E65D59184DE209EE3045679ADD"
+      "sha256": "BAFBC541EC21ADD12C6FD8C026411BDB63C98BAED8A1AE5A640752EA0CCC9D26"
     },
     {
       "descriptor": "projects/oa_tof/config/project.json",
-      "sha256": "8AB49B79EFFA23348190451E5D290E8BD499BEC38FC38C5F868B471DE132999D"
+      "sha256": "5AF31F8ABA50D6F559711987FEB9F11780625B3887AC99F5D1A79EB487706025"
     },
     {
       "descriptor": "projects/rf_quadrupole_collision_cooling/config/project.json",
-      "sha256": "785AAD6882DAE3183CCD5E0264D3C36F7E1662BBFEA8E711D49A90BC728F4BAE"
+      "sha256": "409FECC3163E81B60755CF60257B10A31C310AD5E722BD2EF26977120E3DF3BF"
     },
     {
       "descriptor": "projects/wehnelt_electron_gun/config/project.json",
-      "sha256": "8A3794C4AA27F08276AE1F6E7C09709D734597ACAE90B8C0215CBE71C578617B"
+      "sha256": "11B5795A1E3AD2809DB7DD0F48994B1F24822E77B9B1483EEF3478ABAA3F4F98"
     }
   ],
   "projects": [
@@ -36,7 +36,9 @@
         "resolved": null,
         "analysis": null,
         "interface": null,
-        "execution": null
+        "execution": null,
+        "design_variables": null,
+        "optimization_envelope": null
       },
       "capabilities": [
         {
@@ -82,7 +84,9 @@
         "resolved": "config/resolved_geometry.json",
         "analysis": "config/analysis_contract.json",
         "interface": null,
-        "execution": "config/execution_profiles.json"
+        "execution": "config/execution_profiles.json",
+        "design_variables": "config/design_variables.json",
+        "optimization_envelope": "config/optimization_envelope.json"
       },
       "capabilities": [
         {
@@ -103,12 +107,30 @@
             "accelerator_ring_thickness",
             "accelerator_ring_width",
             "accelerator_insulation_gap",
+            "accelerator_stage1_length",
+            "accelerator_stage2_length",
+            "accelerator_ring_count",
+            "accelerator_bore_half_width",
+            "accelerator_shield_wall_thickness",
+            "accelerator_rear_clearance",
+            "accelerator_repeller_thickness",
+            "accelerator_front_vacuum_margin",
+            "accelerator_exit_grid_half_width",
             "flight_length",
             "reflectron_bore_radius",
             "reflectron_ring_outer_radius",
             "reflectron_ring_thickness",
+            "reflectron_stage1_electrode_count",
+            "reflectron_stage2_electrode_count",
+            "reflectron_shield_inner_radius",
+            "reflectron_shield_wall_thickness",
+            "reflectron_shield_endcap_thickness",
+            "reflectron_shield_near_endcap_gap",
             "reflectron_shield_axial_gap",
-            "electrode_voltages"
+            "accelerator_repeller_voltage",
+            "accelerator_grid1_voltage",
+            "reflectron_midgrid_voltage",
+            "reflectron_backplate_voltage"
           ]
         }
       ],
@@ -146,7 +168,9 @@
         "resolved": "config/resolved_geometry.json",
         "analysis": null,
         "interface": "config/interface_contract.json",
-        "execution": "config/execution_profiles.json"
+        "execution": "config/execution_profiles.json",
+        "design_variables": null,
+        "optimization_envelope": null
       },
       "capabilities": [
         {
@@ -237,7 +261,9 @@
         "resolved": null,
         "analysis": null,
         "interface": null,
-        "execution": null
+        "execution": null,
+        "design_variables": null,
+        "optimization_envelope": null
       },
       "capabilities": [
         {

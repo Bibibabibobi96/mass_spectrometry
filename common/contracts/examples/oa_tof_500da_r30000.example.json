@@ -23,7 +23,8 @@
     "flight_length",
     "reflectron_ring_thickness",
     "reflectron_shield_axial_gap",
-    "electrode_voltages"
+    "reflectron_midgrid_voltage",
+    "reflectron_backplate_voltage"
   ],
   "required_outputs": ["simulation_results", "validation_report", "comsol_model", "simion_model", "cad"],
   "evidence_level": "candidate",

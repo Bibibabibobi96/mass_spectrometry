@@ -35,13 +35,15 @@
     "contracts": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["baseline", "resolved", "analysis", "interface", "execution"],
+      "required": ["baseline", "resolved", "analysis", "interface", "execution", "design_variables", "optimization_envelope"],
       "properties": {
         "baseline": {"$ref": "#/$defs/nullablePath"},
         "resolved": {"$ref": "#/$defs/nullablePath"},
         "analysis": {"$ref": "#/$defs/nullablePath"},
         "interface": {"$ref": "#/$defs/nullablePath"},
-        "execution": {"$ref": "#/$defs/nullablePath"}
+        "execution": {"$ref": "#/$defs/nullablePath"},
+        "design_variables": {"$ref": "#/$defs/nullablePath"},
+        "optimization_envelope": {"$ref": "#/$defs/nullablePath"}
       }
     },
     "capabilities": {

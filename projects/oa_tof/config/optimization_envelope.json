@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "role": "project_optimization_envelope",
+  "project_id": "oa_tof",
+  "envelope_id": "oatof_reference_20260720",
+  "status": "approved",
+  "policy": "Candidates may move bidirectionally within this envelope. Exceeding it requires explicit envelope review; an approved expansion does not automatically modify the formal baseline.",
+  "reference": {
+    "baseline": "config/baseline.json",
+    "baseline_sha256": "AE9645CF5C482952A0ED2CEEFE93986485FB37FF76812ED79ED1286ADE8C8731"
+  },
+  "tof_limits": {
+    "max_flight_length_mm": 600.0,
+    "max_positive_axial_extent_mm": 871.8328,
+    "max_outer_radius_mm": 360.0,
+    "max_stage1_electrode_count": 10,
+    "max_stage2_electrode_count": 5
+  }
+}

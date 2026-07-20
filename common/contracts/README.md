@@ -48,3 +48,22 @@
 优化变量的“项目能力声明”和“现有执行入口可消费”是两层事实。一个变量可以属于未来设计空间，但在
 候选参数编译器尚未把它单向派生到baseline/resolved和全部求解器/CAD前，dry-run必须报告
 `NEEDS_IMPLEMENTATION`，不得调用固定模型冒充优化。
+
+## 候选参数编译
+
+项目可以用`config/design_variables.json`声明变量类型、静态安全范围、JSON指针和重建影响，并用独立
+`config/optimization_envelope.json`限制一轮优化的总体包络。正式baseline是当前验收设计，不是永远
+不可扩大的宇宙上限；envelope可经明确审查扩大，扩大本身也不会自动改写或转正baseline。
+
+oa-TOF当前采用“可扩展参考包络紧凑化”：TOF候选可在包络内双向调节，超出时返回
+`NEEDS_ENVELOPE_REVIEW`；加速器几何与电压全部双向优化，不受TOF包络的单方向紧凑化约束。
+获批需求和候选提案可静态编译为隔离合同：
+
+```powershell
+.\.venv\Scripts\python.exe projects\oa_tof\analysis\compile_candidate_design.py <proposal.json> `
+  --output-dir <new-candidate-directory>
+```
+
+输出固定为`candidate_baseline.json`、`candidate_resolved_geometry.json`和`candidate_diff.json`。编译器
+验证请求/提案哈希、单位、范围、整数数量、径向顺序、电极重叠、需求约束和当前envelope；不会修改
+正式baseline、运行求解器或创建正式资产。候选提案Schema为`candidate_proposal.schema.json`。

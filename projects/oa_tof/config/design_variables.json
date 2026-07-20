@@ -1,0 +1,288 @@
+{
+  "schema_version": 1,
+  "role": "project_design_variable_catalog",
+  "project_id": "oa_tof",
+  "optimization_strategy": "expandable_reference_envelope_compaction",
+  "envelope_contract": "config/optimization_envelope.json",
+  "range_policy": "Variables move bidirectionally inside static compilation-safety bounds. TOF candidates must also remain inside the separately versioned optimization envelope; accelerator variables are exempt from the TOF compaction envelope. Bounds are not a validated feasible or optimal physics domain.",
+  "variables": [
+    {
+      "variable_id": "accelerator_ring_thickness",
+      "label": "Accelerator ring axial thickness",
+      "kind": "continuous",
+      "optimization_role": "accelerator_bidirectional",
+      "json_pointer": "/geometry_mm/accelerator_ring_thickness",
+      "unit": "mm", "minimum": 0.1, "maximum": 10.0,
+      "compile_status": "candidate_contract",
+      "rebuild_effects": ["resolved", "comsol", "simion", "cad"]
+    },
+    {
+      "variable_id": "accelerator_ring_width",
+      "label": "Accelerator ring radial width",
+      "kind": "continuous",
+      "optimization_role": "accelerator_bidirectional",
+      "json_pointer": "/geometry_mm/accelerator_ring_width",
+      "unit": "mm", "minimum": 0.1, "maximum": 50.0,
+      "compile_status": "candidate_contract",
+      "rebuild_effects": ["resolved", "comsol", "simion", "cad"]
+    },
+    {
+      "variable_id": "accelerator_insulation_gap",
+      "label": "Accelerator radial insulation gap",
+      "kind": "continuous",
+      "optimization_role": "accelerator_bidirectional",
+      "json_pointer": "/geometry_mm/accelerator_insulation_gap",
+      "unit": "mm", "minimum": 0.1, "maximum": 50.0,
+      "compile_status": "candidate_contract",
+      "rebuild_effects": ["resolved", "comsol", "simion", "cad"]
+    },
+    {
+      "variable_id": "accelerator_stage1_length",
+      "label": "Accelerator repeller-to-grid1 distance",
+      "kind": "continuous",
+      "optimization_role": "accelerator_bidirectional",
+      "json_pointer": "/geometry_derivation/accelerator/d1_mm",
+      "unit": "mm", "minimum": 0.2, "maximum": 100.0,
+      "compile_status": "candidate_contract",
+      "rebuild_effects": ["theory", "resolved", "comsol", "simion", "cad"]
+    },
+    {
+      "variable_id": "accelerator_stage2_length",
+      "label": "Accelerator grid1-to-grid2 distance",
+      "kind": "continuous",
+      "optimization_role": "accelerator_bidirectional",
+      "json_pointer": "/geometry_derivation/accelerator/d2_mm",
+      "unit": "mm", "minimum": 0.2, "maximum": 300.0,
+      "compile_status": "candidate_contract",
+      "rebuild_effects": ["theory", "resolved", "comsol", "simion", "cad"]
+    },
+    {
+      "variable_id": "accelerator_ring_count",
+      "label": "Accelerator intermediate ring count",
+      "kind": "integer",
+      "optimization_role": "accelerator_bidirectional",
+      "json_pointer": "/rings/accelerator_count",
+      "unit": "count", "minimum": 1, "maximum": 100,
+      "compile_status": "candidate_contract",
+      "rebuild_effects": ["theory", "resolved", "comsol", "simion", "cad"]
+    },
+    {
+      "variable_id": "accelerator_bore_half_width",
+      "label": "Accelerator clear-aperture half width",
+      "kind": "continuous",
+      "optimization_role": "accelerator_bidirectional",
+      "json_pointer": "/geometry_mm/accelerator_bore_half",
+      "unit": "mm", "minimum": 0.5, "maximum": 100.0,
+      "compile_status": "candidate_contract",
+      "rebuild_effects": ["resolved", "comsol", "simion", "cad"]
+    },
+    {
+      "variable_id": "accelerator_shield_wall_thickness",
+      "label": "Accelerator shield wall thickness",
+      "kind": "continuous",
+      "optimization_role": "accelerator_bidirectional",
+      "json_pointer": "/geometry_mm/accelerator_shield_wall",
+      "unit": "mm", "minimum": 0.1, "maximum": 100.0,
+      "compile_status": "candidate_contract",
+      "rebuild_effects": ["resolved", "comsol", "simion", "cad"]
+    },
+    {
+      "variable_id": "accelerator_rear_clearance",
+      "label": "Accelerator rear insulation clearance",
+      "kind": "continuous",
+      "optimization_role": "accelerator_bidirectional",
+      "json_pointer": "/geometry_mm/accelerator_rear_clearance",
+      "unit": "mm", "minimum": 0.0, "maximum": 100.0,
+      "compile_status": "candidate_contract",
+      "rebuild_effects": ["resolved", "comsol", "simion", "cad"]
+    },
+    {
+      "variable_id": "accelerator_repeller_thickness",
+      "label": "Accelerator repeller thickness",
+      "kind": "continuous",
+      "optimization_role": "accelerator_bidirectional",
+      "json_pointer": "/geometry_mm/accelerator_repeller_thickness",
+      "unit": "mm", "minimum": 0.1, "maximum": 20.0,
+      "compile_status": "candidate_contract",
+      "rebuild_effects": ["resolved", "comsol", "simion", "cad"]
+    },
+    {
+      "variable_id": "accelerator_front_vacuum_margin",
+      "label": "Accelerator front vacuum margin",
+      "kind": "continuous",
+      "optimization_role": "accelerator_bidirectional",
+      "json_pointer": "/geometry_mm/accelerator_front_vacuum_margin",
+      "unit": "mm", "minimum": 0.0, "maximum": 50.0,
+      "compile_status": "candidate_contract",
+      "rebuild_effects": ["resolved", "simion"]
+    },
+    {
+      "variable_id": "accelerator_exit_grid_half_width",
+      "label": "Accelerator exit-grid half width",
+      "kind": "continuous",
+      "optimization_role": "accelerator_bidirectional",
+      "json_pointer": "/geometry_mm/accelerator_exit_grid_half_width",
+      "unit": "mm", "minimum": 0.5, "maximum": 200.0,
+      "compile_status": "candidate_contract",
+      "rebuild_effects": ["resolved", "comsol", "simion", "cad"]
+    },
+    {
+      "variable_id": "flight_length",
+      "label": "One-way field-free flight length",
+      "kind": "continuous",
+      "optimization_role": "tof_envelope",
+      "json_pointer": "/geometry_mm/L_flight",
+      "unit": "mm", "minimum": 250.0, "maximum": 5000.0,
+      "compile_status": "candidate_contract",
+      "rebuild_effects": ["theory", "resolved", "comsol", "simion", "cad"]
+    },
+    {
+      "variable_id": "reflectron_bore_radius",
+      "label": "Reflectron clear bore radius",
+      "kind": "continuous",
+      "optimization_role": "tof_internal",
+      "json_pointer": "/geometry_mm/bore_r",
+      "unit": "mm", "minimum": 1.0, "maximum": 1000.0,
+      "compile_status": "candidate_contract",
+      "rebuild_effects": ["resolved", "comsol", "simion", "cad"]
+    },
+    {
+      "variable_id": "reflectron_ring_outer_radius",
+      "label": "Reflectron ring outer radius",
+      "kind": "continuous",
+      "optimization_role": "tof_internal",
+      "json_pointer": "/geometry_mm/ring_outer_r",
+      "unit": "mm", "minimum": 2.0, "maximum": 1200.0,
+      "compile_status": "candidate_contract",
+      "rebuild_effects": ["resolved", "comsol", "simion", "cad"]
+    },
+    {
+      "variable_id": "reflectron_ring_thickness",
+      "label": "Shared reflectron ring axial thickness",
+      "kind": "continuous",
+      "optimization_role": "tof_internal",
+      "json_pointer": "/geometry_mm/ring_thickness",
+      "unit": "mm", "minimum": 0.1, "maximum": 20.0,
+      "compile_status": "candidate_contract",
+      "rebuild_effects": ["resolved", "comsol", "simion", "cad"]
+    },
+    {
+      "variable_id": "reflectron_stage1_electrode_count",
+      "label": "Stage-1 intermediate ring count",
+      "kind": "integer",
+      "optimization_role": "tof_internal",
+      "json_pointer": "/rings/stage1_count",
+      "unit": "count", "minimum": 1, "maximum": 100,
+      "compile_status": "candidate_contract",
+      "rebuild_effects": ["resolved", "comsol", "simion", "cad"]
+    },
+    {
+      "variable_id": "reflectron_stage2_electrode_count",
+      "label": "Stage-2 intermediate ring count",
+      "kind": "integer",
+      "optimization_role": "tof_internal",
+      "json_pointer": "/rings/stage2_count",
+      "unit": "count", "minimum": 1, "maximum": 100,
+      "compile_status": "candidate_contract",
+      "rebuild_effects": ["resolved", "comsol", "simion", "cad"]
+    },
+    {
+      "variable_id": "reflectron_shield_inner_radius",
+      "label": "Flight-tube and reflectron shield inner radius",
+      "kind": "continuous",
+      "optimization_role": "tof_internal",
+      "json_pointer": "/geometry_mm/flight_tube_r",
+      "unit": "mm", "minimum": 3.0, "maximum": 1500.0,
+      "compile_status": "candidate_contract",
+      "rebuild_effects": ["resolved", "comsol", "simion", "cad"]
+    },
+    {
+      "variable_id": "reflectron_shield_wall_thickness",
+      "label": "Flight-tube shield wall thickness",
+      "kind": "continuous",
+      "optimization_role": "tof_internal",
+      "json_pointer": "/geometry_mm/flight_tube_wall",
+      "unit": "mm", "minimum": 0.1, "maximum": 100.0,
+      "compile_status": "candidate_contract",
+      "rebuild_effects": ["resolved", "comsol", "simion", "cad"]
+    },
+    {
+      "variable_id": "reflectron_shield_endcap_thickness",
+      "label": "Reflectron shield endcap thickness",
+      "kind": "continuous",
+      "optimization_role": "tof_internal",
+      "json_pointer": "/geometry_mm/shield_endcap_thickness",
+      "unit": "mm", "minimum": 0.1, "maximum": 100.0,
+      "compile_status": "candidate_contract",
+      "rebuild_effects": ["resolved", "comsol", "simion", "cad"]
+    },
+    {
+      "variable_id": "reflectron_shield_near_endcap_gap",
+      "label": "Near shield endcap axial gap",
+      "kind": "continuous",
+      "optimization_role": "tof_internal",
+      "json_pointer": "/geometry_mm/shield_near_endcap_gap",
+      "unit": "mm", "minimum": 0.0, "maximum": 500.0,
+      "compile_status": "candidate_contract",
+      "rebuild_effects": ["resolved", "comsol", "simion", "cad"]
+    },
+    {
+      "variable_id": "reflectron_shield_axial_gap",
+      "label": "Far shield endcap axial gap",
+      "kind": "continuous",
+      "optimization_role": "tof_internal",
+      "json_pointer": "/geometry_mm/shield_axial_gap",
+      "unit": "mm", "minimum": 0.0, "maximum": 500.0,
+      "compile_status": "candidate_contract",
+      "rebuild_effects": ["resolved", "comsol", "simion", "cad"]
+    },
+    {
+      "variable_id": "accelerator_repeller_voltage",
+      "label": "Accelerator repeller voltage",
+      "kind": "continuous",
+      "optimization_role": "accelerator_bidirectional",
+      "json_pointer": "/electrodes_V/repeller",
+      "unit": "V", "minimum": -10000.0, "maximum": 10000.0,
+      "compile_status": "candidate_contract",
+      "rebuild_effects": ["theory", "resolved", "comsol", "simion"]
+    },
+    {
+      "variable_id": "accelerator_grid1_voltage",
+      "label": "Accelerator first-grid voltage",
+      "kind": "continuous",
+      "optimization_role": "accelerator_bidirectional",
+      "json_pointer": "/electrodes_V/grid1",
+      "unit": "V", "minimum": -10000.0, "maximum": 10000.0,
+      "compile_status": "candidate_contract",
+      "rebuild_effects": ["theory", "resolved", "comsol", "simion"]
+    },
+    {
+      "variable_id": "reflectron_midgrid_voltage",
+      "label": "Reflectron inter-stage grid voltage",
+      "kind": "continuous",
+      "optimization_role": "compensation",
+      "json_pointer": "/electrodes_V/midgrid",
+      "unit": "V", "minimum": -10000.0, "maximum": 10000.0,
+      "compile_status": "candidate_contract",
+      "rebuild_effects": ["theory", "resolved", "comsol", "simion"]
+    },
+    {
+      "variable_id": "reflectron_backplate_voltage",
+      "label": "Reflectron backplate voltage",
+      "kind": "continuous",
+      "optimization_role": "compensation",
+      "json_pointer": "/electrodes_V/backplate",
+      "unit": "V", "minimum": -10000.0, "maximum": 10000.0,
+      "compile_status": "candidate_contract",
+      "rebuild_effects": ["theory", "resolved", "comsol", "simion"]
+    }
+  ],
+  "invariants": [
+    "reflectron_radial_order",
+    "detector_inside_shield",
+    "reflectron_ring_nonoverlap",
+    "reflectron_length_identity",
+    "accelerator_length_identity",
+    "shield_axial_bounds_derived"
+  ]
+}

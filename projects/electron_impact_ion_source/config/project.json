@@ -11,7 +11,9 @@
     "resolved": null,
     "analysis": null,
     "interface": null,
-    "execution": null
+    "execution": null,
+    "design_variables": null,
+    "optimization_envelope": null
   },
   "capabilities": [
     {

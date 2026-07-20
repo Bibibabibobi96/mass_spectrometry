@@ -24,9 +24,21 @@ def _close(label: str, actual: float, expected: float, tolerance: float = 1e-10)
         raise ValueError(f"inconsistent {label}: {actual} != {expected}")
 
 
-def resolve_contract() -> dict[str, Any]:
-    baseline = json.loads(BASELINE_PATH.read_text(encoding="utf-8"))
-    mode = json.loads(MODE_PATH.read_text(encoding="utf-8"))
+def _input_label(path: Path) -> str:
+    try:
+        return path.resolve().relative_to(PROJECT_ROOT.resolve()).as_posix()
+    except ValueError:
+        return str(path.resolve())
+
+
+def resolve_contract(
+    baseline_path: Path = BASELINE_PATH,
+    mode_path: Path = MODE_PATH,
+) -> dict[str, Any]:
+    baseline_path = Path(baseline_path)
+    mode_path = Path(mode_path)
+    baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+    mode = json.loads(mode_path.read_text(encoding="utf-8"))
     geometry = baseline["geometry_mm"]
     accelerator = baseline["geometry_derivation"]["accelerator"]
     source = baseline["particle_source"]
@@ -76,10 +88,10 @@ def resolve_contract() -> dict[str, Any]:
         "schema_version": 1,
         "role": "oa_tof_resolved_contract_do_not_edit",
         "inputs": {
-            "baseline": "config/baseline.json",
-            "baseline_sha256": _sha256(BASELINE_PATH),
-            "mode": "config/modes/formal.json",
-            "mode_sha256": _sha256(MODE_PATH),
+            "baseline": _input_label(baseline_path),
+            "baseline_sha256": _sha256(baseline_path),
+            "mode": _input_label(mode_path),
+            "mode_sha256": _sha256(mode_path),
         },
         "coordinate_convention": coordinate,
         "geometry_derivation": baseline["geometry_derivation"],

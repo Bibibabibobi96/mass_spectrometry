@@ -34,6 +34,9 @@
 
 - 项目机器身份、能力和成熟度：[`config/project.json`](config/project.json)；它不保存物理参数或取代PROJECT。
 - 现有入口可执行范围：[`config/execution_profiles.json`](config/execution_profiles.json)；固定复验入口不等于已实现任意参数优化。
+- 设计变量与当前优化包络：[`config/design_variables.json`](config/design_variables.json)、
+  [`config/optimization_envelope.json`](config/optimization_envelope.json)；包络可审查扩大，不等于正式baseline。
+- 纯静态候选编译：[`analysis/compile_candidate_design.py`](analysis/compile_candidate_design.py)；只写隔离合同，不运行求解器或CAD。
 - 人工设计入口：[`config/baseline.json`](config/baseline.json)；程序入口为自动生成的
   [`config/resolved_geometry.json`](config/resolved_geometry.json)，禁止手改。
 - 全项目门禁：`verify_project.ps1 -Level Static|Candidate|Formal`。

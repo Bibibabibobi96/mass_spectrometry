@@ -11,7 +11,9 @@
     "resolved": "config/resolved_geometry.json",
     "analysis": null,
     "interface": "config/interface_contract.json",
-    "execution": "config/execution_profiles.json"
+    "execution": "config/execution_profiles.json",
+    "design_variables": null,
+    "optimization_envelope": null
   },
   "capabilities": [
     {

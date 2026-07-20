@@ -11,7 +11,9 @@
     "resolved": "config/resolved_geometry.json",
     "analysis": "config/analysis_contract.json",
     "interface": null,
-    "execution": "config/execution_profiles.json"
+    "execution": "config/execution_profiles.json",
+    "design_variables": "config/design_variables.json",
+    "optimization_envelope": "config/optimization_envelope.json"
   },
   "capabilities": [
     {
@@ -24,12 +26,30 @@
         "accelerator_ring_thickness",
         "accelerator_ring_width",
         "accelerator_insulation_gap",
+        "accelerator_stage1_length",
+        "accelerator_stage2_length",
+        "accelerator_ring_count",
+        "accelerator_bore_half_width",
+        "accelerator_shield_wall_thickness",
+        "accelerator_rear_clearance",
+        "accelerator_repeller_thickness",
+        "accelerator_front_vacuum_margin",
+        "accelerator_exit_grid_half_width",
         "flight_length",
         "reflectron_bore_radius",
         "reflectron_ring_outer_radius",
         "reflectron_ring_thickness",
+        "reflectron_stage1_electrode_count",
+        "reflectron_stage2_electrode_count",
+        "reflectron_shield_inner_radius",
+        "reflectron_shield_wall_thickness",
+        "reflectron_shield_endcap_thickness",
+        "reflectron_shield_near_endcap_gap",
         "reflectron_shield_axial_gap",
-        "electrode_voltages"
+        "accelerator_repeller_voltage",
+        "accelerator_grid1_voltage",
+        "reflectron_midgrid_voltage",
+        "reflectron_backplate_voltage"
       ]
     }
   ],

@@ -19,6 +19,13 @@ def descriptor_paths(repo_root: Path) -> list[Path]:
     return sorted((repo_root / "projects").glob("*/config/project.json"))
 
 
+def pointer_value(document: dict[str, Any], pointer: str) -> Any:
+    value: Any = document
+    for token in pointer.lstrip("/").split("/"):
+        value = value[token.replace("~1", "/").replace("~0", "~")]
+    return value
+
+
 def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path) -> None:
     validate_schema(descriptor, "project.schema.json")
     project_root = path.parents[1]
@@ -76,6 +83,70 @@ def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path)
                 entrypoint = project_root / step["entrypoint"]
                 if not entrypoint.is_file():
                     raise ContractError(f"{execution_path}: step entrypoint is missing: {step['entrypoint']}")
+
+    variables_relative = descriptor["contracts"]["design_variables"]
+    if variables_relative is not None:
+        variables_path = project_root / variables_relative
+        catalog = load_json(variables_path)
+        validate_schema(catalog, "design_variable_catalog.schema.json")
+        if catalog["project_id"] != descriptor["project_id"]:
+            raise ContractError(f"{variables_path}: project_id differs from project descriptor")
+        baseline_relative = descriptor["contracts"]["baseline"]
+        if baseline_relative is None:
+            raise ContractError(f"{variables_path}: design variables require a baseline contract")
+        baseline = load_json(project_root / baseline_relative)
+        catalog_ids: set[str] = set()
+        for variable in catalog["variables"]:
+            variable_id = variable["variable_id"]
+            if variable_id in catalog_ids:
+                raise ContractError(f"{variables_path}: duplicate variable_id {variable_id!r}")
+            catalog_ids.add(variable_id)
+            if variable["minimum"] >= variable["maximum"]:
+                raise ContractError(f"{variables_path}: invalid bounds for {variable_id!r}")
+            try:
+                current = pointer_value(baseline, variable["json_pointer"])
+            except (KeyError, TypeError) as exc:
+                raise ContractError(f"{variables_path}: invalid JSON pointer for {variable_id!r}") from exc
+            if not isinstance(current, (int, float)) or isinstance(current, bool):
+                raise ContractError(f"{variables_path}: variable target is not numeric: {variable_id!r}")
+            if not variable["minimum"] <= current <= variable["maximum"]:
+                raise ContractError(f"{variables_path}: baseline value is outside bounds: {variable_id!r}")
+            if variable["kind"] == "integer" and not isinstance(current, int):
+                raise ContractError(f"{variables_path}: integer variable targets non-integer baseline: {variable_id!r}")
+        declared_ids = {item for capability in descriptor["capabilities"] for item in capability["design_variables"]}
+        if catalog_ids != declared_ids:
+            missing = sorted(declared_ids - catalog_ids)
+            extra = sorted(catalog_ids - declared_ids)
+            raise ContractError(f"{variables_path}: catalog/capability mismatch missing={missing} extra={extra}")
+
+        envelope_relative = descriptor["contracts"]["optimization_envelope"]
+        if envelope_relative is None or catalog["envelope_contract"] != envelope_relative:
+            raise ContractError(f"{variables_path}: catalog must reference the project optimization envelope")
+        envelope_path = project_root / envelope_relative
+        envelope = load_json(envelope_path)
+        validate_schema(envelope, "optimization_envelope.schema.json")
+        if envelope["project_id"] != descriptor["project_id"]:
+            raise ContractError(f"{envelope_path}: project_id differs from project descriptor")
+        if envelope["reference"]["baseline"] != baseline_relative:
+            raise ContractError(f"{envelope_path}: reference baseline differs from project descriptor")
+        baseline_path = project_root / baseline_relative
+        if envelope["reference"]["baseline_sha256"] != sha256(baseline_path):
+            raise ContractError(f"{envelope_path}: reference baseline hash is stale")
+        geometry = baseline["geometry_mm"]
+        rings = baseline["rings"]
+        limits = envelope["tof_limits"]
+        current_values = {
+            "max_flight_length_mm": geometry["L_flight"],
+            "max_positive_axial_extent_mm": geometry["shield_outer_z_max"] - geometry["detector_z"],
+            "max_outer_radius_mm": geometry["flight_tube_r"] + geometry["flight_tube_wall"],
+            "max_stage1_electrode_count": rings["stage1_count"],
+            "max_stage2_electrode_count": rings["stage2_count"],
+        }
+        for limit, current in current_values.items():
+            if current > limits[limit] + 1e-10:
+                raise ContractError(f"{envelope_path}: formal baseline exceeds {limit}")
+    elif descriptor["contracts"]["optimization_envelope"] is not None:
+        raise ContractError(f"{path}: optimization envelope requires a design-variable catalog")
 
     assets = descriptor["formal_assets"]
     identity = assets["identity_contract"]

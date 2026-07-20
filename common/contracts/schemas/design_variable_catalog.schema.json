@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/design_variable_catalog.schema.json",
+  "title": "Project design variable catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "role", "project_id", "optimization_strategy", "envelope_contract", "range_policy", "variables", "invariants"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "project_design_variable_catalog"},
+    "project_id": {"$ref": "#/$defs/identifier"},
+    "optimization_strategy": {"const": "expandable_reference_envelope_compaction"},
+    "envelope_contract": {"type": "string", "minLength": 1},
+    "range_policy": {"type": "string", "minLength": 1},
+    "variables": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["variable_id", "label", "kind", "optimization_role", "json_pointer", "unit", "minimum", "maximum", "compile_status", "rebuild_effects"],
+        "properties": {
+          "variable_id": {"$ref": "#/$defs/identifier"},
+          "label": {"type": "string", "minLength": 1},
+          "kind": {"enum": ["continuous", "integer", "topology", "derived"]},
+          "optimization_role": {"enum": ["accelerator_bidirectional", "tof_envelope", "tof_internal", "compensation"]},
+          "json_pointer": {"type": "string", "pattern": "^/(?:[^~/]|~[01])+(?:/(?:[^~/]|~[01])+)*$"},
+          "unit": {"type": "string", "minLength": 1},
+          "minimum": {"type": "number"},
+          "maximum": {"type": "number"},
+          "compile_status": {"enum": ["declared", "candidate_contract", "solver_synced", "cad_synced"]},
+          "rebuild_effects": {
+            "type": "array", "minItems": 1, "uniqueItems": true,
+            "items": {"enum": ["theory", "resolved", "comsol", "simion", "cad"]}
+          }
+        }
+      }
+    },
+    "invariants": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/identifier"}}
+  },
+  "$defs": {
+    "identifier": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"}
+  }
+}

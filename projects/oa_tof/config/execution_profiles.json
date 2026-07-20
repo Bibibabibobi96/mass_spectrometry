@@ -39,7 +39,7 @@
       ],
       "limitations": [
         "Uses the five fixed species and current geometry declared by config/modes/mass_spectrum.json",
-        "Does not yet compile requested geometry or voltage design variables into a candidate contract",
+        "The static candidate compiler exists, but this runner does not yet consume its candidate baseline/resolved outputs",
         "Does not produce a new SIMION package or CAD assembly"
       ]
     },
