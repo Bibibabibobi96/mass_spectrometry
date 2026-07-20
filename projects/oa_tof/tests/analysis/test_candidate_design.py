@@ -189,7 +189,9 @@ class CandidateDesignTests(unittest.TestCase):
         source = (PROJECT_ROOT / "comsol" / "ms_oaTOF_two_stage_ringstack_reflectron.m").read_text(
             encoding="utf-8"
         )
-        contract_branch = source.split("if ~isempty(contract_path)", 1)[1].split("end", 1)[0]
+        contract_branch = source.split("if ~isempty(contract_path)", 1)[1].split(
+            "fprintf('[d1 scan]", 1
+        )[0]
         self.assertIn("reflectron_midgrid_voltage_v = voltageV.midgrid", contract_branch)
         self.assertIn("reflectron_backplate_voltage_v = voltageV.backplate", contract_branch)
         self.assertIn("d2_mm = geometryMm.L_stage2", contract_branch)

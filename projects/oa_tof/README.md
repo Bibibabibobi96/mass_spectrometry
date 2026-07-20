@@ -88,13 +88,15 @@
 - 正式跨求解器直接重算与发布入口：
   [`tests/cross_solver/run_formal_validation.ps1`](tests/cross_solver/run_formal_validation.ps1)；发布器只在
   两端达到机器契约样本量、统一比较PASS且当前资产/结果SHA齐全时更新机器契约。
+- 耦合纵向baseline的老/新理论与老/新N=1000主比较入口：
+  [`tests/cross_solver/run_coupled_baseline_validation.ps1`](tests/cross_solver/run_coupled_baseline_validation.ps1)。
 - 三栅加速器时间聚焦参考实现：
   [`analysis/accelerator_time_focus.py`](analysis/accelerator_time_focus.py)
 - 二级反射器闭式解参考实现：
   [`analysis/reflectron_dual_stage_solver.py`](analysis/reflectron_dual_stage_solver.py)
 - 加速器—反射器整机纵向耦合参考实现：
-  [`analysis/oatof_oaaccelerator_coupling.py`](analysis/oatof_oaaccelerator_coupling.py)；当前只绑定隔离
-  诊断 Candidate，不修改 Formal baseline。
+  [`analysis/oatof_oaaccelerator_coupling.py`](analysis/oatof_oaaccelerator_coupling.py)；已用于当前
+  Formal baseline的反射器电压、二级长度、完整释放到探测器时间和时间窗口派生。
 - Python参考分析：[`analysis/README.md`](analysis/README.md)
 - 路径解析：[`oatof_paths.m`](oatof_paths.m)
 

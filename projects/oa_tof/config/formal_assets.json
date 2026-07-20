@@ -1,18 +1,20 @@
 {
   "schema_version": 1,
   "role": "oa_tof_formal_model_and_cad_asset_identity",
-  "verified_on": "2026-07-19",
+  "verified_on": "2026-07-20",
   "comsol": {
     "geometry_status": "synchronized",
     "artifact_relative_path": "formal/comsol/oa_tof__model.mph",
-    "sha256": "6EF392C5F66A9CBD51CD968ABC0831A87097F73FCCE6B72F871949C0E4D535EE"
+    "sha256": "865AF07657CA38F2E5EDB72B240ACE7C9DBC1EF75659F280F0B10DA8BD3E4937"
   },
   "solidworks": {
     "geometry_status": "synchronized",
     "revision": "30.5.0",
     "component_count": 25,
-    "assembly_artifact_relative_path": "formal/cad/oa_tof__assembly.SLDASM",
-    "assembly_sha256": "D05A5E1EF8CE90C8E268C877CF6F7668562BEFF1098440998D81121112392C54"
+    "assembly_artifact_relative_path": "formal/cad/oa_tof__model_physical_components.sldasm",
+    "assembly_sha256": "9A6A9FAD25A952374A2044A3FE1236933C1B51D6643FE409113D058AA10B2827",
+    "export_report_artifact_relative_path": "formal/cad/oaTOF_solidworks_export_report.json",
+    "export_report_sha256": "24541FC5ABEBCAE3214BF94635D9E388BCCC3F57E6E150EC3E7112DBBB4C9543"
   },
   "simion_manifest": "simion_stable_entry.json"
 }

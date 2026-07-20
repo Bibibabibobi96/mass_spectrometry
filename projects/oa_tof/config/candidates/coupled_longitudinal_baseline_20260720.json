@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "role": "design_candidate_proposal",
+  "candidate_id": "coupled_longitudinal_baseline_20260720",
+  "project_id": "oa_tof",
+  "request": {
+    "path": "../requests/coupled_longitudinal_baseline_20260720.json",
+    "sha256": "46D5EEBFFC21FEC5D3CE9976E5B51175EEAB7C8A2BF6D1D11C272ED30F1AA839"
+  },
+  "values": [
+    {
+      "variable": "flight_length",
+      "value": 600.0,
+      "unit": "mm"
+    }
+  ]
+}

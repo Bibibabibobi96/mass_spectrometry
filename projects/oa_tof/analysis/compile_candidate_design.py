@@ -19,9 +19,9 @@ if str(COMMON_CONTRACTS) not in sys.path:
 
 from machine_contracts import load_json, sha256, validate_schema
 from validate_design_request import validate_request
-from accelerator_time_focus import focus_drift_mm
+from accelerator_time_focus import accelerator_state, focus_drift_mm
 from geometry_contract import BASELINE_PATH, MODE_PATH, resolve_contract, serialized
-from reflectron_dual_stage_solver import solve_reflectron_fields
+from oatof_oaaccelerator_coupling import solve_coupled_reflectron_fields
 
 
 CATALOG_PATH = PROJECT_ROOT / "config" / "design_variables.json"
@@ -79,16 +79,42 @@ def pointer_set(document: dict[str, Any], pointer: str, value: int | float) -> N
 def _derive_reflectron_for_flight_length(baseline: dict[str, Any]) -> None:
     geometry = baseline["geometry_mm"]
     derivation = baseline["geometry_derivation"]["reflectron"]
+    accelerator_derivation = baseline["geometry_derivation"]["accelerator"]
+    voltage = baseline["electrodes_V"]
     flight = float(geometry["L_flight"])
     total_field_free = 2.0 * flight
-    fields = solve_reflectron_fields(
-        float(derivation["incident_energy_eV"]),
-        float(geometry["L_stage1"]),
-        total_field_free_length_mm=total_field_free,
-        enforce_energy_envelope=False,
+    accelerator = accelerator_state(
+        float(voltage["repeller"]),
+        float(voltage["grid1"]),
+        float(accelerator_derivation["d1_mm"]),
+        float(accelerator_derivation["d2_mm"]),
     )
-    margin = float(derivation["stage2_margin_fraction"])
-    stage2_raw_mm = fields.nominal_stage2_penetration_mm * (1.0 + margin)
+    source_width = float(baseline["particle_source"]["size_z_mm"])
+    spatial_half_range = accelerator.field1_v_per_mm * source_width / 2.0
+    intrinsic_half_range = float(
+        derivation.get("intrinsic_axial_energy_per_charge_half_range_V", 0.0)
+    )
+    energy_min = (
+        accelerator.nominal_energy_per_charge_v
+        - spatial_half_range
+        - intrinsic_half_range
+    )
+    energy_max = (
+        accelerator.nominal_energy_per_charge_v
+        + spatial_half_range
+        + intrinsic_half_range
+    )
+    fields = solve_coupled_reflectron_fields(
+        accelerator,
+        float(geometry["L_stage1"]),
+        flight,
+        flight,
+        energy_min_v=energy_min,
+        energy_max_v=energy_max,
+        stage2_margin_fraction=float(derivation["stage2_margin_fraction"]),
+        stage2_margin_mm=float(derivation.get("stage2_margin_absolute_mm", 0.0)),
+    )
+    stage2_raw_mm = fields.required_stage2_depth_mm
     stage2 = round(stage2_raw_mm, int(derivation["engineering_length_decimals_mm"]))
     mirror_voltage = (
         fields.stage1_voltage_drop_v
@@ -104,6 +130,30 @@ def _derive_reflectron_for_flight_length(baseline: dict[str, Any]) -> None:
     derivation["total_field_free_length_mm"] = total_field_free
     derivation["outbound_field_free_length_mm"] = flight
     derivation["return_field_free_length_mm"] = flight
+    derivation.pop("incident_energy_eV", None)
+    derivation.update(
+        {
+            "model_id": "oatof.oaaccelerator_reflectron_coupled.ideal_1d.v1",
+            "nominal_energy_per_charge_V": accelerator.nominal_energy_per_charge_v,
+            "source_release_full_width_mm": source_width,
+            "spatial_energy_half_range_V": spatial_half_range,
+            "intrinsic_axial_energy_per_charge_half_range_V": intrinsic_half_range,
+            "energy_min_V": energy_min,
+            "energy_max_V": energy_max,
+            "stage2_margin_basis": "full_energy_envelope_high_tail_penetration",
+            "stage2_margin_absolute_mm": float(
+                derivation.get("stage2_margin_absolute_mm", 0.0)
+            ),
+            "rule": (
+                "Solve the coupled accelerator-to-detector first- and second-order "
+                "conditions for U_R1 and F_2; derive the source-correlated full "
+                "energy envelope from accelerator E_A1 and source z width; set "
+                "L_stage2=((W_max-U_R1)/F_2)*(1+margin_fraction)+margin_absolute; "
+                "derive V_backplate=U_R1+F_2*L_stage2_raw; round only final "
+                "engineering lengths and voltages."
+            ),
+        }
+    )
 
 
 def _derive_shield_bounds(baseline: dict[str, Any]) -> None:
@@ -224,7 +274,8 @@ def compile_proposal(proposal_path: Path) -> tuple[dict[str, Any], dict[str, Any
     }
     if accelerator_focus_inputs & values.keys():
         _derive_accelerator_focus(candidate)
-    if "flight_length" in values:
+    longitudinal_inputs = accelerator_focus_inputs | {"flight_length"}
+    if longitudinal_inputs & values.keys():
         _derive_reflectron_for_flight_length(candidate)
     if values:
         _derive_shield_bounds(candidate)
@@ -233,7 +284,11 @@ def compile_proposal(proposal_path: Path) -> tuple[dict[str, Any], dict[str, Any
             pointer_set(candidate, definitions[variable_id]["json_pointer"], item["value"])
     _validate_invariants(candidate)
 
-    excesses = _envelope_excesses(candidate, envelope)
+    envelope_applies = any(
+        definitions[variable_id]["optimization_role"] != "accelerator_bidirectional"
+        for variable_id in values
+    )
+    excesses = _envelope_excesses(candidate, envelope) if envelope_applies else []
     if excesses:
         raise EnvelopeReviewRequired("NEEDS_ENVELOPE_REVIEW: " + "; ".join(excesses))
     for constraint in request["constraints"]:

@@ -60,7 +60,7 @@
   },
   "known_gaps": [
     "RF upstream interface contract is not frozen",
-    "Coupled accelerator-reflectron longitudinal candidate and stage-2 margin semantics are not validated",
+    "Stage-2 engineering margin and manufacturing-tolerance semantics are not experimentally validated",
     "Axisymmetric circular accelerator is deferred",
     "Manufacturing and assembly tolerance budget is not established"
   ]

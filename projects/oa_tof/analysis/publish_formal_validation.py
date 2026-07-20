@@ -72,6 +72,14 @@ def main() -> None:
     parser.add_argument("--simion-csv", type=Path, required=True)
     parser.add_argument("--simion-summary", type=Path, required=True)
     parser.add_argument("--comparison", type=Path, required=True)
+    parser.add_argument(
+        "--validation-scope",
+        default="direct_rerun_of_current_formal_comsol_and_simion_assets",
+        choices=(
+            "direct_rerun_of_current_formal_comsol_and_simion_assets",
+            "validated_candidate_assets_promoted_atomically_to_current_formal",
+        ),
+    )
     parser.add_argument("--output", type=Path, default=CONFIG / "formal_validation.json")
     args = parser.parse_args()
 
@@ -89,11 +97,27 @@ def main() -> None:
     mph = ARTIFACTS / "formal/comsol/oa_tof__model.mph"
     iob = ARTIFACTS / "formal/simion/oatof_ideal_grounded.iob"
     simion_manifest = ARTIFACTS / "formal/simion/run_manifest.json"
+    validation_manifest = ARTIFACTS / "runs" / args.run_id / "run_manifest.json"
+    comsol_promotion_report = ARTIFACTS / "formal/comsol/promotion_report.txt"
+    cad_sync_report = ARTIFACTS / "formal/cad/formal_cad_sync_report.txt"
+    promotion_paths = (
+        validation_manifest,
+        comsol_promotion_report,
+        cad_sync_report,
+    ) if args.validation_scope == (
+        "validated_candidate_assets_promoted_atomically_to_current_formal"
+    ) else ()
     for path in (baseline, analysis_contract, ion, mph, iob, simion_manifest,
                  args.comsol_csv, args.comsol_report, args.simion_csv,
-                 args.simion_summary, args.comparison):
+                 args.simion_summary, args.comparison, *promotion_paths):
         if not path.is_file():
             raise FileNotFoundError(path)
+    if promotion_paths:
+        report_values(comsol_promotion_report)
+        report_values(cad_sync_report)
+        validation_record = json.loads(validation_manifest.read_text(encoding="utf-8-sig"))
+        if validation_record.get("status") != "success":
+            raise ValueError("Promotion source validation run is not successful")
 
     comp = comparison["comparison"]
     landing = comp["detector_landing"]
@@ -103,7 +127,7 @@ def main() -> None:
         "status": "formal_cross_solver_validation",
         "validated_on": date.today().isoformat(),
         "run_id": args.run_id,
-        "validation_scope": "direct_rerun_of_current_formal_comsol_and_simion_assets",
+        "validation_scope": args.validation_scope,
         "physical_contract": "baseline.json",
         "physical_contract_sha256": digest(baseline),
         "analysis_contract": "analysis_contract.json",
@@ -159,6 +183,15 @@ def main() -> None:
             "simion_summary_sha256": digest(args.simion_summary),
         },
     }
+    if promotion_paths:
+        record["promotion_evidence"] = {
+            "validation_run_manifest_artifact_relative_path": artifact(validation_manifest),
+            "validation_run_manifest_sha256": digest(validation_manifest),
+            "comsol_promotion_report_artifact_relative_path": artifact(comsol_promotion_report),
+            "comsol_promotion_report_sha256": digest(comsol_promotion_report),
+            "cad_sync_report_artifact_relative_path": artifact(cad_sync_report),
+            "cad_sync_report_sha256": digest(cad_sync_report),
+        }
     args.output.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8", newline="\n")
     print(f"FORMAL_VALIDATION_PUBLISHED={args.output}")
 

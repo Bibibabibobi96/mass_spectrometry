@@ -42,8 +42,8 @@
 .\projects\oa_tof\tests\simion\verify_stable_entry.ps1
 ```
 
-脚本分别验证正式包和自包含收敛参考的SHA256清单各覆盖54个文件，再实际加载两个IOB并检查
-4实例、静态优先级与T.Qual=8。任一项改变都必须重新验证并有意识地更新清单，禁止只替换PA或手工改IOB后
+脚本验证当前正式包SHA256清单覆盖53个包内文件，再实际加载IOB并检查4实例、静态优先级与
+T.Qual=8。任一项改变都必须重新验证并有意识地更新清单，禁止只替换PA或手工改IOB后
 继续称为稳定入口。
 
 `simion/workbench/build_formal_delivery.ps1`已从统一baseline/resolved契约和四份版本化GEM独立生成
@@ -64,9 +64,16 @@
 该样本的粒子传递。正式跨求解器比较和峰结构解释见`PROJECT.md`，机器记录见
 `config/formal_validation.json`。
 
-2026-07-18以当前正式IOB、PA、同名Program和正式N=1000 ION表直接重算，1000/1000命中，平均TOF
-`71.9910151844 us`，统一直接KDE质量FWHM为`0.0117728715881 Da`、`R=44509.11`。该CSV、运行摘要、
-当前IOB和交付manifest的SHA均由新版`config/formal_validation.json`冻结。
+2026-07-20耦合纵向baseline的正式包通过SHA、四实例和quality=8真实加载门禁。同源N=1000为
+1000/1000命中，平均TOF`71.3535844772 us`，统一直接KDE质量FWHM为`0.010715355226 Da`、
+`R=48901.79`。新理论预测均值`71.3533528284 us`，模拟减预测为`+0.2316 ns`，绝对RMSE
+`0.6186 ns`；逐粒子相关较弱，不能把亚纳秒残差解释成解析式已经复现SIMION离散场细节。当前IOB、
+Program、交付manifest和结果SHA均由`config/simion_stable_entry.json`及
+`config/formal_validation.json`冻结。
+
+2026-07-18旧Formal IOB、PA和同名Program的N=1000重算同样1000/1000命中，平均TOF
+`71.9910151844 us`，质量FWHM`0.0117728715881 Da`、`R=44509.11`；现仅作为老baseline比较证据，
+旧资产位于2026-07-20晋升前Formal归档。
 
 正式场诊断表明，SIMION释放区轴向Ez平均比COMSOL高`0.8396%`，而反射器内部相对RMS差仅
 `0.000528%`。代表轨迹显示该小差异在出射漂移中累计、在反射器中反向补偿，最终只留下数ns

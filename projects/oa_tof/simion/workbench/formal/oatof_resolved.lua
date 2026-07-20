@@ -4,7 +4,7 @@ return {
   role="oa_tof_resolved_contract_do_not_edit",
   inputs={
     baseline="config/baseline.json",
-    baseline_sha256="AE9645CF5C482952A0ED2CEEFE93986485FB37FF76812ED79ED1286ADE8C8731",
+    baseline_sha256="93E4D7BD872EBB820499E8CA2EFE5D64873D071F4C33180A50C246164ECEC473",
     mode="config/modes/formal.json",
     mode_sha256="1DF0704256FE0F6761353AACF5466C5E003216572CC6F52A304CD6183BBEB916"
   },
@@ -36,7 +36,6 @@ return {
       rule="Keep d1=3.0 mm; set d2=16.8 mm so all six grid1-to-grid2 pitches are 2.8 mm; retain voltages; translate the accelerator and source rigidly so the derived first-order global focus exactly matches the former 16.83 mm engineering baseline"
     },
     reflectron={
-      incident_energy_eV=2000.0,
       total_field_free_length_mm=1200.0,
       outbound_field_free_length_mm=600.0,
       return_field_free_length_mm=600.0,
@@ -44,7 +43,16 @@ return {
       stage2_margin_fraction=1.0,
       engineering_length_decimals_mm=4,
       engineering_voltage_decimals_V=4,
-      rule="U1=2*U0*(L+2*d1)/(3*L); E2=12*U0*(sqrt(3)*sqrt(L)+sqrt(L-4*d1))/(sqrt(3)*L^1.5+8*sqrt(3)*sqrt(L)*d1+3*L*sqrt(L-4*d1)); d2min=(U0-U1)/E2; d2_raw=d2min*(1+margin); V_mirror=U1+E2*d2_raw; L_reflectron_raw=d1+d2_raw; only after all physics values are derived, round engineering lengths and voltages to their declared precisions"
+      rule="Solve the coupled accelerator-to-detector first- and second-order conditions for U_R1 and F_2; derive the source-correlated full energy envelope from accelerator E_A1 and source z width; set L_stage2=((W_max-U_R1)/F_2)*(1+margin_fraction)+margin_absolute; derive V_backplate=U_R1+F_2*L_stage2_raw; round only final engineering lengths and voltages.",
+      model_id="oatof.oaaccelerator_reflectron_coupled.ideal_1d.v1",
+      nominal_energy_per_charge_V=2000.0,
+      source_release_full_width_mm=1.0,
+      spatial_energy_half_range_V=80.0,
+      intrinsic_axial_energy_per_charge_half_range_V=0.0,
+      energy_min_V=1920.0,
+      energy_max_V=2080.0,
+      stage2_margin_basis="full_energy_envelope_high_tail_penetration",
+      stage2_margin_absolute_mm=0.0
     }
   },
   geometry_mm={
@@ -56,8 +64,8 @@ return {
     detector_z=0.0,
     L_flight=600.0,
     L_stage1=120.0,
-    L_stage2=86.8328,
-    L_reflectron=206.8328,
+    L_stage2=96.1563,
+    L_reflectron=216.1563,
     detector_radius=40.0,
     detector_thickness=1.0,
     bore_r=250.0,
@@ -78,9 +86,9 @@ return {
     accelerator_insulation_gap=5.0,
     accelerator_exit_grid_half_width=15.0,
     shield_bore_z_min=-49.92918680341103,
-    shield_bore_z_max=861.8328,
+    shield_bore_z_max=871.1563,
     shield_outer_z_min=-59.92918680341103,
-    shield_outer_z_max=871.8328
+    shield_outer_z_max=881.1563
   },
   particle_source={
     seed=20260713,
@@ -100,8 +108,8 @@ return {
     grid1=1760.0,
     grid2=0.0,
     entgrid=0.0,
-    midgrid=1600.0,
-    backplate=2400.0,
+    midgrid=1628.8001,
+    backplate=2531.1999,
     shield=0.0
   },
   rings={
@@ -254,7 +262,7 @@ return {
         y_mm=0,
         z_mm=600.0,
         az_deg=-90.0,
-        nx=1089,
+        nx=1126,
         ny=361,
         nz=1,
         cell_mm=0.25
@@ -317,7 +325,7 @@ return {
       reflectron_stage2={
         0,
         0,
-        763.4164
+        768.07815
       }
     }
   }

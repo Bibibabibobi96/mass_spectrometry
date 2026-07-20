@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "request_id": "coupled_longitudinal_baseline_20260720",
+  "status": "approved",
+  "title": "Rebuild the formal oa-TOF baseline from the coupled accelerator-reflectron longitudinal theory",
+  "target": {
+    "family_id": "tof_mass_analyzers",
+    "preferred_project_id": "oa_tof",
+    "function": "mass_analysis",
+    "mode": "design_candidate"
+  },
+  "operating_points": [
+    {
+      "mass": {"value": 524.0, "unit": "Da"},
+      "charge_state": 1
+    }
+  ],
+  "objectives": [
+    {
+      "metric": "mass_resolving_power",
+      "operator": "maximize",
+      "value": null,
+      "unit": "1",
+      "tolerance": null
+    },
+    {
+      "metric": "transmission_fraction",
+      "operator": ">=",
+      "value": 1.0,
+      "unit": "fraction",
+      "tolerance": null
+    }
+  ],
+  "constraints": [
+    {
+      "parameter": "flight_length",
+      "operator": "=",
+      "value": 600.0,
+      "unit": "mm"
+    }
+  ],
+  "design_variables": ["flight_length"],
+  "required_outputs": [
+    "simulation_results",
+    "comsol_model",
+    "cad",
+    "validation_report"
+  ],
+  "evidence_level": "formal",
+  "approval": {
+    "approved_by": "workspace_owner",
+    "approved_on": "2026-07-20"
+  }
+}

@@ -28,10 +28,8 @@ $flightTubeGemPath = Join-Path $componentDir 'simion\workbench\oatof_flight_tube
 $flightTubeBuilderPath = Join-Path $componentDir 'simion\workbench\build_flight_tube_variant.lua'
 $reflectronGemPath = Join-Path $componentDir 'simion\reflectron\oatof_reflectron_ideal_10_5.gem'
 $reflectronBuilderPath = Join-Path $componentDir 'simion\reflectron\build_reflectron_variant.lua'
-$formalDir = Join-Path $projectRoot 'artifacts\projects\oa_tof\formal\simion'
-$formalMph = Join-Path $projectRoot 'artifacts\projects\oa_tof\formal\comsol\oa_tof__model.mph'
-$formalCadAssembly = Join-Path $projectRoot 'artifacts\projects\oa_tof\formal\cad\oa_tof__assembly.SLDASM'
-$formalCadReport = Join-Path $projectRoot 'artifacts\projects\oa_tof\formal\cad\export_report.json'
+$artifactRoot = Join-Path $projectRoot 'artifacts\projects\oa_tof'
+$formalDir = Join-Path $artifactRoot 'formal\simion'
 
 function Assert-Near([double]$Actual, [double]$Expected, [string]$Label, [double]$Tolerance = 1e-9) {
   if ([Math]::Abs($Actual - $Expected) -gt $Tolerance) { throw "$Label mismatch: actual=$Actual expected=$Expected" }
@@ -50,6 +48,9 @@ function Assert-NotContains([string]$Text, [string]$Needle, [string]$Label) {
 
 $contract = Get-Content -LiteralPath $contractPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $formalAssets = Get-Content -LiteralPath (Join-Path $componentDir 'config\formal_assets.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+$formalMph = Join-Path $artifactRoot $formalAssets.comsol.artifact_relative_path.Replace('/','\')
+$formalCadAssembly = Join-Path $artifactRoot $formalAssets.solidworks.assembly_artifact_relative_path.Replace('/','\')
+$formalCadReport = Join-Path $artifactRoot $formalAssets.solidworks.export_report_artifact_relative_path.Replace('/','\')
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 $derivationGate = Join-Path $PSScriptRoot 'verify_geometry_derivation.py'
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 project runtime missing: $python" }
@@ -207,7 +208,9 @@ Assert-Contains $deliveryBuilder 'run_finalization_deferred=[bool]$DeferRunFinal
 Assert-Contains $comsol "p.set('detector_x', '-x_accel_center'" 'COMSOL detector x parameter'
 Assert-Contains $comsol 'contract = load_oatof_contract(contract_path);' 'COMSOL resolved-contract loader'
 Assert-Contains $comsol 'options.ContractPath (1,1) string = ""' 'COMSOL candidate contract option'
-Assert-Contains $comsol 'contract = load_oatof_contract(options.ContractPath);' 'COMSOL candidate contract binding'
+Assert-Contains $comsol "contractPath = string(fullfile(projectRoot, 'config', 'resolved_geometry.json'));" 'COMSOL formal resolved-contract default'
+Assert-Contains $comsol 'contract = load_oatof_contract(contractPath);' 'COMSOL candidate contract binding'
+Assert-Contains $comsol 'char(options.OutputModelPath), char(contractPath)' 'COMSOL authoritative contract forwarding'
 Assert-Contains $comsol "p.set('detector_radius', sprintf('%.12g[mm]', geometryMm.detector_radius)" 'COMSOL detector radius parameter'
 Assert-Contains $comsol "p.set('E_mean_eV', sprintf('%.12g[V]', contract.validation_target.initial_energy_mean_ev)" 'COMSOL mean initial energy'
 Assert-Contains $comsol "p.set('flight_tube_wall', sprintf('%.12g[mm]', geometryMm.flight_tube_wall)" 'COMSOL shield wall thickness'
@@ -246,6 +249,8 @@ if (-not $SkipRuntime) {
   if ($mphHash -ne $formalAssets.comsol.sha256) { throw 'Formal COMSOL MPH differs from the verified asset manifest.' }
   $cadHash = (Get-FileHash -LiteralPath $formalCadAssembly -Algorithm SHA256).Hash
   if ($cadHash -ne $formalAssets.solidworks.assembly_sha256) { throw 'Formal SolidWorks assembly differs from the verified asset manifest.' }
+  $cadReportHash = (Get-FileHash -LiteralPath $formalCadReport -Algorithm SHA256).Hash
+  if ($cadReportHash -ne $formalAssets.solidworks.export_report_sha256) { throw 'Formal SolidWorks export report differs from the verified asset manifest.' }
   $cadReport = Get-Content -LiteralPath $formalCadReport -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($cadReport.solidWorks.solidWorksRevision -ne $formalAssets.solidworks.revision) { throw 'Formal SolidWorks revision differs from the verified asset manifest.' }
   if ($cadReport.solidWorks.partCount -ne $formalAssets.solidworks.component_count) { throw 'Formal SolidWorks part count differs from the verified asset manifest.' }

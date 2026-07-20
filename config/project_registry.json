@@ -8,7 +8,7 @@
     },
     {
       "descriptor": "projects/oa_tof/config/project.json",
-      "sha256": "1C6EC1FBA34628F8200B3780A070E1C880D33A7A1AC011010DF108D812EC9CD5"
+      "sha256": "C2A8F2C4911B5E7614CDEC878C196364C250D4FF76F78B879F653ED9F75F689B"
     },
     {
       "descriptor": "projects/rf_quadrupole_collision_cooling/config/project.json",
@@ -148,7 +148,7 @@
       },
       "known_gaps": [
         "RF upstream interface contract is not frozen",
-        "Coupled accelerator-reflectron longitudinal candidate and stage-2 margin semantics are not validated",
+        "Stage-2 engineering margin and manufacturing-tolerance semantics are not experimentally validated",
         "Axisymmetric circular accelerator is deferred",
         "Manufacturing and assembly tolerance budget is not established"
       ]

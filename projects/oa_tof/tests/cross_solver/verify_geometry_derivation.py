@@ -8,6 +8,15 @@ import sys
 from pathlib import Path
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+ANALYSIS = PROJECT_ROOT / "analysis"
+if str(ANALYSIS) not in sys.path:
+    sys.path.insert(0, str(ANALYSIS))
+
+from accelerator_time_focus import accelerator_state
+from oatof_oaaccelerator_coupling import solve_coupled_reflectron_fields
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         raise SystemExit("usage: verify_geometry_derivation.py baseline.json")
@@ -51,32 +60,60 @@ def main() -> int:
     ):
         raise AssertionError("accelerator ring pitch is not aligned to geometry quantum")
 
-    u0 = float(source["incident_energy_eV"])
-    length_m = float(source["total_field_free_length_mm"]) / 1000.0
+    if source.get("model_id") != "oatof.oaaccelerator_reflectron_coupled.ideal_1d.v1":
+        raise AssertionError("formal reflectron derivation is not the coupled model")
+    length_mm = float(source["total_field_free_length_mm"])
     split_length_mm = float(source["outbound_field_free_length_mm"]) + float(
         source["return_field_free_length_mm"]
     )
-    if not math.isclose(split_length_mm / 1000.0, length_m, rel_tol=0.0, abs_tol=1e-12):
+    if not math.isclose(split_length_mm, length_mm, rel_tol=0.0, abs_tol=1e-12):
         raise AssertionError("outbound+return field-free lengths do not equal total")
     d1_mm = float(source["stage1_length_mm"])
-    d1_m = d1_mm / 1000.0
     margin = float(source["stage2_margin_fraction"])
+    margin_mm = float(source.get("stage2_margin_absolute_mm", 0.0))
     digits = int(source["engineering_length_decimals_mm"])
     voltage_digits = int(source["engineering_voltage_decimals_V"])
-
-    u1 = 2.0 * u0 * (length_m + 2.0 * d1_m) / (3.0 * length_m)
-    sqrt3 = math.sqrt(3.0)
-    e2 = 12.0 * u0 * (
-        sqrt3 * math.sqrt(length_m) + math.sqrt(length_m - 4.0 * d1_m)
-    ) / (
-        sqrt3 * length_m**1.5
-        + 8.0 * sqrt3 * math.sqrt(length_m) * d1_m
-        + 3.0 * length_m * math.sqrt(length_m - 4.0 * d1_m)
+    voltage = contract["electrodes_V"]
+    accelerator_state_value = accelerator_state(
+        float(voltage["repeller"]),
+        float(voltage["grid1"]),
+        accel_d1,
+        accel_d2,
     )
-    d2_min_mm = ((u0 - u1) / e2) * 1000.0
-    d2_raw_mm = d2_min_mm * (1.0 + margin)
+    spatial_half_range = (
+        accelerator_state_value.field1_v_per_mm
+        * float(contract["particle_source"]["size_z_mm"])
+        / 2.0
+    )
+    intrinsic_half_range = float(
+        source.get("intrinsic_axial_energy_per_charge_half_range_V", 0.0)
+    )
+    energy_min = (
+        accelerator_state_value.nominal_energy_per_charge_v
+        - spatial_half_range
+        - intrinsic_half_range
+    )
+    energy_max = (
+        accelerator_state_value.nominal_energy_per_charge_v
+        + spatial_half_range
+        + intrinsic_half_range
+    )
+    solution = solve_coupled_reflectron_fields(
+        accelerator_state_value,
+        d1_mm,
+        float(source["outbound_field_free_length_mm"]),
+        float(source["return_field_free_length_mm"]),
+        energy_min_v=energy_min,
+        energy_max_v=energy_max,
+        stage2_margin_fraction=margin,
+        stage2_margin_mm=margin_mm,
+    )
+    u1 = solution.stage1_voltage_drop_v
+    e2_v_per_mm = solution.stage2_field_v_per_mm
+    d2_min_mm = solution.nominal_stage2_penetration_mm
+    d2_raw_mm = solution.required_stage2_depth_mm
     l_reflectron_raw_mm = d1_mm + d2_raw_mm
-    v_mirror_raw = u1 + e2 * (d2_raw_mm / 1000.0)
+    v_mirror_raw = u1 + e2_v_per_mm * d2_raw_mm
     d2_engineering_mm = round(d2_raw_mm, digits)
     l_reflectron_engineering_mm = round(l_reflectron_raw_mm, digits)
 
@@ -97,9 +134,19 @@ def main() -> int:
         actual = float(contract["electrodes_V"][name])
         if not math.isclose(actual, target, rel_tol=0.0, abs_tol=10 ** (-(voltage_digits + 2))):
             raise AssertionError(f"{name}={actual} but physics derivation requires {target}")
+    metadata_expected = {
+        "nominal_energy_per_charge_V": accelerator_state_value.nominal_energy_per_charge_v,
+        "spatial_energy_half_range_V": spatial_half_range,
+        "energy_min_V": energy_min,
+        "energy_max_V": energy_max,
+    }
+    for name, target in metadata_expected.items():
+        actual = float(source[name])
+        if not math.isclose(actual, target, rel_tol=0.0, abs_tol=1e-12):
+            raise AssertionError(f"{name}={actual} but coupled derivation requires {target}")
 
     print("GEOMETRY_DERIVATION_STATUS=PASS")
-    print(f"DERIVED_D2_MIN_RAW_MM={d2_min_mm:.15g}")
+    print(f"DERIVED_NOMINAL_D2_PENETRATION_MM={d2_min_mm:.15g}")
     print(f"DERIVED_D2_RAW_MM={d2_raw_mm:.15g}")
     print(f"DERIVED_L_REFLECTRON_RAW_MM={l_reflectron_raw_mm:.15g}")
     print(f"DERIVED_V_MIRROR_RAW_V={v_mirror_raw:.15g}")

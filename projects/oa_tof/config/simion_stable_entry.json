@@ -1,21 +1,21 @@
 {
   "schema_version": 2,
-  "frozen_on": "2026-07-19",
+  "frozen_on": "2026-07-20",
   "role": "Implementation hash manifest for the current formal SIMION delivery.",
   "artifact_workspace_relative": "formal/simion",
   "entries": [
     {
-      "id": "formal_524amu_event_capture_xy025_z0050_refaxial0250",
-      "role": "Formal portable 524 amu GUI and production delivery with N=1000 statistical Fly2, static PA priority and detector event capture",
+      "id": "formal_524amu_coupled_longitudinal_xy025_z0050_refaxial0250",
+      "role": "Formal coupled-longitudinal 524 amu GUI and production delivery with N=1000 statistical Fly2, static PA priority and detector event capture",
       "trajectory_quality": 8,
       "expected_instances": 4,
       "assets": [
-        {"role":"iob","relative_path":"oatof_ideal_grounded.iob","bytes":20902,"sha256":"9720E40F862CA7B74DF6E6CB72CDFC2254B07337D8904F180C58DE38EA859FFD"},
+        {"role":"iob","relative_path":"oatof_ideal_grounded.iob","bytes":20902,"sha256":"6B48B09A14A6743447FF8AA0D60BA6717ADBB3D4396817BD6B252D4A1477DC25"},
         {"role":"con","relative_path":"oatof_ideal_grounded.con","bytes":2170,"sha256":"D8DA212B73B7D7A70E591C452811B13377AAF93B1E4E627301B71BEE5EBA4B80"},
-        {"role":"program","relative_path":"oatof_ideal_grounded.lua","bytes":19997,"sha256":"5231A1AEA9C574C89015893F674DDAB72DEEA5C006C79A1247D19F09D1D08367"},
+        {"role":"program","relative_path":"oatof_ideal_grounded.lua","bytes":20003,"sha256":"E4CA477665D6DC7F2160DDAFD3698285831091CAE7A2C856806B9E428B55608F"},
         {"role":"fly2","relative_path":"oatof_ideal_grounded.fly2","bytes":868,"sha256":"56A5B2E86EA861F048EEBAD68A4132A321F1CE1909AAE1A46386CFF40DBC74FD"},
-        {"role":"sha256_manifest","relative_path":"SHA256SUMS.csv","bytes":5345,"sha256":"E91D9C3333FF266CF9B039601EE4F1D5C09FB432229F9610E741C39F42C3312D"},
-        {"role":"run_manifest","relative_path":"run_manifest.json","bytes":2582,"sha256":"A4864FFB7BA20418EA11E6B45E8FBC9DCDD65FC4393143BA6866F9C53A70A0B1"}
+        {"role":"sha256_manifest","relative_path":"SHA256SUMS.csv","bytes":5254,"sha256":"A6511B683BAD077D8FCD50CEE60644865C3CF64B6ED724810D1C29FD046BFE6E"},
+        {"role":"run_manifest","relative_path":"run_manifest.json","bytes":3294,"sha256":"D1605CD8A7142139FFDC731B4DF1EB80984D9090F583C7D6F4C94672DAD32714"}
       ]
     }
   ]

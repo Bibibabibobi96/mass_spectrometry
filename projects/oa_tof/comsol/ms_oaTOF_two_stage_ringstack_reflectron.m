@@ -119,51 +119,26 @@ end
 if ~(isscalar(n_rings2) && n_rings2 >= 1 && n_rings2 == fix(n_rings2))
     error('n_rings2 must be a positive integer.');
 end
-% !!! d2 made ADAPTIVE (doc §7.50, per explicit request): previously a
-% fixed 300mm regardless of d1, which is WAY more than the ion's actual
-% penetration depth needs. Now computed as d2_min*(1+d2_margin_frac), a
-% modest, consistent margin over the theoretical minimum penetration
-% depth (docx recommends 20%-50% margin -- 30% picked as a reasonable
-% middle value) rather than an arbitrary fixed length.
-% !!! d2_min FORMULA CORRECTED (doc §7.51, per explicit user question
-% "穿透深度是d1+d2min�?"): the reference docx's own line 48 states
-% "d2_min = U1/E2", but this contradicts its OWN line 9, which defines
-% U1=E1*d1 as the voltage ABSORBED by stage1, leaving remaining energy
-% q(U-U1) for the ion entering stage2 -- physically, the depth needed
-% to decelerate that REMAINING energy under field E2 is (U0-U1)/E2, not
-% U1/E2 (a basic energy-conservation check: KE=q*E2*depth). Verified
-% directly against simulation at d1=120mm: measured stage2-only
-% penetration = 50.70mm (170.70mm total - 120mm d1) vs the docx's
-% U1/E2=173.67mm (off by 3.4x) vs the corrected (U0-U1)/E2=43.42mm (off
-% by only ~17%, plausible real-3D-field vs ideal-1D-field discrepancy).
-% This confirms the docx formula (d2_min=U1/E2) is an error; using the
-% energy-conservation-correct (U0-U1)/E2 here instead.
+% Stable named execution consumes the coupled longitudinal voltage and
+% stage-2 length from the resolved contract. Only legacy positional scans
+% retain the historical local-reflectron derivation below.
 d2_margin_fraction = reflectronDesign.stage2_margin_fraction;
-reflectron_incident_energy_ev = reflectronDesign.incident_energy_eV;
 reflectron_total_drift_m = reflectronDesign.total_field_free_length_mm/1000;
 reflectron_stage1_m = d1_mm/1000;
 if ~(reflectron_stage1_m > 0 && reflectron_stage1_m < reflectron_total_drift_m/4)
     error('d1_mm=%g violates 0<d1<L/4=%gmm', d1_mm, reflectron_total_drift_m/4*1000);
 end
-reflectron_midgrid_voltage_v = 2*reflectron_incident_energy_ev* ...
-    (reflectron_total_drift_m+2*reflectron_stage1_m)/(3*reflectron_total_drift_m);
-reflectron_stage1_field_vpm = reflectron_midgrid_voltage_v/reflectron_stage1_m;
-reflectron_stage2_field_vpm = 12*reflectron_incident_energy_ev* ...
-    (sqrt(3)*sqrt(reflectron_total_drift_m)+sqrt(reflectron_total_drift_m-4*reflectron_stage1_m)) / ...
-    (sqrt(3)*reflectron_total_drift_m^1.5 + 8*sqrt(3)*sqrt(reflectron_total_drift_m)*reflectron_stage1_m + ...
-     3*reflectron_total_drift_m*sqrt(reflectron_total_drift_m-4*reflectron_stage1_m));
-reflectron_stage2_min_mm = ((reflectron_incident_energy_ev-reflectron_midgrid_voltage_v)/reflectron_stage2_field_vpm)*1000;
-% Derive all physical quantities from the unrounded value first.  Only the
-% resulting engineering geometry is rounded to baseline.json precision.
-d2_raw_mm = reflectron_stage2_min_mm*(1+d2_margin_fraction);
-reflectron_backplate_voltage_v = reflectron_midgrid_voltage_v + reflectron_stage2_field_vpm*(d2_raw_mm/1000);
-d2_mm = round(d2_raw_mm, reflectronDesign.engineering_length_decimals_mm);
 % An explicit resolved contract is authoritative for candidate execution.
 % The legacy positional builder historically re-derived reflectron voltages
 % and stage-2 length from d1; retaining that behavior without this branch
 % silently discarded candidate compensation-voltage overrides.  Use the
 % frozen candidate values and recompute the actual fields they imply.
 if ~isempty(contract_path)
+    if isfield(reflectronDesign, 'nominal_energy_per_charge_V')
+        reflectron_incident_energy_ev = reflectronDesign.nominal_energy_per_charge_V;
+    else
+        reflectron_incident_energy_ev = reflectronDesign.incident_energy_eV;
+    end
     d2_mm = geometryMm.L_stage2;
     reflectron_midgrid_voltage_v = voltageV.midgrid;
     reflectron_backplate_voltage_v = voltageV.backplate;
@@ -171,6 +146,23 @@ if ~isempty(contract_path)
     reflectron_stage2_field_vpm = (reflectron_backplate_voltage_v-reflectron_midgrid_voltage_v)/(d2_mm/1000);
     reflectron_stage2_min_mm = ...
         ((reflectron_incident_energy_ev-reflectron_midgrid_voltage_v)/reflectron_stage2_field_vpm)*1000;
+else
+    % Legacy positional scans retain the historical local-reflectron
+    % derivation. Stable named execution always supplies a resolved contract.
+    reflectron_incident_energy_ev = reflectronDesign.incident_energy_eV;
+    reflectron_midgrid_voltage_v = 2*reflectron_incident_energy_ev* ...
+        (reflectron_total_drift_m+2*reflectron_stage1_m)/(3*reflectron_total_drift_m);
+    reflectron_stage1_field_vpm = reflectron_midgrid_voltage_v/reflectron_stage1_m;
+    reflectron_stage2_field_vpm = 12*reflectron_incident_energy_ev* ...
+        (sqrt(3)*sqrt(reflectron_total_drift_m)+sqrt(reflectron_total_drift_m-4*reflectron_stage1_m)) / ...
+        (sqrt(3)*reflectron_total_drift_m^1.5 + 8*sqrt(3)*sqrt(reflectron_total_drift_m)*reflectron_stage1_m + ...
+         3*reflectron_total_drift_m*sqrt(reflectron_total_drift_m-4*reflectron_stage1_m));
+    reflectron_stage2_min_mm = ((reflectron_incident_energy_ev-reflectron_midgrid_voltage_v)/reflectron_stage2_field_vpm)*1000;
+    % Derive all physical quantities from the unrounded value first. Only the
+    % resulting engineering geometry is rounded to baseline.json precision.
+    d2_raw_mm = reflectron_stage2_min_mm*(1+d2_margin_fraction);
+    reflectron_backplate_voltage_v = reflectron_midgrid_voltage_v + reflectron_stage2_field_vpm*(d2_raw_mm/1000);
+    d2_mm = round(d2_raw_mm, reflectronDesign.engineering_length_decimals_mm);
 end
 fprintf('[d1 scan] d1=%gmm -> U1(V_mid)=%.4fV, E1=%.4fV/m, E2=%.4fV/m, V_mirror=%.4fV, d2_min=%.2fmm, d2(adaptive,+%.0f%%)=%.2fmm\n', ...
     d1_mm, reflectron_midgrid_voltage_v, reflectron_stage1_field_vpm, reflectron_stage2_field_vpm, ...
@@ -278,7 +270,7 @@ p.set('KE_in_eV', sprintf('%.12g[V]', contract.validation_target.initial_energy_
 % (V_accelmid, absorbs most of the drop) -> exit grid (0V, always
 % grounded, matches the field-free region). Both repeller and accelmid
 % pulse together; the exit grid never pulses.
-% !!! REDESIGNED per the "三栅加速器总长度符号推�? document's exact
+% !!! REDESIGNED per the three-grid accelerator total-length derivation's exact
 % first-order time-focusing solution: the three-grid accelerator
 % (repeller=grid1_doc, my grid1=grid2_doc, my grid2=grid3_doc/grounded)
 % can be designed so the ion focuses (dT/du=0) EXACTLY at the field-free
@@ -1429,7 +1421,7 @@ title(sprintf('mass peak (direct FWHM R=%.0f, N=%d)', R_direct, nDet));
 % !!! Title now includes N (statistical sample size, nP -- NOT the N_plot=50
 % trajectory-rendering subset) and field_mode, per doc convention (always
 % show sample size so a reader can't mistake an N=100 result for N=1000,
-% see COMSOL_调试方法�?md 统计陷阱一�?. Also dropped the hardcoded
+% see the statistical-sample-size warning in COMSOL_调试方法论.md. Also dropped the hardcoded
 % "V_mirror=4551.15V" that was stale (V_mirror is now computed dynamically
 % per d1_mm/d2_margin_frac and no longer a fixed literal) in favor of the
 % actual computed value.

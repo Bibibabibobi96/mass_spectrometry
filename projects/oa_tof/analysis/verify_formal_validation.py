@@ -78,8 +78,40 @@ def main() -> None:
         diagnostics = record.get("diagnostics", {})
         if diagnostics.get("status") != "peak_shoulder_source_localized":
             raise ValueError("Formal peak-shoulder diagnostic is not localized")
-    elif record.get("validation_scope") != "direct_rerun_of_current_formal_comsol_and_simion_assets":
-        raise ValueError("Formal validation is not a direct current-asset rerun")
+    else:
+        validation_scope = record.get("validation_scope")
+        allowed_scopes = {
+            "direct_rerun_of_current_formal_comsol_and_simion_assets",
+            "validated_candidate_assets_promoted_atomically_to_current_formal",
+        }
+        if validation_scope not in allowed_scopes:
+            raise ValueError(f"Unsupported formal validation scope: {validation_scope}")
+        if validation_scope == "validated_candidate_assets_promoted_atomically_to_current_formal":
+            promotion = record.get("promotion_evidence")
+            if not isinstance(promotion, dict):
+                raise ValueError("Promoted formal validation lacks promotion evidence")
+            for key in (
+                "validation_run_manifest_artifact_relative_path",
+                "comsol_promotion_report_artifact_relative_path",
+                "cad_sync_report_artifact_relative_path",
+            ):
+                if key not in promotion:
+                    raise ValueError(f"Promoted formal validation lacks {key}")
+            validation_manifest = json.loads(
+                (ARTIFACT_ROOT / promotion["validation_run_manifest_artifact_relative_path"])
+                .read_text(encoding="utf-8-sig")
+            )
+            if validation_manifest.get("status") != "success":
+                raise ValueError("Promotion source validation run is not successful")
+            for key in (
+                "comsol_promotion_report_artifact_relative_path",
+                "cad_sync_report_artifact_relative_path",
+            ):
+                report = (
+                    ARTIFACT_ROOT / promotion[key]
+                ).read_text(encoding="utf-8-sig")
+                if "STATUS=PASS" not in report.splitlines():
+                    raise ValueError(f"Promotion report is not PASS: {promotion[key]}")
     comparison_path = ARTIFACT_ROOT / record["comparison_artifact_relative_path"]
     comparison = json.loads(comparison_path.read_text(encoding="utf-8"))
     if comparison["status"] != "PASS":

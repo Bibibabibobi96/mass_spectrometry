@@ -26,7 +26,11 @@ end
 
 projectRoot = fileparts(fileparts(mfilename('fullpath')));
 addpath(projectRoot);
-contract = load_oatof_contract(options.ContractPath);
+contractPath = options.ContractPath;
+if strlength(contractPath) == 0
+    contractPath = string(fullfile(projectRoot, 'config', 'resolved_geometry.json'));
+end
+contract = load_oatof_contract(contractPath);
 options = apply_defaults(options, contract);
 positiveNames = ["MassAmu","ReflectronStage1Mm","ReflectronMeshHmaxMm", ...
     "BoreRadiusMm","RingThicknessMm","ParticleCount", ...
@@ -65,7 +69,7 @@ result = ms_oaTOF_two_stage_ringstack_reflectron( ...
     options.ReflectronStage1RingCount, options.AcceleratorBoreHalfMm, ...
     char(options.FixedParticleTable), options.FineTimestepNs, ...
     options.AcceleratorMeshHmaxMm, options.DriftTimestepNs, ...
-    char(options.OutputModelPath), char(options.ContractPath));
+    char(options.OutputModelPath), char(contractPath));
 end
 
 function options = apply_defaults(options, contract)
