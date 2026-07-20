@@ -16,5 +16,14 @@
     "export_report_artifact_relative_path": "formal/cad/oaTOF_solidworks_export_report.json",
     "export_report_sha256": "24541FC5ABEBCAE3214BF94635D9E388BCCC3F57E6E150EC3E7112DBBB4C9543"
   },
+  "results": {
+    "status": "formal_n1000_coupled_longitudinal",
+    "source_run_id": "20260720_191743__sim__cross__coupled-baseline-validation__n1000",
+    "artifact_relative_path": "formal/results",
+    "sha256_manifest_relative_path": "formal/results/SHA256SUMS.csv",
+    "sha256_manifest_bytes": 4275,
+    "sha256_manifest_sha256": "B0E0F7E823B76CD2D4462FBC68EE9EE9B6CA326113251207E95AF230F8899DF7",
+    "manifest_file_count": 35
+  },
   "simion_manifest": "simion_stable_entry.json"
 }

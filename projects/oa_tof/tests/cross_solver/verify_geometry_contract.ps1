@@ -51,6 +51,8 @@ $formalAssets = Get-Content -LiteralPath (Join-Path $componentDir 'config\formal
 $formalMph = Join-Path $artifactRoot $formalAssets.comsol.artifact_relative_path.Replace('/','\')
 $formalCadAssembly = Join-Path $artifactRoot $formalAssets.solidworks.assembly_artifact_relative_path.Replace('/','\')
 $formalCadReport = Join-Path $artifactRoot $formalAssets.solidworks.export_report_artifact_relative_path.Replace('/','\')
+$formalResultsDir = Join-Path $artifactRoot $formalAssets.results.artifact_relative_path.Replace('/','\')
+$formalResultsManifest = Join-Path $artifactRoot $formalAssets.results.sha256_manifest_relative_path.Replace('/','\')
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 $derivationGate = Join-Path $PSScriptRoot 'verify_geometry_derivation.py'
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 project runtime missing: $python" }
@@ -241,16 +243,44 @@ if (-not $SkipRuntime) {
   if ($formalAssets.solidworks.geometry_status -ne 'synchronized') {
     throw "Formal SolidWorks geometry is not synchronized: $($formalAssets.solidworks.geometry_status)."
   }
+  if ($formalAssets.results.status -ne 'formal_n1000_coupled_longitudinal') {
+    throw "Formal results status is not current: $($formalAssets.results.status)."
+  }
   if (-not (Test-Path -LiteralPath $formalDir)) { throw "Formal SIMION runtime workspace missing: $formalDir" }
   if (-not (Test-Path -LiteralPath $formalMph)) { throw "Formal COMSOL MPH missing: $formalMph" }
   if (-not (Test-Path -LiteralPath $formalCadAssembly)) { throw "Formal SolidWorks assembly missing: $formalCadAssembly" }
   if (-not (Test-Path -LiteralPath $formalCadReport)) { throw "Formal SolidWorks export report missing: $formalCadReport" }
+  if (-not (Test-Path -LiteralPath $formalResultsDir -PathType Container)) { throw "Formal results directory missing: $formalResultsDir" }
+  if (-not (Test-Path -LiteralPath $formalResultsManifest -PathType Leaf)) { throw "Formal results SHA manifest missing: $formalResultsManifest" }
   $mphHash = (Get-FileHash -LiteralPath $formalMph -Algorithm SHA256).Hash
   if ($mphHash -ne $formalAssets.comsol.sha256) { throw 'Formal COMSOL MPH differs from the verified asset manifest.' }
   $cadHash = (Get-FileHash -LiteralPath $formalCadAssembly -Algorithm SHA256).Hash
   if ($cadHash -ne $formalAssets.solidworks.assembly_sha256) { throw 'Formal SolidWorks assembly differs from the verified asset manifest.' }
   $cadReportHash = (Get-FileHash -LiteralPath $formalCadReport -Algorithm SHA256).Hash
   if ($cadReportHash -ne $formalAssets.solidworks.export_report_sha256) { throw 'Formal SolidWorks export report differs from the verified asset manifest.' }
+  $resultsManifestItem = Get-Item -LiteralPath $formalResultsManifest
+  $resultsManifestHash = (Get-FileHash -LiteralPath $formalResultsManifest -Algorithm SHA256).Hash
+  if ($resultsManifestItem.Length -ne [int64]$formalAssets.results.sha256_manifest_bytes -or
+      $resultsManifestHash -ne $formalAssets.results.sha256_manifest_sha256) {
+    throw 'Formal results SHA manifest differs from the verified asset manifest.'
+  }
+  $resultsListed = @(Import-Csv -LiteralPath $formalResultsManifest)
+  $resultsActual = @(Get-ChildItem -LiteralPath $formalResultsDir -Recurse -File | Where-Object {
+    $_.FullName -ne $formalResultsManifest
+  })
+  if ($resultsListed.Count -ne [int]$formalAssets.results.manifest_file_count -or
+      $resultsActual.Count -ne [int]$formalAssets.results.manifest_file_count) {
+    throw "Formal results file count differs from manifest: listed=$($resultsListed.Count) actual=$($resultsActual.Count)."
+  }
+  foreach ($row in $resultsListed) {
+    $resultPath = Join-Path $formalResultsDir $row.file.Replace('/','\')
+    if (-not (Test-Path -LiteralPath $resultPath -PathType Leaf)) { throw "Formal result missing: $resultPath" }
+    $resultItem = Get-Item -LiteralPath $resultPath
+    $resultHash = (Get-FileHash -LiteralPath $resultPath -Algorithm SHA256).Hash
+    if ($resultItem.Length -ne [int64]$row.bytes -or $resultHash -ne $row.sha256) {
+      throw "Formal result differs from SHA manifest: $resultPath"
+    }
+  }
   $cadReport = Get-Content -LiteralPath $formalCadReport -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($cadReport.solidWorks.solidWorksRevision -ne $formalAssets.solidworks.revision) { throw 'Formal SolidWorks revision differs from the verified asset manifest.' }
   if ($cadReport.solidWorks.partCount -ne $formalAssets.solidworks.component_count) { throw 'Formal SolidWorks part count differs from the verified asset manifest.' }
@@ -282,4 +312,6 @@ if (-not $SkipRuntime) {
   Write-Output ("COMSOL_FORMAL_MPH_SHA256={0}" -f $mphHash)
   Write-Output ("SOLIDWORKS_FORMAL_ASSEMBLY_SHA256={0}" -f $cadHash)
   Write-Output ("SOLIDWORKS_FORMAL_COMPONENT_COUNT={0}" -f $cadReport.solidWorks.assembly.componentCount)
+  Write-Output ("FORMAL_RESULTS_MANIFEST_SHA256={0}" -f $resultsManifestHash)
+  Write-Output ("FORMAL_RESULTS_FILE_COUNT={0}" -f $resultsActual.Count)
 }

@@ -14,8 +14,8 @@
         {"role":"con","relative_path":"oatof_ideal_grounded.con","bytes":2170,"sha256":"D8DA212B73B7D7A70E591C452811B13377AAF93B1E4E627301B71BEE5EBA4B80"},
         {"role":"program","relative_path":"oatof_ideal_grounded.lua","bytes":20003,"sha256":"E4CA477665D6DC7F2160DDAFD3698285831091CAE7A2C856806B9E428B55608F"},
         {"role":"fly2","relative_path":"oatof_ideal_grounded.fly2","bytes":868,"sha256":"56A5B2E86EA861F048EEBAD68A4132A321F1CE1909AAE1A46386CFF40DBC74FD"},
-        {"role":"sha256_manifest","relative_path":"SHA256SUMS.csv","bytes":5254,"sha256":"A6511B683BAD077D8FCD50CEE60644865C3CF64B6ED724810D1C29FD046BFE6E"},
-        {"role":"run_manifest","relative_path":"run_manifest.json","bytes":3294,"sha256":"D1605CD8A7142139FFDC731B4DF1EB80984D9090F583C7D6F4C94672DAD32714"}
+        {"role":"sha256_manifest","relative_path":"SHA256SUMS.csv","bytes":5254,"sha256":"F856431F93A8E1937A3F900C20B61E5D5CD927440CDB104F716773C70FB2917B"},
+        {"role":"run_manifest","relative_path":"run_manifest.json","bytes":3294,"sha256":"8E5FBE2D5FC611ADBD6C2BA35DDD357FB5B3DDF44A0F91FBB8DEEFF560680B76"}
       ]
     }
   ]

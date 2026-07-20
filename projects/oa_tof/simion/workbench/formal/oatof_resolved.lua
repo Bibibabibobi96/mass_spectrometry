@@ -4,7 +4,7 @@ return {
   role="oa_tof_resolved_contract_do_not_edit",
   inputs={
     baseline="config/baseline.json",
-    baseline_sha256="93E4D7BD872EBB820499E8CA2EFE5D64873D071F4C33180A50C246164ECEC473",
+    baseline_sha256="5502D35FBAFB543352175ECA560D2EA27DC210738FBD0826B1A35DDFA6C8C467",
     mode="config/modes/formal.json",
     mode_sha256="1DF0704256FE0F6761353AACF5466C5E003216572CC6F52A304CD6183BBEB916"
   },

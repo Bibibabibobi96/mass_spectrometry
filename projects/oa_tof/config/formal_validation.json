@@ -5,7 +5,7 @@
   "run_id": "20260720_191743__sim__cross__coupled-baseline-validation__n1000",
   "validation_scope": "validated_candidate_assets_promoted_atomically_to_current_formal",
   "physical_contract": "baseline.json",
-  "physical_contract_sha256": "93E4D7BD872EBB820499E8CA2EFE5D64873D071F4C33180A50C246164ECEC473",
+  "physical_contract_sha256": "5502D35FBAFB543352175ECA560D2EA27DC210738FBD0826B1A35DDFA6C8C467",
   "analysis_contract": "analysis_contract.json",
   "analysis_contract_sha256": "A22F16DCE188A2C2D80D192D740058EB85888DDCB7270B1FF4FFE36D8912A56F",
   "shared_particles": {
@@ -28,7 +28,7 @@
     "mesh_tetrahedra": 336867,
     "fine_output_step_ns": 0.2,
     "field_free_output_step_ns": 50.0,
-    "particle_csv_artifact_relative_path": "runs/20260720_191743__sim__cross__coupled-baseline-validation__n1000/results/new_baseline_comsol_particles.csv",
+    "particle_csv_artifact_relative_path": "formal/results/new_baseline_comsol_particles.csv",
     "particle_csv_sha256": "2AFB04C63B92235849E22EA93B8EED4300EE52D946C437C607821B8D6172D4EB",
     "hit_fraction": "1000/1000",
     "mean_tof_us": 71.3528379922445,
@@ -48,8 +48,8 @@
     "iob_artifact_relative_path": "formal/simion/oatof_ideal_grounded.iob",
     "iob_sha256": "6B48B09A14A6743447FF8AA0D60BA6717ADBB3D4396817BD6B252D4A1477DC25",
     "delivery_manifest_artifact_relative_path": "formal/simion/run_manifest.json",
-    "delivery_manifest_sha256": "D1605CD8A7142139FFDC731B4DF1EB80984D9090F583C7D6F4C94672DAD32714",
-    "particle_csv_artifact_relative_path": "runs/20260720_191743__sim__cross__coupled-baseline-validation__n1000/results/new_baseline_simion_particles.csv",
+    "delivery_manifest_sha256": "8E5FBE2D5FC611ADBD6C2BA35DDD357FB5B3DDF44A0F91FBB8DEEFF560680B76",
+    "particle_csv_artifact_relative_path": "formal/results/new_baseline_simion_particles.csv",
     "particle_csv_sha256": "DDE073E085150ECA90AED8A633ABEE54C34C84400F5FE1C22D1439F74F4C28FF",
     "hit_fraction": "1000/1000",
     "mean_tof_us": 71.3535844771654,
@@ -97,12 +97,12 @@
     "paired_rms_landing_distance_mm": 0.2940816123585503,
     "paired_max_landing_distance_mm": 0.7596096160399486
   },
-  "comparison_artifact_relative_path": "runs/20260720_191743__sim__cross__coupled-baseline-validation__n1000/results/new_baseline_cross_solver/comparison_metrics.json",
+  "comparison_artifact_relative_path": "formal/results/new_baseline_cross_solver/comparison_metrics.json",
   "comparison_artifact_sha256": "7B6C267FE587985FFDAFA89E54374DBB476B923F82EE4C970EC655F2E441AC89",
   "run_evidence": {
-    "comsol_report_artifact_relative_path": "runs/20260720_191743__sim__cross__coupled-baseline-validation__n1000/logs/new_baseline_comsol_report.txt",
+    "comsol_report_artifact_relative_path": "formal/results/new_baseline_comsol_report.txt",
     "comsol_report_sha256": "D5620596574C0C7D2DA481BFA9E5290A2AFBC47254A26C5456464F798B12429C",
-    "simion_summary_artifact_relative_path": "runs/20260720_191743__sim__cross__coupled-baseline-validation__n1000/results/new_baseline_simion_summary.json",
+    "simion_summary_artifact_relative_path": "formal/results/new_baseline_simion_summary.json",
     "simion_summary_sha256": "C7B9C45C41A96F717341B91087AF1638406E374C121B191170880717950B4541"
   },
   "promotion_evidence": {
