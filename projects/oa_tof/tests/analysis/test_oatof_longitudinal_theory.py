@@ -42,6 +42,24 @@ def _five_point_second(function, x: float, h: float) -> float:
 
 
 class OatofLongitudinalTheoryTest(unittest.TestCase):
+    def test_theory_markdown_uses_github_safe_math_fences(self) -> None:
+        theory_dir = PROJECT_DIR / "docs" / "theory"
+        for name in (
+            "oaaccelerator_time_focus.md",
+            "dual_stage_reflectron.md",
+            "oatof_oaaccelerator_coupling.md",
+        ):
+            lines = (theory_dir / name).read_text(encoding="utf-8").splitlines()
+            self.assertNotIn("$$", lines, msg=f"{name} uses ambiguous display math")
+            self.assertGreater(lines.count("```math"), 0)
+            self.assertEqual(
+                sum(
+                    line.startswith("```") and line != "```" for line in lines
+                ),
+                lines.count("```"),
+                msg=f"{name} has an unbalanced fenced block",
+            )
+
     def test_current_baseline_reproduces_uncoupled_reflectron(self) -> None:
         solution = solve_reflectron_fields(
             2000.0,

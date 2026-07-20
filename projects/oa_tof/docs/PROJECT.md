@@ -40,7 +40,10 @@ oa-TOF COMSOL/SIMION中按40 mm有效半径分别命中`70/100`和`68/100`，RF-
 权威；待物理接口和第二个实际消费者证明通用性后才评估提升共享代码。
 
 2026-07-20完成 oa-TOF 理论重写文档及代码审查。三份 Markdown 已取代旧 DOCX 成为活跃理论入口，
-三份求解器无关 Python 已接入静态测试；原始投稿包及 SHA 保留在根`docs/oatof_theory_refactor/`。
+三份求解器无关 Python 已接入静态测试；原始投稿包及 SHA 已冻结在
+`docs/history/20260720_theory_refactor_submission/`，审查记录为
+`docs/history/20260720__oatof-theory-refactor-review.md`。活跃理论文档的展示公式已统一使用 GitHub
+官方支持的 fenced `math` 语法，避免多行公式中的行首`+`、`-`、`#`被 Markdown 误解析。
 独立有限差分与当前参数回归确认核心公式成立，同时发现 Formal baseline 的`1600/2400 V`反射镜是
 局部反射镜二阶聚焦解，并未补偿加速器在一阶焦面处的二阶时间曲率。机器可读诊断 Candidate
 `config/candidates/oatof_longitudinal_coupled_reference.json`给出约`1628.8001 V`一级压降和
