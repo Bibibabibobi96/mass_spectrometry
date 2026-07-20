@@ -17,6 +17,8 @@ from compile_candidate_design import EnvelopeReviewRequired, compile_proposal, w
 from machine_contracts import load_json, sha256
 from prepare_candidate_consumers import prepare, verify_routing_coverage
 from prepare_candidate_run import prepare_candidate_run, validate_workflow
+from candidate_run_lifecycle import finalize_candidate_run, start_candidate_run
+from verify_artifact_layout import verify_project
 
 
 class CandidateDesignTests(unittest.TestCase):
@@ -246,6 +248,79 @@ class CandidateDesignTests(unittest.TestCase):
                     *inputs, "20260720_120002__build__cross__design-candidate__hash-mismatch",
                     root_path / "artifacts" / "projects" / "oa_tof",
                 )
+
+    def materialize_candidate_run(self, root_path, stamp="20260720_130000"):
+        artifact_root = root_path / "artifacts" / "projects" / "oa_tof"
+        artifact_root.mkdir(parents=True)
+        (artifact_root / "00_README.txt").write_text("test artifact root", encoding="utf-8")
+        source = root_path / "source"
+        source.mkdir()
+        inputs = self.candidate_run_inputs(source)
+        run_id = f"{stamp}__build__cross__design-candidate__lifecycle"
+        plan = prepare_candidate_run(*inputs, run_id, artifact_root)
+        run_root = start_candidate_run(Path(plan["planning_root"]) / "candidate_workflow_plan.json")
+        return artifact_root, run_root, plan
+
+    def stage_results(self, plan, terminal_status="success", terminal_stage=None):
+        results = []
+        failed_seen = False
+        for stage in plan["stages"]:
+            stage_id = stage["stage_id"]
+            if stage_id == terminal_stage:
+                results.append({"stage_id": stage_id, "status": terminal_status})
+                failed_seen = True
+            elif failed_seen:
+                results.append({"stage_id": stage_id, "status": "blocked"})
+            else:
+                results.append({"stage_id": stage_id, "status": "success"})
+        return results
+
+    def test_materialized_run_is_always_layout_complete_and_success_is_not_promotion(self):
+        with tempfile.TemporaryDirectory() as root:
+            artifact_root, run_root, plan = self.materialize_candidate_run(Path(root))
+            initial = load_json(run_root / "summary.json")
+            self.assertEqual(initial["status"], "interrupted")
+            self.assertEqual(verify_project(artifact_root), (1, 0))
+            summary, manifest = finalize_candidate_run(run_root, "success", self.stage_results(plan))
+            self.assertEqual(summary["candidate_decision"], "candidate_accepted_not_promoted")
+            self.assertFalse(summary["formal_modified"])
+            self.assertFalse(summary["safe_to_promote"])
+            self.assertFalse(manifest["formal_eligible"])
+            self.assertEqual(verify_project(artifact_root), (1, 0))
+
+    def test_failed_and_interrupted_runs_close_with_complete_root_records(self):
+        cases = (("failed", "comsol_candidate", "20260720_130001"),
+                 ("interrupted", "simion_candidate", "20260720_130002"))
+        for status, failure_stage, stamp in cases:
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as root:
+                artifact_root, run_root, plan = self.materialize_candidate_run(Path(root), stamp)
+                stage_status = "failed" if status == "failed" else "interrupted"
+                summary, manifest = finalize_candidate_run(
+                    run_root, status, self.stage_results(plan, stage_status, failure_stage), failure_stage
+                )
+                self.assertEqual(summary["status"], status)
+                self.assertEqual(manifest["status"], status)
+                self.assertTrue((run_root / "run_config.json").is_file())
+                self.assertTrue((run_root / "summary.json").is_file())
+                self.assertTrue((run_root / "run_manifest.json").is_file())
+                self.assertEqual(verify_project(artifact_root), (1, 0))
+
+    def test_planned_inputs_cannot_change_before_atomic_run_start(self):
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            artifact_root = root_path / "artifacts" / "projects" / "oa_tof"
+            source = root_path / "source"
+            source.mkdir()
+            inputs = self.candidate_run_inputs(source)
+            plan = prepare_candidate_run(
+                *inputs, "20260720_130003__build__cross__design-candidate__tamper", artifact_root
+            )
+            planning_root = Path(plan["planning_root"])
+            frozen_baseline = planning_root / "inputs" / "candidate_baseline.json"
+            frozen_baseline.write_text(frozen_baseline.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "changed before run start"):
+                start_candidate_run(planning_root / "candidate_workflow_plan.json")
+            self.assertFalse(Path(plan["run_root"]).exists())
 
 
 if __name__ == "__main__":

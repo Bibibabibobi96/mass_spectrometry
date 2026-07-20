@@ -43,6 +43,8 @@
 - 候选运行冻结与排序：[`analysis/prepare_candidate_run.py`](analysis/prepare_candidate_run.py)按
   [`config/candidate_workflow.json`](config/candidate_workflow.json)先在scratch冻结计划，预声明单一run和阶段依赖；
   自动计划不包含晋升，正式baseline与formal在候选期保持只读。
+- 候选运行三件套生命周期：[`analysis/candidate_run_lifecycle.py`](analysis/candidate_run_lifecycle.py)；
+  从scratch原子启动完整run，并对success/failed/interrupted统一写根`summary.json/run_manifest.json`。
 - 人工设计入口：[`config/baseline.json`](config/baseline.json)；程序入口为自动生成的
   [`config/resolved_geometry.json`](config/resolved_geometry.json)，禁止手改。
 - 全项目门禁：`verify_project.ps1 -Level Static|Candidate|Formal`。
