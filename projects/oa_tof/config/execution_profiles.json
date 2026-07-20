@@ -8,6 +8,7 @@
       "capability_id": "single_reflection_mass_analysis",
       "mode": "mass_spectrum",
       "evidence_levels": ["candidate"],
+      "supported_objectives": ["tof_centroid", "transmission_fraction", "detector_landing"],
       "supported_operating_points": [
         {"mass": {"value": 10, "unit": "Da"}, "charge_state": 1},
         {"mass": {"value": 100, "unit": "Da"}, "charge_state": 1},
@@ -48,6 +49,7 @@
       "capability_id": "single_reflection_mass_analysis",
       "mode": "formal",
       "evidence_levels": ["formal"],
+      "supported_objectives": ["mass_resolving_power", "transmission_fraction", "tof_centroid", "detector_landing"],
       "supported_operating_points": [
         {"mass": {"value": 524, "unit": "Da"}, "charge_state": 1}
       ],
@@ -68,6 +70,35 @@
       "limitations": [
         "Validates and packages the current approved 524 Da formal design only",
         "Does not synthesize a new geometry from optimization variables"
+      ]
+    },
+    {
+      "profile_id": "zero_change_structural_candidate",
+      "capability_id": "single_reflection_mass_analysis",
+      "mode": "design_candidate",
+      "evidence_levels": ["candidate"],
+      "supported_objectives": ["transmission_fraction"],
+      "supported_operating_points": [
+        {"mass": {"value": 524, "unit": "Da"}, "charge_state": 1}
+      ],
+      "supported_design_variables": [],
+      "supported_constraints": [],
+      "deliverable_outputs": ["simulation_results", "comsol_model", "simion_model", "cad", "validation_report"],
+      "required_bindings": ["candidate_workflow_plan"],
+      "steps": [
+        {
+          "step_id": "candidate_workflow",
+          "kind": "run",
+          "shell": "python",
+          "entrypoint": "analysis/run_bound_candidate_workflow.py",
+          "run_id_template": null,
+          "arguments": ["{design_plan_path}", "{candidate_workflow_plan}"]
+        }
+      ],
+      "limitations": [
+        "Validated only for zero-change reproduction of the approved 524 Da baseline with the N=100 structural gate",
+        "Requires a separately compiled and frozen candidate workflow plan from the same approved design request and run_id",
+        "Does not evaluate resolving power, optimize variables, promote formal assets, or authorize performance claims"
       ]
     }
   ]

@@ -63,8 +63,28 @@ class ExecutionCompilerTests(unittest.TestCase):
         request = load_json(HERE / "examples" / "oa_tof_500da_r30000.example.json")
         result = self.compile_request(request)
         self.assertEqual(result["status"], "NEEDS_IMPLEMENTATION")
+        self.assertTrue(any("objectives" in item for item in result["blockers"]))
         self.assertTrue(any("constraints" in item for item in result["blockers"]))
         self.assertTrue(any("outputs" in item for item in result["blockers"]))
+
+    def test_oa_zero_change_structural_candidate_requires_matching_plan_binding(self):
+        request = load_json(HERE / "examples" / "oa_tof_500da_r30000.example.json")
+        request["status"] = "approved"
+        request["approval"] = {"approved_by": "owner", "approved_on": "2026-07-20"}
+        request["target"]["mode"] = "design_candidate"
+        request["operating_points"] = [{"mass": {"value": 524, "unit": "Da"}, "charge_state": 1}]
+        request["objectives"] = [
+            {"metric": "transmission_fraction", "operator": "maximize", "value": None,
+             "unit": "1", "tolerance": None}
+        ]
+        request["constraints"] = []
+        request["design_variables"] = []
+        result = self.compile_request(request)
+        self.assertEqual(result["status"], "NEEDS_RUNTIME_INPUTS")
+        ready = self.compile_request(request, {"candidate_workflow_plan": "C:/candidate/plan.json"})
+        self.assertEqual(ready["status"], "EXECUTION_READY")
+        self.assertEqual(ready["profile_id"], "zero_change_structural_candidate")
+        self.assertIn("C:/candidate/plan.json", ready["commands"][0]["argv"])
 
     def test_interface_profile_requires_explicit_runtime_bindings(self):
         request = self.approved_rf_request()

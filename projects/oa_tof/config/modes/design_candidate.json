@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "role": "oa_tof_structural_design_candidate_mode",
+  "mode": "design_candidate",
+  "purpose": "Build and cross-check an isolated design candidate without modifying or promoting formal assets",
+  "particle": {
+    "mass_amu": 524.0,
+    "charge_state": 1,
+    "structural_check_count": 100
+  },
+  "acceptance": {
+    "scope": "structural_build_and_contract",
+    "required_stages": [
+      "static_inputs",
+      "comsol_candidate",
+      "simion_candidate",
+      "cad_candidate",
+      "cross_solver_acceptance"
+    ],
+    "performance_claim_allowed": false,
+    "automatic_promotion": false
+  },
+  "current_validated_extent": {
+    "zero_change_reference_reproduction": true,
+    "nonzero_design_variables": [],
+    "reason": "The commercial end-to-end gate has been run only for the zero-change reference candidate"
+  }
+}

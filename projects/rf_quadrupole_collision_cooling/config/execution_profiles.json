@@ -8,6 +8,7 @@
       "capability_id": "quadrupole_ion_transport",
       "mode": "transport_no_collision",
       "evidence_levels": ["candidate"],
+      "supported_objectives": ["transmission_fraction", "mean_tof", "rms_beam_radius", "rms_divergence", "mean_kinetic_energy"],
       "supported_operating_points": [
         {"mass": {"value": 100, "unit": "Da"}, "charge_state": 1}
       ],
@@ -55,6 +56,7 @@
       "capability_id": "quadrupole_ion_transport",
       "mode": "transport_interface_readiness",
       "evidence_levels": ["candidate"],
+      "supported_objectives": ["transmission_fraction", "mean_tof", "rms_beam_radius", "rms_divergence", "mean_kinetic_energy"],
       "supported_operating_points": [
         {"mass": {"value": 100, "unit": "Da"}, "charge_state": 1},
         {"mass": {"value": 524, "unit": "Da"}, "charge_state": 1}

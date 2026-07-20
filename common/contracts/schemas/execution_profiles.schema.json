@@ -17,6 +17,7 @@
         "additionalProperties": false,
         "required": [
           "profile_id", "capability_id", "mode", "evidence_levels",
+          "supported_objectives",
           "supported_operating_points", "supported_design_variables",
           "supported_constraints", "deliverable_outputs", "required_bindings",
           "steps", "limitations"
@@ -28,6 +29,10 @@
           "evidence_levels": {
             "type": "array", "minItems": 1, "uniqueItems": true,
             "items": {"enum": ["plan", "static", "candidate", "formal"]}
+          },
+          "supported_objectives": {
+            "type": "array", "uniqueItems": true,
+            "items": {"$ref": "#/$defs/identifier"}
           },
           "supported_operating_points": {
             "type": "array", "minItems": 1,

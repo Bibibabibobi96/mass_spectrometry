@@ -25,6 +25,7 @@ from run_candidate_workflow import (
     execute_stage,
     run_candidate_workflow,
 )
+from run_bound_candidate_workflow import validate_bound_candidate
 from verify_artifact_layout import verify_project
 
 
@@ -203,6 +204,12 @@ class CandidateDesignTests(unittest.TestCase):
         resolved_contract["inputs"]["baseline_sha256"] = sha256(baseline)
         resolved.write_text(json.dumps(resolved_contract), encoding="utf-8")
         request_contract = self.base_request()
+        request_contract["target"]["mode"] = "design_candidate"
+        request_contract["operating_points"] = [{"mass": {"value": 524, "unit": "Da"}, "charge_state": 1}]
+        request_contract["objectives"] = [
+            {"metric": "transmission_fraction", "operator": "maximize", "value": None,
+             "unit": "1", "tolerance": None}
+        ]
         request_contract["constraints"] = []
         request_contract["design_variables"] = []
         request.write_text(json.dumps(request_contract), encoding="utf-8")
@@ -496,6 +503,30 @@ class CandidateDesignTests(unittest.TestCase):
         command = _powershell("task.ps1", ["-Value", "test"])
         self.assertEqual(command[0], "pwsh.exe")
         self.assertEqual(command[-3:], ["task.ps1", "-Value", "test"])
+
+    def test_bound_runner_requires_same_approved_request_and_run_id(self):
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            _, candidate_plan_path = self.prepared_workflow_plan(root_path, "20260720_150000")
+            candidate = load_json(candidate_plan_path)
+            request_record = candidate["candidate_inputs"]["design_request.json"]
+            request = load_json(Path(request_record["path"]))
+            design = {
+                "role": "solver_neutral_design_plan",
+                "run_id": candidate["run_id"],
+                "request_id": request["request_id"],
+                "request_status": "approved",
+                "project_id": "oa_tof",
+                "mode": "design_candidate",
+                "provenance": {"request": request_record},
+            }
+            design_path = root_path / "design_plan.json"
+            design_path.write_text(json.dumps(design), encoding="utf-8")
+            validate_bound_candidate(design_path, candidate_plan_path)
+            design["run_id"] = "20260720_150001__build__cross__design-candidate__mismatch"
+            design_path.write_text(json.dumps(design), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "run_id differ"):
+                validate_bound_candidate(design_path, candidate_plan_path)
 
 
 if __name__ == "__main__":

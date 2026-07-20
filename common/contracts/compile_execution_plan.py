@@ -68,6 +68,10 @@ def compile_execution(
     missing_points = [_operating_point_key(point) for point in plan["operating_points"] if _operating_point_key(point) not in supported_points]
     if missing_points:
         implementation_blockers.append("Unsupported operating points: " + ", ".join(f"{m:g} {u}, z={z}" for m, u, z in missing_points))
+    requested_objectives = {item["metric"] for item in plan["objectives"]}
+    missing_objectives = sorted(requested_objectives - set(profile["supported_objectives"]))
+    if missing_objectives:
+        implementation_blockers.append("Runner cannot evaluate objectives: " + ", ".join(missing_objectives))
     missing_variables = sorted(set(plan["design_variables"]) - set(profile["supported_design_variables"]))
     if missing_variables:
         implementation_blockers.append("Runner cannot consume design variables: " + ", ".join(missing_variables))
@@ -81,7 +85,11 @@ def compile_execution(
     missing_bindings = sorted(set(profile["required_bindings"]) - set(bindings))
 
     stamp = validate_run_id(plan["run_id"])["stamp"]
-    context: dict[str, str] = {"timestamp": stamp or "", "python_exe": str(REPO_ROOT / ".venv" / "Scripts" / "python.exe")}
+    context: dict[str, str] = {
+        "timestamp": stamp or "",
+        "python_exe": str(REPO_ROOT / ".venv" / "Scripts" / "python.exe"),
+        "design_plan_path": str(plan_path),
+    }
     context.update(bindings)
     for step in profile["steps"]:
         if step["run_id_template"]:

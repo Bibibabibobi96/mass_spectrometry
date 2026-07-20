@@ -34,7 +34,8 @@
 ## 权威入口
 
 - 项目机器身份、能力和成熟度：[`config/project.json`](config/project.json)；它不保存物理参数或取代PROJECT。
-- 现有入口可执行范围：[`config/execution_profiles.json`](config/execution_profiles.json)；固定复验入口不等于已实现任意参数优化。
+- 现有入口可执行范围：[`config/execution_profiles.json`](config/execution_profiles.json)；固定复验入口及
+  零变化结构候选入口不等于已实现任意参数优化或性能目标评价。
 - 设计变量与当前优化包络：[`config/design_variables.json`](config/design_variables.json)、
   [`config/optimization_envelope.json`](config/optimization_envelope.json)；包络可审查扩大，不等于正式baseline。
 - 纯静态候选编译：[`analysis/compile_candidate_design.py`](analysis/compile_candidate_design.py)；只写隔离合同，不运行求解器或CAD。
@@ -49,6 +50,9 @@
   success/failed/interrupted统一写根`summary.json/run_manifest.json`。
 - 集成候选执行：[`analysis/run_candidate_workflow.py`](analysis/run_candidate_workflow.py)；顺序调用N=100
   粒子表、COMSOL、SIMION、CAD和结构/合同验收，任何终态均由上述生命周期后端统一收口，不含晋升。
+- 设计计划绑定入口：[`analysis/run_bound_candidate_workflow.py`](analysis/run_bound_candidate_workflow.py)；
+  只执行同获批request、同run_id且零变量变化的已冻结候选计划，当前范围由
+  [`config/modes/design_candidate.json`](config/modes/design_candidate.json)限制。
 - 人工设计入口：[`config/baseline.json`](config/baseline.json)；程序入口为自动生成的
   [`config/resolved_geometry.json`](config/resolved_geometry.json)，禁止手改。
 - 全项目门禁：`verify_project.ps1 -Level Static|Candidate|Formal`。

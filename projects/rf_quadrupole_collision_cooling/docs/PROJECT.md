@@ -55,7 +55,8 @@ source与权威ION表逐值一致，杆端85.4 mm和交接面90.2 mm坐标严格
 
 `../config/execution_profiles.json`现将两种传输mode映射到Static、COMSOL、SIMION、跨求解器比较和
 Candidate门禁的真实组合链。无碰撞profile只能消费现有入口已暴露的RF幅值与频率；接口profile还要求
-显式粒子表和RF峰值。其余已设想但入口尚未消费的变量必须由dry-run报告`NEEDS_IMPLEMENTATION`，
+显式粒子表和RF峰值；两者还显式声明当前分析能够评价的传输、TOF、束流半径/发散和平均能量目标。
+其余已设想但入口尚未消费的变量或目标必须由dry-run报告`NEEDS_IMPLEMENTATION`，
 profile存在不等于碰撞、质量过滤或正式机械设计已经完成。
 
 求解器无关接口由`../config/interface_contract.json`定义。`z=85.4 mm`是杆端边缘场诊断面，

@@ -8,7 +8,7 @@
     },
     {
       "descriptor": "projects/oa_tof/config/project.json",
-      "sha256": "5AF31F8ABA50D6F559711987FEB9F11780625B3887AC99F5D1A79EB487706025"
+      "sha256": "FA2FA866D30535143532A3C4CB025E54D8C7ED8E1339F02DA4A52358FAEC5ED2"
     },
     {
       "descriptor": "projects/rf_quadrupole_collision_cooling/config/project.json",
@@ -95,7 +95,8 @@
           "status": "formal",
           "modes": [
             "formal",
-            "mass_spectrum"
+            "mass_spectrum",
+            "design_candidate"
           ],
           "metrics": [
             "mass_resolving_power",

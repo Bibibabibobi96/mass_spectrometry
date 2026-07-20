@@ -33,7 +33,7 @@
 
 ## 执行dry-run
 
-各项目在`config/execution_profiles.json`中声明现有入口实际支持的工况、变量、约束、产物和命令链。
+各项目在`config/execution_profiles.json`中声明现有入口实际支持的工况、目标指标、变量、约束、产物和命令链。
 执行编译器只生成命令预览，没有执行开关：
 
 ```powershell
@@ -41,7 +41,8 @@
 ```
 
 结果为`EXECUTION_READY`、`AWAITING_APPROVAL`、`NEEDS_RUNTIME_INPUTS`或`NEEDS_IMPLEMENTATION`。
-`EXECUTION_READY`只表示需求已批准且现有入口能够消费声明字段；它不表示求解已经运行或指标已经满足。
+`EXECUTION_READY`只表示需求已批准且现有入口能够消费声明字段并评价所请求的目标指标；它不表示
+求解已经运行或指标已经满足。只完成结构构建的runner不得把分辨率等未评价目标列为支持。
 需要显式粒子表、RF幅值等运行绑定的profile使用`--bind key=value`提供预览值。编译器会验证入口文件、
 生成受命名合同约束的子run ID，并保留项目profile的限制说明，但不会创建artifact运行目录。
 
