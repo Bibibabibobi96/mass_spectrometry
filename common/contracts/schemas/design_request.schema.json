@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/design_request.schema.json",
+  "title": "Mass spectrometer engineering design request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "request_id", "status", "title", "target",
+    "operating_points", "objectives", "constraints", "design_variables",
+    "required_outputs", "evidence_level", "approval"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "request_id": {"$ref": "#/$defs/identifier"},
+    "status": {"enum": ["example", "proposed", "approved", "retired"]},
+    "title": {"type": "string", "minLength": 1},
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["family_id", "preferred_project_id", "function", "mode"],
+      "properties": {
+        "family_id": {"$ref": "#/$defs/identifier"},
+        "preferred_project_id": {
+          "oneOf": [{"$ref": "#/$defs/identifier"}, {"type": "null"}]
+        },
+        "function": {"$ref": "#/$defs/identifier"},
+        "mode": {"oneOf": [{"$ref": "#/$defs/identifier"}, {"type": "null"}]}
+      }
+    },
+    "operating_points": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["mass", "charge_state"],
+        "properties": {
+          "mass": {"$ref": "#/$defs/quantity"},
+          "charge_state": {"type": "integer", "not": {"const": 0}}
+        }
+      }
+    },
+    "objectives": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["metric", "operator", "value", "unit", "tolerance"],
+        "properties": {
+          "metric": {"$ref": "#/$defs/identifier"},
+          "operator": {"enum": [">=", "<=", "target", "maximize", "minimize"]},
+          "value": {"type": ["number", "null"]},
+          "unit": {"type": "string", "minLength": 1},
+          "tolerance": {"type": ["number", "null"], "minimum": 0}
+        }
+      }
+    },
+    "constraints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["parameter", "operator", "value", "unit"],
+        "properties": {
+          "parameter": {"$ref": "#/$defs/identifier"},
+          "operator": {"enum": [">=", "<=", "=", ">", "<"]},
+          "value": {"type": "number"},
+          "unit": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "design_variables": {
+      "type": "array", "uniqueItems": true,
+      "items": {"$ref": "#/$defs/identifier"}
+    },
+    "required_outputs": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {
+        "enum": ["simulation_results", "comsol_model", "simion_model", "cad", "validation_report", "interface_state"]
+      }
+    },
+    "evidence_level": {"enum": ["plan", "static", "candidate", "formal"]},
+    "approval": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["approved_by", "approved_on"],
+          "properties": {
+            "approved_by": {"type": "string", "minLength": 1},
+            "approved_on": {"type": "string", "format": "date"}
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "identifier": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
+    "quantity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["value", "unit"],
+      "properties": {
+        "value": {"type": "number", "exclusiveMinimum": 0},
+        "unit": {"const": "Da"}
+      }
+    }
+  }
+}

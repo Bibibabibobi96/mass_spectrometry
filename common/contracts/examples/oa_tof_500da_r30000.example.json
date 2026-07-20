@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "request_id": "oa_tof_500da_r30000",
+  "status": "example",
+  "title": "500 Da singly charged ion oa-TOF resolving-power design",
+  "target": {
+    "family_id": "tof_mass_analyzers",
+    "preferred_project_id": "oa_tof",
+    "function": "mass_analysis",
+    "mode": "mass_spectrum"
+  },
+  "operating_points": [
+    {"mass": {"value": 500, "unit": "Da"}, "charge_state": 1}
+  ],
+  "objectives": [
+    {"metric": "mass_resolving_power", "operator": ">=", "value": 30000, "unit": "1", "tolerance": null},
+    {"metric": "transmission_fraction", "operator": "maximize", "value": null, "unit": "1", "tolerance": null}
+  ],
+  "constraints": [
+    {"parameter": "flight_length", "operator": "<=", "value": 300, "unit": "mm"}
+  ],
+  "design_variables": [
+    "flight_length",
+    "reflectron_ring_thickness",
+    "reflectron_shield_axial_gap",
+    "electrode_voltages"
+  ],
+  "required_outputs": ["simulation_results", "validation_report", "comsol_model", "simion_model", "cad"],
+  "evidence_level": "candidate",
+  "approval": null
+}

@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "request_id": "rf_quadrupole_transport",
+  "status": "example",
+  "title": "RF quadrupole ion-transport design check",
+  "target": {
+    "family_id": "rf_multipole_ion_optics",
+    "preferred_project_id": "rf_quadrupole_collision_cooling",
+    "function": "ion_transport",
+    "mode": "transport_no_collision"
+  },
+  "operating_points": [
+    {"mass": {"value": 500, "unit": "Da"}, "charge_state": 1}
+  ],
+  "objectives": [
+    {"metric": "transmission_fraction", "operator": "maximize", "value": null, "unit": "1", "tolerance": null},
+    {"metric": "rms_beam_radius", "operator": "minimize", "value": null, "unit": "mm", "tolerance": null}
+  ],
+  "constraints": [],
+  "design_variables": ["rf_amplitude", "rf_frequency", "dc_differential", "axis_offset"],
+  "required_outputs": ["simulation_results", "validation_report", "interface_state"],
+  "evidence_level": "candidate",
+  "approval": null
+}
