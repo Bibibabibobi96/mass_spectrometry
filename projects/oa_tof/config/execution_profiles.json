@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "role": "project_execution_profiles",
+  "project_id": "oa_tof",
+  "profiles": [
+    {
+      "profile_id": "mass_spectrum_candidate",
+      "capability_id": "single_reflection_mass_analysis",
+      "mode": "mass_spectrum",
+      "evidence_levels": ["candidate"],
+      "supported_operating_points": [
+        {"mass": {"value": 10, "unit": "Da"}, "charge_state": 1},
+        {"mass": {"value": 100, "unit": "Da"}, "charge_state": 1},
+        {"mass": {"value": 500, "unit": "Da"}, "charge_state": 1},
+        {"mass": {"value": 1000, "unit": "Da"}, "charge_state": 1},
+        {"mass": {"value": 2000, "unit": "Da"}, "charge_state": 1}
+      ],
+      "supported_design_variables": [],
+      "supported_constraints": [],
+      "deliverable_outputs": ["simulation_results", "comsol_model", "validation_report"],
+      "required_bindings": [],
+      "steps": [
+        {
+          "step_id": "static_gate",
+          "kind": "gate",
+          "shell": "powershell",
+          "entrypoint": "verify_project.ps1",
+          "run_id_template": null,
+          "arguments": ["-Level", "Static", "-PythonExe", "{python_exe}"]
+        },
+        {
+          "step_id": "mass_spectrum_run",
+          "kind": "run",
+          "shell": "powershell",
+          "entrypoint": "tests/cross_solver/run_mass_spectrum_candidate.ps1",
+          "run_id_template": "{timestamp}__sim__cross__mass-spectrum__five-mass",
+          "arguments": ["-RunId", "{mass_spectrum_run_id}"]
+        }
+      ],
+      "limitations": [
+        "Uses the five fixed species and current geometry declared by config/modes/mass_spectrum.json",
+        "Does not yet compile requested geometry or voltage design variables into a candidate contract",
+        "Does not produce a new SIMION package or CAD assembly"
+      ]
+    },
+    {
+      "profile_id": "formal_current_design_validation",
+      "capability_id": "single_reflection_mass_analysis",
+      "mode": "formal",
+      "evidence_levels": ["formal"],
+      "supported_operating_points": [
+        {"mass": {"value": 524, "unit": "Da"}, "charge_state": 1}
+      ],
+      "supported_design_variables": [],
+      "supported_constraints": [],
+      "deliverable_outputs": ["simulation_results", "comsol_model", "simion_model", "cad", "validation_report"],
+      "required_bindings": [],
+      "steps": [
+        {
+          "step_id": "formal_gate",
+          "kind": "gate",
+          "shell": "powershell",
+          "entrypoint": "verify_project.ps1",
+          "run_id_template": null,
+          "arguments": ["-Level", "Formal", "-PythonExe", "{python_exe}"]
+        }
+      ],
+      "limitations": [
+        "Validates and packages the current approved 524 Da formal design only",
+        "Does not synthesize a new geometry from optimization variables"
+      ]
+    }
+  ]
+}

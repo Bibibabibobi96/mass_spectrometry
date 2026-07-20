@@ -4,19 +4,19 @@
   "generated_from": [
     {
       "descriptor": "projects/electron_impact_ion_source/config/project.json",
-      "sha256": "5978B92CE23DECAD1424FD7A80AD8A13EA2998A71B52B54429D231AF59C16255"
+      "sha256": "A275A28F51053E64CB9BA12CAB19874AEB0C66E65D59184DE209EE3045679ADD"
     },
     {
       "descriptor": "projects/oa_tof/config/project.json",
-      "sha256": "47F7F544DFC99B04C08D55A8B6D3443C4EE5A21C14C8A3FC27807E2A66756A6E"
+      "sha256": "8AB49B79EFFA23348190451E5D290E8BD499BEC38FC38C5F868B471DE132999D"
     },
     {
       "descriptor": "projects/rf_quadrupole_collision_cooling/config/project.json",
-      "sha256": "B660DE571AB5AC8FA34437CD772A1D4309997DB724A1E03BB9D013B715BFD657"
+      "sha256": "785AAD6882DAE3183CCD5E0264D3C36F7E1662BBFEA8E711D49A90BC728F4BAE"
     },
     {
       "descriptor": "projects/wehnelt_electron_gun/config/project.json",
-      "sha256": "0DFC333B8410507802315BD6B61010998FDFE05F7CD490546AE64C393491B0F6"
+      "sha256": "8A3794C4AA27F08276AE1F6E7C09709D734597ACAE90B8C0215CBE71C578617B"
     }
   ],
   "projects": [
@@ -35,7 +35,8 @@
         "baseline": null,
         "resolved": null,
         "analysis": null,
-        "interface": null
+        "interface": null,
+        "execution": null
       },
       "capabilities": [
         {
@@ -80,7 +81,8 @@
         "baseline": "config/baseline.json",
         "resolved": "config/resolved_geometry.json",
         "analysis": "config/analysis_contract.json",
-        "interface": null
+        "interface": null,
+        "execution": "config/execution_profiles.json"
       },
       "capabilities": [
         {
@@ -143,7 +145,8 @@
         "baseline": "config/baseline.json",
         "resolved": "config/resolved_geometry.json",
         "analysis": null,
-        "interface": "config/interface_contract.json"
+        "interface": "config/interface_contract.json",
+        "execution": "config/execution_profiles.json"
       },
       "capabilities": [
         {
@@ -233,7 +236,8 @@
         "baseline": null,
         "resolved": null,
         "analysis": null,
-        "interface": null
+        "interface": null,
+        "execution": null
       },
       "capabilities": [
         {

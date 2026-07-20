@@ -10,7 +10,8 @@
     "baseline": "config/baseline.json",
     "resolved": "config/resolved_geometry.json",
     "analysis": null,
-    "interface": "config/interface_contract.json"
+    "interface": "config/interface_contract.json",
+    "execution": "config/execution_profiles.json"
   },
   "capabilities": [
     {

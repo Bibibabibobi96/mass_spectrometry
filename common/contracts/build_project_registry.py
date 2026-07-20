@@ -11,6 +11,7 @@ from machine_contracts import ContractError, REPO_ROOT, load_json, sha256, valid
 
 
 MATURITY = {"prototype": 0, "static": 1, "candidate": 2, "formal": 3}
+EVIDENCE = {"plan": -1, **MATURITY}
 DEFAULT_OUTPUT = REPO_ROOT / "config" / "project_registry.json"
 
 
@@ -44,6 +45,37 @@ def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path)
     for role, relative in descriptor["contracts"].items():
         if relative is not None and not (project_root / relative).is_file():
             raise ContractError(f"{path}: {role} contract is missing: {relative}")
+
+    execution_relative = descriptor["contracts"]["execution"]
+    if execution_relative is not None:
+        execution_path = project_root / execution_relative
+        execution = load_json(execution_path)
+        validate_schema(execution, "execution_profiles.schema.json")
+        if execution["project_id"] != descriptor["project_id"]:
+            raise ContractError(f"{execution_path}: project_id differs from project descriptor")
+        capabilities = {item["capability_id"]: item for item in descriptor["capabilities"]}
+        profile_ids: set[str] = set()
+        profile_keys: set[tuple[str, str]] = set()
+        for profile in execution["profiles"]:
+            profile_id = profile["profile_id"]
+            if profile_id in profile_ids:
+                raise ContractError(f"{execution_path}: duplicate profile_id {profile_id!r}")
+            profile_ids.add(profile_id)
+            capability = capabilities.get(profile["capability_id"])
+            if capability is None:
+                raise ContractError(f"{execution_path}: unknown capability {profile['capability_id']!r}")
+            if profile["mode"] not in capability["modes"]:
+                raise ContractError(f"{execution_path}: profile mode {profile['mode']!r} is not declared by capability")
+            key = (profile["capability_id"], profile["mode"])
+            if key in profile_keys:
+                raise ContractError(f"{execution_path}: duplicate capability/mode profile {key!r}")
+            profile_keys.add(key)
+            if any(EVIDENCE[level] > MATURITY[capability["status"]] for level in profile["evidence_levels"]):
+                raise ContractError(f"{execution_path}: profile evidence exceeds capability maturity")
+            for step in profile["steps"]:
+                entrypoint = project_root / step["entrypoint"]
+                if not entrypoint.is_file():
+                    raise ContractError(f"{execution_path}: step entrypoint is missing: {step['entrypoint']}")
 
     assets = descriptor["formal_assets"]
     identity = assets["identity_contract"]

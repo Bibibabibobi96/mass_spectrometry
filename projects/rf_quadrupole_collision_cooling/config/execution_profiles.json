@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "role": "project_execution_profiles",
+  "project_id": "rf_quadrupole_collision_cooling",
+  "profiles": [
+    {
+      "profile_id": "transport_no_collision_candidate",
+      "capability_id": "quadrupole_ion_transport",
+      "mode": "transport_no_collision",
+      "evidence_levels": ["candidate"],
+      "supported_operating_points": [
+        {"mass": {"value": 100, "unit": "Da"}, "charge_state": 1}
+      ],
+      "supported_design_variables": ["rf_amplitude", "rf_frequency"],
+      "supported_constraints": [],
+      "deliverable_outputs": ["simulation_results", "comsol_model", "simion_model", "validation_report", "interface_state"],
+      "required_bindings": [],
+      "steps": [
+        {
+          "step_id": "static_gate", "kind": "gate", "shell": "powershell",
+          "entrypoint": "verify_project.ps1", "run_id_template": null,
+          "arguments": ["-Level", "Static", "-PythonExe", "{python_exe}"]
+        },
+        {
+          "step_id": "comsol_run", "kind": "run", "shell": "powershell",
+          "entrypoint": "tests/comsol/run_transport_candidate.ps1",
+          "run_id_template": "{timestamp}__sim__comsol__rf-transport__no-collision",
+          "arguments": ["-RunId", "{comsol_run_id}", "-Mode", "transport_no_collision"]
+        },
+        {
+          "step_id": "simion_run", "kind": "run", "shell": "powershell",
+          "entrypoint": "tests/simion/run_transport_candidate.ps1",
+          "run_id_template": "{timestamp}__sim__simion__rf-transport__no-collision",
+          "arguments": ["-RunId", "{simion_run_id}", "-Mode", "transport_no_collision"]
+        },
+        {
+          "step_id": "cross_solver_comparison", "kind": "analyze", "shell": "powershell",
+          "entrypoint": "tests/cross_solver/verify_transport_candidate.ps1",
+          "run_id_template": "{timestamp}__analysis__cross__rf-transport__no-collision",
+          "arguments": ["-ComsolRunId", "{comsol_run_id}", "-SimionRunId", "{simion_run_id}", "-RunId", "{cross_solver_comparison_run_id}", "-Mode", "transport_no_collision", "-PythonExe", "{python_exe}"]
+        },
+        {
+          "step_id": "candidate_gate", "kind": "gate", "shell": "powershell",
+          "entrypoint": "verify_project.ps1", "run_id_template": null,
+          "arguments": ["-Level", "Candidate", "-CandidateMode", "transport_no_collision", "-ComsolRunLabel", "{comsol_run_id}", "-SimionRunLabel", "{simion_run_id}", "-ComparisonLabel", "{cross_solver_comparison_run_id}", "-PythonExe", "{python_exe}"]
+        }
+      ],
+      "limitations": [
+        "Uses the official 100 Da fixed particle source unless a future approved binding is added",
+        "The runner exposes RF amplitude and frequency but not rod DC differential or axis-offset voltage"
+      ]
+    },
+    {
+      "profile_id": "transport_interface_readiness_candidate",
+      "capability_id": "quadrupole_ion_transport",
+      "mode": "transport_interface_readiness",
+      "evidence_levels": ["candidate"],
+      "supported_operating_points": [
+        {"mass": {"value": 100, "unit": "Da"}, "charge_state": 1},
+        {"mass": {"value": 524, "unit": "Da"}, "charge_state": 1}
+      ],
+      "supported_design_variables": ["rf_amplitude", "rf_frequency"],
+      "supported_constraints": [],
+      "deliverable_outputs": ["simulation_results", "comsol_model", "simion_model", "validation_report", "interface_state"],
+      "required_bindings": ["particle_table_path", "rf_peak_v"],
+      "steps": [
+        {
+          "step_id": "static_gate", "kind": "gate", "shell": "powershell",
+          "entrypoint": "verify_project.ps1", "run_id_template": null,
+          "arguments": ["-Level", "Static", "-PythonExe", "{python_exe}"]
+        },
+        {
+          "step_id": "comsol_run", "kind": "run", "shell": "powershell",
+          "entrypoint": "tests/comsol/run_transport_candidate.ps1",
+          "run_id_template": "{timestamp}__sim__comsol__rf-transport__interface-readiness",
+          "arguments": ["-RunId", "{comsol_run_id}", "-Mode", "transport_interface_readiness", "-ParticleTablePath", "{particle_table_path}", "-RfPeakV", "{rf_peak_v}"]
+        },
+        {
+          "step_id": "simion_run", "kind": "run", "shell": "powershell",
+          "entrypoint": "tests/simion/run_transport_candidate.ps1",
+          "run_id_template": "{timestamp}__sim__simion__rf-transport__interface-readiness",
+          "arguments": ["-RunId", "{simion_run_id}", "-Mode", "transport_interface_readiness", "-ParticleTablePath", "{particle_table_path}", "-RfPeakV", "{rf_peak_v}"]
+        },
+        {
+          "step_id": "cross_solver_comparison", "kind": "analyze", "shell": "powershell",
+          "entrypoint": "tests/cross_solver/verify_transport_candidate.ps1",
+          "run_id_template": "{timestamp}__analysis__cross__rf-transport__interface-readiness",
+          "arguments": ["-ComsolRunId", "{comsol_run_id}", "-SimionRunId", "{simion_run_id}", "-RunId", "{cross_solver_comparison_run_id}", "-Mode", "transport_interface_readiness", "-ParticleTablePath", "{particle_table_path}", "-PythonExe", "{python_exe}"]
+        },
+        {
+          "step_id": "candidate_gate", "kind": "gate", "shell": "powershell",
+          "entrypoint": "verify_project.ps1", "run_id_template": null,
+          "arguments": ["-Level", "Candidate", "-CandidateMode", "transport_interface_readiness", "-ComsolRunLabel", "{comsol_run_id}", "-SimionRunLabel", "{simion_run_id}", "-ComparisonLabel", "{cross_solver_comparison_run_id}", "-PythonExe", "{python_exe}"]
+        }
+      ],
+      "limitations": [
+        "Requires a versioned N>=100 particle table and explicit RF peak binding before execution",
+        "Current strict interface comparison is an allowed candidate FAIL, not a formal capability"
+      ]
+    }
+  ]
+}

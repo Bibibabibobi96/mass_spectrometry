@@ -53,6 +53,11 @@ source与权威ION表逐值一致，杆端85.4 mm和交接面90.2 mm坐标严格
 `sync_simion_geometry.py`从同一解析发布生成两份GEM。SIMION安装目录的官方例程只作为几何来源证据，
 不再参与运行时读取。Lua、GEM、COMSOL脚本和测试入口不得各自维护同一几何或运行参数。
 
+`../config/execution_profiles.json`现将两种传输mode映射到Static、COMSOL、SIMION、跨求解器比较和
+Candidate门禁的真实组合链。无碰撞profile只能消费现有入口已暴露的RF幅值与频率；接口profile还要求
+显式粒子表和RF峰值。其余已设想但入口尚未消费的变量必须由dry-run报告`NEEDS_IMPLEMENTATION`，
+profile存在不等于碰撞、质量过滤或正式机械设计已经完成。
+
 求解器无关接口由`../config/interface_contract.json`定义。`z=85.4 mm`是杆端边缘场诊断面，
 `z=90.2 mm`是出口孔口处的部件交接面，`z=95.2 mm`仍是独立部件验收检测器而不是集成边界。
 两端必须在相同物理平面插值得到位置、速度、能量、发散角和RF相位，并保留所有粒子的终止原因；

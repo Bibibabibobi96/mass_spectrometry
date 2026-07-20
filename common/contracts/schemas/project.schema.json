@@ -35,12 +35,13 @@
     "contracts": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["baseline", "resolved", "analysis", "interface"],
+      "required": ["baseline", "resolved", "analysis", "interface", "execution"],
       "properties": {
         "baseline": {"$ref": "#/$defs/nullablePath"},
         "resolved": {"$ref": "#/$defs/nullablePath"},
         "analysis": {"$ref": "#/$defs/nullablePath"},
-        "interface": {"$ref": "#/$defs/nullablePath"}
+        "interface": {"$ref": "#/$defs/nullablePath"},
+        "execution": {"$ref": "#/$defs/nullablePath"}
       }
     },
     "capabilities": {

@@ -17,6 +17,7 @@
 ## 权威入口
 
 - 当前具体四极杆项目的机器身份、能力和成熟度：[`config/project.json`](config/project.json)；多级杆设计族不在本项目内虚构子项目。
+- 现有入口可执行范围和组合命令链：[`config/execution_profiles.json`](config/execution_profiles.json)。
 - 共享几何契约：[`config/baseline.json`](config/baseline.json)
 - 程序统一入口：[`config/resolved_geometry.json`](config/resolved_geometry.json)，由
   `analysis/resolve_contract.py`生成，禁止手改；它只代表官方回归profile。

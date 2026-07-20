@@ -33,6 +33,7 @@
 ## 权威入口
 
 - 项目机器身份、能力和成熟度：[`config/project.json`](config/project.json)；它不保存物理参数或取代PROJECT。
+- 现有入口可执行范围：[`config/execution_profiles.json`](config/execution_profiles.json)；固定复验入口不等于已实现任意参数优化。
 - 人工设计入口：[`config/baseline.json`](config/baseline.json)；程序入口为自动生成的
   [`config/resolved_geometry.json`](config/resolved_geometry.json)，禁止手改。
 - 全项目门禁：`verify_project.ps1 -Level Static|Candidate|Formal`。
