@@ -158,6 +158,20 @@ reflectron_stage2_min_mm = ((reflectron_incident_energy_ev-reflectron_midgrid_vo
 d2_raw_mm = reflectron_stage2_min_mm*(1+d2_margin_fraction);
 reflectron_backplate_voltage_v = reflectron_midgrid_voltage_v + reflectron_stage2_field_vpm*(d2_raw_mm/1000);
 d2_mm = round(d2_raw_mm, reflectronDesign.engineering_length_decimals_mm);
+% An explicit resolved contract is authoritative for candidate execution.
+% The legacy positional builder historically re-derived reflectron voltages
+% and stage-2 length from d1; retaining that behavior without this branch
+% silently discarded candidate compensation-voltage overrides.  Use the
+% frozen candidate values and recompute the actual fields they imply.
+if ~isempty(contract_path)
+    d2_mm = geometryMm.L_stage2;
+    reflectron_midgrid_voltage_v = voltageV.midgrid;
+    reflectron_backplate_voltage_v = voltageV.backplate;
+    reflectron_stage1_field_vpm = reflectron_midgrid_voltage_v/reflectron_stage1_m;
+    reflectron_stage2_field_vpm = (reflectron_backplate_voltage_v-reflectron_midgrid_voltage_v)/(d2_mm/1000);
+    reflectron_stage2_min_mm = ...
+        ((reflectron_incident_energy_ev-reflectron_midgrid_voltage_v)/reflectron_stage2_field_vpm)*1000;
+end
 fprintf('[d1 scan] d1=%gmm -> U1(V_mid)=%.4fV, E1=%.4fV/m, E2=%.4fV/m, V_mirror=%.4fV, d2_min=%.2fmm, d2(adaptive,+%.0f%%)=%.2fmm\n', ...
     d1_mm, reflectron_midgrid_voltage_v, reflectron_stage1_field_vpm, reflectron_stage2_field_vpm, ...
     reflectron_backplate_voltage_v, reflectron_stage2_min_mm, d2_margin_fraction*100, d2_mm);

@@ -73,7 +73,7 @@
       ]
     },
     {
-      "profile_id": "zero_change_structural_candidate",
+      "profile_id": "validated_structural_candidate",
       "capability_id": "single_reflection_mass_analysis",
       "mode": "design_candidate",
       "evidence_levels": ["candidate"],
@@ -81,7 +81,7 @@
       "supported_operating_points": [
         {"mass": {"value": 524, "unit": "Da"}, "charge_state": 1}
       ],
-      "supported_design_variables": [],
+      "supported_design_variables": ["reflectron_midgrid_voltage"],
       "supported_constraints": [],
       "deliverable_outputs": ["simulation_results", "comsol_model", "simion_model", "cad", "validation_report"],
       "required_bindings": ["candidate_workflow_plan"],
@@ -96,7 +96,7 @@
         }
       ],
       "limitations": [
-        "Validated only for zero-change reproduction of the approved 524 Da baseline with the N=100 structural gate",
+        "Validated for zero-change reproduction and reflectron_midgrid_voltage changes at 524 Da with the N=100 structural gate",
         "Requires a separately compiled and frozen candidate workflow plan from the same approved design request and run_id",
         "Does not evaluate resolving power, optimize variables, promote formal assets, or authorize performance claims"
       ]

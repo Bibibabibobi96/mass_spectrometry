@@ -11,6 +11,8 @@ import win32com.client
 
 
 SW_MULTI_CAD_ENABLE_3D_INTERCONNECT = 691
+SW_ALWAYS_USE_DEFAULT_TEMPLATES = 111
+SW_DEFAULT_TEMPLATE_PART = 8
 SW_DOC_ASSEMBLY = 2
 SW_ADD_COMPONENT_CURRENT_CONFIGURATION = 0
 SOLIDWORKS_EXE = Path(
@@ -18,6 +20,9 @@ SOLIDWORKS_EXE = Path(
 )
 ASSEMBLY_TEMPLATE = Path(
     r"C:\ProgramData\SOLIDWORKS\SOLIDWORKS 2022\templates\gb_assembly.asmdot"
+)
+CLEAN_PART_TEMPLATE = Path(
+    r"C:\ProgramData\SOLIDWORKS\SOLIDWORKS 2022\templates\gb_part.prtdot"
 )
 
 
@@ -67,6 +72,9 @@ def import_steps(
     step_paths: list[Path], sldprt_paths: list[Path], assembly_path: Path | None,
     translations_mm: list[tuple[float, float, float]], visible: bool,
 ) -> dict:
+    step_paths = [path.resolve() for path in step_paths]
+    sldprt_paths = [path.resolve() for path in sldprt_paths]
+    assembly_path = assembly_path.resolve() if assembly_path is not None else None
     if len(step_paths) != len(sldprt_paths):
         raise ValueError("--step and --sldprt must be supplied in matching counts")
     if not step_paths:
@@ -78,6 +86,10 @@ def import_steps(
             raise FileNotFoundError(f"STEP file not found: {step_path}")
     if not SOLIDWORKS_EXE.is_file():
         raise FileNotFoundError(f"SolidWorks executable not found: {SOLIDWORKS_EXE}")
+    if not CLEAN_PART_TEMPLATE.is_file():
+        raise FileNotFoundError(
+            f"SolidWorks clean part template not found: {CLEAN_PART_TEMPLATE}"
+        )
     if assembly_path is not None and not ASSEMBLY_TEMPLATE.is_file():
         raise FileNotFoundError(
             f"SolidWorks assembly template not found: {ASSEMBLY_TEMPLATE}"
@@ -86,18 +98,23 @@ def import_steps(
     pythoncom.CoInitialize()
     sw = None
     original_interconnect = None
+    original_part_template = None
+    original_always_use_default_templates = None
     original_visible = None
     started_solidworks = False
     opened_parts = []
     assembly = None
+    template_policy = {
+        "mode": "explicit_clean_installed_templates",
+        "partTemplate": str(CLEAN_PART_TEMPLATE),
+        "assemblyTemplate": str(ASSEMBLY_TEMPLATE),
+        "userPreferencesRestored": False,
+    }
     try:
         try:
             sw = win32com.client.GetActiveObject("SldWorks.Application.30")
         except pythoncom.com_error:
             # COM activation avoids the ordinary interactive startup path.
-            # A missing default template can nevertheless still display a
-            # user-facing modal dialog; the project document records that
-            # residual interaction and the required user response.
             sw = win32com.client.Dispatch("SldWorks.Application.30")
             started_solidworks = True
 
@@ -107,6 +124,21 @@ def import_steps(
         original_interconnect = bool(
             sw.GetUserPreferenceToggle(SW_MULTI_CAD_ENABLE_3D_INTERCONNECT)
         )
+        # LoadFile4 creates a native part for every imported STEP and consults
+        # the machine's default part template.  A stale path opens a modal
+        # "default template not available" dialog.  Bind the installed clean
+        # template for this import only, then restore the user's settings.
+        original_part_template = str(
+            sw.GetUserPreferenceStringValue(SW_DEFAULT_TEMPLATE_PART)
+        )
+        original_always_use_default_templates = bool(
+            sw.GetUserPreferenceToggle(SW_ALWAYS_USE_DEFAULT_TEMPLATES)
+        )
+        if not sw.SetUserPreferenceStringValue(
+            SW_DEFAULT_TEMPLATE_PART, str(CLEAN_PART_TEMPLATE)
+        ):
+            raise RuntimeError("SolidWorks could not bind the clean part template")
+        sw.SetUserPreferenceToggle(SW_ALWAYS_USE_DEFAULT_TEMPLATES, True)
         sw.SetUserPreferenceToggle(SW_MULTI_CAD_ENABLE_3D_INTERCONNECT, True)
 
         part_results = []
@@ -220,6 +252,7 @@ def import_steps(
             "assembly": assembly_result,
             "solidWorksRevision": revision,
             "startedSolidWorks": started_solidworks,
+            "templatePolicy": template_policy,
         }
         if len(part_results) == 1 and assembly_result is None:
             result.update(part_results[0])
@@ -233,6 +266,23 @@ def import_steps(
             if original_interconnect is not None:
                 sw.SetUserPreferenceToggle(
                     SW_MULTI_CAD_ENABLE_3D_INTERCONNECT, original_interconnect
+                )
+            if original_part_template is not None:
+                sw.SetUserPreferenceStringValue(
+                    SW_DEFAULT_TEMPLATE_PART, original_part_template
+                )
+            if original_always_use_default_templates is not None:
+                sw.SetUserPreferenceToggle(
+                    SW_ALWAYS_USE_DEFAULT_TEMPLATES,
+                    original_always_use_default_templates,
+                )
+            if (original_part_template is not None
+                    and original_always_use_default_templates is not None):
+                template_policy["userPreferencesRestored"] = (
+                    str(sw.GetUserPreferenceStringValue(SW_DEFAULT_TEMPLATE_PART))
+                    == original_part_template
+                    and bool(sw.GetUserPreferenceToggle(SW_ALWAYS_USE_DEFAULT_TEMPLATES))
+                    == original_always_use_default_templates
                 )
             if started_solidworks:
                 sw.ExitApp()

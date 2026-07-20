@@ -185,6 +185,26 @@ class CandidateDesignTests(unittest.TestCase):
                 plan["consumers"]["comsol"]["arguments"]["ContractPath"], str(contract_path.resolve())
             )
 
+    def test_comsol_explicit_contract_consumes_reflectron_voltage_overrides(self):
+        source = (PROJECT_ROOT / "comsol" / "ms_oaTOF_two_stage_ringstack_reflectron.m").read_text(
+            encoding="utf-8"
+        )
+        contract_branch = source.split("if ~isempty(contract_path)", 1)[1].split("end", 1)[0]
+        self.assertIn("reflectron_midgrid_voltage_v = voltageV.midgrid", contract_branch)
+        self.assertIn("reflectron_backplate_voltage_v = voltageV.backplate", contract_branch)
+        self.assertIn("d2_mm = geometryMm.L_stage2", contract_branch)
+
+    def test_solidworks_step_import_binds_clean_part_template_temporarily(self):
+        source = (REPO_ROOT / "common" / "solidworks" / "import_step_to_solidworks.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("CLEAN_PART_TEMPLATE", source)
+        self.assertIn("SW_DEFAULT_TEMPLATE_PART, str(CLEAN_PART_TEMPLATE)", source)
+        self.assertIn("SW_ALWAYS_USE_DEFAULT_TEMPLATES, True", source)
+        self.assertIn("SW_DEFAULT_TEMPLATE_PART, original_part_template", source)
+        self.assertIn("original_always_use_default_templates", source)
+        self.assertIn("step_paths = [path.resolve() for path in step_paths]", source)
+
     def test_missing_consumer_route_is_rejected(self):
         consumer_contract = load_json(PROJECT_ROOT / "config" / "candidate_consumers.json")
         variable_catalog = load_json(PROJECT_ROOT / "config" / "design_variables.json")
@@ -526,6 +546,52 @@ class CandidateDesignTests(unittest.TestCase):
             design["run_id"] = "20260720_150001__build__cross__design-candidate__mismatch"
             design_path.write_text(json.dumps(design), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "run_id differ"):
+                validate_bound_candidate(design_path, candidate_plan_path)
+
+    def test_bound_runner_accepts_only_runtime_covered_requested_variable(self):
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            _, candidate_plan_path = self.prepared_workflow_plan(root_path, "20260720_150010")
+            candidate = load_json(candidate_plan_path)
+            request_record = candidate["candidate_inputs"]["design_request.json"]
+            request_path = Path(request_record["path"])
+            request = load_json(request_path)
+            request["design_variables"] = ["reflectron_midgrid_voltage"]
+            request_path.write_text(json.dumps(request), encoding="utf-8")
+            request_record["sha256"] = sha256(request_path)
+
+            diff_record = candidate["candidate_inputs"]["candidate_diff.json"]
+            diff_path = Path(diff_record["path"])
+            diff = load_json(diff_path)
+            diff["changed_variables"] = [{
+                "variable": "reflectron_midgrid_voltage",
+                "before": 1600.0,
+                "after": 1601.0,
+                "unit": "V",
+                "change_origin": "proposed",
+            }]
+            diff_path.write_text(json.dumps(diff), encoding="utf-8")
+            diff_record["sha256"] = sha256(diff_path)
+            candidate_plan_path.write_text(json.dumps(candidate), encoding="utf-8")
+
+            design = {
+                "role": "solver_neutral_design_plan",
+                "run_id": candidate["run_id"],
+                "request_id": request["request_id"],
+                "request_status": "approved",
+                "project_id": "oa_tof",
+                "mode": "design_candidate",
+                "provenance": {"request": request_record},
+            }
+            design_path = root_path / "design_plan.json"
+            design_path.write_text(json.dumps(design), encoding="utf-8")
+            validate_bound_candidate(design_path, candidate_plan_path)
+
+            diff["changed_variables"][0]["variable"] = "flight_length"
+            diff_path.write_text(json.dumps(diff), encoding="utf-8")
+            diff_record["sha256"] = sha256(diff_path)
+            candidate_plan_path.write_text(json.dumps(candidate), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "without runtime coverage"):
                 validate_bound_candidate(design_path, candidate_plan_path)
 
 

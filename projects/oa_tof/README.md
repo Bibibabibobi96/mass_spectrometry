@@ -22,7 +22,8 @@
 `docs/history/NUMERICAL_VALIDATION_20260716_18.md`、
 `docs/history/COMSOL_EXTREME_N_CRASH_20260718_19.md`、
 `docs/history/COMSOL_EXTREME_N_CRASH_CLOSURE_20260719.md`、
-`docs/history/CANDIDATE_WORKFLOW_VALIDATION_20260720.md`。四份日常文档不再横向链接历史。
+`docs/history/CANDIDATE_WORKFLOW_VALIDATION_20260720.md`和
+`docs/history/20260720__midgrid-candidate-runtime-coverage.md`。四份日常文档不再横向链接历史。
 
 ## 本项目的知识边界
 
@@ -51,7 +52,8 @@
 - 集成候选执行：[`analysis/run_candidate_workflow.py`](analysis/run_candidate_workflow.py)；顺序调用N=100
   粒子表、COMSOL、SIMION、CAD和结构/合同验收，任何终态均由上述生命周期后端统一收口，不含晋升。
 - 设计计划绑定入口：[`analysis/run_bound_candidate_workflow.py`](analysis/run_bound_candidate_workflow.py)；
-  只执行同获批request、同run_id且零变量变化的已冻结候选计划，当前范围由
+  只执行同获批request、同run_id且变量属于已验证运行时覆盖的冻结候选计划；当前覆盖为零变化及
+  `reflectron_midgrid_voltage`，范围由
   [`config/modes/design_candidate.json`](config/modes/design_candidate.json)限制。
 - 人工设计入口：[`config/baseline.json`](config/baseline.json)；程序入口为自动生成的
   [`config/resolved_geometry.json`](config/resolved_geometry.json)，禁止手改。

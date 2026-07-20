@@ -67,7 +67,7 @@ class ExecutionCompilerTests(unittest.TestCase):
         self.assertTrue(any("constraints" in item for item in result["blockers"]))
         self.assertTrue(any("outputs" in item for item in result["blockers"]))
 
-    def test_oa_zero_change_structural_candidate_requires_matching_plan_binding(self):
+    def test_oa_validated_structural_candidate_requires_matching_plan_binding(self):
         request = load_json(HERE / "examples" / "oa_tof_500da_r30000.example.json")
         request["status"] = "approved"
         request["approval"] = {"approved_by": "owner", "approved_on": "2026-07-20"}
@@ -83,8 +83,21 @@ class ExecutionCompilerTests(unittest.TestCase):
         self.assertEqual(result["status"], "NEEDS_RUNTIME_INPUTS")
         ready = self.compile_request(request, {"candidate_workflow_plan": "C:/candidate/plan.json"})
         self.assertEqual(ready["status"], "EXECUTION_READY")
-        self.assertEqual(ready["profile_id"], "zero_change_structural_candidate")
+        self.assertEqual(ready["profile_id"], "validated_structural_candidate")
         self.assertIn("C:/candidate/plan.json", ready["commands"][0]["argv"])
+
+        request["design_variables"] = ["reflectron_midgrid_voltage"]
+        variable_ready = self.compile_request(
+            request, {"candidate_workflow_plan": "C:/candidate/midgrid-plan.json"}
+        )
+        self.assertEqual(variable_ready["status"], "EXECUTION_READY")
+        self.assertEqual(variable_ready["profile_id"], "validated_structural_candidate")
+
+        request["design_variables"] = ["flight_length"]
+        unsupported = self.compile_request(
+            request, {"candidate_workflow_plan": "C:/candidate/flight-plan.json"}
+        )
+        self.assertEqual(unsupported["status"], "NEEDS_IMPLEMENTATION")
 
     def test_interface_profile_requires_explicit_runtime_bindings(self):
         request = self.approved_rf_request()

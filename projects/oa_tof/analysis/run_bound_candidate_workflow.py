@@ -61,8 +61,33 @@ def validate_bound_candidate(design_plan_path: Path, candidate_plan_path: Path) 
     diff = load_json(diff_path)
     if diff.get("request_id") != design.get("request_id"):
         raise ValueError("candidate diff belongs to another design request")
-    if diff.get("changed_variables"):
-        raise ValueError("current bound profile is validated only for a zero-change candidate")
+    allowed_variables = {"reflectron_midgrid_voltage"}
+    requested_variables = set(request.get("design_variables", []))
+    unsupported_requested = requested_variables - allowed_variables
+    if unsupported_requested:
+        raise ValueError(
+            "approved request contains variables without runtime coverage: "
+            + ", ".join(sorted(unsupported_requested))
+        )
+    changed_variables = diff.get("changed_variables", [])
+    proposed_variables = {
+        item.get("variable") for item in changed_variables
+        if item.get("change_origin") == "proposed"
+    }
+    unsupported = proposed_variables - allowed_variables
+    if unsupported:
+        raise ValueError(
+            "bound candidate contains variables without runtime coverage: "
+            + ", ".join(sorted(unsupported))
+        )
+    unrequested = proposed_variables - requested_variables
+    if unrequested:
+        raise ValueError(
+            "candidate diff contains variables absent from the approved request: "
+            + ", ".join(sorted(unrequested))
+        )
+    if any(item.get("change_origin") != "proposed" for item in changed_variables):
+        raise ValueError("changed_variables must contain only explicitly proposed variables")
     return design, candidate
 
 
