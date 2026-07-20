@@ -2,7 +2,10 @@ param(
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$OutputDir = '',
   [string]$TemplateIob = '',
-  [string]$RunId = ''
+  [string]$RunId = '',
+  [string]$ContractPath = '',
+  [string]$CandidateBaselinePath = '',
+  [string]$CandidateTextDir = ''
 )
 
 Set-StrictMode -Version Latest
@@ -11,9 +14,30 @@ $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\oa_tof'
-$baselinePath = Join-Path $projectRoot 'config\baseline.json'
+$formalBaselinePath = Join-Path $projectRoot 'config\baseline.json'
 $modePath = Join-Path $projectRoot 'config\modes\formal.json'
-$contractPath = Join-Path $projectRoot 'config\resolved_geometry.json'
+$formalContractPath = Join-Path $projectRoot 'config\resolved_geometry.json'
+$candidateMode = -not [string]::IsNullOrWhiteSpace($ContractPath)
+if ($candidateMode) {
+  $contractPath = [IO.Path]::GetFullPath($ContractPath)
+  if (-not (Test-Path -LiteralPath $contractPath -PathType Leaf)) { throw "Candidate ContractPath is missing: $contractPath" }
+  if ([string]::IsNullOrWhiteSpace($CandidateBaselinePath) -or [string]::IsNullOrWhiteSpace($CandidateTextDir)) {
+    throw 'Candidate build requires CandidateBaselinePath and CandidateTextDir with ContractPath.'
+  }
+  $baselinePath = [IO.Path]::GetFullPath($CandidateBaselinePath)
+  $textDir = [IO.Path]::GetFullPath($CandidateTextDir)
+  if (-not (Test-Path -LiteralPath $baselinePath -PathType Leaf)) { throw "Candidate baseline is missing: $baselinePath" }
+  foreach ($name in @('oatof_resolved.lua','oatof_ideal_grounded.lua','oatof_ideal_grounded.fly2')) {
+    if (-not (Test-Path -LiteralPath (Join-Path $textDir $name) -PathType Leaf)) {
+      throw "Candidate text input is missing: $name"
+    }
+  }
+}
+else {
+  $contractPath = $formalContractPath
+  $baselinePath = $formalBaselinePath
+  $textDir = Join-Path $projectRoot 'simion\workbench\formal'
+}
 
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
   if ([string]::IsNullOrWhiteSpace($RunId)) {
@@ -32,8 +56,10 @@ if (Test-Path -LiteralPath $outputFull) {
 New-Item -ItemType Directory -Path $outputFull | Out-Null
 
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
-& $python (Join-Path $projectRoot 'analysis\sync_geometry_contract.py') --write
-if ($LASTEXITCODE -ne 0) { throw 'SIMION text synchronization failed.' }
+if (-not $candidateMode) {
+  & $python (Join-Path $projectRoot 'analysis\sync_geometry_contract.py') --write
+  if ($LASTEXITCODE -ne 0) { throw 'SIMION text synchronization failed.' }
+}
 $contract = Get-Content -LiteralPath $contractPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $geometry = $contract.geometry_mm
 $accelerator = $contract.geometry_derivation.accelerator
@@ -112,7 +138,7 @@ Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\SIMION_REPRODUCTION_PARAMET
 Copy-Item -LiteralPath $baselinePath -Destination (Join-Path $outputFull 'baseline.json')
 Copy-Item -LiteralPath $modePath -Destination (Join-Path $outputFull 'formal_mode.json')
 Copy-Item -LiteralPath $contractPath -Destination (Join-Path $outputFull 'resolved_geometry.json')
-$resolvedLua = Join-Path $projectRoot 'simion\workbench\formal\oatof_resolved.lua'
+$resolvedLua = Join-Path $textDir 'oatof_resolved.lua'
 Copy-Item -LiteralPath $resolvedLua -Destination (Join-Path $outputFull 'oatof_resolved.lua')
 
 $runRoot = if ((Split-Path -Leaf $outputFull) -eq 'simion') { Split-Path -Parent $outputFull } else { $outputFull }
@@ -124,7 +150,7 @@ $runConfig = [ordered]@{
   schema_version = 1; role = 'oa_tof_simion_delivery_run_config'
   run_id = $RunId; project = 'oa_tof'; mode = 'formal_delivery_candidate'
   project_root = $projectRoot
-  inputs = [ordered]@{baseline='config/baseline.json'; resolved_geometry='config/resolved_geometry.json'; mode='config/modes/formal.json'}
+  inputs = [ordered]@{baseline=$baselinePath; resolved_geometry=$contractPath; mode=$modePath; candidate_mode=$candidateMode}
   output_dir = $outputFull; overwrite = $false
 }
 $runConfig | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $runConfigPath -Encoding UTF8
@@ -151,8 +177,8 @@ Copy-Item -LiteralPath $template -Destination $iobOutput
 Copy-Item -LiteralPath $templateCon -Destination ([IO.Path]::ChangeExtension($iobOutput, '.con'))
 Invoke-SimionLua (Join-Path $PSScriptRoot 'build_formal_iob.lua') @(
   (Join-Path $outputFull 'oatof_resolved.lua'), $iobOutput, $iobOutput,
-  (Join-Path $projectRoot 'simion\workbench\formal\oatof_ideal_grounded.lua'),
-  (Join-Path $projectRoot 'simion\workbench\formal\oatof_ideal_grounded.fly2')
+  (Join-Path $textDir 'oatof_ideal_grounded.lua'),
+  (Join-Path $textDir 'oatof_ideal_grounded.fly2')
 )
 
 foreach ($required in @('oatof_ideal_grounded.iob','oatof_ideal_grounded.con','oatof_ideal_grounded.lua','oatof_ideal_grounded.fly2')) {

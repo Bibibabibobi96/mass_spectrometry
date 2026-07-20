@@ -28,6 +28,10 @@
 零改动回归要求三份生成文本与正式版本逐字一致。该步骤尚未Refine PA、建立IOB或Fly，因此只标记
 `text_generated_pa_iob_not_built`，不能作为SIMION候选运行通过的证据。
 
+`build_formal_delivery.ps1`的默认行为仍从正式合同构建run内候选交付；当显式提供`ContractPath`时，
+必须同时提供`CandidateBaselinePath`和`CandidateTextDir`，构建器禁止调用正式文本同步，而是从隔离
+候选输入建立PA/IOB。两种模式都只允许输出到`runs/`，晋升继续是独立门禁。
+
 稳定实现入口以`config/simion_stable_entry.json`冻结：0.05mm是正式可移植交付，0.025mm仅作轴向
 网格收敛参考。该清单记录外部资产路径、大小和SHA-256，不重复维护物理参数；物理
 参数仍以`config/baseline.json`为唯一来源。每次移动、重建或打包SIMION资产后运行：

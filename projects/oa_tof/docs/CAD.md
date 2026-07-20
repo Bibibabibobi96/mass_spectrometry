@@ -12,6 +12,8 @@
 CAD不直接解析候选JSON。`analysis/prepare_candidate_consumers.py`先把候选合同绑定到唯一候选MPH路径，
 随后本文件的`modelPath`入口只读该MPH导出STEP和SolidWorks装配。这样机械几何继承已持久化的COMSOL
 模型树，同时避免CAD另建一套参数推导；候选MPH不存在或未通过同步门禁时，CAD状态必须保持阻塞。
+隔离任务`tests/cad/run_candidate_cad_sync.m`只接受候选MPH和`runs/<run_id>/cad/`输出目录；它不会读取、
+覆盖或提升正式装配。通过SolidWorks保存检查后仍须等待跨软件候选验收和独立晋升决定。
 
 ## 硬性规则
 

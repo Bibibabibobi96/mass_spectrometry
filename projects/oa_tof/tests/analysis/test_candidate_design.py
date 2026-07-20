@@ -16,6 +16,7 @@ sys.path.insert(0, str(REPO_ROOT / "common" / "contracts"))
 from compile_candidate_design import EnvelopeReviewRequired, compile_proposal, write_candidate
 from machine_contracts import load_json, sha256
 from prepare_candidate_consumers import prepare, verify_routing_coverage
+from prepare_candidate_run import prepare_candidate_run, validate_workflow
 
 
 class CandidateDesignTests(unittest.TestCase):
@@ -180,6 +181,71 @@ class CandidateDesignTests(unittest.TestCase):
         del consumer_contract["consumers"]["cad"]
         with self.assertRaisesRegex(ValueError, "candidate consumer routing is incomplete"):
             verify_routing_coverage(consumer_contract, variable_catalog)
+
+    def candidate_run_inputs(self, root_path):
+        baseline = root_path / "candidate_baseline.json"
+        resolved = root_path / "candidate_resolved_geometry.json"
+        diff = root_path / "candidate_diff.json"
+        baseline.write_text((PROJECT_ROOT / "config" / "baseline.json").read_text(encoding="utf-8"), encoding="utf-8")
+        resolved_contract = load_json(PROJECT_ROOT / "config" / "resolved_geometry.json")
+        resolved_contract["inputs"]["baseline"] = str(baseline.resolve())
+        resolved_contract["inputs"]["baseline_sha256"] = sha256(baseline)
+        resolved.write_text(json.dumps(resolved_contract), encoding="utf-8")
+        diff.write_text(json.dumps({"role": "oa_tof_candidate_contract_diff", "changed_variables": []}), encoding="utf-8")
+        return baseline, resolved, diff
+
+    def test_candidate_run_is_isolated_and_never_contains_promotion(self):
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            inputs = self.candidate_run_inputs(root_path)
+            artifact_root = root_path / "artifacts" / "projects" / "oa_tof"
+            run_id = "20260720_120000__build__cross__design-candidate__zero-change"
+            plan = prepare_candidate_run(*inputs, run_id, artifact_root)
+            run_root = artifact_root / "runs" / run_id
+            planning_root = Path(plan["planning_root"])
+            self.assertEqual(Path(plan["run_root"]), run_root)
+            self.assertFalse(run_root.exists())
+            planning_root.relative_to(artifact_root / "scratch")
+            self.assertFalse(plan["formal_root"]["mutation_allowed"])
+            self.assertFalse(plan["promotion"]["included"])
+            self.assertFalse(plan["promotion"]["automatic"])
+            self.assertFalse(plan["promotion"]["safe_to_promote"])
+            for stage in plan["stages"]:
+                for key in ("model_path", "output_dir", "report_path"):
+                    if key in stage:
+                        Path(stage[key]).resolve().relative_to(run_root.resolve())
+            self.assertTrue((planning_root / "run_config.template.json").is_file())
+            self.assertTrue((planning_root / "candidate_workflow_plan.json").is_file())
+            with self.assertRaisesRegex(FileExistsError, "overwrite is forbidden"):
+                prepare_candidate_run(*inputs, run_id, artifact_root)
+
+    def test_candidate_inputs_cannot_come_from_formal_artifacts(self):
+        with tempfile.TemporaryDirectory() as root:
+            artifact_root = Path(root) / "artifacts" / "projects" / "oa_tof"
+            formal = artifact_root / "formal" / "inputs"
+            formal.mkdir(parents=True)
+            inputs = self.candidate_run_inputs(formal)
+            with self.assertRaisesRegex(ValueError, "must not be sourced from formal"):
+                prepare_candidate_run(
+                    *inputs, "20260720_120001__build__cross__design-candidate__formal-source", artifact_root
+                )
+
+    def test_workflow_rejects_automatic_promotion(self):
+        workflow = load_json(PROJECT_ROOT / "config" / "candidate_workflow.json")
+        workflow["formal_policy"]["automatic_promotion"] = True
+        with self.assertRaisesRegex(ValueError, "disable automatic promotion"):
+            validate_workflow(workflow)
+
+    def test_candidate_baseline_and_resolved_hashes_must_match(self):
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            inputs = self.candidate_run_inputs(root_path)
+            inputs[0].write_text(inputs[0].read_text(encoding="utf-8") + "\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "hashes do not match"):
+                prepare_candidate_run(
+                    *inputs, "20260720_120002__build__cross__design-candidate__hash-mismatch",
+                    root_path / "artifacts" / "projects" / "oa_tof",
+                )
 
 
 if __name__ == "__main__":

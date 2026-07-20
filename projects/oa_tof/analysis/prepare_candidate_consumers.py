@@ -35,7 +35,7 @@ def verify_routing_coverage(consumer_contract: dict, variable_catalog: dict) -> 
         raise ValueError("candidate consumer routing is incomplete: " + ", ".join(sorted(missing)))
 
 
-def prepare(contract_path: Path, output_dir: Path) -> dict:
+def prepare(contract_path: Path, output_dir: Path, runtime_root: Path | None = None) -> dict:
     contract_path = contract_path.resolve()
     contract = load_contract(contract_path)
     consumer_contract = json.loads(CONSUMER_CONTRACT_PATH.read_text(encoding="utf-8"))
@@ -59,8 +59,9 @@ def prepare(contract_path: Path, output_dir: Path) -> dict:
     for key, path in generated.items():
         path.write_text(contents[key], encoding="utf-8", newline="\n")
 
-    candidate_mph = (output_dir / "comsol" / "oa_tof__candidate.mph").resolve()
-    cad_dir = (output_dir / "cad").resolve()
+    runtime_root = runtime_root or output_dir
+    candidate_mph = (runtime_root / "comsol" / "oa_tof__candidate.mph").resolve()
+    cad_dir = (runtime_root / "cad").resolve()
     plan = {
         "schema_version": 1,
         "role": "oa_tof_candidate_consumption_plan",

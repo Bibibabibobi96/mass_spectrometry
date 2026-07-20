@@ -3,7 +3,12 @@ testDir = fileparts(mfilename('fullpath'));
 componentDir = fileparts(fileparts(testDir));
 addpath(componentDir);
 paths = oatof_paths();
-contract = jsondecode(fileread(fullfile(componentDir, 'config', 'resolved_geometry.json')));
+contractPath = getenv('OATOF_CONTRACT_PATH');
+if isempty(contractPath)
+    contractPath = fullfile(componentDir, 'config', 'resolved_geometry.json');
+end
+assert(isfile(contractPath), 'Resolved contract to verify is missing: %s', contractPath);
+contract = load_oatof_contract(contractPath);
 g = contract.geometry_mm;
 modelPath = getenv('OATOF_COMSOL_MODEL_PATH');
 if isempty(modelPath)
@@ -21,6 +26,7 @@ fprintf(fid, 'JVM=%d\n', usejava('jvm'));
 import com.comsol.model.util.*
 fprintf(fid, 'COMSOL_VERSION=%s\n', char(ModelUtil.getComsolVersion));
 fprintf(fid, 'MODEL=%s\n', modelPath);
+fprintf(fid, 'CONTRACT=%s\n', contractPath);
 
 tLoad = tic;
 model = mphload(modelPath, 'OaTofSyncVerify');
@@ -47,10 +53,10 @@ expected = {
     'ring_thickness',        g.ring_thickness*1e-3;
     'L_flight',              g.L_flight*1e-3;
     'L_refl',                g.L_reflectron*1e-3;
-    'V_repeller',           2240;
-    'V_grid1',              1760;
-    'V_mid',                1600;
-    'V_mirror',             2400};
+    'V_repeller',           contract.electrodes_V.repeller;
+    'V_grid1',              contract.electrodes_V.grid1;
+    'V_mid',                contract.electrodes_V.midgrid;
+    'V_mirror',             contract.electrodes_V.backplate};
 for k = 1:size(expected, 1)
     name = expected{k, 1};
     value = model.param.evaluate(name);

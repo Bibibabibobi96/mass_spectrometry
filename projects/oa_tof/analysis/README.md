@@ -27,6 +27,10 @@ py -3.11 -m venv .venv
 - 候选静态消费准备：`prepare_candidate_consumers.py --contract <candidate_resolved_geometry.json>
   --output-dir <run-or-scratch-directory>`；生成SIMION Lua/Fly2和`candidate_consumption_plan.json`，其中
   COMSOL直接绑定同一合同，CAD绑定由该合同构建的候选MPH。它不启动COMSOL、SIMION或SolidWorks。
+- 候选运行准备：`prepare_candidate_run.py`冻结`candidate_baseline/resolved/diff`，生成N=100粒子表及
+  COMSOL、SIMION、CAD和跨软件验收的有向执行计划（粒子表本身由计划的首个运行命令生成）。它不执行商业软件，也不包含
+  baseline/formal晋升。计划先进入`scratch/<task_id>/`，集成runner真正开始时才创建含三件套的run，
+  避免留下不通过artifacts门禁的半成品运行目录；当前计划会明确报告该runner尚待完成。
 - 数值算法：`peak_metrics.py`。
 - 五质量标定、逐峰COMSOL/SIMION局部密度叠加和质心差汇总图：`mass_spectrum.py`。主图使用2×3布局，
   五个峰各自缩放局部质量偏差轴且共享各峰分箱，第六格只汇总跨求解器平均TOF差；全图图例明确

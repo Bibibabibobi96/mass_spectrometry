@@ -31,6 +31,10 @@ Desktop查看、修改和Compute；仅脚本内存状态通过不算验收。
 静态准备器只生成调用计划，不代表MPH已经构建或GUI Compute已经通过；候选仍须写入run/scratch，
 并完成模型树、求解与重开门禁。
 
+隔离运行任务为`tests/comsol/run_candidate_contract_build.m`，只接受环境中显式候选合同、N=100粒子表
+和`runs/<run_id>/comsol/`候选MPH路径。同步验收器也可通过`OATOF_CONTRACT_PATH`按候选合同核对模型，
+电压不再固定写成正式值；省略该变量时仍按正式合同验收。
+
 模块化候选直接使用统一N=100检查档完整构建，并从保存后的MPH执行`std1/std2` GUI Compute。
 重开检查确认`sol1/sol2`及`dset1/pdset1`关联；参数、几何、选择集、335972个四面体、5个数据集
 和7个绘图组通过同步门禁。相对拆分前正式MPH，两边100/100命中，平均TOF差`1.30 ps`，逐粒子

@@ -4,6 +4,7 @@ param(
   [string]$PythonExe = '',
   [ValidateSet('SIMION','COMSOL','CAD')][string]$CandidateTarget = 'SIMION',
   [string]$CandidateModelPath,
+  [string]$CandidateContractPath,
   [string]$CandidateCadAssemblyPath,
   [string]$CandidateCadReportPath
 )
@@ -48,8 +49,19 @@ if ($Level -eq 'Candidate') {
     New-Item -ItemType Directory -Path $logDir -Force | Out-Null
     $report = Join-Path $logDir 'comsol_sync_report.txt'
     $oldModelPath = $env:OATOF_COMSOL_MODEL_PATH
+    $oldContractPath = $env:OATOF_CONTRACT_PATH
     try {
       $env:OATOF_COMSOL_MODEL_PATH = $candidateModel
+      if ($CandidateContractPath) {
+        $candidateContract = [IO.Path]::GetFullPath($CandidateContractPath)
+        if (-not (Test-Path -LiteralPath $candidateContract -PathType Leaf)) {
+          throw "COMSOL candidate contract is invalid: $candidateContract"
+        }
+        $env:OATOF_CONTRACT_PATH = $candidateContract
+      }
+      else {
+        Remove-Item Env:OATOF_CONTRACT_PATH -ErrorAction SilentlyContinue
+      }
       & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') `
         -TaskScript (Join-Path $projectRoot 'tests\comsol\verify_oatof_comsol_sync.m') `
         -ReportPath $report
@@ -58,6 +70,8 @@ if ($Level -eq 'Candidate') {
     finally {
       if ($null -eq $oldModelPath) { Remove-Item Env:OATOF_COMSOL_MODEL_PATH -ErrorAction SilentlyContinue }
       else { $env:OATOF_COMSOL_MODEL_PATH = $oldModelPath }
+      if ($null -eq $oldContractPath) { Remove-Item Env:OATOF_CONTRACT_PATH -ErrorAction SilentlyContinue }
+      else { $env:OATOF_CONTRACT_PATH = $oldContractPath }
     }
     $runConfig = Join-Path $runDir 'run_config.json'
     [ordered]@{schema_version=1;run_id=$runId;project='oa_tof';mode='comsol_candidate_sync_gate';project_root=$projectRoot;inputs=[ordered]@{candidate_model=$candidateModel};formal_gate_passed=$false} |
@@ -101,8 +115,10 @@ elseif ($Level -eq 'Formal') {
   New-Item -ItemType Directory -Path $formalLogDir -Force | Out-Null
   $comsolReport = Join-Path $formalLogDir 'comsol_sync_report.txt'
   $oldModelPath = $env:OATOF_COMSOL_MODEL_PATH
+  $oldContractPath = $env:OATOF_CONTRACT_PATH
   try {
     $env:OATOF_COMSOL_MODEL_PATH = $formalModel
+    Remove-Item Env:OATOF_CONTRACT_PATH -ErrorAction SilentlyContinue
     & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') `
       -TaskScript (Join-Path $projectRoot 'tests\comsol\verify_oatof_comsol_sync.m') `
       -ReportPath $comsolReport
@@ -111,6 +127,8 @@ elseif ($Level -eq 'Formal') {
   finally {
     if ($null -eq $oldModelPath) { Remove-Item Env:OATOF_COMSOL_MODEL_PATH -ErrorAction SilentlyContinue }
     else { $env:OATOF_COMSOL_MODEL_PATH = $oldModelPath }
+    if ($null -eq $oldContractPath) { Remove-Item Env:OATOF_CONTRACT_PATH -ErrorAction SilentlyContinue }
+    else { $env:OATOF_CONTRACT_PATH = $oldContractPath }
   }
   $formalRunConfig = Join-Path $formalRunDir 'run_config.json'
   [ordered]@{schema_version=1;run_id=$formalRunId;project='oa_tof';mode='comsol_formal_sync_gate';project_root=$projectRoot;inputs=[ordered]@{formal_model=$formalModel};formal_gate_passed=$true} |

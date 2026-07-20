@@ -40,6 +40,9 @@
 - 候选消费准备：[`analysis/prepare_candidate_consumers.py`](analysis/prepare_candidate_consumers.py)按
   [`config/candidate_consumers.json`](config/candidate_consumers.json)把同一resolved候选绑定到COMSOL、
   生成SIMION自包含文本，并把CAD输入锁定为该候选的MPH；只证明静态输入路由，不替代运行时门禁。
+- 候选运行冻结与排序：[`analysis/prepare_candidate_run.py`](analysis/prepare_candidate_run.py)按
+  [`config/candidate_workflow.json`](config/candidate_workflow.json)先在scratch冻结计划，预声明单一run和阶段依赖；
+  自动计划不包含晋升，正式baseline与formal在候选期保持只读。
 - 人工设计入口：[`config/baseline.json`](config/baseline.json)；程序入口为自动生成的
   [`config/resolved_geometry.json`](config/resolved_geometry.json)，禁止手改。
 - 全项目门禁：`verify_project.ps1 -Level Static|Candidate|Formal`。
