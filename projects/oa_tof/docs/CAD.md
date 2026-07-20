@@ -5,7 +5,8 @@
 ## 正式入口
 
 - CAD导出：`../cad/ms_export_oatof_to_solidworks.m`
-- 几何构造：`../cad/oatof_cad_geometry.m`
+- 实体发现与导出清单：`../cad/oatof_cad_export_manifest.m`
+- STEP导出实现：`../cad/export_oatof_cad_step.m`
 - CAD测试：`../tests/cad/OaTofCadExportTest.m`
 - 正式产物：工作区`artifacts/projects/oa_tof/formal/cad/`；主装配为`oa_tof__assembly.SLDASM`
 

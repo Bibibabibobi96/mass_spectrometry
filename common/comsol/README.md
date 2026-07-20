@@ -6,8 +6,9 @@
 
 ## 正式启动入口
 
-`run_comsol_r2025b.ps1`是当前MATLAB R2025b + COMSOL 6.4 LiveLink任务入口。项目脚本不得再次
-调用`mphstart`，也不得绕过入口维护另一套长期服务连接。
+`run_comsol_r2025b.ps1`是共享LiveLink任务入口；允许的软件版本和调用命令只以仓库根
+[`README.md`](../../README.md#comsol-r2025b-执行入口)为权威。项目脚本不得再次调用`mphstart`，
+也不得绕过入口维护另一套长期服务连接。
 
 入口只对白名单中的启动瞬态进行有限重试：报告必须同时包含首次模型打开链路中的
 `mphload`、`mphopen`和`Not connected to a server`。重试前失败报告以

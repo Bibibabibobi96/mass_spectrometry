@@ -3,19 +3,11 @@
 本目录只负责与求解器无关的指标、统计和图形。COMSOL模型树仍由MATLAB维护，SIMION运行时仍由
 GEM/Lua/Fly2维护；Python不直接解析MPH或PA。
 
-## 正式环境
+## 执行环境
 
-- Python：3.11（MATLAB R2025b支持；本项目不使用默认Python 3.14或旧Python 3.8）。
-- 依赖声明：仓库根`pyproject.toml`。
-- 已验证锁定版本：仓库根`requirements-lock.txt`。
-- 本机隔离环境：仓库根`.venv/`，不进入Git。
-
-首次建立或完全重建环境：
-
-```powershell
-py -3.11 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r .\requirements-lock.txt
-```
+Python版本、隔离环境和重建方法只以仓库根
+[`README.md`](../../../README.md#python-311-分析环境)为权威；本目录不维护第二份工具链说明。
+依赖声明和锁定版本分别为仓库根`pyproject.toml`与`requirements-lock.txt`。
 
 ## 权威边界
 
@@ -27,14 +19,15 @@ py -3.11 -m venv .venv
 - 二级反射镜局部闭式解：`reflectron_dual_stage_solver.py`，公式来源为
   `../docs/theory/dual_stage_reflectron.md`。
 - 加速器—反射镜整机纵向耦合：`oatof_oaaccelerator_coupling.py`，公式来源为
-  `../docs/theory/oatof_oaaccelerator_coupling.md`；当前只用于诊断 Candidate，不能自动改写 Formal。
+  `../docs/theory/oatof_oaaccelerator_coupling.md`；当前Formal baseline已由该实现派生并通过晋升门禁，
+  以后改动仍必须走隔离Candidate和独立晋升，分析脚本本身不能直接改写Formal。
 - 候选静态消费准备：`prepare_candidate_consumers.py --contract <candidate_resolved_geometry.json>
   --output-dir <run-or-scratch-directory>`；生成SIMION Lua/Fly2和`candidate_consumption_plan.json`，其中
   COMSOL直接绑定同一合同，CAD绑定由该合同构建的候选MPH。它不启动COMSOL、SIMION或SolidWorks。
 - 候选运行准备：`prepare_candidate_run.py`冻结`candidate_baseline/resolved/diff`，生成N=100粒子表及
   COMSOL、SIMION、CAD和跨软件验收的有向执行计划（粒子表本身由计划的首个运行命令生成）。它不执行商业软件，也不包含
   baseline/formal晋升。计划先进入`scratch/<task_id>/`，集成runner真正开始时才创建含三件套的run，
-  避免留下不通过artifacts门禁的半成品运行目录；当前计划会明确报告该runner尚待完成。
+  避免留下不通过artifacts门禁的半成品运行目录。
 - 候选运行记录后端：`candidate_run_lifecycle.py start <plan>`先在scratch组装包含
   `run_config.json/summary.json/run_manifest.json`的失效安全骨架，再原子进入`runs/<run_id>/`；
   `finalize`要求按工作流顺序提交全部阶段状态，并以success、failed或interrupted重写根summary和manifest。

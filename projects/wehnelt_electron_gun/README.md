@@ -1,6 +1,6 @@
 # Wehnelt 电子枪项目
 
-本项目的正式基线是**横置螺旋灯丝 Wehnelt 电子枪**，面向质谱 EI 离子源中优先提高电子
+本项目的当前物理基线是**横置螺旋灯丝 Wehnelt 电子枪**，面向质谱 EI 离子源中优先提高电子
 利用率、无需成像级轴对称束斑的应用。开始任务先读仓库根[`README.md`](../../README.md)，再读
 当前权威状态[`docs/PROJECT.md`](docs/PROJECT.md)。需要追溯选型依据和旧实验时才读冻结背景
 [`docs/history/PROJECT_HISTORY.md`](docs/history/PROJECT_HISTORY.md)。
@@ -34,8 +34,8 @@ Wehnelt 参数扫描需要以后重新建立和验证。
 
 ## 运行依赖
 
-脚本依赖 MATLAB R2025b 和 COMSOL 6.4 LiveLink。当前验证范围、正式资格和未闭合事项只写入
-PROJECT；本入口不保存容易漂移的复算数值。
+版本和启动方式只采用仓库根[`README.md`](../../README.md#工具链与执行入口)的统一工具链；当前
+验证范围、正式资格和未闭合事项只写入PROJECT，本入口不保存容易漂移的复算数值。
 
 新增跨项目API或调试经验按仓库根README路由到根`docs/`，项目特有当前事实写PROJECT，不创建
 按阶段排列的活跃说明文件。

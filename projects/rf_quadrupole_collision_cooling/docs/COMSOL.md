@@ -1,8 +1,9 @@
 # COMSOL：RF 四极杆无碰撞候选
 
 返回项目统一状态：[`PROJECT.md`](PROJECT.md)。生产脚本为
-`../comsol/ms_rf_quadrupole_no_collision.m`，只通过根目录 `common/comsol/run_comsol_r2025b.ps1`
-与 MATLAB R2025b 启动。
+`../comsol/ms_rf_quadrupole_no_collision.m`；工具版本、启动方式和共享LiveLink入口只采用仓库根
+[`README.md`](../../../README.md#工具链与执行入口)及
+[`common/comsol/README.md`](../../../common/comsol/README.md)的定义。
 
 脚本通过`../load_rf_quadrupole_contract.m`读取解析发布，持久化四根圆杆、入口孔板、出口壳体、
 检测器、真空选择、材料、ES/CPT、按粒子表行数生成的`ReleaseFromDataFile`节点、RF

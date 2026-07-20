@@ -5,8 +5,8 @@
 
 ## 当前状态
 
-项目目前只有COMSOL实现，尚无正式或可提升候选资产。现存三个MPH与三张结果图均位于项目
-旧模型和结果已冻结在`archive/20260719_212436__migration-snapshot__repo__pre-v2-layout/legacy-layout/`，
+项目目前只有COMSOL实现，尚无正式或可提升候选资产。现存三个MPH与三张结果图等旧模型和结果
+已冻结在`archive/20260719_212436__migration-snapshot__repo__pre-v2-layout/legacy-layout/`，
 只能作为旧试验证据。新模型与结果必须统一写入`runs/<run_id>/{comsol,results,logs}`；未形成run config、summary和已复核manifest前，
 不得从scratch提升或声明正式完成。
 
