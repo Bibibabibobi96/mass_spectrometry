@@ -102,8 +102,51 @@
       ]
     }
   },
+  "spatial_registration": {
+    "status": "unresolved",
+    "instrument_frame_id": "instrument_global",
+    "pose_convention": "component_to_instrument: position_instrument = rotation * position_component + translation_mm",
+    "source_component_pose": {
+      "status": "unresolved",
+      "frame_id": "rf_quadrupole_component",
+      "translation_mm": null,
+      "rotation_component_to_instrument": null
+    },
+    "target_component_pose": {
+      "status": "unresolved",
+      "frame_id": "oatof_global",
+      "translation_mm": null,
+      "rotation_component_to_instrument": null
+    },
+    "derived_target_from_source_pose": {
+      "status": "unresolved",
+      "translation_mm": null,
+      "rotation_source_to_target": null,
+      "policy": "Derive from the two component poses; never maintain an independently editable duplicate transform."
+    },
+    "rigid_transform_rules": {
+      "position": "position_target = rotation_source_to_target * position_source + translation_mm",
+      "velocity": "velocity_target = rotation_source_to_target * velocity_source",
+      "time": "instrument_time_us is unchanged by a coordinate transform",
+      "rotation_requirement": "orthonormal right-handed matrix with determinant +1",
+      "physical_policy": "A transform registers coordinate frames only; it may not teleport particles across the physical connector gap."
+    },
+    "alignment_variables": {
+      "status": "candidate_variables_without_frozen_values_or_tolerances",
+      "nominal_translation": ["offset_x_mm", "offset_y_mm", "offset_z_mm"],
+      "nominal_rotation": ["roll_deg", "pitch_deg", "yaw_deg"],
+      "assembly_error_translation": ["delta_x_mm", "delta_y_mm", "delta_z_mm"],
+      "assembly_error_rotation": ["delta_roll_deg", "delta_pitch_deg", "delta_yaw_deg"],
+      "acceptance_policy": "Evaluate alignment errors through the frozen connector and downstream capture model; do not compensate by moving the source distribution in post-processing."
+    }
+  },
   "connector": {
     "status": "unresolved",
+    "spatial_responsibilities": [
+      "realize the physical separation and relative angle between source exit and target entry",
+      "provide mechanical alignment or physical steering and focusing elements when required",
+      "transport particles through the full displaced geometry without coordinate teleportation"
+    ],
     "required_physics": [
       "RF exit fringe field",
       "physical gap and apertures",
@@ -162,6 +205,8 @@
   "package_generation_allowed": false,
   "open_blockers": [
     "target_entry_surface_unresolved",
+    "relative_component_pose_unresolved",
+    "alignment_tolerances_unresolved",
     "connector_geometry_and_fields_unresolved",
     "pulse_capture_volume_unresolved",
     "pulse_waveform_unresolved",

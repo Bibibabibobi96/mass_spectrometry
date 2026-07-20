@@ -68,7 +68,8 @@
   [`config/rf_to_oatof_interface_candidate.json`](config/rf_to_oatof_interface_candidate.json)、
   [`analysis/build_interface_handoff.py`](analysis/build_interface_handoff.py)。它把RF出口面、尚未冻结的
   oa入口面和脉冲时刻捕获状态分开；canonical CSV只保存每粒子一次带全局时间的出口相空间事件，
-  三维快照和求解器输入均按需派生。该候选只通过静态合同门禁，不授权物理连接或运行打包。
+  三维快照和求解器输入均按需派生。RF与oa在统一仪器坐标中的位姿分别冻结，相对平移/转角只能由
+  两者派生；坐标变换不代替连接器内的真实输运。该候选只通过静态合同门禁，不授权物理连接或运行打包。
 - 路径解析：[`rf_quadrupole_paths.m`](rf_quadrupole_paths.m)
 
 大型 MPH、PA、IOB、Fly2 输出和图像一律放在

@@ -40,6 +40,34 @@ class InterfaceContractTests(unittest.TestCase):
         self.assertNotIn("rf_phase_rad", MODULE.EVENT_COLUMNS)
         self.assertNotIn("divergence_angle_deg", MODULE.EVENT_COLUMNS)
 
+    def test_relative_pose_is_unresolved_and_not_duplicated(self) -> None:
+        registration = MODULE.validate_contract(CONTRACT)["contract"]["spatial_registration"]
+        self.assertEqual(registration["status"], "unresolved")
+        self.assertIsNone(registration["source_component_pose"]["translation_mm"])
+        self.assertIsNone(registration["target_component_pose"]["translation_mm"])
+        self.assertIsNone(registration["derived_target_from_source_pose"]["translation_mm"])
+        self.assertIn("teleport", registration["rigid_transform_rules"]["physical_policy"])
+
+    def test_relative_pose_is_derived_from_component_poses(self) -> None:
+        identity = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+        relative = MODULE.derive_target_from_source_pose(
+            identity, [10.0, 2.0, 0.0], identity, [4.0, -1.0, 0.0]
+        )
+        self.assertEqual(relative["rotation_source_to_target"], identity)
+        self.assertEqual(relative["translation_mm"], [6.0, 3.0, 0.0])
+
+    def test_rigid_transform_rotates_velocity_but_only_translates_position(self) -> None:
+        rotation = [[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]
+        transformed = MODULE.transform_phase_space(
+            [1.0, 0.0, 0.0], [100.0, 0.0, 0.0], rotation, [10.0, 20.0, 30.0]
+        )
+        self.assertEqual(transformed["position_mm"], [10.0, 21.0, 30.0])
+        self.assertEqual(transformed["velocity_m_s"], [0.0, 100.0, 0.0])
+        with self.assertRaisesRegex(ValueError, "right handed"):
+            MODULE.validate_rotation_matrix(
+                [[-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+            )
+
     def test_time_rebase_and_field_free_snapshot(self) -> None:
         event = {
             "instrument_time_us": 12.0,

@@ -42,6 +42,87 @@ def project_path(value: str) -> Path:
     return (PROJECT_ROOT / value).resolve()
 
 
+def _vector3(values: list[float], label: str) -> list[float]:
+    if len(values) != 3:
+        raise ValueError(f"{label} must contain three values")
+    vector = [float(value) for value in values]
+    if not all(math.isfinite(value) for value in vector):
+        raise ValueError(f"{label} must be finite")
+    return vector
+
+
+def transpose3(matrix: list[list[float]]) -> list[list[float]]:
+    return [[matrix[row][column] for row in range(3)] for column in range(3)]
+
+
+def matmul3(left: list[list[float]], right: list[list[float]]) -> list[list[float]]:
+    return [
+        [sum(left[row][k] * right[k][column] for k in range(3)) for column in range(3)]
+        for row in range(3)
+    ]
+
+
+def validate_rotation_matrix(matrix: list[list[float]]) -> list[list[float]]:
+    if len(matrix) != 3 or any(len(row) != 3 for row in matrix):
+        raise ValueError("rotation must be a 3x3 matrix")
+    rotation = [[float(value) for value in row] for row in matrix]
+    if not all(math.isfinite(value) for row in rotation for value in row):
+        raise ValueError("rotation values must be finite")
+    for row in range(3):
+        for other in range(3):
+            dot = sum(rotation[row][k] * rotation[other][k] for k in range(3))
+            expected = 1.0 if row == other else 0.0
+            if not math.isclose(dot, expected, rel_tol=0.0, abs_tol=1e-12):
+                raise ValueError("rotation must be orthonormal")
+    if not math.isclose(legacy.determinant3(rotation), 1.0, rel_tol=0.0, abs_tol=1e-12):
+        raise ValueError("rotation must be right handed with determinant +1")
+    return rotation
+
+
+def derive_target_from_source_pose(
+    source_rotation_to_instrument: list[list[float]],
+    source_translation_mm: list[float],
+    target_rotation_to_instrument: list[list[float]],
+    target_translation_mm: list[float],
+) -> dict[str, list[float] | list[list[float]]]:
+    """Derive the only source-to-target transform from two component poses."""
+
+    source_rotation = validate_rotation_matrix(source_rotation_to_instrument)
+    target_rotation = validate_rotation_matrix(target_rotation_to_instrument)
+    source_translation = _vector3(source_translation_mm, "source translation")
+    target_translation = _vector3(target_translation_mm, "target translation")
+    instrument_to_target = transpose3(target_rotation)
+    relative_rotation = matmul3(instrument_to_target, source_rotation)
+    relative_translation = legacy.matvec(
+        instrument_to_target,
+        [source_translation[index] - target_translation[index] for index in range(3)],
+    )
+    validate_rotation_matrix(relative_rotation)
+    return {
+        "rotation_source_to_target": relative_rotation,
+        "translation_mm": relative_translation,
+    }
+
+
+def transform_phase_space(
+    position_mm: list[float],
+    velocity_m_s: list[float],
+    rotation_source_to_target: list[list[float]],
+    translation_mm: list[float],
+) -> dict[str, list[float]]:
+    """Register one state between frames without modeling physical transport."""
+
+    rotation = validate_rotation_matrix(rotation_source_to_target)
+    position = _vector3(position_mm, "position")
+    velocity = _vector3(velocity_m_s, "velocity")
+    translation = _vector3(translation_mm, "translation")
+    rotated_position = legacy.matvec(rotation, position)
+    return {
+        "position_mm": [rotated_position[index] + translation[index] for index in range(3)],
+        "velocity_m_s": legacy.matvec(rotation, velocity),
+    }
+
+
 def validate_contract(contract_path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
     contract = load_json(contract_path)
     if contract.get("schema_version") != 2:
@@ -82,6 +163,26 @@ def validate_contract(contract_path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
         raise ValueError("pulse snapshots must remain derived on demand")
     if contract["time_control"]["pulse_waveform"].get("status") != "unresolved":
         raise ValueError("pulse waveform may not be implied by the present static oaTOF model")
+
+    registration = contract["spatial_registration"]
+    if registration.get("status") != "unresolved":
+        raise ValueError("component poses must remain unresolved before mechanical placement is frozen")
+    for key in ("source_component_pose", "target_component_pose"):
+        pose = registration[key]
+        if pose.get("status") != "unresolved":
+            raise ValueError("component pose unexpectedly claims to be resolved")
+        if pose.get("translation_mm") is not None or pose.get("rotation_component_to_instrument") is not None:
+            raise ValueError("unresolved component pose must not contain nominal coordinates")
+    relative_pose = registration["derived_target_from_source_pose"]
+    if relative_pose.get("status") != "unresolved":
+        raise ValueError("relative pose must be derived only after both component poses are frozen")
+    if relative_pose.get("translation_mm") is not None or relative_pose.get("rotation_source_to_target") is not None:
+        raise ValueError("unresolved relative pose must not contain a duplicate transform")
+    if "teleport" not in registration["rigid_transform_rules"].get("physical_policy", ""):
+        raise ValueError("coordinate registration must explicitly prohibit particle teleportation")
+    alignment = registration["alignment_variables"]
+    if alignment.get("status") != "candidate_variables_without_frozen_values_or_tolerances":
+        raise ValueError("alignment variables must remain untoleranced candidates")
 
     required_columns = contract["state_transfer"]["required_columns"]
     lineage_columns = contract["state_transfer"]["lineage_columns_when_available"]
