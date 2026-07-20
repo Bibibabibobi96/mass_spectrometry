@@ -1,17 +1,30 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "mode": "mass_filter_reference",
   "status": "frozen_future_mode_not_yet_validated",
   "source": "SIMION 2020 examples/quad/quad.lua defaults",
+  "theory_contract": {
+    "model_level": "L0",
+    "field_model_id": "quadrupole.ideal_linear.mathieu.v1",
+    "coordinate_convention_id": "multipole.cartesian.z_axis.v1",
+    "voltage_convention_id": "multipole.pair_about_common_mode.zero_to_peak.v1",
+    "voltage": {
+      "reference": "one_rod_group_about_axis_common_mode",
+      "amplitude_type": "zero_to_peak",
+      "polarity_groups": ["axis_offset_plus_W", "axis_offset_minus_W"],
+      "waveform": "sinusoidal"
+    }
+  },
   "rf": {
     "frequency_Hz": 1100000.0,
     "phase_deg": 0.0,
-    "effective_radius_cm": 0.4,
-    "tune_mass_amu_per_charge": 100.0,
+    "effective_radius_mm": 4.0,
+    "tune_mass_Th": 100.0,
     "percent_tune": 97.0,
-    "rf_amplitude_V_peak": 139.81792,
-    "dc_differential_V": 22.763014939677756,
-    "axis_offset_V": -8.0
+    "apex_U_over_V_reference": 0.1678399,
+    "amplitude_V_zero_to_peak_per_group": 139.81792,
+    "dc_amplitude_V_per_group": 22.763014939677756,
+    "axis_common_mode_offset_V": -8.0
   },
   "static_electrodes_V": {
     "entrance_plate": 0.0,

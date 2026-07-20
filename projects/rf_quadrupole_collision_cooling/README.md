@@ -39,6 +39,8 @@
 - 命名粒子表生成器：[`analysis/generate_interface_particle_table.py`](analysis/generate_interface_particle_table.py)，
   用固定种子生成任意 N 的可追溯 ION 表与元数据；求解器不得各自随机生成接口粒子。
 - 预留质量过滤模式：[`config/modes/mass_filter_reference.json`](config/modes/mass_filter_reference.json)
+- 求解器无关四极杆 L0 参考计算：[`analysis/quadrupole_l0.py`](analysis/quadrupole_l0.py)；只校验理想
+  Mathieu 稳定区、质量尺度和预留模式的电压合同，不证明质量峰、透过率或求解器资格。
 - COMSOL 候选生产入口：[`comsol/ms_rf_quadrupole_no_collision.m`](comsol/ms_rf_quadrupole_no_collision.m)
 - 旧`comsol/ms_rf_quadrupole_collision_cooling.m`现为拒绝执行的兼容短桩；其150 mm旧几何、硬编码
   连接和未验证碰撞模型不得恢复为当前入口。未来碰撞模式必须从共享契约重新建立。
@@ -83,7 +85,7 @@ rf_quadrupole_collision_cooling/
 
 | 层级 | 回答的问题 | 当前状态 |
 |---|---|---|
-| Static | 源配置与解析发布是否同步、GEM是否同步、固定粒子表、分析测试和PowerShell入口语法是否通过 | 可执行 |
+| Static | 源配置与解析发布是否同步、GEM是否同步、固定粒子表、四极杆L0理论/电压合同、分析测试和PowerShell入口语法是否通过 | 可执行 |
 | Candidate | 指定mode的两份成功manifest、统一事件表和跨求解器功能指标是否通过 | 可执行；接口N=100已有有效FAIL证据 |
 | Formal | 机械正式几何、SolidWorks装配与求解器资产是否同任务同步并复验 | 固定阻断，直到正式机械几何被选定 |
 

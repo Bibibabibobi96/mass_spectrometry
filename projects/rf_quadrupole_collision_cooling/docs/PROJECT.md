@@ -48,6 +48,14 @@ source与权威ION表逐值一致，杆端85.4 mm和交接面90.2 mm坐标严格
 过滤四极杆实例化同一硬件模板，分别绑定 `transport_no_collision` 与 `mass_filter_reference` 配置和空间
 变换；不复制两套近似几何。质量过滤配置目前只冻结官方参考值，尚未验证。
 
+2026-07-20新增项目内求解器无关 L0 参考实现`../analysis/quadrupole_l0.py`，按根多极杆理论计算
+Mathieu参数、第一稳定区尖点、RF-only截止、固定`U/V`通带和质量尺度，并由Static门禁运行理论向量。
+审计确认SIMION官方例程的`22.7630149397 V`是单杆组相对`-8 V`公共偏置的DC幅值`U`，不是两组间
+差值；机器字段已改为`dc_amplitude_V_per_group`，对应组间DC差值为`45.5260298794 V`。同一合同下
+100 Th处`q=0.7060233010`、`a=0.2298878277`，扫描线`U/V=0.162804703`的理想稳定区
+`q_in=0.682729174`、`q_out=0.710802209`、`R_stab=24.8197`。这些只闭合L0公式和电压语义，未运行
+质量扫描、未验证质量峰/透过率，也不改变该mode的`frozen_future_mode_not_yet_validated`状态。
+
 参数发布执行单向链：人工只修改`baseline.json`、粒子源、mode和接口契约；
 `resolve_contract.py`生成解析发布，MATLAB通过`load_rf_quadrupole_contract.m`读取并检查派生关系，
 `sync_simion_geometry.py`从同一解析发布生成两份GEM。SIMION安装目录的官方例程只作为几何来源证据，

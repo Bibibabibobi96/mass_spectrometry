@@ -24,6 +24,8 @@ if ($LASTEXITCODE -ne 0) { throw 'SIMION geometry publication gate failed.' }
 & $python (Join-Path $projectRoot 'analysis\generate_official_particle_table.py') --check `
   (Join-Path $projectRoot 'config\particles\official_fixed_25.ion')
 if ($LASTEXITCODE -ne 0) { throw 'Paired-particle identity gate failed.' }
+& $python (Join-Path $projectRoot 'analysis\quadrupole_l0.py') --check-mode
+if ($LASTEXITCODE -ne 0) { throw 'Quadrupole L0 reference gate failed.' }
 & $python -m unittest discover -s (Join-Path $projectRoot 'tests\analysis') -p 'test_*.py'
 if ($LASTEXITCODE -ne 0) { throw 'Python analysis tests failed.' }
 $parseErrors = @()
