@@ -26,11 +26,27 @@ class InterfaceContractTests(unittest.TestCase):
         contract = MODULE.validate_contract(CONTRACT)["contract"]
         boundaries = contract["boundaries"]
         self.assertEqual(boundaries["source_exit_surface"]["status"], "defined_by_source_component")
-        self.assertEqual(boundaries["target_entry_surface"]["status"], "unresolved")
+        self.assertEqual(
+            boundaries["target_entry_surface"]["status"],
+            "blocked_by_closed_accelerator_shield",
+        )
+        self.assertIsNone(boundaries["target_entry_surface"]["physical_aperture"])
+        self.assertFalse(boundaries["target_entry_surface"]["reference_surface_is_an_opening"])
         self.assertEqual(boundaries["pulse_capture_state"]["status"], "unresolved")
         self.assertFalse(boundaries["pulse_capture_state"]["stored_by_default"])
         self.assertFalse(contract["target_reference_distribution"]["hard_acceptance"])
         self.assertFalse(contract["package_generation_allowed"])
+
+    def test_target_entry_reference_is_derived_from_the_closed_shield(self) -> None:
+        validated = MODULE.validate_contract(CONTRACT)
+        reference = MODULE.derive_oatof_entry_reference(validated["target_baseline"])
+        self.assertEqual(reference["center_mm"], [-67.8, 0.0, -18.42918680341103])
+        self.assertEqual(reference["shield_inner_face_x_mm"], -63.8)
+        self.assertEqual(reference["shield_outer_face_x_mm"], -67.8)
+        self.assertEqual(reference["shield_wall_thickness_mm"], 4.0)
+        audit = validated["contract"]["connector"]["target_entry_topology_audit"]
+        self.assertEqual(audit["status"], "FAIL")
+        self.assertIn("no physical +x injection opening", audit["conclusion"])
 
     def test_canonical_columns_exclude_derived_quantities(self) -> None:
         contract = MODULE.validate_contract(CONTRACT)["contract"]

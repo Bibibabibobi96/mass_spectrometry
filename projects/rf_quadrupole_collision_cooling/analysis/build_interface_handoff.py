@@ -42,6 +42,34 @@ def project_path(value: str) -> Path:
     return (PROJECT_ROOT / value).resolve()
 
 
+def derive_oatof_entry_reference(target_baseline: dict[str, Any]) -> dict[str, Any]:
+    """Locate the blocked +x entry reference on the current closed shield."""
+
+    geometry = target_baseline["geometry_mm"]
+    source = target_baseline["particle_source"]
+    axis_x = float(target_baseline["coordinate_convention"]["accelerator_axis_x"])
+    inner_half = sum(float(geometry[key]) for key in (
+        "accelerator_bore_half",
+        "accelerator_ring_width",
+        "accelerator_insulation_gap",
+    ))
+    wall = float(geometry["accelerator_shield_wall"])
+    outer_half = inner_half + wall
+    return {
+        "center_mm": [
+            axis_x - outer_half,
+            float(source["center_y_mm"]),
+            float(source["center_z_mm"]),
+        ],
+        "shield_inner_face_x_mm": axis_x - inner_half,
+        "shield_outer_face_x_mm": axis_x - outer_half,
+        "shield_inner_half_width_mm": inner_half,
+        "shield_outer_half_width_mm": outer_half,
+        "shield_wall_thickness_mm": wall,
+        "incoming_axis": "+x",
+    }
+
+
 def _vector3(values: list[float], label: str) -> list[float]:
     if len(values) != 3:
         raise ValueError(f"{label} must contain three values")
@@ -157,8 +185,30 @@ def validate_contract(contract_path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
             raise ValueError("target reference distribution differs from the oaTOF baseline")
     if target_reference.get("hard_acceptance") is not False:
         raise ValueError("the oaTOF formal release distribution is not a hard acceptance")
-    if contract["boundaries"]["target_entry_surface"].get("status") != "unresolved":
-        raise ValueError("target entry must remain unresolved until physical geometry is frozen")
+    target_entry = contract["boundaries"]["target_entry_surface"]
+    if target_entry.get("status") != "blocked_by_closed_accelerator_shield":
+        raise ValueError("target entry must expose the closed-shield topology blocker")
+    entry_reference = derive_oatof_entry_reference(target_baseline)
+    if not all(
+        math.isclose(float(actual), float(expected), rel_tol=0.0, abs_tol=1e-12)
+        for actual, expected in zip(target_entry["center_mm"], entry_reference["center_mm"])
+    ):
+        raise ValueError("target entry reference center differs from the oaTOF baseline")
+    for key in ("shield_inner_face_x_mm", "shield_outer_face_x_mm", "shield_wall_thickness_mm"):
+        if not math.isclose(float(target_entry[key]), float(entry_reference[key]), rel_tol=0.0, abs_tol=1e-12):
+            raise ValueError("target entry shield reference differs from the oaTOF baseline")
+    if target_entry.get("physical_aperture") is not None:
+        raise ValueError("the current closed shield must not claim a physical entry aperture")
+    if target_entry.get("reference_surface_is_an_opening") is not False:
+        raise ValueError("the target reference plane is blocked by solid shield material")
+    connector = contract["connector"]
+    if connector.get("status") != "blocked_by_target_shield_topology":
+        raise ValueError("connector must remain blocked by the missing target entry port")
+    topology_audit = connector["target_entry_topology_audit"]
+    if topology_audit.get("status") != "FAIL":
+        raise ValueError("closed target shield must remain a failed topology audit")
+    if any(not topology_audit.get(key) for key in ("comsol", "simion", "cad", "conclusion")):
+        raise ValueError("target entry topology audit must cover COMSOL, SIMION and CAD")
     if contract["boundaries"]["pulse_capture_state"].get("stored_by_default") is not False:
         raise ValueError("pulse snapshots must remain derived on demand")
     if contract["time_control"]["pulse_waveform"].get("status") != "unresolved":

@@ -78,12 +78,21 @@
       "policy": "Export every qualifying source-exit event; never clip it with a downstream reference distribution."
     },
     "target_entry_surface": {
-      "status": "unresolved",
+      "status": "blocked_by_closed_accelerator_shield",
       "frame_id": "oatof_global",
-      "geometry": null,
+      "geometry": "plane_on_negative_x_outer_shield_face",
+      "center_mm": [-67.8, 0.0, -18.42918680341103],
+      "incoming_axis": "+x",
+      "outward_normal": [-1.0, 0.0, 0.0],
+      "shield_inner_face_x_mm": -63.8,
+      "shield_outer_face_x_mm": -67.8,
+      "shield_wall_thickness_mm": 4.0,
       "physical_aperture": null,
+      "reference_derivation": "outer_face_x = accelerator_axis_x - (accelerator_bore_half + accelerator_ring_width + accelerator_insulation_gap + accelerator_shield_wall); y and z use the formal source center",
+      "reference_surface_is_an_opening": false,
       "required_before_runtime": [
-        "mechanical entry surface and aperture",
+        "parameterized side-port cut through the accelerator shield",
+        "physical entry aperture and grounded injection-tube geometry",
         "source-to-target rigid transform",
         "common electrostatic potential reference",
         "connector field ownership"
@@ -141,12 +150,19 @@
     }
   },
   "connector": {
-    "status": "unresolved",
+    "status": "blocked_by_target_shield_topology",
     "spatial_responsibilities": [
       "realize the physical separation and relative angle between source exit and target entry",
       "provide mechanical alignment or physical steering and focusing elements when required",
       "transport particles through the full displaced geometry without coordinate teleportation"
     ],
+    "target_entry_topology_audit": {
+      "status": "FAIL",
+      "comsol": "accelshield is one outer Block minus one inner Block, leaving continuous x/y side walls and an integrated rear cap; no side-port subtraction exists",
+      "simion": "the grounded accelerator electrode is an outer centered box minus an inner centered box plus a rear closure; no lateral port is removed",
+      "cad": "the COMSOL accelshield Difference is exported as one accelerator_shield solid, so CAD inherits the closed side wall",
+      "conclusion": "The present formal analyzer has no physical +x injection opening. A connector alone outside the shield cannot deliver particles into the release region."
+    },
     "required_physics": [
       "RF exit fringe field",
       "physical gap and apertures",
@@ -204,7 +220,8 @@
   },
   "package_generation_allowed": false,
   "open_blockers": [
-    "target_entry_surface_unresolved",
+    "target_accelerator_shield_has_no_injection_port",
+    "target_entry_aperture_unresolved",
     "relative_component_pose_unresolved",
     "alignment_tolerances_unresolved",
     "connector_geometry_and_fields_unresolved",
