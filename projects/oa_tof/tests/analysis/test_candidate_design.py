@@ -21,6 +21,7 @@ from candidate_run_lifecycle import finalize_candidate_run, start_candidate_run
 from run_candidate_workflow import (
     CandidateWorkflowError,
     CandidateWorkflowInterrupted,
+    _powershell,
     execute_stage,
     run_candidate_workflow,
 )
@@ -209,11 +210,18 @@ class CandidateDesignTests(unittest.TestCase):
             artifact_root = root_path / "artifacts" / "projects" / "oa_tof"
             run_id = "20260720_120000__build__cross__design-candidate__zero-change"
             plan = prepare_candidate_run(*inputs, run_id, artifact_root)
-            run_root = artifact_root / "runs" / run_id
+            expected_run_root = artifact_root / "runs" / run_id
+            run_root = Path(plan["run_root"])
             planning_root = Path(plan["planning_root"])
-            self.assertEqual(Path(plan["run_root"]), run_root)
-            self.assertFalse(run_root.exists())
-            planning_root.relative_to(artifact_root / "scratch")
+            # GitHub Windows runners may expose the same temporary directory
+            # through long and 8.3 path aliases.  Compare the existing project
+            # root by file identity, then verify the not-yet-created suffix.
+            self.assertTrue(run_root.parents[1].samefile(artifact_root))
+            self.assertEqual(run_root.parent.name, "runs")
+            self.assertEqual(run_root.name, run_id)
+            self.assertFalse(expected_run_root.exists())
+            self.assertTrue(planning_root.parents[1].samefile(artifact_root))
+            self.assertEqual(planning_root.parent.name, "scratch")
             self.assertFalse(plan["formal_root"]["mutation_allowed"])
             self.assertFalse(plan["promotion"]["included"])
             self.assertFalse(plan["promotion"]["automatic"])
@@ -222,6 +230,8 @@ class CandidateDesignTests(unittest.TestCase):
                 for key in ("model_path", "output_dir", "report_path"):
                     if key in stage:
                         Path(stage[key]).resolve().relative_to(run_root.resolve())
+            comsol_stage = next(stage for stage in plan["stages"] if stage["stage_id"] == "comsol_candidate")
+            self.assertEqual(Path(comsol_stage["environment"]["OATOF_RUNTIME_DIR"]), run_root / "comsol")
             self.assertTrue((planning_root / "run_config.template.json").is_file())
             self.assertTrue((planning_root / "candidate_workflow_plan.json").is_file())
             with self.assertRaisesRegex(FileExistsError, "overwrite is forbidden"):
@@ -435,6 +445,11 @@ class CandidateDesignTests(unittest.TestCase):
             Path(files["ion_n100"]).write_text("different", encoding="utf-8")
             with self.assertRaisesRegex(RuntimeError, "particle tables differ"):
                 execute_stage(stage, plan, "unused")
+
+    def test_integrated_runner_uses_powershell_7(self):
+        command = _powershell("task.ps1", ["-Value", "test"])
+        self.assertEqual(command[0], "pwsh.exe")
+        self.assertEqual(command[-3:], ["task.ps1", "-Value", "test"])
 
 
 if __name__ == "__main__":

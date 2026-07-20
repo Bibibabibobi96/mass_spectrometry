@@ -145,6 +145,7 @@ def prepare_candidate_run(
                     "OATOF_CANDIDATE_CONTRACT_PATH": str(frozen["candidate_resolved_geometry.json"]),
                     "OATOF_CANDIDATE_MODEL_PATH": str(comsol_model),
                     "OATOF_CANDIDATE_ION_PATH": str(candidate_ion),
+                    "OATOF_RUNTIME_DIR": str(run_root / "comsol"),
                 },
             },
             {

@@ -33,7 +33,10 @@ class CandidateWorkflowInterrupted(KeyboardInterrupt):
 
 
 def _powershell(entrypoint: str, arguments: list[str]) -> list[str]:
-    return ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", entrypoint, *arguments]
+    # The shared COMSOL launcher uses ProcessStartInfo.ArgumentList, which is
+    # unavailable under Windows PowerShell 5.1.  Keep integrated commercial
+    # workflows on the repository's PowerShell 7 runtime.
+    return ["pwsh.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", entrypoint, *arguments]
 
 
 def _run_command(command: list[str], log_path: Path, environment: dict[str, str] | None = None) -> None:
