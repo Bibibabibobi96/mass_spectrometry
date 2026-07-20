@@ -16,6 +16,8 @@
 
 ## 权威入口
 
+- 多极杆通用坐标、电压、Mathieu稳定区、碰撞模型和适用边界：仓库根
+  [`docs/multipoles/index.md`](../../docs/multipoles/index.md)；该理论包不覆盖本项目当前参数或状态。
 - 当前具体四极杆项目的机器身份、能力和成熟度：[`config/project.json`](config/project.json)；多级杆设计族不在本项目内虚构子项目。
 - 现有入口可执行范围和组合命令链：[`config/execution_profiles.json`](config/execution_profiles.json)。
 - 共享几何契约：[`config/baseline.json`](config/baseline.json)
