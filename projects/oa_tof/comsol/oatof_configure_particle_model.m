@@ -293,7 +293,7 @@ tstep.label('Transient solver');
 % be numerically identical to the high-precision reference while reducing
 % the particle solve by 2.89x and 1.77x (relative to the 1 ns segmented run).
 timing = configure_oatof_segmented_output( ...
-    model, mass_amu, fine_tstep_ns, drift_tstep_ns);
+    model, mass_amu, fine_tstep_ns, drift_tstep_ns, contract);
 expected_tof = timing.expected_tof_s;
 fine_start = timing.t_refl_start_s;
 fine_end = timing.t_detector_end_s;

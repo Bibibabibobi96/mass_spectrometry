@@ -32,8 +32,9 @@ def number(value: float | int | bool) -> str:
     return repr(float(value))
 
 
-def load_contract() -> dict:
-    contract = resolve_contract()
+def validate_resolved_contract(contract: dict) -> dict:
+    if contract.get("schema_version") != 1 or contract.get("role") != "oa_tof_resolved_contract_do_not_edit":
+        raise ValueError("unsupported oa-TOF resolved contract")
     geometry = contract["geometry_mm"]
     accelerator = contract["geometry_derivation"]["accelerator"]
     checks = {
@@ -63,6 +64,12 @@ def load_contract() -> dict:
         if not math.isclose(actual, expected, rel_tol=0.0, abs_tol=1e-10):
             raise ValueError(f"inconsistent {label}: {actual} != {expected}")
     return contract
+
+
+def load_contract(contract_path: Path | None = None) -> dict:
+    if contract_path is None:
+        return validate_resolved_contract(resolve_contract())
+    return validate_resolved_contract(json.loads(contract_path.read_text(encoding="utf-8")))
 
 
 def lua_value(value: object, indent: int = 0) -> str:

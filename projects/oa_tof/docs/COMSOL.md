@@ -26,6 +26,11 @@ Desktop查看、修改和Compute；仅脚本内存状态通过不算验收。
 `run_oatof_model.m`新增`OutputModelPath`，候选必须显式写入COMSOL模型根目录内的`.mph`，不再
 依赖脚本内部固定正式路径。
 
+2026-07-20又增加可选`ContractPath`：省略时仍严格读取正式`config/resolved_geometry.json`；指定时，
+上层默认值、底层模型树构建器和分段时间窗口共同消费该resolved候选，避免底层重新混入正式合同。
+静态准备器只生成调用计划，不代表MPH已经构建或GUI Compute已经通过；候选仍须写入run/scratch，
+并完成模型树、求解与重开门禁。
+
 模块化候选直接使用统一N=100检查档完整构建，并从保存后的MPH执行`std1/std2` GUI Compute。
 重开检查确认`sol1/sol2`及`dset1/pdset1`关联；参数、几何、选择集、335972个四面体、5个数据集
 和7个绘图组通过同步门禁。相对拆分前正式MPH，两边100/100命中，平均TOF差`1.30 ps`，逐粒子

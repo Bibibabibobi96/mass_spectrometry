@@ -39,7 +39,7 @@
       ],
       "limitations": [
         "Uses the five fixed species and current geometry declared by config/modes/mass_spectrum.json",
-        "The static candidate compiler exists, but this runner does not yet consume its candidate baseline/resolved outputs",
+        "Static candidate compilation and consumer preparation exist, but this runner does not yet execute their candidate COMSOL, SIMION, or CAD plan",
         "Does not produce a new SIMION package or CAD assembly"
       ]
     },

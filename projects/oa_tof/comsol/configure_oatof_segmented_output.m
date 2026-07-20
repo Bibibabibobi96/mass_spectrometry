@@ -1,4 +1,4 @@
-function timing = configure_oatof_segmented_output(model, mass_amu, fine_step_ns, drift_step_ns)
+function timing = configure_oatof_segmented_output(model, mass_amu, fine_step_ns, drift_step_ns, contract)
 %CONFIGURE_OATOF_SEGMENTED_OUTPUT Persist GUI-visible oa-TOF time windows.
 % Event times are derived from the same mass, voltage and length parameters
 % used by the physical model. Fine-window boundaries are aligned to one
@@ -10,10 +10,13 @@ arguments
     mass_amu (1,1) double {mustBePositive}
     fine_step_ns (1,1) double {mustBePositive}
     drift_step_ns (1,1) double {mustBePositive}
+    contract = []
 end
 
 p = model.param;
-contract = load_oatof_contract();
+if nargin < 5 || isempty(contract)
+    contract = load_oatof_contract();
+end
 runtime = contract.comsol_runtime;
 p.set('ion_mass_amu', sprintf('%.12g', mass_amu), ...
     'Reference ion mass number for GUI-visible event-time formulas');

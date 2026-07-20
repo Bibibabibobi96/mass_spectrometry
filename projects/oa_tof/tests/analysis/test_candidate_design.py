@@ -15,6 +15,7 @@ sys.path.insert(0, str(REPO_ROOT / "common" / "contracts"))
 
 from compile_candidate_design import EnvelopeReviewRequired, compile_proposal, write_candidate
 from machine_contracts import load_json, sha256
+from prepare_candidate_consumers import prepare, verify_routing_coverage
 
 
 class CandidateDesignTests(unittest.TestCase):
@@ -133,6 +134,52 @@ class CandidateDesignTests(unittest.TestCase):
         request["design_variables"] = ["flight_length"]
         with self.assertRaisesRegex(EnvelopeReviewRequired, "NEEDS_ENVELOPE_REVIEW"):
             self.compile(request, [{"variable": "flight_length", "value": 700.0, "unit": "mm"}])
+
+    def test_zero_change_candidate_generates_formal_equivalent_simion_text(self):
+        with tempfile.TemporaryDirectory() as root:
+            output = Path(root) / "prepared"
+            plan = prepare(PROJECT_ROOT / "config" / "resolved_geometry.json", output)
+            formal = PROJECT_ROOT / "simion" / "workbench" / "formal"
+            self.assertEqual(
+                (output / "simion" / "oatof_resolved.lua").read_text(encoding="utf-8"),
+                (formal / "oatof_resolved.lua").read_text(encoding="utf-8"),
+            )
+            self.assertEqual(
+                (output / "simion" / "oatof_ideal_grounded.lua").read_text(encoding="utf-8"),
+                (formal / "oatof_ideal_grounded.lua").read_text(encoding="utf-8"),
+            )
+            self.assertEqual(
+                (output / "simion" / "oatof_ideal_grounded.fly2").read_text(encoding="utf-8"),
+                (formal / "oatof_ideal_grounded.fly2").read_text(encoding="utf-8"),
+            )
+            self.assertEqual(plan["status"], "STATIC_INPUTS_READY")
+            self.assertEqual(plan["consumers"]["comsol"]["runtime_status"], "not_run")
+            self.assertEqual(
+                plan["consumers"]["cad"]["arguments"]["modelPath"],
+                plan["consumers"]["comsol"]["arguments"]["OutputModelPath"],
+            )
+
+    def test_nonzero_candidate_routes_one_contract_to_all_consumers(self):
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            candidate = load_json(PROJECT_ROOT / "config" / "resolved_geometry.json")
+            candidate["geometry_mm"]["accelerator_ring_width"] = 6.0
+            contract_path = root_path / "candidate_resolved_geometry.json"
+            contract_path.write_text(json.dumps(candidate), encoding="utf-8")
+            plan = prepare(contract_path, root_path / "prepared")
+            program = Path(plan["consumers"]["simion"]["generated"]["program"]["path"])
+            self.assertIn("adjustable accelerator_ring_width_mm=6.0", program.read_text(encoding="utf-8"))
+            self.assertEqual(plan["candidate_contract"]["path"], str(contract_path.resolve()))
+            self.assertEqual(
+                plan["consumers"]["comsol"]["arguments"]["ContractPath"], str(contract_path.resolve())
+            )
+
+    def test_missing_consumer_route_is_rejected(self):
+        consumer_contract = load_json(PROJECT_ROOT / "config" / "candidate_consumers.json")
+        variable_catalog = load_json(PROJECT_ROOT / "config" / "design_variables.json")
+        del consumer_contract["consumers"]["cad"]
+        with self.assertRaisesRegex(ValueError, "candidate consumer routing is incomplete"):
+            verify_routing_coverage(consumer_contract, variable_catalog)
 
 
 if __name__ == "__main__":

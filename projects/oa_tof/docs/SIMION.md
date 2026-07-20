@@ -23,6 +23,11 @@
 - 当前日常IOB、正式COMSOL MPH和SolidWorks装配体已经通过共享几何门禁；SIMION网格收敛参考仍
   保持候选角色，不得误写成第二套正式几何。
 
+任意设计候选先由`analysis/prepare_candidate_consumers.py`从同一
+`candidate_resolved_geometry.json`生成隔离的`oatof_resolved.lua`、Program和Fly2；正式文本保持不变。
+零改动回归要求三份生成文本与正式版本逐字一致。该步骤尚未Refine PA、建立IOB或Fly，因此只标记
+`text_generated_pa_iob_not_built`，不能作为SIMION候选运行通过的证据。
+
 稳定实现入口以`config/simion_stable_entry.json`冻结：0.05mm是正式可移植交付，0.025mm仅作轴向
 网格收敛参考。该清单记录外部资产路径、大小和SHA-256，不重复维护物理参数；物理
 参数仍以`config/baseline.json`为唯一来源。每次移动、重建或打包SIMION资产后运行：

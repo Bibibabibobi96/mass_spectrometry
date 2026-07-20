@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "role": "oa_tof_candidate_consumer_contract",
+  "project_id": "oa_tof",
+  "coverage_semantics": "static_input_routing_only",
+  "consumers": {
+    "comsol": {
+      "input": "candidate_resolved_geometry.json",
+      "entrypoint": "comsol/run_oatof_model.m",
+      "binding": "ContractPath",
+      "output": "candidate COMSOL MPH"
+    },
+    "simion": {
+      "input": "candidate_resolved_geometry.json",
+      "entrypoint": "analysis/prepare_candidate_consumers.py",
+      "binding": "generated self-contained Lua and Fly2",
+      "output": "candidate SIMION text package"
+    },
+    "cad": {
+      "input": "candidate COMSOL MPH",
+      "entrypoint": "cad/ms_export_oatof_to_solidworks.m",
+      "binding": "modelPath",
+      "output": "candidate STEP and SolidWorks assembly"
+    }
+  },
+  "limitations": [
+    "This contract proves that candidate inputs are routed without modifying the formal baseline.",
+    "It does not prove that every downstream geometry feature changed correctly or that a solver/CAD run passed.",
+    "Runtime model-tree, SIMION PA/IOB, GUI Compute, and SolidWorks checks remain required before promotion."
+  ]
+}

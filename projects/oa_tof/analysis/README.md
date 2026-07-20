@@ -24,6 +24,9 @@ py -3.11 -m venv .venv
 - 当前正式COMSOL/SIMION同源闭合记录：`../config/formal_validation.json`。
 - 三栅加速器一阶时间聚焦公式：`accelerator_time_focus.py`；输入为候选或正式JSON契约，公式来源为
   `../docs/theory/三栅加速器总长度符号推导.docx`。
+- 候选静态消费准备：`prepare_candidate_consumers.py --contract <candidate_resolved_geometry.json>
+  --output-dir <run-or-scratch-directory>`；生成SIMION Lua/Fly2和`candidate_consumption_plan.json`，其中
+  COMSOL直接绑定同一合同，CAD绑定由该合同构建的候选MPH。它不启动COMSOL、SIMION或SolidWorks。
 - 数值算法：`peak_metrics.py`。
 - 五质量标定、逐峰COMSOL/SIMION局部密度叠加和质心差汇总图：`mass_spectrum.py`。主图使用2×3布局，
   五个峰各自缩放局部质量偏差轴且共享各峰分箱，第六格只汇总跨求解器平均TOF差；全图图例明确

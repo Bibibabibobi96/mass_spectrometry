@@ -1,13 +1,17 @@
-function contract = load_oatof_contract()
+function contract = load_oatof_contract(contractPath)
 %LOAD_OATOF_CONTRACT Load the generated oa-TOF resolved machine contract.
 % Humans edit baseline.json and modes/formal.json; programs consume only
 % resolved_geometry.json so every language sees the same derived values.
 
 projectRoot = fileparts(mfilename('fullpath'));
-contractPath = fullfile(projectRoot, 'config', 'resolved_geometry.json');
+if nargin < 1 || strlength(string(contractPath)) == 0
+    contractPath = fullfile(projectRoot, 'config', 'resolved_geometry.json');
+end
+contractPath = char(contractPath);
 assert(isfile(contractPath), 'oatof:MissingResolvedContract', ...
-    ['Missing resolved_geometry.json. Run analysis/resolve_geometry.py ' ...
-     '--write before building a model.']);
+    ['Missing resolved contract "%s". Generate the formal contract with ' ...
+     'analysis/resolve_geometry.py --write or compile an isolated candidate.'], ...
+    contractPath);
 contract = jsondecode(fileread(contractPath));
 assert(contract.schema_version == 1 && ...
     strcmp(contract.role, 'oa_tof_resolved_contract_do_not_edit'), ...

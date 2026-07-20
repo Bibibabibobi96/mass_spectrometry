@@ -1,7 +1,10 @@
-function result = ms_oaTOF_two_stage_ringstack_reflectron(mass_amu, label, solver_mode, field_mode, d1_mm, n_rings2, mesh_hmax_refl_mm, bore_r_mm, ring_thickness_mm, n_particles, n_rings1, accel_bore_half_mm, fixed_particle_table, fine_tstep_ns, mesh_hmax_accel_mm, drift_tstep_ns, output_model_path)
+function result = ms_oaTOF_two_stage_ringstack_reflectron(mass_amu, label, solver_mode, field_mode, d1_mm, n_rings2, mesh_hmax_refl_mm, bore_r_mm, ring_thickness_mm, n_particles, n_rings1, accel_bore_half_mm, fixed_particle_table, fine_tstep_ns, mesh_hmax_accel_mm, drift_tstep_ns, output_model_path, contract_path)
 projectRoot = fileparts(fileparts(mfilename('fullpath')));
 addpath(projectRoot);
-contract = load_oatof_contract();
+if nargin < 18
+    contract_path = '';
+end
+contract = load_oatof_contract(contract_path);
 geometryMm = contract.geometry_mm;
 acceleratorDesign = contract.geometry_derivation.accelerator;
 reflectronDesign = contract.geometry_derivation.reflectron;
