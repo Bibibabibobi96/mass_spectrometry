@@ -21,7 +21,8 @@
 `docs/history/SIMION_VALIDATION.md`、`docs/history/SUPERSEDED_RESULTS.md`和
 `docs/history/NUMERICAL_VALIDATION_20260716_18.md`、
 `docs/history/COMSOL_EXTREME_N_CRASH_20260718_19.md`、
-`docs/history/COMSOL_EXTREME_N_CRASH_CLOSURE_20260719.md`。四份日常文档不再横向链接历史。
+`docs/history/COMSOL_EXTREME_N_CRASH_CLOSURE_20260719.md`、
+`docs/history/CANDIDATE_WORKFLOW_VALIDATION_20260720.md`。四份日常文档不再横向链接历史。
 
 ## 本项目的知识边界
 

@@ -35,6 +35,11 @@ Desktop查看、修改和Compute；仅脚本内存状态通过不算验收。
 和`runs/<run_id>/comsol/`候选MPH路径。同步验收器也可通过`OATOF_CONTRACT_PATH`按候选合同核对模型，
 电压不再固定写成正式值；省略该变量时仍按正式合同验收。
 
+集成候选执行器必须由PowerShell 7启动共享LiveLink入口，并把`OATOF_RUNTIME_DIR`指向本次
+`runs/<run_id>/comsol/`。前者是`ProcessStartInfo.ArgumentList`的运行时要求，后者用于保存固定粒子
+实际释放数据；缺少任一项都属于编排失败，不得误判为COMSOL求解器缺陷。2026-07-20零改动候选已按
+此路由完成真实构建、100/100命中、保存MPH及独立回读同步门禁。
+
 模块化候选直接使用统一N=100检查档完整构建，并从保存后的MPH执行`std1/std2` GUI Compute。
 重开检查确认`sol1/sol2`及`dset1/pdset1`关联；参数、几何、选择集、335972个四面体、5个数据集
 和7个绘图组通过同步门禁。相对拆分前正式MPH，两边100/100命中，平均TOF差`1.30 ps`，逐粒子
