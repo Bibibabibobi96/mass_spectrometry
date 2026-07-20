@@ -195,12 +195,36 @@ class CandidateDesignTests(unittest.TestCase):
         baseline = root_path / "candidate_baseline.json"
         resolved = root_path / "candidate_resolved_geometry.json"
         diff = root_path / "candidate_diff.json"
+        request = root_path / "design_request.json"
+        proposal = root_path / "candidate_proposal.json"
         baseline.write_text((PROJECT_ROOT / "config" / "baseline.json").read_text(encoding="utf-8"), encoding="utf-8")
         resolved_contract = load_json(PROJECT_ROOT / "config" / "resolved_geometry.json")
         resolved_contract["inputs"]["baseline"] = str(baseline.resolve())
         resolved_contract["inputs"]["baseline_sha256"] = sha256(baseline)
         resolved.write_text(json.dumps(resolved_contract), encoding="utf-8")
-        diff.write_text(json.dumps({"role": "oa_tof_candidate_contract_diff", "changed_variables": []}), encoding="utf-8")
+        request_contract = self.base_request()
+        request_contract["constraints"] = []
+        request_contract["design_variables"] = []
+        request.write_text(json.dumps(request_contract), encoding="utf-8")
+        proposal_contract = {
+            "schema_version": 1,
+            "role": "design_candidate_proposal",
+            "candidate_id": "test_candidate",
+            "project_id": "oa_tof",
+            "request": {"path": str(request.resolve()), "sha256": sha256(request)},
+            "values": [],
+        }
+        proposal.write_text(json.dumps(proposal_contract), encoding="utf-8")
+        diff.write_text(json.dumps({
+            "role": "oa_tof_candidate_contract_diff",
+            "candidate_id": "test_candidate",
+            "request_id": request_contract["request_id"],
+            "changed_variables": [],
+            "provenance": {
+                "proposal": {"path": str(proposal.resolve()), "sha256": sha256(proposal)},
+                "request": {"path": str(request.resolve()), "sha256": sha256(request)},
+            },
+        }), encoding="utf-8")
         return baseline, resolved, diff
 
     def test_candidate_run_is_isolated_and_never_contains_promotion(self):
@@ -232,6 +256,11 @@ class CandidateDesignTests(unittest.TestCase):
                         Path(stage[key]).resolve().relative_to(run_root.resolve())
             comsol_stage = next(stage for stage in plan["stages"] if stage["stage_id"] == "comsol_candidate")
             self.assertEqual(Path(comsol_stage["environment"]["OATOF_RUNTIME_DIR"]), run_root / "comsol")
+            self.assertEqual(
+                set(plan["candidate_inputs"]),
+                {"candidate_baseline.json", "candidate_resolved_geometry.json", "candidate_diff.json",
+                 "candidate_proposal.json", "design_request.json"},
+            )
             self.assertTrue((planning_root / "run_config.template.json").is_file())
             self.assertTrue((planning_root / "candidate_workflow_plan.json").is_file())
             with self.assertRaisesRegex(FileExistsError, "overwrite is forbidden"):
@@ -302,7 +331,24 @@ class CandidateDesignTests(unittest.TestCase):
             self.assertFalse(summary["formal_modified"])
             self.assertFalse(summary["safe_to_promote"])
             self.assertFalse(manifest["formal_eligible"])
+            self.assertEqual(
+                set(manifest["inputs"]),
+                {"candidate_baseline.json", "candidate_resolved_geometry.json", "candidate_diff.json",
+                 "candidate_proposal.json", "design_request.json"},
+            )
             self.assertEqual(verify_project(artifact_root), (1, 0))
+
+    def test_candidate_proposal_and_request_cannot_change_before_planning(self):
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            inputs = self.candidate_run_inputs(root_path)
+            proposal = root_path / "candidate_proposal.json"
+            proposal.write_text(proposal.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "proposal provenance is missing or changed"):
+                prepare_candidate_run(
+                    *inputs, "20260720_130005__build__cross__design-candidate__provenance-tamper",
+                    root_path / "artifacts" / "projects" / "oa_tof",
+                )
 
     def test_failed_and_interrupted_runs_close_with_complete_root_records(self):
         cases = (("failed", "comsol_candidate", "20260720_130001"),

@@ -45,7 +45,8 @@
   [`config/candidate_workflow.json`](config/candidate_workflow.json)先在scratch冻结计划，预声明单一run和阶段依赖；
   自动计划不包含晋升，正式baseline与formal在候选期保持只读。
 - 候选运行三件套生命周期：[`analysis/candidate_run_lifecycle.py`](analysis/candidate_run_lifecycle.py)；
-  从scratch原子启动完整run，并对success/failed/interrupted统一写根`summary.json/run_manifest.json`。
+  从scratch原子启动完整run，冻结request/proposal/baseline/resolved/diff五项输入，并对
+  success/failed/interrupted统一写根`summary.json/run_manifest.json`。
 - 集成候选执行：[`analysis/run_candidate_workflow.py`](analysis/run_candidate_workflow.py)；顺序调用N=100
   粒子表、COMSOL、SIMION、CAD和结构/合同验收，任何终态均由上述生命周期后端统一收口，不含晋升。
 - 人工设计入口：[`config/baseline.json`](config/baseline.json)；程序入口为自动生成的

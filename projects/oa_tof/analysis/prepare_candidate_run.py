@@ -17,7 +17,7 @@ if str(COMMON_CONTRACTS) not in sys.path:
     sys.path.insert(0, str(COMMON_CONTRACTS))
 
 from artifact_naming import validate_run_id, validate_task_id
-from machine_contracts import load_json, sha256
+from machine_contracts import load_json, sha256, validate_schema
 from prepare_candidate_consumers import prepare as prepare_consumers
 
 
@@ -56,6 +56,50 @@ def _inside(path: Path, root: Path) -> bool:
         return False
 
 
+def _provenance_path(record: dict, base: Path, label: str) -> Path:
+    path = Path(record.get("path", ""))
+    if not path.is_absolute():
+        path = base / path
+    path = path.resolve()
+    expected = record.get("sha256", "")
+    if not path.is_file() or not expected or sha256(path).lower() != expected.lower():
+        raise ValueError(f"candidate {label} provenance is missing or changed")
+    return path
+
+
+def _candidate_sources(candidate_baseline: Path, candidate_resolved: Path, candidate_diff: Path) -> dict[str, Path]:
+    baseline = candidate_baseline.resolve()
+    resolved = candidate_resolved.resolve()
+    diff = candidate_diff.resolve()
+    report = load_json(diff)
+    if report.get("role") != "oa_tof_candidate_contract_diff":
+        raise ValueError("candidate diff has an unsupported role")
+    provenance = report.get("provenance", {})
+    proposal = _provenance_path(provenance.get("proposal", {}), diff.parent, "proposal")
+    request = _provenance_path(provenance.get("request", {}), diff.parent, "request")
+    proposal_contract = load_json(proposal)
+    request_contract = load_json(request)
+    validate_schema(proposal_contract, "candidate_proposal.schema.json")
+    validate_schema(request_contract, "design_request.schema.json")
+    proposal_request = proposal_contract["request"]
+    proposal_request_path = Path(proposal_request["path"])
+    if not proposal_request_path.is_absolute():
+        proposal_request_path = proposal.parent / proposal_request_path
+    if (proposal_request_path.resolve() != request or
+            proposal_request["sha256"].lower() != sha256(request).lower()):
+        raise ValueError("candidate proposal and request provenance do not match")
+    if (report.get("candidate_id") != proposal_contract["candidate_id"] or
+            report.get("request_id") != request_contract["request_id"]):
+        raise ValueError("candidate diff identity does not match its proposal/request")
+    return {
+        "candidate_baseline.json": baseline,
+        "candidate_resolved_geometry.json": resolved,
+        "candidate_diff.json": diff,
+        "candidate_proposal.json": proposal,
+        "design_request.json": request,
+    }
+
+
 def prepare_candidate_run(
     candidate_baseline: Path,
     candidate_resolved: Path,
@@ -77,24 +121,27 @@ def prepare_candidate_run(
     if planning_root.exists():
         raise FileExistsError(f"candidate planning task already exists; overwrite is forbidden: {planning_root}")
 
-    sources = [candidate_baseline.resolve(), candidate_resolved.resolve(), candidate_diff.resolve()]
-    if any(not path.is_file() for path in sources):
+    primary_sources = [candidate_baseline.resolve(), candidate_resolved.resolve(), candidate_diff.resolve()]
+    if any(not path.is_file() for path in primary_sources):
         raise FileNotFoundError("candidate baseline, resolved contract, and diff must all exist")
-    if any(_inside(path, formal_root) for path in sources):
+    sources = _candidate_sources(candidate_baseline, candidate_resolved, candidate_diff)
+    if any(_inside(path, formal_root) for path in sources.values()):
         raise ValueError("candidate inputs must not be sourced from formal artifacts")
-    if sources[0] == FORMAL_BASELINE_PATH.resolve() or sources[1] == FORMAL_RESOLVED_PATH.resolve():
+    if (sources["candidate_baseline.json"] == FORMAL_BASELINE_PATH.resolve() or
+            sources["candidate_resolved_geometry.json"] == FORMAL_RESOLVED_PATH.resolve()):
         raise ValueError("candidate run requires isolated candidate contracts, not the formal project contracts")
-    resolved_source = load_json(sources[1])
+    resolved_source = load_json(sources["candidate_resolved_geometry.json"])
     if resolved_source.get("role") != "oa_tof_resolved_contract_do_not_edit":
         raise ValueError("candidate resolved contract has an unsupported role")
-    if resolved_source.get("inputs", {}).get("baseline_sha256", "").lower() != sha256(sources[0]).lower():
+    if (resolved_source.get("inputs", {}).get("baseline_sha256", "").lower() !=
+            sha256(sources["candidate_baseline.json"]).lower()):
         raise ValueError("candidate baseline and resolved contract hashes do not match")
 
     planning_root.mkdir(parents=True)
     inputs_dir = planning_root / "inputs"
     inputs_dir.mkdir()
     frozen = {}
-    for source, name in zip(sources, ("candidate_baseline.json", "candidate_resolved_geometry.json", "candidate_diff.json")):
+    for name, source in sources.items():
         target = inputs_dir / name
         shutil.copy2(source, target)
         frozen[name] = target
