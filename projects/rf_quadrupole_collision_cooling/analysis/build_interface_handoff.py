@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 import build_oatof_handoff as legacy
+import entry_aperture_l0
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -209,6 +210,96 @@ def validate_contract(contract_path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
         raise ValueError("closed target shield must remain a failed topology audit")
     if any(not topology_audit.get(key) for key in ("comsol", "simion", "cad", "conclusion")):
         raise ValueError("target entry topology audit must cover COMSOL, SIMION and CAD")
+    aperture = connector["entry_aperture_design"]
+    if aperture.get("status") != "blocked_pending_theoretical_feasibility":
+        raise ValueError("entry aperture must remain blocked pending theoretical feasibility")
+    if aperture.get("shape") is not None or aperture.get("design_semi_axes_mm") is not None:
+        raise ValueError("entry aperture geometry may not be selected before its bounds are frozen")
+    if aperture.get("unconstrained_candidate_scan_allowed") is not False:
+        raise ValueError("entry aperture may not be selected by an unconstrained scan")
+    gap_bound = entry_aperture_l0.evaluate_entry_aperture_l0(
+        repeller_z_mm=float(target_baseline["geometry_mm"]["accelerator_repeller_z"]),
+        grid1_z_mm=float(target_baseline["geometry_mm"]["accelerator_grid1_z"]),
+        entry_center_z_mm=float(target_baseline["particle_source"]["center_z_mm"]),
+    )
+    declared_gap = aperture["upper_bounds"]["first_gap_geometry"][
+        "absolute_axial_semi_height_ceiling_mm"
+    ]
+    if not math.isclose(
+        float(declared_gap),
+        float(gap_bound["absolute_gap_semi_height_ceiling_mm"]),
+        rel_tol=0.0,
+        abs_tol=1e-12,
+    ):
+        raise ValueError("entry-aperture first-gap ceiling differs from the oaTOF baseline")
+    geometry = target_baseline["geometry_mm"]
+    voltages = target_baseline["electrodes_V"]
+    reflectron = target_baseline["geometry_derivation"]["reflectron"]
+    field1 = (
+        float(voltages["repeller"]) - float(voltages["grid1"])
+    ) / (
+        float(geometry["accelerator_grid1_z"])
+        - float(geometry["accelerator_repeller_z"])
+    )
+    stage2_field = (
+        float(voltages["backplate"]) - float(voltages["midgrid"])
+    ) / float(geometry["L_stage2"])
+    theory_full_width = entry_aperture_l0.coupled_longitudinal_full_width_ceiling_mm(
+        nominal_energy_per_charge_v=float(reflectron["nominal_energy_per_charge_V"]),
+        field1_v_per_mm=field1,
+        reflectron_stage1_voltage_drop_v=(
+            float(voltages["midgrid"]) - float(voltages["entgrid"])
+        ),
+        reflectron_stage2_field_v_per_mm=stage2_field,
+        reflectron_stage2_length_mm=float(geometry["L_stage2"]),
+        stage2_margin_fraction=float(reflectron["stage2_margin_fraction"]),
+        stage2_margin_absolute_mm=float(reflectron["stage2_margin_absolute_mm"]),
+        intrinsic_energy_half_range_v=float(
+            reflectron["intrinsic_axial_energy_per_charge_half_range_V"]
+        ),
+    )
+    longitudinal_bound = aperture["upper_bounds"]["coupled_longitudinal_envelope"]
+    expected_model = "oatof.oaaccelerator_reflectron_coupled.ideal_1d.v1"
+    if reflectron.get("model_id") != expected_model:
+        raise ValueError("oaTOF baseline is not the required coupled accelerator-reflectron model")
+    if longitudinal_bound.get("required_theory_model_id") != expected_model:
+        raise ValueError("entry-aperture contract does not require the active coupled theory model")
+    focus_conditions = longitudinal_bound.get("focus_conditions", "")
+    if "tau_A+tau_R" not in focus_conditions or "d2" not in focus_conditions:
+        raise ValueError("entry-aperture contract must name both coupled focus conditions")
+    if not math.isclose(
+        float(longitudinal_bound["axial_full_height_ceiling_mm"]),
+        theory_full_width,
+        rel_tol=0.0,
+        abs_tol=1e-12,
+    ):
+        raise ValueError("entry-aperture 1 mm theory ceiling differs from the oaTOF baseline")
+    if not math.isclose(
+        float(longitudinal_bound["axial_semi_height_ceiling_mm"]),
+        theory_full_width / 2.0,
+        rel_tol=0.0,
+        abs_tol=1e-12,
+    ):
+        raise ValueError("entry-aperture full-height and semi-height semantics disagree")
+    if not math.isclose(
+        float(aperture["upper_bounds"]["current_known_axial_full_height_ceiling_mm"]),
+        min(2.0 * float(declared_gap), theory_full_width),
+        rel_tol=0.0,
+        abs_tol=1e-12,
+    ):
+        raise ValueError("known axial aperture ceiling is not the minimum derived bound")
+    unresolved = aperture["unresolved_inputs"]
+    if any(unresolved.get(key) is not None for key in (
+        "axial_electrode_clearance_mm",
+        "effective_grounded_tube_length_mm",
+        "maximum_relative_field_leakage",
+        "high_voltage_and_breakdown_limit_mm",
+        "field_uniformity_limit_mm",
+        "design_safety_factor",
+        "required_beam_semi_axes_mm",
+        "alignment_allowance_mm",
+    )):
+        raise ValueError("unresolved aperture inputs must not contain invented design values")
     if contract["boundaries"]["pulse_capture_state"].get("stored_by_default") is not False:
         raise ValueError("pulse snapshots must remain derived on demand")
     if contract["time_control"]["pulse_waveform"].get("status") != "unresolved":
@@ -246,6 +337,7 @@ def validate_contract(contract_path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
         "source_interface": source_interface,
         "source_baseline": source_baseline,
         "target_baseline": target_baseline,
+        "entry_aperture_theory_full_width_ceiling_mm": theory_full_width,
     }
 
 

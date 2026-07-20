@@ -26,6 +26,8 @@ if ($LASTEXITCODE -ne 0) { throw 'SIMION geometry publication gate failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Paired-particle identity gate failed.' }
 & $python (Join-Path $projectRoot 'analysis\quadrupole_l0.py') --check-mode
 if ($LASTEXITCODE -ne 0) { throw 'Quadrupole L0 reference gate failed.' }
+& $python (Join-Path $projectRoot 'analysis\entry_aperture_l0.py') --check
+if ($LASTEXITCODE -ne 0) { throw 'Entry-aperture L0 reference gate failed.' }
 & $python (Join-Path $projectRoot 'analysis\build_oatof_handoff.py') --check-contract
 if ($LASTEXITCODE -ne 0) { throw 'RF-to-oaTOF handoff contract gate failed.' }
 & $python (Join-Path $projectRoot 'analysis\build_interface_handoff.py') --check-contract

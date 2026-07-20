@@ -71,6 +71,8 @@
   三维快照和求解器输入均按需派生。RF与oa在统一仪器坐标中的位姿分别冻结，相对平移/转角只能由
   两者派生；坐标变换不代替连接器内的真实输运。当前审计还确认oa加速器屏蔽沿注入轴没有侧孔，
   连接器必须包含参数化屏蔽开孔和接地注入管候选。该合同只通过静态门禁，不授权物理连接或运行打包。
+- oa入口孔L0上限参考：[`analysis/entry_aperture_l0.py`](analysis/entry_aperture_l0.py)；从当前耦合
+  oa baseline重算上限并失败关闭候选，适用结论和未决约束见[`docs/PROJECT.md`](docs/PROJECT.md)。
 - 路径解析：[`rf_quadrupole_paths.m`](rf_quadrupole_paths.m)
 
 大型 MPH、PA、IOB、Fly2 输出和图像一律放在

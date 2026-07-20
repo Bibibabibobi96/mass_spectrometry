@@ -163,6 +163,74 @@
       "cad": "the COMSOL accelshield Difference is exported as one accelerator_shield solid, so CAD inherits the closed side wall",
       "conclusion": "The present formal analyzer has no physical +x injection opening. A connector alone outside the shield cannot deliver particles into the release region."
     },
+    "entry_aperture_design": {
+      "status": "blocked_pending_theoretical_feasibility",
+      "shape": null,
+      "design_semi_axes_mm": null,
+      "cross_section_plane": "oatof y-z plane",
+      "upper_bounds": {
+        "first_gap_geometry": {
+          "formula": "a_z < min(z_entry-z_repeller, z_grid1-z_entry)-c_z",
+          "absolute_axial_semi_height_ceiling_mm": 1.5,
+          "meaning": "Zero-clearance geometric ceiling from the current 3.0 mm first accelerator gap; it is not a design value."
+        },
+        "coupled_longitudinal_envelope": {
+          "required_theory_model_id": "oatof.oaaccelerator_reflectron_coupled.ideal_1d.v1",
+          "focus_conditions": "d(tau_A+tau_R)/dW = 0 and d2(tau_A+tau_R)/dW2 = 0 at W_0",
+          "formula": "Delta_x_max = 2*[U_R1 + F_2*(L_2-m_abs)/(1+m_frac) - W_0 - Delta_W_intrinsic]/E_A1",
+          "axial_full_height_ceiling_mm": 1.0,
+          "axial_semi_height_ceiling_mm": 0.5,
+          "inequality": "physical axial full height must be strictly less than 1.0 mm after applying the design safety factor",
+          "derived_from": [
+            "oa_tof/config/baseline.json geometry_mm accelerator electrode positions and L_stage2",
+            "oa_tof/config/baseline.json electrodes_V",
+            "oa_tof/config/baseline.json geometry_derivation.reflectron energy and stage2-margin policy"
+          ],
+          "meaning": "The fixed coupled oaTOF theory and its 100% stage-2 penetration-depth margin support at most a 1.0 mm source-correlated axial full width. U_R1 and F_2 must come from the coupled total-time solution, never the superseded separately focused reflectron. This is the controlling known bound, not the looser 3.0 mm electrode gap."
+        },
+        "ideal_grounded_circular_tube": {
+          "formula": "a <= chi_01*L_eff/ln(1/epsilon), chi_01=2.404825557695773",
+          "radius_ceiling_mm": null,
+          "applicability": "L0 dominant Laplace-mode attenuation for a circular grounded tube with normalized boundary-mode coefficient no greater than one; the real side-port field requires 3D validation."
+        },
+        "current_known_axial_full_height_ceiling_mm": 1.0,
+        "combined_policy": "The usable upper bound is the minimum of the coupled-longitudinal, gap-clearance, shielding/leakage, field-uniformity and high-voltage/breakdown bounds; every applicable bound must be satisfied. Full height and semi-height must never be mixed.",
+        "combined_upper_bound_mm": null
+      },
+      "lower_bound": {
+        "formula": "a_required >= propagated target-entry beam envelope + alignment allowance + explicitly frozen transmission margin",
+        "required_semi_axes_mm": null,
+        "policy": "Derive from the selected percentile or loss budget of the connector-propagated three-dimensional phase space; do not copy the 3.6 mm RF exit radius or the 1 mm oaTOF reference source size."
+      },
+      "feasibility_rule": "A candidate exists only if every required lower semi-axis is strictly below its corresponding safety-factored theoretical upper bound. If the interval is empty, redesign the connector, focusing, tube, first gap or accelerator topology.",
+      "selection_order": [
+        "freeze leakage, clearance, high-voltage, field-uniformity and safety requirements",
+        "derive all theoretical upper bounds",
+        "propagate the beam and derive required lower bounds",
+        "prove a non-empty feasible interval",
+        "select and validate a geometry only inside that interval"
+      ],
+      "unconstrained_candidate_scan_allowed": false,
+      "candidate_selection_allowed_after_bounds_frozen": true,
+      "constraint_freeze_policy": {
+        "single_input_authority": "oa_tof/config/baseline.json plus this interface contract for connector-only requirements",
+        "derived_values_must_be_recomputed": true,
+        "manual_duplicate_constants_forbidden": true,
+        "consumer_generation_requires_validation_pass": true,
+        "failure_mode": "fail_closed_without_runtime_package",
+        "dimension_semantics": "Store explicit axial_full_height_mm and axial_semi_height_mm; use diameter_mm only for a frozen circular shape."
+      },
+      "unresolved_inputs": {
+        "axial_electrode_clearance_mm": null,
+        "effective_grounded_tube_length_mm": null,
+        "maximum_relative_field_leakage": null,
+        "high_voltage_and_breakdown_limit_mm": null,
+        "field_uniformity_limit_mm": null,
+        "design_safety_factor": null,
+        "required_beam_semi_axes_mm": null,
+        "alignment_allowance_mm": null
+      }
+    },
     "required_physics": [
       "RF exit fringe field",
       "physical gap and apertures",

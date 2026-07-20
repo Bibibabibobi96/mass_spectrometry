@@ -56,6 +56,12 @@ oa-TOF COMSOL/SIMION中按40 mm有效半径分别命中`70/100`和`68/100`，RF-
 参数化切出侧孔并建立接地注入管/必要离子光学，重新评价加速场泄漏、脉冲捕获和机械/CAD门禁；当前
 Formal几何及25组件装配未修改。
 
+入口孔不再作为自由扫描量。RF接口候选已从本项目当前耦合baseline重算出轴向完整宽度上限
+`1.0 mm`（半高`0.5 mm`），并拒绝旧单独聚焦模型；该值不作为本项目第二份可编辑输入。
+详细派生、完整宽度/半高语义、其余上下限和失败关闭判据以RF项目
+[`docs/PROJECT.md`](../../rf_quadrupole_collision_cooling/docs/PROJECT.md)及其机器合同为权威。未决输入
+尚未冻结，所以当前仍不选择孔形或尺寸。
+
 2026-07-20完成 oa-TOF 理论重写文档及代码审查。三份 Markdown 已取代旧 DOCX 成为活跃理论入口，
 三份求解器无关 Python 已接入静态测试；原始投稿包及 SHA 已冻结在
 `docs/history/20260720_theory_refactor_submission/`，审查记录为
