@@ -23,7 +23,8 @@
 `docs/history/COMSOL_EXTREME_N_CRASH_CLOSURE_20260719.md`、
 `docs/history/CANDIDATE_WORKFLOW_VALIDATION_20260720.md`和
 `docs/history/20260720__midgrid-candidate-runtime-coverage.md`、
-`docs/history/20260720__oatof-theory-refactor-review.md`。四份日常文档不再横向链接历史。
+`docs/history/20260720__oatof-theory-refactor-review.md`及
+`docs/history/20260721__superseded-theory-docx.md`。四份日常文档不再横向链接历史。
 
 ## 本项目的知识边界
 
