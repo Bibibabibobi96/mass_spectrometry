@@ -37,6 +37,11 @@ class AcceleratorTimeFocusTest(unittest.TestCase):
         self.assertAlmostEqual(
             result["focus_global_z_mm"], result["reference_global_focus_z_mm"], places=12
         )
+        self.assertAlmostEqual(result["canonical_origin_shift_z_mm"], -19.8305446661873)
+        self.assertAlmostEqual(result["canonical_repeller_z_mm"], -19.92918680341103)
+        self.assertAlmostEqual(result["canonical_grid1_z_mm"], -16.92918680341103)
+        self.assertAlmostEqual(result["canonical_grid2_z_mm"], -0.12918680341103)
+        self.assertAlmostEqual(result["canonical_focus_and_detector_z_mm"], 0.0)
 
     def test_derived_geometry_rejects_unequal_pitch_contract(self) -> None:
         contract = {
@@ -52,6 +57,22 @@ class AcceleratorTimeFocusTest(unittest.TestCase):
             }
         }
         with self.assertRaisesRegex(ValueError, "equal"):
+            derive(contract)
+
+    def test_ring_count_rejects_silent_fractional_truncation(self) -> None:
+        contract = {
+            "design": {
+                "target_global_focus_z_mm": 19.83,
+                "local_geometry_mm": {
+                    "d1": 3.0,
+                    "d2": 16.8,
+                    "ring_count": 5.5,
+                    "ring_pitch": 2.8,
+                },
+                "electrodes_V": {"repeller": 2240.0, "grid1": 1760.0},
+            }
+        }
+        with self.assertRaisesRegex(ValueError, "integer"):
             derive(contract)
 
 

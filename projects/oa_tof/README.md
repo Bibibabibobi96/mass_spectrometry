@@ -10,8 +10,7 @@
 
 1. 所有任务先读[`docs/PROJECT.md`](docs/PROJECT.md)，确认当前参数、正式/候选状态和开放任务。
 2. 修改加速器或反射器的时间聚焦、场强、电压或轴向长度时，先读`docs/theory/`中对应推导；
-   三栅加速器读`三栅加速器总长度符号推导.docx`，二级反射器读
-   `单次反射TOF二级反射镜等时聚焦推导.docx`及其指定的Python参考实现。
+   入口见[`docs/theory/README.md`](docs/theory/README.md)。旧 DOCX 仅为 superseded 历史输入。
 3. 操作COMSOL时再读[`docs/COMSOL.md`](docs/COMSOL.md)。
 4. 操作SIMION时再读[`docs/SIMION.md`](docs/SIMION.md)。
 5. 操作STEP/SolidWorks时再读[`docs/CAD.md`](docs/CAD.md)。
@@ -80,6 +79,11 @@
 - 当前正式跨求解器验证：[`config/formal_validation.json`](config/formal_validation.json)
 - 宽质量标定候选模式：[`config/modes/mass_spectrum.json`](config/modes/mass_spectrum.json)；只评价
   峰位、标定和传输率，不替代正式分辨率基线。
+- RF外部handoff功能投影候选：
+  [`config/modes/rf_handoff_projection.json`](config/modes/rf_handoff_projection.json)、
+  [`analysis/prepare_rf_handoff_projection.py`](analysis/prepare_rf_handoff_projection.py)、
+  [`tests/cross_solver/run_rf_handoff_projection.ps1`](tests/cross_solver/run_rf_handoff_projection.ps1)；
+  只读复用正式静电资产，恢复部件链时钟，允许记录损失，但不表示电气/机械接口已连接。
 - 正式跨求解器直接重算与发布入口：
   [`tests/cross_solver/run_formal_validation.ps1`](tests/cross_solver/run_formal_validation.ps1)；发布器只在
   两端达到机器契约样本量、统一比较PASS且当前资产/结果SHA齐全时更新机器契约。
@@ -87,6 +91,9 @@
   [`analysis/accelerator_time_focus.py`](analysis/accelerator_time_focus.py)
 - 二级反射器闭式解参考实现：
   [`analysis/reflectron_dual_stage_solver.py`](analysis/reflectron_dual_stage_solver.py)
+- 加速器—反射器整机纵向耦合参考实现：
+  [`analysis/oatof_oaaccelerator_coupling.py`](analysis/oatof_oaaccelerator_coupling.py)；当前只绑定隔离
+  诊断 Candidate，不修改 Formal baseline。
 - Python参考分析：[`analysis/README.md`](analysis/README.md)
 - 路径解析：[`oatof_paths.m`](oatof_paths.m)
 

@@ -1,1 +1,4 @@
 *.json text eol=lf
+docs/oatof_theory_refactor/SHA256SUMS.txt -text
+docs/oatof_theory_refactor/analysis/*.py -text
+docs/oatof_theory_refactor/docs/theory/*.md -text

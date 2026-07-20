@@ -22,8 +22,12 @@ py -3.11 -m venv .venv
 - 机器数据定义：`../config/analysis_contract.json`。
 - 迁移基准身份与旧MATLAB参考：`../config/analysis_baselines.json`。
 - 当前正式COMSOL/SIMION同源闭合记录：`../config/formal_validation.json`。
-- 三栅加速器一阶时间聚焦公式：`accelerator_time_focus.py`；输入为候选或正式JSON契约，公式来源为
-  `../docs/theory/三栅加速器总长度符号推导.docx`。
+- 双区正交加速器一阶时间聚焦：`accelerator_time_focus.py`，公式来源为
+  `../docs/theory/oaaccelerator_time_focus.md`。
+- 二级反射镜局部闭式解：`reflectron_dual_stage_solver.py`，公式来源为
+  `../docs/theory/dual_stage_reflectron.md`。
+- 加速器—反射镜整机纵向耦合：`oatof_oaaccelerator_coupling.py`，公式来源为
+  `../docs/theory/oatof_oaaccelerator_coupling.md`；当前只用于诊断 Candidate，不能自动改写 Formal。
 - 候选静态消费准备：`prepare_candidate_consumers.py --contract <candidate_resolved_geometry.json>
   --output-dir <run-or-scratch-directory>`；生成SIMION Lua/Fly2和`candidate_consumption_plan.json`，其中
   COMSOL直接绑定同一合同，CAD绑定由该合同构建的候选MPH。它不启动COMSOL、SIMION或SolidWorks。

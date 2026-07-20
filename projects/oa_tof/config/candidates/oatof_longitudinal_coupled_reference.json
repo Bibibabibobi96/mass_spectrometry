@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "status": "diagnostic_candidate_not_promoted",
+  "purpose": "Evaluate the current formal geometry with a coupled one-dimensional oa-accelerator/reflectron longitudinal model without changing the formal baseline",
+  "theory_sources": [
+    "docs/theory/oaaccelerator_time_focus.md",
+    "docs/theory/dual_stage_reflectron.md",
+    "docs/theory/oatof_oaaccelerator_coupling.md"
+  ],
+  "reference_implementation": "analysis/oatof_oaaccelerator_coupling.py",
+  "design": {
+    "oa_accelerator": {
+      "local_geometry_mm": {
+        "gap1": 3.0,
+        "gap2": 16.8,
+        "release_position": 1.5
+      },
+      "electrodes_V": {
+        "repeller": 2240.0,
+        "grid1": 1760.0,
+        "exit": 0.0
+      },
+      "assembly_translation_z_mm": -19.92918680341103
+    },
+    "layout_mm": {
+      "upstream_from_accelerator_focus": 600.0,
+      "downstream_to_detector": 600.0
+    },
+    "source": {
+      "release_full_width_mm": 1.0,
+      "intrinsic_energy_per_charge_half_range_V": 0.0,
+      "sample_count": 101
+    },
+    "reflectron": {
+      "stage1_length": 120.0,
+      "stage2_length": 86.8328,
+      "stage2_margin": {
+        "fraction": 1.0,
+        "absolute_mm": 0.0
+      }
+    },
+    "enforce_stage2_depth": false
+  },
+  "particle": {
+    "mass_to_charge_Th": 524.0
+  },
+  "expected_derived": {
+    "accelerator": {
+      "nominal_energy_per_charge_v": 2000.0,
+      "first_order_focus_drift_mm": 0.12918680341102168,
+      "accelerator_focus_global_z_mm": 0.0
+    },
+    "source_energy_envelope": {
+      "spatial_energy_half_range_V": 80.0,
+      "energy_min_V": 1920.0,
+      "energy_max_V": 2080.0,
+      "timing_model_covers_intrinsic_energy_spread": false
+    },
+    "coupled_reflectron": {
+      "stage1_voltage_drop_v": 1628.8000630464526,
+      "stage1_field_v_per_mm": 13.573333858720439,
+      "stage2_field_v_per_mm": 9.384721788228374,
+      "required_stage2_depth_mm": 96.15627338457817,
+      "stage2_depth_margin_mm": -9.323473384578165,
+      "stage2_depth_pass": false,
+      "total_first_derivative_residual": 0.0,
+      "total_second_derivative_residual": 0.0
+    },
+    "formal_FWHM_eligible": false
+  },
+  "expected_tolerance": {
+    "absolute": 1e-12,
+    "relative": 1e-12
+  },
+  "interpretation": {
+    "formal_baseline_unchanged": true,
+    "candidate_voltage_changes_require_3d_validation": true,
+    "stage2_margin_policy_is_a_known_open_blocker": true,
+    "formal_FWHM_claim_allowed": false
+  }
+}

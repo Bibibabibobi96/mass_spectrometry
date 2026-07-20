@@ -410,19 +410,15 @@ def arrival_time_samples(
     solution: ReflectronSolution,
     mass_to_charge_th: float,
     energies_per_charge_v: Sequence[float],
-) -> list[dict[str, float | int]]:
+) -> list[dict[str, float]]:
     """Return deterministic particle-level times for external FWHM processing."""
 
-    rows: list[dict[str, float | int]] = []
+    rows: list[dict[str, float]] = []
     for index, energy in enumerate(energies_per_charge_v):
         w = float(energy)
-        if not solution.energy_min_v <= w <= solution.energy_max_v:
-            raise PhysicsContractError(
-                "sample energy lies outside the solution's validated energy envelope"
-            )
         rows.append(
             {
-                "sample_index": index,
+                "sample_index": float(index),
                 "energy_per_charge_V": w,
                 "arrival_time_s": flight_time_s(
                     w,
@@ -592,9 +588,7 @@ def _assert_expected(
         raise SystemExit(f"MISMATCH {path}: actual={actual!r} expected={expected!r}")
 
 
-def _write_samples_csv(
-    path: Path, rows: Sequence[Mapping[str, float | int]]
-) -> None:
+def _write_samples_csv(path: Path, rows: Sequence[Mapping[str, float]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if not rows:
         raise ValueError("cannot write empty sample set")

@@ -1,7 +1,7 @@
 {
   "status": "promoted_to_formal_baseline_2026-07-17",
   "purpose": "Constrain every internal accelerator axial dimension to 0.1 mm while preserving the existing global first-order time-focus plane exactly",
-  "theory_source": "docs/theory/三栅加速器总长度符号推导.docx",
+  "theory_source": "docs/theory/oaaccelerator_time_focus.md",
   "reference_implementation": "analysis/accelerator_time_focus.py",
   "design": {
     "reference_geometry": {

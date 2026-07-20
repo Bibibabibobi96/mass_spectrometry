@@ -83,17 +83,23 @@ def _derive_reflectron_for_flight_length(baseline: dict[str, Any]) -> None:
     total_field_free = 2.0 * flight
     fields = solve_reflectron_fields(
         float(derivation["incident_energy_eV"]),
-        float(geometry["L_stage1"]) / 1000.0,
-        total_field_free / 1000.0,
+        float(geometry["L_stage1"]),
+        total_field_free_length_mm=total_field_free,
+        enforce_energy_envelope=False,
     )
     margin = float(derivation["stage2_margin_fraction"])
-    stage2_raw_mm = fields["d2_min"] * (1.0 + margin) * 1000.0
+    stage2_raw_mm = fields.nominal_stage2_penetration_mm * (1.0 + margin)
     stage2 = round(stage2_raw_mm, int(derivation["engineering_length_decimals_mm"]))
-    mirror_voltage = fields["U1"] + fields["E2"] * stage2_raw_mm / 1000.0
+    mirror_voltage = (
+        fields.stage1_voltage_drop_v
+        + fields.stage2_field_v_per_mm * stage2_raw_mm
+    )
     voltage_decimals = int(derivation["engineering_voltage_decimals_V"])
     geometry["L_stage2"] = stage2
     geometry["L_reflectron"] = geometry["L_stage1"] + stage2
-    baseline["electrodes_V"]["midgrid"] = round(fields["U1"], voltage_decimals)
+    baseline["electrodes_V"]["midgrid"] = round(
+        fields.stage1_voltage_drop_v, voltage_decimals
+    )
     baseline["electrodes_V"]["backplate"] = round(mirror_voltage, voltage_decimals)
     derivation["total_field_free_length_mm"] = total_field_free
     derivation["outbound_field_free_length_mm"] = flight

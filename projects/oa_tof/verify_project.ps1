@@ -22,6 +22,20 @@ $gateTimer = [Diagnostics.Stopwatch]::StartNew()
 if ($LASTEXITCODE -ne 0) { throw 'Resolved-geometry gate failed.' }
 & $python (Join-Path $projectRoot 'analysis\sync_geometry_contract.py') --check
 if ($LASTEXITCODE -ne 0) { throw 'Generated-input freshness gate failed.' }
+& $python (Join-Path $projectRoot 'analysis\prepare_rf_handoff_projection.py') --check-mode
+if ($LASTEXITCODE -ne 0) { throw 'RF handoff consumer-mode gate failed.' }
+& $python (Join-Path $projectRoot 'analysis\accelerator_time_focus.py') --self-test
+if ($LASTEXITCODE -ne 0) { throw 'Accelerator theory self-test failed.' }
+& $python (Join-Path $projectRoot 'analysis\reflectron_dual_stage_solver.py') --self-test
+if ($LASTEXITCODE -ne 0) { throw 'Reflectron theory self-test failed.' }
+& $python (Join-Path $projectRoot 'analysis\oatof_oaaccelerator_coupling.py') --self-test
+if ($LASTEXITCODE -ne 0) { throw 'Coupled longitudinal theory self-test failed.' }
+& $python (Join-Path $projectRoot 'analysis\accelerator_time_focus.py') `
+  (Join-Path $projectRoot 'config\candidates\accelerator_grid_aligned_strict_focus.json') | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'Accelerator theory contract gate failed.' }
+& $python (Join-Path $projectRoot 'analysis\oatof_oaaccelerator_coupling.py') `
+  (Join-Path $projectRoot 'config\candidates\oatof_longitudinal_coupled_reference.json') | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'Coupled longitudinal theory contract gate failed.' }
 & (Join-Path $projectRoot 'tests\cross_solver\verify_geometry_contract.ps1') -SkipRuntime -SimionExe $SimionExe -PythonExe $python
 if ($LASTEXITCODE -ne 0) { throw 'Static cross-solver geometry gate failed.' }
 & $python -m unittest discover -s (Join-Path $projectRoot 'tests\analysis') -p 'test_*.py'

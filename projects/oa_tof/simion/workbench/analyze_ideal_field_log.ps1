@@ -4,7 +4,8 @@ param(
   [Parameter(Mandatory = $true)][string]$Mode,
   [Parameter(Mandatory = $true)][string]$Distribution,
   [double]$DetectorRadiusMm = 40,
-  [string]$ParticleCsv = ''
+  [string]$ParticleCsv = '',
+  [switch]$AllowIncompleteCensus
 )
 
 Set-StrictMode -Version Latest
@@ -82,10 +83,25 @@ foreach ($line in Get-Content -LiteralPath $Log) {
   })
 }
 
-if ($rows.Count -eq 0) { throw "No detector_crossing records found in $Log" }
+$crossingRows = @($rows)
+if ($rows.Count -eq 0 -and -not $AllowIncompleteCensus) { throw "No detector_crossing records found in $Log" }
 $uniqueIons = @($rows | Select-Object -ExpandProperty Ion -Unique)
 if ($rows.Count -ne $initial.Count -or $uniqueIons.Count -ne $initial.Count) {
-  throw "Incomplete detector-plane census in $Log`: emitted=$($initial.Count), crossings=$($rows.Count), unique_ions=$($uniqueIons.Count)"
+  if (-not $AllowIncompleteCensus) {
+    throw "Incomplete detector-plane census in $Log`: emitted=$($initial.Count), crossings=$($rows.Count), unique_ions=$($uniqueIons.Count)"
+  }
+  $seen = @{}; foreach ($row in $rows) { $seen[[int]$row.Ion] = $true }
+  foreach ($n in ($initial.Keys | Sort-Object)) {
+    if ($seen.ContainsKey([int]$n)) { continue }
+    $p = $initial[$n]
+    $rows.Add([pscustomobject]@{
+      Mode = $Mode; Distribution = $Distribution; Ion = [int]$n
+      MassAmu = $p.MassAmu; ChargeState = $p.ChargeState
+      X0Mm = $p.X0Mm; Y0Mm = $p.Y0Mm; Z0Mm = $p.Z0Mm; EnergyEv = $p.EnergyEv
+      TofUs = [double]::NaN; XMm = [double]::NaN; YMm = [double]::NaN
+      RadiusMm = [double]::NaN; ZmaxMm = [double]::NaN; Hit = $false
+    })
+  }
 }
 if ($ParticleCsv) {
   $parent = Split-Path -Parent $ParticleCsv
@@ -96,18 +112,18 @@ if ($ParticleCsv) {
 $hits = @($rows | Where-Object Hit)
 $misses = @($rows | Where-Object { -not $_.Hit })
 $hitTof = @($hits | ForEach-Object TofUs)
-$allTof = @($rows | ForEach-Object TofUs)
+$allTof = @($crossingRows | ForEach-Object TofUs)
 $hitX0 = @($hits | ForEach-Object X0Mm)
 $hitY0 = @($hits | ForEach-Object Y0Mm)
 $hitZ0 = @($hits | ForEach-Object Z0Mm)
 $hitEnergy = @($hits | ForEach-Object EnergyEv)
 $missZ0 = @($misses | ForEach-Object Z0Mm)
 $missEnergy = @($misses | ForEach-Object EnergyEv)
-$allX0 = @($rows | ForEach-Object X0Mm)
-$allY0 = @($rows | ForEach-Object Y0Mm)
-$allZ0 = @($rows | ForEach-Object Z0Mm)
-$allEnergy = @($rows | ForEach-Object EnergyEv)
-$allRadius = @($rows | ForEach-Object RadiusMm)
+$allX0 = @($crossingRows | ForEach-Object X0Mm)
+$allY0 = @($crossingRows | ForEach-Object Y0Mm)
+$allZ0 = @($crossingRows | ForEach-Object Z0Mm)
+$allEnergy = @($crossingRows | ForEach-Object EnergyEv)
+$allRadius = @($crossingRows | ForEach-Object RadiusMm)
 $meanTof = Get-Mean $hitTof
 $stdTofUs = Get-SampleStd $hitTof
 $fwhmFactor = 2.0 * [Math]::Sqrt(2.0 * [Math]::Log(2.0))
@@ -117,7 +133,7 @@ $fwhmTofUs = $fwhmFactor * $stdTofUs
   Mode = $Mode
   Distribution = $Distribution
   Emitted = $initial.Count
-  Crossed = $rows.Count
+  Crossed = $crossingRows.Count
   Hit = $hits.Count
   EfficiencyPct = 100.0 * $hits.Count / $initial.Count
   MeanTofUs = $meanTof
@@ -126,8 +142,8 @@ $fwhmTofUs = $fwhmFactor * $stdTofUs
   ResolutionFwhm = $meanTof / (2.0 * $fwhmTofUs)
   AllCrossingStdTofNs = 1000.0 * (Get-SampleStd $allTof)
   MaxHitRadiusMm = if ($hits.Count) { ($hits.RadiusMm | Measure-Object -Maximum).Maximum } else { [double]::NaN }
-  MaxCrossingRadiusMm = ($rows.RadiusMm | Measure-Object -Maximum).Maximum
-  MeanZmaxMm = Get-Mean $rows.ZmaxMm
+  MaxCrossingRadiusMm = if ($crossingRows.Count) { ($crossingRows.RadiusMm | Measure-Object -Maximum).Maximum } else { [double]::NaN }
+  MeanZmaxMm = Get-Mean $crossingRows.ZmaxMm
   CorrTofX0 = Get-Correlation $hitX0 $hitTof
   CorrTofY0 = Get-Correlation $hitY0 $hitTof
   CorrTofZ0 = Get-Correlation $hitZ0 $hitTof

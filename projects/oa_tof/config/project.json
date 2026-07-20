@@ -20,7 +20,7 @@
       "capability_id": "single_reflection_mass_analysis",
       "function": "mass_analysis",
       "status": "formal",
-      "modes": ["formal", "mass_spectrum", "design_candidate"],
+      "modes": ["formal", "mass_spectrum", "design_candidate", "rf_handoff_projection"],
       "metrics": ["mass_resolving_power", "transmission_fraction", "tof_centroid", "detector_landing"],
       "design_variables": [
         "accelerator_ring_thickness",
@@ -60,6 +60,7 @@
   },
   "known_gaps": [
     "RF upstream interface contract is not frozen",
+    "Coupled accelerator-reflectron longitudinal candidate and stage-2 margin semantics are not validated",
     "Axisymmetric circular accelerator is deferred",
     "Manufacturing and assembly tolerance budget is not established"
   ]

@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "role": "oa_tof_external_handoff_projection_candidate",
+  "status": "candidate_runtime_only_physical_interface_unresolved",
+  "source_project": "rf_quadrupole_collision_cooling",
+  "target_project": "oa_tof",
+  "handoff_contract": "projects/rf_quadrupole_collision_cooling/config/rf_to_oatof_handoff.json",
+  "handoff_builder": "projects/rf_quadrupole_collision_cooling/analysis/build_oatof_handoff.py",
+  "source_cases": [
+    {
+      "case_id": "rf_comsol_n100",
+      "upstream_solver": "COMSOL",
+      "particle_state_csv": "artifacts/projects/rf_quadrupole_collision_cooling/archive/20260719_212436__migration-snapshot__repo__pre-v2-layout/legacy-layout/results/comsol/transport_no_collision_particle_state_interface_100amu_n100_20260718.csv",
+      "run_manifest": "artifacts/projects/rf_quadrupole_collision_cooling/archive/20260719_212436__migration-snapshot__repo__pre-v2-layout/legacy-layout/runs/transport_no_collision/comsol_interface_100amu_n100_20260718/run_manifest.json"
+    },
+    {
+      "case_id": "rf_simion_n100",
+      "upstream_solver": "SIMION",
+      "particle_state_csv": "artifacts/projects/rf_quadrupole_collision_cooling/archive/20260719_212436__migration-snapshot__repo__pre-v2-layout/legacy-layout/results/simion/transport_no_collision_particle_state_interface_100amu_n100_20260718_r2.csv",
+      "run_manifest": "artifacts/projects/rf_quadrupole_collision_cooling/archive/20260719_212436__migration-snapshot__repo__pre-v2-layout/legacy-layout/runs/transport_no_collision/simion_interface_100amu_n100_20260718_r2/run_manifest.json"
+    }
+  ],
+  "target_consumers": {
+    "COMSOL": {
+      "formal_asset": "artifacts/projects/oa_tof/formal/comsol/oa_tof__model.mph",
+      "particle_runner": "projects/oa_tof/tests/comsol/test_accelerator_mesh_particle_candidate.m",
+      "reuse_formal_electrostatic_solution": true,
+      "save_modified_mph": false
+    },
+    "SIMION": {
+      "formal_asset": "artifacts/projects/oa_tof/formal/simion/oatof_ideal_grounded.iob",
+      "stable_entry": "projects/oa_tof/config/simion_stable_entry.json",
+      "trajectory_quality": 8,
+      "trajectory_log_enable": 1
+    }
+  },
+  "clock_policy": {
+    "solver_local_birth_time_us": 0.0,
+    "detector_instrument_time": "handoff_instrument_time_us + local_oatof_tof_us",
+    "detector_lineage_age": "handoff_lineage_age_us + local_oatof_tof_us",
+    "detector_particle_age": "handoff_particle_age_us + local_oatof_tof_us"
+  },
+  "acceptance_source": "handoff_contract.acceptance_criteria.downstream_functional",
+  "claims": {
+    "functional_projection_claim_allowed": true,
+    "physical_link_claim_allowed": false,
+    "resolution_claim_allowed": false,
+    "formal_asset_modification_allowed": false,
+    "promotion_authorized": false
+  },
+  "open_blockers": [
+    "electrical_interface_unresolved",
+    "physical_gap_and_injection_optics_unmodeled",
+    "rf_entry_clock_not_yet_generalized_for_an_upstream_source"
+  ]
+}

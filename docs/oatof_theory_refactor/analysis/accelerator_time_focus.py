@@ -59,15 +59,6 @@ def _require_positive(value: float, name: str) -> None:
         raise PhysicsContractError(f"{name} must be > 0")
 
 
-def _as_nonnegative_int(value: Any, name: str) -> int:
-    if isinstance(value, bool):
-        raise PhysicsContractError(f"{name} must be a nonnegative integer")
-    numeric = _as_finite_float(value, name)
-    if numeric < 0.0 or not numeric.is_integer():
-        raise PhysicsContractError(f"{name} must be a nonnegative integer")
-    return int(numeric)
-
-
 def _relative_potentials(
     repeller_v: float,
     intermediate_v: float,
@@ -147,7 +138,7 @@ def accelerator_state(
     focus_is_downstream = drift >= 0.0
     if require_downstream_focus and drift < 0.0:
         raise PhysicsContractError(
-            "first-order time focus lies upstream of the accelerator exit plane beyond "
+            "first-order focus lies upstream of the accelerator exit plane beyond "
             "the configured serialization tolerance"
         )
 
@@ -398,8 +389,10 @@ def derive(contract: Mapping[str, Any]) -> dict[str, Any]:
                 "ring_pitch and ring_count must be supplied together"
             )
         ring_pitch = float(ring_pitch_raw)
-        ring_count = _as_nonnegative_int(ring_count_raw, "ring_count")
+        ring_count = int(ring_count_raw)
         _require_positive(ring_pitch, "ring_pitch")
+        if ring_count < 0:
+            raise PhysicsContractError("ring_count must be >= 0")
         expected_gap2 = (ring_count + 1) * ring_pitch
         tolerance = max(1.0e-12, abs(gap2) * 1.0e-12)
         if not math.isclose(gap2, expected_gap2, rel_tol=0.0, abs_tol=tolerance):
@@ -456,13 +449,6 @@ def derive(contract: Mapping[str, Any]) -> dict[str, Any]:
         "accelerator_exit_global_z_mm": translation + local_exit,
         "focus_global_z_mm": translation + local_focus,
         "first_order_focus_global_z_mm": translation + local_focus,
-        "canonical_origin_shift_z_mm": -target_focus,
-        "canonical_repeller_z_mm": translation - target_focus,
-        "canonical_grid1_z_mm": translation + gap1 - target_focus,
-        "canonical_grid2_z_mm": translation + local_exit - target_focus,
-        "canonical_focus_and_detector_z_mm": (
-            translation + local_focus - target_focus
-        ),
         "formal_use_requires": [
             "project baseline/resolved contract",
             "3D field and trajectory validation",

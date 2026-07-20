@@ -1,0 +1,186 @@
+from __future__ import annotations
+
+import csv
+import importlib.util
+import json
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).parents[2]
+
+
+def load_module(name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+PREPARE = load_module(
+    "prepare_rf_handoff_projection",
+    PROJECT_ROOT / "analysis" / "prepare_rf_handoff_projection.py",
+)
+ANALYZE = load_module(
+    "analyze_rf_handoff_projection",
+    PROJECT_ROOT / "analysis" / "analyze_rf_handoff_projection.py",
+)
+
+
+def write_csv(path: Path, fieldnames: list[str], rows: list[dict[str, object]]) -> None:
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+class HandoffConsumerModeTests(unittest.TestCase):
+    def test_mode_is_candidate_and_forbids_physical_claims(self) -> None:
+        validated = PREPARE.validate_mode()
+        self.assertFalse(validated["mode"]["claims"]["physical_link_claim_allowed"])
+        self.assertFalse(validated["mode"]["claims"]["resolution_claim_allowed"])
+        self.assertFalse(validated["mode"]["claims"]["formal_asset_modification_allowed"])
+
+
+class HandoffBundleTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.canonical = self.root / "canonical.csv"
+        self.row_map = self.root / "row_map.csv"
+        self.ion = self.root / "particles.ion"
+        self.metadata = self.root / "metadata.json"
+        write_csv(self.canonical, [
+            "particle_id", "clock_epoch_id", "instrument_time_us", "lineage_age_us",
+            "particle_age_us", "mass_amu", "charge_state", "position_x_mm",
+            "position_y_mm", "position_z_mm", "kinetic_energy_eV",
+        ], [{
+            "particle_id": 7, "clock_epoch_id": "epoch", "instrument_time_us": 15,
+            "lineage_age_us": 5, "particle_age_us": 2, "mass_amu": 100,
+            "charge_state": 1, "position_x_mm": -48.8, "position_y_mm": 0.1,
+            "position_z_mm": -18.4, "kinetic_energy_eV": 2,
+        }])
+        write_csv(self.row_map, [
+            "solver_row_index", "particle_id", "instrument_time_us", "lineage_age_us",
+            "particle_age_us", "solver_birth_time_us",
+        ], [{
+            "solver_row_index": 1, "particle_id": 7, "instrument_time_us": 15,
+            "lineage_age_us": 5, "particle_age_us": 2, "solver_birth_time_us": 0,
+        }])
+        self.ion.write_text("0,100,1,-48.8,0.1,-18.4,0,0,2,1,3\n", encoding="utf-8")
+        contract = PREPARE.repo_path(PREPARE.load_json(PREPARE.DEFAULT_MODE)["handoff_contract"])
+        self.metadata.write_text(json.dumps({
+            "status": "PASS",
+            "package_generation_allowed": False,
+            "contract": {"sha256": PREPARE.sha256(contract)},
+            "outputs": {
+                "canonical_handoff_csv": {"sha256": PREPARE.sha256(self.canonical)},
+                "oatof_ion": {"sha256": PREPARE.sha256(self.ion)},
+                "row_map_csv": {"sha256": PREPARE.sha256(self.row_map)},
+            },
+        }), encoding="utf-8")
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def test_bundle_preserves_identity_clocks_and_derived_ion(self) -> None:
+        result = PREPARE.validate_bundle(self.canonical, self.ion, self.row_map, self.metadata)
+        self.assertEqual(result["particles"], 1)
+        self.assertTrue(result["functional_projection_runtime_authorized"])
+        self.assertFalse(result["physical_link_claim_allowed"])
+
+    def test_changed_ion_is_rejected(self) -> None:
+        self.ion.write_text("0,100,1,-48.8,0.1,-18.4,0,0,3,1,3\n", encoding="utf-8")
+        metadata = json.loads(self.metadata.read_text(encoding="utf-8"))
+        metadata["outputs"]["oatof_ion"]["sha256"] = PREPARE.sha256(self.ion)
+        self.metadata.write_text(json.dumps(metadata), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "differs from the canonical"):
+            PREPARE.validate_bundle(self.canonical, self.ion, self.row_map, self.metadata)
+
+
+class HandoffAnalysisTests(unittest.TestCase):
+    def test_detector_plane_crossing_outside_active_radius_is_not_a_hit(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            canonical = root / "canonical.csv"
+            row_map = root / "row.csv"
+            result_path = root / "result.csv"
+            write_csv(canonical, ["particle_id", "clock_epoch_id"], [
+                {"particle_id": 1, "clock_epoch_id": "epoch"}
+            ])
+            write_csv(row_map, [
+                "solver_row_index", "particle_id", "instrument_time_us",
+                "lineage_age_us", "particle_age_us",
+            ], [{
+                "solver_row_index": 1, "particle_id": 1, "instrument_time_us": 10,
+                "lineage_age_us": 5, "particle_age_us": 2,
+            }])
+            write_csv(result_path, ["Ion", "TofUs", "XMm", "YMm", "Hit"], [{
+                "Ion": 1, "TofUs": 30, "XMm": 90, "YMm": 0, "Hit": True,
+            }])
+            rows = ANALYZE._normalize_case({
+                "case_id": "case", "upstream_solver": "COMSOL",
+                "canonical": str(canonical), "row_map": str(row_map),
+                "downstream_results": {"COMSOL": str(result_path)},
+            }, 48.8, 0.0, 40.0)
+            self.assertFalse(rows[0]["hit"])
+
+    def test_global_detector_clocks_and_functional_acceptance(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            cases = []
+            for case_index, (case_id, upstream) in enumerate((
+                ("rf_comsol_n100", "COMSOL"), ("rf_simion_n100", "SIMION")
+            )):
+                canonical = root / f"{case_id}_canonical.csv"
+                row_map = root / f"{case_id}_row.csv"
+                write_csv(canonical, [
+                    "particle_id", "clock_epoch_id", "instrument_time_us",
+                ], [
+                    {"particle_id": index, "clock_epoch_id": "epoch", "instrument_time_us": 10 + index}
+                    for index in range(1, 101)
+                ])
+                write_csv(row_map, [
+                    "solver_row_index", "particle_id", "instrument_time_us",
+                    "lineage_age_us", "particle_age_us",
+                ], [
+                    {"solver_row_index": index, "particle_id": index,
+                     "instrument_time_us": 10 + index, "lineage_age_us": 5, "particle_age_us": 2}
+                    for index in range(1, 101)
+                ])
+                downstream = {}
+                for solver_index, solver in enumerate(("COMSOL", "SIMION")):
+                    result_path = root / f"{case_id}_{solver}.csv"
+                    write_csv(result_path, ["Ion", "TofUs", "XMm", "YMm", "Hit"], [
+                        {"Ion": index, "TofUs": 30 + 0.01 * case_index + 0.001 * solver_index,
+                         "XMm": 48.8 + 0.2 + 0.005 * case_index, "YMm": 0.1, "Hit": True}
+                        for index in range(1, 101)
+                    ])
+                    downstream[solver] = str(result_path)
+                cases.append({
+                    "case_id": case_id, "upstream_solver": upstream,
+                    "canonical": str(canonical), "row_map": str(row_map),
+                    "downstream_results": downstream,
+                })
+            manifest = root / "inputs.json"
+            manifest.write_text(json.dumps({
+                "resolved_geometry": str(PROJECT_ROOT / "config" / "resolved_geometry.json"),
+                "cases": cases,
+            }), encoding="utf-8")
+            result = ANALYZE.analyze(manifest, root / "results")
+            self.assertEqual(result["status"], "CONDITIONAL_PASS")
+            self.assertEqual(result["clock_reconstruction"], "PASS")
+            self.assertEqual(result["physical_link_status"], "BLOCKED")
+            detector_rows = ANALYZE._read_csv(root / "results" / "detector_particles.csv")
+            first = detector_rows[0]
+            self.assertAlmostEqual(float(first["detector_instrument_time_us"]), 41.0)
+            self.assertAlmostEqual(float(first["detector_lineage_age_us"]), 35.0)
+            self.assertAlmostEqual(float(first["detector_particle_age_us"]), 32.0)
+
+
+if __name__ == "__main__":
+    unittest.main()

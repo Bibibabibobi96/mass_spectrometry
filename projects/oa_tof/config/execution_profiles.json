@@ -45,6 +45,35 @@
       ]
     },
     {
+      "profile_id": "rf_handoff_projection_candidate",
+      "capability_id": "single_reflection_mass_analysis",
+      "mode": "rf_handoff_projection",
+      "evidence_levels": ["candidate"],
+      "supported_objectives": ["transmission_fraction", "tof_centroid", "detector_landing"],
+      "supported_operating_points": [
+        {"mass": {"value": 100, "unit": "Da"}, "charge_state": 1}
+      ],
+      "supported_design_variables": [],
+      "supported_constraints": ["paired_upstream_ensembles", "detector_radius"],
+      "deliverable_outputs": ["simulation_results", "validation_report"],
+      "required_bindings": ["rf_handoff_bundle"],
+      "steps": [
+        {
+          "step_id": "rf_handoff_projection",
+          "kind": "run",
+          "shell": "powershell",
+          "entrypoint": "tests/cross_solver/run_rf_handoff_projection.ps1",
+          "run_id_template": "{timestamp}__sim__cross__rf-handoff-projection__n100",
+          "arguments": ["-RunId", "{rf_handoff_run_id}", "-TargetSolver", "Both"]
+        }
+      ],
+      "limitations": [
+        "Uses the two archived RF N=100 interface ensembles and the provisional source-center coordinate projection",
+        "Reuses formal electrostatic assets read-only and does not model the electrical reference, physical gap, aperture, or injection optics",
+        "A passing functional projection would be conditional only; N=100 cannot support a resolution claim or formal-interface promotion"
+      ]
+    },
+    {
       "profile_id": "formal_current_design_validation",
       "capability_id": "single_reflection_mass_analysis",
       "mode": "formal",
