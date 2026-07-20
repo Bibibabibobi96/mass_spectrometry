@@ -272,6 +272,23 @@ oa-TOF随后在隔离run `20260720_164843__sim__cross__rf-handoff-projection__n1
 继续BLOCKED，禁止通过移动源、扩大探测器或分别调参追求PASS。oa-TOF已形成项目内实际消费者，待
 物理接口闭合及通用性证明后再判断是否提升到`common/`。
 
+2026-07-21新增`../config/rf_to_oatof_interface_candidate.json`和
+`../analysis/build_interface_handoff.py`，把未来物理连接明确拆为RF出口面、连接器、oa入口面和统一
+脉冲时刻的三维捕获状态。唯一canonical传输量是每粒子一次的首次正向过面事件：身份、物种引用、
+全局时间、三维位置、三维速度及可选出生时间；质量、电荷、动能、半径、发散、RF相位、年龄和求解器
+局部出生时间均由事件表与单份JSON派生，不逐行重复。现有详细`particle_state.csv`继续承担RF内部诊断，
+旧静态oa投影合同继续承担已完成运行的兼容入口，两者都不被新候选冒充为物理接口。
+
+双边界合同从当前RF契约读取`z=90.2 mm`出口面和`3.6 mm`出口孔径，但故意把oa入口几何、连接器场、
+脉冲波形和捕获体积保留为未解析。当前oa-TOF的`1×1×1 mm³`只登记为Formal参考释放分布，
+`hard_acceptance=false`；`40 mm`仍只是oa检测器有效半径，不是RF出口束斑或oa入口孔径。接口不得在RF
+出口按1 mm预裁剪粒子，而应分别统计`source_exit_exported → target_entry_crossed → pulse_captured →
+detector_hit`。接口场重叠时必须归同一个连接器或联合模型，不能靠增加粒子表列数弥补场所有权缺失。
+静态门禁已验证双边界不混用、派生量不进入canonical CSV、全局到局部时钟映射以及按需场自由快照；
+这些轻量测试不证明真实入口接受度或脉冲捕获性能，运行打包仍被禁止。
+两份归档COMSOL/SIMION N=100源表还通过新入口的只读`--check-source`兼容检查，均识别100个首次正向
+出口事件，最大速度—动能相对残差分别为`7.65e-15`和`4.39e-6`；检查没有写出重复事件表或三维快照。
+
 ## 产物与边界
 
 - 迁移前的COMSOL/SIMION候选、闭合证据、轨迹诊断、独立场闭合和图表统一冻结在

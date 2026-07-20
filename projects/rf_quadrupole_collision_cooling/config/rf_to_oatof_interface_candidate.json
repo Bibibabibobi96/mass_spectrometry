@@ -1,0 +1,170 @@
+{
+  "schema_version": 2,
+  "role": "two_boundary_time_resolved_component_interface_candidate",
+  "status": "draft_blocked_by_physical_interface_and_pulse_definition",
+  "qualification_scope": "source_exit_event_contract_and_static_validation_only",
+  "source_component": {
+    "project_id": "rf_quadrupole_collision_cooling",
+    "mode": "transport_interface_readiness",
+    "baseline": "config/baseline.json",
+    "mode_contract": "config/modes/transport_interface_readiness.json",
+    "interface_contract": "config/interface_contract.json",
+    "event": "handoff",
+    "required_status": "transmitted",
+    "minimum_particles": 100,
+    "frame_id": "rf_quadrupole_component",
+    "species_id": "ion_100amu_z1"
+  },
+  "target_component": {
+    "project_id": "oa_tof",
+    "baseline": "../oa_tof/config/baseline.json",
+    "formal_assets_read_only": true,
+    "physical_link_claim_allowed": false
+  },
+  "species_catalog": {
+    "ion_100amu_z1": {
+      "mass_amu": 100.0,
+      "charge_state": 1
+    }
+  },
+  "state_transfer": {
+    "authoritative_representation": "one_time_stamped_first_forward_crossing_event_per_particle",
+    "required_columns": [
+      "particle_id",
+      "species_id",
+      "instrument_time_us",
+      "position_x_mm",
+      "position_y_mm",
+      "position_z_mm",
+      "velocity_x_m_s",
+      "velocity_y_m_s",
+      "velocity_z_m_s"
+    ],
+    "lineage_columns_when_available": [
+      "lineage_birth_time_us",
+      "particle_birth_time_us"
+    ],
+    "derived_not_stored": [
+      "mass_amu",
+      "charge_state",
+      "mass_to_charge_Th",
+      "kinetic_energy_eV",
+      "radial_position_mm",
+      "divergence_angle_deg",
+      "rf_phase_rad",
+      "lineage_age_us",
+      "particle_age_us",
+      "solver_local_birth_time_us"
+    ],
+    "serialization": {
+      "format": "CSV_UTF8",
+      "floating_point_significant_digits": 17,
+      "policy": "Preserve binary64 round-trip precision; solver-specific inputs are derived adapters, not a second authority."
+    }
+  },
+  "boundaries": {
+    "source_exit_surface": {
+      "status": "defined_by_source_component",
+      "frame_id": "rf_quadrupole_component",
+      "geometry": "plane",
+      "axial_axis": "+z",
+      "z_mm": 90.2,
+      "outward_normal": [0.0, 0.0, 1.0],
+      "physical_aperture": {
+        "shape": "circle",
+        "radius_mm": 3.6
+      },
+      "selection_rule": "first_forward_crossing_only",
+      "policy": "Export every qualifying source-exit event; never clip it with a downstream reference distribution."
+    },
+    "target_entry_surface": {
+      "status": "unresolved",
+      "frame_id": "oatof_global",
+      "geometry": null,
+      "physical_aperture": null,
+      "required_before_runtime": [
+        "mechanical entry surface and aperture",
+        "source-to-target rigid transform",
+        "common electrostatic potential reference",
+        "connector field ownership"
+      ]
+    },
+    "pulse_capture_state": {
+      "status": "unresolved",
+      "representation": "three_dimensional_particle_state_at_a_shared_instrument_time",
+      "stored_by_default": false,
+      "derivation": "Replay the time-stamped entry stream through the connector and collection region to the pulse trigger time.",
+      "required_before_runtime": [
+        "collection volume",
+        "collection time window",
+        "pulse waveform and trigger rule",
+        "capture acceptance criteria"
+      ]
+    }
+  },
+  "connector": {
+    "status": "unresolved",
+    "required_physics": [
+      "RF exit fringe field",
+      "physical gap and apertures",
+      "injection electrodes or lenses",
+      "oa-accelerator field leakage",
+      "time-dependent pulse field when active",
+      "static or time-dependent magnetic field when present"
+    ],
+    "field_ownership_policy": "If upstream and downstream fields overlap, the overlap belongs to one connector or joint model; a one-way particle handoff may not split the overlap."
+  },
+  "time_control": {
+    "clock_epoch_id": "instrument_clock_epoch.v1",
+    "canonical_particle_time": "instrument_time_us",
+    "solver_mapping": "solver_local_time_us = instrument_time_us - run_window_start_instrument_time_us",
+    "static_field_policy": "A local rebase is allowed only when forces are time independent and the canonical time mapping is retained.",
+    "time_dependent_field_policy": "Release each particle at its mapped local time and evaluate every waveform on the same mapped instrument clock.",
+    "pulse_waveform": {
+      "status": "unresolved",
+      "required_fields": [
+        "electrode states before and after trigger",
+        "trigger time or repetition rule",
+        "rise and fall model",
+        "pulse duration",
+        "phase reference"
+      ]
+    }
+  },
+  "target_reference_distribution": {
+    "source": "projects/oa_tof/config/baseline.json particle_source",
+    "size_x_mm": 1.0,
+    "size_y_mm": 1.0,
+    "size_z_mm": 1.0,
+    "hard_acceptance": false,
+    "policy": "The current 1 x 1 x 1 mm formal release distribution is a validation input, not a proven target-entry aperture or pulse-capture acceptance."
+  },
+  "stage_accounting": {
+    "ordered_populations": [
+      "source_exit_exported",
+      "target_entry_crossed",
+      "pulse_captured",
+      "detector_hit"
+    ],
+    "required_metrics": [
+      "connector_transmission",
+      "pulse_capture_fraction",
+      "end_to_end_detection_fraction"
+    ],
+    "losses_must_remain_attributed_to_the_first_failed_stage": true
+  },
+  "storage_policy": {
+    "canonical": "one compact source-exit event row per particle plus one metadata JSON",
+    "derived_runtime_inputs": "Generate only for the selected downstream solver and run; they do not become parameter authorities.",
+    "three_dimensional_snapshot": "Generate only when a pulse-capture, space-charge or diagnostic consumer requires it.",
+    "dense_trajectories": "Diagnostic only; never part of the canonical handoff."
+  },
+  "package_generation_allowed": false,
+  "open_blockers": [
+    "target_entry_surface_unresolved",
+    "connector_geometry_and_fields_unresolved",
+    "pulse_capture_volume_unresolved",
+    "pulse_waveform_unresolved",
+    "downstream_functional_acceptance_failed"
+  ]
+}

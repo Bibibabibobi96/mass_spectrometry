@@ -28,6 +28,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Paired-particle identity gate failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Quadrupole L0 reference gate failed.' }
 & $python (Join-Path $projectRoot 'analysis\build_oatof_handoff.py') --check-contract
 if ($LASTEXITCODE -ne 0) { throw 'RF-to-oaTOF handoff contract gate failed.' }
+& $python (Join-Path $projectRoot 'analysis\build_interface_handoff.py') --check-contract
+if ($LASTEXITCODE -ne 0) { throw 'Two-boundary time-resolved interface contract gate failed.' }
 & $python -m unittest discover -s (Join-Path $projectRoot 'tests\analysis') -p 'test_*.py'
 if ($LASTEXITCODE -ne 0) { throw 'Python analysis tests failed.' }
 $parseErrors = @()

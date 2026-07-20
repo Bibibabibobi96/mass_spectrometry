@@ -219,7 +219,7 @@ def verify_source_manifest(source_csv: Path, manifest_path: Path, contract: dict
     return actual_sha
 
 
-def _read_handoff_rows(source_csv: Path, contract: dict[str, Any]) -> list[dict[str, str]]:
+def read_handoff_rows(source_csv: Path, contract: dict[str, Any]) -> list[dict[str, str]]:
     with source_csv.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
         if not reader.fieldnames or not REQUIRED_SOURCE_COLUMNS.issubset(reader.fieldnames):
@@ -259,7 +259,7 @@ def build_handoff(
     validated = validate_contract(contract_path)
     contract = validated["contract"]
     source_sha = verify_source_manifest(source_csv, source_manifest, contract)
-    rows = _read_handoff_rows(source_csv, contract)
+    rows = read_handoff_rows(source_csv, contract)
     transform = contract["coordinate_transform"]
     rotation = validated["rotation"]
     source_origin = [float(value) for value in transform["source_origin_mm"]]

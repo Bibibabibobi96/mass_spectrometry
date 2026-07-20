@@ -64,6 +64,11 @@
   [`config/rf_to_oatof_handoff.json`](config/rf_to_oatof_handoff.json)、
   [`analysis/build_oatof_handoff.py`](analysis/build_oatof_handoff.py)。合同当前是禁止打包的draft；完整状态包
   保存全局仪器时间和粒子谱系，11列ION只是当前静电oa-TOF消费者的派生输入。
+- 双边界、时变兼容的物理接口候选：
+  [`config/rf_to_oatof_interface_candidate.json`](config/rf_to_oatof_interface_candidate.json)、
+  [`analysis/build_interface_handoff.py`](analysis/build_interface_handoff.py)。它把RF出口面、尚未冻结的
+  oa入口面和脉冲时刻捕获状态分开；canonical CSV只保存每粒子一次带全局时间的出口相空间事件，
+  三维快照和求解器输入均按需派生。该候选只通过静态合同门禁，不授权物理连接或运行打包。
 - 路径解析：[`rf_quadrupole_paths.m`](rf_quadrupole_paths.m)
 
 大型 MPH、PA、IOB、Fly2 输出和图像一律放在
@@ -89,7 +94,7 @@ rf_quadrupole_collision_cooling/
 
 | 层级 | 回答的问题 | 当前状态 |
 |---|---|---|
-| Static | 源配置与解析发布是否同步、GEM是否同步、固定粒子表、四极杆L0理论/电压合同、部件链draft合同、分析测试和PowerShell入口语法是否通过 | 可执行 |
+| Static | 源配置与解析发布是否同步、GEM是否同步、固定粒子表、四极杆L0理论/电压合同、静态投影及双边界draft合同、分析测试和PowerShell入口语法是否通过 | 可执行 |
 | Candidate | 指定mode的两份成功manifest、统一事件表和跨求解器功能指标是否通过 | 可执行；接口N=100已有有效FAIL证据 |
 | Formal | 机械正式几何、SolidWorks装配与求解器资产是否同任务同步并复验 | 固定阻断，直到正式机械几何被选定 |
 

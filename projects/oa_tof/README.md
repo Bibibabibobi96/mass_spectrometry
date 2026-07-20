@@ -87,6 +87,10 @@
   [`analysis/prepare_rf_handoff_projection.py`](analysis/prepare_rf_handoff_projection.py)、
   [`tests/cross_solver/run_rf_handoff_projection.ps1`](tests/cross_solver/run_rf_handoff_projection.ps1)；
   只读复用正式静电资产，恢复部件链时钟，允许记录损失，但不表示电气/机械接口已连接。
+- 未来RF→oa物理接口的双边界及时变合同当前仍由RF项目候选
+  [`../rf_quadrupole_collision_cooling/config/rf_to_oatof_interface_candidate.json`](../rf_quadrupole_collision_cooling/config/rf_to_oatof_interface_candidate.json)
+  管理；本项目的`1×1×1 mm³`释放体只是参考输入而非入口硬接受度，真实oa入口、脉冲波形和捕获体积
+  冻结前不得建立动态消费者或宣称已连接。
 - 正式跨求解器直接重算与发布入口：
   [`tests/cross_solver/run_formal_validation.ps1`](tests/cross_solver/run_formal_validation.ps1)；发布器只在
   两端达到机器契约样本量、统一比较PASS且当前资产/结果SHA齐全时更新机器契约。
