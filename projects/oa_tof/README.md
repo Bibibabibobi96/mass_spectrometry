@@ -78,8 +78,8 @@
   [`tests/cross_solver/verify_geometry_contract.ps1`](tests/cross_solver/verify_geometry_contract.ps1)
 - 统一分析契约：[`config/analysis_contract.json`](config/analysis_contract.json)
 - 当前正式跨求解器验证：[`config/formal_validation.json`](config/formal_validation.json)
-- 当前N=1000正式结果与图片：`artifacts/projects/oa_tof/formal/results/`；包含当前COMSOL/SIMION
-  粒子表、三组主比较、峰形/落点/源映射图片、源运行manifest和完整SHA256清单。
+- 当前N=1000正式结果与图片：`artifacts/projects/oa_tof/formal/results/`；只包含当前baseline的
+  COMSOL/SIMION粒子表、新理论验证、跨求解器峰形/落点/源映射图片、源运行manifest和完整SHA256清单。
 - 宽质量标定候选模式：[`config/modes/mass_spectrum.json`](config/modes/mass_spectrum.json)；只评价
   峰位、标定和传输率，不替代正式分辨率基线。
 - RF外部handoff功能投影候选：

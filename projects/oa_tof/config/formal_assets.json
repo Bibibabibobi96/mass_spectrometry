@@ -21,9 +21,9 @@
     "source_run_id": "20260720_191743__sim__cross__coupled-baseline-validation__n1000",
     "artifact_relative_path": "formal/results",
     "sha256_manifest_relative_path": "formal/results/SHA256SUMS.csv",
-    "sha256_manifest_bytes": 4275,
-    "sha256_manifest_sha256": "B0E0F7E823B76CD2D4462FBC68EE9EE9B6CA326113251207E95AF230F8899DF7",
-    "manifest_file_count": 35
+    "sha256_manifest_bytes": 2183,
+    "sha256_manifest_sha256": "12141F3024A064D340B842F0FE0C9D20830EC9E6DFC4EB31127288522469BE2A",
+    "manifest_file_count": 18
   },
   "simion_manifest": "simion_stable_entry.json"
 }
