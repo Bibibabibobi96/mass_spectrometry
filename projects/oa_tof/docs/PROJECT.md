@@ -22,6 +22,15 @@
   资产门禁。SIMION正式PA顺序为`shield 1 < reflectron 2 < accelerator 3 < detector 4`。
 - 当前只完成oa-TOF分析器本体；尚未与RF四极杆正式连接。
 
+2026-07-20 RF项目新增了指向本项目当前源中心的求解器无关handoff draft及静态派生器。它保留跨任意
+上游部件累计的全局仪器时间、根粒子谱系年龄、当前粒子年龄、末组件耗时和谱系身份，并可从RF
+handoff状态派生现有固定ION格式；
+两份归档N=100 RF数据的只读格式转换均通过。该工作没有修改本项目baseline、正式粒子源、COMSOL MPH、
+SIMION包或CAD，也尚未形成oa-TOF外部handoff运行入口。RF轴0 V到本项目高压出生区的电气参考、真实
+间隙/孔径/注入光学和下游功能接受度仍未闭合，因此本项目的`contracts.interface`继续为`null`，正式状态
+不变。候选详情以RF项目`config/rf_to_oatof_handoff.json`为当前实例来源；只有本项目实际消费验证后才
+评估形成共享接口代码。
+
 ## 物理与几何基线
 
 紧凑三栅加速器保持对称等间距：`d1=3.0 mm`、`d2=16.8 mm`，五环中心间距均为`2.8 mm`。

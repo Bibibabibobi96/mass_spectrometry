@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "role": "component_chain_handoff_contract",
+  "status": "draft_blocked_by_electrical_and_physical_interface",
+  "qualification_scope": "solver_neutral_phase_space_projection_only",
+  "source_component": {
+    "project_id": "rf_quadrupole_collision_cooling",
+    "mode": "transport_interface_readiness",
+    "baseline": "config/baseline.json",
+    "mode_contract": "config/modes/transport_interface_readiness.json",
+    "interface_contract": "config/interface_contract.json",
+    "event": "handoff",
+    "required_status": "transmitted",
+    "mass_to_charge_Th": 100.0,
+    "charge_state": 1,
+    "minimum_particles": 100
+  },
+  "target_component": {
+    "project_id": "oa_tof",
+    "baseline": "../oa_tof/config/baseline.json",
+    "candidate_consumer": "fixed_particle_table_projection_not_yet_runtime_qualified",
+    "formal_assets_read_only": true
+  },
+  "identity_contract": {
+    "particle_id_policy": "stable_across_transport_components",
+    "row_order_policy": "sort_by_integer_particle_id_and_record_row_map",
+    "lineage_policy": "new products require a new particle_id, parent_particle_id and generation",
+    "current_generation": 0
+  },
+  "coordinate_transform": {
+    "status": "provisional_for_diagnostic_projection",
+    "source_frame_id": "rf_quadrupole_component",
+    "source_vector_order": ["transverse_x", "transverse_y", "axial_z"],
+    "source_origin_mm": [0.0, 0.0, 90.2],
+    "target_frame_id": "oatof_global",
+    "target_vector_order": ["x", "y", "z"],
+    "target_origin_mm": [-48.8, 0.0, -18.42918680341103],
+    "rotation_source_to_target": [
+      [0.0, 0.0, 1.0],
+      [1.0, 0.0, 0.0],
+      [0.0, 1.0, 0.0]
+    ],
+    "determinant_expected": 1.0,
+    "mapping_summary": "RF +z -> oa-TOF +x, RF +x -> oa-TOF +y, RF +y -> oa-TOF +z; handoff center maps to the current oa-TOF source center"
+  },
+  "timing_contract": {
+    "clock_epoch_id": "instrument_clock_epoch.v1",
+    "canonical_fields": {
+      "instrument_time_us": "absolute time on the shared instrument clock",
+      "lineage_age_us": "elapsed time since the root source particle was created; inherited by reaction products",
+      "particle_age_us": "elapsed time since the current particle entity was created; reset for a reaction product",
+      "last_component_elapsed_time_us": "elapsed time in the component that produced this handoff"
+    },
+    "propagation_rule": {
+      "instrument_time_out": "instrument_time_in + component_elapsed_time",
+      "lineage_age_out": "lineage_age_in + component_elapsed_time",
+      "particle_age_out_without_reaction": "particle_age_in + component_elapsed_time",
+      "reaction_product": "create a new particle_id with parent_particle_id and generation+1; retain instrument_time and lineage_age at creation, reset particle_age to zero"
+    },
+    "current_rf_source_mapping": {
+      "assumption": "the present standalone RF run creates the root particles at the RF source",
+      "time_us": "instrument_time_us",
+      "elapsed_time_us": ["lineage_age_us", "particle_age_us", "last_component_elapsed_time_us"],
+      "upgrade_before_upstream_components": "the RF input and particle_state contract must accept entry instrument_time_us, lineage_age_us and particle_age_us, then emit a distinct RF component elapsed time"
+    },
+    "solver_local_time_policy": {
+      "static_fields": "a solver may rebase each particle to local zero only if the per-particle instrument time is retained and restored in downstream analysis",
+      "time_dependent_fields": "use instrument time directly or apply an exactly equivalent clock and phase offset; an unqualified reset to zero is forbidden"
+    },
+    "current_oatof_projection": {
+      "field_time_dependence": "static",
+      "solver_birth_time_us": 0.0,
+      "canonical_time_retained": true,
+      "detector_time_rule": "instrument_detector_time_us = handoff_instrument_time_us + oatof_elapsed_time_us",
+      "lineage_time_rule": "detector_lineage_age_us = handoff_lineage_age_us + oatof_elapsed_time_us",
+      "particle_time_rule": "detector_particle_age_us = handoff_particle_age_us + oatof_elapsed_time_us"
+    }
+  },
+  "electrical_interface": {
+    "status": "unresolved",
+    "source_axis_reference_V": 0.0,
+    "target_source_region_reference": "not_yet_defined",
+    "required_before_runtime": [
+      "common potential and energy reference",
+      "physical drift, aperture and injection-lens geometry",
+      "proof that the projected particles can enter the oa-TOF source region without an unmodeled electrostatic barrier"
+    ]
+  },
+  "acceptance_criteria": {
+    "projection": {
+      "minimum_particles": 100,
+      "require_unique_particle_ids": true,
+      "require_positive_target_beam_velocity": true,
+      "maximum_abs_target_y_mm": 5.0,
+      "target_z_min_mm": -19.92918680341103,
+      "target_z_max_mm": -16.92918680341103,
+      "maximum_energy_velocity_relative_residual": 0.00001
+    },
+    "downstream_functional": {
+      "status": "NOT_EVALUATED",
+      "minimum_particles_for_transport_and_centroid": 100,
+      "minimum_particles_for_peak_shape_or_resolution": 1000,
+      "minimum_detector_transmission": 0.8,
+      "maximum_cross_ensemble_transmission_absolute_difference": 0.05,
+      "maximum_cross_ensemble_mean_tof_relative_difference": 0.05,
+      "maximum_cross_ensemble_rms_detector_radius_relative_difference": 0.1,
+      "n100_resolution_claim_allowed": false
+    }
+  },
+  "derived_solver_inputs": {
+    "canonical_handoff_csv": "authoritative transformed particle state and chain clock",
+    "oatof_ion": "derived 11-column fixed-particle table; solver birth time is local and particle identity is preserved by the row map",
+    "row_map_csv": "stable link between solver row order, particle identity and canonical time",
+    "metadata_json": "input, contract and output SHA-256 plus projection diagnostics"
+  },
+  "open_blockers": [
+    "electrical_interface_unresolved",
+    "physical_gap_and_injection_optics_unmodeled",
+    "rf_entry_clock_not_yet_generalized_for_an_upstream_source",
+    "oatof_external_handoff_runtime_not_qualified",
+    "downstream_functional_acceptance_not_evaluated"
+  ],
+  "package_generation_allowed": false
+}

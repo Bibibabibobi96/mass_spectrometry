@@ -60,6 +60,10 @@
 - 杆内释放诊断：[`analysis/compare_internal_release.py`](analysis/compare_internal_release.py)
 - 边缘定位、接口差异评估与oa-TOF集成门禁：
   [`analysis/assess_interface_integration_gate.py`](analysis/assess_interface_integration_gate.py)
+- 通用部件链时钟、RF→oa-TOF候选投影合同与派生器：
+  [`config/rf_to_oatof_handoff.json`](config/rf_to_oatof_handoff.json)、
+  [`analysis/build_oatof_handoff.py`](analysis/build_oatof_handoff.py)。合同当前是禁止打包的draft；完整状态包
+  保存全局仪器时间和粒子谱系，11列ION只是当前静电oa-TOF消费者的派生输入。
 - 路径解析：[`rf_quadrupole_paths.m`](rf_quadrupole_paths.m)
 
 大型 MPH、PA、IOB、Fly2 输出和图像一律放在
@@ -85,7 +89,7 @@ rf_quadrupole_collision_cooling/
 
 | 层级 | 回答的问题 | 当前状态 |
 |---|---|---|
-| Static | 源配置与解析发布是否同步、GEM是否同步、固定粒子表、四极杆L0理论/电压合同、分析测试和PowerShell入口语法是否通过 | 可执行 |
+| Static | 源配置与解析发布是否同步、GEM是否同步、固定粒子表、四极杆L0理论/电压合同、部件链draft合同、分析测试和PowerShell入口语法是否通过 | 可执行 |
 | Candidate | 指定mode的两份成功manifest、统一事件表和跨求解器功能指标是否通过 | 可执行；接口N=100已有有效FAIL证据 |
 | Formal | 机械正式几何、SolidWorks装配与求解器资产是否同任务同步并复验 | 固定阻断，直到正式机械几何被选定 |
 
@@ -105,6 +109,9 @@ rf_quadrupole_collision_cooling/
 - 新运行只以统一`particle_state.csv`、`summary.json`、稀疏轨迹和manifest为权威结果；不再生成旧版
   solver-specific粒子终点表。每份manifest在比较前必须重新计算全部文件哈希。
 - 部件交接面、杆端诊断面和独立传输检测面必须分别读取接口机器契约，不得相互替代。
+- 跨部件时间不得在求解器边界丢失：状态包累计全局仪器时间、谱系年龄、当前粒子年龄和末组件耗时；静态求解器可在
+  保留逐粒子时间映射时使用局部零时刻；状态包还须区分根源粒子谱系年龄与当前粒子年龄，时变场必须
+  消费全局时间或严格等价的时钟/相位偏移。
 - 机械正式资格适用根README的SolidWorks同步门禁；当前项目状态只查PROJECT。
 - 集成仪器中，传输四极杆和质量过滤四极杆是同一硬件模板的两个实例；共享几何/粒子接口，分别绑定 mode 配置和空间变换，不复制成两套几何源。
 
