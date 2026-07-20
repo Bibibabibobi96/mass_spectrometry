@@ -18,5 +18,5 @@
 - [`三栅加速器总长度符号推导.docx`](../history/20260721__superseded-theory-docx/三栅加速器总长度符号推导.docx)；
 - [`单次反射TOF二级反射镜等时聚焦推导.docx`](../history/20260721__superseded-theory-docx/单次反射TOF二级反射镜等时聚焦推导.docx)。
 
-原始重写投稿包及 SHA 已冻结在 `../history/20260720_theory_refactor_submission/`；审查记录见
+原始重写投稿包及 SHA 已冻结在 `../history/20260720__oatof-theory-refactor-review/`；审查清单见
 `../history/20260720__oatof-theory-refactor-review.md`。归档不参与活跃程序导入。

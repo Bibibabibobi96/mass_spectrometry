@@ -64,7 +64,7 @@ Formal几何及25组件装配未修改。
 
 2026-07-20完成 oa-TOF 理论重写文档及代码审查。三份 Markdown 已取代旧 DOCX 成为活跃理论入口，
 三份求解器无关 Python 已接入静态测试；原始投稿包及 SHA 已冻结在
-`docs/history/20260720_theory_refactor_submission/`，审查记录为
+`docs/history/20260720__oatof-theory-refactor-review/`，同名审查清单为
 `docs/history/20260720__oatof-theory-refactor-review.md`。活跃理论文档的展示公式已统一使用 GitHub
 官方支持的 fenced `math` 语法，避免多行公式中的行首`+`、`-`、`#`被 Markdown 误解析。
 独立数值积分、有限差分、根求解及当前参数回归确认核心公式成立。审查发现旧 Formal baseline 的

@@ -4,11 +4,21 @@
 
 ## 结论
 
-相邻目录`20260720_theory_refactor_submission/`中的三份原始 Markdown 和三份 Python 均已完整审查，
+同名载荷目录`20260720__oatof-theory-refactor-review/`中的三份原始 Markdown 和三份 Python 均已完整审查，
 `SHA256SUMS.txt`覆盖的原始文件哈希验证通过，三份脚本自检通过。为避免原始 Markdown 被历史文档
 门禁和 GitHub 当作活跃文档处理，归档副本仅追加`.txt`后缀并扁平化文件名，文件字节及记录的 SHA
 保持不变。经修正和集成的活跃版本位于
 `projects/oa_tof/docs/theory/`与`projects/oa_tof/analysis/`。
+
+载荷清单：
+
+- [`SHA256SUMS.txt`](20260720__oatof-theory-refactor-review/SHA256SUMS.txt)
+- [`theory__dual_stage_reflectron.md.txt`](20260720__oatof-theory-refactor-review/theory__dual_stage_reflectron.md.txt)
+- [`theory__oaaccelerator_time_focus.md.txt`](20260720__oatof-theory-refactor-review/theory__oaaccelerator_time_focus.md.txt)
+- [`theory__oatof_oaaccelerator_coupling.md.txt`](20260720__oatof-theory-refactor-review/theory__oatof_oaaccelerator_coupling.md.txt)
+- [`analysis__accelerator_time_focus.py`](20260720__oatof-theory-refactor-review/analysis__accelerator_time_focus.py)
+- [`analysis__oatof_oaaccelerator_coupling.py`](20260720__oatof-theory-refactor-review/analysis__oatof_oaaccelerator_coupling.py)
+- [`analysis__reflectron_dual_stage_solver.py`](20260720__oatof-theory-refactor-review/analysis__reflectron_dual_stage_solver.py)
 
 重写版本比旧 DOCX 有更高的长期价值，原因是它明确拆分了：
 

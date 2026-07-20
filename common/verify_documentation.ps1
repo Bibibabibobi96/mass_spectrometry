@@ -119,24 +119,77 @@ foreach ($file in $activeTextFiles) {
     }
 }
 
-$historyFiles = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'projects') -Recurse -File -Filter '*.md' |
-    Where-Object { $_.FullName -match '[\\/]docs[\\/]history[\\/]' })
-foreach ($file in $historyFiles) {
-    $hasArchiveBanner = Select-String -LiteralPath $file.FullName -SimpleMatch 'DOC_STATUS: ARCHIVED_READ_ONLY' `
-        -Encoding UTF8 -Quiet
-    if (-not $hasArchiveBanner) {
-        $relative = $file.FullName.Substring($repoRoot.Length + 1)
-        Add-DocError "$relative`: missing read-only archive banner"
-    }
-    $marker = [regex]::Escape([IO.Path]::DirectorySeparatorChar + 'docs' +
-        [IO.Path]::DirectorySeparatorChar + 'history' + [IO.Path]::DirectorySeparatorChar)
-    $projectPath = ($file.FullName -split $marker, 2)[0]
+$historyFiles = New-Object System.Collections.Generic.List[System.IO.FileInfo]
+$historyDirs = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'projects') -Directory | ForEach-Object {
+    $candidate = Join-Path $_.FullName 'docs\history'
+    if (Test-Path -LiteralPath $candidate -PathType Container) { Get-Item -LiteralPath $candidate }
+})
+foreach ($historyDir in $historyDirs) {
+    $projectPath = Split-Path -Parent (Split-Path -Parent $historyDir.FullName)
     $projectReadme = Join-Path $projectPath 'README.md'
-    $historyEntry = 'docs/history/' + $file.Name
-    if (-not (Test-Path -LiteralPath $projectReadme -PathType Leaf) -or
-        [System.IO.File]::ReadAllText($projectReadme, $utf8) -notmatch [regex]::Escape($historyEntry)) {
-        $relative = $file.FullName.Substring($repoRoot.Length + 1)
-        Add-DocError "$relative`: project README does not index '$historyEntry'"
+    $projectReadmeRaw = if (Test-Path -LiteralPath $projectReadme -PathType Leaf) {
+        [System.IO.File]::ReadAllText($projectReadme, $utf8)
+    } else { '' }
+    $flatMarkdown = @(Get-ChildItem -LiteralPath $historyDir.FullName -File -Filter '*.md')
+    foreach ($file in $flatMarkdown) {
+        $historyFiles.Add($file)
+        $hasArchiveBanner = Select-String -LiteralPath $file.FullName -SimpleMatch `
+            'DOC_STATUS: ARCHIVED_READ_ONLY' -Encoding UTF8 -Quiet
+        if (-not $hasArchiveBanner) {
+            $relative = $file.FullName.Substring($repoRoot.Length + 1)
+            Add-DocError "$relative`: missing read-only archive banner"
+        }
+        $historyEntry = 'docs/history/' + $file.Name
+        if ($projectReadmeRaw -notmatch [regex]::Escape($historyEntry)) {
+            $relative = $file.FullName.Substring($repoRoot.Length + 1)
+            Add-DocError "$relative`: project README does not index '$historyEntry'"
+        }
+    }
+
+    $rootPayloadFiles = @(Get-ChildItem -LiteralPath $historyDir.FullName -File |
+        Where-Object { $_.Extension -ne '.md' })
+    foreach ($payloadFile in $rootPayloadFiles) {
+        $relative = $payloadFile.FullName.Substring($repoRoot.Length + 1)
+        Add-DocError "$relative`: history payload must be inside a same-name manifest directory"
+    }
+
+    foreach ($payloadDir in @(Get-ChildItem -LiteralPath $historyDir.FullName -Directory)) {
+        $manifestPath = Join-Path $historyDir.FullName ($payloadDir.Name + '.md')
+        if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+            $relative = $payloadDir.FullName.Substring($repoRoot.Length + 1)
+            Add-DocError "$relative`: payload directory has no same-name flat Markdown manifest"
+            continue
+        }
+        $nestedDirs = @(Get-ChildItem -LiteralPath $payloadDir.FullName -Recurse -Directory)
+        foreach ($nestedDir in $nestedDirs) {
+            $relative = $nestedDir.FullName.Substring($repoRoot.Length + 1)
+            Add-DocError "$relative`: nested directories are forbidden in history payloads"
+        }
+        $manifestRaw = [System.IO.File]::ReadAllText($manifestPath, $utf8)
+        $checksumPath = Join-Path $payloadDir.FullName 'SHA256SUMS.txt'
+        $checksumRaw = if (Test-Path -LiteralPath $checksumPath -PathType Leaf) {
+            [System.IO.File]::ReadAllText($checksumPath, $utf8)
+        } else { '' }
+        foreach ($payloadFile in @(Get-ChildItem -LiteralPath $payloadDir.FullName -Recurse -File)) {
+            $relative = $payloadFile.FullName.Substring($repoRoot.Length + 1)
+            if ($payloadFile.Extension -in @('.md', '.pyc') -or
+                $payloadFile.FullName -match '[\\/]__pycache__[\\/]') {
+                Add-DocError "$relative`: forbidden Markdown or runtime cache in history payload"
+            }
+            $payloadEntry = $payloadDir.Name + '/' + $payloadFile.Name
+            if ($manifestRaw -notmatch [regex]::Escape($payloadEntry)) {
+                Add-DocError "$relative`: same-name manifest does not link payload '$payloadEntry'"
+            }
+            if ($payloadFile.Name -ne 'SHA256SUMS.txt') {
+                $actualHash = (Get-FileHash -LiteralPath $payloadFile.FullName -Algorithm SHA256).Hash
+                $checksumPattern = '(?im)^' + [regex]::Escape($actualHash) + '\s+\*?' +
+                    [regex]::Escape($payloadFile.Name) + '\s*$'
+                if ($manifestRaw -notmatch [regex]::Escape($actualHash) -and
+                    $checksumRaw -notmatch $checksumPattern) {
+                    Add-DocError "$relative`: SHA-256 is absent or stale in manifest/checksum list"
+                }
+            }
+        }
     }
 }
 
