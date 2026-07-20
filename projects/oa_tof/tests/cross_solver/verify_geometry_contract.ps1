@@ -202,6 +202,8 @@ Assert-Contains $deliveryBuilder '[string]$ContractPath' 'SIMION candidate resol
 Assert-Contains $deliveryBuilder '[string]$CandidateBaselinePath' 'SIMION candidate baseline option'
 Assert-Contains $deliveryBuilder '[string]$CandidateTextDir' 'SIMION candidate generated-text option'
 Assert-Contains $deliveryBuilder 'if (-not $candidateMode)' 'SIMION formal synchronization isolation'
+Assert-Contains $deliveryBuilder '[switch]$DeferRunFinalization' 'SIMION integrated-run finalization deferral'
+Assert-Contains $deliveryBuilder 'run_finalization_deferred=[bool]$DeferRunFinalization' 'SIMION stage-only summary identity'
 Assert-Contains $comsol "p.set('detector_x', '-x_accel_center'" 'COMSOL detector x parameter'
 Assert-Contains $comsol 'contract = load_oatof_contract(contract_path);' 'COMSOL resolved-contract loader'
 Assert-Contains $comsol 'options.ContractPath (1,1) string = ""' 'COMSOL candidate contract option'

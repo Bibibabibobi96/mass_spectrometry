@@ -17,7 +17,7 @@
     {"stage_id": "comsol_candidate", "depends_on": ["static_inputs"], "output_scope": "run/comsol", "failure_stops_workflow": true},
     {"stage_id": "simion_candidate", "depends_on": ["static_inputs", "comsol_candidate"], "output_scope": "run/simion", "failure_stops_workflow": true},
     {"stage_id": "cad_candidate", "depends_on": ["comsol_candidate"], "output_scope": "run/cad", "failure_stops_workflow": true},
-    {"stage_id": "cross_solver_acceptance", "depends_on": ["comsol_candidate", "simion_candidate", "cad_candidate"], "output_scope": "run/results", "failure_stops_workflow": true}
+    {"stage_id": "cross_solver_acceptance", "depends_on": ["comsol_candidate", "simion_candidate", "cad_candidate"], "output_scope": "run/results", "failure_stops_workflow": true, "acceptance_scope": "structural_build_and_contract", "performance_claim_allowed": false}
   ],
   "terminal_states": ["candidate_rejected", "candidate_accepted_not_promoted", "candidate_accepted_for_promotion"],
   "promotion_is_not_a_workflow_stage": true

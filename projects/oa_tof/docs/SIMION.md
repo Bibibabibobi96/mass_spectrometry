@@ -31,6 +31,8 @@
 `build_formal_delivery.ps1`的默认行为仍从正式合同构建run内候选交付；当显式提供`ContractPath`时，
 必须同时提供`CandidateBaselinePath`和`CandidateTextDir`，构建器禁止调用正式文本同步，而是从隔离
 候选输入建立PA/IOB。两种模式都只允许输出到`runs/`，晋升继续是独立门禁。
+集成runner额外传入`DeferRunFinalization`：构建器只在`simion/`写阶段摘要，不得提前覆盖run根
+`summary.json/run_manifest.json`；根三件套由跨软件生命周期后端在所有阶段结束后唯一收口。
 
 稳定实现入口以`config/simion_stable_entry.json`冻结：0.05mm是正式可移植交付，0.025mm仅作轴向
 网格收敛参考。该清单记录外部资产路径、大小和SHA-256，不重复维护物理参数；物理

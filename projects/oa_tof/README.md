@@ -45,6 +45,8 @@
   自动计划不包含晋升，正式baseline与formal在候选期保持只读。
 - 候选运行三件套生命周期：[`analysis/candidate_run_lifecycle.py`](analysis/candidate_run_lifecycle.py)；
   从scratch原子启动完整run，并对success/failed/interrupted统一写根`summary.json/run_manifest.json`。
+- 集成候选执行：[`analysis/run_candidate_workflow.py`](analysis/run_candidate_workflow.py)；顺序调用N=100
+  粒子表、COMSOL、SIMION、CAD和结构/合同验收，任何终态均由上述生命周期后端统一收口，不含晋升。
 - 人工设计入口：[`config/baseline.json`](config/baseline.json)；程序入口为自动生成的
   [`config/resolved_geometry.json`](config/resolved_geometry.json)，禁止手改。
 - 全项目门禁：`verify_project.ps1 -Level Static|Candidate|Formal`。

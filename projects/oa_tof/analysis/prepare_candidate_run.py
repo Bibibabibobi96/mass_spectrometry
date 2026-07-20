@@ -181,6 +181,9 @@ def prepare_candidate_run(
         contract_stage = stage_contracts[stage["stage_id"]]
         stage["depends_on"] = contract_stage["depends_on"]
         stage["failure_stops_workflow"] = contract_stage["failure_stops_workflow"]
+        for key in ("acceptance_scope", "performance_claim_allowed"):
+            if key in contract_stage:
+                stage[key] = contract_stage[key]
     (planning_root / "candidate_workflow_plan.json").write_text(
         json.dumps(workflow_plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )

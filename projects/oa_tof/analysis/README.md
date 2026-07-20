@@ -35,6 +35,10 @@ py -3.11 -m venv .venv
   `run_config.json/summary.json/run_manifest.json`的失效安全骨架，再原子进入`runs/<run_id>/`；
   `finalize`要求按工作流顺序提交全部阶段状态，并以success、failed或interrupted重写根summary和manifest。
   success只表示`candidate_accepted_not_promoted`，始终保持`formal_eligible=false`。
+- 集成执行器：`run_candidate_workflow.py <scratch-plan>/candidate_workflow_plan.json`。它生成共享N=100
+  粒子表，构建并同步检查候选COMSOL MPH，使用延迟根收口模式建立/检查SIMION PA/IOB，导出候选CAD，
+  最后要求两端N=100粒子表SHA一致。当前接受范围固定为`structural_build_and_contract`，
+  `performance_claim_allowed=false`；不能用这次成功替代N=1000性能、GUI Compute或正式晋升门禁。
 - 数值算法：`peak_metrics.py`。
 - 五质量标定、逐峰COMSOL/SIMION局部密度叠加和质心差汇总图：`mass_spectrum.py`。主图使用2×3布局，
   五个峰各自缩放局部质量偏差轴且共享各峰分箱，第六格只汇总跨求解器平均TOF差；全图图例明确

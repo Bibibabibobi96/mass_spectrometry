@@ -121,6 +121,8 @@ def _summary(status: str, stage_results: list[dict[str, Any]], failure_stage: st
         "role": "oa_tof_candidate_run_summary",
         "status": status,
         "candidate_decision": decision,
+        "acceptance_scope": "structural_build_and_contract" if status == "success" else None,
+        "performance_claim_allowed": False,
         "failure_stage": failure_stage,
         "stages": stage_results,
         "formal_modified": False,
@@ -154,6 +156,16 @@ def start_candidate_run(plan_path: Path) -> Path:
         expected = config_template.get("input_sha256", {}).get(key, "")
         if not expected or sha256(Path(value)).lower() != expected.lower():
             raise ValueError(f"planned candidate input changed before run start: {key}")
+    consumption = load_json(planning_root / "inputs" / "prepared_consumers" / "candidate_consumption_plan.json")
+    contract_record = consumption.get("candidate_contract", {})
+    consumer_contract_path = Path(contract_record.get("path", ""))
+    if (not consumer_contract_path.is_file() or
+            sha256(consumer_contract_path).lower() != contract_record.get("sha256", "").lower()):
+        raise ValueError("prepared candidate consumer contract changed before run start")
+    for key, record in consumption.get("consumers", {}).get("simion", {}).get("generated", {}).items():
+        generated_path = Path(record.get("path", ""))
+        if not generated_path.is_file() or sha256(generated_path).lower() != record.get("sha256", "").lower():
+            raise ValueError(f"prepared SIMION candidate text changed before run start: {key}")
 
     staging = planning_root / "materialized_run"
     if staging.exists():

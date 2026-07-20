@@ -18,6 +18,12 @@ from machine_contracts import load_json, sha256
 from prepare_candidate_consumers import prepare, verify_routing_coverage
 from prepare_candidate_run import prepare_candidate_run, validate_workflow
 from candidate_run_lifecycle import finalize_candidate_run, start_candidate_run
+from run_candidate_workflow import (
+    CandidateWorkflowError,
+    CandidateWorkflowInterrupted,
+    execute_stage,
+    run_candidate_workflow,
+)
 from verify_artifact_layout import verify_project
 
 
@@ -321,6 +327,114 @@ class CandidateDesignTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "changed before run start"):
                 start_candidate_run(planning_root / "candidate_workflow_plan.json")
             self.assertFalse(Path(plan["run_root"]).exists())
+
+    def test_prepared_solver_text_cannot_change_before_atomic_run_start(self):
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            artifact_root = root_path / "artifacts" / "projects" / "oa_tof"
+            source = root_path / "source"
+            source.mkdir()
+            inputs = self.candidate_run_inputs(source)
+            plan = prepare_candidate_run(
+                *inputs, "20260720_130004__build__cross__design-candidate__text-tamper", artifact_root
+            )
+            planning_root = Path(plan["planning_root"])
+            program = planning_root / "inputs" / "prepared_consumers" / "simion" / "oatof_ideal_grounded.lua"
+            program.write_text(program.read_text(encoding="utf-8") + "-- changed\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "SIMION candidate text changed"):
+                start_candidate_run(planning_root / "candidate_workflow_plan.json")
+            self.assertFalse(Path(plan["run_root"]).exists())
+
+    def prepared_workflow_plan(self, root_path, stamp):
+        artifact_root = root_path / "artifacts" / "projects" / "oa_tof"
+        artifact_root.mkdir(parents=True)
+        (artifact_root / "00_README.txt").write_text("test artifact root", encoding="utf-8")
+        source = root_path / "source"
+        source.mkdir()
+        inputs = self.candidate_run_inputs(source)
+        plan = prepare_candidate_run(
+            *inputs, f"{stamp}__build__cross__design-candidate__integrated", artifact_root
+        )
+        return artifact_root, Path(plan["planning_root"]) / "candidate_workflow_plan.json"
+
+    def test_integrated_runner_success_closes_one_root_manifest(self):
+        with tempfile.TemporaryDirectory() as root:
+            artifact_root, plan_path = self.prepared_workflow_plan(Path(root), "20260720_140000")
+            observed = []
+
+            def fake_executor(stage, plan, _simion):
+                observed.append(stage["stage_id"])
+                evidence_path = Path(plan["run_root"]) / "results" / f"{stage['stage_id']}.txt"
+                evidence_path.write_text("STATUS=PASS\n", encoding="utf-8")
+                return {"report": str(evidence_path)}
+
+            run_root, summary = run_candidate_workflow(plan_path, stage_executor=fake_executor)
+            expected = ["static_inputs", "comsol_candidate", "simion_candidate", "cad_candidate", "cross_solver_acceptance"]
+            self.assertEqual(observed, expected)
+            self.assertEqual([item["stage_id"] for item in summary["stages"]], expected)
+            self.assertEqual(summary["acceptance_scope"], "structural_build_and_contract")
+            self.assertFalse(summary["performance_claim_allowed"])
+            self.assertEqual(verify_project(artifact_root), (1, 0))
+            self.assertEqual(load_json(run_root / "run_manifest.json")["status"], "success")
+
+    def test_integrated_runner_failure_and_interrupt_close_remaining_stages(self):
+        cases = (("failed", "simion_candidate", CandidateWorkflowError, "20260720_140001"),
+                 ("interrupted", "cad_candidate", CandidateWorkflowInterrupted, "20260720_140002"))
+        for outcome, stop_stage, exception_type, stamp in cases:
+            with self.subTest(outcome=outcome), tempfile.TemporaryDirectory() as root:
+                artifact_root, plan_path = self.prepared_workflow_plan(Path(root), stamp)
+
+                def fake_executor(stage, _plan, _simion):
+                    if stage["stage_id"] == stop_stage:
+                        if outcome == "interrupted":
+                            raise KeyboardInterrupt("test interruption")
+                        raise RuntimeError("test failure")
+                    return {"stage": stage["stage_id"]}
+
+                with self.assertRaises(exception_type) as caught:
+                    run_candidate_workflow(plan_path, stage_executor=fake_executor)
+                run_root = caught.exception.run_root
+                summary = load_json(run_root / "summary.json")
+                self.assertEqual(summary["status"], outcome)
+                self.assertEqual(summary["failure_stage"], stop_stage)
+                statuses = {item["stage_id"]: item["status"] for item in summary["stages"]}
+                self.assertEqual(statuses[stop_stage], outcome)
+                later = False
+                for item in summary["stages"]:
+                    if later:
+                        self.assertEqual(item["status"], "blocked")
+                    later = later or item["stage_id"] == stop_stage
+                self.assertEqual(verify_project(artifact_root), (1, 0))
+
+    def test_cross_acceptance_requires_identical_candidate_particle_tables(self):
+        with tempfile.TemporaryDirectory() as root:
+            run_root = Path(root)
+            files = {}
+            for name in ("particle_table", "model", "sync_report", "iob", "ion_n100", "stage_summary", "cad_report"):
+                path = run_root / f"{name}.dat"
+                path.write_text("same particle table" if name in ("particle_table", "ion_n100") else "evidence", encoding="utf-8")
+                files[name] = str(path)
+            plan = {
+                "run_root": str(run_root),
+                "stage_results_so_far": [
+                    {"stage_id": "static_inputs", "evidence": {"particle_table": files["particle_table"]}},
+                    {"stage_id": "comsol_candidate", "evidence": {"model": files["model"], "sync_report": files["sync_report"]}},
+                    {"stage_id": "simion_candidate", "evidence": {
+                        "iob": files["iob"], "ion_n100": files["ion_n100"], "stage_summary": files["stage_summary"]}},
+                    {"stage_id": "cad_candidate", "evidence": {"cad_report": files["cad_report"]}},
+                ],
+            }
+            stage = {
+                "stage_id": "cross_solver_acceptance", "output_dir": str(run_root / "results"),
+                "acceptance_scope": "structural_build_and_contract", "performance_claim_allowed": False,
+            }
+            evidence = execute_stage(stage, plan, "unused")
+            acceptance = load_json(Path(evidence["acceptance"]))
+            self.assertEqual(acceptance["scope"], "structural_build_and_contract")
+            self.assertTrue(acceptance["shared_particle_table_sha256"])
+            Path(files["ion_n100"]).write_text("different", encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "particle tables differ"):
+                execute_stage(stage, plan, "unused")
 
 
 if __name__ == "__main__":

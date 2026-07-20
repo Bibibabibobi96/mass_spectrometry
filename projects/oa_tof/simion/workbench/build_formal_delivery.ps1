@@ -5,7 +5,8 @@ param(
   [string]$RunId = '',
   [string]$ContractPath = '',
   [string]$CandidateBaselinePath = '',
-  [string]$CandidateTextDir = ''
+  [string]$CandidateTextDir = '',
+  [switch]$DeferRunFinalization
 )
 
 Set-StrictMode -Version Latest
@@ -51,9 +52,14 @@ if (-not $outputFull.StartsWith($runsRoot, [StringComparison]::OrdinalIgnoreCase
   throw 'OutputDir must remain under runs; promotion to formal is a separate gate.'
 }
 if (Test-Path -LiteralPath $outputFull) {
-  throw "Output directory already exists; no automatic overwrite is allowed: $outputFull"
+  $existing = @(Get-ChildItem -LiteralPath $outputFull -Force)
+  if (-not $DeferRunFinalization -or $existing.Count -ne 0) {
+    throw "Output directory already exists or is not empty; no automatic overwrite is allowed: $outputFull"
+  }
 }
-New-Item -ItemType Directory -Path $outputFull | Out-Null
+else {
+  New-Item -ItemType Directory -Path $outputFull | Out-Null
+}
 
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 if (-not $candidateMode) {
@@ -145,15 +151,17 @@ $runRoot = if ((Split-Path -Leaf $outputFull) -eq 'simion') { Split-Path -Parent
 if ([string]::IsNullOrWhiteSpace($RunId)) { $RunId = Split-Path -Leaf $runRoot }
 & $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
 if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
-$runConfigPath = Join-Path $runRoot 'run_config.json'
-$runConfig = [ordered]@{
-  schema_version = 1; role = 'oa_tof_simion_delivery_run_config'
-  run_id = $RunId; project = 'oa_tof'; mode = 'formal_delivery_candidate'
-  project_root = $projectRoot
-  inputs = [ordered]@{baseline=$baselinePath; resolved_geometry=$contractPath; mode=$modePath; candidate_mode=$candidateMode}
-  output_dir = $outputFull; overwrite = $false
+if (-not $DeferRunFinalization) {
+  $runConfigPath = Join-Path $runRoot 'run_config.json'
+  $runConfig = [ordered]@{
+    schema_version = 1; role = 'oa_tof_simion_delivery_run_config'
+    run_id = $RunId; project = 'oa_tof'; mode = 'formal_delivery_candidate'
+    project_root = $projectRoot
+    inputs = [ordered]@{baseline=$baselinePath; resolved_geometry=$contractPath; mode=$modePath; candidate_mode=$candidateMode}
+    output_dir = $outputFull; overwrite = $false
+  }
+  $runConfig | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $runConfigPath -Encoding UTF8
 }
-$runConfig | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $runConfigPath -Encoding UTF8
 
 $template = $TemplateIob
 if ([string]::IsNullOrWhiteSpace($template)) {
@@ -197,12 +205,14 @@ $hashes = Get-ChildItem -LiteralPath $outputFull -File | Where-Object {
   [pscustomobject]@{file=$_.Name; bytes=$_.Length; sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash}
 }
 $hashes | Export-Csv -LiteralPath $shaPath -NoTypeInformation -Encoding UTF8
-$summaryPath = Join-Path $runRoot 'summary.json'
-[ordered]@{schema_version=1;role='oa_tof_simion_delivery_summary';status='success';delivery_dir='simion'} |
+$summaryPath = if ($DeferRunFinalization) { Join-Path $outputFull 'stage_summary.json' } else { Join-Path $runRoot 'summary.json' }
+[ordered]@{schema_version=1;role='oa_tof_simion_delivery_summary';status='success';delivery_dir='simion';run_finalization_deferred=[bool]$DeferRunFinalization} |
   ConvertTo-Json -Depth 3 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
-& $python $manifestScript --run-config $runConfigPath --manifest (Join-Path $runRoot 'run_manifest.json') --status success --software 'SIMION 2020' `
-  --output $iobOutput --output (Join-Path $outputFull 'oatof_ideal_grounded.lua') `
-  --output (Join-Path $outputFull 'oatof_ideal_grounded.fly2') `
-  --output $shaPath --output $summaryPath
-if ($LASTEXITCODE -ne 0) { throw 'Run-manifest generation failed.' }
+if (-not $DeferRunFinalization) {
+  & $python $manifestScript --run-config $runConfigPath --manifest (Join-Path $runRoot 'run_manifest.json') --status success --software 'SIMION 2020' `
+    --output $iobOutput --output (Join-Path $outputFull 'oatof_ideal_grounded.lua') `
+    --output (Join-Path $outputFull 'oatof_ideal_grounded.fly2') `
+    --output $shaPath --output $summaryPath
+  if ($LASTEXITCODE -ne 0) { throw 'Run-manifest generation failed.' }
+}
 "STATUS=PASS OUTPUT_DIR=$outputFull FILES=$($hashes.Count)"
