@@ -72,7 +72,7 @@ Formal几何及25组件装配未修改。
 耦合纵向候选随后按完整空间能量包络和既有100%穿透深度裕量生成，N=100全链路及同源N=1000
 COMSOL/SIMION比较均通过；所有者批准后已于2026-07-20原子晋升为当前 Formal baseline。旧 Formal
 资产未删除，归档在
-`artifacts/projects/oa_tof/archive/20260720_204500__formal__pre-coupled-longitudinal-baseline/`。
+`artifacts/projects/oa_tof/archive/20260720_204500__superseded__cross__pre-coupled-baseline/`。
 
 ## 物理与几何基线
 

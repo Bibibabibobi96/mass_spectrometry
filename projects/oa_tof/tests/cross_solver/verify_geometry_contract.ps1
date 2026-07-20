@@ -48,6 +48,9 @@ function Assert-NotContains([string]$Text, [string]$Needle, [string]$Label) {
 
 $contract = Get-Content -LiteralPath $contractPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $formalAssets = Get-Content -LiteralPath (Join-Path $componentDir 'config\formal_assets.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+$formalValidationPath = Join-Path $componentDir 'config\formal_validation.json'
+$formalValidation = Get-Content -LiteralPath $formalValidationPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$formalReleaseManifestPath = Join-Path $artifactRoot 'formal\asset_manifest.json'
 $formalMph = Join-Path $artifactRoot $formalAssets.comsol.artifact_relative_path.Replace('/','\')
 $formalCadAssembly = Join-Path $artifactRoot $formalAssets.solidworks.assembly_artifact_relative_path.Replace('/','\')
 $formalCadReport = Join-Path $artifactRoot $formalAssets.solidworks.export_report_artifact_relative_path.Replace('/','\')
@@ -252,6 +255,7 @@ if (-not $SkipRuntime) {
   if (-not (Test-Path -LiteralPath $formalCadReport)) { throw "Formal SolidWorks export report missing: $formalCadReport" }
   if (-not (Test-Path -LiteralPath $formalResultsDir -PathType Container)) { throw "Formal results directory missing: $formalResultsDir" }
   if (-not (Test-Path -LiteralPath $formalResultsManifest -PathType Leaf)) { throw "Formal results SHA manifest missing: $formalResultsManifest" }
+  if (-not (Test-Path -LiteralPath $formalReleaseManifestPath -PathType Leaf)) { throw "Formal asset manifest missing: $formalReleaseManifestPath" }
   $mphHash = (Get-FileHash -LiteralPath $formalMph -Algorithm SHA256).Hash
   if ($mphHash -ne $formalAssets.comsol.sha256) { throw 'Formal COMSOL MPH differs from the verified asset manifest.' }
   $cadHash = (Get-FileHash -LiteralPath $formalCadAssembly -Algorithm SHA256).Hash
@@ -263,6 +267,24 @@ if (-not $SkipRuntime) {
   if ($resultsManifestItem.Length -ne [int64]$formalAssets.results.sha256_manifest_bytes -or
       $resultsManifestHash -ne $formalAssets.results.sha256_manifest_sha256) {
     throw 'Formal results SHA manifest differs from the verified asset manifest.'
+  }
+  $formalRelease = Get-Content -LiteralPath $formalReleaseManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+  if ($formalRelease.project -ne 'oa_tof' -or $formalRelease.role -ne 'formal_asset_manifest') {
+    throw 'Formal asset manifest identity differs.'
+  }
+  if ($formalRelease.source_run.run_id -ne $formalAssets.results.source_run_id) {
+    throw 'Formal asset manifest source run differs from formal results identity.'
+  }
+  $validationHash = (Get-FileHash -LiteralPath $formalValidationPath -Algorithm SHA256).Hash
+  if ($formalRelease.validation_contract.path -ne 'projects/oa_tof/config/formal_validation.json' -or
+      $formalRelease.validation_contract.sha256 -ne $validationHash) {
+    throw 'Formal asset manifest validation-contract identity differs.'
+  }
+  if ($formalRelease.assets.comsol_model.sha256 -ne $mphHash -or
+      $formalRelease.assets.solidworks_assembly.sha256 -ne $cadHash -or
+      $formalRelease.assets.formal_results_manifest.sha256 -ne $resultsManifestHash -or
+      $formalRelease.assets.simion_delivery_manifest.sha256 -ne $formalValidation.simion.delivery_manifest_sha256) {
+    throw 'Formal asset manifest does not match the independently verified project assets.'
   }
   $resultsListed = @(Import-Csv -LiteralPath $formalResultsManifest)
   $resultsActual = @(Get-ChildItem -LiteralPath $formalResultsDir -Recurse -File | Where-Object {

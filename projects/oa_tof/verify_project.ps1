@@ -118,6 +118,9 @@ if ($Level -eq 'Candidate') {
   }
 }
 elseif ($Level -eq 'Formal') {
+  & $python (Join-Path $repoRoot 'common\contracts\verify_artifact_layout.py') `
+    (Join-Path $workspaceRoot 'artifacts\projects') --formal-only --repository-root $repoRoot
+  if ($LASTEXITCODE -ne 0) { throw 'Formal asset-manifest structure gate failed.' }
   & (Join-Path $repoRoot 'common\verify_toolchain.ps1')
   if ($LASTEXITCODE -ne 0) { throw 'Toolchain gate failed.' }
 

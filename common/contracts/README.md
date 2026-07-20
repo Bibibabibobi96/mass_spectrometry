@@ -46,6 +46,25 @@
 需要显式粒子表、RF幅值等运行绑定的profile使用`--bind key=value`提供预览值。编译器会验证入口文件、
 生成受命名合同约束的子run ID，并保留项目profile的限制说明，但不会创建artifact运行目录。
 
+## 正式结果与来源运行
+
+每次运行的`run_config.json`、`summary.json`和`run_manifest.json`只描述来源run；通过正式门禁后，选出的
+模型、CAD和结果进入稳定`formal/`，但不改变来源三件套。`formal/asset_manifest.json`是当前正式发布
+的唯一资产清单，记录来源run三件套、Git内正式验证合同及各正式资产的相对路径、字节数和SHA-256：
+
+```powershell
+python common/contracts/write_formal_asset_manifest.py `
+  --project-root <artifacts-project-root> --repository-root <repository-root> `
+  --project <project_id> --source-run-id <run_id> `
+  --validation-contract <formal-validation-json> `
+  --asset formal_results_manifest=results/SHA256SUMS.csv
+```
+
+结构门禁默认不读取大二进制；正式发布或资产变更后再运行
+`verify_artifact_layout.py <artifacts-projects-root> --verify-hashes`做完整哈希复核。正式结果本体不复制回
+来源run；为便于独立交付，可在结果包保留三份小型来源JSON快照，但它们不能替代原始run或正式清单。
+只复核当前正式发布而不审计旧run命名时使用`--formal-only --repository-root <repository-root>`。
+
 优化变量的“项目能力声明”和“现有执行入口可消费”是两层事实。一个变量可以属于未来设计空间，但在
 候选参数编译器尚未把它单向派生到baseline/resolved和全部求解器/CAD前，dry-run必须报告
 `NEEDS_IMPLEMENTATION`，不得调用固定模型冒充优化。

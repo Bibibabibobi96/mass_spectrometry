@@ -48,7 +48,7 @@ STEP导入会让SolidWorks为每个外部实体新建原生零件，因此会读
 2026-07-20已从耦合纵向正式COMSOL MPH重新导出CAD，并用SolidWorks 2022（revision 30.5.0）
 生成25个SLDPRT和25组件SLDASM。组件世界中心相对COMSOL导出目标的最大误差为
 `6.82e-13 mm`，所有STEP加载、零件保存和装配体保存错误/警告均为0。晋升前整套Formal资产已归档到
-`artifacts/projects/oa_tof/archive/20260720_204500__formal__pre-coupled-longitudinal-baseline/`，没有与新正式零件混放。可重复门禁入口为
+`artifacts/projects/oa_tof/archive/20260720_204500__superseded__cross__pre-coupled-baseline/`，没有与新正式零件混放。可重复门禁入口为
 `../tests/cad/run_oatof_formal_cad_sync.m`。
 
 当前CAD manifest把COMSOL的`accelshield`作为单一`accelerator_shield`实体导出，因此正式装配同样

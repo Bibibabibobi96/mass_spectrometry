@@ -122,6 +122,14 @@ def file_record(path: Path) -> dict:
             "bytes": path.stat().st_size, "sha256": sha256(path)}
 
 
+def relative_file_record(path: Path, root: Path) -> dict:
+    return {
+        "path": path.resolve().relative_to(root.resolve()).as_posix(),
+        "bytes": path.stat().st_size,
+        "sha256": sha256(path),
+    }
+
+
 def migrate_oa_formal(migration: Migration) -> None:
     old_comsol = OA / "models" / "comsol" / "formal" / "MS_oaTOF_TwoStageRingStackReflectron_Final.mph"
     migration.move(old_comsol, OA / "formal" / "comsol" / "oa_tof__model.mph")
@@ -236,11 +244,27 @@ def rewrite_oa_manifests(migration: Migration) -> None:
     asset_manifest = {
         "schema_version": 1, "role": "formal_asset_manifest", "project": "oa_tof",
         "release_id": "20260719_111417__build__cross__formal-assets__n1000",
-        "source_run_id": FORMAL_RUN_ID,
+        "recorded_at_utc": "2026-07-19T03:14:17.105123+00:00",
+        "source_run": {
+            "run_id": FORMAL_RUN_ID,
+            "path": f"runs/{FORMAL_RUN_ID}",
+            "run_config": relative_file_record(run / "run_config.json", OA),
+            "summary": relative_file_record(run / "summary.json", OA),
+            "run_manifest": relative_file_record(run / "run_manifest.json", OA),
+        },
+        "validation_contract": relative_file_record(
+            REPO / "projects" / "oa_tof" / "config" / "formal_validation.json", REPO
+        ),
         "assets": {
-            "comsol_model": file_record(OA / "formal" / "comsol" / "oa_tof__model.mph"),
-            "solidworks_assembly": file_record(OA / "formal" / "cad" / "oa_tof__assembly.SLDASM"),
-            "simion_delivery_manifest": file_record(simion / "run_manifest.json"),
+            "comsol_model": relative_file_record(
+                OA / "formal" / "comsol" / "oa_tof__model.mph", OA / "formal"
+            ),
+            "solidworks_assembly": relative_file_record(
+                OA / "formal" / "cad" / "oa_tof__assembly.SLDASM", OA / "formal"
+            ),
+            "simion_delivery_manifest": relative_file_record(
+                simion / "run_manifest.json", OA / "formal"
+            ),
         },
         "former_names": {
             "comsol_model": "MS_oaTOF_TwoStageRingStackReflectron_Final.mph",
