@@ -17,6 +17,10 @@
 - 不建立 COMSOL、SIMION、CAD 文档之间的横向网状引用；项目 README 负责导航，统一结论写入 `docs/PROJECT.md`。
 - MATLAB、COMSOL、Python和SolidWorks的版本及启动方式只以根README的
   [“工具链与执行入口”](README.md#工具链与执行入口)为准；Agent不得另建连接生命周期或把临时检查工具当作正式入口。
+- MATLAB/COMSOL和SolidWorks会写用户配置、许可证、日志及临时目录；Agent调用这些商业工具时必须从
+  第一次尝试就使用允许其正常访问用户配置目录的执行上下文。公共入口报告
+  `EXECUTION_ENVIRONMENT_BLOCKED`时，应在权限正确的上下文重试同一冻结输入，不得把它归因于模型、
+  求解器或物理FAIL，也不得靠延长求解超时绕过。
 - GUI对等与CAD同步的技术判据只由根README的“GUI 与 CAD 门禁”定义；Agent必须按变更类型执行该
   门禁，未完成适用验收时不得报告正式模型或正式几何已经完成。
 

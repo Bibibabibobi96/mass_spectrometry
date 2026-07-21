@@ -25,6 +25,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $bootstrapDir = Join-Path $PSScriptRoot 'livelink_r2025b'
 $failureClassifier = Join-Path $PSScriptRoot 'livelink_failure_classification.ps1'
+$environmentPreflight = Join-Path $PSScriptRoot 'livelink_environment.ps1'
 $launcher = 'D:\COMSOL 6.4\COMSOL64\Multiphysics\bin\win64\comsolmphserver.exe'
 $matlabRoot = 'C:\Program Files\MATLAB\R2025b\MatlabR2025b'
 
@@ -35,6 +36,10 @@ if (-not (Test-Path -LiteralPath $matlabRoot -PathType Container)) {
     throw "MATLAB R2025b root not found: $matlabRoot"
 }
 . $failureClassifier
+. $environmentPreflight
+
+$runtimeWritePaths = @(Get-ComsolRuntimeWritePaths -UserProfile $env:USERPROFILE -TempPath $env:TEMP)
+Assert-ComsolRuntimeWriteAccess -Paths $runtimeWritePaths
 
 function Get-ComsolServerProcessIds {
     return @(Get-Process -Name 'comsolmphserver' -ErrorAction SilentlyContinue |
