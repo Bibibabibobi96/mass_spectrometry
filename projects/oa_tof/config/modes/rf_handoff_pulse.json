@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "role": "oa_tof_external_handoff_projection_candidate",
+  "status": "finite_pulse_functional_runtime_qualified",
+  "comparison_kind": "pulse_functional",
+  "source_project": "rf_quadrupole_collision_cooling",
+  "target_project": "oa_tof",
+  "handoff_contract": "projects/rf_quadrupole_collision_cooling/config/rf_to_oatof_handoff.json",
+  "handoff_builder": "projects/rf_quadrupole_collision_cooling/analysis/build_oatof_handoff.py",
+  "source_cases": [
+    {
+      "case_id": "rf_hybrid_hend0p5",
+      "upstream_solver": "COMSOL",
+      "mesh_role": "selected_low_cost",
+      "particle_state_csv": "artifacts/projects/rf_quadrupole_collision_cooling/runs/20260722_030000__sim__comsol__rf-hybrid-n100__hend0p5__r02/results/rf_hybrid_mesh_n100_events.csv",
+      "run_manifest": "artifacts/projects/rf_quadrupole_collision_cooling/runs/20260722_030000__sim__comsol__rf-hybrid-n100__hend0p5__r02/run_manifest.json"
+    }
+  ],
+  "target_consumers": {
+    "SIMION": {
+      "formal_asset": "artifacts/projects/oa_tof/formal/simion/oatof_ideal_grounded.iob",
+      "candidate_program_extension": "projects/oa_tof/simion/workbench/candidates/oatof_handoff_pulse.lua",
+      "trajectory_quality": 8
+    }
+  },
+  "clock_policy": {
+    "solver_clock": "instrument_time",
+    "detector_instrument_time": "SIMION detector time is already on the shared instrument clock",
+    "detector_lineage_age": "handoff_lineage_age_us + detector_instrument_time_us - handoff_instrument_time_us",
+    "detector_particle_age": "handoff_particle_age_us + detector_instrument_time_us - handoff_instrument_time_us"
+  },
+  "projection": {
+    "target_origin_mm": [-62.8, 0.0, -18.42918680341103],
+    "role": "effective_entry_plane_1p0_mm_inside_the_closed_formal_inner_wall",
+    "claim_limit": "Projection bypasses the unmodeled physical side-wall opening but does not bypass subsequent pre-pulse or post-pulse trajectory integration."
+  },
+  "pulse": {
+    "waveform": "ideal_rectangular",
+    "time_rule": "mean_handoff_instrument_time_us + entry_to_source_center_mm / mean_positive_injection_velocity_mm_per_us",
+    "width_us": 1.0,
+    "pre_pulse_accelerator_electrodes_v": 0.0,
+    "post_pulse_repeller_v": 2240.0,
+    "grid1_v": 1760.0,
+    "grid2_v": 0.0,
+    "control": "all accelerator electrodes held at 0 V for the full run",
+    "maximum_elapsed_after_pulse_us": 90.0,
+    "qualification_limit": "One fixed engineering timing is used to prove continuous pre-pulse and post-pulse trajectories; no timing or width optimization is claimed."
+  },
+  "acceptance": {
+    "minimum_particles": 100,
+    "minimum_timed_pulse_detector_transmission": 0.05,
+    "minimum_transmission_gain_over_held_off_control": 0.05,
+    "minimum_pulse_event_fraction": 0.05
+  },
+  "claims": {
+    "functional_projection_claim_allowed": true,
+    "physical_link_claim_allowed": false,
+    "resolution_claim_allowed": false,
+    "formal_asset_modification_allowed": false,
+    "promotion_authorized": false
+  },
+  "deferred_refinements": [
+    "finite_rise_and_fall_time",
+    "pulse_timing_and_width_optimization",
+    "physical_connector_transport",
+    "n1000_resolution_regression"
+  ],
+  "open_blockers": []
+}

@@ -2,6 +2,7 @@
 param(
   [string]$RunId = ((Get-Date -Format 'yyyyMMdd_HHmmss') + '__sim__cross__rf-handoff-projection__n100'),
   [ValidateSet('Both','COMSOL','SIMION')][string]$TargetSolver = 'Both',
+  [string]$ModePath = '',
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [switch]$Resume
 )
@@ -18,7 +19,7 @@ $resultDir = Join-Path $runDir 'results'
 $logDir = Join-Path $runDir 'logs'
 $comsolDir = Join-Path $runDir 'comsol'
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
-$modePath = Join-Path $projectRoot 'config\modes\rf_handoff_projection.json'
+$modePath = if ([string]::IsNullOrWhiteSpace($ModePath)) { Join-Path $projectRoot 'config\modes\rf_handoff_projection.json' } else { [IO.Path]::GetFullPath($ModePath) }
 $prepare = Join-Path $projectRoot 'analysis\prepare_rf_handoff_projection.py'
 $analyze = Join-Path $projectRoot 'analysis\analyze_rf_handoff_projection.py'
 $rfBuilder = Join-Path $repoRoot 'projects\rf_quadrupole_collision_cooling\analysis\build_oatof_handoff.py'
@@ -180,7 +181,7 @@ foreach ($case in $mode.source_cases) {
   }
 
   foreach ($path in @($canonical,$ion,$rowMap,$metadata,$consumerRequest)) { $allOutputs.Add($path) }
-  $caseRecords.Add([ordered]@{
+  $caseRecord = [ordered]@{
     case_id = [string]$case.case_id
     upstream_solver = [string]$case.upstream_solver
     canonical = $canonical
@@ -188,7 +189,9 @@ foreach ($case in $mode.source_cases) {
     metadata = $metadata
     ion = $ion
     downstream_results = $downstream
-  })
+  }
+  if ($case.PSObject.Properties.Name -contains 'mesh_role') { $caseRecord.mesh_role = [string]$case.mesh_role }
+  $caseRecords.Add($caseRecord)
 }
 
 $analysisInputs = Join-Path $inputDir 'analysis_inputs.json'
@@ -215,7 +218,7 @@ $runConfigPath = Join-Path $runDir 'run_config.json'
   role = 'oa_tof_rf_handoff_projection_run_config'
   run_id = $RunId
   project = 'oa_tof'
-  mode = 'rf_handoff_projection_candidate'
+  mode = [IO.Path]::GetFileNameWithoutExtension($modePath)
   project_root = $projectRoot
   formal_gate_passed = $false
   inputs = [ordered]@{

@@ -101,8 +101,12 @@ def validate(path: Path = DEFAULT_PLAN) -> dict[str, Any]:
     if data.get("dense_trajectories_default") is not False:
         raise ValueError("dense trajectories must remain opt-in diagnostics")
     mesh_input = plan["rf_mesh_state_input"]
-    if mesh_input.get("status") != "paired_exit_states_ready_for_downstream_functional_arbitration":
+    if mesh_input.get("status") != "shared_clock_functional_chain_qualified_physical_refinement_deferred":
         raise ValueError("RF mesh states are not routed to downstream functional arbitration")
+    if mesh_input.get("shared_clock_pulse_run") != "20260722_080000__sim__simion__rf-entry-finite-pulse__n100__r12":
+        raise ValueError("shared-clock pulse evidence is not frozen")
+    if not math.isclose(float(mesh_input.get("retained_end_hmax_mm", -1)), 0.5, abs_tol=1e-12):
+        raise ValueError("RF low-cost mesh selection changed")
     if "shared instrument clock" not in mesh_input.get("required_next_test", ""):
         raise ValueError("downstream mesh arbitration must preserve the shared clock")
     return plan

@@ -38,6 +38,11 @@ REQUIRED_SOURCE_COLUMNS = {
     "kinetic_energy_eV",
 }
 
+HYBRID_MESH_SOURCE_COLUMNS = {
+    "particle_id", "event", "status", "global_time_us", "particle_age_us", "rf_phase_rad",
+    "x_mm", "y_mm", "z_mm", "vx_m_s", "vy_m_s", "vz_m_s", "kinetic_energy_eV",
+}
+
 CANONICAL_COLUMNS = [
     "particle_id",
     "parent_particle_id",
@@ -200,18 +205,35 @@ def verify_source_manifest(source_csv: Path, manifest_path: Path, contract: dict
     source = contract["source_component"]
     if manifest.get("project") != source["project_id"]:
         raise ValueError("source manifest project mismatch")
-    if manifest.get("mode") != source["mode"] or manifest.get("status") != "success":
-        raise ValueError("source manifest is not a successful required-mode run")
+    if manifest.get("status") != "success":
+        raise ValueError("source manifest is not successful")
+    manifest_mode = manifest.get("mode")
     manifest_inputs = manifest.get("inputs", {})
-    for input_key, contract_key in (("baseline", "baseline"), ("mode", "mode_contract")):
-        current_path = (PROJECT_ROOT / source[contract_key]).resolve()
-        expected_sha = sha256(current_path)
-        if manifest_inputs.get(input_key, {}).get("sha256", "").upper() != expected_sha:
-            raise ValueError(f"source manifest {input_key} hash does not match the current contract")
-    if "interface_contract" in manifest_inputs:
-        interface_sha = sha256((PROJECT_ROOT / source["interface_contract"]).resolve())
-        if manifest_inputs["interface_contract"].get("sha256", "").upper() != interface_sha:
-            raise ValueError("source manifest interface-contract hash is stale")
+    if manifest_mode == source["mode"]:
+        for input_key, contract_key in (("baseline", "baseline"), ("mode", "mode_contract")):
+            current_path = (PROJECT_ROOT / source[contract_key]).resolve()
+            expected_sha = sha256(current_path)
+            if manifest_inputs.get(input_key, {}).get("sha256", "").upper() != expected_sha:
+                raise ValueError(f"source manifest {input_key} hash does not match the current contract")
+        if "interface_contract" in manifest_inputs:
+            interface_sha = sha256((PROJECT_ROOT / source["interface_contract"]).resolve())
+            if manifest_inputs["interface_contract"].get("sha256", "").upper() != interface_sha:
+                raise ValueError("source manifest interface-contract hash is stale")
+    elif manifest_mode == "rf_full_device_hybrid_mesh_n100_functional_arbitration":
+        run_config_record = manifest.get("run_config", {})
+        run_config_path = Path(run_config_record.get("path", ""))
+        if not run_config_path.is_file() or sha256(run_config_path) != run_config_record.get("sha256", "").upper():
+            raise ValueError("hybrid-mesh source run config is missing or stale")
+        run_config = load_json(run_config_path)
+        parameters = run_config.get("parameters", {})
+        if parameters.get("particle_tracking") is not True or int(parameters.get("particle_count", 0)) != 100:
+            raise ValueError("hybrid-mesh source is not the frozen N=100 particle diagnostic")
+        if float(parameters.get("end_core_hmax_mm", -1.0)) not in (0.5, 0.25):
+            raise ValueError("hybrid-mesh source is outside the retained pair")
+        if Path(manifest_inputs.get("contract", {}).get("path", "")).name != "rf_hybrid_mesh_candidate.json":
+            raise ValueError("hybrid-mesh source lacks its frozen mesh contract")
+    else:
+        raise ValueError("source manifest mode is not an accepted handoff source profile")
     actual_sha = sha256(source_csv)
     matching = [entry for entry in manifest.get("outputs", []) if Path(entry["path"]).name == source_csv.name]
     if not matching or not any(entry.get("sha256", "").upper() == actual_sha for entry in matching):
@@ -222,12 +244,31 @@ def verify_source_manifest(source_csv: Path, manifest_path: Path, contract: dict
 def read_handoff_rows(source_csv: Path, contract: dict[str, Any]) -> list[dict[str, str]]:
     with source_csv.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
-        if not reader.fieldnames or not REQUIRED_SOURCE_COLUMNS.issubset(reader.fieldnames):
-            missing = sorted(REQUIRED_SOURCE_COLUMNS - set(reader.fieldnames or []))
-            raise ValueError(f"source particle-state CSV missing columns: {missing}")
+        fields = set(reader.fieldnames or [])
+        if REQUIRED_SOURCE_COLUMNS.issubset(fields):
+            normalize = lambda row: row
+        elif HYBRID_MESH_SOURCE_COLUMNS.issubset(fields):
+            normalize = lambda row: {
+                **row,
+                "time_us": row["global_time_us"],
+                "elapsed_time_us": row["particle_age_us"],
+                "axial_z_mm": row["z_mm"],
+                "transverse_x_mm": row["x_mm"],
+                "transverse_y_mm": row["y_mm"],
+                "velocity_axial_m_s": row["vz_m_s"],
+                "velocity_x_m_s": row["vx_m_s"],
+                "velocity_y_m_s": row["vy_m_s"],
+            }
+        else:
+            legacy_missing = sorted(REQUIRED_SOURCE_COLUMNS - fields)
+            hybrid_missing = sorted(HYBRID_MESH_SOURCE_COLUMNS - fields)
+            raise ValueError(
+                f"source particle-state CSV matches neither supported profile; "
+                f"legacy missing={legacy_missing}, hybrid missing={hybrid_missing}"
+            )
         source = contract["source_component"]
         rows = [
-            row for row in reader
+            normalize(row) for row in reader
             if row["event"] == source["event"] and row["status"] == source["required_status"]
         ]
     ids = [int(row["particle_id"]) for row in rows]
@@ -255,6 +296,8 @@ def build_handoff(
     ion_output: Path,
     row_map_output: Path,
     metadata_output: Path,
+    solver_clock: str = "local_zero",
+    target_origin_override_mm: list[float] | None = None,
 ) -> dict[str, Any]:
     validated = validate_contract(contract_path)
     contract = validated["contract"]
@@ -263,11 +306,19 @@ def build_handoff(
     transform = contract["coordinate_transform"]
     rotation = validated["rotation"]
     source_origin = [float(value) for value in transform["source_origin_mm"]]
-    target_origin = [float(value) for value in transform["target_origin_mm"]]
+    target_origin = (
+        [float(value) for value in target_origin_override_mm]
+        if target_origin_override_mm is not None
+        else [float(value) for value in transform["target_origin_mm"]]
+    )
+    if len(target_origin) != 3 or not all(math.isfinite(value) for value in target_origin):
+        raise ValueError("target origin override must contain three finite millimetre coordinates")
     source = contract["source_component"]
     target = contract["target_component"]
     timing = contract["timing_contract"]
-    solver_birth_time = float(timing["current_oatof_projection"]["solver_birth_time_us"])
+    if solver_clock not in {"local_zero", "instrument_time"}:
+        raise ValueError("solver_clock must be local_zero or instrument_time")
+    local_solver_birth_time = float(timing["current_oatof_projection"]["solver_birth_time_us"])
     mass_th = float(source["mass_to_charge_Th"])
     charge_state = int(source["charge_state"])
     mass_amu = mass_amu_from_mass_to_charge(mass_th, charge_state)
@@ -312,6 +363,7 @@ def build_handoff(
             math.atan2(target_velocity[2], math.hypot(target_velocity[0], target_velocity[1]))
         )
         instrument_time = float(row["time_us"])
+        solver_birth_time = instrument_time if solver_clock == "instrument_time" else local_solver_birth_time
         lineage_age = float(row["elapsed_time_us"])
         particle_age = float(row["elapsed_time_us"])
         lineage_birth_time = instrument_time - lineage_age
@@ -394,12 +446,18 @@ def build_handoff(
             "canonical_instrument_time_retained": True,
             "canonical_lineage_age_retained": True,
             "canonical_particle_age_retained": True,
-            "solver_birth_time_us": solver_birth_time,
-            "solver_time_rebase_allowed_only_for_static_fields": True,
+            "solver_clock": solver_clock,
+            "solver_birth_time_us": (
+                "per_particle_instrument_time" if solver_clock == "instrument_time"
+                else local_solver_birth_time
+            ),
+            "solver_time_rebase_allowed_only_for_static_fields": solver_clock == "local_zero",
         },
         "diagnostics": {
             "rotation_determinant": validated["determinant"],
             "maximum_energy_velocity_relative_residual": maximum_energy_residual,
+            "target_origin_mm": target_origin,
+            "target_origin_overridden": target_origin_override_mm is not None,
         },
         "package_generation_allowed": False,
         "open_blockers": contract["open_blockers"],
@@ -421,6 +479,8 @@ def main() -> None:
     parser.add_argument("--ion-output", type=Path)
     parser.add_argument("--row-map-output", type=Path)
     parser.add_argument("--metadata-output", type=Path)
+    parser.add_argument("--solver-clock", choices=("local_zero", "instrument_time"), default="local_zero")
+    parser.add_argument("--target-origin-mm", type=float, nargs=3)
     args = parser.parse_args()
     if args.check_contract:
         validated = validate_contract(args.contract)
@@ -445,6 +505,8 @@ def main() -> None:
         args.ion_output,
         args.row_map_output,
         args.metadata_output,
+        args.solver_clock,
+        args.target_origin_mm,
     )
     print(f"COMPONENT_HANDOFF_PROJECTION=PASS PARTICLES={metadata['particles']}")
 

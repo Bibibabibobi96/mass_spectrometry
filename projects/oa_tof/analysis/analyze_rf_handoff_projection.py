@@ -117,13 +117,17 @@ def _metrics(rows: list[dict[str, Any]]) -> dict[str, float | int]:
         return {
             "emitted": len(rows), "hits": 0, "transmission": 0.0,
             "mean_local_tof_us": None, "rms_detector_radius_mm": None,
+            "detector_r99_mm": None,
         }
+    radii = sorted(row["detector_radius_mm"] for row in hits)
+    r99_index = max(0, math.ceil(0.99 * len(radii)) - 1)
     return {
         "emitted": len(rows),
         "hits": len(hits),
         "transmission": len(hits) / len(rows),
         "mean_local_tof_us": fmean(row["local_oatof_tof_us"] for row in hits),
         "rms_detector_radius_mm": math.sqrt(fmean(row["detector_radius_mm"] ** 2 for row in hits)),
+        "detector_r99_mm": radii[r99_index],
         "mean_detector_instrument_time_us": fmean(row["detector_instrument_time_us"] for row in hits),
     }
 
@@ -173,6 +177,24 @@ def analyze(input_manifest_path: Path, output_dir: Path, mode_path: Path = DEFAU
             "mean_tof_symmetric_relative_difference": tof_difference,
             "rms_detector_radius_symmetric_relative_difference": radius_difference,
         }
+        solver_rows = [row for row in rows if row["downstream_solver"] == solver]
+        hits_by_case = {
+            case_id: {row["particle_id"] for row in solver_rows if row["upstream_case_id"] == case_id and row["hit"]}
+            for case_id in case_ids
+        }
+        changed_ids = sorted(hits_by_case[case_ids[0]] ^ hits_by_case[case_ids[1]])
+        changed_hit_radii = [
+            row["detector_radius_mm"] for row in solver_rows
+            if row["particle_id"] in changed_ids and row["hit"] and row["detector_radius_mm"] is not None
+        ]
+        values.update({
+            "detector_classification_change_count": len(changed_ids),
+            "detector_classification_changed_particle_ids": changed_ids,
+            "minimum_detected_radius_among_changed_particles_mm": min(changed_hit_radii) if changed_hit_radii else None,
+            "minimum_detected_radius_fraction_of_active_radius_among_changed_particles": (
+                min(changed_hit_radii) / detector_radius if changed_hit_radii else None
+            ),
+        })
         checks = {
             "minimum_particles": all(
                 item["emitted"] >= int(acceptance["minimum_particles_for_transport_and_centroid"])
@@ -208,9 +230,47 @@ def analyze(input_manifest_path: Path, output_dir: Path, mode_path: Path = DEFAU
                 ),
             }
 
-    functional_status = "CONDITIONAL_PASS" if all(
-        comparison["status"] == "PASS" for comparison in comparisons.values()
-    ) else "FAIL"
+    comparisons_pass = all(comparison["status"] == "PASS" for comparison in comparisons.values())
+    comparison_kind = validated["mode"].get("comparison_kind", "cross_solver_upstream")
+    functional_status = (
+        "PASS" if comparisons_pass and comparison_kind == "rf_mesh_pair"
+        else "CONDITIONAL_PASS" if comparisons_pass
+        else "FAIL"
+    )
+    mesh_decision = None
+    if comparison_kind == "rf_mesh_pair":
+        performance_path = Path(validated["mode"]["field_performance_contract"])
+        if not performance_path.is_absolute():
+            performance_path = Path(__file__).resolve().parents[3] / performance_path
+        budgets = load_json(performance_path)["provisional_performance_budgets"]
+        r99_limit = float(budgets["maximum_detector_r99_fraction_of_active_radius"]) * detector_radius
+        loss_budget = float(budgets["maximum_additional_field_induced_loss_fraction_after_geometric_cut"])
+        per_solver = {}
+        retain = True
+        for solver in downstream_solvers:
+            r99_pass = {
+                case_id: metrics[solver][case_id]["detector_r99_mm"] is not None
+                and metrics[solver][case_id]["detector_r99_mm"] <= r99_limit
+                for case_id in case_ids
+            }
+            same_r99_classification = len(set(r99_pass.values())) == 1
+            loss_within_budget = comparisons[solver]["transmission_absolute_difference"] <= loss_budget + 1e-12
+            solver_retain = comparisons[solver]["status"] == "PASS" and loss_within_budget and same_r99_classification
+            retain = retain and solver_retain
+            per_solver[solver] = {
+                "detector_r99_limit_mm": r99_limit,
+                "detector_r99_pass_by_case": r99_pass,
+                "same_detector_r99_classification": same_r99_classification,
+                "transmission_difference_within_one_percentage_point_budget": loss_within_budget,
+                "retain_low_cost_mesh_for_next_stage": solver_retain,
+            }
+        mesh_decision = {
+            "status": "RETAIN_LOW_COST_FOR_NEXT_STAGE" if retain else "MESH_DECISION_UNRESOLVED",
+            "low_cost_case_id": next(case["case_id"] for case in cases if case.get("mesh_role") == "low_cost_candidate"),
+            "reference_case_id": next(case["case_id"] for case in cases if case.get("mesh_role") == "reference"),
+            "per_solver": per_solver,
+            "claim_limit": "Qualifies the selected projected RF-COMSOL to oaTOF-SIMION functional chain and its low-cost RF mesh. Physical connector transport, pulse capture and formal resolution remain deferred.",
+        }
     output_dir.mkdir(parents=True, exist_ok=True)
     detector_csv = output_dir / "detector_particles.csv"
     with detector_csv.open("w", encoding="utf-8", newline="") as handle:
@@ -227,9 +287,12 @@ def analyze(input_manifest_path: Path, output_dir: Path, mode_path: Path = DEFAU
         "metrics": metrics,
         "cross_ensemble_comparisons": comparisons,
         "cross_downstream_solver_comparisons": cross_solver_comparisons,
+        "rf_mesh_decision": mesh_decision,
         "clock_reconstruction": "PASS",
+        "functional_link_status": "PASS" if functional_status == "PASS" else functional_status,
         "strict_rf_interface_status": "FAIL",
         "physical_link_status": "BLOCKED",
+        "resolution_validation_status": "DEFERRED_TO_N1000_REGRESSION",
         "resolution_claim_allowed": False,
         "formal_assets_modified": False,
         "promotion_authorized": False,

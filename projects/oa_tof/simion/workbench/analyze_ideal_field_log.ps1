@@ -52,6 +52,7 @@ foreach ($line in Get-Content -LiteralPath $IonFile) {
   $c = $line.Split(',')
   if ($c.Count -lt 9) { throw "Malformed ION line $ionNumber in $IonFile" }
   $initial[$ionNumber] = [pscustomobject]@{
+    TobUs = Convert-InvariantDouble $c[0]
     MassAmu = Convert-InvariantDouble $c[1]
     ChargeState = [int](Convert-InvariantDouble $c[2])
     X0Mm = Convert-InvariantDouble $c[3]
@@ -74,7 +75,8 @@ foreach ($line in Get-Content -LiteralPath $Log) {
     Mode = $Mode; Distribution = $Distribution; Ion = $n
     MassAmu = $p.MassAmu; ChargeState = $p.ChargeState
     X0Mm = $p.X0Mm; Y0Mm = $p.Y0Mm; Z0Mm = $p.Z0Mm; EnergyEv = $p.EnergyEv
-    TofUs = Convert-InvariantDouble $Matches[2]
+    TofUs = (Convert-InvariantDouble $Matches[2]) - $p.TobUs
+    InstrumentTimeUs = Convert-InvariantDouble $Matches[2]
     XMm = Convert-InvariantDouble $Matches[3]
     YMm = Convert-InvariantDouble $Matches[4]
     RadiusMm = $r
@@ -98,7 +100,7 @@ if ($rows.Count -ne $initial.Count -or $uniqueIons.Count -ne $initial.Count) {
       Mode = $Mode; Distribution = $Distribution; Ion = [int]$n
       MassAmu = $p.MassAmu; ChargeState = $p.ChargeState
       X0Mm = $p.X0Mm; Y0Mm = $p.Y0Mm; Z0Mm = $p.Z0Mm; EnergyEv = $p.EnergyEv
-      TofUs = [double]::NaN; XMm = [double]::NaN; YMm = [double]::NaN
+      TofUs = [double]::NaN; InstrumentTimeUs = [double]::NaN; XMm = [double]::NaN; YMm = [double]::NaN
       RadiusMm = [double]::NaN; ZmaxMm = [double]::NaN; Hit = $false
     })
   }
@@ -143,7 +145,7 @@ $fwhmTofUs = $fwhmFactor * $stdTofUs
   AllCrossingStdTofNs = 1000.0 * (Get-SampleStd $allTof)
   MaxHitRadiusMm = if ($hits.Count) { ($hits.RadiusMm | Measure-Object -Maximum).Maximum } else { [double]::NaN }
   MaxCrossingRadiusMm = if ($crossingRows.Count) { ($crossingRows.RadiusMm | Measure-Object -Maximum).Maximum } else { [double]::NaN }
-  MeanZmaxMm = Get-Mean $crossingRows.ZmaxMm
+  MeanZmaxMm = Get-Mean @($crossingRows | ForEach-Object ZmaxMm)
   CorrTofX0 = Get-Correlation $hitX0 $hitTof
   CorrTofY0 = Get-Correlation $hitY0 $hitTof
   CorrTofZ0 = Get-Correlation $hitZ0 $hitTof

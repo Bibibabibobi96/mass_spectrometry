@@ -42,8 +42,28 @@ class HandoffConsumerModeTests(unittest.TestCase):
     def test_mode_is_candidate_and_forbids_physical_claims(self) -> None:
         validated = PREPARE.validate_mode()
         self.assertFalse(validated["mode"]["claims"]["physical_link_claim_allowed"])
+
+    def test_pulse_mode_requires_one_comsol_source_and_instrument_clock(self) -> None:
+        mode_path = PROJECT_ROOT / "config" / "modes" / "rf_handoff_pulse.json"
+        validated = PREPARE.validate_mode(mode_path)
+        self.assertEqual(validated["mode"]["comparison_kind"], "pulse_functional")
+        self.assertEqual(len(validated["mode"]["source_cases"]), 1)
+        self.assertEqual(validated["mode"]["clock_policy"]["solver_clock"], "instrument_time")
+        self.assertEqual(validated["mode"]["pulse"]["waveform"], "ideal_rectangular")
+        self.assertEqual(validated["mode"]["projection"]["target_origin_mm"][0], -62.8)
+        self.assertFalse(validated["mode"]["claims"]["physical_link_claim_allowed"])
         self.assertFalse(validated["mode"]["claims"]["resolution_claim_allowed"])
         self.assertFalse(validated["mode"]["claims"]["formal_asset_modification_allowed"])
+
+    def test_hybrid_mesh_pair_mode_is_supported_without_physical_claims(self) -> None:
+        mode_path = PROJECT_ROOT / "config" / "modes" / "rf_hybrid_mesh_projection.json"
+        validated = PREPARE.validate_mode(mode_path)
+        self.assertEqual(validated["mode"]["comparison_kind"], "rf_mesh_pair")
+        self.assertEqual(
+            {case["mesh_role"] for case in validated["mode"]["source_cases"]},
+            {"low_cost_candidate", "reference"},
+        )
+        self.assertFalse(validated["mode"]["claims"]["physical_link_claim_allowed"])
 
 
 class HandoffBundleTests(unittest.TestCase):
@@ -175,6 +195,11 @@ class HandoffAnalysisTests(unittest.TestCase):
             self.assertEqual(result["status"], "CONDITIONAL_PASS")
             self.assertEqual(result["clock_reconstruction"], "PASS")
             self.assertEqual(result["physical_link_status"], "BLOCKED")
+            self.assertEqual(
+                result["cross_ensemble_comparisons"]["COMSOL"]["detector_classification_change_count"],
+                0,
+            )
+            self.assertIsNotNone(result["metrics"]["COMSOL"]["rf_comsol_n100"]["detector_r99_mm"])
             detector_rows = ANALYZE._read_csv(root / "results" / "detector_particles.csv")
             first = detector_rows[0]
             self.assertAlmostEqual(float(first["detector_instrument_time_us"]), 41.0)

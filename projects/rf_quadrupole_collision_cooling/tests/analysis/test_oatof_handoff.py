@@ -59,6 +59,27 @@ class OatofHandoffContractTests(unittest.TestCase):
         self.assertEqual(MODULE.matvec(rotation, [1.0, 0.0, 0.0]), [0.0, 1.0, 0.0])
         self.assertEqual(MODULE.matvec(rotation, [0.0, 1.0, 0.0]), [0.0, 0.0, 1.0])
 
+    def test_hybrid_mesh_event_schema_normalizes_without_duplicate_storage(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "hybrid.csv"
+            fields = sorted(MODULE.HYBRID_MESH_SOURCE_COLUMNS)
+            with path.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=fields, lineterminator="\n")
+                writer.writeheader()
+                for particle_id in range(1, 101):
+                    writer.writerow({
+                        "particle_id": particle_id, "event": "handoff", "status": "transmitted",
+                        "global_time_us": 12.5, "particle_age_us": 7.5, "rf_phase_rad": 0.2,
+                        "x_mm": 0.1, "y_mm": 0.2, "z_mm": 90.2,
+                        "vx_m_s": 10, "vy_m_s": 20, "vz_m_s": 2000,
+                        "kinetic_energy_eV": 2.1,
+                    })
+            rows = MODULE.read_handoff_rows(path, MODULE.validate_contract(CONTRACT)["contract"])
+            self.assertEqual(len(rows), 100)
+            self.assertEqual(rows[0]["time_us"], "12.5")
+            self.assertEqual(rows[0]["axial_z_mm"], "90.2")
+            self.assertEqual(rows[0]["velocity_axial_m_s"], "2000")
+
 
 class OatofHandoffBuildTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -166,6 +187,31 @@ class OatofHandoffBuildTests(unittest.TestCase):
         self.assertAlmostEqual(
             float(ion[0][6]), math.degrees(math.atan2(100.0, 2000.0)), delta=1e-12
         )
+
+    def test_time_dependent_consumer_uses_instrument_time_as_solver_birth(self) -> None:
+        metadata = MODULE.build_handoff(
+            self.source, self.manifest, CONTRACT, self.canonical, self.ion,
+            self.row_map, self.metadata, solver_clock="instrument_time",
+        )
+        with self.row_map.open("r", encoding="utf-8", newline="") as handle:
+            row_map = list(csv.DictReader(handle))
+        ion = [line.split(",") for line in self.ion.read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(metadata["clock"]["solver_clock"], "instrument_time")
+        self.assertAlmostEqual(float(row_map[0]["solver_birth_time_us"]), 10.1)
+        self.assertAlmostEqual(float(ion[0][0]), 10.1)
+
+    def test_functional_entry_projection_uses_explicit_target_origin(self) -> None:
+        target = [-62.8, 0.0, -18.42918680341103]
+        metadata = MODULE.build_handoff(
+            self.source, self.manifest, CONTRACT, self.canonical, self.ion,
+            self.row_map, self.metadata, solver_clock="instrument_time",
+            target_origin_override_mm=target,
+        )
+        with self.canonical.open("r", encoding="utf-8", newline="") as handle:
+            canonical = list(csv.DictReader(handle))
+        self.assertTrue(metadata["diagnostics"]["target_origin_overridden"])
+        self.assertEqual(metadata["diagnostics"]["target_origin_mm"], target)
+        self.assertAlmostEqual(float(canonical[0]["position_x_mm"]), -62.8)
 
     def test_manifest_hash_is_required(self) -> None:
         manifest = json.loads(self.manifest.read_text(encoding="utf-8"))

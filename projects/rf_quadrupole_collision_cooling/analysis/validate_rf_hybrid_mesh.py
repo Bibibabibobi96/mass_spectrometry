@@ -54,12 +54,20 @@ def validate(path: Path = CONTRACT_PATH) -> dict:
     if acceptance.get("local_field_maximum_is_diagnostic_not_a_standalone_veto") is not True:
         raise ValueError("RF hybrid local-field interpretation changed")
     evidence = contract["n100_functional_arbitration_evidence"]
-    if evidence.get("status") != "proceed_to_shared_downstream_time_dependent_test":
+    if evidence.get("status") != "low_cost_mesh_and_shared_clock_functional_chain_qualified":
         raise ValueError("RF hybrid downstream arbitration state changed")
     if evidence.get("classification_change_count") != 0 or evidence.get("hmax_0p125_run_allowed") is not False:
         raise ValueError("RF hybrid stop rule changed")
     if not math.isclose(float(evidence.get("retained_low_cost_mesh_end_hmax_mm", -1)), 0.5, abs_tol=1e-12):
         raise ValueError("RF hybrid low-cost mesh changed")
+    projection = evidence.get("static_oatof_projection", {})
+    if projection.get("mesh_decision") != "RETAIN_LOW_COST_FOR_NEXT_STAGE":
+        raise ValueError("RF hybrid static downstream mesh decision changed")
+    if not math.isclose(float(projection.get("transmission_absolute_difference", -1)), 0.01, abs_tol=1e-12):
+        raise ValueError("RF hybrid downstream loss sensitivity changed")
+    pulse = evidence.get("shared_clock_pulse", {})
+    if pulse.get("status") != "PASS" or pulse.get("timed_pulse_hits") != 44 or pulse.get("held_off_control_hits") != 0:
+        raise ValueError("RF hybrid shared-clock pulse evidence changed")
     if uniform["localized_transverse_mesh"]["work_core_radius_mm_candidates"] != [6.0, 8.0, 10.0]:
         raise ValueError("RF hybrid input swept contract changed")
     return contract

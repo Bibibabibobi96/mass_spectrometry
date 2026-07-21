@@ -136,11 +136,14 @@
     "required_statistics": "paired particle identities with bootstrap or equivalent 95% confidence intervals"
   },
   "rf_mesh_state_input": {
-    "status": "paired_exit_states_ready_for_downstream_functional_arbitration",
+    "status": "shared_clock_functional_chain_qualified_physical_refinement_deferred",
     "low_cost_candidate_run": "20260722_030000__sim__comsol__rf-hybrid-n100__hend0p5__r02",
     "reference_run": "20260722_031000__sim__comsol__rf-hybrid-n100__hend0p25",
     "comparison_run": "20260722_033000__analysis__python__rf-hybrid-n100-functional-arbitration__r02",
-    "required_next_test": "Replay both paired exit-state tables through one identical joint connector, oa pulse waveform and analyzer on the shared instrument clock.",
+    "static_oatof_projection_run": "20260722_050000__sim__cross__rf-hybrid-mesh-projection__n100__r03",
+    "shared_clock_pulse_run": "20260722_080000__sim__simion__rf-entry-finite-pulse__n100__r12",
+    "retained_end_hmax_mm": 0.5,
+    "required_next_test": "At the later physical-refinement stage, replay the selected state table through one joint connector and oa pulse waveform on the shared instrument clock; this is not required for current functional workflow use.",
     "forbidden_shortcut": "Do not choose a mesh from local field maxima, transmission alone, or RF phase alone."
   }
 }

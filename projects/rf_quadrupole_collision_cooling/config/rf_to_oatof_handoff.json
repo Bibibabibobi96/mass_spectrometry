@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "role": "component_chain_handoff_contract",
-  "status": "draft_blocked_by_electrical_and_physical_interface",
-  "qualification_scope": "solver_neutral_phase_space_projection_only",
+  "status": "functional_projection_and_shared_clock_pulse_qualified_physical_interface_deferred",
+  "qualification_scope": "selected_solver_chain_phase_space_projection",
   "source_component": {
     "project_id": "rf_quadrupole_collision_cooling",
     "mode": "transport_interface_readiness",
@@ -97,12 +97,20 @@
       "maximum_energy_velocity_relative_residual": 0.00001
     },
     "downstream_functional": {
-      "status": "FAIL",
+      "status": "PASS",
       "evidence": {
+        "selected_chain": "RF-COMSOL hybrid end hmax 0.5 mm -> rigid phase-space projection -> oaTOF-SIMION Formal static analyzer",
+        "run_id": "20260722_050000__sim__cross__rf-hybrid-mesh-projection__n100__r03",
+        "metrics": "artifacts/projects/oa_tof/runs/20260722_050000__sim__cross__rf-hybrid-mesh-projection__n100__r03/results/rf_handoff_projection_metrics.json",
+        "run_manifest": "artifacts/projects/oa_tof/runs/20260722_050000__sim__cross__rf-hybrid-mesh-projection__n100__r03/run_manifest.json",
+        "transmitted_particles": 96,
+        "emitted_particles": 100,
+        "qualification_summary": "the selected low-cost chain transmits 96/100 particles; the 0.25 mm RF reference transmits 97/100, with one percentage point sensitivity and unchanged detector-r99 classification"
+      },
+      "superseded_cross_solver_upstream_diagnostic": {
+        "status": "FAIL",
         "run_id": "20260720_164843__sim__cross__rf-handoff-projection__n100",
-        "metrics": "artifacts/projects/oa_tof/runs/20260720_164843__sim__cross__rf-handoff-projection__n100/results/rf_handoff_projection_metrics.json",
-        "run_manifest": "artifacts/projects/oa_tof/runs/20260720_164843__sim__cross__rf-handoff-projection__n100/run_manifest.json",
-        "failure_summary": "the RF-COMSOL and RF-SIMION ensembles differ by 29-32 percentage points in 40 mm detector transmission while the two downstream oa-TOF solvers differ by only 1-2 percentage points for either fixed ensemble"
+        "interpretation": "RF-COMSOL and RF-SIMION exit ensembles differed substantially; this remains diagnostic evidence but is not a blocker for the selected RF-COMSOL chain"
       },
       "minimum_particles_for_transport_and_centroid": 100,
       "minimum_particles_for_peak_shape_or_resolution": 1000,
@@ -111,6 +119,18 @@
       "maximum_cross_ensemble_mean_tof_relative_difference": 0.05,
       "maximum_cross_ensemble_rms_detector_radius_relative_difference": 0.1,
       "n100_resolution_claim_allowed": false
+    },
+    "shared_clock_pulse_functional": {
+      "status": "PASS",
+      "run_id": "20260722_080000__sim__simion__rf-entry-finite-pulse__n100__r12",
+      "effective_entry_origin_x_mm": -62.8,
+      "pulse_time_us": 54.45242561132196,
+      "pulse_width_us": 1.0,
+      "particles_reaching_pulse": 95,
+      "timed_pulse_transmission": 0.44,
+      "held_off_control_transmission": 0.0,
+      "waveform_scope": "one ideal-edged 1 us rectangular pulse after continuous time-ordered entry and pre-pulse flight",
+      "claim_limit": "Functional projected chain only; physical entry opening, connector field, finite edge rise/fall and N=1000 resolution remain deferred."
     }
   },
   "derived_solver_inputs": {
@@ -122,8 +142,7 @@
   "open_blockers": [
     "electrical_interface_unresolved",
     "physical_gap_and_injection_optics_unmodeled",
-    "rf_entry_clock_not_yet_generalized_for_an_upstream_source",
-    "downstream_functional_acceptance_failed"
+    "rf_entry_clock_not_yet_generalized_for_an_upstream_source"
   ],
   "package_generation_allowed": false
 }

@@ -53,13 +53,41 @@ def validate_mode(
         raise ValueError("candidate mode contains an unauthorized claim")
     if claims.get("functional_projection_claim_allowed") is not True:
         raise ValueError("candidate must explicitly scope its functional projection claim")
-    if len(mode.get("source_cases", [])) != 2:
-        raise ValueError("the projection requires the paired RF COMSOL and SIMION ensembles")
+    comparison_kind = mode.get("comparison_kind", "cross_solver_upstream")
+    expected_cases = 1 if comparison_kind == "pulse_functional" else 2
+    if len(mode.get("source_cases", [])) != expected_cases:
+        raise ValueError(f"{comparison_kind} requires exactly {expected_cases} RF source case(s)")
     case_ids = [case["case_id"] for case in mode["source_cases"]]
     if len(case_ids) != len(set(case_ids)):
         raise ValueError("source case IDs must be unique")
-    if {case["upstream_solver"] for case in mode["source_cases"]} != {"COMSOL", "SIMION"}:
-        raise ValueError("source cases must cover RF COMSOL and SIMION")
+    upstream_solvers = {case["upstream_solver"] for case in mode["source_cases"]}
+    if comparison_kind == "cross_solver_upstream":
+        if upstream_solvers != {"COMSOL", "SIMION"}:
+            raise ValueError("cross-solver source cases must cover RF COMSOL and SIMION")
+    elif comparison_kind == "rf_mesh_pair":
+        if upstream_solvers != {"COMSOL"}:
+            raise ValueError("RF mesh-pair source cases must both come from COMSOL")
+        if {case.get("mesh_role") for case in mode["source_cases"]} != {"low_cost_candidate", "reference"}:
+            raise ValueError("RF mesh-pair roles are incomplete")
+        performance_path = repo_path(mode.get("field_performance_contract", ""))
+        performance = load_json(performance_path)
+        budgets = performance.get("provisional_performance_budgets", {})
+        if float(budgets.get("maximum_additional_field_induced_loss_fraction_after_geometric_cut", -1)) != 0.01:
+            raise ValueError("RF mesh pair lacks the frozen one-percentage-point numerical loss budget")
+        if float(budgets.get("maximum_detector_r99_fraction_of_active_radius", -1)) != 0.9:
+            raise ValueError("RF mesh pair lacks the frozen detector-r99 budget")
+    elif comparison_kind == "pulse_functional":
+        if upstream_solvers != {"COMSOL"}:
+            raise ValueError("pulse functional source must use the selected RF-COMSOL chain")
+        if mode.get("clock_policy", {}).get("solver_clock") != "instrument_time":
+            raise ValueError("time-dependent pulse mode must use the shared instrument clock")
+        pulse = mode.get("pulse", {})
+        if pulse.get("waveform") not in {"ideal_step_and_hold", "ideal_rectangular"}:
+            raise ValueError("pulse functional waveform is incomplete")
+        if pulse.get("waveform") == "ideal_rectangular" and float(pulse.get("width_us", 0)) <= 0:
+            raise ValueError("rectangular pulse width must be positive")
+    else:
+        raise ValueError("unsupported RF handoff projection comparison kind")
 
     contract_path = repo_path(mode["handoff_contract"])
     contract = load_json(contract_path)
@@ -103,6 +131,9 @@ def validate_bundle(
         raise ValueError("handoff metadata is not a passing projection-only bundle")
     if metadata.get("contract", {}).get("sha256", "").upper() != sha256(validated["contract_path"]):
         raise ValueError("handoff bundle contract hash is stale")
+    expected_solver_clock = validated["mode"]["clock_policy"].get("solver_clock", "local_zero")
+    if metadata.get("clock", {}).get("solver_clock", "local_zero") != expected_solver_clock:
+        raise ValueError("handoff bundle solver clock differs from the consumer mode")
     declared = metadata.get("outputs", {})
     checks = {
         "canonical_handoff_csv": canonical_path,
@@ -119,7 +150,9 @@ def validate_bundle(
     if not canonical or len(canonical) != len(row_map) or len(canonical) != len(ion_lines):
         raise ValueError("canonical, row-map and ION particle counts differ")
     seen_ids: set[int] = set()
-    local_birth = float(validated["mode"]["clock_policy"]["solver_local_birth_time_us"])
+    clock_policy = validated["mode"]["clock_policy"]
+    solver_clock = clock_policy.get("solver_clock", "local_zero")
+    local_birth = float(clock_policy.get("solver_local_birth_time_us", 0.0))
     for index, (state, mapping, line) in enumerate(zip(canonical, row_map, ion_lines), start=1):
         particle_id = int(state["particle_id"])
         if particle_id in seen_ids:
@@ -133,7 +166,8 @@ def validate_bundle(
         ion = line.split(",")
         if len(ion) != 11:
             raise ValueError("derived oa-TOF ION row must contain 11 columns")
-        if not math.isclose(float(ion[0]), local_birth, rel_tol=0.0, abs_tol=1e-12):
+        expected_birth = float(state["instrument_time_us"]) if solver_clock == "instrument_time" else local_birth
+        if not math.isclose(float(ion[0]), expected_birth, rel_tol=0.0, abs_tol=1e-12):
             raise ValueError("derived ION solver birth time violates the candidate clock policy")
         comparisons = (
             (ion[1], state["mass_amu"]),

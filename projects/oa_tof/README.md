@@ -90,10 +90,16 @@
   [`analysis/prepare_rf_handoff_projection.py`](analysis/prepare_rf_handoff_projection.py)、
   [`tests/cross_solver/run_rf_handoff_projection.ps1`](tests/cross_solver/run_rf_handoff_projection.ps1)；
   只读复用正式静电资产，恢复部件链时钟，允许记录损失，但不表示电气/机械接口已连接。
+- RF混合网格配对投影：[`config/modes/rf_hybrid_mesh_projection.json`](config/modes/rf_hybrid_mesh_projection.json)；
+  比较同一RF-COMSOL模型的低成本/参考网格出口状态并选择当前功能链网格，不替代真实连接器。
+- RF共享时钟有限脉冲功能入口：[`config/modes/rf_handoff_pulse.json`](config/modes/rf_handoff_pulse.json)、
+  [`tests/cross_solver/run_rf_handoff_pulse.ps1`](tests/cross_solver/run_rf_handoff_pulse.ps1)；从Formal Program
+  确定性生成隔离候选，按instrument-time从等效入口面注入并连续计算脉冲前后轨迹，不修改Formal资产。
 - 未来RF→oa物理接口的双边界及时变合同当前仍由RF项目候选
   [`../rf_quadrupole_collision_cooling/config/rf_to_oatof_interface_candidate.json`](../rf_quadrupole_collision_cooling/config/rf_to_oatof_interface_candidate.json)
-  管理并从本项目耦合baseline重算入口上限；本README不复制接口判据。真实oa入口、脉冲波形和捕获
-  体积冻结前不得建立动态消费者或宣称已连接，当前影响见[`docs/PROJECT.md`](docs/PROJECT.md)。
+  管理并从本项目耦合baseline重算入口上限；本README不复制接口判据。当前动态消费者只允许声明
+  投影功能链，真实oa入口、连接器场和有限边沿冻结前不得宣称物理连接，当前影响见
+  [`docs/PROJECT.md`](docs/PROJECT.md)。
 - 正式跨求解器直接重算与发布入口：
   [`tests/cross_solver/run_formal_validation.ps1`](tests/cross_solver/run_formal_validation.ps1)；发布器只在
   两端达到机器契约样本量、统一比较PASS且当前资产/结果SHA齐全时更新机器契约。
