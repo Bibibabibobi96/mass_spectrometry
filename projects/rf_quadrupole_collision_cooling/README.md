@@ -93,7 +93,8 @@
   [`analysis/build_s1_downstream_handoff.py`](analysis/build_s1_downstream_handoff.py)、
   [`analysis/analyze_s1_end_to_end.py`](analysis/analyze_s1_end_to_end.py)、
   [`analysis/plot_s1_loss_atlas.py`](analysis/plot_s1_loss_atlas.py)及
-  [`tests/cross_solver/run_s1_physical_end_to_end.ps1`](tests/cross_solver/run_s1_physical_end_to_end.ps1)；
+  [`analysis/compare_s1_entry_to_oatof_ideal_source.py`](analysis/compare_s1_entry_to_oatof_ideal_source.py)；
+  执行入口为[`tests/cross_solver/run_s1_physical_end_to_end.ps1`](tests/cross_solver/run_s1_physical_end_to_end.ps1)；
   COMSOL在真实`1.0×0.9 mm`孔和局部联合场中完成按时进入及统一有限脉冲，SIMION从局部出口真实三维
   状态继续到分析器。当前N=100清点为`100→88→28→9`，只证明功能贯通，不授权分辨率、阶段PASS或Formal晋升。
 - RF连续接地屏蔽候选：
