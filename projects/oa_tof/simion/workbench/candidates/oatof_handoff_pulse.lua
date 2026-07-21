@@ -10,6 +10,7 @@ adjustable handoff_pulse_pre_all_v = 0
 local base_initialize_run = segment.initialize_run
 local base_tstep_adjust = segment.tstep_adjust
 local base_other_actions = segment.other_actions
+local base_terminate = segment.terminate
 local pulse_reported = {}
 
 function segment.initialize_run()
@@ -64,8 +65,18 @@ function segment.other_actions()
       and ion_time_of_flight >= handoff_pulse_time_us then
     pulse_reported[ion_number] = true
     if trajectory_log_enable ~= 0 then
-      print(string.format('TRACE: handoff_pulse_on ion=%d instrument_time_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g',
-        ion_number, ion_time_of_flight, ion_px_mm, ion_py_mm, ion_pz_mm))
+      print(string.format('TRACE: handoff_pulse_on ion=%d instrument_time_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g',
+        ion_number, ion_time_of_flight, ion_px_mm, ion_py_mm, ion_pz_mm,
+        ion_vx_mm, ion_vy_mm, ion_vz_mm))
     end
   end
+end
+
+function segment.terminate()
+  if handoff_pulse_mode == 1 and trajectory_log_enable ~= 0 then
+    print(string.format('TRACE: handoff_terminal_raw ion=%d instance=%d instrument_time_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g',
+      ion_number, ion_instance, ion_time_of_flight, ion_px_mm, ion_py_mm, ion_pz_mm,
+      ion_vx_mm, ion_vy_mm, ion_vz_mm))
+  end
+  base_terminate()
 end

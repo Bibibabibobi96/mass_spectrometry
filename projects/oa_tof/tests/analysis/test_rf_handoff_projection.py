@@ -29,6 +29,10 @@ ANALYZE = load_module(
     "analyze_rf_handoff_projection",
     PROJECT_ROOT / "analysis" / "analyze_rf_handoff_projection.py",
 )
+PULSE_ANALYZE = load_module(
+    "analyze_rf_handoff_pulse",
+    PROJECT_ROOT / "analysis" / "analyze_rf_handoff_pulse.py",
+)
 
 
 def write_csv(path: Path, fieldnames: list[str], rows: list[dict[str, object]]) -> None:
@@ -205,6 +209,43 @@ class HandoffAnalysisTests(unittest.TestCase):
             self.assertAlmostEqual(float(first["detector_instrument_time_us"]), 41.0)
             self.assertAlmostEqual(float(first["detector_lineage_age_us"]), 35.0)
             self.assertAlmostEqual(float(first["detector_particle_age_us"]), 32.0)
+
+
+class HandoffPulseAnalysisTests(unittest.TestCase):
+    def test_sparse_events_preserve_entry_and_pulse_velocity(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            canonical = root / "canonical.csv"
+            timed = root / "timed.csv"
+            control = root / "control.csv"
+            log = root / "timed.log"
+            write_csv(canonical, [
+                "particle_id", "instrument_time_us", "position_x_mm", "position_y_mm",
+                "position_z_mm", "velocity_x_m_s", "velocity_y_m_s", "velocity_z_m_s",
+            ], [{
+                "particle_id": 1, "instrument_time_us": 45, "position_x_mm": -62.8,
+                "position_y_mm": 0.1, "position_z_mm": -18.4, "velocity_x_m_s": 2000,
+                "velocity_y_m_s": 20, "velocity_z_m_s": -30,
+            }])
+            result_fields = ["Ion", "Hit", "TofUs"]
+            write_csv(timed, result_fields, [{"Ion": 1, "Hit": "True", "TofUs": 40}])
+            write_csv(control, result_fields, [{"Ion": 1, "Hit": "False", "TofUs": "NaN"}])
+            log.write_text("\n".join([
+                "TRACE: handoff_pulse_contract mode=1 time_us=54 width_us=1 pre_all_v=0 post_repeller_v=2240 grid1_v=1760",
+                "TRACE: handoff_pulse_on ion=1 instrument_time_us=54 x_mm=-48.8 y_mm=0.2 z_mm=-18.3 vx_mm_per_us=2 vy_mm_per_us=0.02 vz_mm_per_us=-0.03",
+                "TRACE: handoff_terminal_raw ion=1 instance=4 instrument_time_us=85 x_mm=49 y_mm=1 z_mm=19.8 vx_mm_per_us=0.1 vy_mm_per_us=0.2 vz_mm_per_us=-30",
+            ]), encoding="utf-8")
+            events_path = root / "events.csv"
+            events, outcomes = PULSE_ANALYZE.build_events(
+                PULSE_ANALYZE.read_csv(canonical), PULSE_ANALYZE.read_csv(timed),
+                PULSE_ANALYZE.parse_log(log)[2], PULSE_ANALYZE.parse_log(log)[3],
+            )
+            PULSE_ANALYZE.write_csv(events_path, events)
+            saved = PULSE_ANALYZE.read_csv(events_path)
+            self.assertEqual([row["event"] for row in saved], ["effective_entry", "pulse_on", "terminal"])
+            self.assertEqual(float(saved[1]["vx_m_s"]), 2000.0)
+            self.assertEqual(saved[2]["status"], "detector_hit")
+            self.assertEqual(outcomes[1], "detector_hit")
 
 
 if __name__ == "__main__":

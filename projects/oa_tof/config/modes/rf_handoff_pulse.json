@@ -52,6 +52,13 @@
     "minimum_transmission_gain_over_held_off_control": 0.05,
     "minimum_pulse_event_fraction": 0.05
   },
+  "diagnostics": {
+    "storage_policy": "sparse_key_events_only",
+    "events": ["effective_entry", "pulse_on", "terminal"],
+    "required_state_at": ["effective_entry", "pulse_on"],
+    "dense_trajectories_saved": false,
+    "figures": ["arrival_pulse_outcome_timeline", "pulse_snapshot_spatial_distribution"]
+  },
   "claims": {
     "functional_projection_claim_allowed": true,
     "physical_link_claim_allowed": false,

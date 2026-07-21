@@ -105,8 +105,12 @@ try {
 }
 
 $metrics = Join-Path $resultDir 'rf_handoff_pulse_metrics.json'
+$events = Join-Path $resultDir 'rf_handoff_pulse_events.csv'
+$timeline = Join-Path $resultDir 'rf_handoff_pulse_timeline.png'
+$snapshot = Join-Path $resultDir 'rf_handoff_pulse_snapshot.png'
 & $python $analyze --timed $outputs.timed --control $outputs.held_off --mode $modePath `
-  --pulse-log (Join-Path $logDir 'timed.stdout.log') --output $metrics
+  --canonical $canonical --pulse-log (Join-Path $logDir 'timed.stdout.log') --output $metrics `
+  --events-output $events --timeline-output $timeline --snapshot-output $snapshot
 if ($LASTEXITCODE -ne 0) { throw 'Shared-clock pulse functional gate failed.' }
 $result = Get-Content -LiteralPath $metrics -Raw -Encoding UTF8 | ConvertFrom-Json
 
@@ -125,7 +129,7 @@ $summary = Join-Path $runDir 'summary.json'
 $manifest = Join-Path $runDir 'run_manifest.json'
 $manifestArgs = @((Join-Path $repoRoot 'common\contracts\write_run_manifest.py'),'--run-config',$runConfig,
   '--manifest',$manifest,'--status','success','--software','SIMION 2020')
-foreach ($path in @($canonical,$ion,$rowMap,$metadata,$request,$programBuildMetadata,$runtimeProgram,$outputs.timed,$outputs.held_off,$metrics,
+foreach ($path in @($canonical,$ion,$rowMap,$metadata,$request,$programBuildMetadata,$runtimeProgram,$outputs.timed,$outputs.held_off,$metrics,$events,$timeline,$snapshot,
   (Join-Path $logDir 'timed.stdout.log'),(Join-Path $logDir 'timed.stderr.log'),
   (Join-Path $logDir 'held_off.stdout.log'),(Join-Path $logDir 'held_off.stderr.log'),$summary)) {
   $manifestArgs += @('--output',$path)
