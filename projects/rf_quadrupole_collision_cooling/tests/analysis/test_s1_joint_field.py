@@ -30,8 +30,9 @@ class S1JointFieldContractTests(unittest.TestCase):
         self.assertEqual(contract["local_domain"]["oatof_downstream_buffer_diagnostic_mm"], [5.0, 15.0, 30.0])
         self.assertEqual(contract["local_domain"]["legacy_external_vacuum_diagnostic_margin_mm"], [1.0, 10.0, 30.0])
         self.assertFalse(contract["local_domain"]["external_vacuum_field_domain_included"])
-        self.assertFalse(contract["permissions"]["field_solve_allowed"])
-        self.assertFalse(contract["permissions"]["particle_runtime_allowed"])
+        self.assertTrue(contract["permissions"]["field_solve_allowed"])
+        self.assertTrue(contract["permissions"]["particle_runtime_allowed"])
+        self.assertEqual(contract["port_sweep"]["selected_n100_candidate_full_width_y_mm"], 1.0)
         self.assertEqual(contract["evaluation"]["field_reference_role"], "diagnostic_alert_only")
         self.assertFalse(contract["evaluation"]["field_reference_alert_clear_required_for_s1_pass"])
 
@@ -85,6 +86,29 @@ class S1JointFieldContractTests(unittest.TestCase):
         self.assertEqual(analysis_module.evaluation_half_width(0.0, 1.0), 0.5)
         self.assertEqual(analysis_module.evaluation_half_width(0.75, 1.0), 0.375)
 
+    def test_local_closed_reference_schema_is_normalized(self):
+        samples = pd.DataFrame({
+            "sample_type": ["accelerator_profile", "injection_axis"],
+            "x_mm": [0.0, 0.0], "y_mm": [0.0, 0.0], "z_mm": [0.0, 0.0],
+            "static_Ex_V_per_m": [1.0, 2.0], "static_Ey_V_per_m": [3.0, 4.0],
+            "static_Ez_V_per_m": [5.0, 6.0], "static_potential_V": [7.0, 8.0],
+        })
+        normalized = analysis_module.normalize_static_reference(samples)
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(float(normalized.iloc[0]["Ez_V_per_m"]), 5.0)
+
+    def test_shielding_diagnostics_separate_upstream_and_source_regions(self):
+        samples = pd.DataFrame({
+            "x_mm": [-70.0, -67.8, -50.0, -48.8],
+            "static_Ex_V_per_m": [1.0, 2.0, 100.0, 200.0],
+            "static_Ey_V_per_m": [0.0] * 4, "static_Ez_V_per_m": [0.0] * 4,
+            "rf_Ex_V_per_m": [100.0, 50.0, 2.0, 1.0],
+            "rf_Ey_V_per_m": [0.0] * 4, "rf_Ez_V_per_m": [0.0] * 4,
+        })
+        result = analysis_module.shielding_diagnostics(samples, -67.8, 2.0)
+        self.assertEqual(result["oatof_static_maximum_upstream_of_entry_V_per_m"], 2.0)
+        self.assertEqual(result["rf_peak_maximum_near_oatof_source_V_per_m"], 2.0)
+
     def test_comsol_sampler_includes_exact_port_edge(self):
         source = (PROJECT_ROOT / "tests" / "comsol" / "build_s1_joint_field_candidate.m").read_text(
             encoding="utf-8"
@@ -96,18 +120,22 @@ class S1JointFieldContractTests(unittest.TestCase):
         self.assertIn("acceleratorHmax", source)
         self.assertIn("includeRfHardware", source)
         self.assertIn("downstreamBuffer", source)
-        self.assertIn("outerVacuumMargin", source)
+        self.assertIn("rfShieldInnerRadius", source)
+        self.assertIn("EXTERNAL_VACUUM_INCLUDED=false", source)
+        self.assertNotIn("jointvac", source)
+        self.assertIn("geom1_portvac_dom", source)
+        self.assertNotIn("sel_connector_mesh", source)
         runner = (PROJECT_ROOT / "tests" / "comsol" / "run_s1_joint_field_candidate.ps1").read_text(
             encoding="utf-8"
         )
         self.assertIn("permissions.field_solve_allowed", runner)
-        self.assertIn("blocked until the continuous RF shield radius is selected", runner)
+        self.assertIn("field_solve_allowed", runner)
 
     def test_continuous_rf_shield_parameter_sweep(self):
         shield = shield_module.validate()
         geometry = shield["candidate_geometry_mm"]
         self.assertEqual(geometry["inner_radius_ratio_to_rod_outer_extent_sweep"], [1.5, 2.0, 3.0])
-        self.assertIsNone(geometry["selected_inner_radius_mm"])
+        self.assertEqual(geometry["selected_inner_radius_mm"], 19.776)
         self.assertFalse(geometry["oa_accelerator_outer_size_dependency_allowed"])
         self.assertEqual(
             shield["two_dimensional_screen_evidence"]["retained_inner_radius_mm_for_3d"],
@@ -145,14 +173,14 @@ class S1JointFieldContractTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "exceeds"):
                 module.validate()
 
-    def test_premature_field_solve_permission_is_rejected(self):
+    def test_disabling_approved_field_solve_permission_is_rejected(self):
         original = module.load
 
         def altered(path):
             value = original(path)
             if Path(path).name == "rf_to_oatof_s1_joint_field.json":
                 value = deepcopy(value)
-                value["permissions"]["field_solve_allowed"] = True
+                value["permissions"]["field_solve_allowed"] = False
             return value
 
         with patch.object(module, "load", side_effect=altered):

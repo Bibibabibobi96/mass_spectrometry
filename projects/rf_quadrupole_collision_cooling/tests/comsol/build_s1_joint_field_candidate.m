@@ -13,7 +13,6 @@ acceleratorHmax = str2double(getenv('RF_OATOF_ACCELERATOR_HMAX_MM'));
 jointScope = getenv('RF_OATOF_JOINT_SCOPE');
 includeRfHardware = strcmp(jointScope,'rf-oa');
 downstreamBuffer = str2double(getenv('RF_OATOF_DOWNSTREAM_BUFFER_MM'));
-outerVacuumMargin = str2double(getenv('RF_OATOF_OUTER_VACUUM_MARGIN_MM'));
 assert(~isempty(outputCsv) && ~isempty(jointPath) && ~isempty(interfacePath), 'S1 environment is incomplete.');
 assert(isfinite(portWidth) && portWidth >= 0, 'RF_OATOF_PORT_WIDTH_MM must be non-negative.');
 assert(isfinite(meshAutoLevel) && meshAutoLevel == round(meshAutoLevel) && meshAutoLevel >= 1 && meshAutoLevel <= 9, ...
@@ -26,11 +25,9 @@ assert(includeRfHardware || portWidth == 0, ...
     'The oa-only diagnostic is allowed only for the closed control.');
 assert(isfinite(downstreamBuffer) && downstreamBuffer > 0, ...
     'RF_OATOF_DOWNSTREAM_BUFFER_MM must be positive.');
-assert(isfinite(outerVacuumMargin) && outerVacuumMargin > 0, ...
-    'RF_OATOF_OUTER_VACUUM_MARGIN_MM must be positive.');
 fid = fopen(reportPath, 'w'); assert(fid >= 0, 'Could not create task report.');
 cleanup = onCleanup(@() fclose(fid));
-fprintf(fid, 'TASK=S1_LOCAL_JOINT_FIELD\nJOINT_SCOPE=%s\nPORT_WIDTH_MM=%.17g\nDOWNSTREAM_BUFFER_MM=%.17g\nOUTER_VACUUM_MARGIN_MM=%.17g\nMESH_AUTO_LEVEL=%d\nACCELERATOR_HMAX_MM=%.17g\n', jointScope, portWidth, downstreamBuffer, outerVacuumMargin, meshAutoLevel, acceleratorHmax);
+fprintf(fid, 'TASK=S1_LOCAL_JOINT_FIELD\nJOINT_SCOPE=%s\nPORT_WIDTH_MM=%.17g\nDOWNSTREAM_BUFFER_MM=%.17g\nEXTERNAL_VACUUM_INCLUDED=false\nMESH_AUTO_LEVEL=%d\nACCELERATOR_HMAX_MM=%.17g\n', jointScope, portWidth, downstreamBuffer, meshAutoLevel, acceleratorHmax);
 
 try
     joint = jsondecode(fileread(jointPath));
@@ -69,14 +66,32 @@ try
     sourcePose = joint.nominal_registration.source_component_pose;
     tx = sourcePose.translation_mm(1); tz = sourcePose.translation_mm(3);
     rg = rf.geometry_mm;
-    xMin = tx - 1.0; xMax = oa.coordinate_convention.accelerator_axis_x + ...
-        g.accelerator_bore_half+g.accelerator_ring_width+g.accelerator_insulation_gap+g.accelerator_shield_wall+outerVacuumMargin;
-    yHalf = g.accelerator_bore_half+g.accelerator_ring_width+g.accelerator_insulation_gap+g.accelerator_shield_wall+outerVacuumMargin;
-    zMin = g.accelerator_repeller_z-g.accelerator_repeller_thickness-g.accelerator_rear_clearance-g.accelerator_shield_wall-outerVacuumMargin;
-    zMax = g.accelerator_grid2_z+downstreamBuffer;
-    geom.feature.create('jointvac', 'Block'); geom.feature('jointvac').set('selresult', 'on');
-    geom.feature('jointvac').set('size', {sprintf('%.17g[mm]',xMax-xMin),sprintf('%.17g[mm]',2*yHalf),sprintf('%.17g[mm]',zMax-zMin)});
-    geom.feature('jointvac').set('pos', {sprintf('%.17g[mm]',xMin),sprintf('%.17g[mm]',-yHalf),sprintf('%.17g[mm]',zMin)});
+    rfShieldInnerRadius = joint.local_domain.rf_shield_inner_radius_mm;
+    rfShieldWall = joint.local_domain.rf_shield_numerical_wall_thickness_mm;
+    fprintf(fid,'RF_SHIELD_INNER_RADIUS_MM=%.17g\nRF_SHIELD_NUMERICAL_WALL_MM=%.17g\n',rfShieldInnerRadius,rfShieldWall);
+    vacuumInputs = {};
+    if includeRfHardware
+        geom.feature.create('rfvac', 'Cylinder'); geom.feature('rfvac').set('axis',{'1','0','0'});
+        geom.feature('rfvac').set('r',sprintf('%.17g[mm]',rfShieldInnerRadius));
+        geom.feature('rfvac').set('h',sprintf('%.17g[mm]',joint.local_domain.rf_local_z_max_mm-joint.local_domain.rf_local_z_min_mm));
+        geom.feature('rfvac').set('pos',{sprintf('%.17g[mm]',tx+joint.local_domain.rf_local_z_min_mm),'0',sprintf('%.17g[mm]',tz)});
+        geom.feature('rfvac').set('selresult','on'); vacuumInputs{end+1}='rfvac';
+    end
+    oaVacHalf = g.accelerator_bore_half+g.accelerator_ring_width+g.accelerator_insulation_gap;
+    oaVacZMin = g.accelerator_repeller_z-g.accelerator_repeller_thickness-g.accelerator_rear_clearance;
+    oaVacZMax = g.accelerator_grid2_z+downstreamBuffer;
+    geom.feature.create('oavac', 'Block'); geom.feature('oavac').set('selresult', 'on');
+    geom.feature('oavac').set('size', {sprintf('%.17g[mm]',2*oaVacHalf),sprintf('%.17g[mm]',2*oaVacHalf),sprintf('%.17g[mm]',oaVacZMax-oaVacZMin)});
+    geom.feature('oavac').set('pos', {sprintf('%.17g[mm]',oa.coordinate_convention.accelerator_axis_x-oaVacHalf),sprintf('%.17g[mm]',-oaVacHalf),sprintf('%.17g[mm]',oaVacZMin)});
+    vacuumInputs{end+1}='oavac';
+    if includeRfHardware && portWidth>0
+        oaShieldOuterX = oa.coordinate_convention.accelerator_axis_x-(oaVacHalf+g.accelerator_shield_wall);
+        oaShieldInnerX = oa.coordinate_convention.accelerator_axis_x-oaVacHalf;
+        geom.feature.create('portvac','Block'); geom.feature('portvac').set('selresult','on');
+        geom.feature('portvac').set('size',{sprintf('%.17g[mm]',oaShieldInnerX-oaShieldOuterX),sprintf('%.17g[mm]',portWidth),sprintf('%.17g[mm]',portHeight)});
+        geom.feature('portvac').set('pos',{sprintf('%.17g[mm]',oaShieldOuterX),sprintf('%.17g[mm]',-portWidth/2),sprintf('%.17g[mm]',joint.port_sweep.center_z_mm-portHeight/2)});
+        vacuumInputs{end+1}='portvac';
+    end
     source = oa.particle_source;
     geom.feature.create('relvol','Block'); geom.feature('relvol').set('selresult','on');
     geom.feature('relvol').set('size',{sprintf('%.17g[mm]',source.size_x_mm),sprintf('%.17g[mm]',source.size_y_mm),sprintf('%.17g[mm]',source.size_z_mm)});
@@ -88,7 +103,7 @@ try
         wp.geom.feature.create('r1','Rectangle'); wp.geom.feature('r1').set('size',{sprintf('%.17g[mm]',item{3}),sprintf('%.17g[mm]',item{3})});
         wp.geom.feature('r1').set('pos',{sprintf('%.17g[mm]',oa.coordinate_convention.accelerator_axis_x-item{3}/2),sprintf('%.17g[mm]',-item{3}/2)});
     end
-    geom.feature.create('univacgrid','Union'); geom.feature('univacgrid').selection('input').set({'jointvac','wp_grid1','wp_grid2','relvol'}); geom.feature('univacgrid').set('intbnd',true);
+    geom.feature.create('univacgrid','Union'); geom.feature('univacgrid').selection('input').set([vacuumInputs,{'wp_grid1','wp_grid2','relvol'}]); geom.feature('univacgrid').set('intbnd',true);
 
     assert(~isempty(oaComsolDir) && isfolder(oaComsolDir), 'Frozen oa COMSOL source directory is missing.');
     addpath(oaComsolDir);
@@ -99,6 +114,7 @@ try
     for k=1:numel(accelrings), geom.feature(accelrings{k}).set('selresult','on'); end
 
     rodTags = {};
+    rfGroundTags = {};
     if includeRfHardware
         rodTags = cell(1,4);
         for k=1:4
@@ -108,13 +124,16 @@ try
             geom.feature(rodTags{k}).set('pos',{sprintf('%.17g[mm]',tx+rg.rod_z_min),sprintf('%.17g[mm]',rg.rod_center_radius*cosd(angle)),sprintf('%.17g[mm]',tz+rg.rod_center_radius*sind(angle))});
             geom.feature(rodTags{k}).set('selresult','on');
         end
-        add_plate(geom,'rfentrance',tx+rg.entrance_plate_z_min,rg.entrance_plate_z_max-rg.entrance_plate_z_min,rg.exit_enclosure_outer_half_width,rg.entrance_aperture_radius,tz);
-        add_plate(geom,'rfexit',tx+rg.exit_enclosure_z_min,rg.exit_enclosure_front_wall_end_z-rg.exit_enclosure_z_min,rg.exit_enclosure_outer_half_width,rg.exit_aperture_radius,tz);
+        geom.feature.create('rfshieldO','Cylinder'); geom.feature('rfshieldO').set('axis',{'1','0','0'}); geom.feature('rfshieldO').set('r',sprintf('%.17g[mm]',rfShieldInnerRadius+rfShieldWall)); geom.feature('rfshieldO').set('h',sprintf('%.17g[mm]',rg.exit_enclosure_z_min-rg.entrance_plate_z_max)); geom.feature('rfshieldO').set('pos',{sprintf('%.17g[mm]',tx+rg.entrance_plate_z_max),'0',sprintf('%.17g[mm]',tz)});
+        geom.feature.create('rfshieldH','Cylinder'); geom.feature('rfshieldH').set('axis',{'1','0','0'}); geom.feature('rfshieldH').set('r',sprintf('%.17g[mm]',rfShieldInnerRadius)); geom.feature('rfshieldH').set('h',sprintf('%.17g[mm]',rg.exit_enclosure_z_min-rg.entrance_plate_z_max)); geom.feature('rfshieldH').set('pos',{sprintf('%.17g[mm]',tx+rg.entrance_plate_z_max),'0',sprintf('%.17g[mm]',tz)});
+        geom.feature.create('rfshield','Difference'); geom.feature('rfshield').selection('input').set({'rfshieldO'}); geom.feature('rfshield').selection('input2').set({'rfshieldH'}); geom.feature('rfshield').set('selresult','on');
+        add_circular_plate(geom,'rfentrance',tx+rg.entrance_plate_z_min,rg.entrance_plate_z_max-rg.entrance_plate_z_min,rfShieldInnerRadius+rfShieldWall,rg.entrance_aperture_radius,tz);
+        add_circular_plate(geom,'rfexit',tx+rg.exit_enclosure_z_min,rg.exit_enclosure_front_wall_end_z-rg.exit_enclosure_z_min,rfShieldInnerRadius+rfShieldWall,rg.exit_aperture_radius,tz);
+        rfGroundTags={'rfshield','rfentrance','rfexit'};
     end
     geom.run;
 
-    rfSolidTags = {}; if includeRfHardware, rfSolidTags = {'rfentrance','rfexit'}; end
-    solidTags = [{'repeller','accelshield'}, rfSolidTags, accelrings, rodTags];
+    solidTags = [{'repeller','accelshield'}, rfGroundTags, accelrings, rodTags];
     solidSelections = cellfun(@(name) ['geom1_' name '_dom'],solidTags,'UniformOutput',false);
     comp.selection.create('sel_vac','Complement'); comp.selection('sel_vac').set('input',solidSelections);
     mat=model.material.create('mat_vac','Common'); mat.selection.named('sel_vac'); mat.propertyGroup('def').set('relpermittivity',{'1'});
@@ -137,7 +156,11 @@ try
     esRf.field('electricpotential').field('Vrf'); esRf.field('electricpotential').component({'Vrf'});
     set_potential(esStatic,'repeller','selb_repeller',oa.electrodes_V.repeller);
     set_potential(esStatic,'accelshield','selb_accelshield',0);
-    if includeRfHardware, set_potential(esStatic,'rfentrance','selb_rfentrance',0); set_potential(esStatic,'rfexit','selb_rfexit',0); end
+    if includeRfHardware
+        for k=1:numel(rfGroundTags)
+            set_potential(esStatic,rfGroundTags{k},['selb_' rfGroundTags{k}],0);
+        end
+    end
     set_potential(esStatic,'grid1','selb_grid1',oa.electrodes_V.grid1); set_potential(esStatic,'grid2','selb_grid2',0);
     for k=1:5, set_potential(esStatic,sprintf('ring%d',k),sprintf('selb_accelring_%d',k),oa.electrodes_V.grid1*(1-k/6)); end
     if includeRfHardware
@@ -145,7 +168,7 @@ try
             set_potential(esStatic,sprintf('rfrod%d',k),sprintf('selb_rfrod%d',k),0);
         end
     end
-    groundedRfTags = [{'repeller','accelshield'}, rfSolidTags, accelrings];
+    groundedRfTags = [{'repeller','accelshield'}, rfGroundTags, accelrings];
     for name=groundedRfTags, set_potential(esRf,['g_' name{1}],['selb_' name{1}],0); end
     set_potential(esRf,'g_grid1','selb_grid1',0); set_potential(esRf,'g_grid2','selb_grid2',0);
     if includeRfHardware
@@ -157,6 +180,9 @@ try
     mesh=comp.mesh.create('mesh1'); mesh.feature('size').set('hauto',meshAutoLevel);
     mesh.feature.create('szrelease','Size'); mesh.feature('szrelease').selection.geom('geom1',3); mesh.feature('szrelease').selection.named('geom1_relvol_dom'); mesh.feature('szrelease').set('custom','on'); mesh.feature('szrelease').set('hmaxactive',true); mesh.feature('szrelease').set('hmax','0.1[mm]');
     mesh.feature.create('szaccel','Size'); mesh.feature('szaccel').selection.geom('geom1',3); mesh.feature('szaccel').selection.named('sel_accel_mesh'); mesh.feature('szaccel').set('custom','on'); mesh.feature('szaccel').set('hmaxactive',true); mesh.feature('szaccel').set('hmax',sprintf('%.17g[mm]',acceleratorHmax));
+    if includeRfHardware && portWidth>0
+        mesh.feature.create('szconnector','Size'); mesh.feature('szconnector').selection.geom('geom1',3); mesh.feature('szconnector').selection.named('geom1_portvac_dom'); mesh.feature('szconnector').set('custom','on'); mesh.feature('szconnector').set('hmaxactive',true); mesh.feature('szconnector').set('hmax',sprintf('%.17g[mm]',joint.numerical_qualification.connector_diagnostic_hmax_mm));
+    end
     mesh.feature.create('ftet1','FreeTet'); mesh.run;
     study=model.study.create('std1'); study.create('stat','Stationary'); solution=model.sol.create('sol1'); solution.study('std1'); solution.createAutoSequence('std1'); solution.attach('std1'); solution.runAll;
 
@@ -181,8 +207,8 @@ catch exception
 end
 clear cleanup
 
-function add_plate(geom,tag,xStart,thickness,halfWidth,holeRadius,zCenter)
-geom.feature.create([tag 'O'],'Block'); geom.feature([tag 'O']).set('size',{sprintf('%.17g[mm]',thickness),sprintf('%.17g[mm]',2*halfWidth),sprintf('%.17g[mm]',2*halfWidth)}); geom.feature([tag 'O']).set('pos',{sprintf('%.17g[mm]',xStart),sprintf('%.17g[mm]',-halfWidth),sprintf('%.17g[mm]',zCenter-halfWidth)});
+function add_circular_plate(geom,tag,xStart,thickness,outerRadius,holeRadius,zCenter)
+geom.feature.create([tag 'O'],'Cylinder'); geom.feature([tag 'O']).set('axis',{'1','0','0'}); geom.feature([tag 'O']).set('r',sprintf('%.17g[mm]',outerRadius)); geom.feature([tag 'O']).set('h',sprintf('%.17g[mm]',thickness)); geom.feature([tag 'O']).set('pos',{sprintf('%.17g[mm]',xStart),'0',sprintf('%.17g[mm]',zCenter)});
 geom.feature.create([tag 'H'],'Cylinder'); geom.feature([tag 'H']).set('axis',{'1','0','0'}); geom.feature([tag 'H']).set('r',sprintf('%.17g[mm]',holeRadius)); geom.feature([tag 'H']).set('h',sprintf('%.17g[mm]',thickness)); geom.feature([tag 'H']).set('pos',{sprintf('%.17g[mm]',xStart),'0',sprintf('%.17g[mm]',zCenter)});
 geom.feature.create(tag,'Difference'); geom.feature(tag).selection('input').set({[tag 'O']}); geom.feature(tag).selection('input2').set({[tag 'H']}); geom.feature(tag).set('selresult','on');
 end

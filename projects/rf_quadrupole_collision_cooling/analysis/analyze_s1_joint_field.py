@@ -9,6 +9,10 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 
 RF_PROJECT = Path(__file__).resolve().parents[1]
@@ -69,16 +73,83 @@ def field_line_integrals(injection: pd.DataFrame, prefix: str) -> dict[str, floa
     }
 
 
+def normalize_static_reference(samples: pd.DataFrame) -> pd.DataFrame:
+    if "sample_type" in samples.columns:
+        samples = samples[samples["sample_type"] == "accelerator_profile"].copy()
+    rename = {
+        "static_Ex_V_per_m": "Ex_V_per_m",
+        "static_Ey_V_per_m": "Ey_V_per_m",
+        "static_Ez_V_per_m": "Ez_V_per_m",
+        "static_potential_V": "potential_V",
+    }
+    samples = samples.rename(columns=rename)
+    required = {"x_mm", "y_mm", "z_mm", "Ex_V_per_m", "Ey_V_per_m", "Ez_V_per_m", "potential_V"}
+    missing = required - set(samples.columns)
+    if missing:
+        raise ValueError(f"closed reference is missing columns: {sorted(missing)}")
+    return samples
+
+
+def vector_magnitude(samples: pd.DataFrame, prefix: str) -> np.ndarray:
+    return np.sqrt(sum(np.square(samples[f"{prefix}_{axis}_V_per_m"].to_numpy(float)) for axis in (
+        "Ex", "Ey", "Ez"
+    )))
+
+
+def shielding_diagnostics(
+    injection: pd.DataFrame, entry_x_mm: float, rf_peak_scale: float,
+) -> dict[str, float]:
+    upstream = injection[injection["x_mm"] <= entry_x_mm + 1e-12]
+    source = injection[injection["x_mm"] >= float(injection["x_mm"].max()) - 0.5 - 1e-12]
+    if upstream.empty or source.empty:
+        raise ValueError("injection-axis samples do not cover the RF region and oa source neighborhood")
+    static_all = vector_magnitude(injection, "static")
+    rf_all = vector_magnitude(injection, "rf") * rf_peak_scale
+    static_upstream = vector_magnitude(upstream, "static")
+    rf_source = vector_magnitude(source, "rf") * rf_peak_scale
+    static_scale, rf_scale = float(static_all.max()), float(rf_all.max())
+    if static_scale <= 0.0 or rf_scale <= 0.0:
+        raise ValueError("joint-field shielding scales must be positive")
+    return {
+        "oatof_static_maximum_upstream_of_entry_V_per_m": float(static_upstream.max()),
+        "oatof_static_upstream_relative_to_joint_axis_maximum": float(static_upstream.max() / static_scale),
+        "rf_peak_maximum_near_oatof_source_V_per_m": float(rf_source.max()),
+        "rf_peak_near_source_relative_to_joint_axis_maximum": float(rf_source.max() / rf_scale),
+        "rf_peak_scale_from_unit_field": rf_peak_scale,
+    }
+
+
+def plot_injection_axis(injection: pd.DataFrame, rf_peak_scale: float, entry_x_mm: float, output: Path) -> None:
+    ordered = injection.sort_values("x_mm")
+    static = np.maximum(vector_magnitude(ordered, "static"), 1e-18)
+    rf_peak = np.maximum(vector_magnitude(ordered, "rf") * rf_peak_scale, 1e-18)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    figure, axis = plt.subplots(figsize=(8, 4.8))
+    axis.semilogy(ordered["x_mm"], static, label="oa pulse-field basis |E|", color="#2166ac")
+    axis.semilogy(ordered["x_mm"], rf_peak, label="RF peak |E|", color="#d95f0e")
+    axis.axvline(entry_x_mm, color="#636363", linestyle="--", label="oa outer entry face")
+    axis.set(xlabel="Instrument x (mm)", ylabel="Field magnitude (V/m)",
+             title="S1 physical-port injection-axis field isolation")
+    axis.grid(alpha=0.25, which="both")
+    axis.legend()
+    figure.tight_layout()
+    figure.savefig(output, dpi=180)
+    plt.close(figure)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--candidate", required=True, type=Path)
     parser.add_argument("--closed-reference", required=True, type=Path)
     parser.add_argument("--joint-contract", required=True, type=Path)
     parser.add_argument("--interface-contract", required=True, type=Path)
+    parser.add_argument("--rf-resolved", required=True, type=Path)
+    parser.add_argument("--reference-role", required=True, choices=("formal_closed", "matched_local_closed"))
     parser.add_argument("--output-dir", required=True, type=Path)
     args = parser.parse_args()
     joint = json.loads(args.joint_contract.read_text(encoding="utf-8-sig"))
     interface = json.loads(args.interface_contract.read_text(encoding="utf-8-sig"))
+    rf_resolved = json.loads(args.rf_resolved.read_text(encoding="utf-8-sig"))
     candidate_all = pd.read_csv(args.candidate)
     candidate = candidate_all[candidate_all["sample_type"] == "accelerator_profile"].copy()
     candidate = candidate.rename(columns={
@@ -87,7 +158,7 @@ def main() -> None:
         "static_Ez_V_per_m": "Ez_V_per_m",
         "static_potential_V": "potential_V",
     })
-    closed = pd.read_csv(args.closed_reference)
+    closed = normalize_static_reference(pd.read_csv(args.closed_reference))
     envelope, candidate_report = analyze(candidate, formal_half_width_mm=0.5)
     field_reference = interface["connector"]["entry_aperture_design"]["field_uniformity_reference"]
     thresholds = field_reference["diagnostic_alert_thresholds"]
@@ -124,19 +195,22 @@ def main() -> None:
             "maximum_rf_unit_field_V_per_m": None,
         }
     else:
-        static_magnitude = np.sqrt(sum(np.square(injection[column].to_numpy(float)) for column in (
-            "static_Ex_V_per_m", "static_Ey_V_per_m", "static_Ez_V_per_m"
-        )))
-        rf_magnitude = np.sqrt(sum(np.square(injection[column].to_numpy(float)) for column in (
-            "rf_Ex_V_per_m", "rf_Ey_V_per_m", "rf_Ez_V_per_m"
-        )))
+        static_magnitude = vector_magnitude(injection, "static")
+        rf_magnitude = vector_magnitude(injection, "rf")
+        rf_peak_scale = float(rf_resolved["mode"]["rf"]["amplitude_V_peak"]) / 100.0
+        entry_x_mm = float(joint["nominal_registration"]["target_entry_center_instrument_mm"][0])
         injection_characterization = {
             "status": "sampled_through_open_port",
             "maximum_oatof_static_field_V_per_m": float(static_magnitude.max()),
             "maximum_rf_unit_field_V_per_m": float(rf_magnitude.max()),
             "oatof_static_component_line_integrals": field_line_integrals(injection, "static"),
             "rf_unit_component_line_integrals": field_line_integrals(injection, "rf"),
+            "shielding_diagnostics": shielding_diagnostics(injection, entry_x_mm, rf_peak_scale),
         }
+        plot_injection_axis(
+            injection, rf_peak_scale, entry_x_mm,
+            args.output_dir / "s1_injection_axis_field.png",
+        )
     width = float(candidate_all["port_full_width_y_mm"].iloc[0])
     reference_width = float(
         field_reference["closed_shield_contiguous_full_width_y_mm"]
@@ -158,6 +232,7 @@ def main() -> None:
         "closed_reference_alert_clear": reference_alert_clear,
         "closed_reference_alert_is_hard_gate": False,
         "opened_to_closed_axis_change": axis_change,
+        "axis_change_reference_role": args.reference_role,
         "injection_axis_characterization": injection_characterization,
         "unresolved_gates": [
             "maximum relative field leakage",

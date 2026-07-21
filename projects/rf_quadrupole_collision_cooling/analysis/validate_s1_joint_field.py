@@ -29,8 +29,8 @@ def validate(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
     contract = load(path)
     if contract.get("schema_version") != 1 or contract.get("stage") != "S1":
         raise ValueError("S1 joint-field contract identity is invalid")
-    if contract.get("status") != "blocked_pending_continuous_rf_shield_selection":
-        raise ValueError("S1 joint-field contract must remain blocked until the RF shield is selected")
+    if contract.get("status") != "field_characterized_n100_physical_port_runtime_ready":
+        raise ValueError("S1 joint-field contract is not ready for N=100 physical-port runtime")
 
     inputs = contract["inputs"]
     interface = load(PROJECT_ROOT / inputs["interface_contract"])
@@ -38,8 +38,11 @@ def validate(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
     oatof = load((PROJECT_ROOT / inputs["oatof_baseline"]).resolve())
     oatof_mode = load((PROJECT_ROOT / inputs["oatof_formal_mode"]).resolve())
     shield = load(PROJECT_ROOT / inputs["rf_continuous_shield_candidate"])
-    if shield.get("status") != "approved_parameter_sweep_for_solver_validation":
-        raise ValueError("S1 continuous RF shield candidate is not approved for a parameter sweep")
+    if shield.get("status") != "smallest_radius_retained_for_s1_candidate_validation":
+        raise ValueError("S1 continuous RF shield radius is not retained for candidate validation")
+    shield_geometry = shield["candidate_geometry_mm"]
+    if not math.isclose(float(shield_geometry.get("selected_inner_radius_mm", -1.0)), 19.776, abs_tol=1e-12):
+        raise ValueError("S1 continuous RF shield candidate radius differs from 19.776 mm")
     experiment = load(PROJECT_ROOT / inputs["field_performance_experiment"])
     if experiment.get("role") != "rf_to_oatof_field_to_particle_performance_calibration_plan":
         raise ValueError("S1 field-performance experiment identity is invalid")
@@ -79,6 +82,15 @@ def validate(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
         raise ValueError("S1 RF geometry must be trimmed at the handoff plane")
     if float(local["rf_local_z_max_mm"]) >= float(rf["geometry_mm"]["exit_enclosure_z_max"]):
         raise ValueError("S1 local domain includes forbidden standalone acceptance hardware")
+    if not math.isclose(
+        float(local.get("rf_shield_inner_radius_mm", -1.0)),
+        float(shield_geometry["selected_inner_radius_mm"]), abs_tol=1e-12,
+    ):
+        raise ValueError("S1 local-domain RF shield radius differs from the retained candidate")
+    if not math.isclose(float(local.get("rf_shield_numerical_wall_thickness_mm", -1.0)), 1.0, abs_tol=1e-12):
+        raise ValueError("S1 numerical RF shield wall thickness changed")
+    if local.get("rf_shield_wall_thickness_claim_allowed") is not False:
+        raise ValueError("S1 numerical RF shield wall may not become a mechanical claim")
     if [float(value) for value in local.get("oatof_downstream_buffer_diagnostic_mm", [])] != [5.0, 15.0, 30.0]:
         raise ValueError("S1 downstream local-domain convergence values are not frozen")
     if [float(value) for value in local.get("legacy_external_vacuum_diagnostic_margin_mm", [])] != [1.0, 10.0, 30.0]:
@@ -117,8 +129,12 @@ def validate(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
         raise ValueError("S1 closed control must be evaluated over the formal source width")
     if "exact +/- port half-width" not in sweep.get("sampling_rule", ""):
         raise ValueError("S1 field sampling must include the exact port edge")
-    if sweep.get("selection_allowed") is not False:
-        raise ValueError("field characterization may not select the final port")
+    if sweep.get("selection_allowed") is not True:
+        raise ValueError("S1 field characterization must retain one N=100 runtime candidate")
+    if not math.isclose(float(sweep.get("selected_n100_candidate_full_width_y_mm", -1.0)), widths[0], abs_tol=1e-12):
+        raise ValueError("S1 N=100 runtime must use the largest characterized width")
+    if "no performance or Formal selection" not in sweep.get("selection_scope", ""):
+        raise ValueError("S1 N=100 width selection overstates its authority")
 
     basis = contract["field_basis"]
     if basis.get("shared_geometry_required") is not True:
@@ -185,12 +201,19 @@ def validate(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
         raise ValueError("S1 legacy field thresholds must remain diagnostic")
     if evaluation.get("field_reference_alert_clear_required_for_s1_pass") is not False:
         raise ValueError("S1 field-reference alert may not directly control PASS")
-    if evaluation.get("maximum_relative_field_leakage") is not None:
-        raise ValueError("S1 leakage acceptance has not yet been frozen")
+    leakage = evaluation.get("maximum_relative_field_leakage", {})
+    if not math.isclose(float(leakage.get("n100_runtime_precheck_limit", -1.0)), 1e-4, abs_tol=1e-15):
+        raise ValueError("S1 N=100 leakage precheck limit changed")
+    if leakage.get("hard_performance_gate") is not False:
+        raise ValueError("S1 field leakage precheck may not replace particle performance")
+    if any(float(leakage[key]) >= float(leakage["n100_runtime_precheck_limit"]) for key in (
+        "oatof_static_upstream_measured", "rf_peak_near_oatof_source_measured"
+    )):
+        raise ValueError("S1 field leakage does not authorize N=100 runtime")
     if permissions != {
-        "candidate_geometry_generation_allowed": False,
-        "field_solve_allowed": False,
-        "particle_runtime_allowed": False,
+        "candidate_geometry_generation_allowed": True,
+        "field_solve_allowed": True,
+        "particle_runtime_allowed": True,
         "formal_asset_modification_allowed": False,
     }:
         raise ValueError("S1 characterization permissions are invalid")
@@ -203,7 +226,7 @@ def main() -> None:
     print(
         "S1_JOINT_FIELD_CONTRACT=PASS "
         f"WIDTHS_MM={','.join(str(value) for value in widths)} "
-        "FIELD_SOLVE_ALLOWED=false PARTICLE_RUNTIME_ALLOWED=false"
+        "FIELD_SOLVE_ALLOWED=true PARTICLE_RUNTIME_ALLOWED=true"
     )
 
 

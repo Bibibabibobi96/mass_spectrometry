@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "role": "rf_to_oatof_s1_local_joint_field_characterization_contract",
-  "status": "blocked_pending_continuous_rf_shield_selection",
+  "status": "field_characterized_n100_physical_port_runtime_ready",
   "stage": "S1",
   "inputs": {
     "interface_contract": "config/rf_to_oatof_interface_candidate.json",
@@ -45,6 +45,9 @@
     ],
     "rf_local_z_min_mm": 0.0,
     "rf_local_z_max_mm": 90.2,
+    "rf_shield_inner_radius_mm": 19.776,
+    "rf_shield_numerical_wall_thickness_mm": 1.0,
+    "rf_shield_wall_thickness_claim_allowed": false,
     "rf_trim_rule": "The S1 RF solid and vacuum geometry ends at the first-forward handoff plane; standalone acceptance hardware beyond that plane is forbidden.",
     "oatof_downstream_buffer_after_grid2_mm": 5.0,
     "oatof_downstream_buffer_diagnostic_mm": [5.0, 15.0, 30.0],
@@ -52,10 +55,10 @@
     "legacy_external_vacuum_diagnostic_margin_mm": [1.0, 10.0, 30.0],
     "legacy_external_vacuum_diagnostic_role": "historical evidence only; forbidden for selecting or qualifying the shielded candidate",
     "external_vacuum_field_domain_included": false,
-    "rf_side_boundary": "selected continuous grounded cylindrical RF housing and grounded end plates",
+    "rf_side_boundary": "continuous grounded cylindrical RF housing with retained candidate inner radius 19.776 mm and grounded end plates",
     "oa_side_boundary": "oa accelerator grounded shield",
     "interior_vacuum_rule": "Mesh only vacuum enclosed by the RF housing, centered ion aperture and oa accelerator shield. No 350 mm flight-tube cross-section or exterior vacuum is part of the S1 connector sweep.",
-    "downstream_truncation_status": "requires_formal_field_matching_or_verified_decay_after_grid2"
+    "downstream_truncation_status": "diagnostic_sequence_5_15_30_mm_required_before_opened_field_acceptance"
   },
   "port_sweep": {
     "shape": "rectangle",
@@ -64,9 +67,11 @@
     "closed_control_full_width_y_mm": 0.0,
     "closed_control_evaluation_full_width_y_mm": 1.0,
     "full_width_y_mm": [1.0, 0.75, 0.5, 0.25],
+    "selected_n100_candidate_full_width_y_mm": 1.0,
     "execution_order": "closed local-domain control first, then descending opened width; stop only for a solver failure, not for a failed physical metric",
     "sampling_rule": "Always include y=0, every regular 0.25 mm offset and the exact +/- port half-width; the closed control is evaluated over the frozen 1.0 mm formal source width.",
-    "selection_allowed": false
+    "selection_allowed": true,
+    "selection_scope": "largest theory-admissible characterization width retained only for N=100 physical-port function; no performance or Formal selection"
   },
   "field_basis": {
     "shared_geometry_required": true,
@@ -96,8 +101,13 @@
     "opened_to_closed_axis_change_report_required": true,
     "rf_fringe_at_oatof_source_report_required": true,
     "oatof_static_leakage_upstream_report_required": true,
-    "maximum_relative_field_leakage": null,
-    "resolution_gate_status": "requires_later_particle_runtime_after_field_characterization",
+    "maximum_relative_field_leakage": {
+      "n100_runtime_precheck_limit": 0.0001,
+      "oatof_static_upstream_measured": 3.813564613011992e-09,
+      "rf_peak_near_oatof_source_measured": 4.314825111903488e-18,
+      "hard_performance_gate": false
+    },
+    "resolution_gate_status": "requires_n100_physical_port_runtime_then_n1000_only_after_function_pass",
     "pass_allowed": false
   },
   "numerical_qualification": {
@@ -123,10 +133,26 @@
     "diagnostic_control_policy": "The oa-only control may isolate RF-hardware influence but may not qualify an opened physical connector or replace the full joint geometry.",
     "claim_limit": "A field-reference alert is not attributable to connector performance until the closed control, opened outer-domain sensitivity and particle-performance calibration are qualified."
   },
+  "field_characterization_evidence": {
+    "closed_control_run_id": "20260722_090000__analysis__comsol__rf-oatof-s1-joint-field__closed-rf-oa-h1-buf5__r02",
+    "opened_field_run_id": "20260722_092000__analysis__comsol__rf-oatof-s1-joint-field__w1-h1-buf5__r02",
+    "reanalysis_run_id": "20260722_094000__analysis__python__rf-oatof-s1-joint-field-reanalysis__w1__r02",
+    "opened_to_matched_closed_axis_change": {
+      "ez_relative_rms": 0.0005564029601412239,
+      "potential_relative_rms": 0.000017293762970002896
+    },
+    "shielding": {
+      "oatof_static_maximum_upstream_V_per_m": 0.0016806808291259816,
+      "oatof_static_upstream_relative_to_joint_axis_maximum": 3.813564613011992e-09,
+      "rf_peak_maximum_near_oatof_source_V_per_m": 5.852790627363117e-15,
+      "rf_peak_near_source_relative_to_joint_axis_maximum": 4.314825111903488e-18
+    },
+    "decision": "The 1.0 x 0.9 mm port is field-qualified only to enter deterministic N=100 physical-port runtime. Legacy uniformity alerts remain diagnostic; no S1 PASS, resolution or Formal claim is authorized."
+  },
   "permissions": {
-    "candidate_geometry_generation_allowed": false,
-    "field_solve_allowed": false,
-    "particle_runtime_allowed": false,
+    "candidate_geometry_generation_allowed": true,
+    "field_solve_allowed": true,
+    "particle_runtime_allowed": true,
     "formal_asset_modification_allowed": false
   }
 }

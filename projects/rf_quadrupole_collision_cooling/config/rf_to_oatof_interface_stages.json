@@ -44,7 +44,7 @@
     {
       "id": "S1",
       "name": "coincident_open_port_no_oa_pulse_reference",
-      "status": "blocked_by_continuous_rf_shield_selection_then_joint_field_rebuild",
+      "status": "n100_physical_port_runtime_ready",
       "separate_connector_component": false,
       "physical_interface_claim_allowed": true,
       "model": "Simplest physical topology: coaxial nominal alignment, RF exit mating directly to a parameterized oa shield opening, zero modeled inter-component gap, no tube, lens or steering electrode. Retain the time-dependent upstream RF basis and the always-on oa electrostatic basis on one joint geometry, but do not add an oa extraction pulse.",

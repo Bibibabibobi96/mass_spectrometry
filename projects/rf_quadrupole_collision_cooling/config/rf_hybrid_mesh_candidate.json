@@ -78,7 +78,7 @@
       "mesh_decision": "RETAIN_LOW_COST_FOR_NEXT_STAGE"
     },
     "shared_clock_pulse": {
-      "run_id": "20260722_080000__sim__simion__rf-entry-finite-pulse__n100__r12",
+      "run_id": "20260722_083000__sim__simion__rf-entry-finite-pulse__n100__r13",
       "effective_entry_origin_x_mm": -62.8,
       "pulse_time_us": 54.45242561132196,
       "pulse_width_us": 1.0,
@@ -87,7 +87,10 @@
       "timed_pulse_hits": 44,
       "held_off_control_hits": 0,
       "pre_pulse_accelerator_electrodes_v": 0.0,
-      "status": "PASS"
+      "status": "PASS",
+      "sparse_event_rows": 295,
+      "dense_trajectories_saved": false,
+      "diagnostic_figures": ["rf_handoff_pulse_timeline.png", "rf_handoff_pulse_snapshot.png"]
     },
     "decision": "Retain end hmax=0.5 mm and accept the selected RF-COMSOL to projected oaTOF-SIMION functional chain. Particles are born in time order at the effective entry plane, follow continuous pre-pulse trajectories with the accelerator electrodes at 0 V, then receive one shared 1 us Formal-voltage pulse; 95/100 reach the pulse and 44/100 reach the detector versus 0/100 in the all-zero control. Do not run 0.125 mm. Physical connector transport, finite edge rise/fall and N=1000 resolution regression are deferred refinements, not blockers for functional workflow integration."
   },

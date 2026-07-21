@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "role": "rf_quadrupole_continuous_grounded_shield_candidate",
-  "status": "approved_parameter_sweep_for_solver_validation",
+  "status": "smallest_radius_retained_for_s1_candidate_validation",
   "inputs": {
     "rf_baseline": "config/baseline.json",
     "rf_resolved_geometry": "config/resolved_geometry.json"
@@ -17,10 +17,10 @@
     "rf_local_z_min": 1.8,
     "rf_local_z_max": 89.4,
     "rod_outer_extent": 13.184,
-    "inner_radius_selection_status": "unresolved_pending_rf_field_and_transport_sweep",
+    "inner_radius_selection_status": "retained_for_s1_candidate_not_formal_hardware",
     "inner_radius_ratio_to_rod_outer_extent_sweep": [1.5, 2.0, 3.0],
     "inner_radius_mm_sweep": [19.776, 26.368, 39.552],
-    "selected_inner_radius_mm": null,
+    "selected_inner_radius_mm": 19.776,
     "field_model_wall_thickness_required": false,
     "cad_wall_thickness_mm": null,
     "oa_accelerator_outer_size_dependency_allowed": false,
@@ -198,6 +198,19 @@
     },
     "decision": "Run paired N=100 at global auto 4 and 3 with local hmax=0.5 mm. No radius selection is authorized."
   },
+  "s1_candidate_radius_decision": {
+    "status": "RETAINED_FOR_NEXT_STAGE",
+    "inner_radius_mm": 19.776,
+    "scope": "S1 joint-field candidate geometry only",
+    "evidence": [
+      "2D midpoint field at 19.776 mm is indistinguishable from 26.368 mm within measured mesh sensitivity",
+      "3D radius sensitivity in the fringe core is smaller than the available mesh sensitivity",
+      "the full-device hybrid-mesh N=100 pair at 19.776 mm preserved 100/100 RF exit classification and passed the projected shared-clock pulse function gate"
+    ],
+    "decision_rule": "Retain the smallest tested radius because the next larger radius does not change the current functional decision; do not interpret this as a mechanical wall-thickness, feedthrough, gas-containment or Formal selection.",
+    "source_contract": "config/rf_hybrid_mesh_candidate.json",
+    "formal_selection_allowed": false
+  },
   "electrical_contract": {
     "potential_V": 0.0,
     "common_reference": "RF entrance plate, cylindrical housing and RF exit enclosure share 0 V; the later RF-to-oa interface must preserve that common reference",
@@ -242,5 +255,5 @@
     "formal_asset_modification_allowed": false,
     "formal_promotion_allowed": false
   },
-  "claim_limit": "Parameter sweep for a coaxial cylindrical conductive enclosure only. No radius or wall thickness is selected. It removes the need to mesh external vacuum only after the end plates and shielded feedthrough penetrations close the 0 V boundary; it does not yet prove RF-field fidelity, collision-gas containment or a physical RF-to-oa connection."
+  "claim_limit": "The 19.776 mm inner radius is retained only for S1 candidate field construction. No physical wall thickness, feedthrough, gas-containment or Formal shield is selected, and no physical RF-to-oa connection is yet proven."
 }

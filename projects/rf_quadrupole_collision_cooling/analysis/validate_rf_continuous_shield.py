@@ -18,7 +18,7 @@ def load(path: Path) -> dict[str, Any]:
 
 def validate(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
     contract = load(path)
-    if contract.get("schema_version") != 1 or contract.get("status") != "approved_parameter_sweep_for_solver_validation":
+    if contract.get("schema_version") != 1 or contract.get("status") != "smallest_radius_retained_for_s1_candidate_validation":
         raise ValueError("continuous RF shield candidate identity is invalid")
     inputs = contract["inputs"]
     rf = load(PROJECT_ROOT / inputs["rf_resolved_geometry"])
@@ -47,8 +47,8 @@ def validate(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
         raise ValueError("continuous RF shield radius sweep is not derived from the rod extent")
     if any(radius <= rod_outer for radius in radii):
         raise ValueError("continuous RF shield intersects the RF rods")
-    if geometry.get("selected_inner_radius_mm") is not None:
-        raise ValueError("continuous RF shield radius may not be selected before validation")
+    if not math.isclose(float(geometry.get("selected_inner_radius_mm", -1.0)), radii[0], abs_tol=1e-12):
+        raise ValueError("continuous RF shield S1 candidate must retain the smallest tested radius")
     if geometry.get("oa_accelerator_outer_size_dependency_allowed") is not False:
         raise ValueError("RF shield size must be independent of oa accelerator size")
     if geometry.get("field_model_wall_thickness_required") is not False:
@@ -150,6 +150,13 @@ def validate(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
     midpoint = background["auto3_midpoint_relative_to_converged_2d"]
     if float(midpoint["quadrupole_amplitude"]) >= 0.002 or float(midpoint["transverse_field_rms"]) >= 0.002:
         raise ValueError("continuous RF shield auto3 midpoint is not sufficiently close to the converged 2D reference")
+    decision = contract["s1_candidate_radius_decision"]
+    if decision.get("status") != "RETAINED_FOR_NEXT_STAGE" or not math.isclose(
+        float(decision.get("inner_radius_mm", -1.0)), radii[0], abs_tol=1e-12
+    ):
+        raise ValueError("continuous RF shield S1 candidate decision is invalid")
+    if decision.get("formal_selection_allowed") is not False:
+        raise ValueError("continuous RF shield S1 radius may not become a Formal selection")
 
     electrical = contract["electrical_contract"]
     if float(electrical.get("potential_V", 1.0)) != 0.0:
