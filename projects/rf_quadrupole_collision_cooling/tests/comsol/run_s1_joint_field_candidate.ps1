@@ -112,6 +112,7 @@ if ([math]::Abs($PortWidthMm) -gt 1e-12) {
 if (-not (Test-Path -LiteralPath $closedReference -PathType Leaf)) { throw 'S1 closed-reference field sample is missing.' }
 $fieldCsv = Join-Path $resultDir 's1_joint_field_samples.csv'
 $particleCsv = Join-Path $resultDir 's1_physical_port_particles.csv'
+$captureCsv = Join-Path $resultDir 's1_pulse_capture_particles.csv'
 $report = Join-Path $logDir 'comsol_joint_field.txt'
 $summary = Join-Path $runDir 'summary.json'
 $runConfig = Join-Path $runDir 'run_config.json'
@@ -129,7 +130,7 @@ if($particleEnabled){$inputMap.particle_input=$particleInput}
 & $python $manifestWriter --run-config $runConfig --status interrupted --software 'COMSOL 6.4' --software 'MATLAB R2025b' --software 'Python 3.11'
 if ($LASTEXITCODE -ne 0) { throw 'Initial manifest failed.' }
 
-$names = @('RF_OATOF_S1_FIELD_CSV','RF_OATOF_S1_CONTRACT','RF_OATOF_INTERFACE_CONTRACT','RF_OATOF_RF_RESOLVED','RF_OATOF_OA_BASELINE','RF_OATOF_PORT_WIDTH_MM','RF_OATOF_DOWNSTREAM_BUFFER_MM','RF_OATOF_MESH_AUTO_LEVEL','RF_OATOF_ACCELERATOR_HMAX_MM','RF_OATOF_JOINT_SCOPE','RF_OATOF_OA_COMSOL_DIR','RF_OATOF_S1_PARTICLE_INPUT','RF_OATOF_S1_PARTICLE_OUTPUT','RF_OATOF_PULSE_TIME_US','RF_OATOF_PULSE_WIDTH_US')
+$names = @('RF_OATOF_S1_FIELD_CSV','RF_OATOF_S1_CONTRACT','RF_OATOF_INTERFACE_CONTRACT','RF_OATOF_RF_RESOLVED','RF_OATOF_OA_BASELINE','RF_OATOF_PORT_WIDTH_MM','RF_OATOF_DOWNSTREAM_BUFFER_MM','RF_OATOF_MESH_AUTO_LEVEL','RF_OATOF_ACCELERATOR_HMAX_MM','RF_OATOF_JOINT_SCOPE','RF_OATOF_OA_COMSOL_DIR','RF_OATOF_S1_PARTICLE_INPUT','RF_OATOF_S1_PARTICLE_OUTPUT','RF_OATOF_S1_CAPTURE_OUTPUT','RF_OATOF_PULSE_TIME_US','RF_OATOF_PULSE_WIDTH_US')
 $old = @{}; foreach($name in $names){$old[$name]=[Environment]::GetEnvironmentVariable($name)}
 try {
   try {
@@ -140,7 +141,7 @@ try {
     $env:RF_OATOF_JOINT_SCOPE=$JointScope
     $env:RF_OATOF_DOWNSTREAM_BUFFER_MM=[string]$DownstreamBufferMm
     $env:RF_OATOF_OA_COMSOL_DIR=$inputDir
-    if($particleEnabled){$env:RF_OATOF_S1_PARTICLE_INPUT=$particleInput;$env:RF_OATOF_S1_PARTICLE_OUTPUT=$particleCsv;$env:RF_OATOF_PULSE_TIME_US=[string]$PulseTimeUs;$env:RF_OATOF_PULSE_WIDTH_US=[string]$PulseWidthUs}
+    if($particleEnabled){$env:RF_OATOF_S1_PARTICLE_INPUT=$particleInput;$env:RF_OATOF_S1_PARTICLE_OUTPUT=$particleCsv;$env:RF_OATOF_S1_CAPTURE_OUTPUT=$captureCsv;$env:RF_OATOF_PULSE_TIME_US=[string]$PulseTimeUs;$env:RF_OATOF_PULSE_WIDTH_US=[string]$PulseWidthUs}
     & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') -TaskScript $task -ReportPath $report
     if ($LASTEXITCODE -ne 0) { throw 'COMSOL S1 joint-field task failed.' }
   } finally {
@@ -158,10 +159,10 @@ try {
   & $python $manifestWriter --run-config $runConfig --status failed --software 'COMSOL 6.4' --software 'MATLAB R2025b' --software 'Python 3.11'
   throw
 }
-[ordered]@{schema_version=1;role='rf_to_oatof_s1_joint_field_summary';status='success';result='results/s1_joint_field_metrics.json';physical_link=$false;particle_tracking=$particleEnabled;particle_result=if($particleEnabled){'results/s1_physical_port_metrics.json'}else{$null}} | ConvertTo-Json | Set-Content $summary -Encoding UTF8
+[ordered]@{schema_version=1;role='rf_to_oatof_s1_joint_field_summary';status='success';result='results/s1_joint_field_metrics.json';physical_link=$false;particle_tracking=$particleEnabled;particle_result=if($particleEnabled){'results/s1_physical_port_metrics.json'}else{$null};capture_result=if($particleEnabled){'results/s1_pulse_capture_particles.csv'}else{$null}} | ConvertTo-Json | Set-Content $summary -Encoding UTF8
 $outputs=@($fieldCsv,(Join-Path $resultDir 's1_joint_field_uniformity_curve.csv'),(Join-Path $resultDir 's1_joint_field_metrics.json'),$report,$summary)
 $injectionFigure=Join-Path $resultDir 's1_injection_axis_field.png'; if(Test-Path -LiteralPath $injectionFigure){$outputs+=$injectionFigure}
-if($particleEnabled){$outputs+=@($particleCsv,(Join-Path $resultDir 's1_physical_port_metrics.json'),(Join-Path $resultDir 's1_physical_port_entry.png'))}
+if($particleEnabled){$outputs+=@($particleCsv,$captureCsv,(Join-Path $resultDir 's1_physical_port_metrics.json'),(Join-Path $resultDir 's1_physical_port_entry.png'))}
 $args=@($manifestWriter,'--run-config',$runConfig,'--status','success','--software','COMSOL 6.4','--software','MATLAB R2025b','--software','Python 3.11')
 foreach($output in $outputs){$args+=@('--output',$output)}
 & $python @args
