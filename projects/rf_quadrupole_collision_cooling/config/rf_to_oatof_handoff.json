@@ -13,7 +13,14 @@
     "required_status": "transmitted",
     "mass_to_charge_Th": 100.0,
     "charge_state": 1,
-    "minimum_particles": 100
+    "minimum_particles": 100,
+    "energy_match_profile": {
+      "mode": "rf_to_oatof_energy_match_n100",
+      "contract": "config/rf_to_oatof_energy_match_candidate.json",
+      "operating_point": "rf_to_oatof_100amu_5eV",
+      "particles": 100,
+      "end_core_hmax_mm": 0.5
+    }
   },
   "target_component": {
     "project_id": "oa_tof",

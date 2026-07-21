@@ -225,6 +225,35 @@ class OatofHandoffBuildTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "manifest hash"):
             self.build()
 
+    def test_verified_5ev_energy_match_profile_is_an_accepted_source(self) -> None:
+        run_config = self.root / "run_config.json"
+        run_config.write_text(json.dumps({
+            "parameters": {
+                "particle_tracking": True,
+                "particle_count": 100,
+                "energy_match_enabled": True,
+                "source_operating_point": "rf_to_oatof_100amu_5eV",
+                "end_core_hmax_mm": 0.5,
+            }
+        }), encoding="utf-8")
+        manifest = json.loads(self.manifest.read_text(encoding="utf-8"))
+        manifest["mode"] = "rf_to_oatof_energy_match_n100"
+        manifest["run_config"] = {
+            "path": str(run_config),
+            "sha256": MODULE.sha256(run_config),
+        }
+        manifest["inputs"] = {
+            "energy_match_contract": {
+                "path": str(PROJECT_ROOT / "config" / "rf_to_oatof_energy_match_candidate.json"),
+                "sha256": MODULE.sha256(
+                    PROJECT_ROOT / "config" / "rf_to_oatof_energy_match_candidate.json"
+                )
+            }
+        }
+        self.manifest.write_text(json.dumps(manifest), encoding="utf-8")
+        metadata = self.build()
+        self.assertEqual(metadata["particles"], 100)
+
 
 if __name__ == "__main__":
     unittest.main()

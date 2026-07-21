@@ -53,6 +53,24 @@
     "rms_divergence_relative_change_from_2eV": 0.36950682628421694,
     "decision": "PASS for RF-handoff mean-energy matching only. The larger radius and divergence require the existing physical-port and oaTOF downstream test; they do not authorize parameter optimization or Formal source replacement."
   },
+  "physical_port_pulse_evidence": {
+    "pulse_time_rule": "mean RF handoff instrument time plus 14 mm divided by mean positive axial velocity",
+    "timing_rule_scope": "Retain the previous functional-projection distance so input energy is the isolated source variable.",
+    "mean_rf_handoff_instrument_time_us": 29.862084895081193,
+    "mean_positive_axial_velocity_m_s": 3088.32866845337,
+    "post_handoff_distance_mm": 14.0,
+    "derived_pulse_time_us": 34.3952811649624,
+    "pulse_width_us": 1.0,
+    "comsol_physical_port_run_id": "20260722_210000__sim__comsol__rf-oatof-s1-physical-port-5ev__n100",
+    "cross_solver_end_to_end_run_id": "20260722_213000__sim__cross__rf-oatof-s1-physical-5ev__n100",
+    "capture_comparison_run_id": "20260722_214500__analysis__python__rf-oatof-s1-capture-ideal-5ev__n100",
+    "geometric_port_accepted": 77,
+    "local_joint_exit": 39,
+    "detector_hits": 37,
+    "alive_at_pulse": 77,
+    "inside_oatof_ideal_reference_volume": 0,
+    "decision": "PASS for N=100 functional transport through the existing physical port and shared pulse. This does not demonstrate compact storage, resolution, S1 promotion or Formal integration."
+  },
   "claims": {
     "energy_match_pass_allowed": true,
     "connector_pass_allowed": false,

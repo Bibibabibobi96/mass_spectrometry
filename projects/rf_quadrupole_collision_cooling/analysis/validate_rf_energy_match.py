@@ -53,6 +53,21 @@ def validate(path: Path = CONTRACT_PATH) -> dict:
         raise ValueError("RF energy-match N=100 evidence is incomplete")
     if abs(float(evidence.get("mean_handoff_energy_eV", -1)) - target) > float(paired["target_mean_energy_tolerance_eV"]):
         raise ValueError("RF energy-match evidence no longer meets the target")
+    downstream = contract.get("physical_port_pulse_evidence", {})
+    derived_pulse = (
+        float(downstream.get("mean_rf_handoff_instrument_time_us", math.nan))
+        + 1000.0 * float(downstream.get("post_handoff_distance_mm", math.nan))
+        / float(downstream.get("mean_positive_axial_velocity_m_s", math.nan))
+    )
+    if not math.isclose(derived_pulse, float(downstream.get("derived_pulse_time_us", math.nan)), abs_tol=1e-12):
+        raise ValueError("RF energy-match pulse time is not derived from the frozen timing rule")
+    port = int(downstream.get("geometric_port_accepted", -1))
+    local_exit = int(downstream.get("local_joint_exit", -1))
+    detector_hits = int(downstream.get("detector_hits", -1))
+    if not (100 >= port >= local_exit >= detector_hits >= 1):
+        raise ValueError("RF energy-match downstream particle funnel is inconsistent")
+    if int(downstream.get("alive_at_pulse", -1)) != port:
+        raise ValueError("RF energy-match pulse census does not match the physical-port evidence")
     return contract
 
 

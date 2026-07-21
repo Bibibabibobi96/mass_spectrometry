@@ -27,6 +27,15 @@ class RfEnergyMatchTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "rewrite"):
                 module.validate(path)
 
+    def test_arbitrary_pulse_time_is_rejected(self) -> None:
+        contract = module.load(module.CONTRACT_PATH)
+        contract["physical_port_pulse_evidence"]["derived_pulse_time_us"] += 0.1
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "candidate.json"
+            path.write_text(json.dumps(contract), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "pulse time"):
+                module.validate(path)
+
 
 if __name__ == "__main__":
     unittest.main()

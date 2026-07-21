@@ -15,8 +15,22 @@ $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling'
 $source = Join-Path $artifactRoot "runs\$SourceRunId"
 $sourceManifest = Get-Content -LiteralPath (Join-Path $source 'run_manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-if ($sourceManifest.status -ne 'success' -or $sourceManifest.mode -ne 's1_physical_port_analysis_only') {
-  throw 'S1 downstream runtime requires a successful analysis-only physical-port source.'
+if ($sourceManifest.status -ne 'success') {
+  throw 'S1 downstream runtime requires a successful physical-port source.'
+}
+$directJointSource = $sourceManifest.mode -eq 'rf_to_oatof_s1_local_joint_field'
+if (-not $directJointSource -and $sourceManifest.mode -ne 's1_physical_port_analysis_only') {
+  throw 'S1 downstream runtime requires a successful joint-field or analysis-only physical-port source.'
+}
+if ($directJointSource) {
+  $sourceConfig = Get-Content -LiteralPath (Join-Path $source 'run_config.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+  $parameters = $sourceConfig.parameters
+  if (-not [bool]$parameters.particle_tracking -or [int]$parameters.particle_count -ne 100 -or
+      $parameters.geometry_state -ne 'opened_port' -or [math]::Abs([double]$parameters.port_full_width_y_mm-1.0) -gt 1e-12 -or
+      [math]::Abs([double]$parameters.pulse_time_us-$PulseTimeUs) -gt 1e-9 -or
+      [math]::Abs([double]$parameters.pulse_width_us-$PulseWidthUs) -gt 1e-12) {
+    throw 'Direct joint-field source does not match the N=100 physical-port pulse request.'
+  }
 }
 $runDir = Join-Path $artifactRoot "runs\$RunId"
 if (Test-Path -LiteralPath $runDir) { throw "Run already exists: $runDir" }
@@ -26,7 +40,12 @@ New-Item -ItemType Directory -Force -Path $inputDir,$resultDir,$logDir,$runtimeD
 $entry = Join-Path $inputDir 'canonical_rf_exit_at_oatof_entry.csv'
 $local = Join-Path $inputDir 's1_physical_port_particles.csv'
 Copy-Item -LiteralPath (Join-Path $source 'inputs\canonical_rf_exit_at_oatof_entry.csv') -Destination $entry
-Copy-Item -LiteralPath (Join-Path $source 'inputs\s1_physical_port_particles.csv') -Destination $local
+$sourceLocal = if ($directJointSource) {
+  Join-Path $source 'results\s1_physical_port_particles.csv'
+} else {
+  Join-Path $source 'inputs\s1_physical_port_particles.csv'
+}
+Copy-Item -LiteralPath $sourceLocal -Destination $local
 $converter = Join-Path $inputDir 'build_s1_downstream_handoff.py'
 $handoffLibrary = Join-Path $inputDir 'build_oatof_handoff.py'
 $analyzer = Join-Path $inputDir 'analyze_s1_end_to_end.py'
@@ -84,7 +103,7 @@ $figure = Join-Path $resultDir 's1_end_to_end_funnel.png'
 if ($LASTEXITCODE -ne 0) { throw 'S1 end-to-end function gate failed.' }
 $result = Get-Content -LiteralPath $metrics -Raw -Encoding UTF8 | ConvertFrom-Json
 $runConfig = Join-Path $runDir 'run_config.json'
-[ordered]@{schema_version=1;run_id=$RunId;project='rf_quadrupole_collision_cooling';mode='rf_oatof_s1_physical_end_to_end';project_root=$repoRoot;inputs=[ordered]@{source_run_manifest=(Join-Path $source 'run_manifest.json');formal_simion_iob=$formalIob;local_joint_events=$local;entry_canonical=$entry;converter=$converter;handoff_library=$handoffLibrary;analyzer=$analyzer};parameters=[ordered]@{particle_count=$particleCount;position_projection_applied=$false;solver_clock='instrument_time';pulse_time_us=$PulseTimeUs;pulse_width_us=$PulseWidthUs;dense_trajectories_saved=$false};formal_gate_passed=$false} | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath $runConfig -Encoding UTF8
+[ordered]@{schema_version=1;run_id=$RunId;project='rf_quadrupole_collision_cooling';mode='rf_oatof_s1_physical_end_to_end';project_root=$repoRoot;inputs=[ordered]@{source_run_manifest=(Join-Path $source 'run_manifest.json');formal_simion_iob=$formalIob;local_joint_events=$local;entry_canonical=$entry;converter=$converter;handoff_library=$handoffLibrary;analyzer=$analyzer};parameters=[ordered]@{particle_count=$particleCount;source_mode=$sourceManifest.mode;position_projection_applied=$false;solver_clock='instrument_time';pulse_time_us=$PulseTimeUs;pulse_width_us=$PulseWidthUs;dense_trajectories_saved=$false};formal_gate_passed=$false} | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath $runConfig -Encoding UTF8
 $summary = Join-Path $runDir 'summary.json'
 [ordered]@{schema_version=1;role='rf_oatof_s1_physical_end_to_end_summary';status='success';candidate_decision=$result.status;detector_hits=$result.detector_hits;rf_exit_particles=100;local_joint_exit=$result.local_joint_exit;physical_link_claim_allowed=$false;resolution_claim_allowed=$false} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $summary -Encoding UTF8
 $writer = Join-Path $repoRoot 'common\contracts\write_run_manifest.py'

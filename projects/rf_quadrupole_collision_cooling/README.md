@@ -96,11 +96,14 @@
   [`analysis/compare_s1_entry_to_oatof_ideal_source.py`](analysis/compare_s1_entry_to_oatof_ideal_source.py)；
   执行入口为[`tests/cross_solver/run_s1_physical_end_to_end.ps1`](tests/cross_solver/run_s1_physical_end_to_end.ps1)；
   COMSOL在真实`1.0×0.9 mm`孔和局部联合场中完成按时进入及统一有限脉冲，SIMION从局部出口真实三维
-  状态继续到分析器。当前N=100清点为`100→88→28→9`，只证明功能贯通，不授权分辨率、阶段PASS或Formal晋升。
+  状态继续到分析器；成功的联合场run可直接作为下游来源，无需复制成仅为修复旧布尔解析问题而保留的
+  reanalysis run。2 eV功能基线清点为`100→88→28→9`；5 eV候选为`100→77→39→37`。两者都只证明
+  功能贯通，不授权分辨率、阶段PASS或Formal晋升。
 - RF入口能量匹配候选：[`config/rf_to_oatof_energy_match_candidate.json`](config/rf_to_oatof_energy_match_candidate.json)、
   [`analysis/validate_rf_energy_match.py`](analysis/validate_rf_energy_match.py)及
   [`analysis/compare_rf_input_energy.py`](analysis/compare_rf_input_energy.py)；它用独立命名的100 amu、5 eV
-  入射工况保持几何、RF和其他逐粒子源变量不变，不覆盖2 eV官方回归源，也不在handoff重写速度。
+  入射工况保持几何、RF和其他逐粒子源变量不变，不覆盖2 eV官方回归源，也不在handoff重写速度；
+  通过能量合同、运行配置和manifest身份校验后，该模式可作为现有canonical交接转换器的显式候选来源。
 - RF连续接地屏蔽候选：
   [`config/rf_continuous_grounded_shield_candidate.json`](config/rf_continuous_grounded_shield_candidate.json)及
   [`analysis/validate_rf_continuous_shield.py`](analysis/validate_rf_continuous_shield.py)；现有COMSOL/SIMION

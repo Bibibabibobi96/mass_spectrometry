@@ -167,6 +167,16 @@ def validate_contract(contract_path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
         raise ValueError("current electrical interface must remain explicitly unresolved")
 
     source = contract["source_component"]
+    energy_profile = source.get("energy_match_profile", {})
+    if energy_profile.get("mode") != "rf_to_oatof_energy_match_n100":
+        raise ValueError("the RF energy-match handoff profile is missing or unsupported")
+    if int(energy_profile.get("particles", 0)) < int(source["minimum_particles"]):
+        raise ValueError("the RF energy-match handoff profile is below the particle minimum")
+    energy_contract = load_json(_project_root_path(energy_profile["contract"]))
+    if energy_contract.get("claims", {}).get("energy_match_pass_allowed") is not True:
+        raise ValueError("the RF energy-match source has not passed its energy gate")
+    if energy_contract.get("input_candidate", {}).get("operating_point") != energy_profile["operating_point"]:
+        raise ValueError("the RF energy-match operating point is inconsistent")
     source_interface = load_json((PROJECT_ROOT / source["interface_contract"]).resolve())
     source_handoff_z = float(source_interface["planes"][source["event"]]["z_mm"])
     transform = contract["coordinate_transform"]
@@ -247,6 +257,45 @@ def verify_source_manifest(source_csv: Path, manifest_path: Path, contract: dict
             raise ValueError("hybrid-mesh source is outside the retained pair")
         if Path(manifest_inputs.get("contract", {}).get("path", "")).name != "rf_hybrid_mesh_candidate.json":
             raise ValueError("hybrid-mesh source lacks its frozen mesh contract")
+    elif manifest_mode == source["energy_match_profile"]["mode"]:
+        profile = source["energy_match_profile"]
+        run_config_record = manifest.get("run_config", {})
+        run_config_path = Path(run_config_record.get("path", ""))
+        if not run_config_path.is_file() or sha256(run_config_path) != run_config_record.get("sha256", "").upper():
+            raise ValueError("energy-match source run config is missing or stale")
+        run_config = load_json(run_config_path)
+        parameters = run_config.get("parameters", {})
+        if parameters.get("particle_tracking") is not True or int(parameters.get("particle_count", 0)) != int(profile["particles"]):
+            raise ValueError("energy-match source is not the frozen N=100 particle diagnostic")
+        if parameters.get("energy_match_enabled") is not True:
+            raise ValueError("energy-match source did not enable the named operating point")
+        if parameters.get("source_operating_point") != profile["operating_point"]:
+            raise ValueError("energy-match source operating point mismatch")
+        if not math.isclose(float(parameters.get("end_core_hmax_mm", -1.0)), float(profile["end_core_hmax_mm"]), abs_tol=1e-12):
+            raise ValueError("energy-match source mesh does not match the accepted profile")
+        energy_record = manifest_inputs.get("energy_match_contract", {})
+        frozen_energy_path = Path(energy_record.get("path", ""))
+        if not frozen_energy_path.is_file() or sha256(frozen_energy_path) != energy_record.get("sha256", "").upper():
+            raise ValueError("energy-match source contract is missing or stale")
+        frozen_energy = load_json(frozen_energy_path)
+        frozen_candidate = frozen_energy.get("input_candidate", {})
+        frozen_changes = frozen_energy.get("model_changes", {})
+        if frozen_energy.get("role") != "rf_to_oatof_axial_energy_match_candidate":
+            raise ValueError("energy-match source contract role mismatch")
+        if frozen_energy.get("claims", {}).get("energy_match_pass_allowed") is not True:
+            raise ValueError("energy-match source contract did not pass its energy gate")
+        if frozen_candidate.get("operating_point") != profile["operating_point"]:
+            raise ValueError("energy-match source contract operating point mismatch")
+        if int(frozen_candidate.get("particles", 0)) != int(profile["particles"]):
+            raise ValueError("energy-match source contract particle count mismatch")
+        if not math.isclose(float(frozen_candidate.get("kinetic_energy_eV", -1.0)), 5.0, abs_tol=1e-12):
+            raise ValueError("energy-match source contract energy mismatch")
+        prohibited_changes = (
+            "geometry_changed", "electrode_potentials_changed", "differential_rf_amplitude_changed",
+            "collisions_enabled", "velocity_rewrite_at_handoff_allowed",
+        )
+        if any(frozen_changes.get(name) is not False for name in prohibited_changes):
+            raise ValueError("energy-match source contract changed prohibited RF or handoff physics")
     else:
         raise ValueError("source manifest mode is not an accepted handoff source profile")
     actual_sha = sha256(source_csv)
