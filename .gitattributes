@@ -1,4 +1,4 @@
 *.json text eol=lf
-projects/oa_tof/docs/history/20260720_theory_refactor_submission/SHA256SUMS.txt -text
-projects/oa_tof/docs/history/20260720_theory_refactor_submission/analysis__*.py -text
-projects/oa_tof/docs/history/20260720_theory_refactor_submission/theory__*.md.txt -text
+# History is immutable payload. Preserve its exact Git bytes on every OS so
+# frozen SHA-256 lists remain valid after directory renames and clean checkout.
+projects/*/docs/history/** -text

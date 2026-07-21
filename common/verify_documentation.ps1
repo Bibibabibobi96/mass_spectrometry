@@ -172,6 +172,11 @@ foreach ($historyDir in $historyDirs) {
         } else { '' }
         foreach ($payloadFile in @(Get-ChildItem -LiteralPath $payloadDir.FullName -Recurse -File)) {
             $relative = $payloadFile.FullName.Substring($repoRoot.Length + 1)
+            $relativeGit = $relative -replace '\\', '/'
+            $textAttribute = & git -C $repoRoot check-attr text -- $relativeGit
+            if ($LASTEXITCODE -ne 0 -or $textAttribute -notmatch ': text: unset$') {
+                Add-DocError "$relative`: frozen history payload must be marked -text in .gitattributes"
+            }
             if ($payloadFile.Extension -in @('.md', '.pyc') -or
                 $payloadFile.FullName -match '[\\/]__pycache__[\\/]') {
                 Add-DocError "$relative`: forbidden Markdown or runtime cache in history payload"
