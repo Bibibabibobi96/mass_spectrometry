@@ -12,6 +12,8 @@
 4. 操作 SIMION 时读[`docs/SIMION.md`](docs/SIMION.md)。
 5. 只有引入机械正式几何时才读/创建 CAD 文档。
 
+已关闭的网格策略筛选记录：[`docs/history/20260722_rf-mesh-strategy-screen.md`](docs/history/20260722_rf-mesh-strategy-screen.md)。
+
 软件细节不相互横向引用；统一参数与跨求解器结论只写入 `PROJECT.md`。
 
 ## 权威入口
@@ -82,6 +84,25 @@
   [`analysis/analyze_s1_aperture_acceptance.py`](analysis/analyze_s1_aperture_acceptance.py)及
   [`config/modes/rf_to_oatof_s1_aperture_precheck.json`](config/modes/rf_to_oatof_s1_aperture_precheck.json)；
   从S0虚拟入口事件计算严格理论上限内的最佳轴向几何通过率，不选择最终孔径、不替代三维联合场。
+- S1局部联合场特征化合同：
+  [`config/rf_to_oatof_s1_joint_field.json`](config/rf_to_oatof_s1_joint_field.json)、
+  [`analysis/validate_s1_joint_field.py`](analysis/validate_s1_joint_field.py)及
+  [`analysis/analyze_s1_joint_field.py`](analysis/analyze_s1_joint_field.py)；旧闭合场阈值只作L0诊断告警，
+  不直接接受或拒绝连接器，并分别报告`Ex/Ey/Ez`诊断量。
+- RF连续接地屏蔽候选：
+  [`config/rf_continuous_grounded_shield_candidate.json`](config/rf_continuous_grounded_shield_candidate.json)及
+  [`analysis/validate_rf_continuous_shield.py`](analysis/validate_rf_continuous_shield.py)；现有COMSOL/SIMION
+  参考几何没有贯穿杆区的接地侧壁，故先独立扫描同轴圆柱内半径，再恢复S1联合场。圆柱尺寸不由oa外壳
+  决定，未完成RF场、传输和馈通审查前不修改Formal资产。二维执行入口为
+  [`tests/comsol/run_rf_continuous_shield_2d.ps1`](tests/comsol/run_rf_continuous_shield_2d.ps1)，当前只把
+  `19.776/26.368 mm`保留到三维验证，没有选定物理半径。三维分析合同已冻结为杆中段—出口多截面
+  谐波和`Ex/Ey/Ez`诊断；三份场运行已完成，出口中心区网格变化仍大于半径效应，现只允许同一最小
+  半径的N=100配对网格敏感度诊断，仍不允许选择壳体或声明连接完成。
+- 场到粒子性能的分阶段实验：
+  [`config/rf_to_oatof_field_performance_experiment.json`](config/rf_to_oatof_field_performance_experiment.json)及
+  [`analysis/validate_field_performance_experiment.py`](analysis/validate_field_performance_experiment.py)；保持一个
+  当前Formal baseline，按E0场诊断、E1连接专用数值验证、E2 N=100无oa脉冲筛选、E3 N=1000完整
+  脉冲/分辨率确认和E4相位、公差、跨软件鲁棒性顺序执行。
 - oa入口孔L0上限参考：[`analysis/entry_aperture_l0.py`](analysis/entry_aperture_l0.py)；从当前耦合
   oa baseline重算上限并失败关闭候选，适用结论和未决约束见[`docs/PROJECT.md`](docs/PROJECT.md)。
 - 路径解析：[`rf_quadrupole_paths.m`](rf_quadrupole_paths.m)

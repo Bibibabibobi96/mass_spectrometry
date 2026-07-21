@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "role": "rf_full_device_piecewise_swept_mesh_candidate",
+  "status": "closed_after_topology_incompatibility",
+  "inputs": {
+    "resolved_geometry": "config/resolved_geometry.json",
+    "hybrid_tetra_reference_comparison_run": "20260722_004500__analysis__python__rf-hybrid-mesh-comparison",
+    "uniform_mesh_evidence_run": "20260721_220000__analysis__python__rf-swept-mesh-convergence"
+  },
+  "geometry_mm": {
+    "shield_inner_radius": 19.776,
+    "fine_core_radius": 8.0,
+    "segment_boundaries_z": [0.0, 1.0, 1.8, 5.8, 9.8, 81.4, 85.4, 89.4, 90.2]
+  },
+  "transverse_mesh": {
+    "fine_core_and_rod_boundary_hmax_mm": 0.2,
+    "outer_vacuum_hmax_mm": 1.0,
+    "minimum_element_size_mm": 0.02
+  },
+  "axial_mesh": {
+    "coarse_layer_count_by_segment": [5, 4, 20, 20, 40, 20, 20, 4],
+    "fine_layer_count_by_segment": [10, 8, 40, 40, 40, 40, 40, 8],
+    "uniform_rod_segment_index_zero_based": 4,
+    "only_two_profiles_allowed": true
+  },
+  "field_sampling": {
+    "sample_z_mm": [0.999, 1.001, 1.799, 1.801, 5.799, 5.801, 9.799, 9.801, 45.6, 81.399, 81.401, 85.399, 85.401, 89.399, 89.401, 90.199],
+    "sample_radius_fraction_of_r0": [0.25, 0.5, 0.75, 0.9],
+    "azimuth_samples_per_radius": 72
+  },
+  "decision": {
+    "local_field_differences_are_diagnostic": true,
+    "particle_diagnostic_allowed_after_both_profiles_are_problem_free": true,
+    "particle_acceptance_requires_stable_classification_and_phase_space": true,
+    "third_mesh_profile_allowed": false,
+    "solver_runs": [
+      "20260722_013000__analysis__comsol__rf-piecewise-swept__coarse",
+      "20260722_020000__analysis__comsol__rf-piecewise-swept__coarse-imprints"
+    ],
+    "outcome": "Rejected before field or particle comparison. Full-device piecewise sweeps remained incompatible at topology-changing source and destination faces after one geometry-imprint correction.",
+    "further_topology_repairs_allowed": false,
+    "replacement": "Use the problem-free central swept plus tetrahedral-end hybrid pair for downstream functional arbitration."
+  },
+  "claim_limit": "One physics-aligned alternative to the rejected isotropic tetrahedral end refinement. Local field maxima alone neither accept nor reject it; paired field and N=100 function evidence are both required."
+}

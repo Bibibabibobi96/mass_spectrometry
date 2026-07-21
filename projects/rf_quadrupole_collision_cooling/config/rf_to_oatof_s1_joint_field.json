@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "role": "rf_to_oatof_s1_local_joint_field_characterization_contract",
+  "status": "blocked_pending_continuous_rf_shield_selection",
+  "stage": "S1",
+  "inputs": {
+    "interface_contract": "config/rf_to_oatof_interface_candidate.json",
+    "stage_plan": "config/rf_to_oatof_interface_stages.json",
+    "rf_resolved_geometry": "config/resolved_geometry.json",
+    "oatof_baseline": "../oa_tof/config/baseline.json",
+    "oatof_formal_mode": "../oa_tof/config/modes/formal.json",
+    "rf_continuous_shield_candidate": "config/rf_continuous_grounded_shield_candidate.json",
+    "field_performance_experiment": "config/rf_to_oatof_field_performance_experiment.json"
+  },
+  "nominal_registration": {
+    "claim_scope": "ideal zero-gap direct mating for S1 field characterization; no assembly-tolerance claim",
+    "instrument_frame": "oatof_global",
+    "target_component_pose": {
+      "rotation_component_to_instrument": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+      "translation_mm": [0.0, 0.0, 0.0]
+    },
+    "source_component_pose": {
+      "rotation_component_to_instrument": [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+      "translation_mm": [-158.0, 0.0, -18.42918680341103]
+    },
+    "source_exit_center_local_mm": [0.0, 0.0, 90.2],
+    "source_exit_center_instrument_mm": [-67.8, 0.0, -18.42918680341103],
+    "target_entry_center_instrument_mm": [-67.8, 0.0, -18.42918680341103],
+    "direct_mating_gap_mm": 0.0,
+    "axis_mapping": "RF +z -> oa +x; RF +x -> oa +y; RF +y -> oa +z"
+  },
+  "local_domain": {
+    "included": [
+      "full RF quadrupole from local z=0 through the first-forward exit plane",
+      "RF entrance plate and trimmed exit front plate",
+      "oa accelerator repeller, grid1, graded rings, grid2 and grounded shield",
+      "5 mm grounded-boundary buffer downstream of oa grid2"
+    ],
+    "excluded": [
+      "RF standalone detector and enclosure downstream of the handoff plane",
+      "oa main flight tube",
+      "oa reflectron",
+      "oa detector",
+      "particle tracing"
+    ],
+    "rf_local_z_min_mm": 0.0,
+    "rf_local_z_max_mm": 90.2,
+    "rf_trim_rule": "The S1 RF solid and vacuum geometry ends at the first-forward handoff plane; standalone acceptance hardware beyond that plane is forbidden.",
+    "oatof_downstream_buffer_after_grid2_mm": 5.0,
+    "oatof_downstream_buffer_diagnostic_mm": [5.0, 15.0, 30.0],
+    "downstream_buffer_rule": "Use the shortest tested local-domain buffer that reproduces the frozen closed-shield accelerator field and is stable to the next longer buffer; do not infer that the full TOF analyzer is required before this controlled test.",
+    "legacy_external_vacuum_diagnostic_margin_mm": [1.0, 10.0, 30.0],
+    "legacy_external_vacuum_diagnostic_role": "historical evidence only; forbidden for selecting or qualifying the shielded candidate",
+    "external_vacuum_field_domain_included": false,
+    "rf_side_boundary": "selected continuous grounded cylindrical RF housing and grounded end plates",
+    "oa_side_boundary": "oa accelerator grounded shield",
+    "interior_vacuum_rule": "Mesh only vacuum enclosed by the RF housing, centered ion aperture and oa accelerator shield. No 350 mm flight-tube cross-section or exterior vacuum is part of the S1 connector sweep.",
+    "downstream_truncation_status": "requires_formal_field_matching_or_verified_decay_after_grid2"
+  },
+  "port_sweep": {
+    "shape": "rectangle",
+    "center_z_mm": -18.42918680341103,
+    "full_height_z_mm": 0.9,
+    "closed_control_full_width_y_mm": 0.0,
+    "closed_control_evaluation_full_width_y_mm": 1.0,
+    "full_width_y_mm": [1.0, 0.75, 0.5, 0.25],
+    "execution_order": "closed local-domain control first, then descending opened width; stop only for a solver failure, not for a failed physical metric",
+    "sampling_rule": "Always include y=0, every regular 0.25 mm offset and the exact +/- port half-width; the closed control is evaluated over the frozen 1.0 mm formal source width.",
+    "selection_allowed": false
+  },
+  "field_basis": {
+    "shared_geometry_required": true,
+    "oa_static": {
+      "rf_rods_and_rf_grounded_hardware_V": 0.0,
+      "oatof_electrodes": "use oa_tof/config/baseline.json exactly"
+    },
+    "rf_unit": {
+      "rod_differential_pattern_V": [100.0, -100.0, 100.0, -100.0],
+      "all_oatof_electrodes_and_grounded_hardware_V": 0.0,
+      "runtime_scale": "V_rf_peak/100[V] * sin(2*pi*f_rf*instrument_time + phase)"
+    },
+    "field_superposition": "E_total(r,t) = E_oa_static(r) + V_rf_peak/100[V] * sin(2*pi*f_rf*t+phase) * E_rf_unit(r)"
+  },
+  "evaluation": {
+    "logical_operator": "AND_for_hard_constraints_only",
+    "field_reference_role": "diagnostic_alert_only",
+    "field_uniformity_alert_source": "interface_contract.connector.entry_aperture_design.field_uniformity_reference.diagnostic_alert_thresholds",
+    "field_reference_alert_clear_required_for_s1_pass": false,
+    "component_resolved_diagnostics_required": [
+      "Ez profile perturbation",
+      "potential profile perturbation",
+      "Ex profile perturbation",
+      "Ey profile perturbation",
+      "Ex Ey Ez injection-axis line integrals"
+    ],
+    "opened_to_closed_axis_change_report_required": true,
+    "rf_fringe_at_oatof_source_report_required": true,
+    "oatof_static_leakage_upstream_report_required": true,
+    "maximum_relative_field_leakage": null,
+    "resolution_gate_status": "requires_later_particle_runtime_after_field_characterization",
+    "pass_allowed": false
+  },
+  "numerical_qualification": {
+    "strategy_id": "formal_oatof_accelerator_local_mesh_v1",
+    "global_mesh_auto_level": 6,
+    "accelerator_routine_hmax_mm": 1.0,
+    "accelerator_convergence_hmax_mm": 0.5,
+    "connector_diagnostic_hmax_mm": 0.25,
+    "release_volume_hmax_mm": 0.1,
+    "source_authority": "oa_tof/config/modes/formal.json comsol accelerator sizes and oa_tof/comsol/oatof_build_mesh.m release-volume refinement",
+    "closed_control_required_before_port_selection": true,
+    "closed_control_rule": "Evaluate the identical local domain without an injection opening over the full 1.0 mm formal source width to measure numerical bias; crossing a legacy field alert does not itself fail the connector.",
+    "convergence_order": ["accelerator_hmax_1.0_mm", "accelerator_hmax_0.5_mm", "connector_diagnostic_hmax_0.25_mm"],
+    "conditional_refinement_hmax_mm": 0.125,
+    "maximum_numerical_uncertainty_fraction_of_performance_budget": 0.2,
+    "convergence_rule": "Compare final particle observables at 0.5 and 0.25 mm. Numerical uncertainty must be no greater than 20% of each frozen performance budget and must not change its classification; use 0.125 mm only if that rule is unresolved.",
+    "opened_outer_domain_convergence_required": true,
+    "final_boundary_policy": "Use the real grounded connector or enclosure boundary for final qualification; arbitrary vacuum margins are diagnostics only.",
+    "diagnostic_controls": [
+      "closed local domain with RF grounded hardware present",
+      "same closed local domain with RF hardware omitted and all other oa geometry, boundaries and mesh settings unchanged"
+    ],
+    "diagnostic_control_policy": "The oa-only control may isolate RF-hardware influence but may not qualify an opened physical connector or replace the full joint geometry.",
+    "claim_limit": "A field-reference alert is not attributable to connector performance until the closed control, opened outer-domain sensitivity and particle-performance calibration are qualified."
+  },
+  "permissions": {
+    "candidate_geometry_generation_allowed": false,
+    "field_solve_allowed": false,
+    "particle_runtime_allowed": false,
+    "formal_asset_modification_allowed": false
+  }
+}

@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "role": "rf_to_oatof_field_to_particle_performance_calibration_plan",
+  "status": "approved_staged_experiment_plan",
+  "implementation_stage_mapping": {
+    "E0": "S1 field characterization",
+    "E1": "S1 connection-specific numerical qualification",
+    "E2": "S1 N=100 functional gate",
+    "E3": "after the S3 N=100 pulse gate and before S5 formal promotion",
+    "E4": "S4 tolerance work when applicable and S5 cross-solver closure"
+  },
+  "formal_baseline_policy": {
+    "formal_baseline_count": 1,
+    "authority": "the current oa_tof formal baseline using the coupled accelerator-reflectron theory",
+    "matched_state_replay_role": "diagnostic_reference_only_not_a_second_baseline",
+    "old_baseline_comparison_forbidden": true
+  },
+  "coordinate_semantics": {
+    "z": "oaTOF acceleration and coupled longitudinal time-focusing direction",
+    "x": "RF injection direction; transverse to oa acceleration but directly coupled to entry timing and pulse capture",
+    "y": "lateral direction; primarily coupled to spot size, aperture loss and detector position",
+    "aggregate_xy_metric_alone_is_sufficient": false
+  },
+  "candidate_space": {
+    "port_full_height_z_mm": 0.9,
+    "port_full_width_y_mm": [1.0, 0.75, 0.5, 0.25],
+    "width_execution_policy": "screen in descending order; refine only survivors and decision-neighbour candidates",
+    "minimum_absolute_transmission": null,
+    "geometric_filtering_policy": "A beam wider than the downstream aperture is allowed; report geometric loss separately from field-induced loss."
+  },
+  "experiment_stages": [
+    {
+      "id": "E0",
+      "name": "component_resolved_field_diagnostics",
+      "particle_count": 0,
+      "required_outputs": [
+        "Ez and potential profile perturbations",
+        "Ex and Ey profile perturbations reported separately",
+        "Ex, Ey and Ez line integrals along the injection axis",
+        "legacy closed-shield reference alert status"
+      ],
+      "claim_limit": "Diagnostic only; a field-reference alert cannot accept or reject a physical connector."
+    },
+    {
+      "id": "E1",
+      "name": "connection_specific_numerical_qualification",
+      "particle_count": 0,
+      "global_mesh_auto_level": 6,
+      "local_accelerator_hmax_mm": [0.5, 0.25],
+      "conditional_hmax_mm": 0.125,
+      "conditional_hmax_currently_authorized": false,
+      "outer_domain_policy": "Test the opened geometry, not only the closed control; replace an arbitrary vacuum box by the real grounded connector or enclosure boundary before final qualification.",
+      "conditional_refinement_rule": "Use 0.125 mm only when the same downstream time-dependent model proves that the last two settings change a capture or final-performance decision. A local field or RF-phase difference alone does not authorize refinement."
+    },
+    {
+      "id": "E2",
+      "name": "n100_no_oa_pulse_functional_screen",
+      "particle_count": 100,
+      "time_policy": "Preserve instrument global time, particle age and RF phase; do not reset release time to zero.",
+      "claim_limit": "Screens entry, trajectory and additional loss with RF plus always-on oa field; makes no pulse-capture or final-resolution claim."
+    },
+    {
+      "id": "E3",
+      "name": "n1000_full_oatof_pulse_and_resolution_confirmation",
+      "particle_count": 1000,
+      "required_physics": [
+        "accepted RF-to-oa joint field",
+        "frozen oa extraction waveform on the shared instrument clock",
+        "full accelerator-reflectron coupled oaTOF analyzer",
+        "detector acceptance"
+      ],
+      "adaptive_particle_rule": "Increase beyond N=1000 only if the 95% confidence interval overlaps a frozen decision boundary."
+    },
+    {
+      "id": "E4",
+      "name": "phase_alignment_and_cross_solver_robustness",
+      "particle_count": 1000,
+      "required_variations": [
+        "RF arrival phase",
+        "pulse delay about the coupled-theory prediction",
+        "approved connector translations and rotations",
+        "COMSOL-SIMION-CAD consistency for the selected candidate"
+      ]
+    }
+  ],
+  "metrics": {
+    "longitudinal": [
+      "flight-time FWHM",
+      "resolving power",
+      "arrival-time centroid",
+      "energy spread after acceleration",
+      "initial-z to arrival-time correlation"
+    ],
+    "injection_x": [
+      "x-directed field impulse",
+      "entry-time change",
+      "pulse-capture displacement",
+      "x loss locations"
+    ],
+    "lateral_y": [
+      "y-directed field impulse",
+      "detector RMS spot radius",
+      "detector r99",
+      "y loss locations"
+    ],
+    "transport": [
+      "geometric aperture transmission",
+      "field-conditional capture fraction",
+      "detector fraction relative to the RF exit population"
+    ]
+  },
+  "provisional_performance_budgets": {
+    "status": "frozen_for_candidate_experiments_pending_formal_promotion",
+    "logical_operator": "AND",
+    "minimum_resolving_power_ratio_to_formal_baseline": 0.99,
+    "maximum_detector_rms_spot_ratio_to_formal_baseline": 1.05,
+    "maximum_detector_r99_fraction_of_active_radius": 0.9,
+    "maximum_additional_field_induced_loss_fraction_after_geometric_cut": 0.01,
+    "confidence_level": 0.95,
+    "maximum_numerical_uncertainty_fraction_of_each_performance_budget": 0.2,
+    "absolute_resolution_requirement": null,
+    "absolute_end_to_end_transmission_requirement": null
+  },
+  "field_limit_derivation": {
+    "legacy_closed_shield_threshold_role": "diagnostic_alert_only",
+    "independent_hard_limits_before_particle_calibration_forbidden": true,
+    "component_policy": "Derive separate longitudinal-z, injection-x and lateral-y screening limits; never use aggregate transverse RMS alone.",
+    "safety_rule": "Freeze each incremental screening limit at 0.8 times the smallest performance-derived failure perturbation, measured relative to the closed reference.",
+    "final_authority": "The numerically qualified full physical-field particle result remains authoritative because accelerator and reflectron focusing are coupled."
+  },
+  "result_data_policy": {
+    "required_run_files": ["run_config.json", "summary.json", "run_manifest.json"],
+    "required_particle_events": ["rf_exit", "oa_entry", "pulse_capture", "detector"],
+    "dense_trajectories_default": false,
+    "dense_trajectory_exception": "failed-particle diagnosis only",
+    "required_statistics": "paired particle identities with bootstrap or equivalent 95% confidence intervals"
+  },
+  "rf_mesh_state_input": {
+    "status": "paired_exit_states_ready_for_downstream_functional_arbitration",
+    "low_cost_candidate_run": "20260722_030000__sim__comsol__rf-hybrid-n100__hend0p5__r02",
+    "reference_run": "20260722_031000__sim__comsol__rf-hybrid-n100__hend0p25",
+    "comparison_run": "20260722_033000__analysis__python__rf-hybrid-n100-functional-arbitration__r02",
+    "required_next_test": "Replay both paired exit-state tables through one identical joint connector, oa pulse waveform and analyzer on the shared instrument clock.",
+    "forbidden_shortcut": "Do not choose a mesh from local field maxima, transmission alone, or RF phase alone."
+  }
+}

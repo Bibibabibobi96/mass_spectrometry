@@ -97,14 +97,14 @@ class InterfaceContractTests(unittest.TestCase):
         aperture = contract["connector"]["entry_aperture_design"]
         self.assertEqual(
             aperture["status"],
-            "axial_height_frozen_transverse_field_limit_unresolved",
+            "controlled_joint_field_characterization_enabled",
         )
         self.assertEqual(aperture["shape"], "rectangle")
         self.assertIsNone(aperture["design_full_width_y_mm"])
         self.assertEqual(aperture["design_full_height_z_mm"], 0.9)
         self.assertIsNone(aperture["design_semi_axes_mm"]["transverse_y"])
         self.assertEqual(aperture["design_semi_axes_mm"]["axial_z"], 0.45)
-        self.assertFalse(aperture["characterization_geometry_generation_allowed"])
+        self.assertTrue(aperture["characterization_geometry_generation_allowed"])
         self.assertFalse(aperture["particle_runtime_allowed"])
         self.assertEqual(
             aperture["frozen_characterization_derivation"][

@@ -44,23 +44,24 @@
     {
       "id": "S1",
       "name": "coincident_open_port_no_oa_pulse_reference",
-      "status": "blocked_by_port_and_joint_field_implementation",
+      "status": "blocked_by_continuous_rf_shield_selection_then_joint_field_rebuild",
       "separate_connector_component": false,
       "physical_interface_claim_allowed": true,
       "model": "Simplest physical topology: coaxial nominal alignment, RF exit mating directly to a parameterized oa shield opening, zero modeled inter-component gap, no tube, lens or steering electrode. Retain the time-dependent upstream RF basis and the always-on oa electrostatic basis on one joint geometry, but do not add an oa extraction pulse.",
       "prerequisites": [
         "S0 PASS",
         "theory-bounded characterization aperture; a minimum transmission is required only before PASS or promotion",
+        "validated continuous grounded RF housing with centered entrance and exit apertures",
         "parameterized oa shield port in COMSOL, SIMION and CAD candidate geometry",
         "common electrical reference and a single joint-field implementation"
       ],
       "tests": [
         "solid-versus-opening topology",
         "geometric aperture losses",
-        "static joint-field leakage",
+        "component-resolved joint-field diagnostics and opened-domain numerical qualification",
         "N=100 target-entry crossing and downstream detector acceptance"
       ],
-      "exit_gate": "Aperture, field and N=100 functional gates pass without an independent connector component.",
+      "exit_gate": "Aperture and N=100 functional gates pass without an independent connector component; legacy closed-field thresholds are diagnostic alerts, while hard field acceptance is derived from numerically qualified particle performance.",
       "claim_limit": "Ideal direct-mating reference with upstream RF retained and no oa extraction pulse; no finite gap, tube, pulse capture or assembly tolerance claim.",
       "precheck_evidence": {
         "run_id": "20260721_085453__analysis__python__rf-oatof-s1-aperture__n100",

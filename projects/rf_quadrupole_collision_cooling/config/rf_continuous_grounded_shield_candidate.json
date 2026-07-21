@@ -1,0 +1,246 @@
+{
+  "schema_version": 1,
+  "role": "rf_quadrupole_continuous_grounded_shield_candidate",
+  "status": "approved_parameter_sweep_for_solver_validation",
+  "inputs": {
+    "rf_baseline": "config/baseline.json",
+    "rf_resolved_geometry": "config/resolved_geometry.json"
+  },
+  "audit": {
+    "current_comsol_topology": "entrance plate plus rods plus a 5.8 mm exit enclosure inside a finite vacuum block; no continuous grounded side wall over the rod region",
+    "current_simion_topology": "generated from the same contract and likewise has no continuous grounded side wall over the rod region",
+    "cad_authority_present": false,
+    "formal_geometry_already_shielded": false
+  },
+  "candidate_geometry_mm": {
+    "cross_section": "circular_cylinder_coaxial_with_rf_axis",
+    "rf_local_z_min": 1.8,
+    "rf_local_z_max": 89.4,
+    "rod_outer_extent": 13.184,
+    "inner_radius_selection_status": "unresolved_pending_rf_field_and_transport_sweep",
+    "inner_radius_ratio_to_rod_outer_extent_sweep": [1.5, 2.0, 3.0],
+    "inner_radius_mm_sweep": [19.776, 26.368, 39.552],
+    "selected_inner_radius_mm": null,
+    "field_model_wall_thickness_required": false,
+    "cad_wall_thickness_mm": null,
+    "oa_accelerator_outer_size_dependency_allowed": false,
+    "derivation": {
+      "rf_local_z_min": "RF entrance plate downstream face",
+      "rf_local_z_max": "RF exit enclosure upstream face",
+      "rod_outer_extent": "rod_center_radius + rod_radius",
+      "inner_radius_mm_sweep": "rod_outer_extent multiplied by each frozen diagnostic ratio",
+      "selection_rule": "Select the smallest mechanically feasible radius whose RF harmonics, N=100 transport and exit phase space meet the frozen candidate budgets; oa accelerator size is not an input."
+    }
+  },
+  "end_closure": {
+    "entrance": "grounded end plate with the existing on-axis entrance aperture",
+    "exit": "grounded end plate with a centered ion aperture; the final aperture and any shape transition belong to the RF-to-oa interface contract",
+    "rf_feedthroughs": "use shielded feedthrough penetrations; no unmodeled open slot may receive a complete-shield claim"
+  },
+  "two_dimensional_field_screen": {
+    "purpose": "Select at most two cylindrical radii before any three-dimensional transport run.",
+    "rod_potential_pattern_V": [100.0, -100.0, 100.0, -100.0],
+    "global_mesh_auto_level": 6,
+    "local_maximum_element_size_mm": [0.2, 0.1],
+    "sample_radius_fraction_of_r0": [0.25, 0.5, 0.75, 0.9],
+    "azimuth_samples_per_radius": 72,
+    "reported_fourier_orders": [2, 6, 10],
+    "largest_radius_role": "finite-radius convergence reference, not a formal baseline",
+    "selection_rule": "Retain the smallest radius whose quadrupole coefficient and normalized higher multipoles are numerically stable against the next larger radius; retain one neighbouring radius for N=100 confirmation.",
+    "claim_limit": "Rod-midpoint 2D field screening only; no entrance, exit, feedthrough, transport or connector claim."
+  },
+  "two_dimensional_screen_evidence": {
+    "status": "characterized_candidates_reduced_for_3d_validation",
+    "coarse_mesh_hmax_mm": 0.2,
+    "fine_mesh_hmax_mm": 0.1,
+    "run_ids": {
+      "radius_19p776_coarse": "20260721_135543__analysis__comsol__rf-continuous-shield-2d__r19p776-h0p2",
+      "radius_26p368_coarse": "20260721_135434__analysis__comsol__rf-continuous-shield-2d__r26p368-h0p2",
+      "radius_39p552_coarse": "20260721_135106__analysis__comsol__rf-continuous-shield-2d__r39p552-h0p2-retry",
+      "radius_19p776_fine": "20260721_135747__analysis__comsol__rf-continuous-shield-2d__r19p776-h0p1"
+    },
+    "edge_sample_radius_mm": 3.6,
+    "radius_19p776_to_26p368": {
+      "quadrupole_amplitude_relative_change": 2.5792350477615855e-08,
+      "order_6_ratio_absolute_change": 3.548049729064644e-08,
+      "order_10_ratio_absolute_change": 2.1896586695300396e-08
+    },
+    "radius_19p776_mesh_0p2_to_0p1": {
+      "quadrupole_amplitude_relative_change": 3.169436477712395e-07,
+      "field_magnitude_rms_relative_change": 1.809955583431666e-05,
+      "order_6_ratio_absolute_change": 9.054489503090499e-08,
+      "order_10_ratio_absolute_change": 3.9827127249879996e-07
+    },
+    "retained_inner_radius_mm_for_3d": [19.776, 26.368],
+    "selected_inner_radius_mm": null,
+    "conclusion": "The smallest radius is indistinguishable from larger radii at the rod midpoint within the measured mesh sensitivity. Retain it and one neighbour for 3D fringe-field and N=100 validation; do not select a physical shield yet."
+  },
+  "three_dimensional_fringe_field_screen": {
+    "status": "characterized_mesh_pair_and_radius_pair",
+    "inner_radius_mm": [19.776, 26.368],
+    "geometry_scope": "RF entrance plate, four full-length rods, continuous coaxial grounded side shield and RF exit grounded front plate; interior vacuum only",
+    "external_vacuum_included": false,
+    "feedthroughs_included": false,
+    "rod_potential_pattern_V": [100.0, -100.0, 100.0, -100.0],
+    "global_mesh_auto_level": 6,
+    "global_mesh_auto_level_particle_stability_sequence": [6, 5, 4, 3, 2],
+    "physical_work_region_radius_r0_mm": 4.0,
+    "local_mesh_partition_radius_mm": 3.6,
+    "local_mesh_partition_z_min_mm": 81.4,
+    "local_mesh_partition_z_max_mm": 90.2,
+    "local_maximum_element_size_mm": [0.5, 0.25],
+    "local_mesh_scope": [
+      "exit-fringe diagnostic cylinder r<=3.6 mm and 81.4<=z<=90.2 mm",
+      "exit aperture edge contained inside that volume"
+    ],
+    "sample_z_mm": [45.6, 83.4, 85.4, 87.4, 89.4, 90.2],
+    "sample_radius_fraction_of_r0": [0.25, 0.5, 0.75, 0.9],
+    "boundary_evaluation_inset_mm": 0.001,
+    "azimuth_samples_per_radius": 72,
+    "reported_fourier_orders": [2, 6, 10],
+    "coarse_mesh_role": "screening only; hmax=0.5 mm is not a convergence claim",
+    "partition_rationale": "The physical work radius remains r0=4.0 mm. The numerical partition stops at the frozen diagnostic edge r=3.6 mm: an r=4.0 mm partition is exactly tangent to the rod tips, while r=3.9 mm leaves a 0.1 mm artificial narrow region below the coarse local size. No physical aperture or acceptance limit is changed.",
+    "evaluation_inset_rationale": "Nominal samples on the exit-plate faces or r=3.6 mm aperture wall are evaluated 0.001 mm toward the vacuum and reported with both nominal and actual coordinates so COMSOL cannot assign them to an unsolved conductor domain.",
+    "convergence_rule": "Before N=100, compare hmax=0.5 and 0.25 mm for the smallest radius. The field and harmonic metrics must satisfy an explicitly frozen functional budget; otherwise refine again.",
+    "revised_convergence_rule_after_n100_fail": "The local hmax pair changed five particle classifications, and auto 4 versus 3 retained transmission but not phase space. Hold local hmax at 0.5 mm and perform one final auto 2 field-only check; if auto 3 versus 2 is unstable, replace central isotropic tetrahedra with a swept or anisotropic rod-region mesh.",
+    "radius_selection_rule": "After spatial convergence is established, retain the smallest radius whose three-dimensional central and fringe-field metrics remain within the frozen functional budget relative to the neighbouring radius.",
+    "claim_limit": "Candidate unit-field comparison only. It does not validate particle transport, oa back-leakage, feedthrough shielding, gas containment or a physical wall thickness."
+  },
+  "three_dimensional_screen_evidence": {
+    "status": "field_characterized_particle_function_unresolved",
+    "successful_field_run_ids": {
+      "radius_19p776_hmax_0p5": "20260721_141645__analysis__comsol__rf-continuous-shield-3d__r19p776-h0p5-vacuum-inset",
+      "radius_19p776_hmax_0p25": "20260721_143100__analysis__comsol__rf-continuous-shield-3d__r19p776-h0p25",
+      "radius_26p368_hmax_0p5": "20260721_144000__analysis__comsol__rf-continuous-shield-3d__r26p368-h0p5"
+    },
+    "paired_comparison_run_ids": {
+      "mesh_convergence": "20260721_145000__analysis__python__rf-continuous-shield-3d-mesh-convergence",
+      "radius_sensitivity": "20260721_145001__analysis__python__rf-continuous-shield-3d-radius-sensitivity"
+    },
+    "mesh_tetrahedra": {
+      "radius_19p776_hmax_0p5": 114443,
+      "radius_19p776_hmax_0p25": 500760,
+      "radius_26p368_hmax_0p5": 134890
+    },
+    "maximum_relative_vector_rms_fringe_region_r_le_2_mm": {
+      "hmax_0p5_to_0p25": 0.028413851866361545,
+      "radius_19p776_to_26p368_at_hmax_0p5": 0.003273830831381418
+    },
+    "maximum_relative_vector_rms_all_radii": {
+      "hmax_0p5_to_0p25": 0.3032924647041153,
+      "radius_19p776_to_26p368_at_hmax_0p5": 0.01576053196454064
+    },
+    "interpretation": "The radius effect in the fringe-region core is smaller than the current mesh sensitivity. The largest mesh difference is boundary-adjacent to an ideal aperture edge and cannot be used alone as a functional rejection. Resolve relevance with paired N=100 transport before radius selection.",
+    "selected_inner_radius_mm": null
+  },
+  "n100_transport_screen": {
+    "status": "approved_for_auto4_auto3_paired_particle_diagnostic",
+    "particle_count": 100,
+    "source": "existing frozen interface-readiness particle table and seed",
+    "source_metadata_path": "artifacts/projects/rf_quadrupole_collision_cooling/archive/20260719_212436__migration-snapshot__repo__pre-v2-layout/legacy-layout/runs/interface_sources/official_100amu_n100_20260718/particle_source_metadata.json",
+    "source_particle_table_sha256": "555A5F46B3D2EE58027F600ECC23912FC2180F74DDE4E63EC8A2EC6574C264DF",
+    "rf_peak_V": 139.81792,
+    "rf_frequency_Hz": 1100000.0,
+    "rf_phase_rad": 0.0,
+    "rf_steps_per_period": 80,
+    "maximum_particle_age_us": 80.0,
+    "nominal_handoff_z_mm": 90.2,
+    "handoff_evaluation_inset_mm": 0.001,
+    "comparison": "The initial local hmax=0.5 versus 0.25 mm pair failed. The next authorized pair holds local hmax=0.5 mm and compares global auto 4 versus 3 without changing source, RF waveform, time step or handoff plane. Radius comparison remains blocked.",
+    "required_outputs": [
+      "particle identity and first-forward handoff event",
+      "transmission and loss classification",
+      "exit x-y distribution and covariance",
+      "exit transverse velocity and angular distribution",
+      "kinetic-energy and global-time distribution",
+      "RF phase at handoff"
+    ],
+    "selection_allowed": false,
+    "claim_limit": "N=100 is authorized only as a paired mesh-sensitivity diagnostic. It may not select a shield radius, validate the RF-to-oa connection or promote a Formal asset."
+  },
+  "n100_mesh_sensitivity_evidence": {
+    "status": "failed_local_hmax_pair_global_background_refinement_required",
+    "run_ids": {
+      "hmax_0p5": "20260721_150000__sim__comsol__rf-continuous-shield-n100__r19p776-h0p5",
+      "hmax_0p25": "20260721_151000__sim__comsol__rf-continuous-shield-n100__r19p776-h0p25",
+      "paired_comparison": "20260721_152000__analysis__python__rf-continuous-shield-n100-mesh-sensitivity"
+    },
+    "transmitted_particles": {"hmax_0p5": 98, "hmax_0p25": 95},
+    "classification_change_count": 5,
+    "classification_changed_particle_ids": [2, 10, 56, 62, 97],
+    "common_transmitted_particles": 94,
+    "relative_rms_radius_difference_common_transmitted": 0.11577981061410647,
+    "relative_rms_divergence_difference_common_transmitted": 0.1299734111983682,
+    "relative_mean_energy_difference_common_transmitted": 0.05784996771861036,
+    "paired_time_difference_rms_us_common_transmitted": 4.203106568359088,
+    "acceptance_decision": "FAIL",
+    "next_allowed_action": "Run auto 2 field-only with local hmax=0.5 mm. No auto 2 particles are authorized until the auto 3 to 2 field comparison is interpreted."
+  },
+  "global_background_field_evidence": {
+    "status": "auto4_auto3_particle_pair_approved",
+    "field_run_ids": {
+      "auto5": "20260721_153000__analysis__comsol__rf-continuous-shield-3d__r19p776-a5-h0p5",
+      "auto4": "20260721_154000__analysis__comsol__rf-continuous-shield-3d__r19p776-a4-h0p5",
+      "auto3": "20260721_155000__analysis__comsol__rf-continuous-shield-3d__r19p776-a3-h0p5"
+    },
+    "comparison_run_ids": {
+      "auto5_to4": "20260721_154500__analysis__python__rf-continuous-shield-3d-auto5-to4",
+      "auto4_to3": "20260721_155500__analysis__python__rf-continuous-shield-3d-auto4-to3"
+    },
+    "auto4_to3_maximum_relative_vector_rms": {
+      "midplane": 0.014575671544432175,
+      "fringe_region_r_le_2_mm": 0.0029716564290408944,
+      "all_groups": 0.014575671544432175
+    },
+    "auto3_midpoint_relative_to_converged_2d": {
+      "quadrupole_amplitude": 0.000952606995504946,
+      "transverse_field_rms": 0.0011426511070287587
+    },
+    "decision": "Run paired N=100 at global auto 4 and 3 with local hmax=0.5 mm. No radius selection is authorized."
+  },
+  "electrical_contract": {
+    "potential_V": 0.0,
+    "common_reference": "RF entrance plate, cylindrical housing and RF exit enclosure share 0 V; the later RF-to-oa interface must preserve that common reference",
+    "external_vacuum_field_domain_required": false,
+    "interior_vacuum_only": true,
+    "feedthrough_openings_included": false,
+    "feedthrough_claim_allowed": false
+  },
+  "component_ownership": {
+    "rf_component": [
+      "continuous grounded housing around the RF rods",
+      "RF entrance plate",
+      "RF exit grounded front plate"
+    ],
+    "s1_direct_interface": [
+      "nominal zero-gap field connection between the centered RF exit aperture and the parameterized oa shield opening",
+      "no requirement that RF and oa outer shield dimensions or cross-section shapes match"
+    ],
+    "s2_passive_connector": [
+      "any finite separation",
+      "grounded transition tube or collar",
+      "diameter or rectangular-section transition",
+      "assembly-offset compensation"
+    ]
+  },
+  "required_candidate_validation": {
+    "logical_operator": "AND",
+    "solver_neutral_geometry_sync": true,
+      "rf_unit_field_harmonic_comparison": true,
+    "rf_unit_field_spatial_convergence": true,
+    "n100_transport_comparison": true,
+    "exit_phase_space_comparison": true,
+    "rf_fringe_decay_at_oa_release_region": true,
+    "oa_static_back_leakage_into_rf_region": true,
+    "high_voltage_clearance_review": true,
+    "feedthrough_and_gas_cell_review_before_formal_promotion": true
+  },
+  "permissions": {
+    "candidate_comsol_generation_allowed": true,
+    "candidate_simion_generation_allowed": true,
+    "candidate_joint_field_generation_allowed": true,
+    "formal_asset_modification_allowed": false,
+    "formal_promotion_allowed": false
+  },
+  "claim_limit": "Parameter sweep for a coaxial cylindrical conductive enclosure only. No radius or wall thickness is selected. It removes the need to mesh external vacuum only after the end plates and shielded feedthrough penetrations close the 0 V boundary; it does not yet prove RF-field fidelity, collision-gas containment or a physical RF-to-oa connection."
+}

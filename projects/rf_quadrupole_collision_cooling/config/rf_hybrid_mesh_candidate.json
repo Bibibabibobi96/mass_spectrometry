@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "role": "rf_full_device_hybrid_mesh_candidate",
+  "status": "approved_for_solver_validation",
+  "inputs": {
+    "resolved_geometry": "config/resolved_geometry.json",
+    "shield_contract": "config/rf_continuous_grounded_shield_candidate.json",
+    "uniform_mesh_contract": "config/rf_rod_region_swept_mesh_candidate.json",
+    "uniform_mesh_evidence_run": "20260721_220000__analysis__python__rf-swept-mesh-convergence"
+  },
+  "geometry_mm": {
+    "model_z_min": 0.0,
+    "model_z_max": 90.2,
+    "shield_inner_radius": 19.776,
+    "uniform_region_z_min": 9.8,
+    "uniform_region_z_max": 81.4,
+    "fine_core_radius": 8.0
+  },
+  "uniform_region_mesh": {
+    "method": "free_triangular_source_and_swept_prisms",
+    "fine_core_and_rod_boundary_hmax_mm": 0.2,
+    "outer_vacuum_hmax_mm": 1.0,
+    "axial_layers": 40
+  },
+  "end_region_mesh": {
+    "method": "free_tetrahedral",
+    "fine_core_hmax_mm_sequence": [0.5, 0.25, 0.125],
+    "outer_vacuum_hmax_mm": 1.0,
+    "stop_after_first_converged_pair": true
+  },
+  "field_sampling": {
+    "sample_z_mm": [1.801, 5.8, 9.799, 9.801, 45.6, 81.399, 81.401, 83.4, 85.4, 87.4, 89.4, 90.199],
+    "sample_radius_fraction_of_r0": [0.25, 0.5, 0.75, 0.9],
+    "azimuth_samples_per_radius": 72,
+    "aperture_edge_radius_mm": 3.6,
+    "hard_field_convergence_radius_max_mm": 3.0
+  },
+  "acceptance": {
+    "logical_operator": "AND",
+    "mesh_problem_free": true,
+    "maximum_relative_vector_rms_last_two_end_meshes_r_le_3_mm": 0.001,
+    "maximum_relative_vector_rms_at_partition_pairs_r_le_3_mm": 0.001,
+    "aperture_edge_is_diagnostic_not_a_standalone_veto": true,
+    "particle_tracking_allowed_only_after_field_pass": false,
+    "particle_diagnostic_allowed_after_problem_free_paired_fields": true,
+    "functional_arbitration_policy": "When localized field ratios fail but both meshes are problem-free, run the same frozen N=100 particles on both meshes. Do not refine again unless particle classification or paired exit phase space changes enough to affect the transport or integration decision.",
+    "local_field_maximum_is_diagnostic_not_a_standalone_veto": true
+  },
+  "n100_functional_arbitration_evidence": {
+    "status": "proceed_to_shared_downstream_time_dependent_test",
+    "coarse_run_id": "20260722_030000__sim__comsol__rf-hybrid-n100__hend0p5__r02",
+    "fine_run_id": "20260722_031000__sim__comsol__rf-hybrid-n100__hend0p25",
+    "comparison_run_id": "20260722_033000__analysis__python__rf-hybrid-n100-functional-arbitration__r02",
+    "vacuum_elements": {"end_hmax_0p5_mm": 1584535, "end_hmax_0p25_mm": 4184759},
+    "transmitted_particles": {"end_hmax_0p5_mm": 100, "end_hmax_0p25_mm": 100},
+    "classification_change_count": 0,
+    "relative_rms_radius_difference": 0.005140748869724905,
+    "relative_rms_divergence_difference": 0.010421052322714758,
+    "relative_mean_energy_difference": 0.0004996487652845809,
+    "paired_position_difference_rms_mm": 0.043418280095643996,
+    "paired_time_difference_rms_us": 0.053449550057926724,
+    "paired_rf_phase_difference_rms_rad": 0.3694167703592515,
+    "paired_rf_phase_difference_max_abs_rad": 1.0581713254309801,
+    "retained_low_cost_mesh_end_hmax_mm": 0.5,
+    "retained_reference_mesh_end_hmax_mm": 0.25,
+    "hmax_0p125_run_allowed": false,
+    "decision": "Do not refine locally again. Replay both paired exit states through the same downstream time-dependent pulse and analyzer; retain 0.5 mm only if capture classification and final performance decisions are unchanged."
+  },
+  "claim_limit": "Candidate full-device unit-field mesh only. It does not validate particles, select a shield radius, include feedthroughs or authorize a physical RF-to-oa connection."
+}

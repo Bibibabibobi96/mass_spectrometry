@@ -32,6 +32,18 @@ if ($LASTEXITCODE -ne 0) { throw 'Entry-aperture L0 reference gate failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'RF-to-oaTOF handoff contract gate failed.' }
 & $python (Join-Path $projectRoot 'analysis\build_interface_handoff.py') --check-contract
 if ($LASTEXITCODE -ne 0) { throw 'Two-boundary time-resolved interface contract gate failed.' }
+$candidateValidators = @(
+  'validate_field_performance_experiment.py',
+  'validate_rf_continuous_shield.py',
+  'validate_rf_hybrid_mesh.py',
+  'validate_rf_piecewise_swept_mesh.py',
+  'validate_rf_rod_region_swept_mesh.py',
+  'validate_s1_joint_field.py'
+)
+foreach ($validator in $candidateValidators) {
+  & $python (Join-Path $projectRoot "analysis\$validator")
+  if ($LASTEXITCODE -ne 0) { throw "Candidate-contract static gate failed: $validator" }
+}
 & $python -m unittest discover -s (Join-Path $projectRoot 'tests\analysis') -p 'test_*.py'
 if ($LASTEXITCODE -ne 0) { throw 'Python analysis tests failed.' }
 $parseErrors = @()

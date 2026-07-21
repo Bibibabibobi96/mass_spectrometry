@@ -164,7 +164,7 @@
       "conclusion": "The present formal analyzer has no physical +x injection opening. A connector alone outside the shield cannot deliver particles into the release region."
     },
     "entry_aperture_design": {
-      "status": "axial_height_frozen_transverse_field_limit_unresolved",
+      "status": "controlled_joint_field_characterization_enabled",
       "shape": "rectangle",
       "design_semi_axes_mm": {
         "transverse_y": null,
@@ -183,7 +183,7 @@
         "claim_limit": "Geometry characterization only; dimensions are not a qualified physical interface until the joint field and downstream losses are evaluated."
       },
       "field_uniformity_reference": {
-        "status": "closed_shield_reference_only",
+        "status": "closed_shield_diagnostic_reference_only",
         "run_id": "20260721_093712__analysis__comsol__accelerator-transverse-field__grid",
         "formal_source_half_width_y_mm": 0.5,
         "closed_shield_contiguous_full_width_y_mm": 1.0,
@@ -192,9 +192,16 @@
           "accelerator potential profile relative RMS",
           "transverse-field relative RMS"
         ],
-        "logical_operator": "AND",
+        "logical_operator": "AND_for_alerts_only",
+        "diagnostic_alert_thresholds": {
+          "ez_profile_relative_rms": 0.00032165873008262814,
+          "potential_profile_relative_rms": 9.261289302988189e-06,
+          "transverse_field_relative_rms": 0.0006730531364423708
+        },
         "opened_joint_geometry_limit_mm": null,
-        "claim_limit": "This freezes the comparison thresholds and an L0 sweep starting bound only. The opened joint RF-oa geometry must be resampled before selecting the physical transverse width."
+        "hard_gate_allowed": false,
+        "performance_calibration_contract": "config/rf_to_oatof_field_performance_experiment.json",
+        "claim_limit": "These values are closed-shield L0 diagnostic alerts, not performance-derived limits. An opened connector may be accepted or rejected only after numerical qualification and the frozen particle-performance experiment."
       },
       "upper_bounds": {
         "first_gap_geometry": {
@@ -243,7 +250,7 @@
       ],
       "unconstrained_candidate_scan_allowed": false,
       "candidate_selection_allowed_after_bounds_frozen": true,
-      "characterization_geometry_generation_allowed": false,
+      "characterization_geometry_generation_allowed": true,
       "particle_runtime_allowed": false,
       "constraint_freeze_policy": {
         "single_input_authority": "oa_tof/config/baseline.json plus this interface contract for connector-only requirements",

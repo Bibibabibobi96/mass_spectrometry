@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "role": "rf_uniform_rod_region_swept_mesh_candidate",
+  "status": "approved_for_solver_validation",
+  "scope": "Uniform RF rod region only; establishes transverse-versus-axial mesh separation before hybrid full-device meshing.",
+  "inputs": {
+    "resolved_geometry": "config/resolved_geometry.json",
+    "continuous_shield": "config/rf_continuous_grounded_shield_candidate.json",
+    "two_dimensional_reference_run": "20260721_135747__analysis__comsol__rf-continuous-shield-2d__r19p776-h0p1"
+  },
+  "geometry_mm": {
+    "z_min": 5.8,
+    "z_max": 81.4,
+    "length": 75.6,
+    "shield_inner_radius": 19.776,
+    "physical_work_radius_r0": 4.0,
+    "diagnostic_radius_max": 3.6,
+    "derivation": "The start is the rod entrance. The end is 4 mm upstream of the rod exit so the swept region excludes the three-dimensional exit fringe transition."
+  },
+  "transverse_mesh": {
+    "source_face_method": "free_triangular",
+    "maximum_element_size_mm": [0.2, 0.1],
+    "refinement_scope": "vacuum source cross-section; later hybrid optimization may localize it only after equivalent field evidence",
+    "authority": "The same 0.2 to 0.1 mm sequence already converged in the independent 2D shield screen."
+  },
+  "localized_transverse_mesh": {
+    "status": "approved_for_solver_validation",
+    "reference_profile": "full_vacuum_hmax_0p2",
+    "work_core_radius_mm_candidates": [6.0, 8.0, 10.0],
+    "work_core_hmax_mm": 0.2,
+    "rod_boundary_hmax_mm": 0.2,
+    "transition_minimum_element_size_mm": 0.02,
+    "outer_vacuum_hmax_mm": [1.0, 0.5],
+    "axial_layers": 40,
+    "selection_rule": "Increase the fine core only through the frozen 6, 8 and 10 mm sequence until every field group passes. All candidates extend beyond the r0=4 mm rod tips, avoid a tangent partition, retain 0.2 mm sizing on all rod boundaries, and coarsen only the remote vacuum toward the grounded shield.",
+    "maximum_relative_vector_rms_to_full_vacuum_reference": 0.0001,
+    "selection_allowed_only_after_field_pass": true
+  },
+  "axial_mesh": {
+    "method": "equidistant_swept_prism_layers",
+    "layer_count": [20, 40],
+    "nominal_layer_thickness_mm": [3.78, 1.89],
+    "reason": "The geometry and electrode potentials are invariant along this region; axial layers resolve data transfer and later interface matching, not transverse rod curvature."
+  },
+  "field_contract": {
+    "rod_potential_pattern_V": [100.0, -100.0, 100.0, -100.0],
+    "shield_potential_V": 0.0,
+    "sample_z_mm": [10.0, 45.6, 77.2],
+    "sample_radius_fraction_of_r0": [0.25, 0.5, 0.75, 0.9],
+    "azimuth_samples_per_radius": 72,
+    "reported_fourier_orders": [2, 6, 10]
+  },
+  "acceptance": {
+    "logical_operator": "AND",
+    "physics_domain_mesh_coverage_and_problem_free": true,
+    "global_geometry_mesh_completion_required": false,
+    "completion_evidence": "The electrostatics vacuum selection has swept prism elements, reports no mesh problems, solves successfully and returns finite field values at every frozen sample point. Conductive solid domains are intentionally not volume-meshed, so global mphmeshstats.iscomplete is diagnostic rather than an acceptance predicate.",
+    "maximum_relative_vector_rms_to_converged_2d": 0.001,
+    "maximum_relative_vector_rms_20_to_40_layers": 0.0001,
+    "maximum_axial_to_transverse_field_rms": 0.0001,
+    "particle_acceptance_allowed": false,
+    "hybrid_mesh_integration_allowed_only_after_pass": true
+  },
+  "future_multipole_promotion": {
+    "common_implementation_allowed_now": false,
+    "promotion_condition": "Validate the same dimensionless transverse and axial construction on at least one additional multipole order or geometry family before extracting common code.",
+    "generalizable_quantities": [
+      "elements per characteristic field radius",
+      "elements per minimum electrode gap",
+      "elements along electrode curvature",
+      "axial layers per geometry-change length",
+      "field-harmonic and particle-performance convergence"
+    ]
+  },
+  "claim_limit": "Candidate uniform-region field mesh only. It does not validate entrance/exit fringe fields, particle transport, a shield radius, a connector or any Formal asset."
+}
