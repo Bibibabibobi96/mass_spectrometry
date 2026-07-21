@@ -201,7 +201,18 @@ try
         injection=profile([],:);
     end
     outputDir=fileparts(outputCsv); if ~isfolder(outputDir),mkdir(outputDir);end; writetable([profile;injection],outputCsv);
-    fprintf(fid,'PROFILE_ROWS=%d\nINJECTION_ROWS=%d\nMODEL_SAVED=false\nSTATUS=PASS\n',height(profile),height(injection));
+    particleInput=getenv('RF_OATOF_S1_PARTICLE_INPUT');
+    particleRows=0;
+    if ~isempty(particleInput)
+        particleOutput=getenv('RF_OATOF_S1_PARTICLE_OUTPUT');
+        pulseTimeUs=str2double(getenv('RF_OATOF_PULSE_TIME_US'));
+        pulseWidthUs=str2double(getenv('RF_OATOF_PULSE_WIDTH_US'));
+        assert(portWidth>0 && includeRfHardware,'S1 particles require the opened joint RF-oa geometry.');
+        assert(~isempty(particleOutput) && isfinite(pulseTimeUs) && isfinite(pulseWidthUs) && pulseWidthUs>0,'S1 particle environment is incomplete.');
+        particleEvents=run_s1_particles(model,comp,particleInput,fileparts(particleOutput),joint,rf,oa,portWidth,portHeight,downstreamBuffer,pulseTimeUs,pulseWidthUs);
+        writetable(particleEvents,particleOutput); particleRows=height(particleEvents);
+    end
+    fprintf(fid,'PROFILE_ROWS=%d\nINJECTION_ROWS=%d\nPARTICLE_ROWS=%d\nMODEL_SAVED=false\nSTATUS=PASS\n',height(profile),height(injection),particleRows);
 catch exception
     fprintf(fid,'STATUS=FAIL\nERROR=%s\n',getReport(exception,'extended','hyperlinks','off')); rethrow(exception)
 end
@@ -219,4 +230,52 @@ end
 
 function set_potential(physics,tag,selection,value)
 feature=physics.create(['pot_' tag],'ElectricPotential',2); feature.selection.named(selection); feature.set('V0',sprintf('%.17g[V]',value));
+end
+
+function events=run_s1_particles(model,comp,inputPath,runtimeDir,joint,rf,oa,portWidth,portHeight,downstreamBuffer,pulseTimeUs,pulseWidthUs)
+ions=readtable(inputPath,'VariableNamingRule','preserve');
+assert(height(ions)==100,'S1 physical-port runtime requires the frozen N=100 input.');
+required={'particle_id','instrument_time_us','mass_amu','charge_state','position_y_mm','position_z_mm','velocity_x_m_s','velocity_y_m_s','velocity_z_m_s'};
+assert(all(ismember(required,ions.Properties.VariableNames)),'S1 canonical particle columns are incomplete.');
+center=joint.nominal_registration.target_entry_center_instrument_mm;
+inside=abs(ions.position_y_mm)<=portWidth/2+1e-12 & abs(ions.position_z_mm-center(3))<=portHeight/2+1e-12;
+accepted=find(inside); assert(~isempty(accepted),'S1 port rejects every input particle geometrically.');
+if ~isfolder(runtimeDir),mkdir(runtimeDir);end
+cpt=comp.physics.create('cpt','ChargedParticleTracing','geom1'); cpt.label('S1 physical-port shared-clock pulse N=100'); cpt.selection.named('sel_vac');
+cpt.feature('pp1').set('mp',sprintf('%.17g[kg]',ions.mass_amu(1)*1.66053906660e-27)); cpt.feature('pp1').set('Z',sprintf('%d',round(ions.charge_state(1))));
+for solverIndex=1:numel(accepted)
+    row=accepted(solverIndex); releaseData=[center(1)+0.001,ions.position_y_mm(row),ions.position_z_mm(row),ions.velocity_x_m_s(row),ions.velocity_y_m_s(row),ions.velocity_z_m_s(row)];
+    releasePath=fullfile(runtimeDir,sprintf('physical_port_particle_%03d.txt',ions.particle_id(row))); writematrix(releaseData,releasePath,'Delimiter','tab');
+    rel=cpt.create(sprintf('rel%03d',solverIndex),'ReleaseFromDataFile',-1); rel.set('Filename',releasePath); rel.set('icolp','0'); rel.set('VelocitySpecification','SpecifyVelocity'); rel.set('InitialVelocity','FromFile'); rel.set('icolv','3'); rel.set('rt',sprintf('%.17g[us]',ions.instrument_time_us(row))); rel.importData();
+end
+rfScale=rf.mode.rf.amplitude_V_peak/100.0; frequency=rf.mode.rf.frequency_Hz; phase=rf.mode.rf.phase_rad;
+gate=sprintf('if(t>=%.17g[us]&&t<%.17g[us],1,0)',pulseTimeUs,pulseTimeUs+pulseWidthUs);
+ef=cpt.create('ef1','ElectricForce',3); ef.selection.named('sel_vac'); ef.set('E_src','userdef');
+ef.set('E',{sprintf('%.17g*(-d(Vrf,x))*sin(2*pi*%.17g[Hz]*t+%.17g)+(%s)*(-d(V,x))',rfScale,frequency,phase,gate),sprintf('%.17g*(-d(Vrf,y))*sin(2*pi*%.17g[Hz]*t+%.17g)+(%s)*(-d(V,y))',rfScale,frequency,phase,gate),sprintf('%.17g*(-d(Vrf,z))*sin(2*pi*%.17g[Hz]*t+%.17g)+(%s)*(-d(V,z))',rfScale,frequency,phase,gate)});
+std2=model.study.create('std2'); time=std2.create('time1','Transient'); dt=1/frequency/80; tmax=(pulseTimeUs+pulseWidthUs+8.0)*1e-6;
+time.set('tlist',sprintf('range(0,%.17g,%.17g)',dt,tmax)); time.setEntry('activate','es_static',false); time.setEntry('activate','es_rf',false); time.setEntry('activate','cpt',true);
+for solverIndex=1:numel(accepted),cpt.feature(sprintf('rel%03d',solverIndex)).set('StudyStep','std2/time1');end; cpt.feature('pp1').set('StudyStep','std2/time1');
+sol2=model.sol.create('sol2'); sol2.study('std2'); sol2.createAutoSequence('std2'); sol2.feature('v1').set('notsolmethod','sol'); sol2.feature('v1').set('notsol','sol1'); sol2.attach('std2'); sol2.runAll;
+pdset=model.result.dataset.create('pdset1','Particle'); pdset.set('solution','sol2'); pd=mphparticle(model,'dataset','pdset1');
+x=squeeze(pd.p(:,:,1));y=squeeze(pd.p(:,:,2));z=squeeze(pd.p(:,:,3));vx=squeeze(pd.v(:,:,1));vy=squeeze(pd.v(:,:,2));vz=squeeze(pd.v(:,:,3));
+if isvector(x),x=x(:);y=y(:);z=z(:);vx=vx(:);vy=vy(:);vz=vz(:);end
+assert(size(z,2)==numel(accepted),'S1 solved particle count differs from geometric acceptance.');
+plane=oa.geometry_mm.accelerator_grid2_z+downstreamBuffer-0.001; rows=cell(height(ions),15); solverIndex=0;
+for row=1:height(ions)
+    if ~inside(row)
+        state=struct('t_s',ions.instrument_time_us(row)*1e-6,'x_mm',center(1),'y_mm',ions.position_y_mm(row),'z_mm',ions.position_z_mm(row),'vx_m_s',ions.velocity_x_m_s(row),'vy_m_s',ions.velocity_y_m_s(row),'vz_m_s',ions.velocity_z_m_s(row)); event='geometric_reject';status='lost';reason='outside_1p0_by_0p9_mm_port';
+    else
+        solverIndex=solverIndex+1; valid=find(isfinite(x(:,solverIndex))&isfinite(y(:,solverIndex))&isfinite(z(:,solverIndex))&isfinite(vx(:,solverIndex))&isfinite(vy(:,solverIndex))&isfinite(vz(:,solverIndex))); assert(~isempty(valid),'S1 particle has no finite state.');
+        [state,found]=interpolate_z_plane(pd.t,x(:,solverIndex),y(:,solverIndex),z(:,solverIndex),vx(:,solverIndex),vy(:,solverIndex),vz(:,solverIndex),plane);
+        if found,event='local_joint_exit';status='transmitted';reason='none';else,last=valid(end);state=struct('t_s',pd.t(last),'x_mm',x(last,solverIndex),'y_mm',y(last,solverIndex),'z_mm',z(last,solverIndex),'vx_m_s',vx(last,solverIndex),'vy_m_s',vy(last,solverIndex),'vz_m_s',vz(last,solverIndex));event='terminal';status='lost';reason='electrode_or_boundary';end
+    end
+    speed2=state.vx_m_s^2+state.vy_m_s^2+state.vz_m_s^2; energy=0.5*ions.mass_amu(row)*1.66053906660e-27*speed2/1.602176634e-19;
+    rows(row,:)={ions.particle_id(row),event,status,reason,ions.instrument_time_us(row),state.t_s*1e6,(state.t_s*1e6>=pulseTimeUs),state.x_mm,state.y_mm,state.z_mm,state.vx_m_s,state.vy_m_s,state.vz_m_s,energy,mod(2*pi*frequency*state.t_s+phase,2*pi)};
+end
+events=cell2table(rows,'VariableNames',{'particle_id','event','status','terminal_reason','entry_instrument_time_us','instrument_time_us','pulse_time_reached','x_mm','y_mm','z_mm','vx_m_s','vy_m_s','vz_m_s','kinetic_energy_eV','rf_phase_rad'});
+end
+
+function [state,found]=interpolate_z_plane(time_s,x,y,z,vx,vy,vz,planeMm)
+state=struct();found=false;valid=find(isfinite(x)&isfinite(y)&isfinite(z)&isfinite(vx)&isfinite(vy)&isfinite(vz));
+for index=2:numel(valid),a=valid(index-1);b=valid(index);if z(a)<planeMm&&z(b)>=planeMm&&z(b)>z(a),fraction=(planeMm-z(a))/(z(b)-z(a));lerp=@(left,right)left+fraction*(right-left);state=struct('t_s',lerp(time_s(a),time_s(b)),'x_mm',lerp(x(a),x(b)),'y_mm',lerp(y(a),y(b)),'z_mm',planeMm,'vx_m_s',lerp(vx(a),vx(b)),'vy_m_s',lerp(vy(a),vy(b)),'vz_m_s',lerp(vz(a),vz(b)));found=true;return,end,end
 end

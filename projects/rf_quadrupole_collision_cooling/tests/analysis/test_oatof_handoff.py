@@ -185,7 +185,12 @@ class OatofHandoffBuildTests(unittest.TestCase):
         self.assertAlmostEqual(float(ion[0][4]), 0.1)
         self.assertAlmostEqual(float(ion[0][5]), -18.22918680341103)
         self.assertAlmostEqual(
-            float(ion[0][6]), math.degrees(math.atan2(100.0, 2000.0)), delta=1e-12
+            float(ion[0][6]), math.degrees(math.atan2(-200.0, 2000.0)), delta=1e-12
+        )
+        self.assertAlmostEqual(
+            float(ion[0][7]),
+            math.degrees(math.atan2(100.0, math.hypot(2000.0, 200.0))),
+            delta=1e-12,
         )
 
     def test_time_dependent_consumer_uses_instrument_time_as_solver_birth(self) -> None:

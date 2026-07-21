@@ -89,6 +89,12 @@
   [`analysis/validate_s1_joint_field.py`](analysis/validate_s1_joint_field.py)及
   [`analysis/analyze_s1_joint_field.py`](analysis/analyze_s1_joint_field.py)；旧闭合场阈值只作L0诊断告警，
   不直接接受或拒绝连接器，并分别报告`Ex/Ey/Ez`诊断量。
+- S1真实过孔动态功能链：
+  [`analysis/build_s1_downstream_handoff.py`](analysis/build_s1_downstream_handoff.py)、
+  [`analysis/analyze_s1_end_to_end.py`](analysis/analyze_s1_end_to_end.py)及
+  [`tests/cross_solver/run_s1_physical_end_to_end.ps1`](tests/cross_solver/run_s1_physical_end_to_end.ps1)；
+  COMSOL在真实`1.0×0.9 mm`孔和局部联合场中完成按时进入及统一有限脉冲，SIMION从局部出口真实三维
+  状态继续到分析器。当前N=100清点为`100→88→28→9`，只证明功能贯通，不授权分辨率、阶段PASS或Formal晋升。
 - RF连续接地屏蔽候选：
   [`config/rf_continuous_grounded_shield_candidate.json`](config/rf_continuous_grounded_shield_candidate.json)及
   [`analysis/validate_rf_continuous_shield.py`](analysis/validate_rf_continuous_shield.py)；现有COMSOL/SIMION

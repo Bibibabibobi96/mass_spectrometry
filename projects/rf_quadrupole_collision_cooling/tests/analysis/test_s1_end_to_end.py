@@ -1,0 +1,49 @@
+from __future__ import annotations
+
+import csv
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(PROJECT_ROOT / "analysis"))
+import analyze_s1_end_to_end as module  # noqa: E402
+
+
+def write(path: Path, fields: list[str], rows: list[dict[str, object]]) -> None:
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader(); writer.writerows(rows)
+
+
+class S1EndToEndTests(unittest.TestCase):
+    def test_builds_sparse_census_and_maps_solver_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            entry, local, downstream, mapping, events = (root / name for name in
+                ("entry.csv", "local.csv", "down.csv", "map.csv", "events.csv"))
+            write(entry, ["particle_id", "instrument_time_us", "position_x_mm", "position_y_mm", "position_z_mm"],
+                  [{"particle_id": i, "instrument_time_us": 1, "position_x_mm": 0,
+                    "position_y_mm": 0, "position_z_mm": 0} for i in range(1, 101)])
+            write(local, ["particle_id", "event", "instrument_time_us", "x_mm", "y_mm", "z_mm", "status"],
+                  [{"particle_id": i, "event": "local_joint_exit" if i <= 5 else "terminal",
+                    "instrument_time_us": 2, "x_mm": 0, "y_mm": 0, "z_mm": 1,
+                    "status": "transmitted" if i <= 5 else "lost"} for i in range(1, 101)])
+            write(mapping, ["solver_row_index", "particle_id"],
+                  [{"solver_row_index": i, "particle_id": i} for i in range(1, 6)])
+            write(downstream, ["Ion", "Hit", "InstrumentTimeUs", "XMm", "YMm"],
+                  [{"Ion": i, "Hit": i == 1, "InstrumentTimeUs": 10, "XMm": 0, "YMm": 0}
+                   for i in range(1, 6)])
+            result = module.analyze(entry, local, downstream, mapping, events)
+            self.assertEqual(result["status"], "PASS")
+            self.assertEqual(result["detector_hits"], 1)
+            self.assertEqual(result["sparse_event_rows"], 205)
+            figure = root / "funnel.png"
+            module.plot_funnel(result, figure)
+            self.assertGreater(figure.stat().st_size, 0)
+
+
+if __name__ == "__main__":
+    unittest.main()

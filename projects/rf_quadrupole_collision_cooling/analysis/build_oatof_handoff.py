@@ -132,6 +132,21 @@ def matvec(matrix: list[list[float]], vector: list[float]) -> list[float]:
     return [sum(row[index] * vector[index] for index in range(3)) for row in matrix]
 
 
+def simion_accelerator_instance_angles(velocity: list[float]) -> tuple[float, float]:
+    """Encode a global velocity for oaTOF SIMION workbench instance 3.
+
+    The accelerator PA instance maps its local velocity axes into workbench
+    axes as ``(vx, vy, vz)_wb = (vx, vz, -vy)_pa``.  ION direction angles are
+    interpreted in those PA axes even though ION positions are workbench
+    coordinates, so the velocity must be inverse-mapped before angle encoding.
+    """
+    vx, vy, vz = velocity
+    local_x, local_y, local_z = vx, -vz, vy
+    azimuth = math.degrees(math.atan2(local_y, local_x))
+    elevation = math.degrees(math.atan2(local_z, math.hypot(local_x, local_y)))
+    return azimuth, elevation
+
+
 def _close_vector(left: list[float], right: list[float], tolerance: float = 1e-12) -> bool:
     return all(math.isclose(a, b, rel_tol=0.0, abs_tol=tolerance) for a, b in zip(left, right))
 
@@ -358,10 +373,7 @@ def build_handoff(
         if residual > float(acceptance["maximum_energy_velocity_relative_residual"]):
             raise ValueError("kinetic energy is inconsistent with transformed velocity")
 
-        azimuth = math.degrees(math.atan2(target_velocity[1], target_velocity[0]))
-        elevation = math.degrees(
-            math.atan2(target_velocity[2], math.hypot(target_velocity[0], target_velocity[1]))
-        )
+        azimuth, elevation = simion_accelerator_instance_angles(target_velocity)
         instrument_time = float(row["time_us"])
         solver_birth_time = instrument_time if solver_clock == "instrument_time" else local_solver_birth_time
         lineage_age = float(row["elapsed_time_us"])

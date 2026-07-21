@@ -8,6 +8,9 @@ param(
   [string]$JointScope = 'rf-oa',
   [double]$DownstreamBufferMm = 5.0,
   [string]$ClosedControlRunId = '',
+  [string]$ParticleInputPath = '',
+  [double]$PulseTimeUs = 54.45242561132196,
+  [double]$PulseWidthUs = 1.0,
   [string]$RunId = ''
 )
 
@@ -22,6 +25,13 @@ $jointSource = Join-Path $projectRoot 'config\rf_to_oatof_s1_joint_field.json'
 $jointSourceDocument = Get-Content -LiteralPath $jointSource -Raw -Encoding UTF8 | ConvertFrom-Json
 if (-not [bool]$jointSourceDocument.permissions.field_solve_allowed) {
   throw 'S1 joint-field solve is not authorized by the candidate contract.'
+}
+$particleEnabled = -not [string]::IsNullOrWhiteSpace($ParticleInputPath)
+if ($particleEnabled -and (-not [bool]$jointSourceDocument.permissions.particle_runtime_allowed)) {
+  throw 'S1 particle runtime is not authorized by the candidate contract.'
+}
+if ($particleEnabled -and ([math]::Abs($PortWidthMm-[double]$jointSourceDocument.port_sweep.selected_n100_candidate_full_width_y_mm) -gt 1e-12 -or $JointScope -ne 'rf-oa')) {
+  throw 'S1 particles require the selected opened rf-oa candidate geometry.'
 }
 $numerical = $jointSourceDocument.numerical_qualification
 $allowedAcceleratorHmax = @(
@@ -55,6 +65,7 @@ New-Item -ItemType Directory -Force -Path $inputDir,$resultDir,$logDir | Out-Nul
 
 $task = Join-Path $inputDir 'build_s1_joint_field_candidate.m'
 $analysis = Join-Path $inputDir 'analyze_s1_joint_field.py'
+$particleAnalysis = Join-Path $inputDir 'analyze_s1_physical_port_particles.py'
 $uniformity = Join-Path $inputDir 'analyze_accelerator_transverse_field_uniformity.py'
 $oaBuilder = Join-Path $inputDir 'oatof_build_accelerator_geometry.m'
 $joint = Join-Path $inputDir 'rf_to_oatof_s1_joint_field.json'
@@ -66,6 +77,7 @@ $runner = Join-Path $inputDir 'run_s1_joint_field_candidate.ps1.txt'
 Copy-Item $PSCommandPath $runner
 Copy-Item (Join-Path $PSScriptRoot 'build_s1_joint_field_candidate.m') $task
 Copy-Item (Join-Path $projectRoot 'analysis\analyze_s1_joint_field.py') $analysis
+Copy-Item (Join-Path $projectRoot 'analysis\analyze_s1_physical_port_particles.py') $particleAnalysis
 Copy-Item (Join-Path $repoRoot 'projects\oa_tof\analysis\analyze_accelerator_transverse_field_uniformity.py') $uniformity
 Copy-Item (Join-Path $repoRoot 'projects\oa_tof\comsol\oatof_build_accelerator_geometry.m') $oaBuilder
 Copy-Item $jointSource $joint
@@ -73,6 +85,13 @@ Copy-Item (Join-Path $projectRoot 'config\rf_to_oatof_interface_candidate.json')
 Copy-Item (Join-Path $projectRoot 'config\resolved_geometry.json') $rfResolved
 Copy-Item (Join-Path $repoRoot 'projects\oa_tof\config\baseline.json') $oaBaseline
 Copy-Item (Join-Path $repoRoot 'projects\oa_tof\config\modes\formal.json') $oaFormalMode
+$particleInput = $null
+if ($particleEnabled) {
+  $sourceParticleInput = [IO.Path]::GetFullPath($ParticleInputPath)
+  if (-not (Test-Path -LiteralPath $sourceParticleInput -PathType Leaf)) { throw 'S1 particle input is missing.' }
+  $particleInput = Join-Path $inputDir 'canonical_rf_exit_at_oatof_entry.csv'
+  Copy-Item -LiteralPath $sourceParticleInput -Destination $particleInput
+}
 $referenceRole = 'formal_closed'
 $closedReference = Join-Path $workspaceRoot 'artifacts\projects\oa_tof\runs\20260721_093712__analysis__comsol__accelerator-transverse-field__grid\results\accelerator_transverse_field_samples.csv'
 if ([math]::Abs($PortWidthMm) -gt 1e-12) {
@@ -92,22 +111,25 @@ if ([math]::Abs($PortWidthMm) -gt 1e-12) {
 }
 if (-not (Test-Path -LiteralPath $closedReference -PathType Leaf)) { throw 'S1 closed-reference field sample is missing.' }
 $fieldCsv = Join-Path $resultDir 's1_joint_field_samples.csv'
+$particleCsv = Join-Path $resultDir 's1_physical_port_particles.csv'
 $report = Join-Path $logDir 'comsol_joint_field.txt'
 $summary = Join-Path $runDir 'summary.json'
 $runConfig = Join-Path $runDir 'run_config.json'
 $manifestWriter = Join-Path $repoRoot 'common\contracts\write_run_manifest.py'
+$inputMap=[ordered]@{task=$task;analysis=$analysis;particle_analysis=$particleAnalysis;uniformity_analysis=$uniformity;oa_accelerator_builder=$oaBuilder;joint_contract=$joint;interface_contract=$interface;rf_resolved=$rfResolved;oa_baseline=$oaBaseline;oa_formal_mode=$oaFormalMode;closed_reference=$closedReference;runner=$runner}
+if($particleEnabled){$inputMap.particle_input=$particleInput}
 [ordered]@{
   schema_version=1;run_id=$RunId;project='rf_quadrupole_collision_cooling';mode='rf_to_oatof_s1_local_joint_field'
   project_root=$repoRoot
-  inputs=[ordered]@{task=$task;analysis=$analysis;uniformity_analysis=$uniformity;oa_accelerator_builder=$oaBuilder;joint_contract=$joint;interface_contract=$interface;rf_resolved=$rfResolved;oa_baseline=$oaBaseline;oa_formal_mode=$oaFormalMode;closed_reference=$closedReference;runner=$runner}
-  parameters=[ordered]@{geometry_state=if([math]::Abs($PortWidthMm) -lt 1e-12){'closed_local_domain_control'}else{'opened_port'};joint_scope=$JointScope;port_full_width_y_mm=$PortWidthMm;port_full_height_z_mm=0.9;downstream_buffer_after_grid2_mm=$DownstreamBufferMm;external_vacuum_included=$false;mesh_auto_level=$MeshAutoLevel;accelerator_hmax_mm=$AcceleratorHmaxMm;release_volume_hmax_mm=0.1;solver_rerun=$true;particle_tracking=$false;model_saved=$false}
+  inputs=$inputMap
+  parameters=[ordered]@{geometry_state=if([math]::Abs($PortWidthMm) -lt 1e-12){'closed_local_domain_control'}else{'opened_port'};joint_scope=$JointScope;port_full_width_y_mm=$PortWidthMm;port_full_height_z_mm=0.9;downstream_buffer_after_grid2_mm=$DownstreamBufferMm;external_vacuum_included=$false;mesh_auto_level=$MeshAutoLevel;accelerator_hmax_mm=$AcceleratorHmaxMm;release_volume_hmax_mm=0.1;solver_rerun=$true;particle_tracking=$particleEnabled;particle_count=if($particleEnabled){100}else{0};pulse_time_us=if($particleEnabled){$PulseTimeUs}else{$null};pulse_width_us=if($particleEnabled){$PulseWidthUs}else{$null};model_saved=$false}
   formal_gate_passed=$false
 } | ConvertTo-Json -Depth 6 | Set-Content $runConfig -Encoding UTF8
 [ordered]@{schema_version=1;role='rf_to_oatof_s1_joint_field_summary';status='interrupted';reason='Run package initialized; final status not yet recorded.'} | ConvertTo-Json | Set-Content $summary -Encoding UTF8
 & $python $manifestWriter --run-config $runConfig --status interrupted --software 'COMSOL 6.4' --software 'MATLAB R2025b' --software 'Python 3.11'
 if ($LASTEXITCODE -ne 0) { throw 'Initial manifest failed.' }
 
-$names = @('RF_OATOF_S1_FIELD_CSV','RF_OATOF_S1_CONTRACT','RF_OATOF_INTERFACE_CONTRACT','RF_OATOF_RF_RESOLVED','RF_OATOF_OA_BASELINE','RF_OATOF_PORT_WIDTH_MM','RF_OATOF_DOWNSTREAM_BUFFER_MM','RF_OATOF_MESH_AUTO_LEVEL','RF_OATOF_ACCELERATOR_HMAX_MM','RF_OATOF_JOINT_SCOPE','RF_OATOF_OA_COMSOL_DIR')
+$names = @('RF_OATOF_S1_FIELD_CSV','RF_OATOF_S1_CONTRACT','RF_OATOF_INTERFACE_CONTRACT','RF_OATOF_RF_RESOLVED','RF_OATOF_OA_BASELINE','RF_OATOF_PORT_WIDTH_MM','RF_OATOF_DOWNSTREAM_BUFFER_MM','RF_OATOF_MESH_AUTO_LEVEL','RF_OATOF_ACCELERATOR_HMAX_MM','RF_OATOF_JOINT_SCOPE','RF_OATOF_OA_COMSOL_DIR','RF_OATOF_S1_PARTICLE_INPUT','RF_OATOF_S1_PARTICLE_OUTPUT','RF_OATOF_PULSE_TIME_US','RF_OATOF_PULSE_WIDTH_US')
 $old = @{}; foreach($name in $names){$old[$name]=[Environment]::GetEnvironmentVariable($name)}
 try {
   try {
@@ -118,6 +140,7 @@ try {
     $env:RF_OATOF_JOINT_SCOPE=$JointScope
     $env:RF_OATOF_DOWNSTREAM_BUFFER_MM=[string]$DownstreamBufferMm
     $env:RF_OATOF_OA_COMSOL_DIR=$inputDir
+    if($particleEnabled){$env:RF_OATOF_S1_PARTICLE_INPUT=$particleInput;$env:RF_OATOF_S1_PARTICLE_OUTPUT=$particleCsv;$env:RF_OATOF_PULSE_TIME_US=[string]$PulseTimeUs;$env:RF_OATOF_PULSE_WIDTH_US=[string]$PulseWidthUs}
     & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') -TaskScript $task -ReportPath $report
     if ($LASTEXITCODE -ne 0) { throw 'COMSOL S1 joint-field task failed.' }
   } finally {
@@ -125,14 +148,20 @@ try {
   }
   & $python $analysis --candidate $fieldCsv --closed-reference $closedReference --joint-contract $joint --interface-contract $interface --rf-resolved $rfResolved --reference-role $referenceRole --output-dir $resultDir
   if ($LASTEXITCODE -ne 0) { throw 'S1 joint-field analysis failed.' }
+  if($particleEnabled){
+    $particleMetrics=Join-Path $resultDir 's1_physical_port_metrics.json';$particleFigure=Join-Path $resultDir 's1_physical_port_entry.png'
+    & $python $particleAnalysis --events $particleCsv --canonical $particleInput --center-z-mm ([double]$jointSourceDocument.port_sweep.center_z_mm) --output $particleMetrics --figure $particleFigure
+    if($LASTEXITCODE -ne 0){throw 'S1 physical-port particle gate failed.'}
+  }
 } catch {
   [ordered]@{schema_version=1;role='rf_to_oatof_s1_joint_field_summary';status='failed';reason=$_.Exception.Message} | ConvertTo-Json | Set-Content $summary -Encoding UTF8
   & $python $manifestWriter --run-config $runConfig --status failed --software 'COMSOL 6.4' --software 'MATLAB R2025b' --software 'Python 3.11'
   throw
 }
-[ordered]@{schema_version=1;role='rf_to_oatof_s1_joint_field_summary';status='success';result='results/s1_joint_field_metrics.json';physical_link=$false;particle_tracking=$false} | ConvertTo-Json | Set-Content $summary -Encoding UTF8
+[ordered]@{schema_version=1;role='rf_to_oatof_s1_joint_field_summary';status='success';result='results/s1_joint_field_metrics.json';physical_link=$false;particle_tracking=$particleEnabled;particle_result=if($particleEnabled){'results/s1_physical_port_metrics.json'}else{$null}} | ConvertTo-Json | Set-Content $summary -Encoding UTF8
 $outputs=@($fieldCsv,(Join-Path $resultDir 's1_joint_field_uniformity_curve.csv'),(Join-Path $resultDir 's1_joint_field_metrics.json'),$report,$summary)
 $injectionFigure=Join-Path $resultDir 's1_injection_axis_field.png'; if(Test-Path -LiteralPath $injectionFigure){$outputs+=$injectionFigure}
+if($particleEnabled){$outputs+=@($particleCsv,(Join-Path $resultDir 's1_physical_port_metrics.json'),(Join-Path $resultDir 's1_physical_port_entry.png'))}
 $args=@($manifestWriter,'--run-config',$runConfig,'--status','success','--software','COMSOL 6.4','--software','MATLAB R2025b','--software','Python 3.11')
 foreach($output in $outputs){$args+=@('--output',$output)}
 & $python @args

@@ -95,6 +95,10 @@
 - RF共享时钟有限脉冲功能入口：[`config/modes/rf_handoff_pulse.json`](config/modes/rf_handoff_pulse.json)、
   [`tests/cross_solver/run_rf_handoff_pulse.ps1`](tests/cross_solver/run_rf_handoff_pulse.ps1)；从Formal Program
   确定性生成隔离候选，按instrument-time从等效入口面注入并连续计算脉冲前后轨迹，不修改Formal资产。
+- RF真实过孔局部联合场接力由RF项目维护；当前COMSOL→SIMION N=100候选按真实三维局部出口状态、
+  粒子身份和instrument-time继续进入本项目只读Formal分析器，阶段清点为`100→88→28→9`。它取代
+  等效投影作为当前接口功能证据，但不修改本项目Formal资产，也不作分辨率或正式连接声明；详见
+  [`docs/PROJECT.md`](docs/PROJECT.md)。
 - 未来RF→oa物理接口的双边界及时变合同当前仍由RF项目候选
   [`../rf_quadrupole_collision_cooling/config/rf_to_oatof_interface_candidate.json`](../rf_quadrupole_collision_cooling/config/rf_to_oatof_interface_candidate.json)
   管理并从本项目耦合baseline重算入口上限；本README不复制接口判据。当前动态消费者只允许声明
