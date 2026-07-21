@@ -2,7 +2,7 @@
   "schema_version": 1,
   "role": "rf_to_oatof_interface_implementation_stages",
   "status": "approved_sequential_plan",
-  "current_stage": "S0",
+  "current_stage": "S1",
   "governance": {
     "sequential_execution_required": true,
     "skip_stage_allowed": false,
@@ -14,7 +14,7 @@
     {
       "id": "S0",
       "name": "direct_boundary_data_reference",
-      "status": "ready_for_lightweight_test",
+      "status": "passed",
       "separate_connector_component": false,
       "physical_interface_claim_allowed": false,
       "model": "Zero-length virtual boundary in the shared instrument frame; retain the RF-to-oa axis rotation, particle identity, three clocks and first-forward-crossing event, but do not propagate across a physical gap.",
@@ -30,7 +30,16 @@
         "no downstream aperture clipping at the RF exit"
       ],
       "exit_gate": "Both source datasets produce deterministic, lossless virtual-entry events and identical schema semantics.",
-      "claim_limit": "Data-path reference only; particles still encounter the closed oaTOF shield in the real geometry."
+      "claim_limit": "Data-path reference only; particles still encounter the closed oaTOF shield in the real geometry.",
+      "evidence": {
+        "run_id": "20260721_084441__analysis__python__rf-oatof-s0__n100",
+        "status": "PASS",
+        "particles_per_source_case": 100,
+        "losses": 0,
+        "maximum_target_plane_residual_mm": 0.0,
+        "maximum_clock_value_residual_us": 0.0,
+        "physical_link": false
+      }
     },
     {
       "id": "S1",

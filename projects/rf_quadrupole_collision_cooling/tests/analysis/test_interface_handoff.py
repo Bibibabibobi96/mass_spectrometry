@@ -26,13 +26,16 @@ class InterfaceContractTests(unittest.TestCase):
     def test_interface_stages_are_sequential_and_start_without_physical_claim(self) -> None:
         plan = json.loads(STAGES.read_text(encoding="utf-8"))
         self.assertEqual(plan["status"], "approved_sequential_plan")
-        self.assertEqual(plan["current_stage"], "S0")
+        self.assertEqual(plan["current_stage"], "S1")
         self.assertTrue(plan["governance"]["sequential_execution_required"])
         self.assertFalse(plan["governance"]["skip_stage_allowed"])
         stages = plan["stages"]
         self.assertEqual([stage["id"] for stage in stages], [f"S{i}" for i in range(6)])
         self.assertFalse(stages[0]["separate_connector_component"])
         self.assertFalse(stages[0]["physical_interface_claim_allowed"])
+        self.assertEqual(stages[0]["status"], "passed")
+        self.assertEqual(stages[0]["evidence"]["losses"], 0)
+        self.assertFalse(stages[0]["evidence"]["physical_link"])
         self.assertFalse(stages[1]["separate_connector_component"])
         self.assertTrue(stages[1]["physical_interface_claim_allowed"])
         self.assertTrue(any(
@@ -191,6 +194,35 @@ class InterfaceContractTests(unittest.TestCase):
             MODULE.validate_rotation_matrix(
                 [[-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
             )
+
+    def test_s0_virtual_entry_maps_planes_axes_and_clocks_without_propagation(self) -> None:
+        contract = MODULE.validate_contract(CONTRACT)["contract"]
+        event = {
+            "particle_id": 1,
+            "species_id": "ion_100amu_z1",
+            "instrument_time_us": "12.5",
+            "position_x_mm": "0.2",
+            "position_y_mm": "-0.3",
+            "position_z_mm": "90.2",
+            "velocity_x_m_s": "10",
+            "velocity_y_m_s": "20",
+            "velocity_z_m_s": "2000",
+            "lineage_birth_time_us": "1.25",
+            "particle_birth_time_us": "1.25",
+        }
+        rotation = [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
+        row = MODULE.build_virtual_entry_rows(
+            [event], contract, [0.0, 0.0, 90.2], rotation
+        )[0]
+        target = contract["boundaries"]["target_entry_surface"]["center_mm"]
+        self.assertEqual(float(row["position_x_mm"]), target[0])
+        self.assertAlmostEqual(float(row["position_y_mm"]), target[1] + 0.2)
+        self.assertAlmostEqual(float(row["position_z_mm"]), target[2] - 0.3)
+        self.assertEqual(float(row["velocity_x_m_s"]), 2000.0)
+        self.assertEqual(float(row["velocity_y_m_s"]), 10.0)
+        self.assertEqual(float(row["velocity_z_m_s"]), 20.0)
+        self.assertEqual(row["instrument_time_us"], event["instrument_time_us"])
+        self.assertEqual(row["lineage_birth_time_us"], event["lineage_birth_time_us"])
 
     def test_time_rebase_and_field_free_snapshot(self) -> None:
         event = {

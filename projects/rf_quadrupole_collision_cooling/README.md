@@ -74,6 +74,10 @@
 - RF→oa接口分阶段实施顺序：
   [`config/rf_to_oatof_interface_stages.json`](config/rf_to_oatof_interface_stages.json)；从无物理资格的
   S0数据直连参考开始，逐级增加开孔、被动通道、脉冲、必要的主动光学及最终跨求解器/CAD门禁，禁止跳级。
+- S0求解器无关执行入口：
+  [`analysis/run_interface_s0_reference.py`](analysis/run_interface_s0_reference.py)及
+  [`config/modes/rf_to_oatof_s0_reference.json`](config/modes/rf_to_oatof_s0_reference.json)；只复用已冻结
+  N=100源证据并生成虚拟入口事件和run三件套，不运行求解器、不裁剪孔径、不授权物理连接。
 - oa入口孔L0上限参考：[`analysis/entry_aperture_l0.py`](analysis/entry_aperture_l0.py)；从当前耦合
   oa baseline重算上限并失败关闭候选，适用结论和未决约束见[`docs/PROJECT.md`](docs/PROJECT.md)。
 - 路径解析：[`rf_quadrupole_paths.m`](rf_quadrupole_paths.m)

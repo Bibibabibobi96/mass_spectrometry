@@ -152,6 +152,39 @@ def transform_phase_space(
     }
 
 
+def build_virtual_entry_rows(
+    source_events: list[dict[str, Any]],
+    contract: dict[str, Any],
+    source_origin_mm: list[float],
+    rotation_source_to_target: list[list[float]],
+) -> list[dict[str, Any]]:
+    """Register exit events on the blocked target plane without physical propagation."""
+
+    source_origin = _vector3(source_origin_mm, "source origin")
+    rotation = validate_rotation_matrix(rotation_source_to_target)
+    target_origin = _vector3(
+        contract["boundaries"]["target_entry_surface"]["center_mm"], "target origin"
+    )
+    rows: list[dict[str, Any]] = []
+    for event in source_events:
+        source_position = [float(event[f"position_{axis}_mm"]) for axis in "xyz"]
+        relative_position = [
+            source_position[index] - source_origin[index] for index in range(3)
+        ]
+        transformed = transform_phase_space(
+            relative_position,
+            [float(event[f"velocity_{axis}_m_s"]) for axis in "xyz"],
+            rotation,
+            target_origin,
+        )
+        row = dict(event)
+        for index, axis in enumerate("xyz"):
+            row[f"position_{axis}_mm"] = f"{transformed['position_mm'][index]:.17g}"
+            row[f"velocity_{axis}_m_s"] = f"{transformed['velocity_m_s'][index]:.17g}"
+        rows.append(row)
+    return rows
+
+
 def validate_contract(contract_path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
     contract = load_json(contract_path)
     if contract.get("schema_version") != 2:
