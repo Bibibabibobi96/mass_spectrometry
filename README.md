@@ -110,6 +110,7 @@ simulation_repo/
 │  └─ multipoles/              # 多极杆设计族通用理论与可复现图示
 ├─ projects/                 # 平级项目；不再按软件或器件类别嵌套
 │  ├─ oa_tof/
+│  ├─ mr_tof/
 │  ├─ electron_impact_ion_source/
 │  ├─ rf_quadrupole_collision_cooling/
 │  └─ wehnelt_electron_gun/
@@ -141,6 +142,7 @@ simulation_repo/
 当前项目：
 
 - `projects/oa_tof`：正交加速双级反射 oa-TOF。
+- `projects/mr_tof`：以用户自绘 SolidWorks 工程图为种子的多次反射 TOF 原型设计线；尚无正式理论、参数合同或验收资产。
 - `projects/electron_impact_ion_source`：电子轰击离子源。
 - `projects/rf_quadrupole_collision_cooling`：RF四极杆碰撞冷却与传输。
 - `projects/wehnelt_electron_gun`：螺旋灯丝 Wehnelt 电子枪。

@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "project_id": "mr_tof",
+  "family_id": "tof_mass_analyzers",
+  "display_name": "多次反射飞行时间质量分析器",
+  "purpose": "MR-TOF多次往返质量分析、参数化设计和独立性能验证",
+  "lifecycle_status": "prototype",
+  "toolchains": ["solidworks"],
+  "contracts": {
+    "baseline": null,
+    "resolved": null,
+    "analysis": null,
+    "interface": null,
+    "execution": null,
+    "design_variables": null,
+    "optimization_envelope": null
+  },
+  "capabilities": [
+    {
+      "capability_id": "multiple_reflection_mass_analysis",
+      "function": "mass_analysis",
+      "status": "prototype",
+      "modes": [],
+      "metrics": [],
+      "design_variables": []
+    }
+  ],
+  "formal_assets": {
+    "status": "none",
+    "types": [],
+    "identity_contract": null
+  },
+  "known_gaps": [
+    "SolidWorks assembly references and coordinate systems are not audited",
+    "Theory and baseline parameter contracts are not established",
+    "COMSOL and SIMION models do not exist",
+    "Performance and formal acceptance contracts are not defined"
+  ]
+}
