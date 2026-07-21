@@ -92,13 +92,15 @@
 - S1真实过孔动态功能链：
   [`analysis/build_s1_downstream_handoff.py`](analysis/build_s1_downstream_handoff.py)、
   [`analysis/analyze_s1_end_to_end.py`](analysis/analyze_s1_end_to_end.py)、
-  [`analysis/plot_s1_loss_atlas.py`](analysis/plot_s1_loss_atlas.py)及
-  [`analysis/compare_s1_entry_to_oatof_ideal_source.py`](analysis/compare_s1_entry_to_oatof_ideal_source.py)；
+  [`analysis/plot_s1_loss_atlas.py`](analysis/plot_s1_loss_atlas.py)、
+  [`analysis/compare_s1_entry_to_oatof_ideal_source.py`](analysis/compare_s1_entry_to_oatof_ideal_source.py)及
+  [`analysis/plot_s1_pulse_geometry_snapshot.py`](analysis/plot_s1_pulse_geometry_snapshot.py)；
   执行入口为[`tests/cross_solver/run_s1_physical_end_to_end.ps1`](tests/cross_solver/run_s1_physical_end_to_end.ps1)；
   COMSOL在真实`1.0×0.9 mm`孔和局部联合场中完成按时进入及统一有限脉冲，SIMION从局部出口真实三维
   状态继续到分析器；成功的联合场run可直接作为下游来源，无需复制成仅为修复旧布尔解析问题而保留的
   reanalysis run。2 eV功能基线清点为`100→88→28→9`；5 eV候选为`100→77→39→37`。两者都只证明
-  功能贯通，不授权分辨率、阶段PASS或Formal晋升。
+  功能贯通，不授权分辨率、阶段PASS或Formal晋升。每个启用粒子和统一脉冲的S1 COMSOL run还必须在
+  自身`results/`生成参数化双投影脉冲快照；图中的oa加速器尺寸读取baseline，孔尺寸读取S1合同。
 - RF入口能量匹配候选：[`config/rf_to_oatof_energy_match_candidate.json`](config/rf_to_oatof_energy_match_candidate.json)、
   [`analysis/validate_rf_energy_match.py`](analysis/validate_rf_energy_match.py)及
   [`analysis/compare_rf_input_energy.py`](analysis/compare_rf_input_energy.py)；它用独立命名的100 amu、5 eV

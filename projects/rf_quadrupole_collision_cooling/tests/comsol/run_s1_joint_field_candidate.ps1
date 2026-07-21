@@ -66,6 +66,7 @@ New-Item -ItemType Directory -Force -Path $inputDir,$resultDir,$logDir | Out-Nul
 $task = Join-Path $inputDir 'build_s1_joint_field_candidate.m'
 $analysis = Join-Path $inputDir 'analyze_s1_joint_field.py'
 $particleAnalysis = Join-Path $inputDir 'analyze_s1_physical_port_particles.py'
+$pulseSnapshotAnalysis = Join-Path $inputDir 'plot_s1_pulse_geometry_snapshot.py'
 $uniformity = Join-Path $inputDir 'analyze_accelerator_transverse_field_uniformity.py'
 $oaBuilder = Join-Path $inputDir 'oatof_build_accelerator_geometry.m'
 $joint = Join-Path $inputDir 'rf_to_oatof_s1_joint_field.json'
@@ -78,6 +79,7 @@ Copy-Item $PSCommandPath $runner
 Copy-Item (Join-Path $PSScriptRoot 'build_s1_joint_field_candidate.m') $task
 Copy-Item (Join-Path $projectRoot 'analysis\analyze_s1_joint_field.py') $analysis
 Copy-Item (Join-Path $projectRoot 'analysis\analyze_s1_physical_port_particles.py') $particleAnalysis
+Copy-Item (Join-Path $projectRoot 'analysis\plot_s1_pulse_geometry_snapshot.py') $pulseSnapshotAnalysis
 Copy-Item (Join-Path $repoRoot 'projects\oa_tof\analysis\analyze_accelerator_transverse_field_uniformity.py') $uniformity
 Copy-Item (Join-Path $repoRoot 'projects\oa_tof\comsol\oatof_build_accelerator_geometry.m') $oaBuilder
 Copy-Item $jointSource $joint
@@ -117,7 +119,7 @@ $report = Join-Path $logDir 'comsol_joint_field.txt'
 $summary = Join-Path $runDir 'summary.json'
 $runConfig = Join-Path $runDir 'run_config.json'
 $manifestWriter = Join-Path $repoRoot 'common\contracts\write_run_manifest.py'
-$inputMap=[ordered]@{task=$task;analysis=$analysis;particle_analysis=$particleAnalysis;uniformity_analysis=$uniformity;oa_accelerator_builder=$oaBuilder;joint_contract=$joint;interface_contract=$interface;rf_resolved=$rfResolved;oa_baseline=$oaBaseline;oa_formal_mode=$oaFormalMode;closed_reference=$closedReference;runner=$runner}
+$inputMap=[ordered]@{task=$task;analysis=$analysis;particle_analysis=$particleAnalysis;pulse_snapshot_analysis=$pulseSnapshotAnalysis;uniformity_analysis=$uniformity;oa_accelerator_builder=$oaBuilder;joint_contract=$joint;interface_contract=$interface;rf_resolved=$rfResolved;oa_baseline=$oaBaseline;oa_formal_mode=$oaFormalMode;closed_reference=$closedReference;runner=$runner}
 if($particleEnabled){$inputMap.particle_input=$particleInput}
 [ordered]@{
   schema_version=1;run_id=$RunId;project='rf_quadrupole_collision_cooling';mode='rf_to_oatof_s1_local_joint_field'
@@ -153,16 +155,19 @@ try {
     $particleMetrics=Join-Path $resultDir 's1_physical_port_metrics.json';$particleFigure=Join-Path $resultDir 's1_physical_port_entry.png'
     & $python $particleAnalysis --events $particleCsv --canonical $particleInput --center-z-mm ([double]$jointSourceDocument.port_sweep.center_z_mm) --output $particleMetrics --figure $particleFigure
     if($LASTEXITCODE -ne 0){throw 'S1 physical-port particle gate failed.'}
+    $pulseSnapshotFigure=Join-Path $resultDir 's1_pulse_geometry_snapshot.png';$pulseSnapshotMetadata=Join-Path $resultDir 's1_pulse_geometry_snapshot.json'
+    & $python $pulseSnapshotAnalysis --capture $captureCsv --oatof-baseline $oaBaseline --joint-contract $joint --figure $pulseSnapshotFigure --metadata $pulseSnapshotMetadata
+    if($LASTEXITCODE -ne 0){throw 'S1 standard pulse geometry snapshot failed.'}
   }
 } catch {
   [ordered]@{schema_version=1;role='rf_to_oatof_s1_joint_field_summary';status='failed';reason=$_.Exception.Message} | ConvertTo-Json | Set-Content $summary -Encoding UTF8
   & $python $manifestWriter --run-config $runConfig --status failed --software 'COMSOL 6.4' --software 'MATLAB R2025b' --software 'Python 3.11'
   throw
 }
-[ordered]@{schema_version=1;role='rf_to_oatof_s1_joint_field_summary';status='success';result='results/s1_joint_field_metrics.json';physical_link=$false;particle_tracking=$particleEnabled;particle_result=if($particleEnabled){'results/s1_physical_port_metrics.json'}else{$null};capture_result=if($particleEnabled){'results/s1_pulse_capture_particles.csv'}else{$null}} | ConvertTo-Json | Set-Content $summary -Encoding UTF8
+[ordered]@{schema_version=1;role='rf_to_oatof_s1_joint_field_summary';status='success';result='results/s1_joint_field_metrics.json';physical_link=$false;particle_tracking=$particleEnabled;particle_result=if($particleEnabled){'results/s1_physical_port_metrics.json'}else{$null};capture_result=if($particleEnabled){'results/s1_pulse_capture_particles.csv'}else{$null};pulse_snapshot_result=if($particleEnabled){'results/s1_pulse_geometry_snapshot.json'}else{$null};pulse_snapshot_figure=if($particleEnabled){'results/s1_pulse_geometry_snapshot.png'}else{$null}} | ConvertTo-Json | Set-Content $summary -Encoding UTF8
 $outputs=@($fieldCsv,(Join-Path $resultDir 's1_joint_field_uniformity_curve.csv'),(Join-Path $resultDir 's1_joint_field_metrics.json'),$report,$summary)
 $injectionFigure=Join-Path $resultDir 's1_injection_axis_field.png'; if(Test-Path -LiteralPath $injectionFigure){$outputs+=$injectionFigure}
-if($particleEnabled){$outputs+=@($particleCsv,$captureCsv,(Join-Path $resultDir 's1_physical_port_metrics.json'),(Join-Path $resultDir 's1_physical_port_entry.png'))}
+if($particleEnabled){$outputs+=@($particleCsv,$captureCsv,(Join-Path $resultDir 's1_physical_port_metrics.json'),(Join-Path $resultDir 's1_physical_port_entry.png'),(Join-Path $resultDir 's1_pulse_geometry_snapshot.json'),(Join-Path $resultDir 's1_pulse_geometry_snapshot.png'))}
 $args=@($manifestWriter,'--run-config',$runConfig,'--status','success','--software','COMSOL 6.4','--software','MATLAB R2025b','--software','Python 3.11')
 foreach($output in $outputs){$args+=@('--output',$output)}
 & $python @args
