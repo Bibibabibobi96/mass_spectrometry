@@ -19,9 +19,28 @@ assert SPEC and SPEC.loader
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 CONTRACT = PROJECT_ROOT / "config" / "rf_to_oatof_interface_candidate.json"
+STAGES = PROJECT_ROOT / "config" / "rf_to_oatof_interface_stages.json"
 
 
 class InterfaceContractTests(unittest.TestCase):
+    def test_interface_stages_are_sequential_and_start_without_physical_claim(self) -> None:
+        plan = json.loads(STAGES.read_text(encoding="utf-8"))
+        self.assertEqual(plan["status"], "approved_sequential_plan")
+        self.assertEqual(plan["current_stage"], "S0")
+        self.assertTrue(plan["governance"]["sequential_execution_required"])
+        self.assertFalse(plan["governance"]["skip_stage_allowed"])
+        stages = plan["stages"]
+        self.assertEqual([stage["id"] for stage in stages], [f"S{i}" for i in range(6)])
+        self.assertFalse(stages[0]["separate_connector_component"])
+        self.assertFalse(stages[0]["physical_interface_claim_allowed"])
+        self.assertFalse(stages[1]["separate_connector_component"])
+        self.assertTrue(stages[1]["physical_interface_claim_allowed"])
+        self.assertTrue(any(
+            "parameterized oa shield port" in item
+            for item in stages[1]["prerequisites"]
+        ))
+        self.assertEqual(stages[4]["status"], "conditional")
+
     def test_two_boundaries_and_capture_state_remain_distinct(self) -> None:
         contract = MODULE.validate_contract(CONTRACT)["contract"]
         boundaries = contract["boundaries"]

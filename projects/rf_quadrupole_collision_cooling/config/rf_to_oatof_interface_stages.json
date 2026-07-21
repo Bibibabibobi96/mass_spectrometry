@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "role": "rf_to_oatof_interface_implementation_stages",
+  "status": "approved_sequential_plan",
+  "current_stage": "S0",
+  "governance": {
+    "sequential_execution_required": true,
+    "skip_stage_allowed": false,
+    "formal_assets_read_only_until_S5_promotion": true,
+    "failed_stage_policy": "Preserve the failed run and add only the minimum next-stage physics; do not tune upstream particles, enlarge a theory-bounded aperture, or move the target in post-processing.",
+    "sample_policy": "Use deterministic N=100 for candidate function checks and N=1000 only after the N=100 gate passes. S0 reuses existing N=100 source evidence without a solver rerun."
+  },
+  "stages": [
+    {
+      "id": "S0",
+      "name": "direct_boundary_data_reference",
+      "status": "ready_for_lightweight_test",
+      "separate_connector_component": false,
+      "physical_interface_claim_allowed": false,
+      "model": "Zero-length virtual boundary in the shared instrument frame; retain the RF-to-oa axis rotation, particle identity, three clocks and first-forward-crossing event, but do not propagate across a physical gap.",
+      "inputs": [
+        "existing COMSOL and SIMION RF N=100 source-exit evidence",
+        "rf_to_oatof_interface_candidate.json",
+        "oaTOF closed-shield reference entry plane"
+      ],
+      "tests": [
+        "canonical event conversion and source hashes",
+        "right-handed coordinate registration",
+        "global-time preservation and local-time rebase",
+        "no downstream aperture clipping at the RF exit"
+      ],
+      "exit_gate": "Both source datasets produce deterministic, lossless virtual-entry events and identical schema semantics.",
+      "claim_limit": "Data-path reference only; particles still encounter the closed oaTOF shield in the real geometry."
+    },
+    {
+      "id": "S1",
+      "name": "coincident_open_port_static_reference",
+      "status": "blocked_by_entry_aperture_feasibility",
+      "separate_connector_component": false,
+      "physical_interface_claim_allowed": true,
+      "model": "Simplest physical topology: coaxial nominal alignment, RF exit mating directly to a parameterized oa shield opening, zero modeled inter-component gap, no tube, lens or steering electrode, and time-independent fields.",
+      "prerequisites": [
+        "S0 PASS",
+        "non-empty theory-bounded aperture interval",
+        "parameterized oa shield port in COMSOL, SIMION and CAD candidate geometry",
+        "common electrical reference and field ownership"
+      ],
+      "tests": [
+        "solid-versus-opening topology",
+        "geometric aperture losses",
+        "static joint-field leakage",
+        "N=100 target-entry crossing and downstream detector acceptance"
+      ],
+      "exit_gate": "Aperture, field and N=100 functional gates pass without an independent connector component.",
+      "claim_limit": "Ideal direct-mating static reference; no finite gap, tube, pulse capture or assembly tolerance claim."
+    },
+    {
+      "id": "S2",
+      "name": "passive_grounded_connector",
+      "status": "pending_S1_result",
+      "separate_connector_component": true,
+      "physical_interface_claim_allowed": true,
+      "model": "Add only the measured finite separation and a passive grounded vacuum tube or housing; no active focusing or steering.",
+      "prerequisites": [
+        "S1 completed or demonstrated physically infeasible",
+        "frozen gap, tube length, aperture, alignment datum and leakage limit"
+      ],
+      "tests": [
+        "three-dimensional joint electrostatic and RF fringe field",
+        "tube-wall and aperture losses",
+        "N=100 target-entry and detector acceptance",
+        "field-mesh and PA-resolution convergence at both ends"
+      ],
+      "exit_gate": "Passive geometry meets the frozen functional and field-leakage limits.",
+      "claim_limit": "Static passive transport only; no extraction-pulse capture claim."
+    },
+    {
+      "id": "S3",
+      "name": "time_resolved_pulse_capture",
+      "status": "pending_S2",
+      "separate_connector_component": true,
+      "physical_interface_claim_allowed": true,
+      "model": "Retain the accepted passive geometry and add the minimum frozen oa extraction waveform, trigger rule, rise/fall model and three-dimensional capture volume on the shared instrument clock.",
+      "prerequisites": [
+        "S2 PASS",
+        "frozen pulse waveform and capture acceptance contract"
+      ],
+      "tests": [
+        "per-particle global-to-local time mapping",
+        "pre-trigger accumulation and post-trigger extraction",
+        "pulse-time and time-step convergence",
+        "N=100 capture, target-entry and detector acceptance"
+      ],
+      "exit_gate": "Time-resolved N=100 capture and downstream acceptance pass in the frozen passive geometry.",
+      "claim_limit": "Nominal alignment only; no active correction or tolerance qualification."
+    },
+    {
+      "id": "S4",
+      "name": "conditional_active_optics_and_tolerances",
+      "status": "conditional",
+      "separate_connector_component": true,
+      "physical_interface_claim_allowed": true,
+      "model": "Add steering or focusing electrodes only if S2/S3 prove the passive interface cannot meet a frozen requirement; then evaluate nominal offsets and assembly-error variables without retuning the source.",
+      "prerequisites": [
+        "documented passive-interface failure tied to a frozen requirement",
+        "approved active-variable envelope and high-voltage constraints"
+      ],
+      "tests": [
+        "single-variable and interaction checks",
+        "alignment and voltage tolerance matrix",
+        "N=100 functional acceptance and selected convergence repeats"
+      ],
+      "exit_gate": "The minimum active design has a bounded operating and assembly tolerance region.",
+      "claim_limit": "Candidate design only; not formal until S5."
+    },
+    {
+      "id": "S5",
+      "name": "cross_solver_cad_candidate_closure",
+      "status": "pending_prior_stages",
+      "separate_connector_component": true,
+      "physical_interface_claim_allowed": true,
+      "model": "Freeze the simplest passing topology from S1-S4 and build the same contract in COMSOL, SIMION and SolidWorks.",
+      "prerequisites": [
+        "all applicable earlier stages PASS",
+        "frozen geometry, waveform, tolerances, acceptance metrics and source dataset"
+      ],
+      "tests": [
+        "N=100 cross-solver candidate gate",
+        "N=1000 statistical confirmation after N=100 PASS",
+        "COMSOL GUI Compute, SIMION GUI package and SolidWorks assembly synchronization",
+        "formal asset and result manifest generation"
+      ],
+      "exit_gate": "Both solvers, CAD and the formal manifest gate pass the same frozen interface contract.",
+      "claim_limit": "Formal connection may be claimed only after explicit promotion; prior stages never modify current formal assets."
+    }
+  ]
+}
