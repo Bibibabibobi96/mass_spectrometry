@@ -12,6 +12,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from matplotlib.patches import Rectangle
+import numpy as np
 import pandas as pd
 
 
@@ -65,9 +66,38 @@ def _filled_rect(ax, xy, width, height, **kwargs) -> None:
     ax.add_patch(Rectangle(xy, width, height, **kwargs))
 
 
-def plot_snapshot(capture_path: Path, baseline_path: Path, joint_path: Path,
+def classify_snapshot(capture: pd.DataFrame, events: pd.DataFrame,
+                      geometry: dict[str, object]) -> pd.DataFrame:
+    required = {"particle_id", "event", "status", "terminal_reason"}
+    if not required.issubset(events.columns):
+        raise ValueError("particle event table is missing terminal-classification columns")
+    classified = capture.merge(events[list(required)], on="particle_id", how="left",
+                               validate="one_to_one")
+    if classified[["event", "status", "terminal_reason"]].isna().any().any():
+        raise ValueError("pulse snapshot particle IDs are not a subset of the event table")
+    cx = float(geometry["center_x"])
+    outer_face = cx - float(geometry["shield_outer_half"])
+    inner_face = cx - float(geometry["shield_inner_half"])
+    y_edge_distance = (classified["y_mm"].abs() - float(geometry["port_width_y"]) / 2).abs()
+    z_low = float(geometry["port_center_z"]) - float(geometry["port_height_z"]) / 2
+    z_high = float(geometry["port_center_z"]) + float(geometry["port_height_z"]) / 2
+    z_edge_distance = np.minimum((classified["z_mm"] - z_low).abs(),
+                                 (classified["z_mm"] - z_high).abs())
+    tolerance_mm = 1e-8
+    classified["frozen_port_loss_before_pulse"] = (
+        classified["status"].eq("lost")
+        & classified["terminal_reason"].eq("electrode_or_boundary")
+        & classified["x_mm"].between(outer_face - tolerance_mm, inner_face + tolerance_mm)
+        & (np.minimum(y_edge_distance, z_edge_distance) <= tolerance_mm)
+    )
+    classified["active_at_pulse"] = ~classified["frozen_port_loss_before_pulse"]
+    return classified
+
+
+def plot_snapshot(capture_path: Path, events_path: Path, baseline_path: Path, joint_path: Path,
                   figure_path: Path, metadata_path: Path) -> dict[str, object]:
     capture = pd.read_csv(capture_path)
+    events = pd.read_csv(events_path)
     required = {"particle_id", "instrument_time_us", "x_mm", "y_mm", "z_mm"}
     if not required.issubset(capture.columns):
         raise ValueError("pulse capture table is missing required position columns")
@@ -77,6 +107,9 @@ def plot_snapshot(capture_path: Path, baseline_path: Path, joint_path: Path,
     baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
     joint = json.loads(joint_path.read_text(encoding="utf-8"))
     g = accelerator_geometry(baseline, joint)
+    capture = classify_snapshot(capture, events, g)
+    active = capture[capture["active_at_pulse"]]
+    frozen_loss = capture[capture["frozen_port_loss_before_pulse"]]
     cx = g["center_x"]
     inner = g["shield_inner_half"]
     outer = g["shield_outer_half"]
@@ -130,7 +163,7 @@ def plot_snapshot(capture_path: Path, baseline_path: Path, joint_path: Path,
                   source_center["z"] - source_size["z"] / 2),
                  source_size["x"], source_size["z"], fill=False, edgecolor=ideal_color,
                  linewidth=2.0, linestyle="--", zorder=5)
-    ax_xz.scatter(capture["x_mm"], capture["z_mm"], s=27, c=ion_color,
+    ax_xz.scatter(active["x_mm"], active["z_mm"], s=27, c=ion_color,
                   edgecolors="white", linewidths=0.35, alpha=0.85, zorder=6)
     ax_xz.annotate(f"physical port\n{g['port_width_y']:.3g} y × {g['port_height_z']:.3g} z mm",
                    xy=(cx - outer + wall / 2, g["port_center_z"]),
@@ -161,7 +194,7 @@ def plot_snapshot(capture_path: Path, baseline_path: Path, joint_path: Path,
                   source_center["y"] - source_size["y"] / 2),
                  source_size["x"], source_size["y"], fill=False, edgecolor=ideal_color,
                  linewidth=2.0, linestyle="--", zorder=5)
-    ax_xy.scatter(capture["x_mm"], capture["y_mm"], s=27, c=ion_color,
+    ax_xy.scatter(active["x_mm"], active["y_mm"], s=27, c=ion_color,
                   edgecolors="white", linewidths=0.35, alpha=0.85, zorder=6)
     ax_xy.annotate(f"physical port\n{g['port_width_y']:.3g} y × {g['port_height_z']:.3g} z mm",
                    xy=(cx - outer + wall / 2, 0.0), xytext=(cx - outer + 2.0, 3.0),
@@ -184,7 +217,7 @@ def plot_snapshot(capture_path: Path, baseline_path: Path, joint_path: Path,
 
     legend = [
         Line2D([], [], marker="o", linestyle="None", markerfacecolor=ion_color,
-               markeredgecolor="white", label="ions alive at pulse"),
+               markeredgecolor="white", label="ions immediately before pulse"),
         Rectangle((0, 0), 1, 1, facecolor=shield_color, edgecolor="#636363",
                   alpha=0.75, label="grounded accelerator shield"),
         Rectangle((0, 0), 1, 1, fill=False, edgecolor=electrode_color,
@@ -196,7 +229,8 @@ def plot_snapshot(capture_path: Path, baseline_path: Path, joint_path: Path,
     fig.legend(handles=legend, loc="lower center", ncol=5, frameon=False, fontsize=9)
     pulse_time = float(capture["instrument_time_us"].iloc[0])
     fig.suptitle(f"RF-to-oaTOF state immediately before shared pulse: "
-                 f"t = {pulse_time:.6f} µs, N = {len(capture)}", fontsize=14)
+                 f"t = {pulse_time:.6f} µs (left limit), active = {len(active)} "
+                 f"(pre-pulse port loss = {len(frozen_loss)})", fontsize=14)
     fig.tight_layout(rect=(0, 0.065, 1, 0.94))
     figure_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(figure_path, dpi=190)
@@ -207,7 +241,15 @@ def plot_snapshot(capture_path: Path, baseline_path: Path, joint_path: Path,
         "role": "rf_to_oatof_standard_pulse_geometry_snapshot",
         "status": "PASS",
         "pulse_instrument_time_us": pulse_time,
-        "particles_alive_at_pulse": int(len(capture)),
+        "state_time_semantics": "left_limit_immediately_before_pulse_t_pulse_minus",
+        "state_continuity_note": "Position and velocity are continuous at the finite field step; frozen pre-pulse losses are excluded.",
+        "snapshot_rows": int(len(capture)),
+        "particles_active_at_pulse": int(len(active)),
+        "frozen_port_losses_before_pulse": int(len(frozen_loss)),
+        "frozen_port_loss_positions_drawn_as_ions": False,
+        "active_inside_ideal_reference_volume": int(pd.to_numeric(
+            active.get("inside_oatof_ideal_reference_volume", pd.Series(dtype=int)),
+            errors="coerce").fillna(0).astype(bool).sum()),
         "planes": ["x-z injection-acceleration", "x-y injection-cross-plane"],
         "geometry_sources": {
             "accelerator": str(baseline_path),
@@ -224,14 +266,16 @@ def plot_snapshot(capture_path: Path, baseline_path: Path, joint_path: Path,
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--capture", type=Path, required=True)
+    parser.add_argument("--events", type=Path, required=True)
     parser.add_argument("--oatof-baseline", type=Path, required=True)
     parser.add_argument("--joint-contract", type=Path, required=True)
     parser.add_argument("--figure", type=Path, required=True)
     parser.add_argument("--metadata", type=Path, required=True)
     args = parser.parse_args()
-    result = plot_snapshot(args.capture, args.oatof_baseline, args.joint_contract,
+    result = plot_snapshot(args.capture, args.events, args.oatof_baseline, args.joint_contract,
                            args.figure, args.metadata)
-    print(f"S1_PULSE_GEOMETRY_SNAPSHOT=PASS N={result['particles_alive_at_pulse']}")
+    print(f"S1_PULSE_GEOMETRY_SNAPSHOT=PASS ACTIVE={result['particles_active_at_pulse']} "
+          f"PORT_LOSS={result['frozen_port_losses_before_pulse']}")
 
 
 if __name__ == "__main__":

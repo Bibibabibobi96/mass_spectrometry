@@ -14,6 +14,8 @@ from matplotlib.patches import Rectangle
 import numpy as np
 import pandas as pd
 
+from plot_s1_pulse_geometry_snapshot import accelerator_geometry, classify_snapshot
+
 
 ATOMIC_MASS_KG = 1.66053906660e-27
 ELEMENTARY_CHARGE_C = 1.602176634e-19
@@ -68,26 +70,31 @@ def describe(data: pd.DataFrame) -> dict[str, float | int]:
 
 
 def compare(capture_path: Path, entry_path: Path, local_path: Path, ideal_path: Path,
-            baseline_path: Path, figure_path: Path, summary_path: Path) -> dict[str, object]:
+            baseline_path: Path, joint_path: Path, figure_path: Path,
+            summary_path: Path) -> dict[str, object]:
     capture_raw = pd.read_csv(capture_path)
     entry = pd.read_csv(entry_path)
     local = pd.read_csv(local_path)
     ideal = read_ideal_ion(ideal_path)
     baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
-    capture = enrich_capture(capture_raw, entry)
+    joint = json.loads(joint_path.read_text(encoding="utf-8"))
+    snapshot = classify_snapshot(enrich_capture(capture_raw, entry), local,
+                                 accelerator_geometry(baseline, joint))
+    frozen_loss = snapshot[snapshot["frozen_port_loss_before_pulse"]]
+    capture = snapshot[snapshot["active_at_pulse"]].copy()
     accepted_ids = set(local.loc[local["event"] != "geometric_reject", "particle_id"])
     if len(entry) != 100 or len(local) != 100 or len(ideal) != 100:
         raise ValueError("capture comparison requires deterministic N=100 source and reference groups")
-    if not set(capture["particle_id"]).issubset(accepted_ids):
+    if not set(snapshot["particle_id"]).issubset(accepted_ids):
         raise ValueError("capture table contains a geometrically rejected particle")
-    if capture.empty or capture["instrument_time_us"].nunique() != 1:
+    if snapshot.empty or snapshot["instrument_time_us"].nunique() != 1:
         raise ValueError("capture table must be a non-empty snapshot at one shared pulse time")
     source = baseline["particle_source"]
     expected_inside = np.logical_and.reduce([
-        (capture[f"{axis}_mm"] - float(source[f"center_{axis}_mm"])).abs().to_numpy()
+        (snapshot[f"{axis}_mm"] - float(source[f"center_{axis}_mm"])).abs().to_numpy()
         <= float(source[f"size_{axis}_mm"]) / 2 + 1e-12 for axis in "xyz"
     ])
-    if not np.array_equal(expected_inside, capture["inside_reference"].to_numpy()):
+    if not np.array_equal(expected_inside, snapshot["inside_reference"].to_numpy()):
         raise ValueError("capture reference-volume flag disagrees with the oaTOF baseline")
     species = capture[["mass_amu", "charge_state"]].drop_duplicates()
     if len(species) != 1 or not np.allclose(ideal["mass_amu"], species.iloc[0]["mass_amu"]):
@@ -95,7 +102,7 @@ def compare(capture_path: Path, entry_path: Path, local_path: Path, ideal_path: 
     ideal["speed_m_s"] = np.sqrt(ideal["vx_m_s"] ** 2 + ideal["vy_m_s"] ** 2 + ideal["vz_m_s"] ** 2)
     ideal["angle_deg"] = 0.0
     inside = capture[capture["inside_reference"]]
-    pulse_time = float(capture["instrument_time_us"].iloc[0])
+    pulse_time = float(snapshot["instrument_time_us"].iloc[0])
     centers = {axis: float(source[f"center_{axis}_mm"]) for axis in "xyz"}
     for data in (capture, ideal):
         for axis in "xyz":
@@ -136,7 +143,10 @@ def compare(capture_path: Path, entry_path: Path, local_path: Path, ideal_path: 
         "role": "rf_s1_pulse_capture_vs_mass_matched_oatof_ideal_source",
         "status": "PASS",
         "pulse_instrument_time_us": pulse_time,
+        "state_time_semantics": "left_limit_immediately_before_pulse_t_pulse_minus",
         "geometric_port_accepted": len(accepted_ids),
+        "snapshot_rows_including_frozen_terminal_coordinates": int(len(snapshot)),
+        "frozen_port_losses_before_pulse": int(len(frozen_loss)),
         "alive_at_pulse": int(len(capture)),
         "pre_pulse_dynamic_loss": int(len(accepted_ids) - len(capture)),
         "inside_oatof_ideal_reference_volume": int(len(inside)),
@@ -169,11 +179,12 @@ def main() -> None:
     parser.add_argument("--local", type=Path, required=True)
     parser.add_argument("--ideal-ion", type=Path, required=True)
     parser.add_argument("--oatof-baseline", type=Path, required=True)
+    parser.add_argument("--joint-contract", type=Path, required=True)
     parser.add_argument("--figure", type=Path, required=True)
     parser.add_argument("--summary", type=Path, required=True)
     args = parser.parse_args()
     result = compare(args.capture, args.entry, args.local, args.ideal_ion, args.oatof_baseline,
-                     args.figure, args.summary)
+                     args.joint_contract, args.figure, args.summary)
     print(f"S1_CAPTURE_IDEAL_COMPARISON=PASS ALIVE={result['alive_at_pulse']} "
           f"INSIDE_REFERENCE={result['inside_oatof_ideal_reference_volume']}")
 

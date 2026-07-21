@@ -59,11 +59,11 @@ $figure = Join-Path $resultDir 's1_capture_vs_oatof_ideal_source.png'
 $comparison = Join-Path $resultDir 's1_capture_vs_oatof_ideal_source.json'
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 & $python $analysis --capture $capture --entry $entry --local $local --ideal-ion $ideal `
-  --oatof-baseline $baseline --figure $figure --summary $comparison
+  --oatof-baseline $baseline --joint-contract $joint --figure $figure --summary $comparison
 if ($LASTEXITCODE -ne 0) { throw 'S1 pulse-capture versus ideal-source analysis failed.' }
 $snapshotFigure = Join-Path $resultDir 's1_pulse_geometry_snapshot.png'
 $snapshotMetadata = Join-Path $resultDir 's1_pulse_geometry_snapshot.json'
-& $python $snapshotAnalysis --capture $capture --oatof-baseline $baseline --joint-contract $joint `
+& $python $snapshotAnalysis --capture $capture --events $local --oatof-baseline $baseline --joint-contract $joint `
   --figure $snapshotFigure --metadata $snapshotMetadata
 if ($LASTEXITCODE -ne 0) { throw 'S1 standard pulse geometry snapshot failed.' }
 $comparisonDocument = Get-Content -LiteralPath $comparison -Raw -Encoding UTF8 | ConvertFrom-Json

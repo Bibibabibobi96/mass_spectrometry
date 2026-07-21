@@ -156,7 +156,7 @@ try {
     & $python $particleAnalysis --events $particleCsv --canonical $particleInput --center-z-mm ([double]$jointSourceDocument.port_sweep.center_z_mm) --output $particleMetrics --figure $particleFigure
     if($LASTEXITCODE -ne 0){throw 'S1 physical-port particle gate failed.'}
     $pulseSnapshotFigure=Join-Path $resultDir 's1_pulse_geometry_snapshot.png';$pulseSnapshotMetadata=Join-Path $resultDir 's1_pulse_geometry_snapshot.json'
-    & $python $pulseSnapshotAnalysis --capture $captureCsv --oatof-baseline $oaBaseline --joint-contract $joint --figure $pulseSnapshotFigure --metadata $pulseSnapshotMetadata
+    & $python $pulseSnapshotAnalysis --capture $captureCsv --events $particleCsv --oatof-baseline $oaBaseline --joint-contract $joint --figure $pulseSnapshotFigure --metadata $pulseSnapshotMetadata
     if($LASTEXITCODE -ne 0){throw 'S1 standard pulse geometry snapshot failed.'}
   }
 } catch {
