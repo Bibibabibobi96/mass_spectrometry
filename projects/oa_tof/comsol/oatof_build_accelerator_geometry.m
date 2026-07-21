@@ -1,4 +1,25 @@
-function accelringtags = oatof_build_accelerator_geometry(geom1)
+function accelringtags = oatof_build_accelerator_geometry(geom1, interfacePort)
+if nargin < 2
+    interfacePort = struct('enabled', false);
+end
+if ~isfield(interfacePort, 'enabled')
+    error('oatof:InterfacePortContract', 'interfacePort.enabled is required.');
+end
+portEnabled = logical(interfacePort.enabled);
+if portEnabled
+    required = {'full_width_y_mm','full_height_z_mm','center_z_mm'};
+    for kPort = 1:numel(required)
+        if ~isfield(interfacePort, required{kPort}) || ...
+                ~isscalar(interfacePort.(required{kPort})) || ...
+                ~isfinite(interfacePort.(required{kPort}))
+            error('oatof:InterfacePortContract', ...
+                'interfacePort.%s must be a finite scalar.', required{kPort});
+        end
+    end
+    if interfacePort.full_width_y_mm <= 0 || interfacePort.full_height_z_mm <= 0
+        error('oatof:InterfacePortContract', 'Interface-port dimensions must be positive.');
+    end
+end
 %% Solid electrodes (repeller, rings, backplate) -- unchanged technique
 % (Difference: outer solid minus bore, auto Form Union with a vacuum
 % envelope). These are real solid objects the ion never passes through
@@ -55,10 +76,31 @@ geom1.feature.create('accelshieldH', 'Block');
 geom1.feature('accelshieldH').label('Accelerator shield bore (stops accel_shield_wall short of the outer solid''s back face, leaving the integrated back cap)');
 geom1.feature('accelshieldH').set('size', {'2*accel_shield_half', '2*accel_shield_half', 'L_accel+accel_repeller_thickness+accel_shield_back_extra'});
 geom1.feature('accelshieldH').set('pos', {'x_accel_center-accel_shield_half', '-accel_shield_half', 'z_accel_origin-accel_repeller_thickness-accel_shield_back_extra'});
+shieldCutInputs = {'accelshieldH'};
+if portEnabled
+    % Candidate-only negative-x side port. The extra 0.2 mm in x is a
+    % Boolean-cut padding, not a physical connector length. Formal callers
+    % omit interfacePort and therefore retain the closed one-piece shield.
+    geom1.feature.create('accelshieldPort', 'Block');
+    geom1.feature('accelshieldPort').label('S1 characterization entry port cut (candidate only)');
+    geom1.feature('accelshieldPort').set('size', { ...
+        'accel_shield_wall+0.2[mm]', ...
+        sprintf('%.17g[mm]', interfacePort.full_width_y_mm), ...
+        sprintf('%.17g[mm]', interfacePort.full_height_z_mm)});
+    geom1.feature('accelshieldPort').set('pos', { ...
+        'x_accel_center-(accel_shield_half+accel_shield_wall)-0.1[mm]', ...
+        sprintf('%.17g[mm]', -interfacePort.full_width_y_mm/2), ...
+        sprintf('%.17g[mm]', interfacePort.center_z_mm-interfacePort.full_height_z_mm/2)});
+    shieldCutInputs{end+1} = 'accelshieldPort'; %#ok<AGROW>
+end
 geom1.feature.create('accelshield', 'Difference');
-geom1.feature('accelshield').label('Accelerator shield (grounded, one-piece: side walls + integrated back cap)');
+if portEnabled
+    geom1.feature('accelshield').label('Accelerator shield with S1 characterization entry port');
+else
+    geom1.feature('accelshield').label('Accelerator shield (grounded, one-piece: side walls + integrated back cap)');
+end
 geom1.feature('accelshield').selection('input').set({'accelshieldO'});
-geom1.feature('accelshield').selection('input2').set({'accelshieldH'});
+geom1.feature('accelshield').selection('input2').set(shieldCutInputs);
 
 % !!! Flight-tube shield (doc §7.46, simplified per explicit request):
 % REMOVED the separate 'endcap'/'endcap2'/'flighttubewall' three-feature

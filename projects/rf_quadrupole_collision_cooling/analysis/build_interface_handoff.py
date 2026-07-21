@@ -286,12 +286,16 @@ def validate_contract(contract_path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
     if any(not topology_audit.get(key) for key in ("comsol", "simion", "cad", "conclusion")):
         raise ValueError("target entry topology audit must cover COMSOL, SIMION and CAD")
     aperture = connector["entry_aperture_design"]
-    if aperture.get("status") != "theory_ceiling_derived_performance_requirement_unresolved":
-        raise ValueError("entry aperture must retain its derived ceiling and unresolved performance gate")
-    if aperture.get("shape") is not None or aperture.get("design_semi_axes_mm") is not None:
-        raise ValueError("entry aperture geometry may not be selected before its bounds are frozen")
+    if aperture.get("status") != "axial_height_frozen_transverse_field_limit_unresolved":
+        raise ValueError("entry aperture characterization geometry status is inconsistent")
+    if aperture.get("shape") != "rectangle":
+        raise ValueError("S1 characterization must use the frozen rectangular opening")
     if aperture.get("unconstrained_candidate_scan_allowed") is not False:
         raise ValueError("entry aperture may not be selected by an unconstrained scan")
+    if aperture.get("characterization_geometry_generation_allowed") is not False:
+        raise ValueError("S1 geometry generation must wait for the transverse field bound")
+    if aperture.get("particle_runtime_allowed") is not False:
+        raise ValueError("S1 particle runtime must remain blocked until the joint field exists")
     performance = aperture["performance_bound"]
     if performance.get("partial_transmission_allowed") is not True:
         raise ValueError("the aperture contract must permit explicitly accounted particle losses")
@@ -370,14 +374,68 @@ def validate_contract(contract_path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
         abs_tol=1e-12,
     ):
         raise ValueError("known axial aperture ceiling is not the minimum derived bound")
+    derivation = aperture["frozen_characterization_derivation"]
+    safety_factor = float(derivation["axial_theory_safety_factor"])
+    if not math.isclose(safety_factor, 0.9, rel_tol=0.0, abs_tol=1e-12):
+        raise ValueError("S1 axial theory safety factor must remain 0.9")
+    design_height = float(aperture["design_full_height_z_mm"])
+    expected_height = safety_factor * theory_full_width
+    if not math.isclose(design_height, expected_height, rel_tol=0.0, abs_tol=1e-12):
+        raise ValueError("S1 axial opening height is not derived from the theory ceiling")
+    if not design_height < theory_full_width:
+        raise ValueError("S1 axial opening must remain strictly below the theory ceiling")
+    if aperture.get("design_full_width_y_mm") is not None:
+        raise ValueError("S1 transverse opening width must wait for all field and geometry bounds")
+    semi_axes = aperture["design_semi_axes_mm"]
+    if semi_axes.get("transverse_y") is not None or not math.isclose(
+        2.0 * float(semi_axes["axial_z"]), design_height,
+        rel_tol=0.0, abs_tol=1e-12,
+    ):
+        raise ValueError("S1 aperture full-size and semi-axis semantics disagree")
+    source_ceiling = float(derivation["transverse_source_nonbenefit_ceiling_mm"])
+    if not math.isclose(source_ceiling, 2.0 * actual_radius, rel_tol=0.0, abs_tol=1e-12):
+        raise ValueError("S1 transverse source ceiling differs from the RF exit diameter")
+    expected_clearance = float(declared_gap) - design_height / 2.0
+    if not math.isclose(
+        float(aperture["unresolved_inputs"]["axial_electrode_clearance_mm"]),
+        expected_clearance, rel_tol=0.0, abs_tol=1e-12,
+    ):
+        raise ValueError("S1 axial electrode clearance is not derived from the opening height")
+    if derivation.get("selection_independent_of_particle_results") is not True:
+        raise ValueError("S1 opening dimensions must not be selected from particle results")
+    if derivation.get("minimum_transmission_gate") is not None:
+        raise ValueError("S1 characterization must not imply a transmission gate")
+    field_reference = aperture["field_uniformity_reference"]
+    if field_reference.get("status") != "closed_shield_reference_only":
+        raise ValueError("S1 field reference must not claim an opened-port result")
+    if field_reference.get("run_id") != (
+        "20260721_093712__analysis__comsol__accelerator-transverse-field__grid"
+    ):
+        raise ValueError("S1 field reference run identity is not frozen")
+    if not math.isclose(
+        float(field_reference["closed_shield_contiguous_full_width_y_mm"]),
+        1.0, rel_tol=0.0, abs_tol=1e-12,
+    ):
+        raise ValueError("S1 closed-shield field reference width is inconsistent")
+    if field_reference.get("logical_operator") != "AND":
+        raise ValueError("S1 field reference metrics must combine by logical AND")
+    if field_reference.get("opened_joint_geometry_limit_mm") is not None:
+        raise ValueError("opened joint-geometry field limit has not been measured")
+    intersection = aperture["constraint_intersection"]
+    if intersection.get("logical_operator") != "AND":
+        raise ValueError("all S1 hard constraints must be combined by logical AND")
+    if intersection.get("controlling_constraint") is not None:
+        raise ValueError("S1 controlling aperture constraint is not yet known")
+    if intersection.get("all_constraints_evaluated") is not False:
+        raise ValueError("S1 must not claim that every aperture constraint is evaluated")
+    if intersection.get("pass_allowed") is not False:
+        raise ValueError("S1 PASS is forbidden before the full constraint intersection closes")
     unresolved = aperture["unresolved_inputs"]
     if any(unresolved.get(key) is not None for key in (
-        "axial_electrode_clearance_mm",
         "effective_grounded_tube_length_mm",
         "maximum_relative_field_leakage",
         "high_voltage_and_breakdown_limit_mm",
         "field_uniformity_limit_mm",
-        "design_safety_factor",
         "minimum_geometric_transmission_per_source_case",
         "required_beam_semi_axes_mm",
         "alignment_allowance_mm",

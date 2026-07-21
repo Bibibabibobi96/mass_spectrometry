@@ -153,8 +153,8 @@ def validate_feasible_axial_aperture(
     safe_upper = factor * min(bounds)
     if required > design:
         raise ValueError("design aperture is smaller than the required beam envelope")
-    if not design < safe_upper:
-        raise ValueError("design aperture must be strictly below the safety-factored theory ceiling")
+    if design > safe_upper:
+        raise ValueError("design aperture exceeds the safety-factored theory ceiling")
     return safe_upper
 
 
@@ -182,8 +182,8 @@ def validate_theory_bounded_axial_aperture(
     if not math.isfinite(factor) or not 0.0 < factor < 1.0:
         raise ValueError("safety factor must lie strictly between zero and one")
     safe_upper = factor * min(bounds)
-    if not design < safe_upper:
-        raise ValueError("design aperture must be strictly below the safety-factored theory ceiling")
+    if design > safe_upper:
+        raise ValueError("design aperture exceeds the safety-factored theory ceiling")
     return safe_upper
 
 

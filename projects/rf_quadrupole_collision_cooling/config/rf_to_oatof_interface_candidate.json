@@ -164,10 +164,38 @@
       "conclusion": "The present formal analyzer has no physical +x injection opening. A connector alone outside the shield cannot deliver particles into the release region."
     },
     "entry_aperture_design": {
-      "status": "theory_ceiling_derived_performance_requirement_unresolved",
-      "shape": null,
-      "design_semi_axes_mm": null,
+      "status": "axial_height_frozen_transverse_field_limit_unresolved",
+      "shape": "rectangle",
+      "design_semi_axes_mm": {
+        "transverse_y": null,
+        "axial_z": 0.45
+      },
+      "design_full_width_y_mm": null,
+      "design_full_height_z_mm": 0.9,
       "cross_section_plane": "oatof y-z plane",
+      "frozen_characterization_derivation": {
+        "axial_theory_safety_factor": 0.9,
+        "axial_rule": "design_full_height_z_mm = axial_theory_safety_factor * coupled_longitudinal axial_full_height_ceiling_mm",
+        "transverse_source_nonbenefit_ceiling_mm": 7.2,
+        "transverse_rule": "design_full_width_y_mm must not exceed either 2 * RF source-exit physical aperture radius or the field-uniformity, leakage, high-voltage and mechanical upper bounds; it remains unresolved until all are evaluated",
+        "selection_independent_of_particle_results": true,
+        "minimum_transmission_gate": null,
+        "claim_limit": "Geometry characterization only; dimensions are not a qualified physical interface until the joint field and downstream losses are evaluated."
+      },
+      "field_uniformity_reference": {
+        "status": "closed_shield_reference_only",
+        "run_id": "20260721_093712__analysis__comsol__accelerator-transverse-field__grid",
+        "formal_source_half_width_y_mm": 0.5,
+        "closed_shield_contiguous_full_width_y_mm": 1.0,
+        "metrics": [
+          "accelerator axial-field profile relative RMS",
+          "accelerator potential profile relative RMS",
+          "transverse-field relative RMS"
+        ],
+        "logical_operator": "AND",
+        "opened_joint_geometry_limit_mm": null,
+        "claim_limit": "This freezes the comparison thresholds and an L0 sweep starting bound only. The opened joint RF-oa geometry must be resampled before selecting the physical transverse width."
+      },
       "upper_bounds": {
         "first_gap_geometry": {
           "formula": "a_z < min(z_entry-z_repeller, z_grid1-z_entry)-c_z",
@@ -215,6 +243,8 @@
       ],
       "unconstrained_candidate_scan_allowed": false,
       "candidate_selection_allowed_after_bounds_frozen": true,
+      "characterization_geometry_generation_allowed": false,
+      "particle_runtime_allowed": false,
       "constraint_freeze_policy": {
         "single_input_authority": "oa_tof/config/baseline.json plus this interface contract for connector-only requirements",
         "derived_values_must_be_recomputed": true,
@@ -223,13 +253,21 @@
         "failure_mode": "fail_closed_without_runtime_package",
         "dimension_semantics": "Store explicit axial_full_height_mm and axial_semi_height_mm; use diameter_mm only for a frozen circular shape."
       },
+      "constraint_intersection": {
+        "logical_operator": "AND",
+        "scalar_upper_bound_rule": "final upper bound is the minimum of every applicable upper bound",
+        "scalar_lower_bound_rule": "final lower bound is the maximum of every applicable lower bound",
+        "coupled_constraint_rule": "Width-height-dependent constraints define a joint feasible set and may not be reduced to independent scalar limits without validation.",
+        "controlling_constraint": null,
+        "all_constraints_evaluated": false,
+        "pass_allowed": false
+      },
       "unresolved_inputs": {
-        "axial_electrode_clearance_mm": null,
+        "axial_electrode_clearance_mm": 1.05,
         "effective_grounded_tube_length_mm": null,
         "maximum_relative_field_leakage": null,
         "high_voltage_and_breakdown_limit_mm": null,
         "field_uniformity_limit_mm": null,
-        "design_safety_factor": null,
         "minimum_geometric_transmission_per_source_case": null,
         "required_beam_semi_axes_mm": null,
         "alignment_allowance_mm": null

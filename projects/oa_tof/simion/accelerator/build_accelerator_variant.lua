@@ -7,6 +7,8 @@
 --     [stage1_length_mm] [stage2_length_mm] [ring_count]
 --     [repeller_thickness_mm] [ring_thickness_mm] [front_vacuum_margin_mm]
 --     [repeller_voltage_v] [grid1_voltage_v]
+--     [interface_port_enable] [interface_port_width_y_mm]
+--     [interface_port_height_z_mm] [interface_port_center_z_mm]
 
 local source = assert(arg[1], 'missing source GEM')
 local output = assert(arg[2], 'missing output PA#')
@@ -30,6 +32,10 @@ local ring_thickness = tonumber(arg[19] or '1')
 local front_vacuum_margin = tonumber(arg[20] or '0.2')
 local repeller_voltage = tonumber(arg[21] or '2240')
 local grid1_voltage = tonumber(arg[22] or '1760')
+local interface_port_enable = tonumber(arg[23] or '0')
+local interface_port_width_y = tonumber(arg[24] or '0')
+local interface_port_height_z = tonumber(arg[25] or '0')
+local interface_port_center_z = tonumber(arg[26] or tostring(stage1_length/2))
 local shield_outer_width = 2*(bore_half+ring_width+insulation_gap+shield_wall)
 local xy_span = shield_outer_width+2*vacuum_margin
 local geometry_z_min = -repeller_thickness-rear_gap-shield_wall
@@ -64,6 +70,17 @@ assert(ring_thickness and ring_thickness > 0,
   'ring_thickness must be positive')
 assert(front_vacuum_margin and front_vacuum_margin > 0,
   'front_vacuum_margin must be positive')
+assert(interface_port_enable == 0 or interface_port_enable == 1,
+  'interface_port_enable must be zero or one')
+if interface_port_enable == 1 then
+  assert(interface_port_width_y and interface_port_width_y > 0,
+    'enabled interface port width must be positive')
+  assert(interface_port_height_z and interface_port_height_z > 0,
+    'enabled interface port height must be positive')
+  assert(interface_port_center_z and interface_port_center_z > 0 and
+    interface_port_center_z < stage1_length,
+    'enabled interface port center must lie inside the first acceleration gap')
+end
 assert(stage1_length+stage2_length < z_max,
   'grid2 must remain inside the PA domain; increase front_domain_margin')
 
@@ -82,11 +99,17 @@ print(string.format('BUILD: domain_margin_back_front_mm=(%.12g,%.12g) grid_phase
   back_domain_margin,front_domain_margin,grid_phase_z,z_min-grid_phase_z))
 print(string.format('BUILD: accelerator_stage_lengths_mm=(%.12g,%.12g) ring_count=%d ring_pitch_mm=%.12g grid2_local_z_mm=%.12g',
   stage1_length,stage2_length,ring_count,stage2_length/(ring_count+1),stage1_length+stage2_length))
+print(string.format('BUILD: interface_port_enable=%d width_y_mm=%.12g height_z_mm=%.12g center_z_mm=%.12g',
+  interface_port_enable,interface_port_width_y,interface_port_height_z,interface_port_center_z))
 assert(estimated_gib <= max_gib, string.format('estimated PA set %.3f GiB exceeds limit %.3f GiB',estimated_gib,max_gib))
 
 _G.var={mmgu_xy=mmgu_xy,mmgu_z=mmgu_z,xy_span=xy_span,z_min=z_min,z_span=z_span,
   bore_half=bore_half,ring_width=ring_width,insulation_gap=insulation_gap,
   rear_gap=rear_gap,shield_wall=shield_wall,grid_phase_z=grid_phase_z,
+  interface_port_enable=interface_port_enable,
+  interface_port_width_y=interface_port_width_y,
+  interface_port_height_z=interface_port_height_z,
+  interface_port_center_z=interface_port_center_z,
   stage1_length=stage1_length,stage2_length=stage2_length,
   ring_count=ring_count,repeller_thickness=repeller_thickness,
   ring_thickness=ring_thickness,front_vacuum_margin=front_vacuum_margin}

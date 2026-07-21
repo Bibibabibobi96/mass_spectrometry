@@ -44,13 +44,13 @@
     {
       "id": "S1",
       "name": "coincident_open_port_no_oa_pulse_reference",
-      "status": "blocked_by_transmission_requirement_port_and_joint_field_implementation",
+      "status": "blocked_by_port_and_joint_field_implementation",
       "separate_connector_component": false,
       "physical_interface_claim_allowed": true,
       "model": "Simplest physical topology: coaxial nominal alignment, RF exit mating directly to a parameterized oa shield opening, zero modeled inter-component gap, no tube, lens or steering electrode. Retain the time-dependent upstream RF basis and the always-on oa electrostatic basis on one joint geometry, but do not add an oa extraction pulse.",
       "prerequisites": [
         "S0 PASS",
-        "theory-bounded aperture with a frozen minimum geometric transmission per source case",
+        "theory-bounded characterization aperture; a minimum transmission is required only before PASS or promotion",
         "parameterized oa shield port in COMSOL, SIMION and CAD candidate geometry",
         "common electrical reference and a single joint-field implementation"
       ],
@@ -72,6 +72,9 @@
           "rf_simion_n100": 0.96
         },
         "minimum_geometric_transmission_frozen": false,
+        "closed_shield_field_reference_run_id": "20260721_093712__analysis__comsol__accelerator-transverse-field__grid",
+        "closed_shield_field_reference_full_width_mm": 1.0,
+        "opened_joint_geometry_field_limit_resolved": false,
         "physical_link": false
       }
     },

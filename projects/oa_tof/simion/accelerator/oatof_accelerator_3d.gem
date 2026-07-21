@@ -37,6 +37,10 @@
 # local z_min = var.z_min or shield_back_z
 # local z_span = var.z_span or (stage1_length+stage2_length+front_vacuum_margin-z_min)
 # local grid_phase_z = var.grid_phase_z or 0
+# local interface_port_enable = var.interface_port_enable or 0
+# local interface_port_width_y = var.interface_port_width_y or 0
+# local interface_port_height_z = var.interface_port_height_z or 0
+# local interface_port_center_z = var.interface_port_center_z or stage1_length/2
 # local cx = xy_span/2
 # local cy = xy_span/2
 # local cz = -z_min+grid_phase_z
@@ -59,6 +63,11 @@ locate($(cx),$(cy),$(cz)) {
   e($(4+ring_count)) { fill {
     within { centered_box3D(0,0,$(shield_z_center), $(shield_outer_width),$(shield_outer_width),$(shield_z_span)) }
     notin  { centered_box3D(0,0,$(shield_z_center), $(shield_inner_width),$(shield_inner_width),$(shield_z_span)) }
+# if interface_port_enable ~= 0 then
+    ; Candidate-only port through the negative-x side wall. Formal builds
+    ; leave interface_port_enable at zero and remain byte-compatible in shape.
+    notin  { centered_box3D($(-shield_inner_width/2-shield_wall/2),0,$(interface_port_center_z), $(shield_wall+2*mmgu_xy),$(interface_port_width_y),$(interface_port_height_z)) }
+# end
   } }
   ; Rear closure: its front face stays rear_gap behind the repeller rear face.
   e($(4+ring_count)) { fill { within { centered_box3D(0,0,$(rear_cap_center_z), $(shield_outer_width),$(shield_outer_width),$(shield_wall)) } } }
