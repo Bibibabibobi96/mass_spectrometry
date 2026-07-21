@@ -43,16 +43,16 @@
     },
     {
       "id": "S1",
-      "name": "coincident_open_port_static_reference",
-      "status": "blocked_by_entry_aperture_feasibility",
+      "name": "coincident_open_port_no_oa_pulse_reference",
+      "status": "blocked_by_transmission_requirement_port_and_joint_field_implementation",
       "separate_connector_component": false,
       "physical_interface_claim_allowed": true,
-      "model": "Simplest physical topology: coaxial nominal alignment, RF exit mating directly to a parameterized oa shield opening, zero modeled inter-component gap, no tube, lens or steering electrode, and time-independent fields.",
+      "model": "Simplest physical topology: coaxial nominal alignment, RF exit mating directly to a parameterized oa shield opening, zero modeled inter-component gap, no tube, lens or steering electrode. Retain the time-dependent upstream RF basis and the always-on oa electrostatic basis on one joint geometry, but do not add an oa extraction pulse.",
       "prerequisites": [
         "S0 PASS",
-        "non-empty theory-bounded aperture interval",
+        "theory-bounded aperture with a frozen minimum geometric transmission per source case",
         "parameterized oa shield port in COMSOL, SIMION and CAD candidate geometry",
-        "common electrical reference and field ownership"
+        "common electrical reference and a single joint-field implementation"
       ],
       "tests": [
         "solid-versus-opening topology",
@@ -61,7 +61,19 @@
         "N=100 target-entry crossing and downstream detector acceptance"
       ],
       "exit_gate": "Aperture, field and N=100 functional gates pass without an independent connector component.",
-      "claim_limit": "Ideal direct-mating static reference; no finite gap, tube, pulse capture or assembly tolerance claim."
+      "claim_limit": "Ideal direct-mating reference with upstream RF retained and no oa extraction pulse; no finite gap, tube, pulse capture or assembly tolerance claim.",
+      "precheck_evidence": {
+        "run_id": "20260721_085453__analysis__python__rf-oatof-s1-aperture__n100",
+        "analysis_status": "PASS",
+        "interface_stage_status": "BLOCKED",
+        "theoretical_axial_full_height_ceiling_mm": 1.0,
+        "maximum_axial_geometric_acceptance_fraction": {
+          "rf_comsol_n100": 0.85,
+          "rf_simion_n100": 0.96
+        },
+        "minimum_geometric_transmission_frozen": false,
+        "physical_link": false
+      }
     },
     {
       "id": "S2",
@@ -81,7 +93,7 @@
         "field-mesh and PA-resolution convergence at both ends"
       ],
       "exit_gate": "Passive geometry meets the frozen functional and field-leakage limits.",
-      "claim_limit": "Static passive transport only; no extraction-pulse capture claim."
+      "claim_limit": "Passive transport with upstream RF and always-on downstream fields retained; no oa extraction-pulse capture claim."
     },
     {
       "id": "S3",

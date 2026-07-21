@@ -78,6 +78,10 @@
   [`analysis/run_interface_s0_reference.py`](analysis/run_interface_s0_reference.py)及
   [`config/modes/rf_to_oatof_s0_reference.json`](config/modes/rf_to_oatof_s0_reference.json)；只复用已冻结
   N=100源证据并生成虚拟入口事件和run三件套，不运行求解器、不裁剪孔径、不授权物理连接。
+- S1轴向孔径—接受率预检：
+  [`analysis/analyze_s1_aperture_acceptance.py`](analysis/analyze_s1_aperture_acceptance.py)及
+  [`config/modes/rf_to_oatof_s1_aperture_precheck.json`](config/modes/rf_to_oatof_s1_aperture_precheck.json)；
+  从S0虚拟入口事件计算严格理论上限内的最佳轴向几何通过率，不选择最终孔径、不替代三维联合场。
 - oa入口孔L0上限参考：[`analysis/entry_aperture_l0.py`](analysis/entry_aperture_l0.py)；从当前耦合
   oa baseline重算上限并失败关闭候选，适用结论和未决约束见[`docs/PROJECT.md`](docs/PROJECT.md)。
 - 路径解析：[`rf_quadrupole_paths.m`](rf_quadrupole_paths.m)

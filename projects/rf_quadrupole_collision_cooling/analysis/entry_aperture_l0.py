@@ -130,7 +130,14 @@ def validate_feasible_axial_aperture(
     theoretical_full_height_bounds_mm: list[float],
     safety_factor: float,
 ) -> float:
-    """Fail closed unless a proposed aperture lies inside its frozen interval."""
+    """Validate a lossless-envelope candidate against its frozen interval.
+
+    This helper applies only when ``required_full_height_mm`` was derived from
+    an explicitly frozen transmission requirement.  The complete beam support
+    is not implicitly required; performance-limited apertures use
+    :func:`validate_theory_bounded_axial_aperture` and separately test their
+    accepted fraction.
+    """
 
     design = _positive_finite(design_full_height_mm, "design full height")
     required = _positive_finite(required_full_height_mm, "required full height")
@@ -149,6 +156,75 @@ def validate_feasible_axial_aperture(
     if not design < safe_upper:
         raise ValueError("design aperture must be strictly below the safety-factored theory ceiling")
     return safe_upper
+
+
+def validate_theory_bounded_axial_aperture(
+    *,
+    design_full_height_mm: float,
+    theoretical_full_height_bounds_mm: list[float],
+    safety_factor: float,
+) -> float:
+    """Return the safe ceiling for a positive, strictly bounded aperture.
+
+    Particle losses are intentionally not inferred here.  They must be
+    calculated for every frozen source distribution and compared with a
+    separately approved minimum transmission.
+    """
+
+    design = _positive_finite(design_full_height_mm, "design full height")
+    if not theoretical_full_height_bounds_mm:
+        raise ValueError("at least one theoretical upper bound is required")
+    bounds = [
+        _positive_finite(value, "theoretical full-height bound")
+        for value in theoretical_full_height_bounds_mm
+    ]
+    factor = float(safety_factor)
+    if not math.isfinite(factor) or not 0.0 < factor < 1.0:
+        raise ValueError("safety factor must lie strictly between zero and one")
+    safe_upper = factor * min(bounds)
+    if not design < safe_upper:
+        raise ValueError("design aperture must be strictly below the safety-factored theory ceiling")
+    return safe_upper
+
+
+def axial_acceptance_tradeoff(
+    offsets_mm: list[float],
+    theoretical_full_height_ceiling_mm: float,
+    requested_fractions: list[float],
+) -> dict[str, Any]:
+    """Summarize the best-case axial acceptance below a strict theory ceiling.
+
+    The result treats only the aperture coordinate and therefore is an upper
+    bound on the final three-dimensional static-interface transmission.
+    """
+
+    ceiling = _positive_finite(
+        theoretical_full_height_ceiling_mm, "theoretical full-height ceiling"
+    )
+    magnitudes = sorted(abs(float(value)) for value in offsets_mm)
+    if not magnitudes or any(not math.isfinite(value) for value in magnitudes):
+        raise ValueError("axial offsets must be a non-empty finite sequence")
+    thresholds: dict[str, Any] = {}
+    for fraction_value in requested_fractions:
+        fraction = float(fraction_value)
+        if not math.isfinite(fraction) or not 0.0 < fraction <= 1.0:
+            raise ValueError("requested fractions must lie in (0, 1]")
+        retained = math.ceil(fraction * len(magnitudes))
+        required_height = 2.0 * magnitudes[retained - 1]
+        thresholds[f"{fraction:.6g}"] = {
+            "required_full_height_mm_inclusive": required_height,
+            "strictly_below_theory_ceiling": required_height < ceiling,
+        }
+    accepted = sum(2.0 * value < ceiling for value in magnitudes)
+    return {
+        "particles": len(magnitudes),
+        "theoretical_full_height_ceiling_mm": ceiling,
+        "accepted_strictly_below_ceiling": accepted,
+        "maximum_axial_geometric_acceptance_fraction": accepted / len(magnitudes),
+        "complete_support_full_height_mm": 2.0 * magnitudes[-1],
+        "requested_fraction_thresholds": thresholds,
+        "scope": "Axial cut only; final 3D port and joint field can only reduce acceptance.",
+    }
 
 
 def evaluate_entry_aperture_l0(

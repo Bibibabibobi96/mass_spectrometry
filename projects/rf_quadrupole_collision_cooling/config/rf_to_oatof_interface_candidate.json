@@ -164,7 +164,7 @@
       "conclusion": "The present formal analyzer has no physical +x injection opening. A connector alone outside the shield cannot deliver particles into the release region."
     },
     "entry_aperture_design": {
-      "status": "blocked_pending_theoretical_feasibility",
+      "status": "theory_ceiling_derived_performance_requirement_unresolved",
       "shape": null,
       "design_semi_axes_mm": null,
       "cross_section_plane": "oatof y-z plane",
@@ -197,17 +197,20 @@
         "combined_policy": "The usable upper bound is the minimum of the coupled-longitudinal, gap-clearance, shielding/leakage, field-uniformity and high-voltage/breakdown bounds; every applicable bound must be satisfied. Full height and semi-height must never be mixed.",
         "combined_upper_bound_mm": null
       },
-      "lower_bound": {
-        "formula": "a_required >= propagated target-entry beam envelope + alignment allowance + explicitly frozen transmission margin",
+      "performance_bound": {
+        "formula": "a_required(p) = selected percentile of the propagated target-entry beam envelope + alignment allowance, where p is derived from the frozen minimum geometric transmission",
         "required_semi_axes_mm": null,
-        "policy": "Derive from the selected percentile or loss budget of the connector-propagated three-dimensional phase space; do not copy the 3.6 mm RF exit radius or the 1 mm oaTOF reference source size."
+        "minimum_geometric_transmission_per_source_case": null,
+        "partial_transmission_allowed": true,
+        "policy": "The complete beam support is not a mandatory lower bound. Derive the required percentile from an explicitly approved loss budget, report rejected particles, and never copy the 3.6 mm RF exit radius or the 1 mm oaTOF reference source size."
       },
-      "feasibility_rule": "A candidate exists only if every required lower semi-axis is strictly below its corresponding safety-factored theoretical upper bound. If the interval is empty, redesign the connector, focusing, tube, first gap or accelerator topology.",
+      "feasibility_rule": "A geometry is theory-admissible when every aperture dimension is positive and strictly below its safety-factored theoretical upper bound. It is performance-eligible only when the measured acceptance of every frozen source case meets the separately frozen minimum transmission. A beam tail outside the aperture is an explicit loss, not proof that no geometry exists.",
       "selection_order": [
         "freeze leakage, clearance, high-voltage, field-uniformity and safety requirements",
         "derive all theoretical upper bounds",
-        "propagate the beam and derive required lower bounds",
-        "prove a non-empty feasible interval",
+        "propagate every frozen source case and compute aperture-versus-acceptance tradeoffs",
+        "freeze the minimum geometric transmission and derive its percentile envelope",
+        "prove both theory admissibility and performance eligibility",
         "select and validate a geometry only inside that interval"
       ],
       "unconstrained_candidate_scan_allowed": false,
@@ -227,6 +230,7 @@
         "high_voltage_and_breakdown_limit_mm": null,
         "field_uniformity_limit_mm": null,
         "design_safety_factor": null,
+        "minimum_geometric_transmission_per_source_case": null,
         "required_beam_semi_axes_mm": null,
         "alignment_allowance_mm": null
       }
@@ -240,6 +244,34 @@
       "static or time-dependent magnetic field when present"
     ],
     "field_ownership_policy": "If upstream and downstream fields overlap, the overlap belongs to one connector or joint model; a one-way particle handoff may not split the overlap."
+  },
+  "electrical_interface": {
+    "status": "common_ground_resolved_joint_field_implementation_unbuilt",
+    "common_potential_reference": {
+      "status": "resolved_for_S1_nominal_direct_mating",
+      "potential_V": 0.0,
+      "source_authority": "rf_quadrupole_collision_cooling/config/modes/transport_no_collision.json static_electrodes_V.exit_enclosure and rf.axis_offset_V",
+      "target_authority": "oa_tof/config/baseline.json electrodes_V.shield",
+      "source_exit_enclosure_V": 0.0,
+      "source_axis_offset_V": 0.0,
+      "target_accelerator_shield_V": 0.0,
+      "scope": "Nominal ideal direct mating only; it does not qualify grounding impedance, finite hardware separation or assembly bonding."
+    },
+    "joint_field_ownership": {
+      "status": "resolved_to_single_joint_domain_implementation_unbuilt",
+      "owner": "rf_to_oatof_S1_joint_vacuum_and_electrode_model",
+      "geometry_scope": "One connected three-dimensional vacuum domain spanning the RF exit fringe region, coincident shield opening and oa first accelerator gap.",
+      "required_field_bases": [
+        "RF rod differential unit field on the shared S1 geometry",
+        "oaTOF always-on electrostatic electrode field on the same shared S1 geometry"
+      ],
+      "temporal_class": "time_dependent_due_to_upstream_RF_even_without_an_oa_extraction_pulse",
+      "rf_frequency_Hz": 1100000.0,
+      "oa_extraction_pulse_included": false,
+      "superposition_policy": "Basis-field superposition is allowed only when every basis is solved on the identical joint geometry, common 0 V reference and compatible discretization; importing a field solved on either closed standalone component is forbidden.",
+      "particle_clock_policy": "Evaluate the RF waveform from canonical instrument_time_us; a downstream local-time rebase must preserve the identical RF phase.",
+      "claim_limit": "Ownership is resolved, but no joint field has yet been built, converged or used for particle tracing."
+    }
   },
   "time_control": {
     "clock_epoch_id": "instrument_clock_epoch.v1",

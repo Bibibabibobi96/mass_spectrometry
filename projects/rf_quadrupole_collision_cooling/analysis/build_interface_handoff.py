@@ -196,7 +196,11 @@ def validate_contract(contract_path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
 
     source = contract["source_component"]
     source_interface = load_json(project_path(source["interface_contract"]))
-    source_baseline = load_json(project_path(source["baseline"]))
+    source_baseline_path = project_path(source["baseline"])
+    source_baseline = load_json(source_baseline_path)
+    source_active_mode = load_json(
+        source_baseline_path.parent / source_baseline["contracts"]["active_mode"]
+    )
     source_boundary = contract["boundaries"]["source_exit_surface"]
     expected_z = float(source_interface["planes"][source["event"]]["z_mm"])
     if not math.isclose(float(source_boundary["z_mm"]), expected_z, rel_tol=0.0, abs_tol=1e-12):
@@ -210,6 +214,44 @@ def validate_contract(contract_path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
 
     target = contract["target_component"]
     target_baseline = load_json(project_path(target["baseline"]))
+    electrical = contract["electrical_interface"]
+    if electrical.get("status") != "common_ground_resolved_joint_field_implementation_unbuilt":
+        raise ValueError("S1 electrical interface status is inconsistent")
+    common_reference = electrical["common_potential_reference"]
+    if common_reference.get("status") != "resolved_for_S1_nominal_direct_mating":
+        raise ValueError("S1 common potential reference is not resolved")
+    expected_ground_values = (
+        float(source_active_mode["static_electrodes_V"]["exit_enclosure"]),
+        float(source_active_mode["rf"]["axis_offset_V"]),
+        float(target_baseline["electrodes_V"]["shield"]),
+    )
+    declared_ground_values = (
+        float(common_reference["source_exit_enclosure_V"]),
+        float(common_reference["source_axis_offset_V"]),
+        float(common_reference["target_accelerator_shield_V"]),
+    )
+    if any(not math.isclose(value, 0.0, rel_tol=0.0, abs_tol=1e-12)
+           for value in expected_ground_values + declared_ground_values):
+        raise ValueError("RF exit, RF axis and oa shield must share the nominal 0 V reference")
+    if expected_ground_values != declared_ground_values:
+        raise ValueError("declared S1 common ground differs from project authorities")
+    joint_field = electrical["joint_field_ownership"]
+    if joint_field.get("status") != "resolved_to_single_joint_domain_implementation_unbuilt":
+        raise ValueError("S1 joint-field ownership is unresolved")
+    if joint_field.get("temporal_class") != (
+        "time_dependent_due_to_upstream_RF_even_without_an_oa_extraction_pulse"
+    ):
+        raise ValueError("S1 must retain the upstream time-dependent RF field")
+    if joint_field.get("oa_extraction_pulse_included") is not False:
+        raise ValueError("S1 must not imply an oa extraction pulse")
+    expected_frequency = float(source_active_mode["rf"]["frequency_Hz"])
+    if not math.isclose(
+        float(joint_field["rf_frequency_Hz"]), expected_frequency,
+        rel_tol=0.0, abs_tol=1e-12,
+    ):
+        raise ValueError("S1 RF frequency differs from the active RF mode")
+    if "identical joint geometry" not in joint_field.get("superposition_policy", ""):
+        raise ValueError("joint field bases must use one identical S1 geometry")
     target_reference = contract["target_reference_distribution"]
     particle_source = target_baseline["particle_source"]
     for axis in "xyz":
@@ -244,12 +286,19 @@ def validate_contract(contract_path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
     if any(not topology_audit.get(key) for key in ("comsol", "simion", "cad", "conclusion")):
         raise ValueError("target entry topology audit must cover COMSOL, SIMION and CAD")
     aperture = connector["entry_aperture_design"]
-    if aperture.get("status") != "blocked_pending_theoretical_feasibility":
-        raise ValueError("entry aperture must remain blocked pending theoretical feasibility")
+    if aperture.get("status") != "theory_ceiling_derived_performance_requirement_unresolved":
+        raise ValueError("entry aperture must retain its derived ceiling and unresolved performance gate")
     if aperture.get("shape") is not None or aperture.get("design_semi_axes_mm") is not None:
         raise ValueError("entry aperture geometry may not be selected before its bounds are frozen")
     if aperture.get("unconstrained_candidate_scan_allowed") is not False:
         raise ValueError("entry aperture may not be selected by an unconstrained scan")
+    performance = aperture["performance_bound"]
+    if performance.get("partial_transmission_allowed") is not True:
+        raise ValueError("the aperture contract must permit explicitly accounted particle losses")
+    if performance.get("minimum_geometric_transmission_per_source_case") is not None:
+        raise ValueError("minimum interface transmission has not yet been approved")
+    if performance.get("required_semi_axes_mm") is not None:
+        raise ValueError("beam percentile bounds require an approved transmission target")
     gap_bound = entry_aperture_l0.evaluate_entry_aperture_l0(
         repeller_z_mm=float(target_baseline["geometry_mm"]["accelerator_repeller_z"]),
         grid1_z_mm=float(target_baseline["geometry_mm"]["accelerator_grid1_z"]),
@@ -329,6 +378,7 @@ def validate_contract(contract_path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
         "high_voltage_and_breakdown_limit_mm",
         "field_uniformity_limit_mm",
         "design_safety_factor",
+        "minimum_geometric_transmission_per_source_case",
         "required_beam_semi_axes_mm",
         "alignment_allowance_mm",
     )):
@@ -370,6 +420,7 @@ def validate_contract(contract_path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
         "source_interface": source_interface,
         "source_baseline": source_baseline,
         "target_baseline": target_baseline,
+        "source_active_mode": source_active_mode,
         "entry_aperture_theory_full_width_ceiling_mm": theory_full_width,
     }
 

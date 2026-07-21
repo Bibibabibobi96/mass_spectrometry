@@ -42,6 +42,16 @@ class InterfaceContractTests(unittest.TestCase):
             "parameterized oa shield port" in item
             for item in stages[1]["prerequisites"]
         ))
+        self.assertIn("time-dependent upstream RF", stages[1]["model"])
+        self.assertEqual(
+            stages[1]["precheck_evidence"][
+                "maximum_axial_geometric_acceptance_fraction"
+            ]["rf_comsol_n100"],
+            0.85,
+        )
+        self.assertFalse(
+            stages[1]["precheck_evidence"]["minimum_geometric_transmission_frozen"]
+        )
         self.assertEqual(stages[4]["status"], "conditional")
 
     def test_two_boundaries_and_capture_state_remain_distinct(self) -> None:
@@ -70,10 +80,25 @@ class InterfaceContractTests(unittest.TestCase):
         self.assertEqual(audit["status"], "FAIL")
         self.assertIn("no physical +x injection opening", audit["conclusion"])
 
+    def test_s1_common_ground_and_joint_field_ownership_are_explicit(self) -> None:
+        validated = MODULE.validate_contract(CONTRACT)
+        electrical = validated["contract"]["electrical_interface"]
+        reference = electrical["common_potential_reference"]
+        self.assertEqual(reference["source_exit_enclosure_V"], 0.0)
+        self.assertEqual(reference["source_axis_offset_V"], 0.0)
+        self.assertEqual(reference["target_accelerator_shield_V"], 0.0)
+        field = electrical["joint_field_ownership"]
+        self.assertIn("time_dependent_due_to_upstream_RF", field["temporal_class"])
+        self.assertFalse(field["oa_extraction_pulse_included"])
+        self.assertIn("identical joint geometry", field["superposition_policy"])
+
     def test_entry_aperture_is_theory_bounded_before_candidate_selection(self) -> None:
         contract = MODULE.validate_contract(CONTRACT)["contract"]
         aperture = contract["connector"]["entry_aperture_design"]
-        self.assertEqual(aperture["status"], "blocked_pending_theoretical_feasibility")
+        self.assertEqual(
+            aperture["status"],
+            "theory_ceiling_derived_performance_requirement_unresolved",
+        )
         self.assertIsNone(aperture["shape"])
         self.assertIsNone(aperture["design_semi_axes_mm"])
         self.assertFalse(aperture["unconstrained_candidate_scan_allowed"])
@@ -95,6 +120,9 @@ class InterfaceContractTests(unittest.TestCase):
             aperture["upper_bounds"]["current_known_axial_full_height_ceiling_mm"], 1.0
         )
         self.assertIsNone(aperture["upper_bounds"]["combined_upper_bound_mm"])
+        performance = aperture["performance_bound"]
+        self.assertTrue(performance["partial_transmission_allowed"])
+        self.assertIsNone(performance["minimum_geometric_transmission_per_source_case"])
 
     def test_entry_aperture_l0_gap_and_tube_bounds(self) -> None:
         l0 = MODULE.entry_aperture_l0
@@ -144,6 +172,34 @@ class InterfaceContractTests(unittest.TestCase):
                 theoretical_full_height_bounds_mm=[1.0, 3.0],
                 safety_factor=0.8,
             )
+
+        self.assertEqual(
+            l0.validate_theory_bounded_axial_aperture(
+                design_full_height_mm=0.7,
+                theoretical_full_height_bounds_mm=[1.0, 3.0],
+                safety_factor=0.8,
+            ),
+            0.8,
+        )
+
+    def test_axial_acceptance_tradeoff_allows_explicit_losses(self) -> None:
+        result = MODULE.entry_aperture_l0.axial_acceptance_tradeoff(
+            offsets_mm=[-0.6, -0.2, 0.1, 0.4],
+            theoretical_full_height_ceiling_mm=1.0,
+            requested_fractions=[0.5, 0.75, 1.0],
+        )
+        self.assertEqual(result["accepted_strictly_below_ceiling"], 3)
+        self.assertEqual(result["maximum_axial_geometric_acceptance_fraction"], 0.75)
+        self.assertTrue(
+            result["requested_fraction_thresholds"]["0.75"][
+                "strictly_below_theory_ceiling"
+            ]
+        )
+        self.assertFalse(
+            result["requested_fraction_thresholds"]["1"][
+                "strictly_below_theory_ceiling"
+            ]
+        )
 
     def test_entry_aperture_l0_rejects_invalid_inputs(self) -> None:
         l0 = MODULE.entry_aperture_l0
