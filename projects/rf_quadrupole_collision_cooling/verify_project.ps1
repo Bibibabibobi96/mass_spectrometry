@@ -36,6 +36,7 @@ $candidateValidators = @(
   'validate_field_performance_experiment.py',
   'validate_rf_continuous_shield.py',
   'validate_rf_hybrid_mesh.py',
+  'validate_rf_energy_match.py',
   'validate_rf_piecewise_swept_mesh.py',
   'validate_rf_rod_region_swept_mesh.py',
   'validate_s1_joint_field.py'

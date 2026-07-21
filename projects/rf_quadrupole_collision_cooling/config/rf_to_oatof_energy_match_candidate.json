@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "role": "rf_to_oatof_axial_energy_match_candidate",
+  "status": "approved_for_paired_n100_characterization",
+  "objective": "Test whether a physically specified 5 eV ion-source operating point remains near the oaTOF 5 eV reference after the existing collision-free RF quadrupole, without changing geometry, fields or handoff velocity.",
+  "inputs": {
+    "source_family": "config/interface_readiness_particle_source.json",
+    "distribution_shape": "config/official_particle_source.json",
+    "transport_mode": "config/modes/transport_no_collision.json",
+    "hybrid_mesh": "config/rf_hybrid_mesh_candidate.json",
+    "oatof_formal_validation": "../oa_tof/config/formal_validation.json"
+  },
+  "input_candidate": {
+    "operating_point": "rf_to_oatof_100amu_5eV",
+    "particles": 100,
+    "mass_amu": 100.0,
+    "charge_state": 1,
+    "kinetic_energy_eV": 5.0,
+    "distribution_policy": "Reuse the official birth-time, position and filled-cone direction distributions; change only the named input energy operating point.",
+    "official_2eV_regression_source_overwrite_allowed": false
+  },
+  "model_changes": {
+    "geometry_changed": false,
+    "electrode_potentials_changed": false,
+    "differential_rf_amplitude_changed": false,
+    "collisions_enabled": false,
+    "velocity_rewrite_at_handoff_allowed": false,
+    "future_physical_provider": "upstream ion source and extraction optics"
+  },
+  "paired_test": {
+    "particles": 100,
+    "mesh_end_core_hmax_mm": 0.5,
+    "only_variable_from_the_previous_rf_input_distribution": "named input kinetic-energy operating point",
+    "minimum_transmitted_particles": 80,
+    "target_mean_energy_eV": 5.0,
+    "target_mean_energy_tolerance_eV": 0.2,
+    "maximum_mean_energy_change_through_rf_eV": 0.2,
+    "report_direction_and_beam_size_without_optimizing_them": true
+  },
+  "n100_evidence": {
+    "control_2eV_run_id": "20260722_030000__sim__comsol__rf-hybrid-n100__hend0p5__r02",
+    "excluded_first_5eV_run_id": "20260722_193000__sim__comsol__rf-input5ev-handoff__n100__r01",
+    "excluded_reason": "The fixed-energy generator branch did not consume an energy random quantile, so downstream direction samples were not particle-wise paired.",
+    "candidate_5eV_run_id": "20260722_193000__sim__comsol__rf-input5ev-handoff__n100__r02",
+    "comparison_run_id": "20260722_201500__analysis__python__rf-input-energy-2ev-vs-5ev__n100__r01",
+    "source_phase_space_particle_wise_paired_except_energy": true,
+    "transmitted": 100,
+    "mean_handoff_energy_eV": 5.005919535653313,
+    "handoff_energy_sample_std_eV": 0.026815812361563874,
+    "rms_radial_position_mm": 0.40882692882175414,
+    "rms_divergence_angle_deg": 6.455162324561007,
+    "rms_radius_relative_change_from_2eV": 0.14499407367030837,
+    "rms_divergence_relative_change_from_2eV": 0.36950682628421694,
+    "decision": "PASS for RF-handoff mean-energy matching only. The larger radius and divergence require the existing physical-port and oaTOF downstream test; they do not authorize parameter optimization or Formal source replacement."
+  },
+  "claims": {
+    "energy_match_pass_allowed": true,
+    "connector_pass_allowed": false,
+    "resolution_claim_allowed": false,
+    "formal_asset_modification_allowed": false,
+    "cad_sync_required_for_this_numerical_candidate": false
+  }
+}

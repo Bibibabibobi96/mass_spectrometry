@@ -40,8 +40,11 @@ def main() -> None:
     transverse_1 = rng.uniform(position["transverse_1"]["min"], position["transverse_1"]["max"], n)
     transverse_2 = rng.uniform(position["transverse_2"]["min"], position["transverse_2"]["max"], n)
     energy_contract = point["kinetic_energy_eV"]
+    # Consume one energy quantile for every operating point so fixed- and
+    # distributed-energy tables remain particle-wise paired downstream.
+    energy_quantile = rng.random(n)
     if energy_contract["distribution"] == "uniform":
-        energy = rng.uniform(energy_contract["min"], energy_contract["max"], n)
+        energy = energy_contract["min"] + (energy_contract["max"] - energy_contract["min"]) * energy_quantile
     elif energy_contract["distribution"] == "fixed":
         energy = np.full(n, energy_contract["value"])
     else:

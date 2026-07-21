@@ -7,7 +7,7 @@
     "mode": "config/modes/transport_interface_readiness.json",
     "mode_sha256": "0106E528F5B12A6D4EBEC653DF7598D1B0DC0926A4ECF288618CE047B2025C33",
     "particle_source": "config/interface_readiness_particle_source.json",
-    "particle_source_sha256": "C5DEEA4B0E9D0245A78EA213D69702A47A3500793CFD79A4EEFA537CD3465D12",
+    "particle_source_sha256": "8D60E727E22BF2F97FE54D6385C72CD3A5D890C435F8DAD3D4D6A271AA22FF86",
     "interface_contract": "config/interface_contract.json",
     "interface_contract_sha256": "DDCF3BC650D648F543E93520E1A93AF417432C19DA575712A6DB26F5FD33A24E"
   },
@@ -120,6 +120,15 @@
           "distribution": "uniform",
           "min": 1.8,
           "max": 2.2
+        }
+      },
+      "rf_to_oatof_100amu_5eV": {
+        "purpose": "N=100 RF-to-oaTOF mean-energy matching candidate; preserves the official source as a separate regression point",
+        "mass_amu": 100.0,
+        "charge_state": 1,
+        "kinetic_energy_eV": {
+          "distribution": "fixed",
+          "value": 5.0
         }
       },
       "oa_tof_readiness_524amu_5eV": {

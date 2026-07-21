@@ -16,6 +16,12 @@
       "charge_state": 1,
       "kinetic_energy_eV": {"distribution": "uniform", "min": 1.8, "max": 2.2}
     },
+    "rf_to_oatof_100amu_5eV": {
+      "purpose": "N=100 RF-to-oaTOF mean-energy matching candidate; preserves the official source as a separate regression point",
+      "mass_amu": 100.0,
+      "charge_state": 1,
+      "kinetic_energy_eV": {"distribution": "fixed", "value": 5.0}
+    },
     "oa_tof_readiness_524amu_5eV": {
       "purpose": "future integration-readiness candidate; does not create a coupled model",
       "mass_amu": 524.0,
