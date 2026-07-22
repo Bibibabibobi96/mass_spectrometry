@@ -7,6 +7,9 @@ import hashlib
 import json
 from pathlib import Path
 
+from common.multipole.round_rod_geometry import build_round_rod_array
+from common.multipole.interface_geometry import build_axial_interface_layout
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CONFIG = PROJECT_ROOT / "config"
@@ -51,6 +54,34 @@ def resolve(profile: str) -> dict:
         raise ValueError("rod radius derivation mismatch")
     if abs(geometry["rod_length"] - (geometry["rod_z_max"] - geometry["rod_z_min"])) > 1e-12:
         raise ValueError("rod length derivation mismatch")
+    multipole = baseline["multipole"]
+    rod_array = build_round_rod_array(
+        radial_order_n=int(multipole["radial_order_n"]),
+        electrode_count=int(multipole["electrode_count"]),
+        inscribed_radius_r0_mm=float(geometry["field_radius_r0"]),
+        rod_radius_mm=float(geometry["rod_radius"]),
+        rod_z_min_mm=float(geometry["rod_z_min"]),
+        rod_z_max_mm=float(geometry["rod_z_max"]),
+        orientation_rad=float(multipole.get("orientation_rad", 0.0)),
+    )
+    interface_layout = build_axial_interface_layout(
+        rod_z_min_mm=float(geometry["rod_z_min"]),
+        rod_z_max_mm=float(geometry["rod_z_max"]),
+        entrance={
+            "aperture_radius_mm": geometry["entrance_aperture_radius"],
+            "plate_thickness_mm": geometry["entrance_plate_z_max"] - geometry["entrance_plate_z_min"],
+            "rod_clearance_mm": geometry["rod_z_min"] - geometry["entrance_plate_z_max"],
+            "connector_length_mm": 0.0,
+            "particle_plane_distance_mm": geometry["entrance_plate_z_min"] - geometry["release_z"],
+        },
+        exit_interface={
+            "aperture_radius_mm": geometry["exit_aperture_radius"],
+            "plate_thickness_mm": geometry["exit_enclosure_front_wall_end_z"] - geometry["exit_enclosure_z_min"],
+            "rod_clearance_mm": geometry["exit_enclosure_z_min"] - geometry["rod_z_max"],
+            "connector_length_mm": 0.0,
+            "particle_plane_distance_mm": geometry["model_z_span"] - geometry["exit_enclosure_front_wall_end_z"],
+        },
+    )
     inputs = {
         "baseline": relative(BASELINE), "baseline_sha256": digest(BASELINE),
         "mode": relative(mode_path), "mode_sha256": digest(mode_path),
@@ -62,6 +93,9 @@ def resolve(profile: str) -> dict:
         "inputs": inputs,
         "coordinate_convention": baseline["coordinate_convention"],
         "geometry_mm": geometry,
+        "multipole": multipole,
+        "rod_array_mm": rod_array,
+        "interface_layout_mm": interface_layout,
         "mode": mode,
         "particle_source": source,
     }

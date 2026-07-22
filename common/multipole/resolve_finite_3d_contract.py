@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from common.multipole.family_contract import from_high_order_baseline
+from common.multipole.interface_geometry import build_axial_interface_layout
 
 
 class Finite3DContractError(ValueError):
@@ -175,15 +176,23 @@ def resolve_contract(baseline: dict[str, Any], contract: dict[str, Any]) -> dict
         raise Finite3DContractError("claim_limit must be a nonempty string")
 
     rod_z_max = rod_z_min + rod_length
-    entrance_plate_z_max = rod_z_min - entrance["rod_clearance_mm"]
-    entrance_plate_z_min = entrance_plate_z_max - entrance["plate_thickness_mm"]
-    source_z = entrance_plate_z_min - entrance["connector_length_mm"] - entrance["particle_plane_distance_mm"]
+    interface_layout = build_axial_interface_layout(
+        rod_z_min_mm=rod_z_min,
+        rod_z_max_mm=rod_z_max,
+        entrance=entrance,
+        exit_interface=exit_interface,
+    )
+    entrance_layout = interface_layout["entrance"]
+    exit_layout = interface_layout["exit"]
+    entrance_plate_z_min = entrance_layout["plate_z_min_mm"]
+    entrance_plate_z_max = entrance_layout["plate_z_max_mm"]
+    source_z = entrance_layout["particle_plane_z_mm"]
     entrance_outer_ground_inner_z = source_z - entrance["outer_ground_clearance_mm"]
     vacuum_z_min = entrance_outer_ground_inner_z - outer_cap
 
-    exit_plate_z_min = rod_z_max + exit_interface["rod_clearance_mm"]
-    exit_plate_z_max = exit_plate_z_min + exit_interface["plate_thickness_mm"]
-    detector_z = exit_plate_z_max + exit_interface["connector_length_mm"] + exit_interface["particle_plane_distance_mm"]
+    exit_plate_z_min = exit_layout["plate_z_min_mm"]
+    exit_plate_z_max = exit_layout["plate_z_max_mm"]
+    detector_z = exit_layout["particle_plane_z_mm"]
     exit_outer_ground_inner_z = detector_z + exit_interface["outer_ground_clearance_mm"]
     vacuum_z_max = exit_outer_ground_inner_z + outer_cap
     if entrance_plate_z_max > rod_z_min or exit_plate_z_min < rod_z_max:
@@ -191,6 +200,7 @@ def resolve_contract(baseline: dict[str, Any], contract: dict[str, Any]) -> dict
 
     resolved = json.loads(json.dumps(contract))
     resolved["role"] = "multipole_finite_3d_interface_transport_resolved_contract"
+    resolved["interface_layout_mm"] = interface_layout
     resolved["derived_geometry_mm"] = {
         "rod_length": rod_length,
         "rod_z_max": rod_z_max,

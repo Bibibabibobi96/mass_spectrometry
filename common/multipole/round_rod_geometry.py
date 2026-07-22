@@ -13,6 +13,55 @@ class RoundRodGeometryError(ValueError):
     """Raised when the common rod-array inputs are inconsistent."""
 
 
+def build_round_rod_array(
+    *,
+    radial_order_n: int,
+    electrode_count: int,
+    inscribed_radius_r0_mm: float,
+    rod_radius_mm: float,
+    rod_z_min_mm: float,
+    rod_z_max_mm: float,
+    orientation_rad: float = 0.0,
+) -> dict[str, Any]:
+    """Build the solver-neutral circular-rod array shared by every multipole."""
+    if electrode_count != 2 * radial_order_n or electrode_count < 4:
+        raise RoundRodGeometryError("electrode_count must equal 2*radial_order_n and be at least four")
+    values = (
+        inscribed_radius_r0_mm,
+        rod_radius_mm,
+        rod_z_min_mm,
+        rod_z_max_mm,
+        orientation_rad,
+    )
+    if not all(math.isfinite(float(value)) for value in values):
+        raise RoundRodGeometryError("rod-array dimensions and orientation must be finite")
+    if inscribed_radius_r0_mm <= 0 or rod_radius_mm <= 0 or rod_z_max_mm <= rod_z_min_mm:
+        raise RoundRodGeometryError("rod-array radii must be positive and z_max must exceed z_min")
+    center_radius = inscribed_radius_r0_mm + rod_radius_mm
+    rods = []
+    for index in range(electrode_count):
+        angle = orientation_rad + 2 * math.pi * index / electrode_count
+        rods.append(
+            {
+                "rod_id": index + 1,
+                "electrode_group": 1 if index % 2 == 0 else 2,
+                "angle_rad": angle,
+                "center_x_mm": center_radius * math.cos(angle),
+                "center_y_mm": center_radius * math.sin(angle),
+                "radius_mm": rod_radius_mm,
+                "z_min_mm": rod_z_min_mm,
+                "z_max_mm": rod_z_max_mm,
+            }
+        )
+    return {
+        "inscribed_radius_r0": inscribed_radius_r0_mm,
+        "rod_radius": rod_radius_mm,
+        "rod_center_radius": center_radius,
+        "rod_length": rod_z_max_mm - rod_z_min_mm,
+        "rods": rods,
+    }
+
+
 def resolve_round_rod_geometry(
     baseline: dict[str, Any],
     finite_3d: dict[str, Any],
@@ -22,8 +71,6 @@ def resolve_round_rod_geometry(
     multipole = baseline["multipole"]
     electrode_count = int(multipole["electrode_count"])
     radial_order = int(multipole["radial_order_n"])
-    if electrode_count != 2 * radial_order or electrode_count < 4:
-        raise RoundRodGeometryError("electrode_count must equal 2*radial_order_n and be at least four")
     selected = field_metrics["selected_candidate"]
     r0 = float(baseline["geometry_mm"]["inscribed_radius_r0"])
     rod_radius = float(selected["rod_radius_mm"])
@@ -38,21 +85,15 @@ def resolve_round_rod_geometry(
     geometry = finite_3d["geometry_mm"]
     derived = finite_3d["derived_geometry_mm"]
     orientation = float(multipole.get("orientation_rad", 0.0))
-    rods = []
-    for index in range(electrode_count):
-        angle = orientation + 2 * math.pi * index / electrode_count
-        rods.append(
-            {
-                "rod_id": index + 1,
-                "electrode_group": 1 if index % 2 == 0 else 2,
-                "angle_rad": angle,
-                "center_x_mm": center_radius * math.cos(angle),
-                "center_y_mm": center_radius * math.sin(angle),
-                "radius_mm": rod_radius,
-                "z_min_mm": float(geometry["rod_z_min"]),
-                "z_max_mm": float(derived["rod_z_max"]),
-            }
-        )
+    array = build_round_rod_array(
+        radial_order_n=radial_order,
+        electrode_count=electrode_count,
+        inscribed_radius_r0_mm=r0,
+        rod_radius_mm=rod_radius,
+        rod_z_min_mm=float(geometry["rod_z_min"]),
+        rod_z_max_mm=float(derived["rod_z_max"]),
+        orientation_rad=orientation,
+    )
     return {
         "schema_version": 1,
         "role": "multipole_round_rod_geometry_resolved_contract",
@@ -63,13 +104,7 @@ def resolve_round_rod_geometry(
             "electrode_count": electrode_count,
             "orientation_rad": orientation,
         },
-        "array_mm": {
-            "inscribed_radius_r0": r0,
-            "rod_radius": rod_radius,
-            "rod_center_radius": center_radius,
-            "rod_length": float(derived["rod_length"]),
-            "rods": rods,
-        },
+        "array_mm": array,
         "grounded_enclosure_mm": {
             "shield_inner_radius": float(geometry["grounded_shield_inner_radius"]),
             "shield_outer_radius": float(derived["shield_outer_radius"]),

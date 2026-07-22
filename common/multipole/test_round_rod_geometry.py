@@ -4,14 +4,51 @@ import unittest
 from pathlib import Path
 
 from common.multipole.resolve_finite_3d_contract import resolve_contract
-from common.multipole.round_rod_geometry import resolve_round_rod_geometry
-from common.multipole.simion_geometry import render_gem
+from common.multipole.interface_geometry import build_axial_interface_layout
+from common.multipole.round_rod_geometry import build_round_rod_array, resolve_round_rod_geometry
+from common.multipole.simion_geometry import render_gem, render_grouped_rod_array_gem
 
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 class RoundRodGeometryTest(unittest.TestCase):
+    def test_quadrupole_uses_same_array_generator(self):
+        array = build_round_rod_array(
+            radial_order_n=2,
+            electrode_count=4,
+            inscribed_radius_r0_mm=4.0,
+            rod_radius_mm=4.592,
+            rod_z_min_mm=5.8,
+            rod_z_max_mm=85.4,
+        )
+        self.assertEqual([rod["electrode_group"] for rod in array["rods"]], [1, 2, 1, 2])
+        positions = [(round(rod["center_x_mm"], 12), round(rod["center_y_mm"], 12)) for rod in array["rods"]]
+        self.assertEqual(positions, [(8.592, 0.0), (0.0, 8.592), (-8.592, 0.0), (0.0, -8.592)])
+        gem = render_grouped_rod_array_gem(array)
+        self.assertIn("cylinder(8.592,0,0, 4.592,, 79.6)", gem)
+        self.assertEqual(gem.count("fill { within { cylinder"), 4)
+
+    def test_shared_interface_layout_supports_direct_and_connected_ends(self):
+        base = {
+            "aperture_radius_mm": 1.2,
+            "plate_thickness_mm": 0.8,
+            "rod_clearance_mm": 4.0,
+            "connector_length_mm": 0.0,
+            "particle_plane_distance_mm": 1.0,
+        }
+        exit_interface = dict(base, aperture_radius_mm=3.6, connector_length_mm=2.0)
+        layout = build_axial_interface_layout(
+            rod_z_min_mm=5.8,
+            rod_z_max_mm=85.4,
+            entrance=base,
+            exit_interface=exit_interface,
+        )
+        self.assertEqual(layout["entrance"]["connector_length_mm"], 0.0)
+        self.assertAlmostEqual(layout["entrance"]["particle_plane_z_mm"], 0.0)
+        self.assertAlmostEqual(layout["exit"]["connector_z_max_mm"], 92.2)
+        self.assertAlmostEqual(layout["exit"]["particle_plane_z_mm"], 93.2)
+
     def resolve(self, project: str, ratio: float):
         root = ROOT / "projects" / project
         baseline = json.loads((root / "config/baseline.json").read_text(encoding="utf-8"))

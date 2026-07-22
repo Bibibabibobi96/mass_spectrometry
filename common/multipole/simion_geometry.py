@@ -9,6 +9,30 @@ from pathlib import Path
 from typing import Any
 
 
+def render_grouped_rod_array_gem(array: dict[str, Any]) -> str:
+    """Render a shared rod-array contract as alternating SIMION electrodes."""
+    rods = array["rods"]
+    if not rods:
+        raise ValueError("rod array must contain at least one rod")
+    z_max = float(rods[0]["z_max_mm"])
+    lines = [f"locate(0,0,{z_max:.15g}) {{"]
+    for group in (1, 2):
+        lines.append(f"  e({group}) {{")
+        for rod in rods:
+            if int(rod["electrode_group"]) != group:
+                continue
+            x = 0.0 if abs(float(rod["center_x_mm"])) < 1e-12 else float(rod["center_x_mm"])
+            y = 0.0 if abs(float(rod["center_y_mm"])) < 1e-12 else float(rod["center_y_mm"])
+            length = float(rod["z_max_mm"]) - float(rod["z_min_mm"])
+            lines.append(
+                "    fill { within { cylinder("
+                f"{x:.15g},{y:.15g},0, {float(rod['radius_mm']):.15g},, {length:.15g}) }} }}"
+            )
+        lines.append("  }")
+    lines.extend(["}", ""])
+    return "\n".join(lines)
+
+
 def render_gem(geometry: dict[str, Any], cell_mm: float) -> str:
     if not math.isfinite(cell_mm) or cell_mm <= 0:
         raise ValueError("cell_mm must be positive")

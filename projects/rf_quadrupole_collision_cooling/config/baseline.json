@@ -2,6 +2,7 @@
   "schema_version": 1,
   "status": "candidate_no_collision_cross_solver_baseline_simion_builtin_quad_geometry",
   "family_contract_id": "rf_multipole_ion_optics",
+  "multipole": {"electrode_count": 4, "radial_order_n": 2, "orientation_rad": 0.0},
   "geometry_authority": {
     "source": "SIMION 2020 built-in examples/quad monolithic reference",
     "files": ["quad_include.gem", "quad_monolithic.gem"],

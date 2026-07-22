@@ -58,7 +58,8 @@ geom = comp.geom.create('geom1',3);
 geom.lengthUnit('mm');
 geom.label('SIMION built-in quad monolithic geometry');
 
-g = baseline.geometry_mm; rf = mode.rf;
+g = baseline.geometry_mm; rodArray = baseline.rod_array_mm; rods = rodArray.rods;
+interfaces = baseline.interface_layout_mm; rf = mode.rf;
 p = model.param;
 p.set('r0',sprintf('%.12g[mm]',g.field_radius_r0),'Inter-rod field radius');
 p.set('r_rod',sprintf('%.12g[mm]',g.rod_radius),'Circular rod radius');
@@ -73,14 +74,14 @@ p.set('z_acceptance',sprintf('%.12g[mm]',interface.planes.acceptance_detector.z_
 p.set('m_ion',sprintf('%.15g[kg]',source.mass_amu*1.66053906660e-27));
 p.set('q_mathieu','4*e_const*V_rf/(m_ion*(2*pi*f_rf)^2*r0^2)');
 
-rodTags = cell(1,4);
-for k=1:4
+rodTags = cell(1,numel(rods));
+for k=1:numel(rods)
     rodTags{k}=sprintf('rod%d',k);
     geom.feature.create(rodTags{k},'Cylinder');
     geom.feature(rodTags{k}).label(sprintf('Reference circular rod %d',k));
-    geom.feature(rodTags{k}).set('r','r_rod');
-    geom.feature(rodTags{k}).set('h','L_rod');
-    geom.feature(rodTags{k}).set('pos',{sprintf('R_center*cos(%d[deg])',(k-1)*90),sprintf('R_center*sin(%d[deg])',(k-1)*90),'z_rod_min'});
+    geom.feature(rodTags{k}).set('r',sprintf('%.17g[mm]',rods(k).radius_mm));
+    geom.feature(rodTags{k}).set('h',sprintf('%.17g[mm]',rods(k).z_max_mm-rods(k).z_min_mm));
+    geom.feature(rodTags{k}).set('pos',{sprintf('%.17g[mm]',rods(k).center_x_mm),sprintf('%.17g[mm]',rods(k).center_y_mm),sprintf('%.17g[mm]',rods(k).z_min_mm)});
     geom.feature(rodTags{k}).set('selresult','on');
 end
 
@@ -90,12 +91,12 @@ geom.feature('vacuum').set('size',{sprintf('%.12g[mm]',2*g.exit_enclosure_outer_
 geom.feature('vacuum').set('pos',{sprintf('%.12g[mm]',-g.exit_enclosure_outer_half_width),sprintf('%.12g[mm]',-g.exit_enclosure_outer_half_width),'0'});
 
 geom.feature.create('ent_outer','Block');
-geom.feature('ent_outer').set('size',{sprintf('%.12g[mm]',2*g.exit_enclosure_outer_half_width),sprintf('%.12g[mm]',2*g.exit_enclosure_outer_half_width),sprintf('%.12g[mm]',g.entrance_plate_z_max-g.entrance_plate_z_min)});
-geom.feature('ent_outer').set('pos',{sprintf('%.12g[mm]',-g.exit_enclosure_outer_half_width),sprintf('%.12g[mm]',-g.exit_enclosure_outer_half_width),sprintf('%.12g[mm]',g.entrance_plate_z_min)});
+geom.feature('ent_outer').set('size',{sprintf('%.12g[mm]',2*g.exit_enclosure_outer_half_width),sprintf('%.12g[mm]',2*g.exit_enclosure_outer_half_width),sprintf('%.12g[mm]',interfaces.entrance.plate_z_max_mm-interfaces.entrance.plate_z_min_mm)});
+geom.feature('ent_outer').set('pos',{sprintf('%.12g[mm]',-g.exit_enclosure_outer_half_width),sprintf('%.12g[mm]',-g.exit_enclosure_outer_half_width),sprintf('%.12g[mm]',interfaces.entrance.plate_z_min_mm)});
 geom.feature.create('ent_hole','Cylinder');
-geom.feature('ent_hole').set('r',sprintf('%.12g[mm]',g.entrance_aperture_radius));
-geom.feature('ent_hole').set('h',sprintf('%.12g[mm]',g.entrance_plate_z_max-g.entrance_plate_z_min));
-geom.feature('ent_hole').set('pos',{'0','0',sprintf('%.12g[mm]',g.entrance_plate_z_min)});
+geom.feature('ent_hole').set('r',sprintf('%.12g[mm]',interfaces.entrance.aperture_radius_mm));
+geom.feature('ent_hole').set('h',sprintf('%.12g[mm]',interfaces.entrance.plate_z_max_mm-interfaces.entrance.plate_z_min_mm));
+geom.feature('ent_hole').set('pos',{'0','0',sprintf('%.12g[mm]',interfaces.entrance.plate_z_min_mm)});
 geom.feature.create('entrance','Difference');
 geom.feature('entrance').label('Reference entrance plate with aperture');
 geom.feature('entrance').selection('input').set({'ent_outer'});
@@ -122,7 +123,7 @@ geom.feature.create('detector','Cylinder');
 geom.feature('detector').label('Reference detector plate');
 geom.feature('detector').set('r',sprintf('%.12g[mm]',g.detector_radius));
 geom.feature('detector').set('h',sprintf('%.12g[mm]',g.detector_thickness));
-detectorZ=baseline.coordinate_convention.detector_plane_z_mm;
+detectorZ=interfaces.exit.particle_plane_z_mm;
 geom.feature('detector').set('pos',{'0','0',sprintf('%.12g[mm]',detectorZ)});
 geom.feature('detector').set('selresult','on');
 geom.run;
@@ -136,9 +137,9 @@ assert(~isempty(vacDomains),'Vacuum selection is empty.');
 
 mat=model.material.create('mat_vac','Common'); mat.label('Vacuum'); mat.selection.named('sel_vac'); mat.propertyGroup('def').set('relpermittivity',{'1'});
 es=comp.physics.create('es','Electrostatics','geom1'); es.label('RF unit field and grounded static electrodes'); es.selection.named('sel_vac');
-for k=1:4
+for k=1:numel(rods)
     s=sprintf('selb_rod%d',k); comp.selection.create(s,'Adjacent'); comp.selection(s).set('input',{sprintf('geom1_rod%d_dom',k)});
-    pot=es.create(sprintf('pot_rod%d',k),'ElectricPotential',2); pot.selection.named(s); pot.set('V0',sprintf('%d[V]',100*(-1)^(k+1)));
+    pot=es.create(sprintf('pot_rod%d',k),'ElectricPotential',2); pot.selection.named(s); pot.set('V0',sprintf('%d[V]',100*(3-2*rods(k).electrode_group)));
 end
 for item={{'entrance','entrance'},{'exit','exit_enclosure'},{'detector','detector'}}
     entry=item{1}; s=['selb_' entry{1}]; comp.selection.create(s,'Adjacent'); comp.selection(s).set('input',{['geom1_' entry{2} '_dom']});

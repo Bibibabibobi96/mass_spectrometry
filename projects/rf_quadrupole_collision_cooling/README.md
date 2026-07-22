@@ -203,7 +203,9 @@ rf_quadrupole_collision_cooling/
 ## 项目特有硬规则
 
 - 两求解器必须从 `config/` 的共享几何、粒子源与 mode 契约派生同一输入；无碰撞基线不得创建或启用任何碰撞/阻尼模型。
-- 参数链固定为 `baseline + source + mode + interface -> resolved -> COMSOL/SIMION生成资产`。安装目录中的
+- 参数链固定为 `baseline + source + mode + interface -> resolved -> COMSOL/SIMION生成资产`；四极杆与
+  六、八极杆共同调用`common/multipole/round_rod_geometry.py`和`interface_geometry.py`，项目不得再按
+  `0/90/180/270°`自行派生正式杆坐标。安装目录中的
   SIMION官方例程只提供来源依据，不再是运行时权威；任何下游硬编码或反向抄写都视为失效实现。
 - 官方回归与集成就绪验证严格分离：不得覆盖`official_fixed_25.ion`或借新增工况改写已闭合的 N25 结果。
 - 所有run config都同时记录共享硬件解析发布和本次mode解析发布；接口mode是对已闭合RF-only基础物理的

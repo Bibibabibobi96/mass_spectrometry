@@ -18,7 +18,9 @@
 电压、尺寸、粒子源或资格阈值。配对质量扫描和质量响应是公共机制，四极杆Mathieu通带及当前PASS判据
 仍留在四极杆项目。三维接口合同由
 `resolve_finite_3d_contract.py`在求解前验证并单向派生端板、可为0 mm的连接器、释放面、检测面和真空域
-轴向坐标。`round_rod_geometry.py`是杆心、杆径、角度、极性组和轴向范围的唯一公共派生源；COMSOL与
-SIMION只做求解器格式转换。`simion_transport.lua`由四、六、八极杆实际调用，项目目录只保留工况与
+轴向坐标。`round_rod_geometry.py`是四、六、八极杆杆心、杆径、角度、极性组和轴向范围的唯一公共
+派生源；`interface_geometry.py`统一杆端间隙、开孔端板、可为0 mm的连接器、粒子入口面和出口观察面。
+屏蔽截面可为项目参数，观察面也不等同于每台真实器件都安装实体探测器。COMSOL与SIMION只做求解器
+格式转换。`simion_transport.lua`由四、六、八极杆实际调用，项目目录只保留工况与
 附属结构适配。当前能力不选择机械正式几何，也不覆盖网格收敛、屏蔽优化、碰撞或空间电荷。理论与符号以
 [`../../docs/multipoles/index.md`](../../docs/multipoles/index.md)为入口。

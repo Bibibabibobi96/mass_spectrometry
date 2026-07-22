@@ -15,14 +15,17 @@ $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 runtime missing: $python" }
 
-& $python (Join-Path $projectRoot 'analysis\resolve_contract.py') --check
-if ($LASTEXITCODE -ne 0) { throw 'Resolved-contract gate failed.' }
-& $python (Join-Path $projectRoot 'analysis\resolve_contract.py') --profile interface --check
-if ($LASTEXITCODE -ne 0) { throw 'Interface-readiness contract gate failed.' }
-& $python (Join-Path $projectRoot 'analysis\resolve_contract.py') --profile mass_filter --check
-if ($LASTEXITCODE -ne 0) { throw 'Mass-filter resolved contract gate failed.' }
-& $python (Join-Path $projectRoot 'analysis\sync_simion_geometry.py') --check
-if ($LASTEXITCODE -ne 0) { throw 'SIMION geometry publication gate failed.' }
+Push-Location $repoRoot
+try {
+  & $python -m projects.rf_quadrupole_collision_cooling.analysis.resolve_contract --check
+  if ($LASTEXITCODE -ne 0) { throw 'Resolved-contract gate failed.' }
+  & $python -m projects.rf_quadrupole_collision_cooling.analysis.resolve_contract --profile interface --check
+  if ($LASTEXITCODE -ne 0) { throw 'Interface-readiness contract gate failed.' }
+  & $python -m projects.rf_quadrupole_collision_cooling.analysis.resolve_contract --profile mass_filter --check
+  if ($LASTEXITCODE -ne 0) { throw 'Mass-filter resolved contract gate failed.' }
+  & $python -m projects.rf_quadrupole_collision_cooling.analysis.sync_simion_geometry --check
+  if ($LASTEXITCODE -ne 0) { throw 'SIMION geometry publication gate failed.' }
+} finally { Pop-Location }
 & $python (Join-Path $projectRoot 'analysis\generate_official_particle_table.py') --check `
   (Join-Path $projectRoot 'config\particles\official_fixed_25.ion')
 if ($LASTEXITCODE -ne 0) { throw 'Paired-particle identity gate failed.' }

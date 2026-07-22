@@ -3,7 +3,7 @@
   "role": "rf_quadrupole_resolved_mass_filter_contract_do_not_edit",
   "inputs": {
     "baseline": "config/baseline.json",
-    "baseline_sha256": "FEFE3135E4784C9358C6B0B48662FEF7F334A64278DD09E19BA9A8F8A1569494",
+    "baseline_sha256": "4E6B3BD78CEABBB6F9843BB71DB654DC18144F8F1D7C6FE086EF4580FC5E54B4",
     "mode": "config/modes/mass_filter_reference.json",
     "mode_sha256": "58CDC6E49A83922607F1EBB9C18F652796B1946BA10C10C900A15B7E155E814F",
     "particle_source": "config/official_particle_source.json",
@@ -65,6 +65,79 @@
     ],
     "release_radius": 0.05,
     "release_z": 0.0
+  },
+  "multipole": {
+    "electrode_count": 4,
+    "radial_order_n": 2,
+    "orientation_rad": 0.0
+  },
+  "rod_array_mm": {
+    "inscribed_radius_r0": 4.0,
+    "rod_radius": 4.592,
+    "rod_center_radius": 8.591999999999999,
+    "rod_length": 79.60000000000001,
+    "rods": [
+      {
+        "rod_id": 1,
+        "electrode_group": 1,
+        "angle_rad": 0.0,
+        "center_x_mm": 8.591999999999999,
+        "center_y_mm": 0.0,
+        "radius_mm": 4.592,
+        "z_min_mm": 5.8,
+        "z_max_mm": 85.4
+      },
+      {
+        "rod_id": 2,
+        "electrode_group": 2,
+        "angle_rad": 1.5707963267948966,
+        "center_x_mm": 5.261082649137029e-16,
+        "center_y_mm": 8.591999999999999,
+        "radius_mm": 4.592,
+        "z_min_mm": 5.8,
+        "z_max_mm": 85.4
+      },
+      {
+        "rod_id": 3,
+        "electrode_group": 1,
+        "angle_rad": 3.141592653589793,
+        "center_x_mm": -8.591999999999999,
+        "center_y_mm": 1.0522165298274057e-15,
+        "radius_mm": 4.592,
+        "z_min_mm": 5.8,
+        "z_max_mm": 85.4
+      },
+      {
+        "rod_id": 4,
+        "electrode_group": 2,
+        "angle_rad": 4.71238898038469,
+        "center_x_mm": -1.5783247947411086e-15,
+        "center_y_mm": -8.591999999999999,
+        "radius_mm": 4.592,
+        "z_min_mm": 5.8,
+        "z_max_mm": 85.4
+      }
+    ]
+  },
+  "interface_layout_mm": {
+    "entrance": {
+      "aperture_radius_mm": 1.2,
+      "plate_z_min_mm": 0.9999999999999998,
+      "plate_z_max_mm": 1.7999999999999998,
+      "connector_length_mm": 0.0,
+      "connector_z_min_mm": 0.9999999999999998,
+      "connector_z_max_mm": 0.9999999999999998,
+      "particle_plane_z_mm": -2.220446049250313e-16
+    },
+    "exit": {
+      "aperture_radius_mm": 3.6,
+      "plate_z_min_mm": 89.4,
+      "plate_z_max_mm": 90.2,
+      "connector_length_mm": 0.0,
+      "connector_z_min_mm": 90.2,
+      "connector_z_max_mm": 90.2,
+      "particle_plane_z_mm": 95.2
+    }
   },
   "mode": {
     "schema_version": 3,
