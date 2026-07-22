@@ -7,6 +7,7 @@ absolute axial coordinates consumed by COMSOL and particle-source generation.
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import math
 from pathlib import Path
@@ -18,6 +19,33 @@ from common.multipole.interface_geometry import build_axial_interface_layout
 
 class Finite3DContractError(ValueError):
     """Raised when a finite-3D interface contract is inconsistent."""
+
+
+def apply_connector_length_overrides(
+    contract: dict[str, Any],
+    entrance_connector_length_mm: float | None = None,
+    exit_connector_length_mm: float | None = None,
+) -> dict[str, Any]:
+    """Return a copied run contract with explicit nonnegative connector lengths."""
+    result = copy.deepcopy(contract)
+    overrides = {
+        "entrance_interface": entrance_connector_length_mm,
+        "exit_interface": exit_connector_length_mm,
+    }
+    geometry = result.get("geometry_mm")
+    if not isinstance(geometry, dict):
+        raise Finite3DContractError("geometry_mm must be an object")
+    for interface_name, value in overrides.items():
+        if value is None:
+            continue
+        number = float(value)
+        if not math.isfinite(number) or number < 0:
+            raise Finite3DContractError(f"{interface_name} connector length must be finite and nonnegative")
+        interface = geometry.get(interface_name)
+        if not isinstance(interface, dict):
+            raise Finite3DContractError(f"geometry_mm.{interface_name} must be an object")
+        interface["connector_length_mm"] = number
+    return result
 
 
 def _finite_number(mapping: dict[str, Any], key: str) -> float:
@@ -223,11 +251,21 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--baseline", required=True, type=Path)
     parser.add_argument("--contract", required=True, type=Path)
+    parser.add_argument("--entrance-connector-length-mm", type=float)
+    parser.add_argument("--exit-connector-length-mm", type=float)
+    parser.add_argument("--effective-contract-output", type=Path)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     baseline = json.loads(args.baseline.read_text(encoding="utf-8-sig"))
-    contract = json.loads(args.contract.read_text(encoding="utf-8-sig"))
+    contract = apply_connector_length_overrides(
+        json.loads(args.contract.read_text(encoding="utf-8-sig")),
+        args.entrance_connector_length_mm,
+        args.exit_connector_length_mm,
+    )
     resolved = resolve_contract(baseline, contract)
+    if args.effective_contract_output is not None:
+        args.effective_contract_output.parent.mkdir(parents=True, exist_ok=True)
+        args.effective_contract_output.write_text(json.dumps(contract, indent=2) + "\n", encoding="utf-8")
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(resolved, indent=2) + "\n", encoding="utf-8")
     return 0

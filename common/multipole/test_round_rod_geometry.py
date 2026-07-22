@@ -3,7 +3,11 @@ import math
 import unittest
 from pathlib import Path
 
-from common.multipole.resolve_finite_3d_contract import resolve_contract
+from common.multipole.resolve_finite_3d_contract import (
+    Finite3DContractError,
+    apply_connector_length_overrides,
+    resolve_contract,
+)
 from common.multipole.interface_geometry import build_axial_interface_layout
 from common.multipole.round_rod_geometry import build_round_rod_array, resolve_round_rod_geometry
 from common.multipole.simion_geometry import render_gem, render_grouped_rod_array_gem
@@ -91,12 +95,18 @@ class RoundRodGeometryTest(unittest.TestCase):
         root = ROOT / "projects/rf_hexapole_ion_guide"
         baseline = json.loads((root / "config/baseline.json").read_text(encoding="utf-8"))
         contract = json.loads((root / "config/finite_3d_transport.json").read_text(encoding="utf-8"))
-        contract["geometry_mm"]["exit_interface"]["connector_length_mm"] = 2.0
-        finite = resolve_contract(baseline, contract)
+        effective = apply_connector_length_overrides(contract, exit_connector_length_mm=2.0)
+        finite = resolve_contract(baseline, effective)
         metrics = {"selected_candidate": {"rod_radius_mm": 2.2, "rod_center_radius_mm": 6.2}}
         geometry = resolve_round_rod_geometry(baseline, finite, metrics)
         self.assertAlmostEqual(finite["derived_geometry_mm"]["detector_z"], 83.1)
         self.assertIn("cylinder(0,0,82.6,21,,2)", render_gem(geometry, 0.2))
+
+    def test_connector_override_rejects_negative_length(self):
+        root = ROOT / "projects/rf_hexapole_ion_guide"
+        contract = json.loads((root / "config/finite_3d_transport.json").read_text(encoding="utf-8"))
+        with self.assertRaises(Finite3DContractError):
+            apply_connector_length_overrides(contract, entrance_connector_length_mm=-0.1)
 
 
 if __name__ == "__main__":

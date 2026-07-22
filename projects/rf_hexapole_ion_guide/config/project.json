@@ -5,7 +5,7 @@
   "display_name": "RF六极杆离子导引",
   "purpose": "六极杆无碰撞传输、接受度和未来碰撞冷却设计",
   "lifecycle_status": "static",
-  "toolchains": ["python", "comsol"],
+  "toolchains": ["python", "comsol", "simion"],
   "contracts": {
     "baseline": "config/baseline.json",
     "resolved": null,
@@ -38,14 +38,14 @@
       "status": "static",
       "modes": ["finite_3d_no_collision"],
       "metrics": ["entrance_passed", "exit_passed", "transmission_fraction", "exit_rms_radius", "maximum_rod_radius"],
-      "design_variables": ["rod_radius_ratio", "shield_inner_radius", "entrance_aperture_radius", "exit_aperture_radius"]
+      "design_variables": ["rod_radius_ratio", "shield_inner_radius", "entrance_aperture_radius", "exit_aperture_radius", "entrance_connector_length", "exit_connector_length"]
     }
   ],
   "formal_assets": {"status": "none", "types": [], "identity_contract": null},
   "known_gaps": [
     "The circular-rod field is only a provisional 2D L2 screen",
     "The apertured finite 3D interfaces are functional simulation geometry, not a mechanical baseline",
-    "Mesh convergence and an independent solver trajectory comparison are not complete",
-    "Collision, space-charge, SIMION and CAD evidence do not exist"
+    "Mesh convergence and cross-solver numerical-equivalence qualification are not complete",
+    "Collision, space-charge and CAD evidence do not exist"
   ]
 }

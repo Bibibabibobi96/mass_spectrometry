@@ -37,6 +37,12 @@ if ($LASTEXITCODE -ne 0) { throw 'Project registry validation failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Common contract tests failed.' }
 & $PythonExe -m unittest discover -s (Join-Path $PSScriptRoot 'multipole') -p 'test_*.py'
 if ($LASTEXITCODE -ne 0) { throw 'Common multipole family tests failed.' }
+Push-Location $repoRoot
+try {
+    & $PythonExe -m common.multipole.verify_family_foundation
+    if ($LASTEXITCODE -ne 0) { throw 'Frozen multipole-family foundation gate failed.' }
+}
+finally { Pop-Location }
 & $PythonExe -m unittest discover -s (Join-Path $PSScriptRoot 'solidworks') -p 'test_*.py'
 if ($LASTEXITCODE -ne 0) { throw 'SolidWorks path-resolution tests failed.' }
 & (Join-Path $repoRoot 'projects\oa_tof\verify_project.ps1') -Level Static -PythonExe $PythonExe

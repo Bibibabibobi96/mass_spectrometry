@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "role": "rf_multipole_family_contract",
   "family_id": "rf_multipole_ion_optics",
   "coordinate_convention_id": "multipole.cartesian.z_axis.v1",
@@ -18,5 +18,22 @@
     "voltage": "V",
     "phase": "rad",
     "mass_to_charge": "Th"
+  },
+  "foundation": {
+    "status": "frozen_functional_baseline",
+    "consumers": [
+      "rf_quadrupole_collision_cooling",
+      "rf_hexapole_ion_guide",
+      "rf_octupole_ion_guide"
+    ],
+    "scope": [
+      "solver_neutral_round_rod_array",
+      "alternating_two_group_rf_dc_drive",
+      "finite_3d_axial_interfaces",
+      "zero_or_positive_grounded_connectors",
+      "canonical_particle_state",
+      "comsol_and_simion_functional_transport_adapters"
+    ],
+    "change_control": "Changes require the repository multipole-family gate and real-solver regression for every affected adapter; project-specific theory and acceptance thresholds remain outside this contract."
   }
 }

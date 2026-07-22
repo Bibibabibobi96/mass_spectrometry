@@ -16,15 +16,15 @@
     },
     {
       "descriptor": "projects/rf_hexapole_ion_guide/config/project.json",
-      "sha256": "EAB56CC9DD6B2AE22484DFC22E503F5BD30EB1C1F9AF9019164624029773F799"
+      "sha256": "B951A97DCD0482FB84C3BD16AD7C8200BB2989EB3EA8ABF63CE95F4F6C688901"
     },
     {
       "descriptor": "projects/rf_octupole_ion_guide/config/project.json",
-      "sha256": "2C9E62D9721FE628999727C34C7C8817E24A30999A60F7E84A50B00B9A34FC37"
+      "sha256": "A675CDE5D8AD67CF28E7ADD0BB6CF8269012C08A3424DBA71C2D148E675B675C"
     },
     {
       "descriptor": "projects/rf_quadrupole_collision_cooling/config/project.json",
-      "sha256": "917D04C1985E06FBFE018817AF54DDCC26856F6ECD06FA873D7414C43B411770"
+      "sha256": "FB8422CEF18FAF7F114AAC2E333887DEED128016F584136FD9F5D060D09D5E45"
     },
     {
       "descriptor": "projects/wehnelt_electron_gun/config/project.json",
@@ -215,7 +215,8 @@
       "lifecycle_status": "static",
       "toolchains": [
         "python",
-        "comsol"
+        "comsol",
+        "simion"
       ],
       "contracts": {
         "baseline": "config/baseline.json",
@@ -275,7 +276,9 @@
             "rod_radius_ratio",
             "shield_inner_radius",
             "entrance_aperture_radius",
-            "exit_aperture_radius"
+            "exit_aperture_radius",
+            "entrance_connector_length",
+            "exit_connector_length"
           ]
         }
       ],
@@ -287,8 +290,8 @@
       "known_gaps": [
         "The circular-rod field is only a provisional 2D L2 screen",
         "The apertured finite 3D interfaces are functional simulation geometry, not a mechanical baseline",
-        "Mesh convergence and an independent solver trajectory comparison are not complete",
-        "Collision, space-charge, SIMION and CAD evidence do not exist"
+        "Mesh convergence and cross-solver numerical-equivalence qualification are not complete",
+        "Collision, space-charge and CAD evidence do not exist"
       ]
     },
     {
@@ -300,7 +303,8 @@
       "lifecycle_status": "static",
       "toolchains": [
         "python",
-        "comsol"
+        "comsol",
+        "simion"
       ],
       "contracts": {
         "baseline": "config/baseline.json",
@@ -360,7 +364,9 @@
             "rod_radius_ratio",
             "shield_inner_radius",
             "entrance_aperture_radius",
-            "exit_aperture_radius"
+            "exit_aperture_radius",
+            "entrance_connector_length",
+            "exit_connector_length"
           ]
         }
       ],
@@ -372,8 +378,8 @@
       "known_gaps": [
         "The circular-rod field is only a provisional 2D L2 screen",
         "The apertured finite 3D interfaces are functional simulation geometry, not a mechanical baseline",
-        "Mesh convergence and an independent solver trajectory comparison are not complete",
-        "Collision, space-charge, SIMION and CAD evidence do not exist"
+        "Mesh convergence and cross-solver numerical-equivalence qualification are not complete",
+        "Collision, space-charge and CAD evidence do not exist"
       ]
     },
     {
@@ -468,7 +474,7 @@
         "No current formal mechanical geometry or SolidWorks assembly",
         "N=100 strict interface phase-space gate remains failed",
         "Collision physics is not implemented in the current validated chain",
-        "Mass-filter mode has solver-free L1 and one-solver SIMION functional evidence; independent COMSOL comparison and resolving-power qualification remain open"
+        "Mass-filter mode has L1 and dual-solver functional evidence; mesh, numerical-equivalence and resolving-power qualification remain open"
       ]
     },
     {

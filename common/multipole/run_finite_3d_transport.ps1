@@ -4,7 +4,9 @@ param(
   [string]$ProjectRoot,
   [Parameter(Mandatory = $true)]
   [string]$FieldScreenRunId,
-  [string]$RunId = ''
+  [string]$RunId = '',
+  [double]$EntranceConnectorLengthMm = [double]::NaN,
+  [double]$ExitConnectorLengthMm = [double]::NaN
 )
 
 Set-StrictMode -Version Latest
@@ -42,6 +44,7 @@ $runtimeDir = Join-Path $logDir 'runtime'
 New-Item -ItemType Directory -Force -Path $inputDir,$resultDir,$logDir,$runtimeDir | Out-Null
 $baseline = Join-Path $inputDir 'baseline.json'
 $familyOperating = Join-Path $inputDir 'family_operating_contract.json'
+$baseContract = Join-Path $inputDir 'finite_3d_transport_base.json'
 $contract = Join-Path $inputDir 'finite_3d_transport.json'
 $resolvedContract = Join-Path $inputDir 'finite_3d_transport_resolved.json'
 $mode = Join-Path $inputDir 'finite_3d_no_collision.json'
@@ -49,7 +52,7 @@ $fieldMetrics = Join-Path $inputDir 'round_rod_field_screen_metrics.json'
 $roundRodGeometry = Join-Path $inputDir 'round_rod_geometry.json'
 $particleSource = Join-Path $inputDir 'particle_source.csv'
 Copy-Item -LiteralPath (Join-Path $projectRootPath 'config\baseline.json') -Destination $baseline
-Copy-Item -LiteralPath (Join-Path $projectRootPath 'config\finite_3d_transport.json') -Destination $contract
+Copy-Item -LiteralPath (Join-Path $projectRootPath 'config\finite_3d_transport.json') -Destination $baseContract
 Copy-Item -LiteralPath (Join-Path $projectRootPath 'config\modes\finite_3d_no_collision.json') -Destination $mode
 Push-Location $repoRoot
 try {
@@ -57,11 +60,27 @@ try {
     --adapter high-order --baseline $baseline --output $familyOperating
   if ($LASTEXITCODE -ne 0) { throw 'Shared multipole operating-contract resolution failed.' }
 } finally { Pop-Location }
+$resolverArguments = @(
+  '-m','common.multipole.resolve_finite_3d_contract',
+  '--baseline',$baseline,'--contract',$baseContract,
+  '--effective-contract-output',$contract,'--output',$resolvedContract
+)
+if (-not [double]::IsNaN($EntranceConnectorLengthMm)) {
+  $resolverArguments += @('--entrance-connector-length-mm',[string]$EntranceConnectorLengthMm)
+}
+if (-not [double]::IsNaN($ExitConnectorLengthMm)) {
+  $resolverArguments += @('--exit-connector-length-mm',[string]$ExitConnectorLengthMm)
+}
+Push-Location $repoRoot
+try {
+  & $python @resolverArguments
+  if ($LASTEXITCODE -ne 0) { throw 'Finite 3D interface contract validation failed.' }
+} finally { Pop-Location }
+$effectiveContract = Get-Content -LiteralPath $contract -Raw -Encoding UTF8 | ConvertFrom-Json
 $sourceSamples = Join-Path $sourceDir 'results\round_rod_potential_samples.csv'
 $sourceContract = Join-Path $sourceDir 'inputs\round_rod_field_screen.json'
 $screenAnalysis = Join-Path $repoRoot 'common\multipole\analyze_round_rod_screen.py'
 '{}' | Set-Content -LiteralPath $fieldMetrics -Encoding UTF8
-'{}' | Set-Content -LiteralPath $resolvedContract -Encoding UTF8
 '{}' | Set-Content -LiteralPath $roundRodGeometry -Encoding UTF8
 'particle_id,birth_time_s,x_mm,y_mm,z_mm,vx_m_s,vy_m_s,vz_m_s' |
   Set-Content -LiteralPath $particleSource -Encoding UTF8
@@ -87,6 +106,7 @@ $task = Join-Path $repoRoot 'common\multipole\solve_finite_3d_transport.m'
     baseline = $baseline
     family_operating_contract = $familyOperating
     mode = $mode
+    finite_3d_base_contract = $baseContract
     finite_3d_contract = $contract
     finite_3d_resolved_contract = $resolvedContract
     particle_source = $particleSource
@@ -97,7 +117,13 @@ $task = Join-Path $repoRoot 'common\multipole\solve_finite_3d_transport.m'
     field_screen_samples = $sourceSamples
     comsol_task = $task
   }
-  parameters = [ordered]@{ model_level='L3'; direct_comsol_particle_tracking=$true; mesh_convergence=$false }
+  parameters = [ordered]@{
+    model_level='L3'
+    direct_comsol_particle_tracking=$true
+    mesh_convergence=$false
+    entrance_connector_length_mm=[double]$effectiveContract.geometry_mm.entrance_interface.connector_length_mm
+    exit_connector_length_mm=[double]$effectiveContract.geometry_mm.exit_interface.connector_length_mm
+  }
   formal_gate_passed = $false
 } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $runConfig -Encoding UTF8
 [ordered]@{ schema_version=1; role='multipole_finite_3d_transport_summary'; status='interrupted' } |
@@ -116,12 +142,6 @@ try {
   try {
     & $python $screenAnalysis --samples $sourceSamples --contract $sourceContract --output $fieldMetrics
     if ($LASTEXITCODE -ne 0) { throw 'Could not freeze the selected L2 field-screen geometry.' }
-    Push-Location $repoRoot
-    try {
-      & $python -m common.multipole.resolve_finite_3d_contract `
-        --baseline $baseline --contract $contract --output $resolvedContract
-      if ($LASTEXITCODE -ne 0) { throw 'Finite 3D interface contract validation failed.' }
-    } finally { Pop-Location }
     Push-Location $repoRoot
     try {
       & $python -m common.multipole.round_rod_geometry `
@@ -157,6 +177,8 @@ try {
       project_id = $projectId
       source_field_screen_run_id = $FieldScreenRunId
       selected_rod_radius_ratio = $result.selected_geometry.rod_radius_ratio
+      entrance_connector_length_mm = [double]$effectiveContract.geometry_mm.entrance_interface.connector_length_mm
+      exit_connector_length_mm = [double]$effectiveContract.geometry_mm.exit_interface.connector_length_mm
       rf_transmission = $result.cases.finite_3d_rf_on.transmission_fraction
       zero_rf_transmission = $result.cases.zero_rf_control.transmission_fraction
       model_level = 'L3'

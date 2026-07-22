@@ -10,9 +10,11 @@ from common.multipole.family_contract import (
     electrode_group_voltages,
     from_high_order_baseline,
     from_quadrupole_contract,
+    load_family_contract,
 )
 from common.multipole.mass_response import aggregate_response, evaluate_functional_contrast, load_terminal_statuses
 from common.multipole.paired_mass_scan import build_paired_ion_rows
+from common.multipole.verify_family_foundation import validate_family_foundation
 
 
 REPO_ROOT = Path(__file__).parents[2]
@@ -23,6 +25,16 @@ def load_json(path: Path) -> dict:
 
 
 class MultipoleFamilyContractTests(unittest.TestCase):
+    def test_frozen_family_foundation_gate(self) -> None:
+        validate_family_foundation()
+
+    def test_obsolete_family_schema_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "family.json"
+            path.write_text('{"schema_version": 1, "role": "rf_multipole_family_contract"}', encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "schema or role differs"):
+                load_family_contract(path)
+
     def test_three_projects_share_one_family_identity(self) -> None:
         hexapole = from_high_order_baseline(
             load_json(REPO_ROOT / "projects" / "rf_hexapole_ion_guide" / "config" / "baseline.json")
