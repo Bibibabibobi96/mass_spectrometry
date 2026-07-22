@@ -123,7 +123,7 @@ simulation_repo/
 │  └─ wehnelt_electron_gun/
 ├─ common/
 │  ├─ comsol/                # LiveLink启动器、可复用COMSOL测试及就近README
-│  ├─ multipole/             # 已由六极杆、八极杆共同验证的L1与二维圆杆L2参考实现
+│  ├─ multipole/             # 已由六极杆、八极杆共同验证的L1、L2与有限三维功能实现
 │  ├─ paths/                 # 工作区与 artifacts 路径解析
 │  └─ solidworks/            # STEP→SolidWorks 可复用桥接
 ├─ official_docs/            # 官方离线原始资料及索引
@@ -153,8 +153,8 @@ simulation_repo/
 - `projects/mr_tof`：以用户自绘 SolidWorks 工程图为种子的多次反射 TOF 原型设计线；尚无正式理论、参数合同或验收资产。
 - `projects/electron_impact_ion_source`：电子轰击离子源。
 - `projects/rf_quadrupole_collision_cooling`：RF四极杆碰撞冷却与传输。
-- `projects/rf_hexapole_ion_guide`：RF六极杆无碰撞离子导引；当前至二维圆杆L2。
-- `projects/rf_octupole_ion_guide`：RF八极杆无碰撞离子导引；当前至二维圆杆L2。
+- `projects/rf_hexapole_ion_guide`：RF六极杆无碰撞离子导引；当前至封闭接地腔有限三维功能基线。
+- `projects/rf_octupole_ion_guide`：RF八极杆无碰撞离子导引；当前至封闭接地腔有限三维功能基线。
 - `projects/wehnelt_electron_gun`：螺旋灯丝 Wehnelt 电子枪。
 
 每个项目用`config/project.json`声明稳定项目身份、设计族、可选择能力及其真实成熟度；

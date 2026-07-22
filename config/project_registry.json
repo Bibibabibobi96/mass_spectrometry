@@ -16,11 +16,11 @@
     },
     {
       "descriptor": "projects/rf_hexapole_ion_guide/config/project.json",
-      "sha256": "F2613B57E96C1703B31FBBC62F1CFF42E13999C777EA999B5CD0083E82D40998"
+      "sha256": "F68E1E5E6C341C94325AD20550BF2F1B53FFC97B9236E24CBADE490B1A5B2EC2"
     },
     {
       "descriptor": "projects/rf_octupole_ion_guide/config/project.json",
-      "sha256": "91F8BF606DAE22518163CB03955A450445C68532E6CDED36E276B61D553CAD90"
+      "sha256": "2CEBECCA23C35616C1F720A1B4389F1BC551E5F4898AAA84107DFFCCC38100FD"
     },
     {
       "descriptor": "projects/rf_quadrupole_collision_cooling/config/project.json",
@@ -256,6 +256,23 @@
           "design_variables": [
             "rod_radius_ratio"
           ]
+        },
+        {
+          "capability_id": "hexapole_finite_3d_transport",
+          "function": "ion_transport",
+          "status": "static",
+          "modes": [
+            "finite_3d_no_collision"
+          ],
+          "metrics": [
+            "transmission_fraction",
+            "exit_rms_radius",
+            "maximum_rod_radius"
+          ],
+          "design_variables": [
+            "rod_radius_ratio",
+            "shield_inner_radius"
+          ]
         }
       ],
       "formal_assets": {
@@ -265,7 +282,8 @@
       },
       "known_gaps": [
         "The circular-rod field is only a provisional 2D L2 screen",
-        "Finite 3D rods, fringe fields, physical shielding and interfaces are not implemented",
+        "The finite 3D field uses a closed grounded cavity without apertured external interfaces",
+        "Mesh convergence and an independent solver trajectory comparison are not complete",
         "Collision, space-charge, SIMION and CAD evidence do not exist"
       ]
     },
@@ -319,6 +337,23 @@
           "design_variables": [
             "rod_radius_ratio"
           ]
+        },
+        {
+          "capability_id": "octupole_finite_3d_transport",
+          "function": "ion_transport",
+          "status": "static",
+          "modes": [
+            "finite_3d_no_collision"
+          ],
+          "metrics": [
+            "transmission_fraction",
+            "exit_rms_radius",
+            "maximum_rod_radius"
+          ],
+          "design_variables": [
+            "rod_radius_ratio",
+            "shield_inner_radius"
+          ]
         }
       ],
       "formal_assets": {
@@ -328,7 +363,8 @@
       },
       "known_gaps": [
         "The circular-rod field is only a provisional 2D L2 screen",
-        "Finite 3D rods, fringe fields, physical shielding and interfaces are not implemented",
+        "The finite 3D field uses a closed grounded cavity without apertured external interfaces",
+        "Mesh convergence and an independent solver trajectory comparison are not complete",
         "Collision, space-charge, SIMION and CAD evidence do not exist"
       ]
     },

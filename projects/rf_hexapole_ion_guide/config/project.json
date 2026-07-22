@@ -31,12 +31,21 @@
       "modes": ["round_rod_no_collision"],
       "metrics": ["parasitic_harmonic_score", "transmission_fraction", "exit_rms_radius"],
       "design_variables": ["rod_radius_ratio"]
+    },
+    {
+      "capability_id": "hexapole_finite_3d_transport",
+      "function": "ion_transport",
+      "status": "static",
+      "modes": ["finite_3d_no_collision"],
+      "metrics": ["transmission_fraction", "exit_rms_radius", "maximum_rod_radius"],
+      "design_variables": ["rod_radius_ratio", "shield_inner_radius"]
     }
   ],
   "formal_assets": {"status": "none", "types": [], "identity_contract": null},
   "known_gaps": [
     "The circular-rod field is only a provisional 2D L2 screen",
-    "Finite 3D rods, fringe fields, physical shielding and interfaces are not implemented",
+    "The finite 3D field uses a closed grounded cavity without apertured external interfaces",
+    "Mesh convergence and an independent solver trajectory comparison are not complete",
     "Collision, space-charge, SIMION and CAD evidence do not exist"
   ]
 }

@@ -11,6 +11,7 @@ from common.multipole.ideal_transport import (
     evaluate_round_rod_contract,
     potential_spatial,
     pseudopotential_ev,
+    source_particles,
 )
 
 
@@ -69,6 +70,13 @@ class OctupoleIdealTransportTests(unittest.TestCase):
         metrics, rows = evaluate_round_rod_contract(self.contract, screen)
         self.assertEqual(metrics["status"], "PASS")
         self.assertEqual(len(rows), 50)
+
+    def test_finite_3d_contract_preserves_baseline_source_and_length(self):
+        l3 = json.loads((PROJECT_ROOT / "config" / "finite_3d_transport.json").read_text(encoding="utf-8"))
+        self.assertEqual(l3["multipole"], {"radial_order_n": 4, "electrode_count": 8})
+        self.assertEqual(l3["geometry_mm"]["rod_length"], self.contract["geometry_mm"]["effective_length"])
+        self.assertLess(l3["geometry_mm"]["vacuum_z_min"], l3["geometry_mm"]["source_z"])
+        self.assertEqual(len(source_particles(self.contract)), self.contract["particle_source"]["count"])
 
 
 if __name__ == "__main__":

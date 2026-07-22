@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "role": "rf_octupole_finite_3d_transport_mode",
+  "mode_id": "finite_3d_no_collision",
+  "field_model_id": "multipole.comsol_finite_3d_round_rod.v1",
+  "collision_model": "disabled",
+  "space_charge_model": "disabled",
+  "model_level": "L3"
+}

@@ -1,7 +1,7 @@
 # RF六极杆离子导引项目
 
-本项目是`rf_multipole_ion_optics`家族的独立六极杆设计线。当前具有理想有限长度L1参考，以及真实圆杆
-二维COMSOL场筛选和无端部L2传输；现状与边界以[`docs/PROJECT.md`](docs/PROJECT.md)为准。
+本项目是`rf_multipole_ion_optics`家族的独立六极杆设计线。当前已从理想L1、二维圆杆L2推进到封闭
+接地腔内的有限三维COMSOL直接传输；现状与边界以[`docs/PROJECT.md`](docs/PROJECT.md)为准。
 
 ## 固定阅读顺序
 
@@ -17,6 +17,7 @@
 - 运行入口：[`analysis/run_transport.ps1`](analysis/run_transport.ps1)
 - L2圆杆筛选：[`analysis/run_round_rod_field_screen.ps1`](analysis/run_round_rod_field_screen.ps1)
 - L2传输：[`analysis/run_round_rod_transport.ps1`](analysis/run_round_rod_transport.ps1)
+- L3直接跟踪：[`analysis/run_finite_3d_transport.ps1`](analysis/run_finite_3d_transport.ps1)
 - 静态门禁：[`verify_project.ps1`](verify_project.ps1)
 
 运行产物只进入`artifacts/projects/rf_hexapole_ion_guide/runs/`，不进入Git。

@@ -88,7 +88,7 @@ def adiabaticity(
     return value * (radius_m / r0_m) ** (order - 2)
 
 
-def _source_particles(contract: dict[str, Any]) -> list[dict[str, float]]:
+def source_particles(contract: dict[str, Any]) -> list[dict[str, float]]:
     source = contract["particle_source"]
     rng = random.Random(int(source["seed"]))
     mass_kg = float(source["mass_amu"]) * AMU_KG
@@ -196,7 +196,7 @@ def _case_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 def evaluate_contract(contract: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     validate_contract(contract)
-    particles = _source_particles(contract)
+    particles = source_particles(contract)
     voltage = float(contract["rf"]["amplitude_V_peak"])
     order = int(contract["multipole"]["radial_order_n"])
     field_terms = [(order, voltage)]
@@ -254,7 +254,7 @@ def evaluate_round_rod_contract(
     source_drive = float(screen_metrics["field_solve_drive_V"])
     scale = float(contract["rf"]["amplitude_V_peak"]) / source_drive
     field_terms = [(int(order), float(value) * scale) for order, value in coefficients.items()]
-    particles = _source_particles(contract)
+    particles = source_particles(contract)
     cases: dict[str, Any] = {}
     all_rows: list[dict[str, Any]] = []
     for case_id, rf_enabled in (("round_rod_rf_on", True), ("zero_rf_control", False)):
