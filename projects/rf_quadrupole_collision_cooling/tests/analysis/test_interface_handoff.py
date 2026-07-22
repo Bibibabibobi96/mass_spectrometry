@@ -47,7 +47,7 @@ class InterfaceContractTests(unittest.TestCase):
         self.assertEqual(stages[4]["status"], "conditional")
         self.assertEqual(
             stages[2]["status"],
-            "static_contract_ready_function_runtime_not_started",
+            "geometry_built_field_and_function_runtime_not_started",
         )
         self.assertEqual(stages[2]["static_contract"]["gap_mm"], 1.0)
         self.assertFalse(stages[2]["static_contract"]["field_solve_allowed"])

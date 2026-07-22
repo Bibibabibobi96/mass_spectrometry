@@ -21,6 +21,11 @@ class S2PassiveConnectorTests(unittest.TestCase):
         self.assertEqual(geometry["downstream_entry_aperture"]["full_height_z_mm"], 0.9)
         self.assertFalse(contract["field_ownership"]["oa_extraction_pulse_included"])
         self.assertFalse(contract["permissions"]["particle_runtime_allowed"])
+        evidence = contract["geometry_build_evidence"]
+        self.assertEqual(evidence["status"], "PASS")
+        self.assertEqual(evidence["connector_domain_count"], 1)
+        self.assertEqual(evidence["port_domain_count"], 1)
+        self.assertFalse(evidence["field_solved"])
 
     def test_contract_rejects_a_gap_that_breaks_the_pose_derivation(self) -> None:
         contract = json.loads(module.DEFAULT_CONTRACT.read_text(encoding="utf-8"))

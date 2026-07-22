@@ -112,11 +112,12 @@
   选择目标物种，用实际逐粒子入口时刻和三维速度预测有限厚孔后的粒子组，再求其x质心到达当前oa理想
   源中心的共享脉冲时刻。能量变化由实际速度自然进入，禁止为某个质量、能量或电荷态硬编码时间；混合
   物种必须显式选组或分别生成调度。
-- S2有限间距被动连接器静态合同：
+- S2有限间距被动连接器合同与build-only入口：
   [`config/rf_to_oatof_s2_passive_connector.json`](config/rf_to_oatof_s2_passive_connector.json)及
-  [`analysis/validate_s2_passive_connector.py`](analysis/validate_s2_passive_connector.py)；当前只冻结1 mm
-  标称间距、同轴位姿、接地圆柱腔和既有`1.0×0.9 mm`oa入口孔，不授权场求解、粒子运行、S2 PASS或
-  Formal晋升。
+  [`analysis/validate_s2_passive_connector.py`](analysis/validate_s2_passive_connector.py)，真实COMSOL入口为
+  [`tests/comsol/run_s2_passive_connector_geometry.ps1`](tests/comsol/run_s2_passive_connector_geometry.ps1)；
+  当前已冻结并成功构建1 mm标称间距、同轴位姿、接地圆柱腔和既有`1.0×0.9 mm`oa入口孔。该入口不建
+  网格、不创建物理、不求场、不放粒子，也不授权S2 PASS或Formal晋升。
 - RF入口能量匹配候选：[`config/rf_to_oatof_energy_match_candidate.json`](config/rf_to_oatof_energy_match_candidate.json)、
   [`analysis/validate_rf_energy_match.py`](analysis/validate_rf_energy_match.py)及
   [`analysis/compare_rf_input_energy.py`](analysis/compare_rf_input_energy.py)；它用独立命名的100 amu、5 eV

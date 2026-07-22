@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "role": "rf_to_oatof_s2_passive_grounded_connector_candidate",
-  "status": "static_contract_ready_function_runtime_not_started",
+  "status": "geometry_built_field_and_function_runtime_not_started",
   "stage": "S2",
-  "qualification_scope": "nominal_geometry_and_coordinate_contract_only",
+  "qualification_scope": "nominal_geometry_coordinate_and_build_only_contract",
   "inputs": {
     "stage_plan": "config/rf_to_oatof_interface_stages.json",
     "interface_reference": "config/rf_to_oatof_interface_candidate.json",
@@ -94,6 +94,20 @@
       "velocity_z_m_s"
     ],
     "claim_limit": "A future N=100 run may demonstrate nominal passive-connector function only; it cannot qualify S2 performance, pulse capture, tolerances, CAD or Formal assets."
+  },
+  "geometry_build_evidence": {
+    "run_id": "20260722_134157__build__comsol__rf-oatof-s2-passive-connector__gap1",
+    "software": "COMSOL 6.4 through MATLAB R2025b LiveLink",
+    "status": "PASS",
+    "geometry_domains": 21,
+    "connector_domain_count": 1,
+    "port_domain_count": 1,
+    "mesh_built": false,
+    "physics_created": false,
+    "field_solved": false,
+    "particle_runtime_executed": false,
+    "model_saved": false,
+    "claim_limit": "Confirms the parameterized 1 mm nominal geometry builds and exposes nonempty connector and port vacuum selections only."
   },
   "unresolved_for_stage_pass": [
     "field_mesh_and_pa_resolution_convergence_at_both_ends",

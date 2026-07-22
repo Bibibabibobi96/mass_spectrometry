@@ -40,7 +40,7 @@ def validate_contract(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
     if stage_plan.get("current_stage") != "S2":
         raise ValueError("stage plan has not advanced to S2")
     stage = next(item for item in stage_plan["stages"] if item["id"] == "S2")
-    if stage.get("status") != "static_contract_ready_function_runtime_not_started":
+    if stage.get("status") != "geometry_built_field_and_function_runtime_not_started":
         raise ValueError("S2 stage status differs")
 
     s1 = _load_relative(contract["inputs"]["s1_joint_field"])
@@ -90,9 +90,16 @@ def validate_contract(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
         raise ValueError("S2 must not include oa pulse capture")
     permissions = contract["permissions"]
     if permissions["field_solve_allowed"] or permissions["particle_runtime_allowed"]:
-        raise ValueError("S2 runtime must remain blocked before the geometry builder exists")
+        raise ValueError("S2 field and particle runtime must remain blocked after the build-only check")
     if permissions["s2_stage_pass_allowed"] or permissions["formal_promotion_allowed"]:
         raise ValueError("Static S2 contract cannot authorize qualification or promotion")
+    evidence = contract["geometry_build_evidence"]
+    if evidence["status"] != "PASS" or evidence["run_id"] != stage["geometry_build_evidence"]["run_id"]:
+        raise ValueError("S2 geometry-build evidence differs from the stage plan")
+    if evidence["connector_domain_count"] < 1 or evidence["port_domain_count"] < 1:
+        raise ValueError("S2 geometry-build vacuum selections are empty")
+    if evidence["mesh_built"] or evidence["physics_created"] or evidence["field_solved"] or evidence["particle_runtime_executed"]:
+        raise ValueError("S2 build-only evidence contains an unauthorized runtime step")
     return contract
 
 
