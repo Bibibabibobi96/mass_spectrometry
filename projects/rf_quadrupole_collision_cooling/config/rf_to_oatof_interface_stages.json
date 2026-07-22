@@ -2,7 +2,7 @@
   "schema_version": 1,
   "role": "rf_to_oatof_interface_implementation_stages",
   "status": "approved_sequential_plan",
-  "current_stage": "S1",
+  "current_stage": "S2",
   "governance": {
     "sequential_execution_required": true,
     "skip_stage_allowed": false,
@@ -102,7 +102,7 @@
     {
       "id": "S2",
       "name": "passive_grounded_connector",
-      "status": "pending_S1_result",
+      "status": "static_contract_ready_function_runtime_not_started",
       "separate_connector_component": true,
       "physical_interface_claim_allowed": true,
       "model": "Add only the measured finite separation and a passive grounded vacuum tube or housing; no active focusing or steering.",
@@ -110,6 +110,14 @@
         "S1 completed or demonstrated physically infeasible",
         "frozen gap, tube length, aperture, alignment datum and leakage limit"
       ],
+      "static_contract": {
+        "path": "config/rf_to_oatof_s2_passive_connector.json",
+        "gap_mm": 1.0,
+        "nominal_alignment": "coaxial_zero_offset_zero_rotation",
+        "field_solve_allowed": false,
+        "particle_runtime_allowed": false,
+        "stage_pass_allowed": false
+      },
       "tests": [
         "three-dimensional joint electrostatic and RF fringe field",
         "tube-wall and aperture losses",

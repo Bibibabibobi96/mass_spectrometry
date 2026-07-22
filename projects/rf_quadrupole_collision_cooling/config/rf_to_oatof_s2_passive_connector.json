@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "role": "rf_to_oatof_s2_passive_grounded_connector_candidate",
+  "status": "static_contract_ready_function_runtime_not_started",
+  "stage": "S2",
+  "qualification_scope": "nominal_geometry_and_coordinate_contract_only",
+  "inputs": {
+    "stage_plan": "config/rf_to_oatof_interface_stages.json",
+    "interface_reference": "config/rf_to_oatof_interface_candidate.json",
+    "s1_joint_field": "config/rf_to_oatof_s1_joint_field.json",
+    "rf_resolved_geometry": "config/resolved_geometry.json",
+    "oatof_baseline": "../oa_tof/config/baseline.json"
+  },
+  "formal_assets_read_only": true,
+  "nominal_registration": {
+    "instrument_frame": "oatof_global",
+    "incoming_axis": "+x",
+    "target_component_pose": {
+      "rotation_component_to_instrument": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+      "translation_mm": [0.0, 0.0, 0.0]
+    },
+    "source_component_pose": {
+      "rotation_component_to_instrument": [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+      "translation_mm": [-159.0, 0.0, -18.42918680341103]
+    },
+    "source_exit_center_local_mm": [0.0, 0.0, 90.2],
+    "source_exit_center_instrument_mm": [-68.8, 0.0, -18.42918680341103],
+    "target_entry_center_instrument_mm": [-67.8, 0.0, -18.42918680341103],
+    "connector_gap_mm": 1.0,
+    "nominal_offset_mm": [0.0, 0.0, 0.0],
+    "nominal_rotation_deg": [0.0, 0.0, 0.0],
+    "axis_mapping": "RF +z -> oa +x; RF +x -> oa +y; RF +y -> oa +z",
+    "derivation": "Move the S1 RF source pose exactly 1.0 mm upstream along oa -x while retaining the S1 right-handed rotation and oa target pose."
+  },
+  "passive_connector_geometry": {
+    "topology": "straight_grounded_cylindrical_vacuum_cavity_terminated_by_existing_oatof_rectangular_port",
+    "axial_extent_x_mm": [-68.8, -67.8],
+    "length_mm": 1.0,
+    "upstream_clear_aperture": {
+      "shape": "circle",
+      "radius_mm": 3.6,
+      "derivation": "Inherit the RF source-exit physical aperture; the connector may not add a smaller upstream stop."
+    },
+    "cavity": {
+      "shape": "cylinder",
+      "inner_radius_mm": 3.6,
+      "axis": "+x",
+      "potential_V": 0.0
+    },
+    "downstream_entry_aperture": {
+      "shape": "rectangle",
+      "full_width_y_mm": 1.0,
+      "full_height_z_mm": 0.9,
+      "center_mm": [-67.8, 0.0, -18.42918680341103],
+      "derivation": "Inherit the selected S1 N=100 characterization width and the 90% coupled-longitudinal height; do not enlarge for S2."
+    },
+    "secondary_internal_aperture_allowed": false,
+    "active_electrode_allowed": false,
+    "wall_model": "zero_thickness_grounded_field_boundary_for_function_candidate",
+    "mechanical_wall_thickness_claim_allowed": false
+  },
+  "field_ownership": {
+    "owner": "single_rf_to_oatof_s2_joint_vacuum_model",
+    "included_bases": [
+      "time-dependent RF rod differential field",
+      "always-on oa accelerator electrostatic field"
+    ],
+    "oa_extraction_pulse_included": false,
+    "magnetic_field_included": false,
+    "collision_or_space_charge_included": false,
+    "common_ground_V": 0.0,
+    "policy": "The 1 mm gap and both fringe-field regions belong to one joint model; no field stitching or coordinate teleportation is allowed."
+  },
+  "functional_candidate": {
+    "source_particles": 100,
+    "required_census": [
+      "rf_exit",
+      "connector_entry",
+      "connector_wall_loss",
+      "oatof_entry",
+      "detector_hit_or_terminal_loss"
+    ],
+    "minimum_detector_hits": 1,
+    "dense_trajectories_saved": false,
+    "required_state": [
+      "particle_id",
+      "species_id",
+      "instrument_time_us",
+      "position_x_mm",
+      "position_y_mm",
+      "position_z_mm",
+      "velocity_x_m_s",
+      "velocity_y_m_s",
+      "velocity_z_m_s"
+    ],
+    "claim_limit": "A future N=100 run may demonstrate nominal passive-connector function only; it cannot qualify S2 performance, pulse capture, tolerances, CAD or Formal assets."
+  },
+  "unresolved_for_stage_pass": [
+    "field_mesh_and_pa_resolution_convergence_at_both_ends",
+    "field_leakage_acceptance_limit",
+    "minimum_transmission_requirement",
+    "mechanical_wall_thickness_and_flange",
+    "assembly_tolerances",
+    "solidworks_synchronization_scope"
+  ],
+  "permissions": {
+    "geometry_builder_implementation_allowed": true,
+    "field_solve_allowed": false,
+    "particle_runtime_allowed": false,
+    "s2_stage_pass_allowed": false,
+    "formal_promotion_allowed": false
+  }
+}

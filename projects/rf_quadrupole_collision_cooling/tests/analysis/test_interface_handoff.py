@@ -18,7 +18,7 @@ class InterfaceContractTests(unittest.TestCase):
     def test_interface_stages_are_sequential_and_start_without_physical_claim(self) -> None:
         plan = json.loads(STAGES.read_text(encoding="utf-8"))
         self.assertEqual(plan["status"], "approved_sequential_plan")
-        self.assertEqual(plan["current_stage"], "S1")
+        self.assertEqual(plan["current_stage"], "S2")
         self.assertTrue(plan["governance"]["sequential_execution_required"])
         self.assertFalse(plan["governance"]["skip_stage_allowed"])
         stages = plan["stages"]
@@ -45,6 +45,12 @@ class InterfaceContractTests(unittest.TestCase):
             stages[1]["precheck_evidence"]["minimum_geometric_transmission_frozen"]
         )
         self.assertEqual(stages[4]["status"], "conditional")
+        self.assertEqual(
+            stages[2]["status"],
+            "static_contract_ready_function_runtime_not_started",
+        )
+        self.assertEqual(stages[2]["static_contract"]["gap_mm"], 1.0)
+        self.assertFalse(stages[2]["static_contract"]["field_solve_allowed"])
 
     def test_two_boundaries_and_capture_state_remain_distinct(self) -> None:
         contract = MODULE.validate_contract(CONTRACT)["contract"]

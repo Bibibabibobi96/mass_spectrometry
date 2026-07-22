@@ -1,0 +1,36 @@
+from __future__ import annotations
+
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+from projects.rf_quadrupole_collision_cooling.analysis import validate_s2_passive_connector as module
+
+
+class S2PassiveConnectorTests(unittest.TestCase):
+    def test_contract_inherits_s1_geometry_and_freezes_one_mm_gap(self) -> None:
+        contract = module.validate_contract()
+        registration = contract["nominal_registration"]
+        geometry = contract["passive_connector_geometry"]
+        self.assertEqual(registration["connector_gap_mm"], 1.0)
+        self.assertEqual(registration["source_exit_center_instrument_mm"][0], -68.8)
+        self.assertEqual(registration["target_entry_center_instrument_mm"][0], -67.8)
+        self.assertEqual(geometry["upstream_clear_aperture"]["radius_mm"], 3.6)
+        self.assertEqual(geometry["downstream_entry_aperture"]["full_width_y_mm"], 1.0)
+        self.assertEqual(geometry["downstream_entry_aperture"]["full_height_z_mm"], 0.9)
+        self.assertFalse(contract["field_ownership"]["oa_extraction_pulse_included"])
+        self.assertFalse(contract["permissions"]["particle_runtime_allowed"])
+
+    def test_contract_rejects_a_gap_that_breaks_the_pose_derivation(self) -> None:
+        contract = json.loads(module.DEFAULT_CONTRACT.read_text(encoding="utf-8"))
+        contract["nominal_registration"]["connector_gap_mm"] = 2.0
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "contract.json"
+            path.write_text(json.dumps(contract), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "connector gap"):
+                module.validate_contract(path)
+
+
+if __name__ == "__main__":
+    unittest.main()

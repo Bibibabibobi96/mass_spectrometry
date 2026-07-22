@@ -40,7 +40,8 @@ $candidateValidators = @(
   'validate_rf_piecewise_swept_mesh.py',
   'validate_rf_rod_region_swept_mesh.py',
   'validate_s1_pulse_timing.py',
-  'validate_s1_joint_field.py'
+  'validate_s1_joint_field.py',
+  'validate_s2_passive_connector.py'
 )
 foreach ($validator in $candidateValidators) {
   & $python (Join-Path $projectRoot "analysis\$validator")
