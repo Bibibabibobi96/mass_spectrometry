@@ -12,12 +12,16 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
+$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling'
 $source = Join-Path $artifactRoot "runs\$SourceRunId"
 $sourceManifest = Get-Content -LiteralPath (Join-Path $source 'run_manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($sourceManifest.status -ne 'success') {
   throw 'S1 downstream runtime requires a successful physical-port source.'
 }
+& $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') `
+  (Join-Path $source 'run_manifest.json') --require-status success
+if ($LASTEXITCODE -ne 0) { throw 'S1 source manifest verification failed.' }
 $directJointSource = $sourceManifest.mode -eq 'rf_to_oatof_s1_local_joint_field'
 if (-not $directJointSource -and $sourceManifest.mode -ne 's1_physical_port_analysis_only') {
   throw 'S1 downstream runtime requires a successful joint-field or analysis-only physical-port source.'
@@ -52,7 +56,12 @@ $analyzer = Join-Path $inputDir 'analyze_s1_end_to_end.py'
 Copy-Item -LiteralPath (Join-Path $projectRoot 'analysis\build_s1_downstream_handoff.py') -Destination $converter
 Copy-Item -LiteralPath (Join-Path $projectRoot 'analysis\build_oatof_handoff.py') -Destination $handoffLibrary
 Copy-Item -LiteralPath (Join-Path $projectRoot 'analysis\analyze_s1_end_to_end.py') -Destination $analyzer
-$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+$peakMetrics = Join-Path $inputDir 'peak_metrics.py'
+$analysisContract = Join-Path $inputDir 'oatof_analysis_contract.json'
+$geometryContract = Join-Path $inputDir 'oatof_resolved_geometry.json'
+Copy-Item -LiteralPath (Join-Path $repoRoot 'projects\oa_tof\analysis\peak_metrics.py') -Destination $peakMetrics
+Copy-Item -LiteralPath (Join-Path $repoRoot 'projects\oa_tof\config\analysis_contract.json') -Destination $analysisContract
+Copy-Item -LiteralPath (Join-Path $repoRoot 'projects\oa_tof\config\resolved_geometry.json') -Destination $geometryContract
 $canonical = Join-Path $inputDir 'canonical_local_joint_exit.csv'
 $ion = Join-Path $inputDir 'local_joint_exit_instrument_clock.ion'
 $rowMap = Join-Path $inputDir 'row_map.csv'
@@ -81,9 +90,12 @@ $programMetadata = Join-Path $inputDir 'pulse_program_build.json'
 if ($LASTEXITCODE -ne 0) { throw 'S1 downstream pulse Program build failed.' }
 
 $stdout = Join-Path $logDir 'simion.stdout.log'; $stderr = Join-Path $logDir 'simion.stderr.log'
+# SIMION accepts only its supported defaults here; the ION table row count controls
+# the actual number of particles emitted by this run.
+$simionDefaultParticleCount = 100
 $process = Start-Process -FilePath $SimionExe -WorkingDirectory $runtimeDir -WindowStyle Hidden -Wait -PassThru `
   -RedirectStandardOutput $stdout -RedirectStandardError $stderr -ArgumentList @(
-    '--default-num-particles','100','--nogui','fly','--trajectory-quality','8',
+    '--default-num-particles',([string]$simionDefaultParticleCount),'--nogui','fly','--trajectory-quality','8',
     '--retain-trajectories','0','--particles',$ion,'--programs','1',
     '--adjustable','trajectory_quality=8','--adjustable','trajectory_log_enable=1',
     '--adjustable','diagnostic_max_tof_us=90',
@@ -98,17 +110,20 @@ $downstream = Join-Path $resultDir 'simion_downstream_particles.csv'
 $metrics = Join-Path $resultDir 's1_end_to_end_metrics.json'
 $events = Join-Path $resultDir 's1_end_to_end_events.csv'
 $figure = Join-Path $resultDir 's1_end_to_end_funnel.png'
+$resolutionFigure = Join-Path $resultDir 's1_downstream_resolution_diagnostic.png'
 & $python $analyzer --entry $entry --local $local --downstream $downstream --row-map $rowMap `
-  --events-output $events --figure $figure --output $metrics
+  --events-output $events --figure $figure --resolution-figure $resolutionFigure `
+  --pulse-time-us $PulseTimeUs --pulse-width-us $PulseWidthUs `
+  --analysis-contract $analysisContract --geometry-contract $geometryContract --output $metrics
 if ($LASTEXITCODE -ne 0) { throw 'S1 end-to-end function gate failed.' }
 $result = Get-Content -LiteralPath $metrics -Raw -Encoding UTF8 | ConvertFrom-Json
 $runConfig = Join-Path $runDir 'run_config.json'
-[ordered]@{schema_version=1;run_id=$RunId;project='rf_quadrupole_collision_cooling';mode='rf_oatof_s1_physical_end_to_end';project_root=$repoRoot;inputs=[ordered]@{source_run_manifest=(Join-Path $source 'run_manifest.json');formal_simion_iob=$formalIob;local_joint_events=$local;entry_canonical=$entry;converter=$converter;handoff_library=$handoffLibrary;analyzer=$analyzer};parameters=[ordered]@{particle_count=$particleCount;source_mode=$sourceManifest.mode;position_projection_applied=$false;solver_clock='instrument_time';pulse_time_us=$PulseTimeUs;pulse_width_us=$PulseWidthUs;dense_trajectories_saved=$false};formal_gate_passed=$false} | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath $runConfig -Encoding UTF8
+[ordered]@{schema_version=1;run_id=$RunId;project='rf_quadrupole_collision_cooling';mode='rf_oatof_s1_physical_end_to_end';project_root=$repoRoot;inputs=[ordered]@{source_run_manifest=(Join-Path $source 'run_manifest.json');formal_simion_iob=$formalIob;local_joint_events=$local;entry_canonical=$entry;converter=$converter;handoff_library=$handoffLibrary;analyzer=$analyzer;peak_metrics=$peakMetrics;analysis_contract=$analysisContract;geometry_contract=$geometryContract};parameters=[ordered]@{particle_count=$particleCount;ion_table_rows=$particleCount;simion_default_num_particles=$simionDefaultParticleCount;source_mode=$sourceManifest.mode;position_projection_applied=$false;solver_clock='instrument_time';pulse_time_us=$PulseTimeUs;pulse_width_us=$PulseWidthUs;downstream_time_origin='shared_pulse_onset';dense_trajectories_saved=$false};formal_gate_passed=$false} | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath $runConfig -Encoding UTF8
 $summary = Join-Path $runDir 'summary.json'
-[ordered]@{schema_version=1;role='rf_oatof_s1_physical_end_to_end_summary';status='success';candidate_decision=$result.status;detector_hits=$result.detector_hits;rf_exit_particles=100;local_joint_exit=$result.local_joint_exit;physical_link_claim_allowed=$false;resolution_claim_allowed=$false} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $summary -Encoding UTF8
+[ordered]@{schema_version=1;role='rf_oatof_s1_physical_end_to_end_summary';status='success';candidate_decision=$result.status;detector_hits=$result.detector_hits;rf_exit_particles=100;local_joint_exit=$result.local_joint_exit;resolution_diagnostic=$result.resolution_diagnostic;physical_link_claim_allowed=$false;resolution_claim_allowed=$false} | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $summary -Encoding UTF8
 $writer = Join-Path $repoRoot 'common\contracts\write_run_manifest.py'
 $args = @($writer,'--run-config',$runConfig,'--status','success','--software','COMSOL 6.4','--software','SIMION 2020','--software','Python 3.11')
-foreach ($output in @($canonical,$ion,$rowMap,$handoffMetadata,$programMetadata,$runtimeProgram,$downstream,$metrics,$events,$figure,$stdout,$stderr,$summary)) { $args += @('--output',$output) }
+foreach ($output in @($canonical,$ion,$rowMap,$handoffMetadata,$programMetadata,$runtimeProgram,$downstream,$metrics,$events,$figure,$resolutionFigure,$stdout,$stderr,$summary)) { $args += @('--output',$output) }
 & $python @args
 if ($LASTEXITCODE -ne 0) { throw 'S1 end-to-end manifest failed.' }
 Write-Output "S1_PHYSICAL_END_TO_END=PASS RUN_ID=$RunId HITS=$($result.detector_hits)/100 LOCAL_EXIT=$($result.local_joint_exit)/100"
