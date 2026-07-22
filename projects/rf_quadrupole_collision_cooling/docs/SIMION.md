@@ -76,7 +76,8 @@ S1小样本结果只允许功能与诊断声明。
 `instrument_global`变换。
 
 当前累积S3的统一入口是`tests/cross_solver/run_s3_cumulative_chain.ps1`；它先取得匹配连接器案例的S2和
-S3 COMSOL状态，再调用SIMION下游阶段，不允许从共享目录猜测来源。0 mm运行
+S3 COMSOL状态，再调用SIMION下游阶段，不允许从共享目录猜测来源。默认1 mm运行
+`20260722_165527__sim__cross__rf-oatof-s3-end-to-end-gap1__n100`从31个真实局部出口状态得到7个探测命中；0 mm运行
 `20260722_164341__sim__cross__rf-oatof-s3-end-to-end-gap0__n100`从39个真实局部出口状态得到9个探测命中，
 保持粒子ID、三维速度、全局时钟和同一脉冲结束时刻。该结果仅证明功能贯通，不是峰形、分辨率或接口
 资格结论。
