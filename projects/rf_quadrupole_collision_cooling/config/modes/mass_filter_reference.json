@@ -1,7 +1,7 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "mode": "mass_filter_reference",
-  "status": "frozen_future_mode_not_yet_validated",
+  "status": "solver_free_l1_functional_pass",
   "source": "SIMION 2020 examples/quad/quad.lua defaults",
   "theory_contract": {
     "model_level": "L0",
@@ -31,5 +31,19 @@
     "exit_enclosure": -100.0,
     "detector": -1500.0
   },
-  "execution_policy": "Do not run or promote in the current transport-only task."
+  "functional_screen": {
+    "model_level": "L1",
+    "field_model": "finite_length_ideal_linear_quadrupole_with_hard_r0_aperture",
+    "source_contract": "../../official_particle_source.json",
+    "particle_count": 256,
+    "random_seed": 20260722,
+    "mass_scan_Th": {"min": 94.0, "max": 108.0, "step": 0.5},
+    "steps_per_rf_period": 100,
+    "acceptance": {
+      "minimum_peak_transmission": 0.9,
+      "minimum_inside_band_transmission": 0.9,
+      "maximum_endpoint_transmission": 0.05
+    }
+  },
+  "execution_policy": "L1 solver-free functional screening is allowed; solver qualification requires a separately approved Candidate run."
 }

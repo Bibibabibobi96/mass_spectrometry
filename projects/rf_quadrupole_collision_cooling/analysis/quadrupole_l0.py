@@ -122,12 +122,12 @@ def scanline_passband(u_over_v: float) -> dict[str, float]:
 
 def validate_mass_filter_reference(baseline: dict[str, Any], mode: dict[str, Any]) -> dict[str, Any]:
     """Validate the frozen SIMION reference without claiming solver qualification."""
-    if mode.get("schema_version") != 2:
-        raise ValueError("mass-filter reference schema_version must be 2")
+    if mode.get("schema_version") != 3:
+        raise ValueError("mass-filter reference schema_version must be 3")
     if mode.get("mode") != "mass_filter_reference":
         raise ValueError("mode must be mass_filter_reference")
-    if mode.get("status") != "frozen_future_mode_not_yet_validated":
-        raise ValueError("mass-filter reference must remain explicitly unvalidated")
+    if mode.get("status") != "solver_free_l1_functional_pass":
+        raise ValueError("mass-filter reference must record the current L1 status")
 
     theory = mode.get("theory_contract", {})
     expected_contract = {

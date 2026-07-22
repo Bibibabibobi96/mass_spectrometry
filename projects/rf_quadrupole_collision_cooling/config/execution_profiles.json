@@ -99,6 +99,37 @@
         "Requires a versioned N>=100 particle table and explicit RF peak binding before execution",
         "Current strict interface comparison is an allowed candidate FAIL, not a formal capability"
       ]
+    },
+    {
+      "profile_id": "mass_filter_l1_static",
+      "capability_id": "quadrupole_mass_filter_reference",
+      "mode": "mass_filter_reference",
+      "evidence_levels": ["static"],
+      "supported_objectives": ["transmission_fraction", "mass_peak_centroid"],
+      "supported_operating_points": [
+        {"mass": {"value": 100, "unit": "Da"}, "charge_state": 1}
+      ],
+      "supported_design_variables": ["rf_amplitude", "rf_frequency", "dc_differential", "axis_offset"],
+      "supported_constraints": [],
+      "deliverable_outputs": ["simulation_results", "validation_report"],
+      "required_bindings": ["run_id"],
+      "steps": [
+        {
+          "step_id": "static_gate", "kind": "gate", "shell": "powershell",
+          "entrypoint": "verify_project.ps1", "run_id_template": null,
+          "arguments": ["-Level", "Static", "-PythonExe", "{python_exe}"]
+        },
+        {
+          "step_id": "l1_mass_response", "kind": "analyze", "shell": "python",
+          "entrypoint": "analysis/run_mass_filter_l1.py",
+          "run_id_template": "{timestamp}__analysis__python__mass-filter-l1__n256",
+          "arguments": ["--run-id", "{run_id}"]
+        }
+      ],
+      "limitations": [
+        "Uses an ideal linear field with a hard r0 aperture and omits entrance and exit fringe fields",
+        "Establishes same-geometry functional feasibility only, not COMSOL or SIMION Candidate qualification"
+      ]
     }
   ]
 }

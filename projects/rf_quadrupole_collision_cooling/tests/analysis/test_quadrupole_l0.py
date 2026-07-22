@@ -58,10 +58,10 @@ class MassFilterReferenceContractTests(unittest.TestCase):
         cls.mode = load_json(PROJECT_ROOT / "config" / "modes" / "mass_filter_reference.json")
 
     def test_frozen_reference_uses_explicit_voltage_semantics(self) -> None:
-        self.assertEqual(self.mode["schema_version"], 2)
+        self.assertEqual(self.mode["schema_version"], 3)
         result = MODULE.validate_mass_filter_reference(self.baseline, self.mode)
         self.assertEqual(result["status"], "PASS")
-        self.assertEqual(result["mode_status"], "frozen_future_mode_not_yet_validated")
+        self.assertEqual(result["mode_status"], "solver_free_l1_functional_pass")
         self.assertAlmostEqual(result["q_at_tune_mass"], 0.7060233, delta=1e-7)
         self.assertAlmostEqual(result["a_at_tune_mass"], 0.2298878, delta=1e-7)
         self.assertAlmostEqual(result["dc_differential_V"], 45.52602987935551, delta=1e-12)

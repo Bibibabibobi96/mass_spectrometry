@@ -24,7 +24,7 @@
     },
     {
       "descriptor": "projects/rf_quadrupole_collision_cooling/config/project.json",
-      "sha256": "409FECC3163E81B60755CF60257B10A31C310AD5E722BD2EF26977120E3DF3BF"
+      "sha256": "3182EACDAAA6E949C01474F240168FBC7CE52E21A375B146C814C578B7032C05"
     },
     {
       "descriptor": "projects/wehnelt_electron_gun/config/project.json",
@@ -381,7 +381,7 @@
       "project_id": "rf_quadrupole_collision_cooling",
       "family_id": "rf_multipole_ion_optics",
       "display_name": "RF四极杆碰撞冷却与传输",
-      "purpose": "四极杆无碰撞传输、接口相空间和未来碰撞冷却功能验证",
+      "purpose": "四极杆无碰撞传输、RF+DC质量过滤、接口相空间和未来碰撞冷却功能验证",
       "lifecycle_status": "candidate",
       "toolchains": [
         "comsol",
@@ -442,7 +442,7 @@
         {
           "capability_id": "quadrupole_mass_filter_reference",
           "function": "mass_filtering",
-          "status": "prototype",
+          "status": "static",
           "modes": [
             "mass_filter_reference"
           ],
@@ -468,7 +468,7 @@
         "No current formal mechanical geometry or SolidWorks assembly",
         "N=100 strict interface phase-space gate remains failed",
         "Collision physics is not implemented in the current validated chain",
-        "Mass-filter mode is a frozen unvalidated reference only"
+        "Mass-filter mode has only solver-free L1 functional evidence; fringe fields and solver Candidate qualification remain open"
       ]
     },
     {
