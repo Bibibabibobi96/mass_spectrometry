@@ -112,12 +112,14 @@
   选择目标物种，用实际逐粒子入口时刻和三维速度预测有限厚孔后的粒子组，再求其x质心到达当前oa理想
   源中心的共享脉冲时刻。能量变化由实际速度自然进入，禁止为某个质量、能量或电荷态硬编码时间；混合
   物种必须显式选组或分别生成调度。
-- S2有限间距被动连接器合同与build-only入口：
+- S2有限间距被动连接器合同、build-only入口与无脉冲场入口：
   [`config/rf_to_oatof_s2_passive_connector.json`](config/rf_to_oatof_s2_passive_connector.json)及
   [`analysis/validate_s2_passive_connector.py`](analysis/validate_s2_passive_connector.py)，真实COMSOL入口为
-  [`tests/comsol/run_s2_passive_connector_geometry.ps1`](tests/comsol/run_s2_passive_connector_geometry.ps1)；
-  当前已冻结并成功构建1 mm标称间距、同轴位姿、接地圆柱腔和既有`1.0×0.9 mm`oa入口孔。该入口不建
-  网格、不创建物理、不求场、不放粒子，也不授权S2 PASS或Formal晋升。跨项目输入由
+  [`tests/comsol/run_s2_passive_connector_geometry.ps1`](tests/comsol/run_s2_passive_connector_geometry.ps1)
+  和[`tests/comsol/run_s2_passive_connector_field.ps1`](tests/comsol/run_s2_passive_connector_field.ps1)；
+  当前已冻结并成功构建1 mm标称间距、同轴位姿、接地圆柱腔和既有`1.0×0.9 mm`oa入口孔，并在同一共享
+  几何构建函数上求得oa静态场与RF 100 V单位场。场入口不放粒子、不加oa脉冲、不保存MPH，也不授权
+  网格收敛、S2 PASS或Formal晋升。跨项目输入由
   [`config/rf_to_oatof_s2_dependencies.json`](config/rf_to_oatof_s2_dependencies.json)显式声明提供项目、
   仓库相对路径和冻结文件名；运行时核对源文件与`inputs/`副本SHA-256，并把身份写入run config。
   三件套、环境恢复和失败收尾当前由RF项目内部`tests/support/rf_run_artifact_support.ps1`统一；旧run和

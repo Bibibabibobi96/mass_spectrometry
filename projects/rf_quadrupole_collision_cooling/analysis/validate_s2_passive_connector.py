@@ -40,7 +40,7 @@ def validate_contract(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
     if stage_plan.get("current_stage") != "S2":
         raise ValueError("stage plan has not advanced to S2")
     stage = next(item for item in stage_plan["stages"] if item["id"] == "S2")
-    if stage.get("status") != "geometry_built_field_and_function_runtime_not_started":
+    if stage.get("status") != "no_pulse_field_function_passed_particle_runtime_not_started":
         raise ValueError("S2 stage status differs")
 
     dependency_contract = _load_relative(contract["inputs"]["explicit_dependencies"])
@@ -67,6 +67,7 @@ def validate_contract(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
         raise ValueError("S2 dependency runtime policy is not fail-closed")
 
     s1 = _load_relative(contract["inputs"]["s1_joint_field"])
+    rf = _load_relative(contract["inputs"]["rf_resolved_geometry"])
     interface = _load_relative(contract["inputs"]["interface_reference"])
     registration = contract["nominal_registration"]
     gap_mm = float(registration["connector_gap_mm"])
@@ -111,9 +112,34 @@ def validate_contract(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
     _assert_close(fields["common_ground_V"], 0.0, "common ground")
     if fields["oa_extraction_pulse_included"]:
         raise ValueError("S2 must not include oa pulse capture")
+    field_candidate = contract["no_pulse_field_candidate"]
+    if field_candidate["required_field_bases"] != ["oatof_static", "rf_unit_100_V"]:
+        raise ValueError("S2 no-pulse field bases differ")
+    if set(field_candidate["required_probe_locations"]) != {
+        "rf_rod_region_off_axis",
+        "rf_exit_center",
+        "connector_midpoint",
+        "oatof_entry_center",
+        "oatof_ideal_source_center",
+    }:
+        raise ValueError("S2 no-pulse field probes differ")
+    if not 0 < float(field_candidate["rf_off_axis_probe_radius_mm"]) < float(rf["geometry_mm"]["field_radius_r0"]):
+        raise ValueError("S2 RF off-axis probe must remain inside r0")
+    mesh = field_candidate["mesh"]
+    if mesh["global_auto_level"] != 6 or mesh["convergence_claim_allowed"]:
+        raise ValueError("S2 no-pulse field mesh scope differs")
+    if float(mesh["accelerator_hmax_mm"]) <= 0 or float(mesh["connector_and_port_hmax_mm"]) <= 0:
+        raise ValueError("S2 no-pulse field mesh sizes must be positive")
+    _assert_close(
+        field_candidate["boundary_probe_inset_mm"],
+        s1["port_sweep"]["particle_release_offset_inside_outer_face_mm"],
+        "S2 boundary probe inset",
+    )
     permissions = contract["permissions"]
-    if permissions["field_solve_allowed"] or permissions["particle_runtime_allowed"]:
-        raise ValueError("S2 field and particle runtime must remain blocked after the build-only check")
+    if not permissions["field_solve_allowed"] or permissions["particle_runtime_allowed"]:
+        raise ValueError("S2 must allow field solve while particle runtime remains blocked")
+    if not stage["static_contract"]["field_solve_allowed"]:
+        raise ValueError("S2 stage plan does not authorize the no-pulse field candidate")
     if permissions["s2_stage_pass_allowed"] or permissions["formal_promotion_allowed"]:
         raise ValueError("Static S2 contract cannot authorize qualification or promotion")
     evidence = contract["geometry_build_evidence"]
@@ -123,6 +149,18 @@ def validate_contract(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
         raise ValueError("S2 geometry-build vacuum selections are empty")
     if evidence["mesh_built"] or evidence["physics_created"] or evidence["field_solved"] or evidence["particle_runtime_executed"]:
         raise ValueError("S2 build-only evidence contains an unauthorized runtime step")
+    field_evidence = contract["no_pulse_field_evidence"]
+    stage_field_evidence = stage["no_pulse_field_evidence"]
+    if field_evidence["status"] != "PASS" or field_evidence["run_id"] != stage_field_evidence["run_id"]:
+        raise ValueError("S2 no-pulse field evidence differs from the stage plan")
+    if field_evidence["field_bases_solved"] != 2 or field_evidence["probe_count"] != 5:
+        raise ValueError("S2 no-pulse field evidence is incomplete")
+    if not field_evidence["all_probe_values_finite"] or float(field_evidence["rf_off_axis_field_norm_V_per_m"]) <= 0:
+        raise ValueError("S2 no-pulse field evidence is nonfinite or physically trivial")
+    if field_evidence["particle_runtime_executed"] or field_evidence["oa_extraction_pulse_included"]:
+        raise ValueError("S2 no-pulse field evidence contains unauthorized runtime physics")
+    if field_evidence["mesh_convergence_claimed"] or field_evidence["s2_stage_passed"] or field_evidence["formal_gate_passed"]:
+        raise ValueError("S2 no-pulse field evidence overclaims qualification")
     return contract
 
 
@@ -134,7 +172,7 @@ def main() -> None:
     gap_mm = contract["nominal_registration"]["connector_gap_mm"]
     print(
         "S2_PASSIVE_CONNECTOR=PASS "
-        f"GAP_MM={gap_mm:g} FIELD_SOLVE_ALLOWED=false PARTICLE_RUNTIME_ALLOWED=false"
+        f"GAP_MM={gap_mm:g} FIELD_SOLVE_ALLOWED=true PARTICLE_RUNTIME_ALLOWED=false"
     )
 
 

@@ -20,7 +20,20 @@ class S2PassiveConnectorTests(unittest.TestCase):
         self.assertEqual(geometry["downstream_entry_aperture"]["full_width_y_mm"], 1.0)
         self.assertEqual(geometry["downstream_entry_aperture"]["full_height_z_mm"], 0.9)
         self.assertFalse(contract["field_ownership"]["oa_extraction_pulse_included"])
+        self.assertTrue(contract["permissions"]["field_solve_allowed"])
         self.assertFalse(contract["permissions"]["particle_runtime_allowed"])
+        self.assertFalse(
+            contract["no_pulse_field_candidate"]["mesh"]["convergence_claim_allowed"]
+        )
+        rf = json.loads(
+            (module.PROJECT_ROOT / contract["inputs"]["rf_resolved_geometry"]).read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertLess(
+            contract["no_pulse_field_candidate"]["rf_off_axis_probe_radius_mm"],
+            rf["geometry_mm"]["field_radius_r0"],
+        )
         evidence = contract["geometry_build_evidence"]
         self.assertEqual(evidence["status"], "PASS")
         self.assertEqual(evidence["connector_domain_count"], 1)
@@ -46,6 +59,15 @@ class S2PassiveConnectorTests(unittest.TestCase):
             path = Path(temporary) / "contract.json"
             path.write_text(json.dumps(contract), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "connector gap"):
+                module.validate_contract(path)
+
+    def test_contract_rejects_particle_runtime_during_field_candidate(self) -> None:
+        contract = json.loads(module.DEFAULT_CONTRACT.read_text(encoding="utf-8"))
+        contract["permissions"]["particle_runtime_allowed"] = True
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "contract.json"
+            path.write_text(json.dumps(contract), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "particle runtime"):
                 module.validate_contract(path)
 
 

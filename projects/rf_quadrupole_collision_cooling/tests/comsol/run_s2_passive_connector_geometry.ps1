@@ -14,9 +14,8 @@ $contractDocument = Get-Content -LiteralPath $contractSource -Raw -Encoding UTF8
 if (-not [bool]$contractDocument.permissions.geometry_builder_implementation_allowed) {
   throw 'The S2 contract does not authorize geometry construction.'
 }
-if ([bool]$contractDocument.permissions.field_solve_allowed -or
-    [bool]$contractDocument.permissions.particle_runtime_allowed) {
-  throw 'The S2 geometry-only runner requires field and particle runtime to remain disabled.'
+if ([bool]$contractDocument.permissions.particle_runtime_allowed) {
+  throw 'The S2 geometry-only runner requires particle runtime to remain disabled.'
 }
 $gapMm = [double]$contractDocument.nominal_registration.connector_gap_mm
 if ([math]::Abs($gapMm-1.0) -gt 1e-12) {
@@ -37,6 +36,7 @@ $logDir = $package.log_dir
 
 try {
 $task = Join-Path $inputDir 'build_s2_passive_connector_geometry.m'
+$geometryBuilder = Join-Path $inputDir 'build_s2_passive_connector_model.m'
 $runner = Join-Path $inputDir 'run_s2_passive_connector_geometry.ps1.txt'
 $support = Join-Path $inputDir 'rf_run_artifact_support.ps1.txt'
 $contract = Join-Path $inputDir 'rf_to_oatof_s2_passive_connector.json'
@@ -44,6 +44,7 @@ $dependencyContract = Join-Path $inputDir 'rf_to_oatof_s2_dependencies.json'
 $s1Contract = Join-Path $inputDir 'rf_to_oatof_s1_joint_field.json'
 $rfResolved = Join-Path $inputDir 'rf_resolved_geometry.json'
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'build_s2_passive_connector_geometry.m') -Destination $task
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'build_s2_passive_connector_model.m') -Destination $geometryBuilder
 Copy-Item -LiteralPath $PSCommandPath -Destination $runner
 Copy-Item -LiteralPath $supportSource -Destination $support
 Copy-Item -LiteralPath $contractSource -Destination $contract
@@ -78,6 +79,7 @@ $runConfiguration = [ordered]@{
   project_root = $repoRoot
   inputs = [ordered]@{
     task = $task
+    geometry_builder = $geometryBuilder
     runner = $runner
     run_artifact_support = $support
     s2_contract = $contract

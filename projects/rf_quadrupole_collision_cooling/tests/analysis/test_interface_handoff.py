@@ -47,10 +47,11 @@ class InterfaceContractTests(unittest.TestCase):
         self.assertEqual(stages[4]["status"], "conditional")
         self.assertEqual(
             stages[2]["status"],
-            "geometry_built_field_and_function_runtime_not_started",
+            "no_pulse_field_function_passed_particle_runtime_not_started",
         )
         self.assertEqual(stages[2]["static_contract"]["gap_mm"], 1.0)
-        self.assertFalse(stages[2]["static_contract"]["field_solve_allowed"])
+        self.assertTrue(stages[2]["static_contract"]["field_solve_allowed"])
+        self.assertFalse(stages[2]["static_contract"]["particle_runtime_allowed"])
 
     def test_two_boundaries_and_capture_state_remain_distinct(self) -> None:
         contract = MODULE.validate_contract(CONTRACT)["contract"]

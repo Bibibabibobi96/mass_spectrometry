@@ -102,7 +102,7 @@
     {
       "id": "S2",
       "name": "passive_grounded_connector",
-      "status": "geometry_built_field_and_function_runtime_not_started",
+      "status": "no_pulse_field_function_passed_particle_runtime_not_started",
       "separate_connector_component": true,
       "physical_interface_claim_allowed": true,
       "model": "Add only the measured finite separation and a passive grounded vacuum tube or housing; no active focusing or steering.",
@@ -114,7 +114,7 @@
         "path": "config/rf_to_oatof_s2_passive_connector.json",
         "gap_mm": 1.0,
         "nominal_alignment": "coaxial_zero_offset_zero_rotation",
-        "field_solve_allowed": false,
+        "field_solve_allowed": true,
         "particle_runtime_allowed": false,
         "stage_pass_allowed": false
       },
@@ -125,6 +125,15 @@
         "mesh_built": false,
         "field_solved": false,
         "particle_runtime_allowed": false
+      },
+      "no_pulse_field_evidence": {
+        "run_id": "20260722_142733__analysis__comsol__rf-oatof-s2-no-pulse-field__gap1__r03",
+        "status": "PASS",
+        "field_bases_solved": 2,
+        "probe_count": 5,
+        "all_probe_values_finite": true,
+        "particle_runtime_allowed": false,
+        "stage_pass_allowed": false
       },
       "tests": [
         "three-dimensional joint electrostatic and RF fringe field",
