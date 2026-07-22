@@ -16,6 +16,13 @@ import plot_s1_pulse_geometry_snapshot as module  # noqa: E402
 
 
 class S1PulseGeometrySnapshotTests(unittest.TestCase):
+    def test_particle_markers_shrink_for_large_n(self) -> None:
+        n100 = module.particle_marker_areas(100)
+        n1000 = module.particle_marker_areas(1000)
+        self.assertEqual(n100["active"], 16.0)
+        self.assertLess(n1000["active"], n100["active"])
+        self.assertGreater(n1000["active"], 0.0)
+
     def test_geometry_is_derived_from_contracts_and_plot_is_written(self) -> None:
         baseline_path = REPO_ROOT / "projects" / "oa_tof" / "config" / "baseline.json"
         joint_path = PROJECT_ROOT / "config" / "rf_to_oatof_s1_joint_field.json"

@@ -68,6 +68,13 @@ def _filled_rect(ax, xy, width, height, **kwargs) -> None:
     ax.add_patch(Rectangle(xy, width, height, **kwargs))
 
 
+def particle_marker_areas(snapshot_rows: int) -> dict[str, float]:
+    """Return point areas that remain readable for N=100 and denser snapshots."""
+    scale = min(1.0, np.sqrt(100.0 / max(snapshot_rows, 1)))
+    return {"active": 16.0 * scale, "port_loss": 18.0 * scale,
+            "accelerator_loss": 28.0 * scale}
+
+
 def classify_snapshot(capture: pd.DataFrame, events: pd.DataFrame,
                       geometry: dict[str, object]) -> pd.DataFrame:
     required = {"particle_id", "event", "status", "terminal_reason"}
@@ -164,6 +171,7 @@ def plot_snapshot(capture_path: Path, events_path: Path, baseline_path: Path, jo
     grid_color = "#31a354"
     ion_color = "#d95f0e"
     ideal_color = "#756bb1"
+    marker_areas = particle_marker_areas(len(capture))
 
     fig, (ax_xz, ax_xy) = plt.subplots(1, 2, figsize=(15.5, 7.2))
 
@@ -206,13 +214,14 @@ def plot_snapshot(capture_path: Path, events_path: Path, baseline_path: Path, jo
                   source_center["z"] - source_size["z"] / 2),
                  source_size["x"], source_size["z"], fill=False, edgecolor=ideal_color,
                  linewidth=2.0, linestyle="--", zorder=5)
-    ax_xz.scatter(active["x_mm"], active["z_mm"], s=27, c=ion_color,
+    ax_xz.scatter(active["x_mm"], active["z_mm"], s=marker_areas["active"], c=ion_color,
                   edgecolors="white", linewidths=0.35, alpha=0.85, zorder=6)
-    ax_xz.scatter(frozen_port_loss["x_mm"], frozen_port_loss["z_mm"], s=31,
-                  c="#cb181d", marker="x", linewidths=1.1, alpha=0.8, zorder=7)
+    ax_xz.scatter(frozen_port_loss["x_mm"], frozen_port_loss["z_mm"],
+                  s=marker_areas["port_loss"], c="#cb181d", marker="x",
+                  linewidths=0.8, alpha=0.75, zorder=7)
     ax_xz.scatter(frozen_accelerator_loss["x_mm"],
-                  frozen_accelerator_loss["z_mm"], s=48, c="#252525", marker="X",
-                  linewidths=0.7, alpha=0.9, zorder=8)
+                  frozen_accelerator_loss["z_mm"], s=marker_areas["accelerator_loss"],
+                  c="#252525", marker="X", linewidths=0.55, alpha=0.9, zorder=8)
     ax_xz.annotate(f"physical port\n{g['port_width_y']:.3g} y × {g['port_height_z']:.3g} z mm",
                    xy=(cx - outer + wall / 2, g["port_center_z"]),
                    xytext=(cx - outer + 2.0, g["port_center_z"] + 3.1),
@@ -242,13 +251,14 @@ def plot_snapshot(capture_path: Path, events_path: Path, baseline_path: Path, jo
                   source_center["y"] - source_size["y"] / 2),
                  source_size["x"], source_size["y"], fill=False, edgecolor=ideal_color,
                  linewidth=2.0, linestyle="--", zorder=5)
-    ax_xy.scatter(active["x_mm"], active["y_mm"], s=27, c=ion_color,
+    ax_xy.scatter(active["x_mm"], active["y_mm"], s=marker_areas["active"], c=ion_color,
                   edgecolors="white", linewidths=0.35, alpha=0.85, zorder=6)
-    ax_xy.scatter(frozen_port_loss["x_mm"], frozen_port_loss["y_mm"], s=31,
-                  c="#cb181d", marker="x", linewidths=1.1, alpha=0.8, zorder=7)
+    ax_xy.scatter(frozen_port_loss["x_mm"], frozen_port_loss["y_mm"],
+                  s=marker_areas["port_loss"], c="#cb181d", marker="x",
+                  linewidths=0.8, alpha=0.75, zorder=7)
     ax_xy.scatter(frozen_accelerator_loss["x_mm"],
-                  frozen_accelerator_loss["y_mm"], s=48, c="#252525", marker="X",
-                  linewidths=0.7, alpha=0.9, zorder=8)
+                  frozen_accelerator_loss["y_mm"], s=marker_areas["accelerator_loss"],
+                  c="#252525", marker="X", linewidths=0.55, alpha=0.9, zorder=8)
     ax_xy.annotate(f"physical port\n{g['port_width_y']:.3g} y × {g['port_height_z']:.3g} z mm",
                    xy=(cx - outer + wall / 2, 0.0), xytext=(cx - outer + 2.0, 3.0),
                    arrowprops={"arrowstyle": "->", "color": "#cb181d"}, fontsize=9)
@@ -315,6 +325,10 @@ def plot_snapshot(capture_path: Path, events_path: Path, baseline_path: Path, jo
             "physical_port": str(joint_path),
         },
         "geometry_mm": g,
+        "plot_style": {
+            "particle_marker_area_pt2": marker_areas,
+            "marker_scaling_rule": "base_area_times_min(1,sqrt(100/snapshot_rows))",
+        },
         "dense_trajectories_saved": False,
     }
     metadata_path.parent.mkdir(parents=True, exist_ok=True)
