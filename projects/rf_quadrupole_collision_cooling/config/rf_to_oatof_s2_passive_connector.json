@@ -8,6 +8,7 @@
     "stage_plan": "config/rf_to_oatof_interface_stages.json",
     "interface_reference": "config/rf_to_oatof_interface_candidate.json",
     "s1_joint_field": "config/rf_to_oatof_s1_joint_field.json",
+    "explicit_dependencies": "config/rf_to_oatof_s2_dependencies.json",
     "rf_resolved_geometry": "config/resolved_geometry.json",
     "oatof_baseline": "../oa_tof/config/baseline.json"
   },
@@ -96,7 +97,7 @@
     "claim_limit": "A future N=100 run may demonstrate nominal passive-connector function only; it cannot qualify S2 performance, pulse capture, tolerances, CAD or Formal assets."
   },
   "geometry_build_evidence": {
-    "run_id": "20260722_134157__build__comsol__rf-oatof-s2-passive-connector__gap1",
+    "run_id": "20260722_140611__build__comsol__rf-oatof-s2-passive-connector__gap1",
     "software": "COMSOL 6.4 through MATLAB R2025b LiveLink",
     "status": "PASS",
     "geometry_domains": 21,

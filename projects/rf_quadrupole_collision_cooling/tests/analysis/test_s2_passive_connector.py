@@ -26,6 +26,18 @@ class S2PassiveConnectorTests(unittest.TestCase):
         self.assertEqual(evidence["connector_domain_count"], 1)
         self.assertEqual(evidence["port_domain_count"], 1)
         self.assertFalse(evidence["field_solved"])
+        dependencies = json.loads(
+            (module.PROJECT_ROOT / contract["inputs"]["explicit_dependencies"]).read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(
+            {item["provider_project"] for item in dependencies["dependencies"]},
+            {"oa_tof"},
+        )
+        self.assertTrue(
+            dependencies["runtime_policy"]["verify_source_and_frozen_sha256_equal"]
+        )
 
     def test_contract_rejects_a_gap_that_breaks_the_pose_derivation(self) -> None:
         contract = json.loads(module.DEFAULT_CONTRACT.read_text(encoding="utf-8"))

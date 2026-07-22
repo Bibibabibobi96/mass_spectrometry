@@ -119,7 +119,7 @@
         "stage_pass_allowed": false
       },
       "geometry_build_evidence": {
-        "run_id": "20260722_134157__build__comsol__rf-oatof-s2-passive-connector__gap1",
+        "run_id": "20260722_140611__build__comsol__rf-oatof-s2-passive-connector__gap1",
         "status": "PASS",
         "gap_mm": 1.0,
         "mesh_built": false,

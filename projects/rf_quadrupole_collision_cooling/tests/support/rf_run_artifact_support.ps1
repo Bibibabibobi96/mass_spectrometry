@@ -1,0 +1,186 @@
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+function New-RfRunPackage {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][string]$ArtifactRoot,
+    [Parameter(Mandatory)][string]$RunId,
+    [Parameter(Mandatory)][string]$Project,
+    [Parameter(Mandatory)][string]$Mode,
+    [Parameter(Mandatory)][string[]]$Software
+  )
+  $python = Join-Path $RepoRoot '.venv\Scripts\python.exe'
+  if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
+    throw "RF run Python 3.11 environment is missing: $python"
+  }
+  $validationOutput = & $python (Join-Path $RepoRoot 'common\contracts\artifact_naming.py') run $RunId
+  if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
+  if (-not ($validationOutput -match '^ARTIFACT_ID=PASS ')) {
+    throw "Artifact naming validator returned an unexpected result for $RunId."
+  }
+  $runDir = Join-Path $ArtifactRoot "runs\$RunId"
+  if (Test-Path -LiteralPath $runDir) { throw "Run already exists: $runDir" }
+  $inputDir = Join-Path $runDir 'inputs'
+  $resultDir = Join-Path $runDir 'results'
+  $logDir = Join-Path $runDir 'logs'
+  New-Item -ItemType Directory -Force -Path $inputDir,$resultDir,$logDir | Out-Null
+  $package = [pscustomobject]@{
+    python = $python
+    run_dir = $runDir
+    input_dir = $inputDir
+    result_dir = $resultDir
+    log_dir = $logDir
+    run_config = Join-Path $runDir 'run_config.json'
+    summary = Join-Path $runDir 'summary.json'
+  }
+  Write-RfJson -Path $package.run_config -Value ([ordered]@{
+    schema_version = 1
+    run_id = $RunId
+    project = $Project
+    mode = $Mode
+    project_root = $RepoRoot
+    inputs = [ordered]@{}
+    parameters = [ordered]@{ lifecycle_stage = 'run_package_initialized' }
+    formal_gate_passed = $false
+  })
+  Write-RfJson -Path $package.summary -Value ([ordered]@{
+    schema_version = 1
+    role = 'run_package_initialization_summary'
+    status = 'interrupted'
+    reason = 'Run package initialized; task-specific inputs are not frozen yet.'
+  })
+  $manifestOutput = Write-RfRunManifest -Python $python -RepoRoot $RepoRoot `
+    -RunConfig $package.run_config -Status interrupted -Software $Software
+  if (-not ($manifestOutput -match '^RUN_MANIFEST=PASS ')) {
+    throw "Initial run manifest returned an unexpected result for $RunId."
+  }
+  return $package
+}
+
+function Write-RfJson {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][object]$Value,
+    [Parameter(Mandatory)][string]$Path,
+    [int]$Depth = 8
+  )
+  $Value | ConvertTo-Json -Depth $Depth | Set-Content -LiteralPath $Path -Encoding UTF8
+}
+
+function Write-RfRunManifest {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Python,
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][string]$RunConfig,
+    [Parameter(Mandatory)][ValidateSet('success','failed','interrupted','superseded')][string]$Status,
+    [Parameter(Mandatory)][string[]]$Software,
+    [string[]]$Outputs = @()
+  )
+  $arguments = @(
+    (Join-Path $RepoRoot 'common\contracts\write_run_manifest.py'),
+    '--run-config',$RunConfig,'--status',$Status
+  )
+  foreach ($item in $Software) { $arguments += @('--software',$item) }
+  foreach ($item in $Outputs) { $arguments += @('--output',$item) }
+  & $Python @arguments
+  if ($LASTEXITCODE -ne 0) { throw "RF run manifest failed for status $Status." }
+}
+
+function Save-RfEnvironment {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string[]]$Names)
+  $snapshot = @{}
+  foreach ($name in $Names) {
+    $snapshot[$name] = [Environment]::GetEnvironmentVariable($name)
+  }
+  return $snapshot
+}
+
+function Restore-RfEnvironment {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string[]]$Names,
+    [Parameter(Mandatory)][hashtable]$Snapshot
+  )
+  foreach ($name in $Names) {
+    [Environment]::SetEnvironmentVariable($name, $Snapshot[$name])
+  }
+}
+
+function Copy-RfFrozenDependency {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][string]$InputDir,
+    [Parameter(Mandatory)][pscustomobject]$Dependency
+  )
+  $providerRoot = [IO.Path]::GetFullPath(
+    (Join-Path $RepoRoot (Join-Path 'projects' ([string]$Dependency.provider_project))))
+  $source = [IO.Path]::GetFullPath((Join-Path $RepoRoot ([string]$Dependency.source_repo_path)))
+  if (-not $source.StartsWith(
+      $providerRoot + [IO.Path]::DirectorySeparatorChar,
+      [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Dependency $($Dependency.id) escapes provider project $($Dependency.provider_project)."
+  }
+  if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+    throw "Dependency $($Dependency.id) is missing: $source"
+  }
+  $destination = Join-Path $InputDir ([string]$Dependency.frozen_filename)
+  Copy-Item -LiteralPath $source -Destination $destination
+  $sourceHash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
+  $destinationHash = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash
+  if ($sourceHash -ne $destinationHash) {
+    throw "Dependency $($Dependency.id) changed while it was frozen into the run package."
+  }
+  return [pscustomobject]@{
+    id = [string]$Dependency.id
+    provider_project = [string]$Dependency.provider_project
+    source_repo_path = [string]$Dependency.source_repo_path
+    frozen_input_name = [string]$Dependency.run_input_name
+    frozen_path = $destination
+    sha256 = $sourceHash
+  }
+}
+
+function Complete-RfFailedRun {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Python,
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][string]$RunConfig,
+    [Parameter(Mandatory)][string]$Summary,
+    [Parameter(Mandatory)][string]$SummaryRole,
+    [Parameter(Mandatory)][string]$Reason,
+    [Parameter(Mandatory)][string[]]$Software
+  )
+  $runConfigDocument = Get-Content -LiteralPath $RunConfig -Raw -Encoding UTF8 |
+    ConvertFrom-Json -AsHashtable
+  if (-not $runConfigDocument.Contains('inputs')) {
+    $runConfigDocument.inputs = [ordered]@{}
+  }
+  $knownInputs = @($runConfigDocument.inputs.Values | ForEach-Object {
+    if ($_ -is [string]) { [IO.Path]::GetFullPath($_) }
+  })
+  $inputDir = Join-Path (Split-Path -Parent $RunConfig) 'inputs'
+  $recoveredIndex = 0
+  if (Test-Path -LiteralPath $inputDir -PathType Container) {
+    foreach ($file in Get-ChildItem -LiteralPath $inputDir -File | Sort-Object Name) {
+      if ($knownInputs -notcontains $file.FullName) {
+        $recoveredIndex += 1
+        $runConfigDocument.inputs[("recovered_input_{0:D3}" -f $recoveredIndex)] = $file.FullName
+      }
+    }
+  }
+  Write-RfJson -Path $RunConfig -Depth 8 -Value $runConfigDocument
+  Write-RfJson -Path $Summary -Value ([ordered]@{
+    schema_version = 1
+    role = $SummaryRole
+    status = 'failed'
+    reason = $Reason
+  })
+  Write-RfRunManifest -Python $Python -RepoRoot $RepoRoot -RunConfig $RunConfig `
+    -Status failed -Software $Software
+}

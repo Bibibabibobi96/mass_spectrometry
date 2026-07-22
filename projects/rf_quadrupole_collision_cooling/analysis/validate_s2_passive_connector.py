@@ -43,6 +43,29 @@ def validate_contract(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
     if stage.get("status") != "geometry_built_field_and_function_runtime_not_started":
         raise ValueError("S2 stage status differs")
 
+    dependency_contract = _load_relative(contract["inputs"]["explicit_dependencies"])
+    if dependency_contract.get("role") != "rf_to_oatof_s2_explicit_source_dependencies":
+        raise ValueError("S2 dependency-contract role differs")
+    if dependency_contract.get("consumer_project") != "rf_quadrupole_collision_cooling":
+        raise ValueError("S2 dependency consumer differs")
+    dependencies = dependency_contract.get("dependencies", [])
+    if {item.get("id") for item in dependencies} != {
+        "oatof_baseline",
+        "oatof_accelerator_geometry_builder",
+    }:
+        raise ValueError("S2 explicit dependency set differs")
+    for dependency in dependencies:
+        provider = dependency.get("provider_project")
+        source = Path(str(dependency.get("source_repo_path", "")))
+        expected_prefix = Path("projects") / str(provider)
+        if provider != "oa_tof" or source.parts[:2] != expected_prefix.parts:
+            raise ValueError(f"S2 dependency {dependency.get('id')} escapes oa_tof")
+        if not (PROJECT_ROOT.parents[1] / source).is_file():
+            raise ValueError(f"S2 dependency {dependency.get('id')} source is missing")
+    policy = dependency_contract.get("runtime_policy", {})
+    if not policy.get("verify_source_and_frozen_sha256_equal") or policy.get("allow_directory_search"):
+        raise ValueError("S2 dependency runtime policy is not fail-closed")
+
     s1 = _load_relative(contract["inputs"]["s1_joint_field"])
     interface = _load_relative(contract["inputs"]["interface_reference"])
     registration = contract["nominal_registration"]

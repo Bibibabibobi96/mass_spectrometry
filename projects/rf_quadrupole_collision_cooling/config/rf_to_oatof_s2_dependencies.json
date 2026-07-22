@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "role": "rf_to_oatof_s2_explicit_source_dependencies",
+  "consumer_project": "rf_quadrupole_collision_cooling",
+  "dependencies": [
+    {
+      "id": "oatof_baseline",
+      "provider_project": "oa_tof",
+      "source_repo_path": "projects/oa_tof/config/baseline.json",
+      "frozen_filename": "oatof_baseline.json",
+      "run_input_name": "oatof_baseline"
+    },
+    {
+      "id": "oatof_accelerator_geometry_builder",
+      "provider_project": "oa_tof",
+      "source_repo_path": "projects/oa_tof/comsol/oatof_build_accelerator_geometry.m",
+      "frozen_filename": "oatof_build_accelerator_geometry.m",
+      "run_input_name": "oatof_accelerator_builder"
+    }
+  ],
+  "runtime_policy": {
+    "copy_into_run_inputs": true,
+    "record_provider_project": true,
+    "record_source_repo_path": true,
+    "verify_source_and_frozen_sha256_equal": true,
+    "allow_directory_search": false
+  }
+}

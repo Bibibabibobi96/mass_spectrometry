@@ -1,4 +1,5 @@
 % Build the S2 passive RF-to-oaTOF connector geometry without mesh or physics.
+% REPOSITORY_CONTRACT: MATLAB_BUILD_ONLY
 
 reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
 metricsPath = getenv('RF_OATOF_S2_GEOMETRY_METRICS');

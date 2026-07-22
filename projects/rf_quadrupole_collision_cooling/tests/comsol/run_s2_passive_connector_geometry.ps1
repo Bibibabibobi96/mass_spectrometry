@@ -2,12 +2,14 @@ param([string]$RunId = '')
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$supportSource = (Resolve-Path (Join-Path $PSScriptRoot '..\support\rf_run_artifact_support.ps1')).Path
+. $supportSource
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling'
-$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 $contractSource = Join-Path $projectRoot 'config\rf_to_oatof_s2_passive_connector.json'
+$dependencyContractSource = Join-Path $projectRoot 'config\rf_to_oatof_s2_dependencies.json'
 $contractDocument = Get-Content -LiteralPath $contractSource -Raw -Encoding UTF8 | ConvertFrom-Json
 if (-not [bool]$contractDocument.permissions.geometry_builder_implementation_allowed) {
   throw 'The S2 contract does not authorize geometry construction.'
@@ -23,51 +25,69 @@ if ([math]::Abs($gapMm-1.0) -gt 1e-12) {
 if ([string]::IsNullOrWhiteSpace($RunId)) {
   $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__build__comsol__rf-oatof-s2-passive-connector__gap1'
 }
-& $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
-if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
+$mode = 'rf_to_oatof_s2_passive_connector_geometry_build'
+$software = @('COMSOL 6.4','MATLAB R2025b','Python 3.11')
+$package = New-RfRunPackage -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
+  -RunId $RunId -Project 'rf_quadrupole_collision_cooling' -Mode $mode -Software $software
+$python = $package.python
+$runDir = $package.run_dir
+$inputDir = $package.input_dir
+$resultDir = $package.result_dir
+$logDir = $package.log_dir
 
-$runDir = Join-Path $artifactRoot "runs\$RunId"
-if (Test-Path -LiteralPath $runDir) { throw "Run already exists: $runDir" }
-$inputDir = Join-Path $runDir 'inputs'
-$resultDir = Join-Path $runDir 'results'
-$logDir = Join-Path $runDir 'logs'
-New-Item -ItemType Directory -Force -Path $inputDir,$resultDir,$logDir | Out-Null
-
+try {
 $task = Join-Path $inputDir 'build_s2_passive_connector_geometry.m'
 $runner = Join-Path $inputDir 'run_s2_passive_connector_geometry.ps1.txt'
+$support = Join-Path $inputDir 'rf_run_artifact_support.ps1.txt'
 $contract = Join-Path $inputDir 'rf_to_oatof_s2_passive_connector.json'
+$dependencyContract = Join-Path $inputDir 'rf_to_oatof_s2_dependencies.json'
 $s1Contract = Join-Path $inputDir 'rf_to_oatof_s1_joint_field.json'
 $rfResolved = Join-Path $inputDir 'rf_resolved_geometry.json'
-$oaBaseline = Join-Path $inputDir 'oatof_baseline.json'
-$oaBuilder = Join-Path $inputDir 'oatof_build_accelerator_geometry.m'
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'build_s2_passive_connector_geometry.m') -Destination $task
 Copy-Item -LiteralPath $PSCommandPath -Destination $runner
+Copy-Item -LiteralPath $supportSource -Destination $support
 Copy-Item -LiteralPath $contractSource -Destination $contract
+Copy-Item -LiteralPath $dependencyContractSource -Destination $dependencyContract
 Copy-Item -LiteralPath (Join-Path $projectRoot 'config\rf_to_oatof_s1_joint_field.json') -Destination $s1Contract
 Copy-Item -LiteralPath (Join-Path $projectRoot 'config\resolved_geometry.json') -Destination $rfResolved
-Copy-Item -LiteralPath (Join-Path $repoRoot 'projects\oa_tof\config\baseline.json') -Destination $oaBaseline
-Copy-Item -LiteralPath (Join-Path $repoRoot 'projects\oa_tof\comsol\oatof_build_accelerator_geometry.m') -Destination $oaBuilder
+$dependencyDocument = Get-Content -LiteralPath $dependencyContractSource -Raw -Encoding UTF8 | ConvertFrom-Json
+$dependencyIdentities = [ordered]@{}
+$dependencyPaths = @{}
+foreach ($dependency in $dependencyDocument.dependencies) {
+  $identity = Copy-RfFrozenDependency -RepoRoot $repoRoot -InputDir $inputDir -Dependency $dependency
+  $dependencyIdentities[$identity.id] = [ordered]@{
+    provider_project = $identity.provider_project
+    source_repo_path = $identity.source_repo_path
+    frozen_input_name = $identity.frozen_input_name
+    sha256 = $identity.sha256
+  }
+  $dependencyPaths[$identity.id] = $identity.frozen_path
+}
+$oaBaseline = $dependencyPaths['oatof_baseline']
+$oaBuilder = $dependencyPaths['oatof_accelerator_geometry_builder']
 
 $metrics = Join-Path $resultDir 's2_passive_connector_geometry_metrics.json'
 $report = Join-Path $logDir 'comsol_s2_passive_connector_geometry.txt'
-$summary = Join-Path $runDir 'summary.json'
-$runConfig = Join-Path $runDir 'run_config.json'
-$manifestWriter = Join-Path $repoRoot 'common\contracts\write_run_manifest.py'
-[ordered]@{
+$summary = $package.summary
+$runConfig = $package.run_config
+$runConfiguration = [ordered]@{
   schema_version = 1
   run_id = $RunId
   project = 'rf_quadrupole_collision_cooling'
-  mode = 'rf_to_oatof_s2_passive_connector_geometry_build'
+  mode = $mode
   project_root = $repoRoot
   inputs = [ordered]@{
     task = $task
     runner = $runner
+    run_artifact_support = $support
     s2_contract = $contract
+    dependency_contract = $dependencyContract
     s1_joint_field_contract = $s1Contract
     rf_resolved_geometry = $rfResolved
     oatof_baseline = $oaBaseline
     oatof_accelerator_builder = $oaBuilder
   }
+  dependency_identities = $dependencyIdentities
   parameters = [ordered]@{
     connector_gap_mm = $gapMm
     geometry_build = $true
@@ -78,27 +98,23 @@ $manifestWriter = Join-Path $repoRoot 'common\contracts\write_run_manifest.py'
     model_saved = $false
   }
   formal_gate_passed = $false
-} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $runConfig -Encoding UTF8
-[ordered]@{
+}
+Write-RfJson -Path $runConfig -Depth 8 -Value $runConfiguration
+Write-RfJson -Path $summary -Value ([ordered]@{
   schema_version = 1
   role = 'rf_to_oatof_s2_passive_connector_geometry_summary'
   status = 'interrupted'
   reason = 'Run package initialized; final status not yet recorded.'
-} | ConvertTo-Json | Set-Content -LiteralPath $summary -Encoding UTF8
-& $python $manifestWriter --run-config $runConfig --status interrupted `
-  --software 'COMSOL 6.4' --software 'MATLAB R2025b' --software 'Python 3.11'
-if ($LASTEXITCODE -ne 0) { throw 'Initial S2 geometry manifest failed.' }
+})
+Write-RfRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig `
+  -Status interrupted -Software $software
 
 $environmentNames = @(
   'RF_OATOF_S2_GEOMETRY_METRICS','RF_OATOF_S2_CONTRACT','RF_OATOF_S2_S1_CONTRACT',
   'RF_OATOF_S2_RF_RESOLVED','RF_OATOF_S2_OA_BASELINE','RF_OATOF_S2_OA_COMSOL_DIR'
 )
-$oldEnvironment = @{}
-foreach ($name in $environmentNames) {
-  $oldEnvironment[$name] = [Environment]::GetEnvironmentVariable($name)
-}
+$oldEnvironment = Save-RfEnvironment -Names $environmentNames
 try {
-  try {
     $env:RF_OATOF_S2_GEOMETRY_METRICS = $metrics
     $env:RF_OATOF_S2_CONTRACT = $contract
     $env:RF_OATOF_S2_S1_CONTRACT = $s1Contract
@@ -108,29 +124,16 @@ try {
     & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') `
       -TaskScript $task -ReportPath $report
     if ($LASTEXITCODE -ne 0) { throw 'COMSOL S2 geometry-only task failed.' }
-  } finally {
-    foreach ($name in $environmentNames) {
-      [Environment]::SetEnvironmentVariable($name, $oldEnvironment[$name])
-    }
-  }
-  $geometryMetrics = Get-Content -LiteralPath $metrics -Raw -Encoding UTF8 | ConvertFrom-Json
-  if ($geometryMetrics.status -ne 'BUILT' -or [bool]$geometryMetrics.field_solved -or
-      [bool]$geometryMetrics.particle_runtime_executed) {
-    throw 'S2 geometry metrics violate the build-only contract.'
-  }
-} catch {
-  [ordered]@{
-    schema_version = 1
-    role = 'rf_to_oatof_s2_passive_connector_geometry_summary'
-    status = 'failed'
-    reason = $_.Exception.Message
-  } | ConvertTo-Json | Set-Content -LiteralPath $summary -Encoding UTF8
-  & $python $manifestWriter --run-config $runConfig --status failed `
-    --software 'COMSOL 6.4' --software 'MATLAB R2025b' --software 'Python 3.11'
-  throw
+} finally {
+  Restore-RfEnvironment -Names $environmentNames -Snapshot $oldEnvironment
+}
+$geometryMetrics = Get-Content -LiteralPath $metrics -Raw -Encoding UTF8 | ConvertFrom-Json
+if ($geometryMetrics.status -ne 'BUILT' -or [bool]$geometryMetrics.field_solved -or
+    [bool]$geometryMetrics.particle_runtime_executed) {
+  throw 'S2 geometry metrics violate the build-only contract.'
 }
 
-[ordered]@{
+Write-RfJson -Path $summary -Value ([ordered]@{
   schema_version = 1
   role = 'rf_to_oatof_s2_passive_connector_geometry_summary'
   status = 'success'
@@ -142,11 +145,14 @@ try {
   particle_runtime = $false
   s2_stage_passed = $false
   formal_gate_passed = $false
-} | ConvertTo-Json | Set-Content -LiteralPath $summary -Encoding UTF8
+})
 $outputs = @($metrics,$report,$summary)
-$manifestArguments = @($manifestWriter,'--run-config',$runConfig,'--status','success',
-  '--software','COMSOL 6.4','--software','MATLAB R2025b','--software','Python 3.11')
-foreach ($output in $outputs) { $manifestArguments += @('--output',$output) }
-& $python @manifestArguments
-if ($LASTEXITCODE -ne 0) { throw 'Final S2 geometry manifest failed.' }
+Write-RfRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig `
+  -Status success -Software $software -Outputs $outputs
 Write-Output "STATUS=PASS RUN_ID=$RunId GAP_MM=1 FIELD_SOLVED=false PARTICLES=false"
+} catch {
+  Complete-RfFailedRun -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config `
+    -Summary $package.summary -SummaryRole 'rf_to_oatof_s2_passive_connector_geometry_summary' `
+    -Reason $_.Exception.Message -Software $software
+  throw
+}

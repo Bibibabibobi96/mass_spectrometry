@@ -31,6 +31,26 @@ class S2GeometryBuildContractTests(unittest.TestCase):
         self.assertIn("common\\comsol\\run_comsol_r2025b.ps1", runner)
         self.assertIn("field_solve = $false", runner)
         self.assertIn("particle_tracking = $false", runner)
+        self.assertIn("Copy-RfFrozenDependency", runner)
+        self.assertIn("dependency_identities = $dependencyIdentities", runner)
+
+    def test_project_local_run_support_owns_artifact_lifecycle(self):
+        support = (
+            PROJECT_ROOT
+            / "tests"
+            / "support"
+            / "rf_run_artifact_support.ps1"
+        ).read_text(encoding="utf-8")
+        for function_name in (
+            "New-RfRunPackage",
+            "Write-RfRunManifest",
+            "Save-RfEnvironment",
+            "Restore-RfEnvironment",
+            "Copy-RfFrozenDependency",
+            "Complete-RfFailedRun",
+        ):
+            self.assertIn(f"function {function_name}", support)
+        self.assertIn("Get-FileHash -LiteralPath $source -Algorithm SHA256", support)
 
     def test_runner_and_contract_freeze_one_millimeter_gap(self):
         contract = json.loads(

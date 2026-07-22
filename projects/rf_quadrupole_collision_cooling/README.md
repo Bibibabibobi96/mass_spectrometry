@@ -117,7 +117,11 @@
   [`analysis/validate_s2_passive_connector.py`](analysis/validate_s2_passive_connector.py)，真实COMSOL入口为
   [`tests/comsol/run_s2_passive_connector_geometry.ps1`](tests/comsol/run_s2_passive_connector_geometry.ps1)；
   当前已冻结并成功构建1 mm标称间距、同轴位姿、接地圆柱腔和既有`1.0×0.9 mm`oa入口孔。该入口不建
-  网格、不创建物理、不求场、不放粒子，也不授权S2 PASS或Formal晋升。
+  网格、不创建物理、不求场、不放粒子，也不授权S2 PASS或Formal晋升。跨项目输入由
+  [`config/rf_to_oatof_s2_dependencies.json`](config/rf_to_oatof_s2_dependencies.json)显式声明提供项目、
+  仓库相对路径和冻结文件名；运行时核对源文件与`inputs/`副本SHA-256，并把身份写入run config。
+  三件套、环境恢复和失败收尾当前由RF项目内部`tests/support/rf_run_artifact_support.ps1`统一；旧run和
+  未触及的旧运行器保持原样，第二个项目实际复用前不提升到根`common/`。
 - RF入口能量匹配候选：[`config/rf_to_oatof_energy_match_candidate.json`](config/rf_to_oatof_energy_match_candidate.json)、
   [`analysis/validate_rf_energy_match.py`](analysis/validate_rf_energy_match.py)及
   [`analysis/compare_rf_input_energy.py`](analysis/compare_rf_input_energy.py)；它用独立命名的100 amu、5 eV
