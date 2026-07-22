@@ -74,10 +74,14 @@ $entries = @(
     [pscustomobject]@{Solver='SIMION'; Path=$simionState}
 )
 foreach ($entry in $entries) {
-    & $python (Join-Path $projectRoot 'analysis\verify_particle_state_contract.py') `
-        --state $entry.Path --particles $particlePath --interface $interfacePath `
-        --frequency-hz $FrequencyHz --phase-rad $PhaseRad --solver $entry.Solver
-    if ($LASTEXITCODE -ne 0) { throw "$($entry.Solver) particle-state contract failed." }
+    Push-Location $repoRoot
+    try {
+        & $python -m projects.rf_quadrupole_collision_cooling.analysis.verify_particle_state_contract `
+            --state $entry.Path --particles $particlePath --source-format ion11 --contract $interfacePath `
+            --frequency-hz $FrequencyHz --phase-rad $PhaseRad --solver $entry.Solver
+        if ($LASTEXITCODE -ne 0) { throw "$($entry.Solver) particle-state contract failed." }
+    }
+    finally { Pop-Location }
 }
 
 New-Item -ItemType Directory -Path $runDir,$resultDir -Force | Out-Null

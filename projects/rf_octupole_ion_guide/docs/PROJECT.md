@@ -13,9 +13,10 @@ Mathieu稳定图。当前公共合同回归`20260722_210401__sim__python__rf-oct
 `20260722_181611__sim__python__rf-octupole-ion-guide-round-rod__l2-n25`为RF 25/25、0 V 1/25，出口
 RMS半径0.5560 mm。它证明二维真实圆杆横向场的功能贯通，不证明有限三维端部或机械资格。
 
-带接口的有限三维COMSOL公共合同回归`20260722_210900__sim__comsol__rf-octupole-family-contract__l3-n25`
+带接口的有限三维COMSOL完整电压合同回归`20260723_052500__sim__comsol__rf-octupole-family-contract__complete-drive-n25`
 从入口端板外侧释放相同N=25粒子。入口孔两组均通过25/25；RF组穿过完整杆区、出口孔并到达外部
-检测面25/25，0 V组仅1/25到达。RF检测面RMS半径0.601705 mm，杆区最大半径1.110295 mm。
+检测面25/25，零RF对照仅1/25到达。RF检测面RMS半径0.508183 mm，杆区最大半径1.081394 mm。
+结果显式记录波形、RF/DC、公共偏置、频率和相位；当前baseline的DC与公共偏置均为0 V。
 模型已保存参数化开孔端板、封闭外壳、有限外部区和原生轨迹节点，满足当前L3接口功能闭合。
 
 共享圆杆几何与SIMION核心回归`20260722_233002__sim__simion__rf-octupole-family-contract__shared-runtime-n25__r02`

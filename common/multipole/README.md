@@ -16,7 +16,8 @@
 `resolve_family_operating_contract.py`把各项目baseline、mode和显式运行绑定标准化为每次run冻结的
 `family_operating_contract.json`。项目 baseline/mode 仍是物理参数权威，公共代码不得内置项目专用
 电压、尺寸、粒子源或资格阈值。配对质量扫描和质量响应是公共机制，四极杆Mathieu通带及当前PASS判据
-仍留在四极杆项目。三维接口合同由
+仍留在四极杆项目。公共COMSOL有限三维求解器执行该合同的RF波形、幅值、频率、相位、差分DC和
+公共偏置；`zero_rf_control`只关闭RF，保留DC与公共偏置。三维接口合同由
 `resolve_finite_3d_contract.py`在求解前验证并单向派生端板、可为0 mm的连接器、释放面、检测面和真空域
 轴向坐标。`round_rod_geometry.py`是四、六、八极杆杆心、杆径、角度、极性组和轴向范围的唯一公共
 派生源；`interface_geometry.py`统一杆端间隙、开孔端板、可为0 mm的连接器、粒子入口面和出口观察面。

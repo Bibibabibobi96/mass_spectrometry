@@ -50,11 +50,26 @@ class ComsolMassFilterContractTests(unittest.TestCase):
     def test_matlab_builder_superposes_differential_and_static_fields(self) -> None:
         builder = (PROJECT_ROOT / "comsol" / "ms_rf_quadrupole_no_collision.m").read_text(encoding="utf-8")
         self.assertIn("'mass_filter_reference'", builder)
+        self.assertIn("runConfig.inputs,'family_operating_contract'", builder)
+        self.assertIn("drive=operating.voltage", builder)
         self.assertIn("V_dc+V_rf*sin", builder)
         self.assertIn("Vdiff", builder)
         self.assertIn("Vstatic", builder)
         self.assertIn("-d(Vdiff,x))-d(Vstatic,x)", builder)
         self.assertIn("static_electrodes_V.detector", builder)
+
+    def test_comsol_runners_freeze_the_shared_operating_contract(self) -> None:
+        transport_runner = (PROJECT_ROOT / "tests" / "comsol" / "run_transport_candidate.ps1").read_text(
+            encoding="utf-8"
+        )
+        mass_runner = (PROJECT_ROOT / "tests" / "comsol" / "run_mass_filter_candidate.ps1").read_text(
+            encoding="utf-8"
+        )
+        for runner in (transport_runner, mass_runner):
+            self.assertIn("common.multipole.resolve_family_operating_contract", runner)
+            self.assertIn("family_operating_contract", runner)
+        self.assertIn("--source-format ion11", transport_runner)
+        self.assertIn("analysis.verify_particle_state_contract", transport_runner)
 
 
 if __name__ == "__main__":

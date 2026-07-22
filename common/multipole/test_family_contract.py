@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from common.multipole.family_contract import (
+    VoltageDrive,
     electrode_group_voltages,
     from_high_order_baseline,
     from_quadrupole_contract,
@@ -75,6 +76,15 @@ class MultipoleFamilyContractTests(unittest.TestCase):
         )
         self.assertEqual(operating.voltage.rf_amplitude_v_per_group, 141.0)
         self.assertEqual(operating.voltage.frequency_hz, 1.2e6)
+
+    def test_waveform_phase_dc_and_common_mode_are_all_executed(self) -> None:
+        drive = VoltageDrive("cosine", 10.0, 2.0, -3.0, 1.0, 0.0)
+        self.assertEqual(electrode_group_voltages(drive, 0.0), (9.0, -15.0))
+        solver = (REPO_ROOT / "common" / "multipole" / "solve_finite_3d_transport.m").read_text(
+            encoding="utf-8"
+        )
+        for token in ("V_dc", "V_axis", "phi_rf", "rf.waveform", "Vdiff", "Vstatic"):
+            self.assertIn(token, solver)
 
 
 class MultipoleMassResponseTests(unittest.TestCase):

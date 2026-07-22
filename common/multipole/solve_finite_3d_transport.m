@@ -60,8 +60,18 @@ try
     model = ModelUtil.create(tag);
     model.label(sprintf('%d-pole finite 3D circular-rod L3 transport', electrodeCount));
     model.param.set('V_rf', sprintf('%.17g[V]', rf.rf_amplitude_V_zero_to_peak_per_group));
+    model.param.set('V_dc', sprintf('%.17g[V]', rf.dc_amplitude_V_per_group));
+    model.param.set('V_axis', sprintf('%.17g[V]', rf.common_mode_offset_V));
     model.param.set('f_rf', sprintf('%.17g[Hz]', rf.frequency_Hz));
+    model.param.set('phi_rf', sprintf('%.17g[rad]', rf.phase_rad));
     model.param.set('rf_scale', '1');
+    if strcmp(rf.waveform, 'sine')
+        rfWaveform = 'sin(2*pi*f_rf*t+phi_rf)';
+    elseif strcmp(rf.waveform, 'cosine')
+        rfWaveform = 'cos(2*pi*f_rf*t+phi_rf)';
+    else
+        error('Unsupported shared multipole RF waveform: %s', rf.waveform);
+    end
     model.param.set('m_ion', sprintf('%.17g[kg]', baseline.particle_source.mass_amu*1.66053906660e-27));
     comp = model.component.create('comp1', true);
     geom = comp.geom.create('geom1', 3);
@@ -115,7 +125,10 @@ try
     material.selection.named('sel_vac');
     material.propertyGroup('def').set('relpermittivity', {'1'});
     es = comp.physics.create('es', 'Electrostatics', 'geom1');
+    es.label('Differential RF/DC unit field');
     es.selection.named('sel_vac');
+    es.field('electricpotential').field('Vdiff');
+    es.field('electricpotential').component({'Vdiff'});
     for k = 1:electrodeCount
         boundarySelection = sprintf('selb_rod%d', k);
         comp.selection.create(boundarySelection, 'Adjacent');
@@ -131,6 +144,22 @@ try
         comp.selection(selection).set('input', {['geom1_' name '_dom']});
         potential = es.create(['pot_' name], 'ElectricPotential', 2);
         potential.selection.named(selection);
+        potential.set('V0', '0[V]');
+    end
+    esStatic = comp.physics.create('es_static', 'Electrostatics', 'geom1');
+    esStatic.label('Common-mode static field');
+    esStatic.selection.named('sel_vac');
+    esStatic.field('electricpotential').field('Vstatic');
+    esStatic.field('electricpotential').component({'Vstatic'});
+    for k = 1:electrodeCount
+        potential = esStatic.create(sprintf('pot_rod%d', k), 'ElectricPotential', 2);
+        potential.selection.named(sprintf('selb_rod%d', k));
+        potential.set('V0', 'V_axis');
+    end
+    for groundIndex = 1:numel(groundTags)
+        name = groundTags{groundIndex};
+        potential = esStatic.create(['pot_' name], 'ElectricPotential', 2);
+        potential.selection.named(['selb_' name]);
         potential.set('V0', '0[V]');
     end
 
@@ -170,10 +199,11 @@ try
     force = cpt.create('ef1', 'ElectricForce', 3);
     force.selection.named('sel_vac');
     force.set('E_src', 'userdef');
+    differentialScale = ['((V_dc+rf_scale*V_rf*' rfWaveform ')/100[V])'];
     force.set('E', { ...
-        'rf_scale*(V_rf/100[V])*es.Ex*cos(2*pi*f_rf*t)', ...
-        'rf_scale*(V_rf/100[V])*es.Ey*cos(2*pi*f_rf*t)', ...
-        'rf_scale*(V_rf/100[V])*es.Ez*cos(2*pi*f_rf*t)'});
+        [differentialScale '*(-d(Vdiff,x))-d(Vstatic,x)'], ...
+        [differentialScale '*(-d(Vdiff,y))-d(Vstatic,y)'], ...
+        [differentialScale '*(-d(Vdiff,z))-d(Vstatic,z)']});
     dt = 1/rf.frequency_Hz/contract.trajectory.rf_steps_per_period;
     timeMaximum = contract.trajectory.maximum_global_time_us*1e-6;
     [pdOn, solutionOn] = solve_particle_case(model, cpt, 'on', 1, dt, timeMaximum);
@@ -199,6 +229,7 @@ try
     metrics = struct('schema_version', 1, 'role', 'multipole_finite_3d_transport_metrics', ...
         'status', 'UNRESOLVED', 'project_id', contract.project_id, ...
         'model_level', 'L3', 'selected_geometry', selected, ...
+        'voltage_contract', rf, ...
         'interface_geometry_mm', struct('entrance_aperture_radius', ...
         g.entrance_interface.aperture_radius_mm, 'exit_aperture_radius', ...
         g.exit_interface.aperture_radius_mm, 'source_z', d.source_z, ...
@@ -242,6 +273,7 @@ study = model.study.create(studyTag);
 time = study.create(stepTag, 'Transient');
 time.set('tlist', sprintf('range(0,%.17g,%.17g)', dt, timeMaximum));
 time.setEntry('activate', 'es', false);
+time.setEntry('activate', 'es_static', false);
 time.setEntry('activate', 'cpt', true);
 featureTags = cell(cpt.feature.tags());
 releaseTags = featureTags(startsWith(featureTags, 'rel'));

@@ -26,6 +26,7 @@ if ([string]::IsNullOrWhiteSpace($RunId)) {
 if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
 $runDir = Join-Path $artifactRoot "runs\$RunId"
 $resultDir = Join-Path $runDir 'results'
+$inputDir = Join-Path $runDir 'inputs'
 $candidateDir = Join-Path $runDir 'comsol'
 $logDir = Join-Path $runDir 'logs'
 $runtimeDir = Join-Path $runDir 'runtime'
@@ -51,7 +52,18 @@ if ([double]::IsNaN($RfPeakV) -or [double]::IsInfinity($RfPeakV)) { $RfPeakV = $
 if ([double]::IsNaN($FrequencyHz) -or [double]::IsInfinity($FrequencyHz)) { $FrequencyHz = $resolved.mode.rf.frequency_Hz }
 $modeInput = if ($Mode -eq 'transport_no_collision') { 'config/modes/transport_no_collision.json' } else { 'config/modes/transport_interface_readiness.json' }
 
-New-Item -ItemType Directory -Path $runDir,$resultDir,$candidateDir,$logDir,$runtimeDir -Force | Out-Null
+New-Item -ItemType Directory -Path $runDir,$inputDir,$resultDir,$candidateDir,$logDir,$runtimeDir -Force | Out-Null
+
+$familyOperatingPath = Join-Path $inputDir 'family_operating_contract.json'
+Push-Location $repoRoot
+try {
+    & $python -m common.multipole.resolve_family_operating_contract --adapter quadrupole `
+        --baseline (Join-Path $projectRoot 'config\baseline.json') --mode (Join-Path $projectRoot $modeInput) `
+        --rf-amplitude-v-per-group $RfPeakV --frequency-hz $FrequencyHz --output $familyOperatingPath
+    if ($LASTEXITCODE -ne 0) { throw 'Shared multipole operating-contract resolution failed.' }
+}
+finally { Pop-Location }
+$familyOperating = Get-Content -LiteralPath $familyOperatingPath -Raw -Encoding UTF8 | ConvertFrom-Json
 
 $runConfigPath = Join-Path $runDir 'run_config.json'
 $bootstrapReport = Join-Path $logDir 'comsol_bootstrap_report.txt'
@@ -63,6 +75,7 @@ $runConfig = [ordered]@{
     inputs=[ordered]@{
         baseline='config/baseline.json'; resolved_geometry='config/resolved_geometry.json'; resolved_contract=$resolvedContractInput
         mode=$modeInput; particle_table=$particleTable
+        family_operating_contract=$familyOperatingPath
         interface_contract='config/interface_contract.json'
     }
     results_dir=$resultDir; comsol_dir=$candidateDir; logs_dir=$logDir; runtime_dir=$runtimeDir; run_dir=$runDir
@@ -116,12 +129,16 @@ $expected = @($modelPath,$summaryPath,$trajectoryPath,$particleStatePath,$rawPha
 $missing = @($expected | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) })
 if ($missing.Count -gt 0) { throw "COMSOL candidate outputs are missing: $($missing -join ', ')" }
 
-& $python (Join-Path $projectRoot 'analysis\verify_particle_state_contract.py') `
-    --state $particleStatePath --particles $particleTable `
-    --interface (Join-Path $projectRoot 'config\interface_contract.json') --axial-offset-mm $SourceAxialOffsetMm `
-    --frequency-hz $FrequencyHz --phase-rad $resolved.mode.rf.phase_rad `
+Push-Location $repoRoot
+try {
+& $python -m projects.rf_quadrupole_collision_cooling.analysis.verify_particle_state_contract `
+    --state $particleStatePath --particles $particleTable --source-format ion11 `
+    --contract (Join-Path $projectRoot 'config\interface_contract.json') --axial-offset-mm $SourceAxialOffsetMm `
+    --frequency-hz $FrequencyHz --phase-rad $familyOperating.voltage.phase_rad `
     --solver COMSOL --output $stateContractReport
-if ($LASTEXITCODE -ne 0) { throw 'Particle-state contract gate failed.' }
+    if ($LASTEXITCODE -ne 0) { throw 'Particle-state contract gate failed.' }
+}
+finally { Pop-Location }
 
 $runSummary = Join-Path $runDir 'summary.json'
 [ordered]@{
