@@ -1,13 +1,18 @@
-function phase4_thermal_emission_coil_transverse()
+function result = phase4_thermal_emission_coil_transverse(executionMode)
 % Thermal (2700K) CPT emission for the TRANSVERSE-coil electron gun
 % (helix axis perpendicular to the beam axis), directly comparable to
 % phase4_thermal_emission_coil.m (axial/coaxial coil) under the same
 % Wehnelt baseline (r_weh_hole=1.0mm, V_wehnelt=-0.5V) to assess whether
 % electron utilization (collection efficiency) actually improves.
+% executionMode='build_only' adds and saves the CPT/study/solver tree on the
+% isolated phase-2 model but returns before particle tracing is computed.
 
 componentRoot = fileparts(mfilename('fullpath'));
 addpath(componentRoot);
 paths = egun_paths();
+if nargin < 1, executionMode = 'full'; end
+assert(any(strcmp(executionMode, {'full', 'build_only'})), ...
+    'executionMode must be full or build_only.');
 import com.comsol.model.*
 import com.comsol.model.util.*
 
@@ -46,6 +51,15 @@ model.sol('sol2').study('std2');
 model.sol('sol2').createAutoSequence('std2');
 model.sol('sol2').feature('v1').set('notsolmethod', 'sol');
 model.sol('sol2').feature('v1').set('notsol', 'sol1');
+if strcmp(executionMode, 'build_only')
+    if ~exist(paths.modelWorkspaceDir, 'dir'), mkdir(paths.modelWorkspaceDir); end
+    model.save(savePath);
+    result = struct('status', 'PASS', 'execution_mode', executionMode, ...
+        'model_path', savePath, 'cpt_tree_built', true, ...
+        'electrostatics_solved', false, 'particle_tracing_solved', false);
+    fprintf('BUILD_ONLY=PASS model=%s\n', savePath);
+    return;
+end
 model.sol('sol2').runAll;
 fprintf('SUCCESS: Particle tracing (thermal, transverse coil) solved.\n');
 
@@ -92,4 +106,7 @@ fprintf('KE[eV] among valid: min=%.4f max=%.4f mean=%.4f median=%.4f\n', ...
 if ~exist(paths.modelWorkspaceDir, 'dir'), mkdir(paths.modelWorkspaceDir); end
 model.save(savePath);
 fprintf('\nSUCCESS: model saved to %s\n', savePath);
+result = struct('status', 'PASS', 'execution_mode', executionMode, ...
+    'model_path', savePath, 'cpt_tree_built', true, ...
+    'electrostatics_solved', true, 'particle_tracing_solved', true);
 end

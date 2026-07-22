@@ -1,5 +1,8 @@
-function result = ms_stage1_ei_source(Nd_val, label)
+function result = ms_stage1_ei_source(Nd_val, label, executionMode)
 % Mass spectrometer Stage 1: Electron Impact (EI) ionization source.
+% executionMode='full' preserves the complete ES/CPT solve.  The explicit
+% 'build_only' mode builds geometry, mesh, physics, studies and solver trees,
+% saves an isolated run model, and returns before either solver runs.
 %
 % Geometry directly modeled on the validated test_collision_cell.m
 % template (aperture-hole electrode disks, long thin tube: R_tube=5mm,
@@ -51,6 +54,9 @@ import com.comsol.model.util.*
 
 if nargin < 1, Nd_val = 1e19; end
 if nargin < 2, label = sprintf('Nd%.0e', Nd_val); end
+if nargin < 3, executionMode = 'full'; end
+assert(any(strcmp(executionMode, {'full', 'build_only'})), ...
+    'executionMode must be full or build_only.');
 
 if any(strcmp(cell(ModelUtil.tags()), 'ModelEISource'))
     ModelUtil.remove('ModelEISource');
@@ -167,8 +173,10 @@ model.sol.create('sol1');
 model.sol('sol1').label('Solution: ES');
 model.sol('sol1').study('std1');
 model.sol('sol1').createAutoSequence('std1');
-model.sol('sol1').runAll;
-fprintf('SUCCESS: electrostatics solved.\n');
+if strcmp(executionMode, 'full')
+    model.sol('sol1').runAll;
+    fprintf('SUCCESS: electrostatics solved.\n');
+end
 
 %% CPT: electrons cross the ionization tube, undergo Ionization collisions
 cpt = comp1.physics.create('cpt', 'ChargedParticleTracing', 'geom1');
@@ -253,6 +261,18 @@ model.sol('sol2').createAutoSequence('std2');
 model.sol('sol2').feature('v1').set('notsolmethod', 'sol');
 model.sol('sol2').feature('v1').set('notsol', es_sol_tag);
 model.sol('sol2').feature('t1').set('tstepsbdf', 'strict');
+if strcmp(executionMode, 'build_only')
+    modelsDir = paths.modelsDir;
+    if ~exist(modelsDir, 'dir'), mkdir(modelsDir); end
+    modelPath = fullfile(modelsDir, sprintf('MS_Stage1_EISource_%s__build_only.mph', ...
+        strrep(label, ' ', '_')));
+    model.save(modelPath);
+    result = struct('status', 'PASS', 'execution_mode', executionMode, ...
+        'model_path', modelPath, 'geometry_built', true, 'mesh_built', true, ...
+        'electrostatics_solved', false, 'particle_tracing_solved', false);
+    fprintf('[%s] BUILD_ONLY=PASS model=%s\n', label, modelPath);
+    return;
+end
 model.sol('sol2').runAll;
 fprintf('[%s] SUCCESS: EI source CPT solved.\n', label);
 

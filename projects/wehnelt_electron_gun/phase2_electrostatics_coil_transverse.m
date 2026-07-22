@@ -1,14 +1,19 @@
-function phase2_electrostatics_coil_transverse()
+function result = phase2_electrostatics_coil_transverse(executionMode)
 % Phase 2 (transverse-coil variant): materials, voltage boundary
 % conditions, electrostatics solve, potential/field result plots for the
 % electron gun geometry with the filament coil's own axis PERPENDICULAR
 % to the beam axis (see phase1_geometry_coil_transverse.m). Same
 % Complement-selection / FreeTet-mesh fixes as phase2_electrostatics_coil.m
 % documented in COMSOL_API.md under Geometry, Selections, and Mesh.
+% executionMode='build_only' stops after the geometry, mesh, electrostatics,
+% study and solver trees are built and saved; it never calls sol1.runAll.
 
 componentRoot = fileparts(mfilename('fullpath'));
 addpath(componentRoot);
 paths = egun_paths();
+if nargin < 1, executionMode = 'full'; end
+assert(any(strcmp(executionMode, {'full', 'build_only'})), ...
+    'executionMode must be full or build_only.');
 import com.comsol.model.*
 import com.comsol.model.util.*
 
@@ -107,6 +112,14 @@ std1.create('stat1', 'Stationary');
 model.sol.create('sol1');
 model.sol('sol1').study('std1');
 model.sol('sol1').createAutoSequence('std1');
+if strcmp(executionMode, 'build_only')
+    model.save(savePath);
+    result = struct('status', 'PASS', 'execution_mode', executionMode, ...
+        'model_path', savePath, 'geometry_built', true, 'mesh_built', true, ...
+        'electrostatics_solved', false);
+    fprintf('BUILD_ONLY=PASS model=%s\n', savePath);
+    return;
+end
 model.sol('sol1').runAll;
 fprintf('SUCCESS: Electrostatics solved.\n');
 
@@ -144,4 +157,7 @@ end
 
 model.save(savePath);
 fprintf('\nSUCCESS: model saved to %s\n', savePath);
+result = struct('status', 'PASS', 'execution_mode', executionMode, ...
+    'model_path', savePath, 'geometry_built', true, 'mesh_built', true, ...
+    'electrostatics_solved', true);
 end

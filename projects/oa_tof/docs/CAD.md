@@ -13,6 +13,8 @@
 MATLAB导出任务必须通过根`common/comsol/run_comsol_r2025b.ps1`获得既有LiveLink连接；
 `export_oatof_cad_step.m`只校验LiveLink是否可用，不自行发现MLI或调用`mphstart`。SolidWorks安装由
 `common/solidworks/`共享解析器从注册表或`SOLIDWORKS_2022_ROOT`发现，项目脚本不得保存安装盘符。
+该入口的`load_only`模式只加载MPH并解析动态CAD manifest与实体对象，不创建输出目录、不导出STEP、
+不运行求解器，也不保存模型；它用于把LiveLink/模型读取故障与STEP/SolidWorks故障分层。
 
 CAD不直接解析候选JSON。`analysis/prepare_candidate_consumers.py`先把候选合同绑定到唯一候选MPH路径，
 随后本文件的`modelPath`入口只读该MPH导出STEP和SolidWorks装配。这样机械几何继承已持久化的COMSOL
@@ -58,3 +60,8 @@ STEP导入会让SolidWorks为每个外部实体新建原生零件，因此会读
 当前CAD manifest把COMSOL的`accelshield`作为单一`accelerator_shield`实体导出，因此正式装配同样
 没有沿RF→oa注入方向的侧孔。未来侧孔、法兰或接地注入管一旦进入候选，必须先在候选MPH形成真实
 实体/切除，再由现有CAD链重新导出和验证；不得仅在SolidWorks装配中手工打孔形成第二份几何真值。
+
+2026-07-22运行`20260722_121500__test__cad__load-only`通过统一R2025b/COMSOL 6.4入口只读加载当前
+正式MPH，并解析出25个manifest特征和25个可导出实体；未运行求解器、未创建STEP输出目录、未修改
+Formal。输入MPH哈希及两份轻量输出已由run manifest复核。该测试只证明CAD读取边界，不替代完整STEP
+导出、SolidWorks装配或Formal CAD同步门禁。

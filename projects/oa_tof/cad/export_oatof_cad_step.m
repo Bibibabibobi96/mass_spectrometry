@@ -1,16 +1,19 @@
-function result = export_oatof_cad_step(modelPath, outputDir)
+function result = export_oatof_cad_step(modelPath, outputDir, executionMode)
 %EXPORT_OATOF_CAD_STEP Export oa-TOF physical solids from an MPH to STEP.
 %
 % The source MPH is opened read-only in COMSOL server memory and is never
 % saved.  STEP AP203 is used because COMSOL 6.4 emits Parasolid v37, which
 % is not a dependable interchange target for the formal SolidWorks 2022 workflow.
+% executionMode='load_only' stops after loading the MPH and discovering all
+% exportable geometry objects; it creates no output directory or CAD file.
 
     arguments
         modelPath (1,1) string {mustBeFile}
         outputDir (1,1) string
+        executionMode (1,1) string {mustBeMember(executionMode, ["export", "load_only"])} = "export"
     end
 
-    if ~isfolder(outputDir)
+    if executionMode == "export" && ~isfolder(outputDir)
         mkdir(outputDir);
     end
 
@@ -36,6 +39,19 @@ function result = export_oatof_cad_step(modelPath, outputDir)
         end
         objectNames = [objectNames; featureObjects(:)]; %#ok<AGROW>
         objectFeatureTags = [objectFeatureTags; repmat(manifest.FeatureTag(k), numel(featureObjects), 1)]; %#ok<AGROW>
+    end
+
+    if executionMode == "load_only"
+        result = struct( ...
+            'modelPath', char(modelPath), ...
+            'executionMode', char(executionMode), ...
+            'modelLoaded', true, ...
+            'geometryResolved', true, ...
+            'bodyFeatureCount', height(manifest), ...
+            'exportableObjectCount', numel(objectNames), ...
+            'stepExported', false, ...
+            'formalAssetModified', false);
+        return;
     end
 
     stepPath = fullfile(outputDir, modelBase + "_physical_components.step");
@@ -70,6 +86,7 @@ function result = export_oatof_cad_step(modelPath, outputDir)
 
     result = struct( ...
         'modelPath', char(modelPath), ...
+        'executionMode', char(executionMode), ...
         'stepPath', char(stepPath), ...
         'manifestPath', char(csvPath), ...
         'format', 'STEP AP203', ...

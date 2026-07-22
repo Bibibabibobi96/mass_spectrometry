@@ -39,6 +39,7 @@ COMSOL自带`tbbmalloc.dll`，可用`-Allocator native`绕过TBB scalable alloca
 
 |主题|测试入口|证明范围|
 |---|---|---|
+|共享连接冒烟|`test_livelink_connection.m`|确认统一入口连接真实COMSOL服务器并读取版本/模型标签；不创建模型、不运行求解器|
 |多极杆几何与静电场|`test_multipole_geometry.m`、`test_multipole_es.m`|偶数多极杆几何、交替电位和近轴场|
 |四极稳定性|`test_quadrupole_stability.m`、`test_multipole_stability.m`|特定理想条件下的稳定/不稳定工作点|
 |Einzel透镜|`test_einzel_lens.m`、`test_einzel_cpt.m`|静电透镜最小几何、场与轨迹验证|

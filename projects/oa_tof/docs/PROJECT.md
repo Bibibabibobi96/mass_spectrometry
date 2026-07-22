@@ -21,6 +21,9 @@
 - 正式COMSOL MPH、SIMION四实例自包含交付和SolidWorks 2022的25组件装配均已建立并通过各自
   资产门禁。SIMION正式PA顺序为`shield 1 < reflectron 2 < accelerator 3 < detector 4`。
 - 当前只完成oa-TOF分析器本体；尚未与RF四极杆正式连接。
+- CAD读取入口已用运行`20260722_121500__test__cad__load-only`对当前正式MPH完成真实只读冒烟：25个
+  manifest特征和25个可导出实体均可解析，未求解、未导出STEP、未修改Formal。该结果只分层证明
+  LiveLink与CAD模型读取，不替代SolidWorks同步或Formal门禁。
 
 2026-07-20 RF项目新增了指向本项目当前源中心的求解器无关handoff draft及静态派生器。它保留跨任意
 上游部件累计的全局仪器时间、根粒子谱系年龄、当前粒子年龄、末组件耗时和谱系身份，并可从RF

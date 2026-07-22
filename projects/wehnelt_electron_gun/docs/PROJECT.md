@@ -23,15 +23,17 @@
 
 ## 已知程序问题
 
-- 三阶段源码已移除COMSOL安装路径和`mphstart`，只能由仓库统一R2025b连接入口运行；尚未做三阶段
-  不求解构建冒烟和最终CPT复验，因此不改变当前资产资格。
+- 三阶段源码已移除COMSOL安装路径和`mphstart`，只能由仓库统一R2025b连接入口运行。运行
+  `20260722_120100__test__comsol__three-stage-build-only`已在真实MATLAB R2025b/COMSOL 6.4连接中依次
+  完成横置灯丝几何、网格、静电和CPT Study/Solver树构建并保存隔离MPH，未运行静电或粒子求解器；
+  三件套manifest复核PASS。该结果不复验历史收集效率，也不改变当前资产资格。
 - 参数仍直接写在MATLAB源码中，没有baseline/resolved机器契约和运行模式分层。
 - 当前正式MPH早于现行run config/summary/manifest合同；资产身份与结果尚未形成完整哈希链。
 - 横置Wehnelt参数扫描尚未建立；旧phase5实际属于轴向灯丝，只能支持非单调性的历史假设。
 
 ## 下一步
 
-1. 通过统一R2025b入口完成三阶段不求解构建冒烟和节点审计，再用小样本复算最终CPT。
+1. 用小样本复算最终CPT，并在GUI中重开检查Study、Solver和结果节点。
 2. 为几何、电压、温度、粒子与数值设置建立机器契约，保持GUI节点可检查。
 3. 复验收集效率、损失分类和正式结果图，补齐run config、summary、manifest及资产SHA。
 4. 只有下游设计需要时才建立横置谱系参数扫描；不得复用轴向phase5的具体最优值。
