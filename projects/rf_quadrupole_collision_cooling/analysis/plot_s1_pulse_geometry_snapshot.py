@@ -52,6 +52,8 @@ def accelerator_geometry(baseline: dict, joint: dict) -> dict[str, object]:
         "repeller_thickness": repeller_thickness,
         "grid1_z": grid1_z,
         "grid2_z": grid2_z,
+        "grid1_half": ring_outer_half,
+        "grid2_half": shield_inner_half,
         "ring_thickness": ring_thickness,
         "ring_centers_z": ring_centers,
         "port_center_z": float(port["center_z_mm"]),
@@ -90,7 +92,42 @@ def classify_snapshot(capture: pd.DataFrame, events: pd.DataFrame,
         & classified["x_mm"].between(outer_face - tolerance_mm, inner_face + tolerance_mm)
         & (np.minimum(y_edge_distance, z_edge_distance) <= tolerance_mm)
     )
-    classified["active_at_pulse"] = ~classified["frozen_port_loss_before_pulse"]
+    dx = (classified["x_mm"] - cx).abs()
+    ay = classified["y_mm"].abs()
+    terminal_wall_loss = (
+        classified["status"].eq("lost")
+        & classified["terminal_reason"].eq("electrode_or_boundary")
+    )
+    repeller_hit = (
+        (classified["z_mm"] - float(geometry["repeller_z"])).abs() <= tolerance_mm
+    ) & (dx <= float(geometry["ring_outer_half"]) + tolerance_mm) & (
+        ay <= float(geometry["ring_outer_half"]) + tolerance_mm
+    )
+    grid_hit = pd.Series(False, index=classified.index)
+    for name in ("grid1", "grid2"):
+        grid_hit |= (
+            (classified["z_mm"] - float(geometry[f"{name}_z"])).abs() <= tolerance_mm
+        ) & (dx <= float(geometry[f"{name}_half"]) + tolerance_mm) & (
+            ay <= float(geometry[f"{name}_half"]) + tolerance_mm
+        )
+    ring_hit = pd.Series(False, index=classified.index)
+    square_radius = np.maximum(dx, ay)
+    for ring_z in geometry["ring_centers_z"]:
+        ring_hit |= (
+            (classified["z_mm"] - float(ring_z)).abs()
+            <= float(geometry["ring_thickness"]) / 2 + tolerance_mm
+        ) & (square_radius >= float(geometry["bore_half"]) - tolerance_mm) & (
+            square_radius <= float(geometry["ring_outer_half"]) + tolerance_mm
+        )
+    classified["frozen_accelerator_loss_before_pulse"] = (
+        terminal_wall_loss
+        & ~classified["frozen_port_loss_before_pulse"]
+        & (repeller_hit | grid_hit | ring_hit)
+    )
+    classified["active_at_pulse"] = ~(
+        classified["frozen_port_loss_before_pulse"]
+        | classified["frozen_accelerator_loss_before_pulse"]
+    )
     return classified
 
 
@@ -109,7 +146,9 @@ def plot_snapshot(capture_path: Path, events_path: Path, baseline_path: Path, jo
     g = accelerator_geometry(baseline, joint)
     capture = classify_snapshot(capture, events, g)
     active = capture[capture["active_at_pulse"]]
-    frozen_loss = capture[capture["frozen_port_loss_before_pulse"]]
+    frozen_port_loss = capture[capture["frozen_port_loss_before_pulse"]]
+    frozen_accelerator_loss = capture[
+        capture["frozen_accelerator_loss_before_pulse"]]
     cx = g["center_x"]
     inner = g["shield_inner_half"]
     outer = g["shield_outer_half"]
@@ -151,10 +190,14 @@ def plot_snapshot(capture_path: Path, events_path: Path, baseline_path: Path, jo
                          g["repeller_z"] - g["repeller_thickness"]),
                  2 * g["ring_outer_half"], g["repeller_thickness"],
                  facecolor=electrode_color, edgecolor="#08519c", alpha=0.7, zorder=2)
-    for grid_z, label in ((g["grid1_z"], "grid1"), (g["grid2_z"], "grid2")):
-        ax_xz.plot([cx - inner, cx + inner], [grid_z, grid_z], color=grid_color,
+    for grid_z, grid_half, label in (
+        (g["grid1_z"], g["grid1_half"], "grid1"),
+        (g["grid2_z"], g["grid2_half"], "grid2"),
+    ):
+        ax_xz.plot([cx - grid_half, cx + grid_half], [grid_z, grid_z], color=grid_color,
                    linewidth=1.5, linestyle="-.", zorder=2)
-        ax_xz.text(cx + inner + 0.35, grid_z, label, va="center", fontsize=8, color="#006d2c")
+        ax_xz.text(cx + grid_half + 0.35, grid_z, label, va="center", fontsize=8,
+                   color="#006d2c")
 
     source_center = g["source_center"]
     source_size = g["source_size"]
@@ -165,6 +208,11 @@ def plot_snapshot(capture_path: Path, events_path: Path, baseline_path: Path, jo
                  linewidth=2.0, linestyle="--", zorder=5)
     ax_xz.scatter(active["x_mm"], active["z_mm"], s=27, c=ion_color,
                   edgecolors="white", linewidths=0.35, alpha=0.85, zorder=6)
+    ax_xz.scatter(frozen_port_loss["x_mm"], frozen_port_loss["z_mm"], s=31,
+                  c="#cb181d", marker="x", linewidths=1.1, alpha=0.8, zorder=7)
+    ax_xz.scatter(frozen_accelerator_loss["x_mm"],
+                  frozen_accelerator_loss["z_mm"], s=48, c="#252525", marker="X",
+                  linewidths=0.7, alpha=0.9, zorder=8)
     ax_xz.annotate(f"physical port\n{g['port_width_y']:.3g} y × {g['port_height_z']:.3g} z mm",
                    xy=(cx - outer + wall / 2, g["port_center_z"]),
                    xytext=(cx - outer + 2.0, g["port_center_z"] + 3.1),
@@ -188,7 +236,7 @@ def plot_snapshot(capture_path: Path, events_path: Path, baseline_path: Path, jo
                  edgecolor=electrode_color, linewidth=2.0, zorder=2)
     _filled_rect(ax_xy, (cx - g["bore_half"], -g["bore_half"]),
                  2 * g["bore_half"], 2 * g["bore_half"], fill=False,
-                 edgecolor=electrode_color, linewidth=1.5, linestyle=":", zorder=2)
+                 edgecolor=electrode_color, linewidth=1.5, linestyle="-", zorder=2)
     _filled_rect(ax_xy,
                  (source_center["x"] - source_size["x"] / 2,
                   source_center["y"] - source_size["y"] / 2),
@@ -196,6 +244,11 @@ def plot_snapshot(capture_path: Path, events_path: Path, baseline_path: Path, jo
                  linewidth=2.0, linestyle="--", zorder=5)
     ax_xy.scatter(active["x_mm"], active["y_mm"], s=27, c=ion_color,
                   edgecolors="white", linewidths=0.35, alpha=0.85, zorder=6)
+    ax_xy.scatter(frozen_port_loss["x_mm"], frozen_port_loss["y_mm"], s=31,
+                  c="#cb181d", marker="x", linewidths=1.1, alpha=0.8, zorder=7)
+    ax_xy.scatter(frozen_accelerator_loss["x_mm"],
+                  frozen_accelerator_loss["y_mm"], s=48, c="#252525", marker="X",
+                  linewidths=0.7, alpha=0.9, zorder=8)
     ax_xy.annotate(f"physical port\n{g['port_width_y']:.3g} y × {g['port_height_z']:.3g} z mm",
                    xy=(cx - outer + wall / 2, 0.0), xytext=(cx - outer + 2.0, 3.0),
                    arrowprops={"arrowstyle": "->", "color": "#cb181d"}, fontsize=9)
@@ -218,6 +271,10 @@ def plot_snapshot(capture_path: Path, events_path: Path, baseline_path: Path, jo
     legend = [
         Line2D([], [], marker="o", linestyle="None", markerfacecolor=ion_color,
                markeredgecolor="white", label="ions immediately before pulse"),
+        Line2D([], [], marker="x", linestyle="None", color="#cb181d",
+               label="pre-pulse port-wall loss"),
+        Line2D([], [], marker="X", linestyle="None", color="#252525",
+               label="pre-pulse accelerator loss"),
         Rectangle((0, 0), 1, 1, facecolor=shield_color, edgecolor="#636363",
                   alpha=0.75, label="grounded accelerator shield"),
         Rectangle((0, 0), 1, 1, fill=False, edgecolor=electrode_color,
@@ -226,12 +283,13 @@ def plot_snapshot(capture_path: Path, events_path: Path, baseline_path: Path, jo
         Rectangle((0, 0), 1, 1, fill=False, edgecolor=ideal_color,
                   linestyle="--", linewidth=2, label="ideal source bounds"),
     ]
-    fig.legend(handles=legend, loc="lower center", ncol=5, frameon=False, fontsize=9)
+    fig.legend(handles=legend, loc="lower center", ncol=4, frameon=False, fontsize=9)
     pulse_time = float(capture["instrument_time_us"].iloc[0])
     fig.suptitle(f"RF-to-oaTOF state immediately before shared pulse: "
                  f"t = {pulse_time:.6f} µs (left limit), active = {len(active)} "
-                 f"(pre-pulse port loss = {len(frozen_loss)})", fontsize=14)
-    fig.tight_layout(rect=(0, 0.065, 1, 0.94))
+                 f"(port loss = {len(frozen_port_loss)}, accelerator loss = "
+                 f"{len(frozen_accelerator_loss)})", fontsize=14)
+    fig.tight_layout(rect=(0, 0.1, 1, 0.94))
     figure_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(figure_path, dpi=190)
     plt.close(fig)
@@ -242,11 +300,12 @@ def plot_snapshot(capture_path: Path, events_path: Path, baseline_path: Path, jo
         "status": "PASS",
         "pulse_instrument_time_us": pulse_time,
         "state_time_semantics": "left_limit_immediately_before_pulse_t_pulse_minus",
-        "state_continuity_note": "Position and velocity are continuous at the finite field step; frozen pre-pulse losses are excluded.",
+        "state_continuity_note": "Position and velocity are continuous at the finite field step; frozen pre-pulse losses are classified separately and plotted, but excluded from the active cohort.",
         "snapshot_rows": int(len(capture)),
         "particles_active_at_pulse": int(len(active)),
-        "frozen_port_losses_before_pulse": int(len(frozen_loss)),
-        "frozen_port_loss_positions_drawn_as_ions": False,
+        "frozen_port_losses_before_pulse": int(len(frozen_port_loss)),
+        "frozen_accelerator_losses_before_pulse": int(len(frozen_accelerator_loss)),
+        "frozen_loss_positions_plotted_separately": True,
         "active_inside_ideal_reference_volume": int(pd.to_numeric(
             active.get("inside_oatof_ideal_reference_volume", pd.Series(dtype=int)),
             errors="coerce").fillna(0).astype(bool).sum()),
@@ -275,7 +334,8 @@ def main() -> None:
     result = plot_snapshot(args.capture, args.events, args.oatof_baseline, args.joint_contract,
                            args.figure, args.metadata)
     print(f"S1_PULSE_GEOMETRY_SNAPSHOT=PASS ACTIVE={result['particles_active_at_pulse']} "
-          f"PORT_LOSS={result['frozen_port_losses_before_pulse']}")
+          f"PORT_LOSS={result['frozen_port_losses_before_pulse']} "
+          f"ACCELERATOR_LOSS={result['frozen_accelerator_losses_before_pulse']}")
 
 
 if __name__ == "__main__":

@@ -66,12 +66,13 @@ def validate(path: Path = CONTRACT_PATH) -> dict:
     port = int(downstream.get("geometric_port_accepted", -1))
     predicted = int(downstream.get("predicted_finite_wall_survivors", -1))
     active = int(downstream.get("active_at_pulse", -1))
-    pre_loss = int(downstream.get("pre_pulse_port_losses", -1))
+    port_loss = int(downstream.get("pre_pulse_port_losses", -1))
+    accelerator_loss = int(downstream.get("pre_pulse_accelerator_losses", -1))
     local_exit = int(downstream.get("local_joint_exit", -1))
     if not (100 >= port >= active >= local_exit >= 0):
         raise ValueError("RF energy-match downstream particle funnel is inconsistent")
-    if predicted != active or pre_loss != port - active:
-        raise ValueError("RF energy-match finite-wall prediction does not match the pulse census")
+    if predicted != active + accelerator_loss or port_loss != port - predicted:
+        raise ValueError("RF energy-match finite-wall and downstream-loss census is inconsistent")
     centroid_error = float(downstream.get("actual_centroid_error_x_mm", math.nan))
     if abs(centroid_error) > 0.1:
         raise ValueError("RF energy-match pulse does not center the active cohort")

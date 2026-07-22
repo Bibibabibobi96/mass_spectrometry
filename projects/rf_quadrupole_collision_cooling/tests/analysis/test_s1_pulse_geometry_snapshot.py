@@ -27,6 +27,8 @@ class S1PulseGeometrySnapshotTests(unittest.TestCase):
         self.assertEqual(len(geometry["ring_centers_z"]), 5)
         self.assertAlmostEqual(geometry["port_width_y"], 1.0)
         self.assertAlmostEqual(geometry["port_height_z"], 0.9)
+        self.assertAlmostEqual(geometry["grid1_half"], 10.0)
+        self.assertAlmostEqual(geometry["grid2_half"], 15.0)
 
         with tempfile.TemporaryDirectory() as temp:
             temp_path = Path(temp)
@@ -39,17 +41,23 @@ class S1PulseGeometrySnapshotTests(unittest.TestCase):
                  "x_mm": -67.0, "y_mm": 0.5, "z_mm": -18.4},
                 {"particle_id": 2, "instrument_time_us": 34.0,
                  "x_mm": -55.0, "y_mm": -0.2, "z_mm": -18.2},
+                {"particle_id": 3, "instrument_time_us": 34.0,
+                 "x_mm": -49.0, "y_mm": 0.1,
+                 "z_mm": geometry["repeller_z"]},
             ]).to_csv(capture, index=False)
             pd.DataFrame([
                 {"particle_id": 1, "event": "terminal", "status": "lost",
                  "terminal_reason": "electrode_or_boundary"},
                 {"particle_id": 2, "event": "local_joint_exit", "status": "transmitted",
                  "terminal_reason": "none"},
+                {"particle_id": 3, "event": "terminal", "status": "lost",
+                 "terminal_reason": "electrode_or_boundary"},
             ]).to_csv(events, index=False)
             result = module.plot_snapshot(
                 capture, events, baseline_path, joint_path, figure, metadata)
             self.assertEqual(result["particles_active_at_pulse"], 1)
             self.assertEqual(result["frozen_port_losses_before_pulse"], 1)
+            self.assertEqual(result["frozen_accelerator_losses_before_pulse"], 1)
             self.assertGreater(figure.stat().st_size, 1000)
             self.assertEqual(json.loads(metadata.read_text(encoding="utf-8"))["status"], "PASS")
 

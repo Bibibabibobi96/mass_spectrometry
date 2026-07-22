@@ -80,7 +80,9 @@ def compare(capture_path: Path, entry_path: Path, local_path: Path, ideal_path: 
     joint = json.loads(joint_path.read_text(encoding="utf-8"))
     snapshot = classify_snapshot(enrich_capture(capture_raw, entry), local,
                                  accelerator_geometry(baseline, joint))
-    frozen_loss = snapshot[snapshot["frozen_port_loss_before_pulse"]]
+    frozen_port_loss = snapshot[snapshot["frozen_port_loss_before_pulse"]]
+    frozen_accelerator_loss = snapshot[
+        snapshot["frozen_accelerator_loss_before_pulse"]]
     capture = snapshot[snapshot["active_at_pulse"]].copy()
     accepted_ids = set(local.loc[local["event"] != "geometric_reject", "particle_id"])
     if len(entry) != 100 or len(local) != 100 or len(ideal) != 100:
@@ -146,7 +148,8 @@ def compare(capture_path: Path, entry_path: Path, local_path: Path, ideal_path: 
         "state_time_semantics": "left_limit_immediately_before_pulse_t_pulse_minus",
         "geometric_port_accepted": len(accepted_ids),
         "snapshot_rows_including_frozen_terminal_coordinates": int(len(snapshot)),
-        "frozen_port_losses_before_pulse": int(len(frozen_loss)),
+        "frozen_port_losses_before_pulse": int(len(frozen_port_loss)),
+        "frozen_accelerator_losses_before_pulse": int(len(frozen_accelerator_loss)),
         "alive_at_pulse": int(len(capture)),
         "pre_pulse_dynamic_loss": int(len(accepted_ids) - len(capture)),
         "inside_oatof_ideal_reference_volume": int(len(inside)),
