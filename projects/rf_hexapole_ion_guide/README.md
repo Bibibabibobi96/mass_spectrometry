@@ -18,7 +18,7 @@
 - 运行入口：[`analysis/run_transport.ps1`](analysis/run_transport.ps1)
 - L2圆杆筛选：[`analysis/run_round_rod_field_screen.ps1`](analysis/run_round_rod_field_screen.ps1)
 - L2传输：[`analysis/run_round_rod_transport.ps1`](analysis/run_round_rod_transport.ps1)
-- L3直接跟踪：[`analysis/run_finite_3d_transport.ps1`](analysis/run_finite_3d_transport.ps1)
+- L3直接跟踪与`-AxialAcceleration`功能模式：[`analysis/run_finite_3d_transport.ps1`](analysis/run_finite_3d_transport.ps1)
 - L3 SIMION独立回归：[`analysis/run_simion_finite_3d_transport.ps1`](analysis/run_simion_finite_3d_transport.ps1)
 - 静态门禁：[`verify_project.ps1`](verify_project.ps1)
 

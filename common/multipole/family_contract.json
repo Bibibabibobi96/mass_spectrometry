@@ -32,7 +32,8 @@
       "finite_3d_axial_interfaces",
       "zero_or_positive_grounded_connectors",
       "canonical_particle_state",
-      "comsol_and_simion_functional_transport_adapters"
+      "comsol_and_simion_functional_transport_adapters",
+      "segmented_rod_axial_acceleration_comsol_adapter"
     ],
     "change_control": "Changes require the repository multipole-family gate and real-solver regression for every affected adapter; project-specific theory and acceptance thresholds remain outside this contract."
   }

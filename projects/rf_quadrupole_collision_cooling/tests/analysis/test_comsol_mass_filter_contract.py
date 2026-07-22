@@ -55,7 +55,8 @@ class ComsolMassFilterContractTests(unittest.TestCase):
         self.assertIn("V_dc+V_rf*sin", builder)
         self.assertIn("Vdiff", builder)
         self.assertIn("Vstatic", builder)
-        self.assertIn("-d(Vdiff,x))-d(Vstatic,x)", builder)
+        self.assertIn("-d(Vdiff,x))-axial_scale*d(Vstatic,x)", builder)
+        self.assertIn("p.set('axial_scale','1')", builder)
         self.assertIn("static_electrodes_V.detector", builder)
 
     def test_comsol_runners_freeze_the_shared_operating_contract(self) -> None:

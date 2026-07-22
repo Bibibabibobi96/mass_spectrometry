@@ -18,7 +18,7 @@ runConfigPath = getenv('RFQUAD_RUN_CONFIG');
 assert(~isempty(runConfigPath), 'RFQUAD_RUN_CONFIG is required for a traceable run.');
 runConfig = jsondecode(fileread(runConfigPath));
 assert(strcmp(runConfig.project, 'rf_quadrupole_collision_cooling') && ...
-    any(strcmp(runConfig.mode, {'transport_no_collision','transport_interface_readiness','mass_filter_reference'})), ...
+    any(strcmp(runConfig.mode, {'transport_no_collision','transport_interface_readiness','mass_filter_reference','axial_acceleration_reference'})), ...
     'RF quadrupole run-config project or mode mismatch.');
 runMode = runConfig.mode;
 resolvedPath=fullfile(projectRoot,'config','resolved_geometry.json');
@@ -49,6 +49,17 @@ if isfield(runConfig, 'save_model'), saveModel = logical(runConfig.save_model); 
 if isfield(runConfig, 'write_detailed_outputs'), writeDetailedOutputs = logical(runConfig.write_detailed_outputs); end
 comsolOutputDir = runConfig.comsol_dir; resultsOutputDir = runConfig.results_dir;
 isMassFilter=strcmp(runMode,'mass_filter_reference');
+isAxialAcceleration=strcmp(runMode,'axial_acceleration_reference');
+if isAxialAcceleration
+    assert(isfield(runConfig.inputs,'axial_acceleration_resolved') && ...
+        isfile(runConfig.inputs.axial_acceleration_resolved), ...
+        'Resolved axial-acceleration contract is required.');
+    axialAcceleration=jsondecode(fileread(runConfig.inputs.axial_acceleration_resolved));
+    assert(strcmp(axialAcceleration.project_id,'rf_quadrupole_collision_cooling'), ...
+        'Axial-acceleration project identity differs.');
+else
+    axialAcceleration=struct();
+end
 drive=operating.voltage;
 assert(strcmp(drive.waveform,'sine'),'Quadrupole COMSOL modes require the shared sine-wave contract.');
 rfPeakV=drive.rf_amplitude_V_zero_to_peak_per_group;
@@ -97,6 +108,7 @@ p.set('V_dc',sprintf('%.12g[V]',dcV));
 p.set('V_axis',sprintf('%.12g[V]',axisV));
 p.set('phi_rf',sprintf('%.12g[rad]',rfPhaseRad));
 p.set('f_rf',sprintf('%.12g[Hz]',rfFrequencyHz));
+p.set('axial_scale','1');
 p.set('z_rod_exit',sprintf('%.12g[mm]',interface.planes.rod_exit.z_mm),'Rod-exit diagnostic plane');
 p.set('z_handoff',sprintf('%.12g[mm]',interface.planes.handoff.z_mm),'Downstream component handoff plane');
 p.set('z_acceptance',sprintf('%.12g[mm]',interface.planes.acceptance_detector.z_mm),'Standalone acceptance detector plane');
@@ -104,7 +116,17 @@ p.set('m_ion',sprintf('%.15g[kg]',source.mass_amu*1.66053906660e-27));
 p.set('q_mathieu','4*e_const*V_rf/(m_ion*(2*pi*f_rf)^2*r0^2)');
 p.set('a_mathieu','8*e_const*V_dc/(m_ion*(2*pi*f_rf)^2*r0^2)');
 
-rodTags=create_multipole_round_rods(geom,rodArray,'rod','z',[0 0 0]);
+if isAxialAcceleration
+    [rodTags,rodMetadata]=create_multipole_segmented_round_rods(geom,rodArray,axialAcceleration,'rod');
+else
+    rodTags=create_multipole_round_rods(geom,rodArray,'rod','z',[0 0 0]);
+    rodMetadata=repmat(struct('tag','','rod_id',0,'electrode_group',0, ...
+        'segment_id',1,'common_mode_V',axisV),1,numel(rods));
+    for k=1:numel(rods)
+        rodMetadata(k).tag=rodTags{k}; rodMetadata(k).rod_id=rods(k).rod_id;
+        rodMetadata(k).electrode_group=rods(k).electrode_group;
+    end
+end
 for k=1:numel(rodTags)
     geom.feature(rodTags{k}).label(sprintf('Reference circular rod %d',k));
 end
@@ -162,9 +184,9 @@ assert(~isempty(vacDomains),'Vacuum selection is empty.');
 mat=model.material.create('mat_vac','Common'); mat.label('Vacuum'); mat.selection.named('sel_vac'); mat.propertyGroup('def').set('relpermittivity',{'1'});
 es=comp.physics.create('es','Electrostatics','geom1'); es.label('Differential RF/DC unit field'); es.selection.named('sel_vac');
 es.field('electricpotential').field('Vdiff'); es.field('electricpotential').component({'Vdiff'});
-for k=1:numel(rods)
-    s=sprintf('selb_rod%d',k); comp.selection.create(s,'Adjacent'); comp.selection(s).set('input',{sprintf('geom1_rod%d_dom',k)});
-    pot=es.create(sprintf('pot_rod%d',k),'ElectricPotential',2); pot.selection.named(s); pot.set('V0',sprintf('%d[V]',100*(3-2*rods(k).electrode_group)));
+for k=1:numel(rodTags)
+    s=['selb_' rodTags{k}]; comp.selection.create(s,'Adjacent'); comp.selection(s).set('input',{['geom1_' rodTags{k} '_dom']});
+    pot=es.create(sprintf('pot_rod%d',k),'ElectricPotential',2); pot.selection.named(s); pot.set('V0',sprintf('%d[V]',100*(3-2*rodMetadata(k).electrode_group)));
 end
 for item={{'entrance','entrance'},{'exit','exit_enclosure'},{'detector','detector'}}
     entry=item{1}; s=['selb_' entry{1}]; comp.selection.create(s,'Adjacent'); comp.selection(s).set('input',{['geom1_' entry{2} '_dom']});
@@ -173,10 +195,15 @@ end
 
 ess=comp.physics.create('ess','Electrostatics','geom1'); ess.label('Axis common mode and static end fields'); ess.selection.named('sel_vac');
 ess.field('electricpotential').field('Vstatic'); ess.field('electricpotential').component({'Vstatic'});
-for k=1:numel(rods)
-    pot=ess.create(sprintf('pot_rod%d',k),'ElectricPotential',2); pot.selection.named(sprintf('selb_rod%d',k)); pot.set('V0','V_axis');
+for k=1:numel(rodTags)
+    pot=ess.create(sprintf('pot_rod%d',k),'ElectricPotential',2); pot.selection.named(['selb_' rodTags{k}]);
+    pot.set('V0',sprintf('%.12g[V]',rodMetadata(k).common_mode_V));
 end
 staticItems={{'entrance',staticEntranceV},{'exit',staticExitV},{'detector',staticDetectorV}};
+if isAxialAcceleration
+    staticItems={{'entrance',axialAcceleration.entrance_common_mode_V}, ...
+        {'exit',axialAcceleration.output_reference_V},{'detector',axialAcceleration.output_reference_V}};
+end
 for item=staticItems
     entry=item{1}; pot=ess.create(['pot_' entry{1}],'ElectricPotential',2); pot.selection.named(['selb_' entry{1}]);
     pot.set('V0',sprintf('%.12g[V]',entry{2}));
@@ -219,7 +246,7 @@ ef=cpt.create('ef1','ElectricForce',3);
 if isMassFilter, ef.label('RF+DC and static electric force'); else, ef.label('RF-only electric force'); end
 ef.selection.named('sel_vac'); ef.set('E_src','userdef');
 fieldScale='((V_dc+V_rf*sin(2*pi*f_rf*t+phi_rf))/100[V])';
-ef.set('E',{[fieldScale '*(-d(Vdiff,x))-d(Vstatic,x)'],[fieldScale '*(-d(Vdiff,y))-d(Vstatic,y)'],[fieldScale '*(-d(Vdiff,z))-d(Vstatic,z)']});
+ef.set('E',{[fieldScale '*(-d(Vdiff,x))-axial_scale*d(Vstatic,x)'],[fieldScale '*(-d(Vdiff,y))-axial_scale*d(Vstatic,y)'],[fieldScale '*(-d(Vdiff,z))-axial_scale*d(Vstatic,z)']});
 
 std2=model.study.create('std2');
 if isMassFilter, std2.label('Transient RF+DC mass filtering'); else, std2.label('Transient RF-only transport'); end
@@ -231,6 +258,24 @@ time.setEntry('activate','cpt',true);
 for i=1:size(ions,1), cpt.feature(sprintf('rel%03d',i)).set('StudyStep','std2/time1'); end
 cpt.feature('pp1').set('StudyStep','std2/time1');
 sol2=model.sol.create('sol2'); sol2.study('std2'); sol2.createAutoSequence('std2'); sol2.feature('v1').set('notsolmethod','sol'); sol2.feature('v1').set('notsol','sol1'); sol2.attach('std2'); sol2.runAll;
+
+controlMetrics=struct('transmission',NaN,'mean_output_energy_eV',NaN);
+if isAxialAcceleration
+    model.param.set('axial_scale','0');
+    stdControl=model.study.create('std_control'); stdControl.label('RF-on zero axial-drop control');
+    timeControl=stdControl.create('time1','Transient'); timeControl.set('tlist',sprintf('range(0,%.15g,%.15g)',dt,tmax));
+    timeControl.setEntry('activate','es',false); timeControl.setEntry('activate','ess',false); timeControl.setEntry('activate','cpt',true);
+    for i=1:size(ions,1), cpt.feature(sprintf('rel%03d',i)).set('StudyStep','std_control/time1'); end
+    cpt.feature('pp1').set('StudyStep','std_control/time1');
+    solControl=model.sol.create('sol_control'); solControl.study('std_control'); solControl.createAutoSequence('std_control');
+    solControl.feature('v1').set('notsolmethod','sol'); solControl.feature('v1').set('notsol','sol1'); solControl.attach('std_control'); solControl.runAll;
+    controlDataset=model.result.dataset.create('pdset_control','Particle'); controlDataset.set('solution','sol_control');
+    controlPd=mphparticle(model,'dataset','pdset_control');
+    controlMetrics=summarizeDetectorEnergy(controlPd,detectorZ,g.detector_radius,source.mass_amu);
+    model.param.set('axial_scale','1');
+    for i=1:size(ions,1), cpt.feature(sprintf('rel%03d',i)).set('StudyStep','std2/time1'); end
+    cpt.feature('pp1').set('StudyStep','std2/time1');
+end
 
 pdset=model.result.dataset.create('pdset1','Particle'); pdset.label(sprintf('Fixed paired particle trajectories (N=%d)',source.particles)); pdset.set('solution','sol2');
 pg=model.result.create('pg_traj','PlotGroup3D'); pg.set('data','pdset1'); pg.set('titletype','manual');
@@ -270,9 +315,21 @@ result=struct('solver','COMSOL','mode',runMode,'operating_point',operatingPoint,
     'detector_plane_crossings',sum(crossedDetectorPlane),'max_detector_hit_radius_mm',max(arrivalRadius(hit),[],'omitnan'), ...
     'mean_detector_time_us',mean(arrival,'omitnan'),'rf_steps_per_period',mode.numerics.comsol_rf_steps_per_period,'mesh_auto_level',meshAuto,'mesh_hmax_mm',meshHmaxMm, ...
     'source_axial_offset_mm',sourceAxialOffsetMm,'mass_Th',source.mass_amu,'rf_peak_V',rfPeakV,'dc_per_group_V',dcV, ...
-    'axis_common_mode_V',axisV,'static_entrance_V',staticEntranceV,'static_exit_V',staticExitV,'static_detector_V',staticDetectorV,'run_label',runLabel);
+    'axis_common_mode_V',axisV,'static_entrance_V',staticEntranceV,'static_exit_V',staticExitV,'static_detector_V',staticDetectorV,'run_label',runLabel, ...
+    'zero_axial_drop_control',controlMetrics);
+primaryMetrics=summarizeDetectorEnergy(pd,detectorZ,g.detector_radius,source.mass_amu);
+result.mean_output_energy_eV=primaryMetrics.mean_output_energy_eV;
+if isAxialAcceleration
+    result.predicted_output_energy_eV=axialAcceleration.derived.predicted_output_energy_eV;
+    result.mean_energy_gain_eV=result.mean_output_energy_eV-controlMetrics.mean_output_energy_eV;
+    accelerationGateFailed=result.transmission<axialAcceleration.functional_acceptance.minimum_transmission || ...
+        result.mean_energy_gain_eV<axialAcceleration.functional_acceptance.minimum_mean_energy_gain_eV || ...
+        abs(result.mean_output_energy_eV-result.predicted_output_energy_eV)>axialAcceleration.functional_acceptance.maximum_mean_output_energy_error_eV;
+else
+    accelerationGateFailed=false;
+end
 transportGateFailed=~isMassFilter && (result.transmission<mode.numerics.minimum_expected_transmission || result.max_hit_rod_radius_mm>=mode.numerics.maximum_allowed_radius_fraction_r0*g.field_radius_r0);
-if collisionPresent || transportGateFailed
+if collisionPresent || transportGateFailed || accelerationGateFailed
     error('COMSOL transport/confinement gate failed: transmission=%.6g maxHitRodRadius=%.6g',result.transmission,result.max_hit_rod_radius_mm);
 end
 
@@ -371,4 +428,21 @@ divergenceDeg=atan2d(hypot(state.vx_m_s,state.vy_m_s),state.vz_m_s);
 row={particleId,event,status,reason,state.t_s*1e6,(state.t_s-birthTimeS)*1e6, ...
     mod(2*pi*frequencyHz*state.t_s+phaseRad,2*pi),state.z_mm,state.x_mm,state.y_mm, ...
     state.vz_m_s,state.vx_m_s,state.vy_m_s,energyEv,radiusMm,divergenceDeg,maxRodRadiusMm};
+end
+
+function metrics=summarizeDetectorEnergy(pd,detectorZ,detectorRadius,massAmu)
+x=squeeze(pd.p(:,:,1)); y=squeeze(pd.p(:,:,2)); z=squeeze(pd.p(:,:,3));
+vx=squeeze(pd.v(:,:,1)); vy=squeeze(pd.v(:,:,2)); vz=squeeze(pd.v(:,:,3));
+if isvector(z), x=x(:); y=y(:); z=z(:); vx=vx(:); vy=vy(:); vz=vz(:); end
+energy=nan(1,size(z,2)); hit=false(1,size(z,2));
+for particle=1:size(z,2)
+    sample=find(z(:,particle)>=detectorZ-1e-6,1,'first');
+    if ~isempty(sample) && hypot(x(sample,particle),y(sample,particle))<=detectorRadius
+        hit(particle)=true;
+        speed2=vx(sample,particle)^2+vy(sample,particle)^2+vz(sample,particle)^2;
+        energy(particle)=0.5*massAmu*1.66053906660e-27*speed2/1.602176634e-19;
+    end
+end
+metrics=struct('transmission',mean(hit),'mean_output_energy_eV',mean(energy,'omitnan'), ...
+    'output_energy_standard_deviation_eV',std(energy,'omitnan'));
 end

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from common.multipole.family_contract import from_high_order_baseline, from_quadrupole_contract
+from common.multipole.axial_acceleration import resolve_axial_acceleration
 from common.multipole.resolve_finite_3d_contract import resolve_contract
 
 
@@ -23,6 +24,7 @@ FOUNDATION_SCOPE = {
     "zero_or_positive_grounded_connectors",
     "canonical_particle_state",
     "comsol_and_simion_functional_transport_adapters",
+    "segmented_rod_axial_acceleration_comsol_adapter",
 }
 
 
@@ -64,13 +66,35 @@ def validate_project_identity(project_id: str, order: int, electrode_count: int)
         and baseline.get("multipole", {}).get("electrode_count") == electrode_count,
         f"{project_id} baseline multipole identity differs",
     )
+    axial = load_json(root / "config" / "modes" / "axial_acceleration_reference.json")
+    require(axial.get("project_id") == project_id, f"{project_id} axial-acceleration identity differs")
+    if order == 2:
+        resolved_geometry = load_json(root / "config" / "resolved_geometry.json")
+        first_rod = resolved_geometry["rod_array_mm"]["rods"][0]
+        source_energy = 2.0
+        charge_state = 1
+    else:
+        first_rod = {
+            "z_min_mm": 0.0,
+            "z_max_mm": baseline["geometry_mm"]["effective_length"],
+        }
+        source_energy = baseline["particle_source"]["kinetic_energy_eV"]
+        charge_state = baseline["particle_source"]["charge_state"]
+    acceleration = resolve_axial_acceleration(
+        axial,
+        rod_z_min_mm=first_rod["z_min_mm"],
+        rod_z_max_mm=first_rod["z_max_mm"],
+        source_kinetic_energy_ev=source_energy,
+        charge_state=charge_state,
+    )
+    require(acceleration["derived"]["predicted_output_energy_eV"] == 5.0, f"{project_id} energy target differs")
     if order == 2:
         modes = root / "config" / "modes"
         for mode_name in ("transport_no_collision.json", "mass_filter_reference.json"):
             operating = from_quadrupole_contract(baseline, load_json(modes / mode_name))
             require(operating.identity.radial_order_n == order, "quadrupole operating order differs")
         builder = (root / "comsol" / "ms_rf_quadrupole_no_collision.m").read_text(encoding="utf-8")
-        require("create_multipole_round_rods" in builder, "quadrupole COMSOL bypasses the shared rod array")
+        require("create_multipole_segmented_round_rods" in builder, "quadrupole COMSOL bypasses segmented rods")
         require("family_operating_contract" in builder, "quadrupole COMSOL bypasses the shared drive")
     else:
         operating = from_high_order_baseline(baseline)
@@ -96,6 +120,8 @@ def validate_shared_implementations() -> None:
     solver = (multipole / "solve_finite_3d_transport.m").read_text(encoding="utf-8")
     for token in ("V_rf", "V_dc", "V_axis", "phi_rf", "rf.waveform", "connIn", "connOut"):
         require(token in solver, f"shared COMSOL solver omits {token}")
+    for token in ("MULTIPOLE_L3_AXIAL_ACCELERATION", "create_multipole_segmented_round_rods", "zero_axial_drop_rf_on"):
+        require(token in solver, f"shared COMSOL acceleration adapter omits {token}")
     simion = (multipole / "simion_transport.lua").read_text(encoding="utf-8")
     for token in ("transport_rf_peak_v", "transport_dc_amplitude_v", "transport_axis_voltage_v"):
         require(token in simion, f"shared SIMION runtime omits {token}")

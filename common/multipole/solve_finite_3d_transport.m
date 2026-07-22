@@ -8,6 +8,7 @@ familyOperatingPath = getenv('MULTIPOLE_L3_FAMILY_OPERATING');
 contractPath = getenv('MULTIPOLE_L3_CONTRACT');
 fieldMetricsPath = getenv('MULTIPOLE_L3_FIELD_METRICS');
 roundRodGeometryPath = getenv('MULTIPOLE_L3_ROUND_ROD_GEOMETRY');
+axialAccelerationPath = getenv('MULTIPOLE_L3_AXIAL_ACCELERATION');
 sourcePath = getenv('MULTIPOLE_L3_PARTICLE_SOURCE');
 runtimeDir = getenv('MULTIPOLE_L3_RUNTIME_DIR');
 eventsPath = getenv('MULTIPOLE_L3_EVENTS');
@@ -33,6 +34,17 @@ try
     contract = jsondecode(fileread(contractPath));
     fieldMetrics = jsondecode(fileread(fieldMetricsPath));
     roundRodGeometry = jsondecode(fileread(roundRodGeometryPath));
+    axialAccelerationEnabled = ~isempty(axialAccelerationPath);
+    if axialAccelerationEnabled
+        assert(isfile(axialAccelerationPath), 'Resolved axial-acceleration contract is missing.');
+        axialAcceleration = jsondecode(fileread(axialAccelerationPath));
+        assert(strcmp(axialAcceleration.role,'multipole_axial_acceleration_resolved_contract') && ...
+            strcmp(axialAcceleration.project_id,contract.project_id), ...
+            'Axial-acceleration contract identity differs.');
+    else
+        axialAcceleration = struct();
+    end
+    if axialAccelerationEnabled, claimLimit=axialAcceleration.claim_limit; else, claimLimit=contract.claim_limit; end
     source = readtable(sourcePath);
     n = familyOperating.identity.radial_order_n;
     electrodeCount = familyOperating.identity.electrode_count;
@@ -65,6 +77,7 @@ try
     model.param.set('f_rf', sprintf('%.17g[Hz]', rf.frequency_Hz));
     model.param.set('phi_rf', sprintf('%.17g[rad]', rf.phase_rad));
     model.param.set('rf_scale', '1');
+    model.param.set('axial_scale', '1');
     if strcmp(rf.waveform, 'sine')
         rfWaveform = 'sin(2*pi*f_rf*t+phi_rf)';
     elseif strcmp(rf.waveform, 'cosine')
@@ -88,7 +101,18 @@ try
     geom.feature('workvol').set('h', sprintf('%.17g[mm]', vacuumHeight));
     geom.feature('workvol').set('pos', {'0','0',sprintf('%.17g[mm]', d.vacuum_z_min)});
     geom.feature('workvol').set('selresult', 'on');
-    rodTags=create_multipole_round_rods(geom,rodArray,'rod','z',[0 0 0]);
+    if axialAccelerationEnabled
+        [rodTags,rodMetadata]=create_multipole_segmented_round_rods( ...
+            geom,rodArray,axialAcceleration,'rod');
+    else
+        rodTags=create_multipole_round_rods(geom,rodArray,'rod','z',[0 0 0]);
+        rodMetadata=repmat(struct('tag','','rod_id',0,'electrode_group',0, ...
+            'segment_id',1,'common_mode_V',rf.common_mode_offset_V),1,electrodeCount);
+        for k=1:electrodeCount
+            rodMetadata(k).tag=rodTags{k}; rodMetadata(k).rod_id=rods(k).rod_id;
+            rodMetadata(k).electrode_group=rods(k).electrode_group;
+        end
+    end
     create_comsol_cylindrical_shell(geom,'shield',g.grounded_shield_inner_radius,shieldOuter,vacuumHeight,d.vacuum_z_min);
     create_comsol_cylinder(geom, 'outerIn', shieldOuter, g.grounded_outer_end_cap_thickness, d.vacuum_z_min);
     create_comsol_cylinder(geom, 'outerOut', shieldOuter, g.grounded_outer_end_cap_thickness, ...
@@ -129,13 +153,13 @@ try
     es.selection.named('sel_vac');
     es.field('electricpotential').field('Vdiff');
     es.field('electricpotential').component({'Vdiff'});
-    for k = 1:electrodeCount
-        boundarySelection = sprintf('selb_rod%d', k);
+    for k = 1:numel(rodTags)
+        boundarySelection = ['selb_' rodTags{k}];
         comp.selection.create(boundarySelection, 'Adjacent');
-        comp.selection(boundarySelection).set('input', {sprintf('geom1_rod%d_dom', k)});
+        comp.selection(boundarySelection).set('input', {['geom1_' rodTags{k} '_dom']});
         potential = es.create(sprintf('pot_rod%d', k), 'ElectricPotential', 2);
         potential.selection.named(boundarySelection);
-        potential.set('V0', sprintf('%d[V]', 100*(3-2*rods(k).electrode_group)));
+        potential.set('V0', sprintf('%d[V]', 100*(3-2*rodMetadata(k).electrode_group)));
     end
     for groundIndex = 1:numel(groundTags)
         name = groundTags{groundIndex};
@@ -151,16 +175,20 @@ try
     esStatic.selection.named('sel_vac');
     esStatic.field('electricpotential').field('Vstatic');
     esStatic.field('electricpotential').component({'Vstatic'});
-    for k = 1:electrodeCount
+    for k = 1:numel(rodTags)
         potential = esStatic.create(sprintf('pot_rod%d', k), 'ElectricPotential', 2);
-        potential.selection.named(sprintf('selb_rod%d', k));
-        potential.set('V0', 'V_axis');
+        potential.selection.named(['selb_' rodTags{k}]);
+        potential.set('V0', sprintf('%.17g[V]',rodMetadata(k).common_mode_V));
     end
     for groundIndex = 1:numel(groundTags)
         name = groundTags{groundIndex};
         potential = esStatic.create(['pot_' name], 'ElectricPotential', 2);
         potential.selection.named(['selb_' name]);
-        potential.set('V0', '0[V]');
+        if axialAccelerationEnabled && any(strcmp(name,{'outerOut','capOut','connOut'}))
+            potential.set('V0', sprintf('%.17g[V]',axialAcceleration.output_reference_V));
+        else
+            potential.set('V0', '0[V]');
+        end
     end
 
     mesh = comp.mesh.create('mesh1');
@@ -201,21 +229,29 @@ try
     force.set('E_src', 'userdef');
     differentialScale = ['((V_dc+rf_scale*V_rf*' rfWaveform ')/100[V])'];
     force.set('E', { ...
-        [differentialScale '*(-d(Vdiff,x))-d(Vstatic,x)'], ...
-        [differentialScale '*(-d(Vdiff,y))-d(Vstatic,y)'], ...
-        [differentialScale '*(-d(Vdiff,z))-d(Vstatic,z)']});
+        [differentialScale '*(-d(Vdiff,x))-axial_scale*d(Vstatic,x)'], ...
+        [differentialScale '*(-d(Vdiff,y))-axial_scale*d(Vstatic,y)'], ...
+        [differentialScale '*(-d(Vdiff,z))-axial_scale*d(Vstatic,z)']});
     dt = 1/rf.frequency_Hz/contract.trajectory.rf_steps_per_period;
     timeMaximum = contract.trajectory.maximum_global_time_us*1e-6;
-    [pdOn, solutionOn] = solve_particle_case(model, cpt, 'on', 1, dt, timeMaximum);
-    [pdZero, solutionZero] = solve_particle_case(model, cpt, 'zero', 0, dt, timeMaximum);
+    if axialAccelerationEnabled
+        primaryCaseId='axial_acceleration_rf_on'; controlCaseId='zero_axial_drop_rf_on';
+        [pdOn, solutionOn] = solve_particle_case(model, cpt, 'on', 1, 1, dt, timeMaximum);
+        [pdZero, solutionZero] = solve_particle_case(model, cpt, 'zero', 1, 0, dt, timeMaximum);
+    else
+        primaryCaseId='finite_3d_rf_on'; controlCaseId='zero_rf_control';
+        [pdOn, solutionOn] = solve_particle_case(model, cpt, 'on', 1, 1, dt, timeMaximum);
+        [pdZero, solutionZero] = solve_particle_case(model, cpt, 'zero', 0, 1, dt, timeMaximum);
+    end
+    massKg=baseline.particle_source.mass_amu*1.66053906660e-27;
     [onMetrics, onEvents, onTrajectories] = analyze_particle_case( ...
-        pdOn, source, 'finite_3d_rf_on', d.detector_z, g.working_region_radius, ...
+        pdOn, source, primaryCaseId, d.detector_z, g.working_region_radius, ...
         g.rod_z_min, d.rod_z_max, d.entrance_plate_z_max, d.exit_plate_z_max, ...
-        g.entrance_interface.aperture_radius_mm, g.exit_interface.aperture_radius_mm);
+        g.entrance_interface.aperture_radius_mm, g.exit_interface.aperture_radius_mm,massKg);
     [zeroMetrics, zeroEvents, zeroTrajectories] = analyze_particle_case( ...
-        pdZero, source, 'zero_rf_control', d.detector_z, g.working_region_radius, ...
+        pdZero, source, controlCaseId, d.detector_z, g.working_region_radius, ...
         g.rod_z_min, d.rod_z_max, d.entrance_plate_z_max, d.exit_plate_z_max, ...
-        g.entrance_interface.aperture_radius_mm, g.exit_interface.aperture_radius_mm);
+        g.entrance_interface.aperture_radius_mm, g.exit_interface.aperture_radius_mm,massKg);
     events = [onEvents; zeroEvents];
     trajectories = [onTrajectories; zeroTrajectories];
     outputDir = fileparts(eventsPath);
@@ -223,9 +259,18 @@ try
     writetable(events, eventsPath);
     writetable(trajectories, trajectoryPath);
     improvement = onMetrics.transmission_fraction-zeroMetrics.transmission_fraction;
-    checks = struct( ...
-        'minimum_rf_transmission', onMetrics.transmission_fraction >= contract.functional_acceptance.minimum_rf_transmission, ...
-        'minimum_improvement_over_zero_rf', improvement >= contract.functional_acceptance.minimum_improvement_over_zero_rf);
+    if axialAccelerationEnabled
+        expectedEnergy=axialAcceleration.derived.predicted_output_energy_eV;
+        energyGain=onMetrics.mean_output_energy_eV-zeroMetrics.mean_output_energy_eV;
+        checks=struct('minimum_transmission',onMetrics.transmission_fraction >= axialAcceleration.functional_acceptance.minimum_transmission, ...
+            'minimum_mean_energy_gain_eV',energyGain >= axialAcceleration.functional_acceptance.minimum_mean_energy_gain_eV, ...
+            'maximum_mean_output_energy_error_eV',abs(onMetrics.mean_output_energy_eV-expectedEnergy) <= axialAcceleration.functional_acceptance.maximum_mean_output_energy_error_eV);
+    else
+        expectedEnergy=NaN; energyGain=NaN;
+        checks = struct( ...
+            'minimum_rf_transmission', onMetrics.transmission_fraction >= contract.functional_acceptance.minimum_rf_transmission, ...
+            'minimum_improvement_over_zero_rf', improvement >= contract.functional_acceptance.minimum_improvement_over_zero_rf);
+    end
     metrics = struct('schema_version', 1, 'role', 'multipole_finite_3d_transport_metrics', ...
         'status', 'UNRESOLVED', 'project_id', contract.project_id, ...
         'model_level', 'L3', 'selected_geometry', selected, ...
@@ -234,27 +279,31 @@ try
         g.entrance_interface.aperture_radius_mm, 'exit_aperture_radius', ...
         g.exit_interface.aperture_radius_mm, 'source_z', d.source_z, ...
         'detector_z', d.detector_z), ...
-        'cases', struct('finite_3d_rf_on', onMetrics, 'zero_rf_control', zeroMetrics), ...
+        'primary_case_id',primaryCaseId,'control_case_id',controlCaseId, ...
+        'cases', struct(primaryCaseId, onMetrics, controlCaseId, zeroMetrics), ...
         'rf_minus_zero_transmission', improvement, 'checks', checks, ...
+        'axial_acceleration_enabled',axialAccelerationEnabled, ...
+        'predicted_output_energy_eV',expectedEnergy,'mean_energy_gain_eV',energyGain, ...
         'mesh', struct('global_auto_level', contract.mesh.global_auto_level, ...
         'working_region_hmax_mm', contract.mesh.working_region_maximum_element_size_mm), ...
-        'claim_limit', contract.claim_limit);
+        'claim_limit', claimLimit);
     if all(struct2array(checks)), metrics.status = 'PASS'; else, metrics.status = 'FAIL'; end
     metricsFid = fopen(metricsPath, 'w');
     assert(metricsFid >= 0, 'Could not create finite 3D metrics.');
     fprintf(metricsFid, '%s', jsonencode(metrics, 'PrettyPrint', true));
     fclose(metricsFid);
     write_transport_plot(onMetrics, zeroMetrics, onEvents, zeroEvents, ...
-        onTrajectories, zeroTrajectories, plotPath, contract.project_id, g, d);
-    create_native_plot(model, solutionOn, 'pd_on', 'pg_on', 'Finite 3D RF-on trajectories');
-    create_native_plot(model, solutionZero, 'pd_zero', 'pg_zero', 'Finite 3D zero-RF control');
+        onTrajectories, zeroTrajectories, plotPath, contract.project_id, g, d, ...
+        primaryCaseId,controlCaseId);
+    create_native_plot(model, solutionOn, 'pd_on', 'pg_on', strrep(primaryCaseId,'_',' '));
+    create_native_plot(model, solutionZero, 'pd_zero', 'pg_zero', strrep(controlCaseId,'_',' '));
     model.param.set('rf_scale', '1');
     model.save(modelPath);
     assert(strcmp(metrics.status, 'PASS'), 'Finite 3D functional transport gate failed.');
     delete(fullfile(runtimeDir, 'particle_*.txt'));
     if isfolder(runtimeDir), rmdir(runtimeDir); end
-    fprintf(fid, ['ELECTRODE_COUNT=%d\nRF_TRANSMISSION=%.17g\n' ...
-        'ZERO_RF_TRANSMISSION=%.17g\nMODEL_SAVED=true\nSTATUS=PASS\n'], ...
+    fprintf(fid, ['ELECTRODE_COUNT=%d\nPRIMARY_TRANSMISSION=%.17g\n' ...
+        'CONTROL_TRANSMISSION=%.17g\nMODEL_SAVED=true\nSTATUS=PASS\n'], ...
         electrodeCount, onMetrics.transmission_fraction, zeroMetrics.transmission_fraction);
     ModelUtil.remove(tag);
 catch exception
@@ -264,11 +313,12 @@ catch exception
 end
 clear cleanup
 
-function [pd, solutionTag] = solve_particle_case(model, cpt, label, rfScale, dt, timeMaximum)
+function [pd, solutionTag] = solve_particle_case(model, cpt, label, rfScale, axialScale, dt, timeMaximum)
 studyTag = ['std_' label];
 stepTag = ['time_' label];
 solutionTag = ['sol_' label];
 model.param.set('rf_scale', sprintf('%d', rfScale));
+model.param.set('axial_scale', sprintf('%d', axialScale));
 study = model.study.create(studyTag);
 time = study.create(stepTag, 'Transient');
 time.set('tlist', sprintf('range(0,%.17g,%.17g)', dt, timeMaximum));
@@ -297,8 +347,9 @@ end
 
 function [metrics, events, trajectories] = analyze_particle_case(pd, source, caseId, ...
     detectorZ, usableRadius, rodZMin, rodZMax, entranceCrossingZ, exitCrossingZ, ...
-    entranceApertureRadius, exitApertureRadius)
+    entranceApertureRadius, exitApertureRadius,massKg)
 x = squeeze(pd.p(:,:,1)); y = squeeze(pd.p(:,:,2)); z = squeeze(pd.p(:,:,3));
+vx=squeeze(pd.v(:,:,1)); vy=squeeze(pd.v(:,:,2)); vz=squeeze(pd.v(:,:,3));
 if isvector(x), x = x(:); y = y(:); z = z(:); end
 radius = sqrt(x.^2+y.^2);
 particleCount = size(z,2);
@@ -309,6 +360,7 @@ exitRadii = nan(1, particleCount);
 maximumRodRadius = nan(1, particleCount);
 entranceRadii = nan(1, particleCount);
 exitRadiiAtPlate = nan(1, particleCount);
+outputEnergyEv=nan(1,particleCount);
 for particle = 1:particleCount
     valid = find(isfinite(x(:,particle)) & isfinite(y(:,particle)) & isfinite(z(:,particle)));
     assert(~isempty(valid), 'A finite 3D particle has no trajectory samples.');
@@ -328,6 +380,8 @@ for particle = 1:particleCount
         reason = 'detector_plane';
         terminal = crossing;
         exitRadii(particle) = radius(crossing,particle);
+        outputEnergyEv(particle)=0.5*massKg*(vx(crossing,particle)^2+ ...
+            vy(crossing,particle)^2+vz(crossing,particle)^2)/1.602176634e-19;
     else
         terminal = valid(end);
         if isempty(entranceCrossing) || entranceRadii(particle) > entranceApertureRadius
@@ -362,34 +416,43 @@ metrics = struct('particles', particleCount, 'transmitted', sum(transmitted), ..
     'entrance_passed', sum(isfinite(entranceRadii) & entranceRadii <= entranceApertureRadius), ...
     'exit_passed', sum(isfinite(exitRadiiAtPlate) & exitRadiiAtPlate <= exitApertureRadius), ...
     'exit_rms_radius_mm', sqrt(mean(exitRadii(transmitted).^2)), ...
+    'mean_output_energy_eV',mean(outputEnergyEv(transmitted)), ...
+    'output_energy_standard_deviation_eV',std(outputEnergyEv(transmitted)), ...
     'maximum_rod_radius_mm', max(maximumRodRadius));
 end
 
 function write_transport_plot(onMetrics, zeroMetrics, onEvents, zeroEvents, ...
-    onTrajectories, zeroTrajectories, path, projectId, geometry, derived)
-figureHandle = figure('Visible', 'off', 'Position', [100 100 1000 420]);
+    onTrajectories, zeroTrajectories, path, projectId, geometry, derived,primaryCaseId,controlCaseId)
+figureHandle = figure('Visible', 'off', 'Position', [100 100 1000 420], 'Color', 'w');
 tiledlayout(1,2);
 nexttile; hold on;
+set(gca,'Color','w','XColor','k','YColor','k');
 plot(zeroTrajectories.z_mm, zeroTrajectories.radius_mm, '.', 'Color', [0.72 0.72 0.72], 'MarkerSize', 2);
-plot(onTrajectories.z_mm, onTrajectories.radius_mm, '.', 'Color', [0.13 0.44 0.71], 'MarkerSize', 2);
+plot(onTrajectories.z_mm, onTrajectories.radius_mm, 'x', 'Color', [0 0.447 0.698], 'MarkerSize', 2);
 yLimit = geometry.working_region_radius*1.15;
 draw_interface_plate(derived.entrance_plate_z_min, derived.entrance_plate_z_max, ...
     geometry.entrance_interface.aperture_radius_mm, yLimit);
 draw_interface_plate(derived.exit_plate_z_min, derived.exit_plate_z_max, ...
     geometry.exit_interface.aperture_radius_mm, yLimit);
 xlabel('z (mm)'); ylabel('Radius (mm)'); ylim([0 yLimit]);
-title(sprintf('Interfaces: RF %.0f%%, 0 V %.0f%%', ...
+title(sprintf('Transmission: primary %.0f%%, control %.0f%%', ...
     100*onMetrics.transmission_fraction, 100*zeroMetrics.transmission_fraction));
 nexttile; hold on;
+set(gca,'Color','w','XColor','k','YColor','k');
 scatter(zeroEvents.terminal_x_mm, zeroEvents.terminal_y_mm, 14, [0.55 0.55 0.55], 'filled');
-scatter(onEvents.terminal_x_mm, onEvents.terminal_y_mm, 14, [0.13 0.44 0.71], 'filled');
+scatter(onEvents.terminal_x_mm, onEvents.terminal_y_mm, 18, [0 0.447 0.698], 'x');
 axis equal; xlabel('Terminal x (mm)'); ylabel('Terminal y (mm)');
 theta = linspace(0,2*pi,200);
 plot(geometry.exit_interface.aperture_radius_mm*cos(theta), ...
     geometry.exit_interface.aperture_radius_mm*sin(theta), 'k--', 'LineWidth', 0.8, ...
     'HandleVisibility', 'off');
-legend({'0 V control','RF on'}, 'Location', 'best'); title('Terminal transverse states');
-sgtitle([strrep(projectId,'_','\_') ' — finite 3D L3']);
+legendHandle=legend({strrep(controlCaseId,'_',' '),strrep(primaryCaseId,'_',' ')}, ...
+    'Location', 'best');
+set(legendHandle,'Color','w','TextColor','k','EdgeColor',[0.3 0.3 0.3]);
+title('Terminal transverse states');
+superTitle=sgtitle([strrep(projectId,'_','\_') ' — finite 3D L3']);
+set(superTitle,'Color','k');
+set(findall(figureHandle,'Type','text'),'Color','k');
 print(figureHandle, path, '-dpng', '-r180'); close(figureHandle);
 end
 

@@ -4,7 +4,8 @@ param(
   [string]$FieldScreenRunId,
   [string]$RunId = '',
   [double]$EntranceConnectorLengthMm = [double]::NaN,
-  [double]$ExitConnectorLengthMm = [double]::NaN
+  [double]$ExitConnectorLengthMm = [double]::NaN,
+  [switch]$AxialAcceleration
 )
 
 Set-StrictMode -Version Latest
@@ -12,5 +13,6 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 & (Join-Path $repoRoot 'common\multipole\run_finite_3d_transport.ps1') `
   -ProjectRoot (Join-Path $PSScriptRoot '..') -FieldScreenRunId $FieldScreenRunId -RunId $RunId `
-  -EntranceConnectorLengthMm $EntranceConnectorLengthMm -ExitConnectorLengthMm $ExitConnectorLengthMm
+  -EntranceConnectorLengthMm $EntranceConnectorLengthMm -ExitConnectorLengthMm $ExitConnectorLengthMm `
+  -AxialAcceleration:$AxialAcceleration
 if ($LASTEXITCODE -ne 0) { throw 'RF octupole finite 3D L3 transport failed.' }

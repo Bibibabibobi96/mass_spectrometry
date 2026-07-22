@@ -1,7 +1,7 @@
 # RF 四极杆无碰撞传输与碰撞冷却项目
 
-本项目以SIMION 2020自带`examples/quad`为共享硬件模板，验证三种运行模式：无背景气体的RF
-约束与传输、RF+DC质量过滤，以及后续碰撞冷却。各模式当前闭合状态、候选/正式资格和开放任务
+本项目以SIMION 2020自带`examples/quad`为共享硬件模板，验证无背景气体的RF约束与传输、RF+DC
+质量过滤和分段杆轴向加速，并保留碰撞冷却为后续模式。各模式当前闭合状态、候选/正式资格和开放任务
 只以[`docs/PROJECT.md`](docs/PROJECT.md)为准。
 
 ## 固定阅读顺序
@@ -37,6 +37,8 @@ S2–S3连接功能闭环记录：
   `resolved_geometry.json`，GEM 是生成文件，禁止作为第二参数源手改。
 - 官方粒子源：[`config/official_particle_source.json`](config/official_particle_source.json)
 - 当前传输模式：[`config/modes/transport_no_collision.json`](config/modes/transport_no_collision.json)
+- 轴向加速模式：[`config/modes/axial_acceleration_reference.json`](config/modes/axial_acceleration_reference.json)；
+  当前仅闭合COMSOL N=25功能baseline，不代表SIMION、参数优化或机械资格。
 - 集成就绪解析入口：[`config/resolved_interface_readiness.json`](config/resolved_interface_readiness.json)，
   由`analysis/resolve_contract.py --profile interface`生成，禁止手改。
 - 求解器无关相空间接口：[`config/interface_contract.json`](config/interface_contract.json)
