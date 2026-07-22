@@ -12,6 +12,20 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOTS = (REPO_ROOT / "common", REPO_ROOT / "projects")
 EXCLUDED_PARTS = {"history", "legacy", ".venv", "__pycache__"}
+MATLAB_BUILD_ONLY_MARKER = re.compile(
+    r"(?im)^\s*%\s*REPOSITORY_CONTRACT:\s*MATLAB_BUILD_ONLY\s*$"
+)
+MATLAB_BUILD_ONLY_FORBIDDEN = (
+    (re.compile(r"\.mesh\.create\s*\("), "creates a mesh"),
+    (re.compile(r"\.physics\.create\s*\("), "creates physics"),
+    (re.compile(r"\.study\.create\s*\("), "creates a study"),
+    (re.compile(r"\.sol\.create\s*\("), "creates a solver"),
+    (re.compile(r"\.runAll\s*(?:\(|;|$)"), "runs a solver sequence"),
+    (re.compile(r"\bmphinterp\s*\("), "extracts a solved field"),
+    (re.compile(r"\bmphparticle\s*\("), "extracts solved particles"),
+    (re.compile(r"\bmphsave\s*\("), "saves an MPH"),
+    (re.compile(r"\bmodel\.save\s*\("), "saves a model"),
+)
 
 
 def active_files(suffix: str) -> list[Path]:
@@ -96,17 +110,32 @@ def check_powershell() -> list[str]:
     return errors
 
 
-def check_matlab() -> list[str]:
+def check_matlab_source(path: Path, source: str) -> list[str]:
     errors: list[str] = []
     forbidden = (
         (re.compile(r"\bmphstart\s*\("), "manages its own mphstart connection"),
         (re.compile(r"(?i)COMSOL64[\\/]Multiphysics[\\/]mli"), "hard-codes the COMSOL MLI path"),
     )
+    lines = source.splitlines()
+    for line_number, line in enumerate(lines, 1):
+        for pattern, message in forbidden:
+            if pattern.search(line):
+                errors.append(f"{location(path, line_number)} {message}")
+    if MATLAB_BUILD_ONLY_MARKER.search(source):
+        for line_number, line in enumerate(lines, 1):
+            code = line.split("%", 1)[0]
+            for pattern, action in MATLAB_BUILD_ONLY_FORBIDDEN:
+                if pattern.search(code):
+                    errors.append(
+                        f"{location(path, line_number)} MATLAB_BUILD_ONLY {action}"
+                    )
+    return errors
+
+
+def check_matlab() -> list[str]:
+    errors: list[str] = []
     for path in active_files(".m"):
-        for line_number, line in enumerate(path.read_text(encoding="utf-8-sig").splitlines(), 1):
-            for pattern, message in forbidden:
-                if pattern.search(line):
-                    errors.append(f"{location(path, line_number)} {message}")
+        errors.extend(check_matlab_source(path, path.read_text(encoding="utf-8-sig")))
     return errors
 
 
