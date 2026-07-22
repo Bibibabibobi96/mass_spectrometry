@@ -1,4 +1,7 @@
-param([string]$RunId = '')
+param(
+  [string]$RunId = '',
+  [switch]$Particles
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -14,17 +17,22 @@ $contractDocument = Get-Content -LiteralPath $contractSource -Raw -Encoding UTF8
 if (-not [bool]$contractDocument.permissions.field_solve_allowed) {
   throw 'The S2 contract does not authorize a field solve.'
 }
-if ([bool]$contractDocument.permissions.particle_runtime_allowed) {
-  throw 'The S2 no-pulse field runner requires particle runtime to remain disabled.'
+if ($Particles -and -not [bool]$contractDocument.permissions.particle_runtime_allowed) {
+  throw 'The S2 contract does not authorize particle runtime.'
 }
 $gapMm = [double]$contractDocument.nominal_registration.connector_gap_mm
-if ([math]::Abs($gapMm-1.0) -gt 1e-12) {
-  throw 'The S2 no-pulse field runner requires the approved 1 mm gap.'
+if (-not [double]::IsFinite($gapMm) -or $gapMm -le 0) {
+  throw 'The S2 connector gap must be finite and positive.'
 }
 if ([string]::IsNullOrWhiteSpace($RunId)) {
-  $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__analysis__comsol__rf-oatof-s2-no-pulse-field__gap1'
+  $suffix = if ($Particles) { '__sim__comsol__rf-oatof-s2-passive-connector__n100' } `
+    else { '__analysis__comsol__rf-oatof-s2-no-pulse-field__gap1' }
+  $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + $suffix
 }
-$mode = 'rf_to_oatof_s2_passive_connector_no_pulse_field'
+$mode = if ($Particles) { 'rf_to_oatof_s2_passive_connector_n100' } `
+  else { 'rf_to_oatof_s2_passive_connector_no_pulse_field' }
+$summaryRole = if ($Particles) { 'rf_to_oatof_s2_passive_connector_n100_summary' } `
+  else { 'rf_to_oatof_s2_no_pulse_field_summary' }
 $software = @('COMSOL 6.4','MATLAB R2025b','Python 3.11')
 $package = New-RfRunPackage -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project 'rf_quadrupole_collision_cooling' -Mode $mode -Software $software
@@ -42,6 +50,8 @@ try {
   $dependencyContract = Join-Path $inputDir 'rf_to_oatof_s2_dependencies.json'
   $s1Contract = Join-Path $inputDir 'rf_to_oatof_s1_joint_field.json'
   $rfResolved = Join-Path $inputDir 'rf_resolved_geometry.json'
+  $particleInput = $null
+  $particleOutput = $null
   Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'solve_s2_passive_connector_field.m') -Destination $task
   Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'build_s2_passive_connector_model.m') -Destination $geometryBuilder
   Copy-Item -LiteralPath $PSCommandPath -Destination $runner
@@ -66,6 +76,59 @@ try {
   }
   $oaBaseline = $dependencyPaths['oatof_baseline']
   $oaBuilder = $dependencyPaths['oatof_accelerator_geometry_builder']
+  if ($Particles) {
+    $candidate = $contractDocument.functional_candidate
+    $sourceRun = Join-Path (Join-Path $artifactRoot 'runs') ([string]$candidate.source_run_id)
+    $sourceManifestOriginal = Join-Path $sourceRun 'run_manifest.json'
+    $sourceEventsOriginal = Join-Path $sourceRun ([string]$candidate.source_event_path)
+    $sourceMetadataOriginal = Join-Path $sourceRun ([string]$candidate.source_metadata_path)
+    & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') `
+      $sourceManifestOriginal --require-status success
+    if ($LASTEXITCODE -ne 0) { throw 'The frozen S2 particle source manifest is invalid.' }
+    $sourceManifest = Join-Path $inputDir 'source_run_manifest.json'
+    $sourceEvents = Join-Path $inputDir ([System.IO.Path]::GetFileName([string]$candidate.source_event_path))
+    $sourceMetadata = Join-Path $inputDir 'particle_source_metadata.json'
+    $handoffBuilder = Join-Path $inputDir 'build_oatof_handoff.py'
+    $handoffProjectRoot = Join-Path $inputDir 'handoff_project_snapshot'
+    $handoffConfigDir = Join-Path $handoffProjectRoot 'config'
+    New-Item -ItemType Directory -Path $handoffConfigDir -Force | Out-Null
+    $handoffContract = Join-Path $handoffConfigDir 'rf_to_oatof_handoff.json'
+    $energyMatchContract = Join-Path $handoffConfigDir 'rf_to_oatof_energy_match_candidate.json'
+    $sourceInterfaceContract = Join-Path $handoffConfigDir 'interface_contract.json'
+    $energyMatchContractSource = Join-Path $projectRoot 'config\rf_to_oatof_energy_match_candidate.json'
+    $sourceInterfaceContractSource = Join-Path $projectRoot 'config\interface_contract.json'
+    Copy-Item -LiteralPath $sourceManifestOriginal -Destination $sourceManifest
+    Copy-Item -LiteralPath $sourceEventsOriginal -Destination $sourceEvents
+    Copy-Item -LiteralPath $sourceMetadataOriginal -Destination $sourceMetadata
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'analysis\build_oatof_handoff.py') -Destination $handoffBuilder
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'config\rf_to_oatof_handoff.json') -Destination $handoffContract
+    Copy-Item -LiteralPath $energyMatchContractSource -Destination $energyMatchContract
+    Copy-Item -LiteralPath $sourceInterfaceContractSource -Destination $sourceInterfaceContract
+    $particleInput = Join-Path $inputDir 'canonical_rf_exit_at_s2_connector.csv'
+    $particleIon = Join-Path $inputDir 'rf_exit_at_s2_connector.ion'
+    $particleRowMap = Join-Path $inputDir 'particle_row_map.csv'
+    $particleMetadata = Join-Path $inputDir 's2_handoff_metadata.json'
+    $sourceCenter = @($contractDocument.nominal_registration.source_exit_center_instrument_mm)
+    $handoffEnvironment = Save-RfEnvironment -Names @('RF_HANDOFF_PROJECT_ROOT')
+    try {
+      $env:RF_HANDOFF_PROJECT_ROOT = $handoffProjectRoot
+      & $python $handoffBuilder --convert --contract $handoffContract `
+        --source-csv $sourceEvents --source-manifest $sourceManifest `
+        --canonical-output $particleInput --ion-output $particleIon `
+        --row-map-output $particleRowMap --metadata-output $particleMetadata `
+        --solver-clock instrument_time --target-origin-mm $sourceCenter[0] $sourceCenter[1] $sourceCenter[2]
+      if ($LASTEXITCODE -ne 0) { throw 'S2 canonical particle-source conversion failed.' }
+    } finally {
+      Restore-RfEnvironment -Names @('RF_HANDOFF_PROJECT_ROOT') -Snapshot $handoffEnvironment
+    }
+    $sourceIdentity = [ordered]@{
+      run_id = [string]$candidate.source_run_id
+      manifest_sha256 = (Get-FileHash -LiteralPath $sourceManifestOriginal -Algorithm SHA256).Hash
+      event_sha256 = (Get-FileHash -LiteralPath $sourceEventsOriginal -Algorithm SHA256).Hash
+      metadata_sha256 = (Get-FileHash -LiteralPath $sourceMetadataOriginal -Algorithm SHA256).Hash
+    }
+    $particleOutput = Join-Path $resultDir 's2_passive_connector_particles.csv'
+  }
   $metrics = Join-Path $resultDir 's2_no_pulse_field_metrics.json'
   $samples = Join-Path $resultDir 's2_no_pulse_field_samples.csv'
   $report = Join-Path $logDir 'comsol_s2_no_pulse_field.txt'
@@ -86,22 +149,36 @@ try {
       rf_resolved_geometry = $rfResolved
       oatof_baseline = $oaBaseline
       oatof_accelerator_builder = $oaBuilder
+      particle_source = $particleInput
     }
     dependency_identities = $dependencyIdentities
+    source_particle_identity = if ($Particles) { $sourceIdentity } else { $null }
     parameters = [ordered]@{
       connector_gap_mm = $gapMm
       field_bases = @('oatof_static','rf_unit_100_V')
       oa_extraction_pulse = $false
-      particle_tracking = $false
+      particle_tracking = [bool]$Particles
       model_saved = $false
       mesh_convergence_claimed = $false
     }
     formal_gate_passed = $false
   }
+  if ($Particles) {
+    $runConfiguration.inputs.source_run_manifest = $sourceManifest
+    $runConfiguration.inputs.source_events = $sourceEvents
+    $runConfiguration.inputs.source_metadata = $sourceMetadata
+    $runConfiguration.inputs.handoff_builder = $handoffBuilder
+    $runConfiguration.inputs.handoff_contract = $handoffContract
+    $runConfiguration.inputs.energy_match_contract = $energyMatchContract
+    $runConfiguration.inputs.source_interface_contract = $sourceInterfaceContract
+    $runConfiguration.inputs.particle_ion = $particleIon
+    $runConfiguration.inputs.particle_row_map = $particleRowMap
+    $runConfiguration.inputs.particle_handoff_metadata = $particleMetadata
+  }
   Write-RfJson -Path $package.run_config -Depth 8 -Value $runConfiguration
   Write-RfJson -Path $package.summary -Value ([ordered]@{
     schema_version = 1
-    role = 'rf_to_oatof_s2_no_pulse_field_summary'
+    role = $summaryRole
     status = 'interrupted'
     reason = 'Run package initialized; final status not yet recorded.'
   })
@@ -111,7 +188,7 @@ try {
   $environmentNames = @(
     'RF_OATOF_S2_FIELD_METRICS','RF_OATOF_S2_FIELD_SAMPLES','RF_OATOF_S2_CONTRACT',
     'RF_OATOF_S2_S1_CONTRACT','RF_OATOF_S2_RF_RESOLVED','RF_OATOF_S2_OA_BASELINE',
-    'RF_OATOF_S2_OA_COMSOL_DIR'
+    'RF_OATOF_S2_OA_COMSOL_DIR','RF_OATOF_S2_PARTICLE_INPUT','RF_OATOF_S2_PARTICLE_OUTPUT'
   )
   $oldEnvironment = Save-RfEnvironment -Names $environmentNames
   try {
@@ -122,6 +199,10 @@ try {
     $env:RF_OATOF_S2_RF_RESOLVED = $rfResolved
     $env:RF_OATOF_S2_OA_BASELINE = $oaBaseline
     $env:RF_OATOF_S2_OA_COMSOL_DIR = $inputDir
+    if ($Particles) {
+      $env:RF_OATOF_S2_PARTICLE_INPUT = $particleInput
+      $env:RF_OATOF_S2_PARTICLE_OUTPUT = $particleOutput
+    }
     & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') `
       -TaskScript $task -ReportPath $report
     if ($LASTEXITCODE -ne 0) { throw 'COMSOL S2 no-pulse field task failed.' }
@@ -132,32 +213,42 @@ try {
   $fieldMetrics = Get-Content -LiteralPath $metrics -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($fieldMetrics.status -ne 'SOLVED' -or -not [bool]$fieldMetrics.all_probe_values_finite -or
       [double]$fieldMetrics.rf_off_axis_field_norm_V_per_m -le 0 -or
-      [bool]$fieldMetrics.particle_runtime_executed -or [bool]$fieldMetrics.oa_extraction_pulse_included -or
+      [bool]$fieldMetrics.particle_runtime_executed -ne [bool]$Particles -or
+      [bool]$fieldMetrics.oa_extraction_pulse_included -or
       [bool]$fieldMetrics.mesh_convergence_claimed -or [bool]$fieldMetrics.s2_stage_passed) {
     throw 'S2 field metrics violate the no-pulse functional contract.'
   }
+  if ($Particles -and
+      ([int]$fieldMetrics.particle_input_count -ne [int]$contractDocument.functional_candidate.source_particles -or
+       [int]$fieldMetrics.oatof_entry_crossings -lt [int]$contractDocument.functional_candidate.minimum_oatof_entry_crossings)) {
+    throw 'S2 particle metrics violate the nominal functional contract.'
+  }
   Write-RfJson -Path $package.summary -Value ([ordered]@{
     schema_version = 1
-    role = 'rf_to_oatof_s2_no_pulse_field_summary'
+    role = $summaryRole
     status = 'success'
     metrics = 'results/s2_no_pulse_field_metrics.json'
     samples = 'results/s2_no_pulse_field_samples.csv'
     gap_mm = $gapMm
     field_bases_solved = 2
     finite_probe_rows = [int]$fieldMetrics.probe_count
-    particle_runtime = $false
+    particle_runtime = [bool]$Particles
+    particle_input_count = [int]$fieldMetrics.particle_input_count
+    oatof_entry_crossings = [int]$fieldMetrics.oatof_entry_crossings
+    connector_losses = [int]$fieldMetrics.connector_losses
     oa_extraction_pulse = $false
     mesh_convergence_claimed = $false
     s2_stage_passed = $false
     formal_gate_passed = $false
   })
   $outputs = @($metrics,$samples,$report,$package.summary)
+  if ($Particles) { $outputs += $particleOutput }
   Write-RfRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config `
     -Status success -Software $software -Outputs $outputs
-  Write-Output "STATUS=PASS RUN_ID=$RunId GAP_MM=1 FIELD_BASES=2 PARTICLES=false OA_PULSE=false"
+  Write-Output "STATUS=PASS RUN_ID=$RunId GAP_MM=$gapMm FIELD_BASES=2 PARTICLES=$Particles OA_PULSE=false"
 } catch {
   Complete-RfFailedRun -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config `
-    -Summary $package.summary -SummaryRole 'rf_to_oatof_s2_no_pulse_field_summary' `
+    -Summary $package.summary -SummaryRole $summaryRole `
     -Reason $_.Exception.Message -Software $software
   throw
 }

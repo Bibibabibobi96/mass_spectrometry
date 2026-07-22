@@ -69,7 +69,7 @@ class S2GeometryBuildContractTests(unittest.TestCase):
         self.assertEqual(contract["nominal_registration"]["connector_gap_mm"], 1.0)
         self.assertTrue(contract["permissions"]["geometry_builder_implementation_allowed"])
         self.assertTrue(contract["permissions"]["field_solve_allowed"])
-        self.assertFalse(contract["permissions"]["particle_runtime_allowed"])
+        self.assertTrue(contract["permissions"]["particle_runtime_allowed"])
 
     def test_no_pulse_field_runner_is_fail_closed(self):
         task = (
@@ -82,7 +82,11 @@ class S2GeometryBuildContractTests(unittest.TestCase):
         self.assertIn("physics.create('es_static'", task)
         self.assertIn("physics.create('es_rf'", task)
         self.assertIn("solution.runAll", task)
-        self.assertNotIn("ChargedParticleTracing", task)
+        self.assertIn("ChargedParticleTracing", task)
+        self.assertIn("particleEnabled = ~isempty(particleInputPath)", task)
+        self.assertIn("oa_extraction_pulse_included", task)
+        self.assertIn("insideAperture = crossed &&", task)
+        self.assertIn("outside_rectangular_oatof_entry", task)
         self.assertNotIn("model.save", task)
         self.assertIn("{'geom1_connvac_dom','geom1_portvac_dom'}", task)
         self.assertNotIn("selection.named('geom1_univacgrid_dom')", task)
@@ -90,6 +94,45 @@ class S2GeometryBuildContractTests(unittest.TestCase):
         self.assertIn("Complete-RfFailedRun", runner)
         self.assertIn("dependency_identities = $dependencyIdentities", runner)
         self.assertIn("mesh_convergence_claimed = $false", runner)
+        self.assertIn("[switch]$Particles", runner)
+        self.assertIn("verify_run_manifest.py", runner)
+        self.assertIn("--target-origin-mm $sourceCenter", runner)
+        self.assertIn("RF_HANDOFF_PROJECT_ROOT", runner)
+        self.assertIn("handoff_project_snapshot", runner)
+        self.assertIn("$env:RF_HANDOFF_PROJECT_ROOT = $handoffProjectRoot", runner)
+        self.assertNotIn("$env:RF_HANDOFF_PROJECT_ROOT = $projectRoot", runner)
+        self.assertIn("Copy-Item -LiteralPath $energyMatchContractSource -Destination $energyMatchContract", runner)
+        self.assertIn("Copy-Item -LiteralPath $sourceInterfaceContractSource -Destination $sourceInterfaceContract", runner)
+        self.assertIn("source_particle_identity", runner)
+        self.assertNotIn("Get-Command py", runner)
+
+    def test_s2_solver_scripts_consume_contracts_without_physical_fallbacks(self):
+        scripts = [
+            (PROJECT_ROOT / "tests" / "comsol" / name).read_text(encoding="utf-8")
+            for name in (
+                "build_s2_passive_connector_model.m",
+                "solve_s2_passive_connector_field.m",
+            )
+        ]
+        combined = "\n".join(scripts)
+        for required_source in (
+            "contract.nominal_registration",
+            "contract.passive_connector_geometry",
+            "contract.no_pulse_field_candidate.mesh",
+            "s1.field_basis.rf_unit.rod_differential_pattern_V",
+            "oa.electrodes_V",
+            "rf.geometry_mm",
+        ):
+            self.assertIn(required_source, combined)
+        for forbidden_literal in (
+            "shieldInnerRadius = 19.776",
+            "gapMm = 1.0",
+            "portWidth = 1.0",
+            "portHeight = 0.9",
+            "offset = 0.001",
+            "100*(-1)",
+        ):
+            self.assertNotIn(forbidden_literal, combined)
 
 
 if __name__ == "__main__":

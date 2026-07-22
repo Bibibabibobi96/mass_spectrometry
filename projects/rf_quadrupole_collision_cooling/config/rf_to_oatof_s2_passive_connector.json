@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "role": "rf_to_oatof_s2_passive_grounded_connector_candidate",
-  "status": "no_pulse_field_function_passed_particle_runtime_not_started",
+  "status": "nominal_no_pulse_particle_function_passed_stage_unqualified",
   "stage": "S2",
-  "qualification_scope": "nominal_geometry_and_no_pulse_joint_field_function_only",
+  "qualification_scope": "nominal_geometry_no_pulse_joint_field_and_particle_connection_function_only",
   "inputs": {
     "stage_plan": "config/rf_to_oatof_interface_stages.json",
     "interface_reference": "config/rf_to_oatof_interface_candidate.json",
@@ -81,6 +81,8 @@
       "convergence_claim_allowed": false
     },
     "required_field_bases": ["oatof_static", "rf_unit_100_V"],
+    "rf_unit_voltage_V": 100.0,
+    "rf_unit_voltage_derivation": "Equal the absolute value of every entry in s1_joint_field.field_basis.rf_unit.rod_differential_pattern_V.",
     "required_probe_locations": ["rf_rod_region_off_axis", "rf_exit_center", "connector_midpoint", "oatof_entry_center", "oatof_ideal_source_center"],
     "rf_off_axis_probe_radius_mm": 1.0,
     "rf_off_axis_probe_derivation": "Use the RF rod-region axial midpoint and the configured local-x offset transformed by source_component_pose; the radius must remain inside resolved_geometry.geometry_mm.field_radius_r0 and produce a nonzero RF-unit field.",
@@ -91,14 +93,29 @@
   },
   "functional_candidate": {
     "source_particles": 100,
+    "source_run_id": "20260722_193000__sim__comsol__rf-input5ev-handoff__n100__r02",
+    "source_event_path": "results/rf_hybrid_mesh_n100_events.csv",
+    "source_metadata_path": "inputs/particle_source_metadata.json",
+    "source_selection": "Use the first-forward handoff events at RF local z=90.2 mm and transform them with nominal_registration.source_component_pose; do not project to the oa entry plane.",
+    "source_operating_point": "rf_to_oatof_100amu_5eV",
+    "clock_epoch_id": "instrument_clock_epoch.v1",
+    "rf_steps_per_period": 80,
+    "connector_transit_time_margin_factor": 3.0,
+    "audit_tolerances": {
+      "plane_residual_mm": 1e-9,
+      "clock_residual_us": 1e-9,
+      "energy_velocity_relative_residual": 1e-10
+    },
     "required_census": [
       "rf_exit",
       "connector_entry",
       "connector_wall_loss",
-      "oatof_entry",
-      "detector_hit_or_terminal_loss"
+      "downstream_entry_wall_loss",
+      "oatof_entry"
     ],
-    "minimum_detector_hits": 1,
+    "minimum_detector_hits": null,
+    "detector_scope": "Not included in the S2 passive-connector functional boundary; downstream oaTOF analysis remains a later stage.",
+    "minimum_oatof_entry_crossings": 1,
     "dense_trajectories_saved": false,
     "required_state": [
       "particle_id",
@@ -111,7 +128,7 @@
       "velocity_y_m_s",
       "velocity_z_m_s"
     ],
-    "claim_limit": "A future N=100 run may demonstrate nominal passive-connector function only; it cannot qualify S2 performance, pulse capture, tolerances, CAD or Formal assets."
+    "claim_limit": "The N=100 run may demonstrate nominal RF-exit to oa-entry passive-connector function only; it cannot qualify downstream detector performance, pulse capture, tolerances, CAD or Formal assets."
   },
   "geometry_build_evidence": {
     "run_id": "20260722_140611__build__comsol__rf-oatof-s2-passive-connector__gap1",
@@ -156,6 +173,30 @@
     ],
     "claim_limit": "Demonstrates a finite nominal no-pulse S2 joint-field implementation only; no numerical convergence, leakage acceptance, particle transport, stage PASS or Formal claim."
   },
+  "nominal_particle_evidence": {
+    "run_id": "20260722_150059__sim__comsol__rf-oatof-s2-passive-connector__n100__r02",
+    "audit_run_id": "20260722_151037__analysis__python__rf-oatof-s2-particle-chain__n100__r04",
+    "status": "PASS",
+    "source_particles": 100,
+    "oatof_entry_crossings": 61,
+    "downstream_entry_wall_losses": 39,
+    "minimum_component_elapsed_time_us": 0.321362759230716,
+    "maximum_component_elapsed_time_us": 0.338685264151191,
+    "maximum_source_plane_residual_mm": 0.0,
+    "maximum_target_plane_residual_mm": 0.0,
+    "maximum_clock_residual_us": 5.0182080713057076e-14,
+    "maximum_energy_velocity_relative_residual": 3.9119314001847475e-15,
+    "maximum_transmitted_abs_y_mm": 0.443781327341081,
+    "maximum_transmitted_abs_z_offset_mm": 0.43585489325383264,
+    "minimum_lost_aperture_excess_mm": 0.0009489554236089548,
+    "oa_extraction_pulse_included": false,
+    "mesh_convergence_claimed": false,
+    "s2_stage_passed": false,
+    "formal_gate_passed": false,
+    "superseded_run_id": "20260722_150059__sim__comsol__rf-oatof-s2-passive-connector__n100",
+    "superseded_reason": "The first event classifier treated all contacts with the oa entry plane as aperture crossings and therefore reported a false 100/100; the corrected AND rule requires plane contact and coordinates inside the 1.0 x 0.9 mm opening.",
+    "claim_limit": "Nominal RF-exit to oa-entry passive-connector function only; no minimum-transmission qualification, pulse, downstream analyzer, tolerance, convergence, S2 PASS or Formal claim."
+  },
   "unresolved_for_stage_pass": [
     "field_mesh_and_pa_resolution_convergence_at_both_ends",
     "field_leakage_acceptance_limit",
@@ -167,7 +208,7 @@
   "permissions": {
     "geometry_builder_implementation_allowed": true,
     "field_solve_allowed": true,
-    "particle_runtime_allowed": false,
+    "particle_runtime_allowed": true,
     "s2_stage_pass_allowed": false,
     "formal_promotion_allowed": false
   }

@@ -26,9 +26,6 @@ try
     oa = jsondecode(fileread(oaBaselinePath));
     assert(contract.permissions.geometry_builder_implementation_allowed, ...
         'The S2 contract does not authorize geometry construction.');
-    assert(~contract.permissions.particle_runtime_allowed, ...
-        'This build-only task requires particle runtime to remain disabled.');
-
     import com.comsol.model.util.*
     tag = 'RFOATOF_S2_GEOMETRY';
     [model, context] = build_s2_passive_connector_model( ...

@@ -14,9 +14,6 @@ $contractDocument = Get-Content -LiteralPath $contractSource -Raw -Encoding UTF8
 if (-not [bool]$contractDocument.permissions.geometry_builder_implementation_allowed) {
   throw 'The S2 contract does not authorize geometry construction.'
 }
-if ([bool]$contractDocument.permissions.particle_runtime_allowed) {
-  throw 'The S2 geometry-only runner requires particle runtime to remain disabled.'
-}
 $gapMm = [double]$contractDocument.nominal_registration.connector_gap_mm
 if ([math]::Abs($gapMm-1.0) -gt 1e-12) {
   throw 'The S2 geometry-only runner requires the approved 1 mm gap.'

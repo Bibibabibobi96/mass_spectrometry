@@ -118,8 +118,10 @@
   [`tests/comsol/run_s2_passive_connector_geometry.ps1`](tests/comsol/run_s2_passive_connector_geometry.ps1)
   和[`tests/comsol/run_s2_passive_connector_field.ps1`](tests/comsol/run_s2_passive_connector_field.ps1)；
   当前已冻结并成功构建1 mm标称间距、同轴位姿、接地圆柱腔和既有`1.0×0.9 mm`oa入口孔，并在同一共享
-  几何构建函数上求得oa静态场与RF 100 V单位场。场入口不放粒子、不加oa脉冲、不保存MPH，也不授权
-  网格收敛、S2 PASS或Formal晋升。跨项目输入由
+  几何构建函数上求得oa静态场与RF 100 V单位场。相同入口的`-Particles`模式消费manifest覆盖的真实
+  N=100 RF出口状态并保持ID、三维状态与全局时钟，当前得到61个oa入口过面和39个端壁损失；不加oa
+  脉冲、不保存MPH，也不授权网格收敛、S2 PASS或Formal晋升。求解器无关审计入口为
+  [`tests/analysis/run_s2_particle_chain_audit.ps1`](tests/analysis/run_s2_particle_chain_audit.ps1)。跨项目输入由
   [`config/rf_to_oatof_s2_dependencies.json`](config/rf_to_oatof_s2_dependencies.json)显式声明提供项目、
   仓库相对路径和冻结文件名；运行时核对源文件与`inputs/`副本SHA-256，并把身份写入run config。
   三件套、环境恢复和失败收尾当前由RF项目内部`tests/support/rf_run_artifact_support.ps1`统一；旧run和

@@ -13,11 +13,14 @@ import csv
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 from typing import Any
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(
+    os.environ.get("RF_HANDOFF_PROJECT_ROOT", Path(__file__).resolve().parents[1])
+).resolve()
 DEFAULT_CONTRACT = PROJECT_ROOT / "config" / "rf_to_oatof_handoff.json"
 ATOMIC_MASS_KG = 1.66053906660e-27
 ELEMENTARY_CHARGE_C = 1.602176634e-19

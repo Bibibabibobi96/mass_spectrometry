@@ -102,7 +102,7 @@
     {
       "id": "S2",
       "name": "passive_grounded_connector",
-      "status": "no_pulse_field_function_passed_particle_runtime_not_started",
+      "status": "nominal_no_pulse_particle_function_passed_stage_unqualified",
       "separate_connector_component": true,
       "physical_interface_claim_allowed": true,
       "model": "Add only the measured finite separation and a passive grounded vacuum tube or housing; no active focusing or steering.",
@@ -115,7 +115,7 @@
         "gap_mm": 1.0,
         "nominal_alignment": "coaxial_zero_offset_zero_rotation",
         "field_solve_allowed": true,
-        "particle_runtime_allowed": false,
+        "particle_runtime_allowed": true,
         "stage_pass_allowed": false
       },
       "geometry_build_evidence": {
@@ -135,10 +135,19 @@
         "particle_runtime_allowed": false,
         "stage_pass_allowed": false
       },
+      "nominal_particle_evidence": {
+        "run_id": "20260722_150059__sim__comsol__rf-oatof-s2-passive-connector__n100__r02",
+        "audit_run_id": "20260722_151037__analysis__python__rf-oatof-s2-particle-chain__n100__r04",
+        "status": "PASS",
+        "source_particles": 100,
+        "oatof_entry_crossings": 61,
+        "downstream_entry_wall_losses": 39,
+        "stage_pass_allowed": false
+      },
       "tests": [
         "three-dimensional joint electrostatic and RF fringe field",
         "tube-wall and aperture losses",
-        "N=100 target-entry and detector acceptance",
+        "N=100 RF-exit to target-entry census with explicit downstream-wall losses",
         "field-mesh and PA-resolution convergence at both ends"
       ],
       "exit_gate": "Passive geometry meets the frozen functional and field-leakage limits.",

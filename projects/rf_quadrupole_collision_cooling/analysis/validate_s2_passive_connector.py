@@ -40,7 +40,7 @@ def validate_contract(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
     if stage_plan.get("current_stage") != "S2":
         raise ValueError("stage plan has not advanced to S2")
     stage = next(item for item in stage_plan["stages"] if item["id"] == "S2")
-    if stage.get("status") != "no_pulse_field_function_passed_particle_runtime_not_started":
+    if stage.get("status") != "nominal_no_pulse_particle_function_passed_stage_unqualified":
         raise ValueError("S2 stage status differs")
 
     dependency_contract = _load_relative(contract["inputs"]["explicit_dependencies"])
@@ -115,6 +115,9 @@ def validate_contract(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
     field_candidate = contract["no_pulse_field_candidate"]
     if field_candidate["required_field_bases"] != ["oatof_static", "rf_unit_100_V"]:
         raise ValueError("S2 no-pulse field bases differ")
+    unit_pattern = [abs(float(value)) for value in s1["field_basis"]["rf_unit"]["rod_differential_pattern_V"]]
+    if any(value != float(field_candidate["rf_unit_voltage_V"]) for value in unit_pattern):
+        raise ValueError("S2 RF unit voltage differs from the inherited rod pattern")
     if set(field_candidate["required_probe_locations"]) != {
         "rf_rod_region_off_axis",
         "rf_exit_center",
@@ -136,10 +139,12 @@ def validate_contract(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
         "S2 boundary probe inset",
     )
     permissions = contract["permissions"]
-    if not permissions["field_solve_allowed"] or permissions["particle_runtime_allowed"]:
-        raise ValueError("S2 must allow field solve while particle runtime remains blocked")
+    if not permissions["field_solve_allowed"] or not permissions["particle_runtime_allowed"]:
+        raise ValueError("S2 must authorize the field and nominal N=100 particle candidate")
     if not stage["static_contract"]["field_solve_allowed"]:
         raise ValueError("S2 stage plan does not authorize the no-pulse field candidate")
+    if not stage["static_contract"]["particle_runtime_allowed"]:
+        raise ValueError("S2 stage plan does not authorize the nominal particle candidate")
     if permissions["s2_stage_pass_allowed"] or permissions["formal_promotion_allowed"]:
         raise ValueError("Static S2 contract cannot authorize qualification or promotion")
     evidence = contract["geometry_build_evidence"]
@@ -161,6 +166,42 @@ def validate_contract(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
         raise ValueError("S2 no-pulse field evidence contains unauthorized runtime physics")
     if field_evidence["mesh_convergence_claimed"] or field_evidence["s2_stage_passed"] or field_evidence["formal_gate_passed"]:
         raise ValueError("S2 no-pulse field evidence overclaims qualification")
+    particles = contract["functional_candidate"]
+    if particles["source_particles"] != 100 or not particles["source_run_id"].endswith("__n100__r02"):
+        raise ValueError("S2 particle source identity differs")
+    if particles["source_event_path"] != "results/rf_hybrid_mesh_n100_events.csv":
+        raise ValueError("S2 particle source event path differs")
+    if particles["source_operating_point"] != "rf_to_oatof_100amu_5eV":
+        raise ValueError("S2 particle source operating point differs")
+    if particles["rf_steps_per_period"] < 40 or float(particles["connector_transit_time_margin_factor"]) < 1:
+        raise ValueError("S2 particle integration controls are invalid")
+    if particles["minimum_oatof_entry_crossings"] < 1:
+        raise ValueError("S2 particle candidate must require an oa-entry crossing")
+    if particles["minimum_detector_hits"] is not None:
+        raise ValueError("S2 passive-connector scope must not claim downstream detector hits")
+    if set(particles["required_census"]) != {
+        "rf_exit", "connector_entry", "connector_wall_loss",
+        "downstream_entry_wall_loss", "oatof_entry",
+    }:
+        raise ValueError("S2 particle census differs")
+    particle_evidence = contract["nominal_particle_evidence"]
+    stage_particle_evidence = stage["nominal_particle_evidence"]
+    if particle_evidence["status"] != "PASS" or particle_evidence["run_id"] != stage_particle_evidence["run_id"]:
+        raise ValueError("S2 nominal particle evidence differs from the stage plan")
+    if particle_evidence["source_particles"] != 100:
+        raise ValueError("S2 nominal particle evidence input count differs")
+    if particle_evidence["oatof_entry_crossings"] + particle_evidence["downstream_entry_wall_losses"] != 100:
+        raise ValueError("S2 nominal particle evidence census is incomplete")
+    if particle_evidence["oatof_entry_crossings"] < particles["minimum_oatof_entry_crossings"]:
+        raise ValueError("S2 nominal particle evidence misses the functional minimum")
+    if particle_evidence["maximum_clock_residual_us"] > particles["audit_tolerances"]["clock_residual_us"]:
+        raise ValueError("S2 nominal particle clock residual exceeds the contract")
+    if particle_evidence["maximum_energy_velocity_relative_residual"] > particles["audit_tolerances"]["energy_velocity_relative_residual"]:
+        raise ValueError("S2 nominal particle energy residual exceeds the contract")
+    if particle_evidence["oa_extraction_pulse_included"] or particle_evidence["mesh_convergence_claimed"]:
+        raise ValueError("S2 nominal particle evidence contains unauthorized claims")
+    if particle_evidence["s2_stage_passed"] or particle_evidence["formal_gate_passed"]:
+        raise ValueError("S2 nominal particle evidence overclaims qualification")
     return contract
 
 
@@ -172,7 +213,7 @@ def main() -> None:
     gap_mm = contract["nominal_registration"]["connector_gap_mm"]
     print(
         "S2_PASSIVE_CONNECTOR=PASS "
-        f"GAP_MM={gap_mm:g} FIELD_SOLVE_ALLOWED=true PARTICLE_RUNTIME_ALLOWED=false"
+        f"GAP_MM={gap_mm:g} FIELD_SOLVE_ALLOWED=true PARTICLE_RUNTIME_ALLOWED=true"
     )
 
 

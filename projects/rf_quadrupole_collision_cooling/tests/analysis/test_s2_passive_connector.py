@@ -21,7 +21,7 @@ class S2PassiveConnectorTests(unittest.TestCase):
         self.assertEqual(geometry["downstream_entry_aperture"]["full_height_z_mm"], 0.9)
         self.assertFalse(contract["field_ownership"]["oa_extraction_pulse_included"])
         self.assertTrue(contract["permissions"]["field_solve_allowed"])
-        self.assertFalse(contract["permissions"]["particle_runtime_allowed"])
+        self.assertTrue(contract["permissions"]["particle_runtime_allowed"])
         self.assertFalse(
             contract["no_pulse_field_candidate"]["mesh"]["convergence_claim_allowed"]
         )
@@ -51,6 +51,11 @@ class S2PassiveConnectorTests(unittest.TestCase):
         self.assertTrue(
             dependencies["runtime_policy"]["verify_source_and_frozen_sha256_equal"]
         )
+        particle_evidence = contract["nominal_particle_evidence"]
+        self.assertEqual(particle_evidence["source_particles"], 100)
+        self.assertEqual(particle_evidence["oatof_entry_crossings"], 61)
+        self.assertEqual(particle_evidence["downstream_entry_wall_losses"], 39)
+        self.assertFalse(particle_evidence["s2_stage_passed"])
 
     def test_contract_rejects_a_gap_that_breaks_the_pose_derivation(self) -> None:
         contract = json.loads(module.DEFAULT_CONTRACT.read_text(encoding="utf-8"))
@@ -61,13 +66,13 @@ class S2PassiveConnectorTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "connector gap"):
                 module.validate_contract(path)
 
-    def test_contract_rejects_particle_runtime_during_field_candidate(self) -> None:
+    def test_contract_rejects_disabled_particle_runtime_after_authorization(self) -> None:
         contract = json.loads(module.DEFAULT_CONTRACT.read_text(encoding="utf-8"))
-        contract["permissions"]["particle_runtime_allowed"] = True
+        contract["permissions"]["particle_runtime_allowed"] = False
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "contract.json"
             path.write_text(json.dumps(contract), encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "particle runtime"):
+            with self.assertRaisesRegex(ValueError, "particle candidate"):
                 module.validate_contract(path)
 
 
