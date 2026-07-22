@@ -41,6 +41,20 @@ class S2GeometryBuildContractTests(unittest.TestCase):
         self.assertIn("particle_tracking = $false", runner)
         self.assertIn("Copy-RfFrozenDependency", runner)
         self.assertIn("dependency_identities = $dependencyIdentities", runner)
+        self.assertIn("[switch]$SaveReviewModel", runner)
+        self.assertIn("rf_quadrupole_connector_oatof_accelerator_geometry.mph", runner)
+
+    def test_geometry_review_task_saves_only_the_shared_geometry(self):
+        task = (
+            PROJECT_ROOT
+            / "tests"
+            / "comsol"
+            / "build_s2_passive_connector_geometry_review.m"
+        ).read_text(encoding="utf-8")
+        self.assertIn("build_s2_passive_connector_model", task)
+        self.assertIn("model.save(modelPath)", task)
+        for token in ("runAll", "mesh.create", "physics.create", "ChargedParticleTracing"):
+            self.assertNotIn(token, task)
 
     def test_project_local_run_support_owns_artifact_lifecycle(self):
         support = (

@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "project_id": "rf_hexapole_ion_guide",
+  "family_id": "rf_multipole_ion_optics",
+  "display_name": "RF六极杆离子导引",
+  "purpose": "六极杆无碰撞传输、接受度和未来碰撞冷却设计",
+  "lifecycle_status": "static",
+  "toolchains": ["python"],
+  "contracts": {
+    "baseline": "config/baseline.json",
+    "resolved": null,
+    "analysis": null,
+    "interface": null,
+    "execution": null,
+    "design_variables": null,
+    "optimization_envelope": null
+  },
+  "capabilities": [
+    {
+      "capability_id": "hexapole_ideal_transport",
+      "function": "ion_transport",
+      "status": "static",
+      "modes": ["transport_no_collision"],
+      "metrics": ["transmission_fraction", "exit_rms_radius", "maximum_radius"],
+      "design_variables": []
+    }
+  ],
+  "formal_assets": {"status": "none", "types": [], "identity_contract": null},
+  "known_gaps": [
+    "Only the ideal finite-length L1 transverse field is implemented",
+    "Round rods, fringe fields, shielding and interfaces are not implemented",
+    "Collision, space-charge, COMSOL, SIMION and CAD evidence do not exist"
+  ]
+}

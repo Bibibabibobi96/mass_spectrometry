@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "role": "rf_hexapole_ideal_l1_transport_baseline",
+  "status": "initial_functional_reference",
+  "project_id": "rf_hexapole_ion_guide",
+  "field_model_id": "multipole.ideal_2n.v1",
+  "trajectory_model_id": "multipole.ideal_finite_length.time_domain.v1",
+  "model_level": "L1",
+  "multipole": {"electrode_count": 6, "radial_order_n": 3, "orientation_rad": 0.0},
+  "conventions": {
+    "coordinate_id": "multipole.cartesian.z_axis.v1",
+    "voltage_id": "multipole.pair_about_common_mode.zero_to_peak.v1",
+    "r0_id": "nearest_ideal_electrode_surface.v1"
+  },
+  "geometry_mm": {
+    "inscribed_radius_r0": 4.0,
+    "usable_radius": 3.6,
+    "effective_length": 79.6,
+    "round_rod_geometry_selected": false
+  },
+  "rf": {
+    "waveform": "cosine",
+    "amplitude_V_peak": 139.81792,
+    "frequency_Hz": 1100000.0,
+    "phase_rad": 0.0,
+    "common_mode_offset_V": 0.0
+  },
+  "particle_source": {
+    "count": 25,
+    "seed": 20260722,
+    "mass_amu": 100.0,
+    "charge_state": 1,
+    "kinetic_energy_eV": 2.0,
+    "maximum_source_radius_mm": 0.5,
+    "maximum_divergence_deg": 5.0,
+    "birth_phase_distribution": "uniform_one_rf_period"
+  },
+  "numerics": {"rf_steps_per_period": 80},
+  "assumptions": {
+    "collision_model": "disabled",
+    "space_charge_model": "disabled",
+    "magnetic_field_model": "disabled",
+    "axial_field_model": "disabled"
+  },
+  "functional_acceptance": {
+    "minimum_rf_transmission": 0.8,
+    "minimum_improvement_over_zero_rf": 0.2
+  },
+  "claim_limit": "Ideal L1 functional transport reference only; no real geometry or solver qualification."
+}

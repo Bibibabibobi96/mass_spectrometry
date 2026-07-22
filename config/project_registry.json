@@ -15,6 +15,14 @@
       "sha256": "C2A8F2C4911B5E7614CDEC878C196364C250D4FF76F78B879F653ED9F75F689B"
     },
     {
+      "descriptor": "projects/rf_hexapole_ion_guide/config/project.json",
+      "sha256": "FC21A84E656FE60F991A5C64079B299A966885B8C51F4394130F484C824DE6EA"
+    },
+    {
+      "descriptor": "projects/rf_octupole_ion_guide/config/project.json",
+      "sha256": "5400E8DE7D587063E654FBBB3EAF646E17E1FA496213A7B9FC88F37031869F16"
+    },
+    {
       "descriptor": "projects/rf_quadrupole_collision_cooling/config/project.json",
       "sha256": "409FECC3163E81B60755CF60257B10A31C310AD5E722BD2EF26977120E3DF3BF"
     },
@@ -196,6 +204,98 @@
         "Stage-2 engineering margin and manufacturing-tolerance semantics are not experimentally validated",
         "Axisymmetric circular accelerator is deferred",
         "Manufacturing and assembly tolerance budget is not established"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "project_id": "rf_hexapole_ion_guide",
+      "family_id": "rf_multipole_ion_optics",
+      "display_name": "RF六极杆离子导引",
+      "purpose": "六极杆无碰撞传输、接受度和未来碰撞冷却设计",
+      "lifecycle_status": "static",
+      "toolchains": [
+        "python"
+      ],
+      "contracts": {
+        "baseline": "config/baseline.json",
+        "resolved": null,
+        "analysis": null,
+        "interface": null,
+        "execution": null,
+        "design_variables": null,
+        "optimization_envelope": null
+      },
+      "capabilities": [
+        {
+          "capability_id": "hexapole_ideal_transport",
+          "function": "ion_transport",
+          "status": "static",
+          "modes": [
+            "transport_no_collision"
+          ],
+          "metrics": [
+            "transmission_fraction",
+            "exit_rms_radius",
+            "maximum_radius"
+          ],
+          "design_variables": []
+        }
+      ],
+      "formal_assets": {
+        "status": "none",
+        "types": [],
+        "identity_contract": null
+      },
+      "known_gaps": [
+        "Only the ideal finite-length L1 transverse field is implemented",
+        "Round rods, fringe fields, shielding and interfaces are not implemented",
+        "Collision, space-charge, COMSOL, SIMION and CAD evidence do not exist"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "project_id": "rf_octupole_ion_guide",
+      "family_id": "rf_multipole_ion_optics",
+      "display_name": "RF八极杆离子导引",
+      "purpose": "八极杆无碰撞传输、接受度和未来碰撞冷却设计",
+      "lifecycle_status": "static",
+      "toolchains": [
+        "python"
+      ],
+      "contracts": {
+        "baseline": "config/baseline.json",
+        "resolved": null,
+        "analysis": null,
+        "interface": null,
+        "execution": null,
+        "design_variables": null,
+        "optimization_envelope": null
+      },
+      "capabilities": [
+        {
+          "capability_id": "octupole_ideal_transport",
+          "function": "ion_transport",
+          "status": "static",
+          "modes": [
+            "transport_no_collision"
+          ],
+          "metrics": [
+            "transmission_fraction",
+            "exit_rms_radius",
+            "maximum_radius"
+          ],
+          "design_variables": []
+        }
+      ],
+      "formal_assets": {
+        "status": "none",
+        "types": [],
+        "identity_contract": null
+      },
+      "known_gaps": [
+        "Only the ideal finite-length L1 transverse field is implemented",
+        "Round rods, fringe fields, shielding and interfaces are not implemented",
+        "Collision, space-charge, COMSOL, SIMION and CAD evidence do not exist"
       ]
     },
     {

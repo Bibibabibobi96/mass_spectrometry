@@ -1,4 +1,7 @@
-param([string]$RunId = '')
+param(
+  [string]$RunId = '',
+  [switch]$SaveReviewModel
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -20,9 +23,14 @@ if (-not [double]::IsFinite($gapMm) -or $gapMm -lt 0) {
 }
 if ([string]::IsNullOrWhiteSpace($RunId)) {
   $gapLabel = ('{0:g}' -f $gapMm).Replace('.','p')
-  $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + "__build__comsol__rf-oatof-s2-connector__gap$gapLabel"
+  $modelLabel = if ($SaveReviewModel) { 'rf-oatof-s2-connector-review' } else { 'rf-oatof-s2-connector' }
+  $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + "__build__comsol__${modelLabel}__gap$gapLabel"
 }
-$mode = 'rf_to_oatof_s2_passive_connector_geometry_build'
+$mode = if ($SaveReviewModel) {
+  'rf_to_oatof_s2_passive_connector_geometry_review'
+} else {
+  'rf_to_oatof_s2_passive_connector_geometry_build'
+}
 $software = @('COMSOL 6.4','MATLAB R2025b','Python 3.11')
 $package = New-RfRunPackage -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project 'rf_quadrupole_collision_cooling' -Mode $mode -Software $software
@@ -33,7 +41,12 @@ $resultDir = $package.result_dir
 $logDir = $package.log_dir
 
 try {
-$task = Join-Path $inputDir 'build_s2_passive_connector_geometry.m'
+$taskName = if ($SaveReviewModel) {
+  'build_s2_passive_connector_geometry_review.m'
+} else {
+  'build_s2_passive_connector_geometry.m'
+}
+$task = Join-Path $inputDir $taskName
 $geometryBuilder = Join-Path $inputDir 'build_s2_passive_connector_model.m'
 $runner = Join-Path $inputDir 'run_s2_passive_connector_geometry.ps1.txt'
 $support = Join-Path $inputDir 'rf_run_artifact_support.ps1.txt'
@@ -41,7 +54,7 @@ $contract = Join-Path $inputDir 'rf_to_oatof_s2_passive_connector.json'
 $dependencyContract = Join-Path $inputDir 'rf_to_oatof_s2_dependencies.json'
 $s1Contract = Join-Path $inputDir 'rf_to_oatof_s1_joint_field.json'
 $rfResolved = Join-Path $inputDir 'rf_resolved_geometry.json'
-Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'build_s2_passive_connector_geometry.m') -Destination $task
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot $taskName) -Destination $task
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'build_s2_passive_connector_model.m') -Destination $geometryBuilder
 Copy-Item -LiteralPath $PSCommandPath -Destination $runner
 Copy-Item -LiteralPath $supportSource -Destination $support
@@ -66,6 +79,7 @@ $oaBaseline = $dependencyPaths['oatof_baseline']
 $oaBuilder = $dependencyPaths['oatof_accelerator_geometry_builder']
 
 $metrics = Join-Path $resultDir 's2_passive_connector_geometry_metrics.json'
+$reviewModel = Join-Path $resultDir 'rf_quadrupole_connector_oatof_accelerator_geometry.mph'
 $report = Join-Path $logDir 'comsol_s2_passive_connector_geometry.txt'
 $summary = $package.summary
 $runConfig = $package.run_config
@@ -95,7 +109,7 @@ $runConfiguration = [ordered]@{
     physics_created = $false
     field_solve = $false
     particle_tracking = $false
-    model_saved = $false
+    model_saved = [bool]$SaveReviewModel
   }
   formal_gate_passed = $false
 }
@@ -111,7 +125,8 @@ Write-RfRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig `
 
 $environmentNames = @(
   'RF_OATOF_S2_GEOMETRY_METRICS','RF_OATOF_S2_CONTRACT','RF_OATOF_S2_S1_CONTRACT',
-  'RF_OATOF_S2_RF_RESOLVED','RF_OATOF_S2_OA_BASELINE','RF_OATOF_S2_OA_COMSOL_DIR'
+  'RF_OATOF_S2_RF_RESOLVED','RF_OATOF_S2_OA_BASELINE','RF_OATOF_S2_OA_COMSOL_DIR',
+  'RF_OATOF_S2_GEOMETRY_MODEL'
 )
 $oldEnvironment = Save-RfEnvironment -Names $environmentNames
 try {
@@ -121,6 +136,7 @@ try {
     $env:RF_OATOF_S2_RF_RESOLVED = $rfResolved
     $env:RF_OATOF_S2_OA_BASELINE = $oaBaseline
     $env:RF_OATOF_S2_OA_COMSOL_DIR = $inputDir
+    $env:RF_OATOF_S2_GEOMETRY_MODEL = if ($SaveReviewModel) { $reviewModel } else { '' }
     & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') `
       -TaskScript $task -ReportPath $report
     if ($LASTEXITCODE -ne 0) { throw 'COMSOL S2 geometry-only task failed.' }
@@ -131,6 +147,12 @@ $geometryMetrics = Get-Content -LiteralPath $metrics -Raw -Encoding UTF8 | Conve
 if ($geometryMetrics.status -ne 'BUILT' -or [bool]$geometryMetrics.field_solved -or
     [bool]$geometryMetrics.particle_runtime_executed) {
   throw 'S2 geometry metrics violate the build-only contract.'
+}
+if ([bool]$geometryMetrics.model_saved -ne [bool]$SaveReviewModel) {
+  throw 'S2 geometry review model status differs from the requested mode.'
+}
+if ($SaveReviewModel -and -not (Test-Path -LiteralPath $reviewModel -PathType Leaf)) {
+  throw 'S2 geometry review MPH was not created.'
 }
 
 Write-RfJson -Path $summary -Value ([ordered]@{
@@ -143,13 +165,17 @@ Write-RfJson -Path $summary -Value ([ordered]@{
   mesh_built = $false
   field_solved = $false
   particle_runtime = $false
+  review_model = if ($SaveReviewModel) {
+    'results/rf_quadrupole_connector_oatof_accelerator_geometry.mph'
+  } else { $null }
   s2_stage_passed = $false
   formal_gate_passed = $false
 })
 $outputs = @($metrics,$report,$summary)
+if ($SaveReviewModel) { $outputs += $reviewModel }
 Write-RfRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig `
   -Status success -Software $software -Outputs $outputs
-Write-Output "STATUS=PASS RUN_ID=$RunId GAP_MM=$gapMm FIELD_SOLVED=false PARTICLES=false"
+Write-Output "STATUS=PASS RUN_ID=$RunId GAP_MM=$gapMm FIELD_SOLVED=false PARTICLES=false MODEL_SAVED=$([bool]$SaveReviewModel)"
 } catch {
   Complete-RfFailedRun -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config `
     -Summary $package.summary -SummaryRole 'rf_to_oatof_s2_passive_connector_geometry_summary' `
