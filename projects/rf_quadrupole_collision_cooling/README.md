@@ -101,6 +101,12 @@
   reanalysis run。2 eV功能基线清点为`100→88→28→9`；5 eV候选为`100→77→39→37`。两者都只证明
   功能贯通，不授权分辨率、阶段PASS或Formal晋升。每个启用粒子和统一脉冲的S1 COMSOL run还必须在
   自身`results/`生成参数化双投影脉冲快照；图中的oa加速器尺寸读取baseline，孔尺寸读取S1合同。
+- S1状态驱动脉冲定时：[`config/rf_to_oatof_pulse_timing.json`](config/rf_to_oatof_pulse_timing.json)、
+  [`analysis/derive_s1_centroid_pulse_time.py`](analysis/derive_s1_centroid_pulse_time.py)及
+  [`analysis/validate_s1_pulse_timing.py`](analysis/validate_s1_pulse_timing.py)；按显式`mass_amu + charge_state`
+  选择目标物种，用实际逐粒子入口时刻和三维速度预测有限厚孔后的粒子组，再求其x质心到达当前oa理想
+  源中心的共享脉冲时刻。能量变化由实际速度自然进入，禁止为某个质量、能量或电荷态硬编码时间；混合
+  物种必须显式选组或分别生成调度。
 - RF入口能量匹配候选：[`config/rf_to_oatof_energy_match_candidate.json`](config/rf_to_oatof_energy_match_candidate.json)、
   [`analysis/validate_rf_energy_match.py`](analysis/validate_rf_energy_match.py)及
   [`analysis/compare_rf_input_energy.py`](analysis/compare_rf_input_energy.py)；它用独立命名的100 amu、5 eV

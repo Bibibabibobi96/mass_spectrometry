@@ -9,6 +9,7 @@
     "rf_resolved_geometry": "config/resolved_geometry.json",
     "oatof_baseline": "../oa_tof/config/baseline.json",
     "oatof_formal_mode": "../oa_tof/config/modes/formal.json",
+    "pulse_timing_policy": "config/rf_to_oatof_pulse_timing.json",
     "rf_continuous_shield_candidate": "config/rf_continuous_grounded_shield_candidate.json",
     "field_performance_experiment": "config/rf_to_oatof_field_performance_experiment.json"
   },
@@ -68,6 +69,7 @@
     "closed_control_evaluation_full_width_y_mm": 1.0,
     "full_width_y_mm": [1.0, 0.75, 0.5, 0.25],
     "selected_n100_candidate_full_width_y_mm": 1.0,
+    "particle_release_offset_inside_outer_face_mm": 0.001,
     "execution_order": "closed local-domain control first, then descending opened width; stop only for a solver failure, not for a failed physical metric",
     "sampling_rule": "Always include y=0, every regular 0.25 mm offset and the exact +/- port half-width; the closed control is evaluated over the frozen 1.0 mm formal source width.",
     "selection_allowed": true,

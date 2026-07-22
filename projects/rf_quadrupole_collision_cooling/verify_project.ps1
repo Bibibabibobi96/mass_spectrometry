@@ -39,6 +39,7 @@ $candidateValidators = @(
   'validate_rf_energy_match.py',
   'validate_rf_piecewise_swept_mesh.py',
   'validate_rf_rod_region_swept_mesh.py',
+  'validate_s1_pulse_timing.py',
   'validate_s1_joint_field.py'
 )
 foreach ($validator in $candidateValidators) {

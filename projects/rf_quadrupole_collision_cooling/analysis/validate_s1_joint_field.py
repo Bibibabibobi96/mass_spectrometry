@@ -37,6 +37,9 @@ def validate(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
     rf = load(PROJECT_ROOT / inputs["rf_resolved_geometry"])
     oatof = load((PROJECT_ROOT / inputs["oatof_baseline"]).resolve())
     oatof_mode = load((PROJECT_ROOT / inputs["oatof_formal_mode"]).resolve())
+    pulse_timing = load(PROJECT_ROOT / inputs["pulse_timing_policy"])
+    if pulse_timing.get("method") != "selected_species_ballistic_port_survivor_x_centroid":
+        raise ValueError("S1 pulse timing policy is not the state-driven centroid scheduler")
     shield = load(PROJECT_ROOT / inputs["rf_continuous_shield_candidate"])
     if shield.get("status") != "smallest_radius_retained_for_s1_candidate_validation":
         raise ValueError("S1 continuous RF shield radius is not retained for candidate validation")
@@ -133,6 +136,9 @@ def validate(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
         raise ValueError("S1 field characterization must retain one N=100 runtime candidate")
     if not math.isclose(float(sweep.get("selected_n100_candidate_full_width_y_mm", -1.0)), widths[0], abs_tol=1e-12):
         raise ValueError("S1 N=100 runtime must use the largest characterized width")
+    release_offset = float(sweep.get("particle_release_offset_inside_outer_face_mm", math.nan))
+    if not math.isclose(release_offset, 0.001, abs_tol=1e-12):
+        raise ValueError("S1 particle release offset must remain explicit and inside the outer shield face")
     if "no performance or Formal selection" not in sweep.get("selection_scope", ""):
         raise ValueError("S1 N=100 width selection overstates its authority")
 

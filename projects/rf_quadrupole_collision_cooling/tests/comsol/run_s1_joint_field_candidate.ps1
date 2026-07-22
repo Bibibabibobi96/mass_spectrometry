@@ -9,6 +9,7 @@ param(
   [double]$DownstreamBufferMm = 5.0,
   [string]$ClosedControlRunId = '',
   [string]$ParticleInputPath = '',
+  [string]$PulseSchedulePath = '',
   [double]$PulseTimeUs = 54.45242561132196,
   [double]$PulseWidthUs = 1.0,
   [string]$RunId = ''
@@ -27,11 +28,34 @@ if (-not [bool]$jointSourceDocument.permissions.field_solve_allowed) {
   throw 'S1 joint-field solve is not authorized by the candidate contract.'
 }
 $particleEnabled = -not [string]::IsNullOrWhiteSpace($ParticleInputPath)
+$sourceParticleInput = $null
+$pulseScheduleSource = $null
+$pulseScheduleDocument = $null
 if ($particleEnabled -and (-not [bool]$jointSourceDocument.permissions.particle_runtime_allowed)) {
   throw 'S1 particle runtime is not authorized by the candidate contract.'
 }
 if ($particleEnabled -and ([math]::Abs($PortWidthMm-[double]$jointSourceDocument.port_sweep.selected_n100_candidate_full_width_y_mm) -gt 1e-12 -or $JointScope -ne 'rf-oa')) {
   throw 'S1 particles require the selected opened rf-oa candidate geometry.'
+}
+if ($particleEnabled) {
+  $sourceParticleInput = [IO.Path]::GetFullPath($ParticleInputPath)
+  if (-not (Test-Path -LiteralPath $sourceParticleInput -PathType Leaf)) { throw 'S1 particle input is missing.' }
+  if (-not [string]::IsNullOrWhiteSpace($PulseSchedulePath)) {
+    $pulseScheduleSource = [IO.Path]::GetFullPath($PulseSchedulePath)
+    if (-not (Test-Path -LiteralPath $pulseScheduleSource -PathType Leaf)) { throw 'S1 pulse schedule is missing.' }
+    $pulseScheduleDocument = Get-Content -LiteralPath $pulseScheduleSource -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($pulseScheduleDocument.status -ne 'PASS' -or $pulseScheduleDocument.method -ne 'selected_species_ballistic_port_survivor_x_centroid') {
+      throw 'S1 pulse schedule identity is invalid.'
+    }
+    $particleHash = (Get-FileHash -LiteralPath $sourceParticleInput -Algorithm SHA256).Hash
+    if ($particleHash -ne [string]$pulseScheduleDocument.source_particle_table_sha256) {
+      throw 'S1 pulse schedule was derived from a different particle table.'
+    }
+    $PulseTimeUs = [double]$pulseScheduleDocument.derived_pulse_time_us
+    $PulseWidthUs = [double]$pulseScheduleDocument.pulse_width_us
+  }
+} elseif (-not [string]::IsNullOrWhiteSpace($PulseSchedulePath)) {
+  throw 'PulseSchedulePath requires a particle-enabled run.'
 }
 $numerical = $jointSourceDocument.numerical_qualification
 $allowedAcceleratorHmax = @(
@@ -88,11 +112,14 @@ Copy-Item (Join-Path $projectRoot 'config\resolved_geometry.json') $rfResolved
 Copy-Item (Join-Path $repoRoot 'projects\oa_tof\config\baseline.json') $oaBaseline
 Copy-Item (Join-Path $repoRoot 'projects\oa_tof\config\modes\formal.json') $oaFormalMode
 $particleInput = $null
+$pulseSchedule = $null
 if ($particleEnabled) {
-  $sourceParticleInput = [IO.Path]::GetFullPath($ParticleInputPath)
-  if (-not (Test-Path -LiteralPath $sourceParticleInput -PathType Leaf)) { throw 'S1 particle input is missing.' }
   $particleInput = Join-Path $inputDir 'canonical_rf_exit_at_oatof_entry.csv'
   Copy-Item -LiteralPath $sourceParticleInput -Destination $particleInput
+  if ($null -ne $pulseScheduleSource) {
+    $pulseSchedule = Join-Path $inputDir 's1_centroid_pulse_schedule.json'
+    Copy-Item -LiteralPath $pulseScheduleSource -Destination $pulseSchedule
+  }
 }
 $referenceRole = 'formal_closed'
 $closedReference = Join-Path $workspaceRoot 'artifacts\projects\oa_tof\runs\20260721_093712__analysis__comsol__accelerator-transverse-field__grid\results\accelerator_transverse_field_samples.csv'
@@ -121,11 +148,12 @@ $runConfig = Join-Path $runDir 'run_config.json'
 $manifestWriter = Join-Path $repoRoot 'common\contracts\write_run_manifest.py'
 $inputMap=[ordered]@{task=$task;analysis=$analysis;particle_analysis=$particleAnalysis;pulse_snapshot_analysis=$pulseSnapshotAnalysis;uniformity_analysis=$uniformity;oa_accelerator_builder=$oaBuilder;joint_contract=$joint;interface_contract=$interface;rf_resolved=$rfResolved;oa_baseline=$oaBaseline;oa_formal_mode=$oaFormalMode;closed_reference=$closedReference;runner=$runner}
 if($particleEnabled){$inputMap.particle_input=$particleInput}
+if($null -ne $pulseSchedule){$inputMap.pulse_schedule=$pulseSchedule}
 [ordered]@{
   schema_version=1;run_id=$RunId;project='rf_quadrupole_collision_cooling';mode='rf_to_oatof_s1_local_joint_field'
   project_root=$repoRoot
   inputs=$inputMap
-  parameters=[ordered]@{geometry_state=if([math]::Abs($PortWidthMm) -lt 1e-12){'closed_local_domain_control'}else{'opened_port'};joint_scope=$JointScope;port_full_width_y_mm=$PortWidthMm;port_full_height_z_mm=0.9;downstream_buffer_after_grid2_mm=$DownstreamBufferMm;external_vacuum_included=$false;mesh_auto_level=$MeshAutoLevel;accelerator_hmax_mm=$AcceleratorHmaxMm;release_volume_hmax_mm=0.1;solver_rerun=$true;particle_tracking=$particleEnabled;particle_count=if($particleEnabled){100}else{0};pulse_time_us=if($particleEnabled){$PulseTimeUs}else{$null};pulse_width_us=if($particleEnabled){$PulseWidthUs}else{$null};model_saved=$false}
+  parameters=[ordered]@{geometry_state=if([math]::Abs($PortWidthMm) -lt 1e-12){'closed_local_domain_control'}else{'opened_port'};joint_scope=$JointScope;port_full_width_y_mm=$PortWidthMm;port_full_height_z_mm=0.9;downstream_buffer_after_grid2_mm=$DownstreamBufferMm;external_vacuum_included=$false;mesh_auto_level=$MeshAutoLevel;accelerator_hmax_mm=$AcceleratorHmaxMm;release_volume_hmax_mm=0.1;solver_rerun=$true;particle_tracking=$particleEnabled;particle_count=if($particleEnabled){100}else{0};pulse_time_us=if($particleEnabled){$PulseTimeUs}else{$null};pulse_width_us=if($particleEnabled){$PulseWidthUs}else{$null};pulse_timing_method=if($null -ne $pulseSchedule){[string]$pulseScheduleDocument.method}else{'explicit_parameter'};model_saved=$false}
   formal_gate_passed=$false
 } | ConvertTo-Json -Depth 6 | Set-Content $runConfig -Encoding UTF8
 [ordered]@{schema_version=1;role='rf_to_oatof_s1_joint_field_summary';status='interrupted';reason='Run package initialized; final status not yet recorded.'} | ConvertTo-Json | Set-Content $summary -Encoding UTF8

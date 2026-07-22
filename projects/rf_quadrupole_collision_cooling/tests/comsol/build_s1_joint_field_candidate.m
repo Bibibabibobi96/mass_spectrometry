@@ -246,7 +246,7 @@ if ~isfolder(runtimeDir),mkdir(runtimeDir);end
 cpt=comp.physics.create('cpt','ChargedParticleTracing','geom1'); cpt.label('S1 physical-port shared-clock pulse N=100'); cpt.selection.named('sel_vac');
 cpt.feature('pp1').set('mp',sprintf('%.17g[kg]',ions.mass_amu(1)*1.66053906660e-27)); cpt.feature('pp1').set('Z',sprintf('%d',round(ions.charge_state(1))));
 for solverIndex=1:numel(accepted)
-    row=accepted(solverIndex); releaseData=[center(1)+0.001,ions.position_y_mm(row),ions.position_z_mm(row),ions.velocity_x_m_s(row),ions.velocity_y_m_s(row),ions.velocity_z_m_s(row)];
+    row=accepted(solverIndex); releaseData=[center(1)+joint.port_sweep.particle_release_offset_inside_outer_face_mm,ions.position_y_mm(row),ions.position_z_mm(row),ions.velocity_x_m_s(row),ions.velocity_y_m_s(row),ions.velocity_z_m_s(row)];
     releasePath=fullfile(runtimeDir,sprintf('physical_port_particle_%03d.txt',ions.particle_id(row))); writematrix(releaseData,releasePath,'Delimiter','tab');
     rel=cpt.create(sprintf('rel%03d',solverIndex),'ReleaseFromDataFile',-1); rel.set('Filename',releasePath); rel.set('icolp','0'); rel.set('VelocitySpecification','SpecifyVelocity'); rel.set('InitialVelocity','FromFile'); rel.set('icolv','3'); rel.set('rt',sprintf('%.17g[us]',ions.instrument_time_us(row))); rel.importData();
 end

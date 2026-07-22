@@ -55,19 +55,28 @@ def validate(path: Path = CONTRACT_PATH) -> dict:
         raise ValueError("RF energy-match evidence no longer meets the target")
     downstream = contract.get("physical_port_pulse_evidence", {})
     derived_pulse = (
-        float(downstream.get("mean_rf_handoff_instrument_time_us", math.nan))
-        + 1000.0 * float(downstream.get("post_handoff_distance_mm", math.nan))
-        / float(downstream.get("mean_positive_axial_velocity_m_s", math.nan))
-    )
+        1000.0 * (
+            float(downstream.get("target_centroid_x_mm", math.nan))
+            - float(downstream.get("release_x_mm", math.nan))
+        )
+        + float(downstream.get("mean_velocity_x_times_entry_time_m_s_us", math.nan))
+    ) / float(downstream.get("mean_selected_velocity_x_m_s", math.nan))
     if not math.isclose(derived_pulse, float(downstream.get("derived_pulse_time_us", math.nan)), abs_tol=1e-12):
         raise ValueError("RF energy-match pulse time is not derived from the frozen timing rule")
     port = int(downstream.get("geometric_port_accepted", -1))
+    predicted = int(downstream.get("predicted_finite_wall_survivors", -1))
+    active = int(downstream.get("active_at_pulse", -1))
+    pre_loss = int(downstream.get("pre_pulse_port_losses", -1))
     local_exit = int(downstream.get("local_joint_exit", -1))
-    detector_hits = int(downstream.get("detector_hits", -1))
-    if not (100 >= port >= local_exit >= detector_hits >= 1):
+    if not (100 >= port >= active >= local_exit >= 0):
         raise ValueError("RF energy-match downstream particle funnel is inconsistent")
-    if int(downstream.get("alive_at_pulse", -1)) != port:
-        raise ValueError("RF energy-match pulse census does not match the physical-port evidence")
+    if predicted != active or pre_loss != port - active:
+        raise ValueError("RF energy-match finite-wall prediction does not match the pulse census")
+    centroid_error = float(downstream.get("actual_centroid_error_x_mm", math.nan))
+    if abs(centroid_error) > 0.1:
+        raise ValueError("RF energy-match pulse does not center the active cohort")
+    if downstream.get("hit_rate_gate_applied") is not False or downstream.get("compact_storage_claimed") is not False:
+        raise ValueError("RF pulse timing evidence exceeds the continuous-beam slice scope")
     return contract
 
 

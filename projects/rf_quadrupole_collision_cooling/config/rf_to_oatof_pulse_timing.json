@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "role": "rf_to_oatof_state_driven_pulse_timing_policy",
+  "status": "candidate_authorized_for_s1_n100_validation",
+  "method": "selected_species_ballistic_port_survivor_x_centroid",
+  "inputs": {
+    "canonical_handoff_state": "runtime particle table",
+    "oatof_baseline": "../oa_tof/config/baseline.json",
+    "s1_joint_contract": "config/rf_to_oatof_s1_joint_field.json"
+  },
+  "population": {
+    "species_key": [
+      "mass_amu",
+      "charge_state"
+    ],
+    "mixed_species_policy": "require an explicit target species or emit a separate schedule for each species; never average different species into one hidden pulse time",
+    "energy_policy": "consume each particle's actual velocity; kinetic energy is reported but is not converted through a hard-coded mass-energy formula",
+    "minimum_particles_after_port_prediction": 1
+  },
+  "geometry": {
+    "target_axis": "oatof_global_x",
+    "target_position_source": "oatof_baseline.particle_source.center_x_mm",
+    "release_position_source": "negative-x accelerator shield outer face plus s1_joint_contract.port_sweep.particle_release_offset_inside_outer_face_mm",
+    "finite_wall_filter": "require the straight pre-pulse path to remain inside the rectangular aperture at both outer and inner shield faces",
+    "pre_pulse_field_assumption": "oa accelerator electrodes are off and measured RF leakage at the source is negligible; validate the derived schedule in the actual joint model"
+  },
+  "centroid_equation": {
+    "units": "x in mm, vx in m/s, instrument time and pulse time in us",
+    "expression": "t_pulse_us = (1000*(x_target_mm-x_release_mm) + mean(vx_m_s*t_entry_us))/mean(vx_m_s)",
+    "acceptance": "mean(x_i(t_pulse)) equals x_target within 1e-9 mm in the scheduler; the COMSOL validation tolerance is reported separately"
+  },
+  "waveform": {
+    "pulse_width_us": 1.0
+  },
+  "claims": {
+    "continuous_beam_time_slice_extraction": true,
+    "compact_storage_required": false,
+    "all_particles_inside_ideal_volume_required": false,
+    "hit_rate_gate_required_for_timing_validation": false,
+    "formal_promotion_allowed": false
+  }
+}
