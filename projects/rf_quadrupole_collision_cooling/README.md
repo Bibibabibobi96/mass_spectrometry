@@ -15,7 +15,9 @@
 详细验证与S1集成演进记录：
 [`docs/history/20260722_rf-validation-and-s1-integration.md`](docs/history/20260722_rf-validation-and-s1-integration.md)；
 已关闭的网格策略筛选记录：
-[`docs/history/20260722_rf-mesh-strategy-screen.md`](docs/history/20260722_rf-mesh-strategy-screen.md)。
+[`docs/history/20260722_rf-mesh-strategy-screen.md`](docs/history/20260722_rf-mesh-strategy-screen.md)；
+S2–S3连接功能闭环记录：
+[`docs/history/20260722__rf-oatof-s2-s3-functional-closure.md`](docs/history/20260722__rf-oatof-s2-s3-functional-closure.md)。
 
 软件细节不相互横向引用；统一参数与跨求解器结论只写入 `PROJECT.md`。
 
