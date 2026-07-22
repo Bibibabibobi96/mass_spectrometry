@@ -37,8 +37,8 @@ def validate_contract(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
         raise ValueError("S2 connector stage differs")
 
     stage_plan = _load_relative(contract["inputs"]["stage_plan"])
-    if stage_plan.get("current_stage") != "S2":
-        raise ValueError("stage plan has not advanced to S2")
+    if stage_plan.get("current_stage") not in {"S2", "S3", "S4", "S5"}:
+        raise ValueError("stage plan has not reached or inherited S2")
     stage = next(item for item in stage_plan["stages"] if item["id"] == "S2")
     if stage.get("status") != "nominal_no_pulse_particle_function_passed_stage_unqualified":
         raise ValueError("S2 stage status differs")
@@ -71,9 +71,8 @@ def validate_contract(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
     interface = _load_relative(contract["inputs"]["interface_reference"])
     registration = contract["nominal_registration"]
     gap_mm = float(registration["connector_gap_mm"])
-    _assert_close(gap_mm, 1.0, "connector gap")
-    if gap_mm <= 0.0:
-        raise ValueError("S2 connector gap must be positive")
+    if gap_mm < 0.0:
+        raise ValueError("S2 connector gap cannot be negative")
 
     rotation = registration["source_component_pose"]["rotation_component_to_instrument"]
     build_interface_handoff.validate_rotation_matrix(rotation)
@@ -94,6 +93,10 @@ def validate_contract(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
         _assert_close(value, expected_translation[index], f"source translation[{index}]")
 
     geometry = contract["passive_connector_geometry"]
+    if geometry.get("zero_gap_supported") is not True:
+        raise ValueError("S2 geometry must support direct mating at zero gap")
+    if geometry.get("cavity", {}).get("creation_condition") != "connector_gap_mm > 0":
+        raise ValueError("S2 connector-domain creation rule differs")
     source_radius = float(interface["boundaries"]["source_exit_surface"]["physical_aperture"]["radius_mm"])
     _assert_close(geometry["upstream_clear_aperture"]["radius_mm"], source_radius, "upstream aperture radius")
     _assert_close(geometry["cavity"]["inner_radius_mm"], source_radius, "connector cavity radius")

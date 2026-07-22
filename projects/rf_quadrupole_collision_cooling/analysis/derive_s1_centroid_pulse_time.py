@@ -1,4 +1,4 @@
-"""Derive an S1 shared pulse time from selected-species handoff phase space."""
+"""Derive a shared pulse time from selected-species handoff phase space."""
 
 from __future__ import annotations
 
@@ -56,7 +56,8 @@ def _sha256(path: Path) -> str:
 
 def derive_schedule(particle_path: Path, baseline_path: Path, joint_path: Path,
                     policy_path: Path = POLICY_PATH, target_mass_amu: float | None = None,
-                    target_charge_state: int | None = None) -> dict[str, object]:
+                    target_charge_state: int | None = None,
+                    s2_contract_path: Path | None = None) -> dict[str, object]:
     policy = validate_policy(policy_path)
     particles = pd.read_csv(particle_path)
     required = {
@@ -87,8 +88,30 @@ def derive_schedule(particle_path: Path, baseline_path: Path, joint_path: Path,
     baseline = load_json(baseline_path)
     joint = load_json(joint_path)
     geometry = accelerator_geometry(baseline, joint)
-    offset = float(joint["port_sweep"]["particle_release_offset_inside_outer_face_mm"])
-    entry_surface_x = float(joint["nominal_registration"]["target_entry_center_instrument_mm"][0])
+    schedule_stage = "S1"
+    if s2_contract_path is None:
+        offset = float(joint["port_sweep"]["particle_release_offset_inside_outer_face_mm"])
+        entry_center = joint["nominal_registration"]["target_entry_center_instrument_mm"]
+        port_width = float(geometry["port_width_y"])
+        port_height = float(geometry["port_height_z"])
+    else:
+        s2 = load_json(s2_contract_path)
+        if s2.get("stage") != "S2":
+            raise ValueError("S3 timing requires an S2 connector contract")
+        if not {"event", "status"}.issubset(selected.columns):
+            raise ValueError("S3 timing states must identify real S2 oa-entry events")
+        selected = selected[
+            selected["event"].eq("oatof_entry") & selected["status"].eq("transmitted")
+        ].copy()
+        if selected.empty:
+            raise ValueError("S3 timing states contain no transmitted oa-entry event")
+        offset = float(s2["no_pulse_field_candidate"]["boundary_probe_inset_mm"])
+        entry_center = s2["nominal_registration"]["target_entry_center_instrument_mm"]
+        port = s2["passive_connector_geometry"]["downstream_entry_aperture"]
+        port_width = float(port["full_width_y_mm"])
+        port_height = float(port["full_height_z_mm"])
+        schedule_stage = "S3"
+    entry_surface_x = float(entry_center[0])
     if not np.allclose(selected["position_x_mm"], entry_surface_x, rtol=0, atol=1e-12):
         raise ValueError(
             "canonical handoff position_x_mm must equal the physical oa-TOF entry surface; "
@@ -96,9 +119,9 @@ def derive_schedule(particle_path: Path, baseline_path: Path, joint_path: Path,
         )
     release_x = entry_surface_x + offset
     target_x = float(geometry["source_center"]["x"])
-    port_center_z = float(geometry["port_center_z"])
-    half_y = float(geometry["port_width_y"]) / 2
-    half_z = float(geometry["port_height_z"]) / 2
+    port_center_z = float(entry_center[2])
+    half_y = port_width / 2
+    half_z = port_height / 2
     wall = float(geometry["shield_wall"])
 
     at_outer = (
@@ -131,7 +154,8 @@ def derive_schedule(particle_path: Path, baseline_path: Path, joint_path: Path,
     energy = cohort["kinetic_energy_eV"] if "kinetic_energy_eV" in cohort else None
     return {
         "schema_version": 1,
-        "role": "rf_to_oatof_s1_centroid_pulse_schedule",
+        "role": f"rf_to_oatof_{schedule_stage.lower()}_centroid_pulse_schedule",
+        "stage": schedule_stage,
         "status": "PASS",
         "method": policy["method"],
         "source_particle_table": str(particle_path.resolve()),
@@ -176,6 +200,7 @@ def main() -> None:
     parser.add_argument("--particle-state", type=Path)
     parser.add_argument("--oatof-baseline", type=Path)
     parser.add_argument("--joint-contract", type=Path)
+    parser.add_argument("--s2-contract", type=Path)
     parser.add_argument("--policy", type=Path, default=POLICY_PATH)
     parser.add_argument("--target-mass-amu", type=float)
     parser.add_argument("--target-charge-state", type=int)
@@ -190,10 +215,11 @@ def main() -> None:
     if any(value is None for value in required):
         parser.error("derivation requires particle state, oaTOF baseline, joint contract and output")
     result = derive_schedule(args.particle_state, args.oatof_baseline, args.joint_contract,
-                             args.policy, args.target_mass_amu, args.target_charge_state)
+                             args.policy, args.target_mass_amu, args.target_charge_state,
+                             args.s2_contract)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
-    print(f"S1_CENTROID_PULSE_TIME=PASS TIME_US={result['derived_pulse_time_us']:.12f} "
+    print(f"{result['stage']}_CENTROID_PULSE_TIME=PASS TIME_US={result['derived_pulse_time_us']:.12f} "
           f"COHORT={result['population_counts']['predicted_finite_wall_survivors']}")
 
 

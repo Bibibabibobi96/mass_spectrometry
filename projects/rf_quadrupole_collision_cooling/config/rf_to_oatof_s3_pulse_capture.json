@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "role": "rf_to_oatof_s3_shared_clock_pulse_capture_candidate",
+  "status": "nominal_cumulative_function_passed_stage_unqualified",
+  "stage": "S3",
+  "qualification_scope": "nominal_S2_geometry_shared_clock_finite_pulse_function_only",
+  "inputs": {
+    "stage_plan": "config/rf_to_oatof_interface_stages.json",
+    "s2_connector": "config/rf_to_oatof_s2_passive_connector.json",
+    "s1_joint_field": "config/rf_to_oatof_s1_joint_field.json",
+    "pulse_timing_policy": "config/rf_to_oatof_pulse_timing.json",
+    "oatof_baseline": "../oa_tof/config/baseline.json"
+  },
+  "source": {
+    "particle_run_id": "20260722_193000__sim__comsol__rf-input5ev-handoff__n100__r02",
+    "particle_event_path": "results/rf_hybrid_mesh_n100_events.csv",
+    "particle_metadata_path": "inputs/particle_source_metadata.json",
+    "timing_state_run_id": "20260722_150059__sim__comsol__rf-oatof-s2-passive-connector__n100__r02",
+    "timing_state_path": "results/s2_passive_connector_particles.csv",
+    "target_mass_amu": 100.0,
+    "target_charge_state": 1,
+    "clock_epoch_id": "instrument_clock_epoch.v1",
+    "source_particles": 100,
+    "rule": "Track the original RF-exit population in the S2 joint geometry; derive timing from the prior real S2 oa-entry states without projecting positions or resetting clocks."
+  },
+  "timing_geometry": {
+    "entry_surface_source": "s2_connector.nominal_registration.target_entry_center_instrument_mm",
+    "port_source": "s2_connector.passive_connector_geometry.downstream_entry_aperture",
+    "wall_thickness_source": "oatof_baseline.geometry_mm.accelerator_shield_wall",
+    "target_centroid_source": "oatof_baseline.particle_source.center_x_mm",
+    "release_offset_source": "s2_connector.no_pulse_field_candidate.boundary_probe_inset_mm"
+  },
+  "waveform": {
+    "pre_pulse_oatof_field_scale": 0.0,
+    "pulse_oatof_field_scale": 1.0,
+    "post_pulse_oatof_field_scale": 0.0,
+    "pulse_width_source": "pulse_timing_policy.waveform.pulse_width_us",
+    "rise_fall_model": "ideal_finite_step",
+    "rf_field": "continuous_from_global_instrument_clock",
+    "post_pulse_tracking_time_us": 8.0,
+    "claim_limit": "The ideal finite step is the first functional waveform model; finite electrical rise and fall remain a later qualification variable."
+  },
+  "runtime": {
+    "shared_geometry_builder": "tests/comsol/build_s2_passive_connector_model.m",
+    "rf_steps_per_period_source": "s2_connector.functional_candidate.rf_steps_per_period",
+    "dense_trajectories_saved": false,
+    "required_outputs": [
+      "particle_terminal_census",
+      "pulse_left_limit_state",
+      "local_accelerator_exit_state",
+      "identity_clock_and_energy_audit"
+    ],
+    "minimum_active_at_pulse": 1,
+    "minimum_local_accelerator_exit": 1,
+    "detector_tracking_included": false
+  },
+  "claims": {
+    "continuous_beam_time_slice_extraction": true,
+    "compact_storage_claimed": false,
+    "minimum_transmission_qualified": false,
+    "pulse_time_convergence_claimed": false,
+    "time_step_convergence_claimed": false,
+    "s2_stage_passed": false,
+    "s3_stage_passed": false,
+    "formal_gate_passed": false
+  },
+  "permissions": {
+    "schedule_derivation_allowed": true,
+    "nominal_particle_runtime_allowed": true,
+    "downstream_handoff_allowed_after_local_exit_audit": true,
+    "s3_stage_pass_allowed": false,
+    "formal_promotion_allowed": false
+  }
+}

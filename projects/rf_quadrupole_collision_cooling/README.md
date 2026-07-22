@@ -79,6 +79,7 @@
 - RF→oa接口分阶段实施顺序：
   [`config/rf_to_oatof_interface_stages.json`](config/rf_to_oatof_interface_stages.json)；从无物理资格的
   S0数据直连参考开始，逐级增加开孔、被动通道、脉冲、必要的主动光学及最终跨求解器/CAD门禁，禁止跳级。
+  各级是累积替代关系；当前级覆盖早期功能，早期runner只保留诊断和证据复验用途。
 - S0求解器无关执行入口：
   [`analysis/run_interface_s0_reference.py`](analysis/run_interface_s0_reference.py)及
   [`config/modes/rf_to_oatof_s0_reference.json`](config/modes/rf_to_oatof_s0_reference.json)；只复用已冻结
@@ -124,8 +125,15 @@
   [`tests/analysis/run_s2_particle_chain_audit.ps1`](tests/analysis/run_s2_particle_chain_audit.ps1)。跨项目输入由
   [`config/rf_to_oatof_s2_dependencies.json`](config/rf_to_oatof_s2_dependencies.json)显式声明提供项目、
   仓库相对路径和冻结文件名；运行时核对源文件与`inputs/`副本SHA-256，并把身份写入run config。
+  同一几何实现允许间距为0 mm；此时不创建独立连接器域，直接共面连接。负间距拒绝，当前真实证据仍为1 mm。
   三件套、环境恢复和失败收尾当前由RF项目内部`tests/support/rf_run_artifact_support.ps1`统一；旧run和
   未触及的旧运行器保持原样，第二个项目实际复用前不提升到根`common/`。
+- S3累积脉冲与分析器贯通：
+  [`config/rf_to_oatof_s3_pulse_capture.json`](config/rf_to_oatof_s3_pulse_capture.json)、
+  [`tests/comsol/run_s3_pulse_capture.ps1`](tests/comsol/run_s3_pulse_capture.ps1)和
+  [`tests/cross_solver/run_s3_end_to_end.ps1`](tests/cross_solver/run_s3_end_to_end.ps1)。当前N=100功能证据为
+  `100 RF出口→61 oa入口→31脉冲时活动→31局部出口→7探测命中`；canonical状态到SIMION仅派生11列
+  适配表，不投影位置、不重置粒子ID或全局时间。该证据不授权S2/S3资格、数值收敛、分辨率或Formal声明。
 - RF入口能量匹配候选：[`config/rf_to_oatof_energy_match_candidate.json`](config/rf_to_oatof_energy_match_candidate.json)、
   [`analysis/validate_rf_energy_match.py`](analysis/validate_rf_energy_match.py)及
   [`analysis/compare_rf_input_energy.py`](analysis/compare_rf_input_energy.py)；它用独立命名的100 amu、5 eV

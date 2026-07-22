@@ -94,6 +94,27 @@ class S1CentroidPulseTimeTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "physical oa-TOF entry surface"):
                 module.derive_schedule(path, self.baseline, self.joint)
 
+    def test_s3_uses_only_real_s2_entry_events(self) -> None:
+        s2 = PROJECT_ROOT / "config" / "rf_to_oatof_s2_passive_connector.json"
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "particles.csv"
+            base = {
+                "instrument_time_us": 10.0, "mass_amu": 100.0, "charge_state": 1,
+                "position_x_mm": -67.8, "position_y_mm": 0.0,
+                "position_z_mm": -18.42918680341103,
+                "velocity_x_m_s": 1000.0, "velocity_y_m_s": 0.0,
+                "velocity_z_m_s": 0.0,
+            }
+            self._write(path, [
+                dict(base, particle_id=1, event="oatof_entry", status="transmitted"),
+                dict(base, particle_id=2, event="downstream_entry_wall", status="lost"),
+            ])
+            result = module.derive_schedule(
+                path, self.baseline, self.joint, s2_contract_path=s2)
+            self.assertEqual(result["stage"], "S3")
+            self.assertEqual(result["role"], "rf_to_oatof_s3_centroid_pulse_schedule")
+            self.assertEqual(result["population_counts"]["outer_face_geometric_acceptance"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

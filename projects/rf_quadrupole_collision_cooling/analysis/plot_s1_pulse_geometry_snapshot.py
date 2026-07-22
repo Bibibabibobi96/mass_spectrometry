@@ -93,12 +93,20 @@ def classify_snapshot(capture: pd.DataFrame, events: pd.DataFrame,
     z_edge_distance = np.minimum((classified["z_mm"] - z_low).abs(),
                                  (classified["z_mm"] - z_high).abs())
     tolerance_mm = 1e-8
-    classified["frozen_port_loss_before_pulse"] = (
+    legacy_port_loss = (
         classified["status"].eq("lost")
         & classified["terminal_reason"].eq("electrode_or_boundary")
         & classified["x_mm"].between(outer_face - tolerance_mm, inner_face + tolerance_mm)
         & (np.minimum(y_edge_distance, z_edge_distance) <= tolerance_mm)
     )
+    if "active_at_pulse" in classified:
+        classified["active_at_pulse"] = pd.to_numeric(
+            classified["active_at_pulse"], errors="raise").astype(bool)
+        inactive = ~classified["active_at_pulse"]
+        classified["frozen_port_loss_before_pulse"] = inactive & (
+            classified["event"].eq("downstream_entry_wall") | legacy_port_loss)
+    else:
+        classified["frozen_port_loss_before_pulse"] = legacy_port_loss
     dx = (classified["x_mm"] - cx).abs()
     ay = classified["y_mm"].abs()
     terminal_wall_loss = (
@@ -126,16 +134,44 @@ def classify_snapshot(capture: pd.DataFrame, events: pd.DataFrame,
         ) & (square_radius >= float(geometry["bore_half"]) - tolerance_mm) & (
             square_radius <= float(geometry["ring_outer_half"]) + tolerance_mm
         )
-    classified["frozen_accelerator_loss_before_pulse"] = (
-        terminal_wall_loss
-        & ~classified["frozen_port_loss_before_pulse"]
-        & (repeller_hit | grid_hit | ring_hit)
-    )
-    classified["active_at_pulse"] = ~(
-        classified["frozen_port_loss_before_pulse"]
-        | classified["frozen_accelerator_loss_before_pulse"]
-    )
+    legacy_accelerator_loss = (
+        terminal_wall_loss & ~classified["frozen_port_loss_before_pulse"]
+        & (repeller_hit | grid_hit | ring_hit))
+    if "active_at_pulse" in classified:
+        classified["frozen_accelerator_loss_before_pulse"] = inactive & (
+            classified["terminal_reason"].eq("accelerator_electrode_or_boundary")
+            | legacy_accelerator_loss)
+    else:
+        classified["frozen_accelerator_loss_before_pulse"] = legacy_accelerator_loss
+        classified["active_at_pulse"] = ~(
+            classified["frozen_port_loss_before_pulse"]
+            | classified["frozen_accelerator_loss_before_pulse"])
     return classified
+
+
+def add_sparse_loss_positions(capture: pd.DataFrame, events: pd.DataFrame) -> pd.DataFrame:
+    """Add one terminal loss position when S3 stores only active pulse states."""
+    required = {"active_at_pulse", "x_mm", "y_mm", "z_mm"}
+    if not required.issubset(events.columns):
+        return capture
+    missing = events[~events["particle_id"].isin(capture["particle_id"])].copy()
+    if missing.empty:
+        return capture
+    inactive = pd.to_numeric(missing["active_at_pulse"], errors="raise").astype(bool)
+    missing = missing[~inactive].copy()
+    if missing.empty:
+        return capture
+    pulse_time = float(capture["instrument_time_us"].iloc[0])
+    additions = pd.DataFrame(index=missing.index, columns=capture.columns)
+    additions["particle_id"] = missing["particle_id"]
+    additions["instrument_time_us"] = pulse_time
+    for coordinate in ("x_mm", "y_mm", "z_mm"):
+        additions[coordinate] = missing[coordinate]
+    if "inside_oatof_ideal_reference_volume" in additions:
+        additions["inside_oatof_ideal_reference_volume"] = False
+    if "active_at_pulse" in additions:
+        additions["active_at_pulse"] = False
+    return pd.concat([capture, additions], ignore_index=True)
 
 
 def plot_snapshot(capture_path: Path, events_path: Path, baseline_path: Path, joint_path: Path,
@@ -147,6 +183,7 @@ def plot_snapshot(capture_path: Path, events_path: Path, baseline_path: Path, jo
         raise ValueError("pulse capture table is missing required position columns")
     if capture.empty or capture["instrument_time_us"].nunique() != 1:
         raise ValueError("standard pulse snapshot requires one non-empty shared-time state")
+    capture = add_sparse_loss_positions(capture, events)
 
     baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
     joint = json.loads(joint_path.read_text(encoding="utf-8"))

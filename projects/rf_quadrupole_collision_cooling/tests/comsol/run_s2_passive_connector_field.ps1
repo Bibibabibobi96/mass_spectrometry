@@ -21,12 +21,13 @@ if ($Particles -and -not [bool]$contractDocument.permissions.particle_runtime_al
   throw 'The S2 contract does not authorize particle runtime.'
 }
 $gapMm = [double]$contractDocument.nominal_registration.connector_gap_mm
-if (-not [double]::IsFinite($gapMm) -or $gapMm -le 0) {
-  throw 'The S2 connector gap must be finite and positive.'
+if (-not [double]::IsFinite($gapMm) -or $gapMm -lt 0) {
+  throw 'The S2 connector gap must be finite and non-negative.'
 }
 if ([string]::IsNullOrWhiteSpace($RunId)) {
-  $suffix = if ($Particles) { '__sim__comsol__rf-oatof-s2-passive-connector__n100' } `
-    else { '__analysis__comsol__rf-oatof-s2-no-pulse-field__gap1' }
+  $gapLabel = ('{0:g}' -f $gapMm).Replace('.','p')
+  $suffix = if ($Particles) { "__sim__comsol__rf-oatof-s2-connector-gap$gapLabel__n100" } `
+    else { "__analysis__comsol__rf-oatof-s2-no-pulse-field__gap$gapLabel" }
   $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + $suffix
 }
 $mode = if ($Particles) { 'rf_to_oatof_s2_passive_connector_n100' } `
@@ -44,6 +45,7 @@ $logDir = $package.log_dir
 try {
   $task = Join-Path $inputDir 'solve_s2_passive_connector_field.m'
   $geometryBuilder = Join-Path $inputDir 'build_s2_passive_connector_model.m'
+  $fieldBuilder = Join-Path $inputDir 'prepare_s2_joint_field_model.m'
   $runner = Join-Path $inputDir 'run_s2_passive_connector_field.ps1.txt'
   $support = Join-Path $inputDir 'rf_run_artifact_support.ps1.txt'
   $contract = Join-Path $inputDir 'rf_to_oatof_s2_passive_connector.json'
@@ -54,6 +56,7 @@ try {
   $particleOutput = $null
   Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'solve_s2_passive_connector_field.m') -Destination $task
   Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'build_s2_passive_connector_model.m') -Destination $geometryBuilder
+  Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'prepare_s2_joint_field_model.m') -Destination $fieldBuilder
   Copy-Item -LiteralPath $PSCommandPath -Destination $runner
   Copy-Item -LiteralPath $supportSource -Destination $support
   Copy-Item -LiteralPath $contractSource -Destination $contract
@@ -141,6 +144,7 @@ try {
     inputs = [ordered]@{
       task = $task
       geometry_builder = $geometryBuilder
+      field_builder = $fieldBuilder
       runner = $runner
       run_artifact_support = $support
       s2_contract = $contract

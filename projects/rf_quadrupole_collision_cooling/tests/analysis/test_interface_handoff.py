@@ -18,7 +18,8 @@ class InterfaceContractTests(unittest.TestCase):
     def test_interface_stages_are_sequential_and_start_without_physical_claim(self) -> None:
         plan = json.loads(STAGES.read_text(encoding="utf-8"))
         self.assertEqual(plan["status"], "approved_sequential_plan")
-        self.assertEqual(plan["current_stage"], "S2")
+        self.assertEqual(plan["current_stage"], "S3")
+        self.assertEqual(plan["governance"]["stage_relationship"], "cumulative_replacement")
         self.assertTrue(plan["governance"]["sequential_execution_required"])
         self.assertFalse(plan["governance"]["skip_stage_allowed"])
         stages = plan["stages"]

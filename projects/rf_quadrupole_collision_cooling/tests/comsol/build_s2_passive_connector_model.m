@@ -16,6 +16,8 @@ connector = contract.passive_connector_geometry;
 sourceCenter = registration.source_exit_center_instrument_mm(:).';
 targetCenter = registration.target_entry_center_instrument_mm(:).';
 gapMm = registration.connector_gap_mm;
+assert(gapMm >= 0, 'Connector gap cannot be negative.');
+connectorPresent = gapMm > 0;
 assert(abs(targetCenter(1)-sourceCenter(1)-gapMm) < 1e-12, ...
     'Connector endpoints do not reproduce the frozen S2 gap.');
 assert(abs(connector.length_mm-gapMm) < 1e-12, ...
@@ -44,13 +46,16 @@ oaVacuumHalf = oaGeometry.accelerator_bore_half + ...
 
 add_cylinder(geom, 'rfvac', shieldInnerRadius, ...
     registration.source_exit_center_local_mm(3), [tx, 0.0, tz], true);
-add_cylinder(geom, 'connvac', connector.cavity.inner_radius_mm, gapMm, sourceCenter, true);
+if connectorPresent
+    add_cylinder(geom, 'connvac', connector.cavity.inner_radius_mm, gapMm, sourceCenter, true);
+end
 add_oatof_vacuum(geom, oa, oaVacuumHalf, downstreamBufferMm);
 add_oatof_port(geom, connector, oa, oaVacuumHalf);
 add_grid_surfaces(geom, oa);
 geom.feature.create('univacgrid', 'Union');
-geom.feature('univacgrid').selection('input').set( ...
-    {'rfvac','connvac','oavac','portvac','wp_grid1','wp_grid2'});
+vacuumInputs = {'rfvac','oavac','portvac','wp_grid1','wp_grid2'};
+if connectorPresent, vacuumInputs = [vacuumInputs(1), {'connvac'}, vacuumInputs(2:end)]; end
+geom.feature('univacgrid').selection('input').set(vacuumInputs);
 geom.feature('univacgrid').set('intbnd', true);
 geom.feature('univacgrid').set('selresult', 'on');
 
@@ -69,17 +74,23 @@ end
 add_rf_hardware(geom, rfGeometry, tx, tz, shieldInnerRadius, numericalWallMm);
 geom.run;
 
-connectorDomains = comp.selection('geom1_connvac_dom').entities(3);
+if connectorPresent
+    connectorDomains = comp.selection('geom1_connvac_dom').entities(3);
+else
+    connectorDomains = [];
+end
 portDomains = comp.selection('geom1_portvac_dom').entities(3);
 rfVacuumDomains = comp.selection('geom1_rfvac_dom').entities(3);
 oaVacuumDomains = comp.selection('geom1_oavac_dom').entities(3);
-assert(~isempty(connectorDomains) && ~isempty(portDomains), ...
-    'Connector or oaTOF port vacuum selection is empty after geometry build.');
+assert(~isempty(portDomains), 'The oaTOF port vacuum selection is empty after geometry build.');
+assert(~connectorPresent || ~isempty(connectorDomains), ...
+    'The finite connector vacuum selection is empty after geometry build.');
 assert(~isempty(rfVacuumDomains) && ~isempty(oaVacuumDomains), ...
     'Upstream or downstream vacuum selection is empty after geometry build.');
 
 context = struct( ...
     'gap_mm', gapMm, ...
+    'connector_present', connectorPresent, ...
     'source_center_mm', sourceCenter, ...
     'target_center_mm', targetCenter, ...
     'connector_inner_radius_mm', connector.cavity.inner_radius_mm, ...

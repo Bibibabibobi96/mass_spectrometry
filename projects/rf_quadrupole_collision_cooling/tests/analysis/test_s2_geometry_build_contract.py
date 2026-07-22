@@ -60,13 +60,18 @@ class S2GeometryBuildContractTests(unittest.TestCase):
             self.assertIn(f"function {function_name}", support)
         self.assertIn("Get-FileHash -LiteralPath $source -Algorithm SHA256", support)
 
-    def test_runner_and_contract_freeze_one_millimeter_gap(self):
+    def test_contract_keeps_current_one_millimeter_candidate_and_supports_zero_gap(self):
         contract = json.loads(
             (PROJECT_ROOT / "config" / "rf_to_oatof_s2_passive_connector.json").read_text(
                 encoding="utf-8"
             )
         )
         self.assertEqual(contract["nominal_registration"]["connector_gap_mm"], 1.0)
+        self.assertTrue(contract["passive_connector_geometry"]["zero_gap_supported"])
+        self.assertEqual(
+            contract["passive_connector_geometry"]["cavity"]["creation_condition"],
+            "connector_gap_mm > 0",
+        )
         self.assertTrue(contract["permissions"]["geometry_builder_implementation_allowed"])
         self.assertTrue(contract["permissions"]["field_solve_allowed"])
         self.assertTrue(contract["permissions"]["particle_runtime_allowed"])
@@ -78,17 +83,22 @@ class S2GeometryBuildContractTests(unittest.TestCase):
         runner = (
             PROJECT_ROOT / "tests" / "comsol" / "run_s2_passive_connector_field.ps1"
         ).read_text(encoding="utf-8")
-        self.assertIn("build_s2_passive_connector_model", task)
-        self.assertIn("physics.create('es_static'", task)
-        self.assertIn("physics.create('es_rf'", task)
-        self.assertIn("solution.runAll", task)
+        field_builder = (
+            PROJECT_ROOT / "tests" / "comsol" / "prepare_s2_joint_field_model.m"
+        ).read_text(encoding="utf-8")
+        self.assertIn("prepare_s2_joint_field_model", task)
+        self.assertIn("build_s2_passive_connector_model", field_builder)
+        self.assertIn("physics.create('es_static'", field_builder)
+        self.assertIn("physics.create('es_rf'", field_builder)
+        self.assertIn("solution.runAll", field_builder)
         self.assertIn("ChargedParticleTracing", task)
         self.assertIn("particleEnabled = ~isempty(particleInputPath)", task)
         self.assertIn("oa_extraction_pulse_included", task)
         self.assertIn("insideAperture = crossed &&", task)
         self.assertIn("outside_rectangular_oatof_entry", task)
         self.assertNotIn("model.save", task)
-        self.assertIn("{'geom1_connvac_dom','geom1_portvac_dom'}", task)
+        self.assertIn("connector_gap_mm > 0", field_builder)
+        self.assertIn("{'geom1_connvac_dom','geom1_portvac_dom'}", field_builder)
         self.assertNotIn("selection.named('geom1_univacgrid_dom')", task)
         self.assertIn("particle_runtime_allowed", runner)
         self.assertIn("Complete-RfFailedRun", runner)
@@ -111,6 +121,7 @@ class S2GeometryBuildContractTests(unittest.TestCase):
             (PROJECT_ROOT / "tests" / "comsol" / name).read_text(encoding="utf-8")
             for name in (
                 "build_s2_passive_connector_model.m",
+                "prepare_s2_joint_field_model.m",
                 "solve_s2_passive_connector_field.m",
             )
         ]
@@ -133,6 +144,15 @@ class S2GeometryBuildContractTests(unittest.TestCase):
             "100*(-1)",
         ):
             self.assertNotIn(forbidden_literal, combined)
+
+    def test_shared_geometry_branches_on_zero_gap_without_a_second_builder(self):
+        builder = (
+            PROJECT_ROOT / "tests" / "comsol" / "build_s2_passive_connector_model.m"
+        ).read_text(encoding="utf-8")
+        self.assertIn("connectorPresent = gapMm > 0", builder)
+        self.assertIn("if connectorPresent", builder)
+        self.assertIn("connectorDomains = []", builder)
+        self.assertNotIn("add_cylinder(geom, 'connvac', connector.cavity.inner_radius_mm, 0", builder)
 
 
 if __name__ == "__main__":

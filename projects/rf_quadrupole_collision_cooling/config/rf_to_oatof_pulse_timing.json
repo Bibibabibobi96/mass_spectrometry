@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "role": "rf_to_oatof_state_driven_pulse_timing_policy",
-  "status": "candidate_authorized_for_s1_n100_validation",
+  "status": "candidate_authorized_for_continuous_beam_n100_functional_validation",
   "method": "selected_species_ballistic_port_survivor_x_centroid",
   "inputs": {
     "canonical_handoff_state": "runtime particle table",

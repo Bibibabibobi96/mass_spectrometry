@@ -42,6 +42,7 @@ $candidateValidators = @(
   'validate_s1_pulse_timing.py',
   'validate_s1_joint_field.py',
   'validate_s2_passive_connector.py'
+  'validate_s3_pulse_capture.py'
 )
 foreach ($validator in $candidateValidators) {
   & $python (Join-Path $projectRoot "analysis\$validator")

@@ -89,6 +89,21 @@ class S1PulseGeometrySnapshotTests(unittest.TestCase):
                     PROJECT_ROOT / "config" / "rf_to_oatof_s1_joint_field.json",
                     Path(temp) / "out.png", Path(temp) / "out.json")
 
+    def test_sparse_s3_capture_adds_terminal_loss_positions(self) -> None:
+        capture = pd.DataFrame([{
+            "particle_id": 1, "instrument_time_us": 36.0,
+            "x_mm": -48.8, "y_mm": 0.0, "z_mm": -18.4,
+            "active_at_pulse": True,
+        }])
+        events = pd.DataFrame([
+            {"particle_id": 1, "active_at_pulse": 1, "x_mm": 0, "y_mm": 0, "z_mm": 0},
+            {"particle_id": 2, "active_at_pulse": 0, "x_mm": -67.8,
+             "y_mm": 0.6, "z_mm": -18.4},
+        ])
+        expanded = module.add_sparse_loss_positions(capture, events)
+        self.assertEqual(len(expanded), 2)
+        self.assertFalse(bool(expanded.loc[expanded["particle_id"].eq(2), "active_at_pulse"].iloc[0]))
+
 
 if __name__ == "__main__":
     unittest.main()

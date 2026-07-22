@@ -63,7 +63,7 @@ class S2PassiveConnectorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "contract.json"
             path.write_text(json.dumps(contract), encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "connector gap"):
+            with self.assertRaisesRegex(ValueError, "frozen gap"):
                 module.validate_contract(path)
 
     def test_contract_rejects_disabled_particle_runtime_after_authorization(self) -> None:

@@ -35,6 +35,8 @@
   },
   "passive_connector_geometry": {
     "topology": "straight_grounded_cylindrical_vacuum_cavity_terminated_by_existing_oatof_rectangular_port",
+    "presence_rule": "connector_gap_mm == 0 means direct mating with no separate connector domain; connector_gap_mm > 0 creates the finite grounded connector cavity",
+    "zero_gap_supported": true,
     "axial_extent_x_mm": [-68.8, -67.8],
     "length_mm": 1.0,
     "upstream_clear_aperture": {
@@ -46,7 +48,8 @@
       "shape": "cylinder",
       "inner_radius_mm": 3.6,
       "axis": "+x",
-      "potential_V": 0.0
+      "potential_V": 0.0,
+      "creation_condition": "connector_gap_mm > 0"
     },
     "downstream_entry_aperture": {
       "shape": "rectangle",

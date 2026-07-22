@@ -15,11 +15,12 @@ if (-not [bool]$contractDocument.permissions.geometry_builder_implementation_all
   throw 'The S2 contract does not authorize geometry construction.'
 }
 $gapMm = [double]$contractDocument.nominal_registration.connector_gap_mm
-if ([math]::Abs($gapMm-1.0) -gt 1e-12) {
-  throw 'The S2 geometry-only runner requires the approved 1 mm gap.'
+if (-not [double]::IsFinite($gapMm) -or $gapMm -lt 0) {
+  throw 'The S2 geometry-only runner requires a finite non-negative gap.'
 }
 if ([string]::IsNullOrWhiteSpace($RunId)) {
-  $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__build__comsol__rf-oatof-s2-passive-connector__gap1'
+  $gapLabel = ('{0:g}' -f $gapMm).Replace('.','p')
+  $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + "__build__comsol__rf-oatof-s2-connector__gap$gapLabel"
 }
 $mode = 'rf_to_oatof_s2_passive_connector_geometry_build'
 $software = @('COMSOL 6.4','MATLAB R2025b','Python 3.11')
@@ -148,7 +149,7 @@ Write-RfJson -Path $summary -Value ([ordered]@{
 $outputs = @($metrics,$report,$summary)
 Write-RfRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig `
   -Status success -Software $software -Outputs $outputs
-Write-Output "STATUS=PASS RUN_ID=$RunId GAP_MM=1 FIELD_SOLVED=false PARTICLES=false"
+Write-Output "STATUS=PASS RUN_ID=$RunId GAP_MM=$gapMm FIELD_SOLVED=false PARTICLES=false"
 } catch {
   Complete-RfFailedRun -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config `
     -Summary $package.summary -SummaryRole 'rf_to_oatof_s2_passive_connector_geometry_summary' `
