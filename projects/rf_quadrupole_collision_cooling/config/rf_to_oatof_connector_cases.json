@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "role": "rf_to_oatof_passive_connector_topology_cases",
+  "status": "functional_cases_only_stage_unqualified",
+  "default_case_id": "nominal_gap_1mm",
+  "cases": [
+    {
+      "case_id": "nominal_gap_1mm",
+      "connector_gap_mm": 1.0,
+      "topology": "finite_grounded_connector",
+      "evidence_scope": "current_nominal_s3_functional_evidence"
+    },
+    {
+      "case_id": "direct_mating_gap_0mm",
+      "connector_gap_mm": 0.0,
+      "topology": "direct_mating_without_separate_connector_domain",
+      "evidence_scope": "minimal_real_solver_compatibility_check"
+    }
+  ],
+  "constraints": {
+    "allowed_gap_min_mm": 0.0,
+    "negative_gap_allowed": false,
+    "aperture_and_alignment_inherited": true,
+    "qualification_claim_allowed": false
+  }
+}

@@ -1,4 +1,7 @@
-param([string]$RunId = '')
+param(
+  [Parameter(Mandatory)][string]$SourceRunId,
+  [string]$RunId = ''
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -48,7 +51,6 @@ try {
   Copy-Item -LiteralPath $PSCommandPath -Destination $runner
   Copy-Item -LiteralPath $supportSource -Destination $support
   Copy-Item -LiteralPath $s3Source -Destination $s3
-  Copy-Item -LiteralPath (Join-Path $projectRoot 'config\rf_to_oatof_s2_passive_connector.json') -Destination $s2
   Copy-Item -LiteralPath (Join-Path $projectRoot 'config\rf_to_oatof_s1_joint_field.json') -Destination $s1
   Copy-Item -LiteralPath (Join-Path $projectRoot 'config\resolved_geometry.json') -Destination $rf
   Copy-Item -LiteralPath (Join-Path $projectRoot 'config\rf_to_oatof_pulse_timing.json') -Destination $pulsePolicy
@@ -73,16 +75,28 @@ try {
   $oaBaseline = $dependencyPaths['oatof_baseline']
   $oaBuilder = $dependencyPaths['oatof_accelerator_geometry_builder']
 
-  $timingRun = Join-Path (Join-Path $artifactRoot 'runs') ([string]$s3Document.source.timing_state_run_id)
+  $timingRun = Join-Path (Join-Path $artifactRoot 'runs') $SourceRunId
   $sourceManifestOriginal = Join-Path $timingRun 'run_manifest.json'
-  $particleOriginal = Join-Path $timingRun 'inputs\canonical_rf_exit_at_s2_connector.csv'
-  $timingStateOriginal = Join-Path $timingRun ([string]$s3Document.source.timing_state_path)
   & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') `
     $sourceManifestOriginal --require-status success
   if ($LASTEXITCODE -ne 0) { throw 'The frozen S2 timing/source run manifest is invalid.' }
+  $sourceRunConfiguration = Get-Content -LiteralPath (Join-Path $timingRun 'run_config.json') `
+    -Raw -Encoding UTF8 | ConvertFrom-Json
+  if ($sourceRunConfiguration.mode -ne 'rf_to_oatof_s2_passive_connector_n100' -or
+      -not [bool]$sourceRunConfiguration.parameters.particle_tracking) {
+    throw 'S3 requires a successful S2 N=100 particle source run.'
+  }
+  $sourceS2Contract = [string]$sourceRunConfiguration.inputs.s2_contract
+  $particleOriginal = [string]$sourceRunConfiguration.inputs.particle_source
+  $timingStateOriginal = Join-Path $timingRun 'results\s2_passive_connector_particles.csv'
   foreach ($path in @($particleOriginal,$timingStateOriginal)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "S3 source input is missing: $path" }
   }
+  if (-not (Test-Path -LiteralPath $sourceS2Contract -PathType Leaf)) {
+    throw 'S3 source run has no frozen S2 connector contract.'
+  }
+  Copy-Item -LiteralPath $sourceS2Contract -Destination $s2
+  $resolvedS2Document = Get-Content -LiteralPath $s2 -Raw -Encoding UTF8 | ConvertFrom-Json
   $sourceManifest = Join-Path $inputDir 's2_source_run_manifest.json'
   $particleInput = Join-Path $inputDir 'canonical_rf_exit_at_s2_connector.csv'
   $timingState = Join-Path $inputDir 's2_passive_connector_particles.csv'
@@ -112,7 +126,7 @@ try {
   $snapshotMetadata = Join-Path $resultDir 's3_pulse_geometry_snapshot.json'
   $report = Join-Path $logDir 'comsol_s3_pulse_capture.txt'
   $sourceIdentity = [ordered]@{
-    run_id = [string]$s3Document.source.timing_state_run_id
+    run_id = $SourceRunId
     manifest_sha256 = (Get-FileHash -LiteralPath $sourceManifestOriginal -Algorithm SHA256).Hash
     particle_sha256 = (Get-FileHash -LiteralPath $particleOriginal -Algorithm SHA256).Hash
     timing_state_sha256 = (Get-FileHash -LiteralPath $timingStateOriginal -Algorithm SHA256).Hash
@@ -137,6 +151,8 @@ try {
     source_particle_identity = $sourceIdentity
     parameters = [ordered]@{
       source_particles = [int]$s3Document.source.source_particles
+      connector_gap_mm = [double]$resolvedS2Document.nominal_registration.connector_gap_mm
+      connector_case_id = [string]$resolvedS2Document.runtime_case.case_id
       pulse_time_us = [double]$scheduleDocument.derived_pulse_time_us
       pulse_width_us = [double]$scheduleDocument.pulse_width_us
       rise_fall_model = [string]$s3Document.waveform.rise_fall_model

@@ -171,19 +171,39 @@ cpt.selection.named('sel_vac');
 cpt.feature('pp1').set('mp', sprintf('%.17g[kg]', ions.mass_amu(1)*1.66053906660e-27));
 cpt.feature('pp1').set('Z', sprintf('%d', round(ions.charge_state(1))));
 releaseOffset = contract.no_pulse_field_candidate.boundary_probe_inset_mm;
-for index = 1:height(ions)
+directMating = abs(contract.nominal_registration.connector_gap_mm) <= 1e-12;
+aperture = contract.passive_connector_geometry.downstream_entry_aperture;
+insidePhysicalAperture = ...
+    abs(ions.position_y_mm-targetCenter(2)) <= aperture.full_width_y_mm/2+1e-12 & ...
+    abs(ions.position_z_mm-targetCenter(3)) <= aperture.full_height_z_mm/2+1e-12;
+if directMating
+    releaseIndices = find(insidePhysicalAperture);
+else
+    releaseIndices = (1:height(ions)).';
+end
+releaseColumnByIon = zeros(height(ions), 1);
+releaseTimeUs = ions.instrument_time_us;
+for releaseColumn = 1:numel(releaseIndices)
+    index = releaseIndices(releaseColumn);
+    releaseColumnByIon(index) = releaseColumn;
+    restartDtS = 0;
+    if directMating
+        restartDtS = releaseOffset*1e-3/ions.velocity_x_m_s(index);
+    end
+    releaseTimeUs(index) = ions.instrument_time_us(index)+restartDtS*1e6;
     releaseData = [ions.position_x_mm(index)+releaseOffset, ...
-        ions.position_y_mm(index), ions.position_z_mm(index), ...
+        ions.position_y_mm(index)+ions.velocity_y_m_s(index)*restartDtS*1e3, ...
+        ions.position_z_mm(index)+ions.velocity_z_m_s(index)*restartDtS*1e3, ...
         ions.velocity_x_m_s(index), ions.velocity_y_m_s(index), ions.velocity_z_m_s(index)];
     releasePath = fullfile(runtimeDir, sprintf('s2_connector_particle_%03d.txt', ions.particle_id(index)));
     writematrix(releaseData, releasePath, 'Delimiter', 'tab');
-    release = cpt.create(sprintf('rel%03d', index), 'ReleaseFromDataFile', -1);
+    release = cpt.create(sprintf('rel%03d', releaseColumn), 'ReleaseFromDataFile', -1);
     release.set('Filename', releasePath);
     release.set('icolp', '0');
     release.set('VelocitySpecification', 'SpecifyVelocity');
     release.set('InitialVelocity', 'FromFile');
     release.set('icolv', '3');
-    release.set('rt', sprintf('%.17g[us]', ions.instrument_time_us(index)));
+    release.set('rt', sprintf('%.17g[us]', releaseTimeUs(index)));
     release.importData();
 end
 
@@ -201,17 +221,17 @@ electricForce.set('E', { ...
 timeStep = 1 / frequency / candidate.rf_steps_per_period;
 minimumVx = min(ions.velocity_x_m_s);
 transitEstimate = contract.nominal_registration.connector_gap_mm*1e-3/minimumVx;
-timeStart = max(0, min(ions.instrument_time_us)*1e-6-timeStep);
-timeEnd = max(ions.instrument_time_us)*1e-6 + ...
-    candidate.connector_transit_time_margin_factor*transitEstimate;
+timeStart = max(0, min(releaseTimeUs(releaseIndices))*1e-6-timeStep);
+timeEnd = max(releaseTimeUs(releaseIndices))*1e-6 + max(timeStep, ...
+    candidate.connector_transit_time_margin_factor*transitEstimate);
 study = model.study.create('std2');
 time = study.create('time1', 'Transient');
 time.set('tlist', sprintf('range(%.17g,%.17g,%.17g)', timeStart, timeStep, timeEnd));
 time.setEntry('activate', 'es_static', false);
 time.setEntry('activate', 'es_rf', false);
 time.setEntry('activate', 'cpt', true);
-for index = 1:height(ions)
-    cpt.feature(sprintf('rel%03d', index)).set('StudyStep', 'std2/time1');
+for releaseColumn = 1:numel(releaseIndices)
+    cpt.feature(sprintf('rel%03d', releaseColumn)).set('StudyStep', 'std2/time1');
 end
 cpt.feature('pp1').set('StudyStep', 'std2/time1');
 solution = model.sol.create('sol2');
@@ -230,15 +250,20 @@ vx = squeeze(particles.v(:,:,1)); vy = squeeze(particles.v(:,:,2)); vz = squeeze
 if isvector(x)
     x=x(:); y=y(:); z=z(:); vx=vx(:); vy=vy(:); vz=vz(:);
 end
-assert(size(x,2) == height(ions), 'S2 solved particle count differs from the input.');
+assert(size(x,2) == numel(releaseIndices), 'S2 solved particle count differs from released particles.');
 rows = cell(height(ions), 22);
 for index = 1:height(ions)
-    valid = find(isfinite(x(:,index)) & isfinite(y(:,index)) & isfinite(z(:,index)) & ...
-        isfinite(vx(:,index)) & isfinite(vy(:,index)) & isfinite(vz(:,index)));
-    assert(~isempty(valid), 'S2 particle has no finite state.');
-    [state, crossed] = interpolate_x_plane(particles.t, x(:,index), y(:,index), z(:,index), ...
-        vx(:,index), vy(:,index), vz(:,index), targetCenter(1));
-    aperture = contract.passive_connector_geometry.downstream_entry_aperture;
+    if directMating
+        state = struct('t_s', ions.instrument_time_us(index)*1e-6, ...
+            'x_mm', targetCenter(1), 'y_mm', ions.position_y_mm(index), ...
+            'z_mm', ions.position_z_mm(index), 'vx_m_s', ions.velocity_x_m_s(index), ...
+            'vy_m_s', ions.velocity_y_m_s(index), 'vz_m_s', ions.velocity_z_m_s(index));
+        crossed = true;
+    else
+        column = releaseColumnByIon(index);
+        [state, crossed] = interpolate_x_plane(particles.t, x(:,column), y(:,column), z(:,column), ...
+            vx(:,column), vy(:,column), vz(:,column), targetCenter(1));
+    end
     insideAperture = crossed && ...
         abs(state.y_mm-targetCenter(2)) <= aperture.full_width_y_mm/2+1e-12 && ...
         abs(state.z_mm-targetCenter(3)) <= aperture.full_height_z_mm/2+1e-12;
@@ -247,10 +272,14 @@ for index = 1:height(ions)
     elseif crossed
         event = 'downstream_entry_wall'; status = 'lost'; reason = 'outside_rectangular_oatof_entry';
     else
+        column = releaseColumnByIon(index);
+        valid = find(isfinite(x(:,column)) & isfinite(y(:,column)) & isfinite(z(:,column)) & ...
+            isfinite(vx(:,column)) & isfinite(vy(:,column)) & isfinite(vz(:,column)));
+        assert(~isempty(valid), 'S2 released particle has no finite state.');
         last = valid(end);
-        state = struct('t_s', particles.t(last), 'x_mm', x(last,index), ...
-            'y_mm', y(last,index), 'z_mm', z(last,index), ...
-            'vx_m_s', vx(last,index), 'vy_m_s', vy(last,index), 'vz_m_s', vz(last,index));
+        state = struct('t_s', particles.t(last), 'x_mm', x(last,column), ...
+            'y_mm', y(last,column), 'z_mm', z(last,column), ...
+            'vx_m_s', vx(last,column), 'vy_m_s', vy(last,column), 'vz_m_s', vz(last,column));
         event = 'terminal'; status = 'lost'; reason = 'no_oatof_entry_before_end_or_boundary';
     end
     elapsedUs = max(0, state.t_s*1e6-ions.instrument_time_us(index));

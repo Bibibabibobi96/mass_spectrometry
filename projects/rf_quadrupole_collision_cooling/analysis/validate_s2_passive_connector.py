@@ -18,8 +18,8 @@ PROJECT_ROOT = Path(__file__).parents[1]
 DEFAULT_CONTRACT = PROJECT_ROOT / "config" / "rf_to_oatof_s2_passive_connector.json"
 
 
-def _load_relative(path: str) -> dict[str, Any]:
-    resolved = (PROJECT_ROOT / path).resolve()
+def _load_relative(path: str, reference_root: Path = PROJECT_ROOT) -> dict[str, Any]:
+    resolved = (reference_root / path).resolve()
     return json.loads(resolved.read_text(encoding="utf-8"))
 
 
@@ -28,7 +28,9 @@ def _assert_close(actual: float, expected: float, name: str) -> None:
         raise ValueError(f"{name} differs: expected {expected}, got {actual}")
 
 
-def validate_contract(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
+def validate_contract(
+    path: Path = DEFAULT_CONTRACT, reference_root: Path = PROJECT_ROOT,
+) -> dict[str, Any]:
     """Validate inherited geometry, rigid poses and fail-closed S2 permissions."""
     contract = json.loads(path.read_text(encoding="utf-8"))
     if contract.get("role") != "rf_to_oatof_s2_passive_grounded_connector_candidate":
@@ -36,14 +38,15 @@ def validate_contract(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
     if contract.get("stage") != "S2":
         raise ValueError("S2 connector stage differs")
 
-    stage_plan = _load_relative(contract["inputs"]["stage_plan"])
+    stage_plan = _load_relative(contract["inputs"]["stage_plan"], reference_root)
     if stage_plan.get("current_stage") not in {"S2", "S3", "S4", "S5"}:
         raise ValueError("stage plan has not reached or inherited S2")
     stage = next(item for item in stage_plan["stages"] if item["id"] == "S2")
     if stage.get("status") != "nominal_no_pulse_particle_function_passed_stage_unqualified":
         raise ValueError("S2 stage status differs")
 
-    dependency_contract = _load_relative(contract["inputs"]["explicit_dependencies"])
+    dependency_contract = _load_relative(
+        contract["inputs"]["explicit_dependencies"], reference_root)
     if dependency_contract.get("role") != "rf_to_oatof_s2_explicit_source_dependencies":
         raise ValueError("S2 dependency-contract role differs")
     if dependency_contract.get("consumer_project") != "rf_quadrupole_collision_cooling":
@@ -60,15 +63,15 @@ def validate_contract(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
         expected_prefix = Path("projects") / str(provider)
         if provider != "oa_tof" or source.parts[:2] != expected_prefix.parts:
             raise ValueError(f"S2 dependency {dependency.get('id')} escapes oa_tof")
-        if not (PROJECT_ROOT.parents[1] / source).is_file():
+        if not (reference_root.parents[1] / source).is_file():
             raise ValueError(f"S2 dependency {dependency.get('id')} source is missing")
     policy = dependency_contract.get("runtime_policy", {})
     if not policy.get("verify_source_and_frozen_sha256_equal") or policy.get("allow_directory_search"):
         raise ValueError("S2 dependency runtime policy is not fail-closed")
 
-    s1 = _load_relative(contract["inputs"]["s1_joint_field"])
-    rf = _load_relative(contract["inputs"]["rf_resolved_geometry"])
-    interface = _load_relative(contract["inputs"]["interface_reference"])
+    s1 = _load_relative(contract["inputs"]["s1_joint_field"], reference_root)
+    rf = _load_relative(contract["inputs"]["rf_resolved_geometry"], reference_root)
+    interface = _load_relative(contract["inputs"]["interface_reference"], reference_root)
     registration = contract["nominal_registration"]
     gap_mm = float(registration["connector_gap_mm"])
     if gap_mm < 0.0:
@@ -211,8 +214,9 @@ def validate_contract(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--contract", type=Path, default=DEFAULT_CONTRACT)
+    parser.add_argument("--reference-root", type=Path, default=PROJECT_ROOT)
     args = parser.parse_args()
-    contract = validate_contract(args.contract)
+    contract = validate_contract(args.contract, args.reference_root)
     gap_mm = contract["nominal_registration"]["connector_gap_mm"]
     print(
         "S2_PASSIVE_CONNECTOR=PASS "

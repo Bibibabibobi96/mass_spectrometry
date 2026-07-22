@@ -129,19 +129,39 @@ cpt.selection.named('sel_vac');
 cpt.feature('pp1').set('mp', sprintf('%.17g[kg]', ions.mass_amu(1)*1.66053906660e-27));
 cpt.feature('pp1').set('Z', sprintf('%d', round(ions.charge_state(1))));
 releaseOffset = s2.no_pulse_field_candidate.boundary_probe_inset_mm;
-for index = 1:height(ions)
+directMating = abs(s2.nominal_registration.connector_gap_mm) <= 1e-12;
+aperture = s2.passive_connector_geometry.downstream_entry_aperture;
+insidePhysicalAperture = ...
+    abs(ions.position_y_mm-targetCenter(2)) <= aperture.full_width_y_mm/2+1e-12 & ...
+    abs(ions.position_z_mm-targetCenter(3)) <= aperture.full_height_z_mm/2+1e-12;
+if directMating
+    releaseIndices = find(insidePhysicalAperture);
+else
+    releaseIndices = (1:height(ions)).';
+end
+releaseColumnByIon = zeros(height(ions), 1);
+releaseTimeUs = ions.instrument_time_us;
+for releaseColumn = 1:numel(releaseIndices)
+    index = releaseIndices(releaseColumn);
+    releaseColumnByIon(index) = releaseColumn;
+    restartDtS = 0;
+    if directMating
+        restartDtS = releaseOffset*1e-3/ions.velocity_x_m_s(index);
+    end
+    releaseTimeUs(index) = ions.instrument_time_us(index)+restartDtS*1e6;
     releaseData = [ions.position_x_mm(index)+releaseOffset, ...
-        ions.position_y_mm(index), ions.position_z_mm(index), ...
+        ions.position_y_mm(index)+ions.velocity_y_m_s(index)*restartDtS*1e3, ...
+        ions.position_z_mm(index)+ions.velocity_z_m_s(index)*restartDtS*1e3, ...
         ions.velocity_x_m_s(index), ions.velocity_y_m_s(index), ions.velocity_z_m_s(index)];
     releasePath = fullfile(runtimeDir, sprintf('s3_particle_%03d.txt', ions.particle_id(index)));
     writematrix(releaseData, releasePath, 'Delimiter', 'tab');
-    release = cpt.create(sprintf('rel%03d', index), 'ReleaseFromDataFile', -1);
+    release = cpt.create(sprintf('rel%03d', releaseColumn), 'ReleaseFromDataFile', -1);
     release.set('Filename', releasePath);
     release.set('icolp', '0');
     release.set('VelocitySpecification', 'SpecifyVelocity');
     release.set('InitialVelocity', 'FromFile');
     release.set('icolv', '3');
-    release.set('rt', sprintf('%.17g[us]', ions.instrument_time_us(index)));
+    release.set('rt', sprintf('%.17g[us]', releaseTimeUs(index)));
     release.importData();
 end
 
@@ -160,7 +180,7 @@ electricForce.set('E', { ...
     sprintf('%.17g*(-d(Vrf,y))*sin(2*pi*%.17g[Hz]*t+%.17g)+(%s)*(-d(V,y))', rfScale, frequency, phase, gate), ...
     sprintf('%.17g*(-d(Vrf,z))*sin(2*pi*%.17g[Hz]*t+%.17g)+(%s)*(-d(V,z))', rfScale, frequency, phase, gate)});
 timeStep = 1/frequency/s2.functional_candidate.rf_steps_per_period;
-timeStart = max(0, min(ions.instrument_time_us)*1e-6-timeStep);
+timeStart = max(0, min(releaseTimeUs(releaseIndices))*1e-6-timeStep);
 timeEnd = (pulseTimeUs+pulseWidthUs+s3.waveform.post_pulse_tracking_time_us)*1e-6;
 study = model.study.create('std2');
 time = study.create('time1', 'Transient');
@@ -168,8 +188,8 @@ time.set('tlist', sprintf('range(%.17g,%.17g,%.17g)', timeStart, timeStep, timeE
 time.setEntry('activate', 'es_static', false);
 time.setEntry('activate', 'es_rf', false);
 time.setEntry('activate', 'cpt', true);
-for index = 1:height(ions)
-    cpt.feature(sprintf('rel%03d', index)).set('StudyStep', 'std2/time1');
+for releaseColumn = 1:numel(releaseIndices)
+    cpt.feature(sprintf('rel%03d', releaseColumn)).set('StudyStep', 'std2/time1');
 end
 cpt.feature('pp1').set('StudyStep', 'std2/time1');
 solution = model.sol.create('sol2');
@@ -186,25 +206,33 @@ particles = mphparticle(model, 'dataset', 'pdset1');
 x=squeeze(particles.p(:,:,1)); y=squeeze(particles.p(:,:,2)); z=squeeze(particles.p(:,:,3));
 vx=squeeze(particles.v(:,:,1)); vy=squeeze(particles.v(:,:,2)); vz=squeeze(particles.v(:,:,3));
 if isvector(x), x=x(:); y=y(:); z=z(:); vx=vx(:); vy=vy(:); vz=vz(:); end
-assert(size(x,2) == height(ions), 'S3 solved particle count differs from the input.');
-aperture = s2.passive_connector_geometry.downstream_entry_aperture;
+assert(size(x,2) == numel(releaseIndices), 'S3 solved particle count differs from released particles.');
 localPlane = oa.geometry_mm.accelerator_grid2_z+context.oatof_downstream_buffer_mm-releaseOffset;
 eventRows = cell(height(ions), 25);
 captureRows = cell(height(ions), 10); captureCount = 0;
 exitRows = cell(height(ions), 25); exitCount = 0;
 for index = 1:height(ions)
-    valid = find(isfinite(x(:,index)) & isfinite(y(:,index)) & isfinite(z(:,index)) & ...
-        isfinite(vx(:,index)) & isfinite(vy(:,index)) & isfinite(vz(:,index)));
-    assert(~isempty(valid), 'S3 particle has no finite state.');
-    [entryState, crossed] = interpolate_x_plane(particles.t, x(:,index), y(:,index), z(:,index), ...
-        vx(:,index), vy(:,index), vz(:,index), targetCenter(1));
+    if directMating
+        entryState = make_state(ions.instrument_time_us(index)*1e-6, targetCenter(1), ...
+            ions.position_y_mm(index), ions.position_z_mm(index), ...
+            ions.velocity_x_m_s(index), ions.velocity_y_m_s(index), ions.velocity_z_m_s(index));
+        crossed = true;
+    else
+        column = releaseColumnByIon(index);
+        [entryState, crossed] = interpolate_x_plane(particles.t, x(:,column), y(:,column), z(:,column), ...
+            vx(:,column), vy(:,column), vz(:,column), targetCenter(1));
+    end
     insideEntry = crossed && ...
         abs(entryState.y_mm-targetCenter(2)) <= aperture.full_width_y_mm/2+1e-12 && ...
         abs(entryState.z_mm-targetCenter(3)) <= aperture.full_height_z_mm/2+1e-12;
-    [pulseState, pulseFound] = interpolate_time(particles.t, x(:,index), y(:,index), z(:,index), ...
-        vx(:,index), vy(:,index), vz(:,index), pulseTimeUs*1e-6);
-    activeAtPulse = insideEntry && pulseFound && trajectory_active_at_time( ...
-        particles.t, x(:,index), y(:,index), z(:,index), pulseTimeUs*1e-6);
+    pulseFound = false; activeAtPulse = false;
+    if insideEntry
+        column = releaseColumnByIon(index);
+        [pulseState, pulseFound] = interpolate_time(particles.t, x(:,column), y(:,column), z(:,column), ...
+            vx(:,column), vy(:,column), vz(:,column), pulseTimeUs*1e-6);
+        activeAtPulse = pulseFound && trajectory_active_at_time( ...
+            particles.t, x(:,column), y(:,column), z(:,column), pulseTimeUs*1e-6);
+    end
     if activeAtPulse
         source = oa.particle_source;
         insideReference = ...
@@ -216,15 +244,23 @@ for index = 1:height(ions)
             pulseState.x_mm,pulseState.y_mm,pulseState.z_mm,pulseState.vx_m_s, ...
             pulseState.vy_m_s,pulseState.vz_m_s,insideReference,true};
     end
-    [exitState, exited] = interpolate_z_plane(particles.t, x(:,index), y(:,index), z(:,index), ...
-        vx(:,index), vy(:,index), vz(:,index), localPlane);
+    exited = false;
+    if insideEntry
+        column = releaseColumnByIon(index);
+        [exitState, exited] = interpolate_z_plane(particles.t, x(:,column), y(:,column), z(:,column), ...
+            vx(:,column), vy(:,column), vz(:,column), localPlane);
+    end
     if exited
         state=exitState; event='local_accelerator_exit'; status='transmitted'; reason='none';
     elseif crossed && ~insideEntry
         state=entryState; event='downstream_entry_wall'; status='lost'; reason='outside_rectangular_oatof_entry';
     else
-        last=valid(end); state=make_state(particles.t(last),x(last,index),y(last,index),z(last,index), ...
-            vx(last,index),vy(last,index),vz(last,index));
+        column = releaseColumnByIon(index);
+        valid = find(isfinite(x(:,column)) & isfinite(y(:,column)) & isfinite(z(:,column)) & ...
+            isfinite(vx(:,column)) & isfinite(vy(:,column)) & isfinite(vz(:,column)));
+        assert(~isempty(valid), 'S3 released particle has no finite state.');
+        last=valid(end); state=make_state(particles.t(last),x(last,column),y(last,column),z(last,column), ...
+            vx(last,column),vy(last,column),vz(last,column));
         event='terminal'; status='lost';
         if crossed, reason='accelerator_electrode_or_boundary'; else, reason='connector_wall_or_no_entry'; end
     end

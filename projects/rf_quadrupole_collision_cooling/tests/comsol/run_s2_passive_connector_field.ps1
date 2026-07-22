@@ -1,6 +1,7 @@
 param(
   [string]$RunId = '',
-  [switch]$Particles
+  [switch]$Particles,
+  [string]$ConnectorCaseId = 'nominal_gap_1mm'
 )
 
 Set-StrictMode -Version Latest
@@ -12,15 +13,23 @@ $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling'
 $contractSource = Join-Path $projectRoot 'config\rf_to_oatof_s2_passive_connector.json'
+$connectorCasesSource = Join-Path $projectRoot 'config\rf_to_oatof_connector_cases.json'
+$connectorResolverSource = Join-Path $projectRoot 'analysis\resolve_s2_connector_case.py'
+$connectorValidatorSource = Join-Path $projectRoot 'analysis\validate_s2_passive_connector.py'
+$interfaceHandoffSource = Join-Path $projectRoot 'analysis\build_interface_handoff.py'
+$oatofHandoffSource = Join-Path $projectRoot 'analysis\build_oatof_handoff.py'
 $dependencyContractSource = Join-Path $projectRoot 'config\rf_to_oatof_s2_dependencies.json'
-$contractDocument = Get-Content -LiteralPath $contractSource -Raw -Encoding UTF8 | ConvertFrom-Json
-if (-not [bool]$contractDocument.permissions.field_solve_allowed) {
+$baseContractDocument = Get-Content -LiteralPath $contractSource -Raw -Encoding UTF8 | ConvertFrom-Json
+if (-not [bool]$baseContractDocument.permissions.field_solve_allowed) {
   throw 'The S2 contract does not authorize a field solve.'
 }
-if ($Particles -and -not [bool]$contractDocument.permissions.particle_runtime_allowed) {
+if ($Particles -and -not [bool]$baseContractDocument.permissions.particle_runtime_allowed) {
   throw 'The S2 contract does not authorize particle runtime.'
 }
-$gapMm = [double]$contractDocument.nominal_registration.connector_gap_mm
+$connectorCasesDocument = Get-Content -LiteralPath $connectorCasesSource -Raw -Encoding UTF8 | ConvertFrom-Json
+$selectedCases = @($connectorCasesDocument.cases | Where-Object { $_.case_id -eq $ConnectorCaseId })
+if ($selectedCases.Count -ne 1) { throw "Connector case must resolve uniquely: $ConnectorCaseId" }
+$gapMm = [double]$selectedCases[0].connector_gap_mm
 if (-not [double]::IsFinite($gapMm) -or $gapMm -lt 0) {
   throw 'The S2 connector gap must be finite and non-negative.'
 }
@@ -49,6 +58,12 @@ try {
   $runner = Join-Path $inputDir 'run_s2_passive_connector_field.ps1.txt'
   $support = Join-Path $inputDir 'rf_run_artifact_support.ps1.txt'
   $contract = Join-Path $inputDir 'rf_to_oatof_s2_passive_connector.json'
+  $baseContract = Join-Path $inputDir 'rf_to_oatof_s2_passive_connector_base.json'
+  $connectorCases = Join-Path $inputDir 'rf_to_oatof_connector_cases.json'
+  $connectorResolver = Join-Path $inputDir 'resolve_s2_connector_case.py'
+  $connectorValidator = Join-Path $inputDir 'validate_s2_passive_connector.py'
+  $interfaceHandoff = Join-Path $inputDir 'build_interface_handoff.py'
+  $oatofHandoff = Join-Path $inputDir 'build_oatof_handoff.py'
   $dependencyContract = Join-Path $inputDir 'rf_to_oatof_s2_dependencies.json'
   $s1Contract = Join-Path $inputDir 'rf_to_oatof_s1_joint_field.json'
   $rfResolved = Join-Path $inputDir 'rf_resolved_geometry.json'
@@ -59,7 +74,24 @@ try {
   Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'prepare_s2_joint_field_model.m') -Destination $fieldBuilder
   Copy-Item -LiteralPath $PSCommandPath -Destination $runner
   Copy-Item -LiteralPath $supportSource -Destination $support
-  Copy-Item -LiteralPath $contractSource -Destination $contract
+  Copy-Item -LiteralPath $contractSource -Destination $baseContract
+  Copy-Item -LiteralPath $connectorCasesSource -Destination $connectorCases
+  Copy-Item -LiteralPath $connectorResolverSource -Destination $connectorResolver
+  Copy-Item -LiteralPath $connectorValidatorSource -Destination $connectorValidator
+  Copy-Item -LiteralPath $interfaceHandoffSource -Destination $interfaceHandoff
+  Copy-Item -LiteralPath $oatofHandoffSource -Destination $oatofHandoff
+  & $python $connectorResolver --base $baseContract --cases $connectorCases `
+    --case-id $ConnectorCaseId --output $contract
+  if ($LASTEXITCODE -ne 0) { throw 'S2 connector-case resolution failed.' }
+  $validatorEnvironment = Save-RfEnvironment -Names @('PYTHONPATH')
+  try {
+    $env:PYTHONPATH = $repoRoot
+    & $python $connectorValidator --contract $contract --reference-root $projectRoot
+    if ($LASTEXITCODE -ne 0) { throw 'Resolved S2 connector-case contract is invalid.' }
+  } finally {
+    Restore-RfEnvironment -Names @('PYTHONPATH') -Snapshot $validatorEnvironment
+  }
+  $contractDocument = Get-Content -LiteralPath $contract -Raw -Encoding UTF8 | ConvertFrom-Json
   Copy-Item -LiteralPath $dependencyContractSource -Destination $dependencyContract
   Copy-Item -LiteralPath (Join-Path $projectRoot 'config\rf_to_oatof_s1_joint_field.json') -Destination $s1Contract
   Copy-Item -LiteralPath (Join-Path $projectRoot 'config\resolved_geometry.json') -Destination $rfResolved
@@ -94,17 +126,22 @@ try {
     $handoffBuilder = Join-Path $inputDir 'build_oatof_handoff.py'
     $handoffProjectRoot = Join-Path $inputDir 'handoff_project_snapshot'
     $handoffConfigDir = Join-Path $handoffProjectRoot 'config'
-    New-Item -ItemType Directory -Path $handoffConfigDir -Force | Out-Null
+    $handoffTargetConfigDir = Join-Path $inputDir 'oa_tof\config'
+    New-Item -ItemType Directory -Path $handoffConfigDir,$handoffTargetConfigDir -Force | Out-Null
     $handoffContract = Join-Path $handoffConfigDir 'rf_to_oatof_handoff.json'
     $energyMatchContract = Join-Path $handoffConfigDir 'rf_to_oatof_energy_match_candidate.json'
     $sourceInterfaceContract = Join-Path $handoffConfigDir 'interface_contract.json'
     $energyMatchContractSource = Join-Path $projectRoot 'config\rf_to_oatof_energy_match_candidate.json'
     $sourceInterfaceContractSource = Join-Path $projectRoot 'config\interface_contract.json'
+    $sourceBaseline = Join-Path $handoffConfigDir 'baseline.json'
+    $targetBaseline = Join-Path $handoffTargetConfigDir 'baseline.json'
     Copy-Item -LiteralPath $sourceManifestOriginal -Destination $sourceManifest
     Copy-Item -LiteralPath $sourceEventsOriginal -Destination $sourceEvents
     Copy-Item -LiteralPath $sourceMetadataOriginal -Destination $sourceMetadata
     Copy-Item -LiteralPath (Join-Path $projectRoot 'analysis\build_oatof_handoff.py') -Destination $handoffBuilder
     Copy-Item -LiteralPath (Join-Path $projectRoot 'config\rf_to_oatof_handoff.json') -Destination $handoffContract
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'config\baseline.json') -Destination $sourceBaseline
+    Copy-Item -LiteralPath $oaBaseline -Destination $targetBaseline
     Copy-Item -LiteralPath $energyMatchContractSource -Destination $energyMatchContract
     Copy-Item -LiteralPath $sourceInterfaceContractSource -Destination $sourceInterfaceContract
     $particleInput = Join-Path $inputDir 'canonical_rf_exit_at_s2_connector.csv'
@@ -148,6 +185,12 @@ try {
       runner = $runner
       run_artifact_support = $support
       s2_contract = $contract
+      s2_base_contract = $baseContract
+      connector_cases = $connectorCases
+      connector_case_resolver = $connectorResolver
+      connector_case_validator = $connectorValidator
+      interface_handoff_library = $interfaceHandoff
+      oatof_handoff_library = $oatofHandoff
       dependency_contract = $dependencyContract
       s1_joint_field_contract = $s1Contract
       rf_resolved_geometry = $rfResolved
@@ -159,6 +202,7 @@ try {
     source_particle_identity = if ($Particles) { $sourceIdentity } else { $null }
     parameters = [ordered]@{
       connector_gap_mm = $gapMm
+      connector_case_id = $ConnectorCaseId
       field_bases = @('oatof_static','rf_unit_100_V')
       oa_extraction_pulse = $false
       particle_tracking = [bool]$Particles
@@ -173,6 +217,8 @@ try {
     $runConfiguration.inputs.source_metadata = $sourceMetadata
     $runConfiguration.inputs.handoff_builder = $handoffBuilder
     $runConfiguration.inputs.handoff_contract = $handoffContract
+    $runConfiguration.inputs.handoff_source_baseline = $sourceBaseline
+    $runConfiguration.inputs.handoff_target_baseline = $targetBaseline
     $runConfiguration.inputs.energy_match_contract = $energyMatchContract
     $runConfiguration.inputs.source_interface_contract = $sourceInterfaceContract
     $runConfiguration.inputs.particle_ion = $particleIon
