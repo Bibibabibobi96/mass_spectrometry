@@ -12,7 +12,10 @@
 4. 操作 SIMION 时读[`docs/SIMION.md`](docs/SIMION.md)。
 5. 只有引入机械正式几何时才读/创建 CAD 文档。
 
-已关闭的网格策略筛选记录：[`docs/history/20260722_rf-mesh-strategy-screen.md`](docs/history/20260722_rf-mesh-strategy-screen.md)。
+详细验证与S1集成演进记录：
+[`docs/history/20260722_rf-validation-and-s1-integration.md`](docs/history/20260722_rf-validation-and-s1-integration.md)；
+已关闭的网格策略筛选记录：
+[`docs/history/20260722_rf-mesh-strategy-screen.md`](docs/history/20260722_rf-mesh-strategy-screen.md)。
 
 软件细节不相互横向引用；统一参数与跨求解器结论只写入 `PROJECT.md`。
 
