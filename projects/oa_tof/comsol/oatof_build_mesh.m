@@ -3,13 +3,8 @@ t_mesh_start = tic;
 mesh1 = comp1.mesh.create('mesh1');
 mesh1.label('Mesh (hauto=6, refined at release, accelerator + ring stack)');
 mesh1.feature('size').set('hauto', 6);
-sz1 = mesh1.feature.create('sz1', 'Size');
-sz1.label('Fine mesh on release volume');
-sz1.selection.geom('geom1', 3);
-sz1.selection.named('geom1_relvol_dom');
-sz1.set('custom', 'on');
-sz1.set('hmaxactive', true);
-sz1.set('hmax', '0.1[mm]');
+add_comsol_size_feature(mesh1,'sz1','Fine mesh on release volume', ...
+    'geom1',3,'geom1_relvol_dom','0.1[mm]');
 % GUI-visible whole-accelerator selection for diagnostics and migration
 % regression checks.  All bounds are expressions tied to the accelerator
 % parameters: the old hardcoded x=[-50,50] box stopped following the
@@ -24,7 +19,6 @@ comp1.selection('selbracket').set('xmin', 'x_accel_center-accel_shield_half');
 comp1.selection('selbracket').set('xmax', 'x_accel_center+accel_shield_half');
 comp1.selection('selbracket').set('ymin', '-accel_shield_half');
 comp1.selection('selbracket').set('ymax', 'accel_shield_half');
-comp1.selection('selbracket').set('zmin', '0');
 comp1.selection('selbracket').set('zmin', 'z_accel_origin');
 comp1.selection('selbracket').set('zmax', 'z_accel_grid2');
 comp1.selection('selbracket').set('condition', 'inside');
@@ -74,13 +68,9 @@ comp1.selection('selreflregion').set('axis', [0 0 1]);
 % default mesh.
 comp1.selection('selreflregion').set('top', 'L_flight+L_refl+ring_thickness+2');
 comp1.selection('selreflregion').set('condition', 'inside');
-szrefl = mesh1.feature.create('szrefl', 'Size');
-szrefl.label('Finer mesh on ring-stack region (resolve the graded field)');
-szrefl.selection.geom('geom1', 3);
-szrefl.selection.named('selreflregion');
-szrefl.set('custom', 'on');
-szrefl.set('hmaxactive', true);
-szrefl.set('hmax', sprintf('%g[mm]', mesh_hmax_refl_mm));
+add_comsol_size_feature(mesh1,'szrefl', ...
+    'Finer mesh on ring-stack region (resolve the graded field)', ...
+    'geom1',3,'selreflregion',sprintf('%g[mm]',mesh_hmax_refl_mm));
 % Layered local refinement for field diagnostics: uniformly setting the
 % full r=ring_outer_r cylinder to 5mm creates millions of elements and
 % makes every particle scan prohibitively expensive. The useful field
@@ -107,27 +97,18 @@ if use_local_edge_refinement
     comp1.selection('selreflrimmesh').set('axis', [0 0 1]);
     comp1.selection('selreflrimmesh').set('top', 'L_flight+L_refl+ring_thickness+2');
     comp1.selection('selreflrimmesh').set('condition', 'intersects');
-    szreflrim = mesh1.feature.create('szreflrim', 'Size');
-    szreflrim.label(sprintf('Fine mesh at reflectron ring inner edge (%.3gmm)', local_rim_hmax_mm));
-    szreflrim.selection.geom('geom1', 2);
-    szreflrim.selection.named('selreflrimmesh');
-    szreflrim.set('custom', 'on');
-    szreflrim.set('hmaxactive', true);
-    szreflrim.set('hmax', sprintf('%g[mm]', local_rim_hmax_mm));
+    add_comsol_size_feature(mesh1,'szreflrim', ...
+        sprintf('Fine mesh at reflectron ring inner edge (%.3gmm)',local_rim_hmax_mm), ...
+        'geom1',2,'selreflrimmesh',sprintf('%g[mm]',local_rim_hmax_mm));
 end
 % COMSOL resolves overlapping Size features in feature-tree order.  The
 % accelerator selection overlaps the broad ring-stack/drift sizing region,
 % so szaccel must be the last Size before FreeTet.  Creating it earlier made
 % the GUI show 1 mm while the built mesh silently remained the old coarse
 % 274576-element mesh.  Keep this order as a numerical-geometry gate.
-szaccel = mesh1.feature.create('szaccel', 'Size');
-szaccel.label(sprintf('Accelerator convergence mesh (hmax %.3g mm)', ...
-    mesh_hmax_accel_mm));
-szaccel.selection.geom('geom1', 3);
-szaccel.selection.named('selbracket');
-szaccel.set('custom', 'on');
-szaccel.set('hmaxactive', true);
-szaccel.set('hmax', 'mesh_hmax_accel');
+add_comsol_size_feature(mesh1,'szaccel', ...
+    sprintf('Accelerator convergence mesh (hmax %.3g mm)',mesh_hmax_accel_mm), ...
+    'geom1',3,'selbracket','mesh_hmax_accel');
 mesh1.feature.create('ftet1', 'FreeTet');
 mesh1.run;
 mi = mphmeshstats(model, 'mesh1');

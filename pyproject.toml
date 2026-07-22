@@ -14,6 +14,14 @@ dependencies = [
 
 [project.optional-dependencies]
 cad = ["pywin32>=306; platform_system == 'Windows'"]
+dev = ["ruff==0.15.22"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E9", "F"]
 
 [tool.pytest.ini_options]
 testpaths = ["projects"]

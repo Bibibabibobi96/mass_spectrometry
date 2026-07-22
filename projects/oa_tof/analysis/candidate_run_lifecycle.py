@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import shutil
@@ -26,18 +25,10 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _hash_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest().upper()
-
-
 def _file_record(path: Path, recorded_path: Path | None = None) -> dict[str, Any]:
     record: dict[str, Any] = {"path": str(recorded_path or path), "exists": path.is_file()}
     if path.is_file():
-        record.update(bytes=path.stat().st_size, sha256=_hash_file(path))
+        record.update(bytes=path.stat().st_size, sha256=sha256(path))
     return record
 
 

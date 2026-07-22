@@ -13,7 +13,7 @@ $workspaceRoot = Split-Path -Parent $repoRoot
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 $project = Get-Content -LiteralPath (Join-Path $projectRootPath 'config\project.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $projectId = [string]$project.project_id
-& $python (Join-Path $repoRoot 'common\multipole\ensure_artifact_project.py') `
+& $python (Join-Path $repoRoot 'common\contracts\artifact_project.py') `
   --artifact-projects-root (Join-Path $workspaceRoot 'artifacts\projects') --project-id $projectId
 if ($LASTEXITCODE -ne 0) { throw 'Multipole artifact project initialization failed.' }
 if ([string]::IsNullOrWhiteSpace($RunId)) {

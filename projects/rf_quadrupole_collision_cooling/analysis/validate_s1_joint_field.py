@@ -38,7 +38,7 @@ def validate(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
     inputs = contract["inputs"]
     interface = load(PROJECT_ROOT / inputs["interface_contract"])
     rf = load(PROJECT_ROOT / inputs["rf_resolved_geometry"])
-    oatof = load((PROJECT_ROOT / inputs["oatof_baseline"]).resolve())
+    load((PROJECT_ROOT / inputs["oatof_baseline"]).resolve())
     oatof_mode = load((PROJECT_ROOT / inputs["oatof_formal_mode"]).resolve())
     pulse_timing = load(PROJECT_ROOT / inputs["pulse_timing_policy"])
     if pulse_timing.get("method") != "selected_species_ballistic_port_survivor_x_centroid":

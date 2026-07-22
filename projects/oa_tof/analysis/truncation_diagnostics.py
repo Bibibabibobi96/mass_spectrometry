@@ -7,7 +7,7 @@ import hashlib
 import json
 import platform
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import matplotlib
 

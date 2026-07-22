@@ -199,7 +199,6 @@ def plot_snapshot(capture_path: Path, events_path: Path, baseline_path: Path, jo
     wall = g["shield_wall"]
     zmin = g["shield_z_min"]
     zmax = g["shield_z_max"]
-    bore_zmin = g["shield_bore_z_min"]
     port_z0 = g["port_center_z"] - g["port_height_z"] / 2
     port_y0 = -g["port_width_y"] / 2
 

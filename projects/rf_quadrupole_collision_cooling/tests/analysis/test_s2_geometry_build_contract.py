@@ -4,6 +4,7 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+REPOSITORY_ROOT = PROJECT_ROOT.parents[1]
 
 
 class S2GeometryBuildContractTests(unittest.TestCase):
@@ -56,20 +57,21 @@ class S2GeometryBuildContractTests(unittest.TestCase):
         for token in ("runAll", "mesh.create", "physics.create", "ChargedParticleTracing"):
             self.assertNotIn(token, task)
 
-    def test_project_local_run_support_owns_artifact_lifecycle(self):
-        support = (
-            PROJECT_ROOT
-            / "tests"
-            / "support"
-            / "rf_run_artifact_support.ps1"
-        ).read_text(encoding="utf-8")
+    def test_project_wrapper_uses_repository_run_artifact_lifecycle(self):
+        wrapper = (PROJECT_ROOT / "tests" / "support" / "rf_run_artifact_support.ps1").read_text(
+            encoding="utf-8"
+        )
+        support = (REPOSITORY_ROOT / "common" / "contracts" / "run_artifact_support.ps1").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("common\\contracts\\run_artifact_support.ps1", wrapper)
         for function_name in (
-            "New-RfRunPackage",
-            "Write-RfRunManifest",
-            "Save-RfEnvironment",
-            "Restore-RfEnvironment",
-            "Copy-RfFrozenDependency",
-            "Complete-RfFailedRun",
+            "New-RunPackage",
+            "Write-RunManifest",
+            "Save-RunEnvironment",
+            "Restore-RunEnvironment",
+            "Copy-FrozenDependency",
+            "Complete-FailedRun",
         ):
             self.assertIn(f"function {function_name}", support)
         self.assertIn("Get-FileHash -LiteralPath $source -Algorithm SHA256", support)

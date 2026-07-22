@@ -24,3 +24,9 @@
 格式转换。`simion_transport.lua`由四、六、八极杆实际调用，项目目录只保留工况与
 附属结构适配。当前能力不选择机械正式几何，也不覆盖网格收敛、屏蔽优化、碰撞或空间电荷。理论与符号以
 [`../../docs/multipoles/index.md`](../../docs/multipoles/index.md)为入口。
+
+SIMION的通用beam/source-state文本序列化位于`common/simion/`；本目录只负责把多极杆canonical或
+ION11坐标适配到该求解器无关序列化层。run目录建立、失败收尾、manifest及canonical粒子状态验证位于
+`common/contracts/`，四、六、八极杆使用同一实现。
+SIMION 2020有限三维运行器按`gem2pa → refine → PA句柄稳定等待 → 直接CLI fly`严格串行；不得在
+`simion lua`任务内再次用`simion.command("fly")`重入同一PA操作。

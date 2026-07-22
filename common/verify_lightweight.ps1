@@ -29,6 +29,8 @@ if ($LASTEXITCODE -ne 0 -or $pythonVersion -ne '3.11') {
 & (Join-Path $PSScriptRoot 'comsol\test_livelink_environment.ps1')
 & $PythonExe (Join-Path $PSScriptRoot 'verify_development_standards.py')
 if ($LASTEXITCODE -ne 0) { throw 'Development-standards gate failed.' }
+& $PythonExe -m ruff check (Join-Path $repoRoot 'common') (Join-Path $repoRoot 'projects')
+if ($LASTEXITCODE -ne 0) { throw 'Python Ruff static analysis failed.' }
 & $PythonExe (Join-Path $PSScriptRoot 'contracts\build_project_registry.py') --check
 if ($LASTEXITCODE -ne 0) { throw 'Project registry validation failed.' }
 & $PythonExe -m unittest discover -s (Join-Path $PSScriptRoot 'contracts') -p 'test_*.py'

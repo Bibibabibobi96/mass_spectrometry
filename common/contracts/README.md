@@ -4,6 +4,10 @@
 单位是否完整；Python语义层判断项目选择、能力成熟度、模式、指标、设计变量和约束是否成立。
 二者不能互相取代。
 
+`artifact_project.py`统一artifact项目根索引，`particle_state.py`统一SIMION/COMSOL适配后的粒子事件字段、
+身份、三维位置/速度、全局时间和RF相位校验；`run_artifact_support.ps1`统一PowerShell运行器创建目录、
+冻结输入、失败收尾和三件套manifest。它们不得内置器件参数，项目包装器只允许保留兼容入口。
+
 ## 项目发现
 
 项目身份和能力的权威源是各项目`config/project.json`。根`config/project_registry.json`是生成索引，

@@ -196,7 +196,6 @@ def evaluate_response(
     high = float(derived["theory_high_mass_Th"])
     acceptance = mode["functional_screen"]["acceptance"]
     inside = (masses >= low) & (masses <= high)
-    outside = ~inside
     half_maximum = 0.5 * float(np.max(transmission))
     half_indices = np.flatnonzero(transmission >= half_maximum)
     observed_low = float(masses[half_indices[0]])

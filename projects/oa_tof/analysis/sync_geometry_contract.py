@@ -194,8 +194,6 @@ def render_program(contract: dict) -> str:
 
 
 def render_fly2(contract: dict) -> str:
-    geometry = contract["geometry_mm"]
-    accelerator = contract["geometry_derivation"]["accelerator"]
     source = contract["particle_source"]
     target = contract["validation_target"]
     runtime = contract["simion_runtime"]

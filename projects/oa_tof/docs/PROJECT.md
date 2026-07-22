@@ -21,6 +21,8 @@
 - 正式COMSOL MPH、SIMION四实例自包含交付和SolidWorks 2022的25组件装配均已建立并通过各自
   资产门禁。SIMION正式PA顺序为`shield 1 < reflectron 2 < accelerator 3 < detector 4`。
 - 当前只完成oa-TOF分析器本体；尚未与RF四极杆正式连接。
+- 正式网格构建器已调用根`common/comsol/`局部Size原语；具体选择、hmax值和收敛资格仍由本项目合同
+  与后续网格专项决定，公共函数不改变现有数值结论。
 - CAD读取入口已用运行`20260722_121500__test__cad__load-only`对当前正式MPH完成真实只读冒烟：25个
   manifest特征和25个可导出实体均可解析，未求解、未导出STEP、未修改Formal。该结果只分层证明
   LiveLink与CAD模型读取，不替代SolidWorks同步或Formal门禁。

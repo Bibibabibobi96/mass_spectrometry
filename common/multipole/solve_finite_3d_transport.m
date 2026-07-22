@@ -1,5 +1,7 @@
 % Solve finite 3D circular-rod fields and direct RF/zero-RF particle transport.
 
+addpath(fullfile(fileparts(mfilename('fullpath')),'..','comsol'));
+
 reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
 baselinePath = getenv('MULTIPOLE_L3_BASELINE');
 familyOperatingPath = getenv('MULTIPOLE_L3_FAMILY_OPERATING');
@@ -76,48 +78,26 @@ try
     geom.feature('workvol').set('h', sprintf('%.17g[mm]', vacuumHeight));
     geom.feature('workvol').set('pos', {'0','0',sprintf('%.17g[mm]', d.vacuum_z_min)});
     geom.feature('workvol').set('selresult', 'on');
-    rodTags = cell(1, electrodeCount);
-    for k = 1:electrodeCount
-        rodTags{k} = sprintf('rod%d', k);
-        geom.feature.create(rodTags{k}, 'Cylinder');
-        geom.feature(rodTags{k}).set('r', sprintf('%.17g[mm]', rods(k).radius_mm));
-        geom.feature(rodTags{k}).set('h', sprintf('%.17g[mm]', d.rod_length));
-        geom.feature(rodTags{k}).set('pos', { ...
-            sprintf('%.17g[mm]', rods(k).center_x_mm), ...
-            sprintf('%.17g[mm]', rods(k).center_y_mm), ...
-            sprintf('%.17g[mm]', rods(k).z_min_mm)});
-        geom.feature(rodTags{k}).set('selresult', 'on');
-    end
-    geom.feature.create('shieldO', 'Cylinder');
-    geom.feature('shieldO').set('r', sprintf('%.17g[mm]', shieldOuter));
-    geom.feature('shieldO').set('h', sprintf('%.17g[mm]', vacuumHeight));
-    geom.feature('shieldO').set('pos', {'0','0',sprintf('%.17g[mm]', d.vacuum_z_min)});
-    geom.feature.create('shieldH', 'Cylinder');
-    geom.feature('shieldH').set('r', sprintf('%.17g[mm]', g.grounded_shield_inner_radius));
-    geom.feature('shieldH').set('h', sprintf('%.17g[mm]', vacuumHeight));
-    geom.feature('shieldH').set('pos', {'0','0',sprintf('%.17g[mm]', d.vacuum_z_min)});
-    geom.feature.create('shield', 'Difference');
-    geom.feature('shield').selection('input').set({'shieldO'});
-    geom.feature('shield').selection('input2').set({'shieldH'});
-    geom.feature('shield').set('selresult', 'on');
-    create_cylinder(geom, 'outerIn', shieldOuter, g.grounded_outer_end_cap_thickness, d.vacuum_z_min);
-    create_cylinder(geom, 'outerOut', shieldOuter, g.grounded_outer_end_cap_thickness, ...
+    rodTags=create_multipole_round_rods(geom,rodArray,'rod','z',[0 0 0]);
+    create_comsol_cylindrical_shell(geom,'shield',g.grounded_shield_inner_radius,shieldOuter,vacuumHeight,d.vacuum_z_min);
+    create_comsol_cylinder(geom, 'outerIn', shieldOuter, g.grounded_outer_end_cap_thickness, d.vacuum_z_min);
+    create_comsol_cylinder(geom, 'outerOut', shieldOuter, g.grounded_outer_end_cap_thickness, ...
         d.exit_outer_ground_inner_z);
-    create_apertured_plate(geom, 'capIn', shieldOuter, ...
+    create_comsol_apertured_plate(geom, 'capIn', shieldOuter, ...
         g.entrance_interface.aperture_radius_mm, g.entrance_interface.plate_thickness_mm, ...
         d.entrance_plate_z_min);
-    create_apertured_plate(geom, 'capOut', shieldOuter, ...
+    create_comsol_apertured_plate(geom, 'capOut', shieldOuter, ...
         g.exit_interface.aperture_radius_mm, g.exit_interface.plate_thickness_mm, ...
         d.exit_plate_z_min);
     connectorTags = {};
     if g.entrance_interface.connector_length_mm > 0
-        create_apertured_plate(geom, 'connIn', shieldOuter, ...
+        create_comsol_apertured_plate(geom, 'connIn', shieldOuter, ...
             g.entrance_interface.aperture_radius_mm, g.entrance_interface.connector_length_mm, ...
             d.entrance_plate_z_min-g.entrance_interface.connector_length_mm);
         connectorTags{end+1} = 'connIn';
     end
     if g.exit_interface.connector_length_mm > 0
-        create_apertured_plate(geom, 'connOut', shieldOuter, ...
+        create_comsol_apertured_plate(geom, 'connOut', shieldOuter, ...
             g.exit_interface.aperture_radius_mm, g.exit_interface.connector_length_mm, ...
             d.exit_plate_z_max);
         connectorTags{end+1} = 'connOut';
@@ -155,15 +135,8 @@ try
     end
 
     mesh = comp.mesh.create('mesh1');
-    mesh.feature('size').set('hauto', contract.mesh.global_auto_level);
-    mesh.feature.create('szwork', 'Size');
-    mesh.feature('szwork').selection.geom('geom1', 3);
-    mesh.feature('szwork').selection.named('geom1_workvol_dom');
-    mesh.feature('szwork').set('custom', 'on');
-    mesh.feature('szwork').set('hmaxactive', true);
-    mesh.feature('szwork').set('hmax', sprintf('%.17g[mm]', ...
-        contract.mesh.working_region_maximum_element_size_mm));
-    mesh.feature.create('ftet1', 'FreeTet');
+    configure_comsol_mesh(mesh,'geom1',contract.mesh.global_auto_level,'geom1_workvol_dom', ...
+        contract.mesh.working_region_maximum_element_size_mm);
     mesh.run;
     meshInfo = mphmeshstats(model, 'mesh1');
     assert(~meshInfo.isempty && meshInfo.iscomplete && ~meshInfo.hasproblems, ...
@@ -394,25 +367,6 @@ dataset.set('solution', solutionTag);
 plotGroup = model.result.create(plotTag, 'PlotGroup3D');
 plotGroup.label(label); plotGroup.set('data', datasetTag);
 plotGroup.create('traj', 'ParticleTrajectories'); plotGroup.run;
-end
-
-function create_cylinder(geom, tag, radius, height, zMin)
-geom.feature.create(tag, 'Cylinder');
-geom.feature(tag).set('r', sprintf('%.17g[mm]', radius));
-geom.feature(tag).set('h', sprintf('%.17g[mm]', height));
-geom.feature(tag).set('pos', {'0','0',sprintf('%.17g[mm]', zMin)});
-geom.feature(tag).set('selresult', 'on');
-end
-
-function create_apertured_plate(geom, tag, outerRadius, apertureRadius, thickness, zMin)
-blankTag = [tag 'Blank'];
-holeTag = [tag 'Hole'];
-create_cylinder(geom, blankTag, outerRadius, thickness, zMin);
-create_cylinder(geom, holeTag, apertureRadius, thickness, zMin);
-geom.feature.create(tag, 'Difference');
-geom.feature(tag).selection('input').set({blankTag});
-geom.feature(tag).selection('input2').set({holeTag});
-geom.feature(tag).set('selresult', 'on');
 end
 
 function draw_interface_plate(zMin, zMax, apertureRadius, yLimit)

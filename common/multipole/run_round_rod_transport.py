@@ -13,7 +13,7 @@ from pathlib import Path
 
 from common.contracts.artifact_naming import validate_run_id
 from common.multipole.analyze_round_rod_screen import analyze
-from common.multipole.ensure_artifact_project import ensure_artifact_project
+from common.contracts.artifact_project import ensure_artifact_project
 from common.multipole.family_contract import from_high_order_baseline, operating_contract_document
 from common.multipole.ideal_transport import evaluate_round_rod_contract, write_results
 

@@ -17,22 +17,20 @@ $repoRoot = Split-Path -Parent (Split-Path -Parent $projectRoot)
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling'
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 if ([string]::IsNullOrWhiteSpace($RunId)) {
     $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + "__sim__simion__rf-transport__$($Mode.Replace('_','-'))"
 }
-& $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
-if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
-$runDir = Join-Path $artifactRoot "runs\$RunId"
-$candidateDir = Join-Path $runDir 'simion'
-$resultDir = Join-Path $runDir 'results'
-$logDir = Join-Path $runDir 'logs'
-$inputDir = Join-Path $runDir 'inputs'
+$package=New-RunPackage -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RunId $RunId `
+    -Project 'rf_quadrupole_collision_cooling' -Mode $Mode -Software @('SIMION 2020','Python 3.11') `
+    -AdditionalDirectories @('simion')
+$runDir=$package.run_dir
+$candidateDir=Join-Path $runDir 'simion'
+$resultDir=$package.result_dir
+$logDir=$package.log_dir
+$inputDir=$package.input_dir
 $simion = 'C:\Program Files\SIMION-2020\simion.exe'
 $officialIob = 'C:\Program Files\SIMION-2020\examples\quad\quad_monolithic.iob'
-
-if (Test-Path -LiteralPath $runDir) {
-    throw "Run directory already exists: $RunId"
-}
 
 $isMassFilter = $Mode -eq 'mass_filter_reference'
 if ($isMassFilter -and -not [string]::IsNullOrWhiteSpace($ParticleTablePath)) {
@@ -67,7 +65,6 @@ if ($Mode -eq 'transport_interface_readiness') {
     }
 }
 
-New-Item -ItemType Directory -Path $candidateDir,$resultDir,$runDir,$logDir,$inputDir -Force | Out-Null
 $frozenBaseline = Join-Path $inputDir 'baseline.json'
 $frozenMode = Join-Path $inputDir 'mode.json'
 $frozenResolved = Join-Path $inputDir 'resolved_contract.json'
@@ -112,9 +109,11 @@ Copy-Item -LiteralPath (Join-Path $repoRoot 'common\multipole\simion_transport.l
 Copy-Item -LiteralPath $officialIob -Destination (Join-Path $candidateDir 'quad_monolithic.iob') -Force
 $flyPath = Join-Path $candidateDir 'quad_monolithic.fly2'
 $sourceStatesLua = Join-Path $inputDir 'source_states.lua'
-& (Join-Path $repoRoot '.venv\Scripts\python.exe') `
-    (Join-Path $projectRoot 'analysis\generate_fixed_fly2.py') $ionPath $flyPath `
-    --axial-offset-mm $SourceAxialOffsetMm --source-states-lua $sourceStatesLua
+Push-Location $repoRoot
+try {
+    & $python -m common.multipole.simion_particle_source --ion-table $ionPath --fly2 $flyPath `
+        --axial-offset-mm $SourceAxialOffsetMm --source-states-lua $sourceStatesLua
+} finally { Pop-Location }
 if ($LASTEXITCODE -ne 0) { throw 'Fixed FLY2 generation failed.' }
 
 $resolved = Get-Content -LiteralPath $frozenResolved -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -217,10 +216,11 @@ if ($summary.particles -ne $expectedParticles -or $summary.collision_model -ne '
     (-not $isMassFilter -and $summary.transmission -lt 0.8)) {
     throw "SIMION transport gate failed: $($summary | ConvertTo-Json -Compress)"
 }
-& $python (Join-Path $projectRoot 'analysis\verify_particle_state_contract.py') `
-    --state $particleStateCsv --particles $ionPath --interface $frozenInterface `
+Push-Location $repoRoot
+try { & $python -m common.contracts.particle_state `
+    --state $particleStateCsv --particles $ionPath --source-format ion11 --contract $frozenInterface `
     --axial-offset-mm $SourceAxialOffsetMm --frequency-hz $FrequencyHz --phase-rad ($phaseDeg*[Math]::PI/180) `
-    --solver SIMION --output $stateContractReport
+    --solver SIMION --output $stateContractReport } finally { Pop-Location }
 if ($LASTEXITCODE -ne 0) { throw 'Particle-state contract gate failed.' }
 $massResponseCsv = Join-Path $resultDir 'mass-response__simion.csv'
 $massMetricsJson = Join-Path $resultDir 'mass-filter__simion-functional-metrics.json'
@@ -251,18 +251,15 @@ if ($isMassFilter) {
     $rootSummary.figure = 'results/mass-response__simion-passband.png'
 }
 $rootSummary | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $runSummary -Encoding UTF8
-$manifestArguments = @(
-    (Join-Path $repoRoot 'common\contracts\write_run_manifest.py'), '--run-config', $runConfigPath,
-    '--status', 'success', '--software', 'SIMION 2020',
-    '--output', $trajectoryCsv, '--output', $summaryJson, '--output', $particleStateCsv,
-    '--output', $stateContractReport, '--output', (Join-Path $logDir 'simion_stdout.txt'),
-    '--output', (Join-Path $logDir 'simion_stderr.txt'), '--output', (Join-Path $candidateDir 'quad_monolithic.iob'),
-    '--output', (Join-Path $candidateDir 'quad_monolithic.pa0'), '--output', $flyPath,
-    '--output', $iobReport, '--output', $shaPath, '--output', $runSummary
+$manifestOutputs = @(
+    $trajectoryCsv,$summaryJson,$particleStateCsv,$stateContractReport,
+    (Join-Path $logDir 'simion_stdout.txt'),(Join-Path $logDir 'simion_stderr.txt'),
+    (Join-Path $candidateDir 'quad_monolithic.iob'),(Join-Path $candidateDir 'quad_monolithic.pa0'),
+    $flyPath,$iobReport,$shaPath,$runSummary
 )
 if ($isMassFilter) {
-    $manifestArguments += @('--output', $massResponseCsv, '--output', $massMetricsJson, '--output', $massResponseFigure)
+    $manifestOutputs += @($massResponseCsv,$massMetricsJson,$massResponseFigure)
 }
-& $python $manifestArguments
-if ($LASTEXITCODE -ne 0) { throw 'Run-manifest generation failed.' }
+Write-RunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfigPath -Status success `
+    -Software @('SIMION 2020','Python 3.11') -Outputs $manifestOutputs
 "STATUS=PASS RUN_ID=$RunId HITS=$($summary.hits) TRANSMISSION=$($summary.transmission)"

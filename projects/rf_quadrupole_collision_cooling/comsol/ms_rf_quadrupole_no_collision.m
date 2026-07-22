@@ -3,7 +3,8 @@ function result = ms_rf_quadrupole_no_collision()
 
 projectRoot = fileparts(fileparts(mfilename('fullpath')));
 addpath(projectRoot);
-paths = rf_quadrupole_paths();
+repoRoot=fileparts(fileparts(projectRoot));
+addpath(fullfile(repoRoot,'common','comsol'));
 resolved = load_rf_quadrupole_contract();
 interface = jsondecode(fileread(fullfile(projectRoot,'config','interface_contract.json')));
 baseline = resolved;
@@ -74,15 +75,9 @@ p.set('z_acceptance',sprintf('%.12g[mm]',interface.planes.acceptance_detector.z_
 p.set('m_ion',sprintf('%.15g[kg]',source.mass_amu*1.66053906660e-27));
 p.set('q_mathieu','4*e_const*V_rf/(m_ion*(2*pi*f_rf)^2*r0^2)');
 
-rodTags = cell(1,numel(rods));
-for k=1:numel(rods)
-    rodTags{k}=sprintf('rod%d',k);
-    geom.feature.create(rodTags{k},'Cylinder');
+rodTags=create_multipole_round_rods(geom,rodArray,'rod','z',[0 0 0]);
+for k=1:numel(rodTags)
     geom.feature(rodTags{k}).label(sprintf('Reference circular rod %d',k));
-    geom.feature(rodTags{k}).set('r',sprintf('%.17g[mm]',rods(k).radius_mm));
-    geom.feature(rodTags{k}).set('h',sprintf('%.17g[mm]',rods(k).z_max_mm-rods(k).z_min_mm));
-    geom.feature(rodTags{k}).set('pos',{sprintf('%.17g[mm]',rods(k).center_x_mm),sprintf('%.17g[mm]',rods(k).center_y_mm),sprintf('%.17g[mm]',rods(k).z_min_mm)});
-    geom.feature(rodTags{k}).set('selresult','on');
 end
 
 geom.feature.create('vacuum','Block');
@@ -147,13 +142,10 @@ for item={{'entrance','entrance'},{'exit','exit_enclosure'},{'detector','detecto
 end
 
 mesh=comp.mesh.create('mesh1'); mesh.label('Candidate tetrahedral mesh');
-meshSize=mesh.feature('size'); meshSize.set('hauto',meshAuto);
 if isfinite(meshHmaxMm)
-    meshSize.set('custom','on');
-    meshSize.set('hmax',sprintf('%.12g[mm]',meshHmaxMm));
     mesh.label(sprintf('Candidate tetrahedral mesh (hmax %.12g mm)',meshHmaxMm));
 end
-mesh.feature.create('ftet1','FreeTet'); mesh.run;
+configure_comsol_mesh(mesh,'geom1',meshAuto,'',meshHmaxMm);mesh.run;
 mi=mphmeshstats(model,'mesh1'); assert(~mi.isempty && mi.iscomplete && ~mi.hasproblems,'Mesh gate failed.');
 std1=model.study.create('std1'); std1.label('Stationary RF unit field'); std1.create('stat1','Stationary');
 sol1=model.sol.create('sol1'); sol1.study('std1'); sol1.createAutoSequence('std1'); sol1.attach('std1'); sol1.runAll;
