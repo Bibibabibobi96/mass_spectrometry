@@ -11,7 +11,7 @@ param(
     [ValidateRange(1, 30)]
     [int]$StartupRetryDelaySeconds = 5,
 
-    [ValidateRange(10, 600)]
+    [ValidateRange(10, 3600)]
     [int]$StartupReportTimeoutSeconds = 120,
 
     [ValidateRange(0, 64)]

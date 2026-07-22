@@ -6,10 +6,12 @@
 [`common/comsol/README.md`](../../../common/comsol/README.md)的定义。
 
 脚本通过`../load_rf_quadrupole_contract.m`读取解析发布，持久化四根圆杆、入口孔板、出口壳体、
-检测器、真空选择、材料、ES/CPT、按粒子表行数生成的`ReleaseFromDataFile`节点、RF
+检测器、真空选择、材料、ES/CPT、按粒子表行数生成的`ReleaseFromDataFile`节点、RF或RF+DC
 `ElectricForce`、两个Study/已attach Solver、粒子数据集和轨迹图。几何、检测层厚度、RF和接口平面
 不得在脚本中另设第二份数值。
-静态 ES 使用杆组 ±100 V 单位场，CPT 乘 `V_rf/100[V]` 的正弦波；模型内不存在 Collisions 特征。
+传输模式使用杆组±100 V差分单位场，CPT乘`V_rf/100[V]`正弦波。质量过滤模式在同一几何中显式求解
+`Vdiff`差分单位势和`Vstatic`公共偏置/静态端部势，CPT叠加`(V_dc+V_rf sin)/100 V`倍差分场与静态场；
+不依赖COMSOL自动生成的`es/es2`变量名。两个模式都不存在Collisions特征。
 固定源位置按候选 IOB 实测基向量映射到 PA/COMSOL 坐标；速度则以 SIMION 实际轨迹的入口斜率为准：
 Fly2 `standard_beam` 的角度在 IOB 放置前按局部束流基向量解释，故 `vSim=(vx,vy,vz)` 必须写为
 `(-vy,-vz,vx)`。不能将位置变换机械复用于速度，也不能只做轴向交换。
@@ -30,6 +32,11 @@ Fly2 `standard_beam` 的角度在 IOB 放置前按局部束流基向量解释，
 启动器，随后重开MPH并通过GUI `Study -> Compute`复算，最后写入并复验manifest。MPH中持久化
 `z_rod_exit=85.4 mm`、`z_handoff=90.2 mm`、`z_acceptance=95.2 mm`及GUI可见
 `exp_phase_raw`数据导出节点。
+
+`tests/comsol/run_mass_filter_candidate.ps1`是RF+DC功能扫描入口：从同一N=25源派生七个只改变质量的
+单质量表，在一个LiveLink会话中顺序求解，并按冻结的中心透过、端点抑制和对比度判据汇总。每个质量
+只保留`particle_state.csv`和`solver_summary.json`，101.5 Th额外保存一份GUI可检查MPH；L1与SIMION
+权威响应以manifest校验后冻结进运行包，比较差异只作诊断，不构成网格或分辨能力资格。
 
 标准逐粒子结果为`<mode>_particle_state_<run>.csv`；官方回归的mode仍为`transport_no_collision`。
 每个粒子写出精确source、杆端、

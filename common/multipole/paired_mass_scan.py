@@ -82,3 +82,35 @@ def generate_paired_ion_table(
     }
     metadata_path.write_text(json.dumps(metadata, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return metadata
+
+
+def generate_paired_case_tables(
+    source_path: Path,
+    output_directory: Path,
+    masses_Th: list[float],
+    expected_particles_per_mass: int,
+) -> list[dict[str, Any]]:
+    """Write one solver-ready ION table per mass from the same source rows."""
+    source_rows = load_ion_rows(source_path)
+    if len(source_rows) != int(expected_particles_per_mass):
+        raise ValueError("source row count differs from expected_particles_per_mass")
+    output_directory.mkdir(parents=True, exist_ok=True)
+    cases: list[dict[str, Any]] = []
+    masses = validate_masses(masses_Th)
+    for mass in masses:
+        token = f"{mass:.12g}".replace(".", "p")
+        destination = output_directory / f"mass_{token}_Th.ion"
+        mass_text = f"{mass:.12g}"
+        rows = []
+        for source in source_rows:
+            row = source.copy()
+            row[1] = mass_text
+            rows.append(row)
+        write_ion_table(destination, rows)
+        cases.append({
+            "mass_Th": mass,
+            "particles": len(rows),
+            "particle_table": str(destination.resolve()),
+            "particle_table_sha256": sha256(destination),
+        })
+    return cases

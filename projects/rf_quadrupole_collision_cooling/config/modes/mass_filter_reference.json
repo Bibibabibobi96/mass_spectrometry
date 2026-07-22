@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
   "mode": "mass_filter_reference",
-  "status": "simion_functional_scan_pass",
+  "status": "dual_solver_functional_scan_pass",
   "source": "SIMION 2020 examples/quad/quad.lua defaults",
   "theory_contract": {
     "model_level": "L0",
@@ -47,7 +47,7 @@
   },
   "solver_screen": {
     "status": "pass",
-    "authority_run_id": "20260722_210300__sim__simion__mass-filter__n175__r03",
+    "authority_run_id": "20260722_231100__sim__simion__mass-filter__shared-geometry-n175__r01",
     "paired_source_masses_Th": [96.0, 99.0, 99.5, 101.5, 103.0, 103.5, 106.0],
     "particles_per_mass": 25,
     "acceptance": {
@@ -57,10 +57,33 @@
     },
     "claim_limit": "SIMION finite-geometry functional response only; no cross-solver or resolving-power qualification."
   },
+  "comsol_screen": {
+    "status": "pass",
+    "authority_run_id": "20260723_002556__sim__comsol__mass-filter__rf-dc-n175",
+    "paired_source_masses_Th": [96.0, 99.0, 99.5, 101.5, 103.0, 103.5, 106.0],
+    "particles_per_mass": 25,
+    "acceptance_source": "solver_screen.acceptance",
+    "result": {
+      "center_transmission": 1.0,
+      "maximum_endpoint_transmission": 0.08,
+      "center_to_endpoint_contrast": 0.92
+    },
+    "claim_limit": "COMSOL finite-geometry RF+DC functional response only; no mesh, resolving-power or accuracy qualification."
+  },
+  "cross_solver_functional_comparison": {
+    "status": "characterized",
+    "authority_run_id": "20260723_002556__sim__comsol__mass-filter__rf-dc-n175",
+    "maximum_absolute_transmission_difference": 0.2,
+    "maximum_difference_mass_Th": 99.0,
+    "acceptance_tolerance_frozen": false,
+    "claim_limit": "Sparse functional comparison only; no numerical agreement or resolving-power qualification."
+  },
   "numerics": {
     "simion_rf_steps_per_period": 40,
     "simion_trajectory_quality": 10,
+    "comsol_rf_steps_per_period": 80,
+    "comsol_mesh_auto_level": 1,
     "maximum_time_us": 80.0
   },
-  "execution_policy": "L1 and SIMION functional scans are allowed; cross-solver and resolving-power qualification require separately approved Candidate work."
+  "execution_policy": "L1, SIMION and COMSOL functional scans are allowed; mesh, numerical-agreement and resolving-power qualification require separately approved Candidate work."
 }

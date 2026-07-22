@@ -1,13 +1,17 @@
-function contract = load_rf_quadrupole_contract()
+function contract = load_rf_quadrupole_contract(contractPath)
 %LOAD_RF_QUADRUPOLE_CONTRACT Load and validate the generated design release.
 
 projectRoot = fileparts(mfilename('fullpath'));
-contractPath = fullfile(projectRoot,'config','resolved_geometry.json');
+if nargin<1 || isempty(contractPath)
+    contractPath = fullfile(projectRoot,'config','resolved_geometry.json');
+end
 assert(isfile(contractPath),'rfquad:MissingResolvedContract', ...
-    'Missing resolved_geometry.json; run analysis/resolve_contract.py --write.');
+    'Missing resolved contract: %s. Run analysis/resolve_contract.py --write.',contractPath);
 contract = jsondecode(fileread(contractPath));
-assert(contract.schema_version==1 && ...
-    strcmp(contract.role,'rf_quadrupole_resolved_official_contract_do_not_edit'), ...
+allowedRoles={'rf_quadrupole_resolved_official_contract_do_not_edit', ...
+    'rf_quadrupole_resolved_interface_readiness_contract_do_not_edit', ...
+    'rf_quadrupole_resolved_mass_filter_contract_do_not_edit'};
+assert(contract.schema_version==1 && any(strcmp(contract.role,allowedRoles)), ...
     'rfquad:ResolvedSchema','Unsupported resolved contract schema.');
 g=contract.geometry_mm;
 array=contract.rod_array_mm;

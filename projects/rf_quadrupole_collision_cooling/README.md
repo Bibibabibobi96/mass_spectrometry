@@ -59,7 +59,9 @@ S2–S3连接功能闭环记录：
   连接和未验证碰撞模型不得恢复为当前入口。未来碰撞模式必须从共享契约重新建立。
 - SIMION 几何入口：[`simion/geometry/quad_monolithic.gem`](simion/geometry/quad_monolithic.gem)
 - SIMION RF-only/RF+DC程序：[`simion/programs/quad_transport.lua`](simion/programs/quad_transport.lua)
-- COMSOL 构建/GUI复验入口：[`tests/comsol/run_transport_candidate.ps1`](tests/comsol/run_transport_candidate.ps1)
+- COMSOL RF-only构建/GUI复验入口：[`tests/comsol/run_transport_candidate.ps1`](tests/comsol/run_transport_candidate.ps1)；
+  RF+DC七质量功能入口：[`tests/comsol/run_mass_filter_candidate.ps1`](tests/comsol/run_mass_filter_candidate.ps1)，
+  使用配对源输出L0/L1/SIMION/COMSOL比较CSV与规范图，仅中心质量保存一份MPH。
 - SIMION 构建/验证入口：[`tests/simion/run_transport_candidate.ps1`](tests/simion/run_transport_candidate.ps1)
  ；同一入口的`mass_filter_reference`模式生成配对七质量表并输出质量响应CSV、指标JSON和规范图。
 - SIMION IOB 结构门禁：[`tests/simion/inspect_builtin_quad_reference.lua`](tests/simion/inspect_builtin_quad_reference.lua)

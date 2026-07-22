@@ -123,14 +123,19 @@ def scanline_passband(u_over_v: float) -> dict[str, float]:
 
 
 def validate_mass_filter_reference(baseline: dict[str, Any], mode: dict[str, Any]) -> dict[str, Any]:
-    """Validate the frozen SIMION reference without claiming solver qualification."""
+    """Validate the frozen mass-filter reference without claiming numerical qualification."""
     operating = from_quadrupole_contract(baseline, mode)
     if mode.get("schema_version") != 3:
         raise ValueError("mass-filter reference schema_version must be 3")
     if mode.get("mode") != "mass_filter_reference":
         raise ValueError("mode must be mass_filter_reference")
-    if mode.get("status") != "simion_functional_scan_pass":
-        raise ValueError("mass-filter reference must record the current SIMION functional status")
+    allowed_statuses = {"simion_functional_scan_pass", "dual_solver_functional_scan_pass"}
+    if mode.get("status") not in allowed_statuses:
+        raise ValueError("mass-filter reference must record an approved functional status")
+    if mode["status"] == "dual_solver_functional_scan_pass":
+        comsol_screen = mode.get("comsol_screen", {})
+        if comsol_screen.get("status") != "pass" or not comsol_screen.get("authority_run_id"):
+            raise ValueError("dual-solver status requires a passing COMSOL authority run")
 
     theory = mode.get("theory_contract", {})
     expected_contract = {

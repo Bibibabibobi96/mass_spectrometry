@@ -1,43 +1,58 @@
 function result = ms_rf_quadrupole_no_collision()
-%MS_RF_QUADRUPOLE_NO_COLLISION Build the SIMION-reference RF-only candidate.
+%MS_RF_QUADRUPOLE_NO_COLLISION Build a traceable RF transport or RF+DC mass-filter case.
 
 projectRoot = fileparts(fileparts(mfilename('fullpath')));
 addpath(projectRoot);
 repoRoot=fileparts(fileparts(projectRoot));
 addpath(fullfile(repoRoot,'common','comsol'));
-resolved = load_rf_quadrupole_contract();
 interface = jsondecode(fileread(fullfile(projectRoot,'config','interface_contract.json')));
-baseline = resolved;
-source = resolved.particle_source;
-mode = resolved.mode;
 runLabel = 'baseline';
 runMode = 'transport_no_collision';
 operatingPoint = 'official_100amu_2eV';
-meshAuto = mode.numerics.comsol_mesh_auto_level;
+meshAuto = 1;
 meshHmaxMm = NaN;
 sourceAxialOffsetMm = 0;
+saveModel = true;
+writeDetailedOutputs = true;
 ionPath = fullfile(projectRoot,'config','particles','official_fixed_25.ion');
 runConfigPath = getenv('RFQUAD_RUN_CONFIG');
 assert(~isempty(runConfigPath), 'RFQUAD_RUN_CONFIG is required for a traceable run.');
-if ~isempty(runConfigPath)
-    runConfig = jsondecode(fileread(runConfigPath));
-    assert(strcmp(runConfig.project, 'rf_quadrupole_collision_cooling') && ...
-        any(strcmp(runConfig.mode, {'transport_no_collision','transport_interface_readiness'})), ...
-        'RF quadrupole run-config project or mode mismatch.');
-    runMode = runConfig.mode;
-    if isfield(runConfig, 'run_id'), runLabel = runConfig.run_id; end
-    if isfield(runConfig, 'operating_point'), operatingPoint = runConfig.operating_point; end
-    if isfield(runConfig, 'particle_table_path'), ionPath = runConfig.particle_table_path; end
-    if isfield(runConfig, 'rf_peak_v'), mode.rf.amplitude_V_peak = runConfig.rf_peak_v; end
-    if isfield(runConfig, 'frequency_hz'), mode.rf.frequency_Hz = runConfig.frequency_hz; end
-    if isfield(runConfig, 'comsol_rf_steps_per_period')
-        mode.numerics.comsol_rf_steps_per_period = runConfig.comsol_rf_steps_per_period;
-    end
-    if isfield(runConfig, 'comsol_mesh_auto_level'), meshAuto = runConfig.comsol_mesh_auto_level; end
-    if isfield(runConfig, 'comsol_hmax_mm'), meshHmaxMm = runConfig.comsol_hmax_mm; end
-    if isfield(runConfig, 'source_axial_offset_mm'), sourceAxialOffsetMm = runConfig.source_axial_offset_mm; end
-    comsolOutputDir = runConfig.comsol_dir;
-    resultsOutputDir = runConfig.results_dir;
+runConfig = jsondecode(fileread(runConfigPath));
+assert(strcmp(runConfig.project, 'rf_quadrupole_collision_cooling') && ...
+    any(strcmp(runConfig.mode, {'transport_no_collision','transport_interface_readiness','mass_filter_reference'})), ...
+    'RF quadrupole run-config project or mode mismatch.');
+runMode = runConfig.mode;
+resolvedPath=fullfile(projectRoot,'config','resolved_geometry.json');
+if isfield(runConfig,'inputs') && isfield(runConfig.inputs,'resolved_contract')
+    resolvedPath=runConfig.inputs.resolved_contract;
+    if ~isfile(resolvedPath), resolvedPath=fullfile(projectRoot,resolvedPath); end
+end
+resolved = load_rf_quadrupole_contract(resolvedPath);
+baseline = resolved; source = resolved.particle_source; mode = resolved.mode;
+if isfield(runConfig, 'run_id'), runLabel = runConfig.run_id; end
+if isfield(runConfig, 'operating_point'), operatingPoint = runConfig.operating_point; end
+if isfield(runConfig, 'particle_table_path'), ionPath = runConfig.particle_table_path; end
+if isfield(runConfig, 'rf_peak_v')
+    if isfield(mode.rf,'amplitude_V_peak'), mode.rf.amplitude_V_peak = runConfig.rf_peak_v;
+    else, mode.rf.amplitude_V_zero_to_peak_per_group = runConfig.rf_peak_v; end
+end
+if isfield(runConfig, 'frequency_hz'), mode.rf.frequency_Hz = runConfig.frequency_hz; end
+if isfield(runConfig, 'comsol_rf_steps_per_period'), mode.numerics.comsol_rf_steps_per_period = runConfig.comsol_rf_steps_per_period; end
+if isfield(runConfig, 'comsol_mesh_auto_level'), meshAuto = runConfig.comsol_mesh_auto_level; end
+if isfield(runConfig, 'comsol_hmax_mm'), meshHmaxMm = runConfig.comsol_hmax_mm; end
+if isfield(runConfig, 'source_axial_offset_mm'), sourceAxialOffsetMm = runConfig.source_axial_offset_mm; end
+if isfield(runConfig, 'save_model'), saveModel = logical(runConfig.save_model); end
+if isfield(runConfig, 'write_detailed_outputs'), writeDetailedOutputs = logical(runConfig.write_detailed_outputs); end
+comsolOutputDir = runConfig.comsol_dir; resultsOutputDir = runConfig.results_dir;
+isMassFilter=strcmp(runMode,'mass_filter_reference');
+if isfield(mode.rf,'amplitude_V_peak'), rfPeakV=mode.rf.amplitude_V_peak; else, rfPeakV=mode.rf.amplitude_V_zero_to_peak_per_group; end
+if isfield(mode.rf,'phase_rad'), rfPhaseRad=mode.rf.phase_rad; else, rfPhaseRad=deg2rad(mode.rf.phase_deg); end
+dcV=0; axisV=0; staticEntranceV=0; staticExitV=0; staticDetectorV=0;
+if isMassFilter
+    dcV=mode.rf.dc_amplitude_V_per_group; axisV=mode.rf.axis_common_mode_offset_V;
+    staticEntranceV=mode.static_electrodes_V.entrance_plate;
+    staticExitV=mode.static_electrodes_V.exit_enclosure;
+    staticDetectorV=mode.static_electrodes_V.detector;
 end
 assert(meshAuto > 0 && isfinite(meshAuto), 'COMSOL mesh-auto level must be positive.');
 if ~(meshHmaxMm > 0 && isfinite(meshHmaxMm)), meshHmaxMm = NaN; end
@@ -53,7 +68,7 @@ import com.comsol.model.util.*
 tag = 'RFQuadTransport';
 if any(strcmp(cell(ModelUtil.tags()),tag)), ModelUtil.remove(tag); end
 model = ModelUtil.create(tag);
-model.label('SIMION reference quadrupole - RF-only transport');
+if isMassFilter, model.label('Reference quadrupole - RF+DC mass filter'); else, model.label('SIMION reference quadrupole - RF-only transport'); end
 comp = model.component.create('comp1',true);
 geom = comp.geom.create('geom1',3);
 geom.lengthUnit('mm');
@@ -67,13 +82,17 @@ p.set('r_rod',sprintf('%.12g[mm]',g.rod_radius),'Circular rod radius');
 p.set('R_center',sprintf('%.12g[mm]',g.rod_center_radius),'Rod center radius');
 p.set('z_rod_min',sprintf('%.12g[mm]',g.rod_z_min));
 p.set('L_rod',sprintf('%.12g[mm]',g.rod_length));
-p.set('V_rf',sprintf('%.12g[V]',rf.amplitude_V_peak));
+p.set('V_rf',sprintf('%.12g[V]',rfPeakV));
+p.set('V_dc',sprintf('%.12g[V]',dcV));
+p.set('V_axis',sprintf('%.12g[V]',axisV));
+p.set('phi_rf',sprintf('%.12g[rad]',rfPhaseRad));
 p.set('f_rf',sprintf('%.12g[Hz]',rf.frequency_Hz));
 p.set('z_rod_exit',sprintf('%.12g[mm]',interface.planes.rod_exit.z_mm),'Rod-exit diagnostic plane');
 p.set('z_handoff',sprintf('%.12g[mm]',interface.planes.handoff.z_mm),'Downstream component handoff plane');
 p.set('z_acceptance',sprintf('%.12g[mm]',interface.planes.acceptance_detector.z_mm),'Standalone acceptance detector plane');
 p.set('m_ion',sprintf('%.15g[kg]',source.mass_amu*1.66053906660e-27));
 p.set('q_mathieu','4*e_const*V_rf/(m_ion*(2*pi*f_rf)^2*r0^2)');
+p.set('a_mathieu','8*e_const*V_dc/(m_ion*(2*pi*f_rf)^2*r0^2)');
 
 rodTags=create_multipole_round_rods(geom,rodArray,'rod','z',[0 0 0]);
 for k=1:numel(rodTags)
@@ -131,7 +150,10 @@ vacDomains=comp.selection('sel_vac').entities();
 assert(~isempty(vacDomains),'Vacuum selection is empty.');
 
 mat=model.material.create('mat_vac','Common'); mat.label('Vacuum'); mat.selection.named('sel_vac'); mat.propertyGroup('def').set('relpermittivity',{'1'});
-es=comp.physics.create('es','Electrostatics','geom1'); es.label('RF unit field and grounded static electrodes'); es.selection.named('sel_vac');
+es=comp.physics.create('es','Electrostatics','geom1'); es.label('Differential RF/DC unit field'); es.selection.named('sel_vac');
+if isMassFilter
+    es.field('electricpotential').field('Vdiff'); es.field('electricpotential').component({'Vdiff'});
+end
 for k=1:numel(rods)
     s=sprintf('selb_rod%d',k); comp.selection.create(s,'Adjacent'); comp.selection(s).set('input',{sprintf('geom1_rod%d_dom',k)});
     pot=es.create(sprintf('pot_rod%d',k),'ElectricPotential',2); pot.selection.named(s); pot.set('V0',sprintf('%d[V]',100*(3-2*rods(k).electrode_group)));
@@ -141,16 +163,33 @@ for item={{'entrance','entrance'},{'exit','exit_enclosure'},{'detector','detecto
     pot=es.create(['pot_' entry{1}],'ElectricPotential',2); pot.selection.named(s); pot.set('V0','0[V]');
 end
 
+if isMassFilter
+    ess=comp.physics.create('ess','Electrostatics','geom1'); ess.label('Axis common mode and static end fields'); ess.selection.named('sel_vac');
+    ess.field('electricpotential').field('Vstatic'); ess.field('electricpotential').component({'Vstatic'});
+    for k=1:numel(rods)
+        pot=ess.create(sprintf('pot_rod%d',k),'ElectricPotential',2); pot.selection.named(sprintf('selb_rod%d',k)); pot.set('V0','V_axis');
+    end
+    staticItems={{'entrance',staticEntranceV},{'exit',staticExitV},{'detector',staticDetectorV}};
+    for item=staticItems
+        entry=item{1}; pot=ess.create(['pot_' entry{1}],'ElectricPotential',2); pot.selection.named(['selb_' entry{1}]);
+        pot.set('V0',sprintf('%.12g[V]',entry{2}));
+    end
+end
+
 mesh=comp.mesh.create('mesh1'); mesh.label('Candidate tetrahedral mesh');
 if isfinite(meshHmaxMm)
     mesh.label(sprintf('Candidate tetrahedral mesh (hmax %.12g mm)',meshHmaxMm));
 end
 configure_comsol_mesh(mesh,'geom1',meshAuto,'',meshHmaxMm);mesh.run;
 mi=mphmeshstats(model,'mesh1'); assert(~mi.isempty && mi.iscomplete && ~mi.hasproblems,'Mesh gate failed.');
-std1=model.study.create('std1'); std1.label('Stationary RF unit field'); std1.create('stat1','Stationary');
+std1=model.study.create('std1');
+if isMassFilter, std1.label('Stationary differential and static fields'); else, std1.label('Stationary RF unit field'); end
+std1.create('stat1','Stationary');
 sol1=model.sol.create('sol1'); sol1.study('std1'); sol1.createAutoSequence('std1'); sol1.attach('std1'); sol1.runAll;
 
-cpt=comp.physics.create('cpt','ChargedParticleTracing','geom1'); cpt.label('RF-only transport - no collisions'); cpt.selection.named('sel_vac');
+cpt=comp.physics.create('cpt','ChargedParticleTracing','geom1');
+if isMassFilter, cpt.label('RF+DC mass-filter transport - no collisions'); else, cpt.label('RF-only transport - no collisions'); end
+cpt.selection.named('sel_vac');
 cpt.feature('pp1').set('mp','m_ion'); cpt.feature('pp1').set('Z',sprintf('%d',source.charge_state));
 scratch=runConfig.runtime_dir; if ~exist(scratch,'dir'),mkdir(scratch);end
 initialPositionMm=zeros(size(ions,1),3); initialVelocityMS=zeros(size(ions,1),3);
@@ -170,18 +209,35 @@ for i=1:size(ions,1)
     rel=cpt.create(sprintf('rel%03d',i),'ReleaseFromDataFile',-1); rel.label(sprintf('Official fixed particle %03d, birth %.9g us',i,ions(i,1)));
     rel.set('Filename',releasePath); rel.set('icolp','0'); rel.set('VelocitySpecification','SpecifyVelocity'); rel.set('InitialVelocity','FromFile'); rel.set('icolv','3'); rel.set('rt',sprintf('%.12g[us]',ions(i,1))); rel.importData();
 end
-ef=cpt.create('ef1','ElectricForce',3); ef.label('RF-only electric force'); ef.selection.named('sel_vac'); ef.set('E_src','userdef');
-ef.set('E',{'(V_rf/100[V])*es.Ex*sin(2*pi*f_rf*t)','(V_rf/100[V])*es.Ey*sin(2*pi*f_rf*t)','(V_rf/100[V])*es.Ez*sin(2*pi*f_rf*t)'});
+ef=cpt.create('ef1','ElectricForce',3);
+if isMassFilter, ef.label('RF+DC and static electric force'); else, ef.label('RF-only electric force'); end
+ef.selection.named('sel_vac'); ef.set('E_src','userdef');
+if isMassFilter
+    fieldScale='((V_dc+V_rf*sin(2*pi*f_rf*t+phi_rf))/100[V])';
+    ef.set('E',{[fieldScale '*(-d(Vdiff,x))-d(Vstatic,x)'],[fieldScale '*(-d(Vdiff,y))-d(Vstatic,y)'],[fieldScale '*(-d(Vdiff,z))-d(Vstatic,z)']});
+else
+    ef.set('E',{'(V_rf/100[V])*es.Ex*sin(2*pi*f_rf*t+phi_rf)','(V_rf/100[V])*es.Ey*sin(2*pi*f_rf*t+phi_rf)','(V_rf/100[V])*es.Ez*sin(2*pi*f_rf*t+phi_rf)'});
+end
 
-std2=model.study.create('std2'); std2.label('Transient RF-only transport'); time=std2.create('time1','Transient');
+std2=model.study.create('std2');
+if isMassFilter, std2.label('Transient RF+DC mass filtering'); else, std2.label('Transient RF-only transport'); end
+time=std2.create('time1','Transient');
 dt=1/rf.frequency_Hz/mode.numerics.comsol_rf_steps_per_period; tmax=(max(ions(:,1))+mode.numerics.maximum_time_us)*1e-6;
-time.set('tlist',sprintf('range(0,%.15g,%.15g)',dt,tmax)); time.setEntry('activate','es',false); time.setEntry('activate','cpt',true);
+time.set('tlist',sprintf('range(0,%.15g,%.15g)',dt,tmax)); time.setEntry('activate','es',false);
+if isMassFilter, time.setEntry('activate','ess',false); end
+time.setEntry('activate','cpt',true);
 for i=1:size(ions,1), cpt.feature(sprintf('rel%03d',i)).set('StudyStep','std2/time1'); end
 cpt.feature('pp1').set('StudyStep','std2/time1');
 sol2=model.sol.create('sol2'); sol2.study('std2'); sol2.createAutoSequence('std2'); sol2.feature('v1').set('notsolmethod','sol'); sol2.feature('v1').set('notsol','sol1'); sol2.attach('std2'); sol2.runAll;
 
 pdset=model.result.dataset.create('pdset1','Particle'); pdset.label(sprintf('Fixed paired particle trajectories (N=%d)',source.particles)); pdset.set('solution','sol2');
-pg=model.result.create('pg_traj','PlotGroup3D'); pg.label('RF-only transport trajectories'); pg.set('data','pdset1'); pg.set('titletype','manual'); pg.set('title',sprintf('SIMION reference quadrupole: RF-only transport (N=%d)',source.particles)); pg.create('traj1','ParticleTrajectories');
+pg=model.result.create('pg_traj','PlotGroup3D'); pg.set('data','pdset1'); pg.set('titletype','manual');
+if isMassFilter
+    pg.label('RF+DC mass-filter trajectories'); pg.set('title',sprintf('Reference quadrupole: RF+DC mass filtering at %.12g Th (N=%d)',source.mass_amu,source.particles));
+else
+    pg.label('RF-only transport trajectories'); pg.set('title',sprintf('SIMION reference quadrupole: RF-only transport (N=%d)',source.particles));
+end
+pg.create('traj1','ParticleTrajectories');
 pd=mphparticle(model,'dataset','pdset1'); x=squeeze(pd.p(:,:,1)); y=squeeze(pd.p(:,:,2)); z=squeeze(pd.p(:,:,3));
 vx=squeeze(pd.v(:,:,1)); vy=squeeze(pd.v(:,:,2)); vz=squeeze(pd.v(:,:,3)); radial=sqrt(x.^2+y.^2);
 nP=size(z,2); assert(nP==size(ions,1),'Solved particle count mismatch.');
@@ -207,12 +263,14 @@ for i=1:nP
 end
 hitRodRadius=maxRodRadius(hit); if isempty(hitRodRadius), maxHitRodRadius=NaN; else, maxHitRodRadius=max(hitRodRadius); end
 featureTags=cell(cpt.feature.tags()); collisionPresent=any(contains(lower(string(featureTags)),'coll'));
-result=struct('solver','COMSOL','mode',runMode,'operating_point',operatingPoint,'collision_feature_present',collisionPresent,'q_mathieu',mphglobal(model,'q_mathieu','dataset','dset1'), ...
+result=struct('solver','COMSOL','mode',runMode,'operating_point',operatingPoint,'collision_feature_present',collisionPresent,'q_mathieu',mphglobal(model,'q_mathieu','dataset','dset1'),'a_mathieu',mphglobal(model,'a_mathieu','dataset','dset1'), ...
     'particles',nP,'hits',sum(hit),'transmission',mean(hit),'max_radius_mm',max(maxRadius),'max_hit_rod_radius_mm',maxHitRodRadius, ...
     'detector_plane_crossings',sum(crossedDetectorPlane),'max_detector_hit_radius_mm',max(arrivalRadius(hit),[],'omitnan'), ...
     'mean_detector_time_us',mean(arrival,'omitnan'),'rf_steps_per_period',mode.numerics.comsol_rf_steps_per_period,'mesh_auto_level',meshAuto,'mesh_hmax_mm',meshHmaxMm, ...
-    'source_axial_offset_mm',sourceAxialOffsetMm,'run_label',runLabel);
-if collisionPresent || result.transmission<mode.numerics.minimum_expected_transmission || result.max_hit_rod_radius_mm>=mode.numerics.maximum_allowed_radius_fraction_r0*g.field_radius_r0
+    'source_axial_offset_mm',sourceAxialOffsetMm,'mass_Th',source.mass_amu,'rf_peak_V',rfPeakV,'dc_per_group_V',dcV, ...
+    'axis_common_mode_V',axisV,'static_entrance_V',staticEntranceV,'static_exit_V',staticExitV,'static_detector_V',staticDetectorV,'run_label',runLabel);
+transportGateFailed=~isMassFilter && (result.transmission<mode.numerics.minimum_expected_transmission || result.max_hit_rod_radius_mm>=mode.numerics.maximum_allowed_radius_fraction_r0*g.field_radius_r0);
+if collisionPresent || transportGateFailed
     error('COMSOL transport/confinement gate failed: transmission=%.6g maxHitRodRadius=%.6g',result.transmission,result.max_hit_rod_radius_mm);
 end
 
@@ -225,28 +283,30 @@ rawPhaseSpacePath=fullfile(resultsOutputDir,'particle_raw.csv');
 % Persist a GUI-visible raw export node.  The standardized crossing table
 % below is derived from this solved particle dataset by solver-independent
 % linear crossing interpolation; no field or force logic is hidden here.
-rawExport=model.result.export.create('exp_phase_raw','Data');
-rawExport.label('Raw particle phase space for interface reconstruction');
-rawExport.set('data','pdset1');
-rawExport.set('expr',{'x','y','z','cpt.vx','cpt.vy','cpt.vz'});
-rawExport.set('filename',rawPhaseSpacePath);
-rawExport.run;
+if writeDetailedOutputs
+    rawExport=model.result.export.create('exp_phase_raw','Data');
+    rawExport.label('Raw particle phase space for interface reconstruction');
+    rawExport.set('data','pdset1');
+    rawExport.set('expr',{'x','y','z','cpt.vx','cpt.vy','cpt.vz'});
+    rawExport.set('filename',rawPhaseSpacePath);
+    rawExport.run;
+end
 
 stateRows=cell(0,17);
 for i=1:nP
     sourceState=struct('t_s',ions(i,1)*1e-6,'x_mm',initialPositionMm(i,1),'y_mm',initialPositionMm(i,2), ...
         'z_mm',initialPositionMm(i,3),'vx_m_s',initialVelocityMS(i,1),'vy_m_s',initialVelocityMS(i,2),'vz_m_s',initialVelocityMS(i,3));
-    stateRows(end+1,:)=particleStateRow(i,'source','alive','none',sourceState,ions(i,1)*1e-6,rf.frequency_Hz,rf.phase_rad, ...
+    stateRows(end+1,:)=particleStateRow(i,'source','alive','none',sourceState,ions(i,1)*1e-6,rf.frequency_Hz,rfPhaseRad, ...
         source.mass_amu,hypot(sourceState.x_mm,sourceState.y_mm),hypot(sourceState.x_mm,sourceState.y_mm)); %#ok<AGROW>
 
     [rodState,rodFound]=interpolateParticlePlane(pd.t,x(:,i),y(:,i),z(:,i),vx(:,i),vy(:,i),vz(:,i),interface.planes.rod_exit.z_mm);
     if rodFound
-        stateRows(end+1,:)=particleStateRow(i,'rod_exit','alive','none',rodState,ions(i,1)*1e-6,rf.frequency_Hz,rf.phase_rad, ...
+        stateRows(end+1,:)=particleStateRow(i,'rod_exit','alive','none',rodState,ions(i,1)*1e-6,rf.frequency_Hz,rfPhaseRad, ...
             source.mass_amu,hypot(rodState.x_mm,rodState.y_mm),maxRodRadius(i)); %#ok<AGROW>
     end
     [handoffState,handoffFound]=interpolateParticlePlane(pd.t,x(:,i),y(:,i),z(:,i),vx(:,i),vy(:,i),vz(:,i),interface.planes.handoff.z_mm);
     if handoffFound
-        stateRows(end+1,:)=particleStateRow(i,'handoff','transmitted','none',handoffState,ions(i,1)*1e-6,rf.frequency_Hz,rf.phase_rad, ...
+        stateRows(end+1,:)=particleStateRow(i,'handoff','transmitted','none',handoffState,ions(i,1)*1e-6,rf.frequency_Hz,rfPhaseRad, ...
             source.mass_amu,hypot(handoffState.x_mm,handoffState.y_mm),maxRodRadius(i)); %#ok<AGROW>
     end
 
@@ -259,7 +319,7 @@ for i=1:nP
     elseif terminalZ(i)<0, terminalReason='backward_escape';
     elseif terminalRadius>g.exit_enclosure_outer_half_width, terminalReason='radial_escape';
     end
-    stateRows(end+1,:)=particleStateRow(i,'terminal',terminalStatus,terminalReason,terminalState,ions(i,1)*1e-6,rf.frequency_Hz,rf.phase_rad, ...
+    stateRows(end+1,:)=particleStateRow(i,'terminal',terminalStatus,terminalReason,terminalState,ions(i,1)*1e-6,rf.frequency_Hz,rfPhaseRad, ...
         source.mass_amu,terminalRadius,maxRodRadius(i)); %#ok<AGROW>
 end
 stateNames={'particle_id','event','status','terminal_reason','time_us','elapsed_time_us','rf_phase_rad','axial_z_mm', ...
@@ -268,19 +328,21 @@ stateNames={'particle_id','event','status','terminal_reason','time_us','elapsed_
 assert(isequal(stateNames(:),cellstr(string(interface.particle_state_columns(:)))),'Interface column contract mismatch.');
 writetable(cell2table(stateRows,'VariableNames',stateNames),particleStatePath);
 
-modelPath=fullfile(comsolOutputDir,modelName); model.save(modelPath);
+modelPath=fullfile(comsolOutputDir,modelName); if saveModel, model.save(modelPath); end
 summaryPath=fullfile(resultsOutputDir,'solver_summary.json'); fid=fopen(summaryPath,'w'); fprintf(fid,'%s',jsonencode(result,'PrettyPrint',true)); fclose(fid);
-trajectoryPath=fullfile(resultsOutputDir,'trajectory_samples.csv');
-trajectoryFile=fopen(trajectoryPath,'w'); assert(trajectoryFile>=0,'Could not open trajectory CSV.');
-fprintf(trajectoryFile,'particle_id,time_us,axial_z_mm,transverse_x_mm,transverse_y_mm,r_mm\n');
-for i=1:nP
-    valid=find(isfinite(x(:,i)) & isfinite(y(:,i)) & isfinite(z(:,i)));
-    sampled=unique([valid(1:5:end); valid(end)]);
-    for sample=sampled'
-        fprintf(trajectoryFile,'%d,%.12g,%.12g,%.12g,%.12g,%.12g\n',i,pd.t(sample)*1e6,z(sample,i),x(sample,i),y(sample,i),radial(sample,i));
+if writeDetailedOutputs
+    trajectoryPath=fullfile(resultsOutputDir,'trajectory_samples.csv');
+    trajectoryFile=fopen(trajectoryPath,'w'); assert(trajectoryFile>=0,'Could not open trajectory CSV.');
+    fprintf(trajectoryFile,'particle_id,time_us,axial_z_mm,transverse_x_mm,transverse_y_mm,r_mm\n');
+    for i=1:nP
+        valid=find(isfinite(x(:,i)) & isfinite(y(:,i)) & isfinite(z(:,i)));
+        sampled=unique([valid(1:5:end); valid(end)]);
+        for sample=sampled'
+            fprintf(trajectoryFile,'%d,%.12g,%.12g,%.12g,%.12g,%.12g\n',i,pd.t(sample)*1e6,z(sample,i),x(sample,i),y(sample,i),radial(sample,i));
+        end
     end
+    fclose(trajectoryFile);
 end
-fclose(trajectoryFile);
 fprintf('STATUS=PASS\n');
 end
 
