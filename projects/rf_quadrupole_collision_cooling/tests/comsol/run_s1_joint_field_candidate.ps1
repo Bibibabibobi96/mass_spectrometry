@@ -40,6 +40,17 @@ if ($particleEnabled -and ([math]::Abs($PortWidthMm-[double]$jointSourceDocument
 if ($particleEnabled) {
   $sourceParticleInput = [IO.Path]::GetFullPath($ParticleInputPath)
   if (-not (Test-Path -LiteralPath $sourceParticleInput -PathType Leaf)) { throw 'S1 particle input is missing.' }
+  $particleRows = @(Import-Csv -LiteralPath $sourceParticleInput)
+  $entryX = [double]$jointSourceDocument.nominal_registration.target_entry_center_instrument_mm[0]
+  $entryFrame = [string]$jointSourceDocument.nominal_registration.instrument_frame
+  if ($particleRows.Count -ne 100) { throw 'S1 physical-port runtime requires exactly 100 canonical input particles.' }
+  if (@($particleRows | Where-Object { [math]::Abs([double]$_.position_x_mm-$entryX) -gt 1e-12 }).Count -ne 0) {
+    throw 'S1 canonical position_x_mm must equal the physical oa-TOF entry surface.'
+  }
+  $frames = @($particleRows | Select-Object -ExpandProperty frame_id -Unique)
+  if ($frames.Count -ne 1 -or [string]$frames[0] -ne $entryFrame) {
+    throw 'S1 canonical frame_id does not match the joint-contract instrument frame.'
+  }
   if (-not [string]::IsNullOrWhiteSpace($PulseSchedulePath)) {
     $pulseScheduleSource = [IO.Path]::GetFullPath($PulseSchedulePath)
     if (-not (Test-Path -LiteralPath $pulseScheduleSource -PathType Leaf)) { throw 'S1 pulse schedule is missing.' }

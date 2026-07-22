@@ -237,16 +237,20 @@ end
 function [events,capture]=run_s1_particles(model,comp,inputPath,runtimeDir,joint,rf,oa,portWidth,portHeight,downstreamBuffer,pulseTimeUs,pulseWidthUs)
 ions=readtable(inputPath,'VariableNamingRule','preserve');
 assert(height(ions)==100,'S1 physical-port runtime requires the frozen N=100 input.');
-required={'particle_id','instrument_time_us','mass_amu','charge_state','position_y_mm','position_z_mm','velocity_x_m_s','velocity_y_m_s','velocity_z_m_s'};
+required={'particle_id','instrument_time_us','mass_amu','charge_state','frame_id','position_x_mm','position_y_mm','position_z_mm','velocity_x_m_s','velocity_y_m_s','velocity_z_m_s'};
 assert(all(ismember(required,ions.Properties.VariableNames)),'S1 canonical particle columns are incomplete.');
 center=joint.nominal_registration.target_entry_center_instrument_mm;
+assert(all(string(ions.frame_id)==string(joint.nominal_registration.instrument_frame)), ...
+    'S1 canonical frame_id must match the joint-contract instrument frame.');
+assert(all(abs(ions.position_x_mm-center(1))<=1e-12), ...
+    'S1 canonical position_x_mm must equal the physical oa-TOF entry surface; silent coordinate replacement is forbidden.');
 inside=abs(ions.position_y_mm)<=portWidth/2+1e-12 & abs(ions.position_z_mm-center(3))<=portHeight/2+1e-12;
 accepted=find(inside); assert(~isempty(accepted),'S1 port rejects every input particle geometrically.');
 if ~isfolder(runtimeDir),mkdir(runtimeDir);end
 cpt=comp.physics.create('cpt','ChargedParticleTracing','geom1'); cpt.label('S1 physical-port shared-clock pulse N=100'); cpt.selection.named('sel_vac');
 cpt.feature('pp1').set('mp',sprintf('%.17g[kg]',ions.mass_amu(1)*1.66053906660e-27)); cpt.feature('pp1').set('Z',sprintf('%d',round(ions.charge_state(1))));
 for solverIndex=1:numel(accepted)
-    row=accepted(solverIndex); releaseData=[center(1)+joint.port_sweep.particle_release_offset_inside_outer_face_mm,ions.position_y_mm(row),ions.position_z_mm(row),ions.velocity_x_m_s(row),ions.velocity_y_m_s(row),ions.velocity_z_m_s(row)];
+    row=accepted(solverIndex); releaseData=[ions.position_x_mm(row)+joint.port_sweep.particle_release_offset_inside_outer_face_mm,ions.position_y_mm(row),ions.position_z_mm(row),ions.velocity_x_m_s(row),ions.velocity_y_m_s(row),ions.velocity_z_m_s(row)];
     releasePath=fullfile(runtimeDir,sprintf('physical_port_particle_%03d.txt',ions.particle_id(row))); writematrix(releaseData,releasePath,'Delimiter','tab');
     rel=cpt.create(sprintf('rel%03d',solverIndex),'ReleaseFromDataFile',-1); rel.set('Filename',releasePath); rel.set('icolp','0'); rel.set('VelocitySpecification','SpecifyVelocity'); rel.set('InitialVelocity','FromFile'); rel.set('icolv','3'); rel.set('rt',sprintf('%.17g[us]',ions.instrument_time_us(row))); rel.importData();
 end

@@ -26,6 +26,7 @@ class S1CentroidPulseTimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "particles.csv"
             base = {
+                "position_x_mm": -67.8,
                 "position_y_mm": 0.0, "position_z_mm": -18.42918680341103,
                 "velocity_y_m_s": 0.0, "velocity_z_m_s": 0.0,
                 "charge_state": 1,
@@ -48,6 +49,7 @@ class S1CentroidPulseTimeTests(unittest.TestCase):
             path = Path(temp) / "particles.csv"
             base = {
                 "instrument_time_us": 10.0, "mass_amu": 50.0, "charge_state": 2,
+                "position_x_mm": -67.8,
                 "position_y_mm": 0.49, "position_z_mm": -18.42918680341103,
                 "velocity_x_m_s": 1000.0, "velocity_z_m_s": 0.0,
             }
@@ -68,6 +70,7 @@ class S1CentroidPulseTimeTests(unittest.TestCase):
                 rows.append({
                     "particle_id": particle_id, "instrument_time_us": 10.0,
                     "mass_amu": mass, "charge_state": charge,
+                    "position_x_mm": -67.8,
                     "position_y_mm": 0.0, "position_z_mm": -18.42918680341103,
                     "velocity_x_m_s": 1000.0, "velocity_y_m_s": 0.0,
                     "velocity_z_m_s": 0.0,
@@ -78,6 +81,20 @@ class S1CentroidPulseTimeTests(unittest.TestCase):
             selected = module.derive_schedule(path, self.baseline, self.joint,
                                               target_mass_amu=50.0, target_charge_state=2)
             self.assertEqual(selected["target_species"]["charge_state"], 2)
+
+    def test_rejects_stale_projected_entry_coordinate(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "particles.csv"
+            self._write(path, [{
+                "particle_id": 1, "instrument_time_us": 10.0,
+                "mass_amu": 100.0, "charge_state": 1,
+                "position_x_mm": -62.8, "position_y_mm": 0.0,
+                "position_z_mm": -18.42918680341103,
+                "velocity_x_m_s": 1000.0, "velocity_y_m_s": 0.0,
+                "velocity_z_m_s": 0.0,
+            }])
+            with self.assertRaisesRegex(ValueError, "physical oa-TOF entry surface"):
+                module.derive_schedule(path, self.baseline, self.joint)
 
 
 if __name__ == "__main__":

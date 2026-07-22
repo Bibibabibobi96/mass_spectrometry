@@ -58,7 +58,7 @@ def derive_schedule(particle_path: Path, baseline_path: Path, joint_path: Path,
     particles = pd.read_csv(particle_path)
     required = {
         "particle_id", "instrument_time_us", "mass_amu", "charge_state",
-        "position_y_mm", "position_z_mm", "velocity_x_m_s", "velocity_y_m_s",
+        "position_x_mm", "position_y_mm", "position_z_mm", "velocity_x_m_s", "velocity_y_m_s",
         "velocity_z_m_s",
     }
     if not required.issubset(particles.columns):
@@ -85,7 +85,13 @@ def derive_schedule(particle_path: Path, baseline_path: Path, joint_path: Path,
     joint = load_json(joint_path)
     geometry = accelerator_geometry(baseline, joint)
     offset = float(joint["port_sweep"]["particle_release_offset_inside_outer_face_mm"])
-    release_x = (float(geometry["center_x"]) - float(geometry["shield_outer_half"]) + offset)
+    entry_surface_x = float(joint["nominal_registration"]["target_entry_center_instrument_mm"][0])
+    if not np.allclose(selected["position_x_mm"], entry_surface_x, rtol=0, atol=1e-12):
+        raise ValueError(
+            "canonical handoff position_x_mm must equal the physical oa-TOF entry surface; "
+            "projection or silent coordinate replacement is forbidden"
+        )
+    release_x = entry_surface_x + offset
     target_x = float(geometry["source_center"]["x"])
     port_center_z = float(geometry["port_center_z"])
     half_y = float(geometry["port_width_y"]) / 2
@@ -138,6 +144,8 @@ def derive_schedule(particle_path: Path, baseline_path: Path, joint_path: Path,
             "predicted_finite_wall_survivors": int(len(cohort)),
         },
         "geometry_mm": {
+            "canonical_entry_surface_x": entry_surface_x,
+            "numerical_release_offset_inside_surface": offset,
             "release_x": release_x,
             "target_centroid_x": target_x,
             "shield_wall_thickness": wall,
