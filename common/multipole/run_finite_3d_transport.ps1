@@ -46,6 +46,7 @@ $contract = Join-Path $inputDir 'finite_3d_transport.json'
 $resolvedContract = Join-Path $inputDir 'finite_3d_transport_resolved.json'
 $mode = Join-Path $inputDir 'finite_3d_no_collision.json'
 $fieldMetrics = Join-Path $inputDir 'round_rod_field_screen_metrics.json'
+$roundRodGeometry = Join-Path $inputDir 'round_rod_geometry.json'
 $particleSource = Join-Path $inputDir 'particle_source.csv'
 Copy-Item -LiteralPath (Join-Path $projectRootPath 'config\baseline.json') -Destination $baseline
 Copy-Item -LiteralPath (Join-Path $projectRootPath 'config\finite_3d_transport.json') -Destination $contract
@@ -61,6 +62,7 @@ $sourceContract = Join-Path $sourceDir 'inputs\round_rod_field_screen.json'
 $screenAnalysis = Join-Path $repoRoot 'common\multipole\analyze_round_rod_screen.py'
 '{}' | Set-Content -LiteralPath $fieldMetrics -Encoding UTF8
 '{}' | Set-Content -LiteralPath $resolvedContract -Encoding UTF8
+'{}' | Set-Content -LiteralPath $roundRodGeometry -Encoding UTF8
 'particle_id,birth_time_s,x_mm,y_mm,z_mm,vx_m_s,vy_m_s,vz_m_s' |
   Set-Content -LiteralPath $particleSource -Encoding UTF8
 
@@ -89,6 +91,7 @@ $task = Join-Path $repoRoot 'common\multipole\solve_finite_3d_transport.m'
     finite_3d_resolved_contract = $resolvedContract
     particle_source = $particleSource
     field_screen_metrics = $fieldMetrics
+    round_rod_geometry = $roundRodGeometry
     field_screen_manifest = $sourceManifest
     field_screen_contract = $sourceContract
     field_screen_samples = $sourceSamples
@@ -103,7 +106,7 @@ $task = Join-Path $repoRoot 'common\multipole\solve_finite_3d_transport.m'
 if ($LASTEXITCODE -ne 0) { throw 'Initial finite 3D run manifest failed.' }
 
 $environmentNames = @(
-  'MULTIPOLE_L3_BASELINE','MULTIPOLE_L3_FAMILY_OPERATING','MULTIPOLE_L3_CONTRACT','MULTIPOLE_L3_FIELD_METRICS',
+  'MULTIPOLE_L3_BASELINE','MULTIPOLE_L3_FAMILY_OPERATING','MULTIPOLE_L3_CONTRACT','MULTIPOLE_L3_FIELD_METRICS','MULTIPOLE_L3_ROUND_ROD_GEOMETRY',
   'MULTIPOLE_L3_PARTICLE_SOURCE','MULTIPOLE_L3_RUNTIME_DIR','MULTIPOLE_L3_EVENTS',
   'MULTIPOLE_L3_TRAJECTORIES','MULTIPOLE_L3_METRICS','MULTIPOLE_L3_PLOT','MULTIPOLE_L3_MODEL'
 )
@@ -119,6 +122,12 @@ try {
         --baseline $baseline --contract $contract --output $resolvedContract
       if ($LASTEXITCODE -ne 0) { throw 'Finite 3D interface contract validation failed.' }
     } finally { Pop-Location }
+    Push-Location $repoRoot
+    try {
+      & $python -m common.multipole.round_rod_geometry `
+        --baseline $baseline --finite-3d $resolvedContract --field-metrics $fieldMetrics --output $roundRodGeometry
+      if ($LASTEXITCODE -ne 0) { throw 'Could not freeze the shared round-rod geometry.' }
+    } finally { Pop-Location }
     $l3Document = Get-Content -LiteralPath $resolvedContract -Raw -Encoding UTF8 | ConvertFrom-Json
     Push-Location $repoRoot
     try {
@@ -130,6 +139,7 @@ try {
     $env:MULTIPOLE_L3_FAMILY_OPERATING = $familyOperating
     $env:MULTIPOLE_L3_CONTRACT = $resolvedContract
     $env:MULTIPOLE_L3_FIELD_METRICS = $fieldMetrics
+    $env:MULTIPOLE_L3_ROUND_ROD_GEOMETRY = $roundRodGeometry
     $env:MULTIPOLE_L3_PARTICLE_SOURCE = $particleSource
     $env:MULTIPOLE_L3_RUNTIME_DIR = $runtimeDir
     $env:MULTIPOLE_L3_EVENTS = $events

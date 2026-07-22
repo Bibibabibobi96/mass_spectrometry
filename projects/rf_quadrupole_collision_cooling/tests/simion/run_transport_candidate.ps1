@@ -108,7 +108,7 @@ if ($isMassFilter) {
 }
 Copy-Item -LiteralPath (Join-Path $projectRoot 'simion\geometry\quad_include.gem') -Destination $candidateDir -Force
 Copy-Item -LiteralPath (Join-Path $projectRoot 'simion\geometry\quad_monolithic.gem') -Destination $candidateDir -Force
-Copy-Item -LiteralPath (Join-Path $projectRoot 'simion\programs\quad_transport.lua') -Destination (Join-Path $candidateDir 'quad_monolithic.lua') -Force
+Copy-Item -LiteralPath (Join-Path $repoRoot 'common\multipole\simion_transport.lua') -Destination (Join-Path $candidateDir 'quad_monolithic.lua') -Force
 Copy-Item -LiteralPath $officialIob -Destination (Join-Path $candidateDir 'quad_monolithic.iob') -Force
 $flyPath = Join-Path $candidateDir 'quad_monolithic.fly2'
 $sourceStatesLua = Join-Path $inputDir 'source_states.lua'
@@ -190,7 +190,7 @@ try {
 
     # Loading the IOB immediately loads its same-basename Program, which
     # validates this run configuration before the structural report runs.
-    $env:RFQUAD_RUN_CONFIG_LUA = $runConfigLua
+    $env:MULTIPOLE_SIMION_RUN_CONFIG_LUA = $runConfigLua
     $env:RFQUAD_SIMION_REFERENCE_REPORT = $iobReport
     $env:RFQUAD_SIMION_REFERENCE_IOB = Join-Path $candidateDir 'quad_monolithic.iob'
     & $simion --nogui --noprompt lua (Join-Path $PSScriptRoot 'inspect_builtin_quad_reference.lua')
@@ -199,14 +199,14 @@ try {
     $stdoutPath = Join-Path $logDir 'simion_stdout.txt'
     $stderrPath = Join-Path $logDir 'simion_stderr.txt'
     $flyProcess = Start-Process -FilePath $simion -ArgumentList @(
-        '--nogui','--noprompt','lua',(Join-Path $PSScriptRoot 'run_fly.lua')
+        '--nogui','--noprompt','lua',(Join-Path $repoRoot 'common\multipole\simion_run_fly.lua')
     ) -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
     Get-Content -LiteralPath $stdoutPath -Encoding UTF8
     if ((Get-Item -LiteralPath $stderrPath).Length -gt 0) { Get-Content -LiteralPath $stderrPath -Encoding UTF8 }
     if ($flyProcess.ExitCode -ne 0) { throw "SIMION fly failed with exit code $($flyProcess.ExitCode)." }
 }
 finally {
-    Remove-Item Env:RFQUAD_RUN_CONFIG_LUA -ErrorAction SilentlyContinue
+    Remove-Item Env:MULTIPOLE_SIMION_RUN_CONFIG_LUA -ErrorAction SilentlyContinue
     Remove-Item Env:RFQUAD_SIMION_REFERENCE_REPORT -ErrorAction SilentlyContinue
     Remove-Item Env:RFQUAD_SIMION_REFERENCE_IOB -ErrorAction SilentlyContinue
     Pop-Location

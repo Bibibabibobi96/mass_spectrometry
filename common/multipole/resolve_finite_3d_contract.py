@@ -59,6 +59,7 @@ def _resolve_interface(interface: dict[str, Any], name: str) -> dict[str, float]
             "rod_clearance_mm",
             "particle_plane_distance_mm",
             "outer_ground_clearance_mm",
+            "connector_length_mm",
         },
         f"geometry_mm.{name}_interface",
     )
@@ -68,6 +69,7 @@ def _resolve_interface(interface: dict[str, Any], name: str) -> dict[str, float]
         "rod_clearance_mm": _nonnegative_number(interface, "rod_clearance_mm"),
         "particle_plane_distance_mm": _positive_number(interface, "particle_plane_distance_mm"),
         "outer_ground_clearance_mm": _positive_number(interface, "outer_ground_clearance_mm"),
+        "connector_length_mm": _nonnegative_number(interface, "connector_length_mm"),
     }
 
 
@@ -175,13 +177,13 @@ def resolve_contract(baseline: dict[str, Any], contract: dict[str, Any]) -> dict
     rod_z_max = rod_z_min + rod_length
     entrance_plate_z_max = rod_z_min - entrance["rod_clearance_mm"]
     entrance_plate_z_min = entrance_plate_z_max - entrance["plate_thickness_mm"]
-    source_z = entrance_plate_z_min - entrance["particle_plane_distance_mm"]
+    source_z = entrance_plate_z_min - entrance["connector_length_mm"] - entrance["particle_plane_distance_mm"]
     entrance_outer_ground_inner_z = source_z - entrance["outer_ground_clearance_mm"]
     vacuum_z_min = entrance_outer_ground_inner_z - outer_cap
 
     exit_plate_z_min = rod_z_max + exit_interface["rod_clearance_mm"]
     exit_plate_z_max = exit_plate_z_min + exit_interface["plate_thickness_mm"]
-    detector_z = exit_plate_z_max + exit_interface["particle_plane_distance_mm"]
+    detector_z = exit_plate_z_max + exit_interface["connector_length_mm"] + exit_interface["particle_plane_distance_mm"]
     exit_outer_ground_inner_z = detector_z + exit_interface["outer_ground_clearance_mm"]
     vacuum_z_max = exit_outer_ground_inner_z + outer_cap
     if entrance_plate_z_max > rod_z_min or exit_plate_z_min < rod_z_max:

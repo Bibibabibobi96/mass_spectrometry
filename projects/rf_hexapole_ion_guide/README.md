@@ -19,6 +19,7 @@
 - L2圆杆筛选：[`analysis/run_round_rod_field_screen.ps1`](analysis/run_round_rod_field_screen.ps1)
 - L2传输：[`analysis/run_round_rod_transport.ps1`](analysis/run_round_rod_transport.ps1)
 - L3直接跟踪：[`analysis/run_finite_3d_transport.ps1`](analysis/run_finite_3d_transport.ps1)
+- L3 SIMION独立回归：[`analysis/run_simion_finite_3d_transport.ps1`](analysis/run_simion_finite_3d_transport.ps1)
 - 静态门禁：[`verify_project.ps1`](verify_project.ps1)
 
 运行产物只进入`artifacts/projects/rf_hexapole_ion_guide/runs/`，不进入Git。

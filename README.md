@@ -128,7 +128,7 @@ simulation_repo/
 │  └─ wehnelt_electron_gun/
 ├─ common/
 │  ├─ comsol/                # LiveLink启动器、可复用COMSOL测试及就近README
-│  ├─ multipole/             # 已由六极杆、八极杆共同验证的L1、L2与有限三维功能实现
+│  ├─ multipole/             # 四/六/八极杆共享合同、圆杆几何、COMSOL/SIMION传输与分析
 │  ├─ paths/                 # 工作区与 artifacts 路径解析
 │  └─ solidworks/            # STEP→SolidWorks 可复用桥接
 ├─ official_docs/            # 官方离线原始资料及索引

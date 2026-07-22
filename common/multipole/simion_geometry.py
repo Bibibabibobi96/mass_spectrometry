@@ -1,0 +1,83 @@
+"""Export the shared circular-rod geometry contract to a SIMION GEM file."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import math
+from pathlib import Path
+from typing import Any
+
+
+def render_gem(geometry: dict[str, Any], cell_mm: float) -> str:
+    if not math.isfinite(cell_mm) or cell_mm <= 0:
+        raise ValueError("cell_mm must be positive")
+    enclosure = geometry["grounded_enclosure_mm"]
+    interface = geometry["interfaces_mm"]
+    rods = geometry["array_mm"]["rods"]
+    outer = float(enclosure["shield_outer_radius"])
+    inner = float(enclosure["shield_inner_radius"])
+    z_min = float(enclosure["vacuum_z_min"])
+    z_max = float(enclosure["vacuum_z_max"])
+    span = z_max - z_min
+    nx = math.ceil(2 * outer / cell_mm) + 1
+    nz = math.ceil(span / cell_mm) + 1
+    lines = [
+        "; Generated from the solver-neutral round-rod geometry contract; do not edit.",
+        f"pa_define({nx},{nx},{nz},planar,none,electrostatic,,{cell_mm:.12g},{cell_mm:.12g},{cell_mm:.12g},surface=fractional)",
+        f"locate({outer:.12g},{outer:.12g},{-z_min:.12g}) {{",
+    ]
+    for rod in rods:
+        lines.extend([
+            f"  e({rod['electrode_group']}) {{ fill {{ within {{ cylinder({rod['center_x_mm']:.12g},{rod['center_y_mm']:.12g},{rod['z_max_mm']:.12g},{rod['radius_mm']:.12g},,{rod['z_max_mm']-rod['z_min_mm']:.12g}) }} }} }}",
+        ])
+    lines.extend([
+        "  e(3) { fill {",
+        f"    within {{ cylinder(0,0,{z_max:.12g},{outer:.12g},,{span:.12g}) }}",
+        f"    notin_inside {{ cylinder(0,0,{z_max+cell_mm:.12g},{inner:.12g},,{span+2*cell_mm:.12g}) }}",
+        "  } }",
+        f"  e(3) {{ fill {{ within {{ cylinder(0,0,{z_min+cell_mm:.12g},{outer:.12g},,{cell_mm:.12g}) }} }} }}",
+        f"  e(3) {{ fill {{ within {{ cylinder(0,0,{z_max:.12g},{outer:.12g},,{cell_mm:.12g}) }} }} }}",
+        "  e(3) { fill {",
+        f"    within {{ cylinder(0,0,{interface['entrance_plate_z_max']:.12g},{outer:.12g},,{interface['entrance_plate_z_max']-interface['entrance_plate_z_min']:.12g}) }}",
+        f"    notin_inside {{ cylinder(0,0,{interface['entrance_plate_z_max']+cell_mm:.12g},{interface['entrance_aperture_radius']:.12g},,{interface['entrance_plate_z_max']-interface['entrance_plate_z_min']+2*cell_mm:.12g}) }}",
+        "  } }",
+        "  e(3) { fill {",
+        f"    within {{ cylinder(0,0,{interface['exit_plate_z_max']:.12g},{outer:.12g},,{interface['exit_plate_z_max']-interface['exit_plate_z_min']:.12g}) }}",
+        f"    notin_inside {{ cylinder(0,0,{interface['exit_plate_z_max']+cell_mm:.12g},{interface['exit_aperture_radius']:.12g},,{interface['exit_plate_z_max']-interface['exit_plate_z_min']+2*cell_mm:.12g}) }}",
+        "  } }",
+    ])
+    entrance_length = float(interface["entrance_connector_length"])
+    exit_length = float(interface["exit_connector_length"])
+    if entrance_length > 0:
+        lines.extend([
+            "  e(3) { fill {",
+            f"    within {{ cylinder(0,0,{interface['entrance_plate_z_min']:.12g},{outer:.12g},,{entrance_length:.12g}) }}",
+            f"    notin_inside {{ cylinder(0,0,{interface['entrance_plate_z_min']+cell_mm:.12g},{interface['entrance_aperture_radius']:.12g},,{entrance_length+2*cell_mm:.12g}) }}",
+            "  } }",
+        ])
+    if exit_length > 0:
+        lines.extend([
+            "  e(3) { fill {",
+            f"    within {{ cylinder(0,0,{interface['exit_plate_z_max']+exit_length:.12g},{outer:.12g},,{exit_length:.12g}) }}",
+            f"    notin_inside {{ cylinder(0,0,{interface['exit_plate_z_max']+exit_length+cell_mm:.12g},{interface['exit_aperture_radius']:.12g},,{exit_length+2*cell_mm:.12g}) }}",
+            "  } }",
+        ])
+    lines.extend(["}", ""])
+    return "\n".join(lines)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--geometry", required=True, type=Path)
+    parser.add_argument("--cell-mm", required=True, type=float)
+    parser.add_argument("--output", required=True, type=Path)
+    args = parser.parse_args()
+    geometry = json.loads(args.geometry.read_text(encoding="utf-8-sig"))
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(render_gem(geometry, args.cell_mm), encoding="ascii")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

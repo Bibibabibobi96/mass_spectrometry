@@ -4,8 +4,8 @@ local report_path = assert(os.getenv('RFQUAD_SIMION_REFERENCE_REPORT'),
   'RFQUAD_SIMION_REFERENCE_REPORT is not set')
 local iob_path = assert(os.getenv('RFQUAD_SIMION_REFERENCE_IOB'),
   'RFQUAD_SIMION_REFERENCE_IOB is not set')
-local run_config_path = assert(os.getenv('RFQUAD_RUN_CONFIG_LUA'),
-  'RFQUAD_RUN_CONFIG_LUA is not set')
+local run_config_path = assert(os.getenv('MULTIPOLE_SIMION_RUN_CONFIG_LUA'),
+  'MULTIPOLE_SIMION_RUN_CONFIG_LUA is not set')
 local expected = assert(dofile(run_config_path), 'run config did not return a table')
 
 simion.command('"' .. iob_path .. '"')

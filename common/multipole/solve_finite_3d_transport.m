@@ -5,6 +5,7 @@ baselinePath = getenv('MULTIPOLE_L3_BASELINE');
 familyOperatingPath = getenv('MULTIPOLE_L3_FAMILY_OPERATING');
 contractPath = getenv('MULTIPOLE_L3_CONTRACT');
 fieldMetricsPath = getenv('MULTIPOLE_L3_FIELD_METRICS');
+roundRodGeometryPath = getenv('MULTIPOLE_L3_ROUND_ROD_GEOMETRY');
 sourcePath = getenv('MULTIPOLE_L3_PARTICLE_SOURCE');
 runtimeDir = getenv('MULTIPOLE_L3_RUNTIME_DIR');
 eventsPath = getenv('MULTIPOLE_L3_EVENTS');
@@ -12,10 +13,10 @@ trajectoryPath = getenv('MULTIPOLE_L3_TRAJECTORIES');
 metricsPath = getenv('MULTIPOLE_L3_METRICS');
 plotPath = getenv('MULTIPOLE_L3_PLOT');
 modelPath = getenv('MULTIPOLE_L3_MODEL');
-required = {reportPath, baselinePath, familyOperatingPath, contractPath, fieldMetricsPath, sourcePath, ...
+required = {reportPath, baselinePath, familyOperatingPath, contractPath, fieldMetricsPath, roundRodGeometryPath, sourcePath, ...
     runtimeDir, eventsPath, trajectoryPath, metricsPath, plotPath, modelPath};
 assert(all(~cellfun(@isempty, required)), 'Finite 3D multipole environment is incomplete.');
-assert(isfile(baselinePath) && isfile(familyOperatingPath) && isfile(contractPath) && isfile(fieldMetricsPath) && ...
+assert(isfile(baselinePath) && isfile(familyOperatingPath) && isfile(contractPath) && isfile(fieldMetricsPath) && isfile(roundRodGeometryPath) && ...
     isfile(sourcePath), 'Finite 3D multipole inputs are missing.');
 if ~isfolder(runtimeDir), mkdir(runtimeDir); end
 
@@ -29,6 +30,7 @@ try
     familyOperating = jsondecode(fileread(familyOperatingPath));
     contract = jsondecode(fileread(contractPath));
     fieldMetrics = jsondecode(fileread(fieldMetricsPath));
+    roundRodGeometry = jsondecode(fileread(roundRodGeometryPath));
     source = readtable(sourcePath);
     n = familyOperating.identity.radial_order_n;
     electrodeCount = familyOperating.identity.electrode_count;
@@ -36,8 +38,13 @@ try
         'Finite 3D multipole identities differ.');
     selected = fieldMetrics.selected_candidate;
     r0 = familyOperating.geometry_mm.r0;
-    rodRadius = selected.rod_radius_mm;
-    centerRadius = selected.rod_center_radius_mm;
+    rodArray = roundRodGeometry.array_mm;
+    rods = rodArray.rods;
+    assert(roundRodGeometry.identity.electrode_count == electrodeCount && numel(rods) == electrodeCount, ...
+        'Shared round-rod geometry identity differs from the operating contract.');
+    assert(abs(rodArray.rod_radius-selected.rod_radius_mm) < 1e-12 && ...
+        abs(rodArray.rod_center_radius-selected.rod_center_radius_mm) < 1e-12, ...
+        'Shared round-rod geometry differs from the selected field-screen candidate.');
     g = contract.geometry_mm;
     d = contract.derived_geometry_mm;
     assert(abs(d.rod_length-familyOperating.geometry_mm.effective_length) < 1e-12, ...
@@ -72,14 +79,13 @@ try
     rodTags = cell(1, electrodeCount);
     for k = 1:electrodeCount
         rodTags{k} = sprintf('rod%d', k);
-        angle = (k-1)*360/electrodeCount;
         geom.feature.create(rodTags{k}, 'Cylinder');
-        geom.feature(rodTags{k}).set('r', sprintf('%.17g[mm]', rodRadius));
+        geom.feature(rodTags{k}).set('r', sprintf('%.17g[mm]', rods(k).radius_mm));
         geom.feature(rodTags{k}).set('h', sprintf('%.17g[mm]', d.rod_length));
         geom.feature(rodTags{k}).set('pos', { ...
-            sprintf('%.17g[mm]', centerRadius*cosd(angle)), ...
-            sprintf('%.17g[mm]', centerRadius*sind(angle)), ...
-            sprintf('%.17g[mm]', g.rod_z_min)});
+            sprintf('%.17g[mm]', rods(k).center_x_mm), ...
+            sprintf('%.17g[mm]', rods(k).center_y_mm), ...
+            sprintf('%.17g[mm]', rods(k).z_min_mm)});
         geom.feature(rodTags{k}).set('selresult', 'on');
     end
     geom.feature.create('shieldO', 'Cylinder');
@@ -103,9 +109,23 @@ try
     create_apertured_plate(geom, 'capOut', shieldOuter, ...
         g.exit_interface.aperture_radius_mm, g.exit_interface.plate_thickness_mm, ...
         d.exit_plate_z_min);
+    connectorTags = {};
+    if g.entrance_interface.connector_length_mm > 0
+        create_apertured_plate(geom, 'connIn', shieldOuter, ...
+            g.entrance_interface.aperture_radius_mm, g.entrance_interface.connector_length_mm, ...
+            d.entrance_plate_z_min-g.entrance_interface.connector_length_mm);
+        connectorTags{end+1} = 'connIn';
+    end
+    if g.exit_interface.connector_length_mm > 0
+        create_apertured_plate(geom, 'connOut', shieldOuter, ...
+            g.exit_interface.aperture_radius_mm, g.exit_interface.connector_length_mm, ...
+            d.exit_plate_z_max);
+        connectorTags{end+1} = 'connOut';
+    end
     geom.run;
 
-    electrodeTags = [rodTags, {'shield','outerIn','outerOut','capIn','capOut'}];
+    groundTags = [{'shield','outerIn','outerOut','capIn','capOut'}, connectorTags];
+    electrodeTags = [rodTags, groundTags];
     electrodeDomains = cellfun(@(name) ['geom1_' name '_dom'], electrodeTags, ...
         'UniformOutput', false);
     comp.selection.create('sel_vac', 'Complement');
@@ -122,10 +142,10 @@ try
         comp.selection(boundarySelection).set('input', {sprintf('geom1_rod%d_dom', k)});
         potential = es.create(sprintf('pot_rod%d', k), 'ElectricPotential', 2);
         potential.selection.named(boundarySelection);
-        potential.set('V0', sprintf('%d[V]', 100*(-1)^(k+1)));
+        potential.set('V0', sprintf('%d[V]', 100*(3-2*rods(k).electrode_group)));
     end
-    for groundName = {'shield','outerIn','outerOut','capIn','capOut'}
-        name = groundName{1};
+    for groundIndex = 1:numel(groundTags)
+        name = groundTags{groundIndex};
         selection = ['selb_' name];
         comp.selection.create(selection, 'Adjacent');
         comp.selection(selection).set('input', {['geom1_' name '_dom']});

@@ -6,11 +6,14 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).parents[2]
+REPO_ROOT = PROJECT_ROOT.parents[1]
 
 
 class MassFilterSimionContractTests(unittest.TestCase):
     def test_lua_applies_dc_and_rf_as_one_differential_voltage(self) -> None:
-        lua = (PROJECT_ROOT / "simion" / "programs" / "quad_transport.lua").read_text(encoding="utf-8")
+        wrapper = (PROJECT_ROOT / "simion" / "programs" / "quad_transport.lua").read_text(encoding="utf-8")
+        self.assertIn("MULTIPOLE_SIMION_SHARED_PROGRAM_LUA", wrapper)
+        lua = (REPO_ROOT / "common" / "multipole" / "simion_transport.lua").read_text(encoding="utf-8")
         self.assertIn("local differential = transport_dc_amplitude_v + rf", lua)
         self.assertIn("adj_elect01 = transport_axis_voltage_v + differential", lua)
         self.assertIn("adj_elect02 = transport_axis_voltage_v - differential", lua)
