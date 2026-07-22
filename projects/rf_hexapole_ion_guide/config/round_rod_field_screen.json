@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "role": "multipole_round_rod_field_screen_contract",
+  "project_id": "rf_hexapole_ion_guide",
+  "model_level": "L2",
+  "multipole": {"radial_order_n": 3, "electrode_count": 6},
+  "geometry_mm": {
+    "inscribed_radius_r0": 4.0,
+    "grounded_shield_inner_radius": 20.0,
+    "rod_radius_ratio_sweep": [0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65]
+  },
+  "field_solve": {"rod_voltage_zero_to_peak_V": 100.0},
+  "mesh": {"global_auto_level": 4, "vacuum_maximum_element_size_mm": 0.15},
+  "sampling": {"radius_fraction_of_r0": [0.65, 0.8], "azimuth_samples_per_radius": 256},
+  "selection": {
+    "seed_rule": "local curvature match gives rod_radius/r0 = 1/(n-1) = 0.5",
+    "objective": "minimize RMS boundary-normalized A9/A3 and A15/A3 parasitic harmonics",
+    "minimum_adjacent_surface_gap_mm": 0.5,
+    "minimum_main_boundary_amplitude_fraction_of_drive": 0.5,
+    "maximum_cross_radius_absolute_harmonic_spread": 0.02
+  },
+  "claim_limit": "Provisional 2D circular-rod L2 field screen; no mesh convergence, fringe field, particle transport, Candidate or Formal claim."
+}

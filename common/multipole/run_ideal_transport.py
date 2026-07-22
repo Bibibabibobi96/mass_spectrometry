@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 from common.contracts.artifact_naming import validate_run_id
+from common.multipole.ensure_artifact_project import ensure_artifact_project
 from common.multipole.ideal_transport import evaluate_contract, write_results
 
 
@@ -40,7 +41,8 @@ def execute(project_root: Path, run_id: str) -> Path:
     mode_source = project_root / "config" / "modes" / "transport_no_collision.json"
     contract = json.loads(baseline_source.read_text(encoding="utf-8"))
     project_id = contract["project_id"]
-    run_dir = WORKSPACE_ROOT / "artifacts" / "projects" / project_id / "runs" / run_id
+    artifact_project = ensure_artifact_project(WORKSPACE_ROOT / "artifacts" / "projects", project_id)
+    run_dir = artifact_project / "runs" / run_id
     if run_dir.exists():
         raise FileExistsError(f"run directory already exists: {run_dir}")
     input_dir, result_dir, log_dir = (run_dir / name for name in ("inputs", "results", "logs"))

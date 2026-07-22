@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "role": "rf_octupole_round_rod_transport_mode",
+  "mode_id": "round_rod_no_collision",
+  "field_model_id": "multipole.comsol_2d_round_rod_harmonic_fit.v1",
+  "collision_model": "disabled",
+  "space_charge_model": "disabled",
+  "axial_fringe_field": "disabled",
+  "model_level": "L2"
+}

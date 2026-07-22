@@ -5,7 +5,7 @@
   "display_name": "RF六极杆离子导引",
   "purpose": "六极杆无碰撞传输、接受度和未来碰撞冷却设计",
   "lifecycle_status": "static",
-  "toolchains": ["python"],
+  "toolchains": ["python", "comsol"],
   "contracts": {
     "baseline": "config/baseline.json",
     "resolved": null,
@@ -23,12 +23,20 @@
       "modes": ["transport_no_collision"],
       "metrics": ["transmission_fraction", "exit_rms_radius", "maximum_radius"],
       "design_variables": []
+    },
+    {
+      "capability_id": "hexapole_round_rod_l2_transport",
+      "function": "ion_transport",
+      "status": "static",
+      "modes": ["round_rod_no_collision"],
+      "metrics": ["parasitic_harmonic_score", "transmission_fraction", "exit_rms_radius"],
+      "design_variables": ["rod_radius_ratio"]
     }
   ],
   "formal_assets": {"status": "none", "types": [], "identity_contract": null},
   "known_gaps": [
-    "Only the ideal finite-length L1 transverse field is implemented",
-    "Round rods, fringe fields, shielding and interfaces are not implemented",
-    "Collision, space-charge, COMSOL, SIMION and CAD evidence do not exist"
+    "The circular-rod field is only a provisional 2D L2 screen",
+    "Finite 3D rods, fringe fields, physical shielding and interfaces are not implemented",
+    "Collision, space-charge, SIMION and CAD evidence do not exist"
   ]
 }

@@ -49,6 +49,21 @@ def electric_field_xy(
     return -scale * power.real, scale * power.imag
 
 
+def electric_field_series_xy(
+    terms: list[tuple[int, float]], r0_m: float, rf_factor: float, x_m: float, y_m: float
+) -> tuple[float, float]:
+    """Return a transverse field from signed boundary cosine coefficients."""
+    field_x = 0.0
+    field_y = 0.0
+    position = complex(x_m, y_m)
+    for order, boundary_coefficient_v in terms:
+        power = position ** (order - 1)
+        scale = order * boundary_coefficient_v * rf_factor / (r0_m ** order)
+        field_x -= scale * power.real
+        field_y += scale * power.imag
+    return field_x, field_y
+
+
 def pseudopotential_ev(
     order: int, radius_m: float, r0_m: float, voltage_peak_v: float,
     frequency_hz: float, mass_amu: float, charge_state: int,
@@ -99,15 +114,14 @@ def _source_particles(contract: dict[str, Any]) -> list[dict[str, float]]:
 
 def _derivative(
     time_s: float, state: tuple[float, float, float, float], contract: dict[str, Any],
-    voltage_peak_v: float,
+    field_terms: list[tuple[int, float]], rf_enabled: bool,
 ) -> tuple[float, float, float, float]:
     x_m, y_m, vx_m_s, vy_m_s = state
     rf = contract["rf"]
-    order = int(contract["multipole"]["radial_order_n"])
     r0_m = float(contract["geometry_mm"]["inscribed_radius_r0"]) * 1e-3
     phase = float(rf["phase_rad"])
-    voltage = voltage_peak_v * math.cos(2 * math.pi * float(rf["frequency_Hz"]) * time_s + phase)
-    field_x, field_y = electric_field_xy(order, r0_m, voltage, x_m, y_m)
+    rf_factor = math.cos(2 * math.pi * float(rf["frequency_Hz"]) * time_s + phase) if rf_enabled else 0.0
+    field_x, field_y = electric_field_series_xy(field_terms, r0_m, rf_factor, x_m, y_m)
     charge = int(contract["particle_source"]["charge_state"]) * ELEMENTARY_CHARGE_C
     mass = float(contract["particle_source"]["mass_amu"]) * AMU_KG
     return vx_m_s, vy_m_s, charge * field_x / mass, charge * field_y / mass
@@ -115,15 +129,15 @@ def _derivative(
 
 def _rk4_step(
     time_s: float, state: tuple[float, float, float, float], step_s: float,
-    contract: dict[str, Any], voltage_peak_v: float,
+    contract: dict[str, Any], field_terms: list[tuple[int, float]], rf_enabled: bool,
 ) -> tuple[float, float, float, float]:
     def add(base: tuple[float, ...], delta: tuple[float, ...], scale: float) -> tuple[float, ...]:
         return tuple(value + scale * change for value, change in zip(base, delta))
 
-    k1 = _derivative(time_s, state, contract, voltage_peak_v)
-    k2 = _derivative(time_s + step_s / 2, add(state, k1, step_s / 2), contract, voltage_peak_v)
-    k3 = _derivative(time_s + step_s / 2, add(state, k2, step_s / 2), contract, voltage_peak_v)
-    k4 = _derivative(time_s + step_s, add(state, k3, step_s), contract, voltage_peak_v)
+    k1 = _derivative(time_s, state, contract, field_terms, rf_enabled)
+    k2 = _derivative(time_s + step_s / 2, add(state, k1, step_s / 2), contract, field_terms, rf_enabled)
+    k3 = _derivative(time_s + step_s / 2, add(state, k2, step_s / 2), contract, field_terms, rf_enabled)
+    k4 = _derivative(time_s + step_s, add(state, k3, step_s), contract, field_terms, rf_enabled)
     return tuple(
         value + step_s * (a + 2 * b + 2 * c + d) / 6
         for value, a, b, c, d in zip(state, k1, k2, k3, k4)
@@ -131,7 +145,8 @@ def _rk4_step(
 
 
 def _simulate_particle(
-    particle: dict[str, float], contract: dict[str, Any], voltage_peak_v: float,
+    particle: dict[str, float], contract: dict[str, Any],
+    field_terms: list[tuple[int, float]], rf_enabled: bool,
 ) -> dict[str, Any]:
     geometry = contract["geometry_mm"]
     numerics = contract["numerics"]
@@ -147,7 +162,7 @@ def _simulate_particle(
     status, reason = "transmitted", "ideal_exit"
     while time_s < end_s:
         step_s = min(base_step_s, end_s - time_s)
-        state = _rk4_step(time_s, state, step_s, contract, voltage_peak_v)
+        state = _rk4_step(time_s, state, step_s, contract, field_terms, rf_enabled)
         time_s += step_s
         radius_m = math.hypot(state[0], state[1])
         maximum_radius_m = max(maximum_radius_m, radius_m)
@@ -183,10 +198,12 @@ def evaluate_contract(contract: dict[str, Any]) -> tuple[dict[str, Any], list[di
     validate_contract(contract)
     particles = _source_particles(contract)
     voltage = float(contract["rf"]["amplitude_V_peak"])
+    order = int(contract["multipole"]["radial_order_n"])
+    field_terms = [(order, voltage)]
     cases = {}
     all_rows = []
-    for case_id, case_voltage in (("rf_on", voltage), ("zero_rf_control", 0.0)):
-        rows = [_simulate_particle(particle, contract, case_voltage) for particle in particles]
+    for case_id, rf_enabled in (("rf_on", True), ("zero_rf_control", False)):
+        rows = [_simulate_particle(particle, contract, field_terms, rf_enabled) for particle in particles]
         for row in rows:
             row["case_id"] = case_id
         all_rows.extend(rows)
@@ -195,7 +212,6 @@ def evaluate_contract(contract: dict[str, Any]) -> tuple[dict[str, Any], list[di
     source = contract["particle_source"]
     r0_m = float(geometry["inscribed_radius_r0"]) * 1e-3
     usable_m = float(geometry["usable_radius"]) * 1e-3
-    order = int(contract["multipole"]["radial_order_n"])
     reference = {
         "pseudopotential_at_usable_radius_eV": pseudopotential_ev(
             order, usable_m, r0_m, voltage, float(contract["rf"]["frequency_Hz"]),
@@ -228,9 +244,58 @@ def evaluate_contract(contract: dict[str, Any]) -> tuple[dict[str, Any], list[di
     return metrics, all_rows
 
 
-def write_results(metrics: dict[str, Any], rows: list[dict[str, Any]], result_dir: Path) -> None:
+def evaluate_round_rod_contract(
+    contract: dict[str, Any], screen_metrics: dict[str, Any]
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Evaluate finite transport in the fitted 2D circular-rod field."""
+    validate_contract(contract)
+    selected = screen_metrics["selected_candidate"]
+    coefficients = selected["boundary_cosine_coefficients_V"]
+    source_drive = float(screen_metrics["field_solve_drive_V"])
+    scale = float(contract["rf"]["amplitude_V_peak"]) / source_drive
+    field_terms = [(int(order), float(value) * scale) for order, value in coefficients.items()]
+    particles = _source_particles(contract)
+    cases: dict[str, Any] = {}
+    all_rows: list[dict[str, Any]] = []
+    for case_id, rf_enabled in (("round_rod_rf_on", True), ("zero_rf_control", False)):
+        rows = [_simulate_particle(particle, contract, field_terms, rf_enabled) for particle in particles]
+        for row in rows:
+            row["case_id"] = case_id
+        all_rows.extend(rows)
+        cases[case_id] = _case_metrics(rows)
+    improvement = cases["round_rod_rf_on"]["transmission_fraction"] - cases["zero_rf_control"]["transmission_fraction"]
+    acceptance = contract["functional_acceptance"]
+    checks = {
+        "minimum_rf_transmission": cases["round_rod_rf_on"]["transmission_fraction"] >= float(acceptance["minimum_rf_transmission"]),
+        "minimum_improvement_over_zero_rf": improvement >= float(acceptance["minimum_improvement_over_zero_rf"]),
+    }
+    metrics = {
+        "schema_version": 1,
+        "role": "multipole_round_rod_l2_transport_metrics",
+        "project_id": contract["project_id"],
+        "model_level": "L2",
+        "selected_geometry": {
+            key: selected[key] for key in (
+                "rod_radius_ratio", "rod_radius_mm", "rod_center_radius_mm",
+                "minimum_adjacent_surface_gap_mm", "parasitic_harmonic_score",
+            )
+        },
+        "field_terms_boundary_cosine_V": {str(order): value for order, value in field_terms},
+        "cases": cases,
+        "rf_minus_zero_transmission": improvement,
+        "checks": checks,
+        "status": "PASS" if all(checks.values()) else "FAIL",
+        "claim_limit": "Fitted 2D COMSOL circular-rod field extended uniformly along z; no fringe field, 3D solver tracking, collisions, Candidate or Formal claim.",
+    }
+    return metrics, all_rows
+
+
+def write_results(
+    metrics: dict[str, Any], rows: list[dict[str, Any]], result_dir: Path,
+    metrics_filename: str = "ideal_transport_metrics.json",
+) -> None:
     result_dir.mkdir(parents=True, exist_ok=True)
-    metrics_path = result_dir / "ideal_transport_metrics.json"
+    metrics_path = result_dir / metrics_filename
     metrics_path.write_text(json.dumps(metrics, indent=2) + "\n", encoding="utf-8")
     fields = [
         "case_id", "particle_id", "status", "terminal_reason", "birth_time_s", "terminal_time_s",
@@ -248,11 +313,12 @@ def _write_figure(metrics: dict[str, Any], rows: list[dict[str, Any]], path: Pat
     import matplotlib.pyplot as plt
 
     figure, axes = plt.subplots(1, 2, figsize=(10, 4.2), constrained_layout=True)
-    case_ids = ["zero_rf_control", "rf_on"]
+    rf_case = "round_rod_rf_on" if "round_rod_rf_on" in metrics["cases"] else "rf_on"
+    case_ids = ["zero_rf_control", rf_case]
     transmissions = [metrics["cases"][case]["transmission_fraction"] for case in case_ids]
     axes[0].bar(["0 V control", "RF on"], transmissions, color=["#bdbdbd", "#238b45"])
     axes[0].set(ylim=(0, 1.05), ylabel="Transmission fraction", title="Functional transport control")
-    colors = {"zero_rf_control": "#969696", "rf_on": "#2171b5"}
+    colors = {"zero_rf_control": "#969696", rf_case: "#2171b5"}
     for case_id in case_ids:
         selected = [row for row in rows if row["case_id"] == case_id]
         axes[1].scatter(
@@ -262,6 +328,6 @@ def _write_figure(metrics: dict[str, Any], rows: list[dict[str, Any]], path: Pat
         )
     axes[1].set(aspect="equal", xlabel="Terminal x (mm)", ylabel="Terminal y (mm)", title="Terminal transverse states")
     axes[1].legend(fontsize=8)
-    figure.suptitle(metrics["project_id"] + " — ideal L1 reference")
+    figure.suptitle(metrics["project_id"] + f" — {metrics['model_level']} transport reference")
     figure.savefig(path, dpi=180)
     plt.close(figure)

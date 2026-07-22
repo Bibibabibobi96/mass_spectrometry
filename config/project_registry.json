@@ -16,11 +16,11 @@
     },
     {
       "descriptor": "projects/rf_hexapole_ion_guide/config/project.json",
-      "sha256": "FC21A84E656FE60F991A5C64079B299A966885B8C51F4394130F484C824DE6EA"
+      "sha256": "F2613B57E96C1703B31FBBC62F1CFF42E13999C777EA999B5CD0083E82D40998"
     },
     {
       "descriptor": "projects/rf_octupole_ion_guide/config/project.json",
-      "sha256": "5400E8DE7D587063E654FBBB3EAF646E17E1FA496213A7B9FC88F37031869F16"
+      "sha256": "91F8BF606DAE22518163CB03955A450445C68532E6CDED36E276B61D553CAD90"
     },
     {
       "descriptor": "projects/rf_quadrupole_collision_cooling/config/project.json",
@@ -214,7 +214,8 @@
       "purpose": "六极杆无碰撞传输、接受度和未来碰撞冷却设计",
       "lifecycle_status": "static",
       "toolchains": [
-        "python"
+        "python",
+        "comsol"
       ],
       "contracts": {
         "baseline": "config/baseline.json",
@@ -239,6 +240,22 @@
             "maximum_radius"
           ],
           "design_variables": []
+        },
+        {
+          "capability_id": "hexapole_round_rod_l2_transport",
+          "function": "ion_transport",
+          "status": "static",
+          "modes": [
+            "round_rod_no_collision"
+          ],
+          "metrics": [
+            "parasitic_harmonic_score",
+            "transmission_fraction",
+            "exit_rms_radius"
+          ],
+          "design_variables": [
+            "rod_radius_ratio"
+          ]
         }
       ],
       "formal_assets": {
@@ -247,9 +264,9 @@
         "identity_contract": null
       },
       "known_gaps": [
-        "Only the ideal finite-length L1 transverse field is implemented",
-        "Round rods, fringe fields, shielding and interfaces are not implemented",
-        "Collision, space-charge, COMSOL, SIMION and CAD evidence do not exist"
+        "The circular-rod field is only a provisional 2D L2 screen",
+        "Finite 3D rods, fringe fields, physical shielding and interfaces are not implemented",
+        "Collision, space-charge, SIMION and CAD evidence do not exist"
       ]
     },
     {
@@ -260,7 +277,8 @@
       "purpose": "八极杆无碰撞传输、接受度和未来碰撞冷却设计",
       "lifecycle_status": "static",
       "toolchains": [
-        "python"
+        "python",
+        "comsol"
       ],
       "contracts": {
         "baseline": "config/baseline.json",
@@ -285,6 +303,22 @@
             "maximum_radius"
           ],
           "design_variables": []
+        },
+        {
+          "capability_id": "octupole_round_rod_l2_transport",
+          "function": "ion_transport",
+          "status": "static",
+          "modes": [
+            "round_rod_no_collision"
+          ],
+          "metrics": [
+            "parasitic_harmonic_score",
+            "transmission_fraction",
+            "exit_rms_radius"
+          ],
+          "design_variables": [
+            "rod_radius_ratio"
+          ]
         }
       ],
       "formal_assets": {
@@ -293,9 +327,9 @@
         "identity_contract": null
       },
       "known_gaps": [
-        "Only the ideal finite-length L1 transverse field is implemented",
-        "Round rods, fringe fields, shielding and interfaces are not implemented",
-        "Collision, space-charge, COMSOL, SIMION and CAD evidence do not exist"
+        "The circular-rod field is only a provisional 2D L2 screen",
+        "Finite 3D rods, fringe fields, physical shielding and interfaces are not implemented",
+        "Collision, space-charge, SIMION and CAD evidence do not exist"
       ]
     },
     {

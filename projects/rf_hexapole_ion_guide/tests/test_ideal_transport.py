@@ -3,10 +3,12 @@ import math
 import unittest
 from pathlib import Path
 
+from common.multipole.analyze_round_rod_screen import analyze
 from common.multipole.ideal_transport import (
     adiabaticity,
     electric_field_xy,
     evaluate_contract,
+    evaluate_round_rod_contract,
     potential_spatial,
     pseudopotential_ev,
 )
@@ -37,6 +39,34 @@ class HexapoleIdealTransportTests(unittest.TestCase):
 
     def test_l1_functional_gate(self):
         metrics, rows = evaluate_contract(self.contract)
+        self.assertEqual(metrics["status"], "PASS")
+        self.assertEqual(len(rows), 50)
+
+    def test_round_rod_screen_recovers_boundary_normalized_harmonic(self):
+        screen = json.loads((PROJECT_ROOT / "config" / "round_rod_field_screen.json").read_text(encoding="utf-8"))
+        rows = []
+        for ratio, parasitic in ((0.45, 0.03), (0.5, 0.01)):
+            for radius_mm in (1.6, 2.4):
+                for index in range(96):
+                    theta = 2 * math.pi * index / 96
+                    rho = radius_mm / 4.0
+                    value = 100 * (rho**3 * math.cos(3 * theta) + parasitic * rho**9 * math.cos(9 * theta))
+                    rows.append({"rod_radius_ratio": str(ratio), "sample_radius_mm": str(radius_mm), "theta_rad": str(theta), "potential_V": str(value)})
+        result = analyze(rows, screen)
+        self.assertEqual(result["selected_candidate"]["rod_radius_ratio"], 0.5)
+        self.assertAlmostEqual(result["selected_candidate"]["harmonics"]["normalized_a9_over_a3"], 0.01, places=10)
+
+    def test_round_rod_l2_functional_gate(self):
+        screen = {
+            "field_solve_drive_V": 100.0,
+            "selected_candidate": {
+                "rod_radius_ratio": 0.55, "rod_radius_mm": 2.2,
+                "rod_center_radius_mm": 6.2, "minimum_adjacent_surface_gap_mm": 1.8,
+                "parasitic_harmonic_score": 0.004,
+                "boundary_cosine_coefficients_V": {"3": 100.0, "9": -0.2, "15": 0.1},
+            },
+        }
+        metrics, rows = evaluate_round_rod_contract(self.contract, screen)
         self.assertEqual(metrics["status"], "PASS")
         self.assertEqual(len(rows), 50)
 
