@@ -13,6 +13,7 @@ from common.multipole.ideal_transport import (
     pseudopotential_ev,
     source_particles,
 )
+from common.multipole.resolve_finite_3d_contract import Finite3DContractError, resolve_contract
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -73,10 +74,25 @@ class OctupoleIdealTransportTests(unittest.TestCase):
 
     def test_finite_3d_contract_preserves_baseline_source_and_length(self):
         l3 = json.loads((PROJECT_ROOT / "config" / "finite_3d_transport.json").read_text(encoding="utf-8"))
+        resolved = resolve_contract(self.contract, l3)
         self.assertEqual(l3["multipole"], {"radial_order_n": 4, "electrode_count": 8})
-        self.assertEqual(l3["geometry_mm"]["rod_length"], self.contract["geometry_mm"]["effective_length"])
-        self.assertLess(l3["geometry_mm"]["vacuum_z_min"], l3["geometry_mm"]["source_z"])
+        self.assertEqual(resolved["derived_geometry_mm"]["rod_length"], self.contract["geometry_mm"]["effective_length"])
+        self.assertLess(resolved["derived_geometry_mm"]["vacuum_z_min"], resolved["derived_geometry_mm"]["source_z"])
+        self.assertLess(resolved["derived_geometry_mm"]["source_z"], resolved["derived_geometry_mm"]["entrance_plate_z_min"])
+        self.assertGreater(resolved["derived_geometry_mm"]["detector_z"], resolved["derived_geometry_mm"]["exit_plate_z_max"])
         self.assertEqual(len(source_particles(self.contract)), self.contract["particle_source"]["count"])
+
+    def test_finite_3d_contract_rejects_aperture_beyond_working_region(self):
+        l3 = json.loads((PROJECT_ROOT / "config" / "finite_3d_transport.json").read_text(encoding="utf-8"))
+        l3["geometry_mm"]["exit_interface"]["aperture_radius_mm"] = 3.7
+        with self.assertRaises(Finite3DContractError):
+            resolve_contract(self.contract, l3)
+
+    def test_finite_3d_contract_rejects_unknown_physical_field(self):
+        l3 = json.loads((PROJECT_ROOT / "config" / "finite_3d_transport.json").read_text(encoding="utf-8"))
+        l3["geometry_mm"]["legacy_source_z"] = -1.5
+        with self.assertRaises(Finite3DContractError):
+            resolve_contract(self.contract, l3)
 
 
 if __name__ == "__main__":

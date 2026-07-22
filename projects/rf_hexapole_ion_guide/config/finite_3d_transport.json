@@ -1,23 +1,32 @@
 {
-  "schema_version": 1,
-  "role": "multipole_finite_3d_transport_contract",
+  "schema_version": 2,
+  "role": "multipole_finite_3d_interface_transport_contract",
   "project_id": "rf_hexapole_ion_guide",
   "model_level": "L3",
   "multipole": {"radial_order_n": 3, "electrode_count": 6},
   "geometry_mm": {
     "rod_z_min": 0.0,
-    "rod_length": 79.6,
-    "vacuum_z_min": -2.0,
-    "vacuum_z_max": 81.6,
-    "source_z": -1.0,
-    "detector_z": 80.6,
     "grounded_shield_inner_radius": 20.0,
     "grounded_shield_wall_thickness": 1.0,
-    "grounded_end_cap_thickness": 0.5,
-    "working_region_radius": 3.6
+    "grounded_outer_end_cap_thickness": 0.5,
+    "working_region_radius": 3.6,
+    "entrance_interface": {
+      "aperture_radius_mm": 3.6,
+      "plate_thickness_mm": 0.5,
+      "rod_clearance_mm": 0.5,
+      "particle_plane_distance_mm": 0.5,
+      "outer_ground_clearance_mm": 0.5
+    },
+    "exit_interface": {
+      "aperture_radius_mm": 3.6,
+      "plate_thickness_mm": 0.5,
+      "rod_clearance_mm": 0.5,
+      "particle_plane_distance_mm": 0.5,
+      "outer_ground_clearance_mm": 0.5
+    }
   },
   "mesh": {"global_auto_level": 6, "working_region_maximum_element_size_mm": 0.5},
   "trajectory": {"rf_steps_per_period": 40, "maximum_global_time_us": 50.0},
   "functional_acceptance": {"minimum_rf_transmission": 0.8, "minimum_improvement_over_zero_rf": 0.2},
-  "claim_limit": "Finite 3D circular rods in a closed grounded cylindrical cavity; functional direct COMSOL tracking only, without apertured end caps, mesh convergence, SIMION, CAD, Candidate or Formal claim."
+  "claim_limit": "Finite 3D circular rods with parameterized apertured entrance/exit plates and finite external injection/output regions; functional direct COMSOL tracking only, without mesh convergence, SIMION, CAD, Candidate or Formal claim."
 }

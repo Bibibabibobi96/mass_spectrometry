@@ -27,7 +27,7 @@ if ($sourceDocument.status -ne 'success' -or $sourceDocument.project -ne $projec
   throw 'The finite 3D field-screen source is not a successful run for this project.'
 }
 if ([string]::IsNullOrWhiteSpace($RunId)) {
-  $taskLabel = $projectId.Replace('_','-') + '-finite-3d'
+  $taskLabel = $projectId.Replace('_','-') + '-finite-3d-interfaces'
   $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + "__sim__comsol__${taskLabel}__l3-n25"
 }
 & $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
@@ -42,6 +42,7 @@ $runtimeDir = Join-Path $logDir 'runtime'
 New-Item -ItemType Directory -Force -Path $inputDir,$resultDir,$logDir,$runtimeDir | Out-Null
 $baseline = Join-Path $inputDir 'baseline.json'
 $contract = Join-Path $inputDir 'finite_3d_transport.json'
+$resolvedContract = Join-Path $inputDir 'finite_3d_transport_resolved.json'
 $mode = Join-Path $inputDir 'finite_3d_no_collision.json'
 $fieldMetrics = Join-Path $inputDir 'round_rod_field_screen_metrics.json'
 $particleSource = Join-Path $inputDir 'particle_source.csv'
@@ -52,6 +53,7 @@ $sourceSamples = Join-Path $sourceDir 'results\round_rod_potential_samples.csv'
 $sourceContract = Join-Path $sourceDir 'inputs\round_rod_field_screen.json'
 $screenAnalysis = Join-Path $repoRoot 'common\multipole\analyze_round_rod_screen.py'
 '{}' | Set-Content -LiteralPath $fieldMetrics -Encoding UTF8
+'{}' | Set-Content -LiteralPath $resolvedContract -Encoding UTF8
 'particle_id,birth_time_s,x_mm,y_mm,z_mm,vx_m_s,vy_m_s,vz_m_s' |
   Set-Content -LiteralPath $particleSource -Encoding UTF8
 
@@ -76,6 +78,7 @@ $task = Join-Path $repoRoot 'common\multipole\solve_finite_3d_transport.m'
     baseline = $baseline
     mode = $mode
     finite_3d_contract = $contract
+    finite_3d_resolved_contract = $resolvedContract
     particle_source = $particleSource
     field_screen_metrics = $fieldMetrics
     field_screen_manifest = $sourceManifest
@@ -102,15 +105,21 @@ try {
   try {
     & $python $screenAnalysis --samples $sourceSamples --contract $sourceContract --output $fieldMetrics
     if ($LASTEXITCODE -ne 0) { throw 'Could not freeze the selected L2 field-screen geometry.' }
-    $l3Document = Get-Content -LiteralPath $contract -Raw -Encoding UTF8 | ConvertFrom-Json
+    Push-Location $repoRoot
+    try {
+      & $python -m common.multipole.resolve_finite_3d_contract `
+        --baseline $baseline --contract $contract --output $resolvedContract
+      if ($LASTEXITCODE -ne 0) { throw 'Finite 3D interface contract validation failed.' }
+    } finally { Pop-Location }
+    $l3Document = Get-Content -LiteralPath $resolvedContract -Raw -Encoding UTF8 | ConvertFrom-Json
     Push-Location $repoRoot
     try {
       & $python -m common.multipole.generate_particle_source `
-        --baseline $baseline --release-z-mm ([double]$l3Document.geometry_mm.source_z) --output $particleSource
+        --baseline $baseline --release-z-mm ([double]$l3Document.derived_geometry_mm.source_z) --output $particleSource
       if ($LASTEXITCODE -ne 0) { throw 'Could not freeze the finite 3D particle source.' }
     } finally { Pop-Location }
     $env:MULTIPOLE_L3_BASELINE = $baseline
-    $env:MULTIPOLE_L3_CONTRACT = $contract
+    $env:MULTIPOLE_L3_CONTRACT = $resolvedContract
     $env:MULTIPOLE_L3_FIELD_METRICS = $fieldMetrics
     $env:MULTIPOLE_L3_PARTICLE_SOURCE = $particleSource
     $env:MULTIPOLE_L3_RUNTIME_DIR = $runtimeDir

@@ -1,7 +1,7 @@
 # RF六极杆离子导引项目
 
-本项目是`rf_multipole_ion_optics`家族的独立六极杆设计线。当前已从理想L1、二维圆杆L2推进到封闭
-接地腔内的有限三维COMSOL直接传输；现状与边界以[`docs/PROJECT.md`](docs/PROJECT.md)为准。
+本项目是`rf_multipole_ion_optics`家族的独立六极杆设计线。当前已从理想L1、二维圆杆L2推进到带
+参数化开孔端板和有限外部区的三维COMSOL直接传输；现状与边界以[`docs/PROJECT.md`](docs/PROJECT.md)为准。
 
 ## 固定阅读顺序
 

@@ -37,9 +37,10 @@ try
     rodRadius = selected.rod_radius_mm;
     centerRadius = selected.rod_center_radius_mm;
     g = contract.geometry_mm;
-    assert(abs(g.rod_length-baseline.geometry_mm.effective_length) < 1e-12, ...
+    d = contract.derived_geometry_mm;
+    assert(abs(d.rod_length-baseline.geometry_mm.effective_length) < 1e-12, ...
         'Finite 3D rod length differs from the baseline.');
-    assert(all(abs(source.z_mm-g.source_z) < 1e-12), 'Particle source plane differs from the L3 contract.');
+    assert(all(abs(source.z_mm-d.source_z) < 1e-12), 'Particle source plane differs from the L3 contract.');
     rf = baseline.rf;
     import com.comsol.model.*
     import com.comsol.model.util.*
@@ -54,17 +55,17 @@ try
     comp = model.component.create('comp1', true);
     geom = comp.geom.create('geom1', 3);
     geom.lengthUnit('mm');
-    vacuumHeight = g.vacuum_z_max-g.vacuum_z_min;
-    shieldOuter = g.grounded_shield_inner_radius+g.grounded_shield_wall_thickness;
+    vacuumHeight = d.vacuum_z_max-d.vacuum_z_min;
+    shieldOuter = d.shield_outer_radius;
     geom.feature.create('vac', 'Cylinder');
     geom.feature('vac').set('r', sprintf('%.17g[mm]', g.grounded_shield_inner_radius));
     geom.feature('vac').set('h', sprintf('%.17g[mm]', vacuumHeight));
-    geom.feature('vac').set('pos', {'0','0',sprintf('%.17g[mm]', g.vacuum_z_min)});
+    geom.feature('vac').set('pos', {'0','0',sprintf('%.17g[mm]', d.vacuum_z_min)});
     geom.feature('vac').set('selresult', 'on');
     geom.feature.create('workvol', 'Cylinder');
     geom.feature('workvol').set('r', sprintf('%.17g[mm]', g.working_region_radius));
     geom.feature('workvol').set('h', sprintf('%.17g[mm]', vacuumHeight));
-    geom.feature('workvol').set('pos', {'0','0',sprintf('%.17g[mm]', g.vacuum_z_min)});
+    geom.feature('workvol').set('pos', {'0','0',sprintf('%.17g[mm]', d.vacuum_z_min)});
     geom.feature('workvol').set('selresult', 'on');
     rodTags = cell(1, electrodeCount);
     for k = 1:electrodeCount
@@ -72,7 +73,7 @@ try
         angle = (k-1)*360/electrodeCount;
         geom.feature.create(rodTags{k}, 'Cylinder');
         geom.feature(rodTags{k}).set('r', sprintf('%.17g[mm]', rodRadius));
-        geom.feature(rodTags{k}).set('h', sprintf('%.17g[mm]', g.rod_length));
+        geom.feature(rodTags{k}).set('h', sprintf('%.17g[mm]', d.rod_length));
         geom.feature(rodTags{k}).set('pos', { ...
             sprintf('%.17g[mm]', centerRadius*cosd(angle)), ...
             sprintf('%.17g[mm]', centerRadius*sind(angle)), ...
@@ -82,28 +83,27 @@ try
     geom.feature.create('shieldO', 'Cylinder');
     geom.feature('shieldO').set('r', sprintf('%.17g[mm]', shieldOuter));
     geom.feature('shieldO').set('h', sprintf('%.17g[mm]', vacuumHeight));
-    geom.feature('shieldO').set('pos', {'0','0',sprintf('%.17g[mm]', g.vacuum_z_min)});
+    geom.feature('shieldO').set('pos', {'0','0',sprintf('%.17g[mm]', d.vacuum_z_min)});
     geom.feature.create('shieldH', 'Cylinder');
     geom.feature('shieldH').set('r', sprintf('%.17g[mm]', g.grounded_shield_inner_radius));
     geom.feature('shieldH').set('h', sprintf('%.17g[mm]', vacuumHeight));
-    geom.feature('shieldH').set('pos', {'0','0',sprintf('%.17g[mm]', g.vacuum_z_min)});
+    geom.feature('shieldH').set('pos', {'0','0',sprintf('%.17g[mm]', d.vacuum_z_min)});
     geom.feature.create('shield', 'Difference');
     geom.feature('shield').selection('input').set({'shieldO'});
     geom.feature('shield').selection('input2').set({'shieldH'});
     geom.feature('shield').set('selresult', 'on');
-    for cap = {'capIn','capOut'}
-        name = cap{1};
-        z = g.vacuum_z_min;
-        if strcmp(name, 'capOut'), z = g.vacuum_z_max-g.grounded_end_cap_thickness; end
-        geom.feature.create(name, 'Cylinder');
-        geom.feature(name).set('r', sprintf('%.17g[mm]', shieldOuter));
-        geom.feature(name).set('h', sprintf('%.17g[mm]', g.grounded_end_cap_thickness));
-        geom.feature(name).set('pos', {'0','0',sprintf('%.17g[mm]', z)});
-        geom.feature(name).set('selresult', 'on');
-    end
+    create_cylinder(geom, 'outerIn', shieldOuter, g.grounded_outer_end_cap_thickness, d.vacuum_z_min);
+    create_cylinder(geom, 'outerOut', shieldOuter, g.grounded_outer_end_cap_thickness, ...
+        d.exit_outer_ground_inner_z);
+    create_apertured_plate(geom, 'capIn', shieldOuter, ...
+        g.entrance_interface.aperture_radius_mm, g.entrance_interface.plate_thickness_mm, ...
+        d.entrance_plate_z_min);
+    create_apertured_plate(geom, 'capOut', shieldOuter, ...
+        g.exit_interface.aperture_radius_mm, g.exit_interface.plate_thickness_mm, ...
+        d.exit_plate_z_min);
     geom.run;
 
-    electrodeTags = [rodTags, {'shield','capIn','capOut'}];
+    electrodeTags = [rodTags, {'shield','outerIn','outerOut','capIn','capOut'}];
     electrodeDomains = cellfun(@(name) ['geom1_' name '_dom'], electrodeTags, ...
         'UniformOutput', false);
     comp.selection.create('sel_vac', 'Complement');
@@ -122,7 +122,7 @@ try
         potential.selection.named(boundarySelection);
         potential.set('V0', sprintf('%d[V]', 100*(-1)^(k+1)));
     end
-    for groundName = {'shield','capIn','capOut'}
+    for groundName = {'shield','outerIn','outerOut','capIn','capOut'}
         name = groundName{1};
         selection = ['selb_' name];
         comp.selection.create(selection, 'Adjacent');
@@ -184,11 +184,13 @@ try
     [pdOn, solutionOn] = solve_particle_case(model, cpt, 'on', 1, dt, timeMaximum);
     [pdZero, solutionZero] = solve_particle_case(model, cpt, 'zero', 0, dt, timeMaximum);
     [onMetrics, onEvents, onTrajectories] = analyze_particle_case( ...
-        pdOn, source, 'finite_3d_rf_on', g.detector_z, g.working_region_radius, ...
-        g.rod_z_min, g.rod_z_min+g.rod_length);
+        pdOn, source, 'finite_3d_rf_on', d.detector_z, g.working_region_radius, ...
+        g.rod_z_min, d.rod_z_max, d.entrance_plate_z_max, d.exit_plate_z_max, ...
+        g.entrance_interface.aperture_radius_mm, g.exit_interface.aperture_radius_mm);
     [zeroMetrics, zeroEvents, zeroTrajectories] = analyze_particle_case( ...
-        pdZero, source, 'zero_rf_control', g.detector_z, g.working_region_radius, ...
-        g.rod_z_min, g.rod_z_min+g.rod_length);
+        pdZero, source, 'zero_rf_control', d.detector_z, g.working_region_radius, ...
+        g.rod_z_min, d.rod_z_max, d.entrance_plate_z_max, d.exit_plate_z_max, ...
+        g.entrance_interface.aperture_radius_mm, g.exit_interface.aperture_radius_mm);
     events = [onEvents; zeroEvents];
     trajectories = [onTrajectories; zeroTrajectories];
     outputDir = fileparts(eventsPath);
@@ -202,6 +204,10 @@ try
     metrics = struct('schema_version', 1, 'role', 'multipole_finite_3d_transport_metrics', ...
         'status', 'UNRESOLVED', 'project_id', contract.project_id, ...
         'model_level', 'L3', 'selected_geometry', selected, ...
+        'interface_geometry_mm', struct('entrance_aperture_radius', ...
+        g.entrance_interface.aperture_radius_mm, 'exit_aperture_radius', ...
+        g.exit_interface.aperture_radius_mm, 'source_z', d.source_z, ...
+        'detector_z', d.detector_z), ...
         'cases', struct('finite_3d_rf_on', onMetrics, 'zero_rf_control', zeroMetrics), ...
         'rf_minus_zero_transmission', improvement, 'checks', checks, ...
         'mesh', struct('global_auto_level', contract.mesh.global_auto_level, ...
@@ -212,7 +218,8 @@ try
     assert(metricsFid >= 0, 'Could not create finite 3D metrics.');
     fprintf(metricsFid, '%s', jsonencode(metrics, 'PrettyPrint', true));
     fclose(metricsFid);
-    write_transport_plot(onMetrics, zeroMetrics, onEvents, zeroEvents, plotPath, contract.project_id);
+    write_transport_plot(onMetrics, zeroMetrics, onEvents, zeroEvents, ...
+        onTrajectories, zeroTrajectories, plotPath, contract.project_id, g, d);
     create_native_plot(model, solutionOn, 'pd_on', 'pg_on', 'Finite 3D RF-on trajectories');
     create_native_plot(model, solutionZero, 'pd_zero', 'pg_zero', 'Finite 3D zero-RF control');
     model.param.set('rf_scale', '1');
@@ -261,16 +268,20 @@ pd = mphparticle(model, 'dataset', datasetTag);
 model.result.dataset.remove(datasetTag);
 end
 
-function [metrics, events, trajectories] = analyze_particle_case(pd, source, caseId, detectorZ, usableRadius, rodZMin, rodZMax)
+function [metrics, events, trajectories] = analyze_particle_case(pd, source, caseId, ...
+    detectorZ, usableRadius, rodZMin, rodZMax, entranceCrossingZ, exitCrossingZ, ...
+    entranceApertureRadius, exitApertureRadius)
 x = squeeze(pd.p(:,:,1)); y = squeeze(pd.p(:,:,2)); z = squeeze(pd.p(:,:,3));
 if isvector(x), x = x(:); y = y(:); z = z(:); end
 radius = sqrt(x.^2+y.^2);
 particleCount = size(z,2);
-eventRows = cell(particleCount, 11);
+eventRows = cell(particleCount, 13);
 trajectoryRows = cell(0, 7);
 transmitted = false(1, particleCount);
 exitRadii = nan(1, particleCount);
 maximumRodRadius = nan(1, particleCount);
+entranceRadii = nan(1, particleCount);
+exitRadiiAtPlate = nan(1, particleCount);
 for particle = 1:particleCount
     valid = find(isfinite(x(:,particle)) & isfinite(y(:,particle)) & isfinite(z(:,particle)));
     assert(~isempty(valid), 'A finite 3D particle has no trajectory samples.');
@@ -281,6 +292,10 @@ for particle = 1:particleCount
         maximumRodRadius(particle) = max(radius(rodSamples,particle));
     end
     crossing = valid(find(z(valid,particle) >= detectorZ, 1, 'first'));
+    entranceCrossing = valid(find(z(valid,particle) >= entranceCrossingZ, 1, 'first'));
+    exitCrossing = valid(find(z(valid,particle) >= exitCrossingZ, 1, 'first'));
+    if ~isempty(entranceCrossing), entranceRadii(particle) = radius(entranceCrossing,particle); end
+    if ~isempty(exitCrossing), exitRadiiAtPlate(particle) = radius(exitCrossing,particle); end
     if ~isempty(crossing) && maximumRodRadius(particle) < usableRadius
         transmitted(particle) = true;
         reason = 'detector_plane';
@@ -288,44 +303,64 @@ for particle = 1:particleCount
         exitRadii(particle) = radius(crossing,particle);
     else
         terminal = valid(end);
-        if maximumRodRadius(particle) >= usableRadius
+        if isempty(entranceCrossing) || entranceRadii(particle) > entranceApertureRadius
+            reason = 'entrance_aperture_loss';
+        elseif maximumRodRadius(particle) >= usableRadius
             reason = 'usable_radius_exceeded';
+        elseif isempty(exitCrossing) || exitRadiiAtPlate(particle) > exitApertureRadius
+            reason = 'exit_aperture_loss';
         else
-            reason = 'electrode_or_timeout';
+            reason = 'external_region_or_timeout';
         end
     end
     status = 'lost'; if transmitted(particle), status = 'transmitted'; end
     eventRows(particle,:) = {caseId, source.particle_id(particle), status, reason, ...
         source.birth_time_s(particle), pd.t(terminal), x(terminal,particle), ...
         y(terminal,particle), z(terminal,particle), radius(terminal,particle), ...
-        maximumRodRadius(particle)};
+        maximumRodRadius(particle), entranceRadii(particle), exitRadiiAtPlate(particle)};
     sampled = unique([valid(1:20:end); valid(end)]);
     for sample = sampled'
         trajectoryRows(end+1,:) = {caseId, source.particle_id(particle), pd.t(sample), ...
             x(sample,particle), y(sample,particle), z(sample,particle), radius(sample,particle)}; %#ok<AGROW>
     end
 end
-events = cell2table(eventRows, 'VariableNames', {'case_id','particle_id','status', ...
-    'terminal_reason','birth_time_s','terminal_time_s','terminal_x_mm','terminal_y_mm', ...
-    'terminal_z_mm','terminal_radius_mm','maximum_rod_radius_mm'});
+events = cell2table(eventRows, 'VariableNames', {'case_id','particle_id','status','terminal_reason', ...
+    'birth_time_s','terminal_time_s','terminal_x_mm','terminal_y_mm','terminal_z_mm', ...
+    'terminal_radius_mm','maximum_rod_radius_mm','entrance_aperture_radius_mm', ...
+    'exit_aperture_radius_mm'});
 trajectories = cell2table(trajectoryRows, 'VariableNames', {'case_id','particle_id', ...
     'time_s','x_mm','y_mm','z_mm','radius_mm'});
 metrics = struct('particles', particleCount, 'transmitted', sum(transmitted), ...
     'transmission_fraction', mean(transmitted), ...
+    'entrance_passed', sum(isfinite(entranceRadii) & entranceRadii <= entranceApertureRadius), ...
+    'exit_passed', sum(isfinite(exitRadiiAtPlate) & exitRadiiAtPlate <= exitApertureRadius), ...
     'exit_rms_radius_mm', sqrt(mean(exitRadii(transmitted).^2)), ...
     'maximum_rod_radius_mm', max(maximumRodRadius));
 end
 
-function write_transport_plot(onMetrics, zeroMetrics, onEvents, zeroEvents, path, projectId)
+function write_transport_plot(onMetrics, zeroMetrics, onEvents, zeroEvents, ...
+    onTrajectories, zeroTrajectories, path, projectId, geometry, derived)
 figureHandle = figure('Visible', 'off', 'Position', [100 100 1000 420]);
 tiledlayout(1,2);
-nexttile; bar([zeroMetrics.transmission_fraction,onMetrics.transmission_fraction]);
-set(gca, 'XTickLabel', {'0 V control','RF on'}); ylim([0 1.05]); ylabel('Transmission fraction');
-title('Finite 3D functional control');
+nexttile; hold on;
+plot(zeroTrajectories.z_mm, zeroTrajectories.radius_mm, '.', 'Color', [0.72 0.72 0.72], 'MarkerSize', 2);
+plot(onTrajectories.z_mm, onTrajectories.radius_mm, '.', 'Color', [0.13 0.44 0.71], 'MarkerSize', 2);
+yLimit = geometry.working_region_radius*1.15;
+draw_interface_plate(derived.entrance_plate_z_min, derived.entrance_plate_z_max, ...
+    geometry.entrance_interface.aperture_radius_mm, yLimit);
+draw_interface_plate(derived.exit_plate_z_min, derived.exit_plate_z_max, ...
+    geometry.exit_interface.aperture_radius_mm, yLimit);
+xlabel('z (mm)'); ylabel('Radius (mm)'); ylim([0 yLimit]);
+title(sprintf('Interfaces: RF %.0f%%, 0 V %.0f%%', ...
+    100*onMetrics.transmission_fraction, 100*zeroMetrics.transmission_fraction));
 nexttile; hold on;
 scatter(zeroEvents.terminal_x_mm, zeroEvents.terminal_y_mm, 14, [0.55 0.55 0.55], 'filled');
 scatter(onEvents.terminal_x_mm, onEvents.terminal_y_mm, 14, [0.13 0.44 0.71], 'filled');
 axis equal; xlabel('Terminal x (mm)'); ylabel('Terminal y (mm)');
+theta = linspace(0,2*pi,200);
+plot(geometry.exit_interface.aperture_radius_mm*cos(theta), ...
+    geometry.exit_interface.aperture_radius_mm*sin(theta), 'k--', 'LineWidth', 0.8, ...
+    'HandleVisibility', 'off');
 legend({'0 V control','RF on'}, 'Location', 'best'); title('Terminal transverse states');
 sgtitle([strrep(projectId,'_','\_') ' — finite 3D L3']);
 print(figureHandle, path, '-dpng', '-r180'); close(figureHandle);
@@ -337,4 +372,29 @@ dataset.set('solution', solutionTag);
 plotGroup = model.result.create(plotTag, 'PlotGroup3D');
 plotGroup.label(label); plotGroup.set('data', datasetTag);
 plotGroup.create('traj', 'ParticleTrajectories'); plotGroup.run;
+end
+
+function create_cylinder(geom, tag, radius, height, zMin)
+geom.feature.create(tag, 'Cylinder');
+geom.feature(tag).set('r', sprintf('%.17g[mm]', radius));
+geom.feature(tag).set('h', sprintf('%.17g[mm]', height));
+geom.feature(tag).set('pos', {'0','0',sprintf('%.17g[mm]', zMin)});
+geom.feature(tag).set('selresult', 'on');
+end
+
+function create_apertured_plate(geom, tag, outerRadius, apertureRadius, thickness, zMin)
+blankTag = [tag 'Blank'];
+holeTag = [tag 'Hole'];
+create_cylinder(geom, blankTag, outerRadius, thickness, zMin);
+create_cylinder(geom, holeTag, apertureRadius, thickness, zMin);
+geom.feature.create(tag, 'Difference');
+geom.feature(tag).selection('input').set({blankTag});
+geom.feature(tag).selection('input2').set({holeTag});
+geom.feature(tag).set('selresult', 'on');
+end
+
+function draw_interface_plate(zMin, zMax, apertureRadius, yLimit)
+patch([zMin zMax zMax zMin], [apertureRadius apertureRadius yLimit yLimit], ...
+    [0.45 0.45 0.45], 'FaceAlpha', 0.35, 'EdgeColor', 'none', ...
+    'HandleVisibility', 'off');
 end
