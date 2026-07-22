@@ -68,3 +68,9 @@ S1下游由`tests/cross_solver/run_s1_physical_end_to_end.ps1`消费COMSOL局部
 唯一映射，Program直接使用绝对`ion_time_of_flight`延续同一有限脉冲，不重置时钟或波形。下游分析按
 oaTOF冻结`resolved_geometry.json`把SIMION全局落点转换为探测器局部坐标，并复用oaTOF统一峰形合同；
 S1小样本结果只允许功能与诊断声明。
+
+`analysis/audit_s1_state_chain.py`是该链的最小只读审计器：以canonical单事件状态为权威，独立反解ION
+角度经过accelerator实例3轴映射后的全局三维速度，并核对COMSOL出口、ION位置/能量/出生时刻、
+`row_map`原始ID、SIMION初始状态和`InstrumentTimeUs=出生时刻+TofUs`。它只输出汇总JSON，不复制逐粒子
+表或密集轨迹。S1直接使用`oatof_global`；只有S2出现真实相对位姿时才引入由部件pose派生的
+`instrument_global`变换。

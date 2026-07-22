@@ -53,9 +53,11 @@ Copy-Item -LiteralPath $sourceLocal -Destination $local
 $converter = Join-Path $inputDir 'build_s1_downstream_handoff.py'
 $handoffLibrary = Join-Path $inputDir 'build_oatof_handoff.py'
 $analyzer = Join-Path $inputDir 'analyze_s1_end_to_end.py'
+$stateAuditor = Join-Path $inputDir 'audit_s1_state_chain.py'
 Copy-Item -LiteralPath (Join-Path $projectRoot 'analysis\build_s1_downstream_handoff.py') -Destination $converter
 Copy-Item -LiteralPath (Join-Path $projectRoot 'analysis\build_oatof_handoff.py') -Destination $handoffLibrary
 Copy-Item -LiteralPath (Join-Path $projectRoot 'analysis\analyze_s1_end_to_end.py') -Destination $analyzer
+Copy-Item -LiteralPath (Join-Path $projectRoot 'analysis\audit_s1_state_chain.py') -Destination $stateAuditor
 $peakMetrics = Join-Path $inputDir 'peak_metrics.py'
 $analysisContract = Join-Path $inputDir 'oatof_analysis_contract.json'
 $geometryContract = Join-Path $inputDir 'oatof_resolved_geometry.json'
@@ -70,6 +72,9 @@ $handoffMetadata = Join-Path $inputDir 'handoff_metadata.json'
   --ion-output $ion --row-map-output $rowMap --metadata-output $handoffMetadata
 if ($LASTEXITCODE -ne 0) { throw 'S1 no-projection handoff build failed.' }
 $particleCount = @(Get-Content -LiteralPath $ion | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count
+$frameIds = @(Import-Csv -LiteralPath $canonical | Select-Object -ExpandProperty frame_id -Unique)
+if ($frameIds.Count -ne 1) { throw 'S1 downstream handoff must use one explicit authoritative frame.' }
+$authoritativeFrameId = [string]$frameIds[0]
 
 $oaProject = Join-Path $repoRoot 'projects\oa_tof'
 $formalDir = Join-Path $workspaceRoot 'artifacts\projects\oa_tof\formal\simion'
@@ -118,12 +123,19 @@ $resolutionFigure = Join-Path $resultDir 's1_downstream_resolution_diagnostic.pn
 if ($LASTEXITCODE -ne 0) { throw 'S1 end-to-end function gate failed.' }
 $result = Get-Content -LiteralPath $metrics -Raw -Encoding UTF8 | ConvertFrom-Json
 $runConfig = Join-Path $runDir 'run_config.json'
-[ordered]@{schema_version=1;run_id=$RunId;project='rf_quadrupole_collision_cooling';mode='rf_oatof_s1_physical_end_to_end';project_root=$repoRoot;inputs=[ordered]@{source_run_manifest=(Join-Path $source 'run_manifest.json');formal_simion_iob=$formalIob;local_joint_events=$local;entry_canonical=$entry;converter=$converter;handoff_library=$handoffLibrary;analyzer=$analyzer;peak_metrics=$peakMetrics;analysis_contract=$analysisContract;geometry_contract=$geometryContract};parameters=[ordered]@{particle_count=$particleCount;ion_table_rows=$particleCount;simion_default_num_particles=$simionDefaultParticleCount;source_mode=$sourceManifest.mode;position_projection_applied=$false;solver_clock='instrument_time';pulse_time_us=$PulseTimeUs;pulse_width_us=$PulseWidthUs;downstream_time_origin='shared_pulse_onset';dense_trajectories_saved=$false};formal_gate_passed=$false} | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath $runConfig -Encoding UTF8
+[ordered]@{schema_version=1;run_id=$RunId;project='rf_quadrupole_collision_cooling';mode='rf_oatof_s1_physical_end_to_end';project_root=$repoRoot;inputs=[ordered]@{source_run_manifest=(Join-Path $source 'run_manifest.json');formal_simion_iob=$formalIob;local_joint_events=$local;entry_canonical=$entry;converter=$converter;handoff_library=$handoffLibrary;analyzer=$analyzer;state_chain_auditor=$stateAuditor;peak_metrics=$peakMetrics;analysis_contract=$analysisContract;geometry_contract=$geometryContract};parameters=[ordered]@{particle_count=$particleCount;ion_table_rows=$particleCount;simion_default_num_particles=$simionDefaultParticleCount;source_mode=$sourceManifest.mode;authoritative_frame_id=$authoritativeFrameId;position_projection_applied=$false;solver_clock='instrument_time';pulse_time_us=$PulseTimeUs;pulse_width_us=$PulseWidthUs;downstream_time_origin='shared_pulse_onset';dense_trajectories_saved=$false};formal_gate_passed=$false} | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath $runConfig -Encoding UTF8
+$stateAudit = Join-Path $resultDir 's1_state_chain_audit.json'
+& $python $stateAuditor --entry $entry --local-events $local --canonical $canonical --ion $ion `
+  --row-map $rowMap --downstream $downstream --handoff-metadata $handoffMetadata `
+  --run-config $runConfig --source-run-config (Join-Path $source 'run_config.json') `
+  --simion-stdout $stdout --output $stateAudit
+if ($LASTEXITCODE -ne 0) { throw 'S1 state-chain physics audit failed.' }
+$stateAuditResult = Get-Content -LiteralPath $stateAudit -Raw -Encoding UTF8 | ConvertFrom-Json
 $summary = Join-Path $runDir 'summary.json'
-[ordered]@{schema_version=1;role='rf_oatof_s1_physical_end_to_end_summary';status='success';candidate_decision=$result.status;detector_hits=$result.detector_hits;rf_exit_particles=100;local_joint_exit=$result.local_joint_exit;resolution_diagnostic=$result.resolution_diagnostic;physical_link_claim_allowed=$false;resolution_claim_allowed=$false} | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $summary -Encoding UTF8
+[ordered]@{schema_version=1;role='rf_oatof_s1_physical_end_to_end_summary';status='success';candidate_decision=$result.status;state_chain_audit=$stateAuditResult.status;detector_hits=$result.detector_hits;rf_exit_particles=100;local_joint_exit=$result.local_joint_exit;resolution_diagnostic=$result.resolution_diagnostic;physical_link_claim_allowed=$false;resolution_claim_allowed=$false} | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $summary -Encoding UTF8
 $writer = Join-Path $repoRoot 'common\contracts\write_run_manifest.py'
 $args = @($writer,'--run-config',$runConfig,'--status','success','--software','COMSOL 6.4','--software','SIMION 2020','--software','Python 3.11')
-foreach ($output in @($canonical,$ion,$rowMap,$handoffMetadata,$programMetadata,$runtimeProgram,$downstream,$metrics,$events,$figure,$resolutionFigure,$stdout,$stderr,$summary)) { $args += @('--output',$output) }
+foreach ($output in @($canonical,$ion,$rowMap,$handoffMetadata,$programMetadata,$runtimeProgram,$downstream,$metrics,$stateAudit,$events,$figure,$resolutionFigure,$stdout,$stderr,$summary)) { $args += @('--output',$output) }
 & $python @args
 if ($LASTEXITCODE -ne 0) { throw 'S1 end-to-end manifest failed.' }
 Write-Output "S1_PHYSICAL_END_TO_END=PASS RUN_ID=$RunId HITS=$($result.detector_hits)/100 LOCAL_EXIT=$($result.local_joint_exit)/100"
