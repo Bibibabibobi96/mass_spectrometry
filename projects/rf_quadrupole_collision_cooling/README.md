@@ -25,6 +25,8 @@ S2–S3连接功能闭环记录：
 
 - 多极杆通用坐标、电压、Mathieu稳定区、碰撞模型和适用边界：仓库根
   [`docs/multipoles/index.md`](../../docs/multipoles/index.md)；该理论包不覆盖本项目当前参数或状态。
+- 四、六、八极杆共同消费的运行时坐标、`r0`、RF/DC双极性组电压和配对多质量机制：
+  [`../../common/multipole/README.md`](../../common/multipole/README.md)；项目baseline、mode和资格判据仍在本项目。
 - 当前具体四极杆项目的机器身份、能力和成熟度：[`config/project.json`](config/project.json)；多级杆设计族不在本项目内虚构子项目。
 - 现有入口可执行范围和组合命令链：[`config/execution_profiles.json`](config/execution_profiles.json)。
 - 共享几何契约：[`config/baseline.json`](config/baseline.json)
@@ -56,9 +58,10 @@ S2–S3连接功能闭环记录：
 - 旧`comsol/ms_rf_quadrupole_collision_cooling.m`现为拒绝执行的兼容短桩；其150 mm旧几何、硬编码
   连接和未验证碰撞模型不得恢复为当前入口。未来碰撞模式必须从共享契约重新建立。
 - SIMION 几何入口：[`simion/geometry/quad_monolithic.gem`](simion/geometry/quad_monolithic.gem)
-- SIMION 传输程序：[`simion/programs/quad_transport.lua`](simion/programs/quad_transport.lua)
+- SIMION RF-only/RF+DC程序：[`simion/programs/quad_transport.lua`](simion/programs/quad_transport.lua)
 - COMSOL 构建/GUI复验入口：[`tests/comsol/run_transport_candidate.ps1`](tests/comsol/run_transport_candidate.ps1)
 - SIMION 构建/验证入口：[`tests/simion/run_transport_candidate.ps1`](tests/simion/run_transport_candidate.ps1)
+ ；同一入口的`mass_filter_reference`模式生成配对七质量表并输出质量响应CSV、指标JSON和规范图。
 - SIMION IOB 结构门禁：[`tests/simion/inspect_builtin_quad_reference.lua`](tests/simion/inspect_builtin_quad_reference.lua)
 - 跨求解器门禁：[`tests/cross_solver/verify_transport_candidate.ps1`](tests/cross_solver/verify_transport_candidate.ps1)
 - 全项目门禁：`verify_project.ps1 -Level Static|Candidate|Formal`；Candidate必须显式给出 mode、COMSOL、

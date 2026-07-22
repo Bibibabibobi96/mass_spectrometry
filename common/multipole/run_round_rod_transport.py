@@ -14,6 +14,7 @@ from pathlib import Path
 from common.contracts.artifact_naming import validate_run_id
 from common.multipole.analyze_round_rod_screen import analyze
 from common.multipole.ensure_artifact_project import ensure_artifact_project
+from common.multipole.family_contract import from_high_order_baseline, operating_contract_document
 from common.multipole.ideal_transport import evaluate_round_rod_contract, write_results
 
 
@@ -70,8 +71,10 @@ def execute(project_root: Path, source_run_id: str, run_id: str) -> Path:
         directory.mkdir(parents=True)
     frozen_baseline = input_dir / "baseline.json"
     frozen_mode = input_dir / "round_rod_no_collision.json"
+    family_operating = input_dir / "family_operating_contract.json"
     shutil.copy2(baseline_source, frozen_baseline)
     shutil.copy2(project_root / "config" / "modes" / "round_rod_no_collision.json", frozen_mode)
+    _write_json(family_operating, operating_contract_document(from_high_order_baseline(contract)))
     run_config_path = run_dir / "run_config.json"
     summary_path = run_dir / "summary.json"
     run_config = {
@@ -84,6 +87,7 @@ def execute(project_root: Path, source_run_id: str, run_id: str) -> Path:
         "inputs": {
             "baseline": str(frozen_baseline),
             "mode": str(frozen_mode),
+            "family_operating_contract": str(family_operating),
             "field_screen_manifest": str(source_dir / "run_manifest.json"),
             "field_screen_contract": str(source_dir / "inputs" / "round_rod_field_screen.json"),
             "field_screen_samples": str(source_dir / "results" / "round_rod_potential_samples.csv"),

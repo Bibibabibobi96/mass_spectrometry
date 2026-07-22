@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "role": "rf_quadrupole_resolved_official_contract_do_not_edit",
+  "role": "rf_quadrupole_resolved_mass_filter_contract_do_not_edit",
   "inputs": {
     "baseline": "config/baseline.json",
     "baseline_sha256": "FEFE3135E4784C9358C6B0B48662FEF7F334A64278DD09E19BA9A8F8A1569494",
-    "mode": "config/modes/transport_no_collision.json",
-    "mode_sha256": "111C7DCEB54E5106024B79A66F65BB780F434AD0816B439CB74C7919783AED95",
+    "mode": "config/modes/mass_filter_reference.json",
+    "mode_sha256": "58CDC6E49A83922607F1EBB9C18F652796B1946BA10C10C900A15B7E155E814F",
     "particle_source": "config/official_particle_source.json",
     "particle_source_sha256": "FFFCF747F710154BEC9F156AD21121EF41D37189865C86F1D8FE98DC649CAE40"
   },
@@ -67,40 +67,85 @@
     "release_z": 0.0
   },
   "mode": {
-    "schema_version": 1,
-    "mode": "transport_no_collision",
-    "status": "candidate_cross_solver_mode",
-    "description": "RF-only radial confinement and axial transmission; no mass-filter DC component and no collision or drag model",
+    "schema_version": 3,
+    "mode": "mass_filter_reference",
+    "status": "simion_functional_scan_pass",
+    "source": "SIMION 2020 examples/quad/quad.lua defaults",
+    "theory_contract": {
+      "model_level": "L0",
+      "field_model_id": "quadrupole.ideal_linear.mathieu.v1",
+      "coordinate_convention_id": "multipole.cartesian.z_axis.v1",
+      "voltage_convention_id": "multipole.pair_about_common_mode.zero_to_peak.v1",
+      "voltage": {
+        "reference": "one_rod_group_about_axis_common_mode",
+        "amplitude_type": "zero_to_peak",
+        "polarity_groups": [
+          "axis_offset_plus_W",
+          "axis_offset_minus_W"
+        ],
+        "waveform": "sinusoidal"
+      }
+    },
     "rf": {
       "frequency_Hz": 1100000.0,
-      "phase_rad": 0.0,
-      "amplitude_rule": "effective_radius_cm^2 * frequency_Hz^2 * 7.222e-12 * tune_mass_amu_per_charge",
-      "amplitude_V_peak": 139.81792,
-      "tune_mass_amu_per_charge": 100.0,
-      "mathieu_q_expected": 0.706,
-      "rod_dc_differential_V": 0.0,
-      "axis_offset_V": 0.0
+      "phase_deg": 0.0,
+      "effective_radius_mm": 4.0,
+      "tune_mass_Th": 100.0,
+      "percent_tune": 97.0,
+      "apex_U_over_V_reference": 0.1678399,
+      "amplitude_V_zero_to_peak_per_group": 139.81792,
+      "dc_amplitude_V_per_group": 22.763014939677756,
+      "axis_common_mode_offset_V": -8.0
     },
     "static_electrodes_V": {
       "entrance_plate": 0.0,
-      "exit_enclosure": 0.0,
-      "detector": 0.0
+      "exit_enclosure": -100.0,
+      "detector": -1500.0
     },
-    "gas": {
-      "number_density_m3": 0.0,
-      "collision_model": "none"
+    "functional_screen": {
+      "model_level": "L1",
+      "field_model": "finite_length_ideal_linear_quadrupole_with_hard_r0_aperture",
+      "source_contract": "../../official_particle_source.json",
+      "particle_count": 256,
+      "random_seed": 20260722,
+      "mass_scan_Th": {
+        "min": 94.0,
+        "max": 108.0,
+        "step": 0.5
+      },
+      "steps_per_rf_period": 100,
+      "acceptance": {
+        "minimum_peak_transmission": 0.9,
+        "minimum_inside_band_transmission": 0.9,
+        "maximum_endpoint_transmission": 0.05
+      }
+    },
+    "solver_screen": {
+      "status": "pass",
+      "authority_run_id": "20260722_210300__sim__simion__mass-filter__n175__r03",
+      "paired_source_masses_Th": [
+        96.0,
+        99.0,
+        99.5,
+        101.5,
+        103.0,
+        103.5,
+        106.0
+      ],
+      "particles_per_mass": 25,
+      "acceptance": {
+        "minimum_center_transmission": 0.8,
+        "maximum_endpoint_transmission": 0.2,
+        "minimum_center_to_endpoint_contrast": 0.6
+      },
+      "claim_limit": "SIMION finite-geometry functional response only; no cross-solver or resolving-power qualification."
     },
     "numerics": {
-      "comsol_rf_steps_per_period": 80,
-      "comsol_mesh_auto_level": 1,
       "simion_rf_steps_per_period": 40,
       "simion_trajectory_quality": 10,
-      "maximum_time_us": 80.0,
-      "minimum_expected_transmission": 0.8,
-      "maximum_allowed_radius_fraction_r0": 1.0,
-      "cross_solver_relative_mean_tof_tolerance": 0.1,
-      "cross_solver_transmission_absolute_tolerance": 0.1
-    }
+      "maximum_time_us": 80.0
+    },
+    "execution_policy": "L1 and SIMION functional scans are allowed; cross-solver and resolving-power qualification require separately approved Candidate work."
   },
   "particle_source": {
     "schema_version": 1,

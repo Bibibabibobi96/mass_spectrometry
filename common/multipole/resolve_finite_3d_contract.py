@@ -12,6 +12,8 @@ import math
 from pathlib import Path
 from typing import Any
 
+from common.multipole.family_contract import from_high_order_baseline
+
 
 class Finite3DContractError(ValueError):
     """Raised when a finite-3D interface contract is inconsistent."""
@@ -71,6 +73,7 @@ def _resolve_interface(interface: dict[str, Any], name: str) -> dict[str, float]
 
 def resolve_contract(baseline: dict[str, Any], contract: dict[str, Any]) -> dict[str, Any]:
     """Return a validated contract with all axial coordinates resolved."""
+    operating = from_high_order_baseline(baseline)
     _require_exact_keys(
         contract,
         {
@@ -96,10 +99,9 @@ def resolve_contract(baseline: dict[str, Any], contract: dict[str, Any]) -> dict
     if contract.get("model_level") != "L3":
         raise Finite3DContractError("finite-3D interface contract must remain model level L3")
     multipole = contract.get("multipole")
-    expected = baseline.get("multipole", {})
     expected_identity = {
-        "radial_order_n": expected.get("radial_order_n"),
-        "electrode_count": expected.get("electrode_count"),
+        "radial_order_n": operating.identity.radial_order_n,
+        "electrode_count": operating.identity.electrode_count,
     }
     if not isinstance(multipole, dict) or multipole != expected_identity:
         raise Finite3DContractError("baseline and finite-3D multipole identities differ")
@@ -127,7 +129,7 @@ def resolve_contract(baseline: dict[str, Any], contract: dict[str, Any]) -> dict
     working_radius = _positive_number(geometry, "working_region_radius")
     entrance = _resolve_interface(geometry.get("entrance_interface"), "entrance")
     exit_interface = _resolve_interface(geometry.get("exit_interface"), "exit")
-    rod_length = _positive_number(baseline.get("geometry_mm", {}), "effective_length")
+    rod_length = operating.geometry.effective_length_mm
     usable_radius = _positive_number(baseline.get("geometry_mm", {}), "usable_radius")
     if working_radius > usable_radius:
         raise Finite3DContractError("working_region_radius exceeds baseline usable_radius")

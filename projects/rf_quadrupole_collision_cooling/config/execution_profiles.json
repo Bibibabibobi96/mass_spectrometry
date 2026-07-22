@@ -101,7 +101,7 @@
       ]
     },
     {
-      "profile_id": "mass_filter_l1_static",
+      "profile_id": "mass_filter_simion_functional_reference",
       "capability_id": "quadrupole_mass_filter_reference",
       "mode": "mass_filter_reference",
       "evidence_levels": ["static"],
@@ -111,7 +111,7 @@
       ],
       "supported_design_variables": ["rf_amplitude", "rf_frequency", "dc_differential", "axis_offset"],
       "supported_constraints": [],
-      "deliverable_outputs": ["simulation_results", "validation_report"],
+      "deliverable_outputs": ["simulation_results", "simion_model", "validation_report"],
       "required_bindings": ["run_id"],
       "steps": [
         {
@@ -120,15 +120,15 @@
           "arguments": ["-Level", "Static", "-PythonExe", "{python_exe}"]
         },
         {
-          "step_id": "l1_mass_response", "kind": "analyze", "shell": "python",
-          "entrypoint": "analysis/run_mass_filter_l1.py",
-          "run_id_template": "{timestamp}__analysis__python__mass-filter-l1__n256",
-          "arguments": ["--run-id", "{run_id}"]
+          "step_id": "simion_mass_response", "kind": "run", "shell": "powershell",
+          "entrypoint": "tests/simion/run_transport_candidate.ps1",
+          "run_id_template": "{timestamp}__sim__simion__mass-filter__n175",
+          "arguments": ["-Mode", "mass_filter_reference", "-RunId", "{run_id}", "-OperatingPoint", "paired-mass-functional-screen"]
         }
       ],
       "limitations": [
-        "Uses an ideal linear field with a hard r0 aperture and omits entrance and exit fringe fields",
-        "Establishes same-geometry functional feasibility only, not COMSOL or SIMION Candidate qualification"
+        "The SIMION functional scan includes the finite reference geometry but is not a cross-solver comparison",
+        "The seven-point N=25-per-mass response does not qualify resolving power or Candidate maturity"
       ]
     }
   ]

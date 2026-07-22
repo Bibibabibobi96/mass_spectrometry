@@ -30,9 +30,16 @@ $resultDir = Join-Path $runDir 'results'
 $logDir = Join-Path $runDir 'logs'
 New-Item -ItemType Directory -Force -Path $inputDir,$resultDir,$logDir | Out-Null
 $baseline = Join-Path $inputDir 'baseline.json'
+$familyOperating = Join-Path $inputDir 'family_operating_contract.json'
 $contract = Join-Path $inputDir 'round_rod_field_screen.json'
 Copy-Item -LiteralPath (Join-Path $projectRootPath 'config\baseline.json') -Destination $baseline
 Copy-Item -LiteralPath (Join-Path $projectRootPath 'config\round_rod_field_screen.json') -Destination $contract
+Push-Location $repoRoot
+try {
+  & $python -m common.multipole.resolve_family_operating_contract `
+    --adapter high-order --baseline $baseline --output $familyOperating
+  if ($LASTEXITCODE -ne 0) { throw 'Shared multipole operating-contract resolution failed.' }
+} finally { Pop-Location }
 $samples = Join-Path $resultDir 'round_rod_potential_samples.csv'
 $metrics = Join-Path $resultDir 'round_rod_field_screen_metrics.json'
 $report = Join-Path $logDir 'comsol_round_rod_field_screen.txt'
@@ -51,6 +58,7 @@ $task = Join-Path $repoRoot 'common\multipole\solve_round_rod_field_screen.m'
   project_root = $projectRootPath
   inputs = [ordered]@{
     baseline = $baseline
+    family_operating_contract = $familyOperating
     field_screen = $contract
     comsol_task = $task
     analysis = $analysis
@@ -63,12 +71,13 @@ $task = Join-Path $repoRoot 'common\multipole\solve_round_rod_field_screen.m'
 & $python $manifestWriter --run-config $runConfig --status interrupted --software 'COMSOL 6.4' --software 'MATLAB R2025b' --software 'Python 3.11' --output $summary
 if ($LASTEXITCODE -ne 0) { throw 'Initial run manifest failed.' }
 
-$environmentNames = @('MULTIPOLE_BASELINE','MULTIPOLE_ROUND_ROD_SCREEN','MULTIPOLE_ROUND_ROD_SAMPLES')
+$environmentNames = @('MULTIPOLE_BASELINE','MULTIPOLE_FAMILY_OPERATING','MULTIPOLE_ROUND_ROD_SCREEN','MULTIPOLE_ROUND_ROD_SAMPLES')
 $oldEnvironment = @{}
 foreach ($name in $environmentNames) { $oldEnvironment[$name] = [Environment]::GetEnvironmentVariable($name) }
 try {
   try {
     $env:MULTIPOLE_BASELINE = $baseline
+    $env:MULTIPOLE_FAMILY_OPERATING = $familyOperating
     $env:MULTIPOLE_ROUND_ROD_SCREEN = $contract
     $env:MULTIPOLE_ROUND_ROD_SAMPLES = $samples
     & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') -TaskScript $task -ReportPath $report

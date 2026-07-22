@@ -50,6 +50,6 @@
     "No current formal mechanical geometry or SolidWorks assembly",
     "N=100 strict interface phase-space gate remains failed",
     "Collision physics is not implemented in the current validated chain",
-    "Mass-filter mode has only solver-free L1 functional evidence; fringe fields and solver Candidate qualification remain open"
+    "Mass-filter mode has solver-free L1 and one-solver SIMION functional evidence; independent COMSOL comparison and resolving-power qualification remain open"
   ]
 }

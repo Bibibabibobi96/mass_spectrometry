@@ -9,12 +9,15 @@ import random
 from pathlib import Path
 from typing import Any
 
+from common.multipole.family_contract import from_high_order_baseline
+
 
 AMU_KG = 1.66053906660e-27
 ELEMENTARY_CHARGE_C = 1.602176634e-19
 
 
 def validate_contract(contract: dict[str, Any]) -> None:
+    operating = from_high_order_baseline(contract)
     multipole = contract["multipole"]
     order = int(multipole["radial_order_n"])
     if order < 3 or int(multipole["electrode_count"]) != 2 * order:
@@ -33,6 +36,8 @@ def validate_contract(contract: dict[str, Any]) -> None:
     geometry = contract["geometry_mm"]
     if not 0 < float(geometry["usable_radius"]) < float(geometry["inscribed_radius_r0"]):
         raise ValueError("usable radius must be positive and below r0")
+    if not math.isclose(operating.geometry.r0_mm, float(geometry["inscribed_radius_r0"])):
+        raise ValueError("normalized family r0 differs from the project baseline")
 
 
 def potential_spatial(order: int, r0_m: float, x_m: float, y_m: float) -> float:

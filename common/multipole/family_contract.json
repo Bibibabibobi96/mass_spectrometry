@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "role": "rf_multipole_family_contract",
+  "family_id": "rf_multipole_ion_optics",
+  "coordinate_convention_id": "multipole.cartesian.z_axis.v1",
+  "voltage_convention_id": "multipole.pair_about_common_mode.zero_to_peak.v1",
+  "r0_convention_id": "nearest_ideal_electrode_surface.v1",
+  "voltage_semantics": {
+    "rf_amplitude": "zero_to_peak amplitude of one polarity group about the common-mode voltage",
+    "dc_amplitude": "static differential amplitude of one polarity group about the common-mode voltage",
+    "group_positive": "common_mode + dc_amplitude + rf_waveform",
+    "group_negative": "common_mode - dc_amplitude - rf_waveform"
+  },
+  "supported_radial_orders": [2, 3, 4],
+  "canonical_units": {
+    "length": "mm",
+    "frequency": "Hz",
+    "voltage": "V",
+    "phase": "rad",
+    "mass_to_charge": "Th"
+  }
+}

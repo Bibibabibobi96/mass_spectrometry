@@ -33,6 +33,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Development-standards gate failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Project registry validation failed.' }
 & $PythonExe -m unittest discover -s (Join-Path $PSScriptRoot 'contracts') -p 'test_*.py'
 if ($LASTEXITCODE -ne 0) { throw 'Common contract tests failed.' }
+& $PythonExe -m unittest discover -s (Join-Path $PSScriptRoot 'multipole') -p 'test_*.py'
+if ($LASTEXITCODE -ne 0) { throw 'Common multipole family tests failed.' }
 & $PythonExe -m unittest discover -s (Join-Path $PSScriptRoot 'solidworks') -p 'test_*.py'
 if ($LASTEXITCODE -ne 0) { throw 'SolidWorks path-resolution tests failed.' }
 & (Join-Path $repoRoot 'projects\oa_tof\verify_project.ps1') -Level Static -PythonExe $PythonExe

@@ -19,6 +19,8 @@ from scipy.constants import atomic_mass, elementary_charge
 from scipy.optimize import brentq
 from scipy.special import mathieu_a, mathieu_b
 
+from common.multipole.family_contract import from_quadrupole_contract
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BASELINE = PROJECT_ROOT / "config" / "baseline.json"
@@ -122,12 +124,13 @@ def scanline_passband(u_over_v: float) -> dict[str, float]:
 
 def validate_mass_filter_reference(baseline: dict[str, Any], mode: dict[str, Any]) -> dict[str, Any]:
     """Validate the frozen SIMION reference without claiming solver qualification."""
+    operating = from_quadrupole_contract(baseline, mode)
     if mode.get("schema_version") != 3:
         raise ValueError("mass-filter reference schema_version must be 3")
     if mode.get("mode") != "mass_filter_reference":
         raise ValueError("mode must be mass_filter_reference")
-    if mode.get("status") != "solver_free_l1_functional_pass":
-        raise ValueError("mass-filter reference must record the current L1 status")
+    if mode.get("status") != "simion_functional_scan_pass":
+        raise ValueError("mass-filter reference must record the current SIMION functional status")
 
     theory = mode.get("theory_contract", {})
     expected_contract = {
@@ -155,12 +158,12 @@ def validate_mass_filter_reference(baseline: dict[str, Any], mode: dict[str, Any
     common_mode_offset = float(rf["axis_common_mode_offset_V"])
     if not math.isfinite(common_mode_offset):
         raise ValueError("axis_common_mode_offset_V must be finite")
-    r0_mm = float(baseline["geometry_mm"]["field_radius_r0"])
+    r0_mm = operating.geometry.r0_mm
     if not math.isclose(float(rf["effective_radius_mm"]), r0_mm, rel_tol=0.0, abs_tol=1e-12):
         raise ValueError("mass-filter effective radius must equal baseline field_radius_r0")
 
-    rf_amplitude = float(rf["amplitude_V_zero_to_peak_per_group"])
-    dc_amplitude = float(rf["dc_amplitude_V_per_group"])
+    rf_amplitude = operating.voltage.rf_amplitude_v_per_group
+    dc_amplitude = operating.voltage.dc_amplitude_v_per_group
     expected_dc = rf_amplitude * float(rf["percent_tune"]) / 100.0 * float(rf["apex_U_over_V_reference"])
     if not math.isclose(dc_amplitude, expected_dc, rel_tol=1e-12, abs_tol=1e-12):
         raise ValueError("mass-filter DC amplitude does not match the frozen SIMION tune rule")

@@ -23,6 +23,11 @@ PROFILES = {
         "interface": CONFIG / "interface_contract.json",
         "output": CONFIG / "resolved_interface_readiness.json",
     },
+    "mass_filter": {
+        "mode": CONFIG / "modes" / "mass_filter_reference.json",
+        "source": CONFIG / "official_particle_source.json",
+        "output": CONFIG / "resolved_mass_filter.json",
+    },
 }
 
 

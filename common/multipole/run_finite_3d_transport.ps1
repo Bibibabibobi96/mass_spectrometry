@@ -41,6 +41,7 @@ $logDir = Join-Path $runDir 'logs'
 $runtimeDir = Join-Path $logDir 'runtime'
 New-Item -ItemType Directory -Force -Path $inputDir,$resultDir,$logDir,$runtimeDir | Out-Null
 $baseline = Join-Path $inputDir 'baseline.json'
+$familyOperating = Join-Path $inputDir 'family_operating_contract.json'
 $contract = Join-Path $inputDir 'finite_3d_transport.json'
 $resolvedContract = Join-Path $inputDir 'finite_3d_transport_resolved.json'
 $mode = Join-Path $inputDir 'finite_3d_no_collision.json'
@@ -49,6 +50,12 @@ $particleSource = Join-Path $inputDir 'particle_source.csv'
 Copy-Item -LiteralPath (Join-Path $projectRootPath 'config\baseline.json') -Destination $baseline
 Copy-Item -LiteralPath (Join-Path $projectRootPath 'config\finite_3d_transport.json') -Destination $contract
 Copy-Item -LiteralPath (Join-Path $projectRootPath 'config\modes\finite_3d_no_collision.json') -Destination $mode
+Push-Location $repoRoot
+try {
+  & $python -m common.multipole.resolve_family_operating_contract `
+    --adapter high-order --baseline $baseline --output $familyOperating
+  if ($LASTEXITCODE -ne 0) { throw 'Shared multipole operating-contract resolution failed.' }
+} finally { Pop-Location }
 $sourceSamples = Join-Path $sourceDir 'results\round_rod_potential_samples.csv'
 $sourceContract = Join-Path $sourceDir 'inputs\round_rod_field_screen.json'
 $screenAnalysis = Join-Path $repoRoot 'common\multipole\analyze_round_rod_screen.py'
@@ -76,6 +83,7 @@ $task = Join-Path $repoRoot 'common\multipole\solve_finite_3d_transport.m'
   project_root = $projectRootPath
   inputs = [ordered]@{
     baseline = $baseline
+    family_operating_contract = $familyOperating
     mode = $mode
     finite_3d_contract = $contract
     finite_3d_resolved_contract = $resolvedContract
@@ -95,7 +103,7 @@ $task = Join-Path $repoRoot 'common\multipole\solve_finite_3d_transport.m'
 if ($LASTEXITCODE -ne 0) { throw 'Initial finite 3D run manifest failed.' }
 
 $environmentNames = @(
-  'MULTIPOLE_L3_BASELINE','MULTIPOLE_L3_CONTRACT','MULTIPOLE_L3_FIELD_METRICS',
+  'MULTIPOLE_L3_BASELINE','MULTIPOLE_L3_FAMILY_OPERATING','MULTIPOLE_L3_CONTRACT','MULTIPOLE_L3_FIELD_METRICS',
   'MULTIPOLE_L3_PARTICLE_SOURCE','MULTIPOLE_L3_RUNTIME_DIR','MULTIPOLE_L3_EVENTS',
   'MULTIPOLE_L3_TRAJECTORIES','MULTIPOLE_L3_METRICS','MULTIPOLE_L3_PLOT','MULTIPOLE_L3_MODEL'
 )
@@ -119,6 +127,7 @@ try {
       if ($LASTEXITCODE -ne 0) { throw 'Could not freeze the finite 3D particle source.' }
     } finally { Pop-Location }
     $env:MULTIPOLE_L3_BASELINE = $baseline
+    $env:MULTIPOLE_L3_FAMILY_OPERATING = $familyOperating
     $env:MULTIPOLE_L3_CONTRACT = $resolvedContract
     $env:MULTIPOLE_L3_FIELD_METRICS = $fieldMetrics
     $env:MULTIPOLE_L3_PARTICLE_SOURCE = $particleSource

@@ -1,4 +1,4 @@
-# SIMION：RF 四极杆无碰撞候选
+# SIMION：RF四极杆传输与质量过滤
 
 返回项目统一状态：[`PROJECT.md`](PROJECT.md)。项目GEM由内置`examples/quad`单体参考派生；
 `analysis/generate_fixed_fly2.py`按共享ION表的实际行数生成显式Fly2，候选IOB沿用官方文件并在
@@ -8,19 +8,30 @@
 SHA-256；`verify_project.ps1 -Level Static`会拒绝过期GEM。官方`examples/quad`只保留来源依据，运行时
 几何不再从安装目录复制，也不允许手改生成GEM形成第二权威源。
 
-`simion/programs/quad_transport.lua`只实现RF-only Fast Adjust、静态电极、RF步长上限、最长飞行及
+`simion/programs/quad_transport.lua`实现RF-only或RF+DC Fast Adjust、静态电极、RF步长上限、最长飞行及
 统一particle-state/轨迹/JSON统计；运行器必须显式传入几何、数值和工况配置。SIMION没有
 `segment.load()`回调，配置在程序加载阶段读取，依赖配置的RF派生量必须在赋值后计算。此前N=25因
 默认值与正式输入完全相同而未改变物理结果，但该缺陷会使新增非默认工况失效，现已修正。物理默认值
 现为零占位并带正值断言；`official_config_authority_n25_20260718`在此条件下仍为25/25且manifest PASS。
 
-Lua没有 collision、drag、pressure 或 buffer-gas 逻辑。两组杆为
-±139.81792 V peak、1.1 MHz，其余电极 0 V。
+Lua没有 collision、drag、pressure 或 buffer-gas 逻辑。RF-only模式两组杆为±139.81792 V peak、
+1.1 MHz且其余电极0 V；质量过滤模式由冻结运行合同另加每组±22.76301494 V DC、−8 V公共偏置和
+既有端电极电压，不能把每组DC幅值误作组间差值。
+
+每次运行先由公共多极杆适配器生成`inputs/family_operating_contract.json`，再由PowerShell和Lua消费
+相同的RF幅值、DC幅值、公共偏置、频率和相位。接口模式的RF幅值允许显式运行绑定；未在接口mode重复
+保存的求解器步数和静态端电极从基础RF-only mode继承，不使用代码硬数字。
 
 `tests/simion/run_transport_candidate.ps1` 执行 Fly2 生成、GEM 编译、PA refine 和独立无界面 fly；
 默认 quality 10、40 RF 步/周期，并禁用轨迹临时文件保留。20→40 步时 25/25 不变，平均 TOF
 变化 0.00030%；40→80 步时平均 TOF 仅变化 `1.05e-6`、最大杆区半径变化 0.030%，最大逐粒子
 到达时间变化 0.000157 us。最终为 25/25、49.7386 us、最大杆区半径 0.4729 mm、最大探测半径 1.4472 mm。
+
+同一入口的`mass_filter_reference`模式从N=25权威源构造七质量配对表，一次Fly'm保持各质量相同的
+位置、速度、出生时间和ID次序，只改变质量。权威run
+`20260722_210300__sim__simion__mass-filter__n175__r03`得到96～106 Th七点透过率
+`0%、32%、96%、100%、60%、40%、8%`，功能判据PASS；输出位于该run的`results/`并由manifest冻结。
+这证明有限几何中的RF+DC质量选择，不构成跨求解器或质量分辨能力资格。
 
 运行器在Fly前实际加载候选IOB，检查单实例、本地PA、放置变换、尺寸和0.2 mm单元；成功后为候选
 目录生成完整`SHA256SUMS.csv`，并在独立run目录生成含输入/输出身份的`run_manifest.json`。

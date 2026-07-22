@@ -2,12 +2,13 @@
 
 reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
 baselinePath = getenv('MULTIPOLE_BASELINE');
+familyOperatingPath = getenv('MULTIPOLE_FAMILY_OPERATING');
 contractPath = getenv('MULTIPOLE_ROUND_ROD_SCREEN');
 outputCsv = getenv('MULTIPOLE_ROUND_ROD_SAMPLES');
-assert(~isempty(reportPath) && ~isempty(baselinePath) && ...
+assert(~isempty(reportPath) && ~isempty(baselinePath) && ~isempty(familyOperatingPath) && ...
     ~isempty(contractPath) && ~isempty(outputCsv), ...
     'Multipole round-rod screen environment is incomplete.');
-assert(isfile(baselinePath) && isfile(contractPath), ...
+assert(isfile(baselinePath) && isfile(familyOperatingPath) && isfile(contractPath), ...
     'Multipole round-rod screen inputs are missing.');
 
 fid = fopen(reportPath, 'w');
@@ -17,14 +18,17 @@ fprintf(fid, 'TASK=MULTIPOLE_ROUND_ROD_FIELD_SCREEN\n');
 
 try
     baseline = jsondecode(fileread(baselinePath));
+    familyOperating = jsondecode(fileread(familyOperatingPath));
     contract = jsondecode(fileread(contractPath));
-    n = contract.multipole.radial_order_n;
-    electrodeCount = contract.multipole.electrode_count;
+    n = familyOperating.identity.radial_order_n;
+    electrodeCount = familyOperating.identity.electrode_count;
     assert(electrodeCount == 2*n && n >= 3, ...
         'The L2 screen requires a high-order 2n-pole contract.');
     assert(electrodeCount == baseline.multipole.electrode_count, ...
         'Baseline and L2 electrode counts differ.');
     r0 = contract.geometry_mm.inscribed_radius_r0;
+    assert(abs(r0-familyOperating.geometry_mm.r0) < 1e-12, ...
+        'L2 field radius differs from the shared family operating contract.');
     ratios = contract.geometry_mm.rod_radius_ratio_sweep(:);
     radii = contract.sampling.radius_fraction_of_r0(:) * r0;
     thetaCount = contract.sampling.azimuth_samples_per_radius;

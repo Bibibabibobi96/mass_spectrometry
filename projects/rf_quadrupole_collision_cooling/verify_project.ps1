@@ -19,14 +19,22 @@ if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 r
 if ($LASTEXITCODE -ne 0) { throw 'Resolved-contract gate failed.' }
 & $python (Join-Path $projectRoot 'analysis\resolve_contract.py') --profile interface --check
 if ($LASTEXITCODE -ne 0) { throw 'Interface-readiness contract gate failed.' }
+& $python (Join-Path $projectRoot 'analysis\resolve_contract.py') --profile mass_filter --check
+if ($LASTEXITCODE -ne 0) { throw 'Mass-filter resolved contract gate failed.' }
 & $python (Join-Path $projectRoot 'analysis\sync_simion_geometry.py') --check
 if ($LASTEXITCODE -ne 0) { throw 'SIMION geometry publication gate failed.' }
 & $python (Join-Path $projectRoot 'analysis\generate_official_particle_table.py') --check `
   (Join-Path $projectRoot 'config\particles\official_fixed_25.ion')
 if ($LASTEXITCODE -ne 0) { throw 'Paired-particle identity gate failed.' }
-& $python (Join-Path $projectRoot 'analysis\quadrupole_l0.py') --check-mode
+Push-Location $repoRoot
+try {
+  & $python -m projects.rf_quadrupole_collision_cooling.analysis.quadrupole_l0 --check-mode
+} finally { Pop-Location }
 if ($LASTEXITCODE -ne 0) { throw 'Quadrupole L0 reference gate failed.' }
-& $python (Join-Path $projectRoot 'analysis\run_mass_filter_l1.py') --check-contract
+Push-Location $repoRoot
+try {
+  & $python -m projects.rf_quadrupole_collision_cooling.analysis.run_mass_filter_l1 --check-contract
+} finally { Pop-Location }
 if ($LASTEXITCODE -ne 0) { throw 'Quadrupole mass-filter L1 contract gate failed.' }
 & $python (Join-Path $projectRoot 'analysis\entry_aperture_l0.py') --check
 if ($LASTEXITCODE -ne 0) { throw 'Entry-aperture L0 reference gate failed.' }

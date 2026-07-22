@@ -11,6 +11,7 @@ local source_states = assert(run_config.source_states, 'run config source_states
 -- Safe placeholders only.  The required run_config below is the authority;
 -- nonzero physics defaults here would mask a broken configuration load.
 adjustable transport_rf_peak_v = 0
+adjustable transport_dc_amplitude_v = 0
 adjustable transport_frequency_hz = 0
 adjustable transport_phase_deg = 0.0
 adjustable transport_axis_voltage_v = 0.0
@@ -45,6 +46,7 @@ local radial_escape_radius_mm
 -- has no segment.load lifecycle callback; relying on one would leave the GUI
 -- adjustable defaults active and silently ignore parameterized runs.
 transport_rf_peak_v = assert(run_config.rf_peak_v)
+transport_dc_amplitude_v = assert(run_config.dc_amplitude_v)
 transport_frequency_hz = assert(run_config.frequency_hz)
 transport_phase_deg = assert(run_config.phase_deg)
 transport_axis_voltage_v = assert(run_config.axis_voltage_v)
@@ -54,6 +56,7 @@ transport_detector_voltage_v = assert(run_config.detector_voltage_v)
 transport_rf_steps_per_period = assert(run_config.rf_steps_per_period)
 transport_max_elapsed_us = assert(run_config.maximum_time_us)
 assert(transport_rf_peak_v > 0, 'run config rf_peak_v must be positive')
+assert(transport_dc_amplitude_v >= 0, 'run config dc_amplitude_v must be non-negative')
 assert(transport_frequency_hz > 0, 'run config frequency_hz must be positive')
 assert(transport_rf_steps_per_period > 0, 'run config rf_steps_per_period must be positive')
 assert(transport_max_elapsed_us > 0, 'run config maximum_time_us must be positive')
@@ -148,8 +151,9 @@ end
 
 function segment.fast_adjust()
   local rf = transport_rf_peak_v * math.sin(ion_time_of_flight * omega + phase)
-  adj_elect01 = transport_axis_voltage_v + rf
-  adj_elect02 = transport_axis_voltage_v - rf
+  local differential = transport_dc_amplitude_v + rf
+  adj_elect01 = transport_axis_voltage_v + differential
+  adj_elect02 = transport_axis_voltage_v - differential
 end
 
 function segment.tstep_adjust()
@@ -243,9 +247,9 @@ function segment.terminate_run()
   local summary_path = assert(run_config.summary_json, 'run config summary_json is missing')
   local summary = assert(io.open(summary_path, 'w'))
   summary:write(string.format(
-    '{\n  "solver": "SIMION",\n  "mode": "%s",\n  "operating_point": "%s",\n  "collision_model": "none",\n  "particles": %d,\n  "detector_plane_crossings": %d,\n  "hits": %d,\n  "transmission": %.12g,\n  "rf_peak_V": %.12g,\n  "frequency_Hz": %.12g,\n  "rf_steps_per_period": %.12g\n}\n',
+    '{\n  "solver": "SIMION",\n  "mode": "%s",\n  "operating_point": "%s",\n  "collision_model": "none",\n  "particles": %d,\n  "detector_plane_crossings": %d,\n  "hits": %d,\n  "transmission": %.12g,\n  "rf_peak_V": %.12g,\n  "dc_amplitude_V_per_group": %.12g,\n  "frequency_Hz": %.12g,\n  "rf_steps_per_period": %.12g\n}\n',
     run_config.mode, run_config.operating_point, sim_ions_count, crossings, hits, hits/sim_ions_count,
-    transport_rf_peak_v, transport_frequency_hz, transport_rf_steps_per_period))
+    transport_rf_peak_v, transport_dc_amplitude_v, transport_frequency_hz, transport_rf_steps_per_period))
   summary:close()
   print(string.format('RFQUAD_STATUS particles=%d crossings=%d hits=%d transmission=%.12g',
     sim_ions_count, crossings, hits, hits/sim_ions_count))

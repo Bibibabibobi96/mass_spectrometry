@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
   "mode": "mass_filter_reference",
-  "status": "solver_free_l1_functional_pass",
+  "status": "simion_functional_scan_pass",
   "source": "SIMION 2020 examples/quad/quad.lua defaults",
   "theory_contract": {
     "model_level": "L0",
@@ -45,5 +45,22 @@
       "maximum_endpoint_transmission": 0.05
     }
   },
-  "execution_policy": "L1 solver-free functional screening is allowed; solver qualification requires a separately approved Candidate run."
+  "solver_screen": {
+    "status": "pass",
+    "authority_run_id": "20260722_210300__sim__simion__mass-filter__n175__r03",
+    "paired_source_masses_Th": [96.0, 99.0, 99.5, 101.5, 103.0, 103.5, 106.0],
+    "particles_per_mass": 25,
+    "acceptance": {
+      "minimum_center_transmission": 0.8,
+      "maximum_endpoint_transmission": 0.2,
+      "minimum_center_to_endpoint_contrast": 0.6
+    },
+    "claim_limit": "SIMION finite-geometry functional response only; no cross-solver or resolving-power qualification."
+  },
+  "numerics": {
+    "simion_rf_steps_per_period": 40,
+    "simion_trajectory_quality": 10,
+    "maximum_time_us": 80.0
+  },
+  "execution_policy": "L1 and SIMION functional scans are allowed; cross-solver and resolving-power qualification require separately approved Candidate work."
 }

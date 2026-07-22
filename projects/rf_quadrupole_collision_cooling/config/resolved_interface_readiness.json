@@ -3,7 +3,7 @@
   "role": "rf_quadrupole_resolved_interface_contract_do_not_edit",
   "inputs": {
     "baseline": "config/baseline.json",
-    "baseline_sha256": "A43DDB306DD35919D6EE5BDBBDC12FCAC7D72261D3A4772B750CFB3C92B70443",
+    "baseline_sha256": "FEFE3135E4784C9358C6B0B48662FEF7F334A64278DD09E19BA9A8F8A1569494",
     "mode": "config/modes/transport_interface_readiness.json",
     "mode_sha256": "0106E528F5B12A6D4EBEC653DF7598D1B0DC0926A4ECF288618CE047B2025C33",
     "particle_source": "config/interface_readiness_particle_source.json",

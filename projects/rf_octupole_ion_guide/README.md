@@ -13,6 +13,7 @@
 ## 当前入口
 
 - 项目身份：[`config/project.json`](config/project.json)
+- 三项目共享运行合同：[`../../common/multipole/README.md`](../../common/multipole/README.md)
 - L1 baseline：[`config/baseline.json`](config/baseline.json)
 - 运行入口：[`analysis/run_transport.ps1`](analysis/run_transport.ps1)
 - L2圆杆筛选：[`analysis/run_round_rod_field_screen.ps1`](analysis/run_round_rod_field_screen.ps1)

@@ -2,6 +2,7 @@
 
 reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
 baselinePath = getenv('MULTIPOLE_L3_BASELINE');
+familyOperatingPath = getenv('MULTIPOLE_L3_FAMILY_OPERATING');
 contractPath = getenv('MULTIPOLE_L3_CONTRACT');
 fieldMetricsPath = getenv('MULTIPOLE_L3_FIELD_METRICS');
 sourcePath = getenv('MULTIPOLE_L3_PARTICLE_SOURCE');
@@ -11,10 +12,10 @@ trajectoryPath = getenv('MULTIPOLE_L3_TRAJECTORIES');
 metricsPath = getenv('MULTIPOLE_L3_METRICS');
 plotPath = getenv('MULTIPOLE_L3_PLOT');
 modelPath = getenv('MULTIPOLE_L3_MODEL');
-required = {reportPath, baselinePath, contractPath, fieldMetricsPath, sourcePath, ...
+required = {reportPath, baselinePath, familyOperatingPath, contractPath, fieldMetricsPath, sourcePath, ...
     runtimeDir, eventsPath, trajectoryPath, metricsPath, plotPath, modelPath};
 assert(all(~cellfun(@isempty, required)), 'Finite 3D multipole environment is incomplete.');
-assert(isfile(baselinePath) && isfile(contractPath) && isfile(fieldMetricsPath) && ...
+assert(isfile(baselinePath) && isfile(familyOperatingPath) && isfile(contractPath) && isfile(fieldMetricsPath) && ...
     isfile(sourcePath), 'Finite 3D multipole inputs are missing.');
 if ~isfolder(runtimeDir), mkdir(runtimeDir); end
 
@@ -25,30 +26,31 @@ fprintf(fid, 'TASK=MULTIPOLE_FINITE_3D_TRANSPORT\n');
 
 try
     baseline = jsondecode(fileread(baselinePath));
+    familyOperating = jsondecode(fileread(familyOperatingPath));
     contract = jsondecode(fileread(contractPath));
     fieldMetrics = jsondecode(fileread(fieldMetricsPath));
     source = readtable(sourcePath);
-    n = contract.multipole.radial_order_n;
-    electrodeCount = contract.multipole.electrode_count;
+    n = familyOperating.identity.radial_order_n;
+    electrodeCount = familyOperating.identity.electrode_count;
     assert(electrodeCount == 2*n && electrodeCount == baseline.multipole.electrode_count, ...
         'Finite 3D multipole identities differ.');
     selected = fieldMetrics.selected_candidate;
-    r0 = baseline.geometry_mm.inscribed_radius_r0;
+    r0 = familyOperating.geometry_mm.r0;
     rodRadius = selected.rod_radius_mm;
     centerRadius = selected.rod_center_radius_mm;
     g = contract.geometry_mm;
     d = contract.derived_geometry_mm;
-    assert(abs(d.rod_length-baseline.geometry_mm.effective_length) < 1e-12, ...
+    assert(abs(d.rod_length-familyOperating.geometry_mm.effective_length) < 1e-12, ...
         'Finite 3D rod length differs from the baseline.');
     assert(all(abs(source.z_mm-d.source_z) < 1e-12), 'Particle source plane differs from the L3 contract.');
-    rf = baseline.rf;
+    rf = familyOperating.voltage;
     import com.comsol.model.*
     import com.comsol.model.util.*
     tag = sprintf('MULTIPOLE_FINITE_3D_%d', electrodeCount);
     if any(strcmp(cell(ModelUtil.tags()), tag)), ModelUtil.remove(tag); end
     model = ModelUtil.create(tag);
     model.label(sprintf('%d-pole finite 3D circular-rod L3 transport', electrodeCount));
-    model.param.set('V_rf', sprintf('%.17g[V]', rf.amplitude_V_peak));
+    model.param.set('V_rf', sprintf('%.17g[V]', rf.rf_amplitude_V_zero_to_peak_per_group));
     model.param.set('f_rf', sprintf('%.17g[Hz]', rf.frequency_Hz));
     model.param.set('rf_scale', '1');
     model.param.set('m_ion', sprintf('%.17g[kg]', baseline.particle_source.mass_amu*1.66053906660e-27));

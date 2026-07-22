@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "status": "candidate_no_collision_cross_solver_baseline_simion_builtin_quad_geometry",
+  "family_contract_id": "rf_multipole_ion_optics",
   "geometry_authority": {
     "source": "SIMION 2020 built-in examples/quad monolithic reference",
     "files": ["quad_include.gem", "quad_monolithic.gem"],
@@ -54,6 +55,6 @@
     "interface_contract": "interface_contract.json",
     "interface_readiness_mode": "modes/transport_interface_readiness.json",
     "interface_readiness_source": "interface_readiness_particle_source.json",
-    "future_mass_filter_mode": "modes/mass_filter_reference.json"
+    "mass_filter_mode": "modes/mass_filter_reference.json"
   }
 }

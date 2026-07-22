@@ -3,6 +3,7 @@
   "role": "rf_octupole_ideal_l1_transport_baseline",
   "status": "initial_functional_reference",
   "project_id": "rf_octupole_ion_guide",
+  "family_contract_id": "rf_multipole_ion_optics",
   "field_model_id": "multipole.ideal_2n.v1",
   "trajectory_model_id": "multipole.ideal_finite_length.time_domain.v1",
   "model_level": "L1",
