@@ -1,3 +1,6 @@
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
 function Test-ComsolRetryableStartupReport {
     param([Parameter(Mandatory = $true)][string]$ReportText)
 

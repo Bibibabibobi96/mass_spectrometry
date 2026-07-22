@@ -14,7 +14,7 @@ import math
 import re
 from pathlib import Path
 
-from geometry_contract import RESOLVED_PATH, resolve_contract, serialized
+from projects.oa_tof.analysis.geometry_contract import RESOLVED_PATH, resolve_contract, serialized
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]

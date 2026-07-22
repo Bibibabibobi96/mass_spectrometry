@@ -11,7 +11,6 @@ function test_square_shield_accel()
 % uniform). Shield half-width chosen to match the real design's
 % accel_shield_r=35mm attempt.
 
-addpath('D:\COMSOL 6.4\COMSOL64\Multiphysics\mli');
 componentRoot = fileparts(fileparts(fileparts(mfilename('fullpath'))));
 addpath(componentRoot);
 paths = oatof_paths();

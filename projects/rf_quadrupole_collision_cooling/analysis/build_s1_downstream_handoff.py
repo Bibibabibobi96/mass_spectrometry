@@ -9,13 +9,22 @@ import json
 import math
 from pathlib import Path
 
-from build_oatof_handoff import (
-    ATOMIC_MASS_KG,
-    CANONICAL_COLUMNS,
-    ELEMENTARY_CHARGE_C,
-    ROW_MAP_COLUMNS,
-    simion_accelerator_instance_angles,
-)
+try:
+    from build_oatof_handoff import (
+        ATOMIC_MASS_KG,
+        CANONICAL_COLUMNS,
+        ELEMENTARY_CHARGE_C,
+        ROW_MAP_COLUMNS,
+        simion_accelerator_instance_angles,
+    )
+except ModuleNotFoundError:
+    from projects.rf_quadrupole_collision_cooling.analysis.build_oatof_handoff import (
+        ATOMIC_MASS_KG,
+        CANONICAL_COLUMNS,
+        ELEMENTARY_CHARGE_C,
+        ROW_MAP_COLUMNS,
+        simion_accelerator_instance_angles,
+    )
 
 
 def sha256(path: Path) -> str:

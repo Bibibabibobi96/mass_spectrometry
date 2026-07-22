@@ -11,6 +11,7 @@ import numpy as np
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+REPOSITORY_ROOT = PROJECT_ROOT.parents[1]
 GENERATOR = PROJECT_ROOT / "analysis" / "generate_interface_particle_table.py"
 
 
@@ -44,7 +45,14 @@ class InterfaceParticleTableTests(unittest.TestCase):
                            "--distribution", str(distribution_path), "--operating-point", point,
                            "--particles", "20", "--seed", "77", "--output", str(output),
                            "--metadata", str(root / f"{point}.json")]
-                subprocess.run(command, check=True, capture_output=True, text=True)
+                subprocess.run(
+                    command,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    cwd=REPOSITORY_ROOT,
+                    timeout=60,
+                )
                 tables.append(np.loadtxt(output, delimiter=","))
             uniform, fixed = tables
             self.assertTrue(np.array_equal(uniform[:, :8], fixed[:, :8]))

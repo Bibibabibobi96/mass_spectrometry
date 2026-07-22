@@ -16,13 +16,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from mass_spectrum import load_mode
-from peak_metrics import (
+from projects.oa_tof.analysis.mass_spectrum import load_mode
+from projects.oa_tof.analysis.peak_metrics import (
     AnalysisSettings,
     bootstrap_resolution_distribution,
     compute_peak_metrics,
 )
-from reference_analysis import read_particle_table
+from projects.oa_tof.analysis.reference_analysis import read_particle_table
 
 
 def _sha256(path: Path) -> str:

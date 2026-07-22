@@ -379,7 +379,7 @@ Markdown入口。这里的“载荷”表示只读原始证据，不限于二进
 ### 轻量门禁
 
 不依赖商业软件和外部artifacts的统一入口为`common/verify_lightweight.ps1`。它使用Python 3.11运行
-文档/仓库卫生门禁、机器合同测试、项目注册表新鲜度、oa-TOF Static门禁和RF Static门禁；本机默认
+文档/仓库卫生门禁、开发标准静态检查、机器合同测试、项目注册表新鲜度、oa-TOF Static门禁和RF Static门禁；本机默认
 使用`.venv`，GitHub Workflow注入干净运行器的Python路径。门禁逻辑只在该脚本及其调用的项目门禁中维护；
 项目发现、设计请求校验和求解器中立规划入口见[`common/contracts/README.md`](common/contracts/README.md)。
 `.github/workflows/lightweight-gate.yml`只负责编排，在push、pull request和人工触发时调用同一入口，
@@ -433,7 +433,8 @@ README重复声明。它不重写或重存已有的MPH、SLDPRT或SLDASM。若Li
 
 自2026-07-16起，求解器无关分析固定使用**64位Python 3.11**。MATLAB R2025b官方支持
 Python 3.9至3.12；本机默认Python 3.14和旧Python 3.8均不得作为本仓库正式运行时。依赖由根目录
-`pyproject.toml`声明、`requirements-lock.txt`冻结，并安装在不入Git的`.venv/`。oa-TOF入口见
+`pyproject.toml`声明、`requirements-lock.txt`冻结，并安装在不入Git的`.venv/`。跨目录Python入口从
+仓库根使用`python -m <module>`运行，禁止由各脚本重复修改`sys.path`。oa-TOF入口见
 `projects/oa_tof/analysis/README.md`。
 
 ## Git 规则

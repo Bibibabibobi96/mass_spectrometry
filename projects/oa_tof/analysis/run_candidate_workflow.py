@@ -13,11 +13,12 @@ from typing import Any, Callable
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PROJECT_ROOT.parents[1]
-from candidate_run_lifecycle import finalize_candidate_run, start_candidate_run
-from machine_contracts import load_json, sha256
+from common.contracts.machine_contracts import load_json, sha256
+from projects.oa_tof.analysis.candidate_run_lifecycle import finalize_candidate_run, start_candidate_run
 
 
 StageExecutor = Callable[[dict[str, Any], dict[str, Any], str], dict[str, Any]]
+STAGE_PROCESS_TIMEOUT_S = 4 * 60 * 60
 
 
 class CandidateWorkflowError(RuntimeError):
@@ -44,7 +45,15 @@ def _run_command(command: list[str], log_path: Path, environment: dict[str, str]
     env = os.environ.copy()
     env.update(environment or {})
     with log_path.open("w", encoding="utf-8", newline="\n") as log:
-        result = subprocess.run(command, cwd=REPO_ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, check=False)
+        result = subprocess.run(
+            command,
+            cwd=REPO_ROOT,
+            env=env,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            check=False,
+            timeout=STAGE_PROCESS_TIMEOUT_S,
+        )
     if result.returncode != 0:
         raise RuntimeError(f"command failed with exit code {result.returncode}; log={log_path}")
 

@@ -63,7 +63,7 @@ else {
 
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 if (-not $candidateMode) {
-  & $python (Join-Path $projectRoot 'analysis\sync_geometry_contract.py') --write
+  & $python -m projects.oa_tof.analysis.sync_geometry_contract --write
   if ($LASTEXITCODE -ne 0) { throw 'SIMION text synchronization failed.' }
 }
 $contract = Get-Content -LiteralPath $contractPath -Raw -Encoding UTF8 | ConvertFrom-Json

@@ -7,7 +7,10 @@ import math
 from pathlib import Path
 from typing import Any
 
-import build_interface_handoff as handoff
+try:
+    import build_interface_handoff as handoff
+except ModuleNotFoundError:
+    from projects.rf_quadrupole_collision_cooling.analysis import build_interface_handoff as handoff
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]

@@ -1,3 +1,4 @@
+Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'livelink_failure_classification.ps1')
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,8 +9,7 @@ import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
-sys.path.insert(0, str(PROJECT_ROOT / "analysis"))
-import derive_s1_centroid_pulse_time as module  # noqa: E402
+from projects.rf_quadrupole_collision_cooling.analysis import derive_s1_centroid_pulse_time as module
 
 
 class S1CentroidPulseTimeTests(unittest.TestCase):

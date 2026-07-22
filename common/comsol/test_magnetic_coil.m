@@ -10,8 +10,6 @@ function test_magnetic_coil()
 % required material conductivity, and the CoilCurrentCalculation study
 % step that must precede the Stationary step).
 
-addpath('D:\COMSOL 6.4\COMSOL64\Multiphysics\mli');
-mphstart(2036);
 import com.comsol.model.*
 import com.comsol.model.util.*
 

@@ -7,7 +7,12 @@ import hashlib
 import json
 from pathlib import Path
 
-from sync_geometry_contract import load_contract, render_fly2, render_program, render_resolved_lua
+from projects.oa_tof.analysis.sync_geometry_contract import (
+    load_contract,
+    render_fly2,
+    render_program,
+    render_resolved_lua,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]

@@ -1,15 +1,13 @@
 import copy
-import sys
 import unittest
 from pathlib import Path
 
 
-HERE = Path(__file__).resolve().parent
-if str(HERE) not in sys.path:
-    sys.path.insert(0, str(HERE))
+from common.contracts.machine_contracts import REPO_ROOT, load_json
+from common.contracts.validate_design_request import validate_request
 
-from machine_contracts import REPO_ROOT, load_json
-from validate_design_request import validate_request
+
+HERE = Path(__file__).resolve().parent
 
 
 class DesignRequestTests(unittest.TestCase):

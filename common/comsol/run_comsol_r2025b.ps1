@@ -21,13 +21,19 @@ param(
     [string]$Allocator = 'auto'
 )
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $bootstrapDir = Join-Path $PSScriptRoot 'livelink_r2025b'
 $failureClassifier = Join-Path $PSScriptRoot 'livelink_failure_classification.ps1'
 $environmentPreflight = Join-Path $PSScriptRoot 'livelink_environment.ps1'
-$launcher = 'D:\COMSOL 6.4\COMSOL64\Multiphysics\bin\win64\comsolmphserver.exe'
-$matlabRoot = 'C:\Program Files\MATLAB\R2025b\MatlabR2025b'
+. (Join-Path $PSScriptRoot 'resolve_comsol_64.ps1')
+$launcher = Get-Comsol64Launcher
+$matlabRoot = if ($env:MATLAB_R2025B_ROOT) {
+    [IO.Path]::GetFullPath($env:MATLAB_R2025B_ROOT)
+} else {
+    Join-Path $env:ProgramFiles 'MATLAB\R2025b\MatlabR2025b'
+}
 
 if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
     throw "COMSOL MATLAB launcher not found: $launcher"

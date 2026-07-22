@@ -1,14 +1,10 @@
-import sys
 import unittest
 from pathlib import Path
 
 import pandas as pd
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(PROJECT_ROOT / "analysis"))
-
-from analyze_accelerator_transverse_field_uniformity import analyze  # noqa: E402
+from projects.oa_tof.analysis.analyze_accelerator_transverse_field_uniformity import analyze
 
 
 class TransverseFieldUniformityTests(unittest.TestCase):

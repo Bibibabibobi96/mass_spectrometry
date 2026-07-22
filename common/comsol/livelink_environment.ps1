@@ -1,3 +1,6 @@
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
 function Get-ComsolRuntimeWritePaths {
     param(
         [Parameter(Mandatory = $true)]

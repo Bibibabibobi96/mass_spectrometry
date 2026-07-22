@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -16,11 +15,10 @@ import matplotlib.pyplot as plt
 
 
 RF_PROJECT = Path(__file__).resolve().parents[1]
-OA_ANALYSIS = Path(__file__).resolve().parent
-if not (OA_ANALYSIS / "analyze_accelerator_transverse_field_uniformity.py").is_file():
-    OA_ANALYSIS = RF_PROJECT.parent / "oa_tof" / "analysis"
-sys.path.insert(0, str(OA_ANALYSIS))
-from analyze_accelerator_transverse_field_uniformity import analyze  # noqa: E402
+try:
+    from analyze_accelerator_transverse_field_uniformity import analyze
+except ModuleNotFoundError:
+    from projects.oa_tof.analysis.analyze_accelerator_transverse_field_uniformity import analyze
 
 
 def relative_rms(delta: np.ndarray, scale: float) -> float:

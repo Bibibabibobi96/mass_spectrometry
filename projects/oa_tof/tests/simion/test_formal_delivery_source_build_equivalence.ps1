@@ -97,7 +97,7 @@ foreach ($key in $leftFields.Keys) {
   if ($norm -gt 1e-12) { $maxFieldRelativeDifference = [Math]::Max($maxFieldRelativeDifference,$difference/$norm) }
 }
 
-& $python $referenceAnalysis compare (Join-Path $runDir 'reference_particles.csv') `
+& $python -m projects.oa_tof.analysis.reference_analysis compare (Join-Path $runDir 'reference_particles.csv') `
   (Join-Path $runDir 'source_built_particles.csv') --mass 524 --output $resultDir `
   --left-label frozen_formal --right-label source_built --require-paired-particle-ids --bootstrap-resamples 0
 if ($LASTEXITCODE -ne 0) { throw 'Unified paired comparison failed.' }

@@ -14,7 +14,13 @@ from matplotlib.patches import Rectangle
 import numpy as np
 import pandas as pd
 
-from plot_s1_pulse_geometry_snapshot import accelerator_geometry, classify_snapshot
+try:
+    from plot_s1_pulse_geometry_snapshot import accelerator_geometry, classify_snapshot
+except ModuleNotFoundError:
+    from projects.rf_quadrupole_collision_cooling.analysis.plot_s1_pulse_geometry_snapshot import (
+        accelerator_geometry,
+        classify_snapshot,
+    )
 
 
 ATOMIC_MASS_KG = 1.66053906660e-27

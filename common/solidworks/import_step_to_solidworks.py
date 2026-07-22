@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 import pythoncom
 import win32com.client
+
+from common.solidworks.installation import resolve_solidworks_2022_root
 
 
 SW_MULTI_CAD_ENABLE_3D_INTERCONNECT = 691
@@ -15,15 +18,10 @@ SW_ALWAYS_USE_DEFAULT_TEMPLATES = 111
 SW_DEFAULT_TEMPLATE_PART = 8
 SW_DOC_ASSEMBLY = 2
 SW_ADD_COMPONENT_CURRENT_CONFIGURATION = 0
-SOLIDWORKS_EXE = Path(
-    r"D:\SW2022\SOLIDWORKS Corp2022\SOLIDWORKS\SLDWORKS.exe"
-)
-ASSEMBLY_TEMPLATE = Path(
-    r"C:\ProgramData\SOLIDWORKS\SOLIDWORKS 2022\templates\gb_assembly.asmdot"
-)
-CLEAN_PART_TEMPLATE = Path(
-    r"C:\ProgramData\SOLIDWORKS\SOLIDWORKS 2022\templates\gb_part.prtdot"
-)
+PROGRAM_DATA = Path(os.environ.get("ProgramData", r"C:\ProgramData"))
+TEMPLATE_ROOT = PROGRAM_DATA / "SOLIDWORKS" / "SOLIDWORKS 2022" / "templates"
+ASSEMBLY_TEMPLATE = TEMPLATE_ROOT / "gb_assembly.asmdot"
+CLEAN_PART_TEMPLATE = TEMPLATE_ROOT / "gb_part.prtdot"
 
 
 def save_native_document(document, destination: Path) -> tuple[int, int]:
@@ -84,8 +82,9 @@ def import_steps(
     for step_path in step_paths:
         if not step_path.is_file():
             raise FileNotFoundError(f"STEP file not found: {step_path}")
-    if not SOLIDWORKS_EXE.is_file():
-        raise FileNotFoundError(f"SolidWorks executable not found: {SOLIDWORKS_EXE}")
+    solidworks_exe = resolve_solidworks_2022_root() / "SLDWORKS.exe"
+    if not solidworks_exe.is_file():
+        raise FileNotFoundError(f"SolidWorks executable not found: {solidworks_exe}")
     if not CLEAN_PART_TEMPLATE.is_file():
         raise FileNotFoundError(
             f"SolidWorks clean part template not found: {CLEAN_PART_TEMPLATE}"

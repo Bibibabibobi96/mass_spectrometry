@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import json
-import sys
 import unittest
 from pathlib import Path
 
 
 PROJECT_DIR = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(PROJECT_DIR / "analysis"))
-
-from accelerator_time_focus import derive, focus_drift_mm
+from projects.oa_tof.analysis.accelerator_time_focus import derive, focus_drift_mm
 
 
 class AcceleratorTimeFocusTest(unittest.TestCase):

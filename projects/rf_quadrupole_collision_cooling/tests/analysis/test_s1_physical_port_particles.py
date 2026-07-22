@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-import sys
 import unittest
 from pathlib import Path
 
 import pandas as pd
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(PROJECT_ROOT / "analysis"))
-import analyze_s1_physical_port_particles as module  # noqa: E402
+from projects.rf_quadrupole_collision_cooling.analysis import analyze_s1_physical_port_particles as module
 
 
 class S1PhysicalPortParticleTests(unittest.TestCase):

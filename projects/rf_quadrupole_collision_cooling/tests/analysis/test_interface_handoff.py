@@ -1,23 +1,15 @@
 from __future__ import annotations
 
 import csv
-import importlib.util
 import json
 import math
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).parents[2]
-ANALYSIS = PROJECT_ROOT / "analysis"
-sys.path.insert(0, str(ANALYSIS))
-SCRIPT = ANALYSIS / "build_interface_handoff.py"
-SPEC = importlib.util.spec_from_file_location("build_interface_handoff", SCRIPT)
-assert SPEC and SPEC.loader
-MODULE = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(MODULE)
+from projects.rf_quadrupole_collision_cooling.analysis import build_interface_handoff as MODULE
 CONTRACT = PROJECT_ROOT / "config" / "rf_to_oatof_interface_candidate.json"
 STAGES = PROJECT_ROOT / "config" / "rf_to_oatof_interface_stages.json"
 

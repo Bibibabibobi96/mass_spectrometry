@@ -583,7 +583,7 @@ source_position_samples(...)
 CLI：
 
 ```powershell
-python .\analysis\oatof_oaaccelerator_coupling.py `
+python -m projects.oa_tof.analysis.oatof_oaaccelerator_coupling `
   .\config\oatof_longitudinal_contract.json `
   --write-derived <derived.json> `
   --write-samples <samples.csv>
@@ -609,7 +609,7 @@ python .\analysis\oatof_oaaccelerator_coupling.py `
 运行轻量自检：
 
 ```powershell
-python .\analysis\oatof_oaaccelerator_coupling.py --self-test
+python -m projects.oa_tof.analysis.oatof_oaaccelerator_coupling --self-test
 ```
 
 ## 15. 从解析耦合到 Formal 的升级路线

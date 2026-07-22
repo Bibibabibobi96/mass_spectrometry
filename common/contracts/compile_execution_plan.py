@@ -7,8 +7,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from artifact_naming import validate_run_id
-from machine_contracts import REPO_ROOT, load_json, sha256, validate_schema
+from common.contracts.artifact_naming import validate_run_id
+from common.contracts.machine_contracts import REPO_ROOT, load_json, sha256, validate_schema
 
 
 class PreserveMissing(dict):
@@ -101,10 +101,14 @@ def compile_execution(
     for step in profile["steps"]:
         entrypoint = (project_root / step["entrypoint"]).resolve()
         arguments = [value.format_map(PreserveMissing(context)) for value in step["arguments"]]
-        launcher = ["powershell.exe", "-NoProfile", "-File"] if step["shell"] == "powershell" else [context["python_exe"]]
+        if step["shell"] == "powershell":
+            argv = ["powershell.exe", "-NoProfile", "-File", str(entrypoint), *arguments]
+        else:
+            module = entrypoint.relative_to(REPO_ROOT).with_suffix("").as_posix().replace("/", ".")
+            argv = [context["python_exe"], "-m", module, *arguments]
         commands.append({
             "step_id": step["step_id"], "kind": step["kind"], "shell": step["shell"],
-            "entrypoint": str(entrypoint), "argv": launcher + [str(entrypoint)] + arguments,
+            "entrypoint": str(entrypoint), "argv": argv,
             "run_id": context.get(f"{step['step_id']}_run_id"),
         })
 

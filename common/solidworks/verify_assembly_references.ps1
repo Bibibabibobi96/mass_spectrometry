@@ -4,6 +4,7 @@ param(
     [ValidateRange(1, 10000)][int]$ExpectedComponentCount = 25
 )
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $assembly = (Resolve-Path -LiteralPath $AssemblyPath).Path
@@ -13,8 +14,10 @@ if (-not (Test-Path -LiteralPath $reportDir -PathType Container)) {
     New-Item -ItemType Directory -Path $reportDir -Force | Out-Null
 }
 
-$interopPath = 'D:\SW2022\SOLIDWORKS Corp2022\SOLIDWORKS\SolidWorks.Interop.sldworks.dll'
-$constantsPath = 'D:\SW2022\SOLIDWORKS Corp2022\SOLIDWORKS\SolidWorks.Interop.swconst.dll'
+. (Join-Path $PSScriptRoot 'resolve_solidworks_2022.ps1')
+$solidWorksPaths = Get-SolidWorks2022Paths
+$interopPath = $solidWorksPaths.Interop
+$constantsPath = $solidWorksPaths.Constants
 if (-not (Test-Path -LiteralPath $interopPath -PathType Leaf)) {
     throw "SolidWorks 2022 Interop assembly was not found: $interopPath"
 }

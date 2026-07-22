@@ -15,6 +15,9 @@ param(
   [string]$Output = 'oatof_comsol_524amu_gaussian_N100.ion'
 )
 
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
 $rng = [System.Random]::new($Seed)
 $hx = if ($HalfWidthXmm -ge 0) { $HalfWidthXmm } else { $HalfWidthMm }
 $hy = if ($HalfWidthYmm -ge 0) { $HalfWidthYmm } else { $HalfWidthMm }

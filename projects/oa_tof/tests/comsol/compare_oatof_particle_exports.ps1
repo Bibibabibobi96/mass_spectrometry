@@ -12,6 +12,7 @@ param(
     [double]$MaxLandingDifferenceMm = 0.05
 )
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $reference = Import-Csv -LiteralPath $ReferenceCsv
 $candidate = Import-Csv -LiteralPath $CandidateCsv

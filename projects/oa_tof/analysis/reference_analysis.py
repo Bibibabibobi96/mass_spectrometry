@@ -31,7 +31,7 @@ import pandas as pd
 import scipy
 from scipy import stats
 
-from peak_metrics import (
+from projects.oa_tof.analysis.peak_metrics import (
     AnalysisSettings,
     bootstrap_resolution_difference,
     compare_peak_shapes,

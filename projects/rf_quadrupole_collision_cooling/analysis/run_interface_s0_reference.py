@@ -18,6 +18,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOT = PROJECT_ROOT.parents[1]
 WORKSPACE_ROOT = REPOSITORY_ROOT.parent
 DEFAULT_MODE = PROJECT_ROOT / "config" / "modes" / "rf_to_oatof_s0_reference.json"
+MANIFEST_PROCESS_TIMEOUT_S = 60
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -211,7 +212,12 @@ def run(mode_path: Path, run_id: str, artifact_project_root: Path) -> Path:
         ]
         for output in outputs:
             command.extend(("--output", str(output)))
-        subprocess.run(command, check=True)
+        subprocess.run(
+            command,
+            check=True,
+            cwd=REPOSITORY_ROOT,
+            timeout=MANIFEST_PROCESS_TIMEOUT_S,
+        )
         if failures:
             raise RuntimeError("S0 gate failed: " + ", ".join(failures))
         return destination

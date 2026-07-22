@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,8 +10,7 @@ import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
-sys.path.insert(0, str(PROJECT_ROOT / "analysis"))
-import plot_s1_pulse_geometry_snapshot as module  # noqa: E402
+from projects.rf_quadrupole_collision_cooling.analysis import plot_s1_pulse_geometry_snapshot as module
 
 
 class S1PulseGeometrySnapshotTests(unittest.TestCase):

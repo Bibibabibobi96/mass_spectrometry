@@ -11,8 +11,6 @@ function test_collision_cell_gpu_comparison(Nd_val, KE_eV)
 % Also verifies the two solves give IDENTICAL particle trajectories
 % (switching the linear solver backend must not change the physics).
 
-addpath('D:\COMSOL 6.4\COMSOL64\Multiphysics\mli');
-mphstart(2036);
 import com.comsol.model.*
 import com.comsol.model.util.*
 

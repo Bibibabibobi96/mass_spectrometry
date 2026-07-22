@@ -19,6 +19,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOT = PROJECT_ROOT.parents[1]
 WORKSPACE_ROOT = REPOSITORY_ROOT.parent
 DEFAULT_MODE = PROJECT_ROOT / "config" / "modes" / "rf_to_oatof_s1_aperture_precheck.json"
+MANIFEST_PROCESS_TIMEOUT_S = 60
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -81,7 +82,12 @@ def run(mode_path: Path, run_id: str, artifact_project_root: Path) -> Path:
     theory_ceiling = float(validated["entry_aperture_theory_full_width_ceiling_mm"])
     source_manifest_path = configured_path(mode["source_run_manifest"])
     verifier = REPOSITORY_ROOT / "common" / "contracts" / "verify_run_manifest.py"
-    subprocess.run([sys.executable, str(verifier), str(source_manifest_path)], check=True)
+    subprocess.run(
+        [sys.executable, str(verifier), str(source_manifest_path)],
+        check=True,
+        cwd=REPOSITORY_ROOT,
+        timeout=MANIFEST_PROCESS_TIMEOUT_S,
+    )
     source_manifest = load_json(source_manifest_path)
 
     destination = artifact_project_root.resolve() / "runs" / run_id
@@ -182,7 +188,7 @@ def run(mode_path: Path, run_id: str, artifact_project_root: Path) -> Path:
             "--software", "Python 3.11 solver-free S1 aperture precheck",
             "--output", str(metrics_path),
             "--output", str(summary_path),
-        ], check=True)
+        ], check=True, cwd=REPOSITORY_ROOT, timeout=MANIFEST_PROCESS_TIMEOUT_S)
         return destination
     except Exception:
         if not (destination / "run_manifest.json").exists():

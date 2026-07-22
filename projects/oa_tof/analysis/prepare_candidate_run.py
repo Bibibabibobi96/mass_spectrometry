@@ -5,20 +5,15 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
-import sys
 from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 WORKSPACE_ROOT = REPO_ROOT.parent
-COMMON_CONTRACTS = REPO_ROOT / "common" / "contracts"
-if str(COMMON_CONTRACTS) not in sys.path:
-    sys.path.insert(0, str(COMMON_CONTRACTS))
-
-from artifact_naming import validate_run_id, validate_task_id
-from machine_contracts import load_json, sha256, validate_schema
-from prepare_candidate_consumers import prepare as prepare_consumers
+from common.contracts.artifact_naming import validate_run_id, validate_task_id
+from common.contracts.machine_contracts import load_json, sha256, validate_schema
+from projects.oa_tof.analysis.prepare_candidate_consumers import prepare as prepare_consumers
 
 
 WORKFLOW_PATH = PROJECT_ROOT / "config" / "candidate_workflow.json"

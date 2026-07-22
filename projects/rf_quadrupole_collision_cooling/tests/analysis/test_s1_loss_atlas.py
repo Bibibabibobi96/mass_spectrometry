@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,9 +7,7 @@ from pathlib import Path
 import pandas as pd
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(PROJECT_ROOT / "analysis"))
-import plot_s1_loss_atlas as module  # noqa: E402
+from projects.rf_quadrupole_collision_cooling.analysis import plot_s1_loss_atlas as module
 
 
 class S1LossAtlasTests(unittest.TestCase):

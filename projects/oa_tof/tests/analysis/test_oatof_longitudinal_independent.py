@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import math
 import random
-import sys
 import unittest
 from pathlib import Path
 
@@ -12,14 +11,12 @@ from scipy.optimize import brentq
 
 
 PROJECT_DIR = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(PROJECT_DIR / "analysis"))
-
-from accelerator_time_focus import (
+from projects.oa_tof.analysis.accelerator_time_focus import (
     accelerator_state,
     normalized_time_to_plane_mm_sqrt_v,
 )
-from oatof_oaaccelerator_coupling import solve_coupled_reflectron_fields
-from reflectron_dual_stage_solver import (
+from projects.oa_tof.analysis.oatof_oaaccelerator_coupling import solve_coupled_reflectron_fields
+from projects.oa_tof.analysis.reflectron_dual_stage_solver import (
     normalized_flight_time_mm_sqrt_v,
     solve_reflectron_fields,
 )

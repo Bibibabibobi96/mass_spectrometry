@@ -8,7 +8,10 @@ import json
 import math
 from pathlib import Path
 
-import build_oatof_handoff as handoff
+try:
+    import build_oatof_handoff as handoff
+except ModuleNotFoundError:
+    from projects.rf_quadrupole_collision_cooling.analysis import build_oatof_handoff as handoff
 
 
 def _read_rows(path: Path) -> list[dict[str, str]]:

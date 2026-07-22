@@ -7,7 +7,6 @@ import hashlib
 import json
 import os
 import shutil
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -15,12 +14,8 @@ from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PROJECT_ROOT.parents[1]
-COMMON_CONTRACTS = REPO_ROOT / "common" / "contracts"
-if str(COMMON_CONTRACTS) not in sys.path:
-    sys.path.insert(0, str(COMMON_CONTRACTS))
-
-from artifact_naming import validate_run_id
-from machine_contracts import load_json, sha256
+from common.contracts.artifact_naming import validate_run_id
+from common.contracts.machine_contracts import load_json, sha256
 
 
 FORMAL_BASELINE_PATH = PROJECT_ROOT / "config" / "baseline.json"

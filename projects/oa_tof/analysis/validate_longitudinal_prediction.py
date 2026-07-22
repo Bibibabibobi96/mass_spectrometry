@@ -15,7 +15,6 @@ import hashlib
 import json
 import math
 from pathlib import Path
-import sys
 from typing import Any
 
 import numpy as np
@@ -23,8 +22,6 @@ import numpy as np
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PROJECT_ROOT.parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from projects.oa_tof.analysis.accelerator_time_focus import accelerator_state
 from projects.oa_tof.analysis.oatof_oaaccelerator_coupling import (

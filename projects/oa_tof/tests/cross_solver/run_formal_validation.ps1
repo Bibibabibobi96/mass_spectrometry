@@ -77,7 +77,7 @@ $summary = & (Join-Path $projectRoot 'simion\workbench\analyze_ideal_field_log.p
 $summary | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $simionSummary -Encoding UTF8
 if ([int]$summary.Hit -ne 1000) { throw "Current formal SIMION hit count is $($summary.Hit)/1000" }
 
-& $python (Join-Path $projectRoot 'analysis\reference_analysis.py') compare $comsolCsv $simionCsv `
+& $python -m projects.oa_tof.analysis.reference_analysis compare $comsolCsv $simionCsv `
   --mass 524 --output $resultDir --left-label COMSOL --right-label SIMION `
   --require-paired-particle-ids --bootstrap-resamples $BootstrapResamples --bootstrap-seed $BootstrapSeed
 if ($LASTEXITCODE -ne 0) { throw 'Formal cross-solver analysis failed.' }

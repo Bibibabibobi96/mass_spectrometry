@@ -7,12 +7,20 @@ import hashlib
 import json
 from pathlib import Path
 
-from artifact_naming import (
-    validate_archive_id,
-    validate_formal_asset_name,
-    validate_run_id,
-    validate_task_id,
-)
+try:
+    from common.contracts.artifact_naming import (
+        validate_archive_id,
+        validate_formal_asset_name,
+        validate_run_id,
+        validate_task_id,
+    )
+except ModuleNotFoundError:
+    from artifact_naming import (
+        validate_archive_id,
+        validate_formal_asset_name,
+        validate_run_id,
+        validate_task_id,
+    )
 
 
 ALLOWED_PROJECT_ENTRIES = {"00_README.txt", "formal", "runs", "archive", "scratch"}

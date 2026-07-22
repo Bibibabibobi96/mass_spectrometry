@@ -57,14 +57,12 @@ $formalCadReport = Join-Path $artifactRoot $formalAssets.solidworks.export_repor
 $formalResultsDir = Join-Path $artifactRoot $formalAssets.results.artifact_relative_path.Replace('/','\')
 $formalResultsManifest = Join-Path $artifactRoot $formalAssets.results.sha256_manifest_relative_path.Replace('/','\')
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
-$derivationGate = Join-Path $PSScriptRoot 'verify_geometry_derivation.py'
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 project runtime missing: $python" }
-$derivationOutput = & $python $derivationGate $baselinePath
+$derivationOutput = & $python -m projects.oa_tof.tests.cross_solver.verify_geometry_derivation $baselinePath
 if ($LASTEXITCODE -ne 0 -or $derivationOutput -notcontains 'GEOMETRY_DERIVATION_STATUS=PASS') {
   throw 'Physics-input to engineering-geometry derivation gate failed.'
 }
-$syncScript = Join-Path $componentDir 'analysis\sync_geometry_contract.py'
-$syncOutput = & $python $syncScript --check
+$syncOutput = & $python -m projects.oa_tof.analysis.sync_geometry_contract --check
 if ($LASTEXITCODE -ne 0 -or $syncOutput -notcontains 'GEOMETRY_TEXT_SYNC=PASS') {
   throw 'Resolved geometry or generated SIMION inputs are stale.'
 }

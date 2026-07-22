@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,9 +10,9 @@ import pandas as pd
 
 
 ANALYSIS_DIR = Path(__file__).resolve().parents[2] / "analysis"
-sys.path.insert(0, str(ANALYSIS_DIR))
 
-from peak_metrics import (
+
+from projects.oa_tof.analysis.peak_metrics import (
     AnalysisSettings,
     bootstrap_resolution_distribution,
     bootstrap_resolution_difference,
@@ -22,14 +21,14 @@ from peak_metrics import (
     compute_paired_tof_delta_source_metrics,
     compute_source_mapping_metrics,
 )
-from reference_analysis import (
+from projects.oa_tof.analysis.reference_analysis import (
     DEFAULT_DETECTOR_CENTER_X_MM,
     analyze_comparison,
     audit_simion_recording,
     read_particle_table,
 )
-from mass_spectrum import analyze_mass_spectrum, fit_calibration
-from truncation_diagnostics import _common_intersection_masks
+from projects.oa_tof.analysis.mass_spectrum import analyze_mass_spectrum, fit_calibration
+from projects.oa_tof.analysis.truncation_diagnostics import _common_intersection_masks
 
 
 class PeakMetricsTest(unittest.TestCase):

@@ -98,9 +98,8 @@ $simionSummary = & (Join-Path $projectRoot 'simion\workbench\analyze_ideal_field
 $simionSummary | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $newSimionSummary -Encoding UTF8
 if ([int]$simionSummary.Hit -ne 1000) { throw "New-baseline SIMION hit count is $($simionSummary.Hit)/1000" }
 
-$analysis = Join-Path $projectRoot 'analysis\reference_analysis.py'
 function Invoke-PairedComparison([string]$Left, [string]$Right, [string]$Output, [string]$LeftLabel, [string]$RightLabel) {
-  & $python $analysis compare $Left $Right --mass 524 --output $Output `
+  & $python -m projects.oa_tof.analysis.reference_analysis compare $Left $Right --mass 524 --output $Output `
     --left-label $LeftLabel --right-label $RightLabel --require-paired-particle-ids `
     --bootstrap-resamples $BootstrapResamples --bootstrap-seed $BootstrapSeed
   if ($LASTEXITCODE -ne 0) { throw "Paired comparison failed: $LeftLabel versus $RightLabel" }

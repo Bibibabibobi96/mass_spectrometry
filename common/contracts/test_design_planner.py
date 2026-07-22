@@ -1,16 +1,14 @@
 import json
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 
-HERE = Path(__file__).resolve().parent
-if str(HERE) not in sys.path:
-    sys.path.insert(0, str(HERE))
+from common.contracts.machine_contracts import REPO_ROOT, sha256
+from common.contracts.plan_design_request import build_plan, write_plan
 
-from machine_contracts import REPO_ROOT, sha256
-from plan_design_request import build_plan, write_plan
+
+HERE = Path(__file__).resolve().parent
 
 
 class DesignPlannerTests(unittest.TestCase):

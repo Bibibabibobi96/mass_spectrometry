@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 
-from geometry_contract import RESOLVED_PATH, resolve_contract, serialized
+from projects.oa_tof.analysis.geometry_contract import RESOLVED_PATH, resolve_contract, serialized
 
 
 def main() -> None:

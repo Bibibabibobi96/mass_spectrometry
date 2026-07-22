@@ -7,9 +7,9 @@ import json
 from pathlib import Path
 from typing import Any
 
-from artifact_naming import validate_run_id
-from machine_contracts import REPO_ROOT, load_json, sha256
-from validate_design_request import validate_request
+from common.contracts.artifact_naming import validate_run_id
+from common.contracts.machine_contracts import REPO_ROOT, load_json, sha256
+from common.contracts.validate_design_request import validate_request
 
 
 def build_plan(request_path: Path, registry_path: Path, run_id: str) -> tuple[dict[str, Any], dict[str, Any]]:

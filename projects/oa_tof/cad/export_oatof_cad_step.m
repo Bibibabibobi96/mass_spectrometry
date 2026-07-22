@@ -14,7 +14,7 @@ function result = export_oatof_cad_step(modelPath, outputDir)
         mkdir(outputDir);
     end
 
-    ensure_comsol_livelink();
+    require_comsol_livelink();
     modelTag = 'oatof_cad_export';
     remove_model_if_present(modelTag);
     cleanupModel = onCleanup(@() remove_model_if_present(modelTag));
@@ -180,23 +180,10 @@ function remove_model_if_present(modelTag)
     end
 end
 
-function ensure_comsol_livelink()
-    mliPath = 'D:\COMSOL 6.4\COMSOL64\Multiphysics\mli';
-    if exist('mphload', 'file') == 0
-        addpath(mliPath);
-    end
+function require_comsol_livelink()
     if exist('mphload', 'file') == 0
         error('oatofCadExport:LiveLinkUnavailable', ...
-            'COMSOL LiveLink for MATLAB was not found at "%s".', mliPath);
-    end
-
-    try
-        mphstart(2036);
-    catch exception
-        if contains(exception.message, 'Already connected')
-            return;
-        end
-        error('oatofCadExport:ComsolServerUnavailable', ...
-            'Cannot connect to comsolmphserver on port 2036: %s', exception.message);
+            ['COMSOL LiveLink is unavailable. Run this task through ', ...
+             'common/comsol/run_comsol_r2025b.ps1.']);
     end
 end

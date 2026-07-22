@@ -14,8 +14,12 @@ import math
 from pathlib import Path
 from typing import Any
 
-import build_oatof_handoff as legacy
-import entry_aperture_l0
+try:
+    import build_oatof_handoff as legacy
+    import entry_aperture_l0
+except ModuleNotFoundError:
+    from projects.rf_quadrupole_collision_cooling.analysis import build_oatof_handoff as legacy
+    from projects.rf_quadrupole_collision_cooling.analysis import entry_aperture_l0
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]

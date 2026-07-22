@@ -5,6 +5,7 @@ param(
     [string]$OutputDir
 )
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $projectDir = Split-Path -Parent $PSScriptRoot
 $repoRoot = Split-Path -Parent (Split-Path -Parent $projectDir)
@@ -42,7 +43,8 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $arguments = @(
-    (Join-Path $PSScriptRoot 'reference_analysis.py'),
+    '-m',
+    'projects.oa_tof.analysis.reference_analysis',
     'verify-baselines',
     '--manifest', $ManifestPath
 )

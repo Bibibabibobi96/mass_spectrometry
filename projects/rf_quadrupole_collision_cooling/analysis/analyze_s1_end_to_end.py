@@ -8,7 +8,6 @@ import hashlib
 import json
 import math
 from pathlib import Path
-import sys
 
 import matplotlib
 
@@ -20,8 +19,7 @@ import numpy as np
 try:
     from peak_metrics import AnalysisSettings, compute_detector_metrics, compute_peak_metrics
 except ModuleNotFoundError:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "oa_tof" / "analysis"))
-    from peak_metrics import AnalysisSettings, compute_detector_metrics, compute_peak_metrics
+    from projects.oa_tof.analysis.peak_metrics import AnalysisSettings, compute_detector_metrics, compute_peak_metrics
 
 
 FIELDS = ["particle_id", "event", "instrument_time_us", "x_mm", "y_mm", "z_mm", "status"]

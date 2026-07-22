@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import json
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(PROJECT_ROOT / "analysis"))
-import validate_rf_energy_match as module  # noqa: E402
+from projects.rf_quadrupole_collision_cooling.analysis import validate_rf_energy_match as module
 
 
 class RfEnergyMatchTests(unittest.TestCase):

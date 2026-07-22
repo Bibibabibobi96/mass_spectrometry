@@ -18,9 +18,9 @@ $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Pat
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 runtime missing: $python" }
 $gateTimer = [Diagnostics.Stopwatch]::StartNew()
 
-& $python (Join-Path $projectRoot 'analysis\resolve_geometry.py') --check
+& $python -m projects.oa_tof.analysis.resolve_geometry --check
 if ($LASTEXITCODE -ne 0) { throw 'Resolved-geometry gate failed.' }
-& $python (Join-Path $projectRoot 'analysis\sync_geometry_contract.py') --check
+& $python -m projects.oa_tof.analysis.sync_geometry_contract --check
 if ($LASTEXITCODE -ne 0) { throw 'Generated-input freshness gate failed.' }
 & $python (Join-Path $projectRoot 'analysis\prepare_rf_handoff_projection.py') --check-mode
 if ($LASTEXITCODE -ne 0) { throw 'RF handoff consumer-mode gate failed.' }
@@ -34,12 +34,12 @@ if ($LASTEXITCODE -ne 0) { throw 'RF shared-clock pulse mode gate failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Accelerator theory self-test failed.' }
 & $python (Join-Path $projectRoot 'analysis\reflectron_dual_stage_solver.py') --self-test
 if ($LASTEXITCODE -ne 0) { throw 'Reflectron theory self-test failed.' }
-& $python (Join-Path $projectRoot 'analysis\oatof_oaaccelerator_coupling.py') --self-test
+& $python -m projects.oa_tof.analysis.oatof_oaaccelerator_coupling --self-test
 if ($LASTEXITCODE -ne 0) { throw 'Coupled longitudinal theory self-test failed.' }
 & $python (Join-Path $projectRoot 'analysis\accelerator_time_focus.py') `
   (Join-Path $projectRoot 'config\candidates\accelerator_grid_aligned_strict_focus.json') | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Accelerator theory contract gate failed.' }
-& $python (Join-Path $projectRoot 'analysis\oatof_oaaccelerator_coupling.py') `
+& $python -m projects.oa_tof.analysis.oatof_oaaccelerator_coupling `
   (Join-Path $projectRoot 'config\candidates\oatof_longitudinal_coupled_reference.json') | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Coupled longitudinal theory contract gate failed.' }
 & (Join-Path $projectRoot 'tests\cross_solver\verify_geometry_contract.ps1') -SkipRuntime -SimionExe $SimionExe -PythonExe $python

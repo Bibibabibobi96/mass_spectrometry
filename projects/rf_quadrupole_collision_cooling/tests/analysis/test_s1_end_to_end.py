@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import csv
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(PROJECT_ROOT / "analysis"))
-import analyze_s1_end_to_end as module  # noqa: E402
+from projects.rf_quadrupole_collision_cooling.analysis import analyze_s1_end_to_end as module
 
 
 def write(path: Path, fields: list[str], rows: list[dict[str, object]]) -> None:

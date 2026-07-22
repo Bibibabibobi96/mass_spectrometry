@@ -16,17 +16,11 @@ import argparse
 import csv
 import json
 import math
-import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-# Make sibling imports work both as a repository script and as a copied reference set.
-_THIS_DIR = Path(__file__).resolve().parent
-if str(_THIS_DIR) not in sys.path:
-    sys.path.insert(0, str(_THIS_DIR))
-
-from accelerator_time_focus import (  # noqa: E402
+from projects.oa_tof.analysis.accelerator_time_focus import (
     ATOMIC_MASS_CONSTANT_KG,
     ELEMENTARY_CHARGE_C,
     AcceleratorState,
@@ -35,7 +29,7 @@ from accelerator_time_focus import (  # noqa: E402
     compact_exit_focus_bound,
     normalized_time_to_plane_mm_sqrt_v,
 )
-from reflectron_dual_stage_solver import (  # noqa: E402
+from projects.oa_tof.analysis.reflectron_dual_stage_solver import (
     normalized_derivatives as reflectron_normalized_derivatives,
     normalized_flight_time_mm_sqrt_v as reflectron_normalized_time,
     normalized_third_derivative as reflectron_normalized_third_derivative,

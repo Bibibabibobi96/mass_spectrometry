@@ -19,8 +19,6 @@ function test_lit_geometry_es()
 commonDir = fileparts(mfilename('fullpath'));
 addpath(commonDir);
 paths = common_artifact_paths();
-addpath('D:\COMSOL 6.4\COMSOL64\Multiphysics\mli');
-mphstart(2036);
 import com.comsol.model.*
 import com.comsol.model.util.*
 

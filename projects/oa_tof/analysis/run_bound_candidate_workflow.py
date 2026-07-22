@@ -3,19 +3,14 @@
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 from typing import Any
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PROJECT_ROOT.parents[1]
-COMMON_CONTRACTS = REPO_ROOT / "common" / "contracts"
-if str(COMMON_CONTRACTS) not in sys.path:
-    sys.path.insert(0, str(COMMON_CONTRACTS))
-
-from machine_contracts import load_json, sha256
-from run_candidate_workflow import run_candidate_workflow
+from common.contracts.machine_contracts import load_json, sha256
+from projects.oa_tof.analysis.run_candidate_workflow import run_candidate_workflow
 
 
 def _verified_record(record: dict[str, Any], label: str) -> Path:

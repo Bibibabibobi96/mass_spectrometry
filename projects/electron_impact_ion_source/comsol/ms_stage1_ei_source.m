@@ -46,8 +46,6 @@ function result = ms_stage1_ei_source(Nd_val, label)
 componentRoot = fileparts(fileparts(mfilename('fullpath')));
 addpath(componentRoot);
 paths = ei_source_paths();
-addpath('D:\COMSOL 6.4\COMSOL64\Multiphysics\mli');
-mphstart(2036);
 import com.comsol.model.*
 import com.comsol.model.util.*
 

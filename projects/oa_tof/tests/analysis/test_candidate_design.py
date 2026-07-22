@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import copy
 import json
-import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,23 +9,20 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
-sys.path.insert(0, str(PROJECT_ROOT / "analysis"))
-sys.path.insert(0, str(REPO_ROOT / "common" / "contracts"))
-
-from compile_candidate_design import EnvelopeReviewRequired, compile_proposal, write_candidate
-from machine_contracts import load_json, sha256
-from prepare_candidate_consumers import prepare, verify_routing_coverage
-from prepare_candidate_run import prepare_candidate_run, validate_workflow
-from candidate_run_lifecycle import finalize_candidate_run, start_candidate_run
-from run_candidate_workflow import (
+from common.contracts.machine_contracts import load_json, sha256
+from common.contracts.verify_artifact_layout import verify_project
+from projects.oa_tof.analysis.candidate_run_lifecycle import finalize_candidate_run, start_candidate_run
+from projects.oa_tof.analysis.compile_candidate_design import EnvelopeReviewRequired, compile_proposal, write_candidate
+from projects.oa_tof.analysis.prepare_candidate_consumers import prepare, verify_routing_coverage
+from projects.oa_tof.analysis.prepare_candidate_run import prepare_candidate_run, validate_workflow
+from projects.oa_tof.analysis.run_bound_candidate_workflow import validate_bound_candidate
+from projects.oa_tof.analysis.run_candidate_workflow import (
     CandidateWorkflowError,
     CandidateWorkflowInterrupted,
     _powershell,
     execute_stage,
     run_candidate_workflow,
 )
-from run_bound_candidate_workflow import validate_bound_candidate
-from verify_artifact_layout import verify_project
 
 
 class CandidateDesignTests(unittest.TestCase):

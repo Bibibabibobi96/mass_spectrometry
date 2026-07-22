@@ -1,18 +1,16 @@
 import copy
 import json
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 
-HERE = Path(__file__).resolve().parent
-if str(HERE) not in sys.path:
-    sys.path.insert(0, str(HERE))
+from common.contracts.compile_execution_plan import compile_execution
+from common.contracts.machine_contracts import REPO_ROOT, load_json
+from common.contracts.plan_design_request import build_plan
 
-from compile_execution_plan import compile_execution
-from machine_contracts import REPO_ROOT, load_json
-from plan_design_request import build_plan
+
+HERE = Path(__file__).resolve().parent
 
 
 class ExecutionCompilerTests(unittest.TestCase):
@@ -84,6 +82,7 @@ class ExecutionCompilerTests(unittest.TestCase):
         ready = self.compile_request(request, {"candidate_workflow_plan": "C:/candidate/plan.json"})
         self.assertEqual(ready["status"], "EXECUTION_READY")
         self.assertEqual(ready["profile_id"], "validated_structural_candidate")
+        self.assertEqual(ready["commands"][0]["argv"][1:3], ["-m", "projects.oa_tof.analysis.run_bound_candidate_workflow"])
         self.assertIn("C:/candidate/plan.json", ready["commands"][0]["argv"])
 
         request["design_variables"] = ["reflectron_midgrid_voltage"]

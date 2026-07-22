@@ -223,7 +223,6 @@ fprintf('[d1 scan] d1=%gmm -> U1(V_mid)=%.4fV, E1=%.4fV/m, E2=%.4fV/m, V_mirror=
 % the very end. Does not affect any physics/accuracy, purely diagnostic.
 t_total_start = tic;
 paths = oatof_paths();
-addpath('D:\COMSOL 6.4\COMSOL64\Multiphysics\mli');
 import com.comsol.model.*
 import com.comsol.model.util.*
 

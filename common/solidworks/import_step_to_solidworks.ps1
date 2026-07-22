@@ -4,6 +4,7 @@ param(
     [switch]$Visible
 )
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 if (-not (Test-Path -LiteralPath $StepPath -PathType Leaf)) {
@@ -18,8 +19,10 @@ if (-not (Test-Path -LiteralPath $outDir -PathType Container)) {
 # Do not use late-bound dispatch through whichever TypeLib happens to be
 # registered.  Load the installed SolidWorks 2022 PIA explicitly so every
 # import uses the repository's formal CAD baseline.
-$interopPath = 'D:\SW2022\SOLIDWORKS Corp2022\SOLIDWORKS\SolidWorks.Interop.sldworks.dll'
-$constantsPath = 'D:\SW2022\SOLIDWORKS Corp2022\SOLIDWORKS\SolidWorks.Interop.swconst.dll'
+. (Join-Path $PSScriptRoot 'resolve_solidworks_2022.ps1')
+$solidWorksPaths = Get-SolidWorks2022Paths
+$interopPath = $solidWorksPaths.Interop
+$constantsPath = $solidWorksPaths.Constants
 if (-not (Test-Path -LiteralPath $interopPath -PathType Leaf)) {
     throw "SolidWorks 2022 Interop assembly was not found: $interopPath"
 }

@@ -10,6 +10,10 @@
 - CAD测试：`../tests/cad/OaTofCadExportTest.m`
 - 正式产物：工作区`artifacts/projects/oa_tof/formal/cad/`；主装配为`oa_tof__assembly.SLDASM`
 
+MATLAB导出任务必须通过根`common/comsol/run_comsol_r2025b.ps1`获得既有LiveLink连接；
+`export_oatof_cad_step.m`只校验LiveLink是否可用，不自行发现MLI或调用`mphstart`。SolidWorks安装由
+`common/solidworks/`共享解析器从注册表或`SOLIDWORKS_2022_ROOT`发现，项目脚本不得保存安装盘符。
+
 CAD不直接解析候选JSON。`analysis/prepare_candidate_consumers.py`先把候选合同绑定到唯一候选MPH路径，
 随后本文件的`modelPath`入口只读该MPH导出STEP和SolidWorks装配。这样机械几何继承已持久化的COMSOL
 模型树，同时避免CAD另建一套参数推导；候选MPH不存在或未通过同步门禁时，CAD状态必须保持阻塞。

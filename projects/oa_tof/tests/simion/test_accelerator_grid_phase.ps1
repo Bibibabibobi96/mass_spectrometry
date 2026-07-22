@@ -166,7 +166,7 @@ $manifest = [pscustomobject]@{
 }
 $manifestPath = Join-Path $runDir 'grid_phase_manifest.json'
 $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $manifestPath -Encoding utf8
-& $pythonExe $pythonAnalyzer $manifestPath --output $resultDir
+& $pythonExe -m projects.oa_tof.analysis.analyze_accelerator_grid_phase $manifestPath --output $resultDir
 if ($LASTEXITCODE -ne 0) { throw "Grid-phase Python analysis failed with exit code $LASTEXITCODE" }
 $runConfig = Join-Path $runDir 'run_config.json'
 [ordered]@{schema_version=1;run_id=$RunId;project='oa_tof';mode='accelerator_grid_phase';project_root=$projectRoot;inputs=[ordered]@{formal_iob=(Join-Path $formalDir 'oatof_ideal_grounded.iob');resolved_geometry='config/resolved_geometry.json'};formal_gate_passed=$false;ideal_grid_epsilon_mm=$IdealGridEpsilonMm} |

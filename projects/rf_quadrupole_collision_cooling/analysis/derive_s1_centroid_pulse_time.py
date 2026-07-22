@@ -11,7 +11,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from plot_s1_pulse_geometry_snapshot import accelerator_geometry
+try:
+    from plot_s1_pulse_geometry_snapshot import accelerator_geometry
+except ModuleNotFoundError:
+    from projects.rf_quadrupole_collision_cooling.analysis.plot_s1_pulse_geometry_snapshot import accelerator_geometry
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]

@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-import sys
 import unittest
 from pathlib import Path
 
 import pandas as pd
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(PROJECT_ROOT / "analysis"))
-import compare_s1_capture_to_oatof_ideal_source as module  # noqa: E402
+from projects.rf_quadrupole_collision_cooling.analysis import compare_s1_capture_to_oatof_ideal_source as module
 
 
 class S1CaptureIdealComparisonTests(unittest.TestCase):

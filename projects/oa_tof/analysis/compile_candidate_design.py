@@ -6,22 +6,17 @@ import argparse
 import copy
 import json
 import math
-import sys
 from pathlib import Path
 from typing import Any
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PROJECT_ROOT.parents[1]
-COMMON_CONTRACTS = REPO_ROOT / "common" / "contracts"
-if str(COMMON_CONTRACTS) not in sys.path:
-    sys.path.insert(0, str(COMMON_CONTRACTS))
-
-from machine_contracts import load_json, sha256, validate_schema
-from validate_design_request import validate_request
-from accelerator_time_focus import accelerator_state, focus_drift_mm
-from geometry_contract import BASELINE_PATH, MODE_PATH, resolve_contract, serialized
-from oatof_oaaccelerator_coupling import solve_coupled_reflectron_fields
+from common.contracts.machine_contracts import load_json, sha256, validate_schema
+from common.contracts.validate_design_request import validate_request
+from projects.oa_tof.analysis.accelerator_time_focus import accelerator_state, focus_drift_mm
+from projects.oa_tof.analysis.geometry_contract import BASELINE_PATH, MODE_PATH, resolve_contract, serialized
+from projects.oa_tof.analysis.oatof_oaaccelerator_coupling import solve_coupled_reflectron_fields
 
 
 CATALOG_PATH = PROJECT_ROOT / "config" / "design_variables.json"

@@ -9,12 +9,9 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-ANALYSIS = PROJECT_ROOT / "analysis"
-if str(ANALYSIS) not in sys.path:
-    sys.path.insert(0, str(ANALYSIS))
 
-from accelerator_time_focus import accelerator_state
-from oatof_oaaccelerator_coupling import solve_coupled_reflectron_fields
+from projects.oa_tof.analysis.accelerator_time_focus import accelerator_state
+from projects.oa_tof.analysis.oatof_oaaccelerator_coupling import solve_coupled_reflectron_fields
 
 
 def main() -> int:

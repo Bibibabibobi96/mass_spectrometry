@@ -188,7 +188,7 @@ if ([int]$summary.Hit -ne $totalParticles) {
   throw "SIMION detected $($summary.Hit)/$totalParticles mixed-species ions."
 }
 
-& $python (Join-Path $projectRoot 'analysis\mass_spectrum.py') `
+& $python -m projects.oa_tof.analysis.mass_spectrum `
   --mode-config $effectiveModePath --comsol-dir $comsolDir --simion-csv $simionCsv --output $resultDir
 if ($LASTEXITCODE -ne 0) { throw 'Candidate mass-spectrum analysis failed.' }
 

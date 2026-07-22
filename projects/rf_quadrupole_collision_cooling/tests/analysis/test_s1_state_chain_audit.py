@@ -1,14 +1,9 @@
 from __future__ import annotations
 
 import math
-import sys
 import unittest
-from pathlib import Path
 
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(PROJECT_ROOT / "analysis"))
-import audit_s1_state_chain as module  # noqa: E402
+from projects.rf_quadrupole_collision_cooling.analysis import audit_s1_state_chain as module
 
 
 class S1StateChainAuditTests(unittest.TestCase):

@@ -9,6 +9,8 @@
 `run_comsol_r2025b.ps1`是共享LiveLink任务入口；允许的软件版本和调用命令只以仓库根
 [`README.md`](../../README.md#comsol-r2025b-执行入口)为权威。项目脚本不得再次调用`mphstart`，
 也不得绕过入口维护另一套长期服务连接。
+入口默认从Windows卸载注册表发现COMSOL 6.4，并从`ProgramFiles`派生MATLAB R2025b根目录；非标准
+安装分别使用`COMSOL_64_ROOT`和`MATLAB_R2025B_ROOT`覆盖。环境变量只描述软件部署位置，不承载模型参数。
 
 入口只对白名单中的启动瞬态进行有限重试：报告必须同时包含首次模型打开链路中的
 `mphload`、`mphopen`和`Not connected to a server`。重试前失败报告以

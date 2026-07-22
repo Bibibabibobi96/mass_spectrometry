@@ -1,21 +1,18 @@
 from __future__ import annotations
 
 import json
-import sys
 import unittest
 from pathlib import Path
 
 
 PROJECT_DIR = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(PROJECT_DIR / "analysis"))
-
-from accelerator_time_focus import accelerator_state
-from oatof_oaaccelerator_coupling import (
+from projects.oa_tof.analysis.accelerator_time_focus import accelerator_state
+from projects.oa_tof.analysis.oatof_oaaccelerator_coupling import (
     coupled_normalized_flight_time_mm_sqrt_v,
     derive as derive_coupled,
     source_position_samples,
 )
-from reflectron_dual_stage_solver import (
+from projects.oa_tof.analysis.reflectron_dual_stage_solver import (
     normalized_derivatives,
     normalized_flight_time_mm_sqrt_v,
     solve_reflectron_fields,
@@ -163,7 +160,7 @@ class OatofLongitudinalTheoryTest(unittest.TestCase):
         )
         result, _ = derive_coupled(contract)
         coupled_dict = result["coupled_reflectron"]
-        from oatof_oaaccelerator_coupling import CoupledReflectronSolution
+        from projects.oa_tof.analysis.oatof_oaaccelerator_coupling import CoupledReflectronSolution
 
         coupled = CoupledReflectronSolution(
             **{

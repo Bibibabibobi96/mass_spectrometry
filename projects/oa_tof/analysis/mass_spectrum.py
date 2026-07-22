@@ -22,8 +22,8 @@ from matplotlib.lines import Line2D
 import numpy as np
 import pandas as pd
 
-from peak_metrics import AnalysisSettings, compare_peak_shapes, compute_detector_metrics
-from reference_analysis import (
+from projects.oa_tof.analysis.peak_metrics import AnalysisSettings, compare_peak_shapes, compute_detector_metrics
+from projects.oa_tof.analysis.reference_analysis import (
     DEFAULT_DETECTOR_CENTER_X_MM,
     DEFAULT_DETECTOR_CENTER_Y_MM,
     read_particle_table,

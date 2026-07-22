@@ -1,4 +1,3 @@
-import sys
 import unittest
 from copy import deepcopy
 from pathlib import Path
@@ -9,13 +8,12 @@ import pandas as pd
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(PROJECT_ROOT / "analysis"))
 
-import validate_s1_joint_field as module  # noqa: E402
-import analyze_s1_joint_field as analysis_module  # noqa: E402
-import validate_field_performance_experiment as experiment_module  # noqa: E402
-import validate_rf_continuous_shield as shield_module  # noqa: E402
-import analyze_rf_continuous_shield_2d as shield_analysis_module  # noqa: E402
+from projects.rf_quadrupole_collision_cooling.analysis import analyze_rf_continuous_shield_2d as shield_analysis_module
+from projects.rf_quadrupole_collision_cooling.analysis import analyze_s1_joint_field as analysis_module
+from projects.rf_quadrupole_collision_cooling.analysis import validate_field_performance_experiment as experiment_module
+from projects.rf_quadrupole_collision_cooling.analysis import validate_rf_continuous_shield as shield_module
+from projects.rf_quadrupole_collision_cooling.analysis import validate_s1_joint_field as module
 
 
 class S1JointFieldContractTests(unittest.TestCase):

@@ -7,10 +7,17 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$matlabExe = 'C:\Program Files\MATLAB\R2025b\MatlabR2025b\bin\matlab.exe'
-$solidWorksExe = 'D:\SW2022\SOLIDWORKS Corp2022\SOLIDWORKS\SLDWORKS.exe'
-$swInterop = 'D:\SW2022\SOLIDWORKS Corp2022\SOLIDWORKS\SolidWorks.Interop.sldworks.dll'
-$swConstants = 'D:\SW2022\SOLIDWORKS Corp2022\SOLIDWORKS\SolidWorks.Interop.swconst.dll'
+$matlabRoot = if ($env:MATLAB_R2025B_ROOT) {
+    [IO.Path]::GetFullPath($env:MATLAB_R2025B_ROOT)
+} else {
+    Join-Path $env:ProgramFiles 'MATLAB\R2025b\MatlabR2025b'
+}
+$matlabExe = Join-Path $matlabRoot 'bin\matlab.exe'
+. (Join-Path $PSScriptRoot 'solidworks\resolve_solidworks_2022.ps1')
+$solidWorksPaths = Get-SolidWorks2022Paths
+$solidWorksExe = $solidWorksPaths.Executable
+$swInterop = $solidWorksPaths.Interop
+$swConstants = $solidWorksPaths.Constants
 
 if (-not (Test-Path -LiteralPath $matlabExe -PathType Leaf)) {
     throw "MATLAB R2025b executable not found: $matlabExe"
