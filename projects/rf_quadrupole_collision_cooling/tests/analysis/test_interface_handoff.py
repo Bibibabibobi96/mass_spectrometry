@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from common.contracts.particle_physics import kinetic_energy_ev
 
 PROJECT_ROOT = Path(__file__).parents[2]
 from projects.rf_quadrupole_collision_cooling.analysis import build_interface_handoff as MODULE
@@ -385,10 +386,7 @@ class ExitEventBuildTests(unittest.TestCase):
         legacy = MODULE.legacy
         fieldnames = sorted(legacy.REQUIRED_SOURCE_COLUMNS)
         vx, vy, vz = 100.0, 200.0, 2000.0
-        energy = (
-            0.5 * 100.0 * legacy.ATOMIC_MASS_KG * (vx**2 + vy**2 + vz**2)
-            / legacy.ELEMENTARY_CHARGE_C
-        )
+        energy = kinetic_energy_ev(100.0, vx, vy, vz)
         with self.source.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.DictWriter(handle, fieldnames=fieldnames, lineterminator="\n")
             writer.writeheader()

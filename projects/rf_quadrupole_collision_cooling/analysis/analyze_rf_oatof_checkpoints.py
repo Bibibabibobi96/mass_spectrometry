@@ -17,6 +17,7 @@ from matplotlib.patches import Rectangle
 import numpy as np
 import pandas as pd
 
+from common.contracts import particle_physics
 from common.contracts.rigid_transform import (
     FramedPosition,
     FramedVector,
@@ -32,8 +33,6 @@ except ModuleNotFoundError:
     )
 
 
-ATOMIC_MASS_KG = 1.66053906660e-27
-ELEMENTARY_CHARGE_C = 1.602176634e-19
 AXES = ("x", "y", "z")
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SPATIAL_REGISTRATION = (
@@ -124,8 +123,16 @@ def _registered_local_positions(data: pd.DataFrame,
 
 
 def _energy_eV(data: pd.DataFrame) -> np.ndarray:
-    speed_squared = sum(data[f"local_v{axis}_m_s"].to_numpy(float) ** 2 for axis in AXES)
-    return 0.5 * data["mass_amu"].to_numpy(float) * ATOMIC_MASS_KG * speed_squared / ELEMENTARY_CHARGE_C
+    masses = data["mass_amu"].to_numpy(float)
+    velocities = data[[f"local_v{axis}_m_s" for axis in AXES]].to_numpy(float)
+    return np.fromiter(
+        (
+            particle_physics.kinetic_energy_ev(float(mass), *velocity)
+            for mass, velocity in zip(masses, velocities, strict=True)
+        ),
+        dtype=float,
+        count=len(data),
+    )
 
 
 def _axis_distribution(data: pd.DataFrame, prefix: str, unit: str) -> dict[str, Any]:

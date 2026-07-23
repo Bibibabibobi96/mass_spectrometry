@@ -1,7 +1,12 @@
 {
   "schema_version": 1,
   "role": "oa_tof_external_handoff_projection_candidate",
-  "status": "finite_pulse_functional_runtime_qualified",
+  "status": "superseded_projected_pulse_diagnostic_only",
+  "lifecycle": {
+    "active_execution": false,
+    "superseded_by": "projects/rf_quadrupole_collision_cooling/tests/cross_solver/run_s3_cumulative_chain.ps1",
+    "claim_limit": "Retained for the projected-entry finite-pulse regression. The active S3 path first transports through the candidate COMSOL physical port/connector and then continues from canonical local-exit state."
+  },
   "comparison_kind": "pulse_functional",
   "source_project": "rf_quadrupole_collision_cooling",
   "target_project": "oa_tof",

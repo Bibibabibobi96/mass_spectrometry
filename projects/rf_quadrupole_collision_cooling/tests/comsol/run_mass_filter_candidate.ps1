@@ -136,7 +136,7 @@ try {
     comparison='results/mass-response__l0-l1-simion-comsol.csv';figure='results/mass-response__l0-l1-simion-comsol.png'
     claim_limit=$metricDocument.claim_limit
   })
-  $runConfiguration.parameters.lifecycle_stage='complete';$runConfiguration.formal_gate_passed=($metricDocument.status-eq 'PASS')
+  $runConfiguration.parameters.lifecycle_stage='complete'
   Write-RfJson -Value $runConfiguration -Path $package.run_config
   $outputs=@($report,$response,$metrics,$comparison,$figure,$package.summary)
   foreach($case in $cases){$outputs+=@($case.solver_summary,$case.particle_state)}

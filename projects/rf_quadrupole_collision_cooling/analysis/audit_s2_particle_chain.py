@@ -8,9 +8,8 @@ import json
 import math
 from pathlib import Path
 
+from common.contracts.particle_physics import kinetic_energy_ev
 
-ATOMIC_MASS_KG = 1.66053906660e-27
-ELEMENTARY_CHARGE_C = 1.602176634e-19
 
 
 def _read_rows(path: Path) -> dict[int, dict[str, str]]:
@@ -92,16 +91,11 @@ def audit(source_path: Path, event_path: Path, contract_path: Path) -> dict:
             )
             maximum_clock_residual = max(maximum_clock_residual, residual)
 
-        speed_squared = sum(
-            float(event[name]) ** 2
-            for name in ("velocity_x_m_s", "velocity_y_m_s", "velocity_z_m_s")
-        )
-        energy = (
-            0.5
-            * float(event["mass_amu"])
-            * ATOMIC_MASS_KG
-            * speed_squared
-            / ELEMENTARY_CHARGE_C
+        energy = kinetic_energy_ev(
+            float(event["mass_amu"]),
+            *(float(event[name]) for name in (
+                "velocity_x_m_s", "velocity_y_m_s", "velocity_z_m_s"
+            )),
         )
         recorded_energy = float(event["kinetic_energy_eV"])
         relative_energy_residual = abs(energy - recorded_energy) / recorded_energy

@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from common.contracts.particle_physics import kinetic_energy_ev
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
@@ -102,6 +103,19 @@ class RfOatofCheckpointTests(unittest.TestCase):
         return module.analyze_checkpoints(
             self.exit_path, self.capture_path, self.terminal_path,
             self.schedule_path, self.baseline, self.s2, self.joint, self.contract)
+
+    def test_energy_uses_common_particle_physics_for_each_state(self) -> None:
+        states = pd.DataFrame({
+            "mass_amu": [40.0, 100.0],
+            "local_vx_m_s": [1000.0, -250.0],
+            "local_vy_m_s": [0.0, 500.0],
+            "local_vz_m_s": [0.0, 750.0],
+        })
+        expected = np.array([
+            kinetic_energy_ev(40.0, 1000.0, 0.0, 0.0),
+            kinetic_energy_ev(100.0, -250.0, 500.0, 750.0),
+        ])
+        np.testing.assert_allclose(module._energy_eV(states), expected, rtol=1e-15)
 
     def test_same_id_metrics_preserve_full_population_and_residual(self) -> None:
         metrics, table, _ = self._analyze()

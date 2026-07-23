@@ -98,15 +98,14 @@ S2–S3连接功能闭环记录：
   [`analysis/assess_interface_integration_gate.py`](analysis/assess_interface_integration_gate.py)
 - 通用部件链时钟、RF→oa-TOF候选投影合同与派生器：
   [`config/rf_to_oatof_handoff.json`](config/rf_to_oatof_handoff.json)、
-  [`analysis/build_oatof_handoff.py`](analysis/build_oatof_handoff.py)。合同当前是禁止打包的draft；完整状态包
-  保存全局仪器时间和粒子谱系，11列ION只是当前静电oa-TOF消费者的派生输入。
+  [`analysis/build_oatof_handoff.py`](analysis/build_oatof_handoff.py)。该合同现已被S2/S3物理链取代为
+  活动入口，只保留旧刚体投影、时钟适配回归和历史run复现；完整状态包语义仍可追溯，但不得把该旧入口
+  的projection PASS解释为当前物理连接器资格。
 - 双边界、时变兼容的物理接口候选：
   [`config/rf_to_oatof_interface_candidate.json`](config/rf_to_oatof_interface_candidate.json)、
-  [`analysis/build_interface_handoff.py`](analysis/build_interface_handoff.py)。它把RF出口面、尚未冻结的
-  oa入口面和脉冲时刻捕获状态分开；canonical CSV只保存每粒子一次带全局时间的出口相空间事件，
-  三维快照和求解器输入均按需派生。RF与oa在统一仪器坐标中的位姿分别冻结，相对平移/转角只能由
-  两者派生；坐标变换不代替连接器内的真实输运。当前审计还确认oa加速器屏蔽沿注入轴没有侧孔，
-  连接器必须包含参数化屏蔽开孔和接地注入管候选。该合同只通过静态门禁，不授权物理连接或运行打包。
+  [`analysis/build_interface_handoff.py`](analysis/build_interface_handoff.py)。它保留S0/S1时期的闭合Formal
+  屏蔽审计、双边界和时钟静态参考，已被S2/S3活动合同显式取代；其中“Formal屏蔽无侧孔”仍是当前
+  Formal事实，但不能覆盖候选COMSOL中已经实现并运行的参数化侧孔和接地连接器。
 - RF→oa接口分阶段实施顺序：
   [`config/rf_to_oatof_interface_stages.json`](config/rf_to_oatof_interface_stages.json)；从无物理资格的
   S0数据直连参考开始，逐级增加开孔、被动通道、脉冲、必要的主动光学及最终跨求解器/CAD门禁，禁止跳级。
@@ -178,6 +177,8 @@ S2–S3连接功能闭环记录：
   依次运行S2无脉冲接口、S3共享时钟脉冲和SIMION下游分析器；各段runner只作内部阶段诊断。默认1 mm
   N=100功能证据为`100→61→31→31→7`；0 mm兼容案例为`100→77→39→39→9`。canonical状态到SIMION仅派生11列
   适配表，不投影位置、不重置粒子ID或全局时间。该证据不授权S2/S3资格、数值收敛、分辨率或Formal声明。
+  这是当前RF→oaTOF唯一活动累积执行入口；早期S0/S1、刚体projection、hybrid-mesh projection和
+  projected-entry pulse入口只保留诊断与历史复现职责。
 - S3脉冲前同ID checkpoint派生诊断：
   [`config/rf_to_oatof_checkpoint_diagnostic.json`](config/rf_to_oatof_checkpoint_diagnostic.json)、
   [`analysis/analyze_rf_oatof_checkpoints.py`](analysis/analyze_rf_oatof_checkpoints.py)及

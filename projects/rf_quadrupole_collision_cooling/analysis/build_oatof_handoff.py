@@ -17,6 +17,11 @@ import os
 from pathlib import Path
 from typing import Any
 
+from common.contracts.component_particle_state import (
+    csv_columns as component_state_columns,
+    validate_component_particle_state_csv,
+)
+from common.contracts.particle_physics import kinetic_energy_ev
 from common.contracts.rigid_transform import (
     FramedPosition,
     FramedVector,
@@ -34,8 +39,6 @@ DEFAULT_CONTRACT = PROJECT_ROOT / "config" / "rf_to_oatof_handoff.json"
 DEFAULT_SPATIAL_REGISTRATION = (
     PROJECT_ROOT / "config" / "resolved_rf_to_oatof_s1_spatial_registration.json"
 )
-ATOMIC_MASS_KG = 1.66053906660e-27
-ELEMENTARY_CHARGE_C = 1.602176634e-19
 
 REQUIRED_SOURCE_COLUMNS = {
     "particle_id",
@@ -57,34 +60,6 @@ HYBRID_MESH_SOURCE_COLUMNS = {
     "particle_id", "event", "status", "global_time_us", "particle_age_us", "rf_phase_rad",
     "x_mm", "y_mm", "z_mm", "vx_m_s", "vy_m_s", "vz_m_s", "kinetic_energy_eV",
 }
-
-CANONICAL_COLUMNS = [
-    "particle_id",
-    "parent_particle_id",
-    "generation",
-    "source_component_id",
-    "target_component_id",
-    "state_event",
-    "frame_id",
-    "clock_epoch_id",
-    "instrument_time_us",
-    "lineage_age_us",
-    "particle_age_us",
-    "last_component_elapsed_time_us",
-    "lineage_birth_time_us",
-    "particle_birth_time_us",
-    "mass_to_charge_Th",
-    "mass_amu",
-    "charge_state",
-    "position_x_mm",
-    "position_y_mm",
-    "position_z_mm",
-    "velocity_x_m_s",
-    "velocity_y_m_s",
-    "velocity_z_m_s",
-    "kinetic_energy_eV",
-    "source_rf_phase_rad",
-]
 
 ROW_MAP_COLUMNS = [
     "solver_row_index",
@@ -458,8 +433,7 @@ def build_handoff(
             raise ValueError("projected particle is outside the oa-TOF extraction gap")
 
         kinetic_energy = float(row["kinetic_energy_eV"])
-        speed_squared = sum(value * value for value in target_velocity)
-        velocity_energy = 0.5 * mass_amu * ATOMIC_MASS_KG * speed_squared / ELEMENTARY_CHARGE_C
+        velocity_energy = kinetic_energy_ev(mass_amu, *target_velocity)
         residual = abs(velocity_energy - kinetic_energy) / kinetic_energy
         maximum_energy_residual = max(maximum_energy_residual, residual)
         if residual > float(acceptance["maximum_energy_velocity_relative_residual"]):
@@ -477,6 +451,8 @@ def build_handoff(
             "particle_id": particle_id,
             "parent_particle_id": "",
             "generation": int(contract["identity_contract"]["current_generation"]),
+            "species_id": "ion_100amu_q1",
+            "particle_weight": "1",
             "source_component_id": source["project_id"],
             "target_component_id": target["project_id"],
             "state_event": "component_handoff",
@@ -498,7 +474,8 @@ def build_handoff(
             "velocity_y_m_s": f"{target_velocity[1]:.15g}",
             "velocity_z_m_s": f"{target_velocity[2]:.15g}",
             "kinetic_energy_eV": f"{kinetic_energy:.15g}",
-            "source_rf_phase_rad": f"{float(row['rf_phase_rad']):.15g}",
+            "phase_reference_id": "rf_quadrupole_drive.v1",
+            "phase_rad": f"{float(row['rf_phase_rad']):.15g}",
         })
         row_map_rows.append({
             "solver_row_index": solver_index,
@@ -523,7 +500,8 @@ def build_handoff(
         ]
         ion_lines.append(",".join(f"{float(value):.15g}" for value in ion_values))
 
-    _write_csv(canonical_output, CANONICAL_COLUMNS, canonical_rows)
+    _write_csv(canonical_output, component_state_columns(), canonical_rows)
+    validate_component_particle_state_csv(canonical_output)
     _write_csv(row_map_output, ROW_MAP_COLUMNS, row_map_rows)
     ion_output.parent.mkdir(parents=True, exist_ok=True)
     ion_output.write_text("\n".join(ion_lines) + "\n", encoding="utf-8", newline="\n")

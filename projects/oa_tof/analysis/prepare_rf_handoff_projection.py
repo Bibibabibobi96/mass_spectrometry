@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from projects.oa_tof.analysis.rf_handoff_adapter import (
+    load_handoff_particle_states,
     ordered_solver_identity_map,
     validate_ion_velocity_adapter,
 )
@@ -48,6 +49,9 @@ def validate_mode(
         raise ValueError("unsupported external-handoff mode role")
     if mode.get("status") == "formal":
         raise ValueError("RF handoff projection must remain a candidate")
+    active_execution = mode.get("lifecycle", {}).get("active_execution")
+    if not isinstance(active_execution, bool):
+        raise ValueError("RF handoff mode must explicitly declare lifecycle.active_execution")
     claims = mode["claims"]
     forbidden = (
         "physical_link_claim_allowed",
@@ -112,7 +116,13 @@ def validate_mode(
             asset = workspace_path(consumer["formal_asset"])
             if not asset.is_file():
                 raise ValueError(f"formal read-only consumer asset is missing: {asset}")
-    return {"mode": mode, "contract": contract, "contract_path": contract_path, "acceptance": acceptance}
+    return {
+        "mode": mode,
+        "contract": contract,
+        "contract_path": contract_path,
+        "acceptance": acceptance,
+        "legacy_projection": not active_execution,
+    }
 
 
 def _read_csv(path: Path) -> list[dict[str, str]]:
@@ -122,6 +132,10 @@ def _read_csv(path: Path) -> list[dict[str, str]]:
 
 def _same_number(left: str, right: str, tolerance: float = 1e-10) -> bool:
     return math.isclose(float(left), float(right), rel_tol=tolerance, abs_tol=tolerance)
+
+
+def mode_execution_status(validated: dict[str, Any]) -> str:
+    return "DIAGNOSTIC" if validated["legacy_projection"] else "ACTIVE"
 
 
 def validate_bundle(
@@ -150,7 +164,10 @@ def validate_bundle(
         if declared.get(key, {}).get("sha256", "").upper() != sha256(path):
             raise ValueError(f"handoff bundle output hash mismatch: {key}")
 
-    canonical = _read_csv(canonical_path)
+    canonical, state_validation = load_handoff_particle_states(
+        canonical_path,
+        legacy_projection=validated["legacy_projection"],
+    )
     row_map = _read_csv(row_map_path)
     ion_lines = [line for line in ion_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     if not canonical or len(canonical) != len(row_map) or len(canonical) != len(ion_lines):
@@ -197,6 +214,7 @@ def validate_bundle(
         "row_map_sha256": sha256(row_map_path),
         "metadata_sha256": sha256(metadata_path),
         "handoff_contract_sha256": sha256(validated["contract_path"]),
+        "canonical_state_validation": state_validation,
         "functional_projection_runtime_authorized": True,
         "physical_link_claim_allowed": False,
         "resolution_claim_allowed": False,
@@ -217,8 +235,11 @@ def main() -> None:
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     if args.check_mode:
-        validate_mode(args.mode)
-        print("RF_HANDOFF_CONSUMER_MODE=PASS STATUS=CANDIDATE PHYSICAL_LINK=false")
+        validated = validate_mode(args.mode)
+        print(
+            "RF_HANDOFF_CONSUMER_MODE=PASS "
+            f"STATUS={mode_execution_status(validated)} PHYSICAL_LINK=false"
+        )
         return
     required = (args.canonical, args.ion, args.row_map, args.metadata, args.output)
     if any(value is None for value in required):

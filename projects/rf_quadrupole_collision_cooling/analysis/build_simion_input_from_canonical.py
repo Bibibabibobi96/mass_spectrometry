@@ -9,11 +9,12 @@ import json
 import math
 from pathlib import Path
 
+from common.contracts.component_particle_state import validate_component_particle_state_csv
+
 try:
-    from build_oatof_handoff import CANONICAL_COLUMNS, ROW_MAP_COLUMNS, simion_accelerator_instance_angles
+    from build_oatof_handoff import ROW_MAP_COLUMNS, simion_accelerator_instance_angles
 except ModuleNotFoundError:
     from projects.rf_quadrupole_collision_cooling.analysis.build_oatof_handoff import (
-        CANONICAL_COLUMNS,
         ROW_MAP_COLUMNS,
         simion_accelerator_instance_angles,
     )
@@ -33,10 +34,9 @@ def _write_csv(path: Path, fields: list[str], rows: list[dict[str, object]]) -> 
 
 def build(source: Path, canonical_output: Path, ion_output: Path,
           row_map_output: Path, metadata_output: Path) -> dict[str, object]:
+    validate_component_particle_state_csv(source)
     with source.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
-        if reader.fieldnames != CANONICAL_COLUMNS:
-            raise ValueError("source is not the complete canonical particle-state schema")
         rows = sorted(reader, key=lambda row: int(row["particle_id"]))
     if not rows or len({row["particle_id"] for row in rows}) != len(rows):
         raise ValueError("canonical source must contain unique particle IDs")

@@ -14,11 +14,11 @@
     },
     {
       "path": "projects/rf_quadrupole_collision_cooling/config/rf_to_oatof_interface_candidate.json",
-      "sha256": "FE3A08B0CAC7C18C9CD0F99C537BC9E019EB606B367EA62B141FA13E9A8BB268"
+      "sha256": "1F309CE1F0915D8CDDD797A8A9AA47D67B8BEEE38DDCC53DFBB4FBA0229A94A7"
     },
     {
       "path": "projects/rf_quadrupole_collision_cooling/config/rf_to_oatof_s2_passive_connector.json",
-      "sha256": "867459EF9BC2A1E9B1AF0BBFFB8DA0ABEF90A13A63CF3AF5CF825E08D14D7E82"
+      "sha256": "F09512390A4D0450B200FDF8BB7736B7EB0A4B7FDDB22F69154474011DA1C135"
     }
   ],
   "component_poses": {
@@ -184,7 +184,7 @@
       "unit": "V",
       "source": {
         "path": "projects/rf_quadrupole_collision_cooling/config/rf_to_oatof_interface_candidate.json",
-        "sha256": "FE3A08B0CAC7C18C9CD0F99C537BC9E019EB606B367EA62B141FA13E9A8BB268"
+        "sha256": "1F309CE1F0915D8CDDD797A8A9AA47D67B8BEEE38DDCC53DFBB4FBA0229A94A7"
       },
       "json_pointer": "/electrical_interface/common_potential_reference/potential_V",
       "electrode_bindings": [
@@ -225,7 +225,7 @@
       "unit": "V",
       "source": {
         "path": "projects/rf_quadrupole_collision_cooling/config/rf_to_oatof_interface_candidate.json",
-        "sha256": "FE3A08B0CAC7C18C9CD0F99C537BC9E019EB606B367EA62B141FA13E9A8BB268"
+        "sha256": "1F309CE1F0915D8CDDD797A8A9AA47D67B8BEEE38DDCC53DFBB4FBA0229A94A7"
       },
       "json_pointer": "/electrical_interface/common_potential_reference/potential_V",
       "electrode_bindings": [

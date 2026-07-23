@@ -1,7 +1,12 @@
 {
   "schema_version": 1,
   "role": "oa_tof_external_handoff_projection_candidate",
-  "status": "functional_projection_qualified_physical_interface_deferred",
+  "status": "superseded_mesh_projection_diagnostic_only",
+  "lifecycle": {
+    "active_execution": false,
+    "superseded_by": "projects/rf_quadrupole_collision_cooling/tests/cross_solver/run_s3_cumulative_chain.ps1",
+    "claim_limit": "Retained for the frozen RF mesh-pair projection comparison. Its historical functional qualification applies only to that projection, not to S2/S3 stage qualification or Formal connection."
+  },
   "comparison_kind": "rf_mesh_pair",
   "source_project": "rf_quadrupole_collision_cooling",
   "target_project": "oa_tof",

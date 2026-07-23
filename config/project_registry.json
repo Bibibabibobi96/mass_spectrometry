@@ -12,7 +12,7 @@
     },
     {
       "descriptor": "projects/oa_tof/config/project.json",
-      "sha256": "C2A8F2C4911B5E7614CDEC878C196364C250D4FF76F78B879F653ED9F75F689B"
+      "sha256": "EC4E2AE51229011828EA4912D1E38E18EBC5922B410018C4B4FCD2E15BBE7B52"
     },
     {
       "descriptor": "projects/rf_hexapole_ion_guide/config/project.json",
@@ -151,8 +151,7 @@
           "modes": [
             "formal",
             "mass_spectrum",
-            "design_candidate",
-            "rf_handoff_projection"
+            "design_candidate"
           ],
           "metrics": [
             "mass_resolving_power",

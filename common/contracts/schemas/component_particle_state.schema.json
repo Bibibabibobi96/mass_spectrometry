@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/component_particle_state.schema.json",
+  "title": "Cross-component canonical particle state row",
+  "description": "One transferable particle state at a named component event. CSV v1 uses the exact x-csv-column-order and is not byte-compatible with legacy project handoff tables.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "particle_id", "parent_particle_id", "generation", "species_id",
+    "particle_weight", "source_component_id", "target_component_id",
+    "state_event", "frame_id", "clock_epoch_id", "instrument_time_us",
+    "lineage_age_us", "particle_age_us", "last_component_elapsed_time_us",
+    "lineage_birth_time_us", "particle_birth_time_us", "mass_to_charge_Th",
+    "mass_amu", "charge_state", "position_x_mm", "position_y_mm",
+    "position_z_mm", "velocity_x_m_s", "velocity_y_m_s", "velocity_z_m_s",
+    "kinetic_energy_eV", "phase_reference_id", "phase_rad"
+  ],
+  "x-csv-schema-version": 1,
+  "x-csv-column-order": [
+    "particle_id", "parent_particle_id", "generation", "species_id",
+    "particle_weight", "source_component_id", "target_component_id",
+    "state_event", "frame_id", "clock_epoch_id", "instrument_time_us",
+    "lineage_age_us", "particle_age_us", "last_component_elapsed_time_us",
+    "lineage_birth_time_us", "particle_birth_time_us", "mass_to_charge_Th",
+    "mass_amu", "charge_state", "position_x_mm", "position_y_mm",
+    "position_z_mm", "velocity_x_m_s", "velocity_y_m_s", "velocity_z_m_s",
+    "kinetic_energy_eV", "phase_reference_id", "phase_rad"
+  ],
+  "x-legacy-migration": {
+    "source_contract": "legacy_25_column_component_handoff",
+    "byte_compatible": false,
+    "required_explicit_bindings": [
+      "species_id", "particle_weight", "phase_reference_id"
+    ]
+  },
+  "properties": {
+    "particle_id": {"type": "integer", "minimum": 1},
+    "parent_particle_id": {
+      "oneOf": [{"type": "integer", "minimum": 1}, {"type": "null"}]
+    },
+    "generation": {"type": "integer", "minimum": 0},
+    "species_id": {"$ref": "#/$defs/identifier"},
+    "particle_weight": {"type": "number", "exclusiveMinimum": 0},
+    "source_component_id": {"$ref": "#/$defs/identifier"},
+    "target_component_id": {"$ref": "#/$defs/identifier"},
+    "state_event": {"$ref": "#/$defs/identifier"},
+    "frame_id": {"$ref": "#/$defs/identifier"},
+    "clock_epoch_id": {"$ref": "#/$defs/identifier"},
+    "instrument_time_us": {"type": "number"},
+    "lineage_age_us": {"type": "number", "minimum": 0},
+    "particle_age_us": {"type": "number", "minimum": 0},
+    "last_component_elapsed_time_us": {"type": "number", "minimum": 0},
+    "lineage_birth_time_us": {"type": "number"},
+    "particle_birth_time_us": {"type": "number"},
+    "mass_to_charge_Th": {"type": "number", "exclusiveMinimum": 0},
+    "mass_amu": {"type": "number", "exclusiveMinimum": 0},
+    "charge_state": {"type": "integer", "not": {"const": 0}},
+    "position_x_mm": {"type": "number"},
+    "position_y_mm": {"type": "number"},
+    "position_z_mm": {"type": "number"},
+    "velocity_x_m_s": {"type": "number"},
+    "velocity_y_m_s": {"type": "number"},
+    "velocity_z_m_s": {"type": "number"},
+    "kinetic_energy_eV": {"type": "number", "minimum": 0},
+    "phase_reference_id": {
+      "oneOf": [{"$ref": "#/$defs/identifier"}, {"type": "null"}]
+    },
+    "phase_rad": {
+      "oneOf": [
+        {
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMaximum": 6.283185307179586
+        },
+        {"type": "null"}
+      ]
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "phase_reference_id": {"$ref": "#/$defs/identifier"},
+        "phase_rad": {"type": "number"}
+      }
+    },
+    {
+      "properties": {
+        "phase_reference_id": {"type": "null"},
+        "phase_rad": {"type": "null"}
+      }
+    }
+  ],
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z][A-Za-z0-9_.:-]*$"
+    }
+  }
+}

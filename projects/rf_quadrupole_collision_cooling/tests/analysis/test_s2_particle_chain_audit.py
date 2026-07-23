@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from common.contracts.particle_physics import kinetic_energy_ev
 from projects.rf_quadrupole_collision_cooling.analysis import audit_s2_particle_chain as module
 
 
@@ -68,7 +69,7 @@ class S2ParticleChainAuditTests(unittest.TestCase):
         reason: str = "none",
     ) -> dict[str, object]:
         velocity = 3100.0
-        energy = 0.5 * 100.0 * module.ATOMIC_MASS_KG * velocity**2 / module.ELEMENTARY_CHARGE_C
+        energy = kinetic_energy_ev(100.0, velocity, 0.0, 0.0)
         return {
             "particle_id": particle_id,
             "event": event,

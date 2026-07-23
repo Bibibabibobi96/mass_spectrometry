@@ -8,11 +8,13 @@ import json
 import math
 from pathlib import Path
 
+from common.contracts.particle_physics import (
+    AMU_KG,
+    ELEMENTARY_CHARGE_C,
+    kinetic_energy_ev,
+)
 from common.multipole.particle_source_preflight import validate_source
 from common.simion.particle_source import render_source_states, render_standard_beams
-
-AMU_KG = 1.66053906660e-27
-E_CHARGE_C = 1.602176634e-19
 
 
 def _ion11_rows(source: Path) -> list[list[str]]:
@@ -41,7 +43,7 @@ def render_ion11_source_states(source: Path, axial_offset_mm: float = 0.0) -> st
     states = []
     for index, row in enumerate(_ion11_rows(source), start=1):
         tob, mass, _, axial, transverse_1, transverse_2, azimuth, elevation, energy, _, _ = map(float, row)
-        speed = math.sqrt(2 * energy * E_CHARGE_C / (mass * AMU_KG))
+        speed = math.sqrt(2 * energy * ELEMENTARY_CHARGE_C / (mass * AMU_KG))
         az, el = math.radians(azimuth), math.radians(elevation)
         v_sim = (
             speed * math.cos(el) * math.cos(az),
@@ -75,8 +77,7 @@ def render_canonical_source(
         if abs(float(row["z_mm"]) - source_z) > 1e-12:
             raise ValueError("canonical particle source plane differs from resolved design")
         vx, vy, vz = (float(row[key]) for key in ("vx_m_s", "vy_m_s", "vz_m_s"))
-        speed2 = vx * vx + vy * vy + vz * vz
-        ke = 0.5 * mass_amu * AMU_KG * speed2 / E_CHARGE_C
+        ke = kinetic_energy_ev(mass_amu, vx, vy, vz)
         pa_x = origin + float(row["x_mm"])
         pa_y = origin + float(row["y_mm"])
         pa_z = z_shift + float(row["z_mm"])

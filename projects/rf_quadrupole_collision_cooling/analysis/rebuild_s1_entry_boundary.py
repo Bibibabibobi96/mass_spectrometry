@@ -10,8 +10,12 @@ from pathlib import Path
 
 try:
     import build_oatof_handoff as handoff
+    from migrate_legacy_component_particle_state import LEGACY_25_COLUMNS
 except ModuleNotFoundError:
     from projects.rf_quadrupole_collision_cooling.analysis import build_oatof_handoff as handoff
+    from projects.rf_quadrupole_collision_cooling.analysis.migrate_legacy_component_particle_state import (
+        LEGACY_25_COLUMNS,
+    )
 
 
 def _read_rows(path: Path) -> list[dict[str, str]]:
@@ -22,11 +26,19 @@ def _read_rows(path: Path) -> list[dict[str, str]]:
 def _compare_legacy_rows(legacy: list[dict[str, str]], rows: list[dict[str, str]]) -> dict[str, object]:
     if len(legacy) != len(rows):
         raise ValueError("legacy and rebuilt S1 entry tables have different row counts")
-    invariant_columns = [name for name in rows[0] if name != "position_x_mm"]
+    if not legacy:
+        raise ValueError("legacy comparison table is empty")
+    is_legacy_25 = set(legacy[0]) == set(LEGACY_25_COLUMNS)
+    invariant_columns = [
+        name for name in legacy[0]
+        if name not in {"position_x_mm", "source_rf_phase_rad"}
+    ]
     invariant_mismatches = 0
     x_shifts: list[float] = []
     for old, new in zip(legacy, rows, strict=True):
         if any(old[name] != new[name] for name in invariant_columns):
+            invariant_mismatches += 1
+        if is_legacy_25 and old["source_rf_phase_rad"] != new["phase_rad"]:
             invariant_mismatches += 1
         x_shifts.append(float(new["position_x_mm"]) - float(old["position_x_mm"]))
     if invariant_mismatches:
@@ -35,6 +47,9 @@ def _compare_legacy_rows(legacy: list[dict[str, str]], rows: list[dict[str, str]
         raise ValueError("entry repair did not apply one rigid x-coordinate correction")
     return {
         "rows": len(rows),
+        "comparison_source_schema": (
+            "legacy_25_column_component_handoff" if is_legacy_25 else "shared_columns"
+        ),
         "only_position_x_changed": True,
         "rigid_position_x_shift_mm": x_shifts[0],
         "invariant_column_mismatches": 0,

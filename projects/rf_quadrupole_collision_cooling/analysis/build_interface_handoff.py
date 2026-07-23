@@ -14,6 +14,7 @@ import math
 from pathlib import Path
 from typing import Any
 
+from common.contracts.particle_physics import kinetic_energy_ev
 from common.contracts.rigid_transform import (
     FramedPosition,
     FramedVector,
@@ -660,11 +661,11 @@ def convert_source_rows(
         if float(row["velocity_axial_m_s"]) <= 0:
             raise ValueError("source handoff row is not a forward crossing")
 
-        speed_squared = sum(float(row[key]) ** 2 for key in (
-            "velocity_x_m_s", "velocity_y_m_s", "velocity_axial_m_s"
-        ))
-        derived_energy = (
-            0.5 * mass_amu * legacy.ATOMIC_MASS_KG * speed_squared / legacy.ELEMENTARY_CHARGE_C
+        derived_energy = kinetic_energy_ev(
+            mass_amu,
+            float(row["velocity_x_m_s"]),
+            float(row["velocity_y_m_s"]),
+            float(row["velocity_axial_m_s"]),
         )
         source_energy = float(row["kinetic_energy_eV"])
         residual = abs(derived_energy - source_energy) / source_energy

@@ -1,8 +1,22 @@
 {
   "schema_version": 2,
   "role": "two_boundary_time_resolved_component_interface_candidate",
-  "status": "draft_blocked_by_physical_interface_and_pulse_definition",
+  "status": "superseded_for_active_execution_retained_as_static_s0_s1_reference",
   "qualification_scope": "source_exit_event_contract_and_static_validation_only",
+  "lifecycle": {
+    "active_execution": false,
+    "retained_for": [
+      "S0 virtual-boundary evidence reproduction",
+      "S1 theory and closed-shield topology reference",
+      "legacy interface-handoff unit tests"
+    ],
+    "superseded_by": [
+      "config/rf_to_oatof_s2_passive_connector.json",
+      "config/rf_to_oatof_s3_pulse_capture.json",
+      "config/rf_to_oatof_interface_stages.json"
+    ],
+    "current_fact": "The parameterized oa shield port, finite passive connector and cumulative shared-clock chain are implemented and have N=100 functional evidence in the S2/S3 contracts. This retained static reference does not grant qualification or Formal status."
+  },
   "source_component": {
     "project_id": "rf_quadrupole_collision_cooling",
     "mode": "transport_interface_readiness",

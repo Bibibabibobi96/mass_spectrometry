@@ -8,6 +8,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from common.contracts.component_particle_state import csv_columns
+from common.contracts.particle_physics import kinetic_energy_ev
 
 PROJECT_ROOT = Path(__file__).parents[2]
 SCRIPT = PROJECT_ROOT / "analysis" / "build_oatof_handoff.py"
@@ -96,13 +98,7 @@ class OatofHandoffBuildTests(unittest.TestCase):
         fieldnames = sorted(MODULE.REQUIRED_SOURCE_COLUMNS)
         mass_th = 100.0
         vx_rf, vy_rf, vz_rf = 100.0, 200.0, 2000.0
-        energy = (
-            0.5
-            * mass_th
-            * MODULE.ATOMIC_MASS_KG
-            * (vx_rf**2 + vy_rf**2 + vz_rf**2)
-            / MODULE.ELEMENTARY_CHARGE_C
-        )
+        energy = kinetic_energy_ev(mass_th, vx_rf, vy_rf, vz_rf)
         with self.source.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.DictWriter(handle, fieldnames=fieldnames, lineterminator="\n")
             writer.writeheader()
@@ -163,13 +159,19 @@ class OatofHandoffBuildTests(unittest.TestCase):
         self.assertTrue(metadata["clock"]["canonical_lineage_age_retained"])
         self.assertTrue(metadata["clock"]["canonical_particle_age_retained"])
         with self.canonical.open("r", encoding="utf-8", newline="") as handle:
-            canonical = list(csv.DictReader(handle))
+            reader = csv.DictReader(handle)
+            self.assertEqual(reader.fieldnames, csv_columns())
+            canonical = list(reader)
         with self.row_map.open("r", encoding="utf-8", newline="") as handle:
             row_map = list(csv.DictReader(handle))
         ion = [line.split(",") for line in self.ion.read_text(encoding="utf-8").splitlines()]
 
         self.assertEqual(len(canonical), 100)
         self.assertEqual(canonical[0]["particle_id"], "1")
+        self.assertEqual(canonical[0]["species_id"], "ion_100amu_q1")
+        self.assertEqual(float(canonical[0]["particle_weight"]), 1.0)
+        self.assertEqual(canonical[0]["phase_reference_id"], "rf_quadrupole_drive.v1")
+        self.assertAlmostEqual(float(canonical[0]["phase_rad"]), 0.25)
         self.assertAlmostEqual(float(canonical[0]["instrument_time_us"]), 10.1)
         self.assertAlmostEqual(float(canonical[0]["lineage_age_us"]), 5.01)
         self.assertAlmostEqual(float(canonical[0]["particle_age_us"]), 5.01)

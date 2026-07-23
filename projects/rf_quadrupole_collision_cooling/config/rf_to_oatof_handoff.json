@@ -1,8 +1,22 @@
 {
   "schema_version": 1,
   "role": "component_chain_handoff_contract",
-  "status": "functional_projection_and_shared_clock_pulse_qualified_physical_interface_deferred",
+  "status": "superseded_projection_diagnostic_only",
   "qualification_scope": "selected_solver_chain_phase_space_projection",
+  "lifecycle": {
+    "active_execution": false,
+    "retained_for": [
+      "legacy rigid-projection diagnostics",
+      "shared-clock adapter regression",
+      "historical run reproduction"
+    ],
+    "superseded_by": [
+      "config/rf_to_oatof_s2_passive_connector.json",
+      "config/rf_to_oatof_s3_pulse_capture.json",
+      "tests/cross_solver/run_s3_cumulative_chain.ps1"
+    ],
+    "claim_limit": "Projection and adapter evidence remains valid only within its frozen diagnostic scope. The active physical-port and connector path is S2/S3; neither path is stage-qualified or Formal."
+  },
   "source_component": {
     "project_id": "rf_quadrupole_collision_cooling",
     "mode": "transport_interface_readiness",

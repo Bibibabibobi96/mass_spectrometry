@@ -14,16 +14,14 @@ import math
 from pathlib import Path
 import re
 
+from common.contracts.particle_physics import kinetic_energy_ev
+
 try:
     from rf_handoff_adapter import (
-        ATOMIC_MASS_KG,
-        ELEMENTARY_CHARGE_C,
         decode_simion_accelerator_velocity,
     )
 except ModuleNotFoundError:
     from projects.oa_tof.analysis.rf_handoff_adapter import (
-        ATOMIC_MASS_KG,
-        ELEMENTARY_CHARGE_C,
         decode_simion_accelerator_velocity,
     )
 PULSE_CONTRACT = re.compile(
@@ -135,10 +133,7 @@ def audit(
         mass_amu = float(state["mass_amu"])
         charge_state = int(float(state["charge_state"]))
         energy_ev = float(state["kinetic_energy_eV"])
-        velocity_energy = (
-            0.5 * mass_amu * ATOMIC_MASS_KG * sum(value * value for value in velocity)
-            / ELEMENTARY_CHARGE_C
-        )
+        velocity_energy = kinetic_energy_ev(mass_amu, *velocity)
         maximum_energy_relative_residual = max(
             maximum_energy_relative_residual,
             relative_residual(velocity_energy, energy_ev, 1e-30),

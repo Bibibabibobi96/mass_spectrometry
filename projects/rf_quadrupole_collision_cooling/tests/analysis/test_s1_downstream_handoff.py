@@ -5,6 +5,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from common.contracts.component_particle_state import csv_columns
+from common.contracts.particle_physics import kinetic_energy_ev
 
 from projects.rf_quadrupole_collision_cooling.analysis import build_s1_downstream_handoff as module
 
@@ -15,19 +17,27 @@ class S1DownstreamHandoffTests(unittest.TestCase):
             root = Path(root)
             entry = root / "entry.csv"
             events = root / "events.csv"
-            fields = module.CANONICAL_COLUMNS
+            fields = csv_columns()
             row = {field: "" for field in fields}
             row.update({
                 "particle_id": "7", "generation": "0", "frame_id": "instrument_global",
+                "species_id": "ion_100amu_q1", "particle_weight": "1",
+                "source_component_id": "rf", "target_component_id": "s1",
+                "state_event": "component_handoff",
                 "clock_epoch_id": "epoch", "instrument_time_us": "10", "lineage_age_us": "8",
-                "particle_age_us": "8", "lineage_birth_time_us": "2", "particle_birth_time_us": "2",
+                "particle_age_us": "8", "last_component_elapsed_time_us": "8",
+                "lineage_birth_time_us": "2", "particle_birth_time_us": "2",
                 "mass_to_charge_Th": "100", "mass_amu": "100", "charge_state": "1",
+                "position_x_mm": "-67.8", "position_y_mm": "0", "position_z_mm": "0",
+                "velocity_x_m_s": "0", "velocity_y_m_s": "0", "velocity_z_m_s": "1000",
+                "kinetic_energy_eV": f"{kinetic_energy_ev(100, 0, 0, 1000):.15g}",
+                "phase_reference_id": "rf_drive.v1", "phase_rad": "1",
             })
             module.write_csv(entry, fields, [row])
             event_fields = ["particle_id", "event", "status", "instrument_time_us", "x_mm", "y_mm",
                             "z_mm", "vx_m_s", "vy_m_s", "vz_m_s", "kinetic_energy_eV", "rf_phase_rad"]
             speed = 1000.0
-            energy = 0.5 * 100 * module.ATOMIC_MASS_KG * speed**2 / module.ELEMENTARY_CHARGE_C
+            energy = kinetic_energy_ev(100, 0, 0, speed)
             module.write_csv(events, event_fields, [{
                 "particle_id": 7, "event": "local_joint_exit", "status": "transmitted",
                 "instrument_time_us": 12.5, "x_mm": -47.2, "y_mm": 0.3, "z_mm": 4.87,

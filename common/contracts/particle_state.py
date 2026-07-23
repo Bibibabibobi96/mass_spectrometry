@@ -9,6 +9,12 @@ import math
 from pathlib import Path
 from typing import Any
 
+from common.contracts.particle_physics import (
+    AMU_KG,
+    ELEMENTARY_CHARGE_C as E_CHARGE_C,
+    kinetic_energy_ev,
+)
+
 PARTICLE_STATE_COLUMNS = [
     "particle_id", "event", "status", "terminal_reason", "time_us", "elapsed_time_us",
     "rf_phase_rad", "axial_z_mm", "transverse_x_mm", "transverse_y_mm",
@@ -23,10 +29,6 @@ ENUMS = {
         "timeout", "solver_stop", "unknown",
     ],
 }
-AMU_KG = 1.66053906660e-27
-E_CHARGE_C = 1.602176634e-19
-
-
 def _close(actual: float, expected: float, tolerance: float, label: str) -> None:
     if not math.isfinite(actual) or abs(actual - expected) > tolerance:
         raise AssertionError(f"{label}: actual={actual:.15g} expected={expected:.15g}")
@@ -81,8 +83,12 @@ def canonical_sources(path: Path, mass_amu: float | None = None) -> dict[int, di
             velocity_x_m_s = float(row["vx_m_s"])
             velocity_y_m_s = float(row["vy_m_s"])
             velocity_z_m_s = float(row["vz_m_s"])
-            speed_squared = velocity_x_m_s**2 + velocity_y_m_s**2 + velocity_z_m_s**2
-            energy_ev = 0.5 * particle_mass_amu * AMU_KG * speed_squared / E_CHARGE_C
+            energy_ev = kinetic_energy_ev(
+                particle_mass_amu,
+                velocity_x_m_s,
+                velocity_y_m_s,
+                velocity_z_m_s,
+            )
             result[particle_id] = {
                 "time_us": float(row["birth_time_s"]) * 1e6,
                 "elapsed_time_us": 0.0,

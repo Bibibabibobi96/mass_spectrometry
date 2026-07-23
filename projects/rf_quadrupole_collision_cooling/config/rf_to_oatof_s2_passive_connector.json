@@ -13,6 +13,15 @@
     "oatof_baseline": "../oa_tof/config/baseline.json"
   },
   "formal_assets_read_only": true,
+  "implementation_level": {
+    "physical_port_and_connector_implemented": true,
+    "comsol_n100_function_passed": true,
+    "simion_connector_geometry_implemented": false,
+    "solidworks_synchronized": false,
+    "s2_stage_qualified": false,
+    "formal_gate_passed": false,
+    "claim_limit": "The candidate COMSOL side port and passive connector participate in real field and particle solves. This does not modify the closed oaTOF Formal assets or establish independent SIMION/CAD connector parity."
+  },
   "nominal_registration": {
     "instrument_frame": "oatof_global",
     "incoming_axis": "+x",
@@ -199,6 +208,27 @@
     "superseded_run_id": "20260722_150059__sim__comsol__rf-oatof-s2-passive-connector__n100",
     "superseded_reason": "The first event classifier treated all contacts with the oa entry plane as aperture crossings and therefore reported a false 100/100; the corrected AND rule requires plane contact and coordinates inside the 1.0 x 0.9 mm opening.",
     "claim_limit": "Nominal RF-exit to oa-entry passive-connector function only; no minimum-transmission qualification, pulse, downstream analyzer, tolerance, convergence, S2 PASS or Formal claim."
+  },
+  "current_cumulative_function_evidence": {
+    "nominal_gap_1mm": {
+      "run_id": "20260722_165527__sim__comsol__rf-oatof-s2-connector-gap1__n100",
+      "manifest_status": "success",
+      "source_particles": 100,
+      "oatof_entry_crossings": 61,
+      "connector_losses": 39,
+      "s2_stage_passed": false,
+      "formal_gate_passed": false
+    },
+    "direct_mating_gap_0mm": {
+      "run_id": "20260722_164341__sim__comsol__rf-oatof-s2-connector-gap0__n100",
+      "manifest_status": "success",
+      "source_particles": 100,
+      "oatof_entry_crossings": 77,
+      "connector_losses": 23,
+      "s2_stage_passed": false,
+      "formal_gate_passed": false
+    },
+    "selection_policy": "The two cases are functional topology evidence, not a controlled performance ranking or a qualified hardware selection."
   },
   "unresolved_for_stage_pass": [
     "field_mesh_and_pa_resolution_convergence_at_both_ends",

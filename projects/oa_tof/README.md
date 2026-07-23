@@ -40,6 +40,8 @@
 - 项目机器身份、能力和成熟度：[`config/project.json`](config/project.json)；它不保存物理参数或取代PROJECT。
 - 现有入口可执行范围：[`config/execution_profiles.json`](config/execution_profiles.json)；固定复验入口及
   零变化结构候选入口不等于已实现任意参数优化或性能目标评价。
+- 已被替代的RF handoff投影不注册为execution profile或项目capability mode；其mode与runner仅保留为
+  显式diagnostic复现入口。
 - 设计变量与当前优化包络：[`config/design_variables.json`](config/design_variables.json)、
   [`config/optimization_envelope.json`](config/optimization_envelope.json)；包络可审查扩大，不等于正式baseline。
 - 纯静态候选编译：[`analysis/compile_candidate_design.py`](analysis/compile_candidate_design.py)；只写隔离合同，不运行求解器或CAD。
@@ -98,16 +100,19 @@
   [`config/modes/rf_handoff_projection.json`](config/modes/rf_handoff_projection.json)、
   [`analysis/prepare_rf_handoff_projection.py`](analysis/prepare_rf_handoff_projection.py)、
   [`tests/cross_solver/run_rf_handoff_projection.ps1`](tests/cross_solver/run_rf_handoff_projection.ps1)；
-  只读复用正式静电资产，恢复部件链时钟，允许记录损失，但不表示电气/机械接口已连接。
+  现只保留为superseded刚体投影诊断；只读复用正式静电资产并恢复部件链时钟，不表示活动电气/机械接口。
 - RF混合网格配对投影：[`config/modes/rf_hybrid_mesh_projection.json`](config/modes/rf_hybrid_mesh_projection.json)；
-  比较同一RF-COMSOL模型的低成本/参考网格出口状态并选择当前功能链网格，不替代真实连接器。
+  现只保留为superseded网格配对诊断，不替代当前S2真实连接器入口。
 - RF共享时钟有限脉冲功能入口：[`config/modes/rf_handoff_pulse.json`](config/modes/rf_handoff_pulse.json)、
   [`tests/cross_solver/run_rf_handoff_pulse.ps1`](tests/cross_solver/run_rf_handoff_pulse.ps1)；从Formal Program
-  确定性生成隔离候选，按instrument-time从等效入口面注入并连续计算脉冲前后轨迹，不修改Formal资产。
+  确定性生成隔离候选，按instrument-time从投影入口面注入并连续计算脉冲前后轨迹；现只用于
+  superseded projected-entry诊断，不修改Formal资产。
 - RF→oaTOF连接器、共享时钟脉冲、阶段资格、漏斗结果和后续恢复条件只由
   [`../rf_quadrupole_collision_cooling/docs/PROJECT.md`](../rf_quadrupole_collision_cooling/docs/PROJECT.md)
   及其机器合同维护，本项目不复制阶段数字或接口判据。本项目只维护下游格式适配和对Formal分析器的
   只读消费入口；功能链证据不修改本项目Formal资产，也不构成整机Formal连接或分辨率声明。
+  当前活动累积入口是RF项目`tests/cross_solver/run_s3_cumulative_chain.ps1`：候选COMSOL负责真实侧孔、
+  被动连接器和局部脉冲输运，随后才把canonical局部出口状态交给本项目SIMION分析器续算。
 - 正式跨求解器直接重算与发布入口：
   [`tests/cross_solver/run_formal_validation.ps1`](tests/cross_solver/run_formal_validation.ps1)；发布器只在
   两端达到机器契约样本量、统一比较PASS且当前资产/结果SHA齐全时更新机器契约。

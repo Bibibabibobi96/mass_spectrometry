@@ -8,6 +8,7 @@
     "skip_stage_allowed": false,
     "stage_relationship": "cumulative_replacement",
     "current_entry_policy": "The current stage subsumes all earlier functional capabilities. Earlier runners remain only for isolated diagnostics and frozen evidence reproduction, not as parallel production paths.",
+    "current_qualification_status": "S2 and S3 are implemented and N=100 functionally passed, but both stage gates and the whole-interface Formal gate remain blocked.",
     "formal_assets_read_only_until_S5_promotion": true,
     "failed_stage_policy": "Preserve the failed run and add only the minimum next-stage physics; do not tune upstream particles, enlarge a theory-bounded aperture, or move the target in post-processing.",
     "sample_policy": "Use deterministic N=100 for candidate function and physics-semantics checks. N=1000 is conditional future work only when statistical peak shape, resolution, optimization or Formal qualification is requested; it is not required to close a functional prototype. S0 reuses existing N=100 source evidence without a solver rerun."
@@ -54,7 +55,7 @@
         "S0 PASS",
         "theory-bounded characterization aperture; a minimum transmission is required only before PASS or promotion",
         "validated continuous grounded RF housing with centered entrance and exit apertures",
-        "parameterized oa shield port in COMSOL, SIMION and CAD candidate geometry",
+        "parameterized oa shield port in candidate COMSOL; independent SIMION connector geometry and CAD synchronization remain S5 requirements",
         "common electrical reference and a single joint-field implementation"
       ],
       "tests": [
@@ -81,14 +82,14 @@
         "physical_link": false
       },
       "dynamic_function_extension_evidence": {
-        "run_id": "20260722_100000__sim__cross__rf-oatof-s1-centroid-pulse-downstream__n39__r04",
+        "run_id": "20260722_140000__sim__cross__rf-oatof-s1-physical-end-to-end__n100-r07",
         "state_chain_audit_run_id": "20260722_111500__analysis__python__rf-oatof-s1-state-chain-audit__n39",
         "entry_boundary_repair_run_id": "20260722_120000__analysis__python__rf-oatof-s1-entry-boundary-repair__n100__r02",
         "topology": "S1 zero-gap physical port with a shared-clock finite oa extraction pulse added only for end-to-end function demonstration",
         "rf_exit_particles": 100,
-        "inside_physical_port": 77,
-        "local_joint_exit": 39,
-        "detector_hits": 39,
+        "inside_physical_port": 88,
+        "local_joint_exit": 28,
+        "detector_hits": 9,
         "position_projection_applied": false,
         "authoritative_runtime_frame": "oatof_global",
         "original_particle_id_and_absolute_clock_preserved": true,
@@ -128,6 +129,14 @@
         "field_solved": false,
         "particle_runtime_allowed": false
       },
+      "geometry_review_evidence": {
+        "run_id": "20260722_172327__build__comsol__rf-oatof-s2-connector-review__gap1",
+        "status": "PASS",
+        "review_model_saved": true,
+        "mesh_built": false,
+        "field_solved": false,
+        "claim_limit": "GUI-reviewable candidate MPH only; no reopen/Compute, physics or qualification evidence."
+      },
       "no_pulse_field_evidence": {
         "run_id": "20260722_142733__analysis__comsol__rf-oatof-s2-no-pulse-field__gap1__r03",
         "status": "PASS",
@@ -145,6 +154,24 @@
         "oatof_entry_crossings": 61,
         "downstream_entry_wall_losses": 39,
         "stage_pass_allowed": false
+      },
+      "current_cumulative_nominal_particle_evidence": {
+        "run_id": "20260722_165527__sim__comsol__rf-oatof-s2-connector-gap1__n100",
+        "status": "PASS",
+        "source_particles": 100,
+        "oatof_entry_crossings": 61,
+        "downstream_entry_wall_losses": 39,
+        "stage_pass_allowed": false,
+        "claim_limit": "Current cumulative functional evidence only; the legacy nominal evidence above remains the frozen S2 contract key until a separately reviewed contract migration."
+      },
+      "direct_mating_particle_evidence": {
+        "run_id": "20260722_164341__sim__comsol__rf-oatof-s2-connector-gap0__n100",
+        "status": "PASS",
+        "source_particles": 100,
+        "oatof_entry_crossings": 77,
+        "downstream_entry_wall_losses": 23,
+        "stage_pass_allowed": false,
+        "comparison_limit": "This compatibility topology uses a different gap and particle census; it is not a controlled performance ranking against the nominal 1 mm case."
       },
       "tests": [
         "three-dimensional joint electrostatic and RF fringe field",
@@ -174,8 +201,8 @@
         "N=100 capture, target-entry and detector acceptance"
       ],
       "nominal_function_evidence": {
-        "local_run_id": "20260722_160000__sim__comsol__rf-oatof-s3-pulse-capture__n100__r03",
-        "downstream_run_id": "20260722_163000__sim__cross__rf-oatof-s3-end-to-end__n100__r03",
+        "local_run_id": "20260722_165527__sim__comsol__rf-oatof-s3-pulse-gap1__n100",
+        "downstream_run_id": "20260722_165527__sim__cross__rf-oatof-s3-end-to-end-gap1__n100",
         "status": "PASS",
         "rf_exit_particles": 100,
         "oatof_entry_crossings": 61,
@@ -185,6 +212,18 @@
         "position_projection_applied": false,
         "identity_state_and_global_clock_preserved": true,
         "stage_pass_allowed": false
+      },
+      "direct_mating_function_evidence": {
+        "local_run_id": "20260722_164341__sim__comsol__rf-oatof-s3-pulse-gap0__n100",
+        "downstream_run_id": "20260722_164341__sim__cross__rf-oatof-s3-end-to-end-gap0__n100",
+        "status": "PASS",
+        "rf_exit_particles": 100,
+        "oatof_entry_crossings": 77,
+        "active_at_pulse": 39,
+        "local_accelerator_exit": 39,
+        "detector_hits": 9,
+        "stage_pass_allowed": false,
+        "comparison_limit": "The zero-gap chain is a compatibility case, not a qualified hardware choice or performance ranking."
       },
       "exit_gate": "Time-resolved N=100 capture and downstream acceptance pass in the frozen passive geometry.",
       "claim_limit": "Nominal alignment only; no active correction or tolerance qualification."

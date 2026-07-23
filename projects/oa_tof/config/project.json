@@ -20,7 +20,7 @@
       "capability_id": "single_reflection_mass_analysis",
       "function": "mass_analysis",
       "status": "formal",
-      "modes": ["formal", "mass_spectrum", "design_candidate", "rf_handoff_projection"],
+      "modes": ["formal", "mass_spectrum", "design_candidate"],
       "metrics": ["mass_resolving_power", "transmission_fraction", "tof_centroid", "detector_landing"],
       "design_variables": [
         "accelerator_ring_thickness",

@@ -28,6 +28,19 @@ class S1EntryBoundaryTests(unittest.TestCase):
         self.assertTrue(result["only_position_x_changed"])
         self.assertAlmostEqual(result["rigid_position_x_shift_mm"], -5.0)
 
+    def test_legacy_25_comparison_maps_rf_phase_and_labels_schema(self) -> None:
+        old = {name: "1" for name in module.LEGACY_25_COLUMNS}
+        old["position_x_mm"] = "-62.8"
+        old["source_rf_phase_rad"] = "1.25"
+        new = {name: value for name, value in old.items() if name != "source_rf_phase_rad"}
+        new["position_x_mm"] = "-67.8"
+        new["phase_rad"] = "1.25"
+        result = module._compare_legacy_rows([old], [new])
+        self.assertEqual(
+            result["comparison_source_schema"],
+            "legacy_25_column_component_handoff",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -10,6 +10,37 @@
 `file_identity.py`是manifest、正式资产和机器合同文件SHA-256身份的唯一流式实现，固定返回大写十六进制；
 调用者只负责路径范围、字节数和证据资格等各自合同。
 
+粒子状态分为两个不同边界。`particle_state.py`验证单个多极杆组件内部的17列
+`source/rod_exit/handoff/terminal`事件账本，其轴向/横向字段仍表达该组件局部坐标。
+`component_particle_state.py`及
+[`schemas/component_particle_state.schema.json`](schemas/component_particle_state.schema.json)
+定义跨组件转移使用的version 1 canonical状态：每个粒子一行，严格按Schema中的
+`x-csv-column-order`保存identity、`species_id`、正的`particle_weight`、组件和事件、frame、clock
+epoch、年龄/出生时刻、谱系、质量/电荷、三维位置/速度、派生质荷比/动能，以及可选的具名相位。
+入口为：
+
+```powershell
+python -m common.contracts.component_particle_state --state <canonical.csv>
+```
+
+version 1不允许重排列、缺列或追加项目列。新的公共必需字段必须增加Schema版本并提供显式迁移；
+项目专用状态、损失分类和求解器诊断应写入以`particle_id`关联的独立表。组件ID、事件名、frame ID、
+clock epoch ID、species ID和phase reference ID是开放的受控标识，不在公共层维护器件枚举。
+`phase_reference_id`与`phase_rad`必须同时为空或同时有值；因此无周期驱动器件不必伪造RF相位。
+
+`mass_amu`、`charge_state`和三维速度是物理主字段；`mass_to_charge_Th`与`kinetic_energy_eV`只是便于
+交换和审计的派生字段。validator使用`particle_physics.kinetic_energy_ev`中的唯一非相对论公式和冻结容差
+复算它们，矛盾即失败，但不重算或覆盖文件。它还校验有限值、唯一身份、谱系父子关系和时钟恒等式，
+并复用`rigid_transform.PhaseSpaceState`校验具名frame中的三维状态。它不推进粒子、不推导相位，也不
+实施坐标变换。生产者必须先由实际求解器得到物理状态；跨frame位置/速度只调用
+`rigid_transform.py`，clock epoch与谱系推进由组件链编排合同负责。时钟epoch之前的绝对时刻允许为负，
+但年龄和组件内elapsed time必须非负。
+
+RF→oaTOF现有含`source_rf_phase_rad`的25列项目表是legacy输入，不是公共version 1的别名，也不得静默
+当作兼容格式。迁移器必须从冻结的源粒子身份显式绑定`species_id`与`particle_weight`，将旧RF相位映射
+为具名`phase_reference_id`/`phase_rad`对，再验证输出；缺少绑定应失败。已冻结运行保持原字节不变，
+新生产运行才使用迁移后的公共合同。任何未来公共字段变更都提升版本并保留显式、可测试的迁移路径。
+
 `rigid_transform.py`是求解器无关的空间注册语义。版本1刚体合同显式保存`from_frame_id`、
 `to_frame_id`、有限右手正交`rotation`和`translation_mm`。点按`R @ r + t`变换；free、polar和
 axial向量都显式标记种类，并在当前仅允许`det(R)=+1`的旋转下按`R @ v`变换；二阶张量和3D协方差按

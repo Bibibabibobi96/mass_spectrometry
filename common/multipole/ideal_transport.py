@@ -9,12 +9,9 @@ import random
 from pathlib import Path
 from typing import Any
 
-from common.multipole.family_contract import from_high_order_baseline
 from common.contracts.particle_count_policy import validate_standard_particle_count
-
-
-AMU_KG = 1.66053906660e-27
-ELEMENTARY_CHARGE_C = 1.602176634e-19
+from common.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
+from common.multipole.family_contract import from_high_order_baseline
 
 
 def validate_contract(contract: dict[str, Any]) -> None:

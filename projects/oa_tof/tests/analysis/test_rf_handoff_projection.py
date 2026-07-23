@@ -4,10 +4,14 @@ import csv
 import importlib.util
 import json
 import math
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+from common.contracts.component_particle_state import csv_columns
+from common.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
 
 
 PROJECT_ROOT = Path(__file__).parents[2]
@@ -51,6 +55,20 @@ class HandoffConsumerModeTests(unittest.TestCase):
     def test_mode_is_candidate_and_forbids_physical_claims(self) -> None:
         validated = PREPARE.validate_mode()
         self.assertFalse(validated["mode"]["claims"]["physical_link_claim_allowed"])
+        self.assertEqual(PREPARE.mode_execution_status(validated), "DIAGNOSTIC")
+
+    def test_check_mode_cli_reports_diagnostic_not_candidate(self) -> None:
+        completed = subprocess.run(
+            [sys.executable, "-m", "projects.oa_tof.analysis.prepare_rf_handoff_projection",
+             "--check-mode"],
+            cwd=PROJECT_ROOT.parents[1],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        self.assertIn("STATUS=DIAGNOSTIC", completed.stdout)
+        self.assertNotIn("STATUS=CANDIDATE", completed.stdout)
 
     def test_pulse_mode_requires_one_comsol_source_and_instrument_clock(self) -> None:
         mode_path = PROJECT_ROOT / "config" / "modes" / "rf_handoff_pulse.json"
@@ -74,6 +92,19 @@ class HandoffConsumerModeTests(unittest.TestCase):
         )
         self.assertFalse(validated["mode"]["claims"]["physical_link_claim_allowed"])
 
+    def test_superseded_projection_is_not_an_execution_profile_or_capability_mode(self) -> None:
+        execution = json.loads(
+            (PROJECT_ROOT / "config" / "execution_profiles.json").read_text(encoding="utf-8")
+        )
+        project = json.loads(
+            (PROJECT_ROOT / "config" / "project.json").read_text(encoding="utf-8")
+        )
+        self.assertNotIn(
+            "rf_handoff_projection_candidate",
+            {profile["profile_id"] for profile in execution["profiles"]},
+        )
+        self.assertNotIn("rf_handoff_projection", project["capabilities"][0]["modes"])
+
 
 class SimionVelocityFrameAdapterTests(unittest.TestCase):
     def test_non_axis_velocity_round_trip_preserves_energy(self) -> None:
@@ -83,9 +114,9 @@ class SimionVelocityFrameAdapterTests(unittest.TestCase):
         energy_ev = (
             0.5
             * mass_amu
-            * ADAPTER.ATOMIC_MASS_KG
+            * AMU_KG
             * speed_squared
-            / ADAPTER.ELEMENTARY_CHARGE_C
+            / ELEMENTARY_CHARGE_C
         )
         azimuth_deg, elevation_deg = (
             ADAPTER.encode_simion_accelerator_velocity(velocity)
@@ -118,18 +149,20 @@ class HandoffBundleTests(unittest.TestCase):
         self.row_map = self.root / "row_map.csv"
         self.ion = self.root / "particles.ion"
         self.metadata = self.root / "metadata.json"
-        write_csv(self.canonical, [
-            "particle_id", "frame_id", "clock_epoch_id", "instrument_time_us", "lineage_age_us",
-            "particle_age_us", "mass_amu", "charge_state", "position_x_mm",
-            "position_y_mm", "position_z_mm", "velocity_x_m_s", "velocity_y_m_s",
-            "velocity_z_m_s", "kinetic_energy_eV",
-        ], [{
-            "particle_id": 7, "frame_id": "oatof_global",
+        write_csv(self.canonical, ADAPTER.LEGACY_PROJECTION_COLUMNS, [{
+            "particle_id": 7, "parent_particle_id": "", "generation": 0,
+            "source_component_id": "rf_quadrupole_collision_cooling",
+            "target_component_id": "oa_tof", "state_event": "component_handoff",
+            "frame_id": "oatof_global",
             "clock_epoch_id": "epoch", "instrument_time_us": 15,
-            "lineage_age_us": 5, "particle_age_us": 2, "mass_amu": 100,
+            "lineage_age_us": 5, "particle_age_us": 2,
+            "last_component_elapsed_time_us": 2,
+            "lineage_birth_time_us": 10, "particle_birth_time_us": 13,
+            "mass_to_charge_Th": 100, "mass_amu": 100,
             "charge_state": 1, "position_x_mm": -48.8, "position_y_mm": 0.1,
             "position_z_mm": -18.4, "velocity_x_m_s": 1964.5389500506553,
             "velocity_y_m_s": 0, "velocity_z_m_s": 0, "kinetic_energy_eV": 2,
+            "source_rf_phase_rad": 0,
         }])
         write_csv(self.row_map, [
             "solver_row_index", "particle_id", "instrument_time_us", "lineage_age_us",
@@ -155,11 +188,125 @@ class HandoffBundleTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp.cleanup()
 
+    def write_public_v1_state(self) -> None:
+        write_csv(self.canonical, csv_columns(), [{
+            "particle_id": 7, "parent_particle_id": "", "generation": 0,
+            "species_id": "ion_100amu", "particle_weight": 1,
+            "source_component_id": "rf_quadrupole_collision_cooling",
+            "target_component_id": "oa_tof", "state_event": "component_handoff",
+            "frame_id": "oatof_global", "clock_epoch_id": "epoch",
+            "instrument_time_us": 15, "lineage_age_us": 2,
+            "particle_age_us": 2, "last_component_elapsed_time_us": 2,
+            "lineage_birth_time_us": 13, "particle_birth_time_us": 13,
+            "mass_to_charge_Th": 100, "mass_amu": 100, "charge_state": 1,
+            "position_x_mm": -48.8, "position_y_mm": 0.1,
+            "position_z_mm": -18.4, "velocity_x_m_s": 1964.5389500506553,
+            "velocity_y_m_s": 0, "velocity_z_m_s": 0,
+            "kinetic_energy_eV": 2, "phase_reference_id": "", "phase_rad": "",
+        }])
+        write_csv(self.row_map, [
+            "solver_row_index", "particle_id", "instrument_time_us", "lineage_age_us",
+            "particle_age_us", "solver_birth_time_us", "azimuth_deg", "elevation_deg",
+        ], [{
+            "solver_row_index": 1, "particle_id": 7, "instrument_time_us": 15,
+            "lineage_age_us": 2, "particle_age_us": 2, "solver_birth_time_us": 0,
+            "azimuth_deg": 0, "elevation_deg": 0,
+        }])
+        metadata = json.loads(self.metadata.read_text(encoding="utf-8"))
+        metadata["outputs"]["canonical_handoff_csv"]["sha256"] = PREPARE.sha256(
+            self.canonical
+        )
+        metadata["outputs"]["row_map_csv"]["sha256"] = PREPARE.sha256(self.row_map)
+        self.metadata.write_text(json.dumps(metadata), encoding="utf-8")
+
+    def write_active_mode(self) -> Path:
+        mode = PREPARE.load_json(PREPARE.DEFAULT_MODE)
+        mode["lifecycle"]["active_execution"] = True
+        mode_path = self.root / "active_mode.json"
+        mode_path.write_text(json.dumps(mode), encoding="utf-8")
+        return mode_path
+
     def test_bundle_preserves_identity_clocks_and_derived_ion(self) -> None:
         result = PREPARE.validate_bundle(self.canonical, self.ion, self.row_map, self.metadata)
         self.assertEqual(result["particles"], 1)
         self.assertTrue(result["functional_projection_runtime_authorized"])
         self.assertFalse(result["physical_link_claim_allowed"])
+        self.assertFalse(result["canonical_state_validation"]["public_v1"])
+        self.assertEqual(
+            result["canonical_state_validation"]["format"],
+            "legacy_25_column_component_handoff",
+        )
+
+    def test_active_bundle_uses_public_v1_validator(self) -> None:
+        self.write_public_v1_state()
+        result = PREPARE.validate_bundle(
+            self.canonical,
+            self.ion,
+            self.row_map,
+            self.metadata,
+            self.write_active_mode(),
+        )
+        self.assertTrue(result["canonical_state_validation"]["public_v1"])
+        self.assertEqual(
+            result["canonical_state_validation"]["validated_by"],
+            "common.contracts.component_particle_state",
+        )
+
+    def test_active_bundle_rejects_legacy_25_column_state(self) -> None:
+        with self.assertRaisesRegex(ValueError, "component particle-state columns differ"):
+            PREPARE.validate_bundle(
+                self.canonical,
+                self.ion,
+                self.row_map,
+                self.metadata,
+                self.write_active_mode(),
+            )
+
+    def test_legacy_mode_rejects_public_v1_state(self) -> None:
+        self.write_public_v1_state()
+        with self.assertRaisesRegex(ValueError, "handoff particle-state columns differ"):
+            PREPARE.validate_bundle(
+                self.canonical, self.ion, self.row_map, self.metadata
+            )
+
+    def test_active_bundle_rejects_invalid_public_v1_state(self) -> None:
+        self.write_public_v1_state()
+        rows = PREPARE._read_csv(self.canonical)
+        rows[0]["species_id"] = ""
+        write_csv(self.canonical, csv_columns(), rows)
+        metadata = json.loads(self.metadata.read_text(encoding="utf-8"))
+        metadata["outputs"]["canonical_handoff_csv"]["sha256"] = PREPARE.sha256(
+            self.canonical
+        )
+        self.metadata.write_text(json.dumps(metadata), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "species_id"):
+            PREPARE.validate_bundle(
+                self.canonical,
+                self.ion,
+                self.row_map,
+                self.metadata,
+                self.write_active_mode(),
+            )
+
+    def test_active_bundle_rejects_divergent_root_lineage_clock(self) -> None:
+        self.write_public_v1_state()
+        rows = PREPARE._read_csv(self.canonical)
+        rows[0]["lineage_age_us"] = "5"
+        rows[0]["lineage_birth_time_us"] = "10"
+        write_csv(self.canonical, csv_columns(), rows)
+        metadata = json.loads(self.metadata.read_text(encoding="utf-8"))
+        metadata["outputs"]["canonical_handoff_csv"]["sha256"] = PREPARE.sha256(
+            self.canonical
+        )
+        self.metadata.write_text(json.dumps(metadata), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "root particle clock"):
+            PREPARE.validate_bundle(
+                self.canonical,
+                self.ion,
+                self.row_map,
+                self.metadata,
+                self.write_active_mode(),
+            )
 
     def test_changed_ion_is_rejected(self) -> None:
         self.ion.write_text("0,100,1,-48.8,0.1,-18.4,0,0,3,1,3\n", encoding="utf-8")

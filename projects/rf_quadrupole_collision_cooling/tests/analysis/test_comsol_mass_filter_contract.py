@@ -73,6 +73,16 @@ class ComsolMassFilterContractTests(unittest.TestCase):
         self.assertIn("--source-format ion11", transport_runner)
         self.assertIn("common.contracts.particle_state", transport_runner)
 
+    def test_mass_filter_functional_pass_does_not_claim_formal_eligibility(self) -> None:
+        runner = (PROJECT_ROOT / "tests" / "comsol" / "run_mass_filter_candidate.ps1").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("formal_gate_passed=$false", runner)
+        self.assertNotIn(
+            "$runConfiguration.formal_gate_passed=($metricDocument.status-eq 'PASS')",
+            runner,
+        )
+
     def test_project_comsol_runner_and_builder_retain_only_specialized_modes(self) -> None:
         runner = (PROJECT_ROOT / "tests/comsol/run_transport_candidate.ps1").read_text(encoding="utf-8")
         builder = (PROJECT_ROOT / "comsol/ms_rf_quadrupole_no_collision.m").read_text(encoding="utf-8")

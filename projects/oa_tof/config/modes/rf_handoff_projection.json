@@ -1,7 +1,12 @@
 {
   "schema_version": 1,
   "role": "oa_tof_external_handoff_projection_candidate",
-  "status": "candidate_runtime_only_physical_interface_unresolved",
+  "status": "superseded_projection_diagnostic_only",
+  "lifecycle": {
+    "active_execution": false,
+    "superseded_by": "projects/rf_quadrupole_collision_cooling/tests/cross_solver/run_s3_cumulative_chain.ps1",
+    "claim_limit": "Retained to reproduce legacy rigid handoff projection. It does not represent the implemented S2 physical port/connector or current S3 cumulative chain."
+  },
   "source_project": "rf_quadrupole_collision_cooling",
   "target_project": "oa_tof",
   "handoff_contract": "projects/rf_quadrupole_collision_cooling/config/rf_to_oatof_handoff.json",

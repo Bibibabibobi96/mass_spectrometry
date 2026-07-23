@@ -8,19 +8,19 @@ import hashlib
 import json
 from pathlib import Path
 
+from common.contracts.component_particle_state import (
+    csv_columns as component_state_columns,
+    validate_component_particle_state_csv,
+)
+from common.contracts.particle_physics import kinetic_energy_ev
+
 try:
     from build_oatof_handoff import (
-        ATOMIC_MASS_KG,
-        CANONICAL_COLUMNS,
-        ELEMENTARY_CHARGE_C,
         ROW_MAP_COLUMNS,
         simion_accelerator_instance_angles,
     )
 except ModuleNotFoundError:
     from projects.rf_quadrupole_collision_cooling.analysis.build_oatof_handoff import (
-        ATOMIC_MASS_KG,
-        CANONICAL_COLUMNS,
-        ELEMENTARY_CHARGE_C,
         ROW_MAP_COLUMNS,
         simion_accelerator_instance_angles,
     )
@@ -51,6 +51,7 @@ def build(
     row_map_output: Path,
     metadata_output: Path,
 ) -> dict[str, object]:
+    validate_component_particle_state_csv(entry_path)
     events = read_rows(events_path)
     entries = {int(row["particle_id"]): row for row in read_rows(entry_path)}
     exits = sorted(
@@ -81,10 +82,7 @@ def build(
         mass_amu = float(entry["mass_amu"])
         charge_state = int(float(entry["charge_state"]))
         kinetic_energy = float(event["kinetic_energy_eV"])
-        velocity_energy = (
-            0.5 * mass_amu * ATOMIC_MASS_KG * sum(value * value for value in velocity)
-            / ELEMENTARY_CHARGE_C
-        )
+        velocity_energy = kinetic_energy_ev(mass_amu, *velocity)
         residual = abs(velocity_energy - kinetic_energy) / kinetic_energy
         max_energy_residual = max(max_energy_residual, residual)
         if residual > 1e-9:
@@ -96,6 +94,8 @@ def build(
             "particle_id": particle_id,
             "parent_particle_id": entry.get("parent_particle_id", ""),
             "generation": int(float(entry["generation"])),
+            "species_id": entry["species_id"],
+            "particle_weight": entry["particle_weight"],
             "source_component_id": "rf_oatof_s1_local_joint",
             "target_component_id": "oa_tof_downstream_analyzer",
             "state_event": "local_joint_exit",
@@ -117,7 +117,8 @@ def build(
             "velocity_y_m_s": f"{velocity[1]:.15g}",
             "velocity_z_m_s": f"{velocity[2]:.15g}",
             "kinetic_energy_eV": f"{kinetic_energy:.15g}",
-            "source_rf_phase_rad": event["rf_phase_rad"],
+            "phase_reference_id": "rf_quadrupole_drive.v1",
+            "phase_rad": event["rf_phase_rad"],
         })
         row_map.append({
             "solver_row_index": solver_index,
@@ -133,7 +134,8 @@ def build(
                       kinetic_energy, 1, 3]
         ion_lines.append(",".join(f"{float(value):.15g}" for value in ion_values))
 
-    write_csv(canonical_output, CANONICAL_COLUMNS, canonical)
+    write_csv(canonical_output, component_state_columns(), canonical)
+    validate_component_particle_state_csv(canonical_output)
     write_csv(row_map_output, ROW_MAP_COLUMNS, row_map)
     ion_output.parent.mkdir(parents=True, exist_ok=True)
     ion_output.write_text("\n".join(ion_lines) + "\n", encoding="utf-8", newline="\n")

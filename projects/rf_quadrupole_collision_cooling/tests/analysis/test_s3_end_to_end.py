@@ -4,14 +4,16 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from common.contracts.component_particle_state import csv_columns
+from common.contracts.particle_physics import kinetic_energy_ev
 from projects.rf_quadrupole_collision_cooling.analysis import analyze_s3_end_to_end as analyze
 from projects.rf_quadrupole_collision_cooling.analysis import build_simion_input_from_canonical as adapter
-from projects.rf_quadrupole_collision_cooling.analysis.build_oatof_handoff import CANONICAL_COLUMNS
 
 
 def canonical_row(particle_id: int) -> dict[str, object]:
     return {
         "particle_id": particle_id, "parent_particle_id": "", "generation": 0,
+        "species_id": "ion_100amu_q1", "particle_weight": 1,
         "source_component_id": "s3", "target_component_id": "oatof_analyzer",
         "state_event": "local_accelerator_exit", "frame_id": "oatof_global",
         "clock_epoch_id": "instrument_clock_epoch.v1", "instrument_time_us": 36.75,
@@ -21,7 +23,8 @@ def canonical_row(particle_id: int) -> dict[str, object]:
         "mass_amu": 100, "charge_state": 1, "position_x_mm": -47,
         "position_y_mm": 0.2, "position_z_mm": 4.87, "velocity_x_m_s": 4000,
         "velocity_y_m_s": 300, "velocity_z_m_s": 58000,
-        "kinetic_energy_eV": 1750, "source_rf_phase_rad": 2.7,
+        "kinetic_energy_eV": kinetic_energy_ev(100, 4000, 300, 58000),
+        "phase_reference_id": "rf_drive.v1", "phase_rad": 2.7,
     }
 
 
@@ -35,7 +38,7 @@ class S3EndToEndTests(unittest.TestCase):
     def test_canonical_adapter_preserves_state_and_clock(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); source = root / "source.csv"
-            write_csv(source, CANONICAL_COLUMNS, [canonical_row(8), canonical_row(2)])
+            write_csv(source, csv_columns(), [canonical_row(8), canonical_row(2)])
             canonical = root / "canonical.csv"; ion = root / "input.ion"
             mapping = root / "map.csv"; metadata = root / "metadata.json"
             result = adapter.build(source, canonical, ion, mapping, metadata)
@@ -49,7 +52,7 @@ class S3EndToEndTests(unittest.TestCase):
     def test_s3_audit_requires_identity_clock_and_pulse(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); canonical = root / "canonical.csv"
-            write_csv(canonical, CANONICAL_COLUMNS, [canonical_row(2)])
+            write_csv(canonical, csv_columns(), [canonical_row(2)])
             ion = root / "input.ion"; mapping = root / "map.csv"; metadata = root / "meta.json"
             adapter.build(canonical, root / "copy.csv", ion, mapping, metadata)
             summary = root / "summary.json"

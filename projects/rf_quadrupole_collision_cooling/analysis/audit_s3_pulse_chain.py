@@ -10,9 +10,9 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from common.contracts.component_particle_state import validate_component_particle_state_csv
+from common.contracts.particle_physics import kinetic_energy_ev
 
-ATOMIC_MASS_KG = 1.66053906660e-27
-ELEMENTARY_CHARGE_C = 1.602176634e-19
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -26,6 +26,7 @@ def audit(source_path: Path, terminal_path: Path, capture_path: Path,
     source = pd.read_csv(source_path)
     terminal = pd.read_csv(terminal_path)
     capture = pd.read_csv(capture_path)
+    validate_component_particle_state_csv(local_exit_path)
     local_exit = pd.read_csv(local_exit_path)
     schedule = _load(schedule_path)
     contract = _load(contract_path)
@@ -40,15 +41,6 @@ def audit(source_path: Path, terminal_path: Path, capture_path: Path,
         raise ValueError("S3 capture state contains an unknown particle ID")
     if not set(local_exit["particle_id"]).issubset(source_ids):
         raise ValueError("S3 local exit contains an unknown particle ID")
-    required_local_exit = {
-        "particle_id", "frame_id", "clock_epoch_id", "instrument_time_us",
-        "lineage_age_us", "particle_age_us", "mass_amu", "charge_state",
-        "position_x_mm", "position_y_mm", "position_z_mm", "velocity_x_m_s",
-        "velocity_y_m_s", "velocity_z_m_s", "kinetic_energy_eV", "source_rf_phase_rad",
-    }
-    if not required_local_exit.issubset(local_exit.columns):
-        raise ValueError("S3 local exit is not a complete canonical particle state")
-
     merged = terminal.merge(
         source[["particle_id", "frame_id", "clock_epoch_id", "instrument_time_us",
                 "lineage_age_us", "particle_age_us", "mass_amu", "charge_state"]],
@@ -70,9 +62,12 @@ def audit(source_path: Path, terminal_path: Path, capture_path: Path,
     maximum_clock_residual = float(np.max(np.abs(residuals)))
     if maximum_clock_residual > 1e-9:
         raise ValueError("S3 clock continuity residual exceeds tolerance")
-    speed_squared = (
-        terminal["vx_m_s"]**2 + terminal["vy_m_s"]**2 + terminal["vz_m_s"]**2)
-    energy = 0.5*terminal["mass_amu"]*ATOMIC_MASS_KG*speed_squared/ELEMENTARY_CHARGE_C
+    energy = kinetic_energy_ev(
+        terminal["mass_amu"],
+        terminal["vx_m_s"],
+        terminal["vy_m_s"],
+        terminal["vz_m_s"],
+    )
     energy_residual = np.abs(energy-terminal["kinetic_energy_eV"])/terminal["kinetic_energy_eV"]
     maximum_energy_residual = float(energy_residual.max())
     if maximum_energy_residual > 1e-10:

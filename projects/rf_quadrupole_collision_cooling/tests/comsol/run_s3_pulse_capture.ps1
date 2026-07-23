@@ -109,6 +109,24 @@ try {
   Copy-Item -LiteralPath $sourceManifestOriginal -Destination $sourceManifest
   Copy-Item -LiteralPath $particleOriginal -Destination $particleInput
   Copy-Item -LiteralPath $timingStateOriginal -Destination $timingState
+  $particleValidation = Join-Path $inputDir 'canonical_rf_exit_component_state_validation.json'
+  Push-Location -LiteralPath $repoRoot
+  try {
+    & $python -m common.contracts.component_particle_state --state $particleInput `
+      --output $particleValidation
+  } finally {
+    Pop-Location
+  }
+  if ($LASTEXITCODE -ne 0 -or
+      -not (Test-Path -LiteralPath $particleValidation -PathType Leaf)) {
+    throw 'S3 canonical particle input failed the common component-state contract.'
+  }
+  $particleValidationDocument = Get-Content -LiteralPath $particleValidation `
+    -Raw -Encoding UTF8 | ConvertFrom-Json
+  if ($particleValidationDocument.status -ne 'PASS' -or
+      [int]$particleValidationDocument.particles -ne [int]$s3Document.source.source_particles) {
+    throw 'S3 canonical particle validation report is incomplete or inconsistent.'
+  }
   $pulseSchedule = Join-Path $inputDir 's3_centroid_pulse_schedule.json'
   & $python $scheduler --particle-state $timingState --oatof-baseline $oaBaseline `
     --joint-contract $s1 --s2-contract $s2 --policy $pulsePolicy `
@@ -135,6 +153,7 @@ try {
     run_id = $SourceRunId
     manifest_sha256 = (Get-FileHash -LiteralPath $sourceManifestOriginal -Algorithm SHA256).Hash
     particle_sha256 = (Get-FileHash -LiteralPath $particleOriginal -Algorithm SHA256).Hash
+    particle_validation_sha256 = (Get-FileHash -LiteralPath $particleValidation -Algorithm SHA256).Hash
     timing_state_sha256 = (Get-FileHash -LiteralPath $timingStateOriginal -Algorithm SHA256).Hash
   }
   $runConfiguration = [ordered]@{
@@ -152,7 +171,8 @@ try {
       snapshot_analysis = $snapshotAnalysis; audit_analysis = $auditAnalysis
       dependency_contract = $dependencyContract; oatof_baseline = $oaBaseline
       oatof_accelerator_builder = $oaBuilder; source_run_manifest = $sourceManifest
-      particle_source = $particleInput; timing_state = $timingState; pulse_schedule = $pulseSchedule
+      particle_source = $particleInput; particle_state_validation = $particleValidation
+      timing_state = $timingState; pulse_schedule = $pulseSchedule
     }
     dependency_identities = $dependencyIdentities
     source_particle_identity = $sourceIdentity
