@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+import subprocess
+import sys
 import unittest
 
 from build_project_registry import (
@@ -28,6 +30,24 @@ class ProjectRegistryTests(unittest.TestCase):
             sorted(project["project_id"] for project in registry["projects"]),
         )
         self.assertEqual(DEFAULT_OUTPUT.read_text(encoding="utf-8"), serialized(registry))
+        commands = (
+            [
+                sys.executable,
+                str(REPO_ROOT / "common" / "contracts" / "build_project_registry.py"),
+                "--check",
+            ],
+            [sys.executable, "-m", "common.contracts.build_project_registry", "--check"],
+        )
+        for command in commands:
+            completed = subprocess.run(
+                command,
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=30,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
     def test_project_id_must_match_directory(self) -> None:
         path = REPO_ROOT / "projects" / "oa_tof" / "config" / "project.json"

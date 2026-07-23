@@ -7,7 +7,10 @@ import json
 from pathlib import Path
 from typing import Any
 
-from machine_contracts import ContractError, REPO_ROOT, load_json, sha256, validate_schema
+if __package__:
+    from .machine_contracts import ContractError, REPO_ROOT, load_json, sha256, validate_schema
+else:
+    from machine_contracts import ContractError, REPO_ROOT, load_json, sha256, validate_schema
 
 
 MATURITY = {"prototype": 0, "static": 1, "candidate": 2, "formal": 3}

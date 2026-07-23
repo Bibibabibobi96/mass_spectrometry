@@ -9,7 +9,10 @@ from typing import Any
 from jsonschema import Draft202012Validator
 from referencing import Registry, Resource
 
-from common.contracts.file_identity import file_sha256
+if __package__:
+    from .file_identity import file_sha256
+else:
+    from file_identity import file_sha256
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
