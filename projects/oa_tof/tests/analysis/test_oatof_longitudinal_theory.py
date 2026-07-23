@@ -47,14 +47,17 @@ class OatofLongitudinalTheoryTest(unittest.TestCase):
             "oatof_oaaccelerator_coupling.md",
         ):
             lines = (theory_dir / name).read_text(encoding="utf-8").splitlines()
-            self.assertNotIn("$$", lines, msg=f"{name} uses ambiguous display math")
-            self.assertGreater(lines.count("```math"), 0)
+            self.assertNotIn("```math", lines, msg=f"{name} uses a legacy math fence")
+            delimiter_count = lines.count("$$")
+            self.assertGreater(delimiter_count, 0)
             self.assertEqual(
-                sum(
-                    line.startswith("```") and line != "```" for line in lines
-                ),
-                lines.count("```"),
-                msg=f"{name} has an unbalanced fenced block",
+                delimiter_count % 2,
+                0,
+                msg=f"{name} has unpaired display-math delimiters",
+            )
+            self.assertFalse(
+                any("$$" in line and line != "$$" for line in lines),
+                msg=f"{name} has a display-math delimiter with inline content",
             )
 
     def test_current_baseline_reproduces_uncoupled_reflectron(self) -> None:
