@@ -46,6 +46,51 @@ foreach ($file in $markdownFiles) {
         Add-DocError "$relative`: expected exactly one H1, found $h1Count"
     }
 
+    $inFence = $false
+    $inDisplayMath = $false
+    $lineNumber = 0
+    $bareLatexPattern = '\\(?:mathrm|frac|sqrt|tau|Delta|operatorname|left|right|begin|end|text|ell|' +
+        'partial|alpha|beta|rho|eta|equiv|propto|int|sum|mu|sigma|omega|cdot|times|pm|approx|' +
+        'ne|qquad|quad|bar|mathbf)|[A-Za-z0-9)\]]_\{|\^\{'
+    foreach ($line in $lines) {
+        $lineNumber++
+        if ($line -match '^\s*(```|~~~)') {
+            if (-not $inFence -and $line -match '^\s*```math\s*$') {
+                Add-DocError "$relative`:$lineNumber`: use dollar-delimited math, not a fenced math code block"
+            }
+            $inFence = -not $inFence
+            continue
+        }
+        if ($inFence) { continue }
+
+        if ($line.Trim() -eq '$$') {
+            $inDisplayMath = -not $inDisplayMath
+            continue
+        }
+        if ($line -match '\$\$') {
+            Add-DocError "$relative`:$lineNumber`: display-math delimiter '$$' must be on its own line"
+            continue
+        }
+        if ($inDisplayMath) { continue }
+
+        $withoutCode = [regex]::Replace($line, '`[^`]*`', '')
+        $inlineParts = [regex]::Split($withoutCode, '(?<!\\)\$')
+        if ((($inlineParts.Count - 1) % 2) -ne 0) {
+            Add-DocError "$relative`:$lineNumber`: unclosed inline-math dollar delimiter"
+            continue
+        }
+        $outsideMath = New-Object System.Text.StringBuilder
+        for ($partIndex = 0; $partIndex -lt $inlineParts.Count; $partIndex += 2) {
+            [void]$outsideMath.Append($inlineParts[$partIndex])
+        }
+        if ($outsideMath.ToString() -match $bareLatexPattern) {
+            Add-DocError "$relative`:$lineNumber`: LaTeX expression appears outside dollar delimiters"
+        }
+    }
+    if ($inDisplayMath) {
+        Add-DocError "$relative`: unclosed display-math dollar delimiter"
+    }
+
     $raw = [System.IO.File]::ReadAllText($file.FullName, $utf8)
     $matches = [regex]::Matches($raw, '!?(?:\[[^\]]*\])\((?<target>[^)]+)\)')
     foreach ($match in $matches) {

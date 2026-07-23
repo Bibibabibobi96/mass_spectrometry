@@ -54,52 +54,52 @@ two_region_orthogonal_space_focusing_accelerator
 
 所有解析公式先将末级出口电位作为参考：
 
-```math
+$$
 \widetilde V_R = V_R-V_X,
 \qquad
 \widetilde V_G = V_G-V_X.
-```
+$$
 
 要求：
 
-```math
+$$
 \widetilde V_R>\widetilde V_G>0,
 \qquad
 g_1>0,
 \qquad
 g_2>0.
-```
+$$
 
 为简化下文，除非特别说明，均写作：
 
-```math
+$$
 V_R\equiv\widetilde V_R,
 \qquad
 V_G\equiv\widetilde V_G,
 \qquad
 V_X=0.
-```
+$$
 
 两个理想均匀场为：
 
-```math
+$$
 E_{A1}=\frac{V_R-V_G}{g_1},
 \qquad
 E_{A2}=\frac{V_G}{g_2}.
-```
+$$
 
 离子在第一间隙内的标称释放位置为：
 
-```math
+$$
 x=x_c,
 \qquad 0<x_c<g_1.
-```
+$$
 
 当前参考模型默认：
 
-```math
+$$
 x_c=\frac{g_1}{2},
-```
+$$
 
 但程序允许显式指定其他释放中心。
 
@@ -107,51 +107,51 @@ x_c=\frac{g_1}{2},
 
 令离子电荷量为：
 
-```math
+$$
 q=ze>0.
-```
+$$
 
 本文统一使用能量每电荷：
 
-```math
+$$
 W\equiv\frac{K}{q},
-```
+$$
 
 其 SI 单位为伏特。离子在位置 `x` 由静止释放并到达接地出口后的能量每电荷为：
 
-```math
+$$
 W(x)=V_R-E_{A1}x.
-```
+$$
 
 在标称释放位置：
 
-```math
+$$
 W_0=V_R-E_{A1}x_c.
-```
+$$
 
 若 `x_c=g_1/2`：
 
-```math
+$$
 W_0=\frac{V_R+V_G}{2}.
-```
+$$
 
 离子穿过第一场区后、进入第二场区时的能量每电荷为：
 
-```math
+$$
 W_{2}(x)=W(x)-V_G=E_{A1}(g_1-x).
-```
+$$
 
 因此实际动能为：
 
-```math
+$$
 K=qW=zeW.
-```
+$$
 
 以电子伏特表示时：
 
-```math
+$$
 K[\mathrm{eV}]=zW[\mathrm V].
-```
+$$
 
 禁止把 `W = 4000 V` 在未声明 `z=1` 的情况下直接写成“所有离子均为 4000 eV”。
 
@@ -159,9 +159,9 @@ K[\mathrm{eV}]=zW[\mathrm V].
 
 设释放区完整轴向宽度为 `Δx`，分布关于 `x_c` 对称。仅由位置引入的能量每电荷半范围为：
 
-```math
+$$
 \Delta W_x=\frac{E_{A1}\Delta x}{2}.
-```
+$$
 
 机器合同必须明确宽度语义，例如：
 
@@ -193,51 +193,51 @@ K[\mathrm{eV}]=zW[\mathrm V].
 
 定义：
 
-```math
+$$
 \alpha=\frac{q}{m}.
-```
+$$
 
 离子到达中间栅和末级出口时的速度分别为：
 
-```math
+$$
 v_2(x)=\sqrt{2\alpha\,[W(x)-V_G]},
-```
+$$
 
-```math
+$$
 v_3(x)=\sqrt{2\alpha W(x)}.
-```
+$$
 
 各段时间为：
 
-```math
+$$
 t_1(x)=\frac{v_2(x)}{\alpha E_{A1}},
-```
+$$
 
-```math
+$$
 t_2(x)=\frac{v_3(x)-v_2(x)}{\alpha E_{A2}},
-```
+$$
 
-```math
+$$
 t_D(x)=\frac{D_A}{v_3(x)}.
-```
+$$
 
 从释放到末级出口后距离 `D_A` 的总时间：
 
-```math
+$$
 T_A(x;D_A)=t_1+t_2+t_D.
-```
+$$
 
 ## 7. 一阶空间—时间聚焦面
 
 一阶空间聚焦条件为：
 
-```math
+$$
 \left.\frac{\partial T_A}{\partial x}\right|_{x=x_c}=0.
-```
+$$
 
 解得末级场出口面到一阶聚焦面的场自由漂移距离：
 
-```math
+$$
 D_A=
 \frac{v_3^3}{\alpha E_{A1}}
 \left[
@@ -248,7 +248,7 @@ D_A=
 \frac{1}{v_3}-\frac{1}{v_2}
 \right)
 \right]_{x=x_c}.
-```
+$$
 
 由于 `v_2`、`v_3` 均正比于 `√α`，上式中的 `m/q` 完全消去。因此：
 
@@ -256,15 +256,15 @@ D_A=
 
 可使用去掉公共 `√α` 因子的速度：
 
-```math
+$$
 \bar v_2=\sqrt{2[W_0-V_G]},
 \qquad
 \bar v_3=\sqrt{2W_0},
-```
+$$
 
 于是：
 
-```math
+$$
 D_A=
 \frac{\bar v_3^3}{E_{A1}}
 \left[
@@ -275,19 +275,19 @@ D_A=
 \frac{1}{\bar v_3}-\frac{1}{\bar v_2}
 \right)
 \right].
-```
+$$
 
 ### 7.1 聚焦面而不是固定出口面
 
 定义：
 
-```math
+$$
 z_{A,\mathrm{out}}=z_{A,0}+g_1+g_2,
-```
+$$
 
-```math
+$$
 z_{A,f}=z_{A,\mathrm{out}}+D_A.
-```
+$$
 
 其中：
 
@@ -309,15 +309,15 @@ z_{A,f}=z_{A,\mathrm{out}}+D_A.
 
 若 `E_A1=E_A2`，则：
 
-```math
+$$
 D_A=2(g_1+g_2-x_c).
-```
+$$
 
 当 `x_c=g_1/2`：
 
-```math
+$$
 D_A=g_1+2g_2.
-```
+$$
 
 这是参考程序的一个基础回归测试。
 
@@ -334,76 +334,76 @@ D_A=g_1+2g_2.
 
 定义：
 
-```math
+$$
 r=\frac{W_0}{\Delta W_x},
 \qquad
 s=\frac{g_1^*}{\Delta x},
 \qquad
  g_1^*=\max(\Delta x,g_{\min}).
-```
+$$
 
 必须满足：
 
-```math
+$$
 0<s<r.
-```
+$$
 
 否则中间电极相对出口的电位非正，当前模型失效。
 
 第一场强和电压为：
 
-```math
+$$
 E_{A1}=\frac{2\Delta W_x}{\Delta x},
-```
+$$
 
-```math
+$$
 V_R=W_0+\Delta W_x s,
 \qquad
 V_G=W_0-\Delta W_x s.
-```
+$$
 
 使 `D_A=0` 的场强比：
 
-```math
+$$
 \rho^*\equiv\frac{E_{A1}}{E_{A2}}
 =
 \frac{\sqrt r}{\sqrt r-\sqrt s}.
-```
+$$
 
 因此：
 
-```math
+$$
 E_{A2}^*=\frac{E_{A1}}{\rho^*},
-```
+$$
 
-```math
+$$
 g_2^*
 =
 \frac{\Delta x}{2}
 \left(r+\sqrt{rs}\right),
-```
+$$
 
-```math
+$$
 L_{A,\mathrm{compact}}
 =g_1^*+g_2^*
 =
 \frac{\Delta x}{2}
 \left(r+2s+\sqrt{rs}\right).
-```
+$$
 
 ### 8.1 工程下限生效时仍有闭式解
 
 当 `g_min > Δx`：
 
-```math
+$$
 s=\frac{g_{\min}}{\Delta x},
-```
+$$
 
 仍然存在上述闭式解，不需要为了该理想问题进行数值优化。
 
 此时：
 
-```math
+$$
 L_{A,\mathrm{compact}}
 =
  g_{\min}
@@ -411,7 +411,7 @@ L_{A,\mathrm{compact}}
 \frac{r\Delta x}{2}
 +
 \frac{1}{2}\sqrt{r g_{\min}\Delta x}.
-```
+$$
 
 因此，当固定机械下限生效时，总长不再与 `Δx` 严格线性；其中含有 `√Δx` 项。
 

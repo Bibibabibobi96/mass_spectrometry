@@ -37,9 +37,9 @@ analysis/oatof_oaaccelerator_coupling.py
 
 定义：
 
-```math
+$$
 L=L_{\mathrm{up}}+L_{\mathrm{down}}.
-```
+$$
 
 这里的 `L_up` **不是**末级加速电极出口到反射镜入口的距离，而是：
 
@@ -47,15 +47,15 @@ L=L_{\mathrm{up}}+L_{\mathrm{down}}.
 
 第一反射级吸收的能量每电荷为：
 
-```math
+$$
 U_{R1}=F_1\ell_1.
-```
+$$
 
 离子进入反射镜前的能量每电荷为：
 
-```math
+$$
 W=\frac{K}{q},
-```
+$$
 
 标称值为 `W_0`。
 
@@ -88,49 +88,49 @@ W=\frac{K}{q},
 
 令：
 
-```math
+$$
 q=ze>0,
 \qquad
 v(W)=\sqrt{\frac{2qW}{m}},
-```
+$$
 
-```math
+$$
 v_1(W)=\sqrt{\frac{2q(W-U_{R1})}{m}}.
-```
+$$
 
 无场时间为：
 
-```math
+$$
 t_{\mathrm{drift}}(W)=\frac{L}{v(W)}.
-```
+$$
 
 第一级往返时间为：
 
-```math
+$$
 t_{R1}(W)=\frac{2m[v(W)-v_1(W)]}{qF_1}.
-```
+$$
 
 第二级往返时间为：
 
-```math
+$$
 t_{R2}(W)=\frac{2m v_1(W)}{qF_2}.
-```
+$$
 
 总时间：
 
-```math
+$$
 T_R(W)=t_{\mathrm{drift}}+t_{R1}+t_{R2}.
-```
+$$
 
 将公共质荷比因子提出：
 
-```math
+$$
 T_R(W)=\sqrt{\frac{m}{2q}}\,\tau_R(W),
-```
+$$
 
 其中：
 
-```math
+$$
 \tau_R(W)=
 \frac{L}{\sqrt W}
 +
@@ -138,23 +138,23 @@ T_R(W)=\sqrt{\frac{m}{2q}}\,\tau_R(W),
 \left(\sqrt W-\sqrt{W-U_{R1}}\right)
 +
 \frac{4}{F_2}\sqrt{W-U_{R1}}.
-```
+$$
 
 当长度单位为 mm、场强单位为 V/mm 时，`τ_R` 的单位为 mm/√V，实际时间还需乘以 `10^-3`：
 
-```math
+$$
 T_R[\mathrm s]
 =
 10^{-3}
 \sqrt{\frac{m}{2q}}
 \tau_R.
-```
+$$
 
 ## 5. 为什么只依赖 `L_up + L_down`
 
 在理想模型中：
 
-```math
+$$
 t_{\mathrm{up}}+t_{\mathrm{down}}
 =
 \frac{L_{\mathrm{up}}}{v(W)}
@@ -162,13 +162,13 @@ t_{\mathrm{up}}+t_{\mathrm{down}}
 \frac{L_{\mathrm{down}}}{v(W)}
 =
 \frac{L}{v(W)}.
-```
+$$
 
 因此局部反射镜解只依赖：
 
-```math
+$$
 L=L_{\mathrm{up}}+L_{\mathrm{down}}.
-```
+$$
 
 该不变量只在以下条件同时成立时有效：
 
@@ -184,25 +184,25 @@ L=L_{\mathrm{up}}+L_{\mathrm{down}}.
 
 局部参考解要求：
 
-```math
+$$
 \left.\frac{\mathrm d\tau_R}{\mathrm dW}\right|_{W_0}=0,
-```
+$$
 
-```math
+$$
 \left.\frac{\mathrm d^2\tau_R}{\mathrm dW^2}\right|_{W_0}=0.
-```
+$$
 
 记：
 
-```math
+$$
 s_0=\sqrt{W_0},
 \qquad
 s_1=\sqrt{W_0-U_{R1}}.
-```
+$$
 
 一阶条件为：
 
-```math
+$$
 -
 \frac{L}{2s_0^3}
 +
@@ -213,11 +213,11 @@ s_1=\sqrt{W_0-U_{R1}}.
 +
 \frac{2}{F_2s_1}
 =0.
-```
+$$
 
 二阶条件为：
 
-```math
+$$
 \frac{3L}{4s_0^5}
 +
 \frac{1}{F_1}
@@ -230,13 +230,13 @@ s_1=\sqrt{W_0-U_{R1}}.
 -
 \frac{1}{F_2s_1^3}
 =0.
-```
+$$
 
 再加入几何约束：
 
-```math
+$$
 U_{R1}=F_1\ell_1.
-```
+$$
 
 ## 7. 未耦合闭式参考解
 
@@ -248,29 +248,29 @@ U_{R1}=F_1\ell_1.
 
 可以直接得到：
 
-```math
+$$
 U_{R1}
 =
 \frac{2W_0(L+2\ell_1)}{3L},
-```
+$$
 
-```math
+$$
 F_1
 =
 \frac{U_{R1}}{\ell_1}
 =
 \frac{2W_0(L+2\ell_1)}{3L\ell_1}.
-```
+$$
 
 存在性条件：
 
-```math
+$$
 0<\ell_1<\frac{L}{4}.
-```
+$$
 
 然后由一阶条件计算第二级场：
 
-```math
+$$
 \frac{1}{F_2}
 =
 \frac{s_1}{2}
@@ -282,7 +282,7 @@ F_1
 \frac{1}{s_0}-\frac{1}{s_1}
 \right)
 \right].
-```
+$$
 
 该形式比展开成大型根式更适合程序实现，因为：
 
@@ -301,15 +301,15 @@ F_1
 
 对完整能量包络：
 
-```math
+$$
 W\in[W_{\min},W_{\max}],
-```
+$$
 
 必须满足：
 
-```math
+$$
 W_{\min}>U_{R1}.
-```
+$$
 
 否则低能尾部会在第一级内折返，当前二级模型失效。
 
@@ -319,15 +319,15 @@ W_{\min}>U_{R1}.
 
 理想均匀第二场中，最高能量离子的穿透深度为：
 
-```math
+$$
 d_{2,\mathrm{high}}
 =
 \frac{W_{\max}-U_{R1}}{F_2}.
-```
+$$
 
 所以至少要求：
 
-```math
+$$
 \ell_2
 \ge
  d_{2,\mathrm{high}}
@@ -335,21 +335,21 @@ d_{2,\mathrm{high}}
 \delta_{\mathrm{fringe}}
 +
 \delta_{\mathrm{manufacturing}}.
-```
+$$
 
 如果使用比例和绝对裕量：
 
-```math
+$$
 \ell_{2,\mathrm{req}}
 =
  d_{2,\mathrm{high}}(1+\eta)+\delta_{\mathrm{abs}}.
-```
+$$
 
 标称穿透深度：
 
-```math
+$$
 d_{2,0}=\frac{W_0-U_{R1}}{F_2}
-```
+$$
 
 只能作为诊断值，不能代替高能包络。
 
@@ -357,11 +357,11 @@ d_{2,0}=\frac{W_0-U_{R1}}{F_2}
 
 对真实三维或轴向非均匀场，应检查：
 
-```math
+$$
 \int_0^{\ell_2}F_z(z)\,\mathrm dz
 \ge
 W_{\max}-U_{R1}.
-```
+$$
 
 程序中的均匀场深度只是 L0/L1 参考，不取代场图积分和轨迹折返点验证。
 
@@ -376,19 +376,19 @@ W_{\max}-U_{R1}.
 
 它们不依赖具体 `m/z`。总飞行时间满足：
 
-```math
+$$
 T\propto\sqrt{\frac{m}{q}}.
-```
+$$
 
 如果使用质荷比 `μ=m/z`，以 Th 表示，则无需再单独输入电荷态来计算飞行时间缩放。
 
 固定相对能散 `ΔW/W_0` 时，理想相对时间像差与 `m/z` 无关。若输入固定绝对动能宽度 `ΔK[eV]`，必须先转换：
 
-```math
+$$
 \Delta W[\mathrm V]
 =
 \frac{\Delta K[\mathrm{eV}]}{z}.
-```
+$$
 
 因此固定绝对 eV 宽度时，结果会依赖电荷态 `z`。
 
@@ -396,7 +396,7 @@ T\propto\sqrt{\frac{m}{q}}.
 
 当一、二阶导数为零时，可以定义归一化三阶导数：
 
-```math
+$$
 \tau_R'''(W_0)
 =
 -
@@ -411,26 +411,26 @@ W_0^{-5/2}
 +
 \frac{3}{2F_2}
 (W_0-U_{R1})^{-5/2}.
-```
+$$
 
 对单侧能量偏移 `ΔW`，可形成三阶端点估计：
 
-```math
+$$
 |\Delta T_{\mathrm{endpoint}}|
 \approx
 10^{-3}
 \sqrt{\frac{m}{2q}}
 \frac{|\tau_R'''(W_0)|}{6}
 |\Delta W|^3.
-```
+$$
 
 这个量可以用于候选预筛选，但它不是时间峰 FWHM。
 
 禁止直接写：
 
-```math
+$$
 R=\frac{T_0}{2|\Delta T_{\mathrm{endpoint}}|}
-```
+$$
 
 并把它称为正式质量分辨率。原因是三次映射后的峰一般非高斯，端点偏移、半范围、标准差和 FWHM 没有固定换算关系。
 
@@ -456,35 +456,35 @@ formal_FWHM_eligible = false
 
 局部闭式解令：
 
-```math
+$$
 \tau_R'(W_0)=0,
 \qquad
 \tau_R''(W_0)=0.
-```
+$$
 
 但双区正交加速器到其一阶焦面的时间 `τ_A(W)` 通常满足：
 
-```math
+$$
 \tau_A'(W_0)=0,
 \qquad
 \tau_A''(W_0)\ne0.
-```
+$$
 
 所以整机时间：
 
-```math
+$$
 \tau_{\mathrm{total}}(W)
 =
 \tau_A(W)+\tau_R(W)
-```
+$$
 
 会有：
 
-```math
+$$
 \tau_{\mathrm{total}}''(W_0)
 =
 \tau_A''(W_0),
-```
+$$
 
 并不自动为零。
 
