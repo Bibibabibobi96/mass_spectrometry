@@ -8,7 +8,7 @@
     "resolved_geometry": "config/resolved_geometry.json",
     "mode": "config/modes/transport_no_collision.json",
     "particle_source": "config/official_particle_source.json",
-    "particle_table": "config/particles/official_fixed_25.ion"
+    "particle_table": "config/particles/official_fixed_100.ion"
   },
   "output_policy": {
     "lifecycle": "candidate",

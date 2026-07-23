@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "role": "multipole_endplate_acceleration_contract",
+  "project_id": "rf_hexapole_ion_guide",
+  "model_id": "multipole.endplate_potential_step.v1",
+  "rod_common_mode_V": 0.0,
+  "entrance_plate_V": 0.0,
+  "exit_plate_V": -3.0,
+  "output_reference_V": -3.0,
+  "functional_acceptance": {
+    "minimum_transmission": 0.8,
+    "minimum_mean_energy_gain_eV": 2.5,
+    "maximum_mean_output_energy_error_eV": 0.5
+  },
+  "claim_limit": "N=100 functional endplate-acceleration reference only; acceleration is localized near the exit and does not establish continuous in-rod acceleration, convergence, mechanical or Formal qualification."
+}

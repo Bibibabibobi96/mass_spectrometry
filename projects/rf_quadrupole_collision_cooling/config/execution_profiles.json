@@ -24,9 +24,9 @@
         },
         {
           "step_id": "comsol_run", "kind": "run", "shell": "powershell",
-          "entrypoint": "tests/comsol/run_transport_candidate.ps1",
+          "entrypoint": "analysis/run_finite_3d_transport.ps1",
           "run_id_template": "{timestamp}__sim__comsol__rf-transport__no-collision",
-          "arguments": ["-RunId", "{comsol_run_id}", "-Mode", "transport_no_collision"]
+          "arguments": ["-RunId", "{comsol_run_id}"]
         },
         {
           "step_id": "simion_run", "kind": "run", "shell": "powershell",
@@ -122,13 +122,13 @@
         {
           "step_id": "simion_mass_response", "kind": "run", "shell": "powershell",
           "entrypoint": "tests/simion/run_transport_candidate.ps1",
-          "run_id_template": "{timestamp}__sim__simion__mass-filter__n175",
+          "run_id_template": "{timestamp}__sim__simion__mass-filter__n700",
           "arguments": ["-Mode", "mass_filter_reference", "-RunId", "{run_id}", "-OperatingPoint", "paired-mass-functional-screen"]
         }
       ],
       "limitations": [
         "The SIMION functional scan includes the finite reference geometry but is not a cross-solver comparison",
-        "The seven-point N=25-per-mass response does not qualify resolving power or Candidate maturity"
+        "The seven-point N=100-per-mass response is the functional check tier and does not qualify resolving power or Candidate maturity"
       ]
     }
   ]

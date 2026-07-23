@@ -27,7 +27,7 @@
     "common_mode_offset_V": 0.0
   },
   "particle_source": {
-    "count": 25,
+    "count": 100,
     "seed": 20260722,
     "mass_amu": 100.0,
     "charge_state": 1,

@@ -41,9 +41,9 @@ class InterfaceParticleTableTests(unittest.TestCase):
             tables = []
             for point in ("uniform", "fixed"):
                 output = root / f"{point}.ion"
-                command = [sys.executable, str(GENERATOR), "--source-family", str(family_path),
+                command = [sys.executable, "-m", "projects.rf_quadrupole_collision_cooling.analysis.generate_interface_particle_table", "--source-family", str(family_path),
                            "--distribution", str(distribution_path), "--operating-point", point,
-                           "--particles", "20", "--seed", "77", "--output", str(output),
+                           "--particles", "100", "--seed", "77", "--output", str(output),
                            "--metadata", str(root / f"{point}.json")]
                 subprocess.run(
                     command,
@@ -58,6 +58,39 @@ class InterfaceParticleTableTests(unittest.TestCase):
             self.assertTrue(np.array_equal(uniform[:, :8], fixed[:, :8]))
             self.assertTrue(np.array_equal(uniform[:, 9:], fixed[:, 9:]))
             self.assertFalse(np.array_equal(uniform[:, 8], fixed[:, 8]))
+
+    def test_n100_is_prefix_of_n1000(self) -> None:
+        with tempfile.TemporaryDirectory() as root_text:
+            root = Path(root_text)
+            distribution = {
+                "time_of_birth_us": {"min": 0.0, "max": 1.0},
+                "position_mm": {"axial": 0.0, "transverse_1": {"min": -0.1, "max": 0.1},
+                                "transverse_2": {"min": -0.1, "max": 0.1}},
+                "direction": {"half_angle_deg": 5.0}, "cwf": 1, "color": 3,
+            }
+            family = {
+                "paired_sampling": {"base_seed": 10},
+                "operating_points": {
+                    "reference": {"mass_amu": 100, "charge_state": 1,
+                                  "kinetic_energy_eV": {"distribution": "fixed", "value": 2.0}},
+                },
+            }
+            distribution_path = root / "distribution.json"
+            family_path = root / "family.json"
+            distribution_path.write_text(json.dumps(distribution), encoding="utf-8")
+            family_path.write_text(json.dumps(family), encoding="utf-8")
+            tables = {}
+            for count in (100, 1000):
+                output = root / f"n{count}.ion"
+                subprocess.run(
+                    [sys.executable, "-m", "projects.rf_quadrupole_collision_cooling.analysis.generate_interface_particle_table", "--source-family", str(family_path),
+                     "--distribution", str(distribution_path), "--operating-point", "reference",
+                     "--particles", str(count), "--output", str(output),
+                     "--metadata", str(root / f"n{count}.json")],
+                    check=True, capture_output=True, text=True, cwd=REPOSITORY_ROOT, timeout=60,
+                )
+                tables[count] = np.loadtxt(output, delimiter=",")
+            self.assertTrue(np.array_equal(tables[100], tables[1000][:100]))
 
 
 if __name__ == "__main__":

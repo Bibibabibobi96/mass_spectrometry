@@ -7,7 +7,7 @@
     "mode": "config/modes/transport_interface_readiness.json",
     "mode_sha256": "0106E528F5B12A6D4EBEC653DF7598D1B0DC0926A4ECF288618CE047B2025C33",
     "particle_source": "config/interface_readiness_particle_source.json",
-    "particle_source_sha256": "8D60E727E22BF2F97FE54D6385C72CD3A5D890C435F8DAD3D4D6A271AA22FF86",
+    "particle_source_sha256": "2CDAAF5A2CE242880998316AFBAE4C850E2A96431F7474A0D115377B3833A8EF",
     "interface_contract": "config/interface_contract.json",
     "interface_contract_sha256": "DDCF3BC650D648F543E93520E1A93AF417432C19DA575712A6DB26F5FD33A24E"
   },
@@ -219,7 +219,7 @@
       "transverse_position",
       "filled_cone_direction"
     ],
-    "policy": "New masses or energies are added as named operating points; official_particle_source.json and official_fixed_25.ion are never overwritten."
+    "policy": "New masses or energies are added as named operating points; N=100 is the functional prefix of the N=1000 statistical source and neither table is overwritten by another operating point."
   },
   "interface_contract": {
     "schema_version": 1,

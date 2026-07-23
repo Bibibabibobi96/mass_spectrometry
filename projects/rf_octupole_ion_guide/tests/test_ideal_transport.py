@@ -42,7 +42,8 @@ class OctupoleIdealTransportTests(unittest.TestCase):
     def test_l1_functional_gate(self):
         metrics, rows = evaluate_contract(self.contract)
         self.assertEqual(metrics["status"], "PASS")
-        self.assertEqual(len(rows), 50)
+        self.assertEqual(len(rows), 200)
+        self.assertEqual(len({row["particle_id"] for row in rows}), 100)
 
     def test_round_rod_screen_recovers_boundary_normalized_harmonic(self):
         screen = json.loads((PROJECT_ROOT / "config" / "round_rod_field_screen.json").read_text(encoding="utf-8"))
@@ -70,7 +71,8 @@ class OctupoleIdealTransportTests(unittest.TestCase):
         }
         metrics, rows = evaluate_round_rod_contract(self.contract, screen)
         self.assertEqual(metrics["status"], "PASS")
-        self.assertEqual(len(rows), 50)
+        self.assertEqual(len(rows), 200)
+        self.assertEqual(len({row["particle_id"] for row in rows}), 100)
 
     def test_finite_3d_contract_preserves_baseline_source_and_length(self):
         l3 = json.loads((PROJECT_ROOT / "config" / "finite_3d_transport.json").read_text(encoding="utf-8"))

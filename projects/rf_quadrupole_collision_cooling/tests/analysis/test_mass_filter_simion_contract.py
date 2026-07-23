@@ -34,7 +34,7 @@ class MassFilterSimionContractTests(unittest.TestCase):
         )
         self.assertAlmostEqual(mode["rf"]["dc_amplitude_V_per_group"], 22.763014939677756)
         self.assertAlmostEqual(mode["rf"]["axis_common_mode_offset_V"], -8.0)
-        self.assertEqual(mode["solver_screen"]["particles_per_mass"], 25)
+        self.assertEqual(mode["solver_screen"]["particles_per_mass"], 100)
 
 
 if __name__ == "__main__":

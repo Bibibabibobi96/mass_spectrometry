@@ -129,13 +129,26 @@ def validate_mass_filter_reference(baseline: dict[str, Any], mode: dict[str, Any
         raise ValueError("mass-filter reference schema_version must be 3")
     if mode.get("mode") != "mass_filter_reference":
         raise ValueError("mode must be mass_filter_reference")
-    allowed_statuses = {"simion_functional_scan_pass", "dual_solver_functional_scan_pass"}
+    allowed_statuses = {
+        "simion_functional_scan_pass",
+        "dual_solver_functional_scan_pass",
+        "n100_dual_solver_revalidation_pending",
+    }
     if mode.get("status") not in allowed_statuses:
         raise ValueError("mass-filter reference must record an approved functional status")
     if mode["status"] == "dual_solver_functional_scan_pass":
         comsol_screen = mode.get("comsol_screen", {})
         if comsol_screen.get("status") != "pass" or not comsol_screen.get("authority_run_id"):
             raise ValueError("dual-solver status requires a passing COMSOL authority run")
+    if mode["status"] == "n100_dual_solver_revalidation_pending":
+        for screen_name in ("solver_screen", "comsol_screen"):
+            screen = mode.get(screen_name, {})
+            if screen.get("status") != "pending_n100_revalidation":
+                raise ValueError(f"{screen_name} must remain pending until an N=100 run passes")
+            if screen.get("authority_run_id") is not None:
+                raise ValueError(f"{screen_name} cannot cite a pre-N=100 authority run")
+            if int(screen.get("particles_per_mass", 0)) != 100:
+                raise ValueError(f"{screen_name} must require 100 particles per mass")
 
     theory = mode.get("theory_contract", {})
     expected_contract = {

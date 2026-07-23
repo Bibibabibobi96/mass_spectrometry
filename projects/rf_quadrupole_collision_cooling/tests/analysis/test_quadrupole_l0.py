@@ -61,7 +61,7 @@ class MassFilterReferenceContractTests(unittest.TestCase):
         self.assertEqual(self.mode["schema_version"], 3)
         result = MODULE.validate_mass_filter_reference(self.baseline, self.mode)
         self.assertEqual(result["status"], "PASS")
-        self.assertEqual(result["mode_status"], "dual_solver_functional_scan_pass")
+        self.assertEqual(result["mode_status"], "n100_dual_solver_revalidation_pending")
         self.assertAlmostEqual(result["q_at_tune_mass"], 0.7060233, delta=1e-7)
         self.assertAlmostEqual(result["a_at_tune_mass"], 0.2298878, delta=1e-7)
         self.assertAlmostEqual(result["dc_differential_V"], 45.52602987935551, delta=1e-12)

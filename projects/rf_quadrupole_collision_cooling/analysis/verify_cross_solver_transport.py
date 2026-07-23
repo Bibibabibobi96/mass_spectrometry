@@ -102,7 +102,7 @@ def main() -> None:
         "status": "PASS" if all(gates.values()) else "FAIL",
         "mode": "transport_no_collision",
         "particles": len(ids),
-        "source_ion_sha256": sha256(args.project / "config/particles/official_fixed_25.ion"),
+        "source_ion_sha256": sha256(args.project / "config/particles/official_fixed_100.ion"),
         "geometry_gem_sha256": sha256(args.project / "simion/geometry/quad_include.gem"),
         "comsol": comsol_summary,
         "simion": simion_summary,

@@ -120,7 +120,9 @@ def resolve_round_rod_geometry(
             "exit_plate_z_max": float(derived["exit_plate_z_max"]),
             "exit_aperture_radius": float(geometry["exit_interface"]["aperture_radius_mm"]),
             "entrance_connector_length": float(geometry["entrance_interface"]["connector_length_mm"]),
+            "entrance_connector_shape": geometry["entrance_interface"]["connector_shape"],
             "exit_connector_length": float(geometry["exit_interface"]["connector_length_mm"]),
+            "exit_connector_shape": geometry["exit_interface"]["connector_shape"],
             "detector_z": float(derived["detector_z"]),
         },
     }

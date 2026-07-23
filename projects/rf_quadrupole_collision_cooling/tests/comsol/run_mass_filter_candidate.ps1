@@ -2,8 +2,8 @@ param(
   [string]$RunId='',
   [int]$RfStepsPerPeriod=80,
   [int]$MeshAutoLevel=1,
-  [string]$L1RunId='20260722_201222__analysis__python__mass-filter-l1__n256',
-  [string]$SimionRunId='20260722_231100__sim__simion__mass-filter__shared-geometry-n175__r01'
+  [Parameter(Mandatory=$true)][string]$L1RunId,
+  [Parameter(Mandatory=$true)][string]$SimionRunId
 )
 
 Set-StrictMode -Version Latest
@@ -14,7 +14,7 @@ $workspaceRoot=Split-Path -Parent $repoRoot
 $artifactRoot=Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling'
 . (Join-Path $projectRoot 'tests\support\rf_run_artifact_support.ps1')
 if([string]::IsNullOrWhiteSpace($RunId)){
-  $RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__sim__comsol__mass-filter__rf-dc-n175'
+  $RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__sim__comsol__mass-filter__rf-dc-n700'
 }
 $software=@('COMSOL 6.4','MATLAB R2025b','Python 3.11')
 $package=New-RfRunPackage -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RunId $RunId `
@@ -29,13 +29,16 @@ try {
     baseline=Join-Path $projectRoot 'config\baseline.json'
     mode=Join-Path $projectRoot 'config\modes\mass_filter_reference.json'
     resolved_contract=Join-Path $projectRoot 'config\resolved_mass_filter.json'
-    particles=Join-Path $projectRoot 'config\particles\official_fixed_25.ion'
+    particles=Join-Path $projectRoot 'config\particles\official_fixed_100.ion'
   }
   foreach($key in @($sources.Keys)){
     $destination=Join-Path $inputDir (Split-Path -Leaf $sources[$key])
     Copy-Item -LiteralPath $sources[$key] -Destination $destination
     $sources[$key]=$destination
   }
+  $sourceParticleCount=@(Get-Content -LiteralPath $sources.particles -Encoding UTF8|Where-Object{-not[string]::IsNullOrWhiteSpace($_)}).Count
+  & $package.python -m common.contracts.particle_count_policy --count $sourceParticleCount
+  if($LASTEXITCODE-ne 0){throw 'Mass-filter source violates the repository N=100/N=1000 policy.'}
   $familyOperating=Join-Path $inputDir 'family_operating_contract.json'
   Push-Location $repoRoot
   try {

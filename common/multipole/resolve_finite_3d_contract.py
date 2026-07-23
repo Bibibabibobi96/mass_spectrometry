@@ -15,6 +15,7 @@ from typing import Any
 
 from common.multipole.family_contract import from_high_order_baseline
 from common.multipole.interface_geometry import build_axial_interface_layout
+from common.multipole.connector_geometry import CONNECTOR_SHAPES
 
 
 class Finite3DContractError(ValueError):
@@ -89,9 +90,13 @@ def _resolve_interface(interface: dict[str, Any], name: str) -> dict[str, float]
             "particle_plane_distance_mm",
             "outer_ground_clearance_mm",
             "connector_length_mm",
+            "connector_shape",
         },
         f"geometry_mm.{name}_interface",
     )
+    shape = interface.get("connector_shape")
+    if shape not in CONNECTOR_SHAPES:
+        raise Finite3DContractError(f"geometry_mm.{name}_interface connector_shape is invalid")
     return {
         "aperture_radius_mm": _positive_number(interface, "aperture_radius_mm"),
         "plate_thickness_mm": _positive_number(interface, "plate_thickness_mm"),
@@ -99,6 +104,7 @@ def _resolve_interface(interface: dict[str, Any], name: str) -> dict[str, float]
         "particle_plane_distance_mm": _positive_number(interface, "particle_plane_distance_mm"),
         "outer_ground_clearance_mm": _positive_number(interface, "outer_ground_clearance_mm"),
         "connector_length_mm": _nonnegative_number(interface, "connector_length_mm"),
+        "connector_shape": shape,
     }
 
 
@@ -121,8 +127,8 @@ def resolve_contract(baseline: dict[str, Any], contract: dict[str, Any]) -> dict
         },
         "finite-3D contract",
     )
-    if contract.get("schema_version") != 2:
-        raise Finite3DContractError("finite-3D contract schema_version must be 2")
+    if contract.get("schema_version") != 3:
+        raise Finite3DContractError("finite-3D contract schema_version must be 3")
     if contract.get("role") != "multipole_finite_3d_interface_transport_contract":
         raise Finite3DContractError("finite-3D contract role is invalid")
     if contract.get("project_id") != baseline.get("project_id"):

@@ -7,7 +7,7 @@
     "mode": "config/modes/transport_no_collision.json",
     "mode_sha256": "111C7DCEB54E5106024B79A66F65BB780F434AD0816B439CB74C7919783AED95",
     "particle_source": "config/official_particle_source.json",
-    "particle_source_sha256": "FFFCF747F710154BEC9F156AD21121EF41D37189865C86F1D8FE98DC649CAE40"
+    "particle_source_sha256": "BAB1FCB5F46CA3EDBF11C37490A6E330C32750B0115890D91E8CFE3D0ACCDA74"
   },
   "coordinate_convention": {
     "units": "mm",
@@ -184,7 +184,7 @@
       "simion_pa_local_axis": "positive z",
       "project_and_comsol_axis": "positive z"
     },
-    "particles": 25,
+    "particles": 100,
     "mass_amu": 100.0,
     "charge_state": 1,
     "time_of_birth_us": {
@@ -222,6 +222,6 @@
     },
     "cwf": 1,
     "color": 3,
-    "paired_cross_solver_policy": "A versioned fixed 25-particle realization sampled from these distributions is used by both solvers; the distribution contract remains GUI-visible."
+    "paired_cross_solver_policy": "The N=100 functional table is the deterministic prefix of the N=1000 statistical table; both solvers use the same frozen rows and the distribution contract remains GUI-visible."
   }
 }

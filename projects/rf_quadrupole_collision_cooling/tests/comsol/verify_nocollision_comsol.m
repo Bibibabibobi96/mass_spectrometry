@@ -59,11 +59,20 @@ assert(any(strcmp(exportTags, 'exp_phase_raw')), ...
 initialSolutions = joinJavaStrings(model.sol.tags);
 assert(model.sol('sol1').isAttached(), 'sol1 is not attached to std1.');
 assert(model.sol('sol2').isAttached(), 'sol2 is not attached to std2.');
+hasStaticSolution=any(strcmp(cell(model.sol.tags()),'sol_static'));
+if hasStaticSolution
+    assert(model.sol('sol_static').isAttached(), 'sol_static is not attached to std_static.');
+end
 fprintf(fid, 'SOLUTION_TAGS_INITIAL=%s\n', initialSolutions);
 
 tStatic = tic;
 model.study('std1').run;
 fprintf(fid, 'STD1_GUI_COMPUTE_SECONDS=%.6f\n', toc(tStatic));
+if hasStaticSolution
+    tStaticEndplate=tic;
+    model.study('std_static').run;
+    fprintf(fid, 'STD_STATIC_GUI_COMPUTE_SECONDS=%.6f\n', toc(tStaticEndplate));
+end
 afterStatic = joinJavaStrings(model.sol.tags);
 assert(strcmp(afterStatic, initialSolutions), ...
     'std1 GUI Compute generated an unexpected solver sequence.');

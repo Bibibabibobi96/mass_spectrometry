@@ -9,6 +9,8 @@ from pathlib import Path
 
 import numpy as np
 
+from common.contracts.particle_count_policy import validate_standard_particle_count
+
 
 def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest().upper()
@@ -30,9 +32,11 @@ def main() -> None:
     family = json.loads(args.source_family.read_text(encoding="utf-8"))
     distribution = json.loads(args.distribution.read_text(encoding="utf-8"))
     point = family["operating_points"][args.operating_point]
-    seed = args.seed if args.seed is not None else int(family["paired_sampling"]["base_seed"]) + args.particles
+    validate_standard_particle_count(args.particles)
+    seed = args.seed if args.seed is not None else int(family["paired_sampling"]["base_seed"])
     rng = np.random.default_rng(seed)
-    n = args.particles
+    master_n = 1000
+    n = master_n
     birth_contract = distribution["time_of_birth_us"]
     position = distribution["position_mm"]
     direction = distribution["direction"]
@@ -61,14 +65,16 @@ def main() -> None:
         birth, np.full(n, point["mass_amu"]), np.full(n, point["charge_state"]),
         np.full(n, position["axial"]), transverse_1, transverse_2,
         azimuth, elevation, energy, np.full(n, distribution["cwf"]), np.full(n, distribution["color"]),
-    ])
+    ])[:args.particles]
     args.output.parent.mkdir(parents=True, exist_ok=True)
     np.savetxt(args.output, table, delimiter=",", fmt="%.12g")
     metadata = {
         "schema_version": 1,
         "role": "rf_quadrupole_fixed_paired_particle_table",
         "operating_point": args.operating_point,
-        "particles": n,
+        "particles": args.particles,
+        "master_particles": master_n,
+        "prefix_sampling": True,
         "seed": seed,
         "mass_amu": point["mass_amu"],
         "charge_state": point["charge_state"],

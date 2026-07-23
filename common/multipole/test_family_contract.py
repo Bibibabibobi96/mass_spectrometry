@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import copy
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,6 +14,7 @@ from common.multipole.family_contract import (
     load_family_contract,
 )
 from common.multipole.mass_response import aggregate_response, evaluate_functional_contrast, load_terminal_statuses
+from common.multipole.ideal_transport import source_particles
 from common.multipole.paired_mass_scan import build_paired_ion_rows
 from common.multipole.verify_family_foundation import validate_family_foundation
 
@@ -27,6 +29,12 @@ def load_json(path: Path) -> dict:
 class MultipoleFamilyContractTests(unittest.TestCase):
     def test_frozen_family_foundation_gate(self) -> None:
         validate_family_foundation()
+
+    def test_high_order_n100_source_is_n1000_prefix(self) -> None:
+        baseline = load_json(REPO_ROOT / "projects" / "rf_hexapole_ion_guide" / "config" / "baseline.json")
+        statistical = copy.deepcopy(baseline)
+        statistical["particle_source"]["count"] = 1000
+        self.assertEqual(source_particles(baseline), source_particles(statistical)[:100])
 
     def test_obsolete_family_schema_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -97,6 +105,33 @@ class MultipoleFamilyContractTests(unittest.TestCase):
         )
         for token in ("V_dc", "V_axis", "phi_rf", "rf.waveform", "Vdiff", "Vstatic"):
             self.assertIn(token, solver)
+
+    def test_all_acceleration_modes_use_separate_static_solutions(self) -> None:
+        shared_solver = (
+            REPO_ROOT / "common" / "multipole" / "solve_finite_3d_transport.m"
+        ).read_text(encoding="utf-8")
+        quadrupole_solver = (
+            REPO_ROOT
+            / "projects"
+            / "rf_quadrupole_collision_cooling"
+            / "comsol"
+            / "ms_rf_quadrupole_no_collision.m"
+        ).read_text(encoding="utf-8")
+        self.assertIn("if accelerationEnabled\n        studyDiff=", shared_solver)
+        self.assertIn("if accelerationEnabled\n        force.set('E'", shared_solver)
+        self.assertNotIn("withsol(", quadrupole_solver)
+        self.assertNotIn("axial_acceleration_reference", quadrupole_solver)
+        self.assertNotIn("endplate_acceleration_reference", quadrupole_solver)
+        self.assertIn("withsol(", shared_solver)
+        self.assertIn("configure_comsol_stationary_direct_solver", shared_solver)
+        self.assertIn("if isfinite(workingHmax) && workingHmax>0", shared_solver)
+
+    def test_comsol_run_freezes_executed_matlab_sources(self) -> None:
+        runner = (REPO_ROOT / "common/multipole/run_finite_3d_transport.ps1").read_text(encoding="utf-8")
+        self.assertIn("$multipoleCodeDir=Join-Path $inputDir 'code\\multipole'", runner)
+        self.assertIn("$task = Join-Path $multipoleCodeDir 'solve_finite_3d_transport.m'", runner)
+        self.assertIn("comsol_connector_builder = Join-Path $multipoleCodeDir", runner)
+        self.assertIn("comsol_mesh_size_builder = Join-Path $comsolCodeDir", runner)
 
 
 class MultipoleMassResponseTests(unittest.TestCase):

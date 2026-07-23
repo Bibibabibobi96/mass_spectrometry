@@ -10,7 +10,7 @@ from common.multipole.paired_mass_scan import generate_paired_ion_table, sha256,
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SOURCE = PROJECT_ROOT / "config" / "particles" / "official_fixed_25.ion"
+DEFAULT_SOURCE = PROJECT_ROOT / "config" / "particles" / "official_fixed_100.ion"
 DEFAULT_MODE = PROJECT_ROOT / "config" / "modes" / "mass_filter_reference.json"
 
 

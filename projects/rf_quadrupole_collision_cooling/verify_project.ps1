@@ -25,10 +25,10 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'Mass-filter resolved contract gate failed.' }
   & $python -m projects.rf_quadrupole_collision_cooling.analysis.sync_simion_geometry --check
   if ($LASTEXITCODE -ne 0) { throw 'SIMION geometry publication gate failed.' }
+  & $python -m projects.rf_quadrupole_collision_cooling.analysis.generate_official_particle_table --check `
+    (Join-Path $projectRoot 'config\particles\official_fixed_100.ion')
+  if ($LASTEXITCODE -ne 0) { throw 'Paired-particle identity gate failed.' }
 } finally { Pop-Location }
-& $python (Join-Path $projectRoot 'analysis\generate_official_particle_table.py') --check `
-  (Join-Path $projectRoot 'config\particles\official_fixed_25.ion')
-if ($LASTEXITCODE -ne 0) { throw 'Paired-particle identity gate failed.' }
 Push-Location $repoRoot
 try {
   & $python -m projects.rf_quadrupole_collision_cooling.analysis.quadrupole_l0 --check-mode

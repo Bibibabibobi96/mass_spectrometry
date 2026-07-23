@@ -7,7 +7,7 @@
     "simion_pa_local_axis": "positive z",
     "project_and_comsol_axis": "positive z"
   },
-  "particles": 25,
+  "particles": 100,
   "mass_amu": 100.0,
   "charge_state": 1,
   "time_of_birth_us": {
@@ -29,5 +29,5 @@
   },
   "cwf": 1,
   "color": 3,
-  "paired_cross_solver_policy": "A versioned fixed 25-particle realization sampled from these distributions is used by both solvers; the distribution contract remains GUI-visible."
+  "paired_cross_solver_policy": "The N=100 functional table is the deterministic prefix of the N=1000 statistical table; both solvers use the same frozen rows and the distribution contract remains GUI-visible."
 }

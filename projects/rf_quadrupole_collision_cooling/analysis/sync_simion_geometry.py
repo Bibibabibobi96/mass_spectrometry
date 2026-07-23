@@ -7,7 +7,10 @@ import hashlib
 import json
 from pathlib import Path
 
-from common.multipole.simion_geometry import render_grouped_rod_array_gem
+from common.multipole.simion_geometry import (
+    render_grouped_rod_array_gem,
+    render_segmented_rod_array_gem,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -20,23 +23,29 @@ def number(value: float | int) -> str:
     return format(float(value), ".15g")
 
 
-def render() -> dict[Path, str]:
-    contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+def render_contract(
+    contract: dict,
+    digest: str,
+    rod_source: str,
+    *,
+    entrance_electrode: int = 3,
+    output_electrode: int = 4,
+    detector_electrode: int = 5,
+) -> tuple[str, str]:
+    """Render the project enclosure around a supplied shared rod-array GEM."""
     g = contract["geometry_mm"]
-    rod_array = contract["rod_array_mm"]
     entrance = contract["interface_layout_mm"]["entrance"]
     exit_interface = contract["interface_layout_mm"]["exit"]
-    digest = hashlib.sha256(CONTRACT.read_bytes()).hexdigest().upper()
     entrance_thickness = entrance["plate_z_max_mm"] - entrance["plate_z_min_mm"]
     exit_length = g["exit_enclosure_z_max"] - g["exit_enclosure_z_min"]
     exit_front_thickness = g["exit_enclosure_front_wall_end_z"] - g["exit_enclosure_z_min"]
     include = f"""; Generated from config/resolved_geometry.json; do not edit.
 ; resolved_geometry_sha256={digest}
 
-{render_grouped_rod_array_gem(rod_array)}
+{rod_source}
 
 locate(0,0,{number(entrance['plate_z_min_mm'])}) {{
-  e(3) {{
+  e({entrance_electrode}) {{
     fill {{
       within       {{ box3d(-1e6,-1e6,0, 1e6,1e6,{number(entrance_thickness)}) }}
       notin_inside {{ circle(0,0, {number(entrance['aperture_radius_mm'])}) }}
@@ -45,14 +54,14 @@ locate(0,0,{number(entrance['plate_z_min_mm'])}) {{
 }}
 
 locate(0,0,{number(g['exit_enclosure_z_min'])}) {{
-  e(4) {{
+  e({output_electrode}) {{
     fill {{
       within       {{ box3d({number(g['exit_enclosure_outer_half_width'])},{number(g['exit_enclosure_outer_half_width'])},0, -{number(g['exit_enclosure_outer_half_width'])},-{number(g['exit_enclosure_outer_half_width'])},{number(exit_length)}) }}
       notin_inside {{ box3d({number(g['exit_enclosure_inner_half_width'])},{number(g['exit_enclosure_inner_half_width'])},{number(exit_front_thickness)}, -{number(g['exit_enclosure_inner_half_width'])},-{number(g['exit_enclosure_inner_half_width'])},1E+6) }}
       notin_inside {{ circle(0,0, {number(exit_interface['aperture_radius_mm'])}) }}
     }}
   }}
-  e(5) {{
+  e({detector_electrode}) {{
     fill {{ within {{ cylinder(0,0,{number(exit_interface['particle_plane_z_mm']-g['exit_enclosure_z_min'])}, {number(g['detector_radius'])},, {number(g['detector_thickness'])}) }} }}
   }}
 }}
@@ -66,6 +75,17 @@ pa_define($({number(g['exit_enclosure_outer_half_width'])}/mmgu+1), $({number(g[
 
 include(quad_include.gem)
 """
+    return include, monolithic
+
+
+def render() -> dict[Path, str]:
+    contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+    digest = hashlib.sha256(CONTRACT.read_bytes()).hexdigest().upper()
+    include, monolithic = render_contract(
+        contract,
+        digest,
+        render_grouped_rod_array_gem(contract["rod_array_mm"]),
+    )
     return {INCLUDE: include, MONOLITHIC: monolithic}
 
 
@@ -74,7 +94,30 @@ def main() -> None:
     choice = parser.add_mutually_exclusive_group(required=True)
     choice.add_argument("--check", action="store_true")
     choice.add_argument("--write", action="store_true")
+    choice.add_argument("--axial-candidate", action="store_true")
+    parser.add_argument("--contract", type=Path)
+    parser.add_argument("--segmented-rods", type=Path)
+    parser.add_argument("--output-directory", type=Path)
     args = parser.parse_args()
+    if args.axial_candidate:
+        if args.contract is None or args.segmented_rods is None or args.output_directory is None:
+            parser.error("--axial-candidate requires --contract, --segmented-rods and --output-directory")
+        contract_bytes = args.contract.read_bytes()
+        contract = json.loads(contract_bytes.decode("utf-8-sig"))
+        segmented = json.loads(args.segmented_rods.read_text(encoding="utf-8-sig"))
+        include, monolithic = render_contract(
+            contract,
+            hashlib.sha256(contract_bytes).hexdigest().upper(),
+            render_segmented_rod_array_gem(segmented),
+            entrance_electrode=9,
+            output_electrode=10,
+            detector_electrode=10,
+        )
+        args.output_directory.mkdir(parents=True, exist_ok=True)
+        (args.output_directory / "quad_include.gem").write_text(include, encoding="ascii", newline="\n")
+        (args.output_directory / "quad_monolithic.gem").write_text(monolithic, encoding="ascii", newline="\n")
+        print("SIMION_AXIAL_GEOMETRY=PASS")
+        return
     stale = []
     for path, expected in render().items():
         current = path.read_text(encoding="utf-8") if path.exists() else ""

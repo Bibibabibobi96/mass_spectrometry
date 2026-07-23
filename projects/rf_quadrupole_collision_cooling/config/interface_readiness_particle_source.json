@@ -30,5 +30,5 @@
     }
   },
   "inherited_distributions": ["birth_time_over_one_rf_period", "transverse_position", "filled_cone_direction"],
-  "policy": "New masses or energies are added as named operating points; official_particle_source.json and official_fixed_25.ion are never overwritten."
+  "policy": "New masses or energies are added as named operating points; N=100 is the functional prefix of the N=1000 statistical source and neither table is overwritten by another operating point."
 }

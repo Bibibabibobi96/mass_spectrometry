@@ -57,6 +57,22 @@ local origin_y_mm
 local origin_z_mm
 local backward_escape_plane_mm
 local rf_scale
+local axial_scale
+local segmented_rod_electrodes
+
+local function set_electrode_voltage(electrode_id, voltage)
+  if electrode_id == 1 then adj_elect01 = voltage
+  elseif electrode_id == 2 then adj_elect02 = voltage
+  elseif electrode_id == 3 then adj_elect03 = voltage
+  elseif electrode_id == 4 then adj_elect04 = voltage
+  elseif electrode_id == 5 then adj_elect05 = voltage
+  elseif electrode_id == 6 then adj_elect06 = voltage
+  elseif electrode_id == 7 then adj_elect07 = voltage
+  elseif electrode_id == 8 then adj_elect08 = voltage
+  elseif electrode_id == 9 then adj_elect09 = voltage
+  elseif electrode_id == 10 then adj_elect10 = voltage
+  else error('unsupported SIMION electrode id ' .. tostring(electrode_id)) end
+end
 
 -- Apply the explicit run configuration while the Program is loaded.  SIMION
 -- has no segment.load lifecycle callback; relying on one would leave the GUI
@@ -92,6 +108,15 @@ origin_z_mm = run_config.origin_z_mm or 0
 backward_escape_plane_mm = run_config.backward_escape_plane_mm or 0
 rf_scale = run_config.rf_scale or 1
 assert(rf_scale == 0 or rf_scale == 1, 'rf_scale must be zero or one')
+axial_scale = run_config.axial_scale or 0
+assert(axial_scale == 0 or axial_scale == 1, 'axial_scale must be zero or one')
+segmented_rod_electrodes = run_config.segmented_rod_electrodes
+if segmented_rod_electrodes then
+  assert(#segmented_rod_electrodes >= 4, 'segmented rod electrode table is incomplete')
+  assert(run_config.ground_electrode_id, 'ground electrode id is missing')
+  assert(run_config.output_electrode_id, 'output electrode id is missing')
+  assert(run_config.output_reference_v, 'output reference voltage is missing')
+end
 local omega = transport_frequency_hz * 1E-6 * 2 * math.pi
 local phase = transport_phase_deg * math.pi / 180
 
@@ -176,6 +201,12 @@ function segment.initialize_run()
 end
 
 function segment.init_p_values()
+  if segmented_rod_electrodes then
+    set_electrode_voltage(run_config.ground_electrode_id, 0)
+    set_electrode_voltage(run_config.output_electrode_id,
+      axial_scale * run_config.output_reference_v)
+    return
+  end
   adj_elect03 = transport_entrance_voltage_v
   if run_config.has_electrode_4 ~= false then adj_elect04 = transport_exit_voltage_v end
   if run_config.has_electrode_5 ~= false then adj_elect05 = transport_detector_voltage_v end
@@ -184,6 +215,17 @@ end
 function segment.fast_adjust()
   local rf = rf_scale * transport_rf_peak_v * math.sin(ion_time_of_flight * omega + phase)
   local differential = transport_dc_amplitude_v + rf
+  if segmented_rod_electrodes then
+    for _, electrode in ipairs(segmented_rod_electrodes) do
+      local polarity = electrode.electrode_group == 1 and 1 or -1
+      set_electrode_voltage(electrode.electrode_id,
+        axial_scale * electrode.common_mode_v + polarity * differential)
+    end
+    set_electrode_voltage(run_config.ground_electrode_id, 0)
+    set_electrode_voltage(run_config.output_electrode_id,
+      axial_scale * run_config.output_reference_v)
+    return
+  end
   adj_elect01 = transport_axis_voltage_v + differential
   adj_elect02 = transport_axis_voltage_v - differential
 end

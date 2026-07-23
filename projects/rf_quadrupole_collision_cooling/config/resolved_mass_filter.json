@@ -5,9 +5,9 @@
     "baseline": "config/baseline.json",
     "baseline_sha256": "4E6B3BD78CEABBB6F9843BB71DB654DC18144F8F1D7C6FE086EF4580FC5E54B4",
     "mode": "config/modes/mass_filter_reference.json",
-    "mode_sha256": "AC4F486C674CE2D13DAFF3D13B9B76A27291A71BE10BAB470D3A54AAA4AA1166",
+    "mode_sha256": "A0329CF7D4A4A1732CC20C5F89133F4CA4D5EE85367C61E217028FAED4F2D6F7",
     "particle_source": "config/official_particle_source.json",
-    "particle_source_sha256": "FFFCF747F710154BEC9F156AD21121EF41D37189865C86F1D8FE98DC649CAE40"
+    "particle_source_sha256": "BAB1FCB5F46CA3EDBF11C37490A6E330C32750B0115890D91E8CFE3D0ACCDA74"
   },
   "coordinate_convention": {
     "units": "mm",
@@ -142,7 +142,7 @@
   "mode": {
     "schema_version": 3,
     "mode": "mass_filter_reference",
-    "status": "dual_solver_functional_scan_pass",
+    "status": "n100_dual_solver_revalidation_pending",
     "source": "SIMION 2020 examples/quad/quad.lua defaults",
     "theory_contract": {
       "model_level": "L0",
@@ -179,7 +179,7 @@
       "model_level": "L1",
       "field_model": "finite_length_ideal_linear_quadrupole_with_hard_r0_aperture",
       "source_contract": "../../official_particle_source.json",
-      "particle_count": 256,
+      "particle_count": 100,
       "random_seed": 20260722,
       "mass_scan_Th": {
         "min": 94.0,
@@ -194,8 +194,8 @@
       }
     },
     "solver_screen": {
-      "status": "pass",
-      "authority_run_id": "20260722_231100__sim__simion__mass-filter__shared-geometry-n175__r01",
+      "status": "pending_n100_revalidation",
+      "authority_run_id": null,
       "paired_source_masses_Th": [
         96.0,
         99.0,
@@ -205,7 +205,7 @@
         103.5,
         106.0
       ],
-      "particles_per_mass": 25,
+      "particles_per_mass": 100,
       "acceptance": {
         "minimum_center_transmission": 0.8,
         "maximum_endpoint_transmission": 0.2,
@@ -214,8 +214,8 @@
       "claim_limit": "SIMION finite-geometry functional response only; no cross-solver or resolving-power qualification."
     },
     "comsol_screen": {
-      "status": "pass",
-      "authority_run_id": "20260723_002556__sim__comsol__mass-filter__rf-dc-n175",
+      "status": "pending_n100_revalidation",
+      "authority_run_id": null,
       "paired_source_masses_Th": [
         96.0,
         99.0,
@@ -225,20 +225,16 @@
         103.5,
         106.0
       ],
-      "particles_per_mass": 25,
+      "particles_per_mass": 100,
       "acceptance_source": "solver_screen.acceptance",
-      "result": {
-        "center_transmission": 1.0,
-        "maximum_endpoint_transmission": 0.08,
-        "center_to_endpoint_contrast": 0.92
-      },
+      "result": null,
       "claim_limit": "COMSOL finite-geometry RF+DC functional response only; no mesh, resolving-power or accuracy qualification."
     },
     "cross_solver_functional_comparison": {
-      "status": "characterized",
-      "authority_run_id": "20260723_002556__sim__comsol__mass-filter__rf-dc-n175",
-      "maximum_absolute_transmission_difference": 0.2,
-      "maximum_difference_mass_Th": 99.0,
+      "status": "pending_n100_revalidation",
+      "authority_run_id": null,
+      "maximum_absolute_transmission_difference": null,
+      "maximum_difference_mass_Th": null,
       "acceptance_tolerance_frozen": false,
       "claim_limit": "Sparse functional comparison only; no numerical agreement or resolving-power qualification."
     },
@@ -260,7 +256,7 @@
       "simion_pa_local_axis": "positive z",
       "project_and_comsol_axis": "positive z"
     },
-    "particles": 25,
+    "particles": 100,
     "mass_amu": 100.0,
     "charge_state": 1,
     "time_of_birth_us": {
@@ -298,6 +294,6 @@
     },
     "cwf": 1,
     "color": 3,
-    "paired_cross_solver_policy": "A versioned fixed 25-particle realization sampled from these distributions is used by both solvers; the distribution contract remains GUI-visible."
+    "paired_cross_solver_policy": "The N=100 functional table is the deterministic prefix of the N=1000 statistical table; both solvers use the same frozen rows and the distribution contract remains GUI-visible."
   }
 }

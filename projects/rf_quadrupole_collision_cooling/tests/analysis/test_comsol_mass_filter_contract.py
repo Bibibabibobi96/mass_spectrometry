@@ -15,14 +15,14 @@ PROJECT_ROOT = Path(__file__).parents[2]
 
 class ComsolMassFilterContractTests(unittest.TestCase):
     def test_paired_case_tables_preserve_source_and_change_only_mass(self) -> None:
-        source = PROJECT_ROOT / "config" / "particles" / "official_fixed_25.ion"
+        source = PROJECT_ROOT / "config" / "particles" / "official_fixed_100.ion"
         source_rows = list(csv.reader(source.read_text(encoding="utf-8").splitlines()))
         with tempfile.TemporaryDirectory() as temporary:
-            cases = generate_paired_case_tables(Path(source), Path(temporary), [96.0, 101.5, 106.0], 25)
+            cases = generate_paired_case_tables(Path(source), Path(temporary), [96.0, 101.5, 106.0], 100)
             self.assertEqual(len(cases), 3)
             for case in cases:
                 rows = list(csv.reader(Path(case["particle_table"]).read_text(encoding="utf-8").splitlines()))
-                self.assertEqual(len(rows), 25)
+                self.assertEqual(len(rows), 100)
                 self.assertTrue(all(float(row[1]) == case["mass_Th"] for row in rows))
                 self.assertEqual([row[:1] + row[2:] for row in rows], [row[:1] + row[2:] for row in source_rows])
 
@@ -37,7 +37,7 @@ class ComsolMassFilterContractTests(unittest.TestCase):
             for mass, transmission in zip(mode["solver_screen"]["paired_source_masses_Th"], transmissions):
                 summary = root / f"mass_{mass:g}.json"
                 summary.write_text(json.dumps({
-                    "mode": "mass_filter_reference", "mass_Th": mass, "particles": 25,
+                    "mode": "mass_filter_reference", "mass_Th": mass, "particles": 100,
                     "hits": round(25 * transmission), "transmission": transmission,
                 }), encoding="utf-8")
                 cases.append({"solver_summary": str(summary)})

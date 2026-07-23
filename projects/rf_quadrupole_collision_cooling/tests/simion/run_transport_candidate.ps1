@@ -4,7 +4,7 @@ param(
     [string]$RunId = '',
     [double]$SourceAxialOffsetMm = 0.0,
     [string]$ParticleTablePath = '',
-    [ValidateSet('transport_no_collision','transport_interface_readiness','mass_filter_reference')][string]$Mode = 'transport_no_collision',
+    [ValidateSet('transport_no_collision','transport_interface_readiness','mass_filter_reference','axial_acceleration_reference','endplate_acceleration_reference')][string]$Mode = 'transport_no_collision',
     [string]$OperatingPoint = 'official_100amu_2eV',
     [double]$RfPeakV = [double]::NaN,
     [double]$FrequencyHz = [double]::NaN
@@ -33,28 +33,38 @@ $simion = 'C:\Program Files\SIMION-2020\simion.exe'
 $officialIob = 'C:\Program Files\SIMION-2020\examples\quad\quad_monolithic.iob'
 
 $isMassFilter = $Mode -eq 'mass_filter_reference'
+$isAxialAcceleration = $Mode -eq 'axial_acceleration_reference'
+$isEndplateAcceleration = $Mode -eq 'endplate_acceleration_reference'
+$isAcceleration = $isAxialAcceleration -or $isEndplateAcceleration
 if ($isMassFilter -and -not [string]::IsNullOrWhiteSpace($ParticleTablePath)) {
     throw 'Mass-filter mode generates its paired multi-mass particle table; ParticleTablePath must be omitted.'
 }
 $sourceIonPath = if ([string]::IsNullOrWhiteSpace($ParticleTablePath)) {
-    Join-Path $projectRoot 'config\particles\official_fixed_25.ion'
+    Join-Path $projectRoot 'config\particles\official_fixed_100.ion'
 } else { [IO.Path]::GetFullPath($ParticleTablePath) }
 $ionPath = Join-Path $inputDir $(if ($isMassFilter) { 'mass_scan_particles.ion' } else { 'particles.ion' })
 $resolvedContractInput = switch ($Mode) {
     'transport_no_collision' { 'config/resolved_geometry.json' }
     'transport_interface_readiness' { 'config/resolved_interface_readiness.json' }
     'mass_filter_reference' { 'config/resolved_mass_filter.json' }
+    'axial_acceleration_reference' { 'config/resolved_geometry.json' }
+    'endplate_acceleration_reference' { 'config/resolved_geometry.json' }
 }
 $modeInput = switch ($Mode) {
     'transport_no_collision' { 'config/modes/transport_no_collision.json' }
     'transport_interface_readiness' { 'config/modes/transport_interface_readiness.json' }
     'mass_filter_reference' { 'config/modes/mass_filter_reference.json' }
+    'axial_acceleration_reference' { 'config/modes/axial_acceleration_reference.json' }
+    'endplate_acceleration_reference' { 'config/modes/endplate_acceleration_reference.json' }
 }
 $expectedParticles = if ($isMassFilter) {
     0
 } else {
     @(Get-Content -LiteralPath $sourceIonPath -Encoding UTF8 | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count
 }
+$sourceParticleCount = @(Get-Content -LiteralPath $sourceIonPath -Encoding UTF8 | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count
+& $python -m common.contracts.particle_count_policy --count $sourceParticleCount
+if ($LASTEXITCODE -ne 0) { throw 'Particle table violates the repository N=100/N=1000 policy.' }
 if ($Mode -eq 'transport_interface_readiness') {
     $minimumParticles = (Get-Content -LiteralPath (Join-Path $projectRoot 'config\modes\transport_interface_readiness.json') -Raw -Encoding UTF8 | ConvertFrom-Json).numerics.minimum_diagnostic_particles
     if ([string]::IsNullOrWhiteSpace($ParticleTablePath) -or $expectedParticles -lt $minimumParticles) {
@@ -85,10 +95,11 @@ if ($isMassFilter) {
     Copy-Item -LiteralPath $sourceIonPath -Destination $ionPath
 }
 $familyOperatingContract = Join-Path $inputDir 'family_operating_contract.json'
+$operatingModePath=if($isAcceleration){$frozenBaseTransportMode}else{$frozenMode}
 $familyResolverArguments = @(
     '-m','common.multipole.resolve_family_operating_contract',
     '--adapter','quadrupole','--baseline',$frozenBaseline,
-    '--mode',$frozenMode,'--output',$familyOperatingContract
+    '--mode',$operatingModePath,'--output',$familyOperatingContract
 )
 if (-not [double]::IsNaN($RfPeakV) -and -not [double]::IsInfinity($RfPeakV)) {
     $familyResolverArguments += @('--rf-amplitude-v-per-group', [string]$RfPeakV)
@@ -103,8 +114,26 @@ if (-not (Test-Path -LiteralPath $ionPath -PathType Leaf)) { throw "Particle tab
 if ($isMassFilter) {
     $expectedParticles = @(Get-Content -LiteralPath $ionPath -Encoding UTF8 | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count
 }
-Copy-Item -LiteralPath (Join-Path $projectRoot 'simion\geometry\quad_include.gem') -Destination $candidateDir -Force
-Copy-Item -LiteralPath (Join-Path $projectRoot 'simion\geometry\quad_monolithic.gem') -Destination $candidateDir -Force
+$axialResolved=Join-Path $inputDir 'axial_acceleration_resolved.json'
+$segmentedRods=Join-Path $inputDir 'segmented_round_rods.json'
+$endplateResolved=Join-Path $inputDir 'endplate_acceleration_resolved.json'
+if($isAxialAcceleration){
+    $baselineDoc=Get-Content -LiteralPath $frozenBaseline -Raw -Encoding UTF8|ConvertFrom-Json
+    & $python -m common.multipole.axial_acceleration --contract $frozenMode --rod-geometry $frozenResolved `
+        --source-energy-ev 2.0 --charge-state 1 --output $axialResolved --segmented-rods-output $segmentedRods
+    if($LASTEXITCODE-ne 0){throw 'Axial-acceleration contract resolution failed.'}
+    & $python -m projects.rf_quadrupole_collision_cooling.analysis.sync_simion_geometry --axial-candidate `
+        --contract $frozenResolved --segmented-rods $segmentedRods --output-directory $candidateDir
+    if($LASTEXITCODE-ne 0){throw 'Segmented quadrupole SIMION geometry generation failed.'}
+}else{
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'simion\geometry\quad_include.gem') -Destination $candidateDir -Force
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'simion\geometry\quad_monolithic.gem') -Destination $candidateDir -Force
+}
+if($isEndplateAcceleration){
+    & $python -m common.multipole.endplate_acceleration --contract $frozenMode --source-energy-ev 2.0 `
+        --charge-state 1 --output $endplateResolved
+    if($LASTEXITCODE-ne 0){throw 'Endplate-acceleration contract resolution failed.'}
+}
 Copy-Item -LiteralPath (Join-Path $repoRoot 'common\multipole\simion_transport.lua') -Destination (Join-Path $candidateDir 'quad_monolithic.lua') -Force
 Copy-Item -LiteralPath $officialIob -Destination (Join-Path $candidateDir 'quad_monolithic.iob') -Force
 $flyPath = Join-Path $candidateDir 'quad_monolithic.fly2'
@@ -135,6 +164,17 @@ if ([double]::IsNaN($FrequencyHz) -or [double]::IsInfinity($FrequencyHz)) { $Fre
 $particleStateCsv = Join-Path $resultDir 'particle_state.csv'
 $trajectoryCsv = Join-Path $resultDir 'trajectory_samples.csv'
 $summaryJson = Join-Path $resultDir 'solver_summary.json'
+$primaryCaseName=$OperatingPoint;$controlCaseName='unused_control'
+if($isAcceleration){
+    $primaryCaseName=if($isAxialAcceleration){'axial_acceleration_rf_on'}else{'endplate_acceleration_rf_on'}
+    $controlCaseName=if($isAxialAcceleration){'zero_axial_drop_rf_on'}else{'zero_endplate_drop_rf_on'}
+    $particleStateCsv=Join-Path $resultDir "particle_states__$primaryCaseName.csv"
+    $trajectoryCsv=Join-Path $resultDir "trajectory_samples__$primaryCaseName.csv"
+    $summaryJson=Join-Path $resultDir "simion_summary__$primaryCaseName.json"
+}
+$controlParticleStateCsv=Join-Path $resultDir "particle_states__$controlCaseName.csv"
+$controlTrajectoryCsv=Join-Path $resultDir "trajectory_samples__$controlCaseName.csv"
+$controlSummaryJson=Join-Path $resultDir "simion_summary__$controlCaseName.json"
 $runConfigPath = Join-Path $runDir 'run_config.json'
 $runConfigLua = Join-Path $runDir 'run_config.lua'
 $iobReport = Join-Path $logDir 'simion_iob_contract.txt'
@@ -148,7 +188,7 @@ $staticElectrodes = if ($physicalMode.PSObject.Properties.Name -contains 'static
 $runConfig = [ordered]@{
     schema_version=1; role='rf_quadrupole_simion_run_config'; run_id=$RunId
     project='rf_quadrupole_collision_cooling'; mode=$Mode; project_root=$projectRoot
-    inputs=[ordered]@{baseline=$frozenBaseline; base_transport_mode=$frozenBaseTransportMode; family_operating_contract=$familyOperatingContract; resolved_contract=$frozenResolved; interface_contract=$frozenInterface; mode=$frozenMode; particle_table=$ionPath; source_states=$sourceStatesLua}
+    inputs=[ordered]@{baseline=$frozenBaseline; base_transport_mode=$frozenBaseTransportMode; family_operating_contract=$familyOperatingContract; resolved_contract=$frozenResolved; interface_contract=$frozenInterface; mode=$frozenMode; particle_table=$ionPath; source_states=$sourceStatesLua;axial_acceleration_resolved=$(if($isAxialAcceleration){$axialResolved}else{$null});segmented_round_rods=$(if($isAxialAcceleration){$segmentedRods}else{$null});endplate_acceleration_resolved=$(if($isEndplateAcceleration){$endplateResolved}else{$null})}
     output_dir=$resultDir; candidate_dir=$candidateDir; run_dir=$runDir
     rf_steps_per_period=$RfStepsPerPeriod; trajectory_quality=$TrajectoryQuality
     source_axial_offset_mm=$SourceAxialOffsetMm; operating_point=$OperatingPoint
@@ -156,16 +196,28 @@ $runConfig = [ordered]@{
 }
 if ($isMassFilter) { $runConfig.inputs.mass_scan_metadata = $massScanMetadata }
 $runConfig | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $runConfigPath -Encoding UTF8
-$luaConfig = @"
+$segmentedLua='';$groundElectrodeId=0;$outputElectrodeId=0;$outputReferenceV=0
+if($isAxialAcceleration){
+    $segmentedDoc=Get-Content -LiteralPath $segmentedRods -Raw -Encoding UTF8|ConvertFrom-Json
+    $axialDoc=Get-Content -LiteralPath $axialResolved -Raw -Encoding UTF8|ConvertFrom-Json
+    $entries=@($segmentedDoc.electrodes|ForEach-Object{"{electrode_id=$([int]$_.electrode_id),electrode_group=$([int]$_.electrode_group),common_mode_v=$([double]$_.common_mode_V)}"})
+    $segmentedLua="segmented_rod_electrodes={$($entries -join ',')},"
+    $groundElectrodeId=2*[int]$segmentedDoc.segment_count+1
+    $outputElectrodeId=$groundElectrodeId+1
+    $outputReferenceV=[double]$axialDoc.output_reference_V
+}
+function New-LuaConfig([string]$caseName,[string]$caseState,[string]$caseTrajectory,[string]$caseSummary,[int]$caseAxialScale,[double]$caseOutputVoltage,[double]$caseDetectorVoltage){
+@"
 return {
-  mode=[[$Mode]], operating_point=[[$OperatingPoint]],
+  mode=[[$Mode]], operating_point=[[$caseName]],
   iob=[[$(Join-Path $candidateDir 'quad_monolithic.iob')]], fly2=[[$flyPath]],
   source_states=dofile([[$sourceStatesLua]]),
-  particle_state_csv=[[$particleStateCsv]], trajectory_csv=[[$trajectoryCsv]], summary_json=[[$summaryJson]],
+  particle_state_csv=[[$caseState]], trajectory_csv=[[$caseTrajectory]], summary_json=[[$caseSummary]],
   trajectory_quality=$TrajectoryQuality, rf_steps_per_period=$RfStepsPerPeriod,
-  rf_peak_v=$RfPeakV, dc_amplitude_v=$dcAmplitudeV, frequency_hz=$FrequencyHz, phase_deg=$phaseDeg,
+  rf_peak_v=$RfPeakV, rf_scale=1, axial_scale=$caseAxialScale, dc_amplitude_v=$dcAmplitudeV, frequency_hz=$FrequencyHz, phase_deg=$phaseDeg,
   axis_voltage_v=$axisVoltageV, entrance_voltage_v=$($staticElectrodes.entrance_plate),
-  exit_voltage_v=$($staticElectrodes.exit_enclosure), detector_voltage_v=$($staticElectrodes.detector),
+  exit_voltage_v=$caseOutputVoltage, detector_voltage_v=$caseDetectorVoltage,
+  $segmentedLua ground_electrode_id=$groundElectrodeId, output_electrode_id=$outputElectrodeId, output_reference_v=$outputReferenceV,
   maximum_time_us=$($physicalMode.numerics.maximum_time_us),
   trajectory_plane_step_mm=$($geometry.simion_cell_mm), rod_z_min_mm=$($geometry.rod_z_min), rod_z_max_mm=$($geometry.rod_z_max),
   rod_exit_plane_mm=$($interface.planes.rod_exit.z_mm), handoff_plane_mm=$($interface.planes.handoff.z_mm),
@@ -176,6 +228,10 @@ return {
   expected_pa_nz=$([int][Math]::Round($geometry.model_z_span/$geometry.simion_cell_mm)+1), expected_pa_cell_mm=$($geometry.simion_cell_mm)
 }
 "@
+}
+$primaryOutputVoltage=if($isEndplateAcceleration){[double](Get-Content -LiteralPath $endplateResolved -Raw -Encoding UTF8|ConvertFrom-Json).exit_plate_V}else{[double]$staticElectrodes.exit_enclosure}
+$primaryDetectorVoltage=if($isEndplateAcceleration){$primaryOutputVoltage}else{[double]$staticElectrodes.detector}
+$luaConfig=New-LuaConfig $(if($isAcceleration){$primaryCaseName}else{$OperatingPoint}) $particleStateCsv $trajectoryCsv $summaryJson $(if($isAxialAcceleration){1}else{0}) $primaryOutputVoltage $primaryDetectorVoltage
 # Windows PowerShell 5.1 writes a BOM for -Encoding UTF8; SIMION's Lua 5.1
 # parser treats that BOM as source text.  This generated table is ASCII-only.
 $luaConfig | Set-Content -LiteralPath $runConfigLua -Encoding ASCII
@@ -186,6 +242,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'SIMION gem2pa failed.' }
     & $simion --nogui --noprompt refine quad_monolithic.pa#
     if ($LASTEXITCODE -ne 0) { throw 'SIMION refine failed.' }
+    Start-Sleep -Milliseconds 500
 
     # Loading the IOB immediately loads its same-basename Program, which
     # validates this run configuration before the structural report runs.
@@ -194,15 +251,29 @@ try {
     $env:RFQUAD_SIMION_REFERENCE_IOB = Join-Path $candidateDir 'quad_monolithic.iob'
     & $simion --nogui --noprompt lua (Join-Path $PSScriptRoot 'inspect_builtin_quad_reference.lua')
     if ($LASTEXITCODE -ne 0) { throw 'SIMION IOB runtime contract failed.' }
+    Start-Sleep -Milliseconds 500
 
     $stdoutPath = Join-Path $logDir 'simion_stdout.txt'
     $stderrPath = Join-Path $logDir 'simion_stderr.txt'
-    $flyProcess = Start-Process -FilePath $simion -ArgumentList @(
-        '--nogui','--noprompt','lua',(Join-Path $repoRoot 'common\multipole\simion_run_fly.lua')
-    ) -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
+    $flyArguments=@('--nogui','--noprompt','fly','--trajectory-quality',[string]$TrajectoryQuality,
+        '--particles',$flyPath,'--programs','1','--retain-trajectories','0',
+        '--adjustable',"transport_rf_steps_per_period=$RfStepsPerPeriod",(Join-Path $candidateDir 'quad_monolithic.iob'))
+    $flyProcess = Start-Process -FilePath $simion -ArgumentList $flyArguments `
+        -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
     Get-Content -LiteralPath $stdoutPath -Encoding UTF8
     if ((Get-Item -LiteralPath $stderrPath).Length -gt 0) { Get-Content -LiteralPath $stderrPath -Encoding UTF8 }
     if ($flyProcess.ExitCode -ne 0) { throw "SIMION fly failed with exit code $($flyProcess.ExitCode)." }
+    if($isAcceleration){
+        New-LuaConfig $controlCaseName $controlParticleStateCsv $controlTrajectoryCsv $controlSummaryJson 0 0 0 |
+            Set-Content -LiteralPath $runConfigLua -Encoding ASCII
+        $controlStdoutPath=Join-Path $logDir "simion_stdout__$controlCaseName.txt"
+        $controlStderrPath=Join-Path $logDir "simion_stderr__$controlCaseName.txt"
+        $controlProcess=Start-Process -FilePath $simion -ArgumentList $flyArguments `
+            -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput $controlStdoutPath -RedirectStandardError $controlStderrPath
+        Get-Content -LiteralPath $controlStdoutPath -Encoding UTF8
+        if((Get-Item -LiteralPath $controlStderrPath).Length-gt 0){Get-Content -LiteralPath $controlStderrPath -Encoding UTF8}
+        if($controlProcess.ExitCode-ne 0){throw "SIMION zero-axial-drop fly failed with exit code $($controlProcess.ExitCode)."}
+    }
 }
 finally {
     Remove-Item Env:MULTIPOLE_SIMION_RUN_CONFIG_LUA -ErrorAction SilentlyContinue
@@ -222,6 +293,22 @@ try { & $python -m common.contracts.particle_state `
     --axial-offset-mm $SourceAxialOffsetMm --frequency-hz $FrequencyHz --phase-rad ($phaseDeg*[Math]::PI/180) `
     --solver SIMION --output $stateContractReport } finally { Pop-Location }
 if ($LASTEXITCODE -ne 0) { throw 'Particle-state contract gate failed.' }
+$controlStateContractReport=Join-Path $resultDir "particle_state_contract__$controlCaseName.json"
+$accelerationMetricsJson=Join-Path $resultDir $(if($isAxialAcceleration){'axial_acceleration_metrics.json'}else{'endplate_acceleration_metrics.json'})
+$accelerationMetrics=$null
+if($isAcceleration){
+    Push-Location $repoRoot
+    try{& $python -m common.contracts.particle_state `
+        --state $controlParticleStateCsv --particles $ionPath --source-format ion11 --contract $frozenInterface `
+        --axial-offset-mm $SourceAxialOffsetMm --frequency-hz $FrequencyHz --phase-rad ($phaseDeg*[Math]::PI/180) `
+        --solver SIMION --output $controlStateContractReport}finally{Pop-Location}
+    if($LASTEXITCODE-ne 0){throw 'Zero-axial-drop particle-state contract gate failed.'}
+    $accelerationResolved=if($isAxialAcceleration){$axialResolved}else{$endplateResolved}
+    & $python -m common.multipole.analyze_simion_axial_acceleration --accelerated-state $particleStateCsv `
+        --control-state $controlParticleStateCsv --resolved-contract $accelerationResolved --output $accelerationMetricsJson
+    if($LASTEXITCODE-ne 0){throw 'SIMION quadrupole axial-acceleration functional gate failed.'}
+    $accelerationMetrics=Get-Content -LiteralPath $accelerationMetricsJson -Raw -Encoding UTF8|ConvertFrom-Json
+}
 $massResponseCsv = Join-Path $resultDir 'mass-response__simion.csv'
 $massMetricsJson = Join-Path $resultDir 'mass-filter__simion-functional-metrics.json'
 $massResponseFigure = Join-Path $resultDir 'mass-response__simion-passband.png'
@@ -242,13 +329,18 @@ $hashes = Get-ChildItem -LiteralPath $candidateDir -File | Where-Object {
 }
 $hashes | Export-Csv -LiteralPath $shaPath -NoTypeInformation -Encoding UTF8
 $runSummary = Join-Path $runDir 'summary.json'
-$summaryRole = if ($isMassFilter) { 'rf_quadrupole_mass_filter_summary' } else { 'rf_quadrupole_transport_summary' }
+$summaryRole = if ($isMassFilter) { 'rf_quadrupole_mass_filter_summary' } elseif($isAxialAcceleration){'rf_quadrupole_axial_acceleration_summary'}elseif($isEndplateAcceleration){'rf_quadrupole_endplate_acceleration_summary'} else { 'rf_quadrupole_transport_summary' }
 $rootSummary = [ordered]@{schema_version=1;role=$summaryRole;status='success';mode=$Mode;particles=$expectedParticles;hits=$summary.hits;transmission=$summary.transmission}
 if ($isMassFilter) {
     $rootSummary.functional_gate = $massMetrics.status
     $rootSummary.mass_response = 'results/mass-response__simion.csv'
     $rootSummary.metrics = 'results/mass-filter__simion-functional-metrics.json'
     $rootSummary.figure = 'results/mass-response__simion-passband.png'
+}
+if($isAcceleration){
+    $rootSummary.mean_output_energy_eV=$accelerationMetrics.mean_accelerated_output_energy_eV
+    $rootSummary.mean_energy_gain_eV=$accelerationMetrics.mean_energy_gain_eV
+    $rootSummary.predicted_output_energy_eV=$accelerationMetrics.predicted_output_energy_eV
 }
 $rootSummary | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $runSummary -Encoding UTF8
 $manifestOutputs = @(
@@ -260,6 +352,14 @@ $manifestOutputs = @(
 if ($isMassFilter) {
     $manifestOutputs += @($massResponseCsv,$massMetricsJson,$massResponseFigure)
 }
+if($isAcceleration){
+    $manifestOutputs+=@($controlParticleStateCsv,$controlTrajectoryCsv,$controlSummaryJson,$controlStateContractReport,$accelerationMetricsJson,
+        (Join-Path $logDir "simion_stdout__$controlCaseName.txt"),(Join-Path $logDir "simion_stderr__$controlCaseName.txt"))
+}
 Write-RunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfigPath -Status success `
     -Software @('SIMION 2020','Python 3.11') -Outputs $manifestOutputs
-"STATUS=PASS RUN_ID=$RunId HITS=$($summary.hits) TRANSMISSION=$($summary.transmission)"
+if($isAcceleration){
+    "STATUS=PASS RUN_ID=$RunId HITS=$($summary.hits) TRANSMISSION=$($summary.transmission) MEAN_ENERGY_EV=$($accelerationMetrics.mean_accelerated_output_energy_eV)"
+}else{
+    "STATUS=PASS RUN_ID=$RunId HITS=$($summary.hits) TRANSMISSION=$($summary.transmission)"
+}

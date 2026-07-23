@@ -54,7 +54,7 @@ def build_axial_interface_layout(
     entrance_plate_min = entrance_plate_max - in_thickness
     exit_plate_min = rod_z_max + out_clearance
     exit_plate_max = exit_plate_min + out_thickness
-    return {
+    layout = {
         "entrance": {
             "aperture_radius_mm": in_aperture,
             "plate_z_min_mm": entrance_plate_min,
@@ -74,3 +74,8 @@ def build_axial_interface_layout(
             "particle_plane_z_mm": exit_plate_max + out_connector + out_distance,
         },
     }
+    if "connector_shape" in entrance:
+        layout["entrance"]["connector_shape"] = entrance["connector_shape"]
+    if "connector_shape" in exit_interface:
+        layout["exit"]["connector_shape"] = exit_interface["connector_shape"]
+    return layout

@@ -1,10 +1,16 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "role": "rf_multipole_family_contract",
   "family_id": "rf_multipole_ion_optics",
   "coordinate_convention_id": "multipole.cartesian.z_axis.v1",
   "voltage_convention_id": "multipole.pair_about_common_mode.zero_to_peak.v1",
   "r0_convention_id": "nearest_ideal_electrode_surface.v1",
+  "connector_contract": {
+    "shape_field": "connector_shape",
+    "supported_shapes": ["rectangular_bore", "cylindrical_bore"],
+    "zero_length_behavior": "do_not_create_geometry_feature",
+    "electrical_role": "grounded_passive_section"
+  },
   "voltage_semantics": {
     "rf_amplitude": "zero_to_peak amplitude of one polarity group about the common-mode voltage",
     "dc_amplitude": "static differential amplitude of one polarity group about the common-mode voltage",
@@ -20,7 +26,7 @@
     "mass_to_charge": "Th"
   },
   "foundation": {
-    "status": "frozen_functional_baseline",
+    "api_status": "frozen",
     "consumers": [
       "rf_quadrupole_collision_cooling",
       "rf_hexapole_ion_guide",
@@ -30,11 +36,50 @@
       "solver_neutral_round_rod_array",
       "alternating_two_group_rf_dc_drive",
       "finite_3d_axial_interfaces",
-      "zero_or_positive_grounded_connectors",
+      "zero_or_positive_grounded_connectors_with_explicit_shape",
       "canonical_particle_state",
       "comsol_and_simion_functional_transport_adapters",
-      "segmented_rod_axial_acceleration_comsol_adapter"
+      "segmented_rod_axial_acceleration_comsol_and_simion_adapters",
+      "endplate_acceleration_comsol_and_simion_adapters"
     ],
+    "functional_validation": {
+      "status": "n100_dual_solver_pass",
+      "particle_count": 100,
+      "modes": ["segmented_rod_axial_acceleration", "endplate_acceleration"],
+      "evidence": {
+        "rf_quadrupole_collision_cooling": {
+          "comsol": {
+            "segmented_rod_axial_acceleration": "20260723_151500__sim__comsol__rf-quadrupole-axial-acceleration__n100__r03",
+            "endplate_acceleration": "20260723_155500__sim__comsol__rf-quadrupole-endplate-acceleration__n100__r02"
+          },
+          "simion": {
+            "segmented_rod_axial_acceleration": "20260723_163000__sim__simion__rf-quadrupole-axial-acceleration__n100",
+            "endplate_acceleration": "20260723_163500__sim__simion__rf-quadrupole-endplate-acceleration__n100"
+          }
+        },
+        "rf_hexapole_ion_guide": {
+          "comsol": {
+            "segmented_rod_axial_acceleration": "20260723_161000__sim__comsol__rf-hexapole-axial-acceleration__n100__r03",
+            "endplate_acceleration": "20260723_161500__sim__comsol__rf-hexapole-endplate-acceleration__n100__r02"
+          },
+          "simion": {
+            "segmented_rod_axial_acceleration": "20260723_164000__sim__simion__rf-hexapole-axial-acceleration__n100",
+            "endplate_acceleration": "20260723_164500__sim__simion__rf-hexapole-endplate-acceleration__n100"
+          }
+        },
+        "rf_octupole_ion_guide": {
+          "comsol": {
+            "segmented_rod_axial_acceleration": "20260723_162000__sim__comsol__rf-octupole-axial-acceleration__n100__r02",
+            "endplate_acceleration": "20260723_162500__sim__comsol__rf-octupole-endplate-acceleration__n100__r02"
+          },
+          "simion": {
+            "segmented_rod_axial_acceleration": "20260723_165000__sim__simion__rf-octupole-axial-acceleration__n100",
+            "endplate_acceleration": "20260723_165500__sim__simion__rf-octupole-endplate-acceleration__n100"
+          }
+        }
+      },
+      "claim_limit": "Functional N=100 transport and energy-gain evidence only; no mesh convergence, cross-solver numerical-equivalence, mechanical, Candidate or Formal qualification."
+    },
     "change_control": "Changes require the repository multipole-family gate and real-solver regression for every affected adapter; project-specific theory and acceptance thresholds remain outside this contract."
   }
 }

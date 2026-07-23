@@ -149,7 +149,7 @@ def main() -> None:
     )
     result = {
         "status": "PASS" if accepted else "FAIL",
-        "scope": "interface_readiness" if interface_evaluated else "official_n25_phase_space_regression",
+        "scope": "interface_readiness" if interface_evaluated else "official_n100_phase_space_regression",
         "particles": particles,
         "interface_acceptance_formally_evaluated": interface_evaluated,
         "minimum_interface_diagnostic_particles": minimum,

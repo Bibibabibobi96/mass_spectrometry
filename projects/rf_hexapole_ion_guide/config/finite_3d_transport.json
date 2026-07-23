@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "role": "multipole_finite_3d_interface_transport_contract",
   "project_id": "rf_hexapole_ion_guide",
   "model_level": "L3",
@@ -16,7 +16,8 @@
       "rod_clearance_mm": 0.5,
       "particle_plane_distance_mm": 0.5,
       "outer_ground_clearance_mm": 0.5,
-      "connector_length_mm": 0.0
+      "connector_length_mm": 0.0,
+      "connector_shape": "cylindrical_bore"
     },
     "exit_interface": {
       "aperture_radius_mm": 3.6,
@@ -24,7 +25,8 @@
       "rod_clearance_mm": 0.5,
       "particle_plane_distance_mm": 0.5,
       "outer_ground_clearance_mm": 0.5,
-      "connector_length_mm": 0.0
+      "connector_length_mm": 0.0,
+      "connector_shape": "cylindrical_bore"
     }
   },
   "mesh": {"global_auto_level": 6, "working_region_maximum_element_size_mm": 0.5},

@@ -13,5 +13,5 @@
     "minimum_mean_energy_gain_eV": 2.5,
     "maximum_mean_output_energy_error_eV": 0.5
   },
-  "claim_limit": "N=25 functional axial-acceleration reference only; no segmentation optimization, mesh convergence, cross-solver equivalence, Candidate, mechanical or Formal claim."
+  "claim_limit": "N=100 functional axial-acceleration reference only; no segmentation optimization, mesh convergence, cross-solver equivalence, Candidate, mechanical or Formal claim."
 }

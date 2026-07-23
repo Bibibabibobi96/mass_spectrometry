@@ -138,7 +138,7 @@ def main() -> None:
     args = parser.parse_args()
     project_root = args.project_root.resolve()
     project_label = project_root.name.replace("_", "-")
-    run_id = args.run_id or datetime.now().strftime("%Y%m%d_%H%M%S") + f"__sim__python__{project_label}-round-rod__l2-n25"
+    run_id = args.run_id or datetime.now().strftime("%Y%m%d_%H%M%S") + f"__sim__python__{project_label}-round-rod__l2-n100"
     execute(project_root, args.field_screen_run_id, run_id)
 
 
