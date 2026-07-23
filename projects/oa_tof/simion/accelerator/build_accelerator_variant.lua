@@ -103,6 +103,13 @@ print(string.format('BUILD: interface_port_enable=%d width_y_mm=%.12g height_z_m
   interface_port_enable,interface_port_width_y,interface_port_height_z,interface_port_center_z))
 assert(estimated_gib <= max_gib, string.format('estimated PA set %.3f GiB exceeds limit %.3f GiB',estimated_gib,max_gib))
 
+local staged_source=output:gsub('%.pa#$','.source.gem')
+local input=assert(io.open(source,'rb'))
+local content=input:read('*a')
+input:close()
+local staged=assert(io.open(staged_source,'wb'))
+staged:write(content)
+staged:close()
 _G.var={mmgu_xy=mmgu_xy,mmgu_z=mmgu_z,xy_span=xy_span,z_min=z_min,z_span=z_span,
   bore_half=bore_half,ring_width=ring_width,insulation_gap=insulation_gap,
   rear_gap=rear_gap,shield_wall=shield_wall,grid_phase_z=grid_phase_z,
@@ -113,8 +120,10 @@ _G.var={mmgu_xy=mmgu_xy,mmgu_z=mmgu_z,xy_span=xy_span,z_min=z_min,z_span=z_span,
   stage1_length=stage1_length,stage2_length=stage2_length,
   ring_count=ring_count,repeller_thickness=repeller_thickness,
   ring_thickness=ring_thickness,front_vacuum_margin=front_vacuum_margin}
-simion.command(string.format('gem2pa %q %q',source,output))
+simion.command(string.format('gem2pa %q %q',staged_source,output))
 _G.var=nil
+os.remove(staged_source)
+os.remove(staged_source:gsub('%.gem$','.processed.gem'))
 simion.command(string.format('refine --resume=0 --convergence=5e-7 %q',output))
 local voltage_assignments={string.format('1=%.12g',repeller_voltage),
   string.format('2=%.12g',grid1_voltage)}

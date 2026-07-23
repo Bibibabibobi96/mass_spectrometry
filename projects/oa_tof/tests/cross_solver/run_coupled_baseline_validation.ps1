@@ -26,6 +26,18 @@ if (Test-Path -LiteralPath $runDir) { throw "Validation run already exists: $Run
 & $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
 if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
 New-Item -ItemType Directory -Path $runDir,$resultDir,$logDir | Out-Null
+. (Join-Path $projectRoot 'tests\run_record_helpers.ps1')
+Initialize-OaTofRunRecord -RunDir $runDir -RunId $RunId `
+  -Mode 'coupled_baseline_validation' -ProjectRoot $projectRoot `
+  -RepoRoot $repoRoot -Python $python
+$runRecordComplete = $false
+trap {
+  if (-not $runRecordComplete) {
+    Write-OaTofTerminalRunRecord -RunDir $runDir -Status failed `
+      -Reason $_.Exception.Message -RepoRoot $repoRoot -Python $python
+  }
+  exit 1
+}
 
 $candidateBaseline = Join-Path $candidateRoot 'inputs\candidate_baseline.json'
 $candidateMph = Join-Path $candidateRoot 'comsol\oa_tof__candidate.mph'
@@ -145,4 +157,8 @@ $manifestArgs = @(
 )
 & $python @manifestArgs
 if ($LASTEXITCODE -ne 0) { throw 'Candidate validation manifest creation failed.' }
+& $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') `
+  (Join-Path $runDir 'run_manifest.json') --require-status success
+if ($LASTEXITCODE -ne 0) { throw 'Candidate validation manifest verification failed.' }
+$runRecordComplete = $true
 Write-Output "COUPLED_BASELINE_VALIDATION=PASS RUN_ID=$RunId"

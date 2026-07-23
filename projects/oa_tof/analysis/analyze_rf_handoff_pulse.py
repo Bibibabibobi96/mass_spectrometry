@@ -17,6 +17,8 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 
+from rf_handoff_adapter import ordered_solver_identity_map
+
 
 NUMBER = r"[-+0-9.eE]+"
 PULSE_CONTRACT_RE = re.compile(
@@ -95,13 +97,39 @@ def parse_log(path: Path) -> tuple[float, float, dict[int, dict[str, float]], di
 
 
 def build_events(
-    canonical_rows: list[dict[str, str]], timed_rows: list[dict[str, str]],
+    canonical_rows: list[dict[str, str]], row_map_rows: list[dict[str, str]],
+    timed_rows: list[dict[str, str]],
     pulse_states: dict[int, dict[str, float]], terminal_states: dict[int, dict[str, float]],
 ) -> tuple[list[dict[str, object]], dict[int, str]]:
-    outcomes = {
-        int(row["Ion"]): "detector_hit" if row["Hit"].lower() == "true" else "lost"
-        for row in timed_rows
+    solver_to_particle = ordered_solver_identity_map(canonical_rows, row_map_rows)
+    outcomes: dict[int, str] = {}
+    for row in timed_rows:
+        solver_row = int(row["Ion"])
+        if solver_row not in solver_to_particle:
+            raise ValueError("timed result contains a solver row absent from row_map")
+        particle_id = solver_to_particle[solver_row]
+        if particle_id in outcomes:
+            raise ValueError("timed result contains a duplicate solver particle")
+        outcomes[particle_id] = (
+            "detector_hit" if row["Hit"].lower() == "true" else "lost"
+        )
+    if len(outcomes) != len(canonical_rows):
+        raise ValueError("timed result does not contain a complete particle census")
+    pulse_by_particle = {
+        solver_to_particle[solver_row]: state
+        for solver_row, state in pulse_states.items()
+        if solver_row in solver_to_particle
     }
+    terminal_by_particle = {
+        solver_to_particle[solver_row]: state
+        for solver_row, state in terminal_states.items()
+        if solver_row in solver_to_particle
+    }
+    unknown_log_rows = (
+        set(pulse_states) | set(terminal_states)
+    ).difference(solver_to_particle)
+    if unknown_log_rows:
+        raise ValueError("pulse log contains a solver row absent from row_map")
     events: list[dict[str, object]] = []
     for row in canonical_rows:
         particle_id = int(row["particle_id"])
@@ -113,7 +141,7 @@ def build_events(
             "vy_m_s": float(row["velocity_y_m_s"]), "vz_m_s": float(row["velocity_z_m_s"]),
             "status": "entered",
         })
-        pulse = pulse_states.get(particle_id)
+        pulse = pulse_by_particle.get(particle_id)
         if pulse:
             events.append({
                 "particle_id": particle_id, "event": "pulse_on",
@@ -122,7 +150,7 @@ def build_events(
                 "vx_m_s": pulse["vx"] * 1000.0, "vy_m_s": pulse["vy"] * 1000.0,
                 "vz_m_s": pulse["vz"] * 1000.0, "status": "exposed_to_pulse",
             })
-        terminal = terminal_states.get(particle_id)
+        terminal = terminal_by_particle.get(particle_id)
         if terminal:
             events.append({
                 "particle_id": particle_id, "event": "terminal",
@@ -198,14 +226,18 @@ def plot_snapshot(
 
 
 def analyze(
-    timed_path: Path, control_path: Path, canonical_path: Path, mode_path: Path,
+    timed_path: Path, control_path: Path, canonical_path: Path, row_map_path: Path,
+    mode_path: Path,
     pulse_log: Path, events_output: Path, timeline_output: Path, snapshot_output: Path,
 ) -> dict:
     mode = json.loads(mode_path.read_text(encoding="utf-8"))
     timed_rows, control_rows = read_csv(timed_path), read_csv(control_path)
     timed, control = summarize(timed_rows), summarize(control_rows)
     pulse_time, pulse_width, pulse_states, terminal_states = parse_log(pulse_log)
-    events, outcomes = build_events(read_csv(canonical_path), timed_rows, pulse_states, terminal_states)
+    events, outcomes = build_events(
+        read_csv(canonical_path), read_csv(row_map_path), timed_rows,
+        pulse_states, terminal_states,
+    )
     write_csv(events_output, events)
     plot_timeline(events, outcomes, pulse_time, pulse_width, timeline_output)
     plot_snapshot(events, outcomes, pulse_time, snapshot_output)
@@ -250,6 +282,7 @@ def main() -> None:
     parser.add_argument("--timed", type=Path, required=True)
     parser.add_argument("--control", type=Path, required=True)
     parser.add_argument("--canonical", type=Path, required=True)
+    parser.add_argument("--row-map", type=Path, required=True)
     parser.add_argument("--mode", type=Path, required=True)
     parser.add_argument("--pulse-log", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
@@ -258,7 +291,7 @@ def main() -> None:
     parser.add_argument("--snapshot-output", type=Path, required=True)
     args = parser.parse_args()
     result = analyze(
-        args.timed, args.control, args.canonical, args.mode, args.pulse_log,
+        args.timed, args.control, args.canonical, args.row_map, args.mode, args.pulse_log,
         args.events_output, args.timeline_output, args.snapshot_output,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)

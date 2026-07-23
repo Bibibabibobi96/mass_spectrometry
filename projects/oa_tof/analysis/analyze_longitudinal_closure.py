@@ -9,6 +9,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from projects.oa_tof.analysis.field_comparison_contract import merge_complete_samples
+
 
 KEY_COLUMNS = ["region", "sample_index", "x_mm", "y_mm", "z_mm"]
 
@@ -22,15 +24,14 @@ def analyze_axis_profiles(comsol_path: Path, simion_path: Path) -> dict[str, dic
         raise ValueError("COMSOL axis profile lacks required columns")
     if not required_simion.issubset(simion.columns):
         raise ValueError("SIMION axis profile lacks required columns")
-    merged = comsol.merge(
+    merged = merge_complete_samples(
+        comsol,
         simion,
-        on=KEY_COLUMNS,
-        how="inner",
-        validate="one_to_one",
+        keys=KEY_COLUMNS,
+        left_label="COMSOL",
+        right_label="SIMION",
         suffixes=("_COMSOL", "_SIMION"),
     )
-    if len(merged) != len(comsol) or len(merged) != len(simion):
-        raise ValueError("Axis profiles do not contain identical sample coordinates")
 
     result: dict[str, dict] = {}
     for region, frame in merged.groupby("region", sort=False):
@@ -71,8 +72,10 @@ def analyze_axis_profiles(comsol_path: Path, simion_path: Path) -> dict[str, dic
             "comsol_potential_gradient_minus_direct_ez_rms_V_per_m": (
                 interpolation_rms
             ),
-            "comsol_gradient_rms_fraction_of_cross_solver_rms": float(
-                interpolation_rms / cross_solver_rms
+            "comsol_gradient_rms_fraction_of_cross_solver_rms": (
+                float(interpolation_rms / cross_solver_rms)
+                if cross_solver_rms > np.finfo(float).eps
+                else None
             ),
         }
     return result

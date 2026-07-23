@@ -1,5 +1,5 @@
 param(
-  [int]$N = 5000,
+  [int]$N = 100,
   [double]$MassAmu = 524,
   [int]$Charge = 1,
   [double]$EnergyMeanEv = 5,
@@ -12,29 +12,40 @@ param(
   [double]$CenterYmm = 0.0,
   [double]$CenterZmm = -18.42918680341103,
   [int]$Seed = 20260713,
-  [string]$Output = 'oatof_comsol_524amu_gaussian_N100.ion'
+  [string]$Output = '',
+  [switch]$AllowNonstandardDiagnosticCount
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-
-$rng = [System.Random]::new($Seed)
+if ([string]::IsNullOrWhiteSpace($Output)) {
+  $massLabel = $MassAmu.ToString('g', [Globalization.CultureInfo]::InvariantCulture)
+  $Output = "oatof_comsol_${massLabel}amu_gaussian_N${N}.ion"
+}
 $hx = if ($HalfWidthXmm -ge 0) { $HalfWidthXmm } else { $HalfWidthMm }
 $hy = if ($HalfWidthYmm -ge 0) { $HalfWidthYmm } else { $HalfWidthMm }
 $hz = if ($HalfWidthZmm -ge 0) { $HalfWidthZmm } else { $HalfWidthMm }
-$m = $MassAmu * 1.66054e-27
-$lines = [System.Collections.Generic.List[string]]::new()
-for ($i = 0; $i -lt $N; $i++) {
-  $x = $CenterXmm + (2*$rng.NextDouble() - 1)*$hx
-  $y = $CenterYmm + (2*$rng.NextDouble() - 1)*$hy
-  $z = $CenterZmm + (2*$rng.NextDouble() - 1)*$hz
-  do {
-    $u1 = [Math]::Max($rng.NextDouble(), 1e-15)
-    $u2 = $rng.NextDouble()
-    $normal = [Math]::Sqrt(-2.0 * [Math]::Log($u1)) * [Math]::Cos(2.0 * [Math]::PI * $u2)
-    $energy = $EnergyMeanEv + $EnergyStdEv * $normal
-  } while ($energy -le 0)
-  $lines.Add(('0,{0:E8},{1},{2:E8},{3:E8},{4:E8},0,0,{5:E8},1,0' -f $MassAmu,$Charge,$x,$y,$z,$energy))
+$projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+$repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
+$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+$arguments = @(
+  (Join-Path $projectRoot 'analysis\generate_ion_source.py')
+  '--particle-count'; [string]$N
+  '--mass-amu'; [string]$MassAmu
+  '--charge'; [string]$Charge
+  '--energy-mean-ev'; [string]$EnergyMeanEv
+  '--energy-std-ev'; [string]$EnergyStdEv
+  '--half-width-x-mm'; [string]$hx
+  '--half-width-y-mm'; [string]$hy
+  '--half-width-z-mm'; [string]$hz
+  '--center-x-mm'; [string]$CenterXmm
+  '--center-y-mm'; [string]$CenterYmm
+  '--center-z-mm'; [string]$CenterZmm
+  '--seed'; [string]$Seed
+  '--output'; $Output
+)
+if ($AllowNonstandardDiagnosticCount) {
+  $arguments += '--allow-nonstandard-diagnostic-count'
 }
-Set-Content -LiteralPath $Output -Value $lines -Encoding ASCII
-Write-Output ("generated={0} N={1} mass_amu={2} charge={3} energy_mean_eV={4} energy_std_eV={5} center_z_mm={6} seed={7}" -f (Resolve-Path $Output),$N,$MassAmu,$Charge,$EnergyMeanEv,$EnergyStdEv,$CenterZmm,$Seed)
+& $python @arguments
+if ($LASTEXITCODE -ne 0) { throw 'Python ION source generation failed.' }

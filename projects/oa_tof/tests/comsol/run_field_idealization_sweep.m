@@ -52,6 +52,7 @@ arrivalTimes = expectedTof + (-300e-9:fineStep:300e-9);
 extractTimes = unique([linspace(0, simulationEnd, 2001), arrivalTimes, simulationEnd]);
 detectorZ = model.param.evaluate('detector_z')*1e3;
 detectorXCenter = model.param.evaluate('detector_x')*1e3;
+detectorRadius = model.param.evaluate('detector_radius')*1e3;
 
 summaryRows = cell(numel(configuration.cases), 11);
 for caseIndex = 1:numel(configuration.cases)
@@ -77,16 +78,19 @@ for caseIndex = 1:numel(configuration.cases)
     x = orient_time_by_particle(squeeze(pd.d1), numel(t));
     y = orient_time_by_particle(squeeze(pd.d2), numel(t));
     z = orient_time_by_particle(squeeze(pd.d3), numel(t));
-    arrivals = oatof_extract_detector_arrivals(t,x,y,z,detectorZ,1e-3);
+    arrivals = oatof_extract_detector_arrivals( ...
+        t,x,y,z,detectorZ,1e-3,0.5,detectorXCenter,0,detectorRadius);
     detectorTimes = arrivals.time_s;
     detectorX = arrivals.x_mm;
     detectorY = arrivals.y_mm;
     hit = arrivals.hit;
     particleTable = table((1:particleCount).', detectorTimes*1e6, hit, ...
-        detectorX, detectorY, initialPosition(:,1), initialPosition(:,2), ...
+        arrivals.status, detectorX, detectorY, arrivals.radius_mm, ...
+        initialPosition(:,1), initialPosition(:,2), ...
         initialPosition(:,3), initialEnergyEv, ...
-        'VariableNames', {'particle_id','tof_us','hit','detector_x_mm', ...
-        'detector_y_mm','initial_x_mm','initial_y_mm','initial_z_mm','initial_energy_eV'});
+        'VariableNames', {'particle_id','tof_us','hit','status','detector_x_mm', ...
+        'detector_y_mm','detector_radius_mm','initial_x_mm','initial_y_mm', ...
+        'initial_z_mm','initial_energy_eV'});
     csvPath = fullfile(outputDir, char(caseId + "_particles.csv"));
     writetable(particleTable, csvPath);
     landingRadius = hypot(detectorX(hit)-detectorXCenter, detectorY(hit));

@@ -47,6 +47,9 @@ $manifestWriter = Join-Path $repoRoot 'common\contracts\write_run_manifest.py'
 & $python $manifestWriter --run-config $runConfig --status interrupted `
   --software 'COMSOL 6.4 saved field' --software 'MATLAB R2025b' --software 'Python 3.11'
 if ($LASTEXITCODE -ne 0) { throw 'Initial run manifest generation failed.' }
+& $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') `
+  (Join-Path $runDir 'run_manifest.json') --require-status interrupted
+if ($LASTEXITCODE -ne 0) { throw 'Initial run manifest verification failed.' }
 
 $oldProject = $env:OATOF_PROJECT_ROOT
 $oldModel = $env:OATOF_COMSOL_MODEL_PATH
@@ -72,6 +75,8 @@ try {
   } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $summary -Encoding UTF8
   & $python $manifestWriter --run-config $runConfig --status failed `
     --software 'COMSOL 6.4 saved field' --software 'MATLAB R2025b' --software 'Python 3.11'
+  & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') `
+    (Join-Path $runDir 'run_manifest.json') --require-status failed
   throw
 }
 [ordered]@{
@@ -94,4 +99,7 @@ $manifestArgs = @(
 foreach ($output in $outputs) { $manifestArgs += @('--output',$output) }
 & $python @manifestArgs
 if ($LASTEXITCODE -ne 0) { throw 'Run manifest generation failed.' }
+& $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') `
+  (Join-Path $runDir 'run_manifest.json') --require-status success
+if ($LASTEXITCODE -ne 0) { throw 'Run manifest verification failed.' }
 Write-Output "STATUS=PASS RUN_ID=$RunId"

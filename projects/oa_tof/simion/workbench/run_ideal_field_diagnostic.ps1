@@ -1,5 +1,5 @@
 param(
-  [int]$N = 5000,
+  [int]$N = 100,
   [int]$Seed = 20260713,
   [int]$TrajectoryQuality = 8,
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
@@ -27,6 +27,18 @@ $resultDir = Join-Path $OutputDir 'results'
 $logDir = Join-Path $OutputDir 'logs'
 $simionDir = Join-Path $OutputDir 'simion'
 New-Item -ItemType Directory -Force -Path $OutputDir,$resultDir,$logDir,$simionDir | Out-Null
+. (Join-Path $repoRoot 'projects\oa_tof\tests\run_record_helpers.ps1')
+Initialize-OaTofRunRecord -RunDir $OutputDir -RunId $RunId `
+  -Mode 'simion_ideal_field_matrix' -ProjectRoot (Join-Path $repoRoot 'projects\oa_tof') `
+  -RepoRoot $repoRoot -Python $python
+$runRecordComplete = $false
+trap {
+  if (-not $runRecordComplete) {
+    Write-OaTofTerminalRunRecord -RunDir $OutputDir -Status failed `
+      -Reason $_.Exception.Message -RepoRoot $repoRoot -Python $python
+  }
+  exit 1
+}
 
 $sourceLua = Join-Path $PSScriptRoot 'formal\oatof_ideal_grounded.lua'
 $runtimeLua = Join-Path $formalDir 'oatof_ideal_grounded.lua'
@@ -57,7 +69,10 @@ $modes = @(
 $ionFiles = @{}
 foreach ($d in $distributions) {
   $ion = Join-Path $simionDir ("ions_{0}_N{1}.ion" -f $d.Name,$N)
-  & $generator -N $N -Seed $Seed -HalfWidthXmm $d.HX -HalfWidthYmm $d.HY -HalfWidthZmm $d.HZ -EnergyStdEv $d.ES -Output $ion | Out-Null
+  $generatorArgs = @{}
+  if ($N -notin @(100,1000)) { $generatorArgs.AllowNonstandardDiagnosticCount = $true }
+  & $generator -N $N -Seed $Seed -HalfWidthXmm $d.HX -HalfWidthYmm $d.HY `
+    -HalfWidthZmm $d.HZ -EnergyStdEv $d.ES -Output $ion @generatorArgs | Out-Null
   $ionFiles[$d.Name] = $ion
 }
 
@@ -105,5 +120,9 @@ $manifestArgs=@((Join-Path $repoRoot 'common\contracts\write_run_manifest.py'),'
 foreach($file in Get-ChildItem -LiteralPath $resultDir,$logDir,$simionDir -Recurse -File){$manifestArgs+=@('--output',$file.FullName)}
 & $python @manifestArgs
 if($LASTEXITCODE -ne 0){throw 'Ideal-field diagnostic manifest failed.'}
+& $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') `
+  (Join-Path $OutputDir 'run_manifest.json') --require-status success
+if($LASTEXITCODE -ne 0){throw 'Ideal-field diagnostic manifest verification failed.'}
+$runRecordComplete = $true
 $summaries | Sort-Object Distribution,Mode | Format-Table Distribution,Mode,Hit,EfficiencyPct,MeanTofUs,StdTofNs,FwhmTofNs,ResolutionFwhm,MaxCrossingRadiusMm -AutoSize
 Write-Host "Summary: $summaryCsv"

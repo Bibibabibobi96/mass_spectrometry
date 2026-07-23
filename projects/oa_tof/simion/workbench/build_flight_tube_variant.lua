@@ -1,20 +1,21 @@
 -- Build the authoritative near-cap + field-free shield PA.
 -- Usage:
 --   simion.exe --nogui lua build_flight_tube_variant.lua source.gem output.pa#
---     [axial_mm_per_gu] [radial_mm_per_gu] [max_GiB]
---     [inner_radius_mm] [wall_mm] [near_cap_mm]
---     [near_outer_z_mm] [reflectron_interface_z_mm]
+--     axial_mm_per_gu radial_mm_per_gu max_GiB
+--     inner_radius_mm wall_mm near_cap_mm
+--     near_outer_z_mm reflectron_interface_z_mm
 
 local source = assert(arg[1], 'missing source GEM')
 local output = assert(arg[2], 'missing output PA#')
-local mmgu_axial = tonumber(arg[3] or '1')
-local mmgu_radial = tonumber(arg[4] or '1')
-local max_gib = tonumber(arg[5] or '0.1')
-local inner_radius = tonumber(arg[6] or '350')
-local wall = tonumber(arg[7] or '10')
-local near_cap_thickness = tonumber(arg[8] or '10')
-local near_outer_z = tonumber(arg[9] or '-59.92918680341103')
-local reflectron_interface_z = tonumber(arg[10] or '600')
+assert(arg[10], 'all flight-tube geometry and mesh arguments are required')
+local mmgu_axial = assert(tonumber(arg[3]), 'invalid axial cell size')
+local mmgu_radial = assert(tonumber(arg[4]), 'invalid radial cell size')
+local max_gib = assert(tonumber(arg[5]), 'invalid memory limit')
+local inner_radius = assert(tonumber(arg[6]), 'invalid inner radius')
+local wall = assert(tonumber(arg[7]), 'invalid wall thickness')
+local near_cap_thickness = assert(tonumber(arg[8]), 'invalid near-cap thickness')
+local near_outer_z = assert(tonumber(arg[9]), 'invalid near outer z')
+local reflectron_interface_z = assert(tonumber(arg[10]), 'invalid reflectron interface z')
 local outer_radius = inner_radius+wall
 local axial_span = reflectron_interface_z-near_outer_z
 
@@ -43,14 +44,23 @@ assert(estimated_gib<=max_gib,
   string.format('estimated PA set %.3f GiB exceeds limit %.3f GiB',
     estimated_gib,max_gib))
 
+local staged_source=output:gsub('%.pa#$','.source.gem')
+local input=assert(io.open(source,'rb'))
+local content=input:read('*a')
+input:close()
+local staged=assert(io.open(staged_source,'wb'))
+staged:write(content)
+staged:close()
 _G.var={
   mmgu_axial=mmgu_axial,mmgu_radial=mmgu_radial,
   inner_radius=inner_radius,wall=wall,
   near_cap_thickness=near_cap_thickness,near_outer_z=near_outer_z,
   reflectron_interface_z=reflectron_interface_z
 }
-simion.command(string.format('gem2pa %q %q',source,output))
+simion.command(string.format('gem2pa %q %q',staged_source,output))
 _G.var=nil
+os.remove(staged_source)
+os.remove(staged_source:gsub('%.gem$','.processed.gem'))
 simion.command(string.format('refine --resume=0 --convergence=5e-7 %q',output))
 simion.command(string.format('fastadj %q 1=0',output:gsub('#$','0')))
 print('BUILD: PASS')

@@ -1,19 +1,20 @@
 -- Build a size-guarded anisotropic detector-position marker PA.
 -- Usage:
 --   simion.exe --nogui lua build_detector_variant.lua source.gem output.pa#
---     [xy_mm] [z_mm] [radius_mm] [absorber_thickness_mm]
---     [front_margin_z_mm] [back_margin_z_mm] [margin_xy_mm] [max_MiB]
+--     xy_mm z_mm radius_mm absorber_thickness_mm
+--     front_margin_z_mm back_margin_z_mm margin_xy_mm max_MiB
 
 local source = assert(arg[1], 'missing source GEM')
 local output = assert(arg[2], 'missing output PA#')
-local mmgu_xy = tonumber(arg[3] or '0.5')
-local mmgu_z = tonumber(arg[4] or '0.01')
-local radius = tonumber(arg[5] or '40')
-local absorber_thickness = tonumber(arg[6] or '0.1')
-local front_margin_z = tonumber(arg[7] or '0.2')
-local back_margin_z = tonumber(arg[8] or '0.05')
-local margin_xy = tonumber(arg[9] or '1')
-local max_mib = tonumber(arg[10] or '64')
+assert(arg[10], 'all detector geometry and mesh arguments are required')
+local mmgu_xy = assert(tonumber(arg[3]), 'invalid xy cell size')
+local mmgu_z = assert(tonumber(arg[4]), 'invalid z cell size')
+local radius = assert(tonumber(arg[5]), 'invalid detector radius')
+local absorber_thickness = assert(tonumber(arg[6]), 'invalid absorber thickness')
+local front_margin_z = assert(tonumber(arg[7]), 'invalid front margin')
+local back_margin_z = assert(tonumber(arg[8]), 'invalid back margin')
+local margin_xy = assert(tonumber(arg[9]), 'invalid xy margin')
+local max_mib = assert(tonumber(arg[10]), 'invalid memory limit')
 
 assert(source:match('^%a:[/\\]') or source:match('^/'),
   'source GEM path must be absolute')
@@ -48,11 +49,20 @@ assert(estimated_mib <= max_mib,
   string.format('estimated PA set %.3f MiB exceeds limit %.3f MiB',
     estimated_mib,max_mib))
 
+local staged_source=output:gsub('%.pa#$','.source.gem')
+local input=assert(io.open(source,'rb'))
+local content=input:read('*a')
+input:close()
+local staged=assert(io.open(staged_source,'wb'))
+staged:write(content)
+staged:close()
 _G.var={mmgu_xy=mmgu_xy,mmgu_z=mmgu_z,radius=radius,
   absorber_thickness=absorber_thickness,front_margin_z=front_margin_z,
   back_margin_z=back_margin_z,margin_xy=margin_xy}
-simion.command(string.format('gem2pa %q %q',source,output))
+simion.command(string.format('gem2pa %q %q',staged_source,output))
 _G.var=nil
+os.remove(staged_source)
+os.remove(staged_source:gsub('%.gem$','.processed.gem'))
 simion.command(string.format(
   'refine --resume=0 --convergence=5e-7 %q',output))
 simion.command(string.format('fastadj %q 1=0',output:gsub('#$','0')))

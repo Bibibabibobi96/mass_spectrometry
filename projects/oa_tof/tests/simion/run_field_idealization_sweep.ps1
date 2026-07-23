@@ -58,6 +58,19 @@ New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 $OutputDir = (Resolve-Path -LiteralPath $OutputDir).Path
 & $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run (Split-Path -Leaf $OutputDir)
 if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $(Split-Path -Leaf $OutputDir)" }
+$runId = Split-Path -Leaf $OutputDir
+. (Join-Path $projectRoot 'tests\run_record_helpers.ps1')
+Initialize-OaTofRunRecord -RunDir $OutputDir -RunId $runId `
+  -Mode 'simion_field_idealization_sweep' -ProjectRoot $projectRoot `
+  -RepoRoot $repoRoot -Python $python
+$runRecordComplete = $false
+trap {
+  if (-not $runRecordComplete) {
+    Write-OaTofTerminalRunRecord -RunDir $OutputDir -Status failed `
+      -Reason $_.Exception.Message -RepoRoot $repoRoot -Python $python
+  }
+  exit 1
+}
 $runtimeDir = if ($RuntimePackage) { (Resolve-Path -LiteralPath $RuntimePackage).Path } else { Join-Path $OutputDir 'runtime_package' }
 if ($N -ne [int]$configuration.particle_count) {
   Write-Warning "N=$N overrides the feasibility-plan particle_count=$($configuration.particle_count)."
@@ -97,7 +110,9 @@ if (-not $AnalyzeOnly) {
     Copy-Item -LiteralPath $sourceLua -Destination (Join-Path $runtimeDir 'oatof_ideal_grounded.lua') -Force
   }
   Assert-DiagnosticPackage $runtimeDir
-  & $generator -N $N -Seed $Seed -Output $ionFile | Out-Null
+  $generatorArgs = @{}
+  if ($N -notin @(100,1000)) { $generatorArgs.AllowNonstandardDiagnosticCount = $true }
+  & $generator -N $N -Seed $Seed -Output $ionFile @generatorArgs | Out-Null
 }
 $iob = Join-Path $runtimeDir 'oatof_ideal_grounded.iob'
 if (-not (Test-Path -LiteralPath $iob)) { throw "Runtime IOB is missing: $iob" }
@@ -183,4 +198,5 @@ foreach ($row in $rows) {
 if ($LASTEXITCODE -ne 0) { throw 'Manifest creation failed.' }
 & $python $manifestVerifier (Join-Path $OutputDir 'run_manifest.json')
 if ($LASTEXITCODE -ne 0) { throw 'Manifest verification failed.' }
+$runRecordComplete = $true
 Write-Host "SIMION_FIELD_IDEALIZATION=PASS output=$OutputDir"

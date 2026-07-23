@@ -62,6 +62,20 @@ if (Test-Path -LiteralPath $runDir) {
 foreach ($path in @($inputDir,$resultDir,$logDir,$comsolDir)) {
   if (-not (Test-Path -LiteralPath $path -PathType Container)) { New-Item -ItemType Directory -Path $path | Out-Null }
 }
+. (Join-Path $projectRoot 'tests\run_record_helpers.ps1')
+if (-not $Resume) {
+  Initialize-OaTofRunRecord -RunDir $runDir -RunId $RunId `
+    -Mode 'rf_handoff_projection' -ProjectRoot $projectRoot `
+    -RepoRoot $repoRoot -Python $python
+}
+$runRecordComplete = $false
+trap {
+  if (-not $runRecordComplete) {
+    Write-OaTofTerminalRunRecord -RunDir $runDir -Status failed `
+      -Reason $_.Exception.Message -RepoRoot $repoRoot -Python $python
+  }
+  exit 1
+}
 
 $mode = Get-Content -LiteralPath $modePath -Raw -Encoding UTF8 | ConvertFrom-Json
 $handoffContract = Join-Path $repoRoot $mode.handoff_contract
@@ -264,4 +278,5 @@ foreach ($output in ($allOutputs | Select-Object -Unique)) {
 if ($LASTEXITCODE -ne 0) { throw 'RF handoff run manifest creation failed.' }
 & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $manifestPath
 if ($LASTEXITCODE -ne 0) { throw 'RF handoff run manifest verification failed.' }
+$runRecordComplete = $true
 Write-Output "RF_HANDOFF_PROJECTION=$($metrics.status) RUN_ID=$RunId TARGET=$TargetSolver PHYSICAL_LINK=BLOCKED"

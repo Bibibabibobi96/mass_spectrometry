@@ -76,26 +76,12 @@ foreach ($entry in $cases.GetEnumerator()) {
   if ([int]$summary.Hit -ne $ParticleCount) { throw "$name hit count $($summary.Hit) != $ParticleCount" }
 }
 
-function Read-Fields([string]$Path) {
-  $values = @{}
-  foreach ($line in Get-Content -LiteralPath $Path) {
-    if ($line -match '^FIELD_(.+)_PA_LOCAL_E_V_PER_MM=([-+0-9.eE]+),([-+0-9.eE]+),([-+0-9.eE]+)$') {
-      $values[$Matches[1]] = @([double]$Matches[2],[double]$Matches[3],[double]$Matches[4])
-    }
-  }
-  return $values
-}
-$leftFields = Read-Fields (Join-Path $runDir 'reference_field.txt')
-$rightFields = Read-Fields (Join-Path $runDir 'source_built_field.txt')
-$maxFieldRelativeDifference = 0.0
-foreach ($key in $leftFields.Keys) {
-  if (-not $rightFields.ContainsKey($key)) { throw "Source-built field report lacks $key" }
-  $left = $leftFields[$key]; $right = $rightFields[$key]
-  $norm = [Math]::Sqrt($left[0]*$left[0]+$left[1]*$left[1]+$left[2]*$left[2])
-  $difference = [Math]::Sqrt(($right[0]-$left[0])*($right[0]-$left[0])+
-    ($right[1]-$left[1])*($right[1]-$left[1])+($right[2]-$left[2])*($right[2]-$left[2]))
-  if ($norm -gt 1e-12) { $maxFieldRelativeDifference = [Math]::Max($maxFieldRelativeDifference,$difference/$norm) }
-}
+$fieldComparisonJson = & $python (Join-Path $projectRoot 'analysis\solver_diagnostics.py') `
+  compare-field-reports --left (Join-Path $runDir 'reference_field.txt') `
+  --right (Join-Path $runDir 'source_built_field.txt')
+if ($LASTEXITCODE -ne 0) { throw 'Python field report comparison failed.' }
+$fieldComparison = $fieldComparisonJson | ConvertFrom-Json
+$maxFieldRelativeDifference = [double]$fieldComparison.max_symmetric_relative_difference
 
 & $python -m projects.oa_tof.analysis.reference_analysis compare (Join-Path $runDir 'reference_particles.csv') `
   (Join-Path $runDir 'source_built_particles.csv') --mass 524 --output $resultDir `

@@ -13,6 +13,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from projects.oa_tof.analysis.field_comparison_contract import (
+    convergence_decision,
+    merge_complete_samples,
+)
+
 
 KEYS = ["particle_id", "time_us", "x_mm", "y_mm", "z_mm"]
 COMPONENTS = ("Ex", "Ey", "Ez")
@@ -45,7 +50,8 @@ def main() -> None:
     order = ["formal_original"] + list(dict.fromkeys(scan["variant"].astype(str)))
 
     metrics: dict[str, object] = {
-        "status": "PASS",
+        "status": "ANALYSIS_COMPLETE",
+        "convergence_decision": convergence_decision(),
         "variant_order": order,
         "against_simion": {},
         "successive_comsol_change": {},
@@ -53,8 +59,13 @@ def main() -> None:
     merged_by_variant: dict[str, pd.DataFrame] = {}
     for variant in order:
         frame = variants[variants["variant"] == variant]
-        merged = frame.merge(
-            simion, on=KEYS, suffixes=("_COMSOL", "_SIMION"), validate="one_to_one"
+        merged = merge_complete_samples(
+            frame,
+            simion,
+            keys=KEYS,
+            left_label=f"COMSOL {variant}",
+            right_label="SIMION",
+            suffixes=("_COMSOL", "_SIMION"),
         )
         merged_by_variant[variant] = merged
         metrics["against_simion"][variant] = {
@@ -115,7 +126,7 @@ def main() -> None:
         args.output / "accelerator_mesh_convergence.png", dpi=220, facecolor="white"
     )
     plt.close(figure)
-    print("ACCELERATOR_MESH_CONVERGENCE_STATUS=PASS")
+    print("ACCELERATOR_MESH_ANALYSIS_STATUS=COMPLETE CONVERGENCE=NOT_EVALUATED")
 
 
 if __name__ == "__main__":

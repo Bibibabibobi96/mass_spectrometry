@@ -13,6 +13,16 @@ function result = export_oatof_cad_step(modelPath, outputDir, executionMode)
         executionMode (1,1) string {mustBeMember(executionMode, ["export", "load_only"])} = "export"
     end
 
+    componentRoot = fileparts(fileparts(mfilename('fullpath')));
+    addpath(componentRoot);
+    paths = oatof_paths();
+    formalCad = string(java.io.File(paths.cadFormalDir).getCanonicalPath());
+    resolvedOutput = string(java.io.File(char(outputDir)).getCanonicalPath());
+    if executionMode == "export" && (strcmpi(resolvedOutput,formalCad) || ...
+            startsWith(lower(resolvedOutput),lower(formalCad+filesep)))
+        oatof_assert_formal_write_authorized(resolvedOutput,'cad_root');
+    end
+
     if executionMode == "export" && ~isfolder(outputDir)
         mkdir(outputDir);
     end

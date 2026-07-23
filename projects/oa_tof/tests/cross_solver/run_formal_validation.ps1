@@ -20,6 +20,18 @@ if (Test-Path -LiteralPath $runDir) {
 & $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
 if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
 New-Item -ItemType Directory -Path $runDir,$resultDir,$logDir | Out-Null
+. (Join-Path $projectRoot 'tests\run_record_helpers.ps1')
+Initialize-OaTofRunRecord -RunDir $runDir -RunId $RunId `
+  -Mode 'formal_cross_solver_validation' -ProjectRoot $projectRoot `
+  -RepoRoot $repoRoot -Python $python
+$runRecordComplete = $false
+trap {
+  if (-not $runRecordComplete) {
+    Write-OaTofTerminalRunRecord -RunDir $runDir -Status failed `
+      -Reason $_.Exception.Message -RepoRoot $repoRoot -Python $python
+  }
+  exit 1
+}
 
 $formalMph = Join-Path $artifactRoot 'formal\comsol\oa_tof__model.mph'
 $formalSimion = Join-Path $artifactRoot 'formal\simion'
@@ -103,4 +115,8 @@ $manifestArgs = @(
 )
 & $python @manifestArgs
 if ($LASTEXITCODE -ne 0) { throw 'Formal validation manifest creation failed.' }
+& $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') `
+  (Join-Path $runDir 'run_manifest.json') --require-status success
+if ($LASTEXITCODE -ne 0) { throw 'Formal validation manifest verification failed.' }
+$runRecordComplete = $true
 Write-Output "FORMAL_VALIDATION_RUN=PASS RUN_ID=$RunId"

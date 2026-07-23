@@ -41,7 +41,7 @@ class LongitudinalPredictionValidationTests(unittest.TestCase):
     def test_stable_comsol_entry_always_passes_a_resolved_contract(self) -> None:
         entry = (PROJECT_ROOT / "comsol" / "run_oatof_model.m").read_text(encoding="utf-8")
         builder = (
-            PROJECT_ROOT / "comsol" / "ms_oaTOF_two_stage_ringstack_reflectron.m"
+            PROJECT_ROOT / "comsol" / "oatof_build_model_core.m"
         ).read_text(encoding="utf-8")
         self.assertIn("config', 'resolved_geometry.json", entry)
         self.assertIn("char(options.OutputModelPath), char(contractPath)", entry)

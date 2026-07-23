@@ -53,29 +53,24 @@ try
     y = orient_time_by_particle(squeeze(pd.d2), numel(t));
     z = orient_time_by_particle(squeeze(pd.d3), numel(t));
     detectorZ = mphevaluate(model, 'detector_z', 'mm');
-    detectorThreshold = detectorZ + 0.5;
-    particleCount = size(z, 2);
-    detectorTimes = nan(particleCount, 1);
-    detectorX = nan(particleCount, 1);
-    detectorY = nan(particleCount, 1);
-    for particle = 1:particleCount
-        crossingIndex = find(z(:,particle) < detectorThreshold, 1, 'first');
-        if ~isempty(crossingIndex)
-            [detectorTimes(particle), detectorX(particle), detectorY(particle)] = ...
-                interpolate_crossing(t, x(:,particle), y(:,particle), ...
-                z(:,particle), crossingIndex, detectorZ);
-        end
-    end
-    assert(all(isfinite(detectorTimes)), ...
+    detectorXCenter = mphevaluate(model, 'detector_x', 'mm');
+    detectorRadius = mphevaluate(model, 'detector_radius', 'mm');
+    arrivals = oatof_extract_detector_arrivals( ...
+        t,x,y,z,detectorZ,1e-3,0.5,detectorXCenter,0,detectorRadius);
+    detectorTimes = arrivals.time_s;
+    particleCount = numel(detectorTimes);
+    assert(all(arrivals.hit), ...
         'Expected all fixed particles to hit the detector.');
-    writetable(table((1:particleCount).', detectorTimes*1e6, detectorX, detectorY, ...
-        'VariableNames', {'Ion','TofUs','XMm','YMm'}), outputCsv);
+    writetable(table((1:particleCount).', detectorTimes*1e6, ...
+        arrivals.x_mm, arrivals.y_mm, arrivals.hit, arrivals.status, ...
+        arrivals.radius_mm, 'VariableNames', ...
+        {'Ion','TofUs','XMm','YMm','Hit','Status','DetectorRadiusMm'}), outputCsv);
 
     fprintf(fid, 'OUTPUT_CSV=%s\n', outputCsv);
     fprintf(fid, 'MAX_T0_RELEASE_POSITION_ERROR_MM=%.12g\n', positionErrorMm);
     fprintf(fid, 'MAX_T0_RELEASE_SPEED_ERROR_M_PER_S=%.12g\n', speedErrorMS);
-    fprintf(fid, 'DETECTED=%d/%d\n', sum(isfinite(detectorTimes)), particleCount);
-    fprintf(fid, 'MEAN_TOF_US=%.12g\n', mean(detectorTimes)*1e6);
+    fprintf(fid, 'DETECTED=%d/%d\n', sum(arrivals.hit), particleCount);
+    fprintf(fid, 'MEAN_TOF_US=%.12g\n', mean(detectorTimes(arrivals.hit))*1e6);
     fprintf(fid, 'ANALYSIS_OWNER=Python_3.11_reference_analysis.py\n');
     fprintf(fid, 'STATUS=PASS\n');
 catch exception
@@ -90,19 +85,4 @@ if size(values, 1) == timeCount, return; end
 if size(values, 2) == timeCount, values = values.'; return; end
 error('Unexpected particle array shape %dx%d for %d times.', ...
     size(values,1), size(values,2), timeCount);
-end
-
-function [crossingTime, crossingX, crossingY] = ...
-    interpolate_crossing(t, x, y, z, index, target)
-if index > 1 && all(isfinite([x(index-1:index); y(index-1:index); ...
-        z(index-1:index)]), 'all') && z(index) ~= z(index-1)
-    fraction = (target-z(index-1))/(z(index)-z(index-1));
-    crossingTime = t(index-1) + fraction*(t(index)-t(index-1));
-    crossingX = x(index-1) + fraction*(x(index)-x(index-1));
-    crossingY = y(index-1) + fraction*(y(index)-y(index-1));
-else
-    crossingTime = t(index);
-    crossingX = x(index);
-    crossingY = y(index);
-end
 end

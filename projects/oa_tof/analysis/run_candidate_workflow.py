@@ -14,6 +14,7 @@ from typing import Any, Callable
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 from common.contracts.machine_contracts import load_json, sha256
+from common.contracts.particle_count_policy import validate_standard_particle_count
 from projects.oa_tof.analysis.candidate_run_lifecycle import finalize_candidate_run, start_candidate_run
 
 
@@ -33,6 +34,16 @@ class CandidateWorkflowInterrupted(KeyboardInterrupt):
         self.run_root = run_root
 
 
+class CandidateWorkflowTimedOut(TimeoutError):
+    def __init__(self, run_root: Path):
+        super().__init__(f"candidate workflow timed out: {run_root}")
+        self.run_root = run_root
+
+
+class StageTimedOut(TimeoutError):
+    pass
+
+
 def _powershell(entrypoint: str, arguments: list[str]) -> list[str]:
     # The shared COMSOL launcher uses ProcessStartInfo.ArgumentList, which is
     # unavailable under Windows PowerShell 5.1.  Keep integrated commercial
@@ -45,15 +56,20 @@ def _run_command(command: list[str], log_path: Path, environment: dict[str, str]
     env = os.environ.copy()
     env.update(environment or {})
     with log_path.open("w", encoding="utf-8", newline="\n") as log:
-        result = subprocess.run(
-            command,
-            cwd=REPO_ROOT,
-            env=env,
-            stdout=log,
-            stderr=subprocess.STDOUT,
-            check=False,
-            timeout=STAGE_PROCESS_TIMEOUT_S,
-        )
+        try:
+            result = subprocess.run(
+                command,
+                cwd=REPO_ROOT,
+                env=env,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                check=False,
+                timeout=STAGE_PROCESS_TIMEOUT_S,
+            )
+        except subprocess.TimeoutExpired as error:
+            raise StageTimedOut(
+                f"command exceeded {STAGE_PROCESS_TIMEOUT_S}s; log={log_path}"
+            ) from error
     if result.returncode != 0:
         raise RuntimeError(f"command failed with exit code {result.returncode}; log={log_path}")
 
@@ -124,6 +140,10 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
         ion_n100 = Path(stage["output_dir"]) / "oatof_comsol_524amu_gaussian_N100.ion"
         if not ion_n100.is_file():
             raise RuntimeError(f"SIMION candidate N=100 particle table is missing: {ion_n100}")
+        particle_count = sum(1 for line in ion_n100.read_text(encoding="utf-8").splitlines() if line.strip())
+        validate_standard_particle_count(particle_count)
+        if particle_count != 100:
+            raise RuntimeError("oa-TOF candidate workflow requires the N=100 functional tier")
         return {
             "iob": str(iob), "ion_n100": str(ion_n100), "stage_summary": str(summary),
             "runtime_log": str(logs / "simion_runtime_verify.log")
@@ -160,6 +180,9 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
                     raise RuntimeError(f"cross-stage evidence is missing: {source_stage}.{key}")
         comsol_ion = Path(evidence["static_inputs"]["particle_table"])
         simion_ion = Path(evidence["simion_candidate"]["ion_n100"])
+        validate_standard_particle_count(
+            sum(1 for line in comsol_ion.read_text(encoding="utf-8").splitlines() if line.strip())
+        )
         if sha256(comsol_ion).lower() != sha256(simion_ion).lower():
             raise RuntimeError("COMSOL and SIMION candidate N=100 particle tables differ")
         output_dir = Path(stage["output_dir"])
@@ -213,6 +236,12 @@ def run_candidate_workflow(
         results.append({"stage_id": current_stage, "status": "interrupted", "error": str(exc)})
         finalize_candidate_run(run_root, "interrupted", _remaining_results(stages, results), current_stage)
         raise CandidateWorkflowInterrupted(run_root) from exc
+    except StageTimedOut as exc:
+        results.append({"stage_id": current_stage, "status": "timeout", "error": str(exc)})
+        finalize_candidate_run(
+            run_root, "timeout", _remaining_results(stages, results), current_stage
+        )
+        raise CandidateWorkflowTimedOut(run_root) from exc
     except Exception as exc:
         results.append({"stage_id": current_stage, "status": "failed", "error": str(exc)})
         finalize_candidate_run(run_root, "failed", _remaining_results(stages, results), current_stage)
@@ -228,6 +257,9 @@ def main() -> None:
         run_root, summary = run_candidate_workflow(args.plan, args.simion_exe)
     except CandidateWorkflowInterrupted as exc:
         raise SystemExit(130) from exc
+    except CandidateWorkflowTimedOut as exc:
+        print(f"CANDIDATE_WORKFLOW=TIMEOUT RUN_ROOT={exc.run_root}", file=sys.stderr)
+        raise SystemExit(124) from exc
     except CandidateWorkflowError as exc:
         print(f"CANDIDATE_WORKFLOW=FAIL RUN_ROOT={exc.run_root} ERROR={exc}", file=sys.stderr)
         raise SystemExit(1) from exc

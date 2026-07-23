@@ -10,6 +10,11 @@ import math
 from pathlib import Path
 from typing import Any
 
+from rf_handoff_adapter import (
+    ordered_solver_identity_map,
+    validate_ion_velocity_adapter,
+)
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PROJECT_ROOT.parents[1]
@@ -149,15 +154,12 @@ def validate_bundle(
     ion_lines = [line for line in ion_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     if not canonical or len(canonical) != len(row_map) or len(canonical) != len(ion_lines):
         raise ValueError("canonical, row-map and ION particle counts differ")
-    seen_ids: set[int] = set()
+    ordered_solver_identity_map(canonical, row_map)
     clock_policy = validated["mode"]["clock_policy"]
     solver_clock = clock_policy.get("solver_clock", "local_zero")
     local_birth = float(clock_policy.get("solver_local_birth_time_us", 0.0))
     for index, (state, mapping, line) in enumerate(zip(canonical, row_map, ion_lines), start=1):
         particle_id = int(state["particle_id"])
-        if particle_id in seen_ids:
-            raise ValueError("canonical particle IDs must be unique")
-        seen_ids.add(particle_id)
         if int(mapping["solver_row_index"]) != index or int(mapping["particle_id"]) != particle_id:
             raise ValueError("row map does not preserve canonical particle identity")
         for field in ("instrument_time_us", "lineage_age_us", "particle_age_us"):
@@ -179,6 +181,9 @@ def validate_bundle(
         )
         if any(not _same_number(left, right) for left, right in comparisons):
             raise ValueError("derived ION content differs from the canonical state")
+        if int(float(ion[9])) != 1 or int(float(ion[10])) != 3:
+            raise ValueError("derived ION uses an unexpected CWF or accelerator instance")
+        validate_ion_velocity_adapter(state, mapping, ion)
     return {
         "particles": len(canonical),
         "canonical_sha256": sha256(canonical_path),

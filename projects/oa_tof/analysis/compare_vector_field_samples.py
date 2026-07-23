@@ -13,6 +13,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from projects.oa_tof.analysis.field_comparison_contract import (
+    merge_complete_samples,
+    normalized_rms_difference_pct,
+)
+
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -23,7 +28,14 @@ def main() -> None:
     keys = ["particle_id", "time_us", "x_mm", "y_mm", "z_mm"]
     c = pd.read_csv(args.comsol)
     s = pd.read_csv(args.simion)
-    merged = c.merge(s, on=keys, suffixes=("_COMSOL", "_SIMION"), validate="one_to_one")
+    merged = merge_complete_samples(
+        c,
+        s,
+        keys=keys,
+        left_label="COMSOL",
+        right_label="SIMION",
+        suffixes=("_COMSOL", "_SIMION"),
+    )
     metrics: dict[str, object] = {
         "status": "PASS",
         "sample_points": int(len(merged)),
@@ -34,19 +46,27 @@ def main() -> None:
         cv = merged[f"{component}_V_per_m_COMSOL"].to_numpy()
         sv = merged[f"{component}_V_per_m_SIMION"].to_numpy()
         delta = sv - cv
-        comsol_rms = float(np.sqrt(np.mean(cv**2)))
-        simion_rms = float(np.sqrt(np.mean(sv**2)))
-        difference_rms = float(np.sqrt(np.mean(delta**2)))
+        normalized = normalized_rms_difference_pct(cv, sv)
         metrics["aggregate"][component] = {
-            "COMSOL_rms_V_per_m": comsol_rms,
-            "SIMION_rms_V_per_m": simion_rms,
-            "difference_rms_V_per_m": difference_rms,
-            "difference_relative_to_COMSOL_rms_pct": 100 * difference_rms / comsol_rms,
+            "COMSOL_rms_V_per_m": normalized["reference_rms_V_per_m"],
+            "SIMION_rms_V_per_m": normalized["values_rms_V_per_m"],
+            "difference_rms_V_per_m": normalized["difference_rms_V_per_m"],
+            "difference_relative_to_COMSOL_rms_pct": normalized[
+                "relative_to_reference_rms_pct"
+            ],
+            "difference_symmetric_scale_pct": normalized["symmetric_scale_pct"],
             "difference_mean_V_per_m": float(np.mean(delta)),
             "difference_max_abs_V_per_m": float(np.max(np.abs(delta))),
         }
-    figure, axes = plt.subplots(3, 3, figsize=(15, 11), constrained_layout=True)
-    for column, particle_id in enumerate(sorted(merged["particle_id"].unique())):
+    particle_ids = sorted(merged["particle_id"].unique())
+    figure, axes = plt.subplots(
+        3,
+        len(particle_ids),
+        figsize=(5 * len(particle_ids), 11),
+        squeeze=False,
+        constrained_layout=True,
+    )
+    for column, particle_id in enumerate(particle_ids):
         group = merged[merged["particle_id"] == particle_id].sort_values("z_mm")
         component_metrics = {}
         for row, component in enumerate(("Ex", "Ey", "Ez")):

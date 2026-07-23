@@ -1,5 +1,7 @@
-function accelringtags = oatof_build_accelerator_geometry(geom1, interfacePort)
-if nargin < 2
+function accelringtags = oatof_build_accelerator_geometry(geom1, acceleratorRingCount, interfacePort)
+mustBeInteger(acceleratorRingCount);
+mustBePositive(acceleratorRingCount);
+if nargin < 3
     interfacePort = struct('enabled', false);
 end
 if ~isfield(interfacePort, 'enabled')
@@ -120,10 +122,11 @@ geom1.feature('accelshield').selection('input2').set(shieldCutInputs);
 % voltage conductors cannot touch -- see doc §7.32 for the hard-won
 % lesson from the cylindrical attempt).
 accelringtags = {};
-for k = 1:5
+for k = 1:acceleratorRingCount
     tagk = sprintf('accelring_%d', k);
-    zk_expr = sprintf('z_accel_origin+3[mm]+%d*(L_accel-3[mm])/6', k);
-    Vk_expr = sprintf('V_grid1*(1-%d/6)', k);
+    zk_expr = sprintf('z_accel_origin+3[mm]+%d*(L_accel-3[mm])/%d', ...
+        k,acceleratorRingCount+1);
+    Vk_expr = sprintf('V_grid1*(1-%d/%d)', k,acceleratorRingCount+1);
     outer_half = 'accel_shield_half-accel_ring_gap';
     geom1.feature.create([tagk 'O'], 'Block');
     geom1.feature([tagk 'O']).label(sprintf('Accelerator ring %d outer solid', k));

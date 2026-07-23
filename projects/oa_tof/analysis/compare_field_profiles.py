@@ -13,15 +13,20 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from projects.oa_tof.analysis.field_comparison_contract import (
+    merge_complete_samples,
+    normalized_rms_difference_pct,
+)
+
 DEFAULT_CONTRACT = Path(__file__).resolve().parents[1] / "config" / "resolved_geometry.json"
 
 
-def region_metrics(frame: pd.DataFrame) -> dict[str, float | int]:
+def region_metrics(frame: pd.DataFrame) -> dict[str, float | int | None]:
     comsol = frame["COMSOL_Ez_V_per_m"].to_numpy()
     simion = frame["SIMION_Ez_V_per_m"].to_numpy()
     difference = simion - comsol
-    nonzero = np.abs(comsol) > 100.0
-    relative = 100.0 * difference[nonzero] / comsol[nonzero]
+    normalized = normalized_rms_difference_pct(comsol, simion)
+    near_zero = np.abs(comsol) <= normalized["numerical_zero_floor_V_per_m"]
     return {
         "points": int(len(frame)),
         "comsol_mean_Ez_V_per_m": float(np.mean(comsol)),
@@ -29,10 +34,16 @@ def region_metrics(frame: pd.DataFrame) -> dict[str, float | int]:
         "mean_difference_V_per_m": float(np.mean(difference)),
         "rms_difference_V_per_m": float(np.sqrt(np.mean(difference**2))),
         "maximum_absolute_difference_V_per_m": float(np.max(np.abs(difference))),
-        "relative_difference_mean_pct": float(np.mean(relative)),
-        "relative_difference_rms_pct": float(np.sqrt(np.mean(relative**2))),
-        "relative_difference_min_pct": float(np.min(relative)),
-        "relative_difference_max_pct": float(np.max(relative)),
+        "relative_to_comsol_rms_pct": normalized[
+            "relative_to_reference_rms_pct"
+        ],
+        "symmetric_normalized_rms_difference_pct": normalized[
+            "symmetric_scale_pct"
+        ],
+        "near_zero_reference_points": int(np.count_nonzero(near_zero)),
+        "numerical_zero_floor_V_per_m": normalized[
+            "numerical_zero_floor_V_per_m"
+        ],
     }
 
 
@@ -53,11 +64,13 @@ def main() -> None:
         missing = required - set(frame.columns)
         if missing:
             raise ValueError(f"{label} field CSV misses columns: {sorted(missing)}")
-    merged = comsol.merge(
+    merged = merge_complete_samples(
+        comsol,
         simion,
-        on=["region", "sample_index"],
+        keys=["region", "sample_index"],
+        left_label="COMSOL",
+        right_label="SIMION",
         suffixes=("_COMSOL", "_SIMION"),
-        validate="one_to_one",
     )
     for coordinate in ("x_mm", "y_mm", "z_mm"):
         error = np.max(
@@ -80,9 +93,20 @@ def main() -> None:
     merged["SIMION_minus_COMSOL_Ez_V_per_m"] = (
         merged["SIMION_Ez_V_per_m"] - merged["COMSOL_Ez_V_per_m"]
     )
-    merged["relative_difference_pct"] = 100.0 * (
-        merged["SIMION_minus_COMSOL_Ez_V_per_m"] / merged["COMSOL_Ez_V_per_m"]
-    )
+    merged["relative_difference_pct"] = np.nan
+    for _, indices in merged.groupby("region", sort=False).groups.items():
+        comsol_values = merged.loc[indices, "COMSOL_Ez_V_per_m"].to_numpy()
+        simion_values = merged.loc[indices, "SIMION_Ez_V_per_m"].to_numpy()
+        normalized = normalized_rms_difference_pct(comsol_values, simion_values)
+        floor = normalized["numerical_zero_floor_V_per_m"]
+        valid = np.abs(comsol_values) > floor
+        relative = np.full(comsol_values.shape, np.nan)
+        relative[valid] = (
+            100.0
+            * (simion_values[valid] - comsol_values[valid])
+            / comsol_values[valid]
+        )
+        merged.loc[indices, "relative_difference_pct"] = relative
 
     metrics = {
         region: region_metrics(frame)

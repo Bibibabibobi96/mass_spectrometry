@@ -20,6 +20,18 @@ $runtimeDir = Join-Path $runDir 'simion'
 New-Item -ItemType Directory -Path $inputDir,$resultDir,$logDir,$runtimeDir | Out-Null
 
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+. (Join-Path $projectRoot 'tests\run_record_helpers.ps1')
+Initialize-OaTofRunRecord -RunDir $runDir -RunId $RunId `
+  -Mode 'rf_handoff_pulse' -ProjectRoot $projectRoot `
+  -RepoRoot $repoRoot -Python $python
+$runRecordComplete = $false
+trap {
+  if (-not $runRecordComplete) {
+    Write-OaTofTerminalRunRecord -RunDir $runDir -Status failed `
+      -Reason $_.Exception.Message -RepoRoot $repoRoot -Python $python
+  }
+  exit 1
+}
 $modePath = if ([string]::IsNullOrWhiteSpace($ModePath)) { Join-Path $projectRoot 'config\modes\rf_handoff_pulse.json' } else { [IO.Path]::GetFullPath($ModePath) }
 $prepare = Join-Path $projectRoot 'analysis\prepare_rf_handoff_projection.py'
 $analyze = Join-Path $projectRoot 'analysis\analyze_rf_handoff_pulse.py'
@@ -54,15 +66,14 @@ if ($LASTEXITCODE -ne 0) { throw 'Shared-clock handoff build failed.' }
   --row-map $rowMap --metadata $metadata --output $request
 if ($LASTEXITCODE -ne 0) { throw 'Pulse consumer rejected the handoff bundle.' }
 
-$handoffTimes = @(Import-Csv -LiteralPath $canonical | ForEach-Object { [double]$_.instrument_time_us })
-$canonicalRows = @(Import-Csv -LiteralPath $canonical)
-$meanHandoffUs = ($handoffTimes | Measure-Object -Average).Average
-$meanInjectionVelocityMmUs = (@($canonicalRows | ForEach-Object { [double]$_.velocity_x_m_s / 1000.0 }) | Measure-Object -Average).Average
 $resolved = Get-Content -LiteralPath (Join-Path $projectRoot 'config\resolved_geometry.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $sourceCenterX = [double]$resolved.coordinate_convention.accelerator_axis_x
-$entryToCenterMm = $sourceCenterX - $targetOrigin[0]
-if ($entryToCenterMm -le 0 -or $meanInjectionVelocityMmUs -le 0) { throw 'Effective entry-plane timing inputs are invalid.' }
-$pulseTimeUs = $meanHandoffUs + $entryToCenterMm / $meanInjectionVelocityMmUs
+$timingJson = & $python (Join-Path $projectRoot 'analysis\solver_diagnostics.py') pulse-timing `
+  --canonical $canonical --source-center-x-mm $sourceCenterX --target-origin-x-mm $targetOrigin[0]
+if ($LASTEXITCODE -ne 0) { throw 'Pulse timing calculation failed.' }
+$timing = $timingJson | ConvertFrom-Json
+$entryToCenterMm = [double]$timing.entry_to_source_center_mm
+$pulseTimeUs = [double]$timing.pulse_time_us
 $pulseWidthUs = [double]$mode.pulse.width_us
 $diagnosticMaxUs = $pulseTimeUs + [double]$mode.pulse.maximum_elapsed_after_pulse_us
 $runtimeIob = Join-Path $runtimeDir 'oatof_ideal_grounded.iob'
@@ -109,7 +120,8 @@ $events = Join-Path $resultDir 'rf_handoff_pulse_events.csv'
 $timeline = Join-Path $resultDir 'rf_handoff_pulse_timeline.png'
 $snapshot = Join-Path $resultDir 'rf_handoff_pulse_snapshot.png'
 & $python $analyze --timed $outputs.timed --control $outputs.held_off --mode $modePath `
-  --canonical $canonical --pulse-log (Join-Path $logDir 'timed.stdout.log') --output $metrics `
+  --canonical $canonical --row-map $rowMap `
+  --pulse-log (Join-Path $logDir 'timed.stdout.log') --output $metrics `
   --events-output $events --timeline-output $timeline --snapshot-output $snapshot
 if ($LASTEXITCODE -ne 0) { throw 'Shared-clock pulse functional gate failed.' }
 $result = Get-Content -LiteralPath $metrics -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -138,4 +150,5 @@ foreach ($path in @($canonical,$ion,$rowMap,$metadata,$request,$programBuildMeta
 if ($LASTEXITCODE -ne 0) { throw 'Pulse run manifest creation failed.' }
 & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $manifest
 if ($LASTEXITCODE -ne 0) { throw 'Pulse run manifest verification failed.' }
+$runRecordComplete = $true
 Write-Output "RF_HANDOFF_PULSE=$($result.status) RUN_ID=$RunId TIMED=$($result.timed_pulse.hits)/100 CONTROL=$($result.held_off_control.hits)/100"

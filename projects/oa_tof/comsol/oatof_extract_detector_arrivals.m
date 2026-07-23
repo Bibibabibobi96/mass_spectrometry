@@ -1,8 +1,10 @@
-function result = oatof_extract_detector_arrivals(t,x,y,z,detector_z,freeze_tolerance_mm,approach_window_mm)
+function result = oatof_extract_detector_arrivals(t,x,y,z,detector_z,freeze_tolerance_mm,approach_window_mm,detector_x,detector_y,active_radius_mm)
 % Extract first downward detector-plane event after each trajectory turn.
 % A clean sign crossing is preferred.  COMSOL Wall/Freeze trajectories may
 % stop within a tight tolerance above the plane; those are accepted only when
 % the remaining samples form a stationary plateau at the same location.
+% Plane arrival and active-area acceptance are deliberately separate: event
+% records the trajectory event, while status and hit apply the detector radius.
 arguments
     t (:,1) double
     x double
@@ -11,6 +13,9 @@ arguments
     detector_z (1,1) double
     freeze_tolerance_mm (1,1) double {mustBeNonnegative} = 1e-3
     approach_window_mm (1,1) double {mustBePositive} = 0.5
+    detector_x (1,1) double = 0
+    detector_y (1,1) double = 0
+    active_radius_mm (1,1) double {mustBePositive} = Inf
 end
 assert(isequal(size(x),size(y),size(z)), 'Particle coordinate arrays must have equal size.');
 assert(size(z,1)==numel(t), 'Coordinate rows must match the time vector.');
@@ -56,8 +61,15 @@ for particle = 1:particle_count
         event(particle) = "near_detector_without_freeze";
     end
 end
+radius_mm = hypot(arrival_x-detector_x,arrival_y-detector_y);
+plane_event = isfinite(arrival_time);
+hit = plane_event & radius_mm<=active_radius_mm;
+status = event;
+status(plane_event & ~hit) = "outside_active_radius";
+status(hit) = "detector_hit";
 result = struct('time_s',arrival_time,'x_mm',arrival_x,'y_mm',arrival_y, ...
-    'hit',isfinite(arrival_time),'event',event);
+    'radius_mm',radius_mm,'plane_event',plane_event,'hit',hit, ...
+    'event',event,'status',status);
 end
 
 function [event_time,event_x,event_y] = interpolate_event(t,x,y,z,index,target)

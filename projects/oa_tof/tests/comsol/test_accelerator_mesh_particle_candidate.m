@@ -244,6 +244,8 @@ try
     speedErrorMS = max(abs(sqrt(sum(releasedVelocityMS.^2,2))-expectedSpeedMS));
 
     detectorZ = mphevaluate(model, 'detector_z', 'mm');
+    detectorXCenter = mphevaluate(model, 'detector_x', 'mm');
+    detectorRadius = mphevaluate(model, 'detector_radius', 'mm');
     if useSegmentedOutput
         expectedTof = mphevaluate(model, 't_detector_ref', 's');
     else
@@ -267,7 +269,14 @@ try
         detectorFinalZ = detectorFinalZ(:);
         assert(numel(detectorTimes) == numel(particleIds), ...
             'Stored stop-time particle count does not match the subset.');
-        assert(all(abs(detectorFinalZ-detectorZ) < 2), ...
+        detectorRadiusMm = hypot(detectorX-detectorXCenter,detectorY);
+        hit = abs(detectorFinalZ-detectorZ)<=1e-3 & ...
+            detectorRadiusMm<=detectorRadius & detectorTimes>0;
+        status = repmat("no_detector_event",numel(detectorTimes),1);
+        status(abs(detectorFinalZ-detectorZ)<=1e-3 & ~hit) = ...
+            "outside_active_radius";
+        status(hit) = "detector_hit";
+        assert(all(abs(detectorFinalZ-detectorZ) <= 1e-3), ...
             'Stored stop-time particles are not frozen at the detector.');
     else
         evalTimes = expectedTof + (-arrivalHalfWindow:0.2e-9:arrivalHalfWindow);
@@ -279,23 +288,21 @@ try
         z = orient_time_by_particle(squeeze(pd.d3), numel(t));
         assert(size(z,2) == numel(particleIds), ...
             'Solved particle count does not match the selected fixed subset.');
-        detectorTimes = nan(size(z,2), 1);
-        detectorX = nan(size(z,2), 1);
-        detectorY = nan(size(z,2), 1);
-        for particle = 1:size(z,2)
-            crossingIndex = find(z(:,particle) < detectorZ+0.5, 1, 'first');
-            if isempty(crossingIndex), continue; end
-            [detectorTimes(particle), detectorX(particle), detectorY(particle)] = ...
-                interpolate_crossing(t, x(:,particle), y(:,particle), ...
-                z(:,particle), crossingIndex, detectorZ);
-        end
+        arrivals = oatof_extract_detector_arrivals( ...
+            t,x,y,z,detectorZ,1e-3,0.5,detectorXCenter,0,detectorRadius);
+        detectorTimes = arrivals.time_s;
+        detectorX = arrivals.x_mm;
+        detectorY = arrivals.y_mm;
+        detectorRadiusMm = arrivals.radius_mm;
+        hit = arrivals.hit;
+        status = arrivals.status;
     end
-    assert(all(isfinite(detectorTimes)), 'Expected all fixed particles to hit.');
+    assert(all(hit), 'Expected all fixed particles to hit.');
     result = table(particleIds, detectorTimes*1e6, detectorX, detectorY, ...
-        true(numel(detectorTimes),1), selectedIon(:,4), selectedIon(:,5), ...
+        hit, status, detectorRadiusMm, selectedIon(:,4), selectedIon(:,5), ...
         selectedIon(:,6), selectedIon(:,9), ...
-        'VariableNames', {'Ion','TofUs','XMm','YMm','Hit', ...
-        'X0Mm','Y0Mm','Z0Mm','EnergyEv'});
+        'VariableNames', {'Ion','TofUs','XMm','YMm','Hit','Status', ...
+        'DetectorRadiusMm','X0Mm','Y0Mm','Z0Mm','EnergyEv'});
     writetable(result, outputCsv);
 
     fprintf(fid, 'MESH_ELEMENTS=%d\nMESH_SECONDS=%.6f\n', ...
@@ -319,19 +326,4 @@ if size(values, 1) == timeCount, return; end
 if size(values, 2) == timeCount, values = values.'; return; end
 error('Unexpected particle array shape %dx%d for %d times.', ...
     size(values,1), size(values,2), timeCount);
-end
-
-function [crossingTime, crossingX, crossingY] = ...
-    interpolate_crossing(t, x, y, z, index, target)
-if index > 1 && all(isfinite([x(index-1:index); y(index-1:index); ...
-        z(index-1:index)]), 'all') && z(index) ~= z(index-1)
-    fraction = (target-z(index-1))/(z(index)-z(index-1));
-    crossingTime = t(index-1) + fraction*(t(index)-t(index-1));
-    crossingX = x(index-1) + fraction*(x(index)-x(index-1));
-    crossingY = y(index-1) + fraction*(y(index)-y(index-1));
-else
-    crossingTime = t(index);
-    crossingX = x(index);
-    crossingY = y(index);
-end
 end

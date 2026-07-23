@@ -14,6 +14,7 @@ from projects.oa_tof.analysis.candidate_run_lifecycle import finalize_candidate_
 from projects.oa_tof.analysis.compile_candidate_design import EnvelopeReviewRequired, compile_proposal, write_candidate
 from projects.oa_tof.analysis.prepare_candidate_consumers import prepare, verify_routing_coverage
 from projects.oa_tof.analysis.prepare_candidate_run import prepare_candidate_run, validate_workflow
+from projects.oa_tof.analysis.prepare_formal_promotion import prepare as prepare_promotion
 from projects.oa_tof.analysis.run_bound_candidate_workflow import validate_bound_candidate
 from projects.oa_tof.analysis.run_candidate_workflow import (
     CandidateWorkflowError,
@@ -181,7 +182,7 @@ class CandidateDesignTests(unittest.TestCase):
             )
 
     def test_comsol_explicit_contract_consumes_reflectron_voltage_overrides(self):
-        source = (PROJECT_ROOT / "comsol" / "ms_oaTOF_two_stage_ringstack_reflectron.m").read_text(
+        source = (PROJECT_ROOT / "comsol" / "oatof_build_model_core.m").read_text(
             encoding="utf-8"
         )
         contract_branch = source.split("if ~isempty(contract_path)", 1)[1].split(
@@ -208,6 +209,50 @@ class CandidateDesignTests(unittest.TestCase):
         del consumer_contract["consumers"]["cad"]
         with self.assertRaisesRegex(ValueError, "candidate consumer routing is incomplete"):
             verify_routing_coverage(consumer_contract, variable_catalog)
+
+    def test_formal_promotion_requires_passing_candidate_acceptance(self):
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            candidate = root_path / "candidate.mph"
+            candidate.write_bytes(b"candidate")
+            acceptance = root_path / "acceptance.json"
+            acceptance.write_text(json.dumps({
+                "role": "oa_tof_candidate_acceptance",
+                "status": "failed",
+                "formal_modified": False,
+                "promotion_authorized": False,
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "pre-promotion"):
+                prepare_promotion(
+                    candidate, acceptance, root_path / "transaction.json",
+                    root_path / "formal",
+                )
+
+    def test_formal_promotion_authorizes_only_exact_destinations(self):
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            candidate = root_path / "candidate.mph"
+            candidate.write_bytes(b"candidate")
+            acceptance = root_path / "acceptance.json"
+            acceptance.write_text(json.dumps({
+                "role": "oa_tof_candidate_acceptance",
+                "status": "success",
+                "formal_modified": False,
+                "promotion_authorized": False,
+            }), encoding="utf-8")
+            output = root_path / "transaction.json"
+            transaction = prepare_promotion(
+                candidate, acceptance, output, root_path / "formal",
+            )
+            self.assertEqual(transaction["status"], "authorized")
+            self.assertEqual(
+                transaction["destinations"]["comsol_model"],
+                str((root_path / "formal" / "comsol" / "oa_tof__model.mph").resolve()),
+            )
+            self.assertEqual(
+                transaction["destinations"]["cad_root"],
+                str((root_path / "formal" / "cad").resolve()),
+            )
 
     def candidate_run_inputs(self, root_path):
         baseline = root_path / "candidate_baseline.json"
@@ -492,7 +537,8 @@ class CandidateDesignTests(unittest.TestCase):
             files = {}
             for name in ("particle_table", "model", "sync_report", "iob", "ion_n100", "stage_summary", "cad_report"):
                 path = run_root / f"{name}.dat"
-                path.write_text("same particle table" if name in ("particle_table", "ion_n100") else "evidence", encoding="utf-8")
+                content = "\n".join(["same particle table"] * 100) if name in ("particle_table", "ion_n100") else "evidence"
+                path.write_text(content, encoding="utf-8")
                 files[name] = str(path)
             plan = {
                 "run_root": str(run_root),

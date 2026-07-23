@@ -49,19 +49,20 @@ end
 if strlength(options.OutputModelPath) > 0
     paths = oatof_paths();
     outputPath = string(java.io.File(char(options.OutputModelPath)).getCanonicalPath());
-    allowedRoots = string({paths.comsolFormalDir, paths.runsRoot, paths.scratchRoot});
+    allowedRoots = string({paths.runsRoot, paths.scratchRoot});
     allowed = false;
     for root = allowedRoots
         canonicalRoot = string(java.io.File(char(root)).getCanonicalPath());
         allowed = allowed || startsWith(lower(outputPath), lower(canonicalRoot + filesep));
     end
-    assert(allowed, 'OutputModelPath must remain under formal/comsol, runs, or scratch.');
+    assert(allowed, ...
+        'Normal COMSOL runs may write only under runs or scratch; Formal requires promotion.');
     [~,~,extension] = fileparts(outputPath);
     assert(strcmpi(extension, '.mph'), 'OutputModelPath must end in .mph.');
     options.OutputModelPath = outputPath;
 end
 
-result = ms_oaTOF_two_stage_ringstack_reflectron( ...
+result = oatof_build_model_core( ...
     options.MassAmu, char(options.Label), char(options.SolverMode), ...
     char(options.FieldMode), options.ReflectronStage1Mm, ...
     options.ReflectronStage2RingCount, options.ReflectronMeshHmaxMm, ...

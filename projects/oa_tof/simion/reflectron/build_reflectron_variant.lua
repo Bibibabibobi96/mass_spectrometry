@@ -1,32 +1,33 @@
 -- Build a size-guarded reflectron PA variant from the formal GEM.
 -- Usage:
 --   simion.exe --nogui lua build_reflectron_variant.lua source.gem output.pa#
---     [axial_mm_per_gu] [radial_mm_per_gu] [max_GiB]
---     [inner_radius_mm] [wall_mm] [backplate_front_mm]
---     [backplate_thickness_mm] [far_clearance_mm] [far_cap_mm]
---     [stage1_length_mm] [stage2_length_mm] [bore_radius_mm]
---     [ring_outer_radius_mm] [stage1_ring_count] [stage2_ring_count]
---     [midgrid_voltage_v] [backplate_voltage_v]
+--     axial_mm_per_gu radial_mm_per_gu max_GiB
+--     inner_radius_mm wall_mm backplate_front_mm
+--     backplate_thickness_mm far_clearance_mm far_cap_mm
+--     stage1_length_mm stage2_length_mm bore_radius_mm
+--     ring_outer_radius_mm stage1_ring_count stage2_ring_count
+--     midgrid_voltage_v backplate_voltage_v
 
 local source = assert(arg[1], 'missing source GEM')
 local output = assert(arg[2], 'missing output PA#')
-local mmgu_axial = tonumber(arg[3] or '1')
-local mmgu_radial = tonumber(arg[4] or tostring(mmgu_axial))
-local max_gib = tonumber(arg[5] or '0.5')
-local inner_radius = tonumber(arg[6] or '350')
-local wall = tonumber(arg[7] or '10')
-local backplate_front = tonumber(arg[8] or '206.8328')
-local backplate_thickness = tonumber(arg[9] or '5')
-local far_clearance = tonumber(arg[10] or '50')
-local far_cap_thickness = tonumber(arg[11] or '10')
-local stage1_length = tonumber(arg[12] or '120')
-local stage2_length = tonumber(arg[13] or '86.8328')
-local bore_radius = tonumber(arg[14] or '250')
-local ring_outer_radius = tonumber(arg[15] or '300')
-local stage1_ring_count = tonumber(arg[16] or '10')
-local stage2_ring_count = tonumber(arg[17] or '5')
-local midgrid_voltage = tonumber(arg[18] or '1600')
-local backplate_voltage = tonumber(arg[19] or '2400')
+assert(arg[19], 'all reflectron geometry, mesh and voltage arguments are required')
+local mmgu_axial = assert(tonumber(arg[3]), 'invalid axial cell size')
+local mmgu_radial = assert(tonumber(arg[4]), 'invalid radial cell size')
+local max_gib = assert(tonumber(arg[5]), 'invalid memory limit')
+local inner_radius = assert(tonumber(arg[6]), 'invalid inner radius')
+local wall = assert(tonumber(arg[7]), 'invalid wall thickness')
+local backplate_front = assert(tonumber(arg[8]), 'invalid backplate front')
+local backplate_thickness = assert(tonumber(arg[9]), 'invalid backplate thickness')
+local far_clearance = assert(tonumber(arg[10]), 'invalid far clearance')
+local far_cap_thickness = assert(tonumber(arg[11]), 'invalid far-cap thickness')
+local stage1_length = assert(tonumber(arg[12]), 'invalid stage-1 length')
+local stage2_length = assert(tonumber(arg[13]), 'invalid stage-2 length')
+local bore_radius = assert(tonumber(arg[14]), 'invalid bore radius')
+local ring_outer_radius = assert(tonumber(arg[15]), 'invalid ring outer radius')
+local stage1_ring_count = assert(tonumber(arg[16]), 'invalid stage-1 ring count')
+local stage2_ring_count = assert(tonumber(arg[17]), 'invalid stage-2 ring count')
+local midgrid_voltage = assert(tonumber(arg[18]), 'invalid midgrid voltage')
+local backplate_voltage = assert(tonumber(arg[19]), 'invalid backplate voltage')
 local bore_end = backplate_front+backplate_thickness+far_clearance
 local axial_span = bore_end+far_cap_thickness
 local radial_span = inner_radius+wall
@@ -64,6 +65,13 @@ assert(estimated_gib <= max_gib,
   string.format('estimated PA set %.3f GiB exceeds limit %.3f GiB',
     estimated_gib,max_gib))
 
+local staged_source=output:gsub('%.pa#$','.source.gem')
+local input=assert(io.open(source,'rb'))
+local content=input:read('*a')
+input:close()
+local staged=assert(io.open(staged_source,'wb'))
+staged:write(content)
+staged:close()
 _G.var={
   mmgu_axial=mmgu_axial,mmgu_radial=mmgu_radial,
   inner_radius=inner_radius,wall=wall,
@@ -74,8 +82,10 @@ _G.var={
   bore_radius=bore_radius,ring_outer_radius=ring_outer_radius,
   stage1_ring_count=stage1_ring_count,stage2_ring_count=stage2_ring_count
 }
-simion.command(string.format('gem2pa %q %q',source,output))
+simion.command(string.format('gem2pa %q %q',staged_source,output))
 _G.var=nil
+os.remove(staged_source)
+os.remove(staged_source:gsub('%.gem$','.processed.gem'))
 simion.command(string.format(
   'refine --resume=0 --convergence=5e-7 %q',output))
 local voltage_assignments={'1=0'}

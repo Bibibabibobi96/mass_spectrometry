@@ -21,6 +21,10 @@ def load_module(name: str, path: Path):
     return module
 
 
+ADAPTER = load_module(
+    "rf_handoff_adapter",
+    PROJECT_ROOT / "analysis" / "rf_handoff_adapter.py",
+)
 PREPARE = load_module(
     "prepare_rf_handoff_projection",
     PROJECT_ROOT / "analysis" / "prepare_rf_handoff_projection.py",
@@ -81,19 +85,22 @@ class HandoffBundleTests(unittest.TestCase):
         write_csv(self.canonical, [
             "particle_id", "clock_epoch_id", "instrument_time_us", "lineage_age_us",
             "particle_age_us", "mass_amu", "charge_state", "position_x_mm",
-            "position_y_mm", "position_z_mm", "kinetic_energy_eV",
+            "position_y_mm", "position_z_mm", "velocity_x_m_s", "velocity_y_m_s",
+            "velocity_z_m_s", "kinetic_energy_eV",
         ], [{
             "particle_id": 7, "clock_epoch_id": "epoch", "instrument_time_us": 15,
             "lineage_age_us": 5, "particle_age_us": 2, "mass_amu": 100,
             "charge_state": 1, "position_x_mm": -48.8, "position_y_mm": 0.1,
-            "position_z_mm": -18.4, "kinetic_energy_eV": 2,
+            "position_z_mm": -18.4, "velocity_x_m_s": 1964.5389500506553,
+            "velocity_y_m_s": 0, "velocity_z_m_s": 0, "kinetic_energy_eV": 2,
         }])
         write_csv(self.row_map, [
             "solver_row_index", "particle_id", "instrument_time_us", "lineage_age_us",
-            "particle_age_us", "solver_birth_time_us",
+            "particle_age_us", "solver_birth_time_us", "azimuth_deg", "elevation_deg",
         ], [{
             "solver_row_index": 1, "particle_id": 7, "instrument_time_us": 15,
             "lineage_age_us": 5, "particle_age_us": 2, "solver_birth_time_us": 0,
+            "azimuth_deg": 0, "elevation_deg": 0,
         }])
         self.ion.write_text("0,100,1,-48.8,0.1,-18.4,0,0,2,1,3\n", encoding="utf-8")
         contract = PREPARE.repo_path(PREPARE.load_json(PREPARE.DEFAULT_MODE)["handoff_contract"])
@@ -123,6 +130,24 @@ class HandoffBundleTests(unittest.TestCase):
         metadata["outputs"]["oatof_ion"]["sha256"] = PREPARE.sha256(self.ion)
         self.metadata.write_text(json.dumps(metadata), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "differs from the canonical"):
+            PREPARE.validate_bundle(self.canonical, self.ion, self.row_map, self.metadata)
+
+    def test_changed_ion_direction_is_rejected(self) -> None:
+        self.ion.write_text("0,100,1,-48.8,0.1,-18.4,90,0,2,1,3\n", encoding="utf-8")
+        metadata = json.loads(self.metadata.read_text(encoding="utf-8"))
+        metadata["outputs"]["oatof_ion"]["sha256"] = PREPARE.sha256(self.ion)
+        self.metadata.write_text(json.dumps(metadata), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "direction"):
+            PREPARE.validate_bundle(self.canonical, self.ion, self.row_map, self.metadata)
+
+    def test_nonfinite_canonical_velocity_is_rejected(self) -> None:
+        rows = PREPARE._read_csv(self.canonical)
+        rows[0]["velocity_x_m_s"] = "NaN"
+        write_csv(self.canonical, list(rows[0]), rows)
+        metadata = json.loads(self.metadata.read_text(encoding="utf-8"))
+        metadata["outputs"]["canonical_handoff_csv"]["sha256"] = PREPARE.sha256(self.canonical)
+        self.metadata.write_text(json.dumps(metadata), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "finite"):
             PREPARE.validate_bundle(self.canonical, self.ion, self.row_map, self.metadata)
 
 
@@ -237,7 +262,9 @@ class HandoffPulseAnalysisTests(unittest.TestCase):
             ]), encoding="utf-8")
             events_path = root / "events.csv"
             events, outcomes = PULSE_ANALYZE.build_events(
-                PULSE_ANALYZE.read_csv(canonical), PULSE_ANALYZE.read_csv(timed),
+                PULSE_ANALYZE.read_csv(canonical), [{
+                    "solver_row_index": "1", "particle_id": "1",
+                }], PULSE_ANALYZE.read_csv(timed),
                 PULSE_ANALYZE.parse_log(log)[2], PULSE_ANALYZE.parse_log(log)[3],
             )
             PULSE_ANALYZE.write_csv(events_path, events)
@@ -246,6 +273,55 @@ class HandoffPulseAnalysisTests(unittest.TestCase):
             self.assertEqual(float(saved[1]["vx_m_s"]), 2000.0)
             self.assertEqual(saved[2]["status"], "detector_hit")
             self.assertEqual(outcomes[1], "detector_hit")
+
+    def test_solver_rows_are_mapped_to_nonsequential_particle_ids(self) -> None:
+        canonical_rows = [
+            {
+                "particle_id": "101", "instrument_time_us": "45",
+                "position_x_mm": "-62.8", "position_y_mm": "0.1",
+                "position_z_mm": "-18.4", "velocity_x_m_s": "2000",
+                "velocity_y_m_s": "20", "velocity_z_m_s": "-30",
+            },
+            {
+                "particle_id": "205", "instrument_time_us": "46",
+                "position_x_mm": "-62.8", "position_y_mm": "0.2",
+                "position_z_mm": "-18.3", "velocity_x_m_s": "1900",
+                "velocity_y_m_s": "10", "velocity_z_m_s": "-20",
+            },
+        ]
+        row_map = [
+            {"solver_row_index": "1", "particle_id": "101"},
+            {"solver_row_index": "2", "particle_id": "205"},
+        ]
+        timed_rows = [
+            {"Ion": "1", "Hit": "True", "TofUs": "40"},
+            {"Ion": "2", "Hit": "False", "TofUs": "NaN"},
+        ]
+        pulse_states = {
+            1: {"time": 54, "x": -48.8, "y": 0.2, "z": -18.3,
+                "vx": 2, "vy": 0.02, "vz": -0.03},
+            2: {"time": 54, "x": -48.7, "y": 0.3, "z": -18.2,
+                "vx": 1.9, "vy": 0.01, "vz": -0.02},
+        }
+        terminal_states = {
+            1: {"time": 85, "x": 49, "y": 1, "z": 19.8,
+                "vx": 0.1, "vy": 0.2, "vz": -30, "instance": 4},
+            2: {"time": 80, "x": 10, "y": 2, "z": 12,
+                "vx": 0.1, "vy": 0.1, "vz": -20, "instance": 1},
+        }
+        events, outcomes = PULSE_ANALYZE.build_events(
+            canonical_rows, row_map, timed_rows, pulse_states, terminal_states,
+        )
+        self.assertEqual(set(outcomes), {101, 205})
+        self.assertEqual(outcomes[101], "detector_hit")
+        self.assertEqual(outcomes[205], "lost")
+        self.assertEqual(
+            [(row["particle_id"], row["event"]) for row in events],
+            [
+                (101, "effective_entry"), (101, "pulse_on"), (101, "terminal"),
+                (205, "effective_entry"), (205, "pulse_on"), (205, "terminal"),
+            ],
+        )
 
 
 if __name__ == "__main__":

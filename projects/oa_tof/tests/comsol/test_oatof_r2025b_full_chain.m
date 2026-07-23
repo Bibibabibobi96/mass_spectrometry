@@ -2,6 +2,7 @@ reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
 testDir = fileparts(mfilename('fullpath'));
 componentDir = fileparts(fileparts(testDir));
 addpath(componentDir);
+addpath(fullfile(componentDir, 'comsol'));
 paths = oatof_paths();
 modelPath = fullfile(paths.comsolFormalDir, ...
     'oa_tof__model.mph');
@@ -42,6 +43,8 @@ assert(strcmp(solutionsAfterParticle, initialSolutions), ...
 
 pd = mphparticle(model, 'dataset', 'pdset1');
 t = pd.t;
+x = squeeze(pd.p(:,:,1));
+y = squeeze(pd.p(:,:,2));
 z = squeeze(pd.p(:,:,3));
 nParticles = size(z, 2);
 expectedParticles = str2double(model.component('comp1').physics('cpt') ...
@@ -51,43 +54,15 @@ assert(nParticles == expectedParticles, ...
     nParticles, expectedParticles);
 
 detectorZ = model.param.evaluate('detector_z') * 1e3;
-detThreshold = detectorZ + 0.5;
-wasUpThreshold = detectorZ * 2;
-freezeTolerance = 2;
-detTimes = nan(1, nParticles);
+detectorX = model.param.evaluate('detector_x') * 1e3;
+detectorRadius = model.param.evaluate('detector_radius') * 1e3;
+arrivals = oatof_extract_detector_arrivals( ...
+    t(:),x,y,z,detectorZ,1e-3,0.5,detectorX,0,detectorRadius);
+detTimes = arrivals.time_s;
+detTimes(~arrivals.hit) = NaN;
 zMax = max(z, [], 1);
-for particle = 1:nParticles
-    zi = z(:, particle);
-    wasUp = false;
-    wasUpIndex = NaN;
-    detected = false;
-    for sample = 1:numel(zi)
-        if isnan(zi(sample))
-            break
-        end
-        if zi(sample) > wasUpThreshold && ~wasUp
-            wasUp = true;
-            wasUpIndex = sample;
-        end
-        if wasUp && zi(sample) < detThreshold
-            detTimes(particle) = interpCrossingTime( ...
-                t, zi, sample, detectorZ);
-            detected = true;
-            break
-        end
-    end
-    if ~detected && wasUp
-        nearDetector = find(abs(zi(wasUpIndex:end) - detectorZ) < ...
-            freezeTolerance, 1, 'first');
-        if ~isempty(nearDetector)
-            sample = wasUpIndex + nearDetector - 1;
-            detTimes(particle) = interpCrossingTime( ...
-                t, zi, sample, detectorZ);
-        end
-    end
-end
 
-nDetected = sum(~isnan(detTimes));
+nDetected = sum(arrivals.hit);
 meanTime = mean(detTimes, 'omitnan');
 stdTime = std(detTimes, 'omitnan');
 fwhmFactor = 2*sqrt(2*log(2));
@@ -103,6 +78,10 @@ fprintf(fid, 'STD_TOF_NS=%.12g\n', stdTime * 1e9);
 fprintf(fid, 'FWHM_TOF_NS=%.12g\n', fwhmTime * 1e9);
 fprintf(fid, 'RESOLUTION_R_FWHM=%.12g\n', resolution);
 fprintf(fid, 'MAX_STAGE2_PENETRATION_MM=%.12g\n', stage2Penetration);
+for status = unique(arrivals.status).'
+    fprintf(fid, 'DETECTOR_STATUS_%s=%d\n', ...
+        upper(status),sum(arrivals.status==status));
+end
 
 assert(nDetected == expectedParticles, ...
     'Only %d/%d particles reached the detector.', ...
@@ -115,15 +94,6 @@ assert(resolution > 15000/fwhmFactor, ...
 fprintf(fid, 'STATUS=PASS\n');
 clear cleanup
 ModelUtil.remove('OaTofFullChainVerify');
-
-function crossingTime = interpCrossingTime(t, z, index, target)
-if index > 1 && z(index-1) ~= z(index)
-    fraction = (target - z(index-1)) / (z(index) - z(index-1));
-    crossingTime = t(index-1) + fraction * (t(index) - t(index-1));
-else
-    crossingTime = t(index);
-end
-end
 
 function text = joinJavaStrings(values)
 items = cell(1, length(values));

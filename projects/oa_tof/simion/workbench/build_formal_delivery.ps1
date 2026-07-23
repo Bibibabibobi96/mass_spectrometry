@@ -138,6 +138,11 @@ foreach ($particleCount in @(100, 1000)) {
     -CenterYmm $source.center_y_mm -CenterZmm $source.center_z_mm `
     -Seed $source.seed -Output $ionPath | Out-Null
 }
+$n100Ion = Join-Path $outputFull 'oatof_comsol_524amu_gaussian_N100.ion'
+$n1000Ion = Join-Path $outputFull 'oatof_comsol_524amu_gaussian_N1000.ion'
+& $python (Join-Path $repoRoot 'common\contracts\particle_count_policy.py') `
+  --prefix-n100 $n100Ion --prefix-n1000 $n1000Ion
+if ($LASTEXITCODE -ne 0) { throw 'N=100 source is not the deterministic N=1000 prefix.' }
 
 Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\SIMION_REPRODUCTION_PARAMETERS.md') `
   -Destination (Join-Path $outputFull 'SIMION_REPRODUCTION_PARAMETERS.md')

@@ -1,4 +1,4 @@
-function [mesh1,mi,t_mesh] = oatof_build_mesh(model,comp1,p,mesh_hmax_refl_mm,mesh_hmax_accel_mm)
+function [mesh1,mi,t_mesh] = oatof_build_mesh(model,comp1,p,mesh_hmax_refl_mm,mesh_hmax_accel_mm,runtime)
 t_mesh_start = tic;
 mesh1 = comp1.mesh.create('mesh1');
 mesh1.label('Mesh (hauto=6, refined at release, accelerator + ring stack)');
@@ -80,13 +80,12 @@ add_comsol_size_feature(mesh1,'szrefl', ...
 % expensive as global refinement. Select only the narrow physical inner
 % cylindrical walls of the annular rings; FreeTet then grades their
 % adjacent vacuum cells locally.
-local_rim_hmax_mm = max(3, mesh_hmax_refl_mm/3);
-% The narrow boundary method is retained as an opt-in experiment. On the
-% current connected-vacuum geometry it was still too expensive for a
-% routine particle scan; enable only after a mesh-only convergence run by
-% setting the environment variable OATOF_LOCAL_EDGE_MESH to a nonempty
-% value. It is disabled by default for all ordinary calls.
-use_local_edge_refinement = ~isempty(getenv('OATOF_LOCAL_EDGE_MESH'));
+local_rim_hmax_mm = max(runtime.local_reflectron_edge_hmax_floor_mm, ...
+    mesh_hmax_refl_mm/runtime.local_reflectron_edge_hmax_divisor);
+% The narrow-boundary experiment is an explicit resolved-runtime choice.
+% Candidate and Formal models therefore record the same mesh behavior.
+use_local_edge_refinement = logical( ...
+    runtime.local_reflectron_edge_refinement_enabled);
 if use_local_edge_refinement
     comp1.selection.create('selreflrimmesh', 'Cylinder');
     comp1.selection('selreflrimmesh').label('Reflectron ring-inner-edge boundaries (local mesh)');

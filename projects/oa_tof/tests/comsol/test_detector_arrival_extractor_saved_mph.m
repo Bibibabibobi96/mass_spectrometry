@@ -23,11 +23,17 @@ x = orient(squeeze(pd.d1),numel(t));
 y = orient(squeeze(pd.d2),numel(t));
 z = orient(squeeze(pd.d3),numel(t));
 detectorZ = model.param.evaluate('detector_z')*1e3;
-arrivals = oatof_extract_detector_arrivals(t,x,y,z,detectorZ,1e-3,0.5);
+detectorX = model.param.evaluate('detector_x')*1e3;
+detectorRadius = model.param.evaluate('detector_radius')*1e3;
+arrivals = oatof_extract_detector_arrivals( ...
+    t,x,y,z,detectorZ,1e-3,0.5,detectorX,0,detectorRadius);
 assert(all(arrivals.hit),'Strict detector extraction found %d/%d hits.',sum(arrivals.hit),numel(arrivals.hit));
 fprintf(fid,'MODEL=%s\nHIT=%d/%d\n',modelPath,sum(arrivals.hit),numel(arrivals.hit));
 for event = unique(arrivals.event).'
     fprintf(fid,'EVENT_%s=%d\n',upper(event),sum(arrivals.event==event));
+end
+for status = unique(arrivals.status).'
+    fprintf(fid,'STATUS_%s=%d\n',upper(status),sum(arrivals.status==status));
 end
 if ~isempty(referenceCsv)
     reference = readtable(referenceCsv,'VariableNamingRule','preserve');

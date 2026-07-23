@@ -18,7 +18,7 @@ from common.contracts.machine_contracts import load_json, sha256
 
 
 FORMAL_BASELINE_PATH = PROJECT_ROOT / "config" / "baseline.json"
-TERMINAL_STATUSES = {"success", "failed", "interrupted"}
+TERMINAL_STATUSES = {"success", "failed", "interrupted", "timeout"}
 
 
 def _utc_now() -> str:
@@ -204,7 +204,7 @@ def finalize_candidate_run(
     if actual_stages != expected_stages:
         raise ValueError("stage results must cover every workflow stage in declared order")
     if status != "success" and not failure_stage:
-        raise ValueError("failed or interrupted candidate runs require failure_stage")
+        raise ValueError("non-success candidate runs require failure_stage")
     summary = _summary(status, stage_results, failure_stage)
     _write_json(run_root / "summary.json", summary)
     manifest = _write_manifest(run_root, status)

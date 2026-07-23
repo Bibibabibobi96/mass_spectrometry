@@ -21,8 +21,14 @@ function result = ms_export_oatof_to_solidworks(modelPath, outputDir, visibleSol
         modelPath = fullfile(paths.comsolFormalDir, ...
             "oa_tof__model.mph");
     end
-    if strlength(outputDir) == 0
-        outputDir = paths.cadFormalDir;
+    assert(strlength(outputDir)>0, ...
+        ['outputDir is required; ordinary CAD export cannot default to ' ...
+         'Formal. Use an explicit promotion transaction for Formal CAD.']);
+    formalCad = string(java.io.File(paths.cadFormalDir).getCanonicalPath());
+    resolvedOutput = string(java.io.File(char(outputDir)).getCanonicalPath());
+    if startsWith(lower(resolvedOutput),lower(formalCad+filesep)) || ...
+            strcmpi(resolvedOutput,formalCad)
+        oatof_assert_formal_write_authorized(resolvedOutput,'cad_root');
     end
 
     exportResult = export_oatof_cad_step(modelPath, outputDir);

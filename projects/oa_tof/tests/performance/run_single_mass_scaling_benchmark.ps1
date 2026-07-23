@@ -22,34 +22,6 @@ function Read-KeyValueReport([string]$Path) {
   return $values
 }
 
-function Get-LineFit([object[]]$Rows, [string]$TimeProperty) {
-  $points = @($Rows | ForEach-Object {
-    [pscustomobject]@{ X = [double]$_.particle_count; Y = [double]$_.$TimeProperty }
-  })
-  $xMean = ($points | Measure-Object -Property X -Average).Average
-  $yMean = ($points | Measure-Object -Property Y -Average).Average
-  $sxx = 0.0
-  $sxy = 0.0
-  foreach ($point in $points) {
-    $sxx += ($point.X-$xMean)*($point.X-$xMean)
-    $sxy += ($point.X-$xMean)*($point.Y-$yMean)
-  }
-  $slope = $sxy/$sxx
-  $intercept = $yMean-$slope*$xMean
-  $ssResidual = 0.0
-  $ssTotal = 0.0
-  foreach ($point in $points) {
-    $predicted = $intercept+$slope*$point.X
-    $ssResidual += ($point.Y-$predicted)*($point.Y-$predicted)
-    $ssTotal += ($point.Y-$yMean)*($point.Y-$yMean)
-  }
-  [ordered]@{
-    intercept_seconds = $intercept
-    slope_seconds_per_particle = $slope
-    r_squared = if ($ssTotal -gt 0) { 1.0-$ssResidual/$ssTotal } else { 1.0 }
-  }
-}
-
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
@@ -70,6 +42,20 @@ if ($Resume) {
     throw "Benchmark run already exists: $RunId"
   }
   New-Item -ItemType Directory -Path $runDir,$resultDir | Out-Null
+}
+. (Join-Path $projectRoot 'tests\run_record_helpers.ps1')
+if (-not $Resume) {
+  Initialize-OaTofRunRecord -RunDir $runDir -RunId $RunId `
+    -Mode 'single_mass_scaling_benchmark' -ProjectRoot $projectRoot `
+    -RepoRoot $repoRoot -Python $python
+}
+$runRecordComplete = $false
+trap {
+  if (-not $runRecordComplete) {
+    Write-OaTofTerminalRunRecord -RunDir $runDir -Status failed `
+      -Reason $_.Exception.Message -RepoRoot $repoRoot -Python $python
+  }
+  exit 1
 }
 
 $formalMph = Join-Path $artifactRoot 'formal\comsol\oa_tof__model.mph'
@@ -112,7 +98,8 @@ foreach ($particleCount in $countValues) {
       -HalfWidthYmm ([double]$source.size_y_mm/2) `
       -HalfWidthZmm ([double]$source.size_z_mm/2) `
       -CenterXmm ([double]$source.center_x_mm) -CenterYmm ([double]$source.center_y_mm) `
-      -CenterZmm ([double]$source.center_z_mm) -Seed $Seed -Output $ionPath | Out-Null
+      -CenterZmm ([double]$source.center_z_mm) -Seed $Seed -Output $ionPath `
+      -AllowNonstandardDiagnosticCount | Out-Null
   }
   if (@(Get-Content -LiteralPath $ionPath).Count -ne $particleCount) {
     throw "ION row count is incorrect: $ionPath"
@@ -218,22 +205,11 @@ foreach ($particleCount in $countValues) {
 
 $sampleCsv = Join-Path $resultDir 'timing_samples.csv'
 $samples | Export-Csv -LiteralPath $sampleCsv -NoTypeInformation -Encoding UTF8
-$comsolRows = @($samples | Where-Object solver -eq 'COMSOL')
-$simionRows = @($samples | Where-Object solver -eq 'SIMION')
-$metrics = [ordered]@{
-  schema_version = 1
-  role = 'oa_tof_single_mass_scaling_benchmark'
-  run_id = $RunId
-  mass_amu = $MassAmu
-  charge_state = $ChargeState
-  particle_counts = @($countValues)
-  simion_repeats = $SimionRepeats
-  comsol_wall_fit = Get-LineFit $comsolRows 'wall_seconds'
-  comsol_particle_fit = Get-LineFit $comsolRows 'particle_seconds'
-  simion_wall_fit = Get-LineFit $simionRows 'wall_seconds'
-}
 $metricsPath = Join-Path $resultDir 'timing_metrics.json'
-$metrics | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $metricsPath -Encoding UTF8
+& $python (Join-Path $projectRoot 'analysis\solver_diagnostics.py') benchmark-metrics `
+  --samples $sampleCsv --output $metricsPath --run-id $RunId --mass-amu $MassAmu `
+  --charge-state $ChargeState --simion-repeats $SimionRepeats | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'Python timing regression failed.' }
 $summaryPath = Join-Path $runDir 'summary.json'
 $summary = [ordered]@{ schema_version=1; role='oa_tof_single_mass_scaling_summary'; status='success'; metrics='results/timing_metrics.json'; particle_counts=@($countValues) }
 $summary | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
@@ -270,4 +246,5 @@ foreach ($output in $manifestOutputs) { $manifestArgs += @('--output',$output) }
 if ($LASTEXITCODE -ne 0) { throw 'Benchmark manifest creation failed.' }
 & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $manifestPath --require-status success
 if ($LASTEXITCODE -ne 0) { throw 'Benchmark manifest verification failed.' }
+$runRecordComplete = $true
 Write-Output "SINGLE_MASS_SCALING=PASS RUN_ID=$RunId MASS_AMU=$MassAmu COUNTS=$($countValues -join ',')"

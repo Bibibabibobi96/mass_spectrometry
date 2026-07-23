@@ -40,5 +40,29 @@ classdef OaTofDetectorArrivalTest < matlab.unittest.TestCase
             testCase.verifyFalse(result.hit);
             testCase.verifyEqual(result.event,"near_detector_without_freeze");
         end
+
+        function rejectsPlaneCrossingOutsideActiveRadius(testCase)
+            t = (0:4).';
+            z = [0;2;1;0.5;-0.5];
+            x = [0;0;0;2;2];
+            result = oatof_extract_detector_arrivals( ...
+                t,x,zeros(5,1),z,0,1e-3,0.5,0,0,1);
+            testCase.verifyFalse(result.hit);
+            testCase.verifyEqual(result.event,"crossing");
+            testCase.verifyEqual(result.status,"outside_active_radius");
+            testCase.verifyEqual(result.radius_mm,2,'AbsTol',1e-12);
+        end
+
+        function reportsDetectorHitStatusAndRadius(testCase)
+            t = (0:4).';
+            z = [0;2;1;0.5;-0.5];
+            x = [0;0;0;0.3;0.5];
+            y = [0;0;0;0.4;0.4];
+            result = oatof_extract_detector_arrivals( ...
+                t,x,y,z,0,1e-3,0.5,0,0,1);
+            testCase.verifyTrue(result.hit);
+            testCase.verifyEqual(result.status,"detector_hit");
+            testCase.verifyEqual(result.radius_mm,hypot(0.4,0.4),'AbsTol',1e-12);
+        end
     end
 end

@@ -8,6 +8,8 @@ import json
 from datetime import date
 from pathlib import Path
 
+from common.contracts.particle_count_policy import validate_standard_particle_count
+
 
 PROJECT = Path(__file__).resolve().parents[1]
 REPO = PROJECT.parents[1]
@@ -45,6 +47,7 @@ def report_values(path: Path) -> dict[str, str]:
 def metric_block(side: dict, csv_path: Path) -> dict:
     metrics = side["metrics"]
     detector = metrics["detector"]
+    validate_standard_particle_count(int(metrics["particles"]))
     if int(metrics["particles"]) != 1000 or float(side["import"]["hit_fraction"]) != 1.0:
         raise ValueError(f"Formal side {side['label']} is not 1000/1000")
     if digest(csv_path) != side["sha256"]:

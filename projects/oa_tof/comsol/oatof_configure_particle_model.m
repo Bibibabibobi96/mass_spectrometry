@@ -159,15 +159,11 @@ ef1.set('E', {Ex_ideal, Ey_ideal, Ez_ideal});
 % !!! Distance estimate updated to match the extended L_flight=3000mm
 % (was hardcoded 0.36m = 0.3+0.03 margin for the old 300mm flight tube;
 % now 3.0+0.03=3.03m, same ~9% margin factor as before).
-v_push_speed = sqrt(2*2000*1.602176e-19/m_kg);
 % !!! Distance estimate updated for the new, much shorter L_flight=320mm
 % (was 3.30m for the old 3000mm design; new: L_flight+L_refl/2+margin
 % =320+45=365mm, *1.09 margin factor=~0.40m).
 % !!! Distance estimate updated for L_flight extended to 600mm (doc
 % §7.49, was 500mm): +100mm added to the previous 1.1m estimate.
-t_flight_oneway = 1.2/v_push_speed;
-fprintf('push-direction speed at 2000eV: %.4e m/s\n', v_push_speed);
-fprintf('estimated one-way flight time: %.3fus, round trip ~%.3fus\n', t_flight_oneway*1e6, 2*t_flight_oneway*1e6);
 
 % !!! Widened margin further (4.0->8.0): with the idealized-grid rebuild
 % (zero field leakage, full ideal field strength), the ion's z_max
@@ -195,7 +191,6 @@ fprintf('estimated one-way flight time: %.3fus, round trip ~%.3fus\n', t_flight_
 % to the full margin (deterministic particle release seed), so this has
 % zero accuracy impact -- it only ever removes wasted tail computation
 % for parameter combinations where the short margin already suffices.
-Tsim_full = 2*t_flight_oneway*8.0 + 1e-6;
 std2 = model.study.create('std2');
 std2.label(sprintf('Time-dependent: oa-TOF ring-stack %s', label));
 tstep = std2.create('time1', 'Transient');
@@ -295,6 +290,9 @@ tstep.label('Transient solver');
 timing = configure_oatof_segmented_output( ...
     model, mass_amu, fine_tstep_ns, drift_tstep_ns, contract);
 expected_tof = timing.expected_tof_s;
+runtime = contract.comsol_runtime;
+Tsim_full = expected_tof*runtime.fallback_time_factor + ...
+    runtime.fallback_end_padding_us*1e-6;
 fine_start = timing.t_refl_start_s;
 fine_end = timing.t_detector_end_s;
 Tsim = timing.t_end_s;

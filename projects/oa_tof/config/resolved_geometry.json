@@ -5,7 +5,7 @@
     "baseline": "config/baseline.json",
     "baseline_sha256": "5502D35FBAFB543352175ECA560D2EA27DC210738FBD0826B1A35DDFA6C8C467",
     "mode": "config/modes/formal.json",
-    "mode_sha256": "1DF0704256FE0F6761353AACF5466C5E003216572CC6F52A304CD6183BBEB916"
+    "mode_sha256": "83EE22C91CDF53FB905B17942D9FD6FA93C6164A6A6CCD72F6BC6C7A9FE64A3A"
   },
   "coordinate_convention": {
     "units": "mm",
@@ -207,6 +207,11 @@
     "routine_reflectron_hmax_mm": 15.0,
     "routine_accelerator_hmax_mm": 1.0,
     "convergence_accelerator_hmax_mm": 0.5,
+    "local_reflectron_edge_refinement_enabled": false,
+    "local_reflectron_edge_hmax_floor_mm": 3.0,
+    "local_reflectron_edge_hmax_divisor": 3.0,
+    "fallback_time_factor": 8.0,
+    "fallback_end_padding_us": 1.0,
     "fine_output_step_ns": 0.2,
     "field_free_output_step_ns": 50.0,
     "accelerator_window_margin_us": 0.5,

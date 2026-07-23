@@ -27,6 +27,18 @@ if (Test-Path -LiteralPath $caseDir) {
   throw "Extreme-N case already exists: $caseDir"
 }
 New-Item -ItemType Directory -Path $caseDir,$resultDir,$logDir -Force | Out-Null
+. (Join-Path $projectRoot 'tests\run_record_helpers.ps1')
+Initialize-OaTofRunRecord -RunDir $caseDir -RunId $RunId `
+  -Mode 'comsol_extreme_particle_count_threshold' -ProjectRoot $projectRoot `
+  -RepoRoot $repoRoot -Python $python
+$runRecordComplete = $false
+trap {
+  if (-not $runRecordComplete) {
+    Write-OaTofTerminalRunRecord -RunDir $caseDir -Status failed `
+      -Reason $_.Exception.Message -RepoRoot $repoRoot -Python $python
+  }
+  exit 1
+}
 
 $ionGenerator = Join-Path $projectRoot 'simion\workbench\generate_comsol_consistent_ions.ps1'
 $launcher = Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1'
@@ -54,7 +66,7 @@ if (-not (Test-Path -LiteralPath $ionPath -PathType Leaf)) {
     -CenterXmm ([double]$source.center_x_mm) `
     -CenterYmm ([double]$source.center_y_mm) `
     -CenterZmm ([double]$source.center_z_mm) `
-    -Seed $Seed -Output $ionPath | Out-Null
+    -Seed $Seed -Output $ionPath -AllowNonstandardDiagnosticCount | Out-Null
 }
 if (@(Get-Content -LiteralPath $ionPath).Count -ne $ParticleCount) {
   throw "ION row count is incorrect: $ionPath"
@@ -188,5 +200,6 @@ if ($LASTEXITCODE -ne 0) { throw 'Extreme-N manifest creation failed.' }
 & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $manifestPath `
   --require-status $manifestStatus
 if ($LASTEXITCODE -ne 0) { throw 'Extreme-N manifest verification failed.' }
+$runRecordComplete = $true
 Write-Output ("EXTREME_N_CASE={0} N={1} WALL_SECONDS={2:F3} SUMMARY={3}" -f `
   $summary.status,$ParticleCount,$watch.Elapsed.TotalSeconds,$summaryPath)

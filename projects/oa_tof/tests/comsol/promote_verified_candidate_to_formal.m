@@ -10,6 +10,7 @@ candidatePath = getenv('OATOF_CANDIDATE_MODEL_PATH');
 assert(~isempty(candidatePath), 'OATOF_CANDIDATE_MODEL_PATH is required.');
 formalPath = fullfile(paths.comsolFormalDir, ...
     'oa_tof__model.mph');
+transaction = oatof_assert_formal_write_authorized(formalPath,'comsol_model');
 assert(isfile(candidatePath), 'Verified candidate is missing: %s', candidatePath);
 
 fid = fopen(reportPath, 'w');
@@ -126,8 +127,18 @@ fprintf(fid, 'GUI_PREDICTED_TOF_US=%.12g\n', ...
 
 if ~isfolder(paths.comsolFormalDir), mkdir(paths.comsolFormalDir); end
 model.label('oa_tof__model.mph');
-model.save(formalPath);
+stagedPath = formalPath + ".promotion-" + string(transaction.authorization_id) + ".tmp.mph";
+stagedCleanup = onCleanup(@() delete_if_present(stagedPath));
+model.save(stagedPath);
+assert(isfile(stagedPath), 'Staged Formal MPH was not written: %s', stagedPath);
+[moved,message] = movefile(stagedPath,formalPath,'f');
+assert(moved,'Formal MPH atomic replacement failed: %s',message);
+clear stagedCleanup
 assert(isfile(formalPath), 'Formal MPH was not written: %s', formalPath);
 fprintf(fid, 'STATUS=PASS\n');
 clear cleanup
 ModelUtil.remove('OaTofPromotion');
+
+function delete_if_present(path)
+if isfile(path), delete(path); end
+end

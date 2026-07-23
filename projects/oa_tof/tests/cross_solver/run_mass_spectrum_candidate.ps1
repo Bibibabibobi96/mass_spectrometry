@@ -40,6 +40,20 @@ if ($resumeExisting) {
   $ionDir = New-Item -ItemType Directory -Path (Join-Path $runDir 'ions')
   $comsolDir = New-Item -ItemType Directory -Path (Join-Path $runDir 'comsol')
 }
+. (Join-Path $projectRoot 'tests\run_record_helpers.ps1')
+if (-not $resumeExisting) {
+  Initialize-OaTofRunRecord -RunDir $runDir -RunId $RunId `
+    -Mode 'mass_spectrum_candidate' -ProjectRoot $projectRoot `
+    -RepoRoot $repoRoot -Python $python
+}
+$runRecordComplete = $false
+trap {
+  if (-not $runRecordComplete) {
+    Write-OaTofTerminalRunRecord -RunDir $runDir -Status failed `
+      -Reason $_.Exception.Message -RepoRoot $repoRoot -Python $python
+  }
+  exit 1
+}
 
 $modePath = Join-Path $projectRoot 'config\modes\mass_spectrum.json'
 $mode = Get-Content -LiteralPath $modePath -Raw | ConvertFrom-Json
@@ -159,9 +173,10 @@ foreach ($species in $mode.species) {
 
 # Run the inexpensive mixed-species SIMION side only after all five COMSOL
 # batches succeed, so a COMSOL failure does not create a misleading half-run.
-$maximumMassAmu = [double](($mode.species | Measure-Object -Property mass_amu -Maximum).Maximum)
 $referenceMassAmu = [double]$contract.validation_target.mass_amu
-$simionMaxTofUs = [Math]::Ceiling(90.0 * [Math]::Sqrt($maximumMassAmu / $referenceMassAmu))
+$simionMaxTofUs = [double](& $python (Join-Path $projectRoot 'analysis\solver_diagnostics.py') `
+  mass-spectrum-max-tof --mode $effectiveModePath --reference-mass-amu $referenceMassAmu)
+if ($LASTEXITCODE -ne 0) { throw 'Mass-spectrum maximum TOF calculation failed.' }
 if ($ReanalyzeOnly) {
   foreach ($path in @($simionCsv,$simionSummary)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
@@ -257,4 +272,5 @@ foreach ($output in $outputs) { $manifestArgs += @('--output',$output) }
 if ($LASTEXITCODE -ne 0) { throw 'Run manifest creation failed.' }
 & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $manifestPath
 if ($LASTEXITCODE -ne 0) { throw 'Run manifest verification failed.' }
+$runRecordComplete = $true
 Write-Output "MASS_SPECTRUM_CANDIDATE=PASS RUN_ID=$RunId PARTICLES=$totalParticles"
