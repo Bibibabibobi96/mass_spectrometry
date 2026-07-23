@@ -46,7 +46,7 @@ S2–S3连接功能闭环记录：
   由`analysis/resolve_contract.py --profile interface`生成，禁止手改。
 - 求解器无关相空间接口：[`config/interface_contract.json`](config/interface_contract.json)
 - `particle_state.csv`的列、枚举和平面语义只以上述接口契约为准；
-  [`analysis/verify_particle_state_contract.py`](analysis/verify_particle_state_contract.py)运行时读取该契约，
+  仓库公共校验器[`../../common/contracts/particle_state.py`](../../common/contracts/particle_state.py)运行时读取该契约，
   不维护第二份列名或枚举。
 - 集成就绪粒子族与模式：[`config/interface_readiness_particle_source.json`](config/interface_readiness_particle_source.json)、
   [`config/modes/transport_interface_readiness.json`](config/modes/transport_interface_readiness.json)

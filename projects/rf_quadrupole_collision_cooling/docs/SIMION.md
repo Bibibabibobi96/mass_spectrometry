@@ -1,7 +1,7 @@
 # SIMION：RF四极杆传输与质量过滤
 
 返回项目统一状态：[`PROJECT.md`](PROJECT.md)。项目GEM由内置`examples/quad`单体参考派生；
-`analysis/generate_fixed_fly2.py`按共享ION表的实际行数生成显式Fly2，候选IOB沿用官方文件并在
+`common.multipole.simion_particle_source`按共享ION表的实际行数生成显式Fly2和积分前源状态，候选IOB沿用官方文件并在
 同目录绑定项目生成的 PA、Fly2 和 `quad_monolithic.lua`。
 
 两份GEM由`analysis/sync_simion_geometry.py`从`config/resolved_geometry.json`生成，并嵌入解析发布
@@ -45,8 +45,9 @@ N=100复验，不构成质量分辨能力资格。
 必须显式给出不少于100行的ION表及RF峰值，不能退回N25默认工况。权威ION表生成无BOM的
 `source_states.lua`，因此source事件是积分前的精确初始状态，而不是
 第一次`other_actions`回调后已前进的坐标。Lua在85.4和90.2 mm处对时间、位置、速度与能量插值，
-并在terminal事件记录统一终止原因；`analysis/verify_particle_state_contract.py`按输入表实际粒子数
-强制检查source身份、事件唯一性、平面坐标、RF相位和物理数值范围。旧solver-specific终点表不再生成。
+并在terminal事件记录统一终止原因；生产runner直接调用`common.contracts.particle_state`，按输入表
+实际粒子数强制检查source身份、事件唯一性、平面坐标、RF相位和物理数值范围。旧solver-specific
+终点表不再生成。
 
 2026-07-18命名N=100工况重新编译、refine并加载`39×39×477 @ 0.2 mm`候选，100/100命中、400条
 事件、源身份/平面/manifest均PASS。它与COMSOL独立场的接口比较整体FAIL，故只作为有效负结果，

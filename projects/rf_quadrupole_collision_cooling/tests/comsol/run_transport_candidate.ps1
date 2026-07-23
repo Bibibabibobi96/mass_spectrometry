@@ -130,7 +130,7 @@ if ($missing.Count -gt 0) { throw "COMSOL candidate outputs are missing: $($miss
 
 Push-Location $repoRoot
 try {
-& $python -m projects.rf_quadrupole_collision_cooling.analysis.verify_particle_state_contract `
+& $python -m common.contracts.particle_state `
     --state $particleStatePath --particles $particleTable --source-format ion11 `
     --contract (Join-Path $projectRoot 'config\interface_contract.json') --axial-offset-mm $SourceAxialOffsetMm `
     --frequency-hz $FrequencyHz --phase-rad $familyOperating.voltage.phase_rad `

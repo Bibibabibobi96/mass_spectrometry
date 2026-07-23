@@ -13,6 +13,13 @@ class SimionRunnerContractTests(unittest.TestCase):
         self.assertIn("Start-Sleep -Milliseconds 500", source)
         self.assertIn("'--nogui','--noprompt','fly'", source)
         self.assertNotIn("simion_run_fly.lua", source)
+        self.assertFalse((RUNNER.parent / "simion_run_fly.lua").exists())
+        self.assertFalse(
+            (
+                REPO_ROOT
+                / "projects/rf_quadrupole_collision_cooling/tests/simion/run_fly.lua"
+            ).exists()
+        )
 
     def test_validator_console_output_cannot_pollute_case_return_value(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")

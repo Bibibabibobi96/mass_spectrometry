@@ -76,7 +76,7 @@ $entries = @(
 foreach ($entry in $entries) {
     Push-Location $repoRoot
     try {
-        & $python -m projects.rf_quadrupole_collision_cooling.analysis.verify_particle_state_contract `
+        & $python -m common.contracts.particle_state `
             --state $entry.Path --particles $particlePath --source-format ion11 --contract $interfacePath `
             --frequency-hz $FrequencyHz --phase-rad $PhaseRad --solver $entry.Solver
         if ($LASTEXITCODE -ne 0) { throw "$($entry.Solver) particle-state contract failed." }

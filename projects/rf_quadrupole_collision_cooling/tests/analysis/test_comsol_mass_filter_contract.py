@@ -70,7 +70,7 @@ class ComsolMassFilterContractTests(unittest.TestCase):
             self.assertIn("common.multipole.resolve_family_operating_contract", runner)
             self.assertIn("family_operating_contract", runner)
         self.assertIn("--source-format ion11", transport_runner)
-        self.assertIn("analysis.verify_particle_state_contract", transport_runner)
+        self.assertIn("common.contracts.particle_state", transport_runner)
 
     def test_project_comsol_runner_and_builder_retain_only_specialized_modes(self) -> None:
         runner = (PROJECT_ROOT / "tests/comsol/run_transport_candidate.ps1").read_text(encoding="utf-8")
