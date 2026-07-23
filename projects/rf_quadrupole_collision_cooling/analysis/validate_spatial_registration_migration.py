@@ -11,7 +11,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOT = PROJECT_ROOT.parents[1]
 POLICY = PROJECT_ROOT / "config" / "spatial_registration_migration_policy.json"
 PYTHON_FILES = (
-    PROJECT_ROOT / "analysis" / "build_interface_handoff.py",
     PROJECT_ROOT / "analysis" / "build_oatof_handoff.py",
     PROJECT_ROOT / "analysis" / "resolve_s2_connector_case.py",
     PROJECT_ROOT / "analysis" / "resolve_spatial_registration.py",
@@ -19,7 +18,6 @@ PYTHON_FILES = (
     REPOSITORY_ROOT / "projects" / "oa_tof" / "analysis" / "rf_handoff_adapter.py",
 )
 MATLAB_FILES = (
-    PROJECT_ROOT / "tests" / "comsol" / "build_s1_joint_field_candidate.m",
     PROJECT_ROOT / "tests" / "comsol" / "build_s2_passive_connector_model.m",
     PROJECT_ROOT / "tests" / "comsol" / "solve_s2_passive_connector_field.m",
 )

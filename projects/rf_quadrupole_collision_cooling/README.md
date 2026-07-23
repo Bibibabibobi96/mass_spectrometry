@@ -101,93 +101,30 @@ S2–S3连接功能闭环记录：
   [`analysis/build_oatof_handoff.py`](analysis/build_oatof_handoff.py)。该合同现已被S2/S3物理链取代为
   活动入口，只保留旧刚体投影、时钟适配回归和历史run复现；完整状态包语义仍可追溯，但不得把该旧入口
   的projection PASS解释为当前物理连接器资格。
-- 双边界、时变兼容的物理接口候选：
-  [`config/rf_to_oatof_interface_candidate.json`](config/rf_to_oatof_interface_candidate.json)、
-  [`analysis/build_interface_handoff.py`](analysis/build_interface_handoff.py)。它保留S0/S1时期的闭合Formal
-  屏蔽审计、双边界和时钟静态参考，已被S2/S3活动合同显式取代；其中“Formal屏蔽无侧孔”仍是当前
-  Formal事实，但不能覆盖候选COMSOL中已经实现并运行的参数化侧孔和接地连接器。
-- RF→oa接口分阶段实施顺序：
-  [`config/rf_to_oatof_interface_stages.json`](config/rf_to_oatof_interface_stages.json)；从无物理资格的
-  S0数据直连参考开始，逐级增加开孔、被动通道、脉冲、必要的主动光学及最终跨求解器/CAD门禁，禁止跳级。
-  各级是累积替代关系；当前级覆盖早期功能，早期runner只保留诊断和证据复验用途。
-- S0求解器无关执行入口：
-  [`analysis/run_interface_s0_reference.py`](analysis/run_interface_s0_reference.py)及
-  [`config/modes/rf_to_oatof_s0_reference.json`](config/modes/rf_to_oatof_s0_reference.json)；只复用已冻结
-  N=100源证据并生成虚拟入口事件和run三件套，不运行求解器、不裁剪孔径、不授权物理连接。
-- S1轴向孔径—接受率预检：
-  [`analysis/analyze_s1_aperture_acceptance.py`](analysis/analyze_s1_aperture_acceptance.py)及
-  [`config/modes/rf_to_oatof_s1_aperture_precheck.json`](config/modes/rf_to_oatof_s1_aperture_precheck.json)；
-  从S0虚拟入口事件计算严格理论上限内的最佳轴向几何通过率，不选择最终孔径、不替代三维联合场。
-- S1局部联合场特征化合同：
-  [`config/rf_to_oatof_s1_joint_field.json`](config/rf_to_oatof_s1_joint_field.json)、
-  [`analysis/validate_s1_joint_field.py`](analysis/validate_s1_joint_field.py)及
-  [`analysis/analyze_s1_joint_field.py`](analysis/analyze_s1_joint_field.py)；旧闭合场阈值只作L0诊断告警，
-  不直接接受或拒绝连接器，并分别报告`Ex/Ey/Ez`诊断量。
-- S1真实过孔动态功能链：
-  [`analysis/build_s1_downstream_handoff.py`](analysis/build_s1_downstream_handoff.py)、
-  [`analysis/analyze_s1_end_to_end.py`](analysis/analyze_s1_end_to_end.py)、
-  [`analysis/plot_s1_loss_atlas.py`](analysis/plot_s1_loss_atlas.py)、
-  [`analysis/compare_s1_entry_to_oatof_ideal_source.py`](analysis/compare_s1_entry_to_oatof_ideal_source.py)及
-  [`analysis/plot_s1_pulse_geometry_snapshot.py`](analysis/plot_s1_pulse_geometry_snapshot.py)；
-  执行入口为[`tests/cross_solver/run_s1_physical_end_to_end.ps1`](tests/cross_solver/run_s1_physical_end_to_end.ps1)；
-  COMSOL在真实`1.0×0.9 mm`孔和局部联合场中完成按时进入及统一有限脉冲，SIMION从局部出口真实三维
-  状态继续到分析器；成功的联合场run可直接作为下游来源，无需复制成仅为修复旧布尔解析问题而保留的
-  reanalysis run。2 eV功能基线清点为`100→88→28→9`；5 eV候选为`100→77→39→37`。两者都只证明
-  功能贯通，不授权分辨率、阶段PASS或Formal晋升。每个启用粒子和统一脉冲的S1 COMSOL run还必须在
-  自身`results/`生成参数化双投影脉冲快照；图中的oa加速器尺寸读取baseline，孔尺寸读取S1合同。
-  活动离子、入口孔壁损失和加速器内部损失必须用不同标记同时显示；grid1/grid2投影分别使用各自
-  baseline尺寸，不能把内部grid1误画成密封整个屏蔽腔。
-- S1状态驱动脉冲定时：[`config/rf_to_oatof_pulse_timing.json`](config/rf_to_oatof_pulse_timing.json)、
-  [`analysis/derive_s1_centroid_pulse_time.py`](analysis/derive_s1_centroid_pulse_time.py)及
-  [`analysis/validate_s1_pulse_timing.py`](analysis/validate_s1_pulse_timing.py)；按显式`mass_amu + charge_state`
-  选择目标物种，用实际逐粒子入口时刻和三维速度预测有限厚孔后的粒子组，再求其x质心到达当前oa理想
-  源中心的共享脉冲时刻。能量变化由实际速度自然进入，禁止为某个质量、能量或电荷态硬编码时间；混合
-  物种必须显式选组或分别生成调度。
-- S2被动连接器合同、拓扑案例、build-only入口与无脉冲场入口：
-  [`config/rf_to_oatof_s2_passive_connector.json`](config/rf_to_oatof_s2_passive_connector.json)及
-  [`config/rf_to_oatof_connector_cases.json`](config/rf_to_oatof_connector_cases.json)、
-  [`analysis/validate_s2_passive_connector.py`](analysis/validate_s2_passive_connector.py)，真实COMSOL入口为
-  [`tests/comsol/run_s2_passive_connector_geometry.ps1`](tests/comsol/run_s2_passive_connector_geometry.ps1)
-  和[`tests/comsol/run_s2_passive_connector_field.ps1`](tests/comsol/run_s2_passive_connector_field.ps1)；
-  当前已冻结并成功构建1 mm标称间距、同轴位姿、接地圆柱腔和既有`1.0×0.9 mm`oa入口孔，并在同一共享
-  几何构建函数上求得oa静态场与RF 100 V单位场。相同入口的`-Particles`模式消费manifest覆盖的真实
-  N=100 RF出口状态并保持ID、三维状态与全局时钟，当前得到61个oa入口过面和39个端壁损失；不加oa
-  脉冲、不保存MPH，也不授权网格收敛、S2 PASS或Formal晋升。求解器无关审计入口为
-  [`tests/analysis/run_s2_particle_chain_audit.ps1`](tests/analysis/run_s2_particle_chain_audit.ps1)。跨项目输入由
-  [`config/rf_to_oatof_s2_dependencies.json`](config/rf_to_oatof_s2_dependencies.json)显式声明提供项目、
-  仓库相对路径和冻结文件名；运行时核对源文件与`inputs/`副本SHA-256，并把身份写入run config。
-  同一几何实现允许间距为0 mm；此时不创建独立连接器域，直接共面连接。0 mm真实运行得到77个孔内
-  oa入口事件和23个入口壁损失。负间距拒绝；0 mm和1 mm均为功能证据，不是资格比较。
-  这里的管段、孔径和位姿语义消费[`common/multipole`](../../common/multipole/README.md#连接器术语与责任边界)
-  的**multipole passive connector**能力；本项目只适配RF与oaTOF参数。oa开孔、局部联合场、脉冲捕获与
-  分析器续算仍属于RF→oaTOF专属耦合链，不形成项目内第二套公共连接器实现。
-  三件套、环境恢复和失败收尾当前由RF项目内部`tests/support/rf_run_artifact_support.ps1`统一；旧run和
-  未触及的旧运行器保持原样，第二个项目实际复用前不提升到根`common/`。
-- RF→oaTOF空间注册发布：
-  [`analysis/resolve_spatial_registration.py`](analysis/resolve_spatial_registration.py)从当前
-  `resolved_design_official.json`接口布局、S1/S2装配输入、oaTOF baseline和接口电气合同生成
-  `config/resolved_rf_to_oatof_{s1,s2}_spatial_registration.json`。发布保存全部来源SHA-256、组件pose、
-  唯一相对变换、定向面在局部/仪器frame中的表示，以及电压/频率的单位、JSON pointer和电极绑定。
-  RF出口`90.2 mm`仅是当前resolved几何的生成值；改变杆长、端板或出口布局后必须重新发布，Static对
-  stale结果失败。COMSOL构建器读取冻结发布，不再保存固定旋转矩阵；零豁免迁移门禁
-  `config/spatial_registration_migration_policy.json`禁止重新引入第二坐标权威。
-- S3累积脉冲与分析器贯通：
-  [`config/rf_to_oatof_s3_pulse_capture.json`](config/rf_to_oatof_s3_pulse_capture.json)、
-  当前统一入口[`tests/cross_solver/run_s3_cumulative_chain.ps1`](tests/cross_solver/run_s3_cumulative_chain.ps1)
-  依次运行S2无脉冲接口、S3共享时钟脉冲和SIMION下游分析器；各段runner只作内部阶段诊断。默认1 mm
-  N=100功能证据为`100→61→31→31→7`；0 mm兼容案例为`100→77→39→39→9`。canonical状态到SIMION仅派生11列
-  适配表，不投影位置、不重置粒子ID或全局时间。该证据不授权S2/S3资格、数值收敛、分辨率或Formal声明。
-  这是当前RF→oaTOF唯一活动累积执行入口；早期S0/S1、刚体projection、hybrid-mesh projection和
-  projected-entry pulse入口只保留诊断与历史复现职责。
-- S3脉冲前同ID checkpoint派生诊断：
-  [`config/rf_to_oatof_checkpoint_diagnostic.json`](config/rf_to_oatof_checkpoint_diagnostic.json)、
+- RF→oaTOF活动物理接口由共享物理端口合同、内部S2被动连接器步骤和单一S3累积入口组成：
+  [`config/rf_to_oatof_interface_stages.json`](config/rf_to_oatof_interface_stages.json)、
+  [`config/rf_to_oatof_shared_physical_port_joint_geometry.json`](config/rf_to_oatof_shared_physical_port_joint_geometry.json)、
+  [`config/rf_to_oatof_s2_passive_connector.json`](config/rf_to_oatof_s2_passive_connector.json)、
+  [`tests/comsol/run_s2_passive_connector_field.ps1`](tests/comsol/run_s2_passive_connector_field.ps1)及
+  [`tests/cross_solver/run_s3_cumulative_chain.ps1`](tests/cross_solver/run_s3_cumulative_chain.ps1)。共享合同是孔、
+  局部域和场基的唯一活动权威；S2只作为S3内部的无脉冲连接器求解步骤，不再提供独立build-only或审计入口。
+  当前1 mm功能证据为`100→61→31→31→7`，0 mm兼容证据为`100→77→39→39→9`；两者均不授权阶段资格、
+  网格收敛、分辨率或Formal声明。
+- 脉冲调度与快照使用阶段中性的共享实现：
+  [`analysis/derive_shared_centroid_pulse_time.py`](analysis/derive_shared_centroid_pulse_time.py)和
+  [`analysis/plot_shared_pulse_geometry_snapshot.py`](analysis/plot_shared_pulse_geometry_snapshot.py)。调度按显式
+  `mass_amu + charge_state`选择目标物种，并以实际入口时刻和三维速度求质心到达oa理想源中心的共享时刻。
+- RF→oaTOF空间注册只发布活动S2装配：
+  [`analysis/resolve_spatial_registration.py`](analysis/resolve_spatial_registration.py)生成并校验
+  [`config/resolved_rf_to_oatof_s2_spatial_registration.json`](config/resolved_rf_to_oatof_s2_spatial_registration.json)。
+  发布保存来源SHA-256、组件pose、唯一相对变换和电气标量绑定；COMSOL只消费冻结发布。
+- S3脉冲前同ID checkpoint仍是来源run的只读派生诊断：
   [`analysis/analyze_rf_oatof_checkpoints.py`](analysis/analyze_rf_oatof_checkpoints.py)及
-  [`tests/analysis/run_rf_oatof_checkpoint_diagnostic.ps1`](tests/analysis/run_rf_oatof_checkpoint_diagnostic.ps1)；
-  runner只接受显式成功S3 pulse-capture run或其manifest，复验后冻结来源run中的RF出口状态、脉冲左极限
-  状态、全粒子终态账本、schedule、S2 registration、S1合同和oa baseline，不搜索目录或回退到当前源码
-  配置。它不重跑求解器；metrics、逐粒子比较表和PNG均为来源状态的派生诊断证据，不维护第二套坐标、
-  位姿或物理参数权威。当前gap1/gap0均为N=100功能诊断，`stage_passed=false`且
-  `formal_gate_passed=false`；精确结论和图审边界见[`docs/PROJECT.md`](docs/PROJECT.md)。
+  [`tests/analysis/run_rf_oatof_checkpoint_diagnostic.ps1`](tests/analysis/run_rf_oatof_checkpoint_diagnostic.ps1)。
+  它冻结共享物理端口合同、S2 registration、oa baseline和来源状态，不维护第二套几何或坐标权威。
+- 已退役阶段的叙事只见
+  [`docs/history/20260722_rf-validation-and-s1-integration.md`](docs/history/20260722_rf-validation-and-s1-integration.md)；
+  已生成run仍保留在工作区`artifacts/`，但都不是活动导入、路径或入口。
 - RF入口能量匹配候选：[`config/rf_to_oatof_energy_match_candidate.json`](config/rf_to_oatof_energy_match_candidate.json)、
   [`analysis/validate_rf_energy_match.py`](analysis/validate_rf_energy_match.py)及
   [`analysis/compare_rf_input_energy.py`](analysis/compare_rf_input_energy.py)；它用独立命名的100 amu、5 eV
@@ -196,7 +133,7 @@ S2–S3连接功能闭环记录：
 - RF连续接地屏蔽候选：
   [`config/rf_continuous_grounded_shield_candidate.json`](config/rf_continuous_grounded_shield_candidate.json)及
   [`analysis/validate_rf_continuous_shield.py`](analysis/validate_rf_continuous_shield.py)；现有COMSOL/SIMION
-  参考几何没有贯穿杆区的接地侧壁，故先独立扫描同轴圆柱内半径，再恢复S1联合场。圆柱尺寸不由oa外壳
+  参考几何没有贯穿杆区的接地侧壁，故先独立扫描同轴圆柱内半径，再恢复局部联合场。圆柱尺寸不由oa外壳
   决定，未完成RF场、传输和馈通审查前不修改Formal资产。二维执行入口为
   [`tests/comsol/run_rf_continuous_shield_2d.ps1`](tests/comsol/run_rf_continuous_shield_2d.ps1)，当前只把
   `19.776/26.368 mm`保留到三维验证，没有选定物理半径。三维分析合同已冻结为杆中段—出口多截面

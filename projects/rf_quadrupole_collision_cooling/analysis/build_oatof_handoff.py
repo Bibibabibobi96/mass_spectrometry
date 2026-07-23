@@ -36,9 +36,6 @@ PROJECT_ROOT = Path(
     os.environ.get("RF_HANDOFF_PROJECT_ROOT", Path(__file__).resolve().parents[1])
 ).resolve()
 DEFAULT_CONTRACT = PROJECT_ROOT / "config" / "rf_to_oatof_handoff.json"
-DEFAULT_SPATIAL_REGISTRATION = (
-    PROJECT_ROOT / "config" / "resolved_rf_to_oatof_s1_spatial_registration.json"
-)
 
 REQUIRED_SOURCE_COLUMNS = {
     "particle_id",
@@ -124,8 +121,10 @@ def _project_root_path(relative_path: str) -> Path:
 
 def validate_contract(
     contract_path: Path = DEFAULT_CONTRACT,
-    registration_path: Path = DEFAULT_SPATIAL_REGISTRATION,
+    registration_path: Path | None = None,
 ) -> dict[str, Any]:
+    if registration_path is None:
+        raise ValueError("resolved spatial registration must be supplied explicitly")
     contract = load_json(contract_path)
     if contract.get("role") != "component_chain_handoff_contract":
         raise ValueError("unsupported handoff contract role")
@@ -348,7 +347,7 @@ def build_handoff(
     metadata_output: Path,
     solver_clock: str = "local_zero",
     target_origin_override_mm: list[float] | None = None,
-    registration_path: Path = DEFAULT_SPATIAL_REGISTRATION,
+    registration_path: Path | None = None,
 ) -> dict[str, Any]:
     validated = validate_contract(contract_path, registration_path)
     contract = validated["contract"]
@@ -570,7 +569,7 @@ def main() -> None:
     parser.add_argument(
         "--resolved-registration",
         type=Path,
-        default=DEFAULT_SPATIAL_REGISTRATION,
+        required=True,
     )
     args = parser.parse_args()
     if args.check_contract:

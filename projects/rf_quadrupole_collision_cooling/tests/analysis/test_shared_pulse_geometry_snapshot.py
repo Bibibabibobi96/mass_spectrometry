@@ -10,10 +10,10 @@ import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
-from projects.rf_quadrupole_collision_cooling.analysis import plot_s1_pulse_geometry_snapshot as module
+from projects.rf_quadrupole_collision_cooling.analysis import plot_shared_pulse_geometry_snapshot as module
 
 
-class S1PulseGeometrySnapshotTests(unittest.TestCase):
+class SharedPulseGeometrySnapshotTests(unittest.TestCase):
     def test_particle_markers_shrink_for_large_n(self) -> None:
         n100 = module.particle_marker_areas(100)
         n1000 = module.particle_marker_areas(1000)
@@ -23,7 +23,7 @@ class S1PulseGeometrySnapshotTests(unittest.TestCase):
 
     def test_geometry_is_derived_from_contracts_and_plot_is_written(self) -> None:
         baseline_path = REPO_ROOT / "projects" / "oa_tof" / "config" / "baseline.json"
-        joint_path = PROJECT_ROOT / "config" / "rf_to_oatof_s1_joint_field.json"
+        joint_path = PROJECT_ROOT / "config" / "rf_to_oatof_shared_physical_port_joint_geometry.json"
         baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
         joint = json.loads(joint_path.read_text(encoding="utf-8"))
         geometry = module.accelerator_geometry(baseline, joint)
@@ -95,7 +95,7 @@ class S1PulseGeometrySnapshotTests(unittest.TestCase):
                 module.plot_snapshot(
                     capture, events,
                     REPO_ROOT / "projects" / "oa_tof" / "config" / "baseline.json",
-                    PROJECT_ROOT / "config" / "rf_to_oatof_s1_joint_field.json",
+                    PROJECT_ROOT / "config" / "rf_to_oatof_shared_physical_port_joint_geometry.json",
                     Path(temp) / "out.png", Path(temp) / "out.json")
 
     def test_sparse_s3_capture_adds_terminal_loss_positions(self) -> None:

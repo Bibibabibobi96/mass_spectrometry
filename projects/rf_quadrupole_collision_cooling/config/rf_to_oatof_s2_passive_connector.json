@@ -6,8 +6,7 @@
   "qualification_scope": "nominal_geometry_no_pulse_joint_field_and_particle_connection_function_only",
   "inputs": {
     "stage_plan": "config/rf_to_oatof_interface_stages.json",
-    "interface_reference": "config/rf_to_oatof_interface_candidate.json",
-    "s1_joint_field": "config/rf_to_oatof_s1_joint_field.json",
+    "shared_physical_port_joint_geometry": "config/rf_to_oatof_shared_physical_port_joint_geometry.json",
     "explicit_dependencies": "config/rf_to_oatof_s2_dependencies.json",
     "rf_resolved_geometry": "config/resolved_design_official.json",
     "oatof_baseline": "../oa_tof/config/baseline.json"
@@ -40,7 +39,7 @@
     "nominal_offset_mm": [0.0, 0.0, 0.0],
     "nominal_rotation_deg": [0.0, 0.0, 0.0],
     "axis_mapping": "RF +z -> oa +x; RF +x -> oa +y; RF +y -> oa +z",
-    "derivation": "Move the S1 RF source pose exactly 1.0 mm upstream along oa -x while retaining the S1 right-handed rotation and oa target pose."
+    "derivation": "Move the shared zero-gap RF source pose exactly 1.0 mm upstream along oa -x while retaining the right-handed rotation and oa target pose."
   },
   "passive_connector_geometry": {
     "topology": "straight_grounded_cylindrical_vacuum_cavity_terminated_by_existing_oatof_rectangular_port",
@@ -65,7 +64,7 @@
       "full_width_y_mm": 1.0,
       "full_height_z_mm": 0.9,
       "center_mm": [-67.8, 0.0, -18.42918680341103],
-      "derivation": "Inherit the selected S1 N=100 characterization width and the 90% coupled-longitudinal height; do not enlarge for S2."
+      "derivation": "Inherit the shared physical-port width and coupled-longitudinal height; do not enlarge for S2."
     },
     "secondary_internal_aperture_allowed": false,
     "active_electrode_allowed": false,
@@ -94,12 +93,12 @@
     },
     "required_field_bases": ["oatof_static", "rf_unit_100_V"],
     "rf_unit_voltage_V": 100.0,
-    "rf_unit_voltage_derivation": "Equal the absolute value of every entry in s1_joint_field.field_basis.rf_unit.rod_differential_pattern_V.",
+    "rf_unit_voltage_derivation": "Equal the absolute value of every entry in shared_physical_port_joint_geometry.field_basis.rf_unit.rod_differential_pattern_V.",
     "required_probe_locations": ["rf_rod_region_off_axis", "rf_exit_center", "connector_midpoint", "oatof_entry_center", "oatof_ideal_source_center"],
     "rf_off_axis_probe_radius_mm": 1.0,
     "rf_off_axis_probe_derivation": "Use the RF rod-region axial midpoint and the configured local-x offset transformed by source_component_pose; the radius must remain inside resolved_design.geometry_mm.inscribed_radius_r0 and produce a nonzero RF-unit field.",
     "boundary_probe_inset_mm": 0.001,
-    "boundary_probe_inset_derivation": "Inherit s1_joint_field.port_sweep.particle_release_offset_inside_outer_face_mm so nominal interface-plane probes are evaluated on the solved vacuum side.",
+    "boundary_probe_inset_derivation": "Inherit shared_physical_port_joint_geometry.port_sweep.particle_release_offset_inside_outer_face_mm so nominal interface-plane probes are evaluated on the solved vacuum side.",
     "acceptance": "Both stationary bases solve, all required probe potentials and field components are finite, and the RF rod-region off-axis probe has nonzero RF-unit field magnitude.",
     "claim_limit": "Functional field-domain evidence only; no mesh convergence, leakage qualification, particle transmission, S2 PASS or Formal promotion."
   },

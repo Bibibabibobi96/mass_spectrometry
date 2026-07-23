@@ -43,13 +43,8 @@ class Phase4DesignConsumerTests(unittest.TestCase):
         managed = (
             "analyze_comsol_mass_scan.py",
             "analyze_s3_end_to_end.py",
-            "analyze_s1_physical_port_particles.py",
-            "analyze_s1_end_to_end.py",
             "compare_rf_input_energy.py",
-            "compare_s1_capture_to_oatof_ideal_source.py",
-            "compare_s1_entry_to_oatof_ideal_source.py",
-            "plot_s1_loss_atlas.py",
-            "plot_s1_pulse_geometry_snapshot.py",
+            "plot_shared_pulse_geometry_snapshot.py",
         )
         for name in managed:
             source = (PROJECT_ROOT / "analysis" / name).read_text(encoding="utf-8")

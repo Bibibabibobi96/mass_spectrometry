@@ -1,13 +1,13 @@
 function [model, comp, context, geometryInfo, meshElementCounts] = ...
-    prepare_s2_joint_field_model(contract, s1, rf, oa, oaComsolDir, modelTag)
+    prepare_s2_joint_field_model(contract, sharedJoint, rf, oa, oaComsolDir, modelTag)
 % Build, mesh and solve the shared S2/S3 electrostatic field bases.
 
 [model, context] = build_s2_passive_connector_model( ...
-    contract, s1, rf, oa, oaComsolDir, modelTag);
+    contract, sharedJoint, rf, oa, oaComsolDir, modelTag);
 comp = model.component('comp1');
 geometryInfo = mphgeominfo(model, 'geom1');
 create_field_selections(comp, context, oa, contract);
-create_field_physics(model, comp, context, s1, oa);
+create_field_physics(model, comp, context, sharedJoint, oa);
 create_field_mesh(comp, contract, oa);
 
 study = model.study.create('std1');
@@ -66,7 +66,7 @@ comp.selection('selb_connector_wall').set('add', {'selb_conn_all'});
 comp.selection('selb_connector_wall').set('subtract', {'selb_conn_ends'});
 end
 
-function create_field_physics(model, comp, context, s1, oa)
+function create_field_physics(model, comp, context, sharedJoint, oa)
 material = model.material.create('mat_vac', 'Common');
 material.selection.named('sel_vac');
 material.propertyGroup('def').set('relpermittivity', {'1'});
@@ -110,7 +110,7 @@ if context.connector_present, set_potential(esRf, 'g_connector', 'selb_connector
 for index = 1:numel(context.rf_rod_tags)
     name = context.rf_rod_tags{index};
     set_potential(esRf, ['u_' name], ['selb_' name], ...
-        s1.field_basis.rf_unit.rod_differential_pattern_V(index));
+        sharedJoint.field_basis.rf_unit.rod_differential_pattern_V(index));
 end
 end
 

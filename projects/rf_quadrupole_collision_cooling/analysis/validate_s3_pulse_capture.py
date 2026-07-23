@@ -29,18 +29,44 @@ def validate_contract(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
     inputs = contract["inputs"]
     stage_plan = _load(_relative(inputs["stage_plan"]))
     s2 = _load(_relative(inputs["s2_connector"]))
+    shared_joint = _load(_relative(inputs["shared_physical_port_joint_geometry"]))
     pulse = _load(_relative(inputs["pulse_timing_policy"]))
     baseline = _load(_relative(inputs["oatof_baseline"]))
-    stage = next(item for item in stage_plan["stages"] if item["id"] == "S3")
+    stages = stage_plan.get("stages", [])
+    if [item.get("id") for item in stages] != ["S2", "S3"]:
+        raise ValueError("active stage plan must contain only the internal S2 step and S3 entry")
+    internal_step, stage = stages
     if stage_plan.get("current_stage") != "S3":
         raise ValueError("S3 is not the current cumulative integration stage")
     governance = stage_plan.get("governance", {})
-    if governance.get("stage_relationship") != "cumulative_replacement":
-        raise ValueError("interface stages are not governed as cumulative replacements")
+    if (
+        stage_plan.get("status") != "active_cumulative_pipeline"
+        or governance.get("stage_relationship") != "internal_step_then_cumulative_entry"
+        or governance.get("public_entry_count") != 1
+        or governance.get("internal_steps_are_not_entrypoints") is not True
+        or governance.get("active_entrypoint")
+        != "tests/cross_solver/run_s3_cumulative_chain.ps1"
+    ):
+        raise ValueError("interface stage governance does not expose one cumulative entry")
+    if (
+        internal_step.get("role") != "internal_passive_connector_step"
+        or internal_step.get("public_entrypoint") is not False
+        or internal_step.get("entrypoint")
+        != "tests/comsol/run_s2_passive_connector_field.ps1"
+    ):
+        raise ValueError("S2 must remain an internal passive-connector step")
+    if (
+        stage.get("role") != "current_cumulative_entry"
+        or stage.get("public_entrypoint") is not True
+        or stage.get("entrypoint") != governance["active_entrypoint"]
+    ):
+        raise ValueError("S3 must be the sole current cumulative entry")
     if stage.get("status") != contract["status"]:
         raise ValueError("S3 stage plan and runtime contract differ")
     if s2["nominal_particle_evidence"]["status"] != "PASS":
         raise ValueError("S3 functional prototype requires the S2 nominal particle evidence")
+    if shared_joint.get("role") != "rf_to_oatof_shared_physical_port_joint_geometry":
+        raise ValueError("S3 shared physical-port authority differs")
     if s2["permissions"]["s2_stage_pass_allowed"]:
         raise ValueError("S3 prototype must not silently promote S2")
     source = contract["source"]

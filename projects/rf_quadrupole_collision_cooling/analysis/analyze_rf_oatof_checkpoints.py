@@ -25,9 +25,9 @@ from common.contracts.rigid_transform import (
 )
 
 try:
-    from plot_s1_pulse_geometry_snapshot import accelerator_geometry, particle_marker_areas
+    from plot_shared_pulse_geometry_snapshot import accelerator_geometry, particle_marker_areas
 except ModuleNotFoundError:
-    from projects.rf_quadrupole_collision_cooling.analysis.plot_s1_pulse_geometry_snapshot import (
+    from projects.rf_quadrupole_collision_cooling.analysis.plot_shared_pulse_geometry_snapshot import (
         accelerator_geometry,
         particle_marker_areas,
     )

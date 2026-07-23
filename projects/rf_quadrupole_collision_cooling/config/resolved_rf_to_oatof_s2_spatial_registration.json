@@ -13,12 +13,12 @@
       "sha256": "0A70DF34CA783309AD339DAB61D17C8EAC6F4FBD1225DD45805BD7201CAD112D"
     },
     {
-      "path": "projects/rf_quadrupole_collision_cooling/config/rf_to_oatof_interface_candidate.json",
-      "sha256": "1F309CE1F0915D8CDDD797A8A9AA47D67B8BEEE38DDCC53DFBB4FBA0229A94A7"
+      "path": "projects/rf_quadrupole_collision_cooling/config/rf_to_oatof_s2_passive_connector.json",
+      "sha256": "5F545BD8C35A326653FD40D130E828748391B97BC92B287D5719EC56195DC627"
     },
     {
-      "path": "projects/rf_quadrupole_collision_cooling/config/rf_to_oatof_s2_passive_connector.json",
-      "sha256": "F09512390A4D0450B200FDF8BB7736B7EB0A4B7FDDB22F69154474011DA1C135"
+      "path": "projects/rf_quadrupole_collision_cooling/config/rf_to_oatof_shared_physical_port_joint_geometry.json",
+      "sha256": "1B93700A5D57065C367A61161342600BC417BD0B8F9A41D79E87F94FC8084DC1"
     }
   ],
   "component_poses": {
@@ -183,8 +183,8 @@
       "value": 0.0,
       "unit": "V",
       "source": {
-        "path": "projects/rf_quadrupole_collision_cooling/config/rf_to_oatof_interface_candidate.json",
-        "sha256": "1F309CE1F0915D8CDDD797A8A9AA47D67B8BEEE38DDCC53DFBB4FBA0229A94A7"
+        "path": "projects/rf_quadrupole_collision_cooling/config/rf_to_oatof_shared_physical_port_joint_geometry.json",
+        "sha256": "1B93700A5D57065C367A61161342600BC417BD0B8F9A41D79E87F94FC8084DC1"
       },
       "json_pointer": "/electrical_interface/common_potential_reference/potential_V",
       "electrode_bindings": [
@@ -224,8 +224,8 @@
       "value": 0.0,
       "unit": "V",
       "source": {
-        "path": "projects/rf_quadrupole_collision_cooling/config/rf_to_oatof_interface_candidate.json",
-        "sha256": "1F309CE1F0915D8CDDD797A8A9AA47D67B8BEEE38DDCC53DFBB4FBA0229A94A7"
+        "path": "projects/rf_quadrupole_collision_cooling/config/rf_to_oatof_shared_physical_port_joint_geometry.json",
+        "sha256": "1B93700A5D57065C367A61161342600BC417BD0B8F9A41D79E87F94FC8084DC1"
       },
       "json_pointer": "/electrical_interface/common_potential_reference/potential_V",
       "electrode_bindings": [

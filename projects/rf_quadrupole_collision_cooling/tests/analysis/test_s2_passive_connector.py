@@ -7,10 +7,11 @@ from copy import deepcopy
 from pathlib import Path
 
 from projects.rf_quadrupole_collision_cooling.analysis import validate_s2_passive_connector as module
+from projects.rf_quadrupole_collision_cooling.analysis import resolve_spatial_registration as resolver
 
 
 class S2PassiveConnectorTests(unittest.TestCase):
-    def test_contract_inherits_s1_geometry_and_freezes_one_mm_gap(self) -> None:
+    def test_contract_inherits_shared_geometry_and_freezes_one_mm_gap(self) -> None:
         contract = module.validate_contract()
         registration = contract["nominal_registration"]
         geometry = contract["passive_connector_geometry"]
@@ -57,6 +58,95 @@ class S2PassiveConnectorTests(unittest.TestCase):
         self.assertEqual(particle_evidence["oatof_entry_crossings"], 61)
         self.assertEqual(particle_evidence["downstream_entry_wall_losses"], 39)
         self.assertFalse(particle_evidence["s2_stage_passed"])
+
+    def test_shared_physical_values_equal_the_extracted_source_exactly(self) -> None:
+        shared = json.loads((
+            module.PROJECT_ROOT / "config" /
+            "rf_to_oatof_shared_physical_port_joint_geometry.json"
+        ).read_text(encoding="utf-8"))
+        expected = {
+            "nominal_registration": {
+                "instrument_frame": "oatof_global",
+                "target_component_pose": {"rotation_component_to_instrument": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], "translation_mm": [0.0, 0.0, 0.0]},
+                "source_component_pose": {"rotation_component_to_instrument": [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], "translation_mm": [-158.0, 0.0, -18.42918680341103]},
+                "source_exit_center_local_mm": [0.0, 0.0, 90.2],
+                "source_exit_center_instrument_mm": [-67.8, 0.0, -18.42918680341103],
+                "target_entry_center_instrument_mm": [-67.8, 0.0, -18.42918680341103],
+                "direct_mating_gap_mm": 0.0,
+                "axis_mapping": "RF +z -> oa +x; RF +x -> oa +y; RF +y -> oa +z",
+            },
+            "local_domain": {"rf_shield_inner_radius_mm": 19.776, "rf_shield_numerical_wall_thickness_mm": 1.0, "oatof_downstream_buffer_after_grid2_mm": 5.0},
+            "port_sweep": {"shape": "rectangle", "center_z_mm": -18.42918680341103, "full_height_z_mm": 0.9, "selected_n100_candidate_full_width_y_mm": 1.0, "particle_release_offset_inside_outer_face_mm": 0.001},
+            "field_basis": {"shared_geometry_required": True, "rf_unit": {"rod_differential_pattern_V": [100.0, -100.0, 100.0, -100.0], "all_oatof_electrodes_and_grounded_hardware_V": 0.0, "runtime_scale": "V_rf_peak/100[V] * sin(2*pi*f_rf*instrument_time + phase)"}},
+        }
+        for section, values in expected.items():
+            self.assertEqual(set(shared[section]), set(values), section)
+            for key, value in values.items():
+                self.assertEqual(shared[section][key], value, f"{section}.{key}")
+
+    def test_shared_boundary_and_electrical_sources_are_bound_per_key(self) -> None:
+        shared = json.loads(resolver.SHARED_JOINT.read_text(encoding="utf-8"))
+        rf = json.loads((module.PROJECT_ROOT / "config" / "resolved_design_official.json").read_text(encoding="utf-8"))
+        oatof = json.loads((module.PROJECT_ROOT.parent / "oa_tof" / "config" / "baseline.json").read_text(encoding="utf-8"))
+        source = shared["physical_boundaries"]["source_exit_surface"]
+        self.assertEqual(source["bindings"]["local_center_z_mm"]["json_pointer"], "/interfaces_mm/exit/connector_z_max_mm")
+        self.assertEqual(source["bindings"]["outward_normal"]["json_pointer"], "/coordinate/axial_axis")
+        self.assertEqual(source["physical_aperture"]["source_binding"]["json_pointer"], "/interfaces_mm/exit/aperture_radius_mm")
+        target = shared["physical_boundaries"]["target_entry_surface"]
+        self.assertEqual(target["reference_binding"]["source_input"], "oatof_baseline")
+        common_sources = {(item["source_input"], item["json_pointer"]) for item in shared["electrical_interface"]["common_potential_reference"]["required_equal_source_bindings"]}
+        self.assertEqual(common_sources, {("rf_resolved_geometry", "/drive/common_mode_offset_V"), ("oatof_baseline", "/electrodes_V/shield")})
+        resolver._validate_shared_authority(shared, rf, oatof)
+        mutations = []
+        for path, value in (
+            (("physical_boundaries", "source_exit_surface", "local_center_mm", 2), 91.2),
+            (("physical_boundaries", "source_exit_surface", "outward_normal", 2), -1.0),
+            (("physical_boundaries", "source_exit_surface", "physical_aperture", "radius_mm"), 3.5),
+            (("physical_boundaries", "target_entry_surface", "center_mm", 0), -67.7),
+            (("electrical_interface", "common_potential_reference", "potential_V"), 1.0),
+        ):
+            changed = deepcopy(shared)
+            cursor = changed
+            for key in path[:-1]:
+                cursor = cursor[key]
+            cursor[path[-1]] = value
+            mutations.append(changed)
+        for changed in mutations:
+            with self.subTest(changed=changed):
+                with self.assertRaises(ValueError):
+                    resolver._validate_shared_authority(changed, rf, oatof)
+
+    def test_active_builder_is_build_only_and_consumes_shared_geometry(self) -> None:
+        builder = (module.PROJECT_ROOT / "tests" / "comsol" / "build_s2_passive_connector_model.m").read_text(encoding="utf-8")
+        self.assertIn("REPOSITORY_CONTRACT: MATLAB_BUILD_ONLY", builder)
+        self.assertIn("sharedJoint.local_domain.rf_shield_inner_radius_mm", builder)
+        self.assertIn("assert_supported_registration(registration, spatial)", builder)
+        self.assertNotIn("expectedSourceRotation", builder)
+        for token in ("runAll", "mesh.create", "physics.create", "mphsave", "model.save"):
+            self.assertNotIn(token, builder)
+
+    def test_active_field_path_is_fail_closed_and_uses_shared_builder(self) -> None:
+        field_builder = (module.PROJECT_ROOT / "tests" / "comsol" / "prepare_s2_joint_field_model.m").read_text(encoding="utf-8")
+        solver = (module.PROJECT_ROOT / "tests" / "comsol" / "solve_s2_passive_connector_field.m").read_text(encoding="utf-8")
+        runner = (module.PROJECT_ROOT / "tests" / "comsol" / "run_s2_passive_connector_field.ps1").read_text(encoding="utf-8")
+        self.assertIn("build_s2_passive_connector_model", field_builder)
+        self.assertIn("connector_gap_mm > 0", field_builder)
+        self.assertIn("ChargedParticleTracing", solver)
+        self.assertIn("particle_runtime_allowed", runner)
+        self.assertIn("Complete-RfFailedRun", runner)
+        self.assertIn("mesh_convergence_claimed = $false", runner)
+        self.assertIn("--shared-joint $sharedJoint", runner)
+        self.assertNotIn("rf_to_oatof_interface_candidate.json", runner)
+        self.assertNotIn("--interface", runner)
+
+    def test_shared_builder_supports_zero_gap_without_a_second_entrypoint(self) -> None:
+        builder = (module.PROJECT_ROOT / "tests" / "comsol" / "build_s2_passive_connector_model.m").read_text(encoding="utf-8")
+        self.assertIn("connectorPresent = gapMm > 0", builder)
+        self.assertIn("if connectorPresent", builder)
+        self.assertIn("connectorDomains = []", builder)
+        contract = json.loads(module.DEFAULT_CONTRACT.read_text(encoding="utf-8"))
+        self.assertEqual(contract["nominal_registration"]["connector_gap_mm"], 1.0)
+        self.assertTrue(contract["passive_connector_geometry"]["zero_gap_supported"])
 
     def test_contract_rejects_a_gap_that_breaks_the_pose_derivation(self) -> None:
         contract = json.loads(module.DEFAULT_CONTRACT.read_text(encoding="utf-8"))

@@ -23,7 +23,7 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'Interface-readiness contract gate failed.' }
   & $python -m projects.rf_quadrupole_collision_cooling.analysis.resolve_contract --profile mass_filter --check
   if ($LASTEXITCODE -ne 0) { throw 'Mass-filter resolved contract gate failed.' }
-  foreach ($registrationStage in @('s1','s2')) {
+  foreach ($registrationStage in @('s2')) {
     & $python -m projects.rf_quadrupole_collision_cooling.analysis.resolve_spatial_registration `
       --stage $registrationStage --check
     if ($LASTEXITCODE -ne 0) {
@@ -51,15 +51,10 @@ if ($LASTEXITCODE -ne 0) { throw 'Entry-aperture L0 reference gate failed.' }
 Push-Location $repoRoot
 try {
   & $python -m projects.rf_quadrupole_collision_cooling.analysis.build_oatof_handoff `
-    --check-contract
+    --check-contract `
+    --resolved-registration (Join-Path $projectRoot 'config\resolved_rf_to_oatof_s2_spatial_registration.json')
 } finally { Pop-Location }
 if ($LASTEXITCODE -ne 0) { throw 'RF-to-oaTOF handoff contract gate failed.' }
-Push-Location $repoRoot
-try {
-  & $python -m projects.rf_quadrupole_collision_cooling.analysis.build_interface_handoff `
-    --check-contract
-} finally { Pop-Location }
-if ($LASTEXITCODE -ne 0) { throw 'Two-boundary time-resolved interface contract gate failed.' }
 $candidateValidators = @(
   'validate_field_performance_experiment.py',
   'validate_rf_continuous_shield.py',
@@ -67,8 +62,6 @@ $candidateValidators = @(
   'validate_rf_energy_match.py',
   'validate_rf_piecewise_swept_mesh.py',
   'validate_rf_rod_region_swept_mesh.py',
-  'validate_s1_pulse_timing.py',
-  'validate_s1_joint_field.py',
   'validate_s2_passive_connector.py'
   'validate_s3_pulse_capture.py',
   'validate_spatial_registration_migration.py'

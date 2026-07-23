@@ -7,13 +7,13 @@ capturePath = getenv('RF_OATOF_S3_CAPTURE_OUTPUT');
 localExitPath = getenv('RF_OATOF_S3_LOCAL_EXIT_OUTPUT');
 s3Path = getenv('RF_OATOF_S3_CONTRACT');
 s2Path = getenv('RF_OATOF_S3_S2_CONTRACT');
-s1Path = getenv('RF_OATOF_S3_S1_CONTRACT');
+sharedJointPath = getenv('RF_OATOF_S3_SHARED_JOINT_CONTRACT');
 rfPath = getenv('RF_OATOF_S3_RF_RESOLVED');
 oaPath = getenv('RF_OATOF_S3_OA_BASELINE');
 schedulePath = getenv('RF_OATOF_S3_PULSE_SCHEDULE');
 particlePath = getenv('RF_OATOF_S3_PARTICLE_INPUT');
 oaComsolDir = getenv('RF_OATOF_S3_OA_COMSOL_DIR');
-requiredFiles = {s3Path,s2Path,s1Path,rfPath,oaPath,schedulePath,particlePath};
+requiredFiles = {s3Path,s2Path,sharedJointPath,rfPath,oaPath,schedulePath,particlePath};
 assert(~isempty(reportPath) && ~isempty(metricsPath) && ...
     ~isempty(terminalPath) && ~isempty(capturePath) && ~isempty(localExitPath), ...
     'S3 output paths are incomplete.');
@@ -28,7 +28,7 @@ fprintf(fid, 'TASK=S3_SHARED_CLOCK_PULSE_CAPTURE\n');
 try
     s3 = jsondecode(fileread(s3Path));
     s2 = jsondecode(fileread(s2Path));
-    s1 = jsondecode(fileread(s1Path));
+    sharedJoint = jsondecode(fileread(sharedJointPath));
     rf = jsondecode(fileread(rfPath));
     oa = jsondecode(fileread(oaPath));
     schedule = jsondecode(fileread(schedulePath));
@@ -41,7 +41,7 @@ try
     import com.comsol.model.util.*
     tag = 'RFOATOF_S3_PULSE';
     [model, comp, context, geometryInfo, meshElementCounts] = ...
-        prepare_s2_joint_field_model(s2, s1, rf, oa, oaComsolDir, tag);
+        prepare_s2_joint_field_model(s2, sharedJoint, rf, oa, oaComsolDir, tag);
     [terminal, capture, localExit] = track_pulsed_particles( ...
         model, comp, particlePath, fileparts(terminalPath), ...
         s3, s2, rf, oa, schedule, context);

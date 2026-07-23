@@ -24,7 +24,7 @@ class RfOatofCheckpointTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.baseline = REPO_ROOT / "projects" / "oa_tof" / "config" / "baseline.json"
         self.s2 = PROJECT_ROOT / "config" / "rf_to_oatof_s2_passive_connector.json"
-        self.joint = PROJECT_ROOT / "config" / "rf_to_oatof_s1_joint_field.json"
+        self.joint = PROJECT_ROOT / "config" / "rf_to_oatof_shared_physical_port_joint_geometry.json"
         self.contract = PROJECT_ROOT / "config" / "rf_to_oatof_checkpoint_diagnostic.json"
         baseline = json.loads(self.baseline.read_text(encoding="utf-8"))
         center = baseline["particle_source"]

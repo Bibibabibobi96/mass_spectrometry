@@ -18,6 +18,7 @@ assert SPEC and SPEC.loader
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 CONTRACT = PROJECT_ROOT / "config" / "rf_to_oatof_handoff.json"
+REGISTRATION = PROJECT_ROOT / "config" / "resolved_rf_to_oatof_s2_spatial_registration.json"
 
 
 class ComponentChainClockTests(unittest.TestCase):
@@ -46,8 +47,12 @@ class ComponentChainClockTests(unittest.TestCase):
 
 
 class OatofHandoffContractTests(unittest.TestCase):
+    def test_registration_must_be_supplied_explicitly(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must be supplied explicitly"):
+            MODULE.validate_contract(CONTRACT)
+
     def test_draft_contract_is_coherent_but_not_package_qualified(self) -> None:
-        validated = MODULE.validate_contract(CONTRACT)
+        validated = MODULE.validate_contract(CONTRACT, REGISTRATION)
         contract = validated["contract"]
         self.assertAlmostEqual(validated["determinant"], 1.0, delta=1e-12)
         self.assertNotEqual(contract["status"], "frozen")
@@ -56,7 +61,7 @@ class OatofHandoffContractTests(unittest.TestCase):
         self.assertIn("time_dependent_fields", contract["timing_contract"]["solver_local_time_policy"])
 
     def test_rotation_maps_rf_axes_to_oatof_axes(self) -> None:
-        transform = MODULE.validate_contract(CONTRACT)["spatial_transform"]
+        transform = MODULE.validate_contract(CONTRACT, REGISTRATION)["spatial_transform"]
         vectors = (
             ((0.0, 0.0, 1.0), (1.0, 0.0, 0.0)),
             ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0)),
@@ -83,7 +88,9 @@ class OatofHandoffContractTests(unittest.TestCase):
                         "vx_m_s": 10, "vy_m_s": 20, "vz_m_s": 2000,
                         "kinetic_energy_eV": 2.1,
                     })
-            rows = MODULE.read_handoff_rows(path, MODULE.validate_contract(CONTRACT)["contract"])
+            rows = MODULE.read_handoff_rows(
+                path, MODULE.validate_contract(CONTRACT, REGISTRATION)["contract"]
+            )
             self.assertEqual(len(rows), 100)
             self.assertEqual(rows[0]["time_us"], "12.5")
             self.assertEqual(rows[0]["axial_z_mm"], "90.2")
@@ -150,6 +157,7 @@ class OatofHandoffBuildTests(unittest.TestCase):
             self.ion,
             self.row_map,
             self.metadata,
+            registration_path=REGISTRATION,
         )
 
     def test_build_preserves_global_clock_and_derives_local_ion(self) -> None:
@@ -206,6 +214,7 @@ class OatofHandoffBuildTests(unittest.TestCase):
         metadata = MODULE.build_handoff(
             self.source, self.manifest, CONTRACT, self.canonical, self.ion,
             self.row_map, self.metadata, solver_clock="instrument_time",
+            registration_path=REGISTRATION,
         )
         with self.row_map.open("r", encoding="utf-8", newline="") as handle:
             row_map = list(csv.DictReader(handle))
@@ -219,7 +228,7 @@ class OatofHandoffBuildTests(unittest.TestCase):
         metadata = MODULE.build_handoff(
             self.source, self.manifest, CONTRACT, self.canonical, self.ion,
             self.row_map, self.metadata, solver_clock="instrument_time",
-            target_origin_override_mm=target,
+            target_origin_override_mm=target, registration_path=REGISTRATION,
         )
         with self.canonical.open("r", encoding="utf-8", newline="") as handle:
             canonical = list(csv.DictReader(handle))

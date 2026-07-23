@@ -21,14 +21,13 @@ from common.contracts.spatial_registration import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOT = PROJECT_ROOT.parents[1]
-INTERFACE = PROJECT_ROOT / "config" / "rf_to_oatof_interface_candidate.json"
-S1 = PROJECT_ROOT / "config" / "rf_to_oatof_s1_joint_field.json"
+SHARED_JOINT = (
+    PROJECT_ROOT
+    / "config"
+    / "rf_to_oatof_shared_physical_port_joint_geometry.json"
+)
 S2 = PROJECT_ROOT / "config" / "rf_to_oatof_s2_passive_connector.json"
 STAGES = {
-    "s1": (
-        S1,
-        PROJECT_ROOT / "config" / "resolved_rf_to_oatof_s1_spatial_registration.json",
-    ),
     "s2": (
         S2,
         PROJECT_ROOT / "config" / "resolved_rf_to_oatof_s2_spatial_registration.json",
@@ -38,6 +37,81 @@ STAGES = {
 
 def _load(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _json_pointer(document: Any, pointer: str) -> Any:
+    """Resolve one absolute JSON pointer without accepting missing keys."""
+    if not pointer.startswith("/"):
+        raise ValueError(f"invalid JSON pointer: {pointer}")
+    value = document
+    for raw_token in pointer[1:].split("/"):
+        token = raw_token.replace("~1", "/").replace("~0", "~")
+        value = value[int(token)] if isinstance(value, list) else value[token]
+    return value
+
+
+def _validate_shared_authority(
+    shared: dict[str, Any],
+    rf_resolved: dict[str, Any],
+    oatof_baseline: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any], float]:
+    """Validate every active boundary/electrical binding in the shared joint."""
+    if shared.get("role") != "rf_to_oatof_shared_physical_port_joint_geometry":
+        raise ValueError("shared physical-port role differs")
+    sources = {
+        "rf_resolved_geometry": rf_resolved,
+        "oatof_baseline": oatof_baseline,
+    }
+    boundaries = shared["physical_boundaries"]
+    source = boundaries["source_exit_surface"]
+    target = boundaries["target_entry_surface"]
+    source_bindings = source["bindings"]
+    z_binding = source_bindings["local_center_z_mm"]
+    if float(source["local_center_mm"][2]) != float(
+        _json_pointer(sources[z_binding["source_input"]], z_binding["json_pointer"])
+    ):
+        raise ValueError("shared source-exit center binding differs")
+    normal_binding = source_bindings["outward_normal"]
+    axis = _json_pointer(
+        sources[normal_binding["source_input"]], normal_binding["json_pointer"]
+    )
+    if axis != normal_binding["expected_source_value"]:
+        raise ValueError("shared source-exit normal binding differs")
+    if tuple(source["outward_normal"]) != _positive_axis_vector(str(axis)):
+        raise ValueError("shared source-exit outward normal differs")
+    aperture = source["physical_aperture"]
+    aperture_binding = aperture["source_binding"]
+    if float(aperture["radius_mm"]) != float(
+        _json_pointer(
+            sources[aperture_binding["source_input"]],
+            aperture_binding["json_pointer"],
+        )
+    ):
+        raise ValueError("shared source-exit aperture binding differs")
+
+    target_binding = target["reference_binding"]
+    if target_binding["source_input"] != "oatof_baseline":
+        raise ValueError("shared target-entry authority differs")
+    for pointer in target_binding["json_pointers"]:
+        _json_pointer(oatof_baseline, pointer)
+    target_reference = derive_oatof_entry_reference(oatof_baseline)
+    if (
+        target["frame_id"]
+        != oatof_baseline["coordinate_convention"]["frame_id"]
+        or tuple(target["center_mm"]) != tuple(target_reference["center_mm"])
+        or tuple(target["outward_normal"]) != tuple(target_reference["normal"])
+    ):
+        raise ValueError("shared target-entry surface binding differs")
+
+    common = shared["electrical_interface"]["common_potential_reference"]
+    if common["unit"] != "V":
+        raise ValueError("shared common-potential unit differs")
+    common_value = float(common["potential_V"])
+    for binding in common["required_equal_source_bindings"]:
+        source_document = sources[binding["source_input"]]
+        if float(_json_pointer(source_document, binding["json_pointer"])) != common_value:
+            raise ValueError("shared common-potential source binding differs")
+    return source, target, common_value
 
 
 def derive_oatof_entry_reference(target_baseline: dict[str, Any]) -> dict[str, Any]:
@@ -78,14 +152,22 @@ def _positive_axis_vector(axis: str) -> tuple[float, float, float]:
 
 def resolve_stage(
     stage_path: Path,
-    interface_path: Path = INTERFACE,
+    shared_path: Path | None = None,
     source_root: Path = REPOSITORY_ROOT,
     rf_resolved_path: Path | None = None,
     oatof_baseline_path: Path | None = None,
 ) -> dict[str, Any]:
-    """Resolve S1 or S2 registration from existing authoritative project inputs."""
+    """Resolve S2 registration from existing authoritative project inputs."""
     stage = _load(stage_path)
-    interface = _load(interface_path)
+    shared_path = shared_path or (
+        PROJECT_ROOT / stage["inputs"]["shared_physical_port_joint_geometry"]
+    ).resolve()
+    shared = _load(shared_path)
+    if shared.get("authoritative_inputs") != {
+        "rf_resolved_geometry": stage["inputs"]["rf_resolved_geometry"],
+        "oatof_baseline": stage["inputs"]["oatof_baseline"],
+    }:
+        raise ValueError("S2 and shared physical-port authoritative inputs differ")
     rf_resolved_path = rf_resolved_path or (
         PROJECT_ROOT / stage["inputs"]["rf_resolved_geometry"]
     ).resolve()
@@ -94,30 +176,30 @@ def resolve_stage(
     ).resolve()
     rf_resolved = _load(rf_resolved_path)
     oatof_baseline = _load(oatof_baseline_path)
+    source_boundary, target_boundary, common_reference_V = (
+        _validate_shared_authority(shared, rf_resolved, oatof_baseline)
+    )
     registration = stage["nominal_registration"]
-    instrument_frame = registration["instrument_frame"]
-    source_frame = interface["boundaries"]["source_exit_surface"]["frame_id"]
-    target_frame = interface["boundaries"]["target_entry_surface"]["frame_id"]
-    target_pose = registration["target_component_pose"]
+    shared_registration = shared["nominal_registration"]
+    instrument_frame = shared_registration["instrument_frame"]
+    source_frame = source_boundary["frame_id"]
+    target_frame = target_boundary["frame_id"]
+    target_pose = shared_registration["target_component_pose"]
     target_transform = RigidTransform(
         target_frame,
         instrument_frame,
         target_pose["rotation_component_to_instrument"],
         target_pose["translation_mm"],
     )
-    target_reference = derive_oatof_entry_reference(oatof_baseline)
     target_surface = PlaneSurface(
         target_frame,
-        target_reference["center_mm"],
-        target_reference["normal"],
+        target_boundary["center_mm"],
+        target_boundary["outward_normal"],
     )
     target_instrument = target_transform.transform_plane(target_surface)
-    gap_field = (
-        "connector_gap_mm"
-        if stage.get("stage") == "S2"
-        else "direct_mating_gap_mm"
-    )
-    gap = float(registration[gap_field])
+    if stage.get("stage") != "S2":
+        raise ValueError("only the active S2 connector registration is supported")
+    gap = float(registration["connector_gap_mm"])
     desired_source_instrument = tuple(
         center + gap * normal
         for center, normal in zip(
@@ -125,11 +207,8 @@ def resolve_stage(
             target_instrument.normal,
         )
     )
-    source_exit_z = float(
-        rf_resolved["interfaces_mm"]["exit"]["connector_z_max_mm"]
-    )
-    source_local_center = (0.0, 0.0, source_exit_z)
-    source_rotation = registration["source_component_pose"][
+    source_local_center = tuple(source_boundary["local_center_mm"])
+    source_rotation = shared_registration["source_component_pose"][
         "rotation_component_to_instrument"
     ]
     rotation_only = RigidTransform(
@@ -157,9 +236,23 @@ def resolve_stage(
         ),
         target_frame: target_transform,
     }
-    source_normal = _positive_axis_vector(
-        rf_resolved["coordinate"]["axial_axis"]
-    )
+    if (
+        registration["instrument_frame"] != instrument_frame
+        or registration["target_component_pose"] != target_pose
+        or registration["source_component_pose"][
+            "rotation_component_to_instrument"
+        ] != source_rotation
+        or tuple(registration["source_exit_center_local_mm"])
+        != source_local_center
+        or tuple(registration["source_exit_center_instrument_mm"])
+        != desired_source_instrument
+        or tuple(registration["target_entry_center_instrument_mm"])
+        != tuple(target_instrument.center_mm)
+    ):
+        raise ValueError("S2 nominal registration differs from shared derivation")
+    if tuple(registration["source_component_pose"]["translation_mm"]) != source_translation:
+        raise ValueError("S2 source pose translation differs from shared derivation")
+    source_normal = tuple(source_boundary["outward_normal"])
     surfaces = {
         "source_exit": PlaneSurface(
             source_frame,
@@ -168,9 +261,6 @@ def resolve_stage(
         ),
         "target_entry": target_surface,
     }
-    common_reference = interface["electrical_interface"][
-        "common_potential_reference"
-    ]
     scalar_bindings = {
         "rf_axis_common_mode": {
             "value": rf_resolved["drive"]["common_mode_offset_V"],
@@ -180,12 +270,10 @@ def resolve_stage(
             "electrode_bindings": ["rf_axis_reference"],
         },
         "rf_exit_enclosure_dc": {
-            "value": common_reference["potential_V"],
+            "value": common_reference_V,
             "unit": "V",
-            "source_file": interface_path,
-            "json_pointer": (
-                "/electrical_interface/common_potential_reference/potential_V"
-            ),
+            "source_file": shared_path,
+            "json_pointer": "/electrical_interface/common_potential_reference/potential_V",
             "electrode_bindings": ["rf_exit_enclosure"],
         },
         "rf_peak_amplitude": {
@@ -212,12 +300,10 @@ def resolve_stage(
             "electrode_bindings": ["oatof_accelerator_shield"],
         },
         "interface_common_reference": {
-            "value": common_reference["potential_V"],
+            "value": common_reference_V,
             "unit": "V",
-            "source_file": interface_path,
-            "json_pointer": (
-                "/electrical_interface/common_potential_reference/potential_V"
-            ),
+            "source_file": shared_path,
+            "json_pointer": "/electrical_interface/common_potential_reference/potential_V",
             "electrode_bindings": [
                 "rf_exit_enclosure",
                 "rf_axis_reference",
@@ -233,9 +319,9 @@ def resolve_stage(
         target_component_id=target_frame,
         surfaces=surfaces,
         source_files=[
-            interface_path,
             oatof_baseline_path,
             rf_resolved_path,
+            shared_path,
             stage_path,
         ],
         repository_root=source_root,
@@ -288,7 +374,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--stage", choices=STAGES, default="s2")
     parser.add_argument("--stage-contract", type=Path)
-    parser.add_argument("--interface", type=Path, default=INTERFACE)
+    parser.add_argument("--shared-joint", type=Path)
     parser.add_argument("--source-root", type=Path, default=REPOSITORY_ROOT)
     parser.add_argument("--rf-resolved", type=Path)
     parser.add_argument("--oatof-baseline", type=Path)
@@ -302,7 +388,7 @@ def main() -> None:
     output = args.output or default_output
     release = resolve_stage(
         stage_path,
-        args.interface,
+        args.shared_joint,
         args.source_root,
         args.rf_resolved,
         args.oatof_baseline,

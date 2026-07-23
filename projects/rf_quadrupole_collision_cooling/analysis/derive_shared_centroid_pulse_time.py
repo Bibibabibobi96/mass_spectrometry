@@ -12,9 +12,11 @@ import numpy as np
 import pandas as pd
 
 try:
-    from plot_s1_pulse_geometry_snapshot import accelerator_geometry
+    from plot_shared_pulse_geometry_snapshot import accelerator_geometry
 except ModuleNotFoundError:
-    from projects.rf_quadrupole_collision_cooling.analysis.plot_s1_pulse_geometry_snapshot import accelerator_geometry
+    from projects.rf_quadrupole_collision_cooling.analysis.plot_shared_pulse_geometry_snapshot import (
+        accelerator_geometry,
+    )
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -88,7 +90,7 @@ def derive_schedule(particle_path: Path, baseline_path: Path, joint_path: Path,
     baseline = load_json(baseline_path)
     joint = load_json(joint_path)
     geometry = accelerator_geometry(baseline, joint)
-    schedule_stage = "S1"
+    schedule_stage = "SHARED"
     if s2_contract_path is None:
         offset = float(joint["port_sweep"]["particle_release_offset_inside_outer_face_mm"])
         entry_center = joint["nominal_registration"]["target_entry_center_instrument_mm"]
@@ -209,7 +211,7 @@ def main() -> None:
     args = parser.parse_args()
     if args.check_contract:
         validate_policy(args.policy)
-        print("S1_PULSE_TIMING_POLICY=PASS")
+        print("SHARED_PULSE_TIMING_POLICY=PASS")
         return
     required = (args.particle_state, args.oatof_baseline, args.joint_contract, args.output)
     if any(value is None for value in required):

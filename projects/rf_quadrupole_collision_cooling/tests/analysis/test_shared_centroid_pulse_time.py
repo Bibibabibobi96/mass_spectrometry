@@ -9,13 +9,13 @@ import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
-from projects.rf_quadrupole_collision_cooling.analysis import derive_s1_centroid_pulse_time as module
+from projects.rf_quadrupole_collision_cooling.analysis import derive_shared_centroid_pulse_time as module
 
 
-class S1CentroidPulseTimeTests(unittest.TestCase):
+class SharedCentroidPulseTimeTests(unittest.TestCase):
     def setUp(self) -> None:
         self.baseline = REPO_ROOT / "projects" / "oa_tof" / "config" / "baseline.json"
-        self.joint = PROJECT_ROOT / "config" / "rf_to_oatof_s1_joint_field.json"
+        self.joint = PROJECT_ROOT / "config" / "rf_to_oatof_shared_physical_port_joint_geometry.json"
 
     def _write(self, path: Path, rows: list[dict]) -> None:
         pd.DataFrame(rows).to_csv(path, index=False)

@@ -26,6 +26,16 @@ def _assert_close(actual: float, expected: float, name: str) -> None:
         raise ValueError(f"{name} differs: expected {expected}, got {actual}")
 
 
+def _json_pointer(document: Any, pointer: str) -> Any:
+    if not pointer.startswith("/"):
+        raise ValueError(f"invalid JSON pointer: {pointer}")
+    value = document
+    for raw_token in pointer[1:].split("/"):
+        token = raw_token.replace("~1", "/").replace("~0", "~")
+        value = value[int(token)] if isinstance(value, list) else value[token]
+    return value
+
+
 def validate_contract(
     path: Path = DEFAULT_CONTRACT, reference_root: Path = PROJECT_ROOT,
     registration_path: Path = DEFAULT_REGISTRATION,
@@ -68,9 +78,120 @@ def validate_contract(
     if not policy.get("verify_source_and_frozen_sha256_equal") or policy.get("allow_directory_search"):
         raise ValueError("S2 dependency runtime policy is not fail-closed")
 
-    s1 = _load_relative(contract["inputs"]["s1_joint_field"], reference_root)
+    shared_joint = _load_relative(
+        contract["inputs"]["shared_physical_port_joint_geometry"], reference_root
+    )
+    if shared_joint.get("role") != "rf_to_oatof_shared_physical_port_joint_geometry":
+        raise ValueError("S2 shared physical-port authority differs")
+    expected_authorities = {
+        "rf_resolved_geometry": contract["inputs"]["rf_resolved_geometry"],
+        "oatof_baseline": contract["inputs"]["oatof_baseline"],
+    }
+    if shared_joint.get("authoritative_inputs") != expected_authorities:
+        raise ValueError("S2 and shared physical-port authoritative inputs differ")
     rf = _load_relative(contract["inputs"]["rf_resolved_geometry"], reference_root)
-    interface = _load_relative(contract["inputs"]["interface_reference"], reference_root)
+    oatof = _load_relative(contract["inputs"]["oatof_baseline"], reference_root)
+    source_boundary = shared_joint["physical_boundaries"]["source_exit_surface"]
+    target_boundary = shared_joint["physical_boundaries"]["target_entry_surface"]
+    expected_source_bindings = {
+        "local_center_z_mm": {
+            "source_input": "rf_resolved_geometry",
+            "json_pointer": "/interfaces_mm/exit/connector_z_max_mm",
+        },
+        "outward_normal": {
+            "source_input": "rf_resolved_geometry",
+            "json_pointer": "/coordinate/axial_axis",
+            "expected_source_value": "+z",
+        },
+    }
+    if source_boundary.get("bindings") != expected_source_bindings:
+        raise ValueError("shared source-exit bindings differ")
+    if source_boundary.get("frame_id") != "rf_quadrupole_component":
+        raise ValueError("shared source-exit frame differs")
+    if source_boundary.get("geometry") != "plane":
+        raise ValueError("shared source-exit geometry differs")
+    _assert_close(
+        source_boundary["local_center_mm"][2],
+        _json_pointer(rf, "/interfaces_mm/exit/connector_z_max_mm"),
+        "shared source-exit center binding",
+    )
+    if (
+        _json_pointer(rf, "/coordinate/axial_axis") != "+z"
+        or source_boundary["outward_normal"] != [0.0, 0.0, 1.0]
+    ):
+        raise ValueError("shared source-exit normal binding differs")
+    aperture = source_boundary["physical_aperture"]
+    if aperture.get("source_binding") != {
+        "source_input": "rf_resolved_geometry",
+        "json_pointer": "/interfaces_mm/exit/aperture_radius_mm",
+    }:
+        raise ValueError("shared source-exit aperture source differs")
+    _assert_close(
+        aperture["radius_mm"],
+        _json_pointer(rf, "/interfaces_mm/exit/aperture_radius_mm"),
+        "shared source-exit aperture binding",
+    )
+    target_binding = target_boundary["reference_binding"]
+    expected_target_pointers = [
+        "/coordinate_convention/frame_id",
+        "/coordinate_convention/accelerator_axis_x",
+        "/geometry_mm/accelerator_bore_half",
+        "/geometry_mm/accelerator_ring_width",
+        "/geometry_mm/accelerator_insulation_gap",
+        "/geometry_mm/accelerator_shield_wall",
+        "/particle_source/center_y_mm",
+        "/particle_source/center_z_mm",
+    ]
+    if (
+        target_binding.get("source_input") != "oatof_baseline"
+        or target_binding.get("json_pointers") != expected_target_pointers
+    ):
+        raise ValueError("shared target-entry source binding differs")
+    target_center_from_oatof = [
+        float(oatof["coordinate_convention"]["accelerator_axis_x"])
+        - sum(
+            float(oatof["geometry_mm"][key])
+            for key in (
+                "accelerator_bore_half",
+                "accelerator_ring_width",
+                "accelerator_insulation_gap",
+                "accelerator_shield_wall",
+            )
+        ),
+        float(oatof["particle_source"]["center_y_mm"]),
+        float(oatof["particle_source"]["center_z_mm"]),
+    ]
+    if (
+        target_boundary.get("frame_id")
+        != oatof["coordinate_convention"]["frame_id"]
+        or target_boundary.get("center_mm") != target_center_from_oatof
+        or target_boundary.get("outward_normal") != [-1.0, 0.0, 0.0]
+    ):
+        raise ValueError("shared target-entry surface binding differs")
+    common_reference = shared_joint["electrical_interface"][
+        "common_potential_reference"
+    ]
+    expected_common_sources = {
+        (
+            "rf_resolved_geometry",
+            "/drive/common_mode_offset_V",
+        ): ("rf_axis_reference", "rf_exit_enclosure"),
+        (
+            "oatof_baseline",
+            "/electrodes_V/shield",
+        ): ("oatof_accelerator_shield",),
+    }
+    actual_common_sources = {
+        (item["source_input"], item["json_pointer"]): tuple(
+            item["electrode_bindings"]
+        )
+        for item in common_reference["required_equal_source_bindings"]
+    }
+    if actual_common_sources != expected_common_sources or common_reference["unit"] != "V":
+        raise ValueError("shared common-potential bindings differ")
+    common_ground = float(common_reference["potential_V"])
+    _assert_close(common_ground, rf["drive"]["common_mode_offset_V"], "RF common reference")
+    _assert_close(common_ground, oatof["electrodes_V"]["shield"], "oaTOF common reference")
     registration = contract["nominal_registration"]
     gap_mm = float(registration["connector_gap_mm"])
     if gap_mm < 0.0:
@@ -106,17 +227,14 @@ def validate_contract(
     ):
         raise ValueError("S2 connector gap differs from resolved registration")
     rotation = source_pose["rotation"]
-    if rotation != s1["nominal_registration"]["source_component_pose"]["rotation_component_to_instrument"]:
-        raise ValueError("S2 source rotation must inherit S1")
+    if rotation != shared_joint["nominal_registration"]["source_component_pose"]["rotation_component_to_instrument"]:
+        raise ValueError("S2 source rotation must inherit the shared physical-port authority")
 
     target_center = spatial["resolved_surfaces"]["target_entry"][
         "in_instrument_frame"
     ]["center_mm"]
-    if (
-        interface["boundaries"]["target_entry_surface"]["outward_normal"]
-        != spatial["resolved_surfaces"]["target_entry"]["declared"]["normal"]
-    ):
-        raise ValueError("S2 interface normal differs from resolved registration")
+    if target_boundary["outward_normal"] != spatial["resolved_surfaces"]["target_entry"]["declared"]["normal"]:
+        raise ValueError("S2 shared target normal differs from resolved registration")
     if registration["target_entry_center_instrument_mm"] != target_center:
         raise ValueError(
             "NEEDS_IMPLEMENTATION: S2 target entry differs from resolved registration"
@@ -134,28 +252,28 @@ def validate_contract(
         raise ValueError("S2 geometry must support direct mating at zero gap")
     if geometry.get("cavity", {}).get("creation_condition") != "connector_gap_mm > 0":
         raise ValueError("S2 connector-domain creation rule differs")
-    source_radius = float(interface["boundaries"]["source_exit_surface"]["physical_aperture"]["radius_mm"])
+    source_radius = float(aperture["radius_mm"])
     _assert_close(geometry["upstream_clear_aperture"]["radius_mm"], source_radius, "upstream aperture radius")
     _assert_close(geometry["cavity"]["inner_radius_mm"], source_radius, "connector cavity radius")
     _assert_close(geometry["length_mm"], gap_mm, "connector length")
     _assert_close(geometry["axial_extent_x_mm"][1] - geometry["axial_extent_x_mm"][0], gap_mm, "connector axial extent")
 
     downstream = geometry["downstream_entry_aperture"]
-    _assert_close(downstream["full_width_y_mm"], s1["port_sweep"]["selected_n100_candidate_full_width_y_mm"], "oa port width")
-    _assert_close(downstream["full_height_z_mm"], s1["port_sweep"]["full_height_z_mm"], "oa port height")
+    _assert_close(downstream["full_width_y_mm"], shared_joint["port_sweep"]["selected_n100_candidate_full_width_y_mm"], "oa port width")
+    _assert_close(downstream["full_height_z_mm"], shared_joint["port_sweep"]["full_height_z_mm"], "oa port height")
     if downstream["center_mm"] != target_center:
         raise ValueError("S2 downstream aperture center differs")
     if geometry["secondary_internal_aperture_allowed"] or geometry["active_electrode_allowed"]:
         raise ValueError("S2 must remain a passive connector without a second aperture")
 
     fields = contract["field_ownership"]
-    _assert_close(fields["common_ground_V"], 0.0, "common ground")
+    _assert_close(fields["common_ground_V"], common_ground, "common ground")
     if fields["oa_extraction_pulse_included"]:
         raise ValueError("S2 must not include oa pulse capture")
     field_candidate = contract["no_pulse_field_candidate"]
     if field_candidate["required_field_bases"] != ["oatof_static", "rf_unit_100_V"]:
         raise ValueError("S2 no-pulse field bases differ")
-    unit_pattern = [abs(float(value)) for value in s1["field_basis"]["rf_unit"]["rod_differential_pattern_V"]]
+    unit_pattern = [abs(float(value)) for value in shared_joint["field_basis"]["rf_unit"]["rod_differential_pattern_V"]]
     if any(value != float(field_candidate["rf_unit_voltage_V"]) for value in unit_pattern):
         raise ValueError("S2 RF unit voltage differs from the inherited rod pattern")
     if set(field_candidate["required_probe_locations"]) != {
@@ -177,7 +295,7 @@ def validate_contract(
         raise ValueError("S2 no-pulse field mesh sizes must be positive")
     _assert_close(
         field_candidate["boundary_probe_inset_mm"],
-        s1["port_sweep"]["particle_release_offset_inside_outer_face_mm"],
+        shared_joint["port_sweep"]["particle_release_offset_inside_outer_face_mm"],
         "S2 boundary probe inset",
     )
     permissions = contract["permissions"]

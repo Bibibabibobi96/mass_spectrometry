@@ -111,7 +111,7 @@ try {
   $spatialRegistrationOriginal = [IO.Path]::GetFullPath(
     [string]$sourceRunConfiguration.inputs.spatial_registration)
   $jointContractOriginal = [IO.Path]::GetFullPath(
-    [string]$sourceRunConfiguration.inputs.s1_joint_field_contract)
+    [string]$sourceRunConfiguration.inputs.shared_physical_port_joint_geometry)
   $oatofBaselineOriginal = [IO.Path]::GetFullPath(
     [string]$sourceRunConfiguration.inputs.oatof_baseline)
   $captureOriginal = Join-Path $sourceRun 'results\s3_pulse_left_limit_state.csv'
@@ -135,7 +135,7 @@ try {
   }
 
   $analysis = Join-Path $package.input_dir 'analyze_rf_oatof_checkpoints.py'
-  $snapshotAnalysis = Join-Path $package.input_dir 'plot_s1_pulse_geometry_snapshot.py'
+  $snapshotAnalysis = Join-Path $package.input_dir 'plot_shared_pulse_geometry_snapshot.py'
   $contract = Join-Path $package.input_dir 'rf_to_oatof_checkpoint_diagnostic.json'
   $runner = Join-Path $package.input_dir 'run_rf_oatof_checkpoint_diagnostic.ps1.txt'
   $support = Join-Path $package.input_dir 'rf_run_artifact_support.ps1.txt'
@@ -147,7 +147,7 @@ try {
   $pulseSchedule = Join-Path $package.input_dir 's3_centroid_pulse_schedule.json'
   $s2Contract = Join-Path $package.input_dir 'rf_to_oatof_s2_passive_connector.json'
   $spatialRegistration = Join-Path $package.input_dir 'resolved_rf_to_oatof_s2_spatial_registration.json'
-  $jointContract = Join-Path $package.input_dir 'rf_to_oatof_s1_joint_field.json'
+  $jointContract = Join-Path $package.input_dir 'rf_to_oatof_shared_physical_port_joint_geometry.json'
   $oatofBaseline = Join-Path $package.input_dir 'oatof_baseline.json'
 
   $sourceIdentities = [ordered]@{
@@ -167,7 +167,7 @@ try {
       -Source $s2ContractOriginal -Destination $s2Contract
     spatial_registration_sha256 = Copy-CheckpointInput `
       -Source $spatialRegistrationOriginal -Destination $spatialRegistration
-    s1_joint_field_contract_sha256 = Copy-CheckpointInput `
+    shared_physical_port_joint_geometry_sha256 = Copy-CheckpointInput `
       -Source $jointContractOriginal -Destination $jointContract
     oatof_baseline_sha256 = Copy-CheckpointInput `
       -Source $oatofBaselineOriginal -Destination $oatofBaseline
@@ -176,7 +176,7 @@ try {
     -Source (Join-Path $projectRoot 'analysis\analyze_rf_oatof_checkpoints.py') `
     -Destination $analysis | Out-Null
   Copy-CheckpointInput `
-    -Source (Join-Path $projectRoot 'analysis\plot_s1_pulse_geometry_snapshot.py') `
+    -Source (Join-Path $projectRoot 'analysis\plot_shared_pulse_geometry_snapshot.py') `
     -Destination $snapshotAnalysis | Out-Null
   Copy-CheckpointInput `
     -Source (Join-Path $projectRoot 'config\rf_to_oatof_checkpoint_diagnostic.json') `
@@ -213,7 +213,7 @@ try {
       pulse_schedule = $pulseSchedule
       s2_contract = $s2Contract
       spatial_registration = $spatialRegistration
-      s1_joint_field_contract = $jointContract
+      shared_physical_port_joint_geometry = $jointContract
       oatof_baseline = $oatofBaseline
     }
     source_identity = [ordered]@{

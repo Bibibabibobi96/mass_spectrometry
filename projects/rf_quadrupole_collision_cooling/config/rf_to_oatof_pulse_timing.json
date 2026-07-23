@@ -6,7 +6,7 @@
   "inputs": {
     "canonical_handoff_state": "runtime particle table",
     "oatof_baseline": "../oa_tof/config/baseline.json",
-    "s1_joint_contract": "config/rf_to_oatof_s1_joint_field.json"
+    "shared_physical_port_joint_geometry": "config/rf_to_oatof_shared_physical_port_joint_geometry.json"
   },
   "population": {
     "species_key": [
@@ -20,7 +20,7 @@
   "geometry": {
     "target_axis": "oatof_global_x",
     "target_position_source": "oatof_baseline.particle_source.center_x_mm",
-    "release_position_source": "negative-x accelerator shield outer face plus s1_joint_contract.port_sweep.particle_release_offset_inside_outer_face_mm",
+    "release_position_source": "negative-x accelerator shield outer face plus shared_physical_port_joint_geometry.port_sweep.particle_release_offset_inside_outer_face_mm",
     "finite_wall_filter": "require the straight pre-pulse path to remain inside the rectangular aperture at both outer and inner shield faces",
     "pre_pulse_field_assumption": "oa accelerator electrodes are off and measured RF leakage at the source is negligible; validate the derived schedule in the actual joint model"
   },

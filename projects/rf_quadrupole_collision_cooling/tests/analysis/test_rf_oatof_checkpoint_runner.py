@@ -37,7 +37,7 @@ class RfOatofCheckpointRunnerTests(unittest.TestCase):
             "$sourceRunConfiguration.inputs.particle_source",
             "$sourceRunConfiguration.inputs.pulse_schedule",
             "$sourceRunConfiguration.inputs.s2_contract",
-            "$sourceRunConfiguration.inputs.s1_joint_field_contract",
+            "$sourceRunConfiguration.inputs.shared_physical_port_joint_geometry",
             "$sourceRunConfiguration.inputs.oatof_baseline",
             "s3_pulse_left_limit_state.csv",
             "s3_particle_terminal_census.csv",
@@ -48,7 +48,7 @@ class RfOatofCheckpointRunnerTests(unittest.TestCase):
         self.assertIn("$manifestOutputPaths -notcontains", self.runner)
         self.assertIn("source_s3_run_manifest.json", self.runner)
         self.assertIn("source_s3_run_config.json", self.runner)
-        self.assertIn("plot_s1_pulse_geometry_snapshot.py", self.runner)
+        self.assertIn("plot_shared_pulse_geometry_snapshot.py", self.runner)
         self.assertIn("snapshot_analysis = $snapshotAnalysis", self.runner)
         self.assertIn("Copy-CheckpointInput", self.runner)
         self.assertIn("Get-FileHash -LiteralPath $Destination", self.runner)

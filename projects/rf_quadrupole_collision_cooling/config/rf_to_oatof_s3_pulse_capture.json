@@ -16,7 +16,7 @@
   "inputs": {
     "stage_plan": "config/rf_to_oatof_interface_stages.json",
     "s2_connector": "config/rf_to_oatof_s2_passive_connector.json",
-    "s1_joint_field": "config/rf_to_oatof_s1_joint_field.json",
+    "shared_physical_port_joint_geometry": "config/rf_to_oatof_shared_physical_port_joint_geometry.json",
     "pulse_timing_policy": "config/rf_to_oatof_pulse_timing.json",
     "oatof_baseline": "../oa_tof/config/baseline.json"
   },

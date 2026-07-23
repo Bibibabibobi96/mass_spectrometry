@@ -4,7 +4,7 @@ reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
 metricsPath = getenv('RF_OATOF_S2_FIELD_METRICS');
 samplesPath = getenv('RF_OATOF_S2_FIELD_SAMPLES');
 contractPath = getenv('RF_OATOF_S2_CONTRACT');
-s1ContractPath = getenv('RF_OATOF_S2_S1_CONTRACT');
+sharedJointPath = getenv('RF_OATOF_S2_SHARED_JOINT_CONTRACT');
 rfResolvedPath = getenv('RF_OATOF_S2_RF_RESOLVED');
 oaBaselinePath = getenv('RF_OATOF_S2_OA_BASELINE');
 spatialRegistrationPath = getenv('RF_OATOF_SPATIAL_REGISTRATION');
@@ -14,7 +14,7 @@ particleInputPath = getenv('RF_OATOF_S2_PARTICLE_INPUT');
 particleOutputPath = getenv('RF_OATOF_S2_PARTICLE_OUTPUT');
 assert(~isempty(reportPath) && ~isempty(metricsPath) && ~isempty(samplesPath), ...
     'S2 field output paths are incomplete.');
-assert(isfile(contractPath) && isfile(s1ContractPath) && ...
+assert(isfile(contractPath) && isfile(sharedJointPath) && ...
     isfile(rfResolvedPath) && isfile(oaBaselinePath) && ...
     isfile(spatialRegistrationPath) && ~isempty(spatialRegistrationSha256), ...
     'S2 field contract inputs are incomplete.');
@@ -27,7 +27,7 @@ fprintf(fid, 'TASK=S2_PASSIVE_CONNECTOR_NO_PULSE_FIELD\n');
 
 try
     contract = jsondecode(fileread(contractPath));
-    s1 = jsondecode(fileread(s1ContractPath));
+    sharedJoint = jsondecode(fileread(sharedJointPath));
     rf = jsondecode(fileread(rfResolvedPath));
     oa = jsondecode(fileread(oaBaselinePath));
     spatial = jsondecode(fileread(spatialRegistrationPath));
@@ -48,7 +48,7 @@ try
     import com.comsol.model.util.*
     tag = 'RFOATOF_S2_FIELD';
     [model, comp, context, geometryInfo, meshElementCounts] = ...
-        prepare_s2_joint_field_model(contract, s1, rf, oa, oaComsolDir, tag);
+        prepare_s2_joint_field_model(contract, sharedJoint, rf, oa, oaComsolDir, tag);
 
     [probeNames, coordinates] = field_probe_coordinates(contract, rf, oa, spatial);
     expressions = {'-d(V,x)','-d(V,y)','-d(V,z)','V', ...

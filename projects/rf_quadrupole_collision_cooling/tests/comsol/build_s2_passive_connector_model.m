@@ -1,10 +1,10 @@
-function [model, context] = build_s2_passive_connector_model(contract, s1, rf, oa, oaComsolDir, modelTag)
+function [model, context] = build_s2_passive_connector_model(contract, sharedJoint, rf, oa, oaComsolDir, modelTag)
 % Build the shared S2 passive-connector geometry and return its selections.
 % REPOSITORY_CONTRACT: MATLAB_BUILD_ONLY
 
 arguments
     contract struct
-    s1 struct
+    sharedJoint struct
     rf struct
     oa struct
     oaComsolDir (1,:) char
@@ -42,9 +42,9 @@ sourcePose = registration.source_component_pose;
 tx = sourcePose.translation_mm(1);
 tz = sourcePose.translation_mm(3);
 rfGeometry = rf.geometry_mm;
-shieldInnerRadius = s1.local_domain.rf_shield_inner_radius_mm;
-numericalWallMm = s1.local_domain.rf_shield_numerical_wall_thickness_mm;
-downstreamBufferMm = s1.local_domain.oatof_downstream_buffer_after_grid2_mm;
+shieldInnerRadius = sharedJoint.local_domain.rf_shield_inner_radius_mm;
+numericalWallMm = sharedJoint.local_domain.rf_shield_numerical_wall_thickness_mm;
+downstreamBufferMm = sharedJoint.local_domain.oatof_downstream_buffer_after_grid2_mm;
 oaGeometry = oa.geometry_mm;
 oaVacuumHalf = oaGeometry.accelerator_bore_half + ...
     oaGeometry.accelerator_ring_width + oaGeometry.accelerator_insulation_gap;

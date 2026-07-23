@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "role": "rf_to_oatof_shared_physical_port_joint_geometry",
+  "status": "authoritative_for_active_connector_and_pulse_stages",
+  "scope": "Stage-neutral physical port, local joint domain and field-basis geometry; no stage qualification claim.",
+  "authoritative_inputs": {
+    "rf_resolved_geometry": "config/resolved_design_official.json",
+    "oatof_baseline": "../oa_tof/config/baseline.json"
+  },
+  "physical_boundaries": {
+    "source_exit_surface": {
+      "frame_id": "rf_quadrupole_component",
+      "geometry": "plane",
+      "local_center_mm": [0.0, 0.0, 90.2],
+      "outward_normal": [0.0, 0.0, 1.0],
+      "bindings": {
+        "local_center_z_mm": {
+          "source_input": "rf_resolved_geometry",
+          "json_pointer": "/interfaces_mm/exit/connector_z_max_mm"
+        },
+        "outward_normal": {
+          "source_input": "rf_resolved_geometry",
+          "json_pointer": "/coordinate/axial_axis",
+          "expected_source_value": "+z"
+        }
+      },
+      "physical_aperture": {
+        "shape": "circle",
+        "radius_mm": 3.6,
+        "source_binding": {
+          "source_input": "rf_resolved_geometry",
+          "json_pointer": "/interfaces_mm/exit/aperture_radius_mm"
+        }
+      }
+    },
+    "target_entry_surface": {
+      "frame_id": "oatof_global",
+      "geometry": "plane_on_negative_x_outer_shield_face",
+      "center_mm": [-67.8, 0.0, -18.42918680341103],
+      "outward_normal": [-1.0, 0.0, 0.0],
+      "reference_binding": {
+        "source_input": "oatof_baseline",
+        "derivation": "center_x_mm = accelerator_axis_x - accelerator_bore_half - accelerator_ring_width - accelerator_insulation_gap - accelerator_shield_wall; center_y_mm and center_z_mm use particle_source center",
+        "json_pointers": [
+          "/coordinate_convention/frame_id",
+          "/coordinate_convention/accelerator_axis_x",
+          "/geometry_mm/accelerator_bore_half",
+          "/geometry_mm/accelerator_ring_width",
+          "/geometry_mm/accelerator_insulation_gap",
+          "/geometry_mm/accelerator_shield_wall",
+          "/particle_source/center_y_mm",
+          "/particle_source/center_z_mm"
+        ]
+      }
+    }
+  },
+  "electrical_interface": {
+    "common_potential_reference": {
+      "potential_V": 0.0,
+      "unit": "V",
+      "required_equal_source_bindings": [
+        {
+          "source_input": "rf_resolved_geometry",
+          "json_pointer": "/drive/common_mode_offset_V",
+          "electrode_bindings": ["rf_axis_reference", "rf_exit_enclosure"]
+        },
+        {
+          "source_input": "oatof_baseline",
+          "json_pointer": "/electrodes_V/shield",
+          "electrode_bindings": ["oatof_accelerator_shield"]
+        }
+      ],
+      "scope": "Nominal ideal connector reference only; no grounding-impedance, finite-bonding or Formal claim."
+    }
+  },
+  "nominal_registration": {
+    "instrument_frame": "oatof_global",
+    "target_component_pose": {
+      "rotation_component_to_instrument": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+      "translation_mm": [0.0, 0.0, 0.0]
+    },
+    "source_component_pose": {
+      "rotation_component_to_instrument": [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+      "translation_mm": [-158.0, 0.0, -18.42918680341103]
+    },
+    "source_exit_center_local_mm": [0.0, 0.0, 90.2],
+    "source_exit_center_instrument_mm": [-67.8, 0.0, -18.42918680341103],
+    "target_entry_center_instrument_mm": [-67.8, 0.0, -18.42918680341103],
+    "direct_mating_gap_mm": 0.0,
+    "axis_mapping": "RF +z -> oa +x; RF +x -> oa +y; RF +y -> oa +z"
+  },
+  "local_domain": {
+    "rf_shield_inner_radius_mm": 19.776,
+    "rf_shield_numerical_wall_thickness_mm": 1.0,
+    "oatof_downstream_buffer_after_grid2_mm": 5.0
+  },
+  "port_sweep": {
+    "shape": "rectangle",
+    "center_z_mm": -18.42918680341103,
+    "full_height_z_mm": 0.9,
+    "selected_n100_candidate_full_width_y_mm": 1.0,
+    "particle_release_offset_inside_outer_face_mm": 0.001
+  },
+  "field_basis": {
+    "shared_geometry_required": true,
+    "rf_unit": {
+      "rod_differential_pattern_V": [100.0, -100.0, 100.0, -100.0],
+      "all_oatof_electrodes_and_grounded_hardware_V": 0.0,
+      "runtime_scale": "V_rf_peak/100[V] * sin(2*pi*f_rf*instrument_time + phase)"
+    }
+  },
+  "physical_value_provenance": {
+    "extraction_origin": "historical zero-gap physical-port characterization authority",
+    "extraction_policy": "Values are copied exactly and checked against authoritative_inputs through the colocated bindings; this shared authority removes stage-name coupling without changing physics."
+  }
+}

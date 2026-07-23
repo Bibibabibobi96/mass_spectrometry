@@ -8,7 +8,7 @@
     "terminal_census": "one terminal classification row for every source-exit particle",
     "pulse_schedule": "S3 state-driven centroid schedule with the selected cohort",
     "registration": "config/rf_to_oatof_s2_passive_connector.json nominal_registration",
-    "geometry": "../oa_tof/config/baseline.json plus config/rf_to_oatof_s1_joint_field.json"
+    "geometry": "../oa_tof/config/baseline.json plus config/rf_to_oatof_shared_physical_port_joint_geometry.json"
   },
   "frame_contract": {
     "input_frame_source": "registration.nominal_registration.instrument_frame",

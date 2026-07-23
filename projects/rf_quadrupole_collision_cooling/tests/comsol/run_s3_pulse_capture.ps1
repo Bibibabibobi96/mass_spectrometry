@@ -38,11 +38,11 @@ try {
   $s3 = Join-Path $inputDir 'rf_to_oatof_s3_pulse_capture.json'
   $s2 = Join-Path $inputDir 'rf_to_oatof_s2_passive_connector.json'
   $spatialRegistration = Join-Path $inputDir 'resolved_rf_to_oatof_s2_spatial_registration.json'
-  $s1 = Join-Path $inputDir 'rf_to_oatof_s1_joint_field.json'
+  $sharedJoint = Join-Path $inputDir 'rf_to_oatof_shared_physical_port_joint_geometry.json'
   $rf = Join-Path $inputDir 'rf_resolved_design.json'
   $pulsePolicy = Join-Path $inputDir 'rf_to_oatof_pulse_timing.json'
-  $scheduler = Join-Path $inputDir 'derive_s1_centroid_pulse_time.py'
-  $snapshotAnalysis = Join-Path $inputDir 'plot_s1_pulse_geometry_snapshot.py'
+  $scheduler = Join-Path $inputDir 'derive_shared_centroid_pulse_time.py'
+  $snapshotAnalysis = Join-Path $inputDir 'plot_shared_pulse_geometry_snapshot.py'
   $auditAnalysis = Join-Path $inputDir 'audit_s3_pulse_chain.py'
   $dependencyContractSource = Join-Path $projectRoot 'config\rf_to_oatof_s2_dependencies.json'
   $dependencyContract = Join-Path $inputDir 'rf_to_oatof_s2_dependencies.json'
@@ -52,11 +52,11 @@ try {
   Copy-Item -LiteralPath $PSCommandPath -Destination $runner
   Copy-Item -LiteralPath $supportSource -Destination $support
   Copy-Item -LiteralPath $s3Source -Destination $s3
-  Copy-Item -LiteralPath (Join-Path $projectRoot 'config\rf_to_oatof_s1_joint_field.json') -Destination $s1
+  Copy-Item -LiteralPath (Join-Path $projectRoot 'config\rf_to_oatof_shared_physical_port_joint_geometry.json') -Destination $sharedJoint
   Copy-Item -LiteralPath (Join-Path $projectRoot 'config\resolved_design_official.json') -Destination $rf
   Copy-Item -LiteralPath (Join-Path $projectRoot 'config\rf_to_oatof_pulse_timing.json') -Destination $pulsePolicy
-  Copy-Item -LiteralPath (Join-Path $projectRoot 'analysis\derive_s1_centroid_pulse_time.py') -Destination $scheduler
-  Copy-Item -LiteralPath (Join-Path $projectRoot 'analysis\plot_s1_pulse_geometry_snapshot.py') -Destination $snapshotAnalysis
+  Copy-Item -LiteralPath (Join-Path $projectRoot 'analysis\derive_shared_centroid_pulse_time.py') -Destination $scheduler
+  Copy-Item -LiteralPath (Join-Path $projectRoot 'analysis\plot_shared_pulse_geometry_snapshot.py') -Destination $snapshotAnalysis
   Copy-Item -LiteralPath (Join-Path $projectRoot 'analysis\audit_s3_pulse_chain.py') -Destination $auditAnalysis
   Copy-Item -LiteralPath $dependencyContractSource -Destination $dependencyContract
 
@@ -129,7 +129,7 @@ try {
   }
   $pulseSchedule = Join-Path $inputDir 's3_centroid_pulse_schedule.json'
   & $python $scheduler --particle-state $timingState --oatof-baseline $oaBaseline `
-    --joint-contract $s1 --s2-contract $s2 --policy $pulsePolicy `
+    --joint-contract $sharedJoint --s2-contract $s2 --policy $pulsePolicy `
     --target-mass-amu ([double]$s3Document.source.target_mass_amu) `
     --target-charge-state ([int]$s3Document.source.target_charge_state) --output $pulseSchedule
   if ($LASTEXITCODE -ne 0) { throw 'S3 centroid pulse schedule derivation failed.' }
@@ -165,7 +165,8 @@ try {
     inputs = [ordered]@{
       task = $task; geometry_builder = $geometryBuilder; field_builder = $fieldBuilder
       runner = $runner; run_artifact_support = $support; s3_contract = $s3
-      s2_contract = $s2; s1_joint_field_contract = $s1; rf_resolved_geometry = $rf
+      s2_contract = $s2; shared_physical_port_joint_geometry = $sharedJoint
+      rf_resolved_geometry = $rf
       spatial_registration = $spatialRegistration
       pulse_timing_policy = $pulsePolicy; pulse_scheduler = $scheduler
       snapshot_analysis = $snapshotAnalysis; audit_analysis = $auditAnalysis
@@ -200,7 +201,7 @@ try {
   $environmentNames = @(
     'RF_OATOF_S3_METRICS','RF_OATOF_S3_TERMINAL_OUTPUT','RF_OATOF_S3_CAPTURE_OUTPUT',
     'RF_OATOF_S3_LOCAL_EXIT_OUTPUT','RF_OATOF_S3_CONTRACT','RF_OATOF_S3_S2_CONTRACT',
-    'RF_OATOF_S3_S1_CONTRACT','RF_OATOF_S3_RF_RESOLVED','RF_OATOF_S3_OA_BASELINE',
+    'RF_OATOF_S3_SHARED_JOINT_CONTRACT','RF_OATOF_S3_RF_RESOLVED','RF_OATOF_S3_OA_BASELINE',
     'RF_OATOF_SPATIAL_REGISTRATION','RF_OATOF_S3_PULSE_SCHEDULE',
     'RF_OATOF_S3_PARTICLE_INPUT','RF_OATOF_S3_OA_COMSOL_DIR'
   )
@@ -209,7 +210,7 @@ try {
     $env:RF_OATOF_S3_METRICS=$metrics; $env:RF_OATOF_S3_TERMINAL_OUTPUT=$terminal
     $env:RF_OATOF_S3_CAPTURE_OUTPUT=$capture; $env:RF_OATOF_S3_LOCAL_EXIT_OUTPUT=$localExit
     $env:RF_OATOF_S3_CONTRACT=$s3; $env:RF_OATOF_S3_S2_CONTRACT=$s2
-    $env:RF_OATOF_S3_S1_CONTRACT=$s1; $env:RF_OATOF_S3_RF_RESOLVED=$rf
+    $env:RF_OATOF_S3_SHARED_JOINT_CONTRACT=$sharedJoint; $env:RF_OATOF_S3_RF_RESOLVED=$rf
     $env:RF_OATOF_SPATIAL_REGISTRATION=$spatialRegistration
     $env:RF_OATOF_S3_OA_BASELINE=$oaBaseline; $env:RF_OATOF_S3_PULSE_SCHEDULE=$pulseSchedule
     $env:RF_OATOF_S3_PARTICLE_INPUT=$particleInput; $env:RF_OATOF_S3_OA_COMSOL_DIR=$inputDir
@@ -223,7 +224,7 @@ try {
     --local-exit $localExit --schedule $pulseSchedule --contract $s3 --output $audit
   if ($LASTEXITCODE -ne 0) { throw 'S3 particle-chain audit failed.' }
   & $python $snapshotAnalysis --capture $capture --events $terminal `
-    --oatof-baseline $oaBaseline --joint-contract $s1 `
+    --oatof-baseline $oaBaseline --joint-contract $sharedJoint `
     --figure $snapshotFigure --metadata $snapshotMetadata
   if ($LASTEXITCODE -ne 0) { throw 'S3 pulse snapshot generation failed.' }
   $result = Get-Content -LiteralPath $metrics -Raw -Encoding UTF8 | ConvertFrom-Json

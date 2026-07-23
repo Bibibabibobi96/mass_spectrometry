@@ -394,7 +394,7 @@ def main() -> None:
     args = parser.parse_args()
     result = plot_snapshot(args.capture, args.events, args.oatof_baseline, args.joint_contract,
                            args.figure, args.metadata)
-    print(f"S1_PULSE_GEOMETRY_SNAPSHOT=PASS ACTIVE={result['particles_active_at_pulse']} "
+    print(f"SHARED_PULSE_GEOMETRY_SNAPSHOT=PASS ACTIVE={result['particles_active_at_pulse']} "
           f"PORT_LOSS={result['frozen_port_losses_before_pulse']} "
           f"ACCELERATOR_LOSS={result['frozen_accelerator_losses_before_pulse']}")
 
