@@ -14,7 +14,7 @@
 
 1. `phase1_geometry_coil_transverse.m`：建立横置灯丝、Wehnelt 和阳极几何，保存几何中间模型。
 2. `phase2_electrostatics_coil_transverse.m`：建立材料、选择集、静电场、网格、Study 和原生结果节点，保存静电中间模型。
-3. `phase4_thermal_emission_coil_transverse.m`：建立 2700 K 热发射 CPT、瞬态 Study、粒子数据集和原生轨迹图，保存最终正式模型。
+3. `phase4_thermal_emission_coil_transverse.m`：建立 2700 K 热发射 CPT、瞬态 Study、粒子数据集和原生轨迹图，保存本次run的最终阶段模型。
 
 编号保留为 phase1/2/4，是为了维持既有实验谱系；旧 phase3 是不适合效率评估的冷发射验证，
 不属于正式流水线。

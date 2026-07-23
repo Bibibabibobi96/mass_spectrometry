@@ -18,6 +18,8 @@
 [`docs/history/20260722_rf-mesh-strategy-screen.md`](docs/history/20260722_rf-mesh-strategy-screen.md)；
 S2–S3连接功能闭环记录：
 [`docs/history/20260722__rf-oatof-s2-s3-functional-closure.md`](docs/history/20260722__rf-oatof-s2-s3-functional-closure.md)。
+迁移前小样本的传输、质量扫描和轴向加速证据见
+[`docs/history/20260723__pre-n100-multipole-functional-evidence.md`](docs/history/20260723__pre-n100-multipole-functional-evidence.md)。
 
 软件细节不相互横向引用；统一参数与跨求解器结论只写入 `PROJECT.md`。
 
@@ -38,7 +40,8 @@ S2–S3连接功能闭环记录：
 - 官方粒子源：[`config/official_particle_source.json`](config/official_particle_source.json)
 - 当前传输模式：[`config/modes/transport_no_collision.json`](config/modes/transport_no_collision.json)
 - 轴向加速模式：[`config/modes/axial_acceleration_reference.json`](config/modes/axial_acceleration_reference.json)；
-  当前实现已迁移到仓库统一粒子数合同，迁移后的双求解器功能baseline尚待重验，不代表参数优化或机械资格。
+  当前实现已迁移到仓库统一粒子数合同；两类轴向加速已通过四、六、八极杆双求解器N=100功能复验，
+  但不代表参数优化、数值等价或机械资格。
 - 集成就绪解析入口：[`config/resolved_interface_readiness.json`](config/resolved_interface_readiness.json)，
   由`analysis/resolve_contract.py --profile interface`生成，禁止手改。
 - 求解器无关相空间接口：[`config/interface_contract.json`](config/interface_contract.json)
@@ -203,7 +206,7 @@ rf_quadrupole_collision_cooling/
 | Formal | 机械正式几何、SolidWorks装配与求解器资产是否同任务同步并复验 | 固定阻断，直到正式机械几何被选定 |
 
 `transport_no_collision`与`transport_interface_readiness`共享硬件和RF-only基础物理，但运行目录、输出文件
-和比较报告按mode隔离。接口mode还必须显式给出不少于100行的粒子表和RF峰值，不能靠N25默认值伪装成
+和比较报告按mode隔离。接口mode还必须显式给出不少于100行的粒子表和RF峰值，不能靠遗留小样本默认值伪装成
 接口候选。隔离规则落地前已经存在的接口运行可由跨求解器门禁只读复验；门禁仍检查其run config中的
 真实mode，不要求重跑，也不再向旧路径写入新结果。
 

@@ -83,15 +83,6 @@ python common/contracts/write_formal_asset_manifest.py `
 `config/optimization_envelope.json`限制一轮优化的总体包络。正式baseline是当前验收设计，不是永远
 不可扩大的宇宙上限；envelope可经明确审查扩大，扩大本身也不会自动改写或转正baseline。
 
-oa-TOF当前采用“可扩展参考包络紧凑化”：TOF候选可在包络内双向调节，超出时返回
-`NEEDS_ENVELOPE_REVIEW`；加速器几何与电压全部双向优化，不受TOF包络的单方向紧凑化约束。
-获批需求和候选提案可静态编译为隔离合同：
-
-```powershell
-.\.venv\Scripts\python.exe -m projects.oa_tof.analysis.compile_candidate_design <proposal.json> `
-  --output-dir <new-candidate-directory>
-```
-
-输出固定为`candidate_baseline.json`、`candidate_resolved_geometry.json`和`candidate_diff.json`。编译器
-验证请求/提案哈希、单位、范围、整数数量、径向顺序、电极重叠、需求约束和当前envelope；不会修改
-正式baseline、运行求解器或创建正式资产。候选提案Schema为`candidate_proposal.schema.json`。
+项目候选编译器必须把获批提案写入隔离run，验证请求/提案身份、单位、变量范围、项目硬约束和当前
+envelope，并输出可审阅的候选合同与差异。它不得修改正式baseline、运行求解器或创建正式资产。
+具体包络策略、候选文件名和编译入口属于消费项目，不在公共合同README维护第二份说明。

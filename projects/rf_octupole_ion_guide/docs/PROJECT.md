@@ -4,38 +4,15 @@
 
 自2026-07-23起，本项目粒子数只遵循仓库根README“通用验证口径”和
 [`../../../common/contracts/particle_count_policy.json`](../../../common/contracts/particle_count_policy.json)，
-不在项目内维护第二份档位定义。baseline已迁移到新的默认功能档；下文N=25运行只保留为迁移前历史
-证据，不再构成当前功能或Candidate闭合，L1/L2/L3及两类加速均等待新标准复验。
+不在项目内维护第二份档位定义。分段杆轴向加速和端面加速已经分别通过COMSOL与SIMION N=100功能
+复验，四项来源run由[`family_contract.json`](../../../common/multipole/family_contract.json)冻结。
+该PASS不授予网格收敛、跨求解器数值等价、机械或Formal资格。
 
 项目已建立独立身份和理想有限长度L1传输合同。模型使用八根交替极性电极对应的理想八极场，直接积分
 RF相位分辨的非线性横向运动，并以0 V对照判断RF是否产生功能性约束。它不是四极杆mode，也不使用
-Mathieu稳定图。迁移前历史公共合同回归`20260722_210401__sim__python__rf-octupole-family-contract__l1-n25`中，RF开启时
-25/25到达出口，0 V对照仅1/25到达；该结果只记录当时的L1功能门禁结果。
-
-迁移前历史二维COMSOL圆杆场筛选`20260722_180355__sim__comsol__rf-octupole-ion-guide-round-rod-screen__l2`
-选择`r_rod/r0=0.36`：杆半径1.44 mm、中心半径5.44 mm、相邻表面间隙1.2836 mm；边界归一化
-`A12/A4=0.0038734`、`A20/A4=0.0031532`。两个采样环得到的高阶系数一致。使用带符号谐波重建场的
-`20260722_181611__sim__python__rf-octupole-ion-guide-round-rod__l2-n25`为RF 25/25、0 V 1/25，出口
-RMS半径0.5560 mm。它证明二维真实圆杆横向场的功能贯通，不证明有限三维端部或机械资格。
-
-迁移前历史带接口有限三维COMSOL完整电压合同回归`20260723_052500__sim__comsol__rf-octupole-family-contract__complete-drive-n25`
-从入口端板外侧释放相同N=25粒子。入口孔两组均通过25/25；RF组穿过完整杆区、出口孔并到达外部
-检测面25/25，零RF对照仅1/25到达。RF检测面RMS半径0.508183 mm，杆区最大半径1.081394 mm。
-结果显式记录波形、RF/DC、公共偏置、频率和相位；当前baseline的DC与公共偏置均为0 V。
-模型已保存参数化开孔端板、封闭外壳、有限外部区和原生轨迹节点；该N=25结论只是历史功能证据。
-
-迁移前历史共享圆杆几何与SIMION核心回归`20260722_233002__sim__simion__rf-octupole-family-contract__shared-runtime-n25__r02`
-同样得到RF 25/25、0 V 1/25。SIMION出口RMS半径0.629088 mm，COMSOL为0.601705 mm；最大杆区半径
-分别为1.007620 mm和1.110295 mm。传输计数完全一致，束斑差只作诊断，不构成网格收敛或数值等价声明。
-该SIMION入口与四极杆、六极杆共同使用根级run生命周期、源序列化和canonical粒子状态校验；粒子质量
-由本项目baseline显式传入，不存在公共层100 amu默认值。SIMION构建与飞行使用严格串行的直接CLI，
-避免refine后的PA锁与Lua嵌套命令重入。
-
-迁移前历史公共分段杆轴向加速运行
-`20260723_072300__sim__comsol__rf-octupole-axial-acceleration__n25`使用4段、0.4 mm段间隙和
-`0→-3 V`公共模阶梯；RF与源保持不变。加速组和同几何零轴向压降对照均为25/25，平均末端能量分别
-为4.9925和1.9881 eV，实测增益3.0044 eV，通过5 eV理论目标的功能判据。它不是分段优化、网格收敛、
-SIMION独立验证或机械资格。
+Mathieu稳定图。L1/L2/L3迁移前小样本数值只保留在
+[`history/20260723__pre-n100-multipole-functional-evidence.md`](history/20260723__pre-n100-multipole-functional-evidence.md)，
+不构成当前Candidate证据。
 
 ## 当前参数与边界
 
@@ -49,7 +26,7 @@ SIMION独立验证或机械资格。
 - 碰撞、空间电荷、磁场、支撑和机械公差均未启用。
 - L2使用二维COMSOL场的谐波展开并沿z均匀延伸；未做网格收敛，不允许机械设计、Candidate或Formal声明。
 - L3使用20 mm内半径连续接地圆柱外壳、完整有限圆杆、两块开孔接地板和两段有限外部区，COMSOL
-  直接求解端部/孔口场与轨迹；尚未完成网格收敛、独立求解器比较或Candidate资格门禁。
+  和SIMION均有功能入口；尚未完成网格收敛、跨求解器数值等价或Candidate资格门禁。
 
 ## 权威入口
 
@@ -70,5 +47,5 @@ SIMION独立验证或机械资格。
 本项目保留0 mm baseline，不用重复同一共享求解器实验。当前离子导引和接口功能链已由COMSOL与
 SIMION独立贯通。下一阶段不再增加模型层级；在需要把本设计
 推进为Candidate时，再进行网格收敛和机械baseline。碰撞冷却与CAD仍为独立后续阶段。轴向加速若
-继续推进，先补SIMION适配，再研究分段数量、绝缘间隙、馈电和机械实现；当前4段参数只作为COMSOL
-功能baseline。
+继续推进，应研究分段数量、绝缘间隙、馈电和机械实现；当前4段参数只是已通过双求解器N=100复验的
+功能baseline，不是正式硬件选择。

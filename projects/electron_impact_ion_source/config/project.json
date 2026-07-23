@@ -34,6 +34,6 @@
     "Physical and numerical parameters remain embedded in MATLAB",
     "No baseline or resolved machine contract",
     "No independent heavy-ion tracking or frozen downstream interface",
-    "COMSOL launcher and GUI result gate are not modernized"
+    "GUI Compute and native result-node acceptance are not completed"
   ]
 }

@@ -26,3 +26,8 @@
 - 静态门禁：[`verify_project.ps1`](verify_project.ps1)
 
 运行产物只进入`artifacts/projects/rf_hexapole_ion_guide/runs/`，不进入Git。
+
+## 历史入口
+
+- [`docs/history/20260723__pre-n100-multipole-functional-evidence.md`](docs/history/20260723__pre-n100-multipole-functional-evidence.md)：
+  N=100规范生效前的L1/L2/L3、正长度连接器和分段加速功能证据。

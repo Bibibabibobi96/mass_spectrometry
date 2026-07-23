@@ -6,7 +6,7 @@
 
 ## 当前基线
 
-当前物理基线为5匝横置螺旋钨丝、2700 K热发射的Wehnelt电子枪。正式源码链为
+当前物理基线为5匝横置螺旋钨丝、2700 K热发射的Wehnelt电子枪。当前维护源码链为
 `phase1_geometry_coil_transverse.m`、`phase2_electrostatics_coil_transverse.m`和
 `phase4_thermal_emission_coil_transverse.m`；实心阴极和轴向线圈源码只属于`legacy/`。
 
@@ -28,17 +28,19 @@
   完成横置灯丝几何、网格、静电和CPT Study/Solver树构建并保存隔离MPH，未运行静电或粒子求解器；
   三件套manifest复核PASS。该结果不复验历史收集效率，也不改变当前资产资格。
 - 参数仍直接写在MATLAB源码中，没有baseline/resolved机器契约和运行模式分层。
-- 当前正式MPH早于现行run config/summary/manifest合同；资产身份与结果尚未形成完整哈希链。
+- 旧MPH早于现行run config/summary/manifest合同；资产身份与结果尚未形成完整哈希链，不能称为当前
+  Formal资产。
 - 横置Wehnelt参数扫描尚未建立；旧phase5实际属于轴向灯丝，只能支持非单调性的历史假设。
 
 ## 下一步
 
-1. 用小样本复算最终CPT，并在GUI中重开检查Study、Solver和结果节点。
+1. 先用低于100的固定fixture做build/smoke和GUI节点检查；它不产生Candidate证据。进入粒子功能
+   复算时使用仓库最低N=100档。
 2. 为几何、电压、温度、粒子与数值设置建立机器契约，保持GUI节点可检查。
 3. 复验收集效率、损失分类和正式结果图，补齐run config、summary、manifest及资产SHA。
 4. 只有下游设计需要时才建立横置谱系参数扫描；不得复用轴向phase5的具体最优值。
 
 ## 产物边界
 
-项目产物根为`artifacts/projects/wehnelt_electron_gun/`。现有formal路径表示资产职责，不自动等于
-现行门禁已通过；旧谱系保留在archive，临时验证进入runs或scratch，不写入Git。
+项目产物根为`artifacts/projects/wehnelt_electron_gun/`。archive中旧目录名出现`formal`只表示归档前
+曾承担的资产职责，不等于现行门禁已通过；旧谱系保留在archive，临时验证进入runs或scratch，不写入Git。
