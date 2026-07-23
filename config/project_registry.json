@@ -4,7 +4,7 @@
   "generated_from": [
     {
       "descriptor": "projects/electron_impact_ion_source/config/project.json",
-      "sha256": "BAFBC541EC21ADD12C6FD8C026411BDB63C98BAED8A1AE5A640752EA0CCC9D26"
+      "sha256": "6A2D7FDEC234A3134BB006999B04EE393546366F31F45D4F394ABD93EDBC9A9A"
     },
     {
       "descriptor": "projects/mr_tof/config/project.json",
@@ -74,7 +74,7 @@
         "Physical and numerical parameters remain embedded in MATLAB",
         "No baseline or resolved machine contract",
         "No independent heavy-ion tracking or frozen downstream interface",
-        "COMSOL launcher and GUI result gate are not modernized"
+        "GUI Compute and native result-node acceptance are not completed"
       ]
     },
     {
