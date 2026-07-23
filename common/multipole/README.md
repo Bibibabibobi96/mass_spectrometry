@@ -42,13 +42,23 @@
 并另外负责oa屏蔽开孔、局部联合场、全局时钟下的脉冲捕获/提取以及下游分析器续算。这些是
 `rf_quadrupole_collision_cooling`项目的耦合参数和验收链，不反向复制公共连接器实现。
 
-公共层还提供`axial_acceleration.py`与`create_multipole_segmented_round_rods.m`：连续杆按项目合同分为
-等长金属段，相邻段保留显式绝缘间隙；每段两组杆继续接受相反RF，但共享同一轴向DC公共模电势。
-当前参考用4段、0.4 mm段间隙和`0→-3 V`阶梯，使100 amu、+1、2 eV离子在`-3 V`输出参考区达到
-理论5 eV。功能对照保持相同分段几何和RF，仅把轴向静电场缩放为0；不得在粒子状态或handoff处重写
-速度。分段杆轴向加速与端面加速已经由四、六、八极杆分别完成COMSOL和SIMION N=100功能复验，共
-12项证据由`family_contract.json`的`functional_validation`冻结。该PASS只关闭公共加速实现和状态链的
-功能风险；参数优化、网格收敛、跨求解器数值等价和机械馈电仍不在当前闭合范围。
+公共层还提供`axial_acceleration.py`与`create_multipole_segmented_round_rods.m`。轴向加速合同
+schema v2支持两种分段策略：`uniform`按段数、统一间隙和首末公共模电势派生等长段与线性电势阶梯；
+`explicit`逐段给出长度、段后间隙和公共模电势，并强制所有段和间隙精确守恒杆长。两种策略都保持
+每段两组杆接受相反RF、共享同一轴向DC公共模电势，功能对照保持相同分段几何和RF，仅把轴向静电场
+缩放为0；不得在粒子状态或handoff处重写速度。
+
+公共COMSOL与SIMION有限三维runner及四、六、八极杆薄wrapper统一接受
+`AxialAccelerationContractPath`。未显式给出路径时仍读取各项目
+`config/modes/axial_acceleration_reference.json`，因此三项目现有默认保持`uniform`四段参考；
+`explicit`必须由调用方传入具名合同，不会隐式改变默认工况。四极杆已用一份非等长、非等间隙、
+非线性电势的显式合同完成两求解器N=100功能复验，详细运行证据只记在四极杆PROJECT；六、八极杆
+目前只完成wrapper兼容和静态合同覆盖，没有新增显式分段真实求解器结论。
+
+分段杆默认`uniform`轴向加速与端面加速已经由四、六、八极杆分别完成COMSOL和SIMION N=100功能
+复验，共12项证据由`family_contract.json`的`functional_validation`冻结。该PASS及四极杆新增的
+`explicit`功能证据只关闭公共加速实现和状态链的相应功能风险；参数优化、网格收敛、跨求解器数值
+等价和机械馈电仍不在当前闭合范围。
 
 SIMION的通用beam/source-state文本序列化位于`common/simion/`；本目录只负责把多极杆canonical或
 ION11坐标适配到该求解器无关序列化层。run目录建立、失败收尾、manifest及canonical粒子状态验证位于

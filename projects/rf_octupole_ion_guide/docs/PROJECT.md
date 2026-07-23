@@ -8,6 +8,11 @@
 复验，四项来源run由[`family_contract.json`](../../../common/multipole/family_contract.json)冻结。
 该PASS不授予网格收敛、跨求解器数值等价、机械或Formal资格。
 
+COMSOL与SIMION薄wrapper现均透传`AxialAccelerationContractPath`，可消费公共schema v2的`uniform`
+或`explicit`轴向分段合同；本项目未显式传入路径时仍使用现有uniform四段参考。当前只验证了wrapper
+兼容和静态合同覆盖，没有新增八极杆explicit真实求解器证据；共享策略语义以
+[`common/multipole/README.md`](../../../common/multipole/README.md)为准。
+
 项目已建立独立身份和理想有限长度L1传输合同。模型使用八根交替极性电极对应的理想八极场，直接积分
 RF相位分辨的非线性横向运动，并以0 V对照判断RF是否产生功能性约束。它不是四极杆mode，也不使用
 Mathieu稳定图。L1/L2/L3迁移前小样本数值只保留在
@@ -47,5 +52,6 @@ Mathieu稳定图。L1/L2/L3迁移前小样本数值只保留在
 本项目保留0 mm baseline，不用重复同一共享求解器实验。当前离子导引和接口功能链已由COMSOL与
 SIMION独立贯通。下一阶段不再增加模型层级；在需要把本设计
 推进为Candidate时，再进行网格收敛和机械baseline。碰撞冷却与CAD仍为独立后续阶段。轴向加速若
-继续推进，应研究分段数量、绝缘间隙、馈电和机械实现；当前4段参数只是已通过双求解器N=100复验的
-功能baseline，不是正式硬件选择。
+继续推进，可通过`AxialAccelerationContractPath`建立项目具名explicit案例，再研究分段数量、各段
+长度/间隙/电势、馈电和机械实现；当前默认uniform四段参数仍只是已通过双求解器N=100复验的功能
+baseline，不是正式硬件选择。
