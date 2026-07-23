@@ -8,6 +8,10 @@
 身份、三维位置/速度、全局时间和RF相位校验；`run_artifact_support.ps1`统一PowerShell运行器创建目录、
 冻结输入、失败收尾和三件套manifest。它们不得内置器件参数，项目包装器只允许保留兼容入口。
 
+`particle_count_policy.json`是根README“通用验证口径”对应的机器合同。入口使用
+`python -m common.contracts.particle_count_policy --count <N>`在求解前失败关闭；本目录不重复定义档位，
+项目也不得复制后修改该规范。
+
 ## 项目发现
 
 项目身份和能力的权威源是各项目`config/project.json`。根`config/project_registry.json`是生成索引，

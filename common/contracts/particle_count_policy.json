@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "role": "repository_particle_count_policy",
+  "functional_check_count": 100,
+  "statistical_count": 1000,
+  "standard_particle_counts": [100, 1000],
+  "default_particle_count": 100,
+  "prefix_sampling_required": true,
+  "scope": "All present and future independent-particle trajectory projects and modes.",
+  "extension_policy": "Versioned convergence or collective-effect studies may add explicitly named counts, but cannot redefine a count below 100 as a functional, Candidate or Formal baseline."
+}
