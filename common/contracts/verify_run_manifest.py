@@ -3,17 +3,13 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 from pathlib import Path
 
-
-def sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest().upper()
+try:
+    from common.contracts.file_identity import file_sha256
+except ModuleNotFoundError:
+    from file_identity import file_sha256
 
 
 def verify_record(name: str, record: dict) -> None:
@@ -22,7 +18,7 @@ def verify_record(name: str, record: dict) -> None:
         raise AssertionError(f"manifest {name} is missing: {path}")
     if path.stat().st_size != record.get("bytes"):
         raise AssertionError(f"manifest {name} byte count changed: {path}")
-    if sha256(path) != str(record.get("sha256", "")).upper():
+    if file_sha256(path) != str(record.get("sha256", "")).upper():
         raise AssertionError(f"manifest {name} SHA-256 changed: {path}")
 
 

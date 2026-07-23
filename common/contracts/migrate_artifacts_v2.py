@@ -9,13 +9,17 @@ their current N=1000 cross-solver evidence are promoted into live locations.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-from artifact_naming import validate_archive_id, validate_run_id
+try:
+    from common.contracts.artifact_naming import validate_archive_id, validate_run_id
+    from common.contracts.file_identity import file_sha256
+except ModuleNotFoundError:
+    from artifact_naming import validate_archive_id, validate_run_id
+    from file_identity import file_sha256
 
 
 REPO = Path(__file__).resolve().parents[2]
@@ -30,14 +34,6 @@ PROJECT_IDS = (
     "electron_impact_ion_source",
 )
 LEGACY_ROOTS = ("models", "cad", "results", "runs", "scratch", "logs", "staging")
-
-
-def sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest().upper()
 
 
 def ensure_under(path: Path, root: Path) -> Path:
@@ -119,14 +115,14 @@ class Migration:
 
 def file_record(path: Path) -> dict:
     return {"path": str(path.resolve()), "exists": path.is_file(),
-            "bytes": path.stat().st_size, "sha256": sha256(path)}
+            "bytes": path.stat().st_size, "sha256": file_sha256(path)}
 
 
 def relative_file_record(path: Path, root: Path) -> dict:
     return {
         "path": path.resolve().relative_to(root.resolve()).as_posix(),
         "bytes": path.stat().st_size,
-        "sha256": sha256(path),
+        "sha256": file_sha256(path),
     }
 
 

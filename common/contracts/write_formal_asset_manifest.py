@@ -3,20 +3,16 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from artifact_naming import validate_run_id
-
-
-def sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest().upper()
+try:
+    from common.contracts.artifact_naming import validate_run_id
+    from common.contracts.file_identity import file_sha256
+except ModuleNotFoundError:
+    from artifact_naming import validate_run_id
+    from file_identity import file_sha256
 
 
 def record(path: Path, relative_to: Path) -> dict[str, object]:
@@ -24,7 +20,7 @@ def record(path: Path, relative_to: Path) -> dict[str, object]:
     relative = resolved.relative_to(relative_to.resolve()).as_posix()
     if not resolved.is_file():
         raise ValueError(f"not a file: {resolved}")
-    return {"path": relative, "bytes": resolved.stat().st_size, "sha256": sha256(resolved)}
+    return {"path": relative, "bytes": resolved.stat().st_size, "sha256": file_sha256(resolved)}
 
 
 def parse_asset(value: str) -> tuple[str, str]:

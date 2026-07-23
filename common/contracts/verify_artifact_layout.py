@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 from pathlib import Path
 
@@ -22,17 +21,14 @@ except ModuleNotFoundError:
         validate_task_id,
     )
 
+try:
+    from common.contracts.file_identity import file_sha256
+except ModuleNotFoundError:
+    from file_identity import file_sha256
+
 
 ALLOWED_PROJECT_ENTRIES = {"00_README.txt", "formal", "runs", "archive", "scratch"}
 REQUIRED_RUN_FILES = {"run_config.json", "summary.json", "run_manifest.json"}
-
-
-def sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest().upper()
 
 
 def verify_record(root: Path, record: dict, verify_hashes: bool) -> Path:
@@ -45,7 +41,7 @@ def verify_record(root: Path, record: dict, verify_hashes: bool) -> Path:
         raise AssertionError(f"manifest file is missing: {path}")
     if path.stat().st_size != int(record["bytes"]):
         raise AssertionError(f"manifest byte count differs: {path}")
-    if verify_hashes and sha256(path) != record["sha256"]:
+    if verify_hashes and file_sha256(path) != record["sha256"]:
         raise AssertionError(f"manifest SHA-256 differs: {path}")
     return path
 

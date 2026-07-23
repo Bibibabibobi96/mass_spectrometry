@@ -7,6 +7,8 @@
 `artifact_project.py`统一artifact项目根索引，`particle_state.py`统一SIMION/COMSOL适配后的粒子事件字段、
 身份、三维位置/速度、全局时间和RF相位校验；`run_artifact_support.ps1`统一PowerShell运行器创建目录、
 冻结输入、失败收尾和三件套manifest。它们不得内置器件参数，项目包装器只允许保留兼容入口。
+`file_identity.py`是manifest、正式资产和机器合同文件SHA-256身份的唯一流式实现，固定返回大写十六进制；
+调用者只负责路径范围、字节数和证据资格等各自合同。
 
 `particle_count_policy.json`是根README“通用验证口径”对应的机器合同。入口使用
 `python -m common.contracts.particle_count_policy --count <N>`在求解前失败关闭；本目录不重复定义档位，

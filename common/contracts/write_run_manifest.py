@@ -3,22 +3,18 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import platform
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from artifact_naming import validate_run_id
-
-
-def sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest().upper()
+try:
+    from common.contracts.artifact_naming import validate_run_id
+    from common.contracts.file_identity import file_sha256
+except ModuleNotFoundError:
+    from artifact_naming import validate_run_id
+    from file_identity import file_sha256
 
 
 def resolve_path(value: str, base: Path, project_root: Path | None) -> Path:
@@ -32,7 +28,7 @@ def resolve_path(value: str, base: Path, project_root: Path | None) -> Path:
 def file_record(path: Path) -> dict[str, Any]:
     record: dict[str, Any] = {"path": str(path), "exists": path.is_file()}
     if path.is_file():
-        record.update(bytes=path.stat().st_size, sha256=sha256(path))
+        record.update(bytes=path.stat().st_size, sha256=file_sha256(path))
     return record
 
 
