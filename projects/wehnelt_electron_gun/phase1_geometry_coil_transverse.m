@@ -1,4 +1,4 @@
-function phase1_geometry_coil_transverse()
+function result = phase1_geometry_coil_transverse(resolvedContractPath)
 % Phase 1 (transverse-coil variant): electron gun geometry with the
 % helical tungsten filament mounted so its OWN helix axis is
 % PERPENDICULAR to the gun's beam axis (axis = x), like a small spring
@@ -15,51 +15,18 @@ function phase1_geometry_coil_transverse()
 componentRoot = fileparts(mfilename('fullpath'));
 addpath(componentRoot);
 paths = egun_paths();
+if nargin < 1 || isempty(resolvedContractPath)
+    error('A resolved Wehnelt contract path is required; no defaults exist.');
+end
+contract = load_wehnelt_contract(char(resolvedContractPath));
 import com.comsol.model.*
 import com.comsol.model.util.*
 
 model = ModelUtil.create('Model');
 model.label('ElectronGunCoilTransverse');
 
-%% Parameters
-p = model.param;
-p.set('coil_rmaj', '0.3[mm]',  'Filament coil radius (axis to wire center)');
-p.set('coil_rmin', '0.05[mm]', 'Filament wire radius (0.1mm diameter tungsten wire)');
-p.set('coil_turns','5',        'Filament coil number of turns');
-p.set('coil_pitch','0.2[mm]',  'Filament coil axial pitch');
-p.set('coil_len',  'coil_turns*coil_pitch', 'Filament coil length along its own (transverse) axis');
-p.set('coil_zc',   '0.9[mm]',  'z-height of the coil''s own axis (centered inside the Wehnelt cavity, top arc facing the aperture)');
-
-% Wehnelt cavity geometry is unchanged from phase1_geometry_coil.m, but
-% z_weh_ceil/z_weh_top etc no longer derive from a cathode "h_cathode"
-% envelope (there is no on-axis cathode block anymore) -- pick the same
-% numeric values directly so downstream gun dimensions stay identical.
-p.set('weh_skirt', '0.5[mm]',  'Wehnelt cup: how far open end extends below z=0 reference');
-p.set('weh_gap',   '0.5[mm]',  'Reference gap used to place the cavity ceiling');
-p.set('weh_wall',  '0.5[mm]',  'Wehnelt cup: front wall thickness (contains aperture)');
-p.set('r_weh_cavity','1.5[mm]','Wehnelt cup: internal cavity radius (encloses coil)');
-p.set('r_weh_out', '4[mm]',    'Wehnelt outer radius');
-p.set('r_weh_hole','1[mm]',    'Wehnelt aperture radius');
-p.set('gap2',      '12[mm]',   'Gap: Wehnelt front face to anode bottom');
-p.set('r_an_out',  '8[mm]',    'Anode outer radius');
-p.set('r_an_hole', '1.5[mm]',  'Anode aperture radius');
-p.set('h_an',      '1[mm]',    'Anode thickness');
-p.set('drift',     '3[mm]',    'Drift space after anode');
-p.set('r_domain',  '10[mm]',   'Vacuum domain radius');
-p.set('z_margin',  '1[mm]',    'Vacuum domain margin below Wehnelt open end');
-p.set('chamfer_d', '0.1[mm]',  'Chamfer distance on Wehnelt/anode electrode edges');
-
-p.set('V_cathode', '0[V]',     'Cathode (filament) potential');
-p.set('V_wehnelt', '-0.5[V]',  'Wehnelt (control electrode) potential');
-p.set('V_anode',   '70[V]',    'Anode potential (sets 70 eV exit energy)');
-
-p.set('z_weh_bot',  '-weh_skirt');
-p.set('z_weh_ceil', '1[mm]+weh_gap');   % same numeric ceiling (1.5mm) as the coaxial version
-p.set('z_weh_top',  'z_weh_ceil+weh_wall');
-p.set('z_an_bot',   'z_weh_top+gap2');
-p.set('z_an_top',   'z_an_bot+h_an');
-p.set('z_dom_bot',  'z_weh_bot-z_margin');
-p.set('z_dom_top',  'z_an_top+drift');
+%% Resolver-validated GUI parameters
+parameterBindingsVerified = apply_wehnelt_contract_parameters(model, contract);
 
 %% Component + geometry
 comp1 = model.component.create('comp1', true);
@@ -76,7 +43,7 @@ geom1.feature('hel1').set('rmin', 'coil_rmin');
 geom1.feature('hel1').set('axialpitch', 'coil_pitch');
 geom1.feature('hel1').set('turns', 'coil_turns');
 geom1.feature('hel1').set('axistype', 'x');
-geom1.feature('hel1').set('pos', {'-coil_len/2' '0' 'coil_zc'});
+geom1.feature('hel1').set('pos', {'coil_xmin' '0' 'coil_zc'});
 
 % --- Wehnelt electrode: cap/cup shape (same as coaxial version) ---
 geom1.feature.create('cyl2', 'Cylinder');
@@ -88,14 +55,16 @@ geom1.feature('cyl2').set('pos', {'0' '0' 'z_weh_bot'});
 geom1.feature.create('cyl2c', 'Cylinder');
 geom1.feature('cyl2c').label('Wehnelt Cavity');
 geom1.feature('cyl2c').set('r', 'r_weh_cavity');
-geom1.feature('cyl2c').set('h', '(z_weh_ceil-z_weh_bot)+0.2[mm]');
-geom1.feature('cyl2c').set('pos', {'0' '0' 'z_weh_bot-0.2[mm]'});
+geom1.feature('cyl2c').set('h', '(z_weh_ceil-z_weh_bot)+tool_overshoot');
+geom1.feature('cyl2c').set('pos', {'0' '0' 'z_weh_bot-tool_overshoot'});
 
 geom1.feature.create('cyl3', 'Cylinder');
 geom1.feature('cyl3').label('Wehnelt Aperture');
 geom1.feature('cyl3').set('r', 'r_weh_hole');
-geom1.feature('cyl3').set('h', '(z_weh_top-z_weh_ceil)+0.4[mm]');
-geom1.feature('cyl3').set('pos', {'0' '0' 'z_weh_ceil-0.2[mm]'});
+geom1.feature('cyl3').set('h', ...
+    '(z_weh_top-z_weh_ceil)+2*tool_overshoot');
+geom1.feature('cyl3').set('pos', ...
+    {'0' '0' 'z_weh_ceil-tool_overshoot'});
 
 geom1.feature.create('dif1a', 'Difference');
 geom1.feature('dif1a').label('Wehnelt Cup (hollowed)');
@@ -117,8 +86,8 @@ geom1.feature('cyl4').set('pos', {'0' '0' 'z_an_bot'});
 geom1.feature.create('cyl5', 'Cylinder');
 geom1.feature('cyl5').label('Anode Hole');
 geom1.feature('cyl5').set('r', 'r_an_hole');
-geom1.feature('cyl5').set('h', 'h_an+0.4[mm]');
-geom1.feature('cyl5').set('pos', {'0' '0' 'z_an_bot-0.2[mm]'});
+geom1.feature('cyl5').set('h', 'h_an+2*tool_overshoot');
+geom1.feature('cyl5').set('pos', {'0' '0' 'z_an_bot-tool_overshoot'});
 
 geom1.feature.create('dif2', 'Difference');
 geom1.feature('dif2').label('Anode Blank');
@@ -162,6 +131,14 @@ disp(gi);
 if ~exist(paths.modelWorkspaceDir, 'dir'), mkdir(paths.modelWorkspaceDir); end
 model.save(fullfile(paths.modelWorkspaceDir, 'ElectronGun_CoilT.mph'));
 fprintf('SUCCESS: model saved.\n');
+result = struct('status', 'PASS', ...
+    'model_path', fullfile(paths.modelWorkspaceDir, 'ElectronGun_CoilT.mph'), ...
+    'contract_loaded', true, ...
+    'contract_project_id', contract.project_id, ...
+    'selected_mode_id', contract.selected_mode_id, ...
+    'parameter_bindings_verified', parameterBindingsVerified, ...
+    'candidate_evidence_allowed', ...
+    contract.evidence.candidate_evidence_allowed);
 end
 
 function tag = make_rim_tool(geom1, id, r0, z0, d, kind)

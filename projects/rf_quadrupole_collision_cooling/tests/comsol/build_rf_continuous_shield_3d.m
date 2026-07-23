@@ -29,6 +29,8 @@ try
     assert(any(abs(screen.inner_radius_mm(:)-shieldRadius)<1e-12),'Shield radius is outside the retained 3D candidates.');
     assert(any(abs(screen.local_maximum_element_size_mm(:)-meshHmax)<1e-12),'Mesh hmax is outside the frozen 3D sequence.');
     g = resolved.geometry_mm;
+    enclosure = g.enclosure;
+    interfaces = resolved.interfaces_mm;
     import com.comsol.model.*
     import com.comsol.model.util.*
     tag = 'RF_SHIELD_3D';
@@ -39,7 +41,7 @@ try
     geom = comp.geom.create('geom1',3); geom.lengthUnit('mm');
 
     modelZMin = 0.0;
-    modelZMax = g.exit_enclosure_front_wall_end_z;
+    modelZMax = enclosure.exit_front_wall_end_z_mm;
     numericalWall = 1.0;
     geom.feature.create('vac','Cylinder'); geom.feature('vac').set('r',sprintf('%.17g[mm]',shieldRadius));
     geom.feature('vac').set('h',sprintf('%.17g[mm]',modelZMax-modelZMin)); geom.feature('vac').set('pos',{'0','0',sprintf('%.17g[mm]',modelZMin)}); geom.feature('vac').set('selresult','on');
@@ -56,12 +58,12 @@ try
         geom.feature(rodTags{k}).set('selresult','on');
     end
     geom.feature.create('shieldO','Cylinder'); geom.feature('shieldO').set('r',sprintf('%.17g[mm]',shieldRadius+numericalWall));
-    geom.feature('shieldO').set('h',sprintf('%.17g[mm]',g.exit_enclosure_z_min-g.entrance_plate_z_max)); geom.feature('shieldO').set('pos',{'0','0',sprintf('%.17g[mm]',g.entrance_plate_z_max)});
+    geom.feature('shieldO').set('h',sprintf('%.17g[mm]',interfaces.exit.plate_z_min_mm-interfaces.entrance.plate_z_max_mm)); geom.feature('shieldO').set('pos',{'0','0',sprintf('%.17g[mm]',interfaces.entrance.plate_z_max_mm)});
     geom.feature.create('shieldH','Cylinder'); geom.feature('shieldH').set('r',sprintf('%.17g[mm]',shieldRadius));
-    geom.feature('shieldH').set('h',sprintf('%.17g[mm]',g.exit_enclosure_z_min-g.entrance_plate_z_max)); geom.feature('shieldH').set('pos',{'0','0',sprintf('%.17g[mm]',g.entrance_plate_z_max)});
+    geom.feature('shieldH').set('h',sprintf('%.17g[mm]',interfaces.exit.plate_z_min_mm-interfaces.entrance.plate_z_max_mm)); geom.feature('shieldH').set('pos',{'0','0',sprintf('%.17g[mm]',interfaces.entrance.plate_z_max_mm)});
     geom.feature.create('shield','Difference'); geom.feature('shield').selection('input').set({'shieldO'}); geom.feature('shield').selection('input2').set({'shieldH'}); geom.feature('shield').set('selresult','on');
-    add_annular_plate(geom,'entrance',shieldRadius+numericalWall,g.entrance_aperture_radius,g.entrance_plate_z_min,g.entrance_plate_z_max-g.entrance_plate_z_min);
-    add_annular_plate(geom,'exit',shieldRadius+numericalWall,g.exit_aperture_radius,g.exit_enclosure_z_min,g.exit_enclosure_front_wall_end_z-g.exit_enclosure_z_min);
+    add_annular_plate(geom,'entrance',shieldRadius+numericalWall,interfaces.entrance.aperture_radius_mm,interfaces.entrance.plate_z_min_mm,interfaces.entrance.plate_z_max_mm-interfaces.entrance.plate_z_min_mm);
+    add_annular_plate(geom,'exit',shieldRadius+numericalWall,interfaces.exit.aperture_radius_mm,interfaces.exit.plate_z_min_mm,interfaces.exit.plate_z_max_mm-interfaces.exit.plate_z_min_mm);
     geom.run;
 
     solidTags=[rodTags,{'shield','entrance','exit'}];
@@ -92,10 +94,10 @@ try
     inset=screen.boundary_evaluation_inset_mm; theta=(0:nTheta-1)'*(2*pi/nTheta); nominalRadius=[]; evaluationRadius=[]; thetaAll=[]; nominalZ=[]; evaluationZ=[];
     for zIndex=1:numel(zValues)
         for radiusIndex=1:numel(fractions)
-            requestedRadius=fractions(radiusIndex)*g.field_radius_r0;
-            evaluatedRadius=requestedRadius; if abs(requestedRadius-g.exit_aperture_radius)<1e-12, evaluatedRadius=requestedRadius-inset; end
+            requestedRadius=fractions(radiusIndex)*g.inscribed_radius_r0;
+            evaluatedRadius=requestedRadius; if abs(requestedRadius-interfaces.exit.aperture_radius_mm)<1e-12, evaluatedRadius=requestedRadius-inset; end
             requestedZ=zValues(zIndex); evaluatedZ=requestedZ;
-            if abs(requestedZ-g.exit_enclosure_z_min)<1e-12 || abs(requestedZ-g.exit_enclosure_front_wall_end_z)<1e-12, evaluatedZ=requestedZ-inset; end
+            if abs(requestedZ-interfaces.exit.plate_z_min_mm)<1e-12 || abs(requestedZ-interfaces.exit.plate_z_max_mm)<1e-12, evaluatedZ=requestedZ-inset; end
             nominalRadius=[nominalRadius;repmat(requestedRadius,nTheta,1)]; %#ok<AGROW>
             evaluationRadius=[evaluationRadius;repmat(evaluatedRadius,nTheta,1)]; %#ok<AGROW>
             thetaAll=[thetaAll;theta]; %#ok<AGROW>
@@ -110,7 +112,7 @@ try
     outputDir=fileparts(outputCsv); if ~isfolder(outputDir),mkdir(outputDir);end; writetable(samples,outputCsv);
     if particleEnabled
         assert(~isempty(particleEventsCsv) && ~isempty(particleSummaryJson) && ~isempty(particleRuntimeDir),'RF shield particle outputs are incomplete.');
-        [events,particleSummary]=run_particle_diagnostic(model,comp,screen,contract.n100_transport_screen,g,particleTablePath,particleRuntimeDir);
+        [events,particleSummary]=run_particle_diagnostic(model,comp,contract.n100_transport_screen,g,particleTablePath,particleRuntimeDir);
         eventDir=fileparts(particleEventsCsv); if ~isfolder(eventDir),mkdir(eventDir);end; writetable(events,particleEventsCsv);
         summaryFile=fopen(particleSummaryJson,'w'); assert(summaryFile>=0,'Could not create particle summary.'); fprintf(summaryFile,'%s',jsonencode(particleSummary,'PrettyPrint',true)); fclose(summaryFile);
         fprintf(fid,'PARTICLE_ROWS=%d\nPARTICLE_TRANSMITTED=%d\n',height(events),particleSummary.transmitted);
@@ -127,7 +129,7 @@ geom.feature.create([tag 'H'],'Cylinder'); geom.feature([tag 'H']).set('r',sprin
 geom.feature.create(tag,'Difference'); geom.feature(tag).selection('input').set({[tag 'O']}); geom.feature(tag).selection('input2').set({[tag 'H']}); geom.feature(tag).set('selresult','on');
 end
 
-function [events,summary]=run_particle_diagnostic(model,comp,screen,transport,g,particleTablePath,runtimeDir)
+function [events,summary]=run_particle_diagnostic(model,comp,transport,g,particleTablePath,runtimeDir)
 ions=readmatrix(particleTablePath,'FileType','text','Delimiter',',');
 assert(size(ions,1)==transport.particle_count && size(ions,2)==11,'Frozen N=100 ION table shape mismatch.');
 assert(all(abs(ions(:,2)-ions(1,2))<1e-12) && all(abs(ions(:,3)-ions(1,3))<1e-12),'One particle run requires one mass and charge state.');

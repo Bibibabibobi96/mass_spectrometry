@@ -21,8 +21,8 @@ $resultDir = Join-Path $runDir 'results'
 $logDir = Join-Path $runDir 'logs'
 $simion = 'C:\Program Files\SIMION-2020\simion.exe'
 $officialIob = 'C:\Program Files\SIMION-2020\examples\quad\quad_monolithic.iob'
-$resolved = Get-Content -LiteralPath (Join-Path $projectRoot 'config\resolved_geometry.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-$baselineCellMm = [double]$resolved.geometry_mm.simion_cell_mm
+$resolved = Get-Content -LiteralPath (Join-Path $projectRoot 'config\resolved_design_official.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+$baselineCellMm = 0.2
 if ($CellMm -le 0 -or $CellMm -gt $baselineCellMm) { throw "CellMm must be in (0, $baselineCellMm]." }
 
 New-Item -ItemType Directory -Path $candidateDir,$resultDir,$runDir,$logDir -Force | Out-Null
@@ -44,12 +44,12 @@ try {
     $env:RFQUAD_SIMION_PA_PATH = Join-Path $candidateDir 'quad_monolithic.pa0'
     $env:RFQUAD_SIMION_UNIT_RF_FIELD_CSV = Join-Path $resultDir 'unit_rf_field_pa_grid.csv'
     $env:RFQUAD_SIMION_UNIT_RF_FIELD_REPORT = Join-Path $logDir 'field_export.txt'
-    $env:RFQUAD_FIELD_X_MIN_MM = [string](-$resolved.geometry_mm.field_radius_r0/2)
-    $env:RFQUAD_FIELD_X_MAX_MM = [string]($resolved.geometry_mm.field_radius_r0/2)
-    $env:RFQUAD_FIELD_Y_MIN_MM = [string](-$resolved.geometry_mm.field_radius_r0/2)
-    $env:RFQUAD_FIELD_Y_MAX_MM = [string]($resolved.geometry_mm.field_radius_r0/2)
+    $env:RFQUAD_FIELD_X_MIN_MM = [string](-$resolved.geometry_mm.inscribed_radius_r0/2)
+    $env:RFQUAD_FIELD_X_MAX_MM = [string]($resolved.geometry_mm.inscribed_radius_r0/2)
+    $env:RFQUAD_FIELD_Y_MIN_MM = [string](-$resolved.geometry_mm.inscribed_radius_r0/2)
+    $env:RFQUAD_FIELD_Y_MAX_MM = [string]($resolved.geometry_mm.inscribed_radius_r0/2)
     $env:RFQUAD_FIELD_Z_MIN_MM = [string]$baselineCellMm
-    $env:RFQUAD_FIELD_Z_MAX_MM = [string]($resolved.coordinate_convention.detector_plane_z_mm-2*$baselineCellMm)
+    $env:RFQUAD_FIELD_Z_MAX_MM = [string]($resolved.interfaces_mm.exit.particle_plane_z_mm-2*$baselineCellMm)
     $env:RFQUAD_FIELD_STEP_MM = [string]$baselineCellMm
     & $simion --nogui lua (Join-Path $PSScriptRoot 'export_unit_rf_field.lua')
     if ($LASTEXITCODE -ne 0) { throw 'SIMION unit-field export failed.' }
@@ -66,7 +66,7 @@ $reportPath = Join-Path $logDir 'field_export.txt'
 $report = Get-Content -LiteralPath $reportPath -Raw
 if ($report -notmatch 'STATUS=PASS') { throw "SIMION field export gate failed: $report" }
 $runConfigPath = Join-Path $runDir 'run_config.json'
-[ordered]@{schema_version=1;run_id=$RunId;project='rf_quadrupole_collision_cooling';mode='pa_field_convergence';project_root=$projectRoot;inputs=[ordered]@{resolved_geometry='config/resolved_geometry.json'};formal_gate_passed=$false;cell_mm=$CellMm} |
+[ordered]@{schema_version=1;run_id=$RunId;project='rf_quadrupole_collision_cooling';mode='pa_field_convergence';project_root=$projectRoot;inputs=[ordered]@{resolved_design='config/resolved_design_official.json'};formal_gate_passed=$false;cell_mm=$CellMm} |
     ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $runConfigPath -Encoding UTF8
 $summaryPath = Join-Path $runDir 'summary.json'
 [ordered]@{schema_version=1;role='rf_quadrupole_pa_field_summary';status='success';cell_mm=$CellMm} |

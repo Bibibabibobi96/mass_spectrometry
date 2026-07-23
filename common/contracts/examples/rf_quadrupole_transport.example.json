@@ -17,7 +17,7 @@
     {"metric": "rms_beam_radius", "operator": "minimize", "value": null, "unit": "mm", "tolerance": null}
   ],
   "constraints": [],
-  "design_variables": ["rf_amplitude", "rf_frequency", "dc_differential", "axis_offset"],
+  "design_variables": ["rf_amplitude", "rf_frequency", "dc_amplitude", "common_mode_offset"],
   "required_outputs": ["simulation_results", "validation_report", "interface_state"],
   "evidence_level": "candidate",
   "approval": null

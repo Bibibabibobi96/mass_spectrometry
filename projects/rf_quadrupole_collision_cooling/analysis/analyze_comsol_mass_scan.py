@@ -106,7 +106,7 @@ def plot(path: Path, rows: list[dict[str, Any]], passband: tuple[float, float]) 
         axis.set(xlabel="Mass-to-charge ratio (Th)", ylabel="Transmission fraction", ylim=(-0.03, 1.03))
         axis.grid(axis="y", linewidth=0.5, alpha=0.3)
         axis.legend(frameon=False, loc="lower center")
-        figure.savefig(path, dpi=240, facecolor="white")
+        figure.savefig(path, format="png", dpi=240, facecolor="white")
         plt.close(figure)
 
 

@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "role": "project_execution_profiles",
+  "project_id": "wehnelt_electron_gun",
+  "profiles": [
+    {
+      "profile_id": "wehnelt_build_only_smoke",
+      "capability_id": "wehnelt_thermal_electron_transport",
+      "mode": "build_only_smoke",
+      "evidence_levels": [
+        "plan"
+      ],
+      "supported_objectives": [],
+      "supported_operating_points": [
+        {
+          "mass": {
+            "value": 0.000548579909,
+            "unit": "Da"
+          },
+          "charge_state": -1
+        }
+      ],
+      "supported_design_variables": [],
+      "supported_constraints": [],
+      "deliverable_outputs": [
+        "comsol_model"
+      ],
+      "required_bindings": [],
+      "steps": [
+        {
+          "step_id": "static_gate",
+          "kind": "gate",
+          "shell": "powershell",
+          "entrypoint": "verify_project.ps1",
+          "run_id_template": null,
+          "arguments": [
+            "-PythonExe",
+            "{python_exe}"
+          ]
+        },
+        {
+          "step_id": "commercial_build_only",
+          "kind": "run",
+          "shell": "powershell",
+          "entrypoint": "run_build_only_smoke.ps1",
+          "run_id_template": "{timestamp}__test__comsol__wehnelt-build-only-smoke",
+          "arguments": [
+            "-RunId",
+            "{run_id}"
+          ]
+        }
+      ],
+      "limitations": [
+        "The commercial step builds geometry, mesh, electrostatics, and CPT trees but does not run either solver or produce performance evidence.",
+        "The low-particle build fixture is explicitly evidence-ineligible.",
+        "The functional_reference mode remains unregistered until an N>=100 solver runner, collection classification, GUI Compute replay, and governed evidence lifecycle exist."
+      ]
+    }
+  ]
+}

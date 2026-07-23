@@ -27,11 +27,8 @@
   "geometry_mm": {
     "field_radius_r0": 4.0,
     "rod_radius_ratio": 1.148,
-    "rod_radius": 4.592,
-    "rod_center_radius": 8.592,
     "rod_z_min": 5.8,
     "rod_z_max": 85.4,
-    "rod_length": 79.6,
     "model_z_span": 95.2,
     "entrance_plate_z_min": 1.0,
     "entrance_plate_z_max": 1.8,

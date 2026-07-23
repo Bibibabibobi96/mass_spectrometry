@@ -8,8 +8,13 @@ function paths = egun_paths()
     paths.projectRoot = componentRoot;
     paths.componentRoot = componentRoot;
     paths.repoRoot = repoRoot;
-    paths.artifactRoot = fullfile(workspaceRoot, 'artifacts', 'projects', ...
-        'wehnelt_electron_gun');
+    configuredArtifactRoot = getenv('WEHNELT_ARTIFACT_ROOT');
+    if isempty(configuredArtifactRoot)
+        paths.artifactRoot = fullfile(workspaceRoot, 'artifacts', 'projects', ...
+            'wehnelt_electron_gun');
+    else
+        paths.artifactRoot = configuredArtifactRoot;
+    end
     paths.formalRoot = fullfile(paths.artifactRoot, 'formal');
     paths.runsRoot = fullfile(paths.artifactRoot, 'runs');
     paths.archiveRoot = fullfile(paths.artifactRoot, 'archive');

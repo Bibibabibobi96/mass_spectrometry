@@ -135,7 +135,8 @@ function New-RunPackage {
     schema_version=1;role='run_package_initialization_summary';status='interrupted';
     reason='Run package initialized; task-specific inputs are not frozen yet.'
   })
-  Write-RunManifest -Python $python -RepoRoot $RepoRoot -RunConfig $package.run_config -Status interrupted -Software $Software
+  $null=Write-VerifiedRunManifest -Python $python -RepoRoot $RepoRoot -RunConfig $package.run_config `
+    -Status interrupted -Software $Software -Outputs @($package.summary)
   return [pscustomobject]$package
 }
 
@@ -182,11 +183,20 @@ function Complete-FailedRun {
   $document=Get-Content -LiteralPath $RunConfig -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
   if(-not $document.Contains('inputs')){$document.inputs=[ordered]@{}}
   $known=@($document.inputs.Values|ForEach-Object{if($_ -is [string]){[IO.Path]::GetFullPath($_)}})
-  $inputDir=Join-Path (Split-Path -Parent $RunConfig) 'inputs';$index=0
-  if(Test-Path -LiteralPath $inputDir -PathType Container){foreach($file in Get-ChildItem -LiteralPath $inputDir -File|Sort-Object Name){
+  $runDir=Split-Path -Parent $RunConfig
+  $inputDir=Join-Path $runDir 'inputs';$index=0
+  if(Test-Path -LiteralPath $inputDir -PathType Container){foreach($file in Get-ChildItem -LiteralPath $inputDir -Recurse -File|Sort-Object FullName){
     if($known-notcontains$file.FullName){$index+=1;$document.inputs[("recovered_input_{0:D3}"-f$index)]=$file.FullName}
   }}
   Write-RunJson -Path $RunConfig -Value $document
   Write-RunJson -Path $Summary -Value ([ordered]@{schema_version=1;role=$SummaryRole;status='failed';reason=$Reason})
-  Write-RunManifest -Python $Python -RepoRoot $RepoRoot -RunConfig $RunConfig -Status failed -Software $Software
+  $outputs=@($Summary)
+  foreach($relative in @('results','logs','simion')){
+    $directory=Join-Path $runDir $relative
+    if(Test-Path -LiteralPath $directory -PathType Container){
+      $outputs+=@(Get-ChildItem -LiteralPath $directory -Recurse -File|Sort-Object FullName|Select-Object -ExpandProperty FullName)
+    }
+  }
+  Write-VerifiedRunManifest -Python $Python -RepoRoot $RepoRoot -RunConfig $RunConfig `
+    -Status failed -Software $Software -Outputs @($outputs|Select-Object -Unique)
 }

@@ -13,6 +13,7 @@ $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling'
 $contractSource = Join-Path $projectRoot 'config\rf_to_oatof_s2_passive_connector.json'
 $dependencyContractSource = Join-Path $projectRoot 'config\rf_to_oatof_s2_dependencies.json'
+$spatialRegistrationSource = Join-Path $projectRoot 'config\resolved_rf_to_oatof_s2_spatial_registration.json'
 $contractDocument = Get-Content -LiteralPath $contractSource -Raw -Encoding UTF8 | ConvertFrom-Json
 if (-not [bool]$contractDocument.permissions.geometry_builder_implementation_allowed) {
   throw 'The S2 contract does not authorize geometry construction.'
@@ -53,7 +54,8 @@ $support = Join-Path $inputDir 'rf_run_artifact_support.ps1.txt'
 $contract = Join-Path $inputDir 'rf_to_oatof_s2_passive_connector.json'
 $dependencyContract = Join-Path $inputDir 'rf_to_oatof_s2_dependencies.json'
 $s1Contract = Join-Path $inputDir 'rf_to_oatof_s1_joint_field.json'
-$rfResolved = Join-Path $inputDir 'rf_resolved_geometry.json'
+$rfResolved = Join-Path $inputDir 'rf_resolved_design.json'
+$spatialRegistration = Join-Path $inputDir 'resolved_rf_to_oatof_s2_spatial_registration.json'
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot $taskName) -Destination $task
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'build_s2_passive_connector_model.m') -Destination $geometryBuilder
 Copy-Item -LiteralPath $PSCommandPath -Destination $runner
@@ -61,7 +63,8 @@ Copy-Item -LiteralPath $supportSource -Destination $support
 Copy-Item -LiteralPath $contractSource -Destination $contract
 Copy-Item -LiteralPath $dependencyContractSource -Destination $dependencyContract
 Copy-Item -LiteralPath (Join-Path $projectRoot 'config\rf_to_oatof_s1_joint_field.json') -Destination $s1Contract
-Copy-Item -LiteralPath (Join-Path $projectRoot 'config\resolved_geometry.json') -Destination $rfResolved
+Copy-Item -LiteralPath (Join-Path $projectRoot 'config\resolved_design_official.json') -Destination $rfResolved
+Copy-Item -LiteralPath $spatialRegistrationSource -Destination $spatialRegistration
 $dependencyDocument = Get-Content -LiteralPath $dependencyContractSource -Raw -Encoding UTF8 | ConvertFrom-Json
 $dependencyIdentities = [ordered]@{}
 $dependencyPaths = @{}
@@ -98,6 +101,7 @@ $runConfiguration = [ordered]@{
     dependency_contract = $dependencyContract
     s1_joint_field_contract = $s1Contract
     rf_resolved_geometry = $rfResolved
+    spatial_registration = $spatialRegistration
     oatof_baseline = $oaBaseline
     oatof_accelerator_builder = $oaBuilder
   }
@@ -126,7 +130,7 @@ Write-RfRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig `
 $environmentNames = @(
   'RF_OATOF_S2_GEOMETRY_METRICS','RF_OATOF_S2_CONTRACT','RF_OATOF_S2_S1_CONTRACT',
   'RF_OATOF_S2_RF_RESOLVED','RF_OATOF_S2_OA_BASELINE','RF_OATOF_S2_OA_COMSOL_DIR',
-  'RF_OATOF_S2_GEOMETRY_MODEL'
+  'RF_OATOF_SPATIAL_REGISTRATION','RF_OATOF_S2_GEOMETRY_MODEL'
 )
 $oldEnvironment = Save-RfEnvironment -Names $environmentNames
 try {
@@ -134,6 +138,7 @@ try {
     $env:RF_OATOF_S2_CONTRACT = $contract
     $env:RF_OATOF_S2_S1_CONTRACT = $s1Contract
     $env:RF_OATOF_S2_RF_RESOLVED = $rfResolved
+    $env:RF_OATOF_SPATIAL_REGISTRATION = $spatialRegistration
     $env:RF_OATOF_S2_OA_BASELINE = $oaBaseline
     $env:RF_OATOF_S2_OA_COMSOL_DIR = $inputDir
     $env:RF_OATOF_S2_GEOMETRY_MODEL = if ($SaveReviewModel) { $reviewModel } else { '' }

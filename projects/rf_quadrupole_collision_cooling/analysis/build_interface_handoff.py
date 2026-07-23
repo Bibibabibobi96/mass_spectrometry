@@ -14,6 +14,15 @@ import math
 from pathlib import Path
 from typing import Any
 
+from common.contracts.rigid_transform import (
+    FramedPosition,
+    FramedVector,
+    PhaseSpaceState,
+    PlaneSurface,
+    RigidTransform,
+    relative_transform,
+)
+
 try:
     import build_oatof_handoff as legacy
     import entry_aperture_l0
@@ -49,27 +58,30 @@ def project_path(value: str) -> Path:
 
 def derive_oatof_entry_reference(target_baseline: dict[str, Any]) -> dict[str, Any]:
     """Locate the blocked +x entry reference on the current closed shield."""
-
+    try:
+        from resolve_spatial_registration import derive_oatof_entry_reference as derive
+    except ModuleNotFoundError:
+        from projects.rf_quadrupole_collision_cooling.analysis.resolve_spatial_registration import (
+            derive_oatof_entry_reference as derive,
+        )
+    resolved = derive(target_baseline)
     geometry = target_baseline["geometry_mm"]
-    source = target_baseline["particle_source"]
     axis_x = float(target_baseline["coordinate_convention"]["accelerator_axis_x"])
-    inner_half = sum(float(geometry[key]) for key in (
-        "accelerator_bore_half",
-        "accelerator_ring_width",
-        "accelerator_insulation_gap",
-    ))
+    inner_half = sum(
+        float(geometry[key])
+        for key in (
+            "accelerator_bore_half",
+            "accelerator_ring_width",
+            "accelerator_insulation_gap",
+        )
+    )
     wall = float(geometry["accelerator_shield_wall"])
-    outer_half = inner_half + wall
     return {
-        "center_mm": [
-            axis_x - outer_half,
-            float(source["center_y_mm"]),
-            float(source["center_z_mm"]),
-        ],
+        "center_mm": list(resolved["center_mm"]),
         "shield_inner_face_x_mm": axis_x - inner_half,
-        "shield_outer_face_x_mm": axis_x - outer_half,
+        "shield_outer_face_x_mm": resolved["center_mm"][0],
         "shield_inner_half_width_mm": inner_half,
-        "shield_outer_half_width_mm": outer_half,
+        "shield_outer_half_width_mm": inner_half + wall,
         "shield_wall_thickness_mm": wall,
         "incoming_axis": "+x",
     }
@@ -84,32 +96,12 @@ def _vector3(values: list[float], label: str) -> list[float]:
     return vector
 
 
-def transpose3(matrix: list[list[float]]) -> list[list[float]]:
-    return [[matrix[row][column] for row in range(3)] for column in range(3)]
-
-
-def matmul3(left: list[list[float]], right: list[list[float]]) -> list[list[float]]:
-    return [
-        [sum(left[row][k] * right[k][column] for k in range(3)) for column in range(3)]
-        for row in range(3)
-    ]
-
-
 def validate_rotation_matrix(matrix: list[list[float]]) -> list[list[float]]:
-    if len(matrix) != 3 or any(len(row) != 3 for row in matrix):
-        raise ValueError("rotation must be a 3x3 matrix")
-    rotation = [[float(value) for value in row] for row in matrix]
-    if not all(math.isfinite(value) for row in rotation for value in row):
-        raise ValueError("rotation values must be finite")
-    for row in range(3):
-        for other in range(3):
-            dot = sum(rotation[row][k] * rotation[other][k] for k in range(3))
-            expected = 1.0 if row == other else 0.0
-            if not math.isclose(dot, expected, rel_tol=0.0, abs_tol=1e-12):
-                raise ValueError("rotation must be orthonormal")
-    if not math.isclose(legacy.determinant3(rotation), 1.0, rel_tol=0.0, abs_tol=1e-12):
-        raise ValueError("rotation must be right handed with determinant +1")
-    return rotation
+    """Compatibility wrapper around the common rotation validator."""
+    transform = RigidTransform(
+        "compatibility_source", "compatibility_target", matrix, (0.0, 0.0, 0.0)
+    )
+    return [list(row) for row in transform.rotation]
 
 
 def derive_target_from_source_pose(
@@ -120,20 +112,22 @@ def derive_target_from_source_pose(
 ) -> dict[str, list[float] | list[list[float]]]:
     """Derive the only source-to-target transform from two component poses."""
 
-    source_rotation = validate_rotation_matrix(source_rotation_to_instrument)
-    target_rotation = validate_rotation_matrix(target_rotation_to_instrument)
-    source_translation = _vector3(source_translation_mm, "source translation")
-    target_translation = _vector3(target_translation_mm, "target translation")
-    instrument_to_target = transpose3(target_rotation)
-    relative_rotation = matmul3(instrument_to_target, source_rotation)
-    relative_translation = legacy.matvec(
-        instrument_to_target,
-        [source_translation[index] - target_translation[index] for index in range(3)],
+    source_pose = RigidTransform(
+        "source_component",
+        "instrument",
+        source_rotation_to_instrument,
+        source_translation_mm,
     )
-    validate_rotation_matrix(relative_rotation)
+    target_pose = RigidTransform(
+        "target_component",
+        "instrument",
+        target_rotation_to_instrument,
+        target_translation_mm,
+    )
+    derived = relative_transform(source_pose, target_pose)
     return {
-        "rotation_source_to_target": relative_rotation,
-        "translation_mm": relative_translation,
+        "rotation_source_to_target": [list(row) for row in derived.rotation],
+        "translation_mm": list(derived.translation_mm),
     }
 
 
@@ -145,15 +139,101 @@ def transform_phase_space(
 ) -> dict[str, list[float]]:
     """Register one state between frames without modeling physical transport."""
 
-    rotation = validate_rotation_matrix(rotation_source_to_target)
-    position = _vector3(position_mm, "position")
-    velocity = _vector3(velocity_m_s, "velocity")
-    translation = _vector3(translation_mm, "translation")
-    rotated_position = legacy.matvec(rotation, position)
+    transform = RigidTransform(
+        "source_frame", "target_frame", rotation_source_to_target, translation_mm
+    )
+    transformed = transform.transform_state(
+        PhaseSpaceState("source_frame", position_mm, velocity_m_s, 0.0)
+    )
     return {
-        "position_mm": [rotated_position[index] + translation[index] for index in range(3)],
-        "velocity_m_s": legacy.matvec(rotation, velocity),
+        "position_mm": list(transformed.position_mm),
+        "velocity_m_s": list(transformed.velocity_m_s),
     }
+
+
+def validate_fixed_rf_oatof_geometry_registration(
+    registration: dict[str, Any],
+    target_entry_surface: dict[str, Any],
+    gap_mm: float,
+) -> None:
+    """Validate one resolved-compatible pose and physical connector separation."""
+
+    source_pose = registration["source_component_pose"]
+    target_pose = registration["target_component_pose"]
+    source_rotation = validate_rotation_matrix(
+        source_pose["rotation_component_to_instrument"]
+    )
+    target_rotation = validate_rotation_matrix(
+        target_pose["rotation_component_to_instrument"]
+    )
+    source_translation = _vector3(source_pose["translation_mm"], "source translation")
+    target_translation = _vector3(target_pose["translation_mm"], "target translation")
+
+    source_local = _vector3(
+        registration["source_exit_center_local_mm"], "source exit local center"
+    )
+    source_to_instrument = RigidTransform(
+        "rf_quadrupole_component",
+        registration["instrument_frame"],
+        source_rotation,
+        source_translation,
+    )
+    target_to_instrument = RigidTransform(
+        "oatof_target_component",
+        registration["instrument_frame"],
+        target_rotation,
+        target_translation,
+    )
+    transformed_source = source_to_instrument.transform_position(
+        FramedPosition("rf_quadrupole_component", source_local)
+    ).coordinates_mm
+    declared_source = _vector3(
+        registration["source_exit_center_instrument_mm"], "source exit instrument center"
+    )
+    declared_target = _vector3(
+        registration["target_entry_center_instrument_mm"], "target entry instrument center"
+    )
+    target_plane = target_to_instrument.transform_plane(
+        PlaneSurface(
+            "oatof_target_component",
+            target_entry_surface["center_mm"],
+            target_entry_surface["outward_normal"],
+        )
+    )
+    interface_target = list(target_plane.center_mm)
+    if not all(
+        math.isclose(actual, expected, rel_tol=0.0, abs_tol=1e-12)
+        for actual, expected in zip(declared_source, transformed_source)
+    ):
+        raise ValueError("NEEDS_IMPLEMENTATION: source exit center differs from its pose")
+    if not all(
+        math.isclose(actual, expected, rel_tol=0.0, abs_tol=1e-12)
+        for actual, expected in zip(declared_target, interface_target)
+    ):
+        raise ValueError("NEEDS_IMPLEMENTATION: target entry center differs from the interface")
+    source_forward = source_to_instrument.transform_vector(
+        FramedVector("rf_quadrupole_component", (0.0, 0.0, 1.0), "polar")
+    ).components
+    if any(
+        not math.isclose(source, -target, rel_tol=0.0, abs_tol=1e-12)
+        for source, target in zip(source_forward, target_plane.normal)
+    ):
+        raise ValueError(
+            "NEEDS_IMPLEMENTATION: source forward axis and target outward normal differ"
+        )
+
+    gap = float(gap_mm)
+    if not math.isfinite(gap) or gap < 0.0:
+        raise ValueError("connector gap must be finite and non-negative")
+    displacement = [
+        declared_target[index] - declared_source[index] for index in range(3)
+    ]
+    expected_displacement = [gap * value for value in source_forward]
+    if any(
+        not math.isclose(actual, expected, rel_tol=0.0, abs_tol=1e-12)
+        for actual, expected in zip(displacement, expected_displacement)
+    ):
+        raise ValueError("NEEDS_IMPLEMENTATION: pose-derived connector gap is inconsistent")
 
 
 def build_virtual_entry_rows(
@@ -169,22 +249,46 @@ def build_virtual_entry_rows(
     target_origin = _vector3(
         contract["boundaries"]["target_entry_surface"]["center_mm"], "target origin"
     )
+    source_to_center = RigidTransform(
+        "source_frame",
+        "source_center",
+        RigidTransform.identity("source_frame").rotation,
+        tuple(-value for value in source_origin),
+    )
+    rotate_centers = RigidTransform(
+        "source_center",
+        "target_center",
+        rotation,
+        (0.0, 0.0, 0.0),
+    )
+    center_to_target = RigidTransform(
+        "target_center",
+        "target_frame",
+        RigidTransform.identity("target_frame").rotation,
+        target_origin,
+    )
+    spatial_transform = source_to_center.then(rotate_centers).then(
+        center_to_target
+    )
     rows: list[dict[str, Any]] = []
     for event in source_events:
         source_position = [float(event[f"position_{axis}_mm"]) for axis in "xyz"]
-        relative_position = [
-            source_position[index] - source_origin[index] for index in range(3)
-        ]
-        transformed = transform_phase_space(
-            relative_position,
-            [float(event[f"velocity_{axis}_m_s"]) for axis in "xyz"],
-            rotation,
-            target_origin,
+        transformed = spatial_transform.transform_state(
+            PhaseSpaceState(
+                "source_frame",
+                source_position,
+                [float(event[f"velocity_{axis}_m_s"]) for axis in "xyz"],
+                float(event["instrument_time_us"]),
+            )
         )
         row = dict(event)
         for index, axis in enumerate("xyz"):
-            row[f"position_{axis}_mm"] = f"{transformed['position_mm'][index]:.17g}"
-            row[f"velocity_{axis}_m_s"] = f"{transformed['velocity_m_s'][index]:.17g}"
+            row[f"position_{axis}_mm"] = (
+                f"{transformed.position_mm[index]:.17g}"
+            )
+            row[f"velocity_{axis}_m_s"] = (
+                f"{transformed.velocity_m_s[index]:.17g}"
+            )
         rows.append(row)
     return rows
 

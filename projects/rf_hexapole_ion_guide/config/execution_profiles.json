@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "role": "project_execution_profiles",
+  "project_id": "rf_hexapole_ion_guide",
+  "profiles": [
+    {
+      "profile_id": "finite_3d_design_compile_static",
+      "capability_id": "hexapole_finite_3d_transport",
+      "mode": "finite_3d_no_collision",
+      "evidence_levels": ["static"],
+      "supported_objectives": ["transmission_fraction", "exit_rms_radius", "maximum_rod_radius"],
+      "supported_operating_points": [
+        {"mass": {"value": 100.0, "unit": "Da"}, "charge_state": 1}
+      ],
+      "supported_design_variables": [
+        "inscribed_radius_r0", "rod_radius_ratio", "rod_z_min", "rod_z_max",
+        "enclosure_working_region_radius", "vacuum_z_min", "vacuum_z_max",
+        "shield_inner_radius", "shield_outer_radius", "entrance_endcap_z_min",
+        "entrance_endcap_z_max", "exit_endcap_z_min", "exit_endcap_z_max",
+        "entrance_aperture_radius", "entrance_plate_thickness", "entrance_rod_clearance",
+        "entrance_connector_length", "entrance_particle_plane_distance",
+        "exit_aperture_radius", "exit_plate_thickness", "exit_rod_clearance",
+        "exit_connector_length", "exit_particle_plane_distance",
+        "rf_amplitude", "dc_amplitude", "common_mode_offset", "rf_frequency", "rf_phase",
+        "segment_count", "intersegment_gap", "segment_entrance_common_mode",
+        "segment_exit_common_mode", "segment_output_reference"
+      ],
+      "supported_constraints": [
+        "locked_multipole_identity", "catalog_variable_bounds", "positive_rod_span",
+        "nonoverlapping_interfaces", "segmented_length_conservation",
+        "supported_connector_shapes"
+      ],
+      "deliverable_outputs": ["validation_report"],
+      "required_bindings": ["compiled_output_path"],
+      "steps": [
+        {
+          "step_id": "static_gate",
+          "kind": "gate",
+          "shell": "powershell",
+          "entrypoint": "verify_project.ps1",
+          "run_id_template": null,
+          "arguments": ["-PythonExe", "{python_exe}"]
+        },
+        {
+          "step_id": "compile_design_request",
+          "kind": "analyze",
+          "shell": "python",
+          "entrypoint": "../../common/multipole/compile_design_request.py",
+          "run_id_template": null,
+          "arguments": [
+            "--request", "config/requests/baseline.json",
+            "--design-variables", "config/design_variables.json",
+            "--optimization-envelope", "config/optimization_envelope.json",
+            "--provenance-root", "../..",
+            "--output", "{compiled_output_path}",
+            "--project-id", "rf_hexapole_ion_guide",
+            "--radial-order-n", "3",
+            "--electrode-count", "6"
+          ]
+        }
+      ],
+      "limitations": [
+        "This governed profile only validates and compiles a solver-neutral request.",
+        "It does not invoke COMSOL, SIMION, CAD or claim Candidate qualification."
+      ]
+    }
+  ]
+}

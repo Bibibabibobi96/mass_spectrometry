@@ -10,7 +10,8 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Circle
-from rfquad_contract import diagnostic_planes, load as load_contract
+from rfquad_contract import load as load_contract
+from transport_diagnostics import diagnostic_planes
 
 
 def load_tracks(path: Path) -> dict[int, dict[str, np.ndarray]]:
@@ -63,12 +64,12 @@ def main() -> None:
     resolved, interface = load_contract()
     geometry = resolved["geometry_mm"]
     plane_contract = diagnostic_planes(resolved, interface)
-    r0 = geometry["field_radius_r0"]
+    r0 = geometry["inscribed_radius_r0"]
     rod_start, rod_end = geometry["rod_z_min"], geometry["rod_z_max"]
     detector_plane = plane_contract["detector_front"]
-    step = geometry["simion_cell_mm"]
+    step = 0.2
     common_z = np.arange(plane_contract["first_common_plane"], detector_plane + 1e-9, step)
-    rf_period_us = 1e6 / resolved["mode"]["rf"]["frequency_Hz"]
+    rf_period_us = 1e6 / resolved["drive"]["frequency_Hz"]
 
     # 1. r(z) envelope, in identical axes for the two solvers.
     figure, axes = plt.subplots(1, 2, figsize=(12, 4.8), constrained_layout=True, sharex=True, sharey=True)
@@ -136,7 +137,11 @@ def main() -> None:
         s_points = np.array([at_plane(tracks["SIMION"][particle_id], plane)[:2] for particle_id in particle_ids])
         axis.scatter(c_points[:, 0], c_points[:, 1], facecolors="none", edgecolors="tab:orange", s=52, linewidths=1.2, label="COMSOL")
         axis.scatter(s_points[:, 0], s_points[:, 1], color="tab:blue", marker="x", s=34, linewidths=1.0, label="SIMION")
-        aperture = geometry["detector_radius"] if plane == detector_plane else r0
+        aperture = (
+            geometry["enclosure"]["detector_radius_mm"]
+            if plane == detector_plane
+            else r0
+        )
         axis.add_patch(Circle((0, 0), aperture, fill=False, color="black", linestyle="--", linewidth=1.0))
         axis.axhline(0, color="0.85", linewidth=0.7)
         axis.axvline(0, color="0.85", linewidth=0.7)

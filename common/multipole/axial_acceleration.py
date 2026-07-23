@@ -17,6 +17,8 @@ from typing import Any
 
 
 MODEL_ID = "multipole.segmented_rod_common_mode_staircase.v2"
+SIMION_MAX_ADJUSTABLE_ELECTRODE_ID = 1000
+MAX_SEGMENT_COUNT = (SIMION_MAX_ADJUSTABLE_ELECTRODE_ID - 2) // 2
 
 
 class AxialAccelerationError(ValueError):
@@ -43,6 +45,10 @@ def _resolve_uniform(segmentation: dict[str, Any], rod_length_mm: float) -> list
     segment_count = segmentation.get("segment_count")
     if not isinstance(segment_count, int) or isinstance(segment_count, bool) or segment_count < 2:
         raise AxialAccelerationError("segment_count must be an integer of at least two")
+    if segment_count > MAX_SEGMENT_COUNT:
+        raise AxialAccelerationError(
+            f"segment_count exceeds the shared SIMION-safe limit of {MAX_SEGMENT_COUNT}"
+        )
     gap = _finite(segmentation, "intersegment_gap_mm")
     entrance_v = _finite(segmentation, "entrance_common_mode_V")
     exit_v = _finite(segmentation, "exit_common_mode_V")
@@ -67,6 +73,10 @@ def _resolve_explicit(segmentation: dict[str, Any]) -> list[dict[str, float]]:
     source_segments = segmentation.get("segments")
     if not isinstance(source_segments, list) or len(source_segments) < 2:
         raise AxialAccelerationError("explicit segments must contain at least two entries")
+    if len(source_segments) > MAX_SEGMENT_COUNT:
+        raise AxialAccelerationError(
+            f"explicit segment count exceeds the shared SIMION-safe limit of {MAX_SEGMENT_COUNT}"
+        )
     segments = []
     for index, source in enumerate(source_segments):
         if not isinstance(source, dict):

@@ -6,7 +6,7 @@
   "inputs": {
     "interface_contract": "config/rf_to_oatof_interface_candidate.json",
     "stage_plan": "config/rf_to_oatof_interface_stages.json",
-    "rf_resolved_geometry": "config/resolved_geometry.json",
+    "rf_resolved_geometry": "config/resolved_design_official.json",
     "oatof_baseline": "../oa_tof/config/baseline.json",
     "oatof_formal_mode": "../oa_tof/config/modes/formal.json",
     "pulse_timing_policy": "config/rf_to_oatof_pulse_timing.json",

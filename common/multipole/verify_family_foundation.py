@@ -94,8 +94,12 @@ def validate_project_identity(project_id: str, order: int, electrode_count: int)
     axial = load_json(root / "config" / "modes" / "axial_acceleration_reference.json")
     require(axial.get("project_id") == project_id, f"{project_id} axial-acceleration identity differs")
     if order == 2:
-        resolved_geometry = load_json(root / "config" / "resolved_geometry.json")
-        first_rod = resolved_geometry["rod_array_mm"]["rods"][0]
+        official = load_json(root / "config" / "resolved_design_official.json")
+        require(
+            official.get("role") == "multipole_resolved_design_do_not_edit",
+            "quadrupole official publication role differs",
+        )
+        first_rod = official["geometry_mm"]["rod_array"]["rods"][0]
         source_energy = 2.0
         charge_state = 1
     else:
@@ -129,7 +133,8 @@ def validate_project_identity(project_id: str, order: int, electrode_count: int)
             require(operating.identity.radial_order_n == order, "quadrupole operating order differs")
         wrapper = (root / "analysis" / "run_finite_3d_transport.ps1").read_text(encoding="utf-8")
         require("common\\multipole\\run_finite_3d_transport.ps1" in wrapper, "quadrupole L3 runner is duplicated")
-        require("-Adapter quadrupole" in wrapper, "quadrupole does not select the shared adapter")
+        require("DesignProfileId" in wrapper, "quadrupole does not bind a governed design profile")
+        require("Adapter" not in wrapper, "quadrupole retains the legacy shared-adapter switch")
         builder = (root / "comsol" / "ms_rf_quadrupole_no_collision.m").read_text(encoding="utf-8")
         require("axial_acceleration_reference" not in builder, "legacy quadrupole builder retains acceleration")
     else:
@@ -142,6 +147,8 @@ def validate_project_identity(project_id: str, order: int, electrode_count: int)
         require(resolved["multipole"] == finite_3d["multipole"], f"{project_id} L3 identity differs")
         wrapper = (root / "analysis" / "run_finite_3d_transport.ps1").read_text(encoding="utf-8")
         require("common\\multipole\\run_finite_3d_transport.ps1" in wrapper, f"{project_id} L3 runner is duplicated")
+        require("DesignProfileId" in wrapper, f"{project_id} does not bind a governed design profile")
+        require("Adapter" not in wrapper, f"{project_id} retains the legacy shared-adapter switch")
         finite_capability = next(
             capability for capability in project["capabilities"] if capability["capability_id"].endswith("finite_3d_transport")
         )
@@ -162,7 +169,7 @@ def validate_shared_implementations() -> None:
     connector = (multipole / "create_comsol_grounded_connector.m").read_text(encoding="utf-8")
     for token in ("rectangular_bore", "cylindrical_bore", "if lengthMm==0"):
         require(token in connector, f"shared COMSOL connector generator omits {token}")
-    for token in ("MULTIPOLE_L3_AXIAL_ACCELERATION", "create_multipole_segmented_round_rods", "zero_axial_drop_rf_on"):
+    for token in ("MULTIPOLE_RESOLVED_DESIGN", "create_multipole_segmented_round_rods", "zero_axial_drop_rf_on"):
         require(token in solver, f"shared COMSOL acceleration adapter omits {token}")
     simion = (multipole / "simion_transport.lua").read_text(encoding="utf-8")
     for token in ("transport_rf_peak_v", "transport_dc_amplitude_v", "transport_axis_voltage_v"):

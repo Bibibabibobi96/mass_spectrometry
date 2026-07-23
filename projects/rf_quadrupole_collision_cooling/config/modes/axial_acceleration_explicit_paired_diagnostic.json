@@ -32,7 +32,8 @@
   ],
   "independent_5ev_source_allowed": false,
   "excluded_legacy_run_ids": [
-    "20260723_230600__sim__simion__rf-quadrupole-explicit-axial__n100__r05"
+    "20260723_230600__sim__simion__rf-quadrupole-explicit-axial__n100__r05",
+    "20260723_231100__sim__comsol__rf-quadrupole-explicit-axial__n100__r02"
   ],
   "claim_limit": "N=100 paired upstream-state preparation only; no S2/S3, pulse, oaTOF, optimization, Candidate or Formal claim."
 }

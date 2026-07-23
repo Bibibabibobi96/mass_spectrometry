@@ -3,11 +3,12 @@
   "role": "oa_tof_resolved_contract_do_not_edit",
   "inputs": {
     "baseline": "config/baseline.json",
-    "baseline_sha256": "5502D35FBAFB543352175ECA560D2EA27DC210738FBD0826B1A35DDFA6C8C467",
+    "baseline_sha256": "1170275D43E64AC18956C804B452172D4DB69D595D0E6098FA1995976C6BCF74",
     "mode": "config/modes/formal.json",
     "mode_sha256": "83EE22C91CDF53FB905B17942D9FD6FA93C6164A6A6CCD72F6BC6C7A9FE64A3A"
   },
   "coordinate_convention": {
+    "frame_id": "oatof_global",
     "units": "mm",
     "origin": "detector active-plane center and exact first-order accelerator time-focus plane",
     "reflectron_axis": [

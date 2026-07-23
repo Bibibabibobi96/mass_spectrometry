@@ -54,10 +54,17 @@ class OatofHandoffContractTests(unittest.TestCase):
         self.assertIn("time_dependent_fields", contract["timing_contract"]["solver_local_time_policy"])
 
     def test_rotation_maps_rf_axes_to_oatof_axes(self) -> None:
-        rotation = MODULE.validate_contract(CONTRACT)["rotation"]
-        self.assertEqual(MODULE.matvec(rotation, [0.0, 0.0, 1.0]), [1.0, 0.0, 0.0])
-        self.assertEqual(MODULE.matvec(rotation, [1.0, 0.0, 0.0]), [0.0, 1.0, 0.0])
-        self.assertEqual(MODULE.matvec(rotation, [0.0, 1.0, 0.0]), [0.0, 0.0, 1.0])
+        transform = MODULE.validate_contract(CONTRACT)["spatial_transform"]
+        vectors = (
+            ((0.0, 0.0, 1.0), (1.0, 0.0, 0.0)),
+            ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0)),
+            ((0.0, 1.0, 0.0), (0.0, 0.0, 1.0)),
+        )
+        for source, expected in vectors:
+            actual = transform.transform_vector(
+                MODULE.FramedVector(transform.from_frame_id, source)
+            )
+            self.assertEqual(actual.components, expected)
 
     def test_hybrid_mesh_event_schema_normalizes_without_duplicate_storage(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

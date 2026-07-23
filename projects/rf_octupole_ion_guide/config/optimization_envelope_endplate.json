@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "role": "project_optimization_envelope",
+  "project_id": "rf_octupole_ion_guide",
+  "family_id": "rf_multipole_ion_optics",
+  "envelope_id": "octupole_endplate_functional_reference",
+  "status": "candidate",
+  "policy": "This envelope preserves the N=100 functional endplate reference; it does not qualify convergence or mechanical implementation.",
+  "reference": {
+    "design_request": "config/requests/endplate.json",
+    "design_request_sha256": "DBD961E045D8A73B575BBE01536EEB129A00773A798AC35C3888AF95CFAD3BB7"
+  },
+  "constraints": [{
+    "constraint_id": "endplate_reference_bounds",
+    "kind": "bounded_variable",
+    "request_json_pointers": [
+      "/geometry_mm/rod_radius_ratio",
+      "/static_electrodes_V/exit_endcap_and_connector"
+    ],
+    "description": "The rod ratio and endplate output reference remain inside the governed catalog bounds."
+  }]
+}

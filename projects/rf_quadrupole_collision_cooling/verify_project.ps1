@@ -23,6 +23,13 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'Interface-readiness contract gate failed.' }
   & $python -m projects.rf_quadrupole_collision_cooling.analysis.resolve_contract --profile mass_filter --check
   if ($LASTEXITCODE -ne 0) { throw 'Mass-filter resolved contract gate failed.' }
+  foreach ($registrationStage in @('s1','s2')) {
+    & $python -m projects.rf_quadrupole_collision_cooling.analysis.resolve_spatial_registration `
+      --stage $registrationStage --check
+    if ($LASTEXITCODE -ne 0) {
+      throw "RF-to-oaTOF $registrationStage spatial-registration publication is stale."
+    }
+  }
   & $python -m projects.rf_quadrupole_collision_cooling.analysis.sync_simion_geometry --check
   if ($LASTEXITCODE -ne 0) { throw 'SIMION geometry publication gate failed.' }
   & $python -m projects.rf_quadrupole_collision_cooling.analysis.generate_official_particle_table --check `
@@ -41,9 +48,17 @@ try {
 if ($LASTEXITCODE -ne 0) { throw 'Quadrupole mass-filter L1 contract gate failed.' }
 & $python (Join-Path $projectRoot 'analysis\entry_aperture_l0.py') --check
 if ($LASTEXITCODE -ne 0) { throw 'Entry-aperture L0 reference gate failed.' }
-& $python (Join-Path $projectRoot 'analysis\build_oatof_handoff.py') --check-contract
+Push-Location $repoRoot
+try {
+  & $python -m projects.rf_quadrupole_collision_cooling.analysis.build_oatof_handoff `
+    --check-contract
+} finally { Pop-Location }
 if ($LASTEXITCODE -ne 0) { throw 'RF-to-oaTOF handoff contract gate failed.' }
-& $python (Join-Path $projectRoot 'analysis\build_interface_handoff.py') --check-contract
+Push-Location $repoRoot
+try {
+  & $python -m projects.rf_quadrupole_collision_cooling.analysis.build_interface_handoff `
+    --check-contract
+} finally { Pop-Location }
 if ($LASTEXITCODE -ne 0) { throw 'Two-boundary time-resolved interface contract gate failed.' }
 $candidateValidators = @(
   'validate_field_performance_experiment.py',
@@ -55,11 +70,20 @@ $candidateValidators = @(
   'validate_s1_pulse_timing.py',
   'validate_s1_joint_field.py',
   'validate_s2_passive_connector.py'
-  'validate_s3_pulse_capture.py'
+  'validate_s3_pulse_capture.py',
+  'validate_spatial_registration_migration.py'
 )
-foreach ($validator in $candidateValidators) {
-  & $python (Join-Path $projectRoot "analysis\$validator")
-  if ($LASTEXITCODE -ne 0) { throw "Candidate-contract static gate failed: $validator" }
+$previousPythonPath = $env:PYTHONPATH
+try {
+  $env:PYTHONPATH = $repoRoot
+  foreach ($validator in $candidateValidators) {
+    & $python (Join-Path $projectRoot "analysis\$validator")
+    if ($LASTEXITCODE -ne 0) {
+      throw "Candidate-contract static gate failed: $validator"
+    }
+  }
+} finally {
+  $env:PYTHONPATH = $previousPythonPath
 }
 & $python -m unittest discover -s (Join-Path $projectRoot 'tests\analysis') -p 'test_*.py'
 if ($LASTEXITCODE -ne 0) { throw 'Python analysis tests failed.' }

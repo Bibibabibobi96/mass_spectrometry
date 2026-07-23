@@ -20,7 +20,7 @@ def main() -> None:
     rows = source_particles(contract)
     fields = [
         "particle_id", "birth_time_s", "x_mm", "y_mm", "z_mm",
-        "vx_m_s", "vy_m_s", "vz_m_s",
+        "vx_m_s", "vy_m_s", "vz_m_s", "mass_amu", "charge_state",
     ]
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("w", newline="", encoding="utf-8") as stream:
@@ -36,6 +36,8 @@ def main() -> None:
                 "vx_m_s": particle["vx_m_s"],
                 "vy_m_s": particle["vy_m_s"],
                 "vz_m_s": particle["vz_m_s"],
+                "mass_amu": contract["particle_source"]["mass_amu"],
+                "charge_state": contract["particle_source"]["charge_state"],
             })
     print(f"MULTIPOLE_SOURCE=PASS PARTICLES={len(rows)} PATH={args.output}")
 

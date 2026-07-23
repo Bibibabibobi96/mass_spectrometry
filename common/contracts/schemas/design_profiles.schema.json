@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/design_profiles.schema.json",
+  "title": "Governed multipole design profile registry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "role", "project_id", "family_id", "profiles"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "multipole_design_profile_registry"},
+    "project_id": {"$ref": "#/$defs/identifier"},
+    "family_id": {"const": "rf_multipole_ion_optics"},
+    "profiles": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["design_profile_id", "design_request", "design_variables", "optimization_envelope", "sha256", "identity", "topology"],
+        "properties": {
+          "design_profile_id": {"$ref": "#/$defs/identifier"},
+          "design_request": {"$ref": "#/$defs/path"},
+          "design_variables": {"$ref": "#/$defs/path"},
+          "optimization_envelope": {"$ref": "#/$defs/path"},
+          "sha256": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["design_request", "design_variables", "optimization_envelope"],
+            "properties": {
+              "design_request": {"$ref": "#/$defs/sha256"},
+              "design_variables": {"$ref": "#/$defs/sha256"},
+              "optimization_envelope": {"$ref": "#/$defs/sha256"}
+            }
+          },
+          "identity": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["project_id", "family_id", "radial_order_n", "electrode_count"],
+            "properties": {
+              "project_id": {"$ref": "#/$defs/identifier"},
+              "family_id": {"const": "rf_multipole_ion_optics"},
+              "radial_order_n": {"type": "integer", "minimum": 2},
+              "electrode_count": {"type": "integer", "minimum": 4}
+            }
+          },
+          "topology": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["enclosure_role", "segmentation_strategy", "axial_drive_topology"],
+            "properties": {
+              "enclosure_role": {"enum": ["full_length_grounded_shield", "downstream_local_reference_enclosure"]},
+              "segmentation_strategy": {"enum": ["off", "uniform", "explicit"]},
+              "axial_drive_topology": {
+                "enum": [
+                  "none",
+                  "segmented_rod_axial_acceleration",
+                  "endplate_potential_step"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
+    "path": {"type": "string", "minLength": 1, "pattern": "^(?![A-Za-z]:|/|.*\\.\\.).+"},
+    "sha256": {"type": "string", "pattern": "^[A-F0-9]{64}$"}
+  }
+}

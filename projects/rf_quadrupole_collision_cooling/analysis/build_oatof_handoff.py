@@ -17,11 +17,23 @@ import os
 from pathlib import Path
 from typing import Any
 
+from common.contracts.rigid_transform import (
+    FramedPosition,
+    FramedVector,
+    RigidTransform,
+)
+from projects.oa_tof.analysis.rf_handoff_adapter import (
+    encode_simion_accelerator_velocity,
+)
+
 
 PROJECT_ROOT = Path(
     os.environ.get("RF_HANDOFF_PROJECT_ROOT", Path(__file__).resolve().parents[1])
 ).resolve()
 DEFAULT_CONTRACT = PROJECT_ROOT / "config" / "rf_to_oatof_handoff.json"
+DEFAULT_SPATIAL_REGISTRATION = (
+    PROJECT_ROOT / "config" / "resolved_rf_to_oatof_s1_spatial_registration.json"
+)
 ATOMIC_MASS_KG = 1.66053906660e-27
 ELEMENTARY_CHARGE_C = 1.602176634e-19
 
@@ -122,32 +134,9 @@ def mass_amu_from_mass_to_charge(mass_to_charge_th: float, charge_state: int) ->
     return mass_to_charge * abs(charge)
 
 
-def determinant3(matrix: list[list[float]]) -> float:
-    a, b, c = matrix
-    return (
-        a[0] * (b[1] * c[2] - b[2] * c[1])
-        - a[1] * (b[0] * c[2] - b[2] * c[0])
-        + a[2] * (b[0] * c[1] - b[1] * c[0])
-    )
-
-
-def matvec(matrix: list[list[float]], vector: list[float]) -> list[float]:
-    return [sum(row[index] * vector[index] for index in range(3)) for row in matrix]
-
-
 def simion_accelerator_instance_angles(velocity: list[float]) -> tuple[float, float]:
-    """Encode a global velocity for oaTOF SIMION workbench instance 3.
-
-    The accelerator PA instance maps its local velocity axes into workbench
-    axes as ``(vx, vy, vz)_wb = (vx, vz, -vy)_pa``.  ION direction angles are
-    interpreted in those PA axes even though ION positions are workbench
-    coordinates, so the velocity must be inverse-mapped before angle encoding.
-    """
-    vx, vy, vz = velocity
-    local_x, local_y, local_z = vx, -vz, vy
-    azimuth = math.degrees(math.atan2(local_y, local_x))
-    elevation = math.degrees(math.atan2(local_z, math.hypot(local_x, local_y)))
-    return azimuth, elevation
+    """Compatibility wrapper around the oaTOF supplier-frame adapter."""
+    return encode_simion_accelerator_velocity(velocity)
 
 
 def _close_vector(left: list[float], right: list[float], tolerance: float = 1e-12) -> bool:
@@ -158,7 +147,10 @@ def _project_root_path(relative_path: str) -> Path:
     return (PROJECT_ROOT / relative_path).resolve()
 
 
-def validate_contract(contract_path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
+def validate_contract(
+    contract_path: Path = DEFAULT_CONTRACT,
+    registration_path: Path = DEFAULT_SPATIAL_REGISTRATION,
+) -> dict[str, Any]:
     contract = load_json(contract_path)
     if contract.get("role") != "component_chain_handoff_contract":
         raise ValueError("unsupported handoff contract role")
@@ -197,19 +189,32 @@ def validate_contract(contract_path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
     if not _close_vector([float(v) for v in transform["target_origin_mm"]], expected_target_origin):
         raise ValueError("coordinate target origin does not match the oa-TOF source center")
 
-    rotation = [[float(value) for value in row] for row in transform["rotation_source_to_target"]]
-    if len(rotation) != 3 or any(len(row) != 3 for row in rotation):
-        raise ValueError("coordinate rotation must be 3x3")
-    for row_index in range(3):
-        for column_index in range(3):
-            dot = sum(rotation[row_index][k] * rotation[column_index][k] for k in range(3))
-            expected = 1.0 if row_index == column_index else 0.0
-            if not math.isclose(dot, expected, rel_tol=0.0, abs_tol=1e-12):
-                raise ValueError("coordinate rotation must be orthonormal")
-    determinant = determinant3(rotation)
+    spatial_registration = load_json(registration_path)
+    if (
+        spatial_registration.get("role")
+        != "resolved_spatial_registration_do_not_edit"
+    ):
+        raise ValueError("authoritative spatial registration is invalid")
+    spatial_transform = RigidTransform.from_contract(
+        spatial_registration["derived_relative_transform"]["transform"]
+    )
+    rotation = transform["rotation_source_to_target"]
+    if [list(row) for row in spatial_transform.rotation] != rotation:
+        raise ValueError(
+            "legacy transform rotation differs from resolved registration"
+        )
+    determinant = 1.0
     if not math.isclose(determinant, float(transform["determinant_expected"]), abs_tol=1e-12):
         raise ValueError("coordinate rotation determinant mismatch")
-    if not _close_vector(matvec(rotation, [0.0, 0.0, 1.0]), [1.0, 0.0, 0.0]):
+    axial = RigidTransform(
+        spatial_transform.from_frame_id,
+        spatial_transform.to_frame_id,
+        spatial_transform.rotation,
+        (0.0, 0.0, 0.0),
+    ).transform_vector(
+        FramedVector("rf_quadrupole_component", (0.0, 0.0, 1.0))
+    )
+    if not _close_vector(list(axial.components), [1.0, 0.0, 0.0]):
         raise ValueError("RF axial direction must map to oa-TOF +x")
 
     timing = contract["timing_contract"]
@@ -225,6 +230,9 @@ def validate_contract(contract_path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
         "target_baseline": target_baseline,
         "rotation": rotation,
         "determinant": determinant,
+        "spatial_transform": spatial_transform,
+        "spatial_registration": spatial_registration,
+        "registration_path": registration_path,
     }
 
 
@@ -365,14 +373,13 @@ def build_handoff(
     metadata_output: Path,
     solver_clock: str = "local_zero",
     target_origin_override_mm: list[float] | None = None,
+    registration_path: Path = DEFAULT_SPATIAL_REGISTRATION,
 ) -> dict[str, Any]:
-    validated = validate_contract(contract_path)
+    validated = validate_contract(contract_path, registration_path)
     contract = validated["contract"]
     source_sha = verify_source_manifest(source_csv, source_manifest, contract)
     rows = read_handoff_rows(source_csv, contract)
     transform = contract["coordinate_transform"]
-    rotation = validated["rotation"]
-    source_origin = [float(value) for value in transform["source_origin_mm"]]
     target_origin = (
         [float(value) for value in target_origin_override_mm]
         if target_origin_override_mm is not None
@@ -380,6 +387,26 @@ def build_handoff(
     )
     if len(target_origin) != 3 or not all(math.isfinite(value) for value in target_origin):
         raise ValueError("target origin override must contain three finite millimetre coordinates")
+    base_transform = validated["spatial_transform"]
+    configured_target = validated["spatial_registration"]["resolved_surfaces"][
+        "source_exit"
+    ]["in_instrument_frame"]["center_mm"]
+    target_offset = tuple(
+        target - configured
+        for target, configured in zip(target_origin, configured_target)
+    )
+    spatial_transform = RigidTransform(
+        base_transform.from_frame_id,
+        base_transform.to_frame_id,
+        base_transform.rotation,
+        tuple(
+            value + offset
+            for value, offset in zip(
+                base_transform.translation_mm,
+                target_offset,
+            )
+        ),
+    )
     source = contract["source_component"]
     target = contract["target_component"]
     timing = contract["timing_contract"]
@@ -401,15 +428,28 @@ def build_handoff(
             float(row["transverse_y_mm"]),
             float(row["axial_z_mm"]),
         ]
-        relative_position = [source_position[i] - source_origin[i] for i in range(3)]
-        rotated_position = matvec(rotation, relative_position)
-        target_position = [target_origin[i] + rotated_position[i] for i in range(3)]
+        target_position = list(
+            spatial_transform.transform_position(
+                FramedPosition(
+                    spatial_transform.from_frame_id,
+                    source_position,
+                )
+            ).coordinates_mm
+        )
         source_velocity = [
             float(row["velocity_x_m_s"]),
             float(row["velocity_y_m_s"]),
             float(row["velocity_axial_m_s"]),
         ]
-        target_velocity = matvec(rotation, source_velocity)
+        target_velocity = list(
+            spatial_transform.transform_vector(
+                FramedVector(
+                    spatial_transform.from_frame_id,
+                    source_velocity,
+                    "polar",
+                )
+            ).components
+        )
         if acceptance["require_positive_target_beam_velocity"] and target_velocity[0] <= 0:
             raise ValueError("projected particle has non-positive oa-TOF beam velocity")
         if abs(target_position[1]) > float(acceptance["maximum_abs_target_y_mm"]):
@@ -500,6 +540,10 @@ def build_handoff(
             "run_manifest_sha256": sha256(source_manifest),
         },
         "contract": {"path": str(contract_path.resolve()), "sha256": sha256(contract_path)},
+        "spatial_registration": {
+            "path": str(registration_path.resolve()),
+            "sha256": sha256(registration_path),
+        },
         "outputs": {
             "canonical_handoff_csv": {"path": str(canonical_output.resolve()), "sha256": sha256(canonical_output)},
             "oatof_ion": {"path": str(ion_output.resolve()), "sha256": sha256(ion_output)},
@@ -545,9 +589,14 @@ def main() -> None:
     parser.add_argument("--metadata-output", type=Path)
     parser.add_argument("--solver-clock", choices=("local_zero", "instrument_time"), default="local_zero")
     parser.add_argument("--target-origin-mm", type=float, nargs=3)
+    parser.add_argument(
+        "--resolved-registration",
+        type=Path,
+        default=DEFAULT_SPATIAL_REGISTRATION,
+    )
     args = parser.parse_args()
     if args.check_contract:
-        validated = validate_contract(args.contract)
+        validated = validate_contract(args.contract, args.resolved_registration)
         print(f"ROTATION_DETERMINANT={validated['determinant']:.12g}")
         print("COMPONENT_HANDOFF_CONTRACT=PASS STATUS=DRAFT PACKAGE_GENERATION_ALLOWED=false")
         return
@@ -571,6 +620,7 @@ def main() -> None:
         args.metadata_output,
         args.solver_clock,
         args.target_origin_mm,
+        args.resolved_registration,
     )
     print(f"COMPONENT_HANDOFF_PROJECTION=PASS PARTICLES={metadata['particles']}")
 

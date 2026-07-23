@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "role": "multipole_design_request",
+  "request_id": "octupole_current_baseline",
+  "identity": {
+    "project_id": "rf_octupole_ion_guide",
+    "family_id": "rf_multipole_ion_optics",
+    "radial_order_n": 4,
+    "electrode_count": 8
+  },
+  "units": {
+    "length": "mm",
+    "voltage": "V",
+    "frequency": "Hz",
+    "phase": "rad",
+    "energy": "eV"
+  },
+  "coordinate": {
+    "coordinate_id": "multipole.cartesian.z_axis.v1",
+    "axial_axis": "+z",
+    "orientation_rad": 0.0
+  },
+  "geometry_mm": {
+    "inscribed_radius_r0": 4.0,
+    "rod_radius_ratio": 0.3333333333333333,
+    "rod_z_min": 0.0,
+    "rod_z_max": 79.6,
+    "enclosure": {
+      "model": "cylindrical_grounded_shield_v1",
+      "role": "full_length_grounded_shield",
+      "working_region_radius_mm": 3.6,
+      "vacuum_z_min_mm": -2.5,
+      "vacuum_z_max_mm": 82.1,
+      "shield_inner_radius_mm": 20.0,
+      "shield_outer_radius_mm": 21.0,
+      "entrance_endcap_z_min_mm": -2.5,
+      "entrance_endcap_z_max_mm": -2.0,
+      "exit_endcap_z_min_mm": 81.6,
+      "exit_endcap_z_max_mm": 82.1
+    },
+    "entrance_interface": {
+      "aperture_radius_mm": 3.6,
+      "plate_thickness_mm": 0.5,
+      "rod_clearance_mm": 0.5,
+      "connector_length_mm": 0.0,
+      "connector_shape": "cylindrical_bore",
+      "particle_plane_distance_mm": 0.5
+    },
+    "exit_interface": {
+      "aperture_radius_mm": 3.6,
+      "plate_thickness_mm": 0.5,
+      "rod_clearance_mm": 0.5,
+      "connector_length_mm": 0.0,
+      "connector_shape": "cylindrical_bore",
+      "particle_plane_distance_mm": 0.5
+    }
+  },
+  "drive": {
+    "waveform": "cosine",
+    "rf_amplitude_V_zero_to_peak_per_group": 139.81792,
+    "dc_amplitude_V_per_group": 0.0,
+    "common_mode_offset_V": 0.0,
+    "frequency_Hz": 1100000.0,
+    "phase_rad": 0.0
+  },
+  "axial_drive": {"topology": "segmented_rod_axial_acceleration"},
+  "static_electrodes_V": {
+    "role": "cylindrical_shield_static_electrodes",
+    "shield_and_entrance_endcap_and_connector": 0.0,
+    "exit_endcap_and_connector": -3.0
+  },
+  "particle_source": {
+    "energy_model": {
+      "kind": "monoenergetic",
+      "kinetic_energy_eV": 2.0
+    },
+    "charge_state": 1
+  },
+  "segmentation": {
+    "strategy": "uniform",
+    "segment_count": 4,
+    "intersegment_gap_mm": 0.4,
+    "entrance_common_mode_V": 0.0,
+    "exit_common_mode_V": -3.0,
+    "output_reference_V": -3.0
+  }
+}

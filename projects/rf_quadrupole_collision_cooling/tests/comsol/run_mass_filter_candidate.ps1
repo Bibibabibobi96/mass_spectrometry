@@ -28,7 +28,7 @@ try {
   $sources=@{
     baseline=Join-Path $projectRoot 'config\baseline.json'
     mode=Join-Path $projectRoot 'config\modes\mass_filter_reference.json'
-    resolved_contract=Join-Path $projectRoot 'config\resolved_mass_filter.json'
+    resolved_design=Join-Path $projectRoot 'config\resolved_design_mass_filter.json'
     particles=Join-Path $projectRoot 'config\particles\official_fixed_100.ion'
   }
   foreach($key in @($sources.Keys)){
@@ -39,13 +39,6 @@ try {
   $sourceParticleCount=@(Get-Content -LiteralPath $sources.particles -Encoding UTF8|Where-Object{-not[string]::IsNullOrWhiteSpace($_)}).Count
   & $package.python -m common.contracts.particle_count_policy --count $sourceParticleCount
   if($LASTEXITCODE-ne 0){throw 'Mass-filter source violates the repository N=100/N=1000 policy.'}
-  $familyOperating=Join-Path $inputDir 'family_operating_contract.json'
-  Push-Location $repoRoot
-  try {
-    & $package.python -m common.multipole.resolve_family_operating_contract --adapter quadrupole `
-      --baseline $sources.baseline --mode $sources.mode --output $familyOperating
-    if($LASTEXITCODE-ne 0){throw 'Shared multipole operating-contract resolution failed.'}
-  } finally { Pop-Location }
   $codeInputs=[ordered]@{}
   $codeSources=[ordered]@{
     runner=$PSCommandPath
@@ -55,7 +48,6 @@ try {
     case_preparer=(Join-Path $projectRoot 'analysis\prepare_comsol_mass_scan.py')
     result_analyzer=(Join-Path $projectRoot 'analysis\analyze_comsol_mass_scan.py')
     paired_mass_library=(Join-Path $repoRoot 'common\multipole\paired_mass_scan.py')
-    operating_contract_resolver=(Join-Path $repoRoot 'common\multipole\resolve_family_operating_contract.py')
   }
   foreach($key in $codeSources.Keys){
     $extension=[IO.Path]::GetExtension($codeSources[$key]);$destination=Join-Path $inputDir "$key$extension.txt"
@@ -96,7 +88,7 @@ try {
     $caseConfig=[ordered]@{
       schema_version=1;role='rf_quadrupole_comsol_mass_filter_case';run_id="${RunId}--mass-${token}-Th"
       project='rf_quadrupole_collision_cooling';mode='mass_filter_reference';operating_point="mass_$token`_Th"
-      inputs=[ordered]@{resolved_contract=$sources.resolved_contract;mode=$sources.mode;family_operating_contract=$familyOperating;particle_table=[string]$case.particle_table}
+      inputs=[ordered]@{resolved_design=$sources.resolved_design;mode=$sources.mode;particle_table=[string]$case.particle_table}
       particle_table_path=[string]$case.particle_table;particles=[int]$case.particles
       results_dir=$caseResultDir;comsol_dir=$caseComsolDir;runtime_dir=$caseRuntimeDir
       comsol_rf_steps_per_period=$RfStepsPerPeriod;comsol_mesh_auto_level=$MeshAutoLevel
@@ -108,7 +100,7 @@ try {
   Write-RfJson -Value ([ordered]@{schema_version=1;role='rf_quadrupole_comsol_mass_filter_scan_execution';cases=$cases}) -Path $scanConfig
   $runConfiguration=[ordered]@{
     schema_version=1;run_id=$RunId;project='rf_quadrupole_collision_cooling';mode='mass_filter_reference';project_root=$repoRoot
-    inputs=[ordered]@{baseline=$sources.baseline;mode=$sources.mode;resolved_contract=$sources.resolved_contract;family_operating_contract=$familyOperating;particle_cases=$caseMetadata;scan_execution=$scanConfig;l1_response=$l1Response;simion_response=$simionResponse;l1_run_manifest=(Join-Path $inputDir 'l1_run_manifest.json');simion_run_manifest=(Join-Path $inputDir 'simion_run_manifest.json');code=$codeInputs}
+    inputs=[ordered]@{baseline=$sources.baseline;mode=$sources.mode;resolved_design=$sources.resolved_design;particle_cases=$caseMetadata;scan_execution=$scanConfig;l1_response=$l1Response;simion_response=$simionResponse;l1_run_manifest=(Join-Path $inputDir 'l1_run_manifest.json');simion_run_manifest=(Join-Path $inputDir 'simion_run_manifest.json');code=$codeInputs}
     parameters=[ordered]@{particles_per_mass=$particlesPerMass;masses=$massCount;total_particles=$totalParticles;rf_steps_per_period=$RfStepsPerPeriod;mesh_auto_level=$MeshAutoLevel;compact_outputs=$true;saved_model_mass_Th=$centerMass;lifecycle_stage='inputs_frozen'}
     formal_gate_passed=$false
   }

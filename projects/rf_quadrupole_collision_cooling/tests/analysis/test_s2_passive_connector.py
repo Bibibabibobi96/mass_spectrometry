@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from copy import deepcopy
 from pathlib import Path
 
 from projects.rf_quadrupole_collision_cooling.analysis import validate_s2_passive_connector as module
@@ -32,7 +33,7 @@ class S2PassiveConnectorTests(unittest.TestCase):
         )
         self.assertLess(
             contract["no_pulse_field_candidate"]["rf_off_axis_probe_radius_mm"],
-            rf["geometry_mm"]["field_radius_r0"],
+            rf["geometry_mm"]["inscribed_radius_r0"],
         )
         evidence = contract["geometry_build_evidence"]
         self.assertEqual(evidence["status"], "PASS")
@@ -63,7 +64,7 @@ class S2PassiveConnectorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "contract.json"
             path.write_text(json.dumps(contract), encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "frozen gap"):
+            with self.assertRaisesRegex(ValueError, "gap"):
                 module.validate_contract(path)
 
     def test_contract_rejects_disabled_particle_runtime_after_authorization(self) -> None:
@@ -73,6 +74,25 @@ class S2PassiveConnectorTests(unittest.TestCase):
             path = Path(temporary) / "contract.json"
             path.write_text(json.dumps(contract), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "particle candidate"):
+                module.validate_contract(path)
+
+    def test_contract_rejects_source_y_translation_not_supported_by_geometry(self) -> None:
+        contract = json.loads(module.DEFAULT_CONTRACT.read_text(encoding="utf-8"))
+        contract["nominal_registration"]["source_component_pose"]["translation_mm"][1] = 0.1
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "contract.json"
+            path.write_text(json.dumps(contract), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "NEEDS_IMPLEMENTATION"):
+                module.validate_contract(path)
+
+    def test_contract_rejects_target_entry_that_differs_from_interface(self) -> None:
+        contract = json.loads(module.DEFAULT_CONTRACT.read_text(encoding="utf-8"))
+        contract = deepcopy(contract)
+        contract["nominal_registration"]["target_entry_center_instrument_mm"][1] = 0.1
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "contract.json"
+            path.write_text(json.dumps(contract), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "NEEDS_IMPLEMENTATION"):
                 module.validate_contract(path)
 
 

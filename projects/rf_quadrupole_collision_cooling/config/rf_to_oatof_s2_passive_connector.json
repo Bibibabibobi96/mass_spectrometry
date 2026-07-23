@@ -9,7 +9,7 @@
     "interface_reference": "config/rf_to_oatof_interface_candidate.json",
     "s1_joint_field": "config/rf_to_oatof_s1_joint_field.json",
     "explicit_dependencies": "config/rf_to_oatof_s2_dependencies.json",
-    "rf_resolved_geometry": "config/resolved_geometry.json",
+    "rf_resolved_geometry": "config/resolved_design_official.json",
     "oatof_baseline": "../oa_tof/config/baseline.json"
   },
   "formal_assets_read_only": true,
@@ -88,7 +88,7 @@
     "rf_unit_voltage_derivation": "Equal the absolute value of every entry in s1_joint_field.field_basis.rf_unit.rod_differential_pattern_V.",
     "required_probe_locations": ["rf_rod_region_off_axis", "rf_exit_center", "connector_midpoint", "oatof_entry_center", "oatof_ideal_source_center"],
     "rf_off_axis_probe_radius_mm": 1.0,
-    "rf_off_axis_probe_derivation": "Use the RF rod-region axial midpoint and the configured local-x offset transformed by source_component_pose; the radius must remain inside resolved_geometry.geometry_mm.field_radius_r0 and produce a nonzero RF-unit field.",
+    "rf_off_axis_probe_derivation": "Use the RF rod-region axial midpoint and the configured local-x offset transformed by source_component_pose; the radius must remain inside resolved_design.geometry_mm.inscribed_radius_r0 and produce a nonzero RF-unit field.",
     "boundary_probe_inset_mm": 0.001,
     "boundary_probe_inset_derivation": "Inherit s1_joint_field.port_sweep.particle_release_offset_inside_outer_face_mm so nominal interface-plane probes are evaluated on the solved vacuum side.",
     "acceptance": "Both stationary bases solve, all required probe potentials and field components are finite, and the RF rod-region off-axis probe has nonzero RF-unit field magnitude.",

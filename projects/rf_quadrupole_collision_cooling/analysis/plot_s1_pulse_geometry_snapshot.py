@@ -178,11 +178,19 @@ def plot_snapshot(capture_path: Path, events_path: Path, baseline_path: Path, jo
                   figure_path: Path, metadata_path: Path) -> dict[str, object]:
     capture = pd.read_csv(capture_path)
     events = pd.read_csv(events_path)
-    required = {"particle_id", "instrument_time_us", "x_mm", "y_mm", "z_mm"}
+    required = {
+        "particle_id", "frame_id", "clock_epoch_id", "instrument_time_us",
+        "x_mm", "y_mm", "z_mm",
+    }
     if not required.issubset(capture.columns):
         raise ValueError("pulse capture table is missing required position columns")
     if capture.empty or capture["instrument_time_us"].nunique() != 1:
         raise ValueError("standard pulse snapshot requires one non-empty shared-time state")
+    identities = capture[["frame_id", "clock_epoch_id"]].drop_duplicates()
+    if len(identities) != 1 or identities.iloc[0].astype(str).str.strip().eq("").any():
+        raise ValueError("standard pulse snapshot requires one frame and clock epoch")
+    frame_id = str(identities.iloc[0]["frame_id"])
+    clock_epoch_id = str(identities.iloc[0]["clock_epoch_id"])
     capture = add_sparse_loss_positions(capture, events)
 
     baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
@@ -334,10 +342,11 @@ def plot_snapshot(capture_path: Path, events_path: Path, baseline_path: Path, jo
     fig.suptitle(f"RF-to-oaTOF state immediately before shared pulse: "
                  f"t = {pulse_time:.6f} µs (left limit), active = {len(active)} "
                  f"(port loss = {len(frozen_port_loss)}, accelerator loss = "
-                 f"{len(frozen_accelerator_loss)})", fontsize=14)
+                 f"{len(frozen_accelerator_loss)})\n"
+                 f"frame={frame_id}; clock epoch={clock_epoch_id}", fontsize=14)
     fig.tight_layout(rect=(0, 0.1, 1, 0.94))
     figure_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(figure_path, dpi=190)
+    fig.savefig(figure_path, format="png", dpi=190)
     plt.close(fig)
 
     metadata = {
@@ -345,6 +354,8 @@ def plot_snapshot(capture_path: Path, events_path: Path, baseline_path: Path, jo
         "role": "rf_to_oatof_standard_pulse_geometry_snapshot",
         "status": "PASS",
         "pulse_instrument_time_us": pulse_time,
+        "frame_id": frame_id,
+        "clock_epoch_id": clock_epoch_id,
         "state_time_semantics": "left_limit_immediately_before_pulse_t_pulse_minus",
         "state_continuity_note": "Position and velocity are continuous at the finite field step; frozen pre-pulse losses are classified separately and plotted, but excluded from the active cohort.",
         "snapshot_rows": int(len(capture)),

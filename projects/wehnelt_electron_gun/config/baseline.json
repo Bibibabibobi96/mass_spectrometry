@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "role": "wehnelt_electron_gun_physical_baseline",
+  "project_id": "wehnelt_electron_gun",
+  "model_id": "wehnelt.transverse_helical_filament.thermal_transport.v1",
+  "capability": {
+    "id": "wehnelt_thermal_electron_transport",
+    "imaging_quality_claim_allowed": false,
+    "formal_performance_claim_allowed": false
+  },
+  "coordinate_convention": {
+    "frame_id": "wehnelt_electron_gun_component",
+    "units": "mm",
+    "origin": "gun axis at x=y=0 and the existing Wehnelt z=0 geometry reference",
+    "beam_axis": "+z",
+    "filament_helix_axis": "+x",
+    "handedness": "right_handed"
+  },
+  "filament": {
+    "material": "tungsten",
+    "coil_major_radius_mm": 0.3,
+    "wire_radius_mm": 0.05,
+    "turn_count": 5,
+    "axial_pitch_mm": 0.2,
+    "axis_center_z_mm": 0.9,
+    "temperature_K": 2700.0,
+    "emission_velocity_distribution": "Thermal"
+  },
+  "geometry_mm": {
+    "wehnelt_skirt_below_reference": 0.5,
+    "wehnelt_cavity_reference_height": 1.0,
+    "wehnelt_cavity_ceiling_gap": 0.5,
+    "wehnelt_front_wall_thickness": 0.5,
+    "wehnelt_cavity_radius": 1.5,
+    "wehnelt_outer_radius": 4.0,
+    "wehnelt_aperture_radius": 1.0,
+    "wehnelt_to_anode_gap": 12.0,
+    "anode_outer_radius": 8.0,
+    "anode_aperture_radius": 1.5,
+    "anode_thickness": 1.0,
+    "post_anode_drift": 3.0,
+    "vacuum_domain_radius": 10.0,
+    "vacuum_margin_below_wehnelt": 1.0,
+    "electrode_chamfer_distance": 0.1,
+    "boolean_tool_overshoot_each_side": 0.2
+  },
+  "electrodes_V": {
+    "cathode": 0.0,
+    "wehnelt": -0.5,
+    "anode": 70.0
+  },
+  "collection_metric": {
+    "valid_state_rule": "finite_final_particle_position",
+    "usable_energy_min_eV": 60.0,
+    "usable_energy_max_eV": 75.0,
+    "historical_value_is_current_evidence": false
+  }
+}

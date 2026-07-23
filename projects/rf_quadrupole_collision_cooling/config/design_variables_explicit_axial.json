@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "role": "project_design_variable_catalog",
+  "project_id": "rf_quadrupole_collision_cooling",
+  "family_id": "rf_multipole_ion_optics",
+  "optimization_strategy": "multipole_design_request_compilation",
+  "range_policy": "The historical explicit-segmentation functional reference is fixed to its irregular three-section topology.",
+  "variables": [
+    {
+      "variable_id": "rod_radius_ratio",
+      "label": "Rod radius to r0 ratio",
+      "kind": "continuous",
+      "optimization_role": "geometry",
+      "json_pointer": "/geometry_mm/rod_radius_ratio",
+      "unit": "ratio",
+      "minimum": 1.148,
+      "maximum": 1.148,
+      "compile_status": "candidate_contract",
+      "rebuild_effects": ["resolved", "comsol", "simion"]
+    }
+  ],
+  "invariants": [
+    "project_identity_locked",
+    "electrode_count_equals_twice_radial_order",
+    "rod_span_positive",
+    "interface_nonoverlap",
+    "connector_shape_supported"
+  ]
+}

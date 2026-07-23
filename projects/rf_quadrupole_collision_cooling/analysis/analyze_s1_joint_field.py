@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 
@@ -117,21 +118,30 @@ def shielding_diagnostics(
     }
 
 
-def plot_injection_axis(injection: pd.DataFrame, rf_peak_scale: float, entry_x_mm: float, output: Path) -> None:
+def plot_injection_axis(
+    injection: pd.DataFrame, rf_peak_scale: float, entry_x_mm: float,
+    frame_id: str, output: Path,
+) -> None:
     ordered = injection.sort_values("x_mm")
     static = np.maximum(vector_magnitude(ordered, "static"), 1e-18)
     rf_peak = np.maximum(vector_magnitude(ordered, "rf") * rf_peak_scale, 1e-18)
     output.parent.mkdir(parents=True, exist_ok=True)
     figure, axis = plt.subplots(figsize=(8, 4.8))
-    axis.semilogy(ordered["x_mm"], static, label="oa pulse-field basis |E|", color="#2166ac")
-    axis.semilogy(ordered["x_mm"], rf_peak, label="RF peak |E|", color="#d95f0e")
+    axis.semilogy(
+        ordered["x_mm"], static, label="oa pulse-field basis |E|",
+        color="#2166ac", linestyle="-",
+    )
+    axis.semilogy(
+        ordered["x_mm"], rf_peak, label="RF peak |E|",
+        color="#d95f0e", linestyle="--",
+    )
     axis.axvline(entry_x_mm, color="#636363", linestyle="--", label="oa outer entry face")
-    axis.set(xlabel="Instrument x (mm)", ylabel="Field magnitude (V/m)",
+    axis.set(xlabel=f"Instrument x (mm), frame={frame_id}", ylabel="Field magnitude (V/m)",
              title="S1 physical-port injection-axis field isolation")
     axis.grid(alpha=0.25, which="both")
     axis.legend()
     figure.tight_layout()
-    figure.savefig(output, dpi=180)
+    figure.savefig(output, format="png", dpi=180)
     plt.close(figure)
 
 
@@ -142,12 +152,18 @@ def main() -> None:
     parser.add_argument("--joint-contract", required=True, type=Path)
     parser.add_argument("--interface-contract", required=True, type=Path)
     parser.add_argument("--rf-resolved", required=True, type=Path)
+    parser.add_argument("--spatial-registration", required=True, type=Path)
     parser.add_argument("--reference-role", required=True, choices=("formal_closed", "matched_local_closed"))
     parser.add_argument("--output-dir", required=True, type=Path)
     args = parser.parse_args()
     joint = json.loads(args.joint_contract.read_text(encoding="utf-8-sig"))
     interface = json.loads(args.interface_contract.read_text(encoding="utf-8-sig"))
     rf_resolved = json.loads(args.rf_resolved.read_text(encoding="utf-8-sig"))
+    spatial = json.loads(args.spatial_registration.read_text(encoding="utf-8-sig"))
+    if spatial.get("role") != "resolved_spatial_registration_do_not_edit":
+        raise ValueError("S1 field metrics require the resolved spatial registration")
+    frame_id = spatial["instrument_frame_id"]
+    spatial_sha256 = hashlib.sha256(args.spatial_registration.read_bytes()).hexdigest().upper()
     candidate_all = pd.read_csv(args.candidate)
     candidate = candidate_all[candidate_all["sample_type"] == "accelerator_profile"].copy()
     candidate = candidate.rename(columns={
@@ -195,7 +211,9 @@ def main() -> None:
     else:
         static_magnitude = vector_magnitude(injection, "static")
         rf_magnitude = vector_magnitude(injection, "rf")
-        rf_peak_scale = float(rf_resolved["mode"]["rf"]["amplitude_V_peak"]) / 100.0
+        rf_peak_scale = float(
+            rf_resolved["drive"]["rf_amplitude_V_zero_to_peak_per_group"]
+        ) / 100.0
         entry_x_mm = float(joint["nominal_registration"]["target_entry_center_instrument_mm"][0])
         injection_characterization = {
             "status": "sampled_through_open_port",
@@ -207,6 +225,7 @@ def main() -> None:
         }
         plot_injection_axis(
             injection, rf_peak_scale, entry_x_mm,
+            frame_id,
             args.output_dir / "s1_injection_axis_field.png",
         )
     width = float(candidate_all["port_full_width_y_mm"].iloc[0])
@@ -222,6 +241,10 @@ def main() -> None:
         "schema_version": 1,
         "role": "rf_to_oatof_s1_opened_joint_field_characterization",
         "status": "CHARACTERIZED",
+        "frame_id": frame_id,
+        "position_unit": "mm",
+        "spatial_registration_sha256": spatial_sha256,
+        "figure_contract": {"format": "png", "dpi": 180, "size_inches": [8.0, 4.8]},
         "geometry_state": "closed_local_domain_control" if np.isclose(width, 0.0) else "opened_port",
         "port_full_width_y_mm": width,
         "port_full_height_z_mm": float(candidate_all["port_full_height_z_mm"].iloc[0]),

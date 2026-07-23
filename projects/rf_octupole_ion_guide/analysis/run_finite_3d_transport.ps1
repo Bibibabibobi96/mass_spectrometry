@@ -1,21 +1,30 @@
 [CmdletBinding()]
 param(
-  [Parameter(Mandatory = $true)]
-  [string]$FieldScreenRunId,
+  [ValidateSet('baseline_finite_3d','endplate_acceleration_reference')]
+  [string]$DesignProfileId = 'baseline_finite_3d',
+  [Parameter(Mandatory=$true)][string]$ParticleSourcePath,
+  [string]$EvidenceContractPath = '',
   [string]$RunId = '',
-  [double]$EntranceConnectorLengthMm = [double]::NaN,
-  [double]$ExitConnectorLengthMm = [double]::NaN,
-  [string]$AxialAccelerationContractPath = '',
-  [switch]$AxialAcceleration,
-  [switch]$EndplateAcceleration
+  [ValidateRange(1,9)][int]$MeshAutoLevel = 6,
+  [double]$WorkingRegionMaximumElementSizeMm = [double]::NaN,
+  [ValidateRange(4,10000)][int]$RfStepsPerPeriod = 80,
+  [ValidateRange(0.001,1000000)][double]$MaximumTimeUs = 80.0
 )
-
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
-& (Join-Path $repoRoot 'common\multipole\run_finite_3d_transport.ps1') `
-  -ProjectRoot (Join-Path $PSScriptRoot '..') -FieldScreenRunId $FieldScreenRunId -RunId $RunId `
-  -EntranceConnectorLengthMm $EntranceConnectorLengthMm -ExitConnectorLengthMm $ExitConnectorLengthMm `
-  -AxialAccelerationContractPath $AxialAccelerationContractPath `
-  -AxialAcceleration:$AxialAcceleration -EndplateAcceleration:$EndplateAcceleration
-if ($LASTEXITCODE -ne 0) { throw 'RF octupole finite 3D L3 transport failed.' }
+$arguments = @{
+  ProjectId = 'rf_octupole_ion_guide'
+  DesignProfileId = $DesignProfileId
+  ParticleSourcePath = $ParticleSourcePath
+  RunId = $RunId
+  MeshAutoLevel = $MeshAutoLevel
+  RfStepsPerPeriod = $RfStepsPerPeriod
+  MaximumTimeUs = $MaximumTimeUs
+}
+if ($EvidenceContractPath) { $arguments.EvidenceContractPath = $EvidenceContractPath }
+if (-not [double]::IsNaN($WorkingRegionMaximumElementSizeMm)) {
+  $arguments.WorkingRegionMaximumElementSizeMm = $WorkingRegionMaximumElementSizeMm
+}
+& (Join-Path $repoRoot 'common\multipole\run_finite_3d_transport.ps1') @arguments
+if ($LASTEXITCODE -ne 0) { throw 'RF octupole COMSOL transport failed.' }

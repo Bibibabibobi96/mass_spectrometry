@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "role": "rf_to_oatof_same_id_checkpoint_diagnostic_contract",
+  "status": "solver_independent_analysis_ready",
+  "inputs": {
+    "source_exit": "canonical RF-exit particle state registered in the S2 instrument frame",
+    "pulse_left_limit": "COMSOL sparse active-particle state at t_pulse^-",
+    "terminal_census": "one terminal classification row for every source-exit particle",
+    "pulse_schedule": "S3 state-driven centroid schedule with the selected cohort",
+    "registration": "config/rf_to_oatof_s2_passive_connector.json nominal_registration",
+    "geometry": "../oa_tof/config/baseline.json plus config/rf_to_oatof_s1_joint_field.json"
+  },
+  "frame_contract": {
+    "input_frame_source": "registration.nominal_registration.instrument_frame",
+    "analysis_frame": "registered_oatof_component_local",
+    "position_rule": "r_local = R_target_to_instrument^T * (r_instrument - translation_mm)",
+    "velocity_rule": "v_local = R_target_to_instrument^T * v_instrument",
+    "time_rule": "instrument_time_us is unchanged",
+    "guide_axis": "+x",
+    "acceleration_axis": "+z",
+    "orthogonal_cross_section": "y-z"
+  },
+  "population_contract": {
+    "source_exit_all": "every unique source-exit particle ID",
+    "scheduler_cohort": "the exact selected_cohort.particle_ids from the pulse schedule",
+    "capture_all_active": "every unique active row in the t_pulse^- table",
+    "losses": "source-exit IDs absent from capture, attributed from terminal event and terminal_reason",
+    "policy": "No particle may be dropped from source accounting to make a beam width smaller."
+  },
+  "metric_contract": {
+    "axis_summary": "centroid, centroid-centered RMS and p95 absolute centroid deviation for x, y and z",
+    "energy": "mean and sample standard deviation derived from mass and all three velocity components",
+    "direction": "angles to the +x guide axis, reported as mean, RMS and p95 absolute angle",
+    "covariance": "sample Cov(r_i,v_j) in mm*m/s",
+    "projected_emittance": "sqrt(var(r_i)*var(v_i)-Cov(r_i,v_i)^2) in mm*m/s; y and z also use slope v_i/v_x in mm*rad",
+    "ideal_volume": "fraction inside the oaTOF baseline particle-source box",
+    "ballistic_prediction": "propagate each exit state to the existing pulse time with its true velocity and global clock; compare only common IDs with COMSOL capture"
+  },
+  "outputs": {
+    "metrics_json": "results/rf-oatof-checkpoints__metrics.json",
+    "particle_csv": "results/rf-oatof-checkpoints__particles.csv",
+    "figure_png": "results/rf-oatof-checkpoints__state-comparison.png"
+  },
+  "claims": {
+    "diagnostic_only": true,
+    "solver_rerun_required": false,
+    "timing_sweep_included": false,
+    "n1000_included": false,
+    "active_optics_included": false,
+    "stage_pass_allowed": false,
+    "formal_gate_passed": false
+  }
+}

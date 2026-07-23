@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "role": "multipole_design_profile_registry",
+  "project_id": "rf_quadrupole_collision_cooling",
+  "family_id": "rf_multipole_ion_optics",
+  "profiles": [
+    {
+      "design_profile_id": "official_transport",
+      "design_request": "config/requests/official.json",
+      "design_variables": "config/design_variables_nonsegmented.json",
+      "optimization_envelope": "config/optimization_envelope_official.json",
+      "sha256": {
+        "design_request": "47BF4D942CACCA86C4128FE50BDB6E5B6598334EEE7D1DB3DC4A5325579EFE96",
+        "design_variables": "2051B29E8E47D934BC52DAD40AFA81B37B1C433327E5A1E58B47C1F8DB704834",
+        "optimization_envelope": "919C875B53850538D13BF40F27AD7E1A79E9D985E6DA40274F230F6B7CDFF647"
+      },
+      "identity": {
+        "project_id": "rf_quadrupole_collision_cooling",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 2,
+        "electrode_count": 4
+      },
+      "topology": {
+        "enclosure_role": "downstream_local_reference_enclosure",
+        "segmentation_strategy": "off",
+        "axial_drive_topology": "none"
+      }
+    },
+    {
+      "design_profile_id": "interface_readiness",
+      "design_request": "config/requests/official.json",
+      "design_variables": "config/design_variables_nonsegmented.json",
+      "optimization_envelope": "config/optimization_envelope_official.json",
+      "sha256": {
+        "design_request": "47BF4D942CACCA86C4128FE50BDB6E5B6598334EEE7D1DB3DC4A5325579EFE96",
+        "design_variables": "2051B29E8E47D934BC52DAD40AFA81B37B1C433327E5A1E58B47C1F8DB704834",
+        "optimization_envelope": "919C875B53850538D13BF40F27AD7E1A79E9D985E6DA40274F230F6B7CDFF647"
+      },
+      "identity": {
+        "project_id": "rf_quadrupole_collision_cooling",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 2,
+        "electrode_count": 4
+      },
+      "topology": {
+        "enclosure_role": "downstream_local_reference_enclosure",
+        "segmentation_strategy": "off",
+        "axial_drive_topology": "none"
+      }
+    },
+    {
+      "design_profile_id": "mass_filter_reference",
+      "design_request": "config/requests/mass_filter.json",
+      "design_variables": "config/design_variables_nonsegmented.json",
+      "optimization_envelope": "config/optimization_envelope_mass_filter.json",
+      "sha256": {
+        "design_request": "7CA8F98D5391700FDFBDF934994B9C8A58EF56B77163F1B71859C2EF2058F450",
+        "design_variables": "2051B29E8E47D934BC52DAD40AFA81B37B1C433327E5A1E58B47C1F8DB704834",
+        "optimization_envelope": "E517AD79E7898827F9C8980F44CCF19C3BAB6D7B0555FFDEA4C31F5AF48FC988"
+      },
+      "identity": {
+        "project_id": "rf_quadrupole_collision_cooling",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 2,
+        "electrode_count": 4
+      },
+      "topology": {
+        "enclosure_role": "downstream_local_reference_enclosure",
+        "segmentation_strategy": "off",
+        "axial_drive_topology": "none"
+      }
+    },
+    {
+      "design_profile_id": "explicit_axial_reference",
+      "design_request": "config/requests/explicit_axial.json",
+      "design_variables": "config/design_variables_explicit_axial.json",
+      "optimization_envelope": "config/optimization_envelope_explicit_axial.json",
+      "sha256": {
+        "design_request": "45FBF66F2C72FEAABB1BC9B9E97DD13A3E11B4B42F73F4752A8D4B4C5F906187",
+        "design_variables": "B9779B2ACE37DEEBAFFD84D84973EF5052BAC3A948C1A5CB7E628D05E4E6C65F",
+        "optimization_envelope": "DF2B81FEF47C908AD9B724287A25BC4BEB8F48F93CAD7A2A52D159972E898A68"
+      },
+      "identity": {
+        "project_id": "rf_quadrupole_collision_cooling",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 2,
+        "electrode_count": 4
+      },
+      "topology": {
+        "enclosure_role": "downstream_local_reference_enclosure",
+        "segmentation_strategy": "explicit",
+        "axial_drive_topology": "segmented_rod_axial_acceleration"
+      }
+    },
+    {
+      "design_profile_id": "endplate_acceleration_reference",
+      "design_request": "config/requests/endplate.json",
+      "design_variables": "config/design_variables_endplate.json",
+      "optimization_envelope": "config/optimization_envelope_endplate.json",
+      "sha256": {
+        "design_request": "FDADB6DF9A7DDF623BE438BA46D024153EF79972149A88C57AB50FA5DF01171E",
+        "design_variables": "C5D222064F5F12CEDBE2F089780A853A5F93DDA9D3D2BD4A76CFFB40C19A6FF1",
+        "optimization_envelope": "130CDE177809F3F1C434ABD2319DB48299F405D16ACFCFAD59C5633A43474175"
+      },
+      "identity": {
+        "project_id": "rf_quadrupole_collision_cooling",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 2,
+        "electrode_count": 4
+      },
+      "topology": {
+        "enclosure_role": "downstream_local_reference_enclosure",
+        "segmentation_strategy": "off",
+        "axial_drive_topology": "endplate_potential_step"
+      }
+    }
+  ]
+}

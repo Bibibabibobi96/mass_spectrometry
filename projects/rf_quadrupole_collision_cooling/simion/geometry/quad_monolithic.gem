@@ -1,5 +1,5 @@
-; Generated from config/resolved_geometry.json; do not edit.
-; resolved_geometry_sha256=EC1A7947BEFF8BD7ECE6EAF13A25F1A753AA9A16053EF04DBDF9418AF733100D
+; Generated from config/resolved_design_official.json; do not edit.
+; resolved_design_sha256=0A70DF34CA783309AD339DAB61D17C8EAC6F4FBD1225DD45805BD7201CAD112D
 
 # local mmgu = 0.2
 

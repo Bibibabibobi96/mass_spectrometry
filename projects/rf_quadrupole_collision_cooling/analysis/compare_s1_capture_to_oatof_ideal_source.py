@@ -97,6 +97,11 @@ def compare(capture_path: Path, entry_path: Path, local_path: Path, ideal_path: 
         raise ValueError("capture table contains a geometrically rejected particle")
     if snapshot.empty or snapshot["instrument_time_us"].nunique() != 1:
         raise ValueError("capture table must be a non-empty snapshot at one shared pulse time")
+    identities = snapshot[["frame_id", "clock_epoch_id"]].drop_duplicates()
+    if len(identities) != 1 or identities.iloc[0].astype(str).str.strip().eq("").any():
+        raise ValueError("capture comparison requires one frame and clock epoch")
+    frame_id = str(identities.iloc[0]["frame_id"])
+    clock_epoch_id = str(identities.iloc[0]["clock_epoch_id"])
     source = baseline["particle_source"]
     expected_inside = np.logical_and.reduce([
         (snapshot[f"{axis}_mm"] - float(source[f"center_{axis}_mm"])).abs().to_numpy()
@@ -140,10 +145,14 @@ def compare(capture_path: Path, entry_path: Path, local_path: Path, ideal_path: 
     axes[1, 2].set(xlabel="centered x (mm)", ylabel="vx (m/s)", title="F  Longitudinal phase space")
     for ax in axes.flat:
         ax.grid(alpha=0.22)
-    fig.suptitle(f"RF-to-oaTOF state immediately before the shared pulse ({pulse_time:.6f} us)", fontsize=15)
+    fig.suptitle(
+        f"RF-to-oaTOF state immediately before the shared pulse ({pulse_time:.6f} µs)\n"
+        f"frame={frame_id}; clock epoch={clock_epoch_id}",
+        fontsize=15,
+    )
     fig.tight_layout(rect=(0, 0, 1, 0.965))
     figure_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(figure_path, dpi=190)
+    fig.savefig(figure_path, format="png", dpi=190)
     plt.close(fig)
 
     result = {
@@ -151,6 +160,8 @@ def compare(capture_path: Path, entry_path: Path, local_path: Path, ideal_path: 
         "role": "rf_s1_pulse_capture_vs_mass_matched_oatof_ideal_source",
         "status": "PASS",
         "pulse_instrument_time_us": pulse_time,
+        "frame_id": frame_id,
+        "clock_epoch_id": clock_epoch_id,
         "state_time_semantics": "left_limit_immediately_before_pulse_t_pulse_minus",
         "geometric_port_accepted": len(accepted_ids),
         "snapshot_rows_including_frozen_terminal_coordinates": int(len(snapshot)),

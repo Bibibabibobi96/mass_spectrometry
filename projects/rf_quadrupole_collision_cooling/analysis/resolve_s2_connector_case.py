@@ -9,6 +9,8 @@ import math
 from pathlib import Path
 from typing import Any
 
+from common.contracts.rigid_transform import FramedVector, RigidTransform
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BASE = PROJECT_ROOT / "config" / "rf_to_oatof_s2_passive_connector.json"
@@ -40,8 +42,15 @@ def resolve_case(base_path: Path, cases_path: Path, case_id: str) -> dict[str, A
     source = [target[0] - gap_mm, target[1], target[2]]
     local = [float(value) for value in registration["source_exit_center_local_mm"]]
     rotation = registration["source_component_pose"]["rotation_component_to_instrument"]
-    rotated = [sum(float(rotation[row][column]) * local[column] for column in range(3))
-               for row in range(3)]
+    rotation_only = RigidTransform(
+        "rf_quadrupole_component",
+        registration["instrument_frame"],
+        rotation,
+        (0.0, 0.0, 0.0),
+    )
+    rotated = rotation_only.transform_vector(
+        FramedVector("rf_quadrupole_component", local)
+    ).components
     translation = [source[index] - rotated[index] for index in range(3)]
     registration["source_exit_center_instrument_mm"] = source
     registration["source_component_pose"]["translation_mm"] = translation

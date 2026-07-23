@@ -16,19 +16,19 @@
     },
     {
       "descriptor": "projects/rf_hexapole_ion_guide/config/project.json",
-      "sha256": "B951A97DCD0482FB84C3BD16AD7C8200BB2989EB3EA8ABF63CE95F4F6C688901"
+      "sha256": "2990E332242678D83182F53944614215E3B3110020FE44389EB96695FE26FEEC"
     },
     {
       "descriptor": "projects/rf_octupole_ion_guide/config/project.json",
-      "sha256": "A675CDE5D8AD67CF28E7ADD0BB6CF8269012C08A3424DBA71C2D148E675B675C"
+      "sha256": "D34E76642A23665802AEF541989A869754B71EDFEB3AAFBA36580BA056597152"
     },
     {
       "descriptor": "projects/rf_quadrupole_collision_cooling/config/project.json",
-      "sha256": "FB8422CEF18FAF7F114AAC2E333887DEED128016F584136FD9F5D060D09D5E45"
+      "sha256": "6C26631E93BD146C45FE9B5ADF215830D9B883D6022C63B588BFF444069B1A3E"
     },
     {
       "descriptor": "projects/wehnelt_electron_gun/config/project.json",
-      "sha256": "11B5795A1E3AD2809DB7DD0F48994B1F24822E77B9B1483EEF3478ABAA3F4F98"
+      "sha256": "F4B9C23F53611ECB94F6F1504F53FDFC0C081738B97AAD29A79D5A5D83602CF4"
     }
   ],
   "projects": [
@@ -222,12 +222,13 @@
       ],
       "contracts": {
         "baseline": "config/baseline.json",
-        "resolved": null,
+        "resolved": "config/resolved_design.json",
         "analysis": null,
         "interface": "config/finite_3d_transport.json",
-        "execution": null,
-        "design_variables": null,
-        "optimization_envelope": null
+        "execution": "config/execution_profiles.json",
+        "design_profiles": "config/design_profiles.json",
+        "design_variables": "config/design_variables.json",
+        "optimization_envelope": "config/optimization_envelope.json"
       },
       "capabilities": [
         {
@@ -275,12 +276,39 @@
             "maximum_rod_radius"
           ],
           "design_variables": [
+            "inscribed_radius_r0",
             "rod_radius_ratio",
+            "rod_z_min",
+            "rod_z_max",
+            "enclosure_working_region_radius",
+            "vacuum_z_min",
+            "vacuum_z_max",
             "shield_inner_radius",
+            "shield_outer_radius",
+            "entrance_endcap_z_min",
+            "entrance_endcap_z_max",
+            "exit_endcap_z_min",
+            "exit_endcap_z_max",
             "entrance_aperture_radius",
-            "exit_aperture_radius",
+            "entrance_plate_thickness",
+            "entrance_rod_clearance",
             "entrance_connector_length",
-            "exit_connector_length"
+            "entrance_particle_plane_distance",
+            "exit_aperture_radius",
+            "exit_plate_thickness",
+            "exit_rod_clearance",
+            "exit_connector_length",
+            "exit_particle_plane_distance",
+            "rf_amplitude",
+            "dc_amplitude",
+            "common_mode_offset",
+            "rf_frequency",
+            "rf_phase",
+            "segment_count",
+            "intersegment_gap",
+            "segment_entrance_common_mode",
+            "segment_exit_common_mode",
+            "segment_output_reference"
           ]
         }
       ],
@@ -310,12 +338,13 @@
       ],
       "contracts": {
         "baseline": "config/baseline.json",
-        "resolved": null,
+        "resolved": "config/resolved_design.json",
         "analysis": null,
         "interface": "config/finite_3d_transport.json",
-        "execution": null,
-        "design_variables": null,
-        "optimization_envelope": null
+        "execution": "config/execution_profiles.json",
+        "design_profiles": "config/design_profiles.json",
+        "design_variables": "config/design_variables.json",
+        "optimization_envelope": "config/optimization_envelope.json"
       },
       "capabilities": [
         {
@@ -363,12 +392,39 @@
             "maximum_rod_radius"
           ],
           "design_variables": [
+            "inscribed_radius_r0",
             "rod_radius_ratio",
+            "rod_z_min",
+            "rod_z_max",
+            "enclosure_working_region_radius",
+            "vacuum_z_min",
+            "vacuum_z_max",
             "shield_inner_radius",
+            "shield_outer_radius",
+            "entrance_endcap_z_min",
+            "entrance_endcap_z_max",
+            "exit_endcap_z_min",
+            "exit_endcap_z_max",
             "entrance_aperture_radius",
-            "exit_aperture_radius",
+            "entrance_plate_thickness",
+            "entrance_rod_clearance",
             "entrance_connector_length",
-            "exit_connector_length"
+            "entrance_particle_plane_distance",
+            "exit_aperture_radius",
+            "exit_plate_thickness",
+            "exit_rod_clearance",
+            "exit_connector_length",
+            "exit_particle_plane_distance",
+            "rf_amplitude",
+            "dc_amplitude",
+            "common_mode_offset",
+            "rf_frequency",
+            "rf_phase",
+            "segment_count",
+            "intersegment_gap",
+            "segment_entrance_common_mode",
+            "segment_exit_common_mode",
+            "segment_output_reference"
           ]
         }
       ],
@@ -399,12 +455,13 @@
       ],
       "contracts": {
         "baseline": "config/baseline.json",
-        "resolved": "config/resolved_geometry.json",
+        "resolved": "config/resolved_design_official.json",
         "analysis": null,
         "interface": "config/interface_contract.json",
         "execution": "config/execution_profiles.json",
-        "design_variables": null,
-        "optimization_envelope": null
+        "design_profiles": "config/design_profiles.json",
+        "design_variables": "config/design_variables.json",
+        "optimization_envelope": "config/optimization_envelope.json"
       },
       "capabilities": [
         {
@@ -423,10 +480,40 @@
             "mean_kinetic_energy"
           ],
           "design_variables": [
+            "inscribed_radius_r0",
+            "rod_radius_ratio",
+            "rod_z_min",
+            "rod_z_max",
+            "enclosure_working_region_radius",
+            "vacuum_z_min",
+            "vacuum_z_max",
+            "enclosure_outer_half_width",
+            "enclosure_inner_half_width",
+            "exit_enclosure_z_min",
+            "exit_enclosure_z_max",
+            "exit_front_wall_end_z",
+            "detector_radius",
+            "detector_thickness",
+            "entrance_aperture_radius",
+            "entrance_plate_thickness",
+            "entrance_rod_clearance",
+            "entrance_connector_length",
+            "entrance_particle_plane_distance",
+            "exit_aperture_radius",
+            "exit_plate_thickness",
+            "exit_rod_clearance",
+            "exit_connector_length",
+            "exit_particle_plane_distance",
             "rf_amplitude",
+            "dc_amplitude",
+            "common_mode_offset",
             "rf_frequency",
-            "dc_differential",
-            "axis_offset"
+            "rf_phase",
+            "segment_count",
+            "intersegment_gap",
+            "segment_entrance_common_mode",
+            "segment_exit_common_mode",
+            "segment_output_reference"
           ]
         },
         {
@@ -440,12 +527,7 @@
             "exit_energy",
             "collision_count"
           ],
-          "design_variables": [
-            "rf_amplitude",
-            "rf_frequency",
-            "gas_pressure",
-            "gas_species"
-          ]
+          "design_variables": []
         },
         {
           "capability_id": "quadrupole_mass_filter_reference",
@@ -461,9 +543,10 @@
           ],
           "design_variables": [
             "rf_amplitude",
+            "dc_amplitude",
+            "common_mode_offset",
             "rf_frequency",
-            "dc_differential",
-            "axis_offset"
+            "rf_phase"
           ]
         }
       ],
@@ -491,11 +574,11 @@
         "matlab"
       ],
       "contracts": {
-        "baseline": null,
-        "resolved": null,
+        "baseline": "config/baseline.json",
+        "resolved": "config/resolved_model.json",
         "analysis": null,
         "interface": null,
-        "execution": null,
+        "execution": "config/execution_profiles.json",
         "design_variables": null,
         "optimization_envelope": null
       },
@@ -504,7 +587,9 @@
           "capability_id": "wehnelt_thermal_electron_transport",
           "function": "electron_transport",
           "status": "prototype",
-          "modes": [],
+          "modes": [
+            "build_only_smoke"
+          ],
           "metrics": [
             "collection_efficiency",
             "beam_current",
@@ -519,10 +604,10 @@
         "identity_contract": null
       },
       "known_gaps": [
-        "Geometry, voltage, temperature, particle, and numerical parameters remain embedded in MATLAB",
-        "No baseline or resolved machine contract",
+        "The functional_reference mode has no governed N>=100 solver runner or current evidence",
         "Final particle model is not reopened and recomputed under the current GUI gate",
-        "Historical collection efficiency is not a current formal result"
+        "Historical collection efficiency is not a current formal result",
+        "No interface contract to the downstream EI source has been frozen"
       ]
     }
   ]

@@ -36,6 +36,9 @@ def validate_resolved_contract(contract: dict) -> dict:
     if contract.get("schema_version") != 1 or contract.get("role") != "oa_tof_resolved_contract_do_not_edit":
         raise ValueError("unsupported oa-TOF resolved contract")
     geometry = contract["geometry_mm"]
+    coordinate = contract.get("coordinate_convention", {})
+    if coordinate.get("frame_id") != "oatof_global":
+        raise ValueError("oa-TOF resolved coordinate frame must be oatof_global")
     accelerator = contract["geometry_derivation"]["accelerator"]
     checks = {
         "accelerator grid1": (

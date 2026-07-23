@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "role": "project_optimization_envelope",
+  "project_id": "rf_quadrupole_collision_cooling",
+  "family_id": "rf_multipole_ion_optics",
+  "envelope_id": "quadrupole_mass_filter_nonsegmented_space",
+  "status": "candidate",
+  "policy": "The complete request is immutable at execution; candidate generation may only change cataloged fields within these bounds before recompilation.",
+  "reference": {
+    "design_request": "config/requests/mass_filter.json",
+    "design_request_sha256": "7CA8F98D5391700FDFBDF934994B9C8A58EF56B77163F1B71859C2EF2058F450"
+  },
+  "constraints": [
+    {
+      "constraint_id": "locked_multipole_identity",
+      "kind": "immutable_identity",
+      "request_json_pointers": ["/identity/project_id", "/identity/family_id", "/identity/radial_order_n", "/identity/electrode_count"],
+      "description": "Project, family, radial order and electrode count are immutable."
+    },
+    {
+      "constraint_id": "catalog_variable_bounds",
+      "kind": "bounded_variable",
+      "request_json_pointers": [
+        "/geometry_mm/inscribed_radius_r0", "/geometry_mm/rod_radius_ratio",
+        "/geometry_mm/rod_z_min", "/geometry_mm/rod_z_max",
+        "/geometry_mm/enclosure/working_region_radius_mm",
+        "/geometry_mm/enclosure/vacuum_z_min_mm", "/geometry_mm/enclosure/vacuum_z_max_mm",
+        "/geometry_mm/enclosure/outer_half_width_mm", "/geometry_mm/enclosure/inner_half_width_mm",
+        "/geometry_mm/enclosure/exit_enclosure_z_min_mm", "/geometry_mm/enclosure/exit_enclosure_z_max_mm",
+        "/geometry_mm/enclosure/exit_front_wall_end_z_mm",
+        "/geometry_mm/enclosure/detector_radius_mm", "/geometry_mm/enclosure/detector_thickness_mm",
+        "/geometry_mm/entrance_interface/aperture_radius_mm",
+        "/geometry_mm/entrance_interface/plate_thickness_mm",
+        "/geometry_mm/entrance_interface/rod_clearance_mm",
+        "/geometry_mm/entrance_interface/connector_length_mm",
+        "/geometry_mm/entrance_interface/particle_plane_distance_mm",
+        "/geometry_mm/exit_interface/aperture_radius_mm",
+        "/geometry_mm/exit_interface/plate_thickness_mm",
+        "/geometry_mm/exit_interface/rod_clearance_mm",
+        "/geometry_mm/exit_interface/connector_length_mm",
+        "/geometry_mm/exit_interface/particle_plane_distance_mm",
+        "/drive/rf_amplitude_V_zero_to_peak_per_group",
+        "/drive/dc_amplitude_V_per_group", "/drive/common_mode_offset_V",
+        "/drive/frequency_Hz", "/drive/phase_rad"
+      ],
+      "description": "Every nonsegmented profile variable remains within the shared catalog bounds."
+    }
+  ]
+}

@@ -8,12 +8,13 @@
   "toolchains": ["comsol", "simion", "matlab", "python"],
   "contracts": {
     "baseline": "config/baseline.json",
-    "resolved": "config/resolved_geometry.json",
+    "resolved": "config/resolved_design_official.json",
     "analysis": null,
     "interface": "config/interface_contract.json",
     "execution": "config/execution_profiles.json",
-    "design_variables": null,
-    "optimization_envelope": null
+    "design_profiles": "config/design_profiles.json",
+    "design_variables": "config/design_variables.json",
+    "optimization_envelope": "config/optimization_envelope.json"
   },
   "capabilities": [
     {
@@ -22,7 +23,20 @@
       "status": "candidate",
       "modes": ["transport_no_collision", "transport_interface_readiness"],
       "metrics": ["transmission_fraction", "mean_tof", "rms_beam_radius", "rms_divergence", "mean_kinetic_energy"],
-      "design_variables": ["rf_amplitude", "rf_frequency", "dc_differential", "axis_offset"]
+      "design_variables": [
+        "inscribed_radius_r0", "rod_radius_ratio", "rod_z_min", "rod_z_max",
+        "enclosure_working_region_radius", "vacuum_z_min", "vacuum_z_max",
+        "enclosure_outer_half_width", "enclosure_inner_half_width",
+        "exit_enclosure_z_min", "exit_enclosure_z_max", "exit_front_wall_end_z",
+        "detector_radius", "detector_thickness",
+        "entrance_aperture_radius", "entrance_plate_thickness", "entrance_rod_clearance",
+        "entrance_connector_length", "entrance_particle_plane_distance",
+        "exit_aperture_radius", "exit_plate_thickness", "exit_rod_clearance",
+        "exit_connector_length", "exit_particle_plane_distance",
+        "rf_amplitude", "dc_amplitude", "common_mode_offset", "rf_frequency", "rf_phase",
+        "segment_count", "intersegment_gap", "segment_entrance_common_mode",
+        "segment_exit_common_mode", "segment_output_reference"
+      ]
     },
     {
       "capability_id": "quadrupole_collision_cooling",
@@ -30,7 +44,7 @@
       "status": "prototype",
       "modes": [],
       "metrics": ["transmission_fraction", "cooling_time", "exit_energy", "collision_count"],
-      "design_variables": ["rf_amplitude", "rf_frequency", "gas_pressure", "gas_species"]
+      "design_variables": []
     },
     {
       "capability_id": "quadrupole_mass_filter_reference",
@@ -38,7 +52,7 @@
       "status": "static",
       "modes": ["mass_filter_reference"],
       "metrics": ["mass_resolving_power", "transmission_fraction", "mass_peak_centroid"],
-      "design_variables": ["rf_amplitude", "rf_frequency", "dc_differential", "axis_offset"]
+      "design_variables": ["rf_amplitude", "dc_amplitude", "common_mode_offset", "rf_frequency", "rf_phase"]
     }
   ],
   "formal_assets": {

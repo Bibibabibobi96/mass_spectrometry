@@ -47,8 +47,10 @@ def main() -> None:
         "SIMION": args.simion_state,
     }
     resolved, _ = load_contract()
-    detector_radius = resolved["geometry_mm"]["detector_radius"]
-    plot_limit = max(resolved["geometry_mm"]["field_radius_r0"], detector_radius) * 1.05
+    detector_radius = resolved["geometry_mm"]["enclosure"]["detector_radius_mm"]
+    plot_limit = max(
+        resolved["geometry_mm"]["inscribed_radius_r0"], detector_radius
+    ) * 1.05
     data = {solver: load_rows(path) for solver, path in inputs.items()}
     ids = {
         solver: [int(row["particle_id"]) for row in rows]

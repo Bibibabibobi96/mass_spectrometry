@@ -10,9 +10,11 @@
 `phase1_geometry_coil_transverse.m`、`phase2_electrostatics_coil_transverse.m`和
 `phase4_thermal_emission_coil_transverse.m`；实心阴极和轴向线圈源码只属于`legacy/`。
 
-基线参数为线圈半径0.3 mm、钨丝半径0.05 mm、节距0.2 mm，阴极/Wehnelt/阳极电势分别为
-0/-0.5/70 V，Wehnelt与阳极孔径半径分别为1.0/1.5 mm。横置方案服务于EI离子源的电子利用率，
-不声明成像级轴对称束斑。
+机器权威已建立为`config/baseline.json + config/numerical_modes.json → analysis/resolve_contract.py
+→ config/resolved_model.json`。线圈、钨丝、节距、电位和孔径等既有数值均保持不变；完整精度和
+派生轴向坐标只认机器合同，本文不再复制第二份参数表。三阶段MATLAB只消费resolved并把值绑定为
+GUI可见参数，不再自行维护物理默认值或派生坐标。横置方案服务于EI离子源的电子利用率，不声明
+成像级轴对称束斑。
 
 ## 资产与验证状态
 
@@ -27,18 +29,35 @@
   `20260722_120100__test__comsol__three-stage-build-only`已在真实MATLAB R2025b/COMSOL 6.4连接中依次
   完成横置灯丝几何、网格、静电和CPT Study/Solver树构建并保存隔离MPH，未运行静电或粒子求解器；
   三件套manifest复核PASS。该结果不复验历史收集效率，也不改变当前资产资格。
-- 参数仍直接写在MATLAB源码中，没有baseline/resolved机器契约和运行模式分层。
+- 已建立物理baseline、数值模式、来源身份和resolved过期门禁。跟踪resolved选择
+  `build_only_smoke`和低N固定fixture，只验证合同读取、三阶段模型树构建与GUI参数绑定，明确没有
+  Candidate或Formal证据资格。
+- `run_build_only_smoke.ps1`是当前唯一注册的商业构建入口；它冻结合同与三阶段源码、串行调用统一
+  R2025b/COMSOL入口并对`interrupted`、`failed`或`success`形成统一summary与manifest。run建立后
+  立即预置可复核的`interrupted`状态；后续递归冻结实际输入/输出，持久化商业wrapper控制台与退出
+  上下文。执行profile、resolver、Static gate以及实际调用的公共COMSOL/manifest入口也进入冻结清单。
+  该入口不运行静电或粒子求解器。
+- 修复前的`20260723_172817__test__comsol__wehnelt-build-only-smoke`把外部超时记为`failed`，
+  `20260723_173100__test__comsol__wehnelt-build-only-smoke`则在输入冻结失败后留下空inputs manifest。
+  它们只保留为历史不合格诊断，不用于证明当前生命周期或哈希治理；既有run内容不得追写或改写。
+- 受治理运行`20260723_173500__test__comsol__wehnelt-build-only-smoke`已用冻结输入在真实MATLAB
+  R2025b/COMSOL 6.4中完成三阶段构建：几何、网格和CPT树通过，GUI参数绑定通过，静电与粒子求解器
+  均未运行；success manifest及其12项输入、5项输出哈希复核PASS。该run仍不具备Candidate或Formal资格。
+- `functional_reference`定义现行网格与时间设置及N>=100证据下限，但尚未注册为执行profile，也未
+  运行真实求解器；它不能把历史34.18%收集效率恢复为当前结论。
 - 旧MPH早于现行run config/summary/manifest合同；资产身份与结果尚未形成完整哈希链，不能称为当前
   Formal资产。
 - 横置Wehnelt参数扫描尚未建立；旧phase5实际属于轴向灯丝，只能支持非单调性的历史假设。
 
 ## 下一步
 
-1. 先用低于100的固定fixture做build/smoke和GUI节点检查；它不产生Candidate证据。进入粒子功能
-   复算时使用仓库最低N=100档。
-2. 为几何、电压、温度、粒子与数值设置建立机器契约，保持GUI节点可检查。
-3. 复验收集效率、损失分类和正式结果图，补齐run config、summary、manifest及资产SHA。
-4. 只有下游设计需要时才建立横置谱系参数扫描；不得复用轴向phase5的具体最优值。
+1. 用当前`build_only_smoke`继续做真实R2025b三阶段构建和GUI节点复验；低N fixture不产生
+   Candidate证据。
+2. 为`functional_reference`建立受治理的N>=100运行器，复验实际求解输出粒子数、收集效率和损失
+   分类，再决定是否允许进入Candidate评审。
+3. 补齐run config、summary、manifest、资产SHA和正式结果图；最终CPT模型还必须重开并完成GUI
+   Compute对等复算。
+4. 只有下游设计需要时才建立横置谱系参数扫描或与EI源的接口合同；不得复用轴向phase5的具体最优值。
 
 ## 产物边界
 

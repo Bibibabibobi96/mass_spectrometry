@@ -21,11 +21,15 @@ class S1EndToEndTests(unittest.TestCase):
             root = Path(root)
             entry, local, downstream, mapping, events = (root / name for name in
                 ("entry.csv", "local.csv", "down.csv", "map.csv", "events.csv"))
-            write(entry, ["particle_id", "instrument_time_us", "position_x_mm", "position_y_mm", "position_z_mm"],
-                  [{"particle_id": i, "instrument_time_us": 1, "position_x_mm": 0,
+            write(entry, ["particle_id", "frame_id", "clock_epoch_id", "instrument_time_us", "position_x_mm", "position_y_mm", "position_z_mm"],
+                  [{"particle_id": i, "frame_id": "oatof_global",
+                    "clock_epoch_id": "instrument_clock_epoch.v1",
+                    "instrument_time_us": 1, "position_x_mm": 0,
                     "position_y_mm": 0, "position_z_mm": 0} for i in range(1, 101)])
-            write(local, ["particle_id", "event", "instrument_time_us", "x_mm", "y_mm", "z_mm", "status"],
+            write(local, ["particle_id", "event", "frame_id", "clock_epoch_id", "instrument_time_us", "x_mm", "y_mm", "z_mm", "status"],
                   [{"particle_id": i, "event": "local_joint_exit" if i <= 5 else "terminal",
+                    "frame_id": "oatof_global",
+                    "clock_epoch_id": "instrument_clock_epoch.v1",
                     "instrument_time_us": 2, "x_mm": 0, "y_mm": 0, "z_mm": 1,
                     "status": "transmitted" if i <= 5 else "lost"} for i in range(1, 101)])
             write(mapping, ["solver_row_index", "particle_id", "solver_birth_time_us"],
@@ -40,6 +44,7 @@ class S1EndToEndTests(unittest.TestCase):
             self.assertTrue(result["checks"]["original_particle_id_set_preserved"])
             self.assertTrue(result["checks"]["absolute_clock_monotonic"])
             self.assertEqual(result["sparse_event_rows"], 205)
+            self.assertEqual(result["frame_id"], "oatof_global")
             figure = root / "funnel.png"
             module.plot_funnel(result, figure)
             self.assertGreater(figure.stat().st_size, 0)
@@ -54,7 +59,8 @@ class S1EndToEndTests(unittest.TestCase):
             figure = Path(root) / "resolution.png"
             result = module.resolution_diagnostic(
                 downstream, 100.0, 40.0, module.AnalysisSettings(), "ABC",
-                48.8, 0.0, 40.0, "DEF", figure)
+                48.8, 0.0, 40.0, "DEF", figure,
+                "oatof_global", "instrument_clock_epoch.v1")
             metrics = result["canonical_peak_metrics"]
             self.assertEqual(result["status"], "AVAILABLE")
             self.assertAlmostEqual(metrics["mean_tof_us"], 10.128)

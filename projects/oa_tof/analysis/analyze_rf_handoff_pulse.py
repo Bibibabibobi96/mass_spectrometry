@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 
-from rf_handoff_adapter import ordered_solver_identity_map
+from projects.oa_tof.analysis.rf_handoff_adapter import ordered_solver_identity_map
 
 
 NUMBER = r"[-+0-9.eE]+"
@@ -39,7 +39,8 @@ TERMINAL_RE = re.compile(
     rf"vz_mm_per_us=(?P<vz>{NUMBER})"
 )
 EVENT_FIELDS = [
-    "particle_id", "event", "instrument_time_us", "x_mm", "y_mm", "z_mm",
+    "particle_id", "event", "frame_id", "clock_epoch_id",
+    "instrument_time_us", "x_mm", "y_mm", "z_mm",
     "vx_m_s", "vy_m_s", "vz_m_s", "status",
 ]
 
@@ -133,8 +134,11 @@ def build_events(
     events: list[dict[str, object]] = []
     for row in canonical_rows:
         particle_id = int(row["particle_id"])
+        frame_id = row["frame_id"]
+        clock_epoch_id = row["clock_epoch_id"]
         events.append({
             "particle_id": particle_id, "event": "effective_entry",
+            "frame_id": frame_id, "clock_epoch_id": clock_epoch_id,
             "instrument_time_us": float(row["instrument_time_us"]),
             "x_mm": float(row["position_x_mm"]), "y_mm": float(row["position_y_mm"]),
             "z_mm": float(row["position_z_mm"]), "vx_m_s": float(row["velocity_x_m_s"]),
@@ -145,6 +149,7 @@ def build_events(
         if pulse:
             events.append({
                 "particle_id": particle_id, "event": "pulse_on",
+                "frame_id": frame_id, "clock_epoch_id": clock_epoch_id,
                 "instrument_time_us": pulse["time"], "x_mm": pulse["x"],
                 "y_mm": pulse["y"], "z_mm": pulse["z"],
                 "vx_m_s": pulse["vx"] * 1000.0, "vy_m_s": pulse["vy"] * 1000.0,
@@ -154,6 +159,7 @@ def build_events(
         if terminal:
             events.append({
                 "particle_id": particle_id, "event": "terminal",
+                "frame_id": frame_id, "clock_epoch_id": clock_epoch_id,
                 "instrument_time_us": terminal["time"], "x_mm": terminal["x"],
                 "y_mm": terminal["y"], "z_mm": terminal["z"],
                 "vx_m_s": terminal["vx"] * 1000.0, "vy_m_s": terminal["vy"] * 1000.0,
@@ -164,7 +170,7 @@ def build_events(
 
 def plot_timeline(
     events: list[dict[str, object]], outcomes: dict[int, str], pulse_time: float,
-    pulse_width: float, output: Path,
+    pulse_width: float, frame_id: str, clock_epoch_id: str, output: Path,
 ) -> None:
     by_particle: dict[int, dict[str, dict[str, object]]] = {}
     for row in events:
@@ -182,7 +188,7 @@ def plot_timeline(
             ax.scatter(terminal["instrument_time_us"], particle_id, color=color, marker=marker, s=14)
         ax.scatter(entry["instrument_time_us"], particle_id, color="#2166ac", marker="|", s=22)
     ax.axvspan(pulse_time, pulse_time + pulse_width, color="#756bb1", alpha=0.25)
-    ax.set(xlabel="Instrument time (us)", ylabel="Particle ID",
+    ax.set(xlabel="Instrument time (µs)", ylabel="Particle ID",
            title="RF handoff arrival, shared extraction pulse, and terminal outcome")
     ax.grid(alpha=0.2)
     ax.legend(handles=[
@@ -193,14 +199,19 @@ def plot_timeline(
         Line2D([], [], color=colors["lost"], marker="x", linestyle="None", label="lost"),
         Patch(facecolor="#756bb1", alpha=0.25, label=f"extraction pulse ({pulse_width:g} us)"),
     ], loc="upper right")
+    fig.text(
+        0.01, 0.01, f"frame={frame_id}; clock epoch={clock_epoch_id}",
+        fontsize=8, ha="left", va="bottom",
+    )
     fig.tight_layout()
     output.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output, dpi=180)
+    fig.savefig(output, format="png", dpi=180)
     plt.close(fig)
 
 
 def plot_snapshot(
-    events: list[dict[str, object]], outcomes: dict[int, str], pulse_time: float, output: Path,
+    events: list[dict[str, object]], outcomes: dict[int, str], pulse_time: float,
+    frame_id: str, clock_epoch_id: str, output: Path,
 ) -> None:
     pulse_rows = [row for row in events if row["event"] == "pulse_on"]
     fig, axes = plt.subplots(1, 2, figsize=(10, 4.5))
@@ -218,29 +229,51 @@ def plot_snapshot(
     for ax in axes:
         ax.grid(alpha=0.2)
     axes[1].legend(loc="best")
-    fig.suptitle(f"Particle distribution at pulse onset, t = {pulse_time:.6f} us")
+    fig.suptitle(
+        f"Particle distribution at pulse onset, t = {pulse_time:.6f} µs\n"
+        f"frame={frame_id}; clock epoch={clock_epoch_id}"
+    )
     fig.tight_layout()
     output.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output, dpi=180)
+    fig.savefig(output, format="png", dpi=180)
     plt.close(fig)
 
 
 def analyze(
     timed_path: Path, control_path: Path, canonical_path: Path, row_map_path: Path,
     mode_path: Path,
-    pulse_log: Path, events_output: Path, timeline_output: Path, snapshot_output: Path,
+    pulse_log: Path, resolved_path: Path, analysis_contract_path: Path,
+    events_output: Path, timeline_output: Path, snapshot_output: Path,
 ) -> dict:
     mode = json.loads(mode_path.read_text(encoding="utf-8"))
+    resolved = json.loads(resolved_path.read_text(encoding="utf-8"))
+    analysis_contract = json.loads(analysis_contract_path.read_text(encoding="utf-8"))
+    frame_id = resolved["coordinate_convention"]["frame_id"]
+    expected_frame_id = analysis_contract["coordinate_frames"]["instrument"]["frame_id"]
+    if frame_id != expected_frame_id:
+        raise ValueError("pulse diagnostic frame authority differs from resolved geometry")
+    canonical_rows = read_csv(canonical_path)
+    if not canonical_rows or any(row.get("frame_id") != frame_id for row in canonical_rows):
+        raise ValueError("pulse diagnostic canonical state frame differs")
+    clock_epochs = {row.get("clock_epoch_id", "") for row in canonical_rows}
+    if len(clock_epochs) != 1 or not next(iter(clock_epochs)):
+        raise ValueError("pulse diagnostic requires one nonempty clock epoch")
+    clock_epoch_id = next(iter(clock_epochs))
     timed_rows, control_rows = read_csv(timed_path), read_csv(control_path)
     timed, control = summarize(timed_rows), summarize(control_rows)
     pulse_time, pulse_width, pulse_states, terminal_states = parse_log(pulse_log)
     events, outcomes = build_events(
-        read_csv(canonical_path), read_csv(row_map_path), timed_rows,
+        canonical_rows, read_csv(row_map_path), timed_rows,
         pulse_states, terminal_states,
     )
     write_csv(events_output, events)
-    plot_timeline(events, outcomes, pulse_time, pulse_width, timeline_output)
-    plot_snapshot(events, outcomes, pulse_time, snapshot_output)
+    plot_timeline(
+        events, outcomes, pulse_time, pulse_width,
+        frame_id, clock_epoch_id, timeline_output,
+    )
+    plot_snapshot(
+        events, outcomes, pulse_time, frame_id, clock_epoch_id, snapshot_output,
+    )
     acceptance = mode["acceptance"]
     checks = {
         "minimum_particles": timed["emitted"] >= int(acceptance["minimum_particles"]),
@@ -260,6 +293,17 @@ def analyze(
         "schema_version": 2,
         "role": "oa_tof_rf_handoff_shared_clock_pulse_test",
         "status": "PASS" if all(checks.values()) else "FAIL",
+        "coordinate_contract": {
+            "frame_id": frame_id,
+            "position_unit": "mm",
+        },
+        "clock_epoch_id": clock_epoch_id,
+        "figure_contract": {
+            "format": "png",
+            "dpi": 180,
+            "timeline_size_inches": [10.0, 6.0],
+            "snapshot_size_inches": [10.0, 4.5],
+        },
         "timed_pulse": timed,
         "held_off_control": control,
         "transmission_gain": timed["transmission"] - control["transmission"],
@@ -285,6 +329,8 @@ def main() -> None:
     parser.add_argument("--row-map", type=Path, required=True)
     parser.add_argument("--mode", type=Path, required=True)
     parser.add_argument("--pulse-log", type=Path, required=True)
+    parser.add_argument("--resolved", type=Path, required=True)
+    parser.add_argument("--analysis-contract", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--events-output", type=Path, required=True)
     parser.add_argument("--timeline-output", type=Path, required=True)
@@ -292,6 +338,7 @@ def main() -> None:
     args = parser.parse_args()
     result = analyze(
         args.timed, args.control, args.canonical, args.row_map, args.mode, args.pulse_log,
+        args.resolved, args.analysis_contract,
         args.events_output, args.timeline_output, args.snapshot_output,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)

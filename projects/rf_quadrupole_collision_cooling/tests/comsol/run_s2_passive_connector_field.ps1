@@ -19,6 +19,8 @@ $connectorValidatorSource = Join-Path $projectRoot 'analysis\validate_s2_passive
 $interfaceHandoffSource = Join-Path $projectRoot 'analysis\build_interface_handoff.py'
 $oatofHandoffSource = Join-Path $projectRoot 'analysis\build_oatof_handoff.py'
 $dependencyContractSource = Join-Path $projectRoot 'config\rf_to_oatof_s2_dependencies.json'
+$spatialResolverSource = Join-Path $projectRoot 'analysis\resolve_spatial_registration.py'
+$interfaceSource = Join-Path $projectRoot 'config\rf_to_oatof_interface_candidate.json'
 $baseContractDocument = Get-Content -LiteralPath $contractSource -Raw -Encoding UTF8 | ConvertFrom-Json
 if (-not [bool]$baseContractDocument.permissions.field_solve_allowed) {
   throw 'The S2 contract does not authorize a field solve.'
@@ -66,7 +68,10 @@ try {
   $oatofHandoff = Join-Path $inputDir 'build_oatof_handoff.py'
   $dependencyContract = Join-Path $inputDir 'rf_to_oatof_s2_dependencies.json'
   $s1Contract = Join-Path $inputDir 'rf_to_oatof_s1_joint_field.json'
-  $rfResolved = Join-Path $inputDir 'rf_resolved_geometry.json'
+  $rfResolved = Join-Path $inputDir 'rf_resolved_design.json'
+  $spatialRegistration = Join-Path $inputDir 'resolved_rf_to_oatof_s2_spatial_registration.json'
+  $spatialResolver = Join-Path $inputDir 'resolve_spatial_registration.py'
+  $interface = Join-Path $inputDir 'rf_to_oatof_interface_candidate.json'
   $particleInput = $null
   $particleOutput = $null
   Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'solve_s2_passive_connector_field.m') -Destination $task
@@ -80,21 +85,19 @@ try {
   Copy-Item -LiteralPath $connectorValidatorSource -Destination $connectorValidator
   Copy-Item -LiteralPath $interfaceHandoffSource -Destination $interfaceHandoff
   Copy-Item -LiteralPath $oatofHandoffSource -Destination $oatofHandoff
-  & $python $connectorResolver --base $baseContract --cases $connectorCases `
-    --case-id $ConnectorCaseId --output $contract
-  if ($LASTEXITCODE -ne 0) { throw 'S2 connector-case resolution failed.' }
-  $validatorEnvironment = Save-RfEnvironment -Names @('PYTHONPATH')
+  Copy-Item -LiteralPath $spatialResolverSource -Destination $spatialResolver
+  Copy-Item -LiteralPath $interfaceSource -Destination $interface
+  Push-Location $repoRoot
   try {
-    $env:PYTHONPATH = $repoRoot
-    & $python $connectorValidator --contract $contract --reference-root $projectRoot
-    if ($LASTEXITCODE -ne 0) { throw 'Resolved S2 connector-case contract is invalid.' }
-  } finally {
-    Restore-RfEnvironment -Names @('PYTHONPATH') -Snapshot $validatorEnvironment
-  }
+    & $python -m projects.rf_quadrupole_collision_cooling.analysis.resolve_s2_connector_case `
+      --base $baseContract --cases $connectorCases `
+      --case-id $ConnectorCaseId --output $contract
+  } finally { Pop-Location }
+  if ($LASTEXITCODE -ne 0) { throw 'S2 connector-case resolution failed.' }
   $contractDocument = Get-Content -LiteralPath $contract -Raw -Encoding UTF8 | ConvertFrom-Json
   Copy-Item -LiteralPath $dependencyContractSource -Destination $dependencyContract
   Copy-Item -LiteralPath (Join-Path $projectRoot 'config\rf_to_oatof_s1_joint_field.json') -Destination $s1Contract
-  Copy-Item -LiteralPath (Join-Path $projectRoot 'config\resolved_geometry.json') -Destination $rfResolved
+  Copy-Item -LiteralPath (Join-Path $projectRoot 'config\resolved_design_official.json') -Destination $rfResolved
 
   $dependencyDocument = Get-Content -LiteralPath $dependencyContractSource -Raw -Encoding UTF8 | ConvertFrom-Json
   $dependencyIdentities = [ordered]@{}
@@ -111,6 +114,25 @@ try {
   }
   $oaBaseline = $dependencyPaths['oatof_baseline']
   $oaBuilder = $dependencyPaths['oatof_accelerator_geometry_builder']
+  Push-Location $repoRoot
+  try {
+    & $python -m projects.rf_quadrupole_collision_cooling.analysis.resolve_spatial_registration `
+      --stage s2 --stage-contract $contract --interface $interface `
+      --rf-resolved $rfResolved --oatof-baseline $oaBaseline `
+      --source-root $inputDir --output $spatialRegistration --write
+  } finally { Pop-Location }
+  if ($LASTEXITCODE -ne 0) { throw 'S2 spatial-registration resolution failed.' }
+  $spatialDocument = Get-Content -LiteralPath $spatialRegistration -Raw -Encoding UTF8 |
+    ConvertFrom-Json
+  $validatorEnvironment = Save-RfEnvironment -Names @('PYTHONPATH')
+  try {
+    $env:PYTHONPATH = $repoRoot
+    & $python $connectorValidator --contract $contract --reference-root $projectRoot `
+      --resolved-registration $spatialRegistration
+    if ($LASTEXITCODE -ne 0) { throw 'Resolved S2 connector-case contract is invalid.' }
+  } finally {
+    Restore-RfEnvironment -Names @('PYTHONPATH') -Snapshot $validatorEnvironment
+  }
   if ($Particles) {
     $candidate = $contractDocument.functional_candidate
     $sourceRun = Join-Path (Join-Path $artifactRoot 'runs') ([string]$candidate.source_run_id)
@@ -149,17 +171,23 @@ try {
     $particleRowMap = Join-Path $inputDir 'particle_row_map.csv'
     $particleMetadata = Join-Path $inputDir 's2_handoff_metadata.json'
     $sourceCenter = @($contractDocument.nominal_registration.source_exit_center_instrument_mm)
-    $handoffEnvironment = Save-RfEnvironment -Names @('RF_HANDOFF_PROJECT_ROOT')
+    $handoffEnvironment = Save-RfEnvironment -Names @(
+      'RF_HANDOFF_PROJECT_ROOT','PYTHONPATH'
+    )
     try {
       $env:RF_HANDOFF_PROJECT_ROOT = $handoffProjectRoot
+      $env:PYTHONPATH = $repoRoot
       & $python $handoffBuilder --convert --contract $handoffContract `
+        --resolved-registration $spatialRegistration `
         --source-csv $sourceEvents --source-manifest $sourceManifest `
         --canonical-output $particleInput --ion-output $particleIon `
         --row-map-output $particleRowMap --metadata-output $particleMetadata `
         --solver-clock instrument_time --target-origin-mm $sourceCenter[0] $sourceCenter[1] $sourceCenter[2]
       if ($LASTEXITCODE -ne 0) { throw 'S2 canonical particle-source conversion failed.' }
     } finally {
-      Restore-RfEnvironment -Names @('RF_HANDOFF_PROJECT_ROOT') -Snapshot $handoffEnvironment
+      Restore-RfEnvironment -Names @(
+        'RF_HANDOFF_PROJECT_ROOT','PYTHONPATH'
+      ) -Snapshot $handoffEnvironment
     }
     $sourceIdentity = [ordered]@{
       run_id = [string]$candidate.source_run_id
@@ -194,6 +222,9 @@ try {
       dependency_contract = $dependencyContract
       s1_joint_field_contract = $s1Contract
       rf_resolved_geometry = $rfResolved
+      spatial_registration = $spatialRegistration
+      spatial_registration_resolver = $spatialResolver
+      interface_contract = $interface
       oatof_baseline = $oaBaseline
       oatof_accelerator_builder = $oaBuilder
       particle_source = $particleInput
@@ -238,7 +269,9 @@ try {
   $environmentNames = @(
     'RF_OATOF_S2_FIELD_METRICS','RF_OATOF_S2_FIELD_SAMPLES','RF_OATOF_S2_CONTRACT',
     'RF_OATOF_S2_S1_CONTRACT','RF_OATOF_S2_RF_RESOLVED','RF_OATOF_S2_OA_BASELINE',
-    'RF_OATOF_S2_OA_COMSOL_DIR','RF_OATOF_S2_PARTICLE_INPUT','RF_OATOF_S2_PARTICLE_OUTPUT'
+    'RF_OATOF_SPATIAL_REGISTRATION','RF_OATOF_SPATIAL_REGISTRATION_SHA256',
+    'RF_OATOF_S2_OA_COMSOL_DIR',
+    'RF_OATOF_S2_PARTICLE_INPUT','RF_OATOF_S2_PARTICLE_OUTPUT'
   )
   $oldEnvironment = Save-RfEnvironment -Names $environmentNames
   try {
@@ -247,6 +280,10 @@ try {
     $env:RF_OATOF_S2_CONTRACT = $contract
     $env:RF_OATOF_S2_S1_CONTRACT = $s1Contract
     $env:RF_OATOF_S2_RF_RESOLVED = $rfResolved
+    $env:RF_OATOF_SPATIAL_REGISTRATION = $spatialRegistration
+    $env:RF_OATOF_SPATIAL_REGISTRATION_SHA256 = (
+      Get-FileHash -LiteralPath $spatialRegistration -Algorithm SHA256
+    ).Hash
     $env:RF_OATOF_S2_OA_BASELINE = $oaBaseline
     $env:RF_OATOF_S2_OA_COMSOL_DIR = $inputDir
     if ($Particles) {
@@ -261,7 +298,11 @@ try {
   }
 
   $fieldMetrics = Get-Content -LiteralPath $metrics -Raw -Encoding UTF8 | ConvertFrom-Json
+  $expectedSpatialSha256 = (Get-FileHash -LiteralPath $spatialRegistration -Algorithm SHA256).Hash
   if ($fieldMetrics.status -ne 'SOLVED' -or -not [bool]$fieldMetrics.all_probe_values_finite -or
+      [string]$fieldMetrics.frame_id -ne [string]$spatialDocument.instrument_frame_id -or
+      [string]$fieldMetrics.position_unit -ne 'mm' -or
+      [string]$fieldMetrics.spatial_registration_sha256 -ne $expectedSpatialSha256 -or
       [double]$fieldMetrics.rf_off_axis_field_norm_V_per_m -le 0 -or
       [bool]$fieldMetrics.particle_runtime_executed -ne [bool]$Particles -or
       [bool]$fieldMetrics.oa_extraction_pulse_included -or

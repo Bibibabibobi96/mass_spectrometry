@@ -41,13 +41,18 @@ def parse_terminal_log(path: Path, row_map: pd.DataFrame) -> pd.DataFrame:
 
 
 def plot(entry_path: Path, local_path: Path, row_map_path: Path, simion_log: Path,
-         output: Path) -> dict[str, int]:
+         output: Path) -> dict[str, int | str]:
     entry = pd.read_csv(entry_path)
     local = pd.read_csv(local_path)
     row_map = pd.read_csv(row_map_path)
     terminals = parse_terminal_log(simion_log, row_map)
     if len(entry) != 100 or len(local) != 100:
         raise ValueError("loss atlas requires the complete N=100 upstream census")
+    identities = entry[["frame_id", "clock_epoch_id"]].drop_duplicates()
+    if len(identities) != 1 or identities.iloc[0].astype(str).str.strip().eq("").any():
+        raise ValueError("loss atlas requires one frame and clock epoch")
+    frame_id = str(identities.iloc[0]["frame_id"])
+    clock_epoch_id = str(identities.iloc[0]["clock_epoch_id"])
     local_by_id = local.set_index("particle_id")
     entry = entry.copy()
     entry["event"] = entry["particle_id"].map(local_by_id["event"])
@@ -126,13 +131,20 @@ def plot(entry_path: Path, local_path: Path, row_map_path: Path, simion_log: Pat
                  "hits at z≈0; losses at z=-49.929 mm")
     ax.legend(fontsize=8); ax.grid(alpha=0.22); ax.set_aspect("equal", adjustable="datalim")
 
-    figure.suptitle("RF -> oaTOF physical-port loss atlas (N=100, sparse endpoints only)", fontsize=16)
+    figure.suptitle(
+        "RF -> oaTOF physical-port loss atlas (N=100, sparse endpoints only)\n"
+        f"frame={frame_id}; clock epoch={clock_epoch_id}",
+        fontsize=16,
+    )
     figure.tight_layout(rect=(0, 0, 1, 0.965))
     output.parent.mkdir(parents=True, exist_ok=True)
-    figure.savefig(output, dpi=190)
+    figure.savefig(output, format="png", dpi=190)
     plt.close(figure)
-    return {"rf_exit": 100, "inside_port": len(accepted), "local_exit": len(exits),
-            "detector_hit": int(terminals["detector_hit"].sum())}
+    return {
+        "rf_exit": 100, "inside_port": len(accepted), "local_exit": len(exits),
+        "detector_hit": int(terminals["detector_hit"].sum()),
+        "frame_id": frame_id, "clock_epoch_id": clock_epoch_id,
+    }
 
 
 def main() -> None:
@@ -150,6 +162,8 @@ def main() -> None:
             "schema_version": 1,
             "role": "rf_to_oatof_s1_coordinate_loss_atlas",
             "status": "PASS",
+            "frame_id": counts["frame_id"],
+            "clock_epoch_id": counts["clock_epoch_id"],
             "counts": counts,
             "panels": [
                 "physical_port_yz_acceptance",

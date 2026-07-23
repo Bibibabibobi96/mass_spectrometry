@@ -69,7 +69,7 @@ try
     theta=(0:nTheta-1)'*(2*pi/nTheta);
     radius=[]; thetaAll=[];
     for index=1:numel(fractions)
-        radius=[radius;repmat(fractions(index)*g.field_radius_r0,nTheta,1)]; %#ok<AGROW>
+        radius=[radius;repmat(fractions(index)*g.inscribed_radius_r0,nTheta,1)]; %#ok<AGROW>
         thetaAll=[thetaAll;theta]; %#ok<AGROW>
     end
     x=radius.*cos(thetaAll); y=radius.*sin(thetaAll);

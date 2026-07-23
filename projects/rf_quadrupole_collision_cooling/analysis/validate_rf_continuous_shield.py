@@ -28,10 +28,12 @@ def validate(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
 
     geometry = contract["candidate_geometry_mm"]
     rf_geometry = rf["geometry_mm"]
+    enclosure = rf_geometry["enclosure"]
+    interfaces = rf["interfaces_mm"]
     rod_outer = float(rf_geometry["rod_center_radius"]) + float(rf_geometry["rod_radius"])
     expected = {
-        "rf_local_z_min": float(rf_geometry["entrance_plate_z_max"]),
-        "rf_local_z_max": float(rf_geometry["exit_enclosure_z_min"]),
+        "rf_local_z_min": float(interfaces["entrance"]["plate_z_max_mm"]),
+        "rf_local_z_max": float(enclosure["exit_enclosure_z_min_mm"]),
         "rod_outer_extent": rod_outer,
     }
     if geometry.get("cross_section") != "circular_cylinder_coaxial_with_rf_axis":
@@ -90,17 +92,25 @@ def validate(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
         raise ValueError("continuous RF shield 3D global mesh level is not frozen")
     if fringe.get("global_mesh_auto_level_particle_stability_sequence") != [6, 5, 4, 3, 2]:
         raise ValueError("continuous RF shield 3D global refinement sequence changed")
-    if not math.isclose(float(fringe.get("physical_work_region_radius_r0_mm", -1.0)), float(rf_geometry["field_radius_r0"]), abs_tol=1e-12):
+    if not math.isclose(float(fringe.get("physical_work_region_radius_r0_mm", -1.0)), float(rf_geometry["inscribed_radius_r0"]), abs_tol=1e-12):
         raise ValueError("continuous RF shield physical work-region radius changed")
     if not math.isclose(float(fringe.get("local_mesh_partition_radius_mm", -1.0)), 3.6, abs_tol=1e-12):
         raise ValueError("continuous RF shield 3D mesh-partition radius changed")
     if not math.isclose(float(fringe.get("local_mesh_partition_z_min_mm", -1.0)), 81.4, abs_tol=1e-12):
         raise ValueError("continuous RF shield 3D mesh-partition start changed")
-    if not math.isclose(float(fringe.get("local_mesh_partition_z_max_mm", -1.0)), float(rf_geometry["exit_enclosure_front_wall_end_z"]), abs_tol=1e-12):
+    if not math.isclose(float(fringe.get("local_mesh_partition_z_max_mm", -1.0)), float(enclosure["exit_front_wall_end_z_mm"]), abs_tol=1e-12):
         raise ValueError("continuous RF shield 3D mesh-partition end changed")
     if [float(value) for value in fringe.get("local_maximum_element_size_mm", [])] != [0.5, 0.25]:
         raise ValueError("continuous RF shield 3D local mesh sequence is invalid")
-    if [float(value) for value in fringe.get("sample_z_mm", [])] != [45.6, 83.4, 85.4, 87.4, 89.4, 90.2]:
+    expected_sample_z = [
+        45.6,
+        83.4,
+        85.4,
+        87.4,
+        89.4,
+        float(enclosure["exit_front_wall_end_z_mm"]),
+    ]
+    if [float(value) for value in fringe.get("sample_z_mm", [])] != expected_sample_z:
         raise ValueError("continuous RF shield 3D axial sample sequence is invalid")
     if [float(value) for value in fringe.get("sample_radius_fraction_of_r0", [])] != [0.25, 0.5, 0.75, 0.9]:
         raise ValueError("continuous RF shield 3D radial samples are invalid")
@@ -129,7 +139,7 @@ def validate(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
         "rf_phase_rad": 0.0,
         "rf_steps_per_period": 80,
         "maximum_particle_age_us": 80.0,
-        "nominal_handoff_z_mm": float(rf_geometry["exit_enclosure_front_wall_end_z"]),
+        "nominal_handoff_z_mm": float(enclosure["exit_front_wall_end_z_mm"]),
         "handoff_evaluation_inset_mm": 0.001,
     }
     for key, value in expected_transport.items():

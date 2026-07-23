@@ -8,6 +8,7 @@ import json
 import math
 from pathlib import Path
 
+from common.multipole.particle_source_preflight import validate_source
 from common.simion.particle_source import render_source_states, render_standard_beams
 
 AMU_KG = 1.66053906660e-27
@@ -53,53 +54,38 @@ def render_ion11_source_states(source: Path, axial_offset_mm: float = 0.0) -> st
     return render_source_states(states)
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    source = parser.add_mutually_exclusive_group(required=True)
-    source.add_argument("--particles", type=Path, help="canonical multipole particle CSV")
-    source.add_argument("--ion-table", type=Path, help="established eleven-column SIMION ION table")
-    parser.add_argument("--baseline", type=Path)
-    parser.add_argument("--geometry", type=Path)
-    parser.add_argument("--fly2", required=True, type=Path)
-    parser.add_argument("--source-states-lua", required=True, type=Path)
-    parser.add_argument("--axial-offset-mm", type=float, default=0.0)
-    args = parser.parse_args()
-    args.fly2.parent.mkdir(parents=True, exist_ok=True)
-    args.source_states_lua.parent.mkdir(parents=True, exist_ok=True)
-    if args.ion_table:
-        rows = _ion11_rows(args.ion_table)
-        args.fly2.write_text(render_ion11_fly2(args.ion_table, args.axial_offset_mm), encoding="ascii")
-        args.source_states_lua.write_text(
-            render_ion11_source_states(args.ion_table, args.axial_offset_mm), encoding="ascii"
-        )
-        print(f"MULTIPOLE_SIMION_SOURCE=PASS FORMAT=ion11 PARTICLES={len(rows)}")
-        return 0
-    if args.baseline is None or args.geometry is None:
-        parser.error("--baseline and --geometry are required with --particles")
-    baseline = json.loads(args.baseline.read_text(encoding="utf-8-sig"))
-    geometry = json.loads(args.geometry.read_text(encoding="utf-8-sig"))
-    origin = geometry["grounded_enclosure_mm"]["shield_outer_radius"]
-    z_shift = -geometry["grounded_enclosure_mm"]["vacuum_z_min"]
-    mass = float(baseline["particle_source"]["mass_amu"])
-    charge = int(baseline["particle_source"]["charge_state"])
-    rows = list(csv.DictReader(args.particles.open(encoding="utf-8-sig")))
+def render_canonical_source(
+    particles: Path,
+    resolved_design: Path,
+) -> tuple[str, str, int]:
+    """Project canonical particles into the SIMION workbench frame."""
+    resolved = json.loads(resolved_design.read_text(encoding="utf-8-sig"))
+    metadata = validate_source(particles, resolved)
+    mass_amu = float(metadata["mass_amu"])
+    enclosure = resolved["geometry_mm"]["enclosure"]
+    rectangular = enclosure["model"] == "rectangular_reference_enclosure_v1"
+    origin = 0.0 if rectangular else float(enclosure["shield_outer_radius_mm"])
+    z_shift = 0.0 if rectangular else -float(enclosure["vacuum_z_min_mm"])
+    charge = int(resolved["particle_source"]["charge_state"])
+    source_z = float(resolved["interfaces_mm"]["entrance"]["particle_plane_z_mm"])
+    rows = list(csv.DictReader(particles.open(encoding="utf-8-sig")))
     fly = ["particles {", "  coordinates = 0,"]
     states = ["return {"]
     for row in rows:
+        if abs(float(row["z_mm"]) - source_z) > 1e-12:
+            raise ValueError("canonical particle source plane differs from resolved design")
         vx, vy, vz = (float(row[key]) for key in ("vx_m_s", "vy_m_s", "vz_m_s"))
         speed2 = vx * vx + vy * vy + vz * vz
-        ke = 0.5 * mass * AMU_KG * speed2 / E_CHARGE_C
+        ke = 0.5 * mass_amu * AMU_KG * speed2 / E_CHARGE_C
         pa_x = origin + float(row["x_mm"])
         pa_y = origin + float(row["y_mm"])
         pa_z = z_shift + float(row["z_mm"])
-        # Verified quad_monolithic IOB basis: PA x -> WB z,
-        # PA y -> -WB y, PA z -> WB x.
         x, y, z = pa_z, -pa_y, pa_x
         wb_vx, wb_vy, wb_vz = vz, -vy, vx
         tob = float(row["birth_time_s"]) * 1e6
         fly.extend([
             "  standard_beam {",
-            f"    n=1, tob={tob:.12g}, mass={mass:.12g}, charge={charge}, ke={ke:.12g},",
+            f"    n=1, tob={tob:.12g}, mass={mass_amu:.12g}, charge={charge}, ke={ke:.12g},",
             f"    position=vector({x:.12g},{y:.12g},{z:.12g}),",
             f"    direction=vector({wb_vx:.12g},{wb_vy:.12g},{wb_vz:.12g}), cwf=1, color=3",
             "  },",
@@ -110,8 +96,24 @@ def main() -> int:
         )
     fly.append("}\n")
     states.append("}\n")
-    args.fly2.write_text("\n".join(fly), encoding="ascii")
-    args.source_states_lua.write_text("\n".join(states), encoding="ascii")
+    return "\n".join(fly), "\n".join(states), len(rows)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--particles", required=True, type=Path)
+    parser.add_argument("--resolved-design", required=True, type=Path)
+    parser.add_argument("--fly2", required=True, type=Path)
+    parser.add_argument("--source-states-lua", required=True, type=Path)
+    args = parser.parse_args()
+    args.fly2.parent.mkdir(parents=True, exist_ok=True)
+    args.source_states_lua.parent.mkdir(parents=True, exist_ok=True)
+    fly, states, count = render_canonical_source(
+        args.particles, args.resolved_design
+    )
+    args.fly2.write_text(fly, encoding="ascii")
+    args.source_states_lua.write_text(states, encoding="ascii")
+    print(f"MULTIPOLE_SIMION_SOURCE=PASS FORMAT=canonical PARTICLES={count}")
     return 0
 
 

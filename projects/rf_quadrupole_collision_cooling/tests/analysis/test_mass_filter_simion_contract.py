@@ -24,9 +24,10 @@ class MassFilterSimionContractTests(unittest.TestCase):
         self.assertIn("analysis.generate_mass_scan_particle_table", runner)
         self.assertIn("analysis.analyze_simion_mass_scan", runner)
         self.assertLess(runner.index("$expectedParticles = if"), runner.index("minimum_diagnostic_particles"))
-        self.assertIn("$baseTransportMode.numerics.simion_rf_steps_per_period", runner)
-        self.assertIn("$baseTransportMode.static_electrodes_V", runner)
-        self.assertIn("resolved_mass_filter.json", runner)
+        self.assertIn("$numericalMode.numerics.simion_rf_steps_per_period", runner)
+        self.assertIn("$resolved.static_electrodes_V", runner)
+        self.assertNotIn("$resolved.mode", runner)
+        self.assertIn("resolved_design_mass_filter.json", runner)
 
     def test_mass_filter_voltage_contract_is_unambiguous(self) -> None:
         mode = json.loads(

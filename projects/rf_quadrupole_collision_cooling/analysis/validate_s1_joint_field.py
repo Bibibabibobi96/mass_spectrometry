@@ -7,14 +7,12 @@ import math
 from pathlib import Path
 from typing import Any
 
-try:
-    import build_interface_handoff as handoff
-except ModuleNotFoundError:
-    from projects.rf_quadrupole_collision_cooling.analysis import build_interface_handoff as handoff
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONTRACT = PROJECT_ROOT / "config" / "rf_to_oatof_s1_joint_field.json"
+DEFAULT_REGISTRATION = (
+    PROJECT_ROOT / "config" / "resolved_rf_to_oatof_s1_spatial_registration.json"
+)
 
 
 def load(path: Path) -> dict[str, Any]:
@@ -55,29 +53,44 @@ def validate(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
     if experiment.get("formal_baseline_policy", {}).get("formal_baseline_count") != 1:
         raise ValueError("RF-to-oa performance calibration must retain one formal baseline")
     registration = contract["nominal_registration"]
-    source_pose = registration["source_component_pose"]
-    target_pose = registration["target_component_pose"]
-    derived = handoff.derive_target_from_source_pose(
-        source_pose["rotation_component_to_instrument"],
-        source_pose["translation_mm"],
-        target_pose["rotation_component_to_instrument"],
-        target_pose["translation_mm"],
-    )
-    expected_rotation = [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
-    if derived["rotation_source_to_target"] != expected_rotation:
-        raise ValueError("S1 nominal rotation does not map RF +z to oa +x")
-    source_exit = handoff.transform_phase_space(
-        registration["source_exit_center_local_mm"],
-        [0.0, 0.0, 1.0],
-        derived["rotation_source_to_target"],
-        derived["translation_mm"],
-    )
-    target_entry = interface["boundaries"]["target_entry_surface"]["center_mm"]
-    if not close_vector(source_exit["position_mm"], target_entry):
+    target_entry = interface["boundaries"]["target_entry_surface"]
+    spatial = load(DEFAULT_REGISTRATION)
+    if (
+        spatial.get("role") != "resolved_spatial_registration_do_not_edit"
+        or spatial.get("project_semantics", {}).get("stage") != "S1"
+    ):
+        raise ValueError("S1 authoritative spatial registration is invalid")
+    source_pose = spatial["component_poses"]["rf_quadrupole_component"]
+    target_pose = spatial["component_poses"]["oatof_global"]
+    if (
+        registration["source_component_pose"][
+            "rotation_component_to_instrument"
+        ] != source_pose["rotation"]
+        or registration["source_component_pose"]["translation_mm"]
+        != source_pose["translation_mm"]
+        or registration["target_component_pose"][
+            "rotation_component_to_instrument"
+        ] != target_pose["rotation"]
+        or registration["target_component_pose"]["translation_mm"]
+        != target_pose["translation_mm"]
+    ):
+        raise ValueError(
+            "NEEDS_IMPLEMENTATION: S1 pose differs from resolved registration"
+        )
+    source_exit_center = spatial["resolved_surfaces"]["source_exit"][
+        "in_instrument_frame"
+    ]["center_mm"]
+    resolved_target = spatial["resolved_surfaces"]["target_entry"]
+    if target_entry["outward_normal"] != resolved_target["declared"]["normal"]:
+        raise ValueError(
+            "NEEDS_IMPLEMENTATION: interface normal differs from resolved registration"
+        )
+    target_entry_center = target_entry["center_mm"]
+    if not close_vector(source_exit_center, target_entry_center):
         raise ValueError("S1 source exit does not coincide with the oa entry face")
-    if not close_vector(registration["source_exit_center_instrument_mm"], target_entry):
+    if not close_vector(registration["source_exit_center_instrument_mm"], target_entry_center):
         raise ValueError("S1 declared source-exit center differs from the interface contract")
-    if not close_vector(registration["target_entry_center_instrument_mm"], target_entry):
+    if not close_vector(registration["target_entry_center_instrument_mm"], target_entry_center):
         raise ValueError("S1 declared target-entry center differs from the interface contract")
     if float(registration["direct_mating_gap_mm"]) != 0.0:
         raise ValueError("S1 must remain the zero-gap direct-mating reference")
@@ -86,7 +99,9 @@ def validate(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
     source_exit_z = float(interface["boundaries"]["source_exit_surface"]["z_mm"])
     if not math.isclose(float(local["rf_local_z_max_mm"]), source_exit_z, abs_tol=1e-12):
         raise ValueError("S1 RF geometry must be trimmed at the handoff plane")
-    if float(local["rf_local_z_max_mm"]) >= float(rf["geometry_mm"]["exit_enclosure_z_max"]):
+    if float(local["rf_local_z_max_mm"]) >= float(
+        rf["geometry_mm"]["enclosure"]["exit_enclosure_z_max_mm"]
+    ):
         raise ValueError("S1 local domain includes forbidden standalone acceptance hardware")
     if not math.isclose(
         float(local.get("rf_shield_inner_radius_mm", -1.0)),

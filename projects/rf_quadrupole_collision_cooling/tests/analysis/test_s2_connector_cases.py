@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 from projects.rf_quadrupole_collision_cooling.analysis import resolve_s2_connector_case as resolver
+from projects.rf_quadrupole_collision_cooling.analysis import resolve_spatial_registration
 from projects.rf_quadrupole_collision_cooling.analysis import validate_s2_passive_connector as validator
 
 
@@ -23,7 +24,16 @@ class S2ConnectorCaseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "resolved.json"
             path.write_text(__import__("json").dumps(result), encoding="utf-8")
-            validator.validate_contract(path)
+            spatial_path = Path(temp) / "spatial.json"
+            spatial = resolve_spatial_registration.resolve_stage(
+                path,
+                source_root=Path(path.anchor),
+            )
+            spatial_path.write_text(
+                __import__("json").dumps(spatial),
+                encoding="utf-8",
+            )
+            validator.validate_contract(path, registration_path=spatial_path)
 
     def test_nominal_case_reproduces_base_registration(self) -> None:
         base = resolver._load(resolver.DEFAULT_BASE)

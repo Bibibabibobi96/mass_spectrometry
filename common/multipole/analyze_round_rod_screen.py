@@ -1,4 +1,4 @@
-"""Select a provisional circular-rod multipole geometry from 2D field samples."""
+"""Score 2D round-rod field samples without selecting physical geometry."""
 
 from __future__ import annotations
 
@@ -63,11 +63,6 @@ def aggregate_candidate(
     ratio: float, groups: list[dict[str, float]], contract: dict[str, Any]
 ) -> dict[str, Any]:
     radial_order = int(contract["multipole"]["radial_order_n"])
-    r0_mm = float(contract["geometry_mm"]["inscribed_radius_r0"])
-    rod_radius_mm = ratio * r0_mm
-    center_mm = r0_mm + rod_radius_mm
-    electrode_count = 2 * radial_order
-    gap_mm = 2 * center_mm * math.sin(math.pi / electrode_count) - 2 * rod_radius_mm
     harmonic_keys = [
         f"normalized_a{3 * radial_order}_over_a{radial_order}",
         f"normalized_a{5 * radial_order}_over_a{radial_order}",
@@ -88,9 +83,6 @@ def aggregate_candidate(
     score = math.sqrt(sum(value * value for value in means.values()))
     return {
         "rod_radius_ratio": ratio,
-        "rod_radius_mm": rod_radius_mm,
-        "rod_center_radius_mm": center_mm,
-        "minimum_adjacent_surface_gap_mm": gap_mm,
         "main_boundary_amplitude_V": main_mean,
         "boundary_cosine_coefficients_V": signed_cosine,
         "parasitic_harmonic_score": score,
@@ -110,29 +102,27 @@ def analyze(rows: list[dict[str, str]], contract: dict[str, Any]) -> dict[str, A
     for (ratio, _), sample_rows in grouped.items():
         by_ratio[ratio].append(characterize_group(sample_rows, radial_order, r0_mm))
     candidates = [aggregate_candidate(ratio, groups, contract) for ratio, groups in sorted(by_ratio.items())]
-    minimum_gap = float(contract["selection"]["minimum_adjacent_surface_gap_mm"])
     minimum_main = float(contract["selection"]["minimum_main_boundary_amplitude_fraction_of_drive"])
     maximum_spread = float(contract["selection"]["maximum_cross_radius_absolute_harmonic_spread"])
     drive = float(contract["field_solve"]["rod_voltage_zero_to_peak_V"])
-    eligible = [
-        candidate for candidate in candidates
-        if candidate["minimum_adjacent_surface_gap_mm"] >= minimum_gap
-        and candidate["main_boundary_amplitude_V"] >= minimum_main * drive
-        and max(candidate["cross_radius_spread"].values()) <= maximum_spread
-    ]
-    if not eligible:
-        raise ValueError("no circular-rod candidate satisfies the frozen geometry and field constraints")
-    selected = min(eligible, key=lambda candidate: candidate["parasitic_harmonic_score"])
+    for candidate in candidates:
+        candidate["field_metric_checks"] = {
+            "minimum_main_boundary_amplitude": (
+                candidate["main_boundary_amplitude_V"] >= minimum_main * drive
+            ),
+            "maximum_cross_radius_harmonic_spread": (
+                max(candidate["cross_radius_spread"].values()) <= maximum_spread
+            ),
+        }
     return {
         "schema_version": 1,
         "role": "multipole_round_rod_field_screen_metrics",
-        "status": "PASS",
+        "status": "METRICS_ONLY",
         "project_id": contract["project_id"],
         "model_level": "L2",
         "radial_order_n": radial_order,
         "electrode_count": 2 * radial_order,
         "field_solve_drive_V": float(contract["field_solve"]["rod_voltage_zero_to_peak_V"]),
-        "selected_candidate": selected,
         "candidates": candidates,
         "claim_limit": contract["claim_limit"],
     }
@@ -149,10 +139,9 @@ def main() -> None:
         rows = list(csv.DictReader(stream))
     metrics = analyze(rows, contract)
     args.output.write_text(json.dumps(metrics, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    selected = metrics["selected_candidate"]
     print(
         f"ROUND_ROD_SCREEN=PASS PROJECT={metrics['project_id']} "
-        f"RATIO={selected['rod_radius_ratio']:.8g} SCORE={selected['parasitic_harmonic_score']:.6g}"
+        f"CANDIDATES={len(metrics['candidates'])} MODE=METRICS_ONLY"
     )
 
 

@@ -27,6 +27,19 @@ class S2GeometryBuildContractTests(unittest.TestCase):
         self.assertIn("s1.local_domain.rf_shield_inner_radius_mm", builder)
         self.assertIn("s1.local_domain.oatof_downstream_buffer_after_grid2_mm", builder)
         self.assertNotIn("shieldInnerRadius = 19.776", builder)
+        self.assertIn("oa.rings.accelerator_count, interfacePort", builder)
+        self.assertNotIn(
+            "oatof_build_accelerator_geometry(geom, interfacePort)", builder
+        )
+        self.assertIn(
+            "assert_supported_registration(registration, spatial)",
+            builder,
+        )
+        self.assertIn(
+            "spatial.component_poses.rf_quadrupole_component",
+            builder,
+        )
+        self.assertNotIn("expectedSourceRotation", builder)
         for token in forbidden:
             self.assertNotIn(token, builder)
 

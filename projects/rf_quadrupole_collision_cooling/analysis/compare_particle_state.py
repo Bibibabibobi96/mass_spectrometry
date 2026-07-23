@@ -78,6 +78,7 @@ def main() -> None:
     parser.add_argument("--comsol", type=Path, required=True)
     parser.add_argument("--simion", type=Path, required=True)
     parser.add_argument("--resolved", type=Path, required=True)
+    parser.add_argument("--regression-mode", type=Path, required=True)
     parser.add_argument("--interface-mode", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--paired-output", type=Path, required=True)
@@ -85,7 +86,14 @@ def main() -> None:
 
     comsol, simion = load(args.comsol), load(args.simion)
     resolved = json.loads(args.resolved.read_text(encoding="utf-8"))
+    regression_mode = json.loads(args.regression_mode.read_text(encoding="utf-8"))
     interface_mode = json.loads(args.interface_mode.read_text(encoding="utf-8"))
+    if regression_mode.get("mode") != "transport_no_collision":
+        raise ValueError("regression mode identity must be transport_no_collision")
+    if interface_mode.get("mode") != "transport_interface_readiness":
+        raise ValueError("interface mode identity must be transport_interface_readiness")
+    if resolved.get("role") != "multipole_resolved_design_do_not_edit":
+        raise ValueError("resolved physical authority role differs")
     source_ids_c = sorted(particle_id for particle_id, event in comsol if event == "source")
     source_ids_s = sorted(particle_id for particle_id, event in simion if event == "source")
     if source_ids_c != source_ids_s or not source_ids_c:
@@ -135,12 +143,12 @@ def main() -> None:
         "rms_divergence": comparison["rms_divergence_relative_difference"] <= targets["cross_solver_relative_rms_divergence_difference"],
         "mean_energy": comparison["mean_energy_relative_difference"] <= targets["cross_solver_relative_mean_energy_difference"],
     }
-    official = resolved["mode"]["numerics"]
+    regression_numerics = regression_mode["numerics"]
     regression_gates = {
         "particle_identity": len(paired) == particles,
-        "transmission": comparison["transmission_absolute_difference"] <= official["cross_solver_transmission_absolute_tolerance"],
-        "mean_tof": comparison["mean_tof_relative_difference"] <= official["cross_solver_relative_mean_tof_tolerance"],
-        "confinement": max(c_aggregate["max_rod_radius_mm"], s_aggregate["max_rod_radius_mm"]) < resolved["geometry_mm"]["field_radius_r0"],
+        "transmission": comparison["transmission_absolute_difference"] <= regression_numerics["cross_solver_transmission_absolute_tolerance"],
+        "mean_tof": comparison["mean_tof_relative_difference"] <= regression_numerics["cross_solver_relative_mean_tof_tolerance"],
+        "confinement": max(c_aggregate["max_rod_radius_mm"], s_aggregate["max_rod_radius_mm"]) < resolved["geometry_mm"]["inscribed_radius_r0"],
     }
     minimum = interface_mode["numerics"]["minimum_diagnostic_particles"]
     interface_evaluated = particles >= minimum
@@ -156,6 +164,9 @@ def main() -> None:
         "inputs": {
             "comsol_particle_state_sha256": sha256(args.comsol),
             "simion_particle_state_sha256": sha256(args.simion),
+            "resolved_physical_authority_sha256": sha256(args.resolved),
+            "regression_mode_sha256": sha256(args.regression_mode),
+            "interface_mode_sha256": sha256(args.interface_mode),
         },
         "comsol": c_aggregate,
         "simion": s_aggregate,

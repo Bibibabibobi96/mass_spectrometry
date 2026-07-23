@@ -8,12 +8,13 @@
   "toolchains": ["python", "comsol", "simion"],
   "contracts": {
     "baseline": "config/baseline.json",
-    "resolved": null,
+    "resolved": "config/resolved_design.json",
     "analysis": null,
     "interface": "config/finite_3d_transport.json",
-    "execution": null,
-    "design_variables": null,
-    "optimization_envelope": null
+    "execution": "config/execution_profiles.json",
+    "design_profiles": "config/design_profiles.json",
+    "design_variables": "config/design_variables.json",
+    "optimization_envelope": "config/optimization_envelope.json"
   },
   "capabilities": [
     {
@@ -38,7 +39,19 @@
       "status": "static",
       "modes": ["finite_3d_no_collision"],
       "metrics": ["entrance_passed", "exit_passed", "transmission_fraction", "exit_rms_radius", "maximum_rod_radius"],
-      "design_variables": ["rod_radius_ratio", "shield_inner_radius", "entrance_aperture_radius", "exit_aperture_radius", "entrance_connector_length", "exit_connector_length"]
+      "design_variables": [
+        "inscribed_radius_r0", "rod_radius_ratio", "rod_z_min", "rod_z_max",
+        "enclosure_working_region_radius", "vacuum_z_min", "vacuum_z_max",
+        "shield_inner_radius", "shield_outer_radius", "entrance_endcap_z_min",
+        "entrance_endcap_z_max", "exit_endcap_z_min", "exit_endcap_z_max",
+        "entrance_aperture_radius", "entrance_plate_thickness", "entrance_rod_clearance",
+        "entrance_connector_length", "entrance_particle_plane_distance",
+        "exit_aperture_radius", "exit_plate_thickness", "exit_rod_clearance",
+        "exit_connector_length", "exit_particle_plane_distance",
+        "rf_amplitude", "dc_amplitude", "common_mode_offset", "rf_frequency", "rf_phase",
+        "segment_count", "intersegment_gap", "segment_entrance_common_mode",
+        "segment_exit_common_mode", "segment_output_reference"
+      ]
     }
   ],
   "formal_assets": {"status": "none", "types": [], "identity_contract": null},

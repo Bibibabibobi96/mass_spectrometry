@@ -5,9 +5,7 @@ param(
     [double]$SourceAxialOffsetMm = 0.0,
     [string]$ParticleTablePath = '',
     [ValidateSet('transport_interface_readiness','mass_filter_reference')][string]$Mode = 'transport_interface_readiness',
-    [string]$OperatingPoint = 'official_100amu_2eV',
-    [double]$RfPeakV = [double]::NaN,
-    [double]$FrequencyHz = [double]::NaN
+    [string]$OperatingPoint = 'official_100amu_2eV'
 )
 
 Set-StrictMode -Version Latest
@@ -41,8 +39,8 @@ $sourceIonPath = if ([string]::IsNullOrWhiteSpace($ParticleTablePath)) {
 } else { [IO.Path]::GetFullPath($ParticleTablePath) }
 $ionPath = Join-Path $inputDir $(if ($isMassFilter) { 'mass_scan_particles.ion' } else { 'particles.ion' })
 $resolvedContractInput = switch ($Mode) {
-    'transport_interface_readiness' { 'config/resolved_interface_readiness.json' }
-    'mass_filter_reference' { 'config/resolved_mass_filter.json' }
+    'transport_interface_readiness' { 'config/resolved_design_official.json' }
+    'mass_filter_reference' { 'config/resolved_design_mass_filter.json' }
 }
 $modeInput = switch ($Mode) {
     'transport_interface_readiness' { 'config/modes/transport_interface_readiness.json' }
@@ -61,22 +59,16 @@ if ($Mode -eq 'transport_interface_readiness') {
     if ([string]::IsNullOrWhiteSpace($ParticleTablePath) -or $expectedParticles -lt $minimumParticles) {
         throw "Interface-readiness mode requires an explicit particle table with at least $minimumParticles particles."
     }
-    if ([double]::IsNaN($RfPeakV) -or [double]::IsInfinity($RfPeakV)) {
-        throw 'Interface-readiness mode requires an explicit RfPeakV.'
-    }
 }
 
 $frozenBaseline = Join-Path $inputDir 'baseline.json'
 $frozenMode = Join-Path $inputDir 'mode.json'
-$frozenResolved = Join-Path $inputDir 'resolved_contract.json'
+$frozenResolved = Join-Path $inputDir 'resolved_design.json'
 $frozenInterface = Join-Path $inputDir 'interface_contract.json'
-$frozenBaseTransportMode = Join-Path $inputDir 'base_transport_mode.json'
 Copy-Item -LiteralPath (Join-Path $projectRoot 'config\baseline.json') -Destination $frozenBaseline
 Copy-Item -LiteralPath (Join-Path $projectRoot ($modeInput -replace '/', '\')) -Destination $frozenMode
 Copy-Item -LiteralPath (Join-Path $projectRoot ($resolvedContractInput -replace '/', '\')) -Destination $frozenResolved
 Copy-Item -LiteralPath (Join-Path $projectRoot 'config\interface_contract.json') -Destination $frozenInterface
-Copy-Item -LiteralPath (Join-Path $projectRoot 'config\modes\transport_no_collision.json') -Destination $frozenBaseTransportMode
-$baseTransportMode = Get-Content -LiteralPath $frozenBaseTransportMode -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($isMassFilter) {
     $massScanMetadata = Join-Path $inputDir 'mass_scan_particles.json'
     & $python -m projects.rf_quadrupole_collision_cooling.analysis.generate_mass_scan_particle_table `
@@ -85,21 +77,6 @@ if ($isMassFilter) {
 } else {
     Copy-Item -LiteralPath $sourceIonPath -Destination $ionPath
 }
-$familyOperatingContract = Join-Path $inputDir 'family_operating_contract.json'
-$familyResolverArguments = @(
-    '-m','common.multipole.resolve_family_operating_contract',
-    '--adapter','quadrupole','--baseline',$frozenBaseline,
-    '--mode',$frozenMode,'--output',$familyOperatingContract
-)
-if (-not [double]::IsNaN($RfPeakV) -and -not [double]::IsInfinity($RfPeakV)) {
-    $familyResolverArguments += @('--rf-amplitude-v-per-group', [string]$RfPeakV)
-}
-if (-not [double]::IsNaN($FrequencyHz) -and -not [double]::IsInfinity($FrequencyHz)) {
-    $familyResolverArguments += @('--frequency-hz', [string]$FrequencyHz)
-}
-& $python @familyResolverArguments
-if ($LASTEXITCODE -ne 0) { throw 'Shared multipole operating-contract resolution failed.' }
-$operating = Get-Content -LiteralPath $familyOperatingContract -Raw -Encoding UTF8 | ConvertFrom-Json
 if (-not (Test-Path -LiteralPath $ionPath -PathType Leaf)) { throw "Particle table is missing: $ionPath" }
 if ($isMassFilter) {
     $expectedParticles = @(Get-Content -LiteralPath $ionPath -Encoding UTF8 | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count
@@ -118,21 +95,18 @@ try {
 if ($LASTEXITCODE -ne 0) { throw 'Fixed FLY2 generation failed.' }
 
 $resolved = Get-Content -LiteralPath $frozenResolved -Raw -Encoding UTF8 | ConvertFrom-Json
-$physicalMode = $resolved.mode
+$numericalMode = Get-Content -LiteralPath $frozenMode -Raw -Encoding UTF8 | ConvertFrom-Json
 $geometry = $resolved.geometry_mm
+$enclosure = $geometry.enclosure
 $interface = Get-Content -LiteralPath $frozenInterface -Raw -Encoding UTF8 | ConvertFrom-Json
 if (-not $PSBoundParameters.ContainsKey('RfStepsPerPeriod')) {
-    $RfStepsPerPeriod = if ($physicalMode.numerics.PSObject.Properties.Name -contains 'simion_rf_steps_per_period') {
-        $physicalMode.numerics.simion_rf_steps_per_period
-    } else { $baseTransportMode.numerics.simion_rf_steps_per_period }
+    $RfStepsPerPeriod = $numericalMode.numerics.simion_rf_steps_per_period
 }
 if (-not $PSBoundParameters.ContainsKey('TrajectoryQuality')) {
-    $TrajectoryQuality = if ($physicalMode.numerics.PSObject.Properties.Name -contains 'simion_trajectory_quality') {
-        $physicalMode.numerics.simion_trajectory_quality
-    } else { $baseTransportMode.numerics.simion_trajectory_quality }
+    $TrajectoryQuality = $numericalMode.numerics.simion_trajectory_quality
 }
-if ([double]::IsNaN($RfPeakV) -or [double]::IsInfinity($RfPeakV)) { $RfPeakV = $operating.voltage.rf_amplitude_V_zero_to_peak_per_group }
-if ([double]::IsNaN($FrequencyHz) -or [double]::IsInfinity($FrequencyHz)) { $FrequencyHz = $operating.voltage.frequency_Hz }
+$RfPeakV = [double]$resolved.drive.rf_amplitude_V_zero_to_peak_per_group
+$FrequencyHz = [double]$resolved.drive.frequency_Hz
 $particleStateCsv = Join-Path $resultDir 'particle_state.csv'
 $trajectoryCsv = Join-Path $resultDir 'trajectory_samples.csv'
 $summaryJson = Join-Path $resultDir 'solver_summary.json'
@@ -140,16 +114,15 @@ $runConfigPath = Join-Path $runDir 'run_config.json'
 $runConfigLua = Join-Path $runDir 'run_config.lua'
 $iobReport = Join-Path $logDir 'simion_iob_contract.txt'
 $stateContractReport = Join-Path $resultDir 'particle_state_contract.json'
-$phaseDeg = $operating.voltage.phase_rad*180/[Math]::PI
-$dcAmplitudeV = $operating.voltage.dc_amplitude_V_per_group
-$axisVoltageV = $operating.voltage.common_mode_offset_V
-$staticElectrodes = if ($physicalMode.PSObject.Properties.Name -contains 'static_electrodes_V') {
-    $physicalMode.static_electrodes_V
-} else { $baseTransportMode.static_electrodes_V }
+$phaseDeg = [double]$resolved.drive.phase_rad*180/[Math]::PI
+$dcAmplitudeV = [double]$resolved.drive.dc_amplitude_V_per_group
+$axisVoltageV = [double]$resolved.drive.common_mode_offset_V
+$staticElectrodes = $resolved.static_electrodes_V
+$simionCellMm = 0.2
 $runConfig = [ordered]@{
     schema_version=1; role='rf_quadrupole_simion_run_config'; run_id=$RunId
     project='rf_quadrupole_collision_cooling'; mode=$Mode; project_root=$projectRoot
-    inputs=[ordered]@{baseline=$frozenBaseline; base_transport_mode=$frozenBaseTransportMode; family_operating_contract=$familyOperatingContract; resolved_contract=$frozenResolved; interface_contract=$frozenInterface; mode=$frozenMode; particle_table=$ionPath; source_states=$sourceStatesLua}
+    inputs=[ordered]@{baseline=$frozenBaseline; resolved_design=$frozenResolved; interface_contract=$frozenInterface; mode=$frozenMode; particle_table=$ionPath; source_states=$sourceStatesLua}
     output_dir=$resultDir; candidate_dir=$candidateDir; run_dir=$runDir
     rf_steps_per_period=$RfStepsPerPeriod; trajectory_quality=$TrajectoryQuality
     source_axial_offset_mm=$SourceAxialOffsetMm; operating_point=$OperatingPoint
@@ -166,17 +139,17 @@ return {
   particle_state_csv=[[$caseState]], trajectory_csv=[[$caseTrajectory]], summary_json=[[$caseSummary]],
   trajectory_quality=$TrajectoryQuality, rf_steps_per_period=$RfStepsPerPeriod,
   rf_peak_v=$RfPeakV, rf_scale=1, axial_scale=0, dc_amplitude_v=$dcAmplitudeV, frequency_hz=$FrequencyHz, phase_deg=$phaseDeg,
-  axis_voltage_v=$axisVoltageV, entrance_voltage_v=$($staticElectrodes.entrance_plate),
-  exit_voltage_v=$($staticElectrodes.exit_enclosure), detector_voltage_v=$($staticElectrodes.detector),
+  axis_voltage_v=$axisVoltageV, entrance_voltage_v=$($staticElectrodes.entrance_plate_and_connector),
+  exit_voltage_v=$($staticElectrodes.exit_enclosure_and_connector), detector_voltage_v=$($staticElectrodes.detector),
   ground_electrode_id=0, output_electrode_id=0, output_reference_v=0,
-  maximum_time_us=$($physicalMode.numerics.maximum_time_us),
-  trajectory_plane_step_mm=$($geometry.simion_cell_mm), rod_z_min_mm=$($geometry.rod_z_min), rod_z_max_mm=$($geometry.rod_z_max),
+  maximum_time_us=$($numericalMode.numerics.maximum_time_us),
+  trajectory_plane_step_mm=$simionCellMm, rod_z_min_mm=$($geometry.rod_z_min), rod_z_max_mm=$($geometry.rod_z_max),
   rod_exit_plane_mm=$($interface.planes.rod_exit.z_mm), handoff_plane_mm=$($interface.planes.handoff.z_mm),
-  detector_crossing_threshold_mm=$($resolved.coordinate_convention.detector_plane_z_mm-$interface.solver_numerics.simion_terminal_surface_backoff_cells*$geometry.simion_cell_mm),
-  detector_radius_mm=$($geometry.detector_radius), radial_escape_radius_mm=$($geometry.exit_enclosure_outer_half_width),
-  expected_pa_nx=$([int][Math]::Round($geometry.exit_enclosure_outer_half_width/$geometry.simion_cell_mm)+1),
-  expected_pa_ny=$([int][Math]::Round($geometry.exit_enclosure_outer_half_width/$geometry.simion_cell_mm)+1),
-  expected_pa_nz=$([int][Math]::Round($geometry.model_z_span/$geometry.simion_cell_mm)+1), expected_pa_cell_mm=$($geometry.simion_cell_mm)
+  detector_crossing_threshold_mm=$($resolved.interfaces_mm.exit.particle_plane_z_mm-$interface.solver_numerics.simion_terminal_surface_backoff_cells*$simionCellMm),
+  detector_radius_mm=$($enclosure.detector_radius_mm), radial_escape_radius_mm=$($enclosure.outer_half_width_mm),
+  expected_pa_nx=$([int][Math]::Round($enclosure.outer_half_width_mm/$simionCellMm)+1),
+  expected_pa_ny=$([int][Math]::Round($enclosure.outer_half_width_mm/$simionCellMm)+1),
+  expected_pa_nz=$([int][Math]::Round(($enclosure.vacuum_z_max_mm-$enclosure.vacuum_z_min_mm)/$simionCellMm)+1), expected_pa_cell_mm=$simionCellMm
 }
 "@
 }

@@ -37,7 +37,6 @@ trap {
 $modePath = if ([string]::IsNullOrWhiteSpace($ModePath)) { Join-Path $projectRoot 'config\modes\rf_handoff_pulse.json' } else { [IO.Path]::GetFullPath($ModePath) }
 $prepare = Join-Path $projectRoot 'analysis\prepare_rf_handoff_projection.py'
 $analyze = Join-Path $projectRoot 'analysis\analyze_rf_handoff_pulse.py'
-$builder = Join-Path $repoRoot 'projects\rf_quadrupole_collision_cooling\analysis\build_oatof_handoff.py'
 $formalDir = Join-Path $artifactRoot 'formal\simion'
 $formalIob = Join-Path $formalDir 'oatof_ideal_grounded.iob'
 $formalProgramSource = Join-Path $projectRoot 'simion\workbench\formal\oatof_ideal_grounded.lua'
@@ -45,7 +44,7 @@ $pulseProgram = Join-Path $projectRoot 'simion\workbench\candidates\oatof_handof
 $pulseProgramBuilder = Join-Path $projectRoot 'analysis\build_handoff_pulse_program.py'
 $simionAnalyzer = Join-Path $projectRoot 'simion\workbench\analyze_ideal_field_log.ps1'
 
-& $python $prepare --mode $modePath --check-mode
+& $python -m projects.oa_tof.analysis.prepare_rf_handoff_projection --mode $modePath --check-mode
 if ($LASTEXITCODE -ne 0) { throw 'Pulse mode static validation failed.' }
 $mode = Get-Content -LiteralPath $modePath -Raw -Encoding UTF8 | ConvertFrom-Json
 $case = $mode.source_cases[0]
@@ -58,17 +57,29 @@ $rowMap = Join-Path $inputDir 'row_map.csv'
 $metadata = Join-Path $inputDir 'handoff_metadata.json'
 $request = Join-Path $inputDir 'consumer_request.json'
 $targetOrigin = @($mode.projection.target_origin_mm | ForEach-Object { [double]$_ })
-$builderArgs = @($builder,'--contract',$contract,'--convert','--solver-clock','instrument_time',
+$builderArgs = @('--contract',$contract,'--convert','--solver-clock','instrument_time',
   '--source-csv',$sourceCsv,'--source-manifest',$sourceManifest,'--canonical-output',$canonical,
   '--ion-output',$ion,'--row-map-output',$rowMap,'--metadata-output',$metadata,
   '--target-origin-mm',[string]$targetOrigin[0],[string]$targetOrigin[1],[string]$targetOrigin[2])
-& $python @builderArgs
+Push-Location $repoRoot
+try {
+  & $python -m projects.rf_quadrupole_collision_cooling.analysis.build_oatof_handoff `
+    @builderArgs
+} finally { Pop-Location }
 if ($LASTEXITCODE -ne 0) { throw 'Shared-clock handoff build failed.' }
-& $python $prepare --mode $modePath --validate-bundle --canonical $canonical --ion $ion `
+& $python -m projects.oa_tof.analysis.prepare_rf_handoff_projection `
+  --mode $modePath --validate-bundle --canonical $canonical --ion $ion `
   --row-map $rowMap --metadata $metadata --output $request
 if ($LASTEXITCODE -ne 0) { throw 'Pulse consumer rejected the handoff bundle.' }
 
 $resolved = Get-Content -LiteralPath (Join-Path $projectRoot 'config\resolved_geometry.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+$resolvedPath = Join-Path $projectRoot 'config\resolved_geometry.json'
+$analysisContractPath = Join-Path $projectRoot 'config\analysis_contract.json'
+$analysisContract = Get-Content -LiteralPath $analysisContractPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$instrumentFrameId = [string]$analysisContract.coordinate_frames.instrument.frame_id
+if ([string]$resolved.coordinate_convention.frame_id -ne $instrumentFrameId) {
+  throw 'Pulse diagnostic frame authority differs from resolved geometry.'
+}
 $sourceCenterX = [double]$resolved.coordinate_convention.accelerator_axis_x
 $timingJson = & $python (Join-Path $projectRoot 'analysis\solver_diagnostics.py') pulse-timing `
   --canonical $canonical --source-center-x-mm $sourceCenterX --target-origin-x-mm $targetOrigin[0]
@@ -121,24 +132,34 @@ $metrics = Join-Path $resultDir 'rf_handoff_pulse_metrics.json'
 $events = Join-Path $resultDir 'rf_handoff_pulse_events.csv'
 $timeline = Join-Path $resultDir 'rf_handoff_pulse_timeline.png'
 $snapshot = Join-Path $resultDir 'rf_handoff_pulse_snapshot.png'
-& $python $analyze --timed $outputs.timed --control $outputs.held_off --mode $modePath `
+& $python -m projects.oa_tof.analysis.analyze_rf_handoff_pulse `
+  --timed $outputs.timed --control $outputs.held_off --mode $modePath `
   --canonical $canonical --row-map $rowMap `
   --pulse-log (Join-Path $logDir 'timed.stdout.log') --output $metrics `
+  --resolved $resolvedPath --analysis-contract $analysisContractPath `
   --events-output $events --timeline-output $timeline --snapshot-output $snapshot
 if ($LASTEXITCODE -ne 0) { throw 'Shared-clock pulse functional gate failed.' }
 $result = Get-Content -LiteralPath $metrics -Raw -Encoding UTF8 | ConvertFrom-Json
+if ([string]$result.coordinate_contract.frame_id -ne $instrumentFrameId -or
+    [string]$result.coordinate_contract.position_unit -ne 'mm' -or
+    [string]::IsNullOrWhiteSpace([string]$result.clock_epoch_id) -or
+    [string]$result.figure_contract.format -ne 'png' -or
+    [int]$result.figure_contract.dpi -ne 180) {
+  throw 'Shared-clock pulse diagnostics emitted invalid frame, epoch or figure metadata.'
+}
 
 $runConfig = Join-Path $runDir 'run_config.json'
 [ordered]@{schema_version=1;role='oa_tof_rf_handoff_pulse_run_config';run_id=$RunId;project='oa_tof';
-  mode='rf_handoff_pulse';inputs=[ordered]@{mode=$modePath;handoff_contract=$contract;formal_simion_iob=$formalIob};
+  mode='rf_handoff_pulse';inputs=[ordered]@{mode=$modePath;handoff_contract=$contract;resolved_geometry=$resolvedPath;analysis_contract=$analysisContractPath;formal_simion_iob=$formalIob};
   projection=[ordered]@{target_origin_mm=$targetOrigin;entry_to_source_center_mm=$entryToCenterMm};
   pulse=[ordered]@{instrument_time_us=$pulseTimeUs;width_us=$pulseWidthUs;waveform='ideal_rectangular';control='held_off'};
+  diagnostics=[ordered]@{frame_id=$instrumentFrameId;clock_epoch_id=[string]$result.clock_epoch_id;figure_format='png';figure_dpi=180};
   execution=[ordered]@{formal_assets_modified=$false;physical_interface_modeled=$false}} |
   ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $runConfig -Encoding UTF8
 $summary = Join-Path $runDir 'summary.json'
 [ordered]@{schema_version=1;role='oa_tof_rf_handoff_pulse_run_summary';status='success';
   candidate_decision=$result.status;functional_link_status=$result.status;physical_link_status='DEFERRED';
-  resolution_claim_allowed=$false;metrics=$metrics} | ConvertTo-Json -Depth 5 |
+  resolution_claim_allowed=$false;frame_id=$instrumentFrameId;clock_epoch_id=[string]$result.clock_epoch_id;metrics=$metrics} | ConvertTo-Json -Depth 5 |
   Set-Content -LiteralPath $summary -Encoding UTF8
 $manifest = Join-Path $runDir 'run_manifest.json'
 $manifestArgs = @((Join-Path $repoRoot 'common\contracts\write_run_manifest.py'),'--run-config',$runConfig,

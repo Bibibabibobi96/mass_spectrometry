@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/multipole_evidence_evaluation.schema.json",
+  "title": "Multipole transport evidence evaluation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "role",
+    "status",
+    "project_id",
+    "design_profile_id",
+    "evaluation",
+    "checks"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "multipole_transport_evidence_evaluation"},
+    "status": {"enum": ["PASS", "FAIL"]},
+    "project_id": {"type": "string", "minLength": 1},
+    "design_profile_id": {"type": "string", "minLength": 1},
+    "evaluation": {"enum": ["rf_vs_zero_rf", "axial_drop_vs_zero_drop"]},
+    "checks": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {"type": "boolean"}
+    }
+  }
+}

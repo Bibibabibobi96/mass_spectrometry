@@ -61,17 +61,10 @@ local axial_scale
 local segmented_rod_electrodes
 
 local function set_electrode_voltage(electrode_id, voltage)
-  if electrode_id == 1 then adj_elect01 = voltage
-  elseif electrode_id == 2 then adj_elect02 = voltage
-  elseif electrode_id == 3 then adj_elect03 = voltage
-  elseif electrode_id == 4 then adj_elect04 = voltage
-  elseif electrode_id == 5 then adj_elect05 = voltage
-  elseif electrode_id == 6 then adj_elect06 = voltage
-  elseif electrode_id == 7 then adj_elect07 = voltage
-  elseif electrode_id == 8 then adj_elect08 = voltage
-  elseif electrode_id == 9 then adj_elect09 = voltage
-  elseif electrode_id == 10 then adj_elect10 = voltage
-  else error('unsupported SIMION electrode id ' .. tostring(electrode_id)) end
+  assert(type(electrode_id) == 'number' and electrode_id == math.floor(electrode_id)
+    and electrode_id >= 1 and electrode_id <= 1000,
+    'SIMION electrode id must be an integer from 1 through 1000')
+  adj_elect[electrode_id] = voltage
 end
 
 -- Apply the explicit run configuration while the Program is loaded.  SIMION
@@ -81,6 +74,7 @@ transport_rf_peak_v = assert(run_config.rf_peak_v)
 transport_dc_amplitude_v = assert(run_config.dc_amplitude_v)
 transport_frequency_hz = assert(run_config.frequency_hz)
 transport_phase_deg = assert(run_config.phase_deg)
+transport_waveform = assert(run_config.waveform)
 transport_axis_voltage_v = assert(run_config.axis_voltage_v)
 transport_entrance_voltage_v = assert(run_config.entrance_voltage_v)
 transport_exit_voltage_v = assert(run_config.exit_voltage_v)
@@ -92,6 +86,8 @@ assert(transport_dc_amplitude_v >= 0, 'run config dc_amplitude_v must be non-neg
 assert(transport_frequency_hz > 0, 'run config frequency_hz must be positive')
 assert(transport_rf_steps_per_period > 0, 'run config rf_steps_per_period must be positive')
 assert(transport_max_elapsed_us > 0, 'run config maximum_time_us must be positive')
+assert(transport_waveform == 'sine' or transport_waveform == 'cosine',
+  'run config waveform must be sine or cosine')
 trajectory_plane_step_mm = assert(run_config.trajectory_plane_step_mm)
 rod_z_min_mm = assert(run_config.rod_z_min_mm)
 rod_z_max_mm = assert(run_config.rod_z_max_mm)
@@ -115,10 +111,17 @@ if segmented_rod_electrodes then
   assert(#segmented_rod_electrodes >= 4, 'segmented rod electrode table is incomplete')
   assert(run_config.ground_electrode_id, 'ground electrode id is missing')
   assert(run_config.output_electrode_id, 'output electrode id is missing')
+  assert(run_config.ground_reference_v, 'ground reference voltage is missing')
   assert(run_config.output_reference_v, 'output reference voltage is missing')
 end
 local omega = transport_frequency_hz * 1E-6 * 2 * math.pi
 local phase = transport_phase_deg * math.pi / 180
+
+local function rf_wave(angle)
+  if transport_waveform == 'sine' then return math.sin(angle) end
+  if transport_waveform == 'cosine' then return math.cos(angle) end
+  error('unsupported RF waveform')
+end
 
 local function canonical_state(t, x, y, z, vx, vy, vz, ke)
   if axial_axis == 'x' then
@@ -202,18 +205,28 @@ end
 
 function segment.init_p_values()
   if segmented_rod_electrodes then
-    set_electrode_voltage(run_config.ground_electrode_id, 0)
+    set_electrode_voltage(run_config.ground_electrode_id,
+      axial_scale * run_config.ground_reference_v)
     set_electrode_voltage(run_config.output_electrode_id,
       axial_scale * run_config.output_reference_v)
+    if run_config.detector_electrode_id and run_config.detector_electrode_id > 0 then
+      set_electrode_voltage(run_config.detector_electrode_id,
+        axial_scale * transport_detector_voltage_v)
+    end
     return
   end
-  adj_elect03 = transport_entrance_voltage_v
-  if run_config.has_electrode_4 ~= false then adj_elect04 = transport_exit_voltage_v end
-  if run_config.has_electrode_5 ~= false then adj_elect05 = transport_detector_voltage_v end
+  local static_scale = run_config.scale_static_boundaries and axial_scale or 1
+  adj_elect03 = static_scale * transport_entrance_voltage_v
+  if run_config.has_electrode_4 ~= false then
+    adj_elect04 = static_scale * transport_exit_voltage_v
+  end
+  if run_config.has_electrode_5 ~= false then
+    adj_elect05 = static_scale * transport_detector_voltage_v
+  end
 end
 
 function segment.fast_adjust()
-  local rf = rf_scale * transport_rf_peak_v * math.sin(ion_time_of_flight * omega + phase)
+  local rf = rf_scale * transport_rf_peak_v * rf_wave(ion_time_of_flight * omega + phase)
   local differential = transport_dc_amplitude_v + rf
   if segmented_rod_electrodes then
     for _, electrode in ipairs(segmented_rod_electrodes) do
@@ -221,9 +234,14 @@ function segment.fast_adjust()
       set_electrode_voltage(electrode.electrode_id,
         axial_scale * electrode.common_mode_v + polarity * differential)
     end
-    set_electrode_voltage(run_config.ground_electrode_id, 0)
+    set_electrode_voltage(run_config.ground_electrode_id,
+      axial_scale * run_config.ground_reference_v)
     set_electrode_voltage(run_config.output_electrode_id,
       axial_scale * run_config.output_reference_v)
+    if run_config.detector_electrode_id and run_config.detector_electrode_id > 0 then
+      set_electrode_voltage(run_config.detector_electrode_id,
+        axial_scale * transport_detector_voltage_v)
+    end
     return
   end
   adj_elect01 = transport_axis_voltage_v + differential
@@ -333,8 +351,10 @@ function segment.terminate_run()
   local summary_path = assert(run_config.summary_json, 'run config summary_json is missing')
   local summary = assert(io.open(summary_path, 'w'))
   summary:write(string.format(
-    '{\n  "solver": "SIMION",\n  "mode": "%s",\n  "operating_point": "%s",\n  "collision_model": "none",\n  "particles": %d,\n  "detector_plane_crossings": %d,\n  "hits": %d,\n  "transmission": %.12g,\n  "rf_scale": %.12g,\n  "rf_peak_V": %.12g,\n  "dc_amplitude_V_per_group": %.12g,\n  "frequency_Hz": %.12g,\n  "rf_steps_per_period": %.12g\n}\n',
-    run_config.mode, run_config.operating_point, sim_ions_count, crossings, hits, hits/sim_ions_count,
+    '{\n  "solver": "SIMION",\n  "mode": "%s",\n  "operating_point": "%s",\n  "parent_resolved_design_sha256": "%s",\n  "collision_model": "none",\n  "particles": %d,\n  "detector_plane_crossings": %d,\n  "hits": %d,\n  "transmission": %.12g,\n  "rf_scale": %.12g,\n  "rf_peak_V": %.12g,\n  "dc_amplitude_V_per_group": %.12g,\n  "frequency_Hz": %.12g,\n  "rf_steps_per_period": %.12g\n}\n',
+    run_config.mode, run_config.operating_point,
+    assert(run_config.parent_resolved_design_sha256, 'parent resolved-design hash is missing'),
+    sim_ions_count, crossings, hits, hits/sim_ions_count,
     rf_scale, transport_rf_peak_v, transport_dc_amplitude_v, transport_frequency_hz, transport_rf_steps_per_period))
   summary:close()
   print(string.format('MULTIPOLE_STATUS particles=%d crossings=%d hits=%d transmission=%.12g',

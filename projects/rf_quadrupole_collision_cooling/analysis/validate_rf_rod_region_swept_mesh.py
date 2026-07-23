@@ -28,8 +28,8 @@ def validate(path: Path = CONTRACT_PATH) -> dict:
         "z_max": float(shield["three_dimensional_fringe_field_screen"]["local_mesh_partition_z_min_mm"]),
         "length": float(shield["three_dimensional_fringe_field_screen"]["local_mesh_partition_z_min_mm"]) - float(g["rod_z_min"]),
         "shield_inner_radius": 19.776,
-        "physical_work_radius_r0": float(g["field_radius_r0"]),
-        "diagnostic_radius_max": 0.9 * float(g["field_radius_r0"]),
+        "physical_work_radius_r0": float(g["inscribed_radius_r0"]),
+        "diagnostic_radius_max": 0.9 * float(g["inscribed_radius_r0"]),
     }
     for key, value in expected.items():
         if not math.isclose(float(geometry.get(key, -1.0)), value, abs_tol=1e-12):

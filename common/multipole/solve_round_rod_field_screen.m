@@ -1,14 +1,13 @@
 % Solve frozen 2D circular-rod multipole candidates and export potential samples.
 
 reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
-baselinePath = getenv('MULTIPOLE_BASELINE');
-familyOperatingPath = getenv('MULTIPOLE_FAMILY_OPERATING');
+resolvedDesignPath = getenv('MULTIPOLE_RESOLVED_DESIGN');
 contractPath = getenv('MULTIPOLE_ROUND_ROD_SCREEN');
 outputCsv = getenv('MULTIPOLE_ROUND_ROD_SAMPLES');
-assert(~isempty(reportPath) && ~isempty(baselinePath) && ~isempty(familyOperatingPath) && ...
+assert(~isempty(reportPath) && ~isempty(resolvedDesignPath) && ...
     ~isempty(contractPath) && ~isempty(outputCsv), ...
     'Multipole round-rod screen environment is incomplete.');
-assert(isfile(baselinePath) && isfile(familyOperatingPath) && isfile(contractPath), ...
+assert(isfile(resolvedDesignPath) && isfile(contractPath), ...
     'Multipole round-rod screen inputs are missing.');
 
 fid = fopen(reportPath, 'w');
@@ -17,18 +16,20 @@ cleanup = onCleanup(@() fclose(fid));
 fprintf(fid, 'TASK=MULTIPOLE_ROUND_ROD_FIELD_SCREEN\n');
 
 try
-    baseline = jsondecode(fileread(baselinePath));
-    familyOperating = jsondecode(fileread(familyOperatingPath));
+    resolved = jsondecode(fileread(resolvedDesignPath));
     contract = jsondecode(fileread(contractPath));
-    n = familyOperating.identity.radial_order_n;
-    electrodeCount = familyOperating.identity.electrode_count;
+    assert(strcmp(resolved.role,'multipole_resolved_design_do_not_edit'), ...
+        'L2 field screen requires the canonical multipole resolved design.');
+    n = resolved.identity.radial_order_n;
+    electrodeCount = resolved.identity.electrode_count;
     assert(electrodeCount == 2*n && n >= 3, ...
         'The L2 screen requires a high-order 2n-pole contract.');
-    assert(electrodeCount == baseline.multipole.electrode_count, ...
-        'Baseline and L2 electrode counts differ.');
+    assert(electrodeCount == contract.multipole.electrode_count && ...
+        n == contract.multipole.radial_order_n, ...
+        'Resolved design and L2 screen identity differ.');
     r0 = contract.geometry_mm.inscribed_radius_r0;
-    assert(abs(r0-familyOperating.geometry_mm.r0) < 1e-12, ...
-        'L2 field radius differs from the shared family operating contract.');
+    assert(abs(r0-resolved.geometry_mm.inscribed_radius_r0) < 1e-12, ...
+        'L2 field radius differs from the governed resolved design.');
     ratios = contract.geometry_mm.rod_radius_ratio_sweep(:);
     radii = contract.sampling.radius_fraction_of_r0(:) * r0;
     thetaCount = contract.sampling.azimuth_samples_per_radius;

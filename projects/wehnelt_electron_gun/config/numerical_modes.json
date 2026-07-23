@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "role": "wehnelt_electron_gun_numerical_modes",
+  "project_id": "wehnelt_electron_gun",
+  "modes": {
+    "build_only_smoke": {
+      "execution_mode": "build_only",
+      "evidence_kind": "build_smoke_only",
+      "candidate_evidence_allowed": false,
+      "minimum_evidence_particle_count": null,
+      "mesh": {
+        "automatic_level": 3,
+        "filament_surface_hmax_mm": 0.03,
+        "filament_surface_hmin_mm": 0.005,
+        "maximum_element_growth_rate": 1.3,
+        "element_type": "FreeTet"
+      },
+      "particle_time_ns": {
+        "start": 0.0,
+        "step": 0.1,
+        "end": 40.0
+      },
+      "reporting": {
+        "field_image_width_px": 1200,
+        "field_image_height_px": 800,
+        "trajectory_image_width_px": 1200,
+        "trajectory_image_height_px": 900,
+        "electrostatic_axis_samples_z_mm": [
+          1.4,
+          2.0,
+          8.0,
+          13.9,
+          14.5,
+          15.1,
+          17.9
+        ]
+      }
+    },
+    "functional_reference": {
+      "execution_mode": "full",
+      "evidence_kind": "functional_reference",
+      "candidate_evidence_allowed": true,
+      "minimum_evidence_particle_count": 100,
+      "mesh": {
+        "automatic_level": 3,
+        "filament_surface_hmax_mm": 0.03,
+        "filament_surface_hmin_mm": 0.005,
+        "maximum_element_growth_rate": 1.3,
+        "element_type": "FreeTet"
+      },
+      "particle_time_ns": {
+        "start": 0.0,
+        "step": 0.1,
+        "end": 40.0
+      },
+      "reporting": {
+        "field_image_width_px": 1200,
+        "field_image_height_px": 800,
+        "trajectory_image_width_px": 1200,
+        "trajectory_image_height_px": 900,
+        "electrostatic_axis_samples_z_mm": [
+          1.4,
+          2.0,
+          8.0,
+          13.9,
+          14.5,
+          15.1,
+          17.9
+        ]
+      }
+    }
+  }
+}

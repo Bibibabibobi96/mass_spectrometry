@@ -22,10 +22,11 @@ def validate(path: Path = CONTRACT_PATH) -> dict:
     resolved = load(PROJECT_ROOT / contract["inputs"]["resolved_geometry"])
     uniform = load(PROJECT_ROOT / contract["inputs"]["uniform_mesh_contract"])
     g = resolved["geometry_mm"]
+    enclosure = g["enclosure"]
     geometry = contract["geometry_mm"]
     expected = {
         "model_z_min": 0.0,
-        "model_z_max": float(g["exit_enclosure_front_wall_end_z"]),
+        "model_z_max": float(enclosure["exit_front_wall_end_z_mm"]),
         "shield_inner_radius": 19.776,
         "uniform_region_z_min": float(g["rod_z_min"]) + 4.0,
         "uniform_region_z_max": 81.4,

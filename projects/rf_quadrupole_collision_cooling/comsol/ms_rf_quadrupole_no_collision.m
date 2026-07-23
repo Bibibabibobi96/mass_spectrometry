@@ -22,23 +22,16 @@ assert(strcmp(runConfig.project, 'rf_quadrupole_collision_cooling') && ...
     any(strcmp(runConfig.mode, {'transport_interface_readiness','mass_filter_reference'})), ...
     'RF quadrupole run-config project or mode mismatch.');
 runMode = runConfig.mode;
-resolvedPath=fullfile(projectRoot,'config','resolved_geometry.json');
-if isfield(runConfig,'inputs') && isfield(runConfig.inputs,'resolved_contract')
-    resolvedPath=runConfig.inputs.resolved_contract;
-    if ~isfile(resolvedPath), resolvedPath=fullfile(projectRoot,resolvedPath); end
-end
+assert(isfield(runConfig,'inputs') && isfield(runConfig.inputs,'resolved_design'), ...
+    'Run config must freeze a governed resolved design.');
+resolvedPath=runConfig.inputs.resolved_design;
+if ~isfile(resolvedPath), resolvedPath=fullfile(projectRoot,resolvedPath); end
 resolved = load_rf_quadrupole_contract(resolvedPath);
-baseline = resolved; source = resolved.particle_source; mode = resolved.mode;
-assert(isfield(runConfig.inputs,'family_operating_contract'), ...
-    'Run config must freeze the shared multipole operating contract.');
-operating = jsondecode(fileread(runConfig.inputs.family_operating_contract));
-assert(operating.schema_version==1 && strcmp(operating.role,'rf_multipole_normalized_operating_contract') && ...
-    strcmp(operating.identity.project_id,'rf_quadrupole_collision_cooling') && ...
-    operating.identity.radial_order_n==2 && operating.identity.electrode_count==4, ...
-    'Shared multipole operating contract identity mismatch.');
-assert(abs(operating.geometry_mm.r0-baseline.geometry_mm.field_radius_r0)<1e-12 && ...
-    abs(operating.geometry_mm.effective_length-baseline.geometry_mm.rod_length)<1e-12, ...
-    'Shared multipole operating geometry differs from the resolved quadrupole.');
+baseline = resolved; source = resolved.particle_source;
+assert(isfield(runConfig.inputs,'mode'),'Run config must freeze numerical mode settings.');
+modePath=runConfig.inputs.mode;
+if ~isfile(modePath), modePath=fullfile(projectRoot,modePath); end
+mode=jsondecode(fileread(modePath));
 if isfield(runConfig, 'run_id'), runLabel = runConfig.run_id; end
 if isfield(runConfig, 'operating_point'), operatingPoint = runConfig.operating_point; end
 if isfield(runConfig, 'particle_table_path'), ionPath = runConfig.particle_table_path; end
@@ -50,19 +43,19 @@ if isfield(runConfig, 'save_model'), saveModel = logical(runConfig.save_model); 
 if isfield(runConfig, 'write_detailed_outputs'), writeDetailedOutputs = logical(runConfig.write_detailed_outputs); end
 comsolOutputDir = runConfig.comsol_dir; resultsOutputDir = runConfig.results_dir;
 isMassFilter=strcmp(runMode,'mass_filter_reference');
-drive=operating.voltage;
+drive=resolved.drive;
 assert(strcmp(drive.waveform,'sine'),'Quadrupole COMSOL modes require the shared sine-wave contract.');
 rfPeakV=drive.rf_amplitude_V_zero_to_peak_per_group;
 rfPhaseRad=drive.phase_rad;
 dcV=drive.dc_amplitude_V_per_group;
 axisV=drive.common_mode_offset_V;
 rfFrequencyHz=drive.frequency_Hz;
-staticEntranceV=0; staticExitV=0; staticDetectorV=0;
-if isMassFilter
-    staticEntranceV=mode.static_electrodes_V.entrance_plate;
-    staticExitV=mode.static_electrodes_V.exit_enclosure;
-    staticDetectorV=mode.static_electrodes_V.detector;
-end
+staticElectrodes=resolved.static_electrodes_V;
+assert(strcmp(staticElectrodes.role,'rectangular_reference_static_electrodes'), ...
+    'Unsupported static-electrode role.');
+staticEntranceV=staticElectrodes.entrance_plate_and_connector;
+staticExitV=staticElectrodes.exit_enclosure_and_connector;
+staticDetectorV=staticElectrodes.detector;
 assert(meshAuto > 0 && isfinite(meshAuto), 'COMSOL mesh-auto level must be positive.');
 if isempty(meshHmaxMm) || ~isscalar(meshHmaxMm) || ~(meshHmaxMm > 0 && isfinite(meshHmaxMm))
     meshHmaxMm = NaN;
@@ -85,10 +78,11 @@ geom = comp.geom.create('geom1',3);
 geom.lengthUnit('mm');
 geom.label('SIMION built-in quad monolithic geometry');
 
-g = baseline.geometry_mm; rodArray = baseline.rod_array_mm; rods = rodArray.rods;
-interfaces = baseline.interface_layout_mm;
+g = baseline.geometry_mm; enclosure = g.enclosure;
+rodArray = g.rod_array; rods = rodArray.rods;
+interfaces = baseline.interfaces_mm;
 p = model.param;
-p.set('r0',sprintf('%.12g[mm]',g.field_radius_r0),'Inter-rod field radius');
+p.set('r0',sprintf('%.12g[mm]',g.inscribed_radius_r0),'Inter-rod field radius');
 p.set('r_rod',sprintf('%.12g[mm]',g.rod_radius),'Circular rod radius');
 p.set('R_center',sprintf('%.12g[mm]',g.rod_center_radius),'Rod center radius');
 p.set('z_rod_min',sprintf('%.12g[mm]',g.rod_z_min));
@@ -119,12 +113,12 @@ end
 
 geom.feature.create('vacuum','Block');
 geom.feature('vacuum').label('Reference PA vacuum envelope');
-geom.feature('vacuum').set('size',{sprintf('%.12g[mm]',2*g.exit_enclosure_outer_half_width),sprintf('%.12g[mm]',2*g.exit_enclosure_outer_half_width),sprintf('%.12g[mm]',g.model_z_span)});
-geom.feature('vacuum').set('pos',{sprintf('%.12g[mm]',-g.exit_enclosure_outer_half_width),sprintf('%.12g[mm]',-g.exit_enclosure_outer_half_width),'0'});
+geom.feature('vacuum').set('size',{sprintf('%.12g[mm]',2*enclosure.outer_half_width_mm),sprintf('%.12g[mm]',2*enclosure.outer_half_width_mm),sprintf('%.12g[mm]',enclosure.vacuum_z_max_mm-enclosure.vacuum_z_min_mm)});
+geom.feature('vacuum').set('pos',{sprintf('%.12g[mm]',-enclosure.outer_half_width_mm),sprintf('%.12g[mm]',-enclosure.outer_half_width_mm),sprintf('%.12g[mm]',enclosure.vacuum_z_min_mm)});
 
 geom.feature.create('ent_outer','Block');
-geom.feature('ent_outer').set('size',{sprintf('%.12g[mm]',2*g.exit_enclosure_outer_half_width),sprintf('%.12g[mm]',2*g.exit_enclosure_outer_half_width),sprintf('%.12g[mm]',interfaces.entrance.plate_z_max_mm-interfaces.entrance.plate_z_min_mm)});
-geom.feature('ent_outer').set('pos',{sprintf('%.12g[mm]',-g.exit_enclosure_outer_half_width),sprintf('%.12g[mm]',-g.exit_enclosure_outer_half_width),sprintf('%.12g[mm]',interfaces.entrance.plate_z_min_mm)});
+geom.feature('ent_outer').set('size',{sprintf('%.12g[mm]',2*enclosure.outer_half_width_mm),sprintf('%.12g[mm]',2*enclosure.outer_half_width_mm),sprintf('%.12g[mm]',interfaces.entrance.plate_z_max_mm-interfaces.entrance.plate_z_min_mm)});
+geom.feature('ent_outer').set('pos',{sprintf('%.12g[mm]',-enclosure.outer_half_width_mm),sprintf('%.12g[mm]',-enclosure.outer_half_width_mm),sprintf('%.12g[mm]',interfaces.entrance.plate_z_min_mm)});
 geom.feature.create('ent_hole','Cylinder');
 geom.feature('ent_hole').set('r',sprintf('%.12g[mm]',interfaces.entrance.aperture_radius_mm));
 geom.feature('ent_hole').set('h',sprintf('%.12g[mm]',interfaces.entrance.plate_z_max_mm-interfaces.entrance.plate_z_min_mm));
@@ -136,15 +130,15 @@ geom.feature('entrance').selection('input2').set({'ent_hole'});
 geom.feature('entrance').set('selresult','on');
 
 geom.feature.create('exit_outer','Block');
-geom.feature('exit_outer').set('size',{sprintf('%.12g[mm]',2*g.exit_enclosure_outer_half_width),sprintf('%.12g[mm]',2*g.exit_enclosure_outer_half_width),sprintf('%.12g[mm]',g.exit_enclosure_z_max-g.exit_enclosure_z_min)});
-geom.feature('exit_outer').set('pos',{sprintf('%.12g[mm]',-g.exit_enclosure_outer_half_width),sprintf('%.12g[mm]',-g.exit_enclosure_outer_half_width),sprintf('%.12g[mm]',g.exit_enclosure_z_min)});
+geom.feature('exit_outer').set('size',{sprintf('%.12g[mm]',2*enclosure.outer_half_width_mm),sprintf('%.12g[mm]',2*enclosure.outer_half_width_mm),sprintf('%.12g[mm]',enclosure.exit_enclosure_z_max_mm-enclosure.exit_enclosure_z_min_mm)});
+geom.feature('exit_outer').set('pos',{sprintf('%.12g[mm]',-enclosure.outer_half_width_mm),sprintf('%.12g[mm]',-enclosure.outer_half_width_mm),sprintf('%.12g[mm]',enclosure.exit_enclosure_z_min_mm)});
 geom.feature.create('exit_inner','Block');
-geom.feature('exit_inner').set('size',{sprintf('%.12g[mm]',2*g.exit_enclosure_inner_half_width),sprintf('%.12g[mm]',2*g.exit_enclosure_inner_half_width),sprintf('%.12g[mm]',g.exit_enclosure_z_max-g.exit_enclosure_front_wall_end_z)});
-geom.feature('exit_inner').set('pos',{sprintf('%.12g[mm]',-g.exit_enclosure_inner_half_width),sprintf('%.12g[mm]',-g.exit_enclosure_inner_half_width),sprintf('%.12g[mm]',g.exit_enclosure_front_wall_end_z)});
+geom.feature('exit_inner').set('size',{sprintf('%.12g[mm]',2*enclosure.inner_half_width_mm),sprintf('%.12g[mm]',2*enclosure.inner_half_width_mm),sprintf('%.12g[mm]',enclosure.exit_enclosure_z_max_mm-enclosure.exit_front_wall_end_z_mm)});
+geom.feature('exit_inner').set('pos',{sprintf('%.12g[mm]',-enclosure.inner_half_width_mm),sprintf('%.12g[mm]',-enclosure.inner_half_width_mm),sprintf('%.12g[mm]',enclosure.exit_front_wall_end_z_mm)});
 geom.feature.create('exit_hole','Cylinder');
-geom.feature('exit_hole').set('r',sprintf('%.12g[mm]',g.exit_aperture_radius));
-geom.feature('exit_hole').set('h',sprintf('%.12g[mm]',g.exit_enclosure_z_max-g.exit_enclosure_z_min));
-geom.feature('exit_hole').set('pos',{'0','0',sprintf('%.12g[mm]',g.exit_enclosure_z_min)});
+geom.feature('exit_hole').set('r',sprintf('%.12g[mm]',interfaces.exit.aperture_radius_mm));
+geom.feature('exit_hole').set('h',sprintf('%.12g[mm]',enclosure.exit_enclosure_z_max_mm-enclosure.exit_enclosure_z_min_mm));
+geom.feature('exit_hole').set('pos',{'0','0',sprintf('%.12g[mm]',enclosure.exit_enclosure_z_min_mm)});
 geom.feature.create('exit_enclosure','Difference');
 geom.feature('exit_enclosure').label('Reference exit enclosure');
 geom.feature('exit_enclosure').selection('input').set({'exit_outer'});
@@ -153,8 +147,8 @@ geom.feature('exit_enclosure').set('selresult','on');
 
 geom.feature.create('detector','Cylinder');
 geom.feature('detector').label('Reference detector plate');
-geom.feature('detector').set('r',sprintf('%.12g[mm]',g.detector_radius));
-geom.feature('detector').set('h',sprintf('%.12g[mm]',g.detector_thickness));
+geom.feature('detector').set('r',sprintf('%.12g[mm]',enclosure.detector_radius_mm));
+geom.feature('detector').set('h',sprintf('%.12g[mm]',enclosure.detector_thickness_mm));
 detectorZ=interfaces.exit.particle_plane_z_mm;
 geom.feature('detector').set('pos',{'0','0',sprintf('%.12g[mm]',detectorZ)});
 geom.feature('detector').set('selresult','on');
@@ -269,7 +263,7 @@ for i=1:nP
     if ~isempty(k)
         crossedDetectorPlane(i)=true;
         arrivalRadius(i)=radial(k,i);
-        if arrivalRadius(i)<=g.detector_radius
+        if arrivalRadius(i)<=enclosure.detector_radius_mm
             hit(i)=true;
             arrival(i)=pd.t(k)*1e6;
         end
@@ -284,9 +278,9 @@ result=struct('solver','COMSOL','mode',runMode,'operating_point',operatingPoint,
     'source_axial_offset_mm',sourceAxialOffsetMm,'mass_Th',source.mass_amu,'rf_peak_V',rfPeakV,'dc_per_group_V',dcV, ...
     'axis_common_mode_V',axisV,'static_entrance_V',staticEntranceV,'static_exit_V',staticExitV,'static_detector_V',staticDetectorV, ...
     'run_label',runLabel);
-primaryMetrics=summarizeDetectorEnergy(pd,detectorZ,g.detector_radius,source.mass_amu);
+primaryMetrics=summarizeDetectorEnergy(pd,detectorZ,enclosure.detector_radius_mm,source.mass_amu);
 result.mean_output_energy_eV=primaryMetrics.mean_output_energy_eV;
-transportGateFailed=~isMassFilter && (result.transmission<mode.numerics.minimum_expected_transmission || result.max_hit_rod_radius_mm>=mode.numerics.maximum_allowed_radius_fraction_r0*g.field_radius_r0);
+transportGateFailed=~isMassFilter && (result.transmission<mode.numerics.minimum_expected_transmission || result.max_hit_rod_radius_mm>=mode.numerics.maximum_allowed_radius_fraction_r0*g.inscribed_radius_r0);
 if collisionPresent || transportGateFailed
     error('COMSOL transport/confinement gate failed: transmission=%.6g maxHitRodRadius=%.6g',result.transmission,result.max_hit_rod_radius_mm);
 end
@@ -334,7 +328,7 @@ for i=1:nP
     elseif terminalState.t_s-ions(i,1)*1e-6 >= mode.numerics.maximum_time_us*1e-6-1e-12
         terminalStatus='timeout'; terminalReason='timeout';
     elseif terminalZ(i)<0, terminalReason='backward_escape';
-    elseif terminalRadius>g.exit_enclosure_outer_half_width, terminalReason='radial_escape';
+    elseif terminalRadius>enclosure.outer_half_width_mm, terminalReason='radial_escape';
     end
     stateRows(end+1,:)=particleStateRow(i,'terminal',terminalStatus,terminalReason,terminalState,ions(i,1)*1e-6,rfFrequencyHz,rfPhaseRad, ...
         source.mass_amu,terminalRadius,maxRodRadius(i)); %#ok<AGROW>

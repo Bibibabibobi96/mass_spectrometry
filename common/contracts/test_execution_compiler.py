@@ -35,7 +35,13 @@ class ExecutionCompilerTests(unittest.TestCase):
         return request
 
     def test_approved_supported_rf_request_is_execution_ready(self):
-        result = self.compile_request(self.approved_rf_request())
+        result = self.compile_request(
+            self.approved_rf_request(),
+            {
+                "particle_source_path": "C:/data/source.csv",
+                "evidence_contract_path": "C:/data/evidence.json",
+            },
+        )
         self.assertEqual(result["status"], "EXECUTION_READY")
         self.assertTrue(result["safe_to_execute"])
         self.assertEqual(len(result["commands"]), 5)
@@ -45,7 +51,13 @@ class ExecutionCompilerTests(unittest.TestCase):
         request = self.approved_rf_request()
         request["status"] = "proposed"
         request["approval"] = None
-        result = self.compile_request(request)
+        result = self.compile_request(
+            request,
+            {
+                "particle_source_path": "C:/data/source.csv",
+                "evidence_contract_path": "C:/data/evidence.json",
+            },
+        )
         self.assertEqual(result["status"], "AWAITING_APPROVAL")
         self.assertFalse(result["safe_to_execute"])
 
@@ -102,9 +114,15 @@ class ExecutionCompilerTests(unittest.TestCase):
         request["target"]["mode"] = "transport_interface_readiness"
         result = self.compile_request(request)
         self.assertEqual(result["status"], "NEEDS_RUNTIME_INPUTS")
-        ready = self.compile_request(request, {"particle_table_path": "C:/data/source.ion", "rf_peak_v": "139.81792"})
+        ready = self.compile_request(
+            request,
+            {
+                "particle_source_path": "C:/data/source.csv",
+                "evidence_contract_path": "C:/data/evidence.json",
+            },
+        )
         self.assertEqual(ready["status"], "EXECUTION_READY")
-        self.assertIn("C:/data/source.ion", ready["commands"][1]["argv"])
+        self.assertIn("C:/data/source.csv", ready["commands"][1]["argv"])
 
 
 if __name__ == "__main__":

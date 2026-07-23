@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "role": "multipole_design_profile_registry",
+  "project_id": "rf_hexapole_ion_guide",
+  "family_id": "rf_multipole_ion_optics",
+  "profiles": [
+    {
+      "design_profile_id": "baseline_finite_3d",
+      "design_request": "config/requests/baseline.json",
+      "design_variables": "config/design_variables.json",
+      "optimization_envelope": "config/optimization_envelope.json",
+      "sha256": {
+        "design_request": "43CA98CC60ADB7102207F025840552E9D87CEA4C99F1ED1D2670B6F3EAE13CAA",
+        "design_variables": "A8AA781648F560B94F6DF8BA145D60B4BFE14B9E5E7CC1219C91E2B12B8F406A",
+        "optimization_envelope": "1B6DF8758375F9F9B2534B03B4307EEF438A74545FC4A7697CB81BC708B4948C"
+      },
+      "identity": {
+        "project_id": "rf_hexapole_ion_guide",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 3,
+        "electrode_count": 6
+      },
+      "topology": {
+        "enclosure_role": "full_length_grounded_shield",
+        "segmentation_strategy": "uniform",
+        "axial_drive_topology": "segmented_rod_axial_acceleration"
+      }
+    },
+    {
+      "design_profile_id": "endplate_acceleration_reference",
+      "design_request": "config/requests/endplate.json",
+      "design_variables": "config/design_variables_endplate.json",
+      "optimization_envelope": "config/optimization_envelope_endplate.json",
+      "sha256": {
+        "design_request": "1EEDEAEBF7B1D637CEC37D33B3A5FE2E3C5314E1CEB86BE2ACC1D506C4CE03CA",
+        "design_variables": "30E171582F25C5E5A58FFFE794E4877727FA6E1E04E7E433EE82558B426BF82B",
+        "optimization_envelope": "41A6A6F39C6CBDB63098106D67164639898C52439999AE90CA4601CC461EC324"
+      },
+      "identity": {
+        "project_id": "rf_hexapole_ion_guide",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 3,
+        "electrode_count": 6
+      },
+      "topology": {
+        "enclosure_role": "full_length_grounded_shield",
+        "segmentation_strategy": "off",
+        "axial_drive_topology": "endplate_potential_step"
+      }
+    }
+  ]
+}

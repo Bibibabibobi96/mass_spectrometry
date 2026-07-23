@@ -36,6 +36,10 @@ def analyze(source_summary_path: Path, canonical_path: Path, ion_path: Path,
     ion_rows = [line for line in ion_path.read_text(encoding="utf-8-sig").splitlines() if line.strip()]
     if not canonical or len({len(canonical), len(mapping), len(downstream), len(ion_rows)}) != 1:
         raise ValueError("S3 downstream state and adapter censuses are inconsistent")
+    identities = {(row["frame_id"], row["clock_epoch_id"]) for row in canonical}
+    if len(identities) != 1 or any(not value for value in next(iter(identities))):
+        raise ValueError("S3 canonical state must bind one non-empty frame and clock epoch")
+    frame_id, clock_epoch_id = next(iter(identities))
 
     solver_ids = {int(row["solver_row_index"]): int(row["particle_id"]) for row in mapping}
     canonical_ids = {int(row["particle_id"]) for row in canonical}
@@ -80,6 +84,8 @@ def analyze(source_summary_path: Path, canonical_path: Path, ion_path: Path,
         "maximum_simion_initial_position_residual_mm": initial_residual,
         "maximum_detector_clock_residual_us": clock_residual,
         "pulse": {"start_us": pulse_time_us, "width_us": pulse_width_us},
+        "frame_id": frame_id,
+        "clock_epoch_id": clock_epoch_id,
         "checks": checks,
         "s3_stage_passed": False,
         "resolution_claim_allowed": False,
@@ -119,10 +125,13 @@ def plot(result: dict[str, object], downstream_path: Path, output: Path,
     axes[1].grid(alpha=0.22)
     if crossings:
         axes[1].legend(fontsize=8)
-    figure.suptitle("RF quadrupole to oaTOF S3 functional connection")
+    figure.suptitle(
+        "RF quadrupole to oaTOF S3 functional connection\n"
+        f"frame={result['frame_id']}; clock epoch={result['clock_epoch_id']}"
+    )
     figure.tight_layout()
     output.parent.mkdir(parents=True, exist_ok=True)
-    figure.savefig(output, dpi=190)
+    figure.savefig(output, format="png", dpi=190)
     plt.close(figure)
 
 

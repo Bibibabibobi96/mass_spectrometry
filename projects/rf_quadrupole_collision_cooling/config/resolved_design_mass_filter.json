@@ -1,0 +1,182 @@
+{
+  "schema_version": 1,
+  "role": "multipole_resolved_design_do_not_edit",
+  "compiler": {
+    "name": "common.multipole.compile_design_request",
+    "version": 1
+  },
+  "governance": {
+    "design_variables_sha256": "2051B29E8E47D934BC52DAD40AFA81B37B1C433327E5A1E58B47C1F8DB704834",
+    "optimization_envelope_sha256": "E517AD79E7898827F9C8980F44CCF19C3BAB6D7B0555FFDEA4C31F5AF48FC988",
+    "design_request_file_sha256": "7CA8F98D5391700FDFBDF934994B9C8A58EF56B77163F1B71859C2EF2058F450"
+  },
+  "request": {
+    "request_id": "quadrupole_mass_filter_reference",
+    "sha256": "DB546550D163AC4B7561A0CA8F3201F2993BB1E59FDE2E3B9E52707319120FBE"
+  },
+  "sources": [
+    {
+      "label": "design_request",
+      "path": "projects/rf_quadrupole_collision_cooling/config/requests/mass_filter.json",
+      "sha256": "7CA8F98D5391700FDFBDF934994B9C8A58EF56B77163F1B71859C2EF2058F450"
+    },
+    {
+      "label": "design_variables",
+      "path": "projects/rf_quadrupole_collision_cooling/config/design_variables_nonsegmented.json",
+      "sha256": "2051B29E8E47D934BC52DAD40AFA81B37B1C433327E5A1E58B47C1F8DB704834"
+    },
+    {
+      "label": "optimization_envelope",
+      "path": "projects/rf_quadrupole_collision_cooling/config/optimization_envelope_mass_filter.json",
+      "sha256": "E517AD79E7898827F9C8980F44CCF19C3BAB6D7B0555FFDEA4C31F5AF48FC988"
+    }
+  ],
+  "identity": {
+    "project_id": "rf_quadrupole_collision_cooling",
+    "family_id": "rf_multipole_ion_optics",
+    "radial_order_n": 2,
+    "electrode_count": 4
+  },
+  "units": {
+    "length": "mm",
+    "voltage": "V",
+    "frequency": "Hz",
+    "phase": "rad",
+    "energy": "eV"
+  },
+  "coordinate": {
+    "coordinate_id": "multipole.cartesian.z_axis.v1",
+    "axial_axis": "+z",
+    "orientation_rad": 0.0
+  },
+  "geometry_mm": {
+    "inscribed_radius_r0": 4.0,
+    "rod_radius_ratio": 1.148,
+    "rod_radius": 4.592,
+    "rod_center_radius": 8.591999999999999,
+    "rod_z_min": 5.8,
+    "rod_z_max": 85.4,
+    "rod_length": 79.60000000000001,
+    "enclosure": {
+      "model": "rectangular_reference_enclosure_v1",
+      "role": "downstream_local_reference_enclosure",
+      "working_region_radius_mm": 3.6,
+      "vacuum_z_min_mm": 0.0,
+      "vacuum_z_max_mm": 95.2,
+      "outer_half_width_mm": 7.6,
+      "inner_half_width_mm": 7.2,
+      "exit_enclosure_z_min_mm": 89.4,
+      "exit_enclosure_z_max_mm": 95.2,
+      "exit_front_wall_end_z_mm": 90.2,
+      "detector_radius_mm": 3.6,
+      "detector_thickness_mm": 0.4
+    },
+    "rod_array": {
+      "inscribed_radius_r0": 4.0,
+      "rod_radius": 4.592,
+      "rod_center_radius": 8.591999999999999,
+      "rod_length": 79.60000000000001,
+      "rods": [
+        {
+          "rod_id": 1,
+          "electrode_group": 1,
+          "angle_rad": 0.0,
+          "center_x_mm": 8.591999999999999,
+          "center_y_mm": 0.0,
+          "radius_mm": 4.592,
+          "z_min_mm": 5.8,
+          "z_max_mm": 85.4
+        },
+        {
+          "rod_id": 2,
+          "electrode_group": 2,
+          "angle_rad": 1.5707963267948966,
+          "center_x_mm": 5.261082649137029e-16,
+          "center_y_mm": 8.591999999999999,
+          "radius_mm": 4.592,
+          "z_min_mm": 5.8,
+          "z_max_mm": 85.4
+        },
+        {
+          "rod_id": 3,
+          "electrode_group": 1,
+          "angle_rad": 3.141592653589793,
+          "center_x_mm": -8.591999999999999,
+          "center_y_mm": 1.0522165298274057e-15,
+          "radius_mm": 4.592,
+          "z_min_mm": 5.8,
+          "z_max_mm": 85.4
+        },
+        {
+          "rod_id": 4,
+          "electrode_group": 2,
+          "angle_rad": 4.71238898038469,
+          "center_x_mm": -1.5783247947411086e-15,
+          "center_y_mm": -8.591999999999999,
+          "radius_mm": 4.592,
+          "z_min_mm": 5.8,
+          "z_max_mm": 85.4
+        }
+      ]
+    }
+  },
+  "interfaces_mm": {
+    "entrance": {
+      "aperture_radius_mm": 1.2,
+      "plate_z_min_mm": 0.9999999999999998,
+      "plate_z_max_mm": 1.7999999999999998,
+      "connector_length_mm": 0.0,
+      "connector_z_min_mm": 0.9999999999999998,
+      "connector_z_max_mm": 0.9999999999999998,
+      "particle_plane_z_mm": -2.220446049250313e-16,
+      "connector_shape": "rectangular_bore"
+    },
+    "exit": {
+      "aperture_radius_mm": 3.6,
+      "plate_z_min_mm": 89.4,
+      "plate_z_max_mm": 90.2,
+      "connector_length_mm": 0.0,
+      "connector_z_min_mm": 90.2,
+      "connector_z_max_mm": 90.2,
+      "particle_plane_z_mm": 95.2,
+      "connector_shape": "rectangular_bore"
+    }
+  },
+  "drive": {
+    "waveform": "sine",
+    "rf_amplitude_V_zero_to_peak_per_group": 139.81792,
+    "dc_amplitude_V_per_group": 22.763014939677756,
+    "common_mode_offset_V": -8.0,
+    "frequency_Hz": 1100000.0,
+    "phase_rad": 0.0
+  },
+  "axial_drive": {
+    "topology": "none",
+    "source_reference_V": 0.0,
+    "output_reference_V": -100.0,
+    "predicted_energy_gain_eV": 100.0,
+    "predicted_output_energy_eV": 102.0
+  },
+  "static_electrodes_V": {
+    "role": "rectangular_reference_static_electrodes",
+    "entrance_plate_and_connector": 0.0,
+    "exit_enclosure_and_connector": -100.0,
+    "detector": -1500.0
+  },
+  "particle_source": {
+    "energy_model": {
+      "kind": "bounded_distribution",
+      "minimum_energy_eV": 1.8,
+      "maximum_energy_eV": 2.2,
+      "nominal_energy_eV": 2.0,
+      "authority": "config/official_particle_source.json"
+    },
+    "charge_state": 1
+  },
+  "segmentation": {
+    "strategy": "off",
+    "axial_acceleration": null,
+    "segmented_rod_array": null
+  },
+  "resolved_sha256": "C2BF903763C59D934F416AC552E654207BC0C3E136AF75BC0F7C1BC8CCF5F05C"
+}

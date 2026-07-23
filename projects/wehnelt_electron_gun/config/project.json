@@ -7,11 +7,11 @@
   "lifecycle_status": "prototype",
   "toolchains": ["comsol", "matlab"],
   "contracts": {
-    "baseline": null,
-    "resolved": null,
+    "baseline": "config/baseline.json",
+    "resolved": "config/resolved_model.json",
     "analysis": null,
     "interface": null,
-    "execution": null,
+    "execution": "config/execution_profiles.json",
     "design_variables": null,
     "optimization_envelope": null
   },
@@ -20,7 +20,7 @@
       "capability_id": "wehnelt_thermal_electron_transport",
       "function": "electron_transport",
       "status": "prototype",
-      "modes": [],
+      "modes": ["build_only_smoke"],
       "metrics": ["collection_efficiency", "beam_current", "loss_fraction"],
       "design_variables": []
     }
@@ -31,9 +31,9 @@
     "identity_contract": null
   },
   "known_gaps": [
-    "Geometry, voltage, temperature, particle, and numerical parameters remain embedded in MATLAB",
-    "No baseline or resolved machine contract",
+    "The functional_reference mode has no governed N>=100 solver runner or current evidence",
     "Final particle model is not reopened and recomputed under the current GUI gate",
-    "Historical collection efficiency is not a current formal result"
+    "Historical collection efficiency is not a current formal result",
+    "No interface contract to the downstream EI source has been frozen"
   ]
 }

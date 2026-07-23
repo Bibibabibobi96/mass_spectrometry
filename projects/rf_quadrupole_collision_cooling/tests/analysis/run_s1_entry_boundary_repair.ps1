@@ -35,15 +35,21 @@ $ion = Join-Path $resultDir 'rf_exit_at_physical_oatof_entry.ion'
 $rowMap = Join-Path $resultDir 'row_map.csv'
 $metadata = Join-Path $resultDir 'handoff_metadata.json'
 $repair = Join-Path $resultDir 'entry_boundary_repair.json'
-& $python $builder `
-  --source-csv (Join-Path $source 'results\rf_hybrid_mesh_n100_events.csv') `
-  --source-manifest $sourceManifest `
-  --project-root $projectRoot `
-  --handoff-contract (Join-Path $projectRoot 'config\rf_to_oatof_handoff.json') `
-  --joint-contract (Join-Path $projectRoot 'config\rf_to_oatof_s1_joint_field.json') `
-  --canonical-output $canonical --ion-output $ion --row-map-output $rowMap `
-  --metadata-output $metadata --summary-output $repair `
-  --legacy-canonical (Join-Path $legacy 'inputs\canonical_rf_exit_at_oatof_entry.csv')
+$previousPythonPath = $env:PYTHONPATH
+try {
+  $env:PYTHONPATH = $repoRoot
+  & $python $builder `
+    --source-csv (Join-Path $source 'results\rf_hybrid_mesh_n100_events.csv') `
+    --source-manifest $sourceManifest `
+    --project-root $projectRoot `
+    --handoff-contract (Join-Path $projectRoot 'config\rf_to_oatof_handoff.json') `
+    --joint-contract (Join-Path $projectRoot 'config\rf_to_oatof_s1_joint_field.json') `
+    --canonical-output $canonical --ion-output $ion --row-map-output $rowMap `
+    --metadata-output $metadata --summary-output $repair `
+    --legacy-canonical (Join-Path $legacy 'inputs\canonical_rf_exit_at_oatof_entry.csv')
+} finally {
+  $env:PYTHONPATH = $previousPythonPath
+}
 if ($LASTEXITCODE -ne 0) { throw 'S1 physical entry boundary repair failed.' }
 $repairResult = Get-Content -LiteralPath $repair -Raw -Encoding UTF8 | ConvertFrom-Json
 

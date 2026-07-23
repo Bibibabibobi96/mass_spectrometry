@@ -12,9 +12,48 @@ PROJECT_ROOT = Path(__file__).parents[2]
 from projects.rf_quadrupole_collision_cooling.analysis import build_interface_handoff as MODULE
 CONTRACT = PROJECT_ROOT / "config" / "rf_to_oatof_interface_candidate.json"
 STAGES = PROJECT_ROOT / "config" / "rf_to_oatof_interface_stages.json"
+S1 = PROJECT_ROOT / "config" / "rf_to_oatof_s1_joint_field.json"
+S2 = PROJECT_ROOT / "config" / "rf_to_oatof_s2_passive_connector.json"
 
 
 class InterfaceContractTests(unittest.TestCase):
+    def test_frozen_s1_zero_gap_and_s2_one_mm_gap_share_common_transform(self) -> None:
+        interface = MODULE.validate_contract(CONTRACT)["contract"]
+        target = interface["boundaries"]["target_entry_surface"]
+        cases = ((S1, "direct_mating_gap_mm", 0.0), (S2, "connector_gap_mm", 1.0))
+        for path, gap_field, expected_gap in cases:
+            with self.subTest(path=path.name):
+                registration = json.loads(
+                    path.read_text(encoding="utf-8")
+                )["nominal_registration"]
+                MODULE.validate_fixed_rf_oatof_geometry_registration(
+                    registration,
+                    target,
+                    registration[gap_field],
+                )
+                relative = MODULE.derive_target_from_source_pose(
+                    registration["source_component_pose"][
+                        "rotation_component_to_instrument"
+                    ],
+                    registration["source_component_pose"]["translation_mm"],
+                    registration["target_component_pose"][
+                        "rotation_component_to_instrument"
+                    ],
+                    registration["target_component_pose"]["translation_mm"],
+                )
+                transformed = MODULE.transform_phase_space(
+                    registration["source_exit_center_local_mm"],
+                    [0.0, 0.0, 1.0],
+                    relative["rotation_source_to_target"],
+                    relative["translation_mm"],
+                )
+                self.assertAlmostEqual(
+                    registration["target_entry_center_instrument_mm"][0]
+                    - transformed["position_mm"][0],
+                    expected_gap,
+                )
+                self.assertEqual(transformed["velocity_m_s"], [1.0, 0.0, 0.0])
+
     def test_interface_stages_are_sequential_and_start_without_physical_claim(self) -> None:
         plan = json.loads(STAGES.read_text(encoding="utf-8"))
         self.assertEqual(plan["status"], "approved_sequential_plan")

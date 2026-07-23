@@ -4,7 +4,7 @@
   "status": "approved_for_solver_validation",
   "scope": "Uniform RF rod region only; establishes transverse-versus-axial mesh separation before hybrid full-device meshing.",
   "inputs": {
-    "resolved_geometry": "config/resolved_geometry.json",
+    "resolved_geometry": "config/resolved_design_official.json",
     "continuous_shield": "config/rf_continuous_grounded_shield_candidate.json",
     "two_dimensional_reference_run": "20260721_135747__analysis__comsol__rf-continuous-shield-2d__r19p776-h0p1"
   },

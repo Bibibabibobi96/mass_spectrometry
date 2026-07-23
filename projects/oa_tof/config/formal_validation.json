@@ -5,9 +5,9 @@
   "run_id": "20260720_191743__sim__cross__coupled-baseline-validation__n1000",
   "validation_scope": "validated_candidate_assets_promoted_atomically_to_current_formal",
   "physical_contract": "baseline.json",
-  "physical_contract_sha256": "5502D35FBAFB543352175ECA560D2EA27DC210738FBD0826B1A35DDFA6C8C467",
+  "physical_contract_sha256": "1170275D43E64AC18956C804B452172D4DB69D595D0E6098FA1995976C6BCF74",
   "analysis_contract": "analysis_contract.json",
-  "analysis_contract_sha256": "A22F16DCE188A2C2D80D192D740058EB85888DDCB7270B1FF4FFE36D8912A56F",
+  "analysis_contract_sha256": "9AC9DF480DC0D57499E39F26FE358C437C0D30F103417BB4A02E3B1730A36BDD",
   "shared_particles": {
     "mass_amu": 524.0,
     "charge_e": 1,

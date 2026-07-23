@@ -20,12 +20,15 @@ class S1PhysicalPortParticleTests(unittest.TestCase):
             rows.append({
                 "particle_id": particle_id, "event": event, "status": status,
                 "pulse_time_reached": pulse,
+                "frame_id": "oatof_global",
+                "clock_epoch_id": "instrument_clock_epoch.v1",
             })
         result = module.analyze(pd.DataFrame(rows))
         self.assertEqual(result["status"], "PASS")
         self.assertEqual(result["geometric_port_accepted"], 88)
         self.assertEqual(result["local_joint_exit"], 38)
         self.assertFalse(result["physical_link_claim_allowed"])
+        self.assertEqual(result["frame_id"], "oatof_global")
 
     def test_incomplete_census_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "exactly 100"):
@@ -41,6 +44,8 @@ class S1PhysicalPortParticleTests(unittest.TestCase):
                 "event": "local_joint_exit" if particle_id <= 28 else "terminal",
                 "status": "transmitted" if particle_id <= 28 else "lost",
                 "pulse_time_reached": 1,
+                "frame_id": "oatof_global",
+                "clock_epoch_id": "instrument_clock_epoch.v1",
             })
         result = module.analyze(pd.DataFrame(rows))
         self.assertEqual(result["status"], "PASS")

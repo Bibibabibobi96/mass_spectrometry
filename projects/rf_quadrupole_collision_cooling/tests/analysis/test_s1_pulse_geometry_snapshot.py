@@ -42,20 +42,26 @@ class S1PulseGeometrySnapshotTests(unittest.TestCase):
             figure = temp_path / "snapshot.png"
             metadata = temp_path / "snapshot.json"
             pd.DataFrame([
-                {"particle_id": 1, "instrument_time_us": 34.0,
+                {"particle_id": 1, "frame_id": "oatof_global",
+                 "clock_epoch_id": "instrument_clock_epoch.v1", "instrument_time_us": 34.0,
                  "x_mm": -67.0, "y_mm": 0.5, "z_mm": -18.4},
-                {"particle_id": 2, "instrument_time_us": 34.0,
+                {"particle_id": 2, "frame_id": "oatof_global",
+                 "clock_epoch_id": "instrument_clock_epoch.v1", "instrument_time_us": 34.0,
                  "x_mm": -55.0, "y_mm": -0.2, "z_mm": -18.2},
-                {"particle_id": 3, "instrument_time_us": 34.0,
+                {"particle_id": 3, "frame_id": "oatof_global",
+                 "clock_epoch_id": "instrument_clock_epoch.v1", "instrument_time_us": 34.0,
                  "x_mm": -49.0, "y_mm": 0.1,
                  "z_mm": geometry["repeller_z"]},
             ]).to_csv(capture, index=False)
             pd.DataFrame([
                 {"particle_id": 1, "event": "terminal", "status": "lost",
+                 "frame_id": "oatof_global", "clock_epoch_id": "instrument_clock_epoch.v1",
                  "terminal_reason": "electrode_or_boundary"},
                 {"particle_id": 2, "event": "local_joint_exit", "status": "transmitted",
+                 "frame_id": "oatof_global", "clock_epoch_id": "instrument_clock_epoch.v1",
                  "terminal_reason": "none"},
                 {"particle_id": 3, "event": "terminal", "status": "lost",
+                 "frame_id": "oatof_global", "clock_epoch_id": "instrument_clock_epoch.v1",
                  "terminal_reason": "electrode_or_boundary"},
             ]).to_csv(events, index=False)
             result = module.plot_snapshot(
@@ -63,6 +69,7 @@ class S1PulseGeometrySnapshotTests(unittest.TestCase):
             self.assertEqual(result["particles_active_at_pulse"], 1)
             self.assertEqual(result["frozen_port_losses_before_pulse"], 1)
             self.assertEqual(result["frozen_accelerator_losses_before_pulse"], 1)
+            self.assertEqual(result["frame_id"], "oatof_global")
             self.assertGreater(figure.stat().st_size, 1000)
             self.assertEqual(json.loads(metadata.read_text(encoding="utf-8"))["status"], "PASS")
 
@@ -71,9 +78,11 @@ class S1PulseGeometrySnapshotTests(unittest.TestCase):
             capture = Path(temp) / "capture.csv"
             events = Path(temp) / "events.csv"
             pd.DataFrame([
-                {"particle_id": 1, "instrument_time_us": 1.0,
+                {"particle_id": 1, "frame_id": "oatof_global",
+                 "clock_epoch_id": "instrument_clock_epoch.v1", "instrument_time_us": 1.0,
                  "x_mm": 0, "y_mm": 0, "z_mm": 0},
-                {"particle_id": 2, "instrument_time_us": 2.0,
+                {"particle_id": 2, "frame_id": "oatof_global",
+                 "clock_epoch_id": "instrument_clock_epoch.v1", "instrument_time_us": 2.0,
                  "x_mm": 0, "y_mm": 0, "z_mm": 0},
             ]).to_csv(capture, index=False)
             pd.DataFrame([

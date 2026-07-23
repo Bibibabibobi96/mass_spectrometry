@@ -19,6 +19,7 @@ DETECTOR_COLUMNS = [
     "downstream_solver",
     "solver_row_index",
     "particle_id",
+    "frame_id",
     "clock_epoch_id",
     "handoff_instrument_time_us",
     "handoff_lineage_age_us",
@@ -32,8 +33,6 @@ DETECTOR_COLUMNS = [
     "detector_y_mm",
     "detector_radius_mm",
 ]
-
-
 def _read_csv(path: Path) -> list[dict[str, str]]:
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
         return list(csv.DictReader(handle))
@@ -52,6 +51,8 @@ def symmetric_relative_difference(left: float | None, right: float | None) -> fl
 
 def _normalize_case(
     case: dict[str, Any],
+    source_frame_id: str,
+    detector_frame_id: str,
     detector_x_mm: float,
     detector_y_mm: float,
     detector_radius_mm: float,
@@ -72,6 +73,8 @@ def _normalize_case(
             mapping = row_map[row_index]
             particle_id = int(mapping["particle_id"])
             state = canonical[particle_id]
+            if state.get("frame_id") != source_frame_id:
+                raise ValueError("canonical handoff frame differs from the oa-TOF global frame")
             solver_hit = _as_bool(result["Hit"])
             local_tof_value = float(result["TofUs"])
             x_value = float(result["XMm"])
@@ -79,10 +82,10 @@ def _normalize_case(
             if solver_hit and (not math.isfinite(local_tof_value) or local_tof_value <= 0):
                 raise ValueError("hit detector time must be finite and positive")
             local_tof = local_tof_value if math.isfinite(local_tof_value) else None
-            x_mm = x_value if math.isfinite(x_value) else None
-            y_mm = y_value if math.isfinite(y_value) else None
+            x_mm = x_value - detector_x_mm if math.isfinite(x_value) else None
+            y_mm = y_value - detector_y_mm if math.isfinite(y_value) else None
             radius = (
-                math.hypot(x_mm - detector_x_mm, y_mm - detector_y_mm)
+                math.hypot(x_mm, y_mm)
                 if x_mm is not None and y_mm is not None else None
             )
             hit = solver_hit and radius is not None and radius <= detector_radius_mm
@@ -95,6 +98,7 @@ def _normalize_case(
                 "downstream_solver": downstream_solver,
                 "solver_row_index": row_index,
                 "particle_id": particle_id,
+                "frame_id": detector_frame_id,
                 "clock_epoch_id": state["clock_epoch_id"],
                 "handoff_instrument_time_us": instrument_time,
                 "handoff_lineage_age_us": lineage_age,
@@ -139,12 +143,26 @@ def analyze(input_manifest_path: Path, output_dir: Path, mode_path: Path = DEFAU
     if len(cases) != 2:
         raise ValueError("functional projection analysis requires two upstream ensembles")
     resolved = load_json(Path(manifest["resolved_geometry"]))
+    analysis_contract = load_json(Path(manifest["analysis_contract"]))
+    detector_coordinates = analysis_contract["coordinate_frames"]["detector_plane"]
+    source_frame_id = resolved["coordinate_convention"]["frame_id"]
+    if (
+        source_frame_id
+        != analysis_contract["coordinate_frames"]["instrument"]["frame_id"]
+        or detector_coordinates["parent_frame_id"] != source_frame_id
+    ):
+        raise ValueError("oa-TOF detector frame authority differs from resolved geometry")
+    detector_frame_id = detector_coordinates["frame_id"]
     detector_x = float(resolved["coordinate_convention"]["detector_x"])
     detector_y = float(resolved["coordinate_convention"].get("detector_y", 0.0))
+    detector_z = float(resolved["geometry_mm"]["detector_z"])
     detector_radius = float(resolved["geometry_mm"]["detector_radius"])
     rows = [
         row for case in cases
-        for row in _normalize_case(case, detector_x, detector_y, detector_radius)
+        for row in _normalize_case(
+            case, source_frame_id, detector_frame_id,
+            detector_x, detector_y, detector_radius
+        )
     ]
     downstream_solvers = sorted({row["downstream_solver"] for row in rows})
     if not downstream_solvers:
@@ -280,9 +298,19 @@ def analyze(input_manifest_path: Path, output_dir: Path, mode_path: Path = DEFAU
             row["downstream_solver"], row["upstream_case_id"], row["solver_row_index"]
         )))
     result = {
-        "schema_version": 1,
+        "schema_version": 2,
         "role": "oa_tof_rf_handoff_functional_projection",
         "status": functional_status,
+        "detector_coordinate_contract": {
+            "frame_id": detector_frame_id,
+            "source_frame_id": source_frame_id,
+            "position_unit": detector_coordinates["position_unit"],
+            "origin_in_source_frame_mm": [detector_x, detector_y, detector_z],
+            "axes": {
+                "x": "source-frame x translated to the detector active-plane center",
+                "y": "source-frame y translated to the detector active-plane center",
+            },
+        },
         "downstream_solver_coverage": downstream_solvers,
         "metrics": metrics,
         "cross_ensemble_comparisons": comparisons,

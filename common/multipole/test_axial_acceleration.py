@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 from common.multipole.axial_acceleration import (
+    MAX_SEGMENT_COUNT,
     AxialAccelerationError,
     resolve_axial_acceleration,
     segment_rod_array,
@@ -59,6 +60,72 @@ class AxialAccelerationTest(unittest.TestCase):
         self.assertEqual(len(segmented["electrodes"]), 8)
         self.assertEqual([item["electrode_id"] for item in segmented["electrodes"]], list(range(1, 9)))
         self.assertEqual([item["electrode_group"] for item in segmented["electrodes"]], [1, 2] * 4)
+
+    def test_five_segments_receive_dynamic_simion_electrode_ids(self) -> None:
+        five_segment = contract()
+        five_segment["segmentation"]["segment_count"] = 5
+        resolved = resolve_axial_acceleration(
+            five_segment,
+            rod_z_min_mm=0,
+            rod_z_max_mm=100,
+            source_kinetic_energy_ev=2,
+            charge_state=1,
+        )
+        array = {
+            "rods": [
+                {"rod_id": 1, "electrode_group": 1, "z_min_mm": 0, "z_max_mm": 100},
+                {"rod_id": 2, "electrode_group": 2, "z_min_mm": 0, "z_max_mm": 100},
+            ]
+        }
+        segmented = segment_rod_array(array, resolved)
+        self.assertEqual(
+            [item["electrode_id"] for item in segmented["electrodes"]],
+            list(range(1, 11)),
+        )
+        self.assertEqual(2 * segmented["segment_count"] + 1, 11)
+        self.assertEqual(2 * segmented["segment_count"] + 2, 12)
+
+    def test_segment_count_above_shared_simion_limit_is_rejected(self) -> None:
+        maximum = contract()
+        maximum["segmentation"]["segment_count"] = MAX_SEGMENT_COUNT
+        maximum["segmentation"]["intersegment_gap_mm"] = 0.0
+        resolved = resolve_axial_acceleration(
+            maximum,
+            rod_z_min_mm=0,
+            rod_z_max_mm=MAX_SEGMENT_COUNT,
+            source_kinetic_energy_ev=2,
+            charge_state=1,
+        )
+        self.assertEqual(len(resolved["derived"]["segments"]), MAX_SEGMENT_COUNT)
+        self.assertEqual(2 * MAX_SEGMENT_COUNT + 2, 1000)
+
+        uniform = contract()
+        uniform["segmentation"]["segment_count"] = MAX_SEGMENT_COUNT + 1
+        with self.assertRaisesRegex(AxialAccelerationError, "SIMION-safe limit"):
+            resolve_axial_acceleration(
+                uniform,
+                rod_z_min_mm=0,
+                rod_z_max_mm=1000,
+                source_kinetic_energy_ev=2,
+                charge_state=1,
+            )
+
+        explicit = contract()
+        explicit["segmentation"] = {
+            "strategy": "explicit",
+            "segments": [
+                {"length_mm": 1.0, "common_mode_V": -3.0}
+                for _ in range(MAX_SEGMENT_COUNT + 1)
+            ],
+        }
+        with self.assertRaisesRegex(AxialAccelerationError, "SIMION-safe limit"):
+            resolve_axial_acceleration(
+                explicit,
+                rod_z_min_mm=0,
+                rod_z_max_mm=MAX_SEGMENT_COUNT + 1,
+                source_kinetic_energy_ev=2,
+                charge_state=1,
+            )
 
     def test_output_reference_must_preserve_net_energy_gain(self) -> None:
         invalid = contract()
@@ -160,7 +227,7 @@ class AxialAccelerationTest(unittest.TestCase):
                 for marker in forbidden:
                     self.assertNotIn(marker, source, f"{path} duplicates shared segmentation strategy {marker}")
 
-    def test_all_solver_wrappers_expose_one_shared_custom_contract_binding(self) -> None:
+    def test_all_solver_wrappers_expose_only_governed_design_profile_binding(self) -> None:
         root = Path(__file__).resolve().parents[2]
         projects = (
             "rf_quadrupole_collision_cooling",
@@ -170,8 +237,16 @@ class AxialAccelerationTest(unittest.TestCase):
         for project in projects:
             for name in ("run_finite_3d_transport.ps1", "run_simion_finite_3d_transport.ps1"):
                 source = (root / "projects" / project / "analysis" / name).read_text(encoding="utf-8-sig")
-                self.assertIn("AxialAccelerationContractPath", source)
+                self.assertIn("DesignProfileId", source)
+                self.assertIn("ParticleSourcePath", source)
                 self.assertIn("common\\multipole", source)
+                for legacy in (
+                    "AxialAccelerationContractPath",
+                    "EntranceConnectorLengthMm",
+                    "ExitConnectorLengthMm",
+                    "FieldScreenRunId",
+                ):
+                    self.assertNotIn(legacy, source)
 
     def test_versioned_explicit_solver_regression_contract_resolves(self) -> None:
         root = Path(__file__).resolve().parents[2]

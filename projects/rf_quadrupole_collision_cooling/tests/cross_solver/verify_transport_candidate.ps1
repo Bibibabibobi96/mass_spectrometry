@@ -57,7 +57,7 @@ $comsolParticlePath = [IO.Path]::GetFullPath([string]$comsolConfig.inputs.partic
 $simionParticlePath = [IO.Path]::GetFullPath([string]$simionConfig.inputs.particle_table)
 if ($comsolParticlePath -ne $simionParticlePath) { throw 'COMSOL and SIMION particle tables differ.' }
 
-$resolvedPath = Join-Path $projectRoot 'config\resolved_geometry.json'
+$resolvedPath = Join-Path $projectRoot 'config\resolved_design_official.json'
 $resolved = Get-Content -LiteralPath $resolvedPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $particlePath = if ([string]::IsNullOrWhiteSpace($ParticleTablePath)) {
     $comsolParticlePath
@@ -69,6 +69,8 @@ if ([double]::IsNaN($FrequencyHz) -or [double]::IsInfinity($FrequencyHz)) {
     throw 'Explicit frequency differs from the solver run configs.'
 }
 $interfacePath = Join-Path $projectRoot 'config\interface_contract.json'
+$regressionModePath = Join-Path $projectRoot 'config\modes\transport_no_collision.json'
+$interfaceModePath = Join-Path $projectRoot 'config\modes\transport_interface_readiness.json'
 $entries = @(
     [pscustomobject]@{Solver='COMSOL'; Path=$comsolState},
     [pscustomobject]@{Solver='SIMION'; Path=$simionState}
@@ -88,7 +90,7 @@ New-Item -ItemType Directory -Path $runDir,$resultDir -Force | Out-Null
 
 & $python (Join-Path $projectRoot 'analysis\compare_particle_state.py') `
     --comsol $comsolState --simion $simionState --resolved $resolvedPath `
-    --interface-mode (Join-Path $projectRoot 'config\modes\transport_interface_readiness.json') `
+    --regression-mode $regressionModePath --interface-mode $interfaceModePath `
     --output $comparison --paired-output $paired
 $comparisonExit = $LASTEXITCODE
 if ($comparisonExit -ne 0 -and -not (Test-Path -LiteralPath $comparison -PathType Leaf)) {
@@ -104,7 +106,10 @@ $runConfig = [ordered]@{
         comsol_manifest=$comsolManifest; simion_manifest=$simionManifest
         comsol_particle_state=$comsolState; simion_particle_state=$simionState
         particle_table=$particlePath
-        resolved_geometry='config/resolved_geometry.json'; interface_contract='config/interface_contract.json'
+        resolved_design='config/resolved_design_official.json'
+        regression_mode='config/modes/transport_no_collision.json'
+        interface_mode='config/modes/transport_interface_readiness.json'
+        interface_contract='config/interface_contract.json'
         mode=$(if ($Mode -eq 'transport_no_collision') { 'config/modes/transport_no_collision.json' } else { 'config/modes/transport_interface_readiness.json' })
     }
 }

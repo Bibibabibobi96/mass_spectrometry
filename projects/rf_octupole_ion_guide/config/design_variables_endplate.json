@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "role": "project_design_variable_catalog",
+  "project_id": "rf_octupole_ion_guide",
+  "family_id": "rf_multipole_ion_optics",
+  "optimization_strategy": "multipole_design_request_compilation",
+  "range_policy": "The historical endplate reference remains bounded to its validated rod ratio and accelerating output-potential range.",
+  "variables": [
+    {
+      "variable_id": "rod_radius_ratio",
+      "label": "Rod radius to r0 ratio",
+      "kind": "continuous",
+      "optimization_role": "geometry",
+      "json_pointer": "/geometry_mm/rod_radius_ratio",
+      "unit": "ratio",
+      "minimum": 0.2,
+      "maximum": 0.45,
+      "compile_status": "candidate_contract",
+      "rebuild_effects": ["resolved", "comsol", "simion"]
+    },
+    {
+      "variable_id": "endplate_output_reference",
+      "label": "Exit endcap reference",
+      "kind": "continuous",
+      "optimization_role": "drive",
+      "json_pointer": "/static_electrodes_V/exit_endcap_and_connector",
+      "unit": "V",
+      "minimum": -10.0,
+      "maximum": -0.1,
+      "compile_status": "candidate_contract",
+      "rebuild_effects": ["resolved", "comsol", "simion"]
+    }
+  ],
+  "invariants": [
+    "project_identity_locked",
+    "electrode_count_equals_twice_radial_order",
+    "rod_span_positive",
+    "interface_nonoverlap",
+    "connector_shape_supported"
+  ]
+}

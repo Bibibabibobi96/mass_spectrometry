@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "role": "project_optimization_envelope",
+  "project_id": "rf_hexapole_ion_guide",
+  "family_id": "rf_multipole_ion_optics",
+  "envelope_id": "hexapole_endplate_functional_reference",
+  "status": "candidate",
+  "policy": "This envelope preserves the N=100 functional endplate reference; it does not qualify convergence or mechanical implementation.",
+  "reference": {
+    "design_request": "config/requests/endplate.json",
+    "design_request_sha256": "1EEDEAEBF7B1D637CEC37D33B3A5FE2E3C5314E1CEB86BE2ACC1D506C4CE03CA"
+  },
+  "constraints": [{
+    "constraint_id": "endplate_reference_bounds",
+    "kind": "bounded_variable",
+    "request_json_pointers": [
+      "/geometry_mm/rod_radius_ratio",
+      "/static_electrodes_V/exit_endcap_and_connector"
+    ],
+    "description": "The rod ratio and endplate output reference remain inside the governed catalog bounds."
+  }]
+}

@@ -14,9 +14,18 @@ import math
 from pathlib import Path
 import re
 
-
-ATOMIC_MASS_KG = 1.66053906660e-27
-ELEMENTARY_CHARGE_C = 1.602176634e-19
+try:
+    from rf_handoff_adapter import (
+        ATOMIC_MASS_KG,
+        ELEMENTARY_CHARGE_C,
+        decode_simion_accelerator_velocity,
+    )
+except ModuleNotFoundError:
+    from projects.oa_tof.analysis.rf_handoff_adapter import (
+        ATOMIC_MASS_KG,
+        ELEMENTARY_CHARGE_C,
+        decode_simion_accelerator_velocity,
+    )
 PULSE_CONTRACT = re.compile(
     r"handoff_pulse_contract mode=(\d+) time_us=([-+0-9.eE]+) "
     r"width_us=([-+0-9.eE]+)"
@@ -43,20 +52,7 @@ def relative_residual(left: float, right: float, scale: float = 1.0) -> float:
     return abs(left - right) / max(abs(left), abs(right), scale)
 
 
-def decode_simion_instance3_velocity(
-    mass_amu: float, energy_ev: float, azimuth_deg: float, elevation_deg: float,
-) -> list[float]:
-    """Decode ION angles through the frozen oaTOF accelerator instance-3 axes."""
-    speed = math.sqrt(
-        2.0 * energy_ev * ELEMENTARY_CHARGE_C / (mass_amu * ATOMIC_MASS_KG)
-    )
-    azimuth = math.radians(azimuth_deg)
-    elevation = math.radians(elevation_deg)
-    local_x = speed * math.cos(elevation) * math.cos(azimuth)
-    local_y = speed * math.cos(elevation) * math.sin(azimuth)
-    local_z = speed * math.sin(elevation)
-    # Frozen IOB instance 3: (vx, vy, vz)_global = (vx, vz, -vy)_PA.
-    return [local_x, local_z, -local_y]
+decode_simion_instance3_velocity = decode_simion_accelerator_velocity
 
 
 def audit(

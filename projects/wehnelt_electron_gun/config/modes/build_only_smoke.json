@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "mode": "build_only_smoke",
+  "status": "prototype",
+  "numerical_contract": "../numerical_modes.json#/modes/build_only_smoke",
+  "claim_limit": "Build and GUI-binding smoke only; no solver, Candidate, Formal, or collection-efficiency evidence."
+}

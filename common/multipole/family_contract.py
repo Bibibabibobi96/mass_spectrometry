@@ -170,11 +170,14 @@ def from_quadrupole_contract(
     if rf_amplitude_v_per_group is not None:
         amplitude = rf_amplitude_v_per_group
     resolved_frequency = rf["frequency_Hz"] if frequency_hz is None and isinstance(rf, dict) else frequency_hz
+    rod_length = _finite("rod_z_max", geometry["rod_z_max"]) - _finite(
+        "rod_z_min", geometry["rod_z_min"]
+    )
     return MultipoleOperatingContract(
         identity=identity,
         geometry=MultipoleGeometry(
             r0_mm=_positive("field_radius_r0", geometry["field_radius_r0"]),
-            effective_length_mm=_positive("rod_length", geometry["rod_length"]),
+            effective_length_mm=_positive("rod axial span", rod_length),
         ),
         voltage=VoltageDrive(
             waveform="sine",

@@ -4,6 +4,7 @@ reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
 outputCsv = getenv('RF_OATOF_S1_FIELD_CSV');
 jointPath = getenv('RF_OATOF_S1_CONTRACT');
 interfacePath = getenv('RF_OATOF_INTERFACE_CONTRACT');
+spatialRegistrationPath = getenv('RF_OATOF_SPATIAL_REGISTRATION');
 rfResolvedPath = getenv('RF_OATOF_RF_RESOLVED');
 oaBaselinePath = getenv('RF_OATOF_OA_BASELINE');
 oaComsolDir = getenv('RF_OATOF_OA_COMSOL_DIR');
@@ -13,7 +14,8 @@ acceleratorHmax = str2double(getenv('RF_OATOF_ACCELERATOR_HMAX_MM'));
 jointScope = getenv('RF_OATOF_JOINT_SCOPE');
 includeRfHardware = strcmp(jointScope,'rf-oa');
 downstreamBuffer = str2double(getenv('RF_OATOF_DOWNSTREAM_BUFFER_MM'));
-assert(~isempty(outputCsv) && ~isempty(jointPath) && ~isempty(interfacePath), 'S1 environment is incomplete.');
+assert(~isempty(outputCsv) && ~isempty(jointPath) && ~isempty(interfacePath) && ...
+    isfile(spatialRegistrationPath), 'S1 environment is incomplete.');
 assert(isfinite(portWidth) && portWidth >= 0, 'RF_OATOF_PORT_WIDTH_MM must be non-negative.');
 assert(isfinite(meshAutoLevel) && meshAutoLevel == round(meshAutoLevel) && meshAutoLevel >= 1 && meshAutoLevel <= 9, ...
     'RF_OATOF_MESH_AUTO_LEVEL must be an integer from 1 through 9.');
@@ -32,8 +34,10 @@ fprintf(fid, 'TASK=S1_LOCAL_JOINT_FIELD\nJOINT_SCOPE=%s\nPORT_WIDTH_MM=%.17g\nDO
 try
     joint = jsondecode(fileread(jointPath));
     interface = jsondecode(fileread(interfacePath));
+    spatial = jsondecode(fileread(spatialRegistrationPath));
     rf = jsondecode(fileread(rfResolvedPath));
     oa = jsondecode(fileread(oaBaselinePath));
+    assert_supported_registration(joint.nominal_registration, spatial, 'S1');
     sweep = joint.port_sweep.full_width_y_mm(:);
     closedControl = joint.port_sweep.closed_control_full_width_y_mm;
     assert(any(abs(sweep-portWidth) < 1e-12) || abs(closedControl-portWidth) < 1e-12, ...
@@ -63,9 +67,10 @@ try
     p.set('accel_shield_back_extra', sprintf('%.17g[mm]', g.accelerator_rear_clearance));
     p.set('V_grid1', sprintf('%.17g[V]', oa.electrodes_V.grid1));
 
-    sourcePose = joint.nominal_registration.source_component_pose;
+    sourcePose = spatial.component_poses.rf_quadrupole_component;
     tx = sourcePose.translation_mm(1); tz = sourcePose.translation_mm(3);
     rg = rf.geometry_mm;
+    rfInterfaces = rf.interfaces_mm;
     rfShieldInnerRadius = joint.local_domain.rf_shield_inner_radius_mm;
     rfShieldWall = joint.local_domain.rf_shield_numerical_wall_thickness_mm;
     fprintf(fid,'RF_SHIELD_INNER_RADIUS_MM=%.17g\nRF_SHIELD_NUMERICAL_WALL_MM=%.17g\n',rfShieldInnerRadius,rfShieldWall);
@@ -108,7 +113,8 @@ try
     assert(~isempty(oaComsolDir) && isfolder(oaComsolDir), 'Frozen oa COMSOL source directory is missing.');
     addpath(oaComsolDir);
     interfacePort = struct('enabled',portWidth>0,'full_width_y_mm',portWidth,'full_height_z_mm',portHeight,'center_z_mm',joint.port_sweep.center_z_mm);
-    accelrings = oatof_build_accelerator_geometry(geom, interfacePort);
+    accelrings = oatof_build_accelerator_geometry( ...
+        geom, oa.rings.accelerator_count, interfacePort);
     geom.feature('repeller').set('selresult','on');
     geom.feature('accelshield').set('selresult','on');
     for k=1:numel(accelrings), geom.feature(accelrings{k}).set('selresult','on'); end
@@ -124,11 +130,11 @@ try
             geom.feature(rodTags{k}).set('pos',{sprintf('%.17g[mm]',tx+rg.rod_z_min),sprintf('%.17g[mm]',rg.rod_center_radius*cosd(angle)),sprintf('%.17g[mm]',tz+rg.rod_center_radius*sind(angle))});
             geom.feature(rodTags{k}).set('selresult','on');
         end
-        geom.feature.create('rfshieldO','Cylinder'); geom.feature('rfshieldO').set('axis',{'1','0','0'}); geom.feature('rfshieldO').set('r',sprintf('%.17g[mm]',rfShieldInnerRadius+rfShieldWall)); geom.feature('rfshieldO').set('h',sprintf('%.17g[mm]',rg.exit_enclosure_z_min-rg.entrance_plate_z_max)); geom.feature('rfshieldO').set('pos',{sprintf('%.17g[mm]',tx+rg.entrance_plate_z_max),'0',sprintf('%.17g[mm]',tz)});
-        geom.feature.create('rfshieldH','Cylinder'); geom.feature('rfshieldH').set('axis',{'1','0','0'}); geom.feature('rfshieldH').set('r',sprintf('%.17g[mm]',rfShieldInnerRadius)); geom.feature('rfshieldH').set('h',sprintf('%.17g[mm]',rg.exit_enclosure_z_min-rg.entrance_plate_z_max)); geom.feature('rfshieldH').set('pos',{sprintf('%.17g[mm]',tx+rg.entrance_plate_z_max),'0',sprintf('%.17g[mm]',tz)});
+        geom.feature.create('rfshieldO','Cylinder'); geom.feature('rfshieldO').set('axis',{'1','0','0'}); geom.feature('rfshieldO').set('r',sprintf('%.17g[mm]',rfShieldInnerRadius+rfShieldWall)); geom.feature('rfshieldO').set('h',sprintf('%.17g[mm]',rfInterfaces.exit.plate_z_min_mm-rfInterfaces.entrance.plate_z_max_mm)); geom.feature('rfshieldO').set('pos',{sprintf('%.17g[mm]',tx+rfInterfaces.entrance.plate_z_max_mm),'0',sprintf('%.17g[mm]',tz)});
+        geom.feature.create('rfshieldH','Cylinder'); geom.feature('rfshieldH').set('axis',{'1','0','0'}); geom.feature('rfshieldH').set('r',sprintf('%.17g[mm]',rfShieldInnerRadius)); geom.feature('rfshieldH').set('h',sprintf('%.17g[mm]',rfInterfaces.exit.plate_z_min_mm-rfInterfaces.entrance.plate_z_max_mm)); geom.feature('rfshieldH').set('pos',{sprintf('%.17g[mm]',tx+rfInterfaces.entrance.plate_z_max_mm),'0',sprintf('%.17g[mm]',tz)});
         geom.feature.create('rfshield','Difference'); geom.feature('rfshield').selection('input').set({'rfshieldO'}); geom.feature('rfshield').selection('input2').set({'rfshieldH'}); geom.feature('rfshield').set('selresult','on');
-        add_circular_plate(geom,'rfentrance',tx+rg.entrance_plate_z_min,rg.entrance_plate_z_max-rg.entrance_plate_z_min,rfShieldInnerRadius+rfShieldWall,rg.entrance_aperture_radius,tz);
-        add_circular_plate(geom,'rfexit',tx+rg.exit_enclosure_z_min,rg.exit_enclosure_front_wall_end_z-rg.exit_enclosure_z_min,rfShieldInnerRadius+rfShieldWall,rg.exit_aperture_radius,tz);
+        add_circular_plate(geom,'rfentrance',tx+rfInterfaces.entrance.plate_z_min_mm,rfInterfaces.entrance.plate_z_max_mm-rfInterfaces.entrance.plate_z_min_mm,rfShieldInnerRadius+rfShieldWall,rfInterfaces.entrance.aperture_radius_mm,tz);
+        add_circular_plate(geom,'rfexit',tx+rfInterfaces.exit.plate_z_min_mm,rfInterfaces.exit.plate_z_max_mm-rfInterfaces.exit.plate_z_min_mm,rfShieldInnerRadius+rfShieldWall,rfInterfaces.exit.aperture_radius_mm,tz);
         rfGroundTags={'rfshield','rfentrance','rfexit'};
     end
     geom.run;
@@ -210,7 +216,7 @@ try
         pulseWidthUs=str2double(getenv('RF_OATOF_PULSE_WIDTH_US'));
         assert(portWidth>0 && includeRfHardware,'S1 particles require the opened joint RF-oa geometry.');
         assert(~isempty(particleOutput) && ~isempty(captureOutput) && isfinite(pulseTimeUs) && isfinite(pulseWidthUs) && pulseWidthUs>0,'S1 particle environment is incomplete.');
-        [particleEvents,captureEvents]=run_s1_particles(model,comp,particleInput,fileparts(particleOutput),joint,rf,oa,portWidth,portHeight,downstreamBuffer,pulseTimeUs,pulseWidthUs);
+        [particleEvents,captureEvents]=run_s1_particles(model,comp,particleInput,fileparts(particleOutput),joint,spatial,rf,oa,portWidth,portHeight,downstreamBuffer,pulseTimeUs,pulseWidthUs);
         writetable(particleEvents,particleOutput); particleRows=height(particleEvents);
         writetable(captureEvents,captureOutput); captureRows=height(captureEvents);
     end
@@ -219,6 +225,25 @@ catch exception
     fprintf(fid,'STATUS=FAIL\nERROR=%s\n',getReport(exception,'extended','hyperlinks','off')); rethrow(exception)
 end
 clear cleanup
+
+function assert_supported_registration(registration, spatial, expectedStage)
+assert(strcmp(spatial.role,'resolved_spatial_registration_do_not_edit') && ...
+    strcmp(spatial.project_semantics.stage,expectedStage), ...
+    'S1 requires the authoritative resolved spatial registration.');
+sourcePose = spatial.component_poses.rf_quadrupole_component;
+targetPose = spatial.component_poses.oatof_global;
+assert(isequal(registration.source_component_pose.rotation_component_to_instrument,sourcePose.rotation) && ...
+    isequal(registration.source_component_pose.translation_mm,sourcePose.translation_mm) && ...
+    isequal(registration.target_component_pose.rotation_component_to_instrument,targetPose.rotation) && ...
+    isequal(registration.target_component_pose.translation_mm,targetPose.translation_mm), ...
+    'S1 project inputs are stale relative to resolved spatial registration.');
+sourceCenter = spatial.resolved_surfaces.source_exit.in_instrument_frame.center_mm;
+targetCenter = spatial.resolved_surfaces.target_entry.in_instrument_frame.center_mm;
+assert(all(abs(sourceCenter-registration.source_exit_center_instrument_mm) <= 1e-12) && ...
+    all(abs(targetCenter-registration.target_entry_center_instrument_mm) <= 1e-12) && ...
+    abs(targetCenter(1)-sourceCenter(1)) <= 1e-12, ...
+    'S1 resolved direct-mating centers are inconsistent.');
+end
 
 function add_circular_plate(geom,tag,xStart,thickness,outerRadius,holeRadius,zCenter)
 geom.feature.create([tag 'O'],'Cylinder'); geom.feature([tag 'O']).set('axis',{'1','0','0'}); geom.feature([tag 'O']).set('r',sprintf('%.17g[mm]',outerRadius)); geom.feature([tag 'O']).set('h',sprintf('%.17g[mm]',thickness)); geom.feature([tag 'O']).set('pos',{sprintf('%.17g[mm]',xStart),'0',sprintf('%.17g[mm]',zCenter)});
@@ -234,14 +259,17 @@ function set_potential(physics,tag,selection,value)
 feature=physics.create(['pot_' tag],'ElectricPotential',2); feature.selection.named(selection); feature.set('V0',sprintf('%.17g[V]',value));
 end
 
-function [events,capture]=run_s1_particles(model,comp,inputPath,runtimeDir,joint,rf,oa,portWidth,portHeight,downstreamBuffer,pulseTimeUs,pulseWidthUs)
+function [events,capture]=run_s1_particles(model,comp,inputPath,runtimeDir,joint,spatial,rf,oa,portWidth,portHeight,downstreamBuffer,pulseTimeUs,pulseWidthUs)
 ions=readtable(inputPath,'VariableNamingRule','preserve');
 assert(height(ions)==100,'S1 physical-port runtime requires the frozen N=100 input.');
-required={'particle_id','instrument_time_us','mass_amu','charge_state','frame_id','position_x_mm','position_y_mm','position_z_mm','velocity_x_m_s','velocity_y_m_s','velocity_z_m_s'};
+required={'particle_id','instrument_time_us','mass_amu','charge_state','frame_id','clock_epoch_id','position_x_mm','position_y_mm','position_z_mm','velocity_x_m_s','velocity_y_m_s','velocity_z_m_s'};
 assert(all(ismember(required,ions.Properties.VariableNames)),'S1 canonical particle columns are incomplete.');
-center=joint.nominal_registration.target_entry_center_instrument_mm;
+center=spatial.resolved_surfaces.target_entry.in_instrument_frame.center_mm;
 assert(all(string(ions.frame_id)==string(joint.nominal_registration.instrument_frame)), ...
     'S1 canonical frame_id must match the joint-contract instrument frame.');
+clockEpochs=unique(string(ions.clock_epoch_id));
+assert(isscalar(clockEpochs) && strlength(clockEpochs(1))>0, ...
+    'S1 canonical particles must use one nonempty clock epoch.');
 assert(all(abs(ions.position_x_mm-center(1))<=1e-12), ...
     'S1 canonical position_x_mm must equal the physical oa-TOF entry surface; silent coordinate replacement is forbidden.');
 inside=abs(ions.position_y_mm)<=portWidth/2+1e-12 & abs(ions.position_z_mm-center(3))<=portHeight/2+1e-12;
@@ -254,7 +282,7 @@ for solverIndex=1:numel(accepted)
     releasePath=fullfile(runtimeDir,sprintf('physical_port_particle_%03d.txt',ions.particle_id(row))); writematrix(releaseData,releasePath,'Delimiter','tab');
     rel=cpt.create(sprintf('rel%03d',solverIndex),'ReleaseFromDataFile',-1); rel.set('Filename',releasePath); rel.set('icolp','0'); rel.set('VelocitySpecification','SpecifyVelocity'); rel.set('InitialVelocity','FromFile'); rel.set('icolv','3'); rel.set('rt',sprintf('%.17g[us]',ions.instrument_time_us(row))); rel.importData();
 end
-rfScale=rf.mode.rf.amplitude_V_peak/100.0; frequency=rf.mode.rf.frequency_Hz; phase=rf.mode.rf.phase_rad;
+rfScale=rf.drive.rf_amplitude_V_zero_to_peak_per_group/100.0; frequency=rf.drive.frequency_Hz; phase=rf.drive.phase_rad;
 gate=sprintf('if(t>=%.17g[us]&&t<%.17g[us],1,0)',pulseTimeUs,pulseTimeUs+pulseWidthUs);
 ef=cpt.create('ef1','ElectricForce',3); ef.selection.named('sel_vac'); ef.set('E_src','userdef');
 ef.set('E',{sprintf('%.17g*(-d(Vrf,x))*sin(2*pi*%.17g[Hz]*t+%.17g)+(%s)*(-d(V,x))',rfScale,frequency,phase,gate),sprintf('%.17g*(-d(Vrf,y))*sin(2*pi*%.17g[Hz]*t+%.17g)+(%s)*(-d(V,y))',rfScale,frequency,phase,gate),sprintf('%.17g*(-d(Vrf,z))*sin(2*pi*%.17g[Hz]*t+%.17g)+(%s)*(-d(V,z))',rfScale,frequency,phase,gate)});
@@ -266,7 +294,7 @@ pdset=model.result.dataset.create('pdset1','Particle'); pdset.set('solution','so
 x=squeeze(pd.p(:,:,1));y=squeeze(pd.p(:,:,2));z=squeeze(pd.p(:,:,3));vx=squeeze(pd.v(:,:,1));vy=squeeze(pd.v(:,:,2));vz=squeeze(pd.v(:,:,3));
 if isvector(x),x=x(:);y=y(:);z=z(:);vx=vx(:);vy=vy(:);vz=vz(:);end
 assert(size(z,2)==numel(accepted),'S1 solved particle count differs from geometric acceptance.');
-plane=oa.geometry_mm.accelerator_grid2_z+downstreamBuffer-0.001; rows=cell(height(ions),15); captureRows=cell(numel(accepted),9); captureCount=0; solverIndex=0;
+plane=oa.geometry_mm.accelerator_grid2_z+downstreamBuffer-0.001; rows=cell(height(ions),17); captureRows=cell(numel(accepted),11); captureCount=0; solverIndex=0;
 for row=1:height(ions)
     if ~inside(row)
         state=struct('t_s',ions.instrument_time_us(row)*1e-6,'x_mm',center(1),'y_mm',ions.position_y_mm(row),'z_mm',ions.position_z_mm(row),'vx_m_s',ions.velocity_x_m_s(row),'vy_m_s',ions.velocity_y_m_s(row),'vz_m_s',ions.velocity_z_m_s(row)); event='geometric_reject';status='lost';reason='outside_1p0_by_0p9_mm_port';
@@ -277,16 +305,27 @@ for row=1:height(ions)
             source=oa.particle_source;
             insideReference=abs(captureState.x_mm-source.center_x_mm)<=source.size_x_mm/2+1e-12 && abs(captureState.y_mm-source.center_y_mm)<=source.size_y_mm/2+1e-12 && abs(captureState.z_mm-source.center_z_mm)<=source.size_z_mm/2+1e-12;
             captureCount=captureCount+1;
-            captureRows(captureCount,:)={ions.particle_id(row),captureState.t_s*1e6,captureState.x_mm,captureState.y_mm,captureState.z_mm,captureState.vx_m_s,captureState.vy_m_s,captureState.vz_m_s,insideReference};
+            captureRows(captureCount,:)={ions.particle_id(row),string(ions.frame_id(row)), ...
+                string(ions.clock_epoch_id(row)),captureState.t_s*1e6,captureState.x_mm, ...
+                captureState.y_mm,captureState.z_mm,captureState.vx_m_s, ...
+                captureState.vy_m_s,captureState.vz_m_s,insideReference};
         end
         [state,found]=interpolate_z_plane(pd.t,x(:,solverIndex),y(:,solverIndex),z(:,solverIndex),vx(:,solverIndex),vy(:,solverIndex),vz(:,solverIndex),plane);
         if found,event='local_joint_exit';status='transmitted';reason='none';else,last=valid(end);state=struct('t_s',pd.t(last),'x_mm',x(last,solverIndex),'y_mm',y(last,solverIndex),'z_mm',z(last,solverIndex),'vx_m_s',vx(last,solverIndex),'vy_m_s',vy(last,solverIndex),'vz_m_s',vz(last,solverIndex));event='terminal';status='lost';reason='electrode_or_boundary';end
     end
     speed2=state.vx_m_s^2+state.vy_m_s^2+state.vz_m_s^2; energy=0.5*ions.mass_amu(row)*1.66053906660e-27*speed2/1.602176634e-19;
-    rows(row,:)={ions.particle_id(row),event,status,reason,ions.instrument_time_us(row),state.t_s*1e6,(state.t_s*1e6>=pulseTimeUs),state.x_mm,state.y_mm,state.z_mm,state.vx_m_s,state.vy_m_s,state.vz_m_s,energy,mod(2*pi*frequency*state.t_s+phase,2*pi)};
+    rows(row,:)={ions.particle_id(row),event,status,reason,string(ions.frame_id(row)), ...
+        string(ions.clock_epoch_id(row)),ions.instrument_time_us(row),state.t_s*1e6, ...
+        (state.t_s*1e6>=pulseTimeUs),state.x_mm,state.y_mm,state.z_mm,state.vx_m_s, ...
+        state.vy_m_s,state.vz_m_s,energy,mod(2*pi*frequency*state.t_s+phase,2*pi)};
 end
-events=cell2table(rows,'VariableNames',{'particle_id','event','status','terminal_reason','entry_instrument_time_us','instrument_time_us','pulse_time_reached','x_mm','y_mm','z_mm','vx_m_s','vy_m_s','vz_m_s','kinetic_energy_eV','rf_phase_rad'});
-capture=cell2table(captureRows(1:captureCount,:),'VariableNames',{'particle_id','instrument_time_us','x_mm','y_mm','z_mm','vx_m_s','vy_m_s','vz_m_s','inside_oatof_ideal_reference_volume'});
+events=cell2table(rows,'VariableNames',{'particle_id','event','status','terminal_reason', ...
+    'frame_id','clock_epoch_id','entry_instrument_time_us','instrument_time_us', ...
+    'pulse_time_reached','x_mm','y_mm','z_mm','vx_m_s','vy_m_s','vz_m_s', ...
+    'kinetic_energy_eV','rf_phase_rad'});
+capture=cell2table(captureRows(1:captureCount,:),'VariableNames',{'particle_id', ...
+    'frame_id','clock_epoch_id','instrument_time_us','x_mm','y_mm','z_mm', ...
+    'vx_m_s','vy_m_s','vz_m_s','inside_oatof_ideal_reference_volume'});
 end
 
 function [state,found]=interpolate_time(time_s,x,y,z,vx,vy,vz,targetTimeS)

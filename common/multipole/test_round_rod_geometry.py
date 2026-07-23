@@ -15,7 +15,7 @@ from common.multipole.simion_geometry import (
     render_grouped_rod_array_gem,
     render_segmented_rod_array_gem,
 )
-from common.multipole.axial_acceleration import resolve_axial_acceleration, segment_rod_array
+from common.multipole.compile_design_request import compile_design_request
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -107,23 +107,24 @@ class RoundRodGeometryTest(unittest.TestCase):
         self.assertEqual(geometry["interfaces_mm"]["entrance_connector_shape"], "cylindrical_bore")
 
     def test_same_geometry_exports_all_rods_to_simion(self):
-        geometry = self.resolve("rf_octupole_ion_guide", 0.36)
-        gem = render_gem(geometry, 0.2)
+        resolved = json.loads(
+            (ROOT / "projects/rf_octupole_ion_guide/config/resolved_design.json").read_text()
+        )
+        gem = render_gem(resolved, 0.2)
         self.assertEqual(gem.count("e(1) { fill { within { cylinder"), 4)
         self.assertEqual(gem.count("e(2) { fill { within { cylinder"), 4)
         self.assertIn("planar,none", gem)
-        self.assertIn("cylinder(6.2,0,79.6,2.2,,79.6)", render_gem(self.resolve("rf_hexapole_ion_guide", 0.55), 0.2))
+        self.assertIn(f"parent_resolved_sha256={resolved['resolved_sha256']}", gem)
 
     def test_positive_connector_shifts_planes_and_exports_tube(self):
-        root = ROOT / "projects/rf_hexapole_ion_guide"
-        baseline = json.loads((root / "config/baseline.json").read_text(encoding="utf-8"))
-        contract = json.loads((root / "config/finite_3d_transport.json").read_text(encoding="utf-8"))
-        effective = apply_connector_length_overrides(contract, exit_connector_length_mm=2.0)
-        finite = resolve_contract(baseline, effective)
-        metrics = {"selected_candidate": {"rod_radius_mm": 2.2, "rod_center_radius_mm": 6.2}}
-        geometry = resolve_round_rod_geometry(baseline, finite, metrics)
-        self.assertAlmostEqual(finite["derived_geometry_mm"]["detector_z"], 83.1)
-        self.assertIn("cylinder(0,0,82.6,21,,2)", render_gem(geometry, 0.2))
+        request = json.loads(
+            (ROOT / "projects/rf_hexapole_ion_guide/config/requests/baseline.json").read_text()
+        )
+        request["geometry_mm"]["exit_interface"]["connector_length_mm"] = 2.0
+        request["geometry_mm"]["enclosure"]["vacuum_z_max_mm"] += 2.0
+        resolved = compile_design_request(request, expected_identity=request["identity"])
+        self.assertEqual(resolved["interfaces_mm"]["exit"]["connector_length_mm"], 2.0)
+        self.assertIn(",,2)", render_gem(resolved, 0.2))
 
     def test_finite_3d_contract_rejects_unknown_connector_shape(self):
         root = ROOT / "projects/rf_hexapole_ion_guide"
@@ -134,22 +135,13 @@ class RoundRodGeometryTest(unittest.TestCase):
             resolve_contract(baseline, contract)
 
     def test_segmented_simion_geometry_separates_rods_ground_and_output(self):
-        geometry = self.resolve("rf_hexapole_ion_guide", 0.55)
-        contract = json.loads(
-            (ROOT / "projects/rf_hexapole_ion_guide/config/modes/axial_acceleration_reference.json").read_text(
+        resolved = json.loads(
+            (ROOT / "projects/rf_hexapole_ion_guide/config/resolved_design.json").read_text(
                 encoding="utf-8"
             )
         )
-        rods = geometry["array_mm"]["rods"]
-        resolved = resolve_axial_acceleration(
-            contract,
-            rod_z_min_mm=rods[0]["z_min_mm"],
-            rod_z_max_mm=rods[0]["z_max_mm"],
-            source_kinetic_energy_ev=2.0,
-            charge_state=1,
-        )
-        segmented = segment_rod_array(geometry["array_mm"], resolved)
-        gem = render_gem(geometry, 0.2, segmented)
+        segmented = resolved["segmentation"]["segmented_rod_array"]
+        gem = render_gem(resolved, 0.2)
         for electrode_id in range(1, 9):
             self.assertIn(f"e({electrode_id}) {{ fill {{ within {{ cylinder", gem)
         self.assertIn("e(9) { fill {", gem)
@@ -162,12 +154,11 @@ class RoundRodGeometryTest(unittest.TestCase):
         self.assertIn(f"locate(0,0,{first['z_max_mm']:.15g})", quad_gem)
 
     def test_endplate_mode_keeps_continuous_rods_and_separates_output(self):
-        geometry = self.resolve("rf_hexapole_ion_guide", 0.55)
-        gem = render_gem(geometry, 0.2, separate_output_electrode=True)
-        self.assertEqual(gem.count("e(1) { fill { within { cylinder"), 3)
-        self.assertEqual(gem.count("e(2) { fill { within { cylinder"), 3)
-        self.assertIn("e(3) { fill {\n    within { cylinder(0,0", gem)
-        self.assertIn("e(4) { fill {", gem)
+        resolved = json.loads(
+            (ROOT / "projects/rf_hexapole_ion_guide/config/resolved_design.json").read_text()
+        )
+        with self.assertRaises(TypeError):
+            render_gem(resolved, 0.2, separate_output_electrode=True)
 
     def test_connector_override_rejects_negative_length(self):
         root = ROOT / "projects/rf_hexapole_ion_guide"

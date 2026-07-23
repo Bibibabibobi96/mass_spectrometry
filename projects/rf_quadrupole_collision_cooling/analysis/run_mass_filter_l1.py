@@ -37,6 +37,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOT = PROJECT_ROOT.parents[1]
 WORKSPACE_ROOT = REPOSITORY_ROOT.parent
 DEFAULT_BASELINE = PROJECT_ROOT / "config" / "baseline.json"
+DEFAULT_RESOLVED = PROJECT_ROOT / "config" / "resolved_design_mass_filter.json"
 DEFAULT_MODE = PROJECT_ROOT / "config" / "modes" / "mass_filter_reference.json"
 DEFAULT_SOURCE = PROJECT_ROOT / "config" / "official_particle_source.json"
 MANIFEST_TIMEOUT_S = 60
@@ -128,21 +129,22 @@ def generate_particles(
 def simulate_mass(
     mass_Th: float,
     particles: dict[str, np.ndarray],
-    baseline: dict[str, Any],
-    mode: dict[str, Any],
+    resolved: dict[str, Any],
     steps_per_rf_period: int,
 ) -> dict[str, float | int]:
     """Track one mass through the finite ideal rod region and hard ``r0`` aperture."""
-    geometry = baseline["geometry_mm"]
-    rf = mode["rf"]
+    geometry = resolved["geometry_mm"]
+    drive = resolved["drive"]
     mass_kg = float(mass_Th) * atomic_mass
-    r0_m = float(geometry["field_radius_r0"]) * 1e-3
-    rod_length_m = float(geometry["rod_length"]) * 1e-3
-    frequency_hz = float(rf["frequency_Hz"])
+    r0_m = float(geometry["inscribed_radius_r0"]) * 1e-3
+    rod_length_m = (
+        float(geometry["rod_z_max"]) - float(geometry["rod_z_min"])
+    ) * 1e-3
+    frequency_hz = float(drive["frequency_Hz"])
     omega = 2.0 * math.pi * frequency_hz
     time_step_s = 1.0 / (frequency_hz * steps_per_rf_period)
-    dc_v = float(rf["dc_amplitude_V_per_group"])
-    rf_v = float(rf["amplitude_V_zero_to_peak_per_group"])
+    dc_v = float(drive["dc_amplitude_V_per_group"])
+    rf_v = float(drive["rf_amplitude_V_zero_to_peak_per_group"])
 
     speed = np.sqrt(2.0 * particles["energy_j"] / mass_kg)
     x = particles["x_m"].copy()
@@ -250,10 +252,16 @@ def export_response_figure(
 
 
 def run(
-    baseline_path: Path, mode_path: Path, source_path: Path, run_id: str, artifact_project_root: Path
+    baseline_path: Path,
+    resolved_path: Path,
+    mode_path: Path,
+    source_path: Path,
+    run_id: str,
+    artifact_project_root: Path,
 ) -> Path:
     """Execute one immutable L1 run and write its complete provenance triplet."""
     baseline = load_json(baseline_path)
+    resolved = load_json(resolved_path)
     mode = load_json(mode_path)
     source = load_json(source_path)
     derived = validate_l1_contract(baseline, mode, source)
@@ -267,18 +275,20 @@ def run(
     results.mkdir(parents=True)
     inputs.mkdir()
     frozen_baseline = inputs / "baseline.json"
+    frozen_resolved = inputs / "resolved_design_mass_filter.json"
     frozen_mode = inputs / "mass_filter_reference.json"
     frozen_source = inputs / "official_particle_source.json"
     frozen_runner = inputs / "run_mass_filter_l1.py.txt"
     frozen_l0 = inputs / "quadrupole_l0.py.txt"
     shutil.copy2(baseline_path, frozen_baseline)
+    shutil.copy2(resolved_path, frozen_resolved)
     shutil.copy2(mode_path, frozen_mode)
     shutil.copy2(source_path, frozen_source)
     shutil.copy2(Path(__file__), frozen_runner)
     shutil.copy2(Path(l0.__file__), frozen_l0)
 
     rows = [
-        simulate_mass(float(mass), particles, baseline, mode, int(screen["steps_per_rf_period"]))
+        simulate_mass(float(mass), particles, resolved, int(screen["steps_per_rf_period"]))
         for mass in derived["masses_Th"]
     ]
     metrics = evaluate_response(rows, derived, mode)
@@ -307,6 +317,7 @@ def run(
         "project_root": str(REPOSITORY_ROOT),
         "inputs": {
             "baseline": str(frozen_baseline),
+            "resolved_design": str(frozen_resolved),
             "mode": str(frozen_mode),
             "source": str(frozen_source),
             "runner": str(frozen_runner),
@@ -344,6 +355,7 @@ def run(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--baseline", type=Path, default=DEFAULT_BASELINE)
+    parser.add_argument("--resolved-design", type=Path, default=DEFAULT_RESOLVED)
     parser.add_argument("--mode", type=Path, default=DEFAULT_MODE)
     parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
     parser.add_argument("--run-id")
@@ -360,7 +372,14 @@ def main() -> None:
         return
     if not args.run_id:
         parser.error("--run-id is required unless --check-contract is used")
-    destination = run(args.baseline, args.mode, args.source, args.run_id, args.artifact_project_root)
+    destination = run(
+        args.baseline,
+        args.resolved_design,
+        args.mode,
+        args.source,
+        args.run_id,
+        args.artifact_project_root,
+    )
     print(f"QUADRUPOLE_MASS_FILTER_L1=PASS RUN={destination.name}")
 
 

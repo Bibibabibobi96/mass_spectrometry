@@ -17,6 +17,9 @@ from matplotlib.patches import Rectangle
 def analyze(events: pd.DataFrame) -> dict:
     if len(events) != 100 or events["particle_id"].nunique() != 100:
         raise ValueError("S1 physical-port result must contain exactly 100 unique particles")
+    identities = events[["frame_id", "clock_epoch_id"]].drop_duplicates()
+    if len(identities) != 1 or identities.iloc[0].astype(str).str.strip().eq("").any():
+        raise ValueError("S1 physical-port events must bind one frame and clock epoch")
     geometric = events[events["event"] != "geometric_reject"]
     exits = events[events["event"] == "local_joint_exit"]
     pulse_values = events["pulse_time_reached"]
@@ -47,10 +50,15 @@ def analyze(events: pd.DataFrame) -> dict:
         "downstream_analyzer_required": True,
         "physical_link_claim_allowed": False,
         "resolution_claim_allowed": False,
+        "frame_id": str(identities.iloc[0]["frame_id"]),
+        "clock_epoch_id": str(identities.iloc[0]["clock_epoch_id"]),
     }
 
 
-def plot_entry(canonical: pd.DataFrame, events: pd.DataFrame, center_z: float, output: Path) -> None:
+def plot_entry(
+    canonical: pd.DataFrame, events: pd.DataFrame, center_z: float, output: Path,
+    frame_id: str, clock_epoch_id: str,
+) -> None:
     outcome = events.set_index("particle_id")["event"]
     ids = canonical["particle_id"].astype(int)
     accepted = ids.map(outcome).ne("geometric_reject")
@@ -61,13 +69,13 @@ def plot_entry(canonical: pd.DataFrame, events: pd.DataFrame, center_z: float, o
                  color="#d95f0e", marker="x", label="geometric reject", s=32)
     axis.add_patch(Rectangle((-0.5, center_z - 0.45), 1.0, 0.9, fill=False,
                              edgecolor="#54278f", linewidth=2, label="1.0 x 0.9 mm port"))
-    axis.set(xlabel="oa transverse y (mm)", ylabel="oa axial z (mm)",
-             title="RF exit distribution at the physical oa entry port")
+    axis.set(xlabel=f"oa transverse y (mm), frame={frame_id}", ylabel="oa axial z (mm)",
+             title=f"RF exit at physical oa entry port; epoch={clock_epoch_id}")
     axis.grid(alpha=0.25)
     axis.legend()
     figure.tight_layout()
     output.parent.mkdir(parents=True, exist_ok=True)
-    figure.savefig(output, dpi=180)
+    figure.savefig(output, format="png", dpi=180)
     plt.close(figure)
 
 
@@ -81,7 +89,10 @@ def main() -> None:
     args = parser.parse_args()
     events = pd.read_csv(args.events)
     result = analyze(events)
-    plot_entry(pd.read_csv(args.canonical), events, args.center_z_mm, args.figure)
+    plot_entry(
+        pd.read_csv(args.canonical), events, args.center_z_mm, args.figure,
+        result["frame_id"], result["clock_epoch_id"],
+    )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(

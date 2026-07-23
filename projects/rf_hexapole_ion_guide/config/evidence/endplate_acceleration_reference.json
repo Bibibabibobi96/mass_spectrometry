@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "role": "multipole_transport_evidence_contract",
+  "project_id": "rf_hexapole_ion_guide",
+  "design_profile_id": "endplate_acceleration_reference",
+  "evaluation": "axial_drop_vs_zero_drop",
+  "thresholds": {
+    "minimum_primary_transmission": 0.8,
+    "minimum_mean_energy_gain_eV": 2.5,
+    "maximum_mean_output_energy_error_eV": 0.5
+  }
+}

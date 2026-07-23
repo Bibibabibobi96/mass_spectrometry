@@ -8,6 +8,7 @@ $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 if (-not $PythonExe) {
   $PythonExe = Join-Path $repoRoot '.venv\Scripts\python.exe'
 }
+$PythonExe = (Resolve-Path -LiteralPath $PythonExe -ErrorAction Stop).Path
 
 Push-Location $projectRoot
 try {

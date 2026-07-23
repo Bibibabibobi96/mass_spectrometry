@@ -9,7 +9,8 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-from rfquad_contract import diagnostic_planes, load as load_contract
+from rfquad_contract import load as load_contract
+from transport_diagnostics import diagnostic_planes
 
 
 def load_tracks(path: Path) -> dict[int, dict[str, np.ndarray]]:
@@ -52,9 +53,9 @@ def main() -> None:
     particle_ids = sorted(comsol)
     if particle_ids != sorted(simion):
         raise ValueError("COMSOL and SIMION trajectory particle IDs differ")
-    step = geometry["simion_cell_mm"]
+    step = 0.2
     z = np.arange(planes["first_common_plane"], planes["detector_front"] + 1e-9, step)
-    period_us = 1e6 / resolved["mode"]["rf"]["frequency_Hz"]
+    period_us = 1e6 / resolved["drive"]["frequency_Hz"]
 
     dt, distance = [], []
     for particle_id in particle_ids:

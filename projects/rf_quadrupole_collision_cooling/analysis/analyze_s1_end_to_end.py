@@ -22,7 +22,10 @@ except ModuleNotFoundError:
     from projects.oa_tof.analysis.peak_metrics import AnalysisSettings, compute_detector_metrics, compute_peak_metrics
 
 
-FIELDS = ["particle_id", "event", "instrument_time_us", "x_mm", "y_mm", "z_mm", "status"]
+FIELDS = [
+    "particle_id", "event", "frame_id", "clock_epoch_id",
+    "instrument_time_us", "x_mm", "y_mm", "z_mm", "status",
+]
 
 
 def read(path: Path) -> list[dict[str, str]]:
@@ -58,6 +61,7 @@ def resolution_diagnostic(
     settings: AnalysisSettings, contract_sha256: str, detector_center_x_mm: float,
     detector_center_y_mm: float, detector_radius_mm: float,
     geometry_contract_sha256: str, figure_path: Path | None,
+    frame_id: str, clock_epoch_id: str,
 ) -> dict[str, object]:
     crossings = [row for row in downstream if math.isfinite(float(row["InstrumentTimeUs"]))]
     hits = [row for row in crossings if row["Hit"].strip().lower() == "true"]
@@ -71,6 +75,8 @@ def resolution_diagnostic(
         "detector_hits": len(hits),
         "analysis_contract_sha256": contract_sha256,
         "geometry_contract_sha256": geometry_contract_sha256,
+        "frame_id": frame_id,
+        "clock_epoch_id": clock_epoch_id,
         "detector_local_frame": {
             "global_center_x_mm": detector_center_x_mm,
             "global_center_y_mm": detector_center_y_mm,
@@ -127,10 +133,13 @@ def resolution_diagnostic(
         axes[1].set_aspect("equal", adjustable="box")
         axes[1].grid(alpha=0.2)
         axes[1].legend(loc="best", fontsize=8)
-        fig.suptitle("RF-to-oaTOF downstream peak and detector diagnostic")
+        fig.suptitle(
+            "RF-to-oaTOF downstream peak and detector diagnostic\n"
+            f"frame={frame_id}; clock epoch={clock_epoch_id}"
+        )
         fig.tight_layout()
         figure_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(figure_path, dpi=190)
+        fig.savefig(figure_path, format="png", dpi=190)
         plt.close(fig)
     return result
 
@@ -143,6 +152,12 @@ def analyze(entry_path: Path, local_path: Path, downstream_path: Path, row_map_p
     entries, local, downstream, mapping = map(read, (entry_path, local_path, downstream_path, row_map_path))
     if len(entries) != 100 or len(local) != 100:
         raise ValueError("S1 end-to-end analysis requires the complete N=100 upstream census")
+    identities = {
+        (row["frame_id"], row["clock_epoch_id"]) for row in entries + local
+    }
+    if len(identities) != 1 or any(not value for value in next(iter(identities))):
+        raise ValueError("S1 end-to-end states must bind one frame and clock epoch")
+    frame_id, clock_epoch_id = next(iter(identities))
     solver_to_particle = {int(row["solver_row_index"]): int(row["particle_id"]) for row in mapping}
     if len(downstream) != len(mapping):
         raise ValueError("SIMION downstream census differs from its row map")
@@ -150,12 +165,14 @@ def analyze(entry_path: Path, local_path: Path, downstream_path: Path, row_map_p
     for row in entries:
         sparse.append({
             "particle_id": int(row["particle_id"]), "event": "rf_exit_entry",
+            "frame_id": frame_id, "clock_epoch_id": clock_epoch_id,
             "instrument_time_us": row["instrument_time_us"], "x_mm": row["position_x_mm"],
             "y_mm": row["position_y_mm"], "z_mm": row["position_z_mm"], "status": "entered_s1",
         })
     for row in local:
         sparse.append({
             "particle_id": int(row["particle_id"]), "event": row["event"],
+            "frame_id": frame_id, "clock_epoch_id": clock_epoch_id,
             "instrument_time_us": row["instrument_time_us"], "x_mm": row["x_mm"],
             "y_mm": row["y_mm"], "z_mm": row["z_mm"], "status": row["status"],
         })
@@ -167,6 +184,7 @@ def analyze(entry_path: Path, local_path: Path, downstream_path: Path, row_map_p
         hits += int(hit)
         sparse.append({
             "particle_id": particle_id, "event": "detector_outcome",
+            "frame_id": frame_id, "clock_epoch_id": clock_epoch_id,
             "instrument_time_us": row["InstrumentTimeUs"], "x_mm": row["XMm"],
             "y_mm": row["YMm"], "z_mm": "0", "status": "detector_hit" if hit else "lost",
         })
@@ -222,6 +240,8 @@ def analyze(entry_path: Path, local_path: Path, downstream_path: Path, row_map_p
         "checks": checks,
         "physical_link_claim_allowed": False,
         "resolution_claim_allowed": False,
+        "frame_id": frame_id,
+        "clock_epoch_id": clock_epoch_id,
     }
     if pulse_time_us is not None:
         if (pulse_width_us is None or pulse_width_us <= 0 or analysis_contract_path is None
@@ -253,6 +273,7 @@ def analyze(entry_path: Path, local_path: Path, downstream_path: Path, row_map_p
         result["resolution_diagnostic"] = resolution_diagnostic(
             downstream, next(iter(masses)), pulse_time_us, settings, contract_sha,
             detector_x, detector_y, detector_radius, geometry_sha, resolution_figure,
+            frame_id, clock_epoch_id,
         )
     return result
 
@@ -266,11 +287,17 @@ def plot_funnel(result: dict[str, object], output: Path) -> None:
     figure, axis = plt.subplots(figsize=(7.2, 4.6))
     bars = axis.bar(labels, values, color=colors)
     axis.bar_label(bars, labels=[f"{value}/100" for value in values], padding=3)
-    axis.set(ylabel="Particles", ylim=(0, 108), title="RF to oaTOF S1 functional-chain census")
+    axis.set(
+        ylabel="Particles", ylim=(0, 108),
+        title=(
+            "RF to oaTOF S1 functional-chain census\n"
+            f"frame={result['frame_id']}; epoch={result['clock_epoch_id']}"
+        ),
+    )
     axis.grid(axis="y", alpha=0.25)
     figure.tight_layout()
     output.parent.mkdir(parents=True, exist_ok=True)
-    figure.savefig(output, dpi=180)
+    figure.savefig(output, format="png", dpi=180)
     plt.close(figure)
 
 

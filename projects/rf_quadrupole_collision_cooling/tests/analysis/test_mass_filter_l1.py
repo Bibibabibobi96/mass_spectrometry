@@ -17,6 +17,7 @@ class MassFilterL1Tests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.baseline = load_json(PROJECT_ROOT / "config" / "baseline.json")
+        cls.resolved = load_json(PROJECT_ROOT / "config" / "resolved_design_mass_filter.json")
         cls.mode = load_json(PROJECT_ROOT / "config" / "modes" / "mass_filter_reference.json")
         cls.source = load_json(PROJECT_ROOT / "config" / "official_particle_source.json")
 
@@ -30,7 +31,7 @@ class MassFilterL1Tests(unittest.TestCase):
         particles = MODULE.generate_particles(self.source, 64, 20260722)
         transmissions = {}
         for mass in (96.0, 101.5, 106.0):
-            result = MODULE.simulate_mass(mass, particles, self.baseline, self.mode, 80)
+            result = MODULE.simulate_mass(mass, particles, self.resolved, 80)
             transmissions[mass] = result["transmission_fraction"]
         self.assertGreaterEqual(transmissions[101.5], 0.9)
         self.assertLessEqual(transmissions[96.0], 0.1)

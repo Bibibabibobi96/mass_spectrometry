@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/multipole_paired_metrics.schema.json",
+  "title": "Paired axial-drive transport metrics",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "role",
+    "status",
+    "project_id",
+    "parent_resolved_design_sha256",
+    "axial_drive_topology",
+    "primary_case_id",
+    "control_case_id",
+    "paired_population_policy",
+    "particles",
+    "accelerated_transmitted_particles",
+    "control_transmitted_particles",
+    "paired_transmitted_particles",
+    "accelerated_transmission",
+    "control_transmission",
+    "mean_control_output_energy_eV",
+    "mean_accelerated_output_energy_eV",
+    "mean_energy_gain_eV",
+    "expected_axial_energy_gain_eV",
+    "paired_expected_mean_output_energy_eV",
+    "nominal_source_energy_eV",
+    "sample_source_mean_energy_eV",
+    "source_model_predicted_mean_energy_eV",
+    "nominal_predicted_output_energy_eV",
+    "absolute_mean_output_energy_error_eV",
+    "mean_control_divergence_angle_deg",
+    "mean_accelerated_divergence_angle_deg",
+    "mean_divergence_change_deg",
+    "control_rms_radial_position_mm",
+    "accelerated_rms_radial_position_mm",
+    "rms_radial_position_change_mm",
+    "claim_limit"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "multipole_paired_axial_drive_metrics"},
+    "status": {"const": "UNQUALIFIED"},
+    "project_id": {"type": "string", "minLength": 1},
+    "parent_resolved_design_sha256": {
+      "type": "string",
+      "pattern": "^[A-F0-9]{64}$"
+    },
+    "axial_drive_topology": {
+      "enum": [
+        "segmented_rod_axial_acceleration",
+        "endplate_potential_step"
+      ]
+    },
+    "primary_case_id": {"type": "string", "minLength": 1},
+    "control_case_id": {"type": "string", "minLength": 1},
+    "paired_population_policy": {
+      "const": "intersection_of_transmitted_particle_ids"
+    },
+    "particles": {"type": "integer", "minimum": 1},
+    "accelerated_transmitted_particles": {"type": "integer", "minimum": 0},
+    "control_transmitted_particles": {"type": "integer", "minimum": 0},
+    "paired_transmitted_particles": {"type": "integer", "minimum": 1},
+    "accelerated_transmission": {"type": "number", "minimum": 0, "maximum": 1},
+    "control_transmission": {"type": "number", "minimum": 0, "maximum": 1},
+    "mean_control_output_energy_eV": {"type": "number"},
+    "mean_accelerated_output_energy_eV": {"type": "number"},
+    "mean_energy_gain_eV": {"type": "number"},
+    "expected_axial_energy_gain_eV": {"type": "number"},
+    "paired_expected_mean_output_energy_eV": {"type": "number"},
+    "nominal_source_energy_eV": {"type": "number"},
+    "sample_source_mean_energy_eV": {"type": "number"},
+    "source_model_predicted_mean_energy_eV": {
+      "type": ["number", "null"]
+    },
+    "nominal_predicted_output_energy_eV": {"type": "number"},
+    "absolute_mean_output_energy_error_eV": {"type": "number", "minimum": 0},
+    "mean_control_divergence_angle_deg": {"type": "number"},
+    "mean_accelerated_divergence_angle_deg": {"type": "number"},
+    "mean_divergence_change_deg": {"type": "number"},
+    "control_rms_radial_position_mm": {"type": "number", "minimum": 0},
+    "accelerated_rms_radial_position_mm": {"type": "number", "minimum": 0},
+    "rms_radial_position_change_mm": {"type": "number"},
+    "claim_limit": {"type": "string", "minLength": 1}
+  }
+}

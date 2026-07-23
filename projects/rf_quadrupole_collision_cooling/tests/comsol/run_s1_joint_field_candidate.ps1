@@ -106,9 +106,10 @@ $uniformity = Join-Path $inputDir 'analyze_accelerator_transverse_field_uniformi
 $oaBuilder = Join-Path $inputDir 'oatof_build_accelerator_geometry.m'
 $joint = Join-Path $inputDir 'rf_to_oatof_s1_joint_field.json'
 $interface = Join-Path $inputDir 'rf_to_oatof_interface_candidate.json'
-$rfResolved = Join-Path $inputDir 'rf_resolved_geometry.json'
+$rfResolved = Join-Path $inputDir 'rf_resolved_design.json'
 $oaBaseline = Join-Path $inputDir 'oatof_baseline.json'
 $oaFormalMode = Join-Path $inputDir 'oatof_formal_mode.json'
+$spatialRegistration = Join-Path $inputDir 'resolved_rf_to_oatof_s1_spatial_registration.json'
 $runner = Join-Path $inputDir 'run_s1_joint_field_candidate.ps1.txt'
 Copy-Item $PSCommandPath $runner
 Copy-Item (Join-Path $PSScriptRoot 'build_s1_joint_field_candidate.m') $task
@@ -119,9 +120,10 @@ Copy-Item (Join-Path $repoRoot 'projects\oa_tof\analysis\analyze_accelerator_tra
 Copy-Item (Join-Path $repoRoot 'projects\oa_tof\comsol\oatof_build_accelerator_geometry.m') $oaBuilder
 Copy-Item $jointSource $joint
 Copy-Item (Join-Path $projectRoot 'config\rf_to_oatof_interface_candidate.json') $interface
-Copy-Item (Join-Path $projectRoot 'config\resolved_geometry.json') $rfResolved
+Copy-Item (Join-Path $projectRoot 'config\resolved_design_official.json') $rfResolved
 Copy-Item (Join-Path $repoRoot 'projects\oa_tof\config\baseline.json') $oaBaseline
 Copy-Item (Join-Path $repoRoot 'projects\oa_tof\config\modes\formal.json') $oaFormalMode
+Copy-Item (Join-Path $projectRoot 'config\resolved_rf_to_oatof_s1_spatial_registration.json') $spatialRegistration
 $particleInput = $null
 $pulseSchedule = $null
 if ($particleEnabled) {
@@ -157,7 +159,7 @@ $report = Join-Path $logDir 'comsol_joint_field.txt'
 $summary = Join-Path $runDir 'summary.json'
 $runConfig = Join-Path $runDir 'run_config.json'
 $manifestWriter = Join-Path $repoRoot 'common\contracts\write_run_manifest.py'
-$inputMap=[ordered]@{task=$task;analysis=$analysis;particle_analysis=$particleAnalysis;pulse_snapshot_analysis=$pulseSnapshotAnalysis;uniformity_analysis=$uniformity;oa_accelerator_builder=$oaBuilder;joint_contract=$joint;interface_contract=$interface;rf_resolved=$rfResolved;oa_baseline=$oaBaseline;oa_formal_mode=$oaFormalMode;closed_reference=$closedReference;runner=$runner}
+$inputMap=[ordered]@{task=$task;analysis=$analysis;particle_analysis=$particleAnalysis;pulse_snapshot_analysis=$pulseSnapshotAnalysis;uniformity_analysis=$uniformity;oa_accelerator_builder=$oaBuilder;joint_contract=$joint;interface_contract=$interface;spatial_registration=$spatialRegistration;rf_resolved=$rfResolved;oa_baseline=$oaBaseline;oa_formal_mode=$oaFormalMode;closed_reference=$closedReference;runner=$runner}
 if($particleEnabled){$inputMap.particle_input=$particleInput}
 if($null -ne $pulseSchedule){$inputMap.pulse_schedule=$pulseSchedule}
 [ordered]@{
@@ -171,11 +173,12 @@ if($null -ne $pulseSchedule){$inputMap.pulse_schedule=$pulseSchedule}
 & $python $manifestWriter --run-config $runConfig --status interrupted --software 'COMSOL 6.4' --software 'MATLAB R2025b' --software 'Python 3.11'
 if ($LASTEXITCODE -ne 0) { throw 'Initial manifest failed.' }
 
-$names = @('RF_OATOF_S1_FIELD_CSV','RF_OATOF_S1_CONTRACT','RF_OATOF_INTERFACE_CONTRACT','RF_OATOF_RF_RESOLVED','RF_OATOF_OA_BASELINE','RF_OATOF_PORT_WIDTH_MM','RF_OATOF_DOWNSTREAM_BUFFER_MM','RF_OATOF_MESH_AUTO_LEVEL','RF_OATOF_ACCELERATOR_HMAX_MM','RF_OATOF_JOINT_SCOPE','RF_OATOF_OA_COMSOL_DIR','RF_OATOF_S1_PARTICLE_INPUT','RF_OATOF_S1_PARTICLE_OUTPUT','RF_OATOF_S1_CAPTURE_OUTPUT','RF_OATOF_PULSE_TIME_US','RF_OATOF_PULSE_WIDTH_US')
+$names = @('RF_OATOF_S1_FIELD_CSV','RF_OATOF_S1_CONTRACT','RF_OATOF_INTERFACE_CONTRACT','RF_OATOF_SPATIAL_REGISTRATION','RF_OATOF_RF_RESOLVED','RF_OATOF_OA_BASELINE','RF_OATOF_PORT_WIDTH_MM','RF_OATOF_DOWNSTREAM_BUFFER_MM','RF_OATOF_MESH_AUTO_LEVEL','RF_OATOF_ACCELERATOR_HMAX_MM','RF_OATOF_JOINT_SCOPE','RF_OATOF_OA_COMSOL_DIR','RF_OATOF_S1_PARTICLE_INPUT','RF_OATOF_S1_PARTICLE_OUTPUT','RF_OATOF_S1_CAPTURE_OUTPUT','RF_OATOF_PULSE_TIME_US','RF_OATOF_PULSE_WIDTH_US')
 $old = @{}; foreach($name in $names){$old[$name]=[Environment]::GetEnvironmentVariable($name)}
 try {
   try {
     $env:RF_OATOF_S1_FIELD_CSV=$fieldCsv; $env:RF_OATOF_S1_CONTRACT=$joint; $env:RF_OATOF_INTERFACE_CONTRACT=$interface
+    $env:RF_OATOF_SPATIAL_REGISTRATION=$spatialRegistration
     $env:RF_OATOF_RF_RESOLVED=$rfResolved; $env:RF_OATOF_OA_BASELINE=$oaBaseline; $env:RF_OATOF_PORT_WIDTH_MM=[string]$PortWidthMm
     $env:RF_OATOF_MESH_AUTO_LEVEL=[string]$MeshAutoLevel
     $env:RF_OATOF_ACCELERATOR_HMAX_MM=[string]$AcceleratorHmaxMm
@@ -188,7 +191,7 @@ try {
   } finally {
     foreach($name in $names){[Environment]::SetEnvironmentVariable($name,$old[$name])}
   }
-  & $python $analysis --candidate $fieldCsv --closed-reference $closedReference --joint-contract $joint --interface-contract $interface --rf-resolved $rfResolved --reference-role $referenceRole --output-dir $resultDir
+  & $python $analysis --candidate $fieldCsv --closed-reference $closedReference --joint-contract $joint --interface-contract $interface --rf-resolved $rfResolved --spatial-registration $spatialRegistration --reference-role $referenceRole --output-dir $resultDir
   if ($LASTEXITCODE -ne 0) { throw 'S1 joint-field analysis failed.' }
   if($particleEnabled){
     $particleMetrics=Join-Path $resultDir 's1_physical_port_metrics.json';$particleFigure=Join-Path $resultDir 's1_physical_port_entry.png'

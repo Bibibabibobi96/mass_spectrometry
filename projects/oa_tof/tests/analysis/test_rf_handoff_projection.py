@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import importlib.util
 import json
+import math
 import sys
 import tempfile
 import unittest
@@ -74,6 +75,41 @@ class HandoffConsumerModeTests(unittest.TestCase):
         self.assertFalse(validated["mode"]["claims"]["physical_link_claim_allowed"])
 
 
+class SimionVelocityFrameAdapterTests(unittest.TestCase):
+    def test_non_axis_velocity_round_trip_preserves_energy(self) -> None:
+        velocity = (1200.0, -340.0, 560.0)
+        mass_amu = 100.0
+        speed_squared = sum(component * component for component in velocity)
+        energy_ev = (
+            0.5
+            * mass_amu
+            * ADAPTER.ATOMIC_MASS_KG
+            * speed_squared
+            / ADAPTER.ELEMENTARY_CHARGE_C
+        )
+        azimuth_deg, elevation_deg = (
+            ADAPTER.encode_simion_accelerator_velocity(velocity)
+        )
+        decoded = ADAPTER.decode_simion_accelerator_velocity(
+            mass_amu,
+            energy_ev,
+            azimuth_deg,
+            elevation_deg,
+        )
+        for actual, expected in zip(decoded, velocity):
+            self.assertTrue(
+                math.isclose(actual, expected, rel_tol=1e-12, abs_tol=1e-10)
+            )
+        self.assertTrue(
+            math.isclose(
+                sum(component * component for component in decoded),
+                speed_squared,
+                rel_tol=1e-12,
+                abs_tol=1e-9,
+            )
+        )
+
+
 class HandoffBundleTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
@@ -83,12 +119,13 @@ class HandoffBundleTests(unittest.TestCase):
         self.ion = self.root / "particles.ion"
         self.metadata = self.root / "metadata.json"
         write_csv(self.canonical, [
-            "particle_id", "clock_epoch_id", "instrument_time_us", "lineage_age_us",
+            "particle_id", "frame_id", "clock_epoch_id", "instrument_time_us", "lineage_age_us",
             "particle_age_us", "mass_amu", "charge_state", "position_x_mm",
             "position_y_mm", "position_z_mm", "velocity_x_m_s", "velocity_y_m_s",
             "velocity_z_m_s", "kinetic_energy_eV",
         ], [{
-            "particle_id": 7, "clock_epoch_id": "epoch", "instrument_time_us": 15,
+            "particle_id": 7, "frame_id": "oatof_global",
+            "clock_epoch_id": "epoch", "instrument_time_us": 15,
             "lineage_age_us": 5, "particle_age_us": 2, "mass_amu": 100,
             "charge_state": 1, "position_x_mm": -48.8, "position_y_mm": 0.1,
             "position_z_mm": -18.4, "velocity_x_m_s": 1964.5389500506553,
@@ -150,6 +187,20 @@ class HandoffBundleTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "finite"):
             PREPARE.validate_bundle(self.canonical, self.ion, self.row_map, self.metadata)
 
+    def test_canonical_frame_mismatch_is_rejected(self) -> None:
+        rows = PREPARE._read_csv(self.canonical)
+        rows[0]["frame_id"] = "unregistered_frame"
+        write_csv(self.canonical, list(rows[0]), rows)
+        metadata = json.loads(self.metadata.read_text(encoding="utf-8"))
+        metadata["outputs"]["canonical_handoff_csv"]["sha256"] = PREPARE.sha256(
+            self.canonical
+        )
+        self.metadata.write_text(json.dumps(metadata), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "frame differs"):
+            PREPARE.validate_bundle(
+                self.canonical, self.ion, self.row_map, self.metadata
+            )
+
 
 class HandoffAnalysisTests(unittest.TestCase):
     def test_detector_plane_crossing_outside_active_radius_is_not_a_hit(self) -> None:
@@ -158,8 +209,8 @@ class HandoffAnalysisTests(unittest.TestCase):
             canonical = root / "canonical.csv"
             row_map = root / "row.csv"
             result_path = root / "result.csv"
-            write_csv(canonical, ["particle_id", "clock_epoch_id"], [
-                {"particle_id": 1, "clock_epoch_id": "epoch"}
+            write_csv(canonical, ["particle_id", "frame_id", "clock_epoch_id"], [
+                {"particle_id": 1, "frame_id": "oatof_global", "clock_epoch_id": "epoch"}
             ])
             write_csv(row_map, [
                 "solver_row_index", "particle_id", "instrument_time_us",
@@ -171,12 +222,21 @@ class HandoffAnalysisTests(unittest.TestCase):
             write_csv(result_path, ["Ion", "TofUs", "XMm", "YMm", "Hit"], [{
                 "Ion": 1, "TofUs": 30, "XMm": 90, "YMm": 0, "Hit": True,
             }])
+            contract = json.loads(
+                (PROJECT_ROOT / "config" / "analysis_contract.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            instrument_frame = contract["coordinate_frames"]["instrument"]["frame_id"]
+            detector_frame = contract["coordinate_frames"]["detector_plane"]["frame_id"]
             rows = ANALYZE._normalize_case({
                 "case_id": "case", "upstream_solver": "COMSOL",
                 "canonical": str(canonical), "row_map": str(row_map),
                 "downstream_results": {"COMSOL": str(result_path)},
-            }, 48.8, 0.0, 40.0)
+            }, instrument_frame, detector_frame, 48.8, 0.0, 40.0)
             self.assertFalse(rows[0]["hit"])
+            self.assertAlmostEqual(rows[0]["detector_x_mm"], 41.2)
+            self.assertEqual(rows[0]["frame_id"], detector_frame)
 
     def test_global_detector_clocks_and_functional_acceptance(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -188,9 +248,10 @@ class HandoffAnalysisTests(unittest.TestCase):
                 canonical = root / f"{case_id}_canonical.csv"
                 row_map = root / f"{case_id}_row.csv"
                 write_csv(canonical, [
-                    "particle_id", "clock_epoch_id", "instrument_time_us",
+                    "particle_id", "frame_id", "clock_epoch_id", "instrument_time_us",
                 ], [
-                    {"particle_id": index, "clock_epoch_id": "epoch", "instrument_time_us": 10 + index}
+                    {"particle_id": index, "frame_id": "oatof_global",
+                     "clock_epoch_id": "epoch", "instrument_time_us": 10 + index}
                     for index in range(1, 101)
                 ])
                 write_csv(row_map, [
@@ -218,12 +279,21 @@ class HandoffAnalysisTests(unittest.TestCase):
             manifest = root / "inputs.json"
             manifest.write_text(json.dumps({
                 "resolved_geometry": str(PROJECT_ROOT / "config" / "resolved_geometry.json"),
+                "analysis_contract": str(PROJECT_ROOT / "config" / "analysis_contract.json"),
                 "cases": cases,
             }), encoding="utf-8")
             result = ANALYZE.analyze(manifest, root / "results")
             self.assertEqual(result["status"], "CONDITIONAL_PASS")
             self.assertEqual(result["clock_reconstruction"], "PASS")
             self.assertEqual(result["physical_link_status"], "BLOCKED")
+            self.assertEqual(result["schema_version"], 2)
+            authority = json.loads(
+                (PROJECT_ROOT / "config" / "analysis_contract.json").read_text(encoding="utf-8")
+            )["coordinate_frames"]["detector_plane"]
+            self.assertEqual(
+                result["detector_coordinate_contract"]["frame_id"],
+                authority["frame_id"],
+            )
             self.assertEqual(
                 result["cross_ensemble_comparisons"]["COMSOL"]["detector_classification_change_count"],
                 0,
@@ -234,6 +304,9 @@ class HandoffAnalysisTests(unittest.TestCase):
             self.assertAlmostEqual(float(first["detector_instrument_time_us"]), 41.0)
             self.assertAlmostEqual(float(first["detector_lineage_age_us"]), 35.0)
             self.assertAlmostEqual(float(first["detector_particle_age_us"]), 32.0)
+            self.assertAlmostEqual(float(first["detector_x_mm"]), 0.2)
+            self.assertAlmostEqual(float(first["detector_y_mm"]), 0.1)
+            self.assertEqual(first["frame_id"], authority["frame_id"])
 
 
 class HandoffPulseAnalysisTests(unittest.TestCase):
@@ -245,10 +318,13 @@ class HandoffPulseAnalysisTests(unittest.TestCase):
             control = root / "control.csv"
             log = root / "timed.log"
             write_csv(canonical, [
-                "particle_id", "instrument_time_us", "position_x_mm", "position_y_mm",
+                "particle_id", "frame_id", "clock_epoch_id",
+                "instrument_time_us", "position_x_mm", "position_y_mm",
                 "position_z_mm", "velocity_x_m_s", "velocity_y_m_s", "velocity_z_m_s",
             ], [{
-                "particle_id": 1, "instrument_time_us": 45, "position_x_mm": -62.8,
+                "particle_id": 1, "frame_id": "oatof_global",
+                "clock_epoch_id": "epoch", "instrument_time_us": 45,
+                "position_x_mm": -62.8,
                 "position_y_mm": 0.1, "position_z_mm": -18.4, "velocity_x_m_s": 2000,
                 "velocity_y_m_s": 20, "velocity_z_m_s": -30,
             }])
@@ -272,18 +348,22 @@ class HandoffPulseAnalysisTests(unittest.TestCase):
             self.assertEqual([row["event"] for row in saved], ["effective_entry", "pulse_on", "terminal"])
             self.assertEqual(float(saved[1]["vx_m_s"]), 2000.0)
             self.assertEqual(saved[2]["status"], "detector_hit")
+            self.assertTrue(all(row["frame_id"] == "oatof_global" for row in saved))
+            self.assertTrue(all(row["clock_epoch_id"] == "epoch" for row in saved))
             self.assertEqual(outcomes[1], "detector_hit")
 
     def test_solver_rows_are_mapped_to_nonsequential_particle_ids(self) -> None:
         canonical_rows = [
             {
-                "particle_id": "101", "instrument_time_us": "45",
+                "particle_id": "101", "frame_id": "oatof_global",
+                "clock_epoch_id": "epoch", "instrument_time_us": "45",
                 "position_x_mm": "-62.8", "position_y_mm": "0.1",
                 "position_z_mm": "-18.4", "velocity_x_m_s": "2000",
                 "velocity_y_m_s": "20", "velocity_z_m_s": "-30",
             },
             {
-                "particle_id": "205", "instrument_time_us": "46",
+                "particle_id": "205", "frame_id": "oatof_global",
+                "clock_epoch_id": "epoch", "instrument_time_us": "46",
                 "position_x_mm": "-62.8", "position_y_mm": "0.2",
                 "position_z_mm": "-18.3", "velocity_x_m_s": "1900",
                 "velocity_y_m_s": "10", "velocity_z_m_s": "-20",

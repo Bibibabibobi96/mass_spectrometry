@@ -43,7 +43,8 @@
         "interface": {"$ref": "#/$defs/nullablePath"},
         "execution": {"$ref": "#/$defs/nullablePath"},
         "design_variables": {"$ref": "#/$defs/nullablePath"},
-        "optimization_envelope": {"$ref": "#/$defs/nullablePath"}
+        "optimization_envelope": {"$ref": "#/$defs/nullablePath"},
+        "design_profiles": {"$ref": "#/$defs/nullablePath"}
       }
     },
     "capabilities": {

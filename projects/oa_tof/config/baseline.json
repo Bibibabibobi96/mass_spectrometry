@@ -3,6 +3,7 @@
   "source": "Physics-derived oa-TOF project baseline; solver and CAD implementations must conform to this contract",
   "naming_convention": "Code variables use <component>_<feature>_<quantity>_<unit>; global positions include the axis (for example accelerator_grid2_z_mm), local coordinates include local, counts end in _count, voltages end in _v. Keys inside geometry_mm inherit millimetres from the section name.",
   "coordinate_convention": {
+    "frame_id": "oatof_global",
     "units": "mm",
     "origin": "detector active-plane center and exact first-order accelerator time-focus plane",
     "reflectron_axis": [

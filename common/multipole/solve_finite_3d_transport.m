@@ -4,14 +4,10 @@ addpath(fileparts(mfilename('fullpath')));
 addpath(fullfile(fileparts(mfilename('fullpath')),'..','comsol'));
 
 reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
-baselinePath = getenv('MULTIPOLE_L3_BASELINE');
-familyOperatingPath = getenv('MULTIPOLE_L3_FAMILY_OPERATING');
-contractPath = getenv('MULTIPOLE_L3_CONTRACT');
-fieldMetricsPath = getenv('MULTIPOLE_L3_FIELD_METRICS');
-roundRodGeometryPath = getenv('MULTIPOLE_L3_ROUND_ROD_GEOMETRY');
-axialAccelerationPath = getenv('MULTIPOLE_L3_AXIAL_ACCELERATION');
-endplateAccelerationPath = getenv('MULTIPOLE_L3_ENDPLATE_ACCELERATION');
+resolvedDesignPath = getenv('MULTIPOLE_RESOLVED_DESIGN');
+numericsPath = getenv('MULTIPOLE_SOLVER_NUMERICS');
 sourcePath = getenv('MULTIPOLE_L3_PARTICLE_SOURCE');
+sourceMetadataPath = getenv('MULTIPOLE_L3_PARTICLE_SOURCE_METADATA');
 runtimeDir = getenv('MULTIPOLE_L3_RUNTIME_DIR');
 eventsPath = getenv('MULTIPOLE_L3_EVENTS');
 trajectoryPath = getenv('MULTIPOLE_L3_TRAJECTORIES');
@@ -19,11 +15,15 @@ metricsPath = getenv('MULTIPOLE_L3_METRICS');
 plotPath = getenv('MULTIPOLE_L3_PLOT');
 modelPath = getenv('MULTIPOLE_L3_MODEL');
 canonicalStatePath = getenv('MULTIPOLE_L3_CANONICAL_STATE');
-required = {reportPath, baselinePath, familyOperatingPath, contractPath, fieldMetricsPath, roundRodGeometryPath, sourcePath, ...
+primaryCanonicalStatePath = getenv('MULTIPOLE_L3_PRIMARY_CANONICAL_STATE');
+controlCanonicalStatePath = getenv('MULTIPOLE_L3_CONTROL_CANONICAL_STATE');
+primaryTrajectoryPath = getenv('MULTIPOLE_L3_PRIMARY_TRAJECTORIES');
+controlTrajectoryPath = getenv('MULTIPOLE_L3_CONTROL_TRAJECTORIES');
+required = {reportPath, resolvedDesignPath, numericsPath, sourcePath, sourceMetadataPath, ...
     runtimeDir, eventsPath, trajectoryPath, metricsPath, plotPath, modelPath};
 assert(all(~cellfun(@isempty, required)), 'Finite 3D multipole environment is incomplete.');
-assert(isfile(baselinePath) && isfile(familyOperatingPath) && isfile(contractPath) && isfile(fieldMetricsPath) && isfile(roundRodGeometryPath) && ...
-    isfile(sourcePath), 'Finite 3D multipole inputs are missing.');
+assert(isfile(resolvedDesignPath) && isfile(numericsPath) && isfile(sourcePath) && isfile(sourceMetadataPath), ...
+    'Resolved-design finite 3D multipole inputs are missing.');
 if ~isfolder(runtimeDir), mkdir(runtimeDir); end
 
 fid = fopen(reportPath, 'w');
@@ -32,69 +32,79 @@ cleanup = onCleanup(@() fclose(fid));
 fprintf(fid, 'TASK=MULTIPOLE_FINITE_3D_TRANSPORT\n');
 
 try
-    baseline = jsondecode(fileread(baselinePath));
-    familyOperating = jsondecode(fileread(familyOperatingPath));
-    contract = jsondecode(fileread(contractPath));
-    fieldMetrics = jsondecode(fileread(fieldMetricsPath));
-    roundRodGeometry = jsondecode(fileread(roundRodGeometryPath));
-    axialAccelerationEnabled = ~isempty(axialAccelerationPath);
-    endplateAccelerationEnabled = ~isempty(endplateAccelerationPath);
-    assert(~(axialAccelerationEnabled && endplateAccelerationEnabled), ...
-        'Only one multipole acceleration mode may be enabled.');
-    accelerationEnabled = axialAccelerationEnabled || endplateAccelerationEnabled;
-    if axialAccelerationEnabled
-        assert(isfile(axialAccelerationPath), 'Resolved axial-acceleration contract is missing.');
-        axialAcceleration = jsondecode(fileread(axialAccelerationPath));
-        assert(strcmp(axialAcceleration.role,'multipole_axial_acceleration_resolved_contract') && ...
-            strcmp(axialAcceleration.project_id,contract.project_id), ...
-            'Axial-acceleration contract identity differs.');
+    design = jsondecode(fileread(resolvedDesignPath));
+    numerics = jsondecode(fileread(numericsPath));
+    sourceMetadata = jsondecode(fileread(sourceMetadataPath));
+    assert(strcmp(design.role,'multipole_resolved_design_do_not_edit'), ...
+        'COMSOL requires the canonical multipole resolved design.');
+    assert(strcmp(numerics.role,'multipole_comsol_solver_numerics'), ...
+        'COMSOL numerical contract role differs.');
+    assert(strcmp(sourceMetadata.role,'multipole_canonical_particle_source_metadata'), ...
+        'COMSOL particle-source metadata role differs.');
+    assert(strcmp(sourceMetadata.parent_resolved_design_sha256,design.resolved_sha256), ...
+        'COMSOL particle source is not bound to this resolved design.');
+    assert(sourceMetadata.charge_state==design.particle_source.charge_state, ...
+        'COMSOL particle-source charge differs from the resolved design.');
+    axialTopology = design.axial_drive.topology;
+    segmented = strcmp(axialTopology,'segmented_rod_axial_acceleration');
+    endplate = strcmp(axialTopology,'endplate_potential_step');
+    accelerationEnabled = segmented || endplate;
+    if segmented
+        segmentationAcceleration = design.segmentation.axial_acceleration;
+        assert(strcmp(segmentationAcceleration.role,'multipole_axial_acceleration_resolved_contract'), ...
+            'Resolved design segmentation is incomplete.');
     else
-        axialAcceleration = struct();
+        segmentationAcceleration = struct();
     end
-    if endplateAccelerationEnabled
-        assert(isfile(endplateAccelerationPath), 'Resolved endplate-acceleration contract is missing.');
-        endplateAcceleration=jsondecode(fileread(endplateAccelerationPath));
-        assert(strcmp(endplateAcceleration.role,'multipole_endplate_acceleration_resolved_contract') && ...
-            strcmp(endplateAcceleration.project_id,contract.project_id), ...
-            'Endplate-acceleration contract identity differs.');
+    if endplate
+        claimLimit = ['N=100 functional endplate-acceleration reference only; ' ...
+            'acceleration is localized near the exit and does not establish continuous ' ...
+            'in-rod acceleration, convergence, cross-solver numerical equivalence, ' ...
+            'mechanical or Formal qualification.'];
     else
-        endplateAcceleration=struct();
+        claimLimit = 'Resolved-design functional transport only; no formal claim.';
     end
-    if axialAccelerationEnabled
-        acceleration=axialAcceleration;
-    elseif endplateAccelerationEnabled
-        acceleration=endplateAcceleration;
-    else
-        acceleration=struct();
-    end
-    if accelerationEnabled, claimLimit=acceleration.claim_limit; else, claimLimit=contract.claim_limit; end
     source = readtable(sourcePath);
-    n = familyOperating.identity.radial_order_n;
-    electrodeCount = familyOperating.identity.electrode_count;
-    assert(electrodeCount == 2*n && electrodeCount == baseline.multipole.electrode_count, ...
-        'Finite 3D multipole identities differ.');
-    selected = fieldMetrics.selected_candidate;
-    r0 = familyOperating.geometry_mm.r0;
-    rodArray = roundRodGeometry.array_mm;
+    n = design.identity.radial_order_n;
+    electrodeCount = design.identity.electrode_count;
+    assert(electrodeCount == 2*n, 'Finite 3D multipole identity is invalid.');
+    resolvedGeometry = design.geometry_mm;
+    selected = struct('rod_radius_ratio',resolvedGeometry.rod_radius_ratio, ...
+        'rod_radius_mm',resolvedGeometry.rod_radius, ...
+        'rod_center_radius_mm',resolvedGeometry.rod_center_radius);
+    r0 = resolvedGeometry.inscribed_radius_r0;
+    rodArray = resolvedGeometry.rod_array;
     rods = rodArray.rods;
-    assert(roundRodGeometry.identity.electrode_count == electrodeCount && numel(rods) == electrodeCount, ...
-        'Shared round-rod geometry identity differs from the operating contract.');
-    assert(abs(rodArray.rod_radius-selected.rod_radius_mm) < 1e-12 && ...
-        abs(rodArray.rod_center_radius-selected.rod_center_radius_mm) < 1e-12, ...
-        'Shared round-rod geometry differs from the selected field-screen candidate.');
-    g = contract.geometry_mm;
-    d = contract.derived_geometry_mm;
-    geometryModel = 'cylindrical_grounded_shield_v1';
-    if isfield(contract,'geometry_model'), geometryModel=contract.geometry_model; end
+    assert(numel(rods) == electrodeCount, 'Resolved rod-array identity differs.');
+    enclosure = resolvedGeometry.enclosure;
+    interfaces = design.interfaces_mm;
+    g = struct('working_region_radius',enclosure.working_region_radius_mm, ...
+        'entrance_interface',struct('aperture_radius_mm',interfaces.entrance.aperture_radius_mm, ...
+        'plate_thickness_mm',interfaces.entrance.plate_z_max_mm-interfaces.entrance.plate_z_min_mm, ...
+        'connector_length_mm',interfaces.entrance.connector_length_mm, ...
+        'connector_shape',interfaces.entrance.connector_shape), ...
+        'exit_interface',struct('aperture_radius_mm',interfaces.exit.aperture_radius_mm, ...
+        'plate_thickness_mm',interfaces.exit.plate_z_max_mm-interfaces.exit.plate_z_min_mm, ...
+        'connector_length_mm',interfaces.exit.connector_length_mm, ...
+        'connector_shape',interfaces.exit.connector_shape));
+    d = struct('rod_length',resolvedGeometry.rod_length, ...
+        'rod_z_min',resolvedGeometry.rod_z_min,'rod_z_max',resolvedGeometry.rod_z_max, ...
+        'vacuum_z_min',enclosure.vacuum_z_min_mm,'vacuum_z_max',enclosure.vacuum_z_max_mm, ...
+        'source_z',interfaces.entrance.particle_plane_z_mm, ...
+        'detector_z',interfaces.exit.particle_plane_z_mm, ...
+        'entrance_plate_z_min',interfaces.entrance.plate_z_min_mm, ...
+        'entrance_plate_z_max',interfaces.entrance.plate_z_max_mm, ...
+        'exit_plate_z_min',interfaces.exit.plate_z_min_mm, ...
+        'exit_plate_z_max',interfaces.exit.plate_z_max_mm);
+    geometryModel = enclosure.model;
     rectangularReference = strcmp(geometryModel,'rectangular_reference_enclosure_v1');
     assert(rectangularReference || strcmp(geometryModel,'cylindrical_grounded_shield_v1'), ...
         'Unsupported shared finite-3D geometry model.');
     detectorRadius=g.working_region_radius;
-    if isfield(g,'detector_radius_mm'), detectorRadius=g.detector_radius_mm; end
-    assert(abs(d.rod_length-familyOperating.geometry_mm.effective_length) < 1e-12, ...
-        'Finite 3D rod length differs from the baseline.');
+    if isfield(enclosure,'detector_radius_mm'), detectorRadius=enclosure.detector_radius_mm; end
     assert(all(abs(source.z_mm-d.source_z) < 1e-12), 'Particle source plane differs from the L3 contract.');
-    rf = familyOperating.voltage;
+    rf = design.drive;
+    staticElectrodes = design.static_electrodes_V;
     import com.comsol.model.*
     import com.comsol.model.util.*
     tag = sprintf('MULTIPOLE_FINITE_3D_%d', electrodeCount);
@@ -115,13 +125,12 @@ try
     else
         error('Unsupported shared multipole RF waveform: %s', rf.waveform);
     end
-    model.param.set('m_ion', sprintf('%.17g[kg]', baseline.particle_source.mass_amu*1.66053906660e-27));
+    model.param.set('m_ion', sprintf('%.17g[kg]', sourceMetadata.mass_amu*1.66053906660e-27));
     comp = model.component.create('comp1', true);
     geom = comp.geom.create('geom1', 3);
     geom.lengthUnit('mm');
     vacuumHeight = d.vacuum_z_max-d.vacuum_z_min;
     if rectangularReference
-        enclosure=g.reference_enclosure;
         shieldOuter=enclosure.outer_half_width_mm;
         geom.feature.create('vac', 'Block');
         geom.feature('vac').set('size',{sprintf('%.17g[mm]',2*shieldOuter), ...
@@ -129,9 +138,9 @@ try
         geom.feature('vac').set('pos',{sprintf('%.17g[mm]',-shieldOuter), ...
             sprintf('%.17g[mm]',-shieldOuter),sprintf('%.17g[mm]',d.vacuum_z_min)});
     else
-        shieldOuter = d.shield_outer_radius;
+        shieldOuter = enclosure.shield_outer_radius_mm;
         geom.feature.create('vac', 'Cylinder');
-        geom.feature('vac').set('r', sprintf('%.17g[mm]', g.grounded_shield_inner_radius));
+        geom.feature('vac').set('r', sprintf('%.17g[mm]', enclosure.shield_inner_radius_mm));
         geom.feature('vac').set('h', sprintf('%.17g[mm]', vacuumHeight));
         geom.feature('vac').set('pos', {'0','0',sprintf('%.17g[mm]', d.vacuum_z_min)});
     end
@@ -141,9 +150,9 @@ try
     geom.feature('workvol').set('h', sprintf('%.17g[mm]', vacuumHeight));
     geom.feature('workvol').set('pos', {'0','0',sprintf('%.17g[mm]', d.vacuum_z_min)});
     geom.feature('workvol').set('selresult', 'on');
-    if axialAccelerationEnabled
+    if segmented
         [rodTags,rodMetadata]=create_multipole_segmented_round_rods( ...
-            geom,rodArray,axialAcceleration,'rod');
+            geom,rodArray,segmentationAcceleration,'rod');
     else
         rodTags=create_multipole_round_rods(geom,rodArray,'rod','z',[0 0 0]);
         rodMetadata=repmat(struct('tag','','rod_id',0,'electrode_group',0, ...
@@ -154,8 +163,8 @@ try
         end
     end
     if rectangularReference
-        create_rectangular_reference_enclosure(geom,g,d);
-        connectorTags={}; enclosure=g.reference_enclosure;
+        create_rectangular_reference_enclosure(geom,enclosure,g,d,detectorRadius);
+        connectorTags={};
         if create_comsol_grounded_connector(geom,'connIn',g.entrance_interface.connector_shape, ...
                 enclosure.outer_half_width_mm,g.entrance_interface.aperture_radius_mm, ...
                 g.entrance_interface.connector_length_mm, ...
@@ -169,10 +178,14 @@ try
         end
         groundTags=[{'entrance','exit_enclosure','detector'},connectorTags];
     else
-        create_comsol_cylindrical_shell(geom,'shield',g.grounded_shield_inner_radius,shieldOuter,vacuumHeight,d.vacuum_z_min);
-        create_comsol_cylinder(geom, 'outerIn', shieldOuter, g.grounded_outer_end_cap_thickness, d.vacuum_z_min);
-        create_comsol_cylinder(geom, 'outerOut', shieldOuter, g.grounded_outer_end_cap_thickness, ...
-            d.exit_outer_ground_inner_z);
+        create_comsol_cylindrical_shell(geom,'shield',enclosure.shield_inner_radius_mm, ...
+            shieldOuter,vacuumHeight,d.vacuum_z_min);
+        create_comsol_cylinder(geom,'outerIn',shieldOuter, ...
+            enclosure.entrance_endcap_z_max_mm-enclosure.entrance_endcap_z_min_mm, ...
+            enclosure.entrance_endcap_z_min_mm);
+        create_comsol_cylinder(geom,'outerOut',shieldOuter, ...
+            enclosure.exit_endcap_z_max_mm-enclosure.exit_endcap_z_min_mm, ...
+            enclosure.exit_endcap_z_min_mm);
         create_comsol_apertured_plate(geom, 'capIn', shieldOuter, ...
             g.entrance_interface.aperture_radius_mm, g.entrance_interface.plate_thickness_mm, ...
             d.entrance_plate_z_min);
@@ -231,13 +244,7 @@ try
         comp.selection(selection).set('input', {['geom1_' name '_dom']});
         potential = es.create(['pot_' name], 'ElectricPotential', 2);
         potential.selection.named(selection);
-        staticVoltage=0;
-        if accelerationEnabled && any(strcmp(name,{'outerOut','capOut','connOut','exit_enclosure','detector'}))
-            staticVoltage=acceleration.output_reference_V;
-        elseif accelerationEnabled && rectangularReference && strcmp(name,'entrance') && ...
-                isfield(acceleration,'entrance_plate_V')
-            staticVoltage=acceleration.entrance_plate_V;
-        end
+        staticVoltage=static_boundary_voltage(staticElectrodes,rectangularReference,name);
         if accelerationEnabled
             potential.set('V0',sprintf('if(field_case>0.5,0[V],%.17g[V])',staticVoltage));
         else
@@ -259,17 +266,18 @@ try
             name = groundTags{groundIndex};
             potential = esStatic.create(['pot_' name], 'ElectricPotential', 2);
             potential.selection.named(['selb_' name]);
-            potential.set('V0', '0[V]');
+            staticVoltage=static_boundary_voltage(staticElectrodes,rectangularReference,name);
+            potential.set('V0', sprintf('%.17g[V]',staticVoltage));
         end
     end
 
     mesh = comp.mesh.create('mesh1');
-    workingHmax=contract.mesh.working_region_maximum_element_size_mm;
+    workingHmax=numerics.mesh.working_region_maximum_element_size_mm;
     if isempty(workingHmax), workingHmax=NaN; end
     if isfinite(workingHmax) && workingHmax>0
-        configure_comsol_mesh(mesh,'geom1',contract.mesh.global_auto_level,'geom1_workvol_dom',workingHmax);
+        configure_comsol_mesh(mesh,'geom1',numerics.mesh.global_auto_level,'geom1_workvol_dom',workingHmax);
     else
-        configure_comsol_mesh(mesh,'geom1',contract.mesh.global_auto_level,'',workingHmax);
+        configure_comsol_mesh(mesh,'geom1',numerics.mesh.global_auto_level,'',workingHmax);
     end
     mesh.run;
     meshInfo = mphmeshstats(model, 'mesh1');
@@ -312,7 +320,7 @@ try
     cpt = comp.physics.create('cpt', 'ChargedParticleTracing', 'geom1');
     cpt.selection.named('sel_vac');
     cpt.feature('pp1').set('mp', 'm_ion');
-    cpt.feature('pp1').set('Z', sprintf('%d', baseline.particle_source.charge_state));
+    cpt.feature('pp1').set('Z', sprintf('%d', design.particle_source.charge_state));
     for index = 1:height(source)
         releaseData = [source.x_mm(index), source.y_mm(index), source.z_mm(index), ...
             source.vx_m_s(index), source.vy_m_s(index), source.vz_m_s(index)];
@@ -342,14 +350,16 @@ try
             [differentialScale '*(-d(Vdiff,y))-axial_scale*d(Vstatic,y)'], ...
             [differentialScale '*(-d(Vdiff,z))-axial_scale*d(Vstatic,z)']});
     end
-    dt = 1/rf.frequency_Hz/contract.trajectory.rf_steps_per_period;
-    timeMaximum = contract.trajectory.maximum_global_time_us*1e-6;
+    dt = 1/rf.frequency_Hz/numerics.trajectory.rf_steps_per_period;
+    timeMaximum = numerics.trajectory.maximum_global_time_us*1e-6;
     if accelerationEnabled, stationarySolutionTag=''; else, stationarySolutionTag='sol_es'; end
     if accelerationEnabled
-        if axialAccelerationEnabled
-            primaryCaseId='axial_acceleration_rf_on'; controlCaseId='zero_axial_drop_rf_on';
+        if endplate
+            primaryCaseId='endplate_acceleration_rf_on';
+            controlCaseId='zero_endplate_drop_rf_on';
         else
-            primaryCaseId='endplate_acceleration_rf_on'; controlCaseId='zero_endplate_drop_rf_on';
+            primaryCaseId='axial_acceleration_rf_on';
+            controlCaseId='zero_axial_drop_rf_on';
         end
         [pdOn, solutionOn] = solve_particle_case(model, cpt, 'on', 1, 1, dt, timeMaximum,stationarySolutionTag);
         fprintf(fid,'CHECKPOINT=PRIMARY_PARTICLE_CASE_COMPLETE\n');
@@ -362,14 +372,14 @@ try
         [pdZero, solutionZero] = solve_particle_case(model, cpt, 'zero', 0, 1, dt, timeMaximum,stationarySolutionTag);
         fprintf(fid,'CHECKPOINT=CONTROL_PARTICLE_CASE_COMPLETE\n');
     end
-    massKg=baseline.particle_source.mass_amu*1.66053906660e-27;
+    massKg=sourceMetadata.mass_amu*1.66053906660e-27;
     [onMetrics, onEvents, onTrajectories] = analyze_particle_case( ...
         pdOn, source, primaryCaseId, d.detector_z, g.working_region_radius, detectorRadius, ...
-        g.rod_z_min, d.rod_z_max, d.entrance_plate_z_max, d.exit_plate_z_max, ...
+        d.rod_z_min, d.rod_z_max, d.entrance_plate_z_max, d.exit_plate_z_max, ...
         g.entrance_interface.aperture_radius_mm, g.exit_interface.aperture_radius_mm,massKg);
     [zeroMetrics, zeroEvents, zeroTrajectories] = analyze_particle_case( ...
         pdZero, source, controlCaseId, d.detector_z, g.working_region_radius, detectorRadius, ...
-        g.rod_z_min, d.rod_z_max, d.entrance_plate_z_max, d.exit_plate_z_max, ...
+        d.rod_z_min, d.rod_z_max, d.entrance_plate_z_max, d.exit_plate_z_max, ...
         g.entrance_interface.aperture_radius_mm, g.exit_interface.aperture_radius_mm,massKg);
     events = [onEvents; zeroEvents];
     trajectories = [onTrajectories; zeroTrajectories];
@@ -377,26 +387,37 @@ try
     if ~isfolder(outputDir), mkdir(outputDir); end
     writetable(events, eventsPath);
     writetable(trajectories, trajectoryPath);
-    if ~isempty(canonicalStatePath)
+    pairedTrajectories = ~isempty(primaryTrajectoryPath) || ~isempty(controlTrajectoryPath);
+    assert(~pairedTrajectories || ...
+        (~isempty(primaryTrajectoryPath) && ~isempty(controlTrajectoryPath)), ...
+        'Paired trajectory outputs must be configured together.');
+    if pairedTrajectories
+        writetable(onTrajectories, primaryTrajectoryPath);
+        writetable(zeroTrajectories, controlTrajectoryPath);
+    end
+    pairedCanonicalStates = ~isempty(primaryCanonicalStatePath) || ~isempty(controlCanonicalStatePath);
+    assert(~pairedCanonicalStates || ...
+        (~isempty(primaryCanonicalStatePath) && ~isempty(controlCanonicalStatePath)), ...
+        'Paired canonical particle-state outputs must be configured together.');
+    if pairedCanonicalStates
+        write_canonical_particle_state(pdOn,source,primaryCanonicalStatePath,d.rod_z_max, ...
+            d.exit_plate_z_max,d.detector_z,g.working_region_radius,detectorRadius, ...
+            massKg,rf.frequency_Hz,rf.phase_rad);
+        write_canonical_particle_state(pdZero,source,controlCanonicalStatePath,d.rod_z_max, ...
+            d.exit_plate_z_max,d.detector_z,g.working_region_radius,detectorRadius, ...
+            massKg,rf.frequency_Hz,rf.phase_rad);
+        if ~isempty(canonicalStatePath)
+            copyfile(primaryCanonicalStatePath,canonicalStatePath,'f');
+        end
+    elseif ~isempty(canonicalStatePath)
         write_canonical_particle_state(pdOn,source,canonicalStatePath,d.rod_z_max, ...
             d.exit_plate_z_max,d.detector_z,g.working_region_radius,detectorRadius, ...
             massKg,rf.frequency_Hz,rf.phase_rad);
     end
     improvement = onMetrics.transmission_fraction-zeroMetrics.transmission_fraction;
-    if accelerationEnabled
-        expectedEnergy=acceleration.derived.predicted_output_energy_eV;
-        energyGain=onMetrics.mean_output_energy_eV-zeroMetrics.mean_output_energy_eV;
-        checks=struct('minimum_transmission',onMetrics.transmission_fraction >= acceleration.functional_acceptance.minimum_transmission, ...
-            'minimum_mean_energy_gain_eV',energyGain >= acceleration.functional_acceptance.minimum_mean_energy_gain_eV, ...
-            'maximum_mean_output_energy_error_eV',abs(onMetrics.mean_output_energy_eV-expectedEnergy) <= acceleration.functional_acceptance.maximum_mean_output_energy_error_eV);
-    else
-        expectedEnergy=NaN; energyGain=NaN;
-        checks = struct( ...
-            'minimum_rf_transmission', onMetrics.transmission_fraction >= contract.functional_acceptance.minimum_rf_transmission, ...
-            'minimum_improvement_over_zero_rf', improvement >= contract.functional_acceptance.minimum_improvement_over_zero_rf);
-    end
+    checks = struct();
     metrics = struct('schema_version', 1, 'role', 'multipole_finite_3d_transport_metrics', ...
-        'status', 'UNRESOLVED', 'project_id', contract.project_id, ...
+        'status', 'UNRESOLVED', 'project_id', design.identity.project_id, ...
         'model_level', 'L3', 'selected_geometry', selected, ...
         'voltage_contract', rf, ...
         'interface_geometry_mm', struct('entrance_aperture_radius', ...
@@ -406,25 +427,24 @@ try
         'primary_case_id',primaryCaseId,'control_case_id',controlCaseId, ...
         'cases', struct(primaryCaseId, onMetrics, controlCaseId, zeroMetrics), ...
         'rf_minus_zero_transmission', improvement, 'checks', checks, ...
-        'axial_acceleration_enabled',axialAccelerationEnabled, ...
-        'endplate_acceleration_enabled',endplateAccelerationEnabled, ...
-        'predicted_output_energy_eV',expectedEnergy,'mean_energy_gain_eV',energyGain, ...
-        'mesh', struct('global_auto_level', contract.mesh.global_auto_level, ...
-        'working_region_hmax_mm', contract.mesh.working_region_maximum_element_size_mm), ...
+        'axial_drive_topology',axialTopology, ...
+        'segmentation_enabled',segmented, ...
+        'endplate_acceleration_enabled',endplate, ...
+        'mesh', struct('global_auto_level', numerics.mesh.global_auto_level, ...
+        'working_region_hmax_mm', numerics.mesh.working_region_maximum_element_size_mm), ...
         'claim_limit', claimLimit);
-    if all(struct2array(checks)), metrics.status = 'PASS'; else, metrics.status = 'FAIL'; end
+    metrics.status = 'UNQUALIFIED';
     metricsFid = fopen(metricsPath, 'w');
     assert(metricsFid >= 0, 'Could not create finite 3D metrics.');
     fprintf(metricsFid, '%s', jsonencode(metrics, 'PrettyPrint', true));
     fclose(metricsFid);
     write_transport_plot(onMetrics, zeroMetrics, onEvents, zeroEvents, ...
-        onTrajectories, zeroTrajectories, plotPath, contract.project_id, g, d, ...
+        onTrajectories, zeroTrajectories, plotPath, design.identity.project_id, g, d, ...
         primaryCaseId,controlCaseId);
     create_native_plot(model, solutionOn, 'pd_on', 'pg_on', strrep(primaryCaseId,'_',' '));
     create_native_plot(model, solutionZero, 'pd_zero', 'pg_zero', strrep(controlCaseId,'_',' '));
     model.param.set('rf_scale', '1');
     model.save(modelPath);
-    assert(strcmp(metrics.status, 'PASS'), 'Finite 3D functional transport gate failed.');
     delete(fullfile(runtimeDir, 'particle_*.txt'));
     if isfolder(runtimeDir), rmdir(runtimeDir); end
     fprintf(fid, ['ELECTRODE_COUNT=%d\nPRIMARY_TRANSMISSION=%.17g\n' ...
@@ -558,8 +578,8 @@ metrics = struct('particles', particleCount, 'transmitted', sum(transmitted), ..
     'maximum_rod_radius_mm', max(maximumRodRadius));
 end
 
-function create_rectangular_reference_enclosure(geom,g,d)
-enclosure=g.reference_enclosure; outer=enclosure.outer_half_width_mm;
+function create_rectangular_reference_enclosure(geom,enclosure,g,d,detectorRadius)
+outer=enclosure.outer_half_width_mm;
 entranceThickness=d.entrance_plate_z_max-d.entrance_plate_z_min;
 geom.feature.create('ent_outer','Block');
 geom.feature('ent_outer').set('size',{sprintf('%.17g[mm]',2*outer),sprintf('%.17g[mm]',2*outer),sprintf('%.17g[mm]',entranceThickness)});
@@ -576,7 +596,7 @@ geom.feature('exit_inner').set('pos',{sprintf('%.17g[mm]',-inner),sprintf('%.17g
 geom.feature.create('exit_hole','Cylinder'); geom.feature('exit_hole').set('r',sprintf('%.17g[mm]',g.exit_interface.aperture_radius_mm));
 geom.feature('exit_hole').set('h',sprintf('%.17g[mm]',exitHeight)); geom.feature('exit_hole').set('pos',{'0','0',sprintf('%.17g[mm]',enclosure.exit_enclosure_z_min_mm)});
 geom.feature.create('exit_enclosure','Difference'); geom.feature('exit_enclosure').selection('input').set({'exit_outer'}); geom.feature('exit_enclosure').selection('input2').set({'exit_inner','exit_hole'}); geom.feature('exit_enclosure').set('selresult','on');
-geom.feature.create('detector','Cylinder'); geom.feature('detector').set('r',sprintf('%.17g[mm]',g.detector_radius_mm));
+geom.feature.create('detector','Cylinder'); geom.feature('detector').set('r',sprintf('%.17g[mm]',detectorRadius));
 geom.feature('detector').set('h',sprintf('%.17g[mm]',enclosure.detector_thickness_mm)); geom.feature('detector').set('pos',{'0','0',sprintf('%.17g[mm]',d.detector_z)}); geom.feature('detector').set('selresult','on');
 end
 
@@ -662,14 +682,19 @@ figureHandle = figure('Visible', 'off', 'Position', [100 100 1000 420], 'Color',
 tiledlayout(1,2);
 nexttile; hold on;
 set(gca,'Color','w','XColor','k','YColor','k');
-plot(zeroTrajectories.z_mm, zeroTrajectories.radius_mm, '.', 'Color', [0.72 0.72 0.72], 'MarkerSize', 2);
-plot(onTrajectories.z_mm, onTrajectories.radius_mm, 'x', 'Color', [0 0.447 0.698], 'MarkerSize', 2);
+controlTrajectoryHandle=plot(zeroTrajectories.z_mm, zeroTrajectories.radius_mm, '.', ...
+    'Color', [0.72 0.72 0.72], 'MarkerSize', 2);
+primaryTrajectoryHandle=plot(onTrajectories.z_mm, onTrajectories.radius_mm, 'x', ...
+    'Color', [0 0.447 0.698], 'MarkerSize', 2);
 yLimit = geometry.working_region_radius*1.15;
 draw_interface_plate(derived.entrance_plate_z_min, derived.entrance_plate_z_max, ...
     geometry.entrance_interface.aperture_radius_mm, yLimit);
 draw_interface_plate(derived.exit_plate_z_min, derived.exit_plate_z_max, ...
     geometry.exit_interface.aperture_radius_mm, yLimit);
 xlabel('z (mm)'); ylabel('Radius (mm)'); ylim([0 yLimit]);
+trajectoryLegend=legend([controlTrajectoryHandle primaryTrajectoryHandle], ...
+    {strrep(controlCaseId,'_',' '),strrep(primaryCaseId,'_',' ')},'Location','best');
+set(trajectoryLegend,'Color','w','TextColor','k','EdgeColor',[0.3 0.3 0.3]);
 title(sprintf('Transmission: primary %.0f%%, control %.0f%%', ...
     100*onMetrics.transmission_fraction, 100*zeroMetrics.transmission_fraction));
 nexttile; hold on;
@@ -688,6 +713,7 @@ title('Terminal transverse states');
 superTitle=sgtitle([strrep(projectId,'_','\_') ' — finite 3D L3']);
 set(superTitle,'Color','k');
 set(findall(figureHandle,'Type','text'),'Color','k');
+set(figureHandle,'PaperPositionMode','auto');
 print(figureHandle, path, '-dpng', '-r180'); close(figureHandle);
 end
 
@@ -703,4 +729,30 @@ function draw_interface_plate(zMin, zMax, apertureRadius, yLimit)
 patch([zMin zMax zMax zMin], [apertureRadius apertureRadius yLimit yLimit], ...
     [0.45 0.45 0.45], 'FaceAlpha', 0.35, 'EdgeColor', 'none', ...
     'HandleVisibility', 'off');
+end
+
+function voltage = static_boundary_voltage(contract, rectangularReference, name)
+if rectangularReference
+    assert(strcmp(contract.role,'rectangular_reference_static_electrodes'), ...
+        'Static-electrode contract differs from the rectangular enclosure.');
+    if any(strcmp(name,{'entrance','connIn'}))
+        voltage=contract.entrance_plate_and_connector;
+    elseif any(strcmp(name,{'exit_enclosure','connOut'}))
+        voltage=contract.exit_enclosure_and_connector;
+    elseif strcmp(name,'detector')
+        voltage=contract.detector;
+    else
+        error('No canonical static voltage for rectangular boundary %s.',name);
+    end
+else
+    assert(strcmp(contract.role,'cylindrical_shield_static_electrodes'), ...
+        'Static-electrode contract differs from the cylindrical enclosure.');
+    if any(strcmp(name,{'shield','outerIn','capIn','connIn'}))
+        voltage=contract.shield_and_entrance_endcap_and_connector;
+    elseif any(strcmp(name,{'outerOut','capOut','connOut'}))
+        voltage=contract.exit_endcap_and_connector;
+    else
+        error('No canonical static voltage for cylindrical boundary %s.',name);
+    end
+end
 end

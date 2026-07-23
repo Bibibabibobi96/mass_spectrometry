@@ -10,7 +10,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from plot_transport_phase_diagnostics import interpolate, load_tracks
-from rfquad_contract import diagnostic_planes, load as load_contract
+from rfquad_contract import load as load_contract
+from transport_diagnostics import diagnostic_planes
 
 
 def main() -> None:
@@ -29,9 +30,8 @@ def main() -> None:
     if particle_ids != sorted(simion):
         raise ValueError("COMSOL and SIMION trajectory particle IDs differ")
     resolved, interface = load_contract()
-    geometry = resolved["geometry_mm"]
     planes = diagnostic_planes(resolved, interface)
-    step = geometry["simion_cell_mm"]
+    step = 0.2
     common_start = max(max(track["z"][0] for track in comsol.values()),
                        max(track["z"][0] for track in simion.values()))
     common_end = min(min(track["z"][-1] for track in comsol.values()),

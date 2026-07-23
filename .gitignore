@@ -7,8 +7,17 @@ official_docs/*.pdf
 # Local runtime caches and machine-specific launchers are not source assets.
 __pycache__/
 *.py[cod]
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
 .venv/
 run_comsol_mcp.cmd
+
+# Editor backups and rejected patch remnants are disposable local files.
+*.bak
+*.orig
+*.rej
+*~
 
 # SIMION gem2pa compiler intermediate; reproducible from the tracked GEM source.
 *.processed.gem

@@ -7,13 +7,16 @@ contractPath = getenv('RF_OATOF_S2_CONTRACT');
 s1ContractPath = getenv('RF_OATOF_S2_S1_CONTRACT');
 rfResolvedPath = getenv('RF_OATOF_S2_RF_RESOLVED');
 oaBaselinePath = getenv('RF_OATOF_S2_OA_BASELINE');
+spatialRegistrationPath = getenv('RF_OATOF_SPATIAL_REGISTRATION');
+spatialRegistrationSha256 = getenv('RF_OATOF_SPATIAL_REGISTRATION_SHA256');
 oaComsolDir = getenv('RF_OATOF_S2_OA_COMSOL_DIR');
 particleInputPath = getenv('RF_OATOF_S2_PARTICLE_INPUT');
 particleOutputPath = getenv('RF_OATOF_S2_PARTICLE_OUTPUT');
 assert(~isempty(reportPath) && ~isempty(metricsPath) && ~isempty(samplesPath), ...
     'S2 field output paths are incomplete.');
 assert(isfile(contractPath) && isfile(s1ContractPath) && ...
-    isfile(rfResolvedPath) && isfile(oaBaselinePath), ...
+    isfile(rfResolvedPath) && isfile(oaBaselinePath) && ...
+    isfile(spatialRegistrationPath) && ~isempty(spatialRegistrationSha256), ...
     'S2 field contract inputs are incomplete.');
 assert(isfolder(oaComsolDir), 'The oaTOF COMSOL source directory is missing.');
 
@@ -27,6 +30,9 @@ try
     s1 = jsondecode(fileread(s1ContractPath));
     rf = jsondecode(fileread(rfResolvedPath));
     oa = jsondecode(fileread(oaBaselinePath));
+    spatial = jsondecode(fileread(spatialRegistrationPath));
+    assert(strcmp(spatial.role,'resolved_spatial_registration_do_not_edit'), ...
+        'S2 field metrics require the resolved spatial registration.');
     assert(contract.permissions.field_solve_allowed, ...
         'The S2 contract does not authorize a field solve.');
     assert(~contract.field_ownership.oa_extraction_pulse_included, ...
@@ -44,7 +50,7 @@ try
     [model, comp, context, geometryInfo, meshElementCounts] = ...
         prepare_s2_joint_field_model(contract, s1, rf, oa, oaComsolDir, tag);
 
-    [probeNames, coordinates] = field_probe_coordinates(contract, rf, oa);
+    [probeNames, coordinates] = field_probe_coordinates(contract, rf, oa, spatial);
     expressions = {'-d(V,x)','-d(V,y)','-d(V,z)','V', ...
         '-d(Vrf,x)','-d(Vrf,y)','-d(Vrf,z)','Vrf'};
     values = cell(1, numel(expressions));
@@ -85,6 +91,9 @@ try
         'schema_version', 1, ...
         'role', 'rf_to_oatof_s2_no_pulse_field_metrics', ...
         'status', 'SOLVED', ...
+        'frame_id', spatial.instrument_frame_id, ...
+        'position_unit', 'mm', ...
+        'spatial_registration_sha256', spatialRegistrationSha256, ...
         'gap_mm', context.gap_mm, ...
         'geometry_domains', geometryInfo.Ndomains, ...
         'mesh_element_counts_by_type', meshElementCounts, ...
@@ -121,12 +130,12 @@ catch exception
 end
 clear cleanup
 
-function [names, coordinates] = field_probe_coordinates(contract, rf, oa)
-source = contract.nominal_registration.source_exit_center_instrument_mm(:).';
-target = contract.nominal_registration.target_entry_center_instrument_mm(:).';
+function [names, coordinates] = field_probe_coordinates(contract, rf, oa, spatial)
+source = spatial.resolved_surfaces.source_exit.in_instrument_frame.center_mm(:).';
+target = spatial.resolved_surfaces.target_entry.in_instrument_frame.center_mm(:).';
 offset = contract.no_pulse_field_candidate.boundary_probe_inset_mm;
-pose = contract.nominal_registration.source_component_pose;
-rotation = pose.rotation_component_to_instrument;
+pose = spatial.component_poses.rf_quadrupole_component;
+rotation = pose.rotation;
 localProbe = [contract.no_pulse_field_candidate.rf_off_axis_probe_radius_mm; 0; ...
     (rf.geometry_mm.rod_z_min+rf.geometry_mm.rod_z_max)/2];
 rfOffAxis = (rotation*localProbe + pose.translation_mm(:)).';
@@ -147,7 +156,7 @@ assert(all(ismember(required, ions.Properties.VariableNames)), ...
 candidate = contract.functional_candidate;
 assert(height(ions) == candidate.source_particles, ...
     'S2 particle count differs from the frozen source contract.');
-assert(numel(unique(ions.mass_amu)) == 1 && numel(unique(ions.charge_state)) == 1, ...
+assert(isscalar(unique(ions.mass_amu)) && isscalar(unique(ions.charge_state)), ...
     'S2 minimal particle runtime requires one mass and charge state.');
 registration = contract.nominal_registration;
 sourceCenter = registration.source_exit_center_instrument_mm(:).';
@@ -207,10 +216,10 @@ for releaseColumn = 1:numel(releaseIndices)
     release.importData();
 end
 
-rfScale = rf.mode.rf.amplitude_V_peak / ...
+rfScale = rf.drive.rf_amplitude_V_zero_to_peak_per_group / ...
     contract.no_pulse_field_candidate.rf_unit_voltage_V;
-frequency = rf.mode.rf.frequency_Hz;
-phase = rf.mode.rf.phase_rad;
+frequency = rf.drive.frequency_Hz;
+phase = rf.drive.phase_rad;
 electricForce = cpt.create('ef1', 'ElectricForce', 3);
 electricForce.selection.named('sel_vac');
 electricForce.set('E_src', 'userdef');

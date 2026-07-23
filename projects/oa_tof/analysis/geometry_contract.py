@@ -57,6 +57,8 @@ def resolve_contract(
     if marker["capture_arm_distance_mm"] <= marker["front_margin_z_mm"]:
         raise ValueError("detector capture arm distance must exceed the PA front margin")
     coordinate = baseline["coordinate_convention"]
+    if coordinate.get("frame_id") != "oatof_global":
+        raise ValueError("oa-TOF baseline coordinate frame must be oatof_global")
     accelerator_half = geometry["accelerator_bore_half"] + geometry["accelerator_ring_width"] + geometry["accelerator_insulation_gap"] + geometry["accelerator_shield_wall"]
     accelerator_local_z_min = -geometry["accelerator_repeller_thickness"] - geometry["accelerator_rear_clearance"] - geometry["accelerator_shield_wall"]
     accelerator_local_z_max = geometry["L_accel"] + geometry["accelerator_front_vacuum_margin"]

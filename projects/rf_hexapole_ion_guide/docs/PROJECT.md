@@ -8,10 +8,16 @@
 复验，四项来源run由[`family_contract.json`](../../../common/multipole/family_contract.json)冻结。
 该PASS不授予网格收敛、跨求解器数值等价、机械或Formal资格。
 
-COMSOL与SIMION薄wrapper现均透传`AxialAccelerationContractPath`，可消费公共schema v2的`uniform`
-或`explicit`轴向分段合同；本项目未显式传入路径时仍使用现有uniform四段参考。当前只验证了wrapper
-兼容和静态合同覆盖，没有新增六极杆explicit真实求解器证据；共享策略语义以
-[`common/multipole/README.md`](../../../common/multipole/README.md)为准。
+Phase 4已用[`../config/design_profiles.json`](../config/design_profiles.json)冻结
+`baseline_finite_3d`的request、变量目录、包络SHA-256及`full_length_grounded_shield + uniform`
+拓扑。公共runner只接受项目/profile身份、canonical粒子CSV和数值参数；项目薄wrapper不再提供场筛选、
+连接器或加速物理覆盖。无evidence contract的运行固定为`UNQUALIFIED`。
+
+Phase 2设计配置把当前`n=3`、6根电极身份、`r0=4 mm`、圆杆比0.5、有限杆范围、圆柱接地屏蔽及
+真空域、圆孔接口、canonical驱动和uniform四段参考冻结为单一求解器无关请求。33个数值变量均以
+请求JSON pointer、单位和双向边界声明；pole count保持项目身份，外壳model与连接器shape保持受支持
+的锁定拓扑。注册execution profile仍是compile-only；薄wrapper运行公共runner时，无evidence合同只能
+生成`UNQUALIFIED`结果。
 
 项目已建立独立身份和理想有限长度L1传输合同。模型使用六根交替极性电极对应的理想六极场，直接积分
 RF相位分辨的非线性横向运动，并以0 V对照判断RF是否产生功能性约束。它不是四极杆mode，也不使用
@@ -29,13 +35,20 @@ Mathieu稳定图。L1/L2/L3迁移前小样本及2 mm连接器数值只保留在
 - 入口和出口孔半径均为3.6 mm；入口、出口连接器长度当前均为0 mm（直连合同）；入口板范围`z=-1.0…-0.5 mm`，粒子从`z=-1.5 mm`释放；出口板范围
   `z=80.1…80.6 mm`，外部检测面为`z=81.1 mm`。绝对位置只由接口合同单向派生。
 - 碰撞、空间电荷、磁场、支撑和机械公差均未启用。
-- L2使用二维COMSOL场的谐波展开并沿z均匀延伸；未做网格收敛，不允许机械设计、Candidate或Formal声明。
+- L2从`baseline_finite_3d` governed profile即时编译resolved，再使用二维COMSOL场的谐波展开；
+  只发布逐候选metrics，不选择或回写L3几何。未做网格收敛，不允许机械设计、Candidate或Formal声明。
 - L3使用20 mm内半径连续接地圆柱外壳、完整有限圆杆、两块开孔接地板和两段有限外部区，COMSOL
   和SIMION均有功能入口；尚未完成网格收敛、跨求解器数值等价或Candidate资格门禁。
 
 ## 权威入口
 
 - [`../config/baseline.json`](../config/baseline.json)
+- [`../config/requests/baseline.json`](../config/requests/baseline.json)
+- [`../config/design_variables.json`](../config/design_variables.json)
+- [`../config/optimization_envelope.json`](../config/optimization_envelope.json)
+- [`../config/execution_profiles.json`](../config/execution_profiles.json)
+- [`../config/design_profiles.json`](../config/design_profiles.json)
+- [`../config/resolved_design.json`](../config/resolved_design.json)
 - [`../config/modes/transport_no_collision.json`](../config/modes/transport_no_collision.json)
 - [`../analysis/run_transport.ps1`](../analysis/run_transport.ps1)
 - [`../config/round_rod_field_screen.json`](../config/round_rod_field_screen.json)

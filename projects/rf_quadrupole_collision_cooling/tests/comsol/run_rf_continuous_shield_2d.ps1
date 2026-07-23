@@ -34,13 +34,13 @@ New-Item -ItemType Directory -Force -Path $inputDir,$resultDir,$logDir | Out-Nul
 $task = Join-Path $inputDir 'build_rf_continuous_shield_2d.m'
 $analysis = Join-Path $inputDir 'analyze_rf_continuous_shield_2d.py'
 $contract = Join-Path $inputDir 'rf_continuous_grounded_shield_candidate.json'
-$resolved = Join-Path $inputDir 'rf_resolved_geometry.json'
+$resolved = Join-Path $inputDir 'rf_resolved_design.json'
 $runner = Join-Path $inputDir 'run_rf_continuous_shield_2d.ps1.txt'
 Copy-Item $PSCommandPath $runner
 Copy-Item (Join-Path $PSScriptRoot 'build_rf_continuous_shield_2d.m') $task
 Copy-Item (Join-Path $projectRoot 'analysis\analyze_rf_continuous_shield_2d.py') $analysis
 Copy-Item $contractSource $contract
-Copy-Item (Join-Path $projectRoot 'config\resolved_geometry.json') $resolved
+Copy-Item (Join-Path $projectRoot 'config\resolved_design_official.json') $resolved
 $fieldCsv = Join-Path $resultDir 'rf_continuous_shield_2d_samples.csv'
 $report = Join-Path $logDir 'comsol_rf_continuous_shield_2d.txt'
 $summary = Join-Path $runDir 'summary.json'; $runConfig = Join-Path $runDir 'run_config.json'

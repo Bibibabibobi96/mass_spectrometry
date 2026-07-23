@@ -76,6 +76,11 @@ def compare(entry_path: Path, local_path: Path, ideal_path: Path, baseline_path:
     rf = enrich_rf(entry, local)
     if len(rf) != 100 or len(local) != 100 or len(ideal) != 100:
         raise ValueError("entry comparison requires deterministic N=100 groups")
+    identities = entry[["frame_id", "clock_epoch_id"]].drop_duplicates()
+    if len(identities) != 1 or identities.iloc[0].astype(str).str.strip().eq("").any():
+        raise ValueError("entry comparison requires one frame and clock epoch")
+    frame_id = str(identities.iloc[0]["frame_id"])
+    clock_epoch_id = str(identities.iloc[0]["clock_epoch_id"])
     species = rf[["mass_amu", "charge_state"]].drop_duplicates()
     if len(species) != 1 or not np.allclose(ideal["mass_amu"], float(species.iloc[0]["mass_amu"])):
         raise ValueError("oaTOF ideal reference is not mass matched to the RF particles")
@@ -156,16 +161,22 @@ def compare(entry_path: Path, local_path: Path, ideal_path: Path, baseline_path:
            title="F  Port-selected transverse phase space")
     ax.legend(fontsize=8); ax.grid(alpha=0.22)
 
-    fig.suptitle("RF physical-port selection vs mass-matched oaTOF ideal source (N=100)", fontsize=16)
+    fig.suptitle(
+        "RF physical-port selection vs mass-matched oaTOF ideal source (N=100)\n"
+        f"frame={frame_id}; clock epoch={clock_epoch_id}",
+        fontsize=16,
+    )
     fig.tight_layout(rect=(0, 0, 1, 0.965))
     figure_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(figure_path, dpi=190)
+    fig.savefig(figure_path, format="png", dpi=190)
     plt.close(fig)
 
     result = {
         "schema_version": 1,
         "role": "rf_s1_entry_vs_mass_matched_oatof_ideal_source",
         "status": "PASS",
+        "frame_id": frame_id,
+        "clock_epoch_id": clock_epoch_id,
         "comparison_scope": "RF physical-port entry-plane selection diagnostic versus oaTOF ideal release reference",
         "equivalent_capture_state_available": False,
         "direct_acceptance_claim_allowed": False,

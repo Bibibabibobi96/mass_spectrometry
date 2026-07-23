@@ -123,6 +123,19 @@ class S1JointFieldContractTests(unittest.TestCase):
         self.assertNotIn("jointvac", source)
         self.assertIn("geom1_portvac_dom", source)
         self.assertNotIn("sel_connector_mesh", source)
+        self.assertIn("oa.rings.accelerator_count, interfacePort", source)
+        self.assertNotIn(
+            "oatof_build_accelerator_geometry(geom, interfacePort)", source
+        )
+        self.assertIn(
+            "assert_supported_registration(joint.nominal_registration, spatial, 'S1')",
+            source,
+        )
+        self.assertIn(
+            "spatial.component_poses.rf_quadrupole_component",
+            source,
+        )
+        self.assertNotIn("expectedSourceRotation", source)
         runner = (PROJECT_ROOT / "tests" / "comsol" / "run_s1_joint_field_candidate.ps1").read_text(
             encoding="utf-8"
         )
@@ -183,6 +196,56 @@ class S1JointFieldContractTests(unittest.TestCase):
 
         with patch.object(module, "load", side_effect=altered):
             with self.assertRaisesRegex(ValueError, "permissions"):
+                module.validate()
+
+    def test_unsupported_source_rotation_is_fail_closed(self):
+        original = module.load
+
+        def altered(path):
+            value = original(path)
+            if Path(path).name == "rf_to_oatof_s1_joint_field.json":
+                value = deepcopy(value)
+                value["nominal_registration"]["source_component_pose"][
+                    "rotation_component_to_instrument"
+                ] = np.eye(3).tolist()
+            return value
+
+        with patch.object(module, "load", side_effect=altered):
+            with self.assertRaisesRegex(ValueError, "NEEDS_IMPLEMENTATION"):
+                module.validate()
+
+    def test_unsupported_target_pose_is_fail_closed(self):
+        original = module.load
+
+        def altered(path):
+            value = original(path)
+            if Path(path).name == "rf_to_oatof_s1_joint_field.json":
+                value = deepcopy(value)
+                value["nominal_registration"]["target_component_pose"][
+                    "translation_mm"
+                ] = [0.0, 0.1, 0.0]
+            return value
+
+        with patch.object(module, "load", side_effect=altered):
+            with self.assertRaisesRegex(ValueError, "NEEDS_IMPLEMENTATION"):
+                module.validate()
+
+    def test_unsupported_interface_normal_is_fail_closed(self):
+        original = module.load
+
+        def altered(path):
+            value = original(path)
+            if Path(path).name == "rf_to_oatof_interface_candidate.json":
+                value = deepcopy(value)
+                value["boundaries"]["target_entry_surface"]["outward_normal"] = [
+                    0.0,
+                    -1.0,
+                    0.0,
+                ]
+            return value
+
+        with patch.object(module, "load", side_effect=altered):
+            with self.assertRaisesRegex(ValueError, "NEEDS_IMPLEMENTATION"):
                 module.validate()
 
 

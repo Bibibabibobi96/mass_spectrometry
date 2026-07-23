@@ -31,19 +31,32 @@ S2–S3连接功能闭环记录：
   [`../../common/multipole/README.md`](../../common/multipole/README.md)；项目baseline、mode和资格判据仍在本项目。
 - 当前具体四极杆项目的机器身份、能力和成熟度：[`config/project.json`](config/project.json)；多级杆设计族不在本项目内虚构子项目。
 - 现有入口可执行范围和组合命令链：[`config/execution_profiles.json`](config/execution_profiles.json)。
-- 共享几何契约：[`config/baseline.json`](config/baseline.json)
-- 程序统一入口：[`config/resolved_geometry.json`](config/resolved_geometry.json)，由
-  `analysis/resolve_contract.py`生成，禁止手改；它只代表官方回归profile。
+- 历史人工几何输入：[`config/baseline.json`](config/baseline.json)；它只服务尚未迁移的理论与分析
+  检查，不是求解器运行时权威。
+- Phase 2求解器无关设计入口：
+  [`config/requests/baseline.json`](config/requests/baseline.json)冻结当前四极杆身份、几何、接口、
+  五个数值驱动量和分段参考；[`config/design_variables.json`](config/design_variables.json)与
+  [`config/optimization_envelope.json`](config/optimization_envelope.json)只声明候选编译范围，不改写
+  当前baseline，也不授权求解器或CAD运行。
+- Phase 4治理入口：[`config/design_profiles.json`](config/design_profiles.json)把完整request、适用变量
+  目录、优化包络、SHA-256和拓扑身份绑定为命名profile。
+- 程序统一入口：[`config/resolved_design_official.json`](config/resolved_design_official.json)，由
+  `analysis/resolve_contract.py`委托公共治理编译器生成，禁止手改。
 - MATLAB/COMSOL 契约加载器：[`load_rf_quadrupole_contract.m`](load_rf_quadrupole_contract.m)；
   SIMION GEM 发布器：[`analysis/sync_simion_geometry.py`](analysis/sync_simion_geometry.py)。两者都只消费
-  `resolved_geometry.json`，GEM 是生成文件，禁止作为第二参数源手改。
+  `resolved_design_official.json`，GEM 是生成文件，禁止作为第二参数源手改。
+- 当前活动resolved发布统一字段语义：器件几何只读`geometry_mm`及其`rod_array`、`enclosure`，接口面只读
+  `interfaces_mm`，RF/DC只读`drive`，静态端电极只读`static_electrodes_V`，粒子初值只读
+  `particle_source`或冻结的canonical CSV。运行mode只保留数值设置与验收门槛，不得覆盖这些物理字段。
 - 官方粒子源：[`config/official_particle_source.json`](config/official_particle_source.json)
 - 当前传输模式：[`config/modes/transport_no_collision.json`](config/modes/transport_no_collision.json)
 - 轴向加速模式：[`config/modes/axial_acceleration_reference.json`](config/modes/axial_acceleration_reference.json)；
   当前实现已迁移到仓库统一粒子数合同；两类轴向加速已通过四、六、八极杆双求解器N=100功能复验，
   但不代表参数优化、数值等价或机械资格。
-- 集成就绪解析入口：[`config/resolved_interface_readiness.json`](config/resolved_interface_readiness.json)，
-  由`analysis/resolve_contract.py --profile interface`生成，禁止手改。
+- 集成就绪profile与官方传输共用
+  [`config/resolved_design_official.json`](config/resolved_design_official.json)；执行
+  `analysis/resolve_contract.py --profile interface`会复核同一publication。旧interface publication仅为迁移期
+  保留文件，不是活动消费者入口。
 - 求解器无关相空间接口：[`config/interface_contract.json`](config/interface_contract.json)
 - `particle_state.csv`的列、枚举和平面语义只以上述接口契约为准；
   仓库公共校验器[`../../common/contracts/particle_state.py`](../../common/contracts/particle_state.py)运行时读取该契约，
@@ -73,9 +86,11 @@ S2–S3连接功能闭环记录：
 - 跨求解器门禁：[`tests/cross_solver/verify_transport_candidate.ps1`](tests/cross_solver/verify_transport_candidate.ps1)
 - 全项目门禁：`verify_project.ps1 -Level Static|Candidate|Formal`；Candidate必须显式给出 mode、COMSOL、
   SIMION和比较运行标签，Formal在机械几何与SolidWorks同步前固定拒绝执行。
-- 终点分布诊断图：[`analysis/plot_terminal_distribution.py`](analysis/plot_terminal_distribution.py)
-- 轴向轨迹诊断图：[`analysis/plot_transport_trajectory_diagnostics.py`](analysis/plot_transport_trajectory_diagnostics.py)
-- 相位--轨迹差诊断图：[`analysis/plot_transport_phase_diagnostics.py`](analysis/plot_transport_phase_diagnostics.py)
+- 历史诊断图源码：
+  [`analysis/plot_terminal_distribution.py`](analysis/plot_terminal_distribution.py)、
+  [`analysis/plot_transport_trajectory_diagnostics.py`](analysis/plot_transport_trajectory_diagnostics.py)、
+  [`analysis/plot_transport_phase_diagnostics.py`](analysis/plot_transport_phase_diagnostics.py)。三者没有现行
+  managed-run入口，只用于重建历史图；新的证据必须由绑定manifest、frame与clock epoch的managed runner生成。
 - 场分辨率收敛：[`tests/simion/test_pa_field_convergence.ps1`](tests/simion/test_pa_field_convergence.ps1)、
   [`analysis/compare_field_resolution_convergence.py`](analysis/compare_field_resolution_convergence.py)
 - 杆内释放诊断：[`analysis/compare_internal_release.py`](analysis/compare_internal_release.py)
@@ -149,12 +164,29 @@ S2–S3连接功能闭环记录：
   分析器续算仍属于RF→oaTOF专属耦合链，不形成项目内第二套公共连接器实现。
   三件套、环境恢复和失败收尾当前由RF项目内部`tests/support/rf_run_artifact_support.ps1`统一；旧run和
   未触及的旧运行器保持原样，第二个项目实际复用前不提升到根`common/`。
+- RF→oaTOF空间注册发布：
+  [`analysis/resolve_spatial_registration.py`](analysis/resolve_spatial_registration.py)从当前
+  `resolved_design_official.json`接口布局、S1/S2装配输入、oaTOF baseline和接口电气合同生成
+  `config/resolved_rf_to_oatof_{s1,s2}_spatial_registration.json`。发布保存全部来源SHA-256、组件pose、
+  唯一相对变换、定向面在局部/仪器frame中的表示，以及电压/频率的单位、JSON pointer和电极绑定。
+  RF出口`90.2 mm`仅是当前resolved几何的生成值；改变杆长、端板或出口布局后必须重新发布，Static对
+  stale结果失败。COMSOL构建器读取冻结发布，不再保存固定旋转矩阵；零豁免迁移门禁
+  `config/spatial_registration_migration_policy.json`禁止重新引入第二坐标权威。
 - S3累积脉冲与分析器贯通：
   [`config/rf_to_oatof_s3_pulse_capture.json`](config/rf_to_oatof_s3_pulse_capture.json)、
   当前统一入口[`tests/cross_solver/run_s3_cumulative_chain.ps1`](tests/cross_solver/run_s3_cumulative_chain.ps1)
   依次运行S2无脉冲接口、S3共享时钟脉冲和SIMION下游分析器；各段runner只作内部阶段诊断。默认1 mm
   N=100功能证据为`100→61→31→31→7`；0 mm兼容案例为`100→77→39→39→9`。canonical状态到SIMION仅派生11列
   适配表，不投影位置、不重置粒子ID或全局时间。该证据不授权S2/S3资格、数值收敛、分辨率或Formal声明。
+- S3脉冲前同ID checkpoint派生诊断：
+  [`config/rf_to_oatof_checkpoint_diagnostic.json`](config/rf_to_oatof_checkpoint_diagnostic.json)、
+  [`analysis/analyze_rf_oatof_checkpoints.py`](analysis/analyze_rf_oatof_checkpoints.py)及
+  [`tests/analysis/run_rf_oatof_checkpoint_diagnostic.ps1`](tests/analysis/run_rf_oatof_checkpoint_diagnostic.ps1)；
+  runner只接受显式成功S3 pulse-capture run或其manifest，复验后冻结来源run中的RF出口状态、脉冲左极限
+  状态、全粒子终态账本、schedule、S2 registration、S1合同和oa baseline，不搜索目录或回退到当前源码
+  配置。它不重跑求解器；metrics、逐粒子比较表和PNG均为来源状态的派生诊断证据，不维护第二套坐标、
+  位姿或物理参数权威。当前gap1/gap0均为N=100功能诊断，`stage_passed=false`且
+  `formal_gate_passed=false`；精确结论和图审边界见[`docs/PROJECT.md`](docs/PROJECT.md)。
 - RF入口能量匹配候选：[`config/rf_to_oatof_energy_match_candidate.json`](config/rf_to_oatof_energy_match_candidate.json)、
   [`analysis/validate_rf_energy_match.py`](analysis/validate_rf_energy_match.py)及
   [`analysis/compare_rf_input_energy.py`](analysis/compare_rf_input_energy.py)；它用独立命名的100 amu、5 eV

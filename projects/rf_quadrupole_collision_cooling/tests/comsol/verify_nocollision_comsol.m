@@ -26,7 +26,7 @@ fprintf(fid, 'COMSOL_VERSION=%s\n', char(ModelUtil.getComsolVersion));
 fprintf(fid, 'MODEL=%s\n', modelPath);
 model = mphload(modelPath, 'RFQuadTransportGuiVerify');
 
-assert(abs(model.param.evaluate('r0')*1e3 - g.field_radius_r0) < 1e-9, ...
+assert(abs(model.param.evaluate('r0')*1e3 - g.inscribed_radius_r0) < 1e-9, ...
     'Persisted r0 is not the SIMION reference value.');
 assert(abs(model.param.evaluate('r_rod')*1e3 - g.rod_radius) < 1e-9, ...
     'Persisted rod radius is not the SIMION reference value.');
@@ -91,7 +91,7 @@ z = squeeze(pd.p(:,:,3));
 radial = sqrt(x.^2 + y.^2);
 assert(size(z,2) == expectedParticles, 'GUI Compute did not preserve the configured particle source.');
 detectorZ = interface.planes.acceptance_detector.z_mm;
-detectorRadius = g.detector_radius;
+detectorRadius = g.enclosure.detector_radius_mm;
 hits = false(1, size(z,2));
 arrival = nan(1, size(z,2));
 for particle = 1:size(z,2)

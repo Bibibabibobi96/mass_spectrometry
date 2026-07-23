@@ -1,0 +1,480 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/multipole_resolved_design.schema.json",
+  "title": "Compiled solver-neutral RF multipole design",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "role",
+    "compiler",
+    "governance",
+    "request",
+    "sources",
+    "identity",
+    "units",
+    "coordinate",
+    "geometry_mm",
+    "interfaces_mm",
+    "drive",
+    "axial_drive",
+    "static_electrodes_V",
+    "particle_source",
+    "segmentation",
+    "resolved_sha256"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "multipole_resolved_design_do_not_edit"},
+    "compiler": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": {"const": "common.multipole.compile_design_request"},
+        "version": {"const": 1}
+      }
+    },
+    "governance": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "design_variables_sha256",
+            "optimization_envelope_sha256",
+            "design_request_file_sha256"
+          ],
+          "properties": {
+            "design_variables_sha256": {"$ref": "#/$defs/sha256"},
+            "optimization_envelope_sha256": {"$ref": "#/$defs/sha256"},
+            "design_request_file_sha256": {"$ref": "#/$defs/sha256"}
+          }
+        }
+      ]
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request_id", "sha256"],
+      "properties": {
+        "request_id": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["label", "path", "sha256"],
+        "properties": {
+          "label": {"type": "string", "minLength": 1},
+          "path": {"type": "string", "minLength": 1},
+          "sha256": {"$ref": "#/$defs/sha256"}
+        }
+      }
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project_id",
+        "family_id",
+        "radial_order_n",
+        "electrode_count"
+      ],
+      "properties": {
+        "project_id": {"type": "string", "minLength": 1},
+        "family_id": {"const": "rf_multipole_ion_optics"},
+        "radial_order_n": {"type": "integer", "minimum": 2},
+        "electrode_count": {"type": "integer", "minimum": 4}
+      }
+    },
+    "units": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["length", "voltage", "frequency", "phase", "energy"],
+      "properties": {
+        "length": {"const": "mm"},
+        "voltage": {"const": "V"},
+        "frequency": {"const": "Hz"},
+        "phase": {"const": "rad"},
+        "energy": {"const": "eV"}
+      }
+    },
+    "coordinate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["coordinate_id", "axial_axis", "orientation_rad"],
+      "properties": {
+        "coordinate_id": {"type": "string", "minLength": 1},
+        "axial_axis": {"const": "+z"},
+        "orientation_rad": {"type": "number"}
+      }
+    },
+    "geometry_mm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "inscribed_radius_r0",
+        "rod_radius_ratio",
+        "rod_radius",
+        "rod_center_radius",
+        "rod_z_min",
+        "rod_z_max",
+        "rod_length",
+        "enclosure",
+        "rod_array"
+      ],
+      "properties": {
+        "inscribed_radius_r0": {"type": "number", "exclusiveMinimum": 0},
+        "rod_radius_ratio": {"type": "number", "exclusiveMinimum": 0},
+        "rod_radius": {"type": "number", "exclusiveMinimum": 0},
+        "rod_center_radius": {"type": "number", "exclusiveMinimum": 0},
+        "rod_z_min": {"type": "number"},
+        "rod_z_max": {"type": "number"},
+        "rod_length": {"type": "number", "exclusiveMinimum": 0},
+        "enclosure": {"$ref": "#/$defs/enclosure"},
+        "rod_array": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "inscribed_radius_r0",
+            "rod_radius",
+            "rod_center_radius",
+            "rod_length",
+            "rods"
+          ],
+          "properties": {
+            "inscribed_radius_r0": {"type": "number"},
+            "rod_radius": {"type": "number"},
+            "rod_center_radius": {"type": "number"},
+            "rod_length": {"type": "number"},
+            "rods": {
+              "type": "array",
+              "minItems": 4,
+              "items": {"$ref": "#/$defs/rod"}
+            }
+          }
+        }
+      }
+    },
+    "interfaces_mm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entrance", "exit"],
+      "properties": {
+        "entrance": {"$ref": "#/$defs/resolved_interface"},
+        "exit": {"$ref": "#/$defs/resolved_interface"}
+      }
+    },
+    "drive": {"$ref": "#/$defs/drive"},
+    "axial_drive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "topology",
+        "source_reference_V",
+        "output_reference_V",
+        "predicted_energy_gain_eV",
+        "predicted_output_energy_eV"
+      ],
+      "properties": {
+        "topology": {
+          "enum": [
+            "none",
+            "segmented_rod_axial_acceleration",
+            "endplate_potential_step"
+          ]
+        },
+        "source_reference_V": {"type": "number"},
+        "output_reference_V": {"type": "number"},
+        "predicted_energy_gain_eV": {"type": "number"},
+        "predicted_output_energy_eV": {"type": "number"}
+      }
+    },
+    "static_electrodes_V": {"$ref": "#/$defs/static_electrodes"},
+    "particle_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["energy_model", "charge_state"],
+      "properties": {
+        "energy_model": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "kinetic_energy_eV"],
+              "properties": {
+                "kind": {"const": "monoenergetic"},
+                "kinetic_energy_eV": {"type": "number", "exclusiveMinimum": 0}
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "minimum_energy_eV",
+                "maximum_energy_eV",
+                "nominal_energy_eV",
+                "authority"
+              ],
+              "properties": {
+                "kind": {"const": "bounded_distribution"},
+                "minimum_energy_eV": {"type": "number", "exclusiveMinimum": 0},
+                "maximum_energy_eV": {"type": "number", "exclusiveMinimum": 0},
+                "nominal_energy_eV": {"type": "number", "exclusiveMinimum": 0},
+                "authority": {"type": "string", "minLength": 1}
+              }
+            }
+          ]
+        },
+        "charge_state": {"type": "integer", "not": {"const": 0}}
+      }
+    },
+    "segmentation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "strategy",
+        "axial_acceleration",
+        "segmented_rod_array"
+      ],
+      "properties": {
+        "strategy": {"enum": ["off", "uniform", "explicit"]},
+        "axial_acceleration": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "required": ["role", "derived"],
+              "properties": {
+                "role": {
+                  "const": "multipole_axial_acceleration_resolved_contract"
+                },
+                "derived": {
+                  "type": "object",
+                  "required": ["segments"],
+                  "properties": {
+                    "segments": {
+                      "type": "array",
+                      "minItems": 2,
+                      "maxItems": 499
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "segmented_rod_array": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "required": [
+                "role",
+                "segment_count",
+                "electrode_count_per_segment",
+                "electrodes"
+              ],
+              "properties": {
+                "role": {"const": "multipole_segmented_round_rod_array"},
+                "segment_count": {
+                  "type": "integer",
+                  "minimum": 2,
+                  "maximum": 499
+                },
+                "electrode_count_per_segment": {
+                  "type": "integer",
+                  "minimum": 4
+                },
+                "electrodes": {"type": "array", "minItems": 8}
+              }
+            }
+          ]
+        }
+      }
+    },
+    "resolved_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[A-F0-9]{64}$"},
+    "rod": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rod_id",
+        "electrode_group",
+        "angle_rad",
+        "center_x_mm",
+        "center_y_mm",
+        "radius_mm",
+        "z_min_mm",
+        "z_max_mm"
+      ],
+      "properties": {
+        "rod_id": {"type": "integer", "minimum": 1},
+        "electrode_group": {"enum": [1, 2]},
+        "angle_rad": {"type": "number"},
+        "center_x_mm": {"type": "number"},
+        "center_y_mm": {"type": "number"},
+        "radius_mm": {"type": "number", "exclusiveMinimum": 0},
+        "z_min_mm": {"type": "number"},
+        "z_max_mm": {"type": "number"}
+      }
+    },
+    "resolved_interface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "aperture_radius_mm",
+        "plate_z_min_mm",
+        "plate_z_max_mm",
+        "connector_length_mm",
+        "connector_z_min_mm",
+        "connector_z_max_mm",
+        "particle_plane_z_mm",
+        "connector_shape"
+      ],
+      "properties": {
+        "aperture_radius_mm": {"type": "number", "exclusiveMinimum": 0},
+        "plate_z_min_mm": {"type": "number"},
+        "plate_z_max_mm": {"type": "number"},
+        "connector_length_mm": {"type": "number", "minimum": 0},
+        "connector_z_min_mm": {"type": "number"},
+        "connector_z_max_mm": {"type": "number"},
+        "particle_plane_z_mm": {"type": "number"},
+        "connector_shape": {
+          "enum": ["cylindrical_bore", "rectangular_bore"]
+        }
+      }
+    },
+    "enclosure": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "role",
+            "model",
+            "working_region_radius_mm",
+            "vacuum_z_min_mm",
+            "vacuum_z_max_mm",
+            "shield_inner_radius_mm",
+            "shield_outer_radius_mm",
+            "entrance_endcap_z_min_mm",
+            "entrance_endcap_z_max_mm",
+            "exit_endcap_z_min_mm",
+            "exit_endcap_z_max_mm"
+          ],
+          "properties": {
+            "role": {"const": "full_length_grounded_shield"},
+            "model": {"const": "cylindrical_grounded_shield_v1"},
+            "working_region_radius_mm": {"type": "number", "exclusiveMinimum": 0},
+            "vacuum_z_min_mm": {"type": "number"},
+            "vacuum_z_max_mm": {"type": "number"},
+            "shield_inner_radius_mm": {"type": "number", "exclusiveMinimum": 0},
+            "shield_outer_radius_mm": {"type": "number", "exclusiveMinimum": 0},
+            "entrance_endcap_z_min_mm": {"type": "number"},
+            "entrance_endcap_z_max_mm": {"type": "number"},
+            "exit_endcap_z_min_mm": {"type": "number"},
+            "exit_endcap_z_max_mm": {"type": "number"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "role",
+            "model",
+            "working_region_radius_mm",
+            "vacuum_z_min_mm",
+            "vacuum_z_max_mm",
+            "outer_half_width_mm",
+            "inner_half_width_mm",
+            "exit_enclosure_z_min_mm",
+            "exit_enclosure_z_max_mm",
+            "exit_front_wall_end_z_mm",
+            "detector_radius_mm",
+            "detector_thickness_mm"
+          ],
+          "properties": {
+            "role": {"const": "downstream_local_reference_enclosure"},
+            "model": {"const": "rectangular_reference_enclosure_v1"},
+            "working_region_radius_mm": {"type": "number", "exclusiveMinimum": 0},
+            "vacuum_z_min_mm": {"type": "number"},
+            "vacuum_z_max_mm": {"type": "number"},
+            "outer_half_width_mm": {"type": "number", "exclusiveMinimum": 0},
+            "inner_half_width_mm": {"type": "number", "exclusiveMinimum": 0},
+            "exit_enclosure_z_min_mm": {"type": "number"},
+            "exit_enclosure_z_max_mm": {"type": "number"},
+            "exit_front_wall_end_z_mm": {"type": "number"},
+            "detector_radius_mm": {"type": "number", "exclusiveMinimum": 0},
+            "detector_thickness_mm": {"type": "number", "exclusiveMinimum": 0}
+          }
+        }
+      ]
+    },
+    "drive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "waveform",
+        "rf_amplitude_V_zero_to_peak_per_group",
+        "dc_amplitude_V_per_group",
+        "common_mode_offset_V",
+        "frequency_Hz",
+        "phase_rad"
+      ],
+      "properties": {
+        "waveform": {"enum": ["sine", "cosine"]},
+        "rf_amplitude_V_zero_to_peak_per_group": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "dc_amplitude_V_per_group": {"type": "number"},
+        "common_mode_offset_V": {"type": "number"},
+        "frequency_Hz": {"type": "number", "exclusiveMinimum": 0},
+        "phase_rad": {"type": "number"}
+      }
+    },
+    "static_electrodes": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "role",
+            "entrance_plate_and_connector",
+            "exit_enclosure_and_connector",
+            "detector"
+          ],
+          "properties": {
+            "role": {"const": "rectangular_reference_static_electrodes"},
+            "entrance_plate_and_connector": {"type": "number"},
+            "exit_enclosure_and_connector": {"type": "number"},
+            "detector": {"type": "number"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "role",
+            "shield_and_entrance_endcap_and_connector",
+            "exit_endcap_and_connector"
+          ],
+          "properties": {
+            "role": {"const": "cylindrical_shield_static_electrodes"},
+            "shield_and_entrance_endcap_and_connector": {"type": "number"},
+            "exit_endcap_and_connector": {"type": "number"}
+          }
+        }
+      ]
+    }
+  }
+}

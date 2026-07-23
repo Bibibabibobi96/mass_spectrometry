@@ -54,10 +54,12 @@ $converter = Join-Path $inputDir 'build_s1_downstream_handoff.py'
 $handoffLibrary = Join-Path $inputDir 'build_oatof_handoff.py'
 $analyzer = Join-Path $inputDir 'analyze_s1_end_to_end.py'
 $stateAuditor = Join-Path $inputDir 'audit_s1_state_chain.py'
+$handoffAdapter = Join-Path $inputDir 'rf_handoff_adapter.py'
 Copy-Item -LiteralPath (Join-Path $projectRoot 'analysis\build_s1_downstream_handoff.py') -Destination $converter
 Copy-Item -LiteralPath (Join-Path $projectRoot 'analysis\build_oatof_handoff.py') -Destination $handoffLibrary
 Copy-Item -LiteralPath (Join-Path $projectRoot 'analysis\analyze_s1_end_to_end.py') -Destination $analyzer
 Copy-Item -LiteralPath (Join-Path $projectRoot 'analysis\audit_s1_state_chain.py') -Destination $stateAuditor
+Copy-Item -LiteralPath (Join-Path $repoRoot 'projects\oa_tof\analysis\rf_handoff_adapter.py') -Destination $handoffAdapter
 $peakMetrics = Join-Path $inputDir 'peak_metrics.py'
 $analysisContract = Join-Path $inputDir 'oatof_analysis_contract.json'
 $geometryContract = Join-Path $inputDir 'oatof_resolved_geometry.json'
@@ -123,7 +125,7 @@ $resolutionFigure = Join-Path $resultDir 's1_downstream_resolution_diagnostic.pn
 if ($LASTEXITCODE -ne 0) { throw 'S1 end-to-end function gate failed.' }
 $result = Get-Content -LiteralPath $metrics -Raw -Encoding UTF8 | ConvertFrom-Json
 $runConfig = Join-Path $runDir 'run_config.json'
-[ordered]@{schema_version=1;run_id=$RunId;project='rf_quadrupole_collision_cooling';mode='rf_oatof_s1_physical_end_to_end';project_root=$repoRoot;inputs=[ordered]@{source_run_manifest=(Join-Path $source 'run_manifest.json');formal_simion_iob=$formalIob;local_joint_events=$local;entry_canonical=$entry;converter=$converter;handoff_library=$handoffLibrary;analyzer=$analyzer;state_chain_auditor=$stateAuditor;peak_metrics=$peakMetrics;analysis_contract=$analysisContract;geometry_contract=$geometryContract};parameters=[ordered]@{particle_count=$particleCount;ion_table_rows=$particleCount;simion_default_num_particles=$simionDefaultParticleCount;source_mode=$sourceManifest.mode;authoritative_frame_id=$authoritativeFrameId;position_projection_applied=$false;solver_clock='instrument_time';pulse_time_us=$PulseTimeUs;pulse_width_us=$PulseWidthUs;downstream_time_origin='shared_pulse_onset';dense_trajectories_saved=$false};formal_gate_passed=$false} | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath $runConfig -Encoding UTF8
+[ordered]@{schema_version=1;run_id=$RunId;project='rf_quadrupole_collision_cooling';mode='rf_oatof_s1_physical_end_to_end';project_root=$repoRoot;inputs=[ordered]@{source_run_manifest=(Join-Path $source 'run_manifest.json');formal_simion_iob=$formalIob;local_joint_events=$local;entry_canonical=$entry;converter=$converter;handoff_library=$handoffLibrary;analyzer=$analyzer;state_chain_auditor=$stateAuditor;oa_shared_handoff_adapter=$handoffAdapter;peak_metrics=$peakMetrics;analysis_contract=$analysisContract;geometry_contract=$geometryContract};parameters=[ordered]@{particle_count=$particleCount;ion_table_rows=$particleCount;simion_default_num_particles=$simionDefaultParticleCount;source_mode=$sourceManifest.mode;authoritative_frame_id=$authoritativeFrameId;position_projection_applied=$false;solver_clock='instrument_time';pulse_time_us=$PulseTimeUs;pulse_width_us=$PulseWidthUs;downstream_time_origin='shared_pulse_onset';dense_trajectories_saved=$false};formal_gate_passed=$false} | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath $runConfig -Encoding UTF8
 $stateAudit = Join-Path $resultDir 's1_state_chain_audit.json'
 & $python $stateAuditor --entry $entry --local-events $local --canonical $canonical --ion $ion `
   --row-map $rowMap --downstream $downstream --handoff-metadata $handoffMetadata `

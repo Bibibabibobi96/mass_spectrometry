@@ -3,7 +3,7 @@
   "role": "rf_full_device_hybrid_mesh_candidate",
   "status": "approved_for_solver_validation",
   "inputs": {
-    "resolved_geometry": "config/resolved_geometry.json",
+    "resolved_geometry": "config/resolved_design_official.json",
     "shield_contract": "config/rf_continuous_grounded_shield_candidate.json",
     "uniform_mesh_contract": "config/rf_rod_region_swept_mesh_candidate.json",
     "uniform_mesh_evidence_run": "20260721_220000__analysis__python__rf-swept-mesh-convergence"

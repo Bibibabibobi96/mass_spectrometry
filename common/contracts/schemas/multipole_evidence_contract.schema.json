@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/multipole_evidence_contract.schema.json",
+  "title": "Multipole transport evidence thresholds",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "role", "project_id", "design_profile_id", "evaluation", "thresholds"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "multipole_transport_evidence_contract"},
+    "project_id": {"type": "string", "minLength": 1},
+    "design_profile_id": {"type": "string", "minLength": 1},
+    "evaluation": {"enum": ["rf_vs_zero_rf", "axial_drop_vs_zero_drop"]},
+    "thresholds": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["minimum_primary_transmission", "minimum_transmission_improvement"],
+          "properties": {
+            "minimum_primary_transmission": {"type": "number", "minimum": 0, "maximum": 1},
+            "minimum_transmission_improvement": {"type": "number", "minimum": -1, "maximum": 1}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["minimum_primary_transmission", "minimum_mean_energy_gain_eV", "maximum_mean_output_energy_error_eV"],
+          "properties": {
+            "minimum_primary_transmission": {"type": "number", "minimum": 0, "maximum": 1},
+            "minimum_mean_energy_gain_eV": {"type": "number"},
+            "maximum_mean_output_energy_error_eV": {"type": "number", "minimum": 0}
+          }
+        }
+      ]
+    }
+  }
+}

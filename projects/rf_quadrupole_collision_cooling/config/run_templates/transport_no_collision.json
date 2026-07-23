@@ -5,7 +5,7 @@
   "mode": "transport_no_collision",
   "inputs": {
     "baseline": "config/baseline.json",
-    "resolved_geometry": "config/resolved_geometry.json",
+    "resolved_design": "config/resolved_design_official.json",
     "mode": "config/modes/transport_no_collision.json",
     "particle_source": "config/official_particle_source.json",
     "particle_table": "config/particles/official_fixed_100.ion"

@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "role": "spatial_registration_migration_ratchet",
+  "status": "fully_migrated_no_legacy_exceptions",
+  "rules": [
+    {
+      "rule_id": "no_local_matrix_primitives",
+      "reason": "Spatial math belongs to common.contracts.rigid_transform."
+    },
+    {
+      "rule_id": "no_second_resolved_authority",
+      "reason": "Only the common resolver may construct the canonical resolved-registration role."
+    },
+    {
+      "rule_id": "commercial_adapters_consume_resolved",
+      "reason": "Active MATLAB builders must read the frozen resolved registration."
+    },
+    {
+      "rule_id": "no_instance_surface_constant",
+      "reason": "The handoff surface must follow resolved geometry, not the current 90.2 mm instance."
+    }
+  ],
+  "legacy_exceptions": []
+}

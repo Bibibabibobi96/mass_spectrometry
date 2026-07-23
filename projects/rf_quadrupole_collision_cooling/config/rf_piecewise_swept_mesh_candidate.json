@@ -3,7 +3,7 @@
   "role": "rf_full_device_piecewise_swept_mesh_candidate",
   "status": "closed_after_topology_incompatibility",
   "inputs": {
-    "resolved_geometry": "config/resolved_geometry.json",
+    "resolved_geometry": "config/resolved_design_official.json",
     "hybrid_tetra_reference_comparison_run": "20260722_004500__analysis__python__rf-hybrid-mesh-comparison",
     "uniform_mesh_evidence_run": "20260721_220000__analysis__python__rf-swept-mesh-convergence"
   },

@@ -4,7 +4,7 @@
   "status": "smallest_radius_retained_for_s1_candidate_validation",
   "inputs": {
     "rf_baseline": "config/baseline.json",
-    "rf_resolved_geometry": "config/resolved_geometry.json"
+    "rf_resolved_geometry": "config/resolved_design_official.json"
   },
   "audit": {
     "current_comsol_topology": "entrance plate plus rods plus a 5.8 mm exit enclosure inside a finite vacuum block; no continuous grounded side wall over the rod region",

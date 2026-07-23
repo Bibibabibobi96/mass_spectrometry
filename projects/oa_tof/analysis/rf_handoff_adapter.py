@@ -5,9 +5,17 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping, Sequence
 
+from common.contracts.rigid_transform import FramedVector, RigidTransform
+
 
 ATOMIC_MASS_KG = 1.66053906660e-27
 ELEMENTARY_CHARGE_C = 1.602176634e-19
+_ACCELERATOR_PA_TO_GLOBAL = RigidTransform(
+    "oatof_accelerator_pa",
+    "oatof_global",
+    ((1.0, 0.0, 0.0), (0.0, 0.0, 1.0), (0.0, -1.0, 0.0)),
+    (0.0, 0.0, 0.0),
+)
 
 
 def _finite_float(row: Mapping[str, str], field: str, source: str) -> float:
@@ -78,8 +86,33 @@ def decode_simion_accelerator_velocity(
     local_x = speed * math.cos(elevation) * math.cos(azimuth)
     local_y = speed * math.cos(elevation) * math.sin(azimuth)
     local_z = speed * math.sin(elevation)
-    # Frozen IOB instance 3: (vx, vy, vz)_global = (vx, vz, -vy)_PA.
-    return local_x, local_z, -local_y
+    local_velocity = FramedVector(
+        _ACCELERATOR_PA_TO_GLOBAL.from_frame_id,
+        (local_x, local_y, local_z),
+        "polar",
+    )
+    return _ACCELERATOR_PA_TO_GLOBAL.transform_vector(local_velocity).components
+
+
+def encode_simion_accelerator_velocity(
+    velocity_m_s: Sequence[float],
+) -> tuple[float, float]:
+    """Encode one oaTOF-global velocity as SIMION azimuth and elevation."""
+    global_velocity = FramedVector(
+        _ACCELERATOR_PA_TO_GLOBAL.to_frame_id,
+        velocity_m_s,
+        "polar",
+    )
+    local_x, local_y, local_z = (
+        _ACCELERATOR_PA_TO_GLOBAL.inverse()
+        .transform_vector(global_velocity)
+        .components
+    )
+    azimuth_deg = math.degrees(math.atan2(local_y, local_x))
+    elevation_deg = math.degrees(
+        math.atan2(local_z, math.hypot(local_x, local_y))
+    )
+    return azimuth_deg, elevation_deg
 
 
 def validate_ion_velocity_adapter(

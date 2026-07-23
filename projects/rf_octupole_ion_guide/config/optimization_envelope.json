@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "role": "project_optimization_envelope",
+  "project_id": "rf_octupole_ion_guide",
+  "family_id": "rf_multipole_ion_optics",
+  "envelope_id": "octupole_phase2_candidate_space",
+  "status": "candidate",
+  "policy": "Candidates may move within catalog bounds only after request compilation. Identity and coupled geometry constraints remain mandatory; expanding this envelope does not modify the accepted baseline.",
+  "reference": {
+    "design_request": "config/requests/baseline.json",
+    "design_request_sha256": "B0B0F3B58844AC07D6AD370F4ED8AF88BF22B7FFE95411FF39725912BEFEAD91"
+  },
+  "constraints": [
+    {
+      "constraint_id": "locked_multipole_identity",
+      "kind": "immutable_identity",
+      "request_json_pointers": ["/identity/project_id", "/identity/family_id", "/identity/radial_order_n", "/identity/electrode_count"],
+      "description": "Project, family, radial order and electrode count are immutable; a different pole count is a different project."
+    },
+    {
+      "constraint_id": "catalog_variable_bounds",
+      "kind": "bounded_variable",
+      "request_json_pointers": [
+        "/geometry_mm/inscribed_radius_r0",
+        "/geometry_mm/rod_radius_ratio",
+        "/geometry_mm/rod_z_min",
+        "/geometry_mm/rod_z_max",
+        "/geometry_mm/enclosure/working_region_radius_mm",
+        "/geometry_mm/enclosure/vacuum_z_min_mm",
+        "/geometry_mm/enclosure/vacuum_z_max_mm",
+        "/geometry_mm/enclosure/shield_inner_radius_mm",
+        "/geometry_mm/enclosure/shield_outer_radius_mm",
+        "/geometry_mm/enclosure/entrance_endcap_z_min_mm",
+        "/geometry_mm/enclosure/entrance_endcap_z_max_mm",
+        "/geometry_mm/enclosure/exit_endcap_z_min_mm",
+        "/geometry_mm/enclosure/exit_endcap_z_max_mm",
+        "/geometry_mm/entrance_interface/aperture_radius_mm",
+        "/geometry_mm/entrance_interface/plate_thickness_mm",
+        "/geometry_mm/entrance_interface/rod_clearance_mm",
+        "/geometry_mm/entrance_interface/connector_length_mm",
+        "/geometry_mm/entrance_interface/particle_plane_distance_mm",
+        "/geometry_mm/exit_interface/aperture_radius_mm",
+        "/geometry_mm/exit_interface/plate_thickness_mm",
+        "/geometry_mm/exit_interface/rod_clearance_mm",
+        "/geometry_mm/exit_interface/connector_length_mm",
+        "/geometry_mm/exit_interface/particle_plane_distance_mm",
+        "/drive/rf_amplitude_V_zero_to_peak_per_group",
+        "/drive/dc_amplitude_V_per_group",
+        "/drive/common_mode_offset_V",
+        "/drive/frequency_Hz",
+        "/drive/phase_rad",
+        "/segmentation/segment_count",
+        "/segmentation/intersegment_gap_mm",
+        "/segmentation/entrance_common_mode_V",
+        "/segmentation/exit_common_mode_V",
+        "/segmentation/output_reference_V"
+      ],
+      "description": "Every optimizable numeric request field must remain within the catalog range expressed in its declared unit."
+    },
+    {
+      "constraint_id": "positive_rod_span",
+      "kind": "rod_span_positive",
+      "request_json_pointers": ["/geometry_mm/rod_z_min", "/geometry_mm/rod_z_max"],
+      "description": "The upper rod bound must remain strictly greater than the lower rod bound."
+    },
+    {
+      "constraint_id": "nonoverlapping_interfaces",
+      "kind": "interface_nonoverlap",
+      "request_json_pointers": [
+        "/geometry_mm/rod_z_min",
+        "/geometry_mm/rod_z_max",
+        "/geometry_mm/enclosure/vacuum_z_min_mm",
+        "/geometry_mm/enclosure/vacuum_z_max_mm",
+        "/geometry_mm/enclosure/shield_inner_radius_mm",
+        "/geometry_mm/enclosure/shield_outer_radius_mm",
+        "/geometry_mm/enclosure/entrance_endcap_z_min_mm",
+        "/geometry_mm/enclosure/entrance_endcap_z_max_mm",
+        "/geometry_mm/enclosure/exit_endcap_z_min_mm",
+        "/geometry_mm/enclosure/exit_endcap_z_max_mm",
+        "/geometry_mm/entrance_interface/plate_thickness_mm",
+        "/geometry_mm/entrance_interface/rod_clearance_mm",
+        "/geometry_mm/entrance_interface/connector_length_mm",
+        "/geometry_mm/entrance_interface/particle_plane_distance_mm",
+        "/geometry_mm/exit_interface/plate_thickness_mm",
+        "/geometry_mm/exit_interface/rod_clearance_mm",
+        "/geometry_mm/exit_interface/connector_length_mm",
+        "/geometry_mm/exit_interface/particle_plane_distance_mm"
+      ],
+      "description": "Entrance and exit plates, connectors and particle planes must remain ordered outside the positive rod span."
+    },
+    {
+      "constraint_id": "segmented_length_conservation",
+      "kind": "segment_length_conservation",
+      "request_json_pointers": ["/geometry_mm/rod_z_min", "/geometry_mm/rod_z_max", "/segmentation/segment_count", "/segmentation/intersegment_gap_mm"],
+      "description": "Uniform segment lengths and gaps must exactly occupy the rod span with every segment retaining positive length."
+    },
+    {
+      "constraint_id": "supported_connector_shapes",
+      "kind": "connector_compatibility",
+      "request_json_pointers": ["/geometry_mm/entrance_interface/connector_shape", "/geometry_mm/exit_interface/connector_shape"],
+      "description": "Connector topology remains a locked supported request value; topology changes require an explicit reviewed request."
+    }
+  ]
+}

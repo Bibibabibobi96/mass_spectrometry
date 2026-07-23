@@ -28,6 +28,7 @@ $comsolLauncher = Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1'
 $simionAnalyzer = Join-Path $projectRoot 'simion\workbench\analyze_ideal_field_log.ps1'
 $simionStableGate = Join-Path $projectRoot 'tests\simion\verify_stable_entry.ps1'
 $resolvedPath = Join-Path $projectRoot 'config\resolved_geometry.json'
+$analysisContractPath = Join-Path $projectRoot 'config\analysis_contract.json'
 $formalAssetsPath = Join-Path $projectRoot 'config\formal_assets.json'
 $formalMph = Join-Path $artifactRoot 'formal\comsol\oa_tof__model.mph'
 $formalSimion = Join-Path $artifactRoot 'formal\simion'
@@ -35,10 +36,10 @@ $formalIob = Join-Path $formalSimion 'oatof_ideal_grounded.iob'
 
 & $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
 if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
-& $python $prepare --mode $modePath --check-mode
+& $python -m projects.oa_tof.analysis.prepare_rf_handoff_projection --mode $modePath --check-mode
 if ($LASTEXITCODE -ne 0) { throw 'RF handoff consumer mode failed its static gate.' }
 
-$required = @($python,$modePath,$prepare,$analyze,$rfBuilder,$resolvedPath,$formalAssetsPath)
+$required = @($python,$modePath,$prepare,$analyze,$rfBuilder,$resolvedPath,$analysisContractPath,$formalAssetsPath)
 if ($TargetSolver -in @('Both','COMSOL')) { $required += @($formalMph,$comsolTask,$comsolLauncher) }
 if ($TargetSolver -in @('Both','SIMION')) { $required += @($formalIob,$SimionExe,$simionAnalyzer,$simionStableGate) }
 foreach ($path in $required) {
@@ -101,13 +102,18 @@ foreach ($case in $mode.source_cases) {
   $existingBundle = @($bundlePaths | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf })
   if ($existingBundle.Count -ne $bundlePaths.Count) {
     if ($existingBundle.Count -gt 0) { throw "Resume bundle is partial for $($case.case_id)." }
-    & $python $rfBuilder --contract $handoffContract --convert `
-      --source-csv $sourceCsv --source-manifest $sourceManifest `
-      --canonical-output $canonical --ion-output $ion `
-      --row-map-output $rowMap --metadata-output $metadata
+    Push-Location $repoRoot
+    try {
+      & $python -m projects.rf_quadrupole_collision_cooling.analysis.build_oatof_handoff `
+        --contract $handoffContract --convert `
+        --source-csv $sourceCsv --source-manifest $sourceManifest `
+        --canonical-output $canonical --ion-output $ion `
+        --row-map-output $rowMap --metadata-output $metadata
+    } finally { Pop-Location }
     if ($LASTEXITCODE -ne 0) { throw "RF handoff build failed for $($case.case_id)." }
   }
-  & $python $prepare --mode $modePath --validate-bundle `
+  & $python -m projects.oa_tof.analysis.prepare_rf_handoff_projection `
+    --mode $modePath --validate-bundle `
     --canonical $canonical --ion $ion --row-map $rowMap --metadata $metadata --output $consumerRequest
   if ($LASTEXITCODE -ne 0) { throw "oaTOF consumer rejected $($case.case_id)." }
   $request = Get-Content -LiteralPath $consumerRequest -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -215,6 +221,7 @@ $analysisInputs = Join-Path $inputDir 'analysis_inputs.json'
   schema_version = 1
   role = 'oa_tof_rf_handoff_projection_analysis_inputs'
   resolved_geometry = $resolvedPath
+  analysis_contract = $analysisContractPath
   cases = $caseRecords
 } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $analysisInputs -Encoding UTF8
 $allOutputs.Add($analysisInputs)
@@ -226,6 +233,23 @@ if (-not (Test-Path -LiteralPath $metricsPath -PathType Leaf)) {
   throw 'RF handoff functional projection did not produce metrics.'
 }
 $metrics = Get-Content -LiteralPath $metricsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$analysisContract = Get-Content -LiteralPath $analysisContractPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$detectorFrameId = [string]$analysisContract.coordinate_frames.detector_plane.frame_id
+$instrumentFrameId = [string]$analysisContract.coordinate_frames.instrument.frame_id
+$detectorPositionUnit = [string]$analysisContract.coordinate_frames.detector_plane.position_unit
+if ([int]$metrics.schema_version -ne 2 -or
+    [string]$metrics.role -ne 'oa_tof_rf_handoff_functional_projection' -or
+    [string]$metrics.detector_coordinate_contract.frame_id -ne $detectorFrameId -or
+    [string]$metrics.detector_coordinate_contract.source_frame_id -ne $instrumentFrameId -or
+    [string]$metrics.detector_coordinate_contract.position_unit -ne $detectorPositionUnit) {
+  throw 'RF handoff projection emitted an invalid detector-local coordinate contract.'
+}
+$detectorRows = @(Import-Csv -LiteralPath $detectorCsv)
+$detectorFrameIds = @($detectorRows | Select-Object -ExpandProperty frame_id -Unique)
+if ($detectorRows.Count -lt 1 -or $detectorFrameIds.Count -ne 1 -or
+    [string]$detectorFrameIds[0] -ne $detectorFrameId) {
+  throw 'RF handoff detector particles are not uniformly detector-local.'
+}
 $allOutputs.Add($metricsPath); $allOutputs.Add($detectorCsv)
 
 $runConfigPath = Join-Path $runDir 'run_config.json'
@@ -241,6 +265,7 @@ $runConfigPath = Join-Path $runDir 'run_config.json'
     mode = $modePath
     handoff_contract = $handoffContract
     resolved_geometry = $resolvedPath
+    analysis_contract = $analysisContractPath
     formal_comsol_mph = if ($TargetSolver -in @('Both','COMSOL')) { $formalMph } else { $null }
     formal_simion_iob = if ($TargetSolver -in @('Both','SIMION')) { $formalIob } else { $null }
   }
@@ -249,6 +274,12 @@ $runConfigPath = Join-Path $runDir 'run_config.json'
     resumed = [bool]$Resume
     formal_assets_modified = $false
     physical_interface_modeled = $false
+  }
+  detector_output = [ordered]@{
+    schema_version = 2
+    frame_id = $detectorFrameId
+    source_frame_id = $instrumentFrameId
+    position_unit = $detectorPositionUnit
   }
 } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $runConfigPath -Encoding UTF8
 
@@ -262,6 +293,8 @@ $summaryPath = Join-Path $runDir 'summary.json'
   physical_link_status = [string]$metrics.physical_link_status
   resolution_claim_allowed = $false
   formal_assets_modified = $false
+  detector_frame_id = [string]$metrics.detector_coordinate_contract.frame_id
+  detector_position_unit = [string]$metrics.detector_coordinate_contract.position_unit
   metrics = $metricsPath
 } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
 $allOutputs.Add($summaryPath)

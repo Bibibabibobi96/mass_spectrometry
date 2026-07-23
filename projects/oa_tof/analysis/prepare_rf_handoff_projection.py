@@ -10,7 +10,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from rf_handoff_adapter import (
+from projects.oa_tof.analysis.rf_handoff_adapter import (
     ordered_solver_identity_map,
     validate_ion_velocity_adapter,
 )
@@ -20,6 +20,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 WORKSPACE_ROOT = REPO_ROOT.parent
 DEFAULT_MODE = PROJECT_ROOT / "config" / "modes" / "rf_handoff_projection.json"
+RESOLVED_GEOMETRY = PROJECT_ROOT / "config" / "resolved_geometry.json"
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -154,6 +155,11 @@ def validate_bundle(
     ion_lines = [line for line in ion_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     if not canonical or len(canonical) != len(row_map) or len(canonical) != len(ion_lines):
         raise ValueError("canonical, row-map and ION particle counts differ")
+    expected_frame = load_json(RESOLVED_GEOMETRY)["coordinate_convention"]["frame_id"]
+    if expected_frame != "oatof_global":
+        raise ValueError("resolved oa-TOF frame must be oatof_global")
+    if any(row.get("frame_id") != expected_frame for row in canonical):
+        raise ValueError("canonical handoff frame differs from the oa-TOF global frame")
     ordered_solver_identity_map(canonical, row_map)
     clock_policy = validated["mode"]["clock_policy"]
     solver_clock = clock_policy.get("solver_clock", "local_zero")

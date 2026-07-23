@@ -1,19 +1,20 @@
-function result = phase2_electrostatics_coil_transverse(executionMode)
+function result = phase2_electrostatics_coil_transverse(resolvedContractPath)
 % Phase 2 (transverse-coil variant): materials, voltage boundary
 % conditions, electrostatics solve, potential/field result plots for the
 % electron gun geometry with the filament coil's own axis PERPENDICULAR
 % to the beam axis (see phase1_geometry_coil_transverse.m). Same
 % Complement-selection / FreeTet-mesh fixes as phase2_electrostatics_coil.m
 % documented in COMSOL_API.md under Geometry, Selections, and Mesh.
-% executionMode='build_only' stops after the geometry, mesh, electrostatics,
-% study and solver trees are built and saved; it never calls sol1.runAll.
+% The selected resolved mode determines whether the solver is executed.
 
 componentRoot = fileparts(mfilename('fullpath'));
 addpath(componentRoot);
 paths = egun_paths();
-if nargin < 1, executionMode = 'full'; end
-assert(any(strcmp(executionMode, {'full', 'build_only'})), ...
-    'executionMode must be full or build_only.');
+if nargin < 1 || isempty(resolvedContractPath)
+    error('A resolved Wehnelt contract path is required; no defaults exist.');
+end
+contract = load_wehnelt_contract(char(resolvedContractPath));
+executionMode = contract.numerical.execution_mode;
 import com.comsol.model.*
 import com.comsol.model.util.*
 
@@ -23,6 +24,7 @@ if any(strcmp(cell(ModelUtil.tags()), 'Model'))
     ModelUtil.remove('Model');
 end
 model = ModelUtil.load('Model', modelPath);
+parameterBindingsVerified = apply_wehnelt_contract_parameters(model, contract);
 comp1 = model.component('comp1');
 geom1 = comp1.geom('geom1');
 
@@ -88,14 +90,14 @@ pot_a.selection.named('selb_an'); pot_a.set('V0', 'V_anode');
 %% Mesh (same recipe as phase2_electrostatics_coil.m: global Finer +
 % explicit local size on the coil surface + explicit FreeTet + health check)
 mesh1 = comp1.mesh.create('mesh1');
-mesh1.feature('size').set('hauto', 3);
+mesh1.feature('size').set('hauto', contract.numerical.mesh.automatic_level);
 sz1 = mesh1.feature.create('sz1', 'Size');
 sz1.selection.geom('geom1', 2);
 sz1.selection.named('selb_cath');
 sz1.set('custom', 'on');
-sz1.set('hmaxactive', true); sz1.set('hmax', '0.03[mm]');
-sz1.set('hminactive', true); sz1.set('hmin', '0.005[mm]');
-sz1.set('hgradactive', true); sz1.set('hgrad', '1.3');
+sz1.set('hmaxactive', true); sz1.set('hmax', 'mesh_coil_hmax');
+sz1.set('hminactive', true); sz1.set('hmin', 'mesh_coil_hmin');
+sz1.set('hgradactive', true); sz1.set('hgrad', 'mesh_hgrad');
 mesh1.feature.create('ftet1', 'FreeTet');
 mesh1.run;
 meshinfo = mphmeshstats(model, 'mesh1');
@@ -116,7 +118,12 @@ if strcmp(executionMode, 'build_only')
     model.save(savePath);
     result = struct('status', 'PASS', 'execution_mode', executionMode, ...
         'model_path', savePath, 'geometry_built', true, 'mesh_built', true, ...
-        'electrostatics_solved', false);
+        'electrostatics_solved', false, 'contract_loaded', true, ...
+        'contract_project_id', contract.project_id, ...
+        'selected_mode_id', contract.selected_mode_id, ...
+        'parameter_bindings_verified', parameterBindingsVerified, ...
+        'candidate_evidence_allowed', ...
+        contract.evidence.candidate_evidence_allowed);
     fprintf('BUILD_ONLY=PASS model=%s\n', savePath);
     return;
 end
@@ -137,15 +144,18 @@ resultsDir = paths.resultsDir;
 if ~exist(resultsDir, 'dir'), mkdir(resultsDir); end
 imgV = model.result.export.create('imgV', 'Image');
 imgV.set('plotgroup', 'pg_V'); imgV.set('pngfilename', fullfile(resultsDir, 'potential_distribution_coilT.png'));
-imgV.set('width', 1200); imgV.set('height', 800); imgV.run;
+imgV.set('width', contract.numerical.reporting.field_image_width_px);
+imgV.set('height', contract.numerical.reporting.field_image_height_px);
+imgV.run;
 imgE = model.result.export.create('imgE', 'Image');
 imgE.set('plotgroup', 'pg_E'); imgE.set('pngfilename', fullfile(resultsDir, 'efield_distribution_coilT.png'));
-imgE.set('width', 1200); imgE.set('height', 800); imgE.run;
+imgE.set('width', contract.numerical.reporting.field_image_width_px);
+imgE.set('height', contract.numerical.reporting.field_image_height_px);
+imgE.run;
 fprintf('SUCCESS: Result images exported.\n');
 
-%% On-axis check (z well above the coil's z-extent of ~0.55-1.25mm to
-% avoid sampling inside the coil's own solid material)
-zvals = [1.4 2.0 8.0 13.9 14.5 15.1 17.9];
+%% Resolver-defined on-axis diagnostic points avoid the filament solid
+zvals = contract.numerical.reporting.electrostatic_axis_samples_z_mm(:).';
 coords = [zeros(1,numel(zvals)); zeros(1,numel(zvals)); zvals];
 Vq = mphinterp(model, 'V', 'coord', coords, 'dataset', 'dset1', 'matherr', 'off');
 Eq = mphinterp(model, 'es.normE', 'coord', coords, 'dataset', 'dset1', 'matherr', 'off');
@@ -159,5 +169,10 @@ model.save(savePath);
 fprintf('\nSUCCESS: model saved to %s\n', savePath);
 result = struct('status', 'PASS', 'execution_mode', executionMode, ...
     'model_path', savePath, 'geometry_built', true, 'mesh_built', true, ...
-    'electrostatics_solved', true);
+    'electrostatics_solved', true, 'contract_loaded', true, ...
+    'contract_project_id', contract.project_id, ...
+    'selected_mode_id', contract.selected_mode_id, ...
+    'parameter_bindings_verified', parameterBindingsVerified, ...
+    'candidate_evidence_allowed', ...
+    contract.evidence.candidate_evidence_allowed);
 end

@@ -6,9 +6,7 @@ param(
     [double]$SourceAxialOffsetMm = 0.0,
     [string]$ParticleTablePath = '',
     [ValidateSet('transport_interface_readiness')][string]$Mode = 'transport_interface_readiness',
-    [string]$OperatingPoint = 'official_100amu_2eV',
-    [double]$RfPeakV = [double]::NaN,
-    [double]$FrequencyHz = [double]::NaN
+    [string]$OperatingPoint = 'official_100amu_2eV'
 )
 
 Set-StrictMode -Version Latest
@@ -39,31 +37,19 @@ if (-not (Test-Path -LiteralPath $particleTable -PathType Leaf)) { throw "Partic
 $expectedParticles = @(Get-Content -LiteralPath $particleTable -Encoding UTF8 | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count
 & $python -m common.contracts.particle_count_policy --count $expectedParticles
 if ($LASTEXITCODE -ne 0) { throw 'Particle table violates the repository N=100/N=1000 policy.' }
-$resolved = Get-Content -LiteralPath (Join-Path $projectRoot 'config\resolved_geometry.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-$resolvedContractInput = 'config/resolved_interface_readiness.json'
+$resolvedContractInput = 'config/resolved_design_official.json'
+$resolved = Get-Content -LiteralPath (Join-Path $projectRoot $resolvedContractInput) -Raw -Encoding UTF8 | ConvertFrom-Json
 $minimumParticles = (Get-Content -LiteralPath (Join-Path $projectRoot 'config\modes\transport_interface_readiness.json') -Raw -Encoding UTF8 | ConvertFrom-Json).numerics.minimum_diagnostic_particles
 if ([string]::IsNullOrWhiteSpace($ParticleTablePath) -or $expectedParticles -lt $minimumParticles) {
     throw "Interface-readiness mode requires an explicit particle table with at least $minimumParticles particles."
 }
-if ([double]::IsNaN($RfPeakV) -or [double]::IsInfinity($RfPeakV)) {
-    throw 'Interface-readiness mode requires an explicit RfPeakV.'
-}
-if ([double]::IsNaN($RfPeakV) -or [double]::IsInfinity($RfPeakV)) { $RfPeakV = $resolved.mode.rf.amplitude_V_peak }
-if ([double]::IsNaN($FrequencyHz) -or [double]::IsInfinity($FrequencyHz)) { $FrequencyHz = $resolved.mode.rf.frequency_Hz }
+$RfPeakV = [double]$resolved.drive.rf_amplitude_V_zero_to_peak_per_group
+$FrequencyHz = [double]$resolved.drive.frequency_Hz
+$PhaseRad = [double]$resolved.drive.phase_rad
 $modeInput = 'config/modes/transport_interface_readiness.json'
 
 New-Item -ItemType Directory -Path $runDir,$inputDir,$resultDir,$candidateDir,$logDir,$runtimeDir -Force | Out-Null
 
-$familyOperatingPath = Join-Path $inputDir 'family_operating_contract.json'
-Push-Location $repoRoot
-try {
-    & $python -m common.multipole.resolve_family_operating_contract --adapter quadrupole `
-        --baseline (Join-Path $projectRoot 'config\baseline.json') --mode (Join-Path $projectRoot $modeInput) `
-        --rf-amplitude-v-per-group $RfPeakV --frequency-hz $FrequencyHz --output $familyOperatingPath
-    if ($LASTEXITCODE -ne 0) { throw 'Shared multipole operating-contract resolution failed.' }
-}
-finally { Pop-Location }
-$familyOperating = Get-Content -LiteralPath $familyOperatingPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $runConfigPath = Join-Path $runDir 'run_config.json'
 $bootstrapReport = Join-Path $logDir 'comsol_bootstrap_report.txt'
 $guiVerifyReport = Join-Path $logDir 'comsol_gui_compute_report.txt'
@@ -72,9 +58,8 @@ $runConfig = [ordered]@{
     schema_version=1; role='rf_quadrupole_comsol_run_config'; run_id=$RunId
     project='rf_quadrupole_collision_cooling'; mode=$Mode; project_root=$projectRoot
     inputs=[ordered]@{
-        baseline='config/baseline.json'; resolved_geometry='config/resolved_geometry.json'; resolved_contract=$resolvedContractInput
+        resolved_design=$resolvedContractInput
         mode=$modeInput; particle_table=$particleTable
-        family_operating_contract=$familyOperatingPath
         interface_contract='config/interface_contract.json'
     }
     results_dir=$resultDir; comsol_dir=$candidateDir; logs_dir=$logDir; runtime_dir=$runtimeDir; run_dir=$runDir
@@ -133,7 +118,7 @@ try {
 & $python -m common.contracts.particle_state `
     --state $particleStatePath --particles $particleTable --source-format ion11 `
     --contract (Join-Path $projectRoot 'config\interface_contract.json') --axial-offset-mm $SourceAxialOffsetMm `
-    --frequency-hz $FrequencyHz --phase-rad $familyOperating.voltage.phase_rad `
+    --frequency-hz $FrequencyHz --phase-rad $PhaseRad `
     --solver COMSOL --output $stateContractReport
     if ($LASTEXITCODE -ne 0) { throw 'Particle-state contract gate failed.' }
 }

@@ -8,14 +8,12 @@ import math
 from pathlib import Path
 from typing import Any
 
-try:
-    from . import build_interface_handoff
-except ImportError:  # Direct script execution from the project Static gate.
-    import build_interface_handoff
-
 
 PROJECT_ROOT = Path(__file__).parents[1]
 DEFAULT_CONTRACT = PROJECT_ROOT / "config" / "rf_to_oatof_s2_passive_connector.json"
+DEFAULT_REGISTRATION = (
+    PROJECT_ROOT / "config" / "resolved_rf_to_oatof_s2_spatial_registration.json"
+)
 
 
 def _load_relative(path: str, reference_root: Path = PROJECT_ROOT) -> dict[str, Any]:
@@ -30,6 +28,7 @@ def _assert_close(actual: float, expected: float, name: str) -> None:
 
 def validate_contract(
     path: Path = DEFAULT_CONTRACT, reference_root: Path = PROJECT_ROOT,
+    registration_path: Path = DEFAULT_REGISTRATION,
 ) -> dict[str, Any]:
     """Validate inherited geometry, rigid poses and fail-closed S2 permissions."""
     contract = json.loads(path.read_text(encoding="utf-8"))
@@ -76,24 +75,59 @@ def validate_contract(
     gap_mm = float(registration["connector_gap_mm"])
     if gap_mm < 0.0:
         raise ValueError("S2 connector gap cannot be negative")
-
-    rotation = registration["source_component_pose"]["rotation_component_to_instrument"]
-    build_interface_handoff.validate_rotation_matrix(rotation)
+    spatial = json.loads(registration_path.read_text(encoding="utf-8"))
+    if (
+        spatial.get("role") != "resolved_spatial_registration_do_not_edit"
+        or spatial.get("project_semantics", {}).get("stage") != "S2"
+    ):
+        raise ValueError("S2 authoritative spatial registration is invalid")
+    source_pose = spatial["component_poses"]["rf_quadrupole_component"]
+    target_pose = spatial["component_poses"]["oatof_global"]
+    if (
+        registration["source_component_pose"][
+            "rotation_component_to_instrument"
+        ] != source_pose["rotation"]
+        or registration["source_component_pose"]["translation_mm"]
+        != source_pose["translation_mm"]
+        or registration["target_component_pose"][
+            "rotation_component_to_instrument"
+        ] != target_pose["rotation"]
+        or registration["target_component_pose"]["translation_mm"]
+        != target_pose["translation_mm"]
+    ):
+        raise ValueError(
+            "NEEDS_IMPLEMENTATION: S2 pose differs from resolved registration"
+        )
+    if not math.isclose(
+        gap_mm,
+        float(spatial["project_semantics"]["connector_gap_mm"]),
+        rel_tol=0.0,
+        abs_tol=1e-12,
+    ):
+        raise ValueError("S2 connector gap differs from resolved registration")
+    rotation = source_pose["rotation"]
     if rotation != s1["nominal_registration"]["source_component_pose"]["rotation_component_to_instrument"]:
         raise ValueError("S2 source rotation must inherit S1")
 
-    target_center = interface["boundaries"]["target_entry_surface"]["center_mm"]
+    target_center = spatial["resolved_surfaces"]["target_entry"][
+        "in_instrument_frame"
+    ]["center_mm"]
+    if (
+        interface["boundaries"]["target_entry_surface"]["outward_normal"]
+        != spatial["resolved_surfaces"]["target_entry"]["declared"]["normal"]
+    ):
+        raise ValueError("S2 interface normal differs from resolved registration")
     if registration["target_entry_center_instrument_mm"] != target_center:
-        raise ValueError("S2 target entry center differs from the interface reference")
-    expected_source_center = [target_center[0] - gap_mm, target_center[1], target_center[2]]
+        raise ValueError(
+            "NEEDS_IMPLEMENTATION: S2 target entry differs from resolved registration"
+        )
+    expected_source_center = spatial["resolved_surfaces"]["source_exit"][
+        "in_instrument_frame"
+    ]["center_mm"]
     if registration["source_exit_center_instrument_mm"] != expected_source_center:
-        raise ValueError("S2 source exit center does not realize the frozen gap")
-
-    local_center = registration["source_exit_center_local_mm"]
-    rotated_center = [sum(rotation[row][col] * local_center[col] for col in range(3)) for row in range(3)]
-    expected_translation = [expected_source_center[index] - rotated_center[index] for index in range(3)]
-    for index, value in enumerate(registration["source_component_pose"]["translation_mm"]):
-        _assert_close(value, expected_translation[index], f"source translation[{index}]")
+        raise ValueError(
+            "NEEDS_IMPLEMENTATION: S2 source exit differs from resolved registration"
+        )
 
     geometry = contract["passive_connector_geometry"]
     if geometry.get("zero_gap_supported") is not True:
@@ -132,7 +166,9 @@ def validate_contract(
         "oatof_ideal_source_center",
     }:
         raise ValueError("S2 no-pulse field probes differ")
-    if not 0 < float(field_candidate["rf_off_axis_probe_radius_mm"]) < float(rf["geometry_mm"]["field_radius_r0"]):
+    if not 0 < float(field_candidate["rf_off_axis_probe_radius_mm"]) < float(
+        rf["geometry_mm"]["inscribed_radius_r0"]
+    ):
         raise ValueError("S2 RF off-axis probe must remain inside r0")
     mesh = field_candidate["mesh"]
     if mesh["global_auto_level"] != 6 or mesh["convergence_claim_allowed"]:
@@ -215,8 +251,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--contract", type=Path, default=DEFAULT_CONTRACT)
     parser.add_argument("--reference-root", type=Path, default=PROJECT_ROOT)
+    parser.add_argument(
+        "--resolved-registration",
+        type=Path,
+        default=DEFAULT_REGISTRATION,
+    )
     args = parser.parse_args()
-    contract = validate_contract(args.contract, args.reference_root)
+    contract = validate_contract(
+        args.contract,
+        args.reference_root,
+        args.resolved_registration,
+    )
     gap_mm = contract["nominal_registration"]["connector_gap_mm"]
     print(
         "S2_PASSIVE_CONNECTOR=PASS "

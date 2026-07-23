@@ -37,8 +37,9 @@ try {
   $support = Join-Path $inputDir 'rf_run_artifact_support.ps1.txt'
   $s3 = Join-Path $inputDir 'rf_to_oatof_s3_pulse_capture.json'
   $s2 = Join-Path $inputDir 'rf_to_oatof_s2_passive_connector.json'
+  $spatialRegistration = Join-Path $inputDir 'resolved_rf_to_oatof_s2_spatial_registration.json'
   $s1 = Join-Path $inputDir 'rf_to_oatof_s1_joint_field.json'
-  $rf = Join-Path $inputDir 'rf_resolved_geometry.json'
+  $rf = Join-Path $inputDir 'rf_resolved_design.json'
   $pulsePolicy = Join-Path $inputDir 'rf_to_oatof_pulse_timing.json'
   $scheduler = Join-Path $inputDir 'derive_s1_centroid_pulse_time.py'
   $snapshotAnalysis = Join-Path $inputDir 'plot_s1_pulse_geometry_snapshot.py'
@@ -52,7 +53,7 @@ try {
   Copy-Item -LiteralPath $supportSource -Destination $support
   Copy-Item -LiteralPath $s3Source -Destination $s3
   Copy-Item -LiteralPath (Join-Path $projectRoot 'config\rf_to_oatof_s1_joint_field.json') -Destination $s1
-  Copy-Item -LiteralPath (Join-Path $projectRoot 'config\resolved_geometry.json') -Destination $rf
+  Copy-Item -LiteralPath (Join-Path $projectRoot 'config\resolved_design_official.json') -Destination $rf
   Copy-Item -LiteralPath (Join-Path $projectRoot 'config\rf_to_oatof_pulse_timing.json') -Destination $pulsePolicy
   Copy-Item -LiteralPath (Join-Path $projectRoot 'analysis\derive_s1_centroid_pulse_time.py') -Destination $scheduler
   Copy-Item -LiteralPath (Join-Path $projectRoot 'analysis\plot_s1_pulse_geometry_snapshot.py') -Destination $snapshotAnalysis
@@ -87,6 +88,7 @@ try {
     throw 'S3 requires a successful S2 N=100 particle source run.'
   }
   $sourceS2Contract = [string]$sourceRunConfiguration.inputs.s2_contract
+  $sourceSpatialRegistration = [string]$sourceRunConfiguration.inputs.spatial_registration
   $particleOriginal = [string]$sourceRunConfiguration.inputs.particle_source
   $timingStateOriginal = Join-Path $timingRun 'results\s2_passive_connector_particles.csv'
   foreach ($path in @($particleOriginal,$timingStateOriginal)) {
@@ -95,7 +97,11 @@ try {
   if (-not (Test-Path -LiteralPath $sourceS2Contract -PathType Leaf)) {
     throw 'S3 source run has no frozen S2 connector contract.'
   }
+  if (-not (Test-Path -LiteralPath $sourceSpatialRegistration -PathType Leaf)) {
+    throw 'S3 source run has no frozen spatial-registration release.'
+  }
   Copy-Item -LiteralPath $sourceS2Contract -Destination $s2
+  Copy-Item -LiteralPath $sourceSpatialRegistration -Destination $spatialRegistration
   $resolvedS2Document = Get-Content -LiteralPath $s2 -Raw -Encoding UTF8 | ConvertFrom-Json
   $sourceManifest = Join-Path $inputDir 's2_source_run_manifest.json'
   $particleInput = Join-Path $inputDir 'canonical_rf_exit_at_s2_connector.csv'
@@ -141,6 +147,7 @@ try {
       task = $task; geometry_builder = $geometryBuilder; field_builder = $fieldBuilder
       runner = $runner; run_artifact_support = $support; s3_contract = $s3
       s2_contract = $s2; s1_joint_field_contract = $s1; rf_resolved_geometry = $rf
+      spatial_registration = $spatialRegistration
       pulse_timing_policy = $pulsePolicy; pulse_scheduler = $scheduler
       snapshot_analysis = $snapshotAnalysis; audit_analysis = $auditAnalysis
       dependency_contract = $dependencyContract; oatof_baseline = $oaBaseline
@@ -174,7 +181,8 @@ try {
     'RF_OATOF_S3_METRICS','RF_OATOF_S3_TERMINAL_OUTPUT','RF_OATOF_S3_CAPTURE_OUTPUT',
     'RF_OATOF_S3_LOCAL_EXIT_OUTPUT','RF_OATOF_S3_CONTRACT','RF_OATOF_S3_S2_CONTRACT',
     'RF_OATOF_S3_S1_CONTRACT','RF_OATOF_S3_RF_RESOLVED','RF_OATOF_S3_OA_BASELINE',
-    'RF_OATOF_S3_PULSE_SCHEDULE','RF_OATOF_S3_PARTICLE_INPUT','RF_OATOF_S3_OA_COMSOL_DIR'
+    'RF_OATOF_SPATIAL_REGISTRATION','RF_OATOF_S3_PULSE_SCHEDULE',
+    'RF_OATOF_S3_PARTICLE_INPUT','RF_OATOF_S3_OA_COMSOL_DIR'
   )
   $oldEnvironment = Save-RfEnvironment -Names $environmentNames
   try {
@@ -182,6 +190,7 @@ try {
     $env:RF_OATOF_S3_CAPTURE_OUTPUT=$capture; $env:RF_OATOF_S3_LOCAL_EXIT_OUTPUT=$localExit
     $env:RF_OATOF_S3_CONTRACT=$s3; $env:RF_OATOF_S3_S2_CONTRACT=$s2
     $env:RF_OATOF_S3_S1_CONTRACT=$s1; $env:RF_OATOF_S3_RF_RESOLVED=$rf
+    $env:RF_OATOF_SPATIAL_REGISTRATION=$spatialRegistration
     $env:RF_OATOF_S3_OA_BASELINE=$oaBaseline; $env:RF_OATOF_S3_PULSE_SCHEDULE=$pulseSchedule
     $env:RF_OATOF_S3_PARTICLE_INPUT=$particleInput; $env:RF_OATOF_S3_OA_COMSOL_DIR=$inputDir
     & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') `

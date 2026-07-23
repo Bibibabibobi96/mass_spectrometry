@@ -128,17 +128,53 @@ class MultipoleFamilyContractTests(unittest.TestCase):
 
     def test_comsol_run_freezes_executed_matlab_sources(self) -> None:
         runner = (REPO_ROOT / "common/multipole/run_finite_3d_transport.ps1").read_text(encoding="utf-8")
-        self.assertIn("$multipoleCodeDir=Join-Path $inputDir 'code\\multipole'", runner)
-        self.assertIn("$task = Join-Path $multipoleCodeDir 'solve_finite_3d_transport.m'", runner)
-        self.assertIn("comsol_connector_builder = Join-Path $multipoleCodeDir", runner)
-        self.assertIn("comsol_mesh_size_builder = Join-Path $comsolCodeDir", runner)
+        self.assertIn("$codeRoot=Join-Path $inputDir 'code'", runner)
+        self.assertIn("$codeInventory=Join-Path $inputDir 'code_inventory.json'", runner)
+        self.assertIn("$task=Join-Path $codeRoot 'common\\multipole\\solve_finite_3d_transport.m'", runner)
+        self.assertIn("common\\comsol\\run_comsol_r2025b.ps1", runner)
+        self.assertIn("$env:PYTHONPATH=$codeRoot", runner)
 
-    def test_comsol_canonical_state_policy_is_adapter_independent(self) -> None:
+    def test_comsol_canonical_state_policy_is_resolved_design_only(self) -> None:
         runner = (REPO_ROOT / "common/multipole/run_finite_3d_transport.ps1").read_text(encoding="utf-8")
-        self.assertIn("$env:MULTIPOLE_L3_CANONICAL_STATE = $canonicalState", runner)
-        self.assertIn("$outputs+=@($canonicalState)", runner)
-        self.assertIn("[string]$AxialAccelerationContractPath", runner)
-        self.assertNotIn("if($Adapter -eq 'quadrupole'){$canonicalState}", runner)
+        self.assertIn("$env:MULTIPOLE_L3_CANONICAL_STATE=$canonicalState", runner)
+        self.assertIn("MULTIPOLE_L3_PARTICLE_SOURCE_METADATA", runner)
+        self.assertIn("$outputs=@($events,$trajectories,$metrics,$plot,$model,$canonicalState", runner)
+        self.assertNotIn("AxialAccelerationContractPath", runner)
+        self.assertNotIn("Adapter", runner)
+        solver = (
+            REPO_ROOT / "common/multipole/solve_finite_3d_transport.m"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "write_canonical_particle_state(pdOn,source,canonicalStatePath",
+            solver,
+        )
+        self.assertIn("d.exit_plate_z_max,d.detector_z", solver)
+        self.assertIn("'rod_z_min',resolvedGeometry.rod_z_min", solver)
+        self.assertNotIn("g.rod_z_min", solver)
+        pairing = (
+            REPO_ROOT / "common" / "multipole" / "axial_pairing.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("90.2", runner)
+        self.assertNotIn("90.2", solver)
+        self.assertNotIn("90.2", pairing)
+
+    def test_comsol_segmented_run_keeps_paired_arms_and_external_evidence(self) -> None:
+        runner = (
+            REPO_ROOT / "common/multipole/run_finite_3d_transport.ps1"
+        ).read_text(encoding="utf-8")
+        for token in (
+            "DesignProfileId",
+            "EvidenceContractPath",
+            "evaluate_transport_evidence",
+            "qualification_status=$qualification",
+        ):
+            self.assertIn(token, runner)
+        solver = (REPO_ROOT / "common/multipole/solve_finite_3d_transport.m").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("axial_acceleration_rf_on", solver)
+        self.assertIn("zero_axial_drop_rf_on", solver)
+        self.assertNotIn("functional_acceptance", solver)
 
 
 class MultipoleMassResponseTests(unittest.TestCase):

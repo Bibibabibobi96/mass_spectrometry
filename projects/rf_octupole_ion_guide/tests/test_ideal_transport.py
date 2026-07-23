@@ -49,15 +49,26 @@ class OctupoleIdealTransportTests(unittest.TestCase):
         screen = json.loads((PROJECT_ROOT / "config" / "round_rod_field_screen.json").read_text(encoding="utf-8"))
         rows = []
         for ratio, parasitic in ((0.3, 0.025), (1 / 3, 0.008)):
-            for radius_mm in (1.6, 2.4):
-                for index in range(128):
-                    theta = 2 * math.pi * index / 128
+            for radius_mm in (
+                fraction * screen["geometry_mm"]["inscribed_radius_r0"]
+                for fraction in screen["sampling"]["radius_fraction_of_r0"]
+            ):
+                for index in range(screen["sampling"]["azimuth_samples_per_radius"]):
+                    theta = (
+                        2 * math.pi * index
+                        / screen["sampling"]["azimuth_samples_per_radius"]
+                    )
                     rho = radius_mm / 4.0
                     value = 100 * (rho**4 * math.cos(4 * theta) + parasitic * rho**12 * math.cos(12 * theta))
                     rows.append({"rod_radius_ratio": str(ratio), "sample_radius_mm": str(radius_mm), "theta_rad": str(theta), "potential_V": str(value)})
         result = analyze(rows, screen)
-        self.assertAlmostEqual(result["selected_candidate"]["rod_radius_ratio"], 1 / 3)
-        self.assertAlmostEqual(result["selected_candidate"]["harmonics"]["normalized_a12_over_a4"], 0.008, places=10)
+        selected = min(
+            result["candidates"], key=lambda item: item["parasitic_harmonic_score"]
+        )
+        self.assertAlmostEqual(selected["rod_radius_ratio"], 1 / 3)
+        self.assertAlmostEqual(
+            selected["harmonics"]["normalized_a12_over_a4"], 0.008, places=10
+        )
 
     def test_round_rod_l2_functional_gate(self):
         screen = {

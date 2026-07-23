@@ -47,6 +47,9 @@ function Assert-NotContains([string]$Text, [string]$Needle, [string]$Label) {
 }
 
 $contract = Get-Content -LiteralPath $contractPath -Raw -Encoding UTF8 | ConvertFrom-Json
+if ([string]$contract.coordinate_convention.frame_id -ne 'oatof_global') {
+  throw 'Resolved oa-TOF coordinate frame must be oatof_global.'
+}
 $formalAssets = Get-Content -LiteralPath (Join-Path $componentDir 'config\formal_assets.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $formalValidationPath = Join-Path $componentDir 'config\formal_validation.json'
 $formalValidation = Get-Content -LiteralPath $formalValidationPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -68,6 +71,7 @@ if ($LASTEXITCODE -ne 0 -or $syncOutput -notcontains 'GEOMETRY_TEXT_SYNC=PASS') 
 }
 if (-not [bool]$contract.simion_runtime.program_required) { throw 'SIMION formal runtime must require Program.' }
 $lua = Get-Content -LiteralPath $simionLua -Raw -Encoding UTF8
+$resolvedLua = Get-Content -LiteralPath $resolvedLuaPath -Raw -Encoding UTF8
 $fly2 = Get-Content -LiteralPath $simionFly2 -Raw -Encoding UTF8
 $deliveryBuilder = Get-Content -LiteralPath $simionDeliveryBuilder -Raw -Encoding UTF8
 $ionGenerator = Get-Content -LiteralPath $ionGeneratorPath -Raw -Encoding UTF8
@@ -153,6 +157,7 @@ Assert-Contains $lua 'local half_y=(ai.pa.ny-1)*ai.pa.dy_mm*ai.scale/2' 'SIMION 
 Assert-Contains $lua 'ai.x,ai.y,ai.z=accelerator_axis_x_mm-half_x,accelerator_axis_y_mm-half_y,' 'SIMION accelerator lateral transform'
 Assert-Contains $lua 'accelerator_instance_z_mm-accelerator_pa_back_margin_mm-' 'SIMION accelerator axial transform'
 Assert-Contains $lua 'detector_x_mm=-accelerator_axis_x_mm+detector_mirror_offset_x_mm' 'SIMION detector x'
+Assert-Contains $resolvedLua 'frame_id="oatof_global"' 'SIMION resolved coordinate frame'
 Assert-Contains $lua 'detector_z_mm=detector_active_plane_z_mm' 'SIMION detector z'
 Assert-Contains $lua 'di.x=detector_x_mm-detector_half_x' 'SIMION detector PA x transform'
 Assert-Contains $lua 'di.z=detector_z_mm-detector_marker_back_margin_z_mm-' 'SIMION detector PA z transform'

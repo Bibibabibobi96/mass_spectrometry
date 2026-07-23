@@ -97,7 +97,7 @@ def compare(control_events_path: Path, candidate_events_path: Path, control_ion_
     fig.suptitle("Particle-wise paired RF input-energy test: 2 eV versus 5 eV (N=100)", fontsize=15)
     fig.tight_layout(rect=(0, 0, 1, 0.965))
     figure_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(figure_path, dpi=190)
+    fig.savefig(figure_path, format="png", dpi=190)
     plt.close(fig)
 
     result = {

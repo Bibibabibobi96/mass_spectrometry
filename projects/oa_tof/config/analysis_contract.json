@@ -2,6 +2,19 @@
   "schema_version": 3,
   "status": "formal_analysis_contract",
   "nominal_mass_Da": 524.0,
+  "coordinate_frames": {
+    "instrument": {
+      "frame_id": "oatof_global"
+    },
+    "detector_plane": {
+      "frame_id": "oatof_detector_local",
+      "parent_frame_id": "oatof_global",
+      "origin_source": "resolved_geometry.coordinate_convention.detector_x, detector_y and geometry_mm.detector_z",
+      "position_unit": "mm",
+      "x_axis": "parallel to the oatof_global +x axis",
+      "y_axis": "parallel to the oatof_global +y axis"
+    }
+  },
   "canonical_columns": {
     "particle_id": "dimensionless integer unique within one run",
     "tof_us": "positive detector arrival time in microseconds",
