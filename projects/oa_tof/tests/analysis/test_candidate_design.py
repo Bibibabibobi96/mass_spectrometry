@@ -19,6 +19,8 @@ from projects.oa_tof.analysis.run_bound_candidate_workflow import validate_bound
 from projects.oa_tof.analysis.run_candidate_workflow import (
     CandidateWorkflowError,
     CandidateWorkflowInterrupted,
+    CandidateWorkflowTimedOut,
+    StageTimedOut,
     _powershell,
     execute_stage,
     run_candidate_workflow,
@@ -502,9 +504,10 @@ class CandidateDesignTests(unittest.TestCase):
             self.assertEqual(verify_project(artifact_root), (1, 0))
             self.assertEqual(load_json(run_root / "run_manifest.json")["status"], "success")
 
-    def test_integrated_runner_failure_and_interrupt_close_remaining_stages(self):
+    def test_integrated_runner_terminal_faults_close_remaining_stages(self):
         cases = (("failed", "simion_candidate", CandidateWorkflowError, "20260720_140001"),
-                 ("interrupted", "cad_candidate", CandidateWorkflowInterrupted, "20260720_140002"))
+                 ("interrupted", "cad_candidate", CandidateWorkflowInterrupted, "20260720_140002"),
+                 ("timeout", "comsol_candidate", CandidateWorkflowTimedOut, "20260720_140003"))
         for outcome, stop_stage, exception_type, stamp in cases:
             with self.subTest(outcome=outcome), tempfile.TemporaryDirectory() as root:
                 artifact_root, plan_path = self.prepared_workflow_plan(Path(root), stamp)
@@ -513,6 +516,8 @@ class CandidateDesignTests(unittest.TestCase):
                     if stage["stage_id"] == stop_stage:
                         if outcome == "interrupted":
                             raise KeyboardInterrupt("test interruption")
+                        if outcome == "timeout":
+                            raise StageTimedOut("test timeout")
                         raise RuntimeError("test failure")
                     return {"stage": stage["stage_id"]}
 
