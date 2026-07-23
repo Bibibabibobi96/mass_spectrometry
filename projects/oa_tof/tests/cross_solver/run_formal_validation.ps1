@@ -20,15 +20,17 @@ if (Test-Path -LiteralPath $runDir) {
 & $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
 if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
 New-Item -ItemType Directory -Path $runDir,$resultDir,$logDir | Out-Null
-. (Join-Path $projectRoot 'tests\run_record_helpers.ps1')
-Initialize-OaTofRunRecord -RunDir $runDir -RunId $RunId `
+. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+Initialize-RunRecord -RunDir $runDir -RunId $RunId -Project 'oa_tof' `
   -Mode 'formal_cross_solver_validation' -ProjectRoot $projectRoot `
-  -RepoRoot $repoRoot -Python $python
+  -RepoRoot $repoRoot -Python $python -ProvisionalSummaryRole 'oa_tof_provisional_run_summary' `
+  -TerminalSummaryRole 'oa_tof_terminal_run_summary'
 $runRecordComplete = $false
 trap {
   if (-not $runRecordComplete) {
-    Write-OaTofTerminalRunRecord -RunDir $runDir -Status failed `
-      -Reason $_.Exception.Message -RepoRoot $repoRoot -Python $python
+    Write-TerminalRunRecord -RunDir $runDir -Status failed `
+      -Reason $_.Exception.Message -RepoRoot $repoRoot -Python $python `
+      -SummaryRole 'oa_tof_terminal_run_summary'
   }
   exit 1
 }

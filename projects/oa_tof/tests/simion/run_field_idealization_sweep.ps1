@@ -59,15 +59,17 @@ $OutputDir = (Resolve-Path -LiteralPath $OutputDir).Path
 & $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run (Split-Path -Leaf $OutputDir)
 if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $(Split-Path -Leaf $OutputDir)" }
 $runId = Split-Path -Leaf $OutputDir
-. (Join-Path $projectRoot 'tests\run_record_helpers.ps1')
-Initialize-OaTofRunRecord -RunDir $OutputDir -RunId $runId `
+. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+Initialize-RunRecord -RunDir $OutputDir -RunId $runId -Project 'oa_tof' `
   -Mode 'simion_field_idealization_sweep' -ProjectRoot $projectRoot `
-  -RepoRoot $repoRoot -Python $python
+  -RepoRoot $repoRoot -Python $python -ProvisionalSummaryRole 'oa_tof_provisional_run_summary' `
+  -TerminalSummaryRole 'oa_tof_terminal_run_summary'
 $runRecordComplete = $false
 trap {
   if (-not $runRecordComplete) {
-    Write-OaTofTerminalRunRecord -RunDir $OutputDir -Status failed `
-      -Reason $_.Exception.Message -RepoRoot $repoRoot -Python $python
+    Write-TerminalRunRecord -RunDir $OutputDir -Status failed `
+      -Reason $_.Exception.Message -RepoRoot $repoRoot -Python $python `
+      -SummaryRole 'oa_tof_terminal_run_summary'
   }
   exit 1
 }

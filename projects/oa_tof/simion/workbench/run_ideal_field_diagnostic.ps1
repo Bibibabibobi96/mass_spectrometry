@@ -27,15 +27,17 @@ $resultDir = Join-Path $OutputDir 'results'
 $logDir = Join-Path $OutputDir 'logs'
 $simionDir = Join-Path $OutputDir 'simion'
 New-Item -ItemType Directory -Force -Path $OutputDir,$resultDir,$logDir,$simionDir | Out-Null
-. (Join-Path $repoRoot 'projects\oa_tof\tests\run_record_helpers.ps1')
-Initialize-OaTofRunRecord -RunDir $OutputDir -RunId $RunId `
+. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+Initialize-RunRecord -RunDir $OutputDir -RunId $RunId -Project 'oa_tof' `
   -Mode 'simion_ideal_field_matrix' -ProjectRoot (Join-Path $repoRoot 'projects\oa_tof') `
-  -RepoRoot $repoRoot -Python $python
+  -RepoRoot $repoRoot -Python $python -ProvisionalSummaryRole 'oa_tof_provisional_run_summary' `
+  -TerminalSummaryRole 'oa_tof_terminal_run_summary'
 $runRecordComplete = $false
 trap {
   if (-not $runRecordComplete) {
-    Write-OaTofTerminalRunRecord -RunDir $OutputDir -Status failed `
-      -Reason $_.Exception.Message -RepoRoot $repoRoot -Python $python
+    Write-TerminalRunRecord -RunDir $OutputDir -Status failed `
+      -Reason $_.Exception.Message -RepoRoot $repoRoot -Python $python `
+      -SummaryRole 'oa_tof_terminal_run_summary'
   }
   exit 1
 }

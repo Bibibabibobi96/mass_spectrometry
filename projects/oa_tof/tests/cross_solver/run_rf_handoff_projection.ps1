@@ -62,17 +62,19 @@ if (Test-Path -LiteralPath $runDir) {
 foreach ($path in @($inputDir,$resultDir,$logDir,$comsolDir)) {
   if (-not (Test-Path -LiteralPath $path -PathType Container)) { New-Item -ItemType Directory -Path $path | Out-Null }
 }
-. (Join-Path $projectRoot 'tests\run_record_helpers.ps1')
+. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 if (-not $Resume) {
-  Initialize-OaTofRunRecord -RunDir $runDir -RunId $RunId `
+  Initialize-RunRecord -RunDir $runDir -RunId $RunId -Project 'oa_tof' `
     -Mode 'rf_handoff_projection' -ProjectRoot $projectRoot `
-    -RepoRoot $repoRoot -Python $python
+    -RepoRoot $repoRoot -Python $python -ProvisionalSummaryRole 'oa_tof_provisional_run_summary' `
+    -TerminalSummaryRole 'oa_tof_terminal_run_summary'
 }
 $runRecordComplete = $false
 trap {
   if (-not $runRecordComplete) {
-    Write-OaTofTerminalRunRecord -RunDir $runDir -Status failed `
-      -Reason $_.Exception.Message -RepoRoot $repoRoot -Python $python
+    Write-TerminalRunRecord -RunDir $runDir -Status failed `
+      -Reason $_.Exception.Message -RepoRoot $repoRoot -Python $python `
+      -SummaryRole 'oa_tof_terminal_run_summary'
   }
   exit 1
 }

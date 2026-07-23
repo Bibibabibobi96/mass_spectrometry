@@ -14,14 +14,93 @@ function Write-RunManifest {
     [Parameter(Mandatory)][string]$RepoRoot,
     [Parameter(Mandatory)][string]$RunConfig,
     [Parameter(Mandatory)][ValidateSet('success','failed','interrupted','superseded')][string]$Status,
-    [Parameter(Mandatory)][string[]]$Software,
-    [string[]]$Outputs=@()
+    [string[]]$Software=@(),
+    [string]$Manifest='',
+    [string[]]$Outputs=@(),
+    [switch]$PassThru
   )
   $arguments=@((Join-Path $RepoRoot 'common\contracts\write_run_manifest.py'),'--run-config',$RunConfig,'--status',$Status)
+  if(-not[string]::IsNullOrWhiteSpace($Manifest)){$arguments+=@('--manifest',$Manifest)}
   foreach($item in $Software){$arguments+=@('--software',$item)}
   foreach($item in $Outputs){$arguments+=@('--output',$item)}
-  & $Python @arguments | Out-Null
+  $writerOutput=& $Python @arguments
   if($LASTEXITCODE-ne 0){throw "Run manifest failed for status $Status."}
+  if($PassThru){$writerOutput}
+}
+
+function Write-VerifiedRunManifest {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Python,
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][string]$RunConfig,
+    [Parameter(Mandatory)][ValidateSet('success','failed','interrupted','superseded')][string]$Status,
+    [string[]]$Software=@(),
+    [string]$Manifest='',
+    [string[]]$Outputs=@()
+  )
+  if([string]::IsNullOrWhiteSpace($Manifest)){
+    $Manifest=Join-Path (Split-Path -Parent $RunConfig) 'run_manifest.json'
+  }
+  try{
+    Write-RunManifest -Python $Python -RepoRoot $RepoRoot -RunConfig $RunConfig `
+      -Status $Status -Software $Software -Manifest $Manifest -Outputs $Outputs -PassThru
+  }catch{
+    throw "Could not write $Status run manifest."
+  }
+  & $Python (Join-Path $RepoRoot 'common\contracts\verify_run_manifest.py') `
+    $Manifest --require-status $Status
+  if($LASTEXITCODE-ne 0){throw "Could not verify $Status run manifest."}
+}
+
+function Write-TerminalRunRecord {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$RunDir,
+    [Parameter(Mandatory)][ValidateSet('failed','interrupted')][string]$Status,
+    [Parameter(Mandatory)][string]$Reason,
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][string]$Python,
+    [Parameter(Mandatory)][string]$SummaryRole,
+    [string[]]$Software=@()
+  )
+  $config=Join-Path $RunDir 'run_config.json'
+  $summary=Join-Path $RunDir 'summary.json'
+  Write-RunJson -Path $summary -Depth 4 -Value ([ordered]@{
+    schema_version=1;role=$SummaryRole;status=$Status;reason=$Reason
+  })
+  Write-VerifiedRunManifest -Python $Python -RepoRoot $RepoRoot -RunConfig $config `
+    -Manifest (Join-Path $RunDir 'run_manifest.json') -Status $Status `
+    -Software $Software -Outputs @($summary)
+}
+
+function Initialize-RunRecord {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$RunDir,
+    [Parameter(Mandatory)][string]$RunId,
+    [Parameter(Mandatory)][string]$Project,
+    [Parameter(Mandatory)][string]$Mode,
+    [Parameter(Mandatory)][string]$ProjectRoot,
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][string]$Python,
+    [Parameter(Mandatory)][string]$ProvisionalSummaryRole,
+    [Parameter(Mandatory)][string]$TerminalSummaryRole,
+    [string[]]$Software=@()
+  )
+  $config=Join-Path $RunDir 'run_config.json'
+  $summary=Join-Path $RunDir 'summary.json'
+  Write-RunJson -Path $config -Depth 5 -Value ([ordered]@{
+    schema_version=1;run_id=$RunId;project=$Project;mode=$Mode
+    project_root=$ProjectRoot;formal_gate_passed=$false;inputs=[ordered]@{}
+  })
+  Write-RunJson -Path $summary -Depth 4 -Value ([ordered]@{
+    schema_version=1;role=$ProvisionalSummaryRole;status='interrupted'
+    reason='Run package initialized; terminal status was not recorded.'
+  })
+  Write-TerminalRunRecord -RunDir $RunDir -Status interrupted `
+    -Reason 'Run package initialized.' -RepoRoot $RepoRoot -Python $Python `
+    -SummaryRole $TerminalSummaryRole -Software $Software
 }
 
 function New-RunPackage {

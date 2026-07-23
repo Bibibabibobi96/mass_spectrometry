@@ -40,17 +40,19 @@ if ($resumeExisting) {
   $ionDir = New-Item -ItemType Directory -Path (Join-Path $runDir 'ions')
   $comsolDir = New-Item -ItemType Directory -Path (Join-Path $runDir 'comsol')
 }
-. (Join-Path $projectRoot 'tests\run_record_helpers.ps1')
+. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 if (-not $resumeExisting) {
-  Initialize-OaTofRunRecord -RunDir $runDir -RunId $RunId `
+  Initialize-RunRecord -RunDir $runDir -RunId $RunId -Project 'oa_tof' `
     -Mode 'mass_spectrum_candidate' -ProjectRoot $projectRoot `
-    -RepoRoot $repoRoot -Python $python
+    -RepoRoot $repoRoot -Python $python -ProvisionalSummaryRole 'oa_tof_provisional_run_summary' `
+    -TerminalSummaryRole 'oa_tof_terminal_run_summary'
 }
 $runRecordComplete = $false
 trap {
   if (-not $runRecordComplete) {
-    Write-OaTofTerminalRunRecord -RunDir $runDir -Status failed `
-      -Reason $_.Exception.Message -RepoRoot $repoRoot -Python $python
+    Write-TerminalRunRecord -RunDir $runDir -Status failed `
+      -Reason $_.Exception.Message -RepoRoot $repoRoot -Python $python `
+      -SummaryRole 'oa_tof_terminal_run_summary'
   }
   exit 1
 }
