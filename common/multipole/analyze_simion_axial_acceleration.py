@@ -18,7 +18,7 @@ def _handoff(path: Path) -> tuple[set[int], dict[int, float]]:
             particle_id = int(row["particle_id"])
             if row["event"] == "source":
                 sources.add(particle_id)
-            elif row["event"] == "handoff" and row["status"] == "transmitted":
+            elif row["event"] in {"handoff", "terminal"} and row["status"] == "transmitted":
                 transmitted[particle_id] = float(row["kinetic_energy_eV"])
     if not sources:
         raise ValueError(f"no source events in {path}")

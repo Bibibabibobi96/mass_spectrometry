@@ -5,7 +5,7 @@ param(
     [double]$MeshHmaxMm = [double]::NaN,
     [double]$SourceAxialOffsetMm = 0.0,
     [string]$ParticleTablePath = '',
-    [ValidateSet('transport_no_collision','transport_interface_readiness','axial_acceleration_reference','endplate_acceleration_reference')][string]$Mode = 'transport_no_collision',
+    [ValidateSet('transport_interface_readiness')][string]$Mode = 'transport_interface_readiness',
     [string]$OperatingPoint = 'official_100amu_2eV',
     [double]$RfPeakV = [double]::NaN,
     [double]$FrequencyHz = [double]::NaN
@@ -40,19 +40,17 @@ $expectedParticles = @(Get-Content -LiteralPath $particleTable -Encoding UTF8 | 
 & $python -m common.contracts.particle_count_policy --count $expectedParticles
 if ($LASTEXITCODE -ne 0) { throw 'Particle table violates the repository N=100/N=1000 policy.' }
 $resolved = Get-Content -LiteralPath (Join-Path $projectRoot 'config\resolved_geometry.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-$resolvedContractInput = if ($Mode -eq 'transport_interface_readiness') { 'config/resolved_interface_readiness.json' } else { 'config/resolved_geometry.json' }
-if ($Mode -eq 'transport_interface_readiness') {
-    $minimumParticles = (Get-Content -LiteralPath (Join-Path $projectRoot 'config\modes\transport_interface_readiness.json') -Raw -Encoding UTF8 | ConvertFrom-Json).numerics.minimum_diagnostic_particles
-    if ([string]::IsNullOrWhiteSpace($ParticleTablePath) -or $expectedParticles -lt $minimumParticles) {
-        throw "Interface-readiness mode requires an explicit particle table with at least $minimumParticles particles."
-    }
-    if ([double]::IsNaN($RfPeakV) -or [double]::IsInfinity($RfPeakV)) {
-        throw 'Interface-readiness mode requires an explicit RfPeakV.'
-    }
+$resolvedContractInput = 'config/resolved_interface_readiness.json'
+$minimumParticles = (Get-Content -LiteralPath (Join-Path $projectRoot 'config\modes\transport_interface_readiness.json') -Raw -Encoding UTF8 | ConvertFrom-Json).numerics.minimum_diagnostic_particles
+if ([string]::IsNullOrWhiteSpace($ParticleTablePath) -or $expectedParticles -lt $minimumParticles) {
+    throw "Interface-readiness mode requires an explicit particle table with at least $minimumParticles particles."
+}
+if ([double]::IsNaN($RfPeakV) -or [double]::IsInfinity($RfPeakV)) {
+    throw 'Interface-readiness mode requires an explicit RfPeakV.'
 }
 if ([double]::IsNaN($RfPeakV) -or [double]::IsInfinity($RfPeakV)) { $RfPeakV = $resolved.mode.rf.amplitude_V_peak }
 if ([double]::IsNaN($FrequencyHz) -or [double]::IsInfinity($FrequencyHz)) { $FrequencyHz = $resolved.mode.rf.frequency_Hz }
-$modeInput = if ($Mode -eq 'transport_interface_readiness') { 'config/modes/transport_interface_readiness.json' } else { 'config/modes/transport_no_collision.json' }
+$modeInput = 'config/modes/transport_interface_readiness.json'
 
 New-Item -ItemType Directory -Path $runDir,$inputDir,$resultDir,$candidateDir,$logDir,$runtimeDir -Force | Out-Null
 
@@ -66,32 +64,6 @@ try {
 }
 finally { Pop-Location }
 $familyOperating = Get-Content -LiteralPath $familyOperatingPath -Raw -Encoding UTF8 | ConvertFrom-Json
-$axialAccelerationPath = $null
-$endplateAccelerationPath = $null
-if ($Mode -eq 'axial_acceleration_reference') {
-    $axialAccelerationBase = Join-Path $projectRoot 'config\modes\axial_acceleration_reference.json'
-    $axialAccelerationPath = Join-Path $inputDir 'axial_acceleration_resolved.json'
-    Push-Location $repoRoot
-    try {
-        & $python -m common.multipole.axial_acceleration --contract $axialAccelerationBase `
-            --rod-geometry (Join-Path $projectRoot 'config\resolved_geometry.json') `
-            --source-energy-ev 2.0 --charge-state 1 --output $axialAccelerationPath
-        if ($LASTEXITCODE -ne 0) { throw 'Shared axial-acceleration contract resolution failed.' }
-    }
-    finally { Pop-Location }
-}
-if ($Mode -eq 'endplate_acceleration_reference') {
-    $endplateAccelerationBase = Join-Path $projectRoot 'config\modes\endplate_acceleration_reference.json'
-    $endplateAccelerationPath = Join-Path $inputDir 'endplate_acceleration_resolved.json'
-    Push-Location $repoRoot
-    try {
-        & $python -m common.multipole.endplate_acceleration --contract $endplateAccelerationBase `
-            --source-energy-ev 2.0 --charge-state 1 --output $endplateAccelerationPath
-        if ($LASTEXITCODE -ne 0) { throw 'Shared endplate-acceleration contract resolution failed.' }
-    }
-    finally { Pop-Location }
-}
-
 $runConfigPath = Join-Path $runDir 'run_config.json'
 $bootstrapReport = Join-Path $logDir 'comsol_bootstrap_report.txt'
 $guiVerifyReport = Join-Path $logDir 'comsol_gui_compute_report.txt'
@@ -103,8 +75,6 @@ $runConfig = [ordered]@{
         baseline='config/baseline.json'; resolved_geometry='config/resolved_geometry.json'; resolved_contract=$resolvedContractInput
         mode=$modeInput; particle_table=$particleTable
         family_operating_contract=$familyOperatingPath
-        axial_acceleration_resolved=$axialAccelerationPath
-        endplate_acceleration_resolved=$endplateAccelerationPath
         interface_contract='config/interface_contract.json'
     }
     results_dir=$resultDir; comsol_dir=$candidateDir; logs_dir=$logDir; runtime_dir=$runtimeDir; run_dir=$runDir
@@ -112,8 +82,6 @@ $runConfig = [ordered]@{
     comsol_hmax_mm=$MeshHmaxMm; source_axial_offset_mm=$SourceAxialOffsetMm
     particle_table_path=$particleTable; operating_point=$OperatingPoint
     rf_peak_v=$RfPeakV; frequency_hz=$FrequencyHz; particles=$expectedParticles
-    axial_acceleration_enabled=($Mode -eq 'axial_acceleration_reference')
-    endplate_acceleration_enabled=($Mode -eq 'endplate_acceleration_reference')
     formal_gate_passed=$false
 }
 # The run config is ASCII-only.  Avoid the Windows PowerShell 5.1 UTF-8 BOM,
@@ -122,10 +90,9 @@ $runConfig | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $runConfigPath -
 
 $env:RFQUAD_RUN_CONFIG = $runConfigPath
 try {
-    $reportTimeoutSeconds = if ($Mode -in @('axial_acceleration_reference','endplate_acceleration_reference')) { 300 } else { 120 }
     & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') `
         -TaskScript (Join-Path $PSScriptRoot 'run_nocollision_candidate.m') `
-        -ReportPath $bootstrapReport -StartupReportTimeoutSeconds $reportTimeoutSeconds
+        -ReportPath $bootstrapReport -StartupReportTimeoutSeconds 120
     if ($LASTEXITCODE -ne 0) { throw 'COMSOL candidate launcher failed.' }
 }
 finally {
@@ -177,8 +144,6 @@ $runSummary = Join-Path $runDir 'summary.json'
     schema_version=1; role='rf_quadrupole_transport_summary'; status='success'; mode=$Mode
     particles=$expectedParticles; hits=$summary.hits; transmission=$summary.transmission
     mean_output_energy_eV=$summary.mean_output_energy_eV
-    predicted_output_energy_eV=$(if ($Mode -in @('axial_acceleration_reference','endplate_acceleration_reference')) {$summary.predicted_output_energy_eV} else {$null})
-    mean_energy_gain_eV=$(if ($Mode -in @('axial_acceleration_reference','endplate_acceleration_reference')) {$summary.mean_energy_gain_eV} else {$null})
     solver_summary='results/solver_summary.json'
 } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $runSummary -Encoding UTF8
 

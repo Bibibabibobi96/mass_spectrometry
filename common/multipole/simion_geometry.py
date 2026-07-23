@@ -8,6 +8,8 @@ import math
 from pathlib import Path
 from typing import Any
 
+from common.multipole.connector_geometry import CONNECTOR_SHAPES
+
 
 def render_grouped_rod_array_gem(array: dict[str, Any]) -> str:
     """Render a shared rod-array contract as alternating SIMION electrodes."""
@@ -46,7 +48,7 @@ def render_segmented_rod_array_gem(segmented: dict[str, Any]) -> str:
         z_max = float(electrode["z_max_mm"])
         lines.extend(
             [
-                f"locate(0,0,{z_min:.15g}) {{",
+                f"locate(0,0,{z_max:.15g}) {{",
                 f"  e({int(electrode['electrode_id'])}) {{ fill {{ within {{ cylinder("
                 f"{x:.15g},{y:.15g},0, {float(electrode['radius_mm']):.15g},, {z_max-z_min:.15g}) }} }} }}",
                 "}",
@@ -62,10 +64,16 @@ def render_gem(
     segmented_rods: dict[str, Any] | None = None,
     separate_output_electrode: bool = False,
 ) -> str:
+    """Render one finite multipole as a self-contained SIMION GEM."""
     if not math.isfinite(cell_mm) or cell_mm <= 0:
         raise ValueError("cell_mm must be positive")
     enclosure = geometry["grounded_enclosure_mm"]
     interface = geometry["interfaces_mm"]
+    _validate_connector_shapes(interface)
+    if enclosure.get("model", "cylindrical_grounded_shield_v1") == "rectangular_reference_enclosure_v1":
+        return _render_rectangular_reference_gem(
+            geometry, cell_mm, segmented_rods, separate_output_electrode
+        )
     rods = geometry["array_mm"]["rods"]
     axial_mode = segmented_rods is not None
     if axial_mode:
@@ -114,6 +122,7 @@ def render_gem(
     exit_length = float(interface["exit_connector_length"])
     if entrance_length > 0:
         lines.extend([
+            f"  ; connector_shape={interface['entrance_connector_shape']}",
             f"  e({ground_electrode}) {{ fill {{",
             f"    within {{ cylinder(0,0,{interface['entrance_plate_z_min']:.12g},{outer:.12g},,{entrance_length:.12g}) }}",
             f"    notin_inside {{ cylinder(0,0,{interface['entrance_plate_z_min']+cell_mm:.12g},{interface['entrance_aperture_radius']:.12g},,{entrance_length+2*cell_mm:.12g}) }}",
@@ -121,6 +130,7 @@ def render_gem(
         ])
     if exit_length > 0:
         lines.extend([
+            f"  ; connector_shape={interface['exit_connector_shape']}",
             f"  e({output_electrode}) {{ fill {{",
             f"    within {{ cylinder(0,0,{interface['exit_plate_z_max']+exit_length:.12g},{outer:.12g},,{exit_length:.12g}) }}",
             f"    notin_inside {{ cylinder(0,0,{interface['exit_plate_z_max']+exit_length+cell_mm:.12g},{interface['exit_aperture_radius']:.12g},,{exit_length+2*cell_mm:.12g}) }}",
@@ -128,6 +138,150 @@ def render_gem(
         ])
     lines.extend(["}", ""])
     return "\n".join(lines)
+
+
+def _validate_connector_shapes(interface: dict[str, Any]) -> None:
+    for side in ("entrance", "exit"):
+        shape = interface.get(f"{side}_connector_shape")
+        if shape not in CONNECTOR_SHAPES:
+            raise ValueError(f"{side} connector shape is unsupported: {shape}")
+
+
+def _render_rectangular_reference_gem(
+    geometry: dict[str, Any],
+    cell_mm: float,
+    segmented_rods: dict[str, Any] | None,
+    separate_output_electrode: bool,
+) -> str:
+    enclosure = geometry["grounded_enclosure_mm"]
+    reference = enclosure["reference_enclosure"]
+    interface = geometry["interfaces_mm"]
+    rods = geometry["array_mm"]["rods"]
+    if segmented_rods is not None:
+        rods = segmented_rods.get("electrodes", [])
+        segment_count = segmented_rods.get("segment_count")
+        if not isinstance(segment_count, int) or segment_count < 2 or not rods:
+            raise ValueError("segmented rod contract is incomplete")
+        ground_electrode = 2 * segment_count + 1
+        output_electrode = ground_electrode + 1
+    else:
+        ground_electrode = 3
+        output_electrode = 4 if separate_output_electrode else 3
+    outer = float(reference["outer_half_width_mm"])
+    inner = float(reference["inner_half_width_mm"])
+    z_min = float(enclosure["vacuum_z_min"])
+    z_max = float(enclosure["vacuum_z_max"])
+    nx = math.ceil(outer / cell_mm) + 1
+    nz = math.ceil((z_max - z_min) / cell_mm) + 1
+    lines = [
+        "; Generated from the solver-neutral round-rod geometry contract; do not edit.",
+        f"pa_define({nx},{nx},{nz},planar,xy,electrostatic,,{cell_mm:.12g},{cell_mm:.12g},{cell_mm:.12g},surface=fractional)",
+    ]
+    for rod in rods:
+        z0 = float(rod["z_min_mm"])
+        z1 = float(rod["z_max_mm"])
+        electrode = int(rod.get("electrode_id", rod["electrode_group"]))
+        lines.extend(
+            [
+                f"locate(0,0,{z1:.12g}) {{",
+                f"  e({electrode}) {{ fill {{ within {{ cylinder({float(rod['center_x_mm']):.12g},{float(rod['center_y_mm']):.12g},0,{float(rod['radius_mm']):.12g},,{z1-z0:.12g}) }} }} }}",
+                "}",
+            ]
+        )
+    _append_rectangular_apertured_section(
+        lines,
+        ground_electrode,
+        outer,
+        interface["entrance_aperture_radius"],
+        interface["entrance_plate_z_min"],
+        float(interface["entrance_plate_z_max"]) - float(interface["entrance_plate_z_min"]),
+    )
+    exit_z_min = float(reference["exit_enclosure_z_min_mm"])
+    exit_z_max = float(reference["exit_enclosure_z_max_mm"])
+    front_end = float(reference["exit_front_wall_end_z_mm"])
+    lines.extend(
+        [
+            f"locate(0,0,{exit_z_min:.12g}) {{",
+            f"  e({output_electrode}) {{ fill {{",
+            f"    within {{ box3d({outer:.12g},{outer:.12g},0,{-outer:.12g},{-outer:.12g},{exit_z_max-exit_z_min:.12g}) }}",
+            f"    notin_inside {{ box3d({inner:.12g},{inner:.12g},{front_end-exit_z_min:.12g},{-inner:.12g},{-inner:.12g},1E+6) }}",
+            f"    notin_inside {{ cylinder(0,0,{exit_z_max-exit_z_min+cell_mm:.12g},{float(interface['exit_aperture_radius']):.12g},,{exit_z_max-exit_z_min+2*cell_mm:.12g}) }}",
+            "  } }",
+            f"  e({output_electrode}) {{ fill {{ within {{ cylinder(0,0,{float(interface['detector_z'])-exit_z_min:.12g},{float(interface.get('detector_radius', interface['exit_aperture_radius'])):.12g},,{float(reference['detector_thickness_mm']):.12g}) }} }} }}",
+            "}",
+        ]
+    )
+    _append_connector(
+        lines,
+        ground_electrode,
+        interface["entrance_connector_shape"],
+        outer,
+        interface["entrance_aperture_radius"],
+        float(interface["entrance_plate_z_min"]) - float(interface["entrance_connector_length"]),
+        interface["entrance_connector_length"],
+        cell_mm,
+    )
+    _append_connector(
+        lines,
+        output_electrode,
+        interface["exit_connector_shape"],
+        outer,
+        interface["exit_aperture_radius"],
+        interface["exit_plate_z_max"],
+        interface["exit_connector_length"],
+        cell_mm,
+    )
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _append_rectangular_apertured_section(
+    lines: list[str],
+    electrode: int,
+    outer_half_width_mm: float,
+    aperture_radius_mm: float,
+    z_min_mm: float,
+    length_mm: float,
+) -> None:
+    lines.extend(
+        [
+            f"locate(0,0,{float(z_min_mm):.12g}) {{",
+            f"  e({electrode}) {{ fill {{",
+            f"    within {{ box3d({outer_half_width_mm:.12g},{outer_half_width_mm:.12g},0,{-outer_half_width_mm:.12g},{-outer_half_width_mm:.12g},{float(length_mm):.12g}) }}",
+            f"    notin_inside {{ cylinder(0,0,{float(length_mm):.12g},{float(aperture_radius_mm):.12g},,{float(length_mm):.12g}) }}",
+            "  } }",
+            "}",
+        ]
+    )
+
+
+def _append_connector(
+    lines: list[str],
+    electrode: int,
+    shape: str,
+    outer_size_mm: float,
+    aperture_radius_mm: float,
+    z_min_mm: float,
+    length_mm: float,
+    cell_mm: float,
+) -> None:
+    length = float(length_mm)
+    if length == 0:
+        return
+    lines.extend([f"; connector_shape={shape}", f"locate(0,0,{float(z_min_mm):.12g}) {{", f"  e({electrode}) {{ fill {{"])
+    if shape == "rectangular_bore":
+        lines.append(
+            f"    within {{ box3d({outer_size_mm:.12g},{outer_size_mm:.12g},0,{-outer_size_mm:.12g},{-outer_size_mm:.12g},{length:.12g}) }}"
+        )
+    else:
+        lines.append(f"    within {{ cylinder(0,0,{length:.12g},{outer_size_mm:.12g},,{length:.12g}) }}")
+    lines.extend(
+        [
+            f"    notin_inside {{ cylinder(0,0,{length+cell_mm:.12g},{float(aperture_radius_mm):.12g},,{length+2*cell_mm:.12g}) }}",
+            "  } }",
+            "}",
+        ]
+    )
 
 
 def main() -> int:

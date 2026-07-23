@@ -1,0 +1,32 @@
+{
+  "schema_version": 2,
+  "role": "multipole_axial_acceleration_contract",
+  "project_id": "rf_quadrupole_collision_cooling",
+  "model_id": "multipole.segmented_rod_common_mode_staircase.v2",
+  "segmentation": {
+    "strategy": "explicit",
+    "segments": [
+      {
+        "length_mm": 10.0,
+        "gap_after_mm": 0.2,
+        "common_mode_V": 0.0
+      },
+      {
+        "length_mm": 20.0,
+        "gap_after_mm": 0.8,
+        "common_mode_V": -0.7
+      },
+      {
+        "length_mm": 48.6,
+        "common_mode_V": -3.0
+      }
+    ]
+  },
+  "output_reference_V": -3.0,
+  "functional_acceptance": {
+    "minimum_transmission": 0.8,
+    "minimum_mean_energy_gain_eV": 2.5,
+    "maximum_mean_output_energy_error_eV": 0.5
+  },
+  "claim_limit": "N=100 explicit-segmentation functional regression only; irregular lengths, gaps and monotonic voltages are intentional; no segmentation optimization, mesh convergence, Candidate, mechanical or Formal claim."
+}

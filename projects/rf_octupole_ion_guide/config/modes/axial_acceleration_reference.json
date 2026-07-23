@@ -1,12 +1,15 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "role": "multipole_axial_acceleration_contract",
   "project_id": "rf_octupole_ion_guide",
-  "model_id": "multipole.segmented_rod_common_mode_staircase.v1",
-  "segment_count": 4,
-  "intersegment_gap_mm": 0.4,
-  "entrance_common_mode_V": 0.0,
-  "exit_common_mode_V": -3.0,
+  "model_id": "multipole.segmented_rod_common_mode_staircase.v2",
+  "segmentation": {
+    "strategy": "uniform",
+    "segment_count": 4,
+    "intersegment_gap_mm": 0.4,
+    "entrance_common_mode_V": 0.0,
+    "exit_common_mode_V": -3.0
+  },
   "output_reference_V": -3.0,
   "functional_acceptance": {
     "minimum_transmission": 0.8,

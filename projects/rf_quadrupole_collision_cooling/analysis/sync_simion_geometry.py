@@ -9,7 +9,6 @@ from pathlib import Path
 
 from common.multipole.simion_geometry import (
     render_grouped_rod_array_gem,
-    render_segmented_rod_array_gem,
 )
 
 
@@ -94,30 +93,7 @@ def main() -> None:
     choice = parser.add_mutually_exclusive_group(required=True)
     choice.add_argument("--check", action="store_true")
     choice.add_argument("--write", action="store_true")
-    choice.add_argument("--axial-candidate", action="store_true")
-    parser.add_argument("--contract", type=Path)
-    parser.add_argument("--segmented-rods", type=Path)
-    parser.add_argument("--output-directory", type=Path)
     args = parser.parse_args()
-    if args.axial_candidate:
-        if args.contract is None or args.segmented_rods is None or args.output_directory is None:
-            parser.error("--axial-candidate requires --contract, --segmented-rods and --output-directory")
-        contract_bytes = args.contract.read_bytes()
-        contract = json.loads(contract_bytes.decode("utf-8-sig"))
-        segmented = json.loads(args.segmented_rods.read_text(encoding="utf-8-sig"))
-        include, monolithic = render_contract(
-            contract,
-            hashlib.sha256(contract_bytes).hexdigest().upper(),
-            render_segmented_rod_array_gem(segmented),
-            entrance_electrode=9,
-            output_electrode=10,
-            detector_electrode=10,
-        )
-        args.output_directory.mkdir(parents=True, exist_ok=True)
-        (args.output_directory / "quad_include.gem").write_text(include, encoding="ascii", newline="\n")
-        (args.output_directory / "quad_monolithic.gem").write_text(monolithic, encoding="ascii", newline="\n")
-        print("SIMION_AXIAL_GEOMETRY=PASS")
-        return
     stale = []
     for path, expected in render().items():
         current = path.read_text(encoding="utf-8") if path.exists() else ""

@@ -34,6 +34,28 @@ class AnalyzeSimionAxialAccelerationTest(unittest.TestCase):
         self.assertEqual(result["status"], "PASS")
         self.assertAlmostEqual(result["mean_energy_gain_eV"], 3.1)
 
+    def test_simion_terminal_transmitted_event_is_a_valid_output(self):
+        resolved = {
+            "derived": {"predicted_output_energy_eV": 5.0},
+            "functional_acceptance": {
+                "minimum_transmission": 0.8,
+                "minimum_mean_energy_gain_eV": 2.5,
+                "maximum_mean_output_energy_error_eV": 0.5,
+            },
+            "claim_limit": "functional only",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            control = root / "control.csv"
+            accelerated = root / "accelerated.csv"
+            source = "1,source,alive,none,0,0,0,0,0,0,1,0,0,2,0,0,0\n"
+            terminal = "1,terminal,transmitted,acceptance_detector,1,1,0,1,0,0,1,0,0"
+            control.write_text(HEADER + source + terminal + ",2.0,0,0,0\n")
+            accelerated.write_text(HEADER + source + terminal + ",5.0,0,0,0\n")
+            result = evaluate(accelerated, control, resolved)
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(result["paired_transmitted_particles"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

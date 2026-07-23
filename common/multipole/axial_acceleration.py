@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 
-MODEL_ID = "multipole.segmented_rod_common_mode_staircase.v1"
+MODEL_ID = "multipole.segmented_rod_common_mode_staircase.v2"
 
 
 class AxialAccelerationError(ValueError):
@@ -28,6 +28,61 @@ def _finite(mapping: dict[str, Any], key: str) -> float:
     if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value):
         raise AxialAccelerationError(f"{key} must be a finite number")
     return float(value)
+
+
+def _resolve_uniform(segmentation: dict[str, Any], rod_length_mm: float) -> list[dict[str, float]]:
+    expected = {
+        "strategy",
+        "segment_count",
+        "intersegment_gap_mm",
+        "entrance_common_mode_V",
+        "exit_common_mode_V",
+    }
+    if set(segmentation) != expected:
+        raise AxialAccelerationError("uniform segmentation fields differ")
+    segment_count = segmentation.get("segment_count")
+    if not isinstance(segment_count, int) or isinstance(segment_count, bool) or segment_count < 2:
+        raise AxialAccelerationError("segment_count must be an integer of at least two")
+    gap = _finite(segmentation, "intersegment_gap_mm")
+    entrance_v = _finite(segmentation, "entrance_common_mode_V")
+    exit_v = _finite(segmentation, "exit_common_mode_V")
+    if gap < 0:
+        raise AxialAccelerationError("intersegment_gap_mm must be nonnegative")
+    segment_length = (rod_length_mm - (segment_count - 1) * gap) / segment_count
+    if segment_length <= 0:
+        raise AxialAccelerationError("segment gaps consume the complete rod length")
+    return [
+        {
+            "length_mm": segment_length,
+            "gap_after_mm": gap if index < segment_count - 1 else 0.0,
+            "common_mode_V": entrance_v + index / (segment_count - 1) * (exit_v - entrance_v),
+        }
+        for index in range(segment_count)
+    ]
+
+
+def _resolve_explicit(segmentation: dict[str, Any]) -> list[dict[str, float]]:
+    if set(segmentation) != {"strategy", "segments"}:
+        raise AxialAccelerationError("explicit segmentation fields differ")
+    source_segments = segmentation.get("segments")
+    if not isinstance(source_segments, list) or len(source_segments) < 2:
+        raise AxialAccelerationError("explicit segments must contain at least two entries")
+    segments = []
+    for index, source in enumerate(source_segments):
+        if not isinstance(source, dict):
+            raise AxialAccelerationError("each explicit segment must be an object")
+        allowed = {"length_mm", "gap_after_mm", "common_mode_V"}
+        if not {"length_mm", "common_mode_V"} <= set(source) or not set(source) <= allowed:
+            raise AxialAccelerationError("explicit segment fields differ")
+        length = _finite(source, "length_mm")
+        gap = _finite(source, "gap_after_mm") if "gap_after_mm" in source else 0.0
+        voltage = _finite(source, "common_mode_V")
+        if length <= 0 or gap < 0:
+            raise AxialAccelerationError("explicit segment lengths must be positive and gaps nonnegative")
+        if index == len(source_segments) - 1 and gap != 0:
+            raise AxialAccelerationError("the final explicit segment gap_after_mm must be zero or omitted")
+        segments.append({"length_mm": length, "gap_after_mm": gap, "common_mode_V": voltage})
+    return segments
 
 
 def resolve_axial_acceleration(
@@ -44,10 +99,7 @@ def resolve_axial_acceleration(
         "role",
         "project_id",
         "model_id",
-        "segment_count",
-        "intersegment_gap_mm",
-        "entrance_common_mode_V",
-        "exit_common_mode_V",
+        "segmentation",
         "output_reference_V",
         "functional_acceptance",
         "claim_limit",
@@ -57,13 +109,10 @@ def resolve_axial_acceleration(
             f"axial acceleration fields differ: missing={sorted(expected_keys-set(contract))}, "
             f"unknown={sorted(set(contract)-expected_keys)}"
         )
-    if contract.get("schema_version") != 1 or contract.get("role") != "multipole_axial_acceleration_contract":
+    if contract.get("schema_version") != 2 or contract.get("role") != "multipole_axial_acceleration_contract":
         raise AxialAccelerationError("axial acceleration schema or role differs")
     if contract.get("model_id") != MODEL_ID:
         raise AxialAccelerationError("unsupported axial acceleration model_id")
-    segment_count = contract.get("segment_count")
-    if not isinstance(segment_count, int) or isinstance(segment_count, bool) or segment_count < 2:
-        raise AxialAccelerationError("segment_count must be an integer of at least two")
     z_min = float(rod_z_min_mm)
     z_max = float(rod_z_max_mm)
     source_energy = float(source_kinetic_energy_ev)
@@ -73,28 +122,35 @@ def resolve_axial_acceleration(
         raise AxialAccelerationError("rod length and source energy must be positive")
     if not isinstance(charge_state, int) or isinstance(charge_state, bool) or charge_state == 0:
         raise AxialAccelerationError("charge_state must be a nonzero integer")
-    gap = _finite(contract, "intersegment_gap_mm")
-    entrance_v = _finite(contract, "entrance_common_mode_V")
-    exit_v = _finite(contract, "exit_common_mode_V")
+    segmentation = contract.get("segmentation")
+    if not isinstance(segmentation, dict):
+        raise AxialAccelerationError("segmentation must be an object")
+    strategy = segmentation.get("strategy")
+    if strategy == "uniform":
+        source_segments = _resolve_uniform(segmentation, z_max - z_min)
+    elif strategy == "explicit":
+        source_segments = _resolve_explicit(segmentation)
+    else:
+        raise AxialAccelerationError("segmentation strategy must be uniform or explicit")
     output_v = _finite(contract, "output_reference_V")
-    if gap <= 0:
-        raise AxialAccelerationError("intersegment_gap_mm must be positive")
-    metal_length = (z_max - z_min) - (segment_count - 1) * gap
-    if metal_length <= 0:
-        raise AxialAccelerationError("segment gaps consume the complete rod length")
-    segment_length = metal_length / segment_count
+    occupied_length = sum(item["length_mm"] + item["gap_after_mm"] for item in source_segments)
+    if not math.isclose(occupied_length, z_max - z_min, rel_tol=0, abs_tol=1e-9):
+        raise AxialAccelerationError("segment lengths and gaps must exactly conserve the rod length")
     segments = []
-    for index in range(segment_count):
-        segment_z_min = z_min + index * (segment_length + gap)
-        fraction = index / (segment_count - 1)
+    cursor = z_min
+    for index, source in enumerate(source_segments):
+        segment_z_max = cursor + source["length_mm"]
         segments.append(
             {
                 "segment_id": index + 1,
-                "z_min_mm": segment_z_min,
-                "z_max_mm": segment_z_min + segment_length,
-                "common_mode_V": entrance_v + fraction * (exit_v - entrance_v),
+                "z_min_mm": cursor,
+                "z_max_mm": segment_z_max,
+                "common_mode_V": source["common_mode_V"],
             }
         )
+        cursor = segment_z_max + source["gap_after_mm"]
+    entrance_v = segments[0]["common_mode_V"]
+    exit_v = segments[-1]["common_mode_V"]
     if not math.isclose(output_v, exit_v, rel_tol=0, abs_tol=1e-12):
         raise AxialAccelerationError("output_reference_V must equal the last rod-segment common mode")
     predicted_gain = charge_state * (entrance_v - output_v)
@@ -120,8 +176,12 @@ def resolve_axial_acceleration(
     result["derived"] = {
         "rod_z_min_mm": z_min,
         "rod_z_max_mm": z_max,
-        "segment_length_mm": segment_length,
+        "segmentation_strategy": strategy,
         "segments": segments,
+        "voltage_profile_monotonic": all(
+            (right["common_mode_V"] - left["common_mode_V"]) * charge_state <= 0
+            for left, right in zip(segments, segments[1:])
+        ),
         "charge_state": charge_state,
         "source_kinetic_energy_eV": source_energy,
         "predicted_energy_gain_eV": predicted_gain,

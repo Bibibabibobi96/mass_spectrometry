@@ -9,6 +9,7 @@ param(
   [string]$RunId = '',
   [double]$EntranceConnectorLengthMm = [double]::NaN,
   [double]$ExitConnectorLengthMm = [double]::NaN,
+  [string]$AxialAccelerationContractPath = '',
   [switch]$AxialAcceleration,
   [switch]$EndplateAcceleration
 )
@@ -84,7 +85,9 @@ if($Adapter -eq 'high-order'){
   Copy-Item -LiteralPath (Join-Path $projectRootPath 'config\modes\transport_no_collision.json') -Destination $mode
 }
 if ($AxialAcceleration) {
-  Copy-Item -LiteralPath (Join-Path $projectRootPath 'config\modes\axial_acceleration_reference.json') -Destination $axialAccelerationBase
+  $axialContractSource=if($AxialAccelerationContractPath){[IO.Path]::GetFullPath($AxialAccelerationContractPath)}else{Join-Path $projectRootPath 'config\modes\axial_acceleration_reference.json'}
+  if(-not(Test-Path -LiteralPath $axialContractSource -PathType Leaf)){throw "Axial-acceleration contract is missing: $axialContractSource"}
+  Copy-Item -LiteralPath $axialContractSource -Destination $axialAccelerationBase
 }
 if($EndplateAcceleration){
   Copy-Item -LiteralPath (Join-Path $projectRootPath 'config\modes\endplate_acceleration_reference.json') -Destination $endplateAccelerationBase
@@ -271,7 +274,7 @@ try {
     $env:MULTIPOLE_L3_METRICS = $metrics
     $env:MULTIPOLE_L3_PLOT = $plot
     $env:MULTIPOLE_L3_MODEL = $model
-    $env:MULTIPOLE_L3_CANONICAL_STATE = $(if($Adapter -eq 'quadrupole'){$canonicalState}else{''})
+    $env:MULTIPOLE_L3_CANONICAL_STATE = $canonicalState
     & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') -TaskScript $task -ReportPath $report
     if ($LASTEXITCODE -ne 0) { throw 'COMSOL finite 3D multipole transport failed.' }
     $result = Get-Content -LiteralPath $metrics -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -301,7 +304,8 @@ try {
         ConvertTo-Json -Depth 4|Set-Content -LiteralPath $solverSummary -Encoding UTF8
     }
     $outputs = @($events,$trajectories,$metrics,$plot,$model,$report,$summary)
-    if($Adapter -eq 'quadrupole'){$outputs+=@($canonicalState,$solverSummary)}
+    $outputs+=@($canonicalState)
+    if($Adapter -eq 'quadrupole'){$outputs+=@($solverSummary)}
     $manifestArguments = @($manifestWriter,'--run-config',$runConfig,'--status','success',
       '--software','COMSOL 6.4','--software','MATLAB R2025b','--software','Python 3.11')
     foreach ($output in $outputs) { $manifestArguments += @('--output',$output) }

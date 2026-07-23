@@ -30,9 +30,9 @@
         },
         {
           "step_id": "simion_run", "kind": "run", "shell": "powershell",
-          "entrypoint": "tests/simion/run_transport_candidate.ps1",
+          "entrypoint": "analysis/run_simion_finite_3d_transport.ps1",
           "run_id_template": "{timestamp}__sim__simion__rf-transport__no-collision",
-          "arguments": ["-RunId", "{simion_run_id}", "-Mode", "transport_no_collision"]
+          "arguments": ["-RunId", "{simion_run_id}"]
         },
         {
           "step_id": "cross_solver_comparison", "kind": "analyze", "shell": "powershell",

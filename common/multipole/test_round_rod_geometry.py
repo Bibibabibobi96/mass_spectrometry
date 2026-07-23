@@ -158,6 +158,8 @@ class RoundRodGeometryTest(unittest.TestCase):
         quad_gem = render_segmented_rod_array_gem(segmented)
         self.assertEqual(quad_gem.count("locate(0,0,"), 24)
         self.assertIn("e(8) { fill { within { cylinder(", quad_gem)
+        first = segmented["electrodes"][0]
+        self.assertIn(f"locate(0,0,{first['z_max_mm']:.15g})", quad_gem)
 
     def test_endplate_mode_keeps_continuous_rods_and_separates_output(self):
         geometry = self.resolve("rf_hexapole_ion_guide", 0.55)

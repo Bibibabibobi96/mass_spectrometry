@@ -133,6 +133,13 @@ class MultipoleFamilyContractTests(unittest.TestCase):
         self.assertIn("comsol_connector_builder = Join-Path $multipoleCodeDir", runner)
         self.assertIn("comsol_mesh_size_builder = Join-Path $comsolCodeDir", runner)
 
+    def test_comsol_canonical_state_policy_is_adapter_independent(self) -> None:
+        runner = (REPO_ROOT / "common/multipole/run_finite_3d_transport.ps1").read_text(encoding="utf-8")
+        self.assertIn("$env:MULTIPOLE_L3_CANONICAL_STATE = $canonicalState", runner)
+        self.assertIn("$outputs+=@($canonicalState)", runner)
+        self.assertIn("[string]$AxialAccelerationContractPath", runner)
+        self.assertNotIn("if($Adapter -eq 'quadrupole'){$canonicalState}", runner)
+
 
 class MultipoleMassResponseTests(unittest.TestCase):
     def test_paired_rows_change_only_mass(self) -> None:

@@ -1,10 +1,17 @@
 [CmdletBinding()]
 param(
   [Parameter(Mandatory=$true)][string]$ProjectRoot,
-  [Parameter(Mandatory=$true)][string]$FieldScreenRunId,
+  [ValidateSet('high-order','quadrupole')][string]$Adapter='high-order',
+  [string]$FieldScreenRunId='',
   [string]$RunId='',
   [string]$ReferenceComsolRunId='',
+  [string]$ParticleTablePath='',
   [double]$CellMm=0.4,
+  [double]$EntranceConnectorLengthMm=[double]::NaN,
+  [double]$ExitConnectorLengthMm=[double]::NaN,
+  [string]$SimionExe='',
+  [string]$TemplateIob='',
+  [string]$AxialAccelerationContractPath='',
   [switch]$AxialAcceleration,
   [switch]$EndplateAcceleration
 )
@@ -15,8 +22,10 @@ $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $workspaceRoot=Split-Path -Parent $repoRoot
 $python=Join-Path $repoRoot '.venv\Scripts\python.exe'
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
-$simion='C:\Program Files\SIMION-2020\simion.exe'
-$templateIob='C:\Program Files\SIMION-2020\examples\quad\quad_monolithic.iob'
+$simion=if($SimionExe){[IO.Path]::GetFullPath($SimionExe)}else{Join-Path $env:ProgramFiles 'SIMION-2020\simion.exe'}
+$templateIob=if($TemplateIob){[IO.Path]::GetFullPath($TemplateIob)}else{Join-Path $env:ProgramFiles 'SIMION-2020\examples\quad\quad_monolithic.iob'}
+if(-not(Test-Path -LiteralPath $simion -PathType Leaf)){throw "SIMION executable is missing: $simion"}
+if(-not(Test-Path -LiteralPath $templateIob -PathType Leaf)){throw "SIMION template IOB is missing: $templateIob"}
 $project=Get-Content -LiteralPath (Join-Path $projectRootPath 'config\project.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $projectId=[string]$project.project_id
 if($AxialAcceleration -and $EndplateAcceleration){throw 'Select only one acceleration mode.'}
@@ -25,39 +34,71 @@ if ([string]::IsNullOrWhiteSpace($RunId)) {
   $runLabel=if($AxialAcceleration){'axial-acceleration'}elseif($EndplateAcceleration){'endplate-acceleration'}else{'finite-3d'}
   $RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+"__sim__simion__$($projectId.Replace('_','-'))-$runLabel__l3-n100"
 }
-$sourceDir=Join-Path $workspaceRoot "artifacts\projects\$projectId\runs\$FieldScreenRunId"
-$sourceManifest=Join-Path $sourceDir 'run_manifest.json'
-$sourceSamples=Join-Path $sourceDir 'results\round_rod_potential_samples.csv'
-$sourceContract=Join-Path $sourceDir 'inputs\round_rod_field_screen.json'
-if (!(Test-Path -LiteralPath $sourceManifest)){throw "Field-screen run is missing: $FieldScreenRunId"}
+$sourceDir='';$sourceManifest='';$sourceSamples='';$sourceContract=''
+if($Adapter -eq 'high-order'){
+  if([string]::IsNullOrWhiteSpace($FieldScreenRunId)){throw 'High-order SIMION runs require FieldScreenRunId.'}
+  $sourceDir=Join-Path $workspaceRoot "artifacts\projects\$projectId\runs\$FieldScreenRunId"
+  $sourceManifest=Join-Path $sourceDir 'run_manifest.json'
+  $sourceSamples=Join-Path $sourceDir 'results\round_rod_potential_samples.csv'
+  $sourceContract=Join-Path $sourceDir 'inputs\round_rod_field_screen.json'
+  if (!(Test-Path -LiteralPath $sourceManifest)){throw "Field-screen run is missing: $FieldScreenRunId"}
+}elseif([string]::IsNullOrWhiteSpace($ParticleTablePath)){
+  $ParticleTablePath=Join-Path $projectRootPath 'config\particles\official_fixed_100.ion'
+}
 $artifactRoot=Join-Path $workspaceRoot "artifacts\projects\$projectId"
-$runMode=if($AxialAcceleration){'axial_acceleration_reference'}elseif($EndplateAcceleration){'endplate_acceleration_reference'}else{'finite_3d_no_collision'}
+$runMode=if($AxialAcceleration){'axial_acceleration_reference'}elseif($EndplateAcceleration){'endplate_acceleration_reference'}elseif($Adapter-eq'quadrupole'){'transport_no_collision'}else{'finite_3d_no_collision'}
 $package=New-RunPackage -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RunId $RunId -Project $projectId `
   -Mode $runMode -Software @('SIMION 2020','Python 3.11') -AdditionalDirectories @('simion')
 $runDir=$package.run_dir;$inputDir=$package.input_dir;$resultDir=$package.result_dir;$logDir=$package.log_dir
 $solverDir=Join-Path $runDir 'simion';$runConfig=$package.run_config;$summary=$package.summary
+try {
 $baseline=Join-Path $inputDir 'baseline.json'; $finite=Join-Path $inputDir 'finite_3d_transport.json'; $resolved=Join-Path $inputDir 'finite_3d_transport_resolved.json'
 $operating=Join-Path $inputDir 'family_operating_contract.json'; $fieldMetrics=Join-Path $inputDir 'round_rod_field_screen_metrics.json'; $geometry=Join-Path $inputDir 'round_rod_geometry.json'; $particles=Join-Path $inputDir 'particle_source.csv'
 $axialBase=Join-Path $inputDir 'axial_acceleration_base.json'; $axialResolved=Join-Path $inputDir 'axial_acceleration_resolved.json'; $segmentedRods=Join-Path $inputDir 'segmented_round_rods.json'
 $endplateBase=Join-Path $inputDir 'endplate_acceleration_base.json';$endplateResolved=Join-Path $inputDir 'endplate_acceleration_resolved.json'
-Copy-Item -LiteralPath (Join-Path $projectRootPath 'config\baseline.json') -Destination $baseline
-Copy-Item -LiteralPath (Join-Path $projectRootPath 'config\finite_3d_transport.json') -Destination $finite
-if($AxialAcceleration){Copy-Item -LiteralPath (Join-Path $projectRootPath 'config\modes\axial_acceleration_reference.json') -Destination $axialBase}
+if($AxialAcceleration){
+  $axialContractSource=if($AxialAccelerationContractPath){[IO.Path]::GetFullPath($AxialAccelerationContractPath)}else{Join-Path $projectRootPath 'config\modes\axial_acceleration_reference.json'}
+  if(-not(Test-Path -LiteralPath $axialContractSource -PathType Leaf)){throw "Axial-acceleration contract is missing: $axialContractSource"}
+  Copy-Item -LiteralPath $axialContractSource -Destination $axialBase
+}
 if($EndplateAcceleration){Copy-Item -LiteralPath (Join-Path $projectRootPath 'config\modes\endplate_acceleration_reference.json') -Destination $endplateBase}
-& $python (Join-Path $repoRoot 'common\multipole\analyze_round_rod_screen.py') --samples $sourceSamples --contract $sourceContract --output $fieldMetrics
-if($LASTEXITCODE-ne 0){throw 'Could not freeze selected round-rod geometry.'}
+$projectBaseline=Join-Path $projectRootPath 'config\baseline.json'
 Push-Location $repoRoot
 try{
-  & $python -m common.multipole.resolve_family_operating_contract --adapter high-order --baseline $baseline --output $operating
-  if($LASTEXITCODE-ne 0){throw 'Operating-contract resolution failed.'}
-  & $python -m common.multipole.resolve_finite_3d_contract --baseline $baseline --contract $finite --output $resolved
-  if($LASTEXITCODE-ne 0){throw 'Finite-3D contract resolution failed.'}
-  & $python -m common.multipole.round_rod_geometry --baseline $baseline --finite-3d $resolved --field-metrics $fieldMetrics --output $geometry
-  if($LASTEXITCODE-ne 0){throw 'Round-rod geometry resolution failed.'}
+  if($Adapter-eq'high-order'){
+    Copy-Item -LiteralPath $projectBaseline -Destination $baseline
+    Copy-Item -LiteralPath (Join-Path $projectRootPath 'config\finite_3d_transport.json') -Destination $finite
+    & $python (Join-Path $repoRoot 'common\multipole\analyze_round_rod_screen.py') --samples $sourceSamples --contract $sourceContract --output $fieldMetrics
+    if($LASTEXITCODE-ne 0){throw 'Could not freeze selected round-rod geometry.'}
+    & $python -m common.multipole.resolve_family_operating_contract --adapter high-order --baseline $baseline --output $operating
+    if($LASTEXITCODE-ne 0){throw 'Operating-contract resolution failed.'}
+    $resolverArguments=@('-m','common.multipole.resolve_finite_3d_contract','--baseline',$baseline,'--contract',$finite,'--output',$resolved)
+    if(-not [double]::IsNaN($EntranceConnectorLengthMm)){$resolverArguments+=@('--entrance-connector-length-mm',[string]$EntranceConnectorLengthMm)}
+    if(-not [double]::IsNaN($ExitConnectorLengthMm)){$resolverArguments+=@('--exit-connector-length-mm',[string]$ExitConnectorLengthMm)}
+    & $python @resolverArguments
+    if($LASTEXITCODE-ne 0){throw 'Finite-3D contract resolution failed.'}
+    & $python -m common.multipole.round_rod_geometry --baseline $baseline --finite-3d $resolved --field-metrics $fieldMetrics --output $geometry
+    if($LASTEXITCODE-ne 0){throw 'Round-rod geometry resolution failed.'}
+    $resolvedDoc=Get-Content -LiteralPath $resolved -Raw -Encoding UTF8|ConvertFrom-Json
+    & $python -m common.multipole.generate_particle_source --baseline $baseline --release-z-mm ([double]$resolvedDoc.derived_geometry_mm.source_z) --output $particles
+    if($LASTEXITCODE-ne 0){throw 'Particle-source generation failed.'}
+  }else{
+    if(-not(Test-Path -LiteralPath $ParticleTablePath -PathType Leaf)){throw "Particle table is missing: $ParticleTablePath"}
+    $projectResolved=Join-Path $projectRootPath 'config\resolved_geometry.json'
+    $projectMode=Join-Path $projectRootPath 'config\modes\transport_no_collision.json'
+    & $python -m common.multipole.resolve_family_operating_contract --adapter quadrupole --baseline $projectBaseline --mode $projectMode --output $operating
+    if($LASTEXITCODE-ne 0){throw 'Quadrupole operating-contract resolution failed.'}
+    $adapterArguments=@('-m','common.multipole.prepare_quadrupole_finite_3d_inputs','--resolved',$projectResolved,
+      '--operating',$operating,'--particles',$ParticleTablePath,'--baseline-output',$baseline,'--contract-output',$resolved,
+      '--field-metrics-output',$fieldMetrics,'--round-rod-geometry-output',$geometry,'--particle-source-output',$particles)
+    if(-not [double]::IsNaN($EntranceConnectorLengthMm)){$adapterArguments+=@('--entrance-connector-length-mm',[string]$EntranceConnectorLengthMm)}
+    if(-not [double]::IsNaN($ExitConnectorLengthMm)){$adapterArguments+=@('--exit-connector-length-mm',[string]$ExitConnectorLengthMm)}
+    & $python @adapterArguments
+    if($LASTEXITCODE-ne 0){throw 'Quadrupole finite-3D input adaptation failed.'}
+    Copy-Item -LiteralPath $resolved -Destination $finite
+  }
 }finally{Pop-Location}
 $resolvedDoc=Get-Content -LiteralPath $resolved -Raw -Encoding UTF8|ConvertFrom-Json
-& $python -m common.multipole.generate_particle_source --baseline $baseline --release-z-mm ([double]$resolvedDoc.derived_geometry_mm.source_z) --output $particles
-if($LASTEXITCODE-ne 0){throw 'Particle-source generation failed.'}
 $baselineDoc=Get-Content -LiteralPath $baseline -Raw -Encoding UTF8|ConvertFrom-Json
 if($AxialAcceleration){
   & $python -m common.multipole.axial_acceleration --contract $axialBase --rod-geometry $geometry `
@@ -77,13 +118,25 @@ if($AxialAcceleration){$geometryArguments+=@('--segmented-rods',$segmentedRods)}
 if($EndplateAcceleration){$geometryArguments+=@('--separate-output-electrode')}
 & $python @geometryArguments
 if($LASTEXITCODE-ne 0){throw 'SIMION GEM export failed.'}
-& $python -m common.multipole.simion_particle_source --particles $particles --baseline $baseline --geometry $geometry --fly2 $fly2 --source-states-lua $states
+if($Adapter-eq'quadrupole'){
+  & $python -m common.multipole.simion_particle_source --ion-table $ParticleTablePath --fly2 $fly2 --source-states-lua $states
+}else{
+  & $python -m common.multipole.simion_particle_source --particles $particles --baseline $baseline --geometry $geometry --fly2 $fly2 --source-states-lua $states
+}
 if($LASTEXITCODE-ne 0){throw 'SIMION particle export failed.'}
 Copy-Item -LiteralPath $templateIob -Destination (Join-Path $solverDir 'quad_monolithic.iob')
 Copy-Item -LiteralPath (Join-Path $repoRoot 'common\multipole\simion_transport.lua') -Destination (Join-Path $solverDir 'quad_monolithic.lua')
 $geometryDoc=Get-Content -LiteralPath $geometry -Raw -Encoding UTF8|ConvertFrom-Json
 $operatingDoc=Get-Content -LiteralPath $operating -Raw -Encoding UTF8|ConvertFrom-Json
-[ordered]@{schema_version=1;role='multipole_simion_finite_3d_run_config';run_id=$RunId;project=$projectId;mode=$runMode;inputs=[ordered]@{baseline=$baseline;finite_3d_resolved=$resolved;family_operating_contract=$operating;round_rod_geometry=$geometry;particle_source=$particles;field_screen_manifest=$sourceManifest;axial_acceleration_resolved=$(if($AxialAcceleration){$axialResolved}else{$null});segmented_round_rods=$(if($AxialAcceleration){$segmentedRods}else{$null});endplate_acceleration_resolved=$(if($EndplateAcceleration){$endplateResolved}else{$null})};parameters=[ordered]@{simion_cell_mm=$CellMm;paired_rf_zero_control=(-not $accelerationEnabled);paired_axial_zero_control=[bool]$AxialAcceleration;paired_endplate_zero_control=[bool]$EndplateAcceleration;reference_comsol_run_id=$ReferenceComsolRunId};formal_gate_passed=$false}|ConvertTo-Json -Depth 7|Set-Content -LiteralPath $runConfig -Encoding UTF8
+[ordered]@{schema_version=1;role='multipole_simion_finite_3d_run_config';run_id=$RunId;project=$projectId;mode=$runMode;
+  operating_point='official_100amu_2eV';rf_peak_v=[double]$operatingDoc.voltage.rf_amplitude_V_zero_to_peak_per_group;
+  frequency_hz=[double]$operatingDoc.voltage.frequency_Hz;
+  inputs=[ordered]@{baseline=$baseline;finite_3d_resolved=$resolved;family_operating_contract=$operating;round_rod_geometry=$geometry;
+    particle_source=$particles;particle_table=$(if($Adapter-eq'quadrupole'){$ParticleTablePath}else{$null});
+    field_screen_manifest=$(if($Adapter-eq'high-order'){$sourceManifest}else{$null});
+    axial_acceleration_resolved=$(if($AxialAcceleration){$axialResolved}else{$null});segmented_round_rods=$(if($AxialAcceleration){$segmentedRods}else{$null});endplate_acceleration_resolved=$(if($EndplateAcceleration){$endplateResolved}else{$null})};
+  parameters=[ordered]@{adapter=$Adapter;simion_cell_mm=$CellMm;paired_rf_zero_control=(-not $accelerationEnabled);paired_axial_zero_control=[bool]$AxialAcceleration;paired_endplate_zero_control=[bool]$EndplateAcceleration;reference_comsol_run_id=$ReferenceComsolRunId};
+  formal_gate_passed=$false}|ConvertTo-Json -Depth 7|Set-Content -LiteralPath $runConfig -Encoding UTF8
 function Invoke-SimionBuildStep([string]$name,[string[]]$commandArguments){
   $stdout=Join-Path $logDir "simion_stdout__$name.txt"
   $stderr=Join-Path $logDir "simion_stderr__$name.txt"
@@ -116,20 +169,27 @@ if($AxialAcceleration){
 
 function Invoke-TransportCase([string]$name,[int]$rfScale,[int]$axialScale,[double]$exitVoltage){
   $caseState=Join-Path $resultDir "particle_states__$name.csv"; $caseTrajectory=Join-Path $resultDir "trajectory_samples__$name.csv"; $caseSummary=Join-Path $resultDir "simion_summary__$name.json"; $luaConfig=Join-Path $inputDir "simion_config__$name.lua"
-  $outer=[double]$geometryDoc.grounded_enclosure_mm.shield_outer_radius; $zShift=-[double]$geometryDoc.grounded_enclosure_mm.vacuum_z_min
+  $outer=[double]$geometryDoc.grounded_enclosure_mm.shield_outer_radius
+  $rectangular=($geometryDoc.grounded_enclosure_mm.PSObject.Properties.Name -contains 'model') -and
+    ($geometryDoc.grounded_enclosure_mm.model -eq 'rectangular_reference_enclosure_v1')
+  $zShift=if($rectangular){0}else{-[double]$geometryDoc.grounded_enclosure_mm.vacuum_z_min}
+  $transverseOrigin=if($rectangular){0}else{$outer}
+  $detectorRadius=if($geometryDoc.interfaces_mm.PSObject.Properties.Name-contains'detector_radius'){[double]$geometryDoc.interfaces_mm.detector_radius}else{[double]$geometryDoc.interfaces_mm.exit_aperture_radius}
+  $detectorVoltage=if($rectangular){$exitVoltage}else{0}
+  $surfaceToleranceMm=[Math]::Max(1e-6*$CellMm,1e-9)
   $text=@"
 return {iob=[[$(Join-Path $solverDir 'quad_monolithic.iob')]], fly2=[[$fly2]], source_states=dofile([[$states]]),
 trajectory_csv=[[$caseTrajectory]], particle_state_csv=[[$caseState]], summary_json=[[$caseSummary]],
 mode="$runMode", operating_point="$name", trajectory_quality=10, rf_steps_per_period=$($resolvedDoc.trajectory.rf_steps_per_period),
 rf_peak_v=$($operatingDoc.voltage.rf_amplitude_V_zero_to_peak_per_group), rf_scale=$rfScale, axial_scale=$axialScale, dc_amplitude_v=$($operatingDoc.voltage.dc_amplitude_V_per_group), frequency_hz=$($operatingDoc.voltage.frequency_Hz), phase_deg=$([double]$operatingDoc.voltage.phase_rad*180/[Math]::PI),
-axis_voltage_v=$($operatingDoc.voltage.common_mode_offset_V), entrance_voltage_v=0, exit_voltage_v=$exitVoltage, detector_voltage_v=0, has_electrode_4=$(if($EndplateAcceleration){'true'}else{'false'}), has_electrode_5=false,
+axis_voltage_v=$($operatingDoc.voltage.common_mode_offset_V), entrance_voltage_v=0, exit_voltage_v=$exitVoltage, detector_voltage_v=$detectorVoltage, has_electrode_4=$(if($EndplateAcceleration){'true'}else{'false'}), has_electrode_5=false,
 $segmentedLua ground_electrode_id=$groundElectrodeId, output_electrode_id=$outputElectrodeId, output_reference_v=$outputReferenceV,
 maximum_time_us=$($resolvedDoc.trajectory.maximum_global_time_us), trajectory_plane_step_mm=$CellMm,
 rod_z_min_mm=$($geometryDoc.array_mm.rods[0].z_min_mm), rod_z_max_mm=$($geometryDoc.array_mm.rods[0].z_max_mm),
 rod_exit_plane_mm=$($geometryDoc.array_mm.rods[0].z_max_mm), handoff_plane_mm=$($geometryDoc.interfaces_mm.detector_z),
-detector_crossing_threshold_mm=$([double]$geometryDoc.interfaces_mm.detector_z-$CellMm), detector_radius_mm=$($geometryDoc.interfaces_mm.exit_aperture_radius), radial_escape_radius_mm=$($geometryDoc.grounded_enclosure_mm.shield_inner_radius),
+detector_crossing_threshold_mm=$([double]$geometryDoc.interfaces_mm.detector_z-$CellMm-$surfaceToleranceMm), detector_radius_mm=$detectorRadius, radial_escape_radius_mm=$($geometryDoc.grounded_enclosure_mm.shield_inner_radius),
 detector_is_handoff=true,
-axial_axis="x", origin_x_mm=$zShift, origin_y_mm=$(-$outer), origin_z_mm=$outer, backward_escape_plane_mm=$($geometryDoc.grounded_enclosure_mm.vacuum_z_min)}
+axial_axis="x", origin_x_mm=$zShift, origin_y_mm=$(-$transverseOrigin), origin_z_mm=$transverseOrigin, backward_escape_plane_mm=$($geometryDoc.grounded_enclosure_mm.vacuum_z_min)}
 "@
   $text|Set-Content -LiteralPath $luaConfig -Encoding ASCII
   $env:MULTIPOLE_SIMION_RUN_CONFIG_LUA=$luaConfig
@@ -148,11 +208,18 @@ axial_axis="x", origin_x_mm=$zShift, origin_y_mm=$(-$outer), origin_z_mm=$outer,
   $stateReport=Join-Path $resultDir "particle_state_contract__$name.json"
   Push-Location $repoRoot
   try{
-    & $python -m common.contracts.particle_state --state $caseState --particles $particles --source-format canonical `
-        --mass-amu $baselineDoc.particle_source.mass_amu `
-      --frequency-hz $operatingDoc.voltage.frequency_Hz --phase-rad $operatingDoc.voltage.phase_rad `
-      --rod-exit-mm $geometryDoc.array_mm.rods[0].z_max_mm --handoff-mm $geometryDoc.interfaces_mm.detector_z `
-      --solver 'SIMION 2020' --output $stateReport | Out-Null
+    if($Adapter-eq'quadrupole'){
+      & $python -m common.contracts.particle_state --state $caseState --particles $ParticleTablePath --source-format ion11 `
+        --contract (Join-Path $projectRootPath 'config\interface_contract.json') `
+        --frequency-hz $operatingDoc.voltage.frequency_Hz --phase-rad $operatingDoc.voltage.phase_rad `
+        --solver 'SIMION 2020' --output $stateReport | Out-Null
+    }else{
+      & $python -m common.contracts.particle_state --state $caseState --particles $particles --source-format canonical `
+          --mass-amu $baselineDoc.particle_source.mass_amu `
+        --frequency-hz $operatingDoc.voltage.frequency_Hz --phase-rad $operatingDoc.voltage.phase_rad `
+        --rod-exit-mm $geometryDoc.array_mm.rods[0].z_max_mm --handoff-mm $geometryDoc.interfaces_mm.detector_z `
+        --solver 'SIMION 2020' --output $stateReport | Out-Null
+    }
     if($LASTEXITCODE-ne 0){throw "SIMION $name particle-state contract failed."}
   }finally{Pop-Location}
   return Get-Content -LiteralPath $caseSummary -Raw -Encoding UTF8|ConvertFrom-Json
@@ -167,10 +234,10 @@ if($AxialAcceleration){
     --control-state (Join-Path $resultDir 'particle_states__zero_axial_drop_rf_on.csv') `
     --resolved-contract $axialResolved --output $metrics
   $analysisExit=$LASTEXITCODE
+  if($analysisExit-ne 0){throw 'SIMION axial-acceleration functional analysis failed.'}
   $metricsDoc=Get-Content -LiteralPath $metrics -Raw -Encoding UTF8|ConvertFrom-Json
   $status=[string]$metricsDoc.status
   [ordered]@{schema_version=1;role='multipole_simion_axial_acceleration_summary';status=if($status-eq'PASS'){'success'}else{'failed'};project_id=$projectId;particles=$metricsDoc.particles;transmission=$metricsDoc.accelerated_transmission;mean_output_energy_eV=$metricsDoc.mean_accelerated_output_energy_eV;mean_energy_gain_eV=$metricsDoc.mean_energy_gain_eV;predicted_output_energy_eV=$metricsDoc.predicted_output_energy_eV;formal_gate_passed=$false}|ConvertTo-Json -Depth 5|Set-Content -LiteralPath $summary -Encoding UTF8
-  if($analysisExit-ne 0){$status='FAIL'}
 }elseif($EndplateAcceleration){
   $endplateDoc=Get-Content -LiteralPath $endplateResolved -Raw -Encoding UTF8|ConvertFrom-Json
   $accelerated=Invoke-TransportCase 'endplate_acceleration_rf_on' 1 0 ([double]$endplateDoc.exit_plate_V)
@@ -181,10 +248,10 @@ if($AxialAcceleration){
     --control-state (Join-Path $resultDir 'particle_states__zero_endplate_drop_rf_on.csv') `
     --resolved-contract $endplateResolved --output $metrics
   $analysisExit=$LASTEXITCODE
+  if($analysisExit-ne 0){throw 'SIMION endplate-acceleration functional analysis failed.'}
   $metricsDoc=Get-Content -LiteralPath $metrics -Raw -Encoding UTF8|ConvertFrom-Json
   $status=[string]$metricsDoc.status
   [ordered]@{schema_version=1;role='multipole_simion_endplate_acceleration_summary';status=if($status-eq'PASS'){'success'}else{'failed'};project_id=$projectId;particles=$metricsDoc.particles;transmission=$metricsDoc.accelerated_transmission;mean_output_energy_eV=$metricsDoc.mean_accelerated_output_energy_eV;mean_energy_gain_eV=$metricsDoc.mean_energy_gain_eV;predicted_output_energy_eV=$metricsDoc.predicted_output_energy_eV;formal_gate_passed=$false}|ConvertTo-Json -Depth 5|Set-Content -LiteralPath $summary -Encoding UTF8
-  if($analysisExit-ne 0){$status='FAIL'}
 }else{
   $rf=Invoke-TransportCase 'rf_on' 1 0 0; $zero=Invoke-TransportCase 'zero_rf_control' 0 0 0
   $minimum=[double]$resolvedDoc.functional_acceptance.minimum_rf_transmission; $improvement=[double]$resolvedDoc.functional_acceptance.minimum_improvement_over_zero_rf
@@ -200,10 +267,27 @@ if(-not $accelerationEnabled -and -not [string]::IsNullOrWhiteSpace($ReferenceCo
   if($LASTEXITCODE-ne 0){throw 'SIMION/COMSOL functional comparison failed.'}
 }
 $caseNames=if($AxialAcceleration){@('axial_acceleration_rf_on','zero_axial_drop_rf_on')}elseif($EndplateAcceleration){@('endplate_acceleration_rf_on','zero_endplate_drop_rf_on')}else{@('rf_on','zero_rf_control')}
+$compatibilityState=$null
+$compatibilitySummary=$null
+if($Adapter -eq 'quadrupole'){
+  $primaryCaseName=[string]$caseNames[0]
+  $primaryCaseSummary=Get-Content -LiteralPath (Join-Path $resultDir "simion_summary__$primaryCaseName.json") -Raw -Encoding UTF8|ConvertFrom-Json
+  $meanOutputEnergy=if($accelerationEnabled){[double]$metricsDoc.mean_accelerated_output_energy_eV}else{$null}
+  $compatibilityState=Join-Path $resultDir 'particle_state.csv'
+  $compatibilitySummary=Join-Path $resultDir 'solver_summary.json'
+  Copy-Item -LiteralPath (Join-Path $resultDir "particle_states__$primaryCaseName.csv") -Destination $compatibilityState
+  [ordered]@{schema_version=1;role='rf_quadrupole_transport_solver_summary';solver='SIMION';
+    mode=$runMode;particles=$primaryCaseSummary.particles;hits=$primaryCaseSummary.hits;
+    transmission=$primaryCaseSummary.transmission;mean_output_energy_eV=$meanOutputEnergy;
+    rf_peak_V=[double]$operatingDoc.voltage.rf_amplitude_V_zero_to_peak_per_group;
+    frequency_Hz=[double]$operatingDoc.voltage.frequency_Hz}|
+    ConvertTo-Json -Depth 4|Set-Content -LiteralPath $compatibilitySummary -Encoding UTF8
+}
 $outputs=@($summary,$metrics,(Join-Path $solverDir 'quad_monolithic.pa0'),(Join-Path $solverDir 'quad_monolithic.iob'),$gem,$fly2)
 $outputs+=@($caseNames|ForEach-Object{Join-Path $resultDir "particle_state_contract__$_.json"})
 $outputs+=@(Get-ChildItem -LiteralPath $logDir -File | Select-Object -ExpandProperty FullName)
 if($comparison){$outputs+=$comparison}
+if($compatibilityState){$outputs+=@($compatibilityState,$compatibilitySummary)}
 Write-RunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig `
   -Status $(if($status-eq'PASS'){'success'}else{'failed'}) -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
 if($status-ne'PASS'){throw "SIMION $runMode functional gate failed."}
@@ -211,4 +295,10 @@ if($accelerationEnabled){
   Write-Output "MULTIPOLE_SIMION_ACCELERATION=PASS MODE=$runMode PROJECT=$projectId RUN_ID=$RunId TRANSMISSION=$($metricsDoc.accelerated_transmission) MEAN_ENERGY_EV=$($metricsDoc.mean_accelerated_output_energy_eV)"
 }else{
   Write-Output "MULTIPOLE_SIMION_L3=PASS PROJECT=$projectId RUN_ID=$RunId RF=$($rf.transmission) ZERO=$($zero.transmission)"
+}
+} catch {
+  Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Summary $summary `
+    -SummaryRole 'multipole_simion_finite_3d_transport_summary' -Reason $_.Exception.Message `
+    -Software @('SIMION 2020','Python 3.11')
+  throw
 }
