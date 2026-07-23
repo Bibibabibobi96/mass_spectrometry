@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "role": "multipole_axial_field_paired_diagnostic",
+  "pair_id": "rf_quadrupole_explicit_axial_n100.v1",
+  "project_id": "rf_quadrupole_collision_cooling",
+  "axial_contract_file": "axial_acceleration_explicit_functional_test.json",
+  "source": {
+    "operating_point": "official_100amu_2eV",
+    "particle_count": 100,
+    "mean_kinetic_energy_bounds_eV": [1.8, 2.2]
+  },
+  "arms": [
+    {
+      "arm_id": "axial_field_on",
+      "case_id": "axial_acceleration_rf_on",
+      "axial_scale": 1,
+      "rf_scale": 1
+    },
+    {
+      "arm_id": "axial_field_off",
+      "case_id": "zero_axial_drop_rf_on",
+      "axial_scale": 0,
+      "rf_scale": 1
+    }
+  ],
+  "invariants": [
+    "particle_id_and_source_state",
+    "source_particle_sha256",
+    "geometry_and_mesh",
+    "rf_amplitude_frequency_phase_and_steps",
+    "solver_and_trajectory_quality"
+  ],
+  "independent_5ev_source_allowed": false,
+  "excluded_legacy_run_ids": [
+    "20260723_230600__sim__simion__rf-quadrupole-explicit-axial__n100__r05"
+  ],
+  "claim_limit": "N=100 paired upstream-state preparation only; no S2/S3, pulse, oaTOF, optimization, Candidate or Formal claim."
+}

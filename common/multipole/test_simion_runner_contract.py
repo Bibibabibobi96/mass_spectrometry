@@ -55,6 +55,39 @@ class SimionRunnerContractTests(unittest.TestCase):
         self.assertIn("-$CellMm-$surfaceToleranceMm", source)
         self.assertNotIn("-$CellMm-0.001", source)
 
+    def test_physical_handoff_is_distinct_from_standalone_detector(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8")
+        self.assertIn("$interfaceDoc.planes.handoff.z_mm", source)
+        self.assertIn("$resolvedDoc.derived_geometry_mm.exit_plate_z_max", source)
+        self.assertIn("handoff_plane_mm=$handoffPlaneMm", source)
+        self.assertIn("detector_is_handoff=false", source)
+        self.assertNotIn("handoff_plane_mm=$($geometryDoc.interfaces_mm.detector_z)", source)
+
+    def test_axial_pair_outputs_and_audit_are_manifested(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8")
+        self.assertIn("common.multipole.axial_pairing --audit", source)
+        self.assertIn('Join-Path $resultDir "particle_states__$_.csv"', source)
+        self.assertIn('Join-Path $resultDir "simion_summary__$_.json"', source)
+        self.assertIn("paired arms may vary only the frozen axial scale", source)
+        for field in (
+            "pair_id",
+            "arm_id",
+            "source_particle_sha256",
+            "axial_scale",
+            "rf_field_on",
+        ):
+            self.assertIn(field, source)
+
+    def test_explicit_pair_rejects_independent_five_ev_source(self) -> None:
+        config = (
+            REPO_ROOT
+            / "projects/rf_quadrupole_collision_cooling/config/modes"
+            / "axial_acceleration_explicit_paired_diagnostic.json"
+        ).read_text(encoding="utf-8")
+        self.assertIn('"operating_point": "official_100amu_2eV"', config)
+        self.assertIn('"independent_5ev_source_allowed": false', config)
+        self.assertIn("20260723_230600__sim__simion__rf-quadrupole-explicit-axial__n100__r05", config)
+
     def test_failed_acceleration_analysis_is_not_masked_by_missing_metrics(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
         failure = source.index("SIMION axial-acceleration functional analysis failed.")

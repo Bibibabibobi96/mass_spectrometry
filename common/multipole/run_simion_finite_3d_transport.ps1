@@ -56,12 +56,28 @@ $baseline=Join-Path $inputDir 'baseline.json'; $finite=Join-Path $inputDir 'fini
 $operating=Join-Path $inputDir 'family_operating_contract.json'; $fieldMetrics=Join-Path $inputDir 'round_rod_field_screen_metrics.json'; $geometry=Join-Path $inputDir 'round_rod_geometry.json'; $particles=Join-Path $inputDir 'particle_source.csv'
 $axialBase=Join-Path $inputDir 'axial_acceleration_base.json'; $axialResolved=Join-Path $inputDir 'axial_acceleration_resolved.json'; $segmentedRods=Join-Path $inputDir 'segmented_round_rods.json'
 $endplateBase=Join-Path $inputDir 'endplate_acceleration_base.json';$endplateResolved=Join-Path $inputDir 'endplate_acceleration_resolved.json'
+$interfaceContract=Join-Path $inputDir 'interface_contract.json'
+$pairingBase=Join-Path $inputDir 'axial_pairing_base.json';$pairingResolved=Join-Path $inputDir 'axial_pairing_resolved.json'
+$pairAudit=Join-Path $resultDir 'axial_pairing_audit.json';$pairingEnabled=$false;$pairingResolvedDoc=$null
 if($AxialAcceleration){
   $axialContractSource=if($AxialAccelerationContractPath){[IO.Path]::GetFullPath($AxialAccelerationContractPath)}else{Join-Path $projectRootPath 'config\modes\axial_acceleration_reference.json'}
   if(-not(Test-Path -LiteralPath $axialContractSource -PathType Leaf)){throw "Axial-acceleration contract is missing: $axialContractSource"}
   Copy-Item -LiteralPath $axialContractSource -Destination $axialBase
+  if($Adapter-eq'quadrupole'){
+    $pairingCandidate=Join-Path $projectRootPath 'config\modes\axial_acceleration_explicit_paired_diagnostic.json'
+    if(Test-Path -LiteralPath $pairingCandidate -PathType Leaf){
+      $pairingCandidateDoc=Get-Content -LiteralPath $pairingCandidate -Raw -Encoding UTF8|ConvertFrom-Json
+      if([IO.Path]::GetFileName($axialContractSource)-eq[string]$pairingCandidateDoc.axial_contract_file){
+        Copy-Item -LiteralPath $pairingCandidate -Destination $pairingBase
+        $pairingEnabled=$true
+      }
+    }
+  }
 }
 if($EndplateAcceleration){Copy-Item -LiteralPath (Join-Path $projectRootPath 'config\modes\endplate_acceleration_reference.json') -Destination $endplateBase}
+if($Adapter-eq'quadrupole'){
+  Copy-Item -LiteralPath (Join-Path $projectRootPath 'config\interface_contract.json') -Destination $interfaceContract
+}
 $projectBaseline=Join-Path $projectRootPath 'config\baseline.json'
 Push-Location $repoRoot
 try{
@@ -128,14 +144,40 @@ Copy-Item -LiteralPath $templateIob -Destination (Join-Path $solverDir 'quad_mon
 Copy-Item -LiteralPath (Join-Path $repoRoot 'common\multipole\simion_transport.lua') -Destination (Join-Path $solverDir 'quad_monolithic.lua')
 $geometryDoc=Get-Content -LiteralPath $geometry -Raw -Encoding UTF8|ConvertFrom-Json
 $operatingDoc=Get-Content -LiteralPath $operating -Raw -Encoding UTF8|ConvertFrom-Json
+$handoffPlaneMm=[double]$resolvedDoc.derived_geometry_mm.exit_plate_z_max
+$detectorPlaneMm=[double]$resolvedDoc.derived_geometry_mm.detector_z
+if($Adapter-eq'quadrupole'){
+  $interfaceDoc=Get-Content -LiteralPath $interfaceContract -Raw -Encoding UTF8|ConvertFrom-Json
+  $handoffPlaneMm=[double]$interfaceDoc.planes.handoff.z_mm
+  if([Math]::Abs($handoffPlaneMm-[double]$resolvedDoc.derived_geometry_mm.exit_plate_z_max)-gt 1e-12){
+    throw 'Versioned quadrupole handoff plane differs from the resolved exit interface.'
+  }
+}
+if([Math]::Abs($handoffPlaneMm-$detectorPlaneMm)-le 1e-12){
+  throw 'Physical handoff plane must remain distinct from the standalone detector.'
+}
+if($pairingEnabled){
+  & $python -m common.multipole.axial_pairing --resolve --contract $pairingBase `
+    --interface $interfaceContract --resolved-geometry $resolved `
+    --selected-axial-contract-name ([IO.Path]::GetFileName($axialContractSource)) `
+    --source $particles --source-count ([int]$baselineDoc.particle_source.count) `
+    --source-mean-energy-ev ([double]$baselineDoc.particle_source.kinetic_energy_eV) `
+    --project-id $projectId --output $pairingResolved
+  if($LASTEXITCODE-ne 0){throw 'Axial paired-source contract resolution failed.'}
+  $pairingResolvedDoc=Get-Content -LiteralPath $pairingResolved -Raw -Encoding UTF8|ConvertFrom-Json
+}
 [ordered]@{schema_version=1;role='multipole_simion_finite_3d_run_config';run_id=$RunId;project=$projectId;mode=$runMode;
   operating_point='official_100amu_2eV';rf_peak_v=[double]$operatingDoc.voltage.rf_amplitude_V_zero_to_peak_per_group;
   frequency_hz=[double]$operatingDoc.voltage.frequency_Hz;
   inputs=[ordered]@{baseline=$baseline;finite_3d_resolved=$resolved;family_operating_contract=$operating;round_rod_geometry=$geometry;
     particle_source=$particles;particle_table=$(if($Adapter-eq'quadrupole'){$ParticleTablePath}else{$null});
     field_screen_manifest=$(if($Adapter-eq'high-order'){$sourceManifest}else{$null});
-    axial_acceleration_resolved=$(if($AxialAcceleration){$axialResolved}else{$null});segmented_round_rods=$(if($AxialAcceleration){$segmentedRods}else{$null});endplate_acceleration_resolved=$(if($EndplateAcceleration){$endplateResolved}else{$null})};
-  parameters=[ordered]@{adapter=$Adapter;simion_cell_mm=$CellMm;paired_rf_zero_control=(-not $accelerationEnabled);paired_axial_zero_control=[bool]$AxialAcceleration;paired_endplate_zero_control=[bool]$EndplateAcceleration;reference_comsol_run_id=$ReferenceComsolRunId};
+    interface_contract=$(if($Adapter-eq'quadrupole'){$interfaceContract}else{$null});
+    axial_acceleration_resolved=$(if($AxialAcceleration){$axialResolved}else{$null});segmented_round_rods=$(if($AxialAcceleration){$segmentedRods}else{$null});endplate_acceleration_resolved=$(if($EndplateAcceleration){$endplateResolved}else{$null});
+    axial_pairing_base=$(if($pairingEnabled){$pairingBase}else{$null});axial_pairing_resolved=$(if($pairingEnabled){$pairingResolved}else{$null})};
+  parameters=[ordered]@{adapter=$Adapter;simion_cell_mm=$CellMm;physical_handoff_z_mm=$handoffPlaneMm;standalone_detector_z_mm=$detectorPlaneMm;
+    paired_rf_zero_control=(-not $accelerationEnabled);paired_axial_zero_control=[bool]$AxialAcceleration;paired_endplate_zero_control=[bool]$EndplateAcceleration;
+    pair_id=$(if($pairingEnabled){[string]$pairingResolvedDoc.pair_id}else{$null});reference_comsol_run_id=$ReferenceComsolRunId};
   formal_gate_passed=$false}|ConvertTo-Json -Depth 7|Set-Content -LiteralPath $runConfig -Encoding UTF8
 function Invoke-SimionBuildStep([string]$name,[string[]]$commandArguments){
   $stdout=Join-Path $logDir "simion_stdout__$name.txt"
@@ -168,6 +210,15 @@ if($AxialAcceleration){
 }
 
 function Invoke-TransportCase([string]$name,[int]$rfScale,[int]$axialScale,[double]$exitVoltage){
+  $pairArm=$null
+  if($pairingEnabled){
+    $armMatches=@($pairingResolvedDoc.arms|Where-Object{[string]$_.case_id-eq$name})
+    if($armMatches.Count-ne 1){throw "SIMION paired arm metadata is missing for $name."}
+    $pairArm=$armMatches[0]
+    if($rfScale-ne[int]$pairArm.rf_scale -or $axialScale-ne[int]$pairArm.axial_scale -or $exitVoltage-ne 0){
+      throw "SIMION paired arms may vary only the frozen axial scale: $name."
+    }
+  }
   $caseState=Join-Path $resultDir "particle_states__$name.csv"; $caseTrajectory=Join-Path $resultDir "trajectory_samples__$name.csv"; $caseSummary=Join-Path $resultDir "simion_summary__$name.json"; $luaConfig=Join-Path $inputDir "simion_config__$name.lua"
   $outer=[double]$geometryDoc.grounded_enclosure_mm.shield_outer_radius
   $rectangular=($geometryDoc.grounded_enclosure_mm.PSObject.Properties.Name -contains 'model') -and
@@ -186,9 +237,9 @@ axis_voltage_v=$($operatingDoc.voltage.common_mode_offset_V), entrance_voltage_v
 $segmentedLua ground_electrode_id=$groundElectrodeId, output_electrode_id=$outputElectrodeId, output_reference_v=$outputReferenceV,
 maximum_time_us=$($resolvedDoc.trajectory.maximum_global_time_us), trajectory_plane_step_mm=$CellMm,
 rod_z_min_mm=$($geometryDoc.array_mm.rods[0].z_min_mm), rod_z_max_mm=$($geometryDoc.array_mm.rods[0].z_max_mm),
-rod_exit_plane_mm=$($geometryDoc.array_mm.rods[0].z_max_mm), handoff_plane_mm=$($geometryDoc.interfaces_mm.detector_z),
+rod_exit_plane_mm=$($geometryDoc.array_mm.rods[0].z_max_mm), handoff_plane_mm=$handoffPlaneMm,
 detector_crossing_threshold_mm=$([double]$geometryDoc.interfaces_mm.detector_z-$CellMm-$surfaceToleranceMm), detector_radius_mm=$detectorRadius, radial_escape_radius_mm=$($geometryDoc.grounded_enclosure_mm.shield_inner_radius),
-detector_is_handoff=true,
+detector_is_handoff=false,
 axial_axis="x", origin_x_mm=$zShift, origin_y_mm=$(-$transverseOrigin), origin_z_mm=$transverseOrigin, backward_escape_plane_mm=$($geometryDoc.grounded_enclosure_mm.vacuum_z_min)}
 "@
   $text|Set-Content -LiteralPath $luaConfig -Encoding ASCII
@@ -217,18 +268,37 @@ axial_axis="x", origin_x_mm=$zShift, origin_y_mm=$(-$transverseOrigin), origin_z
       & $python -m common.contracts.particle_state --state $caseState --particles $particles --source-format canonical `
           --mass-amu $baselineDoc.particle_source.mass_amu `
         --frequency-hz $operatingDoc.voltage.frequency_Hz --phase-rad $operatingDoc.voltage.phase_rad `
-        --rod-exit-mm $geometryDoc.array_mm.rods[0].z_max_mm --handoff-mm $geometryDoc.interfaces_mm.detector_z `
+        --rod-exit-mm $geometryDoc.array_mm.rods[0].z_max_mm --handoff-mm $handoffPlaneMm `
         --solver 'SIMION 2020' --output $stateReport | Out-Null
     }
     if($LASTEXITCODE-ne 0){throw "SIMION $name particle-state contract failed."}
   }finally{Pop-Location}
-  return Get-Content -LiteralPath $caseSummary -Raw -Encoding UTF8|ConvertFrom-Json
+  $caseSummaryDoc=Get-Content -LiteralPath $caseSummary -Raw -Encoding UTF8|ConvertFrom-Json
+  if($pairingEnabled){
+    $pairMetadata=[ordered]@{pair_id=[string]$pairingResolvedDoc.pair_id;arm_id=[string]$pairArm.arm_id;
+      source_particle_sha256=[string]$pairingResolvedDoc.source.particle_source_sha256;
+      axial_scale=[int]$pairArm.axial_scale;rf_scale=[int]$pairArm.rf_scale;rf_field_on=([int]$pairArm.rf_scale-eq 1);
+      physical_handoff_z_mm=$handoffPlaneMm}
+    $stateReportDoc=Get-Content -LiteralPath $stateReport -Raw -Encoding UTF8|ConvertFrom-Json
+    $stateReportDoc|Add-Member -NotePropertyName pairing -NotePropertyValue $pairMetadata
+    $stateReportDoc|ConvertTo-Json -Depth 7|Set-Content -LiteralPath $stateReport -Encoding UTF8
+    $caseSummaryDoc|Add-Member -NotePropertyName pairing -NotePropertyValue $pairMetadata
+    $caseSummaryDoc|ConvertTo-Json -Depth 7|Set-Content -LiteralPath $caseSummary -Encoding UTF8
+  }
+  return $caseSummaryDoc
 }
 $comparison=$null
 if($AxialAcceleration){
   $accelerated=Invoke-TransportCase 'axial_acceleration_rf_on' 1 1 0
   $control=Invoke-TransportCase 'zero_axial_drop_rf_on' 1 0 0
   $metrics=Join-Path $resultDir 'axial_acceleration_metrics.json'
+  if($pairingEnabled){
+    & $python -m common.multipole.axial_pairing --audit --resolved-pair $pairingResolved `
+      --field-on-state (Join-Path $resultDir 'particle_states__axial_acceleration_rf_on.csv') `
+      --field-off-state (Join-Path $resultDir 'particle_states__zero_axial_drop_rf_on.csv') `
+      --output $pairAudit
+    if($LASTEXITCODE-ne 0){throw 'SIMION axial paired-source audit failed.'}
+  }
   & $python -m common.multipole.analyze_simion_axial_acceleration `
     --accelerated-state (Join-Path $resultDir 'particle_states__axial_acceleration_rf_on.csv') `
     --control-state (Join-Path $resultDir 'particle_states__zero_axial_drop_rf_on.csv') `
@@ -285,6 +355,11 @@ if($Adapter -eq 'quadrupole'){
 }
 $outputs=@($summary,$metrics,(Join-Path $solverDir 'quad_monolithic.pa0'),(Join-Path $solverDir 'quad_monolithic.iob'),$gem,$fly2)
 $outputs+=@($caseNames|ForEach-Object{Join-Path $resultDir "particle_state_contract__$_.json"})
+if($pairingEnabled){
+  $outputs+=@($pairingResolved,$pairAudit)
+  $outputs+=@($caseNames|ForEach-Object{Join-Path $resultDir "particle_states__$_.csv"})
+  $outputs+=@($caseNames|ForEach-Object{Join-Path $resultDir "simion_summary__$_.json"})
+}
 $outputs+=@(Get-ChildItem -LiteralPath $logDir -File | Select-Object -ExpandProperty FullName)
 if($comparison){$outputs+=$comparison}
 if($compatibilityState){$outputs+=@($compatibilityState,$compatibilitySummary)}
