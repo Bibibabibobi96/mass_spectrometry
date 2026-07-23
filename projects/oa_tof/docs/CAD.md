@@ -8,7 +8,10 @@
 - 实体发现与导出清单：`../cad/oatof_cad_export_manifest.m`
 - STEP导出实现：`../cad/export_oatof_cad_step.m`
 - CAD测试：`../tests/cad/OaTofCadExportTest.m`
-- 正式产物：工作区`artifacts/projects/oa_tof/formal/cad/`；主装配为`oa_tof__assembly.SLDASM`
+- 正式产物：工作区`artifacts/projects/oa_tof/formal/cad/`；当前主装配为
+  `oa_tof__model_physical_components.SLDASM`，准确路径和SHA以
+  [`../config/formal_assets.json`](../config/formal_assets.json)为机器权威。该文件名是正式资产清单
+  记录的既有命名例外，不得只按通用命名示例猜测或擅自重命名。
 
 MATLAB导出任务必须通过根`common/comsol/run_comsol_r2025b.ps1`获得既有LiveLink连接；
 `export_oatof_cad_step.m`只校验LiveLink是否可用，不自行发现MLI或调用`mphstart`。SolidWorks安装由

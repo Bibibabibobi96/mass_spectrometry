@@ -19,8 +19,10 @@
 历史入口仅由本文件提供：`docs/history/PROJECT_HISTORY.md`、
 `docs/history/SIMION_VALIDATION.md`、`docs/history/SUPERSEDED_RESULTS.md`和
 `docs/history/NUMERICAL_VALIDATION_20260716_18.md`、
+`docs/history/20260716__simion-gui-recording-and-program-audit.md`、
 `docs/history/COMSOL_EXTREME_N_CRASH_20260718_19.md`、
 `docs/history/COMSOL_EXTREME_N_CRASH_CLOSURE_20260719.md`、
+`docs/history/20260719__analysis-scaling-and-field-diagnostics.md`、
 `docs/history/CANDIDATE_WORKFLOW_VALIDATION_20260720.md`和
 `docs/history/20260720__midgrid-candidate-runtime-coverage.md`、
 `docs/history/20260720__oatof-theory-refactor-review.md`及
@@ -95,15 +97,10 @@
 - RF共享时钟有限脉冲功能入口：[`config/modes/rf_handoff_pulse.json`](config/modes/rf_handoff_pulse.json)、
   [`tests/cross_solver/run_rf_handoff_pulse.ps1`](tests/cross_solver/run_rf_handoff_pulse.ps1)；从Formal Program
   确定性生成隔离候选，按instrument-time从等效入口面注入并连续计算脉冲前后轨迹，不修改Formal资产。
-- RF真实过孔局部联合场接力由RF项目维护；当前COMSOL→SIMION N=100候选按真实三维局部出口状态、
-  粒子身份和instrument-time继续进入本项目只读Formal分析器，阶段清点为`100→88→28→9`。它取代
-  等效投影作为当前接口功能证据，但不修改本项目Formal资产，也不作分辨率或正式连接声明；详见
-  [`docs/PROJECT.md`](docs/PROJECT.md)。
-- 未来RF→oa物理接口的双边界及时变合同当前仍由RF项目候选
-  [`../rf_quadrupole_collision_cooling/config/rf_to_oatof_interface_candidate.json`](../rf_quadrupole_collision_cooling/config/rf_to_oatof_interface_candidate.json)
-  管理并从本项目耦合baseline重算入口上限；本README不复制接口判据。当前动态消费者只允许声明
-  投影功能链，真实oa入口、连接器场和有限边沿冻结前不得宣称物理连接，当前影响见
-  [`docs/PROJECT.md`](docs/PROJECT.md)。
+- RF→oaTOF连接器、共享时钟脉冲、阶段资格、漏斗结果和后续恢复条件只由
+  [`../rf_quadrupole_collision_cooling/docs/PROJECT.md`](../rf_quadrupole_collision_cooling/docs/PROJECT.md)
+  及其机器合同维护，本项目不复制阶段数字或接口判据。本项目只维护下游格式适配和对Formal分析器的
+  只读消费入口；功能链证据不修改本项目Formal资产，也不构成整机Formal连接或分辨率声明。
 - 正式跨求解器直接重算与发布入口：
   [`tests/cross_solver/run_formal_validation.ps1`](tests/cross_solver/run_formal_validation.ps1)；发布器只在
   两端达到机器契约样本量、统一比较PASS且当前资产/结果SHA齐全时更新机器契约。

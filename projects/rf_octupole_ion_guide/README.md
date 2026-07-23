@@ -5,10 +5,13 @@
 
 ## 固定阅读顺序
 
-1. 先读仓库根[`README.md`](../../README.md)和[`docs/ROADMAP.md`](../../docs/ROADMAP.md)。
+1. 先读仓库根[`README.md`](../../README.md)。
 2. 再读[`docs/PROJECT.md`](docs/PROJECT.md)。
 3. 理论读取[`docs/multipoles/foundations.md`](../../docs/multipoles/foundations.md)和
    [`docs/multipoles/higher_multipoles.md`](../../docs/multipoles/higher_multipoles.md)。
+
+只有调整设计族范围、跨项目优先级或长期阶段时才读
+[`docs/ROADMAP.md`](../../docs/ROADMAP.md)，日常项目任务不把它加入固定阅读链。
 
 ## 当前入口
 

@@ -221,23 +221,8 @@ COMSOL 6.4 build 293在当前CPT模型的极小求解粒子数路径存在原生
 `tests/comsol/run_extreme_particle_count_case.ps1`仅用于满足PROJECT所列重启条件后的受控复核，
 不属于日常或正式门禁；详细矩阵、启动干扰项和原始证据路径已冻结到项目history。
 
-500 Da单质量时间标定进一步说明为何统一N=100与N=1000。复用正式`sol1`且
-每档独立冷启动时，N=100/300/1000/5000的完整墙钟分别为`444.240/518.625/774.917/2135.133 s`，
-其中`std2`粒子阶段为`316.004/390.247/635.909/1996.048 s`，全部100%到达。四点拟合的完整固定项
-约`418.02 s`，每增加一个粒子的边际项约`0.3439 s`。该拟合仅有一次递增顺序测量，用于当前机器
-批次规划；新日常运行不再引入N=40或N=300，检查固定N=100，正式统计固定N=1000，N=5000仅用于
-明确的性能或统计收敛专项。
-
-五质量各N=1000重追踪全部通过，10/100/500/1000/2000 Da的`std2`粒子时间分别为
-`227.950/359.063/633.020/843.213/1319.289 s`，各1000/1000命中。首次10 Da启动在设置
-`std2/time1/tlist`时出现一次`APIEngine.runMethod`空指针，下一次又在`mphload`报告未连接服务器；
-第三次干净进程成功，后续五质量连续完成。宽质量入口的Resume会跳过已通过物种、保全失败报告并
-只重跑未完成物种。
-
-共享LiveLink入口现仅把同时含`mphload`、`mphopen`和`Not connected to a server`的首次模型打开失败
-判为可重试启动瞬态，并在干净重启前归档失败报告。发生在`configure_oatof_segmented_output`的API
-空指针不满足该白名单，仍立即失败；N=3的Study Compute原生崩溃也不会被重试。这样解决连接偶发
-阻塞，同时保留程序/求解器缺陷的可见性。
+已关闭的单质量墙钟缩放、五质量批次计时和连接瞬态调查不再作为当前实施说明；其数值与失败链统一
+从项目README的history清单追溯。当前重试分类只采用根共享COMSOL入口的定义，本文件不维护副本。
 
 ## GUI与求解器检查
 
@@ -247,16 +232,9 @@ COMSOL 6.4 build 293在当前CPT模型的极小求解粒子数路径存在原生
 4. 在GUI路径重算静电场和粒子追踪。
 5. 核对命中判据、结果表、FWHM和图标题与脚本输出一致。
 
-## 2026-07-15 固定粒子峰形审计（候选）
+## 固定粒子释放与导出
 
-`tests/comsol/run_oatof_524amu_fixed_particle_candidate.m`以N=100固定SIMION ION表运行真实场候选。
-在`0.2 ns`细输出步下，100/100命中、平均TOF为`71.98684756 us`、直接质量FWHM为`0.01760645 Da`
-（`R=29761.82`）。细输出步不能无限制地直接调用默认`mphparticle`：默认会传回所有存储时间点，
-0.2 ns时会使客户端JVM在提取`qz`时耗尽堆空间。生产脚本现明确对最终位置和轨迹提取传入`t`，保留
-全程稀疏诊断点和预计到达附近的细采样点；这不改变求解或FWHM插值，只缩小LiveLink传输负载。
-
-`tests/comsol/export_fixed_particle_arrivals_from_mph.m`可只读打开已保存候选MPH，重新导出到达时间并核对
-释放。结果证明`ReleaseFromDataFile`的位置列在本模型中按mm解释，`t=0`位置误差仅`7.1e-15 mm`，
-速度模长误差仅`4.2e-4 m/s`；禁止再对ION表位置额外乘`1e-3`。该脚本不再读取SIMION结果或计算
-FWHM/bootstrap；跨求解器统计统一由`analysis/reference_analysis.py compare`完成。峰形比较属于
-项目级结论，统一记录于`PROJECT.md`，本文件不重复维护SIMION数值。
+`tests/comsol/export_fixed_particle_arrivals_from_mph.m`可只读打开已保存MPH并重新导出到达事件。
+`ReleaseFromDataFile`的位置列按mm解释，禁止额外乘`1e-3`。该脚本不读取SIMION结果或计算
+FWHM/bootstrap；跨求解器统计统一由`analysis/reference_analysis.py compare`完成。旧候选的峰形数值、
+采样和LiveLink负载调查只从项目README的history清单追溯。

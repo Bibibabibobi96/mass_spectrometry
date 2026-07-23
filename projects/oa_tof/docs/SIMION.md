@@ -163,129 +163,22 @@ GUI记录时把Data Recording输出保存到独立CSV/文本文件，不从SIMIO
 这样检测器终止、几何联动和Fast Adjust仍然
 工作，但控制台不再输出每个离子的`detector_splat_raw/detector_crossing/detector_hit_entity`。
 
-2026-07-15已将0.05 mm日常候选和0.025 mm收敛候选同步为上述默认值。单粒子实测：不传覆盖
-参数时TRACE为0行，显式`trajectory_log_enable=1`时为11行，且两种模式均正常完成飞行。因此
-该开关只控制审计输出，不关闭Program，也不改变检测器终止或飞行物理。
+`trajectory_log_enable`只控制审计输出，不关闭Program，也不改变检测器终止或飞行物理。
 
-### 2026-07-15 GUI Data Recording积分精度审计
+## GUI轨迹质量与运行时门禁
 
-桌面同名工作簿`simion_524amu_intensity_time_spectrum.xlsx`的更新版含5000个连续离子，所有记录
-均来自PA实例4且`z=19.83mm`，因此记录数量、检测器实例和检测面均正确。MATLAB直接FWHM分析
-得到平均TOF `72.00529112us`、TOF标准差`7.24070347ns`、直接TOF FWHM
-`22.05991476ns`，对应直接质量FWHM `0.32107740amu`、`R=1632.01`。
-
-用完全相同的`oatof_accz0050_refz0250.iob/.fly2`做命令行对照后确认差异来自轨迹积分档位：
-
-| 运行 | N | 平均TOF (us) | 标准差 (ns) | 直接TOF FWHM (ns) | 直接质量R |
-|---|---:|---:|---:|---:|---:|
-| GUI工作簿 | 5000 | 72.005291 | 7.240703 | 22.059915 | 1632.01 |
-| 命令行quality=3 | 5000 | 72.004126 | 7.053347 | 19.925180 | 1806.97 |
-| 正式命令行quality=8 | 5000 | 71.990291 | 0.815089 | 1.408880 | 25549.58 |
-
-quality=3与GUI结果高度一致，而quality=8使均值恢复到正式基线并将直接FWHM缩小约一个数量级。
-因此本次GUI宽峰不是检测器厚度、Program输出、Excel直方图、N或偶然统计误差造成，而是Fly
-对话框仍使用低轨迹质量。该GUI工作簿只保留为错误复现，不得作为正式质量谱。重新记录前必须
-在Fly对话框确认`trajectory quality=8`。Data Recording文件不会保存该设置，分析器只能验证
-N、检测器实例和检测面，并会把轨迹质量标成`QUALITY_UNVERIFIED`。
-
-为防止再次依赖人工记忆，正式文本Program增加`adjustable trajectory_quality=8`：
-`segment.load()`在每次加载IOB时把Particles页T.Qual改为8，`segment.initialize_run()`在每次
-Fly前再次写入。只改Particles页的T.Qual会在飞行前被正式Program恢复；需要低精度诊断时必须
-显式修改Program Adjustables中的`trajectory_quality`，并在结果名中标出quality，不能覆盖基线。
-
-`build_formal_iob.lua`现在会在保存四实例IOB后同时部署同basename的完整`.lua`和`.fly2`，
-并在构建前拒绝缺少quality=8加载契约的Program。运行时门禁为：
+正式Program以`adjustable trajectory_quality=8`在加载IOB和每次Fly初始化时写入轨迹质量。
+Data Recording文件本身不保存T.Qual，单独的GUI工作簿不能证明正式积分档位。运行时门禁必须实际
+加载IOB并读取本次Program报告：
 
 ```powershell
 .\projects\oa_tof\tests\simion\verify_iob_runtime_contract.ps1 `
   -IobPath <待验收.iob> -ExpectedTrajectoryQuality 8 -ExpectedInstances 4
 ```
 
-门禁必须实际加载IOB并收到Program的`segment.load`报告；只检查Lua文本或IOB文件存在不算通过。
-独立SIMION Lua进程不能直接读取Workbench Program环境中的`sim_trajectory_quality`，会得到nil；
-门禁因此使用每次唯一的临时报告路径，由Program加载段写值，避免误读上一次残留的PASS报告。
-Data Recording本身不保存T.Qual，因此以后遇到“GUI导出结构正确但TOF峰突然宽一个数量级”时，
-按以下顺序快速定位：先核对N、PA instance和检测面，再查看平均TOF与标准差是否接近本次
-quality=3指纹（约`72.004us/7.05ns`），最后用同一IOB分别做quality=3/8小样本或固定粒子对照。
-若低档复现而quality=8恢复约`71.9903us/0.815ns`，直接判定为轨迹积分档位问题，不再重复排查
-检测器厚度、Program控制台输出、Excel直方图或偶然统计误差。
-
-### 2026-07-16同名Excel覆盖与统一分析复核
-
-桌面同名文件后来已被覆盖，当前`simion_524amu_intensity_time_spectrum.xlsx`不再是上节所述
-含Ion Number、PA instance和X/Y/Z的版本。当前列只有`TOF`及人工`mean/max/min/delta T/std/R1/R2`，
-共有5000条TOF；因此只能复核单峰谱，不能证明记录来自第4实例、检测面一致、quality=8或与另一
-求解器逐粒子配对。本次文件为56059字节，SHA-256为
-`57EEC5E6EC6275C8DC79C3F9A2EC4E4D336DB772FD9E753127F718643DCC4FC4`。以后文档不得仅用可覆盖
-文件名指代数据，至少绑定列结构、行数和SHA-256。
-
-Python 3.11/Pandas统一入口成功读取当前工作簿，并明确把顺序粒子ID标记为人工生成。统一算法得到
-平均TOF`71.99026824 us`、标准差`0.81232215 ns`、直接TOF FWHM`1.29084535 ns`、直接质量
-FWHM`0.0187909682 Da`和`R=27885.74`；时间域等价R为`27884.93`，相差约0.0029%。Excel内的
-`R1=19456.83`和`R2=35452.67`均不符合本项目`R=m/FWHM_m`定义，不得引用。
-
-该工作簿与冻结的正式命令行N=5000数据平均TOF只差`-0.0226 ns`，但统一直接FWHM对应的R高
-约14.3%。两者不是同一固定粒子表，非高斯右肩又使直接FWHM对样本敏感，所以不能据平均时间相近
-认定逐粒子或峰宽闭合。当前工作簿只保留为未配对GUI人工复核；正式跨求解器比较仍必须导出真实
-Ion Number，并记录PA instance、X/Y/Z和Event。
-
-2026-07-15已用新构建器重建0.05mm日常候选和0.025mm收敛候选；两者重新加载均为4实例、
-`TRAJECTORY_QUALITY=8`。0.05mm候选四实例仍是`849×356×1`反射器、`153×153×601`
-加速器、`601×355×1`无场管和`165×165×31`检测器，坐标及网格未变。其IOB二进制SHA-256
-重建前后均为`BD39757D2A8DC3BFF8DD052A8BBAFF570498E3A520C9A38D0EF7F91C86BDC203`；quality契约
-位于构建器自动部署的同名Program中，这是预期行为。进一步用命令行故意请求quality=3，Program
-在飞行前仍报告`trajectory_quality=8`，单离子于`31.4489337341us`命中检测面，证明旧会话或
-外部T.Qual值不会污染正式运行。单粒子ION测试不要传`--default-num-particles 1`，SIMION会报
-容量参数越界；省略该容量参数即可。
-
-### 2026-07-16 GUI Program On/Off配对审计闭合
-
-桌面同名工作簿再次更新为5000行、左右两组并排记录。冻结副本位于
-`artifacts/projects/oa_tof/runs/simion_gui_recording/2026-07-16_program_on_off/raw/`，文件
-462631字节，SHA-256为
-`132640A666B5C861D3DA9B0834B2C300DD2C61478331206B1079A2017692A988`。Program On列为
-`program on/event/TOF/PA instance/x/y/z`，Program Off列被Excel读为
-`program off/event.1/TOF.1/PA instance.1/x.1/y.1/z.1`。两组Event均为用户所选ion splat事件的
-数值码4，PA实例均为4，z均为19.83 mm。On组5000个连续离子的严格Recording审计全部通过，
-最大检测器局部半径15.343 mm，小于40 mm。
-
-本次来源是日常候选`oatof_accz0050_refz0250.iob`（SHA-256
-`BD39757D2A8DC3BFF8DD052A8BBAFF570498E3A520C9A38D0EF7F91C86BDC203`）。稳定入口运行门禁再次
-实际加载四个PA实例并得到`TRAJECTORY_QUALITY=8/STATUS=PASS`。XLSX本身仍不保存T.Qual；这里的
-quality证据来自同名Program加载契约和用户记录的Program On状态，不得从TOF列反推。
-
-统一Python直接FWHM结果为：
-
-| 组别 | 平均TOF (us) | 标准差 (ns) | 直接TOF FWHM (ns) | 直接质量FWHM (Da) | R |
-|---|---:|---:|---:|---:|---:|
-| Program On（正式） | 71.99028682 | 0.806483 | 1.526591 | 0.02222238 | 23579.83 |
-| Program Off（仅诊断） | 71.98789634 | 0.697827 | 0.723979 | 0.01053960 | 49717.24 |
-
-该XLSX中的TOF实际只保留到`0.0001 us=0.1 ns`，不是Excel单元格显示格式造成的隐藏截断。因此
-它适合闭合GUI和比较同精度的On/Off组，但直接FWHM仍会受0.1 ns量化影响；正式跨求解器数值比较
-优先使用保留更多有效位的命令行TRACE/CSV，不用本表替换高精度基线。
-
-同名Fly2固定执行`seed(20260713)`，所以两组是同一初始粒子的配对A/B，不是随机重抽样。Off-On
-平均TOF为`-2.39048 ns`，逐粒子标准化TOF相关仅`0.05164`；标准化峰形KDE重叠`0.90727`、KS距离
-`0.1122`（p约`8.1e-28`）。关闭Program后，初始粒子到TOF的排序几乎被重排，差异不是5000粒子
-统计波动。
-
-R的两倍差距不能按“整体展宽两倍”解释。On组非高斯右肩略高于50%峰高，直接FWHM跨过整个
-肩部；Off组肩部略低于50%，FWHM只覆盖主峰。标准差只相差约15%，而半高阈值把峰肩的小变化
-放大成R约111%的变化。比较图和机器结果位于同一run目录的`comparison/`。
-
-Program代码逐项排查后的主因是透明栅网跨越。正式粒子每次飞行经过grid1一次、grid2一次、
-entgrid往返两次、midgrid往返两次，共6次；既有TRACE逐粒子均记录为`1/1/2/2`。每次跨越把粒子
-从栅网前`0.005 mm`移到后`0.005 mm`并补偿飞行时间，按约25--30 mm/us轴向速度估算，6次约
-2--2.4 ns，与实测均值差`2.39048 ns`同量级。跨界位置重置还改变PA边界处的场积分和TOF映射，
-从而移动右肩。默认`ideal_accel/stage1/stage2=0`，故`efield_adjust`不生效；
-`detector_tstep_enable=0`，故时间步窗口不生效；约72 us未触发90 us超时；`segment.terminate()`只在
-局部变量中算检测面修正，不改Data Recording的splat值。Fast Adjust和几何联动仍是正式可复现
-所必需，但若在同一已初始化会话中由On切到Off，现有PA电势和实例位置可能被继承，XLSX不能证明
-它们的状态。因此Off组只能用于说明禁用Program会破坏数值契约，不能作为更高R的替代基线。
-
-结论：GUI人工复现链已闭合，正式结果只认Program On组；以后并排XLSX必须显式映射`.1`列，
-Program Off门禁必须失败。
+只检查Lua文本或IOB存在不算通过。门禁使用每次唯一的临时报告路径，避免误读上一次残留结果。
+已关闭的低质量宽峰、同名Excel覆盖和Program On/Off配对调查从项目README的history清单追溯，
+不得把其中任一GUI工作簿作为当前性能基线。
 
 ## 实施流程
 

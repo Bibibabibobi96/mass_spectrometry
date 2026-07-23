@@ -38,7 +38,7 @@ S2–S3连接功能闭环记录：
 - 官方粒子源：[`config/official_particle_source.json`](config/official_particle_source.json)
 - 当前传输模式：[`config/modes/transport_no_collision.json`](config/modes/transport_no_collision.json)
 - 轴向加速模式：[`config/modes/axial_acceleration_reference.json`](config/modes/axial_acceleration_reference.json)；
-  当前仅闭合COMSOL N=25功能baseline，不代表SIMION、参数优化或机械资格。
+  当前实现已迁移到仓库统一粒子数合同，迁移后的双求解器功能baseline尚待重验，不代表参数优化或机械资格。
 - 集成就绪解析入口：[`config/resolved_interface_readiness.json`](config/resolved_interface_readiness.json)，
   由`analysis/resolve_contract.py --profile interface`生成，禁止手改。
 - 求解器无关相空间接口：[`config/interface_contract.json`](config/interface_contract.json)
@@ -141,6 +141,9 @@ S2–S3连接功能闭环记录：
   仓库相对路径和冻结文件名；运行时核对源文件与`inputs/`副本SHA-256，并把身份写入run config。
   同一几何实现允许间距为0 mm；此时不创建独立连接器域，直接共面连接。0 mm真实运行得到77个孔内
   oa入口事件和23个入口壁损失。负间距拒绝；0 mm和1 mm均为功能证据，不是资格比较。
+  这里的管段、孔径和位姿语义消费[`common/multipole`](../../common/multipole/README.md#连接器术语与责任边界)
+  的**multipole passive connector**能力；本项目只适配RF与oaTOF参数。oa开孔、局部联合场、脉冲捕获与
+  分析器续算仍属于RF→oaTOF专属耦合链，不形成项目内第二套公共连接器实现。
   三件套、环境恢复和失败收尾当前由RF项目内部`tests/support/rf_run_artifact_support.ps1`统一；旧run和
   未触及的旧运行器保持原样，第二个项目实际复用前不提升到根`common/`。
 - S3累积脉冲与分析器贯通：
@@ -211,7 +214,8 @@ rf_quadrupole_collision_cooling/
   六、八极杆共同调用`common/multipole/round_rod_geometry.py`和`interface_geometry.py`，项目不得再按
   `0/90/180/270°`自行派生正式杆坐标。安装目录中的
   SIMION官方例程只提供来源依据，不再是运行时权威；任何下游硬编码或反向抄写都视为失效实现。
-- 官方回归与集成就绪验证严格分离：不得覆盖`official_fixed_25.ion`或借新增工况改写已闭合的 N25 结果。
+- 官方回归与集成就绪验证严格分离：不得覆盖活动`official_fixed_100.ion`或借新增工况改写已冻结运行；
+  迁移前小N结果只在历史运行中保留。
 - 所有run config都同时记录共享硬件解析发布和本次mode解析发布；接口mode是对已闭合RF-only基础物理的
   资格叠加，不得隐式继承未记录的运行参数。
 - 新运行只以统一`particle_state.csv`、`summary.json`、稀疏轨迹和manifest为权威结果；不再生成旧版

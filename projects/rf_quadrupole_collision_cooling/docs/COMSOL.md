@@ -21,6 +21,9 @@
 Fly2 `standard_beam` 的角度在 IOB 放置前按局部束流基向量解释，故 `vSim=(vx,vy,vz)` 必须写为
 `(-vy,-vz,vx)`。不能将位置变换机械复用于速度，也不能只做轴向交换。
 
+以下出现的N=25、25/25及其run ID均是迁移前历史数值调查，仅用于追溯当时网格、时间步和GUI行为，
+不构成当前功能、Candidate或Formal闭合证据。
+
 空间审计表明预定义 mesh4 过粗，不得再作为基线。速度映射修正前的空间收敛数值已经失效；
 修正后 mesh2（较粗）相对 mesh1 在 80 步/周期下仍为 25/25，但平均 TOF 为 49.62409 vs
 50.11545 us（变化 0.98%），最大杆区半径为 0.51833 vs 0.54141 mm（变化 4.26%）。故 mesh2
@@ -38,10 +41,11 @@ Fly2 `standard_beam` 的角度在 IOB 放置前按局部束流基向量解释，
 `z_rod_exit=85.4 mm`、`z_handoff=90.2 mm`、`z_acceptance=95.2 mm`及GUI可见
 `exp_phase_raw`数据导出节点。
 
-`tests/comsol/run_mass_filter_candidate.ps1`是RF+DC功能扫描入口：从同一N=25源派生七个只改变质量的
+`tests/comsol/run_mass_filter_candidate.ps1`是RF+DC功能扫描入口：从同一N=100功能源派生七个只改变质量的
 单质量表，在一个LiveLink会话中顺序求解，并按冻结的中心透过、端点抑制和对比度判据汇总。每个质量
 只保留`particle_state.csv`和`solver_summary.json`，101.5 Th额外保存一份GUI可检查MPH；L1与SIMION
-权威响应以manifest校验后冻结进运行包，比较差异只作诊断，不构成网格或分辨能力资格。
+响应以manifest校验后冻结进运行包，比较差异只作诊断，不构成网格或分辨能力资格。迁移前小N结果
+仅为历史证据；新的COMSOL、SIMION及跨求解器权威响应须等待N=100复验后建立。
 
 标准逐粒子结果为`<mode>_particle_state_<run>.csv`；官方回归的mode仍为`transport_no_collision`。
 每个粒子写出精确source、杆端、
