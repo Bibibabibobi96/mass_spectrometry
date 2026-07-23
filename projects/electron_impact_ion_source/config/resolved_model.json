@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "role": "electron_impact_ion_source_resolved_contract",
+  "project_id": "electron_impact_ion_source",
+  "model_id": "ei_source.long_thin_apertured_tube.yield_feasibility.v1",
+  "selected_mode_id": "build_only_smoke",
+  "physical": {
+    "schema_version": 1,
+    "role": "electron_impact_ion_source_physical_baseline",
+    "project_id": "electron_impact_ion_source",
+    "model_id": "ei_source.long_thin_apertured_tube.yield_feasibility.v1",
+    "capability": {
+      "id": "electron_impact_ionization_yield_feasibility",
+      "heavy_ion_source_claim_allowed": false
+    },
+    "geometry_mm": {
+      "tube_bore_radius": 5.0,
+      "cathode_anode_path_length": 100.0,
+      "electrode_disk_thickness": 1.0,
+      "electrode_aperture_radius": 2.0,
+      "boolean_hole_overshoot_each_side": 0.2,
+      "release_volume_radius": 1.0,
+      "release_volume_length": 1.0,
+      "release_volume_start_z": 0.5,
+      "collector_capture_backoff": 1.0
+    },
+    "electrodes_V": {
+      "cathode": 0.0,
+      "anode": 70.0
+    },
+    "gas": {
+      "neutral_number_density_per_m3": 1e+19,
+      "relative_permittivity": 1.0
+    },
+    "ionization": {
+      "cross_section_m2": 2e-20,
+      "primary_energy_loss_eV": 15.0,
+      "release_secondary_electron": false,
+      "release_ionized_particle": false,
+      "release_primary_electron": true,
+      "count_all_collisions": true,
+      "count_ionization_collisions": true,
+      "collision_detection": "NullCollisionMethodColdGasApproximation"
+    },
+    "electron_source": {
+      "release_velocity_m_per_s": [
+        0.0,
+        0.0,
+        10000.0
+      ],
+      "velocity_distribution": "fixed"
+    }
+  },
+  "numerical": {
+    "execution_mode": "build_only",
+    "evidence_kind": "build_smoke_only",
+    "candidate_evidence_allowed": false,
+    "minimum_evidence_particle_count": null,
+    "mesh": {
+      "automatic_level": 4
+    },
+    "time_ns": {
+      "end": 50.0,
+      "step": 0.5
+    },
+    "solver": {
+      "time_integrator": "BDF",
+      "strict_time_steps": true
+    },
+    "reporting": {
+      "maximum_trajectory_curves": 40,
+      "figure_dpi": 150
+    }
+  },
+  "evidence": {
+    "requested_particle_count": 1,
+    "candidate_evidence_allowed": false,
+    "minimum_particle_count": null,
+    "scope": "build_smoke_only"
+  }
+}

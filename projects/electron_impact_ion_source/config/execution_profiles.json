@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "role": "project_execution_profiles",
+  "project_id": "electron_impact_ion_source",
+  "profiles": [
+    {
+      "profile_id": "ei_source_build_only_smoke",
+      "capability_id": "electron_impact_ionization_feasibility",
+      "mode": "build_only_smoke",
+      "evidence_levels": [
+        "plan"
+      ],
+      "supported_objectives": [],
+      "supported_operating_points": [
+        {
+          "mass": {
+            "value": 0.000548579909,
+            "unit": "Da"
+          },
+          "charge_state": -1
+        }
+      ],
+      "supported_design_variables": [],
+      "supported_constraints": [],
+      "deliverable_outputs": [
+        "comsol_model"
+      ],
+      "required_bindings": [],
+      "steps": [
+        {
+          "step_id": "static_gate",
+          "kind": "gate",
+          "shell": "powershell",
+          "entrypoint": "verify_project.ps1",
+          "run_id_template": null,
+          "arguments": [
+            "-PythonExe",
+            "{python_exe}"
+          ]
+        }
+      ],
+      "limitations": [
+        "This plan-level profile validates contracts and static bindings only; it does not run COMSOL or produce simulation evidence.",
+        "The electron operating point identifies the tracked species and does not imply a heavy-ion-source capability.",
+        "The functional_reference numerical mode remains unregistered until an N>=100 solver runner and evidence lifecycle exist."
+      ]
+    }
+  ]
+}

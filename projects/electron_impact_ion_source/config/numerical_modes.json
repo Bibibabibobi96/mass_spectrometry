@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "role": "electron_impact_ion_source_numerical_modes",
+  "project_id": "electron_impact_ion_source",
+  "modes": {
+    "build_only_smoke": {
+      "execution_mode": "build_only",
+      "evidence_kind": "build_smoke_only",
+      "candidate_evidence_allowed": false,
+      "minimum_evidence_particle_count": null,
+      "mesh": {
+        "automatic_level": 4
+      },
+      "time_ns": {
+        "end": 50.0,
+        "step": 0.5
+      },
+      "solver": {
+        "time_integrator": "BDF",
+        "strict_time_steps": true
+      },
+      "reporting": {
+        "maximum_trajectory_curves": 40,
+        "figure_dpi": 150
+      }
+    },
+    "functional_reference": {
+      "execution_mode": "full",
+      "evidence_kind": "functional_reference",
+      "candidate_evidence_allowed": true,
+      "minimum_evidence_particle_count": 100,
+      "mesh": {
+        "automatic_level": 4
+      },
+      "time_ns": {
+        "end": 50.0,
+        "step": 0.5
+      },
+      "solver": {
+        "time_integrator": "BDF",
+        "strict_time_steps": true
+      },
+      "reporting": {
+        "maximum_trajectory_curves": 40,
+        "figure_dpi": 150
+      }
+    }
+  }
+}

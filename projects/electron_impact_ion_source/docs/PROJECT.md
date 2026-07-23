@@ -1,7 +1,10 @@
 # 电子轰击离子源当前项目状态
 
-本文件是项目当前状态的唯一权威。跨项目规则适用仓库根README；精确物理实现以
-[`../comsol/ms_stage1_ei_source.m`](../comsol/ms_stage1_ei_source.m)为准。
+本文件是项目当前状态的唯一权威。跨项目规则适用仓库根README；物理输入以
+[`../config/baseline.json`](../config/baseline.json)为准，数值与证据语义以
+[`../config/numerical_modes.json`](../config/numerical_modes.json)为准，MATLAB只能消费
+解析后的[`../config/resolved_model.json`](../config/resolved_model.json)。仓库执行注册使用
+统一[`../config/execution_profiles.json`](../config/execution_profiles.json)结构。
 
 ## 当前状态
 
@@ -12,10 +15,10 @@
 
 ## 当前物理边界
 
-现有脚本建立半径5 mm、长度100 mm的长细电离管，阴极至阳极电压70 V；默认中性气体密度为
-`1e19 1/m^3`，常数电离截面为`2e-20 m^2`，电离能损失为15 eV。该模型只统计主电子的电离碰撞，
-关闭二次电子释放，也不追踪独立重离子；后续级的离子出生位置只能视为电子束路径范围的近似。
-因此它是电离产额可行性模型，不是完整EI离子源或已闭合的oa-TOF上游接口。
+当前baseline定义长细开孔电离管、阴极—阳极加速场、中性气体、常数电离截面和固定电子释放状态。
+该模型只统计主电子的电离碰撞，关闭二次电子释放，也不追踪独立重离子；后续级的离子出生位置
+只能视为电子束路径范围的近似。因此它是电离产额可行性模型，不是完整EI离子源或已闭合的
+oa-TOF上游接口。具体数值不在本文复制，避免与机器合同形成第二真值。
 
 ## 已知程序问题
 
@@ -23,15 +26,18 @@
   `20260722_120000__test__comsol__build-only-smoke`已在真实MATLAB R2025b/COMSOL 6.4连接中完成
   几何、网格、静电和CPT Study/Solver树构建并保存隔离MPH，未运行静电或粒子求解器；三件套manifest
   复核PASS。该结果只关闭构建入口风险，不提升候选或Formal资格。
-- 几何、气体、截面、粒子源与数值参数仍散落在MATLAB源码，尚无baseline/resolved机器契约。
+- 已建立`baseline physical inputs + numerical mode -> resolved`单向链；Python解析器拒绝身份、
+  单位字段、范围、未知模式和证据粒子数误用，MATLAB入口无旧数值回退。
+- 跟踪的resolved为`build_only_smoke`，低N只验证合同读取、几何/网格/物理/Study树构建和GUI参数
+  绑定；它明确不具备Candidate证据资格。
 - 现有结果提取以脚本端统计为主；正式化前必须确认关键结果节点、Study/Solver和判据在GUI中可见。
 - 旧模型未按当前运行生命周期生成run config、summary和manifest，不能仅凭文件存在恢复正式资格。
 
 ## 下一步
 
-1. 把物理输入和数值模式拆为机器契约，明确“电离产额可行性”而非重离子生成的验收范围。
-2. 低于100的固定fixture只用于build/smoke和GUI节点检查，不产生Candidate证据；粒子功能候选从仓库
-   最低N=100档开始，完成GUI Compute、结果提取和manifest后，再决定是否建立正式基线。
+1. 使用`functional_reference`和最低N=100完成GUI Compute、结果提取与manifest；在此之前不建立
+   Candidate或Formal。
+2. 复核实际求解输出粒子数与请求证据粒子数的一致性，再允许功能结果进入Candidate评审。
 3. 与Wehnelt电子枪或oa-TOF连接前，单独冻结坐标、时间、粒子出生状态和接受度合同。
 
 ## 产物边界

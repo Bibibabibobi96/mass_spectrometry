@@ -11,3 +11,12 @@
 
 机器身份、能力边界和当前`prototype`成熟度由[`config/project.json`](config/project.json)声明；
 它用于项目发现，不把现有脚本自动提升为候选或正式资产。
+
+物理输入只在[`config/baseline.json`](config/baseline.json)维护，数值/证据模式只在
+[`config/numerical_modes.json`](config/numerical_modes.json)维护；解析器
+[`analysis/resolve_contract.py`](analysis/resolve_contract.py)生成MATLAB唯一允许读取的
+[`config/resolved_model.json`](config/resolved_model.json)。当前跟踪的resolved选择
+`build_only_smoke`，只用于构建和GUI参数绑定检查，不是Candidate证据。项目静态门禁为
+`.\verify_project.ps1`；仓库统一执行入口只在
+[`config/execution_profiles.json`](config/execution_profiles.json)注册，不把内部数值模式表
+冒充执行profile合同。
