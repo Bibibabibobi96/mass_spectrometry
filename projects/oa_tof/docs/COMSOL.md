@@ -20,6 +20,22 @@ Desktop查看、修改和Compute；仅脚本内存状态通过不算验收。
 Compute后的大粒子数据提取使用第二个干净任务。共享入口的重试和失败分类只在
 [`common/comsol/README.md`](../../../common/comsol/README.md)维护。
 
+### 2026-07-23 R2025b单元与N=100候选功能回归
+
+- `tests/comsol/run_oatof_matlab_unit_tests.m`在MATLAB R2025b完成`11/11`单元测试。
+- `tests/comsol/run_oatof_formal_write_contract_tests.m`确认普通模型/CAD入口不能写入Formal；只有
+  `OATOF_PROMOTION_TRANSACTION`中角色和目的地精确匹配的晋升事务可授权，路径不匹配仍被拒绝。
+- `tests/comsol/run_n100_candidate_functional.ps1`建立独立run、冻结resolved合同和N=100粒子表，再通过
+  共享R2025b入口构建候选MPH。运行
+  `20260723_135235__test__comsol__oatof-candidate-functional__n100`为100/100唯一detector分类，
+  10/5环数和6个分段时间窗口token均通过合同检查，平均TOF为`71.352937 us`。
+- 首次运行`20260723_135035__test__comsol__oatof-candidate-functional__n100`因缺少
+  `OATOF_RUNTIME_DIR`被明确拒绝，失败run的配置、摘要和manifest仍完整保留。修复只补齐run内固定粒子
+  证据目录，没有放宽模型合同。
+
+该回归只证明模块化生产入口、候选写入隔离、粒子提取和失败收尾可工作；没有修改Formal，也不构成
+网格收敛或性能晋升。
+
 ### 2026-07-18 模块化正式构建器
 
 底层入口保留`ms_oaTOF_two_stage_ringstack_reflectron.m`，几何、网格、粒子物理和结果节点已拆为

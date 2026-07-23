@@ -79,6 +79,13 @@
 - CAD正式入口：[`cad/ms_export_oatof_to_solidworks.m`](cad/ms_export_oatof_to_solidworks.m)
 - 跨求解器门禁：
   [`tests/cross_solver/verify_geometry_contract.ps1`](tests/cross_solver/verify_geometry_contract.ps1)
+- R2025b MATLAB单元与Formal写入合同回归：
+  [`tests/comsol/run_oatof_matlab_unit_tests.m`](tests/comsol/run_oatof_matlab_unit_tests.m)、
+  [`tests/comsol/run_oatof_formal_write_contract_tests.m`](tests/comsol/run_oatof_formal_write_contract_tests.m)
+- COMSOL N=100候选功能回归：
+  [`tests/comsol/run_n100_candidate_functional.ps1`](tests/comsol/run_n100_candidate_functional.ps1)
+- SIMION源码构建与N=100跟踪回归：
+  [`tests/simion/run_n100_source_build_and_track.ps1`](tests/simion/run_n100_source_build_and_track.ps1)
 - 统一分析契约：[`config/analysis_contract.json`](config/analysis_contract.json)
 - 当前正式跨求解器验证：[`config/formal_validation.json`](config/formal_validation.json)
 - 当前N=1000正式结果与图片：`artifacts/projects/oa_tof/formal/results/`；只包含当前baseline的

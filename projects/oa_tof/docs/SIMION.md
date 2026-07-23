@@ -23,6 +23,20 @@
 - 当前日常IOB、正式COMSOL MPH和SolidWorks装配体已经通过共享几何门禁；SIMION网格收敛参考仍
   保持候选角色，不得误写成第二套正式几何。
 
+### 2026-07-23 源码构建与N=100跟踪回归
+
+长期入口为`tests/simion/run_n100_source_build_and_track.ps1`。它先冻结baseline、resolved合同、
+Program/Fly2和四个构建器源码，再从源码建立独立SIMION交付并执行N=100跟踪。运行
+`20260723_143116__test__simion__oatof-source-build-track__n100`确认：
+
+- reflectron、flight-tube和detector三个构建器都拒绝缺少必需参数的调用；
+- 构建后的SHA清单覆盖53个交付文件，临时`*.source.gem`和`*.processed.gem`残留为0；
+- N=100为100/100 detector crossing及100/100 hit，平均TOF为`71.353597 us`；
+- 失败注入时根配置、摘要和manifest三件套仍完整收口并通过manifest复核。
+
+该入口只证明源码可构建、运行合同和失败收尾可工作；它不修改Formal，也不声明网格收敛或新的正式
+性能。
+
 任意设计候选先由`analysis/prepare_candidate_consumers.py`从同一
 `candidate_resolved_geometry.json`生成隔离的`oatof_resolved.lua`、Program和Fly2；正式文本保持不变。
 零改动回归要求三份生成文本与正式版本逐字一致。该步骤尚未Refine PA、建立IOB或Fly，因此只标记
