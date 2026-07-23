@@ -23,6 +23,12 @@ function Add-DocError {
 foreach ($file in $markdownFiles) {
     $lines = @(Get-Content -LiteralPath $file.FullName -Encoding UTF8)
     $relative = $file.FullName.Substring($repoRoot.Length + 1)
+    $relativeGit = $relative -replace '\\', '/'
+    $requiresMathFence = $relativeGit -in @(
+        'projects/oa_tof/docs/theory/oaaccelerator_time_focus.md',
+        'projects/oa_tof/docs/theory/dual_stage_reflectron.md',
+        'projects/oa_tof/docs/theory/oatof_oaaccelerator_coupling.md'
+    )
     $h1Count = 0
     $previousLevel = 0
     $inFence = $false
@@ -46,32 +52,49 @@ foreach ($file in $markdownFiles) {
         Add-DocError "$relative`: expected exactly one H1, found $h1Count"
     }
 
-    $inFence = $false
-    $inDisplayMath = $false
+    $fenceMarker = $null
+    $fenceInfo = ''
+    $inMathFence = $false
+    $inDollarDisplayMath = $false
     $lineNumber = 0
     $bareLatexPattern = '\\(?:mathrm|frac|sqrt|tau|Delta|operatorname|left|right|begin|end|text|ell|' +
         'partial|alpha|beta|rho|eta|equiv|propto|int|sum|mu|sigma|omega|cdot|times|pm|approx|' +
         'ne|qquad|quad|bar|mathbf)|[A-Za-z0-9)\]]_\{|\^\{'
     foreach ($line in $lines) {
         $lineNumber++
-        if ($line -match '^\s*(```|~~~)') {
-            if (-not $inFence -and $line -match '^\s*```math\s*$') {
-                Add-DocError "$relative`:$lineNumber`: use dollar-delimited math, not a fenced math code block"
+        if ($null -ne $fenceMarker) {
+            if ($line.Trim() -ceq $fenceMarker) {
+                $fenceMarker = $null
+                $fenceInfo = ''
+                $inMathFence = $false
             }
-            $inFence = -not $inFence
             continue
         }
-        if ($inFence) { continue }
 
-        if ($line.Trim() -eq '$$') {
-            $inDisplayMath = -not $inDisplayMath
+        if ($line -match '^\s*(?<marker>```|~~~)(?<info>.*)$') {
+            $fenceMarker = $Matches['marker']
+            $fenceInfo = $Matches['info'].Trim()
+            $inMathFence = $fenceInfo -ceq 'math'
+            if ($inMathFence -and $fenceMarker -cne '```') {
+                Add-DocError "$relative`:$lineNumber`: GitHub math fences must use three backticks"
+            }
+            continue
+        }
+
+        if ($line.Trim() -ceq '$$') {
+            if ($requiresMathFence) {
+                Add-DocError "$relative`:$lineNumber`: multiline display math must use a GitHub math fence"
+            }
+            else {
+                $inDollarDisplayMath = -not $inDollarDisplayMath
+            }
             continue
         }
         if ($line -match '\$\$') {
-            Add-DocError "$relative`:$lineNumber`: display-math delimiter '$$' must be on its own line"
+            Add-DocError "$relative`:$lineNumber`: display-math dollar delimiter must be on its own line"
             continue
         }
-        if ($inDisplayMath) { continue }
+        if ($inDollarDisplayMath) { continue }
 
         $withoutCode = [regex]::Replace($line, '`[^`]*`', '')
         $inlineParts = [regex]::Split($withoutCode, '(?<!\\)\$')
@@ -87,7 +110,15 @@ foreach ($file in $markdownFiles) {
             Add-DocError "$relative`:$lineNumber`: LaTeX expression appears outside dollar delimiters"
         }
     }
-    if ($inDisplayMath) {
+    if ($null -ne $fenceMarker) {
+        if ($inMathFence) {
+            Add-DocError "$relative`: unclosed GitHub math fence"
+        }
+        else {
+            Add-DocError "$relative`: unclosed fenced code block ($fenceMarker$fenceInfo)"
+        }
+    }
+    if ($inDollarDisplayMath) {
         Add-DocError "$relative`: unclosed display-math dollar delimiter"
     }
 

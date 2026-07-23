@@ -38,27 +38,74 @@ def _five_point_second(function, x: float, h: float) -> float:
     ) / (12.0 * h * h)
 
 
+def _github_math_blocks(lines: list[str], name: str) -> list[str]:
+    """Extract only GitHub math fences; the repository gate owns full Markdown parsing."""
+    blocks: list[str] = []
+    current: list[str] | None = None
+    for line_number, line in enumerate(lines, start=1):
+        if current is None:
+            if line == "```math":
+                current = []
+            continue
+        if line == "```":
+            blocks.append("\n".join(current))
+            current = None
+        elif line.startswith("```"):
+            raise AssertionError(
+                f"{name}:{line_number} math fence has an invalid closing delimiter"
+            )
+        else:
+            current.append(line)
+    if current is not None:
+        raise AssertionError(f"{name} has an unclosed math fence")
+    return blocks
+
+
 class OatofLongitudinalTheoryTest(unittest.TestCase):
     def test_theory_markdown_uses_github_safe_math_fences(self) -> None:
         theory_dir = PROJECT_DIR / "docs" / "theory"
-        for name in (
-            "oaaccelerator_time_focus.md",
-            "dual_stage_reflectron.md",
-            "oatof_oaaccelerator_coupling.md",
-        ):
+        expected_block_counts = {
+            "oaaccelerator_time_focus.md": 40,
+            "dual_stage_reflectron.md": 40,
+            "oatof_oaaccelerator_coupling.md": 41,
+        }
+        all_blocks: dict[str, list[str]] = {}
+        for name, expected_count in expected_block_counts.items():
             lines = (theory_dir / name).read_text(encoding="utf-8").splitlines()
-            self.assertNotIn("```math", lines, msg=f"{name} uses a legacy math fence")
-            delimiter_count = lines.count("$$")
-            self.assertGreater(delimiter_count, 0)
-            self.assertEqual(
-                delimiter_count % 2,
-                0,
-                msg=f"{name} has unpaired display-math delimiters",
-            )
             self.assertFalse(
-                any("$$" in line and line != "$$" for line in lines),
-                msg=f"{name} has a display-math delimiter with inline content",
+                any("$$" in line for line in lines),
+                msg=f"{name} still uses dollar-delimited display math",
             )
+            blocks = _github_math_blocks(lines, name)
+            self.assertEqual(
+                len(blocks),
+                expected_count,
+                msg=f"{name} changed its reviewed display-math block count",
+            )
+            all_blocks[name] = blocks
+
+        accelerator_blocks = all_blocks["oaaccelerator_time_focus.md"]
+        self.assertTrue(
+            any(
+                block
+                == "\\rho^*\\equiv\\frac{E_{A1}}{E_{A2}}\n"
+                "=\n"
+                "\\frac{\\sqrt r}{\\sqrt r-\\sqrt s}."
+                for block in accelerator_blocks
+            ),
+            msg="rho optimum formula is not enclosed by one complete math fence",
+        )
+
+        coupling_blocks = all_blocks["oatof_oaaccelerator_coupling.md"]
+        first_derivative = next(
+            block for block in coupling_blocks if block.startswith("\\tau_A'(W)=")
+        )
+        second_derivative = next(
+            block for block in coupling_blocks if block.startswith("\\tau_A''(W)=")
+        )
+        self.assertIn("\\frac{D_A}{2W^{3/2}}.", first_derivative)
+        self.assertIn("\\tau_A''(W)=\n-\n\\frac{1}{2E_{A1}R_A^{3/2}}", second_derivative)
+        self.assertIn("\\frac{3D_A}{4W^{5/2}}.", second_derivative)
 
     def test_current_baseline_reproduces_uncoupled_reflectron(self) -> None:
         solution = solve_reflectron_fields(
