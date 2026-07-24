@@ -78,8 +78,10 @@ function Assert-BuildOnlyModeDescriptor {
   $expectedKeys = @(
     'schema_version','mode','status','numerical_contract','claim_limit'
   )
-  if ((Compare-Object -ReferenceObject ($expectedKeys | Sort-Object) `
-      -DifferenceObject @($mode.Keys | Sort-Object)).Count -ne 0) {
+  $keyDifferences = @(Compare-Object `
+    -ReferenceObject @($expectedKeys | Sort-Object) `
+    -DifferenceObject @($mode.Keys | Sort-Object))
+  if ($keyDifferences.Count -ne 0) {
     throw "Build-only mode descriptor has unexpected fields: $Path"
   }
   if ($mode.schema_version -ne 1 -or
@@ -98,12 +100,14 @@ function Assert-BuildOnlyModeDescriptor {
   $profiles = Get-Content -LiteralPath $ExecutionProfilesPath -Raw -Encoding UTF8 |
     ConvertFrom-Json -AsHashtable
   $matchingProfiles = @($profiles.profiles | Where-Object { $_.mode -ceq $mode.mode })
+  $evidenceLevels = @($matchingProfiles | ForEach-Object { $_.evidence_levels })
+  $runnerSteps = @($matchingProfiles | ForEach-Object { $_.steps } | Where-Object {
+      $_.entrypoint -ceq 'run_build_only_smoke.ps1'
+    })
   if ($matchingProfiles.Count -ne 1 -or
-      @($matchingProfiles[0].evidence_levels).Count -ne 1 -or
-      $matchingProfiles[0].evidence_levels[0] -cne 'plan' -or
-      @($matchingProfiles[0].steps | Where-Object {
-          $_.entrypoint -ceq 'run_build_only_smoke.ps1'
-        }).Count -ne 1) {
+      $evidenceLevels.Count -ne 1 -or
+      $evidenceLevels[0] -cne 'plan' -or
+      $runnerSteps.Count -ne 1) {
     throw 'Build-only mode descriptor does not have one matching governed execution profile.'
   }
 }

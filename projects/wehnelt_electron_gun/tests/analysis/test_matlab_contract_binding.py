@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -271,6 +272,66 @@ class MatlabContractBindingTests(unittest.TestCase):
         for token in required:
             with self.subTest(token=token):
                 self.assertIn(token, self.build_runner)
+
+    def test_mode_descriptor_validator_runs_under_latest_strict_mode(self) -> None:
+        mode = str(PROJECT_ROOT / "config" / "modes" / "build_only_smoke.json")
+        resolved = str(PROJECT_ROOT / "config" / "resolved_model.json")
+        profiles = str(PROJECT_ROOT / "config" / "execution_profiles.json")
+        command = (
+            "Set-StrictMode -Version Latest;"
+            f"Assert-BuildOnlyModeDescriptor -Path '{mode}' "
+            f"-ResolvedPath '{resolved}' -ExecutionProfilesPath '{profiles}';"
+            "'MODE_DESCRIPTOR_STRICT=PASS'"
+        )
+        completed = self.invoke_runner_functions(
+            ("Assert-BuildOnlyModeDescriptor",), command
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            (completed.stdout or "") + (completed.stderr or ""),
+        )
+        self.assertIn("MODE_DESCRIPTOR_STRICT=PASS", completed.stdout)
+
+    def test_mode_descriptor_key_diff_is_rejected_under_strict_mode(self) -> None:
+        source = json.loads(
+            (PROJECT_ROOT / "config" / "modes" / "build_only_smoke.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        resolved = str(PROJECT_ROOT / "config" / "resolved_model.json")
+        profiles = str(PROJECT_ROOT / "config" / "execution_profiles.json")
+        mutations = {
+            "extra": {**source, "unexpected": True},
+            "missing": {
+                key: value for key, value in source.items() if key != "claim_limit"
+            },
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            for label, document in mutations.items():
+                with self.subTest(label=label):
+                    mode = Path(directory) / f"{label}.json"
+                    mode.write_text(json.dumps(document), encoding="utf-8")
+                    command = (
+                        "Set-StrictMode -Version Latest;"
+                        "try{Assert-BuildOnlyModeDescriptor "
+                        f"-Path '{mode}' -ResolvedPath '{resolved}' "
+                        f"-ExecutionProfilesPath '{profiles}';exit 41}}"
+                        "catch{if($_.Exception.Message -notlike "
+                        "'Build-only mode descriptor has unexpected fields:*'){exit 42};"
+                        "'MODE_DESCRIPTOR_KEY_DIFF=REJECTED'}"
+                    )
+                    completed = self.invoke_runner_functions(
+                        ("Assert-BuildOnlyModeDescriptor",), command
+                    )
+                    self.assertEqual(
+                        completed.returncode,
+                        0,
+                        (completed.stdout or "") + (completed.stderr or ""),
+                    )
+                    self.assertIn(
+                        "MODE_DESCRIPTOR_KEY_DIFF=REJECTED", completed.stdout
+                    )
 
     def test_report_parser_accepts_only_one_exact_value_per_known_key(self) -> None:
         valid = self.invoke_runner_functions(
