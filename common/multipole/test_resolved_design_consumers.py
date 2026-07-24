@@ -225,6 +225,36 @@ class ResolvedDesignConsumerContractTest(unittest.TestCase):
         ):
             self.assertNotIn(evidence_field, matlab)
 
+    def test_l3_runners_freeze_optional_source_operating_point_binding(self) -> None:
+        for name in (
+            "run_finite_3d_transport.ps1",
+            "run_simion_finite_3d_transport.ps1",
+        ):
+            source = (MULTIPOLE / name).read_text(encoding="utf-8")
+            parameter_block = source[: source.index(")\n\nSet-StrictMode")]
+            self.assertLess(
+                parameter_block.index("[string]$EvidenceContractPath"),
+                parameter_block.index("[string]$SourceFamilyPath"),
+            )
+            for token in (
+                "[string]$SourceFamilyPath",
+                "[string]$OperatingPointId",
+                "$hasSourceFamily-ne$hasOperatingPoint",
+                "SourceFamilyPath and OperatingPointId must be supplied together.",
+                "particle_source_family.json",
+                "--source-family",
+                "--operating-point",
+                "source_family_sha256=$sourceFamilySha",
+                "operating_point_id=$(if($sourceFamily){$OperatingPointId}else{$null})",
+                "particle_source_operating_point_binding=$sourceMeta.operating_point_binding",
+                "particle_source_family=$sourceFamily",
+                "operating_point_id-ne$OperatingPointId",
+                "source_family_sha256-ne$sourceFamilySha",
+                "reported an unexpected operating-point binding",
+                "--expected-source-family-sha256",
+            ):
+                self.assertIn(token, source)
+
 
 if __name__ == "__main__":
     unittest.main()

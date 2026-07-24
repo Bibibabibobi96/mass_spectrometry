@@ -59,10 +59,20 @@ def render_ion11_source_states(source: Path, axial_offset_mm: float = 0.0) -> st
 def render_canonical_source(
     particles: Path,
     resolved_design: Path,
+    *,
+    source_family_path: Path | None = None,
+    operating_point_id: str | None = None,
+    expected_source_family_sha256: str | None = None,
 ) -> tuple[str, str, int]:
     """Project canonical particles into the SIMION workbench frame."""
     resolved = json.loads(resolved_design.read_text(encoding="utf-8-sig"))
-    metadata = validate_source(particles, resolved)
+    metadata = validate_source(
+        particles,
+        resolved,
+        source_family_path=source_family_path,
+        operating_point_id=operating_point_id,
+        expected_source_family_sha256=expected_source_family_sha256,
+    )
     mass_amu = float(metadata["mass_amu"])
     enclosure = resolved["geometry_mm"]["enclosure"]
     rectangular = enclosure["model"] == "rectangular_reference_enclosure_v1"
@@ -70,7 +80,8 @@ def render_canonical_source(
     z_shift = 0.0 if rectangular else -float(enclosure["vacuum_z_min_mm"])
     charge = int(resolved["particle_source"]["charge_state"])
     source_z = float(resolved["interfaces_mm"]["entrance"]["particle_plane_z_mm"])
-    rows = list(csv.DictReader(particles.open(encoding="utf-8-sig")))
+    with particles.open(encoding="utf-8-sig", newline="") as stream:
+        rows = list(csv.DictReader(stream))
     fly = ["particles {", "  coordinates = 0,"]
     states = ["return {"]
     for row in rows:
@@ -104,13 +115,20 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--particles", required=True, type=Path)
     parser.add_argument("--resolved-design", required=True, type=Path)
+    parser.add_argument("--source-family", type=Path)
+    parser.add_argument("--operating-point")
+    parser.add_argument("--expected-source-family-sha256")
     parser.add_argument("--fly2", required=True, type=Path)
     parser.add_argument("--source-states-lua", required=True, type=Path)
     args = parser.parse_args()
     args.fly2.parent.mkdir(parents=True, exist_ok=True)
     args.source_states_lua.parent.mkdir(parents=True, exist_ok=True)
     fly, states, count = render_canonical_source(
-        args.particles, args.resolved_design
+        args.particles,
+        args.resolved_design,
+        source_family_path=args.source_family,
+        operating_point_id=args.operating_point,
+        expected_source_family_sha256=args.expected_source_family_sha256,
     )
     args.fly2.write_text(fly, encoding="ascii")
     args.source_states_lua.write_text(states, encoding="ascii")

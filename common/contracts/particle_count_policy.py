@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import csv
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -36,13 +38,65 @@ def validate_standard_particle_count(count: int) -> int:
     return count
 
 
-def validate_prefix_particle_sources(n100_path: Path, n1000_path: Path) -> None:
-    """Require N=100 to equal the first 100 nonblank rows of N=1000."""
-    small = [line for line in n100_path.read_text(encoding="utf-8-sig").splitlines() if line.strip()]
-    large = [line for line in n1000_path.read_text(encoding="utf-8-sig").splitlines() if line.strip()]
-    if len(small) != 100 or len(large) != 1000:
-        raise ValueError("prefix source validation requires exactly N=100 and N=1000")
-    if small != large[:100]:
+def _nonblank_lines(path: Path) -> list[str]:
+    return [
+        line
+        for line in path.read_text(encoding="utf-8-sig").splitlines()
+        if line.strip()
+    ]
+
+
+def _has_header(lines: list[str]) -> bool:
+    sample = "\n".join(lines[: min(len(lines), 21)])
+    try:
+        return csv.Sniffer().has_header(sample)
+    except csv.Error as error:
+        raise ValueError("particle source header could not be classified") from error
+
+
+def _validate_expected_sha256(
+    path: Path, expected_sha256: str | None, label: str
+) -> None:
+    if expected_sha256 is None:
+        return
+    expected = expected_sha256.upper()
+    if len(expected) != 64 or any(character not in "0123456789ABCDEF" for character in expected):
+        raise ValueError(f"{label} expected SHA-256 is invalid")
+    actual = hashlib.sha256(path.read_bytes()).hexdigest().upper()
+    if actual != expected:
+        raise ValueError(f"{label} SHA-256 differs from the expected identity")
+
+
+def validate_prefix_particle_sources(
+    n100_path: Path,
+    n1000_path: Path,
+    *,
+    expected_n100_sha256: str | None = None,
+    expected_n1000_sha256: str | None = None,
+) -> None:
+    """Require N=100 data rows to exactly prefix the N=1000 source."""
+    _validate_expected_sha256(n100_path, expected_n100_sha256, "N=100 source")
+    _validate_expected_sha256(n1000_path, expected_n1000_sha256, "N=1000 source")
+    small = _nonblank_lines(n100_path)
+    large = _nonblank_lines(n1000_path)
+    small_has_header = _has_header(small)
+    large_has_header = _has_header(large)
+    if small_has_header != large_has_header:
+        raise ValueError("prefix source validation does not allow mixed header formats")
+    if small_has_header:
+        if small[0] != large[0]:
+            raise ValueError("prefix particle sources do not share the same header")
+        small = small[1:]
+        large = large[1:]
+    policy = load_particle_count_policy()
+    functional_count = int(policy["functional_check_count"])
+    statistical_count = int(policy["statistical_count"])
+    if len(small) != functional_count or len(large) != statistical_count:
+        raise ValueError(
+            "prefix source validation requires exactly "
+            f"N={functional_count} and N={statistical_count} data rows"
+        )
+    if small != large[:functional_count]:
         raise ValueError("N=100 source is not the deterministic prefix of N=1000")
 
 

@@ -12,7 +12,9 @@ param(
   [string]$PythonExe='',
   [ValidateRange(4,10000)][int]$RfStepsPerPeriod=80,
   [ValidateRange(0,100)][int]$TrajectoryQuality=10,
-  [ValidateRange(0.001,1000000)][double]$MaximumTimeUs=80.0
+  [ValidateRange(0.001,1000000)][double]$MaximumTimeUs=80.0,
+  [string]$SourceFamilyPath='',
+  [string]$OperatingPointId=''
 )
 
 Set-StrictMode -Version Latest
@@ -22,6 +24,12 @@ $workspaceRoot=Split-Path -Parent $repoRoot
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 $particleSourceInput=(Resolve-Path -LiteralPath $ParticleSourcePath).Path
+$hasSourceFamily=-not[string]::IsNullOrWhiteSpace($SourceFamilyPath)
+$hasOperatingPoint=-not[string]::IsNullOrWhiteSpace($OperatingPointId)
+if($hasSourceFamily-ne$hasOperatingPoint){
+  throw 'SourceFamilyPath and OperatingPointId must be supplied together.'
+}
+$sourceFamilyInput=if($hasSourceFamily){(Resolve-Path -LiteralPath $SourceFamilyPath).Path}else{$null}
 $registryPreflight=Get-Content -LiteralPath (Join-Path $repoRoot 'config\project_registry.json') -Raw -Encoding UTF8|ConvertFrom-Json
 $projectMatches=@($registryPreflight.projects|Where-Object{[string]$_.project_id-eq$ProjectId})
 if($projectMatches.Count-ne 1){throw "ProjectId is not unique in the canonical project registry: $ProjectId"}
@@ -95,15 +103,36 @@ try{
   $resolvedHash=[string]$design.resolved_sha256
   $particleSource=Join-Path $inputDir 'particle_source.csv'
   Copy-Item -LiteralPath $particleSourceInput -Destination $particleSource
+  $sourceFamily=$null;$sourceFamilySha=$null
+  if($sourceFamilyInput){
+    $sourceFamily=Join-Path $inputDir 'particle_source_family.json'
+    Copy-Item -LiteralPath $sourceFamilyInput -Destination $sourceFamily
+    $sourceFamilySha=(Get-FileHash -LiteralPath $sourceFamily -Algorithm SHA256).Hash
+  }
   $sourceMetadata=Join-Path $inputDir 'particle_source_metadata.json'
   Push-Location $codeRoot
   try{
     $env:PYTHONPATH=$codeRoot
-    & $python -m common.multipole.particle_source_preflight --source $particleSource `
-      --resolved-design $resolved --output $sourceMetadata
+    $preflightArguments=@('-m','common.multipole.particle_source_preflight',
+      '--source',$particleSource,'--resolved-design',$resolved,'--output',$sourceMetadata)
+    if($sourceFamily){
+      $preflightArguments+=@('--source-family',$sourceFamily,
+        '--operating-point',$OperatingPointId,
+        '--expected-source-family-sha256',$sourceFamilySha)
+    }
+    & $python @preflightArguments
     if($LASTEXITCODE-ne 0){throw 'Canonical particle source preflight failed.'}
   }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
   $sourceMeta=Get-Content -LiteralPath $sourceMetadata -Raw -Encoding UTF8|ConvertFrom-Json
+  if($sourceFamily){
+    $binding=$sourceMeta.operating_point_binding
+    if($null-eq$binding -or
+      [string]$binding.operating_point_id-ne$OperatingPointId -or
+      [string]$binding.source_family_sha256-ne$sourceFamilySha
+    ){throw 'Canonical particle source operating-point binding differs from the frozen runner input.'}
+  }elseif($null-ne$sourceMeta.operating_point_binding){
+    throw 'Canonical particle source reported an unexpected operating-point binding.'
+  }
   $referenceComsolManifest=$null;$referenceComsolManifestSha=$null;$referenceComsolSourceRunId=$null
   if(-not[string]::IsNullOrWhiteSpace($ReferenceComsolRunId)){
     Push-Location $codeRoot
@@ -153,8 +182,15 @@ try{
     $env:PYTHONPATH=$codeRoot
     & $python -m common.multipole.simion_geometry --resolved-design $resolved --cell-mm $CellMm --output $gem
     if($LASTEXITCODE-ne 0){throw 'SIMION GEM projection failed.'}
-    & $python -m common.multipole.simion_particle_source --particles $particleSource `
-      --resolved-design $resolved --fly2 $fly2 --source-states-lua $states
+    $sourceProjectionArguments=@('-m','common.multipole.simion_particle_source',
+      '--particles',$particleSource,'--resolved-design',$resolved,
+      '--fly2',$fly2,'--source-states-lua',$states)
+    if($sourceFamily){
+      $sourceProjectionArguments+=@('--source-family',$sourceFamily,
+        '--operating-point',$OperatingPointId,
+        '--expected-source-family-sha256',$sourceFamilySha)
+    }
+    & $python @sourceProjectionArguments
     if($LASTEXITCODE-ne 0){throw 'SIMION particle projection failed.'}
   }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
   Copy-Item -LiteralPath $template -Destination (Join-Path $solverDir 'quad_monolithic.iob')
@@ -195,11 +231,14 @@ try{
     $groundElectrodeId=2*[int]$segments.segment_count+1;$outputElectrodeId=$groundElectrodeId+1
     if($rectangular){$detectorElectrodeId=$outputElectrodeId+1}
   }
-  $provenance=[ordered]@{parent_resolved_design_sha256=$resolvedHash;particle_source_sha256=$sourceMeta.source_sha256}
+  $provenance=[ordered]@{parent_resolved_design_sha256=$resolvedHash;particle_source_sha256=$sourceMeta.source_sha256;
+    source_family_sha256=$sourceFamilySha;operating_point_id=$(if($sourceFamily){$OperatingPointId}else{$null});
+    particle_source_operating_point_binding=$sourceMeta.operating_point_binding}
   $runInputs=[ordered]@{project_registry=$registry;project_descriptor=$descriptor;design_profiles=$profiles;
     design_profile_resolution=$profileResolution;design_request=$request;design_variables=$variables;
     optimization_envelope=$envelope;multipole_resolved_design=$resolved;particle_source=$particleSource;
-    particle_source_metadata=$sourceMetadata;solver_numerics=$numerics;code_inventory=$codeInventory;
+    particle_source_metadata=$sourceMetadata;particle_source_family=$sourceFamily;
+    solver_numerics=$numerics;code_inventory=$codeInventory;
     evidence_contract=$evidence;simion_gem=$gem;simion_fly2=$fly2}
   if($referenceComsolManifest){
     $provenance.reference_comsol_run_manifest_sha256=$referenceComsolManifestSha
@@ -209,7 +248,9 @@ try{
   [ordered]@{schema_version=1;role='multipole_resolved_simion_run_config';run_id=$RunId;project=$ProjectId;
     mode='resolved_design_transport';project_root=$profile.project_root;
     provenance=$provenance;inputs=$runInputs;
-    parameters=[ordered]@{model_level='L3';design_profile_id=$DesignProfileId;reference_comsol_run_id=$ReferenceComsolRunId};
+    parameters=[ordered]@{model_level='L3';design_profile_id=$DesignProfileId;
+      operating_point_id=$(if($sourceFamily){$OperatingPointId}else{$null});
+      reference_comsol_run_id=$ReferenceComsolRunId};
     formal_gate_passed=$false}|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $runConfig -Encoding UTF8
 
   function Invoke-SimionStep([string]$name,[string[]]$arguments){

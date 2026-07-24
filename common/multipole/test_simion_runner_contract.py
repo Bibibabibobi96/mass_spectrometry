@@ -1,5 +1,14 @@
+import csv
+import hashlib
+import json
+import math
+import tempfile
 import unittest
 from pathlib import Path
+
+from common.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
+from common.multipole.particle_source_preflight import COLUMNS
+from common.multipole.simion_particle_source import render_canonical_source
 
 
 RUNNER = Path(__file__).resolve().parent / "run_simion_finite_3d_transport.ps1"
@@ -151,6 +160,99 @@ class SimionRunnerContractTests(unittest.TestCase):
             self.assertIn("common\\multipole\\run_simion_finite_3d_transport.ps1", wrapper)
             self.assertNotIn("FieldScreenRunId", wrapper)
             self.assertNotIn("AxialAccelerationContractPath", wrapper)
+
+    def test_5ev_projection_requires_and_consumes_explicit_operating_point(self) -> None:
+        runner = RUNNER.read_text(encoding="utf-8")
+        self.assertIn("$sourceProjectionArguments", runner)
+        self.assertIn("--expected-source-family-sha256", runner)
+        self.assertGreaterEqual(runner.count("--source-family"), 2)
+        self.assertGreaterEqual(runner.count("--operating-point"), 2)
+        project = REPO_ROOT / "projects" / "rf_quadrupole_collision_cooling"
+        resolved_path = project / "config" / "resolved_design_official.json"
+        family_path = project / "config" / "interface_readiness_particle_source.json"
+        resolved = json.loads(resolved_path.read_text(encoding="utf-8"))
+        speed = math.sqrt(
+            2.0 * 5.0 * ELEMENTARY_CHARGE_C / (100.0 * AMU_KG)
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "source.csv"
+            with source.open("w", encoding="utf-8", newline="") as stream:
+                writer = csv.DictWriter(
+                    stream, fieldnames=COLUMNS, lineterminator="\n"
+                )
+                writer.writeheader()
+                for particle_id in range(1, 101):
+                    writer.writerow(
+                        {
+                            "particle_id": particle_id,
+                            "birth_time_s": "0",
+                            "x_mm": "0",
+                            "y_mm": "0",
+                            "z_mm": resolved["interfaces_mm"]["entrance"][
+                                "particle_plane_z_mm"
+                            ],
+                            "vx_m_s": "0",
+                            "vy_m_s": "0",
+                            "vz_m_s": format(speed, ".17g"),
+                            "mass_amu": "100",
+                            "charge_state": "1",
+                        }
+                    )
+            with self.assertRaisesRegex(
+                ValueError, "resolved closed interval"
+            ):
+                render_canonical_source(source, resolved_path)
+            fly, states, count = render_canonical_source(
+                source,
+                resolved_path,
+                source_family_path=family_path,
+                operating_point_id="rf_to_oatof_100amu_5eV",
+                expected_source_family_sha256=hashlib.sha256(
+                    family_path.read_bytes()
+                ).hexdigest(),
+            )
+            self.assertEqual(count, 100)
+            self.assertIn("ke=5", fly)
+            self.assertIn("ke=5", states)
+            with self.assertRaisesRegex(ValueError, "requires both"):
+                render_canonical_source(
+                    source,
+                    resolved_path,
+                    source_family_path=family_path,
+                )
+            with self.assertRaisesRegex(ValueError, "differs from the frozen"):
+                render_canonical_source(
+                    source,
+                    resolved_path,
+                    source_family_path=family_path,
+                    operating_point_id="rf_to_oatof_100amu_5eV",
+                    expected_source_family_sha256="0" * 64,
+                )
+
+            class DriftingSourceFamily:
+                def __init__(self) -> None:
+                    self.read_count = 0
+
+                def read_bytes(self) -> bytes:
+                    self.read_count += 1
+                    return (
+                        family_path.read_bytes()
+                        if self.read_count == 1
+                        else b'{"schema_version":1,"operating_points":{}}'
+                    )
+
+            drifting_family = DriftingSourceFamily()
+            _, _, drift_count = render_canonical_source(
+                source,
+                resolved_path,
+                source_family_path=drifting_family,  # type: ignore[arg-type]
+                operating_point_id="rf_to_oatof_100amu_5eV",
+                expected_source_family_sha256=hashlib.sha256(
+                    family_path.read_bytes()
+                ).hexdigest(),
+            )
+            self.assertEqual(drift_count, 100)
+            self.assertEqual(drifting_family.read_count, 1)
 
 
 if __name__ == "__main__":
