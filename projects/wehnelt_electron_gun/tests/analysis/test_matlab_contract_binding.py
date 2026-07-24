@@ -51,7 +51,7 @@ class MatlabContractBindingTests(unittest.TestCase):
             f"{command}"
         )
         return subprocess.run(
-            ["powershell", "-NoProfile", "-Command", script],
+            ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
             cwd=PROJECT_ROOT,
             check=False,
             capture_output=True,
@@ -182,6 +182,8 @@ class MatlabContractBindingTests(unittest.TestCase):
         for token in required:
             with self.subTest(token=token):
                 self.assertIn(token, self.build_runner)
+        self.assertIn("[string]$PythonExe", self.build_runner)
+        self.assertIn("New-RunPackage -Python $python", self.build_runner)
         self.assertEqual(
             self.build_runner.count("common\\comsol\\run_comsol_r2025b.ps1"),
             1,

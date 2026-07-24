@@ -1,7 +1,8 @@
 param(
   [string]$RunId = '',
   [switch]$Particles,
-  [string]$ConnectorCaseId = 'nominal_gap_1mm'
+  [string]$ConnectorCaseId = 'nominal_gap_1mm',
+  [string]$PythonExe = ''
 )
 
 Set-StrictMode -Version Latest
@@ -10,6 +11,7 @@ $supportSource = (Resolve-Path (Join-Path $PSScriptRoot '..\support\rf_run_artif
 . $supportSource
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
+$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling'
 $contractSource = Join-Path $projectRoot 'config\rf_to_oatof_s2_passive_connector.json'
@@ -44,7 +46,7 @@ $mode = if ($Particles) { 'rf_to_oatof_s2_passive_connector_n100' } `
 $summaryRole = if ($Particles) { 'rf_to_oatof_s2_passive_connector_n100_summary' } `
   else { 'rf_to_oatof_s2_no_pulse_field_summary' }
 $software = @('COMSOL 6.4','MATLAB R2025b','Python 3.11')
-$package = New-RfRunPackage -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
+$package = New-RfRunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project 'rf_quadrupole_collision_cooling' -Mode $mode -Software $software
 $python = $package.python
 $inputDir = $package.input_dir

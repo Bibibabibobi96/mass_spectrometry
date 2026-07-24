@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
   [Parameter(Mandatory = $true)]
-  [string]$RunId
+  [string]$RunId,
+  [string]$PythonExe = ''
 )
 
 Set-StrictMode -Version Latest
@@ -11,6 +12,7 @@ $projectRoot = $PSScriptRoot
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\wehnelt_electron_gun'
+$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 $software = @('COMSOL 6.4 via MATLAB R2025b')
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 
@@ -115,7 +117,7 @@ function New-BuildSummary {
   }
 }
 
-$package = New-RunPackage -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
+$package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project 'wehnelt_electron_gun' -Mode 'build_only_smoke' `
   -Software $software -AdditionalDirectories @('comsol')
 $manifestPath = Join-Path $package.run_dir 'run_manifest.json'

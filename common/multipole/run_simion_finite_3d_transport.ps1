@@ -9,6 +9,7 @@ param(
   [ValidateRange(0.001,100)][double]$CellMm=0.4,
   [string]$SimionExe='',
   [string]$TemplateIob='',
+  [string]$PythonExe='',
   [ValidateRange(4,10000)][int]$RfStepsPerPeriod=80,
   [ValidateRange(0,100)][int]$TrajectoryQuality=10,
   [ValidateRange(0.001,1000000)][double]$MaximumTimeUs=80.0
@@ -18,7 +19,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $workspaceRoot=Split-Path -Parent $repoRoot
-$python=Join-Path $repoRoot '.venv\Scripts\python.exe'
+$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 $particleSourceInput=(Resolve-Path -LiteralPath $ParticleSourcePath).Path
 $registryPreflight=Get-Content -LiteralPath (Join-Path $repoRoot 'config\project_registry.json') -Raw -Encoding UTF8|ConvertFrom-Json
@@ -31,7 +32,7 @@ if(-not(Test-Path -LiteralPath $template -PathType Leaf)){throw "SIMION template
 if([string]::IsNullOrWhiteSpace($RunId)){
   $RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+"__sim__simion__$($ProjectId.Replace('_','-'))-$DesignProfileId__resolved-l3"
 }
-$package=New-RunPackage -RepoRoot $repoRoot `
+$package=New-RunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$ProjectId") -RunId $RunId `
   -Project $ProjectId -Mode 'resolved_design_transport' -Software @('SIMION 2020','Python 3.11') `
   -AdditionalDirectories @('simion')

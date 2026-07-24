@@ -78,6 +78,8 @@ class RfOatofCheckpointRunnerTests(unittest.TestCase):
         self.assertIn("-Outputs $outputs", self.runner)
 
     def test_lifecycle_is_verified_and_never_promotes_stage(self) -> None:
+        self.assertIn("[string]$PythonExe", self.runner)
+        self.assertIn("New-RfRunPackage -Python $python", self.runner)
         self.assertGreaterEqual(
             self.runner.count("Write-VerifiedRunManifest"), 2
         )

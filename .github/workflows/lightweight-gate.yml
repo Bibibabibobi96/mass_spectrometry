@@ -25,6 +25,11 @@ jobs:
           python-version: '3.11'
           cache: pip
           cache-dependency-path: requirements-lock.txt
+      - name: Verify PowerShell host
+        shell: pwsh
+        run: |
+          Write-Output "POWERSHELL_EDITION=$($PSVersionTable.PSEdition) POWERSHELL_VERSION=$($PSVersionTable.PSVersion)"
+          . .\common\require_powershell7.ps1
       - name: Install locked Python dependencies
         shell: pwsh
         run: python -m pip install --disable-pip-version-check -r requirements-lock.txt

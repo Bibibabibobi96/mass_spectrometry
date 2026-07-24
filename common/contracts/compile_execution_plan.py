@@ -102,7 +102,10 @@ def compile_execution(
         entrypoint = (project_root / step["entrypoint"]).resolve()
         arguments = [value.format_map(PreserveMissing(context)) for value in step["arguments"]]
         if step["shell"] == "powershell":
-            argv = ["powershell.exe", "-NoProfile", "-File", str(entrypoint), *arguments]
+            argv = [
+                "pwsh.exe", "-NoProfile", "-NonInteractive", "-File",
+                str(entrypoint), *arguments,
+            ]
         else:
             module = entrypoint.relative_to(REPO_ROOT).with_suffix("").as_posix().replace("/", ".")
             argv = [context["python_exe"], "-m", module, *arguments]

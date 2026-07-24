@@ -161,7 +161,7 @@ oa_tof/
 ## 修改后的最低检查
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass `
+pwsh.exe -NoProfile -ExecutionPolicy Bypass `
   -File .\tests\cross_solver\verify_geometry_contract.ps1 -SkipRuntime
 .\analysis\verify_reference_analysis.ps1
 git diff --check

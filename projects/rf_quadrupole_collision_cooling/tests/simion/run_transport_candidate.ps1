@@ -4,6 +4,7 @@ param(
     [string]$RunId = '',
     [double]$SourceAxialOffsetMm = 0.0,
     [string]$ParticleTablePath = '',
+    [string]$PythonExe = '',
     [ValidateSet('transport_interface_readiness','mass_filter_reference')][string]$Mode = 'transport_interface_readiness',
     [string]$OperatingPoint = 'official_100amu_2eV'
 )
@@ -14,12 +15,12 @@ $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $repoRoot = Split-Path -Parent (Split-Path -Parent $projectRoot)
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling'
-$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 if ([string]::IsNullOrWhiteSpace($RunId)) {
     $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + "__sim__simion__rf-transport__$($Mode.Replace('_','-'))"
 }
-$package=New-RunPackage -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RunId $RunId `
+$package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RunId $RunId `
     -Project 'rf_quadrupole_collision_cooling' -Mode $Mode -Software @('SIMION 2020','Python 3.11') `
     -AdditionalDirectories @('simion')
 $runDir=$package.run_dir

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,9 +16,11 @@ class FailedRunManifestTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             artifact_root = Path(directory) / "artifacts"
             support = ROOT / "common/contracts/run_artifact_support.ps1"
+            python = Path(sys.executable)
             command = (
                 f". '{support}'; "
-                f"$package=New-RunPackage -RepoRoot '{ROOT}' -ArtifactRoot '{artifact_root}' "
+                f"$package=New-RunPackage -Python '{python}' "
+                f"-RepoRoot '{ROOT}' -ArtifactRoot '{artifact_root}' "
                 "-RunId '20260723_120000__test__python__package-output' "
                 "-Project 'fixture' -Mode 'package_output' -Software @('Python 3.11'); "
                 "Write-Output $package.run_dir"
@@ -66,7 +69,7 @@ class FailedRunManifestTest(unittest.TestCase):
                 encoding="utf-8",
             )
             support = ROOT / "common/contracts/run_artifact_support.ps1"
-            python = ROOT / ".venv/Scripts/python.exe"
+            python = Path(sys.executable)
             command = (
                 f". '{support}'; Complete-FailedRun -Python '{python}' "
                 f"-RepoRoot '{ROOT}' -RunConfig '{config}' -Summary '{summary}' "

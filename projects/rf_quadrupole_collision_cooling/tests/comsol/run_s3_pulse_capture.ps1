@@ -1,6 +1,7 @@
 param(
   [Parameter(Mandatory)][string]$SourceRunId,
-  [string]$RunId = ''
+  [string]$RunId = '',
+  [string]$PythonExe = ''
 )
 
 Set-StrictMode -Version Latest
@@ -9,6 +10,7 @@ $supportSource = (Resolve-Path (Join-Path $PSScriptRoot '..\support\rf_run_artif
 . $supportSource
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
+$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling'
 $s3Source = Join-Path $projectRoot 'config\rf_to_oatof_s3_pulse_capture.json'
@@ -21,7 +23,7 @@ if ([string]::IsNullOrWhiteSpace($RunId)) {
   $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__sim__comsol__rf-oatof-s3-pulse-capture__n100'
 }
 $software = @('COMSOL 6.4','MATLAB R2025b','Python 3.11')
-$package = New-RfRunPackage -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
+$package = New-RfRunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project 'rf_quadrupole_collision_cooling' `
   -Mode 'rf_to_oatof_s3_shared_clock_pulse_capture_n100' -Software $software
 $python = $package.python

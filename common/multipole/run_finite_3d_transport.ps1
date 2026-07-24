@@ -5,6 +5,7 @@ param(
   [Parameter(Mandatory=$true)][string]$ParticleSourcePath,
   [string]$EvidenceContractPath='',
   [string]$RunId='',
+  [string]$PythonExe='',
   [ValidateRange(1,9)][int]$MeshAutoLevel=6,
   [double]$WorkingRegionMaximumElementSizeMm=[double]::NaN,
   [ValidateRange(4,10000)][int]$RfStepsPerPeriod=80,
@@ -18,7 +19,7 @@ if(-not [double]::IsNaN($WorkingRegionMaximumElementSizeMm) -and $WorkingRegionM
 }
 $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $workspaceRoot=Split-Path -Parent $repoRoot
-$python=Join-Path $repoRoot '.venv\Scripts\python.exe'
+$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 $particleSourceInput=(Resolve-Path -LiteralPath $ParticleSourcePath).Path
 $registryPreflight=Get-Content -LiteralPath (Join-Path $repoRoot 'config\project_registry.json') -Raw -Encoding UTF8|ConvertFrom-Json
@@ -27,7 +28,7 @@ if($projectMatches.Count-ne 1){throw "ProjectId is not unique in the canonical p
 if([string]::IsNullOrWhiteSpace($RunId)){
   $RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+"__sim__comsol__$($ProjectId.Replace('_','-'))-$DesignProfileId__resolved-l3"
 }
-$package=New-RunPackage -RepoRoot $repoRoot `
+$package=New-RunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$ProjectId") -RunId $RunId `
   -Project $ProjectId -Mode 'resolved_design_transport' `
   -Software @('COMSOL 6.4','MATLAB R2025b','Python 3.11')

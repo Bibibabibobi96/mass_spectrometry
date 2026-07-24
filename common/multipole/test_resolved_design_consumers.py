@@ -197,6 +197,8 @@ class ResolvedDesignConsumerContractTest(unittest.TestCase):
             "run_simion_finite_3d_transport.ps1",
         ):
             source = (MULTIPOLE / name).read_text(encoding="utf-8")
+            self.assertIn("[string]$PythonExe", source)
+            self.assertIn("New-RunPackage -Python $python", source)
             self.assertIn("provenance=[ordered]@{parent_resolved_design_sha256=$resolvedHash", source)
             self.assertIn("Write-VerifiedRunManifest", source)
             self.assertEqual(source.count("Complete-FailedRun"), 1)

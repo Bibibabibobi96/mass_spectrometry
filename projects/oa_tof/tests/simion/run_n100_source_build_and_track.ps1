@@ -1,6 +1,7 @@
 param(
   [string]$RunId = "$(Get-Date -Format 'yyyyMMdd_HHmmss')__test__simion__oatof-source-build-track__n100",
-  [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe'
+  [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
+  [string]$PythonExe = ''
 )
 
 Set-StrictMode -Version Latest
@@ -10,6 +11,7 @@ $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $repoRoot = Split-Path -Parent (Split-Path -Parent $projectRoot)
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\oa_tof'
+$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 $formalSimion = Join-Path $artifactRoot 'formal\simion'
 $builder = Join-Path $projectRoot 'simion\workbench\build_formal_delivery.ps1'
 $analyzer = Join-Path $projectRoot 'simion\workbench\analyze_ideal_field_log.ps1'
@@ -21,7 +23,7 @@ foreach ($path in @($SimionExe, $builder, $analyzer)) {
   }
 }
 $software = @('SIMION 2020', 'Python 3.11')
-$package = New-RunPackage -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
+$package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project 'oa_tof' -Mode 'simion_n100_source_build_and_track' `
   -Software $software -AdditionalDirectories @('simion')
 $simionDir = Join-Path $package.run_dir 'simion'

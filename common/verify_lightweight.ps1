@@ -5,6 +5,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'require_powershell7.ps1')
 $repoRoot = Split-Path -Parent $PSScriptRoot
 if (-not $PythonExe) {
     $venvPython = Join-Path $repoRoot '.venv\Scripts\python.exe'

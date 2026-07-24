@@ -4,7 +4,8 @@ param(
   [string]$SourceRunId,
   [Parameter(Mandatory, ParameterSetName = 'SourceManifest')]
   [string]$SourceManifest,
-  [string]$RunId = ''
+  [string]$RunId = '',
+  [string]$PythonExe = ''
 )
 
 Set-StrictMode -Version Latest
@@ -46,6 +47,7 @@ function Get-ManifestRecordPaths {
 
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
+$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling'
 $runsRoot = Join-Path $artifactRoot 'runs'
@@ -71,7 +73,7 @@ if ([string]::IsNullOrWhiteSpace($RunId)) {
     '__analysis__python__rf-oatof-checkpoint-diagnostic__n100'
 }
 $software = @('Python 3.11')
-$package = New-RfRunPackage -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
+$package = New-RfRunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project 'rf_quadrupole_collision_cooling' `
   -Mode 'rf_to_oatof_checkpoint_diagnostic_n100' -Software $software
 

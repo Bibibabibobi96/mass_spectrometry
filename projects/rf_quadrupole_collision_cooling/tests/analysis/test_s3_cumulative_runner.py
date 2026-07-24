@@ -18,6 +18,8 @@ class S3CumulativeRunnerTests(unittest.TestCase):
         self.assertIn("-SourceRunId $s2RunId", runner)
         self.assertIn("-SourceRunId $s3RunId", runner)
         self.assertIn("verify_run_manifest.py", runner)
+        self.assertIn("[string]$PythonExe", runner)
+        self.assertEqual(runner.count("-PythonExe $python"), 3)
 
     def test_internal_s3_runner_requires_explicit_s2_source(self) -> None:
         runner = (
@@ -26,6 +28,7 @@ class S3CumulativeRunnerTests(unittest.TestCase):
         self.assertIn("[Parameter(Mandatory)][string]$SourceRunId", runner)
         self.assertIn("$sourceRunConfiguration.inputs.s2_contract", runner)
         self.assertNotIn("$s3Document.source.timing_state_run_id", runner)
+        self.assertIn("New-RfRunPackage -Python $python", runner)
 
 
 if __name__ == "__main__":

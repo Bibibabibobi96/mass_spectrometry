@@ -22,6 +22,9 @@
 - 不建立 COMSOL、SIMION、CAD 文档之间的横向网状引用；项目 README 负责导航，统一结论写入 `docs/PROJECT.md`。
 - MATLAB、COMSOL、Python和SolidWorks的版本及启动方式只以根README的
   [“工具链与执行入口”](README.md#工具链与执行入口)为准；Agent不得另建连接生命周期或把临时检查工具当作正式入口。
+- PowerShell Core 7（`pwsh`）是仓库唯一受支持的PowerShell运行时；公开根入口必须通过公共preflight
+  fail-closed验证当前宿主为Core 7，禁止回退到Windows PowerShell 5.1。Python等非PowerShell边界启动
+  PowerShell时必须使用`pwsh`，PowerShell内部脚本继承当前宿主，不得另行选择或启动第二套PowerShell。
 - MATLAB/COMSOL和SolidWorks会写用户配置、许可证、日志及临时目录；Agent调用这些商业工具时必须从
   第一次尝试就使用允许其正常访问用户配置目录的执行上下文。公共入口报告
   `EXECUTION_ENVIRONMENT_BLOCKED`时，应在权限正确的上下文重试同一冻结输入，不得把它归因于模型、

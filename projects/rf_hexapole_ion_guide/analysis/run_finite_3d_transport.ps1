@@ -5,6 +5,7 @@ param(
   [Parameter(Mandatory=$true)][string]$ParticleSourcePath,
   [string]$EvidenceContractPath = '',
   [string]$RunId = '',
+  [string]$PythonExe = '',
   [ValidateRange(1,9)][int]$MeshAutoLevel = 6,
   [double]$WorkingRegionMaximumElementSizeMm = [double]::NaN,
   [ValidateRange(4,10000)][int]$RfStepsPerPeriod = 80,
@@ -13,11 +14,13 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
+$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 $arguments = @{
   ProjectId = 'rf_hexapole_ion_guide'
   DesignProfileId = $DesignProfileId
   ParticleSourcePath = $ParticleSourcePath
   RunId = $RunId
+  PythonExe = $python
   MeshAutoLevel = $MeshAutoLevel
   RfStepsPerPeriod = $RfStepsPerPeriod
   MaximumTimeUs = $MaximumTimeUs

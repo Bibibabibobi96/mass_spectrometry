@@ -2,6 +2,7 @@ param(
   [string]$RunId='',
   [int]$RfStepsPerPeriod=80,
   [int]$MeshAutoLevel=1,
+  [string]$PythonExe='',
   [Parameter(Mandatory=$true)][string]$L1RunId,
   [Parameter(Mandatory=$true)][string]$SimionRunId
 )
@@ -12,12 +13,13 @@ $projectRoot=Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $repoRoot=Split-Path -Parent (Split-Path -Parent $projectRoot)
 $workspaceRoot=Split-Path -Parent $repoRoot
 $artifactRoot=Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling'
+$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
 . (Join-Path $projectRoot 'tests\support\rf_run_artifact_support.ps1')
 if([string]::IsNullOrWhiteSpace($RunId)){
   $RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__sim__comsol__mass-filter__rf-dc-n700'
 }
 $software=@('COMSOL 6.4','MATLAB R2025b','Python 3.11')
-$package=New-RfRunPackage -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RunId $RunId `
+$package=New-RfRunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RunId $RunId `
   -Project 'rf_quadrupole_collision_cooling' -Mode 'mass_filter_reference' -Software $software `
   -AdditionalDirectories @('comsol','runtime')
 $runDir=$package.run_dir;$inputDir=$package.input_dir;$resultDir=$package.result_dir;$logDir=$package.log_dir

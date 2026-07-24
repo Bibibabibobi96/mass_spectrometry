@@ -1,3 +1,4 @@
+import ast
 import unittest
 
 from common import verify_development_standards as standards
@@ -43,6 +44,33 @@ class MatlabBuildOnlyContractTests(unittest.TestCase):
         )
         self.assertEqual(standards.check_matlab_source(self.example_path, source), [])
 
+
+class PowerShellRuntimeContractTests(unittest.TestCase):
+    example_path = standards.REPO_ROOT / "common" / "example.py"
+
+    def check(self, source: str) -> list[str]:
+        return standards.check_legacy_powershell_launchers(
+            self.example_path, ast.parse(source)
+        )
+
+    def test_rejects_legacy_powershell_command_argv(self):
+        errors = self.check(
+            'subprocess.run(["powershell", "-File", "task.ps1"], cwd=root, timeout=30)'
+        )
+        self.assertEqual(len(errors), 1)
+        self.assertIn("legacy PowerShell", errors[0])
+
+    def test_rejects_powershell_exe_command_preview(self):
+        errors = self.check('argv = ["powershell.exe", "-NoProfile", "-File", task]')
+        self.assertEqual(len(errors), 1)
+        self.assertIn("legacy PowerShell", errors[0])
+
+    def test_allows_pwsh_and_explanatory_text(self):
+        source = '''
+"""Explain why Windows PowerShell 5.1 is unsupported."""
+command = ["pwsh.exe", "-NoProfile", "-File", task]
+'''
+        self.assertEqual(self.check(source), [])
 
 if __name__ == "__main__":
     unittest.main()

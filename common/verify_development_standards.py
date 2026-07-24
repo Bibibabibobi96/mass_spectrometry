@@ -26,6 +26,7 @@ MATLAB_BUILD_ONLY_FORBIDDEN = (
     (re.compile(r"\bmphsave\s*\("), "saves an MPH"),
     (re.compile(r"\bmodel\.save\s*\("), "saves a model"),
 )
+LEGACY_POWERSHELL_COMMANDS = {"powershell", "powershell.exe"}
 
 
 def active_files(suffix: str) -> list[Path]:
@@ -54,6 +55,32 @@ def is_subprocess_call(call: ast.Call) -> bool:
     )
 
 
+def check_legacy_powershell_launchers(path: Path, tree: ast.AST) -> list[str]:
+    errors: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.List, ast.Tuple)) and node.elts:
+            command = node.elts[0]
+            if (
+                isinstance(command, ast.Constant)
+                and isinstance(command.value, str)
+                and command.value.casefold() in LEGACY_POWERSHELL_COMMANDS
+            ):
+                errors.append(
+                    f"{location(path, node.lineno)} command argv launches legacy PowerShell"
+                )
+        elif isinstance(node, ast.Call) and is_subprocess_call(node) and node.args:
+            command = node.args[0]
+            if (
+                isinstance(command, ast.Constant)
+                and isinstance(command.value, str)
+                and command.value.casefold() in LEGACY_POWERSHELL_COMMANDS
+            ):
+                errors.append(
+                    f"{location(path, node.lineno)} subprocess launches legacy PowerShell"
+                )
+    return errors
+
+
 def check_python() -> tuple[list[str], list[str]]:
     errors: list[str] = []
     reviews: list[str] = []
@@ -64,6 +91,7 @@ def check_python() -> tuple[list[str], list[str]]:
         except SyntaxError as exception:
             errors.append(f"{location(path, exception.lineno or 1)} Python syntax error: {exception.msg}")
             continue
+        errors.extend(check_legacy_powershell_launchers(path, tree))
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and any(alias.name == "*" for alias in node.names):
                 errors.append(f"{location(path, node.lineno)} wildcard import")

@@ -1,5 +1,6 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path (Split-Path -Parent $PSScriptRoot) 'require_powershell7.ps1')
 
 function Write-RunJson {
   [CmdletBinding()]
@@ -106,6 +107,7 @@ function Initialize-RunRecord {
 function New-RunPackage {
   [CmdletBinding()]
   param(
+    [Parameter(Mandatory)][string]$Python,
     [Parameter(Mandatory)][string]$RepoRoot,
     [Parameter(Mandatory)][string]$ArtifactRoot,
     [Parameter(Mandatory)][string]$RunId,
@@ -114,8 +116,12 @@ function New-RunPackage {
     [Parameter(Mandatory)][string[]]$Software,
     [string[]]$AdditionalDirectories=@()
   )
-  $python=Join-Path $RepoRoot '.venv\Scripts\python.exe'
+  $python=[IO.Path]::GetFullPath($Python)
   if(-not(Test-Path -LiteralPath $python -PathType Leaf)){throw "Run Python environment is missing: $python"}
+  $pythonVersion=(& $python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')").Trim()
+  if($LASTEXITCODE-ne 0 -or $pythonVersion-ne '3.11'){
+    throw "Run package requires Python 3.11, found $pythonVersion at $python"
+  }
   $validation=& $python (Join-Path $RepoRoot 'common\contracts\artifact_naming.py') run $RunId
   if($LASTEXITCODE-ne 0 -or -not($validation-match '^ARTIFACT_ID=PASS ')){throw "Invalid run_id: $RunId"}
   $runDir=Join-Path $ArtifactRoot "runs\$RunId"

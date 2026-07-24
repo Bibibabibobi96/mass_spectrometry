@@ -2,7 +2,8 @@
 param(
   [string]$ConnectorCaseId = 'nominal_gap_1mm',
   [string]$Stamp = '',
-  [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe'
+  [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
+  [string]$PythonExe = ''
 )
 
 Set-StrictMode -Version Latest
@@ -11,7 +12,7 @@ $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling\runs'
-$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 if ([string]::IsNullOrWhiteSpace($Stamp)) { $Stamp = Get-Date -Format 'yyyyMMdd_HHmmss' }
 if ($Stamp -notmatch '^\d{8}_\d{6}$') { throw 'Stamp must use yyyyMMdd_HHmmss.' }
 
@@ -26,13 +27,13 @@ $s3RunId = "${Stamp}__sim__comsol__rf-oatof-s3-pulse-gap${gapLabel}__n100"
 $endToEndRunId = "${Stamp}__sim__cross__rf-oatof-s3-end-to-end-gap${gapLabel}__n100"
 
 & (Join-Path $projectRoot 'tests\comsol\run_s2_passive_connector_field.ps1') `
-  -RunId $s2RunId -Particles -ConnectorCaseId $ConnectorCaseId
+  -RunId $s2RunId -Particles -ConnectorCaseId $ConnectorCaseId -PythonExe $python
 if ($LASTEXITCODE -ne 0) { throw 'S3 cumulative chain stopped at the S2 particle stage.' }
 & (Join-Path $projectRoot 'tests\comsol\run_s3_pulse_capture.ps1') `
-  -SourceRunId $s2RunId -RunId $s3RunId
+  -SourceRunId $s2RunId -RunId $s3RunId -PythonExe $python
 if ($LASTEXITCODE -ne 0) { throw 'S3 cumulative chain stopped at the pulse-capture stage.' }
 & (Join-Path $projectRoot 'tests\cross_solver\run_s3_end_to_end.ps1') `
-  -SourceRunId $s3RunId -RunId $endToEndRunId -SimionExe $SimionExe
+  -SourceRunId $s3RunId -RunId $endToEndRunId -SimionExe $SimionExe -PythonExe $python
 if ($LASTEXITCODE -ne 0) { throw 'S3 cumulative chain stopped at the oaTOF analyzer stage.' }
 
 foreach ($runId in @($s2RunId,$s3RunId,$endToEndRunId)) {

@@ -46,6 +46,15 @@ class ExecutionCompilerTests(unittest.TestCase):
         self.assertTrue(result["safe_to_execute"])
         self.assertEqual(len(result["commands"]), 5)
         self.assertIn("__sim__comsol__", result["commands"][1]["run_id"])
+        powershell_commands = [
+            command for command in result["commands"] if command["shell"] == "powershell"
+        ]
+        self.assertTrue(powershell_commands)
+        for command in powershell_commands:
+            self.assertEqual(
+                command["argv"][:4],
+                ["pwsh.exe", "-NoProfile", "-NonInteractive", "-File"],
+            )
 
     def test_supported_but_unapproved_request_awaits_approval(self):
         request = self.approved_rf_request()

@@ -5,6 +5,7 @@ param(
   [Parameter(Mandatory=$true)][string]$ParticleSourcePath,
   [string]$EvidenceContractPath = '',
   [string]$RunId = '',
+  [string]$PythonExe = '',
   [string]$ReferenceComsolRunId = '',
   [ValidateRange(0.001,100)][double]$CellMm = 0.4,
   [string]$SimionExe = '',
@@ -16,11 +17,13 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
+$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 $arguments = @{
   ProjectId = 'rf_octupole_ion_guide'
   DesignProfileId = $DesignProfileId
   ParticleSourcePath = $ParticleSourcePath
   RunId = $RunId
+  PythonExe = $python
   ReferenceComsolRunId = $ReferenceComsolRunId
   CellMm = $CellMm
   RfStepsPerPeriod = $RfStepsPerPeriod

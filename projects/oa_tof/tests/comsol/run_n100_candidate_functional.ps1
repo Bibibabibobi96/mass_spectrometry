@@ -1,5 +1,6 @@
 param(
-  [string]$RunId = "$(Get-Date -Format 'yyyyMMdd_HHmmss')__test__comsol__oatof-candidate-functional__n100"
+  [string]$RunId = "$(Get-Date -Format 'yyyyMMdd_HHmmss')__test__comsol__oatof-candidate-functional__n100",
+  [string]$PythonExe = ''
 )
 
 Set-StrictMode -Version Latest
@@ -9,6 +10,7 @@ $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $repoRoot = Split-Path -Parent (Split-Path -Parent $projectRoot)
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\oa_tof'
+$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 $launcher = Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1'
 $task = Join-Path $PSScriptRoot 'run_candidate_contract_build.m'
 $contract = Join-Path $projectRoot 'config\resolved_geometry.json'
@@ -16,7 +18,7 @@ $ion = Join-Path $artifactRoot 'formal\simion\oatof_comsol_524amu_gaussian_N100.
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 
 $software = @('COMSOL 6.4', 'MATLAB R2025b', 'Python 3.11')
-$package = New-RunPackage -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
+$package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project 'oa_tof' -Mode 'comsol_n100_candidate_functional' `
   -Software $software -AdditionalDirectories @('comsol')
 $model = Join-Path $package.run_dir 'comsol\oa_tof_candidate_n100.mph'

@@ -2,17 +2,19 @@
 param(
   [Parameter(Mandatory)][string]$SourceRunId,
   [Parameter(Mandatory)][string]$RunId,
-  [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe'
+  [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
+  [string]$PythonExe = ''
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
+$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling'
 . (Join-Path $projectRoot 'tests\support\rf_run_artifact_support.ps1')
-$package = New-RfRunPackage -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RunId $RunId `
+$package = New-RfRunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RunId $RunId `
   -Project 'rf_quadrupole_collision_cooling' -Mode 'rf_to_oatof_s3_cumulative_end_to_end' `
   -Software @('COMSOL 6.4','SIMION 2020','Python 3.11')
 
