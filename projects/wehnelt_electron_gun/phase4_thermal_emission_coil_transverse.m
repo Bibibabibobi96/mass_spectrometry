@@ -2,8 +2,8 @@ function result = phase4_thermal_emission_coil_transverse(resolvedContractPath)
 % Thermal CPT emission for the transverse-coil electron gun
 % (helix axis perpendicular to the beam axis), directly comparable to
 % the historical axial/coaxial coil under the same resolved baseline,
-% to assess whether
-% electron utilization (collection efficiency) actually improves.
+% to evaluate the current usable-final-state metric without inferring a
+% physical collection surface or wall-resolved loss mechanism.
 % The selected resolved mode determines whether particle tracing is executed.
 
 componentRoot = fileparts(mfilename('fullpath'));
@@ -14,6 +14,9 @@ if nargin < 1 || isempty(resolvedContractPath)
 end
 contract = load_wehnelt_contract(char(resolvedContractPath));
 executionMode = contract.numerical.execution_mode;
+particle = contract.physical.particle;
+emission = contract.physical.emission_model;
+terminalOutcomes = contract.physical.terminal_outcomes;
 import com.comsol.model.*
 import com.comsol.model.util.*
 
@@ -30,12 +33,20 @@ sel_vac  = 'sel_vac';
 
 cpt = comp1.physics.create('cpt', 'ChargedParticleTracing', 'geom1');
 cpt.selection.named(sel_vac);
+particleProperties = cpt.feature('pp1');
+particleProperties.set('mp', sprintf('%.17g[kg]', particle.mass_kg));
+particleProperties.set('Z', particle.charge_state);
+wall = cpt.feature('wall1');
+wall.set('WallCondition', terminalOutcomes.wall_condition);
 
 inl1 = cpt.create('inl1', 'Inlet', 2);
-inl1.label('Cathode Coil Emission (Thermal, transverse)');
+inl1.label(sprintf( ...
+    'Cathode Coil Emission (%s identity; %s %s, transverse)', ...
+    contract.physical.filament.material_identity, particle.species_id, ...
+    emission.velocity_distribution));
 inl1.selection.named('selb_cath');
 inl1.set('N', contract.evidence.requested_particle_count);
-inl1.set('VelocitySpecification', 'Thermal');
+inl1.set('VelocitySpecification', emission.velocity_distribution);
 inl1.set('T_src', 'userdef');
 inl1.set('T', 'filament_T');
 
@@ -93,26 +104,29 @@ catch ME
 end
 
 pd = mphparticle(model, 'dataset', 'pdset1');
-me_ = 9.10938e-31; qe = 1.602176e-19;
 n_released = size(pd.p, 2);
+if n_released == 0
+    error('Particle tracing released zero particles.');
+end
 qx_end = pd.p(end,:,1); qy_end = pd.p(end,:,2); qz_end = pd.p(end,:,3);
 vx = pd.v(end,:,1); vy = pd.v(end,:,2); vz = pd.v(end,:,3);
 validPosition = isfinite(qx_end) & isfinite(qy_end) & isfinite(qz_end);
 finiteVelocity = isfinite(vx) & isfinite(vy) & isfinite(vz);
 speed = sqrt(vx.^2+vy.^2+vz.^2);
-KE_eV = 0.5*me_*speed.^2/qe;
+KE_eV = 0.5*particle.mass_kg*speed.^2/abs(particle.charge_C);
 validEnergy = validPosition & finiteVelocity & isfinite(KE_eV);
-energyMin = contract.physical.collection_metric.usable_energy_min_eV;
-energyMax = contract.physical.collection_metric.usable_energy_max_eV;
+energyMin = contract.physical.usable_final_state_metric.usable_energy_min_eV;
+energyMax = contract.physical.usable_final_state_metric.usable_energy_max_eV;
 n_arrived = sum(validEnergy & KE_eV > energyMin & KE_eV < energyMax);
-n_selfabs = sum(~validPosition);
+n_nonfinite_terminal = sum(~validPosition);
 
 fprintf('\n=== Transverse-coil thermal emission results ===\n');
 fprintf('Particles released: %d\n', n_released);
-fprintf('Lost (NaN, self-absorbed on coil/Wehnelt before reaching a valid state): %d (%.2f%%)\n', ...
-    n_selfabs, 100*n_selfabs/n_released);
-fprintf(['Reached contract usable-energy band %.6g-%.6g eV ' ...
-    '(passed anode): %d / %d (%.2f%%)\n'], ...
+fprintf(['Non-finite terminal positions (unclassified; no wall-loss ' ...
+    'attribution): %d (%.2f%%)\n'], ...
+    n_nonfinite_terminal, 100*n_nonfinite_terminal/n_released);
+fprintf(['Finite terminal states inside contract usable-energy band ' ...
+    '%.6g-%.6g eV: %d / %d (%.2f%%)\n'], ...
     energyMin, energyMax, n_arrived, n_released, ...
     100*n_arrived/n_released);
 KEv = KE_eV(validEnergy);

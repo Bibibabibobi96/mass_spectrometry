@@ -5,6 +5,9 @@ from __future__ import annotations
 
 AMU_KG = 1.66053906660e-27
 ELEMENTARY_CHARGE_C = 1.602176634e-19
+# NIST 2022 CODATA recommended values.
+ELECTRON_MASS_KG = 9.1093837139e-31
+ELECTRON_MASS_U = 5.485799090441e-4
 
 
 def kinetic_energy_ev(

@@ -9,6 +9,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from common.contracts.particle_physics import ELECTRON_MASS_U
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 
@@ -67,6 +69,10 @@ class RegistryProfileTests(unittest.TestCase):
         self.assertEqual(
             profile["steps"][1]["entrypoint"],
             "run_build_only_smoke.ps1",
+        )
+        self.assertEqual(
+            profile["supported_operating_points"][0]["mass"],
+            {"value": ELECTRON_MASS_U, "unit": "Da"},
         )
         self.assertIn(
             "does not run either solver",

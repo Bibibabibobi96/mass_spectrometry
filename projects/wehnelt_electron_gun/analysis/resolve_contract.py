@@ -9,6 +9,12 @@ import math
 from pathlib import Path
 from typing import Any
 
+from common.contracts.particle_physics import (
+    ELECTRON_MASS_KG,
+    ELECTRON_MASS_U,
+    ELEMENTARY_CHARGE_C,
+)
+
 PROJECT_ID = "wehnelt_electron_gun"
 MODEL_ID = "wehnelt.transverse_helical_filament.thermal_transport.v1"
 
@@ -112,12 +118,16 @@ def validate_baseline(raw: dict[str, Any]) -> dict[str, Any]:
             "role",
             "project_id",
             "model_id",
+            "constants_authority",
             "capability",
             "coordinate_convention",
             "filament",
+            "particle",
+            "emission_model",
+            "terminal_outcomes",
             "geometry_mm",
             "electrodes_V",
-            "collection_metric",
+            "usable_final_state_metric",
         },
         "baseline",
     )
@@ -127,6 +137,11 @@ def validate_baseline(raw: dict[str, Any]) -> dict[str, Any]:
         raise ContractError("baseline.role identity mismatch")
     if raw["project_id"] != PROJECT_ID or raw["model_id"] != MODEL_ID:
         raise ContractError("baseline project/model identity mismatch")
+    if (
+        raw["constants_authority"]
+        != "NIST 2022 CODATA via common.contracts.particle_physics"
+    ):
+        raise ContractError("baseline constants authority mismatch")
 
     capability = _require_dict(raw["capability"], "baseline.capability")
     _require_exact_keys(
@@ -180,19 +195,24 @@ def validate_baseline(raw: dict[str, Any]) -> dict[str, Any]:
     _require_exact_keys(
         filament,
         {
-            "material",
+            "material_identity",
+            "material_model_scope",
             "coil_major_radius_mm",
             "wire_radius_mm",
             "turn_count",
             "axial_pitch_mm",
             "axis_center_z_mm",
             "temperature_K",
-            "emission_velocity_distribution",
         },
         "baseline.filament",
     )
-    if filament["material"] != "tungsten":
+    if filament["material_identity"] != "tungsten":
         raise ContractError("the current filament material must remain tungsten")
+    if (
+        filament["material_model_scope"]
+        != "identity_only_no_thermionic_current_model"
+    ):
+        raise ContractError("unsupported filament material-model scope")
     for key in (
         "coil_major_radius_mm",
         "wire_radius_mm",
@@ -211,8 +231,88 @@ def validate_baseline(raw: dict[str, Any]) -> dict[str, Any]:
     _require_positive_integer(
         filament["turn_count"], "baseline.filament.turn_count"
     )
-    if filament["emission_velocity_distribution"] != "Thermal":
-        raise ContractError("only the current thermal emission model is supported")
+    particle = _require_dict(raw["particle"], "baseline.particle")
+    _require_exact_keys(
+        particle,
+        {"species_id", "mass_kg", "mass_u", "charge_state", "charge_C"},
+        "baseline.particle",
+    )
+    if particle["species_id"] != "electron":
+        raise ContractError("the current particle species must remain electron")
+    mass_kg = _require_number(
+        particle["mass_kg"],
+        "baseline.particle.mass_kg",
+        minimum=0.0,
+        strict_minimum=True,
+    )
+    mass_u = _require_number(
+        particle["mass_u"],
+        "baseline.particle.mass_u",
+        minimum=0.0,
+        strict_minimum=True,
+    )
+    if mass_kg != ELECTRON_MASS_KG or mass_u != ELECTRON_MASS_U:
+        raise ContractError("electron masses must match the common CODATA authority")
+    if particle["charge_state"] != -1:
+        raise ContractError("the current electron charge state must remain -1")
+    charge = _require_number(
+        particle["charge_C"], "baseline.particle.charge_C"
+    )
+    if charge != -ELEMENTARY_CHARGE_C:
+        raise ContractError("electron charge must match the common exact authority")
+
+    emission = _require_dict(raw["emission_model"], "baseline.emission_model")
+    _require_exact_keys(
+        emission,
+        {
+            "release_surface_role",
+            "velocity_distribution",
+            "particle_weighting",
+            "physical_particle_weight_available",
+            "beam_current_supported",
+        },
+        "baseline.emission_model",
+    )
+    if (
+        emission["release_surface_role"] != "entire_filament_surface"
+        or emission["velocity_distribution"] != "Thermal"
+        or emission["particle_weighting"] != "unweighted_test_particles"
+    ):
+        raise ContractError("unsupported current emission-model assumption")
+    if _require_bool(
+        emission["physical_particle_weight_available"],
+        "baseline.emission_model.physical_particle_weight_available",
+    ):
+        raise ContractError("the current test particles have no physical weight")
+    if _require_bool(
+        emission["beam_current_supported"],
+        "baseline.emission_model.beam_current_supported",
+    ):
+        raise ContractError("unweighted test particles cannot support beam current")
+
+    terminal = _require_dict(
+        raw["terminal_outcomes"], "baseline.terminal_outcomes"
+    )
+    _require_exact_keys(
+        terminal,
+        {
+            "wall_condition",
+            "nonfinite_final_position_outcome",
+            "wall_loss_attribution_supported",
+        },
+        "baseline.terminal_outcomes",
+    )
+    if (
+        terminal["wall_condition"] != "Freeze"
+        or terminal["nonfinite_final_position_outcome"]
+        != "unclassified_terminal_state"
+    ):
+        raise ContractError("unsupported terminal-outcome assumption")
+    if _require_bool(
+        terminal["wall_loss_attribution_supported"],
+        "baseline.terminal_outcomes.wall_loss_attribution_supported",
+    ):
+        raise ContractError("the current model cannot attribute wall-resolved losses")
 
     geometry = _require_dict(raw["geometry_mm"], "baseline.geometry_mm")
     geometry_keys = {
@@ -274,7 +374,10 @@ def validate_baseline(raw: dict[str, Any]) -> dict[str, Any]:
     if not wehnelt < cathode < anode:
         raise ContractError("electrode ordering must remain Wehnelt < cathode < anode")
 
-    metric = _require_dict(raw["collection_metric"], "baseline.collection_metric")
+    metric = _require_dict(
+        raw["usable_final_state_metric"],
+        "baseline.usable_final_state_metric",
+    )
     _require_exact_keys(
         metric,
         {
@@ -283,18 +386,18 @@ def validate_baseline(raw: dict[str, Any]) -> dict[str, Any]:
             "usable_energy_max_eV",
             "historical_value_is_current_evidence",
         },
-        "baseline.collection_metric",
+        "baseline.usable_final_state_metric",
     )
     if metric["valid_state_rule"] != "finite_final_particle_position":
-        raise ContractError("unsupported collection valid-state rule")
+        raise ContractError("unsupported usable-final-state validity rule")
     minimum_energy = _require_number(
         metric["usable_energy_min_eV"],
-        "baseline.collection_metric.usable_energy_min_eV",
+        "baseline.usable_final_state_metric.usable_energy_min_eV",
         minimum=0.0,
     )
     maximum_energy = _require_number(
         metric["usable_energy_max_eV"],
-        "baseline.collection_metric.usable_energy_max_eV",
+        "baseline.usable_final_state_metric.usable_energy_max_eV",
         minimum=0.0,
         strict_minimum=True,
     )
@@ -302,9 +405,9 @@ def validate_baseline(raw: dict[str, Any]) -> dict[str, Any]:
         raise ContractError("usable energy interval must be increasing")
     if _require_bool(
         metric["historical_value_is_current_evidence"],
-        "baseline.collection_metric.historical_value_is_current_evidence",
+        "baseline.usable_final_state_metric.historical_value_is_current_evidence",
     ):
-        raise ContractError("historical collection efficiency is not current evidence")
+        raise ContractError("the historical value is not current usable-state evidence")
     return raw
 
 
@@ -318,6 +421,7 @@ def _validate_mode(mode_id: str, mode: dict[str, Any]) -> None:
             "minimum_evidence_particle_count",
             "mesh",
             "particle_time_ns",
+            "particle_sampling",
             "reporting",
         },
         f"mode.{mode_id}",
@@ -330,10 +434,12 @@ def _validate_mode(mode_id: str, mode: dict[str, Any]) -> None:
         f"mode.{mode_id}.candidate_evidence_allowed",
     )
     minimum_count = mode["minimum_evidence_particle_count"]
+    if allowed:
+        raise ContractError("current Wehnelt modes cannot produce Candidate evidence")
     if mode_id == "build_only_smoke":
-        if allowed or minimum_count is not None:
+        if minimum_count is not None:
             raise ContractError("build-only smoke must remain evidence-ineligible")
-    elif not allowed or _require_positive_integer(
+    elif _require_positive_integer(
         minimum_count, f"mode.{mode_id}.minimum_evidence_particle_count"
     ) < 100:
         raise ContractError("functional evidence minimum must be at least N=100")
@@ -397,6 +503,24 @@ def _validate_mode(mode_id: str, mode: dict[str, Any]) -> None:
     )
     if start != 0.0 or step > end:
         raise ContractError("particle time range must start at zero with step <= end")
+
+    sampling = _require_dict(
+        mode["particle_sampling"], f"mode.{mode_id}.particle_sampling"
+    )
+    _require_exact_keys(
+        sampling,
+        {"random_seed", "seed_control", "reproducible_particle_realization"},
+        f"mode.{mode_id}.particle_sampling",
+    )
+    if sampling["random_seed"] is not None:
+        raise ContractError("the current COMSOL particle sample has no frozen seed")
+    if sampling["seed_control"] != "comsol_default_unfrozen":
+        raise ContractError("unsupported particle seed-control policy")
+    if _require_bool(
+        sampling["reproducible_particle_realization"],
+        f"mode.{mode_id}.particle_sampling.reproducible_particle_realization",
+    ):
+        raise ContractError("an unfrozen COMSOL seed is not reproducible")
 
     reporting = _require_dict(mode["reporting"], f"mode.{mode_id}.reporting")
     _require_exact_keys(
@@ -509,16 +633,13 @@ def resolve_contract(
             evidence_particle_count, "evidence_particle_count"
         )
     minimum_count = selected["minimum_evidence_particle_count"]
-    if selected["candidate_evidence_allowed"]:
-        if evidence_particle_count is None:
-            raise ContractError("functional mode requires an evidence particle count")
-        if evidence_particle_count < minimum_count:
-            raise ContractError(
-                f"N={evidence_particle_count} is below the functional minimum "
-                f"N={minimum_count}"
-            )
-    elif evidence_particle_count is None:
-        raise ContractError("build-only mode requires an explicit fixture particle count")
+    if evidence_particle_count is None:
+        raise ContractError("every mode requires an explicit particle count")
+    if minimum_count is not None and evidence_particle_count < minimum_count:
+        raise ContractError(
+            f"N={evidence_particle_count} is below the functional minimum "
+            f"N={minimum_count}"
+        )
 
     return {
         "schema_version": 1,

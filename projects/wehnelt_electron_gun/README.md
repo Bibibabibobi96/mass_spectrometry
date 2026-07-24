@@ -50,7 +50,8 @@ runner在run目录建立后立即写入`interrupted`预置summary和已复核man
 - 当前没有通过现行门禁的formal资产；旧“formal”、中间模型和结果统一冻结在
   `artifacts/projects/wehnelt_electron_gun/archive/20260719_212436__migration-snapshot__repo__pre-v2-layout/legacy-layout/`。
 - 新运行必须写入`runs/<run_id>/{comsol,results,logs}`并形成run config、summary和manifest。
-- 历史模型和结果：对应`archive/lineages/solid_cathode/`、`archive/lineages/axial_coil/`
+- 历史模型和结果位于上述migration snapshot的
+  `legacy-layout/{models,results}/comsol/archive/lineages/{solid_cathode,axial_coil}/`；这些路径只用于追溯。
 
 ## 历史脚本
 

@@ -28,7 +28,7 @@
     },
     {
       "descriptor": "projects/wehnelt_electron_gun/config/project.json",
-      "sha256": "F4B9C23F53611ECB94F6F1504F53FDFC0C081738B97AAD29A79D5A5D83602CF4"
+      "sha256": "73F3681B38D08F57A00965E1408C618DE8BFF25DF1613D5996EF3B842D1EB2AF"
     }
   ],
   "projects": [
@@ -590,9 +590,7 @@
             "build_only_smoke"
           ],
           "metrics": [
-            "collection_efficiency",
-            "beam_current",
-            "loss_fraction"
+            "usable_final_state_fraction"
           ],
           "design_variables": []
         }
@@ -605,7 +603,8 @@
       "known_gaps": [
         "The functional_reference mode has no governed N>=100 solver runner or current evidence",
         "Final particle model is not reopened and recomputed under the current GUI gate",
-        "Historical collection efficiency is not a current formal result",
+        "The historical 34.18% value is not a current usable-final-state result",
+        "Unweighted test particles do not support a beam-current claim or wall-resolved loss attribution",
         "No interface contract to the downstream EI source has been frozen"
       ]
     }

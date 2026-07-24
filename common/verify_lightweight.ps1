@@ -50,5 +50,6 @@ if ($LASTEXITCODE -ne 0) { throw 'SolidWorks path-resolution tests failed.' }
 & (Join-Path $repoRoot 'projects\rf_quadrupole_collision_cooling\verify_project.ps1') -Level Static -PythonExe $PythonExe
 & (Join-Path $repoRoot 'projects\rf_hexapole_ion_guide\verify_project.ps1') -PythonExe $PythonExe
 & (Join-Path $repoRoot 'projects\rf_octupole_ion_guide\verify_project.ps1') -PythonExe $PythonExe
+& (Join-Path $repoRoot 'projects\wehnelt_electron_gun\verify_project.ps1') -PythonExe $PythonExe
 
 Write-Output "LIGHTWEIGHT_GATE=PASS PYTHON=$pythonVersion"

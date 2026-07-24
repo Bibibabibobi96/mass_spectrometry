@@ -20,6 +20,11 @@
         "step": 0.1,
         "end": 40.0
       },
+      "particle_sampling": {
+        "random_seed": null,
+        "seed_control": "comsol_default_unfrozen",
+        "reproducible_particle_realization": false
+      },
       "reporting": {
         "field_image_width_px": 1200,
         "field_image_height_px": 800,
@@ -39,7 +44,7 @@
     "functional_reference": {
       "execution_mode": "full",
       "evidence_kind": "functional_reference",
-      "candidate_evidence_allowed": true,
+      "candidate_evidence_allowed": false,
       "minimum_evidence_particle_count": 100,
       "mesh": {
         "automatic_level": 3,
@@ -52,6 +57,11 @@
         "start": 0.0,
         "step": 0.1,
         "end": 40.0
+      },
+      "particle_sampling": {
+        "random_seed": null,
+        "seed_control": "comsol_default_unfrozen",
+        "reproducible_particle_realization": false
       },
       "reporting": {
         "field_image_width_px": 1200,

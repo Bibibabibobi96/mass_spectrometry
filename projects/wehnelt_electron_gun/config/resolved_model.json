@@ -8,15 +8,16 @@
     "hash_algorithm": "SHA-256",
     "serialization": "canonical_json_sorted_keys_compact_utf8",
     "baseline_path": "config/baseline.json",
-    "baseline_sha256": "86DABC95446BFD5694F71197AD6DFC1A0CE26D07DD885F8E634B4E4FEF68C6FD",
+    "baseline_sha256": "A00988E477E5DA6553C838A8C9F6D36F9FD9EE9C43D6278D1F58329F8A25DA1F",
     "numerical_modes_path": "config/numerical_modes.json",
-    "numerical_modes_sha256": "139469AB89DC0A861F8407BC8DD4C4A779AC94B406B625A184A9BE5F2B5377DA"
+    "numerical_modes_sha256": "74DB3599FB50242F0DB3E66BB2E1CCE02BE430CC57B74CD3D738D9762081AB4E"
   },
   "physical": {
     "schema_version": 1,
     "role": "wehnelt_electron_gun_physical_baseline",
     "project_id": "wehnelt_electron_gun",
     "model_id": "wehnelt.transverse_helical_filament.thermal_transport.v1",
+    "constants_authority": "NIST 2022 CODATA via common.contracts.particle_physics",
     "capability": {
       "id": "wehnelt_thermal_electron_transport",
       "imaging_quality_claim_allowed": false,
@@ -31,14 +32,33 @@
       "handedness": "right_handed"
     },
     "filament": {
-      "material": "tungsten",
+      "material_identity": "tungsten",
+      "material_model_scope": "identity_only_no_thermionic_current_model",
       "coil_major_radius_mm": 0.3,
       "wire_radius_mm": 0.05,
       "turn_count": 5,
       "axial_pitch_mm": 0.2,
       "axis_center_z_mm": 0.9,
-      "temperature_K": 2700.0,
-      "emission_velocity_distribution": "Thermal"
+      "temperature_K": 2700.0
+    },
+    "particle": {
+      "species_id": "electron",
+      "mass_kg": 9.1093837139e-31,
+      "mass_u": 0.0005485799090441,
+      "charge_state": -1,
+      "charge_C": -1.602176634e-19
+    },
+    "emission_model": {
+      "release_surface_role": "entire_filament_surface",
+      "velocity_distribution": "Thermal",
+      "particle_weighting": "unweighted_test_particles",
+      "physical_particle_weight_available": false,
+      "beam_current_supported": false
+    },
+    "terminal_outcomes": {
+      "wall_condition": "Freeze",
+      "nonfinite_final_position_outcome": "unclassified_terminal_state",
+      "wall_loss_attribution_supported": false
     },
     "geometry_mm": {
       "wehnelt_skirt_below_reference": 0.5,
@@ -63,7 +83,7 @@
       "wehnelt": -0.5,
       "anode": 70.0
     },
-    "collection_metric": {
+    "usable_final_state_metric": {
       "valid_state_rule": "finite_final_particle_position",
       "usable_energy_min_eV": 60.0,
       "usable_energy_max_eV": 75.0,
@@ -98,6 +118,11 @@
       "start": 0.0,
       "step": 0.1,
       "end": 40.0
+    },
+    "particle_sampling": {
+      "random_seed": null,
+      "seed_control": "comsol_default_unfrozen",
+      "reproducible_particle_realization": false
     },
     "reporting": {
       "field_image_width_px": 1200,

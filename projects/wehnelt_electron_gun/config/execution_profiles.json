@@ -14,7 +14,7 @@
       "supported_operating_points": [
         {
           "mass": {
-            "value": 0.000548579909,
+            "value": 0.0005485799090441,
             "unit": "Da"
           },
           "charge_state": -1
@@ -53,7 +53,7 @@
       "limitations": [
         "The commercial step builds geometry, mesh, electrostatics, and CPT trees but does not run either solver or produce performance evidence.",
         "The low-particle build fixture is explicitly evidence-ineligible.",
-        "The functional_reference mode remains unregistered until an N>=100 solver runner, collection classification, GUI Compute replay, and governed evidence lifecycle exist."
+        "The functional_reference mode remains unregistered until an N>=100 solver runner, usable-final-state classification, GUI Compute replay, and governed evidence lifecycle exist."
       ]
     }
   ]

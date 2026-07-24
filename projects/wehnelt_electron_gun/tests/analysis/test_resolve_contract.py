@@ -11,8 +11,14 @@ import unittest
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = PROJECT_ROOT.parents[1]
 
-from analysis.resolve_contract import (
+from common.contracts.particle_physics import (
+    ELECTRON_MASS_KG,
+    ELECTRON_MASS_U,
+    ELEMENTARY_CHARGE_C,
+)
+from projects.wehnelt_electron_gun.analysis.resolve_contract import (
     ContractError,
     contract_sha256,
     derive_geometry,
@@ -39,11 +45,16 @@ class ResolveContractTests(unittest.TestCase):
     ) -> subprocess.CompletedProcess[str]:
         """Run the package entry with bounded subprocess behavior."""
 
-        command = [sys.executable, "-m", "analysis.resolve_contract", *arguments]
+        command = [
+            sys.executable,
+            "-m",
+            "projects.wehnelt_electron_gun.analysis.resolve_contract",
+            *arguments,
+        ]
         try:
             return subprocess.run(
                 command,
-                cwd=PROJECT_ROOT,
+                cwd=REPO_ROOT,
                 check=False,
                 capture_output=True,
                 text=True,
@@ -74,6 +85,14 @@ class ResolveContractTests(unittest.TestCase):
         self.assertEqual(derived["vacuum_domain_top_z_mm"], 18.0)
         self.assertEqual(self.baseline["electrodes_V"]["wehnelt"], -0.5)
         self.assertEqual(self.baseline["filament"]["temperature_K"], 2700.0)
+        self.assertEqual(self.baseline["particle"]["mass_kg"], ELECTRON_MASS_KG)
+        self.assertEqual(self.baseline["particle"]["mass_u"], ELECTRON_MASS_U)
+        self.assertEqual(self.baseline["particle"]["charge_state"], -1)
+        self.assertEqual(
+            self.baseline["particle"]["charge_C"], -ELEMENTARY_CHARGE_C
+        )
+        self.assertIn("usable_final_state_metric", self.baseline)
+        self.assertNotIn("collection_metric", self.baseline)
 
     def test_functional_reference_requires_n100(self) -> None:
         with self.assertRaisesRegex(ContractError, "below the functional minimum"):
@@ -81,7 +100,37 @@ class ResolveContractTests(unittest.TestCase):
         resolved = resolve_contract(
             self.baseline, self.modes, "functional_reference", 100
         )
-        self.assertTrue(resolved["evidence"]["candidate_evidence_allowed"])
+        self.assertFalse(resolved["evidence"]["candidate_evidence_allowed"])
+
+    def test_particle_emission_and_terminal_assumptions_fail_closed(self) -> None:
+        changed = copy.deepcopy(self.baseline)
+        changed["particle"]["species_id"] = "positron"
+        with self.assertRaisesRegex(ContractError, "species"):
+            validate_baseline(changed)
+        changed = copy.deepcopy(self.baseline)
+        changed["particle"]["mass_kg"] = 9.10938e-31
+        with self.assertRaisesRegex(ContractError, "CODATA"):
+            validate_baseline(changed)
+        changed = copy.deepcopy(self.baseline)
+        changed["particle"]["charge_C"] = -1.602176e-19
+        with self.assertRaisesRegex(ContractError, "exact authority"):
+            validate_baseline(changed)
+        changed = copy.deepcopy(self.baseline)
+        changed["emission_model"]["beam_current_supported"] = True
+        with self.assertRaisesRegex(ContractError, "beam current"):
+            validate_baseline(changed)
+        changed = copy.deepcopy(self.baseline)
+        changed["terminal_outcomes"]["wall_loss_attribution_supported"] = True
+        with self.assertRaisesRegex(ContractError, "wall-resolved"):
+            validate_baseline(changed)
+
+    def test_unfrozen_seed_cannot_claim_reproducible_sampling(self) -> None:
+        changed = copy.deepcopy(self.modes)
+        changed["modes"]["functional_reference"]["particle_sampling"][
+            "reproducible_particle_realization"
+        ] = True
+        with self.assertRaisesRegex(ContractError, "not reproducible"):
+            validate_modes(changed)
 
     def test_unknown_mode_and_unknown_key_are_rejected(self) -> None:
         with self.assertRaisesRegex(ContractError, "unknown numerical mode"):
@@ -150,15 +199,15 @@ class ResolveContractTests(unittest.TestCase):
         completed = self.run_resolver_module(
             [
                 "--baseline",
-                "config/baseline.json",
+                str(self.baseline_path),
                 "--modes",
-                "config/numerical_modes.json",
+                str(self.modes_path),
                 "--mode",
                 "build_only_smoke",
                 "--evidence-particle-count",
                 "1",
                 "--check",
-                "config/resolved_model.json",
+                str(PROJECT_ROOT / "config" / "resolved_model.json"),
             ]
         )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
@@ -174,9 +223,9 @@ class ResolveContractTests(unittest.TestCase):
             completed = self.run_resolver_module(
                 [
                     "--baseline",
-                    "config/baseline.json",
+                    str(self.baseline_path),
                     "--modes",
-                    "config/numerical_modes.json",
+                    str(self.modes_path),
                     "--mode",
                     "build_only_smoke",
                     "--evidence-particle-count",

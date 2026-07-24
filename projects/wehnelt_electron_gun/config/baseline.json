@@ -3,6 +3,7 @@
   "role": "wehnelt_electron_gun_physical_baseline",
   "project_id": "wehnelt_electron_gun",
   "model_id": "wehnelt.transverse_helical_filament.thermal_transport.v1",
+  "constants_authority": "NIST 2022 CODATA via common.contracts.particle_physics",
   "capability": {
     "id": "wehnelt_thermal_electron_transport",
     "imaging_quality_claim_allowed": false,
@@ -17,14 +18,33 @@
     "handedness": "right_handed"
   },
   "filament": {
-    "material": "tungsten",
+    "material_identity": "tungsten",
+    "material_model_scope": "identity_only_no_thermionic_current_model",
     "coil_major_radius_mm": 0.3,
     "wire_radius_mm": 0.05,
     "turn_count": 5,
     "axial_pitch_mm": 0.2,
     "axis_center_z_mm": 0.9,
-    "temperature_K": 2700.0,
-    "emission_velocity_distribution": "Thermal"
+    "temperature_K": 2700.0
+  },
+  "particle": {
+    "species_id": "electron",
+    "mass_kg": 9.1093837139e-31,
+    "mass_u": 0.0005485799090441,
+    "charge_state": -1,
+    "charge_C": -1.602176634e-19
+  },
+  "emission_model": {
+    "release_surface_role": "entire_filament_surface",
+    "velocity_distribution": "Thermal",
+    "particle_weighting": "unweighted_test_particles",
+    "physical_particle_weight_available": false,
+    "beam_current_supported": false
+  },
+  "terminal_outcomes": {
+    "wall_condition": "Freeze",
+    "nonfinite_final_position_outcome": "unclassified_terminal_state",
+    "wall_loss_attribution_supported": false
   },
   "geometry_mm": {
     "wehnelt_skirt_below_reference": 0.5,
@@ -49,7 +69,7 @@
     "wehnelt": -0.5,
     "anode": 70.0
   },
-  "collection_metric": {
+  "usable_final_state_metric": {
     "valid_state_rule": "finite_final_particle_position",
     "usable_energy_min_eV": 60.0,
     "usable_energy_max_eV": 75.0,

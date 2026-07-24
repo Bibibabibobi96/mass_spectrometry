@@ -7,7 +7,7 @@ function verified = apply_wehnelt_contract_parameters(model, contract)
     derived = contract.derived_geometry_mm;
     electrodes = physical.electrodes_V;
     numerical = contract.numerical;
-    metric = physical.collection_metric;
+    metric = physical.usable_final_state_metric;
     parameters = {
         'coil_rmaj', with_unit(filament.coil_major_radius_mm, 'mm'), ...
             'Filament coil major radius';

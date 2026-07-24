@@ -27,12 +27,18 @@ class MatlabContractBindingTests(unittest.TestCase):
         cls.binding = (
             PROJECT_ROOT / "apply_wehnelt_contract_parameters.m"
         ).read_text(encoding="utf-8")
+        cls.loader = (PROJECT_ROOT / "load_wehnelt_contract.m").read_text(
+            encoding="utf-8"
+        )
         cls.build_test = (
             PROJECT_ROOT / "tests" / "comsol" / "test_build_only.m"
         ).read_text(encoding="utf-8")
         cls.build_runner = (
             PROJECT_ROOT / "run_build_only_smoke.ps1"
         ).read_text(encoding="utf-8")
+        cls.resolver = (PROJECT_ROOT / "analysis" / "resolve_contract.py").read_text(
+            encoding="utf-8"
+        )
 
     def invoke_runner_functions(
         self, function_names: tuple[str, ...], command: str
@@ -78,6 +84,9 @@ class MatlabContractBindingTests(unittest.TestCase):
             "set('V0', 'V_wehnelt')",
             "set('hmax', 'mesh_coil_hmax')",
             "set('T', 'filament_T')",
+            "particleProperties.set('mp'",
+            "particleProperties.set('Z', particle.charge_state)",
+            "wall.set('WallCondition', terminalOutcomes.wall_condition)",
             "range(particle_t_start,particle_t_step,particle_t_end)",
         )
         for token in required:
@@ -115,6 +124,24 @@ class MatlabContractBindingTests(unittest.TestCase):
         for token in required:
             with self.subTest(token=token):
                 self.assertIn(token, self.binding)
+        self.assertIn("physical.usable_final_state_metric", self.binding)
+        self.assertNotIn("collection_metric", self.binding)
+
+    def test_loader_allows_non_candidate_functional_mode_fail_closed(self) -> None:
+        required = (
+            "~contract.numerical.candidate_evidence_allowed",
+            "~contract.evidence.candidate_evidence_allowed",
+            "minimumCount = contract.evidence.minimum_particle_count",
+            "strcmp(contract.numerical.execution_mode, 'full')",
+            "sampling.seed_control",
+            "~sampling.reproducible_particle_realization",
+            "~emission.beam_current_supported",
+            "~terminal.wall_loss_attribution_supported",
+            "contract.physical.usable_final_state_metric",
+        )
+        for token in required:
+            with self.subTest(token=token):
+                self.assertIn(token, self.loader)
 
     def test_build_only_test_checks_identity_and_evidence_boundary(self) -> None:
         required = (
@@ -155,6 +182,17 @@ class MatlabContractBindingTests(unittest.TestCase):
             with self.subTest(token=token):
                 self.assertIn(token, source)
         self.assertNotIn("valid = ~isnan(qz_end)", source)
+        self.assertNotIn("me_ =", source)
+        self.assertNotIn("qe =", source)
+        self.assertNotIn("self-absorbed", source)
+        self.assertNotIn("passed anode", source)
+        self.assertIn("unclassified; no wall-loss", source)
+        self.assertIn("contract.physical.filament.material_identity", source)
+        self.assertIn("particle.mass_kg", source)
+        self.assertIn("particle.charge_C", source)
+        self.assertIn("contract.physical.usable_final_state_metric", source)
+        self.assertNotIn("collection_metric", source)
+        self.assertNotIn("collection efficiency", source.lower())
 
     def test_required_particle_dataset_is_not_optional_plotting_work(self) -> None:
         source = self.sources["phase4_thermal_emission_coil_transverse.m"]
@@ -190,6 +228,129 @@ class MatlabContractBindingTests(unittest.TestCase):
         )
         self.assertIn("function Get-FileSha256", self.build_runner)
         self.assertNotIn("Get-FileHash", self.build_runner)
+
+    def test_runner_executes_frozen_gate_and_checks_frozen_contract_triplet(
+        self,
+    ) -> None:
+        required = (
+            "& $frozenInputs.static_gate -PythonExe $package.python",
+            "Push-Location $snapshotRoot",
+            "-m projects.wehnelt_electron_gun.analysis.resolve_contract",
+            "--baseline $frozenInputs.baseline",
+            "--modes $frozenInputs.numerical_modes",
+            "--check $frozenInputs.resolved_contract",
+            "Frozen Wehnelt baseline, numerical mode, and resolved contract differ.",
+        )
+        for token in required:
+            with self.subTest(token=token):
+                self.assertIn(token, self.build_runner)
+        self.assertNotIn(
+            "& (Join-Path $projectRoot 'verify_project.ps1')",
+            self.build_runner,
+        )
+
+    def test_frozen_resolver_has_its_shared_particle_physics_dependency(self) -> None:
+        self.assertIn(
+            "from common.contracts.particle_physics import (", self.resolver
+        )
+        self.assertIn(
+            "particle_physics = 'common\\contracts\\particle_physics.py'",
+            self.build_runner,
+        )
+        self.assertIn("$infrastructureRoot = $snapshotRoot", self.build_runner)
+
+    def test_runner_strictly_consumes_the_registered_mode_descriptor(self) -> None:
+        required = (
+            "function Assert-BuildOnlyModeDescriptor",
+            "config\\modes\\build_only_smoke.json",
+            "../numerical_modes.json#/modes/build_only_smoke",
+            "-ResolvedPath $frozenInputs.resolved_contract",
+            "-ExecutionProfilesPath $frozenInputs.execution_profiles",
+            "$resolved.numerical.execution_mode -cne 'build_only'",
+        )
+        for token in required:
+            with self.subTest(token=token):
+                self.assertIn(token, self.build_runner)
+
+    def test_report_parser_accepts_only_one_exact_value_per_known_key(self) -> None:
+        valid = self.invoke_runner_functions(
+            ("Read-BuildOnlyReport",),
+            (
+                "$path=[IO.Path]::GetTempFileName();"
+                "try{Set-Content -LiteralPath $path -Encoding UTF8 "
+                "-Value @('FLAG=true','STATUS=PASS');"
+                "$expected=[ordered]@{FLAG='true';STATUS='PASS'};"
+                "Read-BuildOnlyReport -Path $path -Expected $expected|"
+                "ConvertTo-Json -Compress}finally{Remove-Item -LiteralPath $path}"
+            ),
+        )
+        self.assertEqual(valid.returncode, 0, valid.stdout + valid.stderr)
+        self.assertEqual(json.loads(valid.stdout)["STATUS"], "PASS")
+
+        invalid_reports = (
+            ("duplicate", "@('FLAG=true','FLAG=true','STATUS=PASS')"),
+            ("unknown", "@('FLAG=true','EXTRA=x','STATUS=PASS')"),
+            ("passing", "@('FLAG=true','STATUS=PASSING')"),
+            ("conflict", "@('FLAG=true','FLAG=false','STATUS=PASS')"),
+        )
+        for label, lines in invalid_reports:
+            with self.subTest(label=label):
+                completed = self.invoke_runner_functions(
+                    ("Read-BuildOnlyReport",),
+                    (
+                        "$path=[IO.Path]::GetTempFileName();"
+                        f"Set-Content -LiteralPath $path -Encoding UTF8 -Value {lines};"
+                        "$expected=[ordered]@{FLAG='true';STATUS='PASS'};"
+                        "$failed=$false;try{$null=Read-BuildOnlyReport "
+                        "-Path $path -Expected $expected}catch{$failed=$true};"
+                        "Remove-Item -LiteralPath $path;if($failed){exit 17}"
+                    ),
+                )
+                self.assertNotEqual(
+                    completed.returncode,
+                    0,
+                    (completed.stdout or "") + (completed.stderr or ""),
+                )
+
+    def test_runner_rejects_empty_mph_and_preserves_verified_prestates(self) -> None:
+        required = (
+            "(Get-Item -LiteralPath $modelPath).Length -le 0",
+            "function Invoke-VerifiedRecordTransition",
+            "[IO.File]::ReadAllBytes($path)",
+            "[IO.File]::WriteAllBytes",
+            "the last verified prestate was restored",
+            "bootstrap_boundary = [ordered]@{",
+            "sha256 = Get-FileSha256 -Path $source",
+            "Bootstrap dependency changed before it was frozen",
+        )
+        for token in required:
+            with self.subTest(token=token):
+                self.assertIn(token, self.build_runner)
+
+    def test_bootstrap_identity_includes_immediate_support_dependencies(self) -> None:
+        bootstrap_start = self.build_runner.index("$bootstrapFiles = [ordered]@{")
+        bootstrap_end = self.build_runner.index("}\n$bootstrapIdentity", bootstrap_start)
+        bootstrap_block = self.build_runner[bootstrap_start:bootstrap_end]
+        required = (
+            "powershell_runtime_gate = 'common\\require_powershell7.ps1'",
+            "artifact_support = 'common\\contracts\\run_artifact_support.ps1'",
+            "manifest_writer = 'common\\contracts\\write_run_manifest.py'",
+            "manifest_verifier = 'common\\contracts\\verify_run_manifest.py'",
+            "artifact_naming = 'common\\contracts\\artifact_naming.py'",
+            "file_identity = 'common\\contracts\\file_identity.py'",
+            "particle_physics = 'common\\contracts\\particle_physics.py'",
+        )
+        for token in required:
+            with self.subTest(token=token):
+                self.assertIn(token, bootstrap_block)
+        self.assertIn(
+            "foreach ($entry in $bootstrapIdentity.GetEnumerator())",
+            self.build_runner,
+        )
+        self.assertIn(
+            "Get-FileSha256 -Path $frozenInputs[$entry.Key]",
+            self.build_runner,
+        )
 
     def test_external_termination_has_a_verified_interrupted_prestate(self) -> None:
         initial_summary = self.build_runner.index(
@@ -260,8 +421,8 @@ class MatlabContractBindingTests(unittest.TestCase):
             "commercial_wrapper_started = $commercialWrapperStarted",
             "commercial_wrapper_completed = $commercialWrapperCompleted",
             "failure_stage = $FailureStage",
-            "electrostatics_solved = $reportText -match",
-            "particle_tracing_solved = $reportText -match",
+            "electrostatics_solved = $null -ne $ReportValues",
+            "particle_tracing_solved = $null -ne $ReportValues",
             "New-BuildSummary -Status success",
             "New-BuildSummary -Status failed",
             "New-BuildSummary -Status interrupted",
@@ -309,6 +470,7 @@ class MatlabContractBindingTests(unittest.TestCase):
             "common\\contracts\\run_artifact_support.ps1",
             "common\\contracts\\write_run_manifest.py",
             "common\\contracts\\verify_run_manifest.py",
+            "common\\contracts\\particle_physics.py",
             "common\\comsol\\run_comsol_r2025b.ps1",
             "common\\comsol\\resolve_comsol_64.ps1",
             "common\\comsol\\livelink_r2025b\\comsolstartup.m",
