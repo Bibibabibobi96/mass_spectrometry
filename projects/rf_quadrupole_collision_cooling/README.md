@@ -113,9 +113,8 @@ S2–S3连接功能闭环记录：
   [`tests/comsol/run_s2_passive_connector_field.ps1`](tests/comsol/run_s2_passive_connector_field.ps1)及
   [`tests/cross_solver/run_s3_cumulative_chain.ps1`](tests/cross_solver/run_s3_cumulative_chain.ps1)。共享合同是孔、
   局部域和场基的唯一活动权威；S2只作为S3内部的无脉冲连接器求解步骤，不再提供独立build-only或审计入口。
-  当前1 mm功能证据为`100→61→31→31→7`，其中COMSOL S2/S3来源run为
-  `20260724_190234__sim__comsol__rf-oatof-s3-pulse-gap1__n100`，续接SIMION的E2E run为
-  `20260724_195150__sim__cross__rf-oatof-s3-end-to-end-gap1__n100`；0 mm兼容证据为
+  当前1 mm功能证据为`100→61→31→31→7`，统一累积入口已在同一`20260724_205559`时间戳下完成
+  COMSOL S2、COMSOL S3和SIMION E2E三阶段success，并由E2E冻结verifier复核全部manifest；0 mm兼容证据为
   `100→77→39→39→9`。两者均不授权阶段资格、网格收敛、分辨率或Formal声明。
 - 脉冲调度与快照使用阶段中性的共享实现：
   [`analysis/derive_shared_centroid_pulse_time.py`](analysis/derive_shared_centroid_pulse_time.py)和

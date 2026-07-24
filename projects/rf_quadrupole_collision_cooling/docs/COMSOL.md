@@ -124,10 +124,8 @@ validator和粒子物理公式生成局部出口canonical CSV。runner固定按C
 
 `tests/comsol/run_s3_pulse_capture.ps1`与`tests/cross_solver/run_s3_end_to_end.ps1`已分别按consumer冻结
 依赖、来源manifest及Python/manifest闭包；累积runner使用end-to-end run内的冻结verifier复核阶段manifest。
-迁移后的1 mm链已由`20260724_190234__sim__comsol__rf-oatof-s2-connector-gap1__n100`、
-`20260724_190234__sim__comsol__rf-oatof-s3-pulse-gap1__n100`和
-`20260724_195150__sim__cross__rf-oatof-s3-end-to-end-gap1__n100`完成真实COMSOL/SIMION复验，
-得到`100→61→31→31→7`且E2E manifest为success。该结果只证明N=100功能链和快照隔离，
+迁移后的1 mm链已由统一累积入口在同一`20260724_205559`时间戳下完成真实COMSOL S2、COMSOL S3
+和SIMION E2E复验，得到`100→61→31→31→7`且三阶段manifest均为success。该结果只证明N=100功能链和快照隔离，
 不构成stage PASS、N=1000、收敛、分辨率或Formal资格。
 
 S3静态校验同时闭合resolved S2 registration、共享入口面/法向/孔径、oa屏蔽0 V公共参考、canonical
