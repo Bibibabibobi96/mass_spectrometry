@@ -30,6 +30,40 @@ def _read_csv(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(handle))
 
 
+def _is_detector_crossing(row: dict[str, str]) -> bool:
+    hit = row["Hit"].strip().lower()
+    if hit not in {"true", "false"}:
+        raise ValueError(f"S3 downstream row has invalid Hit value: {row['Hit']!r}")
+    terminal_fields = ("TofUs", "InstrumentTimeUs", "XMm", "YMm")
+    values: list[float | None] = []
+    for field in terminal_fields:
+        text = row[field].strip()
+        if not text:
+            values.append(None)
+            continue
+        try:
+            value = float(text)
+        except ValueError as exc:
+            raise ValueError(
+                f"S3 downstream row has non-numeric {field}: {text!r}"
+            ) from exc
+        if math.isnan(value):
+            values.append(None)
+        elif math.isfinite(value):
+            values.append(value)
+        else:
+            raise ValueError(
+                f"S3 downstream row has non-finite {field}: {text!r}"
+            )
+    if all(value is None for value in values):
+        if hit == "true":
+            raise ValueError("S3 downstream hit has no detector crossing state")
+        return False
+    if any(value is None for value in values):
+        raise ValueError("S3 downstream row has a partial detector crossing state")
+    return True
+
+
 def analyze(source_summary_path: Path, canonical_path: Path, ion_path: Path,
             row_map_path: Path, downstream_path: Path, stdout_path: Path,
             pulse_time_us: float, pulse_width_us: float) -> dict[str, object]:
@@ -67,7 +101,7 @@ def analyze(source_summary_path: Path, canonical_path: Path, ion_path: Path,
     downstream_indices = {int(row["Ion"]) for row in downstream}
     if downstream_indices != set(solver_ids):
         raise ValueError("S3 downstream solver rows differ from the frozen row map")
-    detector_rows = [row for row in downstream if math.isfinite(float(row["InstrumentTimeUs"]))]
+    detector_rows = [row for row in downstream if _is_detector_crossing(row)]
     hits = [row for row in detector_rows if row["Hit"].strip().lower() == "true"]
     initial_residual = max(
         max(
@@ -93,11 +127,23 @@ def analyze(source_summary_path: Path, canonical_path: Path, ion_path: Path,
         == int(canonical_by_id[solver_ids[int(row["Ion"])]]["charge_state"])
         for row in downstream
     )
-    clock_residual = max(
-        abs(float(row["InstrumentTimeUs"]) -
-            (float(mapping_by_index[int(row["Ion"])]["solver_birth_time_us"]) + float(row["TofUs"])))
-        for row in detector_rows
-    ) if detector_rows else 0.0
+    clock_residual = (
+        max(
+            abs(
+                float(row["InstrumentTimeUs"])
+                - (
+                    float(
+                        mapping_by_index[int(row["Ion"])]
+                        ["solver_birth_time_us"]
+                    )
+                    + float(row["TofUs"])
+                )
+            )
+            for row in detector_rows
+        )
+        if detector_rows
+        else None
+    )
     matches = PULSE_CONTRACT.findall(stdout_path.read_text(encoding="utf-8-sig"))
     pulse_match = len(matches) == 1 and int(matches[0][0]) == 1 and (
         math.isclose(float(matches[0][1]), pulse_time_us, abs_tol=1e-9)
@@ -108,7 +154,9 @@ def analyze(source_summary_path: Path, canonical_path: Path, ion_path: Path,
         "identity_preserved": canonical_ids == mapped_ids,
         "species_mass_and_charge_preserved": species_preserved,
         "canonical_position_reaches_simion_exactly": initial_residual <= 1e-12,
-        "global_detector_clock_continues": clock_residual <= 1e-9,
+        "global_detector_clock_continues": (
+            clock_residual is not None and clock_residual <= 1e-9
+        ),
         "same_pulse_contract_continues": pulse_match,
         "at_least_one_detector_crossing": len(detector_rows) > 0,
     }
@@ -151,7 +199,7 @@ def plot(result: dict[str, object], downstream_path: Path, output: Path,
     axes[0].set(ylabel="Particles", title="A  Cumulative functional-chain census", ylim=(0, 108))
     axes[0].tick_params(axis="x", rotation=18)
     axes[0].grid(axis="y", alpha=0.22)
-    crossings = [row for row in downstream if math.isfinite(float(row["InstrumentTimeUs"]))]
+    crossings = [row for row in downstream if _is_detector_crossing(row)]
     hits = [row for row in crossings if row["Hit"].strip().lower() == "true"]
     misses = [row for row in crossings if row["Hit"].strip().lower() != "true"]
     if hits:

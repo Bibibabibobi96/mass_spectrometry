@@ -503,6 +503,86 @@ class S3EndToEndTests(unittest.TestCase):
             self.assertEqual(result["census"]["detector_hit"], 1)
             self.assertFalse(result["s3_stage_passed"])
 
+    def test_s3_audit_keeps_blank_non_crossing_rows_in_census(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); canonical = root / "canonical.csv"
+            write_csv(
+                canonical, csv_columns(), [canonical_row(2), canonical_row(8)]
+            )
+            ion = root / "input.ion"; mapping = root / "map.csv"
+            adapter.build(
+                canonical, root / "copy.csv", ion, mapping, root / "meta.json"
+            )
+            summary = root / "summary.json"
+            summary.write_text(
+                json.dumps(
+                    {
+                        "status": "success",
+                        "source_particles": 100,
+                        "oatof_entry_crossings": 61,
+                        "active_at_pulse": 31,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            fields = [
+                "Ion", "MassAmu", "ChargeState", "X0Mm", "Y0Mm", "Z0Mm",
+                "TofUs", "InstrumentTimeUs", "XMm", "YMm", "Hit",
+            ]
+            downstream = root / "downstream.csv"
+            write_csv(
+                downstream,
+                fields,
+                [
+                    {
+                        "Ion": 1, "MassAmu": 100, "ChargeState": 1,
+                        "X0Mm": -47, "Y0Mm": 0.2, "Z0Mm": 4.87,
+                        "TofUs": 10, "InstrumentTimeUs": 46.75,
+                        "XMm": 0, "YMm": 0, "Hit": "True",
+                    },
+                    {
+                        "Ion": 2, "MassAmu": 100, "ChargeState": 1,
+                        "X0Mm": -47, "Y0Mm": 0.2, "Z0Mm": 4.87,
+                        "TofUs": "", "InstrumentTimeUs": "",
+                        "XMm": "", "YMm": "", "Hit": "False",
+                    },
+                ],
+            )
+            stdout = root / "stdout.log"
+            stdout.write_text(
+                "handoff_pulse_contract mode=1 time_us=36.112 width_us=1\n",
+                encoding="utf-8",
+            )
+            result = analyze.analyze(
+                summary, canonical, ion, mapping, downstream, stdout, 36.112, 1.0
+            )
+            self.assertEqual(result["status"], "PASS")
+            self.assertEqual(result["census"]["local_accelerator_exit"], 2)
+            self.assertEqual(result["census"]["detector_crossing"], 1)
+            self.assertEqual(result["census"]["detector_hit"], 1)
+
+    def test_s3_audit_rejects_incomplete_or_invalid_crossing_state(self) -> None:
+        base = {
+            "TofUs": "", "InstrumentTimeUs": "", "XMm": "", "YMm": "",
+            "Hit": "False",
+        }
+        self.assertFalse(analyze._is_detector_crossing(base))
+        self.assertFalse(
+            analyze._is_detector_crossing(
+                {**base, "TofUs": "NaN", "InstrumentTimeUs": "NaN",
+                 "XMm": "NaN", "YMm": "NaN"}
+            )
+        )
+        for changed in (
+            {"Hit": "True"},
+            {"TofUs": "1"},
+            {"TofUs": "Inf", "InstrumentTimeUs": "Inf",
+             "XMm": "Inf", "YMm": "Inf"},
+            {"Hit": "unknown"},
+        ):
+            with self.assertRaises(ValueError):
+                analyze._is_detector_crossing({**base, **changed})
+
 
 if __name__ == "__main__":
     unittest.main()
