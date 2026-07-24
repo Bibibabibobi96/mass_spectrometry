@@ -149,21 +149,21 @@ def validate(
         raise ValueError("oaTOF SIMION stable-entry identity differs")
     entry = entries[0]
     stable_checks = {
-        "iob": (iob_path, iob_record),
-        "program": (program_path, program_record),
-        "sha256_manifest": (checksum_path, checksum_record),
+        "iob": ("oatof_ideal_grounded.iob", iob_record),
+        "program": ("oatof_ideal_grounded.lua", program_record),
+        "sha256_manifest": ("SHA256SUMS.csv", checksum_record),
         "run_manifest": (
-            delivery_manifest_path,
+            "run_manifest.json",
             {
                 "sha256": delivery_record["sha256"],
                 "bytes": delivery_record["bytes"],
             },
         ),
     }
-    for role, (path, authority) in stable_checks.items():
+    for role, (relative_path, authority) in stable_checks.items():
         record = _stable_asset(entry, role)
         if (
-            record.get("relative_path") != path.name
+            record.get("relative_path") != relative_path
             or int(record["bytes"]) != int(authority["bytes"])
             or record["sha256"] != authority["sha256"]
         ):

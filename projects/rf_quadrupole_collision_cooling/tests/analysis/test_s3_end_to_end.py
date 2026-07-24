@@ -187,6 +187,16 @@ class S3EndToEndTests(unittest.TestCase):
             result = formal_release.validate(*paths)
             self.assertEqual(result["status"], "PASS")
 
+    def test_formal_release_accepts_identical_renamed_frozen_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            paths = self._formal_release_fixture(Path(temp))
+            frozen_delivery = Path(temp) / "oatof_formal_release_manifest.json"
+            shutil.copy2(paths[2], frozen_delivery)
+            result = formal_release.validate(
+                paths[0], paths[1], frozen_delivery, *paths[3:]
+            )
+            self.assertEqual(result["status"], "PASS")
+
     def test_formal_release_rejects_consumed_iob_drift(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             paths = self._formal_release_fixture(Path(temp))
