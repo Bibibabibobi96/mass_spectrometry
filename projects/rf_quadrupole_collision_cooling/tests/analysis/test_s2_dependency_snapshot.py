@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from copy import deepcopy
@@ -344,7 +345,7 @@ class FrozenDependencyHelperTests(unittest.TestCase):
             identity = json.loads(result.stdout)
             frozen = inputs / "runtime_snapshot" / "projects" / "provider" / "data" / "source.txt"
             self.assertEqual(frozen.read_bytes(), source.read_bytes())
-            self.assertEqual(Path(identity["frozen_path"]), frozen)
+            self.assertTrue(Path(identity["frozen_path"]).samefile(frozen))
             self.assertEqual(identity["provider_repo_path"], "projects/provider")
             self.assertEqual(identity["consumers"], ["s2_passive_connector"])
             self.assertRegex(identity["sha256"], r"^[0-9A-F]{64}$")
@@ -386,8 +387,8 @@ class FrozenDependencyHelperTests(unittest.TestCase):
             compatibility = inputs / "source.txt"
             self.assertEqual(source.read_bytes(), snapshot.read_bytes())
             self.assertEqual(source.read_bytes(), compatibility.read_bytes())
-            self.assertEqual(Path(identity["snapshot_path"]), snapshot)
-            self.assertEqual(Path(identity["frozen_path"]), compatibility)
+            self.assertTrue(Path(identity["snapshot_path"]).samefile(snapshot))
+            self.assertTrue(Path(identity["frozen_path"]).samefile(compatibility))
 
     def test_provider_and_destination_escapes_are_rejected(self) -> None:
         cases = (
@@ -525,11 +526,11 @@ class S2SnapshotRunnerTests(unittest.TestCase):
                 f"$env:PYTHONPATH = '{_ps_literal(poison)}'; "
                 f"Push-Location -LiteralPath '{_ps_literal(poison)}'; "
                 "try { "
-                f"Write-RfFrozenRunManifest -Python '{_ps_literal(REPO_ROOT / '.venv/Scripts/python.exe')}' "
+                f"Write-RfFrozenRunManifest -Python '{_ps_literal(Path(sys.executable))}' "
                 f"-FrozenRepoRoot '{_ps_literal(snapshot)}' "
                 f"-RunConfig '{_ps_literal(run_config)}' -Status interrupted "
                 "-Software @('Python 3.11'); "
-                f"Complete-RfFrozenFailedRun -Python '{_ps_literal(REPO_ROOT / '.venv/Scripts/python.exe')}' "
+                f"Complete-RfFrozenFailedRun -Python '{_ps_literal(Path(sys.executable))}' "
                 f"-FrozenRepoRoot '{_ps_literal(snapshot)}' "
                 f"-RunConfig '{_ps_literal(run_config)}' -Summary '{_ps_literal(summary)}' "
                 "-SummaryRole 's2_manifest_snapshot_test' -Reason 'controlled failure' "
@@ -593,7 +594,7 @@ class S2SnapshotRunnerTests(unittest.TestCase):
             environment["PYTHONPATH"] = os.pathsep.join((str(snapshot), str(poisoned_provider)))
             environment["PYTHONNOUSERSITE"] = "1"
             result = subprocess.run(
-                [str(REPO_ROOT / ".venv/Scripts/python.exe"), "-c", code],
+                [sys.executable, "-c", code],
                 cwd=snapshot,
                 env=environment,
                 encoding="utf-8",
@@ -609,7 +610,7 @@ class S2SnapshotRunnerTests(unittest.TestCase):
                 )
             validation = subprocess.run(
                 [
-                    str(REPO_ROOT / ".venv/Scripts/python.exe"),
+                    sys.executable,
                     "-m",
                     "projects.rf_quadrupole_collision_cooling.analysis.validate_s2_passive_connector",
                     "--contract",
