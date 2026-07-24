@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = PROJECT_ROOT.parents[1]
 ACTIVE_SCRIPTS = (
     PROJECT_ROOT / "phase1_geometry_coil_transverse.m",
     PROJECT_ROOT / "phase2_electrostatics_coil_transverse.m",
@@ -608,6 +612,133 @@ class MatlabContractBindingTests(unittest.TestCase):
         for token in required:
             with self.subTest(token=token):
                 self.assertIn(token, self.build_runner)
+
+    def test_frozen_gate_does_not_mutate_its_declared_input_set(self) -> None:
+        if os.environ.get("WEHNELT_NESTED_FROZEN_GATE") == "1":
+            return
+        project_relatives = (
+            "run_build_only_smoke.ps1",
+            "tests/comsol/test_build_only.m",
+            "egun_paths.m",
+            "load_wehnelt_contract.m",
+            "apply_wehnelt_contract_parameters.m",
+            "phase1_geometry_coil_transverse.m",
+            "phase2_electrostatics_coil_transverse.m",
+            "phase4_thermal_emission_coil_transverse.m",
+            "config/baseline.json",
+            "config/numerical_modes.json",
+            "config/resolved_model.json",
+            "config/modes/build_only_smoke.json",
+            "config/execution_profiles.json",
+            "config/project.json",
+            "analysis/__init__.py",
+            "analysis/resolve_contract.py",
+            "verify_project.ps1",
+        )
+        common_relatives = (
+            "pyproject.toml",
+            "common/require_powershell7.ps1",
+            "common/verify_lightweight.ps1",
+            "common/contracts/run_artifact_support.ps1",
+            "common/contracts/write_run_manifest.py",
+            "common/contracts/verify_run_manifest.py",
+            "common/contracts/artifact_naming.py",
+            "common/contracts/file_identity.py",
+            "common/contracts/particle_physics.py",
+            "common/contracts/build_project_registry.py",
+            "common/contracts/machine_contracts.py",
+            "common/comsol/run_comsol_r2025b.ps1",
+            "common/comsol/resolve_comsol_64.ps1",
+            "common/comsol/livelink_failure_classification.ps1",
+            "common/comsol/livelink_environment.ps1",
+            "common/comsol/livelink_r2025b/comsolstartup.m",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            snapshot = Path(directory) / "repository"
+            frozen_project = snapshot / "projects" / "wehnelt_electron_gun"
+            declared: set[Path] = set()
+
+            def freeze(source: Path, destination: Path) -> None:
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, destination)
+                declared.add(destination.resolve())
+
+            for relative in project_relatives:
+                freeze(PROJECT_ROOT / relative, frozen_project / relative)
+            for source in sorted((PROJECT_ROOT / "tests" / "analysis").glob("*.py")):
+                freeze(source, frozen_project / "tests" / "analysis" / source.name)
+            for relative in common_relatives:
+                freeze(REPO_ROOT / relative, snapshot / relative)
+            for source in sorted(
+                (REPO_ROOT / "common" / "contracts" / "schemas").glob("*.json")
+            ):
+                freeze(
+                    source,
+                    snapshot / "common" / "contracts" / "schemas" / source.name,
+                )
+
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "PYTHONDONTWRITEBYTECODE": "1",
+                    "RUFF_NO_CACHE": "true",
+                    "WEHNELT_NESTED_FROZEN_GATE": "1",
+                }
+            )
+            completed = subprocess.run(
+                [
+                    "pwsh",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-File",
+                    str(frozen_project / "verify_project.ps1"),
+                    "-PythonExe",
+                    sys.executable,
+                ],
+                cwd=snapshot,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=90,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                (completed.stdout or "") + (completed.stderr or ""),
+            )
+            actual = {path.resolve() for path in snapshot.rglob("*") if path.is_file()}
+            self.assertEqual(actual, declared)
+            self.assertFalse(any(path.suffix == ".pyc" for path in actual))
+            self.assertFalse((snapshot / ".ruff_cache").exists())
+
+    def test_frozen_input_set_rejects_extra_and_missing_files(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            declared = root / "declared.txt"
+            extra = root / "extra.txt"
+            command = (
+                "Set-StrictMode -Version Latest;"
+                f"Set-Content -LiteralPath '{declared}' -Value declared;"
+                f"$inputs=[ordered]@{{declared='{declared}'}};"
+                f"Assert-FrozenInputSet -InputDirectory '{root}' -Inputs $inputs;"
+                f"Set-Content -LiteralPath '{extra}' -Value extra;"
+                f"try{{Assert-FrozenInputSet -InputDirectory '{root}' "
+                "-Inputs $inputs;exit 51}catch{};"
+                f"Remove-Item -LiteralPath '{extra}','{declared}';"
+                f"try{{Assert-FrozenInputSet -InputDirectory '{root}' "
+                "-Inputs $inputs;exit 52}catch{};"
+                "'FROZEN_INPUT_SET_FAIL_CLOSED=PASS'"
+            )
+            completed = self.invoke_runner_functions(
+                ("Assert-FrozenInputSet",), command
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                (completed.stdout or "") + (completed.stderr or ""),
+            )
+            self.assertIn("FROZEN_INPUT_SET_FAIL_CLOSED=PASS", completed.stdout)
 
 
 if __name__ == "__main__":

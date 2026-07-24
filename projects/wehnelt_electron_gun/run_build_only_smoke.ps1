@@ -176,6 +176,31 @@ function Invoke-VerifiedRecordTransition {
   }
 }
 
+function Assert-FrozenInputSet {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][string]$InputDirectory,
+    [Parameter(Mandatory = $true)][System.Collections.IDictionary]$Inputs
+  )
+  $declared = @($Inputs.Values | ForEach-Object {
+    [IO.Path]::GetFullPath([string]$_)
+  } | Sort-Object)
+  $declaredUnique = @($declared | Select-Object -Unique)
+  if ($declared.Count -ne $declaredUnique.Count) {
+    throw 'Frozen input declarations contain duplicate paths.'
+  }
+  $actual = @(Get-ChildItem -LiteralPath $InputDirectory -Recurse -File |
+    ForEach-Object { $_.FullName } | Sort-Object)
+  $differences = @(Compare-Object -ReferenceObject $declaredUnique `
+    -DifferenceObject $actual)
+  if ($differences.Count -ne 0) {
+    $details = @($differences | ForEach-Object {
+      '{0}:{1}' -f $_.SideIndicator,$_.InputObject
+    }) -join '; '
+    throw "Frozen input directory differs from its declarations: $details"
+  }
+}
+
 function Get-ExistingRunOutputs {
   [CmdletBinding()]
   param(
@@ -211,8 +236,8 @@ function New-BuildSummary {
     [System.Collections.IDictionary]$ReportValues = $null
   )
   $staticGatePassed = @(
-    'commercial_wrapper_pending','commercial_wrapper','report_validation',
-    'manifest_finalization','none'
+    'frozen_input_validation','commercial_wrapper_pending','commercial_wrapper',
+    'report_validation','input_set_validation','manifest_finalization','none'
   ) -contains $FailureStage
   return [ordered]@{
     schema_version = 1
@@ -237,7 +262,10 @@ function New-BuildSummary {
   }
 }
 
-$environmentNames = @('WEHNELT_RUN_ID','WEHNELT_ARTIFACT_ROOT')
+$environmentNames = @(
+  'WEHNELT_RUN_ID','WEHNELT_ARTIFACT_ROOT',
+  'PYTHONDONTWRITEBYTECODE','RUFF_NO_CACHE'
+)
 $savedEnvironment = Save-RunEnvironment -Names $environmentNames
 $package = $null
 $manifestPath = ''
@@ -398,6 +426,8 @@ try {
   }
 
   $failureStage = 'static_gate'
+  $env:PYTHONDONTWRITEBYTECODE = '1'
+  $env:RUFF_NO_CACHE = 'true'
   Push-Location $snapshotRoot
   try {
     & $package.python -m projects.wehnelt_electron_gun.analysis.resolve_contract `
@@ -417,6 +447,8 @@ try {
   if ($LASTEXITCODE -ne 0) {
     throw 'Frozen Wehnelt Static gate failed before the commercial build.'
   }
+  $failureStage = 'frozen_input_validation'
+  Assert-FrozenInputSet -InputDirectory $package.input_dir -Inputs $frozenInputs
 
   $failureStage = 'commercial_wrapper_pending'
   $runConfig.parameters.lifecycle_stage = $failureStage
@@ -491,6 +523,8 @@ try {
     STATUS = 'PASS'
   }
   $reportValues = Read-BuildOnlyReport -Path $report -Expected $expectedReport
+  $failureStage = 'input_set_validation'
+  Assert-FrozenInputSet -InputDirectory $package.input_dir -Inputs $frozenInputs
 
   $failureStage = 'manifest_finalization'
   $runConfig.parameters.lifecycle_stage = 'completed'
