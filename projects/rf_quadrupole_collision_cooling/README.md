@@ -53,6 +53,11 @@ S2–S3连接功能闭环记录：
 - 轴向加速模式：[`config/modes/axial_acceleration_reference.json`](config/modes/axial_acceleration_reference.json)；
   当前实现已迁移到仓库统一粒子数合同；两类轴向加速已通过四、六、八极杆双求解器N=100功能复验，
   但不代表参数优化、数值等价或机械资格。
+- 四臂轴向加速静态实验入口：
+  [`config/axial_acceleration_four_arm_experiment.json`](config/axial_acceleration_four_arm_experiment.json)与
+  [`analysis/validate_axial_acceleration_four_arm_experiment.py`](analysis/validate_axial_acceleration_four_arm_experiment.py)；
+  缺少显式配对粒子bundle metadata时固定失败关闭，只具备Static编排资格，不代表求解器、等价、优化、
+  Candidate或Formal结论。
 - 集成就绪profile与官方传输共用
   [`config/resolved_design_official.json`](config/resolved_design_official.json)；执行
   `analysis/resolve_contract.py --profile interface`会复核同一publication。旧interface publication仅为迁移期
