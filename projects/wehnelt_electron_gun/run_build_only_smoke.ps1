@@ -206,17 +206,13 @@ function New-BuildSummary {
     [string]$Status,
     [Parameter(Mandatory = $true)][string]$Reason,
     [Parameter(Mandatory = $true)][string]$FailureStage,
+    [bool]$CommercialWrapperInvocationAttempted = $false,
+    [bool]$CommercialWrapperCompleted = $false,
     [System.Collections.IDictionary]$ReportValues = $null
   )
   $staticGatePassed = @(
     'commercial_wrapper_pending','commercial_wrapper','report_validation',
     'manifest_finalization','none'
-  ) -contains $FailureStage
-  $commercialWrapperStarted = @(
-    'commercial_wrapper','report_validation','manifest_finalization','none'
-  ) -contains $FailureStage
-  $commercialWrapperCompleted = @(
-    'report_validation','manifest_finalization','none'
   ) -contains $FailureStage
   return [ordered]@{
     schema_version = 1
@@ -229,8 +225,8 @@ function New-BuildSummary {
     formal_asset_modified = $false
     formal_gate_passed = $false
     static_gate_passed = $staticGatePassed
-    commercial_wrapper_started = $commercialWrapperStarted
-    commercial_wrapper_completed = $commercialWrapperCompleted
+    commercial_wrapper_invocation_attempted = $CommercialWrapperInvocationAttempted
+    commercial_wrapper_completed = $CommercialWrapperCompleted
     geometry_built = $null -ne $ReportValues -and $ReportValues.GEOMETRY_BUILT -ceq 'true'
     mesh_built = $null -ne $ReportValues -and $ReportValues.MESH_BUILT -ceq 'true'
     electrostatics_solved = $null -ne $ReportValues -and $ReportValues.ELECTROSTATICS_SOLVED -ceq 'true'
@@ -255,6 +251,8 @@ $frozenInputs = [ordered]@{}
 $manifestRepoRoot = $repoRoot
 $runConfig = $null
 $recordPaths = @()
+$commercialWrapperInvocationAttempted = $false
+$commercialWrapperCompleted = $false
 
 try {
   $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
@@ -446,10 +444,12 @@ try {
   $env:WEHNELT_RUN_ID = $RunId
   $env:WEHNELT_ARTIFACT_ROOT = $artifactRoot
   try {
+    $commercialWrapperInvocationAttempted = $true
     & $frozenInputs.comsol_runner -TaskScript $frozenInputs.task_script `
       -ReportPath $report *>&1 |
-      Tee-Object -LiteralPath $wrapperLog -Append
+      Tee-Object -FilePath $wrapperLog -Append
     $wrapperExitCode = $LASTEXITCODE
+    $commercialWrapperCompleted = $true
     Add-Content -LiteralPath $wrapperLog -Encoding UTF8 -Value @(
       "WRAPPER_EXIT_CODE=$wrapperExitCode"
       "FINISHED_AT_UTC=$([DateTime]::UtcNow.ToString('o'))"
@@ -496,6 +496,8 @@ try {
   $runConfig.parameters.lifecycle_stage = 'completed'
   $successSummary = New-BuildSummary -Status success `
     -Reason 'The governed build-only workflow completed.' -FailureStage 'none' `
+    -CommercialWrapperInvocationAttempted $commercialWrapperInvocationAttempted `
+    -CommercialWrapperCompleted $commercialWrapperCompleted `
     -ReportValues $reportValues
   $successSummary['geometry_model'] = 'comsol/ElectronGun_CoilT.mph'
   $successSummary['electrostatic_model'] = 'comsol/ElectronGun_CoilT_ES.mph'
@@ -532,7 +534,9 @@ try {
         Write-RunJson -Value $runConfig -Path $package.run_config
         Write-RunJson -Path $package.summary -Value (
           New-BuildSummary -Status failed -Reason $runError.Exception.Message `
-            -FailureStage $failureStage
+            -FailureStage $failureStage `
+            -CommercialWrapperInvocationAttempted $commercialWrapperInvocationAttempted `
+            -CommercialWrapperCompleted $commercialWrapperCompleted
         )
         $outputs = Get-ExistingRunOutputs `
           -RunDirectory $package.run_dir -InputDirectory $package.input_dir

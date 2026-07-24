@@ -448,7 +448,7 @@ class MatlabContractBindingTests(unittest.TestCase):
     def test_wrapper_failure_and_success_both_persist_console_context(self) -> None:
         required = (
             "commercial_wrapper.log",
-            "Tee-Object -LiteralPath $wrapperLog -Append",
+            "Tee-Object -FilePath $wrapperLog -Append",
             "STREAM_CAPTURE=all_powershell_streams_merged",
             "WRAPPER_EXCEPTION=",
             "WRAPPER_EXIT_CODE=",
@@ -472,6 +472,66 @@ class MatlabContractBindingTests(unittest.TestCase):
         self.assertLess(wrapper_catch, success)
         self.assertLess(success, outer_failure)
 
+    def test_wrapper_tee_uses_one_supported_append_parameter_set(self) -> None:
+        runner = self.build_runner_path()
+        ast_script = (
+            "$tokens=$null;$errors=$null;"
+            "$ast=[Management.Automation.Language.Parser]::ParseFile("
+            f"'{runner}',[ref]$tokens,[ref]$errors);"
+            "if($errors.Count){exit 31};"
+            "$commands=@($ast.FindAll({param($node)"
+            "$node -is [Management.Automation.Language.CommandAst] -and "
+            "$node.GetCommandName() -eq 'Tee-Object'},$true));"
+            "if($commands.Count -ne 1){exit 32};"
+            "@($commands[0].CommandElements|Where-Object {"
+            "$_ -is [Management.Automation.Language.CommandParameterAst]}|"
+            "ForEach-Object {$_.ParameterName})|ConvertTo-Json -Compress"
+        )
+        ast_result = subprocess.run(
+            ["pwsh", "-NoProfile", "-NonInteractive", "-Command", ast_script],
+            cwd=PROJECT_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        self.assertEqual(
+            ast_result.returncode,
+            0,
+            (ast_result.stdout or "") + (ast_result.stderr or ""),
+        )
+        self.assertEqual(set(json.loads(ast_result.stdout)), {"FilePath", "Append"})
+
+        behavior_script = (
+            "$path=[IO.Path]::GetTempFileName();"
+            "try{Set-Content -LiteralPath $path -Encoding UTF8 -Value 'prefix';"
+            "@('alpha','beta')|Tee-Object -FilePath $path -Append|Out-Null;"
+            "$lines=@(Get-Content -LiteralPath $path -Encoding UTF8);"
+            "if($lines.Count -ne 3 -or $lines[0] -cne 'prefix' -or "
+            "$lines[1] -cne 'alpha' -or $lines[2] -cne 'beta'){exit 33}}"
+            "finally{Remove-Item -LiteralPath $path}"
+        )
+        behavior_result = subprocess.run(
+            [
+                "pwsh",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                behavior_script,
+            ],
+            cwd=PROJECT_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        self.assertEqual(
+            behavior_result.returncode,
+            0,
+            (behavior_result.stdout or "") + (behavior_result.stderr or ""),
+        )
+        self.assertNotIn("Tee-Object -LiteralPath", self.build_runner)
+
     def test_all_summary_states_share_governance_and_solver_fields(self) -> None:
         required = (
             "threshold_result_eligible = $false",
@@ -479,8 +539,8 @@ class MatlabContractBindingTests(unittest.TestCase):
             "formal_asset_modified = $false",
             "formal_gate_passed = $false",
             "static_gate_passed = $staticGatePassed",
-            "commercial_wrapper_started = $commercialWrapperStarted",
-            "commercial_wrapper_completed = $commercialWrapperCompleted",
+            "commercial_wrapper_invocation_attempted = $CommercialWrapperInvocationAttempted",
+            "commercial_wrapper_completed = $CommercialWrapperCompleted",
             "failure_stage = $FailureStage",
             "electrostatics_solved = $null -ne $ReportValues",
             "particle_tracing_solved = $null -ne $ReportValues",
@@ -495,16 +555,19 @@ class MatlabContractBindingTests(unittest.TestCase):
     def test_summary_function_emits_interrupted_and_failed_governance_fields(
         self,
     ) -> None:
-        for status, stage in (
-            ("interrupted", "commercial_wrapper"),
-            ("failed", "input_freeze"),
-            ("success", "none"),
+        for status, stage, attempted, completed_wrapper in (
+            ("interrupted", "commercial_wrapper", True, False),
+            ("failed", "input_freeze", False, False),
+            ("success", "none", True, True),
         ):
             completed = self.invoke_runner_functions(
                 ("New-BuildSummary",),
                 (
                     f"New-BuildSummary -Status {status} -Reason test "
-                    f"-FailureStage {stage}|ConvertTo-Json -Compress"
+                    f"-FailureStage {stage} "
+                    f"-CommercialWrapperInvocationAttempted ${str(attempted).lower()} "
+                    f"-CommercialWrapperCompleted ${str(completed_wrapper).lower()}|"
+                    "ConvertTo-Json -Compress"
                 ),
             )
             self.assertEqual(
@@ -516,11 +579,14 @@ class MatlabContractBindingTests(unittest.TestCase):
             self.assertFalse(summary["threshold_result_eligible"])
             self.assertFalse(summary["electrostatics_solved"])
             self.assertFalse(summary["particle_tracing_solved"])
-            expected_commercial = status == "success"
             self.assertEqual(
-                summary["commercial_wrapper_started"], expected_commercial
-                or stage == "commercial_wrapper"
+                summary["commercial_wrapper_invocation_attempted"],
+                attempted,
             )
+            self.assertEqual(
+                summary["commercial_wrapper_completed"], completed_wrapper
+            )
+            self.assertNotIn("commercial_wrapper_started", summary)
 
     def test_governance_and_actual_common_entries_are_frozen(self) -> None:
         required = (
