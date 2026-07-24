@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -22,13 +23,14 @@ def _relative(path: str) -> Path:
 def validate_contract(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
     """Return a validated S3 contract or raise for inconsistent authority."""
     contract = _load(path)
-    if contract.get("schema_version") != 1 or contract.get("stage") != "S3":
+    if contract.get("schema_version") != 2 or contract.get("stage") != "S3":
         raise ValueError("S3 pulse-capture contract identity differs")
     if contract.get("status") != "nominal_cumulative_function_passed_stage_unqualified":
         raise ValueError("S3 cumulative function evidence is not recorded")
     inputs = contract["inputs"]
     stage_plan = _load(_relative(inputs["stage_plan"]))
     s2 = _load(_relative(inputs["s2_connector"]))
+    spatial = _load(_relative(inputs["spatial_registration"]))
     shared_joint = _load(_relative(inputs["shared_physical_port_joint_geometry"]))
     pulse = _load(_relative(inputs["pulse_timing_policy"]))
     baseline = _load(_relative(inputs["oatof_baseline"]))
@@ -67,6 +69,12 @@ def validate_contract(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
         raise ValueError("S3 functional prototype requires the S2 nominal particle evidence")
     if shared_joint.get("role") != "rf_to_oatof_shared_physical_port_joint_geometry":
         raise ValueError("S3 shared physical-port authority differs")
+    if (
+        spatial.get("role") != "resolved_spatial_registration_do_not_edit"
+        or spatial.get("instrument_frame_id") != "oatof_global"
+        or spatial.get("project_semantics", {}).get("stage") != "S2"
+    ):
+        raise ValueError("S3 resolved spatial-registration authority differs")
     if s2["permissions"]["s2_stage_pass_allowed"]:
         raise ValueError("S3 prototype must not silently promote S2")
     source = contract["source"]
@@ -76,6 +84,16 @@ def validate_contract(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
         raise ValueError("S3 timing state is not the accepted S2 nominal run")
     if source["clock_epoch_id"] != s2["functional_candidate"]["clock_epoch_id"]:
         raise ValueError("S3 and S2 clock epochs differ")
+    identity = contract["identity_contract"]
+    if (
+        identity.get("canonical_state_schema")
+        != "common/contracts/schemas/component_particle_state.schema.json"
+        or identity.get("frame_id") != "oatof_global"
+        or identity.get("clock_epoch_id_source") != "source.clock_epoch_id"
+        or identity.get("species_identity_key")
+        != ["species_id", "mass_amu", "charge_state"]
+    ):
+        raise ValueError("S3 canonical identity contract differs")
     if pulse["method"] != "selected_species_ballistic_port_survivor_x_centroid":
         raise ValueError("S3 pulse timing method differs")
     waveform = contract["waveform"]
@@ -89,13 +107,82 @@ def validate_contract(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
     if float(waveform["post_pulse_tracking_time_us"]) <= 0:
         raise ValueError("S3 post-pulse tracking duration must be positive")
     geometry = contract["timing_geometry"]
+    expected_geometry_sources = {
+        "entry_surface_source": (
+            "s2_connector.nominal_registration.target_entry_center_instrument_mm"
+        ),
+        "port_source": (
+            "s2_connector.passive_connector_geometry.downstream_entry_aperture"
+        ),
+        "wall_thickness_source": "oatof_baseline.geometry_mm.accelerator_shield_wall",
+        "target_centroid_source": "oatof_baseline.particle_source.center_x_mm",
+        "release_offset_source": (
+            "s2_connector.no_pulse_field_candidate.boundary_probe_inset_mm"
+        ),
+    }
     if float(baseline["geometry_mm"]["accelerator_shield_wall"]) <= 0:
         raise ValueError("oaTOF accelerator shield thickness is invalid")
-    if set(geometry) != {
-        "entry_surface_source", "port_source", "wall_thickness_source",
-        "target_centroid_source", "release_offset_source",
-    }:
+    if geometry != expected_geometry_sources:
         raise ValueError("S3 timing geometry sources differ")
+    target_center = s2["nominal_registration"][
+        "target_entry_center_instrument_mm"
+    ]
+    shared_target = shared_joint["physical_boundaries"]["target_entry_surface"]
+    port = s2["passive_connector_geometry"]["downstream_entry_aperture"]
+    if (
+        target_center != shared_target["center_mm"]
+        or port["center_mm"] != target_center
+        or shared_target["outward_normal"] != [-1.0, 0.0, 0.0]
+        or s2["nominal_registration"]["incoming_axis"] != "+x"
+    ):
+        raise ValueError("S3 entry surface, aperture or direction differs")
+    if (
+        spatial["resolved_surfaces"]["target_entry"]["in_instrument_frame"][
+            "center_mm"
+        ]
+        != target_center
+        or spatial["project_semantics"]["connector_gap_mm"]
+        != s2["nominal_registration"]["connector_gap_mm"]
+    ):
+        raise ValueError("S3 geometry differs from resolved S2 registration")
+    if (
+        float(port["full_width_y_mm"])
+        != float(
+            shared_joint["port_sweep"][
+                "selected_n100_candidate_full_width_y_mm"
+            ]
+        )
+        or float(port["full_height_z_mm"])
+        != float(shared_joint["port_sweep"]["full_height_z_mm"])
+        or float(s2["no_pulse_field_candidate"]["boundary_probe_inset_mm"])
+        != float(
+            shared_joint["port_sweep"][
+                "particle_release_offset_inside_outer_face_mm"
+            ]
+        )
+    ):
+        raise ValueError("S3 aperture or numerical release offset differs")
+    common_reference = shared_joint["electrical_interface"][
+        "common_potential_reference"
+    ]
+    if (
+        float(s2["field_ownership"]["common_ground_V"])
+        != float(common_reference["potential_V"])
+        or float(baseline["electrodes_V"]["shield"])
+        != float(common_reference["potential_V"])
+        or common_reference["unit"] != "V"
+    ):
+        raise ValueError("S3 common-potential continuity differs")
+    source_mass = float(source["target_mass_amu"])
+    source_charge = source["target_charge_state"]
+    if (
+        not math.isfinite(source_mass)
+        or source_mass <= 0
+        or not isinstance(source_charge, int)
+        or isinstance(source_charge, bool)
+        or source_charge == 0
+    ):
+        raise ValueError("S3 target species selector is invalid")
     runtime = contract["runtime"]
     if runtime["detector_tracking_included"]:
         raise ValueError("S3 local functional runtime must not claim detector tracking")

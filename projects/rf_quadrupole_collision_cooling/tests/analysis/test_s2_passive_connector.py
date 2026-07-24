@@ -116,6 +116,22 @@ class S2PassiveConnectorTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     resolver._validate_shared_authority(changed, rf, oatof)
 
+        for source_name, source_document in (
+            ("rf", deepcopy(rf)),
+            ("oatof", deepcopy(oatof)),
+        ):
+            if source_name == "rf":
+                source_document["drive"]["common_mode_offset_V"] = 1.0
+                changed_rf, changed_oatof = source_document, oatof
+            else:
+                source_document["electrodes_V"]["shield"] = 1.0
+                changed_rf, changed_oatof = rf, source_document
+            with self.subTest(common_potential_source=source_name):
+                with self.assertRaisesRegex(ValueError, "common-potential"):
+                    resolver._validate_shared_authority(
+                        shared, changed_rf, changed_oatof
+                    )
+
     def test_active_builder_is_build_only_and_consumes_shared_geometry(self) -> None:
         builder = (module.PROJECT_ROOT / "tests" / "comsol" / "build_s2_passive_connector_model.m").read_text(encoding="utf-8")
         self.assertIn("REPOSITORY_CONTRACT: MATLAB_BUILD_ONLY", builder)

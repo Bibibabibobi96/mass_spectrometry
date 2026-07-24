@@ -100,6 +100,8 @@ class SharedCentroidPulseTimeTests(unittest.TestCase):
             path = Path(temp) / "particles.csv"
             base = {
                 "instrument_time_us": 10.0, "mass_amu": 100.0, "charge_state": 1,
+                "frame_id": "oatof_global",
+                "clock_epoch_id": "instrument_clock_epoch.v1",
                 "position_x_mm": -67.8, "position_y_mm": 0.0,
                 "position_z_mm": -18.42918680341103,
                 "velocity_x_m_s": 1000.0, "velocity_y_m_s": 0.0,

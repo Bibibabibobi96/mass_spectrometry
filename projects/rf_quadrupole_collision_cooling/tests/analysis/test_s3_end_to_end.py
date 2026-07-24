@@ -60,8 +60,10 @@ class S3EndToEndTests(unittest.TestCase):
                                            "oatof_entry_crossings": 61,
                                            "active_at_pulse": 31}), encoding="utf-8")
             downstream = root / "downstream.csv"
-            fields = ["Ion", "X0Mm", "Y0Mm", "Z0Mm", "TofUs", "InstrumentTimeUs", "XMm", "YMm", "Hit"]
-            write_csv(downstream, fields, [{"Ion": 1, "X0Mm": -47, "Y0Mm": 0.2,
+            fields = ["Ion", "MassAmu", "ChargeState", "X0Mm", "Y0Mm", "Z0Mm",
+                      "TofUs", "InstrumentTimeUs", "XMm", "YMm", "Hit"]
+            write_csv(downstream, fields, [{"Ion": 1, "MassAmu": 100,
+                                            "ChargeState": 1, "X0Mm": -47, "Y0Mm": 0.2,
                                             "Z0Mm": 4.87, "TofUs": 10,
                                             "InstrumentTimeUs": 46.75, "XMm": 0,
                                             "YMm": 0, "Hit": "True"}])

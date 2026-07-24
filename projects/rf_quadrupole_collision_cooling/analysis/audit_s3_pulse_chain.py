@@ -19,6 +19,21 @@ def _load(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _require_finite_columns(
+    table: pd.DataFrame,
+    required: set[str],
+    numeric: set[str],
+    name: str,
+) -> None:
+    missing = required - set(table.columns)
+    if missing:
+        raise ValueError(f"{name} is missing columns: {sorted(missing)}")
+    if numeric and not np.isfinite(
+        table[list(numeric)].apply(pd.to_numeric, errors="raise").to_numpy(dtype=float)
+    ).all():
+        raise ValueError(f"{name} contains non-finite values")
+
+
 def audit(source_path: Path, terminal_path: Path, capture_path: Path,
           local_exit_path: Path, schedule_path: Path,
           contract_path: Path) -> dict[str, Any]:
@@ -26,10 +41,35 @@ def audit(source_path: Path, terminal_path: Path, capture_path: Path,
     source = pd.read_csv(source_path)
     terminal = pd.read_csv(terminal_path)
     capture = pd.read_csv(capture_path)
+    validate_component_particle_state_csv(source_path)
     validate_component_particle_state_csv(local_exit_path)
     local_exit = pd.read_csv(local_exit_path)
     schedule = _load(schedule_path)
     contract = _load(contract_path)
+    terminal_required = {
+        "particle_id", "frame_id", "clock_epoch_id", "instrument_time_us",
+        "lineage_age_us", "particle_age_us", "last_component_elapsed_time_us",
+        "mass_amu", "charge_state", "vx_m_s", "vy_m_s", "vz_m_s",
+        "kinetic_energy_eV", "event", "first_forward_oatof_entry",
+    }
+    _require_finite_columns(
+        terminal,
+        terminal_required,
+        terminal_required
+        - {"frame_id", "clock_epoch_id", "event"},
+        "S3 terminal census",
+    )
+    capture_required = {
+        "particle_id", "frame_id", "clock_epoch_id", "instrument_time_us",
+        "x_mm", "y_mm", "z_mm", "vx_m_s", "vy_m_s", "vz_m_s",
+        "inside_oatof_ideal_reference_volume", "active_at_pulse",
+    }
+    _require_finite_columns(
+        capture,
+        capture_required,
+        capture_required - {"frame_id", "clock_epoch_id"},
+        "S3 pulse state",
+    )
     if len(source) != int(contract["source"]["source_particles"]):
         raise ValueError("S3 source count differs from the contract")
     if source["particle_id"].duplicated().any() or terminal["particle_id"].duplicated().any():
@@ -41,6 +81,28 @@ def audit(source_path: Path, terminal_path: Path, capture_path: Path,
         raise ValueError("S3 capture state contains an unknown particle ID")
     if not set(local_exit["particle_id"]).issubset(source_ids):
         raise ValueError("S3 local exit contains an unknown particle ID")
+    expected_frame = "oatof_global"
+    expected_epoch = contract["source"]["clock_epoch_id"]
+    if (
+        set(source["frame_id"]) != {expected_frame}
+        or set(source["clock_epoch_id"]) != {expected_epoch}
+        or set(terminal["frame_id"]) != {expected_frame}
+        or set(terminal["clock_epoch_id"]) != {expected_epoch}
+        or (not capture.empty and set(capture["frame_id"]) != {expected_frame})
+        or (not capture.empty and set(capture["clock_epoch_id"]) != {expected_epoch})
+        or set(local_exit["frame_id"]) != {expected_frame}
+        or set(local_exit["clock_epoch_id"]) != {expected_epoch}
+    ):
+        raise ValueError("S3 frame or clock epoch is not continuous")
+    target_species = schedule.get("target_species", {})
+    if (
+        schedule.get("stage") != "S3"
+        or float(target_species.get("mass_amu", float("nan")))
+        != float(contract["source"]["target_mass_amu"])
+        or target_species.get("charge_state")
+        != contract["source"]["target_charge_state"]
+    ):
+        raise ValueError("S3 schedule target species differs from the contract")
     merged = terminal.merge(
         source[["particle_id", "frame_id", "clock_epoch_id", "instrument_time_us",
                 "lineage_age_us", "particle_age_us", "mass_amu", "charge_state"]],
@@ -53,6 +115,26 @@ def audit(source_path: Path, terminal_path: Path, capture_path: Path,
         raise ValueError("S3 terminal mass changed")
     if not (merged["charge_state_out"] == merged["charge_state_in"]).all():
         raise ValueError("S3 terminal charge changed")
+    local_identity = local_exit.merge(
+        source[["particle_id", "species_id", "mass_amu", "charge_state"]],
+        on="particle_id",
+        suffixes=("_out", "_in"),
+        validate="one_to_one",
+    )
+    if (
+        not (local_identity["species_id_out"] == local_identity["species_id_in"]).all()
+        or not np.allclose(
+            local_identity["mass_amu_out"],
+            local_identity["mass_amu_in"],
+            rtol=0,
+            atol=0,
+        )
+        or not (
+            local_identity["charge_state_out"]
+            == local_identity["charge_state_in"]
+        ).all()
+    ):
+        raise ValueError("S3 canonical local-exit species identity changed")
     elapsed = merged["last_component_elapsed_time_us"]
     residuals = np.concatenate([
         (merged["instrument_time_us_out"]-merged["instrument_time_us_in"]-elapsed).to_numpy(),

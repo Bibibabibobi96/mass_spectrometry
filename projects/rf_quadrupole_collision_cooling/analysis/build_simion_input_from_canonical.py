@@ -45,6 +45,18 @@ def build(source: Path, canonical_output: Path, ion_output: Path,
     ion_lines: list[str] = []
     frames = {row["frame_id"] for row in rows}
     epochs = {row["clock_epoch_id"] for row in rows}
+    if len(frames) != 1 or len(epochs) != 1:
+        raise ValueError(
+            "identity SIMION adaptation requires one spatial frame and clock epoch"
+        )
+    species = {
+        (
+            row["species_id"],
+            float(row["mass_amu"]),
+            int(row["charge_state"]),
+        )
+        for row in rows
+    }
     for solver_index, row in enumerate(rows, start=1):
         velocity = [float(row[f"velocity_{axis}_m_s"]) for axis in "xyz"]
         azimuth, elevation = simion_accelerator_instance_angles(velocity)
@@ -81,6 +93,14 @@ def build(source: Path, canonical_output: Path, ion_output: Path,
         "transform": {"kind": "identity", "position_projection_applied": False},
         "coordinate_contract": {"frames": sorted(frames), "simion_accelerator_instance": 3},
         "clock_contract": {"epochs": sorted(epochs), "solver_birth_time": "instrument_time_us"},
+        "species_contract": [
+            {
+                "species_id": species_id,
+                "mass_amu": mass_amu,
+                "charge_state": charge_state,
+            }
+            for species_id, mass_amu, charge_state in sorted(species)
+        ],
         "outputs": {
             "canonical": {"path": str(canonical_output.resolve()), "sha256": _sha256(canonical_output)},
             "ion": {"path": str(ion_output.resolve()), "sha256": _sha256(ion_output)},

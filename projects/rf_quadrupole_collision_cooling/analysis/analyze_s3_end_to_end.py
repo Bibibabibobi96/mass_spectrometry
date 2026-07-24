@@ -15,6 +15,10 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 
+from common.contracts.component_particle_state import (
+    validate_component_particle_state_csv,
+)
+
 
 PULSE_CONTRACT = re.compile(
     r"handoff_pulse_contract mode=(\d+) time_us=([-+0-9.eE]+) width_us=([-+0-9.eE]+)"
@@ -30,29 +34,68 @@ def analyze(source_summary_path: Path, canonical_path: Path, ion_path: Path,
             row_map_path: Path, downstream_path: Path, stdout_path: Path,
             pulse_time_us: float, pulse_width_us: float) -> dict[str, object]:
     source = json.loads(source_summary_path.read_text(encoding="utf-8"))
+    validate_component_particle_state_csv(canonical_path)
     canonical = _read_csv(canonical_path)
     mapping = _read_csv(row_map_path)
     downstream = _read_csv(downstream_path)
     ion_rows = [line for line in ion_path.read_text(encoding="utf-8-sig").splitlines() if line.strip()]
     if not canonical or len({len(canonical), len(mapping), len(downstream), len(ion_rows)}) != 1:
         raise ValueError("S3 downstream state and adapter censuses are inconsistent")
+    downstream_required = {
+        "Ion", "MassAmu", "ChargeState", "X0Mm", "Y0Mm", "Z0Mm",
+        "TofUs", "InstrumentTimeUs", "XMm", "YMm", "Hit",
+    }
+    if not downstream_required.issubset(downstream[0]):
+        raise ValueError("S3 downstream state is missing identity or phase-space columns")
     identities = {(row["frame_id"], row["clock_epoch_id"]) for row in canonical}
     if len(identities) != 1 or any(not value for value in next(iter(identities))):
         raise ValueError("S3 canonical state must bind one non-empty frame and clock epoch")
     frame_id, clock_epoch_id = next(iter(identities))
 
-    solver_ids = {int(row["solver_row_index"]): int(row["particle_id"]) for row in mapping}
+    solver_ids = {
+        int(row["solver_row_index"]): int(row["particle_id"])
+        for row in mapping
+    }
+    if len(solver_ids) != len(mapping):
+        raise ValueError("S3 SIMION row map contains duplicate solver indices")
     canonical_ids = {int(row["particle_id"]) for row in canonical}
     mapped_ids = set(solver_ids.values())
+    canonical_by_id = {int(row["particle_id"]): row for row in canonical}
+    mapping_by_index = {
+        int(row["solver_row_index"]): row for row in mapping
+    }
+    downstream_indices = {int(row["Ion"]) for row in downstream}
+    if downstream_indices != set(solver_ids):
+        raise ValueError("S3 downstream solver rows differ from the frozen row map")
     detector_rows = [row for row in downstream if math.isfinite(float(row["InstrumentTimeUs"]))]
     hits = [row for row in detector_rows if row["Hit"].strip().lower() == "true"]
     initial_residual = max(
-        max(abs(float(result[f"{axis.upper()}0Mm"]) - float(state[f"position_{axis}_mm"])) for axis in "xyz")
-        for state, result in zip(canonical, downstream)
+        max(
+            abs(
+                float(result[f"{axis.upper()}0Mm"])
+                - float(
+                    canonical_by_id[solver_ids[int(result["Ion"])]]
+                    [f"position_{axis}_mm"]
+                )
+            )
+            for axis in "xyz"
+        )
+        for result in downstream
+    )
+    species_preserved = all(
+        math.isclose(
+            float(row["MassAmu"]),
+            float(canonical_by_id[solver_ids[int(row["Ion"])]]["mass_amu"]),
+            rel_tol=0,
+            abs_tol=0,
+        )
+        and int(float(row["ChargeState"]))
+        == int(canonical_by_id[solver_ids[int(row["Ion"])]]["charge_state"])
+        for row in downstream
     )
     clock_residual = max(
         abs(float(row["InstrumentTimeUs"]) -
-            (float(mapping[int(row["Ion"]) - 1]["solver_birth_time_us"]) + float(row["TofUs"])))
+            (float(mapping_by_index[int(row["Ion"])]["solver_birth_time_us"]) + float(row["TofUs"])))
         for row in detector_rows
     ) if detector_rows else 0.0
     matches = PULSE_CONTRACT.findall(stdout_path.read_text(encoding="utf-8-sig"))
@@ -63,6 +106,7 @@ def analyze(source_summary_path: Path, canonical_path: Path, ion_path: Path,
     checks = {
         "source_s3_run_succeeded": source["status"] == "success",
         "identity_preserved": canonical_ids == mapped_ids,
+        "species_mass_and_charge_preserved": species_preserved,
         "canonical_position_reaches_simion_exactly": initial_residual <= 1e-12,
         "global_detector_clock_continues": clock_residual <= 1e-9,
         "same_pulse_contract_continues": pulse_match,
@@ -147,6 +191,8 @@ def main() -> None:
                      args.downstream, args.stdout, args.pulse_time_us, args.pulse_width_us)
     geometry = json.loads(args.geometry_contract.read_text(encoding="utf-8"))
     coordinates = geometry["coordinate_convention"]
+    if coordinates.get("frame_id") != result["frame_id"]:
+        raise ValueError("S3 downstream geometry frame differs from canonical state")
     plot(result, args.downstream, args.figure, float(coordinates["detector_x"]),
          float(coordinates.get("detector_y", 0.0)), float(geometry["geometry_mm"]["detector_radius"]))
     args.output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")

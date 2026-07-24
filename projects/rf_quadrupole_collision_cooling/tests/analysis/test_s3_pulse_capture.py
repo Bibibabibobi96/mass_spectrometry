@@ -5,6 +5,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from projects.rf_quadrupole_collision_cooling.analysis import validate_s3_pulse_capture as module
 
@@ -12,6 +13,15 @@ from projects.rf_quadrupole_collision_cooling.analysis import validate_s3_pulse_
 class S3PulseCaptureContractTests(unittest.TestCase):
     def test_repository_contract_passes(self) -> None:
         contract = module.validate_contract()
+        self.assertEqual(contract["schema_version"], 2)
+        self.assertEqual(
+            contract["inputs"]["spatial_registration"],
+            "config/resolved_rf_to_oatof_s2_spatial_registration.json",
+        )
+        self.assertEqual(
+            contract["identity_contract"]["species_identity_key"],
+            ["species_id", "mass_amu", "charge_state"],
+        )
         self.assertTrue(contract["permissions"]["nominal_particle_runtime_allowed"])
         self.assertFalse(contract["permissions"]["s3_stage_pass_allowed"])
         self.assertEqual(contract["waveform"]["rise_fall_model"], "ideal_finite_step")
@@ -31,6 +41,55 @@ class S3PulseCaptureContractTests(unittest.TestCase):
             plan["stages"][1]["entrypoint"],
             "tests/cross_solver/run_s3_cumulative_chain.ps1",
         )
+
+    def test_stage_plan_drift_is_rejected_by_the_runtime_validator(self) -> None:
+        contract = module._load(module.DEFAULT_CONTRACT)
+        plan_path = module._relative(contract["inputs"]["stage_plan"])
+        original_load = module._load
+        plan = original_load(plan_path)
+        mutations = []
+        changed = copy.deepcopy(plan)
+        changed["governance"]["public_entry_count"] = 2
+        mutations.append(changed)
+        changed = copy.deepcopy(plan)
+        changed["stages"][0]["public_entrypoint"] = True
+        mutations.append(changed)
+        changed = copy.deepcopy(plan)
+        changed["stages"][1]["entrypoint"] = "tests/comsol/run_s3_pulse_capture.ps1"
+        mutations.append(changed)
+        for changed in mutations:
+            def load(path: Path, replacement: dict = changed) -> dict:
+                return replacement if Path(path).resolve() == plan_path else original_load(path)
+
+            with self.subTest(plan=changed):
+                with mock.patch.object(module, "_load", side_effect=load):
+                    with self.assertRaisesRegex(ValueError, "entry|S2|S3"):
+                        module.validate_contract()
+
+    def test_clock_origin_and_pulse_timing_authority_drift_are_rejected(self) -> None:
+        contract = module._load(module.DEFAULT_CONTRACT)
+        changed = copy.deepcopy(contract)
+        changed["source"]["clock_epoch_id"] = "solver_local_time"
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "s3.json"
+            path.write_text(json.dumps(changed), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "clock epochs"):
+                module.validate_contract(path)
+
+        pulse_path = module._relative(contract["inputs"]["pulse_timing_policy"])
+        pulse = module._load(pulse_path)
+        changed_pulse = copy.deepcopy(pulse)
+        changed_pulse["method"] = "fixed_solver_local_time"
+        original_load = module._load
+
+        def load(path: Path) -> dict:
+            if Path(path).resolve() == pulse_path:
+                return changed_pulse
+            return original_load(path)
+
+        with mock.patch.object(module, "_load", side_effect=load):
+            with self.assertRaisesRegex(ValueError, "pulse timing method"):
+                module.validate_contract()
 
     def test_stage_promotion_is_rejected(self) -> None:
         contract = module._load(module.DEFAULT_CONTRACT)

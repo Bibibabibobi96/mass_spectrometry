@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from copy import deepcopy
 
 from projects.rf_quadrupole_collision_cooling.analysis import (
     resolve_spatial_registration as resolver,
@@ -137,6 +138,32 @@ class RfOatofSpatialRegistrationTests(unittest.TestCase):
             write_or_check_release(output, baseline, check=False)
             with self.assertRaisesRegex(ValueError, "stale or missing"):
                 write_or_check_release(output, changed, check=True)
+
+    def test_active_chain_rejects_a_non_rigid_source_pose(self) -> None:
+        with tempfile.TemporaryDirectory(dir=resolver.PROJECT_ROOT) as temporary:
+            root = Path(temporary)
+            stage = root / "stage.json"
+            shared = root / "shared.json"
+            stage_document = json.loads(resolver.S2.read_text(encoding="utf-8"))
+            shared_document = json.loads(
+                resolver.SHARED_JOINT.read_text(encoding="utf-8")
+            )
+            invalid_rotation = deepcopy(
+                shared_document["nominal_registration"]["source_component_pose"][
+                    "rotation_component_to_instrument"
+                ]
+            )
+            invalid_rotation[0][0] = 0.25
+            shared_document["nominal_registration"]["source_component_pose"][
+                "rotation_component_to_instrument"
+            ] = invalid_rotation
+            stage_document["nominal_registration"]["source_component_pose"][
+                "rotation_component_to_instrument"
+            ] = invalid_rotation
+            stage.write_text(json.dumps(stage_document), encoding="utf-8")
+            shared.write_text(json.dumps(shared_document), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "orthonormal|determinant"):
+                resolver.resolve_stage(stage, shared)
 
 
 if __name__ == "__main__":

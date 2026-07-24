@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "role": "rf_to_oatof_s3_shared_clock_pulse_capture_candidate",
   "status": "nominal_cumulative_function_passed_stage_unqualified",
   "stage": "S3",
@@ -16,6 +16,7 @@
   "inputs": {
     "stage_plan": "config/rf_to_oatof_interface_stages.json",
     "s2_connector": "config/rf_to_oatof_s2_passive_connector.json",
+    "spatial_registration": "config/resolved_rf_to_oatof_s2_spatial_registration.json",
     "shared_physical_port_joint_geometry": "config/rf_to_oatof_shared_physical_port_joint_geometry.json",
     "pulse_timing_policy": "config/rf_to_oatof_pulse_timing.json",
     "oatof_baseline": "../oa_tof/config/baseline.json"
@@ -31,6 +32,16 @@
     "clock_epoch_id": "instrument_clock_epoch.v1",
     "source_particles": 100,
     "rule": "Track the original RF-exit population in the S2 joint geometry; derive timing from the prior real S2 oa-entry states without projecting positions or resetting clocks."
+  },
+  "identity_contract": {
+    "canonical_state_schema": "common/contracts/schemas/component_particle_state.schema.json",
+    "frame_id": "oatof_global",
+    "clock_epoch_id_source": "source.clock_epoch_id",
+    "particle_identity_policy": "particle_id remains unique and unchanged across RF exit, S2 terminal, S3 pulse state, local accelerator exit and SIMION row mapping",
+    "species_identity_key": ["species_id", "mass_amu", "charge_state"],
+    "species_selector_policy": "source target_mass_amu and target_charge_state select the timing cohort but never rewrite canonical particle species",
+    "position_transform_policy": "consume the resolved S2 rigid registration once; all S3 and downstream states remain in oatof_global without projection",
+    "velocity_transform_policy": "the resolved S2 rotation applies to velocity once; translation never applies to velocity"
   },
   "timing_geometry": {
     "entry_surface_source": "s2_connector.nominal_registration.target_entry_center_instrument_mm",

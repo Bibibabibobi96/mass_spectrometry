@@ -69,6 +69,27 @@ def derive_schedule(particle_path: Path, baseline_path: Path, joint_path: Path,
     }
     if not required.issubset(particles.columns):
         raise ValueError("canonical handoff table is missing pulse-scheduler columns")
+    if particles.empty or particles["particle_id"].duplicated().any():
+        raise ValueError("pulse-scheduler particle IDs must be nonempty and unique")
+    particle_ids = pd.to_numeric(particles["particle_id"], errors="raise").to_numpy(
+        dtype=float
+    )
+    if (
+        not np.isfinite(particle_ids).all()
+        or not np.equal(particle_ids, np.rint(particle_ids)).all()
+    ):
+        raise ValueError("pulse-scheduler particle IDs must be finite integers")
+    numeric_columns = required - {"particle_id"}
+    numeric = particles[list(numeric_columns)].apply(pd.to_numeric, errors="raise")
+    if not np.isfinite(numeric.to_numpy(dtype=float)).all():
+        raise ValueError("pulse-scheduler state contains non-finite values")
+    charges = particles["charge_state"].to_numpy(dtype=float)
+    if (
+        (particles["mass_amu"].to_numpy(dtype=float) <= 0).any()
+        or (charges == 0).any()
+        or not np.equal(charges, np.rint(charges)).all()
+    ):
+        raise ValueError("pulse-scheduler mass or charge state is invalid")
     if (target_mass_amu is None) != (target_charge_state is None):
         raise ValueError("target mass and charge state must be specified together")
 
@@ -100,8 +121,17 @@ def derive_schedule(particle_path: Path, baseline_path: Path, joint_path: Path,
         s2 = load_json(s2_contract_path)
         if s2.get("stage") != "S2":
             raise ValueError("S3 timing requires an S2 connector contract")
-        if not {"event", "status"}.issubset(selected.columns):
+        if not {"event", "status", "frame_id", "clock_epoch_id"}.issubset(
+            selected.columns
+        ):
             raise ValueError("S3 timing states must identify real S2 oa-entry events")
+        expected_frame = s2["nominal_registration"]["instrument_frame"]
+        expected_epoch = s2["functional_candidate"]["clock_epoch_id"]
+        if (
+            set(particles["frame_id"]) != {expected_frame}
+            or set(particles["clock_epoch_id"]) != {expected_epoch}
+        ):
+            raise ValueError("S3 timing frame or clock epoch differs from S2")
         selected = selected[
             selected["event"].eq("oatof_entry") & selected["status"].eq("transmitted")
         ].copy()
@@ -121,13 +151,14 @@ def derive_schedule(particle_path: Path, baseline_path: Path, joint_path: Path,
         )
     release_x = entry_surface_x + offset
     target_x = float(geometry["source_center"]["x"])
+    port_center_y = float(entry_center[1])
     port_center_z = float(entry_center[2])
     half_y = port_width / 2
     half_z = port_height / 2
     wall = float(geometry["shield_wall"])
 
     at_outer = (
-        selected["position_y_mm"].abs().le(half_y + 1e-12)
+        (selected["position_y_mm"] - port_center_y).abs().le(half_y + 1e-12)
         & (selected["position_z_mm"] - port_center_z).abs().le(half_z + 1e-12)
     )
     outer = selected[at_outer].copy()
@@ -136,7 +167,7 @@ def derive_schedule(particle_path: Path, baseline_path: Path, joint_path: Path,
     outer["predicted_inner_z_mm"] = (
         outer["position_z_mm"] + outer["velocity_z_m_s"] / outer["velocity_x_m_s"] * wall)
     at_inner = (
-        outer["predicted_inner_y_mm"].abs().le(half_y + 1e-12)
+        (outer["predicted_inner_y_mm"] - port_center_y).abs().le(half_y + 1e-12)
         & (outer["predicted_inner_z_mm"] - port_center_z).abs().le(half_z + 1e-12)
     )
     cohort = outer[at_inner].copy()
@@ -183,6 +214,14 @@ def derive_schedule(particle_path: Path, baseline_path: Path, joint_path: Path,
         },
         "selected_cohort": {
             "particle_ids": [int(value) for value in cohort["particle_id"]],
+            "frame_id": (
+                str(cohort["frame_id"].iloc[0]) if "frame_id" in cohort else None
+            ),
+            "clock_epoch_id": (
+                str(cohort["clock_epoch_id"].iloc[0])
+                if "clock_epoch_id" in cohort
+                else None
+            ),
             "mean_entry_instrument_time_us": float(cohort["instrument_time_us"].mean()),
             "mean_velocity_x_m_s": mean_vx,
             "mean_velocity_x_times_entry_time_m_s_us": mean_vx_t,
