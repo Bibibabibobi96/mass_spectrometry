@@ -1,0 +1,176 @@
+{
+  "schema_version": 1,
+  "role": "rf_quadrupole_axial_acceleration_four_arm_experiment",
+  "status": "planned_waiting_for_paired_bundle_metadata",
+  "project_id": "rf_quadrupole_collision_cooling",
+  "authorities": {
+    "design_profile_registry": "projects/rf_quadrupole_collision_cooling/config/design_profiles.json",
+    "source_family": "projects/rf_quadrupole_collision_cooling/config/interface_readiness_particle_source.json",
+    "distribution": "projects/rf_quadrupole_collision_cooling/config/official_particle_source.json",
+    "bundle_preflight_resolved": "projects/rf_quadrupole_collision_cooling/config/resolved_design_official.json",
+    "interface_contract": "projects/rf_quadrupole_collision_cooling/config/interface_contract.json"
+  },
+  "bundle_binding": {
+    "metadata_path": null,
+    "required_role": "rf_quadrupole_paired_particle_source_bundle",
+    "required_identity_keys": [
+      "algorithm_version",
+      "seed",
+      "policy",
+      "inputs",
+      "operating_point_ids",
+      "latent_sha256",
+      "sample_family_sha256",
+      "coordinate_mapping_version",
+      "artifacts"
+    ],
+    "artifact_identity_keys": [
+      "relative_path",
+      "operating_point_id",
+      "particle_count",
+      "representation",
+      "sha256",
+      "n1000_parent"
+    ]
+  },
+  "source_selectors": {
+    "control_2eV_n100": {
+      "operating_point_id": "official_100amu_2eV",
+      "particle_count": 100,
+      "representation": "canonical10"
+    },
+    "candidate_5eV_n100": {
+      "operating_point_id": "rf_to_oatof_100amu_5eV",
+      "particle_count": 100,
+      "representation": "canonical10"
+    }
+  },
+  "arms": [
+    {
+      "arm_id": "A",
+      "purpose": "2 eV source without axial acceleration",
+      "design_profile_id": "official_transport",
+      "source_selector": "control_2eV_n100",
+      "primary_case_id": "finite_3d_rf_on",
+      "evidence_contract": null
+    },
+    {
+      "arm_id": "B",
+      "purpose": "5 eV source without axial acceleration",
+      "design_profile_id": "official_transport",
+      "source_selector": "candidate_5eV_n100",
+      "primary_case_id": "finite_3d_rf_on",
+      "evidence_contract": null
+    },
+    {
+      "arm_id": "C",
+      "purpose": "2 to 5 eV segmented-rod acceleration",
+      "design_profile_id": "explicit_axial_reference",
+      "source_selector": "control_2eV_n100",
+      "primary_case_id": "axial_acceleration_rf_on",
+      "evidence_contract": "projects/rf_quadrupole_collision_cooling/config/evidence/explicit_axial_reference.json"
+    },
+    {
+      "arm_id": "D",
+      "purpose": "2 to 5 eV endplate acceleration",
+      "design_profile_id": "endplate_acceleration_reference",
+      "source_selector": "control_2eV_n100",
+      "primary_case_id": "endplate_acceleration_rf_on",
+      "evidence_contract": "projects/rf_quadrupole_collision_cooling/config/evidence/endplate_acceleration_reference.json"
+    }
+  ],
+  "comparison_contract": {
+    "acceptance_surface": {
+      "contract": "projects/rf_quadrupole_collision_cooling/config/interface_contract.json",
+      "json_pointer": "/planes/acceptance_detector"
+    },
+    "paired_population": {
+      "all_source_particle_ids_required": true,
+      "loss_filtering_allowed": false,
+      "common_survivor_filtering_allowed": false
+    },
+    "source_invariants": {
+      "A_C_D_exact_same_n100_path_and_sha": true,
+      "B_same_latent_and_sample_family_as_A": true,
+      "B_only_energy_and_velocity_scale_may_change": true,
+      "n100_must_be_n1000_prefix": true
+    },
+    "accelerated_arm_invariants": {
+      "arm_ids": [
+        "C",
+        "D"
+      ],
+      "resolved_fields_required_equal": [
+        "source_reference_V",
+        "output_reference_V",
+        "predicted_energy_gain_eV",
+        "predicted_output_energy_eV"
+      ]
+    },
+    "execution_order": [
+      "COMSOL_A",
+      "COMSOL_B",
+      "COMSOL_C",
+      "COMSOL_D",
+      "COMSOL_delta_report",
+      "SIMION_independent_review_if_approved"
+    ],
+    "C_vs_D": {
+      "reporting_mode": "delta_only",
+      "equivalence_tolerance": null,
+      "equivalence_claim_allowed": false
+    },
+    "post_run_acceptance": {
+      "run_mode": "resolved_design_transport",
+      "state_output": "results/particle_state__primary.csv",
+      "metrics_output": "results/finite_3d_transport_metrics.json",
+      "terminal_event": "terminal",
+      "terminal_status": "transmitted",
+      "terminal_reason": "acceptance_detector",
+      "claim_limit": "N=100 functional, per-ID descriptive deltas only; no statistical, Formal, equivalence, superiority, optimization, or cooling claim.",
+      "comparison_fields": [
+        "kinetic_energy_eV",
+        "divergence_angle_deg",
+        "radial_position_mm",
+        "elapsed_time_us"
+      ],
+      "descriptive_aggregations": [
+        {
+          "output_name": "mean_kinetic_energy_eV",
+          "field": "kinetic_energy_eV",
+          "operation": "mean"
+        },
+        {
+          "output_name": "rms_divergence_angle_deg",
+          "field": "divergence_angle_deg",
+          "operation": "rms"
+        },
+        {
+          "output_name": "rms_radial_position_mm",
+          "field": "radial_position_mm",
+          "operation": "rms"
+        },
+        {
+          "output_name": "mean_elapsed_time_us",
+          "field": "elapsed_time_us",
+          "operation": "mean"
+        }
+      ],
+      "comparisons": [
+        {
+          "comparison_id": "source_energy_B_minus_A",
+          "minuend_arm_id": "B",
+          "subtrahend_arm_id": "A",
+          "reporting_mode": "functional_delta"
+        },
+        {
+          "comparison_id": "axial_topology_C_minus_D",
+          "minuend_arm_id": "C",
+          "subtrahend_arm_id": "D",
+          "reporting_mode": "delta_only"
+        }
+      ]
+    }
+  },
+  "claim_limit": "Static experiment orchestration only. Missing bundle metadata blocks execution readiness; no solver, equivalence, optimization, Candidate or Formal claim."
+}
