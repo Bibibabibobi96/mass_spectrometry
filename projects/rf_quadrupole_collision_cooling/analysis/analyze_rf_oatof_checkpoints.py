@@ -12,8 +12,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.collections import LineCollection
-from matplotlib.patches import Rectangle
+from matplotlib.patches import Circle, Rectangle
 import numpy as np
 import pandas as pd
 
@@ -25,11 +24,18 @@ from common.contracts.rigid_transform import (
 )
 
 try:
-    from plot_shared_pulse_geometry_snapshot import accelerator_geometry, particle_marker_areas
+    from plot_shared_pulse_geometry_snapshot import (
+        add_accelerator_geometry_outlines,
+        add_rf_s2_geometry_outlines,
+        particle_marker_areas,
+        registered_chain_geometry,
+    )
 except ModuleNotFoundError:
     from projects.rf_quadrupole_collision_cooling.analysis.plot_shared_pulse_geometry_snapshot import (
-        accelerator_geometry,
+        add_accelerator_geometry_outlines,
+        add_rf_s2_geometry_outlines,
         particle_marker_areas,
+        registered_chain_geometry,
     )
 
 
@@ -38,6 +44,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SPATIAL_REGISTRATION = (
     PROJECT_ROOT / "config" / "resolved_rf_to_oatof_s2_spatial_registration.json"
 )
+DEFAULT_RF_RESOLVED_GEOMETRY = PROJECT_ROOT / "config" / "resolved_design_official.json"
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -329,6 +336,183 @@ def _prepare_states(exit_state: pd.DataFrame, capture: pd.DataFrame,
     return table, pulse_time, cohort
 
 
+def _validate_s2_aperture(
+    s2_contract: dict[str, Any], geometry: dict[str, Any]
+) -> None:
+    aperture = s2_contract["passive_connector_geometry"][
+        "downstream_entry_aperture"
+    ]
+    center = np.asarray(aperture["center_mm"], dtype=float)
+    expected = np.asarray([
+        geometry["target_entry_center"][axis] for axis in AXES
+    ])
+    if (
+        aperture.get("shape") != "rectangle"
+        or not np.allclose(center, expected, rtol=0, atol=1e-12)
+        or not np.isclose(
+            float(aperture["full_width_y_mm"]),
+            float(geometry["port_width_y"]), rtol=0, atol=1e-12,
+        )
+        or not np.isclose(
+            float(aperture["full_height_z_mm"]),
+            float(geometry["port_height_z"]), rtol=0, atol=1e-12,
+        )
+    ):
+        raise ValueError("S2 aperture differs from shared physical-port authority")
+
+
+def _prepare_chain_states(
+    table: pd.DataFrame,
+    s2_entry: pd.DataFrame,
+    local_exit: pd.DataFrame,
+    row_map: pd.DataFrame,
+    downstream: pd.DataFrame,
+    registration: dict[str, Any],
+    geometry: dict[str, Any],
+    clock_epoch_id: str,
+) -> pd.DataFrame:
+    """Join all physical checkpoints and assign exhaustive final outcomes."""
+    s2_required = {
+        "particle_id", "frame_id", "clock_epoch_id", "first_forward_oatof_entry",
+        "position_x_mm", "position_y_mm", "position_z_mm",
+        "velocity_x_m_s", "velocity_y_m_s", "velocity_z_m_s",
+    }
+    local_required = {
+        "particle_id", "frame_id", "clock_epoch_id",
+        "position_x_mm", "position_y_mm", "position_z_mm",
+        "velocity_x_m_s", "velocity_y_m_s", "velocity_z_m_s",
+    }
+    map_required = {"solver_row_index", "particle_id"}
+    downstream_required = {
+        "Ion", "InstrumentTimeUs", "XMm", "YMm", "Hit",
+    }
+    _require_columns(s2_entry, s2_required, "S2 oa-entry state")
+    _require_columns(local_exit, local_required, "S3 local-exit state")
+    _require_columns(row_map, map_required, "SIMION row map")
+    missing_downstream = downstream_required - set(downstream.columns)
+    if missing_downstream or downstream.empty:
+        raise ValueError(
+            "SIMION downstream state is missing columns: "
+            + ", ".join(sorted(missing_downstream))
+        )
+    source_ids = set(table["particle_id"].astype(int))
+    if set(s2_entry["particle_id"].astype(int)) != source_ids:
+        raise ValueError("S2 oa-entry census must contain every RF-exit ID")
+    for role, state in (("S2 oa-entry", s2_entry), ("S3 local-exit", local_exit)):
+        if (
+            not state["frame_id"].eq(registration["instrument_frame_id"]).all()
+            or not state["clock_epoch_id"].eq(clock_epoch_id).all()
+        ):
+            raise ValueError(f"{role} frame or clock epoch changed")
+
+    s2_local = _registered_local_state(
+        s2_entry, registration, "position_", "velocity_"
+    )
+    entry_mask = pd.to_numeric(
+        s2_local["first_forward_oatof_entry"], errors="raise"
+    ).astype(bool)
+    entry = s2_local.loc[entry_mask, [
+        "particle_id", *[f"local_{axis}_mm" for axis in AXES]
+    ]].rename(columns={
+        **{f"local_{axis}_mm": f"s2_entry_local_{axis}_mm" for axis in AXES},
+    })
+    target = geometry["target_entry_center"]
+    if not np.allclose(
+        entry["s2_entry_local_x_mm"], float(target["x"]), rtol=0, atol=1e-9
+    ):
+        raise ValueError("S2 oa-entry positions do not lie on the physical plane")
+    inside = (
+        (entry["s2_entry_local_y_mm"] - float(target["y"])).abs()
+        <= float(geometry["port_width_y"]) / 2 + 1e-12
+    ) & (
+        (entry["s2_entry_local_z_mm"] - float(target["z"])).abs()
+        <= float(geometry["port_height_z"]) / 2 + 1e-12
+    )
+    if not inside.all():
+        raise ValueError("S2 transmitted entry lies outside the physical aperture")
+    table = table.merge(entry, on="particle_id", how="left", validate="one_to_one")
+    table["inside_physical_aperture_at_s2_entry"] = table[
+        "s2_entry_local_x_mm"
+    ].notna()
+
+    local = _registered_local_state(
+        local_exit, registration, "position_", "velocity_"
+    )[["particle_id", *[f"local_{axis}_mm" for axis in AXES]]].rename(columns={
+        **{f"local_{axis}_mm": f"local_exit_local_{axis}_mm" for axis in AXES},
+    })
+    local_ids = set(local["particle_id"].astype(int))
+    active_ids = set(table.loc[table["active_at_pulse"], "particle_id"].astype(int))
+    if not local_ids.issubset(active_ids):
+        raise ValueError("S3 local-exit IDs are not a subset of pulse-active IDs")
+    table = table.merge(local, on="particle_id", how="left", validate="one_to_one")
+    table["reached_local_accelerator_exit"] = table[
+        "local_exit_local_x_mm"
+    ].notna()
+
+    if row_map["solver_row_index"].duplicated().any() or row_map["particle_id"].duplicated().any():
+        raise ValueError("SIMION row map identities are not unique")
+    solver_to_particle = dict(zip(
+        pd.to_numeric(row_map["solver_row_index"], errors="raise").astype(int),
+        pd.to_numeric(row_map["particle_id"], errors="raise").astype(int),
+        strict=True,
+    ))
+    if set(solver_to_particle.values()) != local_ids:
+        raise ValueError("SIMION row map differs from S3 local-exit IDs")
+    downstream = downstream.copy()
+    downstream["solver_row_index"] = pd.to_numeric(
+        downstream["Ion"], errors="raise"
+    ).astype(int)
+    if downstream["solver_row_index"].duplicated().any():
+        raise ValueError("SIMION downstream state contains duplicate solver rows")
+    if set(downstream["solver_row_index"]) != set(solver_to_particle):
+        raise ValueError("SIMION downstream rows differ from the frozen row map")
+    downstream["particle_id"] = downstream["solver_row_index"].map(solver_to_particle)
+    downstream["downstream_detector_crossing"] = np.isfinite(pd.to_numeric(
+        downstream["InstrumentTimeUs"], errors="coerce"
+    ))
+    downstream["downstream_detector_hit"] = downstream["Hit"].astype(str).str.lower().eq("true")
+    if (downstream["downstream_detector_hit"] & ~downstream["downstream_detector_crossing"]).any():
+        raise ValueError("SIMION detector hit lacks a finite detector crossing")
+    downstream["detector_plane_x_mm"] = pd.to_numeric(
+        downstream["XMm"], errors="coerce"
+    ) - float(geometry["detector_center_x"])
+    downstream["detector_plane_y_mm"] = pd.to_numeric(
+        downstream["YMm"], errors="coerce"
+    ) - float(geometry["detector_center_y"])
+    table = table.merge(downstream[[
+        "particle_id", "downstream_detector_crossing", "downstream_detector_hit",
+        "detector_plane_x_mm", "detector_plane_y_mm",
+    ]], on="particle_id", how="left", validate="one_to_one")
+    table[["downstream_detector_crossing", "downstream_detector_hit"]] = table[[
+        "downstream_detector_crossing", "downstream_detector_hit"
+    ]].fillna(False).astype(bool)
+
+    entry_ids = set(table.loc[
+        table["inside_physical_aperture_at_s2_entry"], "particle_id"
+    ].astype(int))
+    if not active_ids.issubset(entry_ids):
+        raise ValueError("pulse-active IDs are not a subset of S2 oa-entry IDs")
+    conditions = [
+        ~table["inside_physical_aperture_at_s2_entry"],
+        table["inside_physical_aperture_at_s2_entry"] & ~table["active_at_pulse"],
+        table["active_at_pulse"] & ~table["reached_local_accelerator_exit"],
+        table["reached_local_accelerator_exit"] & table["downstream_detector_hit"],
+        table["reached_local_accelerator_exit"] & ~table["downstream_detector_hit"],
+    ]
+    labels = [
+        "physical_port_wall_loss", "pre_pulse_loss", "active_local_exit_loss",
+        "detector_hit", "local_exit_without_detector_hit",
+    ]
+    memberships = np.column_stack([condition.to_numpy(bool) for condition in conditions])
+    if not np.sum(memberships, axis=1).astype(int).tolist() == [1] * len(table):
+        bad_ids = table.loc[np.sum(memberships, axis=1) != 1, "particle_id"].tolist()
+        raise ValueError(f"particle outcomes are not exhaustive: particle_ids={bad_ids}")
+    table["particle_outcome"] = np.select(conditions, labels, default="unclassified")
+    if table["particle_outcome"].eq("unclassified").any():
+        raise ValueError("particle outcome classification left unclassified rows")
+    return table
+
+
 def _state_view(table: pd.DataFrame, state: str, mask: pd.Series) -> pd.DataFrame:
     columns = ["particle_id", "mass_amu", "charge_state"]
     result = table.loc[mask, columns].copy()
@@ -357,24 +541,43 @@ def _residual_metrics(table: pd.DataFrame) -> dict[str, Any]:
 
 
 def analyze_checkpoints(exit_path: Path, capture_path: Path, terminal_path: Path,
+                        s2_entry_path: Path, local_exit_path: Path,
+                        row_map_path: Path, downstream_path: Path,
                         schedule_path: Path, baseline_path: Path, s2_path: Path,
                         joint_path: Path, contract_path: Path,
                         registration_path: Path = DEFAULT_SPATIAL_REGISTRATION,
+                        rf_resolved_path: Path = DEFAULT_RF_RESOLVED_GEOMETRY,
                         ) -> tuple[dict[str, Any], pd.DataFrame, dict[str, Any]]:
     """Return metrics, the full-ID comparison table and plotting geometry."""
     contract = load_json(contract_path)
-    if contract.get("schema_version") != 1:
+    if contract.get("schema_version") != 2:
         raise ValueError("checkpoint diagnostic contract schema is invalid")
     exit_state = pd.read_csv(exit_path)
     capture = pd.read_csv(capture_path)
     terminal = pd.read_csv(terminal_path)
+    s2_entry = pd.read_csv(s2_entry_path)
+    local_exit = pd.read_csv(local_exit_path)
+    row_map = pd.read_csv(row_map_path)
+    downstream = pd.read_csv(downstream_path)
     schedule = load_json(schedule_path)
     baseline = load_json(baseline_path)
+    s2_contract = load_json(s2_path)
+    joint = load_json(joint_path)
     registration = load_json(registration_path)
+    rf_resolved = load_json(rf_resolved_path)
     if registration.get("role") != "resolved_spatial_registration_do_not_edit":
         raise ValueError("checkpoint spatial registration is not authoritative")
+    geometry = registered_chain_geometry(
+        baseline, joint, registration, rf_resolved, s2_contract
+    )
+    _validate_s2_aperture(s2_contract, geometry)
     table, pulse_time, cohort = _prepare_states(
         exit_state, capture, terminal, schedule, registration)
+    clock_epoch_id = str(exit_state["clock_epoch_id"].iloc[0])
+    table = _prepare_chain_states(
+        table, s2_entry, local_exit, row_map, downstream,
+        registration, geometry, clock_epoch_id,
+    )
     source = baseline["particle_source"]
     all_mask = pd.Series(True, index=table.index)
     cohort_mask = table["scheduler_cohort"]
@@ -409,7 +612,7 @@ def analyze_checkpoints(exit_path: Path, capture_path: Path, terminal_path: Path
         "status": "PASS",
         "analysis_frame": contract["frame_contract"]["analysis_frame"],
         "input_frame": registration["instrument_frame_id"],
-        "clock_epoch_id": str(exit_state["clock_epoch_id"].iloc[0]),
+        "clock_epoch_id": clock_epoch_id,
         "pulse_instrument_time_us": pulse_time,
         "state_time_semantics": "capture is the left limit immediately before t_pulse",
         "population_counts": {
@@ -420,6 +623,27 @@ def analyze_checkpoints(exit_path: Path, capture_path: Path, terminal_path: Path
             "capture_outside_scheduler_cohort": int((active_mask & ~cohort_mask).sum()),
             "scheduler_cohort_lost_before_pulse": int((cohort_mask & ~active_mask).sum()),
             "all_exit_lost_before_pulse": int((~active_mask).sum()),
+            "s2_oatof_entry": int(table["inside_physical_aperture_at_s2_entry"].sum()),
+            "local_accelerator_exit": int(table["reached_local_accelerator_exit"].sum()),
+            "detector_crossing": int(table["downstream_detector_crossing"].sum()),
+            "detector_hit": int(table["downstream_detector_hit"].sum()),
+        },
+        "stage_membership": {
+            "denominator": int(len(table)),
+            "sets_are_nested_not_additive": True,
+            "rf_exit": int(len(table)),
+            "s2_oatof_entry": int(table["inside_physical_aperture_at_s2_entry"].sum()),
+            "pulse_active": int(table["active_at_pulse"].sum()),
+            "local_accelerator_exit": int(table["reached_local_accelerator_exit"].sum()),
+            "detector_hit": int(table["downstream_detector_hit"].sum()),
+        },
+        "exclusive_particle_outcomes": {
+            "denominator": int(len(table)),
+            "classes_are_mutually_exclusive_and_exhaustive": True,
+            "counts": {
+                str(name): int(count)
+                for name, count in table["particle_outcome"].value_counts().items()
+            },
         },
         "loss_counts": [
             {"event": str(event), "terminal_reason": str(reason), "particles": int(count)}
@@ -438,11 +662,19 @@ def analyze_checkpoints(exit_path: Path, capture_path: Path, terminal_path: Path
             "exit_state": {"path": str(exit_path.resolve()), "sha256": sha256(exit_path)},
             "capture_state": {"path": str(capture_path.resolve()), "sha256": sha256(capture_path)},
             "terminal_census": {"path": str(terminal_path.resolve()), "sha256": sha256(terminal_path)},
+            "s2_oatof_entry_state": {"path": str(s2_entry_path.resolve()), "sha256": sha256(s2_entry_path)},
+            "local_accelerator_exit_state": {"path": str(local_exit_path.resolve()), "sha256": sha256(local_exit_path)},
+            "simion_row_map": {"path": str(row_map_path.resolve()), "sha256": sha256(row_map_path)},
+            "simion_downstream_state": {"path": str(downstream_path.resolve()), "sha256": sha256(downstream_path)},
             "pulse_schedule": {"path": str(schedule_path.resolve()), "sha256": sha256(schedule_path)},
             "s2_contract": {"path": str(s2_path.resolve()), "sha256": sha256(s2_path)},
             "registration": {
                 "path": str(registration_path.resolve()),
                 "sha256": sha256(registration_path),
+            },
+            "rf_resolved_geometry": {
+                "path": str(rf_resolved_path.resolve()),
+                "sha256": sha256(rf_resolved_path),
             },
             "oatof_baseline": {"path": str(baseline_path.resolve()), "sha256": sha256(baseline_path)},
             "joint_geometry": {"path": str(joint_path.resolve()), "sha256": sha256(joint_path)},
@@ -457,7 +689,6 @@ def analyze_checkpoints(exit_path: Path, capture_path: Path, terminal_path: Path
             "formal_gate_passed": False,
         },
     }
-    geometry = accelerator_geometry(baseline, load_json(joint_path))
     return metrics, table, geometry
 
 
@@ -466,67 +697,108 @@ def _add_reference_boxes(ax_xz: plt.Axes, ax_yz: plt.Axes,
     center = geometry["source_center"]
     size = geometry["source_size"]
     ideal_style = {"fill": False, "edgecolor": "#756bb1", "linestyle": "--",
-                   "linewidth": 1.7, "label": "ideal source volume"}
+                   "linewidth": 1.7, "label": "ideal source volume", "zorder": 3}
     ax_xz.add_patch(Rectangle(
         (center["x"] - size["x"] / 2, center["z"] - size["z"] / 2),
         size["x"], size["z"], **ideal_style))
     ax_yz.add_patch(Rectangle(
         (center["y"] - size["y"] / 2, center["z"] - size["z"] / 2),
         size["y"], size["z"], **ideal_style))
-    port_y = geometry["port_width_y"]
-    port_z = geometry["port_height_z"]
-    ax_yz.add_patch(Rectangle(
-        (-port_y / 2, geometry["port_center_z"] - port_z / 2), port_y, port_z,
-        fill=False, edgecolor="#cb181d", linewidth=1.2, linestyle=":",
-        label="physical entry aperture"))
 
 
 def _plot_state_planes(axes: tuple[plt.Axes, plt.Axes], table: pd.DataFrame,
                        geometry: dict[str, Any]) -> None:
+    """Plot registered chain checkpoints and mutually exclusive loss locations."""
     ax_xz, ax_yz = axes
-    active = table["active_at_pulse"]
-    lost = ~active
+    add_rf_s2_geometry_outlines(ax_xz, geometry, "xz")
+    add_rf_s2_geometry_outlines(ax_yz, geometry, "yz")
+    add_accelerator_geometry_outlines(ax_xz, geometry, "x")
+    add_accelerator_geometry_outlines(ax_yz, geometry, "y")
+    _add_reference_boxes(ax_xz, ax_yz, geometry)
     marker = particle_marker_areas(len(table))["active"]
+    states = (
+        ("exit", pd.Series(True, index=table.index), "#0072B2", "o",
+         f"RF exit (N={len(table)})"),
+        ("s2_entry", table["inside_physical_aperture_at_s2_entry"],
+         "#56B4E9", "^", "S2 / oa entry"),
+        ("capture", table["active_at_pulse"], "#E69F00", "s", "S3 pulse left limit"),
+        ("local_exit", table["reached_local_accelerator_exit"],
+         "#009E73", "D", "local accelerator exit"),
+    )
     for ax, horizontal, vertical in (
         (ax_xz, "x", "z"), (ax_yz, "y", "z"),
     ):
-        ax.scatter(table.loc[active, f"ballistic_local_{horizontal}_mm"],
-                   table.loc[active, f"ballistic_local_{vertical}_mm"],
-                   s=marker * 1.1, marker="+", linewidths=0.9, color="#0072B2",
-                   label="ballistic prediction, matched active IDs", rasterized=True)
-        ax.scatter(table.loc[active, f"capture_local_{horizontal}_mm"],
-                   table.loc[active, f"capture_local_{vertical}_mm"],
-                   s=marker, marker="o", linewidths=0.25, edgecolors="white",
-                   color="#E69F00", label="COMSOL capture at pulse left limit",
-                   rasterized=True)
-        segments = [[
-            (row[f"ballistic_local_{horizontal}_mm"], row[f"ballistic_local_{vertical}_mm"]),
-            (row[f"capture_local_{horizontal}_mm"], row[f"capture_local_{vertical}_mm"]),
-        ] for _, row in table.loc[active].iterrows()]
-        ax.add_collection(LineCollection(segments, colors="#7f7f7f", linewidths=0.35,
-                                         alpha=0.28, rasterized=True))
-        terminal_h = f"terminal_local_{horizontal}_mm"
-        terminal_v = f"terminal_local_{vertical}_mm"
-        if terminal_h in table and terminal_v in table:
-            ax.scatter(table.loc[lost, terminal_h], table.loc[lost, terminal_v],
-                       s=marker * 0.9, marker="x", linewidths=0.6, color="#D55E00",
-                       alpha=0.65, label="actual pre-pulse loss position", rasterized=True)
+        for state, mask, color, symbol, label in states:
+            ax.scatter(
+                table.loc[mask, f"{state}_local_{horizontal}_mm"],
+                table.loc[mask, f"{state}_local_{vertical}_mm"],
+                s=marker, marker=symbol, linewidths=0.55, edgecolors="#202020",
+                color=color, alpha=0.78, label=label, rasterized=True, zorder=6,
+            )
+        for outcome, color, symbol, label in (
+            ("physical_port_wall_loss", "#D55E00", "x", "physical port wall loss"),
+            ("pre_pulse_loss", "#252525", "X", "pre-pulse accelerator/boundary loss"),
+            ("active_local_exit_loss", "#CC79A7", "P", "active local-exit loss"),
+        ):
+            mask = table["particle_outcome"].eq(outcome)
+            ax.scatter(
+                table.loc[mask, f"terminal_local_{horizontal}_mm"],
+                table.loc[mask, f"terminal_local_{vertical}_mm"],
+                s=marker * 1.1, marker=symbol, linewidths=0.75,
+                color=color, label=label, rasterized=True, zorder=7,
+            )
         ax.grid(alpha=0.18)
-        ax.set_aspect("equal", adjustable="datalim")
-    _add_reference_boxes(ax_xz, ax_yz, geometry)
+        ax.set_aspect("equal", adjustable="box")
     ax_xz.set(xlabel="Registered oa guide axis, x (mm)",
               ylabel="Registered oa acceleration axis, z (mm)",
-              title="A  Guide–acceleration plane (x–z)")
+              title="A  Registered chain checkpoints (x–z)")
     ax_yz.set(xlabel="Registered oa transverse axis, y (mm)",
               ylabel="Registered oa acceleration axis, z (mm)",
-              title="B  Orthogonal cross-section (y–z)")
+              title="B  Physical aperture and losses (y–z)")
+
+
+def _plot_detector_plane(ax: plt.Axes, table: pd.DataFrame,
+                         geometry: dict[str, Any]) -> None:
+    crossing = table["downstream_detector_crossing"]
+    hit = table["downstream_detector_hit"]
+    ax.add_patch(Circle(
+        (0, 0), float(geometry["detector_radius"]), fill=False,
+        linestyle="--", linewidth=1.2, color="#756bb1", label="active radius",
+    ))
+    ax.scatter(
+        table.loc[crossing & ~hit, "detector_plane_x_mm"],
+        table.loc[crossing & ~hit, "detector_plane_y_mm"],
+        marker="x", color="#D55E00", label="crossing outside active radius",
+    )
+    ax.scatter(
+        table.loc[hit, "detector_plane_x_mm"],
+        table.loc[hit, "detector_plane_y_mm"],
+        marker="*", s=48, edgecolors="#202020", linewidths=0.5,
+        color="#009E73", label="detector hit",
+    )
+    ax.set(
+        xlabel="Detector-plane x − center (mm)",
+        ylabel="Detector-plane y − center (mm)",
+        title=("C  Downstream detector state "
+               f"({int(hit.sum())}/{int(table['reached_local_accelerator_exit'].sum())})"),
+    )
+    ax.set_aspect("equal", adjustable="box")
+    ax.grid(alpha=0.18)
+    ax.legend(fontsize=7, loc="best")
 
 
 def build_checkpoint_figure(metrics: dict[str, Any], table: pd.DataFrame,
-                            geometry: dict[str, Any]) -> tuple[plt.Figure, np.ndarray]:
-    """Build the four-panel run-diagnostic figure without saving it."""
-    figure, axes = plt.subplots(2, 2, figsize=(13.8, 10.2), constrained_layout=True)
-    _plot_state_planes((axes[0, 0], axes[0, 1]), table, geometry)
+                            geometry: dict[str, Any]
+                            ) -> tuple[plt.Figure, dict[str, plt.Axes]]:
+    """Build the six-panel full-chain run diagnostic without saving it."""
+    figure, grid = plt.subplots(2, 3, figsize=(17.4, 10.4), constrained_layout=True)
+    axes = {
+        "chain_xz": grid[0, 0], "aperture_yz": grid[0, 1],
+        "detector": grid[0, 2], "ballistic_residual": grid[1, 0],
+        "exclusive_outcomes": grid[1, 1], "stage_membership": grid[1, 2],
+    }
+    _plot_state_planes((axes["chain_xz"], axes["aperture_yz"]), table, geometry)
+    _plot_detector_plane(axes["detector"], table, geometry)
     active = table[table["active_at_pulse"]]
     residual_styles = {
         "x": {"color": "#0072B2", "marker": "o"},
@@ -536,44 +808,86 @@ def build_checkpoint_figure(metrics: dict[str, Any], table: pd.DataFrame,
     marker_size = np.sqrt(particle_marker_areas(len(table))["active"])
     for axis in AXES:
         style = residual_styles[axis]
-        axes[1, 0].plot(
+        axes["ballistic_residual"].plot(
             active["particle_id"], active[f"capture_minus_ballistic_{axis}_mm"],
             linestyle="none", marker=style["marker"], markersize=marker_size,
             markeredgecolor="#202020", markeredgewidth=0.45,
             color=style["color"], label=f"{axis} residual (Δ{axis})",
             rasterized=True)
-    axes[1, 0].axhline(0, color="#555555", linewidth=0.8)
-    axes[1, 0].set(xlabel="Particle ID",
+    axes["ballistic_residual"].axhline(0, color="#555555", linewidth=0.8)
+    axes["ballistic_residual"].set(xlabel="Particle ID",
                    ylabel="COMSOL capture − ballistic prediction (mm)",
-                   title="C  Same-ID ballistic residual")
-    axes[1, 0].legend(
+                   title=f"D  Same-ID pulse residual (N={len(active)})")
+    axes["ballistic_residual"].legend(
         title="Position component", loc="best", ncol=3, frameon=True,
         facecolor="white", framealpha=0.88, fontsize=8, title_fontsize=8)
-    axes[1, 0].grid(alpha=0.18)
-    counts = metrics["population_counts"]
-    labels = ["RF exit", "scheduler cohort", "active at pulse",
-              "cohort active", "loss before pulse"]
-    values = [counts["source_exit_all"], counts["scheduler_cohort"],
-              counts["capture_all_active"], counts["capture_scheduler_cohort"],
-              counts["all_exit_lost_before_pulse"]]
-    axes[1, 1].barh(labels, values, color=["#0072B2", "#56B4E9", "#E69F00",
-                                          "#009E73", "#D55E00"])
+    axes["ballistic_residual"].grid(alpha=0.18)
+
+    denominator = int(metrics["exclusive_particle_outcomes"]["denominator"])
+    outcome_order = [
+        ("physical_port_wall_loss", "port wall loss"),
+        ("pre_pulse_loss", "pre-pulse loss"),
+        ("active_local_exit_loss", "active local-exit loss"),
+        ("local_exit_without_detector_hit", "local exit; no detector hit"),
+        ("detector_hit", "detector hit"),
+    ]
+    outcome_counts = metrics["exclusive_particle_outcomes"]["counts"]
+    labels = [label for _, label in outcome_order]
+    values = [int(outcome_counts.get(key, 0)) for key, _ in outcome_order]
+    axes["exclusive_outcomes"].barh(
+        labels, values,
+        color=["#D55E00", "#252525", "#CC79A7", "#56B4E9", "#009E73"],
+        hatch=["//", "xx", "..", "--", "++"], edgecolor="#202020",
+        linewidth=0.5,
+    )
     for index, value in enumerate(values):
-        axes[1, 1].text(value, index, f" {value}", va="center", fontsize=8)
-    axes[1, 1].set(xlabel="Particles", title="D  Cohort and loss accounting")
-    axes[1, 1].set_xlim(0, max(values) * 1.12)
+        axes["exclusive_outcomes"].text(
+            value, index, f" {value}/{denominator}", va="center", fontsize=8
+        )
+    axes["exclusive_outcomes"].set(
+        xlabel=f"Mutually exclusive particles (denominator N={denominator})",
+        title="E  Exhaustive final outcomes",
+    )
+    axes["exclusive_outcomes"].set_xlim(0, max(values + [1]) * 1.23)
+
+    membership = metrics["stage_membership"]
+    stage_labels = ["RF exit", "S2 / oa entry", "pulse active", "local exit", "detector hit"]
+    stage_values = [membership[key] for key in (
+        "rf_exit", "s2_oatof_entry", "pulse_active",
+        "local_accelerator_exit", "detector_hit",
+    )]
+    axes["stage_membership"].plot(
+        range(len(stage_values)), stage_values, color="#0072B2", linewidth=1.1,
+        marker="o", markerfacecolor="white", markeredgecolor="#0072B2",
+    )
+    axes["stage_membership"].set_xticks(range(len(stage_labels)), stage_labels, rotation=20)
+    axes["stage_membership"].set(
+        ylabel=f"Nested membership (of N={denominator})",
+        title="F  Stage membership (not additive)", ylim=(0, denominator * 1.08),
+    )
+    for index, value in enumerate(stage_values):
+        axes["stage_membership"].text(index, value, f"{value}/{denominator}",
+                                      ha="center", va="bottom", fontsize=8)
+    axes["stage_membership"].grid(axis="y", alpha=0.18)
     legend_items: dict[str, Any] = {}
-    for axis in (axes[0, 0], axes[0, 1]):
+    for axis in (axes["chain_xz"], axes["aperture_yz"]):
         handles, labels = axis.get_legend_handles_labels()
         legend_items.update(zip(labels, handles, strict=True))
     figure.legend(legend_items.values(), legend_items.keys(),
-                  loc="outside lower center", ncol=3, frameon=False)
+                  loc="outside lower center", ncol=4, frameon=False, fontsize=8)
     figure.suptitle(
-        "RF exit to oaTOF pre-pulse checkpoint diagnostic "
+        "RF exit → S2 port → S3 pulse → local exit → oaTOF detector diagnostic "
         f"(t = {metrics['pulse_instrument_time_us']:.6f} µs)\n"
         f"frame={metrics['analysis_frame']}; input={metrics['input_frame']}; "
-        f"clock epoch={metrics['clock_epoch_id']}", fontsize=13)
+        f"clock epoch={metrics['clock_epoch_id']}; source denominator N={denominator}",
+        fontsize=13)
     return figure, axes
+
+
+def export_checkpoint_figure(figure: plt.Figure, output: Path) -> None:
+    """Export one run-diagnostic PNG without changing its prepared data."""
+    output.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(output, format="png", dpi=190)
 
 
 def main() -> None:
@@ -581,6 +895,10 @@ def main() -> None:
     parser.add_argument("--exit-state", type=Path, required=True)
     parser.add_argument("--capture-state", type=Path, required=True)
     parser.add_argument("--terminal-census", type=Path, required=True)
+    parser.add_argument("--s2-entry-state", type=Path, required=True)
+    parser.add_argument("--local-exit-state", type=Path, required=True)
+    parser.add_argument("--downstream-row-map", type=Path, required=True)
+    parser.add_argument("--downstream-state", type=Path, required=True)
     parser.add_argument("--pulse-schedule", type=Path, required=True)
     parser.add_argument("--oatof-baseline", type=Path, required=True)
     parser.add_argument("--s2-contract", type=Path, required=True)
@@ -589,6 +907,7 @@ def main() -> None:
         type=Path,
         default=DEFAULT_SPATIAL_REGISTRATION,
     )
+    parser.add_argument("--rf-resolved-geometry", type=Path, required=True)
     parser.add_argument("--joint-contract", type=Path, required=True)
     parser.add_argument("--contract", type=Path, required=True)
     parser.add_argument("--metrics", type=Path, required=True)
@@ -597,16 +916,21 @@ def main() -> None:
     args = parser.parse_args()
     metrics, table, geometry = analyze_checkpoints(
         args.exit_state, args.capture_state, args.terminal_census,
+        args.s2_entry_state, args.local_exit_state,
+        args.downstream_row_map, args.downstream_state,
         args.pulse_schedule, args.oatof_baseline, args.s2_contract,
-        args.joint_contract, args.contract, args.resolved_registration)
+        args.joint_contract, args.contract, args.resolved_registration,
+        args.rf_resolved_geometry)
     args.metrics.parent.mkdir(parents=True, exist_ok=True)
     args.particles.parent.mkdir(parents=True, exist_ok=True)
     args.figure.parent.mkdir(parents=True, exist_ok=True)
     args.metrics.write_text(json.dumps(metrics, indent=2) + "\n", encoding="utf-8")
     table.to_csv(args.particles, index=False)
     figure, _ = build_checkpoint_figure(metrics, table, geometry)
-    figure.savefig(args.figure, format="png", dpi=190)
-    plt.close(figure)
+    try:
+        export_checkpoint_figure(figure, args.figure)
+    finally:
+        plt.close(figure)
     counts = metrics["population_counts"]
     print("RF_OATOF_CHECKPOINTS=PASS "
           f"EXIT={counts['source_exit_all']} COHORT={counts['scheduler_cohort']} "

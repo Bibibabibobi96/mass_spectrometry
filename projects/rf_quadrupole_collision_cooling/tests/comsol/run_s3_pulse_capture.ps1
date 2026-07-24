@@ -132,6 +132,7 @@ try {
   $pulseSchedule = Join-Path $inputDir 's3_centroid_pulse_schedule.json'
   & $python $scheduler --particle-state $timingState --oatof-baseline $oaBaseline `
     --joint-contract $sharedJoint --s2-contract $s2 --policy $pulsePolicy `
+    --resolved-registration $spatialRegistration `
     --target-mass-amu ([double]$s3Document.source.target_mass_amu) `
     --target-charge-state ([int]$s3Document.source.target_charge_state) --output $pulseSchedule
   if ($LASTEXITCODE -ne 0) { throw 'S3 centroid pulse schedule derivation failed.' }
@@ -227,6 +228,7 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'S3 particle-chain audit failed.' }
   & $python $snapshotAnalysis --capture $capture --events $terminal `
     --oatof-baseline $oaBaseline --joint-contract $sharedJoint `
+    --resolved-registration $spatialRegistration `
     --figure $snapshotFigure --metadata $snapshotMetadata
   if ($LASTEXITCODE -ne 0) { throw 'S3 pulse snapshot generation failed.' }
   $result = Get-Content -LiteralPath $metrics -Raw -Encoding UTF8 | ConvertFrom-Json

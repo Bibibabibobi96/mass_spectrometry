@@ -4,6 +4,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -55,7 +56,7 @@ class RfOatofCheckpointTests(unittest.TestCase):
         pd.DataFrame(rows).to_csv(self.exit_path, index=False)
 
         capture_rows = []
-        for particle_id, residual_x in ((1, 0.0), (2, 0.2)):
+        for particle_id, residual_x in ((1, 0.0), (2, 0.2), (3, 0.4)):
             source = rows[particle_id - 1]
             capture_rows.append({
                 "particle_id": particle_id,
@@ -76,7 +77,7 @@ class RfOatofCheckpointTests(unittest.TestCase):
 
         terminal_rows = []
         for particle_id in range(1, 6):
-            active = particle_id <= 2
+            active = particle_id <= 3
             terminal_rows.append({
                 "particle_id": particle_id,
                 "frame_id": "oatof_global",
@@ -96,13 +97,59 @@ class RfOatofCheckpointTests(unittest.TestCase):
         self.schedule_path = self.root / "schedule.json"
         self.schedule_path.write_text(json.dumps({
             "derived_pulse_time_us": 2.0,
-            "selected_cohort": {"particle_ids": [1, 2, 3]},
+            "selected_cohort": {"particle_ids": [1, 2, 4]},
         }), encoding="utf-8")
+
+        self.s2_entry_path = self.root / "s2_entry.csv"
+        pd.DataFrame([{
+            "particle_id": particle_id,
+            "frame_id": "oatof_global",
+            "clock_epoch_id": "instrument_clock_epoch.v1",
+            "first_forward_oatof_entry": particle_id <= 4,
+            "position_x_mm": -67.8,
+            "position_y_mm": 0.0,
+            "position_z_mm": -18.42918680341103,
+            "velocity_x_m_s": 1000.0,
+            "velocity_y_m_s": 0.0,
+            "velocity_z_m_s": 0.0,
+        } for particle_id in range(1, 6)]).to_csv(self.s2_entry_path, index=False)
+
+        self.local_exit_path = self.root / "local_exit.csv"
+        pd.DataFrame([{
+            "particle_id": particle_id,
+            "frame_id": "oatof_global",
+            "clock_epoch_id": "instrument_clock_epoch.v1",
+            "position_x_mm": -47.0,
+            "position_y_mm": 0.1 * particle_id,
+            "position_z_mm": 4.8,
+            "velocity_x_m_s": 4000.0,
+            "velocity_y_m_s": 0.0,
+            "velocity_z_m_s": 58000.0,
+        } for particle_id in (1, 2)]).to_csv(self.local_exit_path, index=False)
+
+        self.row_map_path = self.root / "row_map.csv"
+        pd.DataFrame([
+            {"solver_row_index": 1, "particle_id": 2},
+            {"solver_row_index": 2, "particle_id": 1},
+        ]).to_csv(self.row_map_path, index=False)
+        baseline = json.loads(self.baseline.read_text(encoding="utf-8"))
+        detector_x = baseline["coordinate_convention"]["detector_x"]
+        detector_y = baseline["coordinate_convention"].get("detector_y", 0.0)
+        self.downstream_path = self.root / "downstream.csv"
+        pd.DataFrame([
+            {"Ion": 2, "InstrumentTimeUs": 12.0, "XMm": detector_x,
+             "YMm": detector_y, "Hit": True},
+            {"Ion": 1, "InstrumentTimeUs": 12.5, "XMm": detector_x + 1.0,
+             "YMm": detector_y, "Hit": False},
+        ]).to_csv(self.downstream_path, index=False)
 
     def _analyze(self):
         return module.analyze_checkpoints(
             self.exit_path, self.capture_path, self.terminal_path,
-            self.schedule_path, self.baseline, self.s2, self.joint, self.contract)
+            self.s2_entry_path, self.local_exit_path, self.row_map_path,
+            self.downstream_path, self.schedule_path, self.baseline, self.s2,
+            self.joint, self.contract,
+        )
 
     def test_energy_uses_common_particle_physics_for_each_state(self) -> None:
         states = pd.DataFrame({
@@ -122,14 +169,14 @@ class RfOatofCheckpointTests(unittest.TestCase):
         counts = metrics["population_counts"]
         self.assertEqual(counts["source_exit_all"], 5)
         self.assertEqual(counts["scheduler_cohort"], 3)
-        self.assertEqual(counts["capture_all_active"], 2)
+        self.assertEqual(counts["capture_all_active"], 3)
         self.assertEqual(counts["scheduler_cohort_lost_before_pulse"], 1)
-        self.assertEqual(counts["all_exit_lost_before_pulse"], 3)
+        self.assertEqual(counts["all_exit_lost_before_pulse"], 2)
         self.assertEqual(metrics["scientific_scope"]["particles_removed_from_metrics"], 0)
         self.assertEqual(set(table["particle_id"]), {1, 2, 3, 4, 5})
         residual = metrics["capture_minus_ballistic_same_id_residual"]["position"]["x"]
-        self.assertAlmostEqual(residual["mean"], 0.1)
-        self.assertAlmostEqual(residual["rms"], np.sqrt(0.02))
+        self.assertAlmostEqual(residual["mean"], 0.2)
+        self.assertAlmostEqual(residual["rms"], np.sqrt(0.2 / 3))
         capture = metrics["checkpoint_metrics"]["capture_all_active"]
         covariance = capture["covariance_r_v_mm_m_per_s"]
         self.assertEqual(covariance["row_frame_id"], metrics["analysis_frame"])
@@ -138,7 +185,40 @@ class RfOatofCheckpointTests(unittest.TestCase):
         self.assertEqual(covariance["column_unit"], "m/s")
         self.assertEqual(np.asarray(covariance["values"]).shape, (3, 3))
         self.assertIn("projected_emittance", capture)
-        self.assertEqual(capture["ideal_reference_volume"]["denominator"], 2)
+        self.assertEqual(capture["ideal_reference_volume"]["denominator"], 3)
+        stages = metrics["stage_membership"]
+        self.assertEqual(stages["denominator"], 5)
+        self.assertTrue(stages["sets_are_nested_not_additive"])
+        self.assertEqual(
+            [stages[key] for key in (
+                "rf_exit", "s2_oatof_entry", "pulse_active",
+                "local_accelerator_exit", "detector_hit",
+            )],
+            [5, 4, 3, 2, 1],
+        )
+        outcomes = metrics["exclusive_particle_outcomes"]
+        self.assertEqual(outcomes["denominator"], 5)
+        self.assertTrue(outcomes["classes_are_mutually_exclusive_and_exhaustive"])
+        self.assertEqual(
+            outcomes["counts"],
+            {
+                "physical_port_wall_loss": 1,
+                "pre_pulse_loss": 1,
+                "active_local_exit_loss": 1,
+                "local_exit_without_detector_hit": 1,
+                "detector_hit": 1,
+            },
+        )
+        self.assertEqual(
+            dict(zip(table["particle_id"], table["particle_outcome"], strict=True)),
+            {
+                1: "detector_hit",
+                2: "local_exit_without_detector_hit",
+                3: "active_local_exit_loss",
+                4: "pre_pulse_loss",
+                5: "physical_port_wall_loss",
+            },
+        )
 
     def test_registered_transform_applies_translation_to_position_only(self) -> None:
         rotation = np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
@@ -173,14 +253,67 @@ class RfOatofCheckpointTests(unittest.TestCase):
 
     def test_render_smoke_has_required_planes_and_units(self) -> None:
         metrics, table, geometry = self._analyze()
-        figure, axes = module.build_checkpoint_figure(metrics, table, geometry)
+        with mock.patch.object(plt, "show") as show, mock.patch(
+            "matplotlib.figure.Figure.savefig"
+        ) as save:
+            figure, axes = module.build_checkpoint_figure(metrics, table, geometry)
+            show.assert_not_called()
+            save.assert_not_called()
         try:
-            self.assertIn("x–z", axes[0, 0].get_title())
-            self.assertIn("y–z", axes[0, 1].get_title())
-            self.assertIn("(mm)", axes[0, 0].get_xlabel())
+            self.assertEqual(set(axes), {
+                "chain_xz", "aperture_yz", "detector", "ballistic_residual",
+                "exclusive_outcomes", "stage_membership",
+            })
+            self.assertIn("x–z", axes["chain_xz"].get_title())
+            self.assertIn("y–z", axes["aperture_yz"].get_title())
+            self.assertIn("(mm)", axes["chain_xz"].get_xlabel())
+            self.assertIn("(mm)", axes["detector"].get_xlabel())
             self.assertIn(metrics["analysis_frame"], figure._suptitle.get_text())
             self.assertIn(metrics["clock_epoch_id"], figure._suptitle.get_text())
-            residual_axis = axes[1, 0]
+            figure_labels = [
+                text.get_text() for legend in figure.legends
+                for text in legend.get_texts()
+            ]
+            self.assertIn("RF exit (N=5)", figure_labels)
+            self.assertNotIn("RF exit (N=100)", figure_labels)
+            self.assertEqual(axes["chain_xz"].get_aspect(), 1.0)
+            self.assertEqual(axes["aperture_yz"].get_aspect(), 1.0)
+            self.assertEqual(axes["detector"].get_aspect(), 1.0)
+            for axis_name in ("chain_xz", "aperture_yz"):
+                axis = axes[axis_name]
+                geometry_artists = [
+                    artist for artist in [*axis.patches, *axis.lines]
+                    if artist.get_gid()
+                ]
+                semantic_ids = [artist.get_gid() for artist in geometry_artists]
+                self.assertEqual(len(semantic_ids), len(set(semantic_ids)))
+                self.assertEqual(
+                    sum(":ring:" in semantic_id for semantic_id in semantic_ids),
+                    2 * len(geometry["ring_centers_z"]),
+                )
+                self.assertEqual(
+                    sum(semantic_id.endswith(":physical_port")
+                        for semantic_id in semantic_ids),
+                    1,
+                )
+                self.assertTrue(all(artist.get_zorder() < 6
+                                    for artist in geometry_artists))
+            self.assertEqual(
+                sum((patch.get_gid() or "").startswith("rf:xz:rod:")
+                    for patch in axes["chain_xz"].patches),
+                geometry["rf_chain"]["rod_count"],
+            )
+            self.assertEqual(
+                sum((patch.get_gid() or "").startswith("rf:yz:rod:")
+                    for patch in axes["aperture_yz"].patches),
+                geometry["rf_chain"]["rod_count"],
+            )
+            self.assertEqual(
+                sum((patch.get_gid() or "") == "rf:yz:clear_aperture"
+                    for patch in axes["aperture_yz"].patches),
+                1,
+            )
+            residual_axis = axes["ballistic_residual"]
             residual_legend = residual_axis.get_legend()
             self.assertIsNotNone(residual_legend)
             self.assertEqual(
@@ -195,11 +328,13 @@ class RfOatofCheckpointTests(unittest.TestCase):
                 [line.get_marker() for line in residual_lines],
                 ["o", "s", "^"],
             )
+            for line in residual_lines:
+                np.testing.assert_array_equal(line.get_xdata(), [1, 2, 3])
             self.assertTrue(all(
                 line.get_linestyle() == "None" for line in residual_lines
             ))
             output = self.root / "checkpoint.png"
-            figure.savefig(output, format="png", dpi=100)
+            module.export_checkpoint_figure(figure, output)
             self.assertGreater(output.stat().st_size, 1000)
         finally:
             plt.close(figure)
@@ -228,6 +363,28 @@ class RfOatofCheckpointTests(unittest.TestCase):
         terminal.loc[0, "clock_epoch_id"] = "wrong_epoch"
         terminal.to_csv(self.terminal_path, index=False)
         with self.assertRaisesRegex(ValueError, "terminal census clock epoch changed"):
+            self._analyze()
+
+    def test_chain_states_reject_nonfinite_values_and_identity_drift(self) -> None:
+        s2_entry = pd.read_csv(self.s2_entry_path)
+        s2_entry.loc[0, "position_y_mm"] = np.nan
+        s2_entry.to_csv(self.s2_entry_path, index=False)
+        with self.assertRaisesRegex(ValueError, "non-finite"):
+            self._analyze()
+
+        self._write_fixture()
+        local_exit = pd.read_csv(self.local_exit_path)
+        local_exit.loc[0, "frame_id"] = "solver_local"
+        local_exit.to_csv(self.local_exit_path, index=False)
+        with self.assertRaisesRegex(ValueError, "frame or clock epoch"):
+            self._analyze()
+
+        self._write_fixture()
+        downstream = pd.read_csv(self.downstream_path)
+        downstream.loc[0, "InstrumentTimeUs"] = np.nan
+        downstream.loc[0, "Hit"] = True
+        downstream.to_csv(self.downstream_path, index=False)
+        with self.assertRaisesRegex(ValueError, "hit lacks a finite detector crossing"):
             self._analyze()
 
 

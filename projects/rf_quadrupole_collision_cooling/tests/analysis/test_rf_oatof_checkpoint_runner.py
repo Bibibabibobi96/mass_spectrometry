@@ -23,7 +23,8 @@ class RfOatofCheckpointRunnerTests(unittest.TestCase):
         self.assertIn("ParameterSetName = 'SourceManifest'", self.runner)
         self.assertIn("[string]$SourceRunId", self.runner)
         self.assertIn("[string]$SourceManifest", self.runner)
-        self.assertGreaterEqual(self.runner.count("--require-status success"), 2)
+        self.assertIn("[string]$DownstreamRunId", self.runner)
+        self.assertGreaterEqual(self.runner.count("--require-status success"), 3)
         self.assertIn(
             "rf_to_oatof_s3_shared_clock_pulse_capture_n100", self.runner
         )
@@ -31,6 +32,18 @@ class RfOatofCheckpointRunnerTests(unittest.TestCase):
             "The source manifest must belong to the RF project artifact runs directory",
             self.runner,
         )
+        self.assertIn(
+            "The downstream run must belong to the RF project artifact runs directory",
+            self.runner,
+        )
+        for binding in (
+            "$downstreamManifestDocument.mode -ne 'rf_to_oatof_s3_cumulative_end_to_end'",
+            "$downstreamManifestDocument.run_id -ne $DownstreamRunId",
+            "$downstreamRunConfiguration.run_id -ne $DownstreamRunId",
+            "$downstreamRunConfiguration.parameters.source_run_id",
+            "$sourceManifestDocument.run_id",
+        ):
+            self.assertIn(binding, self.runner)
 
     def test_manifest_covered_source_state_and_frozen_contracts_are_copied(self) -> None:
         required_source_roles = (
@@ -39,8 +52,13 @@ class RfOatofCheckpointRunnerTests(unittest.TestCase):
             "$sourceRunConfiguration.inputs.s2_contract",
             "$sourceRunConfiguration.inputs.shared_physical_port_joint_geometry",
             "$sourceRunConfiguration.inputs.oatof_baseline",
+            "$sourceRunConfiguration.inputs.rf_resolved_geometry",
+            "$sourceRunConfiguration.inputs.timing_state",
             "s3_pulse_left_limit_state.csv",
             "s3_particle_terminal_census.csv",
+            "s3_local_accelerator_exit.csv",
+            "inputs\\row_map.csv",
+            "results\\simion_downstream_particles.csv",
         )
         for role in required_source_roles:
             self.assertIn(role, self.runner)
@@ -48,6 +66,17 @@ class RfOatofCheckpointRunnerTests(unittest.TestCase):
         self.assertIn("$manifestOutputPaths -notcontains", self.runner)
         self.assertIn("source_s3_run_manifest.json", self.runner)
         self.assertIn("source_s3_run_config.json", self.runner)
+        self.assertIn("downstream_run_manifest.json", self.runner)
+        self.assertIn("downstream_run_config.json", self.runner)
+        self.assertIn("$downstreamManifestOutputPaths -notcontains", self.runner)
+        for frozen in (
+            "s2_oatof_entry_state.csv",
+            "s3_local_accelerator_exit.csv",
+            "simion_row_map.csv",
+            "simion_downstream_particles.csv",
+            "resolved_design_official.json",
+        ):
+            self.assertIn(frozen, self.runner)
         self.assertIn("plot_shared_pulse_geometry_snapshot.py", self.runner)
         self.assertIn("snapshot_analysis = $snapshotAnalysis", self.runner)
         self.assertIn("Copy-CheckpointInput", self.runner)
@@ -61,9 +90,14 @@ class RfOatofCheckpointRunnerTests(unittest.TestCase):
             "--exit-state $sourceExit",
             "--capture-state $capture",
             "--terminal-census $terminal",
+            "--s2-entry-state $s2Entry",
+            "--local-exit-state $localExit",
+            "--downstream-row-map $downstreamRowMap",
+            "--downstream-state $downstreamState",
             "--pulse-schedule $pulseSchedule",
             "--oatof-baseline $oatofBaseline",
             "--s2-contract $s2Contract",
+            "--rf-resolved-geometry $rfResolvedGeometry",
             "--joint-contract $jointContract",
             "--contract $contract",
             "--metrics $metrics",
@@ -76,6 +110,12 @@ class RfOatofCheckpointRunnerTests(unittest.TestCase):
         self.assertIn("rf-oatof-checkpoints__state-comparison.png", self.runner)
         self.assertIn("$analysisLog", self.runner)
         self.assertIn("-Outputs $outputs", self.runner)
+        self.assertIn("exclusive_particle_outcomes.denominator", self.runner)
+        self.assertIn(
+            "exclusive_particle_outcomes.classes_are_mutually_exclusive_and_exhaustive",
+            self.runner,
+        )
+        self.assertIn("stage_membership.detector_hit", self.runner)
 
     def test_lifecycle_is_verified_and_never_promotes_stage(self) -> None:
         self.assertIn("[string]$PythonExe", self.runner)

@@ -21,6 +21,9 @@ except ModuleNotFoundError:
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 POLICY_PATH = PROJECT_ROOT / "config" / "rf_to_oatof_pulse_timing.json"
+REGISTRATION_PATH = (
+    PROJECT_ROOT / "config" / "resolved_rf_to_oatof_s2_spatial_registration.json"
+)
 
 
 def load_json(path: Path) -> dict:
@@ -59,7 +62,8 @@ def _sha256(path: Path) -> str:
 def derive_schedule(particle_path: Path, baseline_path: Path, joint_path: Path,
                     policy_path: Path = POLICY_PATH, target_mass_amu: float | None = None,
                     target_charge_state: int | None = None,
-                    s2_contract_path: Path | None = None) -> dict[str, object]:
+                    s2_contract_path: Path | None = None,
+                    registration_path: Path = REGISTRATION_PATH) -> dict[str, object]:
     policy = validate_policy(policy_path)
     particles = pd.read_csv(particle_path)
     required = {
@@ -110,7 +114,8 @@ def derive_schedule(particle_path: Path, baseline_path: Path, joint_path: Path,
 
     baseline = load_json(baseline_path)
     joint = load_json(joint_path)
-    geometry = accelerator_geometry(baseline, joint)
+    registration = load_json(registration_path)
+    geometry = accelerator_geometry(baseline, joint, registration)
     schedule_stage = "SHARED"
     if s2_contract_path is None:
         offset = float(joint["port_sweep"]["particle_release_offset_inside_outer_face_mm"])
@@ -242,6 +247,7 @@ def main() -> None:
     parser.add_argument("--oatof-baseline", type=Path)
     parser.add_argument("--joint-contract", type=Path)
     parser.add_argument("--s2-contract", type=Path)
+    parser.add_argument("--resolved-registration", type=Path, default=REGISTRATION_PATH)
     parser.add_argument("--policy", type=Path, default=POLICY_PATH)
     parser.add_argument("--target-mass-amu", type=float)
     parser.add_argument("--target-charge-state", type=int)
@@ -257,7 +263,7 @@ def main() -> None:
         parser.error("derivation requires particle state, oaTOF baseline, joint contract and output")
     result = derive_schedule(args.particle_state, args.oatof_baseline, args.joint_contract,
                              args.policy, args.target_mass_amu, args.target_charge_state,
-                             args.s2_contract)
+                             args.s2_contract, args.resolved_registration)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(f"{result['stage']}_CENTROID_PULSE_TIME=PASS TIME_US={result['derived_pulse_time_us']:.12f} "

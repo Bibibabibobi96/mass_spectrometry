@@ -1,11 +1,15 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "role": "rf_to_oatof_same_id_checkpoint_diagnostic_contract",
   "status": "solver_independent_analysis_ready",
   "inputs": {
     "source_exit": "canonical RF-exit particle state registered in the S2 instrument frame",
     "pulse_left_limit": "COMSOL sparse active-particle state at t_pulse^-",
     "terminal_census": "one terminal classification row for every source-exit particle",
+    "s2_oatof_entry": "S2 terminal census containing the first physical oa-entry crossing flag and state",
+    "local_accelerator_exit": "canonical S3 local accelerator-exit states",
+    "simion_row_map": "identity map from SIMION solver rows to canonical particle IDs",
+    "simion_downstream": "downstream detector-crossing and hit state from the explicitly linked end-to-end run",
     "pulse_schedule": "S3 state-driven centroid schedule with the selected cohort",
     "registration": "config/rf_to_oatof_s2_passive_connector.json nominal_registration",
     "geometry": "../oa_tof/config/baseline.json plus config/rf_to_oatof_shared_physical_port_joint_geometry.json"
@@ -24,7 +28,9 @@
     "source_exit_all": "every unique source-exit particle ID",
     "scheduler_cohort": "the exact selected_cohort.particle_ids from the pulse schedule",
     "capture_all_active": "every unique active row in the t_pulse^- table",
-    "losses": "source-exit IDs absent from capture, attributed from terminal event and terminal_reason",
+    "stage_membership": "nested, non-additive RF exit, S2 oa-entry, pulse-active, local-exit and detector-hit sets; every value uses source_exit_all as denominator",
+    "exclusive_outcomes": "each source ID belongs to exactly one of physical_port_wall_loss, pre_pulse_loss, active_local_exit_loss, local_exit_without_detector_hit or detector_hit",
+    "losses": "source-exit IDs are retained and attributed by physical aperture crossing, pulse activity, local exit and detector status",
     "policy": "No particle may be dropped from source accounting to make a beam width smaller."
   },
   "metric_contract": {
@@ -35,6 +41,14 @@
     "projected_emittance": "sqrt(var(r_i)*var(v_i)-Cov(r_i,v_i)^2) in mm*m/s; y and z also use slope v_i/v_x in mm*rad",
     "ideal_volume": "fraction inside the oaTOF baseline particle-source box",
     "ballistic_prediction": "propagate each exit state to the existing pulse time with its true velocity and global clock; compare only common IDs with COMSOL capture"
+  },
+  "visualization_contract": {
+    "geometry_authority": "resolved S2 registration plus shared target-entry surface and physical rectangular aperture",
+    "ideal_reference_volume": "oaTOF baseline particle-source box; contextual reference only and never the physical aperture",
+    "required_states": ["RF exit", "S2 oa entry", "S3 pulse left limit", "local accelerator exit", "downstream detector"],
+    "required_classifications": ["physical port wall loss", "pre-pulse loss", "active local-exit loss", "local exit without detector hit", "detector hit"],
+    "accessibility": "state and outcome categories use marker or hatch in addition to color",
+    "scale": "all geometry projections use equal physical aspect"
   },
   "outputs": {
     "metrics_json": "results/rf-oatof-checkpoints__metrics.json",
