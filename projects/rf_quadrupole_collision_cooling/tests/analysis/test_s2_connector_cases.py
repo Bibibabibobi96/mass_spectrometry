@@ -21,13 +21,15 @@ class S2ConnectorCaseTests(unittest.TestCase):
         self.assertEqual(geometry["length_mm"], 0.0)
         self.assertEqual(geometry["axial_extent_x_mm"], [-67.8, -67.8])
         self.assertFalse(result["runtime_case"]["connector_domain_present"])
-        with tempfile.TemporaryDirectory() as temp:
+        with tempfile.TemporaryDirectory(
+            dir=resolve_spatial_registration.PROJECT_ROOT
+        ) as temp:
             path = Path(temp) / "resolved.json"
             path.write_text(__import__("json").dumps(result), encoding="utf-8")
             spatial_path = Path(temp) / "spatial.json"
             spatial = resolve_spatial_registration.resolve_stage(
                 path,
-                source_root=Path(path.anchor),
+                source_root=resolve_spatial_registration.REPOSITORY_ROOT,
             )
             spatial_path.write_text(
                 __import__("json").dumps(spatial),
