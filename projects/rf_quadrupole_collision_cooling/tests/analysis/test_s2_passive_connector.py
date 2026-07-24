@@ -46,9 +46,18 @@ class S2PassiveConnectorTests(unittest.TestCase):
                 encoding="utf-8"
             )
         )
+        self.assertEqual(dependencies["schema_version"], 2)
         self.assertEqual(
-            {item["provider_project"] for item in dependencies["dependencies"]},
-            {"oa_tof"},
+            set(dependencies["consumer_ids"]), module.DEPENDENCY_CONSUMERS
+        )
+        s2_dependencies = {
+            item["id"] for item in dependencies["dependencies"]
+            if "s2_passive_connector" in item["consumers"]
+        }
+        self.assertEqual(s2_dependencies, module.S2_DEPENDENCY_IDS)
+        self.assertEqual(
+            {item["provider_scope"] for item in dependencies["dependencies"]},
+            {"project", "repository_common"},
         )
         self.assertTrue(
             dependencies["runtime_policy"]["verify_source_and_frozen_sha256_equal"]
@@ -141,6 +150,59 @@ class S2PassiveConnectorTests(unittest.TestCase):
         for token in ("runAll", "mesh.create", "physics.create", "mphsave", "model.save"):
             self.assertNotIn(token, builder)
 
+    def test_builder_applies_full_resolved_pose_to_rf_cylinders(self) -> None:
+        builder = (
+            module.PROJECT_ROOT
+            / "tests"
+            / "comsol"
+            / "build_s2_passive_connector_model.m"
+        ).read_text(encoding="utf-8")
+
+        # This proper rotation maps local +z away from the frozen legacy +x axis,
+        # plus nonzero translation in all three instrument-frame components.
+        rotation = ((0.0, -1.0, 0.0), (0.0, 0.0, -1.0), (1.0, 0.0, 0.0))
+        translation = (11.0, 22.0, 33.0)
+        local_position = (2.0, 3.0, 5.0)
+
+        def rotate(vector: tuple[float, float, float]) -> tuple[float, float, float]:
+            return tuple(
+                sum(row[index] * vector[index] for index in range(3))
+                for row in rotation
+            )
+
+        rotated_position = rotate(local_position)
+        transformed_position = tuple(
+            rotated_position[index] + translation[index] for index in range(3)
+        )
+        transformed_axis = rotate((0.0, 0.0, 1.0))
+        old_hardcoded_position = (
+            translation[0] + local_position[2],
+            local_position[0],
+            translation[2] + local_position[1],
+        )
+
+        self.assertEqual(transformed_position, (8.0, 17.0, 35.0))
+        self.assertEqual(transformed_axis, (0.0, -1.0, 0.0))
+        self.assertNotEqual(transformed_position, old_hardcoded_position)
+        self.assertNotEqual(transformed_axis, (1.0, 0.0, 0.0))
+        for token in (
+            "sourceTranslation = sourcePose.translation_mm(:);",
+            "sourceAxis = sourceRotation * [0.0; 0.0; 1.0];",
+            "positionMm = (rotation*localPositionMm(:)+translation).';",
+            "transform_source_position(sourcePose, localStart), sourceAxis",
+            "gapMm, sourceCenter, sourceAxis, true",
+            "geom.feature(tag).set('axis', axisDirection(:).');",
+        ):
+            self.assertIn(token, builder)
+        for forbidden in (
+            "tx = sourcePose.translation_mm(1)",
+            "tz = sourcePose.translation_mm(3)",
+            "[tx, 0.0, tz]",
+            "{'1','0','0'}",
+            "targetCenter(1)-sourceCenter(1)-gapMm",
+        ):
+            self.assertNotIn(forbidden, builder)
+
     def test_active_field_path_is_fail_closed_and_uses_shared_builder(self) -> None:
         field_builder = (module.PROJECT_ROOT / "tests" / "comsol" / "prepare_s2_joint_field_model.m").read_text(encoding="utf-8")
         solver = (module.PROJECT_ROOT / "tests" / "comsol" / "solve_s2_passive_connector_field.m").read_text(encoding="utf-8")
@@ -149,9 +211,9 @@ class S2PassiveConnectorTests(unittest.TestCase):
         self.assertIn("connector_gap_mm > 0", field_builder)
         self.assertIn("ChargedParticleTracing", solver)
         self.assertIn("particle_runtime_allowed", runner)
-        self.assertIn("Complete-RfFailedRun", runner)
+        self.assertIn("Complete-RfFrozenFailedRun", runner)
         self.assertIn("mesh_convergence_claimed = $false", runner)
-        self.assertIn("--shared-joint $sharedJoint", runner)
+        self.assertIn("'--shared-joint',$sharedJoint", runner)
         self.assertNotIn("rf_to_oatof_interface_candidate.json", runner)
         self.assertNotIn("--interface", runner)
 

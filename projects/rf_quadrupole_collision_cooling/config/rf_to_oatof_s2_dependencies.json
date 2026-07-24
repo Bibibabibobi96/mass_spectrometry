@@ -1,28 +1,394 @@
 {
-  "schema_version": 1,
-  "role": "rf_to_oatof_s2_explicit_source_dependencies",
+  "schema_version": 2,
+  "role": "rf_to_oatof_s2_s3_explicit_source_dependencies",
   "consumer_project": "rf_quadrupole_collision_cooling",
+  "consumer_ids": [
+    "s2_passive_connector",
+    "s3_pulse_capture",
+    "s3_end_to_end"
+  ],
   "dependencies": [
     {
       "id": "oatof_baseline",
+      "provider_scope": "project",
       "provider_project": "oa_tof",
+      "provider_repo_path": "projects/oa_tof",
       "source_repo_path": "projects/oa_tof/config/baseline.json",
-      "frozen_filename": "oatof_baseline.json",
-      "run_input_name": "oatof_baseline"
+      "frozen_filename": "runtime_snapshot/projects/oa_tof/config/baseline.json",
+      "compatibility_frozen_filename": "oatof_baseline.json",
+      "run_input_name": "oatof_baseline",
+      "consumers": ["s2_passive_connector", "s3_pulse_capture"]
     },
     {
       "id": "oatof_accelerator_geometry_builder",
+      "provider_scope": "project",
       "provider_project": "oa_tof",
+      "provider_repo_path": "projects/oa_tof",
       "source_repo_path": "projects/oa_tof/comsol/oatof_build_accelerator_geometry.m",
-      "frozen_filename": "oatof_build_accelerator_geometry.m",
-      "run_input_name": "oatof_accelerator_builder"
+      "frozen_filename": "runtime_snapshot/projects/oa_tof/comsol/oatof_build_accelerator_geometry.m",
+      "compatibility_frozen_filename": "oatof_build_accelerator_geometry.m",
+      "run_input_name": "oatof_accelerator_builder",
+      "consumers": ["s2_passive_connector", "s3_pulse_capture"]
+    },
+    {
+      "id": "oatof_rf_handoff_adapter",
+      "provider_scope": "project",
+      "provider_project": "oa_tof",
+      "provider_repo_path": "projects/oa_tof",
+      "source_repo_path": "projects/oa_tof/analysis/rf_handoff_adapter.py",
+      "frozen_filename": "runtime_snapshot/projects/oa_tof/analysis/rf_handoff_adapter.py",
+      "run_input_name": "oatof_rf_handoff_adapter",
+      "consumers": ["s2_passive_connector", "s3_end_to_end"]
+    },
+    {
+      "id": "oatof_resolved_geometry",
+      "provider_scope": "project",
+      "provider_project": "oa_tof",
+      "provider_repo_path": "projects/oa_tof",
+      "source_repo_path": "projects/oa_tof/config/resolved_geometry.json",
+      "frozen_filename": "runtime_snapshot/projects/oa_tof/config/resolved_geometry.json",
+      "run_input_name": "oatof_resolved_geometry",
+      "consumers": ["s3_end_to_end"]
+    },
+    {
+      "id": "oatof_handoff_pulse_program_builder",
+      "provider_scope": "project",
+      "provider_project": "oa_tof",
+      "provider_repo_path": "projects/oa_tof",
+      "source_repo_path": "projects/oa_tof/analysis/build_handoff_pulse_program.py",
+      "frozen_filename": "runtime_snapshot/projects/oa_tof/analysis/build_handoff_pulse_program.py",
+      "run_input_name": "oatof_handoff_pulse_program_builder",
+      "consumers": ["s3_end_to_end"]
+    },
+    {
+      "id": "oatof_formal_lua",
+      "provider_scope": "project",
+      "provider_project": "oa_tof",
+      "provider_repo_path": "projects/oa_tof",
+      "source_repo_path": "projects/oa_tof/simion/workbench/formal/oatof_ideal_grounded.lua",
+      "frozen_filename": "runtime_snapshot/projects/oa_tof/simion/workbench/formal/oatof_ideal_grounded.lua",
+      "run_input_name": "oatof_formal_lua",
+      "consumers": ["s3_end_to_end"]
+    },
+    {
+      "id": "oatof_handoff_pulse_extension_lua",
+      "provider_scope": "project",
+      "provider_project": "oa_tof",
+      "provider_repo_path": "projects/oa_tof",
+      "source_repo_path": "projects/oa_tof/simion/workbench/candidates/oatof_handoff_pulse.lua",
+      "frozen_filename": "runtime_snapshot/projects/oa_tof/simion/workbench/candidates/oatof_handoff_pulse.lua",
+      "run_input_name": "oatof_handoff_pulse_extension_lua",
+      "consumers": ["s3_end_to_end"]
+    },
+    {
+      "id": "oatof_simion_log_analyzer_wrapper",
+      "provider_scope": "project",
+      "provider_project": "oa_tof",
+      "provider_repo_path": "projects/oa_tof",
+      "source_repo_path": "projects/oa_tof/simion/workbench/analyze_ideal_field_log.ps1",
+      "frozen_filename": "runtime_snapshot/projects/oa_tof/simion/workbench/analyze_ideal_field_log.ps1",
+      "run_input_name": "oatof_simion_log_analyzer_wrapper",
+      "consumers": ["s3_end_to_end"]
+    },
+    {
+      "id": "oatof_solver_diagnostics",
+      "provider_scope": "project",
+      "provider_project": "oa_tof",
+      "provider_repo_path": "projects/oa_tof",
+      "source_repo_path": "projects/oa_tof/analysis/solver_diagnostics.py",
+      "frozen_filename": "runtime_snapshot/projects/oa_tof/analysis/solver_diagnostics.py",
+      "run_input_name": "oatof_solver_diagnostics",
+      "consumers": ["s3_end_to_end"]
+    },
+    {
+      "id": "rf_legacy_component_state_migrator",
+      "provider_scope": "project",
+      "provider_project": "rf_quadrupole_collision_cooling",
+      "provider_repo_path": "projects/rf_quadrupole_collision_cooling",
+      "source_repo_path": "projects/rf_quadrupole_collision_cooling/analysis/migrate_legacy_component_particle_state.py",
+      "frozen_filename": "runtime_snapshot/projects/rf_quadrupole_collision_cooling/analysis/migrate_legacy_component_particle_state.py",
+      "run_input_name": "rf_legacy_component_state_migrator",
+      "consumers": ["s2_passive_connector", "s3_end_to_end"]
+    },
+    {
+      "id": "rf_interface_stage_plan",
+      "provider_scope": "project",
+      "provider_project": "rf_quadrupole_collision_cooling",
+      "provider_repo_path": "projects/rf_quadrupole_collision_cooling",
+      "source_repo_path": "projects/rf_quadrupole_collision_cooling/config/rf_to_oatof_interface_stages.json",
+      "frozen_filename": "runtime_snapshot/projects/rf_quadrupole_collision_cooling/config/rf_to_oatof_interface_stages.json",
+      "run_input_name": "rf_interface_stage_plan",
+      "consumers": ["s2_passive_connector", "s3_pulse_capture"]
+    },
+    {
+      "id": "rf_shared_joint_geometry",
+      "provider_scope": "project",
+      "provider_project": "rf_quadrupole_collision_cooling",
+      "provider_repo_path": "projects/rf_quadrupole_collision_cooling",
+      "source_repo_path": "projects/rf_quadrupole_collision_cooling/config/rf_to_oatof_shared_physical_port_joint_geometry.json",
+      "frozen_filename": "runtime_snapshot/projects/rf_quadrupole_collision_cooling/config/rf_to_oatof_shared_physical_port_joint_geometry.json",
+      "run_input_name": "rf_shared_joint_geometry",
+      "consumers": ["s2_passive_connector", "s3_pulse_capture"]
+    },
+    {
+      "id": "rf_resolved_design",
+      "provider_scope": "project",
+      "provider_project": "rf_quadrupole_collision_cooling",
+      "provider_repo_path": "projects/rf_quadrupole_collision_cooling",
+      "source_repo_path": "projects/rf_quadrupole_collision_cooling/config/resolved_design_official.json",
+      "frozen_filename": "runtime_snapshot/projects/rf_quadrupole_collision_cooling/config/resolved_design_official.json",
+      "run_input_name": "rf_resolved_design",
+      "consumers": ["s2_passive_connector", "s3_pulse_capture"]
+    },
+    {
+      "id": "rf_dependency_contract_snapshot",
+      "provider_scope": "project",
+      "provider_project": "rf_quadrupole_collision_cooling",
+      "provider_repo_path": "projects/rf_quadrupole_collision_cooling",
+      "source_repo_path": "projects/rf_quadrupole_collision_cooling/config/rf_to_oatof_s2_dependencies.json",
+      "frozen_filename": "runtime_snapshot/projects/rf_quadrupole_collision_cooling/config/rf_to_oatof_s2_dependencies.json",
+      "run_input_name": "rf_dependency_contract_snapshot",
+      "consumers": ["s2_passive_connector", "s3_pulse_capture", "s3_end_to_end"]
+    },
+    {
+      "id": "rf_s3_pulse_scheduler",
+      "provider_scope": "project",
+      "provider_project": "rf_quadrupole_collision_cooling",
+      "provider_repo_path": "projects/rf_quadrupole_collision_cooling",
+      "source_repo_path": "projects/rf_quadrupole_collision_cooling/analysis/derive_shared_centroid_pulse_time.py",
+      "frozen_filename": "runtime_snapshot/projects/rf_quadrupole_collision_cooling/analysis/derive_shared_centroid_pulse_time.py",
+      "run_input_name": "rf_s3_pulse_scheduler",
+      "consumers": ["s3_pulse_capture"]
+    },
+    {
+      "id": "rf_s3_geometry_snapshot_plotter",
+      "provider_scope": "project",
+      "provider_project": "rf_quadrupole_collision_cooling",
+      "provider_repo_path": "projects/rf_quadrupole_collision_cooling",
+      "source_repo_path": "projects/rf_quadrupole_collision_cooling/analysis/plot_shared_pulse_geometry_snapshot.py",
+      "frozen_filename": "runtime_snapshot/projects/rf_quadrupole_collision_cooling/analysis/plot_shared_pulse_geometry_snapshot.py",
+      "run_input_name": "rf_s3_geometry_snapshot_plotter",
+      "consumers": ["s3_pulse_capture"]
+    },
+    {
+      "id": "rf_s3_pulse_chain_auditor",
+      "provider_scope": "project",
+      "provider_project": "rf_quadrupole_collision_cooling",
+      "provider_repo_path": "projects/rf_quadrupole_collision_cooling",
+      "source_repo_path": "projects/rf_quadrupole_collision_cooling/analysis/audit_s3_pulse_chain.py",
+      "frozen_filename": "runtime_snapshot/projects/rf_quadrupole_collision_cooling/analysis/audit_s3_pulse_chain.py",
+      "run_input_name": "rf_s3_pulse_chain_auditor",
+      "consumers": ["s3_pulse_capture"]
+    },
+    {
+      "id": "rf_s3_local_exit_adapter",
+      "provider_scope": "project",
+      "provider_project": "rf_quadrupole_collision_cooling",
+      "provider_repo_path": "projects/rf_quadrupole_collision_cooling",
+      "source_repo_path": "projects/rf_quadrupole_collision_cooling/analysis/build_s3_local_exit_component_state.py",
+      "frozen_filename": "runtime_snapshot/projects/rf_quadrupole_collision_cooling/analysis/build_s3_local_exit_component_state.py",
+      "run_input_name": "rf_s3_local_exit_adapter",
+      "consumers": ["s3_pulse_capture"]
+    },
+    {
+      "id": "rf_s3_simion_input_adapter",
+      "provider_scope": "project",
+      "provider_project": "rf_quadrupole_collision_cooling",
+      "provider_repo_path": "projects/rf_quadrupole_collision_cooling",
+      "source_repo_path": "projects/rf_quadrupole_collision_cooling/analysis/build_simion_input_from_canonical.py",
+      "frozen_filename": "runtime_snapshot/projects/rf_quadrupole_collision_cooling/analysis/build_simion_input_from_canonical.py",
+      "run_input_name": "rf_s3_simion_input_adapter",
+      "consumers": ["s3_end_to_end"]
+    },
+    {
+      "id": "rf_s3_end_to_end_analyzer",
+      "provider_scope": "project",
+      "provider_project": "rf_quadrupole_collision_cooling",
+      "provider_repo_path": "projects/rf_quadrupole_collision_cooling",
+      "source_repo_path": "projects/rf_quadrupole_collision_cooling/analysis/analyze_s3_end_to_end.py",
+      "frozen_filename": "runtime_snapshot/projects/rf_quadrupole_collision_cooling/analysis/analyze_s3_end_to_end.py",
+      "run_input_name": "rf_s3_end_to_end_analyzer",
+      "consumers": ["s3_end_to_end"]
+    },
+    {
+      "id": "rf_oatof_handoff_builder",
+      "provider_scope": "project",
+      "provider_project": "rf_quadrupole_collision_cooling",
+      "provider_repo_path": "projects/rf_quadrupole_collision_cooling",
+      "source_repo_path": "projects/rf_quadrupole_collision_cooling/analysis/build_oatof_handoff.py",
+      "frozen_filename": "runtime_snapshot/projects/rf_quadrupole_collision_cooling/analysis/build_oatof_handoff.py",
+      "run_input_name": "rf_oatof_handoff_builder",
+      "consumers": ["s3_end_to_end"]
+    },
+    {
+      "id": "common_rigid_transform",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/rigid_transform.py",
+      "frozen_filename": "runtime_snapshot/common/contracts/rigid_transform.py",
+      "run_input_name": "common_rigid_transform",
+      "consumers": ["s2_passive_connector", "s3_pulse_capture", "s3_end_to_end"]
+    },
+    {
+      "id": "common_particle_physics",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/particle_physics.py",
+      "frozen_filename": "runtime_snapshot/common/contracts/particle_physics.py",
+      "run_input_name": "common_particle_physics",
+      "consumers": ["s2_passive_connector", "s3_pulse_capture", "s3_end_to_end"]
+    },
+    {
+      "id": "common_component_particle_state",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/component_particle_state.py",
+      "frozen_filename": "runtime_snapshot/common/contracts/component_particle_state.py",
+      "run_input_name": "common_component_particle_state",
+      "consumers": ["s2_passive_connector", "s3_pulse_capture", "s3_end_to_end"]
+    },
+    {
+      "id": "common_component_particle_state_schema",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/schemas/component_particle_state.schema.json",
+      "frozen_filename": "runtime_snapshot/common/contracts/schemas/component_particle_state.schema.json",
+      "run_input_name": "common_component_particle_state_schema",
+      "consumers": ["s2_passive_connector", "s3_pulse_capture", "s3_end_to_end"]
+    },
+    {
+      "id": "common_file_identity",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/file_identity.py",
+      "frozen_filename": "runtime_snapshot/common/contracts/file_identity.py",
+      "run_input_name": "common_file_identity",
+      "consumers": ["s2_passive_connector", "s3_pulse_capture", "s3_end_to_end"]
+    },
+    {
+      "id": "common_spatial_registration",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/spatial_registration.py",
+      "frozen_filename": "runtime_snapshot/common/contracts/spatial_registration.py",
+      "run_input_name": "common_spatial_registration",
+      "consumers": ["s2_passive_connector"]
+    },
+    {
+      "id": "common_verify_run_manifest",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/verify_run_manifest.py",
+      "frozen_filename": "runtime_snapshot/common/contracts/verify_run_manifest.py",
+      "run_input_name": "common_verify_run_manifest",
+      "consumers": ["s2_passive_connector", "s3_pulse_capture", "s3_end_to_end"]
+    },
+    {
+      "id": "common_artifact_naming",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/artifact_naming.py",
+      "frozen_filename": "runtime_snapshot/common/contracts/artifact_naming.py",
+      "run_input_name": "common_artifact_naming",
+      "consumers": ["s2_passive_connector", "s3_pulse_capture", "s3_end_to_end"]
+    },
+    {
+      "id": "common_write_run_manifest",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/write_run_manifest.py",
+      "frozen_filename": "runtime_snapshot/common/contracts/write_run_manifest.py",
+      "run_input_name": "common_write_run_manifest",
+      "consumers": ["s2_passive_connector", "s3_pulse_capture", "s3_end_to_end"]
+    },
+    {
+      "id": "common_run_artifact_support",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/run_artifact_support.ps1",
+      "frozen_filename": "runtime_snapshot/common/contracts/run_artifact_support.ps1",
+      "run_input_name": "common_run_artifact_support",
+      "consumers": ["s2_passive_connector", "s3_pulse_capture", "s3_end_to_end"]
+    },
+    {
+      "id": "common_require_powershell7",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/require_powershell7.ps1",
+      "frozen_filename": "runtime_snapshot/common/require_powershell7.ps1",
+      "run_input_name": "common_require_powershell7",
+      "consumers": ["s2_passive_connector", "s3_pulse_capture", "s3_end_to_end"]
+    },
+    {
+      "id": "common_comsol_runner",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/comsol/run_comsol_r2025b.ps1",
+      "frozen_filename": "runtime_snapshot/common/comsol/run_comsol_r2025b.ps1",
+      "run_input_name": "common_comsol_runner",
+      "consumers": ["s2_passive_connector", "s3_pulse_capture"]
+    },
+    {
+      "id": "common_comsol_resolver",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/comsol/resolve_comsol_64.ps1",
+      "frozen_filename": "runtime_snapshot/common/comsol/resolve_comsol_64.ps1",
+      "run_input_name": "common_comsol_resolver",
+      "consumers": ["s2_passive_connector", "s3_pulse_capture"]
+    },
+    {
+      "id": "common_comsol_failure_classifier",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/comsol/livelink_failure_classification.ps1",
+      "frozen_filename": "runtime_snapshot/common/comsol/livelink_failure_classification.ps1",
+      "run_input_name": "common_comsol_failure_classifier",
+      "consumers": ["s2_passive_connector", "s3_pulse_capture"]
+    },
+    {
+      "id": "common_comsol_environment",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/comsol/livelink_environment.ps1",
+      "frozen_filename": "runtime_snapshot/common/comsol/livelink_environment.ps1",
+      "run_input_name": "common_comsol_environment",
+      "consumers": ["s2_passive_connector", "s3_pulse_capture"]
+    },
+    {
+      "id": "common_comsol_startup",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/comsol/livelink_r2025b/comsolstartup.m",
+      "frozen_filename": "runtime_snapshot/common/comsol/livelink_r2025b/comsolstartup.m",
+      "run_input_name": "common_comsol_startup",
+      "consumers": ["s2_passive_connector", "s3_pulse_capture"]
     }
   ],
   "runtime_policy": {
     "copy_into_run_inputs": true,
     "record_provider_project": true,
+    "record_provider_repo_path": true,
     "record_source_repo_path": true,
     "verify_source_and_frozen_sha256_equal": true,
+    "preserve_repo_relative_snapshot_paths": true,
+    "consumer_scoped_selection_required": true,
     "allow_directory_search": false
   }
 }

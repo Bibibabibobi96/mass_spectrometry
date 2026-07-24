@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 
@@ -14,6 +14,27 @@ DEFAULT_CONTRACT = PROJECT_ROOT / "config" / "rf_to_oatof_s2_passive_connector.j
 DEFAULT_REGISTRATION = (
     PROJECT_ROOT / "config" / "resolved_rf_to_oatof_s2_spatial_registration.json"
 )
+DEPENDENCY_CONSUMERS = {
+    "s2_passive_connector", "s3_pulse_capture", "s3_end_to_end",
+}
+S2_DEPENDENCY_IDS = {
+    "oatof_baseline", "oatof_accelerator_geometry_builder",
+    "oatof_rf_handoff_adapter", "rf_legacy_component_state_migrator",
+    "rf_interface_stage_plan", "rf_shared_joint_geometry", "rf_resolved_design",
+    "rf_dependency_contract_snapshot", "common_rigid_transform",
+    "common_particle_physics", "common_component_particle_state",
+    "common_component_particle_state_schema", "common_file_identity",
+    "common_spatial_registration", "common_verify_run_manifest",
+    "common_artifact_naming", "common_write_run_manifest",
+    "common_run_artifact_support", "common_require_powershell7",
+    "common_comsol_runner", "common_comsol_resolver",
+    "common_comsol_failure_classifier", "common_comsol_environment",
+    "common_comsol_startup",
+}
+DEPENDENCY_COMPATIBILITY_FILENAMES = {
+    "oatof_baseline": "oatof_baseline.json",
+    "oatof_accelerator_geometry_builder": "oatof_build_accelerator_geometry.m",
+}
 
 
 def _load_relative(path: str, reference_root: Path = PROJECT_ROOT) -> dict[str, Any]:
@@ -56,26 +77,85 @@ def validate_contract(
 
     dependency_contract = _load_relative(
         contract["inputs"]["explicit_dependencies"], reference_root)
-    if dependency_contract.get("role") != "rf_to_oatof_s2_explicit_source_dependencies":
+    if dependency_contract.get("schema_version") != 2:
+        raise ValueError("S2 dependency-contract schema differs")
+    if dependency_contract.get("role") != "rf_to_oatof_s2_s3_explicit_source_dependencies":
         raise ValueError("S2 dependency-contract role differs")
     if dependency_contract.get("consumer_project") != "rf_quadrupole_collision_cooling":
         raise ValueError("S2 dependency consumer differs")
+    if set(dependency_contract.get("consumer_ids", [])) != DEPENDENCY_CONSUMERS:
+        raise ValueError("S2 dependency consumer identities differ")
     dependencies = dependency_contract.get("dependencies", [])
-    if {item.get("id") for item in dependencies} != {
-        "oatof_baseline",
-        "oatof_accelerator_geometry_builder",
-    }:
-        raise ValueError("S2 explicit dependency set differs")
+    dependency_ids = [item.get("id") for item in dependencies]
+    run_input_names = [item.get("run_input_name") for item in dependencies]
+    frozen_filenames = [item.get("frozen_filename") for item in dependencies]
+    compatibility_filenames = [
+        item["compatibility_frozen_filename"] for item in dependencies
+        if "compatibility_frozen_filename" in item
+    ]
+    if (
+        not dependencies
+        or len(set(dependency_ids)) != len(dependency_ids)
+        or len(set(run_input_names)) != len(run_input_names)
+        or len(set(frozen_filenames)) != len(frozen_filenames)
+        or len(set(compatibility_filenames)) != len(compatibility_filenames)
+    ):
+        raise ValueError("dependency identities and frozen destinations must be unique")
     for dependency in dependencies:
-        provider = dependency.get("provider_project")
-        source = Path(str(dependency.get("source_repo_path", "")))
-        expected_prefix = Path("projects") / str(provider)
-        if provider != "oa_tof" or source.parts[:2] != expected_prefix.parts:
-            raise ValueError(f"S2 dependency {dependency.get('id')} escapes oa_tof")
-        if not (reference_root.parents[1] / source).is_file():
+        dependency_id = dependency.get("id")
+        provider = str(dependency.get("provider_project", ""))
+        provider_scope = dependency.get("provider_scope")
+        provider_root = PurePosixPath(str(dependency.get("provider_repo_path", "")))
+        source = PurePosixPath(str(dependency.get("source_repo_path", "")))
+        frozen = PurePosixPath(str(dependency.get("frozen_filename", "")))
+        consumers = dependency.get("consumers")
+        if provider_scope == "project":
+            expected_provider_root = PurePosixPath("projects") / provider
+        elif provider_scope == "repository_common" and provider == "common":
+            expected_provider_root = PurePosixPath("common")
+        else:
+            raise ValueError(f"dependency {dependency_id} provider scope differs")
+        if provider_root != expected_provider_root:
+            raise ValueError(f"dependency {dependency_id} provider root differs")
+        if (
+            source.is_absolute()
+            or source.parts[:len(provider_root.parts)] != provider_root.parts
+            or ".." in source.parts
+        ):
+            raise ValueError(f"dependency {dependency_id} escapes its provider")
+        if frozen != PurePosixPath("runtime_snapshot") / source or ".." in frozen.parts:
+            raise ValueError(f"dependency {dependency_id} frozen path differs")
+        compatibility = dependency.get("compatibility_frozen_filename")
+        expected_compatibility = DEPENDENCY_COMPATIBILITY_FILENAMES.get(dependency_id)
+        if compatibility != expected_compatibility:
+            raise ValueError(f"dependency {dependency_id} compatibility path differs")
+        if compatibility is not None:
+            compatibility_path = PurePosixPath(compatibility)
+            if compatibility_path.is_absolute() or ".." in compatibility_path.parts:
+                raise ValueError(f"dependency {dependency_id} compatibility path escapes")
+        if (
+            not isinstance(consumers, list)
+            or not consumers
+            or not set(consumers) <= DEPENDENCY_CONSUMERS
+            or len(set(consumers)) != len(consumers)
+        ):
+            raise ValueError(f"dependency {dependency_id} consumers differ")
+        source_path = reference_root.parents[1].joinpath(*source.parts)
+        if "s2_passive_connector" in consumers and not source_path.is_file():
             raise ValueError(f"S2 dependency {dependency.get('id')} source is missing")
+    s2_dependency_ids = {
+        item["id"] for item in dependencies
+        if "s2_passive_connector" in item["consumers"]
+    }
+    if s2_dependency_ids != S2_DEPENDENCY_IDS:
+        raise ValueError("S2 consumer dependency subset differs")
     policy = dependency_contract.get("runtime_policy", {})
-    if not policy.get("verify_source_and_frozen_sha256_equal") or policy.get("allow_directory_search"):
+    if (
+        not policy.get("verify_source_and_frozen_sha256_equal")
+        or not policy.get("preserve_repo_relative_snapshot_paths")
+        or not policy.get("consumer_scoped_selection_required")
+        or policy.get("allow_directory_search")
+    ):
         raise ValueError("S2 dependency runtime policy is not fail-closed")
 
     shared_joint = _load_relative(

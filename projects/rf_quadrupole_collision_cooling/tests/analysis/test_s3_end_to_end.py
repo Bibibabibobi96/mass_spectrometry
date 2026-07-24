@@ -1,5 +1,9 @@
 import csv
 import json
+import os
+import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -35,6 +39,254 @@ def write_csv(path: Path, fields: list[str], rows: list[dict[str, object]]) -> N
 
 
 class S3EndToEndTests(unittest.TestCase):
+    def test_runner_freezes_dependencies_and_source_before_execution(self) -> None:
+        runner = (
+            Path(__file__).parents[1]
+            / "cross_solver"
+            / "run_s3_end_to_end.ps1"
+        ).read_text(encoding="utf-8")
+        selection = runner.index("$dependencyConsumer = 's3_end_to_end'")
+        snapshot = runner.index("Copy-RfFrozenDependency")
+        naming = runner.index(
+            "$frozenArtifactNaming,'run',$RunId"
+        )
+        source_containment = runner.index(
+            "Resolve-RfDirectChildDirectory -ParentRoot $runsRoot"
+        )
+        manifest_freeze = runner.index(
+            "Copy-RfStableFile -SourceRunRoot $source"
+        )
+        manifest_verify = runner.index(
+            "$frozenManifestVerifier,$sourceManifestPath"
+        )
+        config_copy = runner.index(
+            "Copy-RfManifestBoundFile -SourceRunRoot $source"
+        )
+        adapter = runner.index(
+            "$frozenAdapter,'--source',$sourceCanonical"
+        )
+        program = runner.index(
+            "$frozenProgramBuilder,'--formal',$frozenFormalLua"
+        )
+        simion = runner.index("Start-Process -FilePath $SimionExe")
+        diagnostics = runner.index(
+            "$frozenSolverDiagnostics,'analyze-simion-log'"
+        )
+        analyzer = runner.index(
+            "$frozenAnalyzer,'--source-summary',$sourceSummary"
+        )
+        self.assertLess(selection, snapshot)
+        self.assertLess(snapshot, naming)
+        self.assertLess(naming, source_containment)
+        self.assertLess(source_containment, manifest_freeze)
+        self.assertLess(manifest_freeze, manifest_verify)
+        self.assertLess(manifest_verify, config_copy)
+        self.assertLess(config_copy, adapter)
+        self.assertLess(adapter, program)
+        self.assertLess(program, simion)
+        self.assertLess(simion, diagnostics)
+        self.assertLess(diagnostics, analyzer)
+
+        for dependency_id in (
+            "rf_dependency_contract_snapshot",
+            "rf_s3_simion_input_adapter",
+            "rf_s3_end_to_end_analyzer",
+            "rf_oatof_handoff_builder",
+            "oatof_resolved_geometry",
+            "oatof_handoff_pulse_program_builder",
+            "oatof_formal_lua",
+            "oatof_handoff_pulse_extension_lua",
+            "oatof_solver_diagnostics",
+            "common_verify_run_manifest",
+            "common_write_run_manifest",
+        ):
+            self.assertIn(f"'{dependency_id}'", runner)
+        self.assertIn("$dependencySnapshotPaths = @{}", runner)
+        self.assertIn("$dependencyCompatibilityPaths = @{}", runner)
+        self.assertIn("$manifestToolRoot = $snapshotRoot", runner)
+        self.assertIn("$snapshotReady = $false", runner)
+        self.assertIn("if ($snapshotReady)", runner)
+        self.assertIn("$env:PYTHONPATH = $SnapshotRoot", runner)
+        self.assertIn("$env:PYTHONNOUSERSITE = '1'", runner)
+        self.assertIn("Push-Location -LiteralPath $SnapshotRoot", runner)
+        self.assertIn(
+            "--require-mode','rf_to_oatof_s3_shared_clock_pulse_capture_n100'",
+            runner,
+        )
+        self.assertIn("Get-RfManifestOutputRecord", runner)
+        self.assertIn("Copy-RfManifestBoundFile", runner)
+        self.assertIn(
+            "$frozenManifestVerifier,$formalManifestPath",
+            runner,
+        )
+        self.assertIn(
+            "Get-S3FormalAssetRecords -ChecksumPath $checksumPath",
+            runner,
+        )
+        self.assertIn(
+            "Copy-RfManifestBoundFile `\n      "
+            "-SourceRunRoot $formalDir",
+            runner,
+        )
+        self.assertNotIn("Get-ChildItem -LiteralPath $formalDir", runner)
+        self.assertNotIn("New-Item -ItemType HardLink", runner)
+        self.assertNotIn(
+            "Join-Path $repoRoot 'projects\\oa_tof", runner
+        )
+        self.assertNotIn(
+            "Join-Path $repoRoot 'common\\contracts\\verify_run_manifest.py'",
+            runner,
+        )
+        self.assertNotIn("& $package.python $frozen", runner)
+        self.assertNotIn("New-RfRunPackage", runner)
+        self.assertNotIn(
+            "Complete-RfFailedRun -Python", runner
+        )
+        self.assertNotIn("-FrozenRepoRoot $repoRoot", runner)
+
+    def test_dependency_contract_is_frozen_before_closure_selection(self) -> None:
+        runner = (
+            Path(__file__).parents[1]
+            / "cross_solver"
+            / "run_s3_end_to_end.ps1"
+        ).read_text(encoding="utf-8")
+        stable_copy = runner.index(
+            "$dependencyContractIdentity = Copy-RfStableFile"
+        )
+        frozen_parse = runner.index(
+            "Get-Content -LiteralPath $dependencyContract"
+        )
+        selection = runner.index("$selectedDependencies = @(")
+        self_identity = runner.index(
+            "if ([string]$dependency.id -eq "
+            "'rf_dependency_contract_snapshot')"
+        )
+        identity_hash = runner.index(
+            "$dependencyContractIdentity.sha256", self_identity
+        )
+        ordinary_copy = runner.index(
+            "$identity = Copy-RfFrozenDependency", self_identity
+        )
+        self.assertLess(stable_copy, frozen_parse)
+        self.assertLess(frozen_parse, selection)
+        self.assertLess(selection, self_identity)
+        self.assertLess(self_identity, identity_hash)
+        self.assertLess(identity_hash, ordinary_copy)
+        self.assertNotIn(
+            "Get-Content -LiteralPath $dependencyContractSource",
+            runner,
+        )
+
+    def test_snapshot_adapter_imports_nested_handoff_builder_under_poison(self) -> None:
+        repository = Path(__file__).resolve().parents[4]
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            snapshot = root / "runtime_snapshot"
+            relative_files = (
+                "projects/rf_quadrupole_collision_cooling/analysis/"
+                "build_simion_input_from_canonical.py",
+                "projects/rf_quadrupole_collision_cooling/analysis/"
+                "build_oatof_handoff.py",
+                "projects/rf_quadrupole_collision_cooling/analysis/"
+                "migrate_legacy_component_particle_state.py",
+                "projects/oa_tof/analysis/rf_handoff_adapter.py",
+                "common/contracts/component_particle_state.py",
+                "common/contracts/particle_physics.py",
+                "common/contracts/rigid_transform.py",
+                "common/contracts/schemas/component_particle_state.schema.json",
+            )
+            for relative in relative_files:
+                source = repository / relative
+                destination = snapshot / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, destination)
+
+            poison = root / "poison"
+            poison.mkdir()
+            (poison / "build_oatof_handoff.py").write_text(
+                "raise RuntimeError('LIVE_PROVIDER_POISON')\n",
+                encoding="utf-8",
+            )
+            source = root / "source.csv"
+            write_csv(source, csv_columns(), [canonical_row(1)])
+            adapter_path = (
+                snapshot
+                / "projects/rf_quadrupole_collision_cooling/analysis/"
+                "build_simion_input_from_canonical.py"
+            )
+            environment = os.environ.copy()
+            environment["PYTHONPATH"] = (
+                str(poison) + os.pathsep + str(snapshot)
+            )
+            environment["PYTHONNOUSERSITE"] = "1"
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(adapter_path),
+                    "--source",
+                    str(source),
+                    "--canonical-output",
+                    str(root / "canonical.csv"),
+                    "--ion-output",
+                    str(root / "input.ion"),
+                    "--row-map-output",
+                    str(root / "row_map.csv"),
+                    "--metadata-output",
+                    str(root / "metadata.json"),
+                ],
+                check=True,
+                cwd=snapshot,
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            analysis_dir = adapter_path.parent
+            provenance = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    (
+                        "import pathlib,sys;"
+                        f"sys.path.insert(0,{str(analysis_dir)!r});"
+                        "import build_simion_input_from_canonical;"
+                        "import build_oatof_handoff;"
+                        "print(pathlib.Path(build_oatof_handoff.__file__).resolve())"
+                    ),
+                ],
+                check=True,
+                cwd=snapshot,
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            self.assertEqual(
+                Path(provenance.stdout.strip()).resolve(),
+                (analysis_dir / "build_oatof_handoff.py").resolve(),
+            )
+            self.assertTrue((root / "metadata.json").is_file())
+
+    def test_early_snapshot_failure_cannot_fall_back_to_live_manifest(self) -> None:
+        runner = (
+            Path(__file__).parents[1]
+            / "cross_solver"
+            / "run_s3_end_to_end.ps1"
+        ).read_text(encoding="utf-8")
+        not_ready = runner.index("$snapshotReady = $false")
+        copy = runner.index("Copy-RfFrozenDependency")
+        ready = runner.index("$snapshotReady = $true")
+        catch = runner.index("} catch {")
+        guard = runner.index("if ($snapshotReady)", catch)
+        no_manifest = runner.index("manifest_written = $false", guard)
+        self.assertLess(not_ready, copy)
+        self.assertLess(copy, ready)
+        self.assertLess(ready, catch)
+        self.assertLess(catch, guard)
+        self.assertLess(guard, no_manifest)
+        self.assertNotIn("-FrozenRepoRoot $repoRoot", runner)
+        self.assertNotIn("Complete-RfFailedRun -Python", runner)
+
     def test_canonical_adapter_preserves_state_and_clock(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); source = root / "source.csv"

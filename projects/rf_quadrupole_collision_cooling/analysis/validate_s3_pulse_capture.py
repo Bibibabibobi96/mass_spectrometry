@@ -94,6 +94,29 @@ def validate_contract(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
         != ["species_id", "mass_amu", "charge_state"]
     ):
         raise ValueError("S3 canonical identity contract differs")
+    adapter = contract["local_exit_adapter"]
+    expected_adapter = {
+        "implementation": "analysis/build_s3_local_exit_component_state.py",
+        "source_identity_table": "canonical_rf_exit_at_s2_connector.csv",
+        "solver_state_table": "s3_particle_terminal_census.csv",
+        "terminal_event": "local_accelerator_exit",
+        "terminal_status": "transmitted",
+        "source_component_id": "rf_quadrupole_to_oatof_s3",
+        "target_component_id": "oatof_analyzer",
+        "state_event": "local_accelerator_exit",
+        "canonical_columns_source": (
+            "common.contracts.component_particle_state.csv_columns"
+        ),
+        "canonical_validator_source": (
+            "common.contracts.component_particle_state."
+            "validate_component_particle_state_csv"
+        ),
+        "derived_physics_source": "common.contracts.particle_physics",
+    }
+    if adapter != expected_adapter:
+        raise ValueError("S3 local-exit adapter authority differs")
+    if not _relative(adapter["implementation"]).is_file():
+        raise ValueError("S3 local-exit adapter implementation is missing")
     if pulse["method"] != "selected_species_ballistic_port_survivor_x_centroid":
         raise ValueError("S3 pulse timing method differs")
     waveform = contract["waveform"]

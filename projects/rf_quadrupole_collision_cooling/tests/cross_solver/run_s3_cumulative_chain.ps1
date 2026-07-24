@@ -13,6 +13,7 @@ $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling\runs'
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
+. (Join-Path $projectRoot 'tests\support\rf_run_artifact_support.ps1')
 if ([string]::IsNullOrWhiteSpace($Stamp)) { $Stamp = Get-Date -Format 'yyyyMMdd_HHmmss' }
 if ($Stamp -notmatch '^\d{8}_\d{6}$') { throw 'Stamp must use yyyyMMdd_HHmmss.' }
 
@@ -36,12 +37,49 @@ if ($LASTEXITCODE -ne 0) { throw 'S3 cumulative chain stopped at the pulse-captu
   -SourceRunId $s3RunId -RunId $endToEndRunId -SimionExe $SimionExe -PythonExe $python
 if ($LASTEXITCODE -ne 0) { throw 'S3 cumulative chain stopped at the oaTOF analyzer stage.' }
 
-foreach ($runId in @($s2RunId,$s3RunId,$endToEndRunId)) {
-  & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') `
-    (Join-Path $artifactRoot "$runId\run_manifest.json") --require-status success
-  if ($LASTEXITCODE -ne 0) { throw "Cumulative-chain manifest verification failed: $runId" }
+$endToEndRun = Resolve-RfDirectChildDirectory -ParentRoot $artifactRoot `
+  -ChildName $endToEndRunId -Role 'end-to-end run id'
+$snapshotRoot = Join-Path $endToEndRun 'inputs\runtime_snapshot'
+$manifestVerifier = Join-Path $snapshotRoot 'common\contracts\verify_run_manifest.py'
+if (-not (Test-Path -LiteralPath $manifestVerifier -PathType Leaf)) {
+  throw 'Cumulative-chain frozen manifest verifier is missing.'
 }
-$summary = Get-Content -LiteralPath (Join-Path $artifactRoot "$endToEndRunId\summary.json") `
+$verificationCases = @(
+  [pscustomobject]@{
+    run_id=$s2RunId; mode='rf_to_oatof_s2_passive_connector_n100'
+  },
+  [pscustomobject]@{
+    run_id=$s3RunId; mode='rf_to_oatof_s3_shared_clock_pulse_capture_n100'
+  },
+  [pscustomobject]@{
+    run_id=$endToEndRunId; mode='rf_to_oatof_s3_cumulative_end_to_end'
+  }
+)
+$environmentNames = @('PYTHONPATH','PYTHONNOUSERSITE')
+$savedEnvironment = Save-RfEnvironment -Names $environmentNames
+try {
+  $env:PYTHONPATH = $snapshotRoot
+  $env:PYTHONNOUSERSITE = '1'
+  Push-Location -LiteralPath $snapshotRoot
+  try {
+    foreach ($case in $verificationCases) {
+      $run = Resolve-RfDirectChildDirectory -ParentRoot $artifactRoot `
+        -ChildName $case.run_id -Role 'cumulative stage run id'
+      & $python $manifestVerifier (Join-Path $run 'run_manifest.json') `
+        --require-status success --require-run-id $case.run_id `
+        --require-project rf_quadrupole_collision_cooling `
+        --require-mode $case.mode
+      if ($LASTEXITCODE -ne 0) {
+        throw "Cumulative-chain manifest verification failed: $($case.run_id)"
+      }
+    }
+  } finally {
+    Pop-Location
+  }
+} finally {
+  Restore-RfEnvironment -Names $environmentNames -Snapshot $savedEnvironment
+}
+$summary = Get-Content -LiteralPath (Join-Path $endToEndRun 'summary.json') `
   -Raw -Encoding UTF8 | ConvertFrom-Json
 Write-Output ("S3_CUMULATIVE_CHAIN=PASS CASE={0} GAP_MM={1:g} RUN_ID={2} HITS={3}/{4}" -f `
   $ConnectorCaseId,$gapMm,$endToEndRunId,$summary.census.detector_hit,$summary.census.local_accelerator_exit)

@@ -11,6 +11,28 @@ $supportSource = (Resolve-Path (Join-Path $PSScriptRoot '..\support\rf_run_artif
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
+
+function Invoke-S3SnapshotPython {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Python,
+    [Parameter(Mandatory)][string]$SnapshotRoot,
+    [Parameter(Mandatory)][string[]]$Arguments,
+    [Parameter(Mandatory)][string]$FailureMessage
+  )
+  $environmentNames = @('PYTHONPATH','PYTHONNOUSERSITE')
+  $savedEnvironment = Save-RfEnvironment -Names $environmentNames
+  try {
+    $env:PYTHONPATH = $SnapshotRoot
+    $env:PYTHONNOUSERSITE = '1'
+    Push-Location -LiteralPath $SnapshotRoot
+    try { & $Python @Arguments } finally { Pop-Location }
+    if ($LASTEXITCODE -ne 0) { throw $FailureMessage }
+  } finally {
+    Restore-RfEnvironment -Names $environmentNames -Snapshot $savedEnvironment
+  }
+}
+
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling'
 $s3Source = Join-Path $projectRoot 'config\rf_to_oatof_s3_pulse_capture.json'
@@ -26,6 +48,7 @@ $software = @('COMSOL 6.4','MATLAB R2025b','Python 3.11')
 $package = New-RfRunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project 'rf_quadrupole_collision_cooling' `
   -Mode 'rf_to_oatof_s3_shared_clock_pulse_capture_n100' -Software $software
+$manifestToolRoot = $repoRoot
 $python = $package.python
 $inputDir = $package.input_dir
 $resultDir = $package.result_dir
@@ -37,90 +60,179 @@ try {
   $fieldBuilder = Join-Path $inputDir 'prepare_s2_joint_field_model.m'
   $runner = Join-Path $inputDir 'run_s3_pulse_capture.ps1.txt'
   $support = Join-Path $inputDir 'rf_run_artifact_support.ps1.txt'
+  $snapshotRoot = Join-Path $inputDir 'runtime_snapshot'
   $s3 = Join-Path $inputDir 'rf_to_oatof_s3_pulse_capture.json'
   $s2 = Join-Path $inputDir 'rf_to_oatof_s2_passive_connector.json'
   $spatialRegistration = Join-Path $inputDir 'resolved_rf_to_oatof_s2_spatial_registration.json'
-  $sharedJoint = Join-Path $inputDir 'rf_to_oatof_shared_physical_port_joint_geometry.json'
-  $rf = Join-Path $inputDir 'rf_resolved_design.json'
   $pulsePolicy = Join-Path $inputDir 'rf_to_oatof_pulse_timing.json'
-  $scheduler = Join-Path $inputDir 'derive_shared_centroid_pulse_time.py'
-  $snapshotAnalysis = Join-Path $inputDir 'plot_shared_pulse_geometry_snapshot.py'
-  $auditAnalysis = Join-Path $inputDir 'audit_s3_pulse_chain.py'
   $dependencyContractSource = Join-Path $projectRoot 'config\rf_to_oatof_s2_dependencies.json'
-  $dependencyContract = Join-Path $inputDir 'rf_to_oatof_s2_dependencies.json'
   Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'solve_s3_pulse_capture.m') -Destination $task
   Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'build_s2_passive_connector_model.m') -Destination $geometryBuilder
   Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'prepare_s2_joint_field_model.m') -Destination $fieldBuilder
   Copy-Item -LiteralPath $PSCommandPath -Destination $runner
   Copy-Item -LiteralPath $supportSource -Destination $support
   Copy-Item -LiteralPath $s3Source -Destination $s3
-  Copy-Item -LiteralPath (Join-Path $projectRoot 'config\rf_to_oatof_shared_physical_port_joint_geometry.json') -Destination $sharedJoint
-  Copy-Item -LiteralPath (Join-Path $projectRoot 'config\resolved_design_official.json') -Destination $rf
   Copy-Item -LiteralPath (Join-Path $projectRoot 'config\rf_to_oatof_pulse_timing.json') -Destination $pulsePolicy
-  Copy-Item -LiteralPath (Join-Path $projectRoot 'analysis\derive_shared_centroid_pulse_time.py') -Destination $scheduler
-  Copy-Item -LiteralPath (Join-Path $projectRoot 'analysis\plot_shared_pulse_geometry_snapshot.py') -Destination $snapshotAnalysis
-  Copy-Item -LiteralPath (Join-Path $projectRoot 'analysis\audit_s3_pulse_chain.py') -Destination $auditAnalysis
-  Copy-Item -LiteralPath $dependencyContractSource -Destination $dependencyContract
+  $s3Document = Get-Content -LiteralPath $s3 -Raw -Encoding UTF8 | ConvertFrom-Json
 
-  $dependencyDocument = Get-Content -LiteralPath $dependencyContractSource -Raw -Encoding UTF8 | ConvertFrom-Json
+  $dependencyContract = Join-Path $snapshotRoot `
+    'projects\rf_quadrupole_collision_cooling\config\rf_to_oatof_s2_dependencies.json'
+  $dependencyContractIdentity = Copy-RfStableFile -SourceRunRoot $repoRoot `
+    -SourcePath $dependencyContractSource -Destination $dependencyContract `
+    -Role 'S3 dependency contract'
+  $dependencyDocument = Get-Content -LiteralPath $dependencyContract -Raw -Encoding UTF8 |
+    ConvertFrom-Json
+  $dependencyConsumer = 's3_pulse_capture'
+  if (@($dependencyDocument.consumer_ids) -notcontains $dependencyConsumer) {
+    throw "S3 dependency consumer is not declared: $dependencyConsumer"
+  }
+  $selectedDependencies = @(
+    $dependencyDocument.dependencies |
+      Where-Object { @($_.consumers) -contains $dependencyConsumer }
+  )
+  if ($selectedDependencies.Count -eq 0 -or
+      @($selectedDependencies.id | Select-Object -Unique).Count -ne $selectedDependencies.Count) {
+    throw 'S3 dependency consumer subset is empty or has duplicate identities.'
+  }
   $dependencyIdentities = [ordered]@{}
-  $dependencyPaths = @{}
-  foreach ($dependency in $dependencyDocument.dependencies) {
-    $identity = Copy-RfFrozenDependency -RepoRoot $repoRoot -InputDir $inputDir -Dependency $dependency
+  $dependencySnapshotPaths = @{}
+  $dependencyCompatibilityPaths = @{}
+  foreach ($dependency in $selectedDependencies) {
+    if ([string]$dependency.id -eq 'rf_dependency_contract_snapshot') {
+      $identity = Confirm-RfFrozenDependencyIdentity -RepoRoot $repoRoot `
+        -InputDir $inputDir -Dependency $dependency `
+        -ExpectedSourcePath $dependencyContractSource `
+        -ExistingSnapshotPath $dependencyContract `
+        -ExpectedSha256 $dependencyContractIdentity.sha256
+    } else {
+      $identity = Copy-RfFrozenDependency -RepoRoot $repoRoot -InputDir $inputDir `
+        -Dependency $dependency
+    }
+    if ((Get-FileHash -LiteralPath $identity.snapshot_path -Algorithm SHA256).Hash -ne
+        $identity.sha256) {
+      throw "S3 dependency snapshot identity differs: $($identity.id)"
+    }
     $dependencyIdentities[$identity.id] = [ordered]@{
+      provider_scope = $identity.provider_scope
       provider_project = $identity.provider_project
+      provider_repo_path = $identity.provider_repo_path
       source_repo_path = $identity.source_repo_path
       frozen_input_name = $identity.frozen_input_name
+      consumers = @($identity.consumers)
+      snapshot_path = $identity.snapshot_path
+      compatibility_path = $identity.compatibility_path
       sha256 = $identity.sha256
     }
-    $dependencyPaths[$identity.id] = $identity.frozen_path
+    $dependencySnapshotPaths[$identity.id] = $identity.snapshot_path
+    $dependencyCompatibilityPaths[$identity.id] = $identity.compatibility_path
   }
-  $oaBaseline = $dependencyPaths['oatof_baseline']
-  $oaBuilder = $dependencyPaths['oatof_accelerator_geometry_builder']
+  $manifestToolRoot = $snapshotRoot
+  if (-not $dependencySnapshotPaths['rf_dependency_contract_snapshot'].Equals(
+      $dependencyContract, [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'S3 dependency contract self identity is inconsistent.'
+  }
+  $interfaceStagePlan = $dependencySnapshotPaths['rf_interface_stage_plan']
+  $sharedJoint = $dependencySnapshotPaths['rf_shared_joint_geometry']
+  $rf = $dependencySnapshotPaths['rf_resolved_design']
+  $scheduler = $dependencySnapshotPaths['rf_s3_pulse_scheduler']
+  $snapshotAnalysis = $dependencySnapshotPaths['rf_s3_geometry_snapshot_plotter']
+  $auditAnalysis = $dependencySnapshotPaths['rf_s3_pulse_chain_auditor']
+  $localExitAdapter = $dependencySnapshotPaths['rf_s3_local_exit_adapter']
+  $oaBaselineSnapshot = $dependencySnapshotPaths['oatof_baseline']
+  $oaBuilderSnapshot = $dependencySnapshotPaths['oatof_accelerator_geometry_builder']
+  $oaBaselineMatlab = $dependencyCompatibilityPaths['oatof_baseline']
+  $oaBuilderMatlab = $dependencyCompatibilityPaths['oatof_accelerator_geometry_builder']
+  if ([string]::IsNullOrWhiteSpace($oaBaselineMatlab) -or
+      [string]::IsNullOrWhiteSpace($oaBuilderMatlab)) {
+    throw 'S3 MATLAB compatibility inputs are not declared by the dependency contract.'
+  }
+  $frozenManifestVerifier = $dependencySnapshotPaths['common_verify_run_manifest']
+  $frozenComsolRunner = $dependencySnapshotPaths['common_comsol_runner']
 
-  $timingRun = Join-Path (Join-Path $artifactRoot 'runs') $SourceRunId
+  $requiredSnapshotIds = @(
+    'rf_dependency_contract_snapshot','rf_interface_stage_plan',
+    'rf_shared_joint_geometry','rf_resolved_design',
+    'rf_s3_pulse_scheduler','rf_s3_geometry_snapshot_plotter',
+    'rf_s3_pulse_chain_auditor','rf_s3_local_exit_adapter',
+    'common_component_particle_state','common_particle_physics',
+    'common_verify_run_manifest','common_write_run_manifest',
+    'common_run_artifact_support','common_comsol_runner'
+  )
+  foreach ($requiredId in $requiredSnapshotIds) {
+    if ([string]::IsNullOrWhiteSpace([string]$dependencySnapshotPaths[$requiredId])) {
+      throw "S3 dependency consumer is missing required identity: $requiredId"
+    }
+  }
+
+  $timingRun = Resolve-RfDirectChildDirectory `
+    -ParentRoot (Join-Path $artifactRoot 'runs') -ChildName $SourceRunId `
+    -Role 'SourceRunId'
   $sourceManifestOriginal = Join-Path $timingRun 'run_manifest.json'
-  & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') `
-    $sourceManifestOriginal --require-status success
-  if ($LASTEXITCODE -ne 0) { throw 'The frozen S2 timing/source run manifest is invalid.' }
-  $sourceRunConfiguration = Get-Content -LiteralPath (Join-Path $timingRun 'run_config.json') `
-    -Raw -Encoding UTF8 | ConvertFrom-Json
-  if ($sourceRunConfiguration.mode -ne 'rf_to_oatof_s2_passive_connector_n100' -or
+  $sourceManifest = Join-Path $inputDir 's2_source_run_manifest.json'
+  $sourceManifestIdentity = Copy-RfStableFile -SourceRunRoot $timingRun `
+    -SourcePath $sourceManifestOriginal -Destination $sourceManifest `
+    -Role 'source run manifest'
+  Invoke-S3SnapshotPython -Python $python -SnapshotRoot $snapshotRoot -Arguments @(
+    $frozenManifestVerifier,$sourceManifest,
+    '--require-status','success','--require-run-id',$SourceRunId,
+    '--require-project','rf_quadrupole_collision_cooling',
+    '--require-mode','rf_to_oatof_s2_passive_connector_n100'
+  ) -FailureMessage 'The frozen S2 timing/source run manifest is invalid.'
+  $sourceManifestDocument = Get-Content -LiteralPath $sourceManifest -Raw -Encoding UTF8 |
+    ConvertFrom-Json
+  if ($sourceManifestDocument.role -ne 'simulation_run_manifest' -or
+      $sourceManifestDocument.status -ne 'success' -or
+      $sourceManifestDocument.project -ne 'rf_quadrupole_collision_cooling' -or
+      $sourceManifestDocument.mode -ne 'rf_to_oatof_s2_passive_connector_n100' -or
+      $sourceManifestDocument.run_id -ne $SourceRunId) {
+    throw 'S3 source manifest identity or role is invalid.'
+  }
+
+  $sourceRunConfig = Join-Path $inputDir 's2_source_run_config.json'
+  $sourceRunConfigIdentity = Copy-RfManifestBoundFile -SourceRunRoot $timingRun `
+    -SourcePath ([string]$sourceManifestDocument.run_config.path) `
+    -Destination $sourceRunConfig -ManifestRecord $sourceManifestDocument.run_config `
+    -Role 'run_config'
+  $sourceRunConfiguration = Get-Content -LiteralPath $sourceRunConfig -Raw -Encoding UTF8 |
+    ConvertFrom-Json
+  if ($sourceRunConfiguration.run_id -ne $SourceRunId -or
+      $sourceRunConfiguration.project -ne 'rf_quadrupole_collision_cooling' -or
+      $sourceRunConfiguration.mode -ne 'rf_to_oatof_s2_passive_connector_n100' -or
       -not [bool]$sourceRunConfiguration.parameters.particle_tracking) {
     throw 'S3 requires a successful S2 N=100 particle source run.'
   }
+
   $sourceS2Contract = [string]$sourceRunConfiguration.inputs.s2_contract
   $sourceSpatialRegistration = [string]$sourceRunConfiguration.inputs.spatial_registration
   $particleOriginal = [string]$sourceRunConfiguration.inputs.particle_source
   $timingStateOriginal = Join-Path $timingRun 'results\s2_passive_connector_particles.csv'
-  foreach ($path in @($particleOriginal,$timingStateOriginal)) {
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "S3 source input is missing: $path" }
-  }
-  if (-not (Test-Path -LiteralPath $sourceS2Contract -PathType Leaf)) {
-    throw 'S3 source run has no frozen S2 connector contract.'
-  }
-  if (-not (Test-Path -LiteralPath $sourceSpatialRegistration -PathType Leaf)) {
-    throw 'S3 source run has no frozen spatial-registration release.'
-  }
-  Copy-Item -LiteralPath $sourceS2Contract -Destination $s2
-  Copy-Item -LiteralPath $sourceSpatialRegistration -Destination $spatialRegistration
-  $resolvedS2Document = Get-Content -LiteralPath $s2 -Raw -Encoding UTF8 | ConvertFrom-Json
-  $sourceManifest = Join-Path $inputDir 's2_source_run_manifest.json'
   $particleInput = Join-Path $inputDir 'canonical_rf_exit_at_s2_connector.csv'
   $timingState = Join-Path $inputDir 's2_passive_connector_particles.csv'
-  Copy-Item -LiteralPath $sourceManifestOriginal -Destination $sourceManifest
-  Copy-Item -LiteralPath $particleOriginal -Destination $particleInput
-  Copy-Item -LiteralPath $timingStateOriginal -Destination $timingState
+  $sourceS2Identity = Copy-RfManifestBoundFile -SourceRunRoot $timingRun `
+    -SourcePath $sourceS2Contract -Destination $s2 `
+    -ManifestRecord (Get-RfManifestInputRecord -Manifest $sourceManifestDocument -Role 's2_contract') `
+    -Role 's2_contract'
+  $sourceSpatialIdentity = Copy-RfManifestBoundFile -SourceRunRoot $timingRun `
+    -SourcePath $sourceSpatialRegistration -Destination $spatialRegistration `
+    -ManifestRecord (Get-RfManifestInputRecord -Manifest $sourceManifestDocument -Role 'spatial_registration') `
+    -Role 'spatial_registration'
+  $sourceParticleIdentity = Copy-RfManifestBoundFile -SourceRunRoot $timingRun `
+    -SourcePath $particleOriginal -Destination $particleInput `
+    -ManifestRecord (Get-RfManifestInputRecord -Manifest $sourceManifestDocument -Role 'particle_source') `
+    -Role 'particle_source'
+  $timingOutputRecord = Get-RfManifestOutputRecord -Manifest $sourceManifestDocument `
+    -ExpectedPath $timingStateOriginal -Role 'timing_state'
+  $sourceTimingIdentity = Copy-RfManifestBoundFile -SourceRunRoot $timingRun `
+    -SourcePath $timingStateOriginal -Destination $timingState `
+    -ManifestRecord $timingOutputRecord -Role 'timing_state'
+  $resolvedS2Document = Get-Content -LiteralPath $s2 -Raw -Encoding UTF8 | ConvertFrom-Json
+
   $particleValidation = Join-Path $inputDir 'canonical_rf_exit_component_state_validation.json'
-  Push-Location -LiteralPath $repoRoot
-  try {
-    & $python -m common.contracts.component_particle_state --state $particleInput `
-      --output $particleValidation
-  } finally {
-    Pop-Location
-  }
-  if ($LASTEXITCODE -ne 0 -or
-      -not (Test-Path -LiteralPath $particleValidation -PathType Leaf)) {
+  Invoke-S3SnapshotPython -Python $python -SnapshotRoot $snapshotRoot -Arguments @(
+    '-m','common.contracts.component_particle_state',
+    '--state',$particleInput,'--output',$particleValidation
+  ) -FailureMessage 'S3 canonical particle input failed the common component-state contract.'
+  if (-not (Test-Path -LiteralPath $particleValidation -PathType Leaf)) {
     throw 'S3 canonical particle input failed the common component-state contract.'
   }
   $particleValidationDocument = Get-Content -LiteralPath $particleValidation `
@@ -130,12 +242,15 @@ try {
     throw 'S3 canonical particle validation report is incomplete or inconsistent.'
   }
   $pulseSchedule = Join-Path $inputDir 's3_centroid_pulse_schedule.json'
-  & $python $scheduler --particle-state $timingState --oatof-baseline $oaBaseline `
-    --joint-contract $sharedJoint --s2-contract $s2 --policy $pulsePolicy `
-    --resolved-registration $spatialRegistration `
-    --target-mass-amu ([double]$s3Document.source.target_mass_amu) `
-    --target-charge-state ([int]$s3Document.source.target_charge_state) --output $pulseSchedule
-  if ($LASTEXITCODE -ne 0) { throw 'S3 centroid pulse schedule derivation failed.' }
+  Invoke-S3SnapshotPython -Python $python -SnapshotRoot $snapshotRoot -Arguments @(
+    $scheduler,'--particle-state',$timingState,
+    '--oatof-baseline',$oaBaselineSnapshot,
+    '--joint-contract',$sharedJoint,'--s2-contract',$s2,
+    '--policy',$pulsePolicy,'--resolved-registration',$spatialRegistration,
+    '--target-mass-amu',([string][double]$s3Document.source.target_mass_amu),
+    '--target-charge-state',([string][int]$s3Document.source.target_charge_state),
+    '--output',$pulseSchedule
+  ) -FailureMessage 'S3 centroid pulse schedule derivation failed.'
   $scheduleDocument = Get-Content -LiteralPath $pulseSchedule -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($scheduleDocument.role -ne 'rf_to_oatof_s3_centroid_pulse_schedule' -or
       $scheduleDocument.status -ne 'PASS' -or
@@ -149,15 +264,19 @@ try {
   $localExit = Join-Path $resultDir 's3_local_accelerator_exit.csv'
   $metrics = Join-Path $resultDir 's3_pulse_capture_metrics.json'
   $audit = Join-Path $resultDir 's3_particle_chain_audit.json'
+  $localExitValidation = Join-Path $resultDir 's3_local_accelerator_exit_validation.json'
   $snapshotFigure = Join-Path $resultDir 's3_pulse_geometry_snapshot.png'
   $snapshotMetadata = Join-Path $resultDir 's3_pulse_geometry_snapshot.json'
   $report = Join-Path $logDir 'comsol_s3_pulse_capture.txt'
   $sourceIdentity = [ordered]@{
     run_id = $SourceRunId
-    manifest_sha256 = (Get-FileHash -LiteralPath $sourceManifestOriginal -Algorithm SHA256).Hash
-    particle_sha256 = (Get-FileHash -LiteralPath $particleOriginal -Algorithm SHA256).Hash
+    manifest_sha256 = $sourceManifestIdentity.sha256
+    run_config_sha256 = $sourceRunConfigIdentity.sha256
+    s2_contract_sha256 = $sourceS2Identity.sha256
+    spatial_registration_sha256 = $sourceSpatialIdentity.sha256
+    particle_sha256 = $sourceParticleIdentity.sha256
     particle_validation_sha256 = (Get-FileHash -LiteralPath $particleValidation -Algorithm SHA256).Hash
-    timing_state_sha256 = (Get-FileHash -LiteralPath $timingStateOriginal -Algorithm SHA256).Hash
+    timing_state_sha256 = $sourceTimingIdentity.sha256
   }
   $runConfiguration = [ordered]@{
     schema_version = 1
@@ -170,11 +289,18 @@ try {
       runner = $runner; run_artifact_support = $support; s3_contract = $s3
       s2_contract = $s2; shared_physical_port_joint_geometry = $sharedJoint
       rf_resolved_geometry = $rf
+      interface_stage_plan = $interfaceStagePlan
       spatial_registration = $spatialRegistration
       pulse_timing_policy = $pulsePolicy; pulse_scheduler = $scheduler
       snapshot_analysis = $snapshotAnalysis; audit_analysis = $auditAnalysis
-      dependency_contract = $dependencyContract; oatof_baseline = $oaBaseline
-      oatof_accelerator_builder = $oaBuilder; source_run_manifest = $sourceManifest
+      local_exit_adapter = $localExitAdapter
+      dependency_contract = $dependencyContract
+      oatof_baseline = $oaBaselineSnapshot
+      oatof_baseline_matlab_compatibility = $oaBaselineMatlab
+      oatof_accelerator_builder = $oaBuilderSnapshot
+      oatof_accelerator_builder_matlab_compatibility = $oaBuilderMatlab
+      source_run_manifest = $sourceManifest
+      source_run_config = $sourceRunConfig
       particle_source = $particleInput; particle_state_validation = $particleValidation
       timing_state = $timingState; pulse_schedule = $pulseSchedule
     }
@@ -198,12 +324,13 @@ try {
     schema_version = 1; role = 'rf_to_oatof_s3_pulse_capture_summary'
     status = 'interrupted'; reason = 'Run package initialized; final status not yet recorded.'
   })
-  Write-RfRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config `
+  Write-RfFrozenRunManifest -Python $python -FrozenRepoRoot $manifestToolRoot `
+    -RunConfig $package.run_config `
     -Status interrupted -Software $software
 
   $environmentNames = @(
     'RF_OATOF_S3_METRICS','RF_OATOF_S3_TERMINAL_OUTPUT','RF_OATOF_S3_CAPTURE_OUTPUT',
-    'RF_OATOF_S3_LOCAL_EXIT_OUTPUT','RF_OATOF_S3_CONTRACT','RF_OATOF_S3_S2_CONTRACT',
+    'RF_OATOF_S3_CONTRACT','RF_OATOF_S3_S2_CONTRACT',
     'RF_OATOF_S3_SHARED_JOINT_CONTRACT','RF_OATOF_S3_RF_RESOLVED','RF_OATOF_S3_OA_BASELINE',
     'RF_OATOF_SPATIAL_REGISTRATION','RF_OATOF_S3_PULSE_SCHEDULE',
     'RF_OATOF_S3_PARTICLE_INPUT','RF_OATOF_S3_OA_COMSOL_DIR'
@@ -211,32 +338,45 @@ try {
   $oldEnvironment = Save-RfEnvironment -Names $environmentNames
   try {
     $env:RF_OATOF_S3_METRICS=$metrics; $env:RF_OATOF_S3_TERMINAL_OUTPUT=$terminal
-    $env:RF_OATOF_S3_CAPTURE_OUTPUT=$capture; $env:RF_OATOF_S3_LOCAL_EXIT_OUTPUT=$localExit
+    $env:RF_OATOF_S3_CAPTURE_OUTPUT=$capture
     $env:RF_OATOF_S3_CONTRACT=$s3; $env:RF_OATOF_S3_S2_CONTRACT=$s2
     $env:RF_OATOF_S3_SHARED_JOINT_CONTRACT=$sharedJoint; $env:RF_OATOF_S3_RF_RESOLVED=$rf
     $env:RF_OATOF_SPATIAL_REGISTRATION=$spatialRegistration
-    $env:RF_OATOF_S3_OA_BASELINE=$oaBaseline; $env:RF_OATOF_S3_PULSE_SCHEDULE=$pulseSchedule
+    $env:RF_OATOF_S3_OA_BASELINE=$oaBaselineMatlab
+    $env:RF_OATOF_S3_PULSE_SCHEDULE=$pulseSchedule
     $env:RF_OATOF_S3_PARTICLE_INPUT=$particleInput; $env:RF_OATOF_S3_OA_COMSOL_DIR=$inputDir
-    & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') `
+    & $frozenComsolRunner `
       -TaskScript $task -ReportPath $report
     if ($LASTEXITCODE -ne 0) { throw 'COMSOL S3 pulse-capture task failed.' }
   } finally {
     Restore-RfEnvironment -Names $environmentNames -Snapshot $oldEnvironment
   }
-  & $python $auditAnalysis --source $particleInput --terminal $terminal --capture $capture `
-    --local-exit $localExit --schedule $pulseSchedule --contract $s3 --output $audit
-  if ($LASTEXITCODE -ne 0) { throw 'S3 particle-chain audit failed.' }
-  & $python $snapshotAnalysis --capture $capture --events $terminal `
-    --oatof-baseline $oaBaseline --joint-contract $sharedJoint `
-    --resolved-registration $spatialRegistration `
-    --figure $snapshotFigure --metadata $snapshotMetadata
-  if ($LASTEXITCODE -ne 0) { throw 'S3 pulse snapshot generation failed.' }
+  Invoke-S3SnapshotPython -Python $python -SnapshotRoot $snapshotRoot -Arguments @(
+    $localExitAdapter,'--source',$particleInput,'--terminal',$terminal,
+    '--contract',$s3,'--output',$localExit,'--validation',$localExitValidation
+  ) -FailureMessage 'S3 local-exit canonical adapter failed.'
+  if (-not (Test-Path -LiteralPath $localExit -PathType Leaf) -or
+      -not (Test-Path -LiteralPath $localExitValidation -PathType Leaf)) {
+    throw 'S3 local-exit canonical adapter failed.'
+  }
+  Invoke-S3SnapshotPython -Python $python -SnapshotRoot $snapshotRoot -Arguments @(
+    $auditAnalysis,'--source',$particleInput,'--terminal',$terminal,
+    '--capture',$capture,'--local-exit',$localExit,'--schedule',$pulseSchedule,
+    '--contract',$s3,'--output',$audit
+  ) -FailureMessage 'S3 particle-chain audit failed.'
+  Invoke-S3SnapshotPython -Python $python -SnapshotRoot $snapshotRoot -Arguments @(
+    $snapshotAnalysis,'--capture',$capture,'--events',$terminal,
+    '--oatof-baseline',$oaBaselineSnapshot,'--joint-contract',$sharedJoint,
+    '--resolved-registration',$spatialRegistration,
+    '--figure',$snapshotFigure,'--metadata',$snapshotMetadata
+  ) -FailureMessage 'S3 pulse snapshot generation failed.'
   $result = Get-Content -LiteralPath $metrics -Raw -Encoding UTF8 | ConvertFrom-Json
   $auditResult = Get-Content -LiteralPath $audit -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($result.status -ne 'PASS' -or $auditResult.status -ne 'PASS' -or
       [int]$result.source_particles -ne [int]$s3Document.source.source_particles -or
       [int]$result.active_at_pulse -lt [int]$s3Document.runtime.minimum_active_at_pulse -or
       [int]$result.local_accelerator_exit -lt [int]$s3Document.runtime.minimum_local_accelerator_exit -or
+      [int]$result.local_accelerator_exit -ne [int]$auditResult.local_accelerator_exit -or
       [bool]$result.s3_stage_passed -or [bool]$result.formal_gate_passed) {
     throw 'S3 result violates the qualification-limited functional contract.'
   }
@@ -251,12 +391,14 @@ try {
     pulse_snapshot_figure = 'results/s3_pulse_geometry_snapshot.png'
     dense_trajectories_saved = $false; s3_stage_passed = $false; formal_gate_passed = $false
   })
-  $outputs = @($terminal,$capture,$localExit,$metrics,$audit,$snapshotFigure,$snapshotMetadata,$report,$package.summary)
-  Write-RfRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config `
+  $outputs = @($terminal,$capture,$localExit,$localExitValidation,$metrics,$audit, $snapshotFigure,$snapshotMetadata,$report,$package.summary)
+  Write-RfFrozenRunManifest -Python $python -FrozenRepoRoot $manifestToolRoot `
+    -RunConfig $package.run_config `
     -Status success -Software $software -Outputs $outputs
   Write-Output "STATUS=PASS RUN_ID=$RunId SOURCE=$($result.source_particles) ACTIVE=$($result.active_at_pulse) LOCAL_EXIT=$($result.local_accelerator_exit) S3_STAGE_PASS=false"
 } catch {
-  Complete-RfFailedRun -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config `
+  Complete-RfFrozenFailedRun -Python $python -FrozenRepoRoot $manifestToolRoot `
+    -RunConfig $package.run_config `
     -Summary $package.summary -SummaryRole 'rf_to_oatof_s3_pulse_capture_summary' `
     -Reason $_.Exception.Message -Software $software
   throw

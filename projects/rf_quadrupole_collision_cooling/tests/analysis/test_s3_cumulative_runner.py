@@ -17,9 +17,31 @@ class S3CumulativeRunnerTests(unittest.TestCase):
         self.assertLess(s3_index, downstream_index)
         self.assertIn("-SourceRunId $s2RunId", runner)
         self.assertIn("-SourceRunId $s3RunId", runner)
-        self.assertIn("verify_run_manifest.py", runner)
         self.assertIn("[string]$PythonExe", runner)
         self.assertEqual(runner.count("-PythonExe $python"), 3)
+        self.assertIn(
+            "inputs\\runtime_snapshot", runner
+        )
+        self.assertIn(
+            "common\\contracts\\verify_run_manifest.py", runner
+        )
+        self.assertIn(
+            "Resolve-RfDirectChildDirectory -ParentRoot $artifactRoot", runner
+        )
+        self.assertIn("$env:PYTHONPATH = $snapshotRoot", runner)
+        self.assertIn("$env:PYTHONNOUSERSITE = '1'", runner)
+        self.assertIn("Push-Location -LiteralPath $snapshotRoot", runner)
+        for requirement in (
+            "--require-status success",
+            "--require-run-id $case.run_id",
+            "--require-project rf_quadrupole_collision_cooling",
+            "--require-mode $case.mode",
+        ):
+            self.assertIn(requirement, runner)
+        self.assertNotIn(
+            "Join-Path $repoRoot 'common\\contracts\\verify_run_manifest.py'",
+            runner,
+        )
 
     def test_internal_s3_runner_requires_explicit_s2_source(self) -> None:
         runner = (

@@ -23,8 +23,6 @@ targetCenter = spatial.resolved_surfaces.target_entry.in_instrument_frame.center
 gapMm = spatial.project_semantics.connector_gap_mm;
 assert(gapMm >= 0, 'Connector gap cannot be negative.');
 connectorPresent = gapMm > 0;
-assert(abs(targetCenter(1)-sourceCenter(1)-gapMm) < 1e-12, ...
-    'Connector endpoints do not reproduce the frozen S2 gap.');
 assert(abs(connector.length_mm-gapMm) < 1e-12, ...
     'Connector geometry length differs from the registration gap.');
 
@@ -39,8 +37,11 @@ geom.lengthUnit('mm');
 configure_accelerator_parameters(model.param, oa);
 
 sourcePose = registration.source_component_pose;
-tx = sourcePose.translation_mm(1);
-tz = sourcePose.translation_mm(3);
+sourceRotation = sourcePose.rotation_component_to_instrument;
+sourceTranslation = sourcePose.translation_mm(:);
+sourceAxis = sourceRotation * [0.0; 0.0; 1.0];
+assert(abs(norm(sourceAxis)-1.0) <= 1e-12, ...
+    'Resolved RF source axis must be a unit vector.');
 rfGeometry = rf.geometry_mm;
 shieldInnerRadius = sharedJoint.local_domain.rf_shield_inner_radius_mm;
 numericalWallMm = sharedJoint.local_domain.rf_shield_numerical_wall_thickness_mm;
@@ -50,9 +51,10 @@ oaVacuumHalf = oaGeometry.accelerator_bore_half + ...
     oaGeometry.accelerator_ring_width + oaGeometry.accelerator_insulation_gap;
 
 add_cylinder(geom, 'rfvac', shieldInnerRadius, ...
-    registration.source_exit_center_local_mm(3), [tx, 0.0, tz], true);
+    registration.source_exit_center_local_mm(3), sourceTranslation.', sourceAxis, true);
 if connectorPresent
-    add_cylinder(geom, 'connvac', connector.cavity.inner_radius_mm, gapMm, sourceCenter, true);
+    add_cylinder(geom, 'connvac', connector.cavity.inner_radius_mm, ...
+        gapMm, sourceCenter, sourceAxis, true);
 end
 add_oatof_vacuum(geom, oa, oaVacuumHalf, downstreamBufferMm);
 add_oatof_port(geom, connector, oa, oaVacuumHalf);
@@ -77,7 +79,7 @@ geom.feature('accelshield').set('selresult', 'on');
 for index = 1:numel(acceleratorRingTags)
     geom.feature(acceleratorRingTags{index}).set('selresult', 'on');
 end
-add_rf_hardware(geom, rfGeometry, rf.interfaces_mm, tx, tz, ...
+add_rf_hardware(geom, rfGeometry, rf.interfaces_mm, sourcePose, sourceAxis, ...
     shieldInnerRadius, numericalWallMm);
 geom.run;
 
@@ -130,8 +132,8 @@ targetCenter = spatial.resolved_surfaces.target_entry.in_instrument_frame.center
 gapMm = spatial.project_semantics.connector_gap_mm;
 assert(all(abs(sourceCenter-registration.source_exit_center_instrument_mm) <= 1e-12) && ...
     all(abs(targetCenter-registration.target_entry_center_instrument_mm) <= 1e-12) && ...
-    abs(targetCenter(1)-sourceCenter(1)-gapMm) <= 1e-12 && ...
-    all(abs(targetCenter(2:3)-sourceCenter(2:3)) <= 1e-12), ...
+    all(abs((targetCenter-sourceCenter).'-gapMm* ...
+        registration.source_component_pose.rotation_component_to_instrument*[0.0;0.0;1.0]) <= 1e-12), ...
     'S2 resolved connector centers or gap are inconsistent.');
 end
 
@@ -153,9 +155,9 @@ parameters.set('accel_shield_back_extra', sprintf('%.17g[mm]', g.accelerator_rea
 parameters.set('V_grid1', sprintf('%.17g[V]', oa.electrodes_V.grid1));
 end
 
-function add_cylinder(geom, tag, radiusMm, lengthMm, positionMm, selectionEnabled)
+function add_cylinder(geom, tag, radiusMm, lengthMm, positionMm, axisDirection, selectionEnabled)
 geom.feature.create(tag, 'Cylinder');
-geom.feature(tag).set('axis', {'1','0','0'});
+geom.feature(tag).set('axis', axisDirection(:).');
 geom.feature(tag).set('r', sprintf('%.17g[mm]', radiusMm));
 geom.feature(tag).set('h', sprintf('%.17g[mm]', lengthMm));
 geom.feature(tag).set('pos', cellstr(compose('%.17g[mm]', positionMm)));
@@ -205,37 +207,47 @@ for specification = specifications
 end
 end
 
-function add_rf_hardware(geom, g, interfaces, tx, tz, shieldRadius, wallMm)
+function add_rf_hardware(geom, g, interfaces, sourcePose, sourceAxis, shieldRadius, wallMm)
 for index = 1:4
     tag = sprintf('rfrod%d', index);
     angleDeg = (index-1)*90;
+    localStart = [g.rod_center_radius*cosd(angleDeg), ...
+        g.rod_center_radius*sind(angleDeg), g.rod_z_min];
     add_cylinder(geom, tag, g.rod_radius, g.rod_length, ...
-        [tx+g.rod_z_min, g.rod_center_radius*cosd(angleDeg), ...
-        tz+g.rod_center_radius*sind(angleDeg)], true);
+        transform_source_position(sourcePose, localStart), sourceAxis, true);
 end
 add_cylinder(geom, 'rfshieldO', shieldRadius+wallMm, ...
     interfaces.exit.plate_z_min_mm-interfaces.entrance.plate_z_max_mm, ...
-    [tx+interfaces.entrance.plate_z_max_mm, 0.0, tz], false);
+    transform_source_position(sourcePose, ...
+        [0.0, 0.0, interfaces.entrance.plate_z_max_mm]), sourceAxis, false);
 add_cylinder(geom, 'rfshieldH', shieldRadius, ...
     interfaces.exit.plate_z_min_mm-interfaces.entrance.plate_z_max_mm, ...
-    [tx+interfaces.entrance.plate_z_max_mm, 0.0, tz], false);
+    transform_source_position(sourcePose, ...
+        [0.0, 0.0, interfaces.entrance.plate_z_max_mm]), sourceAxis, false);
 geom.feature.create('rfshield', 'Difference');
 geom.feature('rfshield').selection('input').set({'rfshieldO'});
 geom.feature('rfshield').selection('input2').set({'rfshieldH'});
 geom.feature('rfshield').set('selresult', 'on');
-add_annular_plate(geom, 'rfentrance', tx+interfaces.entrance.plate_z_min_mm, ...
+add_annular_plate(geom, 'rfentrance', interfaces.entrance.plate_z_min_mm, ...
     interfaces.entrance.plate_z_max_mm-interfaces.entrance.plate_z_min_mm, ...
-    shieldRadius+wallMm, interfaces.entrance.aperture_radius_mm, tz);
-add_annular_plate(geom, 'rfexit', tx+interfaces.exit.plate_z_min_mm, ...
+    shieldRadius+wallMm, interfaces.entrance.aperture_radius_mm, sourcePose, sourceAxis);
+add_annular_plate(geom, 'rfexit', interfaces.exit.plate_z_min_mm, ...
     interfaces.exit.plate_z_max_mm-interfaces.exit.plate_z_min_mm, ...
-    shieldRadius+wallMm, interfaces.exit.aperture_radius_mm, tz);
+    shieldRadius+wallMm, interfaces.exit.aperture_radius_mm, sourcePose, sourceAxis);
 end
 
-function add_annular_plate(geom, tag, xStart, thickness, outerRadius, holeRadius, zCenter)
-add_cylinder(geom, [tag 'O'], outerRadius, thickness, [xStart, 0.0, zCenter], false);
-add_cylinder(geom, [tag 'H'], holeRadius, thickness, [xStart, 0.0, zCenter], false);
+function add_annular_plate(geom, tag, localZStart, thickness, outerRadius, holeRadius, sourcePose, sourceAxis)
+position = transform_source_position(sourcePose, [0.0, 0.0, localZStart]);
+add_cylinder(geom, [tag 'O'], outerRadius, thickness, position, sourceAxis, false);
+add_cylinder(geom, [tag 'H'], holeRadius, thickness, position, sourceAxis, false);
 geom.feature.create(tag, 'Difference');
 geom.feature(tag).selection('input').set({[tag 'O']});
 geom.feature(tag).selection('input2').set({[tag 'H']});
 geom.feature(tag).set('selresult', 'on');
+end
+
+function positionMm = transform_source_position(sourcePose, localPositionMm)
+rotation = sourcePose.rotation_component_to_instrument;
+translation = sourcePose.translation_mm(:);
+positionMm = (rotation*localPositionMm(:)+translation).';
 end

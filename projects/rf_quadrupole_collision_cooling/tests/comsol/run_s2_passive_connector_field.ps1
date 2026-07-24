@@ -12,15 +12,73 @@ $supportSource = (Resolve-Path (Join-Path $PSScriptRoot '..\support\rf_run_artif
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
+
+function Copy-S2LocalSnapshotInput {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][string]$SnapshotRoot,
+    [Parameter(Mandatory)][string]$SourceRepoPath
+  )
+  $source = [IO.Path]::GetFullPath((Join-Path $RepoRoot $SourceRepoPath))
+  $destination = [IO.Path]::GetFullPath((Join-Path $SnapshotRoot $SourceRepoPath))
+  $snapshot = [IO.Path]::GetFullPath($SnapshotRoot).TrimEnd(
+    [IO.Path]::DirectorySeparatorChar,
+    [IO.Path]::AltDirectorySeparatorChar
+  )
+  if (-not $destination.StartsWith(
+      $snapshot + [IO.Path]::DirectorySeparatorChar,
+      [StringComparison]::OrdinalIgnoreCase
+  )) { throw "S2 local snapshot destination escapes inputs: $SourceRepoPath" }
+  if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+    throw "S2 local snapshot source is missing: $SourceRepoPath"
+  }
+  if (Test-Path -LiteralPath $destination) {
+    throw "S2 local snapshot destination already exists: $destination"
+  }
+  New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
+  Copy-Item -LiteralPath $source -Destination $destination
+  $sha256 = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
+  if ($sha256 -ne (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash) {
+    throw "S2 local snapshot changed while copied: $SourceRepoPath"
+  }
+  return [pscustomobject]@{
+    source_repo_path = $SourceRepoPath.Replace('\','/')
+    frozen_path = $destination
+    sha256 = $sha256
+  }
+}
+
+function Invoke-S2SnapshotPython {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Python,
+    [Parameter(Mandatory)][string]$SnapshotRoot,
+    [Parameter(Mandatory)][string[]]$Arguments,
+    [Parameter(Mandatory)][string]$FailureMessage,
+    [hashtable]$AdditionalEnvironment = @{}
+  )
+  $environmentNames = @('PYTHONPATH','PYTHONNOUSERSITE') + @($AdditionalEnvironment.Keys)
+  $savedEnvironment = Save-RfEnvironment -Names $environmentNames
+  try {
+    $env:PYTHONPATH = $SnapshotRoot
+    $env:PYTHONNOUSERSITE = '1'
+    foreach ($name in $AdditionalEnvironment.Keys) {
+      [Environment]::SetEnvironmentVariable($name, [string]$AdditionalEnvironment[$name])
+    }
+    Push-Location -LiteralPath $SnapshotRoot
+    try { & $Python @Arguments } finally { Pop-Location }
+    if ($LASTEXITCODE -ne 0) { throw $FailureMessage }
+  } finally {
+    Restore-RfEnvironment -Names $environmentNames -Snapshot $savedEnvironment
+  }
+}
+
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling'
 $contractSource = Join-Path $projectRoot 'config\rf_to_oatof_s2_passive_connector.json'
 $connectorCasesSource = Join-Path $projectRoot 'config\rf_to_oatof_connector_cases.json'
-$connectorResolverSource = Join-Path $projectRoot 'analysis\resolve_s2_connector_case.py'
-$connectorValidatorSource = Join-Path $projectRoot 'analysis\validate_s2_passive_connector.py'
-$oatofHandoffSource = Join-Path $projectRoot 'analysis\build_oatof_handoff.py'
 $dependencyContractSource = Join-Path $projectRoot 'config\rf_to_oatof_s2_dependencies.json'
-$spatialResolverSource = Join-Path $projectRoot 'analysis\resolve_spatial_registration.py'
 $baseContractDocument = Get-Content -LiteralPath $contractSource -Raw -Encoding UTF8 | ConvertFrom-Json
 if (-not [bool]$baseContractDocument.permissions.field_solve_allowed) {
   throw 'The S2 contract does not authorize a field solve.'
@@ -48,6 +106,7 @@ $summaryRole = if ($Particles) { 'rf_to_oatof_s2_passive_connector_n100_summary'
 $software = @('COMSOL 6.4','MATLAB R2025b','Python 3.11')
 $package = New-RfRunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project 'rf_quadrupole_collision_cooling' -Mode $mode -Software $software
+$manifestToolRoot = $repoRoot
 $python = $package.python
 $inputDir = $package.input_dir
 $resultDir = $package.result_dir
@@ -59,17 +118,16 @@ try {
   $fieldBuilder = Join-Path $inputDir 'prepare_s2_joint_field_model.m'
   $runner = Join-Path $inputDir 'run_s2_passive_connector_field.ps1.txt'
   $support = Join-Path $inputDir 'rf_run_artifact_support.ps1.txt'
+  $snapshotRoot = Join-Path $inputDir 'runtime_snapshot'
+  $snapshotRfProject = Join-Path $snapshotRoot 'projects\rf_quadrupole_collision_cooling'
   $contract = Join-Path $inputDir 'rf_to_oatof_s2_passive_connector.json'
   $baseContract = Join-Path $inputDir 'rf_to_oatof_s2_passive_connector_base.json'
   $connectorCases = Join-Path $inputDir 'rf_to_oatof_connector_cases.json'
-  $connectorResolver = Join-Path $inputDir 'resolve_s2_connector_case.py'
-  $connectorValidator = Join-Path $inputDir 'validate_s2_passive_connector.py'
-  $oatofHandoff = Join-Path $inputDir 'build_oatof_handoff.py'
-  $dependencyContract = Join-Path $inputDir 'rf_to_oatof_s2_dependencies.json'
-  $sharedJoint = Join-Path $inputDir 'rf_to_oatof_shared_physical_port_joint_geometry.json'
-  $rfResolved = Join-Path $inputDir 'rf_resolved_design.json'
+  $connectorResolver = Join-Path $snapshotRfProject 'analysis\resolve_s2_connector_case.py'
+  $connectorValidator = Join-Path $snapshotRfProject 'analysis\validate_s2_passive_connector.py'
+  $oatofHandoff = Join-Path $snapshotRfProject 'analysis\build_oatof_handoff.py'
   $spatialRegistration = Join-Path $inputDir 'resolved_rf_to_oatof_s2_spatial_registration.json'
-  $spatialResolver = Join-Path $inputDir 'resolve_spatial_registration.py'
+  $spatialResolver = Join-Path $snapshotRfProject 'analysis\resolve_spatial_registration.py'
   $particleInput = $null
   $particleOutput = $null
   Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'solve_s2_passive_connector_field.m') -Destination $task
@@ -79,69 +137,117 @@ try {
   Copy-Item -LiteralPath $supportSource -Destination $support
   Copy-Item -LiteralPath $contractSource -Destination $baseContract
   Copy-Item -LiteralPath $connectorCasesSource -Destination $connectorCases
-  Copy-Item -LiteralPath $connectorResolverSource -Destination $connectorResolver
-  Copy-Item -LiteralPath $connectorValidatorSource -Destination $connectorValidator
-  Copy-Item -LiteralPath $oatofHandoffSource -Destination $oatofHandoff
-  Copy-Item -LiteralPath $spatialResolverSource -Destination $spatialResolver
-  Push-Location $repoRoot
-  try {
-    & $python -m projects.rf_quadrupole_collision_cooling.analysis.resolve_s2_connector_case `
-      --base $baseContract --cases $connectorCases `
-      --case-id $ConnectorCaseId --output $contract
-  } finally { Pop-Location }
-  if ($LASTEXITCODE -ne 0) { throw 'S2 connector-case resolution failed.' }
-  $contractDocument = Get-Content -LiteralPath $contract -Raw -Encoding UTF8 | ConvertFrom-Json
-  Copy-Item -LiteralPath $dependencyContractSource -Destination $dependencyContract
-  Copy-Item -LiteralPath (Join-Path $projectRoot 'config\rf_to_oatof_shared_physical_port_joint_geometry.json') -Destination $sharedJoint
-  Copy-Item -LiteralPath (Join-Path $projectRoot 'config\resolved_design_official.json') -Destination $rfResolved
 
-  $dependencyDocument = Get-Content -LiteralPath $dependencyContractSource -Raw -Encoding UTF8 | ConvertFrom-Json
+  $dependencyContract = Join-Path $snapshotRoot `
+    'projects\rf_quadrupole_collision_cooling\config\rf_to_oatof_s2_dependencies.json'
+  $dependencyContractIdentity = Copy-RfStableFile -SourceRunRoot $repoRoot `
+    -SourcePath $dependencyContractSource -Destination $dependencyContract `
+    -Role 'S2 dependency contract'
+  $dependencyDocument = Get-Content -LiteralPath $dependencyContract -Raw -Encoding UTF8 |
+    ConvertFrom-Json
+  $dependencyConsumer = 's2_passive_connector'
+  if (@($dependencyDocument.consumer_ids) -notcontains $dependencyConsumer) {
+    throw "S2 dependency consumer is not declared: $dependencyConsumer"
+  }
+  $selectedDependencies = @(
+    $dependencyDocument.dependencies |
+      Where-Object { @($_.consumers) -contains $dependencyConsumer }
+  )
+  if ($selectedDependencies.Count -eq 0 -or
+      @($selectedDependencies.id | Select-Object -Unique).Count -ne $selectedDependencies.Count) {
+    throw 'S2 dependency consumer subset is empty or has duplicate identities.'
+  }
   $dependencyIdentities = [ordered]@{}
   $dependencyPaths = @{}
-  foreach ($dependency in $dependencyDocument.dependencies) {
-    $identity = Copy-RfFrozenDependency -RepoRoot $repoRoot -InputDir $inputDir -Dependency $dependency
+  $dependencySnapshotPaths = @{}
+  foreach ($dependency in $selectedDependencies) {
+    if ([string]$dependency.id -eq 'rf_dependency_contract_snapshot') {
+      $identity = Confirm-RfFrozenDependencyIdentity -RepoRoot $repoRoot `
+        -InputDir $inputDir -Dependency $dependency `
+        -ExpectedSourcePath $dependencyContractSource `
+        -ExistingSnapshotPath $dependencyContract `
+        -ExpectedSha256 $dependencyContractIdentity.sha256
+    } else {
+      $identity = Copy-RfFrozenDependency -RepoRoot $repoRoot -InputDir $inputDir `
+        -Dependency $dependency
+    }
+    if ((Get-FileHash -LiteralPath $identity.snapshot_path -Algorithm SHA256).Hash -ne $identity.sha256) {
+      throw "S2 dependency snapshot identity differs: $($identity.id)"
+    }
     $dependencyIdentities[$identity.id] = [ordered]@{
+      provider_scope = $identity.provider_scope
       provider_project = $identity.provider_project
+      provider_repo_path = $identity.provider_repo_path
       source_repo_path = $identity.source_repo_path
       frozen_input_name = $identity.frozen_input_name
+      consumers = @($identity.consumers)
+      snapshot_path = $identity.snapshot_path
+      compatibility_path = $identity.compatibility_path
       sha256 = $identity.sha256
     }
     $dependencyPaths[$identity.id] = $identity.frozen_path
+    $dependencySnapshotPaths[$identity.id] = $identity.snapshot_path
   }
+  $localSnapshotIdentities = [ordered]@{}
+  foreach ($sourceRepoPath in @(
+    'projects/rf_quadrupole_collision_cooling/analysis/resolve_s2_connector_case.py',
+    'projects/rf_quadrupole_collision_cooling/analysis/validate_s2_passive_connector.py',
+    'projects/rf_quadrupole_collision_cooling/analysis/build_oatof_handoff.py',
+    'projects/rf_quadrupole_collision_cooling/analysis/resolve_spatial_registration.py'
+  )) {
+    $identity = Copy-S2LocalSnapshotInput -RepoRoot $repoRoot -SnapshotRoot $snapshotRoot `
+      -SourceRepoPath $sourceRepoPath
+    $localSnapshotIdentities[[IO.Path]::GetFileNameWithoutExtension($sourceRepoPath)] = [ordered]@{
+      source_repo_path = $identity.source_repo_path
+      frozen_path = $identity.frozen_path
+      sha256 = $identity.sha256
+    }
+  }
+  $manifestToolRoot = $snapshotRoot
+  if (-not $dependencySnapshotPaths['rf_dependency_contract_snapshot'].Equals(
+      $dependencyContract, [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'S2 dependency contract self identity is inconsistent.'
+  }
+  $sharedJoint = $dependencySnapshotPaths['rf_shared_joint_geometry']
+  $rfResolved = $dependencySnapshotPaths['rf_resolved_design']
   $oaBaseline = $dependencyPaths['oatof_baseline']
+  $oaBaselineSnapshot = $dependencySnapshotPaths['oatof_baseline']
   $oaBuilder = $dependencyPaths['oatof_accelerator_geometry_builder']
-  Push-Location $repoRoot
-  try {
-    & $python -m projects.rf_quadrupole_collision_cooling.analysis.resolve_spatial_registration `
-      --stage s2 --stage-contract $contract --shared-joint $sharedJoint `
-      --rf-resolved $rfResolved --oatof-baseline $oaBaseline `
-      --source-root $inputDir --output $spatialRegistration --write
-  } finally { Pop-Location }
-  if ($LASTEXITCODE -ne 0) { throw 'S2 spatial-registration resolution failed.' }
+  $frozenManifestVerifier = $dependencySnapshotPaths['common_verify_run_manifest']
+  $frozenComsolRunner = $dependencySnapshotPaths['common_comsol_runner']
+
+  Invoke-S2SnapshotPython -Python $python -SnapshotRoot $snapshotRoot -Arguments @(
+    '-m','projects.rf_quadrupole_collision_cooling.analysis.resolve_s2_connector_case',
+    '--base',$baseContract,'--cases',$connectorCases,
+    '--case-id',$ConnectorCaseId,'--output',$contract
+  ) -FailureMessage 'S2 connector-case resolution failed.'
+  $contractDocument = Get-Content -LiteralPath $contract -Raw -Encoding UTF8 | ConvertFrom-Json
+  Invoke-S2SnapshotPython -Python $python -SnapshotRoot $snapshotRoot -Arguments @(
+    '-m','projects.rf_quadrupole_collision_cooling.analysis.resolve_spatial_registration',
+    '--stage','s2','--stage-contract',$contract,'--shared-joint',$sharedJoint,
+    '--rf-resolved',$rfResolved,'--oatof-baseline',$oaBaselineSnapshot,
+    '--source-root',$inputDir,'--output',$spatialRegistration,'--write'
+  ) -FailureMessage 'S2 spatial-registration resolution failed.'
   $spatialDocument = Get-Content -LiteralPath $spatialRegistration -Raw -Encoding UTF8 |
     ConvertFrom-Json
-  $validatorEnvironment = Save-RfEnvironment -Names @('PYTHONPATH')
-  try {
-    $env:PYTHONPATH = $repoRoot
-    & $python $connectorValidator --contract $contract --reference-root $projectRoot `
-      --resolved-registration $spatialRegistration
-    if ($LASTEXITCODE -ne 0) { throw 'Resolved S2 connector-case contract is invalid.' }
-  } finally {
-    Restore-RfEnvironment -Names @('PYTHONPATH') -Snapshot $validatorEnvironment
-  }
+  Invoke-S2SnapshotPython -Python $python -SnapshotRoot $snapshotRoot -Arguments @(
+    '-m','projects.rf_quadrupole_collision_cooling.analysis.validate_s2_passive_connector',
+    '--contract',$contract,'--reference-root',$snapshotRfProject,
+    '--resolved-registration',$spatialRegistration
+  ) -FailureMessage 'Resolved S2 connector-case contract is invalid.'
   if ($Particles) {
     $candidate = $contractDocument.functional_candidate
     $sourceRun = Join-Path (Join-Path $artifactRoot 'runs') ([string]$candidate.source_run_id)
     $sourceManifestOriginal = Join-Path $sourceRun 'run_manifest.json'
     $sourceEventsOriginal = Join-Path $sourceRun ([string]$candidate.source_event_path)
     $sourceMetadataOriginal = Join-Path $sourceRun ([string]$candidate.source_metadata_path)
-    & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') `
-      $sourceManifestOriginal --require-status success
-    if ($LASTEXITCODE -ne 0) { throw 'The frozen S2 particle source manifest is invalid.' }
+    Invoke-S2SnapshotPython -Python $python -SnapshotRoot $snapshotRoot -Arguments @(
+      $frozenManifestVerifier,$sourceManifestOriginal,'--require-status','success'
+    ) -FailureMessage 'The frozen S2 particle source manifest is invalid.'
     $sourceManifest = Join-Path $inputDir 'source_run_manifest.json'
     $sourceEvents = Join-Path $inputDir ([System.IO.Path]::GetFileName([string]$candidate.source_event_path))
     $sourceMetadata = Join-Path $inputDir 'particle_source_metadata.json'
-    $handoffBuilder = Join-Path $inputDir 'build_oatof_handoff.py'
+    $handoffBuilder = $oatofHandoff
     $handoffProjectRoot = Join-Path $inputDir 'handoff_project_snapshot'
     $handoffConfigDir = Join-Path $handoffProjectRoot 'config'
     $handoffTargetConfigDir = Join-Path $inputDir 'oa_tof\config'
@@ -156,10 +262,9 @@ try {
     Copy-Item -LiteralPath $sourceManifestOriginal -Destination $sourceManifest
     Copy-Item -LiteralPath $sourceEventsOriginal -Destination $sourceEvents
     Copy-Item -LiteralPath $sourceMetadataOriginal -Destination $sourceMetadata
-    Copy-Item -LiteralPath (Join-Path $projectRoot 'analysis\build_oatof_handoff.py') -Destination $handoffBuilder
     Copy-Item -LiteralPath (Join-Path $projectRoot 'config\rf_to_oatof_handoff.json') -Destination $handoffContract
     Copy-Item -LiteralPath (Join-Path $projectRoot 'config\baseline.json') -Destination $sourceBaseline
-    Copy-Item -LiteralPath $oaBaseline -Destination $targetBaseline
+    Copy-Item -LiteralPath $oaBaselineSnapshot -Destination $targetBaseline
     Copy-Item -LiteralPath $energyMatchContractSource -Destination $energyMatchContract
     Copy-Item -LiteralPath $sourceInterfaceContractSource -Destination $sourceInterfaceContract
     $particleInput = Join-Path $inputDir 'canonical_rf_exit_at_s2_connector.csv'
@@ -167,24 +272,17 @@ try {
     $particleRowMap = Join-Path $inputDir 'particle_row_map.csv'
     $particleMetadata = Join-Path $inputDir 's2_handoff_metadata.json'
     $sourceCenter = @($contractDocument.nominal_registration.source_exit_center_instrument_mm)
-    $handoffEnvironment = Save-RfEnvironment -Names @(
-      'RF_HANDOFF_PROJECT_ROOT','PYTHONPATH'
-    )
-    try {
-      $env:RF_HANDOFF_PROJECT_ROOT = $handoffProjectRoot
-      $env:PYTHONPATH = $repoRoot
-      & $python $handoffBuilder --convert --contract $handoffContract `
-        --resolved-registration $spatialRegistration `
-        --source-csv $sourceEvents --source-manifest $sourceManifest `
-        --canonical-output $particleInput --ion-output $particleIon `
-        --row-map-output $particleRowMap --metadata-output $particleMetadata `
-        --solver-clock instrument_time --target-origin-mm $sourceCenter[0] $sourceCenter[1] $sourceCenter[2]
-      if ($LASTEXITCODE -ne 0) { throw 'S2 canonical particle-source conversion failed.' }
-    } finally {
-      Restore-RfEnvironment -Names @(
-        'RF_HANDOFF_PROJECT_ROOT','PYTHONPATH'
-      ) -Snapshot $handoffEnvironment
-    }
+    Invoke-S2SnapshotPython -Python $python -SnapshotRoot $snapshotRoot -Arguments @(
+      '-m','projects.rf_quadrupole_collision_cooling.analysis.build_oatof_handoff',
+      '--convert','--contract',$handoffContract,
+      '--resolved-registration',$spatialRegistration,
+      '--source-csv',$sourceEvents,'--source-manifest',$sourceManifest,
+      '--canonical-output',$particleInput,'--ion-output',$particleIon,
+      '--row-map-output',$particleRowMap,'--metadata-output',$particleMetadata,
+      '--solver-clock','instrument_time','--target-origin-mm',
+      [string]$sourceCenter[0],[string]$sourceCenter[1],[string]$sourceCenter[2]
+    ) -AdditionalEnvironment @{RF_HANDOFF_PROJECT_ROOT=$handoffProjectRoot} `
+      -FailureMessage 'S2 canonical particle-source conversion failed.'
     $sourceIdentity = [ordered]@{
       run_id = [string]$candidate.source_run_id
       manifest_sha256 = (Get-FileHash -LiteralPath $sourceManifestOriginal -Algorithm SHA256).Hash
@@ -224,10 +322,12 @@ try {
       particle_source = $particleInput
     }
     dependency_identities = $dependencyIdentities
+    local_snapshot_identities = $localSnapshotIdentities
     source_particle_identity = if ($Particles) { $sourceIdentity } else { $null }
     parameters = [ordered]@{
       connector_gap_mm = $gapMm
       connector_case_id = $ConnectorCaseId
+      dependency_consumer_id = $dependencyConsumer
       field_bases = @('oatof_static','rf_unit_100_V')
       oa_extraction_pulse = $false
       particle_tracking = [bool]$Particles
@@ -235,6 +335,13 @@ try {
       mesh_convergence_claimed = $false
     }
     formal_gate_passed = $false
+  }
+  foreach ($identity in $dependencyIdentities.Values) {
+    $runConfiguration.inputs[[string]$identity.frozen_input_name] = [string]$identity.snapshot_path
+    if (-not [string]::IsNullOrWhiteSpace([string]$identity.compatibility_path)) {
+      $runConfiguration.inputs[([string]$identity.frozen_input_name + '_compatibility')] = `
+        [string]$identity.compatibility_path
+    }
   }
   if ($Particles) {
     $runConfiguration.inputs.source_run_manifest = $sourceManifest
@@ -257,7 +364,8 @@ try {
     status = 'interrupted'
     reason = 'Run package initialized; final status not yet recorded.'
   })
-  Write-RfRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config `
+  Write-RfFrozenRunManifest -Python $python -FrozenRepoRoot $manifestToolRoot `
+    -RunConfig $package.run_config `
     -Status interrupted -Software $software
 
   $environmentNames = @(
@@ -284,7 +392,7 @@ try {
       $env:RF_OATOF_S2_PARTICLE_INPUT = $particleInput
       $env:RF_OATOF_S2_PARTICLE_OUTPUT = $particleOutput
     }
-    & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') `
+    & $frozenComsolRunner `
       -TaskScript $task -ReportPath $report
     if ($LASTEXITCODE -ne 0) { throw 'COMSOL S2 no-pulse field task failed.' }
   } finally {
@@ -328,11 +436,13 @@ try {
   })
   $outputs = @($metrics,$samples,$report,$package.summary)
   if ($Particles) { $outputs += $particleOutput }
-  Write-RfRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config `
+  Write-RfFrozenRunManifest -Python $python -FrozenRepoRoot $manifestToolRoot `
+    -RunConfig $package.run_config `
     -Status success -Software $software -Outputs $outputs
   Write-Output "STATUS=PASS RUN_ID=$RunId GAP_MM=$gapMm FIELD_BASES=2 PARTICLES=$Particles OA_PULSE=false"
 } catch {
-  Complete-RfFailedRun -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config `
+  Complete-RfFrozenFailedRun -Python $python -FrozenRepoRoot $manifestToolRoot `
+    -RunConfig $package.run_config `
     -Summary $package.summary -SummaryRole $summaryRole `
     -Reason $_.Exception.Message -Software $software
   throw

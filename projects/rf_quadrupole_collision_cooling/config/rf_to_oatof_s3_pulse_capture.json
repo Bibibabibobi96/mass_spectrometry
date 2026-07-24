@@ -43,6 +43,19 @@
     "position_transform_policy": "consume the resolved S2 rigid registration once; all S3 and downstream states remain in oatof_global without projection",
     "velocity_transform_policy": "the resolved S2 rotation applies to velocity once; translation never applies to velocity"
   },
+  "local_exit_adapter": {
+    "implementation": "analysis/build_s3_local_exit_component_state.py",
+    "source_identity_table": "canonical_rf_exit_at_s2_connector.csv",
+    "solver_state_table": "s3_particle_terminal_census.csv",
+    "terminal_event": "local_accelerator_exit",
+    "terminal_status": "transmitted",
+    "source_component_id": "rf_quadrupole_to_oatof_s3",
+    "target_component_id": "oatof_analyzer",
+    "state_event": "local_accelerator_exit",
+    "canonical_columns_source": "common.contracts.component_particle_state.csv_columns",
+    "canonical_validator_source": "common.contracts.component_particle_state.validate_component_particle_state_csv",
+    "derived_physics_source": "common.contracts.particle_physics"
+  },
   "timing_geometry": {
     "entry_surface_source": "s2_connector.nominal_registration.target_entry_center_instrument_mm",
     "port_source": "s2_connector.passive_connector_geometry.downstream_entry_aperture",
