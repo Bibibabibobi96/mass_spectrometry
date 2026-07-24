@@ -33,6 +33,11 @@ class Phase4DesignConsumerTests(unittest.TestCase):
         self.assertIn("--regression-mode", analyzer)
         self.assertIn("regression_mode_sha256", analyzer)
         self.assertIn("transport_no_collision.json", runner)
+        self.assertIn("Assert-RfTransportParticleTableIdentity", runner)
+        self.assertNotIn(
+            "$comsolParticlePath -ne $simionParticlePath",
+            runner,
+        )
         retired = (
             PROJECT_ROOT / "analysis" / "verify_cross_solver_transport.py"
         ).read_text(encoding="utf-8")

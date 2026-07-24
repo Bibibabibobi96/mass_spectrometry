@@ -98,7 +98,7 @@ if ($Level -eq 'Candidate') {
     throw 'Candidate gate requires explicit ComsolRunLabel, SimionRunLabel, and ComparisonLabel.'
   }
   & (Join-Path $projectRoot 'tests\cross_solver\verify_transport_candidate.ps1') `
-    -ComsolRunLabel $ComsolRunLabel -SimionRunLabel $SimionRunLabel -ComparisonLabel $ComparisonLabel `
+    -ComsolRunId $ComsolRunLabel -SimionRunId $SimionRunLabel -RunId $ComparisonLabel `
     -Mode $CandidateMode -PythonExe $python
   if ($LASTEXITCODE -ne 0) { throw 'Cross-solver transport candidate gate failed.' }
 }
