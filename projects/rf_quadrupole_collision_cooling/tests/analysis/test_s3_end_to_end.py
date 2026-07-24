@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import json
 import os
 import shutil
@@ -12,6 +13,9 @@ from common.contracts.component_particle_state import csv_columns
 from common.contracts.particle_physics import kinetic_energy_ev
 from projects.rf_quadrupole_collision_cooling.analysis import analyze_s3_end_to_end as analyze
 from projects.rf_quadrupole_collision_cooling.analysis import build_simion_input_from_canonical as adapter
+from projects.rf_quadrupole_collision_cooling.analysis import (
+    validate_oatof_formal_analyzer_release as formal_release,
+)
 
 
 def canonical_row(particle_id: int) -> dict[str, object]:
@@ -39,6 +43,165 @@ def write_csv(path: Path, fields: list[str], rows: list[dict[str, object]]) -> N
 
 
 class S3EndToEndTests(unittest.TestCase):
+    def _formal_release_fixture(self, root: Path) -> tuple[Path, ...]:
+        formal = root / "formal" / "simion"
+        formal.mkdir(parents=True)
+        iob = formal / "oatof_ideal_grounded.iob"
+        program = formal / "oatof_ideal_grounded.lua"
+        checksum = formal / "SHA256SUMS.csv"
+        iob.write_bytes(b"iob")
+        program.write_text("formal program\n", encoding="utf-8")
+        checksum.write_text("file,bytes,sha256\n", encoding="utf-8")
+
+        def identity(path: Path, relative: str) -> dict[str, object]:
+            return {
+                "path": relative,
+                "bytes": path.stat().st_size,
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest().upper(),
+            }
+
+        delivery_path = formal / "run_manifest.json"
+        delivery = {
+            "role": "simulation_run_manifest",
+            "status": "success",
+            "run_id": "20260724_120000__build__simion__formal-delivery__n1000",
+            "project": "oa_tof",
+            "mode": "formal_delivery",
+            "formal_eligible": True,
+            "inputs": {
+                "historical_live_source": {
+                    "path": str(root / "changed_after_promotion.json"),
+                    "exists": True,
+                    "bytes": 1,
+                    "sha256": "0" * 64,
+                }
+            },
+            "outputs": [
+                {**identity(iob, str(iob)), "exists": True},
+                {**identity(program, str(program)), "exists": True},
+                {**identity(checksum, str(checksum)), "exists": True},
+            ],
+        }
+        delivery_path.write_text(json.dumps(delivery), encoding="utf-8")
+
+        validation_path = root / "formal_validation.json"
+        release_id = "20260720_191743__sim__cross__coupled-baseline-validation__n1000"
+        baseline_path = root / "baseline.json"
+        baseline_path.write_text('{"coordinate_convention":{"frame_id":"oatof_global"}}', encoding="utf-8")
+        baseline_sha256 = identity(baseline_path, "")["sha256"]
+        resolved_path = root / "resolved_geometry.json"
+        resolved_path.write_text(
+            json.dumps(
+                {
+                    "inputs": {"baseline_sha256": baseline_sha256},
+                    "coordinate_convention": {"frame_id": "oatof_global"},
+                }
+            ),
+            encoding="utf-8",
+        )
+        validation = {
+            "status": "formal_cross_solver_validation",
+            "run_id": release_id,
+            "physical_contract": "baseline.json",
+            "physical_contract_sha256": baseline_sha256,
+            "simion": {
+                "model_role": "formal",
+                "iob_artifact_relative_path": "formal/simion/oatof_ideal_grounded.iob",
+                "iob_sha256": identity(iob, "")["sha256"],
+                "delivery_manifest_artifact_relative_path": "formal/simion/run_manifest.json",
+                "delivery_manifest_sha256": identity(delivery_path, "")["sha256"],
+            },
+            "promotion_evidence": {
+                "validation_run_manifest_sha256": "A" * 64,
+            },
+        }
+        validation_path.write_text(json.dumps(validation), encoding="utf-8")
+
+        asset_path = root / "formal" / "asset_manifest.json"
+        asset = {
+            "schema_version": 1,
+            "role": "formal_asset_manifest",
+            "project": "oa_tof",
+            "release_id": release_id,
+            "source_run": {
+                "run_id": release_id,
+                "run_manifest": {"sha256": "A" * 64},
+            },
+            "validation_contract": identity(
+                validation_path, "projects/oa_tof/config/formal_validation.json"
+            ),
+            "assets": {
+                "simion_delivery_manifest": identity(
+                    delivery_path, "simion/run_manifest.json"
+                )
+            },
+        }
+        asset_path.write_text(json.dumps(asset), encoding="utf-8")
+        stable_path = root / "simion_stable_entry.json"
+        stable = {
+            "schema_version": 1,
+            "role": "Implementation hash manifest for the current formal SIMION delivery.",
+            "artifact_workspace_relative": "formal/simion",
+            "entries": [
+                {
+                    "trajectory_quality": 8,
+                    "expected_instances": 4,
+                    "assets": [
+                        {"role": "iob", "relative_path": iob.name, **identity(iob, "")},
+                        {
+                            "role": "program",
+                            "relative_path": program.name,
+                            **identity(program, ""),
+                        },
+                        {
+                            "role": "sha256_manifest",
+                            "relative_path": checksum.name,
+                            **identity(checksum, ""),
+                        },
+                        {
+                            "role": "run_manifest",
+                            "relative_path": delivery_path.name,
+                            **identity(delivery_path, ""),
+                        },
+                    ],
+                }
+            ],
+        }
+        for record in stable["entries"][0]["assets"]:
+            record.pop("path", None)
+        stable_path.write_text(json.dumps(stable), encoding="utf-8")
+        return (
+            asset_path,
+            validation_path,
+            delivery_path,
+            formal,
+            stable_path,
+            baseline_path,
+            resolved_path,
+            program,
+        )
+
+    def test_formal_release_uses_current_asset_authority(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            paths = self._formal_release_fixture(Path(temp))
+            result = formal_release.validate(*paths)
+            self.assertEqual(result["status"], "PASS")
+
+    def test_formal_release_rejects_consumed_iob_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            paths = self._formal_release_fixture(Path(temp))
+            (paths[3] / "oatof_ideal_grounded.iob").write_bytes(b"changed")
+            with self.assertRaisesRegex(ValueError, "output identity differs"):
+                formal_release.validate(*paths)
+
+    def test_formal_release_rejects_frozen_lua_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            paths = self._formal_release_fixture(Path(temp))
+            frozen_lua = Path(temp) / "frozen.lua"
+            frozen_lua.write_text("drifted program\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "Formal Lua differs"):
+                formal_release.validate(*paths[:-1], frozen_lua)
+
     def test_runner_freezes_dependencies_and_source_before_execution(self) -> None:
         runner = (
             Path(__file__).parents[1]
@@ -91,8 +254,10 @@ class S3EndToEndTests(unittest.TestCase):
             "rf_dependency_contract_snapshot",
             "rf_s3_simion_input_adapter",
             "rf_s3_end_to_end_analyzer",
+            "rf_oatof_formal_release_validator",
             "rf_oatof_handoff_builder",
             "oatof_resolved_geometry",
+            "oatof_formal_validation",
             "oatof_handoff_pulse_program_builder",
             "oatof_formal_lua",
             "oatof_handoff_pulse_extension_lua",
@@ -115,10 +280,10 @@ class S3EndToEndTests(unittest.TestCase):
         )
         self.assertIn("Get-RfManifestOutputRecord", runner)
         self.assertIn("Copy-RfManifestBoundFile", runner)
-        self.assertIn(
-            "$frozenManifestVerifier,$formalManifestPath",
-            runner,
-        )
+        self.assertIn("$frozenFormalReleaseValidator", runner)
+        self.assertIn("--asset-manifest',$formalAssetManifestPath", runner)
+        self.assertIn("--validation-contract',$frozenFormalValidation", runner)
+        self.assertNotIn("$frozenManifestVerifier,$formalManifestPath", runner)
         self.assertIn(
             "Get-S3FormalAssetRecords -ChecksumPath $checksumPath",
             runner,

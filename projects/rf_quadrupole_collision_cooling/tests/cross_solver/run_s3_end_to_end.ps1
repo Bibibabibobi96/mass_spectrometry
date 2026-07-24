@@ -293,8 +293,11 @@ try {
   $requiredSnapshotIds = @(
     'rf_dependency_contract_snapshot',
     'rf_s3_simion_input_adapter','rf_s3_end_to_end_analyzer',
+    'rf_oatof_formal_release_validator',
     'rf_oatof_handoff_builder',
-    'oatof_resolved_geometry','oatof_handoff_pulse_program_builder',
+    'oatof_baseline','oatof_resolved_geometry','oatof_formal_validation',
+    'oatof_simion_stable_entry',
+    'oatof_handoff_pulse_program_builder',
     'oatof_formal_lua','oatof_handoff_pulse_extension_lua',
     'oatof_simion_log_analyzer_wrapper','oatof_solver_diagnostics',
     'common_rigid_transform','common_particle_physics',
@@ -315,7 +318,14 @@ try {
     $dependencySnapshotPaths['common_verify_run_manifest']
   $frozenAdapter = $dependencySnapshotPaths['rf_s3_simion_input_adapter']
   $frozenAnalyzer = $dependencySnapshotPaths['rf_s3_end_to_end_analyzer']
+  $frozenFormalReleaseValidator =
+    $dependencySnapshotPaths['rf_oatof_formal_release_validator']
   $frozenGeometry = $dependencySnapshotPaths['oatof_resolved_geometry']
+  $frozenBaseline = $dependencySnapshotPaths['oatof_baseline']
+  $frozenFormalValidation =
+    $dependencySnapshotPaths['oatof_formal_validation']
+  $frozenStableEntry =
+    $dependencySnapshotPaths['oatof_simion_stable_entry']
   $frozenProgramBuilder =
     $dependencySnapshotPaths['oatof_handoff_pulse_program_builder']
   $frozenFormalLua = $dependencySnapshotPaths['oatof_formal_lua']
@@ -404,8 +414,17 @@ try {
       '--row-map-output',$rowMap,'--metadata-output',$adapterMetadata
     ) -FailureMessage 'Canonical-to-SIMION adapter failed.'
 
-  $formalDir = Join-Path $workspaceRoot `
-    'artifacts\projects\oa_tof\formal\simion'
+  $formalProjectRoot = Join-Path $workspaceRoot 'artifacts\projects\oa_tof'
+  $formalRoot = Join-Path $formalProjectRoot 'formal'
+  $formalDir = Join-Path $formalRoot 'simion'
+  $formalAssetManifestOriginal = Join-Path $formalRoot 'asset_manifest.json'
+  $formalAssetManifestPath = Join-Path $package.input_dir `
+    'oatof_formal_asset_manifest.json'
+  $formalAssetManifestIdentity = Copy-RfStableFile `
+    -SourceRunRoot $formalProjectRoot `
+    -SourcePath $formalAssetManifestOriginal `
+    -Destination $formalAssetManifestPath `
+    -Role 'oaTOF Formal asset manifest'
   $formalManifestOriginal = Join-Path $formalDir 'run_manifest.json'
   $formalManifestPath = Join-Path $package.input_dir `
     'oatof_formal_release_manifest.json'
@@ -414,12 +433,16 @@ try {
     -Role 'oaTOF Formal release manifest'
   Invoke-S3EndToEndSnapshotPython -Python $python -SnapshotRoot $snapshotRoot `
     -Arguments @(
-      $frozenManifestVerifier,$formalManifestPath,
-      '--require-status','success',
-      '--require-run-id',
-      '20260720_204500__build__simion__coupled-formal-delivery__n1000',
-      '--require-project','oa_tof','--require-mode','formal_delivery'
-    ) -FailureMessage 'The frozen oaTOF Formal release manifest is invalid.'
+      $frozenFormalReleaseValidator,
+      '--asset-manifest',$formalAssetManifestPath,
+      '--validation-contract',$frozenFormalValidation,
+      '--delivery-manifest',$formalManifestPath,
+      '--formal-root',$formalDir,
+      '--stable-entry',$frozenStableEntry,
+      '--baseline',$frozenBaseline,
+      '--resolved-geometry',$frozenGeometry,
+      '--formal-lua',$frozenFormalLua
+    ) -FailureMessage 'The current oaTOF Formal analyzer release is invalid.'
   $formalManifest = Get-Content -LiteralPath $formalManifestPath `
     -Raw -Encoding UTF8 | ConvertFrom-Json
   $checksumOriginal = Join-Path $formalDir 'SHA256SUMS.csv'
@@ -498,8 +521,12 @@ try {
       row_map = $rowMap
       adapter_metadata = $adapterMetadata
       oatof_resolved_geometry = $frozenGeometry
+      oatof_baseline = $frozenBaseline
       pulse_program = $runtimeProgram
       pulse_program_metadata = $programMetadata
+      oatof_formal_asset_manifest = $formalAssetManifestPath
+      oatof_formal_validation = $frozenFormalValidation
+      oatof_simion_stable_entry = $frozenStableEntry
       oatof_formal_release_manifest = $formalManifestPath
       oatof_formal_sha256sums = $checksumPath
     }
@@ -508,6 +535,7 @@ try {
     run_local_identity = [ordered]@{
       runner_sha256 = $runnerIdentity.sha256
       support_sha256 = $supportIdentity.sha256
+      formal_asset_manifest_sha256 = $formalAssetManifestIdentity.sha256
       formal_manifest_sha256 = $formalManifestIdentity.sha256
       formal_checksum_sha256 = $checksumIdentity.sha256
     }

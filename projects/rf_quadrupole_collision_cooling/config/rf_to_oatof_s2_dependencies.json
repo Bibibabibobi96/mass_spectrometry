@@ -17,7 +17,7 @@
       "frozen_filename": "runtime_snapshot/projects/oa_tof/config/baseline.json",
       "compatibility_frozen_filename": "oatof_baseline.json",
       "run_input_name": "oatof_baseline",
-      "consumers": ["s2_passive_connector", "s3_pulse_capture"]
+      "consumers": ["s2_passive_connector", "s3_pulse_capture", "s3_end_to_end"]
     },
     {
       "id": "oatof_accelerator_geometry_builder",
@@ -48,6 +48,26 @@
       "source_repo_path": "projects/oa_tof/config/resolved_geometry.json",
       "frozen_filename": "runtime_snapshot/projects/oa_tof/config/resolved_geometry.json",
       "run_input_name": "oatof_resolved_geometry",
+      "consumers": ["s3_end_to_end"]
+    },
+    {
+      "id": "oatof_formal_validation",
+      "provider_scope": "project",
+      "provider_project": "oa_tof",
+      "provider_repo_path": "projects/oa_tof",
+      "source_repo_path": "projects/oa_tof/config/formal_validation.json",
+      "frozen_filename": "runtime_snapshot/projects/oa_tof/config/formal_validation.json",
+      "run_input_name": "oatof_formal_validation",
+      "consumers": ["s3_end_to_end"]
+    },
+    {
+      "id": "oatof_simion_stable_entry",
+      "provider_scope": "project",
+      "provider_project": "oa_tof",
+      "provider_repo_path": "projects/oa_tof",
+      "source_repo_path": "projects/oa_tof/config/simion_stable_entry.json",
+      "frozen_filename": "runtime_snapshot/projects/oa_tof/config/simion_stable_entry.json",
+      "run_input_name": "oatof_simion_stable_entry",
       "consumers": ["s3_end_to_end"]
     },
     {
@@ -208,6 +228,16 @@
       "source_repo_path": "projects/rf_quadrupole_collision_cooling/analysis/analyze_s3_end_to_end.py",
       "frozen_filename": "runtime_snapshot/projects/rf_quadrupole_collision_cooling/analysis/analyze_s3_end_to_end.py",
       "run_input_name": "rf_s3_end_to_end_analyzer",
+      "consumers": ["s3_end_to_end"]
+    },
+    {
+      "id": "rf_oatof_formal_release_validator",
+      "provider_scope": "project",
+      "provider_project": "rf_quadrupole_collision_cooling",
+      "provider_repo_path": "projects/rf_quadrupole_collision_cooling",
+      "source_repo_path": "projects/rf_quadrupole_collision_cooling/analysis/validate_oatof_formal_analyzer_release.py",
+      "frozen_filename": "runtime_snapshot/projects/rf_quadrupole_collision_cooling/analysis/validate_oatof_formal_analyzer_release.py",
+      "run_input_name": "rf_oatof_formal_release_validator",
       "consumers": ["s3_end_to_end"]
     },
     {
