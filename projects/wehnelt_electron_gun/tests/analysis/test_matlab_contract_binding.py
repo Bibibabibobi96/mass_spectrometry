@@ -685,6 +685,69 @@ class MatlabContractBindingTests(unittest.TestCase):
                     "WEHNELT_NESTED_FROZEN_GATE": "1",
                 }
             )
+            record = Path(directory) / "record"
+            record.mkdir()
+            run_config = record / "run_config.json"
+            summary = record / "summary.json"
+            manifest = record / "run_manifest.json"
+            run_config.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "run_id": (
+                            "20260724_000000__test__python__frozen-manifest-fixture"
+                        ),
+                        "project": "wehnelt_electron_gun",
+                        "mode": "build_only_smoke",
+                        "project_root": str(snapshot),
+                        "inputs": {"runner": str(frozen_project / "run_build_only_smoke.ps1")},
+                        "formal_gate_passed": False,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            summary.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "role": "frozen_manifest_fixture_summary",
+                        "status": "interrupted",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            transition_script = (
+                f". '{snapshot / 'common/contracts/run_artifact_support.ps1'}';"
+                f"Write-VerifiedRunManifest -Python '{sys.executable}' "
+                f"-RepoRoot '{snapshot}' -RunConfig '{run_config}' "
+                f"-Manifest '{manifest}' -Status interrupted -Outputs @('{summary}')"
+            )
+            transition = subprocess.run(
+                [
+                    "pwsh",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    transition_script,
+                ],
+                cwd=snapshot,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(
+                transition.returncode,
+                0,
+                (transition.stdout or "") + (transition.stderr or ""),
+            )
+            after_manifest = {
+                path.resolve() for path in snapshot.rglob("*") if path.is_file()
+            }
+            self.assertEqual(after_manifest, declared)
+            self.assertFalse(any(path.suffix == ".pyc" for path in after_manifest))
+
             completed = subprocess.run(
                 [
                     "pwsh",
@@ -711,6 +774,49 @@ class MatlabContractBindingTests(unittest.TestCase):
             self.assertEqual(actual, declared)
             self.assertFalse(any(path.suffix == ".pyc" for path in actual))
             self.assertFalse((snapshot / ".ruff_cache").exists())
+
+    def test_cache_controls_precede_package_and_frozen_python_execution(self) -> None:
+        snapshot_index = self.build_runner.index(
+            "$savedEnvironment = Save-RunEnvironment"
+        )
+        bytecode_index = self.build_runner.index(
+            "$env:PYTHONDONTWRITEBYTECODE = '1'"
+        )
+        ruff_index = self.build_runner.index("$env:RUFF_NO_CACHE = 'true'")
+        package_index = self.build_runner.index("$package = New-RunPackage")
+        frozen_support_index = self.build_runner.index(
+            ". $frozenInputs.artifact_support"
+        )
+        self.assertLess(snapshot_index, bytecode_index)
+        self.assertLess(snapshot_index, ruff_index)
+        self.assertLess(bytecode_index, package_index)
+        self.assertLess(ruff_index, package_index)
+        self.assertLess(bytecode_index, frozen_support_index)
+        self.assertLess(ruff_index, frozen_support_index)
+
+    def test_final_precommercial_inventory_follows_pending_manifest(self) -> None:
+        pending_stage = self.build_runner.index(
+            "$failureStage = 'commercial_wrapper_pending'"
+        )
+        pending_manifest = self.build_runner.index(
+            "Write-VerifiedRunManifest", pending_stage
+        )
+        final_inventory = self.build_runner.index(
+            "Assert-FrozenInputSet", pending_manifest
+        )
+        wrapper_stage = self.build_runner.index(
+            "$failureStage = 'commercial_wrapper'", final_inventory
+        )
+        wrapper_call = self.build_runner.index(
+            "& $frozenInputs.comsol_runner", wrapper_stage
+        )
+        self.assertLess(pending_manifest, final_inventory)
+        self.assertLess(final_inventory, wrapper_stage)
+        self.assertLess(final_inventory, wrapper_call)
+        self.assertIn(
+            "$failureStage = 'precommercial_input_validation'",
+            self.build_runner[pending_manifest:wrapper_stage],
+        )
 
     def test_frozen_input_set_rejects_extra_and_missing_files(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

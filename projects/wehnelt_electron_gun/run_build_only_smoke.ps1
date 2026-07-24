@@ -237,7 +237,8 @@ function New-BuildSummary {
   )
   $staticGatePassed = @(
     'frozen_input_validation','commercial_wrapper_pending','commercial_wrapper',
-    'report_validation','input_set_validation','manifest_finalization','none'
+    'precommercial_input_validation','report_validation','input_set_validation',
+    'manifest_finalization','none'
   ) -contains $FailureStage
   return [ordered]@{
     schema_version = 1
@@ -267,6 +268,8 @@ $environmentNames = @(
   'PYTHONDONTWRITEBYTECODE','RUFF_NO_CACHE'
 )
 $savedEnvironment = Save-RunEnvironment -Names $environmentNames
+$env:PYTHONDONTWRITEBYTECODE = '1'
+$env:RUFF_NO_CACHE = 'true'
 $package = $null
 $manifestPath = ''
 $report = ''
@@ -426,8 +429,6 @@ try {
   }
 
   $failureStage = 'static_gate'
-  $env:PYTHONDONTWRITEBYTECODE = '1'
-  $env:RUFF_NO_CACHE = 'true'
   Push-Location $snapshotRoot
   try {
     & $package.python -m projects.wehnelt_electron_gun.analysis.resolve_contract `
@@ -463,6 +464,8 @@ try {
       -RunConfig $package.run_config -Manifest $manifestPath -Status interrupted `
       -Software $software -Outputs @($package.summary)
   }
+  $failureStage = 'precommercial_input_validation'
+  Assert-FrozenInputSet -InputDirectory $package.input_dir -Inputs $frozenInputs
 
   $failureStage = 'commercial_wrapper'
   Set-Content -LiteralPath $wrapperLog -Encoding UTF8 -Value @(
