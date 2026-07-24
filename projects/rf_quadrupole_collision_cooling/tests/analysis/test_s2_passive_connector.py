@@ -191,6 +191,11 @@ class S2PassiveConnectorTests(unittest.TestCase):
             "positionMm = (rotation*localPositionMm(:)+translation).';",
             "transform_source_position(sourcePose, localStart), sourceAxis",
             "gapMm, sourceCenter, sourceAxis, true",
+            "sourceCenter(:)-",
+            "targetCenter(:)-",
+            "gapMm*sourceAxis(:)",
+            "<= 1e-12,'all'",
+            "sourceCenterMatches && targetCenterMatches && gapVectorMatches",
             "geom.feature(tag).set('axis', axisDirection(:).');",
         ):
             self.assertIn(token, builder)
@@ -200,6 +205,7 @@ class S2PassiveConnectorTests(unittest.TestCase):
             "[tx, 0.0, tz]",
             "{'1','0','0'}",
             "targetCenter(1)-sourceCenter(1)-gapMm",
+            "(targetCenter-sourceCenter).'",
         ):
             self.assertNotIn(forbidden, builder)
 
@@ -214,6 +220,9 @@ class S2PassiveConnectorTests(unittest.TestCase):
         self.assertIn("Complete-RfFrozenFailedRun", runner)
         self.assertIn("mesh_convergence_claimed = $false", runner)
         self.assertIn("'--shared-joint',$sharedJoint", runner)
+        self.assertIn("connector-gap${gapLabel}__n100", runner)
+        self.assertIn("field__gap${gapLabel}", runner)
+        self.assertNotIn("$gapLabel__n100", runner)
         self.assertNotIn("rf_to_oatof_interface_candidate.json", runner)
         self.assertNotIn("--interface", runner)
 

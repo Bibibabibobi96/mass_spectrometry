@@ -95,8 +95,8 @@ if (-not [double]::IsFinite($gapMm) -or $gapMm -lt 0) {
 }
 if ([string]::IsNullOrWhiteSpace($RunId)) {
   $gapLabel = ('{0:g}' -f $gapMm).Replace('.','p')
-  $suffix = if ($Particles) { "__sim__comsol__rf-oatof-s2-connector-gap$gapLabel__n100" } `
-    else { "__analysis__comsol__rf-oatof-s2-no-pulse-field__gap$gapLabel" }
+  $suffix = if ($Particles) { "__sim__comsol__rf-oatof-s2-connector-gap${gapLabel}__n100" } `
+    else { "__analysis__comsol__rf-oatof-s2-no-pulse-field__gap${gapLabel}" }
   $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + $suffix
 }
 $mode = if ($Particles) { 'rf_to_oatof_s2_passive_connector_n100' } `
