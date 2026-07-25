@@ -47,6 +47,14 @@ REQUIRED_MODULES = (
     "common.multipole",
     "common.multipole.particle_source_preflight",
 )
+GATE_VALIDATOR_RELATIVE_PATH = (
+    r"projects\rf_quadrupole_collision_cooling"
+    r"\analysis\validate_release_construction_gate.py"
+)
+GATE_VALIDATOR_MODULE = (
+    "projects.rf_quadrupole_collision_cooling"
+    ".analysis.validate_release_construction_gate"
+)
 
 
 def _ps(value: Path | str) -> str:
@@ -99,6 +107,21 @@ class FrozenParticlePolicyPackageTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, source)
 
+    def test_comsol_runner_freezes_analysis_namespace_modules_without_init(
+        self,
+    ) -> None:
+        source = COMSOL_RUNNER.read_text(encoding="utf-8")
+        self.assertFalse((PROJECT_ROOT / "analysis" / "__init__.py").exists())
+        self.assertNotIn(
+            r"projects\rf_quadrupole_collision_cooling\analysis\__init__.py",
+            source,
+        )
+        for relative_path in (
+            RELATIVE_PATHS[4],
+            GATE_VALIDATOR_RELATIVE_PATH,
+        ):
+            self.assertIn(f"'{relative_path}'", source)
+
     def test_frozen_closure_runs_without_live_pythonpath_and_is_fail_closed(
         self,
     ) -> None:
@@ -107,7 +130,13 @@ class FrozenParticlePolicyPackageTests(unittest.TestCase):
             bundle = root / "bundle"
             generate_interface_bundle(SOURCE_FAMILY, DISTRIBUTION, RESOLVED, bundle)
             source_snapshot = root / "source_snapshot"
-            for relative_path in RELATIVE_PATHS:
+            frozen_relative_paths = RELATIVE_PATHS + (
+                GATE_VALIDATOR_RELATIVE_PATH,
+            )
+            frozen_required_modules = REQUIRED_MODULES + (
+                GATE_VALIDATOR_MODULE,
+            )
+            for relative_path in frozen_relative_paths:
                 source = REPO_ROOT / relative_path
                 destination = source_snapshot / relative_path
                 destination.parent.mkdir(parents=True, exist_ok=True)
@@ -129,8 +158,12 @@ class FrozenParticlePolicyPackageTests(unittest.TestCase):
             )
             result_path = root / "result.json"
             script_path = root / "exercise.ps1"
-            relative_paths = ",\n        ".join(_ps(value) for value in RELATIVE_PATHS)
-            required_modules = ",\n        ".join(_ps(value) for value in REQUIRED_MODULES)
+            relative_paths = ",\n        ".join(
+                _ps(value) for value in frozen_relative_paths
+            )
+            required_modules = ",\n        ".join(
+                _ps(value) for value in frozen_required_modules
+            )
             arguments = ",\n        ".join(
                 _ps(value)
                 for value in (
@@ -244,12 +277,12 @@ $result | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath {_ps(result_path)}
             self.assertTrue(result["failed_closed"])
             self.assertEqual(
                 result["mutation_reject_count"],
-                2 * len(RELATIVE_PATHS),
+                2 * len(frozen_relative_paths),
             )
             package = result["package"]
             execution = result["execution"]
             self.assertEqual(package["package_roots"], [str(code_root.resolve())])
-            self.assertEqual(len(package["files"]), len(RELATIVE_PATHS))
+            self.assertEqual(len(package["files"]), len(frozen_relative_paths))
             self.assertEqual(
                 execution["python_path"],
                 str(code_root.resolve()),
@@ -258,11 +291,11 @@ $result | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath {_ps(result_path)}
             self.assertTrue(execution["python_no_bytecode"])
             self.assertEqual(
                 len([path for path in code_root.rglob("*") if path.is_file()]),
-                len(RELATIVE_PATHS),
+                len(frozen_relative_paths),
             )
             self.assertEqual(
                 {entry["name"] for entry in execution["frozen_modules"]},
-                set(REQUIRED_MODULES),
+                set(frozen_required_modules),
             )
             for entry in execution["frozen_modules"]:
                 self.assertTrue(

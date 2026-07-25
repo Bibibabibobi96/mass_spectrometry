@@ -76,8 +76,12 @@ Candidate入口。专用生产诊断任务
 import逐步追加关闭文件后的JSONL breadcrumb。诊断机制只允许在全部release节点验收后、创建
 `ElectricForce`、`std2`或`sol2`前返回，生成带100个GUI可见release节点的诊断MPH、结构化结果和
 success/failed manifest；它不运行粒子Study，不生成传输率或任何物理资格结论。该代码路径目前只有
-静态与求解器无关门禁，真实Gate A尚未执行。runner在写success manifest前还从本次run冻结的Python
-validator重新读取official ION11、100个实际release文件和1000条breadcrumb，逐条复核sequence、phase、
+静态与求解器无关门禁。首次真实Gate A
+`20260725_213408__test__comsol__rf-release-construction__n100`在商业软件启动前的`freeze_inputs`
+阶段失败，因为冻结清单要求仓库中不存在的`analysis/__init__.py`。analysis使用Python命名空间包；
+runner现只冻结实际消费的中性bundle机制和Gate validator，回归验证两者无需该占位文件即可从隔离
+代码根解析。该失败没有启动MATLAB/COMSOL，也没有生成模型或物理结果；修复后的真实Gate A尚待重跑。
+runner在写success manifest前还从本次run冻结的Python validator重新读取official ION11、100个实际release文件和1000条breadcrumb，逐条复核sequence、phase、
 tag/count演进、文件SHA-256、`Filename`和`rt`。validator还只从冻结run config中的
 `compiled_scientific_spec.source_axial_offset_mm`与ION11质量、能量、方位角和仰角独立重算每个六列
 release状态；同步篡改文件、result SHA和breadcrumb SHA仍必须失败。MATLAB result中的计数字段本身

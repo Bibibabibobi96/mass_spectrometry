@@ -114,7 +114,6 @@ try {
             'projects\rf_quadrupole_collision_cooling\workflows\interface_readiness\__init__.py',
             'projects\rf_quadrupole_collision_cooling\workflows\interface_readiness\generate_particle_table.py',
             'projects\rf_quadrupole_collision_cooling\workflows\interface_readiness\particle_source_policy.py',
-            'projects\rf_quadrupole_collision_cooling\analysis\__init__.py',
             'projects\rf_quadrupole_collision_cooling\analysis\paired_particle_source_bundle.py',
             'projects\rf_quadrupole_collision_cooling\analysis\validate_release_construction_gate.py',
             'common\contracts\particle_physics.py',

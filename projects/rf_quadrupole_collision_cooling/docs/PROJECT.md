@@ -215,8 +215,12 @@ manifest；随后才允许LiveLink启动。任一配置、启动、GUI Compute�
 `ef1/std2/sol2`前停止。该阶段不改变N、birth time、粒子文件、科学Mode或numerics profile，也不产生
 物理结果；shared Gate自身拒绝非100行、非有限或原始/格式化后不唯一的birth time，runner再用本次run
 冻结的独立validator从ION11和compiled scientific spec重算100个六列release状态，并复核实际文件和
-1000条breadcrumb而不信任MATLAB summary或配套SHA计数。源码和非商业
-门禁完成后仍须在一个干净LiveLink进程中执行Gate A，才能判断失败是否可重复。
+1000条breadcrumb而不信任MATLAB summary或配套SHA计数。首次Gate A尝试
+`20260725_213408__test__comsol__rf-release-construction__n100`在商业软件启动前的`freeze_inputs`
+阶段失败：冻结清单错误要求不存在的`analysis/__init__.py`。该目录是Python命名空间包；runner现只
+冻结真实消费的`paired_particle_source_bundle.py`和`validate_release_construction_gate.py`，纯分析
+回归已证明两者在没有占位`__init__.py`时仍从冻结代码根解析。此次失败没有MATLAB、COMSOL模型或物理
+结论。修复后仍须在一个干净LiveLink进程中重新执行同一Gate A，才能判断`rel065 create`是否可重复。
 
 `execution_profiles.json`的两类跨求解器分析也不再用`Mode`切换：普通无碰撞profile固定调用
 `workflows/no_collision_transport/compare_cross_solver.ps1`，接口profile固定调用
