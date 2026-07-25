@@ -14,7 +14,7 @@ $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_colli
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 . (Join-Path $projectRoot `
-    'tests\support\cross_solver_analysis_support.ps1')
+    'runtime\cross_solver_analysis_lifecycle.ps1')
 
 function Resolve-RunConfigInput {
     param([Parameter(Mandatory)]$RunConfig,[Parameter(Mandatory)][string]$Name)
@@ -121,7 +121,7 @@ try {
         @($simionConfigPath,$frozenSimionConfig),
         @((Join-Path $comsolRun 'results\particle_state.csv'),$frozenComsolState),
         @((Join-Path $simionRun 'results\particle_state.csv'),$frozenSimionState),
-        @((Join-Path $projectRoot 'tests\support\cross_solver_analysis_support.ps1'),$frozenLifecycleSupport)
+        @((Join-Path $projectRoot 'runtime\cross_solver_analysis_lifecycle.ps1'),$frozenLifecycleSupport)
     )
     Copy-CrossSolverAnalysisInputs -Pairs $freezePairs
     $comparison = Join-Path $resultDir 'no_collision_cross_solver.json'

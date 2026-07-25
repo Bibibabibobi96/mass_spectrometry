@@ -23,7 +23,7 @@ class S3PulseCaptureContractTests(unittest.TestCase):
             module.PROJECT_ROOT / "tests" / "comsol" / "run_s3_pulse_capture.ps1"
         )
         cls.support_path = (
-            module.PROJECT_ROOT / "tests" / "support" / "rf_run_artifact_support.ps1"
+            module.PROJECT_ROOT / "runtime" / "run_artifacts.ps1"
         )
         cls.runner = cls.runner_path.read_text(encoding="utf-8")
         cls.support = cls.support_path.read_text(encoding="utf-8")

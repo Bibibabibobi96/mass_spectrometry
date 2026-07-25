@@ -5,23 +5,13 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import sys
 from pathlib import Path
 from typing import Any
 
-try:
-    from common.contracts.particle_state import canonical_sources, ion11_sources
-    from projects.rf_quadrupole_collision_cooling.analysis.generate_interface_particle_table import (
-        validate_bundle,
-    )
-except ModuleNotFoundError:
-    repository_root = Path(__file__).resolve().parents[3]
-    if str(repository_root) not in sys.path:
-        sys.path.insert(0, str(repository_root))
-    from common.contracts.particle_state import canonical_sources, ion11_sources
-    from projects.rf_quadrupole_collision_cooling.analysis.generate_interface_particle_table import (
-        validate_bundle,
-    )
+from common.contracts.particle_state import canonical_sources, ion11_sources
+from projects.rf_quadrupole_collision_cooling.analysis.generate_interface_particle_table import (
+    validate_bundle,
+)
 
 
 def sha256(path: Path) -> str:

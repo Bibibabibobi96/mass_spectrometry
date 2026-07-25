@@ -72,5 +72,26 @@ command = ["pwsh.exe", "-NoProfile", "-File", task]
 '''
         self.assertEqual(self.check(source), [])
 
+
+class LightweightGateIntegrationTests(unittest.TestCase):
+    repo_root = standards.REPO_ROOT
+
+    def test_local_hook_and_ci_share_the_development_standards_gate(self):
+        hook = (self.repo_root / ".githooks" / "pre-commit").read_text(
+            encoding="utf-8"
+        )
+        workflow = (
+            self.repo_root / ".github" / "workflows" / "lightweight-gate.yml"
+        ).read_text(encoding="utf-8")
+        lightweight = (self.repo_root / "common" / "verify_lightweight.ps1").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("common/verify_development_standards.py", hook)
+        self.assertIn('"3.11"', hook)
+        self.assertIn("common/verify_lightweight.ps1", workflow.replace("\\", "/"))
+        self.assertIn("verify_development_standards.py", lightweight)
+        self.assertNotIn("verify_lightweight.ps1", hook)
+
+
 if __name__ == "__main__":
     unittest.main()

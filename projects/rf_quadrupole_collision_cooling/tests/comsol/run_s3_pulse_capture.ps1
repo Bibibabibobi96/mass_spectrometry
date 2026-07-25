@@ -6,7 +6,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$supportSource = (Resolve-Path (Join-Path $PSScriptRoot '..\support\rf_run_artifact_support.ps1')).Path
+$supportSource = (Resolve-Path (Join-Path $PSScriptRoot '..\..\runtime\run_artifacts.ps1')).Path
 . $supportSource
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
@@ -59,7 +59,7 @@ try {
   $geometryBuilder = Join-Path $inputDir 'build_s2_passive_connector_model.m'
   $fieldBuilder = Join-Path $inputDir 'prepare_s2_joint_field_model.m'
   $runner = Join-Path $inputDir 'run_s3_pulse_capture.ps1.txt'
-  $support = Join-Path $inputDir 'rf_run_artifact_support.ps1.txt'
+  $support = Join-Path $inputDir 'run_artifacts.ps1.txt'
   $snapshotRoot = Join-Path $inputDir 'runtime_snapshot'
   $s3 = Join-Path $inputDir 'rf_to_oatof_s3_pulse_capture.json'
   $s2 = Join-Path $inputDir 'rf_to_oatof_s2_passive_connector.json'

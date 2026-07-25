@@ -29,8 +29,8 @@ $python = if ($PythonExe) {
     Join-Path $repoRoot '.venv\Scripts\python.exe'
 }
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
-. (Join-Path $projectRoot 'tests\support\simion_run_config_contract.ps1')
-. (Join-Path $projectRoot 'tests\support\simion_execution_support.ps1')
+. (Join-Path $projectRoot 'runtime\simion_run_config.ps1')
+. (Join-Path $projectRoot 'runtime\simion_execution.ps1')
 if ([string]::IsNullOrWhiteSpace($RunId)) {
     $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__sim__simion__rf-mass-filter__reference'
 }

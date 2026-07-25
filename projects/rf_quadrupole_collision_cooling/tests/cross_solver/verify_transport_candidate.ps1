@@ -10,15 +10,15 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot 'particle_table_identity.ps1')
 $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $repoRoot = Split-Path -Parent (Split-Path -Parent $projectRoot)
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling'
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $projectRoot 'runtime\particle_table_identity.ps1')
 . (Join-Path $projectRoot `
-    'tests\support\cross_solver_analysis_support.ps1')
+    'runtime\cross_solver_analysis_lifecycle.ps1')
 if ([string]::IsNullOrWhiteSpace($RunId)) {
     $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') +
         '__analysis__cross__rf-transport__interface-readiness'
@@ -93,7 +93,7 @@ try {
         @((Join-Path $simionRun 'results\particle_state.csv'),$frozenSimionState),
         @($particleIdentity.ion11_path,$frozenIon11),
         @($particleIdentity.canonical10_path,$frozenCanonical),
-        @((Join-Path $projectRoot 'tests\support\cross_solver_analysis_support.ps1'),$frozenLifecycleSupport)
+        @((Join-Path $projectRoot 'runtime\cross_solver_analysis_lifecycle.ps1'),$frozenLifecycleSupport)
     )
     Copy-CrossSolverAnalysisInputs -Pairs $freezePairs
     foreach($entry in @([pscustomobject]@{Solver='COMSOL';State=$frozenComsolState;Particles=$frozenIon11;Format='ion11'},

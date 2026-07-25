@@ -12,12 +12,9 @@ INTERFACE_RUNNER = PROJECT_ROOT / "tests" / "simion" / "run_transport_candidate.
 MASS_FILTER_RUNNER = (
     PROJECT_ROOT / "tests" / "simion" / "run_mass_filter_candidate.ps1"
 )
-SIMION_CONFIG_CORE = (
-    PROJECT_ROOT / "tests" / "support" / "simion_run_config_contract.ps1"
-)
-SIMION_EXECUTION_SUPPORT = (
-    PROJECT_ROOT / "tests" / "support" / "simion_execution_support.ps1"
-)
+SIMION_CONFIG_CORE = PROJECT_ROOT / "runtime" / "simion_run_config.ps1"
+SIMION_EXECUTION_SUPPORT = PROJECT_ROOT / "runtime" / "simion_execution.ps1"
+RUNTIME_ROOT = PROJECT_ROOT / "runtime"
 RUN_ARTIFACT_SUPPORT = REPO_ROOT / "common" / "contracts" / "run_artifact_support.ps1"
 SHARED_SIMION_LUA = REPO_ROOT / "common" / "multipole" / "simion_transport.lua"
 EXECUTION_PROFILES = PROJECT_ROOT / "config" / "execution_profiles.json"
@@ -71,6 +68,57 @@ CONFIG_CORE_FUNCTIONS = {
     "ConvertTo-RfSimionLuaConfig",
 }
 EXECUTION_SUPPORT_FUNCTIONS = {"Invoke-RfSimionCoreRun"}
+RUNTIME_MODULE_FUNCTIONS = {
+    "analysis_run_lifecycle.ps1": {
+        "Assert-PortableManifestRecord",
+        "Copy-PortableRunManifestClosure",
+        "Add-RunInputClosure",
+    },
+    "comsol_solver_numerics.ps1": {
+        "Get-RfComsolRequiredProperty",
+        "Get-RfComsolRequiredFiniteNumber",
+        "ConvertTo-RfComsolCanonicalValue",
+        "Get-RfComsolLogicalSha256",
+        "Read-RfComsolSolverNumericsContract",
+        "Compile-RfComsolSolverNumerics",
+    },
+    "cross_solver_analysis_lifecycle.ps1": {
+        "New-CrossSolverAnalysisPackage",
+        "Assert-CrossSolverSourceManifest",
+        "Get-CrossSolverSourcePair",
+        "Copy-CrossSolverAnalysisInputs",
+        "New-CrossSolverFrozenPathSet",
+        "Invoke-CrossSolverAnalyzer",
+        "Complete-CrossSolverAnalysis",
+    },
+    "particle_table_identity.ps1": {
+        "Resolve-RfConfigInputPath",
+        "Assert-RfTransportParticleTableIdentity",
+    },
+    "run_artifacts.ps1": {
+        "Write-RfFrozenRunManifest",
+        "Complete-RfFrozenFailedRun",
+        "Resolve-RfDirectChildDirectory",
+        "Get-RfManifestInputRecord",
+        "Get-RfManifestOutputRecord",
+        "Copy-RfStableFile",
+        "Copy-RfManifestBoundFile",
+        "Confirm-RfFrozenDependencyIdentity",
+        "Test-RfDependencyPathWithin",
+        "Copy-RfFrozenDependency",
+    },
+    "simion_execution.ps1": EXECUTION_SUPPORT_FUNCTIONS,
+    "simion_run_config.ps1": CONFIG_CORE_FUNCTIONS,
+}
+LEGACY_RUNTIME_FILES = {
+    "analysis_run_support.ps1",
+    "comsol_solver_numerics_contract.ps1",
+    "cross_solver_analysis_support.ps1",
+    "particle_table_identity.ps1",
+    "rf_run_artifact_support.ps1",
+    "simion_execution_support.ps1",
+    "simion_run_config_contract.ps1",
+}
 
 
 def _read(path: Path) -> str:
@@ -94,6 +142,37 @@ def _production_line_count(source: str) -> int:
 
 
 class WorkflowArchitectureContractTests(unittest.TestCase):
+    def test_runtime_modules_have_exact_responsibility_inventory(self) -> None:
+        self.assertEqual(
+            {path.name for path in RUNTIME_ROOT.glob("*.ps1")},
+            set(RUNTIME_MODULE_FUNCTIONS),
+        )
+        for filename, functions in RUNTIME_MODULE_FUNCTIONS.items():
+            source = _read(RUNTIME_ROOT / filename)
+            self.assertEqual(_powershell_functions(source), functions, filename)
+            self.assertIn("$ErrorActionPreference = 'Stop'", source)
+            self.assertNotRegex(source, r"(?i)tests[/\\](?:support|cross_solver)")
+
+    def test_tests_do_not_redefine_runtime_mechanisms(self) -> None:
+        runtime_functions = set().union(*RUNTIME_MODULE_FUNCTIONS.values())
+        for path in (PROJECT_ROOT / "tests").rglob("*.ps1"):
+            overlap = _powershell_functions(_read(path)) & runtime_functions
+            self.assertEqual(
+                overlap,
+                set(),
+                f"{path} redefines runtime mechanisms: {sorted(overlap)}",
+            )
+        for legacy in (
+            PROJECT_ROOT / "tests" / "support",
+            PROJECT_ROOT / "tests" / "cross_solver",
+        ):
+            legacy_files = {
+                path.name
+                for path in legacy.glob("*.ps1")
+                if path.name in LEGACY_RUNTIME_FILES
+            }
+            self.assertEqual(legacy_files, set())
+
     def test_profile_inventory_classifies_every_active_workflow(self) -> None:
         profiles = json.loads(EXECUTION_PROFILES.read_text(encoding="utf-8"))[
             "profiles"
@@ -188,8 +267,8 @@ class WorkflowArchitectureContractTests(unittest.TestCase):
             source = _read(runner_path)
             for support_path in (
                 "common\\contracts\\run_artifact_support.ps1",
-                "tests\\support\\simion_run_config_contract.ps1",
-                "tests\\support\\simion_execution_support.ps1",
+                "runtime\\simion_run_config.ps1",
+                "runtime\\simion_execution.ps1",
             ):
                 self.assertIn(support_path, source)
             for function in (

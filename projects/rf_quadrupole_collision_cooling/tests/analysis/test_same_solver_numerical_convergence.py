@@ -149,7 +149,7 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
             ". (Join-Path $env:RF_REPO "
             "'common/contracts/run_artifact_support.ps1');"
             ". (Join-Path $env:RF_PROJECT "
-            "'tests/support/analysis_run_support.ps1');"
+            "'runtime/analysis_run_lifecycle.ps1');"
             "$inputRoles=ConvertFrom-Json $env:RF_INPUT_ROLES;"
             "$outputRoles=ConvertFrom-Json "
             "$env:RF_OUTPUT_ROLES -AsHashtable;"

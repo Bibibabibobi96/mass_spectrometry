@@ -54,7 +54,7 @@ $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling'
 $runsRoot = Join-Path $artifactRoot 'runs'
 $supportSource = (
-  Resolve-Path (Join-Path $projectRoot 'tests\support\rf_run_artifact_support.ps1')
+  Resolve-Path (Join-Path $projectRoot 'runtime\run_artifacts.ps1')
 ).Path
 . $supportSource
 
@@ -185,7 +185,7 @@ try {
   $snapshotAnalysis = Join-Path $package.input_dir 'plot_shared_pulse_geometry_snapshot.py'
   $contract = Join-Path $package.input_dir 'rf_to_oatof_checkpoint_diagnostic.json'
   $runner = Join-Path $package.input_dir 'run_rf_oatof_checkpoint_diagnostic.ps1.txt'
-  $support = Join-Path $package.input_dir 'rf_run_artifact_support.ps1.txt'
+  $support = Join-Path $package.input_dir 'run_artifacts.ps1.txt'
   $sourceManifestFrozen = Join-Path $package.input_dir 'source_s3_run_manifest.json'
   $sourceRunConfigurationFrozen = Join-Path $package.input_dir 'source_s3_run_config.json'
   $downstreamManifestFrozen = Join-Path $package.input_dir 'downstream_run_manifest.json'

@@ -132,8 +132,13 @@ shared core也不得按上述role或workflow名称分支。
 
 | 模块 | 唯一职责 | 禁止内容 |
 |---|---|---|
-| `tests/support/simion_run_config_contract.ps1` | resolved/interface/numerics编译、完整Lua合同校验和序列化 | 进程启动、文件冻结、复制、checksum、run生命周期 |
-| `tests/support/simion_execution_support.ps1` | 启动GEM/PA/IOB并飞行 | 科学role/mode选择、配置编译、artifact和生命周期 |
+| `runtime/simion_run_config.ps1` | resolved/interface/numerics编译、完整Lua合同校验和序列化 | 进程启动、文件冻结、复制、checksum、run生命周期 |
+| `runtime/simion_execution.ps1` | 启动GEM/PA/IOB并飞行 | 科学role/mode选择、配置编译、artifact和生命周期 |
+| `runtime/comsol_solver_numerics.ps1` | 校验并编译COMSOL数值合同 | 选择科学workflow、启动COMSOL或写run证据 |
+| `runtime/analysis_run_lifecycle.ps1` | 为分析run构建最小可移植来源闭包并登记输入 | 选择科学role、阈值或比较结论 |
+| `runtime/cross_solver_analysis_lifecycle.ps1` | 编排跨求解器分析包、冻结输入和完成manifest | 粒子统计、科学判据或求解器执行 |
+| `runtime/particle_table_identity.ps1` | 校验接口输运两求解器的配对粒子表示身份 | 运行求解器、比较数值结果或改变粒子源 |
+| `runtime/run_artifacts.ps1` | RF项目冻结依赖、manifest-bound复制和失败run收尾 | 科学mode选择、求解器启动或结果判定 |
 | `common/contracts/run_artifact_support.ps1` | 通用run三件套、冻结复制、hash inventory和manifest | RF/SIMION科学role、mode分支和科学schema |
 | dedicated runner | 声明科学输入/输出并顺序调用上述机制 | 直接`Start-Process`、`Copy-Item`、`Get-FileHash`、内联Lua模板或复制生命周期 |
 

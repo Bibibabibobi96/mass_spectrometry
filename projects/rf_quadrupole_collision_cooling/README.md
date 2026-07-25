@@ -197,7 +197,8 @@ rf_quadrupole_collision_cooling/
 ├─ docs/                         # PROJECT、COMSOL、SIMION；需要时才建history/CAD
 ├─ comsol/                       # MATLAB LiveLink 生产实现
 ├─ simion/                       # 生成GEM、Lua和Fly2/PA构建入口
-├─ tests/                        # COMSOL、SIMION、跨求解器复验入口
+├─ runtime/                      # 求解器配置、启动、分析与run证据生命周期机制
+├─ tests/                        # COMSOL、SIMION、跨求解器运行及复验入口
 ├─ load_rf_quadrupole_contract.m # MATLAB解析契约加载器
 ├─ rf_quadrupole_paths.m         # 工作区与artifact路径解析
 └─ verify_project.ps1            # Static/Candidate/Formal统一门禁

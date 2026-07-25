@@ -21,9 +21,7 @@ DEDICATED_ENTRY = (
     PROJECT_ROOT / "comsol" / "ms_rf_quadrupole_interface_transport.m"
 )
 SHARED_SOLVER = PROJECT_ROOT / "comsol" / "ms_rf_quadrupole_no_collision.m"
-NUMERICS_SUPPORT = (
-    PROJECT_ROOT / "tests" / "support" / "comsol_solver_numerics_contract.ps1"
-)
+NUMERICS_SUPPORT = PROJECT_ROOT / "runtime" / "comsol_solver_numerics.ps1"
 ARTIFACT_ROOT = REPO_ROOT.parent / "artifacts" / "projects" / "rf_quadrupole_collision_cooling"
 VENV_PYTHON = REPO_ROOT / ".venv" / "Scripts" / "python.exe"
 

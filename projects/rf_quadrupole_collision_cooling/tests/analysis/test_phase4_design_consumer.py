@@ -46,9 +46,8 @@ class Phase4DesignConsumerTests(unittest.TestCase):
         self.assertNotIn("[string]$Mode", component_runner)
         lifecycle = (
             PROJECT_ROOT
-            / "tests"
-            / "support"
-            / "cross_solver_analysis_support.ps1"
+            / "runtime"
+            / "cross_solver_analysis_lifecycle.ps1"
         ).read_text(encoding="utf-8").lower()
         for forbidden in (
             "transport_interface_readiness",
@@ -155,7 +154,7 @@ class Phase4DesignConsumerTests(unittest.TestCase):
             PROJECT_ROOT / "tests" / "simion" / "run_transport_candidate.ps1"
         ).read_text(encoding="utf-8")
         simion_core = (
-            PROJECT_ROOT / "tests" / "support" / "simion_run_config_contract.ps1"
+            PROJECT_ROOT / "runtime" / "simion_run_config.ps1"
         ).read_text(encoding="utf-8")
         for source in (matlab,):
             self.assertIn("resolved.drive", source)

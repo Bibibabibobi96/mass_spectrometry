@@ -126,8 +126,13 @@ class ExecutionCompilerTests(unittest.TestCase):
         ready = self.compile_request(
             request,
             {
-                "particle_source_path": "C:/data/source.csv",
-                "evidence_contract_path": "C:/data/evidence.json",
+                "comsol_particle_source_path": "C:/data/source.csv",
+                "simion_particle_source_path": "C:/data/source_canonical.csv",
+                "particle_bundle_metadata_path": "C:/data/bundle.json",
+                "particle_source_family_path": "C:/data/source_family.json",
+                "particle_distribution_path": "C:/data/distribution.json",
+                "simion_solver_numerics_contract_path": "C:/data/numerics.json",
+                "operating_point_id": "official_100amu_2eV",
             },
         )
         self.assertEqual(ready["status"], "EXECUTION_READY")

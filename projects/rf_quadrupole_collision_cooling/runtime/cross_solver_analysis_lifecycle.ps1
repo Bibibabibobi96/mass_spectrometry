@@ -55,7 +55,7 @@ function New-CrossSolverFrozenPathSet {
         mode=Join-Path $InputDir $ModeFilename;comsol_manifest=Join-Path $InputDir 'comsol_run_manifest.json'
         simion_manifest=Join-Path $InputDir 'simion_run_manifest.json';comsol_config=Join-Path $InputDir 'comsol_run_config.json'
         simion_config=Join-Path $InputDir 'simion_run_config.json';comsol_state=Join-Path $InputDir 'comsol_particle_state.csv'
-        simion_state=Join-Path $InputDir 'simion_particle_state.csv';support=Join-Path $InputDir 'cross_solver_analysis_support.ps1'
+        simion_state=Join-Path $InputDir 'simion_particle_state.csv';support=Join-Path $InputDir 'cross_solver_analysis_lifecycle.ps1'
     }
 }
 

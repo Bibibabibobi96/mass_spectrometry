@@ -1,7 +1,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
+$repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 
 Set-Alias -Name New-RfRunPackage -Value New-RunPackage

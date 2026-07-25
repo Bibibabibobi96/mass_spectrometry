@@ -20,7 +20,7 @@ from projects.rf_quadrupole_collision_cooling.analysis import (
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 DEPENDENCY_CONTRACT = PROJECT_ROOT / "config" / "rf_to_oatof_s2_dependencies.json"
-SUPPORT = PROJECT_ROOT / "tests" / "support" / "rf_run_artifact_support.ps1"
+SUPPORT = PROJECT_ROOT / "runtime" / "run_artifacts.ps1"
 S2_RUNNER = PROJECT_ROOT / "tests" / "comsol" / "run_s2_passive_connector_field.ps1"
 S2_LOCAL_PYTHON_SOURCES = {
     "projects/rf_quadrupole_collision_cooling/analysis/resolve_s2_connector_case.py",

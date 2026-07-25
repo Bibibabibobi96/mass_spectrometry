@@ -27,9 +27,7 @@ PROJECT_ROOT = Path(__file__).parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 RUNNER = PROJECT_ROOT / "tests" / "simion" / "run_transport_candidate.ps1"
 MASS_RUNNER = PROJECT_ROOT / "tests" / "simion" / "run_mass_filter_candidate.ps1"
-RUN_CONFIG_CONTRACT = (
-    PROJECT_ROOT / "tests" / "support" / "simion_run_config_contract.ps1"
-)
+RUN_CONFIG_CONTRACT = PROJECT_ROOT / "runtime" / "simion_run_config.ps1"
 SHARED_LUA = REPO_ROOT / "common" / "multipole" / "simion_transport.lua"
 EXECUTION_PROFILES = PROJECT_ROOT / "config" / "execution_profiles.json"
 RESOLVED = PROJECT_ROOT / "config" / "resolved_design_official.json"
@@ -143,6 +141,7 @@ class SimionTransportRunnerSourceTests(unittest.TestCase):
                 )
                 result = subprocess.run(
                     ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                    cwd=REPO_ROOT,
                     capture_output=True,
                     encoding="utf-8",
                     env=environment,
@@ -223,6 +222,7 @@ class SimionTransportRunnerSourceTests(unittest.TestCase):
                     "-Command",
                     prefix + mutation + suffix,
                 ],
+                cwd=REPO_ROOT,
                 capture_output=True,
                 encoding="utf-8",
                 env=environment,
@@ -248,6 +248,7 @@ class SimionTransportRunnerSourceTests(unittest.TestCase):
         )
         result = subprocess.run(
             ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+            cwd=REPO_ROOT,
             capture_output=True,
             encoding="utf-8",
             env=environment,

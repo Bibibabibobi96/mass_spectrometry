@@ -1,4 +1,5 @@
 Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
 
 function Invoke-RfSimionCoreRun {
     [CmdletBinding()]

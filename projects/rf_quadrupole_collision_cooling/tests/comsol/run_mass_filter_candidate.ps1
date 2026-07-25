@@ -14,8 +14,8 @@ $repoRoot=Split-Path -Parent (Split-Path -Parent $projectRoot)
 $workspaceRoot=Split-Path -Parent $repoRoot
 $artifactRoot=Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling'
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
-. (Join-Path $projectRoot 'tests\support\rf_run_artifact_support.ps1')
-. (Join-Path $projectRoot 'tests\support\comsol_solver_numerics_contract.ps1')
+. (Join-Path $projectRoot 'runtime\run_artifacts.ps1')
+. (Join-Path $projectRoot 'runtime\comsol_solver_numerics.ps1')
 if([string]::IsNullOrWhiteSpace($RunId)){
   $RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__sim__comsol__mass-filter__rf-dc-n700'
 }

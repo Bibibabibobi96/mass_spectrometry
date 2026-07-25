@@ -20,7 +20,7 @@ $python = if ($PythonExe) {
     Join-Path $repoRoot '.venv\Scripts\python.exe'
 }
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
-. (Join-Path $projectRoot 'tests\support\analysis_run_support.ps1')
+. (Join-Path $projectRoot 'runtime\analysis_run_lifecycle.ps1')
 
 if ([string]::IsNullOrWhiteSpace($RunId)) {
     $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') +
@@ -71,7 +71,7 @@ try {
     $frozenParticleCountPolicy = Join-Path $inputDir `
         'particle_count_policy.json'
     $frozenAnalysisSupport = Join-Path $inputDir `
-        'analysis_run_support.ps1'
+        'analysis_run_lifecycle.ps1'
     foreach ($pair in @(
         @(
             (Join-Path $projectRoot `
@@ -88,7 +88,7 @@ try {
         ),
         @(
             (Join-Path $projectRoot `
-                'tests\support\analysis_run_support.ps1'),
+                'runtime\analysis_run_lifecycle.ps1'),
             $frozenAnalysisSupport
         )
     )) {

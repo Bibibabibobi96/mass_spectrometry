@@ -21,7 +21,7 @@ from projects.rf_quadrupole_collision_cooling.analysis.validate_paired_particle_
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 CROSS_ROOT = PROJECT_ROOT / "tests" / "cross_solver"
-IDENTITY_HELPER = CROSS_ROOT / "particle_table_identity.ps1"
+IDENTITY_HELPER = PROJECT_ROOT / "runtime" / "particle_table_identity.ps1"
 CROSS_RUNNER = CROSS_ROOT / "verify_transport_candidate.ps1"
 COMSOL_RUNNER = PROJECT_ROOT / "tests" / "comsol" / "run_transport_candidate.ps1"
 PROJECT_GATE = PROJECT_ROOT / "verify_project.ps1"
@@ -276,9 +276,8 @@ class CandidateGateParameterContractTests(unittest.TestCase):
         cross_runner = CROSS_RUNNER.read_text(encoding="utf-8")
         support = (
             PROJECT_ROOT
-            / "tests"
-            / "support"
-            / "cross_solver_analysis_support.ps1"
+            / "runtime"
+            / "cross_solver_analysis_lifecycle.ps1"
         ).read_text(encoding="utf-8")
         self.assertIn("'--particles',$frozenIon11", cross_runner)
         self.assertIn("execution_status='success'", cross_runner)

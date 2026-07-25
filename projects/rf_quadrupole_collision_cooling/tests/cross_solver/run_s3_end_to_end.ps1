@@ -17,7 +17,7 @@ $python = if ($PythonExe) {
 }
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling'
-$supportSource = Join-Path $projectRoot 'tests\support\rf_run_artifact_support.ps1'
+$supportSource = Join-Path $projectRoot 'runtime\run_artifacts.ps1'
 . $supportSource
 
 function Invoke-S3EndToEndSnapshotPython {
@@ -192,7 +192,7 @@ try {
   }
 
   $runner = Join-Path $package.input_dir 'run_s3_end_to_end.ps1.txt'
-  $support = Join-Path $package.input_dir 'rf_run_artifact_support.ps1.txt'
+  $support = Join-Path $package.input_dir 'run_artifacts.ps1.txt'
   $runnerIdentity = Copy-RfStableFile -SourceRunRoot $repoRoot `
     -SourcePath $PSCommandPath -Destination $runner -Role 'end-to-end runner'
   $supportIdentity = Copy-RfStableFile -SourceRunRoot $repoRoot `

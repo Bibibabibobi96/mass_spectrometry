@@ -18,7 +18,7 @@ $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling'
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
-. (Join-Path $projectRoot 'tests\support\comsol_solver_numerics_contract.ps1')
+. (Join-Path $projectRoot 'runtime\comsol_solver_numerics.ps1')
 
 $workflowId = 'transport_interface_readiness'
 $software = @('COMSOL 6.4','MATLAB R2025b','Python 3.11')
