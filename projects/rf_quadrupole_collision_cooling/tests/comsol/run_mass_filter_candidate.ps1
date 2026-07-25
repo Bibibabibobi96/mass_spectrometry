@@ -62,10 +62,28 @@ try {
       (Join-Path $sourceRun 'run_manifest.json') --require-status success
     if($LASTEXITCODE-ne 0){throw "Source run manifest failed: $sourceRun"}
   }
+  $simionManifestPath=Join-Path $simionRun 'run_manifest.json'
+  $simionManifestDocument=Get-Content -LiteralPath $simionManifestPath -Raw -Encoding UTF8|ConvertFrom-Json
+  $simionRunConfig=Get-Content -LiteralPath $simionManifestDocument.run_config.path -Raw -Encoding UTF8|ConvertFrom-Json
+  $simionSummary=Get-Content -LiteralPath (Join-Path $simionRun 'summary.json') -Raw -Encoding UTF8|ConvertFrom-Json
+  if($simionRunConfig.role-ne 'rf_quadrupole_simion_mass_filter_run_config' -or
+     $simionRunConfig.mode-ne 'mass_filter_reference' -or
+     $simionSummary.role-ne 'rf_quadrupole_mass_filter_summary' -or
+     $simionSummary.mode-ne 'mass_filter_reference' -or
+     $simionSummary.status-ne 'success'){
+    throw 'SIMION source run is not a verified mass-filter result.'
+  }
+  $simionResponseSource=Join-Path $simionRun 'results\mass-response__simion.csv'
+  $simionResponseRecords=@($simionManifestDocument.outputs|Where-Object{
+    [IO.Path]::GetFullPath([string]$_.path)-eq [IO.Path]::GetFullPath($simionResponseSource)
+  })
+  if($simionResponseRecords.Count-ne 1){
+    throw 'SIMION stable mass-response output is not uniquely recorded by its verified manifest.'
+  }
   $l1Response=Join-Path $inputDir 'l1_mass_response.csv'
   $simionResponse=Join-Path $inputDir 'simion_mass_response.csv'
   Copy-Item -LiteralPath (Join-Path $l1Run 'results\mass-response__finite-length.csv') -Destination $l1Response
-  Copy-Item -LiteralPath (Join-Path $simionRun 'results\mass-response__simion.csv') -Destination $simionResponse
+  Copy-Item -LiteralPath $simionResponseSource -Destination $simionResponse
   Copy-Item -LiteralPath (Join-Path $l1Run 'run_manifest.json') -Destination (Join-Path $inputDir 'l1_run_manifest.json')
   Copy-Item -LiteralPath (Join-Path $simionRun 'run_manifest.json') -Destination (Join-Path $inputDir 'simion_run_manifest.json')
 

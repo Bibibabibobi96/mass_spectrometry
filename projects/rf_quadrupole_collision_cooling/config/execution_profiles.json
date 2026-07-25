@@ -64,7 +64,13 @@
       "supported_design_variables": ["rf_amplitude", "rf_frequency"],
       "supported_constraints": [],
       "deliverable_outputs": ["simulation_results", "comsol_model", "simion_model", "validation_report", "interface_state"],
-      "required_bindings": ["particle_source_path", "evidence_contract_path"],
+      "required_bindings": [
+        "comsol_particle_source_path",
+        "simion_particle_source_path",
+        "particle_bundle_metadata_path",
+        "particle_source_family_path",
+        "particle_distribution_path"
+      ],
       "steps": [
         {
           "step_id": "static_gate", "kind": "gate", "shell": "powershell",
@@ -73,21 +79,21 @@
         },
         {
           "step_id": "comsol_run", "kind": "run", "shell": "powershell",
-          "entrypoint": "../../common/multipole/run_finite_3d_transport.ps1",
+          "entrypoint": "tests/comsol/run_transport_candidate.ps1",
           "run_id_template": "{timestamp}__sim__comsol__rf-transport__interface-readiness",
-          "arguments": ["-ProjectId", "rf_quadrupole_collision_cooling", "-DesignProfileId", "interface_readiness", "-ParticleSourcePath", "{particle_source_path}", "-EvidenceContractPath", "{evidence_contract_path}", "-RunId", "{comsol_run_id}"]
+          "arguments": ["-RunId", "{comsol_run_id}", "-ParticleTablePath", "{comsol_particle_source_path}", "-ParticleBundleMetadataPath", "{particle_bundle_metadata_path}", "-SourceFamilyPath", "{particle_source_family_path}", "-ParticleDistributionPath", "{particle_distribution_path}", "-Mode", "transport_interface_readiness"]
         },
         {
           "step_id": "simion_run", "kind": "run", "shell": "powershell",
-          "entrypoint": "../../common/multipole/run_simion_finite_3d_transport.ps1",
+          "entrypoint": "tests/simion/run_transport_candidate.ps1",
           "run_id_template": "{timestamp}__sim__simion__rf-transport__interface-readiness",
-          "arguments": ["-ProjectId", "rf_quadrupole_collision_cooling", "-DesignProfileId", "interface_readiness", "-ParticleSourcePath", "{particle_source_path}", "-EvidenceContractPath", "{evidence_contract_path}", "-RunId", "{simion_run_id}", "-ReferenceComsolRunId", "{comsol_run_id}"]
+          "arguments": ["-RunId", "{simion_run_id}", "-ParticleTablePath", "{simion_particle_source_path}", "-ParticleBundleMetadataPath", "{particle_bundle_metadata_path}", "-SourceFamilyPath", "{particle_source_family_path}", "-ParticleDistributionPath", "{particle_distribution_path}"]
         },
         {
           "step_id": "cross_solver_comparison", "kind": "analyze", "shell": "powershell",
           "entrypoint": "tests/cross_solver/verify_transport_candidate.ps1",
           "run_id_template": "{timestamp}__analysis__cross__rf-transport__interface-readiness",
-          "arguments": ["-ComsolRunId", "{comsol_run_id}", "-SimionRunId", "{simion_run_id}", "-RunId", "{cross_solver_comparison_run_id}", "-Mode", "transport_interface_readiness", "-ParticleTablePath", "{particle_source_path}", "-PythonExe", "{python_exe}"]
+          "arguments": ["-ComsolRunId", "{comsol_run_id}", "-SimionRunId", "{simion_run_id}", "-RunId", "{cross_solver_comparison_run_id}", "-Mode", "transport_interface_readiness", "-PythonExe", "{python_exe}"]
         },
         {
           "step_id": "candidate_gate", "kind": "gate", "shell": "powershell",
@@ -96,7 +102,7 @@
         }
       ],
       "limitations": [
-        "Requires a canonical N>=100 particle-state CSV and explicit evidence contract before qualification",
+        "Requires explicit paired-bundle metadata, source-family, distribution, COMSOL ION11, and SIMION canonical10 bindings",
         "Current strict interface comparison is an allowed candidate FAIL, not a formal capability"
       ]
     },
@@ -112,7 +118,7 @@
       "supported_design_variables": ["rf_amplitude", "rf_frequency", "dc_differential", "axis_offset"],
       "supported_constraints": [],
       "deliverable_outputs": ["simulation_results", "simion_model", "validation_report"],
-      "required_bindings": ["particle_source_path", "evidence_contract_path", "run_id"],
+      "required_bindings": ["mass_filter_base_source_ion11_path", "run_id"],
       "steps": [
         {
           "step_id": "static_gate", "kind": "gate", "shell": "powershell",
@@ -121,9 +127,9 @@
         },
         {
           "step_id": "simion_mass_response", "kind": "run", "shell": "powershell",
-          "entrypoint": "../../common/multipole/run_simion_finite_3d_transport.ps1",
+          "entrypoint": "tests/simion/run_mass_filter_candidate.ps1",
           "run_id_template": "{timestamp}__sim__simion__mass-filter__n700",
-          "arguments": ["-ProjectId", "rf_quadrupole_collision_cooling", "-DesignProfileId", "mass_filter_reference", "-ParticleSourcePath", "{particle_source_path}", "-EvidenceContractPath", "{evidence_contract_path}", "-RunId", "{run_id}"]
+          "arguments": ["-SourceIonPath", "{mass_filter_base_source_ion11_path}", "-RunId", "{run_id}"]
         }
       ],
       "limitations": [

@@ -83,6 +83,20 @@ class ComsolMassFilterContractTests(unittest.TestCase):
             runner,
         )
 
+    def test_comsol_mass_runner_accepts_only_verified_simion_mass_output(self) -> None:
+        runner = (
+            PROJECT_ROOT / "tests" / "comsol" / "run_mass_filter_candidate.ps1"
+        ).read_text(encoding="utf-8")
+        for token in (
+            "rf_quadrupole_simion_mass_filter_run_config",
+            "rf_quadrupole_mass_filter_summary",
+            "$simionRunConfig.mode-ne 'mass_filter_reference'",
+            "$simionSummary.mode-ne 'mass_filter_reference'",
+            "SIMION stable mass-response output is not uniquely recorded",
+            "verify_run_manifest.py",
+        ):
+            self.assertIn(token, runner)
+
     def test_project_comsol_runner_and_builder_retain_only_specialized_modes(self) -> None:
         runner = (PROJECT_ROOT / "tests/comsol/run_transport_candidate.ps1").read_text(encoding="utf-8")
         builder = (PROJECT_ROOT / "comsol/ms_rf_quadrupole_no_collision.m").read_text(encoding="utf-8")

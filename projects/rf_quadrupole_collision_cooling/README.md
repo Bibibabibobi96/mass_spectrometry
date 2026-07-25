@@ -71,7 +71,7 @@ S2–S3连接功能闭环记录：
 - 命名粒子表生成器：[`analysis/generate_interface_particle_table.py`](analysis/generate_interface_particle_table.py)，
   用固定种子生成任意 N 的可追溯 ION 表与元数据；求解器不得各自随机生成接口粒子。
 - 质量过滤模式：[`config/modes/mass_filter_reference.json`](config/modes/mass_filter_reference.json)；与RF-only
-  传输共用同一几何源，仅切换RF+DC运行合同。
+  传输共用同一几何源，但由独立入口绑定RF+DC运行合同和ION11多质量源，不能作为接口输运运行替身。
 - 求解器无关四极杆 L0 参考计算：[`analysis/quadrupole_l0.py`](analysis/quadrupole_l0.py)；只校验理想
   Mathieu 稳定区、质量尺度和预留模式的电压合同，不证明质量峰、透过率或求解器资格。
 - 求解器无关有限长度 L1 功能扫描：[`analysis/run_mass_filter_l1.py`](analysis/run_mass_filter_l1.py)；使用
@@ -85,10 +85,25 @@ S2–S3连接功能闭环记录：
 - COMSOL RF-only构建/GUI复验入口：[`tests/comsol/run_transport_candidate.ps1`](tests/comsol/run_transport_candidate.ps1)；
   RF+DC七质量功能入口：[`tests/comsol/run_mass_filter_candidate.ps1`](tests/comsol/run_mass_filter_candidate.ps1)，
   使用配对源输出L0/L1/SIMION/COMSOL比较CSV与规范图，仅中心质量保存一份MPH。
-- SIMION 构建/验证入口：[`tests/simion/run_transport_candidate.ps1`](tests/simion/run_transport_candidate.ps1)
- ；同一入口的`mass_filter_reference`模式生成配对七质量表并输出质量响应CSV、指标JSON和规范图。
+- SIMION 接口输运构建/验证入口：
+  [`tests/simion/run_transport_candidate.ps1`](tests/simion/run_transport_candidate.ps1)；入口用途固定为
+  `transport_interface_readiness`，只接受配对bundle中的canonical10表示。
+- SIMION RF+DC质量过滤功能入口：
+  [`tests/simion/run_mass_filter_candidate.ps1`](tests/simion/run_mass_filter_candidate.ps1)；入口用途固定为
+  `mass_filter_reference`，要求显式给出基础ION11源，并生成配对七质量ION11表、质量响应、指标JSON和规范图。
+  `results/mass-response__simion.csv`是下游质量过滤比较使用的唯一稳定正式输出名，不生成同内容别名。
+- `transport_interface_readiness` 的两个求解器入口都必须绑定同一配对bundle metadata：COMSOL实际消费
+  ION11，SIMION实际消费canonical10；两种表示由bundle validator逐ID复算等价，run config不得用未消费
+  文件冒充`particle_table`。
+- 两个SIMION入口不接受`Mode`切换，也不按输入扩展名自动路由：接口入口拒绝质量扫描参数，质量过滤
+  入口拒绝bundle、canonical和接口工况参数；cross/same-solver接口门禁不得消费质量过滤run。
 - SIMION IOB 结构门禁：[`tests/simion/inspect_builtin_quad_reference.lua`](tests/simion/inspect_builtin_quad_reference.lua)
 - 跨求解器门禁：[`tests/cross_solver/verify_transport_candidate.ps1`](tests/cross_solver/verify_transport_candidate.ps1)
+- 同求解器时间离散预注册筛选：
+  [`tests/analysis/run_same_solver_numerical_comparison.ps1`](tests/analysis/run_same_solver_numerical_comparison.ps1)，
+  仅接受SIMION 40→80或COMSOL 80→160 RF步/周期，并受
+  [`config/same_solver_numerical_convergence.json`](config/same_solver_numerical_convergence.json)约束；
+  该结果固定为Candidate数值筛选，不构成跨求解器、N=1000或Formal结论。
 - 全项目门禁：`verify_project.ps1 -Level Static|Candidate|Formal`；Candidate必须显式给出 mode、COMSOL、
   SIMION和比较运行标签，Formal在机械几何与SolidWorks同步前固定拒绝执行。
 - 历史诊断图源码：

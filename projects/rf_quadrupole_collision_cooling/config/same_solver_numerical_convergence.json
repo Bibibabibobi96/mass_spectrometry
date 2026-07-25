@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "role": "rf_quadrupole_same_solver_numerical_convergence_contract",
+  "status": "numerical_screen_candidate_only",
+  "claim_limit": "Same-solver time-discretization screen only; no cross-solver, N=1000, edge-mesh, mechanical, or Formal claim.",
+  "required_mode": "transport_interface_readiness",
+  "comparisons": {
+    "SIMION": {
+      "run_config_role": "rf_quadrupole_simion_run_config",
+      "varied_parameter": "rf_steps_per_period",
+      "baseline_value": 40,
+      "refined_value": 80,
+      "pa_core_identity": "exact SHA-256 inventory match required for quad_monolithic.pa*"
+    },
+    "COMSOL": {
+      "run_config_role": "rf_quadrupole_comsol_run_config",
+      "varied_parameter": "comsol_rf_steps_per_period",
+      "baseline_value": 80,
+      "refined_value": 160,
+      "mesh_setting_identity": "all mesh run-config fields must match",
+      "mesh_element_policy": "exact total element-count match required as a decision gate"
+    }
+  },
+  "acceptance": {
+    "transmission_absolute_difference": 0.01,
+    "mean_tof_relative_difference": 0.01,
+    "rms_radius_relative_difference": 0.02,
+    "rms_divergence_relative_difference": 0.03,
+    "mean_energy_relative_difference": 0.004,
+    "handoff_particle_id_sets": "exact_match"
+  },
+  "event_census_schema": [
+    "source",
+    "rod_exit",
+    "handoff",
+    "terminal"
+  ]
+}

@@ -2,8 +2,8 @@ param(
     [Parameter(Mandatory = $true)][string]$ComsolRunId,
     [Parameter(Mandatory = $true)][string]$SimionRunId,
     [string]$RunId = '',
-    [ValidateSet('transport_no_collision','transport_interface_readiness')]
-    [string]$Mode = 'transport_no_collision',
+    [ValidateSet('transport_interface_readiness')]
+    [string]$Mode = 'transport_interface_readiness',
     [string]$PythonExe = '',
     [string]$ParticleTablePath = '',
     [double]$FrequencyHz = [double]::NaN,
@@ -25,6 +25,7 @@ if ([string]::IsNullOrWhiteSpace($RunId)) {
 if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
 $runDir = Join-Path $artifactRoot "runs\$RunId"
 $resultDir = Join-Path $runDir 'results'
+$inputDir = Join-Path $runDir 'inputs'
 if (Test-Path -LiteralPath $runDir) { throw "Cross-solver run already exists: $RunId" }
 
 $comsolRun = Join-Path $artifactRoot "runs\$ComsolRunId"
@@ -46,6 +47,10 @@ $comsolManifestData = Get-Content -LiteralPath $comsolManifest -Raw -Encoding UT
 $simionManifestData = Get-Content -LiteralPath $simionManifest -Raw -Encoding UTF8 | ConvertFrom-Json
 $comsolConfig = Get-Content -LiteralPath $comsolManifestData.run_config.path -Raw -Encoding UTF8 | ConvertFrom-Json
 $simionConfig = Get-Content -LiteralPath $simionManifestData.run_config.path -Raw -Encoding UTF8 | ConvertFrom-Json
+if ($comsolConfig.role -ne 'rf_quadrupole_comsol_run_config' -or
+    $simionConfig.role -ne 'rf_quadrupole_simion_run_config') {
+    throw 'Cross-solver comparison accepts only interface transport run-config roles.'
+}
 if ($comsolConfig.mode -ne $Mode -or $simionConfig.mode -ne $Mode) {
     throw "Run-config mode does not match requested candidate mode: $Mode"
 }
@@ -54,16 +59,18 @@ if ($comsolConfig.operating_point -ne $simionConfig.operating_point -or
     [double]$comsolConfig.frequency_hz -ne [double]$simionConfig.frequency_hz) {
     throw 'COMSOL and SIMION operating point, RF peak, or frequency differ.'
 }
-$comsolParticlePath = [IO.Path]::GetFullPath([string]$comsolConfig.inputs.particle_table)
-$simionParticlePath = [IO.Path]::GetFullPath([string]$simionConfig.inputs.particle_table)
-
 $resolvedPath = Join-Path $projectRoot 'config\resolved_design_official.json'
 $resolved = Get-Content -LiteralPath $resolvedPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$comsolBindingValidation = Join-Path $inputDir 'comsol_particle_source_binding.json'
+$simionBindingValidation = Join-Path $inputDir 'simion_particle_source_binding.json'
+New-Item -ItemType Directory -Path $runDir,$resultDir,$inputDir -Force | Out-Null
 $particleIdentity = Assert-RfTransportParticleTableIdentity `
-    -ComsolParticlePath $comsolParticlePath `
-    -SimionParticlePath $simionParticlePath `
-    -ExplicitParticlePath $ParticleTablePath
-$particlePath = $particleIdentity.path
+    -Python $python -RepoRoot $repoRoot `
+    -ComsolRunConfig $comsolConfig -SimionRunConfig $simionConfig `
+    -ComsolBindingOutput $comsolBindingValidation `
+    -SimionBindingOutput $simionBindingValidation `
+    -ExplicitIon11Path $ParticleTablePath
+$particlePath = $particleIdentity.ion11_path
 if ([double]::IsNaN($FrequencyHz) -or [double]::IsInfinity($FrequencyHz)) {
     $FrequencyHz = [double]$comsolConfig.frequency_hz
 } elseif ($FrequencyHz -ne [double]$comsolConfig.frequency_hz) {
@@ -73,39 +80,49 @@ $interfacePath = Join-Path $projectRoot 'config\interface_contract.json'
 $regressionModePath = Join-Path $projectRoot 'config\modes\transport_no_collision.json'
 $interfaceModePath = Join-Path $projectRoot 'config\modes\transport_interface_readiness.json'
 $entries = @(
-    [pscustomobject]@{Solver='COMSOL'; Path=$comsolState},
-    [pscustomobject]@{Solver='SIMION'; Path=$simionState}
+    [pscustomobject]@{
+        Solver='COMSOL'; Path=$comsolState
+        Particles=$particleIdentity.comsol_consumed_path; Format='ion11'
+    },
+    [pscustomobject]@{
+        Solver='SIMION'; Path=$simionState
+        Particles=$particleIdentity.simion_consumed_path; Format='canonical'
+    }
 )
 foreach ($entry in $entries) {
     Push-Location $repoRoot
     try {
         & $python -m common.contracts.particle_state `
-            --state $entry.Path --particles $particlePath --source-format ion11 --contract $interfacePath `
+            --state $entry.Path --particles $entry.Particles --source-format $entry.Format --contract $interfacePath `
             --frequency-hz $FrequencyHz --phase-rad $PhaseRad --solver $entry.Solver
         if ($LASTEXITCODE -ne 0) { throw "$($entry.Solver) particle-state contract failed." }
     }
     finally { Pop-Location }
 }
 
-New-Item -ItemType Directory -Path $runDir,$resultDir -Force | Out-Null
-
 $runConfigPath = Join-Path $runDir 'run_config.json'
 $runConfig = [ordered]@{
     schema_version=1; role='rf_quadrupole_cross_solver_run_config'; run_id=$RunId
     project='rf_quadrupole_collision_cooling'; mode="${Mode}_phase_space_comparison"
     project_root=$projectRoot; formal_gate_passed=$false
-    particle_table_sha256=$particleIdentity.sha256
+    source_sample_family_sha256=$particleIdentity.source_sample_family_sha256
+    latent_sha256=$particleIdentity.latent_sha256
+    coordinate_mapping_version=$particleIdentity.coordinate_mapping_version
+    ion11_sha256=$particleIdentity.ion11_sha256
+    canonical10_sha256=$particleIdentity.canonical10_sha256
     inputs=[ordered]@{
         comsol_manifest=$comsolManifest; simion_manifest=$simionManifest
         comsol_particle_state=$comsolState; simion_particle_state=$simionState
-        comsol_particle_table=$comsolParticlePath
-        simion_particle_table=$simionParticlePath
+        comsol_particle_table=$particleIdentity.comsol_consumed_path
+        simion_particle_table=$particleIdentity.simion_consumed_path
         particle_table=$particlePath
+        comsol_particle_source_binding=$comsolBindingValidation
+        simion_particle_source_binding=$simionBindingValidation
         resolved_design='config/resolved_design_official.json'
         regression_mode='config/modes/transport_no_collision.json'
         interface_mode='config/modes/transport_interface_readiness.json'
         interface_contract='config/interface_contract.json'
-        mode=$(if ($Mode -eq 'transport_no_collision') { 'config/modes/transport_no_collision.json' } else { 'config/modes/transport_interface_readiness.json' })
+        mode='config/modes/transport_interface_readiness.json'
     }
 }
 $runConfig | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $runConfigPath -Encoding ASCII

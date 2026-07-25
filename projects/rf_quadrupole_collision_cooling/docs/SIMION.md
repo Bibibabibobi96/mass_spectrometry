@@ -1,8 +1,9 @@
 # SIMION：RF四极杆传输与质量过滤
 
-返回项目统一状态：[`PROJECT.md`](PROJECT.md)。项目GEM由内置`examples/quad`单体参考派生；
-`common.multipole.simion_particle_source`按共享ION表的实际行数生成显式Fly2和积分前源状态，候选IOB沿用官方文件并在
-同目录绑定项目生成的 PA、Fly2 和 `quad_monolithic.lua`。
+返回项目统一状态：[`PROJECT.md`](PROJECT.md)。项目GEM由内置`examples/quad`单体参考派生。接口输运入口
+从配对bundle的canonical10表示生成显式Fly2和积分前源状态；质量过滤入口则从显式基础ION11源构造
+配对多质量ION11表。候选IOB沿用官方文件并在同目录绑定项目生成的 PA、Fly2 和
+`quad_monolithic.lua`。
 
 两份GEM由`analysis/sync_simion_geometry.py`从`config/resolved_design_official.json`生成，并嵌入解析发布
 SHA-256；`verify_project.ps1 -Level Static`会拒绝过期GEM。官方`examples/quad`只保留来源依据，运行时
@@ -25,17 +26,27 @@ Lua没有 collision、drag、pressure 或 buffer-gas 逻辑。RF-only模式两�
 和Lua直接消费其中的`drive`与`static_electrodes_V`；不再生成中间operating contract，也不允许命令行
 覆盖RF幅值或频率。求解器步数与最长时间来自单独冻结的mode数值配置，物理量与数值量不互相回退。
 
-`tests/simion/run_transport_candidate.ps1` 执行 Fly2 生成、GEM 编译、PA refine 和独立无界面 fly；
-默认 quality 10、40 RF 步/周期，并禁用轨迹临时文件保留。20→40 步时 25/25 不变，平均 TOF
+`tests/simion/run_transport_candidate.ps1`是用途固定的`transport_interface_readiness`入口，执行
+canonical10→Fly2投影、GEM 编译、PA refine 和独立无界面 fly；默认 quality 10、40 RF 步/周期，
+并禁用轨迹临时文件保留。20→40 步时 25/25 不变，平均 TOF
 变化 0.00030%；40→80 步时平均 TOF 仅变化 `1.05e-6`、最大杆区半径变化 0.030%，最大逐粒子
 到达时间变化 0.000157 us。最终为 25/25、49.7386 us、最大杆区半径 0.4729 mm、最大探测半径 1.4472 mm。
 
-同一入口的`mass_filter_reference`模式从N=100功能源构造七质量配对表，一次Fly'm保持各质量相同的
-位置、速度、出生时间和ID次序，只改变质量。迁移前历史run
+`tests/simion/run_mass_filter_candidate.ps1`是用途固定的`mass_filter_reference`入口。调用者必须
+显式传入基础ION11源；入口冻结该源后构造七质量配对ION11表，一次Fly'm保持各质量相同的位置、速度、
+出生时间和ID次序，只改变质量。它使用独立的`rf_quadrupole_simion_mass_filter_run_config`角色；
+接口bundle、canonical表、接口工况参数和`Mode`都不是其参数。`results/mass-response__simion.csv`
+是活动COMSOL质量过滤比较消费的唯一稳定正式响应合同，不向第二个文件名双写。分析完成且物理判据
+不通过时，run仍记录执行`success`和`physical_decision=FAIL`；只有生成、求解、契约或分析执行错误
+才写失败manifest。迁移前历史run
 `20260722_210300__sim__simion__mass-filter__n175__r03`得到96～106 Th七点透过率
 `0%、32%、96%、100%、60%、40%、8%`，功能判据PASS；输出位于该run的`results/`并由manifest冻结。
 它曾证明有限几何中的RF+DC质量选择，但已不再是当前权威响应；新的SIMION与跨求解器结论须等待
 N=100复验，不构成质量分辨能力资格。
+
+两个入口均不接受`Mode`分支，也不按输入扩展名自动选择用途。cross与same-solver接口门禁只能接受
+`transport_interface_readiness`的run角色和bundle证据；质量过滤run只能进入质量响应链。执行profile
+和下游消费者必须显式选择入口并校验role、mode、manifest与输出哈希。
 
 运行器在Fly前实际加载候选IOB，检查单实例、本地PA、放置变换、尺寸和0.2 mm单元；成功后为候选
 目录生成完整`SHA256SUMS.csv`，并在独立run目录生成含输入/输出身份的`run_manifest.json`。
@@ -71,8 +82,8 @@ PA/COMSOL 坐标导出 SIMION 自己求得的三维单位 RF 场。该文件只�
 生成 `77×77×953` PA 并独立 refine、导场。0.2→0.1 mm 自身场差在入口/杆区/出口分别为
 3.396%/0.0467%/0.280%；说明官方 0.2 mm PA 的杆区场已收敛，但边缘区仍有明显离散敏感性。
 
-`run_transport_candidate.ps1` 的 `SourceAxialOffsetMm` 仅用于隔离诊断：它把同一 25 粒子源沿 workbench
-轴向平移，默认值 0 不改变权威基线；`CandidateSubdir` 保证候选 PA/IOB 不覆盖正式目录。
+接口输运入口不允许在运行时平移canonical源；需要轴向偏移时必须先生成受治理、可追溯的诊断源。
+质量过滤入口同样固定零偏移。运行器只在独立run目录构建候选 PA/IOB，不覆盖正式目录。
 
 `tests/simion/inspect_builtin_quad_reference.lua` 只加载已构建候选，不触发交互 refine；验证 IOB 单实例、
 `quad_monolithic.pa0`、`39×39×477`、0.2 mm 单元及 PA→workbench 三轴基向量。候选可直接在 SIMION

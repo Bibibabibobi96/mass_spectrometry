@@ -2,10 +2,12 @@ param(
     [int]$RfStepsPerPeriod = 40,
     [int]$TrajectoryQuality = 10,
     [string]$RunId = '',
-    [double]$SourceAxialOffsetMm = 0.0,
-    [string]$ParticleTablePath = '',
+    [Parameter(Mandatory=$true)][string]$ParticleTablePath,
+    [Parameter(Mandatory=$true)][string]$ParticleBundleMetadataPath,
+    [Parameter(Mandatory=$true)][string]$SourceFamilyPath,
+    [Parameter(Mandatory=$true)][string]$ParticleDistributionPath,
+    [string]$ArtifactRootPath = '',
     [string]$PythonExe = '',
-    [ValidateSet('transport_interface_readiness','mass_filter_reference')][string]$Mode = 'transport_interface_readiness',
     [string]$OperatingPoint = 'official_100amu_2eV'
 )
 
@@ -14,86 +16,164 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $repoRoot = Split-Path -Parent (Split-Path -Parent $projectRoot)
 $workspaceRoot = Split-Path -Parent $repoRoot
-$artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling'
+$artifactRoot = if ($ArtifactRootPath) {
+    [IO.Path]::GetFullPath($ArtifactRootPath)
+} else {
+    Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling'
+}
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
+$mode = 'transport_interface_readiness'
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 if ([string]::IsNullOrWhiteSpace($RunId)) {
-    $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + "__sim__simion__rf-transport__$($Mode.Replace('_','-'))"
+    $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__sim__simion__rf-transport__interface-readiness'
 }
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RunId $RunId `
-    -Project 'rf_quadrupole_collision_cooling' -Mode $Mode -Software @('SIMION 2020','Python 3.11') `
+    -Project 'rf_quadrupole_collision_cooling' -Mode $mode -Software @('SIMION 2020','Python 3.11') `
     -AdditionalDirectories @('simion')
 $runDir=$package.run_dir
 $candidateDir=Join-Path $runDir 'simion'
 $resultDir=$package.result_dir
 $logDir=$package.log_dir
 $inputDir=$package.input_dir
+$runConfigPath=$package.run_config
+$runSummary=$package.summary
 $simion = 'C:\Program Files\SIMION-2020\simion.exe'
 $officialIob = 'C:\Program Files\SIMION-2020\examples\quad\quad_monolithic.iob'
 
-$isMassFilter = $Mode -eq 'mass_filter_reference'
-if ($isMassFilter -and -not [string]::IsNullOrWhiteSpace($ParticleTablePath)) {
-    throw 'Mass-filter mode generates its paired multi-mass particle table; ParticleTablePath must be omitted.'
+try {
+$sourceParticlePath = [IO.Path]::GetFullPath($ParticleTablePath)
+if (-not (Test-Path -LiteralPath $sourceParticlePath -PathType Leaf)) {
+    throw "Particle table is missing: $sourceParticlePath"
 }
-$sourceIonPath = if ([string]::IsNullOrWhiteSpace($ParticleTablePath)) {
-    Join-Path $projectRoot 'config\particles\official_fixed_100.ion'
-} else { [IO.Path]::GetFullPath($ParticleTablePath) }
-$ionPath = Join-Path $inputDir $(if ($isMassFilter) { 'mass_scan_particles.ion' } else { 'particles.ion' })
-$resolvedContractInput = switch ($Mode) {
-    'transport_interface_readiness' { 'config/resolved_design_official.json' }
-    'mass_filter_reference' { 'config/resolved_design_mass_filter.json' }
-}
-$modeInput = switch ($Mode) {
-    'transport_interface_readiness' { 'config/modes/transport_interface_readiness.json' }
-    'mass_filter_reference' { 'config/modes/mass_filter_reference.json' }
-}
-$expectedParticles = if ($isMassFilter) {
-    0
-} else {
-    @(Get-Content -LiteralPath $sourceIonPath -Encoding UTF8 | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count
-}
-$sourceParticleCount = @(Get-Content -LiteralPath $sourceIonPath -Encoding UTF8 | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count
-& $python -m common.contracts.particle_count_policy --count $sourceParticleCount
-if ($LASTEXITCODE -ne 0) { throw 'Particle table violates the repository N=100/N=1000 policy.' }
-if ($Mode -eq 'transport_interface_readiness') {
-    $minimumParticles = (Get-Content -LiteralPath (Join-Path $projectRoot 'config\modes\transport_interface_readiness.json') -Raw -Encoding UTF8 | ConvertFrom-Json).numerics.minimum_diagnostic_particles
-    if ([string]::IsNullOrWhiteSpace($ParticleTablePath) -or $expectedParticles -lt $minimumParticles) {
-        throw "Interface-readiness mode requires an explicit particle table with at least $minimumParticles particles."
-    }
-}
+$resolvedContractInput = 'config/resolved_design_official.json'
+$modeInput = 'config/modes/transport_interface_readiness.json'
+$expectedParticles = 0
 
 $frozenBaseline = Join-Path $inputDir 'baseline.json'
 $frozenMode = Join-Path $inputDir 'mode.json'
 $frozenResolved = Join-Path $inputDir 'resolved_design.json'
 $frozenInterface = Join-Path $inputDir 'interface_contract.json'
+$frozenSourceFamily = Join-Path $inputDir 'particle_source_family.json'
+$frozenDistribution = Join-Path $inputDir 'particle_source_distribution.json'
+$sourceBinding = Join-Path $inputDir 'particle_source_binding.json'
 Copy-Item -LiteralPath (Join-Path $projectRoot 'config\baseline.json') -Destination $frozenBaseline
 Copy-Item -LiteralPath (Join-Path $projectRoot ($modeInput -replace '/', '\')) -Destination $frozenMode
 Copy-Item -LiteralPath (Join-Path $projectRoot ($resolvedContractInput -replace '/', '\')) -Destination $frozenResolved
 Copy-Item -LiteralPath (Join-Path $projectRoot 'config\interface_contract.json') -Destination $frozenInterface
-if ($isMassFilter) {
-    $massScanMetadata = Join-Path $inputDir 'mass_scan_particles.json'
-    & $python -m projects.rf_quadrupole_collision_cooling.analysis.generate_mass_scan_particle_table `
-        --source $sourceIonPath --mode $frozenMode --output $ionPath --metadata $massScanMetadata
-    if ($LASTEXITCODE -ne 0) { throw 'Paired mass-scan particle generation failed.' }
-} else {
-    Copy-Item -LiteralPath $sourceIonPath -Destination $ionPath
+$bundleMetadataInput = [IO.Path]::GetFullPath($ParticleBundleMetadataPath)
+$sourceFamilyInput = [IO.Path]::GetFullPath($SourceFamilyPath)
+$distributionInput = [IO.Path]::GetFullPath($ParticleDistributionPath)
+if (-not (Test-Path -LiteralPath $bundleMetadataInput -PathType Leaf)) {
+    throw "Paired particle bundle metadata is missing: $bundleMetadataInput"
 }
-if (-not (Test-Path -LiteralPath $ionPath -PathType Leaf)) { throw "Particle table is missing: $ionPath" }
-if ($isMassFilter) {
-    $expectedParticles = @(Get-Content -LiteralPath $ionPath -Encoding UTF8 | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count
+if (-not (Test-Path -LiteralPath $sourceFamilyInput -PathType Leaf)) {
+    throw "Particle source family is missing: $sourceFamilyInput"
 }
+if (-not (Test-Path -LiteralPath $distributionInput -PathType Leaf)) {
+    throw "Particle source distribution is missing: $distributionInput"
+}
+Copy-Item -LiteralPath $sourceFamilyInput -Destination $frozenSourceFamily
+Copy-Item -LiteralPath $distributionInput -Destination $frozenDistribution
 Copy-Item -LiteralPath (Join-Path $projectRoot 'simion\geometry\quad_include.gem') -Destination $candidateDir -Force
 Copy-Item -LiteralPath (Join-Path $projectRoot 'simion\geometry\quad_monolithic.gem') -Destination $candidateDir -Force
 Copy-Item -LiteralPath (Join-Path $repoRoot 'common\multipole\simion_transport.lua') -Destination (Join-Path $candidateDir 'quad_monolithic.lua') -Force
-Copy-Item -LiteralPath $officialIob -Destination (Join-Path $candidateDir 'quad_monolithic.iob') -Force
 $flyPath = Join-Path $candidateDir 'quad_monolithic.fly2'
 $sourceStatesLua = Join-Path $inputDir 'source_states.lua'
+$sourceMetadata = Join-Path $inputDir 'particle_source_metadata.json'
 Push-Location $repoRoot
 try {
-    & $python -m common.multipole.simion_particle_source --ion-table $ionPath --fly2 $flyPath `
-        --axial-offset-mm $SourceAxialOffsetMm --source-states-lua $sourceStatesLua
+    $sourceFamilySha = (Get-FileHash -LiteralPath $frozenSourceFamily -Algorithm SHA256).Hash
+    $requestedParticles = @(Import-Csv -LiteralPath $sourceParticlePath).Count
+    $bindingArguments = @(
+        '-m','projects.rf_quadrupole_collision_cooling.analysis.validate_paired_particle_source_binding',
+        '--bundle-metadata',$bundleMetadataInput,
+        '--source-family',$frozenSourceFamily,
+        '--distribution',$frozenDistribution,
+        '--resolved-design',$frozenResolved,
+        '--operating-point',$OperatingPoint,
+        '--particle-count',$requestedParticles,
+        '--consumed-representation','canonical10',
+        '--expected-consumed',$sourceParticlePath,
+        '--output',$sourceBinding
+    )
+    & $python @bindingArguments
+    if ($LASTEXITCODE -ne 0) { throw 'Paired particle source bundle binding failed.' }
+    $bindingDocument = Get-Content -LiteralPath $sourceBinding -Raw -Encoding UTF8 | ConvertFrom-Json
+    $bundleDocument = Get-Content -LiteralPath $bundleMetadataInput -Raw -Encoding UTF8 | ConvertFrom-Json
+    $frozenBundleRoot = Join-Path $inputDir 'paired_bundle'
+    New-Item -ItemType Directory -Path $frozenBundleRoot -Force | Out-Null
+    foreach ($entry in $bundleDocument.artifacts) {
+        $sourceArtifact = Join-Path (Split-Path -Parent $bundleMetadataInput) ([string]$entry.relative_path)
+        $frozenArtifact = Join-Path $frozenBundleRoot ([string]$entry.relative_path)
+        New-Item -ItemType Directory -Path (Split-Path -Parent $frozenArtifact) -Force | Out-Null
+        Copy-Item -LiteralPath $sourceArtifact -Destination $frozenArtifact
+    }
+    $frozenBundleMetadata = Join-Path $frozenBundleRoot 'paired_particle_bundle.json'
+    Copy-Item -LiteralPath $bundleMetadataInput -Destination $frozenBundleMetadata
+    $canonicalEntry = @($bundleDocument.artifacts | Where-Object {
+        $_.operating_point_id -eq $OperatingPoint -and
+        [int]$_.particle_count -eq $requestedParticles -and
+        $_.representation -eq 'canonical10'
+    })
+    $ionEntry = @($bundleDocument.artifacts | Where-Object {
+        $_.operating_point_id -eq $OperatingPoint -and
+        [int]$_.particle_count -eq $requestedParticles -and
+        $_.representation -eq 'ion11'
+    })
+    if ($canonicalEntry.Count -ne 1 -or $ionEntry.Count -ne 1) {
+        throw 'Frozen paired bundle selection is not unique.'
+    }
+    $particlePath = Join-Path $frozenBundleRoot ([string]$canonicalEntry[0].relative_path)
+    $frozenIonPath = Join-Path $frozenBundleRoot ([string]$ionEntry[0].relative_path)
+    $frozenBindingArguments = @(
+        '-m','projects.rf_quadrupole_collision_cooling.analysis.validate_paired_particle_source_binding',
+        '--bundle-metadata',$frozenBundleMetadata,
+        '--source-family',$frozenSourceFamily,
+        '--distribution',$frozenDistribution,
+        '--resolved-design',$frozenResolved,
+        '--operating-point',$OperatingPoint,
+        '--particle-count',$requestedParticles,
+        '--consumed-representation','canonical10',
+        '--expected-consumed',$particlePath,
+        '--output',$sourceBinding
+    )
+    & $python @frozenBindingArguments
+    if ($LASTEXITCODE -ne 0) { throw 'Frozen paired particle source bundle binding failed.' }
+    $bindingDocument = Get-Content -LiteralPath $sourceBinding -Raw -Encoding UTF8 | ConvertFrom-Json
+    $preflightArguments = @(
+        '-m','common.multipole.particle_source_preflight',
+        '--source',$particlePath,
+        '--resolved-design',$frozenResolved,
+        '--source-family',$frozenSourceFamily,
+        '--operating-point',$OperatingPoint,
+        '--expected-source-family-sha256',$sourceFamilySha,
+        '--output',$sourceMetadata
+    )
+    & $python @preflightArguments
+    if ($LASTEXITCODE -ne 0) { throw 'Canonical particle source preflight failed.' }
+    $sourceMetadataDocument = Get-Content -LiteralPath $sourceMetadata -Raw -Encoding UTF8 | ConvertFrom-Json
+    $expectedParticles = [int]$sourceMetadataDocument.particle_count
+    $minimumParticles = (
+        Get-Content -LiteralPath (Join-Path $projectRoot 'config\modes\transport_interface_readiness.json') `
+            -Raw -Encoding UTF8 | ConvertFrom-Json
+    ).numerics.minimum_diagnostic_particles
+    if ($expectedParticles -lt $minimumParticles) {
+        throw "Interface-readiness mode requires at least $minimumParticles particles."
+    }
+    $sourceProjectionArguments = @(
+        '-m','common.multipole.simion_particle_source',
+        '--particles',$particlePath,
+        '--resolved-design',$frozenResolved,
+        '--source-family',$frozenSourceFamily,
+        '--operating-point',$OperatingPoint,
+        '--expected-source-family-sha256',$sourceFamilySha,
+        '--fly2',$flyPath,
+        '--source-states-lua',$sourceStatesLua
+    )
+    & $python @sourceProjectionArguments
+    if ($LASTEXITCODE -ne 0) { throw 'Canonical SIMION particle projection failed.' }
 } finally { Pop-Location }
-if ($LASTEXITCODE -ne 0) { throw 'Fixed FLY2 generation failed.' }
+Copy-Item -LiteralPath $officialIob -Destination (Join-Path $candidateDir 'quad_monolithic.iob') -Force
 
 $resolved = Get-Content -LiteralPath $frozenResolved -Raw -Encoding UTF8 | ConvertFrom-Json
 $numericalMode = Get-Content -LiteralPath $frozenMode -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -111,7 +191,6 @@ $FrequencyHz = [double]$resolved.drive.frequency_Hz
 $particleStateCsv = Join-Path $resultDir 'particle_state.csv'
 $trajectoryCsv = Join-Path $resultDir 'trajectory_samples.csv'
 $summaryJson = Join-Path $resultDir 'solver_summary.json'
-$runConfigPath = Join-Path $runDir 'run_config.json'
 $runConfigLua = Join-Path $runDir 'run_config.lua'
 $iobReport = Join-Path $logDir 'simion_iob_contract.txt'
 $stateContractReport = Join-Path $resultDir 'particle_state_contract.json'
@@ -122,19 +201,49 @@ $staticElectrodes = $resolved.static_electrodes_V
 $simionCellMm = 0.2
 $runConfig = [ordered]@{
     schema_version=1; role='rf_quadrupole_simion_run_config'; run_id=$RunId
-    project='rf_quadrupole_collision_cooling'; mode=$Mode; project_root=$projectRoot
-    inputs=[ordered]@{baseline=$frozenBaseline; resolved_design=$frozenResolved; interface_contract=$frozenInterface; mode=$frozenMode; particle_table=$ionPath; source_states=$sourceStatesLua}
+    project='rf_quadrupole_collision_cooling'; mode=$mode; project_root=$projectRoot
+    inputs=[ordered]@{baseline=$frozenBaseline; resolved_design=$frozenResolved; interface_contract=$frozenInterface; mode=$frozenMode; particle_table=$particlePath; source_states=$sourceStatesLua}
     output_dir=$resultDir; candidate_dir=$candidateDir; run_dir=$runDir
     rf_steps_per_period=$RfStepsPerPeriod; trajectory_quality=$TrajectoryQuality
-    source_axial_offset_mm=$SourceAxialOffsetMm; operating_point=$OperatingPoint
+    source_axial_offset_mm=0.0; operating_point=$OperatingPoint
     rf_peak_v=$RfPeakV; dc_amplitude_v=$dcAmplitudeV; frequency_hz=$FrequencyHz; particles=$expectedParticles
 }
-if ($isMassFilter) { $runConfig.inputs.mass_scan_metadata = $massScanMetadata }
+$runConfig.inputs.source_ion11 = $frozenIonPath
+$runConfig.inputs.consumed_particle_table = $particlePath
+$runConfig.inputs.particle_bundle_metadata = $frozenBundleMetadata
+$runConfig.inputs.particle_source_binding = $sourceBinding
+$runConfig.inputs.particle_source_family = $frozenSourceFamily
+$runConfig.inputs.particle_source_distribution = $frozenDistribution
+$runConfig.inputs.particle_source_metadata = $sourceMetadata
+$bundleArtifactIndex = 0
+foreach ($entry in $bundleDocument.artifacts) {
+    $bundleArtifactIndex += 1
+    $runConfig.inputs[("bundle_artifact_{0:D3}" -f $bundleArtifactIndex)] = Join-Path `
+        $frozenBundleRoot ([string]$entry.relative_path)
+}
+$runConfig.provenance = [ordered]@{
+    source_sample_family_sha256 = [string]$bindingDocument.source_sample_family_sha256
+    source_family_sha256 = [string]$bindingDocument.source_family_sha256
+    distribution_sha256 = [string]$bindingDocument.distribution_sha256
+    latent_sha256 = [string]$bindingDocument.latent_sha256
+    coordinate_mapping_version = [string]$bindingDocument.coordinate_mapping_version
+    representation_equivalence = [string]$bindingDocument.representation_equivalence
+    operating_point_id = $OperatingPoint
+    particle_count = $expectedParticles
+    representation = 'canonical10'
+    consumed_sha256 = [string]$bindingDocument.consumed_sha256
+    particle_source_sha256 = [string]$bindingDocument.consumed_sha256
+    ion11_sha256 = [string]$bindingDocument.ion11_sha256
+    canonical10_sha256 = [string]$bindingDocument.canonical10_sha256
+    n1000_parent = $bindingDocument.n1000_parent
+    ion11_n1000_parent = $bindingDocument.ion11_n1000_parent
+    canonical10_n1000_parent = $bindingDocument.canonical10_n1000_parent
+}
 $runConfig | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $runConfigPath -Encoding UTF8
 function New-LuaConfig([string]$caseName,[string]$caseState,[string]$caseTrajectory,[string]$caseSummary){
 @"
 return {
-  mode=[[$Mode]], operating_point=[[$caseName]],
+  mode=[[$mode]], operating_point=[[$caseName]],
   iob=[[$(Join-Path $candidateDir 'quad_monolithic.iob')]], fly2=[[$flyPath]],
   source_states=dofile([[$sourceStatesLua]]),
   particle_state_csv=[[$caseState]], trajectory_csv=[[$caseTrajectory]], summary_json=[[$caseSummary]],
@@ -195,28 +304,17 @@ finally {
 }
 
 $summary = Get-Content -LiteralPath $summaryJson -Raw | ConvertFrom-Json
-if ($summary.particles -ne $expectedParticles -or $summary.collision_model -ne 'none' -or
-    (-not $isMassFilter -and $summary.transmission -lt 0.8)) {
-    throw "SIMION transport gate failed: $($summary | ConvertTo-Json -Compress)"
+if ($summary.particles -ne $expectedParticles -or $summary.collision_model -ne 'none') {
+    throw "SIMION transport execution integrity failed: $($summary | ConvertTo-Json -Compress)"
 }
+$physicalDecision = if ($summary.transmission -ge 0.8) { 'PASS' } else { 'FAIL' }
 Push-Location $repoRoot
 try { & $python -m common.contracts.particle_state `
-    --state $particleStateCsv --particles $ionPath --source-format ion11 --contract $frozenInterface `
-    --axial-offset-mm $SourceAxialOffsetMm --frequency-hz $FrequencyHz --phase-rad ($phaseDeg*[Math]::PI/180) `
+    --state $particleStateCsv --particles $particlePath `
+    --source-format canonical --contract $frozenInterface `
+    --axial-offset-mm 0.0 --frequency-hz $FrequencyHz --phase-rad ($phaseDeg*[Math]::PI/180) `
     --solver SIMION --output $stateContractReport } finally { Pop-Location }
 if ($LASTEXITCODE -ne 0) { throw 'Particle-state contract gate failed.' }
-$massResponseCsv = Join-Path $resultDir 'mass-response__simion.csv'
-$massMetricsJson = Join-Path $resultDir 'mass-filter__simion-functional-metrics.json'
-$massResponseFigure = Join-Path $resultDir 'mass-response__simion-passband.png'
-$massMetrics = $null
-if ($isMassFilter) {
-    & $python -m projects.rf_quadrupole_collision_cooling.analysis.analyze_simion_mass_scan `
-        --state $particleStateCsv --particles $ionPath `
-        --baseline $frozenBaseline --mode $frozenMode `
-        --response $massResponseCsv --metrics $massMetricsJson --figure $massResponseFigure
-    if ($LASTEXITCODE -ne 0) { throw 'SIMION mass-filter functional analysis failed.' }
-    $massMetrics = Get-Content -LiteralPath $massMetricsJson -Raw -Encoding UTF8 | ConvertFrom-Json
-}
 $shaPath = Join-Path $candidateDir 'SHA256SUMS.csv'
 $hashes = Get-ChildItem -LiteralPath $candidateDir -File | Where-Object {
     $_.Name -ne 'SHA256SUMS.csv' -and $_.Name -notlike 'trj*.tmp'
@@ -224,14 +322,10 @@ $hashes = Get-ChildItem -LiteralPath $candidateDir -File | Where-Object {
     [pscustomobject]@{file=$_.Name; bytes=$_.Length; sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash}
 }
 $hashes | Export-Csv -LiteralPath $shaPath -NoTypeInformation -Encoding UTF8
-$runSummary = Join-Path $runDir 'summary.json'
-$summaryRole = if ($isMassFilter) { 'rf_quadrupole_mass_filter_summary' } else { 'rf_quadrupole_transport_summary' }
-$rootSummary = [ordered]@{schema_version=1;role=$summaryRole;status='success';mode=$Mode;particles=$expectedParticles;hits=$summary.hits;transmission=$summary.transmission}
-if ($isMassFilter) {
-    $rootSummary.functional_gate = $massMetrics.status
-    $rootSummary.mass_response = 'results/mass-response__simion.csv'
-    $rootSummary.metrics = 'results/mass-filter__simion-functional-metrics.json'
-    $rootSummary.figure = 'results/mass-response__simion-passband.png'
+$rootSummary = [ordered]@{
+    schema_version=1;role='rf_quadrupole_transport_summary';status='success';mode=$mode
+    physical_decision=$physicalDecision
+    particles=$expectedParticles;hits=$summary.hits;transmission=$summary.transmission
 }
 $rootSummary | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $runSummary -Encoding UTF8
 $manifestOutputs = @(
@@ -240,9 +334,13 @@ $manifestOutputs = @(
     (Join-Path $candidateDir 'quad_monolithic.iob'),(Join-Path $candidateDir 'quad_monolithic.pa0'),
     $flyPath,$iobReport,$shaPath,$runSummary
 )
-if ($isMassFilter) {
-    $manifestOutputs += @($massResponseCsv,$massMetricsJson,$massResponseFigure)
-}
-Write-RunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfigPath -Status success `
+Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfigPath -Status success `
     -Software @('SIMION 2020','Python 3.11') -Outputs $manifestOutputs
-"STATUS=PASS RUN_ID=$RunId HITS=$($summary.hits) TRANSMISSION=$($summary.transmission)"
+"EXECUTION=PASS DECISION=$physicalDecision RUN_ID=$RunId HITS=$($summary.hits) TRANSMISSION=$($summary.transmission)"
+}
+catch {
+    Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $runConfigPath -Summary $runSummary `
+        -SummaryRole 'rf_quadrupole_transport_summary' -Reason $_.Exception.Message `
+        -Software @('SIMION 2020','Python 3.11')
+    throw
+}

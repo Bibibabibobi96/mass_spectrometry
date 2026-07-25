@@ -1,46 +1,172 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
+from projects.rf_quadrupole_collision_cooling.analysis.generate_interface_particle_table import (
+    generate_bundle,
+)
+from projects.rf_quadrupole_collision_cooling.analysis.validate_paired_particle_source_binding import (
+    resolve_binding,
+)
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = PROJECT_ROOT.parents[1]
 CROSS_ROOT = PROJECT_ROOT / "tests" / "cross_solver"
 IDENTITY_HELPER = CROSS_ROOT / "particle_table_identity.ps1"
 CROSS_RUNNER = CROSS_ROOT / "verify_transport_candidate.ps1"
+COMSOL_RUNNER = PROJECT_ROOT / "tests" / "comsol" / "run_transport_candidate.ps1"
 PROJECT_GATE = PROJECT_ROOT / "verify_project.ps1"
 
 
 @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
 class ParticleTableIdentityTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.temporary = tempfile.TemporaryDirectory()
+        root = Path(cls.temporary.name)
+        cls.source_family = (
+            PROJECT_ROOT / "config" / "interface_readiness_particle_source.json"
+        )
+        cls.distribution = (
+            PROJECT_ROOT / "config" / "official_particle_source.json"
+        )
+        cls.resolved = (
+            PROJECT_ROOT / "config" / "resolved_design_official.json"
+        )
+        cls.primary = root / "primary"
+        cls.alternate = root / "alternate"
+        generate_bundle(
+            cls.source_family,
+            cls.distribution,
+            cls.resolved,
+            cls.primary,
+        )
+        generate_bundle(
+            cls.source_family,
+            cls.distribution,
+            cls.resolved,
+            cls.alternate,
+            seed=8675309,
+        )
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.temporary.cleanup()
+
+    def write_config(
+        self,
+        root: Path,
+        solver: str,
+        bundle: Path,
+        *,
+        tamper_provenance: bool = False,
+    ) -> Path:
+        representation = "ion11" if solver == "COMSOL" else "canonical10"
+        consumed = (
+            bundle / "official_100amu_2eV_n100.ion"
+            if representation == "ion11"
+            else bundle / "official_100amu_2eV_n100_canonical.csv"
+        )
+        ion11 = bundle / "official_100amu_2eV_n100.ion"
+        canonical = bundle / "official_100amu_2eV_n100_canonical.csv"
+        metadata = bundle / "paired_particle_bundle.json"
+        binding = resolve_binding(
+            metadata,
+            self.source_family,
+            self.distribution,
+            self.resolved,
+            "official_100amu_2eV",
+            100,
+            representation,
+            consumed,
+        )
+        provenance = {
+            field: binding[field]
+            for field in (
+                "source_sample_family_sha256",
+                "source_family_sha256",
+                "distribution_sha256",
+                "latent_sha256",
+                "coordinate_mapping_version",
+                "representation_equivalence",
+                "operating_point_id",
+                "particle_count",
+                "representation",
+                "consumed_sha256",
+                "ion11_sha256",
+                "canonical10_sha256",
+                "n1000_parent",
+                "ion11_n1000_parent",
+                "canonical10_n1000_parent",
+            )
+        }
+        if tamper_provenance:
+            provenance["latent_sha256"] = "0" * 64
+        config = {
+            "role": (
+                "rf_quadrupole_comsol_run_config"
+                if solver == "COMSOL"
+                else "rf_quadrupole_simion_run_config"
+            ),
+            "mode": "transport_interface_readiness",
+            "project_root": str(PROJECT_ROOT),
+            "operating_point": "official_100amu_2eV",
+            "particles": 100,
+            "inputs": {
+                "particle_table": str(consumed),
+                "consumed_particle_table": str(consumed),
+                "source_ion11": str(ion11),
+                "source_canonical10": str(canonical),
+                "particle_bundle_metadata": str(metadata),
+                "particle_source_family": str(self.source_family),
+                "particle_source_distribution": str(self.distribution),
+                "resolved_design": str(self.resolved),
+            },
+            "provenance": provenance,
+        }
+        path = root / f"{solver.lower()}_config.json"
+        path.write_text(json.dumps(config), encoding="utf-8")
+        return path
+
     def run_identity(
         self,
-        comsol: Path,
-        simion: Path,
+        comsol_config: Path,
+        simion_config: Path,
+        output_root: Path,
         explicit: Path | None = None,
     ) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
         environment.update(
             {
                 "RF_IDENTITY_HELPER": str(IDENTITY_HELPER),
-                "RF_COMSOL_PARTICLES": str(comsol),
-                "RF_SIMION_PARTICLES": str(simion),
+                "RF_COMSOL_CONFIG": str(comsol_config),
+                "RF_SIMION_CONFIG": str(simion_config),
+                "RF_COMSOL_BINDING": str(output_root / "comsol_binding.json"),
+                "RF_SIMION_BINDING": str(output_root / "simion_binding.json"),
+                "RF_REPO_ROOT": str(REPO_ROOT),
+                "RF_PYTHON": sys.executable,
                 "RF_EXPLICIT_PARTICLES": "" if explicit is None else str(explicit),
             }
         )
         command = (
             ". $env:RF_IDENTITY_HELPER; "
+            "$comsol = Get-Content $env:RF_COMSOL_CONFIG -Raw | ConvertFrom-Json; "
+            "$simion = Get-Content $env:RF_SIMION_CONFIG -Raw | ConvertFrom-Json; "
             "$identity = Assert-RfTransportParticleTableIdentity "
-            "-ComsolParticlePath $env:RF_COMSOL_PARTICLES "
-            "-SimionParticlePath $env:RF_SIMION_PARTICLES "
-            "-ExplicitParticlePath $env:RF_EXPLICIT_PARTICLES; "
+            "-Python $env:RF_PYTHON -RepoRoot $env:RF_REPO_ROOT "
+            "-ComsolRunConfig $comsol -SimionRunConfig $simion "
+            "-ComsolBindingOutput $env:RF_COMSOL_BINDING "
+            "-SimionBindingOutput $env:RF_SIMION_BINDING "
+            "-ExplicitIon11Path $env:RF_EXPLICIT_PARTICLES; "
             "$identity | ConvertTo-Json -Compress"
         )
         return subprocess.run(
@@ -51,81 +177,99 @@ class ParticleTableIdentityTests(unittest.TestCase):
             env=environment,
         )
 
-    def test_different_paths_with_identical_content_are_accepted(self) -> None:
+    def test_cross_representation_same_bundle_is_accepted(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            comsol = root / "comsol-input.ion"
-            simion = root / "simion-frozen-input.ion"
-            explicit = root / "explicit-original.ion"
-            payload = b"0,100,1,0,0,0,0,0,2,1,1\n"
-            for path in (comsol, simion, explicit):
-                path.write_bytes(payload)
+            comsol = self.write_config(root, "COMSOL", self.primary)
+            simion = self.write_config(root, "SIMION", self.primary)
 
-            result = self.run_identity(comsol, simion, explicit)
+            result = self.run_identity(comsol, simion, root)
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            identity = json.loads(result.stdout)
-            self.assertEqual(identity["path"], str(explicit.resolve()))
+            identity = json.loads(result.stdout.splitlines()[-1])
             self.assertEqual(
-                identity["sha256"],
-                hashlib.sha256(payload).hexdigest().upper(),
+                identity["source_sample_family_sha256"],
+                json.loads(
+                    (self.primary / "paired_particle_bundle.json").read_text()
+                )["sample_family_sha256"],
+            )
+            self.assertNotEqual(
+                identity["ion11_sha256"],
+                identity["canonical10_sha256"],
             )
 
-    def test_identical_content_without_explicit_path_uses_comsol_copy(self) -> None:
+    def test_mass_filter_run_role_is_rejected_before_binding(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            comsol = root / "comsol-input.ion"
-            simion = root / "simion-frozen-input.ion"
-            payload = b"same-frozen-particle-family\n"
-            comsol.write_bytes(payload)
-            simion.write_bytes(payload)
+            comsol = self.write_config(root, "COMSOL", self.primary)
+            simion = self.write_config(root, "SIMION", self.primary)
+            config = json.loads(simion.read_text(encoding="utf-8"))
+            config["role"] = "rf_quadrupole_simion_mass_filter_run_config"
+            config["mode"] = "mass_filter_reference"
+            simion.write_text(json.dumps(config), encoding="utf-8")
 
-            result = self.run_identity(comsol, simion)
-
-            self.assertEqual(result.returncode, 0, result.stderr)
-            identity = json.loads(result.stdout)
-            self.assertEqual(identity["path"], str(comsol.resolve()))
-            self.assertEqual(
-                identity["sha256"],
-                hashlib.sha256(payload).hexdigest().upper(),
-            )
-
-    def test_different_solver_content_is_rejected(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            comsol = root / "comsol-input.ion"
-            simion = root / "simion-frozen-input.ion"
-            comsol.write_text("same-family-row\n", encoding="ascii")
-            simion.write_text("changed-family-row\n", encoding="ascii")
-
-            result = self.run_identity(comsol, simion)
+            result = self.run_identity(comsol, simion, root)
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn(
-                "COMSOL and SIMION particle table contents differ.",
-                result.stderr,
-            )
+            self.assertIn("interface transport run-config roles", result.stderr)
 
-    def test_different_explicit_content_is_rejected(self) -> None:
+    def test_different_bundle_sample_family_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            comsol = root / "comsol-input.ion"
-            simion = root / "simion-frozen-input.ion"
-            explicit = root / "wrong-explicit-input.ion"
-            comsol.write_text("same-family-row\n", encoding="ascii")
-            simion.write_text("same-family-row\n", encoding="ascii")
-            explicit.write_text("different-family-row\n", encoding="ascii")
+            comsol = self.write_config(root, "COMSOL", self.primary)
+            simion = self.write_config(root, "SIMION", self.alternate)
 
-            result = self.run_identity(comsol, simion, explicit)
+            result = self.run_identity(comsol, simion, root)
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn(
-                "Explicit particle table contents differ from the solver run configs.",
-                result.stderr,
+
+    def test_tampered_run_provenance_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            comsol = self.write_config(
+                root,
+                "COMSOL",
+                self.primary,
+                tamper_provenance=True,
             )
+            simion = self.write_config(root, "SIMION", self.primary)
+
+            result = self.run_identity(comsol, simion, root)
+
+            self.assertNotEqual(result.returncode, 0)
+
+    def test_wrong_explicit_ion11_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            comsol = self.write_config(root, "COMSOL", self.primary)
+            simion = self.write_config(root, "SIMION", self.primary)
+            wrong = root / "wrong.ion"
+            wrong.write_text("not-the-bundle-source\n", encoding="ascii")
+
+            result = self.run_identity(comsol, simion, root, wrong)
+
+            self.assertNotEqual(result.returncode, 0)
 
 
 class CandidateGateParameterContractTests(unittest.TestCase):
+    def test_comsol_runner_consumes_frozen_bundle_ion11_with_binding(self) -> None:
+        runner = COMSOL_RUNNER.read_text(encoding="utf-8")
+        self.assertIn("[string]$ParticleBundleMetadataPath", runner)
+        self.assertIn(
+            "validate_paired_particle_source_binding",
+            runner,
+        )
+        self.assertIn("'--consumed-representation','ion11'", runner)
+        self.assertIn("particle_table=$particleTable", runner)
+        self.assertIn("consumed_particle_table=$particleTable", runner)
+        self.assertIn("source_ion11=$particleTable", runner)
+        self.assertIn("source_canonical10=$frozenCanonicalPath", runner)
+        self.assertIn('("bundle_artifact_{0:D3}"', runner)
+        self.assertIn(
+            "representation_equivalence=[string]$bindingDocument.representation_equivalence",
+            runner,
+        )
+
     def test_runner_separates_execution_manifest_from_scientific_decision(self) -> None:
         cross_runner = CROSS_RUNNER.read_text(encoding="utf-8")
         self.assertIn("--particles $particlePath", cross_runner)
@@ -139,20 +283,22 @@ class CandidateGateParameterContractTests(unittest.TestCase):
         self.assertIn("--status failed", cross_runner)
         self.assertIn("decision_status='NOT_EVALUATED'", cross_runner)
 
-    def test_cross_run_config_freezes_both_solver_particle_tables_and_hash(self) -> None:
+    def test_cross_run_config_freezes_cross_representation_bindings(self) -> None:
         cross_runner = CROSS_RUNNER.read_text(encoding="utf-8")
         self.assertIn(
-            "comsol_particle_table=$comsolParticlePath",
+            "comsol_particle_table=$particleIdentity.comsol_consumed_path",
             cross_runner,
         )
         self.assertIn(
-            "simion_particle_table=$simionParticlePath",
+            "simion_particle_table=$particleIdentity.simion_consumed_path",
             cross_runner,
         )
         self.assertIn(
-            "particle_table_sha256=$particleIdentity.sha256",
+            "source_sample_family_sha256=$particleIdentity.source_sample_family_sha256",
             cross_runner,
         )
+        self.assertIn("Format='ion11'", cross_runner)
+        self.assertIn("Format='canonical'", cross_runner)
 
     def test_project_gate_preserves_public_labels_and_maps_to_runner_ids(self) -> None:
         project_gate = PROJECT_GATE.read_text(encoding="utf-8")

@@ -5,6 +5,9 @@ param(
     [double]$MeshHmaxMm = [double]::NaN,
     [double]$SourceAxialOffsetMm = 0.0,
     [string]$ParticleTablePath = '',
+    [string]$ParticleBundleMetadataPath = '',
+    [string]$SourceFamilyPath = '',
+    [string]$ParticleDistributionPath = '',
     [ValidateSet('transport_interface_readiness')][string]$Mode = 'transport_interface_readiness',
     [string]$OperatingPoint = 'official_100amu_2eV'
 )
@@ -43,12 +46,100 @@ $minimumParticles = (Get-Content -LiteralPath (Join-Path $projectRoot 'config\mo
 if ([string]::IsNullOrWhiteSpace($ParticleTablePath) -or $expectedParticles -lt $minimumParticles) {
     throw "Interface-readiness mode requires an explicit particle table with at least $minimumParticles particles."
 }
+if ([string]::IsNullOrWhiteSpace($ParticleBundleMetadataPath)) {
+    throw 'Interface-readiness mode requires ParticleBundleMetadataPath.'
+}
+$bundleMetadataInput = [IO.Path]::GetFullPath($ParticleBundleMetadataPath)
+$sourceFamilyInput = if ($SourceFamilyPath) {
+    [IO.Path]::GetFullPath($SourceFamilyPath)
+} else {
+    Join-Path $projectRoot 'config\interface_readiness_particle_source.json'
+}
+$distributionInput = if ($ParticleDistributionPath) {
+    [IO.Path]::GetFullPath($ParticleDistributionPath)
+} else {
+    Join-Path $projectRoot 'config\official_particle_source.json'
+}
+foreach ($sourceContract in @($bundleMetadataInput,$sourceFamilyInput,$distributionInput)) {
+    if (-not (Test-Path -LiteralPath $sourceContract -PathType Leaf)) {
+        throw "Paired particle source contract is missing: $sourceContract"
+    }
+}
 $RfPeakV = [double]$resolved.drive.rf_amplitude_V_zero_to_peak_per_group
 $FrequencyHz = [double]$resolved.drive.frequency_Hz
 $PhaseRad = [double]$resolved.drive.phase_rad
 $modeInput = 'config/modes/transport_interface_readiness.json'
 
 New-Item -ItemType Directory -Path $runDir,$inputDir,$resultDir,$candidateDir,$logDir,$runtimeDir -Force | Out-Null
+
+$frozenSourceFamily = Join-Path $inputDir 'particle_source_family.json'
+$frozenDistribution = Join-Path $inputDir 'particle_source_distribution.json'
+$sourceBinding = Join-Path $inputDir 'particle_source_binding.json'
+Copy-Item -LiteralPath $sourceFamilyInput -Destination $frozenSourceFamily
+Copy-Item -LiteralPath $distributionInput -Destination $frozenDistribution
+$bindingArguments = @(
+    '-m','projects.rf_quadrupole_collision_cooling.analysis.validate_paired_particle_source_binding',
+    '--bundle-metadata',$bundleMetadataInput,
+    '--source-family',$frozenSourceFamily,
+    '--distribution',$frozenDistribution,
+    '--resolved-design',(Join-Path $projectRoot $resolvedContractInput),
+    '--operating-point',$OperatingPoint,
+    '--particle-count',$expectedParticles,
+    '--consumed-representation','ion11',
+    '--expected-consumed',$particleTable,
+    '--output',$sourceBinding
+)
+Push-Location $repoRoot
+try {
+    & $python @bindingArguments
+    if ($LASTEXITCODE -ne 0) { throw 'Paired particle source bundle binding failed.' }
+}
+finally { Pop-Location }
+$bundleDocument = Get-Content -LiteralPath $bundleMetadataInput -Raw -Encoding UTF8 | ConvertFrom-Json
+$frozenBundleRoot = Join-Path $inputDir 'paired_bundle'
+New-Item -ItemType Directory -Path $frozenBundleRoot -Force | Out-Null
+foreach ($entry in $bundleDocument.artifacts) {
+    $sourceArtifact = Join-Path (Split-Path -Parent $bundleMetadataInput) ([string]$entry.relative_path)
+    $frozenArtifact = Join-Path $frozenBundleRoot ([string]$entry.relative_path)
+    New-Item -ItemType Directory -Path (Split-Path -Parent $frozenArtifact) -Force | Out-Null
+    Copy-Item -LiteralPath $sourceArtifact -Destination $frozenArtifact
+}
+$frozenBundleMetadata = Join-Path $frozenBundleRoot 'paired_particle_bundle.json'
+Copy-Item -LiteralPath $bundleMetadataInput -Destination $frozenBundleMetadata
+$ionEntry = @($bundleDocument.artifacts | Where-Object {
+    $_.operating_point_id -eq $OperatingPoint -and
+    [int]$_.particle_count -eq $expectedParticles -and
+    $_.representation -eq 'ion11'
+})
+$canonicalEntry = @($bundleDocument.artifacts | Where-Object {
+    $_.operating_point_id -eq $OperatingPoint -and
+    [int]$_.particle_count -eq $expectedParticles -and
+    $_.representation -eq 'canonical10'
+})
+if ($ionEntry.Count -ne 1 -or $canonicalEntry.Count -ne 1) {
+    throw 'Frozen paired bundle selection is not unique.'
+}
+$particleTable = Join-Path $frozenBundleRoot ([string]$ionEntry[0].relative_path)
+$frozenCanonicalPath = Join-Path $frozenBundleRoot ([string]$canonicalEntry[0].relative_path)
+$frozenBindingArguments = @(
+    '-m','projects.rf_quadrupole_collision_cooling.analysis.validate_paired_particle_source_binding',
+    '--bundle-metadata',$frozenBundleMetadata,
+    '--source-family',$frozenSourceFamily,
+    '--distribution',$frozenDistribution,
+    '--resolved-design',(Join-Path $projectRoot $resolvedContractInput),
+    '--operating-point',$OperatingPoint,
+    '--particle-count',$expectedParticles,
+    '--consumed-representation','ion11',
+    '--expected-consumed',$particleTable,
+    '--output',$sourceBinding
+)
+Push-Location $repoRoot
+try {
+    & $python @frozenBindingArguments
+    if ($LASTEXITCODE -ne 0) { throw 'Frozen paired particle source bundle binding failed.' }
+}
+finally { Pop-Location }
+$bindingDocument = Get-Content -LiteralPath $sourceBinding -Raw -Encoding UTF8 | ConvertFrom-Json
 
 $runConfigPath = Join-Path $runDir 'run_config.json'
 $bootstrapReport = Join-Path $logDir 'comsol_bootstrap_report.txt'
@@ -61,6 +152,13 @@ $runConfig = [ordered]@{
         resolved_design=$resolvedContractInput
         mode=$modeInput; particle_table=$particleTable
         interface_contract='config/interface_contract.json'
+        consumed_particle_table=$particleTable
+        source_ion11=$particleTable
+        source_canonical10=$frozenCanonicalPath
+        particle_bundle_metadata=$frozenBundleMetadata
+        particle_source_binding=$sourceBinding
+        particle_source_family=$frozenSourceFamily
+        particle_source_distribution=$frozenDistribution
     }
     results_dir=$resultDir; comsol_dir=$candidateDir; logs_dir=$logDir; runtime_dir=$runtimeDir; run_dir=$runDir
     comsol_rf_steps_per_period=$RfStepsPerPeriod; comsol_mesh_auto_level=$MeshAutoLevel
@@ -68,6 +166,30 @@ $runConfig = [ordered]@{
     particle_table_path=$particleTable; operating_point=$OperatingPoint
     rf_peak_v=$RfPeakV; frequency_hz=$FrequencyHz; particles=$expectedParticles
     formal_gate_passed=$false
+    provenance=[ordered]@{
+        source_sample_family_sha256=[string]$bindingDocument.source_sample_family_sha256
+        source_family_sha256=[string]$bindingDocument.source_family_sha256
+        distribution_sha256=[string]$bindingDocument.distribution_sha256
+        latent_sha256=[string]$bindingDocument.latent_sha256
+        coordinate_mapping_version=[string]$bindingDocument.coordinate_mapping_version
+        representation_equivalence=[string]$bindingDocument.representation_equivalence
+        operating_point_id=$OperatingPoint
+        particle_count=$expectedParticles
+        representation='ion11'
+        consumed_sha256=[string]$bindingDocument.consumed_sha256
+        particle_source_sha256=[string]$bindingDocument.consumed_sha256
+        ion11_sha256=[string]$bindingDocument.ion11_sha256
+        canonical10_sha256=[string]$bindingDocument.canonical10_sha256
+        n1000_parent=$bindingDocument.n1000_parent
+        ion11_n1000_parent=$bindingDocument.ion11_n1000_parent
+        canonical10_n1000_parent=$bindingDocument.canonical10_n1000_parent
+    }
+}
+$bundleArtifactIndex = 0
+foreach ($entry in $bundleDocument.artifacts) {
+    $bundleArtifactIndex += 1
+    $runConfig.inputs[("bundle_artifact_{0:D3}" -f $bundleArtifactIndex)] = Join-Path `
+        $frozenBundleRoot ([string]$entry.relative_path)
 }
 # The run config is ASCII-only.  Avoid the Windows PowerShell 5.1 UTF-8 BOM,
 # which MATLAB jsondecode treats as an invalid first JSON character.
