@@ -36,9 +36,9 @@
         },
         {
           "step_id": "cross_solver_comparison", "kind": "analyze", "shell": "powershell",
-          "entrypoint": "tests/cross_solver/verify_transport_candidate.ps1",
+          "entrypoint": "tests/cross_solver/verify_no_collision_candidate.ps1",
           "run_id_template": "{timestamp}__analysis__cross__rf-transport__no-collision",
-          "arguments": ["-ComsolRunId", "{comsol_run_id}", "-SimionRunId", "{simion_run_id}", "-RunId", "{cross_solver_comparison_run_id}", "-Mode", "transport_no_collision", "-PythonExe", "{python_exe}"]
+          "arguments": ["-ComsolRunId", "{comsol_run_id}", "-SimionRunId", "{simion_run_id}", "-RunId", "{cross_solver_comparison_run_id}", "-PythonExe", "{python_exe}"]
         },
         {
           "step_id": "candidate_gate", "kind": "gate", "shell": "powershell",
@@ -83,7 +83,7 @@
           "step_id": "comsol_run", "kind": "run", "shell": "powershell",
           "entrypoint": "tests/comsol/run_transport_candidate.ps1",
           "run_id_template": "{timestamp}__sim__comsol__rf-transport__interface-readiness",
-          "arguments": ["-RunId", "{comsol_run_id}", "-ParticleTablePath", "{comsol_particle_source_path}", "-ParticleBundleMetadataPath", "{particle_bundle_metadata_path}", "-SourceFamilyPath", "{particle_source_family_path}", "-ParticleDistributionPath", "{particle_distribution_path}", "-OperatingPoint", "{operating_point_id}", "-Mode", "transport_interface_readiness"]
+          "arguments": ["-RunId", "{comsol_run_id}", "-ParticleTablePath", "{comsol_particle_source_path}", "-ParticleBundleMetadataPath", "{particle_bundle_metadata_path}", "-SourceFamilyPath", "{particle_source_family_path}", "-ParticleDistributionPath", "{particle_distribution_path}", "-SolverNumericsContractPath", "projects/rf_quadrupole_collision_cooling/config/comsol_solver_numerics.json", "-SolverNumericsProfileId", "baseline", "-OperatingPoint", "{operating_point_id}"]
         },
         {
           "step_id": "simion_run", "kind": "run", "shell": "powershell",
@@ -95,7 +95,7 @@
           "step_id": "cross_solver_comparison", "kind": "analyze", "shell": "powershell",
           "entrypoint": "tests/cross_solver/verify_transport_candidate.ps1",
           "run_id_template": "{timestamp}__analysis__cross__rf-transport__interface-readiness",
-          "arguments": ["-ComsolRunId", "{comsol_run_id}", "-SimionRunId", "{simion_run_id}", "-RunId", "{cross_solver_comparison_run_id}", "-Mode", "transport_interface_readiness", "-PythonExe", "{python_exe}"]
+          "arguments": ["-ComsolRunId", "{comsol_run_id}", "-SimionRunId", "{simion_run_id}", "-RunId", "{cross_solver_comparison_run_id}", "-PythonExe", "{python_exe}"]
         },
         {
           "step_id": "candidate_gate", "kind": "gate", "shell": "powershell",

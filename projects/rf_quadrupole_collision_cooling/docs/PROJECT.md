@@ -54,6 +54,12 @@ RF→oaTOF连接功能任务已经收口。默认1 mm被动连接器的N=100累�
 相空间一致性目标。因此独立四极杆的严格跨求解器接口仍为FAIL；该结论与已完成的RF→oaTOF功能链
 分别回答“求解器是否一致”和“系统能否贯通”，不能互相替代。
 
+跨求解器分析现已拆成两个不可切换的声明入口：无碰撞部件回归只消费
+`transport_no_collision`证据并要求完整handoff；接口就绪只消费
+`transport_interface_readiness`证据并遵循接口合同的最低样本量和相空间目标。二者共享不含求解器、
+mode和阈值的粒子事件计算内核，但分别发布schema v2结果；集成消费者必须同时显式提供两份结果，
+不再接受旧版混合报告，也不能用粒子数隐式切换结论。
+
 ### RF→oaTOF当前活动入口与资格边界
 
 当前活动机器合同为[`../config/rf_to_oatof_s2_passive_connector.json`](../config/rf_to_oatof_s2_passive_connector.json)
@@ -143,12 +149,34 @@ schema。Lua validator必须检查本次candidate中冻结、实际交给SIMION�
 - `interface_contract.json`唯一规定frame、事件、交接面和状态schema；
   `config/simion_solver_numerics.json`唯一规定SIMION cell、RF步数、quality与最长时间，不复制物理驱动
   或科学验收阈值。
+- `config/comsol_solver_numerics.json`唯一规定活动COMSOL网格、RF时间离散和最长时间。`baseline`
+  是普通interface profile唯一允许的生产数值身份；`time_refined_160`只能由
+  `same_solver_numerical_convergence`授权选择。interface mode不再保存COMSOL最长时间、网格或步数，
+  runner CLI也不接受数值标量覆盖。schema、role、ID、current状态和重算逻辑SHA-256必须同时匹配仓库
+  权威；外部路径不能自授身份。冻结后的PowerShell编译器是唯一profile validator/compiler，MATLAB
+  只消费完整`compiled_solver_numerics`并做最小类型/范围防御，同时核对compiled envelope与顶层冻结
+  identity/数值镜像；它不理解合同profile注册表或授权选择规则。
 - 配对bundle metadata是接口两种粒子表示及其等价关系的权威；质量过滤mode只规定质量集合、每质量N和
   功能阈值，生成的多质量ION11必须在本次run冻结。
 - `execution_profiles.json`只绑定workflow身份、输入身份和明确实验变量；路径、run ID、种子等实例值
   冻结进run config，profile不得内嵌resolved中的RF、DC、频率、静态电极或几何标量。
 - 静态门禁必须验证入口无`Mode`参数、profile无重复物理标量、shared core无role/workflow分支、两个
   workflow均经同一完整Lua合同编译/校验，并在缺失物理字段时于商业运行前失败关闭。
+
+COMSOL接口入口同样固定为单用途。`tests/comsol/run_transport_candidate.ps1`从冻结的official resolved、
+interface contract、interface scientific mode、配对bundle和唯一COMSOL numerics合同在内存编译本次
+scientific spec；`comsol/ms_rf_quadrupole_interface_transport.m`复核RF-only、无碰撞、无静态端场及科学
+阈值后，才调用workflow中性的`ms_rf_quadrupole_no_collision.m`。共享solver不读取`Mode`、不选择claim或
+gate；质量过滤legacy入口只把独立质量case交给同一场/粒子机制，仍保持report-only迁移边界。
+
+COMSOL interface run在创建目录时先写`interrupted`三件套，冻结并验证全部输入后再次复核initialization
+manifest；随后才允许LiveLink启动。任一配置、启动、GUI Compute、状态合同或manifest错误都由同一顶层
+`catch/finally`写成可复核的`failed`三件套并恢复环境。该生命周期变更只有静态与纯合同回归证据，尚未
+执行新的COMSOL求解或GUI复验。
+
+`execution_profiles.json`的两类跨求解器分析也不再用`Mode`切换：普通无碰撞profile固定调用
+`verify_no_collision_candidate.ps1`，接口profile固定调用`verify_transport_candidate.ps1`。两者只接收各自
+来源run身份；科学合同和数值合同从已验证来源run config及manifest读取，不由比较入口重新指定。
 
 ### 架构门禁推广与债务棘轮
 
@@ -363,6 +391,8 @@ target-entry surface及物理矩形孔准备；oaTOF baseline particle-source bo
 
 运行产物只进入`artifacts/projects/rf_quadrupole_collision_cooling/runs/<run_id>/`。成功、失败和中断run均
 保存根级`run_config.json + summary.json + run_manifest.json`；跨求解器run引用来源manifest，不复制大结果。
+同求解器数值比较也只冻结caller显式声明的最小role闭包：无路径来源identity、必要配置/粒子源、小型
+结果表及SIMION PA identity inventory；不复制完整source manifest、未消费的MPH、PA本体或日志。
 
 历史只供追溯，不覆盖本页：
 

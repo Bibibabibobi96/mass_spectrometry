@@ -171,6 +171,8 @@ class ParticleTableIdentityTests(unittest.TestCase):
         )
         return subprocess.run(
             ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+            cwd=REPO_ROOT,
+            timeout=60,
             capture_output=True,
             check=False,
             encoding="utf-8",
@@ -272,25 +274,28 @@ class CandidateGateParameterContractTests(unittest.TestCase):
 
     def test_runner_separates_execution_manifest_from_scientific_decision(self) -> None:
         cross_runner = CROSS_RUNNER.read_text(encoding="utf-8")
-        self.assertIn("--particles $particlePath", cross_runner)
+        support = (
+            PROJECT_ROOT
+            / "tests"
+            / "support"
+            / "cross_solver_analysis_support.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertIn("'--particles',$frozenIon11", cross_runner)
         self.assertIn("execution_status='success'", cross_runner)
-        self.assertIn("decision_status=$comparisonDocument.status", cross_runner)
-        success_manifest = cross_runner.index("--status success")
-        decision_failure = cross_runner.index(
-            "if ($comparisonDocument.status -ne 'PASS')"
-        )
-        self.assertLess(success_manifest, decision_failure)
-        self.assertIn("--status failed", cross_runner)
-        self.assertIn("decision_status='NOT_EVALUATED'", cross_runner)
+        self.assertIn("decision_status=$decisionStatus", cross_runner)
+        self.assertIn("-Status success", support)
+        self.assertIn("if($decisionStatus-ne'PASS')", cross_runner)
+        self.assertIn("Complete-FailedRun", cross_runner)
+        self.assertIn("$decisionStatus = 'NOT_EVALUATED'", cross_runner)
 
     def test_cross_run_config_freezes_cross_representation_bindings(self) -> None:
         cross_runner = CROSS_RUNNER.read_text(encoding="utf-8")
         self.assertIn(
-            "comsol_particle_table=$particleIdentity.comsol_consumed_path",
+            "particle_table_ion11=$frozenIon11",
             cross_runner,
         )
         self.assertIn(
-            "simion_particle_table=$particleIdentity.simion_consumed_path",
+            "particle_table_canonical10=$frozenCanonical",
             cross_runner,
         )
         self.assertIn(
@@ -299,6 +304,8 @@ class CandidateGateParameterContractTests(unittest.TestCase):
         )
         self.assertIn("Format='ion11'", cross_runner)
         self.assertIn("Format='canonical'", cross_runner)
+        self.assertIn("Copy-CrossSolverAnalysisInputs", cross_runner)
+        self.assertIn("Complete-CrossSolverAnalysis", cross_runner)
 
     def test_project_gate_preserves_public_labels_and_maps_to_runner_ids(self) -> None:
         project_gate = PROJECT_GATE.read_text(encoding="utf-8")

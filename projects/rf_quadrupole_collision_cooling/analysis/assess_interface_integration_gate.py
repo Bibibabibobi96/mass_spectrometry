@@ -21,8 +21,24 @@ def write(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
-def pct(value: float) -> float:
-    return 100.0 * value
+def pct(value: float | None) -> float | None:
+    return None if value is None else 100.0 * value
+
+
+def validate_comparison_result(
+    document: dict[str, Any],
+    role: str,
+    workflow: str,
+) -> None:
+    if (
+        document.get("schema_version") != 2
+        or document.get("role") != role
+        or document.get("workflow") != workflow
+        or document.get("execution_status") != "success"
+        or document.get("status") not in {"PASS", "FAIL", "NOT_EVALUATED"}
+        or not isinstance(document.get("gates"), dict)
+    ):
+        raise ValueError(f"{workflow} comparison result identity is invalid")
 
 
 def integration_contract_complete(contract: dict[str, Any] | None) -> bool:
@@ -36,6 +52,7 @@ def integration_contract_complete(contract: dict[str, Any] | None) -> bool:
 def decide_gate(
     regression_pass: bool,
     strict_interface_pass: bool,
+    interface_evaluated: bool,
     contract_complete: bool,
     functional_status: str,
 ) -> tuple[str, list[str], str]:
@@ -43,10 +60,14 @@ def decide_gate(
     blockers: list[str] = []
     if not regression_pass:
         blockers.append("component_regression_failed")
-    if not strict_interface_pass:
+    if interface_evaluated and not strict_interface_pass:
         blockers.append("strict_interface_failed")
+    if not interface_evaluated:
+        blockers.append("interface_readiness_not_evaluated")
     if not contract_complete:
         blockers.append("missing_integration_contract")
+    if not interface_evaluated:
+        return "FAIL", blockers, "interface_readiness_not_evaluated"
     if not regression_pass or not contract_complete:
         return "FAIL", blockers, blockers[0]
     if strict_interface_pass:
@@ -62,7 +83,8 @@ def decide_gate(
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--interface", required=True, type=Path)
+    parser.add_argument("--component-regression", required=True, type=Path)
+    parser.add_argument("--interface-comparison", required=True, type=Path)
     parser.add_argument("--field-convergence", required=True, type=Path)
     parser.add_argument("--phase-diagnostics", required=True, type=Path)
     parser.add_argument("--internal-release", required=True, type=Path)
@@ -72,7 +94,18 @@ def main() -> None:
     parser.add_argument("--output-dir", required=True, type=Path)
     args = parser.parse_args()
 
-    interface = load(args.interface)
+    component = load(args.component_regression)
+    interface = load(args.interface_comparison)
+    validate_comparison_result(
+        component,
+        "rf_quadrupole_no_collision_cross_solver_result",
+        "transport_no_collision",
+    )
+    validate_comparison_result(
+        interface,
+        "rf_quadrupole_interface_readiness_cross_solver_result",
+        "transport_interface_readiness",
+    )
     convergence = load(args.field_convergence)
     phase = load(args.phase_diagnostics)
     internal = load(args.internal_release)
@@ -80,9 +113,6 @@ def main() -> None:
     integration_contract = load(args.integration_contract) if args.integration_contract else None
     functional_result = load(args.functional_result) if args.functional_result else None
     targets = mode["candidate_acceptance_targets"]
-    if int(interface["particles"]) < int(mode["numerics"]["minimum_diagnostic_particles"]):
-        raise ValueError("Interface sample is below the configured diagnostic minimum.")
-
     simion = convergence["SIMION_0p2_to_0p1"]
     comsol = convergence["COMSOL_mesh1_to_hmax0p5"]
     region_rows: list[dict[str, Any]] = []
@@ -121,12 +151,37 @@ def main() -> None:
     }
 
     observed = interface["comparison"]
+    interface_evaluated = interface["status"] in {"PASS", "FAIL"}
+
+    def target_check(name: str, target: str) -> bool:
+        value = observed.get(name)
+        return (
+            interface_evaluated
+            and value is not None
+            and value <= targets[target]
+        )
+
     target_checks = {
-        "transmission": observed["transmission_absolute_difference"] <= targets["cross_solver_transmission_absolute_difference"],
-        "mean_tof": observed["mean_tof_relative_difference"] <= targets["cross_solver_relative_mean_tof_difference"],
-        "rms_radius": observed["rms_radius_relative_difference"] <= targets["cross_solver_relative_rms_output_radius_difference"],
-        "rms_divergence": observed["rms_divergence_relative_difference"] <= targets["cross_solver_relative_rms_divergence_difference"],
-        "mean_energy": observed["mean_energy_relative_difference"] <= targets["cross_solver_relative_mean_energy_difference"],
+        "transmission": target_check(
+            "transmission_absolute_difference",
+            "cross_solver_transmission_absolute_difference",
+        ),
+        "mean_tof": target_check(
+            "mean_tof_relative_difference",
+            "cross_solver_relative_mean_tof_difference",
+        ),
+        "rms_radius": target_check(
+            "rms_radius_relative_difference",
+            "cross_solver_relative_rms_output_radius_difference",
+        ),
+        "rms_divergence": target_check(
+            "rms_divergence_relative_difference",
+            "cross_solver_relative_rms_divergence_difference",
+        ),
+        "mean_energy": target_check(
+            "mean_energy_relative_difference",
+            "cross_solver_relative_mean_energy_difference",
+        ),
     }
     budget = {
         "schema_version": 1,
@@ -159,12 +214,18 @@ def main() -> None:
         },
     }
 
-    regression_pass = all(interface["regression_gates"].values())
-    strict_pass = all(target_checks.values())
+    regression_pass = (
+        component["status"] == "PASS" and all(component["gates"].values())
+    )
+    strict_pass = interface["status"] == "PASS" and all(target_checks.values())
     contract_complete = integration_contract_complete(integration_contract)
     functional_status = budget["alternative_functional_criterion"]["status"]
     verdict, blockers, failure_class = decide_gate(
-        regression_pass, strict_pass, contract_complete, functional_status
+        regression_pass,
+        strict_pass,
+        interface_evaluated,
+        contract_complete,
+        functional_status,
     )
     gate = {
         "schema_version": 1,

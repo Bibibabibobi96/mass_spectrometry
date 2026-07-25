@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "role": "rf_quadrupole_comsol_solver_numerics",
+  "contract_id": "rf_quadrupole.comsol_solver_numerics.v1",
+  "status": "current_candidate_solver_numerics",
+  "current": true,
+  "logical_sha256": "49DB3951BCFD42FAE6C78917D86ABC218AC5F4C1543D74FC1A4B0AC564EBBA2D",
+  "profiles": [
+    {
+      "profile_id": "baseline",
+      "usage": "production",
+      "mesh": {
+        "global_auto_level": 1,
+        "working_region_hmax_override_enabled": false
+      },
+      "trajectory": {
+        "rf_steps_per_period": 80,
+        "maximum_time_us": 80.0
+      }
+    },
+    {
+      "profile_id": "time_refined_160",
+      "usage": "registered_experiment",
+      "authorization_id": "same_solver_numerical_convergence",
+      "mesh": {
+        "global_auto_level": 1,
+        "working_region_hmax_override_enabled": false
+      },
+      "trajectory": {
+        "rf_steps_per_period": 160,
+        "maximum_time_us": 80.0
+      }
+    }
+  ]
+}

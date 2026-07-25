@@ -1,9 +1,10 @@
 """History-only compatibility entry for the retired 25-particle closure.
 
 Current cross-solver evidence must use
-``tests/cross_solver/verify_transport_candidate.ps1`` and its governed
-``compare_particle_state.py`` implementation.  Keeping a second comparison
-implementation would allow threshold and physical-authority drift.
+``tests/cross_solver/verify_transport_candidate.ps1`` for interface readiness
+or ``tests/cross_solver/verify_no_collision_candidate.ps1`` for component
+regression. Keeping another comparison implementation would allow threshold
+and physical-authority drift.
 """
 
 from __future__ import annotations

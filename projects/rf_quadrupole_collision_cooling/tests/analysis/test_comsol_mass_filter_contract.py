@@ -49,8 +49,11 @@ class ComsolMassFilterContractTests(unittest.TestCase):
 
     def test_matlab_builder_superposes_differential_and_static_fields(self) -> None:
         builder = (PROJECT_ROOT / "comsol" / "ms_rf_quadrupole_no_collision.m").read_text(encoding="utf-8")
-        self.assertIn("'mass_filter_reference'", builder)
-        self.assertIn("runConfig.inputs,'resolved_design'", builder)
+        mass_task = (PROJECT_ROOT / "tests" / "comsol" / "run_mass_filter_scan.m").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("'mass_filter_reference'", builder)
+        self.assertIn("requireExistingFile(inputs,'resolved_design')", builder)
         self.assertIn("drive=resolved.drive", builder)
         self.assertIn("V_dc+V_rf*sin", builder)
         self.assertIn("Vdiff", builder)
@@ -58,6 +61,8 @@ class ComsolMassFilterContractTests(unittest.TestCase):
         self.assertIn("-d(Vdiff,x))-axial_scale*d(Vstatic,x)", builder)
         self.assertIn("p.set('axial_scale','1')", builder)
         self.assertIn("staticElectrodes=resolved.static_electrodes_V", builder)
+        self.assertIn("caseConfig.workflow_id,'mass_filter_reference'", mass_task)
+        self.assertIn("ms_rf_quadrupole_no_collision(caseConfig)", mass_task)
 
     def test_comsol_runners_freeze_the_governed_resolved_design(self) -> None:
         transport_runner = (PROJECT_ROOT / "tests" / "comsol" / "run_transport_candidate.ps1").read_text(
@@ -100,13 +105,17 @@ class ComsolMassFilterContractTests(unittest.TestCase):
     def test_project_comsol_runner_and_builder_retain_only_specialized_modes(self) -> None:
         runner = (PROJECT_ROOT / "tests/comsol/run_transport_candidate.ps1").read_text(encoding="utf-8")
         builder = (PROJECT_ROOT / "comsol/ms_rf_quadrupole_no_collision.m").read_text(encoding="utf-8")
+        dedicated = (
+            PROJECT_ROOT / "comsol/ms_rf_quadrupole_interface_transport.m"
+        ).read_text(encoding="utf-8")
         for source in (runner, builder):
             self.assertNotIn("[ValidateSet('transport_no_collision'", source)
             self.assertNotIn("'axial_acceleration_reference'", source)
             self.assertNotIn("'endplate_acceleration_reference'", source)
         self.assertIn("'transport_interface_readiness'", runner)
-        self.assertIn("'transport_interface_readiness'", builder)
-        self.assertIn("'mass_filter_reference'", builder)
+        self.assertIn("'transport_interface_readiness'", dedicated)
+        self.assertNotIn("'transport_interface_readiness'", builder)
+        self.assertNotIn("'mass_filter_reference'", builder)
 
 
 if __name__ == "__main__":

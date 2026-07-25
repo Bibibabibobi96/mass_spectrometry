@@ -7,8 +7,12 @@ try
     scan = jsondecode(fileread(scanConfigPath));
     assert(~isempty(scan.cases), 'Mass-filter scan contains no cases.');
     for index = 1:numel(scan.cases)
-        setenv('RFQUAD_RUN_CONFIG', scan.cases(index).run_config);
-        ms_rf_quadrupole_no_collision();
+        caseConfigPath=scan.cases(index).run_config;
+        setenv('RFQUAD_RUN_CONFIG',caseConfigPath);
+        caseConfig=jsondecode(fileread(caseConfigPath));
+        assert(strcmp(caseConfig.workflow_id,'mass_filter_reference'), ...
+            'Mass-filter scan received a non-mass-filter case.');
+        ms_rf_quadrupole_no_collision(caseConfig);
     end
     setenv('RFQUAD_RUN_CONFIG', '');
     fid = fopen(reportPath, 'w');

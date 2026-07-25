@@ -12,20 +12,20 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from projects.rf_quadrupole_collision_cooling.analysis.compare_particle_state import (
-        aggregate,
-        load,
-        optional_relative_difference,
-        within,
-        wrapped_phase_difference,
+    from projects.rf_quadrupole_collision_cooling.analysis.particle_state_comparison_core import (
+        aggregate_handoff,
+        event_ids,
+        load_event_table,
+        optional_symmetric_relative_difference,
+        residual_values,
     )
 except ModuleNotFoundError:
-    from compare_particle_state import (
-        aggregate,
-        load,
-        optional_relative_difference,
-        within,
-        wrapped_phase_difference,
+    from particle_state_comparison_core import (
+        aggregate_handoff,
+        event_ids,
+        load_event_table,
+        optional_symmetric_relative_difference,
+        residual_values,
     )
 try:
     from projects.rf_quadrupole_collision_cooling.analysis.validate_paired_particle_source_binding import (
@@ -39,6 +39,10 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest().upper()
 
 
+def within_acceptance(value: float | None, maximum: float) -> bool:
+    return value is not None and value <= maximum
+
+
 def verify_record(name: str, record: dict[str, Any]) -> Path:
     path = Path(record["path"]).resolve()
     if not path.is_file():
@@ -48,6 +52,56 @@ def verify_record(name: str, record: dict[str, Any]) -> Path:
     if sha256(path) != str(record["sha256"]).upper():
         raise ValueError(f"{name} SHA-256 changed: {path}")
     return path
+
+
+def validate_source_run_identity(
+    path: Path,
+    manifest: dict[str, Any],
+    config: dict[str, Any],
+) -> None:
+    identity = json.loads(path.read_text(encoding="utf-8-sig"))
+    if set(identity) != {
+        "schema_version",
+        "role",
+        "source_manifest",
+        "run",
+        "run_config",
+    }:
+        raise ValueError("portable source-run identity fields differ")
+    source = identity["source_manifest"]
+    run = identity["run"]
+    run_config = identity["run_config"]
+    if (
+        identity["schema_version"] != 1
+        or identity["role"] != "portable_source_run_identity"
+        or set(source)
+        != {"schema_version", "role", "bytes", "sha256"}
+        or source["schema_version"] != manifest.get("schema_version")
+        or source["role"] != manifest.get("role")
+        or int(source["bytes"]) <= 0
+        or len(str(source["sha256"])) != 64
+        or set(run) != {"run_id", "project", "mode", "status"}
+        or run
+        != {
+            "run_id": manifest.get("run_id"),
+            "project": manifest.get("project"),
+            "mode": manifest.get("mode"),
+            "status": manifest.get("status"),
+        }
+        or set(run_config)
+        != {"schema_version", "role", "workflow_id"}
+        or run_config
+        != {
+            "schema_version": config.get("schema_version"),
+            "role": config.get("role"),
+            "workflow_id": str(config.get("workflow_id", "")),
+        }
+    ):
+        raise ValueError("portable source-run identity differs from its closure")
+    try:
+        int(str(source["sha256"]), 16)
+    except ValueError as error:
+        raise ValueError("portable source-manifest SHA-256 is invalid") from error
 
 
 def load_manifest(path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -63,6 +117,13 @@ def load_manifest(path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     for field in ("run_id", "project", "mode"):
         if manifest.get(field) != config.get(field):
             raise ValueError(f"manifest and run config {field} differ")
+    portable_closure = manifest.get("portable_closure")
+    if portable_closure is not None:
+        identity_record = portable_closure.get("source_run_identity")
+        if not isinstance(identity_record, dict):
+            raise ValueError("portable closure source-run identity is missing")
+        identity_path = verify_record("source-run identity", identity_record)
+        validate_source_run_identity(identity_path, manifest, config)
     return manifest, config
 
 
@@ -114,6 +175,17 @@ def normalized_run_config(
         if isinstance(provenance, dict):
             provenance.pop("rf_steps_per_period", None)
             provenance.pop("rf_steps_override", None)
+    if varied_parameter == "comsol_rf_steps_per_period":
+        normalized.pop("solver_numerics_profile_id", None)
+        normalized.pop("numerical_experiment_id", None)
+        compiled = normalized.get("compiled_solver_numerics")
+        if isinstance(compiled, dict):
+            compiled["selection"] = {
+                "validated_registered_pair_member": True
+            }
+            trajectory = compiled.get("trajectory")
+            if isinstance(trajectory, dict):
+                trajectory.pop("rf_steps_per_period", None)
     normalized["inputs"] = {
         name: {
             "bytes": int(record["bytes"]),
@@ -123,6 +195,61 @@ def normalized_run_config(
         if name != "particle_source_binding"
     }
     return canonicalize(normalized)
+
+
+def validate_derived_numerical_identity(
+    solver: str,
+    config: dict[str, Any],
+    numerical_value: int,
+) -> None:
+    if solver != "COMSOL":
+        return
+    expected = {
+        80: ("baseline", ""),
+        160: (
+            "time_refined_160",
+            "same_solver_numerical_convergence",
+        ),
+    }
+    if numerical_value not in expected:
+        raise ValueError("COMSOL numerical value has no registered profile")
+    profile_id, experiment_id = expected[numerical_value]
+    usage = "production" if numerical_value == 80 else "registered_experiment"
+    compiled = config.get("compiled_solver_numerics")
+    if not isinstance(compiled, dict):
+        raise ValueError("COMSOL compiled numerical identity is missing")
+    authority = compiled.get("authority")
+    selection = compiled.get("selection")
+    mesh = compiled.get("mesh")
+    trajectory = compiled.get("trajectory")
+    if (
+        config.get("solver_numerics_profile_id") != profile_id
+        or config.get("numerical_experiment_id") != experiment_id
+        or compiled.get("schema_version") != 1
+        or compiled.get("role")
+        != "rf_quadrupole_compiled_comsol_solver_numerics"
+        or not isinstance(authority, dict)
+        or authority.get("contract_id")
+        != config.get("solver_numerics_contract_id")
+        or authority.get("logical_sha256")
+        != config.get("solver_numerics_contract_logical_sha256")
+        or selection
+        != {
+            "profile_id": profile_id,
+            "usage": usage,
+            "numerical_experiment_id": experiment_id,
+        }
+        or not isinstance(mesh, dict)
+        or mesh.get("global_auto_level")
+        != config.get("comsol_mesh_auto_level")
+        or not isinstance(trajectory, dict)
+        or trajectory.get("rf_steps_per_period") != numerical_value
+        or trajectory.get("maximum_time_us")
+        != config.get("maximum_time_us")
+    ):
+        raise ValueError(
+            "COMSOL numerical profile identity differs from its RF step count"
+        )
 
 
 def solver_from_role(role: str) -> str:
@@ -136,15 +263,20 @@ def solver_from_role(role: str) -> str:
 
 
 def numerical_pair(
-    solver: str, matrix: dict[str, Any], contract: dict[str, Any], contract_path: Path
+    solver: str,
+    matrix: dict[str, Any],
+    contract: dict[str, Any],
+    contract_path: Path,
+    simion_numerics_path: Path | None,
 ) -> tuple[int, int]:
     if solver != "SIMION":
         return int(matrix["baseline_value"]), int(matrix["refined_value"])
     relative = contract.get("simion_solver_numerics_contract")
-    if not isinstance(relative, str) or not relative:
+    if relative != "config/simion_solver_numerics.json":
         raise ValueError("SIMION solver-numerics contract identity is missing")
-    project_root = contract_path.resolve().parents[1]
-    numerics_path = (project_root / relative).resolve()
+    numerics_path = simion_numerics_path
+    if numerics_path is None:
+        numerics_path = contract_path.resolve().parents[1] / relative
     if not numerics_path.is_file():
         raise ValueError("SIMION solver-numerics contract is missing")
     numerics = json.loads(numerics_path.read_text(encoding="utf-8-sig"))
@@ -230,31 +362,30 @@ def load_pa_core_inventory(manifest: dict[str, Any]) -> dict[str, dict[str, Any]
     inventory_path, _ = find_record(manifest.get("outputs", []), "SHA256SUMS.csv")
     with inventory_path.open(encoding="utf-8-sig", newline="") as handle:
         rows = list(csv.DictReader(handle))
-    inventory = {
-        row["file"]: {
-            "bytes": int(row["bytes"]),
-            "sha256": row["sha256"].upper(),
+    inventory: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        filename = row["file"]
+        if not filename.lower().startswith("quad_monolithic.pa"):
+            continue
+        if Path(filename).name != filename or filename in inventory:
+            raise ValueError("SIMION PA core inventory filename is invalid or duplicated")
+        byte_count = int(row["bytes"])
+        digest = row["sha256"].upper()
+        if byte_count <= 0 or len(digest) != 64:
+            raise ValueError("SIMION PA core inventory identity is invalid")
+        try:
+            int(digest, 16)
+        except ValueError as error:
+            raise ValueError(
+                "SIMION PA core inventory SHA-256 is invalid"
+            ) from error
+        inventory[filename] = {
+            "bytes": byte_count,
+            "sha256": digest,
         }
-        for row in rows
-        if row["file"].lower().startswith("quad_monolithic.pa")
-    }
     if not inventory:
         raise ValueError("SIMION PA core inventory is empty")
-    for filename, identity in inventory.items():
-        asset = inventory_path.parent / filename
-        if (
-            not asset.is_file()
-            or asset.stat().st_size != identity["bytes"]
-            or sha256(asset) != identity["sha256"]
-        ):
-            raise ValueError(f"SIMION PA core asset differs from inventory: {asset}")
     return inventory
-
-
-def event_ids(
-    rows: dict[tuple[int, str], dict[str, str]], event: str
-) -> set[int]:
-    return {particle_id for particle_id, row_event in rows if row_event == event}
 
 
 def residual_row(
@@ -282,33 +413,7 @@ def residual_row(
     }
     if baseline is None or refined is None:
         return row
-    dx = float(baseline["transverse_x_mm"]) - float(
-        refined["transverse_x_mm"]
-    )
-    dy = float(baseline["transverse_y_mm"]) - float(
-        refined["transverse_y_mm"]
-    )
-    dvz = float(baseline["velocity_axial_m_s"]) - float(
-        refined["velocity_axial_m_s"]
-    )
-    dvx = float(baseline["velocity_x_m_s"]) - float(refined["velocity_x_m_s"])
-    dvy = float(baseline["velocity_y_m_s"]) - float(refined["velocity_y_m_s"])
-    row.update(
-        {
-            "position_residual_mm": math.hypot(dx, dy),
-            "velocity_residual_m_s": math.sqrt(
-                dvz * dvz + dvx * dvx + dvy * dvy
-            ),
-            "tof_residual_us": float(baseline["elapsed_time_us"])
-            - float(refined["elapsed_time_us"]),
-            "energy_residual_eV": float(baseline["kinetic_energy_eV"])
-            - float(refined["kinetic_energy_eV"]),
-            "rf_phase_residual_rad": wrapped_phase_difference(
-                float(baseline["rf_phase_rad"]),
-                float(refined["rf_phase_rad"]),
-            ),
-        }
-    )
+    row.update(residual_values(particle_id, baseline, refined))
     return row
 
 
@@ -317,17 +422,24 @@ def main() -> None:
     parser.add_argument("--baseline-manifest", required=True, type=Path)
     parser.add_argument("--refined-manifest", required=True, type=Path)
     parser.add_argument("--contract", required=True, type=Path)
+    parser.add_argument("--simion-numerics", type=Path)
+    parser.add_argument("--particle-count-policy", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--census-output", required=True, type=Path)
     args = parser.parse_args()
 
     contract = json.loads(args.contract.read_text(encoding="utf-8-sig"))
+    particle_policy = json.loads(
+        args.particle_count_policy.read_text(encoding="utf-8-sig")
+    )
     if (
         contract.get("role")
         != "rf_quadrupole_same_solver_numerical_convergence_contract"
         or contract.get("status") != "numerical_screen_candidate_only"
     ):
         raise ValueError("same-solver numerical convergence contract is invalid")
+    if particle_policy.get("role") != "repository_particle_count_policy":
+        raise ValueError("particle-count policy identity differs")
     baseline_manifest, baseline_config = load_manifest(args.baseline_manifest)
     refined_manifest, refined_config = load_manifest(args.refined_manifest)
     baseline_solver = solver_from_role(str(baseline_config.get("role")))
@@ -340,23 +452,29 @@ def main() -> None:
         raise ValueError("run-config role differs from the preregistered matrix")
     varied = matrix["varied_parameter"]
     baseline_value, refined_value = numerical_pair(
-        solver, matrix, contract, args.contract
+        solver, matrix, contract, args.contract, args.simion_numerics
     )
     if (
         baseline_config.get(varied) != baseline_value
         or refined_config.get(varied) != refined_value
     ):
         raise ValueError("numerical step pair differs from the preregistered matrix")
+    validate_derived_numerical_identity(
+        solver, baseline_config, baseline_value
+    )
+    validate_derived_numerical_identity(
+        solver, refined_config, refined_value
+    )
     for field in ("project", "mode", "operating_point"):
         if baseline_config.get(field) != refined_config.get(field):
             raise ValueError(f"source run {field} differs")
     if baseline_config.get("mode") != contract["required_mode"]:
         raise ValueError("source run mode differs from the preregistered matrix")
-    expected_representation = "canonical10" if solver == "SIMION" else "ion11"
-    baseline_binding = recompute_source_binding(
-        baseline_config, expected_representation
-    )
-    refined_binding = recompute_source_binding(refined_config, expected_representation)
+    particles = int(baseline_config.get("particles", 0))
+    if particles <= 0 or int(refined_config.get("particles", 0)) != particles:
+        raise ValueError("source particle count differs or is empty")
+    minimum_particles = int(particle_policy["functional_check_count"])
+    sample_size_eligible = particles >= minimum_particles
     _, baseline_particle_record = particle_record(baseline_manifest)
     _, refined_particle_record = particle_record(refined_manifest)
     if (
@@ -364,9 +482,6 @@ def main() -> None:
         != str(refined_particle_record["sha256"]).upper()
     ):
         raise ValueError("source particle SHA-256 differs")
-    particles = int(baseline_binding["particle_count"])
-    if particles <= 0 or int(refined_binding["particle_count"]) != particles:
-        raise ValueError("source particle count differs or is empty")
     source_identity_fields = (
         "bundle_metadata_sha256",
         "source_sample_family_sha256",
@@ -384,11 +499,32 @@ def main() -> None:
         "ion11_n1000_parent",
         "canonical10_n1000_parent",
     )
-    if any(
-        baseline_binding[field] != refined_binding[field]
-        for field in source_identity_fields
-    ):
-        raise ValueError("same-solver paired source binding identity differs")
+    source_identity: dict[str, Any] = {}
+    if sample_size_eligible:
+        expected_representation = (
+            "canonical10" if solver == "SIMION" else "ion11"
+        )
+        baseline_binding = recompute_source_binding(
+            baseline_config, expected_representation
+        )
+        refined_binding = recompute_source_binding(
+            refined_config, expected_representation
+        )
+        if (
+            int(baseline_binding["particle_count"]) != particles
+            or int(refined_binding["particle_count"]) != particles
+        ):
+            raise ValueError("bound particle count differs from run config")
+        if any(
+            baseline_binding[field] != refined_binding[field]
+            for field in source_identity_fields
+        ):
+            raise ValueError(
+                "same-solver paired source binding identity differs"
+            )
+        source_identity = {
+            field: baseline_binding[field] for field in source_identity_fields
+        }
     if normalized_run_config(
         baseline_config, baseline_manifest, varied
     ) != normalized_run_config(refined_config, refined_manifest, varied):
@@ -436,15 +572,15 @@ def main() -> None:
             "policy": matrix["mesh_element_policy"],
         }
 
-    baseline_rows = load(baseline_state_path)
-    refined_rows = load(refined_state_path)
+    baseline_rows = load_event_table(baseline_state_path)
+    refined_rows = load_event_table(refined_state_path)
     expected_ids = set(range(1, particles + 1))
     if event_ids(baseline_rows, "source") != expected_ids or event_ids(
         refined_rows, "source"
     ) != expected_ids:
         raise ValueError("particle-state source IDs differ from the particle source")
-    baseline_aggregate = aggregate(baseline_rows, particles)
-    refined_aggregate = aggregate(refined_rows, particles)
+    baseline_aggregate = aggregate_handoff(baseline_rows, particles)
+    refined_aggregate = aggregate_handoff(refined_rows, particles)
     baseline_handoff = event_ids(baseline_rows, "handoff")
     refined_handoff = event_ids(refined_rows, "handoff")
     acceptance = contract["acceptance"]
@@ -453,48 +589,49 @@ def main() -> None:
             float(baseline_aggregate["transmission"])
             - float(refined_aggregate["transmission"])
         ),
-        "mean_tof_relative_difference": optional_relative_difference(
+        "mean_tof_relative_difference": optional_symmetric_relative_difference(
             baseline_aggregate["mean_tof_us"],
             refined_aggregate["mean_tof_us"],
         ),
-        "rms_radius_relative_difference": optional_relative_difference(
+        "rms_radius_relative_difference": optional_symmetric_relative_difference(
             baseline_aggregate["rms_radius_mm"],
             refined_aggregate["rms_radius_mm"],
         ),
-        "rms_divergence_relative_difference": optional_relative_difference(
+        "rms_divergence_relative_difference": optional_symmetric_relative_difference(
             baseline_aggregate["rms_divergence_deg"],
             refined_aggregate["rms_divergence_deg"],
         ),
-        "mean_energy_relative_difference": optional_relative_difference(
+        "mean_energy_relative_difference": optional_symmetric_relative_difference(
             baseline_aggregate["mean_energy_eV"],
             refined_aggregate["mean_energy_eV"],
         ),
     }
-    gates = {
+    evaluated_gates = {
         "handoff_particle_id_sets": baseline_handoff == refined_handoff
         and bool(baseline_handoff),
-        "transmission": within(
+        "transmission": within_acceptance(
             metrics["transmission_absolute_difference"],
             acceptance["transmission_absolute_difference"],
         ),
-        "mean_tof": within(
+        "mean_tof": within_acceptance(
             metrics["mean_tof_relative_difference"],
             acceptance["mean_tof_relative_difference"],
         ),
-        "rms_radius": within(
+        "rms_radius": within_acceptance(
             metrics["rms_radius_relative_difference"],
             acceptance["rms_radius_relative_difference"],
         ),
-        "rms_divergence": within(
+        "rms_divergence": within_acceptance(
             metrics["rms_divergence_relative_difference"],
             acceptance["rms_divergence_relative_difference"],
         ),
-        "mean_energy": within(
+        "mean_energy": within_acceptance(
             metrics["mean_energy_relative_difference"],
             acceptance["mean_energy_relative_difference"],
         ),
         "mesh_element_identity": mesh_element_identity,
     }
+    gates = evaluated_gates if sample_size_eligible else {}
     events = contract["event_census_schema"]
     census_rows: list[dict[str, Any]] = []
     for particle_id in range(1, particles + 1):
@@ -527,13 +664,21 @@ def main() -> None:
     result = {
         "schema_version": 1,
         "role": "rf_quadrupole_same_solver_numerical_convergence_result",
-        "status": "PASS" if all(gates.values()) else "FAIL",
+        "status": (
+            "NOT_EVALUATED"
+            if not sample_size_eligible
+            else "PASS"
+            if all(gates.values())
+            else "FAIL"
+        ),
         "execution_status": "success",
         "claim_status": contract["status"],
         "solver": solver,
         "mode": baseline_config["mode"],
         "operating_point": baseline_config["operating_point"],
         "particles": particles,
+        "minimum_functional_particles": minimum_particles,
+        "sample_size_eligible": sample_size_eligible,
         "numerical_parameter": {
             "name": varied,
             "baseline": baseline_config[varied],
@@ -546,10 +691,11 @@ def main() -> None:
                 baseline_particle_record["sha256"]
             ).upper(),
             "contract_sha256": sha256(args.contract),
+            "particle_count_policy_sha256": sha256(
+                args.particle_count_policy
+            ),
         },
-        "source_identity": {
-            field: baseline_binding[field] for field in source_identity_fields
-        },
+        "source_identity": source_identity,
         "asset_identity": asset_identity,
         "event_census": event_census,
         "baseline": baseline_aggregate,

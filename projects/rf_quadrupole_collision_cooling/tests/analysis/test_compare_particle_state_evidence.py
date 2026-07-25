@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import csv
 import json
 import subprocess
@@ -11,7 +12,13 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
-ANALYZER = PROJECT_ROOT / "analysis" / "compare_particle_state.py"
+PARTICLE_COUNT_POLICY = (
+    REPO_ROOT / "common" / "contracts" / "particle_count_policy.json"
+)
+ANALYSIS = PROJECT_ROOT / "analysis"
+INTERFACE = ANALYSIS / "compare_interface_readiness.py"
+NO_COLLISION = ANALYSIS / "compare_no_collision_transport.py"
+CORE = ANALYSIS / "particle_state_comparison_core.py"
 STATE_FIELDS = [
     "particle_id",
     "event",
@@ -29,25 +36,84 @@ STATE_FIELDS = [
 ]
 
 
-class CompareParticleStateEvidenceTests(unittest.TestCase):
-    particles = 5
+class SplitParticleStateComparisonTests(unittest.TestCase):
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.resolved = self.root / "resolved.json"
+        self.resolved.write_text(
+            json.dumps(
+                {
+                    "role": "multipole_resolved_design_do_not_edit",
+                    "geometry_mm": {"inscribed_radius_r0": 3.5},
+                }
+            ),
+            encoding="utf-8",
+        )
+        self.no_collision_mode = self.root / "no_collision.json"
+        self.no_collision_mode.write_text(
+            json.dumps(
+                {
+                    "mode": "transport_no_collision",
+                    "numerics": {
+                        "minimum_expected_transmission": 0.8,
+                        "cross_solver_transmission_absolute_tolerance": 0.1,
+                        "cross_solver_relative_mean_tof_tolerance": 0.1,
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        self.interface_mode = self.root / "interface.json"
+        self.interface_mode.write_text(
+            json.dumps(
+                {
+                    "mode": "transport_interface_readiness",
+                    "status": "candidate_only",
+                    "numerics": {"minimum_diagnostic_particles": 100},
+                    "candidate_acceptance_targets": {
+                        "policy": "diagnostic_only",
+                        "minimum_transmission": 0.8,
+                        "cross_solver_transmission_absolute_difference": 0.05,
+                        "cross_solver_relative_mean_tof_difference": 0.05,
+                        "cross_solver_relative_rms_output_radius_difference": 0.1,
+                        "cross_solver_relative_rms_divergence_difference": 0.15,
+                        "cross_solver_relative_mean_energy_difference": 0.02,
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
 
-    def write_state(self, path: Path, handoff_ids: set[int]) -> None:
+    @staticmethod
+    def write_state(
+        path: Path,
+        particle_count: int,
+        handoff_ids: set[int],
+        source_ids: set[int] | None = None,
+        duplicate_source: bool = False,
+    ) -> None:
+        if source_ids is None:
+            source_ids = set(range(1, particle_count + 1))
         with path.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.DictWriter(handle, fieldnames=STATE_FIELDS)
             writer.writeheader()
-            for particle_id in range(1, self.particles + 1):
+            for particle_id in sorted(source_ids):
                 writer.writerow({"particle_id": particle_id, "event": "source"})
+            if duplicate_source:
+                writer.writerow({"particle_id": 1, "event": "source"})
+            for particle_id in range(1, particle_count + 1):
                 if particle_id in handoff_ids:
                     writer.writerow(
                         {
                             "particle_id": particle_id,
                             "event": "handoff",
-                            "elapsed_time_us": 10 + particle_id / 10,
-                            "radial_position_mm": particle_id / 100,
-                            "divergence_angle_deg": particle_id / 100,
+                            "elapsed_time_us": 10 + particle_id / 1000,
+                            "radial_position_mm": 0.1,
+                            "divergence_angle_deg": 0.1,
                             "kinetic_energy_eV": 2,
-                            "transverse_x_mm": particle_id / 100,
+                            "transverse_x_mm": 0.1,
                             "transverse_y_mm": 0,
                             "velocity_axial_m_s": 1000,
                             "velocity_x_m_s": 0,
@@ -63,156 +129,198 @@ class CompareParticleStateEvidenceTests(unittest.TestCase):
                     }
                 )
 
-    def run_case(
+    def run_analyzer(
         self,
+        analyzer: Path,
+        particle_count: int,
         comsol_handoffs: set[int],
         simion_handoffs: set[int],
-    ) -> tuple[subprocess.CompletedProcess[str], dict, list[dict[str, str]]]:
-        temporary = tempfile.TemporaryDirectory()
-        self.addCleanup(temporary.cleanup)
-        root = Path(temporary.name)
-        comsol = root / "comsol.csv"
-        simion = root / "simion.csv"
-        particles = root / "particles.ion"
-        resolved = root / "resolved.json"
-        regression = root / "regression.json"
-        interface = root / "interface.json"
-        output = root / "comparison.json"
-        paired = root / "paired.csv"
-        self.write_state(comsol, comsol_handoffs)
-        self.write_state(simion, simion_handoffs)
-        particles.write_text("particle-row\n" * self.particles, encoding="ascii")
-        resolved.write_text(
-            json.dumps(
-                {
-                    "role": "multipole_resolved_design_do_not_edit",
-                    "geometry_mm": {"inscribed_radius_r0": 3.5},
-                }
-            ),
-            encoding="utf-8",
+        *,
+        source_ids: set[int] | None = None,
+        duplicate_source: bool = False,
+    ) -> tuple[subprocess.CompletedProcess[str], dict | None, list[dict[str, str]]]:
+        case = self.root / f"case_{len(list(self.root.glob('case_*')))}"
+        case.mkdir()
+        comsol = case / "comsol.csv"
+        simion = case / "simion.csv"
+        particles = case / "particles.dat"
+        output = case / "result.json"
+        census = case / "census.csv"
+        self.write_state(
+            comsol,
+            particle_count,
+            comsol_handoffs,
+            source_ids,
+            duplicate_source,
         )
-        regression.write_text(
-            json.dumps(
-                {
-                    "mode": "transport_no_collision",
-                    "numerics": {
-                        "minimum_expected_transmission": 0.8,
-                        "cross_solver_transmission_absolute_tolerance": 0.1,
-                        "cross_solver_relative_mean_tof_tolerance": 0.1,
-                    },
-                }
-            ),
-            encoding="utf-8",
-        )
-        interface.write_text(
-            json.dumps(
-                {
-                    "mode": "transport_interface_readiness",
-                    "numerics": {"minimum_diagnostic_particles": 1},
-                    "candidate_acceptance_targets": {
-                        "minimum_transmission": 0.8,
-                        "cross_solver_transmission_absolute_difference": 0.05,
-                        "cross_solver_relative_mean_tof_difference": 0.05,
-                        "cross_solver_relative_rms_output_radius_difference": 0.1,
-                        "cross_solver_relative_rms_divergence_difference": 0.15,
-                        "cross_solver_relative_mean_energy_difference": 0.02,
-                    },
-                }
-            ),
-            encoding="utf-8",
-        )
-        result = subprocess.run(
-            [
-                sys.executable,
-                str(ANALYZER),
-                "--comsol",
-                str(comsol),
-                "--simion",
-                str(simion),
+        self.write_state(simion, particle_count, simion_handoffs, source_ids)
+        particles.write_text("particle\n" * particle_count, encoding="ascii")
+        arguments = [
+            sys.executable,
+            str(analyzer),
+            "--comsol",
+            str(comsol),
+            "--simion",
+            str(simion),
+        ]
+        if analyzer == NO_COLLISION:
+            arguments += [
                 "--resolved",
-                str(resolved),
-                "--regression-mode",
-                str(regression),
-                "--interface-mode",
-                str(interface),
-                "--particles",
-                str(particles),
-                "--output",
-                str(output),
-                "--paired-output",
-                str(paired),
-            ],
+                str(self.resolved),
+                "--mode-contract",
+                str(self.no_collision_mode),
+                "--particle-count-policy",
+                str(PARTICLE_COUNT_POLICY),
+            ]
+        else:
+            arguments += [
+                "--mode-contract",
+                str(self.interface_mode),
+            ]
+        arguments += [
+            "--particles",
+            str(particles),
+            "--particle-count",
+            str(particle_count),
+            "--output",
+            str(output),
+            "--census-output",
+            str(census),
+        ]
+        completed = subprocess.run(
+            arguments,
             cwd=REPO_ROOT,
+            timeout=60,
             capture_output=True,
             check=False,
             encoding="utf-8",
         )
-        report = json.loads(output.read_text(encoding="utf-8"))
-        with paired.open(encoding="utf-8", newline="") as handle:
-            paired_rows = list(csv.DictReader(handle))
-        return result, report, paired_rows
+        report = (
+            json.loads(output.read_text(encoding="utf-8"))
+            if output.is_file()
+            else None
+        )
+        rows: list[dict[str, str]] = []
+        if census.is_file():
+            with census.open(encoding="utf-8", newline="") as handle:
+                rows = list(csv.DictReader(handle))
+        return completed, report, rows
 
-    def assert_complete_negative_evidence(
-        self,
-        comsol_handoffs: set[int],
-        simion_handoffs: set[int],
-    ) -> tuple[dict, list[dict[str, str]]]:
-        result, report, paired = self.run_case(
-            comsol_handoffs,
-            simion_handoffs,
+    def test_interface_identical_eighty_percent_survivors_can_pass(self) -> None:
+        survivors = set(range(1, 81))
+        result, report, census = self.run_analyzer(
+            INTERFACE, 100, survivors, survivors
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(report["execution_status"], "success")
-        self.assertEqual(report["status"], "FAIL")
-        self.assertEqual(len(paired), self.particles)
-        self.assertEqual(
-            [int(row["particle_id"]) for row in paired],
-            list(range(1, self.particles + 1)),
-        )
-        return report, paired
-
-    def test_empty_handoffs_fail_closed_with_full_id_evidence(self) -> None:
-        report, paired = self.assert_complete_negative_evidence(set(), set())
-        self.assertEqual(report["comsol"]["transmission"], 0)
-        self.assertIsNone(report["comparison"]["mean_tof_relative_difference"])
-        self.assertEqual({row["pair_status"] for row in paired}, {"neither"})
-
-    def test_disjoint_handoffs_are_not_silently_dropped(self) -> None:
-        report, paired = self.assert_complete_negative_evidence({1, 2}, {3, 4})
-        self.assertEqual(report["paired_handoff_particles"], 0)
-        self.assertEqual(
-            [row["pair_status"] for row in paired],
-            ["comsol_only", "comsol_only", "simion_only", "simion_only", "neither"],
-        )
-
-    def test_partial_pairing_is_reported_for_every_source_id(self) -> None:
-        report, paired = self.assert_complete_negative_evidence(
-            {1, 2, 3, 4, 5},
-            {1, 2, 3, 4},
-        )
-        self.assertEqual(report["paired_handoff_particles"], 4)
-        self.assertFalse(report["regression_gates"]["particle_identity"])
-        self.assertEqual(paired[-1]["pair_status"], "comsol_only")
-
-    def test_equal_but_low_transmission_fails_minimum_gate(self) -> None:
-        report, _ = self.assert_complete_negative_evidence({1, 2, 3}, {1, 2, 3})
-        self.assertFalse(
-            report["candidate_interface_targets_diagnostic_only"][
-                "minimum_transmission_comsol"
-            ]
-        )
-        self.assertFalse(
-            report["regression_gates"]["minimum_transmission_simion"]
-        )
-
-    def test_complete_matching_handoffs_pass(self) -> None:
-        all_ids = set(range(1, self.particles + 1))
-        result, report, paired = self.run_case(all_ids, all_ids)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(report["execution_status"], "success")
+        assert report is not None
         self.assertEqual(report["status"], "PASS")
-        self.assertTrue(all(report["regression_gates"].values()))
-        self.assertEqual({row["pair_status"] for row in paired}, {"paired"})
+        self.assertTrue(all(report["gates"].values()))
+        self.assertEqual(report["paired_handoff_particles"], 80)
+        self.assertEqual(len(census), 100)
+
+    def test_no_collision_requires_full_handoff_pairing(self) -> None:
+        survivors = set(range(1, 81))
+        result, report, _ = self.run_analyzer(
+            NO_COLLISION, 100, survivors, survivors
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        assert report is not None
+        self.assertEqual(report["status"], "FAIL")
+        self.assertFalse(report["gates"]["full_handoff_pairing"])
+
+    def test_interface_below_minimum_is_not_evaluated(self) -> None:
+        survivors = set(range(1, 100))
+        result, report, _ = self.run_analyzer(
+            INTERFACE, 99, survivors, survivors
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        assert report is not None
+        self.assertEqual(report["status"], "NOT_EVALUATED")
+        self.assertFalse(report["sample_size_eligible"])
+        self.assertEqual(report["gates"], {})
+
+    def test_invalid_source_identity_is_not_a_physical_fail(self) -> None:
+        source_ids = set(range(1, 100))
+        result, report, _ = self.run_analyzer(
+            INTERFACE,
+            100,
+            set(range(1, 81)),
+            set(range(1, 81)),
+            source_ids=source_ids,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        assert report is not None
+        self.assertEqual(report["status"], "NOT_EVALUATED")
+        self.assertFalse(report["source_evidence"]["valid"])
+        self.assertEqual(report["gates"], {})
+
+    def test_no_collision_claim_does_not_switch_with_sample_size(self) -> None:
+        statuses = []
+        reports = []
+        for count in (5, 100):
+            all_ids = set(range(1, count + 1))
+            result, report, _ = self.run_analyzer(
+                NO_COLLISION, count, all_ids, all_ids
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            assert report is not None
+            reports.append(report)
+            statuses.append((report["workflow"], report["status"]))
+        self.assertEqual(
+            statuses,
+            [
+                ("transport_no_collision", "NOT_EVALUATED"),
+                ("transport_no_collision", "PASS"),
+            ],
+        )
+        self.assertFalse(reports[0]["sample_size_eligible"])
+        self.assertEqual(reports[0]["gates"], {})
+        self.assertTrue(reports[1]["sample_size_eligible"])
+
+    def test_duplicate_event_is_an_execution_error(self) -> None:
+        result, report, _ = self.run_analyzer(
+            INTERFACE,
+            100,
+            set(range(1, 81)),
+            set(range(1, 81)),
+            duplicate_source=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIsNone(report)
+        self.assertIn("duplicate particle event", result.stderr)
+
+    def test_shared_core_has_no_claim_vocabulary(self) -> None:
+        source = CORE.read_text(encoding="utf-8").lower()
+        for forbidden in (
+            "solver",
+            "comsol",
+            "simion",
+            "mode",
+            "role",
+            "threshold",
+            "decision",
+        ):
+            self.assertNotIn(forbidden, source)
+        tree = ast.parse(source)
+        names = {
+            node.id
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Name)
+        }
+        arguments = {
+            argument.arg
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            for argument in (*node.args.args, *node.args.kwonlyargs)
+        }
+        self.assertTrue(
+            names.isdisjoint({"within", "acceptance", "threshold", "limit"})
+        )
+        self.assertTrue(
+            arguments.isdisjoint(
+                {"maximum", "limit", "acceptance", "threshold"}
+            )
+        )
 
 
 if __name__ == "__main__":

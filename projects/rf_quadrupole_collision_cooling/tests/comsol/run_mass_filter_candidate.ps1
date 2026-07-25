@@ -1,7 +1,7 @@
 param(
   [string]$RunId='',
-  [int]$RfStepsPerPeriod=80,
-  [int]$MeshAutoLevel=1,
+  [Parameter(Mandatory=$true)][string]$SolverNumericsContractPath,
+  [Parameter(Mandatory=$true)][string]$SolverNumericsProfileId,
   [string]$PythonExe='',
   [Parameter(Mandatory=$true)][string]$L1RunId,
   [Parameter(Mandatory=$true)][string]$SimionRunId
@@ -15,6 +15,7 @@ $workspaceRoot=Split-Path -Parent $repoRoot
 $artifactRoot=Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling'
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
 . (Join-Path $projectRoot 'tests\support\rf_run_artifact_support.ps1')
+. (Join-Path $projectRoot 'tests\support\comsol_solver_numerics_contract.ps1')
 if([string]::IsNullOrWhiteSpace($RunId)){
   $RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__sim__comsol__mass-filter__rf-dc-n700'
 }
@@ -27,10 +28,18 @@ $report=Join-Path $logDir 'comsol_mass_filter_scan.txt'
 $scanConfig=Join-Path $inputDir 'comsol_mass_scan_cases.json'
 
 try {
+  $officialNumerics=Join-Path $projectRoot 'config\comsol_solver_numerics.json'
+  $requestedNumerics=if([IO.Path]::IsPathRooted($SolverNumericsContractPath)){
+    [IO.Path]::GetFullPath($SolverNumericsContractPath)
+  }else{
+    [IO.Path]::GetFullPath((Join-Path $repoRoot $SolverNumericsContractPath))
+  }
   $sources=@{
     baseline=Join-Path $projectRoot 'config\baseline.json'
     mode=Join-Path $projectRoot 'config\modes\mass_filter_reference.json'
     resolved_design=Join-Path $projectRoot 'config\resolved_design_mass_filter.json'
+    interface_contract=Join-Path $projectRoot 'config\interface_contract.json'
+    comsol_solver_numerics=$officialNumerics
     particles=Join-Path $projectRoot 'config\particles\official_fixed_100.ion'
   }
   foreach($key in @($sources.Keys)){
@@ -38,6 +47,11 @@ try {
     Copy-Item -LiteralPath $sources[$key] -Destination $destination
     $sources[$key]=$destination
   }
+  $numericsCompilation=Compile-RfComsolSolverNumerics `
+    -OfficialContractPath $sources.comsol_solver_numerics `
+    -RequestedContractPath $requestedNumerics `
+    -ProfileId $SolverNumericsProfileId
+  $compiledNumerics=$numericsCompilation.compiled
   $sourceParticleCount=@(Get-Content -LiteralPath $sources.particles -Encoding UTF8|Where-Object{-not[string]::IsNullOrWhiteSpace($_)}).Count
   & $package.python -m common.contracts.particle_count_policy --count $sourceParticleCount
   if($LASTEXITCODE-ne 0){throw 'Mass-filter source violates the repository N=100/N=1000 policy.'}
@@ -107,12 +121,34 @@ try {
     $caseConfigPath=Join-Path $inputDir "case_mass_$token`_Th.json"
     $caseConfig=[ordered]@{
       schema_version=1;role='rf_quadrupole_comsol_mass_filter_case';run_id="${RunId}--mass-${token}-Th"
-      project='rf_quadrupole_collision_cooling';mode='mass_filter_reference';operating_point="mass_$token`_Th"
-      inputs=[ordered]@{resolved_design=$sources.resolved_design;mode=$sources.mode;particle_table=[string]$case.particle_table}
-      particle_table_path=[string]$case.particle_table;particles=[int]$case.particles
+      project='rf_quadrupole_collision_cooling';mode='mass_filter_reference'
+      workflow_id='mass_filter_reference';operating_point="mass_$token`_Th"
+      inputs=[ordered]@{
+        resolved_design=$sources.resolved_design
+        scientific_mode=$sources.mode
+        interface_contract=$sources.interface_contract
+        comsol_solver_numerics=$sources.comsol_solver_numerics
+        particle_table=[string]$case.particle_table
+      }
+      compiled_scientific_spec=[ordered]@{
+        role='rf_quadrupole_comsol_mass_filter_scientific_spec'
+        workflow_id='mass_filter_reference'
+        source_axial_offset_mm=0.0
+      }
+      compiled_solver_numerics=$compiledNumerics
+      solver_numerics_contract_id=$compiledNumerics.authority.contract_id
+      solver_numerics_contract_logical_sha256=$compiledNumerics.authority.logical_sha256
+      solver_numerics_profile_id=$compiledNumerics.selection.profile_id
+      numerical_experiment_id=$compiledNumerics.selection.numerical_experiment_id
+      particles=[int]$case.particles
       results_dir=$caseResultDir;comsol_dir=$caseComsolDir;runtime_dir=$caseRuntimeDir
-      comsol_rf_steps_per_period=$RfStepsPerPeriod;comsol_mesh_auto_level=$MeshAutoLevel
-      source_axial_offset_mm=0.0;save_model=($mass-eq $centerMass);write_detailed_outputs=$false
+      comsol_rf_steps_per_period=$compiledNumerics.trajectory.rf_steps_per_period
+      comsol_mesh_auto_level=$compiledNumerics.mesh.global_auto_level
+      maximum_time_us=$compiledNumerics.trajectory.maximum_time_us
+      output_policy=[ordered]@{
+        save_model=($mass-eq $centerMass)
+        write_detailed_outputs=$false
+      }
     }
     Write-RfJson -Value $caseConfig -Path $caseConfigPath
     $cases+=,[ordered]@{mass_Th=$mass;run_config=$caseConfigPath;solver_summary=(Join-Path $caseResultDir 'solver_summary.json');particle_state=(Join-Path $caseResultDir 'particle_state.csv')}
@@ -120,8 +156,13 @@ try {
   Write-RfJson -Value ([ordered]@{schema_version=1;role='rf_quadrupole_comsol_mass_filter_scan_execution';cases=$cases}) -Path $scanConfig
   $runConfiguration=[ordered]@{
     schema_version=1;run_id=$RunId;project='rf_quadrupole_collision_cooling';mode='mass_filter_reference';project_root=$repoRoot
-    inputs=[ordered]@{baseline=$sources.baseline;mode=$sources.mode;resolved_design=$sources.resolved_design;particle_cases=$caseMetadata;scan_execution=$scanConfig;l1_response=$l1Response;simion_response=$simionResponse;l1_run_manifest=(Join-Path $inputDir 'l1_run_manifest.json');simion_run_manifest=(Join-Path $inputDir 'simion_run_manifest.json');code=$codeInputs}
-    parameters=[ordered]@{particles_per_mass=$particlesPerMass;masses=$massCount;total_particles=$totalParticles;rf_steps_per_period=$RfStepsPerPeriod;mesh_auto_level=$MeshAutoLevel;compact_outputs=$true;saved_model_mass_Th=$centerMass;lifecycle_stage='inputs_frozen'}
+    inputs=[ordered]@{baseline=$sources.baseline;mode=$sources.mode;resolved_design=$sources.resolved_design;comsol_solver_numerics=$sources.comsol_solver_numerics;particle_cases=$caseMetadata;scan_execution=$scanConfig;l1_response=$l1Response;simion_response=$simionResponse;l1_run_manifest=(Join-Path $inputDir 'l1_run_manifest.json');simion_run_manifest=(Join-Path $inputDir 'simion_run_manifest.json');code=$codeInputs}
+    compiled_solver_numerics=$compiledNumerics
+    solver_numerics_contract_id=$compiledNumerics.authority.contract_id
+    solver_numerics_contract_logical_sha256=$compiledNumerics.authority.logical_sha256
+    solver_numerics_profile_id=$compiledNumerics.selection.profile_id
+    numerical_experiment_id=$compiledNumerics.selection.numerical_experiment_id
+    parameters=[ordered]@{particles_per_mass=$particlesPerMass;masses=$massCount;total_particles=$totalParticles;rf_steps_per_period=$compiledNumerics.trajectory.rf_steps_per_period;mesh_auto_level=$compiledNumerics.mesh.global_auto_level;compact_outputs=$true;saved_model_mass_Th=$centerMass;lifecycle_stage='inputs_frozen'}
     formal_gate_passed=$false
   }
   Write-RfJson -Value $runConfiguration -Path $package.run_config

@@ -77,7 +77,10 @@ S2–S3连接功能闭环记录：
 - 求解器无关有限长度 L1 功能扫描：[`analysis/run_mass_filter_l1.py`](analysis/run_mass_filter_l1.py)；使用
   当前79.6 mm杆长、4 mm场半径和官方源包络，输出质量响应、规范图和run三件套。它证明同一几何能
   形成理论一致的通带，但不包含边缘场，也不替代COMSOL/SIMION Candidate资格。
-- COMSOL 候选生产入口：[`comsol/ms_rf_quadrupole_no_collision.m`](comsol/ms_rf_quadrupole_no_collision.m)
+- COMSOL接口输运科学入口：
+  [`comsol/ms_rf_quadrupole_interface_transport.m`](comsol/ms_rf_quadrupole_interface_transport.m)；
+  [`comsol/ms_rf_quadrupole_no_collision.m`](comsol/ms_rf_quadrupole_no_collision.m)只接收已编译run config，
+  共享无碰撞几何、场、release和状态导出机制，不选择接口输运或质量过滤workflow。
 - 旧`comsol/ms_rf_quadrupole_collision_cooling.m`现为拒绝执行的兼容短桩；其150 mm旧几何、硬编码
   连接和未验证碰撞模型不得恢复为当前入口。未来碰撞模式必须从共享契约重新建立。
 - SIMION 几何入口：[`simion/geometry/quad_monolithic.gem`](simion/geometry/quad_monolithic.gem)
@@ -98,12 +101,23 @@ S2–S3连接功能闭环记录：
 - 两个SIMION入口不接受`Mode`切换，也不按输入扩展名自动路由：接口入口拒绝质量扫描参数，质量过滤
   入口拒绝bundle、canonical和接口工况参数；cross/same-solver接口门禁不得消费质量过滤run。
 - SIMION IOB 结构门禁：[`tests/simion/inspect_builtin_quad_reference.lua`](tests/simion/inspect_builtin_quad_reference.lua)
-- 跨求解器门禁：[`tests/cross_solver/verify_transport_candidate.ps1`](tests/cross_solver/verify_transport_candidate.ps1)
+- 跨求解器证据分为两个固定入口，不再由粒子数或`Mode`在运行时切换声明：
+  [`tests/cross_solver/verify_no_collision_candidate.ps1`](tests/cross_solver/verify_no_collision_candidate.ps1)
+  只判定无碰撞部件回归，
+  [`tests/cross_solver/verify_transport_candidate.ps1`](tests/cross_solver/verify_transport_candidate.ps1)
+  只判定接口就绪；两者分别生成独立schema v2结果和粒子事件census。接口样本低于合同最小值或来源
+  ID无效时为`NOT_EVALUATED`，不能降级成无碰撞结论；无碰撞完整handoff要求也不注入接口门禁。
 - 同求解器时间离散预注册筛选：
   [`tests/analysis/run_same_solver_numerical_comparison.ps1`](tests/analysis/run_same_solver_numerical_comparison.ps1)，
   仅接受SIMION 40→80或COMSOL 80→160 RF步/周期，并受
   [`config/same_solver_numerical_convergence.json`](config/same_solver_numerical_convergence.json)约束；
   该结果固定为Candidate数值筛选，不构成跨求解器、N=1000或Formal结论。
+- COMSOL唯一当前数值合同：
+  [`config/comsol_solver_numerics.json`](config/comsol_solver_numerics.json)。普通接口profile只使用
+  `baseline`（mesh auto 1、80 RF步/周期、80 µs）；`time_refined_160`只允许带
+  `same_solver_numerical_convergence`授权的预注册实验。schema、role、ID、current状态和逻辑SHA-256
+  共同绑定仓库权威；自定义路径必须逻辑完全相同。PowerShell冻结后唯一校验并编译，MATLAB只消费
+  `compiled_solver_numerics`并做最小类型/范围防御。科学mode和CLI不得复制或回退这些值。
 - 全项目门禁：`verify_project.ps1 -Level Static|Candidate|Formal`；Candidate必须显式给出 mode、COMSOL、
   SIMION和比较运行标签，Formal在机械几何与SolidWorks同步前固定拒绝执行。
 - 历史诊断图源码：
@@ -115,7 +129,8 @@ S2–S3连接功能闭环记录：
   [`analysis/compare_field_resolution_convergence.py`](analysis/compare_field_resolution_convergence.py)
 - 杆内释放诊断：[`analysis/compare_internal_release.py`](analysis/compare_internal_release.py)
 - 边缘定位、接口差异评估与oa-TOF集成门禁：
-  [`analysis/assess_interface_integration_gate.py`](analysis/assess_interface_integration_gate.py)
+  [`analysis/assess_interface_integration_gate.py`](analysis/assess_interface_integration_gate.py)；该消费者要求分别
+  提供无碰撞部件回归结果与接口比较结果，不接受旧版混合报告。
 - 通用部件链时钟、RF→oa-TOF候选投影合同与派生器：
   [`config/rf_to_oatof_handoff.json`](config/rf_to_oatof_handoff.json)、
   [`analysis/build_oatof_handoff.py`](analysis/build_oatof_handoff.py)。该合同现已被S2/S3物理链取代为
@@ -213,7 +228,9 @@ rf_quadrupole_collision_cooling/
 - 所有run config都同时记录共享硬件解析发布和本次mode解析发布；接口mode是对已闭合RF-only基础物理的
   资格叠加，不得隐式继承未记录的运行参数。
 - 新运行只以统一`particle_state.csv`、`summary.json`、稀疏轨迹和manifest为权威结果；不再生成旧版
-  solver-specific粒子终点表。每份manifest在比较前必须重新计算全部文件哈希。
+  solver-specific粒子终点表。比较入口必须由caller声明实际消费的input/output role，冻结并复核该最小
+  portable manifest闭包；来源run只保留无路径的标量identity及原manifest bytes/SHA-256，不复制完整
+  source manifest，未消费的MPH、PA本体和日志也不得被复制或伪装成比较依赖。
 - 部件交接面、杆端诊断面和独立传输检测面必须分别读取接口机器契约，不得相互替代。
 - 跨部件时间不得在求解器边界丢失：状态包累计全局仪器时间、谱系年龄、当前粒子年龄和末组件耗时；静态求解器可在
   保留逐粒子时间映射时使用局部零时刻；状态包还须区分根源粒子谱系年龄与当前粒子年龄，时变场必须

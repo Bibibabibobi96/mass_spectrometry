@@ -23,21 +23,42 @@ FORBIDDEN_RUNNER_TERMS = {
 
 class Phase4DesignConsumerTests(unittest.TestCase):
     def test_cross_solver_comparison_separates_physical_and_numerical_authority(self) -> None:
-        analyzer = (
-            PROJECT_ROOT / "analysis" / "compare_particle_state.py"
+        interface_analyzer = (
+            PROJECT_ROOT / "analysis" / "compare_interface_readiness.py"
         ).read_text(encoding="utf-8")
-        runner = (
+        component_analyzer = (
+            PROJECT_ROOT / "analysis" / "compare_no_collision_transport.py"
+        ).read_text(encoding="utf-8")
+        interface_runner = (
             PROJECT_ROOT / "tests" / "cross_solver" / "verify_transport_candidate.ps1"
         ).read_text(encoding="utf-8")
-        self.assertNotIn('resolved["mode"]', analyzer)
-        self.assertIn("--regression-mode", analyzer)
-        self.assertIn("regression_mode_sha256", analyzer)
-        self.assertIn("transport_no_collision.json", runner)
-        self.assertIn("Assert-RfTransportParticleTableIdentity", runner)
-        self.assertNotIn(
-            "$comsolParticlePath -ne $simionParticlePath",
-            runner,
-        )
+        component_runner = (
+            PROJECT_ROOT
+            / "tests"
+            / "cross_solver"
+            / "verify_no_collision_candidate.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("transport_no_collision", interface_analyzer)
+        self.assertNotIn("transport_interface_readiness", component_analyzer)
+        self.assertIn("compare_interface_readiness.py", interface_runner)
+        self.assertIn("compare_no_collision_transport.py", component_runner)
+        self.assertNotIn("[string]$Mode", interface_runner)
+        self.assertNotIn("[string]$Mode", component_runner)
+        lifecycle = (
+            PROJECT_ROOT
+            / "tests"
+            / "support"
+            / "cross_solver_analysis_support.ps1"
+        ).read_text(encoding="utf-8").lower()
+        for forbidden in (
+            "transport_interface_readiness",
+            "transport_no_collision",
+            "minimum_transmission",
+            "threshold",
+            "rf_quadrupole_no_collision_cross_solver_result",
+            "rf_quadrupole_interface_readiness_cross_solver_result",
+        ):
+            self.assertNotIn(forbidden, lifecycle)
         retired = (
             PROJECT_ROOT / "analysis" / "verify_cross_solver_transport.py"
         ).read_text(encoding="utf-8")

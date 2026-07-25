@@ -1,18 +1,21 @@
 # COMSOL：RF 四极杆无碰撞候选
 
-返回项目统一状态：[`PROJECT.md`](PROJECT.md)。生产脚本为
+返回项目统一状态：[`PROJECT.md`](PROJECT.md)。接口输运科学入口为
+`../comsol/ms_rf_quadrupole_interface_transport.m`，workflow中性的共享求解机制为
 `../comsol/ms_rf_quadrupole_no_collision.m`；工具版本、启动方式和共享LiveLink入口只采用仓库根
 [`README.md`](../../../README.md#工具链与执行入口)及
 [`common/comsol/README.md`](../../../common/comsol/README.md)的定义。
 
-脚本通过`../load_rf_quadrupole_contract.m`读取解析发布，持久化四根圆杆、入口孔板、出口壳体、
+专用接口入口只接受`transport_interface_readiness`的冻结run config，复核现有resolved、interface、
+scientific mode和bundle在内存编译出的scientific spec，再调用共享机制。共享机制不读取`Mode`、不选择
+workflow或科学gate；它通过`../load_rf_quadrupole_contract.m`读取解析发布，持久化四根圆杆、入口孔板、出口壳体、
 检测器、真空选择、材料、ES/CPT、按粒子表行数生成的`ReleaseFromDataFile`节点、RF或RF+DC
 `ElectricForce`、两个Study/已attach Solver、粒子数据集和轨迹图。几何、检测层厚度、RF和接口平面
 不得在脚本中另设第二份数值。
 传输模式使用杆组±100 V差分单位场，CPT乘`V_rf/100[V]`正弦波。质量过滤模式在同一几何中显式求解
 `Vdiff`差分单位势和`Vstatic`公共偏置/静态端部势，CPT叠加`(V_dc+V_rf sin)/100 V`倍差分场与静态场；
 不依赖COMSOL自动生成的`es/es2`变量名。两个模式都不存在Collisions特征。
-`axial_acceleration_reference`仍使用同一入口、源、RF和项目专属端部几何，但通过公共分段杆builder
+`axial_acceleration_reference`仍使用独立的公共multipole入口、源、RF和项目专属端部几何，并通过公共分段杆builder
 把每根杆分为4段、段间绝缘间隙0.4 mm；每段两种RF极性共享`0/-1/-2/-3 V`公共模，出口罩和检测
 参考区保持-3 V。模型在同一静电解上推进“轴向场开启”和“同几何同RF、轴向场缩放为0”两套轨迹，
 能量按检测面三维速度派生，不修改粒子速度。该模式使用300 s任务报告窗口以容纳配对推进，常规模型
@@ -27,8 +30,9 @@ Fly2 `standard_beam` 的角度在 IOB 放置前按局部束流基向量解释，
 空间审计表明预定义 mesh4 过粗，不得再作为基线。速度映射修正前的空间收敛数值已经失效；
 修正后 mesh2（较粗）相对 mesh1 在 80 步/周期下仍为 25/25，但平均 TOF 为 49.62409 vs
 50.11545 us（变化 0.98%），最大杆区半径为 0.51833 vs 0.54141 mm（变化 4.26%）。故 mesh2
-不可替代 mesh1；该二级比较尚不能证明 mesh1 已达到渐近空间收敛。生产入口支持仅用于隔离候选的
-`RFQUAD_COMSOL_HMAX_MM`：它会在 GUI 可见的全局 Mesh Size 节点设置 `custom=on,hmax`，并写入摘要。
+不可替代 mesh1；该二级比较尚不能证明 mesh1 已达到渐近空间收敛。历史隔离候选曾使用
+`RFQUAD_COMSOL_HMAX_MM`在 GUI 可见的全局 Mesh Size节点设置`custom=on,hmax`并写入摘要；当前接口
+生产入口已删除该环境/CLI覆盖，唯一数值合同的两个注册profile均明确关闭hmax override。
 显式 `hmax=0.5 mm` 候选仍为 25/25，但平均 TOF 为 49.93682 us（相对 mesh1 变化 0.356%）、最大杆区
 半径为 0.46883 mm（变化 13.4%），故 mesh1 的渐近空间收敛尚未闭合；不得为贴近 SIMION 选择任一候选。
 修正后在 mesh1 上重算 80→160 RF 步/周期，两端均为 25/25，
@@ -36,8 +40,17 @@ Fly2 `standard_beam` 的角度在 IOB 放置前按局部束流基向量解释，
 （0.47%）；故当前 80 步/周期已通过时间步收敛，继续冻结 mesh1、80 步/周期。
 修正后的最终结果为 25/25、50.1155 us、最大杆区半径 0.5414 mm、`q=0.7060233`。
 
-`tests/comsol/run_transport_candidate.ps1`是唯一候选运行入口：生成显式run config，调用统一LiveLink
-启动器，随后重开MPH并通过GUI `Study -> Compute`复算，最后写入并复验manifest。MPH中持久化
+`tests/comsol/run_transport_candidate.ps1`是唯一接口候选运行入口：它没有`Mode`或数值标量开关，
+必须绑定[`../config/comsol_solver_numerics.json`](../config/comsol_solver_numerics.json)及其中的
+具名profile。普通profile只使用`baseline`；160步/周期只允许
+`same_solver_numerical_convergence`预注册实验。schema、role、contract ID、current状态和重算逻辑
+SHA-256共同构成仓库权威；自定义路径仅在逻辑完全相同时可用，运行中仍冻结仓库文件。PowerShell
+support是唯一profile validator/compiler；run config顶层派生字段与`compiled_solver_numerics`来自
+同一对象。MATLAB不再读合同或选择profile，但会在COMSOL import前核对compiled envelope身份及顶层
+identity/数值镜像；任何篡改均早停。runner先创建interrupted三件套，再冻结和验证resolved、
+interface、scientific mode、bundle与numerics；任何预检或后续错误都写入可由冻结verifier复核的failed
+三件套并恢复环境。通过预检后才调用统一LiveLink启动器，随后重开MPH并通过GUI
+`Study -> Compute`复算，最后写入并复验success manifest。MPH中持久化
 `z_rod_exit=85.4 mm`、`z_handoff=90.2 mm`、`z_acceptance=95.2 mm`及GUI可见
 `exp_phase_raw`数据导出节点。
 

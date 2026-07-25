@@ -16,12 +16,12 @@
   },
   "numerics": {
     "minimum_diagnostic_particles": 100,
-    "maximum_time_us": 80.0,
     "crossing_interpolation_required": true,
     "mesh_and_time_step_convergence_required": true
   },
   "candidate_acceptance_targets": {
     "minimum_transmission": 0.8,
+    "maximum_allowed_radius_fraction_r0": 1.0,
     "cross_solver_transmission_absolute_difference": 0.05,
     "cross_solver_relative_mean_tof_difference": 0.05,
     "cross_solver_relative_rms_output_radius_difference": 0.1,

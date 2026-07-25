@@ -1,48 +1,77 @@
-function result = ms_rf_quadrupole_no_collision()
-%MS_RF_QUADRUPOLE_NO_COLLISION Build a traceable RF transport or RF+DC mass-filter case.
+function result = ms_rf_quadrupole_no_collision(runConfig)
+%MS_RF_QUADRUPOLE_NO_COLLISION Solve one fully compiled no-collision case.
+% This project-local mechanism does not select a scientific workflow. Dedicated
+% entries must validate and compile their claim before calling this function.
 
 projectRoot = fileparts(fileparts(mfilename('fullpath')));
 addpath(projectRoot);
 repoRoot=fileparts(fileparts(projectRoot));
 addpath(fullfile(repoRoot,'common','comsol'));
 addpath(fullfile(repoRoot,'common','multipole'));
-interface = jsondecode(fileread(fullfile(projectRoot,'config','interface_contract.json')));
-runLabel = 'baseline';
-operatingPoint = 'official_100amu_2eV';
-meshAuto = 1;
-meshHmaxMm = NaN;
-sourceAxialOffsetMm = 0;
-saveModel = true;
-writeDetailedOutputs = true;
-ionPath = fullfile(projectRoot,'config','particles','official_fixed_100.ion');
-runConfigPath = getenv('RFQUAD_RUN_CONFIG');
-assert(~isempty(runConfigPath), 'RFQUAD_RUN_CONFIG is required for a traceable run.');
-runConfig = jsondecode(fileread(runConfigPath));
-assert(strcmp(runConfig.project, 'rf_quadrupole_collision_cooling') && ...
-    any(strcmp(runConfig.mode, {'transport_interface_readiness','mass_filter_reference'})), ...
-    'RF quadrupole run-config project or mode mismatch.');
-runMode = runConfig.mode;
-assert(isfield(runConfig,'inputs') && isfield(runConfig.inputs,'resolved_design'), ...
-    'Run config must freeze a governed resolved design.');
-resolvedPath=runConfig.inputs.resolved_design;
-if ~isfile(resolvedPath), resolvedPath=fullfile(projectRoot,resolvedPath); end
+assert(nargin==1 && isstruct(runConfig), ...
+    'A fully compiled run-config struct is required.');
+assert(strcmp(requireText(runConfig,'project'),'rf_quadrupole_collision_cooling'), ...
+    'RF quadrupole run-config project mismatch.');
+inputs=requireStruct(runConfig,'inputs');
+resolvedPath=requireExistingFile(inputs,'resolved_design');
 resolved = load_rf_quadrupole_contract(resolvedPath);
 baseline = resolved; source = resolved.particle_source;
-assert(isfield(runConfig.inputs,'mode'),'Run config must freeze numerical mode settings.');
-modePath=runConfig.inputs.mode;
-if ~isfile(modePath), modePath=fullfile(projectRoot,modePath); end
-mode=jsondecode(fileread(modePath));
-if isfield(runConfig, 'run_id'), runLabel = runConfig.run_id; end
-if isfield(runConfig, 'operating_point'), operatingPoint = runConfig.operating_point; end
-if isfield(runConfig, 'particle_table_path'), ionPath = runConfig.particle_table_path; end
-if isfield(runConfig, 'comsol_rf_steps_per_period'), mode.numerics.comsol_rf_steps_per_period = runConfig.comsol_rf_steps_per_period; end
-if isfield(runConfig, 'comsol_mesh_auto_level'), meshAuto = runConfig.comsol_mesh_auto_level; end
-if isfield(runConfig, 'comsol_hmax_mm'), meshHmaxMm = runConfig.comsol_hmax_mm; end
-if isfield(runConfig, 'source_axial_offset_mm'), sourceAxialOffsetMm = runConfig.source_axial_offset_mm; end
-if isfield(runConfig, 'save_model'), saveModel = logical(runConfig.save_model); end
-if isfield(runConfig, 'write_detailed_outputs'), writeDetailedOutputs = logical(runConfig.write_detailed_outputs); end
-comsolOutputDir = runConfig.comsol_dir; resultsOutputDir = runConfig.results_dir;
-isMassFilter=strcmp(runMode,'mass_filter_reference');
+interfacePath=requireExistingFile(inputs,'interface_contract');
+interface=jsondecode(fileread(interfacePath));
+ionPath=requireExistingFile(inputs,'particle_table');
+numerics=requireStruct(runConfig,'compiled_solver_numerics');
+assert(requireFiniteScalar(numerics,'schema_version')==1, ...
+    'Compiled solver-numerics schema_version must equal 1.');
+assert(strcmp(requireText(numerics,'role'), ...
+    'rf_quadrupole_compiled_comsol_solver_numerics'), ...
+    'Compiled solver-numerics envelope role mismatch.');
+authority=requireStruct(numerics,'authority');
+contractId=requireText(authority,'contract_id');
+logicalSha256=requireText(authority,'logical_sha256');
+assert(~isempty(regexp(logicalSha256,'^[0-9A-F]{64}$','once')), ...
+    'Compiled solver-numerics logical_sha256 is invalid.');
+selection=requireStruct(numerics,'selection');
+profileId=requireText(selection,'profile_id');
+requireText(selection,'usage');
+experimentId=requirePresentText(selection,'numerical_experiment_id');
+assert(strcmp(requireText(runConfig,'solver_numerics_contract_id'),contractId) && ...
+    strcmp(requireText(runConfig,'solver_numerics_contract_logical_sha256'), ...
+    logicalSha256) && ...
+    strcmp(requireText(runConfig,'solver_numerics_profile_id'),profileId) && ...
+    strcmp(requirePresentText(runConfig,'numerical_experiment_id'),experimentId), ...
+    'Compiled solver-numerics identity differs from frozen run-config mirrors.');
+mesh=requireStruct(numerics,'mesh');
+meshAuto=requirePositiveInteger(mesh,'global_auto_level');
+assert(meshAuto<=9,'COMSOL mesh global_auto_level must be in [1, 9].');
+hmaxEnabled=requireLogicalScalar(mesh,'working_region_hmax_override_enabled');
+if hmaxEnabled
+    meshHmaxMm=requireFiniteScalar(mesh,'working_region_hmax_mm');
+    assert(meshHmaxMm>0,'COMSOL mesh working_region_hmax_mm must be positive.');
+else
+    assert(~isfield(mesh,'working_region_hmax_mm'), ...
+        'working_region_hmax_mm must be absent when its override is disabled.');
+    meshHmaxMm=NaN;
+end
+trajectory=requireStruct(numerics,'trajectory');
+rfStepsPerPeriod=requirePositiveInteger(trajectory,'rf_steps_per_period');
+assert(rfStepsPerPeriod>=4 && rfStepsPerPeriod<=10000, ...
+    'COMSOL trajectory rf_steps_per_period must be in [4, 10000].');
+maximumTimeUs=requireFiniteScalar(trajectory,'maximum_time_us');
+assert(maximumTimeUs>0,'COMSOL trajectory maximum_time_us must be positive.');
+assert(requireFiniteScalar(runConfig,'comsol_mesh_auto_level')==meshAuto && ...
+    requireFiniteScalar(runConfig,'comsol_rf_steps_per_period')==rfStepsPerPeriod && ...
+    requireFiniteScalar(runConfig,'maximum_time_us')==maximumTimeUs, ...
+    'Compiled solver-numerics values differ from frozen run-config mirrors.');
+scientificSpec=requireStruct(runConfig,'compiled_scientific_spec');
+sourceAxialOffsetMm=requireFiniteScalar(scientificSpec,'source_axial_offset_mm');
+outputPolicy=requireStruct(runConfig,'output_policy');
+saveModel=requireLogicalScalar(outputPolicy,'save_model');
+writeDetailedOutputs=requireLogicalScalar(outputPolicy,'write_detailed_outputs');
+runLabel=requireText(runConfig,'run_id');
+operatingPoint=requireText(runConfig,'operating_point');
+workflowId=requireText(runConfig,'workflow_id');
+comsolOutputDir=requireText(runConfig,'comsol_dir');
+resultsOutputDir=requireText(runConfig,'results_dir');
 drive=resolved.drive;
 assert(strcmp(drive.waveform,'sine'),'Quadrupole COMSOL modes require the shared sine-wave contract.');
 rfPeakV=drive.rf_amplitude_V_zero_to_peak_per_group;
@@ -56,10 +85,6 @@ assert(strcmp(staticElectrodes.role,'rectangular_reference_static_electrodes'), 
 staticEntranceV=staticElectrodes.entrance_plate_and_connector;
 staticExitV=staticElectrodes.exit_enclosure_and_connector;
 staticDetectorV=staticElectrodes.detector;
-assert(meshAuto > 0 && isfinite(meshAuto), 'COMSOL mesh-auto level must be positive.');
-if isempty(meshHmaxMm) || ~isscalar(meshHmaxMm) || ~(meshHmaxMm > 0 && isfinite(meshHmaxMm))
-    meshHmaxMm = NaN;
-end
 ions = readmatrix(ionPath,'FileType','text','Delimiter',',');
 assert(size(ions,1)>0 && size(ions,2)==11, 'Fixed ION table shape mismatch.');
 assert(all(abs(ions(:,2)-ions(1,2))<1e-12) && all(abs(ions(:,3)-ions(1,3))<1e-12), ...
@@ -72,7 +97,7 @@ import com.comsol.model.util.*
 tag = 'RFQuadTransport';
 if any(strcmp(cell(ModelUtil.tags()),tag)), ModelUtil.remove(tag); end
 model = ModelUtil.create(tag);
-if isMassFilter, model.label('Reference quadrupole - RF+DC mass filter'); else, model.label('SIMION reference quadrupole - RF-only transport'); end
+model.label('Reference quadrupole - compiled no-collision transport');
 comp = model.component.create('comp1',true);
 geom = comp.geom.create('geom1',3);
 geom.lengthUnit('mm');
@@ -192,13 +217,13 @@ end
 configure_comsol_mesh(mesh,'geom1',meshAuto,'',meshHmaxMm);mesh.run;
 mi=mphmeshstats(model,'mesh1'); assert(~mi.isempty && mi.iscomplete && ~mi.hasproblems,'Mesh gate failed.');
 std1=model.study.create('std1');
-if isMassFilter, std1.label('Stationary differential and static fields'); else, std1.label('Stationary RF unit field'); end
+std1.label('Stationary differential and static fields');
 std1.create('stat1','Stationary');
 sol1=model.sol.create('sol1'); sol1.study('std1'); sol1.createAutoSequence('std1');
 sol1.attach('std1'); sol1.runAll;
 
 cpt=comp.physics.create('cpt','ChargedParticleTracing','geom1');
-if isMassFilter, cpt.label('RF+DC mass-filter transport - no collisions'); else, cpt.label('RF-only transport - no collisions'); end
+cpt.label('Compiled no-collision particle transport');
 cpt.selection.named('sel_vac');
 cpt.feature('pp1').set('mp','m_ion'); cpt.feature('pp1').set('Z',sprintf('%d',source.charge_state));
 scratch=runConfig.runtime_dir; if ~exist(scratch,'dir'),mkdir(scratch);end
@@ -220,15 +245,15 @@ for i=1:size(ions,1)
     rel.set('Filename',releasePath); rel.set('icolp','0'); rel.set('VelocitySpecification','SpecifyVelocity'); rel.set('InitialVelocity','FromFile'); rel.set('icolv','3'); rel.set('rt',sprintf('%.12g[us]',ions(i,1))); rel.importData();
 end
 ef=cpt.create('ef1','ElectricForce',3);
-if isMassFilter, ef.label('RF+DC and static electric force'); else, ef.label('RF-only electric force'); end
+ef.label('Differential RF/DC and static electric force');
 ef.selection.named('sel_vac'); ef.set('E_src','userdef');
 fieldScale='((V_dc+V_rf*sin(2*pi*f_rf*t+phi_rf))/100[V])';
 ef.set('E',{[fieldScale '*(-d(Vdiff,x))-axial_scale*d(Vstatic,x)'],[fieldScale '*(-d(Vdiff,y))-axial_scale*d(Vstatic,y)'],[fieldScale '*(-d(Vdiff,z))-axial_scale*d(Vstatic,z)']});
 
 std2=model.study.create('std2');
-if isMassFilter, std2.label('Transient RF+DC mass filtering'); else, std2.label('Transient RF-only transport'); end
+std2.label('Transient compiled no-collision transport');
 time=std2.create('time1','Transient');
-dt=1/rfFrequencyHz/mode.numerics.comsol_rf_steps_per_period; tmax=(max(ions(:,1))+mode.numerics.maximum_time_us)*1e-6;
+dt=1/rfFrequencyHz/rfStepsPerPeriod; tmax=(max(ions(:,1))+maximumTimeUs)*1e-6;
 time.set('tlist',sprintf('range(0,%.15g,%.15g)',dt,tmax)); time.setEntry('activate','es',false);
 time.setEntry('activate','ess',false);
 time.setEntry('activate','cpt',true);
@@ -240,11 +265,8 @@ sol2.attach('std2'); sol2.runAll;
 
 pdset=model.result.dataset.create('pdset1','Particle'); pdset.label(sprintf('Fixed paired particle trajectories (N=%d)',source.particles)); pdset.set('solution','sol2');
 pg=model.result.create('pg_traj','PlotGroup3D'); pg.set('data','pdset1'); pg.set('titletype','manual');
-if isMassFilter
-    pg.label('RF+DC mass-filter trajectories'); pg.set('title',sprintf('Reference quadrupole: RF+DC mass filtering at %.12g Th (N=%d)',source.mass_amu,source.particles));
-else
-    pg.label('RF-only transport trajectories'); pg.set('title',sprintf('SIMION reference quadrupole: RF-only transport (N=%d)',source.particles));
-end
+pg.label('Compiled no-collision trajectories');
+pg.set('title',sprintf('Reference quadrupole: no-collision transport at %.12g Th (N=%d)',source.mass_amu,source.particles));
 pg.create('traj1','ParticleTrajectories');
 pd=mphparticle(model,'dataset','pdset1'); x=squeeze(pd.p(:,:,1)); y=squeeze(pd.p(:,:,2)); z=squeeze(pd.p(:,:,3));
 vx=squeeze(pd.v(:,:,1)); vy=squeeze(pd.v(:,:,2)); vz=squeeze(pd.v(:,:,3)); radial=sqrt(x.^2+y.^2);
@@ -271,18 +293,17 @@ for i=1:nP
 end
 hitRodRadius=maxRodRadius(hit); if isempty(hitRodRadius), maxHitRodRadius=NaN; else, maxHitRodRadius=max(hitRodRadius); end
 featureTags=cell(cpt.feature.tags()); collisionPresent=any(contains(lower(string(featureTags)),'coll'));
-result=struct('solver','COMSOL','mode',runMode,'operating_point',operatingPoint,'collision_feature_present',collisionPresent,'q_mathieu',mphglobal(model,'q_mathieu','dataset','dset1'),'a_mathieu',mphglobal(model,'a_mathieu','dataset','dset1'), ...
+result=struct('solver','COMSOL','mode',workflowId,'workflow_id',workflowId,'operating_point',operatingPoint,'collision_feature_present',collisionPresent,'q_mathieu',mphglobal(model,'q_mathieu','dataset','dset1'),'a_mathieu',mphglobal(model,'a_mathieu','dataset','dset1'), ...
     'particles',nP,'hits',sum(hit),'transmission',mean(hit),'max_radius_mm',max(maxRadius),'max_hit_rod_radius_mm',maxHitRodRadius, ...
     'detector_plane_crossings',sum(crossedDetectorPlane),'max_detector_hit_radius_mm',max(arrivalRadius(hit),[],'omitnan'), ...
-    'mean_detector_time_us',mean(arrival,'omitnan'),'rf_steps_per_period',mode.numerics.comsol_rf_steps_per_period,'mesh_auto_level',meshAuto,'mesh_hmax_mm',meshHmaxMm,'mesh_elements_total',sum(mi.numelem), ...
+    'mean_detector_time_us',mean(arrival,'omitnan'),'rf_steps_per_period',rfStepsPerPeriod,'mesh_auto_level',meshAuto,'mesh_hmax_mm',meshHmaxMm,'mesh_elements_total',sum(mi.numelem), ...
     'source_axial_offset_mm',sourceAxialOffsetMm,'mass_Th',source.mass_amu,'rf_peak_V',rfPeakV,'dc_per_group_V',dcV, ...
     'axis_common_mode_V',axisV,'static_entrance_V',staticEntranceV,'static_exit_V',staticExitV,'static_detector_V',staticDetectorV, ...
     'run_label',runLabel);
 primaryMetrics=summarizeDetectorEnergy(pd,detectorZ,enclosure.detector_radius_mm,source.mass_amu);
 result.mean_output_energy_eV=primaryMetrics.mean_output_energy_eV;
-transportGateFailed=~isMassFilter && (result.transmission<mode.numerics.minimum_expected_transmission || result.max_hit_rod_radius_mm>=mode.numerics.maximum_allowed_radius_fraction_r0*g.inscribed_radius_r0);
-if collisionPresent || transportGateFailed
-    error('COMSOL transport/confinement gate failed: transmission=%.6g maxHitRodRadius=%.6g',result.transmission,result.max_hit_rod_radius_mm);
+if collisionPresent
+    error('COMSOL no-collision case contains a collision feature.');
 end
 
 if ~exist(comsolOutputDir,'dir'),mkdir(comsolOutputDir);end
@@ -325,7 +346,7 @@ for i=1:nP
         'z_mm',terminalZ(i),'vx_m_s',vx(finalSample,i),'vy_m_s',vy(finalSample,i),'vz_m_s',vz(finalSample,i));
     terminalRadius=hypot(terminalX(i),terminalY(i)); terminalStatus='lost'; terminalReason='electrode';
     if hit(i), terminalStatus='transmitted'; terminalReason='acceptance_detector';
-    elseif terminalState.t_s-ions(i,1)*1e-6 >= mode.numerics.maximum_time_us*1e-6-1e-12
+    elseif terminalState.t_s-ions(i,1)*1e-6 >= maximumTimeUs*1e-6-1e-12
         terminalStatus='timeout'; terminalReason='timeout';
     elseif terminalZ(i)<0, terminalReason='backward_escape';
     elseif terminalRadius>enclosure.outer_half_width_mm, terminalReason='radial_escape';
@@ -397,4 +418,50 @@ for particle=1:size(z,2)
 end
 metrics=struct('transmission',mean(hit),'mean_output_energy_eV',mean(energy,'omitnan'), ...
     'output_energy_standard_deviation_eV',std(energy,'omitnan'));
+end
+
+function value=requireStruct(parent,fieldName)
+assert(isstruct(parent) && isfield(parent,fieldName) && isstruct(parent.(fieldName)) && ...
+    isscalar(parent.(fieldName)), '%s must be a scalar struct.',fieldName);
+value=parent.(fieldName);
+end
+
+function value=requireText(parent,fieldName)
+assert(isstruct(parent) && isfield(parent,fieldName), '%s is required.',fieldName);
+raw=parent.(fieldName);
+assert((ischar(raw) || (isstring(raw) && isscalar(raw))) && ...
+    ~isempty(strtrim(char(raw))), '%s must be non-empty text.',fieldName);
+value=char(raw);
+end
+
+function value=requirePresentText(parent,fieldName)
+assert(isstruct(parent) && isfield(parent,fieldName), '%s is required.',fieldName);
+raw=parent.(fieldName);
+assert(ischar(raw) || (isstring(raw) && isscalar(raw)), ...
+    '%s must be scalar text.',fieldName);
+value=char(raw);
+end
+
+function path=requireExistingFile(parent,fieldName)
+path=requireText(parent,fieldName);
+assert(isfile(path), '%s does not identify a frozen file: %s',fieldName,path);
+end
+
+function value=requireFiniteScalar(parent,fieldName)
+assert(isstruct(parent) && isfield(parent,fieldName), '%s is required.',fieldName);
+value=parent.(fieldName);
+assert(isnumeric(value) && isscalar(value) && isfinite(value), ...
+    '%s must be one finite numeric scalar.',fieldName);
+value=double(value);
+end
+
+function value=requirePositiveInteger(parent,fieldName)
+value=requireFiniteScalar(parent,fieldName);
+assert(value>0 && value==fix(value), '%s must be a positive integer.',fieldName);
+end
+
+function value=requireLogicalScalar(parent,fieldName)
+assert(isstruct(parent) && isfield(parent,fieldName), '%s is required.',fieldName);
+value=parent.(fieldName);
+assert(islogical(value) && isscalar(value), '%s must be one logical scalar.',fieldName);
 end
