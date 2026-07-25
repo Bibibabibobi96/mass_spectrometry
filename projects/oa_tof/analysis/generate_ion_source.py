@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import math
+import os
 from pathlib import Path
+from typing import Any
 
 
 class DotNetFrameworkRandom:
@@ -98,6 +102,72 @@ def generate_ion_source(
     return lines
 
 
+def _serialized_ion_source(lines: list[str]) -> bytes:
+    return ("\r\n".join(lines) + "\r\n").encode("ascii")
+
+
+def validate_ion_source(
+    *,
+    source_path: Path,
+    particle_count: int,
+    mass_amu: float,
+    charge: int,
+    energy_mean_ev: float,
+    energy_std_ev: float,
+    half_width_xyz_mm: tuple[float, float, float],
+    center_xyz_mm: tuple[float, float, float],
+    seed: int,
+) -> dict[str, Any]:
+    """Rebuild and byte-validate an ION source from its frozen generation inputs."""
+    expected = _serialized_ion_source(
+        generate_ion_source(
+            particle_count=particle_count,
+            mass_amu=mass_amu,
+            charge=charge,
+            energy_mean_ev=energy_mean_ev,
+            energy_std_ev=energy_std_ev,
+            half_width_xyz_mm=half_width_xyz_mm,
+            center_xyz_mm=center_xyz_mm,
+            seed=seed,
+        )
+    )
+    actual = source_path.read_bytes()
+    if actual != expected:
+        raise ValueError(
+            "ION source differs from the deterministic source rebuilt from frozen inputs"
+        )
+    digest = hashlib.sha256(actual).hexdigest().upper()
+    generator_path = Path(__file__).resolve()
+    return {
+        "schema_version": 1,
+        "role": "oa_tof_deterministic_ion_source_validation",
+        "status": "success",
+        "source_path": str(source_path.resolve()),
+        "source_sha256": digest,
+        "generator_path": str(generator_path),
+        "generator_sha256": hashlib.sha256(generator_path.read_bytes())
+        .hexdigest()
+        .upper(),
+        "particle_count": particle_count,
+        "mass_amu": mass_amu,
+        "charge": charge,
+        "energy_mean_ev": energy_mean_ev,
+        "energy_std_ev": energy_std_ev,
+        "half_width_xyz_mm": list(half_width_xyz_mm),
+        "center_xyz_mm": list(center_xyz_mm),
+        "seed": seed,
+        "serialization": "ascii_crlf_ion11",
+    }
+
+
+def _write_json_atomically(path: Path, value: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    payload = json.dumps(value, indent=2, sort_keys=True) + "\n"
+    temporary.write_text(payload, encoding="utf-8")
+    os.replace(temporary, path)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--particle-count", type=int, default=100)
@@ -115,6 +185,8 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=20260713)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--allow-nonstandard-diagnostic-count", action="store_true")
+    parser.add_argument("--validate-existing", action="store_true")
+    parser.add_argument("--validation-report", type=Path)
     args = parser.parse_args()
     if (
         args.particle_count not in (100, 1000)
@@ -132,22 +204,35 @@ def main() -> None:
             args.half_width_z_mm,
         )
     )
-    lines = generate_ion_source(
-        particle_count=args.particle_count,
-        mass_amu=args.mass_amu,
-        charge=args.charge,
-        energy_mean_ev=args.energy_mean_ev,
-        energy_std_ev=args.energy_std_ev,
-        half_width_xyz_mm=half_widths,
-        center_xyz_mm=(args.center_x_mm, args.center_y_mm, args.center_z_mm),
-        seed=args.seed,
-    )
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_bytes(("\r\n".join(lines) + "\r\n").encode("ascii"))
-    print(
-        f"generated={args.output.resolve()} N={args.particle_count} "
-        f"mass_amu={args.mass_amu} charge={args.charge} seed={args.seed}"
-    )
+    generation_arguments = {
+        "particle_count": args.particle_count,
+        "mass_amu": args.mass_amu,
+        "charge": args.charge,
+        "energy_mean_ev": args.energy_mean_ev,
+        "energy_std_ev": args.energy_std_ev,
+        "half_width_xyz_mm": half_widths,
+        "center_xyz_mm": (args.center_x_mm, args.center_y_mm, args.center_z_mm),
+        "seed": args.seed,
+    }
+    if args.validate_existing:
+        if args.validation_report is None:
+            parser.error("--validate-existing requires --validation-report")
+        validation = validate_ion_source(source_path=args.output, **generation_arguments)
+        _write_json_atomically(args.validation_report, validation)
+        print(
+            f"validated={args.output.resolve()} N={args.particle_count} "
+            f"sha256={validation['source_sha256']}"
+        )
+    else:
+        if args.validation_report is not None:
+            parser.error("--validation-report requires --validate-existing")
+        lines = generate_ion_source(**generation_arguments)
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_bytes(_serialized_ion_source(lines))
+        print(
+            f"generated={args.output.resolve()} N={args.particle_count} "
+            f"mass_amu={args.mass_amu} charge={args.charge} seed={args.seed}"
+        )
 
 
 if __name__ == "__main__":

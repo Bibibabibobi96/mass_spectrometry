@@ -132,6 +132,13 @@ z-to-TOF映射。COMSOL加速器`hmax=1 mm`是日常档，`0.5 mm`是收敛参�
 正文；需要追溯时从项目README的history清单进入。当前性能与资产身份只认本节上述
 `config/formal_validation.json`记录，不以历史小样本、旧Formal或机器计时覆盖。
 
+固定五质量候选入口不提供粒子数override；其具名科学合同当前固定每个物种N=100。每个N=100 ION源
+必须先生成同参数、同种子的标准N=1000母源，再截取严格前100行，并在任何COMSOL或SIMION启动前通过
+仓库`common/contracts/particle_count_policy.py`的标准计数和前缀校验。fresh、resume和reanalyze均须先
+用`analysis/generate_ion_source.py`及冻结mode/resolved参数确定性重建完整N=1000期望字节并核对母源
+SHA，再检查N=100前缀；母源后900行篡改也必须失败。N<100、任意未注册计数及独立随机生成的N=100均
+失败关闭；未来只有新增具名科学合同后才能使用相应专项计数。
+
 ## 正式资产与门禁
 
 - COMSOL：`artifacts/projects/oa_tof/formal/comsol/oa_tof__model.mph`；GUI重开后几何、选择集、

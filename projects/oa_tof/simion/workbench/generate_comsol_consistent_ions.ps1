@@ -13,7 +13,9 @@ param(
   [double]$CenterZmm = -18.42918680341103,
   [int]$Seed = 20260713,
   [string]$Output = '',
-  [switch]$AllowNonstandardDiagnosticCount
+  [switch]$AllowNonstandardDiagnosticCount,
+  [switch]$ValidateExisting,
+  [string]$ValidationReport = ''
 )
 
 Set-StrictMode -Version Latest
@@ -46,6 +48,14 @@ $arguments = @(
 )
 if ($AllowNonstandardDiagnosticCount) {
   $arguments += '--allow-nonstandard-diagnostic-count'
+}
+if ($ValidateExisting) {
+  if ([string]::IsNullOrWhiteSpace($ValidationReport)) {
+    throw 'ValidateExisting requires ValidationReport.'
+  }
+  $arguments += @('--validate-existing','--validation-report',$ValidationReport)
+} elseif (-not [string]::IsNullOrWhiteSpace($ValidationReport)) {
+  throw 'ValidationReport is only valid with ValidateExisting.'
 }
 & $python @arguments
 if ($LASTEXITCODE -ne 0) { throw 'Python ION source generation failed.' }
