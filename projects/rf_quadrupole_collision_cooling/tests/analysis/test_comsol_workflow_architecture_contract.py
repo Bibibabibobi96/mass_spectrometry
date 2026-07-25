@@ -23,6 +23,9 @@ MODE = PROJECT_ROOT / "config" / "modes" / "transport_interface_readiness.json"
 PROFILES = PROJECT_ROOT / "config" / "execution_profiles.json"
 RUNNER = PROJECT_ROOT / "workflows" / "interface_readiness" / "run_comsol.ps1"
 TASK = PROJECT_ROOT / "tests" / "comsol" / "run_nocollision_candidate.m"
+GUI_VERIFY_TASK = (
+    PROJECT_ROOT / "tests" / "comsol" / "verify_nocollision_comsol.m"
+)
 RELEASE_GATE_TASK = (
     PROJECT_ROOT / "comsol" / "interface_readiness" / "run_release_construction_gate.m"
 )
@@ -522,6 +525,93 @@ class ComsolWorkflowArchitectureContractTests(unittest.TestCase):
             launcher,
         )
         self.assertEqual(launcher.count("$attempt -lt $StartupAttempts"), 2)
+
+    def test_gui_solver_diagnostics_are_fail_safe_and_observational(self) -> None:
+        source = _read(GUI_VERIFY_TASK)
+        stages = (
+            "after_mphload",
+            "before_std1",
+            "after_std1",
+            "before_std2",
+        )
+        stage_offsets = [
+            source.index(f"writeGuiSolverDiagnostic(fid, model, '{stage}')")
+            for stage in stages
+        ]
+        std1_run = source.index("model.study('std1').run;")
+        std2_run = source.index("model.study('std2').run;")
+        self.assertLess(stage_offsets[0], stage_offsets[1])
+        self.assertLess(stage_offsets[1], std1_run)
+        self.assertLess(std1_run, stage_offsets[2])
+        self.assertLess(stage_offsets[2], stage_offsets[3])
+        self.assertLess(stage_offsets[3], std2_run)
+
+        for token in (
+            "GUI_SOLVER_DIAGNOSTIC_JSON=",
+            "rf_quadrupole_gui_solver_diagnostic",
+            "study_tags",
+            "step_tags",
+            "solver_sequence_tags",
+            "feature_tags",
+            "isAttached()",
+            "isInitialized()",
+            "isEmpty()",
+            "notsolmethod",
+            "getString('notsol')",
+            "dependency_solver_tag",
+            "'status', 'error'",
+            "'error_identifier'",
+            "'error_message'",
+        ):
+            self.assertIn(token, source)
+
+        diagnostic_helpers = source[source.index("function writeGuiSolverDiagnostic") :]
+        compact_helpers = "".join(diagnostic_helpers.split()).replace("...", "")
+        main_body = source[: source.index("function text = joinJavaStrings")]
+        self.assertIn("safeDiagnosticGetter", diagnostic_helpers)
+        self.assertIn("catch getterError", diagnostic_helpers)
+        self.assertIn("'value', []", diagnostic_helpers)
+        self.assertIn("result.value = getter();", diagnostic_helpers)
+        self.assertNotIn("'value', getter()", diagnostic_helpers)
+        self.assertIn(
+            "Diagnostics are observational and must never replace the primary GUI error.",
+            diagnostic_helpers,
+        )
+        self.assertNotRegex(main_body, r"(?m)^\s*try\s*$")
+        self.assertNotRegex(main_body, r"(?m)^\s*catch(?:\s+\w+)?\s*$")
+        for wrapped_getter in (
+            "safeDiagnosticGetter(@()diagnosticTags(model.study.tags()))",
+            "safeDiagnosticGetter(@()diagnosticTags(model.sol.tags()))",
+            "safeDiagnosticGetter(@()hasDiagnosticTag("
+            "model.sol('sol2').feature.tags(),'v1'))",
+            "safeDiagnosticGetter(@()char("
+            "model.sol('sol2').feature('v1').getString('notsolmethod')))",
+            "safeDiagnosticGetter(@()char("
+            "model.sol('sol2').feature('v1').getString('notsol')))",
+            "safeDiagnosticGetter(@()hasDiagnosticTag(model.study.tags(),tag))",
+            "safeDiagnosticGetter(@()diagnosticTags("
+            "model.study(tag).feature.tags()))",
+            "safeDiagnosticGetter(@()hasDiagnosticTag(model.sol.tags(),tag))",
+            "safeDiagnosticGetter(@()diagnosticTags("
+            "model.sol(tag).feature.tags()))",
+            "safeDiagnosticGetter(@()logical(model.sol(tag).isAttached()))",
+            "safeDiagnosticGetter(@()logical(model.sol(tag).isInitialized()))",
+            "safeDiagnosticGetter(@()logical(model.sol(tag).isEmpty()))",
+        ):
+            self.assertIn(wrapped_getter, compact_helpers)
+        for forbidden in (
+            "clear",
+            ".set(",
+            ".create(",
+            ".remove(",
+            ".detach(",
+            ".attach(",
+            "runNoGen",
+            ".run",
+        ):
+            self.assertNotIn(forbidden, diagnostic_helpers)
+        self.assertEqual(source.count("model.study('std1').run;"), 1)
+        self.assertEqual(source.count("model.study('std2').run;"), 1)
 
 
 @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")

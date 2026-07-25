@@ -140,6 +140,10 @@ L1或SIMION run，也不产生跨来源结论；`workflows/mass_filter_reference
 表检查GUI release节点数量、接口平面参数、无碰撞、选择集、Export和Solver attach，并分别调用
 `model.study('std1').run`、`std2.run`。2026-07-18相空间候选复验为25/25、平均检测时间
 50.1154545 us、`q=0.706023302`，Solver标签保持`sol1,sol2`。
+验证报告还在MPH重开后、`std1`前后及`std2`前写出`GUI_SOLVER_DIAGNOSTIC_JSON`：它逐项记录
+Study/step、Solver sequence/feature、attach/initialized/empty状态及`sol2/v1`的`notsol`
+依赖。每个getter失败均作为结构化错误保留；诊断不清解、不重新attach、不改变或包裹原始
+`study.run`，因此不能遮蔽首个GUI Compute错误。
 
 N=100接口候选重开后GUI Compute仍为100/100，`std1/std2`分别约9.43/23.35 s，平均检测时间
 50.43318 us、`q=0.706023302`。该复验只证明MPH自包含和GUI等价，不把未通过的跨求解器相空间目标
