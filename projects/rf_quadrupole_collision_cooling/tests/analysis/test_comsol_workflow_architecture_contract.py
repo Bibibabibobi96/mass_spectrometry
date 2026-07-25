@@ -25,6 +25,7 @@ SHARED_SOLVER = (
     PROJECT_ROOT / "comsol" / "solve_deterministic_rf_quadrupole_particles.m"
 )
 NUMERICS_SUPPORT = PROJECT_ROOT / "runtime" / "comsol_solver_numerics.ps1"
+RUN_ARTIFACT_SUPPORT = REPO_ROOT / "common" / "contracts" / "run_artifact_support.ps1"
 ARTIFACT_ROOT = REPO_ROOT.parent / "artifacts" / "projects" / "rf_quadrupole_collision_cooling"
 RUN_PYTHON = Path(sys.executable).resolve()
 
@@ -268,6 +269,75 @@ class ComsolWorkflowArchitectureContractTests(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
 class ComsolSolverNumericsFailureTests(unittest.TestCase):
+    def test_bundle_artifact_array_freezes_all_entries_without_nesting(self) -> None:
+        runner = _read(RUNNER)
+        self.assertIn(
+            "$bundleArtifacts = Get-RfComsolRequiredProperty", runner
+        )
+        self.assertNotIn(
+            "$bundleArtifacts = @(Get-RfComsolRequiredProperty", runner
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source_root = root / "bundle"
+            frozen_root = root / "frozen"
+            source_root.mkdir()
+            artifacts: list[dict[str, object]] = []
+            for index in range(8):
+                relative_path = f"artifact_{index:02d}.txt"
+                (source_root / relative_path).write_text(
+                    f"artifact {index}\n", encoding="utf-8"
+                )
+                artifacts.append({"relative_path": relative_path})
+            metadata = source_root / "paired_particle_bundle.json"
+            metadata.write_text(
+                json.dumps({"artifacts": artifacts}), encoding="utf-8"
+            )
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "RF_COMSOL_NUMERICS_SUPPORT": str(NUMERICS_SUPPORT),
+                    "RF_RUN_ARTIFACT_SUPPORT": str(RUN_ARTIFACT_SUPPORT),
+                    "RF_BUNDLE_METADATA": str(metadata),
+                    "RF_FROZEN_BUNDLE_ROOT": str(frozen_root),
+                }
+            )
+            command = (
+                ". $env:RF_COMSOL_NUMERICS_SUPPORT; "
+                ". $env:RF_RUN_ARTIFACT_SUPPORT; "
+                "$document=Get-Content -LiteralPath $env:RF_BUNDLE_METADATA "
+                "-Raw -Encoding UTF8 | ConvertFrom-Json; "
+                "$artifacts=Get-RfComsolRequiredProperty -Object $document "
+                "-Property artifacts -Name artifacts; "
+                "if($artifacts.Count -ne 8){"
+                "throw \"Expected 8 artifacts, got $($artifacts.Count)\"}; "
+                "$bundleRoot=[IO.Path]::GetFullPath("
+                "(Split-Path -Parent $env:RF_BUNDLE_METADATA)); "
+                "$frozenRoot=[IO.Path]::GetFullPath($env:RF_FROZEN_BUNDLE_ROOT); "
+                "New-Item -ItemType Directory -Path $frozenRoot -Force | Out-Null; "
+                "$copied=0; "
+                "foreach($entry in $artifacts){"
+                "$relativePath=[string](Get-RfComsolRequiredProperty "
+                "-Object $entry -Property relative_path -Name relative_path); "
+                "$source=[IO.Path]::GetFullPath((Join-Path $bundleRoot $relativePath)); "
+                "if(-not $source.StartsWith("
+                "$bundleRoot+[IO.Path]::DirectorySeparatorChar,"
+                "[StringComparison]::OrdinalIgnoreCase)){"
+                "throw \"Artifact escapes bundle root: $relativePath\"}; "
+                "Copy-VerifiedRunInput -Source $source "
+                "-Destination (Join-Path $frozenRoot $relativePath) | Out-Null; "
+                "$copied+=1}; "
+                "if($copied -ne 8){throw \"Expected 8 copies, got $copied\"}; "
+                "'BUNDLE_ARTIFACT_FREEZE=PASS COUNT=8'"
+            )
+            result = _run_pwsh(command, environment)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("BUNDLE_ARTIFACT_FREEZE=PASS COUNT=8", result.stdout)
+            frozen = sorted(frozen_root.glob("artifact_*.txt"))
+            self.assertEqual(len(frozen), 8)
+            for index, path in enumerate(frozen):
+                self.assertEqual(path.read_text(encoding="utf-8"), f"artifact {index}\n")
+
     def invoke_number(
         self, json_literal: str, *, positive: bool = True, integer: bool = True
     ) -> subprocess.CompletedProcess[str]:

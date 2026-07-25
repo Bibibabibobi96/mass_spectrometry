@@ -116,8 +116,8 @@ try {
 
     $bundleDocument = Get-Content -LiteralPath $liveBundleMetadata -Raw -Encoding UTF8 |
         ConvertFrom-Json
-    $bundleArtifacts = @(Get-RfComsolRequiredProperty -Object $bundleDocument `
-        -Property 'artifacts' -Name 'paired particle bundle artifacts')
+    $bundleArtifacts = Get-RfComsolRequiredProperty -Object $bundleDocument `
+        -Property 'artifacts' -Name 'paired particle bundle artifacts'
     if ($bundleArtifacts.Count -eq 0) {throw 'Paired particle bundle artifacts must not be empty.'}
     $liveBundleRoot = [IO.Path]::GetFullPath((Split-Path -Parent $liveBundleMetadata))
     $frozenBundleRoot = Join-Path $inputDir 'paired_bundle'
