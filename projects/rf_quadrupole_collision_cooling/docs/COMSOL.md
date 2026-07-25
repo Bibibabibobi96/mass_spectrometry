@@ -59,6 +59,28 @@ interface、scientific mode、bundle与numerics；任何预检或后续错误都
 包根、模块实际来源和NumPy版本/安装根，缺失或篡改任一闭包文件均在商业启动前失败关闭。中性analysis
 机制不保存接口point ID、workflow role或能量判据。
 
+2026-07-25的接口N=100重跑在stationary场解完成后、逐粒子
+`ReleaseFromDataFile`构建期间停止：runtime已写到`particle_065.txt`，Java栈在创建`rel065`时由
+`PhysicsClient.create`抛出空指针；尚未执行该节点的属性设置、数据导入、粒子Study或粒子Solver，
+也没有原生崩溃日志。它与oaTOF历史上发生在Study solution-mesh初始化阶段的原生崩溃不是同一失败
+阶段；历史RF接口、当前S2和S3均已有同型100个release节点成功证据，因此不得把本次失败解释为64节点
+硬上限，也不得用变N、拆批或合并release规避。
+
+为在不改变科学或数值输入的前提下定位该失败，接口runner提供显式
+`-ReleaseConstructionGate`诊断执行阶段。它仍完整冻结和验证正式interface resolved、scientific mode、
+paired N=100 bundle和`baseline` COMSOL numerics，并严格拒绝非100粒子；这不是新Mode、profile或
+Candidate入口。专用MATLAB任务在模型构建前先发布`STATUS=RUNNING`任务报告，随后保持`std1/sol1`
+前置场解和100个独立`rel001...rel100`、一行六列文件及100个格式化后仍唯一的逐粒子`rt`，为create、label、各属性设置和
+import逐步追加关闭文件后的JSONL breadcrumb。诊断机制只允许在全部release节点验收后、创建
+`ElectricForce`、`std2`或`sol2`前返回，生成带100个GUI可见release节点的诊断MPH、结构化结果和
+success/failed manifest；它不运行粒子Study，不生成传输率或任何物理资格结论。该代码路径目前只有
+静态与求解器无关门禁，真实Gate A尚未执行。runner在写success manifest前还从本次run冻结的Python
+validator重新读取official ION11、100个实际release文件和1000条breadcrumb，逐条复核sequence、phase、
+tag/count演进、文件SHA-256、`Filename`和`rt`。validator还只从冻结run config中的
+`compiled_scientific_spec.source_axial_offset_mm`与ION11质量、能量、方位角和仰角独立重算每个六列
+release状态；同步篡改文件、result SHA和breadcrumb SHA仍必须失败。MATLAB result中的计数字段本身
+不能使Gate通过。
+
 `workflows/mass_filter_reference/run_comsol.ps1`是RF+DC功能扫描入口；其MATLAB任务固定为
 `comsol/mass_filter_reference/run_scan.m`。入口要求显式传入`SourceIonPath`，只接受仓库政策允许的
 N=100或N=1000源，并从冻结源真实行数派生每质量粒子数。它派生七个只改变质量的

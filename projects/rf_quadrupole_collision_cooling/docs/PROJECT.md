@@ -205,6 +205,17 @@ manifest；随后才允许LiveLink启动。任一配置、启动、GUI Compute�
 `catch/finally`写成可复核的`failed`三件套并恢复环境。该生命周期变更只有静态与纯合同回归证据，尚未
 执行新的COMSOL求解或GUI复验。
 
+2026-07-25的正式interface N=100重跑在`rel065`的`ReleaseFromDataFile`创建API处出现Java空指针，
+失败早于该节点属性设置、import和particle Study。历史RF、S2与S3的N=100成功运行排除了通用64节点
+硬上限；oaTOF历史小N原生崩溃则发生在solution-mesh初始化阶段，不能直接套用。本项目现已增加一个
+显式run-instance `release_construction_gate`诊断阶段：它复用同一正式输入冻结和baseline数值编译，
+只接受完整N=100，在`std1/sol1`后逐步记录100个独立release的durable breadcrumbs，并在
+`ef1/std2/sol2`前停止。该阶段不改变N、birth time、粒子文件、科学Mode或numerics profile，也不产生
+物理结果；shared Gate自身拒绝非100行、非有限或原始/格式化后不唯一的birth time，runner再用本次run
+冻结的独立validator从ION11和compiled scientific spec重算100个六列release状态，并复核实际文件和
+1000条breadcrumb而不信任MATLAB summary或配套SHA计数。源码和非商业
+门禁完成后仍须在一个干净LiveLink进程中执行Gate A，才能判断失败是否可重复。
+
 `execution_profiles.json`的两类跨求解器分析也不再用`Mode`切换：普通无碰撞profile固定调用
 `workflows/no_collision_transport/compare_cross_solver.ps1`，接口profile固定调用
 `workflows/interface_readiness/compare_cross_solver.ps1`。两者只接收各自
@@ -405,17 +416,20 @@ target-entry surface及物理矩形孔准备；oaTOF baseline particle-source bo
 
 ## 开放任务
 
-1. 连接功能任务已关闭；不自动进入S4。若恢复接口工作，先单独批准S3资格指标和最低通过率，再决定
+1. 使用严格固定的official N=100输入执行一次COMSOL release-construction Gate A；按最后一条JSONL
+   breadcrumb判断`rel065 create`是否在干净进程中重复。Gate未闭合前不得启动粒子Study、变N扫描、
+   合并release或据此声明COMSOL接口物理失败。
+2. 连接功能任务已关闭；不自动进入S4。若恢复接口工作，先单独批准S3资格指标和最低通过率，再决定
    是否需要N=1000、网格收敛、分辨率或公差研究。
-2. 研究COMSOL原生接口面或连续真空内部边界初始化，最终删除`0.001 mm`数值重启偏移。
-3. 当前RF参考几何没有正式连续接地侧壁；机械半径、壁厚、馈通和CAD同步仍未选择。
-4. 碰撞冷却仍是独立后续功能；质量过滤的下一步仅在另行批准后开展网格、稠密质量扫描、数值一致性
+3. 研究COMSOL原生接口面或连续真空内部边界初始化，最终删除`0.001 mm`数值重启偏移。
+4. 当前RF参考几何没有正式连续接地侧壁；机械半径、壁厚、馈通和CAD同步仍未选择。
+5. 碰撞冷却仍是独立后续功能；质量过滤的下一步仅在另行批准后开展网格、稠密质量扫描、数值一致性
    或分辨能力资格，不能复用当前功能PASS代替，也不新建几何项目。
-5. 两类轴向加速已完成COMSOL/SIMION N=100功能复验；后续若获批，再比较恒定2 eV、恒定5 eV和杆内
+6. 两类轴向加速已完成COMSOL/SIMION N=100功能复验；后续若获批，再比较恒定2 eV、恒定5 eV和杆内
    `2→5 eV`对oaTOF接口的功能比较。仍禁止在handoff处重写速度伪造加速。
-6. uniform四段和explicit三段都只是已通过功能复验的参考；分段数量、各段长度/间隙/电势、馈电、
+7. uniform四段和explicit三段都只是已通过功能复验的参考；分段数量、各段长度/间隙/电势、馈电、
    屏蔽连续性、局部网格和机械实现尚未优化，不得把任一案例当作正式硬件选择。
-7. 为生产入口补齐通用异常收尾协议及求解器包装器属于平台任务；第二个项目复用前不提前抽到`common/`。
+8. 为生产入口补齐通用异常收尾协议及求解器包装器属于平台任务；第二个项目复用前不提前抽到`common/`。
 
 ## 产物与历史
 

@@ -8,7 +8,8 @@ param(
     [Parameter(Mandatory = $true)][string]$SolverNumericsProfileId,
     [string]$NumericalExperimentId = '',
     [Parameter(Mandatory = $true)][string]$OperatingPoint,
-    [string]$PythonExe = ''
+    [string]$PythonExe = '',
+    [switch]$ReleaseConstructionGate
 )
 
 Set-StrictMode -Version Latest
@@ -29,8 +30,13 @@ $python = if ($PythonExe) {
 $workflowId = 'transport_interface_readiness'
 $software = @('COMSOL 6.4','MATLAB R2025b','Python 3.11')
 if ([string]::IsNullOrWhiteSpace($RunId)) {
-    $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') +
-        '__sim__comsol__rf-transport__interface-readiness'
+    $RunId = if($ReleaseConstructionGate){
+        (Get-Date -Format 'yyyyMMdd_HHmmss') +
+            '__test__comsol__rf-release-construction__n100'
+    }else{
+        (Get-Date -Format 'yyyyMMdd_HHmmss') +
+            '__sim__comsol__rf-transport__interface-readiness'
+    }
 }
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot `
     -ArtifactRoot $artifactRoot -RunId $RunId `
@@ -42,6 +48,17 @@ $candidateDir,$runtimeDir = (Join-Path $runDir 'comsol'),(Join-Path $runDir 'run
 $bootstrapReport = Join-Path $logDir 'comsol_bootstrap_report.txt'
 $guiVerifyReport = Join-Path $logDir 'comsol_gui_compute_report.txt'
 $stateContractReport = Join-Path $resultDir 'particle_state_contract.json'
+$releaseGateBreadcrumbs = Join-Path $logDir 'release_construction_breadcrumbs.jsonl'
+$releaseGateResult = Join-Path $resultDir 'release_construction_gate.json'
+$releaseGateValidation = Join-Path $resultDir `
+    'release_construction_gate_validation.json'
+$releaseGateModel = Join-Path $candidateDir `
+    'rf_quadrupole_collision_cooling__release-construction-gate.mph'
+$summaryRole = if ($ReleaseConstructionGate) {
+    'rf_release_construction_gate_summary'
+} else {
+    'rf_quadrupole_transport_summary'
+}
 $environmentNames = @('RFQUAD_RUN_CONFIG','RFQUAD_COMSOL_MODEL_PATH',
     'RFQUAD_EXPECTED_PARTICLES','RFQUAD_EXPECTED_HITS',
     'RFQUAD_EXPECTED_RF_PEAK_V','RFQUAD_EXPECTED_FREQUENCY_HZ')
@@ -97,7 +114,9 @@ try {
             'projects\rf_quadrupole_collision_cooling\workflows\interface_readiness\__init__.py',
             'projects\rf_quadrupole_collision_cooling\workflows\interface_readiness\generate_particle_table.py',
             'projects\rf_quadrupole_collision_cooling\workflows\interface_readiness\particle_source_policy.py',
+            'projects\rf_quadrupole_collision_cooling\analysis\__init__.py',
             'projects\rf_quadrupole_collision_cooling\analysis\paired_particle_source_bundle.py',
+            'projects\rf_quadrupole_collision_cooling\analysis\validate_release_construction_gate.py',
             'common\contracts\particle_physics.py',
             'common\contracts\particle_count_policy.py',
             'common\contracts\particle_count_policy.json',
@@ -113,6 +132,9 @@ try {
     $frozenBundleMechanism = Get-FrozenPythonPackageFile `
         -Package $frozenPythonPackage -RelativePath `
         'projects/rf_quadrupole_collision_cooling/analysis/paired_particle_source_bundle.py'
+    $frozenReleaseGateValidator = Get-FrozenPythonPackageFile `
+        -Package $frozenPythonPackage -RelativePath `
+        'projects/rf_quadrupole_collision_cooling/analysis/validate_release_construction_gate.py'
 
     $bundleDocument = Get-Content -LiteralPath $liveBundleMetadata -Raw -Encoding UTF8 |
         ConvertFrom-Json
@@ -184,6 +206,8 @@ try {
     if ($actualParticleCount-ne$expectedParticles){throw 'Frozen ION11 row count differs from metadata.'}
     & $python -m common.contracts.particle_count_policy --count $expectedParticles
     if($LASTEXITCODE-ne 0){throw 'Particle table violates the repository N=100/N=1000 policy.'}
+    if($ReleaseConstructionGate -and $expectedParticles-ne 100){
+        throw 'Release-construction gate requires exactly N=100.'}
 
     $mode = Get-Content -LiteralPath $frozenScientificMode -Raw -Encoding UTF8 |
         ConvertFrom-Json
@@ -270,6 +294,7 @@ try {
             particle_source_policy=$frozenParticlePolicy
             particle_source_generator=$frozenParticleGenerator
             paired_particle_source_mechanism=$frozenBundleMechanism
+            release_construction_gate_validator=$frozenReleaseGateValidator
             frozen_python_package_support=$frozenPythonSupport
         }
         frozen_python=[ordered]@{
@@ -289,7 +314,14 @@ try {
         output_policy=[ordered]@{save_model=$true;write_detailed_outputs=$true}
         results_dir=$resultDir;comsol_dir=$candidateDir;logs_dir=$logDir
         runtime_dir=$runtimeDir;run_dir=$runDir;formal_gate_passed=$false
-        parameters=[ordered]@{lifecycle_stage='inputs_frozen_and_validated'}
+        parameters=[ordered]@{
+            lifecycle_stage='inputs_frozen_and_validated'
+            execution_stage=if($ReleaseConstructionGate){
+                'release_construction_gate'
+            }else{
+                'full_particle_transport'
+            }
+        }
         provenance = [ordered]@{
             solver_numerics_sha256=Get-RunFileSha256 -Path $frozenNumerics
             source_sample_family_sha256=[string]$bindingDocument.source_sample_family_sha256
@@ -319,7 +351,7 @@ try {
     }
     Write-RunJson -Value $runConfig -Path $package.run_config
     Write-RunJson -Path $package.summary -Value ([ordered]@{
-        schema_version=1;role='rf_quadrupole_transport_summary';status='interrupted'
+        schema_version=1;role=$summaryRole;status='interrupted'
         failure_stage='commercial_execution_not_started';threshold_result_eligible=$false
         reason='Frozen inputs and COMSOL numerics passed preflight.'
     })
@@ -327,13 +359,125 @@ try {
         -RunConfig $package.run_config -Status interrupted -Software $software `
         -Outputs @($package.summary)
 
-    $failureStage = 'comsol_model_build'
+    $failureStage = if($ReleaseConstructionGate){
+        'comsol_release_construction_gate'
+    }else{
+        'comsol_model_build'
+    }
     $env:RFQUAD_RUN_CONFIG = $package.run_config
+    $taskScript = if($ReleaseConstructionGate){
+        Join-Path $projectRoot 'tests\comsol\run_release_construction_gate.m'
+    }else{
+        Join-Path $projectRoot 'tests\comsol\run_nocollision_candidate.m'
+    }
     & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') `
-        -TaskScript (Join-Path $projectRoot 'tests\comsol\run_nocollision_candidate.m') `
+        -TaskScript $taskScript `
         -ReportPath $bootstrapReport -StartupReportTimeoutSeconds 120
-    if($LASTEXITCODE-ne 0){throw 'COMSOL interface candidate launcher failed.'}
+    if($LASTEXITCODE-ne 0){
+        throw 'COMSOL interface LiveLink task launcher failed.'}
     [Environment]::SetEnvironmentVariable('RFQUAD_RUN_CONFIG',$null)
+
+    if($ReleaseConstructionGate){
+        $failureStage = 'release_construction_gate_contract'
+        foreach($expected in @(
+            $releaseGateBreadcrumbs,
+            $releaseGateResult,
+            $releaseGateModel,
+            $bootstrapReport
+        )){
+            if(-not(Test-Path -LiteralPath $expected -PathType Leaf)){
+                throw "Release-construction gate output is missing: $expected"}
+        }
+        $gateResult=Get-Content -LiteralPath $releaseGateResult -Raw -Encoding UTF8 |
+            ConvertFrom-Json
+        $breadcrumbLines=@(
+            Get-Content -LiteralPath $releaseGateBreadcrumbs -Encoding UTF8 |
+                Where-Object{-not[string]::IsNullOrWhiteSpace($_)}
+        )
+        $releaseFiles=@(
+            Get-ChildItem -LiteralPath $runtimeDir -File -Filter 'particle_*.txt' |
+                Sort-Object Name
+        )
+        $expectedReleaseNames=@(
+            1..100|ForEach-Object{'particle_{0:D3}.txt'-f$_}
+        )
+        $releaseNameDifference=@(
+            Compare-Object -ReferenceObject $expectedReleaseNames `
+                -DifferenceObject ([string[]]$releaseFiles.Name) -CaseSensitive
+        )
+        if([string]$gateResult.status-cne'success' -or
+           [string]$gateResult.role-cne'rf_release_construction_gate_result' -or
+           [int]$gateResult.particles-ne 100 -or
+           [int]$gateResult.release_tag_count-ne 100 -or
+           [int]$gateResult.release_file_count-ne 100 -or
+           [int]$gateResult.birth_time_count-ne 100 -or
+           [int]$gateResult.unique_birth_time_count-ne 100 -or
+           [int]$gateResult.unique_release_time_expression_count-ne 100 -or
+           [int]$gateResult.breadcrumb_count-ne 1000 -or
+           [string]$gateResult.first_release_tag-cne'rel001' -or
+           [string]$gateResult.last_release_tag-cne'rel100' -or
+           -not [bool]$gateResult.stationary_study_present -or
+           -not [bool]$gateResult.stationary_solver_present -or
+           [bool]$gateResult.electric_force_present -or
+           [bool]$gateResult.particle_study_present -or
+           [bool]$gateResult.particle_solver_present){
+            throw 'Release-construction gate result violates the fixed N=100 contract.'}
+        if(-not [string]::Equals(
+            [string]$gateResult.particle_table_sha256,
+            [string]$runConfig.provenance.particle_source_sha256,
+            [StringComparison]::OrdinalIgnoreCase)){
+            throw 'Release-construction gate particle-table SHA-256 differs from the frozen binding.'}
+        if($releaseFiles.Count-ne 100 -or $releaseNameDifference.Count-ne 0){
+            throw 'Release-construction gate did not preserve particle_001..particle_100.'}
+        if($breadcrumbLines.Count-ne 1000){
+            throw 'Release-construction gate did not preserve all 1000 durable breadcrumbs.'}
+        $gateValidationExecution=Invoke-IsolatedFrozenPythonModule `
+            -Python $python -Package $frozenPythonPackage `
+            -Module `
+            'projects.rf_quadrupole_collision_cooling.analysis.validate_release_construction_gate' `
+            -Arguments @(
+                '--run-config',$package.run_config,
+                '--particle-table',$particleTable,
+                '--breadcrumbs',$releaseGateBreadcrumbs,
+                '--result',$releaseGateResult,
+                '--runtime-dir',$runtimeDir,
+                '--output',$releaseGateValidation
+            ) -DistributionNames @() -RequiredModuleNames @(
+                'projects.rf_quadrupole_collision_cooling.analysis',
+                'projects.rf_quadrupole_collision_cooling.analysis.validate_release_construction_gate'
+            ) -ForbiddenRoots @($repoRoot,$projectRoot)
+        if(-not(Test-Path -LiteralPath $releaseGateValidation -PathType Leaf)){
+            throw 'Frozen release-construction validator did not create its report.'}
+        $gateValidation=Get-Content -LiteralPath $releaseGateValidation `
+            -Raw -Encoding UTF8|ConvertFrom-Json
+        if([string]$gateValidation.status-cne'success' -or
+           [int]$gateValidation.particles-ne 100 -or
+           [int]$gateValidation.release_files-ne 100 -or
+           [int]$gateValidation.release_time_expressions-ne 100 -or
+           [int]$gateValidation.breadcrumbs-ne 1000){
+            throw 'Frozen release-construction validator did not close Gate A artifacts.'}
+        Write-RunJson -Path $package.summary -Value ([ordered]@{
+            schema_version=1;role=$summaryRole;status='success'
+            workflow_id=$workflowId;execution_stage='release_construction_gate'
+            particles=100;release_tags=100;release_files=100
+            unique_birth_times=100;unique_release_time_expressions=100
+            particle_study_present=$false;particle_solver_present=$false
+            threshold_result_eligible=$false
+            result='results/release_construction_gate.json'
+        })
+        $runConfig.parameters.lifecycle_stage='complete'
+        $runConfig.frozen_python.release_construction_gate_validation=`
+            $gateValidationExecution
+        Write-RunJson -Value $runConfig -Path $package.run_config
+        $outputs=@($releaseGateModel,$releaseGateResult,$releaseGateBreadcrumbs,
+            $releaseGateValidation,$bootstrapReport,$package.summary)
+        $outputs+=@($releaseFiles|Select-Object -ExpandProperty FullName)
+        Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot `
+            -RunConfig $package.run_config -Status success -Software $software `
+            -Outputs $outputs
+        "STATUS=PASS RUN_ID=$RunId EXECUTION_STAGE=release_construction_gate RELEASE_TAGS=100"
+        return
+    }
 
     $modelPath=Join-Path $candidateDir 'rf_quadrupole_collision_cooling__model.mph'
     $summaryPath=Join-Path $resultDir 'solver_summary.json'
@@ -410,7 +554,7 @@ try {
     try {
         Complete-FailedRun -Python $python -RepoRoot $repoRoot `
             -RunConfig $package.run_config -Summary $package.summary `
-            -SummaryRole 'rf_quadrupole_transport_summary' `
+            -SummaryRole $summaryRole `
             -Reason $failureReason -Software $software
     } catch {
         throw "COMSOL interface failure closure also failed: $($_.Exception.Message)"
