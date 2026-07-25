@@ -19,6 +19,9 @@ function Invoke-RfSimionCoreRun {
     if ($TrajectoryQuality -le 0 -or $RfStepsPerPeriod -le 0) {
         throw 'SIMION launch numerics must be positive.'
     }
+    $iobStdoutPath = Join-Path $LogDir 'simion_iob_stdout.txt'
+    $iobStderrPath = Join-Path $LogDir 'simion_iob_stderr.txt'
+    $iobExitCodePath = Join-Path $LogDir 'simion_iob_exit_code.txt'
     $stdoutPath = Join-Path $LogDir 'simion_stdout.txt'
     $stderrPath = Join-Path $LogDir 'simion_stderr.txt'
     Push-Location $CandidateDir
@@ -32,8 +35,20 @@ function Invoke-RfSimionCoreRun {
         $env:MULTIPOLE_SIMION_RUN_CONFIG_LUA = $RunConfigLua
         $env:RFQUAD_SIMION_REFERENCE_REPORT = $IobReport
         $env:RFQUAD_SIMION_REFERENCE_IOB = $IobPath
-        & $SimionExe --nogui --noprompt lua $InspectScript
-        if ($LASTEXITCODE -ne 0) { throw 'SIMION IOB runtime contract failed.' }
+        'NOT_STARTED' | Set-Content -LiteralPath $iobExitCodePath -Encoding ASCII
+        $inspectArguments = @('--nogui','--noprompt','lua',$InspectScript)
+        $inspectProcess = Start-Process -FilePath $SimionExe -ArgumentList $inspectArguments `
+            -WorkingDirectory $CandidateDir -WindowStyle Hidden -Wait -PassThru `
+            -RedirectStandardOutput $iobStdoutPath -RedirectStandardError $iobStderrPath
+        [string]$inspectProcess.ExitCode |
+            Set-Content -LiteralPath $iobExitCodePath -Encoding ASCII
+        Get-Content -LiteralPath $iobStdoutPath -Encoding UTF8
+        if ((Get-Item -LiteralPath $iobStderrPath).Length -gt 0) {
+            Get-Content -LiteralPath $iobStderrPath -Encoding UTF8
+        }
+        if ($inspectProcess.ExitCode -ne 0) {
+            throw "SIMION IOB runtime contract failed with exit code $($inspectProcess.ExitCode)."
+        }
         Start-Sleep -Milliseconds 500
 
         $flyArguments = @(

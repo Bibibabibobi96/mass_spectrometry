@@ -280,6 +280,8 @@ try {
     $rootSummary | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $runSummary -Encoding UTF8
     $manifestOutputs = @(
         $trajectoryCsv,$summaryJson,$particleStateCsv,$stateContractReport,
+        (Join-Path $logDir 'simion_iob_stdout.txt'),(Join-Path $logDir 'simion_iob_stderr.txt'),
+        (Join-Path $logDir 'simion_iob_exit_code.txt'),
         (Join-Path $logDir 'simion_stdout.txt'),(Join-Path $logDir 'simion_stderr.txt'),
         (Join-Path $candidateDir 'quad_monolithic.iob'),(Join-Path $candidateDir 'quad_monolithic.pa0'),
         $flyPath,$iobReport,$shaPath,$massResponseCsv,$massMetricsJson,$massResponseFigure,$runSummary
