@@ -124,6 +124,9 @@ S2–S3连接功能闭环记录：
   [`workflows/interface_readiness/compare_cross_solver.ps1`](workflows/interface_readiness/compare_cross_solver.ps1)
   只判定接口就绪；两者分别生成独立schema v2结果和粒子事件census。接口样本低于合同最小值或来源
   ID无效时为`NOT_EVALUATED`，不能降级成无碰撞结论；无碰撞完整handoff要求也不注入接口门禁。
+  source manifest验证输出不进入共享helper返回值；接口比较在paired-source身份核验后冻结双方
+  `resolved_design`，RF幅值和频率只从这两份同SHA-256权威文件读取并写入比较run config，不要求
+  solver run config重复这些物理字段。
 - 同求解器时间离散预注册筛选：
   [`workflows/same_solver_convergence/run_comparison.ps1`](workflows/same_solver_convergence/run_comparison.ps1)，
   仅接受SIMION 40→80或COMSOL 80→160 RF步/周期，并受

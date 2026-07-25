@@ -25,6 +25,7 @@ IDENTITY_HELPER = PROJECT_ROOT / "runtime" / "particle_table_identity.ps1"
 CROSS_RUNNER = CROSS_ROOT / "compare_cross_solver.ps1"
 COMSOL_RUNNER = CROSS_ROOT / "run_comsol.ps1"
 PROJECT_GATE = PROJECT_ROOT / "verify_project.ps1"
+LIFECYCLE_SUPPORT = PROJECT_ROOT / "runtime" / "cross_solver_analysis_lifecycle.ps1"
 
 
 @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
@@ -253,6 +254,205 @@ class ParticleTableIdentityTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
 
 
+@unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+class CrossSolverLifecycleTests(unittest.TestCase):
+    def invoke_lifecycle(
+        self,
+        command: str,
+        environment: dict[str, str],
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+            cwd=REPO_ROOT,
+            timeout=60,
+            capture_output=True,
+            check=False,
+            encoding="utf-8",
+            env=environment,
+        )
+
+    def test_source_pair_discards_manifest_verifier_stdout(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fake_repo = root / "repo"
+            verifier = fake_repo / "common" / "contracts" / "verify_run_manifest.py"
+            verifier.parent.mkdir(parents=True)
+            verifier.write_text(
+                "print('RUN_MANIFEST_VERIFY=PASS fake-verifier')\n",
+                encoding="utf-8",
+            )
+            artifact_root = root / "artifacts"
+            for solver, role in (
+                ("comsol", "rf_quadrupole_comsol_run_config"),
+                ("simion", "rf_quadrupole_simion_run_config"),
+            ):
+                run = artifact_root / "runs" / solver
+                run.mkdir(parents=True)
+                config = run / "run_config.json"
+                config.write_text(json.dumps({"role": role}), encoding="utf-8")
+                (run / "run_manifest.json").write_text(
+                    json.dumps({"run_config": {"path": str(config)}}),
+                    encoding="utf-8",
+                )
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "RF_LIFECYCLE_SUPPORT": str(LIFECYCLE_SUPPORT),
+                    "RF_FAKE_REPO": str(fake_repo),
+                    "RF_ARTIFACT_ROOT": str(artifact_root),
+                    "RF_PYTHON": sys.executable,
+                }
+            )
+            command = (
+                ". $env:RF_LIFECYCLE_SUPPORT; "
+                "$pair=Get-CrossSolverSourcePair "
+                "-Python $env:RF_PYTHON -RepoRoot $env:RF_FAKE_REPO "
+                "-ArtifactRoot $env:RF_ARTIFACT_ROOT "
+                "-ComsolRunId comsol -SimionRunId simion; "
+                "[pscustomobject]@{"
+                "type=$pair.GetType().FullName;"
+                "comsol_role=$pair.comsol.config.role;"
+                "simion_role=$pair.simion.config.role"
+                "}|ConvertTo-Json -Compress"
+            )
+            result = self.invoke_lifecycle(command, environment)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["type"], "System.Management.Automation.PSCustomObject")
+            self.assertEqual(
+                payload["comsol_role"],
+                "rf_quadrupole_comsol_run_config",
+            )
+            self.assertEqual(
+                payload["simion_role"],
+                "rf_quadrupole_simion_run_config",
+            )
+            self.assertNotIn("RUN_MANIFEST_VERIFY", result.stdout)
+
+            verifier.write_text(
+                "print('RUN_MANIFEST_VERIFY=FAIL fake-verifier')\n"
+                "raise SystemExit(7)\n",
+                encoding="utf-8",
+            )
+            rejected = self.invoke_lifecycle(command, environment)
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn("Source run-manifest verification failed", rejected.stderr)
+
+    def invoke_resolved_drive(
+        self,
+        comsol: Path,
+        simion: Path,
+    ) -> subprocess.CompletedProcess[str]:
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "RF_LIFECYCLE_SUPPORT": str(LIFECYCLE_SUPPORT),
+                "RF_COMSOL_RESOLVED": str(comsol),
+                "RF_SIMION_RESOLVED": str(simion),
+            }
+        )
+        command = (
+            ". $env:RF_LIFECYCLE_SUPPORT; "
+            "Get-CrossSolverResolvedDrive "
+            "-ComsolResolvedDesign $env:RF_COMSOL_RESOLVED "
+            "-SimionResolvedDesign $env:RF_SIMION_RESOLVED "
+            "|ConvertTo-Json -Compress"
+        )
+        return self.invoke_lifecycle(command, environment)
+
+    def test_resolved_drive_is_authoritative_and_fails_closed(self) -> None:
+        document = {
+            "role": "multipole_resolved_design_do_not_edit",
+            "drive": {
+                "rf_amplitude_V_zero_to_peak_per_group": 139.81792,
+                "frequency_Hz": 1_100_000.0,
+            },
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            comsol = root / "comsol.json"
+            simion = root / "simion.json"
+            encoded = json.dumps(document, sort_keys=True)
+            comsol.write_text(encoded, encoding="utf-8")
+            simion.write_text(encoded, encoding="utf-8")
+
+            accepted = self.invoke_resolved_drive(comsol, simion)
+            self.assertEqual(accepted.returncode, 0, accepted.stderr)
+            drive = json.loads(accepted.stdout)
+            self.assertEqual(drive["rf_peak_v"], 139.81792)
+            self.assertEqual(drive["frequency_hz"], 1_100_000.0)
+            self.assertRegex(drive["resolved_design_sha256"], r"^[0-9A-F]{64}$")
+
+            same_drive_different_file = dict(document)
+            same_drive_different_file["additional_identity"] = "different"
+            simion.write_text(
+                json.dumps(same_drive_different_file, sort_keys=True),
+                encoding="utf-8",
+            )
+            rejected_hash = self.invoke_resolved_drive(comsol, simion)
+            self.assertNotEqual(rejected_hash.returncode, 0)
+            self.assertIn(
+                "resolved designs or drive values differ",
+                rejected_hash.stderr,
+            )
+            simion.write_text(encoded, encoding="utf-8")
+
+            missing_path = self.invoke_resolved_drive(
+                root / "missing.json",
+                simion,
+            )
+            self.assertNotEqual(missing_path.returncode, 0)
+            self.assertIn("frozen resolved design is missing", missing_path.stderr)
+
+            missing_value = dict(document)
+            missing_value["drive"] = dict(document["drive"])
+            del missing_value["drive"]["frequency_Hz"]
+            comsol.write_text(json.dumps(missing_value), encoding="utf-8")
+            missing = self.invoke_resolved_drive(comsol, simion)
+            self.assertNotEqual(missing.returncode, 0)
+            self.assertIn("lacks numeric frequency_Hz", missing.stderr)
+
+            for invalid_value in (True, None):
+                with self.subTest(invalid_value=invalid_value):
+                    invalid_type = dict(document)
+                    invalid_type["drive"] = dict(document["drive"])
+                    invalid_type["drive"]["frequency_Hz"] = invalid_value
+                    comsol.write_text(json.dumps(invalid_type), encoding="utf-8")
+                    rejected_type = self.invoke_resolved_drive(comsol, simion)
+                    self.assertNotEqual(rejected_type.returncode, 0)
+                    self.assertIn(
+                        "lacks numeric frequency_Hz",
+                        rejected_type.stderr,
+                    )
+
+            numeric_string = dict(document)
+            numeric_string["drive"] = dict(document["drive"])
+            numeric_string["drive"]["frequency_Hz"] = "1100000"
+            comsol.write_text(json.dumps(numeric_string), encoding="utf-8")
+            rejected_string = self.invoke_resolved_drive(comsol, simion)
+            self.assertNotEqual(rejected_string.returncode, 0)
+            self.assertIn("lacks numeric frequency_Hz", rejected_string.stderr)
+
+            comsol.write_text(
+                '{"role":"multipole_resolved_design_do_not_edit",'
+                '"drive":{"rf_amplitude_V_zero_to_peak_per_group":139.81792,'
+                '"frequency_Hz":1e9999}}',
+                encoding="utf-8",
+            )
+            rejected_nonfinite = self.invoke_resolved_drive(comsol, simion)
+            self.assertNotEqual(rejected_nonfinite.returncode, 0)
+            self.assertIn("frequency_Hz is not finite", rejected_nonfinite.stderr)
+
+            mismatch = dict(document)
+            mismatch["drive"] = dict(document["drive"])
+            mismatch["drive"]["frequency_Hz"] = 1_200_000.0
+            comsol.write_text(encoded, encoding="utf-8")
+            simion.write_text(json.dumps(mismatch), encoding="utf-8")
+            rejected_mismatch = self.invoke_resolved_drive(comsol, simion)
+            self.assertNotEqual(rejected_mismatch.returncode, 0)
+            self.assertIn("resolved designs or drive values differ", rejected_mismatch.stderr)
+
+
 class CandidateGateParameterContractTests(unittest.TestCase):
     def test_comsol_runner_consumes_frozen_bundle_ion11_with_binding(self) -> None:
         runner = COMSOL_RUNNER.read_text(encoding="utf-8")
@@ -305,6 +505,32 @@ class CandidateGateParameterContractTests(unittest.TestCase):
         self.assertIn("Format='canonical'", cross_runner)
         self.assertIn("Copy-CrossSolverAnalysisInputs", cross_runner)
         self.assertIn("Complete-CrossSolverAnalysis", cross_runner)
+
+    def test_cross_source_contract_uses_single_manifest_and_resolved_drive(self) -> None:
+        cross_runner = CROSS_RUNNER.read_text(encoding="utf-8")
+        support = LIFECYCLE_SUPPORT.read_text(encoding="utf-8")
+        self.assertIn("$null = & $Python", support)
+        self.assertIn("Get-CrossSolverResolvedDrive", support)
+        self.assertNotIn("$comsolConfig.rf_peak_v", cross_runner)
+        self.assertNotIn("$comsolConfig.frequency_hz", cross_runner)
+        self.assertNotIn("$simionConfig.rf_peak_v", cross_runner)
+        self.assertNotIn("$simionConfig.frequency_hz", cross_runner)
+        self.assertIn("comsol_resolved_design=$frozenComsolResolved", cross_runner)
+        self.assertIn("simion_resolved_design=$frozenSimionResolved", cross_runner)
+        self.assertIn("rf_peak_v=$resolvedDrive.rf_peak_v", cross_runner)
+        self.assertIn("frequency_hz=$resolvedDrive.frequency_hz", cross_runner)
+        self.assertIn(
+            "resolved_design_sha256=$resolvedDrive.resolved_design_sha256",
+            cross_runner,
+        )
+        self.assertLess(
+            cross_runner.index("Assert-RfTransportParticleTableIdentity"),
+            cross_runner.index("$comsolResolvedSource"),
+        )
+        self.assertLess(
+            cross_runner.index("Copy-CrossSolverAnalysisInputs"),
+            cross_runner.index("$resolvedDrive = Get-CrossSolverResolvedDrive"),
+        )
 
     def test_project_gate_does_not_select_or_forward_candidate_workflows(self) -> None:
         project_gate = PROJECT_GATE.read_text(encoding="utf-8")

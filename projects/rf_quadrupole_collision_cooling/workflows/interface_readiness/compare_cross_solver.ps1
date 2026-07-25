@@ -49,10 +49,8 @@ try {
         $simionConfig.mode -ne 'transport_interface_readiness') {
         throw 'Interface comparison accepts only interface transport run configs.'
     }
-    if ($comsolConfig.operating_point -ne $simionConfig.operating_point -or
-        [double]$comsolConfig.rf_peak_v -ne [double]$simionConfig.rf_peak_v -or
-        [double]$comsolConfig.frequency_hz -ne [double]$simionConfig.frequency_hz) {
-        throw 'COMSOL and SIMION operating point, RF peak, or frequency differ.'
+    if ($comsolConfig.operating_point -ne $simionConfig.operating_point) {
+        throw 'COMSOL and SIMION operating points differ.'
     }
 
     $comsolBinding = Join-Path $inputDir 'comsol_particle_source_binding.json'
@@ -63,11 +61,18 @@ try {
         -ComsolBindingOutput $comsolBinding `
         -SimionBindingOutput $simionBinding `
         -ExplicitIon11Path $ParticleTablePath
-    if ([double]::IsNaN($FrequencyHz) -or [double]::IsInfinity($FrequencyHz)) {
-        $FrequencyHz = [double]$comsolConfig.frequency_hz
-    } elseif ($FrequencyHz -ne [double]$comsolConfig.frequency_hz) {
-        throw 'Explicit frequency differs from the solver run configs.'
+    foreach($entry in @(
+        [pscustomobject]@{Solver='COMSOL';Config=$comsolConfig},
+        [pscustomobject]@{Solver='SIMION';Config=$simionConfig}
+    )){
+        if(-not $entry.Config.inputs.PSObject.Properties['resolved_design']){
+            throw "$($entry.Solver) run config lacks resolved_design."
+        }
     }
+    $comsolResolvedSource = Resolve-RfConfigInputPath $comsolConfig `
+        ([string]$comsolConfig.inputs.resolved_design)
+    $simionResolvedSource = Resolve-RfConfigInputPath $simionConfig `
+        ([string]$simionConfig.inputs.resolved_design)
 
     $frozen = New-CrossSolverFrozenPathSet -InputDir $inputDir `
         -AnalyzerRelativePath `
@@ -85,6 +90,8 @@ try {
     $frozenInterface = Join-Path $inputDir 'interface_contract.json'
     $frozenIon11 = Join-Path $inputDir 'particles.ion'
     $frozenCanonical = Join-Path $inputDir 'particles.csv'
+    $frozenComsolResolved = Join-Path $inputDir 'comsol_resolved_design.json'
+    $frozenSimionResolved = Join-Path $inputDir 'simion_resolved_design.json'
     $freezePairs = @(
         @((Join-Path $PSScriptRoot 'evaluate.py'),$frozenAnalyzer),
         @((Join-Path $projectRoot 'analysis\particle_state_comparison_core.py'),$frozenCore),
@@ -92,6 +99,8 @@ try {
         @((Join-Path $PSScriptRoot '__init__.py'),$frozenPackageInit),
         @((Join-Path $projectRoot 'config\modes\transport_interface_readiness.json'),$frozenMode),
         @((Join-Path $projectRoot 'config\interface_contract.json'),$frozenInterface),
+        @($comsolResolvedSource,$frozenComsolResolved),
+        @($simionResolvedSource,$frozenSimionResolved),
         @($comsolManifest,$frozenComsolManifest),
         @($simionManifest,$frozenSimionManifest),
         @($comsolConfigPath,$frozenComsolConfig),
@@ -103,6 +112,14 @@ try {
         @((Join-Path $projectRoot 'runtime\cross_solver_analysis_lifecycle.ps1'),$frozenLifecycleSupport)
     )
     Copy-CrossSolverAnalysisInputs -Pairs $freezePairs
+    $resolvedDrive = Get-CrossSolverResolvedDrive `
+        -ComsolResolvedDesign $frozenComsolResolved `
+        -SimionResolvedDesign $frozenSimionResolved
+    if ([double]::IsNaN($FrequencyHz) -or [double]::IsInfinity($FrequencyHz)) {
+        $FrequencyHz = [double]$resolvedDrive.frequency_hz
+    } elseif ($FrequencyHz -ne [double]$resolvedDrive.frequency_hz) {
+        throw 'Explicit frequency differs from the frozen resolved design.'
+    }
     foreach($entry in @([pscustomobject]@{Solver='COMSOL';State=$frozenComsolState;Particles=$frozenIon11;Format='ion11'},
         [pscustomobject]@{Solver='SIMION';State=$frozenSimionState;Particles=$frozenCanonical;Format='canonical'})){
         Push-Location $repoRoot
@@ -126,7 +143,8 @@ try {
         simion_run_config=$frozenSimionConfig;comsol_particle_state=$frozenComsolState
         simion_particle_state=$frozenSimionState;particle_table_ion11=$frozenIon11
         particle_table_canonical10=$frozenCanonical;comsol_particle_source_binding=$comsolBinding
-        simion_particle_source_binding=$simionBinding;analysis_lifecycle_support=$frozenLifecycleSupport}
+        simion_particle_source_binding=$simionBinding;comsol_resolved_design=$frozenComsolResolved
+        simion_resolved_design=$frozenSimionResolved;analysis_lifecycle_support=$frozenLifecycleSupport}
     Write-RunJson -Path $runConfigPath -Depth 8 -Value ([ordered]@{
         schema_version=2
         role='rf_quadrupole_interface_readiness_cross_solver_run_config'
@@ -136,10 +154,12 @@ try {
         project_root=$projectRoot
         inputs=$inputs
         parameters=[ordered]@{comsol_source_run_id=$ComsolRunId;simion_source_run_id=$SimionRunId
-            operating_point=$comsolConfig.operating_point;particle_count=$particleIdentity.particle_count}
+            operating_point=$comsolConfig.operating_point;particle_count=$particleIdentity.particle_count
+            rf_peak_v=$resolvedDrive.rf_peak_v;frequency_hz=$resolvedDrive.frequency_hz}
         provenance=[ordered]@{source_sample_family_sha256=$particleIdentity.source_sample_family_sha256
             latent_sha256=$particleIdentity.latent_sha256;coordinate_mapping_version=$particleIdentity.coordinate_mapping_version
-            ion11_sha256=$particleIdentity.ion11_sha256;canonical10_sha256=$particleIdentity.canonical10_sha256}
+            ion11_sha256=$particleIdentity.ion11_sha256;canonical10_sha256=$particleIdentity.canonical10_sha256
+            resolved_design_sha256=$resolvedDrive.resolved_design_sha256}
         formal_gate_passed=$false
     })
 

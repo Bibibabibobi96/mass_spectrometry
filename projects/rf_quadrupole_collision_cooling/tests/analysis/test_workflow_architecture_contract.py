@@ -108,6 +108,7 @@ RUNTIME_MODULE_FUNCTIONS = {
         "New-CrossSolverAnalysisPackage",
         "Assert-CrossSolverSourceManifest",
         "Get-CrossSolverSourcePair",
+        "Get-CrossSolverResolvedDrive",
         "Copy-CrossSolverAnalysisInputs",
         "New-CrossSolverFrozenPathSet",
         "Invoke-CrossSolverAnalyzer",

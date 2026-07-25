@@ -16,7 +16,7 @@ function Assert-CrossSolverSourceManifest {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$RepoRoot,
         [Parameter(Mandatory)][string]$Manifest)
-    & $Python (Join-Path $RepoRoot 'common\contracts\verify_run_manifest.py') $Manifest `
+    $null = & $Python (Join-Path $RepoRoot 'common\contracts\verify_run_manifest.py') $Manifest `
         --require-status success --require-project rf_quadrupole_collision_cooling
     if ($LASTEXITCODE -ne 0) { throw "Source run-manifest verification failed: $Manifest" }
     Get-Content -LiteralPath $Manifest -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -39,6 +39,79 @@ function Get-CrossSolverSourcePair {
             config_path=$configPath;config=(Get-Content -LiteralPath $configPath -Raw -Encoding UTF8|ConvertFrom-Json)}
     }
     [pscustomobject]$result
+}
+
+function Get-CrossSolverResolvedDrive {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$ComsolResolvedDesign,
+        [Parameter(Mandatory)][string]$SimionResolvedDesign
+    )
+    $numericTypes = @(
+        [byte],[sbyte],[int16],[uint16],[int32],[uint32],
+        [int64],[uint64],[single],[double],[decimal]
+    )
+    $records = [ordered]@{}
+    foreach($entry in @(
+        [pscustomobject]@{Solver='COMSOL';Path=$ComsolResolvedDesign},
+        [pscustomobject]@{Solver='SIMION';Path=$SimionResolvedDesign}
+    )){
+        $path = [IO.Path]::GetFullPath($entry.Path)
+        if(-not(Test-Path -LiteralPath $path -PathType Leaf)){
+            throw "$($entry.Solver) frozen resolved design is missing: $path"
+        }
+        try {
+            $document = Get-Content -LiteralPath $path -Raw -Encoding UTF8 |
+                ConvertFrom-Json
+        } catch {
+            throw "$($entry.Solver) frozen resolved design is invalid JSON: $path"
+        }
+        if($document.role -ne 'multipole_resolved_design_do_not_edit' -or
+            -not $document.PSObject.Properties['drive']){
+            throw "$($entry.Solver) frozen resolved design identity or drive is invalid."
+        }
+        $drive = $document.drive
+        $values = [ordered]@{}
+        foreach($propertyName in @(
+            'rf_amplitude_V_zero_to_peak_per_group','frequency_Hz'
+        )){
+            $property = $drive.PSObject.Properties[$propertyName]
+            if($null -eq $property -or $null -eq $property.Value -or
+                -not $numericTypes.Contains($property.Value.GetType())){
+                throw "$($entry.Solver) resolved drive lacks numeric $propertyName."
+            }
+            try {
+                $number = [double]$property.Value
+            } catch {
+                throw "$($entry.Solver) resolved drive $propertyName is not numeric."
+            }
+            if([double]::IsNaN($number) -or [double]::IsInfinity($number)){
+                throw "$($entry.Solver) resolved drive $propertyName is not finite."
+            }
+            $values[$propertyName] = $number
+        }
+        if($values.frequency_Hz -le 0){
+            throw "$($entry.Solver) resolved drive frequency_Hz must be positive."
+        }
+        $records[$entry.Solver] = [pscustomobject]@{
+            path=$path
+            sha256=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+            rf_peak_v=$values.rf_amplitude_V_zero_to_peak_per_group
+            frequency_hz=$values.frequency_Hz
+        }
+    }
+    if($records.COMSOL.sha256 -cne $records.SIMION.sha256 -or
+        $records.COMSOL.rf_peak_v -ne $records.SIMION.rf_peak_v -or
+        $records.COMSOL.frequency_hz -ne $records.SIMION.frequency_hz){
+        throw 'COMSOL and SIMION frozen resolved designs or drive values differ.'
+    }
+    [pscustomobject]@{
+        comsol_path=$records.COMSOL.path
+        simion_path=$records.SIMION.path
+        resolved_design_sha256=$records.COMSOL.sha256
+        rf_peak_v=$records.COMSOL.rf_peak_v
+        frequency_hz=$records.COMSOL.frequency_hz
+    }
 }
 
 function Copy-CrossSolverAnalysisInputs {
