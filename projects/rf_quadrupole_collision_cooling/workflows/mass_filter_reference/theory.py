@@ -22,7 +22,7 @@ from scipy.special import mathieu_a, mathieu_b
 from common.multipole.family_contract import from_quadrupole_contract
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_BASELINE = PROJECT_ROOT / "config" / "baseline.json"
 DEFAULT_MODE = PROJECT_ROOT / "config" / "modes" / "mass_filter_reference.json"
 
@@ -141,14 +141,12 @@ def validate_mass_filter_reference(baseline: dict[str, Any], mode: dict[str, Any
         if comsol_screen.get("status") != "pass" or not comsol_screen.get("authority_run_id"):
             raise ValueError("dual-solver status requires a passing COMSOL authority run")
     if mode["status"] == "n100_dual_solver_revalidation_pending":
-        for screen_name in ("solver_screen", "comsol_screen"):
+        for screen_name in ("simion_screen", "comsol_screen"):
             screen = mode.get(screen_name, {})
             if screen.get("status") != "pending_n100_revalidation":
                 raise ValueError(f"{screen_name} must remain pending until an N=100 run passes")
             if screen.get("authority_run_id") is not None:
                 raise ValueError(f"{screen_name} cannot cite a pre-N=100 authority run")
-            if int(screen.get("particles_per_mass", 0)) != 100:
-                raise ValueError(f"{screen_name} must require 100 particles per mass")
 
     theory = mode.get("theory_contract", {})
     expected_contract = {
@@ -206,6 +204,26 @@ def validate_mass_filter_reference(baseline: dict[str, Any], mode: dict[str, Any
         "rf_differential_V_peak_to_peak": 4.0 * rf_amplitude,
         "ideal_scanline": passband,
         "scope": "L0 ideal-field contract validation only; no solver or mass-response qualification",
+    }
+
+
+def theory_masses(
+    baseline: dict[str, Any], mode: dict[str, Any]
+) -> dict[str, float]:
+    """Return ideal passband and calibration masses for the governed mode."""
+    reference = validate_mass_filter_reference(baseline, mode)
+    q_tune = float(reference["q_at_tune_mass"])
+    tune_mass = float(mode["rf"]["tune_mass_Th"])
+    passband = reference["ideal_scanline"]
+    return {
+        "low_mass_Th": tune_mass * q_tune / float(passband["q_out"]),
+        "high_mass_Th": tune_mass * q_tune / float(passband["q_in"]),
+        "calibration_mass_Th": mass_to_charge_th(
+            float(passband["q_cal"]),
+            float(mode["rf"]["amplitude_V_zero_to_peak_per_group"]),
+            float(mode["rf"]["effective_radius_mm"]),
+            float(mode["rf"]["frequency_Hz"]),
+        ),
     }
 
 

@@ -59,10 +59,13 @@ interface、scientific mode、bundle与numerics；任何预检或后续错误都
 包根、模块实际来源和NumPy版本/安装根，缺失或篡改任一闭包文件均在商业启动前失败关闭。中性analysis
 机制不保存接口point ID、workflow role或能量判据。
 
-`tests/comsol/run_mass_filter_candidate.ps1`是RF+DC功能扫描入口：从同一N=100功能源派生七个只改变质量的
+`workflows/mass_filter_reference/run_comsol.ps1`是RF+DC功能扫描入口；其MATLAB任务固定为
+`comsol/mass_filter_reference/run_scan.m`。入口要求显式传入`SourceIonPath`，只接受仓库政策允许的
+N=100或N=1000源，并从冻结源真实行数派生每质量粒子数。它派生七个只改变质量的
 单质量表，在一个LiveLink会话中顺序求解，并按冻结的中心透过、端点抑制和对比度判据汇总。每个质量
-只保留`particle_state.csv`和`solver_summary.json`，101.5 Th额外保存一份GUI可检查MPH；L1与SIMION
-响应以manifest校验后冻结进运行包，比较差异只作诊断，不构成网格或分辨能力资格。迁移前小N结果
+只保留`particle_state.csv`和`solver_summary.json`，101.5 Th额外保存一份GUI可检查MPH。该runner不读取
+L1或SIMION run，也不产生跨来源结论；`workflows/mass_filter_reference/compare_responses.ps1`作为
+独立analysis入口显式消费COMSOL、SIMION和L1成功manifest。比较差异只作诊断，不构成网格或分辨能力资格。迁移前小N结果
 仅为历史证据；新的COMSOL、SIMION及跨求解器权威响应须等待N=100复验后建立。
 
 标准逐粒子结果为`<mode>_particle_state_<run>.csv`；官方回归的mode仍为`transport_no_collision`。

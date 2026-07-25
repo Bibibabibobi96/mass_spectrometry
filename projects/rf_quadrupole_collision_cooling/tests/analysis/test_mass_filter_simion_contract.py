@@ -21,7 +21,9 @@ class MassFilterSimionContractTests(unittest.TestCase):
         self.assertIn("adj_elect02 = transport_axis_voltage_v - differential", lua)
 
     def test_mass_filter_has_a_dedicated_fixed_purpose_runner(self) -> None:
-        runner_path = PROJECT_ROOT / "tests" / "simion" / "run_mass_filter_candidate.ps1"
+        runner_path = (
+            PROJECT_ROOT / "workflows" / "mass_filter_reference" / "run_simion.ps1"
+        )
         runner = runner_path.read_text(encoding="utf-8")
         parameter_block = runner[: runner.index("Set-StrictMode")]
 
@@ -41,11 +43,11 @@ class MassFilterSimionContractTests(unittest.TestCase):
 
     def test_mass_runner_uses_one_paired_ion11_analysis_pipeline(self) -> None:
         runner = (
-            PROJECT_ROOT / "tests" / "simion" / "run_mass_filter_candidate.ps1"
+            PROJECT_ROOT / "workflows" / "mass_filter_reference" / "run_simion.ps1"
         ).read_text(encoding="utf-8")
-        self.assertIn("analysis.generate_mass_scan_particle_table", runner)
-        self.assertIn("analysis.render_ion11_simion_source", runner)
-        self.assertIn("analysis.analyze_simion_mass_scan", runner)
+        self.assertIn("mass_filter_reference.prepare_simion_scan", runner)
+        self.assertIn("mass_filter_reference.render_simion_source", runner)
+        self.assertIn("mass_filter_reference.evaluate_simion", runner)
         self.assertIn("--source-format ion11", runner)
         self.assertIn("$numericalContract.baseline_rf_steps_per_period", runner)
         self.assertIn("New-RfSimionCoreRunConfig", runner)
@@ -60,7 +62,7 @@ class MassFilterSimionContractTests(unittest.TestCase):
 
     def test_physical_failure_is_not_an_execution_failure(self) -> None:
         runner = (
-            PROJECT_ROOT / "tests" / "simion" / "run_mass_filter_candidate.ps1"
+            PROJECT_ROOT / "workflows" / "mass_filter_reference" / "run_simion.ps1"
         ).read_text(encoding="utf-8")
         self.assertIn("$physicalDecision = [string]$massMetrics.status", runner)
         self.assertIn("status = 'success'", runner)
@@ -75,7 +77,14 @@ class MassFilterSimionContractTests(unittest.TestCase):
         )
         self.assertAlmostEqual(mode["rf"]["dc_amplitude_V_per_group"], 22.763014939677756)
         self.assertAlmostEqual(mode["rf"]["axis_common_mode_offset_V"], -8.0)
-        self.assertEqual(mode["solver_screen"]["particles_per_mass"], 100)
+        self.assertEqual(
+            mode["mass_scan_spec"]["calibration_mass_Th"],
+            101.5,
+        )
+        self.assertNotIn("particles_per_mass", mode["mass_scan_spec"])
+        self.assertNotIn("numerics", mode)
+        self.assertIn("simion_screen", mode)
+        self.assertIn("comsol_screen", mode)
 
     def test_shared_geometry_drive_and_solver_numerics_have_one_authority(self) -> None:
         config = PROJECT_ROOT / "config"

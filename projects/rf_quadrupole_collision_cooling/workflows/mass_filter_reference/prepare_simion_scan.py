@@ -6,10 +6,15 @@ import argparse
 import json
 from pathlib import Path
 
-from common.multipole.paired_mass_scan import generate_paired_ion_table, sha256, validate_masses
+from common.multipole.paired_mass_scan import (
+    generate_paired_ion_table,
+    load_ion_rows,
+    sha256,
+    validate_masses,
+)
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SOURCE = PROJECT_ROOT / "config" / "particles" / "official_fixed_100.ion"
 DEFAULT_MODE = PROJECT_ROOT / "config" / "modes" / "mass_filter_reference.json"
 
@@ -17,8 +22,8 @@ DEFAULT_MODE = PROJECT_ROOT / "config" / "modes" / "mass_filter_reference.json"
 def generate(source_path: Path, mode_path: Path, destination: Path, metadata_path: Path) -> dict:
     """Generate the paired scan table and its identity metadata."""
     mode = json.loads(mode_path.read_text(encoding="utf-8"))
-    masses = validate_masses(mode["solver_screen"]["paired_source_masses_Th"])
-    expected_per_mass = int(mode["solver_screen"]["particles_per_mass"])
+    masses = validate_masses(mode["mass_scan_spec"]["paired_source_masses_Th"])
+    expected_per_mass = len(load_ion_rows(source_path))
     return generate_paired_ion_table(
         source_path,
         destination,

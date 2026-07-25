@@ -33,12 +33,16 @@ try {
 } finally { Pop-Location }
 Push-Location $repoRoot
 try {
-  & $python -m projects.rf_quadrupole_collision_cooling.analysis.quadrupole_l0 --check-mode
+  & $python -m `
+    projects.rf_quadrupole_collision_cooling.workflows.mass_filter_reference.theory `
+    --check-mode
 } finally { Pop-Location }
 if ($LASTEXITCODE -ne 0) { throw 'Quadrupole L0 reference gate failed.' }
 Push-Location $repoRoot
 try {
-  & $python -m projects.rf_quadrupole_collision_cooling.analysis.run_mass_filter_l1 --check-contract
+  & $python -m `
+    projects.rf_quadrupole_collision_cooling.workflows.mass_filter_reference.run_finite_length `
+    --check-contract
 } finally { Pop-Location }
 if ($LASTEXITCODE -ne 0) { throw 'Quadrupole mass-filter L1 contract gate failed.' }
 & $python (Join-Path $projectRoot 'analysis\entry_aperture_l0.py') --check

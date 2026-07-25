@@ -176,6 +176,45 @@ function Copy-PortableRunManifestClosure {
     }
     $manifest.inputs = $selectedInputs
     $config.inputs = $selectedConfigInputs
+    if ($config.Contains('frozen_python')) {
+        $frozen = $config.frozen_python
+        if (-not $frozen.Contains('package') -or
+            -not $frozen.Contains('execution') -or
+            -not $frozen.package.Contains('files') -or
+            -not $frozen.execution.Contains('frozen_modules') -or
+            -not $frozen.execution.Contains('third_party')) {
+            throw 'Frozen Python identity cannot be made portable.'
+        }
+        $portableFiles = @(
+            foreach ($entry in $frozen.package.files) {
+                [ordered]@{
+                    relative_path = [string]$entry.relative_path
+                    sha256 = ([string]$entry.sha256).ToUpperInvariant()
+                }
+            }
+        )
+        $portableModules = @(
+            foreach ($entry in $frozen.execution.frozen_modules) {
+                [ordered]@{name = [string]$entry.name}
+            }
+        )
+        $portableThirdParty = @(
+            foreach ($entry in $frozen.execution.third_party) {
+                [ordered]@{
+                    name = [string]$entry.name
+                    version = [string]$entry.version
+                }
+            }
+        )
+        $config.frozen_python = [ordered]@{
+            package = [ordered]@{files = $portableFiles}
+            execution = [ordered]@{
+                module = [string]$frozen.execution.module
+                frozen_modules = $portableModules
+                third_party = $portableThirdParty
+            }
+        }
+    }
     $portableContext = Join-Path $Destination 'portable_context'
     foreach ($key in @($config.Keys)) {
         if ($key -eq 'project_root' -or

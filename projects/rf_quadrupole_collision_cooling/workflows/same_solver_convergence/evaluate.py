@@ -11,28 +11,16 @@ import math
 from pathlib import Path
 from typing import Any
 
-try:
-    from projects.rf_quadrupole_collision_cooling.analysis.particle_state_comparison_core import (
-        aggregate_handoff,
-        event_ids,
-        load_event_table,
-        optional_symmetric_relative_difference,
-        residual_values,
-    )
-except ModuleNotFoundError:
-    from particle_state_comparison_core import (
-        aggregate_handoff,
-        event_ids,
-        load_event_table,
-        optional_symmetric_relative_difference,
-        residual_values,
-    )
-try:
-    from projects.rf_quadrupole_collision_cooling.analysis.validate_paired_particle_source_binding import (
-        resolve_binding,
-    )
-except ModuleNotFoundError:
-    from validate_paired_particle_source_binding import resolve_binding
+from projects.rf_quadrupole_collision_cooling.analysis.particle_state_comparison_core import (
+    aggregate_handoff,
+    event_ids,
+    load_event_table,
+    optional_symmetric_relative_difference,
+    residual_values,
+)
+from projects.rf_quadrupole_collision_cooling.analysis.validate_paired_particle_source_binding import (
+    resolve_binding,
+)
 
 
 def sha256(path: Path) -> str:
@@ -157,6 +145,98 @@ def canonicalize(value: Any) -> Any:
     return value
 
 
+def normalized_frozen_python_identity(
+    config: dict[str, Any],
+    manifest: dict[str, Any],
+) -> dict[str, Any] | None:
+    frozen = config.get("frozen_python")
+    if frozen is None:
+        return None
+    if not isinstance(frozen, dict):
+        raise ValueError("frozen Python identity is invalid")
+    package = frozen.get("package")
+    execution = frozen.get("execution")
+    if not isinstance(package, dict) or not isinstance(execution, dict):
+        raise ValueError("frozen Python package or execution identity is missing")
+    files = package.get("files")
+    modules = execution.get("frozen_modules")
+    third_party = execution.get("third_party")
+    if (
+        not isinstance(files, list)
+        or not files
+        or not isinstance(modules, list)
+        or not isinstance(third_party, list)
+    ):
+        raise ValueError("frozen Python inventory is invalid")
+    file_identity: list[dict[str, str]] = []
+    for entry in files:
+        if not isinstance(entry, dict):
+            raise ValueError("frozen Python file identity is invalid")
+        relative = Path(str(entry.get("relative_path", "")))
+        digest = str(entry.get("sha256", "")).upper()
+        if (
+            relative.as_posix() in {"", "."}
+            or relative.is_absolute()
+            or ".." in relative.parts
+            or len(digest) != 64
+        ):
+            raise ValueError("frozen Python relative path or SHA-256 is invalid")
+        try:
+            int(digest, 16)
+        except ValueError as error:
+            raise ValueError("frozen Python SHA-256 is invalid") from error
+        file_identity.append(
+            {
+                "relative_path": relative.as_posix(),
+                "sha256": digest,
+            }
+        )
+    code_records = [
+        record
+        for name, record in sorted(manifest.get("inputs", {}).items())
+        if name.startswith("frozen_python_code_")
+    ]
+    package_hashes = sorted(entry["sha256"] for entry in file_identity)
+    manifest_hashes = sorted(
+        str(record["sha256"]).upper() for record in code_records
+    )
+    if package_hashes != manifest_hashes:
+        raise ValueError(
+            "frozen Python package differs from manifest code inventory"
+        )
+    support = manifest.get("inputs", {}).get(
+        "frozen_python_package_support"
+    )
+    if not isinstance(support, dict):
+        raise ValueError("frozen Python package support identity is missing")
+    module_names = sorted(str(entry.get("name", "")) for entry in modules)
+    module = str(execution.get("module", ""))
+    if not module or not all(module_names):
+        raise ValueError("frozen Python module identity is invalid")
+    distributions = sorted(
+        (
+            {
+                "name": str(entry.get("name", "")),
+                "version": str(entry.get("version", "")),
+            }
+            for entry in third_party
+        ),
+        key=lambda entry: (entry["name"].lower(), entry["version"]),
+    )
+    if not all(entry["name"] and entry["version"] for entry in distributions):
+        raise ValueError("frozen Python distribution identity is invalid")
+    return {
+        "module": module,
+        "files": sorted(
+            file_identity,
+            key=lambda entry: entry["relative_path"].lower(),
+        ),
+        "modules": module_names,
+        "third_party": distributions,
+        "package_support_sha256": str(support["sha256"]).upper(),
+    }
+
+
 def normalized_run_config(
     config: dict[str, Any],
     manifest: dict[str, Any],
@@ -186,6 +266,13 @@ def normalized_run_config(
             trajectory = compiled.get("trajectory")
             if isinstance(trajectory, dict):
                 trajectory.pop("rf_steps_per_period", None)
+    frozen_python_identity = normalized_frozen_python_identity(
+        config, manifest
+    )
+    if frozen_python_identity is None:
+        normalized.pop("frozen_python", None)
+    else:
+        normalized["frozen_python"] = frozen_python_identity
     normalized["inputs"] = {
         name: {
             "bytes": int(record["bytes"]),
@@ -195,6 +282,58 @@ def normalized_run_config(
         if name != "particle_source_binding"
     }
     return canonicalize(normalized)
+
+
+def validate_source_numerics_authority(
+    solver: str,
+    manifest: dict[str, Any],
+    config: dict[str, Any],
+    authority_path: Path,
+) -> None:
+    input_role = (
+        "comsol_solver_numerics"
+        if solver == "COMSOL"
+        else "numerical_contract"
+    )
+    record = manifest.get("inputs", {}).get(input_role)
+    if not isinstance(record, dict):
+        raise ValueError(f"{solver} solver-numerics input is missing")
+    authority_digest = sha256(authority_path)
+    if str(record["sha256"]).upper() != authority_digest:
+        raise ValueError(
+            f"{solver} solver-numerics input differs from workflow authority"
+        )
+    if solver == "COMSOL":
+        authority = json.loads(
+            authority_path.read_text(encoding="utf-8-sig")
+        )
+        provenance = config.get("provenance", {})
+        if (
+            authority.get("role")
+            != "rf_quadrupole_comsol_solver_numerics"
+            or config.get("solver_numerics_contract_id")
+            != authority.get("contract_id")
+            or config.get("solver_numerics_contract_logical_sha256")
+            != authority.get("logical_sha256")
+            or provenance.get("solver_numerics_sha256") != authority_digest
+        ):
+            raise ValueError(
+                "COMSOL solver-numerics authority identity differs"
+            )
+    else:
+        authority = json.loads(
+            authority_path.read_text(encoding="utf-8-sig")
+        )
+        provenance = config.get("provenance", {})
+        if (
+            authority.get("role")
+            != "rf_quadrupole_simion_solver_numerics"
+            or provenance.get("solver_numerics_contract_sha256")
+            != authority_digest
+        ):
+            raise ValueError(
+                "SIMION solver-numerics authority identity differs"
+            )
 
 
 def validate_derived_numerical_identity(
@@ -422,6 +561,7 @@ def main() -> None:
     parser.add_argument("--baseline-manifest", required=True, type=Path)
     parser.add_argument("--refined-manifest", required=True, type=Path)
     parser.add_argument("--contract", required=True, type=Path)
+    parser.add_argument("--comsol-numerics", type=Path)
     parser.add_argument("--simion-numerics", type=Path)
     parser.add_argument("--particle-count-policy", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
@@ -450,6 +590,17 @@ def main() -> None:
     matrix = contract["comparisons"][solver]
     if baseline_config.get("role") != matrix["run_config_role"]:
         raise ValueError("run-config role differs from the preregistered matrix")
+    authority_path = (
+        args.comsol_numerics if solver == "COMSOL" else args.simion_numerics
+    )
+    if authority_path is None:
+        raise ValueError(f"{solver} solver-numerics authority is required")
+    validate_source_numerics_authority(
+        solver, baseline_manifest, baseline_config, authority_path
+    )
+    validate_source_numerics_authority(
+        solver, refined_manifest, refined_config, authority_path
+    )
     varied = matrix["varied_parameter"]
     baseline_value, refined_value = numerical_pair(
         solver, matrix, contract, args.contract, args.simion_numerics

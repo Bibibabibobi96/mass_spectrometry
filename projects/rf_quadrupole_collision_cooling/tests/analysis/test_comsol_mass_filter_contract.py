@@ -7,7 +7,12 @@ import unittest
 from pathlib import Path
 
 from common.multipole.paired_mass_scan import generate_paired_case_tables
-from projects.rf_quadrupole_collision_cooling.analysis import analyze_comsol_mass_scan as module
+from projects.rf_quadrupole_collision_cooling.workflows.mass_filter_reference import (
+    evaluate_comsol as module,
+)
+from projects.rf_quadrupole_collision_cooling.workflows.mass_filter_reference import (
+    prepare_comsol_scan,
+)
 
 
 PROJECT_ROOT = Path(__file__).parents[2]
@@ -28,13 +33,15 @@ class ComsolMassFilterContractTests(unittest.TestCase):
 
     def test_comsol_functional_aggregate_uses_frozen_mass_contract(self) -> None:
         mode_path = PROJECT_ROOT / "config" / "modes" / "mass_filter_reference.json"
-        baseline_path = PROJECT_ROOT / "config" / "baseline.json"
         mode = json.loads(mode_path.read_text(encoding="utf-8"))
         transmissions = [0.0, 0.2, 0.92, 1.0, 0.72, 0.24, 0.04]
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             cases = []
-            for mass, transmission in zip(mode["solver_screen"]["paired_source_masses_Th"], transmissions):
+            for mass, transmission in zip(
+                mode["mass_scan_spec"]["paired_source_masses_Th"],
+                transmissions,
+            ):
                 summary = root / f"mass_{mass:g}.json"
                 summary.write_text(json.dumps({
                     "mode": "mass_filter_reference", "mass_Th": mass, "particles": 100,
@@ -43,9 +50,37 @@ class ComsolMassFilterContractTests(unittest.TestCase):
                 cases.append({"solver_summary": str(summary)})
             scan = root / "scan.json"
             scan.write_text(json.dumps({"cases": cases}), encoding="utf-8")
-            response, metrics = module.analyze(scan, baseline_path, mode_path)
-            self.assertEqual([row["mass_Th"] for row in response], mode["solver_screen"]["paired_source_masses_Th"])
+            response, metrics = module.analyze(scan, mode_path)
+            self.assertEqual(
+                [row["mass_Th"] for row in response],
+                mode["mass_scan_spec"]["paired_source_masses_Th"],
+            )
             self.assertEqual(metrics["status"], "PASS")
+
+    def test_comsol_case_preparation_derives_n1000_from_source(self) -> None:
+        source_100 = (
+            PROJECT_ROOT / "config" / "particles" / "official_fixed_100.ion"
+        )
+        mode = (
+            PROJECT_ROOT / "config" / "modes" / "mass_filter_reference.json"
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source_1000 = root / "source_n1000.ion"
+            source_1000.write_text(
+                source_100.read_text(encoding="utf-8") * 10,
+                encoding="utf-8",
+            )
+            metadata = prepare_comsol_scan.generate(
+                source_1000,
+                mode,
+                root / "cases",
+                root / "cases.json",
+            )
+        self.assertEqual(metadata["particles_per_mass"], 1000)
+        self.assertTrue(
+            all(case["particles"] == 1000 for case in metadata["cases"])
+        )
 
     def test_matlab_builder_superposes_differential_and_static_fields(self) -> None:
         builder = (
@@ -53,7 +88,9 @@ class ComsolMassFilterContractTests(unittest.TestCase):
             / "comsol"
             / "solve_deterministic_rf_quadrupole_particles.m"
         ).read_text(encoding="utf-8")
-        mass_task = (PROJECT_ROOT / "tests" / "comsol" / "run_mass_filter_scan.m").read_text(
+        mass_task = (
+            PROJECT_ROOT / "comsol" / "mass_filter_reference" / "run_scan.m"
+        ).read_text(
             encoding="utf-8"
         )
         self.assertNotIn("'mass_filter_reference'", builder)
@@ -74,9 +111,9 @@ class ComsolMassFilterContractTests(unittest.TestCase):
         transport_runner = (
             PROJECT_ROOT / "workflows" / "interface_readiness" / "run_comsol.ps1"
         ).read_text(encoding="utf-8")
-        mass_runner = (PROJECT_ROOT / "tests" / "comsol" / "run_mass_filter_candidate.ps1").read_text(
-            encoding="utf-8"
-        )
+        mass_runner = (
+            PROJECT_ROOT / "workflows" / "mass_filter_reference" / "run_comsol.ps1"
+        ).read_text(encoding="utf-8")
         for runner in (transport_runner, mass_runner):
             self.assertIn("resolved_design", runner)
             self.assertNotIn("resolve_family_operating_contract", runner)
@@ -85,28 +122,69 @@ class ComsolMassFilterContractTests(unittest.TestCase):
         self.assertIn("common.contracts.particle_state", transport_runner)
 
     def test_mass_filter_functional_pass_does_not_claim_formal_eligibility(self) -> None:
-        runner = (PROJECT_ROOT / "tests" / "comsol" / "run_mass_filter_candidate.ps1").read_text(
-            encoding="utf-8"
-        )
+        runner = (
+            PROJECT_ROOT / "workflows" / "mass_filter_reference" / "run_comsol.ps1"
+        ).read_text(encoding="utf-8")
         self.assertIn("formal_gate_passed=$false", runner)
         self.assertNotIn(
             "$runConfiguration.formal_gate_passed=($metricDocument.status-eq 'PASS')",
             runner,
         )
 
-    def test_comsol_mass_runner_accepts_only_verified_simion_mass_output(self) -> None:
+    def test_comsol_mass_runner_has_no_cross_source_dependency(self) -> None:
         runner = (
-            PROJECT_ROOT / "tests" / "comsol" / "run_mass_filter_candidate.ps1"
+            PROJECT_ROOT / "workflows" / "mass_filter_reference" / "run_comsol.ps1"
         ).read_text(encoding="utf-8")
-        for token in (
-            "rf_quadrupole_simion_mass_filter_run_config",
-            "rf_quadrupole_mass_filter_summary",
-            "$simionRunConfig.mode-ne 'mass_filter_reference'",
-            "$simionSummary.mode-ne 'mass_filter_reference'",
-            "SIMION stable mass-response output is not uniquely recorded",
-            "verify_run_manifest.py",
+        parameter_block = runner[: runner.index("Set-StrictMode")]
+        self.assertIn("[string]$SourceIonPath", parameter_block)
+        self.assertIn(
+            "role='rf_quadrupole_comsol_mass_filter_run_config'",
+            runner,
+        )
+        for forbidden in (
+            "SimionRunId",
+            "L1RunId",
+            "simion_response",
+            "l1_response",
+            "mass-response__l0-l1-simion-comsol",
         ):
-            self.assertIn(token, runner)
+            self.assertNotIn(forbidden, runner)
+        evaluator = (
+            PROJECT_ROOT
+            / "workflows"
+            / "mass_filter_reference"
+            / "evaluate_comsol.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("evaluate_simion", evaluator)
+        self.assertNotIn("theory_masses", evaluator)
+        self.assertNotIn("simion", evaluator.lower())
+
+    def test_mass_comparison_requires_all_source_run_ids(self) -> None:
+        runner = (
+            PROJECT_ROOT
+            / "workflows"
+            / "mass_filter_reference"
+            / "compare_responses.ps1"
+        ).read_text(encoding="utf-8")
+        parameter_block = runner[: runner.index("Set-StrictMode")]
+        for required in ("ComsolRunId", "SimionRunId", "L1RunId"):
+            self.assertIn(
+                f"[Parameter(Mandatory = $true)][string]${required}",
+                parameter_block,
+            )
+        self.assertNotIn("$Mode", parameter_block)
+        self.assertIn("Copy-PortableRunManifestClosure", runner)
+        self.assertIn("Invoke-IsolatedFrozenPythonModule", runner)
+        self.assertIn("$comsolSourceParticles", runner)
+        self.assertIn("$simionSourceParticles", runner)
+        self.assertIn(
+            "'--comsol-source-particles',$comsolSourceParticles",
+            runner,
+        )
+        self.assertIn(
+            "'--simion-source-particles',$simionSourceParticles",
+            runner,
+        )
 
     def test_project_comsol_runner_and_builder_retain_only_specialized_modes(self) -> None:
         runner = (

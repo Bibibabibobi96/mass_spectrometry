@@ -119,7 +119,7 @@
         },
         {
           "step_id": "simion_mass_response", "kind": "run", "shell": "powershell",
-          "entrypoint": "tests/simion/run_mass_filter_candidate.ps1",
+          "entrypoint": "workflows/mass_filter_reference/run_simion.ps1",
           "run_id_template": "{timestamp}__sim__simion__mass-filter__n700",
           "arguments": ["-SourceIonPath", "{mass_filter_base_source_ion11_path}", "-SolverNumericsContractPath", "{simion_solver_numerics_contract_path}", "-RunId", "{run_id}"]
         }

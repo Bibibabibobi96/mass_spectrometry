@@ -17,11 +17,16 @@ from projects.rf_quadrupole_collision_cooling.workflows.interface_readiness.part
 from projects.rf_quadrupole_collision_cooling.analysis.validate_paired_particle_source_binding import (
     resolve_binding,
 )
+from projects.rf_quadrupole_collision_cooling.workflows.same_solver_convergence.evaluate import (
+    normalized_frozen_python_identity,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
-ANALYZER = PROJECT_ROOT / "analysis" / "compare_same_solver_numerics.py"
+ANALYZER = (
+    PROJECT_ROOT / "workflows" / "same_solver_convergence" / "evaluate.py"
+)
 CONTRACT = PROJECT_ROOT / "config" / "same_solver_numerical_convergence.json"
 PARTICLE_COUNT_POLICY = (
     REPO_ROOT / "common" / "contracts" / "particle_count_policy.json"
@@ -35,6 +40,11 @@ PORTABLE_INPUT_ROLES = [
     "particle_source_family",
     "particle_source_distribution",
     "resolved_design",
+    "interface_contract",
+    "mode",
+    "numerical_contract",
+    "frozen_python_package_support",
+    "frozen_python_code_001",
 ]
 PORTABLE_SIMION_OUTPUT_ROLES = {
     "particle_state": "particle_state.csv",
@@ -227,6 +237,60 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
             },
         )
 
+    def test_frozen_python_identity_is_path_free_and_sha_bound(self) -> None:
+        code_sha = "A" * 64
+        support_sha = "B" * 64
+        config = {
+            "frozen_python": {
+                "package": {
+                    "files": [
+                        {
+                            "relative_path": "workflow/evaluate.py",
+                            "path": r"C:\first\absolute\evaluate.py",
+                            "sha256": code_sha,
+                        }
+                    ]
+                },
+                "execution": {
+                    "module": "workflow.evaluate",
+                    "frozen_modules": [
+                        {
+                            "name": "workflow.evaluate",
+                            "origin": r"C:\first\absolute\evaluate.py",
+                        }
+                    ],
+                    "third_party": [
+                        {
+                            "name": "numpy",
+                            "version": "2.0.0",
+                            "distribution_root": r"C:\first\numpy",
+                        }
+                    ],
+                },
+            }
+        }
+        manifest = {
+            "inputs": {
+                "frozen_python_code_001": {"sha256": code_sha},
+                "frozen_python_package_support": {"sha256": support_sha},
+            }
+        }
+        first = normalized_frozen_python_identity(config, manifest)
+        relocated = json.loads(json.dumps(config))
+        relocated["frozen_python"]["package"]["files"][0]["path"] = (
+            r"D:\relocated\evaluate.py"
+        )
+        relocated["frozen_python"]["execution"]["frozen_modules"][0][
+            "origin"
+        ] = r"D:\relocated\evaluate.py"
+        second = normalized_frozen_python_identity(relocated, manifest)
+        self.assertEqual(first, second)
+        self.assertNotIn("absolute", json.dumps(first))
+        drifted = json.loads(json.dumps(manifest))
+        drifted["inputs"]["frozen_python_code_001"]["sha256"] = "C" * 64
+        with self.assertRaisesRegex(ValueError, "manifest code inventory"):
+            normalized_frozen_python_identity(config, drifted)
+
     def test_portable_path_containment_resolves_windows_aliases(self) -> None:
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -416,6 +480,14 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
             encoding="utf-8",
         )
         outputs = [record(state), record(summary)]
+        frozen_code = run / "input" / "code" / "workflow" / "evaluate.py"
+        frozen_code.parent.mkdir(parents=True)
+        frozen_code.write_text("VALUE = 1\n", encoding="utf-8")
+        frozen_support = run / "input" / "frozen_python_package.ps1"
+        frozen_support.write_text(
+            "function Invoke-FrozenPythonFixture { return $true }\n",
+            encoding="utf-8",
+        )
         inputs = {
             "particle_table": record(particles),
             "consumed_particle_table": record(particles),
@@ -426,12 +498,32 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
             "particle_source_family": record(self.source_family),
             "particle_source_distribution": record(self.distribution),
             "resolved_design": record(self.resolved_design),
+            "interface_contract": record(
+                PROJECT_ROOT / "config" / "interface_contract.json"
+            ),
+            "frozen_python_package_support": record(frozen_support),
+            "frozen_python_code_001": record(frozen_code),
         }
         if solver == "COMSOL":
+            inputs["scientific_mode"] = record(
+                PROJECT_ROOT
+                / "config"
+                / "modes"
+                / "transport_interface_readiness.json"
+            )
             inputs["comsol_solver_numerics"] = record(
                 PROJECT_ROOT / "config" / "comsol_solver_numerics.json"
             )
         if solver == "SIMION":
+            inputs["mode"] = record(
+                PROJECT_ROOT
+                / "config"
+                / "modes"
+                / "transport_interface_readiness.json"
+            )
+            inputs["numerical_contract"] = record(
+                PROJECT_ROOT / "config" / "simion_solver_numerics.json"
+            )
             inventory = simion / "SHA256SUMS.csv"
             pa0 = simion / "quad_monolithic.pa0"
             pa1 = simion / "quad_monolithic.pa1"
@@ -553,6 +645,37 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
                 "lifecycle_stage": "inputs_frozen_and_validated",
             },
             "formal_gate_passed": False,
+            "frozen_python": {
+                "package": {
+                    "root": str(frozen_code.parents[2]),
+                    "files": [
+                        {
+                            "relative_path": "workflow/evaluate.py",
+                            "path": str(frozen_code.resolve()),
+                            "sha256": sha256(frozen_code),
+                        }
+                    ],
+                },
+                "execution": {
+                    "module": "workflow.evaluate",
+                    "python_executable": sys.executable,
+                    "frozen_modules": [
+                        {
+                            "name": "workflow.evaluate",
+                            "origin": str(frozen_code.resolve()),
+                        }
+                    ],
+                    "third_party": [
+                        {
+                            "name": "numpy",
+                            "version": "2.0.0",
+                            "distribution_root": str(
+                                frozen_code.parents[2] / "numpy"
+                            ),
+                        }
+                    ],
+                },
+            },
             "provenance": {
                 field: binding[field]
                 for field in (
@@ -577,6 +700,9 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
         if solver == "SIMION":
             config["provenance"]["rf_steps_per_period"] = steps
             config["provenance"]["rf_steps_override"] = steps != 40
+            config["provenance"]["solver_numerics_contract_sha256"] = sha256(
+                PROJECT_ROOT / "config" / "simion_solver_numerics.json"
+            )
         else:
             config["provenance"]["solver_numerics_sha256"] = sha256(
                 PROJECT_ROOT / "config" / "comsol_solver_numerics.json"
@@ -669,13 +795,18 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
             [
                 sys.executable,
                 "-m",
-                "projects.rf_quadrupole_collision_cooling.analysis.compare_same_solver_numerics",
+                "projects.rf_quadrupole_collision_cooling.workflows."
+                "same_solver_convergence.evaluate",
                 "--baseline-manifest",
                 str(baseline),
                 "--refined-manifest",
                 str(refined),
                 "--contract",
                 str(CONTRACT),
+                "--comsol-numerics",
+                str(PROJECT_ROOT / "config" / "comsol_solver_numerics.json"),
+                "--simion-numerics",
+                str(PROJECT_ROOT / "config" / "simion_solver_numerics.json"),
                 "--particle-count-policy",
                 str(PARTICLE_COUNT_POLICY),
                 "--output",
@@ -865,9 +996,9 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
     def test_managed_runner_separates_execution_and_decision(self) -> None:
         runner = (
             PROJECT_ROOT
-            / "tests"
-            / "analysis"
-            / "run_same_solver_numerical_comparison.ps1"
+            / "workflows"
+            / "same_solver_convergence"
+            / "run_comparison.ps1"
         ).read_text(encoding="utf-8")
         self.assertIn("--require-status success", runner)
         self.assertIn("Complete-FailedRun", runner)
@@ -876,8 +1007,17 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
         decision_failure = runner.index("if ($decisionStatus -ne 'PASS')")
         self.assertLess(success_manifest, decision_failure)
         self.assertIn("Copy-VerifiedRunInput", runner)
-        self.assertIn("Save-RunEnvironment", runner)
-        self.assertIn("--simion-numerics $frozenSimionNumerics", runner)
+        self.assertIn("New-FrozenPythonPackage", runner)
+        self.assertIn("Invoke-IsolatedFrozenPythonModule", runner)
+        self.assertIn("-ForbiddenRoots @($repoRoot,$projectRoot)", runner)
+        self.assertIn(
+            "'--comsol-numerics',$frozenComsolNumerics",
+            runner,
+        )
+        self.assertIn(
+            "'--simion-numerics',$frozenSimionNumerics",
+            runner,
+        )
         self.assertIn("Copy-PortableRunManifestClosure", runner)
         self.assertIn("-RequiredInputRoles $requiredInputRoles", runner)
         self.assertIn("-RequiredOutputRoles $requiredOutputRoles", runner)
@@ -969,6 +1109,11 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
                     "particle_source_family",
                     "particle_source_distribution",
                     "resolved_design",
+                    "interface_contract",
+                    "mode",
+                    "numerical_contract",
+                    "frozen_python_package_support",
+                    "frozen_python_code_001",
                 },
             )
             self.assertEqual(
@@ -1085,13 +1230,18 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
         analysis_arguments = [
             sys.executable,
             "-m",
-            "projects.rf_quadrupole_collision_cooling.analysis.compare_same_solver_numerics",
+            "projects.rf_quadrupole_collision_cooling.workflows."
+            "same_solver_convergence.evaluate",
             "--baseline-manifest",
             str(manifests[0]),
             "--refined-manifest",
             str(manifests[1]),
             "--contract",
             str(CONTRACT),
+            "--comsol-numerics",
+            str(PROJECT_ROOT / "config" / "comsol_solver_numerics.json"),
+            "--simion-numerics",
+            str(PROJECT_ROOT / "config" / "simion_solver_numerics.json"),
             "--particle-count-policy",
             str(PARTICLE_COUNT_POLICY),
             "--output",
@@ -1276,7 +1426,7 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
 
     def test_analyzer_reuses_neutral_particle_state_core(self) -> None:
         analyzer = (
-            PROJECT_ROOT / "analysis" / "compare_same_solver_numerics.py"
+            PROJECT_ROOT / "workflows" / "same_solver_convergence" / "evaluate.py"
         ).read_text(encoding="utf-8")
         self.assertIn("particle_state_comparison_core", analyzer)
         self.assertNotIn("def load_event_table", analyzer)

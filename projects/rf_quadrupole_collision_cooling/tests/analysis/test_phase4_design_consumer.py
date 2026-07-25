@@ -69,22 +69,28 @@ class Phase4DesignConsumerTests(unittest.TestCase):
 
     def test_managed_plotters_bind_explicit_png_and_state_identity(self) -> None:
         managed = (
-            "analyze_comsol_mass_scan.py",
-            "analyze_s3_end_to_end.py",
-            "compare_rf_input_energy.py",
-            "plot_shared_pulse_geometry_snapshot.py",
+            PROJECT_ROOT
+            / "workflows"
+            / "mass_filter_reference"
+            / "evaluate_comparison.py",
+            PROJECT_ROOT / "analysis" / "analyze_s3_end_to_end.py",
+            PROJECT_ROOT / "analysis" / "compare_rf_input_energy.py",
+            PROJECT_ROOT / "analysis" / "plot_shared_pulse_geometry_snapshot.py",
         )
-        for name in managed:
-            source = (PROJECT_ROOT / "analysis" / name).read_text(encoding="utf-8")
-            self.assertIn('format="png"', source, name)
-            self.assertIn("dpi=", source, name)
-            self.assertIn("figsize=", source, name)
-        for name in managed:
-            if name in {"analyze_comsol_mass_scan.py", "compare_rf_input_energy.py"}:
+        for path in managed:
+            source = path.read_text(encoding="utf-8")
+            self.assertIn('format="png"', source, path.name)
+            self.assertIn("dpi=", source, path.name)
+            self.assertIn("figsize=", source, path.name)
+        for path in managed:
+            if path.name in {
+                "evaluate_comparison.py",
+                "compare_rf_input_energy.py",
+            }:
                 continue
-            source = (PROJECT_ROOT / "analysis" / name).read_text(encoding="utf-8")
-            self.assertIn("frame_id", source, name)
-            self.assertIn("clock_epoch_id", source, name)
+            source = path.read_text(encoding="utf-8")
+            self.assertIn("frame_id", source, path.name)
+            self.assertIn("clock_epoch_id", source, path.name)
 
     def test_named_profiles_resolve_from_canonical_project_identity(self) -> None:
         for profile_id in (
@@ -135,6 +141,7 @@ class Phase4DesignConsumerTests(unittest.TestCase):
         runtime_roots = (
             PROJECT_ROOT / "analysis",
             PROJECT_ROOT / "comsol",
+            PROJECT_ROOT / "workflows",
             PROJECT_ROOT / "tests" / "comsol",
             PROJECT_ROOT / "tests" / "simion",
         )

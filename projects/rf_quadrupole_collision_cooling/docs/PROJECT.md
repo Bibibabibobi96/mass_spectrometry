@@ -120,8 +120,19 @@ workflow。两者不得通过`Mode`分支互相切换，也不得互相消费run
 | 稳定输出 | canonical `particle_state.csv`、稀疏轨迹、输运summary及接口比较证据 | canonical `particle_state.csv`、`mass-response__simion.csv`、功能metrics与规范图 |
 | provenance | bundle等价、表示、粒子族、分布、latent、N及两表示SHA-256 | 基础ION11、生成质量表、质量集合、每质量N及对应SHA-256 |
 | 物理发布 | `resolved_design_official.json` | `resolved_design_mass_filter.json` |
-| solver numerics | `simion_solver_numerics.json`中的cell、quality、允许RF步数与最长时间；接口mode只保留诊断N和科学判据 | 同一SIMION数值合同；质量mode只保留质量集合、每质量N和功能判据 |
+| solver numerics | `simion_solver_numerics.json`中的cell、quality、允许RF步数与最长时间；接口mode只保留诊断N和科学判据 | 同一SIMION数值合同；质量mode的中性`mass_scan_spec`只保留质量集合、校准点和单求解器功能判据，实际N由冻结源决定 |
 | profile | 只选择接口workflow并绑定来源身份、明确operating point与solver-numerics合同身份 | 只选择质量过滤workflow并绑定基础ION11与solver-numerics合同身份 |
+
+质量过滤活动runner、任务、制表和评估统一位于`workflows/mass_filter_reference/`，COMSOL脚本任务单独位于
+`comsol/mass_filter_reference/run_scan.m`；同求解器数值闭合的runner与评估统一位于
+`workflows/same_solver_convergence/`。`analysis/`、`runtime/`、`comsol/`和`simion/`只保留可复用机制，
+不得反向导入workflow；迁移后的旧活动位置不保留转发桩。质量过滤profile只指向dedicated workflow且
+不传`Mode`，same-solver没有execution profile，不以重复注册伪装成物理mode。
+质量过滤COMSOL和SIMION runner彼此不读取对方或L1 run，只发布各自response/metrics。多来源诊断只能由
+`workflows/mass_filter_reference/compare_responses.ps1`显式接收三个run ID，利用共享analysis lifecycle
+复制可移植最小闭包后执行；它沿用`mass_filter_reference`身份而不创建新Mode。现有
+`cross_solver_functional_comparison`是唯一跨求解器政策权威，容差未冻结时必须报告`NOT_EVALUATED`；
+该手动入口没有execution profile，未来注册必须等真实来源与比较容差获批，不能加入空运行配置。
 
 公共机制只有一套：resolved字段到SIMION run config的编译与序列化、完整Lua字段校验、canonical/ION11
 源序列化、GEM/PA/IOB启动、run三件套生命周期、SHA-256与冻结manifest复核分别由邻近shared core负责。
@@ -161,8 +172,9 @@ schema。Lua validator必须检查本次candidate中冻结、实际交给SIMION�
   权威；外部路径不能自授身份。冻结后的PowerShell编译器是唯一profile validator/compiler，MATLAB
   只消费完整`compiled_solver_numerics`并做最小类型/范围防御，同时核对compiled envelope与顶层冻结
   identity/数值镜像；它不理解合同profile注册表或授权选择规则。
-- 配对bundle metadata是接口两种粒子表示及其等价关系的权威；质量过滤mode只规定质量集合、每质量N和
-  功能阈值，生成的多质量ION11必须在本次run冻结。
+- 配对bundle metadata是接口两种粒子表示及其等价关系的权威；质量过滤mode的中性`mass_scan_spec`
+  只规定质量集合、校准点和单求解器功能阈值。每质量N由显式冻结的基础ION11实际行数决定并必须通过
+  仓库N=100/N=1000政策；生成的多质量ION11必须在本次run冻结。
 - 接口bundle的两个point ID、点位物理规范、1.8--2.2 eV/5 eV能量政策及bundle role/version只由
   `workflows/interface_readiness/particle_source_policy.py`持有。`analysis/paired_particle_source_bundle.py`
   是workflow中性的机制层，只接受调用方显式注入的point ID/spec与role/version并执行latent采样、单表
@@ -171,6 +183,12 @@ schema。Lua validator必须检查本次candidate中冻结、实际交给SIMION�
   代码树路径冻结进run。通用`runtime/frozen_python_package.ps1`只接受包根、模块、参数和依赖声明，
   不理解workflow或policy；子进程只使用冻结`PYTHONPATH`、禁用user site，并把逐文件SHA-256、实际
   模块来源及NumPy安装来源写入run config与manifest输入清单，任何闭包缺失/篡改均禁止live回退。
+- same-solver比较必须先复制两个来源run的最小可移植闭包，并冻结本次评估代码。来源闭包共同绑定
+  interface contract、两种配对粒子表示及其metadata/source/resolved身份；COMSOL另绑定scientific mode
+  和COMSOL numerics，SIMION另绑定mode、SIMION numerics及PA core checksum inventory。来源
+  `frozen_python`只能以相对代码路径、SHA-256、模块名和第三方名称/版本比较，不能把不同run目录的绝对
+  路径当作科学漂移；代码清单必须与manifest中的冻结代码角色逐SHA对应。评估run config在执行分析前
+  一次写定，结果JSON不得回填run config。
 - `execution_profiles.json`只绑定workflow身份、输入身份和明确实验变量；路径、run ID、种子等实例值
   冻结进run config，profile不得内嵌resolved中的RF、DC、频率、静态电极或几何标量。
 - 静态门禁必须验证入口无`Mode`参数、profile无重复物理标量、shared core无role/workflow分支、两个

@@ -26,7 +26,9 @@ from projects.rf_quadrupole_collision_cooling.analysis.validate_paired_particle_
 PROJECT_ROOT = Path(__file__).parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 RUNNER = PROJECT_ROOT / "workflows" / "interface_readiness" / "run_simion.ps1"
-MASS_RUNNER = PROJECT_ROOT / "tests" / "simion" / "run_mass_filter_candidate.ps1"
+MASS_RUNNER = (
+    PROJECT_ROOT / "workflows" / "mass_filter_reference" / "run_simion.ps1"
+)
 RUN_CONFIG_CONTRACT = PROJECT_ROOT / "runtime" / "simion_run_config.ps1"
 SHARED_LUA = REPO_ROOT / "common" / "multipole" / "simion_transport.lua"
 EXECUTION_PROFILES = PROJECT_ROOT / "config" / "execution_profiles.json"
@@ -297,7 +299,7 @@ class SimionTransportRunnerSourceTests(unittest.TestCase):
         )
         self.assertEqual(
             mass_steps["simion_mass_response"]["entrypoint"],
-            "tests/simion/run_mass_filter_candidate.ps1",
+            "workflows/mass_filter_reference/run_simion.ps1",
         )
 
     def test_runner_uses_current_canonical_source_cli_as_an_argument_array(self) -> None:
@@ -307,9 +309,6 @@ class SimionTransportRunnerSourceTests(unittest.TestCase):
             "$Mode",
             "$SourceAxialOffsetMm",
             "mass_filter_reference",
-            "generate_mass_scan_particle_table",
-            "render_ion11_simion_source",
-            "analyze_simion_mass_scan",
         ):
             self.assertNotIn(forbidden, source)
         for required in (
@@ -341,6 +340,7 @@ class SimionTransportRunnerSourceTests(unittest.TestCase):
         self.assertIn("particle_source_sha256", source)
         for field in (
             "source_ion11",
+            "source_canonical10",
             "consumed_particle_table",
             "particle_bundle_metadata",
             "source_sample_family_sha256",

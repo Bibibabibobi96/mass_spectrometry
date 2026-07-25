@@ -102,7 +102,8 @@ function Invoke-IsolatedFrozenPythonModule {
         [Parameter(Mandatory)][string[]]$Arguments,
         [string[]]$DistributionNames = @(),
         [string[]]$RequiredModuleNames = @(),
-        [string[]]$ForbiddenRoots = @()
+        [string[]]$ForbiddenRoots = @(),
+        [switch]$ProbeOnly
     )
     Assert-FrozenPythonPackage -Package $Package
     $packageRoots = @($Package.package_roots | ForEach-Object {
@@ -226,9 +227,13 @@ print(json.dumps({
                     }
                 }
             }
-            $moduleOutput = (& $Python -m $Module @Arguments | Out-String).Trim()
-            if ($LASTEXITCODE -ne 0) {
-                throw "Frozen Python module failed with exit code $LASTEXITCODE."
+            $moduleOutput = ''
+            if (-not $ProbeOnly) {
+                $moduleOutput = (& $Python -m $Module @Arguments |
+                    Out-String).Trim()
+                if ($LASTEXITCODE -ne 0) {
+                    throw "Frozen Python module failed with exit code $LASTEXITCODE."
+                }
             }
         } finally {
             Pop-Location
@@ -242,6 +247,7 @@ print(json.dumps({
     [pscustomobject]@{
         schema_version = 1
         module = $Module
+        module_invoked = -not [bool]$ProbeOnly
         working_directory = $packageRoots[0]
         package_roots = $packageRoots
         python_path = $packageRoots -join [IO.Path]::PathSeparator

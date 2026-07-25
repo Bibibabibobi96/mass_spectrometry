@@ -23,17 +23,14 @@ import matplotlib
 import numpy as np
 from scipy.constants import atomic_mass, elementary_charge, electron_volt
 
-try:
-    from . import quadrupole_l0 as l0
-except ImportError:  # Direct script execution keeps the analysis directory importable.
-    import quadrupole_l0 as l0
+from . import theory
 
 
 matplotlib.use("Agg")
 from matplotlib import pyplot as plt  # noqa: E402
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPOSITORY_ROOT = PROJECT_ROOT.parents[1]
 WORKSPACE_ROOT = REPOSITORY_ROOT.parent
 DEFAULT_BASELINE = PROJECT_ROOT / "config" / "baseline.json"
@@ -52,7 +49,7 @@ def validate_l1_contract(
     baseline: dict[str, Any], mode: dict[str, Any], source: dict[str, Any]
 ) -> dict[str, Any]:
     """Validate the L1 inputs and return derived scan and passband values."""
-    l0_result = l0.validate_mass_filter_reference(baseline, mode)
+    l0_result = theory.validate_mass_filter_reference(baseline, mode)
     screen = mode.get("functional_screen", {})
     if screen.get("model_level") != "L1":
         raise ValueError("functional_screen.model_level must be L1")
@@ -85,7 +82,7 @@ def validate_l1_contract(
         "masses_Th": masses,
         "theory_low_mass_Th": theory_low,
         "theory_high_mass_Th": theory_high,
-        "calibration_mass_Th": l0.mass_to_charge_th(
+        "calibration_mass_Th": theory.mass_to_charge_th(
             float(passband["q_cal"]),
             float(rf["amplitude_V_zero_to_peak_per_group"]),
             float(rf["effective_radius_mm"]),
@@ -278,14 +275,14 @@ def run(
     frozen_resolved = inputs / "resolved_design_mass_filter.json"
     frozen_mode = inputs / "mass_filter_reference.json"
     frozen_source = inputs / "official_particle_source.json"
-    frozen_runner = inputs / "run_mass_filter_l1.py.txt"
-    frozen_l0 = inputs / "quadrupole_l0.py.txt"
+    frozen_runner = inputs / "run_finite_length.py.txt"
+    frozen_l0 = inputs / "theory.py.txt"
     shutil.copy2(baseline_path, frozen_baseline)
     shutil.copy2(resolved_path, frozen_resolved)
     shutil.copy2(mode_path, frozen_mode)
     shutil.copy2(source_path, frozen_source)
     shutil.copy2(Path(__file__), frozen_runner)
-    shutil.copy2(Path(l0.__file__), frozen_l0)
+    shutil.copy2(Path(theory.__file__), frozen_l0)
 
     rows = [
         simulate_mass(float(mass), particles, resolved, int(screen["steps_per_rf_period"]))
@@ -311,6 +308,7 @@ def run(
     run_config = destination / "run_config.json"
     run_config.write_text(json.dumps({
         "schema_version": 1,
+        "role": "rf_quadrupole_mass_filter_l1_run_config",
         "run_id": run_id,
         "project": "rf_quadrupole_collision_cooling",
         "mode": "mass_filter_reference",

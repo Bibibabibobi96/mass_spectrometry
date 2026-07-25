@@ -37,7 +37,7 @@ canonical10→Fly2投影、GEM 编译、PA refine 和独立无界面 fly；默�
 记录逐文件SHA-256、包根、模块实际来源和NumPy版本/安装根。缺失或篡改任一闭包文件不会回退live
 仓库或user site；analysis机制不反向选择接口workflow。
 
-`tests/simion/run_mass_filter_candidate.ps1`是用途固定的`mass_filter_reference`入口。调用者必须
+`workflows/mass_filter_reference/run_simion.ps1`是用途固定的`mass_filter_reference`入口。调用者必须
 显式传入基础ION11源；入口冻结该源后构造七质量配对ION11表，一次Fly'm保持各质量相同的位置、速度、
 出生时间和ID次序，只改变质量。它使用独立的`rf_quadrupole_simion_mass_filter_run_config`角色；
 接口bundle、canonical表、接口工况参数和`Mode`都不是其参数。`results/mass-response__simion.csv`

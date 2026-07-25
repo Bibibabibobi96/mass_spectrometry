@@ -62,6 +62,15 @@ try {
     $particlePath = Join-Path $inputDir 'mass_scan_particles.ion'
     $massScanMetadata = Join-Path $inputDir 'mass_scan_particles.json'
     Copy-VerifiedRunInput -Source $sourceIon -Destination $frozenSourceIon | Out-Null
+    $sourceParticleCount = @(
+        Get-Content -LiteralPath $frozenSourceIon -Encoding UTF8 |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    ).Count
+    & $python (Join-Path $repoRoot `
+        'common\contracts\particle_count_policy.py') --count $sourceParticleCount
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Mass-filter source violates the repository N=100/N=1000 policy.'
+    }
     Copy-VerifiedRunInput -Source (Join-Path $projectRoot 'config\baseline.json') `
         -Destination $frozenBaseline | Out-Null
     Copy-VerifiedRunInput -Source (Join-Path $projectRoot 'config\modes\mass_filter_reference.json') `
@@ -82,7 +91,8 @@ try {
 
     Push-Location $repoRoot
     try {
-        & $python -m projects.rf_quadrupole_collision_cooling.analysis.generate_mass_scan_particle_table `
+        & $python -m `
+            projects.rf_quadrupole_collision_cooling.workflows.mass_filter_reference.prepare_simion_scan `
             --source $frozenSourceIon --mode $frozenMode --output $particlePath --metadata $massScanMetadata
         if ($LASTEXITCODE -ne 0) {
             throw 'Paired mass-scan particle generation failed.'
@@ -108,7 +118,8 @@ try {
     $sourceStatesLua = Join-Path $inputDir 'source_states.lua'
     Push-Location $repoRoot
     try {
-        & $python -m projects.rf_quadrupole_collision_cooling.analysis.render_ion11_simion_source `
+        & $python -m `
+            projects.rf_quadrupole_collision_cooling.workflows.mass_filter_reference.render_simion_source `
             --ion-table $particlePath --fly2 $flyPath --source-states-lua $sourceStatesLua
         if ($LASTEXITCODE -ne 0) {
             throw 'Mass-scan ION11 projection failed.'
@@ -202,7 +213,8 @@ try {
     Invoke-RfSimionCoreRun -SimionExe $simion -CandidateDir $candidateDir `
         -IobPath ([string]$coreConfig.iob) -Fly2Path ([string]$coreConfig.fly2) `
         -RunConfigLua $runConfigLua `
-        -InspectScript (Join-Path $PSScriptRoot 'inspect_builtin_quad_reference.lua') `
+        -InspectScript (Join-Path $projectRoot `
+            'tests\simion\inspect_builtin_quad_reference.lua') `
         -IobReport $iobReport -LogDir $logDir `
         -TrajectoryQuality ([int]$coreConfig.trajectory_quality) `
         -RfStepsPerPeriod ([int]$coreConfig.rf_steps_per_period)
@@ -224,7 +236,8 @@ try {
             throw 'Particle-state contract gate failed.'
         }
 
-        & $python -m projects.rf_quadrupole_collision_cooling.analysis.analyze_simion_mass_scan `
+        & $python -m `
+            projects.rf_quadrupole_collision_cooling.workflows.mass_filter_reference.evaluate_simion `
             --state $particleStateCsv --particles $particlePath `
             --baseline $frozenBaseline --mode $frozenMode `
             --response $massResponseCsv --metrics $massMetricsJson --figure $massResponseFigure

@@ -1,18 +1,15 @@
 from __future__ import annotations
 
 import copy
-import importlib.util
 import json
 import unittest
 from pathlib import Path
 
+from projects.rf_quadrupole_collision_cooling.workflows.mass_filter_reference import (
+    theory as MODULE,
+)
 
 PROJECT_ROOT = Path(__file__).parents[2]
-SCRIPT = PROJECT_ROOT / "analysis" / "quadrupole_l0.py"
-SPEC = importlib.util.spec_from_file_location("quadrupole_l0", SCRIPT)
-assert SPEC and SPEC.loader
-MODULE = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(MODULE)
 
 
 def load_json(path: Path) -> dict:

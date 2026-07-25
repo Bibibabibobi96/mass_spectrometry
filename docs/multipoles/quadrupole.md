@@ -436,7 +436,7 @@ RF-only 预过滤杆可减小主质量过滤段 DC 边界带来的注入损失�
 
 项目特有的 FWHM、网格、样本量和独立验证阈值仍以根 `docs/VALIDATION_METHODS.md` 和项目分析合同为准；项目门禁明确要求跨求解器时，再将其作为强制条件。
 
-当前最小L0参考实现位于RF项目[`analysis/quadrupole_l0.py`](../../projects/rf_quadrupole_collision_cooling/analysis/quadrupole_l0.py)，覆盖本节尖点、RF-only截止、扫描线和质量尺度测试向量。它暂不提升到`common/`，也不覆盖单周期矩阵、有限长度轨迹、峰形或高阶场谐波。
+当前最小L0参考实现位于RF项目[`workflows/mass_filter_reference/theory.py`](../../projects/rf_quadrupole_collision_cooling/workflows/mass_filter_reference/theory.py)，覆盖本节尖点、RF-only截止、扫描线和质量尺度测试向量。它暂不提升到`common/`，也不覆盖单周期矩阵、有限长度轨迹、峰形或高阶场谐波。
 
 ## 15. 算例：100 Th、目标理想 $R=100$
 

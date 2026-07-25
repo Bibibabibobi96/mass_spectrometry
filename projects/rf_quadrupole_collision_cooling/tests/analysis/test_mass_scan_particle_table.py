@@ -5,7 +5,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from projects.rf_quadrupole_collision_cooling.analysis import generate_mass_scan_particle_table as MODULE
+from projects.rf_quadrupole_collision_cooling.workflows.mass_filter_reference import (
+    prepare_simion_scan as MODULE,
+)
 
 
 PROJECT_ROOT = Path(__file__).parents[2]

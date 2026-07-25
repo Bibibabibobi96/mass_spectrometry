@@ -3,7 +3,9 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from projects.rf_quadrupole_collision_cooling.analysis import analyze_simion_mass_scan as MODULE
+from projects.rf_quadrupole_collision_cooling.workflows.mass_filter_reference import (
+    evaluate_simion as MODULE,
+)
 
 
 PROJECT_ROOT = Path(__file__).parents[2]

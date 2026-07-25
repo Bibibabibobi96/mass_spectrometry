@@ -21,6 +21,7 @@ $python = if ($PythonExe) {
 }
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 . (Join-Path $projectRoot 'runtime\analysis_run_lifecycle.ps1')
+. (Join-Path $projectRoot 'runtime\frozen_python_package.ps1')
 
 if ([string]::IsNullOrWhiteSpace($RunId)) {
     $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') +
@@ -45,7 +46,9 @@ try {
 
     $runtimeRoot = Join-Path $inputDir 'runtime'
     $runtimeFiles = @(
-        'projects\rf_quadrupole_collision_cooling\analysis\compare_same_solver_numerics.py',
+        'projects\rf_quadrupole_collision_cooling\workflows\__init__.py',
+        'projects\rf_quadrupole_collision_cooling\workflows\same_solver_convergence\__init__.py',
+        'projects\rf_quadrupole_collision_cooling\workflows\same_solver_convergence\evaluate.py',
         'projects\rf_quadrupole_collision_cooling\analysis\particle_state_comparison_core.py',
         'projects\rf_quadrupole_collision_cooling\analysis\validate_paired_particle_source_binding.py',
         'projects\rf_quadrupole_collision_cooling\analysis\paired_particle_source_bundle.py',
@@ -53,21 +56,27 @@ try {
         'common\contracts\particle_physics.py',
         'common\contracts\particle_count_policy.py',
         'common\contracts\particle_count_policy.json',
+        'common\multipole\__init__.py',
         'common\multipole\particle_source_preflight.py'
     )
+    $frozenPythonSupport = Copy-VerifiedRunInput `
+        -Source (Join-Path $projectRoot 'runtime\frozen_python_package.ps1') `
+        -Destination (Join-Path $inputDir 'frozen_python_package.ps1')
+    $frozenPythonPackage = New-FrozenPythonPackage `
+        -SourceRoot $repoRoot -CodeRoot $runtimeRoot `
+        -RelativePaths $runtimeFiles
     $runtimeInputs = [ordered]@{}
-    foreach ($relative in $runtimeFiles) {
-        $source = Join-Path $repoRoot $relative
-        $destination = Join-Path $runtimeRoot $relative
-        Copy-VerifiedRunInput -Source $source -Destination $destination |
-            Out-Null
-        $name = 'runtime_' + ($relative -replace '[^A-Za-z0-9]+','_').Trim('_')
-        $runtimeInputs[$name] = $destination
+    foreach ($entry in $frozenPythonPackage.files) {
+        $name = 'runtime_' +
+            ([string]$entry.relative_path -replace '[^A-Za-z0-9]+','_').Trim('_')
+        $runtimeInputs[$name] = [string]$entry.path
     }
     $frozenContract = Join-Path $inputDir `
         'same_solver_numerical_convergence.json'
     $frozenSimionNumerics = Join-Path $inputDir `
         'simion_solver_numerics.json'
+    $frozenComsolNumerics = Join-Path $inputDir `
+        'comsol_solver_numerics.json'
     $frozenParticleCountPolicy = Join-Path $inputDir `
         'particle_count_policy.json'
     $frozenAnalysisSupport = Join-Path $inputDir `
@@ -81,6 +90,10 @@ try {
         @(
             (Join-Path $projectRoot 'config\simion_solver_numerics.json'),
             $frozenSimionNumerics
+        ),
+        @(
+            (Join-Path $projectRoot 'config\comsol_solver_numerics.json'),
+            $frozenComsolNumerics
         ),
         @(
             (Join-Path $repoRoot 'common\contracts\particle_count_policy.json'),
@@ -103,8 +116,40 @@ try {
         'particle_bundle_metadata',
         'particle_source_family',
         'particle_source_distribution',
-        'resolved_design'
+        'resolved_design',
+        'interface_contract'
     )
+    if ($Solver -eq 'SIMION') {
+        $requiredInputRoles += @('mode','numerical_contract')
+    } else {
+        $requiredInputRoles += @(
+            'scientific_mode',
+            'comsol_solver_numerics'
+        )
+    }
+    $baselineSourceManifest = Get-Content -LiteralPath $baselineManifest -Raw `
+        -Encoding UTF8 | ConvertFrom-Json
+    $refinedSourceManifest = Get-Content -LiteralPath $refinedManifest -Raw `
+        -Encoding UTF8 | ConvertFrom-Json
+    $baselineRuntimeRoles = @(
+        $baselineSourceManifest.inputs.PSObject.Properties.Name |
+            Where-Object {
+                $_ -match '^frozen_python_code_[0-9]+$' -or
+                $_ -eq 'frozen_python_package_support'
+            } | Sort-Object
+    )
+    $refinedRuntimeRoles = @(
+        $refinedSourceManifest.inputs.PSObject.Properties.Name |
+            Where-Object {
+                $_ -match '^frozen_python_code_[0-9]+$' -or
+                $_ -eq 'frozen_python_package_support'
+            } | Sort-Object
+    )
+    if (($baselineRuntimeRoles -join "`n") -cne
+        ($refinedRuntimeRoles -join "`n")) {
+        throw 'Source frozen-Python input role inventories differ.'
+    }
+    $requiredInputRoles += $baselineRuntimeRoles
     $requiredOutputRoles = [ordered]@{
         particle_state = 'particle_state.csv'
         solver_summary = 'solver_summary.json'
@@ -154,10 +199,12 @@ try {
     $inputs = [ordered]@{
         convergence_contract=$frozenContract
         simion_solver_numerics_contract=$frozenSimionNumerics
+        comsol_solver_numerics_contract=$frozenComsolNumerics
         particle_count_policy=$frozenParticleCountPolicy
         baseline_manifest=$frozenBaselineManifest
         refined_manifest=$frozenRefinedManifest
         analysis_run_support=$frozenAnalysisSupport
+        frozen_python_package_support=$frozenPythonSupport
     }
     foreach ($entry in $runtimeInputs.GetEnumerator()) {
         $inputs[$entry.Key] = $entry.Value
@@ -169,7 +216,24 @@ try {
     $comparison = Join-Path $resultDir `
         'same_solver_numerical_convergence.json'
     $census = Join-Path $resultDir 'particle_event_census.csv'
-    Write-RunJson -Path $runConfigPath -Depth 8 -Value ([ordered]@{
+    $frozenPythonEnvironment = Invoke-IsolatedFrozenPythonModule `
+        -Python $python -Package $frozenPythonPackage `
+        -Module `
+        'projects.rf_quadrupole_collision_cooling.workflows.same_solver_convergence.evaluate' `
+        -Arguments @() -DistributionNames @('numpy') -RequiredModuleNames @(
+            'projects.rf_quadrupole_collision_cooling.workflows',
+            'projects.rf_quadrupole_collision_cooling.workflows.same_solver_convergence',
+            'projects.rf_quadrupole_collision_cooling.workflows.same_solver_convergence.evaluate',
+            'projects.rf_quadrupole_collision_cooling.analysis.particle_state_comparison_core',
+            'projects.rf_quadrupole_collision_cooling.analysis.validate_paired_particle_source_binding',
+            'projects.rf_quadrupole_collision_cooling.analysis.paired_particle_source_bundle',
+            'common.contracts.particle_state',
+            'common.contracts.particle_physics',
+            'common.contracts.particle_count_policy',
+            'common.multipole',
+            'common.multipole.particle_source_preflight'
+        ) -ForbiddenRoots @($repoRoot,$projectRoot) -ProbeOnly
+    $runConfiguration = [ordered]@{
         schema_version=2
         role='rf_quadrupole_same_solver_numerical_convergence_run_config'
         run_id=$RunId
@@ -177,38 +241,48 @@ try {
         mode='same_solver_numerical_convergence'
         project_root=$projectRoot
         inputs=$inputs
+        frozen_python=[ordered]@{
+            package=$frozenPythonPackage
+            environment=$frozenPythonEnvironment
+        }
         parameters=[ordered]@{
             solver=$Solver
             baseline_run_id=$BaselineRunId
             refined_run_id=$RefinedRunId
         }
         formal_gate_passed=$false
-    })
-
-    $environment = Save-RunEnvironment -Names @('PYTHONPATH')
-    try {
-        [Environment]::SetEnvironmentVariable('PYTHONPATH',$runtimeRoot)
-        Push-Location $runtimeRoot
-        try {
-            & $python -m `
-                projects.rf_quadrupole_collision_cooling.analysis.compare_same_solver_numerics `
-                --baseline-manifest $frozenBaselineManifest `
-                --refined-manifest $frozenRefinedManifest `
-                --contract $frozenContract `
-                --simion-numerics $frozenSimionNumerics `
-                --particle-count-policy $frozenParticleCountPolicy `
-                --output $comparison --census-output $census
-            $analysisExit = $LASTEXITCODE
-        } finally {
-            Pop-Location
-        }
-    } finally {
-        Restore-RunEnvironment -Names @('PYTHONPATH') -Snapshot $environment
     }
-    if ($analysisExit -ne 0 -or
-        -not (Test-Path -LiteralPath $comparison -PathType Leaf) -or
+    Write-RunJson -Path $runConfigPath -Depth 12 -Value $runConfiguration
+
+    Invoke-IsolatedFrozenPythonModule `
+        -Python $python -Package $frozenPythonPackage `
+        -Module `
+        'projects.rf_quadrupole_collision_cooling.workflows.same_solver_convergence.evaluate' `
+        -Arguments @(
+            '--baseline-manifest',$frozenBaselineManifest,
+            '--refined-manifest',$frozenRefinedManifest,
+            '--contract',$frozenContract,
+            '--comsol-numerics',$frozenComsolNumerics,
+            '--simion-numerics',$frozenSimionNumerics,
+            '--particle-count-policy',$frozenParticleCountPolicy,
+            '--output',$comparison,
+            '--census-output',$census
+        ) -DistributionNames @('numpy') -RequiredModuleNames @(
+            'projects.rf_quadrupole_collision_cooling.workflows',
+            'projects.rf_quadrupole_collision_cooling.workflows.same_solver_convergence',
+            'projects.rf_quadrupole_collision_cooling.workflows.same_solver_convergence.evaluate',
+            'projects.rf_quadrupole_collision_cooling.analysis.particle_state_comparison_core',
+            'projects.rf_quadrupole_collision_cooling.analysis.validate_paired_particle_source_binding',
+            'projects.rf_quadrupole_collision_cooling.analysis.paired_particle_source_bundle',
+            'common.contracts.particle_state',
+            'common.contracts.particle_physics',
+            'common.contracts.particle_count_policy',
+            'common.multipole',
+            'common.multipole.particle_source_preflight'
+        ) -ForbiddenRoots @($repoRoot,$projectRoot) | Out-Null
+    if (-not (Test-Path -LiteralPath $comparison -PathType Leaf) -or
         -not (Test-Path -LiteralPath $census -PathType Leaf)) {
-        throw "Same-solver comparison execution failed with exit code $analysisExit."
+        throw 'Same-solver comparison execution did not produce required outputs.'
     }
     $report = Get-Content -LiteralPath $comparison -Raw -Encoding UTF8 |
         ConvertFrom-Json

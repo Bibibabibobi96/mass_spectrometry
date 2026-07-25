@@ -77,9 +77,9 @@ S2–S3连接功能闭环记录：
   不得各自随机生成接口粒子。
 - 质量过滤模式：[`config/modes/mass_filter_reference.json`](config/modes/mass_filter_reference.json)；与RF-only
   传输共用同一几何源，但由独立入口绑定RF+DC运行合同和ION11多质量源，不能作为接口输运运行替身。
-- 求解器无关四极杆 L0 参考计算：[`analysis/quadrupole_l0.py`](analysis/quadrupole_l0.py)；只校验理想
+- 求解器无关四极杆 L0 参考计算：[`workflows/mass_filter_reference/theory.py`](workflows/mass_filter_reference/theory.py)；只校验理想
   Mathieu 稳定区、质量尺度和预留模式的电压合同，不证明质量峰、透过率或求解器资格。
-- 求解器无关有限长度 L1 功能扫描：[`analysis/run_mass_filter_l1.py`](analysis/run_mass_filter_l1.py)；使用
+- 求解器无关有限长度 L1 功能扫描：[`workflows/mass_filter_reference/run_finite_length.py`](workflows/mass_filter_reference/run_finite_length.py)；使用
   当前79.6 mm杆长、4 mm场半径和官方源包络，输出质量响应、规范图和run三件套。它证明同一几何能
   形成理论一致的通带，但不包含边缘场，也不替代COMSOL/SIMION Candidate资格。
 - COMSOL接口输运科学入口：
@@ -95,8 +95,8 @@ S2–S3连接功能闭环记录：
   [`workflows/interface_readiness/run_comsol.ps1`](workflows/interface_readiness/run_comsol.ps1)；
   无碰撞部件回归入口：
   [`workflows/no_collision_transport/run_comsol.ps1`](workflows/no_collision_transport/run_comsol.ps1)；
-  RF+DC七质量功能入口：[`tests/comsol/run_mass_filter_candidate.ps1`](tests/comsol/run_mass_filter_candidate.ps1)，
-  使用配对源输出L0/L1/SIMION/COMSOL比较CSV与规范图，仅中心质量保存一份MPH。
+  RF+DC七质量功能入口：[`workflows/mass_filter_reference/run_comsol.ps1`](workflows/mass_filter_reference/run_comsol.ps1)，
+  显式接受N=100或N=1000 ION11源，只输出COMSOL自身响应和功能指标，仅中心质量保存一份MPH。
 - SIMION 接口输运构建/验证入口：
   [`workflows/interface_readiness/run_simion.ps1`](workflows/interface_readiness/run_simion.ps1)；入口用途固定为
   `transport_interface_readiness`，只接受配对bundle中的canonical10表示。
@@ -104,9 +104,14 @@ S2–S3连接功能闭环记录：
   [`workflows/no_collision_transport/run_simion.ps1`](workflows/no_collision_transport/run_simion.ps1)；入口固定
   `official_transport`设计身份，不接受轴向加速、质量过滤或其他设计profile选择。
 - SIMION RF+DC质量过滤功能入口：
-  [`tests/simion/run_mass_filter_candidate.ps1`](tests/simion/run_mass_filter_candidate.ps1)；入口用途固定为
+  [`workflows/mass_filter_reference/run_simion.ps1`](workflows/mass_filter_reference/run_simion.ps1)；入口用途固定为
   `mass_filter_reference`，要求显式给出基础ION11源，并生成配对七质量ION11表、质量响应、指标JSON和规范图。
   `results/mass-response__simion.csv`是下游质量过滤比较使用的唯一稳定正式输出名，不生成同内容别名。
+- 质量过滤多来源诊断入口：
+  [`workflows/mass_filter_reference/compare_responses.ps1`](workflows/mass_filter_reference/compare_responses.ps1)；
+  必须显式给出COMSOL、SIMION和L1 run ID，冻结三份成功manifest的最小闭包后生成L0/L1/双求解器比较。
+  当前跨求解器容差未预注册，因此结果固定为`NOT_EVALUATED`，不构成闭合结论；该入口目前只手动运行，
+  不虚构execution profile。
 - `transport_interface_readiness` 的两个求解器入口都必须绑定同一配对bundle metadata：COMSOL实际消费
   ION11，SIMION实际消费canonical10；两种表示由bundle validator逐ID复算等价，run config不得用未消费
   文件冒充`particle_table`。
@@ -120,7 +125,7 @@ S2–S3连接功能闭环记录：
   只判定接口就绪；两者分别生成独立schema v2结果和粒子事件census。接口样本低于合同最小值或来源
   ID无效时为`NOT_EVALUATED`，不能降级成无碰撞结论；无碰撞完整handoff要求也不注入接口门禁。
 - 同求解器时间离散预注册筛选：
-  [`tests/analysis/run_same_solver_numerical_comparison.ps1`](tests/analysis/run_same_solver_numerical_comparison.ps1)，
+  [`workflows/same_solver_convergence/run_comparison.ps1`](workflows/same_solver_convergence/run_comparison.ps1)，
   仅接受SIMION 40→80或COMSOL 80→160 RF步/周期，并受
   [`config/same_solver_numerical_convergence.json`](config/same_solver_numerical_convergence.json)约束；
   该结果固定为Candidate数值筛选，不构成跨求解器、N=1000或Formal结论。

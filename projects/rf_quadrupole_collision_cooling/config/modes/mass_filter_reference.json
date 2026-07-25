@@ -45,24 +45,23 @@
       "maximum_endpoint_transmission": 0.05
     }
   },
-  "solver_screen": {
-    "status": "pending_n100_revalidation",
-    "authority_run_id": null,
+  "mass_scan_spec": {
     "paired_source_masses_Th": [96.0, 99.0, 99.5, 101.5, 103.0, 103.5, 106.0],
-    "particles_per_mass": 100,
+    "calibration_mass_Th": 101.5,
     "acceptance": {
       "minimum_center_transmission": 0.8,
       "maximum_endpoint_transmission": 0.2,
       "minimum_center_to_endpoint_contrast": 0.6
-    },
+    }
+  },
+  "simion_screen": {
+    "status": "pending_n100_revalidation",
+    "authority_run_id": null,
     "claim_limit": "SIMION finite-geometry functional response only; no cross-solver or resolving-power qualification."
   },
   "comsol_screen": {
     "status": "pending_n100_revalidation",
     "authority_run_id": null,
-    "paired_source_masses_Th": [96.0, 99.0, 99.5, 101.5, 103.0, 103.5, 106.0],
-    "particles_per_mass": 100,
-    "acceptance_source": "solver_screen.acceptance",
     "result": null,
     "claim_limit": "COMSOL finite-geometry RF+DC functional response only; no mesh, resolving-power or accuracy qualification."
   },
@@ -73,13 +72,6 @@
     "maximum_difference_mass_Th": null,
     "acceptance_tolerance_frozen": false,
     "claim_limit": "Sparse functional comparison only; no numerical agreement or resolving-power qualification."
-  },
-  "numerics": {
-    "simion_rf_steps_per_period": 40,
-    "simion_trajectory_quality": 10,
-    "comsol_rf_steps_per_period": 80,
-    "comsol_mesh_auto_level": 1,
-    "maximum_time_us": 80.0
   },
   "execution_policy": "L1, SIMION and COMSOL functional scans are allowed; mesh, numerical-agreement and resolving-power qualification require separately approved Candidate work."
 }

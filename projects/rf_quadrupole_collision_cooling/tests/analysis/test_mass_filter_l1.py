@@ -4,7 +4,9 @@ import json
 import unittest
 from pathlib import Path
 
-from projects.rf_quadrupole_collision_cooling.analysis import run_mass_filter_l1 as MODULE
+from projects.rf_quadrupole_collision_cooling.workflows.mass_filter_reference import (
+    run_finite_length as MODULE,
+)
 
 PROJECT_ROOT = Path(__file__).parents[2]
 

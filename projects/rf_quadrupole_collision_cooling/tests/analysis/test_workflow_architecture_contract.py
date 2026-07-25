@@ -12,8 +12,10 @@ INTERFACE_RUNNER = (
     PROJECT_ROOT / "workflows" / "interface_readiness" / "run_simion.ps1"
 )
 MASS_FILTER_RUNNER = (
-    PROJECT_ROOT / "tests" / "simion" / "run_mass_filter_candidate.ps1"
+    PROJECT_ROOT / "workflows" / "mass_filter_reference" / "run_simion.ps1"
 )
+MASS_FILTER_WORKFLOW = PROJECT_ROOT / "workflows" / "mass_filter_reference"
+SAME_SOLVER_WORKFLOW = PROJECT_ROOT / "workflows" / "same_solver_convergence"
 SIMION_CONFIG_CORE = PROJECT_ROOT / "runtime" / "simion_run_config.ps1"
 SIMION_EXECUTION_SUPPORT = PROJECT_ROOT / "runtime" / "simion_execution.ps1"
 RUNTIME_ROOT = PROJECT_ROOT / "runtime"
@@ -223,6 +225,9 @@ class WorkflowArchitectureContractTests(unittest.TestCase):
                 "workflows/interface_readiness/run_simion.ps1",
                 "workflows/interface_readiness/compare_cross_solver.ps1",
             },
+            "mass_filter_simion_functional_reference": {
+                "workflows/mass_filter_reference/run_simion.ps1",
+            },
         }
         profiles = {
             profile["profile_id"]: profile
@@ -259,11 +264,52 @@ class WorkflowArchitectureContractTests(unittest.TestCase):
             PROJECT_ROOT / "analysis" / "assess_interface_integration_gate.py",
         )
         self.assertFalse(any(path.exists() for path in forbidden_locations))
+        for root in (
+            PROJECT_ROOT / "tests" / "comsol",
+            PROJECT_ROOT / "tests" / "simion",
+        ):
+            self.assertFalse(
+                any(
+                    "mass_filter" in path.stem
+                    for path in root.iterdir()
+                    if path.suffix.lower() in {".ps1", ".m"}
+                )
+            )
+        self.assertFalse(
+            any(
+                "same_solver" in path.stem
+                for path in (PROJECT_ROOT / "tests" / "analysis").glob("*.ps1")
+            )
+        )
+        active_prefixes = (
+            "analyze_",
+            "prepare_",
+            "run_",
+            "generate_",
+            "render_",
+            "compare_",
+        )
+        self.assertFalse(
+            any(
+                path.stem.startswith(active_prefixes)
+                and (
+                    "mass_filter" in path.stem
+                    or "mass_scan" in path.stem
+                    or "same_solver" in path.stem
+                )
+                for path in (PROJECT_ROOT / "analysis").glob("*.py")
+            )
+        )
         reverse_dependency = re.compile(
             r"projects\.rf_quadrupole_collision_cooling\.workflows|"
             r"Join-Path[^\r\n]*['\"]workflows[/\\]"
         )
-        for root in (PROJECT_ROOT / "analysis", PROJECT_ROOT / "runtime"):
+        for root in (
+            PROJECT_ROOT / "analysis",
+            PROJECT_ROOT / "runtime",
+            PROJECT_ROOT / "comsol",
+            PROJECT_ROOT / "simion",
+        ):
             for path in root.rglob("*"):
                 if path.suffix.lower() not in {".py", ".ps1", ".m"}:
                     continue
@@ -271,6 +317,56 @@ class WorkflowArchitectureContractTests(unittest.TestCase):
                     reverse_dependency.search(_read(path)),
                     f"{path.relative_to(PROJECT_ROOT)} reverses workflow dependency",
                 )
+
+    def test_batch3_workflows_have_exact_single_purpose_inventory(self) -> None:
+        self.assertEqual(
+            {path.name for path in MASS_FILTER_WORKFLOW.iterdir() if path.is_file()},
+            {
+                "__init__.py",
+                "compare_responses.ps1",
+                "evaluate_comparison.py",
+                "evaluate_comsol.py",
+                "evaluate_simion.py",
+                "prepare_comsol_scan.py",
+                "prepare_simion_scan.py",
+                "render_simion_source.py",
+                "run_comsol.ps1",
+                "run_finite_length.py",
+                "run_simion.ps1",
+                "theory.py",
+            },
+        )
+        self.assertEqual(
+            {path.name for path in SAME_SOLVER_WORKFLOW.iterdir() if path.is_file()},
+            {"__init__.py", "evaluate.py", "run_comparison.ps1"},
+        )
+        comsol_evaluator = _read(MASS_FILTER_WORKFLOW / "evaluate_comsol.py")
+        simion_evaluator = _read(MASS_FILTER_WORKFLOW / "evaluate_simion.py")
+        comparison_evaluator = _read(
+            MASS_FILTER_WORKFLOW / "evaluate_comparison.py"
+        )
+        self.assertNotIn("evaluate_simion", comsol_evaluator)
+        self.assertNotIn("theory_masses", comsol_evaluator)
+        self.assertNotIn("simion", comsol_evaluator.lower())
+        self.assertIn(".theory import theory_masses", simion_evaluator)
+        self.assertIn(".theory import theory_masses", comparison_evaluator)
+        comparison_runner = _read(
+            MASS_FILTER_WORKFLOW / "compare_responses.ps1"
+        )
+        for source_run_id in ("ComsolRunId", "SimionRunId", "L1RunId"):
+            self.assertIn(source_run_id, comparison_runner)
+        self.assertNotRegex(
+            _parameter_block(comparison_runner),
+            r"(?i)\$Mode\b",
+        )
+        self.assertIn(
+            "Copy-PortableRunManifestClosure",
+            comparison_runner,
+        )
+        same_runner = _read(SAME_SOLVER_WORKFLOW / "run_comparison.ps1")
+        self.assertNotRegex(_parameter_block(same_runner), r"(?i)\$Mode\b")
+        self.assertIn("New-FrozenPythonPackage", same_runner)
+        self.assertIn("Invoke-IsolatedFrozenPythonModule", same_runner)
 
     def test_dedicated_runners_have_no_mode_switch_or_inline_lua_core(self) -> None:
         for runner_path in DEDICATED_RUNNERS:
@@ -521,7 +617,7 @@ class WorkflowArchitectureContractTests(unittest.TestCase):
                 and step.get("entrypoint", "")
                 in {
                     "workflows/interface_readiness/run_simion.ps1",
-                    "tests/simion/run_mass_filter_candidate.ps1",
+                    "workflows/mass_filter_reference/run_simion.ps1",
                 }
             ]
             self.assertEqual(len(simion_steps), 1)

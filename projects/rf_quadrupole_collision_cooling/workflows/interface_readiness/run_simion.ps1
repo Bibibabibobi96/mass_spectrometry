@@ -304,6 +304,7 @@ $runConfig = [ordered]@{
     parent_resolved_design_sha256=$coreConfig.parent_resolved_design_sha256; particles=$expectedParticles
 }
 $runConfig.inputs.source_ion11 = $frozenIonPath
+$runConfig.inputs.source_canonical10 = $particlePath
 $runConfig.inputs.consumed_particle_table = $particlePath
 $runConfig.inputs.particle_bundle_metadata = $frozenBundleMetadata
 $runConfig.inputs.particle_source_binding = $sourceBinding
