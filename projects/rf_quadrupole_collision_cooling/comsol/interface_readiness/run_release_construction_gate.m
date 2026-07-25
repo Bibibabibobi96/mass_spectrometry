@@ -3,8 +3,8 @@ assert(~isempty(reportPath), ...
     'COMSOL_BOOTSTRAP_REPORT must identify the shared launcher report.');
 writeReportAtomically(reportPath,sprintf('STATUS=RUNNING\n'));
 
-testDir=fileparts(mfilename('fullpath'));
-projectRoot=fileparts(fileparts(testDir));
+taskDir=fileparts(mfilename('fullpath'));
+projectRoot=fileparts(fileparts(taskDir));
 addpath(projectRoot);
 addpath(fullfile(projectRoot,'comsol'));
 try

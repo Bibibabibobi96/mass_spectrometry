@@ -19,7 +19,7 @@ PROFILES = PROJECT_ROOT / "config" / "execution_profiles.json"
 RUNNER = PROJECT_ROOT / "workflows" / "interface_readiness" / "run_comsol.ps1"
 TASK = PROJECT_ROOT / "tests" / "comsol" / "run_nocollision_candidate.m"
 RELEASE_GATE_TASK = (
-    PROJECT_ROOT / "tests" / "comsol" / "run_release_construction_gate.m"
+    PROJECT_ROOT / "comsol" / "interface_readiness" / "run_release_construction_gate.m"
 )
 DEDICATED_ENTRY = (
     PROJECT_ROOT / "comsol" / "prepare_interface_readiness_run.m"
@@ -220,6 +220,12 @@ class ComsolWorkflowArchitectureContractTests(unittest.TestCase):
         )
         self.assertIn("execution_stage='release_construction_gate'", runner)
         self.assertIn("run_release_construction_gate.m", runner)
+        self.assertIn(
+            "comsol\\interface_readiness\\run_release_construction_gate.m", runner
+        )
+        self.assertNotIn(
+            "tests\\comsol\\run_release_construction_gate.m", runner
+        )
         self.assertIn("Write-VerifiedRunManifest", runner)
         self.assertIn("threshold_result_eligible=$false", runner)
         self.assertIn("return", runner)

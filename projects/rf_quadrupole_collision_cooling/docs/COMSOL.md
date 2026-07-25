@@ -69,7 +69,9 @@ interface、scientific mode、bundle与numerics；任何预检或后续错误都
 为在不改变科学或数值输入的前提下定位该失败，接口runner提供显式
 `-ReleaseConstructionGate`诊断执行阶段。它仍完整冻结和验证正式interface resolved、scientific mode、
 paired N=100 bundle和`baseline` COMSOL numerics，并严格拒绝非100粒子；这不是新Mode、profile或
-Candidate入口。专用MATLAB任务在模型构建前先发布`STATUS=RUNNING`任务报告，随后保持`std1/sol1`
+Candidate入口。专用生产诊断任务
+`../comsol/interface_readiness/run_release_construction_gate.m`在模型构建前先发布`STATUS=RUNNING`
+任务报告，随后保持`std1/sol1`
 前置场解和100个独立`rel001...rel100`、一行六列文件及100个格式化后仍唯一的逐粒子`rt`，为create、label、各属性设置和
 import逐步追加关闭文件后的JSONL breadcrumb。诊断机制只允许在全部release节点验收后、创建
 `ElectricForce`、`std2`或`sol2`前返回，生成带100个GUI可见release节点的诊断MPH、结构化结果和

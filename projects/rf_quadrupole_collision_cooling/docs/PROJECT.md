@@ -209,7 +209,9 @@ manifest；随后才允许LiveLink启动。任一配置、启动、GUI Compute�
 失败早于该节点属性设置、import和particle Study。历史RF、S2与S3的N=100成功运行排除了通用64节点
 硬上限；oaTOF历史小N原生崩溃则发生在solution-mesh初始化阶段，不能直接套用。本项目现已增加一个
 显式run-instance `release_construction_gate`诊断阶段：它复用同一正式输入冻结和baseline数值编译，
-只接受完整N=100，在`std1/sol1`后逐步记录100个独立release的durable breadcrumbs，并在
+只接受完整N=100；生产诊断task位于
+[`../comsol/interface_readiness/run_release_construction_gate.m`](../comsol/interface_readiness/run_release_construction_gate.m)，
+在`std1/sol1`后逐步记录100个独立release的durable breadcrumbs，并在
 `ef1/std2/sol2`前停止。该阶段不改变N、birth time、粒子文件、科学Mode或numerics profile，也不产生
 物理结果；shared Gate自身拒绝非100行、非有限或原始/格式化后不唯一的birth time，runner再用本次run
 冻结的独立validator从ION11和compiled scientific spec重算100个六列release状态，并复核实际文件和

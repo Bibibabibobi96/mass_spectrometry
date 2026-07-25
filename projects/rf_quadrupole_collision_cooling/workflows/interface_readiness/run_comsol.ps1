@@ -366,7 +366,8 @@ try {
     }
     $env:RFQUAD_RUN_CONFIG = $package.run_config
     $taskScript = if($ReleaseConstructionGate){
-        Join-Path $projectRoot 'tests\comsol\run_release_construction_gate.m'
+        Join-Path $projectRoot `
+            'comsol\interface_readiness\run_release_construction_gate.m'
     }else{
         Join-Path $projectRoot 'tests\comsol\run_nocollision_candidate.m'
     }
