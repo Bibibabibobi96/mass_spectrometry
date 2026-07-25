@@ -50,7 +50,8 @@ Python版本、隔离环境和重建方法只以仓库根
 回归门禁同时验证冻结迁移基准和当前`formal_validation.json`：后者会核对物理/分析契约哈希、
 固定ION表、正式IOB、两侧逐粒子CSV以及Python比较指标，防止正式结果与外部artifacts静默漂移。
 
-需要更新正式跨求解器记录时，只运行`../tests/cross_solver/run_formal_validation.ps1`。它直接加载当前
+需要更新正式跨求解器记录时，只运行
+`../workflows/formal_reference/run_formal_validation.ps1`。它直接加载当前
 正式MPH和SIMION交付，使用同一正式N=1000 ION表重算两端、执行配对bootstrap，再由
 `publish_formal_validation.py`冻结全部输入、结果、报告和资产SHA。禁止手工从候选或staging结果摘抄
 数值更新`formal_validation.json`。

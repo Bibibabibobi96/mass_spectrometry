@@ -80,7 +80,7 @@
   [`analysis/analyze_accelerator_grid_phase.py`](analysis/analyze_accelerator_grid_phase.py)。
 - CAD正式入口：[`cad/ms_export_oatof_to_solidworks.m`](cad/ms_export_oatof_to_solidworks.m)
 - 跨求解器门禁：
-  [`tests/cross_solver/verify_geometry_contract.ps1`](tests/cross_solver/verify_geometry_contract.ps1)
+  [`workflows/formal_reference/verify_geometry_contract.ps1`](workflows/formal_reference/verify_geometry_contract.ps1)
 - R2025b MATLAB单元与Formal写入合同回归：
   [`tests/comsol/run_oatof_matlab_unit_tests.m`](tests/comsol/run_oatof_matlab_unit_tests.m)、
   [`tests/comsol/run_oatof_formal_write_contract_tests.m`](tests/comsol/run_oatof_formal_write_contract_tests.m)
@@ -110,10 +110,11 @@
   当前活动累积入口是RF项目`tests/cross_solver/run_s3_cumulative_chain.ps1`：候选COMSOL负责真实侧孔、
   被动连接器和局部脉冲输运，随后才把canonical局部出口状态交给本项目SIMION分析器续算。
 - 正式跨求解器直接重算与发布入口：
-  [`tests/cross_solver/run_formal_validation.ps1`](tests/cross_solver/run_formal_validation.ps1)；发布器只在
+  [`workflows/formal_reference/run_formal_validation.ps1`](workflows/formal_reference/run_formal_validation.ps1)；
+  发布器只在
   两端达到机器契约样本量、统一比较PASS且当前资产/结果SHA齐全时更新机器契约。
 - 耦合纵向baseline的老/新理论与老/新N=1000主比较入口：
-  [`tests/cross_solver/run_coupled_baseline_validation.ps1`](tests/cross_solver/run_coupled_baseline_validation.ps1)。
+  [`workflows/formal_reference/run_coupled_baseline_validation.ps1`](workflows/formal_reference/run_coupled_baseline_validation.ps1)。
 - 三栅加速器时间聚焦参考实现：
   [`analysis/accelerator_time_focus.py`](analysis/accelerator_time_focus.py)
 - 二级反射器闭式解参考实现：
@@ -135,6 +136,7 @@ oa_tof/
 ├─ simion/            # GEM、Lua、Fly2及构建/分析源码
 ├─ cad/               # COMSOL→STEP→SolidWorks可复现源码
 ├─ analysis/          # 与求解器无关的轻量分析
+├─ workflows/         # Formal/reference等生产工作流及其专用任务
 └─ tests/             # COMSOL、SIMION、CAD和跨求解器长期门禁
 ```
 
@@ -158,7 +160,7 @@ oa_tof/
 
 ```powershell
 pwsh.exe -NoProfile -ExecutionPolicy Bypass `
-  -File .\tests\cross_solver\verify_geometry_contract.ps1 -SkipRuntime
+  -File .\workflows\formal_reference\verify_geometry_contract.ps1 -SkipRuntime
 .\analysis\verify_reference_analysis.ps1
 git diff --check
 git status --short --branch

@@ -8,7 +8,7 @@
 - 生产脚本：`../comsol/ms_oaTOF_two_stage_ringstack_reflectron.m`
 - 全链路测试：`../tests/comsol/test_oatof_r2025b_full_chain.m`
 - 静态同步检查：`../tests/comsol/verify_oatof_comsol_sync.m`
-- 跨求解器门禁：`../tests/cross_solver/verify_geometry_contract.ps1`
+- 跨求解器门禁：`../workflows/formal_reference/verify_geometry_contract.ps1`
 - 正式MPH：工作区`artifacts/projects/oa_tof/formal/comsol/oa_tof__model.mph`
 
 工具版本和启动方式只采用仓库根[`README.md`](../../../README.md#工具链与执行入口)的统一定义。

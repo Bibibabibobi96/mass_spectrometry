@@ -61,7 +61,7 @@ $formalResultsDir = Join-Path $artifactRoot $formalAssets.results.artifact_relat
 $formalResultsManifest = Join-Path $artifactRoot $formalAssets.results.sha256_manifest_relative_path.Replace('/','\')
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 project runtime missing: $python" }
-$derivationOutput = & $python -m projects.oa_tof.tests.cross_solver.verify_geometry_derivation $baselinePath
+$derivationOutput = & $python -m projects.oa_tof.workflows.formal_reference.verify_geometry_derivation $baselinePath
 if ($LASTEXITCODE -ne 0 -or $derivationOutput -notcontains 'GEOMETRY_DERIVATION_STATUS=PASS') {
   throw 'Physics-input to engineering-geometry derivation gate failed.'
 }

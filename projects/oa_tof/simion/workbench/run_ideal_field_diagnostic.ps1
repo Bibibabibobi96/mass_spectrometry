@@ -48,7 +48,7 @@ $iob = Join-Path $formalDir 'oatof_ideal_grounded.iob'
 if ((Get-FileHash $sourceLua -Algorithm SHA256).Hash -ne (Get-FileHash $runtimeLua -Algorithm SHA256).Hash) {
   throw 'Formal SIMION Lua differs from source; rebuild the formal delivery before diagnosis.'
 }
-$geometryGate = Join-Path $repoRoot 'projects\oa_tof\tests\cross_solver\verify_geometry_contract.ps1'
+$geometryGate = Join-Path $repoRoot 'projects\oa_tof\workflows\formal_reference\verify_geometry_contract.ps1'
 & $geometryGate -SimionExe $SimionExe | ForEach-Object { Write-Host $_ }
 
 $generator = Join-Path $PSScriptRoot 'generate_comsol_consistent_ions.ps1'

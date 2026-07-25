@@ -34,7 +34,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Accelerator theory contract gate failed.' }
 & $python -m projects.oa_tof.analysis.oatof_oaaccelerator_coupling `
   (Join-Path $projectRoot 'config\candidates\oatof_longitudinal_coupled_reference.json') | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Coupled longitudinal theory contract gate failed.' }
-& (Join-Path $projectRoot 'tests\cross_solver\verify_geometry_contract.ps1') -SkipRuntime -SimionExe $SimionExe -PythonExe $python
+& (Join-Path $projectRoot 'workflows\formal_reference\verify_geometry_contract.ps1') -SkipRuntime -SimionExe $SimionExe -PythonExe $python
 if ($LASTEXITCODE -ne 0) { throw 'Static cross-solver geometry gate failed.' }
 & $python -m unittest discover -s (Join-Path $projectRoot 'tests\analysis') -p 'test_*.py'
 if ($LASTEXITCODE -ne 0) { throw 'Python analysis tests failed.' }
@@ -154,7 +154,7 @@ elseif ($Level -eq 'Formal') {
   & $python (Join-Path $repoRoot 'common\contracts\write_run_manifest.py') --run-config $formalRunConfig --status success --software 'COMSOL 6.4 via MATLAB R2025b' --output $comsolReport --output $formalSummary
   if ($LASTEXITCODE -ne 0) { throw 'COMSOL formal gate manifest failed.' }
 
-  & (Join-Path $projectRoot 'tests\cross_solver\verify_geometry_contract.ps1') -SimionExe $SimionExe
+  & (Join-Path $projectRoot 'workflows\formal_reference\verify_geometry_contract.ps1') -SimionExe $SimionExe
   if ($LASTEXITCODE -ne 0) { throw 'Formal runtime/CAD/COMSOL gate failed.' }
 
   & (Join-Path $projectRoot 'analysis\verify_reference_analysis.ps1')
