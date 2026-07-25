@@ -95,6 +95,20 @@ def iter_path_values(value: object) -> list[str]:
     return paths
 
 
+def resolved_path_is_within(
+    candidate: Path,
+    root: Path,
+    *,
+    strict: bool,
+) -> bool:
+    resolved_root = root.resolve(strict=True)
+    try:
+        candidate.resolve(strict=strict).relative_to(resolved_root)
+    except (FileNotFoundError, OSError, ValueError):
+        return False
+    return True
+
+
 class SameSolverNumericalConvergenceTests(unittest.TestCase):
     particles = 100
 
@@ -211,6 +225,74 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
                 "mean_energy_relative_difference": 0.004,
                 "handoff_particle_id_sets": "exact_match",
             },
+        )
+
+    def test_portable_path_containment_resolves_windows_aliases(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        closure = root / "ClosureRoot"
+        closure.mkdir()
+        payload = closure / "payload.json"
+        payload.write_text("{}\n", encoding="utf-8")
+        candidate = payload
+        if os.name == "nt":
+            candidate = Path(str(payload).swapcase().replace("\\", "/"))
+        self.assertTrue(
+            resolved_path_is_within(candidate, closure, strict=True)
+        )
+        if os.name == "nt" and shutil.which("pwsh"):
+            alias = root / "ClosureAlias"
+            environment = {
+                **os.environ,
+                "RF_ALIAS": str(alias),
+                "RF_TARGET": str(closure),
+            }
+            linked = subprocess.run(
+                [
+                    "pwsh",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    "New-Item -ItemType Junction "
+                    "-Path $env:RF_ALIAS -Target $env:RF_TARGET | Out-Null",
+                ],
+                cwd=REPO_ROOT,
+                timeout=30,
+                capture_output=True,
+                check=False,
+                encoding="utf-8",
+                env=environment,
+            )
+            self.assertEqual(linked.returncode, 0, linked.stderr)
+            self.assertFalse((alias / payload.name).is_relative_to(closure))
+            self.assertTrue(
+                resolved_path_is_within(
+                    alias / payload.name,
+                    closure,
+                    strict=True,
+                )
+            )
+            self.assertTrue(
+                resolved_path_is_within(
+                    payload,
+                    alias,
+                    strict=True,
+                )
+            )
+        self.assertTrue(
+            resolved_path_is_within(
+                closure / "nested" / ".." / "future.json",
+                closure,
+                strict=False,
+            )
+        )
+        self.assertFalse(
+            resolved_path_is_within(
+                closure / ".." / "external.json",
+                closure,
+                strict=False,
+            )
         )
 
     def write_state(
@@ -903,9 +985,15 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
                 *[record["path"] for record in document["inputs"].values()],
                 *[record["path"] for record in document["outputs"]],
             ]
-            self.assertTrue(
-                all(Path(path).is_relative_to(closure) for path in paths)
-            )
+            for path in paths:
+                self.assertTrue(
+                    resolved_path_is_within(
+                        Path(path),
+                        closure,
+                        strict=True,
+                    ),
+                    f"portable record escapes closure: {path}",
+                )
             identity_path = Path(
                 document["portable_closure"]["source_run_identity"]["path"]
             )
@@ -978,12 +1066,16 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
             for value in values:
                 candidate = Path(value)
                 resolved = (
-                    candidate.resolve()
+                    candidate
                     if candidate.is_absolute()
-                    else (evidence_file.parent / candidate).resolve()
+                    else evidence_file.parent / candidate
                 )
                 self.assertTrue(
-                    resolved.is_relative_to(closure),
+                    resolved_path_is_within(
+                        resolved,
+                        closure,
+                        strict=False,
+                    ),
                     f"{evidence_file}: external path value {value}",
                 )
         (root / "baseline").rename(root / "baseline_removed")

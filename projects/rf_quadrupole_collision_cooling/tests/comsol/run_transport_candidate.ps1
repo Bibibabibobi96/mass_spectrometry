@@ -7,7 +7,8 @@ param(
     [Parameter(Mandatory = $true)][string]$SolverNumericsContractPath,
     [Parameter(Mandatory = $true)][string]$SolverNumericsProfileId,
     [string]$NumericalExperimentId = '',
-    [Parameter(Mandatory = $true)][string]$OperatingPoint
+    [Parameter(Mandatory = $true)][string]$OperatingPoint,
+    [string]$PythonExe = ''
 )
 
 Set-StrictMode -Version Latest
@@ -16,7 +17,11 @@ $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $repoRoot = Split-Path -Parent (Split-Path -Parent $projectRoot)
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling'
-$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+$python = if ($PythonExe) {
+    [IO.Path]::GetFullPath($PythonExe)
+} else {
+    Join-Path $repoRoot '.venv\Scripts\python.exe'
+}
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 . (Join-Path $projectRoot 'runtime\comsol_solver_numerics.ps1')
 

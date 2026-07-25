@@ -5,6 +5,7 @@ import hashlib
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -23,7 +24,7 @@ DEDICATED_ENTRY = (
 SHARED_SOLVER = PROJECT_ROOT / "comsol" / "ms_rf_quadrupole_no_collision.m"
 NUMERICS_SUPPORT = PROJECT_ROOT / "runtime" / "comsol_solver_numerics.ps1"
 ARTIFACT_ROOT = REPO_ROOT.parent / "artifacts" / "projects" / "rf_quadrupole_collision_cooling"
-VENV_PYTHON = REPO_ROOT / ".venv" / "Scripts" / "python.exe"
+RUN_PYTHON = Path(sys.executable).resolve()
 
 
 def _read(path: Path) -> str:
@@ -422,6 +423,7 @@ class ComsolSolverNumericsFailureTests(unittest.TestCase):
                     "RF_REPO_ROOT": str(REPO_ROOT),
                     "RF_INVALID_NUMERICS": str(invalid_path),
                     "RF_RUN_ID": run_id,
+                    "RF_PYTHON": str(RUN_PYTHON),
                 }
             )
             names = (
@@ -445,7 +447,8 @@ class ComsolSolverNumericsFailureTests(unittest.TestCase):
                 "-SourceFamilyPath $env:RF_INVALID_NUMERICS "
                 "-ParticleDistributionPath $env:RF_INVALID_NUMERICS "
                 "-SolverNumericsContractPath $env:RF_INVALID_NUMERICS "
-                "-SolverNumericsProfileId baseline -OperatingPoint forged; "
+                "-SolverNumericsProfileId baseline -OperatingPoint forged "
+                "-PythonExe $env:RF_PYTHON; "
                 "} catch {$failed=$true; $reason=$_.Exception.Message}; "
                 "if(-not $failed){throw 'Invalid numerics unexpectedly reached COMSOL.'}; "
                 "if($reason -notmatch 'logical_sha256'){throw $reason}; "
@@ -460,7 +463,7 @@ class ComsolSolverNumericsFailureTests(unittest.TestCase):
                     self.assertTrue((run_dir / filename).is_file(), filename)
                 verification = subprocess.run(
                     [
-                        str(VENV_PYTHON),
+                        str(RUN_PYTHON),
                         str(REPO_ROOT / "common" / "contracts" / "verify_run_manifest.py"),
                         str(run_dir / "run_manifest.json"),
                         "--require-status",

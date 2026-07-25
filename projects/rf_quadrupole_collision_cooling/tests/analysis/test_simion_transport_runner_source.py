@@ -34,7 +34,6 @@ RESOLVED = PROJECT_ROOT / "config" / "resolved_design_official.json"
 SOURCE_FAMILY = PROJECT_ROOT / "config" / "interface_readiness_particle_source.json"
 INTERFACE_CONTRACT = PROJECT_ROOT / "config" / "interface_contract.json"
 SOLVER_NUMERICS = PROJECT_ROOT / "config" / "simion_solver_numerics.json"
-RUN_PYTHON = REPO_ROOT / ".venv" / "Scripts" / "python.exe"
 
 
 def write_canonical_source(path: Path) -> None:
@@ -482,7 +481,7 @@ class SimionTransportRunnerSourceTests(unittest.TestCase):
                     "-ArtifactRootPath",
                     str(artifact_root),
                     "-PythonExe",
-                    str(RUN_PYTHON),
+                    sys.executable,
                 ],
                 cwd=REPO_ROOT,
                 capture_output=True,
@@ -490,8 +489,20 @@ class SimionTransportRunnerSourceTests(unittest.TestCase):
                 encoding="utf-8",
                 timeout=60,
             )
-            self.assertNotEqual(result.returncode, 0)
+            process_diagnostics = (
+                f"returncode={result.returncode}\n"
+                f"stdout:\n{result.stdout}\n"
+                f"stderr:\n{result.stderr}"
+            )
+            self.assertNotEqual(result.returncode, 0, process_diagnostics)
+            self.assertNotIn("STATUS=PASS", result.stdout)
+            self.assertIn("bundle metadata is missing", result.stderr.lower())
             run = artifact_root / "runs" / run_id
+            for filename in ("run_config.json", "summary.json", "run_manifest.json"):
+                self.assertTrue(
+                    (run / filename).is_file(),
+                    f"missing failed-run {filename}\n{process_diagnostics}",
+                )
             summary = json.loads((run / "summary.json").read_text(encoding="utf-8"))
             manifest = json.loads(
                 (run / "run_manifest.json").read_text(encoding="utf-8")
