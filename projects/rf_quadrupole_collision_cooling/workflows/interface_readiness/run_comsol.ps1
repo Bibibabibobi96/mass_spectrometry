@@ -24,6 +24,7 @@ $python = if ($PythonExe) {
 }
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 . (Join-Path $projectRoot 'runtime\comsol_solver_numerics.ps1')
+. (Join-Path $projectRoot 'runtime\frozen_python_package.ps1')
 
 $workflowId = 'transport_interface_readiness'
 $software = @('COMSOL 6.4','MATLAB R2025b','Python 3.11')
@@ -86,6 +87,32 @@ try {
         -Destination (Join-Path $inputDir 'particle_source_family.json')
     $frozenDistribution = Copy-VerifiedRunInput -Source $liveDistribution `
         -Destination (Join-Path $inputDir 'particle_source_distribution.json')
+    $frozenPythonSupport = Copy-VerifiedRunInput `
+        -Source (Join-Path $projectRoot 'runtime\frozen_python_package.ps1') `
+        -Destination (Join-Path $inputDir 'frozen_python_package.ps1')
+    $frozenCodeRoot = Join-Path $inputDir 'code'
+    $frozenPythonPackage = New-FrozenPythonPackage `
+        -SourceRoot $repoRoot -CodeRoot $frozenCodeRoot -RelativePaths @(
+            'projects\rf_quadrupole_collision_cooling\workflows\__init__.py',
+            'projects\rf_quadrupole_collision_cooling\workflows\interface_readiness\__init__.py',
+            'projects\rf_quadrupole_collision_cooling\workflows\interface_readiness\generate_particle_table.py',
+            'projects\rf_quadrupole_collision_cooling\workflows\interface_readiness\particle_source_policy.py',
+            'projects\rf_quadrupole_collision_cooling\analysis\paired_particle_source_bundle.py',
+            'common\contracts\particle_physics.py',
+            'common\contracts\particle_count_policy.py',
+            'common\contracts\particle_count_policy.json',
+            'common\multipole\__init__.py',
+            'common\multipole\particle_source_preflight.py'
+        )
+    $frozenParticlePolicy = Get-FrozenPythonPackageFile `
+        -Package $frozenPythonPackage -RelativePath `
+        'projects/rf_quadrupole_collision_cooling/workflows/interface_readiness/particle_source_policy.py'
+    $frozenParticleGenerator = Get-FrozenPythonPackageFile `
+        -Package $frozenPythonPackage -RelativePath `
+        'projects/rf_quadrupole_collision_cooling/workflows/interface_readiness/generate_particle_table.py'
+    $frozenBundleMechanism = Get-FrozenPythonPackageFile `
+        -Package $frozenPythonPackage -RelativePath `
+        'projects/rf_quadrupole_collision_cooling/analysis/paired_particle_source_bundle.py'
 
     $bundleDocument = Get-Content -LiteralPath $liveBundleMetadata -Raw -Encoding UTF8 |
         ConvertFrom-Json
@@ -112,6 +139,26 @@ try {
         $bundleIndex += 1
         $bundleInputPaths[("bundle_artifact_{0:D3}" -f $bundleIndex)] = $frozenArtifact
     }
+    $frozenPythonExecution = Invoke-IsolatedFrozenPythonModule `
+        -Python $python -Package $frozenPythonPackage `
+        -Module `
+        'projects.rf_quadrupole_collision_cooling.workflows.interface_readiness.generate_particle_table' `
+        -Arguments @(
+            '--source-family',$frozenSourceFamily,
+            '--distribution',$frozenDistribution,
+            '--resolved-design',$frozenResolved,
+            '--validate-bundle',$frozenBundleMetadata
+        ) -DistributionNames @('numpy') -RequiredModuleNames @(
+            'projects.rf_quadrupole_collision_cooling.workflows',
+            'projects.rf_quadrupole_collision_cooling.workflows.interface_readiness',
+            'projects.rf_quadrupole_collision_cooling.workflows.interface_readiness.generate_particle_table',
+            'projects.rf_quadrupole_collision_cooling.workflows.interface_readiness.particle_source_policy',
+            'projects.rf_quadrupole_collision_cooling.analysis.paired_particle_source_bundle',
+            'common.contracts.particle_physics',
+            'common.contracts.particle_count_policy',
+            'common.multipole',
+            'common.multipole.particle_source_preflight'
+        ) -ForbiddenRoots @($repoRoot,$projectRoot)
 
     $ionEntry = @($bundleArtifacts | Where-Object {
         $_.operating_point_id -eq $OperatingPoint -and
@@ -220,6 +267,14 @@ try {
             particle_bundle_metadata=$frozenBundleMetadata;particle_source_binding=$sourceBinding
             particle_source_family=$frozenSourceFamily
             particle_source_distribution=$frozenDistribution
+            particle_source_policy=$frozenParticlePolicy
+            particle_source_generator=$frozenParticleGenerator
+            paired_particle_source_mechanism=$frozenBundleMechanism
+            frozen_python_package_support=$frozenPythonSupport
+        }
+        frozen_python=[ordered]@{
+            package=$frozenPythonPackage
+            execution=$frozenPythonExecution
         }
         compiled_scientific_spec=$compiledScientificSpec
         compiled_solver_numerics=$compiledNumerics
@@ -256,6 +311,12 @@ try {
     foreach ($key in $bundleInputPaths.Keys) {
         $runConfig.inputs[$key] = $bundleInputPaths[$key]
     }
+    $frozenCodeIndex = 0
+    foreach ($entry in $frozenPythonPackage.files) {
+        $frozenCodeIndex += 1
+        $runConfig.inputs[("frozen_python_code_{0:D3}" -f $frozenCodeIndex)] = `
+            [string]$entry.path
+    }
     Write-RunJson -Value $runConfig -Path $package.run_config
     Write-RunJson -Path $package.summary -Value ([ordered]@{
         schema_version=1;role='rf_quadrupole_transport_summary';status='interrupted'
@@ -269,7 +330,7 @@ try {
     $failureStage = 'comsol_model_build'
     $env:RFQUAD_RUN_CONFIG = $package.run_config
     & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') `
-        -TaskScript (Join-Path $PSScriptRoot 'run_nocollision_candidate.m') `
+        -TaskScript (Join-Path $projectRoot 'tests\comsol\run_nocollision_candidate.m') `
         -ReportPath $bootstrapReport -StartupReportTimeoutSeconds 120
     if($LASTEXITCODE-ne 0){throw 'COMSOL interface candidate launcher failed.'}
     [Environment]::SetEnvironmentVariable('RFQUAD_RUN_CONFIG',$null)
@@ -300,7 +361,7 @@ try {
     $env:RFQUAD_EXPECTED_RF_PEAK_V = [string]$resolved.drive.rf_amplitude_V_zero_to_peak_per_group
     $env:RFQUAD_EXPECTED_FREQUENCY_HZ = [string]$resolved.drive.frequency_Hz
     & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') `
-        -TaskScript (Join-Path $PSScriptRoot 'verify_nocollision_comsol.m') `
+        -TaskScript (Join-Path $projectRoot 'tests\comsol\verify_nocollision_comsol.m') `
         -ReportPath $guiVerifyReport
     if($LASTEXITCODE-ne 0){throw 'COMSOL GUI Compute verification failed.'}
     foreach ($name in $environmentNames | Where-Object {

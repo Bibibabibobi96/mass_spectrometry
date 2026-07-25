@@ -50,13 +50,18 @@ class ExplicitAxialPairingContractTests(unittest.TestCase):
             },
         )
 
-    def test_rf_wrapper_does_not_bypass_governed_design_profiles(self) -> None:
-        wrapper = (
-            PROJECT_ROOT / "analysis" / "run_finite_3d_transport.ps1"
+    def test_no_collision_workflow_cannot_select_explicit_axial_profile(self) -> None:
+        entry = (
+            PROJECT_ROOT
+            / "workflows"
+            / "no_collision_transport"
+            / "run_comsol.ps1"
         ).read_text(encoding="utf-8")
-        self.assertNotIn("AxialAccelerationContractPath", wrapper)
-        self.assertIn("DesignProfileId", wrapper)
-        self.assertIn("common\\multipole\\run_finite_3d_transport.ps1", wrapper)
+        self.assertNotIn("AxialAccelerationContractPath", entry)
+        self.assertNotIn("[string]$DesignProfileId", entry)
+        self.assertNotIn("explicit_axial_reference", entry)
+        self.assertIn("DesignProfileId = 'official_transport'", entry)
+        self.assertIn("common\\multipole\\run_finite_3d_transport.ps1", entry)
 
 
 if __name__ == "__main__":

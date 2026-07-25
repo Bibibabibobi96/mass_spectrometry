@@ -13,7 +13,8 @@ from common.multipole.compile_design_request import (
     compile_governed_design_request_file,
 )
 from common.multipole.design_profile import resolve_design_profile
-from projects.rf_quadrupole_collision_cooling.analysis.generate_interface_particle_table import (
+from projects.rf_quadrupole_collision_cooling.analysis.paired_particle_source_bundle import (
+    load_declared_bundle_specification,
     validate_bundle,
 )
 
@@ -353,11 +354,17 @@ def validate_experiment(
         result["status"] = "BLOCKED_MISSING_PAIRED_BUNDLE_METADATA"
         return result
     authorities = contract["authorities"]
+    source_family_path = _repository_path(authorities["source_family"])
+    bundle_specification = load_declared_bundle_specification(
+        bundle_metadata_path,
+        source_family_path,
+    )
     metadata = validate_bundle(
         bundle_metadata_path,
-        _repository_path(authorities["source_family"]),
+        source_family_path,
         _repository_path(authorities["distribution"]),
         _repository_path(authorities["bundle_preflight_resolved"]),
+        **bundle_specification,
     )
     binding = contract["bundle_binding"]
     if metadata.get("role") != binding["required_role"]:

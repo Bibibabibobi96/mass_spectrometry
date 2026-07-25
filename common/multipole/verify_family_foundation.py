@@ -131,11 +131,15 @@ def validate_project_identity(project_id: str, order: int, electrode_count: int)
         for mode_name in ("transport_no_collision.json", "mass_filter_reference.json"):
             operating = from_quadrupole_contract(baseline, load_json(modes / mode_name))
             require(operating.identity.radial_order_n == order, "quadrupole operating order differs")
-        wrapper = (root / "analysis" / "run_finite_3d_transport.ps1").read_text(encoding="utf-8")
+        wrapper = (
+            root / "workflows" / "no_collision_transport" / "run_comsol.ps1"
+        ).read_text(encoding="utf-8")
         require("common\\multipole\\run_finite_3d_transport.ps1" in wrapper, "quadrupole L3 runner is duplicated")
-        require("DesignProfileId" in wrapper, "quadrupole does not bind a governed design profile")
+        require("DesignProfileId = 'official_transport'" in wrapper, "quadrupole does not fix its governed design profile")
         require("Adapter" not in wrapper, "quadrupole retains the legacy shared-adapter switch")
-        builder = (root / "comsol" / "ms_rf_quadrupole_no_collision.m").read_text(encoding="utf-8")
+        builder = (
+            root / "comsol" / "solve_deterministic_rf_quadrupole_particles.m"
+        ).read_text(encoding="utf-8")
         require("axial_acceleration_reference" not in builder, "legacy quadrupole builder retains acceleration")
     else:
         source_count = validate_standard_particle_count(int(baseline["particle_source"]["count"]))

@@ -1,5 +1,5 @@
-function result = ms_rf_quadrupole_no_collision(runConfig)
-%MS_RF_QUADRUPOLE_NO_COLLISION Solve one fully compiled no-collision case.
+function result = solve_deterministic_rf_quadrupole_particles(runConfig)
+%SOLVE_DETERMINISTIC_RF_QUADRUPOLE_PARTICLES Solve one compiled no-collision case.
 % This project-local mechanism does not select a scientific workflow. Dedicated
 % entries must validate and compile their claim before calling this function.
 

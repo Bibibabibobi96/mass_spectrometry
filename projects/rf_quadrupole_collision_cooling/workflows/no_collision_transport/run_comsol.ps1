@@ -1,8 +1,5 @@
 [CmdletBinding()]
 param(
-  [ValidateSet('official_transport','interface_readiness','mass_filter_reference',
-    'explicit_axial_reference','endplate_acceleration_reference')]
-  [string]$DesignProfileId = 'official_transport',
   [Parameter(Mandatory=$true)][string]$ParticleSourcePath,
   [string]$EvidenceContractPath = '',
   [string]$RunId = '',
@@ -14,11 +11,12 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
+$projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+$repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 $arguments = @{
   ProjectId = 'rf_quadrupole_collision_cooling'
-  DesignProfileId = $DesignProfileId
+  DesignProfileId = 'official_transport'
   ParticleSourcePath = $ParticleSourcePath
   RunId = $RunId
   PythonExe = $python

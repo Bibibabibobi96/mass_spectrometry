@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import argparse
 import csv
 import hashlib
 import io
 import json
 import math
 import re
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -24,10 +24,8 @@ from common.contracts.particle_count_policy import (
 from common.multipole.particle_source_preflight import COLUMNS, validate_source
 
 
-ALGORITHM_VERSION = "rf_interface_paired_latent_family.v2"
-BUNDLE_ROLE = "rf_quadrupole_paired_particle_source_bundle"
-CONTROL_POINT_ID = "official_100amu_2eV"
-CANDIDATE_POINT_ID = "rf_to_oatof_100amu_5eV"
+BUNDLE_SCHEMA_VERSION = 1
+SINGLE_TABLE_ROLE = "paired_particle_single_table"
 
 
 def sha256(path: Path) -> str:
@@ -118,25 +116,76 @@ def _point_energy(point: dict[str, Any], quantile: np.ndarray) -> np.ndarray:
     raise ValueError(f"unsupported energy distribution: {distribution}")
 
 
-def _validate_bundle_points(family: dict[str, Any]) -> list[str]:
-    points = family["operating_points"]
-    for point_id in (CONTROL_POINT_ID, CANDIDATE_POINT_ID):
-        if point_id not in points or not re.fullmatch(r"[A-Za-z0-9_]+", point_id):
-            raise ValueError(f"paired bundle operating point is missing: {point_id}")
-    control = points[CONTROL_POINT_ID]["kinetic_energy_eV"]
-    candidate = points[CANDIDATE_POINT_ID]["kinetic_energy_eV"]
+def _normalize_bundle_specification(
+    family: dict[str, Any],
+    point_ids: Sequence[str],
+    point_specs: Mapping[str, Mapping[str, Any]],
+    bundle_role: str,
+    bundle_version: str,
+) -> tuple[list[str], dict[str, dict[str, Any]]]:
+    if isinstance(point_ids, (str, bytes)):
+        raise ValueError("paired bundle point IDs must be a sequence")
+    normalized_ids = list(point_ids)
     if (
-        control.get("distribution") != "uniform"
-        or float(control.get("min", math.nan)) != 1.8
-        or float(control.get("max", math.nan)) != 2.2
+        not normalized_ids
+        or len(normalized_ids) != len(set(normalized_ids))
+        or any(not re.fullmatch(r"[A-Za-z0-9_]+", item) for item in normalized_ids)
     ):
-        raise ValueError("paired bundle control point must be the governed 1.8-2.2 eV point")
-    if (
-        candidate.get("distribution") != "fixed"
-        or float(candidate.get("value", math.nan)) != 5.0
+        raise ValueError("paired bundle point IDs are empty, duplicated, or invalid")
+    if not isinstance(point_specs, Mapping) or set(point_specs) != set(normalized_ids):
+        raise ValueError("paired bundle point specifications do not match point IDs")
+    if not isinstance(bundle_role, str) or not re.fullmatch(
+        r"[A-Za-z0-9_.-]+", bundle_role
     ):
-        raise ValueError("paired bundle candidate point must be the governed 5 eV point")
-    return [CONTROL_POINT_ID, CANDIDATE_POINT_ID]
+        raise ValueError("paired bundle role is invalid")
+    if not isinstance(bundle_version, str) or not re.fullmatch(
+        r"[A-Za-z0-9_.-]+", bundle_version
+    ):
+        raise ValueError("paired bundle version is invalid")
+    family_points = family.get("operating_points")
+    if not isinstance(family_points, dict):
+        raise ValueError("source family does not declare operating points")
+    normalized_specs: dict[str, dict[str, Any]] = {}
+    for point_id in normalized_ids:
+        point = point_specs[point_id]
+        if not isinstance(point, Mapping):
+            raise ValueError(f"paired bundle point specification is invalid: {point_id}")
+        normalized = dict(point)
+        for field in ("mass_amu", "charge_state", "kinetic_energy_eV"):
+            if field not in normalized:
+                raise ValueError(
+                    f"paired bundle point specification lacks {field}: {point_id}"
+                )
+        if family_points.get(point_id) != normalized:
+            raise ValueError(
+                f"paired bundle point specification differs from source family: {point_id}"
+            )
+        normalized_specs[point_id] = normalized
+    return normalized_ids, normalized_specs
+
+
+def load_declared_bundle_specification(
+    metadata_path: Path,
+    source_family_path: Path,
+) -> dict[str, Any]:
+    """Read a bundle's explicit generic specification without adding policy."""
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8-sig"))
+    family = json.loads(source_family_path.read_text(encoding="utf-8-sig"))
+    point_ids = metadata.get("operating_point_ids")
+    family_points = family.get("operating_points")
+    if not isinstance(point_ids, list) or not isinstance(family_points, dict):
+        raise ValueError("paired bundle does not declare a usable point specification")
+    point_specs = {
+        point_id: family_points[point_id]
+        for point_id in dict.fromkeys(point_ids)
+        if isinstance(point_id, str) and point_id in family_points
+    }
+    return {
+        "point_ids": point_ids,
+        "point_specs": point_specs,
+        "bundle_role": metadata.get("role"),
+        "bundle_version": metadata.get("algorithm_version"),
+    }
 
 
 def _build_ion_table(
@@ -216,7 +265,7 @@ def _render_canonical(
     return stream.getvalue().encode("ascii")
 
 
-def _legacy_generate(
+def _generate_table_prefix(
     family: dict[str, Any],
     distribution: dict[str, Any],
     point_id: str,
@@ -253,10 +302,20 @@ def generate_bundle(
     resolved_path: Path,
     output_dir: Path,
     *,
+    point_ids: Sequence[str],
+    point_specs: Mapping[str, Mapping[str, Any]],
+    bundle_role: str,
+    bundle_version: str,
     seed: int | None = None,
 ) -> dict[str, Any]:
     family, distribution = _load_inputs(source_family_path, distribution_path)
-    point_ids = _validate_bundle_points(family)
+    normalized_ids, normalized_specs = _normalize_bundle_specification(
+        family,
+        point_ids,
+        point_specs,
+        bundle_role,
+        bundle_version,
+    )
     policy, functional_count, statistical_count = _policy_counts()
     selected_seed = (
         int(seed)
@@ -267,8 +326,8 @@ def generate_bundle(
     resolved = json.loads(resolved_path.read_text(encoding="utf-8-sig"))
     output_dir.mkdir(parents=True, exist_ok=True)
     artifacts: list[dict[str, Any]] = []
-    for point_id in point_ids:
-        point = family["operating_points"][point_id]
+    for point_id in normalized_ids:
+        point = normalized_specs[point_id]
         ion_master, vectors = _build_ion_table(point, distribution, latent)
         canonical_master = _render_canonical(point, distribution, latent, vectors)
         canonical_lines = canonical_master.decode("ascii").splitlines()
@@ -312,18 +371,18 @@ def generate_bundle(
         )
     latent_sha = _latent_sha256(latent)
     family_identity = {
-        "algorithm_version": ALGORITHM_VERSION,
+        "algorithm_version": bundle_version,
         "seed": selected_seed,
         "policy_sha256": sha256(POLICY_PATH),
         "source_family_sha256": sha256(source_family_path),
         "distribution_sha256": sha256(distribution_path),
         "latent_sha256": latent_sha,
-        "operating_point_ids": point_ids,
+        "operating_point_ids": normalized_ids,
     }
     metadata = {
-        "schema_version": 1,
-        "role": BUNDLE_ROLE,
-        "algorithm_version": ALGORITHM_VERSION,
+        "schema_version": BUNDLE_SCHEMA_VERSION,
+        "role": bundle_role,
+        "algorithm_version": bundle_version,
         "seed": selected_seed,
         "policy": {
             "source": "common/contracts/particle_count_policy.json",
@@ -338,7 +397,7 @@ def generate_bundle(
             "resolved_design_file_sha256": sha256(resolved_path),
             "resolved_design_sha256": resolved["resolved_sha256"],
         },
-        "operating_point_ids": point_ids,
+        "operating_point_ids": normalized_ids,
         "latent_sha256": latent_sha,
         "sample_family_sha256": _canonical_json_sha256(family_identity),
         "coordinate_mapping_version": "simion_ion11_to_multipole_canonical.v1",
@@ -355,6 +414,10 @@ def generate_bundle(
         source_family_path,
         distribution_path,
         resolved_path,
+        point_ids=normalized_ids,
+        point_specs=normalized_specs,
+        bundle_role=bundle_role,
+        bundle_version=bundle_version,
     )
     return metadata
 
@@ -364,14 +427,28 @@ def validate_bundle(
     source_family_path: Path,
     distribution_path: Path,
     resolved_path: Path,
+    *,
+    point_ids: Sequence[str],
+    point_specs: Mapping[str, Mapping[str, Any]],
+    bundle_role: str,
+    bundle_version: str,
 ) -> dict[str, Any]:
     metadata = json.loads(metadata_path.read_text(encoding="utf-8-sig"))
-    if metadata.get("role") != BUNDLE_ROLE or metadata.get("schema_version") != 1:
+    if (
+        metadata.get("role") != bundle_role
+        or metadata.get("schema_version") != BUNDLE_SCHEMA_VERSION
+    ):
         raise ValueError("paired particle bundle metadata identity is invalid")
     family, distribution = _load_inputs(source_family_path, distribution_path)
-    point_ids = _validate_bundle_points(family)
+    normalized_ids, normalized_specs = _normalize_bundle_specification(
+        family,
+        point_ids,
+        point_specs,
+        bundle_role,
+        bundle_version,
+    )
     policy, functional_count, statistical_count = _policy_counts()
-    if metadata.get("algorithm_version") != ALGORITHM_VERSION:
+    if metadata.get("algorithm_version") != bundle_version:
         raise ValueError("paired particle bundle algorithm version differs")
     expected_policy = {
         "source": "common/contracts/particle_count_policy.json",
@@ -391,18 +468,18 @@ def validate_bundle(
     }
     if metadata.get("inputs") != expected_inputs:
         raise ValueError("paired particle bundle input identity differs")
-    if metadata.get("operating_point_ids") != point_ids:
+    if metadata.get("operating_point_ids") != normalized_ids:
         raise ValueError("paired particle bundle operating points differ")
     latent = _sample_latent(distribution, int(metadata["seed"]), statistical_count)
     latent_sha = _latent_sha256(latent)
     family_identity = {
-        "algorithm_version": ALGORITHM_VERSION,
+        "algorithm_version": bundle_version,
         "seed": int(metadata["seed"]),
         "policy_sha256": sha256(POLICY_PATH),
         "source_family_sha256": sha256(source_family_path),
         "distribution_sha256": sha256(distribution_path),
         "latent_sha256": latent_sha,
-        "operating_point_ids": point_ids,
+        "operating_point_ids": normalized_ids,
     }
     if metadata.get("latent_sha256") != latent_sha:
         raise ValueError("paired particle bundle latent identity differs")
@@ -410,7 +487,10 @@ def validate_bundle(
         raise ValueError("paired particle bundle sample-family identity differs")
     root = metadata_path.parent
     entries = metadata.get("artifacts")
-    if not isinstance(entries, list) or len(entries) != 8:
+    if (
+        not isinstance(entries, list)
+        or len(entries) != len(normalized_ids) * 4
+    ):
         raise ValueError("paired particle bundle artifact inventory is incomplete")
     inventory: dict[tuple[str, int, str], dict[str, Any]] = {}
     for entry in entries:
@@ -426,8 +506,8 @@ def validate_bundle(
         if key in inventory or not path.is_file() or sha256(path) != entry["sha256"]:
             raise ValueError("paired particle bundle artifact identity differs")
         inventory[key] = entry
-    for point_id in point_ids:
-        point = family["operating_points"][point_id]
+    for point_id in normalized_ids:
+        point = normalized_specs[point_id]
         expected_ion, expected_vectors = _build_ion_table(
             point, distribution, latent
         )
@@ -481,112 +561,52 @@ def validate_bundle(
     return metadata
 
 
-def _require(arguments: argparse.Namespace, names: tuple[str, ...], branch: str) -> None:
-    missing = [name for name in names if getattr(arguments, name) is None]
-    if missing:
-        raise ValueError(f"{branch} requires: {', '.join(missing)}")
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--source-family", type=Path)
-    parser.add_argument("--distribution", type=Path)
-    parser.add_argument("--operating-point")
-    parser.add_argument("--particles", type=int)
-    parser.add_argument("--seed", type=int)
-    parser.add_argument("--output", type=Path)
-    parser.add_argument("--metadata", type=Path)
-    parser.add_argument("--resolved-design", type=Path)
-    parser.add_argument("--bundle-output-dir", type=Path)
-    parser.add_argument("--validate-bundle", type=Path)
-    args = parser.parse_args()
-    common = ("source_family", "distribution")
-    if args.validate_bundle is not None:
-        _require(args, common + ("resolved_design",), "bundle validation")
-        forbidden = (
-            args.operating_point,
-            args.particles,
-            args.seed,
-            args.output,
-            args.metadata,
-            args.bundle_output_dir,
-        )
-        if any(value is not None for value in forbidden):
-            raise ValueError("bundle validation received generation-only arguments")
-        validate_bundle(
-            args.validate_bundle,
-            args.source_family,
-            args.distribution,
-            args.resolved_design,
-        )
-        print("STATUS=PASS BUNDLE_VALIDATION=true")
-        return
-    if args.bundle_output_dir is not None:
-        _require(args, common + ("resolved_design",), "paired bundle generation")
-        forbidden = (args.operating_point, args.particles, args.output, args.metadata)
-        if any(value is not None for value in forbidden):
-            raise ValueError("paired bundle generation received legacy-only arguments")
-        metadata = generate_bundle(
-            args.source_family,
-            args.distribution,
-            args.resolved_design,
-            args.bundle_output_dir,
-            seed=args.seed,
-        )
-        print(
-            "STATUS=PASS "
-            f"PARTICLES={metadata['policy']['statistical_count']} "
-            f"SAMPLE_FAMILY_SHA256={metadata['sample_family_sha256']}"
-        )
-        return
-    _require(
-        args,
-        common + ("operating_point", "particles", "output", "metadata"),
-        "legacy single-table generation",
-    )
-    if args.resolved_design is not None:
-        raise ValueError("legacy single-table generation does not accept --resolved-design")
-    validate_standard_particle_count(args.particles)
-    family, distribution = _load_inputs(args.source_family, args.distribution)
-    if args.operating_point not in family["operating_points"]:
-        raise ValueError(f"unknown operating point: {args.operating_point}")
+def generate_single_table(
+    source_family_path: Path,
+    distribution_path: Path,
+    operating_point_id: str,
+    particle_count: int,
+    output_path: Path,
+    metadata_path: Path,
+    *,
+    seed: int | None = None,
+) -> dict[str, Any]:
+    """Generate one ION table from a caller-selected latent-family point."""
+    validate_standard_particle_count(particle_count)
+    family, distribution = _load_inputs(source_family_path, distribution_path)
+    if operating_point_id not in family["operating_points"]:
+        raise ValueError(f"unknown operating point: {operating_point_id}")
     selected_seed = (
-        args.seed
-        if args.seed is not None
+        seed
+        if seed is not None
         else int(family["paired_sampling"]["base_seed"])
     )
-    generated = _legacy_generate(
+    generated = _generate_table_prefix(
         family,
         distribution,
-        args.operating_point,
-        args.particles,
+        operating_point_id,
+        particle_count,
         selected_seed,
     )
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    np.savetxt(args.output, generated, delimiter=",", fmt="%.12g")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    np.savetxt(output_path, generated, delimiter=",", fmt="%.12g")
     metadata = {
         "schema_version": 1,
-        "role": "rf_quadrupole_fixed_paired_particle_table",
-        "operating_point": args.operating_point,
-        "particles": args.particles,
+        "role": SINGLE_TABLE_ROLE,
+        "operating_point": operating_point_id,
+        "particles": particle_count,
         "master_particles": _policy_counts()[2],
         "prefix_sampling": True,
         "seed": selected_seed,
-        "mass_amu": family["operating_points"][args.operating_point]["mass_amu"],
-        "charge_state": family["operating_points"][args.operating_point]["charge_state"],
-        "source_family_sha256": sha256(args.source_family),
-        "distribution_sha256": sha256(args.distribution),
-        "particle_table": str(args.output.resolve()),
-        "particle_table_sha256": sha256(args.output),
+        "mass_amu": family["operating_points"][operating_point_id]["mass_amu"],
+        "charge_state": family["operating_points"][operating_point_id]["charge_state"],
+        "source_family_sha256": sha256(source_family_path),
+        "distribution_sha256": sha256(distribution_path),
+        "particle_table": str(output_path.resolve()),
+        "particle_table_sha256": sha256(output_path),
     }
-    args.metadata.parent.mkdir(parents=True, exist_ok=True)
-    args.metadata.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
-    print(
-        f"STATUS=PASS PARTICLES={args.particles} "
-        f"OPERATING_POINT={args.operating_point} "
-        f"SHA256={metadata['particle_table_sha256']}"
+    metadata_path.parent.mkdir(parents=True, exist_ok=True)
+    metadata_path.write_text(
+        json.dumps(metadata, indent=2) + "\n", encoding="utf-8"
     )
-
-
-if __name__ == "__main__":
-    main()
+    return metadata

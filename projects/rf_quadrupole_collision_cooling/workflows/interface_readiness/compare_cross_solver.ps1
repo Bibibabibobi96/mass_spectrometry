@@ -70,19 +70,26 @@ try {
     }
 
     $frozen = New-CrossSolverFrozenPathSet -InputDir $inputDir `
-        -AnalyzerFilename 'compare_interface_readiness.py' `
+        -AnalyzerRelativePath `
+        'projects\rf_quadrupole_collision_cooling\workflows\interface_readiness\evaluate.py' `
         -ModeFilename 'interface_mode.json'
     $frozenAnalyzer,$frozenCore,$frozenMode=$frozen.analyzer,$frozen.core,$frozen.mode
     $frozenComsolManifest,$frozenSimionManifest=$frozen.comsol_manifest,$frozen.simion_manifest
     $frozenComsolConfig,$frozenSimionConfig=$frozen.comsol_config,$frozen.simion_config
     $frozenComsolState,$frozenSimionState=$frozen.comsol_state,$frozen.simion_state
     $frozenLifecycleSupport = $frozen.support
+    $frozenWorkflowInit = Join-Path $frozen.module_root `
+        'projects\rf_quadrupole_collision_cooling\workflows\__init__.py'
+    $frozenPackageInit = Join-Path $frozen.module_root `
+        'projects\rf_quadrupole_collision_cooling\workflows\interface_readiness\__init__.py'
     $frozenInterface = Join-Path $inputDir 'interface_contract.json'
     $frozenIon11 = Join-Path $inputDir 'particles.ion'
     $frozenCanonical = Join-Path $inputDir 'particles.csv'
     $freezePairs = @(
-        @((Join-Path $projectRoot 'analysis\compare_interface_readiness.py'),$frozenAnalyzer),
+        @((Join-Path $PSScriptRoot 'evaluate.py'),$frozenAnalyzer),
         @((Join-Path $projectRoot 'analysis\particle_state_comparison_core.py'),$frozenCore),
+        @((Join-Path $projectRoot 'workflows\__init__.py'),$frozenWorkflowInit),
+        @((Join-Path $PSScriptRoot '__init__.py'),$frozenPackageInit),
         @((Join-Path $projectRoot 'config\modes\transport_interface_readiness.json'),$frozenMode),
         @((Join-Path $projectRoot 'config\interface_contract.json'),$frozenInterface),
         @($comsolManifest,$frozenComsolManifest),
@@ -142,7 +149,10 @@ try {
         '--mode-contract',$frozenMode,'--particles',$frozenIon11,
         '--particle-count',[string]$particleIdentity.particle_count,
         '--output',$comparison,'--census-output',$census)
-    Invoke-CrossSolverAnalyzer -Python $python -Analyzer $frozenAnalyzer `
+    Invoke-CrossSolverAnalyzer -Python $python `
+        -AnalyzerModule `
+        'projects.rf_quadrupole_collision_cooling.workflows.interface_readiness.evaluate' `
+        -ModuleRoot $frozen.module_root `
         -Arguments $arguments -Stdout $stdout -Stderr $stderr `
         -RequiredOutputs @($comparison,$census)
     $report = Get-Content -LiteralPath $comparison -Raw -Encoding UTF8 |

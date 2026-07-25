@@ -151,10 +151,16 @@ class SimionRunnerContractTests(unittest.TestCase):
             "rf_octupole_ion_guide",
         )
         for project in projects:
-            wrapper = (
-                REPO_ROOT / "projects" / project / "analysis"
-                / "run_simion_finite_3d_transport.ps1"
-            ).read_text(encoding="utf-8-sig")
+            project_root = REPO_ROOT / "projects" / project
+            wrapper_path = (
+                project_root
+                / "workflows"
+                / "no_collision_transport"
+                / "run_simion.ps1"
+                if project == "rf_quadrupole_collision_cooling"
+                else project_root / "analysis" / "run_simion_finite_3d_transport.ps1"
+            )
+            wrapper = wrapper_path.read_text(encoding="utf-8-sig")
             self.assertIn("DesignProfileId", wrapper)
             self.assertIn("ParticleSourcePath", wrapper)
             self.assertIn("common\\multipole\\run_simion_finite_3d_transport.ps1", wrapper)

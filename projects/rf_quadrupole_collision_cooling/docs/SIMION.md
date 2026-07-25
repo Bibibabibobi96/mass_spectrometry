@@ -26,11 +26,16 @@ Lua没有 collision、drag、pressure 或 buffer-gas 逻辑。RF-only模式两�
 和Lua直接消费其中的`drive`与`static_electrodes_V`；不再生成中间operating contract，也不允许命令行
 覆盖RF幅值或频率。求解器步数与最长时间来自单独冻结的mode数值配置，物理量与数值量不互相回退。
 
-`tests/simion/run_transport_candidate.ps1`是用途固定的`transport_interface_readiness`入口，执行
+`workflows/interface_readiness/run_simion.ps1`是用途固定的`transport_interface_readiness`入口，执行
 canonical10→Fly2投影、GEM 编译、PA refine 和独立无界面 fly；默认 quality 10、40 RF 步/周期，
 并禁用轨迹临时文件保留。20→40 步时 25/25 不变，平均 TOF
 变化 0.00030%；40→80 步时平均 TOF 仅变化 `1.05e-6`、最大杆区半径变化 0.030%，最大逐粒子
 到达时间变化 0.000157 us。最终为 25/25、49.7386 us、最大杆区半径 0.4729 mm、最大探测半径 1.4472 mm。
+在任何GEM/PA/SIMION进程前，该入口用相邻`particle_source_policy.py`严格复验bundle点位与能量政策，
+并把接口CLI、policy、中性bundle机制及其`common`导入闭包按原包路径冻结到`input/code`。预检子进程
+只把该冻结根放入`PYTHONPATH`，固定`PYTHONNOUSERSITE=1`并在成功或失败后恢复调用环境；run config
+记录逐文件SHA-256、包根、模块实际来源和NumPy版本/安装根。缺失或篡改任一闭包文件不会回退live
+仓库或user site；analysis机制不反向选择接口workflow。
 
 `tests/simion/run_mass_filter_candidate.ps1`是用途固定的`mass_filter_reference`入口。调用者必须
 显式传入基础ION11源；入口冻结该源后构造七质量配对ION11表，一次Fly'm保持各质量相同的位置、速度、
@@ -47,6 +52,10 @@ N=100复验，不构成质量分辨能力资格。
 两个入口均不接受`Mode`分支，也不按输入扩展名自动选择用途。cross与same-solver接口门禁只能接受
 `transport_interface_readiness`的run角色和bundle证据；质量过滤run只能进入质量响应链。执行profile
 和下游消费者必须显式选择入口并校验role、mode、manifest与输出哈希。
+
+`workflows/no_collision_transport/run_simion.ps1`是独立的无碰撞部件回归入口，固定
+`official_transport`设计身份并复用共享SIMION数值、启动和生命周期机制；它不能选择轴向加速或质量
+过滤设计profile。
 
 运行器在Fly前实际加载候选IOB，检查单实例、本地PA、放置变换、尺寸和0.2 mm单元；成功后为候选
 目录生成完整`SHA256SUMS.csv`，并在独立run目录生成含输入/输出身份的`run_manifest.json`。

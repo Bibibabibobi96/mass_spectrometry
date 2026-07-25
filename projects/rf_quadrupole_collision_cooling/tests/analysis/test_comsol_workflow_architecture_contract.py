@@ -16,12 +16,14 @@ REPO_ROOT = PROJECT_ROOT.parents[1]
 NUMERICS = PROJECT_ROOT / "config" / "comsol_solver_numerics.json"
 MODE = PROJECT_ROOT / "config" / "modes" / "transport_interface_readiness.json"
 PROFILES = PROJECT_ROOT / "config" / "execution_profiles.json"
-RUNNER = PROJECT_ROOT / "tests" / "comsol" / "run_transport_candidate.ps1"
+RUNNER = PROJECT_ROOT / "workflows" / "interface_readiness" / "run_comsol.ps1"
 TASK = PROJECT_ROOT / "tests" / "comsol" / "run_nocollision_candidate.m"
 DEDICATED_ENTRY = (
-    PROJECT_ROOT / "comsol" / "ms_rf_quadrupole_interface_transport.m"
+    PROJECT_ROOT / "comsol" / "prepare_interface_readiness_run.m"
 )
-SHARED_SOLVER = PROJECT_ROOT / "comsol" / "ms_rf_quadrupole_no_collision.m"
+SHARED_SOLVER = (
+    PROJECT_ROOT / "comsol" / "solve_deterministic_rf_quadrupole_particles.m"
+)
 NUMERICS_SUPPORT = PROJECT_ROOT / "runtime" / "comsol_solver_numerics.ps1"
 ARTIFACT_ROOT = REPO_ROOT.parent / "artifacts" / "projects" / "rf_quadrupole_collision_cooling"
 RUN_PYTHON = Path(sys.executable).resolve()
@@ -157,10 +159,10 @@ class ComsolWorkflowArchitectureContractTests(unittest.TestCase):
         }
         expected = {
             "transport_no_collision_candidate": (
-                "tests/cross_solver/verify_no_collision_candidate.ps1"
+                "workflows/no_collision_transport/compare_cross_solver.ps1"
             ),
             "transport_interface_readiness_candidate": (
-                "tests/cross_solver/verify_transport_candidate.ps1"
+                "workflows/interface_readiness/compare_cross_solver.ps1"
             ),
         }
         for profile_id, entrypoint in expected.items():
@@ -179,7 +181,11 @@ class ComsolWorkflowArchitectureContractTests(unittest.TestCase):
         task = _read(TASK)
         dedicated = _read(DEDICATED_ENTRY)
         shared = _read(SHARED_SOLVER)
-        self.assertIn("ms_rf_quadrupole_interface_transport()", task)
+        self.assertIn("prepare_interface_readiness_run()", task)
+        self.assertEqual(
+            shared.splitlines()[1],
+            "%SOLVE_DETERMINISTIC_RF_QUADRUPOLE_PARTICLES Solve one compiled no-collision case.",
+        )
         self.assertIn(
             "Dedicated interface entry rejects other workflows.",
             dedicated,

@@ -48,7 +48,11 @@ class ComsolMassFilterContractTests(unittest.TestCase):
             self.assertEqual(metrics["status"], "PASS")
 
     def test_matlab_builder_superposes_differential_and_static_fields(self) -> None:
-        builder = (PROJECT_ROOT / "comsol" / "ms_rf_quadrupole_no_collision.m").read_text(encoding="utf-8")
+        builder = (
+            PROJECT_ROOT
+            / "comsol"
+            / "solve_deterministic_rf_quadrupole_particles.m"
+        ).read_text(encoding="utf-8")
         mass_task = (PROJECT_ROOT / "tests" / "comsol" / "run_mass_filter_scan.m").read_text(
             encoding="utf-8"
         )
@@ -62,12 +66,14 @@ class ComsolMassFilterContractTests(unittest.TestCase):
         self.assertIn("p.set('axial_scale','1')", builder)
         self.assertIn("staticElectrodes=resolved.static_electrodes_V", builder)
         self.assertIn("caseConfig.workflow_id,'mass_filter_reference'", mass_task)
-        self.assertIn("ms_rf_quadrupole_no_collision(caseConfig)", mass_task)
+        self.assertIn(
+            "solve_deterministic_rf_quadrupole_particles(caseConfig)", mass_task
+        )
 
     def test_comsol_runners_freeze_the_governed_resolved_design(self) -> None:
-        transport_runner = (PROJECT_ROOT / "tests" / "comsol" / "run_transport_candidate.ps1").read_text(
-            encoding="utf-8"
-        )
+        transport_runner = (
+            PROJECT_ROOT / "workflows" / "interface_readiness" / "run_comsol.ps1"
+        ).read_text(encoding="utf-8")
         mass_runner = (PROJECT_ROOT / "tests" / "comsol" / "run_mass_filter_candidate.ps1").read_text(
             encoding="utf-8"
         )
@@ -103,10 +109,14 @@ class ComsolMassFilterContractTests(unittest.TestCase):
             self.assertIn(token, runner)
 
     def test_project_comsol_runner_and_builder_retain_only_specialized_modes(self) -> None:
-        runner = (PROJECT_ROOT / "tests/comsol/run_transport_candidate.ps1").read_text(encoding="utf-8")
-        builder = (PROJECT_ROOT / "comsol/ms_rf_quadrupole_no_collision.m").read_text(encoding="utf-8")
+        runner = (
+            PROJECT_ROOT / "workflows/interface_readiness/run_comsol.ps1"
+        ).read_text(encoding="utf-8")
+        builder = (
+            PROJECT_ROOT / "comsol/solve_deterministic_rf_quadrupole_particles.m"
+        ).read_text(encoding="utf-8")
         dedicated = (
-            PROJECT_ROOT / "comsol/ms_rf_quadrupole_interface_transport.m"
+            PROJECT_ROOT / "comsol/prepare_interface_readiness_run.m"
         ).read_text(encoding="utf-8")
         for source in (runner, builder):
             self.assertNotIn("[ValidateSet('transport_no_collision'", source)

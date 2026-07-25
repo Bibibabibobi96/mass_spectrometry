@@ -11,8 +11,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from projects.rf_quadrupole_collision_cooling.analysis.generate_interface_particle_table import (
-    generate_bundle,
+from projects.rf_quadrupole_collision_cooling.workflows.interface_readiness.particle_source_policy import (
+    generate_interface_bundle as generate_bundle,
 )
 from projects.rf_quadrupole_collision_cooling.analysis.validate_paired_particle_source_binding import (
     resolve_binding,
@@ -1285,7 +1285,9 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
 
     def test_comsol_solver_summary_records_mesh_element_count(self) -> None:
         builder = (
-            PROJECT_ROOT / "comsol" / "ms_rf_quadrupole_no_collision.m"
+            PROJECT_ROOT
+            / "comsol"
+            / "solve_deterministic_rf_quadrupole_particles.m"
         ).read_text(encoding="utf-8")
         self.assertIn("'mesh_elements_total',sum(mi.numelem)", builder)
 

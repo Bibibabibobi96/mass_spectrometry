@@ -5,7 +5,12 @@ import unittest
 from pathlib import Path
 
 
-SCRIPT = Path(__file__).parents[2] / "analysis" / "assess_interface_integration_gate.py"
+SCRIPT = (
+    Path(__file__).parents[2]
+    / "workflows"
+    / "interface_readiness"
+    / "assess_integration.py"
+)
 SPEC = importlib.util.spec_from_file_location("integration_gate", SCRIPT)
 assert SPEC and SPEC.loader
 MODULE = importlib.util.module_from_spec(SPEC)

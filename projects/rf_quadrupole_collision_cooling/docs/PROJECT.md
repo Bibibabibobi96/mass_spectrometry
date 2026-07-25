@@ -103,7 +103,7 @@ mode和阈值的粒子事件计算内核，但分别发布schema v2结果；集�
 | 层级 | 当前能力 | 当前状态 |
 |---|---|---|
 | Static | 配置派生、生成资产同步、理论和纯分析测试 | PASS |
-| Candidate | 指定mode的双求解器manifest、事件合同和功能比较 | 可执行；严格接口证据为FAIL |
+| workflow blocking profile | 指定workflow的双求解器manifest、事件合同和功能比较 | 可执行；严格接口证据为FAIL |
 | Formal | 机械正式几何、CAD/装配同步及完整复验 | BLOCKED |
 
 ## 机器权威与执行入口
@@ -163,16 +163,24 @@ schema。Lua validator必须检查本次candidate中冻结、实际交给SIMION�
   identity/数值镜像；它不理解合同profile注册表或授权选择规则。
 - 配对bundle metadata是接口两种粒子表示及其等价关系的权威；质量过滤mode只规定质量集合、每质量N和
   功能阈值，生成的多质量ION11必须在本次run冻结。
+- 接口bundle的两个point ID、点位物理规范、1.8--2.2 eV/5 eV能量政策及bundle role/version只由
+  `workflows/interface_readiness/particle_source_policy.py`持有。`analysis/paired_particle_source_bundle.py`
+  是workflow中性的机制层，只接受调用方显式注入的point ID/spec与role/version并执行latent采样、单表
+  生成、bundle组装和可重算验证；same-solver与轴向四臂消费者只依赖该中性层，不得反向导入workflow。
+  两个接口求解器入口在商业启动前复验严格policy，并把CLI、policy、中性机制及其`common`导入闭包按
+  代码树路径冻结进run。通用`runtime/frozen_python_package.ps1`只接受包根、模块、参数和依赖声明，
+  不理解workflow或policy；子进程只使用冻结`PYTHONPATH`、禁用user site，并把逐文件SHA-256、实际
+  模块来源及NumPy安装来源写入run config与manifest输入清单，任何闭包缺失/篡改均禁止live回退。
 - `execution_profiles.json`只绑定workflow身份、输入身份和明确实验变量；路径、run ID、种子等实例值
   冻结进run config，profile不得内嵌resolved中的RF、DC、频率、静态电极或几何标量。
 - 静态门禁必须验证入口无`Mode`参数、profile无重复物理标量、shared core无role/workflow分支、两个
   workflow均经同一完整Lua合同编译/校验，并在缺失物理字段时于商业运行前失败关闭。
 
-COMSOL接口入口同样固定为单用途。`tests/comsol/run_transport_candidate.ps1`从冻结的official resolved、
+COMSOL接口入口同样固定为单用途。`workflows/interface_readiness/run_comsol.ps1`从冻结的official resolved、
 interface contract、interface scientific mode、配对bundle和唯一COMSOL numerics合同在内存编译本次
-scientific spec；`comsol/ms_rf_quadrupole_interface_transport.m`复核RF-only、无碰撞、无静态端场及科学
-阈值后，才调用workflow中性的`ms_rf_quadrupole_no_collision.m`。共享solver不读取`Mode`、不选择claim或
-gate；质量过滤legacy入口只把独立质量case交给同一场/粒子机制，仍保持report-only迁移边界。
+scientific spec；`comsol/prepare_interface_readiness_run.m`复核RF-only、无碰撞、无静态端场及科学
+阈值后，才调用workflow中性的`solve_deterministic_rf_quadrupole_particles.m`。共享solver不读取`Mode`、
+不选择claim或gate；质量过滤入口只把独立质量case交给同一场/粒子机制。
 
 COMSOL interface run在创建目录时先写`interrupted`三件套，冻结并验证全部输入后再次复核initialization
 manifest；随后才允许LiveLink启动。任一配置、启动、GUI Compute、状态合同或manifest错误都由同一顶层
@@ -180,29 +188,28 @@ manifest；随后才允许LiveLink启动。任一配置、启动、GUI Compute�
 执行新的COMSOL求解或GUI复验。
 
 `execution_profiles.json`的两类跨求解器分析也不再用`Mode`切换：普通无碰撞profile固定调用
-`verify_no_collision_candidate.ps1`，接口profile固定调用`verify_transport_candidate.ps1`。两者只接收各自
+`workflows/no_collision_transport/compare_cross_solver.ps1`，接口profile固定调用
+`workflows/interface_readiness/compare_cross_solver.ps1`。两者只接收各自
 来源run身份；科学合同和数值合同从已验证来源run config及manifest读取，不由比较入口重新指定。
 
 ### 架构门禁推广与债务棘轮
 
-架构门禁按workflow inventory逐步升级，不把既有入口一次性变成全库阻断项：
+架构门禁按workflow inventory执行，活动候选profile均为阻断项：
 
 | inventory项 | 当前等级 | 当前审计结论 | 升级条件 |
 |---|---|---|---|
 | `transport_interface_readiness_candidate` | blocking | dedicated COMSOL/SIMION入口；SIMION共享完整配置、启动和生命周期core；显式绑定operating point与数值合同 | 保持blocking |
 | `mass_filter_simion_functional_reference` | blocking | dedicated SIMION入口；与接口workflow复用同一机制core；科学源与输出独立 | 保持blocking |
-| `transport_no_collision_candidate` | report-only | 仍直接调用历史`common/multipole`求解器入口；SIMION入口内联数值快照、Lua模板与启动流程 | 迁移为窄dedicated入口、共享core并注册唯一数值合同后升级 |
+| `transport_no_collision_candidate` | blocking | dedicated COMSOL/SIMION入口；固定official transport身份并复用共享数值、启动和生命周期机制 | 保持blocking |
 | `quadrupole_collision_cooling` | report-only / absent | capability为prototype且尚无活动mode或execution profile | 首个活动profile合入前必须完成注册并直接以blocking启用 |
 
-report-only扫描至少列出：workflow声明及科学role、run入口、调用的shared mechanism、物理/数值/源合同
-身份、稳定输出schema和provenance。扫描结果采用债务棘轮：已登记的存量finding不阻断，但新增profile、
-新入口或扩大既有finding必须失败；修复一项后从allowlist删除，不得恢复。
+inventory扫描至少列出：workflow声明及科学role、run入口、调用的shared mechanism、物理/数值/源合同
+身份、稳定输出schema和provenance。活动profile的缺失入口、方向反转或身份漂移均失败关闭。
 
 配置权威注册优先扩展现有`execution_profiles.json`的profile记录，不新增平行“总配置”。注册项只保存
 合同身份与唯一权威路径，不复制物理或数值标量；运行时binding必须与注册身份匹配并把实际文件及
-SHA-256冻结进run。升级顺序为：inventory覆盖全部活动profile → 新增/修改workflow阻断 →
-迁移`transport_no_collision`存量入口 → 所有candidate/static profile统一blocking。prototype且无活动
-profile的能力只做存在性报告，直到首次实现。
+SHA-256冻结进run。所有活动candidate/static profile统一blocking；prototype且无活动profile的能力只做
+存在性报告，直到首次实现。
 
 - 历史人工几何输入：[`../config/baseline.json`](../config/baseline.json)；求解器不得直接消费。
 - 官方N=100源：[`../config/official_particle_source.json`](../config/official_particle_source.json)和

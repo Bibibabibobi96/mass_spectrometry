@@ -44,7 +44,14 @@ class ExecutionCompilerTests(unittest.TestCase):
         )
         self.assertEqual(result["status"], "EXECUTION_READY")
         self.assertTrue(result["safe_to_execute"])
-        self.assertEqual(len(result["commands"]), 5)
+        self.assertEqual(len(result["commands"]), 4)
+        self.assertEqual(
+            [command["step_id"] for command in result["commands"]],
+            ["static_gate", "comsol_run", "simion_run", "cross_solver_comparison"],
+        )
+        self.assertFalse(
+            any(command["step_id"] == "candidate_gate" for command in result["commands"])
+        )
         self.assertIn("__sim__comsol__", result["commands"][1]["run_id"])
         powershell_commands = [
             command for command in result["commands"] if command["shell"] == "powershell"

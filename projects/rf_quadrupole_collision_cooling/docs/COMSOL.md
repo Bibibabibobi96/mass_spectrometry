@@ -1,8 +1,8 @@
 # COMSOL：RF 四极杆无碰撞候选
 
 返回项目统一状态：[`PROJECT.md`](PROJECT.md)。接口输运科学入口为
-`../comsol/ms_rf_quadrupole_interface_transport.m`，workflow中性的共享求解机制为
-`../comsol/ms_rf_quadrupole_no_collision.m`；工具版本、启动方式和共享LiveLink入口只采用仓库根
+`../comsol/prepare_interface_readiness_run.m`，workflow中性的共享求解机制为
+`../comsol/solve_deterministic_rf_quadrupole_particles.m`；工具版本、启动方式和共享LiveLink入口只采用仓库根
 [`README.md`](../../../README.md#工具链与执行入口)及
 [`common/comsol/README.md`](../../../common/comsol/README.md)的定义。
 
@@ -40,7 +40,7 @@ Fly2 `standard_beam` 的角度在 IOB 放置前按局部束流基向量解释，
 （0.47%）；故当前 80 步/周期已通过时间步收敛，继续冻结 mesh1、80 步/周期。
 修正后的最终结果为 25/25、50.1155 us、最大杆区半径 0.5414 mm、`q=0.7060233`。
 
-`tests/comsol/run_transport_candidate.ps1`是唯一接口候选运行入口：它没有`Mode`或数值标量开关，
+`workflows/interface_readiness/run_comsol.ps1`是唯一接口候选运行入口：它没有`Mode`或数值标量开关，
 必须绑定[`../config/comsol_solver_numerics.json`](../config/comsol_solver_numerics.json)及其中的
 具名profile。普通profile只使用`baseline`；160步/周期只允许
 `same_solver_numerical_convergence`预注册实验。schema、role、contract ID、current状态和重算逻辑
@@ -53,6 +53,11 @@ interface、scientific mode、bundle与numerics；任何预检或后续错误都
 `Study -> Compute`复算，最后写入并复验success manifest。MPH中持久化
 `z_rod_exit=85.4 mm`、`z_handoff=90.2 mm`、`z_acceptance=95.2 mm`及GUI可见
 `exp_phase_raw`数据导出节点。
+在LiveLink启动前，runner还通过接口workflow的`particle_source_policy.py`复验bundle两点与能量政策，
+并把接口CLI、policy、中性bundle机制及其`common`导入闭包按原包路径冻结到run的`input/code`树。
+该预检子进程的`PYTHONPATH`只含冻结代码根且固定`PYTHONNOUSERSITE=1`；run config记录逐文件SHA-256、
+包根、模块实际来源和NumPy版本/安装根，缺失或篡改任一闭包文件均在商业启动前失败关闭。中性analysis
+机制不保存接口point ID、workflow role或能量判据。
 
 `tests/comsol/run_mass_filter_candidate.ps1`是RF+DC功能扫描入口：从同一N=100功能源派生七个只改变质量的
 单质量表，在一个LiveLink会话中顺序求解，并按冻结的中心透过、端点抑制和对比度判据汇总。每个质量

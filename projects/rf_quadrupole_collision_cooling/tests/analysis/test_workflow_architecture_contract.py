@@ -8,7 +8,9 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
-INTERFACE_RUNNER = PROJECT_ROOT / "tests" / "simion" / "run_transport_candidate.ps1"
+INTERFACE_RUNNER = (
+    PROJECT_ROOT / "workflows" / "interface_readiness" / "run_simion.ps1"
+)
 MASS_FILTER_RUNNER = (
     PROJECT_ROOT / "tests" / "simion" / "run_mass_filter_candidate.ps1"
 )
@@ -27,6 +29,19 @@ MASS_FILTER_MODE = PROJECT_ROOT / "config" / "modes" / "mass_filter_reference.js
 INTERFACE_CONTRACT = PROJECT_ROOT / "config" / "interface_contract.json"
 SIMION_SOLVER_NUMERICS = PROJECT_ROOT / "config" / "simion_solver_numerics.json"
 SIMION_GEM = PROJECT_ROOT / "simion" / "geometry" / "quad_monolithic.gem"
+PAIRED_BUNDLE_CORE = PROJECT_ROOT / "analysis" / "paired_particle_source_bundle.py"
+INTERFACE_SOURCE_POLICY = (
+    PROJECT_ROOT
+    / "workflows"
+    / "interface_readiness"
+    / "particle_source_policy.py"
+)
+INTERFACE_SOURCE_CLI = (
+    PROJECT_ROOT
+    / "workflows"
+    / "interface_readiness"
+    / "generate_particle_table.py"
+)
 
 DEDICATED_RUNNERS = (INTERFACE_RUNNER, MASS_FILTER_RUNNER)
 CONDITIONAL_LUA_FIELDS = {
@@ -52,10 +67,15 @@ PHYSICAL_PROFILE_SWITCHES = {
 }
 NUMERICAL_OVERRIDE_SWITCHES = {"rfstepsperperiod", "trajectoryquality"}
 BLOCKING_PROFILE_IDS = {
+    "transport_no_collision_candidate",
     "transport_interface_readiness_candidate",
     "mass_filter_simion_functional_reference",
 }
-REPORT_ONLY_PROFILE_IDS = {"transport_no_collision_candidate"}
+REPORT_ONLY_PROFILE_IDS: set[str] = set()
+DEDICATED_SIMION_PROFILE_IDS = {
+    "transport_interface_readiness_candidate",
+    "mass_filter_simion_functional_reference",
+}
 CONFIG_CORE_FUNCTIONS = {
     "Get-VerifiedRfSimionWaveform",
     "Get-VerifiedRfSimionResolvedSha256",
@@ -106,6 +126,12 @@ RUNTIME_MODULE_FUNCTIONS = {
         "Confirm-RfFrozenDependencyIdentity",
         "Test-RfDependencyPathWithin",
         "Copy-RfFrozenDependency",
+    },
+    "frozen_python_package.ps1": {
+        "New-FrozenPythonPackage",
+        "Assert-FrozenPythonPackage",
+        "Get-FrozenPythonPackageFile",
+        "Invoke-IsolatedFrozenPythonModule",
     },
     "simion_execution.ps1": EXECUTION_SUPPORT_FUNCTIONS,
     "simion_run_config.ps1": CONFIG_CORE_FUNCTIONS,
@@ -185,6 +211,67 @@ class WorkflowArchitectureContractTests(unittest.TestCase):
             "new profiles must be explicitly classified before architecture rollout",
         )
 
+    def test_workflow_locations_and_dependency_direction_are_blocking(self) -> None:
+        expected_entries = {
+            "transport_no_collision_candidate": {
+                "workflows/no_collision_transport/run_comsol.ps1",
+                "workflows/no_collision_transport/run_simion.ps1",
+                "workflows/no_collision_transport/compare_cross_solver.ps1",
+            },
+            "transport_interface_readiness_candidate": {
+                "workflows/interface_readiness/run_comsol.ps1",
+                "workflows/interface_readiness/run_simion.ps1",
+                "workflows/interface_readiness/compare_cross_solver.ps1",
+            },
+        }
+        profiles = {
+            profile["profile_id"]: profile
+            for profile in json.loads(
+                EXECUTION_PROFILES.read_text(encoding="utf-8")
+            )["profiles"]
+        }
+        for profile_id, expected in expected_entries.items():
+            entrypoints = {
+                step["entrypoint"]
+                for step in profiles[profile_id]["steps"]
+                if step["kind"] in {"run", "analyze"}
+            }
+            self.assertEqual(entrypoints, expected)
+            self.assertFalse(
+                any(
+                    entrypoint.startswith(("tests/", "analysis/", "../../common/"))
+                    for entrypoint in entrypoints
+                )
+            )
+        forbidden_locations = (
+            PROJECT_ROOT / "tests" / "comsol" / "run_transport_candidate.ps1",
+            PROJECT_ROOT / "tests" / "simion" / "run_transport_candidate.ps1",
+            PROJECT_ROOT
+            / "tests"
+            / "cross_solver"
+            / "verify_transport_candidate.ps1",
+            PROJECT_ROOT
+            / "tests"
+            / "cross_solver"
+            / "verify_no_collision_candidate.ps1",
+            PROJECT_ROOT / "analysis" / "compare_interface_readiness.py",
+            PROJECT_ROOT / "analysis" / "compare_no_collision_transport.py",
+            PROJECT_ROOT / "analysis" / "assess_interface_integration_gate.py",
+        )
+        self.assertFalse(any(path.exists() for path in forbidden_locations))
+        reverse_dependency = re.compile(
+            r"projects\.rf_quadrupole_collision_cooling\.workflows|"
+            r"Join-Path[^\r\n]*['\"]workflows[/\\]"
+        )
+        for root in (PROJECT_ROOT / "analysis", PROJECT_ROOT / "runtime"):
+            for path in root.rglob("*"):
+                if path.suffix.lower() not in {".py", ".ps1", ".m"}:
+                    continue
+                self.assertIsNone(
+                    reverse_dependency.search(_read(path)),
+                    f"{path.relative_to(PROJECT_ROOT)} reverses workflow dependency",
+                )
+
     def test_dedicated_runners_have_no_mode_switch_or_inline_lua_core(self) -> None:
         for runner_path in DEDICATED_RUNNERS:
             source = _read(runner_path)
@@ -214,6 +301,54 @@ class WorkflowArchitectureContractTests(unittest.TestCase):
             branch.search(source),
             "shared SIMION config core must not dispatch scientific workflows",
         )
+
+    def test_particle_bundle_policy_is_owned_only_by_interface_workflow(self) -> None:
+        core = _read(PAIRED_BUNDLE_CORE)
+        policy = _read(INTERFACE_SOURCE_POLICY)
+        cli = _read(INTERFACE_SOURCE_CLI)
+        for forbidden in (
+            "official_100amu_2eV",
+            "rf_to_oatof_100amu_5eV",
+            "rf_interface_paired_latent_family",
+            "rf_quadrupole_paired_particle_source_bundle",
+            "candidate",
+            "interface",
+            "threshold",
+        ):
+            self.assertNotIn(forbidden, core)
+        for required in (
+            "official_100amu_2eV",
+            "rf_to_oatof_100amu_5eV",
+            "rf_interface_paired_latent_family.v2",
+            "rf_quadrupole_paired_particle_source_bundle",
+            '"min": 1.8',
+            '"max": 2.2',
+            '"value": 5.0',
+        ):
+            self.assertIn(required, policy)
+        self.assertIn("particle_source_policy import", cli)
+        self.assertNotIn("generate_single_table", cli)
+        for legacy_option in ("--operating-point", "--particles", "--output", "--metadata"):
+            self.assertNotIn(legacy_option, cli)
+        for consumer in (
+            PROJECT_ROOT / "analysis" / "analyze_axial_acceleration_four_arm_runs.py",
+            PROJECT_ROOT
+            / "analysis"
+            / "validate_axial_acceleration_four_arm_experiment.py",
+            PROJECT_ROOT / "analysis" / "validate_paired_particle_source_binding.py",
+        ):
+            source = _read(consumer)
+            self.assertIn("analysis.paired_particle_source_bundle import", source)
+            self.assertNotIn(".workflows.", source)
+        for runner in (
+            PROJECT_ROOT / "workflows" / "interface_readiness" / "run_comsol.ps1",
+            INTERFACE_RUNNER,
+        ):
+            source = _read(runner)
+            self.assertIn("particle_source_policy.py", source)
+            self.assertIn("paired_particle_source_bundle.py", source)
+            self.assertIn("generate_particle_table", source)
+            self.assertIn("--validate-bundle", source)
 
     def test_shared_modules_have_registered_narrow_responsibilities(self) -> None:
         config_core = _read(SIMION_CONFIG_CORE)
@@ -371,9 +506,9 @@ class WorkflowArchitectureContractTests(unittest.TestCase):
         dedicated = {
             profile["profile_id"]: profile
             for profile in profiles
-            if profile["profile_id"] in BLOCKING_PROFILE_IDS
+            if profile["profile_id"] in DEDICATED_SIMION_PROFILE_IDS
         }
-        self.assertEqual(set(dedicated), BLOCKING_PROFILE_IDS)
+        self.assertEqual(set(dedicated), DEDICATED_SIMION_PROFILE_IDS)
         for profile in dedicated.values():
             self.assertIn(
                 "simion_solver_numerics_contract_path",
@@ -383,7 +518,11 @@ class WorkflowArchitectureContractTests(unittest.TestCase):
                 step
                 for step in profile["steps"]
                 if step.get("kind") == "run"
-                and "tests/simion/" in step.get("entrypoint", "")
+                and step.get("entrypoint", "")
+                in {
+                    "workflows/interface_readiness/run_simion.ps1",
+                    "tests/simion/run_mass_filter_candidate.ps1",
+                }
             ]
             self.assertEqual(len(simion_steps), 1)
             simion_arguments = simion_steps[0]["arguments"]

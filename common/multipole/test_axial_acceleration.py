@@ -236,8 +236,28 @@ class AxialAccelerationTest(unittest.TestCase):
         )
         for project in projects:
             for name in ("run_finite_3d_transport.ps1", "run_simion_finite_3d_transport.ps1"):
-                source = (root / "projects" / project / "analysis" / name).read_text(encoding="utf-8-sig")
-                self.assertIn("DesignProfileId", source)
+                if project == "rf_quadrupole_collision_cooling":
+                    workflow_name = (
+                        "run_comsol.ps1"
+                        if name == "run_finite_3d_transport.ps1"
+                        else "run_simion.ps1"
+                    )
+                    path = (
+                        root
+                        / "projects"
+                        / project
+                        / "workflows"
+                        / "no_collision_transport"
+                        / workflow_name
+                    )
+                else:
+                    path = root / "projects" / project / "analysis" / name
+                source = path.read_text(encoding="utf-8-sig")
+                if project == "rf_quadrupole_collision_cooling":
+                    self.assertIn("DesignProfileId = 'official_transport'", source)
+                    self.assertNotIn("[string]$DesignProfileId", source)
+                else:
+                    self.assertIn("DesignProfileId", source)
                 self.assertIn("ParticleSourcePath", source)
                 self.assertIn("common\\multipole", source)
                 for legacy in (

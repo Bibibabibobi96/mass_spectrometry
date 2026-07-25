@@ -12,7 +12,7 @@ try
         caseConfig=jsondecode(fileread(caseConfigPath));
         assert(strcmp(caseConfig.workflow_id,'mass_filter_reference'), ...
             'Mass-filter scan received a non-mass-filter case.');
-        ms_rf_quadrupole_no_collision(caseConfig);
+        solve_deterministic_rf_quadrupole_particles(caseConfig);
     end
     setenv('RFQUAD_RUN_CONFIG', '');
     fid = fopen(reportPath, 'w');

@@ -59,7 +59,8 @@ try {
   $codeSources=[ordered]@{
     runner=$PSCommandPath
     matlab_task=(Join-Path $PSScriptRoot 'run_mass_filter_scan.m')
-    comsol_builder=(Join-Path $projectRoot 'comsol\ms_rf_quadrupole_no_collision.m')
+    comsol_builder=(Join-Path $projectRoot `
+      'comsol\solve_deterministic_rf_quadrupole_particles.m')
     contract_loader=(Join-Path $projectRoot 'load_rf_quadrupole_contract.m')
     case_preparer=(Join-Path $projectRoot 'analysis\prepare_comsol_mass_scan.py')
     result_analyzer=(Join-Path $projectRoot 'analysis\analyze_comsol_mass_scan.py')

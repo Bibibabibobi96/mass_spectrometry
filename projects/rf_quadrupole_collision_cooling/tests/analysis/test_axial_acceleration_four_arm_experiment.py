@@ -6,8 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from projects.rf_quadrupole_collision_cooling.analysis.generate_interface_particle_table import (
-    generate_bundle,
+from projects.rf_quadrupole_collision_cooling.workflows.interface_readiness.particle_source_policy import (
+    generate_interface_bundle as generate_bundle,
 )
 from projects.rf_quadrupole_collision_cooling.analysis.validate_axial_acceleration_four_arm_experiment import (
     validate_experiment,

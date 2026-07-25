@@ -24,24 +24,27 @@ FORBIDDEN_RUNNER_TERMS = {
 class Phase4DesignConsumerTests(unittest.TestCase):
     def test_cross_solver_comparison_separates_physical_and_numerical_authority(self) -> None:
         interface_analyzer = (
-            PROJECT_ROOT / "analysis" / "compare_interface_readiness.py"
+            PROJECT_ROOT / "workflows" / "interface_readiness" / "evaluate.py"
         ).read_text(encoding="utf-8")
         component_analyzer = (
-            PROJECT_ROOT / "analysis" / "compare_no_collision_transport.py"
+            PROJECT_ROOT / "workflows" / "no_collision_transport" / "evaluate.py"
         ).read_text(encoding="utf-8")
         interface_runner = (
-            PROJECT_ROOT / "tests" / "cross_solver" / "verify_transport_candidate.ps1"
+            PROJECT_ROOT
+            / "workflows"
+            / "interface_readiness"
+            / "compare_cross_solver.ps1"
         ).read_text(encoding="utf-8")
         component_runner = (
             PROJECT_ROOT
-            / "tests"
-            / "cross_solver"
-            / "verify_no_collision_candidate.ps1"
+            / "workflows"
+            / "no_collision_transport"
+            / "compare_cross_solver.ps1"
         ).read_text(encoding="utf-8")
         self.assertNotIn("transport_no_collision", interface_analyzer)
         self.assertNotIn("transport_interface_readiness", component_analyzer)
-        self.assertIn("compare_interface_readiness.py", interface_runner)
-        self.assertIn("compare_no_collision_transport.py", component_runner)
+        self.assertIn("interface_readiness.evaluate", interface_runner)
+        self.assertIn("no_collision_transport.evaluate", component_runner)
         self.assertNotIn("[string]$Mode", interface_runner)
         self.assertNotIn("[string]$Mode", component_runner)
         lifecycle = (
@@ -100,18 +103,17 @@ class Phase4DesignConsumerTests(unittest.TestCase):
                 resolved["profile"]["identity"]["electrode_count"], 4
             )
 
-    def test_wrappers_forward_no_physical_scalar_or_arbitrary_request_path(self) -> None:
-        for name in (
-            "run_finite_3d_transport.ps1",
-            "run_simion_finite_3d_transport.ps1",
-        ):
-            source = (PROJECT_ROOT / "analysis" / name).read_text(encoding="utf-8")
+    def test_no_collision_entries_fix_one_scientific_profile(self) -> None:
+        workflow = PROJECT_ROOT / "workflows" / "no_collision_transport"
+        for name in ("run_comsol.ps1", "run_simion.ps1"):
+            source = (workflow / name).read_text(encoding="utf-8")
             for forbidden in FORBIDDEN_RUNNER_TERMS:
                 self.assertNotIn(forbidden, source)
-            self.assertIn("DesignProfileId", source)
             self.assertIn("ParticleSourcePath", source)
-            self.assertIn("explicit_axial_reference", source)
-            self.assertIn("endplate_acceleration_reference", source)
+            self.assertIn("DesignProfileId = 'official_transport'", source)
+            self.assertNotIn("[string]$DesignProfileId", source)
+            self.assertNotIn("explicit_axial_reference", source)
+            self.assertNotIn("endplate_acceleration_reference", source)
 
     def test_legacy_contract_modules_no_longer_compute_device_geometry(self) -> None:
         for name in ("resolve_contract.py", "rfquad_contract.py"):
@@ -147,11 +149,13 @@ class Phase4DesignConsumerTests(unittest.TestCase):
                     self.assertNotIn(token, source, str(path.relative_to(PROJECT_ROOT)))
 
     def test_solver_builders_read_governed_physical_fields_directly(self) -> None:
-        matlab = (PROJECT_ROOT / "comsol" / "ms_rf_quadrupole_no_collision.m").read_text(
-            encoding="utf-8"
-        )
+        matlab = (
+            PROJECT_ROOT
+            / "comsol"
+            / "solve_deterministic_rf_quadrupole_particles.m"
+        ).read_text(encoding="utf-8")
         simion = (
-            PROJECT_ROOT / "tests" / "simion" / "run_transport_candidate.ps1"
+            PROJECT_ROOT / "workflows" / "interface_readiness" / "run_simion.ps1"
         ).read_text(encoding="utf-8")
         simion_core = (
             PROJECT_ROOT / "runtime" / "simion_run_config.ps1"

@@ -48,7 +48,7 @@ try {
         'projects\rf_quadrupole_collision_cooling\analysis\compare_same_solver_numerics.py',
         'projects\rf_quadrupole_collision_cooling\analysis\particle_state_comparison_core.py',
         'projects\rf_quadrupole_collision_cooling\analysis\validate_paired_particle_source_binding.py',
-        'projects\rf_quadrupole_collision_cooling\analysis\generate_interface_particle_table.py',
+        'projects\rf_quadrupole_collision_cooling\analysis\paired_particle_source_bundle.py',
         'common\contracts\particle_state.py',
         'common\contracts\particle_physics.py',
         'common\contracts\particle_count_policy.py',

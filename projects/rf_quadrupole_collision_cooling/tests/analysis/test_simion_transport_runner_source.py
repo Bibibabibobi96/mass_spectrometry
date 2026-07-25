@@ -15,8 +15,8 @@ from pathlib import Path
 from common.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
 from common.multipole.particle_source_preflight import COLUMNS
 from common.multipole.verify_resolved_design import verify as verify_resolved_design
-from projects.rf_quadrupole_collision_cooling.analysis.generate_interface_particle_table import (
-    generate_bundle,
+from projects.rf_quadrupole_collision_cooling.workflows.interface_readiness.particle_source_policy import (
+    generate_interface_bundle as generate_bundle,
 )
 from projects.rf_quadrupole_collision_cooling.analysis.validate_paired_particle_source_binding import (
     resolve_binding,
@@ -25,7 +25,7 @@ from projects.rf_quadrupole_collision_cooling.analysis.validate_paired_particle_
 
 PROJECT_ROOT = Path(__file__).parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
-RUNNER = PROJECT_ROOT / "tests" / "simion" / "run_transport_candidate.ps1"
+RUNNER = PROJECT_ROOT / "workflows" / "interface_readiness" / "run_simion.ps1"
 MASS_RUNNER = PROJECT_ROOT / "tests" / "simion" / "run_mass_filter_candidate.ps1"
 RUN_CONFIG_CONTRACT = PROJECT_ROOT / "runtime" / "simion_run_config.ps1"
 SHARED_LUA = REPO_ROOT / "common" / "multipole" / "simion_transport.lua"
@@ -279,10 +279,10 @@ class SimionTransportRunnerSourceTests(unittest.TestCase):
         )
         self.assertEqual(
             interface_steps["simion_run"]["entrypoint"],
-            "tests/simion/run_transport_candidate.ps1",
+            "workflows/interface_readiness/run_simion.ps1",
         )
         self.assertNotIn(
-            "../../common/multipole/run_simion_finite_3d_transport.ps1",
+            "workflows/no_collision_transport/run_simion.ps1",
             json.dumps(interface),
         )
         mass_filter = profiles["mass_filter_simion_functional_reference"]

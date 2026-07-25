@@ -9,7 +9,8 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.particle_state import canonical_sources, ion11_sources
-from projects.rf_quadrupole_collision_cooling.analysis.generate_interface_particle_table import (
+from projects.rf_quadrupole_collision_cooling.analysis.paired_particle_source_bundle import (
+    load_declared_bundle_specification,
     validate_bundle,
 )
 
@@ -56,11 +57,16 @@ def resolve_binding(
     consumed_representation: str,
     expected_consumed_path: Path,
 ) -> dict[str, Any]:
+    bundle_specification = load_declared_bundle_specification(
+        metadata_path,
+        source_family_path,
+    )
     metadata = validate_bundle(
         metadata_path,
         source_family_path,
         distribution_path,
         resolved_design_path,
+        **bundle_specification,
     )
     if consumed_representation not in {"ion11", "canonical10"}:
         raise ValueError("consumed representation must be ion11 or canonical10")

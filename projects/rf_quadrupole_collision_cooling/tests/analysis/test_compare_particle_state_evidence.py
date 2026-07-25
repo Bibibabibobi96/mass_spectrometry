@@ -16,8 +16,20 @@ PARTICLE_COUNT_POLICY = (
     REPO_ROOT / "common" / "contracts" / "particle_count_policy.json"
 )
 ANALYSIS = PROJECT_ROOT / "analysis"
-INTERFACE = ANALYSIS / "compare_interface_readiness.py"
-NO_COLLISION = ANALYSIS / "compare_no_collision_transport.py"
+INTERFACE = PROJECT_ROOT / "workflows" / "interface_readiness" / "evaluate.py"
+NO_COLLISION = (
+    PROJECT_ROOT / "workflows" / "no_collision_transport" / "evaluate.py"
+)
+ANALYZER_MODULES = {
+    INTERFACE: (
+        "projects.rf_quadrupole_collision_cooling.workflows."
+        "interface_readiness.evaluate"
+    ),
+    NO_COLLISION: (
+        "projects.rf_quadrupole_collision_cooling.workflows."
+        "no_collision_transport.evaluate"
+    ),
+}
 CORE = ANALYSIS / "particle_state_comparison_core.py"
 STATE_FIELDS = [
     "particle_id",
@@ -157,7 +169,8 @@ class SplitParticleStateComparisonTests(unittest.TestCase):
         particles.write_text("particle\n" * particle_count, encoding="ascii")
         arguments = [
             sys.executable,
-            str(analyzer),
+            "-m",
+            ANALYZER_MODULES[analyzer],
             "--comsol",
             str(comsol),
             "--simion",

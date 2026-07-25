@@ -95,21 +95,28 @@ try {
     }
 
     $frozen = New-CrossSolverFrozenPathSet -InputDir $inputDir `
-        -AnalyzerFilename 'compare_no_collision_transport.py' `
+        -AnalyzerRelativePath `
+        'projects\rf_quadrupole_collision_cooling\workflows\no_collision_transport\evaluate.py' `
         -ModeFilename 'no_collision_mode.json'
     $frozenAnalyzer,$frozenCore,$frozenMode=$frozen.analyzer,$frozen.core,$frozen.mode
     $frozenComsolManifest,$frozenSimionManifest=$frozen.comsol_manifest,$frozen.simion_manifest
     $frozenComsolConfig,$frozenSimionConfig=$frozen.comsol_config,$frozen.simion_config
     $frozenComsolState,$frozenSimionState=$frozen.comsol_state,$frozen.simion_state
     $frozenLifecycleSupport = $frozen.support
+    $frozenWorkflowInit = Join-Path $frozen.module_root `
+        'projects\rf_quadrupole_collision_cooling\workflows\__init__.py'
+    $frozenPackageInit = Join-Path $frozen.module_root `
+        'projects\rf_quadrupole_collision_cooling\workflows\no_collision_transport\__init__.py'
     $frozenParticleCountPolicy = Join-Path $inputDir `
         'particle_count_policy.json'
     $frozenResolved = Join-Path $inputDir 'resolved_design.json'
     $frozenParticles = Join-Path $inputDir 'particles.dat'
     $frozenSourceMetadata = Join-Path $inputDir 'particle_source_metadata.json'
     $freezePairs = @(
-        @((Join-Path $projectRoot 'analysis\compare_no_collision_transport.py'),$frozenAnalyzer),
+        @((Join-Path $PSScriptRoot 'evaluate.py'),$frozenAnalyzer),
         @((Join-Path $projectRoot 'analysis\particle_state_comparison_core.py'),$frozenCore),
+        @((Join-Path $projectRoot 'workflows\__init__.py'),$frozenWorkflowInit),
+        @((Join-Path $PSScriptRoot '__init__.py'),$frozenPackageInit),
         @((Join-Path $projectRoot 'config\modes\transport_no_collision.json'),$frozenMode),
         @((Join-Path $repoRoot 'common\contracts\particle_count_policy.json'),$frozenParticleCountPolicy),
         @($comsolResolved,$frozenResolved),
@@ -152,7 +159,10 @@ try {
         '--resolved',$frozenResolved,'--mode-contract',$frozenMode,
         '--particle-count-policy',$frozenParticleCountPolicy,'--particles',$frozenParticles,
         '--particle-count',[string]$particleCount,'--output',$comparison,'--census-output',$census)
-    Invoke-CrossSolverAnalyzer -Python $python -Analyzer $frozenAnalyzer `
+    Invoke-CrossSolverAnalyzer -Python $python `
+        -AnalyzerModule `
+        'projects.rf_quadrupole_collision_cooling.workflows.no_collision_transport.evaluate' `
+        -ModuleRoot $frozen.module_root `
         -Arguments $arguments -Stdout $stdout -Stderr $stderr `
         -RequiredOutputs @($comparison,$census)
     $report = Get-Content -LiteralPath $comparison -Raw -Encoding UTF8 |

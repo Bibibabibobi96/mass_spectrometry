@@ -115,7 +115,7 @@ class MultipoleFamilyContractTests(unittest.TestCase):
             / "projects"
             / "rf_quadrupole_collision_cooling"
             / "comsol"
-            / "ms_rf_quadrupole_no_collision.m"
+            / "solve_deterministic_rf_quadrupole_particles.m"
         ).read_text(encoding="utf-8")
         self.assertIn("if accelerationEnabled\n        studyDiff=", shared_solver)
         self.assertIn("if accelerationEnabled\n        force.set('E'", shared_solver)

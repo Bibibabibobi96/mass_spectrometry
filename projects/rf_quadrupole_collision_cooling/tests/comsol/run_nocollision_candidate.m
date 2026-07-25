@@ -3,7 +3,7 @@ addpath(projectRoot);
 addpath(fullfile(projectRoot, 'comsol'));
 reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
 try
-    ms_rf_quadrupole_interface_transport();
+    prepare_interface_readiness_run();
     fid = fopen(reportPath, 'w');
     fprintf(fid, 'STATUS=PASS\n');
     fclose(fid);

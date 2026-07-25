@@ -1,4 +1,4 @@
-function result = ms_rf_quadrupole_interface_transport()
+function result = prepare_interface_readiness_run()
 %MS_RF_QUADRUPOLE_INTERFACE_TRANSPORT Run the dedicated interface workflow.
 
 projectRoot=fileparts(fileparts(mfilename('fullpath')));
@@ -64,7 +64,7 @@ assert(requiredFinite(spec,'minimum_transmission')==minimumTransmission && ...
     requiredFinite(spec,'source_axial_offset_mm')==0, ...
     'Compiled interface thresholds or source placement differ from the frozen scientific mode.');
 
-result=ms_rf_quadrupole_no_collision(runConfig);
+result=solve_deterministic_rf_quadrupole_particles(runConfig);
 r0=requiredFinite(requiredStruct(resolved,'geometry_mm'),'inscribed_radius_r0');
 if result.transmission<minimumTransmission || ...
         result.max_hit_rod_radius_mm>=maximumRadiusFraction*r0

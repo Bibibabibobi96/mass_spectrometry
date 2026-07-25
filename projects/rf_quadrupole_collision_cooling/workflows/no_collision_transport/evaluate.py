@@ -8,24 +8,14 @@ import json
 from pathlib import Path
 from typing import Any
 
-if __package__:
-    from projects.rf_quadrupole_collision_cooling.analysis.particle_state_comparison_core import (
-        aggregate_comparison,
-        aggregate_handoff,
-        load_event_table,
-        pair_event_census,
-        source_id_evidence,
-        write_census,
-    )
-else:
-    from particle_state_comparison_core import (
-        aggregate_comparison,
-        aggregate_handoff,
-        load_event_table,
-        pair_event_census,
-        source_id_evidence,
-        write_census,
-    )
+from projects.rf_quadrupole_collision_cooling.analysis.particle_state_comparison_core import (
+    aggregate_comparison,
+    aggregate_handoff,
+    load_event_table,
+    pair_event_census,
+    source_id_evidence,
+    write_census,
+)
 
 
 def _load_json(path: Path) -> dict[str, Any]:

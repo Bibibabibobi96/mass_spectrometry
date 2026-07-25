@@ -10,8 +10,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from projects.rf_quadrupole_collision_cooling.analysis.generate_interface_particle_table import (
-    generate_bundle,
+from projects.rf_quadrupole_collision_cooling.workflows.interface_readiness.particle_source_policy import (
+    generate_interface_bundle as generate_bundle,
 )
 from projects.rf_quadrupole_collision_cooling.analysis.validate_paired_particle_source_binding import (
     resolve_binding,
@@ -20,10 +20,10 @@ from projects.rf_quadrupole_collision_cooling.analysis.validate_paired_particle_
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
-CROSS_ROOT = PROJECT_ROOT / "tests" / "cross_solver"
+CROSS_ROOT = PROJECT_ROOT / "workflows" / "interface_readiness"
 IDENTITY_HELPER = PROJECT_ROOT / "runtime" / "particle_table_identity.ps1"
-CROSS_RUNNER = CROSS_ROOT / "verify_transport_candidate.ps1"
-COMSOL_RUNNER = PROJECT_ROOT / "tests" / "comsol" / "run_transport_candidate.ps1"
+CROSS_RUNNER = CROSS_ROOT / "compare_cross_solver.ps1"
+COMSOL_RUNNER = CROSS_ROOT / "run_comsol.ps1"
 PROJECT_GATE = PROJECT_ROOT / "verify_project.ps1"
 
 
@@ -306,7 +306,7 @@ class CandidateGateParameterContractTests(unittest.TestCase):
         self.assertIn("Copy-CrossSolverAnalysisInputs", cross_runner)
         self.assertIn("Complete-CrossSolverAnalysis", cross_runner)
 
-    def test_project_gate_preserves_public_labels_and_maps_to_runner_ids(self) -> None:
+    def test_project_gate_does_not_select_or_forward_candidate_workflows(self) -> None:
         project_gate = PROJECT_GATE.read_text(encoding="utf-8")
         cross_runner = CROSS_RUNNER.read_text(encoding="utf-8")
         runner_parameters = set(
@@ -316,23 +316,13 @@ class CandidateGateParameterContractTests(unittest.TestCase):
             )
         )
 
-        for public_parameter in (
-            "ComsolRunLabel",
-            "SimionRunLabel",
-            "ComparisonLabel",
-        ):
-            self.assertRegex(project_gate, rf"\[string\]\${public_parameter}\s*=")
-
-        invocation = project_gate.split(
-            "tests\\cross_solver\\verify_transport_candidate.ps1",
-            1,
-        )[1].split("if ($LASTEXITCODE", 1)[0]
-        forwarded = dict(
-            re.findall(r"-(\w+)\s+\$(\w+)", invocation)
-        )
-        self.assertEqual(forwarded["ComsolRunId"], "ComsolRunLabel")
-        self.assertEqual(forwarded["SimionRunId"], "SimionRunLabel")
-        self.assertEqual(forwarded["RunId"], "ComparisonLabel")
+        self.assertIn("[ValidateSet('Static','Formal')]", project_gate)
+        self.assertNotIn("'Candidate'", project_gate)
+        self.assertNotIn("CandidateMode", project_gate)
+        self.assertNotIn("ComsolRunLabel", project_gate)
+        self.assertNotIn("SimionRunLabel", project_gate)
+        self.assertNotIn("ComparisonLabel", project_gate)
+        self.assertNotIn("compare_cross_solver.ps1", project_gate)
         self.assertTrue(
             {"ComsolRunId", "SimionRunId", "RunId"}.issubset(runner_parameters)
         )

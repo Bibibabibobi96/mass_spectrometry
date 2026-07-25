@@ -48,10 +48,12 @@ function Copy-CrossSolverAnalysisInputs {
 
 function New-CrossSolverFrozenPathSet {
     [CmdletBinding()]
-    param([Parameter(Mandatory)][string]$InputDir,[Parameter(Mandatory)][string]$AnalyzerFilename,
+    param([Parameter(Mandatory)][string]$InputDir,[Parameter(Mandatory)][string]$AnalyzerRelativePath,
         [Parameter(Mandatory)][string]$ModeFilename)
+    $moduleRoot=Join-Path $InputDir 'code'
     [pscustomobject]@{
-        analyzer=Join-Path $InputDir $AnalyzerFilename;core=Join-Path $InputDir 'particle_state_comparison_core.py'
+        module_root=$moduleRoot;analyzer=Join-Path $moduleRoot $AnalyzerRelativePath
+        core=Join-Path $moduleRoot 'projects\rf_quadrupole_collision_cooling\analysis\particle_state_comparison_core.py'
         mode=Join-Path $InputDir $ModeFilename;comsol_manifest=Join-Path $InputDir 'comsol_run_manifest.json'
         simion_manifest=Join-Path $InputDir 'simion_run_manifest.json';comsol_config=Join-Path $InputDir 'comsol_run_config.json'
         simion_config=Join-Path $InputDir 'simion_run_config.json';comsol_state=Join-Path $InputDir 'comsol_particle_state.csv'
@@ -62,12 +64,25 @@ function New-CrossSolverFrozenPathSet {
 function Invoke-CrossSolverAnalyzer {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$Analyzer,
+        [Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$AnalyzerModule,
+        [Parameter(Mandatory)][string]$ModuleRoot,
         [Parameter(Mandatory)][string[]]$Arguments,[Parameter(Mandatory)][string]$Stdout,
         [Parameter(Mandatory)][string]$Stderr,[Parameter(Mandatory)][string[]]$RequiredOutputs
     )
-    & $Python $Analyzer @Arguments 1> $Stdout 2> $Stderr
-    if($LASTEXITCODE-ne 0){throw "Cross-solver analyzer failed with exit code $LASTEXITCODE."}
+    $savedPythonPath=$env:PYTHONPATH
+    $savedNoUserSite=$env:PYTHONNOUSERSITE
+    try{
+        $env:PYTHONPATH=$ModuleRoot
+        $env:PYTHONNOUSERSITE='1'
+        Push-Location -LiteralPath $ModuleRoot
+        try{
+            & $Python -m $AnalyzerModule @Arguments 1> $Stdout 2> $Stderr
+            if($LASTEXITCODE-ne 0){throw "Cross-solver analyzer failed with exit code $LASTEXITCODE."}
+        }finally{Pop-Location}
+    }finally{
+        $env:PYTHONPATH=$savedPythonPath
+        $env:PYTHONNOUSERSITE=$savedNoUserSite
+    }
     foreach($path in $RequiredOutputs){
         if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "Cross-solver analyzer output is missing: $path"}
     }

@@ -1,11 +1,6 @@
 param(
-  [ValidateSet('Static','Candidate','Formal')][string]$Level = 'Static',
-  [string]$PythonExe = '',
-  [string]$ComsolRunLabel = '',
-  [string]$SimionRunLabel = '',
-  [string]$ComparisonLabel = '',
-  [ValidateSet('transport_no_collision','transport_interface_readiness')]
-  [string]$CandidateMode = 'transport_no_collision'
+  [ValidateSet('Static','Formal')][string]$Level = 'Static',
+  [string]$PythonExe = ''
 )
 
 Set-StrictMode -Version Latest
@@ -89,20 +84,7 @@ Get-ChildItem -LiteralPath $projectRoot -Recurse -Filter '*.ps1' | ForEach-Objec
 }
 if ($parseErrors.Count -gt 0) { throw "PowerShell syntax gate failed: $($parseErrors -join '; ')" }
 
-if ($Level -eq 'Candidate') {
-  if (-not $PSBoundParameters.ContainsKey('CandidateMode')) {
-    throw 'Candidate gate requires an explicit CandidateMode.'
-  }
-  if ([string]::IsNullOrWhiteSpace($ComsolRunLabel) -or [string]::IsNullOrWhiteSpace($SimionRunLabel) -or
-      [string]::IsNullOrWhiteSpace($ComparisonLabel)) {
-    throw 'Candidate gate requires explicit ComsolRunLabel, SimionRunLabel, and ComparisonLabel.'
-  }
-  & (Join-Path $projectRoot 'tests\cross_solver\verify_transport_candidate.ps1') `
-    -ComsolRunId $ComsolRunLabel -SimionRunId $SimionRunLabel -RunId $ComparisonLabel `
-    -Mode $CandidateMode -PythonExe $python
-  if ($LASTEXITCODE -ne 0) { throw 'Cross-solver transport candidate gate failed.' }
-}
-elseif ($Level -eq 'Formal') {
+if ($Level -eq 'Formal') {
   throw 'Formal gate is intentionally unavailable until the component geometry and SolidWorks assembly are selected and synchronized.'
 }
 

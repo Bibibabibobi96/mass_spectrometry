@@ -68,8 +68,13 @@ S2–S3连接功能闭环记录：
   不维护第二份列名或枚举。
 - 集成就绪粒子族与模式：[`config/interface_readiness_particle_source.json`](config/interface_readiness_particle_source.json)、
   [`config/modes/transport_interface_readiness.json`](config/modes/transport_interface_readiness.json)
-- 命名粒子表生成器：[`analysis/generate_interface_particle_table.py`](analysis/generate_interface_particle_table.py)，
-  用固定种子生成任意 N 的可追溯 ION 表与元数据；求解器不得各自随机生成接口粒子。
+- 命名粒子表workflow入口：
+  [`workflows/interface_readiness/generate_particle_table.py`](workflows/interface_readiness/generate_particle_table.py)，
+  其两点身份、能量政策、bundle role/version只由相邻
+  [`particle_source_policy.py`](workflows/interface_readiness/particle_source_policy.py)规定；中性的
+  [`analysis/paired_particle_source_bundle.py`](analysis/paired_particle_source_bundle.py)只实现显式注入规范后的
+  latent采样、单表生成和bundle组装/复验。CLI只服务接口bundle，不提供通用单表或用途切换分支；求解器
+  不得各自随机生成接口粒子。
 - 质量过滤模式：[`config/modes/mass_filter_reference.json`](config/modes/mass_filter_reference.json)；与RF-only
   传输共用同一几何源，但由独立入口绑定RF+DC运行合同和ION11多质量源，不能作为接口输运运行替身。
 - 求解器无关四极杆 L0 参考计算：[`analysis/quadrupole_l0.py`](analysis/quadrupole_l0.py)；只校验理想
@@ -78,19 +83,26 @@ S2–S3连接功能闭环记录：
   当前79.6 mm杆长、4 mm场半径和官方源包络，输出质量响应、规范图和run三件套。它证明同一几何能
   形成理论一致的通带，但不包含边缘场，也不替代COMSOL/SIMION Candidate资格。
 - COMSOL接口输运科学入口：
-  [`comsol/ms_rf_quadrupole_interface_transport.m`](comsol/ms_rf_quadrupole_interface_transport.m)；
-  [`comsol/ms_rf_quadrupole_no_collision.m`](comsol/ms_rf_quadrupole_no_collision.m)只接收已编译run config，
+  [`comsol/prepare_interface_readiness_run.m`](comsol/prepare_interface_readiness_run.m)；
+  [`comsol/solve_deterministic_rf_quadrupole_particles.m`](comsol/solve_deterministic_rf_quadrupole_particles.m)
+  只接收已编译run config，
   共享无碰撞几何、场、release和状态导出机制，不选择接口输运或质量过滤workflow。
 - 旧`comsol/ms_rf_quadrupole_collision_cooling.m`现为拒绝执行的兼容短桩；其150 mm旧几何、硬编码
   连接和未验证碰撞模型不得恢复为当前入口。未来碰撞模式必须从共享契约重新建立。
 - SIMION 几何入口：[`simion/geometry/quad_monolithic.gem`](simion/geometry/quad_monolithic.gem)
 - SIMION RF-only/RF+DC程序：[`simion/programs/quad_transport.lua`](simion/programs/quad_transport.lua)
-- COMSOL RF-only构建/GUI复验入口：[`tests/comsol/run_transport_candidate.ps1`](tests/comsol/run_transport_candidate.ps1)；
+- COMSOL RF-only接口构建/GUI复验入口：
+  [`workflows/interface_readiness/run_comsol.ps1`](workflows/interface_readiness/run_comsol.ps1)；
+  无碰撞部件回归入口：
+  [`workflows/no_collision_transport/run_comsol.ps1`](workflows/no_collision_transport/run_comsol.ps1)；
   RF+DC七质量功能入口：[`tests/comsol/run_mass_filter_candidate.ps1`](tests/comsol/run_mass_filter_candidate.ps1)，
   使用配对源输出L0/L1/SIMION/COMSOL比较CSV与规范图，仅中心质量保存一份MPH。
 - SIMION 接口输运构建/验证入口：
-  [`tests/simion/run_transport_candidate.ps1`](tests/simion/run_transport_candidate.ps1)；入口用途固定为
+  [`workflows/interface_readiness/run_simion.ps1`](workflows/interface_readiness/run_simion.ps1)；入口用途固定为
   `transport_interface_readiness`，只接受配对bundle中的canonical10表示。
+- SIMION无碰撞部件回归入口：
+  [`workflows/no_collision_transport/run_simion.ps1`](workflows/no_collision_transport/run_simion.ps1)；入口固定
+  `official_transport`设计身份，不接受轴向加速、质量过滤或其他设计profile选择。
 - SIMION RF+DC质量过滤功能入口：
   [`tests/simion/run_mass_filter_candidate.ps1`](tests/simion/run_mass_filter_candidate.ps1)；入口用途固定为
   `mass_filter_reference`，要求显式给出基础ION11源，并生成配对七质量ION11表、质量响应、指标JSON和规范图。
@@ -102,9 +114,9 @@ S2–S3连接功能闭环记录：
   入口拒绝bundle、canonical和接口工况参数；cross/same-solver接口门禁不得消费质量过滤run。
 - SIMION IOB 结构门禁：[`tests/simion/inspect_builtin_quad_reference.lua`](tests/simion/inspect_builtin_quad_reference.lua)
 - 跨求解器证据分为两个固定入口，不再由粒子数或`Mode`在运行时切换声明：
-  [`tests/cross_solver/verify_no_collision_candidate.ps1`](tests/cross_solver/verify_no_collision_candidate.ps1)
+  [`workflows/no_collision_transport/compare_cross_solver.ps1`](workflows/no_collision_transport/compare_cross_solver.ps1)
   只判定无碰撞部件回归，
-  [`tests/cross_solver/verify_transport_candidate.ps1`](tests/cross_solver/verify_transport_candidate.ps1)
+  [`workflows/interface_readiness/compare_cross_solver.ps1`](workflows/interface_readiness/compare_cross_solver.ps1)
   只判定接口就绪；两者分别生成独立schema v2结果和粒子事件census。接口样本低于合同最小值或来源
   ID无效时为`NOT_EVALUATED`，不能降级成无碰撞结论；无碰撞完整handoff要求也不注入接口门禁。
 - 同求解器时间离散预注册筛选：
@@ -118,8 +130,9 @@ S2–S3连接功能闭环记录：
   `same_solver_numerical_convergence`授权的预注册实验。schema、role、ID、current状态和逻辑SHA-256
   共同绑定仓库权威；自定义路径必须逻辑完全相同。PowerShell冻结后唯一校验并编译，MATLAB只消费
   `compiled_solver_numerics`并做最小类型/范围防御。科学mode和CLI不得复制或回退这些值。
-- 全项目门禁：`verify_project.ps1 -Level Static|Candidate|Formal`；Candidate必须显式给出 mode、COMSOL、
-  SIMION和比较运行标签，Formal在机械几何与SolidWorks同步前固定拒绝执行。
+- 全项目门禁：`verify_project.ps1 -Level Static|Formal`；各活动workflow由
+  `config/execution_profiles.json`绑定自己的阻断运行/比较入口，不再由顶层`Candidate`模式转发或选择
+  科学声明。Formal在机械几何与SolidWorks同步前固定拒绝执行。
 - 历史诊断图源码：
   [`analysis/plot_terminal_distribution.py`](analysis/plot_terminal_distribution.py)、
   [`analysis/plot_transport_trajectory_diagnostics.py`](analysis/plot_transport_trajectory_diagnostics.py)、
@@ -129,7 +142,8 @@ S2–S3连接功能闭环记录：
   [`analysis/compare_field_resolution_convergence.py`](analysis/compare_field_resolution_convergence.py)
 - 杆内释放诊断：[`analysis/compare_internal_release.py`](analysis/compare_internal_release.py)
 - 边缘定位、接口差异评估与oa-TOF集成门禁：
-  [`analysis/assess_interface_integration_gate.py`](analysis/assess_interface_integration_gate.py)；该消费者要求分别
+  [`workflows/interface_readiness/assess_integration.py`](workflows/interface_readiness/assess_integration.py)；
+  该消费者要求分别
   提供无碰撞部件回归结果与接口比较结果，不接受旧版混合报告。
 - 通用部件链时钟、RF→oa-TOF候选投影合同与派生器：
   [`config/rf_to_oatof_handoff.json`](config/rf_to_oatof_handoff.json)、
@@ -198,18 +212,19 @@ rf_quadrupole_collision_cooling/
 ├─ comsol/                       # MATLAB LiveLink 生产实现
 ├─ simion/                       # 生成GEM、Lua和Fly2/PA构建入口
 ├─ runtime/                      # 求解器配置、启动、分析与run证据生命周期机制
+├─ workflows/                    # 活动科学workflow的专用生产入口与评估器
 ├─ tests/                        # COMSOL、SIMION、跨求解器运行及复验入口
 ├─ load_rf_quadrupole_contract.m # MATLAB解析契约加载器
 ├─ rf_quadrupole_paths.m         # 工作区与artifact路径解析
-└─ verify_project.ps1            # Static/Candidate/Formal统一门禁
+└─ verify_project.ps1            # Static/Formal项目级门禁
 ```
 
-三层门禁职责固定如下；高层包含低层，不互相替代：
+项目级门禁职责固定如下；活动科学候选由各workflow阻断profile负责，不由项目级参数选择：
 
 | 层级 | 回答的问题 | 当前状态 |
 |---|---|---|
 | Static | 源配置与解析发布是否同步、GEM是否同步、固定粒子表、四极杆L0理论/电压合同、质量过滤L1合同、静态投影及双边界draft合同、分析测试和PowerShell入口语法是否通过 | 可执行 |
-| Candidate | 指定mode的两份成功manifest、统一事件表和跨求解器功能指标是否通过 | 可执行；接口N=100已有有效FAIL证据 |
+| workflow blocking profile | 指定workflow的两份成功manifest、统一事件表和跨求解器功能指标是否通过 | 可执行；接口N=100已有有效FAIL证据 |
 | Formal | 机械正式几何、SolidWorks装配与求解器资产是否同任务同步并复验 | 固定阻断，直到正式机械几何被选定 |
 
 `transport_no_collision`与`transport_interface_readiness`共享硬件和RF-only基础物理，但运行目录、输出文件

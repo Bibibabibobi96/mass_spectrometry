@@ -17,7 +17,8 @@ from common.contracts.particle_state import (
     validate_particle_state,
 )
 from common.contracts.verify_run_manifest import verify_record
-from projects.rf_quadrupole_collision_cooling.analysis.generate_interface_particle_table import (
+from projects.rf_quadrupole_collision_cooling.analysis.paired_particle_source_bundle import (
+    load_declared_bundle_specification,
     validate_bundle,
 )
 
@@ -161,11 +162,17 @@ def _validate_joint_contract(
             raise ValueError("four-arm comparison declaration is invalid")
         comparison_ids.add(comparison_id)
     authorities = contract.get("authorities", {})
+    source_family_path = _repository_file(authorities["source_family"])
+    bundle_specification = load_declared_bundle_specification(
+        bundle_metadata_path,
+        source_family_path,
+    )
     metadata = validate_bundle(
         bundle_metadata_path,
-        _repository_file(authorities["source_family"]),
+        source_family_path,
         _repository_file(authorities["distribution"]),
         _repository_file(authorities["bundle_preflight_resolved"]),
+        **bundle_specification,
     )
     surface = comparison.get("acceptance_surface", {})
     interface_path = _repository_file(surface["contract"])

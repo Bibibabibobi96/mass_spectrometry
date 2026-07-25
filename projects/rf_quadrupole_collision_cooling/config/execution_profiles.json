@@ -24,26 +24,21 @@
         },
         {
           "step_id": "comsol_run", "kind": "run", "shell": "powershell",
-          "entrypoint": "../../common/multipole/run_finite_3d_transport.ps1",
+          "entrypoint": "workflows/no_collision_transport/run_comsol.ps1",
           "run_id_template": "{timestamp}__sim__comsol__rf-transport__no-collision",
-          "arguments": ["-ProjectId", "rf_quadrupole_collision_cooling", "-DesignProfileId", "official_transport", "-ParticleSourcePath", "{particle_source_path}", "-EvidenceContractPath", "{evidence_contract_path}", "-RunId", "{comsol_run_id}"]
+          "arguments": ["-ParticleSourcePath", "{particle_source_path}", "-EvidenceContractPath", "{evidence_contract_path}", "-RunId", "{comsol_run_id}", "-PythonExe", "{python_exe}"]
         },
         {
           "step_id": "simion_run", "kind": "run", "shell": "powershell",
-          "entrypoint": "../../common/multipole/run_simion_finite_3d_transport.ps1",
+          "entrypoint": "workflows/no_collision_transport/run_simion.ps1",
           "run_id_template": "{timestamp}__sim__simion__rf-transport__no-collision",
-          "arguments": ["-ProjectId", "rf_quadrupole_collision_cooling", "-DesignProfileId", "official_transport", "-ParticleSourcePath", "{particle_source_path}", "-EvidenceContractPath", "{evidence_contract_path}", "-RunId", "{simion_run_id}", "-ReferenceComsolRunId", "{comsol_run_id}"]
+          "arguments": ["-ParticleSourcePath", "{particle_source_path}", "-EvidenceContractPath", "{evidence_contract_path}", "-RunId", "{simion_run_id}", "-ReferenceComsolRunId", "{comsol_run_id}", "-PythonExe", "{python_exe}"]
         },
         {
           "step_id": "cross_solver_comparison", "kind": "analyze", "shell": "powershell",
-          "entrypoint": "tests/cross_solver/verify_no_collision_candidate.ps1",
+          "entrypoint": "workflows/no_collision_transport/compare_cross_solver.ps1",
           "run_id_template": "{timestamp}__analysis__cross__rf-transport__no-collision",
           "arguments": ["-ComsolRunId", "{comsol_run_id}", "-SimionRunId", "{simion_run_id}", "-RunId", "{cross_solver_comparison_run_id}", "-PythonExe", "{python_exe}"]
-        },
-        {
-          "step_id": "candidate_gate", "kind": "gate", "shell": "powershell",
-          "entrypoint": "verify_project.ps1", "run_id_template": null,
-          "arguments": ["-Level", "Candidate", "-CandidateMode", "transport_no_collision", "-ComsolRunLabel", "{comsol_run_id}", "-SimionRunLabel", "{simion_run_id}", "-ComparisonLabel", "{cross_solver_comparison_run_id}", "-PythonExe", "{python_exe}"]
         }
       ],
       "limitations": [
@@ -81,26 +76,21 @@
         },
         {
           "step_id": "comsol_run", "kind": "run", "shell": "powershell",
-          "entrypoint": "tests/comsol/run_transport_candidate.ps1",
+          "entrypoint": "workflows/interface_readiness/run_comsol.ps1",
           "run_id_template": "{timestamp}__sim__comsol__rf-transport__interface-readiness",
-          "arguments": ["-RunId", "{comsol_run_id}", "-ParticleTablePath", "{comsol_particle_source_path}", "-ParticleBundleMetadataPath", "{particle_bundle_metadata_path}", "-SourceFamilyPath", "{particle_source_family_path}", "-ParticleDistributionPath", "{particle_distribution_path}", "-SolverNumericsContractPath", "projects/rf_quadrupole_collision_cooling/config/comsol_solver_numerics.json", "-SolverNumericsProfileId", "baseline", "-OperatingPoint", "{operating_point_id}"]
+          "arguments": ["-RunId", "{comsol_run_id}", "-ParticleTablePath", "{comsol_particle_source_path}", "-ParticleBundleMetadataPath", "{particle_bundle_metadata_path}", "-SourceFamilyPath", "{particle_source_family_path}", "-ParticleDistributionPath", "{particle_distribution_path}", "-SolverNumericsContractPath", "projects/rf_quadrupole_collision_cooling/config/comsol_solver_numerics.json", "-SolverNumericsProfileId", "baseline", "-OperatingPoint", "{operating_point_id}", "-PythonExe", "{python_exe}"]
         },
         {
           "step_id": "simion_run", "kind": "run", "shell": "powershell",
-          "entrypoint": "tests/simion/run_transport_candidate.ps1",
+          "entrypoint": "workflows/interface_readiness/run_simion.ps1",
           "run_id_template": "{timestamp}__sim__simion__rf-transport__interface-readiness",
-          "arguments": ["-RunId", "{simion_run_id}", "-ParticleTablePath", "{simion_particle_source_path}", "-ParticleBundleMetadataPath", "{particle_bundle_metadata_path}", "-SourceFamilyPath", "{particle_source_family_path}", "-ParticleDistributionPath", "{particle_distribution_path}", "-SolverNumericsContractPath", "{simion_solver_numerics_contract_path}", "-OperatingPoint", "{operating_point_id}"]
+          "arguments": ["-RunId", "{simion_run_id}", "-ParticleTablePath", "{simion_particle_source_path}", "-ParticleBundleMetadataPath", "{particle_bundle_metadata_path}", "-SourceFamilyPath", "{particle_source_family_path}", "-ParticleDistributionPath", "{particle_distribution_path}", "-SolverNumericsContractPath", "{simion_solver_numerics_contract_path}", "-OperatingPoint", "{operating_point_id}", "-PythonExe", "{python_exe}"]
         },
         {
           "step_id": "cross_solver_comparison", "kind": "analyze", "shell": "powershell",
-          "entrypoint": "tests/cross_solver/verify_transport_candidate.ps1",
+          "entrypoint": "workflows/interface_readiness/compare_cross_solver.ps1",
           "run_id_template": "{timestamp}__analysis__cross__rf-transport__interface-readiness",
           "arguments": ["-ComsolRunId", "{comsol_run_id}", "-SimionRunId", "{simion_run_id}", "-RunId", "{cross_solver_comparison_run_id}", "-PythonExe", "{python_exe}"]
-        },
-        {
-          "step_id": "candidate_gate", "kind": "gate", "shell": "powershell",
-          "entrypoint": "verify_project.ps1", "run_id_template": null,
-          "arguments": ["-Level", "Candidate", "-CandidateMode", "transport_interface_readiness", "-ComsolRunLabel", "{comsol_run_id}", "-SimionRunLabel", "{simion_run_id}", "-ComparisonLabel", "{cross_solver_comparison_run_id}", "-PythonExe", "{python_exe}"]
         }
       ],
       "limitations": [

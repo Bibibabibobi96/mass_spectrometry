@@ -27,6 +27,7 @@ $mode = 'transport_interface_readiness'
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 . (Join-Path $projectRoot 'runtime\simion_run_config.ps1')
 . (Join-Path $projectRoot 'runtime\simion_execution.ps1')
+. (Join-Path $projectRoot 'runtime\frozen_python_package.ps1')
 if ([string]::IsNullOrWhiteSpace($RunId)) {
     $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__sim__simion__rf-transport__interface-readiness'
 }
@@ -104,6 +105,72 @@ if (-not (Test-Path -LiteralPath $distributionInput -PathType Leaf)) {
 }
 Copy-VerifiedRunInput -Source $sourceFamilyInput -Destination $frozenSourceFamily | Out-Null
 Copy-VerifiedRunInput -Source $distributionInput -Destination $frozenDistribution | Out-Null
+$frozenPythonSupport = Copy-VerifiedRunInput `
+    -Source (Join-Path $projectRoot 'runtime\frozen_python_package.ps1') `
+    -Destination (Join-Path $inputDir 'frozen_python_package.ps1')
+$frozenCodeRoot = Join-Path $inputDir 'code'
+$frozenPythonPackage = New-FrozenPythonPackage `
+    -SourceRoot $repoRoot -CodeRoot $frozenCodeRoot -RelativePaths @(
+        'projects\rf_quadrupole_collision_cooling\workflows\__init__.py',
+        'projects\rf_quadrupole_collision_cooling\workflows\interface_readiness\__init__.py',
+        'projects\rf_quadrupole_collision_cooling\workflows\interface_readiness\generate_particle_table.py',
+        'projects\rf_quadrupole_collision_cooling\workflows\interface_readiness\particle_source_policy.py',
+        'projects\rf_quadrupole_collision_cooling\analysis\paired_particle_source_bundle.py',
+        'common\contracts\particle_physics.py',
+        'common\contracts\particle_count_policy.py',
+        'common\contracts\particle_count_policy.json',
+        'common\multipole\__init__.py',
+        'common\multipole\particle_source_preflight.py'
+    )
+$bundleDocument = Get-Content -LiteralPath $bundleMetadataInput -Raw -Encoding UTF8 |
+    ConvertFrom-Json
+$liveBundleRoot = [IO.Path]::GetFullPath((Split-Path -Parent $bundleMetadataInput))
+$frozenBundleRoot = Join-Path $inputDir 'paired_bundle'
+New-Item -ItemType Directory -Path $frozenBundleRoot -Force | Out-Null
+foreach ($entry in $bundleDocument.artifacts) {
+    $relativePath = [string]$entry.relative_path
+    $sourceArtifact = [IO.Path]::GetFullPath((Join-Path $liveBundleRoot $relativePath))
+    if (-not $sourceArtifact.StartsWith(
+        $liveBundleRoot + [IO.Path]::DirectorySeparatorChar,
+        [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Paired particle artifact escapes its bundle root: $relativePath"
+    }
+    $frozenArtifact = Join-Path $frozenBundleRoot $relativePath
+    Copy-VerifiedRunInput -Source $sourceArtifact -Destination $frozenArtifact |
+        Out-Null
+}
+$frozenBundleMetadata = Join-Path $frozenBundleRoot 'paired_particle_bundle.json'
+Copy-VerifiedRunInput -Source $bundleMetadataInput -Destination $frozenBundleMetadata |
+    Out-Null
+$frozenPythonExecution = Invoke-IsolatedFrozenPythonModule `
+    -Python $python -Package $frozenPythonPackage `
+    -Module `
+    'projects.rf_quadrupole_collision_cooling.workflows.interface_readiness.generate_particle_table' `
+    -Arguments @(
+        '--source-family',$frozenSourceFamily,
+        '--distribution',$frozenDistribution,
+        '--resolved-design',$frozenResolved,
+        '--validate-bundle',$frozenBundleMetadata
+    ) -DistributionNames @('numpy') -RequiredModuleNames @(
+        'projects.rf_quadrupole_collision_cooling.workflows',
+        'projects.rf_quadrupole_collision_cooling.workflows.interface_readiness',
+        'projects.rf_quadrupole_collision_cooling.workflows.interface_readiness.generate_particle_table',
+        'projects.rf_quadrupole_collision_cooling.workflows.interface_readiness.particle_source_policy',
+        'projects.rf_quadrupole_collision_cooling.analysis.paired_particle_source_bundle',
+        'common.contracts.particle_physics',
+        'common.contracts.particle_count_policy',
+        'common.multipole',
+        'common.multipole.particle_source_preflight'
+    ) -ForbiddenRoots @($repoRoot,$projectRoot)
+$frozenParticlePolicy = Get-FrozenPythonPackageFile `
+    -Package $frozenPythonPackage -RelativePath `
+    'projects/rf_quadrupole_collision_cooling/workflows/interface_readiness/particle_source_policy.py'
+$frozenParticleGenerator = Get-FrozenPythonPackageFile `
+    -Package $frozenPythonPackage -RelativePath `
+    'projects/rf_quadrupole_collision_cooling/workflows/interface_readiness/generate_particle_table.py'
+$frozenBundleMechanism = Get-FrozenPythonPackageFile `
+    -Package $frozenPythonPackage -RelativePath `
+    'projects/rf_quadrupole_collision_cooling/analysis/paired_particle_source_bundle.py'
 Copy-VerifiedRunInput -Source (Join-Path $projectRoot 'simion\geometry\quad_include.gem') `
     -Destination (Join-Path $candidateDir 'quad_include.gem') | Out-Null
 Copy-VerifiedRunInput -Source (Join-Path $projectRoot 'simion\geometry\quad_monolithic.gem') `
@@ -119,7 +186,7 @@ try {
     $requestedParticles = @(Import-Csv -LiteralPath $sourceParticlePath).Count
     $bindingArguments = @(
         '-m','projects.rf_quadrupole_collision_cooling.analysis.validate_paired_particle_source_binding',
-        '--bundle-metadata',$bundleMetadataInput,
+        '--bundle-metadata',$frozenBundleMetadata,
         '--source-family',$frozenSourceFamily,
         '--distribution',$frozenDistribution,
         '--resolved-design',$frozenResolved,
@@ -132,17 +199,6 @@ try {
     & $python @bindingArguments
     if ($LASTEXITCODE -ne 0) { throw 'Paired particle source bundle binding failed.' }
     $bindingDocument = Get-Content -LiteralPath $sourceBinding -Raw -Encoding UTF8 | ConvertFrom-Json
-    $bundleDocument = Get-Content -LiteralPath $bundleMetadataInput -Raw -Encoding UTF8 | ConvertFrom-Json
-    $frozenBundleRoot = Join-Path $inputDir 'paired_bundle'
-    New-Item -ItemType Directory -Path $frozenBundleRoot -Force | Out-Null
-    foreach ($entry in $bundleDocument.artifacts) {
-        $sourceArtifact = Join-Path (Split-Path -Parent $bundleMetadataInput) ([string]$entry.relative_path)
-        $frozenArtifact = Join-Path $frozenBundleRoot ([string]$entry.relative_path)
-        New-Item -ItemType Directory -Path (Split-Path -Parent $frozenArtifact) -Force | Out-Null
-            Copy-VerifiedRunInput -Source $sourceArtifact -Destination $frozenArtifact | Out-Null
-    }
-    $frozenBundleMetadata = Join-Path $frozenBundleRoot 'paired_particle_bundle.json'
-    Copy-VerifiedRunInput -Source $bundleMetadataInput -Destination $frozenBundleMetadata | Out-Null
     $canonicalEntry = @($bundleDocument.artifacts | Where-Object {
         $_.operating_point_id -eq $OperatingPoint -and
         [int]$_.particle_count -eq $requestedParticles -and
@@ -253,7 +309,17 @@ $runConfig.inputs.particle_bundle_metadata = $frozenBundleMetadata
 $runConfig.inputs.particle_source_binding = $sourceBinding
 $runConfig.inputs.particle_source_family = $frozenSourceFamily
 $runConfig.inputs.particle_source_distribution = $frozenDistribution
+$runConfig.inputs.particle_source_policy = $frozenParticlePolicy
+$runConfig.inputs.particle_source_generator = $frozenParticleGenerator
+$runConfig.inputs.paired_particle_source_mechanism = $frozenBundleMechanism
+$runConfig.inputs.frozen_python_package_support = $frozenPythonSupport
 $runConfig.inputs.particle_source_metadata = $sourceMetadata
+$frozenCodeIndex = 0
+foreach ($entry in $frozenPythonPackage.files) {
+    $frozenCodeIndex += 1
+    $runConfig.inputs[("frozen_python_code_{0:D3}" -f $frozenCodeIndex)] = `
+        [string]$entry.path
+}
 $bundleArtifactIndex = 0
 foreach ($entry in $bundleDocument.artifacts) {
     $bundleArtifactIndex += 1
@@ -289,6 +355,10 @@ $runConfig.provenance = [ordered]@{
     ion11_n1000_parent = $bindingDocument.ion11_n1000_parent
     canonical10_n1000_parent = $bindingDocument.canonical10_n1000_parent
 }
+$runConfig.frozen_python = [ordered]@{
+    package = $frozenPythonPackage
+    execution = $frozenPythonExecution
+}
 $runConfig | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $runConfigPath -Encoding UTF8
 $luaConfig = ConvertTo-RfSimionLuaConfig -CoreConfig $coreConfig `
     -SharedProgramPath (Join-Path $candidateDir 'quad_monolithic.lua')
@@ -299,7 +369,7 @@ $luaConfig | Set-Content -LiteralPath $runConfigLua -Encoding ASCII
 Invoke-RfSimionCoreRun -SimionExe $simion -CandidateDir $candidateDir `
     -IobPath ([string]$coreConfig.iob) -Fly2Path ([string]$coreConfig.fly2) `
     -RunConfigLua $runConfigLua `
-    -InspectScript (Join-Path $PSScriptRoot 'inspect_builtin_quad_reference.lua') `
+    -InspectScript (Join-Path $projectRoot 'tests\simion\inspect_builtin_quad_reference.lua') `
     -IobReport $iobReport -LogDir $logDir `
     -TrajectoryQuality ([int]$coreConfig.trajectory_quality) `
     -RfStepsPerPeriod ([int]$coreConfig.rf_steps_per_period)
