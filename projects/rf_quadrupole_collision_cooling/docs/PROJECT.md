@@ -238,6 +238,16 @@ UTF-8并按实际编码字节数验收。纯分析回归覆盖全部official N=1
 shape、非有限线性索引和最大绝对误差三条独立断言；`%.17g`、N=100和`1e-12`合同保持不变。该第三项
 修复只有静态/纯分析证据，真实Gate A仍待重新批准执行。
 
+第三项修复后的真实run
+`20260725_224313__test__comsol__rf-release-construction__n100`首次完成全部100个release节点、100个六列
+文件和1000条breadcrumb，并保存只含`std1/sol1`、不含`ElectricForce/std2/sol2`的诊断MPH；这已排除
+`rel065`创建硬失败。该run随后在冻结Python环境探针停止，因为runner把合法的命名空间父包
+`projects.rf_quadrupole_collision_cooling.analysis`也列为必须具有文件origin的模块；直接从run冻结代码
+加载实际validator后，100个文件、tag、格式化时间和1000条breadcrumb均独立复核PASS。runner现只探测
+实际具有文件origin的validator模块；若Gate后续失败且诊断MPH已存在，RF专用失败收尾还会把该MPH追加
+到failed manifest。该修复尚未商业复验，因此`20260725_224313`仍是failed runner，不能作为完整Gate A
+success manifest。
+
 `execution_profiles.json`的两类跨求解器分析也不再用`Mode`切换：普通无碰撞profile固定调用
 `workflows/no_collision_transport/compare_cross_solver.ps1`，接口profile固定调用
 `workflows/interface_readiness/compare_cross_solver.ps1`。两者只接收各自

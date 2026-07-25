@@ -136,6 +136,10 @@ class FrozenParticlePolicyPackageTests(unittest.TestCase):
             frozen_required_modules = REQUIRED_MODULES + (
                 GATE_VALIDATOR_MODULE,
             )
+            self.assertNotIn(
+                "projects.rf_quadrupole_collision_cooling.analysis",
+                frozen_required_modules,
+            )
             for relative_path in frozen_relative_paths:
                 source = REPO_ROOT / relative_path
                 destination = source_snapshot / relative_path

@@ -101,6 +101,14 @@ release文件现显式使用`%.17g`写入，既有`1e-12`合同不放宽；报�
 而是显式传真实TAB字符`char(9)`；两处回读检查也依次报告实测shape、非有限线性索引和最大绝对误差，
 避免再次把解析、有限性和数值误差混为一个原因。N、`%.17g`和`1e-12`均未改变；真实Gate尚未复验。
 
+第三项修复后的run
+`20260725_224313__test__comsol__rf-release-construction__n100`已完成100个release、100个六列文件、
+1000条breadcrumb和诊断MPH，且Gate result明确不存在`ElectricForce/std2/sol2`；因此`rel065`创建问题
+未重复。完整runner仍在冻结validator启动前失败：环境探针错误要求无`__init__.py`的analysis命名空间
+父包具有文件origin。直接从该run冻结代码加载实际validator后，全部文件、tag、时间表达式和breadcrumb
+独立复核PASS。runner现从`RequiredModuleNames`移除命名空间父包，只保留实际validator模块；Gate后若
+失败且MPH存在，RF专用失败收尾会把MPH补入failed manifest。该runner收尾修复尚未商业复验。
+
 `workflows/mass_filter_reference/run_comsol.ps1`是RF+DC功能扫描入口；其MATLAB任务固定为
 `comsol/mass_filter_reference/run_scan.m`。入口要求显式传入`SourceIonPath`，只接受仓库政策允许的
 N=100或N=1000源，并从冻结源真实行数派生每质量粒子数。它派生七个只改变质量的

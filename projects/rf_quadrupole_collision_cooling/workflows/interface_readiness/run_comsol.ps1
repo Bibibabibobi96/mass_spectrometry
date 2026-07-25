@@ -443,7 +443,6 @@ try {
                 '--runtime-dir',$runtimeDir,
                 '--output',$releaseGateValidation
             ) -DistributionNames @() -RequiredModuleNames @(
-                'projects.rf_quadrupole_collision_cooling.analysis',
                 'projects.rf_quadrupole_collision_cooling.analysis.validate_release_construction_gate'
             ) -ForbiddenRoots @($repoRoot,$projectRoot)
         if(-not(Test-Path -LiteralPath $releaseGateValidation -PathType Leaf)){
@@ -556,6 +555,18 @@ try {
             -RunConfig $package.run_config -Summary $package.summary `
             -SummaryRole $summaryRole `
             -Reason $failureReason -Software $software
+        if($ReleaseConstructionGate -and
+           (Test-Path -LiteralPath $releaseGateModel -PathType Leaf)){
+            $failedManifestPath=Join-Path $runDir 'run_manifest.json'
+            $failedManifest=Get-Content -LiteralPath $failedManifestPath `
+                -Raw -Encoding UTF8|ConvertFrom-Json
+            $failedOutputs=@(
+                @($failedManifest.outputs)|ForEach-Object{[string]$_.path}
+            )+$releaseGateModel
+            Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot `
+                -RunConfig $package.run_config -Status failed `
+                -Software $software -Outputs @($failedOutputs|Select-Object -Unique)
+        }
     } catch {
         throw "COMSOL interface failure closure also failed: $($_.Exception.Message)"
     }

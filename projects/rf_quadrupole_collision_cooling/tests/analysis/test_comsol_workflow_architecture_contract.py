@@ -305,11 +305,43 @@ class ComsolWorkflowArchitectureContractTests(unittest.TestCase):
         self.assertIn(
             "analysis.validate_release_construction_gate", runner
         )
+        gate_probe_start = runner.index(
+            "$gateValidationExecution=Invoke-IsolatedFrozenPythonModule"
+        )
+        gate_probe_end = runner.index(
+            "if(-not(Test-Path -LiteralPath $releaseGateValidation",
+            gate_probe_start,
+        )
+        gate_probe = runner[gate_probe_start:gate_probe_end]
+        self.assertIn(
+            "'projects.rf_quadrupole_collision_cooling."
+            "analysis.validate_release_construction_gate'",
+            gate_probe,
+        )
+        self.assertNotIn(
+            "'projects.rf_quadrupole_collision_cooling.analysis',",
+            gate_probe,
+        )
         self.assertIn("'--run-config',$package.run_config", runner)
         self.assertNotIn("'--expected-particle-sha256'", runner)
         self.assertIn(
             "[int]$gateResult.unique_release_time_expression_count-ne 100",
             runner,
+        )
+        failed_closure = runner[runner.index("} catch {") :]
+        self.assertIn(
+            "if($ReleaseConstructionGate -and", failed_closure
+        )
+        self.assertIn(
+            "Test-Path -LiteralPath $releaseGateModel -PathType Leaf",
+            failed_closure,
+        )
+        self.assertIn(
+            ")+$releaseGateModel",
+            failed_closure.replace("`r", "").replace("`n", ""),
+        )
+        self.assertIn(
+            "-Status failed", failed_closure
         )
 
     def test_release_files_preserve_six_columns_at_existing_gate_tolerance(
