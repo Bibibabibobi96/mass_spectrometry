@@ -4,12 +4,13 @@
   "status": "numerical_screen_candidate_only",
   "claim_limit": "Same-solver time-discretization screen only; no cross-solver, N=1000, edge-mesh, mechanical, or Formal claim.",
   "required_mode": "transport_interface_readiness",
+  "simion_solver_numerics_contract": "config/simion_solver_numerics.json",
   "comparisons": {
     "SIMION": {
       "run_config_role": "rf_quadrupole_simion_run_config",
       "varied_parameter": "rf_steps_per_period",
-      "baseline_value": 40,
-      "refined_value": 80,
+      "baseline_value_source": "baseline_rf_steps_per_period",
+      "comparison_values_source": "allowed_rf_steps_per_period",
       "pa_core_identity": "exact SHA-256 inventory match required for quad_monolithic.pa*"
     },
     "COMSOL": {

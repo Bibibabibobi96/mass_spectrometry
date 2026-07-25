@@ -1,14 +1,15 @@
 param(
-    [int]$RfStepsPerPeriod = 40,
-    [int]$TrajectoryQuality = 10,
+    [Nullable[int]]$RfStepsPerPeriod = $null,
+    [Nullable[int]]$TrajectoryQuality = $null,
     [string]$RunId = '',
     [Parameter(Mandatory=$true)][string]$ParticleTablePath,
     [Parameter(Mandatory=$true)][string]$ParticleBundleMetadataPath,
     [Parameter(Mandatory=$true)][string]$SourceFamilyPath,
     [Parameter(Mandatory=$true)][string]$ParticleDistributionPath,
+    [Parameter(Mandatory=$true)][string]$SolverNumericsContractPath,
+    [Parameter(Mandatory=$true)][string]$OperatingPoint,
     [string]$ArtifactRootPath = '',
-    [string]$PythonExe = '',
-    [string]$OperatingPoint = 'official_100amu_2eV'
+    [string]$PythonExe = ''
 )
 
 Set-StrictMode -Version Latest
@@ -24,6 +25,8 @@ $artifactRoot = if ($ArtifactRootPath) {
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 $mode = 'transport_interface_readiness'
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $projectRoot 'tests\support\simion_run_config_contract.ps1')
+. (Join-Path $projectRoot 'tests\support\simion_execution_support.ps1')
 if ([string]::IsNullOrWhiteSpace($RunId)) {
     $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__sim__simion__rf-transport__interface-readiness'
 }
@@ -56,10 +59,37 @@ $frozenInterface = Join-Path $inputDir 'interface_contract.json'
 $frozenSourceFamily = Join-Path $inputDir 'particle_source_family.json'
 $frozenDistribution = Join-Path $inputDir 'particle_source_distribution.json'
 $sourceBinding = Join-Path $inputDir 'particle_source_binding.json'
-Copy-Item -LiteralPath (Join-Path $projectRoot 'config\baseline.json') -Destination $frozenBaseline
-Copy-Item -LiteralPath (Join-Path $projectRoot ($modeInput -replace '/', '\')) -Destination $frozenMode
-Copy-Item -LiteralPath (Join-Path $projectRoot ($resolvedContractInput -replace '/', '\')) -Destination $frozenResolved
-Copy-Item -LiteralPath (Join-Path $projectRoot 'config\interface_contract.json') -Destination $frozenInterface
+$frozenNumericalContract = Join-Path $inputDir 'simion_solver_numerics.json'
+Copy-VerifiedRunInput -Source (Join-Path $projectRoot 'config\baseline.json') `
+    -Destination $frozenBaseline | Out-Null
+Copy-VerifiedRunInput -Source (Join-Path $projectRoot ($modeInput -replace '/', '\')) `
+    -Destination $frozenMode | Out-Null
+Copy-VerifiedRunInput -Source (Join-Path $projectRoot ($resolvedContractInput -replace '/', '\')) `
+    -Destination $frozenResolved | Out-Null
+Copy-VerifiedRunInput -Source (Join-Path $projectRoot 'config\interface_contract.json') `
+    -Destination $frozenInterface | Out-Null
+Copy-VerifiedRunInput -Source ([IO.Path]::GetFullPath($SolverNumericsContractPath)) `
+    -Destination $frozenNumericalContract | Out-Null
+$numericalMode = Get-Content -LiteralPath $frozenMode -Raw -Encoding UTF8 | ConvertFrom-Json
+$modeNumerics = Get-RfSimionRequiredProperty -Object $numericalMode `
+    -Property 'numerics' -Name 'frozen interface mode numerics'
+$minimumParticles = [int](Get-RfSimionRequiredFiniteNumber -Object $modeNumerics `
+    -Property 'minimum_diagnostic_particles' `
+    -Name 'frozen interface minimum_diagnostic_particles' -Positive)
+$acceptanceTargets = Get-RfSimionRequiredProperty -Object $numericalMode `
+    -Property 'candidate_acceptance_targets' -Name 'frozen interface acceptance targets'
+$minimumTransmission = Get-RfSimionRequiredFiniteNumber -Object $acceptanceTargets `
+    -Property 'minimum_transmission' -Name 'frozen interface minimum_transmission' -Positive
+if ($minimumTransmission -gt 1) {
+    throw 'Frozen interface minimum_transmission must not exceed 1.'
+}
+Push-Location $repoRoot
+try {
+    & $python -m common.multipole.verify_resolved_design $frozenResolved
+    if ($LASTEXITCODE -ne 0) { throw 'Frozen resolved-design identity verification failed.' }
+} finally {
+    Pop-Location
+}
 $bundleMetadataInput = [IO.Path]::GetFullPath($ParticleBundleMetadataPath)
 $sourceFamilyInput = [IO.Path]::GetFullPath($SourceFamilyPath)
 $distributionInput = [IO.Path]::GetFullPath($ParticleDistributionPath)
@@ -72,17 +102,20 @@ if (-not (Test-Path -LiteralPath $sourceFamilyInput -PathType Leaf)) {
 if (-not (Test-Path -LiteralPath $distributionInput -PathType Leaf)) {
     throw "Particle source distribution is missing: $distributionInput"
 }
-Copy-Item -LiteralPath $sourceFamilyInput -Destination $frozenSourceFamily
-Copy-Item -LiteralPath $distributionInput -Destination $frozenDistribution
-Copy-Item -LiteralPath (Join-Path $projectRoot 'simion\geometry\quad_include.gem') -Destination $candidateDir -Force
-Copy-Item -LiteralPath (Join-Path $projectRoot 'simion\geometry\quad_monolithic.gem') -Destination $candidateDir -Force
-Copy-Item -LiteralPath (Join-Path $repoRoot 'common\multipole\simion_transport.lua') -Destination (Join-Path $candidateDir 'quad_monolithic.lua') -Force
+Copy-VerifiedRunInput -Source $sourceFamilyInput -Destination $frozenSourceFamily | Out-Null
+Copy-VerifiedRunInput -Source $distributionInput -Destination $frozenDistribution | Out-Null
+Copy-VerifiedRunInput -Source (Join-Path $projectRoot 'simion\geometry\quad_include.gem') `
+    -Destination (Join-Path $candidateDir 'quad_include.gem') | Out-Null
+Copy-VerifiedRunInput -Source (Join-Path $projectRoot 'simion\geometry\quad_monolithic.gem') `
+    -Destination (Join-Path $candidateDir 'quad_monolithic.gem') | Out-Null
+Copy-VerifiedRunInput -Source (Join-Path $repoRoot 'common\multipole\simion_transport.lua') `
+    -Destination (Join-Path $candidateDir 'quad_monolithic.lua') | Out-Null
 $flyPath = Join-Path $candidateDir 'quad_monolithic.fly2'
 $sourceStatesLua = Join-Path $inputDir 'source_states.lua'
 $sourceMetadata = Join-Path $inputDir 'particle_source_metadata.json'
 Push-Location $repoRoot
 try {
-    $sourceFamilySha = (Get-FileHash -LiteralPath $frozenSourceFamily -Algorithm SHA256).Hash
+    $sourceFamilySha = Get-RunFileSha256 -Path $frozenSourceFamily
     $requestedParticles = @(Import-Csv -LiteralPath $sourceParticlePath).Count
     $bindingArguments = @(
         '-m','projects.rf_quadrupole_collision_cooling.analysis.validate_paired_particle_source_binding',
@@ -106,10 +139,10 @@ try {
         $sourceArtifact = Join-Path (Split-Path -Parent $bundleMetadataInput) ([string]$entry.relative_path)
         $frozenArtifact = Join-Path $frozenBundleRoot ([string]$entry.relative_path)
         New-Item -ItemType Directory -Path (Split-Path -Parent $frozenArtifact) -Force | Out-Null
-        Copy-Item -LiteralPath $sourceArtifact -Destination $frozenArtifact
+            Copy-VerifiedRunInput -Source $sourceArtifact -Destination $frozenArtifact | Out-Null
     }
     $frozenBundleMetadata = Join-Path $frozenBundleRoot 'paired_particle_bundle.json'
-    Copy-Item -LiteralPath $bundleMetadataInput -Destination $frozenBundleMetadata
+    Copy-VerifiedRunInput -Source $bundleMetadataInput -Destination $frozenBundleMetadata | Out-Null
     $canonicalEntry = @($bundleDocument.artifacts | Where-Object {
         $_.operating_point_id -eq $OperatingPoint -and
         [int]$_.particle_count -eq $requestedParticles -and
@@ -153,10 +186,6 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Canonical particle source preflight failed.' }
     $sourceMetadataDocument = Get-Content -LiteralPath $sourceMetadata -Raw -Encoding UTF8 | ConvertFrom-Json
     $expectedParticles = [int]$sourceMetadataDocument.particle_count
-    $minimumParticles = (
-        Get-Content -LiteralPath (Join-Path $projectRoot 'config\modes\transport_interface_readiness.json') `
-            -Raw -Encoding UTF8 | ConvertFrom-Json
-    ).numerics.minimum_diagnostic_particles
     if ($expectedParticles -lt $minimumParticles) {
         throw "Interface-readiness mode requires at least $minimumParticles particles."
     }
@@ -173,40 +202,50 @@ try {
     & $python @sourceProjectionArguments
     if ($LASTEXITCODE -ne 0) { throw 'Canonical SIMION particle projection failed.' }
 } finally { Pop-Location }
-Copy-Item -LiteralPath $officialIob -Destination (Join-Path $candidateDir 'quad_monolithic.iob') -Force
+Copy-VerifiedRunInput -Source $officialIob `
+    -Destination (Join-Path $candidateDir 'quad_monolithic.iob') | Out-Null
 
 $resolved = Get-Content -LiteralPath $frozenResolved -Raw -Encoding UTF8 | ConvertFrom-Json
-$numericalMode = Get-Content -LiteralPath $frozenMode -Raw -Encoding UTF8 | ConvertFrom-Json
-$geometry = $resolved.geometry_mm
-$enclosure = $geometry.enclosure
 $interface = Get-Content -LiteralPath $frozenInterface -Raw -Encoding UTF8 | ConvertFrom-Json
+$numericalContract = Get-Content -LiteralPath $frozenNumericalContract -Raw -Encoding UTF8 | ConvertFrom-Json
 if (-not $PSBoundParameters.ContainsKey('RfStepsPerPeriod')) {
-    $RfStepsPerPeriod = $numericalMode.numerics.simion_rf_steps_per_period
+    $RfStepsPerPeriod = [int]$numericalContract.baseline_rf_steps_per_period
 }
 if (-not $PSBoundParameters.ContainsKey('TrajectoryQuality')) {
-    $TrajectoryQuality = $numericalMode.numerics.simion_trajectory_quality
+    $TrajectoryQuality = [int]$numericalContract.trajectory_quality
 }
-$RfPeakV = [double]$resolved.drive.rf_amplitude_V_zero_to_peak_per_group
-$FrequencyHz = [double]$resolved.drive.frequency_Hz
+if ($RfStepsPerPeriod -notin @($numericalContract.allowed_rf_steps_per_period | ForEach-Object { [int]$_ })) {
+    throw 'SIMION interface RF steps must be a preregistered baseline or refined value.'
+}
+if ($TrajectoryQuality -ne [int]$numericalContract.trajectory_quality) {
+    throw 'SIMION interface trajectory quality differs from its frozen numerical contract.'
+}
 $particleStateCsv = Join-Path $resultDir 'particle_state.csv'
 $trajectoryCsv = Join-Path $resultDir 'trajectory_samples.csv'
 $summaryJson = Join-Path $resultDir 'solver_summary.json'
 $runConfigLua = Join-Path $runDir 'run_config.lua'
 $iobReport = Join-Path $logDir 'simion_iob_contract.txt'
 $stateContractReport = Join-Path $resultDir 'particle_state_contract.json'
-$phaseDeg = [double]$resolved.drive.phase_rad*180/[Math]::PI
-$dcAmplitudeV = [double]$resolved.drive.dc_amplitude_V_per_group
-$axisVoltageV = [double]$resolved.drive.common_mode_offset_V
-$staticElectrodes = $resolved.static_electrodes_V
-$simionCellMm = 0.2
+$coreConfig = New-RfSimionCoreRunConfig `
+    -ResolvedDesign $resolved -InterfaceContract $interface -SolverNumerics $numericalContract `
+    -RfStepsPerPeriod $RfStepsPerPeriod -TrajectoryQuality $TrajectoryQuality `
+    -ModeName $mode -OperatingPoint $OperatingPoint `
+    -IobPath (Join-Path $candidateDir 'quad_monolithic.iob') -Fly2Path $flyPath `
+    -SourceStatesLua $sourceStatesLua -ParticleStateCsv $particleStateCsv `
+    -TrajectoryCsv $trajectoryCsv -SummaryJson $summaryJson
+$RfPeakV = [double]$coreConfig.rf_peak_v
+$FrequencyHz = [double]$coreConfig.frequency_hz
 $runConfig = [ordered]@{
     schema_version=1; role='rf_quadrupole_simion_run_config'; run_id=$RunId
     project='rf_quadrupole_collision_cooling'; mode=$mode; project_root=$projectRoot
-    inputs=[ordered]@{baseline=$frozenBaseline; resolved_design=$frozenResolved; interface_contract=$frozenInterface; mode=$frozenMode; particle_table=$particlePath; source_states=$sourceStatesLua}
+    inputs=[ordered]@{baseline=$frozenBaseline; resolved_design=$frozenResolved; interface_contract=$frozenInterface; mode=$frozenMode; numerical_contract=$frozenNumericalContract; particle_table=$particlePath; source_states=$sourceStatesLua}
     output_dir=$resultDir; candidate_dir=$candidateDir; run_dir=$runDir
-    rf_steps_per_period=$RfStepsPerPeriod; trajectory_quality=$TrajectoryQuality
+    rf_steps_per_period=$coreConfig.rf_steps_per_period
+    trajectory_quality=$coreConfig.trajectory_quality
     source_axial_offset_mm=0.0; operating_point=$OperatingPoint
-    rf_peak_v=$RfPeakV; dc_amplitude_v=$dcAmplitudeV; frequency_hz=$FrequencyHz; particles=$expectedParticles
+    rf_peak_v=$coreConfig.rf_peak_v; dc_amplitude_v=$coreConfig.dc_amplitude_v
+    frequency_hz=$coreConfig.frequency_hz; waveform=$coreConfig.waveform
+    parent_resolved_design_sha256=$coreConfig.parent_resolved_design_sha256; particles=$expectedParticles
 }
 $runConfig.inputs.source_ion11 = $frozenIonPath
 $runConfig.inputs.consumed_particle_table = $particlePath
@@ -228,6 +267,17 @@ $runConfig.provenance = [ordered]@{
     latent_sha256 = [string]$bindingDocument.latent_sha256
     coordinate_mapping_version = [string]$bindingDocument.coordinate_mapping_version
     representation_equivalence = [string]$bindingDocument.representation_equivalence
+    waveform = $coreConfig.waveform
+    parent_resolved_design_sha256 = $coreConfig.parent_resolved_design_sha256
+    solver_numerics_contract_sha256 = Get-RunFileSha256 -Path $frozenNumericalContract
+    rf_steps_per_period = [int]$coreConfig.rf_steps_per_period
+    trajectory_quality = [int]$coreConfig.trajectory_quality
+    rf_steps_override = (
+        [int]$coreConfig.rf_steps_per_period -ne
+        [int]$numericalContract.baseline_rf_steps_per_period
+    )
+    minimum_diagnostic_particles = $minimumParticles
+    minimum_transmission = $minimumTransmission
     operating_point_id = $OperatingPoint
     particle_count = $expectedParticles
     representation = 'canonical10'
@@ -240,88 +290,37 @@ $runConfig.provenance = [ordered]@{
     canonical10_n1000_parent = $bindingDocument.canonical10_n1000_parent
 }
 $runConfig | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $runConfigPath -Encoding UTF8
-function New-LuaConfig([string]$caseName,[string]$caseState,[string]$caseTrajectory,[string]$caseSummary){
-@"
-return {
-  mode=[[$mode]], operating_point=[[$caseName]],
-  iob=[[$(Join-Path $candidateDir 'quad_monolithic.iob')]], fly2=[[$flyPath]],
-  source_states=dofile([[$sourceStatesLua]]),
-  particle_state_csv=[[$caseState]], trajectory_csv=[[$caseTrajectory]], summary_json=[[$caseSummary]],
-  trajectory_quality=$TrajectoryQuality, rf_steps_per_period=$RfStepsPerPeriod,
-  rf_peak_v=$RfPeakV, rf_scale=1, axial_scale=0, dc_amplitude_v=$dcAmplitudeV, frequency_hz=$FrequencyHz, phase_deg=$phaseDeg,
-  axis_voltage_v=$axisVoltageV, entrance_voltage_v=$($staticElectrodes.entrance_plate_and_connector),
-  exit_voltage_v=$($staticElectrodes.exit_enclosure_and_connector), detector_voltage_v=$($staticElectrodes.detector),
-  ground_electrode_id=0, output_electrode_id=0, output_reference_v=0,
-  maximum_time_us=$($numericalMode.numerics.maximum_time_us),
-  trajectory_plane_step_mm=$simionCellMm, rod_z_min_mm=$($geometry.rod_z_min), rod_z_max_mm=$($geometry.rod_z_max),
-  rod_exit_plane_mm=$($interface.planes.rod_exit.z_mm), handoff_plane_mm=$($interface.planes.handoff.z_mm),
-  detector_crossing_threshold_mm=$($resolved.interfaces_mm.exit.particle_plane_z_mm-$interface.solver_numerics.simion_terminal_surface_backoff_cells*$simionCellMm),
-  detector_radius_mm=$($enclosure.detector_radius_mm), radial_escape_radius_mm=$($enclosure.outer_half_width_mm),
-  expected_pa_nx=$([int][Math]::Round($enclosure.outer_half_width_mm/$simionCellMm)+1),
-  expected_pa_ny=$([int][Math]::Round($enclosure.outer_half_width_mm/$simionCellMm)+1),
-  expected_pa_nz=$([int][Math]::Round(($enclosure.vacuum_z_max_mm-$enclosure.vacuum_z_min_mm)/$simionCellMm)+1), expected_pa_cell_mm=$simionCellMm
-}
-"@
-}
-$luaConfig=New-LuaConfig $OperatingPoint $particleStateCsv $trajectoryCsv $summaryJson
+$luaConfig = ConvertTo-RfSimionLuaConfig -CoreConfig $coreConfig `
+    -SharedProgramPath (Join-Path $candidateDir 'quad_monolithic.lua')
 # Windows PowerShell 5.1 writes a BOM for -Encoding UTF8; SIMION's Lua 5.1
 # parser treats that BOM as source text.  This generated table is ASCII-only.
 $luaConfig | Set-Content -LiteralPath $runConfigLua -Encoding ASCII
 
-Push-Location $candidateDir
-try {
-    & $simion --nogui --noprompt gem2pa quad_monolithic.gem quad_monolithic.pa#
-    if ($LASTEXITCODE -ne 0) { throw 'SIMION gem2pa failed.' }
-    & $simion --nogui --noprompt refine quad_monolithic.pa#
-    if ($LASTEXITCODE -ne 0) { throw 'SIMION refine failed.' }
-    Start-Sleep -Milliseconds 500
-
-    # Loading the IOB immediately loads its same-basename Program, which
-    # validates this run configuration before the structural report runs.
-    $env:MULTIPOLE_SIMION_RUN_CONFIG_LUA = $runConfigLua
-    $env:RFQUAD_SIMION_REFERENCE_REPORT = $iobReport
-    $env:RFQUAD_SIMION_REFERENCE_IOB = Join-Path $candidateDir 'quad_monolithic.iob'
-    & $simion --nogui --noprompt lua (Join-Path $PSScriptRoot 'inspect_builtin_quad_reference.lua')
-    if ($LASTEXITCODE -ne 0) { throw 'SIMION IOB runtime contract failed.' }
-    Start-Sleep -Milliseconds 500
-
-    $stdoutPath = Join-Path $logDir 'simion_stdout.txt'
-    $stderrPath = Join-Path $logDir 'simion_stderr.txt'
-    $flyArguments=@('--nogui','--noprompt','fly','--trajectory-quality',[string]$TrajectoryQuality,
-        '--particles',$flyPath,'--programs','1','--retain-trajectories','0',
-        '--adjustable',"transport_rf_steps_per_period=$RfStepsPerPeriod",(Join-Path $candidateDir 'quad_monolithic.iob'))
-    $flyProcess = Start-Process -FilePath $simion -ArgumentList $flyArguments `
-        -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
-    Get-Content -LiteralPath $stdoutPath -Encoding UTF8
-    if ((Get-Item -LiteralPath $stderrPath).Length -gt 0) { Get-Content -LiteralPath $stderrPath -Encoding UTF8 }
-    if ($flyProcess.ExitCode -ne 0) { throw "SIMION fly failed with exit code $($flyProcess.ExitCode)." }
-}
-finally {
-    Remove-Item Env:MULTIPOLE_SIMION_RUN_CONFIG_LUA -ErrorAction SilentlyContinue
-    Remove-Item Env:RFQUAD_SIMION_REFERENCE_REPORT -ErrorAction SilentlyContinue
-    Remove-Item Env:RFQUAD_SIMION_REFERENCE_IOB -ErrorAction SilentlyContinue
-    Pop-Location
-}
+Invoke-RfSimionCoreRun -SimionExe $simion -CandidateDir $candidateDir `
+    -IobPath ([string]$coreConfig.iob) -Fly2Path ([string]$coreConfig.fly2) `
+    -RunConfigLua $runConfigLua `
+    -InspectScript (Join-Path $PSScriptRoot 'inspect_builtin_quad_reference.lua') `
+    -IobReport $iobReport -LogDir $logDir `
+    -TrajectoryQuality ([int]$coreConfig.trajectory_quality) `
+    -RfStepsPerPeriod ([int]$coreConfig.rf_steps_per_period)
 
 $summary = Get-Content -LiteralPath $summaryJson -Raw | ConvertFrom-Json
-if ($summary.particles -ne $expectedParticles -or $summary.collision_model -ne 'none') {
+if ($summary.particles -ne $expectedParticles -or $summary.collision_model -ne 'none' -or
+    $summary.parent_resolved_design_sha256 -cne $coreConfig.parent_resolved_design_sha256) {
     throw "SIMION transport execution integrity failed: $($summary | ConvertTo-Json -Compress)"
 }
-$physicalDecision = if ($summary.transmission -ge 0.8) { 'PASS' } else { 'FAIL' }
+$physicalDecision = if ($summary.transmission -ge $minimumTransmission) { 'PASS' } else { 'FAIL' }
 Push-Location $repoRoot
 try { & $python -m common.contracts.particle_state `
     --state $particleStateCsv --particles $particlePath `
     --source-format canonical --contract $frozenInterface `
-    --axial-offset-mm 0.0 --frequency-hz $FrequencyHz --phase-rad ($phaseDeg*[Math]::PI/180) `
+    --axial-offset-mm 0.0 --frequency-hz $FrequencyHz `
+    --phase-rad ([double]$coreConfig.phase_deg*[Math]::PI/180) `
     --solver SIMION --output $stateContractReport } finally { Pop-Location }
 if ($LASTEXITCODE -ne 0) { throw 'Particle-state contract gate failed.' }
 $shaPath = Join-Path $candidateDir 'SHA256SUMS.csv'
-$hashes = Get-ChildItem -LiteralPath $candidateDir -File | Where-Object {
-    $_.Name -ne 'SHA256SUMS.csv' -and $_.Name -notlike 'trj*.tmp'
-} | Sort-Object Name | ForEach-Object {
-    [pscustomobject]@{file=$_.Name; bytes=$_.Length; sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash}
-}
-$hashes | Export-Csv -LiteralPath $shaPath -NoTypeInformation -Encoding UTF8
+Write-RunDirectoryChecksumInventory -Directory $candidateDir -OutputPath $shaPath `
+    -ExcludedPatterns @('trj*.tmp')
 $rootSummary = [ordered]@{
     schema_version=1;role='rf_quadrupole_transport_summary';status='success';mode=$mode
     physical_decision=$physicalDecision

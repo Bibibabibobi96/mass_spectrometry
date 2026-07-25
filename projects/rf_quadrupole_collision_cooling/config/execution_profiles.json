@@ -69,7 +69,9 @@
         "simion_particle_source_path",
         "particle_bundle_metadata_path",
         "particle_source_family_path",
-        "particle_distribution_path"
+        "particle_distribution_path",
+        "simion_solver_numerics_contract_path",
+        "operating_point_id"
       ],
       "steps": [
         {
@@ -81,13 +83,13 @@
           "step_id": "comsol_run", "kind": "run", "shell": "powershell",
           "entrypoint": "tests/comsol/run_transport_candidate.ps1",
           "run_id_template": "{timestamp}__sim__comsol__rf-transport__interface-readiness",
-          "arguments": ["-RunId", "{comsol_run_id}", "-ParticleTablePath", "{comsol_particle_source_path}", "-ParticleBundleMetadataPath", "{particle_bundle_metadata_path}", "-SourceFamilyPath", "{particle_source_family_path}", "-ParticleDistributionPath", "{particle_distribution_path}", "-Mode", "transport_interface_readiness"]
+          "arguments": ["-RunId", "{comsol_run_id}", "-ParticleTablePath", "{comsol_particle_source_path}", "-ParticleBundleMetadataPath", "{particle_bundle_metadata_path}", "-SourceFamilyPath", "{particle_source_family_path}", "-ParticleDistributionPath", "{particle_distribution_path}", "-OperatingPoint", "{operating_point_id}", "-Mode", "transport_interface_readiness"]
         },
         {
           "step_id": "simion_run", "kind": "run", "shell": "powershell",
           "entrypoint": "tests/simion/run_transport_candidate.ps1",
           "run_id_template": "{timestamp}__sim__simion__rf-transport__interface-readiness",
-          "arguments": ["-RunId", "{simion_run_id}", "-ParticleTablePath", "{simion_particle_source_path}", "-ParticleBundleMetadataPath", "{particle_bundle_metadata_path}", "-SourceFamilyPath", "{particle_source_family_path}", "-ParticleDistributionPath", "{particle_distribution_path}"]
+          "arguments": ["-RunId", "{simion_run_id}", "-ParticleTablePath", "{simion_particle_source_path}", "-ParticleBundleMetadataPath", "{particle_bundle_metadata_path}", "-SourceFamilyPath", "{particle_source_family_path}", "-ParticleDistributionPath", "{particle_distribution_path}", "-SolverNumericsContractPath", "{simion_solver_numerics_contract_path}", "-OperatingPoint", "{operating_point_id}"]
         },
         {
           "step_id": "cross_solver_comparison", "kind": "analyze", "shell": "powershell",
@@ -118,7 +120,7 @@
       "supported_design_variables": ["rf_amplitude", "rf_frequency", "dc_differential", "axis_offset"],
       "supported_constraints": [],
       "deliverable_outputs": ["simulation_results", "simion_model", "validation_report"],
-      "required_bindings": ["mass_filter_base_source_ion11_path", "run_id"],
+      "required_bindings": ["mass_filter_base_source_ion11_path", "simion_solver_numerics_contract_path", "run_id"],
       "steps": [
         {
           "step_id": "static_gate", "kind": "gate", "shell": "powershell",
@@ -129,7 +131,7 @@
           "step_id": "simion_mass_response", "kind": "run", "shell": "powershell",
           "entrypoint": "tests/simion/run_mass_filter_candidate.ps1",
           "run_id_template": "{timestamp}__sim__simion__mass-filter__n700",
-          "arguments": ["-SourceIonPath", "{mass_filter_base_source_ion11_path}", "-RunId", "{run_id}"]
+          "arguments": ["-SourceIonPath", "{mass_filter_base_source_ion11_path}", "-SolverNumericsContractPath", "{simion_solver_numerics_contract_path}", "-RunId", "{run_id}"]
         }
       ],
       "limitations": [

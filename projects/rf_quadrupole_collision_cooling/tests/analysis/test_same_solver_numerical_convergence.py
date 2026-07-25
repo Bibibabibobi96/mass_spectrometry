@@ -100,12 +100,19 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
             "transport_interface_readiness",
         )
         self.assertEqual(
-            contract["comparisons"]["SIMION"]["baseline_value"],
-            40,
+            contract["simion_solver_numerics_contract"],
+            "config/simion_solver_numerics.json",
         )
+        simion_numerics = json.loads(
+            (PROJECT_ROOT / contract["simion_solver_numerics_contract"]).read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(simion_numerics["baseline_rf_steps_per_period"], 40)
+        self.assertEqual(simion_numerics["allowed_rf_steps_per_period"], [40, 80])
         self.assertEqual(
-            contract["comparisons"]["SIMION"]["refined_value"],
-            80,
+            contract["comparisons"]["SIMION"]["baseline_value_source"],
+            "baseline_rf_steps_per_period",
         )
         self.assertEqual(
             contract["comparisons"]["COMSOL"]["baseline_value"],
@@ -195,6 +202,7 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
         mesh_elements: int = 1000,
         other_numerical: int = 10,
         pa_hash_suffix: str = "A",
+        provenance_drift: str | None = None,
     ) -> Path:
         run = root / name
         results = run / "results"
@@ -322,6 +330,11 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
                 )
             },
         }
+        if solver == "SIMION":
+            config["provenance"]["rf_steps_per_period"] = steps
+            config["provenance"]["rf_steps_override"] = steps != 40
+        if provenance_drift is not None:
+            config["provenance"]["unrelated_identity"] = provenance_drift
         config_path = run / "run_config.json"
         config_path.write_text(json.dumps(config), encoding="utf-8")
         manifest = {
@@ -353,6 +366,7 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
         refined_mesh_elements: int = 1000,
         refined_other_numerical: int = 10,
         refined_pa_hash_suffix: str = "A",
+        refined_provenance_drift: str | None = None,
     ) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -381,6 +395,7 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
             mesh_elements=refined_mesh_elements,
             other_numerical=refined_other_numerical,
             pa_hash_suffix=refined_pa_hash_suffix,
+            provenance_drift=refined_provenance_drift,
         )
         output = root / "comparison.json"
         census = root / "particle_census.csv"
@@ -418,6 +433,19 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
         self.assertEqual(report["status"], "PASS")
         self.assertEqual(report["execution_status"], "success")
         self.assertEqual(len(read_csv(census)), self.particles)
+
+    def test_unrelated_simion_provenance_drift_is_rejected(self) -> None:
+        result, _, _ = self.run_case(
+            solver="SIMION",
+            baseline_steps=40,
+            refined_steps=80,
+            refined_provenance_drift="changed",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "differ outside the preregistered numerical parameter",
+            result.stderr,
+        )
 
     def test_registered_comsol_80_to_160_passes(self) -> None:
         result, output, _ = self.run_case(

@@ -4,6 +4,8 @@ import csv
 import hashlib
 import json
 import math
+import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -12,6 +14,7 @@ from pathlib import Path
 
 from common.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
 from common.multipole.particle_source_preflight import COLUMNS
+from common.multipole.verify_resolved_design import verify as verify_resolved_design
 from projects.rf_quadrupole_collision_cooling.analysis.generate_interface_particle_table import (
     generate_bundle,
 )
@@ -23,9 +26,16 @@ from projects.rf_quadrupole_collision_cooling.analysis.validate_paired_particle_
 PROJECT_ROOT = Path(__file__).parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 RUNNER = PROJECT_ROOT / "tests" / "simion" / "run_transport_candidate.ps1"
+MASS_RUNNER = PROJECT_ROOT / "tests" / "simion" / "run_mass_filter_candidate.ps1"
+RUN_CONFIG_CONTRACT = (
+    PROJECT_ROOT / "tests" / "support" / "simion_run_config_contract.ps1"
+)
+SHARED_LUA = REPO_ROOT / "common" / "multipole" / "simion_transport.lua"
 EXECUTION_PROFILES = PROJECT_ROOT / "config" / "execution_profiles.json"
 RESOLVED = PROJECT_ROOT / "config" / "resolved_design_official.json"
 SOURCE_FAMILY = PROJECT_ROOT / "config" / "interface_readiness_particle_source.json"
+INTERFACE_CONTRACT = PROJECT_ROOT / "config" / "interface_contract.json"
+SOLVER_NUMERICS = PROJECT_ROOT / "config" / "simion_solver_numerics.json"
 RUN_PYTHON = REPO_ROOT / ".venv" / "Scripts" / "python.exe"
 
 
@@ -57,6 +67,195 @@ def write_canonical_source(path: Path) -> None:
 
 
 class SimionTransportRunnerSourceTests(unittest.TestCase):
+    def test_resolved_design_logical_hash_is_recomputed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "resolved.json"
+            document = json.loads(RESOLVED.read_text(encoding="utf-8"))
+            path.write_text(json.dumps(document), encoding="utf-8")
+            self.assertEqual(verify_resolved_design(path), document["resolved_sha256"])
+            document["drive"]["phase_rad"] = 0.25
+            path.write_text(json.dumps(document), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "recomputed logical design hash"):
+                verify_resolved_design(path)
+
+    def test_dedicated_runners_cover_shared_lua_required_config_fields(self) -> None:
+        lua = SHARED_LUA.read_text(encoding="utf-8")
+        required_fields = set(
+            re.findall(r"assert\(run_config\.([a-z0-9_]+)", lua)
+        )
+        self.assertIn("waveform", required_fields)
+        self.assertIn("parent_resolved_design_sha256", required_fields)
+        self.assertGreater(len(required_fields), 10)
+        helper = RUN_CONFIG_CONTRACT.read_text(encoding="utf-8")
+        for token in (
+            "function New-RfSimionCoreRunConfig",
+            "function ConvertTo-RfSimionLuaConfig",
+            "function Assert-RfSimionLuaConfigContract",
+            "'parent_resolved_design_sha256'",
+            "Generated SIMION run config lacks required fields",
+        ):
+            self.assertIn(token, helper)
+        for runner_path in (RUNNER, MASS_RUNNER):
+            runner = runner_path.read_text(encoding="utf-8")
+            for token in (
+                "New-RfSimionCoreRunConfig",
+                "ConvertTo-RfSimionLuaConfig",
+                "Invoke-RfSimionCoreRun",
+                "Copy-VerifiedRunInput",
+                "Write-RunDirectoryChecksumInventory",
+                "parent_resolved_design_sha256 = $coreConfig.parent_resolved_design_sha256",
+                "waveform = $coreConfig.waveform",
+            ):
+                self.assertIn(token, runner)
+            for forbidden in (
+                "return {",
+                "Copy-Item",
+                "gem2pa",
+                "Start-Process -FilePath $simion",
+            ):
+                self.assertNotIn(forbidden, runner)
+
+    def test_waveform_contract_accepts_only_exact_governed_enum(self) -> None:
+        command = (
+            ". $env:RF_SIMION_CONFIG_CONTRACT; "
+            "$resolved=Get-Content -LiteralPath $env:RF_RESOLVED_JSON "
+            "-Raw -Encoding UTF8|ConvertFrom-Json; "
+            "Get-VerifiedRfSimionWaveform -ResolvedDesign $resolved"
+        )
+        cases = (
+            ({"drive": {"waveform": "sine"}}, True, "sine"),
+            ({"drive": {"waveform": "cosine"}}, True, "cosine"),
+            ({"drive": {}}, False, "drive.waveform is missing"),
+            ({"drive": {"waveform": "sinusoidal"}}, False, "exactly sine or cosine"),
+            ({"drive": {"waveform": "SINE"}}, False, "exactly sine or cosine"),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for index, (payload, accepted, message) in enumerate(cases):
+                resolved_path = root / f"resolved_{index}.json"
+                resolved_path.write_text(json.dumps(payload), encoding="utf-8")
+                environment = os.environ.copy()
+                environment.update(
+                    {
+                        "RF_SIMION_CONFIG_CONTRACT": str(RUN_CONFIG_CONTRACT),
+                        "RF_RESOLVED_JSON": str(resolved_path),
+                    }
+                )
+                result = subprocess.run(
+                    ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                    capture_output=True,
+                    encoding="utf-8",
+                    env=environment,
+                    timeout=30,
+                )
+                self.assertEqual(result.returncode == 0, accepted, result.stderr)
+                output = result.stdout if accepted else result.stderr
+                self.assertIn(message, output)
+
+    def test_core_compiler_fails_closed_on_hash_numeric_and_mapping_drift(self) -> None:
+        prefix = (
+            ". $env:RF_SIMION_CONFIG_CONTRACT; "
+            "$r=Get-Content $env:RF_RESOLVED_JSON -Raw|ConvertFrom-Json; "
+            "$i=Get-Content $env:RF_INTERFACE_JSON -Raw|ConvertFrom-Json; "
+            "$n=Get-Content $env:RF_NUMERICS_JSON -Raw|ConvertFrom-Json; "
+            "$steps=40; "
+            "$quality=10; "
+        )
+        suffix = (
+            "$core=New-RfSimionCoreRunConfig -ResolvedDesign $r "
+            "-InterfaceContract $i -SolverNumerics $n "
+            "-RfStepsPerPeriod $steps "
+            "-TrajectoryQuality $quality -ModeName transport_interface_readiness "
+            "-OperatingPoint official_100amu_2eV -IobPath C:\\tmp\\a.iob "
+            "-Fly2Path C:\\tmp\\a.fly2 -SourceStatesLua C:\\tmp\\s.lua "
+            "-ParticleStateCsv C:\\tmp\\p.csv -TrajectoryCsv C:\\tmp\\t.csv "
+            "-SummaryJson C:\\tmp\\q.json; "
+            "ConvertTo-RfSimionLuaConfig -CoreConfig $core "
+            "-SharedProgramPath $env:RF_SHARED_LUA|Out-Null"
+        )
+        cases = (
+            ("", True, ""),
+            (
+                "$r.PSObject.Properties.Remove('resolved_sha256'); ",
+                False,
+                "resolved_sha256 is missing",
+            ),
+            ("$r.resolved_sha256='xyz'; ", False, "64 hexadecimal"),
+            (
+                "$r.drive.PSObject.Properties.Remove('frequency_Hz'); ",
+                False,
+                "RF frequency is missing",
+            ),
+            ("$r.drive.frequency_Hz=$null; ", False, "RF frequency is missing"),
+            ("$r.drive.frequency_Hz=0; ", False, "RF frequency must be positive"),
+            ("$r.drive.frequency_Hz='NaN'; ", False, "RF frequency must be finite"),
+            (
+                "$r.drive.frequency_Hz=[double]::PositiveInfinity; ",
+                False,
+                "RF frequency must be finite",
+            ),
+            ("$n.simion_cell_mm=0; ", False, "simion_cell_mm must be positive"),
+            ("$i.planes.handoff.z_mm=90.3; ", False, "handoff plane mapping differs"),
+            ("$steps=0; ", False, "rf_steps_per_period must be positive"),
+            ("$steps=99; ", False, "not allowed by the solver numerics contract"),
+            (
+                "$quality=11; ",
+                False,
+                "trajectory_quality differs from the solver numerics contract",
+            ),
+        )
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "RF_SIMION_CONFIG_CONTRACT": str(RUN_CONFIG_CONTRACT),
+                "RF_RESOLVED_JSON": str(RESOLVED),
+                "RF_INTERFACE_JSON": str(INTERFACE_CONTRACT),
+                "RF_NUMERICS_JSON": str(SOLVER_NUMERICS),
+                "RF_SHARED_LUA": str(SHARED_LUA),
+            }
+        )
+        for mutation, accepted, message in cases:
+            result = subprocess.run(
+                [
+                    "pwsh",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    prefix + mutation + suffix,
+                ],
+                capture_output=True,
+                encoding="utf-8",
+                env=environment,
+                timeout=30,
+            )
+            self.assertEqual(result.returncode == 0, accepted, result.stderr)
+            if not accepted:
+                self.assertIn(message, result.stderr)
+
+    def test_full_lua_contract_reports_late_terminate_field_before_launch(self) -> None:
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "RF_SIMION_CONFIG_CONTRACT": str(RUN_CONFIG_CONTRACT),
+                "RF_SHARED_LUA": str(SHARED_LUA),
+            }
+        )
+        command = (
+            ". $env:RF_SIMION_CONFIG_CONTRACT; "
+            "Assert-RfSimionLuaConfigContract "
+            "-LuaConfig 'return { waveform=[[sine]], }' "
+            "-SharedProgramPath $env:RF_SHARED_LUA"
+        )
+        result = subprocess.run(
+            ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+            capture_output=True,
+            encoding="utf-8",
+            env=environment,
+            timeout=30,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("parent_resolved_design_sha256", result.stderr)
+
     def test_active_profiles_use_single_purpose_project_runners(self) -> None:
         profiles = {
             item["profile_id"]: item
@@ -74,6 +273,8 @@ class SimionTransportRunnerSourceTests(unittest.TestCase):
                 "particle_bundle_metadata_path",
                 "particle_source_family_path",
                 "particle_distribution_path",
+                "simion_solver_numerics_contract_path",
+                "operating_point_id",
             },
         )
         self.assertEqual(
@@ -88,7 +289,11 @@ class SimionTransportRunnerSourceTests(unittest.TestCase):
         mass_steps = {step["step_id"]: step for step in mass_filter["steps"]}
         self.assertEqual(
             mass_filter["required_bindings"],
-            ["mass_filter_base_source_ion11_path", "run_id"],
+            [
+                "mass_filter_base_source_ion11_path",
+                "simion_solver_numerics_contract_path",
+                "run_id",
+            ],
         )
         self.assertEqual(
             mass_steps["simion_mass_response"]["entrypoint"],
@@ -269,6 +474,10 @@ class SimionTransportRunnerSourceTests(unittest.TestCase):
                     str(SOURCE_FAMILY),
                     "-ParticleDistributionPath",
                     str(PROJECT_ROOT / "config" / "official_particle_source.json"),
+                    "-SolverNumericsContractPath",
+                    str(PROJECT_ROOT / "config" / "simion_solver_numerics.json"),
+                    "-OperatingPoint",
+                    "official_100amu_2eV",
                     "-ArtifactRootPath",
                     str(artifact_root),
                     "-PythonExe",
@@ -303,6 +512,17 @@ class SimionTransportRunnerSourceTests(unittest.TestCase):
             : source.index("$physicalDecision = if")
         ]
         self.assertNotIn("summary.transmission", integrity)
+        self.assertNotIn("-ge 0.8", source)
+        self.assertIn(
+            "$summary.transmission -ge $minimumTransmission",
+            source,
+        )
+        self.assertEqual(source.count("transport_interface_readiness.json"), 1)
+        self.assertIn(
+            "-LiteralPath $frozenMode -Raw -Encoding UTF8 | ConvertFrom-Json",
+            source,
+        )
+        self.assertIn("minimum_transmission = $minimumTransmission", source)
         self.assertEqual(source.count("Complete-FailedRun"), 1)
         self.assertLess(source.index("try {"), source.index("$sourceParticlePath"))
 

@@ -109,6 +109,11 @@ def normalized_run_config(
             or key.endswith("_path")
         ):
             normalized.pop(key)
+    if varied_parameter == "rf_steps_per_period":
+        provenance = normalized.get("provenance")
+        if isinstance(provenance, dict):
+            provenance.pop("rf_steps_per_period", None)
+            provenance.pop("rf_steps_override", None)
     normalized["inputs"] = {
         name: {
             "bytes": int(record["bytes"]),
@@ -128,6 +133,31 @@ def solver_from_role(role: str) -> str:
     if role not in roles:
         raise ValueError(f"unsupported transport run-config role: {role}")
     return roles[role]
+
+
+def numerical_pair(
+    solver: str, matrix: dict[str, Any], contract: dict[str, Any], contract_path: Path
+) -> tuple[int, int]:
+    if solver != "SIMION":
+        return int(matrix["baseline_value"]), int(matrix["refined_value"])
+    relative = contract.get("simion_solver_numerics_contract")
+    if not isinstance(relative, str) or not relative:
+        raise ValueError("SIMION solver-numerics contract identity is missing")
+    project_root = contract_path.resolve().parents[1]
+    numerics_path = (project_root / relative).resolve()
+    if not numerics_path.is_file():
+        raise ValueError("SIMION solver-numerics contract is missing")
+    numerics = json.loads(numerics_path.read_text(encoding="utf-8-sig"))
+    if numerics.get("role") != "rf_quadrupole_simion_solver_numerics":
+        raise ValueError("SIMION solver-numerics contract role is invalid")
+    baseline_key = matrix.get("baseline_value_source")
+    values_key = matrix.get("comparison_values_source")
+    baseline = int(numerics[baseline_key])
+    values = [int(value) for value in numerics[values_key]]
+    if len(values) != 2 or baseline not in values:
+        raise ValueError("SIMION convergence values must be one baseline/refined pair")
+    refined = next(value for value in values if value != baseline)
+    return baseline, refined
 
 
 def config_input_path(config: dict[str, Any], name: str) -> Path:
@@ -309,9 +339,12 @@ def main() -> None:
     if baseline_config.get("role") != matrix["run_config_role"]:
         raise ValueError("run-config role differs from the preregistered matrix")
     varied = matrix["varied_parameter"]
+    baseline_value, refined_value = numerical_pair(
+        solver, matrix, contract, args.contract
+    )
     if (
-        baseline_config.get(varied) != matrix["baseline_value"]
-        or refined_config.get(varied) != matrix["refined_value"]
+        baseline_config.get(varied) != baseline_value
+        or refined_config.get(varied) != refined_value
     ):
         raise ValueError("numerical step pair differs from the preregistered matrix")
     for field in ("project", "mode", "operating_point"):

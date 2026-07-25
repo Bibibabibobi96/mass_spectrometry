@@ -133,11 +133,20 @@ class Phase4DesignConsumerTests(unittest.TestCase):
         simion = (
             PROJECT_ROOT / "tests" / "simion" / "run_transport_candidate.ps1"
         ).read_text(encoding="utf-8")
-        for source in (matlab, simion):
+        simion_core = (
+            PROJECT_ROOT / "tests" / "support" / "simion_run_config_contract.ps1"
+        ).read_text(encoding="utf-8")
+        for source in (matlab,):
             self.assertIn("resolved.drive", source)
             self.assertIn("resolved.static_electrodes_V", source)
             self.assertIn("geometry_mm", source)
             self.assertNotIn("family_operating_contract", source)
+        for token in ("'drive'", "'static_electrodes_V'", "'geometry_mm'"):
+            self.assertIn(token, simion_core)
+        self.assertIn("-ResolvedDesign $resolved", simion)
+        self.assertNotIn("family_operating_contract", simion_core)
+        self.assertIn("New-RfSimionCoreRunConfig", simion)
+        self.assertNotIn("family_operating_contract", simion)
 
 
 if __name__ == "__main__":

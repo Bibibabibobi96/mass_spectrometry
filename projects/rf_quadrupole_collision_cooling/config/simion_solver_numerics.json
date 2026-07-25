@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "role": "rf_quadrupole_simion_solver_numerics",
+  "status": "current_candidate_solver_numerics",
+  "simion_cell_mm": 0.2,
+  "trajectory_quality": 10,
+  "baseline_rf_steps_per_period": 40,
+  "allowed_rf_steps_per_period": [40, 80],
+  "maximum_time_us": 80.0
+}

@@ -102,6 +102,75 @@ RF→oaTOF连接功能任务已经收口。默认1 mm被动连接器的N=100累�
 
 ## 机器权威与执行入口
 
+### 接口输运与质量过滤的架构边界
+
+接口输运与质量过滤共享同一四极杆机械模板和SIMION执行机制，但回答不同科学问题，必须保持独立
+workflow。两者不得通过`Mode`分支互相切换，也不得互相消费run作为本workflow证据：
+
+| 边界 | 接口输运 | 质量过滤 |
+|---|---|---|
+| role / claim | `rf_quadrupole_simion_run_config`；canonical接口传输与跨求解器相空间比较 | `rf_quadrupole_simion_mass_filter_run_config`；RF+DC七质量功能响应 |
+| 科学输入 | 配对bundle、canonical10实际消费表、对应ION11、source family、distribution、operating point | 显式基础ION11、由质量模式生成的配对多质量ION11与metadata |
+| 稳定输出 | canonical `particle_state.csv`、稀疏轨迹、输运summary及接口比较证据 | canonical `particle_state.csv`、`mass-response__simion.csv`、功能metrics与规范图 |
+| provenance | bundle等价、表示、粒子族、分布、latent、N及两表示SHA-256 | 基础ION11、生成质量表、质量集合、每质量N及对应SHA-256 |
+| 物理发布 | `resolved_design_official.json` | `resolved_design_mass_filter.json` |
+| solver numerics | `simion_solver_numerics.json`中的cell、quality、允许RF步数与最长时间；接口mode只保留诊断N和科学判据 | 同一SIMION数值合同；质量mode只保留质量集合、每质量N和功能判据 |
+| profile | 只选择接口workflow并绑定来源身份、明确operating point与solver-numerics合同身份 | 只选择质量过滤workflow并绑定基础ION11与solver-numerics合同身份 |
+
+公共机制只有一套：resolved字段到SIMION run config的编译与序列化、完整Lua字段校验、canonical/ION11
+源序列化、GEM/PA/IOB启动、run三件套生命周期、SHA-256与冻结manifest复核分别由邻近shared core负责。
+dedicated runner只提供上表中的科学差异并调用core，不维护第二份Lua模板、启动器、生命周期或校验器；
+shared core也不得按上述role或workflow名称分支。
+
+共享机制按职责单向调用，禁止合并成万能helper：
+
+| 模块 | 唯一职责 | 禁止内容 |
+|---|---|---|
+| `tests/support/simion_run_config_contract.ps1` | resolved/interface/numerics编译、完整Lua合同校验和序列化 | 进程启动、文件冻结、复制、checksum、run生命周期 |
+| `tests/support/simion_execution_support.ps1` | 启动GEM/PA/IOB并飞行 | 科学role/mode选择、配置编译、artifact和生命周期 |
+| `common/contracts/run_artifact_support.ps1` | 通用run三件套、冻结复制、hash inventory和manifest | RF/SIMION科学role、mode分支和科学schema |
+| dedicated runner | 声明科学输入/输出并顺序调用上述机制 | 直接`Start-Process`、`Copy-Item`、`Get-FileHash`、内联Lua模板或复制生命周期 |
+
+配置模块只能被runner消费，执行模块不得反向调用配置编译器，artifact模块不得调用求解器或读取科学
+schema。Lua validator必须检查本次candidate中冻结、实际交给SIMION的`quad_monolithic.lua`，不能只检查
+仓库live副本。模块函数白名单、调用方向及上述禁止项属于blocking；生产脚本LOC和两个runner的文本重复
+比例只进入report，用于发现再次膨胀，不设置脆弱的固定行数阈值。
+
+权威层次固定如下：
+
+- `resolved_design_official.json`与`resolved_design_mass_filter.json`分别是两个workflow的唯一运行时物理
+  权威；mode中为理论筛选保留的同名RF/DC值必须与对应resolved逐字段门禁一致，求解器不得从mode覆盖。
+- `interface_contract.json`唯一规定frame、事件、交接面和状态schema；
+  `config/simion_solver_numerics.json`唯一规定SIMION cell、RF步数、quality与最长时间，不复制物理驱动
+  或科学验收阈值。
+- 配对bundle metadata是接口两种粒子表示及其等价关系的权威；质量过滤mode只规定质量集合、每质量N和
+  功能阈值，生成的多质量ION11必须在本次run冻结。
+- `execution_profiles.json`只绑定workflow身份、输入身份和明确实验变量；路径、run ID、种子等实例值
+  冻结进run config，profile不得内嵌resolved中的RF、DC、频率、静态电极或几何标量。
+- 静态门禁必须验证入口无`Mode`参数、profile无重复物理标量、shared core无role/workflow分支、两个
+  workflow均经同一完整Lua合同编译/校验，并在缺失物理字段时于商业运行前失败关闭。
+
+### 架构门禁推广与债务棘轮
+
+架构门禁按workflow inventory逐步升级，不把既有入口一次性变成全库阻断项：
+
+| inventory项 | 当前等级 | 当前审计结论 | 升级条件 |
+|---|---|---|---|
+| `transport_interface_readiness_candidate` | blocking | dedicated COMSOL/SIMION入口；SIMION共享完整配置、启动和生命周期core；显式绑定operating point与数值合同 | 保持blocking |
+| `mass_filter_simion_functional_reference` | blocking | dedicated SIMION入口；与接口workflow复用同一机制core；科学源与输出独立 | 保持blocking |
+| `transport_no_collision_candidate` | report-only | 仍直接调用历史`common/multipole`求解器入口；SIMION入口内联数值快照、Lua模板与启动流程 | 迁移为窄dedicated入口、共享core并注册唯一数值合同后升级 |
+| `quadrupole_collision_cooling` | report-only / absent | capability为prototype且尚无活动mode或execution profile | 首个活动profile合入前必须完成注册并直接以blocking启用 |
+
+report-only扫描至少列出：workflow声明及科学role、run入口、调用的shared mechanism、物理/数值/源合同
+身份、稳定输出schema和provenance。扫描结果采用债务棘轮：已登记的存量finding不阻断，但新增profile、
+新入口或扩大既有finding必须失败；修复一项后从allowlist删除，不得恢复。
+
+配置权威注册优先扩展现有`execution_profiles.json`的profile记录，不新增平行“总配置”。注册项只保存
+合同身份与唯一权威路径，不复制物理或数值标量；运行时binding必须与注册身份匹配并把实际文件及
+SHA-256冻结进run。升级顺序为：inventory覆盖全部活动profile → 新增/修改workflow阻断 →
+迁移`transport_no_collision`存量入口 → 所有candidate/static profile统一blocking。prototype且无活动
+profile的能力只做存在性报告，直到首次实现。
+
 - 历史人工几何输入：[`../config/baseline.json`](../config/baseline.json)；求解器不得直接消费。
 - 官方N=100源：[`../config/official_particle_source.json`](../config/official_particle_source.json)和
   [`../config/particles/official_fixed_100.ion`](../config/particles/official_fixed_100.ion)

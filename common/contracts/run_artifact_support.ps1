@@ -178,6 +178,51 @@ function Copy-FrozenDependency {
     frozen_path=$destination;sha256=$hash}
 }
 
+function Copy-VerifiedRunInput {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Source,
+    [Parameter(Mandatory)][string]$Destination
+  )
+  $sourcePath=[IO.Path]::GetFullPath($Source);$destinationPath=[IO.Path]::GetFullPath($Destination)
+  if(-not(Test-Path -LiteralPath $sourcePath -PathType Leaf)){throw "Run input is missing: $sourcePath"}
+  $parent=Split-Path -Parent $destinationPath
+  if(-not(Test-Path -LiteralPath $parent -PathType Container)){New-Item -ItemType Directory -Path $parent -Force|Out-Null}
+  Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Force
+  $sourceHash=(Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash
+  if($sourceHash-cne(Get-FileHash -LiteralPath $destinationPath -Algorithm SHA256).Hash){
+    throw "Run input changed while frozen: $sourcePath"
+  }
+  return $destinationPath
+}
+
+function Write-RunDirectoryChecksumInventory {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Directory,
+    [Parameter(Mandatory)][string]$OutputPath,
+    [string[]]$ExcludedPatterns=@()
+  )
+  $outputName=[IO.Path]::GetFileName($OutputPath)
+  $records=Get-ChildItem -LiteralPath $Directory -File|Where-Object{
+    $name=$_.Name
+    if($name-eq$outputName){return $false}
+    foreach($pattern in $ExcludedPatterns){if($name-like$pattern){return $false}}
+    return $true
+  }|Sort-Object Name|ForEach-Object{
+    [pscustomobject]@{file=$_.Name;bytes=$_.Length;sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash}
+  }
+  $records|Export-Csv -LiteralPath $OutputPath -NoTypeInformation -Encoding UTF8
+}
+
+function Get-RunFileSha256 {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$Path)
+  $fullPath=[IO.Path]::GetFullPath($Path)
+  if(-not(Test-Path -LiteralPath $fullPath -PathType Leaf)){throw "Run file is missing: $fullPath"}
+  return (Get-FileHash -LiteralPath $fullPath -Algorithm SHA256).Hash
+}
+
 function Complete-FailedRun {
   [CmdletBinding()]
   param(
