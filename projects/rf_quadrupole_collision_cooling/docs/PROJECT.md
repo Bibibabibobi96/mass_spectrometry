@@ -231,6 +231,13 @@ manifest；随后才允许LiveLink启动。任一配置、启动、GUI Compute�
 UTF-8并按实际编码字节数验收。纯分析回归覆盖全部official N=100六列往返及中文异常，但真实Gate A
 尚未再次执行；当前仍没有release feature、breadcrumb、诊断MPH或独立Gate validation成功证据。
 
+随后的唯一重试`20260725_222755__test__comsol__rf-release-construction__n100`确认两项修复中的
+序列化和报告均生效：首文件与冻结validator期望逐double相等、最大绝对误差为0，正式UTF-8报告也完整
+保留中文首因且无`.tmp`残留；但MATLAB仍在同一复合断言停止。读取端原来把`'tab'`作为
+`readmatrix`的字段分隔字符传入，未显式传递真实TAB。源码现改用`char(9)`，并把两处回读验收都拆为
+shape、非有限线性索引和最大绝对误差三条独立断言；`%.17g`、N=100和`1e-12`合同保持不变。该第三项
+修复只有静态/纯分析证据，真实Gate A仍待重新批准执行。
+
 `execution_profiles.json`的两类跨求解器分析也不再用`Mode`切换：普通无碰撞profile固定调用
 `workflows/no_collision_transport/compare_cross_solver.ps1`，接口profile固定调用
 `workflows/interface_readiness/compare_cross_solver.ps1`。两者只接收各自

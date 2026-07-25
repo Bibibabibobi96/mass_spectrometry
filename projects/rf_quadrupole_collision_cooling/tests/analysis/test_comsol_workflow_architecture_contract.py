@@ -325,16 +325,10 @@ class ComsolWorkflowArchitectureContractTests(unittest.TestCase):
             shared,
         )
         self.assertNotIn("writematrix(releaseData", shared)
-        self.assertEqual(
-            shared.count("max(abs(releaseFile-releaseData),[],'all')<1e-12"),
-            1,
-        )
-        self.assertEqual(
-            shared.count(
-                "max(abs(actualReleaseData-expectedReleaseData),[],'all')<1e-12"
-            ),
-            1,
-        )
+        self.assertEqual(shared.count("'Delimiter',char(9)"), 2)
+        self.assertNotIn("'Delimiter','tab'", shared)
+        self.assertIn("releaseMaxAbsError<1e-12", shared)
+        self.assertIn("actualReleaseMaxAbsError<1e-12", shared)
 
         with OFFICIAL_ION11.open(encoding="utf-8-sig", newline="") as stream:
             rows = [[float(value) for value in row] for row in csv.reader(stream)]
@@ -353,6 +347,47 @@ class ComsolWorkflowArchitectureContractTests(unittest.TestCase):
                 ),
             )
         self.assertLess(maximum_error, 1e-12)
+
+    def test_release_readback_diagnoses_shape_finite_and_value_failures(
+        self,
+    ) -> None:
+        shared = _read(SHARED_SOLVER)
+        first_read = shared.index("releaseFile=readmatrix")
+        first_shape = shared.index(
+            "assert(isequal(releaseFileShape,[1 6])", first_read
+        )
+        first_finite = shared.index(
+            "assert(isempty(nonFiniteReleaseIndices)", first_shape
+        )
+        first_value = shared.index(
+            "assert(releaseMaxAbsError<1e-12", first_finite
+        )
+        first_create = shared.index("rel=cpt.create(releaseTag", first_value)
+        self.assertLess(first_read, first_shape)
+        self.assertLess(first_shape, first_finite)
+        self.assertLess(first_finite, first_value)
+        self.assertLess(first_value, first_create)
+
+        final_read = shared.index("actualReleaseData=readmatrix")
+        final_shape = shared.index(
+            "assert(isequal(actualReleaseShape,[1 6])", final_read
+        )
+        final_finite = shared.index(
+            "assert(isempty(actualNonFiniteIndices)", final_shape
+        )
+        final_value = shared.index(
+            "assert(actualReleaseMaxAbsError<1e-12", final_finite
+        )
+        self.assertLess(final_read, final_shape)
+        self.assertLess(final_shape, final_finite)
+        self.assertLess(final_finite, final_value)
+
+        for diagnostic in (
+            "shape is %s; expected [1 6]",
+            "has non-finite linear indices %s",
+            "max abs error %.17g exceeds 1e-12",
+        ):
+            self.assertEqual(shared.count(diagnostic), 2)
 
     def test_failure_report_checks_utf8_bytes_for_non_ascii_diagnostics(
         self,

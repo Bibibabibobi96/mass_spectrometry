@@ -95,6 +95,12 @@ release状态；同步篡改文件、result SHA和breadcrumb SHA仍必须失败�
 release文件现显式使用`%.17g`写入，既有`1e-12`合同不放宽；报告显式使用UTF-8并按编码后字节数检查。
 两项修复仅有静态和求解器无关N=100回归，尚未商业复验；不得报告Gate、release构造或`rel065`已关闭。
 
+唯一重试`20260725_222755__test__comsol__rf-release-construction__n100`证明高精度写入和UTF-8报告均已
+实际生效：`particle_001.txt`与冻结validator期望逐double相等，正式report完整保存中文首因且不再遗留
+`.tmp`；但MATLAB仍在创建`rel001`前的复合回读断言停止。读取端现不再给`readmatrix`传文本`'tab'`，
+而是显式传真实TAB字符`char(9)`；两处回读检查也依次报告实测shape、非有限线性索引和最大绝对误差，
+避免再次把解析、有限性和数值误差混为一个原因。N、`%.17g`和`1e-12`均未改变；真实Gate尚未复验。
+
 `workflows/mass_filter_reference/run_comsol.ps1`是RF+DC功能扫描入口；其MATLAB任务固定为
 `comsol/mass_filter_reference/run_scan.m`。入口要求显式传入`SourceIonPath`，只接受仓库政策允许的
 N=100或N=1000源，并从冻结源真实行数派生每质量粒子数。它派生七个只改变质量的
