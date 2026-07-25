@@ -118,6 +118,17 @@
 
 ## 测试报告（面向用户）
 
+- 所有包含代码或机器配置改动的任务在完成、提交或最终交接时，必须报告`baseline SHA → result SHA`
+  （未提交时为`WORKTREE`）的CLOC变化。报告必须分别给出total、production和tests，并按language汇总
+  files、blank、comment和code的基线值、结果值与delta；同时记录CLOC工具版本和完整过滤口径。
+  production/tests按仓库实际用途分类，不能把`tests/`目录整体视为测试：`execution_profiles.json`
+  引用的活动入口及`run_*.ps1`/`verify_*.ps1`属于production，即使位于`tests/`；`test_*.py`、
+  `*_test.py`、`*Test.m`、fixture及明确位于`test_support/`或`testing_support/`的纯测试support
+  属于tests；普通`tests/support/`不自动视为测试，因为其中存在生产运行机制。无法由稳定规则判定的
+  `tests/`下代码必须作为unclassified逐文件警告，不得静默归类。必须排除artifacts、generated、
+  vendor/third-party和run目录，不得把忽略的或排除目录中的untracked产物计入。统一只读入口为
+  `common/report_cloc_delta.ps1 -Base <sha> [-Current <sha|WORKTREE>]`；CLOC不可用时必须明确失败，不得用
+  `wc`、自制行计数或其他口径冒充。纯文档任务可在报告中写`CLOC_DELTA=N/A (docs-only)`。
 - 完成一次或多次测试后，最终交接必须给出测试报告。常规单阶段任务通常控制在**1000 tokens以内**；
   这是篇幅指引而非硬性上限。任务包含多个独立阶段、执行时间较长并产生较多需要比较的结果、存在
   失败排查或数据完整性风险、需要说明复现边界，或用户明确要求详细报告时，可以合理超过。篇幅由
