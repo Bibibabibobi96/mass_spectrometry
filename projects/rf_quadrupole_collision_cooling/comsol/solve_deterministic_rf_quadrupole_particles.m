@@ -262,7 +262,10 @@ for i=1:size(ions,1)
     % distinction; it aligns the fixed source's x(z), y(z) with SIMION.
     releaseData=[ions(i,6),-ions(i,5),ions(i,4)+sourceAxialOffsetMm,-vSim(2),-vSim(3),vSim(1)];
     initialPositionMm(i,:)=releaseData(1:3); initialVelocityMS(i,:)=releaseData(4:6);
-    releasePath=fullfile(scratch,sprintf('particle_%03d.txt',i)); writematrix(releaseData,releasePath,'Delimiter','tab');
+    releasePath=fullfile(scratch,sprintf('particle_%03d.txt',i));
+    releaseText=sprintf([ ...
+        '%.17g\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g\n'],releaseData);
+    writeTextFileChecked(releasePath,'w',releaseText,'release data');
     releaseTag=sprintf('rel%03d',i);
     if releaseGateEnabled
         releaseTimeExpression=releaseTimeExpressions{i};

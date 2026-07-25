@@ -63,7 +63,7 @@ function writeReportAtomically(path,text)
 directory=fileparts(path);
 if ~isfolder(directory),mkdir(directory);end
 temporaryPath=[path '.tmp'];
-fid=fopen(temporaryPath,'w');
+fid=fopen(temporaryPath,'w','n','UTF-8');
 assert(fid>=0,'Could not create temporary task report: %s',temporaryPath);
 try
     written=fprintf(fid,'%s',text);
@@ -72,7 +72,8 @@ catch ME
     rethrow(ME)
 end
 closeStatus=fclose(fid);
-assert(written==numel(text), ...
+expectedBytes=numel(unicode2native(text,'UTF-8'));
+assert(written==expectedBytes, ...
     'Task report write was incomplete: %s',temporaryPath);
 assert(closeStatus==0, ...
     'Task report close/flush failed: %s',temporaryPath);

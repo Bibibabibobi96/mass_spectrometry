@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import json
+import csv
 import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -9,6 +10,10 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+from projects.rf_quadrupole_collision_cooling.analysis.validate_release_construction_gate import (
+    _expected_release_state,
+)
 
 
 PROJECT_ROOT = Path(__file__).parents[2]
@@ -31,6 +36,7 @@ NUMERICS_SUPPORT = PROJECT_ROOT / "runtime" / "comsol_solver_numerics.ps1"
 RUN_ARTIFACT_SUPPORT = REPO_ROOT / "common" / "contracts" / "run_artifact_support.ps1"
 ARTIFACT_ROOT = REPO_ROOT.parent / "artifacts" / "projects" / "rf_quadrupole_collision_cooling"
 RUN_PYTHON = Path(sys.executable).resolve()
+OFFICIAL_ION11 = PROJECT_ROOT / "config" / "particles" / "official_fixed_100.ion"
 
 
 def _read(path: Path) -> str:
@@ -288,7 +294,12 @@ class ComsolWorkflowArchitectureContractTests(unittest.TestCase):
         self.assertIn("writeTextFileChecked(path,'a'", shared)
         self.assertIn("written==numel(text)", shared)
         self.assertIn("closeStatus==0", shared)
-        self.assertIn("written==numel(text)", task)
+        self.assertIn("fopen(temporaryPath,'w','n','UTF-8')", task)
+        self.assertIn(
+            "expectedBytes=numel(unicode2native(text,'UTF-8'))", task
+        )
+        self.assertIn("written==expectedBytes", task)
+        self.assertNotIn("written==numel(text)", task)
         self.assertIn("closeStatus==0", task)
         self.assertIn("validate_release_construction_gate.py", runner)
         self.assertIn(
@@ -300,6 +311,61 @@ class ComsolWorkflowArchitectureContractTests(unittest.TestCase):
             "[int]$gateResult.unique_release_time_expression_count-ne 100",
             runner,
         )
+
+    def test_release_files_preserve_six_columns_at_existing_gate_tolerance(
+        self,
+    ) -> None:
+        shared = _read(SHARED_SOLVER)
+        self.assertIn(
+            "'%.17g\\t%.17g\\t%.17g\\t%.17g\\t%.17g\\t%.17g\\n'",
+            shared,
+        )
+        self.assertIn(
+            "writeTextFileChecked(releasePath,'w',releaseText,'release data')",
+            shared,
+        )
+        self.assertNotIn("writematrix(releaseData", shared)
+        self.assertEqual(
+            shared.count("max(abs(releaseFile-releaseData),[],'all')<1e-12"),
+            1,
+        )
+        self.assertEqual(
+            shared.count(
+                "max(abs(actualReleaseData-expectedReleaseData),[],'all')<1e-12"
+            ),
+            1,
+        )
+
+        with OFFICIAL_ION11.open(encoding="utf-8-sig", newline="") as stream:
+            rows = [[float(value) for value in row] for row in csv.reader(stream)]
+        self.assertEqual(len(rows), 100)
+        maximum_error = 0.0
+        for row in rows:
+            release_data = _expected_release_state(row, axial_offset_mm=0.0)
+            encoded = "\t".join(f"{value:.17g}" for value in release_data)
+            decoded = tuple(float(value) for value in encoded.split("\t"))
+            self.assertEqual(len(decoded), 6)
+            maximum_error = max(
+                maximum_error,
+                *(
+                    abs(actual - expected)
+                    for actual, expected in zip(decoded, release_data)
+                ),
+            )
+        self.assertLess(maximum_error, 1e-12)
+
+    def test_failure_report_checks_utf8_bytes_for_non_ascii_diagnostics(
+        self,
+    ) -> None:
+        task = _read(RELEASE_GATE_TASK)
+        diagnostic = "错误使用 assert：六列文件精度不足"
+        self.assertNotEqual(len(diagnostic), len(diagnostic.encode("utf-8")))
+        self.assertIn("fopen(temporaryPath,'w','n','UTF-8')", task)
+        self.assertIn(
+            "expectedBytes=numel(unicode2native(text,'UTF-8'))", task
+        )
+        self.assertIn("assert(written==expectedBytes", task)
+        self.assertNotIn("assert(written==numel(text)", task)
 
     def test_matlab_solver_consumes_compiled_numerics_without_reselection(self) -> None:
         shared = _read(SHARED_SOLVER)

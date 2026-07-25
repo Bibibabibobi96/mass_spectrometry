@@ -222,6 +222,15 @@ manifest；随后才允许LiveLink启动。任一配置、启动、GUI Compute�
 回归已证明两者在没有占位`__init__.py`时仍从冻结代码根解析。此次失败没有MATLAB、COMSOL模型或物理
 结论。修复后仍须在一个干净LiveLink进程中重新执行同一Gate A，才能判断`rel065 create`是否可重复。
 
+冻结闭包修复后的真实重试
+`20260725_220820__test__comsol__rf-release-construction__n100`通过全部输入冻结与前置`std1/sol1`场解，
+但在创建`rel001`前的首个release文件回读断言停止。`particle_001.txt`实际为有限六列且按独立validator
+语义与ION11派生状态一致；默认`writematrix`序列化造成`5.0022e-12`最大绝对往返误差，超过Gate保持的
+`1e-12`绝对合同。失败报告又因`fprintf`返回UTF-8字节数、`numel`计算Unicode字符数而遮蔽首因，
+原始异常仅保留在`.tmp`。源码现改为六列显式`%.17g`写入，不放宽两处`1e-12`断言；任务报告显式使用
+UTF-8并按实际编码字节数验收。纯分析回归覆盖全部official N=100六列往返及中文异常，但真实Gate A
+尚未再次执行；当前仍没有release feature、breadcrumb、诊断MPH或独立Gate validation成功证据。
+
 `execution_profiles.json`的两类跨求解器分析也不再用`Mode`切换：普通无碰撞profile固定调用
 `workflows/no_collision_transport/compare_cross_solver.ps1`，接口profile固定调用
 `workflows/interface_readiness/compare_cross_solver.ps1`。两者只接收各自

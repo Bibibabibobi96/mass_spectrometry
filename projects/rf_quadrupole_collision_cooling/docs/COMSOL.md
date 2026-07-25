@@ -87,6 +87,14 @@ tag/count演进、文件SHA-256、`Filename`和`rt`。validator还只从冻结ru
 release状态；同步篡改文件、result SHA和breadcrumb SHA仍必须失败。MATLAB result中的计数字段本身
 不能使Gate通过。
 
+冻结闭包修复后的真实重试
+`20260725_220820__test__comsol__rf-release-construction__n100`通过输入预检和`std1/sol1`，但在
+`rel001`创建前停止。首个文件是有限六列，独立复算也符合ION11派生状态；默认`writematrix`的文本精度
+产生`5.0022e-12`最大绝对往返误差，未满足Gate既有`1e-12`绝对断言。任务的中文异常又暴露原子报告
+把`fprintf`写入字节数与Unicode字符数直接比较的问题，正式report因此遮蔽首因，`.tmp`仍保留原始栈。
+release文件现显式使用`%.17g`写入，既有`1e-12`合同不放宽；报告显式使用UTF-8并按编码后字节数检查。
+两项修复仅有静态和求解器无关N=100回归，尚未商业复验；不得报告Gate、release构造或`rel065`已关闭。
+
 `workflows/mass_filter_reference/run_comsol.ps1`是RF+DC功能扫描入口；其MATLAB任务固定为
 `comsol/mass_filter_reference/run_scan.m`。入口要求显式传入`SourceIonPath`，只接受仓库政策允许的
 N=100或N=1000源，并从冻结源真实行数派生每质量粒子数。它派生七个只改变质量的
