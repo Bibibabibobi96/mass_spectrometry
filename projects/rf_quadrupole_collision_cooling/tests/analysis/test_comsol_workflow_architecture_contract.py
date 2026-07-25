@@ -34,6 +34,7 @@ SHARED_SOLVER = (
 )
 NUMERICS_SUPPORT = PROJECT_ROOT / "runtime" / "comsol_solver_numerics.ps1"
 RUN_ARTIFACT_SUPPORT = REPO_ROOT / "common" / "contracts" / "run_artifact_support.ps1"
+SHARED_LIVELINK_LAUNCHER = REPO_ROOT / "common" / "comsol" / "run_comsol_r2025b.ps1"
 ARTIFACT_ROOT = REPO_ROOT.parent / "artifacts" / "projects" / "rf_quadrupole_collision_cooling"
 RUN_PYTHON = Path(sys.executable).resolve()
 OFFICIAL_ION11 = PROJECT_ROOT / "config" / "particles" / "official_fixed_100.ion"
@@ -494,6 +495,33 @@ class ComsolWorkflowArchitectureContractTests(unittest.TestCase):
             source.index("Write-VerifiedRunManifest"),
             source.index("run_comsol_r2025b.ps1"),
         )
+
+    def test_interface_normal_launches_disable_attempt_local_retry(self) -> None:
+        runner = _read(RUNNER)
+        self.assertIn(
+            "$startupAttempts = if($ReleaseConstructionGate){2}else{1}",
+            runner,
+        )
+        build_launch = runner[
+            runner.index("$startupAttempts = if($ReleaseConstructionGate)") :
+            runner.index("if($LASTEXITCODE-ne 0)", runner.index("$startupAttempts"))
+        ]
+        self.assertIn("-StartupAttempts $startupAttempts", build_launch)
+        gui_launch = runner[
+            runner.index("$failureStage = 'comsol_gui_compute_verification'") :
+            runner.index(
+                "if($LASTEXITCODE-ne 0)",
+                runner.index("$failureStage = 'comsol_gui_compute_verification'"),
+            )
+        ]
+        self.assertIn("-StartupAttempts 1", gui_launch)
+
+        launcher = _read(SHARED_LIVELINK_LAUNCHER)
+        self.assertIn(
+            "for ($attempt = 1; $attempt -le $StartupAttempts; $attempt++)",
+            launcher,
+        )
+        self.assertEqual(launcher.count("$attempt -lt $StartupAttempts"), 2)
 
 
 @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")

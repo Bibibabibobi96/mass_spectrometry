@@ -53,6 +53,14 @@ interface、scientific mode、bundle与numerics；任何预检或后续错误都
 `Study -> Compute`复算，最后写入并复验success manifest。MPH中持久化
 `z_rod_exit=85.4 mm`、`z_handoff=90.2 mm`、`z_acceptance=95.2 mm`及GUI可见
 `exp_phase_raw`数据导出节点。
+normal接口运行的模型构建与GUI Compute验证均显式使用一次LiveLink启动attempt；无task report超时或
+其他启动失败直接关闭本次run，不进入共享启动器的第二attempt。`-ReleaseConstructionGate`诊断仍保留
+共享启动器的既有两次启动上限，不改变其诊断合同。2026-07-26的normal N=100运行
+`20260726_002553__sim__comsol__rf-interface-n100__current-paired`最终得到100/100和完整GUI/state成功
+结果，但其模型构建首次attempt在120 s无report后由旧默认策略自动清理，第二attempt又覆盖同RunId
+输出；final manifest未登记首attempt的launcher stdout/stderr，也未记录attempt计数。因此该run只保留
+为求解与执行器诊断证据，不作为要求no-retry的当前配对baseline。未来可把attempt元数据和成功运行中
+产生的launcher日志统一纳入manifest；这不阻塞当前一次attempt策略，也不改变物理、数值或源合同。
 在LiveLink启动前，runner还通过接口workflow的`particle_source_policy.py`复验bundle两点与能量政策，
 并把接口CLI、policy、中性bundle机制及其`common`导入闭包按原包路径冻结到run的`input/code`树。
 该预检子进程的`PYTHONPATH`只含冻结代码根且固定`PYTHONNOUSERSITE=1`；run config记录逐文件SHA-256、

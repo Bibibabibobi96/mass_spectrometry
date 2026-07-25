@@ -370,9 +370,11 @@ try {
     }else{
         Join-Path $projectRoot 'tests\comsol\run_nocollision_candidate.m'
     }
+    $startupAttempts = if($ReleaseConstructionGate){2}else{1}
     & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') `
         -TaskScript $taskScript `
-        -ReportPath $bootstrapReport -StartupReportTimeoutSeconds 120
+        -ReportPath $bootstrapReport -StartupAttempts $startupAttempts `
+        -StartupReportTimeoutSeconds 120
     if($LASTEXITCODE-ne 0){
         throw 'COMSOL interface LiveLink task launcher failed.'}
     [Environment]::SetEnvironmentVariable('RFQUAD_RUN_CONFIG',$null)
@@ -505,7 +507,7 @@ try {
     $env:RFQUAD_EXPECTED_FREQUENCY_HZ = [string]$resolved.drive.frequency_Hz
     & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') `
         -TaskScript (Join-Path $projectRoot 'tests\comsol\verify_nocollision_comsol.m') `
-        -ReportPath $guiVerifyReport
+        -ReportPath $guiVerifyReport -StartupAttempts 1
     if($LASTEXITCODE-ne 0){throw 'COMSOL GUI Compute verification failed.'}
     foreach ($name in $environmentNames | Where-Object {
         $_ -ne 'RFQUAD_RUN_CONFIG'
