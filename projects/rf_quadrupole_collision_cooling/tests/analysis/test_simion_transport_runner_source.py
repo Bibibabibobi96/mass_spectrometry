@@ -6,6 +6,7 @@ import json
 import math
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -338,6 +339,20 @@ class SimionTransportRunnerSourceTests(unittest.TestCase):
         self.assertIn("particle_source_metadata.json", source)
         self.assertIn("'--source',$particlePath", source)
         self.assertIn("particle_source_sha256", source)
+        live_binding = source[
+            source.index("$bindingArguments = @(") :
+            source.index("& $python @bindingArguments")
+        ]
+        self.assertIn("'--bundle-metadata',$bundleMetadataInput", live_binding)
+        self.assertIn("'--expected-consumed',$sourceParticlePath", live_binding)
+        self.assertNotIn("$frozenBundleMetadata", live_binding)
+        frozen_binding = source[
+            source.index("$frozenBindingArguments = @(") :
+            source.index("& $python @frozenBindingArguments")
+        ]
+        self.assertIn("'--bundle-metadata',$frozenBundleMetadata", frozen_binding)
+        self.assertIn("'--expected-consumed',$particlePath", frozen_binding)
+        self.assertNotIn("$bundleMetadataInput", frozen_binding)
         for field in (
             "source_ion11",
             "source_canonical10",
@@ -407,6 +422,58 @@ class SimionTransportRunnerSourceTests(unittest.TestCase):
                     100,
                     "canonical10",
                     root / "official_100amu_2eV_n100.ion",
+                )
+
+    def test_live_and_frozen_bundle_bindings_reject_cross_root_mixing(self) -> None:
+        distribution = PROJECT_ROOT / "config" / "official_particle_source.json"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            live = root / "live"
+            frozen = root / "frozen"
+            generate_bundle(SOURCE_FAMILY, distribution, RESOLVED, live)
+            live_metadata = live / "paired_particle_bundle.json"
+            live_canonical = live / "official_100amu_2eV_n100_canonical.csv"
+            live_result = resolve_binding(
+                live_metadata,
+                SOURCE_FAMILY,
+                distribution,
+                RESOLVED,
+                "official_100amu_2eV",
+                100,
+                "canonical10",
+                live_canonical,
+            )
+            shutil.copytree(live, frozen)
+            frozen_metadata = frozen / "paired_particle_bundle.json"
+            frozen_canonical = (
+                frozen / "official_100amu_2eV_n100_canonical.csv"
+            )
+            frozen_result = resolve_binding(
+                frozen_metadata,
+                SOURCE_FAMILY,
+                distribution,
+                RESOLVED,
+                "official_100amu_2eV",
+                100,
+                "canonical10",
+                frozen_canonical,
+            )
+            self.assertEqual(
+                live_result["consumed_sha256"],
+                frozen_result["consumed_sha256"],
+            )
+            with self.assertRaisesRegex(
+                ValueError, "differs from its bundle artifact"
+            ):
+                resolve_binding(
+                    frozen_metadata,
+                    SOURCE_FAMILY,
+                    distribution,
+                    RESOLVED,
+                    "official_100amu_2eV",
+                    100,
+                    "canonical10",
+                    live_canonical,
                 )
 
     def test_real_python_cli_preserves_canonical_coordinate_mapping(self) -> None:

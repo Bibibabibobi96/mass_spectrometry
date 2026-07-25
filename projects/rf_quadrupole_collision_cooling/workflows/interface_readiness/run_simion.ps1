@@ -186,7 +186,7 @@ try {
     $requestedParticles = @(Import-Csv -LiteralPath $sourceParticlePath).Count
     $bindingArguments = @(
         '-m','projects.rf_quadrupole_collision_cooling.analysis.validate_paired_particle_source_binding',
-        '--bundle-metadata',$frozenBundleMetadata,
+        '--bundle-metadata',$bundleMetadataInput,
         '--source-family',$frozenSourceFamily,
         '--distribution',$frozenDistribution,
         '--resolved-design',$frozenResolved,
