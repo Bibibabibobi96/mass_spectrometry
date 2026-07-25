@@ -22,14 +22,6 @@ $gateTimer = [Diagnostics.Stopwatch]::StartNew()
 if ($LASTEXITCODE -ne 0) { throw 'Resolved-geometry gate failed.' }
 & $python -m projects.oa_tof.analysis.sync_geometry_contract --check
 if ($LASTEXITCODE -ne 0) { throw 'Generated-input freshness gate failed.' }
-& $python -m projects.oa_tof.analysis.prepare_rf_handoff_projection --check-mode
-if ($LASTEXITCODE -ne 0) { throw 'RF handoff consumer-mode gate failed.' }
-& $python -m projects.oa_tof.analysis.prepare_rf_handoff_projection `
-  --mode (Join-Path $projectRoot 'config\modes\rf_hybrid_mesh_projection.json') --check-mode
-if ($LASTEXITCODE -ne 0) { throw 'RF hybrid-mesh projection mode gate failed.' }
-& $python -m projects.oa_tof.analysis.prepare_rf_handoff_projection `
-  --mode (Join-Path $projectRoot 'config\modes\rf_handoff_pulse.json') --check-mode
-if ($LASTEXITCODE -ne 0) { throw 'RF shared-clock pulse mode gate failed.' }
 & $python (Join-Path $projectRoot 'analysis\accelerator_time_focus.py') --self-test
 if ($LASTEXITCODE -ne 0) { throw 'Accelerator theory self-test failed.' }
 & $python (Join-Path $projectRoot 'analysis\reflectron_dual_stage_solver.py') --self-test

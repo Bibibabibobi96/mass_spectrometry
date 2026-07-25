@@ -4,10 +4,12 @@ import csv
 import importlib.util
 import json
 import math
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from common.contracts.component_particle_state import csv_columns
@@ -104,6 +106,182 @@ class HandoffConsumerModeTests(unittest.TestCase):
             {profile["profile_id"] for profile in execution["profiles"]},
         )
         self.assertNotIn("rf_handoff_projection", project["capabilities"][0]["modes"])
+
+    def test_static_gate_does_not_depend_on_superseded_rf_projection_modes(self) -> None:
+        static_gate = (
+            (PROJECT_ROOT / "verify_project.ps1")
+            .read_text(encoding="utf-8")
+            .replace("\\", "/")
+            .lower()
+        )
+        self.assertNotIn("prepare_rf_handoff_projection", static_gate)
+        self.assertNotIn("rf_hybrid_mesh_projection.json", static_gate)
+        self.assertNotIn("rf_handoff_pulse.json", static_gate)
+        self.assertNotIn("diagnostics/legacy_rf_projection/verify_inputs.ps1", static_gate)
+
+    def test_all_superseded_rf_projection_modes_remain_outside_active_profiles(self) -> None:
+        execution = json.loads(
+            (PROJECT_ROOT / "config" / "execution_profiles.json").read_text(encoding="utf-8")
+        )
+        project = json.loads(
+            (PROJECT_ROOT / "config" / "project.json").read_text(encoding="utf-8")
+        )
+        active_entrypoints = {
+            step["entrypoint"].replace("\\", "/").lower()
+            for profile in execution["profiles"]
+            for step in profile["steps"]
+        }
+        active_modes = {
+            mode
+            for capability in project["capabilities"]
+            for mode in capability["modes"]
+        }
+        self.assertNotIn(
+            "diagnostics/legacy_rf_projection/verify_inputs.ps1",
+            active_entrypoints,
+        )
+        for mode in (
+            "rf_handoff_projection",
+            "rf_hybrid_mesh_projection",
+            "rf_handoff_pulse",
+        ):
+            self.assertNotIn(mode, json.dumps(execution).replace("\\", "/").lower())
+            self.assertNotIn(mode, active_modes)
+        wrapper = (
+            PROJECT_ROOT / "diagnostics" / "legacy_rf_projection" / "verify_inputs.ps1"
+        ).read_text(encoding="utf-8").replace("\\", "/").lower()
+        for mode_file in (
+            "rf_handoff_projection.json",
+            "rf_hybrid_mesh_projection.json",
+            "rf_handoff_pulse.json",
+        ):
+            self.assertIn(mode_file, wrapper)
+
+    def test_historical_input_check_requires_manifest_frozen_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state = root / "legacy_state.csv"
+            state.write_text("particle_id\n1\n", encoding="utf-8")
+            manifest = root / "run_manifest.json"
+            manifest.write_text(json.dumps({
+                "project": "rf_quadrupole_collision_cooling",
+                "status": "success",
+                "outputs": [{
+                    "path": "legacy_state.csv",
+                    "bytes": state.stat().st_size,
+                    "sha256": PREPARE.sha256(state),
+                }],
+            }), encoding="utf-8")
+            validated = {
+                "legacy_projection": True,
+                "mode": {"source_cases": [{
+                    "case_id": "legacy_case",
+                    "particle_state_csv": state.name,
+                    "run_manifest": manifest.name,
+                }]},
+            }
+            with mock.patch.object(PREPARE, "validate_mode", return_value=validated):
+                result = PREPARE.validate_historical_inputs(workspace_root=root)
+            self.assertEqual(result["cases"][0]["case_id"], "legacy_case")
+            state.write_text("particle_id\n2\n", encoding="utf-8")
+            with mock.patch.object(PREPARE, "validate_mode", return_value=validated):
+                with self.assertRaisesRegex(ValueError, "not frozen"):
+                    PREPARE.validate_historical_inputs(workspace_root=root)
+
+    def test_historical_input_check_fails_closed_for_each_single_input_defect(self) -> None:
+        def write_valid_case(root: Path) -> tuple[Path, Path, dict[str, object]]:
+            state = root / "legacy_state.csv"
+            state.write_text("particle_id\n1\n", encoding="utf-8")
+            manifest = root / "run_manifest.json"
+            manifest.write_text(json.dumps({
+                "project": "rf_quadrupole_collision_cooling",
+                "status": "success",
+                "outputs": [{
+                    "path": state.name,
+                    "bytes": state.stat().st_size,
+                    "sha256": PREPARE.sha256(state),
+                }],
+            }), encoding="utf-8")
+            return state, manifest, {
+                "legacy_projection": True,
+                "mode": {"source_cases": [{
+                    "case_id": "legacy_case",
+                    "particle_state_csv": state.name,
+                    "run_manifest": manifest.name,
+                }]},
+            }
+
+        defects = {
+            "missing_state": ("historical RF source evidence is missing", lambda state, manifest: state.unlink()),
+            "missing_manifest": ("historical RF source evidence is missing", lambda state, manifest: manifest.unlink()),
+            "byte_mismatch": (
+                "historical RF state is not frozen",
+                lambda state, manifest: manifest.write_text(json.dumps({
+                    **json.loads(manifest.read_text(encoding="utf-8")),
+                    "outputs": [{
+                        **json.loads(manifest.read_text(encoding="utf-8"))["outputs"][0],
+                        "bytes": state.stat().st_size + 1,
+                    }],
+                }), encoding="utf-8"),
+            ),
+            "sha_mismatch": (
+                "historical RF state is not frozen",
+                lambda state, manifest: manifest.write_text(json.dumps({
+                    **json.loads(manifest.read_text(encoding="utf-8")),
+                    "outputs": [{
+                        **json.loads(manifest.read_text(encoding="utf-8"))["outputs"][0],
+                        "sha256": "0" * 64,
+                    }],
+                }), encoding="utf-8"),
+            ),
+            "non_success_manifest": (
+                "historical RF manifest is not a successful RF run",
+                lambda state, manifest: manifest.write_text(json.dumps({
+                    **json.loads(manifest.read_text(encoding="utf-8")),
+                    "status": "failed",
+                }), encoding="utf-8"),
+            ),
+        }
+        for defect, (message, apply_defect) in defects.items():
+            with self.subTest(defect=defect), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                state, manifest, validated = write_valid_case(root)
+                apply_defect(state, manifest)
+                with mock.patch.object(PREPARE, "validate_mode", return_value=validated):
+                    with self.assertRaisesRegex(ValueError, message):
+                        PREPARE.validate_historical_inputs(workspace_root=root)
+
+    def test_legacy_input_entrypoint_runs_all_three_modes_on_demand(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fake_python = root / "fake_python.cmd"
+            call_log = root / "calls.txt"
+            fake_python.write_text(
+                "@echo off\r\necho %*>>\"%LEGACY_RF_PROJECTION_TEST_LOG%\"\r\nexit /b 0\r\n",
+                encoding="utf-8",
+            )
+            environment = os.environ.copy()
+            environment["LEGACY_RF_PROJECTION_TEST_LOG"] = str(call_log)
+            entrypoint = PROJECT_ROOT / "diagnostics" / "legacy_rf_projection" / "verify_inputs.ps1"
+            completed = subprocess.run(
+                ["pwsh.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(entrypoint),
+                 "-PythonExe", str(fake_python)],
+                cwd=PROJECT_ROOT.parents[1],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                env=environment,
+            )
+            calls = call_log.read_text(encoding="utf-8")
+            self.assertIn("LEGACY_RF_PROJECTION_INPUTS=PASS MODES=3", completed.stdout)
+            self.assertEqual(calls.count("--check-historical-inputs"), 3)
+            for mode in (
+                "rf_handoff_projection.json",
+                "rf_hybrid_mesh_projection.json",
+                "rf_handoff_pulse.json",
+            ):
+                self.assertEqual(calls.count(mode), 1)
 
 
 class SimionVelocityFrameAdapterTests(unittest.TestCase):

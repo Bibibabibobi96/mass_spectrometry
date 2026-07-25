@@ -138,6 +138,42 @@ def mode_execution_status(validated: dict[str, Any]) -> str:
     return "DIAGNOSTIC" if validated["legacy_projection"] else "ACTIVE"
 
 
+def validate_historical_inputs(
+    mode_path: Path = DEFAULT_MODE,
+    workspace_root: Path = WORKSPACE_ROOT,
+) -> dict[str, Any]:
+    """Fail closed unless a superseded projection's recorded RF states are intact."""
+    validated = validate_mode(mode_path)
+    if not validated["legacy_projection"]:
+        raise ValueError("historical input verification only accepts a superseded projection")
+    cases: list[dict[str, Any]] = []
+    for source_case in validated["mode"]["source_cases"]:
+        state_path = (workspace_root / source_case["particle_state_csv"]).resolve()
+        manifest_path = (workspace_root / source_case["run_manifest"]).resolve()
+        if not state_path.is_file() or not manifest_path.is_file():
+            raise ValueError(f"historical RF source evidence is missing: {source_case['case_id']}")
+        manifest = load_json(manifest_path)
+        if (manifest.get("project") != "rf_quadrupole_collision_cooling" or
+                manifest.get("status") != "success"):
+            raise ValueError(f"historical RF manifest is not a successful RF run: {source_case['case_id']}")
+        state_sha256 = sha256(state_path)
+        state_bytes = state_path.stat().st_size
+        matching_outputs = [
+            output for output in manifest.get("outputs", [])
+            if Path(str(output.get("path", ""))).name == state_path.name
+            and str(output.get("sha256", "")).upper() == state_sha256
+            and output.get("bytes") == state_bytes
+        ]
+        if len(matching_outputs) != 1:
+            raise ValueError(f"historical RF state is not frozen by its manifest: {source_case['case_id']}")
+        cases.append({
+            "case_id": source_case["case_id"],
+            "state_sha256": state_sha256,
+            "manifest_sha256": sha256(manifest_path),
+        })
+    return {"mode": mode_path.name, "cases": cases}
+
+
 def validate_bundle(
     canonical_path: Path,
     ion_path: Path,
@@ -227,6 +263,7 @@ def main() -> None:
     parser.add_argument("--mode", type=Path, default=DEFAULT_MODE)
     action = parser.add_mutually_exclusive_group(required=True)
     action.add_argument("--check-mode", action="store_true")
+    action.add_argument("--check-historical-inputs", action="store_true")
     action.add_argument("--validate-bundle", action="store_true")
     parser.add_argument("--canonical", type=Path)
     parser.add_argument("--ion", type=Path)
@@ -240,6 +277,10 @@ def main() -> None:
             "RF_HANDOFF_CONSUMER_MODE=PASS "
             f"STATUS={mode_execution_status(validated)} PHYSICAL_LINK=false"
         )
+        return
+    if args.check_historical_inputs:
+        result = validate_historical_inputs(args.mode)
+        print(f"RF_HANDOFF_LEGACY_INPUTS=PASS MODE={result['mode']} CASES={len(result['cases'])}")
         return
     required = (args.canonical, args.ion, args.row_map, args.metadata, args.output)
     if any(value is None for value in required):

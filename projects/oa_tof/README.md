@@ -96,17 +96,13 @@
   `config/formal_validation.json`及COMSOL、SIMION、SolidWorks和结果清单，不复制大结果。
 - 宽质量标定候选模式：[`config/modes/mass_spectrum.json`](config/modes/mass_spectrum.json)；只评价
   峰位、标定和传输率，不替代正式分辨率基线。
-- RF外部handoff功能投影候选：
+- 旧RF刚体投影、网格配对和共享时钟脉冲保留为 superseded diagnostics：
   [`config/modes/rf_handoff_projection.json`](config/modes/rf_handoff_projection.json)、
-  [`analysis/prepare_rf_handoff_projection.py`](analysis/prepare_rf_handoff_projection.py)、
-  [`tests/cross_solver/run_rf_handoff_projection.ps1`](tests/cross_solver/run_rf_handoff_projection.ps1)；
-  现只保留为superseded刚体投影诊断；只读复用正式静电资产并恢复部件链时钟，不表示活动电气/机械接口。
-- RF混合网格配对投影：[`config/modes/rf_hybrid_mesh_projection.json`](config/modes/rf_hybrid_mesh_projection.json)；
-  现只保留为superseded网格配对诊断，不替代当前S2真实连接器入口。
-- RF共享时钟有限脉冲功能入口：[`config/modes/rf_handoff_pulse.json`](config/modes/rf_handoff_pulse.json)、
-  [`tests/cross_solver/run_rf_handoff_pulse.ps1`](tests/cross_solver/run_rf_handoff_pulse.ps1)；从Formal Program
-  确定性生成隔离候选，按instrument-time从投影入口面注入并连续计算脉冲前后轨迹；现只用于
-  superseded projected-entry诊断，不修改Formal资产。
+  [`config/modes/rf_hybrid_mesh_projection.json`](config/modes/rf_hybrid_mesh_projection.json) 与
+  [`config/modes/rf_handoff_pulse.json`](config/modes/rf_handoff_pulse.json)。它们不属于 execution profile、
+  capability 或 `verify_project.ps1 -Level Static`；按需先运行
+  [`diagnostics/legacy_rf_projection/verify_inputs.ps1`](diagnostics/legacy_rf_projection/verify_inputs.ps1)，
+  它会核验所列RF历史粒子状态和成功 manifest 的字节数/SHA，再使用相应历史 runner 复现。
 - RF→oaTOF连接器、共享时钟脉冲、阶段资格、漏斗结果和后续恢复条件只由
   [`../rf_quadrupole_collision_cooling/docs/PROJECT.md`](../rf_quadrupole_collision_cooling/docs/PROJECT.md)
   及其机器合同维护，本项目不复制阶段数字或接口判据。本项目只维护下游格式适配和对Formal分析器的

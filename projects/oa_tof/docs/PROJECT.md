@@ -41,7 +41,9 @@ RF→oaTOF连接功能已经由RF项目收口。接口阶段、连接器几何�
 
 本项目旧`rf_handoff_projection`、`rf_hybrid_mesh_projection`和`rf_handoff_pulse`模式已显式标为
 superseded diagnostic，仅用于复现早期刚体投影、网格配对和投影入口脉冲结果；它们不是与RF项目S2/S3
-并列的活动生产路径，也不得覆盖当前物理连接器功能证据或Formal阻断条件。
+并列的活动生产路径，也不得覆盖当前物理连接器功能证据或Formal阻断条件。它们不进入oa-TOF Static
+门禁；需要复现时先运行`diagnostics/legacy_rf_projection/verify_inputs.ps1`，该入口会失败关闭地核验
+历史RF粒子状态与成功manifest的身份。
 
 2026-07-20完成 oa-TOF 理论重写文档及代码审查。三份 Markdown 已取代旧 DOCX 成为活跃理论入口，
 三份求解器无关 Python 已接入静态测试；原始投稿包及 SHA 已冻结在
