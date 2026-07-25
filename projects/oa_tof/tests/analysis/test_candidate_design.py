@@ -4,6 +4,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -11,6 +12,11 @@ REPO_ROOT = PROJECT_ROOT.parents[1]
 from common.contracts.machine_contracts import load_json, sha256
 from common.contracts.verify_artifact_layout import verify_project
 from projects.oa_tof.analysis.candidate_run_lifecycle import finalize_candidate_run, start_candidate_run
+from projects.oa_tof.analysis.candidate_source_closure import (
+    PYTHON_BOUND_SOURCES,
+    RELATIVE_PATHS,
+    verify_candidate_source_closure,
+)
 from projects.oa_tof.analysis.compile_candidate_design import EnvelopeReviewRequired, compile_proposal, write_candidate
 from projects.oa_tof.analysis.prepare_candidate_consumers import prepare, verify_routing_coverage
 from projects.oa_tof.analysis.prepare_candidate_run import prepare_candidate_run, validate_workflow
@@ -334,6 +340,30 @@ class CandidateDesignTests(unittest.TestCase):
             )
             self.assertTrue((planning_root / "run_config.template.json").is_file())
             self.assertTrue((planning_root / "candidate_workflow_plan.json").is_file())
+            closure = plan["execution_source_closure"]
+            verify_candidate_source_closure(closure)
+            source_ids = {item["source_id"] for item in closure["sources"]}
+            self.assertEqual(source_ids, set(RELATIVE_PATHS))
+            self.assertIn("common/require_powershell7.ps1", source_ids)
+            code_root = Path(closure["code_root"]).resolve()
+            for stage in plan["stages"]:
+                for key in ("entrypoint", "task_script"):
+                    if key in stage:
+                        Path(stage[key]).resolve().relative_to(code_root)
+            transformed = {
+                item["source_id"]
+                for item in closure["sources"]
+                if "python_runtime_binding" in item["transformations"]
+            }
+            self.assertEqual(transformed, PYTHON_BOUND_SOURCES)
+            live_root = str(REPO_ROOT.resolve()).encode()
+            runtime_path = closure["runtime"]["python_executable"].encode()
+            for item in closure["sources"]:
+                frozen_path = code_root / item["source_id"]
+                payload = frozen_path.read_bytes().replace(
+                    runtime_path, b"<FROZEN_PYTHON_RUNTIME>"
+                )
+                self.assertNotIn(live_root, payload)
             with self.assertRaisesRegex(FileExistsError, "overwrite is forbidden"):
                 prepare_candidate_run(*inputs, run_id, artifact_root)
 
@@ -472,6 +502,62 @@ class CandidateDesignTests(unittest.TestCase):
                 start_candidate_run(planning_root / "candidate_workflow_plan.json")
             self.assertFalse(Path(plan["run_root"]).exists())
 
+    def test_frozen_candidate_source_tamper_blocks_start_and_extra_files(self):
+        cases = ("modified", "extra")
+        for index, case in enumerate(cases):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as root:
+                root_path = Path(root)
+                artifact_root = root_path / "artifacts" / "projects" / "oa_tof"
+                source = root_path / "source"
+                source.mkdir()
+                plan = prepare_candidate_run(
+                    *self.candidate_run_inputs(source),
+                    f"20260720_13001{index}__build__cross__design-candidate__source-{case}",
+                    artifact_root,
+                )
+                planning_root = Path(plan["planning_root"])
+                code_root = Path(plan["execution_source_closure"]["code_root"])
+                if case == "modified":
+                    target = code_root / "common" / "require_powershell7.ps1"
+                    target.write_text(
+                        target.read_text(encoding="utf-8") + "\n# tampered\n",
+                        encoding="utf-8",
+                    )
+                else:
+                    (code_root / "undeclared.py").write_text(
+                        "raise RuntimeError('undeclared')\n", encoding="utf-8"
+                    )
+                with self.assertRaisesRegex(
+                    ValueError, "frozen candidate source changed|missing or extra"
+                ):
+                    start_candidate_run(
+                        planning_root / "candidate_workflow_plan.json"
+                    )
+                self.assertFalse(Path(plan["run_root"]).exists())
+
+    def test_frozen_candidate_source_tamper_blocks_stage_and_finalize(self):
+        with tempfile.TemporaryDirectory() as root:
+            _, run_root, plan = self.materialize_candidate_run(Path(root))
+            runtime_plan = load_json(run_root / "candidate_workflow_plan.json")
+            code_root = Path(
+                runtime_plan["execution_source_closure"]["code_root"]
+            )
+            target = code_root / "common" / "require_powershell7.ps1"
+            target.write_text(
+                target.read_text(encoding="utf-8") + "\n# tampered\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                ValueError, "frozen candidate source changed"
+            ):
+                execute_stage(runtime_plan["stages"][0], runtime_plan, "unused")
+            with self.assertRaisesRegex(
+                ValueError, "frozen candidate source changed"
+            ):
+                finalize_candidate_run(
+                    run_root, "success", self.stage_results(plan)
+                )
+
     def prepared_workflow_plan(self, root_path, stamp):
         artifact_root = root_path / "artifacts" / "projects" / "oa_tof"
         artifact_root.mkdir(parents=True)
@@ -571,6 +657,54 @@ class CandidateDesignTests(unittest.TestCase):
         command = _powershell("task.ps1", ["-Value", "test"])
         self.assertEqual(command[0], "pwsh.exe")
         self.assertEqual(command[-3:], ["task.ps1", "-Value", "test"])
+
+    def test_comsol_stage_uses_only_frozen_launcher_and_tasks(self):
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            artifact_root, plan_path = self.prepared_workflow_plan(
+                root_path, "20260720_145000"
+            )
+            plan = load_json(plan_path)
+            stage = next(
+                item
+                for item in plan["stages"]
+                if item["stage_id"] == "comsol_candidate"
+            )
+            observed = []
+
+            def fake_run(command, _log_path, _environment=None):
+                observed.append(command)
+                report_index = command.index("-ReportPath") + 1
+                report = Path(command[report_index])
+                report.parent.mkdir(parents=True, exist_ok=True)
+                report.write_text("STATUS=PASS\n", encoding="utf-8")
+
+            with mock.patch(
+                "projects.oa_tof.analysis.run_candidate_workflow._run_command",
+                side_effect=fake_run,
+            ):
+                execute_stage(stage, plan, "unused")
+
+            code_root = Path(plan["execution_source_closure"]["code_root"])
+            self.assertEqual(len(observed), 2)
+            for command in observed:
+                Path(command[5]).resolve().relative_to(code_root.resolve())
+                task_index = command.index("-TaskScript") + 1
+                Path(command[task_index]).resolve().relative_to(
+                    code_root.resolve()
+                )
+            self.assertEqual(
+                {Path(command[5]).resolve() for command in observed},
+                {
+                    (
+                        code_root
+                        / "common"
+                        / "comsol"
+                        / "run_comsol_r2025b.ps1"
+                    ).resolve()
+                },
+            )
+            self.assertTrue(artifact_root.is_dir())
 
     def test_bound_runner_requires_same_approved_request_and_run_id(self):
         with tempfile.TemporaryDirectory() as root:

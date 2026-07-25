@@ -14,6 +14,10 @@ WORKSPACE_ROOT = REPO_ROOT.parent
 from common.contracts.artifact_naming import validate_run_id, validate_task_id
 from common.contracts.machine_contracts import load_json, sha256, validate_schema
 from projects.oa_tof.analysis.prepare_candidate_consumers import prepare as prepare_consumers
+from projects.oa_tof.analysis.candidate_source_closure import (
+    freeze_candidate_source_closure,
+    frozen_source_path,
+)
 
 
 WORKFLOW_PATH = PROJECT_ROOT / "config" / "candidate_workflow.json"
@@ -80,11 +84,12 @@ def _candidate_sources(candidate_baseline: Path, candidate_resolved: Path, candi
     proposal_request_path = Path(proposal_request["path"])
     if not proposal_request_path.is_absolute():
         proposal_request_path = proposal.parent / proposal_request_path
-    if (proposal_request_path.resolve() != request or
-            proposal_request["sha256"].lower() != sha256(request).lower()):
+    if proposal_request_path.resolve() != request or proposal_request["sha256"].lower() != sha256(request).lower():
         raise ValueError("candidate proposal and request provenance do not match")
-    if (report.get("candidate_id") != proposal_contract["candidate_id"] or
-            report.get("request_id") != request_contract["request_id"]):
+    if (
+        report.get("candidate_id") != proposal_contract["candidate_id"]
+        or report.get("request_id") != request_contract["request_id"]
+    ):
         raise ValueError("candidate diff identity does not match its proposal/request")
     return {
         "candidate_baseline.json": baseline,
@@ -122,19 +127,25 @@ def prepare_candidate_run(
     sources = _candidate_sources(candidate_baseline, candidate_resolved, candidate_diff)
     if any(_inside(path, formal_root) for path in sources.values()):
         raise ValueError("candidate inputs must not be sourced from formal artifacts")
-    if (sources["candidate_baseline.json"] == FORMAL_BASELINE_PATH.resolve() or
-            sources["candidate_resolved_geometry.json"] == FORMAL_RESOLVED_PATH.resolve()):
+    if (
+        sources["candidate_baseline.json"] == FORMAL_BASELINE_PATH.resolve()
+        or sources["candidate_resolved_geometry.json"] == FORMAL_RESOLVED_PATH.resolve()
+    ):
         raise ValueError("candidate run requires isolated candidate contracts, not the formal project contracts")
     resolved_source = load_json(sources["candidate_resolved_geometry.json"])
     if resolved_source.get("role") != "oa_tof_resolved_contract_do_not_edit":
         raise ValueError("candidate resolved contract has an unsupported role")
-    if (resolved_source.get("inputs", {}).get("baseline_sha256", "").lower() !=
-            sha256(sources["candidate_baseline.json"]).lower()):
+    if (
+        resolved_source.get("inputs", {}).get("baseline_sha256", "").lower()
+        != sha256(sources["candidate_baseline.json"]).lower()
+    ):
         raise ValueError("candidate baseline and resolved contract hashes do not match")
 
     planning_root.mkdir(parents=True)
     inputs_dir = planning_root / "inputs"
     inputs_dir.mkdir()
+    source_closure = freeze_candidate_source_closure(inputs_dir / "code", artifact_project_root)
+    frozen_code_root = Path(source_closure["code_root"])
     frozen = {}
     for name, source in sources.items():
         target = inputs_dir / name
@@ -158,31 +169,42 @@ def prepare_candidate_run(
         "run_root": str(run_root),
         "formal_root": {"path": str(formal_root), "mutation_allowed": False},
         "formal_baseline_sha256_at_planning": sha256(FORMAL_BASELINE_PATH),
-        "candidate_inputs": {
-            key: {"path": str(path), "sha256": sha256(path)} for key, path in frozen.items()
-        },
+        "candidate_inputs": {key: {"path": str(path), "sha256": sha256(path)} for key, path in frozen.items()},
+        "execution_source_closure": source_closure,
         "stages": [
             {
-                "stage_id": "static_inputs", "status": "prepared_except_particle_table",
+                "stage_id": "static_inputs",
+                "status": "prepared_except_particle_table",
                 "prepared_outputs": [str(prepared_dir / "candidate_consumption_plan.json")],
                 "pending_output": str(candidate_ion),
-                "entrypoint": str(PROJECT_ROOT / "simion" / "workbench" / "generate_comsol_consistent_ions.ps1"),
+                "entrypoint": frozen_source_path(
+                    source_closure,
+                    "projects/oa_tof/simion/workbench/generate_comsol_consistent_ions.ps1",
+                ),
                 "arguments": {
-                    "N": 100, "MassAmu": target["mass_amu"], "Charge": 1,
+                    "N": 100,
+                    "MassAmu": target["mass_amu"],
+                    "Charge": 1,
                     "EnergyMeanEv": target["initial_energy_mean_ev"],
                     "EnergyStdEv": target["initial_energy_sigma_ev"],
-                    "HalfWidthXmm": source["size_x_mm"] / 2, "HalfWidthYmm": source["size_y_mm"] / 2,
-                    "HalfWidthZmm": source["size_z_mm"] / 2, "CenterXmm": source["center_x_mm"],
-                    "CenterYmm": source["center_y_mm"], "CenterZmm": source["center_z_mm"],
-                    "Seed": source["seed"], "Output": str(candidate_ion),
+                    "HalfWidthXmm": source["size_x_mm"] / 2,
+                    "HalfWidthYmm": source["size_y_mm"] / 2,
+                    "HalfWidthZmm": source["size_z_mm"] / 2,
+                    "CenterXmm": source["center_x_mm"],
+                    "CenterYmm": source["center_y_mm"],
+                    "CenterZmm": source["center_z_mm"],
+                    "Seed": source["seed"],
+                    "Output": str(candidate_ion),
                 },
             },
             {
-                "stage_id": "comsol_candidate", "status": "not_run",
+                "stage_id": "comsol_candidate",
+                "status": "not_run",
                 "contract_path": str(frozen["candidate_resolved_geometry.json"]),
-                "model_path": str(comsol_model), "report_path": str(report_dir / "comsol_build.txt"),
-                "entrypoint": str(REPO_ROOT / "common" / "comsol" / "run_comsol_r2025b.ps1"),
-                "task_script": str(PROJECT_ROOT / "tests" / "comsol" / "run_candidate_contract_build.m"),
+                "model_path": str(comsol_model),
+                "report_path": str(report_dir / "comsol_build.txt"),
+                "entrypoint": frozen_source_path(source_closure, "common/comsol/run_comsol_r2025b.ps1"),
+                "task_script": str(frozen_code_root / "projects/oa_tof/tests/comsol/run_candidate_contract_build.m"),
                 "environment": {
                     "OATOF_CANDIDATE_CONTRACT_PATH": str(frozen["candidate_resolved_geometry.json"]),
                     "OATOF_CANDIDATE_MODEL_PATH": str(comsol_model),
@@ -191,32 +213,42 @@ def prepare_candidate_run(
                 },
             },
             {
-                "stage_id": "simion_candidate", "status": "not_run",
+                "stage_id": "simion_candidate",
+                "status": "not_run",
                 "contract_path": str(frozen["candidate_resolved_geometry.json"]),
                 "baseline_path": str(frozen["candidate_baseline.json"]),
-                "text_dir": str(prepared_dir / "simion"), "output_dir": str(run_root / "simion"),
-                "entrypoint": str(PROJECT_ROOT / "simion" / "workbench" / "build_formal_delivery.ps1"),
+                "text_dir": str(prepared_dir / "simion"),
+                "output_dir": str(run_root / "simion"),
+                "entrypoint": frozen_source_path(
+                    source_closure,
+                    "projects/oa_tof/simion/workbench/build_formal_delivery.ps1",
+                ),
                 "candidate_mode_required": True,
             },
             {
-                "stage_id": "cad_candidate", "status": "blocked_until_comsol_success",
-                "model_path": str(comsol_model), "output_dir": str(run_root / "cad"),
-                "entrypoint": str(REPO_ROOT / "common" / "comsol" / "run_comsol_r2025b.ps1"),
-                "task_script": str(PROJECT_ROOT / "tests" / "cad" / "run_candidate_cad_sync.m"),
+                "stage_id": "cad_candidate",
+                "status": "blocked_until_comsol_success",
+                "model_path": str(comsol_model),
+                "output_dir": str(run_root / "cad"),
+                "entrypoint": frozen_source_path(source_closure, "common/comsol/run_comsol_r2025b.ps1"),
+                "task_script": str(frozen_code_root / "projects/oa_tof/tests/cad/run_candidate_cad_sync.m"),
             },
             {
-                "stage_id": "cross_solver_acceptance", "status": "needs_integrated_candidate_runner",
+                "stage_id": "cross_solver_acceptance",
+                "status": "needs_integrated_candidate_runner",
                 "output_dir": str(run_root / "results"),
             },
         ],
         "promotion": {
-            "included": False, "automatic": False, "safe_to_promote": False,
+            "included": False,
+            "automatic": False,
+            "safe_to_promote": False,
             "required_separate_decision": True,
         },
         "limitations": [
             "This preparation step does not launch COMSOL, SIMION, or SolidWorks.",
             "Runtime stages must update summary and manifest evidence before acceptance.",
-            "Acceptance never mutates baseline or formal assets; promotion is a separate approved workflow."
+            "Acceptance never mutates baseline or formal assets; promotion is a separate approved workflow.",
         ],
     }
     stage_contracts = {stage["stage_id"]: stage for stage in workflow["stages"]}
@@ -231,8 +263,12 @@ def prepare_candidate_run(
         json.dumps(workflow_plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     run_config = {
-        "schema_version": 1, "role": "oa_tof_candidate_run_config", "run_id": run_id,
-        "project": "oa_tof", "mode": "design_candidate", "project_root": str(PROJECT_ROOT),
+        "schema_version": 1,
+        "role": "oa_tof_candidate_run_config",
+        "run_id": run_id,
+        "project": "oa_tof",
+        "mode": "design_candidate",
+        "project_root": str(PROJECT_ROOT),
         "inputs": {key: value["path"] for key, value in workflow_plan["candidate_inputs"].items()},
         "input_sha256": {key: value["sha256"] for key, value in workflow_plan["candidate_inputs"].items()},
         "formal_gate_passed": False,
@@ -251,9 +287,7 @@ def main() -> None:
     parser.add_argument("--candidate-diff", required=True, type=Path)
     parser.add_argument("--run-id", required=True)
     args = parser.parse_args()
-    result = prepare_candidate_run(
-        args.candidate_baseline, args.candidate_resolved, args.candidate_diff, args.run_id
-    )
+    result = prepare_candidate_run(args.candidate_baseline, args.candidate_resolved, args.candidate_diff, args.run_id)
     print(f"CANDIDATE_RUN_PREPARE={result['status']} PLAN_ROOT={result['planning_root']} RUN_ROOT={result['run_root']}")
 
 

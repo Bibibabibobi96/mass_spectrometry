@@ -16,6 +16,7 @@ REPO_ROOT = PROJECT_ROOT.parents[1]
 from common.contracts.machine_contracts import load_json, sha256
 from common.contracts.particle_count_policy import validate_standard_particle_count
 from projects.oa_tof.analysis.candidate_run_lifecycle import finalize_candidate_run, start_candidate_run
+from projects.oa_tof.analysis.candidate_source_closure import frozen_source_path, verify_candidate_source_closure
 
 
 StageExecutor = Callable[[dict[str, Any], dict[str, Any], str], dict[str, Any]]
@@ -67,9 +68,7 @@ def _run_command(command: list[str], log_path: Path, environment: dict[str, str]
                 timeout=STAGE_PROCESS_TIMEOUT_S,
             )
         except subprocess.TimeoutExpired as error:
-            raise StageTimedOut(
-                f"command exceeded {STAGE_PROCESS_TIMEOUT_S}s; log={log_path}"
-            ) from error
+            raise StageTimedOut(f"command exceeded {STAGE_PROCESS_TIMEOUT_S}s; log={log_path}") from error
     if result.returncode != 0:
         raise RuntimeError(f"command failed with exit code {result.returncode}; log={log_path}")
 
@@ -88,23 +87,42 @@ def _require_pass_report(path: Path) -> None:
 
 def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) -> dict[str, Any]:
     stage_id = stage["stage_id"]
+    closure = plan.get("execution_source_closure")
+    if closure is not None:
+        verify_candidate_source_closure(closure)
     run_root = Path(plan["run_root"])
     logs = run_root / "logs"
     if stage_id == "static_inputs":
+        if closure is None:
+            raise RuntimeError("candidate source closure is required")
         output = Path(stage["pending_output"])
         output.parent.mkdir(parents=True, exist_ok=True)
-        command = _powershell(stage["entrypoint"], _ps_arguments(stage["arguments"]))
+        command = _powershell(
+            frozen_source_path(closure, "projects/oa_tof/simion/workbench/generate_comsol_consistent_ions.ps1"),
+            _ps_arguments(stage["arguments"]),
+        )
         _run_command(command, logs / "static_inputs.log")
         if not output.is_file():
             raise RuntimeError(f"candidate particle table was not generated: {output}")
         return {"particle_table": str(output)}
 
     if stage_id == "comsol_candidate":
+        if closure is None:
+            raise RuntimeError("candidate source closure is required")
         environment = {key: str(value) for key, value in stage["environment"].items()}
         build_report = Path(stage["report_path"])
-        build_command = _powershell(stage["entrypoint"], [
-            "-TaskScript", stage["task_script"], "-ReportPath", str(build_report)
-        ])
+        build_command = _powershell(
+            frozen_source_path(closure, "common/comsol/run_comsol_r2025b.ps1"),
+            [
+                "-TaskScript",
+                frozen_source_path(
+                    closure,
+                    "projects/oa_tof/tests/comsol/run_candidate_contract_build.m",
+                ),
+                "-ReportPath",
+                str(build_report),
+            ],
+        )
         _run_command(build_command, logs / "comsol_build_launcher.log", environment)
         _require_pass_report(build_report)
         sync_report = logs / "comsol_sync.txt"
@@ -112,26 +130,50 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
             "OATOF_COMSOL_MODEL_PATH": stage["model_path"],
             "OATOF_CONTRACT_PATH": stage["contract_path"],
         }
-        sync_command = _powershell(stage["entrypoint"], [
-            "-TaskScript", str(PROJECT_ROOT / "tests" / "comsol" / "verify_oatof_comsol_sync.m"),
-            "-ReportPath", str(sync_report),
-        ])
+        sync_command = _powershell(
+            frozen_source_path(closure, "common/comsol/run_comsol_r2025b.ps1"),
+            [
+                "-TaskScript",
+                frozen_source_path(
+                    closure,
+                    "projects/oa_tof/tests/comsol/verify_oatof_comsol_sync.m",
+                ),
+                "-ReportPath",
+                str(sync_report),
+            ],
+        )
         _run_command(sync_command, logs / "comsol_sync_launcher.log", sync_environment)
         _require_pass_report(sync_report)
         return {"model": stage["model_path"], "build_report": str(build_report), "sync_report": str(sync_report)}
 
     if stage_id == "simion_candidate":
+        if closure is None:
+            raise RuntimeError("candidate source closure is required")
         arguments = [
-            "-OutputDir", stage["output_dir"], "-RunId", plan["run_id"],
-            "-ContractPath", stage["contract_path"], "-CandidateBaselinePath", stage["baseline_path"],
-            "-CandidateTextDir", stage["text_dir"], "-SimionExe", simion_exe,
+            "-OutputDir",
+            stage["output_dir"],
+            "-RunId",
+            plan["run_id"],
+            "-ContractPath",
+            stage["contract_path"],
+            "-CandidateBaselinePath",
+            stage["baseline_path"],
+            "-CandidateTextDir",
+            stage["text_dir"],
+            "-SimionExe",
+            simion_exe,
             "-DeferRunFinalization",
         ]
-        _run_command(_powershell(stage["entrypoint"], arguments), logs / "simion_build.log")
-        iob = Path(stage["output_dir"]) / "oatof_ideal_grounded.iob"
-        verify = PROJECT_ROOT / "tests" / "simion" / "verify_iob_runtime_contract.ps1"
         _run_command(
-            _powershell(str(verify), ["-IobPath", str(iob), "-SimionExe", simion_exe]),
+            _powershell(
+                frozen_source_path(closure, "projects/oa_tof/simion/workbench/build_formal_delivery.ps1"), arguments
+            ),
+            logs / "simion_build.log",
+        )
+        iob = Path(stage["output_dir"]) / "oatof_ideal_grounded.iob"
+        verify = frozen_source_path(closure, "projects/oa_tof/tests/simion/verify_iob_runtime_contract.ps1")
+        _run_command(
+            _powershell(verify, ["-IobPath", str(iob), "-SimionExe", simion_exe]),
             logs / "simion_runtime_verify.log",
         )
         summary = Path(stage["output_dir"]) / "stage_summary.json"
@@ -145,19 +187,35 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
         if particle_count != 100:
             raise RuntimeError("oa-TOF candidate workflow requires the N=100 functional tier")
         return {
-            "iob": str(iob), "ion_n100": str(ion_n100), "stage_summary": str(summary),
-            "runtime_log": str(logs / "simion_runtime_verify.log")
+            "iob": str(iob),
+            "ion_n100": str(ion_n100),
+            "stage_summary": str(summary),
+            "runtime_log": str(logs / "simion_runtime_verify.log"),
         }
 
     if stage_id == "cad_candidate":
+        if closure is None:
+            raise RuntimeError("candidate source closure is required")
         report = logs / "cad_build.txt"
         environment = {
             "OATOF_CANDIDATE_MODEL_PATH": stage["model_path"],
             "OATOF_CANDIDATE_CAD_DIR": stage["output_dir"],
+            "PATH": (
+                str(Path(closure["runtime"]["python_executable"]).parent) + os.pathsep + os.environ.get("PATH", "")
+            ),
         }
-        command = _powershell(stage["entrypoint"], [
-            "-TaskScript", stage["task_script"], "-ReportPath", str(report)
-        ])
+        command = _powershell(
+            frozen_source_path(closure, "common/comsol/run_comsol_r2025b.ps1"),
+            [
+                "-TaskScript",
+                frozen_source_path(
+                    closure,
+                    "projects/oa_tof/tests/cad/run_candidate_cad_sync.m",
+                ),
+                "-ReportPath",
+                str(report),
+            ],
+        )
         _run_command(command, logs / "cad_launcher.log", environment)
         _require_pass_report(report)
         cad_report = Path(stage["output_dir"]) / "oaTOF_solidworks_export_report.json"
@@ -208,8 +266,7 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
 def _remaining_results(stages: list[dict[str, Any]], completed: list[dict[str, Any]]) -> list[dict[str, Any]]:
     done = {item["stage_id"] for item in completed}
     return completed + [
-        {"stage_id": stage["stage_id"], "status": "blocked"}
-        for stage in stages if stage["stage_id"] not in done
+        {"stage_id": stage["stage_id"], "status": "blocked"} for stage in stages if stage["stage_id"] not in done
     ]
 
 
@@ -238,9 +295,7 @@ def run_candidate_workflow(
         raise CandidateWorkflowInterrupted(run_root) from exc
     except StageTimedOut as exc:
         results.append({"stage_id": current_stage, "status": "timeout", "error": str(exc)})
-        finalize_candidate_run(
-            run_root, "timeout", _remaining_results(stages, results), current_stage
-        )
+        finalize_candidate_run(run_root, "timeout", _remaining_results(stages, results), current_stage)
         raise CandidateWorkflowTimedOut(run_root) from exc
     except Exception as exc:
         results.append({"stage_id": current_stage, "status": "failed", "error": str(exc)})

@@ -15,6 +15,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 from common.contracts.artifact_naming import validate_run_id
 from common.contracts.machine_contracts import load_json, sha256
+from projects.oa_tof.analysis.candidate_source_closure import verify_candidate_source_closure
 
 
 FORMAL_BASELINE_PATH = PROJECT_ROOT / "config" / "baseline.json"
@@ -53,7 +54,8 @@ def _write_json(path: Path, value: dict[str, Any]) -> None:
 def _output_files(run_root: Path) -> list[Path]:
     excluded = {run_root / "run_config.json", run_root / "run_manifest.json"}
     return sorted(
-        path for path in run_root.rglob("*")
+        path
+        for path in run_root.rglob("*")
         if path.is_file() and path not in excluded and not path.is_relative_to(run_root / "inputs")
     )
 
@@ -88,6 +90,7 @@ def _write_manifest(run_root: Path, status: str, recorded_root: Path | None = No
         "outputs": outputs,
         "formal_eligible": False,
         "promotion_authorized": False,
+        "execution_source_closure": config.get("execution_source_closure", {}),
     }
     _write_json(run_root / "run_manifest.json", manifest)
     return manifest
@@ -137,6 +140,7 @@ def start_candidate_run(plan_path: Path) -> Path:
         raise ValueError("candidate plan requests forbidden formal mutation or promotion")
     if plan["formal_baseline_sha256_at_planning"].lower() != sha256(FORMAL_BASELINE_PATH).lower():
         raise ValueError("formal baseline changed after candidate planning; regenerate the plan")
+    verify_candidate_source_closure(plan.get("execution_source_closure", {}))
     config_template = load_json(planning_root / "run_config.template.json")
     for key, value in config_template.get("inputs", {}).items():
         expected = config_template.get("input_sha256", {}).get(key, "")
@@ -145,8 +149,10 @@ def start_candidate_run(plan_path: Path) -> Path:
     consumption = load_json(planning_root / "inputs" / "prepared_consumers" / "candidate_consumption_plan.json")
     contract_record = consumption.get("candidate_contract", {})
     consumer_contract_path = Path(contract_record.get("path", ""))
-    if (not consumer_contract_path.is_file() or
-            sha256(consumer_contract_path).lower() != contract_record.get("sha256", "").lower()):
+    if (
+        not consumer_contract_path.is_file()
+        or sha256(consumer_contract_path).lower() != contract_record.get("sha256", "").lower()
+    ):
         raise ValueError("prepared candidate consumer contract changed before run start")
     for key, record in consumption.get("consumers", {}).get("simion", {}).get("generated", {}).items():
         generated_path = Path(record.get("path", ""))
@@ -167,6 +173,7 @@ def start_candidate_run(plan_path: Path) -> Path:
     _write_json(staging / "candidate_workflow_plan.json", runtime_plan)
 
     run_config = _rewrite_paths(config_template, planning_root, run_root)
+    run_config["execution_source_closure"] = runtime_plan["execution_source_closure"]
     run_config["started_at_utc"] = runtime_plan["started_at_utc"]
     _write_json(staging / "run_config.json", run_config)
 
@@ -183,6 +190,7 @@ def start_candidate_run(plan_path: Path) -> Path:
     _write_manifest(staging, "interrupted", run_root)
     run_root.parent.mkdir(parents=True, exist_ok=True)
     os.replace(staging, run_root)
+    verify_candidate_source_closure(load_json(run_root / "candidate_workflow_plan.json")["execution_source_closure"])
     return run_root
 
 
@@ -199,6 +207,7 @@ def finalize_candidate_run(
     if run_root.name != config.get("run_id"):
         raise ValueError("run folder and run_config run_id differ")
     runtime_plan = load_json(run_root / "candidate_workflow_plan.json")
+    verify_candidate_source_closure(runtime_plan.get("execution_source_closure", {}))
     expected_stages = [item["stage_id"] for item in runtime_plan["stages"]]
     actual_stages = [item.get("stage_id") for item in stage_results]
     if actual_stages != expected_stages:
