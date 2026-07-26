@@ -421,6 +421,35 @@ class CandidateDesignTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "not a successful structure-only"):
                 _registered_candidate_template(registration, artifact_root)
 
+    def test_candidate_template_accepts_equivalent_noncanonical_manifest_path(self):
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            artifact_root = root_path / "artifacts" / "projects" / "oa_tof"
+            registration = self.registered_template_run(artifact_root)
+            manifest_path = registration / "run_manifest.json"
+            manifest = load_json(manifest_path)
+            source_iob = Path(manifest["inputs"]["source_iob"]["path"])
+            spelling_anchor = source_iob.parent / "equivalent_spelling"
+            spelling_anchor.mkdir()
+            manifest["inputs"]["source_iob"]["path"] = str(
+                spelling_anchor / ".." / source_iob.name
+            )
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            record = _registered_candidate_template(registration, artifact_root)
+            self.assertEqual(record["source_iob"], source_iob.resolve())
+
+    def test_candidate_template_reports_manifest_hash_mismatch_by_field(self):
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            artifact_root = root_path / "artifacts" / "projects" / "oa_tof"
+            registration = self.registered_template_run(artifact_root)
+            manifest_path = registration / "run_manifest.json"
+            manifest = load_json(manifest_path)
+            manifest["inputs"]["source_iob"]["sha256"] = "0" * 64
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "manifest SHA-256 differs: source_iob"):
+                _registered_candidate_template(registration, artifact_root)
+
     def test_candidate_prepare_freezes_only_registered_template_sources(self):
         with tempfile.TemporaryDirectory() as root:
             root_path = Path(root)

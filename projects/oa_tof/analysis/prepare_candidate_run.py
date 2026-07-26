@@ -109,6 +109,18 @@ def _candidate_sources(candidate_baseline: Path, candidate_resolved: Path, candi
     }
 
 
+def _registered_template_source_path(value: object, label: str, record_name: str) -> Path:
+    """Resolve one registered template source path without accepting a missing spelling."""
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"candidate SIMION template {record_name} path is missing: {label}")
+    try:
+        return Path(value).resolve(strict=True)
+    except (OSError, RuntimeError, ValueError) as error:
+        raise ValueError(
+            f"candidate SIMION template {record_name} path is missing or unresolvable: {label}"
+        ) from error
+
+
 def _registered_candidate_template(template_run: Path, artifact_project_root: Path) -> dict[str, Path]:
     """Return validated sources from one successful non-Formal layout registration."""
     run_root = template_run.resolve()
@@ -152,18 +164,23 @@ def _registered_candidate_template(template_run: Path, artifact_project_root: Pa
     manifest_inputs = manifest.get("inputs", {})
     result = {"registration_run": run_root, "registration_manifest": paths["manifest"]}
     for label, suffix in (("source_iob", ".iob"), ("source_con", ".con")):
-        path = Path(inputs.get(label, "")).resolve()
+        path = _registered_template_source_path(inputs.get(label), label, "config")
         expected = str(hashes.get(label, ""))
         recorded = manifest_inputs.get(label, {})
-        if (
-            not path.is_file()
-            or path.suffix.lower() != suffix
-            or not expected
-            or sha256(path).lower() != expected.lower()
-            or str(recorded.get("path", "")) != str(path)
-            or str(recorded.get("sha256", "")).lower() != expected.lower()
-        ):
-            raise ValueError(f"candidate SIMION template registration source changed: {label}")
+        if not isinstance(recorded, dict):
+            raise ValueError(f"candidate SIMION template manifest record is invalid: {label}")
+        recorded_path = _registered_template_source_path(recorded.get("path"), label, "manifest")
+        if path != recorded_path:
+            raise ValueError(f"candidate SIMION template config and manifest paths differ: {label}")
+        if path.suffix.lower() != suffix:
+            raise ValueError(f"candidate SIMION template source suffix is invalid: {label}")
+        if not expected:
+            raise ValueError(f"candidate SIMION template config SHA-256 is missing: {label}")
+        actual = sha256(path).lower()
+        if actual != expected.lower():
+            raise ValueError(f"candidate SIMION template source SHA-256 changed: {label}")
+        if str(recorded.get("sha256", "")).lower() != expected.lower():
+            raise ValueError(f"candidate SIMION template manifest SHA-256 differs: {label}")
         if any(segment in path.as_posix().lower().split("/") for segment in ("formal", "archive", "history")):
             raise ValueError("candidate SIMION template registration references a prohibited source path")
         result[label] = path
