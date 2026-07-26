@@ -85,8 +85,39 @@ def _require_pass_report(path: Path) -> None:
         raise RuntimeError(f"required PASS report is missing or failed: {path}")
 
 
+def _nonformal_template(stage: dict[str, Any], plan: dict[str, Any]) -> Path:
+    if stage.get("status") == "blocked_requires_explicit_nonformal_template":
+        raise RuntimeError("candidate SIMION stage is blocked until an explicit non-Formal template is frozen")
+    record = stage.get("template_input")
+    if not isinstance(record, dict):
+        raise RuntimeError("candidate SIMION template input is missing")
+    run_inputs = (Path(plan["run_root"]) / "inputs").resolve()
+    if record.get("role") != "oa_tof_candidate_simion_layout_template":
+        raise RuntimeError("candidate SIMION template has an unsupported role")
+    files = record.get("files")
+    if not isinstance(files, dict) or set(files) != {"iob", "con"}:
+        raise RuntimeError("candidate SIMION template requires frozen IOB and CON records")
+    verified: dict[str, Path] = {}
+    for suffix, item in files.items():
+        path = Path(item.get("path", "")).resolve() if isinstance(item, dict) else Path()
+        if not path.is_file() or run_inputs not in path.parents:
+            raise RuntimeError("candidate SIMION template must be a frozen run input")
+        if sha256(path).lower() != str(item.get("sha256", "")).lower():
+            raise RuntimeError("candidate SIMION template changed after freezing")
+        if "formal" in path.as_posix().lower():
+            raise RuntimeError("candidate SIMION template must not reference a Formal path")
+        if path.suffix.lower() != f".{suffix}":
+            raise RuntimeError("candidate SIMION template file suffix is invalid")
+        verified[suffix] = path
+    if verified["iob"].with_suffix(".con").name != verified["con"].name or verified["iob"].parent != verified["con"].parent:
+        raise RuntimeError("candidate SIMION IOB and CON template bundle names do not match")
+    return verified["iob"]
+
+
 def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) -> dict[str, Any]:
     stage_id = stage["stage_id"]
+    if stage_id == "simion_candidate" and stage.get("status") == "blocked_requires_explicit_nonformal_template":
+        raise RuntimeError("candidate SIMION stage is blocked until an explicit non-Formal template is frozen")
     closure = plan.get("execution_source_closure")
     if closure is not None:
         verify_candidate_source_closure(closure)
@@ -147,6 +178,7 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
         return {"model": stage["model_path"], "build_report": str(build_report), "sync_report": str(sync_report)}
 
     if stage_id == "simion_candidate":
+        template = _nonformal_template(stage, plan)
         if closure is None:
             raise RuntimeError("candidate source closure is required")
         arguments = [
@@ -163,6 +195,10 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
             "-SimionExe",
             simion_exe,
             "-DeferRunFinalization",
+            "-TemplateIob",
+            str(template),
+            "-ParticleSeed",
+            str(plan.get("run_instance", {}).get("particle_source_seed", "")),
         ]
         _run_command(
             _powershell(

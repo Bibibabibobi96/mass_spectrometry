@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -341,6 +342,8 @@ class CandidateDesignTests(unittest.TestCase):
             source_ids = {item["source_id"] for item in closure["sources"]}
             self.assertEqual(source_ids, set(RELATIVE_PATHS))
             self.assertIn("common/require_powershell7.ps1", source_ids)
+            self.assertIn("projects/oa_tof/oatof_lifecycle_preflight.ps1", source_ids)
+            self.assertIn("projects/oa_tof/simion/workbench/build_formal_iob.lua", source_ids)
             code_root = Path(closure["code_root"]).resolve()
             for stage in plan["stages"]:
                 for key in ("entrypoint", "task_script"):
@@ -648,6 +651,92 @@ class CandidateDesignTests(unittest.TestCase):
             Path(files["ion_n100"]).write_text("different", encoding="utf-8")
             with self.assertRaisesRegex(RuntimeError, "particle tables differ"):
                 execute_stage(stage, plan, "unused")
+
+    def test_simion_candidate_requires_explicit_nonformal_frozen_template_before_builder(self):
+        with tempfile.TemporaryDirectory() as root:
+            run_root = Path(root)
+            stage = {"stage_id": "simion_candidate", "status": "blocked_requires_explicit_nonformal_template"}
+            with mock.patch("projects.oa_tof.workflows.design_candidate.run_candidate_workflow._run_command") as command:
+                with self.assertRaisesRegex(RuntimeError, "blocked until an explicit non-Formal template"):
+                    execute_stage(stage, {"run_root": str(run_root), "execution_source_closure": {}}, "unused")
+            command.assert_not_called()
+
+            formal = run_root / "inputs" / "formal" / "layout.iob"
+            formal.parent.mkdir(parents=True)
+            formal.write_bytes(b"template")
+            stage["status"] = "ready"
+            stage["template_input"] = {
+                "role": "oa_tof_candidate_simion_layout_template",
+                "files": {
+                    "iob": {"path": str(formal), "sha256": sha256(formal)},
+                    "con": {"path": str(formal.with_suffix('.con')), "sha256": "missing"},
+                },
+            }
+            with self.assertRaisesRegex(RuntimeError, "must not reference a Formal path"):
+                execute_stage(stage, {"run_root": str(run_root)}, "unused")
+
+            template = run_root / "inputs" / "simion_template" / "layout.iob"
+            template.parent.mkdir(parents=True)
+            template.write_bytes(b"template")
+            template.with_suffix(".con").write_bytes(b"template-con")
+            stage["template_input"] = {
+                "role": "oa_tof_candidate_simion_layout_template",
+                "files": {
+                    "iob": {"path": str(template), "sha256": sha256(template)},
+                    "con": {"path": str(template.with_suffix('.con')), "sha256": sha256(template.with_suffix('.con'))},
+                },
+            }
+            with self.assertRaisesRegex(ValueError, "invalid candidate source closure"):
+                execute_stage(stage, {"run_root": str(run_root), "execution_source_closure": {}}, "unused")
+
+    def test_formal_asset_entrypoints_preflight_before_paths_or_runs(self):
+        scripts = [
+            PROJECT_ROOT / "workflows" / "formal_reference" / "run_formal_validation.ps1",
+            PROJECT_ROOT / "workflows" / "formal_reference" / "verify_geometry_contract.ps1",
+            PROJECT_ROOT / "workflows" / "formal_reference" / "run_coupled_baseline_validation.ps1",
+            PROJECT_ROOT / "workflows" / "mass_spectrum_candidate" / "run_mass_spectrum_candidate.ps1",
+            PROJECT_ROOT / "tests" / "simion" / "run_n100_source_build_and_track.ps1",
+        ]
+        for script in scripts:
+            text = script.read_text(encoding="utf-8")
+            preflight = text.index("Assert-OaTofFormalAssetsReadable")
+            first_asset = min(index for index in (text.find("formal\\"), text.find("New-Item -ItemType Directory")) if index >= 0)
+            self.assertLess(preflight, first_asset, script.name)
+
+    def test_shared_builder_requires_explicit_seed_and_candidate_template(self):
+        builder = (PROJECT_ROOT / "simion" / "workbench" / "build_formal_delivery.ps1").read_text(encoding="utf-8")
+        self.assertIn("ParticleSeed is required", builder)
+        self.assertIn("Candidate build requires an explicit frozen non-Formal TemplateIob", builder)
+        self.assertIn("Candidate TemplateIob must not reference a Formal path", builder)
+
+    def test_shared_builder_negative_contracts_fail_before_output_creation(self):
+        builder = PROJECT_ROOT / "simion" / "workbench" / "build_formal_delivery.ps1"
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            contract = root_path / "candidate.json"
+            baseline = root_path / "candidate_baseline.json"
+            text_dir = root_path / "candidate_text"
+            contract.write_text("{}", encoding="utf-8")
+            baseline.write_text("{}", encoding="utf-8")
+            text_dir.mkdir()
+            shared = ["-ContractPath", str(contract), "-CandidateBaselinePath", str(baseline), "-CandidateTextDir", str(text_dir)]
+            nonformal_template = root_path / "candidate_template.iob"
+            nonformal_template.write_bytes(b"template")
+            cases = [
+                (shared + ["-TemplateIob", str(nonformal_template)], "ParticleSeed is required"),
+                (shared + ["-ParticleSeed", "7"], "Candidate build requires an explicit frozen non-Formal TemplateIob"),
+                (shared + ["-ParticleSeed", "7", "-TemplateIob", str(root_path / "formal_template.iob")], "Candidate TemplateIob must not reference a Formal path"),
+            ]
+            for ordinal, (arguments, expected) in enumerate(cases):
+                output = root_path / f"output_{ordinal}"
+                result = subprocess.run(
+                    ["pwsh", "-NoProfile", "-File", str(builder), "-OutputDir", str(output), *arguments],
+                    cwd=REPO_ROOT, capture_output=True, timeout=20,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                text = (result.stdout + result.stderr).decode("utf-8", errors="replace")
+                self.assertIn(expected, text)
+                self.assertFalse(output.exists())
 
     def test_integrated_runner_uses_powershell_7(self):
         command = _powershell("task.ps1", ["-Value", "test"])

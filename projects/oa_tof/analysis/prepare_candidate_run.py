@@ -178,6 +178,7 @@ def prepare_candidate_run(
         "role": "oa_tof_candidate_run_plan",
         "status": "NEEDS_CROSS_SOLVER_RUNNER",
         "run_id": run_id,
+        "run_instance": {"particle_source_seed": particle_source_seed},
         "planning_root": str(planning_root),
         "run_root": str(run_root),
         "formal_root": {"path": str(formal_root), "mutation_allowed": False},

@@ -17,6 +17,7 @@ $workspaceRoot = Split-Path -Parent $repoRoot
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 runtime missing: $python" }
 $gateTimer = [Diagnostics.Stopwatch]::StartNew()
+. (Join-Path $projectRoot 'oatof_lifecycle_preflight.ps1')
 $projectContract = Get-Content -LiteralPath (Join-Path $projectRoot 'config\project.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 
 & $python -m projects.oa_tof.analysis.resolve_geometry --check
@@ -121,9 +122,7 @@ if ($Level -eq 'Candidate') {
   }
 }
 elseif ($Level -eq 'Formal') {
-  if ($projectContract.lifecycle_status -eq 'formal_revalidation_pending') {
-    throw 'FORMAL_REVALIDATION_REQUIRED: configuration vNext is not eligible to read or validate Formal assets.'
-  }
+  Assert-OaTofFormalAssetsReadable -ProjectRoot $projectRoot
   & $python (Join-Path $repoRoot 'common\contracts\verify_artifact_layout.py') `
     (Join-Path $workspaceRoot 'artifacts\projects') --formal-only --repository-root $repoRoot
   if ($LASTEXITCODE -ne 0) { throw 'Formal asset-manifest structure gate failed.' }

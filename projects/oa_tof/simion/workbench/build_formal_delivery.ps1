@@ -6,6 +6,7 @@ param(
   [string]$ContractPath = '',
   [string]$CandidateBaselinePath = '',
   [string]$CandidateTextDir = '',
+  [string]$ParticleSeed = '',
   [switch]$DeferRunFinalization
 )
 
@@ -19,6 +20,12 @@ $formalBaselinePath = Join-Path $projectRoot 'config\baseline.json'
 $modePath = Join-Path $projectRoot 'config\modes\formal.json'
 $formalContractPath = Join-Path $projectRoot 'config\resolved_geometry.json'
 $candidateMode = -not [string]::IsNullOrWhiteSpace($ContractPath)
+. (Join-Path $projectRoot 'oatof_lifecycle_preflight.ps1')
+if (-not $candidateMode) { Assert-OaTofFormalAssetsReadable -ProjectRoot $projectRoot }
+if ($candidateMode -and [string]::IsNullOrWhiteSpace($TemplateIob)) { throw 'Candidate build requires an explicit frozen non-Formal TemplateIob.' }
+if ($candidateMode -and $TemplateIob -match '(?i)formal') { throw 'Candidate TemplateIob must not reference a Formal path.' }
+if ($ParticleSeed -notmatch '^-?\d+$') { throw 'ParticleSeed is required and must be an explicit integer run-instance input.' }
+$particleSeedValue = [int]$ParticleSeed
 if ($candidateMode) {
   $contractPath = [IO.Path]::GetFullPath($ContractPath)
   if (-not (Test-Path -LiteralPath $contractPath -PathType Leaf)) { throw "Candidate ContractPath is missing: $contractPath" }
@@ -136,7 +143,7 @@ foreach ($particleCount in @(100, 1000)) {
     -HalfWidthXmm ($source.size_x_mm/2) -HalfWidthYmm ($source.size_y_mm/2) `
     -HalfWidthZmm ($source.size_z_mm/2) -CenterXmm $source.center_x_mm `
     -CenterYmm $source.center_y_mm -CenterZmm $source.center_z_mm `
-    -Seed $source.seed -Output $ionPath | Out-Null
+    -Seed $particleSeedValue -Output $ionPath | Out-Null
 }
 $n100Ion = Join-Path $outputFull 'oatof_comsol_524amu_gaussian_N100.ion'
 $n1000Ion = Join-Path $outputFull 'oatof_comsol_524amu_gaussian_N1000.ion'
@@ -147,7 +154,9 @@ if ($LASTEXITCODE -ne 0) { throw 'N=100 source is not the deterministic N=1000 p
 Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\SIMION_REPRODUCTION_PARAMETERS.md') `
   -Destination (Join-Path $outputFull 'SIMION_REPRODUCTION_PARAMETERS.md')
 Copy-Item -LiteralPath $baselinePath -Destination (Join-Path $outputFull 'baseline.json')
-Copy-Item -LiteralPath $modePath -Destination (Join-Path $outputFull 'formal_mode.json')
+if (-not $candidateMode) {
+  Copy-Item -LiteralPath $modePath -Destination (Join-Path $outputFull 'formal_mode.json')
+}
 Copy-Item -LiteralPath $contractPath -Destination (Join-Path $outputFull 'resolved_geometry.json')
 $resolvedLua = Join-Path $textDir 'oatof_resolved.lua'
 Copy-Item -LiteralPath $resolvedLua -Destination (Join-Path $outputFull 'oatof_resolved.lua')

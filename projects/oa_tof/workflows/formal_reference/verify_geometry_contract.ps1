@@ -7,6 +7,8 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $componentDir = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+. (Join-Path $componentDir 'oatof_lifecycle_preflight.ps1')
+Assert-OaTofFormalAssetsReadable -ProjectRoot $componentDir
 $repoRoot = (Resolve-Path (Join-Path $componentDir '..\..')).Path
 $projectRoot = Split-Path -Parent $repoRoot
 $baselinePath = Join-Path $componentDir 'config\baseline.json'

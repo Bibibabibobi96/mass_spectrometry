@@ -14,6 +14,8 @@ $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\oa_tof'
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+. (Join-Path $projectRoot 'oatof_lifecycle_preflight.ps1')
+Assert-OaTofFormalAssetsReadable -ProjectRoot $projectRoot
 & $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
 if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
 $runDir = Join-Path $artifactRoot "runs\$RunId"

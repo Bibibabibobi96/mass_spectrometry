@@ -48,6 +48,7 @@ RELATIVE_PATHS = (
     "projects/oa_tof/comsol/run_oatof_model.m",
     "projects/oa_tof/docs/SIMION_REPRODUCTION_PARAMETERS.md",
     "projects/oa_tof/load_oatof_contract.m",
+    "projects/oa_tof/oatof_lifecycle_preflight.ps1",
     "projects/oa_tof/oatof_assert_formal_write_authorized.m",
     "projects/oa_tof/oatof_paths.m",
     "projects/oa_tof/simion/accelerator/build_accelerator_variant.lua",
@@ -57,6 +58,8 @@ RELATIVE_PATHS = (
     "projects/oa_tof/simion/workbench/build_detector_variant.lua",
     "projects/oa_tof/simion/workbench/build_flight_tube_variant.lua",
     "projects/oa_tof/simion/workbench/generate_comsol_consistent_ions.ps1",
+    "projects/oa_tof/simion/workbench/build_formal_delivery.ps1",
+    "projects/oa_tof/simion/workbench/build_formal_iob.lua",
     "projects/oa_tof/simion/workbench/oatof_detector_ground.gem",
     "projects/oa_tof/simion/workbench/oatof_flight_tube_ground.gem",
     "projects/oa_tof/workflows/design_candidate/run_candidate_cad_sync.m",
@@ -66,7 +69,10 @@ RELATIVE_PATHS = (
     "projects/oa_tof/tests/simion/verify_iob_runtime_contract.ps1",
 )
 
-PYTHON_BOUND_SOURCES = frozenset({"projects/oa_tof/simion/workbench/generate_comsol_consistent_ions.ps1"})
+PYTHON_BOUND_SOURCES = frozenset({
+    "projects/oa_tof/simion/workbench/generate_comsol_consistent_ions.ps1",
+    "projects/oa_tof/simion/workbench/build_formal_delivery.ps1",
+})
 PYTHON_ASSIGNMENT = "$python = Join-Path $repoRoot '.venv\\Scripts\\python.exe'"
 WORKSPACE_ASSIGNMENT = "    workspaceRoot = fileparts(repoRoot);"
 

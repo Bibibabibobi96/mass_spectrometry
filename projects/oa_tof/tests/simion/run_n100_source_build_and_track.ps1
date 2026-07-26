@@ -1,13 +1,16 @@
 param(
   [string]$RunId = "$(Get-Date -Format 'yyyyMMdd_HHmmss')__test__simion__oatof-source-build-track__n100",
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
-  [string]$PythonExe = ''
+  [string]$PythonExe = '',
+  [int]$ParticleSeed = 20260713
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+. (Join-Path $projectRoot 'oatof_lifecycle_preflight.ps1')
+Assert-OaTofFormalAssetsReadable -ProjectRoot $projectRoot
 $repoRoot = Split-Path -Parent (Split-Path -Parent $projectRoot)
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\oa_tof'
@@ -63,6 +66,7 @@ $config = Get-Content -LiteralPath $package.run_config -Raw -Encoding UTF8 |
 $config.inputs = $frozen
 $config.parameters = [ordered]@{
   particle_count = 100
+  particle_source_seed = $ParticleSeed
   trajectory_quality = 8
   lifecycle_stage = 'inputs_frozen'
   claim_limit = 'Functional source build and N=100 transport only; no Formal or convergence claim.'
@@ -123,7 +127,7 @@ try {
 
   & $builder -SimionExe $SimionExe -OutputDir $simionDir -RunId $RunId `
     -ContractPath $frozen.resolved_geometry -CandidateBaselinePath $frozen.baseline `
-    -CandidateTextDir $textDir -TemplateIob $templateIob -DeferRunFinalization
+    -CandidateTextDir $textDir -TemplateIob $templateIob -ParticleSeed $ParticleSeed -DeferRunFinalization
   if ($LASTEXITCODE -ne 0) { throw 'SIMION source delivery build failed.' }
 
   $temporaryGem = @(Get-ChildItem -LiteralPath $simionDir -Recurse -File |
