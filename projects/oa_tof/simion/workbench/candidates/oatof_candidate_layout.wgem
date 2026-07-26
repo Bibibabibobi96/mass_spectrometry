@@ -5,21 +5,21 @@
 -- This structural template defines no electrodes; the existing Candidate PA builders remain the only field source.
 
 -- role=flight_tube_shield; workbench_index=1; priority_number=1; filename=flight_tube_ground.pa0
-locate(0,0,-59.929186803411,-90,0,0,1) {
+locate(0,0,-59.929186803411,1,1,1,-90,0,0) {
   pa_define {nx=661, ny=361, nz=1, symmetry='cylindrical', dx=1, dy=1, dz=1, filename='flight_tube_ground.pa0'}
 }
 
 -- role=reflectron; workbench_index=2; priority_number=2; filename=reflectron.pa0
-locate(0,0,600,-90,0,0,1) {
+locate(0,0,600,1,1,1,-90,0,0) {
   pa_define {nx=1126, ny=361, nz=1, symmetry='cylindrical', dx=0.25, dy=1, dz=1, filename='reflectron.pa0'}
 }
 
 -- role=accelerator; workbench_index=3; priority_number=3; filename=accelerator.pa0
-locate(-67.8,-19,-29.929186803411,0,0,0,1) {
+locate(-67.8,-19,-29.929186803411,1,1,1,0,0,0) {
   pa_define {nx=153, ny=153, nz=601, symmetry='planar', dx=0.25, dy=0.25, dz=0.05, filename='accelerator.pa0'}
 }
 
 -- role=detector; workbench_index=4; priority_number=4; filename=detector_ground.pa0
-locate(7.8,-41,-0.15,0,0,0,1) {
+locate(7.8,-41,-0.15,1,1,1,0,0,0) {
   pa_define {nx=165, ny=165, nz=36, symmetry='planar', dx=0.5, dy=0.5, dz=0.01, filename='detector_ground.pa0'}
 }

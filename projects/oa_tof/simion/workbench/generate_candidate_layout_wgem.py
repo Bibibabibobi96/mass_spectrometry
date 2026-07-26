@@ -54,7 +54,7 @@ def render_wgem(resolved_path: Path = RESOLVED_GEOMETRY) -> str:
             dx, dy, dz = build["flight_tube"]["cell_axial_mm"], build["flight_tube"]["cell_radial_mm"], build["flight_tube"]["cell_radial_mm"]
         lines.extend((
             f"-- role={role}; workbench_index={expected_index}; priority_number={expected_index}; filename={instance['name']}",
-            "locate({x:.15g},{y:.15g},{z:.15g},{az:.15g},0,0,1) {{".format(
+            "locate({x:.15g},{y:.15g},{z:.15g},1,1,1,{az:.15g},0,0) {{".format(
                 x=instance["x_mm"], y=instance["y_mm"], z=instance["z_mm"], az=instance["az_deg"]
             ),
             "  pa_define {{nx={nx}, ny={ny}, nz={nz}, symmetry='{symmetry}', dx={dx:.15g}, dy={dy:.15g}, dz={dz:.15g}, filename='{filename}'}}".format(

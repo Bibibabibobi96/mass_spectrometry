@@ -501,6 +501,9 @@ class CandidateDesignTests(unittest.TestCase):
         self.assertNotIn("include(", text)
         for filename in ("flight_tube_ground.pa0", "reflectron.pa0", "accelerator.pa0", "detector_ground.pa0"):
             self.assertIn(f"filename='{filename}'", text)
+        self.assertIn("locate(0,0,-59.929186803411,1,1,1,-90,0,0)", text)
+        self.assertIn("locate(0,0,600,1,1,1,-90,0,0)", text)
+        self.assertNotIn("locate(0,0,600,-90", text)
         self.assertEqual([text.index(f"role={role}") for role in ROLE_ORDER], sorted(
             text.index(f"role={role}") for role in ROLE_ORDER
         ))
