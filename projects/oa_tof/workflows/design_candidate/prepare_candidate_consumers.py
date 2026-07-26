@@ -40,7 +40,7 @@ def verify_routing_coverage(consumer_contract: dict, variable_catalog: dict) -> 
         raise ValueError("candidate consumer routing is incomplete: " + ", ".join(sorted(missing)))
 
 
-def prepare(contract_path: Path, output_dir: Path, runtime_root: Path | None = None) -> dict:
+def prepare(contract_path: Path, output_dir: Path, runtime_root: Path | None = None, particle_source_seed: int = 20260713) -> dict:
     contract_path = contract_path.resolve()
     contract = load_contract(contract_path)
     consumer_contract = json.loads(CONSUMER_CONTRACT_PATH.read_text(encoding="utf-8"))
@@ -59,7 +59,7 @@ def prepare(contract_path: Path, output_dir: Path, runtime_root: Path | None = N
     contents = {
         "resolved_lua": render_resolved_lua(contract),
         "program": render_program(contract),
-        "fly2": render_fly2(contract),
+        "fly2": render_fly2({**contract, "particle_source": {**contract["particle_source"], "seed": particle_source_seed}}),
     }
     for key, path in generated.items():
         path.write_text(contents[key], encoding="utf-8", newline="\n")

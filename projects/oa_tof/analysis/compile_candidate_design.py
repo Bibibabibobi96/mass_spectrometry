@@ -15,7 +15,7 @@ REPO_ROOT = PROJECT_ROOT.parents[1]
 from common.contracts.machine_contracts import load_json, sha256, validate_schema
 from common.contracts.validate_design_request import validate_request
 from projects.oa_tof.analysis.accelerator_time_focus import accelerator_state, focus_drift_mm
-from projects.oa_tof.analysis.geometry_contract import BASELINE_PATH, MODE_PATH, resolve_contract, serialized
+from projects.oa_tof.analysis.geometry_contract import BASELINE_PATH, MODE_PATH, NUMERICS_PATH, resolve_contract, serialized
 from projects.oa_tof.analysis.oatof_oaaccelerator_coupling import solve_coupled_reflectron_fields
 
 
@@ -331,6 +331,7 @@ def compile_proposal(proposal_path: Path) -> tuple[dict[str, Any], dict[str, Any
             "proposal": {"path": str(proposal_path), "sha256": sha256(proposal_path)},
             "request": {"path": str(request_path), "sha256": sha256(request_path)},
             "design_variable_catalog": {"path": str(CATALOG_PATH), "sha256": sha256(CATALOG_PATH)},
+            "formal_solver_numerics": {"path": str(NUMERICS_PATH), "sha256": sha256(NUMERICS_PATH)},
         },
         "optimization_envelope": {"envelope_id": envelope["envelope_id"], "sha256": sha256(ENVELOPE_PATH)},
         "formal_baseline_sha256": sha256(BASELINE_PATH),
@@ -347,9 +348,11 @@ def write_candidate(proposal_path: Path, output_dir: Path) -> tuple[Path, Path, 
     output_dir.mkdir(parents=True, exist_ok=False)
     baseline_path = output_dir / "candidate_baseline.json"
     resolved_path = output_dir / "candidate_resolved_geometry.json"
+    numerics_path = output_dir / "candidate_solver_numerics.json"
     report_path = output_dir / "candidate_diff.json"
     baseline_path.write_text(json.dumps(candidate, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    resolved_path.write_text(serialized(resolve_contract(baseline_path=baseline_path, mode_path=MODE_PATH)), encoding="utf-8")
+    numerics_path.write_text(NUMERICS_PATH.read_text(encoding="utf-8"), encoding="utf-8")
+    resolved_path.write_text(serialized(resolve_contract(baseline_path=baseline_path, mode_path=MODE_PATH, numerics_path=numerics_path)), encoding="utf-8")
     report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return baseline_path, resolved_path, report_path
 
@@ -365,7 +368,7 @@ def main() -> None:
         raise SystemExit(str(exc)) from exc
     except (OSError, KeyError, ValueError, json.JSONDecodeError) as exc:
         raise SystemExit(f"CANDIDATE_COMPILE=FAIL {exc}") from exc
-    print(f"CANDIDATE_COMPILE=PASS BASELINE={baseline.resolve()} RESOLVED={resolved.resolve()} DIFF={report.resolve()}")
+    print(f"CANDIDATE_COMPILE=PASS BASELINE={baseline.resolve()} RESOLVED={resolved.resolve()} NUMERICS={(resolved.parent / 'candidate_solver_numerics.json').resolve()} DIFF={report.resolve()}")
 
 
 if __name__ == "__main__":

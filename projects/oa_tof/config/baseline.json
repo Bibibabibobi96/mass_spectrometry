@@ -86,7 +86,6 @@
     "shield_outer_z_max": 881.1563
   },
   "particle_source": {
-    "seed": 20260713,
     "center_x_mm": -48.8,
     "center_y_mm": 0.0,
     "center_z_mm": -18.42918680341103,

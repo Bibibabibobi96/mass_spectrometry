@@ -12,6 +12,7 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 BASELINE_PATH = PROJECT_ROOT / "config" / "baseline.json"
 MODE_PATH = PROJECT_ROOT / "config" / "modes" / "formal.json"
+NUMERICS_PATH = PROJECT_ROOT / "config" / "formal_solver_numerics.json"
 RESOLVED_PATH = PROJECT_ROOT / "config" / "resolved_geometry.json"
 
 
@@ -31,14 +32,39 @@ def _input_label(path: Path) -> str:
         return str(path.resolve())
 
 
+def _require_exact_keys(document: dict[str, Any], allowed: set[str], label: str) -> None:
+    unknown = set(document) - allowed
+    if unknown:
+        raise ValueError(f"{label} contains cross-layer or unknown fields: {sorted(unknown)}")
+
+
+def _validate_layers(baseline: dict[str, Any], science: dict[str, Any], numerics: dict[str, Any]) -> None:
+    if "seed" in baseline.get("particle_source", {}):
+        raise ValueError("science baseline must not contain particle_source.seed; freeze it in the run instance")
+    _require_exact_keys(science, {"schema_version", "role", "mode", "contract_layers", "particle"}, "science contract")
+    if science.get("role") != "oa_tof_formal_science_contract" or science.get("mode") != "formal":
+        raise ValueError("unsupported formal science contract")
+    if science.get("contract_layers") != ["science", "solver_numerics", "run_instance"]:
+        raise ValueError("formal science contract has an invalid layer declaration")
+    _require_exact_keys(numerics, {"schema_version", "role", "comsol", "simion"}, "solver numerics contract")
+    if numerics.get("role") != "oa_tof_formal_solver_numerics":
+        raise ValueError("unsupported formal solver numerics contract")
+    if not isinstance(science.get("particle"), dict) or not isinstance(numerics.get("comsol"), dict) or not isinstance(numerics.get("simion"), dict):
+        raise ValueError("formal contracts are missing required science or solver sections")
+
+
 def resolve_contract(
     baseline_path: Path = BASELINE_PATH,
     mode_path: Path = MODE_PATH,
+    numerics_path: Path = NUMERICS_PATH,
 ) -> dict[str, Any]:
     baseline_path = Path(baseline_path)
     mode_path = Path(mode_path)
+    numerics_path = Path(numerics_path)
     baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
     mode = json.loads(mode_path.read_text(encoding="utf-8"))
+    numerics = json.loads(numerics_path.read_text(encoding="utf-8"))
+    _validate_layers(baseline, mode, numerics)
     geometry = baseline["geometry_mm"]
     accelerator = baseline["geometry_derivation"]["accelerator"]
     source = baseline["particle_source"]
@@ -50,8 +76,8 @@ def resolve_contract(
     _close("reflectron length", geometry["L_reflectron"], geometry["L_stage1"] + geometry["L_stage2"])
     _close("source center z", source["center_z_mm"], geometry["accelerator_repeller_z"] + accelerator["d1_mm"] / 2)
 
-    build = mode["simion"]["geometry_build"]
-    marker = mode["simion"]["detector_marker"]
+    build = numerics["simion"]["geometry_build"]
+    marker = numerics["simion"]["detector_marker"]
     if not 0 < marker["capture_depth_mm"] < marker["absorber_thickness_mm"]:
         raise ValueError("detector capture depth must lie inside the numerical absorber")
     if marker["capture_arm_distance_mm"] <= marker["front_margin_z_mm"]:
@@ -94,6 +120,8 @@ def resolve_contract(
             "baseline_sha256": _sha256(baseline_path),
             "mode": _input_label(mode_path),
             "mode_sha256": _sha256(mode_path),
+            "solver_numerics": _input_label(numerics_path),
+            "solver_numerics_sha256": _sha256(numerics_path),
         },
         "coordinate_convention": coordinate,
         "geometry_derivation": baseline["geometry_derivation"],
@@ -114,11 +142,11 @@ def resolve_contract(
             "specialty_counts_require_explicit_purpose": True,
         },
         "simion_runtime": {
-            **mode["simion"],
+            **numerics["simion"],
             "routine_particles": particle["statistical_count"],
         },
         "simion_geometry_build": build,
-        "comsol_runtime": mode["comsol"],
+        "comsol_runtime": numerics["comsol"],
         "simion_detector_marker": marker,
         "grid_policy": baseline["grid_policy"],
         "derived": {

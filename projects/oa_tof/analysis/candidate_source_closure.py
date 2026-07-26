@@ -46,7 +46,6 @@ RELATIVE_PATHS = (
     "projects/oa_tof/comsol/oatof_extract_detector_arrivals.m",
     "projects/oa_tof/comsol/oatof_parse_field_idealization.m",
     "projects/oa_tof/comsol/run_oatof_model.m",
-    "projects/oa_tof/config/modes/formal.json",
     "projects/oa_tof/docs/SIMION_REPRODUCTION_PARAMETERS.md",
     "projects/oa_tof/load_oatof_contract.m",
     "projects/oa_tof/oatof_assert_formal_write_authorized.m",
@@ -57,8 +56,6 @@ RELATIVE_PATHS = (
     "projects/oa_tof/simion/reflectron/oatof_reflectron_ideal_10_5.gem",
     "projects/oa_tof/simion/workbench/build_detector_variant.lua",
     "projects/oa_tof/simion/workbench/build_flight_tube_variant.lua",
-    "projects/oa_tof/simion/workbench/build_formal_delivery.ps1",
-    "projects/oa_tof/simion/workbench/build_formal_iob.lua",
     "projects/oa_tof/simion/workbench/generate_comsol_consistent_ions.ps1",
     "projects/oa_tof/simion/workbench/oatof_detector_ground.gem",
     "projects/oa_tof/simion/workbench/oatof_flight_tube_ground.gem",
@@ -69,14 +66,8 @@ RELATIVE_PATHS = (
     "projects/oa_tof/tests/simion/verify_iob_runtime_contract.ps1",
 )
 
-PYTHON_BOUND_SOURCES = frozenset(
-    {
-        "projects/oa_tof/simion/workbench/build_formal_delivery.ps1",
-        "projects/oa_tof/simion/workbench/generate_comsol_consistent_ions.ps1",
-    }
-)
+PYTHON_BOUND_SOURCES = frozenset({"projects/oa_tof/simion/workbench/generate_comsol_consistent_ions.ps1"})
 PYTHON_ASSIGNMENT = "$python = Join-Path $repoRoot '.venv\\Scripts\\python.exe'"
-ARTIFACT_ASSIGNMENT = "$artifactRoot = Join-Path $workspaceRoot 'artifacts\\projects\\oa_tof'"
 WORKSPACE_ASSIGNMENT = "    workspaceRoot = fileparts(repoRoot);"
 
 
@@ -128,16 +119,6 @@ def freeze_candidate_source_closure(
         if source_id in PYTHON_BOUND_SOURCES:
             payload = _bind_python_runtime(payload, python_path)
             transformations.append("python_runtime_binding")
-        if source_id == ("projects/oa_tof/simion/workbench/build_formal_delivery.ps1"):
-            text = payload.decode("utf-8")
-            if text.count(ARTIFACT_ASSIGNMENT) != 1:
-                raise ValueError("candidate SIMION source has an unexpected artifact binding")
-            escaped = str(artifact_path).replace("'", "''")
-            payload = text.replace(
-                ARTIFACT_ASSIGNMENT,
-                f"$artifactRoot = '{escaped}' # frozen candidate artifact root",
-            ).encode("utf-8")
-            transformations.append("candidate_artifact_root_binding")
         if source_id == "projects/oa_tof/oatof_paths.m":
             text = payload.decode("utf-8")
             if text.count(WORKSPACE_ASSIGNMENT) != 1:

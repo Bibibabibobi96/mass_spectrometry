@@ -23,6 +23,7 @@ from projects.oa_tof.analysis.candidate_source_closure import (
 WORKFLOW_PATH = PROJECT_ROOT / "config" / "candidate_workflow.json"
 FORMAL_BASELINE_PATH = PROJECT_ROOT / "config" / "baseline.json"
 FORMAL_RESOLVED_PATH = PROJECT_ROOT / "config" / "resolved_geometry.json"
+FORMAL_NUMERICS_PATH = PROJECT_ROOT / "config" / "formal_solver_numerics.json"
 
 
 def validate_workflow(workflow: dict) -> None:
@@ -78,6 +79,13 @@ def _candidate_sources(candidate_baseline: Path, candidate_resolved: Path, candi
     request = _provenance_path(provenance.get("request", {}), diff.parent, "request")
     proposal_contract = load_json(proposal)
     request_contract = load_json(request)
+    numerics = resolved.parent / "candidate_solver_numerics.json"
+    if not numerics.is_file():
+        raise ValueError("candidate solver numerics contract is missing")
+    if resolved_source := load_json(resolved):
+        inputs = resolved_source.get("inputs", {})
+        if inputs.get("solver_numerics_sha256", "").lower() != sha256(numerics).lower():
+            raise ValueError("candidate solver numerics and resolved contract hashes do not match")
     validate_schema(proposal_contract, "candidate_proposal.schema.json")
     validate_schema(request_contract, "design_request.schema.json")
     proposal_request = proposal_contract["request"]
@@ -94,6 +102,7 @@ def _candidate_sources(candidate_baseline: Path, candidate_resolved: Path, candi
     return {
         "candidate_baseline.json": baseline,
         "candidate_resolved_geometry.json": resolved,
+        "candidate_solver_numerics.json": numerics,
         "candidate_diff.json": diff,
         "candidate_proposal.json": proposal,
         "design_request.json": request,
@@ -106,6 +115,7 @@ def prepare_candidate_run(
     candidate_diff: Path,
     run_id: str,
     artifact_project_root: Path | None = None,
+    particle_source_seed: int = 20260713,
 ) -> dict:
     run_identity = validate_run_id(run_id)
     workflow = load_json(WORKFLOW_PATH)
@@ -121,6 +131,8 @@ def prepare_candidate_run(
     if planning_root.exists():
         raise FileExistsError(f"candidate planning task already exists; overwrite is forbidden: {planning_root}")
 
+    if not isinstance(particle_source_seed, int):
+        raise ValueError("candidate run requires an explicit integer particle source seed")
     primary_sources = [candidate_baseline.resolve(), candidate_resolved.resolve(), candidate_diff.resolve()]
     if any(not path.is_file() for path in primary_sources):
         raise FileNotFoundError("candidate baseline, resolved contract, and diff must all exist")
@@ -130,6 +142,7 @@ def prepare_candidate_run(
     if (
         sources["candidate_baseline.json"] == FORMAL_BASELINE_PATH.resolve()
         or sources["candidate_resolved_geometry.json"] == FORMAL_RESOLVED_PATH.resolve()
+        or sources["candidate_solver_numerics.json"] == FORMAL_NUMERICS_PATH.resolve()
     ):
         raise ValueError("candidate run requires isolated candidate contracts, not the formal project contracts")
     resolved_source = load_json(sources["candidate_resolved_geometry.json"])
@@ -153,7 +166,7 @@ def prepare_candidate_run(
         frozen[name] = target
 
     prepared_dir = inputs_dir / "prepared_consumers"
-    consumption = prepare_consumers(frozen["candidate_resolved_geometry.json"], prepared_dir, run_root)
+    consumption = prepare_consumers(frozen["candidate_resolved_geometry.json"], prepared_dir, run_root, particle_source_seed)
     resolved_contract = load_json(frozen["candidate_resolved_geometry.json"])
     source = resolved_contract["particle_source"]
     target = resolved_contract["validation_target"]
@@ -193,7 +206,7 @@ def prepare_candidate_run(
                     "CenterXmm": source["center_x_mm"],
                     "CenterYmm": source["center_y_mm"],
                     "CenterZmm": source["center_z_mm"],
-                    "Seed": source["seed"],
+                    "Seed": particle_source_seed,
                     "Output": str(candidate_ion),
                 },
             },
@@ -214,16 +227,13 @@ def prepare_candidate_run(
             },
             {
                 "stage_id": "simion_candidate",
-                "status": "not_run",
+                "status": "blocked_requires_explicit_nonformal_template",
                 "contract_path": str(frozen["candidate_resolved_geometry.json"]),
                 "baseline_path": str(frozen["candidate_baseline.json"]),
                 "text_dir": str(prepared_dir / "simion"),
                 "output_dir": str(run_root / "simion"),
-                "entrypoint": frozen_source_path(
-                    source_closure,
-                    "projects/oa_tof/simion/workbench/build_formal_delivery.ps1",
-                ),
-                "candidate_mode_required": True,
+                "required_input": "runs/<run_id>/inputs/simion_template/ with role oa_tof_candidate_simion_layout_template and SHA-256 provenance",
+                "formal_asset_read_allowed": False,
             },
             {
                 "stage_id": "cad_candidate",
@@ -268,6 +278,7 @@ def prepare_candidate_run(
         "run_id": run_id,
         "project": "oa_tof",
         "mode": "design_candidate",
+        "run_instance": {"particle_source_seed": particle_source_seed},
         "project_root": str(PROJECT_ROOT),
         "inputs": {key: value["path"] for key, value in workflow_plan["candidate_inputs"].items()},
         "input_sha256": {key: value["sha256"] for key, value in workflow_plan["candidate_inputs"].items()},
@@ -286,8 +297,9 @@ def main() -> None:
     parser.add_argument("--candidate-resolved", required=True, type=Path)
     parser.add_argument("--candidate-diff", required=True, type=Path)
     parser.add_argument("--run-id", required=True)
+    parser.add_argument("--particle-source-seed", required=True, type=int)
     args = parser.parse_args()
-    result = prepare_candidate_run(args.candidate_baseline, args.candidate_resolved, args.candidate_diff, args.run_id)
+    result = prepare_candidate_run(args.candidate_baseline, args.candidate_resolved, args.candidate_diff, args.run_id, particle_source_seed=args.particle_source_seed)
     print(f"CANDIDATE_RUN_PREPARE={result['status']} PLAN_ROOT={result['planning_root']} RUN_ROOT={result['run_root']}")
 
 

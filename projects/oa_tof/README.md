@@ -31,7 +31,7 @@
 ## 本项目的知识边界
 
 知识归属、提升条件和星形引用规则以仓库根[`README.md`](../../README.md)为唯一权威。本项目只补充：
-人工设计写入`config/baseline.json`，程序读取自动生成且禁止手改的`config/resolved_geometry.json`；
+科学设计写入`config/baseline.json`与`config/modes/formal.json`，求解数值只写入`config/formal_solver_numerics.json`，程序读取自动生成且禁止手改的`config/resolved_geometry.json`；每次运行的seed、RunId和冻结路径只存在于run instance，绝不回写科学合同。
 分析契约、迁移基准和正式闭合结果分别写入`config/analysis_contract.json`、
 `config/analysis_baselines.json`和`config/formal_validation.json`。当前统一结论只写`docs/PROJECT.md`。
 

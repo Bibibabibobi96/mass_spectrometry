@@ -6,8 +6,10 @@
   "inputs": {
     "baseline": "config/baseline.json",
     "resolved_geometry": "config/resolved_geometry.json",
-    "mode": "config/modes/formal.json"
+    "science": "config/modes/formal.json",
+    "solver_numerics": "config/formal_solver_numerics.json"
   },
+  "run_instance": {"particle_source_seed": "REQUIRED_AT_RUN_CREATION"},
   "output_policy": {
     "lifecycle": "candidate_until_formal_gate_passes",
     "overwrite": false,

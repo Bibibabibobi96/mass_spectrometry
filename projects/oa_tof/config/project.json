@@ -4,10 +4,12 @@
   "family_id": "tof_mass_analyzers",
   "display_name": "正交加速飞行时间质量分析器",
   "purpose": "单次折返oa-TOF的质量分析、离子传输和正式跨求解器设计",
-  "lifecycle_status": "formal",
+  "lifecycle_status": "formal_revalidation_pending",
   "toolchains": ["comsol", "simion", "matlab", "python", "solidworks"],
   "contracts": {
     "baseline": "config/baseline.json",
+    "science": "config/modes/formal.json",
+    "solver_numerics": "config/formal_solver_numerics.json",
     "resolved": "config/resolved_geometry.json",
     "analysis": "config/analysis_contract.json",
     "interface": null,

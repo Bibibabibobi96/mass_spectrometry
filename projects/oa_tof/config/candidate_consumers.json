@@ -5,7 +5,7 @@
   "coverage_semantics": "static_input_routing_only",
   "consumers": {
     "comsol": {
-      "input": "candidate_resolved_geometry.json",
+      "input": "candidate_resolved_geometry.json + candidate_solver_numerics.json",
       "entrypoint": "comsol/run_oatof_model.m",
       "binding": "ContractPath",
       "output": "candidate COMSOL MPH"
@@ -13,8 +13,8 @@
     "simion": {
       "input": "candidate_resolved_geometry.json",
       "entrypoint": "workflows/design_candidate/prepare_candidate_consumers.py",
-      "binding": "generated self-contained Lua and Fly2",
-      "output": "candidate SIMION text package"
+      "binding": "generated self-contained Lua and Fly2; a future IOB layout template is an explicit non-Formal run input",
+      "output": "candidate SIMION text package; IOB build remains blocked without a non-Formal template"
     },
     "cad": {
       "input": "candidate COMSOL MPH",

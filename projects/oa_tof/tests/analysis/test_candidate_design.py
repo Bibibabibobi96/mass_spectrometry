@@ -150,23 +150,15 @@ class CandidateDesignTests(unittest.TestCase):
         with self.assertRaisesRegex(EnvelopeReviewRequired, "NEEDS_ENVELOPE_REVIEW"):
             self.compile(request, [{"variable": "flight_length", "value": 700.0, "unit": "mm"}])
 
-    def test_zero_change_candidate_generates_formal_equivalent_simion_text(self):
+    def test_candidate_generates_nonformal_simion_text_from_frozen_contract(self):
         with tempfile.TemporaryDirectory() as root:
             output = Path(root) / "prepared"
             plan = prepare(PROJECT_ROOT / "config" / "resolved_geometry.json", output)
-            formal = PROJECT_ROOT / "simion" / "workbench" / "formal"
-            self.assertEqual(
-                (output / "simion" / "oatof_resolved.lua").read_text(encoding="utf-8"),
-                (formal / "oatof_resolved.lua").read_text(encoding="utf-8"),
-            )
-            self.assertEqual(
-                (output / "simion" / "oatof_ideal_grounded.lua").read_text(encoding="utf-8"),
-                (formal / "oatof_ideal_grounded.lua").read_text(encoding="utf-8"),
-            )
-            self.assertEqual(
-                (output / "simion" / "oatof_ideal_grounded.fly2").read_text(encoding="utf-8"),
-                (formal / "oatof_ideal_grounded.fly2").read_text(encoding="utf-8"),
-            )
+            resolved = (output / "simion" / "oatof_resolved.lua").read_text(encoding="utf-8")
+            fly2 = (output / "simion" / "oatof_ideal_grounded.fly2").read_text(encoding="utf-8")
+            self.assertIn(sha256(PROJECT_ROOT / "config" / "formal_solver_numerics.json"), resolved)
+            self.assertIn("seed(20260713)", fly2)
+            self.assertFalse((output / "simion" / "oatof_ideal_grounded.iob").exists())
             self.assertEqual(plan["status"], "STATIC_INPUTS_READY")
             self.assertEqual(plan["consumers"]["comsol"]["runtime_status"], "not_run")
             self.assertEqual(
@@ -265,13 +257,17 @@ class CandidateDesignTests(unittest.TestCase):
     def candidate_run_inputs(self, root_path):
         baseline = root_path / "candidate_baseline.json"
         resolved = root_path / "candidate_resolved_geometry.json"
+        numerics = root_path / "candidate_solver_numerics.json"
         diff = root_path / "candidate_diff.json"
         request = root_path / "design_request.json"
         proposal = root_path / "candidate_proposal.json"
         baseline.write_text((PROJECT_ROOT / "config" / "baseline.json").read_text(encoding="utf-8"), encoding="utf-8")
+        numerics.write_text((PROJECT_ROOT / "config" / "formal_solver_numerics.json").read_text(encoding="utf-8"), encoding="utf-8")
         resolved_contract = load_json(PROJECT_ROOT / "config" / "resolved_geometry.json")
         resolved_contract["inputs"]["baseline"] = str(baseline.resolve())
         resolved_contract["inputs"]["baseline_sha256"] = sha256(baseline)
+        resolved_contract["inputs"]["solver_numerics"] = str(numerics.resolve())
+        resolved_contract["inputs"]["solver_numerics_sha256"] = sha256(numerics)
         resolved.write_text(json.dumps(resolved_contract), encoding="utf-8")
         request_contract = self.base_request()
         request_contract["target"]["mode"] = "design_candidate"
@@ -335,7 +331,7 @@ class CandidateDesignTests(unittest.TestCase):
             self.assertEqual(Path(comsol_stage["environment"]["OATOF_RUNTIME_DIR"]), run_root / "comsol")
             self.assertEqual(
                 set(plan["candidate_inputs"]),
-                {"candidate_baseline.json", "candidate_resolved_geometry.json", "candidate_diff.json",
+                {"candidate_baseline.json", "candidate_resolved_geometry.json", "candidate_solver_numerics.json", "candidate_diff.json",
                  "candidate_proposal.json", "design_request.json"},
             )
             self.assertTrue((planning_root / "run_config.template.json").is_file())
@@ -434,7 +430,7 @@ class CandidateDesignTests(unittest.TestCase):
             self.assertFalse(manifest["formal_eligible"])
             self.assertEqual(
                 set(manifest["inputs"]),
-                {"candidate_baseline.json", "candidate_resolved_geometry.json", "candidate_diff.json",
+                {"candidate_baseline.json", "candidate_resolved_geometry.json", "candidate_solver_numerics.json", "candidate_diff.json",
                  "candidate_proposal.json", "design_request.json"},
             )
             self.assertEqual(verify_project(artifact_root), (1, 0))

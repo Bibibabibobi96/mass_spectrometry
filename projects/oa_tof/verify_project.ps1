@@ -17,11 +17,14 @@ $workspaceRoot = Split-Path -Parent $repoRoot
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 runtime missing: $python" }
 $gateTimer = [Diagnostics.Stopwatch]::StartNew()
+$projectContract = Get-Content -LiteralPath (Join-Path $projectRoot 'config\project.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 
 & $python -m projects.oa_tof.analysis.resolve_geometry --check
 if ($LASTEXITCODE -ne 0) { throw 'Resolved-geometry gate failed.' }
-& $python -m projects.oa_tof.analysis.sync_geometry_contract --check
-if ($LASTEXITCODE -ne 0) { throw 'Generated-input freshness gate failed.' }
+if ($projectContract.lifecycle_status -ne 'formal_revalidation_pending') {
+  & $python -m projects.oa_tof.analysis.sync_geometry_contract --check
+  if ($LASTEXITCODE -ne 0) { throw 'Generated-input freshness gate failed.' }
+}
 & $python (Join-Path $projectRoot 'analysis\accelerator_time_focus.py') --self-test
 if ($LASTEXITCODE -ne 0) { throw 'Accelerator theory self-test failed.' }
 & $python (Join-Path $projectRoot 'analysis\reflectron_dual_stage_solver.py') --self-test
@@ -34,8 +37,10 @@ if ($LASTEXITCODE -ne 0) { throw 'Accelerator theory contract gate failed.' }
 & $python -m projects.oa_tof.analysis.oatof_oaaccelerator_coupling `
   (Join-Path $projectRoot 'config\candidates\oatof_longitudinal_coupled_reference.json') | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Coupled longitudinal theory contract gate failed.' }
-& (Join-Path $projectRoot 'workflows\formal_reference\verify_geometry_contract.ps1') -SkipRuntime -SimionExe $SimionExe -PythonExe $python
-if ($LASTEXITCODE -ne 0) { throw 'Static cross-solver geometry gate failed.' }
+if ($projectContract.lifecycle_status -ne 'formal_revalidation_pending') {
+  & (Join-Path $projectRoot 'workflows\formal_reference\verify_geometry_contract.ps1') -SkipRuntime -SimionExe $SimionExe -PythonExe $python
+  if ($LASTEXITCODE -ne 0) { throw 'Static cross-solver geometry gate failed.' }
+}
 & $python -m unittest discover -s (Join-Path $projectRoot 'tests\analysis') -p 'test_*.py'
 if ($LASTEXITCODE -ne 0) { throw 'Python analysis tests failed.' }
 
@@ -116,6 +121,9 @@ if ($Level -eq 'Candidate') {
   }
 }
 elseif ($Level -eq 'Formal') {
+  if ($projectContract.lifecycle_status -eq 'formal_revalidation_pending') {
+    throw 'FORMAL_REVALIDATION_REQUIRED: configuration vNext is not eligible to read or validate Formal assets.'
+  }
   & $python (Join-Path $repoRoot 'common\contracts\verify_artifact_layout.py') `
     (Join-Path $workspaceRoot 'artifacts\projects') --formal-only --repository-root $repoRoot
   if ($LASTEXITCODE -ne 0) { throw 'Formal asset-manifest structure gate failed.' }

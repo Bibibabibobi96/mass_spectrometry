@@ -7,7 +7,7 @@
   "policy": "Candidates may move bidirectionally within this envelope. Exceeding it requires explicit envelope review; an approved expansion does not automatically modify the formal baseline.",
   "reference": {
     "baseline": "config/baseline.json",
-    "baseline_sha256": "1170275D43E64AC18956C804B452172D4DB69D595D0E6098FA1995976C6BCF74"
+    "baseline_sha256": "A50A247F58093A2C0A030AA8BDAE2AE695AB5E972D1F41E49090B6A121042685"
   },
   "tof_limits": {
     "max_flight_length_mm": 600.0,

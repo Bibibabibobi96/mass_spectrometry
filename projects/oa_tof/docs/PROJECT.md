@@ -202,7 +202,8 @@ GUI重开、正式包和CAD同步门禁，不影响当前100%传输或正式统�
 
 ### 延期架构决策
 
-- `config/modes/formal.json`当前继续作为单一正式模式机器合同，不因文件体量单独拆分。只有出现新的
+- `config/modes/formal.json`现在只保存Formal科学合同；`config/formal_solver_numerics.json`保存唯一COMSOL/SIMION数值合同，run instance显式冻结seed。配置拆分完成后项目处于`formal_revalidation_pending`：Static/Candidate可运行但不得读取Formal资产，Formal gate必须失败关闭，待独立Formal vNext重验证授权。
+- 旧的“`config/modes/formal.json`继续作为单一正式模式机器合同”的判断已由上述三层合同取代。只有出现新的
   多求解器消费者、跨器件消费者，或当前设计线稳定后批准专项迁移并能一次完成调用方与回归切换时，
   才启动结构拆分。
 - `diagnostics/legacy_rf_projection/`继续保持与 execution profile、静态门禁和活动 RF→oaTOF

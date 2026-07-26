@@ -11,6 +11,9 @@ Python版本、隔离环境和重建方法只以仓库根
 
 ## 权威边界
 
+- 正式解析只接受三层输入：`config/baseline.json`与`config/modes/formal.json`（科学）、`config/formal_solver_numerics.json`（COMSOL/SIMION数值）、以及每次run显式冻结的粒子seed。resolver拒绝旧的跨层字段；`resolved_geometry.json`仅为三源的派生产物。
+- Candidate只生成Lua/Fly2文本。候选SIMION IOB若未来需要，必须以带role和SHA-256 provenance的非Formal run input冻结；不得读取、复制或推断Formal资产。
+
 - 机器数据定义：`../config/analysis_contract.json`。
 - 迁移基准身份与旧MATLAB参考：`../config/analysis_baselines.json`。
 - 当前正式COMSOL/SIMION同源闭合记录：`../config/formal_validation.json`。
