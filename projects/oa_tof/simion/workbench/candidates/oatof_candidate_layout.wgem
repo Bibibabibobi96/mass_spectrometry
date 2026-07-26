@@ -1,0 +1,24 @@
+-- GENERATED: oa-TOF Candidate declarative workbench source
+-- Materialize in SIMION 8.2.1.4 GUI; do not edit generated transforms.
+-- resolved_geometry_sha256=90dfe02ed6ab48994f10d34255a1ea9ea644a7aa9e8c2d3b875b54e9c0e41b51
+-- GUI priority is pa_define order: 1 flight_tube, 2 reflectron, 3 accelerator, 4 detector.
+
+-- role=flight_tube_shield; workbench_index=1; priority_number=1; source=../oatof_flight_tube_ground.gem
+locate(0,0,-59.929186803411,-90,0,0,1) {
+  include("../oatof_flight_tube_ground.gem")
+}
+
+-- role=reflectron; workbench_index=2; priority_number=2; source=../../reflectron/oatof_reflectron_ideal_10_5.gem
+locate(0,0,600,-90,0,0,1) {
+  include("../../reflectron/oatof_reflectron_ideal_10_5.gem")
+}
+
+-- role=accelerator; workbench_index=3; priority_number=3; source=../../accelerator/oatof_accelerator_3d.gem
+locate(-67.8,-19,-29.929186803411,0,0,0,1) {
+  include("../../accelerator/oatof_accelerator_3d.gem")
+}
+
+-- role=detector; workbench_index=4; priority_number=4; source=../oatof_detector_ground.gem
+locate(7.8,-41,-0.15,0,0,0,1) {
+  include("../oatof_detector_ground.gem")
+}

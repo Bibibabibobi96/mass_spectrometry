@@ -56,12 +56,14 @@ run生命周期。Candidate仍必须先通过四实例IOB运行时门禁，并�
 模板；模板缺失时在任何PA构建或Fly之前失败。该N=100 transport只补齐结构候选的真实SIMION证据，
 不构成COMSOL逐粒子比较、性能结论或Formal资格。
 
-非Formal模板由用户在SIMION GUI创建四个可编辑槽位后，以
-`simion/workbench/register_candidate_layout_template.ps1`显式登记。登记入口只接受同basename的
-`.iob + .con`来源，拒绝Formal/archive/history路径和目标run自引用；它不复制、Refine或Fly二进制，
-只用无GUI结构门禁确认四个有序实例并写template-build三件套。Candidate准备时只能指定该成功run，
-会重新校验来源SHA、成功summary/manifest及结构报告，再将该输入冻结到Candidate run；未登记、失败或
-来源变更一律失败关闭。模板本身不携带候选物理、Program或Fly2；这些仍由Candidate合同生成。
+非Formal模板先由Git内`simion/workbench/generate_candidate_layout_wgem.py`从唯一
+`resolved_geometry.json`生成`.wgem`；它只声明四槽的来源、role、transform和优先级，复用既有GEM
+来源而不复制PA构建机制。顺序固定为`flight_tube`、`reflectron`、`accelerator`、`detector`，并分别对应
+GUI优先级1..4。用户必须用SIMION 8.2.1.4 GUI将该W-GEM物化为独立、同basename `.iob + .con`，再以
+`simion/workbench/register_candidate_layout_template.ps1`显式登记。登记入口要求W-GEM+IOB+CON，拒绝
+Formal/archive/history、旧Candidate、裸IOB/CON和目标run自引用；它不复制、Refine或Fly二进制，只用
+无GUI结构门禁确认四个有序实例并写template-build三件套。Candidate准备时重新校验W-GEM/IOB/CON的
+SHA、成功summary/manifest及结构报告，再冻结输入；未登记、失败或来源漂移一律失败关闭。
 
 稳定实现入口以`config/simion_stable_entry.json`冻结：0.05mm是正式可移植交付，0.025mm仅作轴向
 网格收敛参考。该清单记录外部资产路径、大小和SHA-256，不重复维护物理参数；物理

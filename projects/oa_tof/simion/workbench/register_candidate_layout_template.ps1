@@ -1,10 +1,10 @@
 <#!
 .SYNOPSIS
-Registers a user-created, non-Formal SIMION four-slot layout for oa-TOF Candidate runs.
+Registers a GUI-materialized, declarative W-GEM SIMION four-slot layout for oa-TOF Candidate runs.
 
 .DESCRIPTION
 This entrypoint never creates, copies, refines, or flies a SIMION binary.  It
-records the explicitly supplied IOB+CON as immutable external inputs of a
+records the explicitly supplied W-GEM + IOB+CON as immutable external inputs of a
 template-build run, then uses the existing no-GUI IOB structure verifier to
 prove the GUI-editable slot order.  Candidate preparation may consume only a
 successful registration run and freezes its input bundle into the Candidate
@@ -13,6 +13,7 @@ run separately.
 param(
   [Parameter(Mandatory = $true)] [string]$SourceIobPath,
   [Parameter(Mandatory = $true)] [string]$SourceConPath,
+  [Parameter(Mandatory = $true)] [string]$SourceWgemPath,
   [Parameter(Mandatory = $true)] [string]$RunId,
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$ArtifactProjectRoot = ''
@@ -54,15 +55,26 @@ if ($LASTEXITCODE -ne 0) { throw "Invalid template-build RunId: $RunId" }
 
 $sourceIob = Assert-NonFormalSource $SourceIobPath 'SourceIobPath'
 $sourceCon = Assert-NonFormalSource $SourceConPath 'SourceConPath'
+$sourceWgem = Assert-NonFormalSource $SourceWgemPath 'SourceWgemPath'
 if ([IO.Path]::GetExtension($sourceIob).ToLowerInvariant() -ne '.iob') { throw 'SourceIobPath must use the .iob extension.' }
 if ([IO.Path]::GetExtension($sourceCon).ToLowerInvariant() -ne '.con') { throw 'SourceConPath must use the .con extension.' }
+if ([IO.Path]::GetExtension($sourceWgem).ToLowerInvariant() -ne '.wgem') { throw 'SourceWgemPath must use the .wgem extension.' }
 if ([IO.Path]::GetFileNameWithoutExtension($sourceIob) -cne [IO.Path]::GetFileNameWithoutExtension($sourceCon)) {
   throw 'SourceIobPath and SourceConPath must have the same basename.'
+}
+$candidateSourceRoot = [IO.Path]::GetFullPath((Join-Path $projectRoot 'simion\workbench\candidates'))
+if (-not $sourceWgem.StartsWith($candidateSourceRoot, [StringComparison]::OrdinalIgnoreCase)) {
+  throw 'SourceWgemPath must be the Git-tracked oa-TOF Candidate declarative source.'
+}
+foreach ($requiredToken in @('GENERATED: oa-TOF Candidate declarative workbench source', 'role=flight_tube_shield', 'role=reflectron', 'role=accelerator', 'role=detector')) {
+  if (-not (Select-String -LiteralPath $sourceWgem -Pattern ([regex]::Escape($requiredToken)) -Quiet)) {
+    throw "SourceWgemPath is not an accepted oa-TOF declarative Candidate source: missing $requiredToken"
+  }
 }
 
 $runRoot = Join-Path $runsRoot $RunId
 if (Test-Path -LiteralPath $runRoot) { throw "Template-build run already exists: $runRoot" }
-foreach ($source in @($sourceIob, $sourceCon)) {
+foreach ($source in @($sourceIob, $sourceCon, $sourceWgem)) {
   if ($source.StartsWith(([IO.Path]::GetFullPath($runRoot)), [StringComparison]::OrdinalIgnoreCase)) {
     throw 'Template source must not be located in its target template-build run.'
   }
@@ -75,14 +87,15 @@ $runConfig = [ordered]@{
   project = 'oa_tof'
   mode = 'candidate_layout_template_build'
   project_root = $projectRoot
-  inputs = [ordered]@{ source_iob = $sourceIob; source_con = $sourceCon }
+  inputs = [ordered]@{ source_wgem = $sourceWgem; source_iob = $sourceIob; source_con = $sourceCon }
   input_sha256 = [ordered]@{
+    source_wgem = (Get-FileHash -LiteralPath $sourceWgem -Algorithm SHA256).Hash
     source_iob = (Get-FileHash -LiteralPath $sourceIob -Algorithm SHA256).Hash
     source_con = (Get-FileHash -LiteralPath $sourceCon -Algorithm SHA256).Hash
   }
   formal_gate_passed = $false
   template_role = 'oa_tof_candidate_simion_layout_template'
-  source_is_user_created_nonformal_layout = $true
+  source_is_declarative_wgem_gui_materialization = $true
 }
 
 New-Item -ItemType Directory -Path $runRoot -ErrorAction Stop | Out-Null
@@ -109,6 +122,7 @@ try {
     role = 'oa_tof_simion_candidate_layout_template_build_summary'
     status = 'success'
     template_role = 'oa_tof_candidate_simion_layout_template'
+    source_wgem_sha256 = $runConfig.input_sha256.source_wgem
     source_iob_sha256 = $runConfig.input_sha256.source_iob
     source_con_sha256 = $runConfig.input_sha256.source_con
     runtime_structure_verified = $true
