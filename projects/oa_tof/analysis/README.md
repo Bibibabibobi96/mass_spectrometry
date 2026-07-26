@@ -21,9 +21,6 @@ Python版本、隔离环境和重建方法只以仓库根
 - 加速器—反射镜整机纵向耦合：`oatof_oaaccelerator_coupling.py`，公式来源为
   `../docs/theory/oatof_oaaccelerator_coupling.md`；当前Formal baseline已由该实现派生并通过晋升门禁，
   以后改动仍必须走隔离Candidate和独立晋升，分析脚本本身不能直接改写Formal。
-- 候选静态消费准备：`prepare_candidate_consumers.py --contract <candidate_resolved_geometry.json>
-  --output-dir <run-or-scratch-directory>`；生成SIMION Lua/Fly2和`candidate_consumption_plan.json`，其中
-  COMSOL直接绑定同一合同，CAD绑定由该合同构建的候选MPH。它不启动COMSOL、SIMION或SolidWorks。
 - 候选运行准备：`prepare_candidate_run.py`冻结`candidate_baseline/resolved/diff`，生成N=100粒子表及
   COMSOL、SIMION、CAD和跨软件验收的有向执行计划（粒子表本身由计划的首个运行命令生成）。它不执行商业软件，也不包含
   baseline/formal晋升。计划先进入`scratch/<task_id>/`，集成runner真正开始时才创建含三件套的run，
@@ -32,10 +29,6 @@ Python版本、隔离环境和重建方法只以仓库根
   `run_config.json/summary.json/run_manifest.json`的失效安全骨架，再原子进入`runs/<run_id>/`；
   `finalize`要求按工作流顺序提交全部阶段状态，并以success、failed或interrupted重写根summary和manifest。
   success只表示`candidate_accepted_not_promoted`，始终保持`formal_eligible=false`。
-- 集成执行器：`run_candidate_workflow.py <scratch-plan>/candidate_workflow_plan.json`。它生成共享N=100
-  粒子表，构建并同步检查候选COMSOL MPH，使用延迟根收口模式建立/检查SIMION PA/IOB，导出候选CAD，
-  最后要求两端N=100粒子表SHA一致。当前接受范围固定为`structural_build_and_contract`，
-  `performance_claim_allowed=false`；不能用这次成功替代N=1000性能、GUI Compute或正式晋升门禁。
 - 数值算法：`peak_metrics.py`。
 - 五质量标定、逐峰COMSOL/SIMION局部密度叠加和质心差汇总图：`mass_spectrum.py`。主图使用2×3布局，
   五个峰各自缩放局部质量偏差轴且共享各峰分箱，第六格只汇总跨求解器平均TOF差；全图图例明确

@@ -44,7 +44,7 @@ trap {
 
 $ionGenerator = Join-Path $projectRoot 'simion\workbench\generate_comsol_consistent_ions.ps1'
 $launcher = Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1'
-$task = Join-Path $projectRoot 'tests\comsol\test_accelerator_mesh_particle_candidate.m'
+$task = Join-Path $projectRoot 'comsol\run_fixed_particle_retrace.m'
 $formalMph = Join-Path $artifactRoot 'formal\comsol\oa_tof__model.mph'
 $geometryPath = Join-Path $projectRoot 'config\resolved_geometry.json'
 foreach ($path in @($ionGenerator,$launcher,$task,$formalMph,$geometryPath,$python)) {

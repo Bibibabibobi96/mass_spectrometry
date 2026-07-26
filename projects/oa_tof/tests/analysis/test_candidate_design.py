@@ -18,11 +18,11 @@ from projects.oa_tof.analysis.candidate_source_closure import (
     verify_candidate_source_closure,
 )
 from projects.oa_tof.analysis.compile_candidate_design import EnvelopeReviewRequired, compile_proposal, write_candidate
-from projects.oa_tof.analysis.prepare_candidate_consumers import prepare, verify_routing_coverage
+from projects.oa_tof.workflows.design_candidate.prepare_candidate_consumers import prepare, verify_routing_coverage
 from projects.oa_tof.analysis.prepare_candidate_run import prepare_candidate_run, validate_workflow
 from projects.oa_tof.analysis.prepare_formal_promotion import prepare as prepare_promotion
-from projects.oa_tof.analysis.run_bound_candidate_workflow import validate_bound_candidate
-from projects.oa_tof.analysis.run_candidate_workflow import (
+from projects.oa_tof.workflows.design_candidate.run_bound_candidate_workflow import validate_bound_candidate
+from projects.oa_tof.workflows.design_candidate.run_candidate_workflow import (
     CandidateWorkflowError,
     CandidateWorkflowInterrupted,
     CandidateWorkflowTimedOut,
@@ -680,7 +680,7 @@ class CandidateDesignTests(unittest.TestCase):
                 report.write_text("STATUS=PASS\n", encoding="utf-8")
 
             with mock.patch(
-                "projects.oa_tof.analysis.run_candidate_workflow._run_command",
+                "projects.oa_tof.workflows.design_candidate.run_candidate_workflow._run_command",
                 side_effect=fake_run,
             ):
                 execute_stage(stage, plan, "unused")

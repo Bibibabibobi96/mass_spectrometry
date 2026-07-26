@@ -15,7 +15,7 @@ from projects.oa_tof.analysis.sync_geometry_contract import (
 )
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CONSUMER_CONTRACT_PATH = PROJECT_ROOT / "config" / "candidate_consumers.json"
 VARIABLE_CATALOG_PATH = PROJECT_ROOT / "config" / "design_variables.json"
 
@@ -79,7 +79,7 @@ def prepare(contract_path: Path, output_dir: Path, runtime_root: Path | None = N
                 "runtime_status": "not_run",
             },
             "simion": {
-                "entrypoint": "analysis/prepare_candidate_consumers.py",
+                "entrypoint": "workflows/design_candidate/prepare_candidate_consumers.py",
                 "generated": {
                     key: {"path": str(path.resolve()), "sha256": sha256(path)}
                     for key, path in generated.items()

@@ -24,10 +24,10 @@ Formal CAD目录对普通运行保持只读。MATLAB R2025b写入合同回归确
 晋升事务才能授权，任何相邻或不同路径仍被拒绝。该合同测试没有导出STEP、启动SolidWorks或修改
 Formal资产。
 
-CAD不直接解析候选JSON。`analysis/prepare_candidate_consumers.py`先把候选合同绑定到唯一候选MPH路径，
+CAD不直接解析候选JSON。`workflows/design_candidate/prepare_candidate_consumers.py`先把候选合同绑定到唯一候选MPH路径，
 随后本文件的`modelPath`入口只读该MPH导出STEP和SolidWorks装配。这样机械几何继承已持久化的COMSOL
 模型树，同时避免CAD另建一套参数推导；候选MPH不存在或未通过同步门禁时，CAD状态必须保持阻塞。
-隔离任务`tests/cad/run_candidate_cad_sync.m`只接受候选MPH和`runs/<run_id>/cad/`输出目录；它不会读取、
+隔离任务`workflows/design_candidate/run_candidate_cad_sync.m`只接受候选MPH和`runs/<run_id>/cad/`输出目录；它不会读取、
 覆盖或提升正式装配。通过SolidWorks保存检查后仍须等待跨软件候选验收和独立晋升决定。
 
 STEP导入会让SolidWorks为每个外部实体新建原生零件，因此会读取机器默认零件模板。若该首选项仍指向

@@ -12,7 +12,7 @@
     },
     "simion": {
       "input": "candidate_resolved_geometry.json",
-      "entrypoint": "analysis/prepare_candidate_consumers.py",
+      "entrypoint": "workflows/design_candidate/prepare_candidate_consumers.py",
       "binding": "generated self-contained Lua and Fly2",
       "output": "candidate SIMION text package"
     },

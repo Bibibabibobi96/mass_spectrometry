@@ -48,7 +48,7 @@ Compute后的大粒子数据提取使用第二个干净任务。共享入口的�
 静态准备器只生成调用计划，不代表MPH已经构建或GUI Compute已经通过；候选仍须写入run/scratch，
 并完成模型树、求解与重开门禁。
 
-隔离运行任务为`tests/comsol/run_candidate_contract_build.m`，只接受环境中显式候选合同、N=100粒子表
+隔离运行任务为`workflows/design_candidate/run_candidate_contract_build.m`，只接受环境中显式候选合同、N=100粒子表
 和`runs/<run_id>/comsol/`候选MPH路径。同步验收器也可通过`OATOF_CONTRACT_PATH`按候选合同核对模型，
 电压不再固定写成正式值；省略该变量时仍按正式合同验收。
 
@@ -216,11 +216,11 @@ Formal保存解在31个对称横向偏移和98个轴向位置上采样，三个�
 
 ## 宽质量候选重追踪
 
-`tests/comsol/test_accelerator_mesh_particle_candidate.m`现从固定ION表读取并验证单一质量和整数电荷，
+`comsol/run_fixed_particle_retrace.m`现从固定ION表读取并验证单一质量和整数电荷，
 不再把524 amu写死在粒子质量、初速度、分段时间窗口和预计到达时间中。重追踪保留GUI求解器节点和
 独立`sol1`静电场，不改写正式MPH；是否显式清除旧`sol2`数据和是否重写`pp1`是可记录的诊断开关，
 正式宽质量入口不清旧解、但显式写入目标质量/电荷。五质量候选由
-`tests/cross_solver/run_mass_spectrum_candidate.ps1`分批调用，配置见`config/modes/mass_spectrum.json`。
+`workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1`分批调用，配置见`config/modes/mass_spectrum.json`。
 每个COMSOL物种的ReleaseFromDataFile中间表按输出CSV stem和实际N唯一命名，防止同目录、同N的
 五个物种互相覆盖；运行manifest同时索引逐物种ION、CSV、报告和现存释放表。该修复不能恢复历史
 运行中已经被覆盖的四份同名中间表，但历史逐物种ION、到达CSV和报告仍完整，可继续做结果复算。

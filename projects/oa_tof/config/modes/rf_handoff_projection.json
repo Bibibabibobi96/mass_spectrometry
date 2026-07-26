@@ -28,7 +28,7 @@
   "target_consumers": {
     "COMSOL": {
       "formal_asset": "artifacts/projects/oa_tof/formal/comsol/oa_tof__model.mph",
-      "particle_runner": "projects/oa_tof/tests/comsol/test_accelerator_mesh_particle_candidate.m",
+      "particle_runner": "projects/oa_tof/comsol/run_fixed_particle_retrace.m",
       "reuse_formal_electrostatic_solution": true,
       "save_modified_mph": false
     },

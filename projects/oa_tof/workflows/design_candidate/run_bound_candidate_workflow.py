@@ -7,10 +7,10 @@ from pathlib import Path
 from typing import Any
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 from common.contracts.machine_contracts import load_json, sha256
-from projects.oa_tof.analysis.run_candidate_workflow import run_candidate_workflow
+from projects.oa_tof.workflows.design_candidate.run_candidate_workflow import run_candidate_workflow
 
 
 def _verified_record(record: dict[str, Any], label: str) -> Path:

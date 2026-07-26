@@ -21,7 +21,12 @@ from projects.oa_tof.analysis.generate_ion_source import (
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-RUNNER = PROJECT_ROOT / "tests" / "cross_solver" / "run_mass_spectrum_candidate.ps1"
+RUNNER = (
+    PROJECT_ROOT
+    / "workflows"
+    / "mass_spectrum_candidate"
+    / "run_mass_spectrum_candidate.ps1"
+)
 MODE = PROJECT_ROOT / "config" / "modes" / "mass_spectrum.json"
 REPO_ROOT = PROJECT_ROOT.parents[1]
 

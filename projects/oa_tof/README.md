@@ -45,7 +45,7 @@
 - 设计变量与当前优化包络：[`config/design_variables.json`](config/design_variables.json)、
   [`config/optimization_envelope.json`](config/optimization_envelope.json)；包络可审查扩大，不等于正式baseline。
 - 纯静态候选编译：[`analysis/compile_candidate_design.py`](analysis/compile_candidate_design.py)；只写隔离合同，不运行求解器或CAD。
-- 候选消费准备：[`analysis/prepare_candidate_consumers.py`](analysis/prepare_candidate_consumers.py)按
+- 候选消费准备：[`workflows/design_candidate/prepare_candidate_consumers.py`](workflows/design_candidate/prepare_candidate_consumers.py)按
   [`config/candidate_consumers.json`](config/candidate_consumers.json)把同一resolved候选绑定到COMSOL、
   生成SIMION自包含文本，并把CAD输入锁定为该候选的MPH；只证明静态输入路由，不替代运行时门禁。
 - 候选运行冻结与排序：[`analysis/prepare_candidate_run.py`](analysis/prepare_candidate_run.py)按
@@ -54,9 +54,9 @@
 - 候选运行三件套生命周期：[`analysis/candidate_run_lifecycle.py`](analysis/candidate_run_lifecycle.py)；
   从scratch原子启动完整run，冻结request/proposal/baseline/resolved/diff五项输入，并对
   success/failed/interrupted统一写根`summary.json/run_manifest.json`。
-- 集成候选执行：[`analysis/run_candidate_workflow.py`](analysis/run_candidate_workflow.py)；顺序调用N=100
+- 集成候选执行：[`workflows/design_candidate/run_candidate_workflow.py`](workflows/design_candidate/run_candidate_workflow.py)；顺序调用N=100
   粒子表、COMSOL、SIMION、CAD和结构/合同验收，任何终态均由上述生命周期后端统一收口，不含晋升。
-- 设计计划绑定入口：[`analysis/run_bound_candidate_workflow.py`](analysis/run_bound_candidate_workflow.py)；
+- 设计计划绑定入口：[`workflows/design_candidate/run_bound_candidate_workflow.py`](workflows/design_candidate/run_bound_candidate_workflow.py)；
   只执行同获批request、同run_id且变量属于已验证运行时覆盖的冻结候选计划；当前覆盖为零变化及
   `reflectron_midgrid_voltage`，范围由
   [`config/modes/design_candidate.json`](config/modes/design_candidate.json)限制。
@@ -132,11 +132,11 @@ oa_tof/
 ├─ README.md          # 本文件：项目入口和知识路由
 ├─ config/            # 跨软件机器参数契约
 ├─ docs/              # PROJECT/COMSOL/SIMION/CAD、理论推导及只读历史
-├─ comsol/            # COMSOL/MATLAB正式生产源码
+├─ comsol/            # 跨Formal、候选、性能与诊断复用的COMSOL/MATLAB机制
 ├─ simion/            # GEM、Lua、Fly2及构建/分析源码
 ├─ cad/               # COMSOL→STEP→SolidWorks可复现源码
-├─ analysis/          # 与求解器无关的轻量分析
-├─ workflows/         # Formal/reference等生产工作流及其专用任务
+├─ analysis/          # 求解器无关分析、候选冻结和run生命周期机制
+├─ workflows/         # Formal/reference、mass-spectrum、design-candidate等生产工作流及其专用任务
 └─ tests/             # COMSOL、SIMION、CAD和跨求解器长期门禁
 ```
 

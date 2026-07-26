@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 from common.contracts.machine_contracts import load_json, sha256
 from common.contracts.particle_count_policy import validate_standard_particle_count
@@ -117,7 +117,7 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
                 "-TaskScript",
                 frozen_source_path(
                     closure,
-                    "projects/oa_tof/tests/comsol/run_candidate_contract_build.m",
+                    "projects/oa_tof/workflows/design_candidate/run_candidate_contract_build.m",
                 ),
                 "-ReportPath",
                 str(build_report),
@@ -210,7 +210,7 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
                 "-TaskScript",
                 frozen_source_path(
                     closure,
-                    "projects/oa_tof/tests/cad/run_candidate_cad_sync.m",
+                    "projects/oa_tof/workflows/design_candidate/run_candidate_cad_sync.m",
                 ),
                 "-ReportPath",
                 str(report),

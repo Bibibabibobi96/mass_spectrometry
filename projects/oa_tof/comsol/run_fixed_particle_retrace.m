@@ -34,8 +34,8 @@ else
         'OATOF_DRIFT_TSTEP_NS must be a positive number.');
 end
 
-testDir = fileparts(mfilename('fullpath'));
-projectDir = fileparts(fileparts(testDir));
+comsolDir = fileparts(mfilename('fullpath'));
+projectDir = fileparts(comsolDir);
 addpath(projectDir);
 addpath(fullfile(projectDir, 'comsol'));
 paths = oatof_paths();

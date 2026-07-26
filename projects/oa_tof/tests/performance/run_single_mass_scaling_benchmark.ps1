@@ -66,7 +66,7 @@ $formalIob = Join-Path $formalSimion 'oatof_ideal_grounded.iob'
 $ionGenerator = Join-Path $projectRoot 'simion\workbench\generate_comsol_consistent_ions.ps1'
 $simionAnalyzer = Join-Path $projectRoot 'simion\workbench\analyze_ideal_field_log.ps1'
 $comsolLauncher = Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1'
-$comsolTask = Join-Path $projectRoot 'tests\comsol\test_accelerator_mesh_particle_candidate.m'
+$comsolTask = Join-Path $projectRoot 'comsol\run_fixed_particle_retrace.m'
 foreach ($path in @($formalMph,$formalIob,$ionGenerator,$simionAnalyzer,$comsolLauncher,$comsolTask,$python,$SimionExe)) {
   if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Required input is absent: $path" }
 }

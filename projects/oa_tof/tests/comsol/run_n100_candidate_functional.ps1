@@ -12,7 +12,7 @@ $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\oa_tof'
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 $launcher = Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1'
-$task = Join-Path $PSScriptRoot 'run_candidate_contract_build.m'
+$task = Join-Path $projectRoot 'workflows\design_candidate\run_candidate_contract_build.m'
 $contract = Join-Path $projectRoot 'config\resolved_geometry.json'
 $ion = Join-Path $artifactRoot 'formal\simion\oatof_comsol_524amu_gaussian_N100.ion'
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
@@ -31,7 +31,7 @@ foreach ($item in @(
   @{Name='stable_entry'; Path=(Join-Path $projectRoot 'comsol\run_oatof_model.m'); File='run_oatof_model.m'},
   @{Name='model_core'; Path=(Join-Path $projectRoot 'comsol\oatof_build_model_core.m'); File='oatof_build_model_core.m'},
   @{Name='detector_extractor'; Path=(Join-Path $projectRoot 'comsol\oatof_extract_detector_arrivals.m'); File='oatof_extract_detector_arrivals.m'},
-  @{Name='task'; Path=$task; File='run_candidate_contract_build.m'}
+  @{Name='task'; Path=$task; File='workflows/design_candidate/run_candidate_contract_build.m'}
 )) {
   if (-not (Test-Path -LiteralPath $item.Path -PathType Leaf)) {
     throw "Required input is missing: $($item.Path)"

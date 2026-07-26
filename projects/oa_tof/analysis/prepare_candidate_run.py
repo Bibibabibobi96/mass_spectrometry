@@ -13,7 +13,7 @@ REPO_ROOT = PROJECT_ROOT.parents[1]
 WORKSPACE_ROOT = REPO_ROOT.parent
 from common.contracts.artifact_naming import validate_run_id, validate_task_id
 from common.contracts.machine_contracts import load_json, sha256, validate_schema
-from projects.oa_tof.analysis.prepare_candidate_consumers import prepare as prepare_consumers
+from projects.oa_tof.workflows.design_candidate.prepare_candidate_consumers import prepare as prepare_consumers
 from projects.oa_tof.analysis.candidate_source_closure import (
     freeze_candidate_source_closure,
     frozen_source_path,
@@ -204,7 +204,7 @@ def prepare_candidate_run(
                 "model_path": str(comsol_model),
                 "report_path": str(report_dir / "comsol_build.txt"),
                 "entrypoint": frozen_source_path(source_closure, "common/comsol/run_comsol_r2025b.ps1"),
-                "task_script": str(frozen_code_root / "projects/oa_tof/tests/comsol/run_candidate_contract_build.m"),
+                "task_script": str(frozen_code_root / "projects/oa_tof/workflows/design_candidate/run_candidate_contract_build.m"),
                 "environment": {
                     "OATOF_CANDIDATE_CONTRACT_PATH": str(frozen["candidate_resolved_geometry.json"]),
                     "OATOF_CANDIDATE_MODEL_PATH": str(comsol_model),
@@ -231,7 +231,7 @@ def prepare_candidate_run(
                 "model_path": str(comsol_model),
                 "output_dir": str(run_root / "cad"),
                 "entrypoint": frozen_source_path(source_closure, "common/comsol/run_comsol_r2025b.ps1"),
-                "task_script": str(frozen_code_root / "projects/oa_tof/tests/cad/run_candidate_cad_sync.m"),
+                "task_script": str(frozen_code_root / "projects/oa_tof/workflows/design_candidate/run_candidate_cad_sync.m"),
             },
             {
                 "stage_id": "cross_solver_acceptance",

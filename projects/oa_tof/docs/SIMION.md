@@ -37,7 +37,7 @@ Program/Fly2和四个构建器源码，再从源码建立独立SIMION交付并�
 该入口只证明源码可构建、运行合同和失败收尾可工作；它不修改Formal，也不声明网格收敛或新的正式
 性能。
 
-任意设计候选先由`analysis/prepare_candidate_consumers.py`从同一
+任意设计候选先由`workflows/design_candidate/prepare_candidate_consumers.py`从同一
 `candidate_resolved_geometry.json`生成隔离的`oatof_resolved.lua`、Program和Fly2；正式文本保持不变。
 零改动回归要求三份生成文本与正式版本逐字一致。该步骤尚未Refine PA、建立IOB或Fly，因此只标记
 `text_generated_pa_iob_not_built`，不能作为SIMION候选运行通过的证据。
@@ -341,7 +341,7 @@ SHA/manifest；`config/simion_stable_entry.json`已冻结新的正式身份。
 
 `simion/workbench/analyze_ideal_field_log.ps1`在逐粒子CSV中保留ION表的`MassAmu`和`ChargeState`，
 支持一次Fly后按物种拆分，不再只能分析单一524 amu粒子。宽质量候选入口
-`tests/cross_solver/run_mass_spectrum_candidate.ps1`把五份共享初始条件的ION表合并为一个混合粒子表，
+`workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1`把五份共享初始条件的ION表合并为一个混合粒子表，
 正式Program、四PA优先级和quality=8均保持不变。只有COMSOL五个分批结果也成功并通过统一分析、
 manifest复核后，这次SIMION混合Fly才构成完整跨求解器候选；不得单独提升或覆盖524 amu正式包。
 

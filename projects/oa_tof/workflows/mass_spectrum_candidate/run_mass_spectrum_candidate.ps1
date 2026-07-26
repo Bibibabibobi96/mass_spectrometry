@@ -296,7 +296,7 @@ foreach ($species in $mode.species) {
       [Environment]::SetEnvironmentVariable($entry.Key,$entry.Value,'Process')
     }
     & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') `
-      -TaskScript (Join-Path $projectRoot 'tests\comsol\test_accelerator_mesh_particle_candidate.m') `
+      -TaskScript (Join-Path $projectRoot 'comsol\run_fixed_particle_retrace.m') `
       -ReportPath $reportPath
   } finally {
     foreach ($entry in $variables.GetEnumerator()) {

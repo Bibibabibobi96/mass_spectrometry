@@ -223,7 +223,7 @@ Formal 资产、candidate source closure 或 RF 项目文件。
    重调；加速器尺寸和电压全部双向优化，不受TOF包络约束。超出当前包络返回
    `NEEDS_ENVELOPE_REVIEW`，批准扩大不自动改写正式baseline。静态测试证明零改动精确复现正式参数，
    也能在求解前拒绝缩短后未同步重配而发生的电极重叠；测试数值不构成候选设计建议。
-   `config/candidate_consumers.json`和`analysis/prepare_candidate_consumers.py`现已闭合静态输入路由：
+   `config/candidate_consumers.json`和`workflows/design_candidate/prepare_candidate_consumers.py`现已闭合静态输入路由：
    COMSOL显式读取候选resolved合同，SIMION从同一合同生成隔离文本，CAD只消费该候选生成的MPH。
    零改动候选的SIMION文本与正式版本逐字一致，单一非零变量能沿计划传播；这只证明路由可行，未证明
    每个模型特征、PA/IOB或装配都正确变化。当前`config/execution_profiles.json`仍只运行固定五质量和
@@ -232,7 +232,7 @@ Formal 资产、candidate source closure 或 RF 项目文件。
    禁止自动晋升；COMSOL候选合同构建、SIMION候选文本/合同构建和CAD候选导出入口已就位。
    `analysis/candidate_run_lifecycle.py`已闭合根三件套：在scratch组装完整失效安全运行后原子进入runs，
    success/failed/interrupted均通过artifact布局门禁，success仍只标记接受但未晋升。
-   `analysis/run_candidate_workflow.py`现已集成共享N=100粒子表、COMSOL构建/同步、SIMION构建/运行时、
+   `workflows/design_candidate/run_candidate_workflow.py`现已集成共享N=100粒子表、COMSOL构建/同步、SIMION构建/运行时、
    CAD导出和最终结构合同验收；模拟执行器已闭合成功、失败、中断、后续阶段阻断及共享粒子表SHA门禁。
    2026-07-20零改动真实候选`20260720_111805__test__cross__zero-change-candidate-retry2__n100`已完成：
    COMSOL构建及独立回读、SIMION PA/IOB构建及运行时合同、25组件SolidWorks装配和共享粒子表SHA验收

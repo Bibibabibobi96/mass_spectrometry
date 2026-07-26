@@ -33,7 +33,7 @@
           "step_id": "mass_spectrum_run",
           "kind": "run",
           "shell": "powershell",
-          "entrypoint": "tests/cross_solver/run_mass_spectrum_candidate.ps1",
+          "entrypoint": "workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1",
           "run_id_template": "{timestamp}__sim__cross__mass-spectrum__five-mass",
           "arguments": ["-RunId", "{mass_spectrum_run_id}"]
         }
@@ -90,7 +90,7 @@
           "step_id": "candidate_workflow",
           "kind": "run",
           "shell": "python",
-          "entrypoint": "analysis/run_bound_candidate_workflow.py",
+          "entrypoint": "workflows/design_candidate/run_bound_candidate_workflow.py",
           "run_id_template": null,
           "arguments": ["{design_plan_path}", "{candidate_workflow_plan}"]
         }
