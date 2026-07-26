@@ -625,18 +625,35 @@ class CandidateDesignTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             run_root = Path(root)
             files = {}
-            for name in ("particle_table", "model", "sync_report", "iob", "ion_n100", "stage_summary", "cad_report"):
+            for name in (
+                "particle_table", "model", "sync_report", "iob", "ion_n100", "stage_summary",
+                "runtime_report", "transport_diagnostics", "cad_report",
+            ):
                 path = run_root / f"{name}.dat"
                 content = "\n".join(["same particle table"] * 100) if name in ("particle_table", "ion_n100") else "evidence"
                 path.write_text(content, encoding="utf-8")
                 files[name] = str(path)
+            particle_csv = run_root / "simion_particles.csv"
+            particle_csv.write_text("Ion\n" + "\n".join(str(index) for index in range(1, 101)) + "\n", encoding="utf-8")
+            transport_summary = run_root / "simion_transport_summary.json"
+            transport_summary.write_text(json.dumps({
+                "status": "success", "expected_particle_count": 100, "trajectory_quality": 8,
+                "emitted": 100, "crossed": 100, "hit": 100,
+                "ion": {"sha256": sha256(Path(files["ion_n100"]))},
+                "particle_csv": {"sha256": sha256(particle_csv)},
+            }), encoding="utf-8")
+            files["particle_csv"] = str(particle_csv)
+            files["transport_summary"] = str(transport_summary)
             plan = {
                 "run_root": str(run_root),
                 "stage_results_so_far": [
                     {"stage_id": "static_inputs", "evidence": {"particle_table": files["particle_table"]}},
                     {"stage_id": "comsol_candidate", "evidence": {"model": files["model"], "sync_report": files["sync_report"]}},
                     {"stage_id": "simion_candidate", "evidence": {
-                        "iob": files["iob"], "ion_n100": files["ion_n100"], "stage_summary": files["stage_summary"]}},
+                        "iob": files["iob"], "ion_n100": files["ion_n100"], "stage_summary": files["stage_summary"],
+                        "runtime_report": files["runtime_report"], "transport_summary": files["transport_summary"],
+                        "particle_csv": files["particle_csv"], "transport_diagnostics": files["transport_diagnostics"],
+                    }},
                     {"stage_id": "cad_candidate", "evidence": {"cad_report": files["cad_report"]}},
                 ],
             }
@@ -648,9 +665,30 @@ class CandidateDesignTests(unittest.TestCase):
             acceptance = load_json(Path(evidence["acceptance"]))
             self.assertEqual(acceptance["scope"], "structural_build_and_contract")
             self.assertTrue(acceptance["shared_particle_table_sha256"])
+            self.assertEqual(acceptance["comsol_simion_particle_level_comparison"], "not_run")
+            particle_csv.write_text("Ion\n1\n", encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "transport evidence is incomplete or changed"):
+                execute_stage(stage, plan, "unused")
+            particle_csv.write_text(
+                "Ion\n" + "\n".join(str(index) for index in range(1, 101)) + "\n", encoding="utf-8"
+            )
             Path(files["ion_n100"]).write_text("different", encoding="utf-8")
             with self.assertRaisesRegex(RuntimeError, "particle tables differ"):
                 execute_stage(stage, plan, "unused")
+
+    def test_candidate_source_closure_freezes_shared_n100_transport_mechanism(self):
+        required = {
+            "projects/oa_tof/simion/workbench/run_n100_transport.ps1",
+            "projects/oa_tof/simion/workbench/analyze_ideal_field_log.ps1",
+            "projects/oa_tof/analysis/solver_diagnostics.py",
+        }
+        self.assertTrue(required.issubset(set(RELATIVE_PATHS)))
+        self.assertIn("projects/oa_tof/simion/workbench/analyze_ideal_field_log.ps1", PYTHON_BOUND_SOURCES)
+
+    def test_source_build_runner_reuses_shared_transport_helper(self):
+        runner = (PROJECT_ROOT / "tests" / "simion" / "run_n100_source_build_and_track.ps1").read_text(encoding="utf-8")
+        self.assertIn("run_n100_transport.ps1", runner)
+        self.assertNotIn("'--nogui', 'fly'", runner)
 
     def test_simion_candidate_requires_explicit_nonformal_frozen_template_before_builder(self):
         with tempfile.TemporaryDirectory() as root:

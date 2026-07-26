@@ -18,9 +18,10 @@ $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Pat
 $formalSimion = Join-Path $artifactRoot 'formal\simion'
 $builder = Join-Path $projectRoot 'simion\workbench\build_formal_delivery.ps1'
 $analyzer = Join-Path $projectRoot 'simion\workbench\analyze_ideal_field_log.ps1'
+$transport = Join-Path $projectRoot 'simion\workbench\run_n100_transport.ps1'
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 
-foreach ($path in @($SimionExe, $builder, $analyzer)) {
+foreach ($path in @($SimionExe, $builder, $analyzer, $transport)) {
   if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
     throw "Required executable or script is missing: $path"
   }
@@ -140,25 +141,14 @@ try {
   $ion = Join-Path $simionDir 'oatof_comsol_524amu_gaussian_N100.ion'
   $flyLog = Join-Path $package.log_dir 'simion_n100.log'
   $flyError = Join-Path $package.log_dir 'simion_n100.stderr.log'
-  Invoke-SimionHidden -Arguments @(
-    '--default-num-particles', '100', '--nogui', 'fly',
-    '--trajectory-quality', '8', '--retain-trajectories', '0',
-    '--particles', $ion,
-    '--adjustable', 'trajectory_quality=8',
-    '--adjustable', 'trajectory_log_enable=1',
-    $iob
-  ) -WorkingDirectory $simionDir -Stdout $flyLog -Stderr $flyError
-
   $particleCsv = Join-Path $package.result_dir 'simion_particles.csv'
-  $diagnostics = & $analyzer -Log $flyLog -IonFile $ion -Mode 'source_built' `
-    -Distribution 'fixedN100' -ParticleCsv $particleCsv
-  if ($LASTEXITCODE -ne 0) { throw 'Python SIMION diagnostics failed.' }
-  if ([int]$diagnostics.Emitted -ne 100 -or [int]$diagnostics.Crossed -ne 100 -or
-      [int]$diagnostics.Hit -ne 100) {
-    throw "SIMION diagnostic census failed: $($diagnostics | ConvertTo-Json -Compress)"
-  }
   $diagnosticsPath = Join-Path $package.result_dir 'solver_diagnostics.json'
-  $diagnostics | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $diagnosticsPath -Encoding UTF8
+  $transportSummary = Join-Path $package.result_dir 'simion_transport_summary.json'
+  & $transport -SimionExe $SimionExe -IobPath $iob -IonPath $ion -LogPath $flyLog `
+    -ErrorPath $flyError -DiagnosticsPath $diagnosticsPath -ParticleCsv $particleCsv `
+    -SummaryPath $transportSummary -AnalyzerScript $analyzer -ResolvedContractPath $frozen.resolved_geometry
+  if ($LASTEXITCODE -ne 0) { throw 'Shared SIMION N=100 transport failed.' }
+  $diagnostics = Get-Content -LiteralPath $diagnosticsPath -Raw -Encoding UTF8 | ConvertFrom-Json
   Write-RunJson -Path $package.summary -Value ([ordered]@{
     schema_version = 1
     role = 'oa_tof_simion_n100_source_build_and_track_summary'
@@ -179,6 +169,7 @@ try {
     $flyLog,
     $particleCsv,
     $diagnosticsPath,
+    $transportSummary,
     $package.summary
   )
   Write-RunManifest -Python $package.python -RepoRoot $repoRoot `

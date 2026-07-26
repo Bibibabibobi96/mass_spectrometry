@@ -58,8 +58,10 @@ RELATIVE_PATHS = (
     "projects/oa_tof/simion/workbench/build_detector_variant.lua",
     "projects/oa_tof/simion/workbench/build_flight_tube_variant.lua",
     "projects/oa_tof/simion/workbench/generate_comsol_consistent_ions.ps1",
+    "projects/oa_tof/simion/workbench/analyze_ideal_field_log.ps1",
     "projects/oa_tof/simion/workbench/build_formal_delivery.ps1",
     "projects/oa_tof/simion/workbench/build_formal_iob.lua",
+    "projects/oa_tof/simion/workbench/run_n100_transport.ps1",
     "projects/oa_tof/simion/workbench/oatof_detector_ground.gem",
     "projects/oa_tof/simion/workbench/oatof_flight_tube_ground.gem",
     "projects/oa_tof/workflows/design_candidate/run_candidate_cad_sync.m",
@@ -67,10 +69,12 @@ RELATIVE_PATHS = (
     "projects/oa_tof/tests/comsol/verify_oatof_comsol_sync.m",
     "projects/oa_tof/tests/simion/verify_iob_runtime_contract.lua",
     "projects/oa_tof/tests/simion/verify_iob_runtime_contract.ps1",
+    "projects/oa_tof/analysis/solver_diagnostics.py",
 )
 
 PYTHON_BOUND_SOURCES = frozenset({
     "projects/oa_tof/simion/workbench/generate_comsol_consistent_ions.ps1",
+    "projects/oa_tof/simion/workbench/analyze_ideal_field_log.ps1",
     "projects/oa_tof/simion/workbench/build_formal_delivery.ps1",
 })
 PYTHON_ASSIGNMENT = "$python = Join-Path $repoRoot '.venv\\Scripts\\python.exe'"

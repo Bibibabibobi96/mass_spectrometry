@@ -235,6 +235,9 @@ Formal 资产、candidate source closure 或 RF 项目文件。
    success/failed/interrupted均通过artifact布局门禁，success仍只标记接受但未晋升。
    `workflows/design_candidate/run_candidate_workflow.py`现已集成共享N=100粒子表、COMSOL构建/同步、SIMION构建/运行时、
    CAD导出和最终结构合同验收；模拟执行器已闭合成功、失败、中断、后续阶段阻断及共享粒子表SHA门禁。
+   SIMION阶段还在IOB运行时门禁后调用共享固定N=100真实Fly机制，冻结日志、粒子CSV、诊断与SHA并要求
+   100/100 emitted/crossed/hit；该结构证据不替代COMSOL逐粒子跨求解器比较。独立非Formal IOB/CON模板
+   尚未物化，因此当前Candidate仍会在模板前置门禁失败，且不会读取旧Formal资产。
    2026-07-20零改动真实候选`20260720_111805__test__cross__zero-change-candidate-retry2__n100`已完成：
    COMSOL构建及独立回读、SIMION PA/IOB构建及运行时合同、25组件SolidWorks装配和共享粒子表SHA验收
    全部PASS，根三件套状态为`success/candidate_accepted_not_promoted`。正式baseline SHA与计划冻结值一致，

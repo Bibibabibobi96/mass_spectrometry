@@ -212,6 +212,8 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
             _powershell(verify, ["-IobPath", str(iob), "-SimionExe", simion_exe]),
             logs / "simion_runtime_verify.log",
         )
+        runtime_report = logs / "simion_runtime_verify.log"
+        _require_pass_report(runtime_report)
         summary = Path(stage["output_dir"]) / "stage_summary.json"
         if load_json(summary).get("status") != "success":
             raise RuntimeError("SIMION candidate stage summary did not pass")
@@ -222,11 +224,54 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
         validate_standard_particle_count(particle_count)
         if particle_count != 100:
             raise RuntimeError("oa-TOF candidate workflow requires the N=100 functional tier")
+        resolved_contract = load_json(Path(stage["contract_path"]))
+        detector_radius_mm = resolved_contract["simion_detector_marker"]["active_radius_mm"]
+        particle_csv = run_root / "results" / "simion_particles.csv"
+        diagnostics = run_root / "results" / "simion_transport_diagnostics.json"
+        transport_summary = run_root / "results" / "simion_transport_summary.json"
+        transport = frozen_source_path(
+            closure, "projects/oa_tof/simion/workbench/run_n100_transport.ps1"
+        )
+        analyzer = frozen_source_path(
+            closure, "projects/oa_tof/simion/workbench/analyze_ideal_field_log.ps1"
+        )
+        _run_command(
+            _powershell(
+                transport,
+                [
+                    "-SimionExe", simion_exe,
+                    "-IobPath", str(iob),
+                    "-IonPath", str(ion_n100),
+                    "-LogPath", str(logs / "simion_n100.log"),
+                    "-ErrorPath", str(logs / "simion_n100.stderr.log"),
+                    "-DiagnosticsPath", str(diagnostics),
+                    "-ParticleCsv", str(particle_csv),
+                    "-SummaryPath", str(transport_summary),
+                    "-AnalyzerScript", analyzer,
+                    "-ResolvedContractPath", stage["contract_path"],
+                    "-ExpectedParticleCount", "100",
+                    "-ExpectedTrajectoryQuality", "8",
+                    "-DetectorRadiusMm", str(detector_radius_mm),
+                ],
+            ),
+            logs / "simion_transport_launcher.log",
+        )
+        transport_record = load_json(transport_summary)
+        if (
+            transport_record.get("status") != "success"
+            or transport_record.get("expected_particle_count") != 100
+            or transport_record.get("trajectory_quality") != 8
+            or any(transport_record.get(key) != 100 for key in ("emitted", "crossed", "hit"))
+        ):
+            raise RuntimeError("SIMION candidate N=100 transport summary did not pass")
         return {
             "iob": str(iob),
             "ion_n100": str(ion_n100),
             "stage_summary": str(summary),
-            "runtime_log": str(logs / "simion_runtime_verify.log"),
+            "runtime_report": str(runtime_report),
+            "transport_summary": str(transport_summary),
+            "particle_csv": str(particle_csv),
+            "transport_diagnostics": str(diagnostics),
         }
 
     if stage_id == "cad_candidate":
@@ -264,7 +309,10 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
         required = {
             "static_inputs": ("particle_table",),
             "comsol_candidate": ("model", "sync_report"),
-            "simion_candidate": ("iob", "ion_n100", "stage_summary"),
+            "simion_candidate": (
+                "iob", "ion_n100", "stage_summary", "runtime_report",
+                "transport_summary", "particle_csv", "transport_diagnostics",
+            ),
             "cad_candidate": ("cad_report",),
         }
         for source_stage, keys in required.items():
@@ -279,6 +327,15 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
         )
         if sha256(comsol_ion).lower() != sha256(simion_ion).lower():
             raise RuntimeError("COMSOL and SIMION candidate N=100 particle tables differ")
+        transport = load_json(Path(evidence["simion_candidate"]["transport_summary"]))
+        if (
+            transport.get("status") != "success"
+            or transport.get("ion", {}).get("sha256", "").lower() != sha256(simion_ion).lower()
+            or any(transport.get(key) != 100 for key in ("emitted", "crossed", "hit"))
+            or transport.get("particle_csv", {}).get("sha256", "").lower()
+            != sha256(Path(evidence["simion_candidate"]["particle_csv"])).lower()
+        ):
+            raise RuntimeError("SIMION candidate transport evidence is incomplete or changed")
         output_dir = Path(stage["output_dir"])
         output_dir.mkdir(parents=True, exist_ok=True)
         acceptance = {
@@ -290,6 +347,9 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
             "formal_modified": False,
             "promotion_authorized": False,
             "shared_particle_table_sha256": sha256(comsol_ion),
+            "simion_transport_particles": 100,
+            "simion_transport_evidence_only": True,
+            "comsol_simion_particle_level_comparison": "not_run",
             "evidence": evidence,
         }
         path = output_dir / "candidate_acceptance.json"

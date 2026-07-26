@@ -48,6 +48,14 @@ Program/Fly2和四个构建器源码，再从源码建立独立SIMION交付并�
 集成runner额外传入`DeferRunFinalization`：构建器只在`simion/`写阶段摘要，不得提前覆盖run根
 `summary.json/run_manifest.json`；根三件套由跨软件生命周期后端在所有阶段结束后唯一收口。
 
+`simion/workbench/run_n100_transport.ps1`是源码构建回归和设计候选共同调用的固定N=100真实
+Fly机制。它只消费调用方冻结的IOB、同源ION、resolved合同和显式输出路径，固定quality=8并打开
+轨迹审计；它写入完整Fly日志、canonical粒子CSV、诊断和含输入/输出SHA的transport summary，且
+只有100/100 emitted/crossed/hit与唯一粒子ID才通过。它不读取Formal资产、不创建候选模板、不承担
+run生命周期。Candidate仍必须先通过四实例IOB运行时门禁，并提供独立、冻结的非Formal IOB/CON
+模板；模板缺失时在任何PA构建或Fly之前失败。该N=100 transport只补齐结构候选的真实SIMION证据，
+不构成COMSOL逐粒子比较、性能结论或Formal资格。
+
 稳定实现入口以`config/simion_stable_entry.json`冻结：0.05mm是正式可移植交付，0.025mm仅作轴向
 网格收敛参考。该清单记录外部资产路径、大小和SHA-256，不重复维护物理参数；物理
 参数仍以`config/baseline.json`为唯一来源。每次移动、重建或打包SIMION资产后运行：
