@@ -63,6 +63,18 @@ class ProjectRegistryTests(unittest.TestCase):
         with self.assertRaises(ContractError):
             validate_schema(descriptor, "project.schema.json")
 
+    def test_revalidation_pending_retains_formal_history_and_identity_requirement(self) -> None:
+        path = REPO_ROOT / "projects" / "oa_tof" / "config" / "project.json"
+        descriptor = copy.deepcopy(load_json(path))
+        self.assertEqual(descriptor["lifecycle_status"], "formal_revalidation_pending")
+        self.assertIn("science", descriptor["contracts"])
+        self.assertIn("solver_numerics", descriptor["contracts"])
+        validate_descriptor(descriptor, path, REPO_ROOT)
+
+        descriptor["formal_assets"]["identity_contract"] = None
+        with self.assertRaisesRegex(ContractError, "identity contract"):
+            validate_descriptor(descriptor, path, REPO_ROOT)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -15,6 +15,9 @@ else:
 
 MATURITY = {"prototype": 0, "static": 1, "candidate": 2, "formal": 3}
 EVIDENCE = {"plan": -1, **MATURITY}
+# Registry records retained Formal history; project lifecycle preflight remains the execution authority.
+LIFECYCLE_MATURITY = {**MATURITY, "formal_revalidation_pending": MATURITY["formal"]}
+FORMAL_ASSET_LIFECYCLES = frozenset(("formal", "formal_revalidation_pending"))
 DEFAULT_OUTPUT = REPO_ROOT / "config" / "project_registry.json"
 
 
@@ -45,7 +48,7 @@ def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path)
         if capability_id in capability_ids:
             raise ContractError(f"{path}: duplicate capability_id {capability_id!r}")
         capability_ids.add(capability_id)
-        if MATURITY[capability["status"]] > MATURITY[descriptor["lifecycle_status"]]:
+        if MATURITY[capability["status"]] > LIFECYCLE_MATURITY[descriptor["lifecycle_status"]]:
             raise ContractError(f"{path}: capability {capability_id!r} exceeds project maturity")
         for mode in capability["modes"]:
             mode_path = project_root / "config" / "modes" / f"{mode}.json"
@@ -259,8 +262,15 @@ def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path)
     if identity is not None and not (project_root / identity).is_file():
         raise ContractError(f"{path}: formal identity contract is missing: {identity}")
     if assets["status"] == "formal":
-        if descriptor["lifecycle_status"] != "formal" or identity is None or not assets["types"]:
-            raise ContractError(f"{path}: formal assets require formal maturity, types, and identity contract")
+        if (
+            descriptor["lifecycle_status"] not in FORMAL_ASSET_LIFECYCLES
+            or identity is None
+            or not assets["types"]
+        ):
+            raise ContractError(
+                f"{path}: formal assets require formal lifecycle or revalidation-pending history, "
+                "types, and identity contract"
+            )
     elif any(capability["status"] == "formal" for capability in descriptor["capabilities"]):
         raise ContractError(f"{path}: formal capability declared without formal assets")
 

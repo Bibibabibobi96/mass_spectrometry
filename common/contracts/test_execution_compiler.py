@@ -109,7 +109,10 @@ class ExecutionCompilerTests(unittest.TestCase):
         ready = self.compile_request(request, {"candidate_workflow_plan": "C:/candidate/plan.json"})
         self.assertEqual(ready["status"], "EXECUTION_READY")
         self.assertEqual(ready["profile_id"], "validated_structural_candidate")
-        self.assertEqual(ready["commands"][0]["argv"][1:3], ["-m", "projects.oa_tof.analysis.run_bound_candidate_workflow"])
+        self.assertEqual(
+            ready["commands"][0]["argv"][1:3],
+            ["-m", "projects.oa_tof.workflows.design_candidate.run_bound_candidate_workflow"],
+        )
         self.assertIn("C:/candidate/plan.json", ready["commands"][0]["argv"])
 
         request["design_variables"] = ["reflectron_midgrid_voltage"]

@@ -23,7 +23,7 @@
     "family_id": {"$ref": "#/$defs/identifier"},
     "display_name": {"type": "string", "minLength": 1},
     "purpose": {"type": "string", "minLength": 1},
-    "lifecycle_status": {"$ref": "#/$defs/maturity"},
+    "lifecycle_status": {"$ref": "#/$defs/lifecycle"},
     "toolchains": {
       "type": "array",
       "minItems": 1,
@@ -38,6 +38,8 @@
       "required": ["baseline", "resolved", "analysis", "interface", "execution", "design_variables", "optimization_envelope"],
       "properties": {
         "baseline": {"$ref": "#/$defs/nullablePath"},
+        "science": {"$ref": "#/$defs/nullablePath"},
+        "solver_numerics": {"$ref": "#/$defs/nullablePath"},
         "resolved": {"$ref": "#/$defs/nullablePath"},
         "analysis": {"$ref": "#/$defs/nullablePath"},
         "interface": {"$ref": "#/$defs/nullablePath"},
@@ -110,6 +112,9 @@
     },
     "maturity": {
       "enum": ["prototype", "static", "candidate", "formal"]
+    },
+    "lifecycle": {
+      "enum": ["prototype", "static", "candidate", "formal", "formal_revalidation_pending"]
     },
     "nullablePath": {
       "type": ["string", "null"],

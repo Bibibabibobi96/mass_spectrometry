@@ -12,7 +12,7 @@
     },
     {
       "descriptor": "projects/oa_tof/config/project.json",
-      "sha256": "EC4E2AE51229011828EA4912D1E38E18EBC5922B410018C4B4FCD2E15BBE7B52"
+      "sha256": "D5AC412C8618ADE801880215DE7471D246E2EF28B609C0B18DFF09BF4CB7E818"
     },
     {
       "descriptor": "projects/rf_hexapole_ion_guide/config/project.json",
@@ -126,7 +126,7 @@
       "family_id": "tof_mass_analyzers",
       "display_name": "正交加速飞行时间质量分析器",
       "purpose": "单次折返oa-TOF的质量分析、离子传输和正式跨求解器设计",
-      "lifecycle_status": "formal",
+      "lifecycle_status": "formal_revalidation_pending",
       "toolchains": [
         "comsol",
         "simion",
@@ -136,6 +136,8 @@
       ],
       "contracts": {
         "baseline": "config/baseline.json",
+        "science": "config/modes/formal.json",
+        "solver_numerics": "config/formal_solver_numerics.json",
         "resolved": "config/resolved_geometry.json",
         "analysis": "config/analysis_contract.json",
         "interface": null,
