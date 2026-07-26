@@ -6,7 +6,7 @@
   "sources": [
     {
       "path": "projects/oa_tof/config/baseline.json",
-      "sha256": "1170275D43E64AC18956C804B452172D4DB69D595D0E6098FA1995976C6BCF74"
+      "sha256": "A50A247F58093A2C0A030AA8BDAE2AE695AB5E972D1F41E49090B6A121042685"
     },
     {
       "path": "projects/rf_quadrupole_collision_cooling/config/resolved_design_official.json",
@@ -199,7 +199,7 @@
       "unit": "V",
       "source": {
         "path": "projects/oa_tof/config/baseline.json",
-        "sha256": "1170275D43E64AC18956C804B452172D4DB69D595D0E6098FA1995976C6BCF74"
+        "sha256": "A50A247F58093A2C0A030AA8BDAE2AE695AB5E972D1F41E49090B6A121042685"
       },
       "json_pointer": "/electrodes_V/shield",
       "electrode_bindings": [
