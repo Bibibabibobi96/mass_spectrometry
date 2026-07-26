@@ -20,7 +20,11 @@ from projects.oa_tof.analysis.candidate_source_closure import (
 )
 from projects.oa_tof.analysis.compile_candidate_design import EnvelopeReviewRequired, compile_proposal, write_candidate
 from projects.oa_tof.workflows.design_candidate.prepare_candidate_consumers import prepare, verify_routing_coverage
-from projects.oa_tof.analysis.prepare_candidate_run import prepare_candidate_run, validate_workflow
+from projects.oa_tof.analysis.prepare_candidate_run import (
+    _registered_candidate_template,
+    prepare_candidate_run,
+    validate_workflow,
+)
 from projects.oa_tof.analysis.prepare_formal_promotion import prepare as prepare_promotion
 from projects.oa_tof.workflows.design_candidate.run_bound_candidate_workflow import validate_bound_candidate
 from projects.oa_tof.workflows.design_candidate.run_candidate_workflow import (
@@ -35,6 +39,44 @@ from projects.oa_tof.workflows.design_candidate.run_candidate_workflow import (
 
 
 class CandidateDesignTests(unittest.TestCase):
+    def registered_template_run(self, artifact_root: Path, run_id: str = "20260726_120000__build__simion__candidate-layout-template") -> Path:
+        run_root = artifact_root / "runs" / run_id
+        source = artifact_root.parent / "user_created_layout"
+        source.mkdir(parents=True)
+        iob = source / "layout.iob"
+        con = source / "layout.con"
+        iob.write_bytes(b"user-created-iob")
+        con.write_bytes(b"user-created-con")
+        run_root.mkdir(parents=True)
+        config = {
+            "schema_version": 1,
+            "role": "oa_tof_simion_candidate_layout_template_build",
+            "run_id": run_id,
+            "project": "oa_tof",
+            "mode": "candidate_layout_template_build",
+            "template_role": "oa_tof_candidate_simion_layout_template",
+            "inputs": {"source_iob": str(iob), "source_con": str(con)},
+            "input_sha256": {"source_iob": sha256(iob), "source_con": sha256(con)},
+        }
+        summary = {
+            "role": "oa_tof_simion_candidate_layout_template_build_summary",
+            "status": "success", "runtime_structure_verified": True,
+            "particle_fly_executed": False, "formal_modified": False,
+        }
+        report = "INSTANCE_COUNT=4\nTEMPLATE_STRUCTURE_ONLY=true\nSTATUS=PASS\n"
+        (run_root / "run_config.json").write_text(json.dumps(config), encoding="utf-8")
+        (run_root / "summary.json").write_text(json.dumps(summary), encoding="utf-8")
+        (run_root / "simion_layout_runtime_report.txt").write_text(report, encoding="utf-8")
+        manifest = {
+            "status": "success", "run_id": run_id,
+            "inputs": {
+                key: {"path": value, "sha256": config["input_sha256"][key]}
+                for key, value in config["inputs"].items()
+            },
+        }
+        (run_root / "run_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        return run_root
+
     def base_request(self):
         request = load_json(REPO_ROOT / "common" / "contracts" / "examples" / "oa_tof_500da_r30000.example.json")
         request["status"] = "approved"
@@ -365,6 +407,49 @@ class CandidateDesignTests(unittest.TestCase):
                 self.assertNotIn(live_root, payload)
             with self.assertRaisesRegex(FileExistsError, "overwrite is forbidden"):
                 prepare_candidate_run(*inputs, run_id, artifact_root)
+
+    def test_candidate_template_requires_successful_registered_template_build_run(self):
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            artifact_root = root_path / "artifacts" / "projects" / "oa_tof"
+            registration = self.registered_template_run(artifact_root)
+            record = _registered_candidate_template(registration, artifact_root)
+            self.assertEqual(record["source_iob"].name, "layout.iob")
+            failed = load_json(registration / "summary.json")
+            failed["status"] = "failed"
+            (registration / "summary.json").write_text(json.dumps(failed), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "not a successful structure-only"):
+                _registered_candidate_template(registration, artifact_root)
+
+    def test_candidate_prepare_freezes_only_registered_template_sources(self):
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            artifact_root = root_path / "artifacts" / "projects" / "oa_tof"
+            registration = self.registered_template_run(artifact_root)
+            candidate_inputs = root_path / "candidate_inputs"
+            candidate_inputs.mkdir()
+            inputs = self.candidate_run_inputs(candidate_inputs)
+            plan = prepare_candidate_run(
+                *inputs,
+                "20260726_121000__build__cross__design-candidate__zero-change",
+                artifact_root,
+                simion_template_run=registration,
+            )
+            stage = next(item for item in plan["stages"] if item["stage_id"] == "simion_candidate")
+            self.assertEqual(stage["status"], "ready")
+            self.assertEqual(stage["template_input"]["role"], "oa_tof_candidate_simion_layout_template")
+            self.assertTrue(Path(stage["template_input"]["files"]["iob"]["path"]).is_file())
+            self.assertTrue(Path(stage["template_input"]["files"]["con"]["path"]).is_file())
+
+    def test_template_registration_is_structure_only_and_rejects_prohibited_sources(self):
+        script = (PROJECT_ROOT / "simion" / "workbench" / "register_candidate_layout_template.ps1").read_text(encoding="utf-8")
+        for token in (
+            "SourceIobPath", "SourceConPath", "oa_tof_simion_candidate_layout_template_build",
+            "-TemplateStructureOnly", "formal', 'archive', 'history", "particle_fly_executed = $false",
+        ):
+            self.assertIn(token, script)
+        self.assertNotIn("Copy-Item", script)
+        self.assertNotIn(" --nogui fly", script)
 
     def test_candidate_inputs_cannot_come_from_formal_artifacts(self):
         with tempfile.TemporaryDirectory() as root:

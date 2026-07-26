@@ -109,6 +109,69 @@ def _candidate_sources(candidate_baseline: Path, candidate_resolved: Path, candi
     }
 
 
+def _registered_candidate_template(template_run: Path, artifact_project_root: Path) -> dict[str, Path]:
+    """Return validated sources from one successful non-Formal layout registration."""
+    run_root = template_run.resolve()
+    runs_root = (artifact_project_root / "runs").resolve()
+    if not _inside(run_root, runs_root) or run_root.parent != runs_root:
+        raise ValueError("candidate SIMION template must be a direct artifacts/runs registration run")
+    paths = {
+        "run_config": run_root / "run_config.json",
+        "summary": run_root / "summary.json",
+        "manifest": run_root / "run_manifest.json",
+        "runtime_report": run_root / "simion_layout_runtime_report.txt",
+    }
+    if any(not path.is_file() for path in paths.values()):
+        raise ValueError("candidate SIMION template registration evidence is incomplete")
+    config = load_json(paths["run_config"])
+    summary = load_json(paths["summary"])
+    manifest = load_json(paths["manifest"])
+    if (
+        config.get("role") != "oa_tof_simion_candidate_layout_template_build"
+        or config.get("project") != "oa_tof"
+        or config.get("mode") != "candidate_layout_template_build"
+        or config.get("run_id") != run_root.name
+        or config.get("template_role") != "oa_tof_candidate_simion_layout_template"
+    ):
+        raise ValueError("candidate SIMION template registration has an unsupported identity")
+    if (
+        summary.get("role") != "oa_tof_simion_candidate_layout_template_build_summary"
+        or summary.get("status") != "success"
+        or not summary.get("runtime_structure_verified")
+        or summary.get("particle_fly_executed")
+        or summary.get("formal_modified")
+        or manifest.get("status") != "success"
+        or manifest.get("run_id") != run_root.name
+    ):
+        raise ValueError("candidate SIMION template registration is not a successful structure-only run")
+    report = paths["runtime_report"].read_text(encoding="utf-8", errors="replace")
+    if not all(token in report for token in ("STATUS=PASS", "INSTANCE_COUNT=4", "TEMPLATE_STRUCTURE_ONLY=true")):
+        raise ValueError("candidate SIMION template runtime evidence is incomplete")
+    inputs = config.get("inputs", {})
+    hashes = config.get("input_sha256", {})
+    manifest_inputs = manifest.get("inputs", {})
+    result = {"registration_run": run_root, "registration_manifest": paths["manifest"]}
+    for label, suffix in (("source_iob", ".iob"), ("source_con", ".con")):
+        path = Path(inputs.get(label, "")).resolve()
+        expected = str(hashes.get(label, ""))
+        recorded = manifest_inputs.get(label, {})
+        if (
+            not path.is_file()
+            or path.suffix.lower() != suffix
+            or not expected
+            or sha256(path).lower() != expected.lower()
+            or str(recorded.get("path", "")) != str(path)
+            or str(recorded.get("sha256", "")).lower() != expected.lower()
+        ):
+            raise ValueError(f"candidate SIMION template registration source changed: {label}")
+        if any(segment in path.as_posix().lower().split("/") for segment in ("formal", "archive", "history")):
+            raise ValueError("candidate SIMION template registration references a prohibited source path")
+        result[label] = path
+    if result["source_iob"].with_suffix(".con").name != result["source_con"].name:
+        raise ValueError("candidate SIMION template registration bundle basenames do not match")
+    return result
+
+
 def prepare_candidate_run(
     candidate_baseline: Path,
     candidate_resolved: Path,
@@ -116,6 +179,7 @@ def prepare_candidate_run(
     run_id: str,
     artifact_project_root: Path | None = None,
     particle_source_seed: int = 20260713,
+    simion_template_run: Path | None = None,
 ) -> dict:
     run_identity = validate_run_id(run_id)
     workflow = load_json(WORKFLOW_PATH)
@@ -145,6 +209,11 @@ def prepare_candidate_run(
         or sources["candidate_solver_numerics.json"] == FORMAL_NUMERICS_PATH.resolve()
     ):
         raise ValueError("candidate run requires isolated candidate contracts, not the formal project contracts")
+    template_registration = (
+        _registered_candidate_template(simion_template_run, artifact_project_root)
+        if simion_template_run is not None
+        else None
+    )
     resolved_source = load_json(sources["candidate_resolved_geometry.json"])
     if resolved_source.get("role") != "oa_tof_resolved_contract_do_not_edit":
         raise ValueError("candidate resolved contract has an unsupported role")
@@ -164,6 +233,17 @@ def prepare_candidate_run(
         target = inputs_dir / name
         shutil.copy2(source, target)
         frozen[name] = target
+    frozen_template = None
+    if template_registration is not None:
+        template_dir = inputs_dir / "simion_template"
+        template_dir.mkdir()
+        frozen_template = {}
+        for key, target_name in (("source_iob", "layout.iob"), ("source_con", "layout.con")):
+            source = template_registration[key]
+            target = template_dir / target_name
+            shutil.copy2(source, target)
+            frozen[f"candidate_simion_template_{key}"] = target
+            frozen_template[key.removeprefix("source_")] = {"path": str(target), "sha256": sha256(target)}
 
     prepared_dir = inputs_dir / "prepared_consumers"
     consumption = prepare_consumers(frozen["candidate_resolved_geometry.json"], prepared_dir, run_root, particle_source_seed)
@@ -228,13 +308,21 @@ def prepare_candidate_run(
             },
             {
                 "stage_id": "simion_candidate",
-                "status": "blocked_requires_explicit_nonformal_template",
+                "status": "ready" if frozen_template is not None else "blocked_requires_explicit_nonformal_template",
                 "contract_path": str(frozen["candidate_resolved_geometry.json"]),
                 "baseline_path": str(frozen["candidate_baseline.json"]),
                 "text_dir": str(prepared_dir / "simion"),
                 "output_dir": str(run_root / "simion"),
                 "required_input": "runs/<run_id>/inputs/simion_template/ with role oa_tof_candidate_simion_layout_template and SHA-256 provenance",
                 "formal_asset_read_allowed": False,
+                **({
+                    "template_input": {
+                        "role": "oa_tof_candidate_simion_layout_template",
+                        "files": frozen_template,
+                        "registration_run": str(template_registration["registration_run"]),
+                        "registration_manifest_sha256": sha256(template_registration["registration_manifest"]),
+                    }
+                } if frozen_template is not None and template_registration is not None else {}),
             },
             {
                 "stage_id": "cad_candidate",
@@ -299,8 +387,9 @@ def main() -> None:
     parser.add_argument("--candidate-diff", required=True, type=Path)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--particle-source-seed", required=True, type=int)
+    parser.add_argument("--simion-template-run", type=Path)
     args = parser.parse_args()
-    result = prepare_candidate_run(args.candidate_baseline, args.candidate_resolved, args.candidate_diff, args.run_id, particle_source_seed=args.particle_source_seed)
+    result = prepare_candidate_run(args.candidate_baseline, args.candidate_resolved, args.candidate_diff, args.run_id, particle_source_seed=args.particle_source_seed, simion_template_run=args.simion_template_run)
     print(f"CANDIDATE_RUN_PREPARE={result['status']} PLAN_ROOT={result['planning_root']} RUN_ROOT={result['run_root']}")
 
 

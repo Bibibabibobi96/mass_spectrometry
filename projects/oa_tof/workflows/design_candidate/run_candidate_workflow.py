@@ -111,6 +111,16 @@ def _nonformal_template(stage: dict[str, Any], plan: dict[str, Any]) -> Path:
         verified[suffix] = path
     if verified["iob"].with_suffix(".con").name != verified["con"].name or verified["iob"].parent != verified["con"].parent:
         raise RuntimeError("candidate SIMION IOB and CON template bundle names do not match")
+    registration_run = Path(record.get("registration_run", "")).resolve()
+    registration_manifest = registration_run / "run_manifest.json"
+    registration_sha = str(record.get("registration_manifest_sha256", ""))
+    if (
+        not registration_run.is_dir()
+        or not registration_manifest.is_file()
+        or not registration_sha
+        or sha256(registration_manifest).lower() != registration_sha.lower()
+    ):
+        raise RuntimeError("candidate SIMION template registration evidence changed after preparation")
     return verified["iob"]
 
 

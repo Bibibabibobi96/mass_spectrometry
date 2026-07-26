@@ -6,6 +6,7 @@ local expected_quality=tonumber(os.getenv('OATOF_SIMION_EXPECTED_QUALITY') or '8
 local expected_instances=tonumber(os.getenv('OATOF_SIMION_EXPECTED_INSTANCES') or '4')
 local program_report_path=assert(os.getenv('OATOF_SIMION_PROGRAM_LOAD_REPORT'),
   'OATOF_SIMION_PROGRAM_LOAD_REPORT is not set')
+local template_structure_only=os.getenv('OATOF_SIMION_TEMPLATE_STRUCTURE_ONLY') == '1'
 
 local report=assert(io.open(report_path,'w'))
 local function record(fmt,...)
@@ -29,17 +30,21 @@ for index,pattern in ipairs(expected_order) do
     string.format('unsafe PA priority at instance %d: %s',index,filename))
   record('INSTANCE_%d=%s',index,filename)
 end
-local program_report_file=assert(io.open(program_report_path,'r'),
-  'Program segment.load report was not created; Program may be disabled')
-local program_report=program_report_file:read('*a')
-program_report_file:close()
-local actual_quality=tonumber(program_report:match('TRAJECTORY_QUALITY=([-+0-9.eE]+)'))
-assert(program_report:match('STATUS=PASS') and actual_quality==expected_quality,
-  string.format('trajectory quality mismatch after IOB load: actual=%s expected=%s',
-    tostring(actual_quality),tostring(expected_quality)))
+local actual_quality=nil
+if not template_structure_only then
+  local program_report_file=assert(io.open(program_report_path,'r'),
+    'Program segment.load report was not created; Program may be disabled')
+  local program_report=program_report_file:read('*a')
+  program_report_file:close()
+  actual_quality=tonumber(program_report:match('TRAJECTORY_QUALITY=([-+0-9.eE]+)'))
+  assert(program_report:match('STATUS=PASS') and actual_quality==expected_quality,
+    string.format('trajectory quality mismatch after IOB load: actual=%s expected=%s',
+      tostring(actual_quality),tostring(expected_quality)))
+end
 
 record('IOB_PATH=%s',iob_path)
 record('INSTANCE_COUNT=%d',#simion.wb.instances)
-record('TRAJECTORY_QUALITY=%g',actual_quality)
+if actual_quality then record('TRAJECTORY_QUALITY=%g',actual_quality) end
+record('TEMPLATE_STRUCTURE_ONLY=%s',tostring(template_structure_only))
 record('STATUS=PASS')
 report:close()

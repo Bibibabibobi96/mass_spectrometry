@@ -3,6 +3,7 @@ param(
   [string]$IobPath,
   [int]$ExpectedTrajectoryQuality = 8,
   [int]$ExpectedInstances = 4,
+  [switch]$TemplateStructureOnly,
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe'
 )
 
@@ -18,12 +19,14 @@ $oldReport = $env:OATOF_SIMION_IOB_REPORT
 $oldQuality = $env:OATOF_SIMION_EXPECTED_QUALITY
 $oldInstances = $env:OATOF_SIMION_EXPECTED_INSTANCES
 $oldProgramReport = $env:OATOF_SIMION_PROGRAM_LOAD_REPORT
+$oldTemplateStructureOnly = $env:OATOF_SIMION_TEMPLATE_STRUCTURE_ONLY
 try {
   $env:OATOF_SIMION_IOB_PATH = $iob
   $env:OATOF_SIMION_IOB_REPORT = $report
   $env:OATOF_SIMION_EXPECTED_QUALITY = [string]$ExpectedTrajectoryQuality
   $env:OATOF_SIMION_EXPECTED_INSTANCES = [string]$ExpectedInstances
   $env:OATOF_SIMION_PROGRAM_LOAD_REPORT = $programReport
+  $env:OATOF_SIMION_TEMPLATE_STRUCTURE_ONLY = if ($TemplateStructureOnly) { '1' } else { '0' }
   & $SimionExe --nogui lua $verifier
   if ($LASTEXITCODE -ne 0) {
     throw "SIMION IOB runtime verification failed with exit code $LASTEXITCODE"
@@ -39,4 +42,5 @@ finally {
   $env:OATOF_SIMION_EXPECTED_QUALITY = $oldQuality
   $env:OATOF_SIMION_EXPECTED_INSTANCES = $oldInstances
   $env:OATOF_SIMION_PROGRAM_LOAD_REPORT = $oldProgramReport
+  $env:OATOF_SIMION_TEMPLATE_STRUCTURE_ONLY = $oldTemplateStructureOnly
 }
