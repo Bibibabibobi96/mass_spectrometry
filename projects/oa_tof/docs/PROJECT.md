@@ -203,6 +203,8 @@ GUI重开、正式包和CAD同步门禁，不影响当前100%传输或正式统�
 ### 延期架构决策
 
 - `config/modes/formal.json`现在只保存Formal科学合同；`config/formal_solver_numerics.json`保存唯一COMSOL/SIMION数值合同，run instance显式冻结seed。配置拆分完成后项目处于`formal_revalidation_pending`：Static/Candidate可运行但不得读取Formal资产，Formal gate必须失败关闭，待独立Formal vNext重验证授权。
+- Formal vNext现先由`workflows/formal_reference/prepare_formal_vnext.py`从成功、未晋升的非Formal Candidate run冻结N=1000 COMSOL/SIMION/CAD计划。该入口只写scratch计划、拒绝Formal/archive/history来源，并明确不启动求解器、不改lifecycle、不创建promotion transaction或发布；实际运行与原子晋升仍须单独实现并经所有者授权。
+- `workflows/formal_reference/run_formal_vnext.py`随后只物化该冻结计划对应的独立run，并以固定阶段顺序收口成功/失败三件套：N=1000粒子冻结、COMSOL、SIMION、SolidWorks CAD、配对跨求解器分析、GUI/CAD重开、promotion transaction预检。默认执行器故意拒绝商业软件，任何阶段均不得读取或改写旧Formal；即使全部阶段由未来获批执行器成功完成，结果也只能是`revalidated_not_promoted`，真正promotion仍是后置显式事务。
 - 旧的“`config/modes/formal.json`继续作为单一正式模式机器合同”的判断已由上述三层合同取代。只有出现新的
   多求解器消费者、跨器件消费者，或当前设计线稳定后批准专项迁移并能一次完成调用方与回归切换时，
   才启动结构拆分。
