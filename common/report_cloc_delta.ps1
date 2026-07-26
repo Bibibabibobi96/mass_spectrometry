@@ -163,6 +163,45 @@ function Get-SnapshotFiles {
   return @($records)
 }
 
+function Invoke-ClocText {
+  param(
+    [Parameter(Mandatory)][string[]]$Arguments
+  )
+  $filePath=$ClocExe
+  $argumentsToRun=@($Arguments)
+  if([IO.Path]::GetExtension($filePath)-ieq'.ps1'){
+    $output=(& $ClocExe @argumentsToRun|Out-String)
+    return [pscustomobject]@{
+      exit_code=$LASTEXITCODE
+      stdout=$output
+      stderr=''
+    }
+  }
+  $startInfo=[Diagnostics.ProcessStartInfo]::new()
+  $startInfo.FileName=$filePath
+  $startInfo.UseShellExecute=$false
+  $startInfo.CreateNoWindow=$true
+  $startInfo.RedirectStandardOutput=$true
+  $startInfo.RedirectStandardError=$true
+  if($startInfo.PSObject.Properties.Name-contains'ArgumentList'){
+    foreach($argument in $argumentsToRun){[void]$startInfo.ArgumentList.Add($argument)}
+  }else{
+    $startInfo.Arguments=(($argumentsToRun|ForEach-Object{
+      '"'+([string]$_).Replace('"','\"')+'"'
+    })-join' ')
+  }
+  $process=[Diagnostics.Process]::Start($startInfo)
+  if($null-eq$process){throw "Could not start cloc: $ClocExe"}
+  $stdoutTask=$process.StandardOutput.ReadToEndAsync()
+  $stderrTask=$process.StandardError.ReadToEndAsync()
+  $process.WaitForExit()
+  return [pscustomobject]@{
+    exit_code=$process.ExitCode
+    stdout=$stdoutTask.GetAwaiter().GetResult()
+    stderr=$stderrTask.GetAwaiter().GetResult()
+  }
+}
+
 function Invoke-ClocSummary {
   param(
     [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Records,
@@ -170,8 +209,9 @@ function Invoke-ClocSummary {
   )
   if($Records.Count-eq 0){return @{}}
   @($Records|ForEach-Object{$_.full})|Set-Content -LiteralPath $ListPath -Encoding UTF8
-  $raw=(& $ClocExe '--json' '--quiet' "--list-file=$ListPath"|Out-String)
-  if($LASTEXITCODE-ne 0){throw "cloc failed for list: $ListPath"}
+  $result=Invoke-ClocText @('--json','--quiet',"--list-file=$ListPath")
+  if($result.exit_code-ne 0){throw "cloc failed for list: $ListPath $($result.stderr.Trim())"}
+  $raw=$result.stdout
   try{$document=$raw|ConvertFrom-Json -AsHashtable}catch{throw 'cloc returned invalid JSON.'}
   $summary=@{}
   foreach($language in $document.Keys){
@@ -240,8 +280,9 @@ if($null-eq$clocCommand){
   throw "CLOC_UNAVAILABLE: '$ClocExe' was not found. Install/authorize cloc; no fallback counter is permitted."
 }
 $ClocExe=$clocCommand.Source
-$clocVersion=((& $ClocExe '--version')|Out-String).Trim()
-if($LASTEXITCODE-ne 0 -or [string]::IsNullOrWhiteSpace($clocVersion)){
+$versionResult=Invoke-ClocText @('--version')
+$clocVersion=$versionResult.stdout.Trim()
+if($versionResult.exit_code-ne 0 -or [string]::IsNullOrWhiteSpace($clocVersion)){
   throw "CLOC_UNAVAILABLE: '$ClocExe --version' failed."
 }
 
