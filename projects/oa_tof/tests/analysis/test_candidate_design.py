@@ -55,6 +55,10 @@ class CandidateDesignTests(unittest.TestCase):
             "-- role=reflectron; workbench_index=2; priority_number=2",
             "-- role=accelerator; workbench_index=3; priority_number=3",
             "-- role=detector; workbench_index=4; priority_number=4",
+            "pa_define {filename='flight_tube_ground.pa0'}",
+            "pa_define {filename='reflectron.pa0'}",
+            "pa_define {filename='accelerator.pa0'}",
+            "pa_define {filename='detector_ground.pa0'}",
         )), encoding="utf-8")
         run_root.mkdir(parents=True)
         config = {
@@ -493,12 +497,16 @@ class CandidateDesignTests(unittest.TestCase):
     def test_declarative_wgem_preserves_four_slot_order_without_copying_builders(self):
         text = render_wgem()
         self.assertEqual(ROLE_ORDER, ("flight_tube_shield", "reflectron", "accelerator", "detector"))
-        self.assertEqual(text.count("include("), 4)
+        self.assertEqual(text.count("pa_define {"), 4)
+        self.assertNotIn("include(", text)
+        for filename in ("flight_tube_ground.pa0", "reflectron.pa0", "accelerator.pa0", "detector_ground.pa0"):
+            self.assertIn(f"filename='{filename}'", text)
         self.assertEqual([text.index(f"role={role}") for role in ROLE_ORDER], sorted(
             text.index(f"role={role}") for role in ROLE_ORDER
         ))
         self.assertNotIn("build_formal_iob", text)
         self.assertNotIn("simion.wb.instances", text)
+        self.assertIn("structural template defines no electrodes", text)
 
     def test_registered_template_rejects_missing_or_tampered_wgem_contract(self):
         with tempfile.TemporaryDirectory() as root:

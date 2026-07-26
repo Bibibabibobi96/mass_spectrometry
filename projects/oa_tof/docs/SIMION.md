@@ -59,7 +59,9 @@ run生命周期。Candidate仍必须先通过四实例IOB运行时门禁，并�
 非Formal模板先由Git内`simion/workbench/generate_candidate_layout_wgem.py`从唯一
 `resolved_geometry.json`生成`.wgem`；它只声明四槽的来源、role、transform和优先级，复用既有GEM
 来源而不复制PA构建机制。顺序固定为`flight_tube`、`reflectron`、`accelerator`、`detector`，并分别对应
-GUI优先级1..4。用户必须用SIMION 8.2.1.4 GUI将该W-GEM物化为独立、同basename `.iob + .con`，再以
+GUI优先级1..4。用户必须从SIMION 8.2.1.4主界面的`New`、`Modify`或Browse加载该W-GEM，进入`View`
+自动创建并保存独立、同basename `.iob + .con`；`View/Load Workbench`只接受IOB，不能加载`.wgem`。该
+W-GEM只创建四个零电极结构PA以固定GUI槽位，Candidate PA builders仍是唯一字段/数值来源。随后再以
 `simion/workbench/register_candidate_layout_template.ps1`显式登记。登记入口要求W-GEM+IOB+CON，拒绝
 Formal/archive/history、旧Candidate、裸IOB/CON和目标run自引用；它不复制、Refine或Fly二进制，只用
 无GUI结构门禁确认四个有序实例并写template-build三件套。Candidate准备时重新校验W-GEM/IOB/CON的

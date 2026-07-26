@@ -192,6 +192,11 @@ def _registered_candidate_template(template_run: Path, artifact_project_root: Pa
         "role=reflectron; workbench_index=2; priority_number=2",
         "role=accelerator; workbench_index=3; priority_number=3",
         "role=detector; workbench_index=4; priority_number=4",
+        "pa_define {",
+        "filename='flight_tube_ground.pa0'",
+        "filename='reflectron.pa0'",
+        "filename='accelerator.pa0'",
+        "filename='detector_ground.pa0'",
     )
     if not all(token in wgem_text for token in required_wgem_tokens):
         raise ValueError("candidate SIMION template W-GEM role/priority contract is invalid")

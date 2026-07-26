@@ -66,7 +66,7 @@ $candidateSourceRoot = [IO.Path]::GetFullPath((Join-Path $projectRoot 'simion\wo
 if (-not $sourceWgem.StartsWith($candidateSourceRoot, [StringComparison]::OrdinalIgnoreCase)) {
   throw 'SourceWgemPath must be the Git-tracked oa-TOF Candidate declarative source.'
 }
-foreach ($requiredToken in @('GENERATED: oa-TOF Candidate declarative workbench source', 'role=flight_tube_shield', 'role=reflectron', 'role=accelerator', 'role=detector')) {
+foreach ($requiredToken in @('GENERATED: oa-TOF Candidate declarative workbench source', 'role=flight_tube_shield', 'role=reflectron', 'role=accelerator', 'role=detector', 'pa_define {', "filename='flight_tube_ground.pa0'", "filename='reflectron.pa0'", "filename='accelerator.pa0'", "filename='detector_ground.pa0'")) {
   if (-not (Select-String -LiteralPath $sourceWgem -Pattern ([regex]::Escape($requiredToken)) -Quiet)) {
     throw "SourceWgemPath is not an accepted oa-TOF declarative Candidate source: missing $requiredToken"
   }
