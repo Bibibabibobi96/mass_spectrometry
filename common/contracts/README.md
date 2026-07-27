@@ -10,6 +10,26 @@
 `file_identity.py`是manifest、正式资产和机器合同文件SHA-256身份的唯一流式实现，固定返回大写十六进制；
 调用者只负责路径范围、字节数和证据资格等各自合同。
 
+`stage_reuse.py`提供跨项目、单父run的阶段续跑合同。它不是缓存或DAG调度器，也不定义项目阶段顺序。
+未来原生runner只可用`write_stage_receipt`为summary中明确标为`success`的阶段写
+`stage_receipts/<stage_id>.json`，随后在父run最终manifest中冻结该receipt、summary、全部阶段输出及
+`inputs/source/solver`三类上下文文件。历史上没有原生receipt的run不得事后补写或通过共享层兼容；
+需要时重新完成一次全流程运行，建立首个可续跑父run。
+
+子run先在自己的run目录冻结三类上下文，并由`run_config.inputs`逐文件声明这些上下文以及将生成的
+`inputs/stage_reuse_provenance.json`，再调用唯一发布入口`validate_and_write_stage_reuse`。父子run
+目录和run ID必须不同，且已有最终manifest的子run不得续写。该入口
+复核父run config、父manifest、summary与manifest相同的`success/failed`终态、summary阶段状态、
+receipt和全部相关SHA-256，将当前上下文与父阶段逐键比较，并直接写
+`inputs/stage_reuse_provenance.json`。缺键、增键、内容变化、项目/run身份不一致及
+`interrupted/superseded`父run均失败关闭；父run整体可以是`failed`，但只能复用其独立成功阶段。
+provenance冻结单一`parent_run_id`及父manifest的bytes/SHA，不保存个人绝对路径，并须纳入子run
+manifest。旧manifest若记录绝对路径，只有仍位于原路径且全部哈希可复核时才可作为父run；工作区迁移
+后必须先按artifact迁移合同重建身份，不能靠路径猜测。
+
+公共层不复制大文件、不解释器件参数或物理判据，也不允许不同父run拼接。项目层仍负责声明可复用阶段、
+把实际文件映射为三类上下文、执行未复用阶段并完成本项目最终验收。
+
 粒子状态分为两个不同边界。`particle_state.py`验证单个多极杆组件内部的17列
 `source/rod_exit/handoff/terminal`事件账本，其轴向/横向字段仍表达该组件局部坐标。
 `component_particle_state.py`及

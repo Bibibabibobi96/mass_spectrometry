@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -33,6 +36,8 @@ from projects.oa_tof.workflows.design_candidate.run_candidate_workflow import (
     CandidateWorkflowTimedOut,
     StageTimedOut,
     _powershell,
+    _run_command,
+    _verify_frozen_cad_python,
     execute_stage,
     run_candidate_workflow,
 )
@@ -245,6 +250,58 @@ class CandidateDesignTests(unittest.TestCase):
         self.assertIn("SW_DEFAULT_TEMPLATE_PART, original_part_template", source)
         self.assertIn("original_always_use_default_templates", source)
         self.assertIn("step_paths = [path.resolve() for path in step_paths]", source)
+
+    def test_solidworks_bridge_uses_module_context_for_frozen_code_root(self):
+        bridge = REPO_ROOT / "common" / "solidworks" / "import_step_to_solidworks.m"
+        source = bridge.read_text(encoding="utf-8")
+        self.assertIn(
+            "codeRoot = fileparts(fileparts(fileparts(mfilename('fullpath'))))",
+            source,
+        )
+        self.assertIn("codeRoot = resolve_code_root()", source)
+        self.assertIn("setenv('PYTHONPATH'", source)
+        self.assertIn("setenv('PYTHONDONTWRITEBYTECODE', '1')", source)
+        self.assertIn("-B -m common.solidworks.import_step_to_solidworks", source)
+        self.assertIn("cleanupPythonPath", source)
+        self.assertIn("cleanupBytecodePolicy", source)
+
+        with tempfile.TemporaryDirectory() as root:
+            code_root = Path(root) / "frozen_code"
+            solidworks = code_root / "common" / "solidworks"
+            solidworks.mkdir(parents=True)
+            for name in ("import_step_to_solidworks.py", "installation.py"):
+                shutil.copy2(REPO_ROOT / "common" / "solidworks" / name, solidworks / name)
+            (code_root / "pythoncom.py").write_text("", encoding="utf-8")
+            win32com = code_root / "win32com"
+            win32com.mkdir()
+            (win32com / "__init__.py").write_text("", encoding="utf-8")
+            (win32com / "client.py").write_text("", encoding="utf-8")
+            working_directory = Path(root) / "outside_frozen_code"
+            working_directory.mkdir()
+            environment = dict(os.environ)
+            environment["PYTHONPATH"] = str(code_root)
+            environment["PYTHONDONTWRITEBYTECODE"] = "1"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-B",
+                    "-m",
+                    "common.solidworks.import_step_to_solidworks",
+                    "--help",
+                ],
+                cwd=working_directory,
+                env=environment,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+                timeout=20,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("--manifest", result.stdout)
+            self.assertFalse(any(code_root.rglob("__pycache__")))
+            self.assertFalse(any(code_root.rglob("*.pyc")))
 
     def test_missing_consumer_route_is_rejected(self):
         consumer_contract = load_json(PROJECT_ROOT / "config" / "candidate_consumers.json")
@@ -967,6 +1024,9 @@ class CandidateDesignTests(unittest.TestCase):
                 report.write_text("STATUS=PASS\n", encoding="utf-8")
 
             with mock.patch(
+                "projects.oa_tof.workflows.design_candidate.run_candidate_workflow._verify_frozen_cad_python",
+                return_value=plan["execution_source_closure"]["runtime"]["python_executable"],
+            ), mock.patch(
                 "projects.oa_tof.workflows.design_candidate.run_candidate_workflow._run_command",
                 side_effect=fake_run,
             ):
@@ -992,6 +1052,51 @@ class CandidateDesignTests(unittest.TestCase):
                 },
             )
             self.assertTrue(artifact_root.is_dir())
+
+    def test_cad_python_preflight_blocks_comsol_before_commercial_launcher(self):
+        with tempfile.TemporaryDirectory() as root:
+            artifact_root, plan_path = self.prepared_workflow_plan(Path(root), "20260727_131000")
+            plan = load_json(plan_path)
+            stage = next(item for item in plan["stages"] if item["stage_id"] == "comsol_candidate")
+            with mock.patch(
+                "projects.oa_tof.workflows.design_candidate.run_candidate_workflow._verify_frozen_cad_python",
+                side_effect=RuntimeError("candidate CAD Python runtime preflight failed"),
+            ), mock.patch(
+                "projects.oa_tof.workflows.design_candidate.run_candidate_workflow._run_command"
+            ) as commercial_launcher:
+                with self.assertRaisesRegex(RuntimeError, "CAD Python runtime preflight failed"):
+                    execute_stage(stage, plan, "unused")
+            commercial_launcher.assert_not_called()
+            self.assertTrue(artifact_root.is_dir())
+
+    def test_cad_python_preflight_reports_missing_pywin32(self):
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            runtime = root_path / "python.exe"
+            runtime.write_bytes(b"frozen runtime")
+            closure = {"runtime": {"python_executable": str(runtime)}}
+            failed = subprocess.CompletedProcess(
+                [str(runtime), "-c", "unused"], 1, stdout="", stderr="ModuleNotFoundError: pythoncom"
+            )
+            with mock.patch(
+                "projects.oa_tof.workflows.design_candidate.run_candidate_workflow.subprocess.run",
+                return_value=failed,
+            ) as command:
+                with self.assertRaisesRegex(RuntimeError, "cannot import pythoncom and win32com.client"):
+                    _verify_frozen_cad_python(closure, root_path / "preflight.log")
+            self.assertEqual(command.call_args.args[0][0], str(runtime.resolve()))
+            self.assertIn("pythoncom", (root_path / "preflight.log").read_text(encoding="utf-8"))
+
+    def test_command_runner_merges_environment_without_name_error(self):
+        with tempfile.TemporaryDirectory() as root:
+            log_path = Path(root) / "command.log"
+            completed = subprocess.CompletedProcess(["unused"], 0)
+            with mock.patch(
+                "projects.oa_tof.workflows.design_candidate.run_candidate_workflow.subprocess.run",
+                return_value=completed,
+            ) as command:
+                _run_command(["unused"], log_path, {"OATOF_TEST_ENVIRONMENT": "present"})
+            self.assertEqual(command.call_args.kwargs["env"]["OATOF_TEST_ENVIRONMENT"], "present")
 
     def test_bound_runner_requires_same_approved_request_and_run_id(self):
         with tempfile.TemporaryDirectory() as root:

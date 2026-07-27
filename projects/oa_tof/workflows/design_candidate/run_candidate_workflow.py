@@ -21,6 +21,7 @@ from projects.oa_tof.analysis.candidate_source_closure import frozen_source_path
 
 StageExecutor = Callable[[dict[str, Any], dict[str, Any], str], dict[str, Any]]
 STAGE_PROCESS_TIMEOUT_S = 4 * 60 * 60
+CAD_PYTHON_PREFLIGHT_TIMEOUT_S = 30
 
 
 class CandidateWorkflowError(RuntimeError):
@@ -83,6 +84,39 @@ def _ps_arguments(values: dict[str, Any]) -> list[str]:
 def _require_pass_report(path: Path) -> None:
     if not path.is_file() or "STATUS=PASS" not in path.read_text(encoding="utf-8", errors="replace"):
         raise RuntimeError(f"required PASS report is missing or failed: {path}")
+
+
+def _verify_frozen_cad_python(closure: dict[str, Any], log_path: Path) -> str:
+    """Fail before commercial stages when the frozen SolidWorks COM bridge is unavailable."""
+    runtime = closure.get("runtime", {})
+    python_executable = Path(str(runtime.get("python_executable", ""))).resolve()
+    if not python_executable.is_file():
+        raise RuntimeError(f"candidate CAD Python runtime is unavailable: {python_executable}")
+    try:
+        result = subprocess.run(
+            [str(python_executable), "-c", "import pythoncom; import win32com.client; print('PYWIN32=PASS')"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=CAD_PYTHON_PREFLIGHT_TIMEOUT_S,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError(
+            f"candidate CAD Python runtime preflight timed out after {CAD_PYTHON_PREFLIGHT_TIMEOUT_S}s"
+        ) from error
+    output = (result.stdout or "") + (result.stderr or "")
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text(output, encoding="utf-8", newline="\n")
+    if result.returncode != 0:
+        detail = output.strip() or "no diagnostic output"
+        raise RuntimeError(
+            "candidate CAD Python runtime preflight failed: frozen runtime cannot import "
+            f"pythoncom and win32com.client; python={python_executable}; detail={detail}"
+        )
+    return str(python_executable)
 
 
 def _nonformal_template(stage: dict[str, Any], plan: dict[str, Any]) -> Path:
@@ -150,6 +184,7 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
     if stage_id == "comsol_candidate":
         if closure is None:
             raise RuntimeError("candidate source closure is required")
+        _verify_frozen_cad_python(closure, logs / "cad_python_preflight.log")
         environment = {key: str(value) for key, value in stage["environment"].items()}
         build_report = Path(stage["report_path"])
         build_command = _powershell(
@@ -294,8 +329,8 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
         environment = {
             "OATOF_CANDIDATE_MODEL_PATH": stage["model_path"],
             "OATOF_CANDIDATE_CAD_DIR": stage["output_dir"],
-            "PATH": (
-                str(Path(closure["runtime"]["python_executable"]).parent) + os.pathsep + os.environ.get("PATH", "")
+            "OATOF_CANDIDATE_PYTHON_EXECUTABLE": str(
+                Path(closure["runtime"]["python_executable"]).resolve()
             ),
         }
         command = _powershell(

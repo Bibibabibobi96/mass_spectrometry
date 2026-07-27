@@ -38,7 +38,6 @@ function result = import_step_to_solidworks(stepPaths, sldprtPaths, visible, ass
         end
     end
 
-    scriptPath = fullfile(fileparts(mfilename('fullpath')), 'import_step_to_solidworks.py');
     visibleArg = "";
     if visible
         visibleArg = " --visible";
@@ -59,13 +58,49 @@ function result = import_step_to_solidworks(stepPaths, sldprtPaths, visible, ass
     cleanupManifest = onCleanup(@() delete_if_present(manifestPath));
     fwrite(fid, jsonencode(payload), 'char');
     fclose(fid);
-    command = sprintf('python "%s" --manifest "%s"%s', ...
-        scriptPath, manifestPath, visibleArg);
+    pythonExecutable = resolve_python_executable();
+    codeRoot = resolve_code_root();
+    previousPythonPath = getenv('PYTHONPATH');
+    cleanupPythonPath = onCleanup(@() setenv('PYTHONPATH', previousPythonPath));
+    previousBytecodePolicy = getenv('PYTHONDONTWRITEBYTECODE');
+    cleanupBytecodePolicy = onCleanup(@() setenv( ...
+        'PYTHONDONTWRITEBYTECODE', previousBytecodePolicy));
+    if isempty(previousPythonPath)
+        setenv('PYTHONPATH', codeRoot);
+    else
+        setenv('PYTHONPATH', [codeRoot pathsep previousPythonPath]);
+    end
+    setenv('PYTHONDONTWRITEBYTECODE', '1');
+    command = sprintf('"%s" -B -m common.solidworks.import_step_to_solidworks --manifest "%s"%s', ...
+        pythonExecutable, manifestPath, visibleArg);
     [status, output] = system(command);
     if status ~= 0
         error('oatofCadExport:SolidWorksImportFailed', '%s', output);
     end
     result = jsondecode(output);
+    clear cleanupBytecodePolicy
+    clear cleanupPythonPath
+end
+
+function pythonExecutable = resolve_python_executable()
+    % Candidate runs freeze their Python identity in the orchestration plan.
+    % Repository-mode calls must use the supported local virtual environment,
+    % never whichever interpreter happens to appear first on PATH.
+    pythonExecutable = string(getenv('OATOF_CANDIDATE_PYTHON_EXECUTABLE'));
+    if strlength(pythonExecutable) == 0
+        repositoryRoot = resolve_code_root();
+        pythonExecutable = fullfile(repositoryRoot, '.venv', 'Scripts', 'python.exe');
+    end
+    assert(isfile(pythonExecutable), 'oatofCadExport:PythonRuntimeUnavailable', ...
+        ['SolidWorks COM bridge requires an explicit frozen Candidate Python or ', ...
+         'the repository .venv\\Scripts\\python.exe. Unavailable: %s'], pythonExecutable);
+end
+
+function codeRoot = resolve_code_root()
+    codeRoot = fileparts(fileparts(fileparts(mfilename('fullpath'))));
+    assert(isfolder(fullfile(codeRoot, 'common', 'solidworks')), ...
+        'oatofCadExport:CodeRootUnavailable', ...
+        'SolidWorks bridge module root is unavailable: %s', codeRoot);
 end
 
 function delete_if_present(pathValue)

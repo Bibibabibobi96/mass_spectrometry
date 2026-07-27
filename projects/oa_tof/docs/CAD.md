@@ -19,6 +19,14 @@ MATLAB导出任务必须通过根`common/comsol/run_comsol_r2025b.ps1`获得既�
 该入口的`load_only`模式只加载MPH并解析动态CAD manifest与实体对象，不创建输出目录、不导出STEP、
 不运行求解器，也不保存模型；它用于把LiveLink/模型读取故障与STEP/SolidWorks故障分层。
 
+`common/solidworks/import_step_to_solidworks.m`通过pywin32 COM桥接调用
+`import_step_to_solidworks.py`。该桥接必须使用仓库根`.venv\Scripts\python.exe`的64位Python 3.11，
+并安装由`requirements-lock.txt`冻结的Windows `pywin32`；系统PATH中的Python、MATLAB自身的Python
+或其他Python版本都不是替代运行时。候选运行会冻结该Python可执行文件身份并把其目录置于CAD子进程
+PATH首位，因此依赖缺失属于运行环境失败，而非STEP、SolidWorks或几何结果。修改此环境后必须先在
+该`.venv`导入`pythoncom`与`win32com.client`并运行`pip check`，再以新的冻结Candidate run完成适用的
+SolidWorks保存、引用与报告验收；不得修改或重用失败run的冻结输入。
+
 Formal CAD目录对普通运行保持只读。MATLAB R2025b写入合同回归确认：普通CAD导出指向Formal时必须
 拒绝；只有`OATOF_PROMOTION_TRANSACTION`中角色为`cad_root`且目的地与Formal CAD根精确一致的独立
 晋升事务才能授权，任何相邻或不同路径仍被拒绝。该合同测试没有导出STEP、启动SolidWorks或修改
@@ -36,6 +44,24 @@ STEP导入会让SolidWorks为每个外部实体新建原生零件，因此会读
 `gb_assembly.asmdot`创建装配；结束时恢复用户原来的模板路径和“总是使用默认模板”开关。报告中的
 `templatePolicy`记录实际策略。不得把空字符串传给`NewDocument`冒充空模板，因为该API要求有效的
 完整模板路径。
+
+## 2026-07-27 Candidate CAD 闭合
+
+零变化N=100运行
+`artifacts/projects/oa_tof/runs/20260727_154500__test__cross__zero-change-candidate-bytecodefix-n100/`
+通过完整Candidate结构链。CAD从本次候选MPH导出25个STEP，生成25个原生SLDPRT和一个25组件SLDASM；
+全部零件及装配保存错误/警告为0，SolidWorks revision为`30.5.0`。根summary的五个阶段均为
+`success`，manifest以`success`冻结130个输出；Formal目录没有修改。该证据只支持
+`structural_build_and_contract`，不支持性能或晋升声明。
+
+前一运行
+`20260727_152000__test__cross__zero-change-candidate-durable-retry-n100`在COMSOL、SIMION和CAD完成后，
+因Python模块导入向冻结`inputs/code/common/solidworks/`写入两个`.pyc`而无法通过最终源码闭包检查。
+桥接器现同时使用Python `-B`和临时`PYTHONDONTWRITEBYTECODE=1`，并在调用后恢复原环境；154500运行
+确认冻结源码内`__pycache__`和`.pyc`均为0。更早的
+`20260727_145500__test__cross__zero-change-candidate-full-retry-n100`因父监督链中断而保持
+`interrupted`。这两个run均不复用、不提升。包含CAD的正式长跑使用可恢复execution cell持续监督，
+不通过`Start-Process`脱离运行终态；154500由cell `243`以退出码0在`1056.5 s`结束。
 
 ## 硬性规则
 

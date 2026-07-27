@@ -210,6 +210,11 @@ GUI重开、正式包和CAD同步门禁，不影响当前100%传输或正式统�
 - `diagnostics/legacy_rf_projection/`继续保持与 execution profile、静态门禁和活动 RF→oaTOF
   生产链隔离。只有这些诊断重新成为生产路径，或其持续维护成本明确超过保持隔离的成本时，才迁移或
   删除；不得借架构整理恢复已 superseded 的科学声明。
+- 跨项目环境bootstrap/预检以及可持久化后台run监测与恢复包装器均暂缓为平台工作，唯一规划入口为
+  根[`ROADMAP.md`](../../../docs/ROADMAP.md#面向大规模代码库的扩展护栏)。它们不改变本项目当前
+  Candidate的物理输入、已运行阶段或验收有效性；在获得专项设计和回归预算前不得以临时包装器替代
+  现有运行三件套或重启冻结run。在该包装器实现前，本项目正式长跑使用可恢复的execution cell并以
+  cell ID持续取得输出与终态，不使用`Start-Process`把商业软件进程脱离当前监督链。
 
 以上两项均不是当前正确性阻塞。本轮只整理 Formal/static 生产入口和文档边界，不修改科学参数、
 Formal 资产、candidate source closure 或 RF 项目文件。
@@ -252,6 +257,26 @@ Formal 资产、candidate source closure 或 RF 项目文件。
    cross-solver acceptance或Formal修改，不能作为Candidate成功或物理结论。修复后的retry机制由Candidate
    runner从冻结计划的`run_root`显式传入已归一化的artifact project root，冻结构建器不再从其复制后的目录
    推导工作区；必须重新冻结source closure并使用新的run_id重试。
+   随后的零变化retry
+   `20260727_121700__test__cross__zero-change-candidate-pathfix-retry-n100`已完成COMSOL和SIMION各自的
+   N=100阶段，但在CAD预导入时失败：冻结的仓库Python 3.11 `.venv`缺少`pythoncom`（Windows
+   `pywin32`），因此COM桥接在启动SolidWorks或导入STEP之前停止。该run保留失败证据；CAD、跨求解器
+   验收和Formal均未执行，COMSOL/SIMION各自成功不构成跨求解器闭合或Candidate接受结论。修复环境后
+   必须以新的冻结run重试，不得改写此run。
+   最终零变化N=100运行
+   `20260727_154500__test__cross__zero-change-candidate-bytecodefix-n100`已通过完整链路：可恢复execution
+   cell `243`以退出码0结束，墙钟`1056.5 s`；`static_inputs`、`comsol_candidate`、
+   `simion_candidate`、`cad_candidate`和`cross_solver_acceptance`五阶段均为`success`，run manifest
+   状态为`success`且130个输出全部通过身份复核。CAD生成25个原生SLDPRT和一个25组件SLDASM，
+   冻结`inputs/code/`中没有`__pycache__`或`.pyc`；正式baseline和Formal资产均未修改。该run的结论
+   仅为`candidate_accepted_not_promoted / structural_build_and_contract`，不包含COMSOL/SIMION逐粒子
+   物理比较、性能声明或晋升授权。
+   此前`20260727_145500__test__cross__zero-change-candidate-full-retry-n100`因父监督链中断而保持
+   `interrupted/orchestration_not_completed`；随后
+   `20260727_152000__test__cross__zero-change-candidate-durable-retry-n100`虽已完成COMSOL、SIMION和CAD，
+   但CAD Python在冻结源码内生成两个`.pyc`，最终源码闭包检查失败并保持
+   `interrupted/orchestration_not_completed`。两者均只保留为失败/中断证据，不复用、不提升，也不
+   覆盖154500成功run。
    2026-07-20零改动真实候选`20260720_111805__test__cross__zero-change-candidate-retry2__n100`已完成：
    COMSOL构建及独立回读、SIMION PA/IOB构建及运行时合同、25组件SolidWorks装配和共享粒子表SHA验收
    全部PASS，根三件套状态为`success/candidate_accepted_not_promoted`。正式baseline SHA与计划冻结值一致，
