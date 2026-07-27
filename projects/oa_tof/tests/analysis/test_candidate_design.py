@@ -25,7 +25,6 @@ from projects.oa_tof.analysis.prepare_candidate_run import (
     prepare_candidate_run,
     validate_workflow,
 )
-from projects.oa_tof.simion.workbench.generate_candidate_layout_wgem import ROLE_ORDER, render_wgem
 from projects.oa_tof.analysis.prepare_formal_promotion import prepare as prepare_promotion
 from projects.oa_tof.workflows.design_candidate.run_bound_candidate_workflow import validate_bound_candidate
 from projects.oa_tof.workflows.design_candidate.run_candidate_workflow import (
@@ -46,20 +45,8 @@ class CandidateDesignTests(unittest.TestCase):
         source.mkdir(parents=True)
         iob = source / "layout.iob"
         con = source / "layout.con"
-        wgem = source / "layout.wgem"
         iob.write_bytes(b"user-created-iob")
         con.write_bytes(b"user-created-con")
-        wgem.write_text("\n".join((
-            "-- GENERATED: oa-TOF Candidate declarative workbench source",
-            "-- role=flight_tube_shield; workbench_index=1; priority_number=1",
-            "-- role=reflectron; workbench_index=2; priority_number=2",
-            "-- role=accelerator; workbench_index=3; priority_number=3",
-            "-- role=detector; workbench_index=4; priority_number=4",
-            "pa_define {filename='flight_tube_ground.pa0'}",
-            "pa_define {filename='reflectron.pa0'}",
-            "pa_define {filename='accelerator.pa0'}",
-            "pa_define {filename='detector_ground.pa0'}",
-        )), encoding="utf-8")
         run_root.mkdir(parents=True)
         config = {
             "schema_version": 1,
@@ -68,9 +55,8 @@ class CandidateDesignTests(unittest.TestCase):
             "project": "oa_tof",
             "mode": "candidate_layout_template_build",
             "template_role": "oa_tof_candidate_simion_layout_template",
-            "source_is_declarative_wgem_gui_materialization": True,
-            "inputs": {"source_wgem": str(wgem), "source_iob": str(iob), "source_con": str(con)},
-            "input_sha256": {"source_wgem": sha256(wgem), "source_iob": sha256(iob), "source_con": sha256(con)},
+            "inputs": {"source_iob": str(iob), "source_con": str(con)},
+            "input_sha256": {"source_iob": sha256(iob), "source_con": sha256(con)},
         }
         summary = {
             "role": "oa_tof_simion_candidate_layout_template_build_summary",
@@ -487,47 +473,12 @@ class CandidateDesignTests(unittest.TestCase):
     def test_template_registration_is_structure_only_and_rejects_prohibited_sources(self):
         script = (PROJECT_ROOT / "simion" / "workbench" / "register_candidate_layout_template.ps1").read_text(encoding="utf-8")
         for token in (
-            "SourceIobPath", "SourceConPath", "SourceWgemPath", "oa_tof_simion_candidate_layout_template_build",
+            "SourceIobPath", "SourceConPath", "oa_tof_simion_candidate_layout_template_build",
             "-TemplateStructureOnly", "formal', 'archive', 'history", "particle_fly_executed = $false",
         ):
             self.assertIn(token, script)
         self.assertNotIn("Copy-Item", script)
         self.assertNotIn(" --nogui fly", script)
-
-    def test_declarative_wgem_preserves_four_slot_order_without_copying_builders(self):
-        text = render_wgem()
-        self.assertEqual(ROLE_ORDER, ("flight_tube_shield", "reflectron", "accelerator", "detector"))
-        self.assertEqual(text.count("pa_define {"), 4)
-        self.assertNotIn("include(", text)
-        for filename in ("flight_tube_ground.pa0", "reflectron.pa0", "accelerator.pa0", "detector_ground.pa0"):
-            self.assertIn(f"filename='{filename}'", text)
-        self.assertIn("locate(0,0,-59.929186803411,1,1,1,-90,0,0)", text)
-        self.assertIn("locate(0,0,600,1,1,1,-90,0,0)", text)
-        self.assertNotIn("locate(0,0,600,-90", text)
-        self.assertEqual([text.index(f"role={role}") for role in ROLE_ORDER], sorted(
-            text.index(f"role={role}") for role in ROLE_ORDER
-        ))
-        self.assertNotIn("build_formal_iob", text)
-        self.assertNotIn("simion.wb.instances", text)
-        self.assertIn("structural template defines no electrodes", text)
-
-    def test_registered_template_rejects_missing_or_tampered_wgem_contract(self):
-        with tempfile.TemporaryDirectory() as root:
-            artifact_root = Path(root) / "artifacts" / "projects" / "oa_tof"
-            registration = self.registered_template_run(artifact_root)
-            config_path = registration / "run_config.json"
-            config = load_json(config_path)
-            config["source_is_declarative_wgem_gui_materialization"] = False
-            config_path.write_text(json.dumps(config), encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "unsupported identity"):
-                _registered_candidate_template(registration, artifact_root)
-
-            config["source_is_declarative_wgem_gui_materialization"] = True
-            config_path.write_text(json.dumps(config), encoding="utf-8")
-            wgem = Path(config["inputs"]["source_wgem"])
-            wgem.write_text("-- tampered", encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "SHA-256 changed: source_wgem"):
-                _registered_candidate_template(registration, artifact_root)
 
     def test_candidate_inputs_cannot_come_from_formal_artifacts(self):
         with tempfile.TemporaryDirectory() as root:

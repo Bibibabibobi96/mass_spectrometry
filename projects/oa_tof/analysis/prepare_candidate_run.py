@@ -122,7 +122,7 @@ def _registered_template_source_path(value: object, label: str, record_name: str
 
 
 def _registered_candidate_template(template_run: Path, artifact_project_root: Path) -> dict[str, Path]:
-    """Return validated sources from one declarative W-GEM GUI materialization."""
+    """Return validated sources from one successful non-Formal layout registration."""
     run_root = template_run.resolve()
     runs_root = (artifact_project_root / "runs").resolve()
     if not _inside(run_root, runs_root) or run_root.parent != runs_root:
@@ -144,7 +144,6 @@ def _registered_candidate_template(template_run: Path, artifact_project_root: Pa
         or config.get("mode") != "candidate_layout_template_build"
         or config.get("run_id") != run_root.name
         or config.get("template_role") != "oa_tof_candidate_simion_layout_template"
-        or config.get("source_is_declarative_wgem_gui_materialization") is not True
     ):
         raise ValueError("candidate SIMION template registration has an unsupported identity")
     if (
@@ -164,7 +163,7 @@ def _registered_candidate_template(template_run: Path, artifact_project_root: Pa
     hashes = config.get("input_sha256", {})
     manifest_inputs = manifest.get("inputs", {})
     result = {"registration_run": run_root, "registration_manifest": paths["manifest"]}
-    for label, suffix in (("source_wgem", ".wgem"), ("source_iob", ".iob"), ("source_con", ".con")):
+    for label, suffix in (("source_iob", ".iob"), ("source_con", ".con")):
         path = _registered_template_source_path(inputs.get(label), label, "config")
         expected = str(hashes.get(label, ""))
         recorded = manifest_inputs.get(label, {})
@@ -185,21 +184,6 @@ def _registered_candidate_template(template_run: Path, artifact_project_root: Pa
         if any(segment in path.as_posix().lower().split("/") for segment in ("formal", "archive", "history")):
             raise ValueError("candidate SIMION template registration references a prohibited source path")
         result[label] = path
-    wgem_text = result["source_wgem"].read_text(encoding="utf-8", errors="strict")
-    required_wgem_tokens = (
-        "GENERATED: oa-TOF Candidate declarative workbench source",
-        "role=flight_tube_shield; workbench_index=1; priority_number=1",
-        "role=reflectron; workbench_index=2; priority_number=2",
-        "role=accelerator; workbench_index=3; priority_number=3",
-        "role=detector; workbench_index=4; priority_number=4",
-        "pa_define {",
-        "filename='flight_tube_ground.pa0'",
-        "filename='reflectron.pa0'",
-        "filename='accelerator.pa0'",
-        "filename='detector_ground.pa0'",
-    )
-    if not all(token in wgem_text for token in required_wgem_tokens):
-        raise ValueError("candidate SIMION template W-GEM role/priority contract is invalid")
     if result["source_iob"].with_suffix(".con").name != result["source_con"].name:
         raise ValueError("candidate SIMION template registration bundle basenames do not match")
     return result

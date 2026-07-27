@@ -92,7 +92,7 @@
   [`tests/simion/run_n100_source_build_and_track.ps1`](tests/simion/run_n100_source_build_and_track.ps1)
 - Candidate SIMION GUI layout登记：
   [`simion/workbench/register_candidate_layout_template.ps1`](simion/workbench/register_candidate_layout_template.ps1)；
-  只登记Git内声明式`.wgem`经SIMION GUI物化的非Formal、同basename `.iob + .con`；登记不创建、复制或Fly二进制，成功template-build run才可被Candidate冻结。
+  只登记用户在GUI创建的非Formal `.iob + .con`，不创建二进制或Fly，成功template-build run才可被Candidate冻结。
 - 统一分析契约：[`config/analysis_contract.json`](config/analysis_contract.json)
 - 当前正式跨求解器验证：[`config/formal_validation.json`](config/formal_validation.json)
 - 当前N=1000正式结果与图片：`artifacts/projects/oa_tof/formal/results/`；只包含当前baseline的
