@@ -177,6 +177,7 @@ class ParticleTableIdentityTests(unittest.TestCase):
             capture_output=True,
             check=False,
             encoding="utf-8",
+            errors="replace",
             env=environment,
         )
 
@@ -268,6 +269,7 @@ class CrossSolverLifecycleTests(unittest.TestCase):
             capture_output=True,
             check=False,
             encoding="utf-8",
+            errors="replace",
             env=environment,
         )
 
@@ -542,7 +544,7 @@ class CandidateGateParameterContractTests(unittest.TestCase):
             )
         )
 
-        self.assertIn("[ValidateSet('Static','Formal')]", project_gate)
+        self.assertIn("[ValidateSet('Core','Static','Formal')]", project_gate)
         self.assertNotIn("'Candidate'", project_gate)
         self.assertNotIn("CandidateMode", project_gate)
         self.assertNotIn("ComsolRunLabel", project_gate)
@@ -555,6 +557,40 @@ class CandidateGateParameterContractTests(unittest.TestCase):
         self.assertNotIn("ComsolRunLabel", runner_parameters)
         self.assertNotIn("SimionRunLabel", runner_parameters)
         self.assertNotIn("ComparisonLabel", runner_parameters)
+
+    def test_project_gate_core_keeps_physical_contracts_but_not_full_regressions(self) -> None:
+        project_gate = PROJECT_GATE.read_text(encoding="utf-8")
+        core_return = project_gate.index("if ($Level -eq 'Core')")
+        full_analysis = project_gate.index("-m unittest discover")
+        full_parse = project_gate.index("[System.Management.Automation.Language.Parser]::ParseFile")
+
+        self.assertLess(core_return, full_analysis)
+        self.assertLess(core_return, full_parse)
+        for required in (
+            "resolve_contract --check",
+            "--profile interface --check",
+            "--profile mass_filter --check",
+            "resolve_spatial_registration",
+            "sync_simion_geometry --check",
+            "generate_official_particle_table --check",
+            "mass_filter_reference.theory",
+            "mass_filter_reference.run_finite_length",
+            "entry_aperture_l0.py",
+            "build_oatof_handoff",
+            "$candidateValidators",
+        ):
+            with self.subTest(required=required):
+                self.assertLess(project_gate.index(required), core_return)
+
+    def test_project_gate_static_retains_full_analysis_and_powershell_regressions(self) -> None:
+        project_gate = PROJECT_GATE.read_text(encoding="utf-8")
+
+        self.assertIn("-m unittest discover", project_gate)
+        self.assertIn("[System.Management.Automation.Language.Parser]::ParseFile", project_gate)
+        self.assertLess(
+            project_gate.index("if ($Level -eq 'Core')"),
+            project_gate.index("-m unittest discover"),
+        )
 
 
 if __name__ == "__main__":

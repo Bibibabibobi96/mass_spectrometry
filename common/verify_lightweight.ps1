@@ -1,55 +1,13 @@
 [CmdletBinding()]
 param(
-    [string]$PythonExe = ''
+    [string]$PythonExe = '',
+    [string[]]$ChangedPath = @()
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot 'require_powershell7.ps1')
-$repoRoot = Split-Path -Parent $PSScriptRoot
-if (-not $PythonExe) {
-    $venvPython = Join-Path $repoRoot '.venv\Scripts\python.exe'
-    if (Test-Path -LiteralPath $venvPython -PathType Leaf) {
-        $PythonExe = $venvPython
-    }
-    else {
-        $PythonExe = (Get-Command python -ErrorAction Stop).Source
-    }
-}
-$PythonExe = [IO.Path]::GetFullPath($PythonExe)
-if (-not (Test-Path -LiteralPath $PythonExe -PathType Leaf)) {
-    throw "Python runtime missing: $PythonExe"
-}
-$pythonVersion = (& $PythonExe -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')").Trim()
-if ($LASTEXITCODE -ne 0 -or $pythonVersion -ne '3.11') {
-    throw "Lightweight gate requires Python 3.11, found $pythonVersion at $PythonExe"
-}
 
-& (Join-Path $PSScriptRoot 'verify_documentation.ps1')
-& (Join-Path $PSScriptRoot 'comsol\test_livelink_failure_classification.ps1')
-& (Join-Path $PSScriptRoot 'comsol\test_livelink_environment.ps1')
-& $PythonExe (Join-Path $PSScriptRoot 'verify_development_standards.py')
-if ($LASTEXITCODE -ne 0) { throw 'Development-standards gate failed.' }
-& $PythonExe -m ruff check (Join-Path $repoRoot 'common') (Join-Path $repoRoot 'projects')
-if ($LASTEXITCODE -ne 0) { throw 'Python Ruff static analysis failed.' }
-& $PythonExe (Join-Path $PSScriptRoot 'contracts\build_project_registry.py') --check
-if ($LASTEXITCODE -ne 0) { throw 'Project registry validation failed.' }
-& $PythonExe -m unittest discover -s (Join-Path $PSScriptRoot 'contracts') -p 'test_*.py'
-if ($LASTEXITCODE -ne 0) { throw 'Common contract tests failed.' }
-& $PythonExe -m unittest discover -s (Join-Path $PSScriptRoot 'multipole') -p 'test_*.py'
-if ($LASTEXITCODE -ne 0) { throw 'Common multipole family tests failed.' }
-Push-Location $repoRoot
-try {
-    & $PythonExe -m common.multipole.verify_family_foundation
-    if ($LASTEXITCODE -ne 0) { throw 'Frozen multipole-family foundation gate failed.' }
+& (Join-Path $PSScriptRoot 'verify_changed.ps1') -PythonExe $PythonExe -ChangedPath $ChangedPath
+if ($LASTEXITCODE -ne 0) {
+    throw "Changed-scope gate failed with exit code $LASTEXITCODE."
 }
-finally { Pop-Location }
-& $PythonExe -m unittest discover -s (Join-Path $PSScriptRoot 'solidworks') -p 'test_*.py'
-if ($LASTEXITCODE -ne 0) { throw 'SolidWorks path-resolution tests failed.' }
-& (Join-Path $repoRoot 'projects\oa_tof\verify_project.ps1') -Level Static -PythonExe $PythonExe
-& (Join-Path $repoRoot 'projects\rf_quadrupole_collision_cooling\verify_project.ps1') -Level Static -PythonExe $PythonExe
-& (Join-Path $repoRoot 'projects\rf_hexapole_ion_guide\verify_project.ps1') -PythonExe $PythonExe
-& (Join-Path $repoRoot 'projects\rf_octupole_ion_guide\verify_project.ps1') -PythonExe $PythonExe
-& (Join-Path $repoRoot 'projects\wehnelt_electron_gun\verify_project.ps1') -PythonExe $PythonExe
-
-Write-Output "LIGHTWEIGHT_GATE=PASS PYTHON=$pythonVersion"

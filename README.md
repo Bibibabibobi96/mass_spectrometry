@@ -393,14 +393,27 @@ N=1000是峰形、尾部、束斑/发散分布、损失分布、分辨率及Form
 
 ## 工具链与执行入口
 
-### 轻量门禁
+### 分层门禁
 
-不依赖商业软件和外部artifacts的统一入口为`common/verify_lightweight.ps1`。它使用Python 3.11运行
-文档/仓库卫生门禁、开发标准静态检查、机器合同测试、项目注册表新鲜度、oa-TOF Static门禁和RF Static门禁；本机默认
-使用`.venv`，GitHub Workflow注入干净运行器的Python路径。门禁逻辑只在该脚本及其调用的项目门禁中维护；
-项目发现、设计请求校验和求解器中立规划入口见[`common/contracts/README.md`](common/contracts/README.md)。
-`.github/workflows/lightweight-gate.yml`只负责编排，在push、pull request和人工触发时调用同一入口，
-不复制检查规则，也不执行求解器、CAD或正式资产门禁。
+所有门禁使用Python 3.11；本机默认使用`.venv`，GitHub Workflow注入干净运行器的Python路径。门禁不执行
+商业求解器、CAD或正式资产门禁。项目发现、设计请求校验和求解器中立规划入口见
+[`common/contracts/README.md`](common/contracts/README.md)。
+
+|层级|入口|何时运行|范围|
+|---|---|---|---|
+|L1 changed-scope|`common/verify_changed.ps1`|每次提交、push和日常参数探索|仅改动的活动项目、其直接公共依赖及必要的仓库卫生/静态合同；RF四极杆在此层只运行无求解器的`Core`合同门禁（实测约21秒）；输出每个路径的`RUN/SKIP`原因|
+|L2 repository integration|`common/verify_repository_integration.ps1`|修改根规则、项目注册表、共享机制或跨项目接口时；GitHub手动触发|完整无商业软件的仓库静态回归，包括RF四极杆完整`Static`分析测试及所有项目的Static gate|
+|L3 project evidence|各项目`verify_project.ps1`的Candidate/Formal级别|Candidate、Formal、promotion或真实物理资产变化时|商业求解、GUI/CAD复验、冻结输入、manifest和物理证据链|
+
+`common/verify_lightweight.ps1`保留为L1兼容入口，并委托给`verify_changed.ps1`；新脚本、文档与CI应直接使用
+`verify_changed.ps1`。`.github/workflows/lightweight-gate.yml`在push只运行L1；L2仅可由
+`workflow_dispatch`人工启动，不对pull request自动运行全仓回归。
+RF四极杆Core的实测约21秒，故GitHub L1的5分钟超时仍为正常单项目改动、直接公共依赖和安全全范围
+fallback保留了足够余量；完整RF Static不占用该预算。
+
+数值探索参数可在活动项目的声明范围内自由修改：L1只校验该项目的参数schema、单位/范围、resolved合同和
+必要输入生成，不自动启动商业求解器，也不检查无关项目。若改变几何、电压、粒子源、网格、RF相位或跨项目
+接口，旧Candidate/Formal证据不再适用；只有在要声明新结果时才运行该项目相应的L3物理链。
 
 ### artifact结构门禁
 
@@ -464,7 +477,7 @@ Python 3.9至3.12；本机默认Python 3.14和旧Python 3.8均不得作为本仓
 git status --short --branch
 git diff --check
 git diff --stat
-.\common\verify_lightweight.ps1
+.\common\verify_changed.ps1
 ```
 
 确认没有 MPH、PA/IOB、结果、日志或一次性脚本进入暂存区。不得强制推送、改写远程历史或

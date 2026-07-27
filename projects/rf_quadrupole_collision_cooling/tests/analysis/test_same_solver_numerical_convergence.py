@@ -192,6 +192,7 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
             capture_output=True,
             check=False,
             encoding="utf-8",
+            errors="replace",
             env=environment,
         )
 
@@ -326,6 +327,7 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
                 capture_output=True,
                 check=False,
                 encoding="utf-8",
+                errors="replace",
                 env=environment,
             )
             self.assertEqual(linked.returncode, 0, linked.stderr)

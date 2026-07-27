@@ -1,5 +1,5 @@
 param(
-  [ValidateSet('Static','Formal')][string]$Level = 'Static',
+  [ValidateSet('Core','Static','Formal')][string]$Level = 'Static',
   [string]$PythonExe = ''
 )
 
@@ -77,6 +77,15 @@ try {
 } finally {
   $env:PYTHONPATH = $previousPythonPath
 }
+
+# Core is the no-solver, active-design contract gate.  It deliberately stops
+# before the repository-wide RF analysis suite and PowerShell tree parse; those
+# broader regressions remain part of Static integration verification.
+if ($Level -eq 'Core') {
+  "PROJECT_GATE=PASS PROJECT=rf_quadrupole_collision_cooling LEVEL=$Level"
+  return
+}
+
 & $python -m unittest discover -s (Join-Path $projectRoot 'tests\analysis') -p 'test_*.py'
 if ($LASTEXITCODE -ne 0) { throw 'Python analysis tests failed.' }
 $parseErrors = @()

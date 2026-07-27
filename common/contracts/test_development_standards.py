@@ -86,10 +86,31 @@ class LightweightGateIntegrationTests(unittest.TestCase):
         lightweight = (self.repo_root / "common" / "verify_lightweight.ps1").read_text(
             encoding="utf-8"
         )
+        integration = (
+            self.repo_root / "common" / "verify_repository_integration.ps1"
+        ).read_text(encoding="utf-8")
         self.assertIn("common/verify_development_standards.py", hook)
         self.assertIn('"3.11"', hook)
-        self.assertIn("common/verify_lightweight.ps1", workflow.replace("\\", "/"))
-        self.assertIn("verify_development_standards.py", lightweight)
+        normalized_workflow = workflow.replace("\\", "/")
+        self.assertIn("common/verify_changed.ps1", normalized_workflow)
+        self.assertIn("common/verify_repository_integration.ps1", normalized_workflow)
+        self.assertNotIn("pull_request:", workflow)
+        self.assertIn("fetch-depth: 0", workflow)
+        self.assertIn("RF quadrupole L1 uses the measured ~21 s Core contract gate", workflow)
+        self.assertIn("timeout-minutes: 5", workflow)
+        self.assertIn("github.event.before", workflow)
+        self.assertIn('git cat-file -e "$before^{commit}"', workflow)
+        self.assertIn("$baseAvailable = $LASTEXITCODE -eq 0", workflow)
+        self.assertNotIn("-not (& git cat-file", workflow)
+        self.assertIn('"$before..$after"', workflow)
+        self.assertIn("-ChangedPath $changedPaths", workflow)
+        self.assertIn("$fallbackChangedPaths", workflow)
+        self.assertIn("verify_changed.ps1", lightweight)
+        self.assertNotIn("exit $LASTEXITCODE", lightweight)
+        self.assertIn("Changed-scope gate failed", lightweight)
+        self.assertIn("verify_development_standards.py", integration)
+        self.assertIn("electron_impact_static", integration)
+        self.assertIn("projects\\electron_impact_ion_source\\verify_project.ps1", integration)
         self.assertNotIn("verify_lightweight.ps1", hook)
 
 

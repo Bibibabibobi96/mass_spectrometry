@@ -17,8 +17,8 @@ class StaticGateTests(unittest.TestCase):
         cls.project_gate = (PROJECT_ROOT / "verify_project.ps1").read_text(
             encoding="utf-8"
         )
-        cls.lightweight_gate = (
-            REPO_ROOT / "common" / "verify_lightweight.ps1"
+        cls.integration_gate = (
+            REPO_ROOT / "common" / "verify_repository_integration.ps1"
         ).read_text(encoding="utf-8")
 
     def test_public_gate_requires_powershell_core_7(self) -> None:
@@ -44,13 +44,13 @@ class StaticGateTests(unittest.TestCase):
             self.project_gate,
         )
 
-    def test_root_lightweight_gate_runs_wehnelt_static_once(self) -> None:
+    def test_repository_integration_gate_runs_wehnelt_static_once(self) -> None:
         invocation = (
             "& (Join-Path $repoRoot "
             "'projects\\wehnelt_electron_gun\\verify_project.ps1') "
             "-PythonExe $PythonExe"
         )
-        self.assertEqual(self.lightweight_gate.count(invocation), 1)
+        self.assertEqual(self.integration_gate.count(invocation), 1)
 
 
 if __name__ == "__main__":

@@ -37,6 +37,7 @@ class S3PulseCaptureContractTests(unittest.TestCase):
             ["pwsh", "-NoProfile", "-Command", script],
             cwd=cwd,
             text=True,
+            errors="replace",
             capture_output=True,
             check=False,
             env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},

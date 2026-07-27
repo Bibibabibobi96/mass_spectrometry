@@ -67,6 +67,25 @@ def write_canonical_source(path: Path) -> None:
 
 
 class SimionTransportRunnerSourceTests(unittest.TestCase):
+    def test_pwsh_invalid_utf8_error_output_remains_assertable(self) -> None:
+        result = subprocess.run(
+            [
+                "pwsh",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "[Console]::OpenStandardError().WriteByte(0xA1); exit 1",
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIsInstance(result.stderr, str)
+        self.assertIn("\ufffd", result.stderr)
+
     def test_resolved_design_logical_hash_is_recomputed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "resolved.json"
@@ -146,6 +165,7 @@ class SimionTransportRunnerSourceTests(unittest.TestCase):
                     cwd=REPO_ROOT,
                     capture_output=True,
                     encoding="utf-8",
+                    errors="replace",
                     env=environment,
                     timeout=30,
                 )
@@ -227,6 +247,7 @@ class SimionTransportRunnerSourceTests(unittest.TestCase):
                 cwd=REPO_ROOT,
                 capture_output=True,
                 encoding="utf-8",
+                errors="replace",
                 env=environment,
                 timeout=30,
             )
@@ -253,6 +274,7 @@ class SimionTransportRunnerSourceTests(unittest.TestCase):
             cwd=REPO_ROOT,
             capture_output=True,
             encoding="utf-8",
+            errors="replace",
             env=environment,
             timeout=30,
         )
@@ -554,6 +576,7 @@ class SimionTransportRunnerSourceTests(unittest.TestCase):
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
+                errors="replace",
                 timeout=60,
             )
             process_diagnostics = (

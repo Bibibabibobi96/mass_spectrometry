@@ -213,6 +213,7 @@ class DependencyContractTests(unittest.TestCase):
                 ["pwsh", "-NoProfile", "-Command", script],
                 cwd=root,
                 text=True,
+                errors="replace",
                 capture_output=True,
                 check=False,
                 timeout=30,

@@ -62,6 +62,7 @@ def _run_pwsh(command: str, environment: dict[str, str]) -> subprocess.Completed
         capture_output=True,
         check=False,
         encoding="utf-8",
+        errors="replace",
         env=environment,
         cwd=REPO_ROOT,
         timeout=120,

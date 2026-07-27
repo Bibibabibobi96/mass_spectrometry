@@ -639,6 +639,7 @@ class MatlabContractBindingTests(unittest.TestCase):
             "pyproject.toml",
             "common/require_powershell7.ps1",
             "common/verify_lightweight.ps1",
+            "common/verify_repository_integration.ps1",
             "common/contracts/run_artifact_support.ps1",
             "common/contracts/write_run_manifest.py",
             "common/contracts/verify_run_manifest.py",

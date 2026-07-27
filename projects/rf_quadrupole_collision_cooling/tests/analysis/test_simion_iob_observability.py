@@ -114,6 +114,7 @@ class SimionIobObservabilityTests(unittest.TestCase):
                 env=environment,
                 capture_output=True,
                 encoding="utf-8",
+                errors="replace",
                 timeout=30,
             )
             self.assertEqual(result.returncode, 0, result.stderr)

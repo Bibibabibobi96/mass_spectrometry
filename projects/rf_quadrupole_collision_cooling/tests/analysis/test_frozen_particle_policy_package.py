@@ -267,6 +267,7 @@ $result | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath {_ps(result_path)}
                 env=environment,
                 capture_output=True,
                 text=True,
+                errors="replace",
                 timeout=120,
                 check=False,
             )
