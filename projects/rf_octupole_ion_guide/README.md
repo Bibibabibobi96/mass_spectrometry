@@ -17,20 +17,27 @@
 
 - 项目身份：[`config/project.json`](config/project.json)
 - 三项目共享运行合同：[`../../common/multipole/README.md`](../../common/multipole/README.md)
-- L1 baseline：[`config/baseline.json`](config/baseline.json)
+- 历史L1兼容输入：[`config/baseline.json`](config/baseline.json)，只读；`project.json`仅因当前registry
+  schema把它保留为旧格式身份检查，不是活动solver参数权威。
 - Phase 2设计请求、变量目录和优化包络：
   [`config/requests/baseline.json`](config/requests/baseline.json)、
   [`config/design_variables.json`](config/design_variables.json)、
   [`config/optimization_envelope.json`](config/optimization_envelope.json)
 - 设计profile注册与解析发布：[`config/design_profiles.json`](config/design_profiles.json)、
   [`config/resolved_design.json`](config/resolved_design.json)。
+- L3运行profile：[`config/runtime_profiles.json`](config/runtime_profiles.json)只绑定设计、
+  粒子源和求解器数值profile身份；粒子源与COMSOL/SIMION数值分别由
+  [`config/particle_source_profiles.json`](config/particle_source_profiles.json)、
+  [`config/comsol_solver_numerics.json`](config/comsol_solver_numerics.json)和
+  [`config/simion_solver_numerics.json`](config/simion_solver_numerics.json)发布。
 - 执行组合：[`config/execution_profiles.json`](config/execution_profiles.json)保留compile-only门禁；
   商业运行可由薄wrapper绑定同一profile，未提供evidence合同即为`UNQUALIFIED`。
 - 运行入口：[`analysis/run_transport.ps1`](analysis/run_transport.ps1)
 - L2圆杆筛选：[`analysis/run_round_rod_field_screen.ps1`](analysis/run_round_rod_field_screen.ps1)，
   固定通过`baseline_finite_3d` profile编译resolved，只发布逐候选场指标，不选择L3几何。
 - L2传输：[`analysis/run_round_rod_transport.ps1`](analysis/run_round_rod_transport.ps1)
-- L3兼容薄wrapper：[`analysis/run_finite_3d_transport.ps1`](analysis/run_finite_3d_transport.ps1)
+- L3 COMSOL薄wrapper：[`analysis/run_finite_3d_transport.ps1`](analysis/run_finite_3d_transport.ps1)，
+  公开入口只接受具名runtime profile，不接受粒子路径或自由数值。
 - L3 SIMION独立回归：[`analysis/run_simion_finite_3d_transport.ps1`](analysis/run_simion_finite_3d_transport.ps1)
 - 静态门禁：[`verify_project.ps1`](verify_project.ps1)
 

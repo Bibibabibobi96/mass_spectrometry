@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "role": "multipole_simion_solver_numerics_profiles",
+  "project_id": "rf_octupole_ion_guide",
+  "profiles": {
+    "baseline_finite_3d": {
+      "cell_mm": 0.4,
+      "trajectory_quality": 10,
+      "trajectory": {
+        "rf_steps_per_period": 40,
+        "maximum_global_time_us": 80.0
+      }
+    }
+  }
+}

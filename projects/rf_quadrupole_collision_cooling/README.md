@@ -38,6 +38,9 @@ S2–S3连接功能闭环记录：
   五个数值驱动量和分段参考；[`config/design_variables.json`](config/design_variables.json)与
   [`config/optimization_envelope.json`](config/optimization_envelope.json)只声明候选编译范围，不改写
   当前baseline，也不授权求解器或CAD运行。
+- `project.json`的`contracts.baseline`因当前项目注册schema仍指向
+  [`config/baseline.json`](config/baseline.json)，仅供旧格式身份检查；活动solver权威是
+  [`config/requests/official.json`](config/requests/official.json)及其resolved发布，旧baseline不得接收新参数。
 - Phase 4治理入口：[`config/design_profiles.json`](config/design_profiles.json)把完整request、适用变量
   目录、优化包络、SHA-256和拓扑身份绑定为命名profile。
 - 程序统一入口：[`config/resolved_design_official.json`](config/resolved_design_official.json)，由

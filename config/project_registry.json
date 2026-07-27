@@ -16,11 +16,11 @@
     },
     {
       "descriptor": "projects/rf_hexapole_ion_guide/config/project.json",
-      "sha256": "2990E332242678D83182F53944614215E3B3110020FE44389EB96695FE26FEEC"
+      "sha256": "E630C018B8493B2BC73D94B17F5DE97402A870923CE3E7543FB74AE219980A7B"
     },
     {
       "descriptor": "projects/rf_octupole_ion_guide/config/project.json",
-      "sha256": "D34E76642A23665802AEF541989A869754B71EDFEB3AAFBA36580BA056597152"
+      "sha256": "F905B104A84AEAE1740BFD80239DF22FCEE9FCC2B516F1E3A19E15C92C3486AA"
     },
     {
       "descriptor": "projects/rf_quadrupole_collision_cooling/config/project.json",
@@ -225,7 +225,7 @@
         "baseline": "config/baseline.json",
         "resolved": "config/resolved_design.json",
         "analysis": null,
-        "interface": "config/finite_3d_transport.json",
+        "interface": null,
         "execution": "config/execution_profiles.json",
         "design_profiles": "config/design_profiles.json",
         "design_variables": "config/design_variables.json",
@@ -341,7 +341,7 @@
         "baseline": "config/baseline.json",
         "resolved": "config/resolved_design.json",
         "analysis": null,
-        "interface": "config/finite_3d_transport.json",
+        "interface": null,
         "execution": "config/execution_profiles.json",
         "design_profiles": "config/design_profiles.json",
         "design_variables": "config/design_variables.json",

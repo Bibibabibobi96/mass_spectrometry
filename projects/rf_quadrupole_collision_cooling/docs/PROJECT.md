@@ -462,6 +462,19 @@ target-entry surface及物理矩形孔准备；oaTOF baseline particle-source bo
 7. uniform四段和explicit三段都只是已通过功能复验的参考；分段数量、各段长度/间隙/电势、馈电、
    屏蔽连续性、局部网格和机械实现尚未优化，不得把任一案例当作正式硬件选择。
 8. 为生产入口补齐通用异常收尾协议及求解器包装器属于平台任务；第二个项目复用前不提前抽到`common/`。
+9. 三个RF多极杆项目的`project.json.contracts.baseline`当前仍因根project registry builder需要旧
+   `multipole`身份结构而指向只读`config/baseline.json`；它只用于registry identity compatibility，
+   不得重新成为solver输入。退出条件是根schema/builder改从design profile/request或独立identity
+   contract校验极数身份，三项目迁移后registry current/deterministic门禁通过，再按删除授权处理旧文件。
+10. `mass_filter_reference`仍是四极杆唯一已知活动legacy baseline消费者。后续须把该独立科学workflow
+    迁到具名request/mode、compiled resolved和solver numerics，runner与analyzer不再冻结或读取
+    `config/baseline.json`；静态合同及双求解器功能复验通过后才关闭该任务。
+11. 多极杆SIMION公共core目前仍以SIMION 2020 vendor `quad_monolithic.iob`作为默认临时容器。
+    先验证四/六/八极杆是否共享同一种单PA非物理容器；若结构合同相同，只登记一个shared multipole
+    template，不复制三份；仅在证明确有结构差异时才建立项目独立模板。最终模板均须完成GUI重开、
+    结构验证、IOB+CON SHA及template-build登记，再由runtime profile绑定身份与SHA并从生产wrapper
+    移除任意`TemplateIob`入口。共享机制边界沿用
+    [`../../../common/multipole/README.md`](../../../common/multipole/README.md)。
 
 ## 产物与历史
 

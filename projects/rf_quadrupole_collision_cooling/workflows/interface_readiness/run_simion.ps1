@@ -53,7 +53,6 @@ $resolvedContractInput = 'config/resolved_design_official.json'
 $modeInput = 'config/modes/transport_interface_readiness.json'
 $expectedParticles = 0
 
-$frozenBaseline = Join-Path $inputDir 'baseline.json'
 $frozenMode = Join-Path $inputDir 'mode.json'
 $frozenResolved = Join-Path $inputDir 'resolved_design.json'
 $frozenInterface = Join-Path $inputDir 'interface_contract.json'
@@ -61,8 +60,6 @@ $frozenSourceFamily = Join-Path $inputDir 'particle_source_family.json'
 $frozenDistribution = Join-Path $inputDir 'particle_source_distribution.json'
 $sourceBinding = Join-Path $inputDir 'particle_source_binding.json'
 $frozenNumericalContract = Join-Path $inputDir 'simion_solver_numerics.json'
-Copy-VerifiedRunInput -Source (Join-Path $projectRoot 'config\baseline.json') `
-    -Destination $frozenBaseline | Out-Null
 Copy-VerifiedRunInput -Source (Join-Path $projectRoot ($modeInput -replace '/', '\')) `
     -Destination $frozenMode | Out-Null
 Copy-VerifiedRunInput -Source (Join-Path $projectRoot ($resolvedContractInput -replace '/', '\')) `
@@ -294,7 +291,7 @@ $FrequencyHz = [double]$coreConfig.frequency_hz
 $runConfig = [ordered]@{
     schema_version=1; role='rf_quadrupole_simion_run_config'; run_id=$RunId
     project='rf_quadrupole_collision_cooling'; mode=$mode; project_root=$projectRoot
-    inputs=[ordered]@{baseline=$frozenBaseline; resolved_design=$frozenResolved; interface_contract=$frozenInterface; mode=$frozenMode; numerical_contract=$frozenNumericalContract; particle_table=$particlePath; source_states=$sourceStatesLua}
+    inputs=[ordered]@{resolved_design=$frozenResolved; interface_contract=$frozenInterface; mode=$frozenMode; numerical_contract=$frozenNumericalContract; particle_table=$particlePath; source_states=$sourceStatesLua}
     output_dir=$resultDir; candidate_dir=$candidateDir; run_dir=$runDir
     rf_steps_per_period=$coreConfig.rf_steps_per_period
     trajectory_quality=$coreConfig.trajectory_quality

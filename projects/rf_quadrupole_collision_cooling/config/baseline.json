@@ -6,7 +6,7 @@
   "geometry_authority": {
     "source": "SIMION 2020 built-in examples/quad monolithic reference",
     "files": ["quad_include.gem", "quad_monolithic.gem"],
-    "policy": "Reference provenance only. This baseline is the sole editable project design source; COMSOL, SIMION and future CAD consume generated releases."
+    "policy": "Legacy read-only compatibility input. Active solver workflows consume governed design requests and compiled resolved releases; this file must not receive new parameter edits."
   },
   "coordinate_convention": {
     "units": "mm",

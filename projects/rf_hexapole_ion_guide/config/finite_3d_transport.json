@@ -32,5 +32,5 @@
   "mesh": {"global_auto_level": 6, "working_region_maximum_element_size_mm": 0.5},
   "trajectory": {"rf_steps_per_period": 40, "maximum_global_time_us": 50.0},
   "functional_acceptance": {"minimum_rf_transmission": 0.8, "minimum_improvement_over_zero_rf": 0.2},
-  "claim_limit": "Finite 3D circular rods with parameterized apertured entrance/exit plates and finite external injection/output regions; functional direct COMSOL tracking only, without mesh convergence, SIMION, CAD, Candidate or Formal claim."
+  "claim_limit": "Legacy read-only compatibility snapshot. Active L3 geometry comes from resolved_design.json and numerical values come from solver-numerics profiles."
 }

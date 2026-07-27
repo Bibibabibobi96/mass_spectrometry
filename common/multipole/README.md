@@ -11,7 +11,7 @@
 
 ## 唯一物理设计入口
 
-商业求解runner只接受`ProjectId + DesignProfileId`，不接受项目目录、resolved文件或单个物理标量。
+公共solver core只接受`ProjectId + DesignProfileId`，不接受项目目录、resolved文件或单个物理标量。
 `design_profile.py`从根`config/project_registry.json`定位唯一canonical项目，再从项目
 `config/design_profiles.json`解析具名profile。每个profile以文件SHA-256和不可变身份绑定：
 
@@ -49,7 +49,7 @@ enclosure必须显式声明职责：
 
 ## 粒子源和证据边界
 
-`ParticleSourcePath`指向canonical CSV，列顺序固定为：
+公共solver core的`ParticleSourcePath`指向canonical CSV，列顺序固定为：
 
 ```text
 particle_id,birth_time_s,x_mm,y_mm,z_mm,vx_m_s,vy_m_s,vz_m_s,mass_amu,charge_state
@@ -62,6 +62,12 @@ CSV SHA-256和parent resolved hash的metadata；MATLAB和SIMION投影只消费�
 成对提供。runner把合同复制到run inputs，冻结其SHA-256与point ID，并把preflight返回的
 `operating_point_binding`写入run config。没有该绑定时仍严格使用resolved source能量约束，不允许
 5 eV等命名工况隐式绕过官方1.8–2.2 eV范围。
+
+六/八极杆的生产薄wrapper再加一层`runtime_profile.py`治理：公开入口只接受`RuntimeProfileId`，
+由项目`runtime_profiles.json`绑定design、particle-source和solver-numerics profile。六/八极杆当前
+完全相同的固定N=100源只保留
+`sources/hex_oct_baseline_fixed_100.csv`一份，各项目通过独立profile与同一SHA绑定；四极杆官方源
+语义不同，不参与该共享。求解器数值profile保持项目独立，以允许后续收敛结果分化。
 
 证据阈值不是物理设计，也不藏在resolved或numerics中。runner可显式接受版本化
 `EvidenceContractPath`；`evaluate_transport_evidence.py`只对已产生metrics评分。未给证据合同时仍可完成

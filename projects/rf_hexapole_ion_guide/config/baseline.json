@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "role": "rf_hexapole_ideal_l1_transport_baseline",
-  "status": "initial_functional_reference",
+  "status": "legacy_read_only",
   "project_id": "rf_hexapole_ion_guide",
   "family_contract_id": "rf_multipole_ion_optics",
   "field_model_id": "multipole.ideal_2n.v1",
@@ -47,5 +47,5 @@
     "minimum_rf_transmission": 0.8,
     "minimum_improvement_over_zero_rf": 0.2
   },
-  "claim_limit": "Ideal L1 functional transport reference only; no real geometry or solver qualification."
+  "claim_limit": "Legacy L1 compatibility input only. It is not an editable authority and must not be consumed by active L3 solver workflows."
 }
