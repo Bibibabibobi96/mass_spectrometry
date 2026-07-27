@@ -245,6 +245,13 @@ Formal 资产、candidate source closure 或 RF 项目文件。
    2026-07-27 `.wgem`首次物化自动化被供应商许可证阻断：安装的SIMION 2026要求2022或以上许可证，而当前
    key日期为2012-03-05。失败证据保留在workspace artifact scratch；该负结果不改变SIMION 2020 legacy-GEM
    模板的已验证范围，也不解除Formal/history资产禁令。
+   同日零变化 N=100 retry
+   `20260727_111100__test__cross__zero-change-candidate-retry-n100`在COMSOL N=100构建与同步报告成功后停止于
+   SIMION构建启动前的路径保护：被冻结到`runs/<run_id>/inputs/code/`的构建器按自身位置错误推导artifact根，
+   因而把该run的`runs/<run_id>/simion`误判为目录外。该run为`failed`；没有SIMION粒子/物理结果、CAD、
+   cross-solver acceptance或Formal修改，不能作为Candidate成功或物理结论。修复后的retry机制由Candidate
+   runner从冻结计划的`run_root`显式传入已归一化的artifact project root，冻结构建器不再从其复制后的目录
+   推导工作区；必须重新冻结source closure并使用新的run_id重试。
    2026-07-20零改动真实候选`20260720_111805__test__cross__zero-change-candidate-retry2__n100`已完成：
    COMSOL构建及独立回读、SIMION PA/IOB构建及运行时合同、25组件SolidWorks装配和共享粒子表SHA验收
    全部PASS，根三件套状态为`success/candidate_accepted_not_promoted`。正式baseline SHA与计划冻结值一致，

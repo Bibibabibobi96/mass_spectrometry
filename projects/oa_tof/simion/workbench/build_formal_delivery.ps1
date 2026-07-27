@@ -1,6 +1,7 @@
 param(
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$OutputDir = '',
+  [string]$ArtifactProjectRoot = '',
   [string]$TemplateIob = '',
   [string]$RunId = '',
   [string]$ContractPath = '',
@@ -15,7 +16,16 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
-$artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\oa_tof'
+# Candidate execution freezes this script below runs/<run_id>/inputs/code.  In
+# that layout PSScriptRoot no longer identifies the workspace, so the caller
+# supplies the already-frozen artifact project root.  Formal/default callers
+# retain the repository-relative resolution below.
+if ([string]::IsNullOrWhiteSpace($ArtifactProjectRoot)) {
+  $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\oa_tof'
+}
+else {
+  $artifactRoot = [IO.Path]::GetFullPath($ArtifactProjectRoot)
+}
 $formalBaselinePath = Join-Path $projectRoot 'config\baseline.json'
 $modePath = Join-Path $projectRoot 'config\modes\formal.json'
 $formalContractPath = Join-Path $projectRoot 'config\resolved_geometry.json'

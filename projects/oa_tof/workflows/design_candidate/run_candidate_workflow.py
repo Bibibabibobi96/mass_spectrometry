@@ -191,9 +191,12 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
         template = _nonformal_template(stage, plan)
         if closure is None:
             raise RuntimeError("candidate source closure is required")
+        artifact_project_root = run_root.resolve().parent.parent
         arguments = [
             "-OutputDir",
             stage["output_dir"],
+            "-ArtifactProjectRoot",
+            str(artifact_project_root),
             "-RunId",
             plan["run_id"],
             "-ContractPath",

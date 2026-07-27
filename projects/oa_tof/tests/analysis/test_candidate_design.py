@@ -872,6 +872,45 @@ class CandidateDesignTests(unittest.TestCase):
         self.assertIn("Candidate build requires an explicit frozen non-Formal TemplateIob", builder)
         self.assertIn("Candidate TemplateIob must not reference a Formal path", builder)
 
+    def test_frozen_candidate_builder_receives_runtime_artifact_root(self):
+        builder = (PROJECT_ROOT / "simion" / "workbench" / "build_formal_delivery.ps1").read_text(encoding="utf-8")
+        self.assertIn("[string]$ArtifactProjectRoot = ''", builder)
+        self.assertIn("$artifactRoot = [IO.Path]::GetFullPath($ArtifactProjectRoot)", builder)
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            artifact_root = root_path / "artifacts" / "projects" / "oa_tof"
+            artifact_root.mkdir(parents=True)
+            template_run = self.registered_template_run(artifact_root)
+            source = root_path / "candidate_inputs"
+            source.mkdir()
+            plan = prepare_candidate_run(
+                *self.candidate_run_inputs(source),
+                "20260727_110000__build__cross__design-candidate__frozen-builder-root",
+                artifact_root,
+                simion_template_run=template_run,
+            )
+            run_root = start_candidate_run(Path(plan["planning_root"]) / "candidate_workflow_plan.json")
+            runtime_plan = load_json(run_root / "candidate_workflow_plan.json")
+            stage = next(item for item in runtime_plan["stages"] if item["stage_id"] == "simion_candidate")
+            commands = []
+
+            def stop_after_capturing_command(command, _log_path, _environment=None):
+                commands.append(command)
+                raise RuntimeError("intentional command capture")
+
+            with mock.patch(
+                "projects.oa_tof.workflows.design_candidate.run_candidate_workflow._run_command",
+                side_effect=stop_after_capturing_command,
+            ):
+                with self.assertRaisesRegex(RuntimeError, "intentional command capture"):
+                    execute_stage(stage, runtime_plan, "unused")
+
+            command = commands[0]
+            frozen_builder = Path(command[5]).resolve()
+            frozen_builder.relative_to(run_root / "inputs" / "code")
+            root_argument = command.index("-ArtifactProjectRoot") + 1
+            self.assertEqual(Path(command[root_argument]).resolve(), artifact_root.resolve())
+
     def test_shared_builder_negative_contracts_fail_before_output_creation(self):
         builder = PROJECT_ROOT / "simion" / "workbench" / "build_formal_delivery.ps1"
         with tempfile.TemporaryDirectory() as root:
