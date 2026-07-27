@@ -86,6 +86,11 @@ Invoke-ChangedGateStage 'repository_hygiene' 'always' { & (Join-Path $PSScriptRo
 $codeExtensions = @('.py', '.ps1', '.m', '.lua', '.gem')
 $hasCodeChange = Test-AnyPath { $codeExtensions -contains [IO.Path]::GetExtension($_).ToLowerInvariant() }
 $changedPython = @($changedPaths | Where-Object { [IO.Path]::GetExtension($_).ToLowerInvariant() -eq '.py' })
+$existingPythonFiles = @(
+    $changedPython |
+        ForEach-Object { Join-Path $repoRoot $_ } |
+        Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }
+)
 $hasDocumentationChange = Test-AnyPath {
     $_ -match '(^|/)(README|AGENTS)\.md$' -or $_.StartsWith('docs/', [StringComparison]::OrdinalIgnoreCase) -or $_ -match '^projects/[^/]+/docs/'
 }
@@ -112,9 +117,12 @@ if ($hasCodeChange) {
     Invoke-ChangedGateStage 'development_standards' 'source_code_changed' { & $PythonExe (Join-Path $PSScriptRoot 'verify_development_standards.py') }
 } else { Skip-ChangedGateStage 'development_standards' 'no_source_code_path_changed' }
 
-if ($changedPython.Count -gt 0) {
-    $pythonFiles = @($changedPython | ForEach-Object { Join-Path $repoRoot $_ })
-    Invoke-ChangedGateStage 'ruff_changed_python' 'python_source_changed' { & $PythonExe -m ruff check -- @pythonFiles }
+if ($existingPythonFiles.Count -gt 0) {
+    Invoke-ChangedGateStage 'ruff_changed_python' 'existing_python_source_changed' {
+        & $PythonExe -m ruff check -- @existingPythonFiles
+    }
+} elseif ($changedPython.Count -gt 0) {
+    Skip-ChangedGateStage 'ruff_changed_python' 'only_deleted_python_paths_changed'
 } else { Skip-ChangedGateStage 'ruff_changed_python' 'no_python_path_changed' }
 
 if ($hasRegistryChange -or (Test-AnyPath { $_ -match '^projects/[^/]+/config/project\.json$' })) {

@@ -28,6 +28,15 @@ class ChangedGateContractTests(unittest.TestCase):
         self.assertIn("ELAPSED_SECONDS", self.source)
         self.assertIn("repository_hygiene' 'always", self.source)
 
+    def test_deleted_python_paths_select_scope_but_are_not_passed_to_ruff(self) -> None:
+        self.assertIn("$changedPython =", self.source)
+        self.assertIn("$existingPythonFiles =", self.source)
+        self.assertIn("Test-Path -LiteralPath $_ -PathType Leaf", self.source)
+        self.assertIn("$existingPythonFiles.Count -gt 0", self.source)
+        self.assertIn("@existingPythonFiles", self.source)
+        self.assertIn("only_deleted_python_paths_changed", self.source)
+        self.assertNotIn("@pythonFiles", self.source)
+
     def test_routes_project_config_to_its_own_static_gate(self) -> None:
         self.assertIn("projects/oa_tof/", self.source)
         self.assertIn("projects/rf_quadrupole_collision_cooling/", self.source)
