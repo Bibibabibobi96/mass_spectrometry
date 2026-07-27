@@ -802,6 +802,7 @@ class CandidateDesignTests(unittest.TestCase):
 
     def test_candidate_source_closure_freezes_shared_n100_transport_mechanism(self):
         required = {
+            "common/comsol/add_comsol_size_feature.m",
             "projects/oa_tof/simion/workbench/run_n100_transport.ps1",
             "projects/oa_tof/simion/workbench/analyze_ideal_field_log.ps1",
             "projects/oa_tof/analysis/solver_diagnostics.py",

@@ -16,6 +16,7 @@ ROLE = "oa_tof_candidate_execution_source_closure"
 # This is intentionally an auditable allowlist, not dependency discovery.
 # Keep paths repository-relative and use forward slashes in the machine record.
 RELATIVE_PATHS = (
+    "common/comsol/add_comsol_size_feature.m",
     "common/comsol/livelink_environment.ps1",
     "common/comsol/livelink_failure_classification.ps1",
     "common/comsol/livelink_r2025b/comsolstartup.m",
