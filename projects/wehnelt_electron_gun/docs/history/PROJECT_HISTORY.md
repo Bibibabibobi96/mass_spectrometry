@@ -11,11 +11,13 @@
 
 > **归档时点采用的物理基线：横置螺旋灯丝 Wehnelt 电子枪**。当时维护的脚本链为
 > `phase1_geometry_coil_transverse.m` → `phase2_electrostatics_coil_transverse.m` →
-> `phase4_thermal_emission_coil_transverse.m`；当时称为最终GUI模型的原路径是
+> `phase4_thermal_emission_coil_transverse.m`；实心阴极和轴向螺旋灯丝源码现冻结于
+> [`20260713__pre-transverse-wehnelt-lineages.md`](20260713__pre-transverse-wehnelt-lineages.md)。
+> 当时称为最终GUI模型的原路径是
 > `artifacts/projects/wehnelt_electron_gun/models/comsol/formal/ElectronGun_CoilT_Thermal_CPT.mph`。
 > 选择依据是同条件 2700 K 热发射对照中横置灯丝收集效率 34.18%，高于轴向灯丝 27.71%，
 > 且本项目面向质谱 EI 离子源，优先电子利用率而非成像级轴对称性。实心阴极和轴向线圈
-> 已降级为`legacy/`与`archive/lineages/`历史谱系。
+> 已冻结为只读源码payload与`archive/lineages/`历史谱系。
 
 ## 0. 归档时点的基线与产物职责（2026-07-13）
 
@@ -25,7 +27,7 @@
 | 中间模型 | `workspace/ElectronGun_CoilT.mph`、`ElectronGun_CoilT_ES.mph` | 可由 phase1/2 重建，不是最终交付 |
 | 当时称为正式的模型 | `formal/ElectronGun_CoilT_Thermal_CPT.mph` | 含横置几何、静电 Study、2700 K CPT Study 和原生轨迹结果节点 |
 | 当时称为正式的结果 | `results/comsol/formal/`中的`*coilT.png`和`electron_trajectories_transverse.png` | 与归档时点横置模型对应的可视化 |
-| 历史谱系 | `legacy/{solid_cathode,axial_coil}/`及对应`archive/lineages/` | 只用于追溯，不作为新模型起点 |
+| 历史谱系 | `20260713__pre-transverse-wehnelt-lineages/`源码payload及对应`archive/lineages/` | 只用于追溯，不作为新模型起点 |
 
 归档时点基线参数：5 匝横置 Helix，线圈半径 0.3 mm、钨丝半径 0.05 mm、节距 0.2 mm；
 `V_cathode=0 V`、`V_wehnelt=-0.5 V`、`V_anode=70 V`，Wehnelt/阳极孔径半径分别为
@@ -75,7 +77,7 @@ z=8 mm轴上得到`V=40.0917301067 V`、`|E|=5300.60566114 V/m`。该测试没�
 对称性"，而不是默认套用同轴设计。
 
 ## 3. 历史轴向谱系：Wehnelt 偏压存在非单调最优点
-旧`legacy/axial_coil/phase5_wehnelt_sweep.m`对Wehnelt孔径和偏压做3×3网格扫描时，观察到
+归档payload中的`phase5_wehnelt_sweep.m`对Wehnelt孔径和偏压做3×3网格扫描时，观察到
 收集效率关于偏压**非单调**：偏压比基线
 更负（抑制过强）和偏压为0（没有聚焦）时收集效率都比一个适中的负偏压更低，每种孔径下
 都是同一个中间值最优。这和电子光学教科书里Wehnelt极"负偏压既截止电流、又同时充当聚焦
@@ -98,5 +100,5 @@ z=8 mm轴上得到`V=40.0917301067 V`、`|E|=5300.60566114 V/m`。该测试没�
 - **phase5（历史轴向谱系）**：Wehnelt孔径×偏压3×3网格扫描，发现偏压非单调趋势；具体
   参数不再作为横置基线结论。
 - **2026-07-13基线定型**：采用横置螺旋灯丝；当时维护的脚本、最终模型和结果进入旧formal层，
-  实心/轴向谱系移入legacy/archive。因MATLAB启动崩溃，本轮完成的是资产与知识基线定型，
+  实心/轴向谱系后来冻结到只读源码payload与artifact archive。因MATLAB启动崩溃，本轮完成的是资产与知识基线定型，
   GUI Compute复验列为运行时修复后的第一项工作。

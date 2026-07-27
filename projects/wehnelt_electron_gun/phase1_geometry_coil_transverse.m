@@ -3,7 +3,8 @@ function result = phase1_geometry_coil_transverse(resolvedContractPath)
 % helical tungsten filament mounted so its OWN helix axis is
 % PERPENDICULAR to the gun's beam axis (axis = x), like a small spring
 % strung sideways inside the Wehnelt cavity, instead of coaxial with the
-% beam (phase1_geometry_coil.m). This matches how real directly-heated
+% beam (see the archived axial-coil lineage in docs/history). This
+% matches how real directly-heated
 % coiled filaments are typically mounted, and -- for an application like
 % a mass-spec EI electron gun where only electron utilization (current
 % reaching the collector) matters, not beam symmetry/imaging quality --

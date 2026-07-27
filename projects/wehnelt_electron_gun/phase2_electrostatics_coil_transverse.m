@@ -3,8 +3,8 @@ function result = phase2_electrostatics_coil_transverse(resolvedContractPath)
 % conditions, electrostatics solve, potential/field result plots for the
 % electron gun geometry with the filament coil's own axis PERPENDICULAR
 % to the beam axis (see phase1_geometry_coil_transverse.m). Same
-% Complement-selection / FreeTet-mesh fixes as phase2_electrostatics_coil.m
-% documented in COMSOL_API.md under Geometry, Selections, and Mesh.
+% Complement-selection / FreeTet-mesh fixes follow the archived axial-coil
+% lineage in docs/history and the current COMSOL_API.md guidance.
 % The selected resolved mode determines whether the solver is executed.
 
 componentRoot = fileparts(mfilename('fullpath'));
@@ -87,7 +87,7 @@ pot_w.selection.named('selb_weh'); pot_w.set('V0', 'V_wehnelt');
 pot_a = es.create('pot_an', 'ElectricPotential', 2);
 pot_a.selection.named('selb_an'); pot_a.set('V0', 'V_anode');
 
-%% Mesh (same recipe as phase2_electrostatics_coil.m: global Finer +
+%% Mesh (same recipe as the archived axial-coil lineage: global Finer +
 % explicit local size on the coil surface + explicit FreeTet + health check)
 mesh1 = comp1.mesh.create('mesh1');
 mesh1.feature('size').set('hauto', contract.numerical.mesh.automatic_level);

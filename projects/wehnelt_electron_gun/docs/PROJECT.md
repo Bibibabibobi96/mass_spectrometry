@@ -8,7 +8,9 @@
 
 当前物理基线为5匝横置螺旋钨丝、2700 K热发射的Wehnelt电子枪。当前维护源码链为
 `phase1_geometry_coil_transverse.m`、`phase2_electrostatics_coil_transverse.m`和
-`phase4_thermal_emission_coil_transverse.m`；实心阴极和轴向线圈源码只属于`legacy/`。
+`phase4_thermal_emission_coil_transverse.m`；实心阴极和轴向线圈源码已冻结到
+[`history/20260713__pre-transverse-wehnelt-lineages.md`](history/20260713__pre-transverse-wehnelt-lineages.md)
+的只读payload，不属于活动实现。
 
 机器权威已建立为`config/baseline.json + config/numerical_modes.json → analysis/resolve_contract.py
 → config/resolved_model.json`。线圈、钨丝、节距、电位和孔径等既有数值均保持不变；完整精度和

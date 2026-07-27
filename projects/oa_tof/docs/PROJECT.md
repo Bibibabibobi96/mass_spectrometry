@@ -39,11 +39,11 @@ RF→oaTOF连接功能已经由RF项目收口。接口阶段、连接器几何�
 本项目只读Formal分析器，并未独立实现连接器或侧孔场。本项目SolidWorks装配仍是无侧孔的25组件正式
 装配。因此候选`implemented + functional PASS`与整机`qualification/Formal BLOCKED`同时成立，并不冲突。
 
-本项目旧`rf_handoff_projection`、`rf_hybrid_mesh_projection`和`rf_handoff_pulse`模式已显式标为
-superseded diagnostic，仅用于复现早期刚体投影、网格配对和投影入口脉冲结果；它们不是与RF项目S2/S3
-并列的活动生产路径，也不得覆盖当前物理连接器功能证据或Formal阻断条件。它们不进入oa-TOF Static
-门禁；需要复现时先运行`diagnostics/legacy_rf_projection/verify_inputs.ps1`，该入口会失败关闭地核验
-历史RF粒子状态与成功manifest的身份。
+本项目旧`rf_handoff_projection`、`rf_hybrid_mesh_projection`和`rf_handoff_pulse`诊断源码、配置与
+历史测试已从活动树迁入只读
+[`history/20260727__superseded-rf-handoff-diagnostics.md`](history/20260727__superseded-rf-handoff-diagnostics.md)。
+它们不是与RF项目S2/S3并列的生产路径，也不得覆盖当前物理连接器功能证据或Formal阻断条件；活动
+profile、Static门禁和Candidate源码闭包均不再消费该包。
 
 2026-07-20完成 oa-TOF 理论重写文档及代码审查。三份 Markdown 已取代旧 DOCX 成为活跃理论入口，
 三份求解器无关 Python 已接入静态测试；原始投稿包及 SHA 已冻结在
@@ -208,9 +208,9 @@ GUI重开、正式包和CAD同步门禁，不影响当前100%传输或正式统�
 - 旧的“`config/modes/formal.json`继续作为单一正式模式机器合同”的判断已由上述三层合同取代。只有出现新的
   多求解器消费者、跨器件消费者，或当前设计线稳定后批准专项迁移并能一次完成调用方与回归切换时，
   才启动结构拆分。
-- `diagnostics/legacy_rf_projection/`继续保持与 execution profile、静态门禁和活动 RF→oaTOF
-  生产链隔离。只有这些诊断重新成为生产路径，或其持续维护成本明确超过保持隔离的成本时，才迁移或
-  删除；不得借架构整理恢复已 superseded 的科学声明。
+- 已替代RF投影诊断的原路径、SHA、历史run身份和非自包含复现边界只在
+  [`history/20260727__superseded-rf-handoff-diagnostics.md`](history/20260727__superseded-rf-handoff-diagnostics.md)
+  追溯；不得从历史载荷恢复生产入口或已superseded的科学声明。
 - 跨项目环境bootstrap/预检以及可持久化后台run监测与恢复包装器均暂缓为平台工作，唯一规划入口为
   根[`ROADMAP.md`](../../../docs/ROADMAP.md#面向大规模代码库的扩展护栏)。它们不改变本项目当前
   Candidate的物理输入、已运行阶段或验收有效性；在获得专项设计和回归预算前不得以临时包装器替代

@@ -3,7 +3,9 @@
 本项目的当前物理基线是**横置螺旋灯丝 Wehnelt 电子枪**，面向质谱 EI 离子源中优先提高电子
 利用率、无需成像级轴对称束斑的应用。开始任务先读仓库根[`README.md`](../../README.md)，再读
 当前权威状态[`docs/PROJECT.md`](docs/PROJECT.md)。需要追溯选型依据和旧实验时才读冻结背景
-[`docs/history/PROJECT_HISTORY.md`](docs/history/PROJECT_HISTORY.md)。
+[`docs/history/PROJECT_HISTORY.md`](docs/history/PROJECT_HISTORY.md)；实心阴极与轴向螺旋灯丝的
+原始源码谱系见
+[`docs/history/20260713__pre-transverse-wehnelt-lineages.md`](docs/history/20260713__pre-transverse-wehnelt-lineages.md)。
 
 机器身份、能力边界和当前`prototype`成熟度由[`config/project.json`](config/project.json)声明；
 它用于项目发现，不改变PROJECT记录的正式资格。
@@ -55,9 +57,11 @@ runner在run目录建立后立即写入`interrupted`预置summary和已复核man
 
 ## 历史脚本
 
-`legacy/solid_cathode/`和`legacy/axial_coil/`只用于追溯旧结论，不得作为新工作的起点。
-旧`phase5_wehnelt_sweep.m`实际使用轴向 Helix，因此其扫描结果不是横置基线参数结论；横置
-Wehnelt 参数扫描需要以后重新建立和验证。
+实心阴极与轴向螺旋灯丝的九个历史脚本已按原字节冻结到
+[`docs/history/20260713__pre-transverse-wehnelt-lineages.md`](docs/history/20260713__pre-transverse-wehnelt-lineages.md)
+的同名扁平payload，只用于追溯旧结论，不得作为新工作的起点。归档
+`phase5_wehnelt_sweep.m`实际使用轴向 Helix，因此其扫描结果不是横置基线参数结论；横置 Wehnelt
+参数扫描需要以后重新建立和验证。
 
 ## 运行依赖
 

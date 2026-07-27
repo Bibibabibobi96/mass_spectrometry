@@ -26,7 +26,8 @@
 `docs/history/CANDIDATE_WORKFLOW_VALIDATION_20260720.md`和
 `docs/history/20260720__midgrid-candidate-runtime-coverage.md`、
 `docs/history/20260720__oatof-theory-refactor-review.md`及
-`docs/history/20260721__superseded-theory-docx.md`。四份日常文档不再横向链接历史。
+`docs/history/20260721__superseded-theory-docx.md`和
+`docs/history/20260727__superseded-rf-handoff-diagnostics.md`。四份日常文档不再横向链接历史。
 
 ## 本项目的知识边界
 
@@ -106,13 +107,10 @@
   `config/formal_validation.json`及COMSOL、SIMION、SolidWorks和结果清单，不复制大结果。
 - 宽质量标定候选模式：[`config/modes/mass_spectrum.json`](config/modes/mass_spectrum.json)；只评价
   峰位、标定和传输率，不替代正式分辨率基线。
-- 旧RF刚体投影、网格配对和共享时钟脉冲保留为 superseded diagnostics：
-  [`config/modes/rf_handoff_projection.json`](config/modes/rf_handoff_projection.json)、
-  [`config/modes/rf_hybrid_mesh_projection.json`](config/modes/rf_hybrid_mesh_projection.json) 与
-  [`config/modes/rf_handoff_pulse.json`](config/modes/rf_handoff_pulse.json)。它们不属于 execution profile、
-  capability 或 `verify_project.ps1 -Level Static`；按需先运行
-  [`diagnostics/legacy_rf_projection/verify_inputs.ps1`](diagnostics/legacy_rf_projection/verify_inputs.ps1)，
-  它会核验所列RF历史粒子状态和成功 manifest 的字节数/SHA，再使用相应历史 runner 复现。
+- 旧RF刚体投影、网格配对和共享时钟脉冲已从活动源码树迁入
+  [`docs/history/20260727__superseded-rf-handoff-diagnostics.md`](docs/history/20260727__superseded-rf-handoff-diagnostics.md)；
+  它们不属于execution profile、capability、Static门禁或Candidate源码闭包。需要追溯时只从该归档清单
+  核对原路径、SHA、历史run身份和复现边界，不从载荷目录直接执行。
 - RF→oaTOF连接器、共享时钟脉冲、阶段资格、漏斗结果和后续恢复条件只由
   [`../rf_quadrupole_collision_cooling/docs/PROJECT.md`](../rf_quadrupole_collision_cooling/docs/PROJECT.md)
   及其机器合同维护，本项目不复制阶段数字或接口判据。本项目只维护下游格式适配和对Formal分析器的
