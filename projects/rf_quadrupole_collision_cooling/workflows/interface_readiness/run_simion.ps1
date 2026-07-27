@@ -42,7 +42,6 @@ $inputDir=$package.input_dir
 $runConfigPath=$package.run_config
 $runSummary=$package.summary
 $simion = 'C:\Program Files\SIMION-2020\simion.exe'
-$officialIob = 'C:\Program Files\SIMION-2020\examples\quad\quad_monolithic.iob'
 
 try {
 $sourceParticlePath = [IO.Path]::GetFullPath($ParticleTablePath)
@@ -60,6 +59,25 @@ $frozenSourceFamily = Join-Path $inputDir 'particle_source_family.json'
 $frozenDistribution = Join-Path $inputDir 'particle_source_distribution.json'
 $sourceBinding = Join-Path $inputDir 'particle_source_binding.json'
 $frozenNumericalContract = Join-Path $inputDir 'simion_solver_numerics.json'
+$templateDir = Join-Path $inputDir 'simion_layout_template'
+$templateResolution = Join-Path $templateDir 'resolution.json'
+New-Item -ItemType Directory -Path $templateDir | Out-Null
+Push-Location $repoRoot
+try {
+    & $python -m common.multipole.simion_layout_template --repo-root $repoRoot `
+        --output $templateResolution | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Shared SIMION layout template resolution failed.' }
+} finally { Pop-Location }
+$templateProfile = Get-Content -LiteralPath $templateResolution -Raw -Encoding UTF8 |
+    ConvertFrom-Json
+$templateRegistry = Copy-VerifiedRunInput -Source $templateProfile.registry_path `
+    -Destination (Join-Path $templateDir 'simion_layout_template.json')
+$templateManifest = Copy-VerifiedRunInput -Source $templateProfile.run_manifest.path `
+    -Destination (Join-Path $templateDir 'registration_run_manifest.json')
+$templateIob = Copy-VerifiedRunInput -Source $templateProfile.bundle.iob.path `
+    -Destination (Join-Path $templateDir 'quad_monolithic.iob')
+$templateCon = Copy-VerifiedRunInput -Source $templateProfile.bundle.con.path `
+    -Destination (Join-Path $templateDir 'quad_monolithic.con')
 Copy-VerifiedRunInput -Source (Join-Path $projectRoot ($modeInput -replace '/', '\')) `
     -Destination $frozenMode | Out-Null
 Copy-VerifiedRunInput -Source (Join-Path $projectRoot ($resolvedContractInput -replace '/', '\')) `
@@ -172,8 +190,12 @@ Copy-VerifiedRunInput -Source (Join-Path $projectRoot 'simion\geometry\quad_incl
     -Destination (Join-Path $candidateDir 'quad_include.gem') | Out-Null
 Copy-VerifiedRunInput -Source (Join-Path $projectRoot 'simion\geometry\quad_monolithic.gem') `
     -Destination (Join-Path $candidateDir 'quad_monolithic.gem') | Out-Null
-Copy-VerifiedRunInput -Source (Join-Path $repoRoot 'common\multipole\simion_transport.lua') `
-    -Destination (Join-Path $candidateDir 'quad_monolithic.lua') | Out-Null
+$programSource = Copy-VerifiedRunInput `
+    -Source (Join-Path $repoRoot 'common\multipole\simion_transport.lua') `
+    -Destination (Join-Path $candidateDir 'multipole_runtime_program.lua')
+$iobBuilder = Copy-VerifiedRunInput `
+    -Source (Join-Path $repoRoot 'common\multipole\build_simion_runtime_iob.lua') `
+    -Destination (Join-Path $candidateDir 'build_simion_runtime_iob.lua')
 $flyPath = Join-Path $candidateDir 'quad_monolithic.fly2'
 $sourceStatesLua = Join-Path $inputDir 'source_states.lua'
 $sourceMetadata = Join-Path $inputDir 'particle_source_metadata.json'
@@ -255,8 +277,10 @@ try {
     & $python @sourceProjectionArguments
     if ($LASTEXITCODE -ne 0) { throw 'Canonical SIMION particle projection failed.' }
 } finally { Pop-Location }
-Copy-VerifiedRunInput -Source $officialIob `
+Copy-VerifiedRunInput -Source $templateIob `
     -Destination (Join-Path $candidateDir 'quad_monolithic.iob') | Out-Null
+Copy-VerifiedRunInput -Source $templateCon `
+    -Destination (Join-Path $candidateDir 'quad_monolithic.con') | Out-Null
 
 $resolved = Get-Content -LiteralPath $frozenResolved -Raw -Encoding UTF8 | ConvertFrom-Json
 $interface = Get-Content -LiteralPath $frozenInterface -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -291,7 +315,10 @@ $FrequencyHz = [double]$coreConfig.frequency_hz
 $runConfig = [ordered]@{
     schema_version=1; role='rf_quadrupole_simion_run_config'; run_id=$RunId
     project='rf_quadrupole_collision_cooling'; mode=$mode; project_root=$projectRoot
-    inputs=[ordered]@{resolved_design=$frozenResolved; interface_contract=$frozenInterface; mode=$frozenMode; numerical_contract=$frozenNumericalContract; particle_table=$particlePath; source_states=$sourceStatesLua}
+    inputs=[ordered]@{resolved_design=$frozenResolved; interface_contract=$frozenInterface; mode=$frozenMode; numerical_contract=$frozenNumericalContract; particle_table=$particlePath; source_states=$sourceStatesLua;
+        simion_layout_template_resolution=$templateResolution;simion_layout_template_registry=$templateRegistry;
+        simion_layout_registration_manifest=$templateManifest;simion_layout_template_iob=$templateIob;
+        simion_layout_template_con=$templateCon}
     output_dir=$resultDir; candidate_dir=$candidateDir; run_dir=$runDir
     rf_steps_per_period=$coreConfig.rf_steps_per_period
     trajectory_quality=$coreConfig.trajectory_quality
@@ -312,6 +339,8 @@ $runConfig.inputs.particle_source_generator = $frozenParticleGenerator
 $runConfig.inputs.paired_particle_source_mechanism = $frozenBundleMechanism
 $runConfig.inputs.frozen_python_package_support = $frozenPythonSupport
 $runConfig.inputs.particle_source_metadata = $sourceMetadata
+$runConfig.inputs.simion_iob_builder = $iobBuilder
+$runConfig.inputs.simion_program_source = $programSource
 $frozenCodeIndex = 0
 foreach ($entry in $frozenPythonPackage.files) {
     $frozenCodeIndex += 1
@@ -352,6 +381,14 @@ $runConfig.provenance = [ordered]@{
     n1000_parent = $bindingDocument.n1000_parent
     ion11_n1000_parent = $bindingDocument.ion11_n1000_parent
     canonical10_n1000_parent = $bindingDocument.canonical10_n1000_parent
+    simion_layout_template = [ordered]@{
+        template_id = [string]$templateProfile.template_id
+        registration_run_id = [string]$templateProfile.registration_run_id
+        registry_sha256 = [string]$templateProfile.registry_sha256
+        registration_manifest_sha256 = [string]$templateProfile.run_manifest.sha256
+        iob_sha256 = [string]$templateProfile.bundle.iob.sha256
+        con_sha256 = [string]$templateProfile.bundle.con.sha256
+    }
 }
 $runConfig.frozen_python = [ordered]@{
     package = $frozenPythonPackage
@@ -366,6 +403,7 @@ $luaConfig | Set-Content -LiteralPath $runConfigLua -Encoding ASCII
 
 Invoke-RfSimionCoreRun -SimionExe $simion -CandidateDir $candidateDir `
     -IobPath ([string]$coreConfig.iob) -Fly2Path ([string]$coreConfig.fly2) `
+    -IobBuilderScript $iobBuilder -ProgramSourcePath $programSource `
     -RunConfigLua $runConfigLua `
     -InspectScript (Join-Path $projectRoot 'tests\simion\inspect_builtin_quad_reference.lua') `
     -IobReport $iobReport -LogDir $logDir `
@@ -400,7 +438,8 @@ $manifestOutputs = @(
     (Join-Path $logDir 'simion_iob_stdout.txt'),(Join-Path $logDir 'simion_iob_stderr.txt'),
     (Join-Path $logDir 'simion_iob_exit_code.txt'),
     (Join-Path $logDir 'simion_stdout.txt'),(Join-Path $logDir 'simion_stderr.txt'),
-    (Join-Path $candidateDir 'quad_monolithic.iob'),(Join-Path $candidateDir 'quad_monolithic.pa0'),
+    (Join-Path $candidateDir 'quad_monolithic.iob'),(Join-Path $candidateDir 'quad_monolithic.con'),
+    (Join-Path $candidateDir 'quad_monolithic.pa0'),
     $flyPath,$iobReport,$shaPath,$runSummary
 )
 Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfigPath -Status success `

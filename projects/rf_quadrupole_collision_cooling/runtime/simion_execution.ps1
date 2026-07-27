@@ -8,6 +8,8 @@ function Invoke-RfSimionCoreRun {
         [Parameter(Mandatory = $true)][string]$CandidateDir,
         [Parameter(Mandatory = $true)][string]$IobPath,
         [Parameter(Mandatory = $true)][string]$Fly2Path,
+        [Parameter(Mandatory = $true)][string]$IobBuilderScript,
+        [Parameter(Mandatory = $true)][string]$ProgramSourcePath,
         [Parameter(Mandatory = $true)][string]$RunConfigLua,
         [Parameter(Mandatory = $true)][string]$InspectScript,
         [Parameter(Mandatory = $true)][string]$IobReport,
@@ -30,6 +32,9 @@ function Invoke-RfSimionCoreRun {
         if ($LASTEXITCODE -ne 0) { throw 'SIMION gem2pa failed.' }
         & $SimionExe --nogui --noprompt refine quad_monolithic.pa#
         if ($LASTEXITCODE -ne 0) { throw 'SIMION refine failed.' }
+        & $SimionExe --nogui --noprompt lua $IobBuilderScript $IobPath `
+            $ProgramSourcePath $Fly2Path
+        if ($LASTEXITCODE -ne 0) { throw 'SIMION runtime IOB build failed.' }
         Start-Sleep -Milliseconds 500
 
         $env:MULTIPOLE_SIMION_RUN_CONFIG_LUA = $RunConfigLua

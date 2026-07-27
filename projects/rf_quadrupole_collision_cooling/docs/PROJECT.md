@@ -469,12 +469,20 @@ target-entry surface及物理矩形孔准备；oaTOF baseline particle-source bo
 10. `mass_filter_reference`仍是四极杆唯一已知活动legacy baseline消费者。后续须把该独立科学workflow
     迁到具名request/mode、compiled resolved和solver numerics，runner与analyzer不再冻结或读取
     `config/baseline.json`；静态合同及双求解器功能复验通过后才关闭该任务。
-11. 多极杆SIMION公共core目前仍以SIMION 2020 vendor `quad_monolithic.iob`作为默认临时容器。
-    先验证四/六/八极杆是否共享同一种单PA非物理容器；若结构合同相同，只登记一个shared multipole
-    template，不复制三份；仅在证明确有结构差异时才建立项目独立模板。最终模板均须完成GUI重开、
-    结构验证、IOB+CON SHA及template-build登记，再由runtime profile绑定身份与SHA并从生产wrapper
-    移除任意`TemplateIob`入口。共享机制边界沿用
+11. 多极杆共享单PA SIMION临时容器退出任务已于2026-07-27关闭。真实IOB+CON完成无粒子结构登记及
+    人工GUI重开复核，登记run为
+    `20260727_232047__build__simion__multipole-layout-template`。公共L3 runner、接口readiness和质量
+    过滤三个生产入口均按oa-TOF的prepare模式校验登记manifest与IOB/CON SHA并冻结到本次run；
+    六/八极杆薄wrapper复用同一公共runner。任意`TemplateIob`参数和vendor示例回退已移除，项目不复制
+    模板身份。共享运行时重绑和GUI可见detector marker已由六极杆N=100双工况run
+    `20260728_004500__sim__simion__rf-hexapole-shared-template__n100__r05`复核通过；该公共机制证据不替代
+    四极杆各科学workflow自身的资格证据。共享机制和非Candidate/Formal边界见
     [`../../../common/multipole/README.md`](../../../common/multipole/README.md)。
+12. SIMION 2026 `.wgem`因当前许可证年份不足，现阶段采用SIMION 2020 GEM+Workbench受控路径，这是
+    技术绕过而非根因修复。它不阻断当前物理链；仅在确有新版能力需求、许可证更新且官方示例状态机
+    复验成功后关闭。Git注册表只发布provider、run id和SHA，但来源manifest仍带本机绝对路径；跨机
+    迁移须把成功run复制到另一工作区并重写/复核manifest，再验证IOB/CON/PA重开。三RF项目均通过后
+    关闭可移植性任务。
 
 ## 产物与历史
 

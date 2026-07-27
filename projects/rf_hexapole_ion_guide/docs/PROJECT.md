@@ -81,10 +81,17 @@ baseline，不是正式硬件选择。
 1. `project.json.contracts.baseline`暂因根registry builder的旧`multipole`身份检查保留只读
    `config/baseline.json`。根schema/builder改由design profile/request或独立identity contract校验，
    且三RF项目registry门禁通过后，解除该兼容绑定并按删除授权处理旧文件。
-2. SIMION当前仍经公共core使用vendor `quad_monolithic.iob`临时容器。先验证四/六/八极杆是否共享
-   同一种单PA非物理容器；结构合同相同时只登记一个shared multipole template，不复制三份，仅在证明
-   确有结构差异时才建立项目独立模板。最终模板须完成GUI重开、结构报告、IOB+CON SHA和
-   template-build登记，再由runtime profile绑定模板身份。
+2. SIMION vendor临时容器退出任务已于2026-07-27关闭。项目通过公共runner消费唯一共享的单PA非物理
+   模板登记，prepare阶段校验成功run、人工GUI复核和IOB/CON SHA并冻结副本；不维护项目模板身份，
+   不接受`TemplateIob`覆盖或vendor回退。2026-07-28的
+   `20260728_004500__sim__simion__rf-hexapole-shared-template__n100__r05`进一步按oa-TOF正式IOB重绑及
+   detector marker模式完成真实N=100双工况复核；两工况均有100条terminal且100/100 transmitted，
+   manifest success。该run未绑定evidence contract，仍为`UNQUALIFIED`，只关闭共享容器运行链，不授予
+   Candidate或Formal资格。
 3. `config/finite_3d_transport.json`仍供旧family/L1测试读取。测试改为消费design request、resolved和
    solver-numerics profile且活动引用归零后，按删除授权退出该快照。公共机制边界见
    [`../../../common/multipole/README.md`](../../../common/multipole/README.md)。
+4. SIMION 2026 `.wgem`因当前许可证年份不足，现以SIMION 2020 GEM+Workbench受控路径绕过，不视为
+   根因修复且不阻断本阶段物理链。确有新版需求、许可证更新并完成官方示例状态机复验后才关闭。
+   Git注册表只发布provider、run id和SHA，但来源manifest仍带本机绝对路径；还须将成功run迁移到
+   不同工作区并重写/复核manifest，再验证IOB/CON/PA重开，三RF项目均通过后关闭跨机可移植性任务。

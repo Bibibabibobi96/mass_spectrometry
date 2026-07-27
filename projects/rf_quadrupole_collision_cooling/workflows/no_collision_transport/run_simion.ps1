@@ -7,7 +7,6 @@ param(
   [string]$ReferenceComsolRunId = '',
   [ValidateRange(0.001,100)][double]$CellMm = 0.2,
   [string]$SimionExe = '',
-  [string]$TemplateIob = '',
   [ValidateRange(4,10000)][int]$RfStepsPerPeriod = 40,
   [ValidateRange(0,100)][int]$TrajectoryQuality = 10,
   [ValidateRange(0.001,1000000)][double]$MaximumTimeUs = 80.0
@@ -31,6 +30,5 @@ $arguments = @{
 }
 if ($EvidenceContractPath) { $arguments.EvidenceContractPath = $EvidenceContractPath }
 if ($SimionExe) { $arguments.SimionExe = $SimionExe }
-if ($TemplateIob) { $arguments.TemplateIob = $TemplateIob }
 & (Join-Path $repoRoot 'common\multipole\run_simion_finite_3d_transport.ps1') @arguments
 if ($LASTEXITCODE -ne 0) { throw 'RF quadrupole SIMION transport failed.' }

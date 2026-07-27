@@ -1,0 +1,12 @@
+; Non-physical PA used only to create the shared multipole GUI container.
+; It deliberately contains no quadrupole, hexapole, octupole, voltage,
+; particle, Program, Data Recording, or scientific geometry definition.
+; Production runners replace this PA through the governed resolved design.
+pa_define(5,5,5,planar,none,electrostatic,,1,1,1)
+
+; One arbitrary zero-volt solid keeps the placeholder loadable in Workbench.
+e(1) {
+  locate(2,2,2) {
+    fill { box3d(-1,-1,-1,1,1,1) }
+  }
+}

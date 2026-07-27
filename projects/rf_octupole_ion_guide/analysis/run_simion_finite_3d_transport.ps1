@@ -6,8 +6,7 @@ param(
   [string]$RunId = '',
   [string]$PythonExe = '',
   [string]$ReferenceComsolRunId = '',
-  [string]$SimionExe = '',
-  [string]$TemplateIob = ''
+  [string]$SimionExe = ''
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -38,7 +37,6 @@ try {
   }
   if ($EvidenceContractPath) { $arguments.EvidenceContractPath = $EvidenceContractPath }
   if ($SimionExe) { $arguments.SimionExe = $SimionExe }
-  if ($TemplateIob) { $arguments.TemplateIob = $TemplateIob }
   & (Join-Path $repoRoot 'common\multipole\run_simion_finite_3d_transport.ps1') @arguments
   if ($LASTEXITCODE -ne 0) { throw 'RF octupole SIMION transport failed.' }
 } finally {

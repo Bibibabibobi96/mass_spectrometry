@@ -71,7 +71,11 @@ def resolved_design(
                 "aperture_radius_mm": 1.2,
                 "connector_length_mm": length_mm,
                 "connector_shape": connector_shape,
-                "particle_plane_z_mm": 20.0,
+                "particle_plane_z_mm": (
+                    20.0
+                    if enclosure_model == "rectangular_reference_enclosure_v1"
+                    else 19.0
+                ),
             },
         },
         "segmentation": {
@@ -108,6 +112,20 @@ class SimionGeometryTests(unittest.TestCase):
         exit_connector = gem.index("; connector_shape=rectangular_bore", entrance + 1)
         self.assertIn("within { box3d(", gem[entrance:exit_connector])
         self.assertIn("within { box3d(", gem[exit_connector:])
+
+    def test_cylindrical_detector_is_a_gui_visible_absorber_inside_the_pa(self) -> None:
+        source = resolved_design("cylindrical_bore", 0.0)
+        source["interfaces_mm"]["exit"]["particle_plane_z_mm"] = 19.0
+        gem = render_gem(source, 0.2)
+        self.assertIn("GUI-visible numerical absorber", gem)
+        self.assertIn("e(4)", gem)
+        self.assertIn("cylinder(0,0,19.2,1.2,,0.2)", gem)
+
+    def test_cylindrical_detector_must_fit_inside_the_pa(self) -> None:
+        source = resolved_design("cylindrical_bore", 0.0)
+        source["interfaces_mm"]["exit"]["particle_plane_z_mm"] = 19.9
+        with self.assertRaisesRegex(ValueError, "detector marker"):
+            render_gem(source, 0.2)
 
     def test_zero_length_creates_no_connector_feature(self) -> None:
         for shape in ("rectangular_bore", "cylindrical_bore"):
@@ -161,6 +179,7 @@ class SimionGeometryTests(unittest.TestCase):
         gem = render_gem(source, 0.2)
         self.assertIn("e(11)", gem)
         self.assertIn("e(12)", gem)
+        self.assertIn("e(13)", gem)
 
 
 if __name__ == "__main__":

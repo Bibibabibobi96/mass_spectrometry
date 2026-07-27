@@ -108,6 +108,39 @@ runner创建run目录后立即写并验证`interrupted` manifest；所有编译�
 覆盖。实际Python、MATLAB、Lua及公共依赖冻结到`inputs/code/`，生成逐文件SHA-256 inventory，后续执行
 从冻结副本加载。
 
+## 单PA GUI模板登记
+
+四、六、八极杆共用一个不含器件物理的单PA Workbench容器，沿用oa-TOF已经验证的
+“结构登记run → 生产prepare校验并冻结”机制。最小源由
+[`build_simion_layout_placeholder.ps1`](build_simion_layout_placeholder.ps1)从
+[`multipole_layout_placeholder.gem`](multipole_layout_placeholder.gem)生成；用户在SIMION 2020 GUI
+建立唯一PA实例并保存、关闭、重开后，由
+[`register_simion_layout_template.ps1`](register_simion_layout_template.ps1)执行一次无粒子结构检查。
+[`inspect_simion_layout_template.lua`](inspect_simion_layout_template.lua)固定验证单实例、相对PA、
+`5×5×5 @ 1 mm`占位阵列、`(0,0,0,-90,0,180,1)`变换和`+z/-y/+x`轴向。
+
+当前活动登记由[`simion_layout_template.json`](simion_layout_template.json)绑定到
+`20260727_232047__build__simion__multipole-layout-template`的manifest、IOB/CON SHA及2026-07-27人工GUI
+复核。[`simion_layout_template.py`](simion_layout_template.py)只执行与oa-TOF
+`prepare_candidate_run`等价的校验和解析；所有多极杆生产SIMION入口将登记manifest、注册表和IOB/CON
+复制进本次run后才构建项目物理PA。[`build_simion_runtime_iob.lua`](build_simion_runtime_iob.lua)严格
+复用oa-TOF `build_formal_iob.lua`的顺序：重绑run-local PA、更新实例尺寸、保存IOB，再恢复完整同名
+Program/Fly2。圆柱投影还在权威检测面生成一网格厚的GUI可见数值吸收片，与oa-TOF detector marker
+一样保证粒子在PA内部终止并触发`segment.terminate`，不依赖旧vendor IOB的隐含数组尺寸。没有第二套
+identity生命周期，不允许`TemplateIob`覆盖或vendor示例回退。登记不refine、不Fly、不加载Program，
+也不授予Candidate或Formal资格。
+
+该路径已由六极杆N=100双工况run
+`20260728_004500__sim__simion__rf-hexapole-shared-template__n100__r05`商业复核：manifest success且25项
+输出复核通过；`axial_acceleration_rf_on`和`zero_axial_drop_rf_on`均为
+`100 source / 100 handoff / 100 terminal / 100 transmitted`。该run没有evidence contract，资格仍为
+`UNQUALIFIED`；它只证明共享模板重绑、真实PA、Program/Fly2和检测终止链闭合。
+
+两项非阻断开放任务保留：当前SIMION 2026 `.wgem`路线因许可证年份不足而以SIMION 2020
+GEM+Workbench受控流程绕过；只有确有新版能力需求且许可证更新、官方示例状态机复验成功后才关闭，
+不得把绕过解释为供应商问题已根治。跨机可移植性则须把一个登记成功run复制到不同工作区路径，在不依赖
+来源绝对路径的条件下复核manifest及IOB/CON/PA重开；三个RF项目都记录迁移验证通过后才关闭。
+
 ## 迁移与删除候选
 
 以下旧实现不再是生产入口；它们仍可能被历史测试或项目专项诊断引用，删除前必须按`AGENTS.md`取得用户
@@ -115,11 +148,11 @@ runner创建run目录后立即写并验证`interrupted` manifest；所有编译�
 
 - `resolve_finite_3d_contract.py`：由request接口编译替代；
 - `round_rod_geometry.py`中的legacy CLI/field-screen selection输入：保留纯`build_round_rod_array`；
-- `axial_acceleration.py`的独立CLI：保留compiler调用的纯resolver/segment函数；
-- 旧ION11 SIMION source CLI；canonical CSV是公共L3入口。
+- `axial_acceleration.py`的独立CLI：保留compiler调用的纯resolver/segment函数。
 
 旧family operating resolver、quadrupole输入准备器和独立endplate resolver已经删除；对应生产入口分别由
 governed profile/compiler、canonical source preflight和resolved `endplate_potential_step` topology覆盖。
+旧ION11转换/生成CLI也已删除，canonical CSV是公共L3唯一粒子入口。
 
 Phase 4项目wrapper必须改为profile入口；旧`Adapter`、`FieldScreenRunId`、
 `AxialAccelerationContractPath`、connector length、RF/DC/common/phase/frequency、`ParticleMassAmu`和

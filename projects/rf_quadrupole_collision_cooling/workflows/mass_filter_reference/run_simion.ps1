@@ -45,7 +45,6 @@ $inputDir = $package.input_dir
 $runConfigPath = $package.run_config
 $runSummary = $package.summary
 $simion = 'C:\Program Files\SIMION-2020\simion.exe'
-$officialIob = 'C:\Program Files\SIMION-2020\examples\quad\quad_monolithic.iob'
 
 try {
     $sourceIon = [IO.Path]::GetFullPath($SourceIonPath)
@@ -61,6 +60,25 @@ try {
     $frozenNumericalContract = Join-Path $inputDir 'simion_solver_numerics.json'
     $particlePath = Join-Path $inputDir 'mass_scan_particles.ion'
     $massScanMetadata = Join-Path $inputDir 'mass_scan_particles.json'
+    $templateDir = Join-Path $inputDir 'simion_layout_template'
+    $templateResolution = Join-Path $templateDir 'resolution.json'
+    New-Item -ItemType Directory -Path $templateDir | Out-Null
+    Push-Location $repoRoot
+    try {
+        & $python -m common.multipole.simion_layout_template --repo-root $repoRoot `
+            --output $templateResolution | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'Shared SIMION layout template resolution failed.' }
+    } finally { Pop-Location }
+    $templateProfile = Get-Content -LiteralPath $templateResolution -Raw -Encoding UTF8 |
+        ConvertFrom-Json
+    $templateRegistry = Copy-VerifiedRunInput -Source $templateProfile.registry_path `
+        -Destination (Join-Path $templateDir 'simion_layout_template.json')
+    $templateManifest = Copy-VerifiedRunInput -Source $templateProfile.run_manifest.path `
+        -Destination (Join-Path $templateDir 'registration_run_manifest.json')
+    $templateIob = Copy-VerifiedRunInput -Source $templateProfile.bundle.iob.path `
+        -Destination (Join-Path $templateDir 'quad_monolithic.iob')
+    $templateCon = Copy-VerifiedRunInput -Source $templateProfile.bundle.con.path `
+        -Destination (Join-Path $templateDir 'quad_monolithic.con')
     Copy-VerifiedRunInput -Source $sourceIon -Destination $frozenSourceIon | Out-Null
     $sourceParticleCount = @(
         Get-Content -LiteralPath $frozenSourceIon -Encoding UTF8 |
@@ -112,8 +130,12 @@ try {
         -Destination (Join-Path $candidateDir 'quad_include.gem') | Out-Null
     Copy-VerifiedRunInput -Source (Join-Path $projectRoot 'simion\geometry\quad_monolithic.gem') `
         -Destination (Join-Path $candidateDir 'quad_monolithic.gem') | Out-Null
-    Copy-VerifiedRunInput -Source (Join-Path $repoRoot 'common\multipole\simion_transport.lua') `
-        -Destination (Join-Path $candidateDir 'quad_monolithic.lua') | Out-Null
+    $programSource = Copy-VerifiedRunInput `
+        -Source (Join-Path $repoRoot 'common\multipole\simion_transport.lua') `
+        -Destination (Join-Path $candidateDir 'multipole_runtime_program.lua')
+    $iobBuilder = Copy-VerifiedRunInput `
+        -Source (Join-Path $repoRoot 'common\multipole\build_simion_runtime_iob.lua') `
+        -Destination (Join-Path $candidateDir 'build_simion_runtime_iob.lua')
     $flyPath = Join-Path $candidateDir 'quad_monolithic.fly2'
     $sourceStatesLua = Join-Path $inputDir 'source_states.lua'
     Push-Location $repoRoot
@@ -127,8 +149,10 @@ try {
     } finally {
         Pop-Location
     }
-    Copy-VerifiedRunInput -Source $officialIob `
+    Copy-VerifiedRunInput -Source $templateIob `
         -Destination (Join-Path $candidateDir 'quad_monolithic.iob') | Out-Null
+    Copy-VerifiedRunInput -Source $templateCon `
+        -Destination (Join-Path $candidateDir 'quad_monolithic.con') | Out-Null
 
     $resolved = Get-Content -LiteralPath $frozenResolved -Raw -Encoding UTF8 | ConvertFrom-Json
     $numericalMode = Get-Content -LiteralPath $frozenMode -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -179,6 +203,13 @@ try {
             mass_scan_ion11 = $particlePath
             mass_scan_metadata = $massScanMetadata
             source_states = $sourceStatesLua
+            simion_layout_template_resolution = $templateResolution
+            simion_layout_template_registry = $templateRegistry
+            simion_layout_registration_manifest = $templateManifest
+            simion_layout_template_iob = $templateIob
+            simion_layout_template_con = $templateCon
+            simion_iob_builder = $iobBuilder
+            simion_program_source = $programSource
         }
         provenance = [ordered]@{
             source_ion11_sha256 = Get-RunFileSha256 -Path $frozenSourceIon
@@ -190,6 +221,14 @@ try {
             rf_steps_per_period = [int]$coreConfig.rf_steps_per_period
             trajectory_quality = [int]$coreConfig.trajectory_quality
             rf_steps_override = $false
+            simion_layout_template = [ordered]@{
+                template_id = [string]$templateProfile.template_id
+                registration_run_id = [string]$templateProfile.registration_run_id
+                registry_sha256 = [string]$templateProfile.registry_sha256
+                registration_manifest_sha256 = [string]$templateProfile.run_manifest.sha256
+                iob_sha256 = [string]$templateProfile.bundle.iob.sha256
+                con_sha256 = [string]$templateProfile.bundle.con.sha256
+            }
         }
         output_dir = $resultDir
         candidate_dir = $candidateDir
@@ -212,6 +251,7 @@ try {
 
     Invoke-RfSimionCoreRun -SimionExe $simion -CandidateDir $candidateDir `
         -IobPath ([string]$coreConfig.iob) -Fly2Path ([string]$coreConfig.fly2) `
+        -IobBuilderScript $iobBuilder -ProgramSourcePath $programSource `
         -RunConfigLua $runConfigLua `
         -InspectScript (Join-Path $projectRoot `
             'tests\simion\inspect_builtin_quad_reference.lua') `
@@ -283,7 +323,8 @@ try {
         (Join-Path $logDir 'simion_iob_stdout.txt'),(Join-Path $logDir 'simion_iob_stderr.txt'),
         (Join-Path $logDir 'simion_iob_exit_code.txt'),
         (Join-Path $logDir 'simion_stdout.txt'),(Join-Path $logDir 'simion_stderr.txt'),
-        (Join-Path $candidateDir 'quad_monolithic.iob'),(Join-Path $candidateDir 'quad_monolithic.pa0'),
+        (Join-Path $candidateDir 'quad_monolithic.iob'),(Join-Path $candidateDir 'quad_monolithic.con'),
+        (Join-Path $candidateDir 'quad_monolithic.pa0'),
         $flyPath,$iobReport,$shaPath,$massResponseCsv,$massMetricsJson,$massResponseFigure,$runSummary
     )
     Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfigPath -Status success `

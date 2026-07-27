@@ -1,6 +1,6 @@
 # RF 四极杆无碰撞传输与碰撞冷却项目
 
-本项目以SIMION 2020自带`examples/quad`为共享硬件模板，验证无背景气体的RF约束与传输、RF+DC
+本项目以公共登记的单PA Workbench容器承载run-local权威几何，验证无背景气体的RF约束与传输、RF+DC
 质量过滤和分段杆轴向加速，并保留碰撞冷却为后续模式。各模式当前闭合状态、候选/正式资格和开放任务
 只以[`docs/PROJECT.md`](docs/PROJECT.md)为准。
 
@@ -29,6 +29,8 @@ S2–S3连接功能闭环记录：
   [`docs/multipoles/index.md`](../../docs/multipoles/index.md)；该理论包不覆盖本项目当前参数或状态。
 - 四、六、八极杆共同消费的运行时坐标、`r0`、RF/DC双极性组电压和配对多质量机制：
   [`../../common/multipole/README.md`](../../common/multipole/README.md)；项目baseline、mode和资格判据仍在本项目。
+- 三项目共享单PA SIMION模板已按oa-TOF的登记run/prepare冻结模式绑定于上述`common/multipole/`；
+  2026-07-27 GUI复核通过，生产入口不再接受任意模板或回退vendor示例。
 - 当前具体四极杆项目的机器身份、能力和成熟度：[`config/project.json`](config/project.json)；多级杆设计族不在本项目内虚构子项目。
 - 现有入口可执行范围和组合命令链：[`config/execution_profiles.json`](config/execution_profiles.json)。
 - 历史人工几何输入：[`config/baseline.json`](config/baseline.json)；它只服务尚未迁移的理论与分析

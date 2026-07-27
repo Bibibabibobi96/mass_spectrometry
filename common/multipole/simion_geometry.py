@@ -109,10 +109,15 @@ def render_gem(
     else:
         ground_electrode = 3
         output_electrode = 3
+    detector_electrode = output_electrode + 1
     outer = float(enclosure["shield_outer_radius_mm"])
     inner = float(enclosure["shield_inner_radius_mm"])
     z_min = float(enclosure["vacuum_z_min_mm"])
     z_max = float(enclosure["vacuum_z_max_mm"])
+    detector_z = float(interface["detector_z"])
+    detector_thickness = cell_mm
+    if detector_z + detector_thickness > z_max + 1e-12:
+        raise ValueError("detector marker must fit inside the cylindrical PA")
     span = z_max - z_min
     nx = math.ceil(2 * outer / cell_mm) + 1
     nz = math.ceil(span / cell_mm) + 1
@@ -141,6 +146,8 @@ def render_gem(
         f"    within {{ cylinder(0,0,{interface['exit_plate_z_max']:.12g},{outer:.12g},,{interface['exit_plate_z_max']-interface['exit_plate_z_min']:.12g}) }}",
         f"    notin_inside {{ cylinder(0,0,{interface['exit_plate_z_max']+cell_mm:.12g},{interface['exit_aperture_radius']:.12g},,{interface['exit_plate_z_max']-interface['exit_plate_z_min']+2*cell_mm:.12g}) }}",
         "  } }",
+        "  ; GUI-visible numerical absorber: its front face is the resolved detector plane.",
+        f"  e({detector_electrode}) {{ fill {{ within {{ cylinder(0,0,{detector_z+detector_thickness:.12g},{interface['detector_radius']:.12g},,{detector_thickness:.12g}) }} }} }}",
     ])
     entrance_length = float(interface["entrance_connector_length"])
     exit_length = float(interface["exit_connector_length"])

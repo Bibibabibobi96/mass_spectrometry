@@ -41,6 +41,7 @@ class RuntimeProfileTests(unittest.TestCase):
             "[int]$RfStepsPerPeriod",
             "[int]$TrajectoryQuality",
             "[double]$MaximumTimeUs",
+            "[string]$TemplateIob",
         )
         for project_id in PROJECT_IDS:
             for name in (

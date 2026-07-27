@@ -8,7 +8,6 @@ param(
   [string]$ReferenceComsolRunId='',
   [ValidateRange(0.001,100)][double]$CellMm=0.4,
   [string]$SimionExe='',
-  [string]$TemplateIob='',
   [string]$PythonExe='',
   [ValidateRange(4,10000)][int]$RfStepsPerPeriod=80,
   [ValidateRange(0,100)][int]$TrajectoryQuality=10,
@@ -34,9 +33,7 @@ $registryPreflight=Get-Content -LiteralPath (Join-Path $repoRoot 'config\project
 $projectMatches=@($registryPreflight.projects|Where-Object{[string]$_.project_id-eq$ProjectId})
 if($projectMatches.Count-ne 1){throw "ProjectId is not unique in the canonical project registry: $ProjectId"}
 $simion=if($SimionExe){[IO.Path]::GetFullPath($SimionExe)}else{Join-Path $env:ProgramFiles 'SIMION-2020\simion.exe'}
-$template=if($TemplateIob){[IO.Path]::GetFullPath($TemplateIob)}else{Join-Path $env:ProgramFiles 'SIMION-2020\examples\quad\quad_monolithic.iob'}
 if(-not(Test-Path -LiteralPath $simion -PathType Leaf)){throw "SIMION executable is missing: $simion"}
-if(-not(Test-Path -LiteralPath $template -PathType Leaf)){throw "SIMION template IOB is missing: $template"}
 if([string]::IsNullOrWhiteSpace($RunId)){
   $RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+"__sim__simion__$($ProjectId.Replace('_','-'))-$DesignProfileId__resolved-l3"
 }
@@ -68,6 +65,27 @@ try{
   [ordered]@{schema_version=1;role='frozen_code_inventory';files=$inventory}|
     ConvertTo-Json -Depth 5|Set-Content -LiteralPath $codeInventory -Encoding UTF8
   $manifestRepoRoot=$codeRoot
+
+  $templateDir=Join-Path $inputDir 'simion_layout_template'
+  New-Item -ItemType Directory -Path $templateDir|Out-Null
+  $templateResolution=Join-Path $templateDir 'resolution.json'
+  $templateRegistryFrozen=Join-Path $codeRoot 'common\multipole\simion_layout_template.json'
+  Push-Location $codeRoot
+  try{
+    $env:PYTHONPATH=$codeRoot
+    & $python -m common.multipole.simion_layout_template --repo-root $repoRoot `
+      --registry $templateRegistryFrozen --output $templateResolution|Out-Null
+    if($LASTEXITCODE-ne 0){throw 'Approved shared SIMION layout template resolution failed.'}
+  }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
+  $templateProfile=Get-Content -LiteralPath $templateResolution -Raw -Encoding UTF8|ConvertFrom-Json
+  $templateRegistryInput=Copy-VerifiedRunInput -Source $templateProfile.registry_path `
+    -Destination (Join-Path $templateDir 'simion_layout_template.json')
+  $templateRegistrationManifest=Copy-VerifiedRunInput -Source $templateProfile.run_manifest.path `
+    -Destination (Join-Path $templateDir 'registration_run_manifest.json')
+  $templateIob=Copy-VerifiedRunInput -Source $templateProfile.bundle.iob.path `
+    -Destination (Join-Path $templateDir 'quad_monolithic.iob')
+  $templateCon=Copy-VerifiedRunInput -Source $templateProfile.bundle.con.path `
+    -Destination (Join-Path $templateDir 'quad_monolithic.con')
 
   $profileResolution=Join-Path $inputDir 'design_profile_resolution.json'
   Push-Location $codeRoot
@@ -193,9 +211,11 @@ try{
     & $python @sourceProjectionArguments
     if($LASTEXITCODE-ne 0){throw 'SIMION particle projection failed.'}
   }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
-  Copy-Item -LiteralPath $template -Destination (Join-Path $solverDir 'quad_monolithic.iob')
-  Copy-Item -LiteralPath (Join-Path $codeRoot 'common\multipole\simion_transport.lua') `
-    -Destination (Join-Path $solverDir 'quad_monolithic.lua')
+  Copy-Item -LiteralPath $templateIob -Destination (Join-Path $solverDir 'quad_monolithic.iob')
+  Copy-Item -LiteralPath $templateCon -Destination (Join-Path $solverDir 'quad_monolithic.con')
+  Copy-VerifiedRunInput `
+    -Source (Join-Path $codeRoot 'common\multipole\simion_transport.lua') `
+    -Destination (Join-Path $solverDir 'multipole_runtime_program.lua')|Out-Null
 
   $drive=$design.drive;$geometry=$design.geometry_mm;$enclosure=$geometry.enclosure
   $static=$design.static_electrodes_V
@@ -221,7 +241,7 @@ try{
     $detectorVoltage=$exitVoltage
   }
   $segmentedLua='';$groundElectrodeId=3;$outputElectrodeId=4
-  $detectorElectrodeId=if($rectangular){5}else{0}
+  $detectorElectrodeId=if($rectangular){5}else{4}
   if($segmented){
     $segments=$design.segmentation.segmented_rod_array
     $entries=@($segments.electrodes|ForEach-Object{
@@ -229,17 +249,30 @@ try{
     })
     $segmentedLua="segmented_rod_electrodes={$($entries -join ',')},"
     $groundElectrodeId=2*[int]$segments.segment_count+1;$outputElectrodeId=$groundElectrodeId+1
-    if($rectangular){$detectorElectrodeId=$outputElectrodeId+1}
+    $detectorElectrodeId=$outputElectrodeId+1
   }
   $provenance=[ordered]@{parent_resolved_design_sha256=$resolvedHash;particle_source_sha256=$sourceMeta.source_sha256;
     source_family_sha256=$sourceFamilySha;operating_point_id=$(if($sourceFamily){$OperatingPointId}else{$null});
-    particle_source_operating_point_binding=$sourceMeta.operating_point_binding}
+    particle_source_operating_point_binding=$sourceMeta.operating_point_binding;
+    simion_layout_template=[ordered]@{
+      template_id=[string]$templateProfile.template_id
+      provider_project_id=[string]$templateProfile.provider_project_id
+      registration_run_id=[string]$templateProfile.registration_run_id
+      registry_sha256=[string]$templateProfile.registry_sha256
+      registration_manifest_sha256=[string]$templateProfile.run_manifest.sha256
+      iob_sha256=[string]$templateProfile.bundle.iob.sha256
+      con_sha256=[string]$templateProfile.bundle.con.sha256
+    }}
   $runInputs=[ordered]@{project_registry=$registry;project_descriptor=$descriptor;design_profiles=$profiles;
     design_profile_resolution=$profileResolution;design_request=$request;design_variables=$variables;
     optimization_envelope=$envelope;multipole_resolved_design=$resolved;particle_source=$particleSource;
     particle_source_metadata=$sourceMetadata;particle_source_family=$sourceFamily;
     solver_numerics=$numerics;code_inventory=$codeInventory;
-    evidence_contract=$evidence;simion_gem=$gem;simion_fly2=$fly2}
+    evidence_contract=$evidence;simion_gem=$gem;simion_fly2=$fly2;
+    simion_layout_template_resolution=$templateResolution;
+    simion_layout_template_registry=$templateRegistryInput;
+    simion_layout_registration_manifest=$templateRegistrationManifest;
+    simion_layout_template_iob=$templateIob;simion_layout_template_con=$templateCon}
   if($referenceComsolManifest){
     $provenance.reference_comsol_run_manifest_sha256=$referenceComsolManifestSha
     $provenance.reference_comsol_source_run_id=$referenceComsolSourceRunId
@@ -261,6 +294,12 @@ try{
   }
   Invoke-SimionStep 'gem2pa' @('--nogui','--noprompt','gem2pa','quad_monolithic.gem','quad_monolithic.pa#')
   Invoke-SimionStep 'refine' @('--nogui','--noprompt','refine','quad_monolithic.pa#')
+  Copy-VerifiedRunInput `
+    -Source (Join-Path $codeRoot 'common\multipole\build_simion_runtime_iob.lua') `
+    -Destination (Join-Path $solverDir 'build_simion_runtime_iob.lua')|Out-Null
+  Invoke-SimionStep 'build_runtime_iob' @(
+    '--nogui','--noprompt','lua','build_simion_runtime_iob.lua',
+    'quad_monolithic.iob','multipole_runtime_program.lua','quad_monolithic.fly2')
   Start-Sleep -Milliseconds 500
 
   function Invoke-TransportCase([string]$name,[int]$rfScale,[int]$axialScale){
@@ -364,7 +403,8 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
     control_transmission=$control.transmission;model_level='L3';formal_gate_passed=$false}|
     ConvertTo-Json -Depth 5|Set-Content -LiteralPath $summary -Encoding UTF8
   $outputs=@($summary,$metrics,(Join-Path $solverDir 'quad_monolithic.pa0'),
-    (Join-Path $solverDir 'quad_monolithic.iob'),$gem,$fly2,
+    (Join-Path $solverDir 'quad_monolithic.iob'),
+    (Join-Path $solverDir 'quad_monolithic.con'),$gem,$fly2,
     (Join-Path $resultDir "simion_summary__$primaryName.json"),
     (Join-Path $resultDir "simion_summary__$controlName.json"),
     (Join-Path $resultDir "particle_states__$primaryName.csv"),
