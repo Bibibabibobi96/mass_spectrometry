@@ -63,6 +63,14 @@ run生命周期。Candidate仍必须先通过四实例IOB运行时门禁，并�
 会重新校验来源SHA、成功summary/manifest及结构报告，再将该输入冻结到Candidate run；未登记、失败或
 来源变更一律失败关闭。模板本身不携带候选物理、Program或Fly2；这些仍由Candidate合同生成。
 
+当前许可证不能处理SIMION 2026的`.wgem`时，允许继续使用已验证的SIMION 2020并采用独立legacy GEM替代路线：
+`simion/workbench/build_candidate_layout_placeholders.ps1`从唯一的非物理
+`candidate_layout_placeholder.gem`自动生成四个小型PA0。用户仅在GUI中以顺序
+`flight_tube_ground.pa0 → reflectron.pa0 → accelerator.pa0 → detector_ground.pa0`将这些PA0加入一个新
+Workbench，再保存同basename的非Formal `.iob + .con`。占位PA不得用于Fly、场或任何物理结论；
+Candidate构建会在运行前将其全部替换为由Candidate合同生成的真实PA。不得以供应商或历史IOB替代这次
+独立组装，登记、结构报告和SHA冻结规则保持不变。
+
 稳定实现入口以`config/simion_stable_entry.json`冻结：0.05mm是正式可移植交付，0.025mm仅作轴向
 网格收敛参考。该清单记录外部资产路径、大小和SHA-256，不重复维护物理参数；物理
 参数仍以`config/baseline.json`为唯一来源。每次移动、重建或打包SIMION资产后运行：

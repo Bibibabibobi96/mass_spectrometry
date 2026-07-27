@@ -1,0 +1,13 @@
+; Non-physical PA used only to seed an independently created Candidate IOB.
+; It deliberately has no oa-TOF dimensions, voltages, particles, Program, or
+; scientific meaning. The Candidate builder replaces all four PA references
+; before any physical SIMION run.
+pa_define(5,5,5,planar,none,electrostatic,,1,1,1)
+
+; A tiny zero-volt electrode makes the generated PA loadable in a Workbench.
+; Its dimensions and position are intentionally arbitrary.
+e(1) {
+  locate(2,2,2) {
+    fill { box3d(-1,-1,-1,1,1,1) }
+  }
+}

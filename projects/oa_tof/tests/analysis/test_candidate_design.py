@@ -480,6 +480,16 @@ class CandidateDesignTests(unittest.TestCase):
         self.assertNotIn("Copy-Item", script)
         self.assertNotIn(" --nogui fly", script)
 
+    def test_legacy_placeholder_layout_source_is_nonphysical_and_has_fixed_slot_order(self):
+        gem = (PROJECT_ROOT / "simion" / "workbench" / "candidate_layout_placeholder.gem").read_text(encoding="utf-8")
+        builder = (PROJECT_ROOT / "simion" / "workbench" / "build_candidate_layout_placeholders.ps1").read_text(encoding="utf-8")
+        self.assertIn("Non-physical PA", gem)
+        self.assertNotIn("2240", gem)
+        self.assertNotIn("524", gem)
+        self.assertIn("flight_tube_ground.pa0', 'reflectron.pa0', 'accelerator.pa0', 'detector_ground.pa0", builder)
+        self.assertIn("physical_model = $false", builder)
+        self.assertIn("build_candidate_layout_placeholders.lua", builder)
+
     def test_candidate_inputs_cannot_come_from_formal_artifacts(self):
         with tempfile.TemporaryDirectory() as root:
             artifact_root = Path(root) / "artifacts" / "projects" / "oa_tof"

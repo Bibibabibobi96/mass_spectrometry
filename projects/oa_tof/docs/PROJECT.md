@@ -238,13 +238,13 @@ Formal 资产、candidate source closure 或 RF 项目文件。
    CAD导出和最终结构合同验收；模拟执行器已闭合成功、失败、中断、后续阶段阻断及共享粒子表SHA门禁。
    SIMION阶段还在IOB运行时门禁后调用共享固定N=100真实Fly机制，冻结日志、粒子CSV、诊断与SHA并要求
    100/100 emitted/crossed/hit；该结构证据不替代COMSOL逐粒子跨求解器比较。独立非Formal IOB/CON模板
-   尚未物化，因此当前Candidate仍会在模板前置门禁失败，且不会读取旧Formal资产。用户可先在SIMION GUI
-   创建独立四槽layout，再以`simion/workbench/register_candidate_layout_template.ps1`登记为成功的
-   非Formal template-build run；Candidate只接受该三件套、结构报告和来源SHA均有效的登记run，不接受
-   旧Formal、历史或任意裸IOB/CON路径。
-   2026-07-27 已暂缓 W-GEM 首次物化自动化：当前 SIMION 没有受支持的非交互首次数料化路径，且已观测
-   到 GUI 加载失败；在存在独立、可重开验证的非Formal模板前，Candidate继续失败关闭，Formal/history
-   资产禁令保持不变。
+   已于2026-07-27物化并登记为`20260727_102100__build__simion__candidate-layout-template-workspace`：它使用
+   仅含非物理占位PA的独立legacy GEM源，在SIMION 2020 GUI创建四槽layout后重开，再由结构门禁、来源SHA、
+   success summary和manifest冻结。后续Candidate只能消费该workspace-local登记run的三件套、结构报告和来源SHA，
+   不接受旧Formal、历史或任意裸IOB/CON路径；Candidate构建在Fly前仍会替换全部占位PA。
+   2026-07-27 `.wgem`首次物化自动化被供应商许可证阻断：安装的SIMION 2026要求2022或以上许可证，而当前
+   key日期为2012-03-05。失败证据保留在workspace artifact scratch；该负结果不改变SIMION 2020 legacy-GEM
+   模板的已验证范围，也不解除Formal/history资产禁令。
    2026-07-20零改动真实候选`20260720_111805__test__cross__zero-change-candidate-retry2__n100`已完成：
    COMSOL构建及独立回读、SIMION PA/IOB构建及运行时合同、25组件SolidWorks装配和共享粒子表SHA验收
    全部PASS，根三件套状态为`success/candidate_accepted_not_promoted`。正式baseline SHA与计划冻结值一致，
