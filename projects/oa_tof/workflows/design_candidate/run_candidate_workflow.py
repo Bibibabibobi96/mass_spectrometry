@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import subprocess
-import sys
 from pathlib import Path
 from typing import Any, Callable
 
@@ -15,13 +13,51 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 from common.contracts.machine_contracts import load_json, sha256
 from common.contracts.particle_count_policy import validate_standard_particle_count
-from projects.oa_tof.analysis.candidate_run_lifecycle import finalize_candidate_run, start_candidate_run
+from common.contracts.stage_reuse import validate_and_write_stage_reuse, write_stage_receipt
+from projects.oa_tof.analysis.candidate_run_lifecycle import (
+    finalize_candidate_run,
+    refresh_candidate_provisional_manifest,
+    start_candidate_run,
+    update_candidate_progress,
+)
 from projects.oa_tof.analysis.candidate_source_closure import frozen_source_path, verify_candidate_source_closure
 
 
 StageExecutor = Callable[[dict[str, Any], dict[str, Any], str], dict[str, Any]]
 STAGE_PROCESS_TIMEOUT_S = 4 * 60 * 60
 CAD_PYTHON_PREFLIGHT_TIMEOUT_S = 30
+REUSABLE_STAGES = ("comsol_candidate", "simion_candidate", "cad_candidate")
+STAGE_SOURCE_PREFIXES = {
+    "comsol_candidate": (
+        "common/comsol/",
+        "projects/oa_tof/comsol/",
+        "projects/oa_tof/load_oatof_contract.m",
+        "projects/oa_tof/oatof_assert_formal_write_authorized.m",
+        "projects/oa_tof/oatof_lifecycle_preflight.ps1",
+        "projects/oa_tof/oatof_paths.m",
+        "projects/oa_tof/tests/comsol/verify_oatof_comsol_sync.m",
+        "projects/oa_tof/workflows/design_candidate/run_candidate_contract_build.m",
+        "projects/oa_tof/workflows/design_candidate/run_candidate_workflow.py",
+    ),
+    "simion_candidate": (
+        "projects/oa_tof/simion/",
+        "projects/oa_tof/analysis/generate_ion_source.py",
+        "projects/oa_tof/oatof_lifecycle_preflight.ps1",
+        "projects/oa_tof/oatof_paths.m",
+        "projects/oa_tof/workflows/design_candidate/run_candidate_workflow.py",
+    ),
+    "cad_candidate": (
+        "common/comsol/",
+        "common/solidworks/",
+        "projects/oa_tof/cad/",
+        "projects/oa_tof/load_oatof_contract.m",
+        "projects/oa_tof/oatof_assert_formal_write_authorized.m",
+        "projects/oa_tof/oatof_lifecycle_preflight.ps1",
+        "projects/oa_tof/oatof_paths.m",
+        "projects/oa_tof/workflows/design_candidate/run_candidate_cad_sync.m",
+        "projects/oa_tof/workflows/design_candidate/run_candidate_workflow.py",
+    ),
+}
 
 
 class CandidateWorkflowError(RuntimeError):
@@ -145,14 +181,18 @@ def _nonformal_template(stage: dict[str, Any], plan: dict[str, Any]) -> Path:
         verified[suffix] = path
     if verified["iob"].with_suffix(".con").name != verified["con"].name or verified["iob"].parent != verified["con"].parent:
         raise RuntimeError("candidate SIMION IOB and CON template bundle names do not match")
-    registration_run = Path(record.get("registration_run", "")).resolve()
-    registration_manifest = registration_run / "run_manifest.json"
-    registration_sha = str(record.get("registration_manifest_sha256", ""))
+    registration_run_id = str(record.get("registration_run_id", ""))
+    registration_record = record.get("registration_manifest", {})
+    registration_manifest = Path(str(registration_record.get("path", ""))).resolve()
+    registration_sha = str(registration_record.get("sha256", ""))
+    registration_document = load_json(registration_manifest)
     if (
-        not registration_run.is_dir()
-        or not registration_manifest.is_file()
+        not registration_manifest.is_file()
+        or run_inputs not in registration_manifest.parents
         or not registration_sha
         or sha256(registration_manifest).lower() != registration_sha.lower()
+        or registration_document.get("run_id") != registration_run_id
+        or registration_document.get("status") != "success"
     ):
         raise RuntimeError("candidate SIMION template registration evidence changed after preparation")
     return verified["iob"]
@@ -352,7 +392,7 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
             raise RuntimeError(f"candidate CAD report is missing: {cad_report}")
         return {"report": str(report), "cad_report": str(cad_report)}
 
-    if stage_id == "cross_solver_acceptance":
+    if stage_id == "structural_acceptance":
         evidence = {item["stage_id"]: item.get("evidence", {}) for item in plan["stage_results_so_far"]}
         required = {
             "static_inputs": ("particle_table",),
@@ -407,6 +447,226 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
     raise ValueError(f"unsupported candidate workflow stage: {stage_id}")
 
 
+def _write_identity(path: Path, stage_id: str, category: str, records: list[dict[str, Any]]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    document = {
+        "schema_version": 1,
+        "role": "oa_tof_candidate_stage_identity",
+        "stage_id": stage_id,
+        "category": category,
+        "records": sorted(records, key=lambda item: item["name"]),
+    }
+    path.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def _identity_record(name: str, path: Path) -> dict[str, Any]:
+    resolved = path.resolve(strict=True)
+    return {"name": name, "bytes": resolved.stat().st_size, "sha256": sha256(resolved)}
+
+
+def _stage_source_paths(closure: dict[str, Any], stage_id: str) -> list[Path]:
+    prefixes = STAGE_SOURCE_PREFIXES[stage_id]
+    paths = []
+    code_root = Path(closure["code_root"])
+    for source in closure.get("sources", []):
+        source_id = str(source.get("source_id", ""))
+        if any(source_id == prefix or source_id.startswith(prefix) for prefix in prefixes):
+            paths.append(code_root / source_id)
+    if not paths:
+        raise RuntimeError(f"candidate source closure has no sources for {stage_id}")
+    return paths
+
+
+def _stage_context(
+    run_root: Path,
+    runtime_plan: dict[str, Any],
+    stage_id: str,
+    simion_exe: str,
+    *,
+    cad_model: Path | dict[str, Any] | None = None,
+) -> dict[str, dict[str, Path]]:
+    inputs = run_root / "inputs"
+    candidate = runtime_plan["candidate_inputs"]
+    names = {
+        "comsol_candidate": (
+            "candidate_baseline.json",
+            "candidate_resolved_geometry.json",
+            "candidate_solver_numerics.json",
+            "candidate_diff.json",
+        ),
+        "simion_candidate": (
+            "candidate_baseline.json",
+            "candidate_resolved_geometry.json",
+            "candidate_solver_numerics.json",
+            "candidate_simion_template_source_iob",
+            "candidate_simion_template_source_con",
+            "candidate_simion_template_registration_manifest",
+        ),
+        "cad_candidate": (
+            "candidate_resolved_geometry.json",
+            "candidate_solver_numerics.json",
+        ),
+    }[stage_id]
+    input_paths = [Path(candidate[name]["path"]) for name in names]
+    particle_table = inputs / "oatof_candidate_N100.ion"
+    if stage_id in {"comsol_candidate", "simion_candidate"}:
+        input_paths.append(particle_table)
+    if stage_id == "cad_candidate":
+        if cad_model is None:
+            raise RuntimeError("CAD stage context requires the actual Candidate MPH identity")
+        if isinstance(cad_model, dict):
+            model_record = {
+                "name": "candidate_mph",
+                "bytes": cad_model["bytes"],
+                "sha256": str(cad_model["sha256"]).upper(),
+            }
+        else:
+            model_record = _identity_record("candidate_mph", cad_model)
+        model_identity = inputs / "stage_contexts" / stage_id / "candidate_mph.json"
+        _write_identity(model_identity, stage_id, "inputs", [model_record])
+        input_paths.append(model_identity)
+
+    solver_paths = [Path(candidate["candidate_solver_numerics.json"]["path"])]
+    closure = runtime_plan["execution_source_closure"]
+    if stage_id == "simion_candidate":
+        identity = inputs / "stage_contexts" / stage_id / "simion_executable.json"
+        _write_identity(
+            identity,
+            stage_id,
+            "solver",
+            [_identity_record("simion_executable", Path(simion_exe))],
+        )
+        solver_paths.append(identity)
+    if stage_id == "cad_candidate":
+        identity = inputs / "stage_contexts" / stage_id / "python_executable.json"
+        _write_identity(
+            identity,
+            stage_id,
+            "solver",
+            [
+                _identity_record(
+                    "python_executable",
+                    Path(closure["runtime"]["python_executable"]),
+                )
+            ],
+        )
+        solver_paths.append(identity)
+    source_paths = _stage_source_paths(closure, stage_id)
+    return {
+        "inputs": {
+            f"{stage_id}_input_{index:03d}": path
+            for index, path in enumerate(input_paths)
+        },
+        "source": {
+            f"{stage_id}_source_{index:03d}": path
+            for index, path in enumerate(source_paths)
+        },
+        "solver": {
+            f"{stage_id}_solver_{index:03d}": path
+            for index, path in enumerate(solver_paths)
+        },
+    }
+
+
+def _declare_context_inputs(
+    run_root: Path,
+    contexts: dict[str, dict[str, dict[str, Path]]],
+    *,
+    provenance: bool,
+) -> None:
+    config_path = run_root / "run_config.json"
+    config = load_json(config_path)
+    particle_table = run_root / "inputs" / "oatof_candidate_N100.ion"
+    config["inputs"]["candidate_particle_table"] = str(particle_table.resolve())
+    config["input_sha256"]["candidate_particle_table"] = sha256(particle_table)
+    for context in contexts.values():
+        for entries in context.values():
+            for name, path in entries.items():
+                config["inputs"][name] = str(path.resolve())
+                config["input_sha256"][name] = sha256(path)
+    if provenance:
+        path = run_root / "inputs" / "stage_reuse_provenance.json"
+        config["inputs"]["stage_reuse_provenance"] = str(path)
+    config_path.write_text(
+        json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+
+
+def _bind_provenance_hash(run_root: Path) -> None:
+    config_path = run_root / "run_config.json"
+    config = load_json(config_path)
+    path = run_root / "inputs" / "stage_reuse_provenance.json"
+    config["input_sha256"]["stage_reuse_provenance"] = sha256(path)
+    config_path.write_text(
+        json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+
+
+def _verify_frozen_run_inputs(
+    run_root: Path,
+    *,
+    allow_pending_provenance: bool = False,
+) -> None:
+    config = load_json(run_root / "run_config.json")
+    inputs = config.get("inputs", {})
+    hashes = config.get("input_sha256", {})
+    for name, value in inputs.items():
+        path = Path(value)
+        if (
+            allow_pending_provenance
+            and name == "stage_reuse_provenance"
+            and not path.exists()
+        ):
+            continue
+        expected = hashes.get(name)
+        if not expected or not path.is_file() or sha256(path) != str(expected).upper():
+            raise RuntimeError(f"frozen candidate run input changed: {name}")
+
+
+def _verify_identity_descriptor(path: Path, actual: Path, label: str) -> None:
+    record = load_json(path)["records"][0]
+    if (
+        not actual.is_file()
+        or actual.stat().st_size != record["bytes"]
+        or sha256(actual) != str(record["sha256"]).upper()
+    ):
+        raise RuntimeError(f"{label} differs from its frozen identity descriptor")
+
+
+def _receipt_outputs(evidence: dict[str, Any]) -> dict[str, Path]:
+    return {
+        name: Path(value)
+        for name, value in evidence.items()
+        if isinstance(value, str) and Path(value).is_file()
+    }
+
+
+def _reused_evidence(
+    parent_root: Path,
+    provenance_path: Path,
+) -> tuple[dict[str, dict[str, str]], dict[str, dict[str, dict[str, Any]]]]:
+    provenance = load_json(provenance_path)
+    evidence: dict[str, dict[str, str]] = {}
+    records: dict[str, dict[str, dict[str, Any]]] = {}
+    for stage in provenance["reused_stages"]:
+        evidence[stage["stage_id"]] = {
+            name: str(parent_root / record["path"])
+            for name, record in stage["outputs"].items()
+        }
+        records[stage["stage_id"]] = stage["outputs"]
+    return evidence, records
+
+
+def _verify_reused_output(path: Path, record: dict[str, Any], label: str) -> None:
+    if (
+        not path.is_file()
+        or path.stat().st_size != record["bytes"]
+        or sha256(path) != str(record["sha256"]).upper()
+    ):
+        raise RuntimeError(f"reused {label} changed after provenance validation")
+
+
 def _remaining_results(stages: list[dict[str, Any]], completed: list[dict[str, Any]]) -> list[dict[str, Any]]:
     done = {item["stage_id"] for item in completed}
     return completed + [
@@ -414,11 +674,58 @@ def _remaining_results(stages: list[dict[str, Any]], completed: list[dict[str, A
     ]
 
 
+def _failure_results(
+    stages: list[dict[str, Any]],
+    completed: list[dict[str, Any]],
+    stage_id: str,
+    *,
+    status: str,
+    error: str,
+    failure_class: str | None = None,
+) -> list[dict[str, Any]]:
+    kept = [item for item in completed if item.get("stage_id") != stage_id]
+    failure = {"stage_id": stage_id, "status": status, "error": error}
+    if failure_class:
+        failure["failure_class"] = failure_class
+    declared = [item["stage_id"] for item in stages]
+    if stage_id not in declared:
+        stage_id = next(
+            identifier for identifier in declared if identifier not in {
+                item.get("stage_id") for item in kept
+            }
+        )
+        failure["stage_id"] = stage_id
+    prefix = []
+    for identifier in declared:
+        match = next((item for item in kept if item.get("stage_id") == identifier), None)
+        if match is not None:
+            prefix.append(match)
+            continue
+        if identifier == stage_id:
+            prefix.append(failure)
+            break
+        prefix.append({"stage_id": identifier, "status": "blocked"})
+    return _remaining_results(stages, prefix)
+
+
 def run_candidate_workflow(
     plan_path: Path,
-    simion_exe: str = r"C:\Program Files\SIMION-2020\simion.exe",
+    simion_exe: str,
     stage_executor: StageExecutor = execute_stage,
+    *,
+    reuse_parent: Path | None = None,
+    reuse_through: str | None = None,
 ) -> tuple[Path, dict[str, Any]]:
+    if (reuse_parent is None) != (reuse_through is None):
+        raise ValueError("reuse_parent and reuse_through must be supplied together")
+    if reuse_through is not None and reuse_through not in REUSABLE_STAGES:
+        raise ValueError(f"unsupported reuse boundary: {reuse_through}")
+    prepared_plan = load_json(Path(plan_path).resolve())
+    if prepared_plan.get("status") != "EXECUTION_READY":
+        raise ValueError(
+            "candidate plan is not execution-ready: "
+            f"{prepared_plan.get('status', 'missing status')}"
+        )
     run_root = start_candidate_run(plan_path)
     runtime_plan_path = run_root / "candidate_workflow_plan.json"
     runtime_plan = load_json(runtime_plan_path)
@@ -426,44 +733,253 @@ def run_candidate_workflow(
     results: list[dict[str, Any]] = []
     current_stage = "orchestration"
     try:
-        for stage in stages:
+        static_stage = stages[0]
+        if static_stage["stage_id"] != "static_inputs":
+            raise RuntimeError("candidate workflow must begin with static_inputs")
+        current_stage = "static_inputs"
+        runtime_plan["stage_results_so_far"] = results
+        static_evidence = stage_executor(static_stage, runtime_plan, simion_exe)
+        results.append(
+            {
+                "stage_id": "static_inputs",
+                "status": "success",
+                "execution": "executed",
+                "evidence": static_evidence,
+            }
+        )
+        reused: dict[str, dict[str, str]] = {}
+        reused_records: dict[str, dict[str, dict[str, Any]]] = {}
+        reuse_set: set[str] = set()
+        contexts: dict[str, dict[str, dict[str, Path]]] = {}
+        cad_model_path: Path | None = None
+        contexts["comsol_candidate"] = _stage_context(
+            run_root, runtime_plan, "comsol_candidate", simion_exe
+        )
+        contexts["simion_candidate"] = _stage_context(
+            run_root, runtime_plan, "simion_candidate", simion_exe
+        )
+        _declare_context_inputs(
+            run_root,
+            contexts,
+            provenance=reuse_parent is not None,
+        )
+        refresh_candidate_provisional_manifest(run_root)
+        _verify_frozen_run_inputs(
+            run_root,
+            allow_pending_provenance=reuse_parent is not None,
+        )
+        if reuse_through is not None:
+            current_stage = "comsol_candidate"
+            boundary = REUSABLE_STAGES.index(reuse_through)
+            reuse_set = set(REUSABLE_STAGES[: boundary + 1])
+            parent_root = Path(reuse_parent).resolve(strict=True)
+            if "cad_candidate" in reuse_set:
+                parent_cad_receipt = load_json(
+                    parent_root / "stage_receipts" / "cad_candidate.json"
+                )
+                parent_mph_identity_record = parent_cad_receipt["context"]["inputs"][
+                    "cad_candidate_input_002"
+                ]
+                parent_mph_identity = load_json(
+                    parent_root / parent_mph_identity_record["path"]
+                )["records"][0]
+                contexts["cad_candidate"] = _stage_context(
+                    run_root,
+                    runtime_plan,
+                    "cad_candidate",
+                    simion_exe,
+                    cad_model=parent_mph_identity,
+                )
+                _declare_context_inputs(run_root, contexts, provenance=True)
+                refresh_candidate_provisional_manifest(run_root)
+            provenance = validate_and_write_stage_reuse(
+                run_root,
+                parent_run_root=parent_root,
+                project="oa_tof",
+                stage_contexts={
+                    stage_id: contexts[stage_id]
+                    for stage_id in REUSABLE_STAGES
+                    if stage_id in reuse_set
+                },
+                allow_provisional_manifest=True,
+            )
+            _bind_provenance_hash(run_root)
+            refresh_candidate_provisional_manifest(run_root)
+            reused, reused_records = _reused_evidence(parent_root, provenance)
+            if "comsol_candidate" in reuse_set:
+                cad_model_path = Path(reused["comsol_candidate"]["model"])
+            if "cad_candidate" not in contexts:
+                contexts["cad_candidate"] = _stage_context(
+                    run_root,
+                    runtime_plan,
+                    "cad_candidate",
+                    simion_exe,
+                    cad_model=reused_records["comsol_candidate"]["model"],
+                )
+                _declare_context_inputs(run_root, contexts, provenance=True)
+                refresh_candidate_provisional_manifest(run_root)
+
+        for stage in stages[1:]:
             current_stage = stage["stage_id"]
             runtime_plan["stage_results_so_far"] = results
-            evidence = stage_executor(stage, runtime_plan, simion_exe)
-            results.append({"stage_id": current_stage, "status": "success", "evidence": evidence})
+            _verify_frozen_run_inputs(run_root)
+            if current_stage in reuse_set:
+                evidence = reused[current_stage]
+                results.append(
+                    {
+                        "stage_id": current_stage,
+                        "status": "success",
+                        "execution": "reused",
+                        "reused_from_run_id": Path(reuse_parent).name,
+                        "evidence": evidence,
+                    }
+                )
+                continue
+            if current_stage == "structural_acceptance":
+                for reused_stage, output_records in reused_records.items():
+                    for name, record in output_records.items():
+                        _verify_reused_output(
+                            Path(reused[reused_stage][name]),
+                            record,
+                            f"{reused_stage}.{name}",
+                        )
+            stage_for_execution = dict(stage)
+            if current_stage == "cad_candidate":
+                if cad_model_path is None:
+                    raise RuntimeError(
+                        "CAD stage has no verified COMSOL model evidence"
+                    )
+                stage_for_execution["model_path"] = str(cad_model_path)
+                if "comsol_candidate" in reuse_set and cad_model_path is not None:
+                    _verify_reused_output(
+                        cad_model_path,
+                        reused_records["comsol_candidate"]["model"],
+                        "comsol_candidate.model",
+                    )
+            if current_stage == "simion_candidate":
+                _verify_identity_descriptor(
+                    next(
+                        path
+                        for path in contexts["simion_candidate"]["solver"].values()
+                        if path.name == "simion_executable.json"
+                    ),
+                    Path(simion_exe),
+                    "SIMION executable",
+                )
+            if current_stage == "cad_candidate":
+                _verify_identity_descriptor(
+                    next(
+                        path
+                        for path in contexts["cad_candidate"]["inputs"].values()
+                        if path.name == "candidate_mph.json"
+                    ),
+                    Path(stage_for_execution["model_path"]),
+                    "Candidate MPH",
+                )
+                _verify_identity_descriptor(
+                    next(
+                        path
+                        for path in contexts["cad_candidate"]["solver"].values()
+                        if path.name == "python_executable.json"
+                    ),
+                    Path(runtime_plan["execution_source_closure"]["runtime"]["python_executable"]),
+                    "CAD Python executable",
+                )
+            evidence = stage_executor(stage_for_execution, runtime_plan, simion_exe)
+            if current_stage == "cad_candidate":
+                _verify_identity_descriptor(
+                    next(
+                        path
+                        for path in contexts["cad_candidate"]["inputs"].values()
+                        if path.name == "candidate_mph.json"
+                    ),
+                    Path(stage_for_execution["model_path"]),
+                    "Candidate MPH",
+                )
+            if (
+                current_stage == "cad_candidate"
+                and "comsol_candidate" in reuse_set
+            ):
+                _verify_reused_output(
+                    Path(stage_for_execution["model_path"]),
+                    reused_records["comsol_candidate"]["model"],
+                    "comsol_candidate.model",
+                )
+            if current_stage == "comsol_candidate" and "model" in evidence:
+                cad_model_path = Path(evidence["model"]).resolve(strict=True)
+            elif current_stage == "comsol_candidate":
+                raise RuntimeError(
+                    "COMSOL stage did not return model evidence for CAD"
+                )
+            if (
+                current_stage == "comsol_candidate"
+                and "cad_candidate" not in contexts
+            ):
+                contexts["cad_candidate"] = _stage_context(
+                    run_root,
+                    runtime_plan,
+                    "cad_candidate",
+                    simion_exe,
+                    cad_model=cad_model_path,
+                )
+                _declare_context_inputs(
+                    run_root,
+                    contexts,
+                    provenance=reuse_parent is not None,
+                )
+                refresh_candidate_provisional_manifest(run_root)
+            results.append(
+                {
+                    "stage_id": current_stage,
+                    "status": "success",
+                    "execution": "executed",
+                    "evidence": evidence,
+                }
+            )
+            if current_stage in REUSABLE_STAGES:
+                _verify_frozen_run_inputs(run_root)
+                update_candidate_progress(run_root, results, stages)
+                write_stage_receipt(
+                    run_root,
+                    project="oa_tof",
+                    stage_id=current_stage,
+                    context=contexts[current_stage],
+                    outputs=_receipt_outputs(evidence),
+                    allow_provisional_manifest=True,
+                )
+                refresh_candidate_provisional_manifest(run_root)
+        _verify_frozen_run_inputs(run_root)
+        current_stage = stages[-1]["stage_id"]
         summary, _ = finalize_candidate_run(run_root, "success", results)
         return run_root, summary
     except KeyboardInterrupt as exc:
-        results.append({"stage_id": current_stage, "status": "interrupted", "error": str(exc)})
-        finalize_candidate_run(run_root, "interrupted", _remaining_results(stages, results), current_stage)
+        interrupted = _failure_results(
+            stages,
+            results,
+            current_stage,
+            status="interrupted",
+            error=str(exc),
+        )
+        finalize_candidate_run(run_root, "interrupted", interrupted, current_stage)
         raise CandidateWorkflowInterrupted(run_root) from exc
     except StageTimedOut as exc:
-        results.append({"stage_id": current_stage, "status": "timeout", "error": str(exc)})
-        finalize_candidate_run(run_root, "timeout", _remaining_results(stages, results), current_stage)
+        failed = _failure_results(
+            stages,
+            results,
+            current_stage,
+            status="failed",
+            error=str(exc),
+            failure_class="timeout",
+        )
+        finalize_candidate_run(run_root, "failed", failed, current_stage)
         raise CandidateWorkflowTimedOut(run_root) from exc
     except Exception as exc:
-        results.append({"stage_id": current_stage, "status": "failed", "error": str(exc)})
-        finalize_candidate_run(run_root, "failed", _remaining_results(stages, results), current_stage)
+        failed = _failure_results(
+            stages,
+            results,
+            current_stage,
+            status="failed",
+            error=str(exc),
+        )
+        finalize_candidate_run(run_root, "failed", failed, current_stage)
         raise CandidateWorkflowError(str(exc), run_root) from exc
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("plan", type=Path)
-    parser.add_argument("--simion-exe", default=r"C:\Program Files\SIMION-2020\simion.exe")
-    args = parser.parse_args()
-    try:
-        run_root, summary = run_candidate_workflow(args.plan, args.simion_exe)
-    except CandidateWorkflowInterrupted as exc:
-        raise SystemExit(130) from exc
-    except CandidateWorkflowTimedOut as exc:
-        print(f"CANDIDATE_WORKFLOW=TIMEOUT RUN_ROOT={exc.run_root}", file=sys.stderr)
-        raise SystemExit(124) from exc
-    except CandidateWorkflowError as exc:
-        print(f"CANDIDATE_WORKFLOW=FAIL RUN_ROOT={exc.run_root} ERROR={exc}", file=sys.stderr)
-        raise SystemExit(1) from exc
-    print(f"CANDIDATE_WORKFLOW=PASS RUN_ROOT={run_root} DECISION={summary['candidate_decision']}")
-
-
-if __name__ == "__main__":
-    main()

@@ -140,6 +140,20 @@ def _declared_child_inputs(config: dict[str, Any], current_root: Path) -> dict[s
         declared[name] = path.resolve() if path.is_absolute() else (base / path).resolve()
     return declared
 
+def _validate_live_manifest(root: Path, project: str) -> None:
+    manifest = _load_json(root / "run_manifest.json", "live run manifest")
+    summary = _load_json(root / "summary.json", "live run summary")
+    if (
+        manifest.get("schema_version") != 1
+        or manifest.get("role") != "simulation_run_manifest"
+        or manifest.get("run_id") != root.name
+        or manifest.get("project") != project
+        or manifest.get("status") != "interrupted"
+        or manifest.get("lifecycle_state") != "provisional"
+        or summary.get("status") not in {"interrupted", "running"}
+    ):
+        raise StageReuseError("existing run manifest is not a live provisional manifest")
+
 def write_stage_receipt(
     run_root: str | Path,
     *,
@@ -147,11 +161,14 @@ def write_stage_receipt(
     stage_id: str,
     context: ContextPaths,
     outputs: PathMap,
+    allow_provisional_manifest: bool = False,
 ) -> Path:
     """Write a receipt before the parent run's final manifest is created."""
     root = Path(run_root).resolve(strict=True)
     if (root / "run_manifest.json").exists():
-        raise StageReuseError("stage receipt cannot be added after the final run manifest")
+        if not allow_provisional_manifest:
+            raise StageReuseError("stage receipt cannot be added after the final run manifest")
+        _validate_live_manifest(root, project)
     run_config = _load_json(root / "run_config.json", "run config")
     summary = _load_json(root / "summary.json", "run summary")
     run_id = run_config.get("run_id")
@@ -287,6 +304,7 @@ def validate_and_write_stage_reuse(
     parent_run_root: str | Path,
     project: str,
     stage_contexts: Mapping[str, ContextPaths],
+    allow_provisional_manifest: bool = False,
 ) -> Path:
     """Validate one parent and publish child-run provenance."""
     current_root = Path(current_run_root).resolve(strict=True)
@@ -294,7 +312,9 @@ def validate_and_write_stage_reuse(
     if current_root == parent_root:
         raise StageReuseError("current and parent run roots must be different")
     if (current_root / "run_manifest.json").exists():
-        raise StageReuseError("current run is already finalized by run_manifest.json")
+        if not allow_provisional_manifest:
+            raise StageReuseError("current run is already finalized by run_manifest.json")
+        _validate_live_manifest(current_root, project)
     current_config = _load_json(current_root / "run_config.json", "current run config")
     current_run_id = current_config.get("run_id")
     if not isinstance(current_run_id, str):

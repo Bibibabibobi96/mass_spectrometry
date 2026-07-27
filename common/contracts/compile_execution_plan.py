@@ -82,6 +82,25 @@ def compile_execution(
     missing_outputs = sorted(set(plan["required_outputs"]) - set(profile["deliverable_outputs"]))
     if missing_outputs:
         implementation_blockers.append("Runner cannot deliver outputs: " + ", ".join(missing_outputs))
+    protected_bindings = {
+        "timestamp",
+        "python_exe",
+        "design_plan_path",
+        "request_path",
+        "run_id",
+    }
+    protected_supplied = sorted(set(bindings) & protected_bindings)
+    if protected_supplied:
+        raise ValueError(
+            "Runtime bindings cannot override plan context: "
+            + ", ".join(protected_supplied)
+        )
+    unexpected_bindings = sorted(set(bindings) - set(profile["required_bindings"]))
+    if unexpected_bindings:
+        raise ValueError(
+            "Unexpected runtime bindings for selected profile: "
+            + ", ".join(unexpected_bindings)
+        )
     missing_bindings = sorted(set(profile["required_bindings"]) - set(bindings))
 
     stamp = validate_run_id(plan["run_id"])["stamp"]
@@ -89,6 +108,8 @@ def compile_execution(
         "timestamp": stamp or "",
         "python_exe": str(REPO_ROOT / ".venv" / "Scripts" / "python.exe"),
         "design_plan_path": str(plan_path),
+        "request_path": str(Path(plan["provenance"]["request"]["path"]).resolve()),
+        "run_id": plan["run_id"],
     }
     context.update(bindings)
     for step in profile["steps"]:

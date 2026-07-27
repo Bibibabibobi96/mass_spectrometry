@@ -14,8 +14,8 @@ class WorkflowEntryLayoutTests(unittest.TestCase):
             "workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1",
             "comsol/run_fixed_particle_retrace.m",
             "workflows/design_candidate/prepare_candidate_consumers.py",
+            "workflows/design_candidate/run_candidate.py",
             "workflows/design_candidate/run_candidate_workflow.py",
-            "workflows/design_candidate/run_bound_candidate_workflow.py",
             "workflows/design_candidate/run_candidate_contract_build.m",
             "workflows/design_candidate/run_candidate_cad_sync.m",
         }
@@ -27,7 +27,6 @@ class WorkflowEntryLayoutTests(unittest.TestCase):
             "tests/comsol/test_accelerator_mesh_particle_candidate.m",
             "analysis/prepare_candidate_consumers.py",
             "analysis/run_candidate_workflow.py",
-            "analysis/run_bound_candidate_workflow.py",
             "tests/comsol/run_candidate_contract_build.m",
             "tests/cad/run_candidate_cad_sync.m",
         }
@@ -47,16 +46,30 @@ class WorkflowEntryLayoutTests(unittest.TestCase):
             "workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1", entries
         )
         self.assertIn(
-            "workflows/design_candidate/run_bound_candidate_workflow.py", entries
+            "workflows/design_candidate/run_candidate.py", entries
         )
 
         closure = (PROJECT_ROOT / "analysis" / "candidate_source_closure.py").read_text(
             encoding="utf-8"
         )
+        self.assertIn("workflows/design_candidate/run_candidate.py", closure)
         self.assertIn("workflows/design_candidate/run_candidate_contract_build.m", closure)
         self.assertIn("workflows/design_candidate/run_candidate_cad_sync.m", closure)
         self.assertNotIn("tests/comsol/run_candidate_contract_build.m", closure)
         self.assertNotIn("tests/cad/run_candidate_cad_sync.m", closure)
+
+        core = (
+            PROJECT_ROOT
+            / "workflows"
+            / "design_candidate"
+            / "run_candidate_workflow.py"
+        ).read_text(encoding="utf-8")
+        lifecycle = (
+            PROJECT_ROOT / "analysis" / "candidate_run_lifecycle.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("native_receipts", core)
+        self.assertNotIn("def main(", core)
+        self.assertNotIn("def main(", lifecycle)
 
 
 if __name__ == "__main__":

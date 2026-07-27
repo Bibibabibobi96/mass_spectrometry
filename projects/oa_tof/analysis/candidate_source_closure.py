@@ -67,6 +67,8 @@ RELATIVE_PATHS = (
     "projects/oa_tof/simion/workbench/oatof_flight_tube_ground.gem",
     "projects/oa_tof/workflows/design_candidate/run_candidate_cad_sync.m",
     "projects/oa_tof/workflows/design_candidate/run_candidate_contract_build.m",
+    "projects/oa_tof/workflows/design_candidate/run_candidate.py",
+    "projects/oa_tof/workflows/design_candidate/run_candidate_workflow.py",
     "projects/oa_tof/tests/comsol/verify_oatof_comsol_sync.m",
     "projects/oa_tof/tests/simion/verify_iob_runtime_contract.lua",
     "projects/oa_tof/tests/simion/verify_iob_runtime_contract.ps1",

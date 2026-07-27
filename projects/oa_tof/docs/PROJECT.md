@@ -203,7 +203,8 @@ GUI重开、正式包和CAD同步门禁，不影响当前100%传输或正式统�
 ### 延期架构决策
 
 - `config/modes/formal.json`现在只保存Formal科学合同；`config/formal_solver_numerics.json`保存唯一COMSOL/SIMION数值合同，run instance显式冻结seed。配置拆分完成后项目处于`formal_revalidation_pending`：Static/Candidate可运行但不得读取Formal资产，Formal gate必须失败关闭，待独立Formal vNext重验证授权。
-- 2026-07-27 暂缓 Formal vNext 执行编排：独立、可重开验证的非Formal SIMION模板尚未登记，保留一个不能接入求解器的生命周期不会提供可信进展。待模板登记且重验证获授权后，再以冻结输入实现和审查执行路径。
+- 独立、可重开验证的非Formal SIMION模板和N=100 Candidate结构链现已登记并验收；Formal vNext仍是
+  独立科学workflow，只有主线进入该阶段并明确授权后才实现，不因Candidate成功自动恢复Formal资格。
 - 旧的“`config/modes/formal.json`继续作为单一正式模式机器合同”的判断已由上述三层合同取代。只有出现新的
   多求解器消费者、跨器件消费者，或当前设计线稳定后批准专项迁移并能一次完成调用方与回归切换时，
   才启动结构拆分。
@@ -216,13 +217,34 @@ GUI重开、正式包和CAD同步门禁，不影响当前100%传输或正式统�
   现有运行三件套或重启冻结run。在该包装器实现前，本项目正式长跑使用可恢复的execution cell并以
   cell ID持续取得输出与终态，不使用`Start-Process`把商业软件进程脱离当前监督链。
 
-以上两项均不是当前正确性阻塞。本轮只整理 Formal/static 生产入口和文档边界，不修改科学参数、
+以上延期项均不是当前正确性阻塞。本轮只整理 Formal/static 生产入口和文档边界，不修改科学参数、
 Formal 资产、candidate source closure 或 RF 项目文件。
 
 ## 下一步
 
 跨TOF设计族的双反射OA-TOF、MR-TOF和自然语言性能设计方向只由根
 [`docs/ROADMAP.md`](../../../docs/ROADMAP.md)规划；本节只保留当前`oa_tof`设计线的开放任务。
+
+### 开放技术绕行登记
+
+- **SIMION 2026 `.wgem`许可证绕行。** 当前2012许可证不能使用2026 `.wgem`功能，活动Candidate固定使用
+  已验收的SIMION 2020 legacy-GEM四槽模板。退出条件是许可证升级后，在Git外隔离scratch完成官方
+  `.wgem`语法、GUI物化、IOB/CON重开和结构门禁；未满足前不迁移生产路线，也不重复排查已关闭路径。
+  原始失败证据为
+  `C:\Users\Liao\mass_spectrometry\artifacts\projects\oa_tof\scratch\20260727_092800__simion-wgem-license-gate\wgem_capability.failed.txt`。
+- **COMSOL逻辑小样本承载绕行。** N<30逻辑样本由同源N=100承载集合求解后只分析目标前缀；适用限制、
+  双粒子数记录要求和重新调查退出条件只引用上文“已知非阻塞限制”的COMSOL 6.4段，不在此复制。
+- **SIMION透明栅网越栅绕行。** 正式Program当前使用`0.0001 mm`固定距离越过一格透明数值栅网；已验证
+  范围、不得继续扫描的边界及重新启动条件只引用上文“已知非阻塞限制”的SIMION段，不在此复制。
+- **长商业运行监督绕行。** 在持久化后台run恢复包装器实现前，长跑使用可恢复execution cell和cell ID
+  监督，不用脱离监督链的`Start-Process`。退出条件沿用根ROADMAP：共享包装器获得专项设计、三件套
+  一致性和中断恢复回归后，才替换当前方式。
+- **SolidWorks默认模板绕行。** 机器默认零件模板路径失效时，共享桥接器在单次导入中临时绑定已安装的
+  SolidWorks 2022空白模板并恢复原用户设置。退出条件是机器默认模板被修复且无人值守25组件重建在
+  不临时改写偏好时仍通过；在此之前必须保留设置恢复回读门禁。
+- **冻结源码字节码绕行。** CAD Python以`-B`及临时`PYTHONDONTWRITEBYTECODE=1`阻止在
+  `inputs/code/`内生成`.pyc`，调用后恢复环境。退出条件是冻结源码改为不会被解释器写入的执行布局，
+  且source-closure故障注入和真实CAD运行均证明零缓存残留；不得仅删除门禁来退出。
 
 1. **完成候选运行编排与逐变量运行时覆盖。** `config/design_variables.json`、可审查扩大的
    `config/optimization_envelope.json`和`analysis/compile_candidate_design.py`已经建立变量分类、候选覆盖、
@@ -271,6 +293,32 @@ Formal 资产、candidate source closure 或 RF 项目文件。
    冻结`inputs/code/`中没有`__pycache__`或`.pyc`；正式baseline和Formal资产均未修改。该run的结论
    仅为`candidate_accepted_not_promoted / structural_build_and_contract`，不包含COMSOL/SIMION逐粒子
    物理比较、性能声明或晋升授权。
+   在此成功基线之后，已实现并完成真实L3验收的唯一运行入口
+   `workflows/design_candidate/run_candidate.py`。它把request绑定、候选编译、冻结、固定线性执行和
+   终态收口合并为一个使用者命令，并通过共享`common/contracts/stage_reuse.py`只允许单父run的连续
+   成功前缀复用。COMSOL、SIMION、CAD实际执行后分别生成receipt；child复用阶段仍写
+   `status=success, execution=reused`，结构验收每次重跑。父run的大型输出不复制，child只从已验证
+   provenance解析并在CAD前后及验收前复核SHA，因此父run成为必须保留的来源依赖。CAD-only child不为
+   外部父输出伪造新receipt，后续仍直接引用原bootstrap父run。旧无receipt run明确拒绝，不补写、不
+   兼容。修复后的全流程bootstrap
+   `20260727_175500__test__cross__candidate-receipt-bootstrap-pathfix-n100`以退出码0完成，五阶段均为
+   `success/executed`，133个manifest输出通过复核，COMSOL、SIMION和CAD三个receipt齐全。其真实
+   CAD-only child `20260727_181500__test__cad__candidate-reuse-child-n100`也以退出码0完成：
+   COMSOL和SIMION为`success/reused`，CAD与结构验收重新执行，61个manifest输出通过复核；child仅
+   `3,339,378 bytes`，不复制MPH、PA或父run的大型结果。至此旧bound包装层及无receipt兼容分支已删除，
+   内部执行核心和生命周期后端不再暴露第二CLI。
+   同一收缩把Candidate seed收回run-instance唯一权威：seed为必填且无隐式默认。COMSOL生产adapter
+   只消费冻结ContractPath、run config中的粒子表/粒子数和run内输出路径；质量、几何、网格与时间步
+   不再由adapter另传一份标量。上述变化不修改baseline或Formal，仍只支持结构合同结论。
+   原生receipt bootstrap
+   `20260727_173500__test__cross__candidate-receipt-bootstrap-n100`虽为结构验收success，但其后续child
+   `20260727_174300__test__cross__candidate-reuse-seed-mismatch`揭示：旧compiler把scratch绝对路径写入
+   `candidate_resolved_geometry.json.inputs`，使不同run ID的同物理合同产生不同SHA并在商业阶段前拒绝
+   reuse。现已从发布源根治：Git内正式输入继续使用项目相对标签；项目外Candidate输入只发布明确的
+   `run_input:<role>`逻辑身份及对应SHA，禁止发布scratch绝对路径。纯测试证明不同run ID、同request和
+   同seed可复用连续前缀，而不同seed仍仅因粒子表context不同而在商业阶段前拒绝。173500父run的receipt
+   已绑定旧路径依赖合同，不得迁移、修补或作为修复后L3父run；替代证据即上述175500完整bootstrap及
+   181500真实CAD-only child。
    此前`20260727_145500__test__cross__zero-change-candidate-full-retry-n100`因父监督链中断而保持
    `interrupted/orchestration_not_completed`；随后
    `20260727_152000__test__cross__zero-change-candidate-durable-retry-n100`虽已完成COMSOL、SIMION和CAD，
@@ -284,10 +332,10 @@ Formal 资产、candidate source closure 或 RF 项目文件。
    两次失败、修复和成功证据已冻结在history。后续候选计划又把设计request/proposal与
    baseline/resolved/diff共同冻结为五项不可变run输入，启动前校验路径、SHA、Schema和身份关系，manifest
    逐项记录，因此清理scratch不再切断新run的设计来源。`design_candidate`模式及
-   `validated_structural_candidate` execution profile现已把已验证runner绑定到solver-neutral计划：只有
+   `validated_structural_candidate` execution profile现已把唯一入口绑定到solver-neutral计划：只有
    获批524 Da、N=100、零变量变化或已验证的`reflectron_midgrid_voltage`变化、仅传输目标且显式提供
-   同request/同run_id候选计划时才返回
-   `EXECUTION_READY`；缺少绑定返回`NEEDS_RUNTIME_INPUTS`，分辨率、500 Da或任何其他变量仍返回
+   本次`particle_source_seed`且冻结已验证SIMION模板登记run时才返回`EXECUTION_READY`；request路径和run ID直接来自已校验设计计划，
+   不再要求调用者另造candidate plan绑定。缺少seed或已验证模板返回`NEEDS_RUNTIME_INPUTS`，分辨率、500 Da或任何其他变量仍返回
    `NEEDS_IMPLEMENTATION`。下一步按重建影响选择其他代表性非零变量做小规模运行时覆盖，每项通过后再扩展
    profile，不一次性宣称全部变量可执行。
    代表性非零变量`reflectron_midgrid_voltage=1601 V`已在运行
@@ -302,6 +350,7 @@ Formal 资产、candidate source closure 或 RF 项目文件。
    `inputs/code/`，以显式 source-id、原始 SHA、执行 SHA 清单在物化、每个阶段和终态前复核。
    需要 Python 或工作区定位的冻结副本会记录已哈希运行时及候选 artifact/workspace 绑定；
    候选阶段不得回读活动工作树源码。
+
 2. **RF→oaTOF连接功能已收口，不自动进入下一阶段。** 阶段状态、恢复条件、资格指标和失败边界
    只以RF项目PROJECT及其机器合同为权威。本项目继续保持Formal分析器资产只读；只有所有者另行批准
    恢复接口资格、性能优化或整机晋升时，才按RF项目冻结的下一阶段执行。

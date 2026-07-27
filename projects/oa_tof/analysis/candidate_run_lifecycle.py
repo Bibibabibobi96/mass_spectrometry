@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import shutil
@@ -19,7 +18,7 @@ from projects.oa_tof.analysis.candidate_source_closure import verify_candidate_s
 
 
 FORMAL_BASELINE_PATH = PROJECT_ROOT / "config" / "baseline.json"
-TERMINAL_STATUSES = {"success", "failed", "interrupted", "timeout"}
+TERMINAL_STATUSES = {"success", "failed", "interrupted"}
 
 
 def _utc_now() -> str:
@@ -60,7 +59,13 @@ def _output_files(run_root: Path) -> list[Path]:
     )
 
 
-def _write_manifest(run_root: Path, status: str, recorded_root: Path | None = None) -> dict[str, Any]:
+def _write_manifest(
+    run_root: Path,
+    status: str,
+    recorded_root: Path | None = None,
+    *,
+    provisional: bool = False,
+) -> dict[str, Any]:
     recorded_root = recorded_root or run_root
     config_path = run_root / "run_config.json"
     config = load_json(config_path)
@@ -84,6 +89,7 @@ def _write_manifest(run_root: Path, status: str, recorded_root: Path | None = No
         "project": "oa_tof",
         "mode": "design_candidate",
         "status": status,
+        "lifecycle_state": "provisional" if provisional else "terminal",
         "recorded_at_utc": _utc_now(),
         "run_config": _file_record(config_path, recorded_root / "run_config.json"),
         "inputs": inputs,
@@ -121,7 +127,7 @@ def _summary(status: str, stage_results: list[dict[str, Any]], failure_stage: st
     }
 
 
-def start_candidate_run(plan_path: Path) -> Path:
+def start_candidate_run(plan_path: Path, *, provisional_manifest: bool = True) -> Path:
     plan_path = plan_path.resolve()
     plan = load_json(plan_path)
     if plan.get("role") != "oa_tof_candidate_run_plan":
@@ -187,11 +193,77 @@ def start_candidate_run(plan_path: Path) -> Path:
         "orchestration_not_completed",
     )
     _write_json(staging / "summary.json", provisional)
-    _write_manifest(staging, "interrupted", run_root)
+    if provisional_manifest:
+        _write_manifest(staging, "interrupted", run_root, provisional=True)
     run_root.parent.mkdir(parents=True, exist_ok=True)
     os.replace(staging, run_root)
-    verify_candidate_source_closure(load_json(run_root / "candidate_workflow_plan.json")["execution_source_closure"])
+    try:
+        verify_candidate_source_closure(
+            load_json(run_root / "candidate_workflow_plan.json")[
+                "execution_source_closure"
+            ]
+        )
+    except Exception as exc:
+        runtime_plan = load_json(run_root / "candidate_workflow_plan.json")
+        stages = runtime_plan["stages"]
+        failed = [
+            {
+                "stage_id": stages[0]["stage_id"],
+                "status": "failed",
+                "error": f"post-materialization source closure verification failed: {exc}",
+            },
+            *[
+                {"stage_id": stage["stage_id"], "status": "blocked"}
+                for stage in stages[1:]
+            ],
+        ]
+        finalize_candidate_run(
+            run_root,
+            "failed",
+            failed,
+            stages[0]["stage_id"],
+        )
+        raise
     return run_root
+
+
+def update_candidate_progress(
+    run_root: Path,
+    stage_results: list[dict[str, Any]],
+    declared_stages: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Persist non-terminal stage progress before a receipt is written."""
+    completed = {item.get("stage_id") for item in stage_results}
+    ordered = stage_results + [
+        {"stage_id": item["stage_id"], "status": "blocked"}
+        for item in declared_stages
+        if item["stage_id"] not in completed
+    ]
+    summary = {
+        "schema_version": 1,
+        "role": "oa_tof_candidate_run_summary",
+        "status": "running",
+        "candidate_decision": "no_candidate_decision",
+        "acceptance_scope": None,
+        "performance_claim_allowed": False,
+        "failure_stage": None,
+        "stages": ordered,
+        "formal_modified": False,
+        "promotion_authorized": False,
+        "safe_to_promote": False,
+        "recorded_at_utc": _utc_now(),
+    }
+    _write_json(run_root.resolve() / "summary.json", summary)
+    return summary
+
+
+def refresh_candidate_provisional_manifest(run_root: Path) -> dict[str, Any]:
+    """Rebind the live interrupted manifest after progress or inputs change."""
+    root = run_root.resolve()
+    summary = load_json(root / "summary.json")
+    if summary.get("status") not in {"interrupted", "running"}:
+        raise ValueError("only a live candidate run may refresh its provisional manifest")
+    return _write_manifest(root, "interrupted", provisional=True)
 
 
 def finalize_candidate_run(
@@ -207,7 +279,8 @@ def finalize_candidate_run(
     if run_root.name != config.get("run_id"):
         raise ValueError("run folder and run_config run_id differ")
     runtime_plan = load_json(run_root / "candidate_workflow_plan.json")
-    verify_candidate_source_closure(runtime_plan.get("execution_source_closure", {}))
+    if status == "success":
+        verify_candidate_source_closure(runtime_plan.get("execution_source_closure", {}))
     expected_stages = [item["stage_id"] for item in runtime_plan["stages"]]
     actual_stages = [item.get("stage_id") for item in stage_results]
     if actual_stages != expected_stages:
@@ -218,26 +291,3 @@ def finalize_candidate_run(
     _write_json(run_root / "summary.json", summary)
     manifest = _write_manifest(run_root, status)
     return summary, manifest
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    subparsers = parser.add_subparsers(dest="command", required=True)
-    start = subparsers.add_parser("start")
-    start.add_argument("plan", type=Path)
-    finish = subparsers.add_parser("finalize")
-    finish.add_argument("run_root", type=Path)
-    finish.add_argument("--status", required=True, choices=sorted(TERMINAL_STATUSES))
-    finish.add_argument("--stages", required=True, type=Path)
-    finish.add_argument("--failure-stage")
-    args = parser.parse_args()
-    if args.command == "start":
-        print(f"CANDIDATE_RUN_START=PASS RUN_ROOT={start_candidate_run(args.plan)}")
-    else:
-        stages = load_json(args.stages)
-        summary, _ = finalize_candidate_run(args.run_root, args.status, stages, args.failure_stage)
-        print(f"CANDIDATE_RUN_FINALIZE=PASS STATUS={summary['status']}")
-
-
-if __name__ == "__main__":
-    main()

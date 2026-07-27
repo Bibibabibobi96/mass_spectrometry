@@ -40,7 +40,14 @@ def verify_routing_coverage(consumer_contract: dict, variable_catalog: dict) -> 
         raise ValueError("candidate consumer routing is incomplete: " + ", ".join(sorted(missing)))
 
 
-def prepare(contract_path: Path, output_dir: Path, runtime_root: Path | None = None, particle_source_seed: int = 20260713) -> dict:
+def prepare(
+    contract_path: Path,
+    output_dir: Path,
+    runtime_root: Path | None = None,
+    particle_source_seed: int | None = None,
+) -> dict:
+    if not isinstance(particle_source_seed, int):
+        raise ValueError("candidate consumer preparation requires an explicit particle source seed")
     contract_path = contract_path.resolve()
     contract = load_contract(contract_path)
     consumer_contract = json.loads(CONSUMER_CONTRACT_PATH.read_text(encoding="utf-8"))
@@ -105,8 +112,13 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--contract", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
+    parser.add_argument("--particle-source-seed", required=True, type=int)
     args = parser.parse_args()
-    plan = prepare(args.contract, args.output_dir.resolve())
+    plan = prepare(
+        args.contract,
+        args.output_dir.resolve(),
+        particle_source_seed=args.particle_source_seed,
+    )
     print(f"CANDIDATE_CONSUMER_PREPARE={plan['status']}")
 
 

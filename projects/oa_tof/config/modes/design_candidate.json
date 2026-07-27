@@ -15,7 +15,7 @@
       "comsol_candidate",
       "simion_candidate",
       "cad_candidate",
-      "cross_solver_acceptance"
+      "structural_acceptance"
     ],
     "performance_claim_allowed": false,
     "automatic_promotion": false

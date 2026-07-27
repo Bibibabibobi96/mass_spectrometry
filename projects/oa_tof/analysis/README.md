@@ -28,10 +28,14 @@ Python版本、隔离环境和重建方法只以仓库根
   COMSOL、SIMION、CAD和跨软件验收的有向执行计划（粒子表本身由计划的首个运行命令生成）。它不执行商业软件，也不包含
   baseline/formal晋升。计划先进入`scratch/<task_id>/`，集成runner真正开始时才创建含三件套的run，
   避免留下不通过artifacts门禁的半成品运行目录。
-- 候选运行记录后端：`candidate_run_lifecycle.py start <plan>`先在scratch组装包含
+- 候选运行记录后端：`candidate_run_lifecycle.py`由唯一Candidate入口内部调用，先在scratch组装包含
   `run_config.json/summary.json/run_manifest.json`的失效安全骨架，再原子进入`runs/<run_id>/`；
-  `finalize`要求按工作流顺序提交全部阶段状态，并以success、failed或interrupted重写根summary和manifest。
-  success只表示`candidate_accepted_not_promoted`，始终保持`formal_eligible=false`。
+  后端API要求按工作流顺序提交全部阶段状态，并以success、failed或interrupted重写根summary和manifest。
+  success只表示`candidate_accepted_not_promoted`，始终保持`formal_eligible=false`；后端不提供独立CLI。
+- Candidate生产seed只来自`run_config.run_instance.particle_source_seed`并且必须显式存在；
+  `prepare_candidate_consumers.py`和`prepare_candidate_run.py`均不提供隐式seed。COMSOL Candidate
+  adapter只从冻结ContractPath读取物理/数值量，从run config读取本次粒子数和粒子表，并接收run内
+  输出路径；它不再独立重复质量、网格或时间步标量。
 - 数值算法：`peak_metrics.py`。
 - 五质量标定、逐峰COMSOL/SIMION局部密度叠加和质心差汇总图：`mass_spectrum.py`。主图使用2×3布局，
   五个峰各自缩放局部质量偏差轴且共享各峰分箱，第六格只汇总跨求解器平均TOF差；全图图例明确

@@ -92,7 +92,7 @@ class ExecutionCompilerTests(unittest.TestCase):
         self.assertTrue(any("constraints" in item for item in result["blockers"]))
         self.assertTrue(any("outputs" in item for item in result["blockers"]))
 
-    def test_oa_validated_structural_candidate_requires_matching_plan_binding(self):
+    def test_oa_validated_structural_candidate_requires_explicit_seed(self):
         request = load_json(HERE / "examples" / "oa_tof_500da_r30000.example.json")
         request["status"] = "approved"
         request["approval"] = {"approved_by": "owner", "approved_on": "2026-07-20"}
@@ -106,27 +106,71 @@ class ExecutionCompilerTests(unittest.TestCase):
         request["design_variables"] = []
         result = self.compile_request(request)
         self.assertEqual(result["status"], "NEEDS_RUNTIME_INPUTS")
-        ready = self.compile_request(request, {"candidate_workflow_plan": "C:/candidate/plan.json"})
+        ready = self.compile_request(request, {"particle_source_seed": "20260720"})
         self.assertEqual(ready["status"], "EXECUTION_READY")
         self.assertEqual(ready["profile_id"], "validated_structural_candidate")
         self.assertEqual(
             ready["commands"][0]["argv"][1:3],
-            ["-m", "projects.oa_tof.workflows.design_candidate.run_bound_candidate_workflow"],
+            ["-m", "projects.oa_tof.workflows.design_candidate.run_candidate"],
         )
-        self.assertIn("C:/candidate/plan.json", ready["commands"][0]["argv"])
+        argv = ready["commands"][0]["argv"]
+        self.assertIn("--request", argv)
+        self.assertIn("--run-id", argv)
+        self.assertIn(self.run_id, argv)
+        self.assertIn("--particle-source-seed", argv)
+        self.assertIn("20260720", argv)
 
         request["design_variables"] = ["reflectron_midgrid_voltage"]
         variable_ready = self.compile_request(
-            request, {"candidate_workflow_plan": "C:/candidate/midgrid-plan.json"}
+            request, {"particle_source_seed": "20260720"}
         )
         self.assertEqual(variable_ready["status"], "EXECUTION_READY")
         self.assertEqual(variable_ready["profile_id"], "validated_structural_candidate")
 
         request["design_variables"] = ["flight_length"]
         unsupported = self.compile_request(
-            request, {"candidate_workflow_plan": "C:/candidate/flight-plan.json"}
+            request, {"particle_source_seed": "20260720"}
         )
         self.assertEqual(unsupported["status"], "NEEDS_IMPLEMENTATION")
+
+    def test_runtime_bindings_reject_unknown_and_plan_owned_context(self):
+        request = load_json(HERE / "examples" / "oa_tof_500da_r30000.example.json")
+        request["status"] = "approved"
+        request["approval"] = {"approved_by": "owner", "approved_on": "2026-07-20"}
+        request["target"]["mode"] = "design_candidate"
+        request["operating_points"] = [
+            {"mass": {"value": 524, "unit": "Da"}, "charge_state": 1}
+        ]
+        request["objectives"] = [
+            {
+                "metric": "transmission_fraction",
+                "operator": "maximize",
+                "value": None,
+                "unit": "1",
+                "tolerance": None,
+            }
+        ]
+        request["constraints"] = []
+        request["design_variables"] = []
+        with self.assertRaisesRegex(ValueError, "Unexpected runtime bindings"):
+            self.compile_request(
+                request,
+                {
+                    "particle_source_seed": "20260720",
+                    "unused_binding": "forbidden",
+                },
+            )
+        for protected in ("request_path", "run_id"):
+            with self.subTest(protected=protected), self.assertRaisesRegex(
+                ValueError, "cannot override plan context"
+            ):
+                self.compile_request(
+                    request,
+                    {
+                        "particle_source_seed": "20260720",
+                        protected: "C:/forged",
+                    },
+                )
 
     def test_interface_profile_requires_explicit_runtime_bindings(self):
         request = self.approved_rf_request()

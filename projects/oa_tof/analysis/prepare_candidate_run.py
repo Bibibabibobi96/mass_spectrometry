@@ -195,7 +195,7 @@ def prepare_candidate_run(
     candidate_diff: Path,
     run_id: str,
     artifact_project_root: Path | None = None,
-    particle_source_seed: int = 20260713,
+    particle_source_seed: int | None = None,
     simion_template_run: Path | None = None,
 ) -> dict:
     run_identity = validate_run_id(run_id)
@@ -261,6 +261,9 @@ def prepare_candidate_run(
             shutil.copy2(source, target)
             frozen[f"candidate_simion_template_{key}"] = target
             frozen_template[key.removeprefix("source_")] = {"path": str(target), "sha256": sha256(target)}
+        manifest_target = template_dir / "registration_manifest.json"
+        shutil.copy2(template_registration["registration_manifest"], manifest_target)
+        frozen["candidate_simion_template_registration_manifest"] = manifest_target
 
     prepared_dir = inputs_dir / "prepared_consumers"
     consumption = prepare_consumers(frozen["candidate_resolved_geometry.json"], prepared_dir, run_root, particle_source_seed)
@@ -273,9 +276,12 @@ def prepare_candidate_run(
     workflow_plan = {
         "schema_version": 1,
         "role": "oa_tof_candidate_run_plan",
-        "status": "NEEDS_CROSS_SOLVER_RUNNER",
+        "status": "EXECUTION_READY" if frozen_template is not None else "NEEDS_RUNTIME_INPUTS",
         "run_id": run_id,
-        "run_instance": {"particle_source_seed": particle_source_seed},
+        "run_instance": {
+            "particle_source_seed": particle_source_seed,
+            "particle_count": 100,
+        },
         "planning_root": str(planning_root),
         "run_root": str(run_root),
         "formal_root": {"path": str(formal_root), "mutation_allowed": False},
@@ -319,7 +325,7 @@ def prepare_candidate_run(
                 "environment": {
                     "OATOF_CANDIDATE_CONTRACT_PATH": str(frozen["candidate_resolved_geometry.json"]),
                     "OATOF_CANDIDATE_MODEL_PATH": str(comsol_model),
-                    "OATOF_CANDIDATE_ION_PATH": str(candidate_ion),
+                    "OATOF_CANDIDATE_RUN_CONFIG_PATH": str(run_root / "run_config.json"),
                     "OATOF_RUNTIME_DIR": str(run_root / "comsol"),
                 },
             },
@@ -336,8 +342,11 @@ def prepare_candidate_run(
                     "template_input": {
                         "role": "oa_tof_candidate_simion_layout_template",
                         "files": frozen_template,
-                        "registration_run": str(template_registration["registration_run"]),
-                        "registration_manifest_sha256": sha256(template_registration["registration_manifest"]),
+                        "registration_run_id": template_registration["registration_run"].name,
+                        "registration_manifest": {
+                            "path": str(manifest_target),
+                            "sha256": sha256(manifest_target),
+                        },
                     }
                 } if frozen_template is not None and template_registration is not None else {}),
             },
@@ -350,8 +359,8 @@ def prepare_candidate_run(
                 "task_script": str(frozen_code_root / "projects/oa_tof/workflows/design_candidate/run_candidate_cad_sync.m"),
             },
             {
-                "stage_id": "cross_solver_acceptance",
-                "status": "needs_integrated_candidate_runner",
+                "stage_id": "structural_acceptance",
+                "status": "ready" if frozen_template is not None else "blocked",
                 "output_dir": str(run_root / "results"),
             },
         ],
@@ -384,7 +393,10 @@ def prepare_candidate_run(
         "run_id": run_id,
         "project": "oa_tof",
         "mode": "design_candidate",
-        "run_instance": {"particle_source_seed": particle_source_seed},
+        "run_instance": {
+            "particle_source_seed": particle_source_seed,
+            "particle_count": 100,
+        },
         "project_root": str(PROJECT_ROOT),
         "inputs": {key: value["path"] for key, value in workflow_plan["candidate_inputs"].items()},
         "input_sha256": {key: value["sha256"] for key, value in workflow_plan["candidate_inputs"].items()},

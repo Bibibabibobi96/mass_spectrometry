@@ -177,6 +177,32 @@ class StageReuseTest(unittest.TestCase):
                 context=self.parent_context,
                 outputs={"model": self.output},
             )
+        with self.assertRaisesRegex(StageReuseError, "not a live provisional"):
+            write_stage_receipt(
+                self.parent,
+                project=PROJECT,
+                stage_id=STAGE,
+                context=self.parent_context,
+                outputs={"model": self.output},
+                allow_provisional_manifest=True,
+            )
+
+    def test_terminal_interrupted_manifest_is_not_live_provisional(self) -> None:
+        self._write_summary("interrupted", "success")
+        self._write_manifest("interrupted")
+        manifest_path = self.parent / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["lifecycle_state"] = "terminal"
+        self._write_json(manifest_path, manifest)
+        with self.assertRaisesRegex(StageReuseError, "not a live provisional"):
+            write_stage_receipt(
+                self.parent,
+                project=PROJECT,
+                stage_id=STAGE,
+                context=self.parent_context,
+                outputs={"model": self.output},
+                allow_provisional_manifest=True,
+            )
 
     def test_summary_and_manifest_status_must_match_and_be_terminal(self) -> None:
         for summary_status, manifest_status in (

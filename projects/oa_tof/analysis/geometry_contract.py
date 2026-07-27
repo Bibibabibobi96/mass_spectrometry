@@ -25,11 +25,11 @@ def _close(label: str, actual: float, expected: float, tolerance: float = 1e-10)
         raise ValueError(f"inconsistent {label}: {actual} != {expected}")
 
 
-def _input_label(path: Path) -> str:
+def _input_label(path: Path, run_role: str) -> str:
     try:
         return path.resolve().relative_to(PROJECT_ROOT.resolve()).as_posix()
     except ValueError:
-        return str(path.resolve())
+        return f"run_input:{run_role}"
 
 
 def _require_exact_keys(document: dict[str, Any], allowed: set[str], label: str) -> None:
@@ -116,11 +116,13 @@ def resolve_contract(
         "schema_version": 1,
         "role": "oa_tof_resolved_contract_do_not_edit",
         "inputs": {
-            "baseline": _input_label(baseline_path),
+            "baseline": _input_label(baseline_path, "candidate_baseline.json"),
             "baseline_sha256": _sha256(baseline_path),
-            "mode": _input_label(mode_path),
+            "mode": _input_label(mode_path, "candidate_science_mode.json"),
             "mode_sha256": _sha256(mode_path),
-            "solver_numerics": _input_label(numerics_path),
+            "solver_numerics": _input_label(
+                numerics_path, "candidate_solver_numerics.json"
+            ),
             "solver_numerics_sha256": _sha256(numerics_path),
         },
         "coordinate_convention": coordinate,

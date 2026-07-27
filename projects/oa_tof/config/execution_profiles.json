@@ -84,20 +84,24 @@
       "supported_design_variables": ["reflectron_midgrid_voltage"],
       "supported_constraints": [],
       "deliverable_outputs": ["simulation_results", "comsol_model", "simion_model", "cad", "validation_report"],
-      "required_bindings": ["candidate_workflow_plan"],
+      "required_bindings": ["particle_source_seed"],
       "steps": [
         {
           "step_id": "candidate_workflow",
           "kind": "run",
           "shell": "python",
-          "entrypoint": "workflows/design_candidate/run_bound_candidate_workflow.py",
+          "entrypoint": "workflows/design_candidate/run_candidate.py",
           "run_id_template": null,
-          "arguments": ["{design_plan_path}", "{candidate_workflow_plan}"]
+          "arguments": [
+            "--request", "{request_path}",
+            "--run-id", "{run_id}",
+            "--particle-source-seed", "{particle_source_seed}"
+          ]
         }
       ],
       "limitations": [
         "Validated for zero-change reproduction and reflectron_midgrid_voltage changes at 524 Da with the N=100 structural gate",
-        "Requires a separately compiled and frozen candidate workflow plan from the same approved design request and run_id",
+        "Compiles and freezes the approved request under the design plan run_id; particle_source_seed is the only required runtime binding",
         "Does not evaluate resolving power, optimize variables, promote formal assets, or authorize performance claims"
       ]
     }

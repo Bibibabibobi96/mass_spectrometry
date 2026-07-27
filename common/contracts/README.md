@@ -15,6 +15,9 @@
 `stage_receipts/<stage_id>.json`，随后在父run最终manifest中冻结该receipt、summary、全部阶段输出及
 `inputs/source/solver`三类上下文文件。历史上没有原生receipt的run不得事后补写或通过共享层兼容；
 需要时重新完成一次全流程运行，建立首个可续跑父run。
+原生runner在运行期间仍须保留`status=interrupted`的 provisional manifest。项目只有在该manifest与
+同run的`interrupted/running` summary身份一致时，才可显式允许共享入口写receipt或provenance；每次
+写入后立即刷新provisional manifest。最终`success/failed/interrupted` manifest仍禁止任何续写。
 
 子run先在自己的run目录冻结三类上下文，并由`run_config.inputs`逐文件声明这些上下文以及将生成的
 `inputs/stage_reuse_provenance.json`，再调用唯一发布入口`validate_and_write_stage_reuse`。父子run

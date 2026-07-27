@@ -55,13 +55,18 @@
   自动计划不包含晋升，正式baseline与formal在候选期保持只读。
 - 候选运行三件套生命周期：[`analysis/candidate_run_lifecycle.py`](analysis/candidate_run_lifecycle.py)；
   从scratch原子启动完整run，冻结request/proposal/baseline/resolved/diff五项输入，并对
-  success/failed/interrupted统一写根`summary.json/run_manifest.json`。
-- 集成候选执行：[`workflows/design_candidate/run_candidate_workflow.py`](workflows/design_candidate/run_candidate_workflow.py)；顺序调用N=100
-  粒子表、COMSOL、SIMION、CAD和结构/合同验收，任何终态均由上述生命周期后端统一收口，不含晋升。
-- 设计计划绑定入口：[`workflows/design_candidate/run_bound_candidate_workflow.py`](workflows/design_candidate/run_bound_candidate_workflow.py)；
-  只执行同获批request、同run_id且变量属于已验证运行时覆盖的冻结候选计划；当前覆盖为零变化及
-  `reflectron_midgrid_voltage`，范围由
-  [`config/modes/design_candidate.json`](config/modes/design_candidate.json)限制。
+  success/failed/interrupted统一写根`summary.json/run_manifest.json`。它是Candidate执行核心调用的内部
+  API，不再提供第二个公开CLI。
+- 唯一Candidate运行入口：[`workflows/design_candidate/run_candidate.py`](workflows/design_candidate/run_candidate.py)；
+  使用者只提供同目录含`candidate_proposal.json`的获批request、run ID、本次显式seed，以及可选的
+  单一父run和连续复用边界。固定顺序为粒子表、COMSOL、SIMION、CAD、结构验收；结构验收永不复用。
+  `20260727_175500__test__cross__candidate-receipt-bootstrap-pathfix-n100`已完成全流程bootstrap，
+  `20260727_181500__test__cad__candidate-reuse-child-n100`已完成真实CAD-only child，因此旧bound包装层
+  已删除。
+- Candidate执行核心：[`workflows/design_candidate/run_candidate_workflow.py`](workflows/design_candidate/run_candidate_workflow.py)；顺序调用N=100
+  粒子表、COMSOL、SIMION、CAD和结构/合同验收，任何终态均由上述生命周期后端统一收口，不含晋升；
+  三个商业阶段的receipt为强制合同，不存在无receipt兼容模式。正常异常和超时收口为`failed`，只有
+  外部中止为`interrupted`；该模块不再提供第二个公开CLI。
 - 人工设计入口：[`config/baseline.json`](config/baseline.json)；程序入口为自动生成的
   [`config/resolved_geometry.json`](config/resolved_geometry.json)，禁止手改。
 - 全项目门禁：`verify_project.ps1 -Level Static|Candidate|Formal`。
