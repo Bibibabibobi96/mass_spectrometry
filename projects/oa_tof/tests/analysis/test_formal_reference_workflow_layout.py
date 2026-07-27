@@ -14,8 +14,6 @@ class FormalReferenceWorkflowLayoutTests(unittest.TestCase):
             "run_coupled_baseline_validation.ps1",
             "run_formal_validation.ps1",
             "run_oatof_formal_cad_sync.m",
-            "prepare_formal_vnext.py",
-            "run_formal_vnext.py",
             "verify_geometry_contract.ps1",
             "verify_geometry_derivation.py",
         }

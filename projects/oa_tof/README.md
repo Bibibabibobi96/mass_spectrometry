@@ -118,13 +118,6 @@
   [`workflows/formal_reference/run_formal_validation.ps1`](workflows/formal_reference/run_formal_validation.ps1)；
   发布器只在
   两端达到机器契约样本量、统一比较PASS且当前资产/结果SHA齐全时更新机器契约。
-- Formal vNext 只读准备入口：
-  [`workflows/formal_reference/prepare_formal_vnext.py`](workflows/formal_reference/prepare_formal_vnext.py)；
-  它只从成功、未晋升的非Formal Candidate run冻结N=1000执行计划，绝不读取或写入旧Formal资产、启动求解器或发布。
-- Formal vNext 分阶段生命周期入口：
-  [`workflows/formal_reference/run_formal_vnext.py`](workflows/formal_reference/run_formal_vnext.py)；
-  它只物化独立run并按N=1000 COMSOL、SIMION、CAD、跨求解器分析、GUI/CAD重开、promotion预检的固定顺序编排。
-  默认执行器拒绝商业软件；实际执行器与promotion transaction仍须独立实现、审查及授权。
 - 耦合纵向baseline的老/新理论与老/新N=1000主比较入口：
   [`workflows/formal_reference/run_coupled_baseline_validation.ps1`](workflows/formal_reference/run_coupled_baseline_validation.ps1)。
 - 三栅加速器时间聚焦参考实现：
