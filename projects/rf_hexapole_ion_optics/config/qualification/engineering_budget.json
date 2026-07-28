@@ -5,7 +5,7 @@
   "contract_id": "hexapole_no_acceleration_n100_baseline_pilot_budget_v1",
   "preregistered_before_run": true,
   "pilot_authorization": {
-    "authorized": false,
+    "authorized": true,
     "scope": {
       "project_id": "rf_hexapole_ion_optics",
       "runtime_profile_id": "no_acceleration_full_length",
@@ -36,5 +36,5 @@
     "reason": "pilot_measurements_required"
   },
   "budget_exhaustion_result": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
-  "claim_limit": "No hexapole commercial solver pilot or matrix run is authorized by this contract."
+  "claim_limit": "Only the hexapole no-acceleration N=100 baseline pair is authorized. Refined tiers, acceleration modes, N=1000 and the full matrix remain unauthorized until the baseline resources and functional classifications are recorded."
 }
