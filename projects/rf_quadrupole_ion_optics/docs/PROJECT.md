@@ -115,7 +115,8 @@ COMSOL首次空间档在`MESH_COMPLETE`
 后以17.752 GB超过原17.180 GB进程树帽而失败关闭，当时系统仍有11.35 GB可用。预算v7保留
 8.59 GB系统可用内存底线、把进程树帽调整为21.475 GB后，唯一人工替代运行仍升至21.835 GB，
 同时系统可用内存降至7.653 GB。COMSOL空间收敛因此为`INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`；
-不再抬高内存帽，当前无商业求解器授权。功能分类使用已有
+不再抬高内存帽。当前只授权出口孔板加速N=100的一对双求解器baseline；任何加密档、N=1000
+和完整矩阵未授权。功能分类使用已有
 `functional_transport_acceptance.json`；连续相空间与minimum relevant effect仍缺少下游依据，必须保持
 `INCONCLUSIVE`。正式
 three-mode dispersion binding只能在真实三模式handoff文件及SHA产生后发布，禁止占位伪造。

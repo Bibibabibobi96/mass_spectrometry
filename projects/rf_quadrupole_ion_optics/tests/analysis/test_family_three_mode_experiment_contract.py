@@ -236,7 +236,11 @@ class FamilyThreeModeExperimentContractTests(unittest.TestCase):
             ],
             "INCONCLUSIVE",
         )
-        self.assertFalse(budget["pilot_authorization"]["authorized"])
+        self.assertTrue(budget["pilot_authorization"]["authorized"])
+        self.assertEqual(
+            budget["pilot_authorization"]["scope"]["runtime_profile_id"],
+            "exit_aperture_plate_acceleration",
+        )
         self.assertFalse(budget["full_matrix_authorization"]["authorized"])
         self.assertEqual(
             budget["budget_exhaustion_result"],
@@ -287,7 +291,11 @@ class FamilyThreeModeExperimentContractTests(unittest.TestCase):
                 "A formal dispersion binding must not be fabricated before solver output",
             )
         budget = load(CONFIG / "family_experiment" / "engineering_budget.json")
-        self.assertFalse(budget["pilot_authorization"]["authorized"])
+        self.assertTrue(budget["pilot_authorization"]["authorized"])
+        self.assertEqual(
+            budget["pilot_authorization"]["scope"]["runtime_profile_id"],
+            "exit_aperture_plate_acceleration",
+        )
         self.assertFalse(budget["full_matrix_authorization"]["authorized"])
 
     def test_no_acceleration_qualification_closes_only_functional_transport(
