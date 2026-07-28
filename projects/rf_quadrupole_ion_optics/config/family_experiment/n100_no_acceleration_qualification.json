@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "role": "multipole_project_numerical_qualification_record",
+  "project_id": "rf_quadrupole_ion_optics",
+  "design_profile_id": "no_acceleration_full_length",
+  "particle_count": 100,
+  "recorded_after_runs": true,
+  "preregistration": {
+    "path": "projects/rf_quadrupole_ion_optics/config/family_experiment/n100_convergence_preregistration.json",
+    "sha256_before_temporal_runs": "E5104076A295A8FA113D3E55DF6C3859A4590183B14219B763AA6C4F81DB7314",
+    "git_commit_before_temporal_runs": "7f88a23"
+  },
+  "method": {
+    "path": "common/multipole/numerical_qualification.json",
+    "sha256": "3919607C1F6E220D9DF11BE66A8C2CD01640F32D48D9A3AE82A1662F482925CD",
+    "acceptance_path": "common/multipole/functional_transport_acceptance.json",
+    "acceptance_sha256": "A4C4F4A6395AAB0F59E0BC8F380E87CDA0F1AD265EC19E66F844C14FF12A98D9"
+  },
+  "particle_source": {
+    "path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_100.csv",
+    "sha256": "0125C3AB02B2321EF26A3A913CF6EC04325FD0D48597D2CB439D0CE42411662F"
+  },
+  "runs": {
+    "simion": {
+      "baseline": {
+        "run_id": "20260728_194230__sim__simion__rf-quadrupole-ion-optics-no-acceleration-full-length__resolved-l3",
+        "manifest_sha256": "F3AD8329053D76C967C16C86F539BB7CB8A6D39D0B1E321F721735E4DC9CDB33"
+      },
+      "spatial_refined": {
+        "run_id": "20260728_200608__sim__simion__rf-quadrupole-ion-optics-no-acceleration-full-length__resolved-l3",
+        "manifest_sha256": "2D217A2239BE360EC8B2826443A0709C8996AA3405FF347738DDBDB4CC01D7F6"
+      },
+      "temporal_refined": {
+        "run_id": "20260728_202457__sim__simion__rf-quadrupole-ion-optics-no-acceleration-full-length__resolved-l3",
+        "manifest_sha256": "0B24F33E9514222B84C0431D96B88A97C64CC2B80B2AF3465C323FFF8D019742"
+      }
+    },
+    "comsol": {
+      "baseline": {
+        "run_id": "20260728_194545__sim__comsol__rf-quadrupole-ion-optics-no-acceleration-full-length__resolved-l3",
+        "manifest_sha256": "B4F903FF8C460FD5A25FBF5A2BC307A6394570C60243C256847235D8462F7A45"
+      },
+      "spatial_refined": {
+        "run_id": "20260728_200956__sim__comsol__rf-quadrupole-ion-optics-no-acceleration-full-length__resolved-l3",
+        "manifest_sha256": "935216976117B3A9A5D9ACE8BC748DADB4157134690272CE51149DDE5A7CD6D6"
+      },
+      "temporal_refined": {
+        "run_id": "20260728_202856__sim__comsol__rf-quadrupole-ion-optics-no-acceleration-full-length__resolved-l3",
+        "manifest_sha256": "80A957267EB52F927651A5B290AC67A0EB15D47CA24A740FC74825BE3462752D"
+      }
+    }
+  },
+  "functional_transport": {
+    "status": "PASS",
+    "transmitted_particle_count_each_final_run": 100,
+    "zero_rf_control_transmitted_particle_count_each_final_run": 21,
+    "same_solver_handoff_particle_id_sets": "exact_match",
+    "cross_solver_handoff_particle_id_sets": "exact_match",
+    "positive_working_radius_margin_each_run": true
+  },
+  "continuous_diagnostics": {
+    "status": "INCONCLUSIVE_NO_SOURCED_ERROR_BUDGET",
+    "same_solver_spatial_rms_radius_relative_difference": {
+      "simion": 0.09572350583904062,
+      "comsol": 0.009195612132894583
+    },
+    "same_solver_temporal_rms_radius_relative_difference": {
+      "simion": 0.0003394722144390369,
+      "comsol": 0.0020087149931999593
+    },
+    "final_cross_solver_relative_difference": {
+      "rms_radius": 0.03586250785732051,
+      "rms_divergence": 0.03066297228575667,
+      "mean_tof": 0.00018259462347058167,
+      "mean_energy": 0.0010975541289935256
+    }
+  },
+  "resource_budget": {
+    "status": "PASS",
+    "automatic_retry_count": 0,
+    "largest_wall_clock_seconds": 592.194,
+    "largest_peak_run_directory_bytes": 1030754740,
+    "largest_peak_process_tree_working_set_bytes": 8807837696,
+    "largest_final_retained_bytes": 1985205
+  },
+  "decision": {
+    "functional_collision_free_transport": "CLOSED",
+    "continuous_numerical_equivalence": "INCONCLUSIVE",
+    "further_brute_force_refinement": "NOT_AUTHORIZED",
+    "next_scope": "Separate preregistration is required for another radial order or acceleration mode."
+  },
+  "claim_limit": "PASS covers only N=100 collision-free functional transport for the named quadrupole no-acceleration profile. It does not qualify continuous phase-space equivalence, N=1000 dispersion, acceleration modes, collision cooling, mass filtering, mechanical design, Candidate or Formal status."
+}

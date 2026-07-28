@@ -106,12 +106,15 @@ runner CLI不暴露任意resolved、RF/DC、几何、轴向加速或数值标量
 基线pilot后登记的v2空间敏感性pair已经完成：COMSOL局部`0.5→0.35 mm`的RMS半径相对变化约
 `0.92%`，SIMION全局`0.4→0.3 mm`约`9.57%`；两者的100个RF-on粒子身份和功能分类均保持一致，
 但这些连续量没有来源充分的误差预算，仍为`INCONCLUSIVE`。空间结果后、时间档运行前登记的v3
-只授权无加速N=100时间敏感性pair：COMSOL固定`0.35 mm`并将`80→160`步/周期，SIMION固定
-`0.3 mm`并将`40→80`步/周期。硬帽仍为COMSOL
-1200 s、SIMION 720 s、2 GiB临时run目录、16 GiB进程树内存和零自动重试。功能分类使用已有
+只授权的无加速N=100时间敏感性pair也已完成：COMSOL固定`0.35 mm`的`80→160`步/周期使RMS半径
+变化约`0.20%`，SIMION固定`0.3 mm`的`40→80`步/周期约`0.034%`。最终两求解器的功能分类和
+全部传输粒子身份闭合，RMS半径诊断差约`3.59%`；连续相空间仍不能贴数值等价PASS。实测最大值为
+592.194 s、1.031 GB瞬态目录、8.808 GB进程树内存，零自动重试。当前授权已关闭。功能分类使用已有
 `functional_transport_acceptance.json`；连续相空间与minimum relevant effect仍缺少下游依据，必须保持
 `INCONCLUSIVE`。正式
 three-mode dispersion binding只能在真实三模式handoff文件及SHA产生后发布，禁止占位伪造。
+完整运行身份和诊断值登记在
+`../config/family_experiment/n100_no_acceleration_qualification.json`。
 
 ### RF+DC质量过滤
 

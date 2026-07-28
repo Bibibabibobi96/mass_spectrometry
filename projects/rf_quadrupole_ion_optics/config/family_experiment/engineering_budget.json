@@ -2,10 +2,10 @@
   "schema_version": 1,
   "role": "multipole_engineering_budget_contract",
   "project_id": "rf_quadrupole_ion_optics",
-  "contract_id": "quadrupole_no_acceleration_n100_temporal_sensitivity_budget_v3",
+  "contract_id": "quadrupole_no_acceleration_n100_discretization_completed_v4",
   "preregistered_before_run": true,
   "pilot_authorization": {
-    "authorized": true,
+    "authorized": false,
     "scope": {
       "project_id": "rf_quadrupole_ion_optics",
       "runtime_profile_id": "no_acceleration_full_length_n100_temporal_refined",
@@ -33,8 +33,8 @@
   },
   "full_matrix_authorization": {
     "authorized": false,
-    "reason": "pilot_measurements_required"
+    "reason": "next_scope_requires_separate_preregistration"
   },
   "budget_exhaustion_result": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
-  "claim_limit": "Revised after the successful governed spatial-sensitivity pair and before any temporal-refined run. Only the quadrupole no-acceleration N=100 temporal-sensitivity pair (COMSOL local 0.35 mm at 160 RF steps per period and SIMION global 0.3 mm at 80 RF steps per period) is authorized. Further refinement, acceleration modes, N=1000 and the full matrix remain unauthorized."
+  "claim_limit": "Closed after the successful governed temporal-sensitivity pair. No commercial-solver run is currently authorized. Further refinement, acceleration modes, N=1000 and the full matrix require a separate preregistered engineering budget."
 }

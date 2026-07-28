@@ -236,11 +236,7 @@ class FamilyThreeModeExperimentContractTests(unittest.TestCase):
             ],
             "INCONCLUSIVE",
         )
-        self.assertTrue(budget["pilot_authorization"]["authorized"])
-        self.assertEqual(
-            budget["pilot_authorization"]["scope"]["runtime_profile_id"],
-            "no_acceleration_full_length_n100_temporal_refined",
-        )
+        self.assertFalse(budget["pilot_authorization"]["authorized"])
         self.assertFalse(budget["full_matrix_authorization"]["authorized"])
         self.assertEqual(
             budget["budget_exhaustion_result"],
@@ -291,8 +287,46 @@ class FamilyThreeModeExperimentContractTests(unittest.TestCase):
                 "A formal dispersion binding must not be fabricated before solver output",
             )
         budget = load(CONFIG / "family_experiment" / "engineering_budget.json")
-        self.assertTrue(budget["pilot_authorization"]["authorized"])
+        self.assertFalse(budget["pilot_authorization"]["authorized"])
         self.assertFalse(budget["full_matrix_authorization"]["authorized"])
+
+    def test_no_acceleration_qualification_closes_only_functional_transport(
+        self,
+    ) -> None:
+        result = load(
+            CONFIG
+            / "family_experiment"
+            / "n100_no_acceleration_qualification.json"
+        )
+        self.assertEqual(result["functional_transport"]["status"], "PASS")
+        self.assertEqual(
+            result["continuous_diagnostics"]["status"],
+            "INCONCLUSIVE_NO_SOURCED_ERROR_BUDGET",
+        )
+        self.assertEqual(
+            result["decision"],
+            {
+                "functional_collision_free_transport": "CLOSED",
+                "continuous_numerical_equivalence": "INCONCLUSIVE",
+                "further_brute_force_refinement": "NOT_AUTHORIZED",
+                "next_scope": (
+                    "Separate preregistration is required for another radial "
+                    "order or acceleration mode."
+                ),
+            },
+        )
+        self.assertEqual(
+            result["method"]["sha256"],
+            sha256(REPO_ROOT / result["method"]["path"]),
+        )
+        self.assertEqual(
+            result["method"]["acceptance_sha256"],
+            sha256(REPO_ROOT / result["method"]["acceptance_path"]),
+        )
+        self.assertEqual(
+            result["particle_source"]["sha256"],
+            sha256(REPO_ROOT / result["particle_source"]["path"]),
+        )
 
     def test_public_runners_propagate_typed_mode_identity(self) -> None:
         comsol = (REPO_ROOT / "common" / "multipole" / "run_finite_3d_transport.ps1")
