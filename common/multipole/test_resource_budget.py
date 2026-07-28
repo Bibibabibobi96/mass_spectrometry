@@ -19,8 +19,8 @@ OCT = "rf_octupole_ion_optics"
 class ResourceBudgetTests(unittest.TestCase):
     def validate(
         self,
-        project_id: str = OCT,
-        runtime_profile_id: str = "no_acceleration_full_length_n100_temporal_refined",
+        project_id: str = QUAD,
+        runtime_profile_id: str = "segmented_rod_axial_acceleration",
         retention_class: str = "compact",
     ) -> dict:
         runtime = resolve_runtime_profile(REPO_ROOT, project_id, runtime_profile_id)
@@ -35,10 +35,20 @@ class ResourceBudgetTests(unittest.TestCase):
             retention_class=retention_class,
         )
 
-    def test_no_commercial_solver_pilot_remains_authorized(self) -> None:
-        for project_id in (QUAD, HEX, OCT):
+    def test_only_quadrupole_segmented_acceleration_baseline_is_authorized(self) -> None:
+        validated = self.validate()
+        self.assertEqual(
+            validated["runtime_profile_id"],
+            "segmented_rod_axial_acceleration",
+        )
+        for project_id in (HEX, OCT):
             with self.assertRaisesRegex(ValueError, "not authorized"):
-                self.validate(project_id)
+                self.validate(
+                    project_id,
+                    "no_acceleration_full_length_n100_temporal_refined",
+                )
+        with self.assertRaisesRegex(ValueError, "differs from authorized scope"):
+            self.validate(QUAD, "no_acceleration_full_length_n100_temporal_refined")
 
     def test_high_cost_runners_validate_before_creating_run_package(self) -> None:
         for name in ("run_finite_3d_transport.ps1", "run_simion_finite_3d_transport.ps1"):
@@ -173,7 +183,10 @@ class ResourceBudgetTests(unittest.TestCase):
                 timeout=20,
             )
             self.assertNotEqual(completed.returncode, 0)
-            self.assertIn("not authorized", completed.stdout + completed.stderr)
+            self.assertIn(
+                "differs from authorized scope",
+                completed.stdout + completed.stderr,
+            )
             run_dir = (
                 REPO_ROOT.parent
                 / "artifacts/projects"

@@ -109,7 +109,8 @@ runner CLI不暴露任意resolved、RF/DC、几何、轴向加速或数值标量
 只授权的无加速N=100时间敏感性pair也已完成：COMSOL固定`0.35 mm`的`80→160`步/周期使RMS半径
 变化约`0.20%`，SIMION固定`0.3 mm`的`40→80`步/周期约`0.034%`。最终两求解器的功能分类和
 全部传输粒子身份闭合，RMS半径诊断差约`3.59%`；连续相空间仍不能贴数值等价PASS。实测最大值为
-592.194 s、1.031 GB瞬态目录、8.808 GB进程树内存，零自动重试。当前授权已关闭。功能分类使用已有
+592.194 s、1.031 GB瞬态目录、8.808 GB进程树内存，零自动重试。当前只授权分段杆轴向加速
+N=100的一对双求解器baseline pilot；加密档、出口板加速、N=1000和完整矩阵未授权。功能分类使用已有
 `functional_transport_acceptance.json`；连续相空间与minimum relevant effect仍缺少下游依据，必须保持
 `INCONCLUSIVE`。正式
 three-mode dispersion binding只能在真实三模式handoff文件及SHA产生后发布，禁止占位伪造。
