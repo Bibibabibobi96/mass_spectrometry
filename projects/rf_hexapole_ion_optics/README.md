@@ -42,8 +42,8 @@
 - 数值与dispersion预登记位于[`config/qualification/`](config/qualification/)；当前没有有依据的连续量
   阈值和完整矩阵资源预算，因此连续资格结论必须为`INCONCLUSIVE`。当前只授权
   无加速N=100 baseline、空间和时间敏感性矩阵已完成，功能传输闭合；连续相空间仍为
-  `INCONCLUSIVE`。当前不授权任何商业求解器运行；进一步加密、加速模式、N=1000和完整矩阵
-  必须另行预注册。
+  `INCONCLUSIVE`。当前只授权分段杆轴向加速N=100的一对双求解器baseline；加密档、出口孔板
+  加速、N=1000和完整矩阵仍未授权。
 - 执行组合：[`config/execution_profiles.json`](config/execution_profiles.json)保留compile-only门禁；
   商业运行可由薄wrapper绑定同一profile，未提供evidence合同即为`UNQUALIFIED`。
 - 运行入口：[`analysis/run_transport.ps1`](analysis/run_transport.ps1)

@@ -67,8 +67,8 @@ Mathieu稳定图。L1/L2/L3迁移前小样本及2 mm连接器数值只保留在
 - L2从兼容alias `baseline_finite_3d`即时编译resolved，再使用二维COMSOL场的谐波展开；
   只发布逐候选metrics，不选择或回写L3几何。未做网格收敛，不允许机械设计、Candidate或Formal声明。
 - L3使用20 mm内半径连续接地圆柱外壳、独立外壳封闭端盖、四段有限圆杆、两块带孔接地接口板和
-  两段有限外部区；当前三模式均尚未用公共N=100前缀完成COMSOL/SIMION功能、空间/时间收敛和连续
-  相空间数值等价，也未完成Candidate资格门禁。
+  两段有限外部区；无加速模式已用公共N=100前缀完成双求解器baseline、空间和时间功能矩阵，
+  连续相空间仍为`INCONCLUSIVE`。两种加速模式尚未恢复当前v2功能资格，也未完成Candidate资格门禁。
 
 ## 权威入口
 
@@ -120,7 +120,8 @@ N=100 baseline和空间敏感性双求解器pair已经完成：各档两边均�
 传输粒子身份一致；0.35/0.3 mm加密解间的RMS半径相对差约`2.47%`。当前只授权固定该空间离散的
 时间敏感性pair也已完成；SIMION时间RMS半径变化约`0.092%`，COMSOL约`5.11%`，最终跨求解器
 RMS半径差约`7.67%`。功能传输闭合，但连续结果只能`INCONCLUSIVE`，不得增加第四档。实测最大值
-为578.056 s、1.031 GB瞬态目录、8.893 GB进程树内存，零自动重试；当前商业运行授权已关闭。完整
+为578.056 s、1.031 GB瞬态目录、8.893 GB进程树内存，零自动重试；当前只授权分段杆轴向加速
+N=100的一对双求解器baseline，加密档和其他模式未授权。完整
 身份登记在`../config/qualification/n100_no_acceleration_qualification.json`。正式
 `three_mode_dispersion_binding`还需要真实solver handoff state路径/SHA，只能在真实run后生成；静态阶段
 不得伪造。没有N=1000真实运行、GUI/CAD同步与formal asset promotion时不得

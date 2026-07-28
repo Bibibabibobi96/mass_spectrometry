@@ -19,8 +19,8 @@ OCT = "rf_octupole_ion_optics"
 class ResourceBudgetTests(unittest.TestCase):
     def validate(
         self,
-        project_id: str = QUAD,
-        runtime_profile_id: str = "exit_aperture_plate_acceleration_n100_spatial_refined",
+        project_id: str = HEX,
+        runtime_profile_id: str = "segmented_rod_axial_acceleration",
         retention_class: str = "compact",
     ) -> dict:
         runtime = resolve_runtime_profile(REPO_ROOT, project_id, runtime_profile_id)
@@ -35,15 +35,22 @@ class ResourceBudgetTests(unittest.TestCase):
             retention_class=retention_class,
         )
 
-    def test_no_commercial_solver_pilot_remains_authorized(self) -> None:
-        profiles = {
-            QUAD: "exit_aperture_plate_acceleration_n100_spatial_refined",
-            HEX: "no_acceleration_full_length_n100_temporal_refined",
-            OCT: "no_acceleration_full_length_n100_temporal_refined",
-        }
-        for project_id, runtime_profile_id in profiles.items():
+    def test_only_hexapole_segmented_acceleration_baseline_is_authorized(self) -> None:
+        validated = self.validate()
+        self.assertEqual(
+            validated["runtime_profile_id"],
+            "segmented_rod_axial_acceleration",
+        )
+        for project_id in (QUAD, OCT):
             with self.assertRaisesRegex(ValueError, "not authorized"):
-                self.validate(project_id, runtime_profile_id)
+                profile = (
+                    "exit_aperture_plate_acceleration_n100_spatial_refined"
+                    if project_id == QUAD
+                    else "no_acceleration_full_length_n100_temporal_refined"
+                )
+                self.validate(project_id, profile)
+        with self.assertRaisesRegex(ValueError, "differs from authorized scope"):
+            self.validate(HEX, "no_acceleration_full_length_n100_temporal_refined")
 
     def test_high_cost_runners_validate_before_creating_run_package(self) -> None:
         for name in ("run_finite_3d_transport.ps1", "run_simion_finite_3d_transport.ps1"):
