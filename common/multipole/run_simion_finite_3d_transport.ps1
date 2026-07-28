@@ -285,6 +285,7 @@ try{
   $interfaces=$design.interfaces_mm
   $axialTopology=[string]$design.axial_drive.topology
   $segmented=($axialTopology-eq'segmented_rod_axial_acceleration')
+  $segmentedRodGeometry=($null-ne$design.segmentation.segmented_rod_array)
   $exitAperturePlateStep=($axialTopology-eq'exit_aperture_plate_potential_step')
   $handoffPlaneMm=[double]$interfaces.exit.handoff_plane_z_mm
   $censusPlaneMm=[double]$interfaces.exit.census_plane_z_mm
@@ -305,7 +306,7 @@ try{
   }
   $segmentedLua='';$groundElectrodeId=3;$outputElectrodeId=4
   $physicalDetectorElectrodeId=if($rectangular){5}else{4}
-  if($segmented){
+  if($segmentedRodGeometry){
     $segments=$design.segmentation.segmented_rod_array
     $entries=@($segments.electrodes|ForEach-Object{
       "{electrode_id=$([int]$_.electrode_id),electrode_group=$([int]$_.electrode_group),common_mode_v=$([double]$_.common_mode_V)}"

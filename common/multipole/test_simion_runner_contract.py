@@ -157,6 +157,18 @@ class SimionRunnerContractTests(unittest.TestCase):
         self.assertIn("transport_waveform == 'cosine'", lua)
         self.assertIn("unsupported RF waveform", lua)
 
+    def test_mechanically_segmented_rods_always_receive_full_length_rf(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8")
+        self.assertIn(
+            "$segmentedRodGeometry=($null-ne$design.segmentation.segmented_rod_array)",
+            source,
+        )
+        self.assertIn("if($segmentedRodGeometry){", source)
+        self.assertIn(
+            "$segmented=($axialTopology-eq'segmented_rod_axial_acceleration')",
+            source,
+        )
+
     def test_metrics_are_unqualified_without_explicit_evidence(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
         self.assertIn("$qualification='UNQUALIFIED'", source)
