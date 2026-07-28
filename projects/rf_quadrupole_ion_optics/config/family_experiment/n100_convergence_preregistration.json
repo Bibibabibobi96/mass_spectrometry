@@ -2,8 +2,28 @@
   "schema_version": 1,
   "role": "multipole_project_numerical_convergence_preregistration",
   "project_id": "rf_quadrupole_ion_optics",
-  "contract_id": "quadrupole_family_three_mode_n100_convergence_v1",
+  "contract_id": "quadrupole_family_three_mode_n100_convergence_v2",
   "preregistered_before_run": true,
+  "revision_basis": {
+    "status": "revised_after_baseline_pilot_before_refined_runs",
+    "baseline_run_ids": {
+      "comsol": "20260728_194545__sim__comsol__rf-quadrupole-ion-optics-no-acceleration-full-length__resolved-l3",
+      "simion": "20260728_194230__sim__simion__rf-quadrupole-ion-optics-no-acceleration-full-length__resolved-l3"
+    },
+    "measured_resources": {
+      "comsol": {
+        "wall_clock_seconds": 285.754,
+        "peak_run_directory_bytes": 458543952,
+        "peak_process_tree_working_set_bytes": 6537928704
+      },
+      "simion": {
+        "wall_clock_seconds": 147.132,
+        "peak_run_directory_bytes": 255968758,
+        "peak_process_tree_working_set_bytes": 279146496
+      }
+    },
+    "decision": "Replace the brute-force refined tiers with the least expensive adjacent sensitivity levels likely to stay inside the frozen resource caps. Refined results remain INCONCLUSIVE for continuous observables without a sourced error budget."
+  },
   "particle_source": {
     "path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_100.csv",
     "sha256": "0125C3AB02B2321EF26A3A913CF6EC04325FD0D48597D2CB439D0CE42411662F",
@@ -29,7 +49,7 @@
   "solver_plans": {
     "comsol": {
       "registry": "projects/rf_quadrupole_ion_optics/config/multipole_transport_comsol_solver_numerics.json",
-      "registry_sha256": "8333CB7738E259EB9AABDDC5F9E1F620906C517A3BAF8DED6A0FF024E4CE1854",
+      "registry_sha256": "17B21A505E0DCBB298711944F80E71035C1282D79342D7290C4D65DA8BD01CD1",
       "tiers": {
         "baseline": {
           "profile_id": "baseline_finite_3d",
@@ -38,19 +58,19 @@
         },
         "spatial_refined": {
           "profile_id": "n100_spatial_refined",
-          "working_region_maximum_element_size_mm": 0.25,
+          "working_region_maximum_element_size_mm": 0.35,
           "rf_steps_per_period": 80
         },
         "temporal_refined": {
           "profile_id": "n100_temporal_refined",
-          "working_region_maximum_element_size_mm": 0.25,
+          "working_region_maximum_element_size_mm": 0.35,
           "rf_steps_per_period": 160
         }
       }
     },
     "simion": {
       "registry": "projects/rf_quadrupole_ion_optics/config/multipole_transport_simion_solver_numerics.json",
-      "registry_sha256": "F7D7A968AC664B203981D08BECD8B30E49D5275E2FFCAEDB2A3BBE1C1128008D",
+      "registry_sha256": "F1209F85185737ABCEF788B77732DE0B1BCFF911DA90D173446B4A9CACD0C4AF",
       "tiers": {
         "baseline": {
           "profile_id": "baseline_finite_3d",
@@ -59,12 +79,12 @@
         },
         "spatial_refined": {
           "profile_id": "n100_spatial_refined",
-          "cell_mm": 0.2,
+          "cell_mm": 0.3,
           "rf_steps_per_period": 40
         },
         "temporal_refined": {
           "profile_id": "n100_temporal_refined",
-          "cell_mm": 0.2,
+          "cell_mm": 0.3,
           "rf_steps_per_period": 80
         }
       }
@@ -81,7 +101,7 @@
     },
     "project_engineering_budget_contract": {
       "path": "projects/rf_quadrupole_ion_optics/config/family_experiment/engineering_budget.json",
-      "sha256": "229A0FB605639AAA0ED9C5696E296A90FC3A385B13ABA45B8D60123E822C6F71"
+      "sha256": "EA8499347DE8E684D68982DFA97F800DC6188DEF78398C43D6DBF28A2644AF92"
     }
   },
   "dispersion_binding_publication": {

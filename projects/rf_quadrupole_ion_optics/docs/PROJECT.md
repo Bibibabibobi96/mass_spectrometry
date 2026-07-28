@@ -25,15 +25,16 @@ run编号、故障链和关闭过程冻结在
   19.6 mm导体与三处0.4 mm gap；源释放面、入口板、出口板、handoff和近接口面分别为
   `-1.5 mm`、`[-1.0,-0.5] mm`、`[80.1,80.6] mm`、`80.6 mm`和`81.1 mm`。
 - 无加速、分段杆加速和出口接口板加速已统一为一个机械base上的三种typed电气模式，并绑定四、六、八
-  极杆共同的2 eV N=100/N=1000母样本。N=100空间/时间三档已经预注册，但尚未运行商业求解器，
-  因而当前仍无数值收敛、跨求解器等价、机械、Candidate或Formal PASS。
+  极杆共同的2 eV N=100/N=1000母样本。无加速N=100基线已在统一四段机械几何和统一近接口统计面上
+  完成COMSOL与SIMION真实重跑：RF-on均为100/100，zero-RF均为21/100；这只恢复基线功能分类，
+  空间/时间敏感性、连续相空间等价、机械、Candidate和Formal仍未完成。
 - 旧A/B/C/D四臂合同已由上述三模式实验取代；5 eV独立源不再被解释为一种轴向加速方式。
 
 ## 资格边界
 
 | 对象 | 当前证据 | 当前资格 |
 |---|---|---|
-| 圆柱家族三模式 | 共享base/source及N=100数值矩阵已预注册；无新run | INCONCLUSIVE；商业运行未授权 |
+| 圆柱家族三模式 | 无加速N=100双求解器基线分类一致；其余模式及refined档未运行 | 基线功能分类闭合；完整数值资格仍INCONCLUSIVE |
 | 接口就绪输运 | v1双端100/100及严格相空间比较FAIL | 历史有效负结果；v2重跑待完成 |
 | RF+DC质量过滤 | L0/L1及v1双求解器功能扫描 | v2商业重跑与分辨能力资格待完成 |
 | RF四极杆离子光学→单次反射oa-TOF S2/S3 | v1真实孔/连接器/脉冲累积链贯通 | v2重跑待完成；stage与整机BLOCKED |
@@ -102,9 +103,12 @@ runner CLI不暴露任意resolved、RF/DC、几何、轴向加速或数值标量
 ### 轴向加速
 
 当前三模式只允许typed operating-mode registry中的电气差异，严格共享圆柱机械base、RF和粒子母样本。
-COMSOL预注册为空间档局部`0.5→0.25 mm`，时间档在已选`0.25 mm`细网格上将`80→160`步/周期；
-SIMION为空间档全局`0.4→0.2 mm`，时间档在已选`0.2 mm`细网格上将`40→80`步/周期。acceptance与minimum relevant effect缺少下游依据，结果必须为
-`INCONCLUSIVE`；engineering budget尚缺wall-clock和内存上限，商业运行当前未授权。正式
+基线pilot实测后、refined运行前已把预注册升级为v2：COMSOL空间敏感性档为局部`0.5→0.35 mm`，
+时间档固定`0.35 mm`并将`80→160`步/周期；SIMION空间敏感性档为全局`0.4→0.3 mm`，时间档固定
+`0.3 mm`并将`40→80`步/周期。当前只授权无加速N=100空间敏感性双求解器pair，硬帽为COMSOL
+1200 s、SIMION 720 s、2 GiB临时run目录、16 GiB进程树内存和零自动重试。功能分类使用已有
+`functional_transport_acceptance.json`；连续相空间与minimum relevant effect仍缺少下游依据，必须保持
+`INCONCLUSIVE`。正式
 three-mode dispersion binding只能在真实三模式handoff文件及SHA产生后发布，禁止占位伪造。
 
 ### RF+DC质量过滤

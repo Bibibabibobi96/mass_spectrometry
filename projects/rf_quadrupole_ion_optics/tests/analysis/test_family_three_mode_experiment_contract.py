@@ -193,7 +193,7 @@ class FamilyThreeModeExperimentContractTests(unittest.TestCase):
                     "n100_temporal_refined",
                 )
             ],
-            [(0.5, 80), (0.25, 80), (0.25, 160)],
+            [(0.5, 80), (0.35, 80), (0.35, 160)],
         )
         self.assertEqual(
             [
@@ -207,7 +207,7 @@ class FamilyThreeModeExperimentContractTests(unittest.TestCase):
                     "n100_temporal_refined",
                 )
             ],
-            [(0.4, 40), (0.2, 40), (0.2, 80)],
+            [(0.4, 40), (0.3, 40), (0.3, 80)],
         )
         runtime = load(CONFIG / "runtime_profiles.json")["profiles"]
         self.assertEqual(len(runtime), 12)
@@ -239,7 +239,7 @@ class FamilyThreeModeExperimentContractTests(unittest.TestCase):
         self.assertTrue(budget["pilot_authorization"]["authorized"])
         self.assertEqual(
             budget["pilot_authorization"]["scope"]["runtime_profile_id"],
-            "no_acceleration_full_length",
+            "no_acceleration_full_length_n100_spatial_refined",
         )
         self.assertFalse(budget["full_matrix_authorization"]["authorized"])
         self.assertEqual(
