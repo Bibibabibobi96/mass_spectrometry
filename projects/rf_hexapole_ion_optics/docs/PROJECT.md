@@ -118,9 +118,10 @@ frame、轴向法向、中心向量、RF相位零点clock及场是否到达交�
 N=100/N=1000源和N=100三档数值矩阵已经预登记，但没有有依据的连续量阈值。当前只授权无加速
 N=100 baseline和空间敏感性双求解器pair已经完成：各档两边均为RF 100/100、zero-RF 21/100且
 传输粒子身份一致；0.35/0.3 mm加密解间的RMS半径相对差约`2.47%`。当前只授权固定该空间离散的
-时间敏感性pair，COMSOL/SIMION分别受1200/720 s、2 GiB瞬态目录、16 GiB进程树内存、
-8 GiB最低可用内存、25 MiB compact保留和零自动重试约束。进一步加密和完整商业矩阵尚未授权，
-连续结果只能`INCONCLUSIVE`。正式
+时间敏感性pair也已完成；SIMION时间RMS半径变化约`0.092%`，COMSOL约`5.11%`，最终跨求解器
+RMS半径差约`7.67%`。功能传输闭合，但连续结果只能`INCONCLUSIVE`，不得增加第四档。实测最大值
+为578.056 s、1.031 GB瞬态目录、8.893 GB进程树内存，零自动重试；当前商业运行授权已关闭。完整
+身份登记在`../config/qualification/n100_no_acceleration_qualification.json`。正式
 `three_mode_dispersion_binding`还需要真实solver handoff state路径/SHA，只能在真实run后生成；静态阶段
 不得伪造。没有N=1000真实运行、GUI/CAD同步与formal asset promotion时不得
 声明Formal。碰撞冷却与CAD仍为独立后续阶段。轴向加速若

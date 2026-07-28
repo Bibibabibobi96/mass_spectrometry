@@ -279,12 +279,21 @@ class FamilyExperimentProfileTests(unittest.TestCase):
             self.assertTrue(contract["preregistered_before_run"])
             self.assertTrue(contract[content])
         engineering = load("config/qualification/engineering_budget.json")
-        self.assertTrue(engineering["pilot_authorization"]["authorized"])
-        self.assertEqual(
-            engineering["pilot_authorization"]["scope"]["runtime_profile_id"],
-            "no_acceleration_full_length_n100_temporal_refined",
-        )
+        self.assertFalse(engineering["pilot_authorization"]["authorized"])
         self.assertFalse(engineering["full_matrix_authorization"]["authorized"])
+
+        result = load(
+            "config/qualification/n100_no_acceleration_qualification.json"
+        )
+        self.assertEqual(result["functional_transport"]["status"], "PASS")
+        self.assertEqual(
+            result["continuous_diagnostics"]["status"],
+            "INCONCLUSIVE_NO_SOURCED_ERROR_BUDGET",
+        )
+        self.assertEqual(
+            result["decision"]["further_brute_force_refinement"],
+            "NOT_AUTHORIZED",
+        )
 
 
 if __name__ == "__main__":

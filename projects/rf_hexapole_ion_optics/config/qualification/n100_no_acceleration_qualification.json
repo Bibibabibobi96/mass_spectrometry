@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "role": "multipole_project_numerical_qualification_record",
+  "project_id": "rf_hexapole_ion_optics",
+  "design_profile_id": "no_acceleration_full_length",
+  "particle_count": 100,
+  "recorded_after_runs": true,
+  "preregistration": {
+    "path": "projects/rf_hexapole_ion_optics/config/qualification/n100_convergence_preregistration.json",
+    "sha256_before_temporal_runs": "DD9652F335379258F4E6596A072C2499E35C08B48961B747AC509C72CCBA4BED",
+    "git_commit_before_temporal_runs": "6eeec83"
+  },
+  "method": {
+    "path": "common/multipole/numerical_qualification.json",
+    "sha256": "3919607C1F6E220D9DF11BE66A8C2CD01640F32D48D9A3AE82A1662F482925CD",
+    "acceptance_path": "common/multipole/functional_transport_acceptance.json",
+    "acceptance_sha256": "A4C4F4A6395AAB0F59E0BC8F380E87CDA0F1AD265EC19E66F844C14FF12A98D9"
+  },
+  "particle_source": {
+    "path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_100.csv",
+    "sha256": "0125C3AB02B2321EF26A3A913CF6EC04325FD0D48597D2CB439D0CE42411662F"
+  },
+  "runs": {
+    "simion": {
+      "baseline": ["20260728_205025__sim__simion__rf-hexapole-ion-optics-no-acceleration-full-length__resolved-l3", "2BEBB12D7E87E0150FC0E8AA6A9D13BFB6B651FC175D3428D975FCB9A8807136"],
+      "spatial_refined": ["20260728_210341__sim__simion__rf-hexapole-ion-optics-no-acceleration-full-length__resolved-l3", "F120EB53EC7749B189632386D42385F3A8B540C8235DA09B8ED6175440D7963B"],
+      "temporal_refined": ["20260728_212111__sim__simion__rf-hexapole-ion-optics-no-acceleration-full-length__resolved-l3", "6ABDC3F5E0D19117D33869CF41182497F8AF208803DBC4FDBE2CEB627D67C446"]
+    },
+    "comsol": {
+      "baseline": ["20260728_205400__sim__comsol__rf-hexapole-ion-optics-no-acceleration-full-length__resolved-l3", "E81ECEA4C0AB07D650F514DD6EFE7F904DF9EF0605B5B6F1078BADCDE32E8307"],
+      "spatial_refined": ["20260728_210752__sim__comsol__rf-hexapole-ion-optics-no-acceleration-full-length__resolved-l3", "EE7BAB09CF917C3F3E0FE42244F28273B56CCA457F08C26C6A67089305B248AE"],
+      "temporal_refined": ["20260728_212550__sim__comsol__rf-hexapole-ion-optics-no-acceleration-full-length__resolved-l3", "784B9178BE8B731358FFA3E93294259EF6D6908987241C7F30DAB487D45C5251"]
+    }
+  },
+  "functional_transport": {
+    "status": "PASS",
+    "transmitted_particle_count_each_run": 100,
+    "zero_rf_control_transmitted_particle_count_each_run": 21,
+    "same_solver_handoff_particle_id_sets": "exact_match",
+    "cross_solver_handoff_particle_id_sets": "exact_match"
+  },
+  "continuous_diagnostics": {
+    "status": "INCONCLUSIVE_NO_SOURCED_ERROR_BUDGET",
+    "same_solver_spatial_rms_radius_relative_difference": {
+      "simion": 0.10722131726857745,
+      "comsol": 0.029196715795380114
+    },
+    "same_solver_temporal_rms_radius_relative_difference": {
+      "simion": 0.0009153364190794837,
+      "comsol": 0.05111609409546771
+    },
+    "final_cross_solver_relative_difference": {
+      "rms_radius": 0.07670885469027593,
+      "rms_divergence": 0.01956291958532776,
+      "mean_tof": 0.0000006403160547957788,
+      "mean_energy": 0.00030082089573116967
+    }
+  },
+  "resource_budget": {
+    "status": "PASS",
+    "automatic_retry_count": 0,
+    "largest_wall_clock_seconds": 578.056,
+    "largest_peak_run_directory_bytes": 1030967315,
+    "largest_peak_process_tree_working_set_bytes": 8892780544,
+    "largest_final_retained_bytes": 1983886
+  },
+  "decision": {
+    "functional_collision_free_transport": "CLOSED",
+    "continuous_numerical_equivalence": "INCONCLUSIVE",
+    "further_brute_force_refinement": "NOT_AUTHORIZED",
+    "next_scope": "Separate preregistration is required for another radial order or acceleration mode."
+  },
+  "claim_limit": "PASS covers only N=100 collision-free functional transport for the named hexapole no-acceleration profile. It does not qualify continuous phase-space equivalence, N=1000 dispersion, acceleration modes, collision cooling, mechanical design, Candidate or Formal status."
+}

@@ -34,39 +34,10 @@ class ResourceBudgetTests(unittest.TestCase):
             retention_class=retention_class,
         )
 
-    def test_only_hexapole_no_acceleration_temporal_screen_is_authorized(self) -> None:
-        resolved = self.validate()
-        self.assertEqual(resolved["limits"]["wall_clock_seconds"], 1200)
-        self.assertEqual(
-            resolved["limits"]["wall_clock_seconds_by_solver"]["simion"],
-            720,
-        )
-        self.assertEqual(
-            resolved["limits"]["transient_run_directory_bytes"],
-            2 * 1024**3,
-        )
-        self.assertEqual(
-            resolved["limits"]["process_tree_working_set_bytes"],
-            16 * 1024**3,
-        )
-        self.assertEqual(
-            resolved["limits"]["minimum_system_available_memory_bytes"],
-            8 * 1024**3,
-        )
-        self.assertEqual(
-            resolved["limits"]["compact_final_retained_bytes"],
-            25 * 1024**2,
-        )
-        self.assertEqual(resolved["limits"]["automatic_retry_count"], 0)
-        for project_id in (QUAD, "rf_octupole_ion_optics"):
+    def test_no_commercial_solver_pilot_remains_authorized(self) -> None:
+        for project_id in (QUAD, HEX, "rf_octupole_ion_optics"):
             with self.assertRaisesRegex(ValueError, "not authorized"):
                 self.validate(project_id)
-        with self.assertRaisesRegex(ValueError, "identity differs"):
-            self.validate(
-                runtime_profile_id=(
-                    "no_acceleration_full_length_n100_spatial_refined"
-                )
-            )
 
     def test_high_cost_runners_validate_before_creating_run_package(self) -> None:
         for name in ("run_finite_3d_transport.ps1", "run_simion_finite_3d_transport.ps1"):
