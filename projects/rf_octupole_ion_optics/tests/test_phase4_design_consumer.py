@@ -164,7 +164,11 @@ class ThreeModeRuntimeAndQualificationTests(unittest.TestCase):
             budget["budget_exhaustion_result"],
             "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
         )
-        self.assertFalse(budget["pilot_authorization"]["authorized"])
+        self.assertTrue(budget["pilot_authorization"]["authorized"])
+        self.assertEqual(
+            budget["pilot_authorization"]["scope"]["runtime_profile_id"],
+            "no_acceleration_full_length",
+        )
 
     def test_geometry_and_voltage_contracts_match_typed_resolved_modes(self) -> None:
         invariant_path = (

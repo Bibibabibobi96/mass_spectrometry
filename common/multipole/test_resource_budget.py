@@ -13,13 +13,14 @@ from common.multipole.runtime_profile import resolve_runtime_profile
 REPO_ROOT = Path(__file__).resolve().parents[2]
 QUAD = "rf_quadrupole_ion_optics"
 HEX = "rf_hexapole_ion_optics"
+OCT = "rf_octupole_ion_optics"
 
 
 class ResourceBudgetTests(unittest.TestCase):
     def validate(
         self,
-        project_id: str = HEX,
-        runtime_profile_id: str = "no_acceleration_full_length_n100_temporal_refined",
+        project_id: str = OCT,
+        runtime_profile_id: str = "no_acceleration_full_length",
         retention_class: str = "compact",
     ) -> dict:
         runtime = resolve_runtime_profile(REPO_ROOT, project_id, runtime_profile_id)
@@ -34,8 +35,27 @@ class ResourceBudgetTests(unittest.TestCase):
             retention_class=retention_class,
         )
 
-    def test_no_commercial_solver_pilot_remains_authorized(self) -> None:
-        for project_id in (QUAD, HEX, "rf_octupole_ion_optics"):
+    def test_only_octupole_no_acceleration_baseline_is_authorized(self) -> None:
+        resolved = self.validate()
+        self.assertEqual(resolved["limits"]["wall_clock_seconds"], 1200)
+        self.assertEqual(
+            resolved["limits"]["wall_clock_seconds_by_solver"]["simion"],
+            300,
+        )
+        self.assertEqual(
+            resolved["limits"]["transient_run_directory_bytes"],
+            2 * 1024**3,
+        )
+        self.assertEqual(
+            resolved["limits"]["process_tree_working_set_bytes"],
+            16 * 1024**3,
+        )
+        self.assertEqual(
+            resolved["limits"]["minimum_system_available_memory_bytes"],
+            8 * 1024**3,
+        )
+        self.assertEqual(resolved["limits"]["automatic_retry_count"], 0)
+        for project_id in (QUAD, HEX):
             with self.assertRaisesRegex(ValueError, "not authorized"):
                 self.validate(project_id)
 

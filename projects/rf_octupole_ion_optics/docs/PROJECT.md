@@ -40,10 +40,11 @@ RF为1.1 MHz余弦、每组零到峰值139.81792 V；源为100 amu、+1、2 eV�
 
 空间比较只改变空间离散；时间比较在已选细网格上保持空间离散不变，只改变每RF周期步数，符合根
 `docs/VALIDATION_METHODS.md`的顺序门禁。没有物理、下游或误差预算支持
-时不得发明百分比作为PASS阈值，结果固定为`INCONCLUSIVE`。wall clock和峰值内存预算尚未量化，
-因此真实资格运行仍受
+时不得发明百分比作为PASS阈值，结果固定为`INCONCLUSIVE`。当前只授权无加速N=100 baseline
+双求解器pilot：COMSOL/SIMION分别受1200/300 s、2 GiB瞬态目录、16 GiB进程树内存、8 GiB最低
+可用内存、25 MiB compact保留和零自动重试约束；其他runtime由
 [`../config/qualification/engineering_budget.json`](../config/qualification/engineering_budget.json)
-的`INCONCLUSIVE_DO_NOT_START_QUALIFICATION_UNTIL_REGISTERED`约束。
+失败关闭。
 
 N=100 baseline runtime key直接使用三种完整mode ID；加密key分别追加`_n100_spatial_refined`和
 `_n100_temporal_refined`。三个N=1000统计runtime追加`_n1000`并绑定同一母样本的N1000档。
@@ -82,7 +83,7 @@ acceptance、effect-resolution、engineering-budget和三份电压合同，但�
 
 1. 为接受尺度绑定真实下游器件的孔径/相空间预算，或建立可审查的项目误差预算；此前只能报告
    `INCONCLUSIVE`。
-2. 由项目负责人登记wall clock与峰值内存预算；随后才能按三档执行N=100双求解器收敛。
+2. 完成已登记wall clock与峰值内存预算的无加速N=100 baseline pilot，再按实测值决定相邻加密档。
 3. 三种模式各自完成独立COMSOL/SIMION运行、共同幸存粒子配对和跨求解器闭合。
 4. 若推进Candidate/Formal，再建立机械制造基线、GUI/CAD同步和N=1000统计证据。
 5. 碰撞冷却和真实下游连接保持独立workflow，不由无碰撞三模式结果代替。
