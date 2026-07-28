@@ -164,10 +164,14 @@ class ThreeModeRuntimeAndQualificationTests(unittest.TestCase):
             budget["budget_exhaustion_result"],
             "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
         )
-        self.assertTrue(budget["pilot_authorization"]["authorized"])
+        self.assertFalse(budget["pilot_authorization"]["authorized"])
+        result = load(
+            "config/qualification/n100_no_acceleration_qualification.json"
+        )
+        self.assertEqual(result["functional_transport"]["status"], "PASS")
         self.assertEqual(
-            budget["pilot_authorization"]["scope"]["runtime_profile_id"],
-            "no_acceleration_full_length_n100_temporal_refined",
+            result["continuous_diagnostics"]["status"],
+            "INCONCLUSIVE_NO_SOURCED_ERROR_BUDGET",
         )
 
     def test_geometry_and_voltage_contracts_match_typed_resolved_modes(self) -> None:

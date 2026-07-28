@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "role": "multipole_project_numerical_qualification_record",
+  "project_id": "rf_octupole_ion_optics",
+  "design_profile_id": "no_acceleration_full_length",
+  "particle_count": 100,
+  "recorded_after_runs": true,
+  "preregistration": {
+    "path": "projects/rf_octupole_ion_optics/config/qualification/n100_convergence_preregistration.json",
+    "sha256_before_temporal_runs": "D3C965869A2CB715FE710C8C5507A7C6F1AABFD6C845378F8D60820376A27669",
+    "git_commit_before_temporal_runs": "523ecf0"
+  },
+  "method": {
+    "path": "common/multipole/numerical_qualification.json",
+    "sha256": "3919607C1F6E220D9DF11BE66A8C2CD01640F32D48D9A3AE82A1662F482925CD",
+    "acceptance_path": "common/multipole/functional_transport_acceptance.json",
+    "acceptance_sha256": "A4C4F4A6395AAB0F59E0BC8F380E87CDA0F1AD265EC19E66F844C14FF12A98D9"
+  },
+  "particle_source": {
+    "path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_100.csv",
+    "sha256": "0125C3AB02B2321EF26A3A913CF6EC04325FD0D48597D2CB439D0CE42411662F"
+  },
+  "runs": {
+    "simion": {
+      "baseline": ["20260728_214523__sim__simion__rf-octupole-ion-optics-no-acceleration-full-length__resolved-l3", "8BE3058202EB39D2DE57E980574DFBDAFB5067E9607ADF300792311CF72CB306"],
+      "spatial_refined": ["20260728_220019__sim__simion__rf-octupole-ion-optics-no-acceleration-full-length__resolved-l3", "ABAF60CB87CDFB657DD75DBD921DC4659AF4B3512F0F0C3B24221BF4A36C7322"],
+      "temporal_refined": ["20260728_221813__sim__simion__rf-octupole-ion-optics-no-acceleration-full-length__resolved-l3", "CA44A64CA231AFCDA8A43F37E974C5D3CEC205E347D58507D25AF90EE873F9C1"]
+    },
+    "comsol": {
+      "baseline": ["20260728_215005__sim__comsol__rf-octupole-ion-optics-no-acceleration-full-length__resolved-l3", "22DC6D72943C6216549E8031884621DE452AA5778F02AA1EE9C4A1E55954A2B1"],
+      "spatial_refined": ["20260728_220522__sim__comsol__rf-octupole-ion-optics-no-acceleration-full-length__resolved-l3", "DEEB58EB9A283F808331610C52F85E11F4CFA203CA93F318618912B75B1D9D78"],
+      "temporal_refined": ["20260728_222324__sim__comsol__rf-octupole-ion-optics-no-acceleration-full-length__resolved-l3", "B7FD0677E6C8D681493B844C9A9BACD21F4BD69321F76626E030D1344EEDC7BC"]
+    }
+  },
+  "functional_transport": {
+    "status": "PASS",
+    "transmitted_particle_count_each_run": 100,
+    "zero_rf_control_transmitted_particle_count_each_run": 21,
+    "same_solver_handoff_particle_id_sets": "exact_match",
+    "cross_solver_handoff_particle_id_sets": "exact_match"
+  },
+  "continuous_diagnostics": {
+    "status": "INCONCLUSIVE_NO_SOURCED_ERROR_BUDGET",
+    "same_solver_spatial_relative_difference": {
+      "simion_rms_radius": 0.005734735584302554,
+      "simion_rms_divergence": 0.02784399689315232,
+      "comsol_rms_radius": 0.13472991059197142,
+      "comsol_rms_divergence": 0.1364147203746751
+    },
+    "same_solver_temporal_relative_difference": {
+      "simion_rms_radius": 0.00003327027315529829,
+      "simion_rms_divergence": 0.000006345038339236737,
+      "comsol_rms_radius": 0.02190354276697011,
+      "comsol_rms_divergence": 0.000317178795692306
+    },
+    "final_cross_solver_relative_difference": {
+      "rms_radius": 0.03848233269574721,
+      "rms_divergence": 0.046198260978465785,
+      "mean_tof": 0.0004537014594007694,
+      "mean_energy": 0.0004245826683105255
+    }
+  },
+  "resource_budget": {
+    "status": "PASS",
+    "automatic_retry_count": 0,
+    "largest_wall_clock_seconds": 572.776,
+    "largest_peak_run_directory_bytes": 1046978307,
+    "largest_peak_process_tree_working_set_bytes": 8672862208,
+    "largest_final_retained_bytes": 1995651
+  },
+  "decision": {
+    "functional_collision_free_transport": "CLOSED",
+    "continuous_numerical_equivalence": "INCONCLUSIVE",
+    "further_brute_force_refinement": "NOT_AUTHORIZED",
+    "next_scope": "Separate preregistration is required for an acceleration mode."
+  },
+  "claim_limit": "PASS covers only N=100 collision-free functional transport for the named octupole no-acceleration profile. It does not qualify continuous phase-space equivalence, N=1000 dispersion, acceleration modes, collision cooling, mechanical design, Candidate or Formal status."
+}

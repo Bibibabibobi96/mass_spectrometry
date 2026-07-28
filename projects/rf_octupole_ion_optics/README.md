@@ -64,8 +64,9 @@ baseline pilot后登记的N=100三档只包含相邻的空间、时间离散比�
 
 当前没有得到下游验收、物理相空间预算或可辩护的误差尺度，因此acceptance和effect-resolution合同
 明确返回`INCONCLUSIVE`，不包含任意百分比。当前只授权
-`no_acceleration_full_length / N=100 / temporal sensitivity / compact`双求解器pair；进一步加密、加速模式、
-N=1000和完整矩阵会由`config/qualification/engineering_budget.json`在创建run目录前失败关闭。项目合同
+无加速N=100 baseline、空间和时间敏感性矩阵已完成，功能传输闭合；连续相空间仍为
+`INCONCLUSIVE`。当前不授权任何商业求解器运行；进一步加密、加速模式、N=1000和完整矩阵
+必须另行预注册。项目合同
 不能把求解器运行、Candidate或Formal状态从旧证据继承到新机械基线。
 
 项目preregistration只冻结母样本、几何、电压和三份资格前置合同。每个求解器必须在三种模式真实运行
