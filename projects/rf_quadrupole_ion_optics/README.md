@@ -82,7 +82,8 @@ rf_quadrupole_ion_optics/
 - 功能PASS不代表跨求解器数值等价、网格收敛、机械、Candidate或Formal资格。
 - 无加速N=100双求解器baseline、空间和时间敏感性矩阵已经完成；最终两求解器的100个RF-on粒子身份
   完全一致，功能传输闭合。连续相空间因无来源充分的误差预算仍为`INCONCLUSIVE`。当前只授权
-  分段杆轴向加速N=100的一对双求解器baseline pilot；加密档、出口板加速、N=1000及完整矩阵仍未授权。公共runner会在创建run目录前复核身份和数值参数，
+  分段杆轴向加速N=100的一对双求解器空间敏感性运行；baseline已完成，时间档、出口板加速、
+  N=1000及完整矩阵仍未授权。公共runner会在创建run目录前复核身份和数值参数，
   并执行`config/family_experiment/engineering_budget.json`的时间、内存和磁盘硬帽。
 - 正式机械几何与CAD同步完成前，`verify_project.ps1 -Level Formal`必须失败关闭。
 

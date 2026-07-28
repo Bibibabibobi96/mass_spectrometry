@@ -239,7 +239,7 @@ class FamilyThreeModeExperimentContractTests(unittest.TestCase):
         self.assertTrue(budget["pilot_authorization"]["authorized"])
         self.assertEqual(
             budget["pilot_authorization"]["scope"]["runtime_profile_id"],
-            "segmented_rod_axial_acceleration",
+            "segmented_rod_axial_acceleration_n100_spatial_refined",
         )
         self.assertFalse(budget["full_matrix_authorization"]["authorized"])
         self.assertEqual(
@@ -294,7 +294,7 @@ class FamilyThreeModeExperimentContractTests(unittest.TestCase):
         self.assertTrue(budget["pilot_authorization"]["authorized"])
         self.assertEqual(
             budget["pilot_authorization"]["scope"]["runtime_profile_id"],
-            "segmented_rod_axial_acceleration",
+            "segmented_rod_axial_acceleration_n100_spatial_refined",
         )
         self.assertFalse(budget["full_matrix_authorization"]["authorized"])
 
