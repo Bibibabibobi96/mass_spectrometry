@@ -164,7 +164,11 @@ class ThreeModeRuntimeAndQualificationTests(unittest.TestCase):
             budget["budget_exhaustion_result"],
             "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
         )
-        self.assertFalse(budget["pilot_authorization"]["authorized"])
+        self.assertTrue(budget["pilot_authorization"]["authorized"])
+        self.assertEqual(
+            budget["pilot_authorization"]["scope"]["runtime_profile_id"],
+            "segmented_rod_axial_acceleration",
+        )
         result = load(
             "config/qualification/n100_no_acceleration_qualification.json"
         )
