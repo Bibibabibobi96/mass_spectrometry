@@ -123,7 +123,8 @@ RMS半径差约`7.67%`。功能传输闭合，但连续结果只能`INCONCLUSIVE
 为578.056 s、1.031 GB瞬态目录、8.893 GB进程树内存，零自动重试；分段杆轴向加速N=100
 baseline已在两求解器保持100/100传输和精确粒子身份，SIMION空间档也保持100/100；COMSOL空间档
 在`MESH_COMPLETE`后以19.453 GB超过17.180 GB进程树帽，记为
-`INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`，不重跑、不抬帽。当前无商业求解器授权。完整
+`INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`，不重跑、不抬帽。当前只授权出口孔板加速N=100
+的一对双求解器baseline；加密档、N=1000和完整矩阵未授权。完整
 身份登记在`../config/qualification/n100_no_acceleration_qualification.json`。正式
 分段杆轴向加速身份和资源结论登记在
 `../config/qualification/n100_segmented_rod_axial_acceleration_qualification.json`。正式
