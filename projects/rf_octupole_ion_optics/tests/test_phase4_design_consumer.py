@@ -95,7 +95,7 @@ class ThreeModeRuntimeAndQualificationTests(unittest.TestCase):
                     "rf_steps_per_period"
                 ],
             ),
-            (0.5, 0.25, 80, 160),
+            (0.5, 0.35, 80, 160),
         )
         self.assertEqual(
             (
@@ -106,7 +106,7 @@ class ThreeModeRuntimeAndQualificationTests(unittest.TestCase):
                     "rf_steps_per_period"
                 ],
             ),
-            (0.4, 0.2, 40, 80),
+            (0.4, 0.3, 40, 80),
         )
         self.assertEqual(
             comsol["n100_spatial_refined"]["mesh"],
@@ -167,7 +167,7 @@ class ThreeModeRuntimeAndQualificationTests(unittest.TestCase):
         self.assertTrue(budget["pilot_authorization"]["authorized"])
         self.assertEqual(
             budget["pilot_authorization"]["scope"]["runtime_profile_id"],
-            "no_acceleration_full_length",
+            "no_acceleration_full_length_n100_spatial_refined",
         )
 
     def test_geometry_and_voltage_contracts_match_typed_resolved_modes(self) -> None:

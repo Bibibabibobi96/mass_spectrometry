@@ -2,8 +2,30 @@
   "schema_version": 1,
   "role": "multipole_n100_spatial_time_convergence_preregistration",
   "project_id": "rf_octupole_ion_optics",
-  "contract_id": "octupole_three_mode_n100_convergence",
+  "contract_id": "octupole_three_mode_n100_convergence_v2",
   "preregistered_before_run": true,
+  "revision_basis": {
+    "status": "revised_after_baseline_pilot_before_refined_runs",
+    "baseline_run_ids": {
+      "comsol": "20260728_215005__sim__comsol__rf-octupole-ion-optics-no-acceleration-full-length__resolved-l3",
+      "simion": "20260728_214523__sim__simion__rf-octupole-ion-optics-no-acceleration-full-length__resolved-l3"
+    },
+    "measured_resources": {
+      "comsol": {
+        "wall_clock_seconds": 283.53,
+        "peak_run_directory_bytes": 475384028,
+        "peak_process_tree_working_set_bytes": 6678683648
+      },
+      "simion": {
+        "wall_clock_seconds": 211.142,
+        "peak_run_directory_bytes": 257786632,
+        "peak_process_tree_working_set_bytes": 281223168
+      }
+    },
+    "functional_result": "PASS_EXACT_TRANSMITTED_PARTICLE_ID_SET",
+    "continuous_cross_solver_result": "INCONCLUSIVE",
+    "decision": "Replace the brute-force refined tiers with the least expensive adjacent spatial sensitivity levels likely to stay inside the frozen resource caps."
+  },
   "particle_count": 100,
   "modes": [
     "no_acceleration_full_length",
@@ -31,26 +53,26 @@
     "comsol_spatial": {
       "vary_only": "working_region_maximum_element_size_mm",
       "coarse": 0.5,
-      "refined": 0.25,
+      "refined": 0.35,
       "fixed_rf_steps_per_period": 80
     },
     "comsol_time": {
       "vary_only": "rf_steps_per_period",
       "coarse": 80,
       "refined": 160,
-      "fixed_working_region_maximum_element_size_mm": 0.25
+      "fixed_working_region_maximum_element_size_mm": 0.35
     },
     "simion_spatial": {
       "vary_only": "cell_mm",
       "coarse": 0.4,
-      "refined": 0.2,
+      "refined": 0.3,
       "fixed_rf_steps_per_period": 40
     },
     "simion_time": {
       "vary_only": "rf_steps_per_period",
       "coarse": 40,
       "refined": 80,
-      "fixed_cell_mm": 0.2
+      "fixed_cell_mm": 0.3
     }
   },
   "observables": [

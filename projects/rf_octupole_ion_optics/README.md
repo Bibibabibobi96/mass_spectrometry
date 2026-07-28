@@ -57,14 +57,14 @@ RF、粒子源或非变化数值差异都会使配对实验失效。
   [`analysis/run_simion_finite_3d_transport.ps1`](analysis/run_simion_finite_3d_transport.ps1)。
 - 静态门禁：[`verify_project.ps1`](verify_project.ps1)。
 
-N=100三档只预登记相邻的空间、时间离散比较：COMSOL局部最大单元`0.5→0.25 mm`、每RF周期
-`80→160`步；SIMION全局cell`0.4→0.2 mm`、每RF周期`40→80`步。空间比较先选择细网格，时间比较
-随后固定COMSOL `0.25 mm`和SIMION `0.2 mm`，只改变每RF周期步数。不得在结果出来后改变输入、
+baseline pilot后登记的N=100三档只包含相邻的空间、时间离散比较：COMSOL局部最大单元
+`0.5→0.35 mm`、每RF周期`80→160`步；SIMION全局cell`0.4→0.3 mm`、每RF周期`40→80`步。
+空间比较先选择相邻网格，时间比较随后固定COMSOL `0.35 mm`和SIMION `0.3 mm`。不得事后改变输入、
 观察量或接受尺度。
 
 当前没有得到下游验收、物理相空间预算或可辩护的误差尺度，因此acceptance和effect-resolution合同
 明确返回`INCONCLUSIVE`，不包含任意百分比。当前只授权
-`no_acceleration_full_length / N=100 / baseline / compact`双求解器pilot；refined档、加速模式、
+`no_acceleration_full_length / N=100 / spatial sensitivity / compact`双求解器pair；时间档、加速模式、
 N=1000和完整矩阵会由`config/qualification/engineering_budget.json`在创建run目录前失败关闭。项目合同
 不能把求解器运行、Candidate或Formal状态从旧证据继承到新机械基线。
 

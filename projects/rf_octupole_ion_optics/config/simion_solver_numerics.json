@@ -12,7 +12,7 @@
       }
     },
     "n100_spatial_refined": {
-      "cell_mm": 0.2,
+      "cell_mm": 0.3,
       "trajectory_quality": 10,
       "trajectory": {
         "rf_steps_per_period": 40,
@@ -20,7 +20,7 @@
       }
     },
     "n100_temporal_refined": {
-      "cell_mm": 0.2,
+      "cell_mm": 0.3,
       "trajectory_quality": 10,
       "trajectory": {
         "rf_steps_per_period": 80,

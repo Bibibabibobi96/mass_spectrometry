@@ -20,7 +20,7 @@ class ResourceBudgetTests(unittest.TestCase):
     def validate(
         self,
         project_id: str = OCT,
-        runtime_profile_id: str = "no_acceleration_full_length",
+        runtime_profile_id: str = "no_acceleration_full_length_n100_spatial_refined",
         retention_class: str = "compact",
     ) -> dict:
         runtime = resolve_runtime_profile(REPO_ROOT, project_id, runtime_profile_id)
@@ -35,12 +35,12 @@ class ResourceBudgetTests(unittest.TestCase):
             retention_class=retention_class,
         )
 
-    def test_only_octupole_no_acceleration_baseline_is_authorized(self) -> None:
+    def test_only_octupole_no_acceleration_spatial_screen_is_authorized(self) -> None:
         resolved = self.validate()
         self.assertEqual(resolved["limits"]["wall_clock_seconds"], 1200)
         self.assertEqual(
             resolved["limits"]["wall_clock_seconds_by_solver"]["simion"],
-            300,
+            720,
         )
         self.assertEqual(
             resolved["limits"]["transient_run_directory_bytes"],
