@@ -167,7 +167,7 @@ class ThreeModeRuntimeAndQualificationTests(unittest.TestCase):
         self.assertTrue(budget["pilot_authorization"]["authorized"])
         self.assertEqual(
             budget["pilot_authorization"]["scope"]["runtime_profile_id"],
-            "segmented_rod_axial_acceleration",
+            "segmented_rod_axial_acceleration_n100_spatial_refined",
         )
         result = load(
             "config/qualification/n100_no_acceleration_qualification.json"
