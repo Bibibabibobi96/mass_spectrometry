@@ -92,8 +92,11 @@ $existingPythonFiles = @(
         Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }
 )
 $hasDocumentationChange = Test-AnyPath {
-    $_ -match '(^|/)(README|AGENTS)\.md$' -or $_.StartsWith('docs/', [StringComparison]::OrdinalIgnoreCase) -or $_ -match '^projects/[^/]+/docs/'
+    [IO.Path]::GetExtension($_).ToLowerInvariant() -eq '.md'
 }
+$isDocumentationOnly = $changedPaths.Count -gt 0 -and -not (Test-AnyPath {
+    [IO.Path]::GetExtension($_).ToLowerInvariant() -ne '.md'
+})
 $hasRegistryChange = Test-PathPrefix 'config/project_registry.json'
 $hasMultipoleChange = Test-PathPrefix 'common/multipole/'
 $hasSolidWorksChange = Test-PathPrefix 'common/solidworks/'
@@ -112,6 +115,12 @@ $hasGateContractChange = Test-AnyPath {
 if ($hasDocumentationChange) {
     Invoke-ChangedGateStage 'documentation' 'documentation_or_project_docs_changed' { & (Join-Path $PSScriptRoot 'verify_documentation.ps1') }
 } else { Skip-ChangedGateStage 'documentation' 'no_documentation_path_changed' }
+
+if ($isDocumentationOnly) {
+    Write-Output 'CHANGED_GATE_FAST_PATH=DOCUMENTATION_ONLY'
+    Write-Output "CHANGED_GATE=PASS PYTHON=$pythonVersion CHANGED_PATHS=$($changedPaths.Count)"
+    return
+}
 
 if ($hasCodeChange) {
     Invoke-ChangedGateStage 'development_standards' 'source_code_changed' { & $PythonExe (Join-Path $PSScriptRoot 'verify_development_standards.py') }

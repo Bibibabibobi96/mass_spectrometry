@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import shutil
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -27,6 +30,44 @@ class ChangedGateContractTests(unittest.TestCase):
         self.assertIn("GATE_STAGE=SKIP", self.source)
         self.assertIn("ELAPSED_SECONDS", self.source)
         self.assertIn("repository_hygiene' 'always", self.source)
+
+    def test_documentation_only_fast_path_is_narrow_and_explicit(self) -> None:
+        self.assertIn("$isDocumentationOnly", self.source)
+        self.assertIn("GetExtension($_).ToLowerInvariant() -ne '.md'", self.source)
+        self.assertIn("CHANGED_GATE_FAST_PATH=DOCUMENTATION_ONLY", self.source)
+        fast_path = self.source.index("if ($isDocumentationOnly)")
+        development_gate = self.source.index("if ($hasCodeChange)")
+        self.assertLess(fast_path, development_gate)
+
+    def test_documentation_only_fast_path_runs_without_project_gates(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell Core is unavailable")
+        completed = subprocess.run(
+            [
+                pwsh,
+                "-NoProfile",
+                "-File",
+                str(CHANGED_GATE),
+                "-PythonExe",
+                sys.executable,
+                "-ChangedPath",
+                "CHANGELOG.md",
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("GATE_STAGE=RUN NAME=documentation", completed.stdout)
+        self.assertIn("CHANGED_GATE_FAST_PATH=DOCUMENTATION_ONLY", completed.stdout)
+        self.assertNotIn("GATE_STAGE=RUN NAME=multipole_common", completed.stdout)
+        self.assertNotIn(
+            "GATE_STAGE=RUN NAME=rf_quadrupole_collision_cooling_static",
+            completed.stdout,
+        )
 
     def test_deleted_python_paths_select_scope_but_are_not_passed_to_ruff(self) -> None:
         self.assertIn("$changedPython =", self.source)

@@ -405,15 +405,16 @@ PowerShell时必须使用`pwsh`；PowerShell脚本内部继承当前宿主，不
 
 |层级|入口|何时运行|范围|
 |---|---|---|---|
-|L1 changed-scope|`common/verify_changed.ps1`|每次提交、push和日常参数探索|仅改动的活动项目、其直接公共依赖及必要的仓库卫生/静态合同；RF四极杆在此层只运行无求解器的`Core`合同门禁（实测约21秒）；输出每个路径的`RUN/SKIP`原因|
-|L2 repository integration|`common/verify_repository_integration.ps1`|修改根规则、项目注册表、共享机制或跨项目接口时；GitHub手动触发|完整无商业软件的仓库静态回归，包括RF四极杆完整`Static`分析测试及所有项目的Static gate|
+|L1 changed-scope|`common/verify_changed.ps1`|每次提交、push和日常参数探索|全部改动均为Markdown时只运行仓库卫生与文档门禁；其他改动只运行活动项目、其直接公共依赖及必要静态合同。RF四极杆在此层只运行无求解器的`Core`合同门禁；输出`RUN/SKIP`原因或显式`DOCUMENTATION_ONLY`快速路径|
+|L2 repository integration|`common/verify_repository_integration.ps1`|修改门禁实现、项目注册表、机器合同语义、共享运行机制或跨项目接口时；GitHub手动触发|完整无商业软件的仓库静态回归，包括RF四极杆完整`Static`分析测试及所有项目的Static gate；纯文档和规则文字调整不触发|
 |L3 project evidence|各项目`verify_project.ps1`的Candidate/Formal级别|Candidate、Formal、promotion或真实物理资产变化时|商业求解、GUI/CAD复验、冻结输入、manifest和物理证据链|
 
 `common/verify_lightweight.ps1`保留为L1兼容入口，并委托给`verify_changed.ps1`；新脚本、文档与CI应直接使用
 `verify_changed.ps1`。`.github/workflows/lightweight-gate.yml`在push只运行L1；L2仅可由
-`workflow_dispatch`人工启动，不对pull request自动运行全仓回归。
+`workflow_dispatch`人工启动，不对pull request自动运行全仓回归。纯Markdown提交应在数十秒内结束；
 RF四极杆Core的实测约21秒，故GitHub L1的5分钟超时仍为正常单项目改动、直接公共依赖和安全全范围
-fallback保留了足够余量；完整RF Static不占用该预算。
+fallback保留了足够余量；完整RF Static不占用该预算。L2是显式全仓审计，当前基线可达十分钟级，不得
+作为纯文档提交的默认门禁。
 
 数值探索参数可在活动项目的声明范围内自由修改：L1只校验该项目的参数schema、单位/范围、resolved合同和
 必要输入生成，不自动启动商业求解器，也不检查无关项目。若改变几何、电压、粒子源、网格、RF相位或跨项目
