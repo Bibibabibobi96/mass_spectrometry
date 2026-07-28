@@ -16,6 +16,15 @@ REPO_ROOT = Path(__file__).parents[2]
 
 
 class SimionRunnerContractTests(unittest.TestCase):
+    def test_default_run_ids_delimit_the_design_profile_variable(self) -> None:
+        for name in (
+            "run_finite_3d_transport.ps1",
+            "run_simion_finite_3d_transport.ps1",
+        ):
+            source = (RUNNER.parent / name).read_text(encoding="utf-8-sig")
+            self.assertIn("${DesignProfileId}__resolved-l3", source)
+            self.assertNotIn("$DesignProfileId__resolved-l3", source)
+
     def test_segmented_voltage_binding_uses_resolved_dynamic_electrodes(self) -> None:
         lua = (RUNNER.parent / "simion_transport.lua").read_text(encoding="utf-8")
         runner = RUNNER.read_text(encoding="utf-8")

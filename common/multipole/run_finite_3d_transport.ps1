@@ -40,7 +40,7 @@ $registryPreflight=Get-Content -LiteralPath (Join-Path $repoRoot 'config\project
 $projectMatches=@($registryPreflight.projects|Where-Object{[string]$_.project_id-eq$ProjectId})
 if($projectMatches.Count-ne 1){throw "ProjectId is not unique in the canonical project registry: $ProjectId"}
 if([string]::IsNullOrWhiteSpace($RunId)){
-  $RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+"__sim__comsol__$($ProjectId.Replace('_','-'))-$DesignProfileId__resolved-l3"
+  $RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+"__sim__comsol__$($ProjectId.Replace('_','-'))-${DesignProfileId}__resolved-l3"
 }
 $budgetPreflight=Join-Path ([IO.Path]::GetTempPath()) ("multipole_budget_{0}.json"-f[guid]::NewGuid())
 try{
