@@ -2,8 +2,30 @@
   "schema_version": 1,
   "role": "multipole_project_numerical_convergence_preregistration",
   "project_id": "rf_hexapole_ion_optics",
-  "contract_id": "hexapole_three_mode_n100_convergence_v1",
+  "contract_id": "hexapole_three_mode_n100_convergence_v2",
   "preregistered_before_run": true,
+  "revision_basis": {
+    "status": "revised_after_baseline_pilot_before_refined_runs",
+    "baseline_run_ids": {
+      "comsol": "20260728_205400__sim__comsol__rf-hexapole-ion-optics-no-acceleration-full-length__resolved-l3",
+      "simion": "20260728_205025__sim__simion__rf-hexapole-ion-optics-no-acceleration-full-length__resolved-l3"
+    },
+    "measured_resources": {
+      "comsol": {
+        "wall_clock_seconds": 273.812,
+        "peak_run_directory_bytes": 462968491,
+        "peak_process_tree_working_set_bytes": 6563336192
+      },
+      "simion": {
+        "wall_clock_seconds": 179.169,
+        "peak_run_directory_bytes": 256208659,
+        "peak_process_tree_working_set_bytes": 280031232
+      }
+    },
+    "functional_result": "PASS_EXACT_TRANSMITTED_PARTICLE_ID_SET",
+    "continuous_cross_solver_result": "INCONCLUSIVE",
+    "decision": "Replace the brute-force refined tiers with the least expensive adjacent spatial sensitivity levels likely to stay inside the frozen resource caps."
+  },
   "particle_source": {
     "path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_100.csv",
     "sha256": "0125C3AB02B2321EF26A3A913CF6EC04325FD0D48597D2CB439D0CE42411662F",
@@ -24,7 +46,7 @@
   "solver_plans": {
     "comsol": {
       "registry": "projects/rf_hexapole_ion_optics/config/comsol_solver_numerics.json",
-      "registry_sha256": "5DB44A44333F61A39118DF7E92AA3B9BA75DCE94A6A4B34006CF2DE008CE8481",
+      "registry_sha256": "E3BF0BAFF09E40D04D489A03DC72CBAB62E4AA5BA199FCD0DCF3534C334E56B2",
       "tiers": {
         "baseline": {
           "profile_id": "baseline_finite_3d",
@@ -33,19 +55,19 @@
         },
         "spatial_refined": {
           "profile_id": "n100_spatial_refined",
-          "working_region_maximum_element_size_mm": 0.25,
+          "working_region_maximum_element_size_mm": 0.35,
           "rf_steps_per_period": 80
         },
         "temporal_refined": {
           "profile_id": "n100_temporal_refined",
-          "working_region_maximum_element_size_mm": 0.25,
+          "working_region_maximum_element_size_mm": 0.35,
           "rf_steps_per_period": 160
         }
       }
     },
     "simion": {
       "registry": "projects/rf_hexapole_ion_optics/config/simion_solver_numerics.json",
-      "registry_sha256": "CAC39ED949C42A128145A1ACD1AA9CE19B851D099416CD189F919F7C21E87FE5",
+      "registry_sha256": "C8A9A0A90ABD543BD424A0ADE15D7DDCE19AAFBAD5950E1A77F8B78A4F3BE9B3",
       "tiers": {
         "baseline": {
           "profile_id": "baseline_finite_3d",
@@ -54,12 +76,12 @@
         },
         "spatial_refined": {
           "profile_id": "n100_spatial_refined",
-          "cell_mm": 0.2,
+          "cell_mm": 0.3,
           "rf_steps_per_period": 40
         },
         "temporal_refined": {
           "profile_id": "n100_temporal_refined",
-          "cell_mm": 0.2,
+          "cell_mm": 0.3,
           "rf_steps_per_period": 80
         }
       }

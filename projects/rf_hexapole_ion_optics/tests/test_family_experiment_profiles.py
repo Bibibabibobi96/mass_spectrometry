@@ -198,7 +198,7 @@ class FamilyExperimentProfileTests(unittest.TestCase):
                 temporal["solver_numerics"]["comsol"]["values"]["mesh"][
                     "working_region_maximum_element_size_mm"
                 ],
-                0.25,
+                0.35,
             )
             self.assertEqual(
                 temporal["solver_numerics"]["comsol"]["values"]["trajectory"][
@@ -208,7 +208,7 @@ class FamilyExperimentProfileTests(unittest.TestCase):
             )
             self.assertEqual(
                 temporal["solver_numerics"]["simion"]["values"]["cell_mm"],
-                0.2,
+                0.3,
             )
             self.assertEqual(
                 temporal["solver_numerics"]["simion"]["values"]["trajectory"][
@@ -282,7 +282,7 @@ class FamilyExperimentProfileTests(unittest.TestCase):
         self.assertTrue(engineering["pilot_authorization"]["authorized"])
         self.assertEqual(
             engineering["pilot_authorization"]["scope"]["runtime_profile_id"],
-            "no_acceleration_full_length",
+            "no_acceleration_full_length_n100_spatial_refined",
         )
         self.assertFalse(engineering["full_matrix_authorization"]["authorized"])
 

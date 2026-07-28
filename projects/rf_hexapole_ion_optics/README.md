@@ -41,7 +41,7 @@
   发布的N=1000母样本及其精确N=100前缀。旧`hex_oct_baseline_fixed_100.csv`仅供legacy功能兼容。
 - 数值与dispersion预登记位于[`config/qualification/`](config/qualification/)；当前没有有依据的连续量
   阈值和完整矩阵资源预算，因此连续资格结论必须为`INCONCLUSIVE`。当前只授权
-  `no_acceleration_full_length / N=100 / baseline / compact`双求解器pilot；refined档、加速模式、
+  `no_acceleration_full_length / N=100 / spatial sensitivity / compact`双求解器pair；时间档、加速模式、
   N=1000和完整矩阵均会由`config/qualification/engineering_budget.json`在创建run目录前失败关闭。
 - 执行组合：[`config/execution_profiles.json`](config/execution_profiles.json)保留compile-only门禁；
   商业运行可由薄wrapper绑定同一profile，未提供evidence合同即为`UNQUALIFIED`。

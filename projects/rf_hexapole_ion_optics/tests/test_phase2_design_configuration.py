@@ -150,13 +150,13 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
             profiles["n100_spatial_refined"]["mesh"][
                 "working_region_maximum_element_size_mm"
             ],
-            0.25,
+            0.35,
         )
         self.assertEqual(
             profiles["n100_temporal_refined"]["mesh"][
                 "working_region_maximum_element_size_mm"
             ],
-            0.25,
+            0.35,
         )
         self.assertEqual(
             profiles["n100_temporal_refined"]["trajectory"]["rf_steps_per_period"],

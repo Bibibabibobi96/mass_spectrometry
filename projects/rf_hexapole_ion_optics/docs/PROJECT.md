@@ -47,9 +47,10 @@ Mathieu稳定图。L1/L2/L3迁移前小样本及2 mm连接器数值只保留在
   design request编译，数值设置只由solver-numerics profile发布，并在每个run冻结。
 - 新家族实验的N=100和N=1000源由同一版本化算法/seed生成，前者是后者精确前缀；100 amu、+1、
   2 eV，最大源半径0.5 mm，最大入射发散5°。旧六/八N=100只供legacy功能兼容。
-- N=100数值预登记固定为三档：COMSOL基线`0.5 mm/80 steps per RF period`、空间细化
-  `0.25 mm/80`、在同一`0.25 mm`细网格上的时间细化`160`；SIMION对应为`0.4 mm/40`、
-  `0.2 mm/40`和在同一`0.2 mm`细网格上的`80`。时间收敛比较必须使用空间细化档作为对照，
+- baseline pilot后、refined运行前登记的N=100数值三档为：COMSOL基线
+  `0.5 mm/80 steps per RF period`、空间敏感性`0.35 mm/80`、在同一`0.35 mm`网格上的时间
+  敏感性`160`；SIMION对应为`0.4 mm/40`、`0.3 mm/40`和在同一`0.3 mm`网格上的`80`。
+  时间比较必须使用空间敏感性档作为对照，
   不得回到粗网格，也不增加第四档。
 - 入口和出口孔半径均为3.6 mm；入口、出口连接器长度当前均为0 mm（直连合同）。入口带孔接口板
   上/下游面为`z=-1.0/-0.5 mm`，源释放面为`z=-1.5 mm`；出口带孔接口板上/下游面为
@@ -115,8 +116,9 @@ frame、轴向法向、中心向量、RF相位零点clock及场是否到达交�
 多极杆公共机制已冻结，后续不再为本项目复制公共杆阵列、运行时或接口实现。v1离子导引和接口功能链
 曾由COMSOL与SIMION独立贯通，但不能继承为当前三模式资格。新的三模式机械base、typed电气合同、
 N=100/N=1000源和N=100三档数值矩阵已经预登记，但没有有依据的连续量阈值。当前只授权无加速
-N=100 baseline双求解器pilot：COMSOL/SIMION分别受1200/300 s、2 GiB瞬态目录、16 GiB进程树内存、
-8 GiB最低可用内存、25 MiB compact保留和零自动重试约束。refined档和完整商业矩阵尚未授权，
+N=100 baseline双求解器pilot已经完成：两边均为RF 100/100、zero-RF 21/100且传输粒子身份一致；
+当前只授权相邻空间敏感性pair，COMSOL/SIMION分别受1200/720 s、2 GiB瞬态目录、16 GiB进程树内存、
+8 GiB最低可用内存、25 MiB compact保留和零自动重试约束。时间档和完整商业矩阵尚未授权，
 连续结果只能`INCONCLUSIVE`。正式
 `three_mode_dispersion_binding`还需要真实solver handoff state路径/SHA，只能在真实run后生成；静态阶段
 不得伪造。没有N=1000真实运行、GUI/CAD同步与formal asset promotion时不得

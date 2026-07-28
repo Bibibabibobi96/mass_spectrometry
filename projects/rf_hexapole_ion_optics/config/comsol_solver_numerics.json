@@ -16,7 +16,7 @@
     "n100_spatial_refined": {
       "mesh": {
         "global_auto_level": 6,
-        "working_region_maximum_element_size_mm": 0.25
+        "working_region_maximum_element_size_mm": 0.35
       },
       "trajectory": {
         "rf_steps_per_period": 80,
@@ -26,7 +26,7 @@
     "n100_temporal_refined": {
       "mesh": {
         "global_auto_level": 6,
-        "working_region_maximum_element_size_mm": 0.25
+        "working_region_maximum_element_size_mm": 0.35
       },
       "trajectory": {
         "rf_steps_per_period": 160,
