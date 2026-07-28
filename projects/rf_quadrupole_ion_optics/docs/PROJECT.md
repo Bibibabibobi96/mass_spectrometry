@@ -111,7 +111,9 @@ runner CLI不暴露任意resolved、RF/DC、几何、轴向加速或数值标量
 全部传输粒子身份闭合，RMS半径诊断差约`3.59%`；连续相空间仍不能贴数值等价PASS。实测最大值为
 592.194 s、1.031 GB瞬态目录、8.808 GB进程树内存，零自动重试。分段杆轴向加速N=100 baseline
 已在两求解器完成并保持100/100传输与精确粒子身份；当前只授权一对空间敏感性运行，时间档、
-出口板加速、N=1000和完整矩阵未授权。功能分类使用已有
+出口板加速、N=1000和完整矩阵未授权。SIMION空间档已完成；COMSOL首次空间档在`MESH_COMPLETE`
+后以17.752 GB超过原17.180 GB进程树帽而失败关闭，当时系统仍有11.35 GB可用。预算v7保留
+8.59 GB系统可用内存底线，仅把进程树帽调整为21.475 GB并授权一次人工替代运行。功能分类使用已有
 `functional_transport_acceptance.json`；连续相空间与minimum relevant effect仍缺少下游依据，必须保持
 `INCONCLUSIVE`。正式
 three-mode dispersion binding只能在真实三模式handoff文件及SHA产生后发布，禁止占位伪造。
