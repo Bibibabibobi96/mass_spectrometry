@@ -9,6 +9,7 @@ from pathlib import Path
 from common.multipole.numerical_qualification import (
     evaluate,
     mean_source_energy_from_particle_input,
+    primary_state_filename,
     validate_identity,
 )
 
@@ -99,6 +100,23 @@ CONTRACT = {
 
 
 class NumericalQualificationTests(unittest.TestCase):
+    def test_simion_primary_state_follows_explicit_case_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            metrics = Path(temp_dir) / "paired_metrics.json"
+            metrics.write_text(
+                '{"primary_case_id":"axial_acceleration_rf_on"}',
+                encoding="utf-8",
+            )
+            manifest = {"outputs": [{"path": str(metrics)}]}
+            self.assertEqual(
+                primary_state_filename(manifest, "SIMION"),
+                "particle_states__axial_acceleration_rf_on.csv",
+            )
+            self.assertEqual(
+                primary_state_filename(manifest, "COMSOL"),
+                "particle_state__primary.csv",
+            )
+
     def test_source_energy_normalization_uses_frozen_particle_input(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             source = Path(temp_dir) / "particle_source.csv"

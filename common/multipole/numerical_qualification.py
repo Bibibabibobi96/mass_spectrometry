@@ -13,11 +13,8 @@ from typing import Any
 from common.contracts.particle_physics import kinetic_energy_ev
 
 
-STATE_FILES = {
-    "COMSOL": "particle_state__primary.csv",
-    "SIMION": "particle_states__rf_on.csv",
-}
-PRIMARY_CASES = {"COMSOL": "finite_3d_rf_on", "SIMION": "rf_on"}
+COMSOL_PRIMARY_STATE_FILE = "particle_state__primary.csv"
+SUPPORTED_SOLVERS = ("COMSOL", "SIMION")
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -26,7 +23,7 @@ def load_json(path: Path) -> dict[str, Any]:
 
 def solver_name(manifest: dict[str, Any]) -> str:
     software = " ".join(str(item) for item in manifest.get("software", []))
-    matches = [name for name in STATE_FILES if name in software.upper()]
+    matches = [name for name in SUPPORTED_SOLVERS if name in software.upper()]
     if len(matches) != 1:
         raise ValueError("manifest must identify exactly one supported solver")
     return matches[0]
@@ -41,6 +38,30 @@ def manifest_record(manifest: dict[str, Any], filename: str) -> Path:
     if len(matches) != 1 or not matches[0].is_file():
         raise ValueError(f"manifest must contain exactly one existing {filename}")
     return matches[0]
+
+
+def primary_case_id(manifest: dict[str, Any]) -> str:
+    """Resolve the named primary case from retained machine-readable outputs."""
+    case_ids: set[str] = set()
+    for record in manifest.get("outputs", []):
+        path = Path(record["path"])
+        if path.suffix.lower() != ".json" or not path.is_file():
+            continue
+        try:
+            value = load_json(path).get("primary_case_id")
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        if value:
+            case_ids.add(str(value))
+    if len(case_ids) != 1:
+        raise ValueError("manifest outputs must identify exactly one primary_case_id")
+    return case_ids.pop()
+
+
+def primary_state_filename(manifest: dict[str, Any], solver: str) -> str:
+    if solver == "COMSOL":
+        return COMSOL_PRIMARY_STATE_FILE
+    return f"particle_states__{primary_case_id(manifest)}.csv"
 
 
 def mean_source_energy_from_particle_input(path: Path) -> float:
@@ -72,8 +93,7 @@ def run_data(manifest_path: Path) -> dict[str, Any]:
     config = load_json(Path(manifest["run_config"]["path"]))
     numerics = load_json(Path(manifest["inputs"]["solver_numerics"]["path"]))
     resolved = load_json(Path(manifest["inputs"]["multipole_resolved_design"]["path"]))
-    metrics = load_json(manifest_record(manifest, "finite_3d_transport_metrics.json"))
-    state_path = manifest_record(manifest, STATE_FILES[solver])
+    state_path = manifest_record(manifest, primary_state_filename(manifest, solver))
     with state_path.open(encoding="utf-8-sig", newline="") as handle:
         rows = list(csv.DictReader(handle))
     handoff = {
@@ -95,7 +115,6 @@ def run_data(manifest_path: Path) -> dict[str, Any]:
     rms = lambda field: math.sqrt(
         sum(float(row[field]) ** 2 for row in values) / len(values)
     )
-    case = metrics["cases"][PRIMARY_CASES[solver]]
     exit_interface = resolved["interfaces_mm"]["exit"]
     aperture_radius = float(exit_interface["aperture_radius_mm"])
     projection_distance = float(exit_interface["census_plane_z_mm"]) - float(
@@ -133,7 +152,7 @@ def run_data(manifest_path: Path) -> dict[str, Any]:
         "handoff_particle_ids": sorted(handoff),
         "_handoff": handoff,
         "observables": {
-            "transmission": float(case["transmission_fraction"]),
+            "transmission": len(handoff) / len(source),
             "transmitted_particle_count": len(handoff),
             "mean_tof": mean_tof,
             "rms_radius": rms_radius,
