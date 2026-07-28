@@ -10,6 +10,13 @@
 `file_identity.py`是manifest、正式资产和机器合同文件SHA-256身份的唯一流式实现，固定返回大写十六进制；
 调用者只负责路径范围、字节数和证据资格等各自合同。
 
+`artifact_retention.json`和`artifact_retention.py`实现根README的run产物保留合同。迁移到manifest v2的
+入口必须显式启用公共生命周期retention，启用后的默认类是`compact`；`qualification/solver_review`
+必须在运行前给出理由。终态前`apply`只清除本次未闭合run中策略禁止的可重建文件并写
+`retention_actions.json`，不会处理既有最终run。manifest schema v2记录保留类和每项输出角色；
+writer/verifier同时扫描未列出的重型文件，防止通过漏报output绕过。schema v1只承担历史兼容，不因
+新增合同而失效；未迁移入口由测试中的具名棘轮清单约束，新建或实质修改时必须退出该清单。
+
 `stage_reuse.py`提供跨项目、单父run的阶段续跑合同。它不是缓存或DAG调度器，也不定义项目阶段顺序。
 未来原生runner只可用`write_stage_receipt`为summary中明确标为`success`的阶段写
 `stage_receipts/<stage_id>.json`，随后在父run最终manifest中冻结该receipt、summary、全部阶段输出及

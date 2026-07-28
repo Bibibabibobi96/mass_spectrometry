@@ -10,6 +10,8 @@ param(
   [double]$WorkingRegionMaximumElementSizeMm=[double]::NaN,
   [ValidateRange(4,10000)][int]$RfStepsPerPeriod=80,
   [ValidateRange(0.001,1000000)][double]$MaximumTimeUs=80.0,
+  [ValidateSet('compact','qualification','solver_review')][string]$RetentionClass='compact',
+  [string]$RetentionReason='',
   [string]$SourceFamilyPath='',
   [string]$OperatingPointId=''
 )
@@ -39,6 +41,8 @@ if([string]::IsNullOrWhiteSpace($RunId)){
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$ProjectId") -RunId $RunId `
   -Project $ProjectId -Mode 'resolved_design_transport' `
+  -RetentionContractEnabled `
+  -RetentionClass $RetentionClass -RetentionReason $RetentionReason `
   -Software @('COMSOL 6.4','MATLAB R2025b','Python 3.11')
 $runDir=$package.run_dir;$inputDir=$package.input_dir;$resultDir=$package.result_dir
 $logDir=$package.log_dir;$runConfig=$package.run_config;$summary=$package.summary
@@ -156,8 +160,10 @@ try{
   $controlTrajectories=Join-Path $resultDir 'trajectory_samples__control.csv'
   $report=Join-Path $logDir 'comsol_finite_3d_transport.txt';$evaluation=Join-Path $resultDir 'evidence_evaluation.json'
   $task=Join-Path $codeRoot 'common\multipole\solve_finite_3d_transport.m'
-  [ordered]@{schema_version=1;role='multipole_resolved_comsol_run_config';run_id=$RunId;project=$ProjectId;
+  [ordered]@{schema_version=2;role='multipole_resolved_comsol_run_config';run_id=$RunId;project=$ProjectId;
     mode='resolved_design_transport';project_root=$profile.project_root;
+    artifact_retention=[ordered]@{policy_version=1;class=$RetentionClass;
+      reason=$(if($RetentionClass-eq'compact'){$null}else{$RetentionReason})};
     provenance=[ordered]@{parent_resolved_design_sha256=$resolvedHash;particle_source_sha256=$sourceMeta.source_sha256;
       source_family_sha256=$sourceFamilySha;operating_point_id=$(if($sourceFamily){$OperatingPointId}else{$null});
       particle_source_operating_point_binding=$sourceMeta.operating_point_binding};
@@ -226,10 +232,14 @@ try{
     parent_resolved_design_sha256=$resolvedHash;primary_transmission=$primary.transmission_fraction;
     control_transmission=$control.transmission_fraction;model_level='L3';formal_gate_passed=$false}|
     ConvertTo-Json -Depth 5|Set-Content -LiteralPath $summary -Encoding UTF8
+  $retentionActions=Apply-RunArtifactRetention -Python $python -RepoRoot $manifestRepoRoot `
+    -RunConfig $runConfig
   $outputs=@($events,$trajectories,$metrics,$plot,$model,$canonicalState,
     $primaryState,$controlState,$primaryTrajectories,$controlTrajectories,$report,$summary)
   if(Test-Path -LiteralPath $pairedMetrics){$outputs+=$pairedMetrics}
   if(Test-Path -LiteralPath $evaluation){$outputs+=$evaluation}
+  $outputs=@($outputs|Where-Object{Test-Path -LiteralPath $_ -PathType Leaf})
+  $outputs+=$retentionActions
   Write-VerifiedRunManifest -Python $python -RepoRoot $manifestRepoRoot -RunConfig $runConfig `
     -Status success -Software @('COMSOL 6.4','MATLAB R2025b','Python 3.11') -Outputs $outputs
   Write-Output "MULTIPOLE_COMSOL_RESOLVED=PASS PROJECT=$ProjectId PROFILE=$DesignProfileId RUN_ID=$RunId PARENT_SHA256=$resolvedHash QUALIFICATION=$qualification"

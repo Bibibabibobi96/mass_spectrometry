@@ -84,6 +84,24 @@ class RuntimeProfileTests(unittest.TestCase):
                 REPO_ROOT, "rf_hexapole_ion_guide", "not-a-profile"
             )
 
+    def test_quadrupole_uses_the_same_governed_runtime_chain(self) -> None:
+        resolved = resolve_runtime_profile(
+            REPO_ROOT, "rf_quadrupole_collision_cooling", "functional_baseline"
+        )
+        self.assertEqual(resolved["design_profile_id"], "official_transport")
+        self.assertEqual(
+            resolved["particle_source"]["sha256"],
+            "3A04CFDD2A091F8CC979DD6180E5C7E072A5D96A87ED03768A606581D15D15C5",
+        )
+        for name in ("run_comsol.ps1", "run_simion.ps1"):
+            source = (
+                REPO_ROOT
+                / "projects/rf_quadrupole_collision_cooling/workflows/no_collision_transport"
+                / name
+            ).read_text(encoding="utf-8-sig")
+            self.assertIn("[string]$RuntimeProfileId", source)
+            self.assertNotIn("[string]$ParticleSourcePath", source)
+
 
 if __name__ == "__main__":
     unittest.main()

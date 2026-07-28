@@ -115,8 +115,9 @@ class Phase4DesignConsumerTests(unittest.TestCase):
             source = (workflow / name).read_text(encoding="utf-8")
             for forbidden in FORBIDDEN_RUNNER_TERMS:
                 self.assertNotIn(forbidden, source)
-            self.assertIn("ParticleSourcePath", source)
-            self.assertIn("DesignProfileId = 'official_transport'", source)
+            self.assertIn("[string]$RuntimeProfileId", source)
+            self.assertNotIn("[string]$ParticleSourcePath", source)
+            self.assertIn("common.multipole.runtime_profile", source)
             self.assertNotIn("[string]$DesignProfileId", source)
             self.assertNotIn("explicit_axial_reference", source)
             self.assertNotIn("exit_aperture_plate_acceleration_reference", source)

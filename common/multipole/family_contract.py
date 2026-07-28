@@ -57,7 +57,7 @@ class MultipoleOperatingContract:
 def load_family_contract(path: Path = FAMILY_CONTRACT_PATH) -> dict[str, Any]:
     """Load the versioned family contract."""
     document = json.loads(path.read_text(encoding="utf-8"))
-    if document.get("schema_version") != 4 or document.get("role") != "rf_multipole_family_contract":
+    if document.get("schema_version") != 5 or document.get("role") != "rf_multipole_family_contract":
         raise ValueError("RF multipole family contract schema or role differs")
     foundation = document.get("foundation")
     if not isinstance(foundation, dict) or foundation.get("api_status") != "frozen":

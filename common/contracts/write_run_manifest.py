@@ -17,6 +17,24 @@ except ModuleNotFoundError:
     from file_identity import file_sha256
 
 
+def retention_api() -> tuple[Any, Any, Any]:
+    """Import the v2-only retention API without breaking frozen v1 writers."""
+
+    try:
+        from common.contracts.artifact_retention import (
+            classify_file,
+            validate_retained_files,
+            validate_retention,
+        )
+    except ModuleNotFoundError:
+        from artifact_retention import (
+            classify_file,
+            validate_retained_files,
+            validate_retention,
+        )
+    return classify_file, validate_retained_files, validate_retention
+
+
 def resolve_path(value: str, base: Path, project_root: Path | None) -> Path:
     path = Path(value)
     if path.is_absolute():
@@ -25,10 +43,12 @@ def resolve_path(value: str, base: Path, project_root: Path | None) -> Path:
     return (root / path).resolve()
 
 
-def file_record(path: Path) -> dict[str, Any]:
+def file_record(path: Path, retention_role: str | None = None) -> dict[str, Any]:
     record: dict[str, Any] = {"path": str(path), "exists": path.is_file()}
     if path.is_file():
         record.update(bytes=path.stat().st_size, sha256=file_sha256(path))
+    if retention_role is not None:
+        record["retention_role"] = retention_role
     return record
 
 
@@ -53,19 +73,39 @@ def main() -> None:
     project_root_value = run_config.get("project_root")
     project_root = Path(project_root_value).resolve() if project_root_value else None
     base = run_config_path.parent
+    retention = None
+    if run_config.get("schema_version") == 2:
+        classify_file, validate_retained_files, validate_retention = retention_api()
+        retention = validate_retention(run_config.get("artifact_retention"))
 
     inputs = {
         name: file_record(resolve_path(value, base, project_root))
         for name, value in run_config.get("inputs", {}).items()
         if isinstance(value, str)
     }
-    outputs = [file_record(resolve_path(value, base, project_root)) for value in args.output]
+    output_paths = [resolve_path(value, base, project_root) for value in args.output]
+    if retention is not None and args.status != "interrupted":
+        run_files = [
+            path
+            for path in base.rglob("*")
+            if path.is_file()
+            and not path.is_symlink()
+            and path.name != "run_manifest.json"
+        ]
+        validate_retained_files(retention, run_files)
+    outputs = [
+        file_record(
+            path,
+            classify_file(path) if retention is not None and path.is_file() else None,
+        )
+        for path in output_paths
+    ]
     missing_inputs = [name for name, record in inputs.items() if not record["exists"]]
     if missing_inputs:
         raise SystemExit(f"missing run inputs: {', '.join(missing_inputs)}")
 
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2 if retention is not None else 1,
         "role": "simulation_run_manifest",
         "run_id": run_id,
         "project": run_config.get("project"),
@@ -82,6 +122,12 @@ def main() -> None:
         and args.status == "success"
         and all(item["exists"] for item in outputs),
     }
+    if retention is not None:
+        manifest["artifact_retention"] = {
+            "policy_version": retention.policy_version,
+            "class": retention.class_id,
+            "reason": retention.reason,
+        }
     destination = args.manifest or run_config_path.with_name("run_manifest.json")
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

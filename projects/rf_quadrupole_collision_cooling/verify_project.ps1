@@ -28,8 +28,14 @@ try {
   & $python -m projects.rf_quadrupole_collision_cooling.analysis.sync_simion_geometry --check
   if ($LASTEXITCODE -ne 0) { throw 'SIMION geometry publication gate failed.' }
   & $python -m projects.rf_quadrupole_collision_cooling.analysis.generate_official_particle_table --check `
-    (Join-Path $projectRoot 'config\particles\official_fixed_100.ion')
+    (Join-Path $projectRoot 'config\particles\official_fixed_100.ion') --check-canonical `
+    (Join-Path $projectRoot 'config\particles\official_fixed_100_canonical.csv') --resolved-design `
+    (Join-Path $projectRoot 'config\resolved_design_official.json')
   if ($LASTEXITCODE -ne 0) { throw 'Paired-particle identity gate failed.' }
+  & $python -m common.multipole.runtime_profile --repo-root $repoRoot `
+    --project-id rf_quadrupole_collision_cooling --runtime-profile-id functional_baseline `
+    --output (Join-Path ([IO.Path]::GetTempPath()) 'rfquad_runtime_profile_gate.json')
+  if ($LASTEXITCODE -ne 0) { throw 'Multipole runtime-profile gate failed.' }
 } finally { Pop-Location }
 if ($Level -eq 'Freshness') {
   "PROJECT_GATE=PASS PROJECT=rf_quadrupole_collision_cooling LEVEL=$Level"

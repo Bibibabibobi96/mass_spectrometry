@@ -104,6 +104,18 @@ L2 `analyze_round_rod_screen.py`同样只报告每个输入ratio的场谐波指�
 `ProjectId + DesignProfileId`，在run内解析profile并编译唯一resolved design；二维求解器只从该resolved
 读取多极阶数、电极数和`r0`，筛选合同仅定义候选采样与数值参数。
 
+## 当前功能数值资格
+
+2026-07-28，四、六、八极杆的`no_acceleration_full_length`均以真实COMSOL和SIMION、同一项目内冻结
+N=100源完成五项矩阵：COMSOL空间加密、COMSOL时间加密、SIMION空间加密、SIMION时间加密，以及两边
+各自收敛解之间的跨求解器比较，全部`PASS`。机器结果位于
+`artifacts/projects/<project_id>/results/numerical_qualification/20260728_functional_transport/`，验收合同为
+[`functional_transport_acceptance.json`](functional_transport_acceptance.json)。
+
+该闭合只证明无碰撞RF传输分类、透射粒子ID和正工作半径裕量稳定；连续束斑、发散、TOF、能量及逐粒子
+相空间差异只是诊断输出，不在这项PASS内。它也不授予碰撞冷却、轴向加速、RF+DC质量过滤、机械、
+Candidate或Formal资格。
+
 ## 求解器投影
 
 两个L3入口为：
@@ -134,6 +146,12 @@ runner创建run目录后立即写并验证`interrupted` manifest；所有编译�
 边界内。终态只写一次，失败时递归收集现存inputs/results/logs/SIMION文件，避免负结果被第二次空manifest
 覆盖。实际Python、MATLAB、Lua及公共依赖冻结到`inputs/code/`，生成逐文件SHA-256 inventory，后续执行
 从冻结副本加载。
+
+两个L3入口继承根README的统一产物保留合同，默认`RetentionClass=compact`：保留冻结输入、metrics、
+canonical粒子终态/事件、必要日志和轻量图，终态前移除可重建MPH、SIMION PA解阵列和完整轨迹并记录
+`retention_actions.json`。普通及中间数值收敛点仍使用compact，并以轨迹提取后的states/metrics完成比较；
+只有预注册最终参考点选择`qualification`，确需GUI/网格重开时选择`solver_review`，两者都必须在运行前
+提供`RetentionReason`。这项存储选择不改变物理输入、判据或资格。
 
 ## 单PA GUI模板登记
 

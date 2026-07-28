@@ -1,0 +1,29 @@
+{
+  "schema_version": 2,
+  "role": "multipole_transport_runtime_profiles",
+  "project_id": "rf_quadrupole_collision_cooling",
+  "solver_numerics_registry_paths": {
+    "comsol": "config/multipole_transport_comsol_solver_numerics.json",
+    "simion": "config/multipole_transport_simion_solver_numerics.json"
+  },
+  "profiles": {
+    "functional_baseline": {
+      "design_profile_id": "official_transport",
+      "particle_source_profile_id": "official_fixed_100",
+      "comsol_solver_numerics_profile_id": "functional_baseline",
+      "simion_solver_numerics_profile_id": "functional_baseline"
+    },
+    "functional_spatial_refined": {
+      "design_profile_id": "official_transport",
+      "particle_source_profile_id": "official_fixed_100",
+      "comsol_solver_numerics_profile_id": "functional_spatial_refined",
+      "simion_solver_numerics_profile_id": "functional_spatial_refined"
+    },
+    "functional_time_refined": {
+      "design_profile_id": "official_transport",
+      "particle_source_profile_id": "official_fixed_100",
+      "comsol_solver_numerics_profile_id": "functional_time_refined",
+      "simion_solver_numerics_profile_id": "functional_time_refined"
+    }
+  }
+}

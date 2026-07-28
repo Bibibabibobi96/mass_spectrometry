@@ -48,7 +48,7 @@ def validate_family_identity() -> dict[str, Any]:
     """Validate the frozen family identity, consumers, and capability boundary."""
     family = load_json(REPO_ROOT / "common" / "multipole" / "family_contract.json")
     foundation = family.get("foundation", {})
-    require(family.get("schema_version") == 4, "family contract schema_version must be 4")
+    require(family.get("schema_version") == 5, "family contract schema_version must be 5")
     require(family.get("role") == "rf_multipole_family_contract", "family contract role differs")
     require(family.get("supported_radial_orders") == [2, 3, 4], "supported radial orders differ")
     require(foundation.get("api_status") == "frozen", "family API is not frozen")
@@ -77,6 +77,61 @@ def validate_family_identity() -> dict[str, Any]:
                     f"{project_id} {solver} evidence modes differ")
             require(all("__n100" in run_id for run_id in evidence[project_id][solver].values()),
                     f"{project_id} {solver} evidence is not N=100")
+    transport = foundation.get("transport_validation", {})
+    require(
+        transport.get("status") == "functional_collision_free_transport_closed",
+        "family transport-validation status differs",
+    )
+    require(
+        transport.get("method_contract") == "common/multipole/numerical_qualification.json"
+        and transport.get("method_role") == "multipole_l3_numerical_qualification_contract",
+        "family transport-validation method differs",
+    )
+    require(
+        transport.get("functional_acceptance_contract")
+        == "common/multipole/functional_transport_acceptance.json",
+        "family functional acceptance contract differs",
+    )
+    require(
+        set(transport.get("consumers", [])) == set(PROJECT_SPECS),
+        "family transport-validation consumers differ",
+    )
+    require(
+        set(transport.get("modes", []))
+        == {
+            "no_acceleration_full_length",
+            "segmented_rod_axial_acceleration",
+            "exit_aperture_plate_acceleration",
+        },
+        "family transport-validation modes differ",
+    )
+    require(
+        len(transport.get("common_observables", [])) == 6
+        and bool(transport.get("acceptance_policy", "").strip()),
+        "family transport-validation observables or acceptance policy differ",
+    )
+    qualification = transport.get("functional_qualification", {})
+    require(
+        qualification.get("particle_count") == 100
+        and qualification.get("profile") == "no_acceleration_full_length",
+        "family functional qualification identity differs",
+    )
+    require(
+        qualification.get("comparison_matrix")
+        == [
+            "comsol_spatial",
+            "comsol_temporal",
+            "simion_spatial",
+            "simion_temporal",
+            "cross_solver",
+        ],
+        "family functional qualification matrix differs",
+    )
+    require(
+        qualification.get("status_each_project")
+        == {project_id: "PASS" for project_id in PROJECT_SPECS},
+        "family functional qualification project status differs",
+    )
     return family
 
 
@@ -138,7 +193,16 @@ def validate_project_identity(project_id: str, order: int, electrode_count: int)
             root / "workflows" / "no_collision_transport" / "run_comsol.ps1"
         ).read_text(encoding="utf-8")
         require("common\\multipole\\run_finite_3d_transport.ps1" in wrapper, "quadrupole L3 runner is duplicated")
-        require("DesignProfileId = 'official_transport'" in wrapper, "quadrupole does not fix its governed design profile")
+        require("common.multipole.runtime_profile" in wrapper, "quadrupole does not use governed runtime profiles")
+        runtime_profiles = load_json(root / "config" / "runtime_profiles.json")
+        require(
+            {
+                profile["design_profile_id"]
+                for profile in runtime_profiles.get("profiles", {}).values()
+            }
+            == {"official_transport"},
+            "quadrupole runtime profiles do not fix the governed design profile",
+        )
         require("Adapter" not in wrapper, "quadrupole retains the legacy shared-adapter switch")
         builder = (
             root / "comsol" / "solve_deterministic_rf_quadrupole_particles.m"

@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "role": "multipole_l3_numerical_qualification_contract",
+  "status": "method_only_project_acceptance_required",
+  "scope": [
+    "rf_quadrupole_collision_cooling",
+    "rf_hexapole_ion_guide",
+    "rf_octupole_ion_guide"
+  ],
+  "required_sequence": [
+    "same_solver_spatial_convergence",
+    "same_solver_time_convergence",
+    "cross_solver_comparison_of_converged_solutions"
+  ],
+  "claim_profiles": {
+    "functional_transport": {
+      "required_observables": [
+        "transmitted_particle_count",
+        "handoff_particle_id_set",
+        "minimum_aperture_margin"
+      ],
+      "does_not_qualify": [
+        "near_interface_divergence",
+        "acceleration_energy_gain",
+        "cross_solver_phase_space"
+      ]
+    },
+    "near_interface_divergence": {
+      "required_observables": [
+        "paired_handoff_transverse_state",
+        "rms_radius_normalized_by_exit_aperture",
+        "divergence_projected_to_declared_observation_plane_normalized_by_exit_aperture"
+      ],
+      "effect_resolution_required": true
+    },
+    "acceleration_energy_gain": {
+      "required_observables": [
+        "paired_handoff_energy",
+        "mean_energy_normalized_by_source_energy"
+      ],
+      "effect_resolution_required": true
+    },
+    "cross_solver_phase_space": {
+      "required_observables": [
+        "paired_handoff_position",
+        "paired_handoff_velocity",
+        "paired_handoff_time",
+        "paired_handoff_energy"
+      ],
+      "both_solvers_independently_converged": true
+    }
+  },
+  "acceptance_contract_requirements": {
+    "explicit_project_or_shared_scope": true,
+    "physical_or_engineering_budget_source": true,
+    "absolute_and_relative_scale_review": true,
+    "downstream_propagation_review": true,
+    "evidence_level": true,
+    "preregistered_before_qualification_result": true,
+    "cross_project_reuse_requires_dimensional_and_budget_review": true
+  },
+  "identity_requirements": {
+    "project": "exact_match",
+    "resolved_design_sha256": "exact_match",
+    "particle_source_sha256": "exact_match",
+    "same_solver_nonvaried_numerics": "exact_match"
+  },
+  "engineering_stop_policy": {
+    "project_budget_must_be_preregistered": true,
+    "budget_dimensions": [
+      "wall_clock_time",
+      "peak_memory",
+      "artifact_storage",
+      "solver_size"
+    ],
+    "accuracy_pass": "retain the least expensive discretization supported by the passing adjacent pair",
+    "accuracy_fail_with_budget_remaining": "refine only the failed discretization axis",
+    "accuracy_fail_with_budget_exhausted": "INCONCLUSIVE_MESH_STRATEGY_CHANGE_REQUIRED",
+    "forbidden_response": "Do not relax acceptance or continue brute-force refinement after the registered engineering budget is exhausted."
+  },
+  "claim_limit": "Method contract only. It cannot produce a qualification PASS until an applicable acceptance contract and engineering budget are preregistered."
+}

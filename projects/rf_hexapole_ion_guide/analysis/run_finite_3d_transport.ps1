@@ -4,6 +4,8 @@ param(
   [string]$RuntimeProfileId = 'baseline_finite_3d',
   [string]$EvidenceContractPath = '',
   [string]$RunId = '',
+  [ValidateSet('compact','qualification','solver_review')][string]$RetentionClass = 'compact',
+  [string]$RetentionReason = '',
   [string]$PythonExe = ''
 )
 Set-StrictMode -Version Latest
@@ -26,6 +28,8 @@ try {
     DesignProfileId = [string]$profile.design_profile_id
     ParticleSourcePath = [string]$profile.particle_source.path
     RunId = $RunId
+    RetentionClass = $RetentionClass
+    RetentionReason = $RetentionReason
     PythonExe = $python
     MeshAutoLevel = [int]$numerics.mesh.global_auto_level
     RfStepsPerPeriod = [int]$numerics.trajectory.rf_steps_per_period

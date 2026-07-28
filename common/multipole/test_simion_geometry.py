@@ -98,6 +98,8 @@ class SimionGeometryTests(unittest.TestCase):
         self.assertIn("notin_inside { cylinder(", gem)
         self.assertIn("; connector_shape=rectangular_bore", gem)
         self.assertIn("parent_resolved_sha256=" + "A" * 64, gem)
+        self.assertIn("GUI-visible numerical absorber", gem)
+        self.assertIn("cylinder(0,0,5.2,1.2,,0.2)", gem)
 
     def test_cylindrical_connector_is_cylinder_minus_cylinder(self) -> None:
         gem = render_gem(resolved_design("cylindrical_bore", 1.0), 0.2)

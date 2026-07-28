@@ -24,7 +24,8 @@ CSV的SHA和各求解器数值profile；任意粒子路径和自由数值不再�
 `20260728_120628__sim__simion__rf-hexapole-no-acceleration-full-length__n100__r05`
 均得到RF传输率1.00、零RF传输率0.17、提升0.83，并通过冻结的证据合同和run manifest。COMSOL
 工作区0.5 mm最大单元尺寸是本次功能复验的必要数值条件，已恢复到solver-numerics profile；这只恢复
-N=100双求解器功能PASS，不构成网格/时间步收敛、跨求解器轨迹数值等价或Candidate资格。
+N=100双求解器功能PASS。随后完成的五项数值矩阵又证明COMSOL空间/时间、SIMION空间/时间以及各自
+收敛解之间的功能传输比较全部PASS；它仍不构成连续相空间数值等价或Candidate资格。
 
 Phase 2设计配置把当前`n=3`、6根电极身份、`r0=4 mm`、圆杆比0.5、有限杆范围、圆柱接地屏蔽及
 真空域、圆孔接口、canonical驱动和uniform四段参考冻结为单一求解器无关请求。33个数值变量均以
@@ -61,8 +62,8 @@ Mathieu稳定图。L1/L2/L3迁移前小样本及2 mm连接器数值只保留在
   只发布逐候选metrics，不选择或回写L3几何。未做网格收敛，不允许机械设计、Candidate或Formal声明。
 - L3使用20 mm内半径连续接地圆柱外壳、独立外壳封闭端盖、完整有限圆杆、两块带孔接地接口板和
   两段有限外部区，COMSOL
-  和SIMION已对`no_acceleration_full_length`完成v2 N=100功能闭合；尚未完成网格/时间步收敛、
-  跨求解器轨迹数值等价或Candidate资格门禁。
+  和SIMION已对`no_acceleration_full_length`完成v2 N=100功能闭合及功能声明所需的空间/时间收敛；
+  尚未完成连续相空间数值等价或Candidate资格门禁。
 
 ## 权威入口
 
@@ -98,8 +99,8 @@ Mathieu稳定图。L1/L2/L3迁移前小样本及2 mm连接器数值只保留在
 
 多极杆公共机制已冻结，后续不再为本项目复制公共杆阵列、运行时或接口实现。v1离子导引和接口功能链
 曾由COMSOL与SIMION独立贯通，但不能继承为v2当前资格。无加速profile已重新完成v2 N=100双求解器
-功能运行；下一阶段不再增加模型层级，直接进行各求解器独立网格/时间步收敛、冻结同输入轨迹数值等价
-和机械baseline。没有N=1000、GUI/CAD同步与formal asset promotion时不得
+功能运行及五项功能数值矩阵；下一阶段只在声明需要时为连续相空间量预注册误差预算，并建立
+机械baseline。没有N=1000、GUI/CAD同步与formal asset promotion时不得
 声明Formal。碰撞冷却与CAD仍为独立后续阶段。轴向加速若
 继续推进，须先建立项目具名design request与runtime profile，再研究分段数量、各段长度/间隙/电势、
 馈电和机械实现；当前默认uniform四段参数仅保留v1历史功能依据，待v2双求解器N=100重验，且不是
@@ -107,7 +108,12 @@ Mathieu稳定图。L1/L2/L3迁移前小样本及2 mm连接器数值只保留在
 
 共享SIMION模板、GUI复核、`.wgem`绕过和跨机可移植性状态只由
 [`../../../common/multipole/README.md`](../../../common/multipole/README.md)维护；公共机制证据不授予
-本项目Candidate或Formal资格。本项目还保留两项项目专属退出任务：
+本项目Candidate或Formal资格。
+
+项目L3薄wrapper默认使用根README定义的`compact`产物保留类；数值资格或GUI复核需要MPH、PA解阵列或
+完整轨迹时，必须在运行前显式选择非compact类并写明理由。该设置只管理产物，不是数值或资格参数。
+
+本项目还保留两项项目专属退出任务：
 
 1. `project.json.contracts.baseline`暂因根registry builder的旧`multipole`身份检查保留只读
    `config/baseline.json`。根schema/builder改由design profile/request或独立identity contract校验，

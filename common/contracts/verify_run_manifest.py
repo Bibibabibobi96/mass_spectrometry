@@ -13,6 +13,24 @@ except ModuleNotFoundError:
     from file_identity import file_sha256
 
 
+def retention_api() -> tuple[Any, Any, Any]:
+    """Import the v2-only retention API without breaking frozen v1 verifiers."""
+
+    try:
+        from common.contracts.artifact_retention import (
+            classify_file,
+            validate_retained_files,
+            validate_retention,
+        )
+    except ModuleNotFoundError:
+        from artifact_retention import (
+            classify_file,
+            validate_retained_files,
+            validate_retention,
+        )
+    return classify_file, validate_retained_files, validate_retention
+
+
 def verify_record(name: str, record: dict) -> None:
     path = Path(record["path"])
     if not path.is_file():
@@ -45,6 +63,9 @@ def main() -> None:
     parser.add_argument("--require-particle-source-sha256")
     args = parser.parse_args()
     manifest = json.loads(args.manifest.read_text(encoding="utf-8-sig"))
+    schema_version = manifest.get("schema_version", 1)
+    if schema_version not in {1, 2}:
+        raise AssertionError(f"unsupported run manifest schema_version: {schema_version!r}")
     if manifest.get("status") != args.require_status:
         raise AssertionError(
             f"manifest status is {manifest.get('status')!r}, expected {args.require_status!r}"
@@ -56,6 +77,18 @@ def main() -> None:
             f"manifest run_config is outside its run directory: {run_config_path}"
         )
     run_config = json.loads(run_config_path.read_text(encoding="utf-8-sig"))
+    retention = None
+    if schema_version == 2:
+        classify_file, validate_retained_files, validate_retention = retention_api()
+        if run_config.get("schema_version") != 2:
+            raise AssertionError("v2 manifest requires v2 run_config")
+        retention = validate_retention(run_config.get("artifact_retention"))
+        if manifest.get("artifact_retention") != {
+            "policy_version": retention.policy_version,
+            "class": retention.class_id,
+            "reason": retention.reason,
+        }:
+            raise AssertionError("manifest artifact_retention differs from run_config")
     for field, expected in (
         ("run_id", args.require_run_id),
         ("project", args.require_project),
@@ -90,6 +123,23 @@ def main() -> None:
         verify_record(f"input {name}", record)
     for index, record in enumerate(manifest.get("outputs", []), start=1):
         verify_record(f"output {index}", record)
+        if retention is not None:
+            expected_role = classify_file(
+                Path(record["path"]), bytes_count=int(record["bytes"])
+            )
+            if record.get("retention_role") != expected_role:
+                raise AssertionError(
+                    f"output {index} retention_role differs: {record.get('retention_role')!r}"
+                )
+    if retention is not None and manifest.get("status") != "interrupted":
+        run_files = [
+            path
+            for path in args.manifest.resolve().parent.rglob("*")
+            if path.is_file()
+            and not path.is_symlink()
+            and path.resolve() != args.manifest.resolve()
+        ]
+        validate_retained_files(retention, run_files)
     print(
         f"RUN_MANIFEST_VERIFY=PASS PROJECT={manifest.get('project')} "
         f"RUN_ID={manifest.get('run_id')} OUTPUTS={len(manifest.get('outputs', []))}"

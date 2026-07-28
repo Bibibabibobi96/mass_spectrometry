@@ -254,7 +254,7 @@ class AxialAccelerationTest(unittest.TestCase):
                     path = root / "projects" / project / "analysis" / name
                 source = path.read_text(encoding="utf-8-sig")
                 if project == "rf_quadrupole_collision_cooling":
-                    self.assertIn("DesignProfileId = 'official_transport'", source)
+                    self.assertIn("common.multipole.runtime_profile", source)
                     self.assertNotIn("[string]$DesignProfileId", source)
                 else:
                     self.assertIn("DesignProfileId", source)

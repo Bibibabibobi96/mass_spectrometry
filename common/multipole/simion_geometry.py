@@ -242,7 +242,8 @@ def _render_rectangular_reference_gem(
     z_min = float(enclosure["vacuum_z_min_mm"])
     z_max = float(enclosure["vacuum_z_max_mm"])
     nx = math.ceil(outer / cell_mm) + 1
-    nz = math.ceil((z_max - z_min) / cell_mm) + 1
+    computational_z_max = z_max + 3 * cell_mm
+    nz = math.ceil((computational_z_max - z_min) / cell_mm) + 1
     lines = [
         "; Generated from multipole_resolved_design; do not edit.",
         f"; parent_resolved_sha256={parent_hash}",
@@ -278,7 +279,8 @@ def _render_rectangular_reference_gem(
             f"    notin_inside {{ box3d({inner:.12g},{inner:.12g},{front_end-exit_z_min:.12g},{-inner:.12g},{-inner:.12g},1E+6) }}",
             f"    notin_inside {{ cylinder(0,0,{exit_z_max-exit_z_min+cell_mm:.12g},{float(interface['exit_aperture_radius']):.12g},,{exit_z_max-exit_z_min+2*cell_mm:.12g}) }}",
             "  } }",
-            f"  e({physical_detector_electrode}) {{ fill {{ within {{ cylinder(0,0,{float(interface['census_plane_z'])-exit_z_min:.12g},{float(interface['census_radius']):.12g},,{float(enclosure['physical_detector_thickness_mm']):.12g}) }} }} }}",
+            "  ; GUI-visible numerical absorber downstream of the census plane; not a physical detector.",
+            f"  e({physical_detector_electrode}) {{ fill {{ within {{ cylinder(0,0,{float(interface['census_plane_z'])-exit_z_min+cell_mm:.12g},{float(interface['census_radius']):.12g},,{cell_mm:.12g}) }} }} }}",
             "}",
         ]
     )

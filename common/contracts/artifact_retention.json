@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "role": "artifact_retention_policy",
+  "default_class": "compact",
+  "large_file_threshold_bytes": 104857600,
+  "classes": {
+    "compact": {
+      "allowed_roles": [
+        "required_evidence",
+        "lightweight_optional"
+      ],
+      "requires_reason": false
+    },
+    "qualification": {
+      "allowed_roles": [
+        "required_evidence",
+        "lightweight_optional",
+        "dense_trajectory",
+        "solver_native_binary",
+        "large_optional"
+      ],
+      "requires_reason": true
+    },
+    "solver_review": {
+      "allowed_roles": [
+        "required_evidence",
+        "lightweight_optional",
+        "dense_trajectory",
+        "solver_native_binary",
+        "large_optional"
+      ],
+      "requires_reason": true
+    }
+  },
+  "dense_trajectory_globs": [
+    "trajectory_samples*.csv",
+    "*trajectory*.h5",
+    "*trajectory*.hdf5"
+  ],
+  "solver_native_suffixes": [
+    ".mph",
+    ".pa",
+    ".pa#",
+    ".pa-surf"
+  ],
+  "solver_native_numbered_suffix_prefixes": [
+    ".pa"
+  ]
+}

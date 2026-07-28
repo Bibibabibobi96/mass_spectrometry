@@ -296,6 +296,29 @@ SIMION IOB 可能嵌入 PA 的绝对路径，移动工作区后必须重新打�
 `common/contracts/write_run_manifest.py`写manifest，再用`verify_run_manifest.py`重新计算全部记录；
 没有通过manifest复核的目录只能留在scratch，不能被正式文档引用。
 
+### run产物保留合同
+
+新建或实质修改的run入口必须使用
+[`common/contracts/artifact_retention.json`](common/contracts/artifact_retention.json)和run manifest
+schema v2冻结保留类别；默认类别是`compact`。保留类别在`run_config.json`运行前确定，manifest逐项记录
+输出的`retention_role`，不得在看见结果或磁盘占用后改类。现有schema v1历史run保持可读、可复核，
+但不得作为新入口绕过保留合同的模板。
+
+| 保留类别 | 适用范围 | 终态必须/允许保留 |
+|---|---|---|
+|`compact`|功能回归、常规参数运行、失败关闭的默认类别|三件套、冻结输入、代码身份、summary/metrics、canonical粒子终态/事件、必要日志和轻量图；禁止MPH、SIMION PA解阵列和完整轨迹|
+|`qualification`|预注册的最终收敛参考点、跨求解器资格参考资产或正式证据源run|允许完整轨迹及求解器原生重型文件；必须在运行前写明保留理由|
+|`solver_review`|需要GUI重开、节点/网格审查或供应商缺陷复现的专项诊断|允许完整轨迹及求解器原生重型文件；必须在运行前写明保留理由，不自动获得资格|
+
+`finite_3d_transport.mph`、`.pa#/.paN/.pa-surf`、完整`trajectory_samples*`以及达到策略阈值的其他大文件
+属于可选重型或可重建临时输出，不是每个成功run的必需证据。`compact`运行可在求解期间生成它们，但须在
+终态manifest前由公共retention执行器移除，并用`retention_actions.json`记录相对路径、字节数、原SHA-256
+和处置原因；执行器只能作用于尚无最终manifest的本次`runs/<run_id>`。writer和verifier会扫描未列出的
+重型文件并失败关闭，因此不能靠遗漏`--output`绕过。资格或GUI复核若确实需要重型文件，必须显式选择
+非compact类别；从compact run晋升时应重跑冻结输入，不得事后补造缺失资产。
+普通及中间网格/时间步收敛点仍使用`compact`：先从完整轨迹生成冻结metrics，再保留canonical states、
+metrics、numerics、summary和manifest用于成对比较；只有少数最终参考点或确需GUI/网格复核的点升级保留类。
+
 ### success / failed / interrupted / superseded
 
 |状态|判定条件|允许的结论|
@@ -364,6 +387,7 @@ Markdown入口。这里的“载荷”表示只读原始证据，不限于二进
 `archive`保留被正式引用的旧资产和冻结快照，`runs`保留被文档引用或用于失败根因的运行，`scratch`
 不作为引用来源。删除仍遵守`AGENTS.md`的用户确认规则；
 “已进入history”“已被superseded”或“manifest已生成”本身均不授权删除原始证据。
+run生成阶段的自动保留行为只按上文预注册的run产物保留合同执行；它不授权事后清理既有run。
 
 模型生成代码不能自动替代正式二进制：代码描述构建过程，`.mph`、SolidWorks装配体和SIMION交付包
 还承载已验收的节点、选择、网格、解或外部引用状态。每个项目只保留一套通过门禁的当前正式二进制；

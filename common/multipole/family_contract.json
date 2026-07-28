@@ -1,5 +1,5 @@
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "role": "rf_multipole_family_contract",
   "family_id": "rf_multipole_ion_optics",
   "coordinate_convention_id": "multipole.cartesian.z_axis.v1",
@@ -79,6 +79,50 @@
         }
       },
       "claim_limit": "All listed N=100 run IDs predate request/resolved contract v2 and are superseded evidence only. No active dual-solver, convergence, numerical-equivalence, mechanical, Candidate or Formal qualification may be inherited until rerun."
+    },
+    "transport_validation": {
+      "status": "functional_collision_free_transport_closed",
+      "method_contract": "common/multipole/numerical_qualification.json",
+      "method_role": "multipole_l3_numerical_qualification_contract",
+      "functional_acceptance_contract": "common/multipole/functional_transport_acceptance.json",
+      "consumers": [
+        "rf_quadrupole_collision_cooling",
+        "rf_hexapole_ion_guide",
+        "rf_octupole_ion_guide"
+      ],
+      "modes": [
+        "no_acceleration_full_length",
+        "segmented_rod_axial_acceleration",
+        "exit_aperture_plate_acceleration"
+      ],
+      "common_observables": [
+        "transmission_particle_count",
+        "handoff_particle_id_set",
+        "rms_radius_normalized_by_exit_aperture",
+        "divergence_projected_to_declared_observation_plane_normalized_by_exit_aperture",
+        "mean_tof_normalized_by_rf_period",
+        "mean_energy_normalized_by_source_energy"
+      ],
+      "acceptance_policy": "The method and normalized observables are shared. Each governed operating profile must preregister its minimum relevant functional effect, numerical-error allocation, engineering compute budget and applicability before qualification; raw percentages may not be copied across radial orders without dimensional and downstream-budget review.",
+      "functional_qualification": {
+        "date": "2026-07-28",
+        "particle_count": 100,
+        "profile": "no_acceleration_full_length",
+        "comparison_matrix": [
+          "comsol_spatial",
+          "comsol_temporal",
+          "simion_spatial",
+          "simion_temporal",
+          "cross_solver"
+        ],
+        "status_each_project": {
+          "rf_quadrupole_collision_cooling": "PASS",
+          "rf_hexapole_ion_guide": "PASS",
+          "rf_octupole_ion_guide": "PASS"
+        },
+        "artifact_relative_pattern": "artifacts/projects/<project_id>/results/numerical_qualification/20260728_functional_transport/<comparison>.json"
+      },
+      "claim_limit": "PASS covers only N=100 collision-free RF transport classification, exact transmitted-ID closure and positive working-radius margin for the named no-acceleration profile. It does not qualify continuous phase-space equivalence, collision cooling, axial acceleration, RF+DC mass filtering, mechanical design, Candidate or Formal status."
     },
     "change_control": "Changes require the repository multipole-family gate and real-solver regression for every affected adapter; project-specific theory and acceptance thresholds remain outside this contract."
   }

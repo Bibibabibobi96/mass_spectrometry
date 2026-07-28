@@ -114,8 +114,21 @@ function New-RunPackage {
     [Parameter(Mandatory)][string]$Project,
     [Parameter(Mandatory)][string]$Mode,
     [Parameter(Mandatory)][string[]]$Software,
+    [switch]$RetentionContractEnabled,
+    [ValidateSet('compact','qualification','solver_review')][string]$RetentionClass='compact',
+    [string]$RetentionReason='',
     [string[]]$AdditionalDirectories=@()
   )
+  if($RetentionContractEnabled-and$RetentionClass-ne'compact'-and[string]::IsNullOrWhiteSpace($RetentionReason)){
+    throw "RetentionReason is required for artifact retention class $RetentionClass."
+  }
+  if($RetentionContractEnabled-and$RetentionClass-eq'compact'-and-not[string]::IsNullOrWhiteSpace($RetentionReason)){
+    throw 'RetentionReason must be empty for compact artifact retention.'
+  }
+  if(-not$RetentionContractEnabled-and(
+      $RetentionClass-ne'compact'-or-not[string]::IsNullOrWhiteSpace($RetentionReason))){
+    throw 'RetentionContractEnabled is required when selecting run artifact retention.'
+  }
   $python=[IO.Path]::GetFullPath($Python)
   if(-not(Test-Path -LiteralPath $python -PathType Leaf)){throw "Run Python environment is missing: $python"}
   $pythonVersion=(& $python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')").Trim()
@@ -133,10 +146,16 @@ function New-RunPackage {
   $directories=@($package.input_dir,$package.result_dir,$package.log_dir)
   foreach($relative in $AdditionalDirectories){$directories+=Join-Path $runDir $relative}
   New-Item -ItemType Directory -Force -Path $directories|Out-Null
-  Write-RunJson -Path $package.run_config -Value ([ordered]@{
-    schema_version=1;run_id=$RunId;project=$Project;mode=$Mode;project_root=$RepoRoot;inputs=[ordered]@{};
+  $initialConfig=[ordered]@{
+    schema_version=$(if($RetentionContractEnabled){2}else{1});
+    run_id=$RunId;project=$Project;mode=$Mode;project_root=$RepoRoot;inputs=[ordered]@{};
     parameters=[ordered]@{lifecycle_stage='run_package_initialized'};formal_gate_passed=$false
-  })
+  }
+  if($RetentionContractEnabled){
+    $initialConfig.artifact_retention=[ordered]@{policy_version=1;class=$RetentionClass;
+      reason=$(if($RetentionClass-eq'compact'){$null}else{$RetentionReason})}
+  }
+  Write-RunJson -Path $package.run_config -Value $initialConfig
   Write-RunJson -Path $package.summary -Value ([ordered]@{
     schema_version=1;role='run_package_initialization_summary';status='interrupted';
     reason='Run package initialized; task-specific inputs are not frozen yet.'
@@ -144,6 +163,20 @@ function New-RunPackage {
   $null=Write-VerifiedRunManifest -Python $python -RepoRoot $RepoRoot -RunConfig $package.run_config `
     -Status interrupted -Software $Software -Outputs @($package.summary)
   return [pscustomobject]$package
+}
+
+function Apply-RunArtifactRetention {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Python,
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][string]$RunConfig
+  )
+  $output=& $Python (Join-Path $RepoRoot 'common\contracts\artifact_retention.py') `
+    apply --run-config $RunConfig
+  if($LASTEXITCODE-ne 0){throw 'Run artifact retention failed.'}
+  Write-Verbose ($output -join [Environment]::NewLine)
+  return Join-Path (Split-Path -Parent $RunConfig) 'retention_actions.json'
 }
 
 function Save-RunEnvironment {
@@ -241,7 +274,12 @@ function Complete-FailedRun {
   }}
   Write-RunJson -Path $RunConfig -Value $document
   Write-RunJson -Path $Summary -Value ([ordered]@{schema_version=1;role=$SummaryRole;status='failed';reason=$Reason})
+  $retentionActions=$null
+  if([int]$document.schema_version-eq 2){
+    $retentionActions=Apply-RunArtifactRetention -Python $Python -RepoRoot $RepoRoot -RunConfig $RunConfig
+  }
   $outputs=@($Summary)
+  if($retentionActions){$outputs+=$retentionActions}
   foreach($relative in @('results','logs','simion')){
     $directory=Join-Path $runDir $relative
     if(Test-Path -LiteralPath $directory -PathType Container){

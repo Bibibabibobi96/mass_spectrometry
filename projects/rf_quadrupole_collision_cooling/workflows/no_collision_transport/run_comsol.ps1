@@ -1,32 +1,44 @@
 [CmdletBinding()]
 param(
-  [Parameter(Mandatory=$true)][string]$ParticleSourcePath,
+  [ValidateSet('functional_baseline','functional_spatial_refined','functional_time_refined')]
+  [string]$RuntimeProfileId = 'functional_baseline',
   [string]$EvidenceContractPath = '',
   [string]$RunId = '',
-  [string]$PythonExe = '',
-  [ValidateRange(1,9)][int]$MeshAutoLevel = 6,
-  [double]$WorkingRegionMaximumElementSizeMm = [double]::NaN,
-  [ValidateRange(4,10000)][int]$RfStepsPerPeriod = 80,
-  [ValidateRange(0.001,1000000)][double]$MaximumTimeUs = 80.0
+  [ValidateSet('compact','qualification','solver_review')][string]$RetentionClass = 'compact',
+  [string]$RetentionReason = '',
+  [string]$PythonExe = ''
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
-$arguments = @{
-  ProjectId = 'rf_quadrupole_collision_cooling'
-  DesignProfileId = 'official_transport'
-  ParticleSourcePath = $ParticleSourcePath
-  RunId = $RunId
-  PythonExe = $python
-  MeshAutoLevel = $MeshAutoLevel
-  RfStepsPerPeriod = $RfStepsPerPeriod
-  MaximumTimeUs = $MaximumTimeUs
+$resolutionPath = Join-Path ([IO.Path]::GetTempPath()) ("rfquad_runtime_{0}.json" -f [guid]::NewGuid())
+try {
+  Push-Location $repoRoot
+  try {
+    & $python -m common.multipole.runtime_profile --repo-root $repoRoot `
+      --project-id rf_quadrupole_collision_cooling --runtime-profile-id $RuntimeProfileId `
+      --output $resolutionPath
+  } finally { Pop-Location }
+  if ($LASTEXITCODE -ne 0) { throw 'RF quadrupole runtime profile resolution failed.' }
+  $profile = Get-Content -LiteralPath $resolutionPath -Raw -Encoding UTF8 | ConvertFrom-Json
+  $numerics = $profile.solver_numerics.comsol.values
+  $arguments = @{
+    ProjectId = 'rf_quadrupole_collision_cooling'
+    DesignProfileId = [string]$profile.design_profile_id
+    ParticleSourcePath = [string]$profile.particle_source.path
+    RunId = $RunId
+    RetentionClass = $RetentionClass
+    RetentionReason = $RetentionReason
+    PythonExe = $python
+    MeshAutoLevel = [int]$numerics.mesh.global_auto_level
+    WorkingRegionMaximumElementSizeMm = [double]$numerics.mesh.working_region_maximum_element_size_mm
+    RfStepsPerPeriod = [int]$numerics.trajectory.rf_steps_per_period
+    MaximumTimeUs = [double]$numerics.trajectory.maximum_global_time_us
+  }
+  if ($EvidenceContractPath) { $arguments.EvidenceContractPath = $EvidenceContractPath }
+  & (Join-Path $repoRoot 'common\multipole\run_finite_3d_transport.ps1') @arguments
+  if ($LASTEXITCODE -ne 0) { throw 'RF quadrupole COMSOL transport failed.' }
+} finally {
+  Remove-Item -LiteralPath $resolutionPath -Force -ErrorAction SilentlyContinue
 }
-if ($EvidenceContractPath) { $arguments.EvidenceContractPath = $EvidenceContractPath }
-if (-not [double]::IsNaN($WorkingRegionMaximumElementSizeMm)) {
-  $arguments.WorkingRegionMaximumElementSizeMm = $WorkingRegionMaximumElementSizeMm
-}
-& (Join-Path $repoRoot 'common\multipole\run_finite_3d_transport.ps1') @arguments
-if ($LASTEXITCODE -ne 0) { throw 'RF quadrupole COMSOL transport failed.' }

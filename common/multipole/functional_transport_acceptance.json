@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "role": "multipole_l3_numerical_acceptance_contract",
+  "contract_id": "rf_multipole.functional_transport.v1",
+  "status": "preregistered_for_future_runs_retrospective_for_existing_runs",
+  "claim_profile": "functional_transport",
+  "scope": {
+    "family_id": "rf_multipole_ion_optics",
+    "radial_orders": [2, 3, 4],
+    "physics": "collision_free_rf_transport",
+    "particle_count": 100
+  },
+  "budget_basis": {
+    "transmission": "N=100 paired deterministic source; one changed particle is a directly observable classification change.",
+    "aperture_margin": "A transmitted classification is invalid if the recorded maximum rod-region radius consumes the complete governed working radius.",
+    "excluded_continuous_outputs": "Radius, divergence, TOF and energy require separate effect-resolution claim contracts."
+  },
+  "same_solver_acceptance": {
+    "maximum": {
+      "transmitted_particle_count_difference": 0
+    },
+    "minimum_each_run": {
+      "transmission": 0.8
+    },
+    "positive_each_run": [
+      "minimum_working_radius_margin_fraction"
+    ],
+    "handoff_particle_id_sets": "exact_match"
+  },
+  "cross_solver_acceptance": {
+    "maximum": {
+      "transmitted_particle_count_difference": 0
+    },
+    "minimum_each_run": {
+      "transmission": 0.8
+    },
+    "positive_each_run": [
+      "minimum_working_radius_margin_fraction"
+    ],
+    "handoff_particle_id_sets": "exact_match"
+  },
+  "engineering_budget": {
+    "ordinary_or_intermediate_runs": "compact retention required",
+    "brute_force_hmax_refinement": "forbidden after the registered project compute budget is exhausted"
+  },
+  "claim_limit": "Functional collision-free transport only; no radius, divergence, TOF, energy, phase-space, collision, mechanical, Candidate or Formal claim."
+}

@@ -33,11 +33,12 @@ def resolve_runtime_profile(
     project_root = repo_root / "projects" / project_id
     registry_path = project_root / "config" / "runtime_profiles.json"
     registry = _load(registry_path)
-    _require_keys(
-        registry,
-        {"schema_version", "role", "project_id", "profiles"},
-        "runtime profile registry",
-    )
+    registry_keys = {"schema_version", "role", "project_id", "profiles"}
+    optional_registry_keys = {"solver_numerics_registry_paths"}
+    if not registry_keys.issubset(registry) or set(registry) - (
+        registry_keys | optional_registry_keys
+    ):
+        raise ValueError(f"runtime profile registry keys differ: {sorted(registry)}")
     if (
         registry["schema_version"] != 2
         or registry["role"] != "multipole_transport_runtime_profiles"
@@ -94,8 +95,21 @@ def resolve_runtime_profile(
 
     numerics: dict[str, Any] = {}
     numerics_paths: dict[str, str] = {}
+    configured_paths = registry.get("solver_numerics_registry_paths", {})
+    if not isinstance(configured_paths, dict) or set(configured_paths) - {
+        "comsol",
+        "simion",
+    }:
+        raise ValueError("solver-numerics registry paths are invalid")
     for solver in ("comsol", "simion"):
-        path = project_root / "config" / f"{solver}_solver_numerics.json"
+        relative_path = configured_paths.get(
+            solver, f"config/{solver}_solver_numerics.json"
+        )
+        if not isinstance(relative_path, str):
+            raise ValueError(f"{solver} solver-numerics registry path is invalid")
+        path = (project_root / relative_path).resolve()
+        if not path.is_relative_to(project_root.resolve()):
+            raise ValueError(f"{solver} solver-numerics registry escapes the project")
         contract = _load(path)
         _require_keys(
             contract,

@@ -12,6 +12,8 @@ param(
   [ValidateRange(4,10000)][int]$RfStepsPerPeriod=80,
   [ValidateRange(0,100)][int]$TrajectoryQuality=10,
   [ValidateRange(0.001,1000000)][double]$MaximumTimeUs=80.0,
+  [ValidateSet('compact','qualification','solver_review')][string]$RetentionClass='compact',
+  [string]$RetentionReason='',
   [string]$SourceFamilyPath='',
   [string]$OperatingPointId=''
 )
@@ -51,6 +53,8 @@ if([string]::IsNullOrWhiteSpace($RunId)){
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$ProjectId") -RunId $RunId `
   -Project $ProjectId -Mode 'resolved_design_transport' -Software @('SIMION 2020','Python 3.11') `
+  -RetentionContractEnabled `
+  -RetentionClass $RetentionClass -RetentionReason $RetentionReason `
   -AdditionalDirectories @('simion')
 $runDir=$package.run_dir;$inputDir=$package.input_dir;$resultDir=$package.result_dir
 $logDir=$package.log_dir;$solverDir=Join-Path $runDir 'simion'
@@ -289,8 +293,10 @@ try{
     $provenance.reference_comsol_source_run_id=$referenceComsolSourceRunId
     $runInputs.reference_comsol_run_manifest=$referenceComsolManifest
   }
-  [ordered]@{schema_version=1;role='multipole_resolved_simion_run_config';run_id=$RunId;project=$ProjectId;
+  [ordered]@{schema_version=2;role='multipole_resolved_simion_run_config';run_id=$RunId;project=$ProjectId;
     mode='resolved_design_transport';project_root=$profile.project_root;
+    artifact_retention=[ordered]@{policy_version=1;class=$RetentionClass;
+      reason=$(if($RetentionClass-eq'compact'){$null}else{$RetentionReason})};
     provenance=$provenance;inputs=$runInputs;
     parameters=[ordered]@{model_level='L3';design_profile_id=$DesignProfileId;
       operating_point_id=$(if($sourceFamily){$OperatingPointId}else{$null});
@@ -415,6 +421,8 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
     parent_resolved_design_sha256=$resolvedHash;primary_transmission=$primary.transmission;
     control_transmission=$control.transmission;model_level='L3';formal_gate_passed=$false}|
     ConvertTo-Json -Depth 5|Set-Content -LiteralPath $summary -Encoding UTF8
+  $retentionActions=Apply-RunArtifactRetention -Python $python -RepoRoot $manifestRepoRoot `
+    -RunConfig $runConfig
   $outputs=@($summary,$metrics,(Join-Path $solverDir 'quad_monolithic.pa0'),
     (Join-Path $solverDir 'quad_monolithic.iob'),
     (Join-Path $solverDir 'quad_monolithic.con'),$gem,$fly2,
@@ -428,6 +436,8 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
     (Join-Path $resultDir "particle_state_contract__$controlName.json"))
   $outputs+=@(Get-ChildItem -LiteralPath $logDir -Recurse -File|Select-Object -ExpandProperty FullName)
   if(Test-Path -LiteralPath $evaluation){$outputs+=$evaluation}
+  $outputs=@($outputs|Where-Object{Test-Path -LiteralPath $_ -PathType Leaf})
+  $outputs+=$retentionActions
   Write-VerifiedRunManifest -Python $python -RepoRoot $manifestRepoRoot -RunConfig $runConfig `
     -Status success -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
   Write-Output "MULTIPOLE_SIMION_RESOLVED=PASS PROJECT=$ProjectId PROFILE=$DesignProfileId RUN_ID=$RunId PARENT_SHA256=$resolvedHash QUALIFICATION=$qualification"

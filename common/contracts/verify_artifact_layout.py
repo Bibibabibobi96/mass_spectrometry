@@ -7,6 +7,11 @@ import json
 from pathlib import Path
 
 try:
+    from common.contracts.artifact_retention import validate_retention
+except ModuleNotFoundError:
+    from artifact_retention import validate_retention
+
+try:
     from common.contracts.artifact_naming import (
         validate_archive_id,
         validate_formal_asset_name,
@@ -98,6 +103,14 @@ def verify_project(
             manifest = json.loads((run / "run_manifest.json").read_text(encoding="utf-8-sig"))
             if config.get("run_id") != run.name or manifest.get("run_id") != run.name:
                 raise AssertionError(f"{run}: folder, config, and manifest run_id differ")
+            if manifest.get("schema_version") == 2:
+                retention = validate_retention(config.get("artifact_retention"))
+                if manifest.get("artifact_retention") != {
+                    "policy_version": retention.policy_version,
+                    "class": retention.class_id,
+                    "reason": retention.reason,
+                }:
+                    raise AssertionError(f"{run}: retention identity differs")
             run_count += 1
 
     archive_count = 0

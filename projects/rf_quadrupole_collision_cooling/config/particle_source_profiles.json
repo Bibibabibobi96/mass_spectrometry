@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "role": "multipole_particle_source_profiles",
+  "project_id": "rf_quadrupole_collision_cooling",
+  "profiles": {
+    "official_fixed_100": {
+      "path": "projects/rf_quadrupole_collision_cooling/config/particles/official_fixed_100_canonical.csv",
+      "sha256": "3A04CFDD2A091F8CC979DD6180E5C7E072A5D96A87ED03768A606581D15D15C5"
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "role": "multipole_transport_evidence_contract",
+  "project_id": "rf_quadrupole_collision_cooling",
+  "design_profile_id": "official_transport",
+  "evaluation": "rf_vs_zero_rf",
+  "thresholds": {
+    "minimum_primary_transmission": 0.8,
+    "minimum_transmission_improvement": 0.2
+  }
+}
