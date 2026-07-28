@@ -123,7 +123,7 @@
     },
     "project_engineering_budget_contract": {
       "path": "projects/rf_quadrupole_ion_optics/config/family_experiment/engineering_budget.json",
-      "sha256": "A6B457544953139FB2F473D13FF73C4265737ABA1C5D490374752FE4610231FC"
+      "sha256": "DBEEAEE37708F357917339B7EA69A3AB21E757645B84CA67B0D5135C29A2C798"
     }
   },
   "dispersion_binding_publication": {
