@@ -5,7 +5,8 @@
 用户已授权删除“高置信度小批次”中的前7项，并明确保留
 `common/contracts/prune_migration_snapshot.py`；前7项已从活动树删除。用户另授权oa-TOF已替代RF诊断
 包在活动性审计通过后迁入history，并授权Wehnelt历史谱系迁入history。两批源码均已按原字节冻结到
-同名扁平payload、写入SHA-256清单并从活动路径移除，等待本主题联合验证、提交与推送。
+同名扁平payload、写入SHA-256清单并从活动路径移除。联合门禁已通过，处置由提交`5cbf38f`记录，并随
+共享SIMION闭合提交`182314c`于2026-07-28推送到`origin/master`。
 
 ## 范围与方法
 
@@ -56,9 +57,8 @@ history清单为准；未获授权的其他文件仍须用户对精确路径逐�
 - `projects/oa_tof/tests/cross_solver/run_rf_handoff_projection.ps1`
 - `projects/oa_tof/tests/cross_solver/run_rf_handoff_pulse.ps1`
 
-oa-TOF README明确它们是superseded diagnostics，不属于capability、execution profile或Static gate。
-删除不影响当前RF→oa-TOF累积物理链，但会失去旧刚体投影、网格投影和共享时钟诊断的源码级复现。
-建议在oa-TOF Candidate N=100成功后，确认活动RF S2/S3链无import或冻结路径依赖，再单独请求批准。
+活动性审计确认它们不属于capability、execution profile或Static gate，oa-TOF Static与联合changed gate
+均通过；原字节payload与SHA-256清单保留旧刚体投影、网格投影和共享时钟诊断的源码级追溯。
 
 ### Wehnelt 历史谱系
 

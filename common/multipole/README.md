@@ -141,10 +141,11 @@ GEM+Workbench受控流程绕过；只有确有新版能力需求且许可证更�
 不得把绕过解释为供应商问题已根治。跨机可移植性则须把一个登记成功run复制到不同工作区路径，在不依赖
 来源绝对路径的条件下复核manifest及IOB/CON/PA重开；三个RF项目都记录迁移验证通过后才关闭。
 
-## 迁移与删除候选
+## 公共遗留兼容边界
 
-以下旧实现不再是生产入口；它们仍可能被历史测试或项目专项诊断引用，删除前必须按`AGENTS.md`取得用户
-确认并完成引用审计：
+本节只登记`common/multipole/`自身仍有活动引用的兼容边界；三个项目各自的退出任务只在对应PROJECT
+维护。下列旧实现不再是生产入口，但仍被公共测试或项目专项诊断引用，删除前必须按`AGENTS.md`取得
+用户确认并完成引用审计：
 
 - `resolve_finite_3d_contract.py`：由request接口编译替代；
 - `round_rod_geometry.py`中的legacy CLI/field-screen selection输入：保留纯`build_round_rod_array`；

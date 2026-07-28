@@ -9,10 +9,10 @@
 [`family_contract.json`](../../../common/multipole/family_contract.json)冻结。该PASS不授予网格收敛、
 跨求解器数值等价、机械或Formal资格。
 
-轴向加速合同已升级为schema v2：默认`axial_acceleration_reference.json`继续使用`uniform`四段参考，
-另可通过COMSOL/SIMION公共runner及本项目薄wrapper的`AxialAccelerationContractPath`显式选择
-`explicit`逐段合同。新增非等长、非等间隙和非线性电势案例已在两个求解器完成N=100功能复验；
-它不替换默认uniform工况，也不提升Candidate、机械或Formal资格。
+轴向加速合同已升级为schema v2：默认`axial_acceleration_reference.json`继续使用`uniform`四段参考；
+`explicit`逐段合同由具名design request与runtime profile选择，公共runner及项目薄wrapper不接受任意
+合同路径覆盖。新增非等长、非等间隙和非线性电势案例已在两个求解器完成N=100功能复验；它不替换
+默认uniform工况，也不提升Candidate、机械或Formal资格。
 
 同一参考四极杆几何承载RF-only传输与RF+DC质量过滤两个已区分的功能模式。求解器无关L1扫描使用
 当前79.6 mm杆长和4 mm场半径，理论通带为99.328～103.412 Th，N=256扫描半高通带为
@@ -451,8 +451,8 @@ target-entry surface及物理矩形孔准备；oaTOF baseline particle-source bo
 1. 使用严格固定的official N=100输入执行一次COMSOL release-construction Gate A；按最后一条JSONL
    breadcrumb判断`rel065 create`是否在干净进程中重复。Gate未闭合前不得启动粒子Study、变N扫描、
    合并release或据此声明COMSOL接口物理失败。
-2. 连接功能任务已关闭；不自动进入S4。若恢复接口工作，先单独批准S3资格指标和最低通过率，再决定
-   是否需要N=1000、网格收敛、分辨率或公差研究。
+2. 若恢复接口资格工作，先单独批准S3资格指标和最低通过率，再决定是否需要N=1000、网格收敛、
+   分辨率或公差研究；当前功能闭合不自动进入S4。
 3. 研究COMSOL原生接口面或连续真空内部边界初始化，最终删除`0.001 mm`数值重启偏移。
 4. 当前RF参考几何没有正式连续接地侧壁；机械半径、壁厚、馈通和CAD同步仍未选择。
 5. 碰撞冷却仍是独立后续功能；质量过滤的下一步仅在另行批准后开展网格、稠密质量扫描、数值一致性
@@ -469,20 +469,10 @@ target-entry surface及物理矩形孔准备；oaTOF baseline particle-source bo
 10. `mass_filter_reference`仍是四极杆唯一已知活动legacy baseline消费者。后续须把该独立科学workflow
     迁到具名request/mode、compiled resolved和solver numerics，runner与analyzer不再冻结或读取
     `config/baseline.json`；静态合同及双求解器功能复验通过后才关闭该任务。
-11. 多极杆共享单PA SIMION临时容器退出任务已于2026-07-27关闭。真实IOB+CON完成无粒子结构登记及
-    人工GUI重开复核，登记run为
-    `20260727_232047__build__simion__multipole-layout-template`。公共L3 runner、接口readiness和质量
-    过滤三个生产入口均按oa-TOF的prepare模式校验登记manifest与IOB/CON SHA并冻结到本次run；
-    六/八极杆薄wrapper复用同一公共runner。任意`TemplateIob`参数和vendor示例回退已移除，项目不复制
-    模板身份。共享运行时重绑和GUI可见detector marker已由六极杆N=100双工况run
-    `20260728_004500__sim__simion__rf-hexapole-shared-template__n100__r05`复核通过；该公共机制证据不替代
-    四极杆各科学workflow自身的资格证据。共享机制和非Candidate/Formal边界见
-    [`../../../common/multipole/README.md`](../../../common/multipole/README.md)。
-12. SIMION 2026 `.wgem`因当前许可证年份不足，现阶段采用SIMION 2020 GEM+Workbench受控路径，这是
-    技术绕过而非根因修复。它不阻断当前物理链；仅在确有新版能力需求、许可证更新且官方示例状态机
-    复验成功后关闭。Git注册表只发布provider、run id和SHA，但来源manifest仍带本机绝对路径；跨机
-    迁移须把成功run复制到另一工作区并重写/复核manifest，再验证IOB/CON/PA重开。三RF项目均通过后
-    关闭可移植性任务。
+
+共享SIMION模板、GUI复核、`.wgem`绕过和跨机可移植性状态只由
+[`../../../common/multipole/README.md`](../../../common/multipole/README.md)维护；公共机制证据不替代
+四极杆各科学workflow自身的资格证据。
 
 ## 产物与历史
 

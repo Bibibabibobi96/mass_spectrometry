@@ -22,9 +22,8 @@
 - 不建立 COMSOL、SIMION、CAD 文档之间的横向网状引用；项目 README 负责导航，统一结论写入 `docs/PROJECT.md`。
 - MATLAB、COMSOL、Python和SolidWorks的版本及启动方式只以根README的
   [“工具链与执行入口”](README.md#工具链与执行入口)为准；Agent不得另建连接生命周期或把临时检查工具当作正式入口。
-- PowerShell Core 7（`pwsh`）是仓库唯一受支持的PowerShell运行时；公开根入口必须通过公共preflight
-  fail-closed验证当前宿主为Core 7，禁止回退到Windows PowerShell 5.1。Python等非PowerShell边界启动
-  PowerShell时必须使用`pwsh`，PowerShell内部脚本继承当前宿主，不得另行选择或启动第二套PowerShell。
+- PowerShell运行时同样只遵循根README的
+  [“工具链与执行入口”](README.md#工具链与执行入口)，不得在Agent规则中维护第二份版本或启动合同。
 - MATLAB/COMSOL和SolidWorks会写用户配置、许可证、日志及临时目录；Agent调用这些商业工具时必须从
   第一次尝试就使用允许其正常访问用户配置目录的执行上下文。公共入口报告
   `EXECUTION_ENVIRONMENT_BLOCKED`时，应在权限正确的上下文重试同一冻结输入，不得把它归因于模型、
@@ -45,22 +44,10 @@
 
 ## 科学工作流隔离与机制复用
 
-- 不同科学问题或声明边界必须使用独立workflow，并分别冻结`role、claim、input、output、schema、
-  provenance`；一个workflow的成功run不得代替另一个workflow的证据。
-- workflow隔离不等于复制基础设施。core config compilation、serialization、full contract validation、
-  launch/lifecycle和frozen verification各自必须只有一个实现；共享core只表达机制，不得按项目role、
-  mode或workflow名称分支。dedicated workflow只能声明科学差异并调用这些core，禁止复制或近似重写
-  core模板、校验、启动与收尾流程。
-- 科学配置、solver numerics和run instance分别只有一个机器权威：物理与实验定义归科学配置，网格、
-  时间步和求解器精度归数值合同，本次路径、run ID、种子和显式实验变量归run config。三层不得互相
-  复制默认值，也不得在缺字段时静默回退为零、空值或求解器默认。
-- execution profile只绑定workflow身份、权威输入身份和本次明确允许变化的实验变量；不得内嵌从
-  resolved/scientific config抄录的物理标量，也不得把所有底层core参数暴露成profile参数。
-- 禁止用共享`Mode`大分支在一个入口承载不同科学workflow；也禁止建立同时处理配置、物理、启动、
-  分析和证据的“万能helper”。独立入口调用窄职责core，core不得反向选择科学workflow。
-- 新增workflow时，最近的项目权威文档必须说明隔离面、复用面、科学/数值/run配置权威和机器门禁；
-  实现必须有无需商业软件即可验证入口单一用途、profile无重复物理量、core无workflow分支及必需合同
-  字段失败关闭的静态测试。
+科学workflow、共享core、科学/数值/run配置和execution profile的通用架构合同只由
+[`docs/DEVELOPMENT_STANDARDS.md`](docs/DEVELOPMENT_STANDARDS.md#科学工作流与配置分层)定义。
+Agent实现或审查workflow时必须应用该合同，并按项目README路由更新最近的PROJECT与静态门禁；
+不得在本文件复制或改写面向所有开发者的架构规则。
 
 ## 多 Agent 协作与自主委派
 

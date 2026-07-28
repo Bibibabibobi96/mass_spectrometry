@@ -17,8 +17,6 @@
 
 - 项目身份：[`config/project.json`](config/project.json)
 - 三项目共享运行合同：[`../../common/multipole/README.md`](../../common/multipole/README.md)
-- 三项目共享单PA SIMION模板已在该公共边界完成真实GUI登记，并由生产prepare冻结登记manifest及
-  IOB/CON；项目不维护第二份模板身份。
 - 历史L1兼容输入：[`config/baseline.json`](config/baseline.json)，只读；`project.json`仅因当前registry
   schema把它保留为旧格式身份检查，不是活动solver参数权威。
 - Phase 2设计请求、变量目录和优化包络：

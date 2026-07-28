@@ -73,22 +73,16 @@ Mathieu稳定图。L1/L2/L3迁移前小样本数值只保留在
 本项目保留0 mm baseline，不用重复同一共享求解器实验。当前离子导引和接口功能链已由COMSOL与
 SIMION独立贯通。下一阶段不再增加模型层级；在需要把本设计
 推进为Candidate时，再进行网格收敛和机械baseline。碰撞冷却与CAD仍为独立后续阶段。轴向加速若
-继续推进，可通过`AxialAccelerationContractPath`建立项目具名explicit案例，再研究分段数量、各段
-长度/间隙/电势、馈电和机械实现；当前默认uniform四段参数仍只是已通过双求解器N=100复验的功能
-baseline，不是正式硬件选择。
+继续推进，须先建立项目具名design request与runtime profile，再研究分段数量、各段长度/间隙/电势、
+馈电和机械实现；当前默认uniform四段参数仍只是已通过双求解器N=100复验的功能baseline，不是正式
+硬件选择。
 
-本项目还保留三项明确退出任务：
+共享SIMION模板、GUI复核、`.wgem`绕过和跨机可移植性状态只由
+[`../../../common/multipole/README.md`](../../../common/multipole/README.md)维护；公共机制证据不授予
+本项目Candidate或Formal资格。本项目还保留两项项目专属退出任务：
 
 1. `project.json.contracts.baseline`暂因根registry builder的旧`multipole`身份检查保留只读
    `config/baseline.json`。根schema/builder改由design profile/request或独立identity contract校验，
    且三RF项目registry门禁通过后，解除该兼容绑定并按删除授权处理旧文件。
-2. SIMION vendor临时容器退出任务已于2026-07-27关闭。项目通过公共runner消费唯一共享的单PA非物理
-   模板登记，prepare阶段校验成功run、人工GUI复核和IOB/CON SHA并冻结副本；不维护项目模板身份，
-   不接受`TemplateIob`覆盖或vendor回退。该登记只关闭容器来源问题，不授予Candidate或Formal资格。
-3. `config/finite_3d_transport.json`仍供旧family/L1测试读取。测试改为消费design request、resolved和
-   solver-numerics profile且活动引用归零后，按删除授权退出该快照。公共机制边界见
-   [`../../../common/multipole/README.md`](../../../common/multipole/README.md)。
-4. SIMION 2026 `.wgem`因当前许可证年份不足，现以SIMION 2020 GEM+Workbench受控路径绕过，不视为
-   根因修复且不阻断本阶段物理链。确有新版需求、许可证更新并完成官方示例状态机复验后才关闭。
-   Git注册表只发布provider、run id和SHA，但来源manifest仍带本机绝对路径；还须将成功run迁移到
-   不同工作区并重写/复核manifest，再验证IOB/CON/PA重开，三RF项目均通过后关闭跨机可移植性任务。
+2. `config/finite_3d_transport.json`仍供旧family/L1测试读取。测试改为消费design request、resolved和
+   solver-numerics profile且活动引用归零后，按删除授权退出该快照。
