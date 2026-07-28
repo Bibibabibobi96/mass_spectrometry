@@ -282,7 +282,7 @@ class FamilyExperimentProfileTests(unittest.TestCase):
         self.assertTrue(engineering["pilot_authorization"]["authorized"])
         self.assertEqual(
             engineering["pilot_authorization"]["scope"]["runtime_profile_id"],
-            "segmented_rod_axial_acceleration",
+            "segmented_rod_axial_acceleration_n100_spatial_refined",
         )
         self.assertFalse(engineering["full_matrix_authorization"]["authorized"])
 
