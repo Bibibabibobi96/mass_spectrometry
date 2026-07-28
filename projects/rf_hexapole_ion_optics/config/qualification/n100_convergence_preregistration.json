@@ -2,10 +2,10 @@
   "schema_version": 1,
   "role": "multipole_project_numerical_convergence_preregistration",
   "project_id": "rf_hexapole_ion_optics",
-  "contract_id": "hexapole_three_mode_n100_convergence_v2",
+  "contract_id": "hexapole_three_mode_n100_convergence_v3",
   "preregistered_before_run": true,
-  "revision_basis": {
-    "status": "revised_after_baseline_pilot_before_refined_runs",
+    "revision_basis": {
+    "status": "revised_after_spatial_sensitivity_before_temporal_refined_runs",
     "baseline_run_ids": {
       "comsol": "20260728_205400__sim__comsol__rf-hexapole-ion-optics-no-acceleration-full-length__resolved-l3",
       "simion": "20260728_205025__sim__simion__rf-hexapole-ion-optics-no-acceleration-full-length__resolved-l3"
@@ -24,7 +24,30 @@
     },
     "functional_result": "PASS_EXACT_TRANSMITTED_PARTICLE_ID_SET",
     "continuous_cross_solver_result": "INCONCLUSIVE",
-    "decision": "Replace the brute-force refined tiers with the least expensive adjacent spatial sensitivity levels likely to stay inside the frozen resource caps."
+    "spatial_sensitivity_run_ids": {
+      "comsol": "20260728_210752__sim__comsol__rf-hexapole-ion-optics-no-acceleration-full-length__resolved-l3",
+      "simion": "20260728_210341__sim__simion__rf-hexapole-ion-optics-no-acceleration-full-length__resolved-l3"
+    },
+    "spatial_sensitivity_measured_resources": {
+      "comsol": {
+        "wall_clock_seconds": 528.623,
+        "peak_run_directory_bytes": 945147218,
+        "peak_process_tree_working_set_bytes": 8172765184
+      },
+      "simion": {
+        "wall_clock_seconds": 193.137,
+        "peak_run_directory_bytes": 595758684,
+        "peak_process_tree_working_set_bytes": 608358400
+      }
+    },
+    "spatial_sensitivity_results": {
+      "functional_transport": "PASS",
+      "comsol_rms_radius_relative_difference": 0.029196715795380114,
+      "simion_rms_radius_relative_difference": 0.10722131726857745,
+      "refined_cross_solver_rms_radius_relative_difference": 0.024702681274014274,
+      "continuous_claim": "INCONCLUSIVE_NO_SOURCED_ERROR_BUDGET"
+    },
+    "decision": "The adjacent spatial pair preserves exact transmitted-particle identity and remains inside the frozen caps. Authorize only the registered temporal pair; do not add a finer spatial tier or qualify continuous observables."
   },
   "particle_source": {
     "path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_100.csv",

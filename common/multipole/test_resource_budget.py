@@ -19,7 +19,7 @@ class ResourceBudgetTests(unittest.TestCase):
     def validate(
         self,
         project_id: str = HEX,
-        runtime_profile_id: str = "no_acceleration_full_length_n100_spatial_refined",
+        runtime_profile_id: str = "no_acceleration_full_length_n100_temporal_refined",
         retention_class: str = "compact",
     ) -> dict:
         runtime = resolve_runtime_profile(REPO_ROOT, project_id, runtime_profile_id)
@@ -34,7 +34,7 @@ class ResourceBudgetTests(unittest.TestCase):
             retention_class=retention_class,
         )
 
-    def test_only_hexapole_no_acceleration_spatial_screen_is_authorized(self) -> None:
+    def test_only_hexapole_no_acceleration_temporal_screen_is_authorized(self) -> None:
         resolved = self.validate()
         self.assertEqual(resolved["limits"]["wall_clock_seconds"], 1200)
         self.assertEqual(
@@ -64,7 +64,7 @@ class ResourceBudgetTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "identity differs"):
             self.validate(
                 runtime_profile_id=(
-                    "no_acceleration_full_length"
+                    "no_acceleration_full_length_n100_spatial_refined"
                 )
             )
 
