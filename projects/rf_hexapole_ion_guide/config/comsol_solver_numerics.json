@@ -6,7 +6,7 @@
     "baseline_finite_3d": {
       "mesh": {
         "global_auto_level": 6,
-        "working_region_maximum_element_size_mm": null
+        "working_region_maximum_element_size_mm": 0.5
       },
       "trajectory": {
         "rf_steps_per_period": 80,

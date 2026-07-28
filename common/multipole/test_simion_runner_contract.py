@@ -90,6 +90,23 @@ class SimionRunnerContractTests(unittest.TestCase):
         self.assertIn("$surfaceToleranceMm=[Math]::Max(1e-6*$CellMm,1e-9)", source)
         self.assertIn("$censusPlaneMm-2*$CellMm-$surfaceToleranceMm", source)
 
+    def test_rejected_handoff_writes_a_unique_terminal_event(self) -> None:
+        program = (REPO_ROOT / "common" / "multipole" / "simion_transport.lua").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "write_particle_state(ion_number, 'terminal', 'lost', "
+            "'acceptance_radius', handoff)",
+            program,
+        )
+        self.assertIn("terminal_written[ion_number] = true", program)
+        self.assertIn("if terminal_written[particle] then return end", program)
+        self.assertIn(
+            "if previous_state[particle] then "
+            "finalize_particle(particle, previous_state[particle]) end",
+            program,
+        )
+
     def test_raw_and_paired_transmission_cannot_diverge(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
         self.assertIn(
@@ -118,6 +135,11 @@ class SimionRunnerContractTests(unittest.TestCase):
         self.assertIn("$qualification='UNQUALIFIED'", source)
         self.assertIn("evaluate_transport_evidence", source)
         self.assertIn("analyze_simion_axial_acceleration", source)
+        self.assertIn("ConvertTo-TransportMetricCase $primary", source)
+        self.assertIn(
+            "$metricCase.transmission_fraction=[double]$CaseSummary.transmission",
+            source,
+        )
         self.assertNotIn("MinimumRfTransmission", source)
         self.assertNotIn("MinimumImprovementOverZeroRf", source)
 

@@ -38,6 +38,9 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
         cls.finite = load(PROJECT_ROOT / "config" / "finite_3d_transport.json")
         cls.screen = load(PROJECT_ROOT / "config" / "round_rod_field_screen.json")
         cls.axial = load(PROJECT_ROOT / "config" / "modes" / "axial_acceleration_reference.json")
+        cls.comsol_numerics = load(
+            PROJECT_ROOT / "config" / "comsol_solver_numerics.json"
+        )
         cls.identity = {
             "project_id": "rf_hexapole_ion_guide",
             "family_id": "rf_multipole_ion_optics",
@@ -127,6 +130,10 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
             hashlib.sha256(REQUEST_PATH.read_bytes()).hexdigest().upper(),
         )
         self.assertIn("connector_shape_supported", self.catalog["invariants"])
+
+    def test_comsol_baseline_freezes_verified_working_region_mesh_limit(self) -> None:
+        mesh = self.comsol_numerics["profiles"]["baseline_finite_3d"]["mesh"]
+        self.assertEqual(mesh["working_region_maximum_element_size_mm"], 0.5)
 
 
 if __name__ == "__main__":

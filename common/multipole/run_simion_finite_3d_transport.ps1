@@ -18,6 +18,17 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
+
+function ConvertTo-TransportMetricCase {
+  param([Parameter(Mandatory)]$CaseSummary)
+  $metricCase=[ordered]@{}
+  foreach($property in $CaseSummary.PSObject.Properties){
+    if($property.Name-ne'transmission'){$metricCase[$property.Name]=$property.Value}
+  }
+  $metricCase.transmission_fraction=[double]$CaseSummary.transmission
+  return $metricCase
+}
+
 $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $workspaceRoot=Split-Path -Parent $repoRoot
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
@@ -376,11 +387,13 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
   }else{
     $primaryName='rf_on';$controlName='zero_rf_control'
     $primary=Invoke-TransportCase $primaryName 1 0;$control=Invoke-TransportCase $controlName 0 0
+    $primaryMetricCase=ConvertTo-TransportMetricCase $primary
+    $controlMetricCase=ConvertTo-TransportMetricCase $control
     $metrics=Join-Path $resultDir 'finite_3d_transport_metrics.json'
     [ordered]@{schema_version=1;role='multipole_simion_finite_3d_transport_metrics';status='UNQUALIFIED';
       project_id=$ProjectId;parent_resolved_design_sha256=$resolvedHash;model_level='L3';
       primary_case_id=$primaryName;control_case_id=$controlName;
-      cases=[ordered]@{rf_on=$primary;zero_rf_control=$control};
+      cases=[ordered]@{rf_on=$primaryMetricCase;zero_rf_control=$controlMetricCase};
       rf_minus_zero_transmission=($primary.transmission-$control.transmission);
       claim_limit='Resolved-design SIMION metrics only; no evidence claim.'}|
       ConvertTo-Json -Depth 8|Set-Content -LiteralPath $metrics -Encoding UTF8

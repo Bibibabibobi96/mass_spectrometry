@@ -43,6 +43,7 @@ local crossed_handoff = {}
 local timed_out = {}
 local census_counted = {}
 local census_hit = {}
+local terminal_written = {}
 local trajectory_plane_step_mm
 local rod_z_min_mm
 local rod_z_max_mm
@@ -187,6 +188,7 @@ function segment.initialize_run()
   timed_out = {}
   census_counted = {}
   census_hit = {}
+  terminal_written = {}
   local trajectory_path = run_config.trajectory_csv
   if trajectory_path and trajectory_path ~= '' then
     trajectory_file = assert(io.open(trajectory_path, 'w'))
@@ -305,6 +307,12 @@ function segment.other_actions()
       write_particle_state(ion_number, 'handoff', accepted and 'transmitted' or 'lost',
         accepted and 'none' or 'acceptance_radius', handoff)
       crossed_handoff[ion_number] = true
+      if not accepted then
+        write_particle_state(ion_number, 'terminal', 'lost', 'acceptance_radius', handoff)
+        write_trajectory(ion_number, handoff)
+        terminal_written[ion_number] = true
+        ion_splat = -6
+      end
       if run_config.numerical_census_marker_is_handoff then
         census_counted[ion_number] = true
         census_hit[ion_number] = accepted
@@ -321,31 +329,42 @@ function segment.other_actions()
   end
 end
 
-function segment.terminate()
-  local current = canonical_state(ion_time_of_flight, ion_px_mm, ion_py_mm, ion_pz_mm,
-    ion_vx_mm, ion_vy_mm, ion_vz_mm, ion_ke)
+local function finalize_particle(particle, current)
+  if terminal_written[particle] then return end
   local radius = radial_mm(current)
   -- The run config derives a safe terminal threshold from the census plane
   -- and PA cell size so SIMION's fractional-surface back-off is not mistaken
   -- for an upstream loss.
-  local crossed = census_counted[ion_number] or current.x >= numerical_census_marker_threshold_mm
-  local hit = census_counted[ion_number] and census_hit[ion_number] or
+  local crossed = census_counted[particle] or current.x >= numerical_census_marker_threshold_mm
+  local hit = census_counted[particle] and census_hit[particle] or
     (crossed and radius <= census_radius_mm)
-  if not census_counted[ion_number] then
+  if not census_counted[particle] then
     if crossed then crossings = crossings + 1 end
     if hit then hits = hits + 1 end
   end
   local status, reason = 'lost', 'electrode'
-  if timed_out[ion_number] then status, reason = 'timeout', 'timeout'
+  if timed_out[particle] then status, reason = 'timeout', 'timeout'
   elseif hit then status, reason = 'transmitted', 'acceptance_surface'
   elseif current.x < backward_escape_plane_mm then reason = 'backward_escape'
   elseif radius > radial_escape_radius_mm then reason = 'radial_escape'
   end
-  write_particle_state(ion_number, 'terminal', status, reason, current)
-  write_trajectory(ion_number, current)
+  write_particle_state(particle, 'terminal', status, reason, current)
+  write_trajectory(particle, current)
+  terminal_written[particle] = true
+end
+
+function segment.terminate()
+  local current = canonical_state(ion_time_of_flight, ion_px_mm, ion_py_mm, ion_pz_mm,
+    ion_vx_mm, ion_vy_mm, ion_vz_mm, ion_ke)
+  finalize_particle(ion_number, current)
 end
 
 function segment.terminate_run()
+  -- SIMION does not call segment.terminate for every electrode splat. Close
+  -- those paths deterministically from the last state seen by other_actions.
+  for particle = 1, sim_ions_count do
+    if previous_state[particle] then finalize_particle(particle, previous_state[particle]) end
+  end
   if trajectory_file then trajectory_file:close() end
   if particle_state_file then particle_state_file:close() end
   local summary_path = assert(run_config.summary_json, 'run config summary_json is missing')
