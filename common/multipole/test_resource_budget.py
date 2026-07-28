@@ -18,7 +18,7 @@ class ResourceBudgetTests(unittest.TestCase):
     def validate(
         self,
         project_id: str = QUAD,
-        runtime_profile_id: str = "no_acceleration_full_length_n100_spatial_refined",
+        runtime_profile_id: str = "no_acceleration_full_length_n100_temporal_refined",
         retention_class: str = "compact",
     ) -> dict:
         runtime = resolve_runtime_profile(REPO_ROOT, project_id, runtime_profile_id)
@@ -33,7 +33,7 @@ class ResourceBudgetTests(unittest.TestCase):
             retention_class=retention_class,
         )
 
-    def test_only_quadrupole_no_acceleration_spatial_screen_is_authorized(self) -> None:
+    def test_only_quadrupole_no_acceleration_temporal_screen_is_authorized(self) -> None:
         resolved = self.validate()
         self.assertEqual(resolved["limits"]["wall_clock_seconds"], 1200)
         self.assertEqual(resolved["limits"]["wall_clock_seconds_by_solver"]["simion"], 720)
@@ -161,7 +161,7 @@ class ResourceBudgetTests(unittest.TestCase):
                 "-ProjectId",
                 QUAD,
                 "-RuntimeProfileId",
-                "no_acceleration_full_length_n100_spatial_refined",
+                "no_acceleration_full_length_n100_temporal_refined",
                 "-DesignProfileId",
                 "no_acceleration_full_length",
                 "-ParticleSourcePath",

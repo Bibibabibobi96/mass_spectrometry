@@ -239,7 +239,7 @@ class FamilyThreeModeExperimentContractTests(unittest.TestCase):
         self.assertTrue(budget["pilot_authorization"]["authorized"])
         self.assertEqual(
             budget["pilot_authorization"]["scope"]["runtime_profile_id"],
-            "no_acceleration_full_length_n100_spatial_refined",
+            "no_acceleration_full_length_n100_temporal_refined",
         )
         self.assertFalse(budget["full_matrix_authorization"]["authorized"])
         self.assertEqual(

@@ -103,9 +103,11 @@ runner CLI不暴露任意resolved、RF/DC、几何、轴向加速或数值标量
 ### 轴向加速
 
 当前三模式只允许typed operating-mode registry中的电气差异，严格共享圆柱机械base、RF和粒子母样本。
-基线pilot实测后、refined运行前已把预注册升级为v2：COMSOL空间敏感性档为局部`0.5→0.35 mm`，
-时间档固定`0.35 mm`并将`80→160`步/周期；SIMION空间敏感性档为全局`0.4→0.3 mm`，时间档固定
-`0.3 mm`并将`40→80`步/周期。当前只授权无加速N=100空间敏感性双求解器pair，硬帽为COMSOL
+基线pilot后登记的v2空间敏感性pair已经完成：COMSOL局部`0.5→0.35 mm`的RMS半径相对变化约
+`0.92%`，SIMION全局`0.4→0.3 mm`约`9.57%`；两者的100个RF-on粒子身份和功能分类均保持一致，
+但这些连续量没有来源充分的误差预算，仍为`INCONCLUSIVE`。空间结果后、时间档运行前登记的v3
+只授权无加速N=100时间敏感性pair：COMSOL固定`0.35 mm`并将`80→160`步/周期，SIMION固定
+`0.3 mm`并将`40→80`步/周期。硬帽仍为COMSOL
 1200 s、SIMION 720 s、2 GiB临时run目录、16 GiB进程树内存和零自动重试。功能分类使用已有
 `functional_transport_acceptance.json`；连续相空间与minimum relevant effect仍缺少下游依据，必须保持
 `INCONCLUSIVE`。正式

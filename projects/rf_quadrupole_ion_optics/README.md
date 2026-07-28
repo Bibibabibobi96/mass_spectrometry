@@ -80,9 +80,9 @@ rf_quadrupole_ion_optics/
 - 两个求解器必须消费同一受治理粒子bundle及各自实际表示；未消费文件不能冒充来源证据。
 - 质量过滤专属Mathieu判据、方形出口罩和上述integration实例不得上移到公共multipole层。
 - 功能PASS不代表跨求解器数值等价、网格收敛、机械、Candidate或Formal资格。
-- 无加速N=100双求解器baseline pilot已经完成；当前只授权
-  `no_acceleration_full_length / N=100 / spatial sensitivity / compact`双求解器pair。
-  时间档、加速模式、N=1000及完整矩阵仍未授权。公共runner会在创建run目录前复核身份和数值参数，
+- 无加速N=100双求解器baseline和空间敏感性pair已经完成；两求解器的100个RF-on粒子身份保持一致，
+  当前只授权`no_acceleration_full_length / N=100 / temporal sensitivity / compact`双求解器pair。
+  进一步空间加密、加速模式、N=1000及完整矩阵仍未授权。公共runner会在创建run目录前复核身份和数值参数，
   并执行`config/family_experiment/engineering_budget.json`的时间、内存和磁盘硬帽。
 - 正式机械几何与CAD同步完成前，`verify_project.ps1 -Level Formal`必须失败关闭。
 
