@@ -40,6 +40,7 @@ local previous_state = {}
 local next_axial_plane = {}
 local crossed_rod_exit = {}
 local crossed_handoff = {}
+local handoff_state = {}
 local timed_out = {}
 local census_counted = {}
 local census_hit = {}
@@ -49,6 +50,7 @@ local rod_z_min_mm
 local rod_z_max_mm
 local rod_exit_plane_mm
 local handoff_plane_mm
+local census_plane_mm
 local numerical_census_marker_threshold_mm
 local census_radius_mm
 local radial_escape_radius_mm
@@ -94,6 +96,7 @@ rod_z_min_mm = assert(run_config.rod_z_min_mm)
 rod_z_max_mm = assert(run_config.rod_z_max_mm)
 rod_exit_plane_mm = assert(run_config.rod_exit_plane_mm)
 handoff_plane_mm = assert(run_config.handoff_plane_mm)
+census_plane_mm = assert(run_config.census_plane_mm)
 numerical_census_marker_threshold_mm = assert(run_config.numerical_census_marker_threshold_mm)
 census_radius_mm = assert(run_config.census_radius_mm)
 radial_escape_radius_mm = assert(run_config.radial_escape_radius_mm)
@@ -175,6 +178,14 @@ local function interpolate_state(previous, current, plane)
     vz=lerp(previous.vz,current.vz), ke=lerp(previous.ke,current.ke)}
 end
 
+local function project_state_to_plane(state, plane)
+  assert(state.vx > 0, 'census projection requires positive axial velocity')
+  local dt = (plane - state.x) / state.vx
+  return {t=state.t + dt, x=plane, y=state.y + dt * state.vy,
+    z=state.z + dt * state.vz, vx=state.vx, vy=state.vy,
+    vz=state.vz, ke=state.ke}
+end
+
 function segment.initialize_run()
   birth_time = {}
   max_rod_radius = {}
@@ -185,6 +196,7 @@ function segment.initialize_run()
   next_axial_plane = {}
   crossed_rod_exit = {}
   crossed_handoff = {}
+  handoff_state = {}
   timed_out = {}
   census_counted = {}
   census_hit = {}
@@ -307,6 +319,7 @@ function segment.other_actions()
       write_particle_state(ion_number, 'handoff', accepted and 'transmitted' or 'lost',
         accepted and 'none' or 'acceptance_radius', handoff)
       crossed_handoff[ion_number] = true
+      handoff_state[ion_number] = handoff
       if not accepted then
         write_particle_state(ion_number, 'terminal', 'lost', 'acceptance_radius', handoff)
         write_trajectory(ion_number, handoff)
@@ -331,11 +344,15 @@ end
 
 local function finalize_particle(particle, current)
   if terminal_written[particle] then return end
-  local radius = radial_mm(current)
   -- The run config derives a safe terminal threshold from the census plane
   -- and PA cell size so SIMION's fractional-surface back-off is not mistaken
   -- for an upstream loss.
   local crossed = census_counted[particle] or current.x >= numerical_census_marker_threshold_mm
+  local terminal_state = current
+  if crossed and handoff_state[particle] and handoff_state[particle].vx > 0 then
+    terminal_state = project_state_to_plane(handoff_state[particle], census_plane_mm)
+  end
+  local radius = radial_mm(terminal_state)
   local hit = census_counted[particle] and census_hit[particle] or
     (crossed and radius <= census_radius_mm)
   if not census_counted[particle] then
@@ -345,11 +362,11 @@ local function finalize_particle(particle, current)
   local status, reason = 'lost', 'electrode'
   if timed_out[particle] then status, reason = 'timeout', 'timeout'
   elseif hit then status, reason = 'transmitted', 'acceptance_surface'
-  elseif current.x < backward_escape_plane_mm then reason = 'backward_escape'
+  elseif terminal_state.x < backward_escape_plane_mm then reason = 'backward_escape'
   elseif radius > radial_escape_radius_mm then reason = 'radial_escape'
   end
-  write_particle_state(particle, 'terminal', status, reason, current)
-  write_trajectory(particle, current)
+  write_particle_state(particle, 'terminal', status, reason, terminal_state)
+  write_trajectory(particle, terminal_state)
   terminal_written[particle] = true
 end
 

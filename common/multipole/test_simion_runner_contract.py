@@ -113,9 +113,16 @@ class SimionRunnerContractTests(unittest.TestCase):
         self.assertIn("$interfaces.exit.handoff_plane_z_mm", source)
         self.assertIn("$interfaces.exit.census_plane_z_mm", source)
         self.assertIn("handoff_plane_mm=$handoffPlaneMm", source)
+        self.assertIn("census_plane_mm=$censusPlaneMm", source)
         self.assertIn("numerical_census_marker_is_handoff=false", source)
         self.assertIn("$surfaceToleranceMm=[Math]::Max(1e-6*$CellMm,1e-9)", source)
         self.assertIn("$censusPlaneMm-2*$CellMm-$surfaceToleranceMm", source)
+        program = (RUNNER.parent / "simion_transport.lua").read_text(encoding="utf-8")
+        self.assertIn("census_plane_mm = assert(run_config.census_plane_mm)", program)
+        self.assertIn(
+            "project_state_to_plane(handoff_state[particle], census_plane_mm)",
+            program,
+        )
 
     def test_rejected_handoff_writes_a_unique_terminal_event(self) -> None:
         program = (REPO_ROOT / "common" / "multipole" / "simion_transport.lua").read_text(
@@ -159,6 +166,9 @@ class SimionRunnerContractTests(unittest.TestCase):
 
     def test_mechanically_segmented_rods_always_receive_full_length_rf(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
+        comsol = (RUNNER.parent / "solve_finite_3d_transport.m").read_text(
+            encoding="utf-8"
+        )
         self.assertIn(
             "$segmentedRodGeometry=($null-ne$design.segmentation.segmented_rod_array)",
             source,
@@ -167,6 +177,16 @@ class SimionRunnerContractTests(unittest.TestCase):
         self.assertIn(
             "$segmented=($axialTopology-eq'segmented_rod_axial_acceleration')",
             source,
+        )
+        self.assertIn(
+            "segmentedRodGeometry = isfield(design.segmentation,'segmented_rod_array');",
+            comsol,
+        )
+        self.assertIn("if segmentedRodGeometry", comsol)
+        self.assertIn(
+            "segmentedAccelerationEnabled = strcmp("
+            "axialTopology,'segmented_rod_axial_acceleration');",
+            comsol,
         )
 
     def test_metrics_are_unqualified_without_explicit_evidence(self) -> None:
