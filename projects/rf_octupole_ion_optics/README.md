@@ -64,7 +64,7 @@ baseline pilot后登记的N=100三档只包含相邻的空间、时间离散比�
 
 当前没有得到下游验收、物理相空间预算或可辩护的误差尺度，因此acceptance和effect-resolution合同
 明确返回`INCONCLUSIVE`，不包含任意百分比。当前只授权
-`no_acceleration_full_length / N=100 / spatial sensitivity / compact`双求解器pair；时间档、加速模式、
+`no_acceleration_full_length / N=100 / temporal sensitivity / compact`双求解器pair；进一步加密、加速模式、
 N=1000和完整矩阵会由`config/qualification/engineering_budget.json`在创建run目录前失败关闭。项目合同
 不能把求解器运行、Candidate或Formal状态从旧证据继承到新机械基线。
 

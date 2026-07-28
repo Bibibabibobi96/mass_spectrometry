@@ -167,7 +167,7 @@ class ThreeModeRuntimeAndQualificationTests(unittest.TestCase):
         self.assertTrue(budget["pilot_authorization"]["authorized"])
         self.assertEqual(
             budget["pilot_authorization"]["scope"]["runtime_profile_id"],
-            "no_acceleration_full_length_n100_spatial_refined",
+            "no_acceleration_full_length_n100_temporal_refined",
         )
 
     def test_geometry_and_voltage_contracts_match_typed_resolved_modes(self) -> None:

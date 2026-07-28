@@ -41,7 +41,8 @@ RF为1.1 MHz余弦、每组零到峰值139.81792 V；源为100 amu、+1、2 eV�
 空间比较只改变空间离散；时间比较在已选细网格上保持空间离散不变，只改变每RF周期步数，符合根
 `docs/VALIDATION_METHODS.md`的顺序门禁。没有物理、下游或误差预算支持
 时不得发明百分比作为PASS阈值，结果固定为`INCONCLUSIVE`。无加速N=100 baseline双求解器pilot
-已经完成，两边均为RF 100/100、zero-RF 21/100且粒子身份一致；当前只授权空间敏感性pair。
+和空间敏感性pair已经完成，各档两边均为RF 100/100、zero-RF 21/100且粒子身份一致；当前只授权
+固定0.35/0.3 mm的时间敏感性pair。
 COMSOL/SIMION分别受1200/720 s、2 GiB瞬态目录、16 GiB进程树内存、8 GiB最低
 可用内存、25 MiB compact保留和零自动重试约束；其他runtime由
 [`../config/qualification/engineering_budget.json`](../config/qualification/engineering_budget.json)
@@ -84,7 +85,7 @@ acceptance、effect-resolution、engineering-budget和三份电压合同，但�
 
 1. 为接受尺度绑定真实下游器件的孔径/相空间预算，或建立可审查的项目误差预算；此前只能报告
    `INCONCLUSIVE`。
-2. 完成已登记wall clock与峰值内存预算的无加速N=100空间敏感性pair，再决定时间档。
+2. 完成已登记wall clock与峰值内存预算的无加速N=100时间敏感性pair，再关闭无加速资格记录。
 3. 三种模式各自完成独立COMSOL/SIMION运行、共同幸存粒子配对和跨求解器闭合。
 4. 若推进Candidate/Formal，再建立机械制造基线、GUI/CAD同步和N=1000统计证据。
 5. 碰撞冷却和真实下游连接保持独立workflow，不由无碰撞三模式结果代替。
