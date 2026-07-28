@@ -115,8 +115,10 @@ COMSOL首次空间档在`MESH_COMPLETE`
 后以17.752 GB超过原17.180 GB进程树帽而失败关闭，当时系统仍有11.35 GB可用。预算v7保留
 8.59 GB系统可用内存底线、把进程树帽调整为21.475 GB后，唯一人工替代运行仍升至21.835 GB，
 同时系统可用内存降至7.653 GB。COMSOL空间收敛因此为`INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`；
-不再抬高内存帽。出口孔板加速N=100 baseline已在两求解器保持100/100传输和精确粒子身份；
-当前只授权其一对空间敏感性运行，时间档、N=1000和完整矩阵未授权。功能分类使用已有
+不再抬高内存帽。出口孔板加速N=100 baseline已在两求解器保持100/100传输和精确粒子身份，
+SIMION空间档也保持100/100和精确身份；COMSOL空间档在`MESH_COMPLETE`后以17.454 GB超过
+17.180 GB进程树帽，记为`INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`。结合分段杆替代运行已证明
+继续抬帽会触及系统内存底线，本模式不再重跑。当前无商业求解器授权。功能分类使用已有
 `functional_transport_acceptance.json`；连续相空间与minimum relevant effect仍缺少下游依据，必须保持
 `INCONCLUSIVE`。正式
 three-mode dispersion binding只能在真实三模式handoff文件及SHA产生后发布，禁止占位伪造。
@@ -124,6 +126,8 @@ three-mode dispersion binding只能在真实三模式handoff文件及SHA产生�
 `../config/family_experiment/n100_no_acceleration_qualification.json`。
 分段杆轴向加速的运行身份、功能结论和资源失败链登记在
 `../config/family_experiment/n100_segmented_rod_axial_acceleration_qualification.json`。
+出口孔板加速的对应记录在
+`../config/family_experiment/n100_exit_aperture_plate_acceleration_qualification.json`。
 
 ### RF+DC质量过滤
 

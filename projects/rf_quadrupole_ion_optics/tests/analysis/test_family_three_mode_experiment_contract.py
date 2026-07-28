@@ -236,11 +236,7 @@ class FamilyThreeModeExperimentContractTests(unittest.TestCase):
             ],
             "INCONCLUSIVE",
         )
-        self.assertTrue(budget["pilot_authorization"]["authorized"])
-        self.assertEqual(
-            budget["pilot_authorization"]["scope"]["runtime_profile_id"],
-            "exit_aperture_plate_acceleration_n100_spatial_refined",
-        )
+        self.assertFalse(budget["pilot_authorization"]["authorized"])
         self.assertFalse(budget["full_matrix_authorization"]["authorized"])
         self.assertEqual(
             budget["budget_exhaustion_result"],
@@ -291,11 +287,7 @@ class FamilyThreeModeExperimentContractTests(unittest.TestCase):
                 "A formal dispersion binding must not be fabricated before solver output",
             )
         budget = load(CONFIG / "family_experiment" / "engineering_budget.json")
-        self.assertTrue(budget["pilot_authorization"]["authorized"])
-        self.assertEqual(
-            budget["pilot_authorization"]["scope"]["runtime_profile_id"],
-            "exit_aperture_plate_acceleration_n100_spatial_refined",
-        )
+        self.assertFalse(budget["pilot_authorization"]["authorized"])
         self.assertFalse(budget["full_matrix_authorization"]["authorized"])
 
     def test_no_acceleration_qualification_closes_only_functional_transport(
@@ -356,6 +348,28 @@ class FamilyThreeModeExperimentContractTests(unittest.TestCase):
         self.assertEqual(
             result["particle_source"]["sha256"],
             sha256(REPO_ROOT / result["particle_source"]["path"]),
+        )
+
+    def test_exit_plate_acceleration_closes_functional_baseline_not_comsol_spatial(
+        self,
+    ) -> None:
+        result = load(
+            CONFIG
+            / "family_experiment"
+            / "n100_exit_aperture_plate_acceleration_qualification.json"
+        )
+        self.assertEqual(result["baseline_functional_transport"]["status"], "PASS")
+        self.assertEqual(
+            result["same_solver_spatial"]["simion"]["functional_status"],
+            "PASS",
+        )
+        self.assertEqual(
+            result["same_solver_spatial"]["comsol"]["status"],
+            "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
+        )
+        self.assertEqual(
+            result["decision"]["continuous_numerical_equivalence"],
+            "INCONCLUSIVE",
         )
 
     def test_public_runners_propagate_typed_mode_identity(self) -> None:
