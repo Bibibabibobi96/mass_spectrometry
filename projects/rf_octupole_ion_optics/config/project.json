@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "project_id": "rf_octupole_ion_optics",
+  "legacy_identities": [
+    {
+      "mapping_id": "rf_oct_rename_20260728",
+      "project_id": "rf_octupole_ion_guide",
+      "retired_at_utc": "2026-07-28T08:19:11Z",
+      "migration_kind": "administrative_rename_only",
+      "artifact_root": "artifacts/projects/rf_octupole_ion_guide",
+      "artifact_access": "read_only",
+      "new_runs_allowed": false,
+      "verification_identity": "recorded_project_id",
+      "claim_policy": "preserve_original_status_and_claim_limits_no_promotion"
+    }
+  ],
+  "family_id": "rf_multipole_ion_optics",
+  "display_name": "RF八极杆离子光学",
+  "purpose": "八极杆无碰撞传输、接受度和未来碰撞冷却设计",
+  "lifecycle_status": "static",
+  "toolchains": ["python", "comsol", "simion"],
+  "contracts": {
+    "baseline": "config/baseline.json",
+    "resolved": "config/resolved_design.json",
+    "analysis": null,
+    "interface": null,
+    "execution": "config/execution_profiles.json",
+    "design_profiles": "config/design_profiles.json",
+    "design_variables": "config/design_variables.json",
+    "optimization_envelope": "config/optimization_envelope.json"
+  },
+  "capabilities": [
+    {
+      "capability_id": "octupole_ideal_transport",
+      "function": "ion_transport",
+      "status": "static",
+      "modes": ["transport_no_collision"],
+      "metrics": ["transmission_fraction", "exit_rms_radius", "maximum_radius"],
+      "design_variables": []
+    },
+    {
+      "capability_id": "octupole_round_rod_l2_transport",
+      "function": "ion_transport",
+      "status": "static",
+      "modes": ["round_rod_no_collision"],
+      "metrics": ["parasitic_harmonic_score", "transmission_fraction", "exit_rms_radius"],
+      "design_variables": ["rod_radius_ratio"]
+    },
+    {
+      "capability_id": "octupole_finite_3d_transport",
+      "function": "ion_transport",
+      "status": "static",
+      "modes": ["finite_3d_no_collision"],
+      "metrics": ["entrance_passed", "exit_passed", "transmission_fraction", "exit_rms_radius", "maximum_rod_radius"],
+      "design_variables": [
+        "inscribed_radius_r0", "rod_radius_ratio", "rod_z_min", "rod_z_max",
+        "enclosure_working_region_radius", "vacuum_z_min", "vacuum_z_max",
+        "shield_inner_radius", "shield_outer_radius", "entrance_outer_endcap_upstream_face_z",
+        "entrance_outer_endcap_downstream_face_z", "exit_outer_endcap_upstream_face_z", "exit_outer_endcap_downstream_face_z",
+        "entrance_aperture_radius", "entrance_plate_thickness", "entrance_rod_clearance",
+        "entrance_connector_length", "entrance_release_offset",
+        "exit_aperture_radius", "exit_plate_thickness", "exit_rod_clearance",
+        "exit_connector_length", "exit_census_offset",
+        "rf_amplitude", "dc_amplitude", "common_mode_offset", "rf_frequency", "rf_phase",
+        "segment_count", "intersegment_gap", "segment_entrance_common_mode",
+        "segment_exit_common_mode", "segment_output_reference",
+        "exit_interface_static_potential"
+      ]
+    }
+  ],
+  "formal_assets": {"status": "none", "types": [], "identity_contract": null},
+  "known_gaps": [
+    "The circular-rod field is only a provisional 2D L2 screen",
+    "The apertured finite 3D interfaces are functional simulation geometry, not a mechanical baseline",
+    "Continuous phase-space numerical equivalence and Candidate qualification are not complete",
+    "Collision, space-charge and CAD evidence do not exist"
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "role": "multipole_dispersion_acceptance_contract",
+  "project_id": "rf_octupole_ion_optics",
+  "contract_id": "octupole_three_mode_dispersion_acceptance",
+  "preregistered_before_run": true,
+  "acceptance_criteria": {
+    "status": "not_established",
+    "decision_without_supported_limits": "INCONCLUSIVE",
+    "required_basis": [
+      "downstream_acceptance_or_transfer_contract",
+      "physical_aperture_or_phase_space_budget",
+      "numerical_error_budget_for_each_claimed_observable"
+    ],
+    "prohibited_substitute": "No generic percentage or another multipole project's tolerance may be used without dimensional and downstream-budget review."
+  }
+}

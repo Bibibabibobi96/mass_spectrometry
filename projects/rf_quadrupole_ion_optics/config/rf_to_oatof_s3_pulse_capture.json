@@ -1,0 +1,136 @@
+{
+  "schema_version": 2,
+  "role": "rf_to_oatof_s3_shared_clock_pulse_capture_candidate",
+  "status": "nominal_cumulative_function_passed_stage_unqualified",
+  "stage": "S3",
+  "qualification_scope": "nominal_S2_geometry_shared_clock_finite_pulse_function_only",
+  "implementation_level": {
+    "active_entry": "tests/cross_solver/run_s3_cumulative_chain.ps1",
+    "comsol_physical_port_connector_and_pulse_implemented": true,
+    "simion_downstream_analyzer_continuation_implemented": true,
+    "simion_connector_geometry_implemented": false,
+    "solidworks_synchronized": false,
+    "s3_stage_qualified": false,
+    "formal_gate_passed": false
+  },
+  "inputs": {
+    "stage_plan": "config/rf_to_oatof_interface_stages.json",
+    "s2_connector": "config/rf_to_oatof_s2_passive_connector.json",
+    "spatial_registration": "config/resolved_rf_to_oatof_s2_spatial_registration.json",
+    "shared_physical_port_joint_geometry": "config/rf_to_oatof_shared_physical_port_joint_geometry.json",
+    "pulse_timing_policy": "config/rf_to_oatof_pulse_timing.json",
+    "oatof_baseline": "../single_reflection_oa_tof_mass_analyzer/config/baseline.json"
+  },
+  "source": {
+    "particle_run_id": "20260722_193000__sim__comsol__rf-input5ev-handoff__n100__r02",
+    "particle_event_path": "results/rf_hybrid_mesh_n100_events.csv",
+    "particle_metadata_path": "inputs/particle_source_metadata.json",
+    "timing_state_run_id": "20260722_150059__sim__comsol__rf-oatof-s2-passive-connector__n100__r02",
+    "timing_state_path": "results/s2_passive_connector_particles.csv",
+    "target_mass_amu": 100.0,
+    "target_charge_state": 1,
+    "clock_epoch_id": "instrument_clock_epoch.v1",
+    "source_particles": 100,
+    "rule": "Track the original RF-exit population in the S2 joint geometry; derive timing from the prior real S2 oa-entry states without projecting positions or resetting clocks."
+  },
+  "identity_contract": {
+    "canonical_state_schema": "common/contracts/schemas/component_particle_state.schema.json",
+    "frame_id": "oatof_global",
+    "clock_epoch_id_source": "source.clock_epoch_id",
+    "particle_identity_policy": "particle_id remains unique and unchanged across RF exit, S2 terminal, S3 pulse state, local accelerator exit and SIMION row mapping",
+    "species_identity_key": ["species_id", "mass_amu", "charge_state"],
+    "species_selector_policy": "source target_mass_amu and target_charge_state select the timing cohort but never rewrite canonical particle species",
+    "position_transform_policy": "consume the resolved S2 rigid registration once; all S3 and downstream states remain in oatof_global without projection",
+    "velocity_transform_policy": "the resolved S2 rotation applies to velocity once; translation never applies to velocity"
+  },
+  "local_exit_adapter": {
+    "implementation": "analysis/build_s3_local_exit_component_state.py",
+    "source_identity_table": "canonical_rf_exit_at_s2_connector.csv",
+    "solver_state_table": "s3_particle_terminal_census.csv",
+    "terminal_event": "local_accelerator_exit",
+    "terminal_status": "transmitted",
+    "source_component_id": "rf_quadrupole_to_oatof_s3",
+    "target_component_id": "oatof_analyzer",
+    "state_event": "local_accelerator_exit",
+    "canonical_columns_source": "common.contracts.component_particle_state.csv_columns",
+    "canonical_validator_source": "common.contracts.component_particle_state.validate_component_particle_state_csv",
+    "derived_physics_source": "common.contracts.particle_physics"
+  },
+  "timing_geometry": {
+    "entry_surface_source": "s2_connector.nominal_registration.target_entry_center_instrument_mm",
+    "port_source": "s2_connector.passive_connector_geometry.downstream_entry_aperture",
+    "wall_thickness_source": "oatof_baseline.geometry_mm.accelerator_shield_wall",
+    "target_centroid_source": "oatof_baseline.particle_source.center_x_mm",
+    "release_offset_source": "s2_connector.no_pulse_field_candidate.boundary_probe_inset_mm"
+  },
+  "waveform": {
+    "pre_pulse_oatof_field_scale": 0.0,
+    "pulse_oatof_field_scale": 1.0,
+    "post_pulse_oatof_field_scale": 0.0,
+    "pulse_width_source": "pulse_timing_policy.waveform.pulse_width_us",
+    "rise_fall_model": "ideal_finite_step",
+    "rf_field": "continuous_from_global_instrument_clock",
+    "post_pulse_tracking_time_us": 8.0,
+    "claim_limit": "The ideal finite step is the first functional waveform model; finite electrical rise and fall remain a later qualification variable."
+  },
+  "runtime": {
+    "shared_geometry_builder": "tests/comsol/build_s2_passive_connector_model.m",
+    "rf_steps_per_period_source": "s2_connector.functional_candidate.rf_steps_per_period",
+    "dense_trajectories_saved": false,
+    "required_outputs": [
+      "particle_terminal_census",
+      "pulse_left_limit_state",
+      "local_accelerator_exit_state",
+      "identity_clock_and_energy_audit"
+    ],
+    "minimum_active_at_pulse": 1,
+    "minimum_local_accelerator_exit": 1,
+    "detector_tracking_included": false
+  },
+  "claims": {
+    "continuous_beam_time_slice_extraction": true,
+    "compact_storage_claimed": false,
+    "minimum_transmission_qualified": false,
+    "pulse_time_convergence_claimed": false,
+    "time_step_convergence_claimed": false,
+    "s2_stage_passed": false,
+    "s3_stage_passed": false,
+    "formal_gate_passed": false
+  },
+  "functional_evidence": {
+    "nominal_gap_1mm": {
+      "s2_run_id": "20260722_165527__sim__comsol__rf-oatof-s2-connector-gap1__n100",
+      "pulse_run_id": "20260722_165527__sim__comsol__rf-oatof-s3-pulse-gap1__n100",
+      "end_to_end_run_id": "20260722_165527__sim__cross__rf-oatof-s3-end-to-end-gap1__n100",
+      "manifest_status": "success",
+      "census": {
+        "rf_exit": 100,
+        "oatof_entry": 61,
+        "active_at_pulse": 31,
+        "local_accelerator_exit": 31,
+        "detector_hit": 7
+      }
+    },
+    "direct_mating_gap_0mm": {
+      "s2_run_id": "20260722_164341__sim__comsol__rf-oatof-s2-connector-gap0__n100",
+      "pulse_run_id": "20260722_164341__sim__comsol__rf-oatof-s3-pulse-gap0__n100",
+      "end_to_end_run_id": "20260722_164341__sim__cross__rf-oatof-s3-end-to-end-gap0__n100",
+      "manifest_status": "success",
+      "census": {
+        "rf_exit": 100,
+        "oatof_entry": 77,
+        "active_at_pulse": 39,
+        "local_accelerator_exit": 39,
+        "detector_hit": 9
+      }
+    },
+    "claim_limit": "Both N=100 chains pass their functional audit only. They do not qualify transmission, pulse timing, resolution, tolerance, cross-solver connector equivalence or Formal promotion."
+  },
+  "permissions": {
+    "schedule_derivation_allowed": true,
+    "nominal_particle_runtime_allowed": true,
+    "downstream_handoff_allowed_after_local_exit_audit": true,
+    "s3_stage_pass_allowed": false,
+    "formal_promotion_allowed": false
+  }
+}

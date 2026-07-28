@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "role": "multipole_family_experiment_geometry_invariant",
+  "project_id": "rf_quadrupole_ion_optics",
+  "family_id": "rf_multipole_ion_optics",
+  "design_request": "projects/rf_quadrupole_ion_optics/config/requests/baseline.json",
+  "design_request_sha256": "A75721393601D18A0BE4C1B05E91A23AA13F6AC16DE605D9AEB2606AFD7468A3",
+  "mechanical_geometry": {
+    "inscribed_radius_r0_mm": 4.0,
+    "rod_radius_ratio": 0.5,
+    "rod_z_min_mm": 0.0,
+    "rod_z_max_mm": 79.6,
+    "rod_segment_count": 4,
+    "rod_segment_length_mm": 19.6,
+    "intersegment_gap_count": 3,
+    "intersegment_gap_mm": 0.4,
+    "source_release_plane_z_mm": -1.5,
+    "entrance_aperture_plate_faces_z_mm": [-1.0, -0.5],
+    "exit_aperture_plate_faces_z_mm": [80.1, 80.6],
+    "handoff_plane_z_mm": 80.6,
+    "near_interface_census_plane_z_mm": 81.1,
+    "enclosure_model": "cylindrical_grounded_shield_v1"
+  },
+  "invariant_policy": "The three family experiment modes may differ only in typed electrical assignments; geometry, RF drive and particle source remain identical."
+}

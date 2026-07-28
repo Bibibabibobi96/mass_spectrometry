@@ -35,6 +35,8 @@ COMPILER_NAME = "common.multipole.compile_design_request"
 COMPILER_VERSION = 2
 REQUEST_SCHEMA = "multipole_design_request.schema.json"
 RESOLVED_SCHEMA = "multipole_resolved_design.schema.json"
+OPERATING_MODE_SCHEMA = "multipole_operating_modes.schema.json"
+OPERATING_MODE_SOURCE_PREFIX = "operating_mode_registry__"
 GEOMETRY_EQUALITY_ABS_TOL_MM = 1e-12
 
 
@@ -295,6 +297,10 @@ def _resolve_segmentation(
         rod_z_max_mm=rod_array["rods"][0]["z_max_mm"],
         source_kinetic_energy_ev=_nominal_source_energy(particle),
         charge_state=particle["charge_state"],
+        require_positive_energy_gain=(
+            request["axial_drive"]["topology"]
+            == "segmented_rod_axial_acceleration"
+        ),
     )
     axial_resolved.pop("functional_acceptance", None)
     axial_resolved.pop("claim_limit", None)
@@ -352,6 +358,23 @@ def _resolve_axial_drive(
     topology = request["axial_drive"]["topology"]
 
     segmented = segmentation["strategy"] != "off"
+    rod_reference = float(request["drive"]["common_mode_offset_V"])
+    if segmented and topology in {
+        "none",
+        "exit_aperture_plate_potential_step",
+    }:
+        segment_voltages = [
+            float(segment["common_mode_V"])
+            for segment in segmentation["axial_acceleration"]["derived"]["segments"]
+        ]
+        if not all(
+            math.isclose(voltage, rod_reference, rel_tol=0, abs_tol=1e-12)
+            for voltage in segment_voltages
+        ):
+            raise MultipoleDesignCompileError(
+                f"{topology} requires every physical rod segment common mode "
+                "to equal drive common_mode_offset_V"
+            )
     if topology == "segmented_rod_axial_acceleration":
         if not segmented:
             raise MultipoleDesignCompileError(
@@ -363,15 +386,10 @@ def _resolve_axial_drive(
         )
         output_reference = float(resolved_acceleration["output_reference_V"])
     elif topology == "exit_aperture_plate_potential_step":
-        if segmented:
-            raise MultipoleDesignCompileError(
-                "exit_aperture_plate_potential_step requires continuous rods"
-            )
         source_reference, output_reference = _static_reference_voltages(request)
-        rod_reference = float(request["drive"]["common_mode_offset_V"])
         if not math.isclose(source_reference, rod_reference, rel_tol=0, abs_tol=1e-12):
             raise MultipoleDesignCompileError(
-                "exit aperture-plate source reference must equal the continuous-rod common mode"
+                "exit aperture-plate source reference must equal the rod common mode"
             )
         static = request["static_electrodes_V"]
         if (
@@ -388,11 +406,16 @@ def _resolve_axial_drive(
                 "rectangular physical detector must share the exit aperture-plate output reference"
             )
     elif topology == "none":
-        if segmented:
-            raise MultipoleDesignCompileError(
-                "axial-drive topology none requires segmentation off"
-            )
         source_reference, output_reference = _static_reference_voltages(request)
+        if segmented and not math.isclose(
+            source_reference,
+            output_reference,
+            rel_tol=0,
+            abs_tol=1e-12,
+        ):
+            raise MultipoleDesignCompileError(
+                "axial-drive topology none requires identical static references"
+            )
     else:
         raise MultipoleDesignCompileError(
             f"unsupported axial-drive topology: {topology}"
@@ -576,6 +599,70 @@ def _pointer_unit(pointer: str) -> str:
     raise MultipoleDesignCompileError(f"cannot determine canonical unit for {pointer}")
 
 
+def operating_mode_source_label(mode_id: str) -> str:
+    """Return the reversible resolved-source label for one selected mode."""
+    return f"{OPERATING_MODE_SOURCE_PREFIX}{mode_id}"
+
+
+def apply_typed_operating_mode(
+    base_request: Mapping[str, Any],
+    mode_registry: Mapping[str, Any],
+    mode_id: str,
+) -> dict[str, Any]:
+    """Apply the narrow electrical mode vocabulary to a deep-copied request."""
+    request = copy.deepcopy(dict(base_request))
+    registry = copy.deepcopy(dict(mode_registry))
+    try:
+        validate_schema(request, REQUEST_SCHEMA)
+        validate_schema(registry, OPERATING_MODE_SCHEMA)
+    except ContractError as error:
+        raise MultipoleDesignCompileError(str(error)) from error
+    _ensure_finite_numbers(registry, "operating_mode_registry")
+    if (
+        registry["project_id"] != request["identity"]["project_id"]
+        or registry["family_id"] != request["identity"]["family_id"]
+    ):
+        raise MultipoleDesignCompileError(
+            "operating mode registry identity differs from the base request"
+        )
+    selected = [mode for mode in registry["modes"] if mode["mode_id"] == mode_id]
+    if len(selected) != 1:
+        raise MultipoleDesignCompileError(
+            f"operating mode is not unique: {mode_id!r}"
+        )
+    segmentation = request["segmentation"]
+    if segmentation["strategy"] != "uniform":
+        raise MultipoleDesignCompileError(
+            "typed operating modes require one uniform physical rod segmentation baseline"
+        )
+    mode = selected[0]
+    request["axial_drive"]["topology"] = mode["axial_drive_topology"]
+    segmentation["entrance_common_mode_V"] = mode[
+        "rod_segment_entrance_common_mode_V"
+    ]
+    segmentation["exit_common_mode_V"] = mode[
+        "rod_segment_exit_common_mode_V"
+    ]
+    segmentation["output_reference_V"] = mode[
+        "rod_segment_exit_common_mode_V"
+    ]
+    static = request["static_electrodes_V"]
+    exit_voltage = mode["exit_aperture_plate_and_connector_V"]
+    if static["role"] == "cylindrical_shield_static_electrodes":
+        static["exit_outer_endcap_aperture_plate_connector_V"] = exit_voltage
+    elif static["role"] == "rectangular_reference_static_electrodes":
+        static["exit_outer_enclosure_and_connector_V"] = exit_voltage
+    else:
+        raise MultipoleDesignCompileError(
+            "typed operating mode cannot map the static-electrode role"
+        )
+    try:
+        validate_schema(request, REQUEST_SCHEMA)
+    except ContractError as error:
+        raise MultipoleDesignCompileError(str(error)) from error
+    return request
+
+
 def compile_governed_design_request_file(
     request_path: Path,
     design_variables_path: Path,
@@ -583,12 +670,26 @@ def compile_governed_design_request_file(
     *,
     expected_identity: Mapping[str, Any],
     provenance_root: Path,
+    operating_mode_registry_path: Path | None = None,
+    mode_id: str | None = None,
 ) -> dict[str, Any]:
-    """Validate governance bounds and compile the exact referenced request."""
+    """Validate a governed base and compile it or one typed in-memory mode."""
     request_path = Path(request_path)
     variables_path = Path(design_variables_path)
     envelope_path = Path(optimization_envelope_path)
-    request = json.loads(request_path.read_text(encoding="utf-8-sig"))
+    base_request = json.loads(request_path.read_text(encoding="utf-8-sig"))
+    if (operating_mode_registry_path is None) != (mode_id is None):
+        raise MultipoleDesignCompileError(
+            "operating_mode_registry_path and mode_id must be provided together"
+        )
+    mode_sources: dict[str, Path] = {}
+    if operating_mode_registry_path is None:
+        request = copy.deepcopy(base_request)
+    else:
+        mode_path = Path(operating_mode_registry_path)
+        mode_registry = json.loads(mode_path.read_text(encoding="utf-8-sig"))
+        request = apply_typed_operating_mode(base_request, mode_registry, mode_id)
+        mode_sources[operating_mode_source_label(mode_id)] = mode_path
     variables = json.loads(variables_path.read_text(encoding="utf-8-sig"))
     envelope = json.loads(envelope_path.read_text(encoding="utf-8-sig"))
     try:
@@ -636,12 +737,14 @@ def compile_governed_design_request_file(
         raise MultipoleDesignCompileError(
             "optimization envelope does not constrain every catalog variable"
         )
-    resolved = compile_design_request_file(
-        request_path,
+    resolved = compile_design_request(
+        request,
         expected_identity=identity,
         source_files={
+            "design_request": request_path,
             "design_variables": variables_path,
             "optimization_envelope": envelope_path,
+            **mode_sources,
         },
         source_root=provenance_root,
     )
@@ -716,16 +819,28 @@ def validate_resolved_design(
             raise MultipoleDesignCompileError(
                 "governed resolved design is missing governance source records"
             ) from error
-        if source_files:
+        mode_sources = {
+            label: path
+            for label, path in source_files.items()
+            if label.startswith(OPERATING_MODE_SOURCE_PREFIX)
+        }
+        if len(mode_sources) > 1 or set(source_files) != set(mode_sources):
             raise MultipoleDesignCompileError(
                 "governed resolved design has unknown additional sources"
             )
+        mode_registry_path = None
+        mode_id = None
+        if mode_sources:
+            label, mode_registry_path = next(iter(mode_sources.items()))
+            mode_id = label.removeprefix(OPERATING_MODE_SOURCE_PREFIX)
         rebuilt = compile_governed_design_request_file(
             requested_path,
             variables_path,
             envelope_path,
             expected_identity=locked_identity,
             provenance_root=source_root,
+            operating_mode_registry_path=mode_registry_path,
+            mode_id=mode_id,
         )
     if document != rebuilt:
         raise MultipoleDesignCompileError(
@@ -775,6 +890,8 @@ def main() -> int:
     parser.add_argument("--project-id", required=True)
     parser.add_argument("--radial-order-n", required=True, type=int)
     parser.add_argument("--electrode-count", required=True, type=int)
+    parser.add_argument("--operating-mode-registry", type=Path)
+    parser.add_argument("--mode-id")
     parser.add_argument(
         "--source",
         action="append",
@@ -799,6 +916,8 @@ def main() -> int:
         args.optimization_envelope,
         expected_identity=expected_identity,
         provenance_root=args.provenance_root,
+        operating_mode_registry_path=args.operating_mode_registry,
+        mode_id=args.mode_id,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(

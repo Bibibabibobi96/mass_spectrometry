@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/execution_adapter_registry.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "role", "integration_id", "mappings"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "integration_execution_adapter_registry"},
+    "integration_id": {"$ref": "#/$defs/identifier"},
+    "mappings": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "connection_profile_id",
+          "adapter_entrypoint",
+          "legacy_entrypoints",
+          "connector_case_id"
+        ],
+        "properties": {
+          "connection_profile_id": {"$ref": "#/$defs/identifier"},
+          "adapter_entrypoint": {"$ref": "#/$defs/path"},
+          "legacy_entrypoints": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["s2_field", "s3_cumulative"],
+            "properties": {
+              "s2_field": {"$ref": "#/$defs/path"},
+              "s3_cumulative": {"$ref": "#/$defs/path"}
+            }
+          },
+          "connector_case_id": {"$ref": "#/$defs/identifier"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![A-Za-z]:|/|.*\\.\\.).+"
+    }
+  }
+}

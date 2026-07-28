@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/integration_registry.schema.json",
+  "title": "Registered integration families",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "role", "integrations"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "integration_registry"},
+    "integrations": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["integration_id", "root", "profile_registry"],
+        "properties": {
+          "integration_id": {"$ref": "#/$defs/identifier"},
+          "root": {"type": "string", "pattern": "^integrations/[a-z][a-z0-9_]*$"},
+          "profile_registry": {
+            "type": "string",
+            "pattern": "^integrations/[a-z][a-z0-9_]*/config/[A-Za-z0-9._-]+\\.json$"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"}
+  }
+}

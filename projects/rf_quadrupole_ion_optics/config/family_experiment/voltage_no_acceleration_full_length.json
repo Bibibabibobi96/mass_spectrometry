@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "role": "multipole_family_experiment_voltage_contract",
+  "project_id": "rf_quadrupole_ion_optics",
+  "mode_id": "no_acceleration_full_length",
+  "geometry_invariant_sha256": "D54EFB6AA1504A78CD746BE599E1F4E23F8D6A5380824607FA4975A79D49A1E9",
+  "operating_mode_registry_sha256": "FEC5FA1CE320194A4BB447FF82539A5C1047B44C972A1034B3332CFCD1B7F40D",
+  "voltage_assignment": {
+    "rod_segment_common_mode_V": [0.0, 0.0, 0.0, 0.0],
+    "entrance_aperture_plate_and_connector_V": 0.0,
+    "exit_aperture_plate_and_connector_V": 0.0
+  }
+}

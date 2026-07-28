@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "role": "multipole_dispersion_acceptance_contract",
+  "project_id": "rf_hexapole_ion_optics",
+  "contract_id": "hexapole_three_mode_dispersion_acceptance_v1",
+  "preregistered_before_run": true,
+  "acceptance_criteria": {
+    "applicable_modes": [
+      "no_acceleration_full_length",
+      "segmented_rod_axial_acceleration",
+      "exit_aperture_plate_acceleration"
+    ],
+    "required_exact_invariants": [
+      "one_mechanical_geometry",
+      "one_selected_particle_source",
+      "one_solver_numerics_identity_per_bound_experiment",
+      "all_losses_retained_by_particle_id"
+    ],
+    "continuous_threshold_status": "UNAVAILABLE_NO_PHYSICAL_OR_DOWNSTREAM_BUDGET",
+    "continuous_qualification_result": "INCONCLUSIVE",
+    "transmission_threshold_status": "UNAVAILABLE_NO_DOWNSTREAM_ACCEPTANCE_REQUIREMENT",
+    "transmission_qualification_result": "INCONCLUSIVE",
+    "required_budget_source_before_pass": [
+      "named_downstream_aperture_or_acceptance_contract",
+      "allowed_radius_and_divergence_at_named_observation_plane",
+      "allowed_energy_and_tof spread for the named downstream workflow",
+      "numerical uncertainty allocation"
+    ]
+  },
+  "claim_limit": "The contract freezes validity prerequisites but contains no invented tolerance. Diagnostics may be reported; acceptance remains INCONCLUSIVE until a cited physical or downstream budget is bound."
+}

@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "role": "multipole_three_mode_dispersion_project_preregistration",
+  "project_id": "rf_octupole_ion_optics",
+  "contract_id": "octupole_three_mode_dispersion_prerun",
+  "preregistered_before_run": true,
+  "formal_binding_status": "pending_real_solver_outputs",
+  "method_contract": "common/multipole/three_mode_dispersion_contract.json",
+  "geometry": {
+    "path": "projects/rf_octupole_ion_optics/config/qualification/three_mode_geometry_invariant.json",
+    "sha256": "A7C87A3EBAD043E61BCA27A1C2F92D7263F3AC41E795C7AAAFCE79C1DD9C13AD"
+  },
+  "source_family": {
+    "n100": {
+      "profile_id": "family_mother_sample_v1_n100",
+      "path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_100.csv",
+      "sha256": "0125C3AB02B2321EF26A3A913CF6EC04325FD0D48597D2CB439D0CE42411662F"
+    },
+    "n1000": {
+      "profile_id": "family_mother_sample_v1_n1000",
+      "path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_1000.csv",
+      "sha256": "CE68A6B47DC5726D9C45CBE28E4397A2321D782FAED265067824891AAF4D0FBF"
+    },
+    "n100_is_exact_prefix_of_n1000": true
+  },
+  "modes": [
+    {
+      "mode_id": "no_acceleration_full_length",
+      "voltage_contract": {
+        "path": "projects/rf_octupole_ion_optics/config/qualification/voltage_no_acceleration_full_length.json",
+        "sha256": "BF7A7498667A34528582BD946A7EEF1AC8CAB982B0E15A503CE56AA6BDA2A87A"
+      }
+    },
+    {
+      "mode_id": "segmented_rod_axial_acceleration",
+      "voltage_contract": {
+        "path": "projects/rf_octupole_ion_optics/config/qualification/voltage_segmented_rod_axial_acceleration.json",
+        "sha256": "28EE96154F7329AAAC49BBF80D7D118903049A1B010E1DB5B8583367613BB7AF"
+      }
+    },
+    {
+      "mode_id": "exit_aperture_plate_acceleration",
+      "voltage_contract": {
+        "path": "projects/rf_octupole_ion_optics/config/qualification/voltage_exit_aperture_plate_acceleration.json",
+        "sha256": "8197259A06C800CBA8CC2621F450D62EABD521117209F24482BC89C94FE76C6A"
+      }
+    }
+  ],
+  "qualification_bindings": {
+    "project_acceptance_contract": {
+      "path": "projects/rf_octupole_ion_optics/config/qualification/dispersion_acceptance.json",
+      "sha256": "751D45F4D56FFF26389F3B3F35200122C30588ADD61DA64F3FC6C8F03131012E"
+    },
+    "project_effect_resolution_contract": {
+      "path": "projects/rf_octupole_ion_optics/config/qualification/dispersion_effect_resolution.json",
+      "sha256": "EF69550ED566413A0867F4C1A7A29762BCEC4317D482A8B7C1847FF64AD75B57"
+    },
+    "project_engineering_budget_contract": {
+      "path": "projects/rf_octupole_ion_optics/config/qualification/engineering_budget.json",
+      "sha256": "96F6EFE210AC9E12B6F95A55F34F3A20D48FFD912FF3F875C45937432CA7D87B"
+    }
+  },
+  "formal_binding_generation": {
+    "generate_only_after": [
+      "one real solver run exists for each of the three modes",
+      "the selected solver-numerics registry SHA-256 is frozen",
+      "each canonical handoff-state path and SHA-256 is verified",
+      "all three runs share the registered geometry source and selected particle source"
+    ],
+    "required_schema": "common/contracts/schemas/three_mode_dispersion_binding.schema.json",
+    "missing_real_handoff_decision": "FAIL_CLOSED_NO_FORMAL_BINDING",
+    "forbidden": "Do not use placeholder paths or hashes and do not infer solver outputs from this preregistration."
+  }
+}

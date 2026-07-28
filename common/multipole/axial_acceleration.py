@@ -1,9 +1,10 @@
-"""Resolve segmented-rod axial acceleration for the RF multipole family.
+"""Resolve physical rod segmentation and its common-mode voltage profile.
 
 Voltages are electrode potentials in volts and axial dimensions are in
 millimetres.  The model applies one common-mode voltage to both RF polarity
-groups in each rod segment, preserving the transverse RF/DC drive while
-creating a real static axial field between adjacent segments.
+groups in each rod segment, preserving the transverse RF/DC drive.  A voltage
+staircase creates a real static axial field; an equal-bias profile preserves
+the same segmented geometry without claiming segmented-rod acceleration.
 """
 
 from __future__ import annotations
@@ -102,8 +103,9 @@ def resolve_axial_acceleration(
     rod_z_max_mm: float,
     source_kinetic_energy_ev: float,
     charge_state: int,
+    require_positive_energy_gain: bool = True,
 ) -> dict[str, Any]:
-    """Validate one mode and derive segment positions, voltages and energy gain."""
+    """Validate one segment profile and derive positions, voltages and energy."""
     expected_keys = {
         "schema_version",
         "role",
@@ -132,6 +134,8 @@ def resolve_axial_acceleration(
         raise AxialAccelerationError("rod length and source energy must be positive")
     if not isinstance(charge_state, int) or isinstance(charge_state, bool) or charge_state == 0:
         raise AxialAccelerationError("charge_state must be a nonzero integer")
+    if not isinstance(require_positive_energy_gain, bool):
+        raise AxialAccelerationError("require_positive_energy_gain must be boolean")
     segmentation = contract.get("segmentation")
     if not isinstance(segmentation, dict):
         raise AxialAccelerationError("segmentation must be an object")
@@ -164,7 +168,7 @@ def resolve_axial_acceleration(
     if not math.isclose(output_v, exit_v, rel_tol=0, abs_tol=1e-12):
         raise AxialAccelerationError("output_reference_V must equal the last rod-segment common mode")
     predicted_gain = charge_state * (entrance_v - output_v)
-    if predicted_gain <= 0:
+    if require_positive_energy_gain and predicted_gain <= 0:
         raise AxialAccelerationError("configured potential profile does not accelerate the selected charge sign")
     acceptance = contract.get("functional_acceptance")
     if not isinstance(acceptance, dict) or set(acceptance) != {

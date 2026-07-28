@@ -20,7 +20,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
 $canonicalScratchRoot = [IO.Path]::GetFullPath(
-  (Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_collision_cooling\scratch'))
+  (Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_ion_optics\scratch'))
 $source = Join-Path $PSScriptRoot 'multipole_layout_placeholder.gem'
 $output = [IO.Path]::GetFullPath($OutputDir)
 $scratchPrefix = $canonicalScratchRoot + [IO.Path]::DirectorySeparatorChar

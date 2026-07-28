@@ -79,10 +79,10 @@ class SimionLayoutTemplateContractTests(unittest.TestCase):
         runners = (
             RUNNER,
             ROOT.parents[1]
-            / "projects/rf_quadrupole_collision_cooling/workflows"
+            / "projects/rf_quadrupole_ion_optics/workflows"
             / "interface_readiness/run_simion.ps1",
             ROOT.parents[1]
-            / "projects/rf_quadrupole_collision_cooling/workflows"
+            / "projects/rf_quadrupole_ion_optics/workflows"
             / "mass_filter_reference/run_simion.ps1",
         )
         for runner in runners:

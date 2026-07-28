@@ -34,7 +34,10 @@ def resolve_runtime_profile(
     registry_path = project_root / "config" / "runtime_profiles.json"
     registry = _load(registry_path)
     registry_keys = {"schema_version", "role", "project_id", "profiles"}
-    optional_registry_keys = {"solver_numerics_registry_paths"}
+    optional_registry_keys = {
+        "solver_numerics_registry_paths",
+        "engineering_budget_path",
+    }
     if not registry_keys.issubset(registry) or set(registry) - (
         registry_keys | optional_registry_keys
     ):
@@ -134,6 +137,15 @@ def resolve_runtime_profile(
         }
         numerics_paths[solver] = str(path.resolve())
 
+    budget_relative_path = registry.get("engineering_budget_path")
+    if not isinstance(budget_relative_path, str) or not budget_relative_path:
+        raise ValueError("runtime profile registry engineering_budget_path is missing")
+    budget_path = (project_root / budget_relative_path).resolve()
+    if not budget_path.is_relative_to(project_root.resolve()):
+        raise ValueError("engineering-budget path escapes the project")
+    if not budget_path.is_file():
+        raise ValueError(f"engineering-budget contract is missing: {budget_path}")
+
     return {
         "schema_version": 1,
         "role": "multipole_resolved_runtime_profile",
@@ -152,6 +164,10 @@ def resolve_runtime_profile(
         },
         "solver_numerics": numerics,
         "solver_numerics_registry_paths": numerics_paths,
+        "engineering_budget": {
+            "path": str(budget_path),
+            "sha256": _sha256(budget_path),
+        },
     }
 
 

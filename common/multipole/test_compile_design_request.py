@@ -21,9 +21,9 @@ from common.multipole.compile_design_request import (
 
 
 PROJECT_IDENTITIES = {
-    "rf_quadrupole_collision_cooling": (2, 4),
-    "rf_hexapole_ion_guide": (3, 6),
-    "rf_octupole_ion_guide": (4, 8),
+    "rf_quadrupole_ion_optics": (2, 4),
+    "rf_hexapole_ion_optics": (3, 6),
+    "rf_octupole_ion_optics": (4, 8),
 }
 
 
@@ -38,11 +38,11 @@ def identity(project_id: str) -> dict:
 
 
 def design_request(
-    project_id: str = "rf_quadrupole_collision_cooling",
+    project_id: str = "rf_quadrupole_ion_optics",
     segmentation: dict | None = None,
 ) -> dict:
     segmentation = segmentation or {"strategy": "off"}
-    if project_id == "rf_quadrupole_collision_cooling":
+    if project_id == "rf_quadrupole_ion_optics":
         enclosure = {
             "role": "downstream_local_reference_enclosure",
             "model": "rectangular_reference_enclosure_v1",
@@ -322,39 +322,211 @@ class MultipoleDesignCompilerTest(unittest.TestCase):
             [(5.0, 25.0), (26.0, 45.0), (45.0, 85.0)],
         )
 
-    def test_exit_aperture_plate_topology_uses_continuous_rods_and_static_references(self) -> None:
-        request = design_request()
-        request["drive"]["common_mode_offset_V"] = 0.0
-        request["axial_drive"]["topology"] = "exit_aperture_plate_potential_step"
-        request["static_electrodes_V"]["exit_outer_enclosure_and_connector_V"] = -3.0
-        request["static_electrodes_V"]["physical_detector_V"] = -3.0
+    def test_three_axial_modes_share_segmented_geometry_and_differ_only_electrically(self) -> None:
+        physical_segmentation = {
+            "strategy": "uniform",
+            "segment_count": 4,
+            "intersegment_gap_mm": 0.4,
+            "entrance_common_mode_V": 0.0,
+            "exit_common_mode_V": 0.0,
+            "output_reference_V": 0.0,
+        }
+        none_request = design_request(segmentation=copy.deepcopy(physical_segmentation))
+        none_request["drive"]["common_mode_offset_V"] = 0.0
+        none_request["axial_drive"]["topology"] = "none"
+
+        plate_request = copy.deepcopy(none_request)
+        plate_request["axial_drive"]["topology"] = (
+            "exit_aperture_plate_potential_step"
+        )
+        plate_request["static_electrodes_V"][
+            "exit_outer_enclosure_and_connector_V"
+        ] = -3.0
+        plate_request["static_electrodes_V"]["physical_detector_V"] = -3.0
+
+        segmented_request = copy.deepcopy(none_request)
+        segmented_request["axial_drive"]["topology"] = (
+            "segmented_rod_axial_acceleration"
+        )
+        segmented_request["segmentation"]["exit_common_mode_V"] = -3.0
+        segmented_request["segmentation"]["output_reference_V"] = -3.0
+
+        resolved = {
+            "none": self.compile(none_request),
+            "plate": self.compile(plate_request),
+            "segmented": self.compile(segmented_request),
+        }
+        physical_arrays = []
+        for mode in resolved.values():
+            segmentation = mode["segmentation"]
+            self.assertEqual(segmentation["strategy"], "uniform")
+            self.assertEqual(segmentation["segmented_rod_array"]["segment_count"], 4)
+            physical_arrays.append(
+                [
+                    {
+                        key: value
+                        for key, value in electrode.items()
+                        if key != "common_mode_V"
+                    }
+                    for electrode in segmentation["segmented_rod_array"]["electrodes"]
+                ]
+            )
+        self.assertEqual(physical_arrays[0], physical_arrays[1])
+        self.assertEqual(physical_arrays[1], physical_arrays[2])
+        self.assertEqual(
+            [resolved[name]["geometry_mm"] for name in resolved],
+            [resolved["none"]["geometry_mm"]] * 3,
+        )
+        self.assertEqual(
+            [resolved[name]["interfaces_mm"] for name in resolved],
+            [resolved["none"]["interfaces_mm"]] * 3,
+        )
+
+        self.assertEqual(
+            [
+                segment["common_mode_V"]
+                for segment in resolved["none"]["segmentation"][
+                    "axial_acceleration"
+                ]["derived"]["segments"]
+            ],
+            [0.0, 0.0, 0.0, 0.0],
+        )
+        self.assertEqual(
+            [
+                segment["common_mode_V"]
+                for segment in resolved["plate"]["segmentation"][
+                    "axial_acceleration"
+                ]["derived"]["segments"]
+            ],
+            [0.0, 0.0, 0.0, 0.0],
+        )
+        self.assertEqual(
+            [
+                segment["common_mode_V"]
+                for segment in resolved["segmented"]["segmentation"][
+                    "axial_acceleration"
+                ]["derived"]["segments"]
+            ],
+            [0.0, -1.0, -2.0, -3.0],
+        )
+        self.assertEqual(
+            resolved["none"]["axial_drive"],
+            {
+                "topology": "none",
+                "source_reference_V": 0.0,
+                "output_reference_V": 0.0,
+                "predicted_energy_gain_eV": 0.0,
+                "predicted_output_energy_eV": 2.0,
+            },
+        )
+        for name, topology in (
+            ("plate", "exit_aperture_plate_potential_step"),
+            ("segmented", "segmented_rod_axial_acceleration"),
+        ):
+            self.assertEqual(resolved[name]["axial_drive"]["topology"], topology)
+            self.assertEqual(
+                resolved[name]["axial_drive"]["predicted_energy_gain_eV"], 3.0
+            )
+
+    def test_legacy_off_none_preserves_project_static_reference_reporting(self) -> None:
+        request = design_request(segmentation={"strategy": "off"})
+        request["axial_drive"]["topology"] = "none"
+        request["static_electrodes_V"]["exit_outer_enclosure_and_connector_V"] = -100.0
+        request["static_electrodes_V"]["physical_detector_V"] = -1500.0
         resolved = self.compile(request)
         self.assertEqual(resolved["segmentation"]["strategy"], "off")
-        self.assertIsNone(resolved["segmentation"]["segmented_rod_array"])
         self.assertEqual(
             resolved["axial_drive"],
             {
-                "topology": "exit_aperture_plate_potential_step",
+                "topology": "none",
                 "source_reference_V": 0.0,
-                "output_reference_V": -3.0,
-                "predicted_energy_gain_eV": 3.0,
-                "predicted_output_energy_eV": 5.0,
+                "output_reference_V": -100.0,
+                "predicted_energy_gain_eV": 100.0,
+                "predicted_output_energy_eV": 102.0,
             },
         )
 
-        mismatched = copy.deepcopy(request)
-        mismatched["segmentation"] = {
-            "strategy": "uniform",
-            "segment_count": 2,
-            "intersegment_gap_mm": 0.0,
-            "entrance_common_mode_V": 0.0,
-            "exit_common_mode_V": -3.0,
-            "output_reference_V": -3.0,
+    def test_none_and_plate_fail_when_segment_bias_differs_from_drive_common_mode(self) -> None:
+        for topology in ("none", "exit_aperture_plate_potential_step"):
+            with self.subTest(topology=topology):
+                request = design_request(
+                    segmentation={
+                        "strategy": "uniform",
+                        "segment_count": 4,
+                        "intersegment_gap_mm": 0.4,
+                        "entrance_common_mode_V": 0.0,
+                        "exit_common_mode_V": -3.0,
+                        "output_reference_V": -3.0,
+                    }
+                )
+                request["drive"]["common_mode_offset_V"] = 0.0
+                request["axial_drive"]["topology"] = topology
+                if topology == "exit_aperture_plate_potential_step":
+                    request["static_electrodes_V"][
+                        "exit_outer_enclosure_and_connector_V"
+                    ] = -3.0
+                    request["static_electrodes_V"]["physical_detector_V"] = -3.0
+                with self.assertRaisesRegex(
+                    MultipoleDesignCompileError,
+                    "every physical rod segment common mode",
+                ):
+                    self.compile(request)
+
+    def test_uniform_and_explicit_physical_segmentation_accept_all_drive_topologies(self) -> None:
+        segmentations = {
+            "uniform": {
+                "strategy": "uniform",
+                "segment_count": 4,
+                "intersegment_gap_mm": 0.4,
+                "entrance_common_mode_V": 0.0,
+                "exit_common_mode_V": 0.0,
+                "output_reference_V": 0.0,
+            },
+            "explicit": {
+                "strategy": "explicit",
+                "segments": [
+                    {"length_mm": 19.7, "gap_after_mm": 0.4, "common_mode_V": 0.0},
+                    {"length_mm": 19.7, "gap_after_mm": 0.4, "common_mode_V": 0.0},
+                    {"length_mm": 19.7, "gap_after_mm": 0.4, "common_mode_V": 0.0},
+                    {"length_mm": 19.7, "common_mode_V": 0.0},
+                ],
+                "output_reference_V": 0.0,
+            },
         }
-        with self.assertRaisesRegex(
-            MultipoleDesignCompileError, "continuous rods"
-        ):
-            self.compile(mismatched)
+        topologies = (
+            "none",
+            "exit_aperture_plate_potential_step",
+            "segmented_rod_axial_acceleration",
+        )
+        for strategy, segmentation in segmentations.items():
+            for topology in topologies:
+                with self.subTest(strategy=strategy, topology=topology):
+                    request = design_request(segmentation=copy.deepcopy(segmentation))
+                    request["drive"]["common_mode_offset_V"] = 0.0
+                    request["axial_drive"]["topology"] = topology
+                    if topology == "exit_aperture_plate_potential_step":
+                        request["static_electrodes_V"][
+                            "exit_outer_enclosure_and_connector_V"
+                        ] = -3.0
+                        request["static_electrodes_V"]["physical_detector_V"] = -3.0
+                    elif topology == "segmented_rod_axial_acceleration":
+                        if strategy == "uniform":
+                            request["segmentation"]["exit_common_mode_V"] = -3.0
+                        else:
+                            for index, segment in enumerate(
+                                request["segmentation"]["segments"]
+                            ):
+                                segment["common_mode_V"] = -float(index)
+                        request["segmentation"]["output_reference_V"] = -3.0
+                    resolved = self.compile(request)
+                    self.assertEqual(
+                        resolved["segmentation"]["strategy"],
+                        strategy,
+                    )
+                    self.assertEqual(
+                        resolved["axial_drive"]["topology"],
+                        topology,
+                    )
 
     def test_legacy_scalar_particle_energy_is_rejected(self) -> None:
         request = design_request()
@@ -460,7 +632,7 @@ class MultipoleDesignCompilerTest(unittest.TestCase):
                 encoding="utf-8",
             )
             auxiliary.write_text('{"mode":"test"}\n', encoding="utf-8")
-            expected = identity("rf_quadrupole_collision_cooling")
+            expected = identity("rf_quadrupole_ion_optics")
             first = compile_design_request_file(
                 request_path,
                 expected_identity=expected,
@@ -685,7 +857,7 @@ class MultipoleGovernanceSchemaTest(unittest.TestCase):
     def test_existing_oatof_catalog_and_envelope_remain_valid(self) -> None:
         validate_schema(
             json.loads(
-                (REPO_ROOT / "projects/oa_tof/config/design_variables.json").read_text(
+                (REPO_ROOT / "projects/single_reflection_oa_tof_mass_analyzer/config/design_variables.json").read_text(
                     encoding="utf-8"
                 )
             ),
@@ -693,7 +865,7 @@ class MultipoleGovernanceSchemaTest(unittest.TestCase):
         )
         validate_schema(
             json.loads(
-                (REPO_ROOT / "projects/oa_tof/config/optimization_envelope.json").read_text(
+                (REPO_ROOT / "projects/single_reflection_oa_tof_mass_analyzer/config/optimization_envelope.json").read_text(
                     encoding="utf-8"
                 )
             ),
@@ -797,14 +969,14 @@ class MultipoleGovernanceSchemaTest(unittest.TestCase):
     def test_multipole_governance_schemas_reject_unknown_fields(self) -> None:
         request = design_request()
         catalog = multipole_catalog(
-            "rf_quadrupole_collision_cooling",
+            "rf_quadrupole_ion_optics",
             "config/requests/baseline.json",
         )
         validate_schema(catalog, "design_variable_catalog.schema.json")
         envelope = {
             "schema_version": 1,
             "role": "project_optimization_envelope",
-            "project_id": "rf_quadrupole_collision_cooling",
+            "project_id": "rf_quadrupole_ion_optics",
             "family_id": "rf_multipole_ion_optics",
             "envelope_id": "quadrupole_candidate",
             "status": "candidate",

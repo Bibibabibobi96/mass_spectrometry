@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "role": "multipole_comsol_solver_numerics_profiles",
+  "project_id": "rf_octupole_ion_optics",
+  "profiles": {
+    "baseline_finite_3d": {
+      "mesh": {
+        "global_auto_level": 6,
+        "working_region_maximum_element_size_mm": 0.5
+      },
+      "trajectory": {
+        "rf_steps_per_period": 80,
+        "maximum_global_time_us": 80.0
+      }
+    },
+    "n100_spatial_refined": {
+      "mesh": {
+        "global_auto_level": 6,
+        "working_region_maximum_element_size_mm": 0.25
+      },
+      "trajectory": {
+        "rf_steps_per_period": 80,
+        "maximum_global_time_us": 80.0
+      }
+    },
+    "n100_temporal_refined": {
+      "mesh": {
+        "global_auto_level": 6,
+        "working_region_maximum_element_size_mm": 0.25
+      },
+      "trajectory": {
+        "rf_steps_per_period": 160,
+        "maximum_global_time_us": 80.0
+      }
+    }
+  }
+}

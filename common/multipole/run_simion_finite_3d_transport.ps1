@@ -1,8 +1,10 @@
 [CmdletBinding()]
 param(
   [Parameter(Mandatory=$true)][string]$ProjectId,
+  [Parameter(Mandatory=$true)][string]$RuntimeProfileId,
   [Parameter(Mandatory=$true)][string]$DesignProfileId,
   [Parameter(Mandatory=$true)][string]$ParticleSourcePath,
+  [Parameter(Mandatory=$true)][string]$EngineeringBudgetPath,
   [string]$EvidenceContractPath='',
   [string]$RunId='',
   [string]$ReferenceComsolRunId='',
@@ -35,7 +37,9 @@ $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $workspaceRoot=Split-Path -Parent $repoRoot
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $repoRoot 'common\multipole\resource_budget_support.ps1')
 $particleSourceInput=(Resolve-Path -LiteralPath $ParticleSourcePath).Path
+$engineeringBudgetInput=(Resolve-Path -LiteralPath $EngineeringBudgetPath).Path
 $hasSourceFamily=-not[string]::IsNullOrWhiteSpace($SourceFamilyPath)
 $hasOperatingPoint=-not[string]::IsNullOrWhiteSpace($OperatingPointId)
 if($hasSourceFamily-ne$hasOperatingPoint){
@@ -46,9 +50,34 @@ $registryPreflight=Get-Content -LiteralPath (Join-Path $repoRoot 'config\project
 $projectMatches=@($registryPreflight.projects|Where-Object{[string]$_.project_id-eq$ProjectId})
 if($projectMatches.Count-ne 1){throw "ProjectId is not unique in the canonical project registry: $ProjectId"}
 $simion=if($SimionExe){[IO.Path]::GetFullPath($SimionExe)}else{Join-Path $env:ProgramFiles 'SIMION-2020\simion.exe'}
-if(-not(Test-Path -LiteralPath $simion -PathType Leaf)){throw "SIMION executable is missing: $simion"}
 if([string]::IsNullOrWhiteSpace($RunId)){
   $RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+"__sim__simion__$($ProjectId.Replace('_','-'))-$DesignProfileId__resolved-l3"
+}
+$budgetPreflight=Join-Path ([IO.Path]::GetTempPath()) ("multipole_budget_{0}.json"-f[guid]::NewGuid())
+try{
+  Push-Location $repoRoot
+  try{
+    & $python -m common.multipole.resource_budget --repo-root $repoRoot `
+      --budget $engineeringBudgetInput --project-id $ProjectId --solver simion `
+      --runtime-profile-id $RuntimeProfileId --design-profile-id $DesignProfileId `
+      --particle-source $particleSourceInput --retention-class $RetentionClass `
+      --output $budgetPreflight
+  }finally{Pop-Location}
+  if($LASTEXITCODE-ne 0){throw 'SIMION resource-budget preflight failed.'}
+  $authorizedNumerics=(Get-Content -LiteralPath $budgetPreflight -Raw -Encoding UTF8|ConvertFrom-Json).solver_numerics
+  if([double]$authorizedNumerics.cell_mm-ne$CellMm-or
+    [int]$authorizedNumerics.trajectory_quality-ne$TrajectoryQuality-or
+    [int]$authorizedNumerics.trajectory.rf_steps_per_period-ne$RfStepsPerPeriod-or
+    [double]$authorizedNumerics.trajectory.maximum_global_time_us-ne$MaximumTimeUs){
+    throw 'SIMION numerical arguments differ from the authorized runtime profile.'
+  }
+}catch{
+  Remove-Item -LiteralPath $budgetPreflight -Force -ErrorAction SilentlyContinue
+  throw
+}
+if(-not(Test-Path -LiteralPath $simion -PathType Leaf)){
+  Remove-Item -LiteralPath $budgetPreflight -Force -ErrorAction SilentlyContinue
+  throw "SIMION executable is missing: $simion"
 }
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$ProjectId") -RunId $RunId `
@@ -59,6 +88,7 @@ $package=New-RunPackage -Python $python -RepoRoot $repoRoot `
 $runDir=$package.run_dir;$inputDir=$package.input_dir;$resultDir=$package.result_dir
 $logDir=$package.log_dir;$solverDir=Join-Path $runDir 'simion'
 $runConfig=$package.run_config;$summary=$package.summary;$manifestRepoRoot=$repoRoot
+$resourceBudgetExceeded=$false
 
 try{
   $codeRoot=Join-Path $inputDir 'code'
@@ -103,6 +133,10 @@ try{
     -Destination (Join-Path $templateDir 'quad_monolithic.con')
 
   $profileResolution=Join-Path $inputDir 'design_profile_resolution.json'
+  $engineeringBudget=Join-Path $inputDir 'engineering_budget.json'
+  $resolvedResourceBudget=Join-Path $inputDir 'resolved_resource_budget.json'
+  Copy-Item -LiteralPath $engineeringBudgetInput -Destination $engineeringBudget
+  Move-Item -LiteralPath $budgetPreflight -Destination $resolvedResourceBudget
   Push-Location $codeRoot
   try{
     $env:PYTHONPATH=$codeRoot
@@ -115,21 +149,35 @@ try{
   $registry=Join-Path $inputDir 'project_registry.json';$descriptor=Join-Path $inputDir 'project.json'
   $profiles=Join-Path $inputDir 'design_profiles.json';$request=Join-Path $inputDir 'multipole_design_request.json'
   $variables=Join-Path $inputDir 'design_variables.json';$envelope=Join-Path $inputDir 'optimization_envelope.json'
+  $modeRegistry=$null;$modeId=$null
   Copy-Item -LiteralPath $profile.registry_path -Destination $registry
   Copy-Item -LiteralPath $profile.descriptor_path -Destination $descriptor
   Copy-Item -LiteralPath $profile.profiles_path -Destination $profiles
   Copy-Item -LiteralPath $profile.paths.design_request -Destination $request
   Copy-Item -LiteralPath $profile.paths.design_variables -Destination $variables
   Copy-Item -LiteralPath $profile.paths.optimization_envelope -Destination $envelope
+  if($profile.profile.PSObject.Properties.Name-contains'mode_id'){
+    $modeId=[string]$profile.profile.mode_id
+    if(-not($profile.paths.PSObject.Properties.Name-contains'operating_mode_registry')){
+      throw 'Typed design profile is missing its resolved operating-mode registry path.'
+    }
+    $modeRegistry=Join-Path $inputDir 'operating_modes.json'
+    Copy-Item -LiteralPath $profile.paths.operating_mode_registry -Destination $modeRegistry
+  }
   $resolved=Join-Path $inputDir 'multipole_resolved_design.json'
   Push-Location $codeRoot
   try{
     $env:PYTHONPATH=$codeRoot
-    & $python -m common.multipole.compile_design_request --request $request `
-      --design-variables $variables --optimization-envelope $envelope --output $resolved `
-      --provenance-root $inputDir `
-      --project-id $ProjectId --radial-order-n ([int]$identity.radial_order_n) `
-      --electrode-count ([int]$identity.electrode_count)
+    $compileArguments=@('-m','common.multipole.compile_design_request',
+      '--request',$request,'--design-variables',$variables,
+      '--optimization-envelope',$envelope,'--output',$resolved,
+      '--provenance-root',$inputDir,'--project-id',$ProjectId,
+      '--radial-order-n',([string][int]$identity.radial_order_n),
+      '--electrode-count',([string][int]$identity.electrode_count))
+    if($modeRegistry){
+      $compileArguments+=@('--operating-mode-registry',$modeRegistry,'--mode-id',$modeId)
+    }
+    & $python @compileArguments
     if($LASTEXITCODE-ne 0){throw 'Governed multipole design compilation failed.'}
   }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
   $design=Get-Content -LiteralPath $resolved -Raw -Encoding UTF8|ConvertFrom-Json
@@ -279,8 +327,10 @@ try{
       con_sha256=[string]$templateProfile.bundle.con.sha256
     }}
   $runInputs=[ordered]@{project_registry=$registry;project_descriptor=$descriptor;design_profiles=$profiles;
+    engineering_budget=$engineeringBudget;resolved_resource_budget=$resolvedResourceBudget;
     design_profile_resolution=$profileResolution;design_request=$request;design_variables=$variables;
-    optimization_envelope=$envelope;multipole_resolved_design=$resolved;particle_source=$particleSource;
+    optimization_envelope=$envelope;operating_mode_registry=$modeRegistry;
+    multipole_resolved_design=$resolved;particle_source=$particleSource;
     particle_source_metadata=$sourceMetadata;particle_source_family=$sourceFamily;
     solver_numerics=$numerics;code_inventory=$codeInventory;
     evidence_contract=$evidence;simion_gem=$gem;simion_fly2=$fly2;
@@ -298,16 +348,23 @@ try{
     artifact_retention=[ordered]@{policy_version=1;class=$RetentionClass;
       reason=$(if($RetentionClass-eq'compact'){$null}else{$RetentionReason})};
     provenance=$provenance;inputs=$runInputs;
-    parameters=[ordered]@{model_level='L3';design_profile_id=$DesignProfileId;
+    parameters=[ordered]@{model_level='L3';runtime_profile_id=$RuntimeProfileId;design_profile_id=$DesignProfileId;
+      operating_mode_id=$modeId;
       operating_point_id=$(if($sourceFamily){$OperatingPointId}else{$null});
       reference_comsol_run_id=$ReferenceComsolRunId};
     formal_gate_passed=$false}|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $runConfig -Encoding UTF8
 
+  $resourceUsage=Join-Path $resultDir 'resource_usage.json'
   function Invoke-SimionStep([string]$name,[string[]]$arguments){
     $stdout=Join-Path $logDir "simion_stdout__$name.txt";$stderr=Join-Path $logDir "simion_stderr__$name.txt"
-    $process=Start-Process -FilePath $simion -ArgumentList $arguments -WorkingDirectory $solverDir `
-      -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
-    if($process.ExitCode-ne 0){throw "SIMION $name failed with exit code $($process.ExitCode)."}
+    $step=Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $resolvedResourceBudget `
+      -RunDir $runDir -UsagePath $resourceUsage -FilePath $simion -WorkingDirectory $solverDir `
+      -ArgumentList $arguments -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    if($step.resource_budget_exceeded){
+      $script:resourceBudgetExceeded=$true
+      throw "SIMION $name resource budget exceeded."
+    }
+    if($step.exit_code-ne 0){throw "SIMION $name failed with exit code $($step.exit_code)."}
   }
   Invoke-SimionStep 'gem2pa' @('--nogui','--noprompt','gem2pa','quad_monolithic.gem','quad_monolithic.pa#')
   Invoke-SimionStep 'refine' @('--nogui','--noprompt','refine','quad_monolithic.pa#')
@@ -423,7 +480,12 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
     ConvertTo-Json -Depth 5|Set-Content -LiteralPath $summary -Encoding UTF8
   $retentionActions=Apply-RunArtifactRetention -Python $python -RepoRoot $manifestRepoRoot `
     -RunConfig $runConfig
-  $outputs=@($summary,$metrics,(Join-Path $solverDir 'quad_monolithic.pa0'),
+  if(-not(Complete-ResourceUsage -ResolvedBudgetPath $resolvedResourceBudget `
+    -RunDir $runDir -UsagePath $resourceUsage)){
+    $resourceBudgetExceeded=$true
+    throw 'SIMION compact final retained-byte budget exceeded.'
+  }
+  $outputs=@($summary,$metrics,$resourceUsage,(Join-Path $solverDir 'quad_monolithic.pa0'),
     (Join-Path $solverDir 'quad_monolithic.iob'),
     (Join-Path $solverDir 'quad_monolithic.con'),$gem,$fly2,
     (Join-Path $resultDir "simion_summary__$primaryName.json"),
@@ -444,6 +506,11 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
 }catch{
   Complete-FailedRun -Python $python -RepoRoot $manifestRepoRoot -RunConfig $runConfig -Summary $summary `
     -SummaryRole 'multipole_simion_finite_3d_transport_summary' -Reason $_.Exception.Message `
-    -Software @('SIMION 2020','Python 3.11')
+    -Software @('SIMION 2020','Python 3.11') `
+    -Status $(if($resourceBudgetExceeded){'interrupted'}else{'failed'}) `
+    -FailureClass $(if($resourceBudgetExceeded){'resource_budget_exceeded'}else{''}) `
+    -ResourceUsagePath $(if($null-ne(Get-Variable resourceUsage -ErrorAction SilentlyContinue)){$resourceUsage}else{''})
   throw
+}finally{
+  Remove-Item -LiteralPath $budgetPreflight -Force -ErrorAction SilentlyContinue
 }

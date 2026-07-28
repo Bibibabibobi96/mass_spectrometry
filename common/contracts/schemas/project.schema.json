@@ -20,6 +20,46 @@
   "properties": {
     "schema_version": {"const": 1},
     "project_id": {"$ref": "#/$defs/identifier"},
+    "legacy_identities": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "mapping_id",
+          "project_id",
+          "retired_at_utc",
+          "migration_kind",
+          "artifact_root",
+          "artifact_access",
+          "new_runs_allowed",
+          "verification_identity",
+          "claim_policy"
+        ],
+        "properties": {
+          "mapping_id": {"$ref": "#/$defs/identifier"},
+          "project_id": {"$ref": "#/$defs/identifier"},
+          "retired_at_utc": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"
+          },
+          "migration_kind": {"const": "administrative_rename_only"},
+          "artifact_root": {
+            "type": "string",
+            "pattern": "^artifacts/projects/[a-z][a-z0-9_]*$"
+          },
+          "artifact_access": {"const": "read_only"},
+          "new_runs_allowed": {"const": false},
+          "verification_identity": {"const": "recorded_project_id"},
+          "claim_policy": {
+            "const": "preserve_original_status_and_claim_limits_no_promotion"
+          }
+        }
+      }
+    },
     "family_id": {"$ref": "#/$defs/identifier"},
     "display_name": {"type": "string", "minLength": 1},
     "purpose": {"type": "string", "minLength": 1},

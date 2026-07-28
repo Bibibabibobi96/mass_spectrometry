@@ -140,7 +140,7 @@ def from_high_order_baseline(baseline: dict[str, Any]) -> MultipoleOperatingCont
 def from_quadrupole_contract(
     baseline: dict[str, Any],
     mode: dict[str, Any],
-    project_id: str = "rf_quadrupole_collision_cooling",
+    project_id: str = "rf_quadrupole_ion_optics",
     rf_amplitude_v_per_group: float | None = None,
     frequency_hz: float | None = None,
 ) -> MultipoleOperatingContract:

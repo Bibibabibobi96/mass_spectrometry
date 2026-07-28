@@ -21,7 +21,7 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
-$providerProject = 'rf_quadrupole_collision_cooling'
+$providerProject = 'rf_quadrupole_ion_optics'
 if ([string]::IsNullOrWhiteSpace($ArtifactProjectRoot)) {
   $ArtifactProjectRoot = Join-Path $workspaceRoot "artifacts\projects\$providerProject"
 }

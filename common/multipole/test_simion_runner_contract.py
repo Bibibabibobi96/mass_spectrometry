@@ -27,7 +27,12 @@ class SimionRunnerContractTests(unittest.TestCase):
 
     def test_build_and_fly_are_serialized_without_nested_reentry(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
-        self.assertIn("Start-Process -FilePath $simion", source)
+        watchdog = (RUNNER.parent / "resource_budget_support.ps1").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("Invoke-ResourceBudgetedProcess", source)
+        self.assertIn("Start-Process @startArguments", watchdog)
+        self.assertIn("$process.WaitForExit", watchdog)
         self.assertIn("Start-Sleep -Milliseconds 500", source)
         self.assertIn("'--nogui','--noprompt','fly'", source)
         self.assertNotIn("simion_run_fly.lua", source)
@@ -51,6 +56,19 @@ class SimionRunnerContractTests(unittest.TestCase):
         self.assertIn("common.multipole.design_profile", source)
         self.assertIn("common.multipole.compile_design_request", source)
         self.assertIn("common.multipole.particle_source_preflight", source)
+
+    def test_typed_mode_is_forwarded_to_both_solver_compilers(self) -> None:
+        for runner_name in (
+            "run_finite_3d_transport.ps1",
+            "run_simion_finite_3d_transport.ps1",
+        ):
+            source = (RUNNER.parent / runner_name).read_text(encoding="utf-8")
+            self.assertIn("$profile.profile.mode_id", source)
+            self.assertIn("$profile.paths.operating_mode_registry", source)
+            self.assertIn("--operating-mode-registry", source)
+            self.assertIn("--mode-id", source)
+            self.assertIn("operating_mode_registry=$modeRegistry", source)
+            self.assertIn("operating_mode_id=$modeId", source)
 
     def test_tool_paths_are_numerical_runtime_parameters(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
@@ -172,9 +190,9 @@ class SimionRunnerContractTests(unittest.TestCase):
 
     def test_project_wrappers_are_thin_profile_consumers(self) -> None:
         projects = (
-            "rf_quadrupole_collision_cooling",
-            "rf_hexapole_ion_guide",
-            "rf_octupole_ion_guide",
+            "rf_quadrupole_ion_optics",
+            "rf_hexapole_ion_optics",
+            "rf_octupole_ion_optics",
         )
         for project in projects:
             project_root = REPO_ROOT / "projects" / project
@@ -183,7 +201,7 @@ class SimionRunnerContractTests(unittest.TestCase):
                 / "workflows"
                 / "no_collision_transport"
                 / "run_simion.ps1"
-                if project == "rf_quadrupole_collision_cooling"
+                if project == "rf_quadrupole_ion_optics"
                 else project_root / "analysis" / "run_simion_finite_3d_transport.ps1"
             )
             wrapper = wrapper_path.read_text(encoding="utf-8-sig")
@@ -199,7 +217,7 @@ class SimionRunnerContractTests(unittest.TestCase):
         self.assertIn("--expected-source-family-sha256", runner)
         self.assertGreaterEqual(runner.count("--source-family"), 2)
         self.assertGreaterEqual(runner.count("--operating-point"), 2)
-        project = REPO_ROOT / "projects" / "rf_quadrupole_collision_cooling"
+        project = REPO_ROOT / "projects" / "rf_quadrupole_ion_optics"
         resolved_path = project / "config" / "resolved_design_official.json"
         family_path = project / "config" / "interface_readiness_particle_source.json"
         resolved = json.loads(resolved_path.read_text(encoding="utf-8"))

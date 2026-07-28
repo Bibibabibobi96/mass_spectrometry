@@ -60,7 +60,7 @@ class ResolvedDesignConsumerContractTest(unittest.TestCase):
 
     def test_simion_projection_preserves_resolved_parent_geometry_and_interfaces(self) -> None:
         profile = resolve_design_profile(
-            ROOT, "rf_hexapole_ion_guide", "baseline_finite_3d"
+            ROOT, "rf_hexapole_ion_optics", "baseline_finite_3d"
         )
         resolved = compile_governed_design_request_file(
             profile["paths"]["design_request"],
@@ -104,7 +104,7 @@ class ResolvedDesignConsumerContractTest(unittest.TestCase):
     def test_static_boundary_voltages_are_canonical_and_solver_shared(self) -> None:
         resolved = (
             ROOT
-            / "projects/rf_quadrupole_collision_cooling/config/resolved_design_mass_filter.json"
+            / "projects/rf_quadrupole_ion_optics/config/resolved_design_mass_filter.json"
         )
         document = json.loads(resolved.read_text(encoding="utf-8"))
         self.assertEqual(

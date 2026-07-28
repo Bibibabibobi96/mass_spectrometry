@@ -13,6 +13,18 @@
 - 电极拓扑、主要功能、正式资产或验收合同需要独立长期维护时，建立新的平级项目。
 - 每一阶段都必须保留失败、不可行性和适用边界，不能只保存最优候选。
 
+## 当前跨项目开放任务
+
+1. **迁移到项目端口 + 公共编排器 + connection profile架构。** 以当前RF四极杆离子光学→单次反射
+   oa-TOF S2/S3为oracle，按
+   [`COMPONENT_CONNECTION_ARCHITECTURE.md`](COMPONENT_CONNECTION_ARCHITECTURE.md)
+   建立provided/required ports、显式连接器、solver-neutral resolved connection、公共composition plan
+   和独立integration证据；当前迁移实例ID固定为
+   `rf_quadrupole_ion_optics_to_single_reflection_oa_tof_mass_analyzer`，所属integration family固定为
+   `rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer`。完成新旧等价复验后才退出旧
+   专用编排。该任务优先于新增第二种RF多极杆离子光学→单次反射oa-TOF连接或复制S2/S3，但不阻断
+   行政项目ID迁移、既有单器件资格或artifact治理。
+
 ## 面向大规模代码库的扩展护栏
 
 仓库增长到十万行乃至更大规模时，主要风险不是源码行数本身，而是求解器入口、物理合同、派生参数、
@@ -62,27 +74,32 @@
 
 ### TOF质量分析器族
 
-- 当前`oa_tof`继续作为现有正交加速、单次折返设计线；双级环栈反射器表示两个场区，不等于两次反射。
+- 当前`single_reflection_oa_tof_mass_analyzer`继续作为现有正交加速、单次折返设计线；双级环栈
+  反射器表示两个场区，不等于两次反射。
 - 环厚、环宽、间距、孔径、屏蔽、漂移长度和电压的优化属于当前设计的候选run。
-- 飞行拓扑变为两次独立折返时，建立`oa_tof_double_reflection`等新的平级项目。
-- MR-TOF具有多次往返和独立验收体系，已建立独立`mr_tof`原型项目接收用户自绘CAD种子；后续理论、
-  参数化和验证在该项目内逐步建立，不放进当前`oa_tof/formal`。
+- 飞行拓扑变为两次独立折返时，建立`double_reflection_oa_tof_mass_analyzer`等新的平级项目。
+- MR-TOF具有多次往返和独立验收体系，已建立独立
+  `open_path_parallel_mirror_dual_stripe_mr_tof_mass_analyzer`原型项目接收用户自绘CAD种子；后续理论、
+  参数化和验证在该项目内逐步建立，不放进单次反射oa-TOF的Formal资产。
 - 若多个TOF项目实际复用同一分析或生成器，再将经验证的部分提升到`common/tof/`。
 
 ### RF多极杆离子光学族
 
-- 当前`rf_quadrupole_collision_cooling`保持原项目名和artifact身份，不改成宽泛的多极杆容器。
-- 已建立平级的`rf_hexapole_ion_guide`和`rf_octupole_ion_guide`，分别维护六极杆、八极杆离子导引的
+- 四、六、八极杆已统一采用平级`rf_*_ion_optics`项目身份；行政改名前的artifact按各项目描述符中的
+  `legacy_identities`只读保留，不搬移、不改写旧manifest，也不因改名扩大资格声明。
+- 已建立平级的`rf_hexapole_ion_optics`和`rf_octupole_ion_optics`，分别维护六极杆、八极杆离子导引的
   独立合同和证据；未来可继续建立`rf_quadrupole_mass_filter`、`rf_hexapole_collision_cell`等设计线。
 - 同一正式硬件的无碰撞传输、碰撞冷却、气体或RF工况可作为mode；不同杆数、主要电极拓扑或独立
   质量响应验收通常形成新项目。
-- 多极杆项目应共同消费统一RF/DC、圆杆阵列、轴向接口、连接器和canonical粒子状态语义；0 mm连接器
-  表示直连，正长度连接器由同一接口合同派生。共享边界、当前调用方和功能验证只由
-  `common/multipole/`邻近机器合同及各项目PROJECT记录，Roadmap不复制运行结果或当前资格。
+- 多极杆项目应共同消费统一RF/DC、圆杆阵列、器件内部轴向接口段和canonical粒子状态语义；0 mm
+  内部接口段表示直连，正长度内部接口段由同一多极杆合同派生。两个项目mating ports之间的跨器件
+  连接器则遵循[`COMPONENT_CONNECTION_ARCHITECTURE.md`](COMPONENT_CONNECTION_ARCHITECTURE.md)。
+  共享边界、当前调用方和功能验证只由邻近机器合同及各项目PROJECT记录，Roadmap不复制运行结果或当前资格。
 
 ### 离子源、电子枪与接口族
 
-- `electron_impact_ion_source`和`wehnelt_electron_gun`先补齐机器可读参数链与独立部件验收。
+- `apertured_tube_electron_impact_ion_source`和
+  `transverse_helical_filament_wehnelt_electron_gun`先补齐机器可读参数链与独立部件验收。
 - 新离子源或电子枪只有在拓扑和正式资产可独立维护时才建立项目；仅工作点变化保留为mode。
 - 部件集成不以文件拼接为完成条件，必须冻结坐标、电位、孔径、压力、相空间、时间和机械接口合同。
 
@@ -97,12 +114,14 @@
 - 将自然语言解析结果冻结为候选规格，要求人工或规则门禁批准后才能创建求解run；
 - 区分目标示例、已批准目标、当前baseline和正式验收结果。
 
-完成门禁：至少OA-TOF和当前RF四极杆能够从同一规格框架产生可追溯run config，且含糊或冲突需求
+完成门禁：至少单次反射oa-TOF和当前RF四极杆离子光学能够从同一规格框架产生可追溯run config，
+且含糊或冲突需求
 会在求解前被拒绝。
 
 ## 阶段二：OA-TOF性能驱动闭环
 
-OA-TOF作为首个端到端性能设计示范。输入可以是质量、电荷态、目标分辨率和尺寸/电压限制，也可以是
+`single_reflection_oa_tof_mass_analyzer`作为首个端到端性能设计示范。输入可以是质量、电荷态、
+目标分辨率和尺寸/电压限制，也可以是
 部分冻结几何；系统自动建立候选、运行多保真度模拟并依据诊断调整参数。
 
 设计空间逐步覆盖：加速区、漂移区、反射器和检测器位置；环电极数量、厚度、宽度、间距和电压；
@@ -134,7 +153,8 @@ OA-TOF作为首个端到端性能设计示范。输入可以是质量、电荷�
 
 ## 阶段四：离子源与电子枪自动化
 
-为电子轰击离子源和Wehnelt电子枪建立`baseline → resolved → solver/CAD`链，定义发射、束流、能量、
+为开孔长管电子轰击离子源和横置螺旋灯丝Wehnelt电子枪建立
+`baseline → resolved → solver/CAD`链，定义发射、束流、能量、
 空间电荷、热、磁场、离化效率和机械约束等适用指标。先完成独立部件验证，再允许它们向下游输出
 冻结接口状态。
 
@@ -173,8 +193,8 @@ OA-TOF作为首个端到端性能设计示范。输入可以是质量、电荷�
 
 ## 暂不提前固化的内容
 
-- 不在实现模块尚未形成前编写推测性的完整`ARCHITECTURE.md`；实际出现规格编译器、设计注册、优化器、
-  求解器适配和发布器后，再记录稳定接口与依赖方向。
+- 不把未实施的目标架构写成当前能力，也不为它预建空实现。经用户批准、明确标记状态、适用边界和
+  迁移门禁的跨项目决策文档可以先冻结职责与依赖方向；实现后的稳定接口再由邻近代码和README记录。
 - 不为未来项目预建空目录、空formal或无验证的通用代码。
 - 不给阶段承诺日期；具体优先级和资源变化时更新本路线图，各项目当期工作只更新其`PROJECT.md`。
 - 不把双反射OA-TOF、MR-TOF、多极杆新功能或整机集成写成当前已具备能力。

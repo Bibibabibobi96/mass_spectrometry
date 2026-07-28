@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "role": "project_optimization_envelope",
+  "project_id": "single_reflection_oa_tof_mass_analyzer",
+  "envelope_id": "oatof_coupled_longitudinal_formal_20260720",
+  "status": "approved",
+  "policy": "Candidates may move bidirectionally within this envelope. Exceeding it requires explicit envelope review; an approved expansion does not automatically modify the formal baseline.",
+  "reference": {
+    "baseline": "config/baseline.json",
+    "baseline_sha256": "A50A247F58093A2C0A030AA8BDAE2AE695AB5E972D1F41E49090B6A121042685"
+  },
+  "tof_limits": {
+    "max_flight_length_mm": 600.0,
+    "max_positive_axial_extent_mm": 881.1563,
+    "max_outer_radius_mm": 360.0,
+    "max_stage1_electrode_count": 10,
+    "max_stage2_electrode_count": 5
+  }
+}

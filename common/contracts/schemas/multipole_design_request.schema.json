@@ -84,6 +84,7 @@
     },
     "drive": {"$ref": "#/$defs/drive"},
     "axial_drive": {
+      "description": "Electrical axial-drive topology, independent of whether the rods are physically segmented.",
       "type": "object",
       "additionalProperties": false,
       "required": ["topology"],
@@ -138,6 +139,7 @@
       }
     },
     "segmentation": {
+      "description": "Physical rod segmentation and per-segment common-mode assignment. Uniform and explicit geometry may be combined with any axial_drive topology; none and exit-plate modes require every segment bias to equal drive.common_mode_offset_V.",
       "oneOf": [
         {
           "type": "object",

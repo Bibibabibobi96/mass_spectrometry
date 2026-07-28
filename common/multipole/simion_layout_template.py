@@ -53,6 +53,7 @@ def resolve_simion_layout_template(
         "role",
         "template_id",
         "provider_project_id",
+        "legacy_evidence_identity",
         "registration_run_id",
         "run_manifest_sha256",
         "iob_sha256",
@@ -66,6 +67,48 @@ def resolve_simion_layout_template(
         or registry["role"] != "multipole_simion_layout_template_binding"
     ):
         raise ValueError("template binding identity differs")
+    provider = registry["provider_project_id"]
+    evidence_identity = registry["legacy_evidence_identity"]
+    expected_evidence_keys = {
+        "mapping_id",
+        "recorded_project_id",
+        "artifact_root",
+        "artifact_access",
+    }
+    if (
+        not isinstance(evidence_identity, dict)
+        or set(evidence_identity) != expected_evidence_keys
+        or evidence_identity["mapping_id"] != "rf_quad_rename_20260728"
+        or evidence_identity["recorded_project_id"]
+        != "rf_quadrupole_collision_cooling"
+        or evidence_identity["artifact_root"]
+        != "artifacts/projects/rf_quadrupole_collision_cooling"
+        or evidence_identity["artifact_access"] != "read_only"
+    ):
+        raise ValueError("template legacy evidence identity differs")
+    provider_descriptor = _load(
+        repo_root / "projects" / provider / "config" / "project.json"
+    )
+    matching_mappings = [
+        mapping
+        for mapping in provider_descriptor.get("legacy_identities", [])
+        if mapping.get("mapping_id") == evidence_identity["mapping_id"]
+    ]
+    if len(matching_mappings) != 1:
+        raise ValueError("template provider legacy identity mapping is unavailable")
+    provider_mapping = matching_mappings[0]
+    if (
+        provider_descriptor.get("project_id") != provider
+        or provider_mapping.get("project_id")
+        != evidence_identity["recorded_project_id"]
+        or provider_mapping.get("artifact_root")
+        != evidence_identity["artifact_root"]
+        or provider_mapping.get("artifact_access")
+        != evidence_identity["artifact_access"]
+        or provider_mapping.get("verification_identity") != "recorded_project_id"
+        or provider_mapping.get("new_runs_allowed") is not False
+    ):
+        raise ValueError("template provider legacy identity mapping differs")
     review = registry["manual_gui_review"]
     if (
         not isinstance(review, dict)
@@ -76,11 +119,15 @@ def resolve_simion_layout_template(
     ):
         raise ValueError("manual GUI review has not approved runtime binding")
 
-    provider = registry["provider_project_id"]
+    recorded_project = evidence_identity["recorded_project_id"]
     run_id = registry["registration_run_id"]
-    runs_root = (
-        repo_root.parent / "artifacts/projects" / provider / "runs"
+    artifact_root = (repo_root.parent / evidence_identity["artifact_root"]).resolve()
+    expected_artifact_root = (
+        repo_root.parent / "artifacts" / "projects" / recorded_project
     ).resolve()
+    if artifact_root != expected_artifact_root:
+        raise ValueError("template legacy artifact root differs")
+    runs_root = (artifact_root / "runs").resolve()
     run_root = (runs_root / run_id).resolve()
     if run_root.parent != runs_root or not run_root.is_dir():
         raise ValueError("template registration run is unavailable")
@@ -101,7 +148,7 @@ def resolve_simion_layout_template(
     manifest = _load(manifest_path)
     if (
         config.get("role") != "multipole_simion_layout_template_build"
-        or config.get("project") != provider
+        or config.get("project") != recorded_project
         or config.get("run_id") != run_id
         or config.get("mode") != "simion_layout_template_build"
         or config.get("physical_model") is not False
@@ -111,6 +158,7 @@ def resolve_simion_layout_template(
         or summary.get("particle_fly_executed") is not False
         or manifest.get("status") != "success"
         or manifest.get("run_id") != run_id
+        or manifest.get("project") != recorded_project
     ):
         raise ValueError("template registration is not a structure-only success")
     structure = config.get("structural_contract", {})
@@ -146,6 +194,7 @@ def resolve_simion_layout_template(
         "role": "multipole_resolved_simion_layout_template",
         "template_id": registry["template_id"],
         "provider_project_id": provider,
+        "legacy_evidence_identity": evidence_identity,
         "registration_run_id": run_id,
         "registry_path": str(registry_path),
         "registry_sha256": _sha256(registry_path),

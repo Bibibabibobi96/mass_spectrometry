@@ -33,7 +33,7 @@ class VerifyRunManifestIntegrationTests(unittest.TestCase):
             json.dumps(
                 {
                     "run_id": "reference-run",
-                    "project": "rf_quadrupole_collision_cooling",
+                    "project": "rf_quadrupole_ion_optics",
                     "mode": "resolved_design_transport",
                     "parameters": {"design_profile_id": "official"},
                     "provenance": {
@@ -55,7 +55,7 @@ class VerifyRunManifestIntegrationTests(unittest.TestCase):
             json.dumps(
                 {
                     "run_id": "reference-run",
-                    "project": "rf_quadrupole_collision_cooling",
+                    "project": "rf_quadrupole_ion_optics",
                     "mode": "resolved_design_transport",
                     "status": status,
                     "run_config": record(self.config),
@@ -78,7 +78,7 @@ class VerifyRunManifestIntegrationTests(unittest.TestCase):
                 "--require-run-id",
                 "reference-run",
                 "--require-project",
-                "rf_quadrupole_collision_cooling",
+                "rf_quadrupole_ion_optics",
                 "--require-mode",
                 "resolved_design_transport",
                 "--require-design-profile-id",

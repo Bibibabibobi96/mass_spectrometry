@@ -50,7 +50,7 @@ class DesignRequestTests(unittest.TestCase):
         request["status"] = "approved"
         request["approval"] = {"approved_by": "owner", "approved_on": "2026-07-20"}
         request["target"] = {
-            "family_id": "ion_sources", "preferred_project_id": "electron_impact_ion_source",
+            "family_id": "ion_sources", "preferred_project_id": "apertured_tube_electron_impact_ion_source",
             "function": "ionization_yield_feasibility", "mode": None
         }
         request["objectives"] = [{"metric": "ionization_yield", "operator": "maximize", "value": None, "unit": "1", "tolerance": None}]

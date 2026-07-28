@@ -1,0 +1,227 @@
+from __future__ import annotations
+
+import json
+import tempfile
+import unittest
+from copy import deepcopy
+from pathlib import Path
+from unittest import mock
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = PROJECT_ROOT.parents[1]
+from projects.rf_quadrupole_ion_optics.analysis import plot_shared_pulse_geometry_snapshot as module
+
+
+class SharedPulseGeometrySnapshotTests(unittest.TestCase):
+    def test_particle_markers_shrink_for_large_n(self) -> None:
+        n100 = module.particle_marker_areas(100)
+        n1000 = module.particle_marker_areas(1000)
+        self.assertEqual(n100["active"], 16.0)
+        self.assertLess(n1000["active"], n100["active"])
+        self.assertGreater(n1000["active"], 0.0)
+
+    def test_geometry_is_derived_from_contracts_and_plot_is_written(self) -> None:
+        baseline_path = REPO_ROOT / "projects" / "single_reflection_oa_tof_mass_analyzer" / "config" / "baseline.json"
+        joint_path = PROJECT_ROOT / "config" / "rf_to_oatof_shared_physical_port_joint_geometry.json"
+        registration_path = (
+            PROJECT_ROOT / "config" /
+            "resolved_rf_to_oatof_s2_spatial_registration.json"
+        )
+        baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+        joint = json.loads(joint_path.read_text(encoding="utf-8"))
+        registration = json.loads(registration_path.read_text(encoding="utf-8"))
+        geometry = module.accelerator_geometry(baseline, joint, registration)
+        self.assertAlmostEqual(geometry["shield_outer_half"], 19.0)
+        self.assertAlmostEqual(geometry["ring_outer_half"], 10.0)
+        self.assertEqual(len(geometry["ring_centers_z"]), 5)
+        self.assertAlmostEqual(geometry["port_width_y"], 1.0)
+        self.assertAlmostEqual(geometry["port_height_z"], 0.9)
+        self.assertAlmostEqual(geometry["grid1_half"], 10.0)
+        self.assertAlmostEqual(geometry["grid2_half"], 15.0)
+
+        with tempfile.TemporaryDirectory() as temp:
+            temp_path = Path(temp)
+            capture = temp_path / "capture.csv"
+            events = temp_path / "events.csv"
+            figure = temp_path / "snapshot.png"
+            metadata = temp_path / "snapshot.json"
+            pd.DataFrame([
+                {"particle_id": 1, "frame_id": "oatof_global",
+                 "clock_epoch_id": "instrument_clock_epoch.v1", "instrument_time_us": 34.0,
+                 "x_mm": -67.0, "y_mm": 0.5, "z_mm": -18.4},
+                {"particle_id": 2, "frame_id": "oatof_global",
+                 "clock_epoch_id": "instrument_clock_epoch.v1", "instrument_time_us": 34.0,
+                 "x_mm": -55.0, "y_mm": -0.2, "z_mm": -18.2},
+                {"particle_id": 3, "frame_id": "oatof_global",
+                 "clock_epoch_id": "instrument_clock_epoch.v1", "instrument_time_us": 34.0,
+                 "x_mm": -49.0, "y_mm": 0.1,
+                 "z_mm": geometry["repeller_z"]},
+            ]).to_csv(capture, index=False)
+            pd.DataFrame([
+                {"particle_id": 1, "event": "terminal", "status": "lost",
+                 "frame_id": "oatof_global", "clock_epoch_id": "instrument_clock_epoch.v1",
+                 "terminal_reason": "electrode_or_boundary"},
+                {"particle_id": 2, "event": "local_joint_exit", "status": "transmitted",
+                 "frame_id": "oatof_global", "clock_epoch_id": "instrument_clock_epoch.v1",
+                 "terminal_reason": "none"},
+                {"particle_id": 3, "event": "terminal", "status": "lost",
+                 "frame_id": "oatof_global", "clock_epoch_id": "instrument_clock_epoch.v1",
+                 "terminal_reason": "electrode_or_boundary"},
+            ]).to_csv(events, index=False)
+            prepared, prepared_geometry, frame_id, clock_epoch_id = (
+                module.prepare_snapshot_data(
+                    capture, events, baseline_path, joint_path, registration_path
+                )
+            )
+            self.assertEqual(frame_id, "oatof_global")
+            self.assertEqual(clock_epoch_id, "instrument_clock_epoch.v1")
+            self.assertTrue(np.isfinite(
+                prepared[["x_mm", "y_mm", "z_mm"]].to_numpy(float)
+            ).all())
+            self.assertEqual(
+                set(prepared["snapshot_class"]),
+                {"active_at_pulse", "port_wall_loss", "accelerator_loss"},
+            )
+            self.assertEqual(prepared["snapshot_class"].value_counts().sum(), 3)
+            self.assertFalse(bool(prepared.loc[
+                prepared["particle_id"].eq(2),
+                "inside_oatof_ideal_reference_volume",
+            ].iloc[0]))
+
+            with mock.patch.object(plt, "show") as show, mock.patch(
+                "matplotlib.figure.Figure.savefig"
+            ) as save:
+                rendered, axes = module.build_shared_pulse_geometry_figure(
+                    prepared, prepared_geometry, frame_id, clock_epoch_id
+                )
+                show.assert_not_called()
+                save.assert_not_called()
+            try:
+                self.assertEqual(
+                    set(axes), {"injection_acceleration", "injection_cross"}
+                )
+                self.assertTrue(all("(mm)" in axis.get_xlabel() for axis in axes.values()))
+                self.assertTrue(all("(mm)" in axis.get_ylabel() for axis in axes.values()))
+                self.assertTrue(all(axis.get_aspect() == 1.0 for axis in axes.values()))
+                labels = [text.get_text() for text in rendered.legends[0].get_texts()]
+                self.assertIn("ions immediately before pulse", labels)
+                self.assertIn("pre-pulse port-wall loss", labels)
+                self.assertIn("pre-pulse accelerator loss", labels)
+                class_handles = rendered.legends[0].legend_handles[:3]
+                self.assertEqual(
+                    [handle.get_marker() for handle in class_handles],
+                    ["o", "x", "X"],
+                )
+                self.assertIn(frame_id, rendered._suptitle.get_text())
+                self.assertIn(clock_epoch_id, rendered._suptitle.get_text())
+            finally:
+                plt.close(rendered)
+
+            result = module.plot_snapshot(
+                capture, events, baseline_path, joint_path, figure, metadata,
+                registration_path,
+            )
+            self.assertEqual(result["particles_active_at_pulse"], 1)
+            self.assertEqual(result["frozen_port_losses_before_pulse"], 1)
+            self.assertEqual(result["frozen_accelerator_losses_before_pulse"], 1)
+            self.assertEqual(result["classification_denominator"], 3)
+            self.assertTrue(result["classification_is_mutually_exclusive_and_exhaustive"])
+            self.assertEqual(result["active_ideal_reference_volume_denominator"], 1)
+            self.assertEqual(result["active_ideal_reference_volume_fraction"], 0.0)
+            self.assertEqual(result["frame_id"], "oatof_global")
+            self.assertGreater(figure.stat().st_size, 1000)
+            self.assertEqual(json.loads(metadata.read_text(encoding="utf-8"))["status"], "PASS")
+
+    def test_geometry_uses_nonzero_authoritative_port_y_center(self) -> None:
+        baseline_path = REPO_ROOT / "projects" / "single_reflection_oa_tof_mass_analyzer" / "config" / "baseline.json"
+        joint_path = PROJECT_ROOT / "config" / "rf_to_oatof_shared_physical_port_joint_geometry.json"
+        registration_path = PROJECT_ROOT / "config" / "resolved_rf_to_oatof_s2_spatial_registration.json"
+        baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+        joint = deepcopy(json.loads(joint_path.read_text(encoding="utf-8")))
+        registration = deepcopy(json.loads(registration_path.read_text(encoding="utf-8")))
+        joint["physical_boundaries"]["target_entry_surface"]["center_mm"][1] = 0.25
+        registration["resolved_surfaces"]["target_entry"]["in_instrument_frame"][
+            "center_mm"
+        ][1] = 0.25
+        geometry = module.accelerator_geometry(baseline, joint, registration)
+        self.assertEqual(geometry["port_center_y"], 0.25)
+
+    def test_prepare_rejects_nonfinite_positions_and_wrong_frame(self) -> None:
+        baseline = REPO_ROOT / "projects" / "single_reflection_oa_tof_mass_analyzer" / "config" / "baseline.json"
+        joint = PROJECT_ROOT / "config" / "rf_to_oatof_shared_physical_port_joint_geometry.json"
+        registration = PROJECT_ROOT / "config" / "resolved_rf_to_oatof_s2_spatial_registration.json"
+        with tempfile.TemporaryDirectory() as temp:
+            capture = Path(temp) / "capture.csv"
+            events = Path(temp) / "events.csv"
+            base = {
+                "particle_id": 1, "frame_id": "oatof_global",
+                "clock_epoch_id": "instrument_clock_epoch.v1",
+                "instrument_time_us": 1.0, "x_mm": -67.8,
+                "y_mm": 0.0, "z_mm": -18.42918680341103,
+            }
+            pd.DataFrame([base]).to_csv(capture, index=False)
+            pd.DataFrame([{
+                "particle_id": 1, "event": "local_joint_exit",
+                "status": "transmitted", "terminal_reason": "none",
+            }]).to_csv(events, index=False)
+            changed = dict(base, x_mm=np.nan)
+            pd.DataFrame([changed]).to_csv(capture, index=False)
+            with self.assertRaisesRegex(ValueError, "finite"):
+                module.prepare_snapshot_data(
+                    capture, events, baseline, joint, registration
+                )
+            changed = dict(base, frame_id="wrong_frame")
+            pd.DataFrame([changed]).to_csv(capture, index=False)
+            with self.assertRaisesRegex(ValueError, "frame"):
+                module.prepare_snapshot_data(
+                    capture, events, baseline, joint, registration
+                )
+
+    def test_mixed_pulse_times_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            capture = Path(temp) / "capture.csv"
+            events = Path(temp) / "events.csv"
+            pd.DataFrame([
+                {"particle_id": 1, "frame_id": "oatof_global",
+                 "clock_epoch_id": "instrument_clock_epoch.v1", "instrument_time_us": 1.0,
+                 "x_mm": 0, "y_mm": 0, "z_mm": 0},
+                {"particle_id": 2, "frame_id": "oatof_global",
+                 "clock_epoch_id": "instrument_clock_epoch.v1", "instrument_time_us": 2.0,
+                 "x_mm": 0, "y_mm": 0, "z_mm": 0},
+            ]).to_csv(capture, index=False)
+            pd.DataFrame([
+                {"particle_id": 1, "event": "terminal", "status": "lost",
+                 "terminal_reason": "electrode_or_boundary"},
+                {"particle_id": 2, "event": "terminal", "status": "lost",
+                 "terminal_reason": "electrode_or_boundary"},
+            ]).to_csv(events, index=False)
+            with self.assertRaisesRegex(ValueError, "shared-time"):
+                module.plot_snapshot(
+                    capture, events,
+                    REPO_ROOT / "projects" / "single_reflection_oa_tof_mass_analyzer" / "config" / "baseline.json",
+                    PROJECT_ROOT / "config" / "rf_to_oatof_shared_physical_port_joint_geometry.json",
+                    Path(temp) / "out.png", Path(temp) / "out.json")
+
+    def test_sparse_s3_capture_adds_terminal_loss_positions(self) -> None:
+        capture = pd.DataFrame([{
+            "particle_id": 1, "instrument_time_us": 36.0,
+            "x_mm": -48.8, "y_mm": 0.0, "z_mm": -18.4,
+            "active_at_pulse": True,
+        }])
+        events = pd.DataFrame([
+            {"particle_id": 1, "active_at_pulse": 1, "x_mm": 0, "y_mm": 0, "z_mm": 0},
+            {"particle_id": 2, "active_at_pulse": 0, "x_mm": -67.8,
+             "y_mm": 0.6, "z_mm": -18.4},
+        ])
+        expanded = module.add_sparse_loss_positions(capture, events)
+        self.assertEqual(len(expanded), 2)
+        self.assertFalse(bool(expanded.loc[expanded["particle_id"].eq(2), "active_at_pulse"].iloc[0]))
+
+
+if __name__ == "__main__":
+    unittest.main()

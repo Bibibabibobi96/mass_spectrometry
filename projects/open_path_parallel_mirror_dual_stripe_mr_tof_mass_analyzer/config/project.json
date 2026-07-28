@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "project_id": "open_path_parallel_mirror_dual_stripe_mr_tof_mass_analyzer",
+  "legacy_identities": [
+    {
+      "mapping_id": "mr_tof_rename_20260728",
+      "project_id": "mr_tof",
+      "retired_at_utc": "2026-07-28T08:19:11Z",
+      "migration_kind": "administrative_rename_only",
+      "artifact_root": "artifacts/projects/mr_tof",
+      "artifact_access": "read_only",
+      "new_runs_allowed": false,
+      "verification_identity": "recorded_project_id",
+      "claim_policy": "preserve_original_status_and_claim_limits_no_promotion"
+    }
+  ],
+  "family_id": "tof_mass_analyzers",
+  "display_name": "开放路径平行镜双条带多次反射飞行时间质量分析器",
+  "purpose": "平行等时镜与两套独立偏压、独立形状漂移条带构成的开放路径MR-TOF质量分析",
+  "lifecycle_status": "prototype",
+  "toolchains": ["solidworks"],
+  "contracts": {
+    "baseline": null,
+    "resolved": null,
+    "analysis": null,
+    "interface": null,
+    "execution": null,
+    "design_variables": null,
+    "optimization_envelope": null
+  },
+  "capabilities": [
+    {
+      "capability_id": "multiple_reflection_mass_analysis",
+      "function": "mass_analysis",
+      "status": "prototype",
+      "modes": [],
+      "metrics": [],
+      "design_variables": []
+    }
+  ],
+  "formal_assets": {
+    "status": "none",
+    "types": [],
+    "identity_contract": null
+  },
+  "known_gaps": [
+    "SolidWorks assembly references and coordinate systems are not audited",
+    "The reviewed dual-stripe theory is not yet bound to baseline and resolved parameter contracts",
+    "COMSOL and SIMION models do not exist",
+    "Performance and formal acceptance contracts are not defined"
+  ]
+}

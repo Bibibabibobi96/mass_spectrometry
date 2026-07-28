@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "role": "component_port",
+  "project_id": "single_reflection_oa_tof_mass_analyzer",
+  "port_id": "oatof_accelerator_entry",
+  "direction": "required",
+  "profile_scope": {
+    "scope_id": "formal_reference",
+    "scope_kind": "formal_reference",
+    "family_experiment_port": false
+  },
+  "authority": {
+    "source_contract": "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json",
+    "source_sha256": "90DFE02ED6AB48994F10D34255A1EA9EA644A7AA9E8C2D3B875B54E9C0E41B51",
+    "bindings": [
+      {
+        "port_json_pointer": "/coordinate_frame/frame_id",
+        "source_json_pointer": "/coordinate_convention/frame_id"
+      },
+      {
+        "port_json_pointer": "/mating_surface/center_mm/1",
+        "source_json_pointer": "/particle_source/center_y_mm"
+      },
+      {
+        "port_json_pointer": "/mating_surface/center_mm/2",
+        "source_json_pointer": "/particle_source/center_z_mm"
+      },
+      {
+        "port_json_pointer": "/mating_surface/aperture_radius_mm",
+        "source_json_pointer": "/geometry_mm/accelerator_bore_half"
+      },
+      {
+        "port_json_pointer": "/mating_surface/potential_V",
+        "source_json_pointer": "/electrodes_V/shield"
+      }
+    ]
+  },
+  "state_contract": {
+    "schema_id": "component_particle_state",
+    "schema_version": 1
+  },
+  "coordinate_frame": {
+    "frame_id": "oatof_global",
+    "length_unit": "mm",
+    "handedness": "right_handed"
+  },
+  "mating_surface": {
+    "center_mm": [
+      -67.8,
+      0.0,
+      -18.42918680341103
+    ],
+    "outward_normal": [
+      -1.0,
+      0.0,
+      0.0
+    ],
+    "aperture_radius_mm": 5.0,
+    "potential_V": 0.0
+  },
+  "clock": {
+    "time_unit": "s",
+    "origin_id": "instrument_clock_epoch_v1"
+  },
+  "field_boundary": {
+    "field_reaches_surface": true
+  }
+}

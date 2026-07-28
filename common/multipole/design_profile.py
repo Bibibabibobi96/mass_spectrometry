@@ -9,6 +9,10 @@ from typing import Any
 
 from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import ContractError, validate_schema
+from common.multipole.compile_design_request import (
+    apply_typed_operating_mode,
+    compile_governed_design_request_file,
+)
 
 
 def _inside(root: Path, relative: str) -> Path:
@@ -60,6 +64,31 @@ def resolve_design_profile(
         if file_sha256(path) != profile["sha256"][label]:
             raise ContractError(f"design profile hash is stale: {label}")
     request = json.loads(paths["design_request"].read_text(encoding="utf-8-sig"))
+    resolved_design = None
+    mode_id = profile.get("mode_id")
+    if mode_id is not None:
+        try:
+            modes_relative = profiles["operating_mode_registry"]
+            expected_modes_sha256 = profiles["operating_mode_registry_sha256"]
+        except KeyError as error:
+            raise ContractError(
+                "typed design profile is missing its operating mode registry"
+            ) from error
+        modes_path = _inside(project_root, modes_relative)
+        if file_sha256(modes_path) != expected_modes_sha256:
+            raise ContractError("operating mode registry hash is stale")
+        modes = json.loads(modes_path.read_text(encoding="utf-8-sig"))
+        request = apply_typed_operating_mode(request, modes, mode_id)
+        paths["operating_mode_registry"] = modes_path
+        resolved_design = compile_governed_design_request_file(
+            paths["design_request"],
+            paths["design_variables"],
+            paths["optimization_envelope"],
+            expected_identity=profile["identity"],
+            provenance_root=repo_root,
+            operating_mode_registry_path=modes_path,
+            mode_id=mode_id,
+        )
     if request["identity"] != profile["identity"]:
         raise ContractError("design request identity differs from design profile")
     if request["geometry_mm"]["enclosure"]["role"] != profile["topology"]["enclosure_role"]:
@@ -68,7 +97,7 @@ def resolve_design_profile(
         raise ContractError("design request segmentation differs from design profile")
     if request["axial_drive"]["topology"] != profile["topology"]["axial_drive_topology"]:
         raise ContractError("design request axial-drive topology differs from design profile")
-    return {
+    result = {
         "project_root": project_root,
         "descriptor_path": descriptor_path,
         "registry_path": registry_path,
@@ -76,6 +105,9 @@ def resolve_design_profile(
         "profile": profile,
         "paths": paths,
     }
+    if resolved_design is not None:
+        result["resolved_design"] = resolved_design
+    return result
 
 
 def main() -> int:

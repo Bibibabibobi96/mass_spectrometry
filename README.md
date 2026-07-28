@@ -4,8 +4,9 @@
 COMSOL、SIMION、MATLAB、Python和SolidWorks，目标是形成跨求解器独立闭合、GUI可检查、CAD同步
 且能够可靠重建的正式模型。
 
-仓库同时面向人类研究人员和编码Agent，当前包含oa-TOF、RF四极杆碰撞冷却与传输、电子轰击离子源
-和Wehnelt电子枪等项目。各项目以物理问题为中心组织，COMSOL、SIMION、MATLAB、Python和SolidWorks
+仓库同时面向人类研究人员和编码Agent，当前包含单次反射正交加速飞行时间质量分析器、RF多极杆
+离子光学、开孔长管电子轰击离子源和横置螺旋灯丝Wehnelt电子枪等项目。各项目以物理问题为中心组织，
+COMSOL、SIMION、MATLAB、Python和SolidWorks
 是平等的实现工具，不以任何软件作为目录主轴。
 
 长期使命和能力边界以[`docs/VISION.md`](docs/VISION.md)为准，跨项目实施阶段以
@@ -57,7 +58,8 @@ COMSOL、SIMION、MATLAB、Python和SolidWorks，目标是形成跨求解器独�
 |项目软件文档|实施说明|单一软件的节点、接口、运行与独立验证；不定义跨软件结论|
 |[`docs/VISION.md`](docs/VISION.md)|长期愿景|平台使命、目标闭环、能力边界和正式交付目标；不记录阶段顺序或当前状态|
 |[`docs/ROADMAP.md`](docs/ROADMAP.md)|跨项目规划|设计族、能力阶段、依赖顺序和阶段完成条件；不保存项目短期任务|
-|根`docs/`|通用参考|至少两个项目验证过的跨项目技术知识|
+|获批跨项目架构决策|迁移目标|带明确状态、适用边界和替换门禁的跨项目目标架构；不是当前已实现能力或已验证通用参考|
+|根`docs/`其他稳定文档|通用参考|至少两个项目验证过的跨项目技术知识|
 |项目`docs/history/`|只读证据|失效结论和演进过程；任何“当前”“正式”“下一步”均按归档时点解释|
 
 冲突处理顺序是：执行行为看`AGENTS.md`，仓库结构和知识归属看本README，项目当前事实看
@@ -88,6 +90,7 @@ COMSOL、SIMION、MATLAB、Python和SolidWorks，目标是形成跨求解器独�
 |跨项目稳定的 SIMION GUI/PA/GEM/Program 经验|`docs/SIMION_REFERENCE.md`|oa-TOF 专属尺寸|
 |仓库长期使命、能力边界和目标交付形态|`docs/VISION.md`|项目PROJECT、Roadmap或history|
 |跨项目设计族、未来项目和能力阶段|`docs/ROADMAP.md`|项目短期下一步或机器参数合同|
+|获批但尚未实施的跨项目架构决策|根`docs/`中的具名决策文档，并在Roadmap和所有参与项目PROJECT登记迁移任务|把目标架构写成当前能力、只登记单侧项目或预建空实现目录|
 |COMSOL可复用测试与其已验证范围|`common/comsol/README.md`及测试源码|根API或项目正式结论|
 |其他可复用代码事实|源码和最邻近的短 README/注释|长项目历史|
 
@@ -122,13 +125,13 @@ simulation_repo/
 │  ├─ history/                 # 全仓一次性审计与处置快照
 │  └─ multipoles/              # 多极杆设计族通用理论与可复现图示
 ├─ projects/                 # 平级项目；不再按软件或器件类别嵌套
-│  ├─ oa_tof/
-│  ├─ mr_tof/
-│  ├─ electron_impact_ion_source/
-│  ├─ rf_quadrupole_collision_cooling/
-│  ├─ rf_hexapole_ion_guide/
-│  ├─ rf_octupole_ion_guide/
-│  └─ wehnelt_electron_gun/
+│  ├─ single_reflection_oa_tof_mass_analyzer/
+│  ├─ open_path_parallel_mirror_dual_stripe_mr_tof_mass_analyzer/
+│  ├─ apertured_tube_electron_impact_ion_source/
+│  ├─ rf_quadrupole_ion_optics/
+│  ├─ rf_hexapole_ion_optics/
+│  ├─ rf_octupole_ion_optics/
+│  └─ transverse_helical_filament_wehnelt_electron_gun/
 ├─ common/
 │  ├─ comsol/                # LiveLink启动器、可复用COMSOL测试及就近README
 │  ├─ multipole/             # 四/六/八极杆共享合同、圆杆几何、COMSOL/SIMION传输与分析
@@ -155,19 +158,24 @@ simulation_repo/
 电极拓扑、主要功能、正式资产或验收合同需要独立长期维护时，建立新的平级项目。共享代码只有在
 第二个项目实际复用并验证后才提升到`common/`。
 
-当前项目：
+当前项目ID与显示名：
 
-- `projects/oa_tof`：正交加速双级反射 oa-TOF。
-- `projects/mr_tof`：以用户自绘 SolidWorks 工程图为种子的多次反射 TOF 原型设计线；尚无正式理论、参数合同或验收资产。
-- `projects/electron_impact_ion_source`：电子轰击离子源。
-- `projects/rf_quadrupole_collision_cooling`：RF四极杆碰撞冷却与传输。
-- `projects/rf_hexapole_ion_guide`：RF六极杆无碰撞离子导引。
-- `projects/rf_octupole_ion_guide`：RF八极杆无碰撞离子导引。
-- `projects/wehnelt_electron_gun`：螺旋灯丝 Wehnelt 电子枪。
+| `project_id` / 目录 | `display_name` |
+|---|---|
+| `single_reflection_oa_tof_mass_analyzer` | 单次反射正交加速飞行时间质量分析器 |
+| `open_path_parallel_mirror_dual_stripe_mr_tof_mass_analyzer` | 开放路径平行镜双条带多次反射飞行时间质量分析器 |
+| `apertured_tube_electron_impact_ion_source` | 开孔长管电子轰击离子源 |
+| `rf_quadrupole_ion_optics` | RF四极杆离子光学 |
+| `rf_hexapole_ion_optics` | RF六极杆离子光学 |
+| `rf_octupole_ion_optics` | RF八极杆离子光学 |
+| `transverse_helical_filament_wehnelt_electron_gun` | 横置螺旋灯丝Wehnelt电子枪 |
 
 每个项目用`config/project.json`声明稳定项目身份、设计族、可选择能力及其真实成熟度；
 `common/contracts/build_project_registry.py`据此生成根`config/project_registry.json`。根注册表只用于
 项目发现和自动选择，不取代项目`PROJECT.md`、baseline/resolved参数合同或Roadmap，也不得手改。
+发生行政改名时，活动源码、新run和新artifact只使用当前`project_id`。描述符`legacy_identities`登记的
+旧artifact根保持只读：不搬移、不改写旧manifest、不追加新run，并继续按旧manifest记录的项目身份
+验证；行政改名本身不得改变原资格、状态或声明边界。
 
 ## 参数权威与单向派生
 
@@ -511,8 +519,8 @@ README重复声明。它不重写或重存已有的MPH、SLDPRT或SLDASM。若Li
 自2026-07-16起，求解器无关分析固定使用**64位Python 3.11**。MATLAB R2025b官方支持
 Python 3.9至3.12；本机默认Python 3.14和旧Python 3.8均不得作为本仓库正式运行时。依赖由根目录
 `pyproject.toml`声明、`requirements-lock.txt`冻结，并安装在不入Git的`.venv/`。跨目录Python入口从
-仓库根使用`python -m <module>`运行，禁止由各脚本重复修改`sys.path`。oa-TOF入口见
-`projects/oa_tof/analysis/README.md`。
+仓库根使用`python -m <module>`运行，禁止由各脚本重复修改`sys.path`。单次反射oa-TOF入口见
+`projects/single_reflection_oa_tof_mass_analyzer/analysis/README.md`。
 
 ## Git 规则
 

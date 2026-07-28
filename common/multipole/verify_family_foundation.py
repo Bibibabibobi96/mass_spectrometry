@@ -17,9 +17,32 @@ from common.multipole.resolve_finite_3d_contract import resolve_contract
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PROJECT_SPECS = {
-    "rf_quadrupole_collision_cooling": (2, 4),
-    "rf_hexapole_ion_guide": (3, 6),
-    "rf_octupole_ion_guide": (4, 8),
+    "rf_quadrupole_ion_optics": (2, 4),
+    "rf_hexapole_ion_optics": (3, 6),
+    "rf_octupole_ion_optics": (4, 8),
+}
+LEGACY_EVIDENCE_SPECS = {
+    "rf_quadrupole_ion_optics": {
+        "identity_mapping_id": "rf_quad_rename_20260728",
+        "recorded_project_id": "rf_quadrupole_collision_cooling",
+        "artifact_root": "artifacts/projects/rf_quadrupole_collision_cooling",
+        "relative_path_pattern":
+            "results/numerical_qualification/20260728_functional_transport/<comparison>.json",
+    },
+    "rf_hexapole_ion_optics": {
+        "identity_mapping_id": "rf_hex_rename_20260728",
+        "recorded_project_id": "rf_hexapole_ion_guide",
+        "artifact_root": "artifacts/projects/rf_hexapole_ion_guide",
+        "relative_path_pattern":
+            "results/numerical_qualification/20260728_functional_transport/<comparison>.json",
+    },
+    "rf_octupole_ion_optics": {
+        "identity_mapping_id": "rf_oct_rename_20260728",
+        "recorded_project_id": "rf_octupole_ion_guide",
+        "artifact_root": "artifacts/projects/rf_octupole_ion_guide",
+        "relative_path_pattern":
+            "results/numerical_qualification/20260728_functional_transport/<comparison>.json",
+    },
 }
 FOUNDATION_SCOPE = {
     "solver_neutral_round_rod_array",
@@ -132,6 +155,10 @@ def validate_family_identity() -> dict[str, Any]:
         == {project_id: "PASS" for project_id in PROJECT_SPECS},
         "family functional qualification project status differs",
     )
+    require(
+        qualification.get("evidence_locations") == LEGACY_EVIDENCE_SPECS,
+        "family functional qualification evidence locations differ",
+    )
     return family
 
 
@@ -141,6 +168,25 @@ def validate_project_identity(project_id: str, order: int, electrode_count: int)
     project = load_json(root / "config" / "project.json")
     baseline = load_json(root / "config" / "baseline.json")
     require(project.get("project_id") == project_id, f"{project_id} project identity differs")
+    evidence_location = LEGACY_EVIDENCE_SPECS[project_id]
+    matching_mappings = [
+        mapping
+        for mapping in project.get("legacy_identities", [])
+        if mapping.get("mapping_id") == evidence_location["identity_mapping_id"]
+    ]
+    require(len(matching_mappings) == 1, f"{project_id} evidence identity mapping differs")
+    mapping = matching_mappings[0]
+    require(
+        mapping.get("project_id") == evidence_location["recorded_project_id"]
+        and mapping.get("artifact_root") == evidence_location["artifact_root"]
+        and mapping.get("migration_kind") == "administrative_rename_only"
+        and mapping.get("artifact_access") == "read_only"
+        and mapping.get("new_runs_allowed") is False
+        and mapping.get("verification_identity") == "recorded_project_id"
+        and mapping.get("claim_policy")
+        == "preserve_original_status_and_claim_limits_no_promotion",
+        f"{project_id} legacy evidence policy differs",
+    )
     require(project.get("family_id") == "rf_multipole_ion_optics", f"{project_id} family differs")
     require("simion" in project.get("toolchains", []), f"{project_id} omits its SIMION adapter")
     require(
@@ -200,8 +246,12 @@ def validate_project_identity(project_id: str, order: int, electrode_count: int)
                 profile["design_profile_id"]
                 for profile in runtime_profiles.get("profiles", {}).values()
             }
-            == {"official_transport"},
-            "quadrupole runtime profiles do not fix the governed design profile",
+            == {
+                "no_acceleration_full_length",
+                "segmented_rod_axial_acceleration",
+                "exit_aperture_plate_acceleration",
+            },
+            "quadrupole family runtime profiles do not fix the three governed modes",
         )
         require("Adapter" not in wrapper, "quadrupole retains the legacy shared-adapter switch")
         builder = (

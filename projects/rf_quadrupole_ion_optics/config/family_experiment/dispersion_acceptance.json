@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "role": "multipole_dispersion_acceptance_contract",
+  "project_id": "rf_quadrupole_ion_optics",
+  "contract_id": "quadrupole_family_three_mode_dispersion_acceptance_v1",
+  "preregistered_before_run": true,
+  "status": "INCONCLUSIVE_PENDING_DOWNSTREAM_ACCEPTANCE",
+  "acceptance_criteria": {
+    "physical_handoff_aperture_radius_mm": 3.6,
+    "physical_basis": "The 3.6 mm limit is the governed cylindrical exit aperture radius.",
+    "minimum_transmission_fraction": null,
+    "maximum_mode_to_mode_dispersion": null,
+    "missing_threshold_decision": "INCONCLUSIVE",
+    "claim_policy": "N=100 may establish functional execution only. Candidate, Formal, superiority and numerical-equivalence PASS require separately approved downstream tolerances."
+  }
+}

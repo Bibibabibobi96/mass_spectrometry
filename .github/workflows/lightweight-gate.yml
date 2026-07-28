@@ -47,14 +47,16 @@ jobs:
             'common/verify_changed.ps1',
             'common/contracts/README.md',
             'common/multipole/README.md',
+            'common/integration/README.md',
             'common/comsol/README.md',
             'common/solidworks/README.md',
-            'projects/oa_tof/README.md',
-            'projects/rf_quadrupole_collision_cooling/README.md',
-            'projects/rf_hexapole_ion_guide/README.md',
-            'projects/rf_octupole_ion_guide/README.md',
-            'projects/wehnelt_electron_gun/README.md',
-            'projects/electron_impact_ion_source/README.md'
+            'integrations/registry.json',
+            'projects/single_reflection_oa_tof_mass_analyzer/README.md',
+            'projects/rf_quadrupole_ion_optics/README.md',
+            'projects/rf_hexapole_ion_optics/README.md',
+            'projects/rf_octupole_ion_optics/README.md',
+            'projects/transverse_helical_filament_wehnelt_electron_gun/README.md',
+            'projects/apertured_tube_electron_impact_ion_source/README.md'
           )
           $baseAvailable = $false
           if ($before -notmatch '^[0]+$') {

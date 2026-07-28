@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "role": "multipole_three_mode_dispersion_method_contract",
+  "status": "method_only_project_preregistration_required",
+  "scope": {
+    "family_id": "rf_multipole_ion_optics",
+    "physics": "collision_free_transport",
+    "solvers": "one_solver_per_bound_experiment"
+  },
+  "geometry_invariants": [
+    "resolved_design_identity",
+    "rod_count_and_radial_order",
+    "rod_cross_section_and_radius",
+    "rod_center_radius",
+    "rod_z_min_and_rod_z_max",
+    "enclosure_and_apertures",
+    "source_release_plane",
+    "exit_aperture_crossing_plane",
+    "canonical_handoff_plane",
+    "near_interface_census_plane"
+  ],
+  "voltage_modes": [
+    "no_acceleration_full_length",
+    "segmented_rod_axial_acceleration",
+    "exit_aperture_plate_acceleration"
+  ],
+  "source_policy": {
+    "authority": "common/contracts/particle_count_policy.json",
+    "required_counts": [100, 1000],
+    "n100_is_exact_prefix_of_n1000": true,
+    "n100_claim": "functional_and_engineering_check_only",
+    "n1000_claim": "statistical_dispersion_evidence_when_project_acceptance_is_bound"
+  },
+  "observation_planes": [
+    {"observation_id": "handoff", "kind": "physical", "offset_from_handoff_mm": 0},
+    {"observation_id": "near_interface", "kind": "bound_project_geometry"},
+    {"observation_id": "field_free_plus_5mm", "kind": "ballistic", "offset_from_handoff_mm": 5},
+    {"observation_id": "field_free_plus_20mm", "kind": "ballistic", "offset_from_handoff_mm": 20},
+    {"observation_id": "field_free_plus_50mm", "kind": "ballistic", "offset_from_handoff_mm": 50}
+  ],
+  "paired_comparisons": [
+    {
+      "comparison_id": "segmented_vs_no_acceleration",
+      "left_mode": "segmented_rod_axial_acceleration",
+      "right_mode": "no_acceleration_full_length"
+    },
+    {
+      "comparison_id": "exit_plate_vs_no_acceleration",
+      "left_mode": "exit_aperture_plate_acceleration",
+      "right_mode": "no_acceleration_full_length"
+    },
+    {
+      "comparison_id": "segmented_vs_exit_plate",
+      "left_mode": "segmented_rod_axial_acceleration",
+      "right_mode": "exit_aperture_plate_acceleration"
+    }
+  ],
+  "population_policy": {
+    "transmission": "all_source_particle_ids_with_losses_retained",
+    "continuous_metrics": "intersection_of_transmitted_particle_ids",
+    "forward_projection_requirement": "velocity_z_m_s_strictly_positive",
+    "forbidden": "Dropping losses or selecting a different survivor subset for a continuous metric."
+  },
+  "paired_run_invariants": [
+    "solver_id",
+    "solver_numerics_sha256",
+    "selected_particle_source_sha256",
+    "geometry_invariant_sha256"
+  ],
+  "metrics": {
+    "per_mode": [
+      "count_and_weighted_transmission",
+      "rms_and_p95_radius_mm",
+      "rms_and_p95_absolute_angular_divergence_mrad",
+      "mean_and_p95_kinetic_energy_eV",
+      "mean_and_p95_component_tof_us"
+    ],
+    "paired_common_survivors": [
+      "radius_mm",
+      "angular_divergence_mrad",
+      "kinetic_energy_eV",
+      "component_tof_us"
+    ],
+    "uncertainty": "deterministic_paired_particle_bootstrap_95_percent_interval",
+    "bootstrap_seed_and_resample_count": "required_project_binding_no_default"
+  },
+  "required_prerun_bindings": [
+    "project_acceptance_contract",
+    "project_effect_resolution_contract",
+    "project_engineering_budget_contract"
+  ],
+  "retention": {
+    "authority": "common/contracts/artifact_retention.json",
+    "required_class": "compact"
+  },
+  "engineering_stop_policy": {
+    "authority": "common/multipole/numerical_qualification.json#/engineering_stop_policy",
+    "decision": "Stop when the preregistered project budget is exhausted; report INCONCLUSIVE rather than relaxing acceptance or continuing brute-force refinement."
+  },
+  "claim_limit": "This method produces solver-neutral diagnostics and paired uncertainty only. It contains no acceptance tolerance and cannot issue Candidate, Formal, solver-equivalence or engineering-acceptance PASS."
+}

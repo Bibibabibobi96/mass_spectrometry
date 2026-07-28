@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/connection_profile.schema.json",
+  "title": "Explicit component connection profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "integration_id", "connection_profile_id",
+    "upstream", "downstream", "coupling_mode", "spatial_registration",
+    "connector", "minimum_clear_radius_mm", "potential_alignment",
+    "clock_alignment", "field_ownership_segments"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "integration_id": {"$ref": "#/$defs/identifier"},
+    "connection_profile_id": {"$ref": "#/$defs/identifier"},
+    "upstream": {"$ref": "#/$defs/endpoint"},
+    "downstream": {"$ref": "#/$defs/endpoint"},
+    "coupling_mode": {"enum": ["state_handoff", "field_overlap", "monolithic_joint_solve"]},
+    "spatial_registration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rotation_upstream_to_downstream", "translation_mm",
+        "expected_gap_mm", "position_tolerance_mm", "angular_tolerance_rad"
+      ],
+      "properties": {
+        "rotation_upstream_to_downstream": {
+          "type": "array", "minItems": 3, "maxItems": 3,
+          "items": {"$ref": "#/$defs/vector3"}
+        },
+        "translation_mm": {"$ref": "#/$defs/vector3"},
+        "expected_gap_mm": {"type": "number", "minimum": 0},
+        "position_tolerance_mm": {"type": "number", "exclusiveMinimum": 0},
+        "angular_tolerance_rad": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "connector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["length_mm", "inner_radius_mm", "wall_thickness_mm"],
+      "properties": {
+        "length_mm": {"type": "number", "minimum": 0},
+        "inner_radius_mm": {"type": "number", "exclusiveMinimum": 0},
+        "wall_thickness_mm": {"type": "number", "minimum": 0}
+      }
+    },
+    "minimum_clear_radius_mm": {"type": "number", "exclusiveMinimum": 0},
+    "potential_alignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "tolerance_V"],
+      "properties": {
+        "mode": {"enum": ["continuous", "declared_step"]},
+        "tolerance_V": {"type": "number", "minimum": 0},
+        "declared_step_V": {"type": "number"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"mode": {"const": "declared_step"}}},
+          "then": {"required": ["declared_step_V"]},
+          "else": {"not": {"required": ["declared_step_V"]}}
+        }
+      ]
+    },
+    "clock_alignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "offset_s"],
+      "properties": {
+        "mode": {"enum": ["same_origin", "declared_offset"]},
+        "offset_s": {"type": "number"}
+      }
+    },
+    "field_ownership_segments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["start_mm", "end_mm", "owner"],
+        "properties": {
+          "start_mm": {"type": "number", "minimum": 0},
+          "end_mm": {"type": "number", "minimum": 0},
+          "owner": {"enum": ["upstream", "downstream", "integration", "field_free"]}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
+    "vector3": {
+      "type": "array", "minItems": 3, "maxItems": 3,
+      "items": {"type": "number"}
+    },
+    "endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project_id", "port_id", "port_contract"],
+      "properties": {
+        "project_id": {"$ref": "#/$defs/identifier"},
+        "port_id": {"$ref": "#/$defs/identifier"},
+        "port_contract": {
+          "type": "string",
+          "pattern": "^projects/[a-z][a-z0-9_]*(?:/[A-Za-z0-9._-]+)+\\.json$"
+        }
+      }
+    }
+  }
+}

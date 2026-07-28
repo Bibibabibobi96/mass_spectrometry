@@ -2,7 +2,13 @@
   "schema_version": 1,
   "role": "multipole_simion_layout_template_binding",
   "template_id": "shared_single_pa_v1",
-  "provider_project_id": "rf_quadrupole_collision_cooling",
+  "provider_project_id": "rf_quadrupole_ion_optics",
+  "legacy_evidence_identity": {
+    "mapping_id": "rf_quad_rename_20260728",
+    "recorded_project_id": "rf_quadrupole_collision_cooling",
+    "artifact_root": "artifacts/projects/rf_quadrupole_collision_cooling",
+    "artifact_access": "read_only"
+  },
   "registration_run_id": "20260727_232047__build__simion__multipole-layout-template",
   "run_manifest_sha256": "E3DD753A11B51D42BBAB4F8011895CB979892856F4DB6F89590F34003E7C9D23",
   "iob_sha256": "8C8C1822E06034207D9E5E044946E7297B264631F2B48CB248F13D2808E91319",

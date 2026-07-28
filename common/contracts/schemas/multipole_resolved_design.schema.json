@@ -172,6 +172,7 @@
     },
     "drive": {"$ref": "#/$defs/drive"},
     "axial_drive": {
+      "description": "Electrical axial-drive topology. This is independent of segmentation.strategy, which describes physical rod continuity or segmentation.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -236,6 +237,7 @@
       }
     },
     "segmentation": {
+      "description": "Physical rod topology and compiled segment electrodes. strategy=off means continuous rods; uniform/explicit mean physically segmented rods and do not by themselves claim segmented acceleration.",
       "type": "object",
       "additionalProperties": false,
       "required": [

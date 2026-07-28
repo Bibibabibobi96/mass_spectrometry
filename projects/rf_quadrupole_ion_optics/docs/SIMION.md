@@ -1,0 +1,61 @@
+# RF四极杆离子光学：SIMION实施与验证
+
+本文只说明SIMION几何、Program、运行入口与独立验收。跨求解器状态和开放任务只见
+[`PROJECT.md`](PROJECT.md)；2026-07-28以前的完整run、数值和故障链冻结在
+[`history/20260728__pre-document-consolidation-simion.md`](history/20260728__pre-document-consolidation-simion.md)。
+多极杆各轴向实体、事件面和`numerical_census_marker`只采用
+[`../../../common/multipole/README.md`](../../../common/multipole/README.md)的统一术语。
+
+## 几何与运行时权威
+
+活动GEM由`../analysis/sync_simion_geometry.py`从具名profile编译的resolved发布生成，并嵌入发布
+SHA-256；生成GEM不得手改。Workbench运行使用项目生成的单PA、Fly2和
+`../simion/programs/quad_transport.lua`。共享模板、GUI复核、`.wgem`绕行和跨工作区可移植性状态
+只由[`../../../common/multipole/README.md`](../../../common/multipole/README.md)登记。
+
+Lua只实现RF-only或RF+DC Fast Adjust、静态电极、时间步上限、最长飞行、事件/轨迹和summary，不含
+collision、drag、pressure或buffer-gas逻辑。物理量来自冻结resolved，数值量来自
+`../config/simion_solver_numerics.json`；Program不得用默认值或命令行覆盖权威输入。
+
+## 活动入口
+
+| 科学问题 | 入口 |
+|---|---|
+| 接口就绪输运 | `../workflows/interface_readiness/run_simion.ps1` |
+| 无碰撞部件回归 | `../workflows/no_collision_transport/run_simion.ps1` |
+| RF+DC质量过滤 | `../workflows/mass_filter_reference/run_simion.ps1` |
+| PA场分辨率诊断 | `../tests/simion/test_pa_field_convergence.ps1` |
+| IOB结构检查 | `../tests/simion/inspect_builtin_quad_reference.lua` |
+
+接口入口只接受配对bundle中的canonical表示；质量过滤入口只接受显式基础ION11并生成逐质量配对表。
+无碰撞入口的具名runtime profile可选择圆柱家族三种typed电气模式，但不接受自由design/source路径，
+也不得选择矩形`official_transport` integration oracle。
+
+## 输出与来源纪律
+
+新运行输出canonical粒子事件表、稀疏轨迹、summary及run manifest。源事件、杆端、出口孔穿越、
+规范交接、近接口统计和terminal事件均保持粒子ID、三维位置/速度、能量、RF相位和终止原因。
+terminal只表示数值标记、撞壁、超时等终态分类，不是近接口统计面的别名。接口运行必须逐ID证明canonical与ION11
+两种表示等价；质量过滤响应稳定文件名为`mass-response__simion.csv`。
+
+IOB加载门禁必须检查：
+
+- 单一项目PA实例及本地路径；
+- 放置变换、尺寸、cell size和PA checksum；
+- Program/Fly2与冻结run config一致；
+- GUI中Program、Adjustables、粒子定义和PA实例可检查；
+- 运行和分析失败按三件套失败关闭，不以文件存在判成功。
+
+## 数值与资格边界
+
+圆柱家族N=100已预注册：空间档全局cell`0.4→0.2 mm`，时间档在已选`0.2 mm`细网格上将
+`40→80`步/周期，但尚未运行。旧分段杆、
+出口带孔接口板和显式多级证据只属历史，不代表当前PA收敛、与COMSOL数值等价或机械资格。接口
+N=100双端100/100但相空间严格比较为FAIL。
+
+RF四极杆离子光学→单次反射oa-TOF下游由本项目累积S3入口驱动，以COMSOL真实局部出口canonical
+状态进入只读分析器；
+SIMION未独立建立同等侧孔/连接器场。功能贯通不得解释为接口场或整机Formal闭合。
+
+许可证不能处理SIMION 2026 `.wgem`时继续使用已验证的SIMION 2020 legacy-GEM路线；该公共开放项
+不在项目软件文档重复维护。

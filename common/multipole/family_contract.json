@@ -28,9 +28,9 @@
   "foundation": {
     "api_status": "frozen",
     "consumers": [
-      "rf_quadrupole_collision_cooling",
-      "rf_hexapole_ion_guide",
-      "rf_octupole_ion_guide"
+      "rf_quadrupole_ion_optics",
+      "rf_hexapole_ion_optics",
+      "rf_octupole_ion_optics"
     ],
     "scope": [
       "solver_neutral_round_rod_array",
@@ -47,7 +47,7 @@
       "particle_count": 100,
       "modes": ["segmented_rod_axial_acceleration", "exit_aperture_plate_acceleration"],
       "superseded_evidence": {
-        "rf_quadrupole_collision_cooling": {
+        "rf_quadrupole_ion_optics": {
           "comsol": {
             "segmented_rod_axial_acceleration": "20260723_151500__sim__comsol__rf-quadrupole-axial-acceleration__n100__r03",
             "exit_aperture_plate_acceleration": "20260723_155500__sim__comsol__rf-quadrupole-endplate-acceleration__n100__r02"
@@ -57,7 +57,7 @@
             "exit_aperture_plate_acceleration": "20260723_163500__sim__simion__rf-quadrupole-endplate-acceleration__n100"
           }
         },
-        "rf_hexapole_ion_guide": {
+        "rf_hexapole_ion_optics": {
           "comsol": {
             "segmented_rod_axial_acceleration": "20260723_161000__sim__comsol__rf-hexapole-axial-acceleration__n100__r03",
             "exit_aperture_plate_acceleration": "20260723_161500__sim__comsol__rf-hexapole-endplate-acceleration__n100__r02"
@@ -67,7 +67,7 @@
             "exit_aperture_plate_acceleration": "20260723_164500__sim__simion__rf-hexapole-endplate-acceleration__n100"
           }
         },
-        "rf_octupole_ion_guide": {
+        "rf_octupole_ion_optics": {
           "comsol": {
             "segmented_rod_axial_acceleration": "20260723_162000__sim__comsol__rf-octupole-axial-acceleration__n100__r02",
             "exit_aperture_plate_acceleration": "20260723_162500__sim__comsol__rf-octupole-endplate-acceleration__n100__r02"
@@ -86,9 +86,9 @@
       "method_role": "multipole_l3_numerical_qualification_contract",
       "functional_acceptance_contract": "common/multipole/functional_transport_acceptance.json",
       "consumers": [
-        "rf_quadrupole_collision_cooling",
-        "rf_hexapole_ion_guide",
-        "rf_octupole_ion_guide"
+        "rf_quadrupole_ion_optics",
+        "rf_hexapole_ion_optics",
+        "rf_octupole_ion_optics"
       ],
       "modes": [
         "no_acceleration_full_length",
@@ -116,11 +116,31 @@
           "cross_solver"
         ],
         "status_each_project": {
-          "rf_quadrupole_collision_cooling": "PASS",
-          "rf_hexapole_ion_guide": "PASS",
-          "rf_octupole_ion_guide": "PASS"
+          "rf_quadrupole_ion_optics": "PASS",
+          "rf_hexapole_ion_optics": "PASS",
+          "rf_octupole_ion_optics": "PASS"
         },
-        "artifact_relative_pattern": "artifacts/projects/<project_id>/results/numerical_qualification/20260728_functional_transport/<comparison>.json"
+        "evidence_locations": {
+          "rf_quadrupole_ion_optics": {
+            "identity_mapping_id": "rf_quad_rename_20260728",
+            "recorded_project_id": "rf_quadrupole_collision_cooling",
+            "artifact_root": "artifacts/projects/rf_quadrupole_collision_cooling",
+            "relative_path_pattern": "results/numerical_qualification/20260728_functional_transport/<comparison>.json"
+          },
+          "rf_hexapole_ion_optics": {
+            "identity_mapping_id": "rf_hex_rename_20260728",
+            "recorded_project_id": "rf_hexapole_ion_guide",
+            "artifact_root": "artifacts/projects/rf_hexapole_ion_guide",
+            "relative_path_pattern": "results/numerical_qualification/20260728_functional_transport/<comparison>.json"
+          },
+          "rf_octupole_ion_optics": {
+            "identity_mapping_id": "rf_oct_rename_20260728",
+            "recorded_project_id": "rf_octupole_ion_guide",
+            "artifact_root": "artifacts/projects/rf_octupole_ion_guide",
+            "relative_path_pattern": "results/numerical_qualification/20260728_functional_transport/<comparison>.json"
+          }
+        },
+        "identity_migration_basis": "Each evidence location explicitly names one administrative rename mapping. Evidence is verified under its recorded legacy project_id, remains read-only with its original status and claim limit, and cannot authorize new runs under the legacy identity. Future runs use the current project_id artifact root."
       },
       "claim_limit": "PASS covers only N=100 collision-free RF transport classification, exact transmitted-ID closure and positive working-radius margin for the named no-acceleration profile. It does not qualify continuous phase-space equivalence, collision cooling, axial acceleration, RF+DC mass filtering, mechanical design, Candidate or Formal status."
     },

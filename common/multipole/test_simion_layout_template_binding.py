@@ -20,6 +20,15 @@ class SimionLayoutTemplateBindingTests(unittest.TestCase):
             "20260727_232047__build__simion__multipole-layout-template",
         )
         self.assertEqual(result["manual_gui_review"]["status"], "pass")
+        self.assertEqual(
+            result["legacy_evidence_identity"],
+            {
+                "mapping_id": "rf_quad_rename_20260728",
+                "recorded_project_id": "rf_quadrupole_collision_cooling",
+                "artifact_root": "artifacts/projects/rf_quadrupole_collision_cooling",
+                "artifact_access": "read_only",
+            },
+        )
         self.assertEqual(Path(result["bundle"]["iob"]["path"]).suffix, ".iob")
         self.assertEqual(Path(result["bundle"]["con"]["path"]).suffix, ".con")
 
@@ -48,6 +57,16 @@ class SimionLayoutTemplateBindingTests(unittest.TestCase):
             registry = Path(directory) / "registry.json"
             registry.write_text(json.dumps(modified), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "manifest SHA-256"):
+                resolve_simion_layout_template(REPO_ROOT, registry)
+
+        with tempfile.TemporaryDirectory() as directory:
+            modified = json.loads(json.dumps(source))
+            modified["legacy_evidence_identity"]["recorded_project_id"] = (
+                "rf_quadrupole_ion_optics"
+            )
+            registry = Path(directory) / "registry.json"
+            registry.write_text(json.dumps(modified), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "legacy evidence identity"):
                 resolve_simion_layout_template(REPO_ROOT, registry)
 
 

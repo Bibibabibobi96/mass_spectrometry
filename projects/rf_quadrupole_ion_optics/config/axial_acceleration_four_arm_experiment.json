@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "role": "superseded_experiment_tombstone",
+  "project_id": "rf_quadrupole_ion_optics",
+  "experiment_id": "axial_acceleration_four_arm_experiment",
+  "status": "SUPERSEDED_NOT_EXECUTABLE",
+  "replacement_contract": "projects/rf_quadrupole_ion_optics/config/family_experiment/n100_convergence_preregistration.json",
+  "supersession_reason": "The approved family experiment uses one shared 2 eV mother sample and three typed voltage modes. A separate 5 eV source is not an acceleration topology.",
+  "history": "projects/rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-project.md",
+  "run_authorization": false
+}

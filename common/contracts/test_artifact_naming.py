@@ -36,11 +36,26 @@ class ArtifactNamingTests(unittest.TestCase):
 
     def test_project_qualified_formal_binary(self) -> None:
         self.assertEqual(
-            validate_formal_asset_name("oa_tof__model.mph", "oa_tof")["role"], "model"
+            validate_formal_asset_name(
+                "single_reflection_oa_tof_mass_analyzer__model.mph",
+                "single_reflection_oa_tof_mass_analyzer",
+            )["role"],
+            "model",
         )
-        validate_formal_asset_name("oa_tof__assembly.SLDASM", "oa_tof")
+        validate_formal_asset_name(
+            "single_reflection_oa_tof_mass_analyzer__assembly.SLDASM",
+            "single_reflection_oa_tof_mass_analyzer",
+        )
         with self.assertRaises(ValueError):
-            validate_formal_asset_name("main.mph", "oa_tof")
+            validate_formal_asset_name("main.mph", "single_reflection_oa_tof_mass_analyzer")
+
+    def test_legacy_formal_binary_uses_recorded_project_identity(self) -> None:
+        validate_formal_asset_name("oa_tof__model.mph", "oa_tof")
+        with self.assertRaises(ValueError):
+            validate_formal_asset_name(
+                "oa_tof__model.mph",
+                "single_reflection_oa_tof_mass_analyzer",
+            )
 
     def test_short_scratch_task_id(self) -> None:
         validate_task_id("20260719_213000__simion__iob-relink")

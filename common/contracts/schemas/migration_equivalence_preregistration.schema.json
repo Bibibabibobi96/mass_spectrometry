@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/migration_equivalence_preregistration.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "role",
+    "integration_id",
+    "equivalence_status",
+    "execution_status",
+    "legacy_oracle",
+    "comparison_requirements",
+    "profiles",
+    "claim_limit"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "integration_migration_equivalence_preregistration"},
+    "integration_id": {"$ref": "#/$defs/identifier"},
+    "equivalence_status": {"const": "BLOCKED"},
+    "execution_status": {"const": "NOT_RUN"},
+    "legacy_oracle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "access"],
+      "properties": {
+        "path": {"$ref": "#/$defs/path"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "access": {"const": "read_only"}
+      }
+    },
+    "comparison_requirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "same_source_population",
+        "same_connection_profile",
+        "new_entrypoint_rerun_required",
+        "metrics"
+      ],
+      "properties": {
+        "same_source_population": {"const": true},
+        "same_connection_profile": {"const": true},
+        "new_entrypoint_rerun_required": {"const": true},
+        "metrics": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/identifier"}
+        }
+      }
+    },
+    "profiles": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "connection_profile_id",
+          "new_run_status",
+          "equivalence_decision"
+        ],
+        "properties": {
+          "connection_profile_id": {"$ref": "#/$defs/identifier"},
+          "new_run_status": {"const": "NOT_RUN"},
+          "equivalence_decision": {"const": "NOT_RUN"}
+        }
+      }
+    },
+    "claim_limit": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![A-Za-z]:|/|.*\\.\\.).+"
+    },
+    "sha256": {"type": "string", "pattern": "^[A-F0-9]{64}$"}
+  }
+}

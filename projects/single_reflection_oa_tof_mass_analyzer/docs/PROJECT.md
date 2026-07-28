@@ -1,0 +1,109 @@
+# 单次反射正交加速飞行时间质量分析器当前状态
+
+本文件是项目当前事实、资格与开放任务的唯一权威。机器精确值分别由`../config/`中的物理、数值、
+resolved、分析和资产合同管理；实现细节见[`COMSOL.md`](COMSOL.md)、[`SIMION.md`](SIMION.md)与
+[`CAD.md`](CAD.md)。2026-07-28以前的完整状态和时间线冻结在
+[`history/20260728__pre-document-consolidation-project.md`](history/20260728__pre-document-consolidation-project.md)。
+
+## 当前状态
+
+- 当前批准设计为524 Da、+1正交加速TOF，双级环栈反射镜，一级10环、二级5环；粒子初始能量
+  `5±0.4 eV`。
+- 统一坐标以检测器有效面中心和精确一阶时间焦点为`z=0`，`+z`从加速器指向反射器。SIMION局部PA
+  必须通过IOB变换映射到同一坐标。
+- 2026-07-20的耦合纵向baseline曾完成N=1000双求解器验证、COMSOL MPH、SIMION四实例包和25组件
+  SolidWorks装配的原子晋升，证据由`../config/formal_validation.json`冻结。
+- 随后科学合同、solver numerics和run instance已拆层；`../config/project.json`的当前生命周期为
+  `formal_revalidation_pending`。因此历史Formal资产和验证记录仍可追溯，但当前Formal gate必须在
+  独立vNext重验证前失败关闭，Candidate不得读取旧Formal资产。
+- 当前Formal加速器为闭合屏蔽结构，没有RF注入侧孔。RF项目的S2/S3候选链没有修改本项目baseline、
+  MPH、SIMION包或CAD，也不构成整机Formal连接。
+
+`project.json`内capability/formal asset字段仍保留历史`formal`身份，而顶层lifecycle已经进入
+`formal_revalidation_pending`。解释当前可执行资格时以后者和门禁为准；完成vNext重验证时应在同一
+事务中消除该机器状态差异。
+
+## 物理与几何基线
+
+精确参数、公式和舍入规则只认`../config/baseline.json`、`../config/resolved_geometry.json`及
+`theory/`。用于识别设计的摘要为：
+
+| 对象 | 当前设计 |
+|---|---|
+| 三栅加速器间距 | `d1=3.0 mm`、`d2=16.8 mm` |
+| 反射器 | 一级120 mm；二级工程长度96.1563 mm |
+| 反射器电位 | 一级压降1628.8001 V；背板2531.1999 V |
+| 屏蔽罩 | 内半径350 mm；侧壁和端盖厚10 mm |
+| 检测有效面 | 全局`z=0`、半径40 mm |
+| SIMION日常加速器网格 | `xy=0.25 mm`、`z=0.05 mm`；`z=0.025 mm`仅为收敛参考 |
+
+这些摘要不能用于重建求解器模型。修改焦点、电压或长度前必须重算理论并同步COMSOL、SIMION和CAD。
+
+## 冻结验证记录
+
+`../config/formal_validation.json`冻结的2026-07-20同源N=1000结果为：
+
+| 指标 | COMSOL | SIMION |
+|---|---:|---:|
+| 命中 | 1000/1000 | 1000/1000 |
+| 平均TOF (us) | 71.35283799 | 71.35358448 |
+| 直接质量FWHM (Da) | 0.01235942211 | 0.01071535523 |
+| 质量分辨率R | 42396.80 | 48901.79 |
+
+两端平均TOF差`0.74648 ns`，逐粒子TOF RMS差`1.00860 ns`，落点RMS差`0.29408 mm`。这些数字是
+拆层前已晋升baseline的可追溯记录，不代表当前`formal_revalidation_pending`已经关闭，也不能通过
+单独调网格、时间步或quality追平某个R值。
+
+质量分辨率统一定义为`R=m/FWHM_m`；窄峰时间域等价式为`R=T/(2·FWHM_t)`。近似高斯时才允许以
+`2.3548×sigma`代替直接半高宽。
+
+## 当前能力与边界
+
+| 能力 | 当前范围 | 资格 |
+|---|---|---|
+| Static合同与候选编译 | baseline/science/numerics分层、resolved与源码冻结 | PASS |
+| 结构Candidate | 零变化和`reflectron_midgrid_voltage`、N=100、真实COMSOL/SIMION/CAD receipt | Candidate结构合同；无性能声明 |
+| 五质量候选 | 固定10/100/500/1000/2000 Da功能比较 | Candidate；不替代524 Da基线 |
+| Formal当前设计 | 2026-07-20历史验证可追溯 | revalidation pending |
+| RF四极杆离子光学→本项目接口 | 下游只读分析器消费 | 整机Formal BLOCKED |
+
+Candidate唯一公开入口为`../workflows/design_candidate/run_candidate.py`；必须提供获批request、run ID和
+显式seed，依次执行粒子表、COMSOL、SIMION、CAD和结构验收。成功结果固定为
+`candidate_accepted_not_promoted`，不含晋升。晋升必须由独立事务完成。
+
+## 已知兼容边界
+
+- COMSOL 6.4当前模型在极小求解粒子数路径存在非单调原生不稳定；日常使用N=100，逻辑小样本仅在
+  无粒子间耦合时由同源N=100承载后分析前缀。该绕行不属于开放调查。
+- SIMION透明栅网以`0.0001 mm`数值距离越过一格厚数值层。现有传输与资产门禁接受该实现；只有要求
+  更严格逐粒子闭合、PA/栅网改变后出现相位敏感，或误splat时才重启自适应越层研究。
+- 当前许可证不能使用SIMION 2026 `.wgem`，Candidate使用已验收的SIMION 2020 legacy-GEM四槽模板；
+  许可证升级并完成隔离GUI/结构复验前不迁移路线。
+
+详细失败矩阵与已关闭调查只在history保存，不作为current开放任务。
+
+## 开放任务
+
+1. **Formal vNext重验证。** 在当前拆层合同下重新冻结N=1000同源输入，独立运行COMSOL、SIMION、
+   CAD/GUI门禁和统一分析；成功晋升时同时更新生命周期、capability/formal asset状态与全部SHA。
+2. **RF接口架构迁移。** 本项目已按根
+   [`COMPONENT_CONNECTION_ARCHITECTURE.md`](../../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md)
+   发布`oatof_accelerator_entry` required port并完成项目内静态校验；尚须把跨器件连接器和联合证据迁入
+   `rf_quadrupole_ion_optics_to_single_reflection_oa_tof_mass_analyzer`实例，并完成新旧等价复验。
+   迁移前的连接器、共享时钟、阶段指标和恢复条件仍以RF项目PROJECT为当前实现权威；等价复验通过前
+   本项目保持Formal分析器只读。
+3. **复现交付。** 按需从自包含Formal目录生成不含日志和收敛参考的ZIP及独立SHA；ZIP不是第二资产权威。
+4. **按需求启动的物理候选。** 轴对称圆形加速器、真实丝网、制造/装配误差预算和二维轴对称混合
+   COMSOL模型均暂缓；任何一项启动都须重新闭合理论、三维场、传输、网格、跨求解器与CAD。
+
+开放任务只写未完成动作和关闭条件。已完成的Candidate bootstrap、路径修复、receipt治理、历史失败
+run和非零变量复验全部冻结在同日PROJECT history快照。
+
+## 产物与历史
+
+新活动产物根为`artifacts/projects/single_reflection_oa_tof_mass_analyzer/`。重命名前的Formal、
+Candidate run及归档仍以原manifest项目身份只读保存在`artifacts/projects/oa_tof/`，各自保留原文件名
+与SHA，不迁入新根、不改写身份、不追加新run，也不改变原资格或声明边界。current文档不复制完整run
+ID清单。旧RF投影诊断只见
+[`history/20260727__superseded-rf-handoff-diagnostics.md`](history/20260727__superseded-rf-handoff-diagnostics.md)，
+不得恢复为活动生产入口。

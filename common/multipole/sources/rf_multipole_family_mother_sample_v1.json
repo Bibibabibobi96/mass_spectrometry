@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "role": "shared_multipole_canonical_mother_sample_build_contract",
+  "family_id": "rf_multipole_ion_optics",
+  "consumers": [
+    "rf_quadrupole_ion_optics",
+    "rf_hexapole_ion_optics",
+    "rf_octupole_ion_optics"
+  ],
+  "output": {
+    "path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_1000.csv",
+    "sha256": "CE68A6B47DC5726D9C45CBE28E4397A2321D782FAED265067824891AAF4D0FBF",
+    "particle_count": 1000
+  },
+  "prefix": {
+    "path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_100.csv",
+    "sha256": "0125C3AB02B2321EF26A3A913CF6EC04325FD0D48597D2CB439D0CE42411662F",
+    "particle_count": 100,
+    "policy": "exact_first_100_data_rows",
+    "provenance": "generated_exact_prefix"
+  },
+  "generator": {
+    "implementation": "common/multipole/sources/generate_rf_multipole_family_mother_sample.py",
+    "implementation_identity": "python_random_mt19937_v1",
+    "seed": 2026072801,
+    "particle_id_start": 1,
+    "particle_id_end": 1000,
+    "draw_order_per_particle": [
+      "birth_time",
+      "radial_area_coordinate",
+      "position_azimuth",
+      "direction_solid_angle_coordinate",
+      "direction_azimuth"
+    ],
+    "distribution": {
+      "birth_time_s": "uniform_half_open_0_to_one_rf_period",
+      "position": "uniform_area_disk_radius_0p5_mm",
+      "direction": "uniform_solid_angle_cone_half_angle_5_deg_about_positive_z",
+      "kinetic_energy_eV": "fixed_2",
+      "mass_amu": "fixed_100",
+      "charge_state": "fixed_plus_1",
+      "source_z_mm": "fixed_minus_1p5"
+    },
+    "constants": {
+      "rf_frequency_Hz": 1100000.0,
+      "atomic_mass_constant_kg": 1.66053906660e-27,
+      "elementary_charge_C": 1.602176634e-19
+    },
+    "float_serialization": "python_repr_binary64",
+    "rebuild_rule": "Generate all 1000 rows in one deterministic stream, then publish rows 1 through 100 as the exact N100 prefix."
+  },
+  "legacy_compatibility": {
+    "path": "common/multipole/sources/hex_oct_baseline_fixed_100.csv",
+    "sha256": "494CB26FA128C475CB2DC1DB1A3437342DFBB5D1C1900E811E4BEBF47D7A6385",
+    "scope": "legacy_hexapole_octupole_functional_runtime_only",
+    "family_experiment_source": false,
+    "quadrupole_oa_tof_oracle_replaced": false
+  }
+}

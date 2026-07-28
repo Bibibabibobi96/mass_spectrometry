@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "role": "component_port",
+  "project_id": "rf_quadrupole_ion_optics",
+  "port_id": "rf_multipole_exit",
+  "direction": "provided",
+  "profile_scope": {
+    "scope_id": "official_transport_oatof_oracle",
+    "scope_kind": "integration_oracle",
+    "family_experiment_port": false
+  },
+  "authority": {
+    "source_contract": "projects/rf_quadrupole_ion_optics/config/resolved_design_official.json",
+    "source_sha256": "F59BD9FFD0B9707219B1D7F02EC23C692518EC38862D421F3D7F3412D2C9A2CB",
+    "bindings": [
+      {
+        "port_json_pointer": "/project_id",
+        "source_json_pointer": "/identity/project_id"
+      },
+      {
+        "port_json_pointer": "/mating_surface/center_mm/2",
+        "source_json_pointer": "/interfaces_mm/exit/handoff_plane_z_mm"
+      },
+      {
+        "port_json_pointer": "/mating_surface/aperture_radius_mm",
+        "source_json_pointer": "/interfaces_mm/exit/aperture_radius_mm"
+      },
+      {
+        "port_json_pointer": "/mating_surface/potential_V",
+        "source_json_pointer": "/static_electrodes_V/exit_outer_enclosure_and_connector_V"
+      }
+    ]
+  },
+  "state_contract": {
+    "schema_id": "component_particle_state",
+    "schema_version": 1
+  },
+  "coordinate_frame": {
+    "frame_id": "multipole_cartesian_z_axis_v1",
+    "length_unit": "mm",
+    "handedness": "right_handed"
+  },
+  "mating_surface": {
+    "center_mm": [
+      0.0,
+      0.0,
+      90.2
+    ],
+    "outward_normal": [
+      0.0,
+      0.0,
+      1.0
+    ],
+    "aperture_radius_mm": 3.6,
+    "potential_V": 0.0
+  },
+  "clock": {
+    "time_unit": "s",
+    "origin_id": "instrument_clock_epoch_v1"
+  },
+  "field_boundary": {
+    "field_reaches_surface": true
+  }
+}

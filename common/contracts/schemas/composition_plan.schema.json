@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/composition_plan.schema.json",
+  "title": "Frozen integration composition plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "role", "integration_id", "selection",
+    "resolved_connection", "coupling_mode", "execution_steps"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "integration_composition_plan_do_not_edit"},
+    "integration_id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
+    "selection": {
+      "$ref": "https://mass-spectrometry.local/schemas/resolved_connection.schema.json#/properties/selection"
+    },
+    "resolved_connection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[A-F0-9]{64}$"}
+      }
+    },
+    "coupling_mode": {"enum": ["state_handoff", "field_overlap", "monolithic_joint_solve"]},
+    "execution_steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["step_id", "adapter", "entrypoint", "arguments"],
+        "properties": {
+          "step_id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
+          "adapter": {"enum": ["python", "powershell", "comsol", "simion"]},
+          "entrypoint": {"type": "string", "minLength": 1},
+          "arguments": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "role": "multipole_project_numerical_convergence_preregistration",
+  "project_id": "rf_quadrupole_ion_optics",
+  "contract_id": "quadrupole_family_three_mode_n100_convergence_v1",
+  "preregistered_before_run": true,
+  "particle_source": {
+    "path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_100.csv",
+    "sha256": "0125C3AB02B2321EF26A3A913CF6EC04325FD0D48597D2CB439D0CE42411662F",
+    "particle_count": 100,
+    "n1000_path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_1000.csv",
+    "n1000_sha256": "CE68A6B47DC5726D9C45CBE28E4397A2321D782FAED265067824891AAF4D0FBF",
+    "n100_is_exact_n1000_prefix": true,
+    "claim_scope": "functional_and_engineering_check_only"
+  },
+  "design_authority": {
+    "design_profiles": "projects/rf_quadrupole_ion_optics/config/design_profiles.json",
+    "design_profiles_sha256": "42534138485C94BE1344C67AA6CB79FEC12A658416ADF1D39F13D142EB330E93",
+    "operating_modes": "projects/rf_quadrupole_ion_optics/config/operating_modes.json",
+    "operating_modes_sha256": "FEC5FA1CE320194A4BB447FF82539A5C1047B44C972A1034B3332CFCD1B7F40D",
+    "geometry_invariant": "projects/rf_quadrupole_ion_optics/config/family_experiment/geometry_invariant.json",
+    "geometry_invariant_sha256": "D54EFB6AA1504A78CD746BE599E1F4E23F8D6A5380824607FA4975A79D49A1E9"
+  },
+  "modes": [
+    "no_acceleration_full_length",
+    "segmented_rod_axial_acceleration",
+    "exit_aperture_plate_acceleration"
+  ],
+  "solver_plans": {
+    "comsol": {
+      "registry": "projects/rf_quadrupole_ion_optics/config/multipole_transport_comsol_solver_numerics.json",
+      "registry_sha256": "8333CB7738E259EB9AABDDC5F9E1F620906C517A3BAF8DED6A0FF024E4CE1854",
+      "tiers": {
+        "baseline": {
+          "profile_id": "baseline_finite_3d",
+          "working_region_maximum_element_size_mm": 0.5,
+          "rf_steps_per_period": 80
+        },
+        "spatial_refined": {
+          "profile_id": "n100_spatial_refined",
+          "working_region_maximum_element_size_mm": 0.25,
+          "rf_steps_per_period": 80
+        },
+        "temporal_refined": {
+          "profile_id": "n100_temporal_refined",
+          "working_region_maximum_element_size_mm": 0.25,
+          "rf_steps_per_period": 160
+        }
+      }
+    },
+    "simion": {
+      "registry": "projects/rf_quadrupole_ion_optics/config/multipole_transport_simion_solver_numerics.json",
+      "registry_sha256": "F7D7A968AC664B203981D08BECD8B30E49D5275E2FFCAEDB2A3BBE1C1128008D",
+      "tiers": {
+        "baseline": {
+          "profile_id": "baseline_finite_3d",
+          "cell_mm": 0.4,
+          "rf_steps_per_period": 40
+        },
+        "spatial_refined": {
+          "profile_id": "n100_spatial_refined",
+          "cell_mm": 0.2,
+          "rf_steps_per_period": 40
+        },
+        "temporal_refined": {
+          "profile_id": "n100_temporal_refined",
+          "cell_mm": 0.2,
+          "rf_steps_per_period": 80
+        }
+      }
+    }
+  },
+  "qualification_bindings": {
+    "project_acceptance_contract": {
+      "path": "projects/rf_quadrupole_ion_optics/config/family_experiment/dispersion_acceptance.json",
+      "sha256": "12CAE795F1DF8DF4979BBB7EF2DE5DB4DA7CBCCBF2D29FE0AADD4899F959D02E"
+    },
+    "project_effect_resolution_contract": {
+      "path": "projects/rf_quadrupole_ion_optics/config/family_experiment/dispersion_effect_resolution.json",
+      "sha256": "48A8BD82295D6D7BCEDC3CA328BADCBDEC5033F35A8048DBC69D42E047197EDD"
+    },
+    "project_engineering_budget_contract": {
+      "path": "projects/rf_quadrupole_ion_optics/config/family_experiment/engineering_budget.json",
+      "sha256": "229A0FB605639AAA0ED9C5696E296A90FC3A385B13ABA45B8D60123E822C6F71"
+    }
+  },
+  "dispersion_binding_publication": {
+    "common_schema": "common/contracts/schemas/three_mode_dispersion_binding.schema.json",
+    "status": "INCONCLUSIVE_PENDING_SOLVER_HANDOFF_STATES",
+    "target_bindings": [
+      "projects/rf_quadrupole_ion_optics/config/family_experiment/dispersion_binding_comsol.json",
+      "projects/rf_quadrupole_ion_optics/config/family_experiment/dispersion_binding_simion.json"
+    ],
+    "publication_rule": "Publish each binding only after all three same-solver N=1000 handoff state files and frozen run identities exist; do not create placeholder state or SHA values."
+  },
+  "comparison_plan": {
+    "spatial": "baseline_vs_spatial_refined_with_time_numerics_fixed",
+    "temporal": "spatial_refined_vs_temporal_refined_with_spatial_numerics_fixed",
+    "required_identity": [
+      "mode_id",
+      "resolved_geometry",
+      "particle_source_sha256",
+      "nonvaried_solver_numerics"
+    ]
+  },
+  "decision_policy": {
+    "continuous_acceptance_threshold_status": "UNAVAILABLE_NO_SOURCED_ERROR_BUDGET",
+    "continuous_result": "INCONCLUSIVE",
+    "qualification_pass_allowed": false,
+    "forbidden": "Do not invent a percentage, relax acceptance after seeing results, publish placeholder dispersion bindings, or add an unregistered brute-force tier."
+  },
+  "claim_limit": "Preregistered N=100 numerical matrix and future N=1000 binding plan only. No commercial run, numerical convergence, solver equivalence, Candidate or Formal PASS is granted."
+}

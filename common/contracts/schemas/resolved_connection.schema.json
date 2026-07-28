@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/resolved_connection.schema.json",
+  "title": "Resolved solver-neutral component connection",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "role", "integration_id", "selection", "sources",
+    "coupling_mode", "spatial_registration", "connector",
+    "effective_clear_radius_mm", "potential_alignment", "clock_alignment",
+    "field_ownership_segments", "compatibility"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "resolved_connection_do_not_edit"},
+    "integration_id": {"$ref": "#/$defs/identifier"},
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "upstream_project_id", "upstream_port_id", "downstream_project_id",
+        "downstream_port_id", "connection_profile_id"
+      ],
+      "properties": {
+        "upstream_project_id": {"$ref": "#/$defs/identifier"},
+        "upstream_port_id": {"$ref": "#/$defs/identifier"},
+        "downstream_project_id": {"$ref": "#/$defs/identifier"},
+        "downstream_port_id": {"$ref": "#/$defs/identifier"},
+        "connection_profile_id": {"$ref": "#/$defs/identifier"}
+      }
+    },
+    "sources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile_sha256", "upstream_port", "downstream_port",
+        "upstream_authority", "downstream_authority"
+      ],
+      "properties": {
+        "profile_sha256": {"$ref": "#/$defs/sha256"},
+        "profile_registry": {"$ref": "#/$defs/source"},
+        "upstream_port": {"$ref": "#/$defs/source"},
+        "downstream_port": {"$ref": "#/$defs/source"},
+        "upstream_authority": {"$ref": "#/$defs/source"},
+        "downstream_authority": {"$ref": "#/$defs/source"}
+      }
+    },
+    "coupling_mode": {"enum": ["state_handoff", "field_overlap", "monolithic_joint_solve"]},
+    "spatial_registration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rotation_upstream_to_downstream", "translation_mm", "expected_gap_mm",
+        "position_tolerance_mm", "angular_tolerance_rad", "actual_gap_mm",
+        "transformed_upstream_normal"
+      ],
+      "properties": {
+        "rotation_upstream_to_downstream": {
+          "type": "array", "minItems": 3, "maxItems": 3,
+          "items": {"$ref": "#/$defs/vector3"}
+        },
+        "translation_mm": {"$ref": "#/$defs/vector3"},
+        "expected_gap_mm": {"type": "number", "minimum": 0},
+        "position_tolerance_mm": {"type": "number", "exclusiveMinimum": 0},
+        "angular_tolerance_rad": {"type": "number", "exclusiveMinimum": 0},
+        "actual_gap_mm": {"type": "number", "minimum": 0},
+        "transformed_upstream_normal": {"$ref": "#/$defs/vector3"}
+      }
+    },
+    "connector": {
+      "$ref": "https://mass-spectrometry.local/schemas/connection_profile.schema.json#/properties/connector"
+    },
+    "effective_clear_radius_mm": {"type": "number", "exclusiveMinimum": 0},
+    "potential_alignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "tolerance_V", "actual_step_V"],
+      "properties": {
+        "mode": {"enum": ["continuous", "declared_step"]},
+        "tolerance_V": {"type": "number", "minimum": 0},
+        "declared_step_V": {"type": "number"},
+        "actual_step_V": {"type": "number"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"mode": {"const": "declared_step"}}},
+          "then": {"required": ["declared_step_V"]},
+          "else": {"not": {"required": ["declared_step_V"]}}
+        }
+      ]
+    },
+    "clock_alignment": {
+      "$ref": "https://mass-spectrometry.local/schemas/connection_profile.schema.json#/properties/clock_alignment"
+    },
+    "field_ownership_segments": {
+      "$ref": "https://mass-spectrometry.local/schemas/connection_profile.schema.json#/properties/field_ownership_segments"
+    },
+    "compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "checks"],
+      "properties": {
+        "status": {"const": "pass"},
+        "checks": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": {"$ref": "#/$defs/identifier"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
+    "sha256": {"type": "string", "pattern": "^[A-F0-9]{64}$"},
+    "vector3": {
+      "type": "array", "minItems": 3, "maxItems": 3,
+      "items": {"type": "number"}
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    }
+  }
+}

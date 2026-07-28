@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "role": "multipole_particle_source_profiles",
+  "project_id": "rf_octupole_ion_optics",
+  "profiles": {
+    "family_mother_sample_v1_n100": {
+      "path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_100.csv",
+      "sha256": "0125C3AB02B2321EF26A3A913CF6EC04325FD0D48597D2CB439D0CE42411662F"
+    },
+    "family_mother_sample_v1_n1000": {
+      "path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_1000.csv",
+      "sha256": "CE68A6B47DC5726D9C45CBE28E4397A2321D782FAED265067824891AAF4D0FBF"
+    }
+  }
+}

@@ -25,6 +25,37 @@ def descriptor_paths(repo_root: Path) -> list[Path]:
     return sorted((repo_root / "projects").glob("*/config/project.json"))
 
 
+def validate_legacy_identity_mappings(descriptors: list[dict[str, Any]]) -> None:
+    """Reject ambiguous rename mappings without inspecting or rewriting old artifacts."""
+    project_ids = {descriptor["project_id"] for descriptor in descriptors}
+    legacy_owners: dict[str, str] = {}
+    mapping_owners: dict[str, str] = {}
+    for descriptor in descriptors:
+        current_id = descriptor["project_id"]
+        for legacy in descriptor.get("legacy_identities", []):
+            legacy_id = legacy["project_id"]
+            mapping_id = legacy["mapping_id"]
+            if legacy_id in project_ids:
+                raise ContractError(f"legacy project_id is still active: {legacy_id}")
+            if legacy_id in legacy_owners:
+                raise ContractError(
+                    f"duplicate legacy project_id {legacy_id}: "
+                    f"{legacy_owners[legacy_id]} and {current_id}"
+                )
+            expected_root = f"artifacts/projects/{legacy_id}"
+            if legacy["artifact_root"] != expected_root:
+                raise ContractError(
+                    f"{current_id}: legacy artifact root must be {expected_root}"
+                )
+            if mapping_id in mapping_owners:
+                raise ContractError(
+                    f"duplicate legacy mapping_id {mapping_id}: "
+                    f"{mapping_owners[mapping_id]} and {current_id}"
+                )
+            legacy_owners[legacy_id] = current_id
+            mapping_owners[mapping_id] = current_id
+
+
 def pointer_value(document: dict[str, Any], pointer: str) -> Any:
     value: Any = document
     for token in pointer.lstrip("/").split("/"):
@@ -300,6 +331,7 @@ def build_registry(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
                 "sha256": sha256(path),
             }
         )
+    validate_legacy_identity_mappings(descriptors)
     registry = {
         "schema_version": 1,
         "role": "generated_project_capability_registry_do_not_edit",

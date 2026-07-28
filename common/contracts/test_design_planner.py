@@ -19,7 +19,7 @@ class DesignPlannerTests(unittest.TestCase):
 
     def test_build_plan_preserves_selection_and_hashes(self):
         plan, run_config = build_plan(self.request, self.registry, self.run_id)
-        self.assertEqual(plan["project_id"], "oa_tof")
+        self.assertEqual(plan["project_id"], "single_reflection_oa_tof_mass_analyzer")
         self.assertEqual(plan["capability_id"], "single_reflection_mass_analysis")
         self.assertEqual(plan["provenance"]["request"]["sha256"], sha256(self.request))
         self.assertFalse(run_config["formal_gate_passed"])

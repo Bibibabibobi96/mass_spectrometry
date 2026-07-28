@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "role": "multipole_dispersion_effect_resolution_contract",
+  "project_id": "rf_hexapole_ion_optics",
+  "contract_id": "hexapole_three_mode_dispersion_effect_resolution_v1",
+  "preregistered_before_run": true,
+  "effect_resolution": {
+    "n100_role": "functional_and_engineering_check_only",
+    "n1000_role": "paired_statistical_dispersion_estimation",
+    "sampling_relation": "N100_is_the_exact_prefix_of_N1000",
+    "paired_unit": "particle_id",
+    "interval": "deterministic_paired_bootstrap_95_percent",
+    "minimum_relevant_effect_status": "UNAVAILABLE_NO_DOWNSTREAM_EFFECT_BUDGET",
+    "decision": "INCONCLUSIVE",
+    "required_before_effect_claim": [
+      "converged_solver_numerics",
+      "named_observation_plane",
+      "downstream-relevant minimum effect",
+      "numerical and sampling uncertainty allocation"
+    ]
+  },
+  "claim_limit": "N=1000 can quantify paired uncertainty but cannot create a relevance threshold. No mode superiority or engineering effect claim is allowed until a sourced minimum relevant effect is registered."
+}

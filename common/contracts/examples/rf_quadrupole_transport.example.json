@@ -5,7 +5,7 @@
   "title": "RF quadrupole ion-transport design check",
   "target": {
     "family_id": "rf_multipole_ion_optics",
-    "preferred_project_id": "rf_quadrupole_collision_cooling",
+    "preferred_project_id": "rf_quadrupole_ion_optics",
     "function": "ion_transport",
     "mode": "transport_no_collision"
   },

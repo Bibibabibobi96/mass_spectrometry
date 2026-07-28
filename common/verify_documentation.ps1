@@ -25,9 +25,9 @@ foreach ($file in $markdownFiles) {
     $relative = $file.FullName.Substring($repoRoot.Length + 1)
     $relativeGit = $relative -replace '\\', '/'
     $requiresMathFence = $relativeGit -in @(
-        'projects/oa_tof/docs/theory/oaaccelerator_time_focus.md',
-        'projects/oa_tof/docs/theory/dual_stage_reflectron.md',
-        'projects/oa_tof/docs/theory/oatof_oaaccelerator_coupling.md'
+        'projects/single_reflection_oa_tof_mass_analyzer/docs/theory/oaaccelerator_time_focus.md',
+        'projects/single_reflection_oa_tof_mass_analyzer/docs/theory/dual_stage_reflectron.md',
+        'projects/single_reflection_oa_tof_mass_analyzer/docs/theory/oatof_oaaccelerator_coupling.md'
     )
     $h1Count = 0
     $previousLevel = 0

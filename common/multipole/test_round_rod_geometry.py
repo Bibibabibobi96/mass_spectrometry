@@ -92,8 +92,8 @@ class RoundRodGeometryTest(unittest.TestCase):
 
     def test_hexapole_and_octupole_share_one_generator(self):
         for project, count, ratio in (
-            ("rf_hexapole_ion_guide", 6, 0.55),
-            ("rf_octupole_ion_guide", 8, 0.36),
+            ("rf_hexapole_ion_optics", 6, 0.55),
+            ("rf_octupole_ion_optics", 8, 0.36),
         ):
             geometry = self.resolve(project, ratio)
             rods = geometry["array_mm"]["rods"]
@@ -104,14 +104,14 @@ class RoundRodGeometryTest(unittest.TestCase):
                 self.assertAlmostEqual(radius, geometry["array_mm"]["rod_center_radius"])
 
     def test_zero_length_connector_is_direct_connection(self):
-        geometry = self.resolve("rf_hexapole_ion_guide", 0.55)
+        geometry = self.resolve("rf_hexapole_ion_optics", 0.55)
         self.assertEqual(geometry["interfaces_mm"]["entrance_connector_length"], 0.0)
         self.assertEqual(geometry["interfaces_mm"]["exit_connector_length"], 0.0)
         self.assertEqual(geometry["interfaces_mm"]["entrance_connector_shape"], "cylindrical_bore")
 
     def test_same_geometry_exports_all_rods_to_simion(self):
         resolved = json.loads(
-            (ROOT / "projects/rf_octupole_ion_guide/config/resolved_design.json").read_text()
+            (ROOT / "projects/rf_octupole_ion_optics/config/resolved_design.json").read_text()
         )
         gem = render_gem(resolved, 0.2)
         self.assertEqual(gem.count("e(1) { fill { within { cylinder"), 4)
@@ -121,7 +121,7 @@ class RoundRodGeometryTest(unittest.TestCase):
 
     def test_positive_connector_shifts_planes_and_exports_tube(self):
         request = json.loads(
-            (ROOT / "projects/rf_hexapole_ion_guide/config/requests/baseline.json").read_text()
+            (ROOT / "projects/rf_hexapole_ion_optics/config/requests/baseline.json").read_text()
         )
         request["geometry_mm"]["exit_interface"]["connector_length_mm"] = 2.0
         request["geometry_mm"]["enclosure"]["vacuum_z_max_mm"] += 2.0
@@ -130,7 +130,7 @@ class RoundRodGeometryTest(unittest.TestCase):
         self.assertIn(",,2)", render_gem(resolved, 0.2))
 
     def test_finite_3d_contract_rejects_unknown_connector_shape(self):
-        root = ROOT / "projects/rf_hexapole_ion_guide"
+        root = ROOT / "projects/rf_hexapole_ion_optics"
         baseline = json.loads((root / "config/baseline.json").read_text(encoding="utf-8"))
         contract = json.loads((root / "config/finite_3d_transport.json").read_text(encoding="utf-8"))
         contract["geometry_mm"]["entrance_interface"]["connector_shape"] = "square"
@@ -139,7 +139,7 @@ class RoundRodGeometryTest(unittest.TestCase):
 
     def test_segmented_simion_geometry_separates_rods_ground_and_output(self):
         resolved = json.loads(
-            (ROOT / "projects/rf_hexapole_ion_guide/config/resolved_design.json").read_text(
+            (ROOT / "projects/rf_hexapole_ion_optics/config/resolved_design.json").read_text(
                 encoding="utf-8"
             )
         )
@@ -158,13 +158,13 @@ class RoundRodGeometryTest(unittest.TestCase):
 
     def test_exit_aperture_plate_mode_keeps_continuous_rods_and_separates_output(self):
         resolved = json.loads(
-            (ROOT / "projects/rf_hexapole_ion_guide/config/resolved_design.json").read_text()
+            (ROOT / "projects/rf_hexapole_ion_optics/config/resolved_design.json").read_text()
         )
         with self.assertRaises(TypeError):
             render_gem(resolved, 0.2, separate_output_electrode=True)
 
     def test_connector_override_rejects_negative_length(self):
-        root = ROOT / "projects/rf_hexapole_ion_guide"
+        root = ROOT / "projects/rf_hexapole_ion_optics"
         contract = json.loads((root / "config/finite_3d_transport.json").read_text(encoding="utf-8"))
         with self.assertRaises(Finite3DContractError):
             apply_connector_length_overrides(contract, entrance_connector_length_mm=-0.1)

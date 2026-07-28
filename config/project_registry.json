@@ -3,40 +3,53 @@
   "role": "generated_project_capability_registry_do_not_edit",
   "generated_from": [
     {
-      "descriptor": "projects/electron_impact_ion_source/config/project.json",
-      "sha256": "7111D4239B7ADF6C88AD7BBAABD18DB3A1F3D908D7433EA8578B6911050510BA"
+      "descriptor": "projects/apertured_tube_electron_impact_ion_source/config/project.json",
+      "sha256": "CEC230747F1EAF39EDFB5FFF231AB73DF134165537145E104D7196934B9FE92E"
     },
     {
-      "descriptor": "projects/mr_tof/config/project.json",
-      "sha256": "C9A9FF77055F09C8BD2E0793A291E4251D3D773037030C12F43CDC08C74D3628"
+      "descriptor": "projects/open_path_parallel_mirror_dual_stripe_mr_tof_mass_analyzer/config/project.json",
+      "sha256": "9BD7657DBAB8FDA6FA375E55A27271F25ED2FA478FE68AFAE0C6B9D787020635"
     },
     {
-      "descriptor": "projects/oa_tof/config/project.json",
-      "sha256": "D5AC412C8618ADE801880215DE7471D246E2EF28B609C0B18DFF09BF4CB7E818"
+      "descriptor": "projects/rf_hexapole_ion_optics/config/project.json",
+      "sha256": "6BE2E82D525C651390B16681A717062BF118C3D7B43A7491E22FC64E04AA86C2"
     },
     {
-      "descriptor": "projects/rf_hexapole_ion_guide/config/project.json",
-      "sha256": "EBF59618223B07F3578A001F695C3040AD3CFC856F3A52CB75897EC45F51D055"
+      "descriptor": "projects/rf_octupole_ion_optics/config/project.json",
+      "sha256": "A4BA077ED1AB5F234F31B7126468455F2E0F8302CF2C8F420C066C7E2CCB5D31"
     },
     {
-      "descriptor": "projects/rf_octupole_ion_guide/config/project.json",
-      "sha256": "44A7C2DEDB48C7E1157FB3C04CA0226CC21145B91B72CAF23EC79730D87D5A30"
+      "descriptor": "projects/rf_quadrupole_ion_optics/config/project.json",
+      "sha256": "01B69706EB01029BDD8A9484124F8A9FEC52DB55838D7C43EA1AFB9CD8F849FA"
     },
     {
-      "descriptor": "projects/rf_quadrupole_collision_cooling/config/project.json",
-      "sha256": "7F100554EFDEFAB9257A8692B8BE071C71DA77536D71065B76D8E68D4288EF16"
+      "descriptor": "projects/single_reflection_oa_tof_mass_analyzer/config/project.json",
+      "sha256": "BF469A54E21741FB02CC0EF4CD870AD0571059C35B3B34AB8E8635F6478BF4E0"
     },
     {
-      "descriptor": "projects/wehnelt_electron_gun/config/project.json",
-      "sha256": "73F3681B38D08F57A00965E1408C618DE8BFF25DF1613D5996EF3B842D1EB2AF"
+      "descriptor": "projects/transverse_helical_filament_wehnelt_electron_gun/config/project.json",
+      "sha256": "BED29BC58560C19EBC6F02A8B3DDA730BD8F04A4A0524236684E982316669563"
     }
   ],
   "projects": [
     {
       "schema_version": 1,
-      "project_id": "electron_impact_ion_source",
+      "project_id": "apertured_tube_electron_impact_ion_source",
+      "legacy_identities": [
+        {
+          "mapping_id": "ei_source_rename_20260728",
+          "project_id": "electron_impact_ion_source",
+          "retired_at_utc": "2026-07-28T08:19:11Z",
+          "migration_kind": "administrative_rename_only",
+          "artifact_root": "artifacts/projects/electron_impact_ion_source",
+          "artifact_access": "read_only",
+          "new_runs_allowed": false,
+          "verification_identity": "recorded_project_id",
+          "claim_policy": "preserve_original_status_and_claim_limits_no_promotion"
+        }
+      ],
       "family_id": "ion_sources",
-      "display_name": "电子轰击离子源",
+      "display_name": "开孔长管电子轰击离子源",
       "purpose": "电子束电离产额可行性以及未来重离子出生接口设计",
       "lifecycle_status": "prototype",
       "toolchains": [
@@ -81,10 +94,23 @@
     },
     {
       "schema_version": 1,
-      "project_id": "mr_tof",
+      "project_id": "open_path_parallel_mirror_dual_stripe_mr_tof_mass_analyzer",
+      "legacy_identities": [
+        {
+          "mapping_id": "mr_tof_rename_20260728",
+          "project_id": "mr_tof",
+          "retired_at_utc": "2026-07-28T08:19:11Z",
+          "migration_kind": "administrative_rename_only",
+          "artifact_root": "artifacts/projects/mr_tof",
+          "artifact_access": "read_only",
+          "new_runs_allowed": false,
+          "verification_identity": "recorded_project_id",
+          "claim_policy": "preserve_original_status_and_claim_limits_no_promotion"
+        }
+      ],
       "family_id": "tof_mass_analyzers",
-      "display_name": "多次反射飞行时间质量分析器",
-      "purpose": "MR-TOF多次往返质量分析、参数化设计和独立性能验证",
+      "display_name": "开放路径平行镜双条带多次反射飞行时间质量分析器",
+      "purpose": "平行等时镜与两套独立偏压、独立形状漂移条带构成的开放路径MR-TOF质量分析",
       "lifecycle_status": "prototype",
       "toolchains": [
         "solidworks"
@@ -115,105 +141,29 @@
       },
       "known_gaps": [
         "SolidWorks assembly references and coordinate systems are not audited",
-        "Theory and baseline parameter contracts are not established",
+        "The reviewed dual-stripe theory is not yet bound to baseline and resolved parameter contracts",
         "COMSOL and SIMION models do not exist",
         "Performance and formal acceptance contracts are not defined"
       ]
     },
     {
       "schema_version": 1,
-      "project_id": "oa_tof",
-      "family_id": "tof_mass_analyzers",
-      "display_name": "正交加速飞行时间质量分析器",
-      "purpose": "单次折返oa-TOF的质量分析、离子传输和正式跨求解器设计",
-      "lifecycle_status": "formal_revalidation_pending",
-      "toolchains": [
-        "comsol",
-        "simion",
-        "matlab",
-        "python",
-        "solidworks"
-      ],
-      "contracts": {
-        "baseline": "config/baseline.json",
-        "science": "config/modes/formal.json",
-        "solver_numerics": "config/formal_solver_numerics.json",
-        "resolved": "config/resolved_geometry.json",
-        "analysis": "config/analysis_contract.json",
-        "interface": null,
-        "execution": "config/execution_profiles.json",
-        "design_variables": "config/design_variables.json",
-        "optimization_envelope": "config/optimization_envelope.json"
-      },
-      "capabilities": [
+      "project_id": "rf_hexapole_ion_optics",
+      "legacy_identities": [
         {
-          "capability_id": "single_reflection_mass_analysis",
-          "function": "mass_analysis",
-          "status": "formal",
-          "modes": [
-            "formal",
-            "mass_spectrum",
-            "design_candidate"
-          ],
-          "metrics": [
-            "mass_resolving_power",
-            "transmission_fraction",
-            "tof_centroid",
-            "detector_landing"
-          ],
-          "design_variables": [
-            "accelerator_ring_thickness",
-            "accelerator_ring_width",
-            "accelerator_insulation_gap",
-            "accelerator_stage1_length",
-            "accelerator_stage2_length",
-            "accelerator_ring_count",
-            "accelerator_bore_half_width",
-            "accelerator_shield_wall_thickness",
-            "accelerator_rear_clearance",
-            "accelerator_repeller_thickness",
-            "accelerator_front_vacuum_margin",
-            "accelerator_exit_grid_half_width",
-            "flight_length",
-            "reflectron_bore_radius",
-            "reflectron_ring_outer_radius",
-            "reflectron_ring_thickness",
-            "reflectron_stage1_electrode_count",
-            "reflectron_stage2_electrode_count",
-            "reflectron_shield_inner_radius",
-            "reflectron_shield_wall_thickness",
-            "reflectron_shield_endcap_thickness",
-            "reflectron_shield_near_endcap_gap",
-            "reflectron_shield_axial_gap",
-            "accelerator_repeller_voltage",
-            "accelerator_grid1_voltage",
-            "reflectron_midgrid_voltage",
-            "reflectron_backplate_voltage"
-          ]
+          "mapping_id": "rf_hex_rename_20260728",
+          "project_id": "rf_hexapole_ion_guide",
+          "retired_at_utc": "2026-07-28T08:19:11Z",
+          "migration_kind": "administrative_rename_only",
+          "artifact_root": "artifacts/projects/rf_hexapole_ion_guide",
+          "artifact_access": "read_only",
+          "new_runs_allowed": false,
+          "verification_identity": "recorded_project_id",
+          "claim_policy": "preserve_original_status_and_claim_limits_no_promotion"
         }
       ],
-      "formal_assets": {
-        "status": "formal",
-        "types": [
-          "comsol_model",
-          "simion_package",
-          "cad",
-          "results"
-        ],
-        "identity_contract": "config/formal_assets.json"
-      },
-      "known_gaps": [
-        "RF upstream interface contract is not frozen",
-        "Stage-2 engineering margin and manufacturing-tolerance semantics are not experimentally validated",
-        "Axisymmetric circular accelerator is deferred",
-        "Manufacturing and assembly tolerance budget is not established"
-      ]
-    },
-    {
-      "schema_version": 1,
-      "project_id": "rf_hexapole_ion_guide",
       "family_id": "rf_multipole_ion_optics",
-      "display_name": "RF六极杆离子导引",
+      "display_name": "RF六极杆离子光学",
       "purpose": "六极杆无碰撞传输、接受度和未来碰撞冷却设计",
       "lifecycle_status": "static",
       "toolchains": [
@@ -309,7 +259,8 @@
             "intersegment_gap",
             "segment_entrance_common_mode",
             "segment_exit_common_mode",
-            "segment_output_reference"
+            "segment_output_reference",
+            "exit_interface_common_mode"
           ]
         }
       ],
@@ -321,15 +272,28 @@
       "known_gaps": [
         "The circular-rod field is only a provisional 2D L2 screen",
         "The apertured finite 3D interfaces are functional simulation geometry, not a mechanical baseline",
-        "Mesh convergence and cross-solver numerical-equivalence qualification are not complete",
+        "Continuous phase-space numerical equivalence and Candidate qualification are not complete",
         "Collision, space-charge and CAD evidence do not exist"
       ]
     },
     {
       "schema_version": 1,
-      "project_id": "rf_octupole_ion_guide",
+      "project_id": "rf_octupole_ion_optics",
+      "legacy_identities": [
+        {
+          "mapping_id": "rf_oct_rename_20260728",
+          "project_id": "rf_octupole_ion_guide",
+          "retired_at_utc": "2026-07-28T08:19:11Z",
+          "migration_kind": "administrative_rename_only",
+          "artifact_root": "artifacts/projects/rf_octupole_ion_guide",
+          "artifact_access": "read_only",
+          "new_runs_allowed": false,
+          "verification_identity": "recorded_project_id",
+          "claim_policy": "preserve_original_status_and_claim_limits_no_promotion"
+        }
+      ],
       "family_id": "rf_multipole_ion_optics",
-      "display_name": "RF八极杆离子导引",
+      "display_name": "RF八极杆离子光学",
       "purpose": "八极杆无碰撞传输、接受度和未来碰撞冷却设计",
       "lifecycle_status": "static",
       "toolchains": [
@@ -425,7 +389,8 @@
             "intersegment_gap",
             "segment_entrance_common_mode",
             "segment_exit_common_mode",
-            "segment_output_reference"
+            "segment_output_reference",
+            "exit_interface_static_potential"
           ]
         }
       ],
@@ -437,15 +402,28 @@
       "known_gaps": [
         "The circular-rod field is only a provisional 2D L2 screen",
         "The apertured finite 3D interfaces are functional simulation geometry, not a mechanical baseline",
-        "Mesh convergence and cross-solver numerical-equivalence qualification are not complete",
+        "Continuous phase-space numerical equivalence and Candidate qualification are not complete",
         "Collision, space-charge and CAD evidence do not exist"
       ]
     },
     {
       "schema_version": 1,
-      "project_id": "rf_quadrupole_collision_cooling",
+      "project_id": "rf_quadrupole_ion_optics",
+      "legacy_identities": [
+        {
+          "mapping_id": "rf_quad_rename_20260728",
+          "project_id": "rf_quadrupole_collision_cooling",
+          "retired_at_utc": "2026-07-28T08:19:11Z",
+          "migration_kind": "administrative_rename_only",
+          "artifact_root": "artifacts/projects/rf_quadrupole_collision_cooling",
+          "artifact_access": "read_only",
+          "new_runs_allowed": false,
+          "verification_identity": "recorded_project_id",
+          "claim_policy": "preserve_original_status_and_claim_limits_no_promotion"
+        }
+      ],
       "family_id": "rf_multipole_ion_optics",
-      "display_name": "RF四极杆碰撞冷却与传输",
+      "display_name": "RF四极杆离子光学",
       "purpose": "四极杆无碰撞传输、RF+DC质量过滤、接口相空间和未来碰撞冷却功能验证",
       "lifecycle_status": "candidate",
       "toolchains": [
@@ -488,13 +466,12 @@
             "enclosure_working_region_radius",
             "vacuum_z_min",
             "vacuum_z_max",
-            "enclosure_outer_half_width",
-            "enclosure_inner_half_width",
-            "exit_enclosure_z_min",
-            "exit_enclosure_z_max",
-            "exit_front_wall_end_z",
-            "physical_detector_radius",
-            "physical_detector_thickness",
+            "shield_inner_radius",
+            "shield_outer_radius",
+            "entrance_outer_endcap_upstream_face_z",
+            "entrance_outer_endcap_downstream_face_z",
+            "exit_outer_endcap_upstream_face_z",
+            "exit_outer_endcap_downstream_face_z",
             "entrance_aperture_radius",
             "entrance_plate_thickness",
             "entrance_rod_clearance",
@@ -514,7 +491,8 @@
             "intersegment_gap",
             "segment_entrance_common_mode",
             "segment_exit_common_mode",
-            "segment_output_reference"
+            "segment_output_reference",
+            "exit_interface_common_mode"
           ]
         },
         {
@@ -565,7 +543,122 @@
     },
     {
       "schema_version": 1,
-      "project_id": "wehnelt_electron_gun",
+      "project_id": "single_reflection_oa_tof_mass_analyzer",
+      "legacy_identities": [
+        {
+          "mapping_id": "oa_tof_rename_20260728",
+          "project_id": "oa_tof",
+          "retired_at_utc": "2026-07-28T08:19:11Z",
+          "migration_kind": "administrative_rename_only",
+          "artifact_root": "artifacts/projects/oa_tof",
+          "artifact_access": "read_only",
+          "new_runs_allowed": false,
+          "verification_identity": "recorded_project_id",
+          "claim_policy": "preserve_original_status_and_claim_limits_no_promotion"
+        }
+      ],
+      "family_id": "tof_mass_analyzers",
+      "display_name": "单次反射正交加速飞行时间质量分析器",
+      "purpose": "单次折返oa-TOF的质量分析、离子传输和正式跨求解器设计",
+      "lifecycle_status": "formal_revalidation_pending",
+      "toolchains": [
+        "comsol",
+        "simion",
+        "matlab",
+        "python",
+        "solidworks"
+      ],
+      "contracts": {
+        "baseline": "config/baseline.json",
+        "science": "config/modes/formal.json",
+        "solver_numerics": "config/formal_solver_numerics.json",
+        "resolved": "config/resolved_geometry.json",
+        "analysis": "config/analysis_contract.json",
+        "interface": null,
+        "execution": "config/execution_profiles.json",
+        "design_variables": "config/design_variables.json",
+        "optimization_envelope": "config/optimization_envelope.json"
+      },
+      "capabilities": [
+        {
+          "capability_id": "single_reflection_mass_analysis",
+          "function": "mass_analysis",
+          "status": "formal",
+          "modes": [
+            "formal",
+            "mass_spectrum",
+            "design_candidate"
+          ],
+          "metrics": [
+            "mass_resolving_power",
+            "transmission_fraction",
+            "tof_centroid",
+            "detector_landing"
+          ],
+          "design_variables": [
+            "accelerator_ring_thickness",
+            "accelerator_ring_width",
+            "accelerator_insulation_gap",
+            "accelerator_stage1_length",
+            "accelerator_stage2_length",
+            "accelerator_ring_count",
+            "accelerator_bore_half_width",
+            "accelerator_shield_wall_thickness",
+            "accelerator_rear_clearance",
+            "accelerator_repeller_thickness",
+            "accelerator_front_vacuum_margin",
+            "accelerator_exit_grid_half_width",
+            "flight_length",
+            "reflectron_bore_radius",
+            "reflectron_ring_outer_radius",
+            "reflectron_ring_thickness",
+            "reflectron_stage1_electrode_count",
+            "reflectron_stage2_electrode_count",
+            "reflectron_shield_inner_radius",
+            "reflectron_shield_wall_thickness",
+            "reflectron_shield_endcap_thickness",
+            "reflectron_shield_near_endcap_gap",
+            "reflectron_shield_axial_gap",
+            "accelerator_repeller_voltage",
+            "accelerator_grid1_voltage",
+            "reflectron_midgrid_voltage",
+            "reflectron_backplate_voltage"
+          ]
+        }
+      ],
+      "formal_assets": {
+        "status": "formal",
+        "types": [
+          "comsol_model",
+          "simion_package",
+          "cad",
+          "results"
+        ],
+        "identity_contract": "config/formal_assets.json"
+      },
+      "known_gaps": [
+        "RF upstream interface contract is not frozen",
+        "Stage-2 engineering margin and manufacturing-tolerance semantics are not experimentally validated",
+        "Axisymmetric circular accelerator is deferred",
+        "Manufacturing and assembly tolerance budget is not established"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "project_id": "transverse_helical_filament_wehnelt_electron_gun",
+      "legacy_identities": [
+        {
+          "mapping_id": "wehnelt_gun_rename_20260728",
+          "project_id": "wehnelt_electron_gun",
+          "retired_at_utc": "2026-07-28T08:19:11Z",
+          "migration_kind": "administrative_rename_only",
+          "artifact_root": "artifacts/projects/wehnelt_electron_gun",
+          "artifact_access": "read_only",
+          "new_runs_allowed": false,
+          "verification_identity": "recorded_project_id",
+          "claim_policy": "preserve_original_status_and_claim_limits_no_promotion"
+        }
+      ],
       "family_id": "electron_guns",
       "display_name": "横置螺旋灯丝Wehnelt电子枪",
       "purpose": "面向EI离子源的热电子发射、收集和电子束传输设计",

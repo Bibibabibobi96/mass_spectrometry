@@ -61,7 +61,7 @@
 
 项目通过现有 README、PROJECT 和机器配置引用所需理论，不复制本目录正文，也不要求预建 `PHYSICS.md` 或 `physics_contract.json`。只有实际实现证明现有合同无法清晰表达物理模型选择时，才评估新增机器合同。
 
-当前 [RF四极杆项目](../../projects/rf_quadrupole_collision_cooling/README.md)、[RF六极杆项目](../../projects/rf_hexapole_ion_guide/README.md)和[RF八极杆项目](../../projects/rf_octupole_ion_guide/README.md)共同组成逻辑上的RF多极杆离子光学设计族，但保持平级项目边界。任何项目是否具备 Candidate 或 Formal 资格，只查其 `docs/PROJECT.md` 和机器门禁。
+当前 [RF四极杆项目](../../projects/rf_quadrupole_ion_optics/README.md)、[RF六极杆项目](../../projects/rf_hexapole_ion_optics/README.md)和[RF八极杆项目](../../projects/rf_octupole_ion_optics/README.md)共同组成逻辑上的RF多极杆离子光学设计族，但保持平级项目边界。任何项目是否具备 Candidate 或 Formal 资格，只查其 `docs/PROJECT.md` 和机器门禁。
 
 新论文、截面数据或模型在进入项目前，应固定来源和版本，归一化坐标、单位及电压约定，声明适用域和不确定度，并建立与结论相称的独立验证。未经验证的内容保持 `provisional`，不能自动修改 baseline、验收阈值或正式 CAD。
 

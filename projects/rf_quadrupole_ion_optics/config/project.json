@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "project_id": "rf_quadrupole_ion_optics",
+  "legacy_identities": [
+    {
+      "mapping_id": "rf_quad_rename_20260728",
+      "project_id": "rf_quadrupole_collision_cooling",
+      "retired_at_utc": "2026-07-28T08:19:11Z",
+      "migration_kind": "administrative_rename_only",
+      "artifact_root": "artifacts/projects/rf_quadrupole_collision_cooling",
+      "artifact_access": "read_only",
+      "new_runs_allowed": false,
+      "verification_identity": "recorded_project_id",
+      "claim_policy": "preserve_original_status_and_claim_limits_no_promotion"
+    }
+  ],
+  "family_id": "rf_multipole_ion_optics",
+  "display_name": "RF四极杆离子光学",
+  "purpose": "四极杆无碰撞传输、RF+DC质量过滤、接口相空间和未来碰撞冷却功能验证",
+  "lifecycle_status": "candidate",
+  "toolchains": ["comsol", "simion", "matlab", "python"],
+  "contracts": {
+    "baseline": "config/baseline.json",
+    "resolved": "config/resolved_design_official.json",
+    "analysis": null,
+    "interface": "config/interface_contract.json",
+    "execution": "config/execution_profiles.json",
+    "design_profiles": "config/design_profiles.json",
+    "design_variables": "config/design_variables.json",
+    "optimization_envelope": "config/optimization_envelope.json"
+  },
+  "capabilities": [
+    {
+      "capability_id": "quadrupole_ion_transport",
+      "function": "ion_transport",
+      "status": "candidate",
+      "modes": ["transport_no_collision", "transport_interface_readiness"],
+      "metrics": ["transmission_fraction", "mean_tof", "rms_beam_radius", "rms_divergence", "mean_kinetic_energy"],
+      "design_variables": [
+        "inscribed_radius_r0", "rod_radius_ratio", "rod_z_min", "rod_z_max",
+        "enclosure_working_region_radius", "vacuum_z_min", "vacuum_z_max",
+        "shield_inner_radius", "shield_outer_radius",
+        "entrance_outer_endcap_upstream_face_z", "entrance_outer_endcap_downstream_face_z",
+        "exit_outer_endcap_upstream_face_z", "exit_outer_endcap_downstream_face_z",
+        "entrance_aperture_radius", "entrance_plate_thickness", "entrance_rod_clearance",
+        "entrance_connector_length", "entrance_release_offset",
+        "exit_aperture_radius", "exit_plate_thickness", "exit_rod_clearance",
+        "exit_connector_length", "exit_census_offset",
+        "rf_amplitude", "dc_amplitude", "common_mode_offset", "rf_frequency", "rf_phase",
+        "segment_count", "intersegment_gap", "segment_entrance_common_mode",
+        "segment_exit_common_mode", "segment_output_reference", "exit_interface_common_mode"
+      ]
+    },
+    {
+      "capability_id": "quadrupole_collision_cooling",
+      "function": "collision_cooling",
+      "status": "prototype",
+      "modes": [],
+      "metrics": ["transmission_fraction", "cooling_time", "exit_energy", "collision_count"],
+      "design_variables": []
+    },
+    {
+      "capability_id": "quadrupole_mass_filter_reference",
+      "function": "mass_filtering",
+      "status": "static",
+      "modes": ["mass_filter_reference"],
+      "metrics": ["mass_resolving_power", "transmission_fraction", "mass_peak_centroid"],
+      "design_variables": ["rf_amplitude", "dc_amplitude", "common_mode_offset", "rf_frequency", "rf_phase"]
+    }
+  ],
+  "formal_assets": {
+    "status": "none",
+    "types": [],
+    "identity_contract": null
+  },
+  "known_gaps": [
+    "No current formal mechanical geometry or SolidWorks assembly",
+    "N=100 strict interface phase-space gate remains failed",
+    "Collision physics is not implemented in the current validated chain",
+    "Mass-filter mode has L1 and dual-solver functional evidence; mesh, numerical-equivalence and resolving-power qualification remain open"
+  ]
+}

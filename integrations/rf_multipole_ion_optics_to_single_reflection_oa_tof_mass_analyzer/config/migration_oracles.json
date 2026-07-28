@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "role": "connection_profile_migration_oracles",
+  "integration_id": "rf_quadrupole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+  "claim_limit": "Read-only mapping to existing S2/S3 N=100 functional evidence. These records are not new integration runs or equivalence evidence.",
+  "profile_interpretation": {
+    "position_tolerance_mm": "The 1e-9 mm value preserves the existing S2 functional plane-residual audit and is not a mechanical assembly tolerance.",
+    "angular_tolerance_rad": "The 1e-12 rad value checks the exact serialized orthonormal axis mapping only and is not a physical angular acceptance budget.",
+    "wall_thickness_mm": "Zero represents the existing zero-thickness grounded field boundary; mechanical wall thickness remains unqualified.",
+    "direct_mating_inner_radius_mm": "The 0.45 mm value represents the limiting half-height of the 1.0 mm by 0.9 mm downstream aperture when no connector entity exists."
+  },
+  "shared_sources": {
+    "s2_contract": "projects/rf_quadrupole_ion_optics/config/rf_to_oatof_s2_passive_connector.json",
+    "s3_contract": "projects/rf_quadrupole_ion_optics/config/rf_to_oatof_s3_pulse_capture.json",
+    "spatial_registration": "projects/rf_quadrupole_ion_optics/config/resolved_rf_to_oatof_s2_spatial_registration.json",
+    "stage_registry": "projects/rf_quadrupole_ion_optics/config/rf_to_oatof_interface_stages.json"
+  },
+  "profiles": [
+    {
+      "connection_profile_id": "rf_quadrupole_s2_s3_grounded_connector_gap_1mm",
+      "source_case": "nominal_gap_1mm",
+      "source_particles": 100,
+      "census": {
+        "rf_exit": 100,
+        "oatof_entry": 61,
+        "active_at_pulse": 31,
+        "local_accelerator_exit": 31,
+        "detector_hit": 7
+      }
+    },
+    {
+      "connection_profile_id": "rf_quadrupole_s2_s3_direct_mating_gap_0mm",
+      "source_case": "direct_mating_gap_0mm",
+      "source_particles": 100,
+      "census": {
+        "rf_exit": 100,
+        "oatof_entry": 77,
+        "active_at_pulse": 39,
+        "local_accelerator_exit": 39,
+        "detector_hit": 9
+      }
+    }
+  ]
+}

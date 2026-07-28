@@ -28,7 +28,7 @@
       "properties": {
         "schema_version": {"const": 1},
         "role": {"const": "project_optimization_envelope"},
-        "project_id": {"const": "oa_tof"},
+        "project_id": {"const": "single_reflection_oa_tof_mass_analyzer"},
         "envelope_id": {"$ref": "#/$defs/identifier"},
         "status": {"enum": ["candidate", "approved", "retired"]},
         "policy": {

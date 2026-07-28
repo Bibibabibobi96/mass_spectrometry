@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "role": "integration_execution_adapter_registry",
+  "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+  "mappings": [
+    {
+      "connection_profile_id": "rf_quadrupole_s2_s3_grounded_connector_gap_1mm",
+      "adapter_entrypoint": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/adapter.ps1",
+      "legacy_entrypoints": {
+        "s2_field": "projects/rf_quadrupole_ion_optics/tests/comsol/run_s2_passive_connector_field.ps1",
+        "s3_cumulative": "projects/rf_quadrupole_ion_optics/tests/cross_solver/run_s3_cumulative_chain.ps1"
+      },
+      "connector_case_id": "nominal_gap_1mm"
+    },
+    {
+      "connection_profile_id": "rf_quadrupole_s2_s3_direct_mating_gap_0mm",
+      "adapter_entrypoint": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/adapter.ps1",
+      "legacy_entrypoints": {
+        "s2_field": "projects/rf_quadrupole_ion_optics/tests/comsol/run_s2_passive_connector_field.ps1",
+        "s3_cumulative": "projects/rf_quadrupole_ion_optics/tests/cross_solver/run_s3_cumulative_chain.ps1"
+      },
+      "connector_case_id": "direct_mating_gap_0mm"
+    }
+  ]
+}

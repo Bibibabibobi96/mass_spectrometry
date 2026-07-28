@@ -99,6 +99,26 @@ $isDocumentationOnly = $changedPaths.Count -gt 0 -and -not (Test-AnyPath {
 })
 $hasRegistryChange = Test-PathPrefix 'config/project_registry.json'
 $hasMultipoleChange = Test-PathPrefix 'common/multipole/'
+$hasCommonIntegrationChange = Test-PathPrefix 'common/integration/'
+$hasIntegrationInstanceChange = Test-PathPrefix 'integrations/'
+$hasComponentPortChange = Test-AnyPath {
+    $_ -match '^projects/[^/]+/config/interfaces/'
+}
+$hasIntegrationSchemaChange = Test-AnyPath {
+    $_ -in @(
+        'common/contracts/schemas/component_port.schema.json',
+        'common/contracts/schemas/composition_plan.schema.json',
+        'common/contracts/schemas/connection_profile.schema.json',
+        'common/contracts/schemas/connection_profile_registry.schema.json',
+        'common/contracts/schemas/execution_adapter_registry.schema.json',
+        'common/contracts/schemas/integration_artifact_identity.schema.json',
+        'common/contracts/schemas/integration_registry.schema.json',
+        'common/contracts/schemas/migration_equivalence_preregistration.schema.json',
+        'common/contracts/schemas/resolved_connection.schema.json'
+    )
+}
+$hasIntegrationChange = $hasCommonIntegrationChange -or $hasIntegrationInstanceChange -or
+    $hasComponentPortChange -or $hasIntegrationSchemaChange
 $hasSolidWorksChange = Test-PathPrefix 'common/solidworks/'
 $hasContractsChange = Test-PathPrefix 'common/contracts/'
 $hasComsolCommonChange = Test-PathPrefix 'common/comsol/'
@@ -138,10 +158,10 @@ if ($hasRegistryChange -or (Test-AnyPath { $_ -match '^projects/[^/]+/config/pro
     Invoke-ChangedGateStage 'project_registry' 'project_descriptor_or_registry_changed' { & $PythonExe (Join-Path $PSScriptRoot 'contracts\build_project_registry.py') --check }
 } else { Skip-ChangedGateStage 'project_registry' 'no_project_descriptor_or_registry_changed' }
 
-$needsQuadrupoleFreshness = (Test-PathPrefix 'projects/rf_quadrupole_collision_cooling/') -or
+$needsQuadrupoleFreshness = (Test-PathPrefix 'projects/rf_quadrupole_ion_optics/') -or
     $hasContractsChange -or $hasMultipoleChange -or $hasComsolCommonChange
 if ($needsQuadrupoleFreshness) {
-    $quadrupoleGate = Join-Path $repoRoot 'projects\rf_quadrupole_collision_cooling\verify_project.ps1'
+    $quadrupoleGate = Join-Path $repoRoot 'projects\rf_quadrupole_ion_optics\verify_project.ps1'
     Invoke-ChangedGateStage 'rf_quadrupole_generated_publications' 'quadrupole_or_direct_dependency_changed' {
         & $quadrupoleGate -Level Freshness -PythonExe $PythonExe
     }
@@ -172,39 +192,55 @@ if ($hasMultipoleChange) {
     Skip-ChangedGateStage 'multipole_foundation' 'common_multipole_not_changed'
 }
 
+if ($hasCommonIntegrationChange -or $hasIntegrationSchemaChange) {
+    Invoke-ChangedGateStage 'integration_common' 'common_integration_or_schema_changed' {
+        & $PythonExe -m unittest discover -s (Join-Path $PSScriptRoot 'integration') -p 'test_*.py'
+    }
+} else {
+    Skip-ChangedGateStage 'integration_common' 'common_integration_and_schemas_unchanged'
+}
+
+if ($hasIntegrationChange) {
+    Invoke-ChangedGateStage 'rf_multipole_to_single_reflection_oatof_integration' 'integration_contract_or_port_changed' {
+        & (Join-Path $repoRoot 'integrations\rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer\verify_integration.ps1') -PythonExe $PythonExe
+    }
+} else {
+    Skip-ChangedGateStage 'rf_multipole_to_single_reflection_oatof_integration' 'integration_contracts_and_ports_unchanged'
+}
+
 if ($hasSolidWorksChange) {
     Invoke-ChangedGateStage 'solidworks_common' 'common_solidworks_changed' { & $PythonExe -m unittest discover -s (Join-Path $PSScriptRoot 'solidworks') -p 'test_*.py' }
 } else { Skip-ChangedGateStage 'solidworks_common' 'common_solidworks_not_changed' }
 
 $projectTriggers = [ordered]@{
-    oa_tof = (Test-PathPrefix 'projects/oa_tof/') -or $hasContractsChange -or $hasComsolCommonChange
-    rf_quadrupole_collision_cooling = (Test-PathPrefix 'projects/rf_quadrupole_collision_cooling/') -or $hasContractsChange -or $hasMultipoleChange -or $hasComsolCommonChange
-    rf_hexapole_ion_guide = (Test-PathPrefix 'projects/rf_hexapole_ion_guide/') -or $hasMultipoleChange
-    rf_octupole_ion_guide = (Test-PathPrefix 'projects/rf_octupole_ion_guide/') -or $hasMultipoleChange
-    wehnelt_electron_gun = (Test-PathPrefix 'projects/wehnelt_electron_gun/') -or $hasContractsChange -or $hasComsolCommonChange
-    electron_impact_ion_source = (Test-PathPrefix 'projects/electron_impact_ion_source/') -or $hasContractsChange
+    single_reflection_oa_tof_mass_analyzer = (Test-PathPrefix 'projects/single_reflection_oa_tof_mass_analyzer/') -or $hasContractsChange -or $hasComsolCommonChange
+    rf_quadrupole_ion_optics = (Test-PathPrefix 'projects/rf_quadrupole_ion_optics/') -or $hasContractsChange -or $hasMultipoleChange -or $hasComsolCommonChange
+    rf_hexapole_ion_optics = (Test-PathPrefix 'projects/rf_hexapole_ion_optics/') -or $hasMultipoleChange
+    rf_octupole_ion_optics = (Test-PathPrefix 'projects/rf_octupole_ion_optics/') -or $hasMultipoleChange
+    transverse_helical_filament_wehnelt_electron_gun = (Test-PathPrefix 'projects/transverse_helical_filament_wehnelt_electron_gun/') -or $hasContractsChange -or $hasComsolCommonChange
+    apertured_tube_electron_impact_ion_source = (Test-PathPrefix 'projects/apertured_tube_electron_impact_ion_source/') -or $hasContractsChange
 }
 $projectReasons = @{
-    oa_tof = if (Test-PathPrefix 'projects/oa_tof/') { 'oa_tof_path_changed' } elseif ($hasContractsChange) { 'common_contracts_direct_dependency_changed' } elseif ($hasComsolCommonChange) { 'common_comsol_direct_dependency_changed' } else { 'no_direct_dependency_changed' }
-    rf_quadrupole_collision_cooling = if (Test-PathPrefix 'projects/rf_quadrupole_collision_cooling/') { 'rf_quadrupole_path_changed' } elseif ($hasContractsChange) { 'common_contracts_direct_dependency_changed' } elseif ($hasMultipoleChange) { 'common_multipole_direct_dependency_changed' } elseif ($hasComsolCommonChange) { 'common_comsol_direct_dependency_changed' } else { 'no_direct_dependency_changed' }
-    rf_hexapole_ion_guide = if (Test-PathPrefix 'projects/rf_hexapole_ion_guide/') { 'rf_hexapole_path_changed' } elseif ($hasMultipoleChange) { 'common_multipole_direct_dependency_changed' } else { 'no_direct_dependency_changed' }
-    rf_octupole_ion_guide = if (Test-PathPrefix 'projects/rf_octupole_ion_guide/') { 'rf_octupole_path_changed' } elseif ($hasMultipoleChange) { 'common_multipole_direct_dependency_changed' } else { 'no_direct_dependency_changed' }
-    wehnelt_electron_gun = if (Test-PathPrefix 'projects/wehnelt_electron_gun/') { 'wehnelt_path_changed' } elseif ($hasContractsChange) { 'common_contracts_direct_dependency_changed' } elseif ($hasComsolCommonChange) { 'common_comsol_direct_dependency_changed' } else { 'no_direct_dependency_changed' }
-    electron_impact_ion_source = if (Test-PathPrefix 'projects/electron_impact_ion_source/') { 'electron_impact_path_changed' } elseif ($hasContractsChange) { 'common_contracts_direct_dependency_changed' } else { 'no_direct_dependency_changed' }
+    single_reflection_oa_tof_mass_analyzer = if (Test-PathPrefix 'projects/single_reflection_oa_tof_mass_analyzer/') { 'single_reflection_oa_tof_mass_analyzer_path_changed' } elseif ($hasContractsChange) { 'common_contracts_direct_dependency_changed' } elseif ($hasComsolCommonChange) { 'common_comsol_direct_dependency_changed' } else { 'no_direct_dependency_changed' }
+    rf_quadrupole_ion_optics = if (Test-PathPrefix 'projects/rf_quadrupole_ion_optics/') { 'rf_quadrupole_path_changed' } elseif ($hasContractsChange) { 'common_contracts_direct_dependency_changed' } elseif ($hasMultipoleChange) { 'common_multipole_direct_dependency_changed' } elseif ($hasComsolCommonChange) { 'common_comsol_direct_dependency_changed' } else { 'no_direct_dependency_changed' }
+    rf_hexapole_ion_optics = if (Test-PathPrefix 'projects/rf_hexapole_ion_optics/') { 'rf_hexapole_path_changed' } elseif ($hasMultipoleChange) { 'common_multipole_direct_dependency_changed' } else { 'no_direct_dependency_changed' }
+    rf_octupole_ion_optics = if (Test-PathPrefix 'projects/rf_octupole_ion_optics/') { 'rf_octupole_path_changed' } elseif ($hasMultipoleChange) { 'common_multipole_direct_dependency_changed' } else { 'no_direct_dependency_changed' }
+    transverse_helical_filament_wehnelt_electron_gun = if (Test-PathPrefix 'projects/transverse_helical_filament_wehnelt_electron_gun/') { 'wehnelt_path_changed' } elseif ($hasContractsChange) { 'common_contracts_direct_dependency_changed' } elseif ($hasComsolCommonChange) { 'common_comsol_direct_dependency_changed' } else { 'no_direct_dependency_changed' }
+    apertured_tube_electron_impact_ion_source = if (Test-PathPrefix 'projects/apertured_tube_electron_impact_ion_source/') { 'electron_impact_path_changed' } elseif ($hasContractsChange) { 'common_contracts_direct_dependency_changed' } else { 'no_direct_dependency_changed' }
 }
 $projectScripts = @{
-    oa_tof = 'projects\oa_tof\verify_project.ps1'
-    rf_quadrupole_collision_cooling = 'projects\rf_quadrupole_collision_cooling\verify_project.ps1'
-    rf_hexapole_ion_guide = 'projects\rf_hexapole_ion_guide\verify_project.ps1'
-    rf_octupole_ion_guide = 'projects\rf_octupole_ion_guide\verify_project.ps1'
-    wehnelt_electron_gun = 'projects\wehnelt_electron_gun\verify_project.ps1'
-    electron_impact_ion_source = 'projects\electron_impact_ion_source\verify_project.ps1'
+    single_reflection_oa_tof_mass_analyzer = 'projects\single_reflection_oa_tof_mass_analyzer\verify_project.ps1'
+    rf_quadrupole_ion_optics = 'projects\rf_quadrupole_ion_optics\verify_project.ps1'
+    rf_hexapole_ion_optics = 'projects\rf_hexapole_ion_optics\verify_project.ps1'
+    rf_octupole_ion_optics = 'projects\rf_octupole_ion_optics\verify_project.ps1'
+    transverse_helical_filament_wehnelt_electron_gun = 'projects\transverse_helical_filament_wehnelt_electron_gun\verify_project.ps1'
+    apertured_tube_electron_impact_ion_source = 'projects\apertured_tube_electron_impact_ion_source\verify_project.ps1'
 }
 foreach ($project in $projectTriggers.Keys) {
     $stage = "${project}_static"
     if ($projectTriggers[$project]) {
         $projectScript = Join-Path $repoRoot $projectScripts[$project]
-        if ($project -eq 'rf_quadrupole_collision_cooling') {
+        if ($project -eq 'rf_quadrupole_ion_optics') {
             Invoke-ChangedGateStage $stage $projectReasons[$project] { & $projectScript -Level Core -PythonExe $PythonExe }
         } else {
             Invoke-ChangedGateStage $stage $projectReasons[$project] { & $projectScript -PythonExe $PythonExe }

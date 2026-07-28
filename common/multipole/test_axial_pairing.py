@@ -34,7 +34,7 @@ def pairing_contract() -> dict:
         "schema_version": 1,
         "role": "multipole_axial_field_paired_diagnostic",
         "pair_id": "explicit_axial_n100.v1",
-        "project_id": "rf_quadrupole_collision_cooling",
+        "project_id": "rf_quadrupole_ion_optics",
         "axial_contract_file": "axial.json",
         "source": {
             "operating_point": "official_100amu_2eV",
@@ -143,7 +143,7 @@ class AxialPairingTest(unittest.TestCase):
                 source_path=source,
                 source_count=2,
                 source_mean_energy_ev=2.0,
-                project_id="rf_quadrupole_collision_cooling",
+                project_id="rf_quadrupole_ion_optics",
             )
             field_on = root / "on.csv"
             field_off = root / "off.csv"
@@ -197,7 +197,7 @@ class AxialPairingTest(unittest.TestCase):
                 source_path=source,
                 source_count=2,
                 source_mean_energy_ev=2.0,
-                project_id="rf_quadrupole_collision_cooling",
+                project_id="rf_quadrupole_ion_optics",
             )
             field_on = root / "on.csv"
             field_off = root / "off.csv"
@@ -231,7 +231,7 @@ class AxialPairingTest(unittest.TestCase):
                     source_path=source,
                     source_count=2,
                     source_mean_energy_ev=5.0,
-                    project_id="rf_quadrupole_collision_cooling",
+                    project_id="rf_quadrupole_ion_optics",
                 )
 
     def test_rejects_census_plane_as_handoff(self) -> None:
@@ -249,7 +249,7 @@ class AxialPairingTest(unittest.TestCase):
                     source_path=source,
                     source_count=2,
                     source_mean_energy_ev=2.0,
-                    project_id="rf_quadrupole_collision_cooling",
+                    project_id="rf_quadrupole_ion_optics",
                 )
 
     def test_rejects_source_state_drift_between_arms(self) -> None:
@@ -265,7 +265,7 @@ class AxialPairingTest(unittest.TestCase):
                 source_path=source,
                 source_count=2,
                 source_mean_energy_ev=2.0,
-                project_id="rf_quadrupole_collision_cooling",
+                project_id="rf_quadrupole_ion_optics",
             )
             field_on = root / "on.csv"
             field_off = root / "off.csv"
@@ -287,7 +287,7 @@ class AxialPairingTest(unittest.TestCase):
                 source_path=source,
                 source_count=2,
                 source_mean_energy_ev=2.0,
-                project_id="rf_quadrupole_collision_cooling",
+                project_id="rf_quadrupole_ion_optics",
             )
             field_on = root / "on.csv"
             field_off = root / "off.csv"
@@ -313,7 +313,7 @@ class AxialPairingTest(unittest.TestCase):
                 source_path=source,
                 source_count=2,
                 source_mean_energy_ev=2.0,
-                project_id="rf_quadrupole_collision_cooling",
+                project_id="rf_quadrupole_ion_optics",
             )
             field_on = root / "on.csv"
             field_off = root / "off.csv"

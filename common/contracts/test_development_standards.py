@@ -110,7 +110,10 @@ class LightweightGateIntegrationTests(unittest.TestCase):
         self.assertIn("Changed-scope gate failed", lightweight)
         self.assertIn("verify_development_standards.py", integration)
         self.assertIn("electron_impact_static", integration)
-        self.assertIn("projects\\electron_impact_ion_source\\verify_project.ps1", integration)
+        self.assertIn(
+            "projects\\apertured_tube_electron_impact_ion_source\\verify_project.ps1",
+            integration,
+        )
         self.assertNotIn("verify_lightweight.ps1", hook)
 
 

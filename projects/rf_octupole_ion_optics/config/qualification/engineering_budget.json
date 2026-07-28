@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "role": "multipole_engineering_budget_contract",
+  "project_id": "rf_octupole_ion_optics",
+  "contract_id": "octupole_no_acceleration_n100_baseline_pilot_budget_v1",
+  "preregistered_before_run": true,
+  "pilot_authorization": {
+    "authorized": false,
+    "scope": {
+      "project_id": "rf_octupole_ion_optics",
+      "runtime_profile_id": "no_acceleration_full_length",
+      "design_profile_id": "no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "particle_count": 100,
+      "solver_numerics_profile_ids": {
+        "comsol": "baseline_finite_3d",
+        "simion": "baseline_finite_3d"
+      },
+      "allowed_solvers": ["comsol", "simion"],
+      "retention_class": "compact"
+    },
+    "limits": {
+      "wall_clock_seconds_by_solver": {
+        "comsol": 1200,
+        "simion": 300
+      },
+      "transient_run_directory_bytes": 2147483648,
+      "process_tree_working_set_bytes": 17179869184,
+      "minimum_system_available_memory_bytes": 8589934592,
+      "compact_final_retained_bytes": 26214400,
+      "automatic_retry_count": 0
+    }
+  },
+  "full_matrix_authorization": {
+    "authorized": false,
+    "reason": "pilot_measurements_required"
+  },
+  "budget_exhaustion_result": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
+  "claim_limit": "No octupole commercial solver pilot or matrix run is authorized by this contract."
+}

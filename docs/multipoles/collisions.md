@@ -302,7 +302,7 @@ for each particle:
 
 ## 16. 与现有 RF 四极杆项目的绑定
 
-现有项目入口为 [`projects/rf_quadrupole_collision_cooling/README.md`](../../projects/rf_quadrupole_collision_cooling/README.md)。接入本文件时遵守：
+现有项目入口为 [`projects/rf_quadrupole_ion_optics/README.md`](../../projects/rf_quadrupole_ion_optics/README.md)。接入本文件时遵守：
 
 - 无碰撞 mode 必须显式绑定 C0，COMSOL 和 SIMION 都不得创建或启用碰撞/阻尼模型；
 - 质量过滤参考 mode 默认先以 C0 建立解析和无碰撞基线；

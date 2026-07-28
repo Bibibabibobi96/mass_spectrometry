@@ -3,9 +3,9 @@
   "role": "multipole_l3_numerical_qualification_contract",
   "status": "method_only_project_acceptance_required",
   "scope": [
-    "rf_quadrupole_collision_cooling",
-    "rf_hexapole_ion_guide",
-    "rf_octupole_ion_guide"
+    "rf_quadrupole_ion_optics",
+    "rf_hexapole_ion_optics",
+    "rf_octupole_ion_optics"
   ],
   "required_sequence": [
     "same_solver_spatial_convergence",
@@ -48,6 +48,23 @@
         "paired_handoff_energy"
       ],
       "both_solvers_independently_converged": true
+    },
+    "three_mode_dispersion": {
+      "method_contract": "common/multipole/three_mode_dispersion_contract.json",
+      "required_observables": [
+        "all_source_particle_transmission_with_losses_retained",
+        "common_survivor_paired_continuous_metrics",
+        "handoff_and_near_interface_metrics",
+        "field_free_projection_at_5_20_50_mm",
+        "deterministic_paired_bootstrap_95_percent_intervals"
+      ],
+      "required_prerun_bindings": [
+        "project_acceptance_contract",
+        "project_effect_resolution_contract",
+        "project_engineering_budget_contract"
+      ],
+      "effect_resolution_required": true,
+      "common_contract_contains_acceptance_tolerances": false
     }
   },
   "acceptance_contract_requirements": {

@@ -1,0 +1,125 @@
+{
+  "schema_version": 2,
+  "role": "multipole_design_profile_registry",
+  "project_id": "rf_hexapole_ion_optics",
+  "family_id": "rf_multipole_ion_optics",
+  "operating_mode_registry": "config/operating_modes.json",
+  "operating_mode_registry_sha256": "8B03C419A537B398048E9F379F015CCC66A51970348CBE533175E910B54F0EF5",
+  "profiles": [
+    {
+      "design_profile_id": "no_acceleration_full_length",
+      "mode_id": "no_acceleration_full_length",
+      "design_request": "config/requests/mechanical_base.json",
+      "design_variables": "config/design_variables.json",
+      "optimization_envelope": "config/optimization_envelope.json",
+      "sha256": {
+        "design_request": "9358BE0D815C281EC8721F07CA39909AE832D92EAAB7C5D502E03F1E728145C1",
+        "design_variables": "9780DFC58129062B737A802D644A541EBBE7702CDE26946A64F0C8AF39A5DD83",
+        "optimization_envelope": "48C54E18E3CBFDC4420F0D1AFF9DF21B23B3DAF006695DCBC6DDB58B58A1FFCB"
+      },
+      "identity": {
+        "project_id": "rf_hexapole_ion_optics",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 3,
+        "electrode_count": 6
+      },
+      "topology": {
+        "enclosure_role": "full_length_grounded_shield",
+        "segmentation_strategy": "uniform",
+        "axial_drive_topology": "none"
+      }
+    },
+    {
+      "design_profile_id": "segmented_rod_axial_acceleration",
+      "mode_id": "segmented_rod_axial_acceleration",
+      "design_request": "config/requests/mechanical_base.json",
+      "design_variables": "config/design_variables.json",
+      "optimization_envelope": "config/optimization_envelope.json",
+      "sha256": {
+        "design_request": "9358BE0D815C281EC8721F07CA39909AE832D92EAAB7C5D502E03F1E728145C1",
+        "design_variables": "9780DFC58129062B737A802D644A541EBBE7702CDE26946A64F0C8AF39A5DD83",
+        "optimization_envelope": "48C54E18E3CBFDC4420F0D1AFF9DF21B23B3DAF006695DCBC6DDB58B58A1FFCB"
+      },
+      "identity": {
+        "project_id": "rf_hexapole_ion_optics",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 3,
+        "electrode_count": 6
+      },
+      "topology": {
+        "enclosure_role": "full_length_grounded_shield",
+        "segmentation_strategy": "uniform",
+        "axial_drive_topology": "segmented_rod_axial_acceleration"
+      }
+    },
+    {
+      "design_profile_id": "exit_aperture_plate_acceleration",
+      "mode_id": "exit_aperture_plate_acceleration",
+      "design_request": "config/requests/mechanical_base.json",
+      "design_variables": "config/design_variables.json",
+      "optimization_envelope": "config/optimization_envelope.json",
+      "sha256": {
+        "design_request": "9358BE0D815C281EC8721F07CA39909AE832D92EAAB7C5D502E03F1E728145C1",
+        "design_variables": "9780DFC58129062B737A802D644A541EBBE7702CDE26946A64F0C8AF39A5DD83",
+        "optimization_envelope": "48C54E18E3CBFDC4420F0D1AFF9DF21B23B3DAF006695DCBC6DDB58B58A1FFCB"
+      },
+      "identity": {
+        "project_id": "rf_hexapole_ion_optics",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 3,
+        "electrode_count": 6
+      },
+      "topology": {
+        "enclosure_role": "full_length_grounded_shield",
+        "segmentation_strategy": "uniform",
+        "axial_drive_topology": "exit_aperture_plate_potential_step"
+      }
+    },
+    {
+      "design_profile_id": "baseline_finite_3d",
+      "mode_id": "segmented_rod_axial_acceleration",
+      "design_request": "config/requests/mechanical_base.json",
+      "design_variables": "config/design_variables.json",
+      "optimization_envelope": "config/optimization_envelope.json",
+      "sha256": {
+        "design_request": "9358BE0D815C281EC8721F07CA39909AE832D92EAAB7C5D502E03F1E728145C1",
+        "design_variables": "9780DFC58129062B737A802D644A541EBBE7702CDE26946A64F0C8AF39A5DD83",
+        "optimization_envelope": "48C54E18E3CBFDC4420F0D1AFF9DF21B23B3DAF006695DCBC6DDB58B58A1FFCB"
+      },
+      "identity": {
+        "project_id": "rf_hexapole_ion_optics",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 3,
+        "electrode_count": 6
+      },
+      "topology": {
+        "enclosure_role": "full_length_grounded_shield",
+        "segmentation_strategy": "uniform",
+        "axial_drive_topology": "segmented_rod_axial_acceleration"
+      }
+    },
+    {
+      "design_profile_id": "exit_aperture_plate_acceleration_reference",
+      "mode_id": "exit_aperture_plate_acceleration",
+      "design_request": "config/requests/mechanical_base.json",
+      "design_variables": "config/design_variables.json",
+      "optimization_envelope": "config/optimization_envelope.json",
+      "sha256": {
+        "design_request": "9358BE0D815C281EC8721F07CA39909AE832D92EAAB7C5D502E03F1E728145C1",
+        "design_variables": "9780DFC58129062B737A802D644A541EBBE7702CDE26946A64F0C8AF39A5DD83",
+        "optimization_envelope": "48C54E18E3CBFDC4420F0D1AFF9DF21B23B3DAF006695DCBC6DDB58B58A1FFCB"
+      },
+      "identity": {
+        "project_id": "rf_hexapole_ion_optics",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 3,
+        "electrode_count": 6
+      },
+      "topology": {
+        "enclosure_role": "full_length_grounded_shield",
+        "segmentation_strategy": "uniform",
+        "axial_drive_topology": "exit_aperture_plate_potential_step"
+      }
+    }
+  ]
+}

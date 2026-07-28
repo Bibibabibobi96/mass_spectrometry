@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "role": "oa_tof_run_config_template",
+  "project": "single_reflection_oa_tof_mass_analyzer",
+  "mode": "formal",
+  "inputs": {
+    "baseline": "config/baseline.json",
+    "resolved_geometry": "config/resolved_geometry.json",
+    "science": "config/modes/formal.json",
+    "solver_numerics": "config/formal_solver_numerics.json"
+  },
+  "run_instance": {"particle_source_seed": "REQUIRED_AT_RUN_CREATION"},
+  "output_policy": {
+    "lifecycle": "candidate_until_formal_gate_passes",
+    "overwrite": false,
+    "manifest_required": true
+  }
+}

@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "role": "multipole_project_numerical_convergence_preregistration",
+  "project_id": "rf_hexapole_ion_optics",
+  "contract_id": "hexapole_three_mode_n100_convergence_v1",
+  "preregistered_before_run": true,
+  "particle_source": {
+    "path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_100.csv",
+    "sha256": "0125C3AB02B2321EF26A3A913CF6EC04325FD0D48597D2CB439D0CE42411662F",
+    "particle_count": 100,
+    "claim_scope": "functional_and_engineering_check_only"
+  },
+  "design_authority": {
+    "design_profiles": "projects/rf_hexapole_ion_optics/config/design_profiles.json",
+    "design_profiles_sha256": "F4BF0B37B1E06A3A605B5914804719893C1A7CF9845BF1057191E885FAD260E3",
+    "operating_modes": "projects/rf_hexapole_ion_optics/config/operating_modes.json",
+    "operating_modes_sha256": "8B03C419A537B398048E9F379F015CCC66A51970348CBE533175E910B54F0EF5"
+  },
+  "modes": [
+    "no_acceleration_full_length",
+    "segmented_rod_axial_acceleration",
+    "exit_aperture_plate_acceleration"
+  ],
+  "solver_plans": {
+    "comsol": {
+      "registry": "projects/rf_hexapole_ion_optics/config/comsol_solver_numerics.json",
+      "registry_sha256": "5DB44A44333F61A39118DF7E92AA3B9BA75DCE94A6A4B34006CF2DE008CE8481",
+      "tiers": {
+        "baseline": {
+          "profile_id": "baseline_finite_3d",
+          "working_region_maximum_element_size_mm": 0.5,
+          "rf_steps_per_period": 80
+        },
+        "spatial_refined": {
+          "profile_id": "n100_spatial_refined",
+          "working_region_maximum_element_size_mm": 0.25,
+          "rf_steps_per_period": 80
+        },
+        "temporal_refined": {
+          "profile_id": "n100_temporal_refined",
+          "working_region_maximum_element_size_mm": 0.25,
+          "rf_steps_per_period": 160
+        }
+      }
+    },
+    "simion": {
+      "registry": "projects/rf_hexapole_ion_optics/config/simion_solver_numerics.json",
+      "registry_sha256": "CAC39ED949C42A128145A1ACD1AA9CE19B851D099416CD189F919F7C21E87FE5",
+      "tiers": {
+        "baseline": {
+          "profile_id": "baseline_finite_3d",
+          "cell_mm": 0.4,
+          "rf_steps_per_period": 40
+        },
+        "spatial_refined": {
+          "profile_id": "n100_spatial_refined",
+          "cell_mm": 0.2,
+          "rf_steps_per_period": 40
+        },
+        "temporal_refined": {
+          "profile_id": "n100_temporal_refined",
+          "cell_mm": 0.2,
+          "rf_steps_per_period": 80
+        }
+      }
+    }
+  },
+  "comparison_plan": {
+    "spatial": "baseline_vs_spatial_refined_with_all_nonspatial_numerics_exact",
+    "temporal": "spatial_refined_vs_temporal_refined_on_the_same_refined_spatial_discretization",
+    "required_identity": [
+      "mode_id",
+      "resolved_geometry",
+      "particle_source_sha256",
+      "nonvaried_solver_numerics"
+    ]
+  },
+  "decision_policy": {
+    "continuous_acceptance_threshold_status": "UNAVAILABLE_NO_SOURCED_ERROR_BUDGET",
+    "continuous_result": "INCONCLUSIVE",
+    "discrete_diagnostics": [
+      "transmitted_particle_count",
+      "handoff_particle_id_set",
+      "minimum_aperture_margin"
+    ],
+    "qualification_pass_allowed": false,
+    "required_before_pass": [
+      "physical_or_downstream_error_budget",
+      "absolute_and_relative_scale_review",
+      "solver_specific_numerical_error_allocation"
+    ],
+    "forbidden": "Do not invent a percentage, relax acceptance after seeing results, or add a fourth brute-force tier."
+  },
+  "claim_limit": "Preregistered N=100 diagnostic matrix only. With no sourced continuous-error budget, every convergence qualification remains INCONCLUSIVE."
+}

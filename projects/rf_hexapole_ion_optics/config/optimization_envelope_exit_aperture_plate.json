@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "role": "project_optimization_envelope",
+  "project_id": "rf_hexapole_ion_optics",
+  "family_id": "rf_multipole_ion_optics",
+  "envelope_id": "hexapole_exit_aperture_plate_functional_reference",
+  "status": "candidate",
+  "policy": "This envelope preserves the N=100 functional exit-aperture-plate reference; it does not qualify convergence or mechanical implementation.",
+  "reference": {
+    "design_request": "config/requests/exit_aperture_plate.json",
+    "design_request_sha256": "6F9360E6CAAB01EA8C985FB949625071B8776C3D5942D354FCFBF4AB2F15EF15"
+  },
+  "constraints": [
+    {
+      "constraint_id": "exit_aperture_plate_reference_bounds",
+      "kind": "bounded_variable",
+      "request_json_pointers": [
+        "/geometry_mm/rod_radius_ratio",
+        "/static_electrodes_V/exit_outer_endcap_aperture_plate_connector_V"
+      ],
+      "description": "The rod ratio and exit-aperture-plate output reference remain inside the governed catalog bounds."
+    }
+  ]
+}

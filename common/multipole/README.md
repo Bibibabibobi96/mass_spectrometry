@@ -5,9 +5,9 @@
 
 当前调用方：
 
-- `projects/rf_quadrupole_collision_cooling`
-- `projects/rf_hexapole_ion_guide`
-- `projects/rf_octupole_ion_guide`
+- `projects/rf_quadrupole_ion_optics`
+- `projects/rf_hexapole_ion_optics`
+- `projects/rf_octupole_ion_optics`
 
 ## 唯一物理设计入口
 
@@ -89,11 +89,13 @@ CSV SHA-256和parent resolved hash的metadata；MATLAB和SIMION投影只消费�
 `operating_point_binding`写入run config。没有该绑定时仍严格使用resolved source能量约束，不允许
 5 eV等命名工况隐式绕过官方1.8–2.2 eV范围。
 
-六/八极杆的生产薄wrapper再加一层`runtime_profile.py`治理：公开入口只接受`RuntimeProfileId`，
-由项目`runtime_profiles.json`绑定design、particle-source和solver-numerics profile。六/八极杆当前
-完全相同的固定N=100源只保留
-`sources/hex_oct_baseline_fixed_100.csv`一份，各项目通过独立profile与同一SHA绑定；四极杆官方源
-语义不同，不参与该共享。求解器数值profile保持项目独立，以允许后续收敛结果分化。
+多极杆生产薄wrapper再加一层`runtime_profile.py`治理：公开入口只接受`RuntimeProfileId`，
+由项目`runtime_profiles.json`绑定design、particle-source和solver-numerics profile。四、六、八极杆
+圆柱家族实验共同使用`rf_multipole_family_mother_sample_v1_1000.csv`及其精确
+`rf_multipole_family_mother_sample_v1_100.csv`前缀；生成算法、seed、分布、消费者和SHA由同目录
+`rf_multipole_family_mother_sample_v1.json`冻结。旧`hex_oct_baseline_fixed_100.csv`只供六/八极杆
+legacy functional兼容，四极杆旧官方源只供oa-TOF oracle；两者都不是新家族实验源。求解器数值profile
+保持项目独立，以允许后续收敛结果分化。
 
 证据阈值不是物理设计，也不藏在resolved或numerics中。runner可显式接受版本化
 `EvidenceContractPath`；`evaluate_transport_evidence.py`只对已产生metrics评分。未给证据合同时仍可完成
@@ -109,12 +111,47 @@ L2 `analyze_round_rod_screen.py`同样只报告每个输入ratio的场谐波指�
 2026-07-28，四、六、八极杆的`no_acceleration_full_length`均以真实COMSOL和SIMION、同一项目内冻结
 N=100源完成五项矩阵：COMSOL空间加密、COMSOL时间加密、SIMION空间加密、SIMION时间加密，以及两边
 各自收敛解之间的跨求解器比较，全部`PASS`。机器结果位于
-`artifacts/projects/<project_id>/results/numerical_qualification/20260728_functional_transport/`，验收合同为
+三个项目描述符`legacy_identities[].artifact_root`所登记的改名前只读artifact根下
+`results/numerical_qualification/20260728_functional_transport/`；验收合同为
 [`functional_transport_acceptance.json`](functional_transport_acceptance.json)。
+2026-07-28改名后的新run进入当前project ID对应artifact根，不移动、复制或改写既有证据。
 
 该闭合只证明无碰撞RF传输分类、透射粒子ID和正工作半径裕量稳定；连续束斑、发散、TOF、能量及逐粒子
 相空间差异只是诊断输出，不在这项PASS内。它也不授予碰撞冷却、轴向加速、RF+DC质量过滤、机械、
 Candidate或Formal资格。
+
+### 三模式粒子分散方法
+
+[`three_mode_dispersion_contract.json`](three_mode_dispersion_contract.json)冻结同一多极杆硬件的三arm
+分散实验方法：`no_acceleration_full_length`、`segmented_rod_axial_acceleration`和
+`exit_aperture_plate_acceleration`。三个arm必须绑定同一轴向几何identity、同一N=100/N=1000母样本
+前缀、同一求解器与除电压模式外的数值设置；公共层不保存项目电压值或验收阈值。
+
+[`three_mode_dispersion.py`](three_mode_dispersion.py)只读取既有canonical component particle-state
+CSV。它保留完整源ID集合和各arm损失ID；传输以全源集合统计，半径、角发散、能量和TOF的配对连续量
+只在两个arm的共同幸存ID上计算。状态从规范交接面按`vz>0`作无场弹道投影，报告近接口统计面及
+`+5/+20/+50 mm`；不创建第二粒子格式或把数值统计面称为探测器。
+
+N=100只用于功能和工程检查；N=1000在项目acceptance允许时才形成统计分散证据。bootstrap seed和
+resample数没有公共默认值，必须随项目合同在运行前冻结。每次实验还必须在运行前绑定项目级
+acceptance、effect-resolution和engineering-budget合同的路径与SHA，并使用`compact`保留类。公共输出
+固定为`UNQUALIFIED_ANALYSIS_ONLY`：95%配对bootstrap区间是测量不确定度，不是接受阈值。预算耗尽时
+遵循[`numerical_qualification.json`](numerical_qualification.json)的工程stop policy，报告
+`INCONCLUSIVE`，不得放宽标准或继续暴力加密。
+
+分析方法和三份项目合同必须在运行前预登记；包含真实handoff文件及其SHA的binding只能在对应run完成
+后发布。binding分别记录`analysis_plan_preregistered_before_run=true`和
+`published_after_real_runs=true`，不得把运行后才知道的输出哈希伪称为运行前已冻结。
+
+三份项目合同分别使用role `multipole_dispersion_acceptance_contract`、
+`multipole_dispersion_effect_resolution_contract`和`multipole_engineering_budget_contract`，并包含
+非空的`acceptance_criteria`、`effect_resolution`和`pilot_authorization`对象。具体数值、依据、适用
+project/solver/N和批准状态属于项目权威；公共层只验证身份、预注册标记和冻结SHA，不提供fallback。
+
+两个商业求解器入口还必须消费runtime profile绑定的engineering-budget合同。预算预检在创建run
+package前严格核对project、design、source、粒子数、solver numerics和retention；运行中监测累计墙钟、
+本次进程树working set、系统可用内存和run目录体积。越界只终止本次子进程树，manifest记为
+`interrupted / resource_budget_exceeded`，自动重试固定为零。
 
 ## 求解器投影
 
@@ -166,7 +203,11 @@ canonical粒子终态/事件、必要日志和轻量图，终态前移除可重�
 
 当前活动登记由[`simion_layout_template.json`](simion_layout_template.json)绑定到
 `20260727_232047__build__simion__multipole-layout-template`的manifest、IOB/CON SHA及2026-07-27人工GUI
-复核。[`simion_layout_template.py`](simion_layout_template.py)只执行与oa-TOF
+复核。该登记run仍按`rf_quad_rename_20260728`映射，以recorded project ID
+`rf_quadrupole_collision_cooling`只读保存在旧artifact根；resolver同时复核当前provider descriptor的
+legacy mapping、旧run config/manifest身份与文件SHA。新登记入口仍只向
+`artifacts/projects/rf_quadrupole_ion_optics/`写入新run，不复用旧身份。
+[`simion_layout_template.py`](simion_layout_template.py)只执行与oa-TOF
 `prepare_candidate_run`等价的校验和解析；所有多极杆生产SIMION入口将登记manifest、注册表和IOB/CON
 复制进本次run后才构建项目物理PA。[`build_simion_runtime_iob.lua`](build_simion_runtime_iob.lua)严格
 复用oa-TOF `build_formal_iob.lua`的顺序：重绑run-local PA、更新实例尺寸、保存IOB，再恢复完整同名

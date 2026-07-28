@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/multipole_operating_modes.schema.json",
+  "title": "Typed RF multipole electrical operating modes",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "role", "project_id", "family_id", "modes"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "multipole_typed_operating_mode_registry"},
+    "project_id": {"$ref": "#/$defs/identifier"},
+    "family_id": {"const": "rf_multipole_ion_optics"},
+    "modes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "mode_id",
+          "axial_drive_topology",
+          "rod_segment_entrance_common_mode_V",
+          "rod_segment_exit_common_mode_V",
+          "exit_aperture_plate_and_connector_V"
+        ],
+        "properties": {
+          "mode_id": {"$ref": "#/$defs/identifier"},
+          "axial_drive_topology": {
+            "enum": [
+              "none",
+              "segmented_rod_axial_acceleration",
+              "exit_aperture_plate_potential_step"
+            ]
+          },
+          "rod_segment_entrance_common_mode_V": {"type": "number"},
+          "rod_segment_exit_common_mode_V": {"type": "number"},
+          "exit_aperture_plate_and_connector_V": {"type": "number"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+    }
+  }
+}

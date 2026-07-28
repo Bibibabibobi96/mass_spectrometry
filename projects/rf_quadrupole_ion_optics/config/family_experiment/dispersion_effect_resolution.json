@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "role": "multipole_dispersion_effect_resolution_contract",
+  "project_id": "rf_quadrupole_ion_optics",
+  "contract_id": "quadrupole_family_three_mode_effect_resolution_v1",
+  "preregistered_before_run": true,
+  "status": "INCONCLUSIVE_PENDING_N1000_AND_DOWNSTREAM_TOLERANCE",
+  "effect_resolution": {
+    "paired_particle_ids_required": true,
+    "n100_role": "functional_and_engineering_check_only",
+    "n1000_role": "paired_bootstrap_95_percent_interval",
+    "minimum_resolvable_effect": null,
+    "basis": "No downstream performance tolerance or validated instrument resolution budget is currently approved.",
+    "decision_when_interval_overlaps_unresolved_region": "INCONCLUSIVE"
+  }
+}

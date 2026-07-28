@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "role": "multipole_simion_solver_numerics_profiles",
+  "project_id": "rf_hexapole_ion_optics",
+  "profiles": {
+    "baseline_finite_3d": {
+      "cell_mm": 0.4,
+      "trajectory_quality": 10,
+      "trajectory": {
+        "rf_steps_per_period": 40,
+        "maximum_global_time_us": 80.0
+      }
+    },
+    "n100_spatial_refined": {
+      "cell_mm": 0.2,
+      "trajectory_quality": 10,
+      "trajectory": {
+        "rf_steps_per_period": 40,
+        "maximum_global_time_us": 80.0
+      }
+    },
+    "n100_temporal_refined": {
+      "cell_mm": 0.2,
+      "trajectory_quality": 10,
+      "trajectory": {
+        "rf_steps_per_period": 80,
+        "maximum_global_time_us": 80.0
+      }
+    }
+  }
+}

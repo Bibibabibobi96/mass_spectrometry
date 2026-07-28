@@ -1,7 +1,7 @@
 function paths = workspace_paths(projectName)
 %WORKSPACE_PATHS Resolve repository and artifact paths without hard-coding a user path.
 %
-% paths = workspace_paths('oa_tof')
+% paths = workspace_paths('single_reflection_oa_tof_mass_analyzer')
 
     arguments
         projectName (1,1) string = ""

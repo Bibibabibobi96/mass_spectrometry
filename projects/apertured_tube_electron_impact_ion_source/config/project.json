@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "project_id": "apertured_tube_electron_impact_ion_source",
+  "legacy_identities": [
+    {
+      "mapping_id": "ei_source_rename_20260728",
+      "project_id": "electron_impact_ion_source",
+      "retired_at_utc": "2026-07-28T08:19:11Z",
+      "migration_kind": "administrative_rename_only",
+      "artifact_root": "artifacts/projects/electron_impact_ion_source",
+      "artifact_access": "read_only",
+      "new_runs_allowed": false,
+      "verification_identity": "recorded_project_id",
+      "claim_policy": "preserve_original_status_and_claim_limits_no_promotion"
+    }
+  ],
+  "family_id": "ion_sources",
+  "display_name": "开孔长管电子轰击离子源",
+  "purpose": "电子束电离产额可行性以及未来重离子出生接口设计",
+  "lifecycle_status": "prototype",
+  "toolchains": ["comsol", "matlab", "python"],
+  "contracts": {
+    "baseline": "config/baseline.json",
+    "resolved": "config/resolved_model.json",
+    "analysis": null,
+    "interface": null,
+    "execution": "config/execution_profiles.json",
+    "design_variables": null,
+    "optimization_envelope": null
+  },
+  "capabilities": [
+    {
+      "capability_id": "electron_impact_ionization_feasibility",
+      "function": "ionization_yield_feasibility",
+      "status": "prototype",
+      "modes": ["build_only_smoke"],
+      "metrics": ["ionization_event_count", "ionization_yield"],
+      "design_variables": []
+    }
+  ],
+  "formal_assets": {
+    "status": "none",
+    "types": [],
+    "identity_contract": null
+  },
+  "known_gaps": [
+    "Functional N=100 GUI Compute and solver-output particle-count verification are not completed",
+    "No independent heavy-ion tracking or frozen downstream interface",
+    "GUI Compute and native result-node acceptance are not completed"
+  ]
+}

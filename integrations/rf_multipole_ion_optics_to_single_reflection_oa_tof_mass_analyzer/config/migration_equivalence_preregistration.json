@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "role": "integration_migration_equivalence_preregistration",
+  "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+  "equivalence_status": "BLOCKED",
+  "execution_status": "NOT_RUN",
+  "legacy_oracle": {
+    "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/migration_oracles.json",
+    "sha256": "E75D3C517E9D7E69898700F240AD3B33061EA4F9FC7893CF9AA17E243EE9DB46",
+    "access": "read_only"
+  },
+  "comparison_requirements": {
+    "same_source_population": true,
+    "same_connection_profile": true,
+    "new_entrypoint_rerun_required": true,
+    "metrics": [
+      "rf_exit",
+      "oatof_entry",
+      "active_at_pulse",
+      "local_accelerator_exit",
+      "detector_hit"
+    ]
+  },
+  "profiles": [
+    {
+      "connection_profile_id": "rf_quadrupole_s2_s3_grounded_connector_gap_1mm",
+      "new_run_status": "NOT_RUN",
+      "equivalence_decision": "NOT_RUN"
+    },
+    {
+      "connection_profile_id": "rf_quadrupole_s2_s3_direct_mating_gap_0mm",
+      "new_run_status": "NOT_RUN",
+      "equivalence_decision": "NOT_RUN"
+    }
+  ],
+  "claim_limit": "No migration-equivalence claim and no legacy implementation archival are allowed before both profiles are rerun through the integration-owned entrypoint with the same N=100 source and compared to the read-only oracle."
+}

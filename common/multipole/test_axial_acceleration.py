@@ -135,6 +135,33 @@ class AxialAccelerationTest(unittest.TestCase):
                 invalid, rod_z_min_mm=0, rod_z_max_mm=79.6, source_kinetic_energy_ev=2, charge_state=1
             )
 
+    def test_equal_bias_segments_are_valid_physical_geometry_when_gain_is_not_required(self) -> None:
+        static_segments = contract()
+        static_segments["segmentation"]["entrance_common_mode_V"] = 0.0
+        static_segments["segmentation"]["exit_common_mode_V"] = 0.0
+        static_segments["output_reference_V"] = 0.0
+        result = resolve_axial_acceleration(
+            static_segments,
+            rod_z_min_mm=0,
+            rod_z_max_mm=79.6,
+            source_kinetic_energy_ev=2,
+            charge_state=1,
+            require_positive_energy_gain=False,
+        )
+        self.assertEqual(
+            [segment["common_mode_V"] for segment in result["derived"]["segments"]],
+            [0.0, 0.0, 0.0, 0.0],
+        )
+        self.assertEqual(result["derived"]["predicted_energy_gain_eV"], 0.0)
+        with self.assertRaisesRegex(AxialAccelerationError, "does not accelerate"):
+            resolve_axial_acceleration(
+                static_segments,
+                rod_z_min_mm=0,
+                rod_z_max_mm=79.6,
+                source_kinetic_energy_ev=2,
+                charge_state=1,
+            )
+
     def test_explicit_strategy_supports_independent_lengths_gaps_and_voltages(self) -> None:
         explicit = contract()
         explicit["segmentation"] = {
@@ -214,9 +241,9 @@ class AxialAccelerationTest(unittest.TestCase):
     def test_projects_do_not_reimplement_segmentation_strategies(self) -> None:
         root = Path(__file__).resolve().parents[2]
         projects = (
-            "rf_quadrupole_collision_cooling",
-            "rf_hexapole_ion_guide",
-            "rf_octupole_ion_guide",
+            "rf_quadrupole_ion_optics",
+            "rf_hexapole_ion_optics",
+            "rf_octupole_ion_optics",
         )
         forbidden = ("strategy == \"uniform\"", "strategy == \"explicit\"", "_resolve_uniform", "_resolve_explicit")
         for project in projects:
@@ -230,13 +257,13 @@ class AxialAccelerationTest(unittest.TestCase):
     def test_all_solver_wrappers_expose_only_governed_design_profile_binding(self) -> None:
         root = Path(__file__).resolve().parents[2]
         projects = (
-            "rf_quadrupole_collision_cooling",
-            "rf_hexapole_ion_guide",
-            "rf_octupole_ion_guide",
+            "rf_quadrupole_ion_optics",
+            "rf_hexapole_ion_optics",
+            "rf_octupole_ion_optics",
         )
         for project in projects:
             for name in ("run_finite_3d_transport.ps1", "run_simion_finite_3d_transport.ps1"):
-                if project == "rf_quadrupole_collision_cooling":
+                if project == "rf_quadrupole_ion_optics":
                     workflow_name = (
                         "run_comsol.ps1"
                         if name == "run_finite_3d_transport.ps1"
@@ -253,7 +280,7 @@ class AxialAccelerationTest(unittest.TestCase):
                 else:
                     path = root / "projects" / project / "analysis" / name
                 source = path.read_text(encoding="utf-8-sig")
-                if project == "rf_quadrupole_collision_cooling":
+                if project == "rf_quadrupole_ion_optics":
                     self.assertIn("common.multipole.runtime_profile", source)
                     self.assertNotIn("[string]$DesignProfileId", source)
                 else:
@@ -272,7 +299,7 @@ class AxialAccelerationTest(unittest.TestCase):
         root = Path(__file__).resolve().parents[2]
         path = (
             root
-            / "projects/rf_quadrupole_collision_cooling/config/modes"
+            / "projects/rf_quadrupole_ion_optics/config/modes"
             / "axial_acceleration_explicit_functional_test.json"
         )
         result = resolve_axial_acceleration(

@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "project_id": "transverse_helical_filament_wehnelt_electron_gun",
+  "legacy_identities": [
+    {
+      "mapping_id": "wehnelt_gun_rename_20260728",
+      "project_id": "wehnelt_electron_gun",
+      "retired_at_utc": "2026-07-28T08:19:11Z",
+      "migration_kind": "administrative_rename_only",
+      "artifact_root": "artifacts/projects/wehnelt_electron_gun",
+      "artifact_access": "read_only",
+      "new_runs_allowed": false,
+      "verification_identity": "recorded_project_id",
+      "claim_policy": "preserve_original_status_and_claim_limits_no_promotion"
+    }
+  ],
+  "family_id": "electron_guns",
+  "display_name": "横置螺旋灯丝Wehnelt电子枪",
+  "purpose": "面向EI离子源的热电子发射、收集和电子束传输设计",
+  "lifecycle_status": "prototype",
+  "toolchains": ["comsol", "matlab"],
+  "contracts": {
+    "baseline": "config/baseline.json",
+    "resolved": "config/resolved_model.json",
+    "analysis": null,
+    "interface": null,
+    "execution": "config/execution_profiles.json",
+    "design_variables": null,
+    "optimization_envelope": null
+  },
+  "capabilities": [
+    {
+      "capability_id": "wehnelt_thermal_electron_transport",
+      "function": "electron_transport",
+      "status": "prototype",
+      "modes": ["build_only_smoke"],
+      "metrics": ["usable_final_state_fraction"],
+      "design_variables": []
+    }
+  ],
+  "formal_assets": {
+    "status": "none",
+    "types": [],
+    "identity_contract": null
+  },
+  "known_gaps": [
+    "The functional_reference mode has no governed N>=100 solver runner or current evidence",
+    "Final particle model is not reopened and recomputed under the current GUI gate",
+    "The historical 34.18% value is not a current usable-final-state result",
+    "Unweighted test particles do not support a beam-current claim or wall-resolved loss attribution",
+    "No interface contract to the downstream EI source has been frozen"
+  ]
+}

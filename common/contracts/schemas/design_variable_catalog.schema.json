@@ -40,7 +40,7 @@
       "properties": {
         "schema_version": {"const": 1},
         "role": {"const": "project_design_variable_catalog"},
-        "project_id": {"const": "oa_tof"},
+        "project_id": {"const": "single_reflection_oa_tof_mass_analyzer"},
         "optimization_strategy": {"const": "expandable_reference_envelope_compaction"},
         "envelope_contract": {"type": "string", "minLength": 1},
         "range_policy": {"type": "string", "minLength": 1},

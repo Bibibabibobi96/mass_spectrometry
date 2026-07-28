@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "role": "multipole_dispersion_effect_resolution_contract",
+  "project_id": "rf_octupole_ion_optics",
+  "contract_id": "octupole_three_mode_dispersion_effect_resolution",
+  "preregistered_before_run": true,
+  "effect_resolution": {
+    "status": "not_established",
+    "decision_without_supported_resolution": "INCONCLUSIVE",
+    "required_basis": [
+      "minimum_scientifically_relevant_change_at_the_declared_observation_plane",
+      "paired_bootstrap_uncertainty_relative_to_that_change",
+      "downstream_sensitivity_to_radius_divergence_energy_and_tof"
+    ],
+    "prohibited_substitute": "Observed mode separation must not be retroactively adopted as the minimum resolvable effect."
+  }
+}

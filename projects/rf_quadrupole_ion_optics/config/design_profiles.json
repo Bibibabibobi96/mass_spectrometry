@@ -1,0 +1,189 @@
+{
+  "schema_version": 2,
+  "role": "multipole_design_profile_registry",
+  "project_id": "rf_quadrupole_ion_optics",
+  "family_id": "rf_multipole_ion_optics",
+  "operating_mode_registry": "config/operating_modes.json",
+  "operating_mode_registry_sha256": "FEC5FA1CE320194A4BB447FF82539A5C1047B44C972A1034B3332CFCD1B7F40D",
+  "profiles": [
+    {
+      "design_profile_id": "official_transport",
+      "design_request": "config/requests/official.json",
+      "design_variables": "config/design_variables_nonsegmented.json",
+      "optimization_envelope": "config/optimization_envelope_official.json",
+      "sha256": {
+        "design_request": "A5918DB685134BAB80506114CE42474D6100FFF0074A5C22456AB3201E3922A8",
+        "design_variables": "AA6FAFFA57E61DE4115A8DFB9D226083B6121C54B983FC01DC9D4646F54979C2",
+        "optimization_envelope": "09C1CECB492CD6AC239500E88DD3B0BC5E47310EB6C9F21990255C4E60D1EF87"
+      },
+      "identity": {
+        "project_id": "rf_quadrupole_ion_optics",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 2,
+        "electrode_count": 4
+      },
+      "topology": {
+        "enclosure_role": "downstream_local_reference_enclosure",
+        "segmentation_strategy": "off",
+        "axial_drive_topology": "none"
+      }
+    },
+    {
+      "design_profile_id": "interface_readiness",
+      "design_request": "config/requests/official.json",
+      "design_variables": "config/design_variables_nonsegmented.json",
+      "optimization_envelope": "config/optimization_envelope_official.json",
+      "sha256": {
+        "design_request": "A5918DB685134BAB80506114CE42474D6100FFF0074A5C22456AB3201E3922A8",
+        "design_variables": "AA6FAFFA57E61DE4115A8DFB9D226083B6121C54B983FC01DC9D4646F54979C2",
+        "optimization_envelope": "09C1CECB492CD6AC239500E88DD3B0BC5E47310EB6C9F21990255C4E60D1EF87"
+      },
+      "identity": {
+        "project_id": "rf_quadrupole_ion_optics",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 2,
+        "electrode_count": 4
+      },
+      "topology": {
+        "enclosure_role": "downstream_local_reference_enclosure",
+        "segmentation_strategy": "off",
+        "axial_drive_topology": "none"
+      }
+    },
+    {
+      "design_profile_id": "mass_filter_reference",
+      "design_request": "config/requests/mass_filter.json",
+      "design_variables": "config/design_variables_nonsegmented.json",
+      "optimization_envelope": "config/optimization_envelope_mass_filter.json",
+      "sha256": {
+        "design_request": "766FABB2F5ED3BB8E69FA100B89BE0758AD7F3870710F836F6B434C5FE5B8820",
+        "design_variables": "AA6FAFFA57E61DE4115A8DFB9D226083B6121C54B983FC01DC9D4646F54979C2",
+        "optimization_envelope": "980E199DE3AA440029BBAAF1AA9946615D2AD179D766C46F6D068133C1154A2F"
+      },
+      "identity": {
+        "project_id": "rf_quadrupole_ion_optics",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 2,
+        "electrode_count": 4
+      },
+      "topology": {
+        "enclosure_role": "downstream_local_reference_enclosure",
+        "segmentation_strategy": "off",
+        "axial_drive_topology": "none"
+      }
+    },
+    {
+      "design_profile_id": "explicit_axial_reference",
+      "design_request": "config/requests/explicit_axial.json",
+      "design_variables": "config/design_variables_explicit_axial.json",
+      "optimization_envelope": "config/optimization_envelope_explicit_axial.json",
+      "sha256": {
+        "design_request": "1020454F3C31D8F4FD14731F548A98B317AE05DAD1160737069776E324124614",
+        "design_variables": "246876497BA5EF678805A2DD2F65075FD40AB2814B5344C295E78F5FC4B0DED2",
+        "optimization_envelope": "217140E9CD67767BDE1C1E0E9D4C4A1736004D3C0D1343CFDC3587D1A339BA87"
+      },
+      "identity": {
+        "project_id": "rf_quadrupole_ion_optics",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 2,
+        "electrode_count": 4
+      },
+      "topology": {
+        "enclosure_role": "downstream_local_reference_enclosure",
+        "segmentation_strategy": "explicit",
+        "axial_drive_topology": "segmented_rod_axial_acceleration"
+      }
+    },
+    {
+      "design_profile_id": "exit_aperture_plate_acceleration_reference",
+      "design_request": "config/requests/exit_aperture_plate.json",
+      "design_variables": "config/design_variables_exit_aperture_plate.json",
+      "optimization_envelope": "config/optimization_envelope_exit_aperture_plate.json",
+      "sha256": {
+        "design_request": "2E4D810DAF55088683430FDB1CEF7AB90283802672D2CEEE821C256B7AC1F5B5",
+        "design_variables": "62B054BDA4EC5752B2771A7042E773CB2420856CF7309300C3ADAB043E077434",
+        "optimization_envelope": "B1E745671FE77D42CC73CB6ADF46B10B7BE5A833BDA1A4C6B65C187F0620B5CB"
+      },
+      "identity": {
+        "project_id": "rf_quadrupole_ion_optics",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 2,
+        "electrode_count": 4
+      },
+      "topology": {
+        "enclosure_role": "downstream_local_reference_enclosure",
+        "segmentation_strategy": "off",
+        "axial_drive_topology": "exit_aperture_plate_potential_step"
+      }
+    },
+    {
+      "design_profile_id": "no_acceleration_full_length",
+      "mode_id": "no_acceleration_full_length",
+      "design_request": "config/requests/baseline.json",
+      "design_variables": "config/design_variables.json",
+      "optimization_envelope": "config/optimization_envelope.json",
+      "sha256": {
+        "design_request": "A75721393601D18A0BE4C1B05E91A23AA13F6AC16DE605D9AEB2606AFD7468A3",
+        "design_variables": "181F635F984704F21FAB35F2AC607EDAABCC9F8FD8ACDCC0B311D32E40E61357",
+        "optimization_envelope": "BBAB5E67BC1A07B1E22E9AB2D6E9A93DF9B6935B7CDE02EA679A7799228A8ADC"
+      },
+      "identity": {
+        "project_id": "rf_quadrupole_ion_optics",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 2,
+        "electrode_count": 4
+      },
+      "topology": {
+        "enclosure_role": "full_length_grounded_shield",
+        "segmentation_strategy": "uniform",
+        "axial_drive_topology": "none"
+      }
+    },
+    {
+      "design_profile_id": "segmented_rod_axial_acceleration",
+      "mode_id": "segmented_rod_axial_acceleration",
+      "design_request": "config/requests/baseline.json",
+      "design_variables": "config/design_variables.json",
+      "optimization_envelope": "config/optimization_envelope.json",
+      "sha256": {
+        "design_request": "A75721393601D18A0BE4C1B05E91A23AA13F6AC16DE605D9AEB2606AFD7468A3",
+        "design_variables": "181F635F984704F21FAB35F2AC607EDAABCC9F8FD8ACDCC0B311D32E40E61357",
+        "optimization_envelope": "BBAB5E67BC1A07B1E22E9AB2D6E9A93DF9B6935B7CDE02EA679A7799228A8ADC"
+      },
+      "identity": {
+        "project_id": "rf_quadrupole_ion_optics",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 2,
+        "electrode_count": 4
+      },
+      "topology": {
+        "enclosure_role": "full_length_grounded_shield",
+        "segmentation_strategy": "uniform",
+        "axial_drive_topology": "segmented_rod_axial_acceleration"
+      }
+    },
+    {
+      "design_profile_id": "exit_aperture_plate_acceleration",
+      "mode_id": "exit_aperture_plate_acceleration",
+      "design_request": "config/requests/baseline.json",
+      "design_variables": "config/design_variables.json",
+      "optimization_envelope": "config/optimization_envelope.json",
+      "sha256": {
+        "design_request": "A75721393601D18A0BE4C1B05E91A23AA13F6AC16DE605D9AEB2606AFD7468A3",
+        "design_variables": "181F635F984704F21FAB35F2AC607EDAABCC9F8FD8ACDCC0B311D32E40E61357",
+        "optimization_envelope": "BBAB5E67BC1A07B1E22E9AB2D6E9A93DF9B6935B7CDE02EA679A7799228A8ADC"
+      },
+      "identity": {
+        "project_id": "rf_quadrupole_ion_optics",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 2,
+        "electrode_count": 4
+      },
+      "topology": {
+        "enclosure_role": "full_length_grounded_shield",
+        "segmentation_strategy": "uniform",
+        "axial_drive_topology": "exit_aperture_plate_potential_step"
+      }
+    }
+  ]
+}

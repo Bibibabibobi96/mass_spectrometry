@@ -33,19 +33,23 @@ Invoke-IntegrationStage 'development_standards' { & $PythonExe (Join-Path $PSScr
 Invoke-IntegrationStage 'ruff_all' { & $PythonExe -m ruff check (Join-Path $repoRoot 'common') (Join-Path $repoRoot 'projects') }
 Invoke-IntegrationStage 'project_registry' { & $PythonExe (Join-Path $PSScriptRoot 'contracts\build_project_registry.py') --check }
 Invoke-IntegrationStage 'rf_quadrupole_generated_publications' {
-    & (Join-Path $repoRoot 'projects\rf_quadrupole_collision_cooling\verify_project.ps1') -Level Freshness -PythonExe $PythonExe
+    & (Join-Path $repoRoot 'projects\rf_quadrupole_ion_optics\verify_project.ps1') -Level Freshness -PythonExe $PythonExe
 }
 Invoke-IntegrationStage 'common_contracts' { & $PythonExe -m unittest discover -s (Join-Path $PSScriptRoot 'contracts') -p 'test_*.py' }
 Invoke-IntegrationStage 'multipole_common' { & $PythonExe -m unittest discover -s (Join-Path $PSScriptRoot 'multipole') -p 'test_*.py' }
+Invoke-IntegrationStage 'integration_common' { & $PythonExe -m unittest discover -s (Join-Path $PSScriptRoot 'integration') -p 'test_*.py' }
+Invoke-IntegrationStage 'rf_multipole_to_single_reflection_oatof_integration' {
+    & (Join-Path $repoRoot 'integrations\rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer\verify_integration.ps1') -PythonExe $PythonExe
+}
 Push-Location $repoRoot
 try { Invoke-IntegrationStage 'multipole_foundation' { & $PythonExe -m common.multipole.verify_family_foundation } }
 finally { Pop-Location }
 Invoke-IntegrationStage 'solidworks_common' { & $PythonExe -m unittest discover -s (Join-Path $PSScriptRoot 'solidworks') -p 'test_*.py' }
-Invoke-IntegrationStage 'oa_tof_static' { & (Join-Path $repoRoot 'projects\oa_tof\verify_project.ps1') -Level Static -PythonExe $PythonExe }
-Invoke-IntegrationStage 'rf_quadrupole_static' { & (Join-Path $repoRoot 'projects\rf_quadrupole_collision_cooling\verify_project.ps1') -Level Static -PythonExe $PythonExe }
-Invoke-IntegrationStage 'rf_hexapole_static' { & (Join-Path $repoRoot 'projects\rf_hexapole_ion_guide\verify_project.ps1') -PythonExe $PythonExe }
-Invoke-IntegrationStage 'rf_octupole_static' { & (Join-Path $repoRoot 'projects\rf_octupole_ion_guide\verify_project.ps1') -PythonExe $PythonExe }
-Invoke-IntegrationStage 'wehnelt_static' { & (Join-Path $repoRoot 'projects\wehnelt_electron_gun\verify_project.ps1') -PythonExe $PythonExe }
-Invoke-IntegrationStage 'electron_impact_static' { & (Join-Path $repoRoot 'projects\electron_impact_ion_source\verify_project.ps1') -PythonExe $PythonExe }
+Invoke-IntegrationStage 'single_reflection_oa_tof_mass_analyzer_static' { & (Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer\verify_project.ps1') -Level Static -PythonExe $PythonExe }
+Invoke-IntegrationStage 'rf_quadrupole_static' { & (Join-Path $repoRoot 'projects\rf_quadrupole_ion_optics\verify_project.ps1') -Level Static -PythonExe $PythonExe }
+Invoke-IntegrationStage 'rf_hexapole_static' { & (Join-Path $repoRoot 'projects\rf_hexapole_ion_optics\verify_project.ps1') -PythonExe $PythonExe }
+Invoke-IntegrationStage 'rf_octupole_static' { & (Join-Path $repoRoot 'projects\rf_octupole_ion_optics\verify_project.ps1') -PythonExe $PythonExe }
+Invoke-IntegrationStage 'wehnelt_static' { & (Join-Path $repoRoot 'projects\transverse_helical_filament_wehnelt_electron_gun\verify_project.ps1') -PythonExe $PythonExe }
+Invoke-IntegrationStage 'electron_impact_static' { & (Join-Path $repoRoot 'projects\apertured_tube_electron_impact_ion_source\verify_project.ps1') -PythonExe $PythonExe }
 
 Write-Output "REPOSITORY_INTEGRATION_GATE=PASS PYTHON=$pythonVersion"

@@ -17,7 +17,7 @@ function Assert-Equal {
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
-$projectRoot = Join-Path $repoRoot 'projects\oa_tof'
+$projectRoot = Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer'
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) ("run_artifact_support_" + [guid]::NewGuid().ToString('N'))
 
 try {
@@ -25,7 +25,7 @@ try {
   $interruptedDir = Join-Path $testRoot '20260723_170001__test__cross__lifecycle-interrupted__n100'
   New-Item -ItemType Directory -Path $interruptedDir -Force | Out-Null
   Initialize-RunRecord -RunDir $interruptedDir `
-    -RunId (Split-Path -Leaf $interruptedDir) -Project 'oa_tof' -Mode 'contract_test' `
+    -RunId (Split-Path -Leaf $interruptedDir) -Project 'single_reflection_oa_tof_mass_analyzer' -Mode 'contract_test' `
     -ProjectRoot $projectRoot -RepoRoot $repoRoot -Python $python `
     -ProvisionalSummaryRole 'oa_tof_provisional_run_summary' `
     -TerminalSummaryRole 'oa_tof_terminal_run_summary'
@@ -61,7 +61,7 @@ try {
   $successConfig = Join-Path $successDir 'run_config.json'
   $successSummary = Join-Path $successDir 'summary.json'
   Write-RunJson -Path $successConfig -Value ([ordered]@{
-    schema_version=1;run_id=(Split-Path -Leaf $successDir);project='oa_tof'
+    schema_version=1;run_id=(Split-Path -Leaf $successDir);project='single_reflection_oa_tof_mass_analyzer'
     mode='contract_test';project_root=$projectRoot;inputs=[ordered]@{}
   })
   Write-RunJson -Path $successSummary -Value ([ordered]@{
@@ -72,6 +72,28 @@ try {
   $successManifest = Get-Content -LiteralPath (Join-Path $successDir 'run_manifest.json') `
     -Raw -Encoding UTF8 | ConvertFrom-Json
   Assert-Equal $successManifest.status 'success' 'Success manifest status changed.'
+
+  $budgetPackage=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $testRoot `
+    -RunId '20260723_170003__test__cross__resource-budget__n100' `
+    -Project 'single_reflection_oa_tof_mass_analyzer' -Mode 'contract_test' `
+    -Software @('contract test') -RetentionContractEnabled -RetentionClass compact
+  $usagePath=Join-Path $budgetPackage.result_dir 'resource_usage.json'
+  Write-RunJson -Path $usagePath -Value ([ordered]@{
+    schema_version=1;role='multipole_resource_usage';status='resource_budget_exceeded'
+    failure_class='resource_budget_exceeded';limit_name='wall_clock_seconds'
+    peak_run_directory_bytes=0;final_retained_bytes=$null
+    limits=[ordered]@{compact_final_retained_bytes=26214400}
+  })
+  Complete-FailedRun -Python $python -RepoRoot $repoRoot `
+    -RunConfig $budgetPackage.run_config -Summary $budgetPackage.summary `
+    -SummaryRole 'resource_budget_test_summary' -Reason 'wall clock exceeded' `
+    -Software @('contract test') -Status interrupted `
+    -FailureClass resource_budget_exceeded -ResourceUsagePath $usagePath
+  $budgetSummary=Get-Content -LiteralPath $budgetPackage.summary -Raw|ConvertFrom-Json
+  $budgetManifest=Get-Content -LiteralPath (Join-Path $budgetPackage.run_dir 'run_manifest.json') -Raw|ConvertFrom-Json
+  Assert-Equal $budgetSummary.status 'interrupted' 'Resource budget summary must be interrupted.'
+  Assert-Equal $budgetSummary.failure_class 'resource_budget_exceeded' 'Resource budget failure class changed.'
+  Assert-Equal $budgetManifest.status 'interrupted' 'Resource budget manifest must be interrupted.'
 
   $writeError = ''
   try {

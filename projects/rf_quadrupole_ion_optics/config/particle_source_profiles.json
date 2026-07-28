@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "role": "multipole_particle_source_profiles",
+  "project_id": "rf_quadrupole_ion_optics",
+  "profiles": {
+    "official_fixed_100": {
+      "path": "projects/rf_quadrupole_ion_optics/config/particles/official_fixed_100_canonical.csv",
+      "sha256": "3A04CFDD2A091F8CC979DD6180E5C7E072A5D96A87ED03768A606581D15D15C5"
+    },
+    "family_mother_sample_v1_n100": {
+      "path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_100.csv",
+      "sha256": "0125C3AB02B2321EF26A3A913CF6EC04325FD0D48597D2CB439D0CE42411662F"
+    },
+    "family_mother_sample_v1_n1000": {
+      "path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_1000.csv",
+      "sha256": "CE68A6B47DC5726D9C45CBE28E4397A2321D782FAED265067824891AAF4D0FBF"
+    }
+  }
+}

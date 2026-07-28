@@ -246,7 +246,7 @@ $$
 六极杆或八极杆形成正式设计线时，建议建立平级项目：
 
 ```text
-projects/rf_hexapole_ion_guide/
+projects/rf_hexapole_ion_optics/
 projects/rf_octopole_collision_cell/
 ```
 

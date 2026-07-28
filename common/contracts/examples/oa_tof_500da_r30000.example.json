@@ -5,7 +5,7 @@
   "title": "500 Da singly charged ion oa-TOF resolving-power design",
   "target": {
     "family_id": "tof_mass_analyzers",
-    "preferred_project_id": "oa_tof",
+    "preferred_project_id": "single_reflection_oa_tof_mass_analyzer",
     "function": "mass_analysis",
     "mode": "mass_spectrum"
   },

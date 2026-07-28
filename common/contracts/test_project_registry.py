@@ -13,6 +13,7 @@ from build_project_registry import (
     descriptor_paths,
     serialized,
     validate_descriptor,
+    validate_legacy_identity_mappings,
 )
 from machine_contracts import load_json, validate_schema
 
@@ -50,21 +51,21 @@ class ProjectRegistryTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
     def test_project_id_must_match_directory(self) -> None:
-        path = REPO_ROOT / "projects" / "oa_tof" / "config" / "project.json"
+        path = REPO_ROOT / "projects" / "single_reflection_oa_tof_mass_analyzer" / "config" / "project.json"
         descriptor = copy.deepcopy(load_json(path))
         descriptor["project_id"] = "wrong_project"
         with self.assertRaisesRegex(ContractError, "differs from directory"):
             validate_descriptor(descriptor, path, REPO_ROOT)
 
     def test_schema_rejects_unknown_maturity(self) -> None:
-        path = REPO_ROOT / "projects" / "oa_tof" / "config" / "project.json"
+        path = REPO_ROOT / "projects" / "single_reflection_oa_tof_mass_analyzer" / "config" / "project.json"
         descriptor = copy.deepcopy(load_json(path))
         descriptor["lifecycle_status"] = "finished"
         with self.assertRaises(ContractError):
             validate_schema(descriptor, "project.schema.json")
 
     def test_revalidation_pending_retains_formal_history_and_identity_requirement(self) -> None:
-        path = REPO_ROOT / "projects" / "oa_tof" / "config" / "project.json"
+        path = REPO_ROOT / "projects" / "single_reflection_oa_tof_mass_analyzer" / "config" / "project.json"
         descriptor = copy.deepcopy(load_json(path))
         self.assertEqual(descriptor["lifecycle_status"], "formal_revalidation_pending")
         self.assertIn("science", descriptor["contracts"])
@@ -74,6 +75,76 @@ class ProjectRegistryTests(unittest.TestCase):
         descriptor["formal_assets"]["identity_contract"] = None
         with self.assertRaisesRegex(ContractError, "identity contract"):
             validate_descriptor(descriptor, path, REPO_ROOT)
+
+    def test_legacy_identity_schema_freezes_recorded_evidence_semantics(self) -> None:
+        path = REPO_ROOT / "projects" / "single_reflection_oa_tof_mass_analyzer" / "config" / "project.json"
+        descriptor = copy.deepcopy(load_json(path))
+        legacy = descriptor["legacy_identities"][0]
+        self.assertEqual(legacy["verification_identity"], "recorded_project_id")
+        self.assertEqual(legacy["artifact_access"], "read_only")
+        self.assertFalse(legacy["new_runs_allowed"])
+
+        legacy["verification_identity"] = "current_project_id"
+        with self.assertRaises(ContractError):
+            validate_schema(descriptor, "project.schema.json")
+
+    def test_legacy_identity_rejects_active_id_and_wrong_artifact_root(self) -> None:
+        descriptors = [
+            {
+                "project_id": "current_project",
+                "legacy_identities": [
+                    {
+                        "mapping_id": "rename_1",
+                        "project_id": "other_active_project",
+                        "artifact_root": "artifacts/projects/other_active_project",
+                    }
+                ],
+            },
+            {"project_id": "other_active_project"},
+        ]
+        with self.assertRaisesRegex(ContractError, "still active"):
+            validate_legacy_identity_mappings(descriptors)
+
+        descriptors.pop()
+        descriptors[0]["legacy_identities"][0]["project_id"] = "retired_project"
+        with self.assertRaisesRegex(ContractError, "legacy artifact root must be"):
+            validate_legacy_identity_mappings(descriptors)
+
+    def test_legacy_identity_rejects_duplicate_ids_and_mapping_ids(self) -> None:
+        descriptors = [
+            {
+                "project_id": "current_a",
+                "legacy_identities": [
+                    {
+                        "mapping_id": "rename_shared",
+                        "project_id": "retired_shared",
+                        "artifact_root": "artifacts/projects/retired_shared",
+                    }
+                ],
+            },
+            {
+                "project_id": "current_b",
+                "legacy_identities": [
+                    {
+                        "mapping_id": "rename_other",
+                        "project_id": "retired_shared",
+                        "artifact_root": "artifacts/projects/retired_shared",
+                    }
+                ],
+            },
+        ]
+        with self.assertRaisesRegex(ContractError, "duplicate legacy project_id"):
+            validate_legacy_identity_mappings(descriptors)
+
+        descriptors[1]["legacy_identities"][0].update(
+            {
+                "mapping_id": "rename_shared",
+                "project_id": "retired_other",
+                "artifact_root": "artifacts/projects/retired_other",
+            }
+        )
+        with self.assertRaisesRegex(ContractError, "duplicate legacy mapping_id"):
+            validate_legacy_identity_mappings(descriptors)
 
 
 if __name__ == "__main__":

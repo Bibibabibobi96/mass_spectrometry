@@ -262,7 +262,11 @@ function Complete-FailedRun {
     [Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$RepoRoot,
     [Parameter(Mandatory)][string]$RunConfig,[Parameter(Mandatory)][string]$Summary,
     [Parameter(Mandatory)][string]$SummaryRole,[Parameter(Mandatory)][string]$Reason,
-    [Parameter(Mandatory)][string[]]$Software
+    [Parameter(Mandatory)][string[]]$Software,
+    [ValidateSet('failed','interrupted')][string]$Status='failed',
+    [string]$FailureClass='',
+    [string[]]$AdditionalOutputs=@(),
+    [string]$ResourceUsagePath=''
   )
   $document=Get-Content -LiteralPath $RunConfig -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
   if(-not $document.Contains('inputs')){$document.inputs=[ordered]@{}}
@@ -273,12 +277,42 @@ function Complete-FailedRun {
     if($known-notcontains$file.FullName){$index+=1;$document.inputs[("recovered_input_{0:D3}"-f$index)]=$file.FullName}
   }}
   Write-RunJson -Path $RunConfig -Value $document
-  Write-RunJson -Path $Summary -Value ([ordered]@{schema_version=1;role=$SummaryRole;status='failed';reason=$Reason})
+  $summaryDocument=[ordered]@{
+    schema_version=1;role=$SummaryRole;status=$Status;reason=$Reason
+  }
+  if(-not[string]::IsNullOrWhiteSpace($FailureClass)){
+    $summaryDocument.failure_class=$FailureClass
+  }
+  Write-RunJson -Path $Summary -Value $summaryDocument
   $retentionActions=$null
   if([int]$document.schema_version-eq 2){
     $retentionActions=Apply-RunArtifactRetention -Python $Python -RepoRoot $RepoRoot -RunConfig $RunConfig
   }
-  $outputs=@($Summary)
+  if(-not[string]::IsNullOrWhiteSpace($ResourceUsagePath)-and
+    (Test-Path -LiteralPath $ResourceUsagePath -PathType Leaf)){
+    $usage=Get-Content -LiteralPath $ResourceUsagePath -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+    $finalBytes=[int64](Get-ChildItem -LiteralPath $runDir -Recurse -File|
+      Measure-Object -Property Length -Sum).Sum
+    $usage.final_retained_bytes=$finalBytes
+    if([int64]$usage.peak_run_directory_bytes-lt$finalBytes){
+      $usage.peak_run_directory_bytes=$finalBytes
+    }
+    if($finalBytes-gt[int64]$usage.limits.compact_final_retained_bytes){
+      $usage.status='resource_budget_exceeded'
+      $usage.failure_class='resource_budget_exceeded'
+      $usage.limit_name='compact_final_retained_bytes'
+      $Status='interrupted'
+      Write-RunJson -Path $Summary -Value ([ordered]@{
+        schema_version=1;role=$SummaryRole;status='interrupted';reason='Compact final retained-byte budget exceeded.'
+        failure_class='resource_budget_exceeded'
+      })
+    }
+    Write-RunJson -Path $ResourceUsagePath -Value $usage
+    $AdditionalOutputs+=@($ResourceUsagePath)
+  }
+  $outputs=@($Summary)+@($AdditionalOutputs|Where-Object{
+    -not[string]::IsNullOrWhiteSpace($_)-and(Test-Path -LiteralPath $_ -PathType Leaf)
+  })
   if($retentionActions){$outputs+=$retentionActions}
   foreach($relative in @('results','logs','simion')){
     $directory=Join-Path $runDir $relative
@@ -287,5 +321,5 @@ function Complete-FailedRun {
     }
   }
   Write-VerifiedRunManifest -Python $Python -RepoRoot $RepoRoot -RunConfig $RunConfig `
-    -Status failed -Software $Software -Outputs @($outputs|Select-Object -Unique)
+    -Status $Status -Software $Software -Outputs @($outputs|Select-Object -Unique)
 }

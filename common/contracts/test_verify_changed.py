@@ -10,8 +10,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CHANGED_GATE = REPO_ROOT / "common" / "verify_changed.ps1"
 INTEGRATION_GATE = REPO_ROOT / "common" / "verify_repository_integration.ps1"
+LIGHTWEIGHT_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "lightweight-gate.yml"
 QUADRUPOLE_GATE = (
-    REPO_ROOT / "projects" / "rf_quadrupole_collision_cooling" / "verify_project.ps1"
+    REPO_ROOT / "projects" / "rf_quadrupole_ion_optics" / "verify_project.ps1"
 )
 
 
@@ -68,7 +69,7 @@ class ChangedGateContractTests(unittest.TestCase):
         self.assertIn("CHANGED_GATE_FAST_PATH=DOCUMENTATION_ONLY", completed.stdout)
         self.assertNotIn("GATE_STAGE=RUN NAME=multipole_common", completed.stdout)
         self.assertNotIn(
-            "GATE_STAGE=RUN NAME=rf_quadrupole_collision_cooling_static",
+            "GATE_STAGE=RUN NAME=rf_quadrupole_ion_optics_static",
             completed.stdout,
         )
 
@@ -82,26 +83,65 @@ class ChangedGateContractTests(unittest.TestCase):
         self.assertNotIn("@pythonFiles", self.source)
 
     def test_routes_project_config_to_its_own_static_gate(self) -> None:
-        self.assertIn("projects/oa_tof/", self.source)
-        self.assertIn("projects/rf_quadrupole_collision_cooling/", self.source)
-        self.assertIn("projects/rf_hexapole_ion_guide/", self.source)
-        self.assertIn("projects/rf_octupole_ion_guide/", self.source)
-        self.assertIn("projects/wehnelt_electron_gun/", self.source)
-        self.assertIn("projects/electron_impact_ion_source/", self.source)
+        self.assertIn("projects/single_reflection_oa_tof_mass_analyzer/", self.source)
+        self.assertIn("projects/rf_quadrupole_ion_optics/", self.source)
+        self.assertIn("projects/rf_hexapole_ion_optics/", self.source)
+        self.assertIn("projects/rf_octupole_ion_optics/", self.source)
+        self.assertIn("projects/transverse_helical_filament_wehnelt_electron_gun/", self.source)
+        self.assertIn("projects/apertured_tube_electron_impact_ion_source/", self.source)
+
+    def test_ci_fallback_uses_current_rf_project_paths(self) -> None:
+        workflow = LIGHTWEIGHT_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("common/integration/README.md", workflow)
+        self.assertIn("integrations/registry.json", workflow)
+        for project_id in (
+            "rf_quadrupole_ion_optics",
+            "rf_hexapole_ion_optics",
+            "rf_octupole_ion_optics",
+        ):
+            self.assertIn(f"projects/{project_id}/README.md", workflow)
+        for legacy_id in (
+            "rf_quadrupole_collision_cooling",
+            "rf_hexapole_ion_guide",
+            "rf_octupole_ion_guide",
+        ):
+            self.assertNotIn(f"projects/{legacy_id}/README.md", workflow)
 
     def test_multipole_common_routes_only_its_direct_family(self) -> None:
         self.assertIn("$hasMultipoleChange", self.source)
         self.assertIn("multipole_common", self.source)
         self.assertIn("multipole_foundation", self.source)
         self.assertIn("common_multipole_direct_dependency_changed", self.source)
-        self.assertNotIn("oa_tof = (Test-PathPrefix 'projects/oa_tof/') -or $hasMultipoleChange", self.source)
+        self.assertNotIn("single_reflection_oa_tof_mass_analyzer = (Test-PathPrefix 'projects/single_reflection_oa_tof_mass_analyzer/') -or $hasMultipoleChange", self.source)
 
     def test_common_contracts_routes_to_declared_direct_consumers(self) -> None:
         self.assertIn("common_contracts_direct_dependency_changed", self.source)
-        self.assertIn("oa_tof = (Test-PathPrefix 'projects/oa_tof/') -or $hasContractsChange", self.source)
-        self.assertIn("rf_quadrupole_collision_cooling = (Test-PathPrefix 'projects/rf_quadrupole_collision_cooling/') -or $hasContractsChange", self.source)
-        self.assertIn("wehnelt_electron_gun = (Test-PathPrefix 'projects/wehnelt_electron_gun/') -or $hasContractsChange", self.source)
-        self.assertIn("electron_impact_ion_source = (Test-PathPrefix 'projects/electron_impact_ion_source/') -or $hasContractsChange", self.source)
+        self.assertIn("single_reflection_oa_tof_mass_analyzer = (Test-PathPrefix 'projects/single_reflection_oa_tof_mass_analyzer/') -or $hasContractsChange", self.source)
+        self.assertIn("rf_quadrupole_ion_optics = (Test-PathPrefix 'projects/rf_quadrupole_ion_optics/') -or $hasContractsChange", self.source)
+        self.assertIn("transverse_helical_filament_wehnelt_electron_gun = (Test-PathPrefix 'projects/transverse_helical_filament_wehnelt_electron_gun/') -or $hasContractsChange", self.source)
+        self.assertIn("apertured_tube_electron_impact_ion_source = (Test-PathPrefix 'projects/apertured_tube_electron_impact_ion_source/') -or $hasContractsChange", self.source)
+
+    def test_integration_changes_route_only_to_connection_gates(self) -> None:
+        self.assertIn("$hasCommonIntegrationChange", self.source)
+        self.assertIn("$hasIntegrationInstanceChange", self.source)
+        self.assertIn("$hasComponentPortChange", self.source)
+        self.assertIn("$hasIntegrationSchemaChange", self.source)
+        self.assertIn("integration_common", self.source)
+        self.assertIn(
+            "rf_multipole_to_single_reflection_oatof_integration",
+            self.source,
+        )
+        self.assertIn(
+            "integrations\\rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer\\verify_integration.ps1",
+            self.source,
+        )
+
+        integration_source = INTEGRATION_GATE.read_text(encoding="utf-8")
+        self.assertIn("integration_common", integration_source)
+        self.assertIn(
+            "rf_multipole_to_single_reflection_oatof_integration",
+            integration_source,
+        )
 
     def test_gate_entrypoints_run_their_contract_tests(self) -> None:
         self.assertIn("$hasGateContractChange", self.source)
@@ -159,11 +199,11 @@ class ChangedGateContractTests(unittest.TestCase):
         self.assertLess(freshness_return, analysis_suite)
 
     def test_rf_quadrupole_uses_core_in_l1_and_static_in_l2(self) -> None:
-        self.assertIn("$project -eq 'rf_quadrupole_collision_cooling'", self.source)
+        self.assertIn("$project -eq 'rf_quadrupole_ion_optics'", self.source)
         self.assertIn("& $projectScript -Level Core -PythonExe $PythonExe", self.source)
         integration_source = INTEGRATION_GATE.read_text(encoding="utf-8")
         self.assertIn(
-            "rf_quadrupole_collision_cooling\\verify_project.ps1') -Level Static",
+            "rf_quadrupole_ion_optics\\verify_project.ps1') -Level Static",
             integration_source,
         )
 

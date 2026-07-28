@@ -31,7 +31,7 @@ class MultipoleFamilyContractTests(unittest.TestCase):
         validate_family_foundation()
 
     def test_high_order_n100_source_is_n1000_prefix(self) -> None:
-        baseline = load_json(REPO_ROOT / "projects" / "rf_hexapole_ion_guide" / "config" / "baseline.json")
+        baseline = load_json(REPO_ROOT / "projects" / "rf_hexapole_ion_optics" / "config" / "baseline.json")
         statistical = copy.deepcopy(baseline)
         statistical["particle_source"]["count"] = 1000
         self.assertEqual(source_particles(baseline), source_particles(statistical)[:100])
@@ -45,12 +45,12 @@ class MultipoleFamilyContractTests(unittest.TestCase):
 
     def test_three_projects_share_one_family_identity(self) -> None:
         hexapole = from_high_order_baseline(
-            load_json(REPO_ROOT / "projects" / "rf_hexapole_ion_guide" / "config" / "baseline.json")
+            load_json(REPO_ROOT / "projects" / "rf_hexapole_ion_optics" / "config" / "baseline.json")
         )
         octupole = from_high_order_baseline(
-            load_json(REPO_ROOT / "projects" / "rf_octupole_ion_guide" / "config" / "baseline.json")
+            load_json(REPO_ROOT / "projects" / "rf_octupole_ion_optics" / "config" / "baseline.json")
         )
-        quad_root = REPO_ROOT / "projects" / "rf_quadrupole_collision_cooling" / "config"
+        quad_root = REPO_ROOT / "projects" / "rf_quadrupole_ion_optics" / "config"
         quadrupole = from_quadrupole_contract(
             load_json(quad_root / "baseline.json"),
             load_json(quad_root / "modes" / "mass_filter_reference.json"),
@@ -66,7 +66,7 @@ class MultipoleFamilyContractTests(unittest.TestCase):
         self.assertEqual({hexapole.geometry.r0_mm, octupole.geometry.r0_mm, quadrupole.geometry.r0_mm}, {4.0})
 
     def test_rf_dc_group_voltage_semantics_are_shared(self) -> None:
-        root = REPO_ROOT / "projects" / "rf_quadrupole_collision_cooling" / "config"
+        root = REPO_ROOT / "projects" / "rf_quadrupole_ion_optics" / "config"
         operating = from_quadrupole_contract(
             load_json(root / "baseline.json"), load_json(root / "modes" / "mass_filter_reference.json")
         )
@@ -76,7 +76,7 @@ class MultipoleFamilyContractTests(unittest.TestCase):
         self.assertAlmostEqual(positive - negative, 45.52602987935551)
 
     def test_interface_mode_requires_and_records_explicit_rf_binding(self) -> None:
-        root = REPO_ROOT / "projects" / "rf_quadrupole_collision_cooling" / "config"
+        root = REPO_ROOT / "projects" / "rf_quadrupole_ion_optics" / "config"
         baseline = load_json(root / "baseline.json")
         mode = load_json(root / "modes" / "transport_interface_readiness.json")
         with self.assertRaisesRegex(ValueError, "explicit per-run RF amplitude"):
@@ -87,7 +87,7 @@ class MultipoleFamilyContractTests(unittest.TestCase):
         self.assertEqual(operating.voltage.dc_amplitude_v_per_group, 0.0)
 
     def test_explicit_run_binding_overrides_embedded_rf_values(self) -> None:
-        root = REPO_ROOT / "projects" / "rf_quadrupole_collision_cooling" / "config"
+        root = REPO_ROOT / "projects" / "rf_quadrupole_ion_optics" / "config"
         operating = from_quadrupole_contract(
             load_json(root / "baseline.json"),
             load_json(root / "modes" / "transport_no_collision.json"),
@@ -113,7 +113,7 @@ class MultipoleFamilyContractTests(unittest.TestCase):
         quadrupole_solver = (
             REPO_ROOT
             / "projects"
-            / "rf_quadrupole_collision_cooling"
+            / "rf_quadrupole_ion_optics"
             / "comsol"
             / "solve_deterministic_rf_quadrupole_particles.m"
         ).read_text(encoding="utf-8")

@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/component_port.schema.json",
+  "title": "Solver-neutral component mating port",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "role", "project_id", "port_id", "direction", "profile_scope",
+    "authority", "state_contract", "coordinate_frame", "mating_surface", "clock",
+    "field_boundary"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "component_port"},
+    "project_id": {"$ref": "#/$defs/identifier"},
+    "port_id": {"$ref": "#/$defs/identifier"},
+    "direction": {"enum": ["provided", "required"]},
+    "profile_scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope_id", "scope_kind", "family_experiment_port"],
+      "properties": {
+        "scope_id": {"$ref": "#/$defs/identifier"},
+        "scope_kind": {
+          "enum": ["design_profile", "formal_reference", "integration_oracle"]
+        },
+        "family_experiment_port": {"type": "boolean"}
+      }
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_contract", "source_sha256", "bindings"],
+      "properties": {
+        "source_contract": {
+          "type": "string",
+          "pattern": "^projects/[a-z][a-z0-9_]*(?:/[A-Za-z0-9._-]+)+\\.json$"
+        },
+        "source_sha256": {"type": "string", "pattern": "^[A-F0-9]{64}$"},
+        "bindings": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["port_json_pointer", "source_json_pointer"],
+            "properties": {
+              "port_json_pointer": {"type": "string", "pattern": "^/(?:[^~/]|~[01])+(?:/(?:[^~/]|~[01])+)*$"},
+              "source_json_pointer": {"type": "string", "pattern": "^/(?:[^~/]|~[01])+(?:/(?:[^~/]|~[01])+)*$"}
+            }
+          }
+        }
+      }
+    },
+    "state_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_id", "schema_version"],
+      "properties": {
+        "schema_id": {"$ref": "#/$defs/identifier"},
+        "schema_version": {"type": "integer", "minimum": 1}
+      }
+    },
+    "coordinate_frame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["frame_id", "length_unit", "handedness"],
+      "properties": {
+        "frame_id": {"$ref": "#/$defs/identifier"},
+        "length_unit": {"const": "mm"},
+        "handedness": {"const": "right_handed"}
+      }
+    },
+    "mating_surface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["center_mm", "outward_normal", "aperture_radius_mm", "potential_V"],
+      "properties": {
+        "center_mm": {"$ref": "#/$defs/vector3"},
+        "outward_normal": {"$ref": "#/$defs/vector3"},
+        "aperture_radius_mm": {"type": "number", "exclusiveMinimum": 0},
+        "potential_V": {"type": "number"}
+      }
+    },
+    "clock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["time_unit", "origin_id"],
+      "properties": {
+        "time_unit": {"const": "s"},
+        "origin_id": {"$ref": "#/$defs/identifier"}
+      }
+    },
+    "field_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field_reaches_surface"],
+      "properties": {
+        "field_reaches_surface": {"type": "boolean"}
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
+    "vector3": {
+      "type": "array", "minItems": 3, "maxItems": 3,
+      "items": {"type": "number"}
+    }
+  }
+}

@@ -1,0 +1,8 @@
+; Generated from config/resolved_design_official.json; do not edit.
+; resolved_design_sha256=F59BD9FFD0B9707219B1D7F02EC23C692518EC38862D421F3D7F3412D2C9A2CB
+
+# local mmgu = 0.2
+
+pa_define($(7.6/mmgu+1), $(7.6/mmgu+1), $(95.2/mmgu+1), planar,xy, electric,, $(mmgu), surface=fractional)
+
+include(quad_include.gem)

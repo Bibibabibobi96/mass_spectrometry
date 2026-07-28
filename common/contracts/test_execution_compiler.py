@@ -111,7 +111,7 @@ class ExecutionCompilerTests(unittest.TestCase):
         self.assertEqual(ready["profile_id"], "validated_structural_candidate")
         self.assertEqual(
             ready["commands"][0]["argv"][1:3],
-            ["-m", "projects.oa_tof.workflows.design_candidate.run_candidate"],
+            ["-m", "projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate"],
         )
         argv = ready["commands"][0]["argv"]
         self.assertIn("--request", argv)

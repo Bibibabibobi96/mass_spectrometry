@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "role": "multipole_three_mode_voltage_contract",
+  "project_id": "rf_octupole_ion_optics",
+  "mode_id": "exit_aperture_plate_acceleration",
+  "geometry_invariant_sha256": "A7C87A3EBAD043E61BCA27A1C2F92D7263F3AC41E795C7AAAFCE79C1DD9C13AD",
+  "rod_segment_common_mode_V": [0.0, 0.0, 0.0, 0.0],
+  "entrance_aperture_plate_and_connector_V": 0.0,
+  "exit_aperture_plate_and_connector_V": -3.0
+}

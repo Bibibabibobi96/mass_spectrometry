@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -28,7 +29,9 @@ def load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
+@lru_cache(maxsize=1)
 def schema_registry() -> Registry:
+    """Build the immutable repository schema registry once per Python process."""
     registry = Registry()
     for path in sorted(SCHEMA_DIR.glob("*.schema.json")):
         schema = load_json(path)
@@ -37,9 +40,14 @@ def schema_registry() -> Registry:
     return registry
 
 
-def validate_schema(instance: Any, schema_name: str) -> None:
+@lru_cache(maxsize=None)
+def _schema_validator(schema_name: str) -> Draft202012Validator:
     schema = load_json(SCHEMA_DIR / schema_name)
-    validator = Draft202012Validator(schema, registry=schema_registry())
+    return Draft202012Validator(schema, registry=schema_registry())
+
+
+def validate_schema(instance: Any, schema_name: str) -> None:
+    validator = _schema_validator(schema_name)
     errors = sorted(validator.iter_errors(instance), key=lambda error: list(error.absolute_path))
     if not errors:
         return

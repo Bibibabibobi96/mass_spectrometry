@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "role": "integration_registry",
+  "integrations": [
+    {
+      "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "root": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "profile_registry": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/connection_profiles.json"
+    }
+  ]
+}

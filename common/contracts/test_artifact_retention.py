@@ -209,22 +209,26 @@ class ArtifactRetentionTests(unittest.TestCase):
             "common/multipole/run_simion_finite_3d_transport.ps1",
         }
         legacy = {
-            "projects/oa_tof/tests/comsol/run_n100_candidate_functional.ps1",
-            "projects/oa_tof/tests/simion/run_n100_source_build_and_track.ps1",
-            "projects/rf_quadrupole_collision_cooling/runtime/cross_solver_analysis_lifecycle.ps1",
-            "projects/rf_quadrupole_collision_cooling/runtime/run_artifacts.ps1",
-            "projects/rf_quadrupole_collision_cooling/workflows/interface_readiness/run_comsol.ps1",
-            "projects/rf_quadrupole_collision_cooling/workflows/interface_readiness/run_simion.ps1",
-            "projects/rf_quadrupole_collision_cooling/workflows/mass_filter_reference/compare_responses.ps1",
-            "projects/rf_quadrupole_collision_cooling/workflows/mass_filter_reference/run_simion.ps1",
-            "projects/rf_quadrupole_collision_cooling/workflows/same_solver_convergence/run_comparison.ps1",
-            "projects/wehnelt_electron_gun/run_build_only_smoke.ps1",
+            "projects/single_reflection_oa_tof_mass_analyzer/tests/comsol/run_n100_candidate_functional.ps1",
+            "projects/single_reflection_oa_tof_mass_analyzer/tests/simion/run_n100_source_build_and_track.ps1",
+            "projects/rf_quadrupole_ion_optics/runtime/cross_solver_analysis_lifecycle.ps1",
+            "projects/rf_quadrupole_ion_optics/runtime/run_artifacts.ps1",
+            "projects/rf_quadrupole_ion_optics/workflows/interface_readiness/run_comsol.ps1",
+            "projects/rf_quadrupole_ion_optics/workflows/interface_readiness/run_simion.ps1",
+            "projects/rf_quadrupole_ion_optics/workflows/mass_filter_reference/compare_responses.ps1",
+            "projects/rf_quadrupole_ion_optics/workflows/mass_filter_reference/run_simion.ps1",
+            "projects/rf_quadrupole_ion_optics/workflows/same_solver_convergence/run_comparison.ps1",
+            "projects/transverse_helical_filament_wehnelt_electron_gun/run_build_only_smoke.ps1",
         }
         callers: dict[str, str] = {}
         for root in ("common", "projects"):
             for path in (REPO_ROOT / root).rglob("*.ps1"):
                 source = path.read_text(encoding="utf-8-sig")
-                if "New-RunPackage" in source and path.name != "run_artifact_support.ps1":
+                if (
+                    "New-RunPackage" in source
+                    and path.name != "run_artifact_support.ps1"
+                    and not path.name.startswith("test_")
+                ):
                     callers[path.relative_to(REPO_ROOT).as_posix()] = source
         self.assertEqual(set(callers), migrated | legacy)
         for relative in migrated:

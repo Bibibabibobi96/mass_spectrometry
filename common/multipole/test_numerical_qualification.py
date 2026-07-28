@@ -28,7 +28,7 @@ def sample(solver: str = "COMSOL") -> dict:
         numerics.update({"cell_mm": 0.4, "trajectory_quality": 10})
     return {
         "run_id": "run-a",
-        "project": "rf_hexapole_ion_guide",
+        "project": "rf_hexapole_ion_optics",
         "solver": solver,
         "resolved_design_sha256": "D",
         "particle_source_sha256": "P",
