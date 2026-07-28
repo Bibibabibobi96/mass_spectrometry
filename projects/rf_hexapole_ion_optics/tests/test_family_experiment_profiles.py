@@ -279,7 +279,7 @@ class FamilyExperimentProfileTests(unittest.TestCase):
             self.assertTrue(contract["preregistered_before_run"])
             self.assertTrue(contract[content])
         engineering = load("config/qualification/engineering_budget.json")
-        self.assertTrue(engineering["pilot_authorization"]["authorized"])
+        self.assertFalse(engineering["pilot_authorization"]["authorized"])
         self.assertEqual(
             engineering["pilot_authorization"]["scope"]["runtime_profile_id"],
             "exit_aperture_plate_acceleration_n100_spatial_refined",
@@ -307,6 +307,21 @@ class FamilyExperimentProfileTests(unittest.TestCase):
         )
         self.assertEqual(
             acceleration["same_solver_spatial"]["comsol"]["status"],
+            "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
+        )
+        exit_plate = load(
+            "config/qualification/n100_exit_aperture_plate_acceleration_qualification.json"
+        )
+        self.assertEqual(
+            exit_plate["baseline_functional_transport"]["status"],
+            "PASS",
+        )
+        self.assertEqual(
+            exit_plate["same_solver_spatial"]["simion"]["functional_status"],
+            "PASS",
+        )
+        self.assertEqual(
+            exit_plate["same_solver_spatial"]["comsol"]["status"],
             "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
         )
 

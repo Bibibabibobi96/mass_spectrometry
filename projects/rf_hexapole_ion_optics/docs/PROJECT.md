@@ -124,11 +124,16 @@ RMS半径差约`7.67%`。功能传输闭合，但连续结果只能`INCONCLUSIVE
 baseline已在两求解器保持100/100传输和精确粒子身份，SIMION空间档也保持100/100；COMSOL空间档
 在`MESH_COMPLETE`后以19.453 GB超过17.180 GB进程树帽，记为
 `INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`，不重跑、不抬帽。当前只授权出口孔板加速N=100
-baseline已在两求解器保持100/100传输和精确粒子身份；当前只授权其一对空间敏感性运行，
+baseline已在两求解器保持100/100传输和精确粒子身份；SIMION空间档也保持100/100，RMS半径、
+发散角和平均能量相对baseline分别变化约`8.16%`、`2.20%`和`0.152%`。COMSOL空间档在
+`MESH_COMPLETE`后以19.288 GB超过17.180 GB进程树帽，记为
+`INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`，不重跑、不抬帽。当前没有授权任何商业求解器运行；
 时间档、N=1000和完整矩阵未授权。完整
 身份登记在`../config/qualification/n100_no_acceleration_qualification.json`。
 分段杆轴向加速身份和资源结论登记在
 `../config/qualification/n100_segmented_rod_axial_acceleration_qualification.json`。
+出口孔板加速身份和资源结论登记在
+`../config/qualification/n100_exit_aperture_plate_acceleration_qualification.json`。
 `three_mode_dispersion_binding`还需要真实solver handoff state路径/SHA，只能在真实run后生成；静态阶段
 不得伪造。没有N=1000真实运行、GUI/CAD同步与formal asset promotion时不得
 声明Formal。碰撞冷却与CAD仍为独立后续阶段。轴向加速若

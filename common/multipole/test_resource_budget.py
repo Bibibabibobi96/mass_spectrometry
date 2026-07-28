@@ -35,19 +35,15 @@ class ResourceBudgetTests(unittest.TestCase):
             retention_class=retention_class,
         )
 
-    def test_only_hexapole_exit_plate_spatial_pair_is_authorized(self) -> None:
-        validated = self.validate()
-        self.assertEqual(
-            validated["runtime_profile_id"],
-            "exit_aperture_plate_acceleration_n100_spatial_refined",
-        )
+    def test_no_commercial_solver_pair_is_authorized(self) -> None:
         for project_id, profile in (
             (QUAD, "exit_aperture_plate_acceleration_n100_spatial_refined"),
+            (HEX, "exit_aperture_plate_acceleration_n100_spatial_refined"),
             (OCT, "no_acceleration_full_length_n100_temporal_refined"),
         ):
             with self.assertRaisesRegex(ValueError, "not authorized"):
                 self.validate(project_id, profile)
-        with self.assertRaisesRegex(ValueError, "differs from authorized scope"):
+        with self.assertRaisesRegex(ValueError, "not authorized"):
             self.validate(
                 HEX,
                 "exit_aperture_plate_acceleration",
