@@ -35,20 +35,15 @@ class ResourceBudgetTests(unittest.TestCase):
             retention_class=retention_class,
         )
 
-    def test_only_quadrupole_segmented_acceleration_spatial_pair_is_authorized(self) -> None:
-        validated = self.validate()
-        self.assertEqual(
-            validated["runtime_profile_id"],
-            "segmented_rod_axial_acceleration_n100_spatial_refined",
-        )
-        for project_id in (HEX, OCT):
+    def test_no_commercial_solver_pilot_remains_authorized(self) -> None:
+        profiles = {
+            QUAD: "segmented_rod_axial_acceleration_n100_spatial_refined",
+            HEX: "no_acceleration_full_length_n100_temporal_refined",
+            OCT: "no_acceleration_full_length_n100_temporal_refined",
+        }
+        for project_id, runtime_profile_id in profiles.items():
             with self.assertRaisesRegex(ValueError, "not authorized"):
-                self.validate(
-                    project_id,
-                    "no_acceleration_full_length_n100_temporal_refined",
-                )
-        with self.assertRaisesRegex(ValueError, "differs from authorized scope"):
-            self.validate(QUAD, "segmented_rod_axial_acceleration")
+                self.validate(project_id, runtime_profile_id)
 
     def test_high_cost_runners_validate_before_creating_run_package(self) -> None:
         for name in ("run_finite_3d_transport.ps1", "run_simion_finite_3d_transport.ps1"):
@@ -184,7 +179,7 @@ class ResourceBudgetTests(unittest.TestCase):
             )
             self.assertNotEqual(completed.returncode, 0)
             self.assertIn(
-                "differs from authorized scope",
+                "not authorized",
                 completed.stdout + completed.stderr,
             )
             run_dir = (
