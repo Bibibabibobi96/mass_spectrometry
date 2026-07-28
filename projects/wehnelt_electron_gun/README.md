@@ -6,6 +6,7 @@
 [`docs/history/PROJECT_HISTORY.md`](docs/history/PROJECT_HISTORY.md)；实心阴极与轴向螺旋灯丝的
 原始源码谱系见
 [`docs/history/20260713__pre-transverse-wehnelt-lineages.md`](docs/history/20260713__pre-transverse-wehnelt-lineages.md)。
+操作COMSOL模型树、三阶段脚本或GUI验收时再读[`docs/COMSOL.md`](docs/COMSOL.md)。
 
 机器身份、能力边界和当前`prototype`成熟度由[`config/project.json`](config/project.json)声明；
 它用于项目发现，不改变PROJECT记录的正式资格。
@@ -28,10 +29,9 @@ runner在run目录建立后立即写入`interrupted`预置summary和已复核man
 及manifest入口均冻结；商业wrapper的控制台与退出上下文写入`logs/commercial_wrapper.log`。失败收尾
 递归枚举当时已经存在的冻结输入和输出，不能用空manifest掩盖中途失败。
 
-`20260723_172817__test__comsol__wehnelt-build-only-smoke`和
-`20260723_173100__test__comsol__wehnelt-build-only-smoke`是修复前的历史不合格诊断：前者把外部超时
-记成了`failed`而非`interrupted`，后者未把中途复制的runner列入空inputs manifest；两目录保持原样，
-不得作为当前runner治理正确性的证据。
+修复前失败、缓存污染和重试闭合过程只在
+[`docs/history/20260728__pre-document-consolidation-project.md`](docs/history/20260728__pre-document-consolidation-project.md)
+追溯；当前入口不复制历史run编号。
 
 ## 基线源码流水线
 
@@ -61,7 +61,7 @@ runner在run目录建立后立即写入`interrupted`预置summary和已复核man
 [`docs/history/20260713__pre-transverse-wehnelt-lineages.md`](docs/history/20260713__pre-transverse-wehnelt-lineages.md)
 的同名扁平payload，只用于追溯旧结论，不得作为新工作的起点。归档
 `phase5_wehnelt_sweep.m`实际使用轴向 Helix，因此其扫描结果不是横置基线参数结论；横置 Wehnelt
-参数扫描需要以后重新建立和验证。
+参数扫描尚未建立，是否启动及关闭条件只以[`docs/PROJECT.md`](docs/PROJECT.md#开放任务)为准。
 
 ## 运行依赖
 
@@ -70,3 +70,9 @@ runner在run目录建立后立即写入`interrupted`预置summary和已复核man
 
 新增跨项目API或调试经验按仓库根README路由到根`docs/`，项目特有当前事实写PROJECT，不创建
 按阶段排列的活跃说明文件。
+
+## History索引
+
+- [`docs/history/20260713__pre-transverse-wehnelt-lineages.md`](docs/history/20260713__pre-transverse-wehnelt-lineages.md)
+- [`docs/history/20260728__pre-document-consolidation-project.md`](docs/history/20260728__pre-document-consolidation-project.md)
+- [`docs/history/PROJECT_HISTORY.md`](docs/history/PROJECT_HISTORY.md)

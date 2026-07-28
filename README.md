@@ -50,7 +50,7 @@ COMSOL、SIMION、MATLAB、Python和SolidWorks，目标是形成跨求解器独�
 |---|---|---|
 |仓库[`AGENTS.md`](AGENTS.md)|规范性|Agent执行、权限、删除授权、测试报告与自主Git行为；发生执行冲突时优先级最高|
 |本README|规范性|仓库架构、阅读顺序、知识路由、参数与产物生命周期、通用Git及跨项目标准|
-|[`docs/DEVELOPMENT_STANDARDS.md`](docs/DEVELOPMENT_STANDARDS.md)|规范性|人类与Agent共同遵守的跨语言编码、合同实现、外部进程、性能、缓存和测试标准；不定义仓库架构或项目状态|
+|[`docs/DEVELOPMENT_STANDARDS.md`](docs/DEVELOPMENT_STANDARDS.md)|规范性|人类与Agent共同遵守的跨语言编码、合同实现、[术语作用域](docs/DEVELOPMENT_STANDARDS.md#术语权威与作用域)、外部进程、性能、缓存和测试标准；不定义仓库架构或项目状态|
 |[`docs/PLOTTING_STANDARDS.md`](docs/PLOTTING_STANDARDS.md)|规范性|跨项目科学绘图、图形证据、可访问性、追溯、导出与图审标准；不定义指标或项目状态|
 |项目`README.md`|规范性入口|项目导航、权威入口、项目特有硬规则；不重述根规则|
 |项目`docs/PROJECT.md`|项目权威状态|当前参数、正式/候选边界、跨软件结论、开放任务|
@@ -74,6 +74,7 @@ COMSOL、SIMION、MATLAB、Python和SolidWorks，目标是形成跨求解器独�
 |某项目的 SIMION PA/GEM、Program、Fly2、网格、GUI 和独立错误|项目 `docs/SIMION.md`|COMSOL/CAD 文档|
 |某项目的 STEP、SolidWorks 零件/装配、坐标和保存验证|项目 `docs/CAD.md`|SIMION/COMSOL 文档|
 |已关闭、被取代或达到明确里程碑且仍需追溯的长过程|项目 `docs/history/`|当前状态入口或活跃运行日志|
+|全仓日期化审计、处置清单和一次性盘点|根`docs/history/`；稳定索引为[`docs/AUDITS.md`](docs/AUDITS.md)|根`docs/`稳定参考层或项目PROJECT|
 |机器必须共同读取的项目参数|项目 `config/`，优先 JSON|散落在文档中的多份数值|
 |项目身份、设计族、机器能力和成熟度|项目 `config/project.json`；根注册表自动生成|Roadmap或人工维护的第二份项目表|
 |工程需求字段、选择与规划规则|`common/contracts/`中的Schema和校验器；获批实例归目标项目`config/requests/`|自然语言对话、Roadmap或求解器脚本|
@@ -117,6 +118,8 @@ simulation_repo/
 │  ├─ PLOTTING_STANDARDS.md
 │  ├─ VALIDATION_METHODS.md
 │  ├─ SIMION_REFERENCE.md
+│  ├─ AUDITS.md                # 已完成全仓日期化审计的稳定索引
+│  ├─ history/                 # 全仓一次性审计与处置快照
 │  └─ multipoles/              # 多极杆设计族通用理论与可复现图示
 ├─ projects/                 # 平级项目；不再按软件或器件类别嵌套
 │  ├─ oa_tof/
@@ -332,9 +335,24 @@ SIMION IOB 可能嵌入 PA 的绝对路径，移动工作区后必须重新打�
 
 `history`不是实时工作日志。活跃调查的逐次原始事实以artifacts中的结构化运行记录为准；只有达到
 可命名里程碑、结论关闭或旧方案被取代时才生成只读叙事快照。归档后若有新阶段，创建新的日期化
-快照，不回写旧档案中的“当前”。项目README必须列出全部history入口。
+快照，不回写旧档案中的“当前”。项目README以紧凑`History索引`列出全部扁平Markdown入口，供人和
+门禁发现；索引只列链接，不复制每份历史的结论、运行数字或时间线。
 
-`docs/history/`采用扁平Markdown入口：所有归档清单或叙事快照直接放在该目录；没有附加载荷时只保留
+current文档必须保持可执行的当前视图。满足以下任一条件时，在同一主题提交中冻结日期化history并
+收缩current：
+
+1. 调查、迁移或候选已经关闭、被取代或达到明确里程碑，后续不再执行原步骤；
+2. 一个current章节开始按日期叙述两个以上已完成尝试，或列出三个以上仅用于追溯的历史run ID；
+3. README、PROJECT和软件文档中出现同一状态、数值表或开放任务正文；
+4. 日期化审计、保留盘点或处置清单已完成执行，只剩追溯价值。
+
+迁移后，项目README只保留导航，PROJECT只保留当前参数摘要、资格、有效证据结论与未完成动作，软件
+文档只保留活动入口、实现边界和独立验收。完整时间线、旧数值表、失败链、run清单和被取代文本进入
+history。current可链接一个代表性机器合同或history入口，但不得复制manifest的完整清单。每个开放
+任务只写未完成动作、进入条件和关闭条件；“已完成事实 + 若获批再做”必须拆开，完成事实归当前结论
+或history。
+
+项目`docs/history/`和根`docs/history/`采用扁平Markdown入口：所有归档清单或叙事快照直接放在该目录；没有附加载荷时只保留
 Markdown。需要冻结原始文本、源码或二进制时，使用与Markdown完全同名（去掉`.md`）的可选载荷
 子目录，清单逐项链接其中每个文件并记录SHA-256或链接已验证的`SHA256SUMS.txt`。载荷目录不得再
 嵌套子目录，不得包含Markdown入口、`__pycache__`、`.pyc`或其他运行缓存；项目README只索引扁平

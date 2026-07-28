@@ -1,0 +1,178 @@
+# oa-TOF 项目使用指南（AI 与人类共用）
+
+本目录是独立的 oa-TOF 项目，不是某个“components”分类下的附属部件。当前分析器方案为
+正交加速、双级环栈反射镜；离子源、多级杆和电子枪分别属于其他平级项目。
+
+本文件既是入口，也是本项目的知识路由规则。开始任务时先读本文件，再按任务类型选择一份
+权威文档；不要默认从COMSOL、SIMION或历史日志开始阅读。
+
+## 固定阅读顺序
+
+1. 所有任务先读[`docs/PROJECT.md`](docs/PROJECT.md)，确认当前参数、正式/候选状态和开放任务。
+2. 修改加速器或反射器的时间聚焦、场强、电压或轴向长度时，先读`docs/theory/`中对应推导；
+   入口见[`docs/theory/README.md`](docs/theory/README.md)。旧 DOCX 仅为 superseded 历史输入。
+3. 操作COMSOL时再读[`docs/COMSOL.md`](docs/COMSOL.md)。
+4. 操作SIMION时再读[`docs/SIMION.md`](docs/SIMION.md)。
+5. 操作STEP/SolidWorks时再读[`docs/CAD.md`](docs/CAD.md)。
+6. 只有追溯旧结论时才进入`docs/history/`；历史文件不能覆盖当前项目结论。
+
+历史入口仅由本文件提供：`docs/history/PROJECT_HISTORY.md`、
+`docs/history/SIMION_VALIDATION.md`、`docs/history/SUPERSEDED_RESULTS.md`和
+`docs/history/NUMERICAL_VALIDATION_20260716_18.md`、
+`docs/history/20260716__simion-gui-recording-and-program-audit.md`、
+`docs/history/COMSOL_EXTREME_N_CRASH_20260718_19.md`、
+`docs/history/COMSOL_EXTREME_N_CRASH_CLOSURE_20260719.md`、
+`docs/history/20260719__analysis-scaling-and-field-diagnostics.md`、
+`docs/history/CANDIDATE_WORKFLOW_VALIDATION_20260720.md`和
+`docs/history/20260720__midgrid-candidate-runtime-coverage.md`、
+`docs/history/20260720__oatof-theory-refactor-review.md`及
+`docs/history/20260721__superseded-theory-docx.md`和
+`docs/history/20260727__superseded-rf-handoff-diagnostics.md`。四份日常文档不再横向链接历史。
+
+## 本项目的知识边界
+
+知识归属、提升条件和星形引用规则以仓库根[`README.md`](../../README.md)为唯一权威。本项目只补充：
+科学设计写入`config/baseline.json`与`config/modes/formal.json`，求解数值只写入`config/formal_solver_numerics.json`，程序读取自动生成且禁止手改的`config/resolved_geometry.json`；每次运行的seed、RunId和冻结路径只存在于run instance，绝不回写科学合同。
+
+在`formal_revalidation_pending`期间，mass-spectrum candidate显式拒绝读取旧Formal MPH/IOB；Candidate SIMION仅可使用随run冻结的非Formal IOB+CON bundle，缺失时必须停止。
+分析契约、迁移基准和正式闭合结果分别写入`config/analysis_contract.json`、
+`config/analysis_baselines.json`和`config/formal_validation.json`。当前统一结论只写`docs/PROJECT.md`。
+
+## 权威入口
+
+- 项目机器身份、能力和成熟度：[`config/project.json`](config/project.json)；它不保存物理参数或取代PROJECT。
+- 现有入口可执行范围：[`config/execution_profiles.json`](config/execution_profiles.json)；固定复验入口及
+  零变化结构候选入口不等于已实现任意参数优化或性能目标评价。
+- 已被替代的RF handoff投影不注册为execution profile或项目capability mode；其mode与runner仅保留为
+  显式diagnostic复现入口。
+- 设计变量与当前优化包络：[`config/design_variables.json`](config/design_variables.json)、
+  [`config/optimization_envelope.json`](config/optimization_envelope.json)；包络可审查扩大，不等于正式baseline。
+- 纯静态候选编译：[`analysis/compile_candidate_design.py`](analysis/compile_candidate_design.py)；只写隔离合同，不运行求解器或CAD。
+- 候选消费准备：[`workflows/design_candidate/prepare_candidate_consumers.py`](workflows/design_candidate/prepare_candidate_consumers.py)按
+  [`config/candidate_consumers.json`](config/candidate_consumers.json)把同一resolved候选绑定到COMSOL、
+  生成SIMION自包含文本，并把CAD输入锁定为该候选的MPH；只证明静态输入路由，不替代运行时门禁。
+- 候选运行冻结与排序：[`analysis/prepare_candidate_run.py`](analysis/prepare_candidate_run.py)按
+  [`config/candidate_workflow.json`](config/candidate_workflow.json)先在scratch冻结计划，预声明单一run和阶段依赖；
+  自动计划不包含晋升，正式baseline与formal在候选期保持只读。
+- 候选运行三件套生命周期：[`analysis/candidate_run_lifecycle.py`](analysis/candidate_run_lifecycle.py)；
+  从scratch原子启动完整run，冻结request/proposal/baseline/resolved/diff五项输入，并对
+  success/failed/interrupted统一写根`summary.json/run_manifest.json`。它是Candidate执行核心调用的内部
+  API，不再提供第二个公开CLI。
+- 唯一Candidate运行入口：[`workflows/design_candidate/run_candidate.py`](workflows/design_candidate/run_candidate.py)；
+  使用者只提供同目录含`candidate_proposal.json`的获批request、run ID、本次显式seed，以及可选的
+  单一父run和连续复用边界。固定顺序为粒子表、COMSOL、SIMION、CAD、结构验收；结构验收永不复用。
+  `20260727_175500__test__cross__candidate-receipt-bootstrap-pathfix-n100`已完成全流程bootstrap，
+  `20260727_181500__test__cad__candidate-reuse-child-n100`已完成真实CAD-only child，因此旧bound包装层
+  已删除。
+- Candidate执行核心：[`workflows/design_candidate/run_candidate_workflow.py`](workflows/design_candidate/run_candidate_workflow.py)；顺序调用N=100
+  粒子表、COMSOL、SIMION、CAD和结构/合同验收，任何终态均由上述生命周期后端统一收口，不含晋升；
+  三个商业阶段的receipt为强制合同，不存在无receipt兼容模式。正常异常和超时收口为`failed`，只有
+  外部中止为`interrupted`；该模块不再提供第二个公开CLI。
+- 人工设计入口：[`config/baseline.json`](config/baseline.json)；程序入口为自动生成的
+  [`config/resolved_geometry.json`](config/resolved_geometry.json)，禁止手改。
+- 全项目门禁：`verify_project.ps1 -Level Static|Candidate|Formal`。
+  `Candidate`用`-CandidateTarget SIMION|COMSOL|CAD`只启动目标软件；COMSOL还需
+  `-CandidateModelPath`，CAD需候选装配和导出报告路径。`Formal`单命令包含工具链、正式MPH重开与
+  静电Compute、SIMION/CAD/COMSOL资产合同和Python正式分析。
+- SIMION正式交付与收敛参考冻结清单：[`config/simion_stable_entry.json`](config/simion_stable_entry.json)。
+  它冻结IOB、完整PA家族、Program、Fly2和粒子表的实现身份，不定义或替代统一物理baseline。
+- 正式COMSOL生产脚本：
+  [`comsol/run_oatof_model.m`](comsol/run_oatof_model.m)（具名参数稳定入口）；底层模型树构建器为
+  `comsol/ms_oaTOF_two_stage_ringstack_reflectron.m`，物理组件实现位于同目录`oatof_*.m`模块。
+- SIMION正式文本入口：
+  [`simion/workbench/formal/oatof_ideal_grounded.lua`](simion/workbench/formal/oatof_ideal_grounded.lua)和
+  [`simion/workbench/formal/oatof_ideal_grounded.fly2`](simion/workbench/formal/oatof_ideal_grounded.fly2)
+- SIMION正式交付构建：[`simion/workbench/build_formal_delivery.ps1`](simion/workbench/build_formal_delivery.ps1)
+- SIMION加速器网格相位诊断：
+  [`tests/simion/test_accelerator_grid_phase.ps1`](tests/simion/test_accelerator_grid_phase.ps1)；统一分析为
+  [`analysis/analyze_accelerator_grid_phase.py`](analysis/analyze_accelerator_grid_phase.py)。
+- CAD正式入口：[`cad/ms_export_oatof_to_solidworks.m`](cad/ms_export_oatof_to_solidworks.m)
+- 跨求解器门禁：
+  [`workflows/formal_reference/verify_geometry_contract.ps1`](workflows/formal_reference/verify_geometry_contract.ps1)
+- R2025b MATLAB单元与Formal写入合同回归：
+  [`tests/comsol/run_oatof_matlab_unit_tests.m`](tests/comsol/run_oatof_matlab_unit_tests.m)、
+  [`tests/comsol/run_oatof_formal_write_contract_tests.m`](tests/comsol/run_oatof_formal_write_contract_tests.m)
+- COMSOL N=100候选功能回归：
+  [`tests/comsol/run_n100_candidate_functional.ps1`](tests/comsol/run_n100_candidate_functional.ps1)
+- SIMION源码构建与N=100跟踪回归：
+  [`tests/simion/run_n100_source_build_and_track.ps1`](tests/simion/run_n100_source_build_and_track.ps1)
+- Candidate SIMION GUI layout登记：
+  [`simion/workbench/register_candidate_layout_template.ps1`](simion/workbench/register_candidate_layout_template.ps1)；
+  只登记用户在GUI创建的非Formal `.iob + .con`，不创建二进制或Fly，成功template-build run才可被Candidate冻结。
+- 统一分析契约：[`config/analysis_contract.json`](config/analysis_contract.json)
+- 当前正式跨求解器验证：[`config/formal_validation.json`](config/formal_validation.json)
+- 当前N=1000正式结果与图片：`artifacts/projects/oa_tof/formal/results/`；只包含当前baseline的
+  COMSOL/SIMION粒子表、新理论验证、跨求解器峰形/落点/源映射图片、源运行manifest和完整SHA256清单。
+- 当前正式发布总清单：`artifacts/projects/oa_tof/formal/asset_manifest.json`；统一关联来源run三件套、
+  `config/formal_validation.json`及COMSOL、SIMION、SolidWorks和结果清单，不复制大结果。
+- 宽质量标定候选模式：[`config/modes/mass_spectrum.json`](config/modes/mass_spectrum.json)；只评价
+  峰位、标定和传输率，不替代正式分辨率基线。
+- 旧RF刚体投影、网格配对和共享时钟脉冲已从活动源码树迁入
+  [`docs/history/20260727__superseded-rf-handoff-diagnostics.md`](docs/history/20260727__superseded-rf-handoff-diagnostics.md)；
+  它们不属于execution profile、capability、Static门禁或Candidate源码闭包。需要追溯时只从该归档清单
+  核对原路径、SHA、历史run身份和复现边界，不从载荷目录直接执行。
+- RF→oaTOF连接器、共享时钟脉冲、阶段资格、漏斗结果和后续恢复条件只由
+  [`../rf_quadrupole_collision_cooling/docs/PROJECT.md`](../rf_quadrupole_collision_cooling/docs/PROJECT.md)
+  及其机器合同维护，本项目不复制阶段数字或接口判据。本项目只维护下游格式适配和对Formal分析器的
+  只读消费入口；功能链证据不修改本项目Formal资产，也不构成整机Formal连接或分辨率声明。
+  当前活动累积入口是RF项目`tests/cross_solver/run_s3_cumulative_chain.ps1`：候选COMSOL负责真实侧孔、
+  被动连接器和局部脉冲输运，随后才把canonical局部出口状态交给本项目SIMION分析器续算。
+- 正式跨求解器直接重算与发布入口：
+  [`workflows/formal_reference/run_formal_validation.ps1`](workflows/formal_reference/run_formal_validation.ps1)；
+  发布器只在
+  两端达到机器契约样本量、统一比较PASS且当前资产/结果SHA齐全时更新机器契约。
+- 耦合纵向baseline的老/新理论与老/新N=1000主比较入口：
+  [`workflows/formal_reference/run_coupled_baseline_validation.ps1`](workflows/formal_reference/run_coupled_baseline_validation.ps1)。
+- 三栅加速器时间聚焦参考实现：
+  [`analysis/accelerator_time_focus.py`](analysis/accelerator_time_focus.py)
+- 二级反射器闭式解参考实现：
+  [`analysis/reflectron_dual_stage_solver.py`](analysis/reflectron_dual_stage_solver.py)
+- 加速器—反射器整机纵向耦合参考实现：
+  [`analysis/oatof_oaaccelerator_coupling.py`](analysis/oatof_oaaccelerator_coupling.py)；已用于当前
+  Formal baseline的反射器电压、二级长度、完整释放到探测器时间和时间窗口派生。
+- Python参考分析：[`analysis/README.md`](analysis/README.md)
+- 路径解析：[`oatof_paths.m`](oatof_paths.m)
+
+## 目录职责
+
+```text
+oa_tof/
+├─ README.md          # 本文件：项目入口和知识路由
+├─ config/            # 跨软件机器参数契约
+├─ docs/              # PROJECT/COMSOL/SIMION/CAD、理论推导及只读历史
+├─ comsol/            # 跨Formal、候选、性能与诊断复用的COMSOL/MATLAB机制
+├─ simion/            # GEM、Lua、Fly2及构建/分析源码
+├─ cad/               # COMSOL→STEP→SolidWorks可复现源码
+├─ analysis/          # 求解器无关分析、候选冻结和run生命周期机制
+├─ workflows/         # Formal/reference、mass-spectrum、design-candidate等生产工作流及其专用任务
+└─ tests/             # COMSOL、SIMION、CAD和跨求解器长期门禁
+```
+
+大型模型和结果位于工作区同级的`artifacts/projects/oa_tof/`，不进入Git。正式资产进入`formal/`；
+候选模型、运行结果和日志统一进入来源`runs/<run_id>/`；冻结证据进入`archive/<archive_id>/`；
+临时任务进入`scratch/<task_id>/`。不得重建顶层`models/`、`results/`、`cad/`、`logs/`或旧的
+`artifacts/components/...`路径。
+
+## 项目特有硬规则
+
+- COMSOL与SIMION联动时必须使用同一几何、坐标、有效探测面、粒子表和FWHM定义。
+- 正式或候选的几何尺寸必须参数化联动，禁止手工移动一个器件后遗漏相关选择集、屏蔽件或探测面。
+- SIMION检测器PA是高于飞行管屏蔽罩的GUI可见数值终止层，只表示有效面和口径，不等于机械
+  检测器厚度；Lua/Data Recording槽位与GUI优先级必须匹配当前机器契约。
+- Program与Data Recording必须同时开启；关闭Program对话框不等于禁用Program。
+
+通用GUI对等、SolidWorks同步、清理和参数单向派生规则不在本项目重复，直接适用根README与
+仓库`AGENTS.md`。
+
+## 修改后的最低检查
+
+```powershell
+pwsh.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\workflows\formal_reference\verify_geometry_contract.ps1 -SkipRuntime
+.\analysis\verify_reference_analysis.ps1
+git diff --check
+git status --short --branch
+```
+
+正式COMSOL、SIMION或SolidWorks入口发生变化时，还必须执行对应软件文档规定的运行时验收。
+完整粒子重算和SolidWorks装配重建仍按变更类型及当前机器契约触发，不纳入每次`Formal`身份检查。

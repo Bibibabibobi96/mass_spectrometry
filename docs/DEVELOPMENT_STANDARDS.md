@@ -98,6 +98,21 @@ LiveLink、SIMION Lua/GEM、PowerShell及跨软件数据合同。仓库架构、
 `final_analysis.py`。根`common/`是README定义的共享边界，不属于模糊命名。源码和运行文件不得用
 `final/latest/new/v2/retry`管理版本；版本、状态和重试身份使用Git、Schema及README规定的容器命名。
 
+### 术语权威与作用域
+
+术语必须跟随概念的真实作用域，不建立脱离实现边界的全仓词典：
+
+- 跨仓通用的event、state、identity、frame和run合同术语归`common/contracts/`的Schema与相邻README；
+- 一个共享技术域内部复用的器件、接口或数值术语归`common/<domain>/`的Schema和README；
+- 项目科学概念归最近的项目机器合同、PROJECT或对应专题文档；
+- 仅由某求解器产生的节点、数值标记、离散层或终态必须带solver或numerical限定，禁止写成机械实体、
+  物理面或跨求解器概念。
+
+每个概念只有一份规范正文。字段、枚举、单位和可判定关系进入Schema及测试；面向人的语义、辨析和
+适用边界进入本作用域README或专题文档。上游/项目入口只链接，不复制词表。重命名时活动合同、实现、
+测试和current文档原子迁移；history保持原文，只在归档导语标明迁移前术语，不为追求当前一致性改写
+历史证据。
+
 ## 3. 单位、坐标与机器合同
 
 - 系统边界的数值字段必须在字段名或Schema中显式单位，不得隐式混用mm/m、µs/s、eV/J或Da/kg。

@@ -1,88 +1,47 @@
 # oa-TOF 当前项目状态
 
-本文件只保存当前权威状态、关键验收结果和开放任务。人工设计以
-[`../config/baseline.json`](../config/baseline.json)为准，程序读取自动生成的
-`../config/resolved_geometry.json`并按`../config/modes/`运行；精确性能、资产身份和分析定义分别以
-`../config/formal_validation.json`、`../config/simion_stable_entry.json`和
-`../config/analysis_contract.json`为机器权威。详细诊断过程只进入`docs/history/`，不得反向覆盖本文件。
+本文件是项目当前事实、资格与开放任务的唯一权威。机器精确值分别由`../config/`中的物理、数值、
+resolved、分析和资产合同管理；实现细节见[`COMSOL.md`](COMSOL.md)、[`SIMION.md`](SIMION.md)与
+[`CAD.md`](CAD.md)。2026-07-28以前的完整状态和时间线冻结在
+[`history/20260728__pre-document-consolidation-project.md`](history/20260728__pre-document-consolidation-project.md)。
 
-## 当前正式状态
+## 当前状态
 
-- 方案：524 amu、+1电荷的正交加速TOF，双级环栈反射镜，一级10环、二级5环；初始能量
-  `5±0.4 eV`，负能量重采样。
-- 统一坐标：检测器有效面中心与精确一阶时间焦点为`z=0`，`+z`从加速器指向反射器；COMSOL与CAD
-  直接使用此坐标，SIMION局部PA必须通过IOB变换映射到同一坐标。
-- `baseline → resolved → COMSOL/SIMION/CAD`是唯一参数链。现有软件文件、网格坐标和GUI显示不能
-  反向修改baseline；候选覆盖不能改写正式参数。
-- baseline表示“当前已批准的正式设计”，不是每次需求的优化输出，也不是永远不可演进。每次需求先
-  生成隔离`candidate_baseline`；候选通过验收后仍不自动修改baseline。仅当所有候选门禁通过且所有者
-  明确批准其取代当前正式设计时，才在独立晋升运行中原子更新baseline、resolved和全部formal资产；
-  一次性交付或未批准候选均保持现行baseline不变。
-- 正式COMSOL MPH、SIMION四实例自包含交付和SolidWorks 2022的25组件装配均已建立并通过各自
-  资产门禁。SIMION正式PA顺序为`shield 1 < reflectron 2 < accelerator 3 < detector 4`。
-- 当前只完成oa-TOF分析器本体；尚未与RF四极杆正式连接。
-- 正式网格构建器已调用根`common/comsol/`局部Size原语；具体选择、hmax值和收敛资格仍由本项目合同
-  与后续网格专项决定，公共函数不改变现有数值结论。
-- CAD读取入口已用运行`20260722_121500__test__cad__load-only`对当前正式MPH完成真实只读冒烟：25个
-  manifest特征和25个可导出实体均可解析，未求解、未导出STEP、未修改Formal。该结果只分层证明
-  LiveLink与CAD模型读取，不替代SolidWorks同步或Formal门禁。
+- 当前批准设计为524 Da、+1正交加速TOF，双级环栈反射镜，一级10环、二级5环；粒子初始能量
+  `5±0.4 eV`。
+- 统一坐标以检测器有效面中心和精确一阶时间焦点为`z=0`，`+z`从加速器指向反射器。SIMION局部PA
+  必须通过IOB变换映射到同一坐标。
+- 2026-07-20的耦合纵向baseline曾完成N=1000双求解器验证、COMSOL MPH、SIMION四实例包和25组件
+  SolidWorks装配的原子晋升，证据由`../config/formal_validation.json`冻结。
+- 随后科学合同、solver numerics和run instance已拆层；`../config/project.json`的当前生命周期为
+  `formal_revalidation_pending`。因此历史Formal资产和验证记录仍可追溯，但当前Formal gate必须在
+  独立vNext重验证前失败关闭，Candidate不得读取旧Formal资产。
+- 当前Formal加速器为闭合屏蔽结构，没有RF注入侧孔。RF项目的S2/S3候选链没有修改本项目baseline、
+  MPH、SIMION包或CAD，也不构成整机Formal连接。
 
-RF→oaTOF连接功能已经由RF项目收口。接口阶段、连接器几何、共享时钟脉冲、粒子漏斗、资格边界和
-恢复条件只以RF项目[`PROJECT.md`](../../rf_quadrupole_collision_cooling/docs/PROJECT.md)及其机器合同
-为权威，本项目不复制运行数字或阶段状态。本项目只维护下游格式适配和对Formal分析器的只读消费；
-这些功能证据没有修改本项目baseline、正式粒子源、COMSOL MPH、SIMION包或CAD，也没有把整机连接
-提升为Formal。当前Formal加速器仍是闭合屏蔽结构，没有沿RF注入方向的正式物理入口。
-
-这里必须区分候选实现与Formal资产：RF项目的S2/S3候选COMSOL几何已经真实切出物理侧孔，并用1 mm
-被动连接器和0 mm直接共面两案完成N=100功能链；当前活动入口是RF项目的
-`tests/cross_solver/run_s3_cumulative_chain.ps1`。下游SIMION只从COMSOL真实局部加速器出口状态继续使用
-本项目只读Formal分析器，并未独立实现连接器或侧孔场。本项目SolidWorks装配仍是无侧孔的25组件正式
-装配。因此候选`implemented + functional PASS`与整机`qualification/Formal BLOCKED`同时成立，并不冲突。
-
-本项目旧`rf_handoff_projection`、`rf_hybrid_mesh_projection`和`rf_handoff_pulse`诊断源码、配置与
-历史测试已从活动树迁入只读
-[`history/20260727__superseded-rf-handoff-diagnostics.md`](history/20260727__superseded-rf-handoff-diagnostics.md)。
-它们不是与RF项目S2/S3并列的生产路径，也不得覆盖当前物理连接器功能证据或Formal阻断条件；活动
-profile、Static门禁和Candidate源码闭包均不再消费该包。
-
-2026-07-20完成 oa-TOF 理论重写文档及代码审查。三份 Markdown 已取代旧 DOCX 成为活跃理论入口，
-三份求解器无关 Python 已接入静态测试；原始投稿包及 SHA 已冻结在
-`docs/history/20260720__oatof-theory-refactor-review/`，同名审查清单为
-`docs/history/20260720__oatof-theory-refactor-review.md`。活跃理论文档的展示公式已统一使用 GitHub
-官方支持的 fenced `math` 语法，避免多行公式中的行首`+`、`-`、`#`被 Markdown 误解析。
-独立数值积分、有限差分、根求解及当前参数回归确认核心公式成立。审查发现旧 Formal baseline 的
-`1600/2400 V`反射镜只满足局部反射镜二阶聚焦，没有补偿加速器在一阶焦面处的二阶时间曲率。
-耦合纵向候选随后按完整空间能量包络和既有100%穿透深度裕量生成，N=100全链路及同源N=1000
-COMSOL/SIMION比较均通过；所有者批准后已于2026-07-20原子晋升为当前 Formal baseline。旧 Formal
-资产未删除，归档在
-`artifacts/projects/oa_tof/archive/20260720_204500__superseded__cross__pre-coupled-baseline/`。
+`project.json`内capability/formal asset字段仍保留历史`formal`身份，而顶层lifecycle已经进入
+`formal_revalidation_pending`。解释当前可执行资格时以后者和门禁为准；完成vNext重验证时应在同一
+事务中消除该机器状态差异。
 
 ## 物理与几何基线
 
-紧凑三栅加速器保持对称等间距：`d1=3.0 mm`、`d2=16.8 mm`，五环中心间距均为`2.8 mm`。
-repeller/grid1/grid2全局z为`-19.92918680341103/-16.92918680341103/
--0.12918680341103 mm`；释放体为`1×1×1 mm³`，轴向范围
-`-18.92918680341103...-17.92918680341103 mm`。加速器平移量和焦点位置来自解析式，不得按显示
-精度手工取整。
+精确参数、公式和舍入规则只认`../config/baseline.json`、`../config/resolved_geometry.json`及
+`theory/`。用于识别设计的摘要为：
 
-反射器一级长度`120 mm`、二级工程长度`96.1563 mm`，总反射区`216.1563 mm`；一级压降
-`1628.8001 V`，背板电位`2531.1999 V`。这些值由加速器—反射器耦合一、二阶条件和
-`1920--2080 V`完整空间能量包络派生，工程长度和电压只在最终输出保留四位小数。屏蔽罩内半径
-`350 mm`，侧壁和端盖厚度`10 mm`。加速器出口的`30×30 mm`理想透明栅网是独立器件，不是屏蔽罩端盖。
+| 对象 | 当前设计 |
+|---|---|
+| 三栅加速器间距 | `d1=3.0 mm`、`d2=16.8 mm` |
+| 反射器 | 一级120 mm；二级工程长度96.1563 mm |
+| 反射器电位 | 一级压降1628.8001 V；背板2531.1999 V |
+| 屏蔽罩 | 内半径350 mm；侧壁和端盖厚10 mm |
+| 检测有效面 | 全局`z=0`、半径40 mm |
+| SIMION日常加速器网格 | `xy=0.25 mm`、`z=0.05 mm`；`z=0.025 mm`仅为收敛参考 |
 
-SIMION日常加速器网格为`xy=0.25 mm,z=0.05 mm`，`z=0.025 mm`只作轴向收敛参考；轨迹质量为8。
-检测器数值PA半径`40 mm`、有效面`z=0`、槽位与GUI优先级均为4。其0.1 mm吸收层只负责数值终止，
-不等于COMSOL/CAD中的机械检测器厚度。
+这些摘要不能用于重建求解器模型。修改焦点、电压或长度前必须重算理论并同步COMSOL、SIMION和CAD。
 
-反射器长度、电压及所有派生坐标的完整公式和精度规则位于baseline及`docs/theory/`。修改加速器或
-反射器前必须先重算理论，再同步三个软件和CAD，不得在本文件另建公式副本。
+## 冻结验证记录
 
-## 当前验证结论
-
-质量分辨率统一定义为`R=m/FWHM_m`；窄峰时间域等价式为`R=T/(2*FWHM_t)`。只有近似高斯时才可
-用`2.3548×sigma`代替直接半高宽。求解器无关分析由Python 3.11参考实现执行。
-
-`config/formal_validation.json`冻结的同源N=1000正式比较为：
+`../config/formal_validation.json`冻结的2026-07-20同源N=1000结果为：
 
 | 指标 | COMSOL | SIMION |
 |---|---:|---:|
@@ -91,279 +50,54 @@ SIMION日常加速器网格为`xy=0.25 mm,z=0.05 mm`，`z=0.025 mm`只作轴向�
 | 直接质量FWHM (Da) | 0.01235942211 | 0.01071535523 |
 | 质量分辨率R | 42396.80 | 48901.79 |
 
-该记录来自`20260720_191743__sim__cross__coupled-baseline-validation__n1000`，并已自包含发布到
-`artifacts/projects/oa_tof/formal/results/`。该目录只保留当前baseline：跨求解器目录含峰形、探测落点
-和源映射PNG，顶层保留两端粒子CSV、新理论比较、求解器摘要及源运行manifest；18个包内文件由
-独立SHA256清单冻结。旧理论和老新baseline晋升比较只保留在源run及archive，不属于当前Formal。
-当前平均TOF差
-`0.74648 ns`、逐粒子TOF RMS差`1.00860 ns`、落点RMS差`0.29408 mm`；标准化KDE重叠为
-`0.69227`。5000次配对bootstrap的绝对R差异2.5%/中位数/97.5%分位为
-`5.017%/13.234%/21.660%`。这仍是两种离散场和轨迹积分实现的跨求解器差异，不能为追平单一R值而
-分别调网格、时间步、quality或场参数。
+两端平均TOF差`0.74648 ns`，逐粒子TOF RMS差`1.00860 ns`，落点RMS差`0.29408 mm`。这些数字是
+拆层前已晋升baseline的可追溯记录，不代表当前`formal_revalidation_pending`已经关闭，也不能通过
+单独调网格、时间步或quality追平某个R值。
 
-本次升级按三条主比较线验收：
+质量分辨率统一定义为`R=m/FWHM_m`；窄峰时间域等价式为`R=T/(2·FWHM_t)`。近似高斯时才允许以
+`2.3548×sigma`代替直接半高宽。
 
-| 主比较 | COMSOL | SIMION |
-|---|---:|---:|
-| 老baseline R → 新baseline R | 38909.36 → 42396.80（+8.96%） | 44509.11 → 48901.79（+9.87%） |
-| 老理论预测均值 / 老baseline模拟均值 (us) | 71.99006613 / 71.99021389 | 71.99006613 / 71.99101518 |
-| 老理论均值偏差、绝对RMSE (ns) | +0.1478，0.6745 | +0.9491，1.4029 |
-| 新理论预测均值 / 新baseline模拟均值 (us) | 71.35335283 / 71.35283799 | 71.35335283 / 71.35358448 |
-| 新理论均值偏差、绝对RMSE (ns) | −0.5148，0.5519 | +0.2316，0.6186 |
+## 当前能力与边界
 
-老、新baseline使用同一N=1000粒子表及相同分析合同，两端均保持1000/1000命中。分辨率提升的配对
-bootstrap 95%区间在COMSOL约为`0.754%--16.268%`、SIMION约为`0.536%--24.662%`，下界均为正。
-新理论在新COMSOL上的中心化RMSE为`0.1987 ns`、逐粒子相关系数`0.9595`；在SIMION上均值预测仍准，
-但`0.1265`的逐粒子相关表明细小空间映射已被离散场/积分残差主导。把新理论套到老baseline只保留为
-辅助归因，不代替“老理论↔老baseline”和“新理论↔新baseline”两组自洽验证。
-
-当前524 amu GUI理论中心为`71.353388 us`，精细输出截至`71.8534 us`，粒子终止时间
-`72.8534 us`，约为理论中心的`1.021×`，不存在活动的三倍飞行时间余量。相对旧Formal终止时间约
-`73.49 us`，时间轴只缩短约`0.64 us`（约0.9%）。本轮COMSOL N=1000粒子阶段实测约`952 s`，旧Formal
-记录约`760 s`，因此不能声称墙钟时间已经节省；更长几何、求解器动力学和运行波动超过了时间轴缩短的
-理论收益。以后若缩窄精细窗口或尾段，必须先做专门的步长/窗口收敛，不能仅凭解析中心删余量。
-
-旧Formal的原因定位表明：反射器内部独立场相对RMS差约`0.000528%`，主要差异来自加速区纵向场和
-z-to-TOF映射。COMSOL加速器`hmax=1 mm`是日常档，`0.5 mm`是收敛参考；后者改善横向梯度伪影，
-但没有消除纵向焦点差。SIMION fractional surface使静电场基本不受网格相位影响，但固定距离越过
-透明数值栅网会放大粒子TOF差；当前加速器和反射器跳转均为`0.0001 mm`。
-
-已关闭的纵向差异归因、源接受度截断、五质量候选、粒子数墙钟缩放和场分量实验均已移出当前状态
-正文；需要追溯时从项目README的history清单进入。当前性能与资产身份只认本节上述
-`config/formal_validation.json`记录，不以历史小样本、旧Formal或机器计时覆盖。
-
-固定五质量候选入口不提供粒子数override；其具名科学合同当前固定每个物种N=100。每个N=100 ION源
-必须先生成同参数、同种子的标准N=1000母源，再截取严格前100行，并在任何COMSOL或SIMION启动前通过
-仓库`common/contracts/particle_count_policy.py`的标准计数和前缀校验。fresh、resume和reanalyze均须先
-用`analysis/generate_ion_source.py`及冻结mode/resolved参数确定性重建完整N=1000期望字节并核对母源
-SHA，再检查N=100前缀；母源后900行篡改也必须失败。N<100、任意未注册计数及独立随机生成的N=100均
-失败关闭；未来只有新增具名科学合同后才能使用相应专项计数。
-
-## 正式资产与门禁
-
-- COMSOL：`artifacts/projects/oa_tof/formal/comsol/oa_tof__model.mph`；GUI重开后几何、选择集、
-  网格、Study/Solver、数据集和绘图组必须可检查并可由Study Compute等价复算。
-- SIMION：`artifacts/projects/oa_tof/formal/simion/`中的IOB、四套PA、Lua、Fly2、
-  ION、SHA和manifest；整个目录可作为同事复现包。
-- CAD：正式SolidWorks装配为25个零件/25组件；几何变更必须同任务重建并检查版本、变换、保存错误
-  和警告。
-- 门禁：`verify_project.ps1 -Level Static|Candidate|Formal`。完整N=100/1000粒子重算和SolidWorks
-  重建由相应物理、数值或几何变更触发，不塞入每次Formal身份检查。
-
-候选只有在共享几何契约、同源粒子比较、差异解释或收敛、COMSOL GUI Compute以及SolidWorks同步
-全部通过后才能转正。模型或CAD没有改变时，不为形式主义重复重建昂贵资产。
-
-### 2026-07-23 生产入口功能与写入边界回归
-
-本轮只验证生产入口、输出合同和失败收尾，不建立新的数值精度或Formal性能结论。MATLAB R2025b
-单元测试为`11/11`通过；普通COMSOL/CAD入口向Formal目标写入均被拒绝，只有目的地与获批事务中
-`comsol_model`或`cad_root`精确一致时才获得授权，非精确目的地仍被拒绝。
-
-| 软件/生命周期 | 运行或证据 | 当前结论 |
+| 能力 | 当前范围 | 资格 |
 |---|---|---|
-| COMSOL | `20260723_135235__test__comsol__oatof-candidate-functional__n100` | N=100为100/100唯一detector分类；10/5环数和6个分段时间窗口token通过合同检查；平均TOF为`71.352937 us` |
-| COMSOL失败收尾 | `20260723_135035__test__comsol__oatof-candidate-functional__n100` | 缺少`OATOF_RUNTIME_DIR`被明确拒绝，失败run仍完整保存配置、摘要和manifest三件套 |
-| SIMION | `20260723_143116__test__simion__oatof-source-build-track__n100` | reflectron、flight-tube、detector三个构建器均拒绝缺参调用；源码构建交付含53个清单文件且临时GEM残留为0；100/100命中，平均TOF为`71.353597 us` |
-| 生命周期故障注入 | 共享run三件套合同 | 失败注入后的配置、摘要和manifest完整收口并通过复核 |
+| Static合同与候选编译 | baseline/science/numerics分层、resolved与源码冻结 | PASS |
+| 结构Candidate | 零变化和`reflectron_midgrid_voltage`、N=100、真实COMSOL/SIMION/CAD receipt | Candidate结构合同；无性能声明 |
+| 五质量候选 | 固定10/100/500/1000/2000 Da功能比较 | Candidate；不替代524 Da基线 |
+| Formal当前设计 | 2026-07-20历史验证可追溯 | revalidation pending |
+| RF→oaTOF接口 | 下游只读分析器消费 | 整机Formal BLOCKED |
 
-以上均为功能/合同证据；本轮没有修改baseline、Formal MPH、SIMION正式包、CAD装配或Formal结果。
-各软件入口和判据分别由`COMSOL.md`、`SIMION.md`和`CAD.md`维护，本文件不复制实现步骤。
+Candidate唯一公开入口为`../workflows/design_candidate/run_candidate.py`；必须提供获批request、run ID和
+显式seed，依次执行粒子表、COMSOL、SIMION、CAD和结构验收。成功结果固定为
+`candidate_accepted_not_promoted`，不含晋升。晋升必须由独立事务完成。
 
-## 场方向归因实例
+## 已知兼容边界
 
-可组合场替换的通用定义、实验顺序和因果边界只见根
-[`docs/VALIDATION_METHODS.md`](../../../docs/VALIDATION_METHODS.md)。“区域×分量”选择器在本项目
-落地为COMSOL全分量能力和SIMION区域Ez能力；两端只在能力交集上比较，不用局部PA导数冒充全局
-横向分量。具体COMSOL语法、GUI参数和SIMION兼容模式见各自软件文档。
+- COMSOL 6.4当前模型在极小求解粒子数路径存在非单调原生不稳定；日常使用N=100，逻辑小样本仅在
+  无粒子间耦合时由同源N=100承载后分析前缀。该绕行不属于开放调查。
+- SIMION透明栅网以`0.0001 mm`数值距离越过一格厚数值层。现有传输与资产门禁接受该实现；只有要求
+  更严格逐粒子闭合、PA/栅网改变后出现相位敏感，或误splat时才重启自适应越层研究。
+- 当前许可证不能使用SIMION 2026 `.wgem`，Candidate使用已验收的SIMION 2020 legacy-GEM四槽模板；
+  许可证升级并完成隔离GUI/结构复验前不迁移路线。
 
-本项目已验证该选择器可在COMSOL和SIMION能力交集上产生可区分响应；它只证明方法可行，不形成
-正式分辨率声明。SIMION旋转二维PA不能独立暴露全局Ex/Ey，因此只支持Ez能力交集。关闭实验的数值、
-运行路径和因果限制从项目README的history清单追溯；跨项目方法成熟度只由根验证方法文档记录。
+详细失败矩阵与已关闭调查只在history保存，不作为current开放任务。
 
-## 已知非阻塞限制
+## 开放任务
 
-COMSOL 6.4 build 293在当前模型的极小求解粒子数路径存在原生不稳定：固定500 Da序列中N=28在
-solution-mesh初始化FAIL，N=29两次分别在结果提取和任务配置阶段原生FAIL，N=30全链路PASS；这不是
-已证明只由N控制的单调阈值，也没有证据把内部根因收窄到某个闭源实现。该问题不影响当前N=100检查档、
-N=1000统计档或已完成的五质量结果，因此定性为可绕开的非致命限制，不再列为开放调查任务。
+1. **Formal vNext重验证。** 在当前拆层合同下重新冻结N=1000同源输入，独立运行COMSOL、SIMION、
+   CAD/GUI门禁和统一分析；成功晋升时同时更新生命周期、capability/formal asset状态与全部SHA。
+2. **RF接口后续仅按授权恢复。** 连接器、共享时钟、阶段指标和恢复条件只以RF项目PROJECT为权威；
+   本项目保持Formal分析器只读，未经单独批准不进入性能优化或整机晋升。
+3. **复现交付。** 按需从自包含Formal目录生成不含日志和收敛参考的ZIP及独立SHA；ZIP不是第二资产权威。
+4. **按需求启动的物理候选。** 轴对称圆形加速器、真实丝网、制造/装配误差预算和二维轴对称混合
+   COMSOL模型均暂缓；任何一项启动都须重新闭合理论、三维场、传输、网格、跨求解器与CAD。
 
-新运行不得用N<30做COMSOL日常冒烟。确需逻辑小样本且模型仍无空间电荷、粒子间碰撞或其他集体效应时，
-统一求解N=100同源承载集合后只分析目标前缀，并同时记录`solver_particle_count`与
-`logical_particle_count`。只有出现N>=100同类失败、启用粒子间耦合后仍需小N、生产任务必须直接求解
-N<30，或升级COMSOL后需要重新建立兼容边界时，才重新启动调查；详细矩阵和失败证据入口只由项目
-README中的history清单提供。
+开放任务只写未完成动作和关闭条件。已完成的Candidate bootstrap、路径修复、receipt治理、历史失败
+run和非零变量复验全部冻结在同日PROJECT history快照。
 
-SIMION正式Program以固定`0.0001 mm`距离越过一格厚的透明数值栅网；该值已通过同源N=1000、
-GUI重开、正式包和CAD同步门禁，不影响当前100%传输或正式统计。固定距离仍可能把PA网格相位放大为
-逐粒子TOF差，因此“自动越过实际数值电极层”保留为非阻塞精度增强，不是当前缺陷。只有项目明确
-要求比现有约`1.093 ns`配对TOF RMS更严格的逐粒子闭合、正式PA/栅网表示改变后出现相位敏感或
-误splat、或新用途要求跨多个网格相位保持同一判据时，才重新启动；不得为追平单一R继续扫描固定
-跳转距离。详细相位与跳转矩阵已经冻结在数值验证history，不重新运行已有组合。
+## 产物与历史
 
-### 延期架构决策
-
-- `config/modes/formal.json`现在只保存Formal科学合同；`config/formal_solver_numerics.json`保存唯一COMSOL/SIMION数值合同，run instance显式冻结seed。配置拆分完成后项目处于`formal_revalidation_pending`：Static/Candidate可运行但不得读取Formal资产，Formal gate必须失败关闭，待独立Formal vNext重验证授权。
-- 独立、可重开验证的非Formal SIMION模板和N=100 Candidate结构链现已登记并验收；Formal vNext仍是
-  独立科学workflow，只有主线进入该阶段并明确授权后才实现，不因Candidate成功自动恢复Formal资格。
-- 旧的“`config/modes/formal.json`继续作为单一正式模式机器合同”的判断已由上述三层合同取代。只有出现新的
-  多求解器消费者、跨器件消费者，或当前设计线稳定后批准专项迁移并能一次完成调用方与回归切换时，
-  才启动结构拆分。
-- 已替代RF投影诊断的原路径、SHA、历史run身份和非自包含复现边界只在
-  [`history/20260727__superseded-rf-handoff-diagnostics.md`](history/20260727__superseded-rf-handoff-diagnostics.md)
-  追溯；不得从历史载荷恢复生产入口或已superseded的科学声明。
-- 跨项目环境bootstrap/预检以及可持久化后台run监测与恢复包装器均暂缓为平台工作，唯一规划入口为
-  根[`ROADMAP.md`](../../../docs/ROADMAP.md#面向大规模代码库的扩展护栏)。它们不改变本项目当前
-  Candidate的物理输入、已运行阶段或验收有效性；在获得专项设计和回归预算前不得以临时包装器替代
-  现有运行三件套或重启冻结run。在该包装器实现前，本项目正式长跑使用可恢复的execution cell并以
-  cell ID持续取得输出与终态，不使用`Start-Process`把商业软件进程脱离当前监督链。
-
-以上延期项均不是当前正确性阻塞。本轮只整理 Formal/static 生产入口和文档边界，不修改科学参数、
-Formal 资产、candidate source closure 或 RF 项目文件。
-
-## 下一步
-
-跨TOF设计族的双反射OA-TOF、MR-TOF和自然语言性能设计方向只由根
-[`docs/ROADMAP.md`](../../../docs/ROADMAP.md)规划；本节只保留当前`oa_tof`设计线的开放任务。
-
-### 开放技术绕行登记
-
-- **SIMION 2026 `.wgem`许可证绕行。** 当前2012许可证不能使用2026 `.wgem`功能，活动Candidate固定使用
-  已验收的SIMION 2020 legacy-GEM四槽模板。退出条件是许可证升级后，在Git外隔离scratch完成官方
-  `.wgem`语法、GUI物化、IOB/CON重开和结构门禁；未满足前不迁移生产路线，也不重复排查已关闭路径。
-  原始失败证据为
-  `C:\Users\Liao\mass_spectrometry\artifacts\projects\oa_tof\scratch\20260727_092800__simion-wgem-license-gate\wgem_capability.failed.txt`。
-- **COMSOL逻辑小样本承载绕行。** N<30逻辑样本由同源N=100承载集合求解后只分析目标前缀；适用限制、
-  双粒子数记录要求和重新调查退出条件只引用上文“已知非阻塞限制”的COMSOL 6.4段，不在此复制。
-- **SIMION透明栅网越栅绕行。** 正式Program当前使用`0.0001 mm`固定距离越过一格透明数值栅网；已验证
-  范围、不得继续扫描的边界及重新启动条件只引用上文“已知非阻塞限制”的SIMION段，不在此复制。
-- **长商业运行监督绕行。** 在持久化后台run恢复包装器实现前，长跑使用可恢复execution cell和cell ID
-  监督，不用脱离监督链的`Start-Process`。退出条件沿用根ROADMAP：共享包装器获得专项设计、三件套
-  一致性和中断恢复回归后，才替换当前方式。
-- **SolidWorks默认模板绕行。** 机器默认零件模板路径失效时，共享桥接器在单次导入中临时绑定已安装的
-  SolidWorks 2022空白模板并恢复原用户设置。退出条件是机器默认模板被修复且无人值守25组件重建在
-  不临时改写偏好时仍通过；在此之前必须保留设置恢复回读门禁。
-- **冻结源码字节码绕行。** CAD Python以`-B`及临时`PYTHONDONTWRITEBYTECODE=1`阻止在
-  `inputs/code/`内生成`.pyc`，调用后恢复环境。退出条件是冻结源码改为不会被解释器写入的执行布局，
-  且source-closure故障注入和真实CAD运行均证明零缓存残留；不得仅删除门禁来退出。
-
-1. **完成候选运行编排与逐变量运行时覆盖。** `config/design_variables.json`、可审查扩大的
-   `config/optimization_envelope.json`和`analysis/compile_candidate_design.py`已经建立变量分类、候选覆盖、
-   理论派生、几何不变量、约束与差异报告。策略固定为：TOF在当前总体包络内紧凑化且内部参数可双向
-   重调；加速器尺寸和电压全部双向优化，不受TOF包络约束。超出当前包络返回
-   `NEEDS_ENVELOPE_REVIEW`，批准扩大不自动改写正式baseline。静态测试证明零改动精确复现正式参数，
-   也能在求解前拒绝缩短后未同步重配而发生的电极重叠；测试数值不构成候选设计建议。
-   `config/candidate_consumers.json`和`workflows/design_candidate/prepare_candidate_consumers.py`现已闭合静态输入路由：
-   COMSOL显式读取候选resolved合同，SIMION从同一合同生成隔离文本，CAD只消费该候选生成的MPH。
-   零改动候选的SIMION文本与正式版本逐字一致，单一非零变量能沿计划传播；这只证明路由可行，未证明
-   每个模型特征、PA/IOB或装配都正确变化。当前`config/execution_profiles.json`仍只运行固定五质量和
-   524 Da正式复验。`config/candidate_workflow.json`和`analysis/prepare_candidate_run.py`进一步在scratch
-   冻结候选计划及COMSOL→SIMION/CAD→跨软件验收依赖，并预声明未来单一run，禁止覆盖、禁止从formal取候选输入、
-   禁止自动晋升；COMSOL候选合同构建、SIMION候选文本/合同构建和CAD候选导出入口已就位。
-   `analysis/candidate_run_lifecycle.py`已闭合根三件套：在scratch组装完整失效安全运行后原子进入runs，
-   success/failed/interrupted均通过artifact布局门禁，success仍只标记接受但未晋升。
-   `workflows/design_candidate/run_candidate_workflow.py`现已集成共享N=100粒子表、COMSOL构建/同步、SIMION构建/运行时、
-   CAD导出和最终结构合同验收；模拟执行器已闭合成功、失败、中断、后续阶段阻断及共享粒子表SHA门禁。
-   SIMION阶段还在IOB运行时门禁后调用共享固定N=100真实Fly机制，冻结日志、粒子CSV、诊断与SHA并要求
-   100/100 emitted/crossed/hit；该结构证据不替代COMSOL逐粒子跨求解器比较。独立非Formal IOB/CON模板
-   已于2026-07-27物化并登记为`20260727_102100__build__simion__candidate-layout-template-workspace`：它使用
-   仅含非物理占位PA的独立legacy GEM源，在SIMION 2020 GUI创建四槽layout后重开，再由结构门禁、来源SHA、
-   success summary和manifest冻结。后续Candidate只能消费该workspace-local登记run的三件套、结构报告和来源SHA，
-   不接受旧Formal、历史或任意裸IOB/CON路径；Candidate构建在Fly前仍会替换全部占位PA。
-   2026-07-27 `.wgem`首次物化自动化被供应商许可证阻断：安装的SIMION 2026要求2022或以上许可证，而当前
-   key日期为2012-03-05。失败证据保留在workspace artifact scratch；该负结果不改变SIMION 2020 legacy-GEM
-   模板的已验证范围，也不解除Formal/history资产禁令。
-   同日零变化 N=100 retry
-   `20260727_111100__test__cross__zero-change-candidate-retry-n100`在COMSOL N=100构建与同步报告成功后停止于
-   SIMION构建启动前的路径保护：被冻结到`runs/<run_id>/inputs/code/`的构建器按自身位置错误推导artifact根，
-   因而把该run的`runs/<run_id>/simion`误判为目录外。该run为`failed`；没有SIMION粒子/物理结果、CAD、
-   cross-solver acceptance或Formal修改，不能作为Candidate成功或物理结论。修复后的retry机制由Candidate
-   runner从冻结计划的`run_root`显式传入已归一化的artifact project root，冻结构建器不再从其复制后的目录
-   推导工作区；必须重新冻结source closure并使用新的run_id重试。
-   随后的零变化retry
-   `20260727_121700__test__cross__zero-change-candidate-pathfix-retry-n100`已完成COMSOL和SIMION各自的
-   N=100阶段，但在CAD预导入时失败：冻结的仓库Python 3.11 `.venv`缺少`pythoncom`（Windows
-   `pywin32`），因此COM桥接在启动SolidWorks或导入STEP之前停止。该run保留失败证据；CAD、跨求解器
-   验收和Formal均未执行，COMSOL/SIMION各自成功不构成跨求解器闭合或Candidate接受结论。修复环境后
-   必须以新的冻结run重试，不得改写此run。
-   最终零变化N=100运行
-   `20260727_154500__test__cross__zero-change-candidate-bytecodefix-n100`已通过完整链路：可恢复execution
-   cell `243`以退出码0结束，墙钟`1056.5 s`；`static_inputs`、`comsol_candidate`、
-   `simion_candidate`、`cad_candidate`和`cross_solver_acceptance`五阶段均为`success`，run manifest
-   状态为`success`且130个输出全部通过身份复核。CAD生成25个原生SLDPRT和一个25组件SLDASM，
-   冻结`inputs/code/`中没有`__pycache__`或`.pyc`；正式baseline和Formal资产均未修改。该run的结论
-   仅为`candidate_accepted_not_promoted / structural_build_and_contract`，不包含COMSOL/SIMION逐粒子
-   物理比较、性能声明或晋升授权。
-   在此成功基线之后，已实现并完成真实L3验收的唯一运行入口
-   `workflows/design_candidate/run_candidate.py`。它把request绑定、候选编译、冻结、固定线性执行和
-   终态收口合并为一个使用者命令，并通过共享`common/contracts/stage_reuse.py`只允许单父run的连续
-   成功前缀复用。COMSOL、SIMION、CAD实际执行后分别生成receipt；child复用阶段仍写
-   `status=success, execution=reused`，结构验收每次重跑。父run的大型输出不复制，child只从已验证
-   provenance解析并在CAD前后及验收前复核SHA，因此父run成为必须保留的来源依赖。CAD-only child不为
-   外部父输出伪造新receipt，后续仍直接引用原bootstrap父run。旧无receipt run明确拒绝，不补写、不
-   兼容。修复后的全流程bootstrap
-   `20260727_175500__test__cross__candidate-receipt-bootstrap-pathfix-n100`以退出码0完成，五阶段均为
-   `success/executed`，133个manifest输出通过复核，COMSOL、SIMION和CAD三个receipt齐全。其真实
-   CAD-only child `20260727_181500__test__cad__candidate-reuse-child-n100`也以退出码0完成：
-   COMSOL和SIMION为`success/reused`，CAD与结构验收重新执行，61个manifest输出通过复核；child仅
-   `3,339,378 bytes`，不复制MPH、PA或父run的大型结果。至此旧bound包装层及无receipt兼容分支已删除，
-   内部执行核心和生命周期后端不再暴露第二CLI。
-   同一收缩把Candidate seed收回run-instance唯一权威：seed为必填且无隐式默认。COMSOL生产adapter
-   只消费冻结ContractPath、run config中的粒子表/粒子数和run内输出路径；质量、几何、网格与时间步
-   不再由adapter另传一份标量。上述变化不修改baseline或Formal，仍只支持结构合同结论。
-   原生receipt bootstrap
-   `20260727_173500__test__cross__candidate-receipt-bootstrap-n100`虽为结构验收success，但其后续child
-   `20260727_174300__test__cross__candidate-reuse-seed-mismatch`揭示：旧compiler把scratch绝对路径写入
-   `candidate_resolved_geometry.json.inputs`，使不同run ID的同物理合同产生不同SHA并在商业阶段前拒绝
-   reuse。现已从发布源根治：Git内正式输入继续使用项目相对标签；项目外Candidate输入只发布明确的
-   `run_input:<role>`逻辑身份及对应SHA，禁止发布scratch绝对路径。纯测试证明不同run ID、同request和
-   同seed可复用连续前缀，而不同seed仍仅因粒子表context不同而在商业阶段前拒绝。173500父run的receipt
-   已绑定旧路径依赖合同，不得迁移、修补或作为修复后L3父run；替代证据即上述175500完整bootstrap及
-   181500真实CAD-only child。
-   此前`20260727_145500__test__cross__zero-change-candidate-full-retry-n100`因父监督链中断而保持
-   `interrupted/orchestration_not_completed`；随后
-   `20260727_152000__test__cross__zero-change-candidate-durable-retry-n100`虽已完成COMSOL、SIMION和CAD，
-   但CAD Python在冻结源码内生成两个`.pyc`，最终源码闭包检查失败并保持
-   `interrupted/orchestration_not_completed`。两者均只保留为失败/中断证据，不复用、不提升，也不
-   覆盖154500成功run。
-   2026-07-20零改动真实候选`20260720_111805__test__cross__zero-change-candidate-retry2__n100`已完成：
-   COMSOL构建及独立回读、SIMION PA/IOB构建及运行时合同、25组件SolidWorks装配和共享粒子表SHA验收
-   全部PASS，根三件套状态为`success/candidate_accepted_not_promoted`。正式baseline SHA与计划冻结值一致，
-   formal未修改。该运行只证明`structural_build_and_contract`闭环，明确禁止性能声明和自动晋升；完整的
-   两次失败、修复和成功证据已冻结在history。后续候选计划又把设计request/proposal与
-   baseline/resolved/diff共同冻结为五项不可变run输入，启动前校验路径、SHA、Schema和身份关系，manifest
-   逐项记录，因此清理scratch不再切断新run的设计来源。`design_candidate`模式及
-   `validated_structural_candidate` execution profile现已把唯一入口绑定到solver-neutral计划：只有
-   获批524 Da、N=100、零变量变化或已验证的`reflectron_midgrid_voltage`变化、仅传输目标且显式提供
-   本次`particle_source_seed`且冻结已验证SIMION模板登记run时才返回`EXECUTION_READY`；request路径和run ID直接来自已校验设计计划，
-   不再要求调用者另造candidate plan绑定。缺少seed或已验证模板返回`NEEDS_RUNTIME_INPUTS`，分辨率、500 Da或任何其他变量仍返回
-   `NEEDS_IMPLEMENTATION`。下一步按重建影响选择其他代表性非零变量做小规模运行时覆盖，每项通过后再扩展
-   profile，不一次性宣称全部变量可执行。
-   代表性非零变量`reflectron_midgrid_voltage=1601 V`已在运行
-   `20260720_123942__test__cross__midgrid-voltage-candidate__n100__r01`完成COMSOL、SIMION、25组件CAD和
-   结构合同PASS，正式baseline与formal均未修改。该轮同时发现两项消费链缺口：COMSOL显式候选合同曾被
-   理论默认电压覆盖，现已改为合同值优先；SolidWorks导入STEP时机器默认零件模板路径失效，运行依赖人工
-   选择空模板后才继续。后者已改为桥接器临时绑定已安装空白模板并在结束后恢复用户设置；随后复用同批
-   STEP在`20260720_132856__test__cad__blank-template-assembly__n25`完成25零件/25组件无人值守装配复验，
-   零件与装配保存均为0错误/0警告且设置恢复回读PASS。因此该
-   变量已纳入结构候选运行时覆盖，但本轮没有评价性能目标，也没有转正或修改formal。
-   候选计划还冻结本次实际执行的 COMSOL、SIMION、CAD 与公共启动源码及其传递源码依赖到
-   `inputs/code/`，以显式 source-id、原始 SHA、执行 SHA 清单在物化、每个阶段和终态前复核。
-   需要 Python 或工作区定位的冻结副本会记录已哈希运行时及候选 artifact/workspace 绑定；
-   候选阶段不得回读活动工作树源码。
-
-2. **RF→oaTOF连接功能已收口，不自动进入下一阶段。** 阶段状态、恢复条件、资格指标和失败边界
-   只以RF项目PROJECT及其机器合同为权威。本项目继续保持Formal分析器资产只读；只有所有者另行批准
-   恢复接口资格、性能优化或整机晋升时，才按RF项目冻结的下一阶段执行。
-3. **按需发布复现ZIP。** 从正式自包含目录生成不含日志、收敛参考和临时轨迹的ZIP及独立SHA；发送后
-   ZIP可删除，源码构建链和正式目录继续保留。
-
-以下未来任务按当前决定暂缓，不进入本轮程序/分析故障清理：
-
-- **轴对称圆形加速器候选。** 将当前方形横向包络、接地屏蔽和理想栅网/支撑边界改为绕加速轴
-  旋转对称的圆筒与圆形结构。第一阶段保持轴向位置、间距、电压和粒子源不变，只隔离“方形改圆形”
-  的物理几何影响；候选须重新闭合解析焦点、三维场、传输率、峰形、网格收敛和跨求解器结果。
-  物理圆形改型与二维轴对称数值降维是两个独立决策；若候选转正，必须同步COMSOL、SIMION及
-  SolidWorks零件/装配，不得只修改某一软件。
-- 真实丝网局部单元。
-- 制造与装配误差预算。
-- RF→oaTOF性能资格、优化或Formal整机晋升，以及二维轴对称COMSOL混合模型。
+活动产物根为`artifacts/projects/oa_tof/`。旧Formal、Candidate run及归档各自保留manifest与SHA；
+current文档不复制完整run ID清单。旧RF投影诊断只见
+[`history/20260727__superseded-rf-handoff-diagnostics.md`](history/20260727__superseded-rf-handoff-diagnostics.md)，
+不得恢复为活动生产入口。

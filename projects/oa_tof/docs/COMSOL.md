@@ -1,256 +1,54 @@
-# oa-TOF COMSOL 实施与验证
+# oa-TOF COMSOL实施与验证
 
-本文件只记录COMSOL实现。统一几何、粒子、FWHM定义、正式状态和下一步由
-[`PROJECT.md`](PROJECT.md)定义。
+本文只记录COMSOL入口、模型树和独立验收。当前项目资格、跨求解器结论与开放任务只见
+[`PROJECT.md`](PROJECT.md)；2026-07-28以前的实现时间线和诊断数值冻结在
+[`history/20260728__pre-document-consolidation-comsol.md`](history/20260728__pre-document-consolidation-comsol.md)。
 
-## 正式入口
+## 活动入口
 
-- 生产脚本：`../comsol/ms_oaTOF_two_stage_ringstack_reflectron.m`
-- 全链路测试：`../tests/comsol/test_oatof_r2025b_full_chain.m`
-- 静态同步检查：`../tests/comsol/verify_oatof_comsol_sync.m`
-- 跨求解器门禁：`../workflows/formal_reference/verify_geometry_contract.ps1`
-- 正式MPH：工作区`artifacts/projects/oa_tof/formal/comsol/oa_tof__model.mph`
+- 具名生产入口：`../comsol/run_oatof_model.m`
+- 模型树构建器：`../comsol/ms_oaTOF_two_stage_ringstack_reflectron.m`
+- MATLAB单元：`../tests/comsol/run_oatof_matlab_unit_tests.m`
+- Formal写入合同：`../tests/comsol/run_oatof_formal_write_contract_tests.m`
+- N=100候选功能：`../tests/comsol/run_n100_candidate_functional.ps1`
+- 几何同步：`../workflows/formal_reference/verify_geometry_contract.ps1`
 
-工具版本和启动方式只采用仓库根[`README.md`](../../../README.md#工具链与执行入口)的统一定义。
-影响物理或数值结果的几何、选择集、
-参数、材料、网格、物理场、Study、Solver、数据集和结果节点必须持久化到MPH并能由COMSOL
-Desktop查看、修改和Compute；仅脚本内存状态通过不算验收。
+版本、启动、连接复用、重试和失败分类只采用根README与`common/comsol/README.md`。项目任务不自行
+`mphstart`。普通构建不得写Formal路径；只有获批promotion事务中角色与目标精确匹配时才允许。
 
-本项目任务通过共享入口建立连接，任务脚本不自行`mphstart`。同一构建/验收任务复用一次连接；
-Compute后的大粒子数据提取使用第二个干净任务。共享入口的重试和失败分类只在
-[`common/comsol/README.md`](../../../common/comsol/README.md)维护。
+## 模型与合同
 
-### 2026-07-23 R2025b单元与N=100候选功能回归
+生产入口只消费`../config/resolved_geometry.json`或上层显式冻结的Candidate resolved；
+`../config/formal_solver_numerics.json`是网格、分段时间输出和solver设置的唯一权威。Candidate
+`ContractPath`必须贯穿顶层入口、底层构建器和时间窗口，不能由理论默认值覆盖。
 
-- `tests/comsol/run_oatof_matlab_unit_tests.m`在MATLAB R2025b完成`11/11`单元测试。
-- `tests/comsol/run_oatof_formal_write_contract_tests.m`确认普通模型/CAD入口不能写入Formal；只有
-  `OATOF_PROMOTION_TRANSACTION`中角色和目的地精确匹配的晋升事务可授权，路径不匹配仍被拒绝。
-- `tests/comsol/run_n100_candidate_functional.ps1`建立独立run、冻结resolved合同和N=100粒子表，再通过
-  共享R2025b入口构建候选MPH。运行
-  `20260723_135235__test__comsol__oatof-candidate-functional__n100`为100/100唯一detector分类，
-  10/5环数和6个分段时间窗口token均通过合同检查，平均TOF为`71.352937 us`。
-- 首次运行`20260723_135035__test__comsol__oatof-candidate-functional__n100`因缺少
-  `OATOF_RUNTIME_DIR`被明确拒绝，失败run的配置、摘要和manifest仍完整保留。修复只补齐run内固定粒子
-  证据目录，没有放宽模型合同。
+模型树按加速器、反射器、检测器、漂移区、栅网、网格、粒子物理和结果节点分责。影响结果的参数、
+选择集、材料、网格、物理、Study/Solver、数据集和图必须持久化到MPH并可由Desktop查看与Compute。
 
-该回归只证明模块化生产入口、候选写入隔离、粒子提取和失败收尾可工作；没有修改Formal，也不构成
-网格收敛或性能晋升。
+## 当前实现边界
 
-### 2026-07-18 模块化正式构建器
+- 当前批准几何为闭合加速器屏蔽，没有RF注入侧孔；`interfacePort`只用于隔离候选，不属于Formal。
+- 正式数值合同以加速器`hmax=1 mm`为日常值、`0.5 mm`为收敛参考；反射器无需无目标全域加密。
+- 分段时间输出必须以全局细时间格对齐；求解器只存合同规定的窗口与状态。
+- 固定粒子释放按mm读取，逐粒子到达事件统一由项目提取器处理；MATLAB不重复FWHM或bootstrap分析。
+- 可组合理想场替换只用于原因隔离，不形成Formal性能声明。
 
-底层入口保留`ms_oaTOF_two_stage_ringstack_reflectron.m`，几何、网格、粒子物理和结果节点已拆为
-八个稳定模块：加速器、反射器、检测器、漂移区、栅网、网格、粒子模型和结果节点。具名入口
-`run_oatof_model.m`新增`OutputModelPath`，候选必须显式写入COMSOL模型根目录内的`.mph`，不再
-依赖脚本内部固定正式路径。
+## GUI与验收
 
-2026-07-20又增加可选`ContractPath`：省略时仍严格读取正式`config/resolved_geometry.json`；指定时，
-上层默认值、底层模型树构建器和分段时间窗口共同消费该resolved候选，避免底层重新混入正式合同。
-静态准备器只生成调用计划，不代表MPH已经构建或GUI Compute已经通过；候选仍须写入run/scratch，
-并完成模型树、求解与重开门禁。
+适用的候选或Formal模型必须：
 
-隔离运行任务为`workflows/design_candidate/run_candidate_contract_build.m`，只接受环境中显式候选合同、N=100粒子表
-和`runs/<run_id>/comsol/`候选MPH路径。同步验收器也可通过`OATOF_CONTRACT_PATH`按候选合同核对模型，
-电压不再固定写成正式值；省略该变量时仍按正式合同验收。
+1. 保存后由COMSOL Desktop重开；
+2. 核对resolved参数、几何、选择集、网格及GUI可见物理节点；
+3. 核对`std1/std2`与`sol1/sol2`附着，禁止GUI Compute生成新solver显示旧解；
+4. 由Study Compute等价复算静电和粒子研究；
+5. 复核固定粒子表、唯一terminal事件分类、输出列和manifest；terminal是事件终态，不是探测面别名；
+6. 几何改变时同步SolidWorks，并由PROJECT更新资格。
 
-集成候选执行器必须由PowerShell 7启动共享LiveLink入口，并把`OATOF_RUNTIME_DIR`指向本次
-`runs/<run_id>/comsol/`。前者是`ProcessStartInfo.ArgumentList`的运行时要求，后者用于保存固定粒子
-实际释放数据；缺少任一项都属于编排失败，不得误判为COMSOL求解器缺陷。2026-07-20零改动候选已按
-此路由完成真实构建、100/100命中、保存MPH及独立回读同步门禁。
+当前项目处于`formal_revalidation_pending`。旧Formal MPH和2026-07-20结果可追溯，但不能替代当前拆层
+合同下的vNext重验证。
 
-显式`ContractPath`还决定反射器实际`L_stage2/V_mid/V_mirror`。底层保留无显式合同时的历史
-位置参数扫描推导，但候选运行不得再次用理论默认值覆盖resolved合同中的补偿电压；模型以合同值建立
-电极电势并重算对应实际场。保存后独立回读门禁逐项核对这些参数，防止“diff声明变化、MPH仍使用
-正式值”的静默失配。
+## 兼容限制
 
-模块化候选直接使用统一N=100检查档完整构建，并从保存后的MPH执行`std1/std2` GUI Compute。
-重开检查确认`sol1/sol2`及`dset1/pdset1`关联；参数、几何、选择集、335972个四面体、5个数据集
-和7个绘图组通过同步门禁。相对拆分前正式MPH，两边100/100命中，平均TOF差`1.30 ps`，逐粒子
-TOF RMS/最大差`0.208/0.644 ns`，落点RMS/最大差`0.0137/0.0329 mm`，已转为固定正式MPH。
-几何合同未改变，因此沿用已验证的25组件SolidWorks 2022装配，不重新导出机械几何。
-
-## 当前状态
-
-2026-07-20已从耦合纵向baseline晋升并重开验证524 amu、固定N=100、真实场正式MPH。模型包含紧凑
-加速器、`L_refl=216.1563 mm`、10 mm一体式封闭屏蔽罩和参数化出口栅网；反射器电位为
-`1628.8001/2531.1999 V`。正式日常数值档仍为加速器`hmax=1 mm`、敏感窗口`0.2 ns`、无场区
-`50 ns`，网格为336867个四面体。
-COMSOL同步验证器已支持用`OATOF_COMSOL_MODEL_PATH`先验证候选，禁止为验证而提前覆盖正式模型。
-正式MPH已在同一任务同步到SolidWorks 2022装配体。历史100 amu性能值只保留作历史参考。
-
-正式MPH逐粒子CSV可由`tests/comsol/export_fixed_particle_arrivals_from_mph.m`导出。默认仍指向历史
-候选以保持旧回归可复现；正式验证必须用`OATOF_COMSOL_MODEL_PATH`和
-`OATOF_COMSOL_OUTPUT_CSV`显式指定输入/输出，避免覆盖冻结数据。2026-07-16正式同源N=100结果及
-跨求解器峰形结论现仅作晋升前回归；当前机器记录是2026-07-20耦合baseline的N=1000
-`config/formal_validation.json`，两者不得混用。
-
-正式MPH保留N=100已存解，便于GUI日常复算和与0.5 mm网格、1 ns时间输出做成对数值收敛；正式
-统计闭合以同源N=1000复用静电场并只重算粒子研究。2026-07-20当前资产验证为1000/1000命中，
-平均TOF `71.3528379922 us`，统一直接KDE质量FWHM为`0.012359422109 Da`、`R=42396.80`。
-新理论预测均值`71.3533528284 us`，模拟减预测为`−0.5148 ns`，绝对/中心化RMSE为
-`0.5519/0.1987 ns`。该粒子阶段实测约`952 s`；旧Formal约`759.81 s`，所以尽管理论终止时间缩短
-约0.9%，当前证据不支持墙钟加速声明。逐粒子结果和与SIMION的正式比较由
-`config/formal_validation.json`冻结，不把大样本解另存成第二个“正式MPH”。
-
-### 可组合场理想化诊断
-
-`FieldMode`支持在保持静电场解`es`不变的前提下，对粒子力节点`ef1`施加可组合替换掩码。权威语法为
-`ideal:<region>.<component>[+...]`；区域可选`accel/drift/stage1/stage2/reflectron/all`，分量可选
-`ex/ey/ez/all`。例如`ideal:accel.ez+stage2.ex+stage2.ey`只替换加速区Ez及二级反射区Ex/Ey；
-`ideal:all.ez`替换全轴向场；`ideal:stage2.all`替换单区域全部分量。旧`ideal_stage2`等名称继续兼容，
-但只作为上述掩码的简写。
-
-理想横向分量为0，理想Ez使用各轴向区域的分段理论值；未选分量始终保留真实`es.E*`。12个
-`ideal_<region>_<component>`全局参数和最终三个场表达式均持久化在MPH，可在Model Builder检查和
-修改。本节只定义COMSOL实现；实验顺序、交互效应和因果边界见根
-[`VALIDATION_METHODS.md`](../../../docs/VALIDATION_METHODS.md#受控理想化场替换与原因隔离)，跨求解器
-能力与统一结论见[`PROJECT.md`](PROJECT.md#场方向归因实例)。
-
-2026-07-19首次实现冒烟使用`ideal:accel.ez+stage2.ex+stage2.ey`与统一N=100检查档，100/100到达；
-重开保存的MPH后，三个选中参数均为1，`ideal_accel_ex`和`ideal_stage2_ez`两个未选对照均为0。
-运行配置、摘要、报告、候选MPH和manifest位于
-`artifacts/projects/oa_tof/runs/field_idealization_smoke/composable_mask_n100_20260719/`。该结果只证明
-组合机制和GUI持久化有效，不是三个分量对当前TOF偏差贡献大小的物理结论。
-
-长期扫掠入口为`tests/comsol/run_field_idealization_sweep.m`，从一份已保存、含GUI可见掩码参数的
-N=100 MPH出发，只改变12个`ideal_<region>_<component>`参数并重算`sol2`；求解器无关汇总由
-`analysis/analyze_field_idealization_sweep.py`完成。全局分量、单区域Ez和选择性交互三组运行均完成
-manifest复核。COMSOL独立结果是Ez控制理想化时间端点、加速区控制主要均值响应，且加速区与二级
-反射区的峰宽响应非加性；本轮不继续做N=1000精确贡献率或无目标组合扫描。
-
-扫掠入口现从保存解和MPH参数读取实际粒子数与`ion_mass_amu`，配置中的N/质量只作一致性断言，因而
-不再把524 Da、N=100藏成工具常数。检测事件由`comsol/oatof_extract_detector_arrivals.m`统一提取：
-先要求转向后的真实向下跨面，或在1 um容差内确认稳定Wall/Freeze平台；后者再用检测面前0.5 mm内
-的碰撞前运动段外推到精确平面，避免直接取Freeze输出时刻造成约0.8 ns采样量化。合成轨迹4项测试和
-保存N=100 MPH只读复核均PASS，后者100/100均分类为`frozen_on_detector`，未运行Study。
-
-### 2026-07-16 场与代表轨迹诊断
-
-`tests/comsol/export_axis_field_profiles.m`从正式MPH导出轴向场；
-`export_selected_particle_trajectories.m`导出18、52、97号粒子的稀疏轨迹；
-`export_accelerator_vector_field_samples.m`在与SIMION完全相同的实际加速段坐标导出Ex/Ey/Ez。
-求解器无关比较由Python完成，不在MATLAB内重复统计。
-
-反射器内部场已闭合到`0.000528%`相对RMS；释放区轴向场与SIMION仍有约`0.8396%`平均差。
-COMSOL离轴Ex/Ey存在明显单元尺度锯齿，符合有限元电势梯度跨单元面不连续的特征；其网格归因
-已由下述局部收敛实验闭合。反射器内部无需重复全域加密。
-
-### 2026-07-16 加速器局部网格收敛
-
-在正式MPH只读加载后，对参数联动选择`selbracket`增加全加速器域Size，比较正式、`hmax=1 mm`
-和`hmax=0.5 mm`。一个关键错误是：COMSOL网格节点严格按序执行；用API新建Size时它默认追加在
-`ftet1`之后，虽然GUI可见却不会控制已经执行的Free Tetrahedral，造成单元数不变的静默no-op。
-诊断入口必须把Size移动到`ftet1`之前，并断言节点顺序后才能把结果称为网格收敛。
-长期入口为`tests/comsol/test_accelerator_mesh_vector_field.m`和
-`test_accelerator_mesh_particle_candidate.m`，求解器无关汇总由
-`analysis/analyze_accelerator_mesh_convergence.py`完成。
-
-有效运行的1/0.5 mm网格分别有336077/659685个单元。从1 mm到0.5 mm，同坐标Ex/Ey/Ez变化RMS
-为`79.47/75.09/80.05 V/m`；0.5 mm相对SIMION的Ex/Ey差异RMS仅`61.90/42.62 V/m`，原锯齿可判为
-粗网格伪影。剩余Ez差异RMS为`781.70 V/m`、平均`COMSOL-SIMION=-612.80 V/m`。
-
-0.5 mm固定N=100高精度档的静电求解约19.1秒、粒子求解约1478.6秒，100/100命中，直接FWHM
-`R=28837.88`。当前正式1 mm日常档为`R=30748.80`，高`6.63%`；两档标准化KDE重叠`0.9677`，
-KS距离`0.07`且`p=0.9684`，峰结构一致。两档同粒子落点平均/RMS/最大距离为
-`0.2309/0.2695/0.7115 mm`。结论是1 mm适合日常计算，0.5 mm保留为正式收敛项；本轮没有
-几何变化，故无需更新SolidWorks装配体。
-
-2026-07-19用保存的轴线场与当前正式N=1000配对结果补做纵向闭合，不重跑求解器。释放区
-COMSOL由电势数值导数得到的Ez与直接`es.Ez`内点RMS差为`7.206 V/m`，而同坐标SIMION-COMSOL
-Ez RMS为`1344.091 V/m`，前者只占`0.536%`，故COMSOL场梯度读取不是释放区差异主因。逐粒子
-`SIMION-COMSOL TOF`与初始z的相关系数为`0.97150`；z二次项解释`94.9506%`差值方差，加入能量、
-x和y只增至`94.9564%`。统一baseline已排除有意的电极位置/电压差，剩余证据与两端对栅网、边界
-和局部场的数值表示不同一致，并通过z-to-TOF映射放大；保存数据不能唯一指认某个闭源内部插值
-实现。可复算入口为`analysis/analyze_longitudinal_closure.py`，结果与11项输出manifest位于
-迁移前的该证据冻结在`artifacts/projects/oa_tof/archive/20260719_212436__migration-snapshot__repo__pre-v2-layout/legacy-layout/results/cross_solver/longitudinal_closure/current_assets_n1000_20260719/`。
-
-### 2026-07-16 参数化分段时间输出
-
-`comsol/configure_oatof_segmented_output.m`用质量、电荷、加速电压、`L_accel/L_flight`和两级
-反射器参数解析计算加速器出口、反射器进出和检测器到达时间。所有预测量、步长和安全裕量均写入
-Global Definitions参数，Study `std2/time1`的Output times只引用这些参数。细窗口边界必须向外取整到
-同一个以`t=0`为原点的`0.2 ns`时间格；未对齐时即使物理窗口完全覆盖，也会造成最大`0.335 ns`
-逐粒子TOF差和`7.30%`的R变化。
-
-相位对齐后，N=20的`50 ns`无场区档相对高精度大窗口基线最大TOF差仅
-`2.98e-7 ns`、R变化`2.40e-6%`、最大落点差`1.45e-9 mm`，粒子阶段从`906.59`降到
-`313.72 s`（`2.89x`）。N=100的`50 ns`档相对`1 ns`分段档最大TOF差`8.25e-8 ns`、R变化
-`1.39e-7%`，粒子阶段从`646.72`降到`366.24 s`（`1.77x`）。正式MPH保存`cpt_dt_fine=0.2 ns`、
-`cpt_dt_drift=50 ns`、`tstepsbdf=free`、`tout=tlist`，关闭额外墙时间和粒子状态存储。运行后事件
-门禁要求实际加速器/反射器/检测器事件均留在细窗口安全裕量内。
-`tests/comsol/test_cpt_wall_time_storage_api.m`长期验证这两个GUI复选框的COMSOL 6.4 API映射。
-
-### 2026-07-17 严格聚焦几何提升
-
-`tests/comsol/build_accelerator_geometry_candidate.m`只读加载正式MPH，按候选契约持久化
-`z_accel_origin`、局部加速长度、五环位置、源体、grid1/grid2、选择集和固定检测面，并通过GUI
-附着的`std1`重算独立静电场。迁移后原`selb_grid2`同时选中`38x38 mm`屏蔽端面和`30x30 mm`
-grid2；候选入口现把选择框收紧到grid2实际包络，最终grid1/grid2均只选中一个正确边界。
-
-候选经COMSOL/SIMION同源粒子、解析焦点、GUI Compute和SolidWorks同步门禁后已提升为正式几何；
-随后模块化构建器又通过N=100等价门禁并转为当前正式MPH。2026-07-18使用当前正式MPH直接重算
-N=1000进一步消除了结果身份歧义；早期candidate目录不再是正式运行依赖。
-
-## RF注入入口拓扑边界
-
-当前`oatof_build_accelerator_geometry.m`中的`accelshield`由完整外Block减去内Block构成，并保留一体
-后盖；没有沿全局`+x`注入方向切除侧孔。负x外表面的派生参考中心是
-`(-67.8, 0, -18.42918680341103) mm`，但该处仍是4 mm厚接地实体，不能作为粒子释放面或物理入口。
-`oatof_build_accelerator_geometry.m`现接受可选`interfacePort`结构；正式调用省略该参数并保持封闭屏蔽。
-S1隔离候选启用时可在负x侧壁切出由RF接口合同传入的矩形孔；当前只冻结轴向`0.9 mm`，横向宽度仍
-等待轴心—离轴场均匀性及其他硬约束取交集。布尔切割在壁厚方向额外伸出`0.1 mm`仅用于稳健穿透，
-不是物理长度。横向宽度、联合RF/静电场、选择集、粒子捕获和GUI Compute未通过前不得生成物理候选、
-保存为Formal或把粒子直接放到屏蔽内部。
-
-横向场判据由只读run `20260721_093712__analysis__comsol__accelerator-transverse-field__grid`建立：现有
-Formal保存解在31个对称横向偏移和98个轴向位置上采样，三个场指标按AND组合。闭合屏蔽参考完整宽度
-为`1.0 mm`；该数值只用于联合开孔模型的初始宽度和验收阈值，不可直接写成端口参数或替代开孔后重算。
-
-## 524 amu闭合要求
-
-- 使用与SIMION相同的质量、电荷、释放体、`5±0.4 eV`分布和固定粒子样本。
-- 探测有效面使用当前统一全局坐标`z=0`、半径40 mm。旧几何中的`19.83 mm`是平移前坐标，
-  不得与当前正式模型混用；SIMION数值终止层厚度也不得复制成机械厚度。
-- 统一输出命中率、平均TOF、直接`FWHM_m`、`R=m/FWHM_m`和峰形指标。
-- 先用SIMION网格探索结论选择最少COMSOL网格组合，不进行无目标的大范围扫描。
-- COMSOL网格同样必须做收敛判断，不能把SIMION网格结论直接当作COMSOL误差上限。
-
-## 宽质量候选重追踪
-
-`comsol/run_fixed_particle_retrace.m`现从固定ION表读取并验证单一质量和整数电荷，
-不再把524 amu写死在粒子质量、初速度、分段时间窗口和预计到达时间中。重追踪保留GUI求解器节点和
-独立`sol1`静电场，不改写正式MPH；是否显式清除旧`sol2`数据和是否重写`pp1`是可记录的诊断开关，
-正式宽质量入口不清旧解、但显式写入目标质量/电荷。五质量候选由
-`workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1`分批调用，配置见`config/modes/mass_spectrum.json`。
-每个COMSOL物种的ReleaseFromDataFile中间表按输出CSV stem和实际N唯一命名，防止同目录、同N的
-五个物种互相覆盖；运行manifest同时索引逐物种ION、CSV、报告和现存释放表。该修复不能恢复历史
-运行中已经被覆盖的四份同名中间表，但历史逐物种ION、到达CSV和报告仍完整，可继续做结果复算。
-
-### 极小粒子数限制（已绕开）
-
-COMSOL 6.4 build 293在当前CPT模型的极小求解粒子数路径存在原生不稳定；N=30是固定500 Da序列的
-最低实测全链路成功点，不是通用或单调阈值。该限制不影响N=100检查档和N=1000统计档，当前不再做
-小N边界扫描，也不把工程绕行表述为内部缺陷已经修复。
-
-日常入口统一求解N=100。确需逻辑小样本时，只在无空间电荷、粒子间碰撞或其他集体效应的前提下，
-求解N=100同源承载集合并截取目标前缀；运行记录必须区分`solver_particle_count`和
-`logical_particle_count`。启用任何粒子间耦合后该绕行立即失效。保留的诊断入口
-`tests/comsol/run_extreme_particle_count_case.ps1`仅用于满足PROJECT所列重启条件后的受控复核，
-不属于日常或正式门禁；详细矩阵、启动干扰项和原始证据路径已冻结到项目history。
-
-已关闭的单质量墙钟缩放、五质量批次计时和连接瞬态调查不再作为当前实施说明；其数值与失败链统一
-从项目README的history清单追溯。当前重试分类只采用根共享COMSOL入口的定义，本文件不维护副本。
-
-## GUI与求解器检查
-
-1. 保存后重新打开MPH。
-2. 核对`std1/std2`与`sol1/sol2`附着关系，防止GUI Compute生成新solver并显示旧解。
-3. 核对所有随加速器迁移的几何选择集和网格选择集仍使用参数表达式。
-4. 在GUI路径重算静电场和粒子追踪。
-5. 核对命中判据、结果表、FWHM和图标题与脚本输出一致。
-
-## 固定粒子释放与导出
-
-`tests/comsol/export_fixed_particle_arrivals_from_mph.m`可只读打开已保存MPH并重新导出到达事件。
-`ReleaseFromDataFile`的位置列按mm解释，禁止额外乘`1e-3`。该脚本不读取SIMION结果或计算
-FWHM/bootstrap；跨求解器统计统一由`analysis/reference_analysis.py compare`完成。旧候选的峰形数值、
-采样和LiveLink负载调查只从项目README的history清单追溯。
+COMSOL 6.4的极小粒子数不稳定由同源N=100承载前缀绕行；除PROJECT列出的重启条件外不再扫描。
+已关闭的场替换扫掠、局部网格、分段时间性能、极小N调查和生产入口故障链全部从同日history快照
+及来源manifest追溯。
