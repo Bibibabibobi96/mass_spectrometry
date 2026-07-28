@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "role": "multipole_project_acceleration_qualification_record",
+  "project_id": "rf_hexapole_ion_optics",
+  "design_profile_id": "segmented_rod_axial_acceleration",
+  "particle_count": 100,
+  "recorded_after_runs": true,
+  "preregistration": {
+    "path": "projects/rf_hexapole_ion_optics/config/qualification/n100_convergence_preregistration.json",
+    "sha256_before_runs": "DD9652F335379258F4E6596A072C2499E35C08B48961B747AC509C72CCBA4BED",
+    "git_commits_before_runs": {
+      "baseline": "9b4bb43",
+      "spatial": "6d6c5ea"
+    }
+  },
+  "particle_source": {
+    "path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_100.csv",
+    "sha256": "0125C3AB02B2321EF26A3A913CF6EC04325FD0D48597D2CB439D0CE42411662F"
+  },
+  "runs": {
+    "simion_baseline": {
+      "run_id": "20260729_004000__sim__simion__hex-segaccel-n100__resolved-l3",
+      "manifest_sha256": "C8D91AA78D6A6F7E76FE04BCE8C198F38B4ADB47B1F341808AC32F4432635969"
+    },
+    "comsol_baseline": {
+      "run_id": "20260729_004500__sim__comsol__hex-segaccel-n100__resolved-l3",
+      "manifest_sha256": "8DDCEE71D9274A61E2AAB0BEB60DF9AC892C6AE64FE555F9784CAA3C5BCF465E"
+    },
+    "simion_spatial": {
+      "run_id": "20260729_010000__sim__simion__hex-segaccel-spatial-n100__resolved-l3",
+      "manifest_sha256": "ADF0E672F7CB0C7205E68414B0F45BF6280FECB1DBACDDF0D080FDAF8146B4B0"
+    },
+    "comsol_spatial_failed": {
+      "run_id": "20260729_010700__sim__comsol__hex-segaccel-spatial-n100__resolved-l3",
+      "manifest_sha256": "854FEB7BC8302F467D7FAE1AD4F9DE2883B75C2D7846518AA52BEC544AA941E7"
+    }
+  },
+  "analysis_artifacts": {
+    "baseline_cross_solver_sha256": "47F1D7A15F3840495E33B0E59687141F2CC709AEEBB9ABE9E04CE35FAB2A0291",
+    "simion_spatial_sha256": "F578F979F115990D63BC88B36F469837D06CE77F8B0FABD02E72151B1908D2FD"
+  },
+  "baseline_functional_transport": {
+    "status": "PASS",
+    "accelerated_and_control_transmitted_each_solver": 100,
+    "cross_solver_handoff_particle_id_sets": "exact_match",
+    "mean_energy_gain_eV": {
+      "simion": 3.0001279141130994,
+      "comsol": 2.997794596802142
+    }
+  },
+  "same_solver_spatial": {
+    "simion": {
+      "functional_status": "PASS",
+      "rms_radius_relative_difference": 0.007006641935096684,
+      "rms_divergence_relative_difference": 0.02652824677246994
+    },
+    "comsol": {
+      "status": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
+      "peak_process_tree_working_set_bytes": 19453120512,
+      "process_tree_working_set_limit_bytes": 17179869184,
+      "minimum_system_available_memory_bytes": 9651736576,
+      "minimum_system_available_memory_limit_bytes": 8589934592,
+      "last_checkpoint": "MESH_COMPLETE"
+    }
+  },
+  "baseline_cross_solver_continuous_diagnostics": {
+    "status": "INCONCLUSIVE_NO_SOURCED_ERROR_BUDGET",
+    "rms_radius_relative_difference": 0.12406072507052472,
+    "rms_divergence_relative_difference": 0.08392017026735,
+    "mean_energy_relative_difference": 0.00006342426370387079
+  },
+  "decision": {
+    "functional_segmented_rod_axial_acceleration": "CLOSED",
+    "comsol_spatial_convergence": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
+    "continuous_numerical_equivalence": "INCONCLUSIVE",
+    "further_memory_limit_increase": "NOT_AUTHORIZED",
+    "temporal_refinement": "NOT_AUTHORIZED"
+  },
+  "claim_limit": "PASS covers only N=100 collision-free functional segmented-rod axial acceleration for the named hexapole profile. It does not qualify COMSOL spatial convergence, continuous phase-space equivalence, exit-aperture-plate acceleration, N=1000, collision cooling, mechanical design, Candidate or Formal status."
+}

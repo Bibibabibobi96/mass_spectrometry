@@ -121,9 +121,12 @@ N=100 baseline和空间敏感性双求解器pair已经完成：各档两边均�
 时间敏感性pair也已完成；SIMION时间RMS半径变化约`0.092%`，COMSOL约`5.11%`，最终跨求解器
 RMS半径差约`7.67%`。功能传输闭合，但连续结果只能`INCONCLUSIVE`，不得增加第四档。实测最大值
 为578.056 s、1.031 GB瞬态目录、8.893 GB进程树内存，零自动重试；分段杆轴向加速N=100
-baseline已在两求解器保持100/100传输和精确粒子身份，当前只授权其一对空间敏感性运行，时间档
-和其他模式未授权。完整
+baseline已在两求解器保持100/100传输和精确粒子身份，SIMION空间档也保持100/100；COMSOL空间档
+在`MESH_COMPLETE`后以19.453 GB超过17.180 GB进程树帽，记为
+`INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`，不重跑、不抬帽。当前无商业求解器授权。完整
 身份登记在`../config/qualification/n100_no_acceleration_qualification.json`。正式
+分段杆轴向加速身份和资源结论登记在
+`../config/qualification/n100_segmented_rod_axial_acceleration_qualification.json`。正式
 `three_mode_dispersion_binding`还需要真实solver handoff state路径/SHA，只能在真实run后生成；静态阶段
 不得伪造。没有N=1000真实运行、GUI/CAD同步与formal asset promotion时不得
 声明Formal。碰撞冷却与CAD仍为独立后续阶段。轴向加速若
