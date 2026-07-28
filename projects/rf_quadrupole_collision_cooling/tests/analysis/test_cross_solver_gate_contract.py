@@ -544,7 +544,10 @@ class CandidateGateParameterContractTests(unittest.TestCase):
             )
         )
 
-        self.assertIn("[ValidateSet('Core','Static','Formal')]", project_gate)
+        self.assertIn(
+            "[ValidateSet('Freshness','Core','Static','Formal')]",
+            project_gate,
+        )
         self.assertNotIn("'Candidate'", project_gate)
         self.assertNotIn("CandidateMode", project_gate)
         self.assertNotIn("ComsolRunLabel", project_gate)

@@ -10,6 +10,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CHANGED_GATE = REPO_ROOT / "common" / "verify_changed.ps1"
 INTEGRATION_GATE = REPO_ROOT / "common" / "verify_repository_integration.ps1"
+QUADRUPOLE_GATE = (
+    REPO_ROOT / "projects" / "rf_quadrupole_collision_cooling" / "verify_project.ps1"
+)
 
 
 class ChangedGateContractTests(unittest.TestCase):
@@ -118,6 +121,42 @@ class ChangedGateContractTests(unittest.TestCase):
             ".github/workflows/lightweight-gate.yml",
         ):
             self.assertIn(path, self.source)
+
+    def test_generated_publications_fail_before_long_test_suites(self) -> None:
+        freshness = self.source.index(
+            "Invoke-ChangedGateStage 'rf_quadrupole_generated_publications'"
+        )
+        common_contracts = self.source.index(
+            "Invoke-ChangedGateStage 'common_contracts'"
+        )
+        multipole_common = self.source.index(
+            "Invoke-ChangedGateStage 'multipole_common'"
+        )
+        self.assertLess(freshness, common_contracts)
+        self.assertLess(freshness, multipole_common)
+        self.assertIn("-Level Freshness -PythonExe $PythonExe", self.source)
+
+        integration_source = INTEGRATION_GATE.read_text(encoding="utf-8")
+        integration_freshness = integration_source.index(
+            "Invoke-IntegrationStage 'rf_quadrupole_generated_publications'"
+        )
+        integration_contracts = integration_source.index(
+            "Invoke-IntegrationStage 'common_contracts'"
+        )
+        self.assertLess(integration_freshness, integration_contracts)
+
+        quadrupole_source = QUADRUPOLE_GATE.read_text(encoding="utf-8")
+        self.assertIn(
+            "[ValidateSet('Freshness','Core','Static','Formal')]",
+            quadrupole_source,
+        )
+        freshness_return = quadrupole_source.index(
+            "if ($Level -eq 'Freshness')"
+        )
+        analysis_suite = quadrupole_source.index(
+            "if ($Level -eq 'Core')"
+        )
+        self.assertLess(freshness_return, analysis_suite)
 
     def test_rf_quadrupole_uses_core_in_l1_and_static_in_l2(self) -> None:
         self.assertIn("$project -eq 'rf_quadrupole_collision_cooling'", self.source)

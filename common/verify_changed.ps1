@@ -138,6 +138,17 @@ if ($hasRegistryChange -or (Test-AnyPath { $_ -match '^projects/[^/]+/config/pro
     Invoke-ChangedGateStage 'project_registry' 'project_descriptor_or_registry_changed' { & $PythonExe (Join-Path $PSScriptRoot 'contracts\build_project_registry.py') --check }
 } else { Skip-ChangedGateStage 'project_registry' 'no_project_descriptor_or_registry_changed' }
 
+$needsQuadrupoleFreshness = (Test-PathPrefix 'projects/rf_quadrupole_collision_cooling/') -or
+    $hasContractsChange -or $hasMultipoleChange -or $hasComsolCommonChange
+if ($needsQuadrupoleFreshness) {
+    $quadrupoleGate = Join-Path $repoRoot 'projects\rf_quadrupole_collision_cooling\verify_project.ps1'
+    Invoke-ChangedGateStage 'rf_quadrupole_generated_publications' 'quadrupole_or_direct_dependency_changed' {
+        & $quadrupoleGate -Level Freshness -PythonExe $PythonExe
+    }
+} else {
+    Skip-ChangedGateStage 'rf_quadrupole_generated_publications' 'quadrupole_and_direct_dependencies_unchanged'
+}
+
 if ($hasContractsChange) {
     Invoke-ChangedGateStage 'common_contracts' 'common_contracts_changed' { & $PythonExe -m unittest discover -s (Join-Path $PSScriptRoot 'contracts') -p 'test_*.py' }
 } else { Skip-ChangedGateStage 'common_contracts' 'common_contracts_not_changed' }

@@ -423,8 +423,8 @@ PowerShell时必须使用`pwsh`；PowerShell脚本内部继承当前宿主，不
 
 |层级|入口|何时运行|范围|
 |---|---|---|---|
-|L1 changed-scope|`common/verify_changed.ps1`|每次提交、push和日常参数探索|全部改动均为Markdown时只运行仓库卫生与文档门禁；其他改动只运行活动项目、其直接公共依赖及必要静态合同。RF四极杆在此层只运行无求解器的`Core`合同门禁；输出`RUN/SKIP`原因或显式`DOCUMENTATION_ONLY`快速路径|
-|L2 repository integration|`common/verify_repository_integration.ps1`|修改门禁实现、项目注册表、机器合同语义、共享运行机制或跨项目接口时；GitHub手动触发|完整无商业软件的仓库静态回归，包括RF四极杆完整`Static`分析测试及所有项目的Static gate；纯文档和规则文字调整不触发|
+|L1 changed-scope|`common/verify_changed.ps1`|每次提交、push和日常参数探索|全部改动均为Markdown时只运行仓库卫生与文档门禁；其他改动只运行活动项目、其直接公共依赖及必要静态合同。RF四极杆或其直接公共依赖变化时，先运行生成物`Freshness`快速失败，再运行无求解器的`Core`合同门禁；输出`RUN/SKIP`原因或显式`DOCUMENTATION_ONLY`快速路径|
+|L2 repository integration|`common/verify_repository_integration.ps1`|修改门禁实现、项目注册表、机器合同语义、共享运行机制或跨项目接口时；GitHub手动触发|在长测试前检查RF四极杆生成物`Freshness`，随后运行完整无商业软件的仓库静态回归，包括RF四极杆完整`Static`分析测试及所有项目的Static gate；纯文档和规则文字调整不触发|
 |L3 project evidence|各项目`verify_project.ps1`的Candidate/Formal级别|Candidate、Formal、promotion或真实物理资产变化时|商业求解、GUI/CAD复验、冻结输入、manifest和物理证据链|
 
 `common/verify_lightweight.ps1`保留为L1兼容入口，并委托给`verify_changed.ps1`；新脚本、文档与CI应直接使用

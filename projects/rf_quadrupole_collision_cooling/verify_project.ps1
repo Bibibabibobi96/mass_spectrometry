@@ -1,5 +1,5 @@
 param(
-  [ValidateSet('Core','Static','Formal')][string]$Level = 'Static',
+  [ValidateSet('Freshness','Core','Static','Formal')][string]$Level = 'Static',
   [string]$PythonExe = ''
 )
 
@@ -31,6 +31,10 @@ try {
     (Join-Path $projectRoot 'config\particles\official_fixed_100.ion')
   if ($LASTEXITCODE -ne 0) { throw 'Paired-particle identity gate failed.' }
 } finally { Pop-Location }
+if ($Level -eq 'Freshness') {
+  "PROJECT_GATE=PASS PROJECT=rf_quadrupole_collision_cooling LEVEL=$Level"
+  return
+}
 Push-Location $repoRoot
 try {
   & $python -m `

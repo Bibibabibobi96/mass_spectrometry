@@ -32,6 +32,9 @@ Invoke-IntegrationStage 'livelink_environment' { & (Join-Path $PSScriptRoot 'com
 Invoke-IntegrationStage 'development_standards' { & $PythonExe (Join-Path $PSScriptRoot 'verify_development_standards.py') }
 Invoke-IntegrationStage 'ruff_all' { & $PythonExe -m ruff check (Join-Path $repoRoot 'common') (Join-Path $repoRoot 'projects') }
 Invoke-IntegrationStage 'project_registry' { & $PythonExe (Join-Path $PSScriptRoot 'contracts\build_project_registry.py') --check }
+Invoke-IntegrationStage 'rf_quadrupole_generated_publications' {
+    & (Join-Path $repoRoot 'projects\rf_quadrupole_collision_cooling\verify_project.ps1') -Level Freshness -PythonExe $PythonExe
+}
 Invoke-IntegrationStage 'common_contracts' { & $PythonExe -m unittest discover -s (Join-Path $PSScriptRoot 'contracts') -p 'test_*.py' }
 Invoke-IntegrationStage 'multipole_common' { & $PythonExe -m unittest discover -s (Join-Path $PSScriptRoot 'multipole') -p 'test_*.py' }
 Push-Location $repoRoot
