@@ -122,7 +122,7 @@ def accelerator_geometry(
         "detector_center_y": float(
             baseline["coordinate_convention"].get("detector_y", 0.0)
         ),
-        "physical_detector_radius": float(geometry["physical_detector_radius"]),
+        "physical_detector_radius": float(geometry["detector_radius"]),
         "source_center": {axis: float(source[f"center_{axis}_mm"]) for axis in "xyz"},
         "source_size": {axis: float(source[f"size_{axis}_mm"]) for axis in "xyz"},
     }

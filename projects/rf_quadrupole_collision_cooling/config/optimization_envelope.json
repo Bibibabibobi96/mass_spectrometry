@@ -8,7 +8,7 @@
   "policy": "Candidates may move within catalog bounds only after request compilation. Identity and coupled geometry constraints remain mandatory; expanding this envelope does not modify the accepted baseline.",
   "reference": {
     "design_request": "config/requests/baseline.json",
-    "design_request_sha256": "A28C9BAAA89FB05876EF7E0649E0CB2A3EBC507C9683C57FA8B6190171DFB44A"
+    "design_request_sha256": "E7191836213BC09B108E9B58D10A51DC37087A0AB7931CB45682244DFB3E5E3B"
   },
   "constraints": [
     {
@@ -86,7 +86,7 @@
         "/geometry_mm/exit_interface/connector_length_mm",
         "/geometry_mm/exit_interface/census_offset_mm"
       ],
-      "description": "Entrance and exit plates, connectors and particle planes must remain ordered outside the positive rod span."
+      "description": "Entrance and exit aperture plates, connectors, release plane and census plane must remain ordered outside the positive rod span."
     },
     {
       "constraint_id": "segmented_length_conservation",
