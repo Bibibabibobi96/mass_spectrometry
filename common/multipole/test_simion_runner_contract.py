@@ -22,7 +22,7 @@ class SimionRunnerContractTests(unittest.TestCase):
             "run_simion_finite_3d_transport.ps1",
         ):
             source = (RUNNER.parent / name).read_text(encoding="utf-8-sig")
-            self.assertIn("${DesignProfileId}__resolved-l3", source)
+            self.assertIn("$($DesignProfileId.Replace('_','-'))__resolved-l3", source)
             self.assertNotIn("$DesignProfileId__resolved-l3", source)
 
     def test_segmented_voltage_binding_uses_resolved_dynamic_electrodes(self) -> None:
