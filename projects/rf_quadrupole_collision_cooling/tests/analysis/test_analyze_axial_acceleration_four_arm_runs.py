@@ -76,7 +76,7 @@ class FourArmPostRunAcceptanceTests(unittest.TestCase):
         frequency = float(resolved["drive"]["frequency_Hz"])
         phase = float(resolved["drive"]["phase_rad"])
         detector = float(
-            resolved["interfaces_mm"]["exit"]["particle_plane_z_mm"]
+            resolved["interfaces_mm"]["exit"]["census_plane_z_mm"]
         )
         arm_offset = {"A": 0.0, "B": 0.3, "C": 0.2, "D": 0.1}[arm_id]
         rows: list[dict[str, object]] = []
@@ -126,7 +126,7 @@ class FourArmPostRunAcceptanceTests(unittest.TestCase):
                     "event": "terminal",
                     "status": "lost" if lost else "transmitted",
                     "terminal_reason": (
-                        "radial_escape" if lost else "acceptance_detector"
+                        "radial_escape" if lost else "acceptance_surface"
                     ),
                     "time_us": source["time_us"] + 30.0 + arm_offset,
                     "elapsed_time_us": 30.0 + arm_offset,
@@ -341,7 +341,7 @@ class FourArmPostRunAcceptanceTests(unittest.TestCase):
     def test_rejects_loss_instead_of_intersecting_survivors(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             runs = self._runs(Path(directory), lost_arm="D")
-            with self.assertRaisesRegex(ValueError, "failed acceptance detector"):
+            with self.assertRaisesRegex(ValueError, "failed near-interface census"):
                 analyze_four_arm_runs(CONTRACT, self.bundle_metadata, runs)
 
     def test_rejects_manifest_valid_but_wrong_operating_point_binding(self) -> None:

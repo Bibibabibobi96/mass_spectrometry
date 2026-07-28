@@ -55,7 +55,7 @@ def write_canonical_source(path: Path) -> None:
                     "x_mm": 0.1,
                     "y_mm": -0.2,
                     "z_mm": resolved["interfaces_mm"]["entrance"][
-                        "particle_plane_z_mm"
+                        "release_plane_z_mm"
                     ],
                     "vx_m_s": format(vx, ".17g"),
                     "vy_m_s": format(vy, ".17g"),

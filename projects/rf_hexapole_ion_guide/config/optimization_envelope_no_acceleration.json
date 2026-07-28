@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "role": "project_optimization_envelope",
+  "project_id": "rf_hexapole_ion_guide",
+  "family_id": "rf_multipole_ion_optics",
+  "envelope_id": "hexapole_no_acceleration_full_length",
+  "status": "candidate",
+  "policy": "This envelope freezes the full 79.6 mm rod span and zero axial references for a near-interface divergence baseline; it does not qualify convergence, far-field drift, or mechanical implementation.",
+  "reference": {
+    "design_request": "config/requests/no_acceleration_full_length.json",
+    "design_request_sha256": "1212DFAFCE5112F0F32370EA5085790573A584037B71B09EDA6E00553D54094C"
+  },
+  "constraints": [
+    {
+      "constraint_id": "no_acceleration_rod_ratio_bound",
+      "kind": "bounded_variable",
+      "request_json_pointers": [
+        "/geometry_mm/rod_radius_ratio"
+      ],
+      "description": "The governed full-length baseline rod ratio remains inside the project catalog bound; axial references are immutable request fields at 0 V."
+    }
+  ]
+}

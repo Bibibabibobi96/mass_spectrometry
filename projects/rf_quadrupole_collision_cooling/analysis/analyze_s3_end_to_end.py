@@ -186,7 +186,7 @@ def analyze(source_summary_path: Path, canonical_path: Path, ion_path: Path,
 
 def plot(result: dict[str, object], downstream_path: Path, output: Path,
          detector_center_x_mm: float, detector_center_y_mm: float,
-         detector_radius_mm: float) -> None:
+         physical_detector_radius_mm: float) -> None:
     downstream = _read_csv(downstream_path)
     census = result["census"]
     labels = ["RF exit", "oa entry", "pulse active", "local exit", "detector hit"]
@@ -210,7 +210,7 @@ def plot(result: dict[str, object], downstream_path: Path, output: Path,
         axes[1].scatter([float(row["XMm"]) - detector_center_x_mm for row in misses],
                         [float(row["YMm"]) - detector_center_y_mm for row in misses],
                         s=16, marker="x", color="#cb181d", label="outside active radius")
-    axes[1].add_patch(Circle((0, 0), detector_radius_mm, fill=False, linestyle="--", color="#756bb1"))
+    axes[1].add_patch(Circle((0, 0), physical_detector_radius_mm, fill=False, linestyle="--", color="#756bb1"))
     axes[1].set(xlabel="Detector x (mm)", ylabel="Detector y (mm)",
                 title=f"B  Detector plane: {len(hits)}/{len(downstream)} hits")
     axes[1].set_aspect("equal", adjustable="box")
@@ -242,7 +242,7 @@ def main() -> None:
     if coordinates.get("frame_id") != result["frame_id"]:
         raise ValueError("S3 downstream geometry frame differs from canonical state")
     plot(result, args.downstream, args.figure, float(coordinates["detector_x"]),
-         float(coordinates.get("detector_y", 0.0)), float(geometry["geometry_mm"]["detector_radius"]))
+         float(coordinates.get("detector_y", 0.0)), float(geometry["geometry_mm"]["physical_detector_radius"]))
     args.output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(f"S3_END_TO_END={result['status']} HITS={result['census']['detector_hit']}")
     if result["status"] != "PASS":

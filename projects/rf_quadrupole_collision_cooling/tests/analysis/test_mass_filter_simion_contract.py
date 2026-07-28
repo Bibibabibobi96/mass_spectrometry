@@ -120,9 +120,9 @@ class MassFilterSimionContractTests(unittest.TestCase):
             math.radians(mode["rf"]["phase_deg"]), mass["drive"]["phase_rad"]
         )
         static_pairs = (
-            ("entrance_plate", "entrance_plate_and_connector"),
-            ("exit_enclosure", "exit_enclosure_and_connector"),
-            ("detector", "detector"),
+            ("entrance_plate", "entrance_aperture_plate_and_connector_V"),
+            ("exit_enclosure", "exit_outer_enclosure_and_connector_V"),
+            ("physical_detector_V", "physical_detector_V"),
         )
         for mode_key, resolved_key in static_pairs:
             self.assertEqual(
@@ -138,8 +138,8 @@ class MassFilterSimionContractTests(unittest.TestCase):
         mmgu = float(re.search(r"local mmgu = ([0-9.]+)", gem).group(1))
         self.assertEqual(mmgu, numerics["simion_cell_mm"])
         self.assertAlmostEqual(
-            interface["planes"]["source"]["z_mm"],
-            official["interfaces_mm"]["entrance"]["particle_plane_z_mm"],
+            interface["planes"]["release"]["z_mm"],
+            official["interfaces_mm"]["entrance"]["release_plane_z_mm"],
         )
         self.assertEqual(
             interface["planes"]["rod_exit"]["z_mm"],
@@ -150,8 +150,8 @@ class MassFilterSimionContractTests(unittest.TestCase):
             official["geometry_mm"]["enclosure"]["exit_front_wall_end_z_mm"],
         )
         self.assertEqual(
-            interface["planes"]["acceptance_detector"]["z_mm"],
-            official["interfaces_mm"]["exit"]["particle_plane_z_mm"],
+            interface["planes"]["census"]["z_mm"],
+            official["interfaces_mm"]["exit"]["census_plane_z_mm"],
         )
 
 

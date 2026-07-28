@@ -138,7 +138,7 @@ def main() -> None:
         axis.scatter(c_points[:, 0], c_points[:, 1], facecolors="none", edgecolors="tab:orange", s=52, linewidths=1.2, label="COMSOL")
         axis.scatter(s_points[:, 0], s_points[:, 1], color="tab:blue", marker="x", s=34, linewidths=1.0, label="SIMION")
         aperture = (
-            geometry["enclosure"]["detector_radius_mm"]
+            geometry["enclosure"]["physical_detector_radius_mm"]
             if plane == detector_plane
             else r0
         )

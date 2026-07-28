@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "role": "solver_independent_component_phase_space_contract",
   "status": "candidate_until_cross_solver_validation",
   "coordinate_system": {
@@ -10,10 +10,10 @@
     "origin": "entrance reference plane on the mechanical and electric axis"
   },
   "planes": {
-    "source": {"z_mm": 0.0, "purpose": "paired initial state"},
+    "release": {"z_mm": 0.0, "purpose": "paired initial state"},
     "rod_exit": {"z_mm": 85.4, "purpose": "fringe-field diagnostic reference"},
     "handoff": {"z_mm": 90.2, "purpose": "downstream component interface at the exit aperture plane"},
-    "acceptance_detector": {"z_mm": 95.2, "purpose": "standalone transport acceptance only; not an integration interface"}
+    "census": {"z_mm": 95.2, "purpose": "near-interface standalone transport census only; not an integration interface"}
   },
   "required_artifacts": {
     "particle_state_csv": "one row per particle event; source and terminal are mandatory, rod_exit and handoff are written when crossed",
@@ -42,7 +42,7 @@
   "enums": {
     "event": ["source", "rod_exit", "handoff", "terminal"],
     "status": ["alive", "transmitted", "lost", "timeout"],
-    "terminal_reason": ["none", "acceptance_detector", "electrode", "radial_escape", "backward_escape", "timeout", "solver_stop", "unknown"]
+    "terminal_reason": ["none", "acceptance_surface", "electrode", "radial_escape", "backward_escape", "timeout", "solver_stop", "unknown"]
   },
   "comparison_policy": {
     "paired_identity_required": true,
@@ -60,6 +60,6 @@
   },
   "solver_numerics": {
     "simion_terminal_surface_backoff_cells": 2.5,
-    "policy": "Numerical classification only; the physical detector plane remains acceptance_detector.z_mm."
+    "policy": "Numerical classification only; the numerical census marker resolves from census.z_mm and is not a physical detector."
   }
 }

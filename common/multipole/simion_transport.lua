@@ -25,7 +25,7 @@ adjustable transport_phase_deg = 0.0
 adjustable transport_axis_voltage_v = 0.0
 adjustable transport_entrance_voltage_v = 0.0
 adjustable transport_exit_voltage_v = 0.0
-adjustable transport_detector_voltage_v = 0.0
+adjustable transport_physical_detector_voltage_v = 0.0
 adjustable transport_rf_steps_per_period = 0
 adjustable transport_max_elapsed_us = 0
 
@@ -41,15 +41,15 @@ local next_axial_plane = {}
 local crossed_rod_exit = {}
 local crossed_handoff = {}
 local timed_out = {}
-local detector_counted = {}
-local detector_hit = {}
+local census_counted = {}
+local census_hit = {}
 local trajectory_plane_step_mm
 local rod_z_min_mm
 local rod_z_max_mm
 local rod_exit_plane_mm
 local handoff_plane_mm
-local detector_crossing_threshold_mm
-local detector_radius_mm
+local numerical_census_marker_threshold_mm
+local census_radius_mm
 local radial_escape_radius_mm
 local axial_axis
 local origin_x_mm
@@ -78,7 +78,7 @@ transport_waveform = assert(run_config.waveform)
 transport_axis_voltage_v = assert(run_config.axis_voltage_v)
 transport_entrance_voltage_v = assert(run_config.entrance_voltage_v)
 transport_exit_voltage_v = assert(run_config.exit_voltage_v)
-transport_detector_voltage_v = assert(run_config.detector_voltage_v)
+transport_physical_detector_voltage_v = assert(run_config.physical_detector_voltage_v)
 transport_rf_steps_per_period = assert(run_config.rf_steps_per_period)
 transport_max_elapsed_us = assert(run_config.maximum_time_us)
 assert(transport_rf_peak_v > 0, 'run config rf_peak_v must be positive')
@@ -93,8 +93,8 @@ rod_z_min_mm = assert(run_config.rod_z_min_mm)
 rod_z_max_mm = assert(run_config.rod_z_max_mm)
 rod_exit_plane_mm = assert(run_config.rod_exit_plane_mm)
 handoff_plane_mm = assert(run_config.handoff_plane_mm)
-detector_crossing_threshold_mm = assert(run_config.detector_crossing_threshold_mm)
-detector_radius_mm = assert(run_config.detector_radius_mm)
+numerical_census_marker_threshold_mm = assert(run_config.numerical_census_marker_threshold_mm)
+census_radius_mm = assert(run_config.census_radius_mm)
 radial_escape_radius_mm = assert(run_config.radial_escape_radius_mm)
 axial_axis = run_config.axial_axis or 'x'
 assert(axial_axis == 'x' or axial_axis == 'z', 'axial_axis must be x or z')
@@ -185,8 +185,8 @@ function segment.initialize_run()
   crossed_rod_exit = {}
   crossed_handoff = {}
   timed_out = {}
-  detector_counted = {}
-  detector_hit = {}
+  census_counted = {}
+  census_hit = {}
   local trajectory_path = run_config.trajectory_csv
   if trajectory_path and trajectory_path ~= '' then
     trajectory_file = assert(io.open(trajectory_path, 'w'))
@@ -209,9 +209,9 @@ function segment.init_p_values()
       axial_scale * run_config.ground_reference_v)
     set_electrode_voltage(run_config.output_electrode_id,
       axial_scale * run_config.output_reference_v)
-    if run_config.detector_electrode_id and run_config.detector_electrode_id > 0 then
-      set_electrode_voltage(run_config.detector_electrode_id,
-        axial_scale * transport_detector_voltage_v)
+    if run_config.physical_detector_electrode_id and run_config.physical_detector_electrode_id > 0 then
+      set_electrode_voltage(run_config.physical_detector_electrode_id,
+        axial_scale * transport_physical_detector_voltage_v)
     end
     return
   end
@@ -221,7 +221,7 @@ function segment.init_p_values()
     adj_elect04 = static_scale * transport_exit_voltage_v
   end
   if run_config.has_electrode_5 ~= false then
-    adj_elect05 = static_scale * transport_detector_voltage_v
+    adj_elect05 = static_scale * transport_physical_detector_voltage_v
   end
 end
 
@@ -238,9 +238,9 @@ function segment.fast_adjust()
       axial_scale * run_config.ground_reference_v)
     set_electrode_voltage(run_config.output_electrode_id,
       axial_scale * run_config.output_reference_v)
-    if run_config.detector_electrode_id and run_config.detector_electrode_id > 0 then
-      set_electrode_voltage(run_config.detector_electrode_id,
-        axial_scale * transport_detector_voltage_v)
+    if run_config.physical_detector_electrode_id and run_config.physical_detector_electrode_id > 0 then
+      set_electrode_voltage(run_config.physical_detector_electrode_id,
+        axial_scale * transport_physical_detector_voltage_v)
     end
     return
   end
@@ -301,13 +301,13 @@ function segment.other_actions()
     end
     if not crossed_handoff[ion_number] and previous.x < handoff_plane_mm and current_x >= handoff_plane_mm then
       local handoff = interpolate_state(previous, current, handoff_plane_mm)
-      local accepted = radial_mm(handoff) <= detector_radius_mm
+      local accepted = radial_mm(handoff) <= census_radius_mm
       write_particle_state(ion_number, 'handoff', accepted and 'transmitted' or 'lost',
         accepted and 'none' or 'acceptance_radius', handoff)
       crossed_handoff[ion_number] = true
-      if run_config.detector_is_handoff then
-        detector_counted[ion_number] = true
-        detector_hit[ion_number] = accepted
+      if run_config.numerical_census_marker_is_handoff then
+        census_counted[ion_number] = true
+        census_hit[ion_number] = accepted
         crossings = crossings + 1
         if accepted then hits = hits + 1 end
         ion_splat = -5
@@ -325,19 +325,19 @@ function segment.terminate()
   local current = canonical_state(ion_time_of_flight, ion_px_mm, ion_py_mm, ion_pz_mm,
     ion_vx_mm, ion_vy_mm, ion_vz_mm, ion_ke)
   local radius = radial_mm(current)
-  -- The run config derives a safe terminal threshold from the detector plane
+  -- The run config derives a safe terminal threshold from the census plane
   -- and PA cell size so SIMION's fractional-surface back-off is not mistaken
   -- for an upstream loss.
-  local crossed = detector_counted[ion_number] or current.x >= detector_crossing_threshold_mm
-  local hit = detector_counted[ion_number] and detector_hit[ion_number] or
-    (crossed and radius <= detector_radius_mm)
-  if not detector_counted[ion_number] then
+  local crossed = census_counted[ion_number] or current.x >= numerical_census_marker_threshold_mm
+  local hit = census_counted[ion_number] and census_hit[ion_number] or
+    (crossed and radius <= census_radius_mm)
+  if not census_counted[ion_number] then
     if crossed then crossings = crossings + 1 end
     if hit then hits = hits + 1 end
   end
   local status, reason = 'lost', 'electrode'
   if timed_out[ion_number] then status, reason = 'timeout', 'timeout'
-  elseif hit then status, reason = 'transmitted', 'acceptance_detector'
+  elseif hit then status, reason = 'transmitted', 'acceptance_surface'
   elseif current.x < backward_escape_plane_mm then reason = 'backward_escape'
   elseif radius > radial_escape_radius_mm then reason = 'radial_escape'
   end
@@ -351,7 +351,7 @@ function segment.terminate_run()
   local summary_path = assert(run_config.summary_json, 'run config summary_json is missing')
   local summary = assert(io.open(summary_path, 'w'))
   summary:write(string.format(
-    '{\n  "solver": "SIMION",\n  "mode": "%s",\n  "operating_point": "%s",\n  "parent_resolved_design_sha256": "%s",\n  "collision_model": "none",\n  "particles": %d,\n  "detector_plane_crossings": %d,\n  "hits": %d,\n  "transmission": %.12g,\n  "rf_scale": %.12g,\n  "rf_peak_V": %.12g,\n  "dc_amplitude_V_per_group": %.12g,\n  "frequency_Hz": %.12g,\n  "rf_steps_per_period": %.12g\n}\n',
+    '{\n  "solver": "SIMION",\n  "mode": "%s",\n  "operating_point": "%s",\n  "parent_resolved_design_sha256": "%s",\n  "collision_model": "none",\n  "particles": %d,\n  "census_plane_crossings": %d,\n  "hits": %d,\n  "transmission": %.12g,\n  "rf_scale": %.12g,\n  "rf_peak_V": %.12g,\n  "dc_amplitude_V_per_group": %.12g,\n  "frequency_Hz": %.12g,\n  "rf_steps_per_period": %.12g\n}\n',
     run_config.mode, run_config.operating_point,
     assert(run_config.parent_resolved_design_sha256, 'parent resolved-design hash is missing'),
     sim_ions_count, crossings, hits, hits/sim_ions_count,

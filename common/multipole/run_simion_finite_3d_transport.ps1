@@ -222,26 +222,26 @@ try{
   $interfaces=$design.interfaces_mm
   $axialTopology=[string]$design.axial_drive.topology
   $segmented=($axialTopology-eq'segmented_rod_axial_acceleration')
-  $endplate=($axialTopology-eq'endplate_potential_step')
-  $handoffPlaneMm=[double]$interfaces.exit.connector_z_max_mm
-  $detectorPlaneMm=[double]$interfaces.exit.particle_plane_z_mm
-  $detectorRadius=if($enclosure.PSObject.Properties.Name-contains'detector_radius_mm'){
-    [double]$enclosure.detector_radius_mm
+  $exitAperturePlateStep=($axialTopology-eq'exit_aperture_plate_potential_step')
+  $handoffPlaneMm=[double]$interfaces.exit.handoff_plane_z_mm
+  $censusPlaneMm=[double]$interfaces.exit.census_plane_z_mm
+  $censusRadius=if($enclosure.PSObject.Properties.Name-contains'physical_detector_radius_mm'){
+    [double]$enclosure.physical_detector_radius_mm
   }else{[double]$interfaces.exit.aperture_radius_mm}
   $rectangular=([string]$enclosure.model-eq'rectangular_reference_enclosure_v1')
   $origin=if($rectangular){0}else{[double]$enclosure.shield_outer_radius_mm}
   $zShift=if($rectangular){0}else{-[double]$enclosure.vacuum_z_min_mm}
   if($rectangular){
-    $entranceVoltage=[double]$static.entrance_plate_and_connector
-    $exitVoltage=[double]$static.exit_enclosure_and_connector
-    $detectorVoltage=[double]$static.detector
+    $entranceVoltage=[double]$static.entrance_aperture_plate_and_connector_V
+    $exitVoltage=[double]$static.exit_outer_enclosure_and_connector_V
+    $physicalDetectorVoltage=[double]$static.physical_detector_V
   }else{
-    $entranceVoltage=[double]$static.shield_and_entrance_endcap_and_connector
-    $exitVoltage=[double]$static.exit_endcap_and_connector
-    $detectorVoltage=$exitVoltage
+    $entranceVoltage=[double]$static.shield_entrance_outer_endcap_aperture_plate_connector_V
+    $exitVoltage=[double]$static.exit_outer_endcap_aperture_plate_connector_V
+    $physicalDetectorVoltage=$exitVoltage
   }
   $segmentedLua='';$groundElectrodeId=3;$outputElectrodeId=4
-  $detectorElectrodeId=if($rectangular){5}else{4}
+  $physicalDetectorElectrodeId=if($rectangular){5}else{4}
   if($segmented){
     $segments=$design.segmentation.segmented_rod_array
     $entries=@($segments.electrodes|ForEach-Object{
@@ -249,7 +249,7 @@ try{
     })
     $segmentedLua="segmented_rod_electrodes={$($entries -join ',')},"
     $groundElectrodeId=2*[int]$segments.segment_count+1;$outputElectrodeId=$groundElectrodeId+1
-    $detectorElectrodeId=$outputElectrodeId+1
+    $physicalDetectorElectrodeId=$outputElectrodeId+1
   }
   $provenance=[ordered]@{parent_resolved_design_sha256=$resolvedHash;particle_source_sha256=$sourceMeta.source_sha256;
     source_family_sha256=$sourceFamilySha;operating_point_id=$(if($sourceFamily){$OperatingPointId}else{$null});
@@ -315,20 +315,20 @@ trajectory_csv=[[$caseTrajectory]], particle_state_csv=[[$caseState]], summary_j
 mode="resolved_design_transport", operating_point="$name", parent_resolved_design_sha256="$resolvedHash",
 trajectory_quality=$TrajectoryQuality, rf_steps_per_period=$RfStepsPerPeriod, waveform="$($drive.waveform)",
 rf_peak_v=$($drive.rf_amplitude_V_zero_to_peak_per_group), rf_scale=$rfScale, axial_scale=$axialScale,
-scale_static_boundaries=$($endplate.ToString().ToLowerInvariant()),
+scale_static_boundaries=$($exitAperturePlateStep.ToString().ToLowerInvariant()),
 dc_amplitude_v=$($drive.dc_amplitude_V_per_group), frequency_hz=$($drive.frequency_Hz), phase_deg=$phaseDeg,
 axis_voltage_v=$($drive.common_mode_offset_V), entrance_voltage_v=$entranceVoltage,
-exit_voltage_v=$exitVoltage, detector_voltage_v=$detectorVoltage,
+exit_voltage_v=$exitVoltage, physical_detector_voltage_v=$physicalDetectorVoltage,
 has_electrode_4=true, has_electrode_5=$($rectangular.ToString().ToLowerInvariant()),
 $segmentedLua ground_electrode_id=$groundElectrodeId, ground_reference_v=$entranceVoltage,
 output_electrode_id=$outputElectrodeId, output_reference_v=$exitVoltage,
-detector_electrode_id=$detectorElectrodeId,
+physical_detector_electrode_id=$physicalDetectorElectrodeId,
 maximum_time_us=$MaximumTimeUs, trajectory_plane_step_mm=$CellMm,
 rod_z_min_mm=$($geometry.rod_z_min), rod_z_max_mm=$($geometry.rod_z_max),
 rod_exit_plane_mm=$($geometry.rod_z_max), handoff_plane_mm=$handoffPlaneMm,
-    detector_crossing_threshold_mm=$($detectorPlaneMm-2*$CellMm-$surfaceToleranceMm),
-detector_radius_mm=$detectorRadius, radial_escape_radius_mm=$($enclosure.working_region_radius_mm),
-detector_is_handoff=false, axial_axis="x", origin_x_mm=$zShift, origin_y_mm=$(-$origin),
+    numerical_census_marker_threshold_mm=$($censusPlaneMm-2*$CellMm-$surfaceToleranceMm),
+census_radius_mm=$censusRadius, radial_escape_radius_mm=$($enclosure.working_region_radius_mm),
+numerical_census_marker_is_handoff=false, axial_axis="x", origin_x_mm=$zShift, origin_y_mm=$(-$origin),
 origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
 "@|Set-Content -LiteralPath $luaConfig -Encoding ASCII
     $env:MULTIPOLE_SIMION_RUN_CONFIG_LUA=$luaConfig
@@ -351,14 +351,14 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
     return Get-Content -LiteralPath $caseSummary -Raw -Encoding UTF8|ConvertFrom-Json
   }
 
-  if($segmented -or $endplate){
-    if($endplate){
-      $primaryName='endplate_acceleration_rf_on';$controlName='zero_endplate_drop_rf_on'
+  if($segmented -or $exitAperturePlateStep){
+    if($exitAperturePlateStep){
+      $primaryName='exit_aperture_plate_acceleration_rf_on';$controlName='zero_exit_aperture_plate_drop_rf_on'
     }else{
       $primaryName='axial_acceleration_rf_on';$controlName='zero_axial_drop_rf_on'
     }
     $primary=Invoke-TransportCase $primaryName 1 1;$control=Invoke-TransportCase $controlName 1 0
-    $metrics=Join-Path $resultDir $(if($endplate){'endplate_acceleration_metrics.json'}else{'axial_acceleration_metrics.json'})
+    $metrics=Join-Path $resultDir $(if($exitAperturePlateStep){'exit_aperture_plate_acceleration_metrics.json'}else{'axial_acceleration_metrics.json'})
     Push-Location $codeRoot
     try{
       $env:PYTHONPATH=$codeRoot

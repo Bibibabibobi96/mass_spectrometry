@@ -10,7 +10,7 @@
     },
     {
       "path": "projects/rf_quadrupole_collision_cooling/config/resolved_design_official.json",
-      "sha256": "0A70DF34CA783309AD339DAB61D17C8EAC6F4FBD1225DD45805BD7201CAD112D"
+      "sha256": "5D528DD5DB76B27762302F6A8E94760B75C9F7874D1A9CAFF1516105DA09E14B"
     },
     {
       "path": "projects/rf_quadrupole_collision_cooling/config/rf_to_oatof_s2_passive_connector.json",
@@ -18,7 +18,7 @@
     },
     {
       "path": "projects/rf_quadrupole_collision_cooling/config/rf_to_oatof_shared_physical_port_joint_geometry.json",
-      "sha256": "1B93700A5D57065C367A61161342600BC417BD0B8F9A41D79E87F94FC8084DC1"
+      "sha256": "876C8759D616126649545CA89D360258A6BA50E9C80DD408F02706F39FBD6717"
     }
   ],
   "component_poses": {
@@ -184,7 +184,7 @@
       "unit": "V",
       "source": {
         "path": "projects/rf_quadrupole_collision_cooling/config/rf_to_oatof_shared_physical_port_joint_geometry.json",
-        "sha256": "1B93700A5D57065C367A61161342600BC417BD0B8F9A41D79E87F94FC8084DC1"
+        "sha256": "876C8759D616126649545CA89D360258A6BA50E9C80DD408F02706F39FBD6717"
       },
       "json_pointer": "/electrical_interface/common_potential_reference/potential_V",
       "electrode_bindings": [
@@ -212,7 +212,7 @@
       "unit": "V",
       "source": {
         "path": "projects/rf_quadrupole_collision_cooling/config/resolved_design_official.json",
-        "sha256": "0A70DF34CA783309AD339DAB61D17C8EAC6F4FBD1225DD45805BD7201CAD112D"
+        "sha256": "5D528DD5DB76B27762302F6A8E94760B75C9F7874D1A9CAFF1516105DA09E14B"
       },
       "json_pointer": "/drive/common_mode_offset_V",
       "electrode_bindings": [
@@ -225,7 +225,7 @@
       "unit": "V",
       "source": {
         "path": "projects/rf_quadrupole_collision_cooling/config/rf_to_oatof_shared_physical_port_joint_geometry.json",
-        "sha256": "1B93700A5D57065C367A61161342600BC417BD0B8F9A41D79E87F94FC8084DC1"
+        "sha256": "876C8759D616126649545CA89D360258A6BA50E9C80DD408F02706F39FBD6717"
       },
       "json_pointer": "/electrical_interface/common_potential_reference/potential_V",
       "electrode_bindings": [
@@ -238,7 +238,7 @@
       "unit": "Hz",
       "source": {
         "path": "projects/rf_quadrupole_collision_cooling/config/resolved_design_official.json",
-        "sha256": "0A70DF34CA783309AD339DAB61D17C8EAC6F4FBD1225DD45805BD7201CAD112D"
+        "sha256": "5D528DD5DB76B27762302F6A8E94760B75C9F7874D1A9CAFF1516105DA09E14B"
       },
       "json_pointer": "/drive/frequency_Hz",
       "electrode_bindings": [
@@ -252,7 +252,7 @@
       "unit": "V_peak",
       "source": {
         "path": "projects/rf_quadrupole_collision_cooling/config/resolved_design_official.json",
-        "sha256": "0A70DF34CA783309AD339DAB61D17C8EAC6F4FBD1225DD45805BD7201CAD112D"
+        "sha256": "5D528DD5DB76B27762302F6A8E94760B75C9F7874D1A9CAFF1516105DA09E14B"
       },
       "json_pointer": "/drive/rf_amplitude_V_zero_to_peak_per_group",
       "electrode_bindings": [
@@ -276,7 +276,7 @@
       -18.42918680341103
     ],
     "source_surface_derivation": {
-      "source": "rf_resolved_design.interfaces_mm.exit.connector_z_max_mm",
+      "source": "rf_resolved_design.interfaces_mm.exit.handoff_plane_z_mm",
       "local_center_mm": [
         0.0,
         0.0,

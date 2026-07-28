@@ -98,7 +98,7 @@ class RfOatofSpatialRegistrationTests(unittest.TestCase):
                 ).read_text(encoding="utf-8")
             )
             document["interfaces_mm"]["exit"][
-                "connector_z_max_mm"
+                "handoff_plane_z_mm"
             ] += 10.0
             rf_resolved.write_text(json.dumps(document), encoding="utf-8")
             shared_document = json.loads(

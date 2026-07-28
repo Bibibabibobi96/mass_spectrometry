@@ -31,7 +31,7 @@ class AxialAccelerationFourArmExperimentTests(unittest.TestCase):
         result = validate_experiment(CONTRACT)
         self.assertEqual(result["static_contract"], "PASS")
         self.assertEqual(result["C_D_resolved_axial_drive_identity"], "PASS")
-        self.assertEqual(result["acceptance_detector_z_mm"], 95.2)
+        self.assertEqual(result["census_plane_z_mm"], 95.2)
         self.assertEqual(result["status"], "BLOCKED_MISSING_PAIRED_BUNDLE_METADATA")
         self.assertFalse(result["run_ready"])
 

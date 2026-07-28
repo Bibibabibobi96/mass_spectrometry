@@ -57,14 +57,17 @@ class MultipoleOperatingContract:
 def load_family_contract(path: Path = FAMILY_CONTRACT_PATH) -> dict[str, Any]:
     """Load the versioned family contract."""
     document = json.loads(path.read_text(encoding="utf-8"))
-    if document.get("schema_version") != 3 or document.get("role") != "rf_multipole_family_contract":
+    if document.get("schema_version") != 4 or document.get("role") != "rf_multipole_family_contract":
         raise ValueError("RF multipole family contract schema or role differs")
     foundation = document.get("foundation")
     if not isinstance(foundation, dict) or foundation.get("api_status") != "frozen":
         raise ValueError("RF multipole family API is not frozen")
     validation = foundation.get("functional_validation", {})
-    if validation.get("status") != "n100_dual_solver_pass" or validation.get("particle_count") != 100:
-        raise ValueError("RF multipole family N=100 functional validation is incomplete")
+    if (
+        validation.get("status") != "unqualified_pending_contract_v2_rerun"
+        or validation.get("particle_count") != 100
+    ):
+        raise ValueError("RF multipole family contract-v2 qualification status differs")
     return document
 
 

@@ -356,7 +356,7 @@ def resolve_stage(
         "source_exit_center_instrument_mm": list(source_instrument),
         "target_entry_center_instrument_mm": list(resolved_target_instrument),
         "source_surface_derivation": {
-            "source": "rf_resolved_design.interfaces_mm.exit.connector_z_max_mm",
+            "source": "rf_resolved_design.interfaces_mm.exit.handoff_plane_z_mm",
             "local_center_mm": list(source_local_center),
         },
         "electrical_policy": (

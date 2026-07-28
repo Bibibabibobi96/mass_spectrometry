@@ -49,7 +49,7 @@ try {
     $env:RFQUAD_FIELD_Y_MIN_MM = [string](-$resolved.geometry_mm.inscribed_radius_r0/2)
     $env:RFQUAD_FIELD_Y_MAX_MM = [string]($resolved.geometry_mm.inscribed_radius_r0/2)
     $env:RFQUAD_FIELD_Z_MIN_MM = [string]$baselineCellMm
-    $env:RFQUAD_FIELD_Z_MAX_MM = [string]($resolved.interfaces_mm.exit.particle_plane_z_mm-2*$baselineCellMm)
+    $env:RFQUAD_FIELD_Z_MAX_MM = [string]($resolved.interfaces_mm.exit.census_plane_z_mm-2*$baselineCellMm)
     $env:RFQUAD_FIELD_STEP_MM = [string]$baselineCellMm
     & $simion --nogui lua (Join-Path $PSScriptRoot 'export_unit_rf_field.lua')
     if ($LASTEXITCODE -ne 0) { throw 'SIMION unit-field export failed.' }

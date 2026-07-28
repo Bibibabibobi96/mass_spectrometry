@@ -199,7 +199,7 @@ class ComsolMassFilterContractTests(unittest.TestCase):
         for source in (runner, builder):
             self.assertNotIn("[ValidateSet('transport_no_collision'", source)
             self.assertNotIn("'axial_acceleration_reference'", source)
-            self.assertNotIn("'endplate_acceleration_reference'", source)
+            self.assertNotIn("'exit_aperture_plate_acceleration_reference'", source)
         self.assertIn("'transport_interface_readiness'", runner)
         self.assertIn("'transport_interface_readiness'", dedicated)
         self.assertNotIn("'transport_interface_readiness'", builder)

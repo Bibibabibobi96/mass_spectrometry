@@ -71,19 +71,19 @@ def render_gem(
     enclosure = geometry["enclosure"]
     source_interfaces = resolved["interfaces_mm"]
     interface = {
-        "entrance_plate_z_min": source_interfaces["entrance"]["plate_z_min_mm"],
-        "entrance_plate_z_max": source_interfaces["entrance"]["plate_z_max_mm"],
+        "entrance_plate_z_min": source_interfaces["entrance"]["aperture_plate_upstream_face_z_mm"],
+        "entrance_plate_z_max": source_interfaces["entrance"]["aperture_plate_downstream_face_z_mm"],
         "entrance_aperture_radius": source_interfaces["entrance"]["aperture_radius_mm"],
         "entrance_connector_length": source_interfaces["entrance"]["connector_length_mm"],
         "entrance_connector_shape": source_interfaces["entrance"]["connector_shape"],
-        "exit_plate_z_min": source_interfaces["exit"]["plate_z_min_mm"],
-        "exit_plate_z_max": source_interfaces["exit"]["plate_z_max_mm"],
+        "exit_plate_z_min": source_interfaces["exit"]["aperture_plate_upstream_face_z_mm"],
+        "exit_plate_z_max": source_interfaces["exit"]["aperture_plate_downstream_face_z_mm"],
         "exit_aperture_radius": source_interfaces["exit"]["aperture_radius_mm"],
         "exit_connector_length": source_interfaces["exit"]["connector_length_mm"],
         "exit_connector_shape": source_interfaces["exit"]["connector_shape"],
-        "detector_z": source_interfaces["exit"]["particle_plane_z_mm"],
-        "detector_radius": enclosure.get(
-            "detector_radius_mm",
+        "census_plane_z": source_interfaces["exit"]["census_plane_z_mm"],
+        "census_radius": enclosure.get(
+            "physical_detector_radius_mm",
             source_interfaces["exit"]["aperture_radius_mm"],
         ),
     }
@@ -109,15 +109,15 @@ def render_gem(
     else:
         ground_electrode = 3
         output_electrode = 3
-    detector_electrode = output_electrode + 1
+    numerical_census_marker_electrode = output_electrode + 1
     outer = float(enclosure["shield_outer_radius_mm"])
     inner = float(enclosure["shield_inner_radius_mm"])
     z_min = float(enclosure["vacuum_z_min_mm"])
     z_max = float(enclosure["vacuum_z_max_mm"])
-    detector_z = float(interface["detector_z"])
-    detector_thickness = cell_mm
-    if detector_z + detector_thickness > z_max + 1e-12:
-        raise ValueError("detector marker must fit inside the cylindrical PA")
+    census_plane_z = float(interface["census_plane_z"])
+    numerical_census_marker_thickness = cell_mm
+    if census_plane_z + numerical_census_marker_thickness > z_max + 1e-12:
+        raise ValueError("numerical census marker must fit inside the cylindrical PA")
     span = z_max - z_min
     nx = math.ceil(2 * outer / cell_mm) + 1
     nz = math.ceil(span / cell_mm) + 1
@@ -136,8 +136,8 @@ def render_gem(
         f"    within {{ cylinder(0,0,{z_max:.12g},{outer:.12g},,{span:.12g}) }}",
         f"    notin_inside {{ cylinder(0,0,{z_max+cell_mm:.12g},{inner:.12g},,{span+2*cell_mm:.12g}) }}",
         "  } }",
-        f"  e({ground_electrode}) {{ fill {{ within {{ cylinder(0,0,{float(enclosure['entrance_endcap_z_max_mm']):.12g},{outer:.12g},,{float(enclosure['entrance_endcap_z_max_mm'])-float(enclosure['entrance_endcap_z_min_mm']):.12g}) }} }} }}",
-        f"  e({output_electrode}) {{ fill {{ within {{ cylinder(0,0,{float(enclosure['exit_endcap_z_max_mm']):.12g},{outer:.12g},,{float(enclosure['exit_endcap_z_max_mm'])-float(enclosure['exit_endcap_z_min_mm']):.12g}) }} }} }}",
+        f"  e({ground_electrode}) {{ fill {{ within {{ cylinder(0,0,{float(enclosure['entrance_outer_endcap_downstream_face_z_mm']):.12g},{outer:.12g},,{float(enclosure['entrance_outer_endcap_downstream_face_z_mm'])-float(enclosure['entrance_outer_endcap_upstream_face_z_mm']):.12g}) }} }} }}",
+        f"  e({output_electrode}) {{ fill {{ within {{ cylinder(0,0,{float(enclosure['exit_outer_endcap_downstream_face_z_mm']):.12g},{outer:.12g},,{float(enclosure['exit_outer_endcap_downstream_face_z_mm'])-float(enclosure['exit_outer_endcap_upstream_face_z_mm']):.12g}) }} }} }}",
         f"  e({ground_electrode}) {{ fill {{",
         f"    within {{ cylinder(0,0,{interface['entrance_plate_z_max']:.12g},{outer:.12g},,{interface['entrance_plate_z_max']-interface['entrance_plate_z_min']:.12g}) }}",
         f"    notin_inside {{ cylinder(0,0,{interface['entrance_plate_z_max']+cell_mm:.12g},{interface['entrance_aperture_radius']:.12g},,{interface['entrance_plate_z_max']-interface['entrance_plate_z_min']+2*cell_mm:.12g}) }}",
@@ -146,8 +146,8 @@ def render_gem(
         f"    within {{ cylinder(0,0,{interface['exit_plate_z_max']:.12g},{outer:.12g},,{interface['exit_plate_z_max']-interface['exit_plate_z_min']:.12g}) }}",
         f"    notin_inside {{ cylinder(0,0,{interface['exit_plate_z_max']+cell_mm:.12g},{interface['exit_aperture_radius']:.12g},,{interface['exit_plate_z_max']-interface['exit_plate_z_min']+2*cell_mm:.12g}) }}",
         "  } }",
-        "  ; GUI-visible numerical absorber: its front face is the resolved detector plane.",
-        f"  e({detector_electrode}) {{ fill {{ within {{ cylinder(0,0,{detector_z+detector_thickness:.12g},{interface['detector_radius']:.12g},,{detector_thickness:.12g}) }} }} }}",
+        "  ; GUI-visible numerical absorber: its front face is the resolved census plane.",
+        f"  e({numerical_census_marker_electrode}) {{ fill {{ within {{ cylinder(0,0,{census_plane_z+numerical_census_marker_thickness:.12g},{interface['census_radius']:.12g},,{numerical_census_marker_thickness:.12g}) }} }} }}",
     ])
     entrance_length = float(interface["entrance_connector_length"])
     exit_length = float(interface["exit_connector_length"])
@@ -236,7 +236,7 @@ def _render_rectangular_reference_gem(
     else:
         ground_electrode = 3
         output_electrode = 4
-    detector_electrode = output_electrode + 1
+    physical_detector_electrode = output_electrode + 1
     outer = float(enclosure["outer_half_width_mm"])
     inner = float(enclosure["inner_half_width_mm"])
     z_min = float(enclosure["vacuum_z_min_mm"])
@@ -278,7 +278,7 @@ def _render_rectangular_reference_gem(
             f"    notin_inside {{ box3d({inner:.12g},{inner:.12g},{front_end-exit_z_min:.12g},{-inner:.12g},{-inner:.12g},1E+6) }}",
             f"    notin_inside {{ cylinder(0,0,{exit_z_max-exit_z_min+cell_mm:.12g},{float(interface['exit_aperture_radius']):.12g},,{exit_z_max-exit_z_min+2*cell_mm:.12g}) }}",
             "  } }",
-            f"  e({detector_electrode}) {{ fill {{ within {{ cylinder(0,0,{float(interface['detector_z'])-exit_z_min:.12g},{float(interface['detector_radius']):.12g},,{float(enclosure['detector_thickness_mm']):.12g}) }} }} }}",
+            f"  e({physical_detector_electrode}) {{ fill {{ within {{ cylinder(0,0,{float(interface['census_plane_z'])-exit_z_min:.12g},{float(interface['census_radius']):.12g},,{float(enclosure['physical_detector_thickness_mm']):.12g}) }} }} }}",
             "}",
         ]
     )

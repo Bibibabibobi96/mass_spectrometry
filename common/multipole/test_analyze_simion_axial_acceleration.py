@@ -43,12 +43,12 @@ class AnalyzeSimionAxialAccelerationTest(unittest.TestCase):
             second_source = "2,source,alive,none,0,0,0,0,0,0,1,0,0,2,0,0,0\n"
             control.write_text(
                 HEADER + source + second_source
-                + "1,terminal,transmitted,acceptance_detector,1,1,0,1,0,0,1,0,0,2.0,1,2,0\n"
-                + "2,terminal,transmitted,acceptance_detector,1,1,0,1,0,0,1,0,0,100.0,9,9,0\n"
+                + "1,terminal,transmitted,acceptance_surface,1,1,0,1,0,0,1,0,0,2.0,1,2,0\n"
+                + "2,terminal,transmitted,acceptance_surface,1,1,0,1,0,0,1,0,0,100.0,9,9,0\n"
             )
             accelerated.write_text(
                 HEADER + source + second_source
-                + "1,terminal,transmitted,acceptance_detector,1,1,0,1,0,0,1,0,0,5.1,2,4,0\n"
+                + "1,terminal,transmitted,acceptance_surface,1,1,0,1,0,0,1,0,0,5.1,2,4,0\n"
             )
             result = evaluate(accelerated, control, resolved)
         self.assertEqual(result["status"], "UNQUALIFIED")
@@ -79,8 +79,8 @@ class AnalyzeSimionAxialAccelerationTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "no common transmitted particles"):
                 evaluate(accelerated, control, resolved)
 
-    def test_endplate_terminal_transmitted_event_is_a_valid_output(self):
-        resolved = self.resolved("endplate_potential_step")
+    def test_exit_aperture_plate_terminal_transmitted_event_is_a_valid_output(self):
+        resolved = self.resolved("exit_aperture_plate_potential_step")
         resolved["particle_source"]["energy_model"] = {
             "kind": "bounded_distribution",
             "minimum_energy_eV": 1.8,
@@ -93,13 +93,13 @@ class AnalyzeSimionAxialAccelerationTest(unittest.TestCase):
             control = root / "control.csv"
             accelerated = root / "accelerated.csv"
             source = "1,source,alive,none,0,0,0,0,0,0,1,0,0,2,0,0,0\n"
-            terminal = "1,terminal,transmitted,acceptance_detector,1,1,0,1,0,0,1,0,0"
+            terminal = "1,terminal,transmitted,acceptance_surface,1,1,0,1,0,0,1,0,0"
             control.write_text(HEADER + source + terminal + ",2.0,0,0,0\n")
             accelerated.write_text(HEADER + source + terminal + ",5.0,0,0,0\n")
             result = evaluate(accelerated, control, resolved)
         self.assertEqual(result["status"], "UNQUALIFIED")
         self.assertEqual(result["paired_transmitted_particles"], 1)
-        self.assertEqual(result["primary_case_id"], "endplate_acceleration_rf_on")
+        self.assertEqual(result["primary_case_id"], "exit_aperture_plate_acceleration_rf_on")
         self.assertIsNone(result["source_model_predicted_mean_energy_eV"])
 
     def test_legacy_resolved_contract_is_rejected(self):

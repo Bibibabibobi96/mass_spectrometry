@@ -75,10 +75,10 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
                 "vacuum_z_max_mm": 82.1,
                 "shield_inner_radius_mm": self.finite["geometry_mm"]["grounded_shield_inner_radius"],
                 "shield_outer_radius_mm": 21.0,
-                "entrance_endcap_z_min_mm": -2.5,
-                "entrance_endcap_z_max_mm": -2.0,
-                "exit_endcap_z_min_mm": 81.6,
-                "exit_endcap_z_max_mm": 82.1,
+                "entrance_outer_endcap_upstream_face_z_mm": -2.5,
+                "entrance_outer_endcap_downstream_face_z_mm": -2.0,
+                "exit_outer_endcap_upstream_face_z_mm": 81.6,
+                "exit_outer_endcap_downstream_face_z_mm": 82.1,
             },
         )
         for side in ("entrance_interface", "exit_interface"):

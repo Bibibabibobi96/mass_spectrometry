@@ -47,9 +47,9 @@ def main() -> None:
         "SIMION": args.simion_state,
     }
     resolved, _ = load_contract()
-    detector_radius = resolved["geometry_mm"]["enclosure"]["detector_radius_mm"]
+    physical_detector_radius = resolved["geometry_mm"]["enclosure"]["physical_detector_radius_mm"]
     plot_limit = max(
-        resolved["geometry_mm"]["inscribed_radius_r0"], detector_radius
+        resolved["geometry_mm"]["inscribed_radius_r0"], physical_detector_radius
     ) * 1.05
     data = {solver: load_rows(path) for solver, path in inputs.items()}
     ids = {
@@ -68,18 +68,18 @@ def main() -> None:
     figure, axes = plt.subplots(2, 2, figsize=(11, 9), constrained_layout=True)
     endpoint_axes = [axes[0, 0], axes[0, 1]]
 
-    summary: dict[str, object] = {"detector_radius_mm": detector_radius, "solvers": {}}
+    summary: dict[str, object] = {"physical_detector_radius_mm": physical_detector_radius, "solvers": {}}
     for axis, (solver, rows) in zip(endpoint_axes, data.items(), strict=True):
         points = endpoints[solver]
         transverse_x = [point[0] for point in points]
         transverse_y = [point[1] for point in points]
         terminal_axial = [point[2] for point in points]
-        hits = [row["status"] == "transmitted" and row["terminal_reason"] == "acceptance_detector" for row in rows]
+        hits = [row["status"] == "transmitted" and row["terminal_reason"] == "acceptance_surface" for row in rows]
         colors = [cmap(norm(value)) for value in terminal_axial]
         for index, (x, y, color, hit) in enumerate(zip(transverse_x, transverse_y, colors, hits), start=1):
             axis.scatter(x, y, s=52, c=[color], marker="o" if hit else "x", linewidths=1.3, zorder=3)
             axis.annotate(str(index), (x, y), xytext=(4, 4), textcoords="offset points", fontsize=7)
-        axis.add_patch(Circle((0, 0), detector_radius, fill=False, color="black", linestyle="--", linewidth=1.1))
+        axis.add_patch(Circle((0, 0), physical_detector_radius, fill=False, color="black", linestyle="--", linewidth=1.1))
         axis.axhline(0, color="0.8", linewidth=0.7, zorder=0)
         axis.axvline(0, color="0.8", linewidth=0.7, zorder=0)
         axis.set_aspect("equal", adjustable="box")
@@ -102,7 +102,7 @@ def main() -> None:
     dy = [c[1] - s[1] for c, s in zip(comsol_points, simion_points, strict=True)]
     paired_distance = [math.hypot(x, y) for x, y in zip(dx, dy, strict=True)]
     vector_axis = axes[1, 0]
-    vector_axis.add_patch(Circle((0, 0), detector_radius, fill=False, color="black", linestyle="--", linewidth=1.1))
+    vector_axis.add_patch(Circle((0, 0), physical_detector_radius, fill=False, color="black", linestyle="--", linewidth=1.1))
     vector_axis.scatter([point[0] for point in simion_points], [point[1] for point in simion_points],
                         c="tab:blue", s=26, label="SIMION terminal", zorder=2)
     vector_axis.quiver([point[0] for point in simion_points], [point[1] for point in simion_points], dx, dy,

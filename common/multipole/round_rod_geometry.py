@@ -112,18 +112,26 @@ def resolve_round_rod_geometry(
             "vacuum_z_max": float(derived["vacuum_z_max"]),
         },
         "interfaces_mm": {
-            "source_z": float(derived["source_z"]),
-            "entrance_plate_z_min": float(derived["entrance_plate_z_min"]),
-            "entrance_plate_z_max": float(derived["entrance_plate_z_max"]),
+            "release_plane_z": float(derived["release_plane_z"]),
+            "entrance_aperture_plate_upstream_face_z": float(
+                derived["entrance_aperture_plate_upstream_face_z"]
+            ),
+            "entrance_aperture_plate_downstream_face_z": float(
+                derived["entrance_aperture_plate_downstream_face_z"]
+            ),
             "entrance_aperture_radius": float(geometry["entrance_interface"]["aperture_radius_mm"]),
-            "exit_plate_z_min": float(derived["exit_plate_z_min"]),
-            "exit_plate_z_max": float(derived["exit_plate_z_max"]),
+            "exit_aperture_plate_upstream_face_z": float(
+                derived["exit_aperture_plate_upstream_face_z"]
+            ),
+            "exit_aperture_plate_downstream_face_z": float(
+                derived["exit_aperture_plate_downstream_face_z"]
+            ),
             "exit_aperture_radius": float(geometry["exit_interface"]["aperture_radius_mm"]),
             "entrance_connector_length": float(geometry["entrance_interface"]["connector_length_mm"]),
             "entrance_connector_shape": geometry["entrance_interface"]["connector_shape"],
             "exit_connector_length": float(geometry["exit_interface"]["connector_length_mm"]),
             "exit_connector_shape": geometry["exit_interface"]["connector_shape"],
-            "detector_z": float(derived["detector_z"]),
+            "census_plane_z": float(derived["census_plane_z"]),
         },
     }
 

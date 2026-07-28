@@ -20,10 +20,10 @@ def resolved_design(
             "vacuum_z_max_mm": 20.0,
             "shield_inner_radius_mm": 9.0,
             "shield_outer_radius_mm": 10.0,
-            "entrance_endcap_z_min_mm": 0.0,
-            "entrance_endcap_z_max_mm": 0.5,
-            "exit_endcap_z_min_mm": 19.5,
-            "exit_endcap_z_max_mm": 20.0,
+            "entrance_outer_endcap_upstream_face_z_mm": 0.0,
+            "entrance_outer_endcap_downstream_face_z_mm": 0.5,
+            "exit_outer_endcap_upstream_face_z_mm": 19.5,
+            "exit_outer_endcap_downstream_face_z_mm": 20.0,
         }
     else:
         enclosure = {
@@ -36,8 +36,8 @@ def resolved_design(
             "exit_enclosure_z_min_mm": 15.0,
             "exit_enclosure_z_max_mm": 20.0,
             "exit_front_wall_end_z_mm": 16.0,
-            "detector_radius_mm": 1.2,
-            "detector_thickness_mm": 0.5,
+            "physical_detector_radius_mm": 1.2,
+            "physical_detector_thickness_mm": 0.5,
         }
     rod = {
         "rod_id": 1,
@@ -58,20 +58,20 @@ def resolved_design(
         },
         "interfaces_mm": {
             "entrance": {
-                "plate_z_min_mm": 1.0,
-                "plate_z_max_mm": 1.5,
+                "aperture_plate_upstream_face_z_mm": 1.0,
+                "aperture_plate_downstream_face_z_mm": 1.5,
                 "aperture_radius_mm": 1.2,
                 "connector_length_mm": length_mm,
                 "connector_shape": connector_shape,
-                "particle_plane_z_mm": 0.5,
+                "release_plane_z_mm": 0.5,
             },
             "exit": {
-                "plate_z_min_mm": 15.0,
-                "plate_z_max_mm": 16.0,
+                "aperture_plate_upstream_face_z_mm": 15.0,
+                "aperture_plate_downstream_face_z_mm": 16.0,
                 "aperture_radius_mm": 1.2,
                 "connector_length_mm": length_mm,
                 "connector_shape": connector_shape,
-                "particle_plane_z_mm": (
+                "census_plane_z_mm": (
                     20.0
                     if enclosure_model == "rectangular_reference_enclosure_v1"
                     else 19.0
@@ -113,18 +113,18 @@ class SimionGeometryTests(unittest.TestCase):
         self.assertIn("within { box3d(", gem[entrance:exit_connector])
         self.assertIn("within { box3d(", gem[exit_connector:])
 
-    def test_cylindrical_detector_is_a_gui_visible_absorber_inside_the_pa(self) -> None:
+    def test_cylindrical_census_marker_is_gui_visible_inside_the_pa(self) -> None:
         source = resolved_design("cylindrical_bore", 0.0)
-        source["interfaces_mm"]["exit"]["particle_plane_z_mm"] = 19.0
+        source["interfaces_mm"]["exit"]["census_plane_z_mm"] = 19.0
         gem = render_gem(source, 0.2)
         self.assertIn("GUI-visible numerical absorber", gem)
         self.assertIn("e(4)", gem)
         self.assertIn("cylinder(0,0,19.2,1.2,,0.2)", gem)
 
-    def test_cylindrical_detector_must_fit_inside_the_pa(self) -> None:
+    def test_cylindrical_census_marker_must_fit_inside_the_pa(self) -> None:
         source = resolved_design("cylindrical_bore", 0.0)
-        source["interfaces_mm"]["exit"]["particle_plane_z_mm"] = 19.9
-        with self.assertRaisesRegex(ValueError, "detector marker"):
+        source["interfaces_mm"]["exit"]["census_plane_z_mm"] = 19.9
+        with self.assertRaisesRegex(ValueError, "numerical census marker"):
             render_gem(source, 0.2)
 
     def test_zero_length_creates_no_connector_feature(self) -> None:

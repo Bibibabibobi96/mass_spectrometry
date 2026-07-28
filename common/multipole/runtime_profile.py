@@ -39,7 +39,7 @@ def resolve_runtime_profile(
         "runtime profile registry",
     )
     if (
-        registry["schema_version"] != 1
+        registry["schema_version"] != 2
         or registry["role"] != "multipole_transport_runtime_profiles"
         or registry["project_id"] != project_id
     ):

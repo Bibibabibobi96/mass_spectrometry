@@ -32,7 +32,7 @@ from common.multipole.round_rod_geometry import (
 
 
 COMPILER_NAME = "common.multipole.compile_design_request"
-COMPILER_VERSION = 1
+COMPILER_VERSION = 2
 REQUEST_SCHEMA = "multipole_design_request.schema.json"
 RESOLVED_SCHEMA = "multipole_resolved_design.schema.json"
 GEOMETRY_EQUALITY_ABS_TOL_MM = 1e-12
@@ -169,15 +169,19 @@ def _validate_enclosure(
     vacuum_max = float(enclosure["vacuum_z_max_mm"])
     if vacuum_max <= vacuum_min:
         raise MultipoleDesignCompileError("enclosure vacuum z range must be increasing")
-    for side in ("entrance", "exit"):
-        plane = float(interfaces[side]["particle_plane_z_mm"])
+    interface_planes = {
+        "entrance release": interfaces["entrance"]["release_plane_z_mm"],
+        "exit census": interfaces["exit"]["census_plane_z_mm"],
+    }
+    for label, plane_value in interface_planes.items():
+        plane = float(plane_value)
         if not (
             vacuum_min - GEOMETRY_EQUALITY_ABS_TOL_MM
             <= plane
             <= vacuum_max + GEOMETRY_EQUALITY_ABS_TOL_MM
         ):
             raise MultipoleDesignCompileError(
-                f"{side} particle plane must remain inside the explicit vacuum z range"
+                f"{label} plane must remain inside the explicit vacuum z range"
             )
     if float(enclosure["working_region_radius_mm"]) <= 0:
         raise MultipoleDesignCompileError("working region radius must be positive")
@@ -189,10 +193,10 @@ def _validate_enclosure(
             raise MultipoleDesignCompileError("cylindrical enclosure role differs")
         inner = float(enclosure["shield_inner_radius_mm"])
         outer = float(enclosure["shield_outer_radius_mm"])
-        entrance_min = float(enclosure["entrance_endcap_z_min_mm"])
-        entrance_max = float(enclosure["entrance_endcap_z_max_mm"])
-        exit_min = float(enclosure["exit_endcap_z_min_mm"])
-        exit_max = float(enclosure["exit_endcap_z_max_mm"])
+        entrance_min = float(enclosure["entrance_outer_endcap_upstream_face_z_mm"])
+        entrance_max = float(enclosure["entrance_outer_endcap_downstream_face_z_mm"])
+        exit_min = float(enclosure["exit_outer_endcap_upstream_face_z_mm"])
+        exit_max = float(enclosure["exit_outer_endcap_downstream_face_z_mm"])
         if not 0 < inner < outer:
             raise MultipoleDesignCompileError(
                 "cylindrical shield radii must be positive and increasing"
@@ -201,14 +205,14 @@ def _validate_enclosure(
             vacuum_min <= entrance_min < entrance_max <= exit_min < exit_max <= vacuum_max
         ):
             raise MultipoleDesignCompileError(
-                "cylindrical endcaps must be ordered inside the explicit vacuum z range"
+                "cylindrical outer endcaps must be ordered inside the explicit vacuum z range"
             )
         rod_z_min = float(rod_array["rods"][0]["z_min_mm"])
         rod_z_max = float(rod_array["rods"][0]["z_max_mm"])
         if entrance_max > rod_z_min + GEOMETRY_EQUALITY_ABS_TOL_MM:
-            raise MultipoleDesignCompileError("entrance endcap intersects the rod span")
+            raise MultipoleDesignCompileError("entrance outer endcap intersects the rod span")
         if exit_min < rod_z_max - GEOMETRY_EQUALITY_ABS_TOL_MM:
-            raise MultipoleDesignCompileError("exit endcap intersects the rod span")
+            raise MultipoleDesignCompileError("exit outer endcap intersects the rod span")
         transverse_limit = inner
         rod_extent = max(
             math.hypot(float(rod["center_x_mm"]), float(rod["center_y_mm"]))
@@ -308,11 +312,13 @@ def _static_reference_voltages(
     static = request["static_electrodes_V"]
     model = request["geometry_mm"]["enclosure"]["model"]
     if model == "rectangular_reference_enclosure_v1":
-        source = float(static["entrance_plate_and_connector"])
-        output = float(static["exit_enclosure_and_connector"])
+        source = float(static["entrance_aperture_plate_and_connector_V"])
+        output = float(static["exit_outer_enclosure_and_connector_V"])
     elif model == "cylindrical_grounded_shield_v1":
-        source = float(static["shield_and_entrance_endcap_and_connector"])
-        output = float(static["exit_endcap_and_connector"])
+        source = float(
+            static["shield_entrance_outer_endcap_aperture_plate_connector_V"]
+        )
+        output = float(static["exit_outer_endcap_aperture_plate_connector_V"])
     else:  # Kept fail-closed even though enclosure validation rejects this first.
         raise MultipoleDesignCompileError(
             f"cannot resolve static references for enclosure model: {model}"
@@ -356,27 +362,30 @@ def _resolve_axial_drive(
             resolved_acceleration["derived"]["segments"][0]["common_mode_V"]
         )
         output_reference = float(resolved_acceleration["output_reference_V"])
-    elif topology == "endplate_potential_step":
+    elif topology == "exit_aperture_plate_potential_step":
         if segmented:
             raise MultipoleDesignCompileError(
-                "endplate_potential_step requires continuous rods"
+                "exit_aperture_plate_potential_step requires continuous rods"
             )
         source_reference, output_reference = _static_reference_voltages(request)
         rod_reference = float(request["drive"]["common_mode_offset_V"])
         if not math.isclose(source_reference, rod_reference, rel_tol=0, abs_tol=1e-12):
             raise MultipoleDesignCompileError(
-                "endplate source reference must equal the continuous-rod common mode"
+                "exit aperture-plate source reference must equal the continuous-rod common mode"
             )
         static = request["static_electrodes_V"]
         if (
             request["geometry_mm"]["enclosure"]["model"]
             == "rectangular_reference_enclosure_v1"
             and not math.isclose(
-                float(static["detector"]), output_reference, rel_tol=0, abs_tol=1e-12
+                float(static["physical_detector_V"]),
+                output_reference,
+                rel_tol=0,
+                abs_tol=1e-12,
             )
         ):
             raise MultipoleDesignCompileError(
-                "rectangular endplate detector must share the output reference"
+                "rectangular physical detector must share the exit aperture-plate output reference"
             )
     elif topology == "none":
         if segmented:
@@ -484,7 +493,7 @@ def compile_design_request(
         raise MultipoleDesignCompileError(str(error)) from error
 
     resolved: dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "role": "multipole_resolved_design_do_not_edit",
         "compiler": {"name": COMPILER_NAME, "version": COMPILER_VERSION},
         "governance": None,

@@ -79,7 +79,7 @@ def render_canonical_source(
     origin = 0.0 if rectangular else float(enclosure["shield_outer_radius_mm"])
     z_shift = 0.0 if rectangular else -float(enclosure["vacuum_z_min_mm"])
     charge = int(resolved["particle_source"]["charge_state"])
-    source_z = float(resolved["interfaces_mm"]["entrance"]["particle_plane_z_mm"])
+    source_z = float(resolved["interfaces_mm"]["entrance"]["release_plane_z_mm"])
     with particles.open(encoding="utf-8-sig", newline="") as stream:
         rows = list(csv.DictReader(stream))
     fly = ["particles {", "  coordinates = 0,"]

@@ -24,7 +24,7 @@
     "resolved_sha256"
   ],
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"const": 2},
     "role": {"const": "multipole_resolved_design_do_not_edit"},
     "compiler": {
       "type": "object",
@@ -32,7 +32,7 @@
       "required": ["name", "version"],
       "properties": {
         "name": {"const": "common.multipole.compile_design_request"},
-        "version": {"const": 1}
+        "version": {"const": 2}
       }
     },
     "governance": {
@@ -166,8 +166,8 @@
       "additionalProperties": false,
       "required": ["entrance", "exit"],
       "properties": {
-        "entrance": {"$ref": "#/$defs/resolved_interface"},
-        "exit": {"$ref": "#/$defs/resolved_interface"}
+        "entrance": {"$ref": "#/$defs/resolved_entrance_interface"},
+        "exit": {"$ref": "#/$defs/resolved_exit_interface"}
       }
     },
     "drive": {"$ref": "#/$defs/drive"},
@@ -186,7 +186,7 @@
           "enum": [
             "none",
             "segmented_rod_axial_acceleration",
-            "endplate_potential_step"
+            "exit_aperture_plate_potential_step"
           ]
         },
         "source_reference_V": {"type": "number"},
@@ -327,27 +327,57 @@
         "z_max_mm": {"type": "number"}
       }
     },
-    "resolved_interface": {
+    "resolved_entrance_interface": {
       "type": "object",
       "additionalProperties": false,
       "required": [
         "aperture_radius_mm",
-        "plate_z_min_mm",
-        "plate_z_max_mm",
+        "aperture_plate_upstream_face_z_mm",
+        "aperture_plate_downstream_face_z_mm",
         "connector_length_mm",
-        "connector_z_min_mm",
-        "connector_z_max_mm",
-        "particle_plane_z_mm",
+        "connector_upstream_face_z_mm",
+        "connector_downstream_face_z_mm",
+        "release_plane_z_mm",
         "connector_shape"
       ],
       "properties": {
         "aperture_radius_mm": {"type": "number", "exclusiveMinimum": 0},
-        "plate_z_min_mm": {"type": "number"},
-        "plate_z_max_mm": {"type": "number"},
+        "aperture_plate_upstream_face_z_mm": {"type": "number"},
+        "aperture_plate_downstream_face_z_mm": {"type": "number"},
         "connector_length_mm": {"type": "number", "minimum": 0},
-        "connector_z_min_mm": {"type": "number"},
-        "connector_z_max_mm": {"type": "number"},
-        "particle_plane_z_mm": {"type": "number"},
+        "connector_upstream_face_z_mm": {"type": "number"},
+        "connector_downstream_face_z_mm": {"type": "number"},
+        "release_plane_z_mm": {"type": "number"},
+        "connector_shape": {
+          "enum": ["cylindrical_bore", "rectangular_bore"]
+        }
+      }
+    },
+    "resolved_exit_interface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "aperture_radius_mm",
+        "aperture_plate_upstream_face_z_mm",
+        "aperture_plate_downstream_face_z_mm",
+        "aperture_crossing_plane_z_mm",
+        "connector_length_mm",
+        "connector_upstream_face_z_mm",
+        "connector_downstream_face_z_mm",
+        "handoff_plane_z_mm",
+        "census_plane_z_mm",
+        "connector_shape"
+      ],
+      "properties": {
+        "aperture_radius_mm": {"type": "number", "exclusiveMinimum": 0},
+        "aperture_plate_upstream_face_z_mm": {"type": "number"},
+        "aperture_plate_downstream_face_z_mm": {"type": "number"},
+        "aperture_crossing_plane_z_mm": {"type": "number"},
+        "connector_length_mm": {"type": "number", "minimum": 0},
+        "connector_upstream_face_z_mm": {"type": "number"},
+        "connector_downstream_face_z_mm": {"type": "number"},
+        "handoff_plane_z_mm": {"type": "number"},
+        "census_plane_z_mm": {"type": "number"},
         "connector_shape": {
           "enum": ["cylindrical_bore", "rectangular_bore"]
         }
@@ -366,10 +396,10 @@
             "vacuum_z_max_mm",
             "shield_inner_radius_mm",
             "shield_outer_radius_mm",
-            "entrance_endcap_z_min_mm",
-            "entrance_endcap_z_max_mm",
-            "exit_endcap_z_min_mm",
-            "exit_endcap_z_max_mm"
+            "entrance_outer_endcap_upstream_face_z_mm",
+            "entrance_outer_endcap_downstream_face_z_mm",
+            "exit_outer_endcap_upstream_face_z_mm",
+            "exit_outer_endcap_downstream_face_z_mm"
           ],
           "properties": {
             "role": {"const": "full_length_grounded_shield"},
@@ -379,10 +409,10 @@
             "vacuum_z_max_mm": {"type": "number"},
             "shield_inner_radius_mm": {"type": "number", "exclusiveMinimum": 0},
             "shield_outer_radius_mm": {"type": "number", "exclusiveMinimum": 0},
-            "entrance_endcap_z_min_mm": {"type": "number"},
-            "entrance_endcap_z_max_mm": {"type": "number"},
-            "exit_endcap_z_min_mm": {"type": "number"},
-            "exit_endcap_z_max_mm": {"type": "number"}
+            "entrance_outer_endcap_upstream_face_z_mm": {"type": "number"},
+            "entrance_outer_endcap_downstream_face_z_mm": {"type": "number"},
+            "exit_outer_endcap_upstream_face_z_mm": {"type": "number"},
+            "exit_outer_endcap_downstream_face_z_mm": {"type": "number"}
           }
         },
         {
@@ -399,8 +429,8 @@
             "exit_enclosure_z_min_mm",
             "exit_enclosure_z_max_mm",
             "exit_front_wall_end_z_mm",
-            "detector_radius_mm",
-            "detector_thickness_mm"
+            "physical_detector_radius_mm",
+            "physical_detector_thickness_mm"
           ],
           "properties": {
             "role": {"const": "downstream_local_reference_enclosure"},
@@ -413,8 +443,8 @@
             "exit_enclosure_z_min_mm": {"type": "number"},
             "exit_enclosure_z_max_mm": {"type": "number"},
             "exit_front_wall_end_z_mm": {"type": "number"},
-            "detector_radius_mm": {"type": "number", "exclusiveMinimum": 0},
-            "detector_thickness_mm": {"type": "number", "exclusiveMinimum": 0}
+            "physical_detector_radius_mm": {"type": "number", "exclusiveMinimum": 0},
+            "physical_detector_thickness_mm": {"type": "number", "exclusiveMinimum": 0}
           }
         }
       ]
@@ -449,15 +479,15 @@
           "additionalProperties": false,
           "required": [
             "role",
-            "entrance_plate_and_connector",
-            "exit_enclosure_and_connector",
-            "detector"
+            "entrance_aperture_plate_and_connector_V",
+            "exit_outer_enclosure_and_connector_V",
+            "physical_detector_V"
           ],
           "properties": {
             "role": {"const": "rectangular_reference_static_electrodes"},
-            "entrance_plate_and_connector": {"type": "number"},
-            "exit_enclosure_and_connector": {"type": "number"},
-            "detector": {"type": "number"}
+            "entrance_aperture_plate_and_connector_V": {"type": "number"},
+            "exit_outer_enclosure_and_connector_V": {"type": "number"},
+            "physical_detector_V": {"type": "number"}
           }
         },
         {
@@ -465,13 +495,13 @@
           "additionalProperties": false,
           "required": [
             "role",
-            "shield_and_entrance_endcap_and_connector",
-            "exit_endcap_and_connector"
+            "shield_entrance_outer_endcap_aperture_plate_connector_V",
+            "exit_outer_endcap_aperture_plate_connector_V"
           ],
           "properties": {
             "role": {"const": "cylindrical_shield_static_electrodes"},
-            "shield_and_entrance_endcap_and_connector": {"type": "number"},
-            "exit_endcap_and_connector": {"type": "number"}
+            "shield_entrance_outer_endcap_aperture_plate_connector_V": {"type": "number"},
+            "exit_outer_endcap_aperture_plate_connector_V": {"type": "number"}
           }
         }
       ]

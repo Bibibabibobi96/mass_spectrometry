@@ -230,7 +230,7 @@ def _verify_arm(
     artifact: dict[str, Any],
     metadata: dict[str, Any],
     run_root: Path,
-    detector_z_mm: float,
+    census_plane_z_mm: float,
     post_run: dict[str, Any],
     project_id: str,
 ) -> dict[str, Any]:
@@ -320,11 +320,11 @@ def _verify_arm(
         "resolved_sha256"
     ):
         raise ValueError(f"arm {arm['arm_id']} resolved-design identity differs")
-    resolved_detector_z = float(
-        resolved["interfaces_mm"]["exit"]["particle_plane_z_mm"]
+    resolved_census_z = float(
+        resolved["interfaces_mm"]["exit"]["census_plane_z_mm"]
     )
     if not math.isclose(
-        resolved_detector_z, detector_z_mm, rel_tol=0.0, abs_tol=1e-9
+        resolved_census_z, census_plane_z_mm, rel_tol=0.0, abs_tol=1e-9
     ):
         raise ValueError(f"arm {arm['arm_id']} resolved acceptance plane differs")
     source = frozen_inputs["particle_source"]
@@ -364,7 +364,7 @@ def _verify_arm(
         float(resolved["drive"]["frequency_Hz"]),
         float(resolved["drive"]["phase_rad"]),
         float(resolved["geometry_mm"]["rod_z_max"]),
-        float(resolved["interfaces_mm"]["exit"]["plate_z_max_mm"]),
+        float(resolved["interfaces_mm"]["exit"]["aperture_plate_downstream_face_z_mm"]),
     )
     terminal, source_ids = _state_rows(state, post_run["terminal_event"])
     expected_ids = set(canonical_sources(source))
@@ -379,11 +379,11 @@ def _verify_arm(
             row["status"] != post_run["terminal_status"]
             or row["terminal_reason"] != post_run["terminal_reason"]
             or not math.isclose(
-                float(row["axial_z_mm"]), detector_z_mm, rel_tol=0.0, abs_tol=1e-9
+                float(row["axial_z_mm"]), census_plane_z_mm, rel_tol=0.0, abs_tol=1e-9
             )
         ):
             raise ValueError(
-                f"arm {arm['arm_id']} particle {particle_id} failed acceptance detector"
+                f"arm {arm['arm_id']} particle {particle_id} failed near-interface census"
             )
     metrics_path = _contained_file(
         root, str(root / post_run["metrics_output"]), "transport metrics"
@@ -399,7 +399,7 @@ def _verify_arm(
         "primary_case_id": arm["primary_case_id"],
         "source_sha256": artifact["sha256"],
         "source_particle_count": len(source_ids),
-        "acceptance_detector_count": len(terminal),
+        "acceptance_surface_count": len(terminal),
         "full_source_id_set": "PASS",
         "state_contract": state_report["status"],
         "terminal": terminal,
@@ -469,7 +469,7 @@ def analyze_four_arm_runs(
 ) -> dict[str, Any]:
     """Verify all four managed runs and return only paired descriptive deltas."""
     contract = _load(contract_path)
-    metadata, detector_z = _validate_joint_contract(
+    metadata, census_plane_z = _validate_joint_contract(
         contract, bundle_metadata_path
     )
     arms = contract["arms"]
@@ -488,7 +488,7 @@ def analyze_four_arm_runs(
             artifact,
             metadata,
             run_roots[arm["arm_id"]],
-            detector_z,
+            census_plane_z,
             post_run,
             contract["project_id"],
         )
@@ -554,7 +554,7 @@ def analyze_four_arm_runs(
             "latent_sha256": metadata["latent_sha256"],
             "sample_family_sha256": metadata["sample_family_sha256"],
         },
-        "acceptance_detector_z_mm": detector_z,
+        "census_plane_z_mm": census_plane_z,
         "full_four_arm_id_set": "PASS",
         "loss_filtering": False,
         "common_survivor_filtering": False,

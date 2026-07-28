@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "role": "multipole_design_request",
   "request_id": "quadrupole_mass_filter_reference",
   "identity": {
@@ -30,8 +30,8 @@
       "exit_enclosure_z_min_mm": 89.4,
       "exit_enclosure_z_max_mm": 95.2,
       "exit_front_wall_end_z_mm": 90.2,
-      "detector_radius_mm": 3.6,
-      "detector_thickness_mm": 0.4
+      "physical_detector_radius_mm": 3.6,
+      "physical_detector_thickness_mm": 0.4
     },
     "entrance_interface": {
       "aperture_radius_mm": 1.2,
@@ -39,7 +39,7 @@
       "rod_clearance_mm": 4.0,
       "connector_length_mm": 0.0,
       "connector_shape": "rectangular_bore",
-      "particle_plane_distance_mm": 1.0
+      "release_offset_mm": 1.0
     },
     "exit_interface": {
       "aperture_radius_mm": 3.6,
@@ -47,7 +47,7 @@
       "rod_clearance_mm": 4.0,
       "connector_length_mm": 0.0,
       "connector_shape": "rectangular_bore",
-      "particle_plane_distance_mm": 5.0
+      "census_offset_mm": 5.0
     }
   },
   "drive": {
@@ -61,9 +61,9 @@
   "axial_drive": {"topology": "none"},
   "static_electrodes_V": {
     "role": "rectangular_reference_static_electrodes",
-    "entrance_plate_and_connector": 0.0,
-    "exit_enclosure_and_connector": -100.0,
-    "detector": -1500.0
+    "entrance_aperture_plate_and_connector_V": 0.0,
+    "exit_outer_enclosure_and_connector_V": -100.0,
+    "physical_detector_V": -1500.0
   },
   "particle_source": {
     "energy_model": {

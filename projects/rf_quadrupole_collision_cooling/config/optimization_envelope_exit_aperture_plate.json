@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "role": "project_optimization_envelope",
+  "project_id": "rf_quadrupole_collision_cooling",
+  "family_id": "rf_multipole_ion_optics",
+  "envelope_id": "quadrupole_exit_aperture_plate_functional_reference",
+  "status": "candidate",
+  "policy": "This envelope preserves the N=100 functional exit-aperture-plate reference; it does not qualify convergence or mechanical implementation.",
+  "reference": {
+    "design_request": "config/requests/exit_aperture_plate.json",
+    "design_request_sha256": "B1D7186AED1A3652366A444C5B115189EBFA982EC7B8441033C5F3E2AA93C22A"
+  },
+  "constraints": [
+    {
+      "constraint_id": "exit_aperture_plate_reference_bounds",
+      "kind": "bounded_variable",
+      "request_json_pointers": [
+        "/geometry_mm/rod_radius_ratio",
+        "/static_electrodes_V/exit_outer_enclosure_and_connector_V"
+      ],
+      "description": "The rod ratio and exit-aperture-plate output reference remain inside the governed catalog bounds."
+    }
+  ]
+}

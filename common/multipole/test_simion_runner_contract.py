@@ -81,14 +81,14 @@ class SimionRunnerContractTests(unittest.TestCase):
         ):
             self.assertIn(output, source)
 
-    def test_detector_and_handoff_are_exact_resolved_projections(self) -> None:
+    def test_census_and_handoff_are_exact_resolved_projections(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
-        self.assertIn("$interfaces.exit.connector_z_max_mm", source)
-        self.assertIn("$interfaces.exit.particle_plane_z_mm", source)
+        self.assertIn("$interfaces.exit.handoff_plane_z_mm", source)
+        self.assertIn("$interfaces.exit.census_plane_z_mm", source)
         self.assertIn("handoff_plane_mm=$handoffPlaneMm", source)
-        self.assertIn("detector_is_handoff=false", source)
+        self.assertIn("numerical_census_marker_is_handoff=false", source)
         self.assertIn("$surfaceToleranceMm=[Math]::Max(1e-6*$CellMm,1e-9)", source)
-        self.assertIn("$detectorPlaneMm-2*$CellMm-$surfaceToleranceMm", source)
+        self.assertIn("$censusPlaneMm-2*$CellMm-$surfaceToleranceMm", source)
 
     def test_raw_and_paired_transmission_cannot_diverge(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
@@ -199,7 +199,7 @@ class SimionRunnerContractTests(unittest.TestCase):
                             "x_mm": "0",
                             "y_mm": "0",
                             "z_mm": resolved["interfaces_mm"]["entrance"][
-                                "particle_plane_z_mm"
+                                "release_plane_z_mm"
                             ],
                             "vx_m_s": "0",
                             "vy_m_s": "0",

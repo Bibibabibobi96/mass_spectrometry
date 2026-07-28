@@ -121,7 +121,7 @@ class MultipoleFamilyContractTests(unittest.TestCase):
         self.assertIn("if accelerationEnabled\n        force.set('E'", shared_solver)
         self.assertNotIn("withsol(", quadrupole_solver)
         self.assertNotIn("axial_acceleration_reference", quadrupole_solver)
-        self.assertNotIn("endplate_acceleration_reference", quadrupole_solver)
+        self.assertNotIn("exit_aperture_plate_acceleration_reference", quadrupole_solver)
         self.assertIn("withsol(", shared_solver)
         self.assertIn("configure_comsol_stationary_direct_solver", shared_solver)
         self.assertIn("if isfinite(workingHmax) && workingHmax>0", shared_solver)
@@ -148,7 +148,12 @@ class MultipoleFamilyContractTests(unittest.TestCase):
             "write_canonical_particle_state(pdOn,source,canonicalStatePath",
             solver,
         )
-        self.assertIn("d.exit_plate_z_max,d.detector_z", solver)
+        self.assertIn("'handoff_plane_z',interfaces.exit.handoff_plane_z_mm", solver)
+        self.assertIn("d.handoff_plane_z,d.census_plane_z", solver)
+        self.assertNotIn(
+            "d.exit_aperture_plate_downstream_face_z,d.census_plane_z,g.working_region_radius",
+            solver,
+        )
         self.assertIn("'rod_z_min',resolvedGeometry.rod_z_min", solver)
         self.assertNotIn("g.rod_z_min", solver)
         pairing = (

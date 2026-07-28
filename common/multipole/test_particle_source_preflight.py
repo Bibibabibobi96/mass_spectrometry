@@ -39,7 +39,7 @@ class ParticleSourcePreflightTest(unittest.TestCase):
     ) -> Path:
         path = Path(directory) / "particles.csv"
         rows = []
-        source_z = self.resolved["interfaces_mm"]["entrance"]["particle_plane_z_mm"]
+        source_z = self.resolved["interfaces_mm"]["entrance"]["release_plane_z_mm"]
         for particle_id in range(1, count + 1):
             row = {
                 "particle_id": particle_id,

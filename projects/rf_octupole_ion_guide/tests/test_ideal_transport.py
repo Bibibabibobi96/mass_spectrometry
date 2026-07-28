@@ -90,9 +90,9 @@ class OctupoleIdealTransportTests(unittest.TestCase):
         resolved = resolve_contract(self.contract, l3)
         self.assertEqual(l3["multipole"], {"radial_order_n": 4, "electrode_count": 8})
         self.assertEqual(resolved["derived_geometry_mm"]["rod_length"], self.contract["geometry_mm"]["effective_length"])
-        self.assertLess(resolved["derived_geometry_mm"]["vacuum_z_min"], resolved["derived_geometry_mm"]["source_z"])
-        self.assertLess(resolved["derived_geometry_mm"]["source_z"], resolved["derived_geometry_mm"]["entrance_plate_z_min"])
-        self.assertGreater(resolved["derived_geometry_mm"]["detector_z"], resolved["derived_geometry_mm"]["exit_plate_z_max"])
+        self.assertLess(resolved["derived_geometry_mm"]["vacuum_z_min"], resolved["derived_geometry_mm"]["release_plane_z"])
+        self.assertLess(resolved["derived_geometry_mm"]["release_plane_z"], resolved["derived_geometry_mm"]["entrance_aperture_plate_upstream_face_z"])
+        self.assertGreater(resolved["derived_geometry_mm"]["census_plane_z"], resolved["derived_geometry_mm"]["exit_aperture_plate_downstream_face_z"])
         self.assertEqual(len(source_particles(self.contract)), self.contract["particle_source"]["count"])
 
     def test_finite_3d_contract_rejects_aperture_beyond_working_region(self):
@@ -103,7 +103,7 @@ class OctupoleIdealTransportTests(unittest.TestCase):
 
     def test_finite_3d_contract_rejects_unknown_physical_field(self):
         l3 = json.loads((PROJECT_ROOT / "config" / "finite_3d_transport.json").read_text(encoding="utf-8"))
-        l3["geometry_mm"]["legacy_source_z"] = -1.5
+        l3["geometry_mm"]["legacy_release_plane_z"] = -1.5
         with self.assertRaises(Finite3DContractError):
             resolve_contract(self.contract, l3)
 

@@ -31,47 +31,55 @@ def build_axial_interface_layout(
     entrance: dict[str, Any],
     exit_interface: dict[str, Any],
 ) -> dict[str, Any]:
-    """Return plate, optional connector, source, and observation-plane positions."""
+    """Derive canonical interface faces and event planes from mechanical primitives."""
     rod_z_min = float(rod_z_min_mm)
     rod_z_max = float(rod_z_max_mm)
     if not all(math.isfinite(value) for value in (rod_z_min, rod_z_max)) or rod_z_max <= rod_z_min:
         raise InterfaceGeometryError("rod z range must be finite and increasing")
 
-    def values(spec: dict[str, Any], side: str) -> tuple[float, float, float, float, float]:
+    def mechanical_values(
+        spec: dict[str, Any], side: str, offset_field: str
+    ) -> tuple[float, float, float, float, float]:
         return (
             _positive(spec["aperture_radius_mm"], f"{side} aperture radius"),
             _positive(spec["plate_thickness_mm"], f"{side} plate thickness"),
             _nonnegative(spec["rod_clearance_mm"], f"{side} rod clearance"),
             _nonnegative(spec["connector_length_mm"], f"{side} connector length"),
-            _positive(spec["particle_plane_distance_mm"], f"{side} particle-plane distance"),
+            _positive(spec[offset_field], f"{side} {offset_field}"),
         )
 
-    in_aperture, in_thickness, in_clearance, in_connector, in_distance = values(entrance, "entrance")
-    out_aperture, out_thickness, out_clearance, out_connector, out_distance = values(
-        exit_interface, "exit"
+    in_aperture, in_thickness, in_clearance, in_connector, release_offset = (
+        mechanical_values(entrance, "entrance", "release_offset_mm")
     )
-    entrance_plate_max = rod_z_min - in_clearance
-    entrance_plate_min = entrance_plate_max - in_thickness
-    exit_plate_min = rod_z_max + out_clearance
-    exit_plate_max = exit_plate_min + out_thickness
+    out_aperture, out_thickness, out_clearance, out_connector, census_offset = (
+        mechanical_values(exit_interface, "exit", "census_offset_mm")
+    )
+    entrance_plate_downstream = rod_z_min - in_clearance
+    entrance_plate_upstream = entrance_plate_downstream - in_thickness
+    entrance_connector_upstream = entrance_plate_upstream - in_connector
+    exit_plate_upstream = rod_z_max + out_clearance
+    exit_plate_downstream = exit_plate_upstream + out_thickness
+    exit_connector_downstream = exit_plate_downstream + out_connector
     layout = {
         "entrance": {
             "aperture_radius_mm": in_aperture,
-            "plate_z_min_mm": entrance_plate_min,
-            "plate_z_max_mm": entrance_plate_max,
+            "aperture_plate_upstream_face_z_mm": entrance_plate_upstream,
+            "aperture_plate_downstream_face_z_mm": entrance_plate_downstream,
             "connector_length_mm": in_connector,
-            "connector_z_min_mm": entrance_plate_min - in_connector,
-            "connector_z_max_mm": entrance_plate_min,
-            "particle_plane_z_mm": entrance_plate_min - in_connector - in_distance,
+            "connector_upstream_face_z_mm": entrance_connector_upstream,
+            "connector_downstream_face_z_mm": entrance_plate_upstream,
+            "release_plane_z_mm": entrance_connector_upstream - release_offset,
         },
         "exit": {
             "aperture_radius_mm": out_aperture,
-            "plate_z_min_mm": exit_plate_min,
-            "plate_z_max_mm": exit_plate_max,
+            "aperture_plate_upstream_face_z_mm": exit_plate_upstream,
+            "aperture_plate_downstream_face_z_mm": exit_plate_downstream,
+            "aperture_crossing_plane_z_mm": exit_plate_downstream,
             "connector_length_mm": out_connector,
-            "connector_z_min_mm": exit_plate_max,
-            "connector_z_max_mm": exit_plate_max + out_connector,
-            "particle_plane_z_mm": exit_plate_max + out_connector + out_distance,
+            "connector_upstream_face_z_mm": exit_plate_downstream,
+            "connector_downstream_face_z_mm": exit_connector_downstream,
+            "handoff_plane_z_mm": exit_connector_downstream,
+            "census_plane_z_mm": exit_connector_downstream + census_offset,
         },
     }
     if "connector_shape" in entrance:

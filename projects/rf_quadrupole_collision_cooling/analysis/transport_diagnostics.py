@@ -11,7 +11,7 @@ def diagnostic_planes(
 ) -> dict[str, float]:
     """Return named analysis planes; these are not design or solver inputs."""
     geometry = resolved["geometry_mm"]
-    detector_plane = resolved["interfaces_mm"]["exit"]["particle_plane_z_mm"]
+    detector_plane = resolved["interfaces_mm"]["exit"]["census_plane_z_mm"]
     return {
         "first_common_plane": simion_cell_mm,
         "rod_entry": geometry["rod_z_min"],

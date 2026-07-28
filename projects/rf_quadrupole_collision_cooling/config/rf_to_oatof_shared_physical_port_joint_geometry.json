@@ -16,7 +16,7 @@
       "bindings": {
         "local_center_z_mm": {
           "source_input": "rf_resolved_geometry",
-          "json_pointer": "/interfaces_mm/exit/connector_z_max_mm"
+          "json_pointer": "/interfaces_mm/exit/handoff_plane_z_mm"
         },
         "outward_normal": {
           "source_input": "rf_resolved_geometry",

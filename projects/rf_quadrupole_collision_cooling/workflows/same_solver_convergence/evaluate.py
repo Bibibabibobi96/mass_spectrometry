@@ -727,7 +727,7 @@ def main() -> None:
     refined_rows = load_event_table(refined_state_path)
     expected_ids = set(range(1, particles + 1))
     if event_ids(baseline_rows, "source") != expected_ids or event_ids(
-        refined_rows, "source"
+        refined_rows, "release"
     ) != expected_ids:
         raise ValueError("particle-state source IDs differ from the particle source")
     baseline_aggregate = aggregate_handoff(baseline_rows, particles)

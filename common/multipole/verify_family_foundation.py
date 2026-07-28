@@ -29,7 +29,7 @@ FOUNDATION_SCOPE = {
     "canonical_particle_state",
     "comsol_and_simion_functional_transport_adapters",
     "segmented_rod_axial_acceleration_comsol_and_simion_adapters",
-    "endplate_acceleration_comsol_and_simion_adapters",
+    "exit_aperture_plate_acceleration_comsol_and_simion_adapters",
 }
 
 
@@ -48,7 +48,7 @@ def validate_family_identity() -> dict[str, Any]:
     """Validate the frozen family identity, consumers, and capability boundary."""
     family = load_json(REPO_ROOT / "common" / "multipole" / "family_contract.json")
     foundation = family.get("foundation", {})
-    require(family.get("schema_version") == 3, "family contract schema_version must be 3")
+    require(family.get("schema_version") == 4, "family contract schema_version must be 4")
     require(family.get("role") == "rf_multipole_family_contract", "family contract role differs")
     require(family.get("supported_radial_orders") == [2, 3, 4], "supported radial orders differ")
     require(foundation.get("api_status") == "frozen", "family API is not frozen")
@@ -61,12 +61,15 @@ def validate_family_identity() -> dict[str, Any]:
     require(connector.get("zero_length_behavior") == "do_not_create_geometry_feature",
             "family zero-length connector behavior differs")
     validation = foundation.get("functional_validation", {})
-    require(validation.get("status") == "n100_dual_solver_pass", "N=100 dual-solver validation is incomplete")
+    require(
+        validation.get("status") == "unqualified_pending_contract_v2_rerun",
+        "contract-v2 qualification status differs",
+    )
     require(validation.get("particle_count") == 100, "family functional evidence must use N=100")
-    require(set(validation.get("modes", [])) == {"segmented_rod_axial_acceleration", "endplate_acceleration"},
+    require(set(validation.get("modes", [])) == {"segmented_rod_axial_acceleration", "exit_aperture_plate_acceleration"},
             "family functional modes differ")
-    evidence = validation.get("evidence", {})
-    require(set(evidence) == set(PROJECT_SPECS), "family N=100 evidence projects differ")
+    evidence = validation.get("superseded_evidence", {})
+    require(set(evidence) == set(PROJECT_SPECS), "family superseded evidence projects differ")
     for project_id in PROJECT_SPECS:
         require(set(evidence[project_id]) == {"comsol", "simion"}, f"{project_id} evidence solvers differ")
         for solver in ("comsol", "simion"):

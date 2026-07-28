@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "role": "multipole_design_profile_registry",
   "project_id": "rf_hexapole_ion_guide",
   "family_id": "rf_multipole_ion_optics",
@@ -10,9 +10,9 @@
       "design_variables": "config/design_variables.json",
       "optimization_envelope": "config/optimization_envelope.json",
       "sha256": {
-        "design_request": "43CA98CC60ADB7102207F025840552E9D87CEA4C99F1ED1D2670B6F3EAE13CAA",
-        "design_variables": "A8AA781648F560B94F6DF8BA145D60B4BFE14B9E5E7CC1219C91E2B12B8F406A",
-        "optimization_envelope": "1B6DF8758375F9F9B2534B03B4307EEF438A74545FC4A7697CB81BC708B4948C"
+        "design_request": "7A36A216FB1B3249E895332D82E54ABA6BDD4E3A90D818DE54A3E45EA02FCE41",
+        "design_variables": "19E60F5B149255545BFE50EF89556826E3D2486B45106569DA3F22FB7B9318FC",
+        "optimization_envelope": "442FE3FB1FD490BBA5481C3BD27902EFED9FB651B5D3129E72F4C0011CD8BBFB"
       },
       "identity": {
         "project_id": "rf_hexapole_ion_guide",
@@ -27,14 +27,14 @@
       }
     },
     {
-      "design_profile_id": "endplate_acceleration_reference",
-      "design_request": "config/requests/endplate.json",
-      "design_variables": "config/design_variables_endplate.json",
-      "optimization_envelope": "config/optimization_envelope_endplate.json",
+      "design_profile_id": "exit_aperture_plate_acceleration_reference",
+      "design_request": "config/requests/exit_aperture_plate.json",
+      "design_variables": "config/design_variables_exit_aperture_plate.json",
+      "optimization_envelope": "config/optimization_envelope_exit_aperture_plate.json",
       "sha256": {
-        "design_request": "1EEDEAEBF7B1D637CEC37D33B3A5FE2E3C5314E1CEB86BE2ACC1D506C4CE03CA",
-        "design_variables": "30E171582F25C5E5A58FFFE794E4877727FA6E1E04E7E433EE82558B426BF82B",
-        "optimization_envelope": "41A6A6F39C6CBDB63098106D67164639898C52439999AE90CA4601CC461EC324"
+        "design_request": "62158EAE3AA40BD2031846CE8D1371D8AB7E985363BA8B9389F93F4AF9021F6A",
+        "design_variables": "4E8C5613DFDAC04F969E87087AB1DF8B6849CEDB744A5E226AFC95A46B2A7233",
+        "optimization_envelope": "E252A1F58338C3BA95484482237F9F1674227BA4E7A45464CB4C5835EAEF9C5F"
       },
       "identity": {
         "project_id": "rf_hexapole_ion_guide",
@@ -45,7 +45,29 @@
       "topology": {
         "enclosure_role": "full_length_grounded_shield",
         "segmentation_strategy": "off",
-        "axial_drive_topology": "endplate_potential_step"
+        "axial_drive_topology": "exit_aperture_plate_potential_step"
+      }
+    },
+    {
+      "design_profile_id": "no_acceleration_full_length",
+      "design_request": "config/requests/no_acceleration_full_length.json",
+      "design_variables": "config/design_variables_no_acceleration.json",
+      "optimization_envelope": "config/optimization_envelope_no_acceleration.json",
+      "sha256": {
+        "design_request": "1212DFAFCE5112F0F32370EA5085790573A584037B71B09EDA6E00553D54094C",
+        "design_variables": "0C9680B86452131F7F094169C3B17105E85CC1B393E4A5421AA49CFFCC765AD5",
+        "optimization_envelope": "EEB0A59888811F1010616E8898986DD790F0CC5207078177CEC6064C86F538D0"
+      },
+      "identity": {
+        "project_id": "rf_hexapole_ion_guide",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 3,
+        "electrode_count": 6
+      },
+      "topology": {
+        "enclosure_role": "full_length_grounded_shield",
+        "segmentation_strategy": "off",
+        "axial_drive_topology": "none"
       }
     }
   ]

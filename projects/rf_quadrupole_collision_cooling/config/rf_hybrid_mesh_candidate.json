@@ -70,7 +70,7 @@
       "transmitted_particles": {"end_hmax_0p5_mm": 96, "end_hmax_0p25_mm": 97},
       "transmission_absolute_difference": 0.01,
       "mean_tof_symmetric_relative_difference": 9.250999794448969e-7,
-      "rms_detector_radius_symmetric_relative_difference": 0.0005671795913418237,
+      "rms_physical_detector_radius_symmetric_relative_difference": 0.0005671795913418237,
       "detector_classification_change_count": 3,
       "minimum_detected_radius_fraction_of_active_radius_among_changed_particles": 0.9828322374226272,
       "detector_r99_mm": {"end_hmax_0p5_mm": 39.60495671551609, "end_hmax_0p25_mm": 39.62645903644795},

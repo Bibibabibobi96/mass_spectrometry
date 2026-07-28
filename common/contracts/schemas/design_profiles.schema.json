@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "role", "project_id", "family_id", "profiles"],
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"const": 2},
     "role": {"const": "multipole_design_profile_registry"},
     "project_id": {"$ref": "#/$defs/identifier"},
     "family_id": {"const": "rf_multipole_ion_optics"},
@@ -54,7 +54,7 @@
                 "enum": [
                   "none",
                   "segmented_rod_axial_acceleration",
-                  "endplate_potential_step"
+                  "exit_aperture_plate_potential_step"
                 ]
               }
             }

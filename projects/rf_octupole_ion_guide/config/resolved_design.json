@@ -1,34 +1,34 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "role": "multipole_resolved_design_do_not_edit",
   "compiler": {
     "name": "common.multipole.compile_design_request",
-    "version": 1
+    "version": 2
   },
   "governance": {
-    "design_variables_sha256": "82370C3D049D99FD5EFD636606EDF0D80065C4C9A739F9A85D2BC6DE97773A42",
-    "optimization_envelope_sha256": "1DFA594223DD5153AA8DC4376AB260E6978CF605CE5E6E28D68B628101D1CFAF",
-    "design_request_file_sha256": "B0B0F3B58844AC07D6AD370F4ED8AF88BF22B7FFE95411FF39725912BEFEAD91"
+    "design_variables_sha256": "F1E4F1D4A4DAEBC6D8D69983E36744FDB92294A5956530094BAC0E66085F257F",
+    "optimization_envelope_sha256": "32CE84454B45C44E44CAA5BAAB809D5F0695200F14308503A46C1A6247EC49C4",
+    "design_request_file_sha256": "177112FB257E1D185F7A38AB67A862BA358DBCD9BBD60351FAEED6917FCED2C6"
   },
   "request": {
     "request_id": "octupole_current_baseline",
-    "sha256": "6A44275D707009F1E24B90CAF18501D596287492AC6576AD854520F2DD909060"
+    "sha256": "6B406CE9E5D4326B4434250096EF03B5100439C0ABDC09AD5A5189B784740FCD"
   },
   "sources": [
     {
       "label": "design_request",
       "path": "projects/rf_octupole_ion_guide/config/requests/baseline.json",
-      "sha256": "B0B0F3B58844AC07D6AD370F4ED8AF88BF22B7FFE95411FF39725912BEFEAD91"
+      "sha256": "177112FB257E1D185F7A38AB67A862BA358DBCD9BBD60351FAEED6917FCED2C6"
     },
     {
       "label": "design_variables",
       "path": "projects/rf_octupole_ion_guide/config/design_variables.json",
-      "sha256": "82370C3D049D99FD5EFD636606EDF0D80065C4C9A739F9A85D2BC6DE97773A42"
+      "sha256": "F1E4F1D4A4DAEBC6D8D69983E36744FDB92294A5956530094BAC0E66085F257F"
     },
     {
       "label": "optimization_envelope",
       "path": "projects/rf_octupole_ion_guide/config/optimization_envelope.json",
-      "sha256": "1DFA594223DD5153AA8DC4376AB260E6978CF605CE5E6E28D68B628101D1CFAF"
+      "sha256": "32CE84454B45C44E44CAA5BAAB809D5F0695200F14308503A46C1A6247EC49C4"
     }
   ],
   "identity": {
@@ -65,10 +65,10 @@
       "vacuum_z_max_mm": 82.1,
       "shield_inner_radius_mm": 20.0,
       "shield_outer_radius_mm": 21.0,
-      "entrance_endcap_z_min_mm": -2.5,
-      "entrance_endcap_z_max_mm": -2.0,
-      "exit_endcap_z_min_mm": 81.6,
-      "exit_endcap_z_max_mm": 82.1
+      "entrance_outer_endcap_upstream_face_z_mm": -2.5,
+      "entrance_outer_endcap_downstream_face_z_mm": -2.0,
+      "exit_outer_endcap_upstream_face_z_mm": 81.6,
+      "exit_outer_endcap_downstream_face_z_mm": 82.1
     },
     "rod_array": {
       "inscribed_radius_r0": 4.0,
@@ -162,22 +162,24 @@
   "interfaces_mm": {
     "entrance": {
       "aperture_radius_mm": 3.6,
-      "plate_z_min_mm": -1.0,
-      "plate_z_max_mm": -0.5,
+      "aperture_plate_upstream_face_z_mm": -1.0,
+      "aperture_plate_downstream_face_z_mm": -0.5,
       "connector_length_mm": 0.0,
-      "connector_z_min_mm": -1.0,
-      "connector_z_max_mm": -1.0,
-      "particle_plane_z_mm": -1.5,
+      "connector_upstream_face_z_mm": -1.0,
+      "connector_downstream_face_z_mm": -1.0,
+      "release_plane_z_mm": -1.5,
       "connector_shape": "cylindrical_bore"
     },
     "exit": {
       "aperture_radius_mm": 3.6,
-      "plate_z_min_mm": 80.1,
-      "plate_z_max_mm": 80.6,
+      "aperture_plate_upstream_face_z_mm": 80.1,
+      "aperture_plate_downstream_face_z_mm": 80.6,
+      "aperture_crossing_plane_z_mm": 80.6,
       "connector_length_mm": 0.0,
-      "connector_z_min_mm": 80.6,
-      "connector_z_max_mm": 80.6,
-      "particle_plane_z_mm": 81.1,
+      "connector_upstream_face_z_mm": 80.6,
+      "connector_downstream_face_z_mm": 80.6,
+      "handoff_plane_z_mm": 80.6,
+      "census_plane_z_mm": 81.1,
       "connector_shape": "cylindrical_bore"
     }
   },
@@ -198,8 +200,8 @@
   },
   "static_electrodes_V": {
     "role": "cylindrical_shield_static_electrodes",
-    "shield_and_entrance_endcap_and_connector": 0.0,
-    "exit_endcap_and_connector": -3.0
+    "shield_entrance_outer_endcap_aperture_plate_connector_V": 0.0,
+    "exit_outer_endcap_aperture_plate_connector_V": -3.0
   },
   "particle_source": {
     "energy_model": {
@@ -717,5 +719,5 @@
       ]
     }
   },
-  "resolved_sha256": "0DBB8C9EC2CC0F25219D72D7DA3BFF294087EC45FB56C0646A53BB2FA43F801B"
+  "resolved_sha256": "366D6798373C4D555A687A3E1A1267F051F2B12976C83135770B1CEEEAF5018B"
 }

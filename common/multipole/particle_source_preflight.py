@@ -134,7 +134,7 @@ def validate_source(
             raise ValueError("expected source-family SHA-256 requires a source family")
         if source_family_sha256 != expected_source_family_sha256.upper():
             raise ValueError("source-family SHA-256 differs from the frozen runner input")
-    source_plane = float(resolved["interfaces_mm"]["entrance"]["particle_plane_z_mm"])
+    source_plane = float(resolved["interfaces_mm"]["entrance"]["release_plane_z_mm"])
     expected_charge = int(resolved["particle_source"]["charge_state"])
     energy_model = (
         operating_point["kinetic_energy_eV"]

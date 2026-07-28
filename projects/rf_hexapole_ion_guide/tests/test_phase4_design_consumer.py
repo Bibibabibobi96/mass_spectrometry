@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
 import unittest
 from pathlib import Path
 
+from common.contracts.machine_contracts import validate_schema
+from common.multipole.compile_design_request import compile_design_request
 from common.multipole.design_profile import resolve_design_profile
 
 
@@ -17,7 +20,11 @@ FORBIDDEN = (
 
 class Phase4DesignConsumerTests(unittest.TestCase):
     def test_profile_and_thin_wrappers(self) -> None:
-        for profile_id in ("baseline_finite_3d", "endplate_acceleration_reference"):
+        for profile_id in (
+            "baseline_finite_3d",
+            "exit_aperture_plate_acceleration_reference",
+            "no_acceleration_full_length",
+        ):
             profile = resolve_design_profile(
                 REPO_ROOT, "rf_hexapole_ion_guide", profile_id
             )
@@ -37,7 +44,34 @@ class Phase4DesignConsumerTests(unittest.TestCase):
                 self.assertNotIn("ProjectRoot", source)
             else:
                 self.assertIn("ParticleSourcePath", source)
-                self.assertIn("endplate_acceleration_reference", source)
+                self.assertIn("exit_aperture_plate_acceleration_reference", source)
+                self.assertIn("no_acceleration_full_length", source)
+
+    def test_no_acceleration_profile_is_full_length_and_zero_reference(self) -> None:
+        resolution = resolve_design_profile(
+            REPO_ROOT, "rf_hexapole_ion_guide", "no_acceleration_full_length"
+        )
+        request = json.loads(
+            resolution["paths"]["design_request"].read_text(encoding="utf-8")
+        )
+        compiled = compile_design_request(
+            request, expected_identity=resolution["profile"]["identity"]
+        )
+        self.assertEqual(compiled["geometry_mm"]["rod_length"], 79.6)
+        self.assertEqual(compiled["axial_drive"]["topology"], "none")
+        self.assertEqual(compiled["axial_drive"]["predicted_energy_gain_eV"], 0.0)
+        self.assertEqual(compiled["interfaces_mm"]["entrance"]["release_plane_z_mm"], -1.5)
+        self.assertEqual(compiled["interfaces_mm"]["exit"]["handoff_plane_z_mm"], 80.6)
+        self.assertEqual(compiled["interfaces_mm"]["exit"]["census_plane_z_mm"], 81.1)
+        evidence = json.loads(
+            (
+                PROJECT_ROOT
+                / "config"
+                / "evidence"
+                / "no_acceleration_full_length.json"
+            ).read_text(encoding="utf-8")
+        )
+        validate_schema(evidence, "multipole_evidence_contract.schema.json")
 
 
 if __name__ == "__main__":

@@ -98,7 +98,7 @@ class S2PassiveConnectorTests(unittest.TestCase):
         rf = json.loads((module.PROJECT_ROOT / "config" / "resolved_design_official.json").read_text(encoding="utf-8"))
         oatof = json.loads((module.PROJECT_ROOT.parent / "oa_tof" / "config" / "baseline.json").read_text(encoding="utf-8"))
         source = shared["physical_boundaries"]["source_exit_surface"]
-        self.assertEqual(source["bindings"]["local_center_z_mm"]["json_pointer"], "/interfaces_mm/exit/connector_z_max_mm")
+        self.assertEqual(source["bindings"]["local_center_z_mm"]["json_pointer"], "/interfaces_mm/exit/handoff_plane_z_mm")
         self.assertEqual(source["bindings"]["outward_normal"]["json_pointer"], "/coordinate/axial_axis")
         self.assertEqual(source["physical_aperture"]["source_binding"]["json_pointer"], "/interfaces_mm/exit/aperture_radius_mm")
         target = shared["physical_boundaries"]["target_entry_surface"]

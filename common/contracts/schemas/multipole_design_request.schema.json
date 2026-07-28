@@ -19,7 +19,7 @@
     "segmentation"
   ],
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"const": 2},
     "role": {"const": "multipole_design_request"},
     "request_id": {"$ref": "#/$defs/identifier"},
     "identity": {
@@ -78,8 +78,8 @@
         "rod_z_min": {"type": "number"},
         "rod_z_max": {"type": "number"},
         "enclosure": {"$ref": "#/$defs/enclosure"},
-        "entrance_interface": {"$ref": "#/$defs/interface"},
-        "exit_interface": {"$ref": "#/$defs/interface"}
+        "entrance_interface": {"$ref": "#/$defs/entrance_interface"},
+        "exit_interface": {"$ref": "#/$defs/exit_interface"}
       }
     },
     "drive": {"$ref": "#/$defs/drive"},
@@ -92,7 +92,7 @@
           "enum": [
             "none",
             "segmented_rod_axial_acceleration",
-            "endplate_potential_step"
+            "exit_aperture_plate_potential_step"
           ]
         }
       }
@@ -197,7 +197,7 @@
       "type": "string",
       "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
     },
-    "interface": {
+    "entrance_interface": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -206,7 +206,7 @@
         "rod_clearance_mm",
         "connector_length_mm",
         "connector_shape",
-        "particle_plane_distance_mm"
+        "release_offset_mm"
       ],
       "properties": {
         "aperture_radius_mm": {"type": "number", "exclusiveMinimum": 0},
@@ -216,7 +216,32 @@
         "connector_shape": {
           "enum": ["cylindrical_bore", "rectangular_bore"]
         },
-        "particle_plane_distance_mm": {
+        "release_offset_mm": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "exit_interface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "aperture_radius_mm",
+        "plate_thickness_mm",
+        "rod_clearance_mm",
+        "connector_length_mm",
+        "connector_shape",
+        "census_offset_mm"
+      ],
+      "properties": {
+        "aperture_radius_mm": {"type": "number", "exclusiveMinimum": 0},
+        "plate_thickness_mm": {"type": "number", "exclusiveMinimum": 0},
+        "rod_clearance_mm": {"type": "number", "minimum": 0},
+        "connector_length_mm": {"type": "number", "minimum": 0},
+        "connector_shape": {
+          "enum": ["cylindrical_bore", "rectangular_bore"]
+        },
+        "census_offset_mm": {
           "type": "number",
           "exclusiveMinimum": 0
         }
@@ -235,10 +260,10 @@
             "vacuum_z_max_mm",
             "shield_inner_radius_mm",
             "shield_outer_radius_mm",
-            "entrance_endcap_z_min_mm",
-            "entrance_endcap_z_max_mm",
-            "exit_endcap_z_min_mm",
-            "exit_endcap_z_max_mm"
+            "entrance_outer_endcap_upstream_face_z_mm",
+            "entrance_outer_endcap_downstream_face_z_mm",
+            "exit_outer_endcap_upstream_face_z_mm",
+            "exit_outer_endcap_downstream_face_z_mm"
           ],
           "properties": {
             "role": {"const": "full_length_grounded_shield"},
@@ -248,10 +273,10 @@
             "vacuum_z_max_mm": {"type": "number"},
             "shield_inner_radius_mm": {"type": "number", "exclusiveMinimum": 0},
             "shield_outer_radius_mm": {"type": "number", "exclusiveMinimum": 0},
-            "entrance_endcap_z_min_mm": {"type": "number"},
-            "entrance_endcap_z_max_mm": {"type": "number"},
-            "exit_endcap_z_min_mm": {"type": "number"},
-            "exit_endcap_z_max_mm": {"type": "number"}
+            "entrance_outer_endcap_upstream_face_z_mm": {"type": "number"},
+            "entrance_outer_endcap_downstream_face_z_mm": {"type": "number"},
+            "exit_outer_endcap_upstream_face_z_mm": {"type": "number"},
+            "exit_outer_endcap_downstream_face_z_mm": {"type": "number"}
           }
         },
         {
@@ -268,8 +293,8 @@
             "exit_enclosure_z_min_mm",
             "exit_enclosure_z_max_mm",
             "exit_front_wall_end_z_mm",
-            "detector_radius_mm",
-            "detector_thickness_mm"
+            "physical_detector_radius_mm",
+            "physical_detector_thickness_mm"
           ],
           "properties": {
             "role": {"const": "downstream_local_reference_enclosure"},
@@ -282,8 +307,8 @@
             "exit_enclosure_z_min_mm": {"type": "number"},
             "exit_enclosure_z_max_mm": {"type": "number"},
             "exit_front_wall_end_z_mm": {"type": "number"},
-            "detector_radius_mm": {"type": "number", "exclusiveMinimum": 0},
-            "detector_thickness_mm": {"type": "number", "exclusiveMinimum": 0}
+            "physical_detector_radius_mm": {"type": "number", "exclusiveMinimum": 0},
+            "physical_detector_thickness_mm": {"type": "number", "exclusiveMinimum": 0}
           }
         }
       ]
@@ -318,15 +343,15 @@
           "additionalProperties": false,
           "required": [
             "role",
-            "entrance_plate_and_connector",
-            "exit_enclosure_and_connector",
-            "detector"
+            "entrance_aperture_plate_and_connector_V",
+            "exit_outer_enclosure_and_connector_V",
+            "physical_detector_V"
           ],
           "properties": {
             "role": {"const": "rectangular_reference_static_electrodes"},
-            "entrance_plate_and_connector": {"type": "number"},
-            "exit_enclosure_and_connector": {"type": "number"},
-            "detector": {"type": "number"}
+            "entrance_aperture_plate_and_connector_V": {"type": "number"},
+            "exit_outer_enclosure_and_connector_V": {"type": "number"},
+            "physical_detector_V": {"type": "number"}
           }
         },
         {
@@ -334,13 +359,13 @@
           "additionalProperties": false,
           "required": [
             "role",
-            "shield_and_entrance_endcap_and_connector",
-            "exit_endcap_and_connector"
+            "shield_entrance_outer_endcap_aperture_plate_connector_V",
+            "exit_outer_endcap_aperture_plate_connector_V"
           ],
           "properties": {
             "role": {"const": "cylindrical_shield_static_electrodes"},
-            "shield_and_entrance_endcap_and_connector": {"type": "number"},
-            "exit_endcap_and_connector": {"type": "number"}
+            "shield_entrance_outer_endcap_aperture_plate_connector_V": {"type": "number"},
+            "exit_outer_endcap_aperture_plate_connector_V": {"type": "number"}
           }
         }
       ]

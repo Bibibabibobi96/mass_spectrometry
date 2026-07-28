@@ -54,14 +54,14 @@ def design_request(
             "exit_enclosure_z_min_mm": 89.4,
             "exit_enclosure_z_max_mm": 95.2,
             "exit_front_wall_end_z_mm": 90.2,
-            "detector_radius_mm": 3.6,
-            "detector_thickness_mm": 0.4,
+            "physical_detector_radius_mm": 3.6,
+            "physical_detector_thickness_mm": 0.4,
         }
         static_electrodes = {
             "role": "rectangular_reference_static_electrodes",
-            "entrance_plate_and_connector": 0.0,
-            "exit_enclosure_and_connector": 0.0,
-            "detector": 0.0,
+            "entrance_aperture_plate_and_connector_V": 0.0,
+            "exit_outer_enclosure_and_connector_V": 0.0,
+            "physical_detector_V": 0.0,
         }
     else:
         enclosure = {
@@ -72,18 +72,18 @@ def design_request(
             "vacuum_z_max_mm": 89.0,
             "shield_inner_radius_mm": 20.0,
             "shield_outer_radius_mm": 21.0,
-            "entrance_endcap_z_min_mm": 2.0,
-            "entrance_endcap_z_max_mm": 2.5,
-            "exit_endcap_z_min_mm": 88.5,
-            "exit_endcap_z_max_mm": 89.0,
+            "entrance_outer_endcap_upstream_face_z_mm": 2.0,
+            "entrance_outer_endcap_downstream_face_z_mm": 2.5,
+            "exit_outer_endcap_upstream_face_z_mm": 88.5,
+            "exit_outer_endcap_downstream_face_z_mm": 89.0,
         }
         static_electrodes = {
             "role": "cylindrical_shield_static_electrodes",
-            "shield_and_entrance_endcap_and_connector": 0.0,
-            "exit_endcap_and_connector": 0.0,
+            "shield_entrance_outer_endcap_aperture_plate_connector_V": 0.0,
+            "exit_outer_endcap_aperture_plate_connector_V": 0.0,
         }
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "role": "multipole_design_request",
         "request_id": f"{project_id}_baseline",
         "identity": identity(project_id),
@@ -111,7 +111,7 @@ def design_request(
                 "rod_clearance_mm": 0.25,
                 "connector_length_mm": 1.25,
                 "connector_shape": "cylindrical_bore",
-                "particle_plane_distance_mm": 0.75,
+                "release_offset_mm": 0.75,
             },
             "exit_interface": {
                 "aperture_radius_mm": 3.25,
@@ -119,7 +119,7 @@ def design_request(
                 "rod_clearance_mm": 0.5,
                 "connector_length_mm": 1.5,
                 "connector_shape": "rectangular_bore",
-                "particle_plane_distance_mm": 1.0,
+                "census_offset_mm": 1.0,
             },
         },
         "drive": {
@@ -232,19 +232,19 @@ class MultipoleDesignCompilerTest(unittest.TestCase):
         exit_interface = resolved["interfaces_mm"]["exit"]
         self.assertEqual(
             (
-                entrance["plate_z_min_mm"],
-                entrance["plate_z_max_mm"],
-                entrance["connector_z_min_mm"],
-                entrance["particle_plane_z_mm"],
+                entrance["aperture_plate_upstream_face_z_mm"],
+                entrance["aperture_plate_downstream_face_z_mm"],
+                entrance["connector_upstream_face_z_mm"],
+                entrance["release_plane_z_mm"],
             ),
             (4.25, 4.75, 3.0, 2.25),
         )
         self.assertEqual(
             (
-                exit_interface["plate_z_min_mm"],
-                exit_interface["plate_z_max_mm"],
-                exit_interface["connector_z_max_mm"],
-                exit_interface["particle_plane_z_mm"],
+                exit_interface["aperture_plate_upstream_face_z_mm"],
+                exit_interface["aperture_plate_downstream_face_z_mm"],
+                exit_interface["connector_downstream_face_z_mm"],
+                exit_interface["census_plane_z_mm"],
             ),
             (85.5, 86.25, 87.75, 88.75),
         )
@@ -262,17 +262,17 @@ class MultipoleDesignCompilerTest(unittest.TestCase):
         entrance["rod_clearance_mm"] = 4.0
         entrance["plate_thickness_mm"] = 0.8
         entrance["connector_length_mm"] = 0.0
-        entrance["particle_plane_distance_mm"] = 1.0
+        entrance["release_offset_mm"] = 1.0
         exact_boundary["geometry_mm"]["rod_z_min"] = 5.8
         exact_boundary["geometry_mm"]["enclosure"]["vacuum_z_min_mm"] = 0.0
         resolved = self.compile(exact_boundary)
         self.assertAlmostEqual(
-            resolved["interfaces_mm"]["entrance"]["particle_plane_z_mm"],
+            resolved["interfaces_mm"]["entrance"]["release_plane_z_mm"],
             0.0,
         )
 
         escaped = copy.deepcopy(exact_boundary)
-        escaped["geometry_mm"]["entrance_interface"]["particle_plane_distance_mm"] = 1.000001
+        escaped["geometry_mm"]["entrance_interface"]["release_offset_mm"] = 1.000001
         with self.assertRaisesRegex(MultipoleDesignCompileError, "vacuum z range"):
             self.compile(escaped)
 
@@ -322,19 +322,19 @@ class MultipoleDesignCompilerTest(unittest.TestCase):
             [(5.0, 25.0), (26.0, 45.0), (45.0, 85.0)],
         )
 
-    def test_endplate_topology_uses_continuous_rods_and_static_references(self) -> None:
+    def test_exit_aperture_plate_topology_uses_continuous_rods_and_static_references(self) -> None:
         request = design_request()
         request["drive"]["common_mode_offset_V"] = 0.0
-        request["axial_drive"]["topology"] = "endplate_potential_step"
-        request["static_electrodes_V"]["exit_enclosure_and_connector"] = -3.0
-        request["static_electrodes_V"]["detector"] = -3.0
+        request["axial_drive"]["topology"] = "exit_aperture_plate_potential_step"
+        request["static_electrodes_V"]["exit_outer_enclosure_and_connector_V"] = -3.0
+        request["static_electrodes_V"]["physical_detector_V"] = -3.0
         resolved = self.compile(request)
         self.assertEqual(resolved["segmentation"]["strategy"], "off")
         self.assertIsNone(resolved["segmentation"]["segmented_rod_array"])
         self.assertEqual(
             resolved["axial_drive"],
             {
-                "topology": "endplate_potential_step",
+                "topology": "exit_aperture_plate_potential_step",
                 "source_reference_V": 0.0,
                 "output_reference_V": -3.0,
                 "predicted_energy_gain_eV": 3.0,

@@ -762,7 +762,7 @@ def _plot_detector_plane(ax: plt.Axes, table: pd.DataFrame,
     crossing = table["downstream_detector_crossing"]
     hit = table["downstream_detector_hit"]
     ax.add_patch(Circle(
-        (0, 0), float(geometry["detector_radius"]), fill=False,
+        (0, 0), float(geometry["physical_detector_radius"]), fill=False,
         linestyle="--", linewidth=1.2, color="#756bb1", label="active radius",
     ))
     ax.scatter(

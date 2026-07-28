@@ -588,7 +588,7 @@ class WorkflowArchitectureContractTests(unittest.TestCase):
             "axis_voltage_v",
             "entrance_voltage_v",
             "exit_voltage_v",
-            "detector_voltage_v",
+            "physical_detector_voltage_v",
             "rf_steps_per_period",
             "maximum_time_us",
         }
@@ -694,18 +694,18 @@ class WorkflowArchitectureContractTests(unittest.TestCase):
             "entrance": (
                 mass_mode["static_electrodes_V"]["entrance_plate"],
                 mass_resolved["static_electrodes_V"][
-                    "entrance_plate_and_connector"
+                    "entrance_aperture_plate_and_connector_V"
                 ],
             ),
             "exit": (
                 mass_mode["static_electrodes_V"]["exit_enclosure"],
                 mass_resolved["static_electrodes_V"][
-                    "exit_enclosure_and_connector"
+                    "exit_outer_enclosure_and_connector_V"
                 ],
             ),
             "detector": (
-                mass_mode["static_electrodes_V"]["detector"],
-                mass_resolved["static_electrodes_V"]["detector"],
+                mass_mode["static_electrodes_V"]["physical_detector_V"],
+                mass_resolved["static_electrodes_V"]["physical_detector_V"],
             ),
         }
         for label, pair in {**drive_pairs, **static_pairs}.items():
@@ -716,8 +716,8 @@ class WorkflowArchitectureContractTests(unittest.TestCase):
             official["drive"]["frequency_Hz"],
         )
         self.assertAlmostEqual(
-            interface["planes"]["source"]["z_mm"],
-            official["interfaces_mm"]["entrance"]["particle_plane_z_mm"],
+            interface["planes"]["release"]["z_mm"],
+            official["interfaces_mm"]["entrance"]["release_plane_z_mm"],
         )
         self.assertAlmostEqual(
             interface["planes"]["rod_exit"]["z_mm"],
@@ -725,11 +725,11 @@ class WorkflowArchitectureContractTests(unittest.TestCase):
         )
         self.assertAlmostEqual(
             interface["planes"]["handoff"]["z_mm"],
-            official["interfaces_mm"]["exit"]["plate_z_max_mm"],
+            official["interfaces_mm"]["exit"]["handoff_plane_z_mm"],
         )
         self.assertAlmostEqual(
-            interface["planes"]["acceptance_detector"]["z_mm"],
-            official["interfaces_mm"]["exit"]["particle_plane_z_mm"],
+            interface["planes"]["census"]["z_mm"],
+            official["interfaces_mm"]["exit"]["census_plane_z_mm"],
         )
 
         gem_cell = float(

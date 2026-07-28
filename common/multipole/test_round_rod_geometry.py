@@ -45,9 +45,10 @@ class RoundRodGeometryTest(unittest.TestCase):
             "rod_clearance_mm": 4.0,
             "connector_length_mm": 0.0,
             "connector_shape": "rectangular_bore",
-            "particle_plane_distance_mm": 1.0,
+            "release_offset_mm": 1.0,
         }
         exit_interface = dict(base, aperture_radius_mm=3.6, connector_length_mm=2.0)
+        exit_interface["census_offset_mm"] = exit_interface.pop("release_offset_mm")
         layout = build_axial_interface_layout(
             rod_z_min_mm=5.8,
             rod_z_max_mm=85.4,
@@ -55,23 +56,25 @@ class RoundRodGeometryTest(unittest.TestCase):
             exit_interface=exit_interface,
         )
         self.assertEqual(layout["entrance"]["connector_length_mm"], 0.0)
-        self.assertAlmostEqual(layout["entrance"]["particle_plane_z_mm"], 0.0)
-        self.assertAlmostEqual(layout["exit"]["connector_z_max_mm"], 92.2)
-        self.assertAlmostEqual(layout["exit"]["particle_plane_z_mm"], 93.2)
+        self.assertAlmostEqual(layout["entrance"]["release_plane_z_mm"], 0.0)
+        self.assertAlmostEqual(layout["exit"]["handoff_plane_z_mm"], 92.2)
+        self.assertAlmostEqual(layout["exit"]["census_plane_z_mm"], 93.2)
 
-    def test_axial_layout_keeps_legacy_non_connector_contract_compatible(self):
-        interface = {
+    def test_axial_layout_accepts_interfaces_without_connector_shape(self):
+        entrance = {
             "aperture_radius_mm": 1.2,
             "plate_thickness_mm": 0.8,
             "rod_clearance_mm": 4.0,
             "connector_length_mm": 0.0,
-            "particle_plane_distance_mm": 1.0,
+            "release_offset_mm": 1.0,
         }
+        exit_interface = dict(entrance)
+        exit_interface["census_offset_mm"] = exit_interface.pop("release_offset_mm")
         layout = build_axial_interface_layout(
             rod_z_min_mm=5.8,
             rod_z_max_mm=85.4,
-            entrance=interface,
-            exit_interface=interface,
+            entrance=entrance,
+            exit_interface=exit_interface,
         )
         self.assertNotIn("connector_shape", layout["entrance"])
 
@@ -153,7 +156,7 @@ class RoundRodGeometryTest(unittest.TestCase):
         first = segmented["electrodes"][0]
         self.assertIn(f"locate(0,0,{first['z_max_mm']:.15g})", quad_gem)
 
-    def test_endplate_mode_keeps_continuous_rods_and_separates_output(self):
+    def test_exit_aperture_plate_mode_keeps_continuous_rods_and_separates_output(self):
         resolved = json.loads(
             (ROOT / "projects/rf_hexapole_ion_guide/config/resolved_design.json").read_text()
         )

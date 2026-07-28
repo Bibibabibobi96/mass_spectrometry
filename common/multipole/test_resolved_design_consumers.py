@@ -111,9 +111,9 @@ class ResolvedDesignConsumerContractTest(unittest.TestCase):
             document["static_electrodes_V"],
             {
                 "role": "rectangular_reference_static_electrodes",
-                "entrance_plate_and_connector": 0.0,
-                "exit_enclosure_and_connector": -100.0,
-                "detector": -1500.0,
+                "entrance_aperture_plate_and_connector_V": 0.0,
+                "exit_outer_enclosure_and_connector_V": -100.0,
+                "physical_detector_V": -1500.0,
             },
         )
         comsol = (MULTIPOLE / "solve_finite_3d_transport.m").read_text(encoding="utf-8")
@@ -121,8 +121,8 @@ class ResolvedDesignConsumerContractTest(unittest.TestCase):
             encoding="utf-8"
         )
         for field in (
-            "entrance_plate_and_connector",
-            "exit_enclosure_and_connector",
+            "entrance_aperture_plate_and_connector_V",
+            "exit_outer_enclosure_and_connector_V",
             "detector",
         ):
             self.assertIn(field, comsol)

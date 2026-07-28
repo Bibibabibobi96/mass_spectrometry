@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-  [ValidateSet('baseline_finite_3d','endplate_acceleration_reference')]
+  [ValidateSet('baseline_finite_3d','exit_aperture_plate_acceleration_reference','no_acceleration_full_length')]
   [string]$RuntimeProfileId = 'baseline_finite_3d',
   [string]$EvidenceContractPath = '',
   [string]$RunId = '',

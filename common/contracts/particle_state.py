@@ -25,7 +25,7 @@ ENUMS = {
     "event": ["source", "rod_exit", "handoff", "terminal"],
     "status": ["alive", "transmitted", "lost", "timeout"],
     "terminal_reason": [
-        "none", "acceptance_detector", "acceptance_radius", "electrode", "radial_escape", "backward_escape",
+        "none", "acceptance_surface", "acceptance_radius", "electrode", "radial_escape", "backward_escape",
         "timeout", "solver_stop", "unknown",
     ],
 }

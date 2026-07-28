@@ -34,7 +34,11 @@ manifest。旧manifest若记录绝对路径，只有仍位于原路径且全部�
 把实际文件映射为三类上下文、执行未复用阶段并完成本项目最终验收。
 
 粒子状态分为两个不同边界。`particle_state.py`验证单个多极杆组件内部的17列
-`source/rod_exit/handoff/terminal`事件账本，其轴向/横向字段仍表达该组件局部坐标。
+`source/rod_exit/handoff/terminal`事件账本，其轴向/横向字段仍表达该组件局部坐标。这四个值是事件
+角色而不是四个可互换平面：`source`记录从粒子源合同在源释放面产生的初始事件，`rod_exit`记录杆端
+事件，`handoff`记录跨组件交接事件，`terminal`记录求解器终止、撞壁、超时等最终分类。公共事件
+角色不定义任何器件表面；具体技术域必须在本域机器合同和README中定义事件绑定的物理对象。多极杆
+绑定只按[`../multipole/README.md`](../multipole/README.md#轴向部件与物理面术语)解释。
 `component_particle_state.py`及
 [`schemas/component_particle_state.schema.json`](schemas/component_particle_state.schema.json)
 定义跨组件转移使用的version 1 canonical状态：每个粒子一行，严格按Schema中的

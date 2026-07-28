@@ -86,9 +86,9 @@ rfFrequencyHz=drive.frequency_Hz;
 staticElectrodes=resolved.static_electrodes_V;
 assert(strcmp(staticElectrodes.role,'rectangular_reference_static_electrodes'), ...
     'Unsupported static-electrode role.');
-staticEntranceV=staticElectrodes.entrance_plate_and_connector;
-staticExitV=staticElectrodes.exit_enclosure_and_connector;
-staticDetectorV=staticElectrodes.detector;
+staticEntranceV=staticElectrodes.entrance_aperture_plate_and_connector_V;
+staticExitV=staticElectrodes.exit_outer_enclosure_and_connector_V;
+physicalDetectorV=staticElectrodes.physical_detector_V;
 ions = readmatrix(ionPath,'FileType','text','Delimiter',',');
 assert(size(ions,1)>0 && size(ions,2)==11, 'Fixed ION table shape mismatch.');
 assert(all(abs(ions(:,2)-ions(1,2))<1e-12) && all(abs(ions(:,3)-ions(1,3))<1e-12), ...
@@ -136,7 +136,7 @@ p.set('f_rf',sprintf('%.12g[Hz]',rfFrequencyHz));
 p.set('axial_scale','1');
 p.set('z_rod_exit',sprintf('%.12g[mm]',interface.planes.rod_exit.z_mm),'Rod-exit diagnostic plane');
 p.set('z_handoff',sprintf('%.12g[mm]',interface.planes.handoff.z_mm),'Downstream component handoff plane');
-p.set('z_acceptance',sprintf('%.12g[mm]',interface.planes.acceptance_detector.z_mm),'Standalone acceptance detector plane');
+p.set('z_acceptance',sprintf('%.12g[mm]',interface.planes.census.z_mm),'Standalone acceptance detector plane');
 p.set('m_ion',sprintf('%.15g[kg]',source.mass_amu*1.66053906660e-27));
 p.set('q_mathieu','4*e_const*V_rf/(m_ion*(2*pi*f_rf)^2*r0^2)');
 p.set('a_mathieu','8*e_const*V_dc/(m_ion*(2*pi*f_rf)^2*r0^2)');
@@ -158,12 +158,12 @@ geom.feature('vacuum').set('size',{sprintf('%.12g[mm]',2*enclosure.outer_half_wi
 geom.feature('vacuum').set('pos',{sprintf('%.12g[mm]',-enclosure.outer_half_width_mm),sprintf('%.12g[mm]',-enclosure.outer_half_width_mm),sprintf('%.12g[mm]',enclosure.vacuum_z_min_mm)});
 
 geom.feature.create('ent_outer','Block');
-geom.feature('ent_outer').set('size',{sprintf('%.12g[mm]',2*enclosure.outer_half_width_mm),sprintf('%.12g[mm]',2*enclosure.outer_half_width_mm),sprintf('%.12g[mm]',interfaces.entrance.plate_z_max_mm-interfaces.entrance.plate_z_min_mm)});
-geom.feature('ent_outer').set('pos',{sprintf('%.12g[mm]',-enclosure.outer_half_width_mm),sprintf('%.12g[mm]',-enclosure.outer_half_width_mm),sprintf('%.12g[mm]',interfaces.entrance.plate_z_min_mm)});
+geom.feature('ent_outer').set('size',{sprintf('%.12g[mm]',2*enclosure.outer_half_width_mm),sprintf('%.12g[mm]',2*enclosure.outer_half_width_mm),sprintf('%.12g[mm]',interfaces.entrance.aperture_plate_downstream_face_z_mm-interfaces.entrance.aperture_plate_upstream_face_z_mm)});
+geom.feature('ent_outer').set('pos',{sprintf('%.12g[mm]',-enclosure.outer_half_width_mm),sprintf('%.12g[mm]',-enclosure.outer_half_width_mm),sprintf('%.12g[mm]',interfaces.entrance.aperture_plate_upstream_face_z_mm)});
 geom.feature.create('ent_hole','Cylinder');
 geom.feature('ent_hole').set('r',sprintf('%.12g[mm]',interfaces.entrance.aperture_radius_mm));
-geom.feature('ent_hole').set('h',sprintf('%.12g[mm]',interfaces.entrance.plate_z_max_mm-interfaces.entrance.plate_z_min_mm));
-geom.feature('ent_hole').set('pos',{'0','0',sprintf('%.12g[mm]',interfaces.entrance.plate_z_min_mm)});
+geom.feature('ent_hole').set('h',sprintf('%.12g[mm]',interfaces.entrance.aperture_plate_downstream_face_z_mm-interfaces.entrance.aperture_plate_upstream_face_z_mm));
+geom.feature('ent_hole').set('pos',{'0','0',sprintf('%.12g[mm]',interfaces.entrance.aperture_plate_upstream_face_z_mm)});
 geom.feature.create('entrance','Difference');
 geom.feature('entrance').label('Reference entrance plate with aperture');
 geom.feature('entrance').selection('input').set({'ent_outer'});
@@ -186,16 +186,16 @@ geom.feature('exit_enclosure').selection('input').set({'exit_outer'});
 geom.feature('exit_enclosure').selection('input2').set({'exit_inner','exit_hole'});
 geom.feature('exit_enclosure').set('selresult','on');
 
-geom.feature.create('detector','Cylinder');
-geom.feature('detector').label('Reference detector plate');
-geom.feature('detector').set('r',sprintf('%.12g[mm]',enclosure.detector_radius_mm));
-geom.feature('detector').set('h',sprintf('%.12g[mm]',enclosure.detector_thickness_mm));
-detectorZ=interfaces.exit.particle_plane_z_mm;
-geom.feature('detector').set('pos',{'0','0',sprintf('%.12g[mm]',detectorZ)});
-geom.feature('detector').set('selresult','on');
+geom.feature.create('physical_detector','Cylinder');
+geom.feature('physical_detector').label('Reference detector plate');
+geom.feature('physical_detector').set('r',sprintf('%.12g[mm]',enclosure.physical_detector_radius_mm));
+geom.feature('physical_detector').set('h',sprintf('%.12g[mm]',enclosure.physical_detector_thickness_mm));
+censusPlaneZ=interfaces.exit.census_plane_z_mm;
+geom.feature('physical_detector').set('pos',{'0','0',sprintf('%.12g[mm]',censusPlaneZ)});
+geom.feature('physical_detector').set('selresult','on');
 geom.run;
 
-electrodeDomains=[cellfun(@(t)['geom1_' t '_dom'],rodTags,'UniformOutput',false),{'geom1_entrance_dom','geom1_exit_enclosure_dom','geom1_detector_dom'}];
+electrodeDomains=[cellfun(@(t)['geom1_' t '_dom'],rodTags,'UniformOutput',false),{'geom1_entrance_dom','geom1_exit_enclosure_dom','geom1_physical_detector_dom'}];
 comp.selection.create('sel_vac','Complement');
 comp.selection('sel_vac').label('Vacuum excluding every electrode');
 comp.selection('sel_vac').set('input',electrodeDomains);
@@ -209,7 +209,7 @@ for k=1:numel(rodTags)
     s=['selb_' rodTags{k}]; comp.selection.create(s,'Adjacent'); comp.selection(s).set('input',{['geom1_' rodTags{k} '_dom']});
     pot=es.create(sprintf('pot_rod%d',k),'ElectricPotential',2); pot.selection.named(s); pot.set('V0',sprintf('%d[V]',100*(3-2*rodMetadata(k).electrode_group)));
 end
-for item={{'entrance','entrance'},{'exit','exit_enclosure'},{'detector','detector'}}
+for item={{'entrance','entrance'},{'exit','exit_enclosure'},{'physical_detector','physical_detector'}}
     entry=item{1}; s=['selb_' entry{1}]; comp.selection.create(s,'Adjacent'); comp.selection(s).set('input',{['geom1_' entry{2} '_dom']});
     pot=es.create(['pot_' entry{1}],'ElectricPotential',2); pot.selection.named(s); pot.set('V0','0[V]');
 end
@@ -220,7 +220,7 @@ for k=1:numel(rodTags)
     pot=ess.create(sprintf('pot_rod%d',k),'ElectricPotential',2); pot.selection.named(['selb_' rodTags{k}]);
     pot.set('V0',sprintf('%.12g[V]',rodMetadata(k).common_mode_V));
 end
-staticItems={{'entrance',staticEntranceV},{'exit',staticExitV},{'detector',staticDetectorV}};
+staticItems={{'entrance',staticEntranceV},{'exit',staticExitV},{'physical_detector',physicalDetectorV}};
 for item=staticItems
     entry=item{1}; pot=ess.create(['pot_' entry{1}],'ElectricPotential',2); pot.selection.named(['selb_' entry{1}]);
     pot.set('V0',sprintf('%.12g[V]',entry{2}));
@@ -382,7 +382,7 @@ pg.create('traj1','ParticleTrajectories');
 pd=mphparticle(model,'dataset','pdset1'); x=squeeze(pd.p(:,:,1)); y=squeeze(pd.p(:,:,2)); z=squeeze(pd.p(:,:,3));
 vx=squeeze(pd.v(:,:,1)); vy=squeeze(pd.v(:,:,2)); vz=squeeze(pd.v(:,:,3)); radial=sqrt(x.^2+y.^2);
 nP=size(z,2); assert(nP==size(ions,1),'Solved particle count mismatch.');
-arrival=nan(1,nP); arrivalRadius=nan(1,nP); crossedDetectorPlane=false(1,nP); hit=false(1,nP); maxRadius=max(radial,[],1,'omitnan'); threshold=detectorZ-1e-6;
+arrival=nan(1,nP); arrivalRadius=nan(1,nP); crossedCensusPlane=false(1,nP); hit=false(1,nP); maxRadius=max(radial,[],1,'omitnan'); threshold=censusPlaneZ-1e-6;
 rodRadial=radial; rodRadial(z<g.rod_z_min | z>g.rod_z_max)=NaN;
 maxRodRadius=max(rodRadial,[],1,'omitnan');
 terminalX=nan(1,nP); terminalY=nan(1,nP); terminalZ=nan(1,nP);
@@ -394,9 +394,9 @@ for i=1:nP
     terminalIndex(i)=finalSample;
     k=find(z(:,i)>=threshold,1,'first');
     if ~isempty(k)
-        crossedDetectorPlane(i)=true;
+        crossedCensusPlane(i)=true;
         arrivalRadius(i)=radial(k,i);
-        if arrivalRadius(i)<=enclosure.detector_radius_mm
+        if arrivalRadius(i)<=enclosure.physical_detector_radius_mm
             hit(i)=true;
             arrival(i)=pd.t(k)*1e6;
         end
@@ -406,12 +406,12 @@ hitRodRadius=maxRodRadius(hit); if isempty(hitRodRadius), maxHitRodRadius=NaN; e
 featureTags=cell(cpt.feature.tags()); collisionPresent=any(contains(lower(string(featureTags)),'coll'));
 result=struct('solver','COMSOL','mode',workflowId,'workflow_id',workflowId,'operating_point',operatingPoint,'collision_feature_present',collisionPresent,'q_mathieu',mphglobal(model,'q_mathieu','dataset','dset1'),'a_mathieu',mphglobal(model,'a_mathieu','dataset','dset1'), ...
     'particles',nP,'hits',sum(hit),'transmission',mean(hit),'max_radius_mm',max(maxRadius),'max_hit_rod_radius_mm',maxHitRodRadius, ...
-    'detector_plane_crossings',sum(crossedDetectorPlane),'max_detector_hit_radius_mm',max(arrivalRadius(hit),[],'omitnan'), ...
-    'mean_detector_time_us',mean(arrival,'omitnan'),'rf_steps_per_period',rfStepsPerPeriod,'mesh_auto_level',meshAuto,'mesh_hmax_mm',meshHmaxMm,'mesh_elements_total',sum(mi.numelem), ...
+    'census_plane_crossings',sum(crossedCensusPlane),'max_census_hit_radius_mm',max(arrivalRadius(hit),[],'omitnan'), ...
+    'mean_census_time_us',mean(arrival,'omitnan'),'rf_steps_per_period',rfStepsPerPeriod,'mesh_auto_level',meshAuto,'mesh_hmax_mm',meshHmaxMm,'mesh_elements_total',sum(mi.numelem), ...
     'source_axial_offset_mm',sourceAxialOffsetMm,'mass_Th',source.mass_amu,'rf_peak_V',rfPeakV,'dc_per_group_V',dcV, ...
-    'axis_common_mode_V',axisV,'static_entrance_V',staticEntranceV,'static_exit_V',staticExitV,'static_detector_V',staticDetectorV, ...
+    'axis_common_mode_V',axisV,'static_entrance_V',staticEntranceV,'static_exit_V',staticExitV,'static_physical_detector_V',physicalDetectorV, ...
     'run_label',runLabel);
-primaryMetrics=summarizeDetectorEnergy(pd,detectorZ,enclosure.detector_radius_mm,source.mass_amu);
+primaryMetrics=summarizeCensusEnergy(pd,censusPlaneZ,enclosure.physical_detector_radius_mm,source.mass_amu);
 result.mean_output_energy_eV=primaryMetrics.mean_output_energy_eV;
 if collisionPresent
     error('COMSOL no-collision case contains a collision feature.');
@@ -456,7 +456,7 @@ for i=1:nP
     finalSample=terminalIndex(i); terminalState=struct('t_s',pd.t(finalSample),'x_mm',terminalX(i),'y_mm',terminalY(i), ...
         'z_mm',terminalZ(i),'vx_m_s',vx(finalSample,i),'vy_m_s',vy(finalSample,i),'vz_m_s',vz(finalSample,i));
     terminalRadius=hypot(terminalX(i),terminalY(i)); terminalStatus='lost'; terminalReason='electrode';
-    if hit(i), terminalStatus='transmitted'; terminalReason='acceptance_detector';
+    if hit(i), terminalStatus='transmitted'; terminalReason='acceptance_surface';
     elseif terminalState.t_s-ions(i,1)*1e-6 >= maximumTimeUs*1e-6-1e-12
         terminalStatus='timeout'; terminalReason='timeout';
     elseif terminalZ(i)<0, terminalReason='backward_escape';
@@ -514,14 +514,14 @@ row={particleId,event,status,reason,state.t_s*1e6,(state.t_s-birthTimeS)*1e6, ..
     state.vz_m_s,state.vx_m_s,state.vy_m_s,energyEv,radiusMm,divergenceDeg,maxRodRadiusMm};
 end
 
-function metrics=summarizeDetectorEnergy(pd,detectorZ,detectorRadius,massAmu)
+function metrics=summarizeCensusEnergy(pd,censusPlaneZ,censusRadius,massAmu)
 x=squeeze(pd.p(:,:,1)); y=squeeze(pd.p(:,:,2)); z=squeeze(pd.p(:,:,3));
 vx=squeeze(pd.v(:,:,1)); vy=squeeze(pd.v(:,:,2)); vz=squeeze(pd.v(:,:,3));
 if isvector(z), x=x(:); y=y(:); z=z(:); vx=vx(:); vy=vy(:); vz=vz(:); end
 energy=nan(1,size(z,2)); hit=false(1,size(z,2));
 for particle=1:size(z,2)
-    sample=find(z(:,particle)>=detectorZ-1e-6,1,'first');
-    if ~isempty(sample) && hypot(x(sample,particle),y(sample,particle))<=detectorRadius
+    sample=find(z(:,particle)>=censusPlaneZ-1e-6,1,'first');
+    if ~isempty(sample) && hypot(x(sample,particle),y(sample,particle))<=censusRadius
         hit(particle)=true;
         speed2=vx(sample,particle)^2+vy(sample,particle)^2+vz(sample,particle)^2;
         energy(particle)=0.5*massAmu*1.66053906660e-27*speed2/1.602176634e-19;

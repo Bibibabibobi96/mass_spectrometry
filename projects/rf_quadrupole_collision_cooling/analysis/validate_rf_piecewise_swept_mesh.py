@@ -8,7 +8,7 @@ def validate(path:Path=PATH)->dict:
     c=json.loads(path.read_text(encoding="utf-8"));g=json.loads((ROOT/c["inputs"]["resolved_geometry"]).read_text(encoding="utf-8"))["geometry_mm"]
     if c.get("schema_version")!=1 or c.get("status")!="closed_after_topology_incompatibility":raise ValueError("piecewise swept closure identity invalid")
     interfaces=json.loads((ROOT/c["inputs"]["resolved_geometry"]).read_text(encoding="utf-8"))["interfaces_mm"];enclosure=g["enclosure"]
-    expected=[0.0,float(interfaces["entrance"]["plate_z_min_mm"]),float(interfaces["entrance"]["plate_z_max_mm"]),float(g["rod_z_min"]),float(g["rod_z_min"])+4.0,float(g["rod_z_max"])-4.0,float(g["rod_z_max"]),float(enclosure["exit_enclosure_z_min_mm"]),float(enclosure["exit_front_wall_end_z_mm"])]
+    expected=[0.0,float(interfaces["entrance"]["aperture_plate_upstream_face_z_mm"]),float(interfaces["entrance"]["aperture_plate_downstream_face_z_mm"]),float(g["rod_z_min"]),float(g["rod_z_min"])+4.0,float(g["rod_z_max"])-4.0,float(g["rod_z_max"]),float(enclosure["exit_enclosure_z_min_mm"]),float(enclosure["exit_front_wall_end_z_mm"])]
     if len(c["geometry_mm"]["segment_boundaries_z"])!=len(expected) or any(abs(float(actual)-target)>1e-12 for actual,target in zip(c["geometry_mm"]["segment_boundaries_z"],expected)):raise ValueError("piecewise swept axial topology is stale")
     if c["geometry_mm"]["fine_core_radius"]!=8.0 or c["transverse_mesh"]["fine_core_and_rod_boundary_hmax_mm"]!=0.2:raise ValueError("piecewise swept transverse mesh changed")
     axial=c["axial_mesh"]

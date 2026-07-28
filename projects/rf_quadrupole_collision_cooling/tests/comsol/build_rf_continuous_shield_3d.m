@@ -58,12 +58,12 @@ try
         geom.feature(rodTags{k}).set('selresult','on');
     end
     geom.feature.create('shieldO','Cylinder'); geom.feature('shieldO').set('r',sprintf('%.17g[mm]',shieldRadius+numericalWall));
-    geom.feature('shieldO').set('h',sprintf('%.17g[mm]',interfaces.exit.plate_z_min_mm-interfaces.entrance.plate_z_max_mm)); geom.feature('shieldO').set('pos',{'0','0',sprintf('%.17g[mm]',interfaces.entrance.plate_z_max_mm)});
+    geom.feature('shieldO').set('h',sprintf('%.17g[mm]',interfaces.exit.aperture_plate_upstream_face_z_mm-interfaces.entrance.aperture_plate_downstream_face_z_mm)); geom.feature('shieldO').set('pos',{'0','0',sprintf('%.17g[mm]',interfaces.entrance.aperture_plate_downstream_face_z_mm)});
     geom.feature.create('shieldH','Cylinder'); geom.feature('shieldH').set('r',sprintf('%.17g[mm]',shieldRadius));
-    geom.feature('shieldH').set('h',sprintf('%.17g[mm]',interfaces.exit.plate_z_min_mm-interfaces.entrance.plate_z_max_mm)); geom.feature('shieldH').set('pos',{'0','0',sprintf('%.17g[mm]',interfaces.entrance.plate_z_max_mm)});
+    geom.feature('shieldH').set('h',sprintf('%.17g[mm]',interfaces.exit.aperture_plate_upstream_face_z_mm-interfaces.entrance.aperture_plate_downstream_face_z_mm)); geom.feature('shieldH').set('pos',{'0','0',sprintf('%.17g[mm]',interfaces.entrance.aperture_plate_downstream_face_z_mm)});
     geom.feature.create('shield','Difference'); geom.feature('shield').selection('input').set({'shieldO'}); geom.feature('shield').selection('input2').set({'shieldH'}); geom.feature('shield').set('selresult','on');
-    add_annular_plate(geom,'entrance',shieldRadius+numericalWall,interfaces.entrance.aperture_radius_mm,interfaces.entrance.plate_z_min_mm,interfaces.entrance.plate_z_max_mm-interfaces.entrance.plate_z_min_mm);
-    add_annular_plate(geom,'exit',shieldRadius+numericalWall,interfaces.exit.aperture_radius_mm,interfaces.exit.plate_z_min_mm,interfaces.exit.plate_z_max_mm-interfaces.exit.plate_z_min_mm);
+    add_annular_plate(geom,'entrance',shieldRadius+numericalWall,interfaces.entrance.aperture_radius_mm,interfaces.entrance.aperture_plate_upstream_face_z_mm,interfaces.entrance.aperture_plate_downstream_face_z_mm-interfaces.entrance.aperture_plate_upstream_face_z_mm);
+    add_annular_plate(geom,'exit',shieldRadius+numericalWall,interfaces.exit.aperture_radius_mm,interfaces.exit.aperture_plate_upstream_face_z_mm,interfaces.exit.aperture_plate_downstream_face_z_mm-interfaces.exit.aperture_plate_upstream_face_z_mm);
     geom.run;
 
     solidTags=[rodTags,{'shield','entrance','exit'}];
@@ -97,7 +97,7 @@ try
             requestedRadius=fractions(radiusIndex)*g.inscribed_radius_r0;
             evaluatedRadius=requestedRadius; if abs(requestedRadius-interfaces.exit.aperture_radius_mm)<1e-12, evaluatedRadius=requestedRadius-inset; end
             requestedZ=zValues(zIndex); evaluatedZ=requestedZ;
-            if abs(requestedZ-interfaces.exit.plate_z_min_mm)<1e-12 || abs(requestedZ-interfaces.exit.plate_z_max_mm)<1e-12, evaluatedZ=requestedZ-inset; end
+            if abs(requestedZ-interfaces.exit.aperture_plate_upstream_face_z_mm)<1e-12 || abs(requestedZ-interfaces.exit.aperture_plate_downstream_face_z_mm)<1e-12, evaluatedZ=requestedZ-inset; end
             nominalRadius=[nominalRadius;repmat(requestedRadius,nTheta,1)]; %#ok<AGROW>
             evaluationRadius=[evaluationRadius;repmat(evaluatedRadius,nTheta,1)]; %#ok<AGROW>
             thetaAll=[thetaAll;theta]; %#ok<AGROW>

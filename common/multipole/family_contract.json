@@ -1,5 +1,5 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "role": "rf_multipole_family_contract",
   "family_id": "rf_multipole_ion_optics",
   "coordinate_convention_id": "multipole.cartesian.z_axis.v1",
@@ -40,45 +40,45 @@
       "canonical_particle_state",
       "comsol_and_simion_functional_transport_adapters",
       "segmented_rod_axial_acceleration_comsol_and_simion_adapters",
-      "endplate_acceleration_comsol_and_simion_adapters"
+      "exit_aperture_plate_acceleration_comsol_and_simion_adapters"
     ],
     "functional_validation": {
-      "status": "n100_dual_solver_pass",
+      "status": "unqualified_pending_contract_v2_rerun",
       "particle_count": 100,
-      "modes": ["segmented_rod_axial_acceleration", "endplate_acceleration"],
-      "evidence": {
+      "modes": ["segmented_rod_axial_acceleration", "exit_aperture_plate_acceleration"],
+      "superseded_evidence": {
         "rf_quadrupole_collision_cooling": {
           "comsol": {
             "segmented_rod_axial_acceleration": "20260723_151500__sim__comsol__rf-quadrupole-axial-acceleration__n100__r03",
-            "endplate_acceleration": "20260723_155500__sim__comsol__rf-quadrupole-endplate-acceleration__n100__r02"
+            "exit_aperture_plate_acceleration": "20260723_155500__sim__comsol__rf-quadrupole-endplate-acceleration__n100__r02"
           },
           "simion": {
             "segmented_rod_axial_acceleration": "20260723_163000__sim__simion__rf-quadrupole-axial-acceleration__n100",
-            "endplate_acceleration": "20260723_163500__sim__simion__rf-quadrupole-endplate-acceleration__n100"
+            "exit_aperture_plate_acceleration": "20260723_163500__sim__simion__rf-quadrupole-endplate-acceleration__n100"
           }
         },
         "rf_hexapole_ion_guide": {
           "comsol": {
             "segmented_rod_axial_acceleration": "20260723_161000__sim__comsol__rf-hexapole-axial-acceleration__n100__r03",
-            "endplate_acceleration": "20260723_161500__sim__comsol__rf-hexapole-endplate-acceleration__n100__r02"
+            "exit_aperture_plate_acceleration": "20260723_161500__sim__comsol__rf-hexapole-endplate-acceleration__n100__r02"
           },
           "simion": {
             "segmented_rod_axial_acceleration": "20260723_164000__sim__simion__rf-hexapole-axial-acceleration__n100",
-            "endplate_acceleration": "20260723_164500__sim__simion__rf-hexapole-endplate-acceleration__n100"
+            "exit_aperture_plate_acceleration": "20260723_164500__sim__simion__rf-hexapole-endplate-acceleration__n100"
           }
         },
         "rf_octupole_ion_guide": {
           "comsol": {
             "segmented_rod_axial_acceleration": "20260723_162000__sim__comsol__rf-octupole-axial-acceleration__n100__r02",
-            "endplate_acceleration": "20260723_162500__sim__comsol__rf-octupole-endplate-acceleration__n100__r02"
+            "exit_aperture_plate_acceleration": "20260723_162500__sim__comsol__rf-octupole-endplate-acceleration__n100__r02"
           },
           "simion": {
             "segmented_rod_axial_acceleration": "20260723_165000__sim__simion__rf-octupole-axial-acceleration__n100",
-            "endplate_acceleration": "20260723_165500__sim__simion__rf-octupole-endplate-acceleration__n100"
+            "exit_aperture_plate_acceleration": "20260723_165500__sim__simion__rf-octupole-endplate-acceleration__n100"
           }
         }
       },
-      "claim_limit": "Functional N=100 transport and energy-gain evidence only; no mesh convergence, cross-solver numerical-equivalence, mechanical, Candidate or Formal qualification."
+      "claim_limit": "All listed N=100 run IDs predate request/resolved contract v2 and are superseded evidence only. No active dual-solver, convergence, numerical-equivalence, mechanical, Candidate or Formal qualification may be inherited until rerun."
     },
     "change_control": "Changes require the repository multipole-family gate and real-solver regression for every affected adapter; project-specific theory and acceptance thresholds remain outside this contract."
   }

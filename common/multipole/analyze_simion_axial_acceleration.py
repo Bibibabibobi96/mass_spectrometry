@@ -56,21 +56,21 @@ def evaluate(
     nominal_predicted_output_energy_eV = axial_drive["predicted_output_energy_eV"]
     expected_energy_gain_eV = axial_drive["predicted_energy_gain_eV"]
     primary_case_id = (
-        "endplate_acceleration_rf_on"
-        if topology == "endplate_potential_step"
+        "exit_aperture_plate_acceleration_rf_on"
+        if topology == "exit_aperture_plate_potential_step"
         else "axial_acceleration_rf_on"
     )
     control_case_id = (
-        "zero_endplate_drop_rf_on"
-        if topology == "endplate_potential_step"
+        "zero_exit_aperture_plate_drop_rf_on"
+        if topology == "exit_aperture_plate_potential_step"
         else "zero_axial_drop_rf_on"
     )
     claim_limit = (
-        "N=100 functional endplate-acceleration reference only; acceleration "
+        "N=100 functional exit-aperture-plate acceleration reference only; acceleration "
         "is localized near the exit and does not establish continuous in-rod "
         "acceleration, convergence, cross-solver numerical equivalence, "
         "mechanical or Formal qualification."
-        if topology == "endplate_potential_step"
+        if topology == "exit_aperture_plate_potential_step"
         else "Resolved-design axial-drive metrics only; no formal claim."
     )
     accelerated_sources, accelerated = _terminal_transmission(accelerated_state)

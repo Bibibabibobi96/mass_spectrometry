@@ -32,7 +32,7 @@ def validate(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
     interfaces = rf["interfaces_mm"]
     rod_outer = float(rf_geometry["rod_center_radius"]) + float(rf_geometry["rod_radius"])
     expected = {
-        "rf_local_z_min": float(interfaces["entrance"]["plate_z_max_mm"]),
+        "rf_local_z_min": float(interfaces["entrance"]["aperture_plate_downstream_face_z_mm"]),
         "rf_local_z_max": float(enclosure["exit_enclosure_z_min_mm"]),
         "rod_outer_extent": rod_outer,
     }

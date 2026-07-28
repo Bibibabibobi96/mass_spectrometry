@@ -87,7 +87,7 @@ def _resolve_interface(interface: dict[str, Any], name: str) -> dict[str, float]
             "aperture_radius_mm",
             "plate_thickness_mm",
             "rod_clearance_mm",
-            "particle_plane_distance_mm",
+            "release_offset_mm" if name == "entrance" else "census_offset_mm",
             "outer_ground_clearance_mm",
             "connector_length_mm",
             "connector_shape",
@@ -101,7 +101,9 @@ def _resolve_interface(interface: dict[str, Any], name: str) -> dict[str, float]
         "aperture_radius_mm": _positive_number(interface, "aperture_radius_mm"),
         "plate_thickness_mm": _positive_number(interface, "plate_thickness_mm"),
         "rod_clearance_mm": _nonnegative_number(interface, "rod_clearance_mm"),
-        "particle_plane_distance_mm": _positive_number(interface, "particle_plane_distance_mm"),
+        ("release_offset_mm" if name == "entrance" else "census_offset_mm"): _positive_number(
+            interface, "release_offset_mm" if name == "entrance" else "census_offset_mm"
+        ),
         "outer_ground_clearance_mm": _positive_number(interface, "outer_ground_clearance_mm"),
         "connector_length_mm": _nonnegative_number(interface, "connector_length_mm"),
         "connector_shape": shape,
@@ -127,8 +129,8 @@ def resolve_contract(baseline: dict[str, Any], contract: dict[str, Any]) -> dict
         },
         "finite-3D contract",
     )
-    if contract.get("schema_version") != 3:
-        raise Finite3DContractError("finite-3D contract schema_version must be 3")
+    if contract.get("schema_version") != 4:
+        raise Finite3DContractError("finite-3D contract schema_version must be 4")
     if contract.get("role") != "multipole_finite_3d_interface_transport_contract":
         raise Finite3DContractError("finite-3D contract role is invalid")
     if contract.get("project_id") != baseline.get("project_id"):
@@ -218,16 +220,16 @@ def resolve_contract(baseline: dict[str, Any], contract: dict[str, Any]) -> dict
     )
     entrance_layout = interface_layout["entrance"]
     exit_layout = interface_layout["exit"]
-    entrance_plate_z_min = entrance_layout["plate_z_min_mm"]
-    entrance_plate_z_max = entrance_layout["plate_z_max_mm"]
-    source_z = entrance_layout["particle_plane_z_mm"]
-    entrance_outer_ground_inner_z = source_z - entrance["outer_ground_clearance_mm"]
+    entrance_plate_z_min = entrance_layout["aperture_plate_upstream_face_z_mm"]
+    entrance_plate_z_max = entrance_layout["aperture_plate_downstream_face_z_mm"]
+    release_z = entrance_layout["release_plane_z_mm"]
+    entrance_outer_ground_inner_z = release_z - entrance["outer_ground_clearance_mm"]
     vacuum_z_min = entrance_outer_ground_inner_z - outer_cap
 
-    exit_plate_z_min = exit_layout["plate_z_min_mm"]
-    exit_plate_z_max = exit_layout["plate_z_max_mm"]
-    detector_z = exit_layout["particle_plane_z_mm"]
-    exit_outer_ground_inner_z = detector_z + exit_interface["outer_ground_clearance_mm"]
+    exit_plate_z_min = exit_layout["aperture_plate_upstream_face_z_mm"]
+    exit_plate_z_max = exit_layout["aperture_plate_downstream_face_z_mm"]
+    census_z = exit_layout["census_plane_z_mm"]
+    exit_outer_ground_inner_z = census_z + exit_interface["outer_ground_clearance_mm"]
     vacuum_z_max = exit_outer_ground_inner_z + outer_cap
     if entrance_plate_z_max > rod_z_min or exit_plate_z_min < rod_z_max:
         raise Finite3DContractError("interface plate overlaps a rod end")
@@ -240,12 +242,13 @@ def resolve_contract(baseline: dict[str, Any], contract: dict[str, Any]) -> dict
         "rod_z_max": rod_z_max,
         "vacuum_z_min": vacuum_z_min,
         "vacuum_z_max": vacuum_z_max,
-        "source_z": source_z,
-        "detector_z": detector_z,
-        "entrance_plate_z_min": entrance_plate_z_min,
-        "entrance_plate_z_max": entrance_plate_z_max,
-        "exit_plate_z_min": exit_plate_z_min,
-        "exit_plate_z_max": exit_plate_z_max,
+        "release_plane_z": release_z,
+        "census_plane_z": census_z,
+        "handoff_plane_z": exit_layout["handoff_plane_z_mm"],
+        "entrance_aperture_plate_upstream_face_z": entrance_plate_z_min,
+        "entrance_aperture_plate_downstream_face_z": entrance_plate_z_max,
+        "exit_aperture_plate_upstream_face_z": exit_plate_z_min,
+        "exit_aperture_plate_downstream_face_z": exit_plate_z_max,
         "entrance_outer_ground_inner_z": entrance_outer_ground_inner_z,
         "exit_outer_ground_inner_z": exit_outer_ground_inner_z,
         "shield_outer_radius": shield_radius + shield_wall,

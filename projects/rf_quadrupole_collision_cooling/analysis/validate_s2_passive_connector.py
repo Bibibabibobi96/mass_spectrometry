@@ -176,7 +176,7 @@ def validate_contract(
     expected_source_bindings = {
         "local_center_z_mm": {
             "source_input": "rf_resolved_geometry",
-            "json_pointer": "/interfaces_mm/exit/connector_z_max_mm",
+            "json_pointer": "/interfaces_mm/exit/handoff_plane_z_mm",
         },
         "outward_normal": {
             "source_input": "rf_resolved_geometry",
@@ -192,7 +192,7 @@ def validate_contract(
         raise ValueError("shared source-exit geometry differs")
     _assert_close(
         source_boundary["local_center_mm"][2],
-        _json_pointer(rf, "/interfaces_mm/exit/connector_z_max_mm"),
+        _json_pointer(rf, "/interfaces_mm/exit/handoff_plane_z_mm"),
         "shared source-exit center binding",
     )
     if (

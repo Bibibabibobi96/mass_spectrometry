@@ -37,7 +37,7 @@ def render_contract(
     enclosure = g["enclosure"]
     entrance = contract["interfaces_mm"]["entrance"]
     exit_interface = contract["interfaces_mm"]["exit"]
-    entrance_thickness = entrance["plate_z_max_mm"] - entrance["plate_z_min_mm"]
+    entrance_thickness = entrance["aperture_plate_downstream_face_z_mm"] - entrance["aperture_plate_upstream_face_z_mm"]
     exit_length = (
         enclosure["exit_enclosure_z_max_mm"]
         - enclosure["exit_enclosure_z_min_mm"]
@@ -51,7 +51,7 @@ def render_contract(
 
 {rod_source}
 
-locate(0,0,{number(entrance['plate_z_min_mm'])}) {{
+locate(0,0,{number(entrance['aperture_plate_upstream_face_z_mm'])}) {{
   e({entrance_electrode}) {{
     fill {{
       within       {{ box3d(-1e6,-1e6,0, 1e6,1e6,{number(entrance_thickness)}) }}
@@ -69,7 +69,7 @@ locate(0,0,{number(enclosure['exit_enclosure_z_min_mm'])}) {{
     }}
   }}
   e({detector_electrode}) {{
-    fill {{ within {{ cylinder(0,0,{number(exit_interface['particle_plane_z_mm']-enclosure['exit_enclosure_z_min_mm'])}, {number(enclosure['detector_radius_mm'])},, {number(enclosure['detector_thickness_mm'])}) }} }}
+    fill {{ within {{ cylinder(0,0,{number(exit_interface['census_plane_z_mm']-enclosure['exit_enclosure_z_min_mm'])}, {number(enclosure['physical_detector_radius_mm'])},, {number(enclosure['physical_detector_thickness_mm'])}) }} }}
   }}
 }}
 """

@@ -50,7 +50,7 @@
     "axial_drive_topology": {
       "enum": [
         "segmented_rod_axial_acceleration",
-        "endplate_potential_step"
+        "exit_aperture_plate_potential_step"
       ]
     },
     "primary_case_id": {"type": "string", "minLength": 1},

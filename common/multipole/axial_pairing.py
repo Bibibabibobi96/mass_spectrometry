@@ -175,15 +175,15 @@ def resolve_pair(
 
     planes = interface.get("planes", {})
     handoff_mm = float(planes["handoff"]["z_mm"])
-    detector_mm = float(planes["acceptance_detector"]["z_mm"])
-    resolved_handoff_mm = float(resolved_geometry["derived_geometry_mm"]["exit_plate_z_max"])
-    resolved_detector_mm = float(resolved_geometry["derived_geometry_mm"]["detector_z"])
+    census_mm = float(planes["census"]["z_mm"])
+    resolved_handoff_mm = float(resolved_geometry["derived_geometry_mm"]["handoff_plane_z"])
+    resolved_census_mm = float(resolved_geometry["derived_geometry_mm"]["census_plane_z"])
     if not math.isclose(handoff_mm, resolved_handoff_mm, rel_tol=0, abs_tol=1e-12):
         raise ValueError("versioned interface handoff differs from resolved exit plane")
-    if not math.isclose(detector_mm, resolved_detector_mm, rel_tol=0, abs_tol=1e-12):
-        raise ValueError("versioned detector differs from resolved standalone detector")
-    if math.isclose(handoff_mm, detector_mm, rel_tol=0, abs_tol=1e-12):
-        raise ValueError("physical handoff and standalone detector must remain distinct")
+    if not math.isclose(census_mm, resolved_census_mm, rel_tol=0, abs_tol=1e-12):
+        raise ValueError("versioned census differs from resolved near-interface census")
+    if math.isclose(handoff_mm, census_mm, rel_tol=0, abs_tol=1e-12):
+        raise ValueError("handoff and near-interface census must remain distinct")
 
     arms = contract["arms"]
     expected_arms = {
@@ -213,7 +213,7 @@ def resolve_pair(
         "physical_handoff": {
             "event": "handoff",
             "z_mm": handoff_mm,
-            "standalone_detector_z_mm": detector_mm,
+            "near_interface_census_z_mm": census_mm,
         },
         "arms": arms,
         "invariants": contract["invariants"],

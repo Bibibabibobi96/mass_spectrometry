@@ -1,5 +1,5 @@
 ; Generated from config/resolved_design_official.json; do not edit.
-; resolved_design_sha256=0A70DF34CA783309AD339DAB61D17C8EAC6F4FBD1225DD45805BD7201CAD112D
+; resolved_design_sha256=5D528DD5DB76B27762302F6A8E94760B75C9F7874D1A9CAFF1516105DA09E14B
 
 locate(0,0,85.4) {
   e(1) {

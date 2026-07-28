@@ -238,9 +238,9 @@ try {
         ConvertFrom-Json
     if ([double]$resolved.drive.dc_amplitude_V_per_group -ne 0 -or
         [double]$resolved.drive.common_mode_offset_V -ne 0 -or
-        [double]$resolved.static_electrodes_V.entrance_plate_and_connector -ne 0 -or
-        [double]$resolved.static_electrodes_V.exit_enclosure_and_connector -ne 0 -or
-        [double]$resolved.static_electrodes_V.detector -ne 0) {
+        [double]$resolved.static_electrodes_V.entrance_aperture_plate_and_connector_V -ne 0 -or
+        [double]$resolved.static_electrodes_V.exit_outer_enclosure_and_connector_V -ne 0 -or
+        [double]$resolved.static_electrodes_V.physical_detector_V -ne 0) {
         throw 'Interface resolved design is not RF-only.'
     }
 

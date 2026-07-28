@@ -122,7 +122,7 @@ def accelerator_geometry(
         "detector_center_y": float(
             baseline["coordinate_convention"].get("detector_y", 0.0)
         ),
-        "detector_radius": float(geometry["detector_radius"]),
+        "physical_detector_radius": float(geometry["physical_detector_radius"]),
         "source_center": {axis: float(source[f"center_{axis}_mm"]) for axis in "xyz"},
         "source_size": {axis: float(source[f"size_{axis}_mm"]) for axis in "xyz"},
     }
@@ -200,11 +200,11 @@ def registered_chain_geometry(
     entrance_interface = rf_resolved["interfaces_mm"]["entrance"]
     exit_interface = rf_resolved["interfaces_mm"]["exit"]
     shield_start = source_point(
-        [0.0, 0.0, entrance_interface["plate_z_max_mm"]]
+        [0.0, 0.0, entrance_interface["aperture_plate_downstream_face_z_mm"]]
     )
-    shield_end = source_point([0.0, 0.0, exit_interface["plate_z_min_mm"]])
-    plate_start = source_point([0.0, 0.0, exit_interface["plate_z_min_mm"]])
-    plate_end = source_point([0.0, 0.0, exit_interface["plate_z_max_mm"]])
+    shield_end = source_point([0.0, 0.0, exit_interface["aperture_plate_upstream_face_z_mm"]])
+    plate_start = source_point([0.0, 0.0, exit_interface["aperture_plate_upstream_face_z_mm"]])
+    plate_end = source_point([0.0, 0.0, exit_interface["aperture_plate_downstream_face_z_mm"]])
     source_surface = instrument_point(list(
         registration["resolved_surfaces"]["source_exit"][
             "in_instrument_frame"
@@ -216,7 +216,7 @@ def registered_chain_geometry(
         ]["center_mm"]
     ))
     expected_source_surface = source_point([
-        0.0, 0.0, exit_interface["connector_z_max_mm"]
+        0.0, 0.0, exit_interface["handoff_plane_z_mm"]
     ])
     if not np.allclose(
         source_surface, expected_source_surface, rtol=0, atol=1e-12

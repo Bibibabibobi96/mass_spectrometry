@@ -2,7 +2,7 @@
   "schema_version": 1,
   "role": "multipole_transport_evidence_contract",
   "project_id": "rf_quadrupole_collision_cooling",
-  "design_profile_id": "endplate_acceleration_reference",
+  "design_profile_id": "exit_aperture_plate_acceleration_reference",
   "evaluation": "axial_drop_vs_zero_drop",
   "thresholds": {
     "minimum_primary_transmission": 0.8,

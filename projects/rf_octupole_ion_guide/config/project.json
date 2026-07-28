@@ -42,12 +42,12 @@
       "design_variables": [
         "inscribed_radius_r0", "rod_radius_ratio", "rod_z_min", "rod_z_max",
         "enclosure_working_region_radius", "vacuum_z_min", "vacuum_z_max",
-        "shield_inner_radius", "shield_outer_radius", "entrance_endcap_z_min",
-        "entrance_endcap_z_max", "exit_endcap_z_min", "exit_endcap_z_max",
+        "shield_inner_radius", "shield_outer_radius", "entrance_outer_endcap_upstream_face_z",
+        "entrance_outer_endcap_downstream_face_z", "exit_outer_endcap_upstream_face_z", "exit_outer_endcap_downstream_face_z",
         "entrance_aperture_radius", "entrance_plate_thickness", "entrance_rod_clearance",
-        "entrance_connector_length", "entrance_particle_plane_distance",
+        "entrance_connector_length", "entrance_release_offset",
         "exit_aperture_radius", "exit_plate_thickness", "exit_rod_clearance",
-        "exit_connector_length", "exit_particle_plane_distance",
+        "exit_connector_length", "exit_census_offset",
         "rf_amplitude", "dc_amplitude", "common_mode_offset", "rf_frequency", "rf_phase",
         "segment_count", "intersegment_gap", "segment_entrance_common_mode",
         "segment_exit_common_mode", "segment_output_reference"

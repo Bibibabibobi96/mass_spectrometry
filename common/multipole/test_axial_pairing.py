@@ -64,24 +64,24 @@ def pairing_contract() -> dict:
 
 def interface_contract(
     handoff_z_mm: float = 90.2,
-    detector_z_mm: float = 95.2,
+    census_z_mm: float = 95.2,
 ) -> dict:
     return {
         "planes": {
             "handoff": {"z_mm": handoff_z_mm},
-            "acceptance_detector": {"z_mm": detector_z_mm},
+            "census": {"z_mm": census_z_mm},
         }
     }
 
 
 def resolved_geometry(
     handoff_z_mm: float = 90.2,
-    detector_z_mm: float = 95.2,
+    census_z_mm: float = 95.2,
 ) -> dict:
     return {
         "derived_geometry_mm": {
-            "exit_plate_z_max": handoff_z_mm,
-            "detector_z": detector_z_mm,
+            "handoff_plane_z": handoff_z_mm,
+            "census_plane_z": census_z_mm,
         }
     }
 
@@ -184,15 +184,15 @@ class AxialPairingTest(unittest.TestCase):
 
     def test_resolved_nondefault_geometry_moves_both_arm_handoffs(self) -> None:
         handoff_z_mm = 123.456
-        detector_z_mm = 130.25
+        census_z_mm = 130.25
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / "source.csv"
             source.write_text("parameterized mother sample\n", encoding="utf-8")
             resolved = resolve_pair(
                 pairing_contract(),
-                interface_contract(handoff_z_mm, detector_z_mm),
-                resolved_geometry(handoff_z_mm, detector_z_mm),
+                interface_contract(handoff_z_mm, census_z_mm),
+                resolved_geometry(handoff_z_mm, census_z_mm),
                 selected_axial_contract_name="axial.json",
                 source_path=source,
                 source_count=2,
@@ -206,8 +206,8 @@ class AxialPairingTest(unittest.TestCase):
             result = audit_pair(resolved, field_on, field_off)
         self.assertEqual(resolved["physical_handoff"]["z_mm"], handoff_z_mm)
         self.assertEqual(
-            resolved["physical_handoff"]["standalone_detector_z_mm"],
-            detector_z_mm,
+            resolved["physical_handoff"]["near_interface_census_z_mm"],
+            census_z_mm,
         )
         self.assertEqual(result["status"], "PASS")
         self.assertEqual(
@@ -234,9 +234,9 @@ class AxialPairingTest(unittest.TestCase):
                     project_id="rf_quadrupole_collision_cooling",
                 )
 
-    def test_rejects_detector_plane_as_handoff(self) -> None:
+    def test_rejects_census_plane_as_handoff(self) -> None:
         invalid = resolved_geometry()
-        invalid["derived_geometry_mm"]["exit_plate_z_max"] = 95.2
+        invalid["derived_geometry_mm"]["handoff_plane_z"] = 95.2
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "source.csv"
             source.write_text("source\n", encoding="utf-8")

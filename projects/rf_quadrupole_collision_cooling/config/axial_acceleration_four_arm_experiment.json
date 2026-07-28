@@ -72,17 +72,17 @@
     },
     {
       "arm_id": "D",
-      "purpose": "2 to 5 eV endplate acceleration",
-      "design_profile_id": "endplate_acceleration_reference",
+      "purpose": "2 to 5 eV exit aperture plate acceleration",
+      "design_profile_id": "exit_aperture_plate_acceleration_reference",
       "source_selector": "control_2eV_n100",
-      "primary_case_id": "endplate_acceleration_rf_on",
-      "evidence_contract": "projects/rf_quadrupole_collision_cooling/config/evidence/endplate_acceleration_reference.json"
+      "primary_case_id": "exit_aperture_plate_acceleration_rf_on",
+      "evidence_contract": "projects/rf_quadrupole_collision_cooling/config/evidence/exit_aperture_plate_acceleration_reference.json"
     }
   ],
   "comparison_contract": {
     "acceptance_surface": {
       "contract": "projects/rf_quadrupole_collision_cooling/config/interface_contract.json",
-      "json_pointer": "/planes/acceptance_detector"
+      "json_pointer": "/planes/census"
     },
     "paired_population": {
       "all_source_particle_ids_required": true,
@@ -126,7 +126,7 @@
       "metrics_output": "results/finite_3d_transport_metrics.json",
       "terminal_event": "terminal",
       "terminal_status": "transmitted",
-      "terminal_reason": "acceptance_detector",
+      "terminal_reason": "acceptance_surface",
       "claim_limit": "N=100 functional, per-ID descriptive deltas only; no statistical, Formal, equivalence, superiority, optimization, or cooling claim.",
       "comparison_fields": [
         "kinetic_energy_eV",

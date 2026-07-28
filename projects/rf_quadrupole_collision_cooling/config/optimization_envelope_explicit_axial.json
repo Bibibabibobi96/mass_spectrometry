@@ -8,19 +8,23 @@
   "policy": "This envelope preserves the historical N=100 explicit-segmentation functional reference and makes no optimization, convergence, mechanical, Candidate or Formal claim.",
   "reference": {
     "design_request": "config/requests/explicit_axial.json",
-    "design_request_sha256": "45FBF66F2C72FEAABB1BC9B9E97DD13A3E11B4B42F73F4752A8D4B4C5F906187"
+    "design_request_sha256": "BD07F67D3132865DAB1210320755D93BCAA889AFA6ACC17565615AED7B3CC8B5"
   },
   "constraints": [
     {
       "constraint_id": "explicit_axial_reference_fixed",
       "kind": "bounded_variable",
-      "request_json_pointers": ["/geometry_mm/rod_radius_ratio"],
+      "request_json_pointers": [
+        "/geometry_mm/rod_radius_ratio"
+      ],
       "description": "The governed catalog fixes the historical explicit-segmentation reference rod ratio."
     },
     {
       "constraint_id": "explicit_segment_length_conservation",
       "kind": "segment_length_conservation",
-      "request_json_pointers": ["/segmentation/segments"],
+      "request_json_pointers": [
+        "/segmentation/segments"
+      ],
       "description": "Explicit segment lengths and gaps must exactly span the rod interval."
     }
   ]

@@ -31,9 +31,9 @@ EXPECTED_ARMS = {
         "axial_acceleration_rf_on",
     ),
     "D": (
-        "endplate_acceleration_reference",
+        "exit_aperture_plate_acceleration_reference",
         "control_2eV_n100",
-        "endplate_acceleration_rf_on",
+        "exit_aperture_plate_acceleration_rf_on",
     ),
 }
 EXPECTED_ORDER = [
@@ -167,14 +167,14 @@ def _validate_static_contract(
             raise ValueError(f"C/D resolved axial-drive field differs: {field}")
     if resolved["C"]["axial_drive"]["topology"] != "segmented_rod_axial_acceleration":
         raise ValueError("arm C does not resolve segmented-rod acceleration")
-    if resolved["D"]["axial_drive"]["topology"] != "endplate_potential_step":
-        raise ValueError("arm D does not resolve endplate acceleration")
+    if resolved["D"]["axial_drive"]["topology"] != "exit_aperture_plate_potential_step":
+        raise ValueError("arm D does not resolve exit aperture plate acceleration")
     interface = _load(_repository_path(authorities["interface_contract"]))
     surface = contract["comparison_contract"]["acceptance_surface"]
     if (
         surface.get("contract") != authorities["interface_contract"]
-        or surface.get("json_pointer") != "/planes/acceptance_detector"
-        or float(interface["planes"]["acceptance_detector"]["z_mm"]) != 95.2
+        or surface.get("json_pointer") != "/planes/census"
+        or float(interface["planes"]["census"]["z_mm"]) != 95.2
     ):
         raise ValueError("four-arm acceptance detector is not the governed z=95.2 mm plane")
     paired = contract["comparison_contract"]["paired_population"]
@@ -208,7 +208,7 @@ def _validate_static_contract(
         "metrics_output": "results/finite_3d_transport_metrics.json",
         "terminal_event": "terminal",
         "terminal_status": "transmitted",
-        "terminal_reason": "acceptance_detector",
+        "terminal_reason": "acceptance_surface",
         "claim_limit": (
             "N=100 functional, per-ID descriptive deltas only; no statistical, "
             "Formal, equivalence, superiority, optimization, or cooling claim."
@@ -344,7 +344,7 @@ def validate_experiment(
         "schema_version": 1,
         "role": "rf_quadrupole_axial_acceleration_four_arm_validation",
         "static_contract": "PASS",
-        "acceptance_detector_z_mm": interface["planes"]["acceptance_detector"]["z_mm"],
+        "census_plane_z_mm": interface["planes"]["census"]["z_mm"],
         "C_D_resolved_axial_drive_identity": "PASS",
         "execution_order": "COMSOL_FIRST_SIMION_REVIEW",
         "C_D_claim_mode": "DELTA_ONLY",

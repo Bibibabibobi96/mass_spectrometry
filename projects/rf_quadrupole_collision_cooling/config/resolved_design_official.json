@@ -1,34 +1,34 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "role": "multipole_resolved_design_do_not_edit",
   "compiler": {
     "name": "common.multipole.compile_design_request",
-    "version": 1
+    "version": 2
   },
   "governance": {
-    "design_variables_sha256": "2051B29E8E47D934BC52DAD40AFA81B37B1C433327E5A1E58B47C1F8DB704834",
-    "optimization_envelope_sha256": "919C875B53850538D13BF40F27AD7E1A79E9D985E6DA40274F230F6B7CDFF647",
-    "design_request_file_sha256": "47BF4D942CACCA86C4128FE50BDB6E5B6598334EEE7D1DB3DC4A5325579EFE96"
+    "design_variables_sha256": "C5E950326F82663178DA959A7A9F6FBFB03BEB42861C1F96E28A0D5A79B249DD",
+    "optimization_envelope_sha256": "C8C9FF7624474DADACF70C2DE9314BB6059A9DCDC8DCD419ACFF0E3A87CACCCD",
+    "design_request_file_sha256": "3B8842F4843C2D82C3BDAF8FE8E925453EABB72071D6A8F270231151A1A617A2"
   },
   "request": {
     "request_id": "quadrupole_official_transport",
-    "sha256": "B69E08B7FC3DA9B1DD3799BE9C6A7A38436A7D89C150E399AE73F5EDC6B243A3"
+    "sha256": "2CAFBD621B8CC3267B359EC0FF5F428BB2909CC28E25AD0B08055FC4F51C8DA9"
   },
   "sources": [
     {
       "label": "design_request",
       "path": "projects/rf_quadrupole_collision_cooling/config/requests/official.json",
-      "sha256": "47BF4D942CACCA86C4128FE50BDB6E5B6598334EEE7D1DB3DC4A5325579EFE96"
+      "sha256": "3B8842F4843C2D82C3BDAF8FE8E925453EABB72071D6A8F270231151A1A617A2"
     },
     {
       "label": "design_variables",
       "path": "projects/rf_quadrupole_collision_cooling/config/design_variables_nonsegmented.json",
-      "sha256": "2051B29E8E47D934BC52DAD40AFA81B37B1C433327E5A1E58B47C1F8DB704834"
+      "sha256": "C5E950326F82663178DA959A7A9F6FBFB03BEB42861C1F96E28A0D5A79B249DD"
     },
     {
       "label": "optimization_envelope",
       "path": "projects/rf_quadrupole_collision_cooling/config/optimization_envelope_official.json",
-      "sha256": "919C875B53850538D13BF40F27AD7E1A79E9D985E6DA40274F230F6B7CDFF647"
+      "sha256": "C8C9FF7624474DADACF70C2DE9314BB6059A9DCDC8DCD419ACFF0E3A87CACCCD"
     }
   ],
   "identity": {
@@ -68,8 +68,8 @@
       "exit_enclosure_z_min_mm": 89.4,
       "exit_enclosure_z_max_mm": 95.2,
       "exit_front_wall_end_z_mm": 90.2,
-      "detector_radius_mm": 3.6,
-      "detector_thickness_mm": 0.4
+      "physical_detector_radius_mm": 3.6,
+      "physical_detector_thickness_mm": 0.4
     },
     "rod_array": {
       "inscribed_radius_r0": 4.0,
@@ -123,22 +123,24 @@
   "interfaces_mm": {
     "entrance": {
       "aperture_radius_mm": 1.2,
-      "plate_z_min_mm": 0.9999999999999998,
-      "plate_z_max_mm": 1.7999999999999998,
+      "aperture_plate_upstream_face_z_mm": 0.9999999999999998,
+      "aperture_plate_downstream_face_z_mm": 1.7999999999999998,
       "connector_length_mm": 0.0,
-      "connector_z_min_mm": 0.9999999999999998,
-      "connector_z_max_mm": 0.9999999999999998,
-      "particle_plane_z_mm": -2.220446049250313e-16,
+      "connector_upstream_face_z_mm": 0.9999999999999998,
+      "connector_downstream_face_z_mm": 0.9999999999999998,
+      "release_plane_z_mm": -2.220446049250313e-16,
       "connector_shape": "rectangular_bore"
     },
     "exit": {
       "aperture_radius_mm": 3.6,
-      "plate_z_min_mm": 89.4,
-      "plate_z_max_mm": 90.2,
+      "aperture_plate_upstream_face_z_mm": 89.4,
+      "aperture_plate_downstream_face_z_mm": 90.2,
+      "aperture_crossing_plane_z_mm": 90.2,
       "connector_length_mm": 0.0,
-      "connector_z_min_mm": 90.2,
-      "connector_z_max_mm": 90.2,
-      "particle_plane_z_mm": 95.2,
+      "connector_upstream_face_z_mm": 90.2,
+      "connector_downstream_face_z_mm": 90.2,
+      "handoff_plane_z_mm": 90.2,
+      "census_plane_z_mm": 95.2,
       "connector_shape": "rectangular_bore"
     }
   },
@@ -159,9 +161,9 @@
   },
   "static_electrodes_V": {
     "role": "rectangular_reference_static_electrodes",
-    "entrance_plate_and_connector": 0.0,
-    "exit_enclosure_and_connector": 0.0,
-    "detector": 0.0
+    "entrance_aperture_plate_and_connector_V": 0.0,
+    "exit_outer_enclosure_and_connector_V": 0.0,
+    "physical_detector_V": 0.0
   },
   "particle_source": {
     "energy_model": {
@@ -178,5 +180,5 @@
     "axial_acceleration": null,
     "segmented_rod_array": null
   },
-  "resolved_sha256": "11C0A6AF38CE977A94FF0158787E2CF20B21319DB6B3C8F129F434803C88E70D"
+  "resolved_sha256": "E5306A8033C4EC7E506A97105B8C7030238026283DFEC74B17D509FDEA1A0D0A"
 }

@@ -98,7 +98,7 @@ class Phase4DesignConsumerTests(unittest.TestCase):
             "interface_readiness",
             "mass_filter_reference",
             "explicit_axial_reference",
-            "endplate_acceleration_reference",
+            "exit_aperture_plate_acceleration_reference",
         ):
             resolved = resolve_design_profile(
                 REPO_ROOT,
@@ -119,7 +119,7 @@ class Phase4DesignConsumerTests(unittest.TestCase):
             self.assertIn("DesignProfileId = 'official_transport'", source)
             self.assertNotIn("[string]$DesignProfileId", source)
             self.assertNotIn("explicit_axial_reference", source)
-            self.assertNotIn("endplate_acceleration_reference", source)
+            self.assertNotIn("exit_aperture_plate_acceleration_reference", source)
 
     def test_legacy_contract_modules_no_longer_compute_device_geometry(self) -> None:
         for name in ("resolve_contract.py", "rfquad_contract.py"):

@@ -194,37 +194,37 @@ function New-RfSimionCoreRunConfig {
         -Property 'exit' -Name 'resolved design interfaces_mm.exit'
     $planes = Get-RfSimionRequiredProperty -Object $InterfaceContract `
         -Property 'planes' -Name 'interface contract planes'
-    $sourcePlane = Get-RfSimionRequiredProperty -Object $planes `
-        -Property 'source' -Name 'interface contract source plane'
+    $releasePlane = Get-RfSimionRequiredProperty -Object $planes `
+        -Property 'release' -Name 'interface contract release plane'
     $rodExitPlane = Get-RfSimionRequiredProperty -Object $planes `
         -Property 'rod_exit' -Name 'interface contract rod-exit plane'
     $handoffPlane = Get-RfSimionRequiredProperty -Object $planes `
         -Property 'handoff' -Name 'interface contract handoff plane'
-    $detectorPlane = Get-RfSimionRequiredProperty -Object $planes `
-        -Property 'acceptance_detector' -Name 'interface contract acceptance-detector plane'
-    $sourcePlaneMm = Get-RfSimionRequiredFiniteNumber -Object $sourcePlane `
-        -Property 'z_mm' -Name 'interface source plane z_mm'
+    $censusPlane = Get-RfSimionRequiredProperty -Object $planes `
+        -Property 'census' -Name 'interface contract census plane'
+    $releasePlaneMm = Get-RfSimionRequiredFiniteNumber -Object $releasePlane `
+        -Property 'z_mm' -Name 'interface release plane z_mm'
     $rodExitPlaneMm = Get-RfSimionRequiredFiniteNumber -Object $rodExitPlane `
         -Property 'z_mm' -Name 'interface rod-exit plane z_mm' -Positive
     $handoffPlaneMm = Get-RfSimionRequiredFiniteNumber -Object $handoffPlane `
         -Property 'z_mm' -Name 'interface handoff plane z_mm' -Positive
-    $detectorPlaneMm = Get-RfSimionRequiredFiniteNumber -Object $detectorPlane `
-        -Property 'z_mm' -Name 'interface acceptance-detector plane z_mm' -Positive
-    $entranceParticlePlaneMm = Get-RfSimionRequiredFiniteNumber -Object $entranceInterface `
-        -Property 'particle_plane_z_mm' -Name 'resolved entrance particle plane'
-    $exitParticlePlaneMm = Get-RfSimionRequiredFiniteNumber -Object $exitInterface `
-        -Property 'particle_plane_z_mm' -Name 'resolved exit particle plane' -Positive
+    $censusPlaneMm = Get-RfSimionRequiredFiniteNumber -Object $censusPlane `
+        -Property 'z_mm' -Name 'interface census plane z_mm' -Positive
+    $resolvedReleasePlaneMm = Get-RfSimionRequiredFiniteNumber -Object $entranceInterface `
+        -Property 'release_plane_z_mm' -Name 'resolved release plane'
+    $resolvedCensusPlaneMm = Get-RfSimionRequiredFiniteNumber -Object $exitInterface `
+        -Property 'census_plane_z_mm' -Name 'resolved census plane' -Positive
     $rodZMinMm = Get-RfSimionRequiredFiniteNumber -Object $geometry `
         -Property 'rod_z_min' -Name 'resolved rod_z_min' -NonNegative
     $rodZMaxMm = Get-RfSimionRequiredFiniteNumber -Object $geometry `
         -Property 'rod_z_max' -Name 'resolved rod_z_max' -Positive
     $handoffAuthorityMm = Get-RfSimionRequiredFiniteNumber -Object $enclosure `
         -Property 'exit_front_wall_end_z_mm' -Name 'resolved exit-front handoff plane' -Positive
-    Assert-RfSimionEqualLength 'source plane' $sourcePlaneMm $entranceParticlePlaneMm
+    Assert-RfSimionEqualLength 'release plane' $releasePlaneMm $resolvedReleasePlaneMm
     Assert-RfSimionEqualLength 'rod-exit plane' $rodExitPlaneMm $rodZMaxMm
     Assert-RfSimionEqualLength 'handoff plane' $handoffPlaneMm $handoffAuthorityMm
-    Assert-RfSimionEqualLength 'acceptance-detector plane' `
-        $detectorPlaneMm $exitParticlePlaneMm
+    Assert-RfSimionEqualLength 'census plane' `
+        $censusPlaneMm $resolvedCensusPlaneMm
 
     $drive = Get-RfSimionRequiredProperty -Object $ResolvedDesign `
         -Property 'drive' -Name 'resolved design drive'
@@ -235,8 +235,8 @@ function New-RfSimionCoreRunConfig {
     $terminalBackoffCells = Get-RfSimionRequiredFiniteNumber -Object $solverNumerics `
         -Property 'simion_terminal_surface_backoff_cells' `
         -Name 'interface SIMION terminal-surface backoff cells' -NonNegative
-    $detectorThresholdMm =
-        $exitParticlePlaneMm - $terminalBackoffCells * $simionCellMm
+    $numericalCensusMarkerThresholdMm =
+        $resolvedCensusPlaneMm - $terminalBackoffCells * $simionCellMm
     $outerHalfWidthMm = Get-RfSimionRequiredFiniteNumber -Object $enclosure `
         -Property 'outer_half_width_mm' -Name 'resolved enclosure outer_half_width_mm' -Positive
     $vacuumZMinMm = Get-RfSimionRequiredFiniteNumber -Object $enclosure `
@@ -271,11 +271,11 @@ function New-RfSimionCoreRunConfig {
         axis_voltage_v = Get-RfSimionRequiredFiniteNumber -Object $drive `
             -Property 'common_mode_offset_V' -Name 'resolved common-mode voltage'
         entrance_voltage_v = Get-RfSimionRequiredFiniteNumber -Object $staticElectrodes `
-            -Property 'entrance_plate_and_connector' -Name 'resolved entrance voltage'
+            -Property 'entrance_aperture_plate_and_connector_V' -Name 'resolved entrance voltage'
         exit_voltage_v = Get-RfSimionRequiredFiniteNumber -Object $staticElectrodes `
-            -Property 'exit_enclosure_and_connector' -Name 'resolved exit voltage'
-        detector_voltage_v = Get-RfSimionRequiredFiniteNumber -Object $staticElectrodes `
-            -Property 'detector' -Name 'resolved detector voltage'
+            -Property 'exit_outer_enclosure_and_connector_V' -Name 'resolved exit voltage'
+        physical_detector_voltage_v = Get-RfSimionRequiredFiniteNumber -Object $staticElectrodes `
+            -Property 'physical_detector_V' -Name 'resolved physical detector voltage'
         ground_electrode_id = 0
         output_electrode_id = 0
         ground_reference_v = 0
@@ -286,9 +286,9 @@ function New-RfSimionCoreRunConfig {
         rod_z_max_mm = $rodZMaxMm
         rod_exit_plane_mm = $rodExitPlaneMm
         handoff_plane_mm = $handoffPlaneMm
-        detector_crossing_threshold_mm = $detectorThresholdMm
-        detector_radius_mm = Get-RfSimionRequiredFiniteNumber -Object $enclosure `
-            -Property 'detector_radius_mm' -Name 'resolved detector radius' -Positive
+        numerical_census_marker_threshold_mm = $numericalCensusMarkerThresholdMm
+        census_radius_mm = Get-RfSimionRequiredFiniteNumber -Object $enclosure `
+            -Property 'physical_detector_radius_mm' -Name 'resolved census radius' -Positive
         radial_escape_radius_mm = $outerHalfWidthMm
         expected_pa_nx = [int][Math]::Round($outerHalfWidthMm / $simionCellMm) + 1
         expected_pa_ny = [int][Math]::Round($outerHalfWidthMm / $simionCellMm) + 1

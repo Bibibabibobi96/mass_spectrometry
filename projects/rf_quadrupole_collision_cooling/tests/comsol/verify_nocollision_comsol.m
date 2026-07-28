@@ -41,7 +41,7 @@ assert(abs(model.param.evaluate('z_rod_exit')*1e3 - interface.planes.rod_exit.z_
     'Persisted rod-exit plane moved from the interface contract.');
 assert(abs(model.param.evaluate('z_handoff')*1e3 - interface.planes.handoff.z_mm) < 1e-9, ...
     'Persisted handoff plane moved from the interface contract.');
-assert(abs(model.param.evaluate('z_acceptance')*1e3 - interface.planes.acceptance_detector.z_mm) < 1e-9, ...
+assert(abs(model.param.evaluate('z_acceptance')*1e3 - interface.planes.census.z_mm) < 1e-9, ...
     'Persisted acceptance plane moved from the interface contract.');
 
 cpt = model.component('comp1').physics('cpt');
@@ -94,8 +94,8 @@ y = squeeze(pd.p(:,:,2));
 z = squeeze(pd.p(:,:,3));
 radial = sqrt(x.^2 + y.^2);
 assert(size(z,2) == expectedParticles, 'GUI Compute did not preserve the configured particle source.');
-detectorZ = interface.planes.acceptance_detector.z_mm;
-detectorRadius = g.enclosure.detector_radius_mm;
+detectorZ = interface.planes.census.z_mm;
+detectorRadius = g.enclosure.physical_detector_radius_mm;
 hits = false(1, size(z,2));
 arrival = nan(1, size(z,2));
 for particle = 1:size(z,2)
