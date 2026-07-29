@@ -11,7 +11,7 @@
   },
   "authority": {
     "source_contract": "projects/rf_hexapole_ion_optics/config/resolved_design.json",
-    "source_sha256": "59FF4D8C5725D3E38603DE842A4D9347ECA46AA8D9F14014B30E195DE982D6CB",
+    "source_sha256": "F5ACC4A12F4689666EAB3FFD186F3F42D3CA4DB84355612A706033C3AE2E5FA3",
     "bindings": [
       {
         "port_json_pointer": "/project_id",

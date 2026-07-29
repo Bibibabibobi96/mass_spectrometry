@@ -11,7 +11,7 @@
   },
   "authority": {
     "source_contract": "projects/rf_octupole_ion_optics/config/resolved_design.json",
-    "source_sha256": "ECA17BFCE269FDF719032F701D9A91E451AB844EE2EAFAB20378352EEB02117D",
+    "source_sha256": "53E4B97344FBB126BC1BE2E458500018D7CA0FA53072904B44FBD389B079E54F",
     "bindings": [
       {
         "port_json_pointer": "/project_id",
