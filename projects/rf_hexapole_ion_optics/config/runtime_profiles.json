@@ -99,6 +99,13 @@
       "comsol_solver_numerics_profile_id": "hybrid_c1_mumps_field_screen",
       "simion_solver_numerics_profile_id": "baseline_finite_3d"
     },
+    "exit_aperture_plate_acceleration_n100_hybrid_d3_axial14_cg_amg_field_screen": {
+      "stop_stage": "field_solve",
+      "design_profile_id": "exit_aperture_plate_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "hybrid_d3_axial14_cg_amg_field_screen",
+      "simion_solver_numerics_profile_id": "baseline_finite_3d"
+    },
     "no_acceleration_full_length_n1000": {
       "design_profile_id": "no_acceleration_full_length",
       "particle_source_profile_id": "family_mother_sample_v1_n1000",

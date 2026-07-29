@@ -2,26 +2,26 @@
   "schema_version": 2,
   "role": "multipole_comsol_field_solver_isolation_preregistration",
   "project_id": "rf_hexapole_ion_optics",
-  "experiment_id": "hexapole_hybrid_d2_p2_cg_amg_sampled_spatial_arm_v1",
+  "experiment_id": "hexapole_hybrid_d3_axial14_cg_amg_sampled_axial_arm_v1",
   "preregistered_before_run": true,
-  "status": "completed_success",
+  "status": "authorized_not_run",
   "authorization": {
     "maximum_commercial_run_count": 1,
     "automatic_retry_count": 0,
-    "planned_run_id": "20260730_014000__analysis__comsol__hex-hybrid-d2-cg-amg-sampled-field__r01",
-    "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_d2_cg_amg_field_screen",
+    "planned_run_id": "20260730_015000__analysis__comsol__hex-hybrid-d3-axial14-cg-amg-field__r01",
+    "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_d3_axial14_cg_amg_field_screen",
     "design_profile_id": "exit_aperture_plate_acceleration",
     "particle_source_profile_id": "family_mother_sample_v1_n100",
-    "comsol_solver_numerics_profile_id": "hybrid_d2_cg_amg_field_screen",
+    "comsol_solver_numerics_profile_id": "hybrid_d3_axial14_cg_amg_field_screen",
     "stop_stage": "field_solve",
     "retention_class": "compact"
   },
   "frozen_identity": {
     "expected_run_parent_resolved_design_sha256": "C9C3B00A5327825FCB138FB7EEDF2C6F7175497EAEB3CD1EB28A5D995AAC4B6E",
     "physical_resolved_payload_sha256": "A868E5C06A6A98BF86C0D662D53118FCFF6EE51BA208214FACD7D39E32F6FD66",
-    "runtime_profiles_sha256": "7063CA94607D1D83C89D4D7FE56E67585CCCE2A7AF97D97EAD8F943AB40FD6A8",
-    "comsol_solver_numerics_sha256": "52CEC6B2F0760ADDBB02E09718DAEA5F154A7C4A6B46D58EF1FEBBF82DF85E7A",
-    "engineering_budget_sha256": "BC13659341C2841096F512E0097DD9569E6070D7563CBDEB3320038A28F8540F",
+    "runtime_profiles_sha256": "890F26A2C254DDFF85FF19D4F5710C215414A105D37A138B4BBD416633FFADAD",
+    "comsol_solver_numerics_sha256": "97343B17FA4BD9A68614EDFD0E4BD5EE9DBEAB731EAAC4D0BA7E75E142434BF6",
+    "engineering_budget_sha256": "F12F91B334505DA08A81BD10D2141B76749068406B86260E270D6ECA9F9370D8",
     "particle_source_profiles_sha256": "8162081232E0ABCA311DA9E9D10B8BDA78ED24E95C919E8E52B6787DDD1C0B30",
     "design_profiles_sha256": "157EB846B0F3715A300EF9F3D994DD3B05A919C04FBFD83D6B8611A77FAA74B1"
   },
@@ -64,15 +64,13 @@
     "swept_length_per_segment_mm": 17.6,
     "core_radius_mm": 8.5,
     "radial_core_and_rod_hmax_mm": 0.5,
-    "axial_layers_per_swept_segment": 10,
+    "axial_layers_per_swept_segment": 14,
     "transition_and_end_tetra_hmax_mm": 0.5,
     "outer_vacuum_hmax_mm": 1.0,
     "minimum_element_size_mm": 0.02,
-    "expected_mesh_global_elements": 884643,
-    "expected_differential_field_dof": 1657156,
-    "expected_static_field_dof": 1657156,
-    "single_refinement_axis": "nonaxial_local_size_limits",
-    "unchanged_axial_layers_per_swept_segment": 10
+    "single_refinement_axis": "axial_layers_per_swept_segment",
+    "parent_axial_layers_per_swept_segment": 10,
+    "unchanged_nonaxial_profile": "hybrid_d2"
   },
   "frozen_solver": {
     "stationary_linear_solver_backend": "cg_amg",
@@ -82,13 +80,13 @@
     "error_check_mode": "on",
     "direct_fallback_allowed": false
   },
-  "parent_c1_cg_amg_arm": {
-    "run_id": "20260730_012000__analysis__comsol__hex-hybrid-c1-cg-amg-field__r01",
-    "run_manifest_sha256": "ACBF37D7CA6DFFC37C378CC5B4493462395C2904BBDC45FADBE29CC57F9634B1",
-    "field_samples_sha256": "60E0040AC3A42931EF6E54E88A6A3913C12F326D5947D4DF6D39CB4EF812646C",
-    "mesh_global_elements": 371447,
-    "differential_field_dof": 733422,
-    "static_field_dof": 733422
+  "parent_d2_arm": {
+    "run_id": "20260730_014000__analysis__comsol__hex-hybrid-d2-cg-amg-sampled-field__r01",
+    "run_manifest_sha256": "60D30D296FA4B3E9743D33D02995798E7C04E61F9E69D87E4DAF4587C5803213",
+    "field_samples_sha256": "562D963A7A7ECAE888A1DE8A144D99B3397CE26A5BCF1A3FDF53E7E19DCE73C1",
+    "mesh_global_elements": 884643,
+    "differential_field_dof": 1657156,
+    "static_field_dof": 1657156
   },
   "resource_limits": {
     "wall_clock_seconds": 600,
@@ -102,13 +100,10 @@
   "required_report": {
     "tokens": [
       "CHECKPOINT=MESH_COMPLETE",
-      "MESH_GLOBAL_ELEMENTS=884643",
       "CHECKPOINT=DIFFERENTIAL_FIELD_COMPLETE",
       "CHECKPOINT=STATIONARY_FIELDS_COMPLETE",
       "ELECTRIC_POTENTIAL_ELEMENT_ORDER=QUADRATIC",
       "STATIONARY_LINEAR_SOLVER_BACKEND=CG_AMG",
-      "DIFFERENTIAL_FIELD_DOF=1657156",
-      "STATIC_FIELD_DOF=1657156",
       "STATIONARY_CONTROL=USER",
       "STATIONARY_RELATIVE_TOLERANCE=0.001",
       "STATIONARY_FULLY_COUPLED_LINEAR_SOLVER=I1",
@@ -144,48 +139,11 @@
     ]
   },
   "decision_policy": {
-    "arm_success": "Both governed D2 fields and all 6660 finite V/E sample rows complete within every hard limit while exact historical D2 mesh-cell and DOF identities are reproduced.",
-    "comparison_after_success": "Compare D2 CG-AMG samples against completed C1 CG-AMG samples with the public comparator; report metrics without applying a PASS threshold.",
+    "arm_success": "Both governed axial-14 fields and all 6660 finite V/E sample rows complete within every hard limit.",
+    "comparison_after_success": "Compare axial-14 samples against completed D2 axial-10 samples with the public comparator; report metrics without applying a PASS threshold.",
     "result_if_hard_limit_exceeded": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
     "fallback_backend_or_retry_authorized": false,
     "particle_followup_authorized": false
   },
-  "execution_result": {
-    "terminal": true,
-    "run_id": "20260730_014000__analysis__comsol__hex-hybrid-d2-cg-amg-sampled-field__r01",
-    "manifest_status": "success",
-    "result": "D2_CG_AMG_SAMPLED_FIELD_ARM_PASS",
-    "commercial_run_count_executed": 1,
-    "retry_authorized": false,
-    "particle_followup_authorized": false,
-    "observed": {
-      "mesh_global_elements": 884643,
-      "mesh_global_min_quality": 0.1983,
-      "mesh_global_mean_quality": 0.7264,
-      "differential_field_dof": 1657156,
-      "differential_field_iterations": 6,
-      "differential_field_final_residual": 5.5e-7,
-      "static_field_dof": 1657156,
-      "static_field_iterations": 7,
-      "static_field_final_residual": 2.9e-7,
-      "field_sample_point_count": 3330,
-      "field_sample_row_count": 6660,
-      "wall_clock_seconds": 130.145,
-      "peak_process_tree_working_set_bytes": 6360670208,
-      "minimum_system_available_memory_bytes": 19286536192,
-      "peak_run_directory_bytes": 3338512,
-      "final_retained_bytes": 3338512
-    },
-    "evidence_sha256": {
-      "run_config": "9D0D38E27A713566C72646CB536FED65E9EAB7717430CF6F5C0669FF0DD45A86",
-      "run_manifest": "60D30D296FA4B3E9743D33D02995798E7C04E61F9E69D87E4DAF4587C5803213",
-      "summary": "37D65E8499E3508779D10C95F09834069D5A78E6896AFF8876BC11A44ED35894",
-      "resource_usage": "BB784791A4A24158548F658517E746450F7E25311176717A878FC21088482E43",
-      "comsol_report": "463DA030F633E19CD69548034090F09E1EEDD3505CDCDF30F429B1CA75612FCF",
-      "field_samples": "562D963A7A7ECAE888A1DE8A144D99B3397CE26A5BCF1A3FDF53E7E19DCE73C1",
-      "field_sample_validation": "B5F7689878D46C507704BC514F7125A984B839BACB85908489E9C3015345C513",
-      "solver_numerics": "8916146B0F2DE035A2F14819F41BAD716592D99D792181B94266AF0B05650636"
-    }
-  },
-  "claim_limit": "This arm changes only nonaxial local mesh-size limits relative to C1 while axial layers and solver configuration remain fixed. It can support a diagnostic nonaxial-refinement comparison, but no sourced convergence PASS, axial convergence, particle transport, Candidate, Formal or N=1000 qualification."
+  "claim_limit": "This arm changes only swept axial layers from 10 to 14 while D2 nonaxial local mesh limits and CG-AMG settings remain fixed. It can support a diagnostic axial-refinement comparison, but no sourced convergence PASS, particle transport, Candidate, Formal or N=1000 qualification."
 }

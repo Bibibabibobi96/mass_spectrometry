@@ -77,10 +77,14 @@
   bytes进程树峰值。公共
   [`场比较记录`](config/qualification/comsol_hybrid_c1_solver_comparison.json)显示差分/静态场矢量
   normalized RMS分别约`2.300e-6/3.030e-5`；因尚无来源化误差预算，结论保持
-  `INCONCLUSIVE_DIAGNOSTIC_ONLY`。C1两臂授权均已关闭；当前仅另行预登记一次
+  `INCONCLUSIVE_DIAGNOSTIC_ONLY`。C1两臂授权均已关闭。随后
   [`D2 sampled CG-AMG非轴向细化臂`](config/qualification/comsol_hybrid_d2_cg_amg_sampled_field_preregistration.json)，
-  保持轴向每段10层和CG-AMG不变，以公共样本比较0.7→0.5 mm非轴向局部加密。它不授权粒子或
-  资格结论。
+  保持轴向每段10层和CG-AMG不变，完成0.7→0.5 mm非轴向局部加密：884,643单元、双场各
+  1,657,156 DOF，130.145 s、6,360,670,208 bytes进程树峰值。C1→D2的差分/静态场矢量
+  normalized RMS约为`2.09%/4.36%`，所以C1不接受为空间参考，空间收敛尚未建立。当前只预登记
+  [`D3 axial-14 CG-AMG轴向细化臂`](config/qualification/comsol_hybrid_d3_axial14_cg_amg_sampled_field_preregistration.json)：
+  固定D2全部非轴向尺寸，只把每物理段轴向层数从10增至14，硬帽100万单元、600 s、12 GiB，
+  一次运行、零重试。它不授权粒子或资格结论。
   既有三模式baseline的两份
   求解器报告只具有`POSTHOC_DESCRIPTIVE`身份，统一
   比较见[`../../docs/history/20260729__multipole-three-mode-posthoc-n100.md`](../../docs/history/20260729__multipole-three-mode-posthoc-n100.md)。

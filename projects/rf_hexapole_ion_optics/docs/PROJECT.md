@@ -269,11 +269,17 @@ field-only运行。该臂也已一次成功，精确重现371,447单元及两个
 field-sample SHA：CG-AMG相对MUMPS的差分场电势/场矢量normalized RMS为
 `1.658e-6/2.300e-6`，静态场为`4.891e-6/3.030e-5`。这证明同配方双求解器功能闭合且数值非常接近，
 但比较仍为`INCONCLUSIVE_DIAGNOSTIC_ONLY`；未定义物理误差预算前不得称为数值等价PASS，也不允许
-提前进入粒子追踪。C1两臂一次性授权均已耗尽；当前仅
+提前进入粒子追踪。C1两臂一次性授权均已耗尽。随后
 [`D2 sampled CG-AMG预登记`](../config/qualification/comsol_hybrid_d2_cg_amg_sampled_field_preregistration.json)
-另行授权一次非轴向细化臂：轴向每段10层保持不变，core/rod及transition/end从0.7 mm细化至
-0.5 mm、outer从1.4 mm细化至1.0 mm、minimum从0.028 mm细化至0.02 mm。该臂硬帽为100万单元、
-600 s、12 GiB且零重试，只形成无阈值的空间细化诊断。
+完成一次非轴向细化臂：轴向每段10层保持不变，core/rod及transition/end从0.7 mm细化至
+0.5 mm、outer从1.4 mm细化至1.0 mm、minimum从0.028 mm细化至0.02 mm。真实运行得到884,643
+单元、双场各1,657,156 DOF，差分/静态场分别6/7次CG迭代，130.145 s、6,360,670,208 bytes
+进程树峰值。公共采样显示C1→D2的差分场电势/场矢量normalized RMS为`0.165%/2.086%`，
+静态场为`0.107%/4.358%`；因此C1不接受为空间参考，空间收敛尚未建立，粒子跟进仍未授权。
+当前
+[`D3 axial-14 sampled CG-AMG预登记`](../config/qualification/comsol_hybrid_d3_axial14_cg_amg_sampled_field_preregistration.json)
+只固定D2非轴向局部尺寸并把每物理段轴向层数从10增至14；硬帽100万单元、600 s、12 GiB，
+一次运行、零重试，只形成无阈值的轴向细化诊断。
 
 共享SIMION模板、GUI复核、`.wgem`绕过和跨机可移植性状态只由
 [`../../../common/multipole/README.md`](../../../common/multipole/README.md)维护；公共机制证据不授予

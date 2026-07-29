@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "role": "multipole_stationary_field_spatial_comparison_record",
+  "project_id": "rf_hexapole_ion_optics",
+  "comparison_id": "hexapole_hybrid_c1_vs_d2_cg_amg_sampled_field_v1",
+  "status": "INCONCLUSIVE_DIAGNOSTIC_ONLY",
+  "acceptance_thresholds_applied": false,
+  "single_changed_axis": "nonaxial_local_mesh_size_limits",
+  "unchanged": {
+    "parent_resolved_design_sha256": "C9C3B00A5327825FCB138FB7EEDF2C6F7175497EAEB3CD1EB28A5D995AAC4B6E",
+    "stationary_linear_solver_backend": "cg_amg",
+    "electric_potential_element_order": "quadratic",
+    "axial_layers_per_swept_segment": 10,
+    "sampling_plan_sha256": "F5F865D6607DA92E5809A98CDF1A068E5C0B83DBEA1361E3281D6859D2E468D3"
+  },
+  "coarse_c1": {
+    "run_id": "20260730_012000__analysis__comsol__hex-hybrid-c1-cg-amg-field__r01",
+    "mesh_global_elements": 371447,
+    "field_samples_sha256": "60E0040AC3A42931EF6E54E88A6A3913C12F326D5947D4DF6D39CB4EF812646C"
+  },
+  "refined_d2": {
+    "run_id": "20260730_014000__analysis__comsol__hex-hybrid-d2-cg-amg-sampled-field__r01",
+    "mesh_global_elements": 884643,
+    "field_samples_sha256": "562D963A7A7ECAE888A1DE8A144D99B3397CE26A5BCF1A3FDF53E7E19DCE73C1"
+  },
+  "comparison_artifact": {
+    "path": "artifacts/projects/rf_hexapole_ion_optics/comparisons/20260730__hex_hybrid_c1_vs_d2_cg_amg_field.json",
+    "sha256": "8BD094DE9279A38801015364DBE627862A3E1341C69B1ECE05265E32796D2B76",
+    "bytes": 3153
+  },
+  "metrics": {
+    "differential": {
+      "potential_reference_normalized_rms": 0.0016496376032936611,
+      "field_vector_reference_normalized_rms": 0.02086163723020146,
+      "maximum_field_vector_difference_V_per_m": 12211.802005846035
+    },
+    "static": {
+      "potential_reference_normalized_rms": 0.001073138532406954,
+      "field_vector_reference_normalized_rms": 0.04358021672709405,
+      "maximum_field_vector_difference_V_per_m": 219.11289235485614
+    }
+  },
+  "decision": {
+    "c1_as_spatial_reference": "REJECT_DIAGNOSTIC_DIFFERENCE_NOT_SMALL",
+    "spatial_convergence": "NOT_ESTABLISHED",
+    "next_axis": "hold_d2_nonaxial_mesh_and_refine_axial_layers",
+    "particle_followup_authorized": false
+  },
+  "claim_limit": "The observed C1-to-D2 sampled-field changes are material enough that C1 is not accepted as a spatial reference. No sourced threshold was applied, so this remains a diagnostic decision rather than a convergence PASS/FAIL qualification."
+}
