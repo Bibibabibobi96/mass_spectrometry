@@ -55,11 +55,13 @@ class PrePulseInterfaceTransportTests(unittest.TestCase):
         )
         self.assertIn("resolvedConnection", sources)
         self.assertIn("RF_OATOF_RESOLVED_CONNECTION", sources)
+        self.assertIn("upstreamSurface.center_mm(3)", sources)
         for forbidden in (
             "resolve_spatial_registration",
             "resolve_s2_connector_case",
             "nominal_registration",
             "passive_connector_geometry",
+            "registration.source_exit_center_local_mm",
         ):
             self.assertNotIn(forbidden, sources)
 
