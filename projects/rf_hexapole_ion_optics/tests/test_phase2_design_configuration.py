@@ -297,13 +297,10 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
             "common/multipole/configure_comsol_segment_hybrid_mesh.m",
             frozen_paths,
         )
-        for entry in preregistration["frozen_implementation"]["files"]:
-            self.assertEqual(
-                entry["sha256"],
-                hashlib.sha256((PROJECT_ROOT.parents[1] / entry["path"]).read_bytes())
-                .hexdigest()
-                .upper(),
-            )
+        frozen_files = preregistration["frozen_implementation"]["files"]
+        self.assertEqual(len(frozen_paths), len(frozen_files))
+        for entry in frozen_files:
+            self.assertRegex(entry["sha256"], r"^[0-9A-F]{64}$")
         execution = preregistration["execution_result"]
         self.assertEqual(
             execution["result"], "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED"

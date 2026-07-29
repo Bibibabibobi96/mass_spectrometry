@@ -112,7 +112,7 @@ for index = 1:numel(sweepSelections)
     end
     add_size(sweep, sprintf('szRod%d', index), geometryTag, ...
         sweepRodBoundarySelectionTags{index}, ...
-        localized_size(strategy, localized), ...
+        strategy.radial_core_and_rod_hmax_mm, ...
         strategy.minimum_element_size_mm, 2);
     distribution = sweep.feature.create(sprintf('dist%d', index), 'Distribution');
     distribution.selection.geom(geometryTag, 3);
@@ -135,10 +135,10 @@ if localized
         strategy.minimum_element_size_mm);
 end
 add_size(tetrahedra, 'szTetRod', geometryTag, 'sel_mesh_rod_bnd', ...
-    localized_size(strategy, localized), strategy.minimum_element_size_mm, 2);
+    strategy.radial_core_and_rod_hmax_mm, strategy.minimum_element_size_mm, 2);
 if localized
     add_size(tetrahedra, 'szTetInterface', geometryTag, ...
-        'sel_mesh_interface_bnd', sensitive.maximum_element_size_mm, ...
+        'sel_mesh_interface_bnd', strategy.transition_and_end_tetra_hmax_mm, ...
         strategy.minimum_element_size_mm, 2);
 end
 
@@ -153,13 +153,6 @@ if localized
     selections.sweep_sensitive = sweepSensitiveSelections;
     selections.tetrahedral_sensitive = 'sel_mesh_tet_sensitive_vac';
     selections.interface_boundary = 'sel_mesh_interface_bnd';
-end
-end
-
-function hmax = localized_size(strategy, localized)
-hmax = strategy.radial_core_and_rod_hmax_mm;
-if localized
-    hmax = strategy.sensitive_region.maximum_element_size_mm;
 end
 end
 

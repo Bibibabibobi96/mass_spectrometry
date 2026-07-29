@@ -254,9 +254,12 @@ class MultipoleFamilyContractTests(unittest.TestCase):
             "'sel_mesh_rod_bnd'",
             "sprintf('szRod%d'",
             "'szTetRod'",
+            "strategy.radial_core_and_rod_hmax_mm",
+            "strategy.transition_and_end_tetra_hmax_mm",
             "minimum_element_size_mm, 2",
         ):
             self.assertIn(token, hybrid)
+        self.assertNotIn("localized_size(", hybrid)
         self.assertNotIn("add_size(mesh, 'szRodBnd'", hybrid)
 
     def test_comsol_run_freezes_executed_matlab_sources(self) -> None:

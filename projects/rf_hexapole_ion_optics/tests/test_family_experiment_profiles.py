@@ -495,6 +495,21 @@ class FamilyExperimentProfileTests(unittest.TestCase):
         self.assertNotIn("'volume', 'selection', entities", solver)
         self.assertIn("add_size(sweep, sprintf('szRod%d'", mesh_helper)
         self.assertIn("add_size(tetrahedra, 'szTetRod'", mesh_helper)
+        self.assertIn(
+            "sweepRodBoundarySelectionTags{index}, ...\n"
+            "        strategy.radial_core_and_rod_hmax_mm",
+            mesh_helper,
+        )
+        self.assertIn(
+            "'sel_mesh_rod_bnd', ...\n"
+            "    strategy.radial_core_and_rod_hmax_mm",
+            mesh_helper,
+        )
+        self.assertIn(
+            "'sel_mesh_interface_bnd', strategy.transition_and_end_tetra_hmax_mm",
+            mesh_helper,
+        )
+        self.assertNotIn("localized_size(", mesh_helper)
         self.assertNotIn("add_size(mesh, 'szRodBnd'", mesh_helper)
         self.assertIn("Assert-MultipoleMeshBuildReport -Path $report", runner)
         for token in diagnostic["d1"]["required_report_tokens"]:

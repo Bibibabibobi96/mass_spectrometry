@@ -308,6 +308,13 @@ D2的0.5 mm，新增分区后全局网格达到1,019,364单元，超过预登记
 `INCONCLUSIVE_MESH_STRATEGY_CHANGE_REQUIRED`；分段杆静态场、粒子、跨求解器、Candidate、
 Formal和N=1000仍全部关闭。
 
+V2沿用同一个`physical_segment_hybrid_swept_tetra_v1`公共实现和既有字段，但修正了细化轴的职责：
+`sensitive_region.maximum_element_size_mm`只控制3.6 mm粒子走廊domain；扫掠段和四面体段的杆边界
+继续使用`radial_core_and_rod_hmax_mm`，入口/出口端板边界继续使用
+`transition_and_end_tetra_hmax_mm`。这不是放宽网格，也不是建立第二套策略；它把走廊、杆面、端面
+恢复成可分别审计的正交误差轴。旧0.50/0.40 mm运行仍绑定旧实现SHA且保持原结论。V2必须以新身份
+重新预登记并先通过三档场-only门禁，才可授权粒子或资格跟进。
+
 共享SIMION模板、GUI复核、`.wgem`绕过和跨机可移植性状态只由
 [`../../../common/multipole/README.md`](../../../common/multipole/README.md)维护；公共机制证据不授予
 本项目Candidate或Formal资格。
