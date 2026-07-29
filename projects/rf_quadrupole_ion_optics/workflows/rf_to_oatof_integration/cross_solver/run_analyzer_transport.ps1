@@ -8,7 +8,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+$projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $python = if ($PythonExe) {
   [IO.Path]::GetFullPath($PythonExe)
@@ -20,7 +20,7 @@ $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_ion_o
 $supportSource = Join-Path $projectRoot 'runtime\run_artifacts.ps1'
 . $supportSource
 
-function Invoke-S3EndToEndSnapshotPython {
+function Invoke-AnalyzerTransportSnapshotPython {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)][string]$Python,
@@ -45,7 +45,7 @@ function Invoke-S3EndToEndSnapshotPython {
   }
 }
 
-function Get-S3FormalAssetRecords {
+function Get-AnalyzerTransportFormalAssetRecords {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)][string]$ChecksumPath,
@@ -170,7 +170,7 @@ Write-RfJson -Path $package.run_config -Value ([ordered]@{
   schema_version = 1
   run_id = $RunId
   project = 'rf_quadrupole_ion_optics'
-  mode = 'rf_to_oatof_s3_cumulative_end_to_end'
+  mode = 'rf_to_oatof_analyzer_transport_n100'
   project_root = $repoRoot
   inputs = [ordered]@{}
   parameters = [ordered]@{ lifecycle_stage = 'bootstrap_before_snapshot' }
@@ -178,7 +178,7 @@ Write-RfJson -Path $package.run_config -Value ([ordered]@{
 })
 Write-RfJson -Path $package.summary -Value ([ordered]@{
   schema_version = 1
-  role = 'rf_oatof_s3_cumulative_end_to_end_summary'
+  role = 'rf_to_oatof_analyzer_transport_summary'
   status = 'interrupted'
   reason = 'Run directory initialized; dependency snapshot not yet complete.'
 })
@@ -191,7 +191,7 @@ try {
     throw "SIMION is missing: $SimionExe"
   }
 
-  $runner = Join-Path $package.input_dir 'run_s3_end_to_end.ps1.txt'
+  $runner = Join-Path $package.input_dir 'run_analyzer_transport.ps1.txt'
   $support = Join-Path $package.input_dir 'run_artifacts.ps1.txt'
   $runnerIdentity = Copy-RfStableFile -SourceRunRoot $repoRoot `
     -SourcePath $PSCommandPath -Destination $runner -Role 'end-to-end runner'
@@ -199,17 +199,17 @@ try {
     -SourcePath $supportSource -Destination $support -Role 'run artifact support'
 
   $dependencyContractSource = Join-Path $projectRoot `
-    'config\rf_to_oatof_s2_dependencies.json'
+    'config\rf_to_oatof_pre_pulse_dependencies.json'
   $dependencyContract = Join-Path $snapshotRoot `
-    'projects\rf_quadrupole_ion_optics\config\rf_to_oatof_s2_dependencies.json'
+    'projects\rf_quadrupole_ion_optics\config\rf_to_oatof_pre_pulse_dependencies.json'
   $dependencyContractIdentity = Copy-RfStableFile -SourceRunRoot $repoRoot `
     -SourcePath $dependencyContractSource -Destination $dependencyContract `
     -Role 'dependency contract'
   $dependencyDocument = Get-Content -LiteralPath $dependencyContract `
     -Raw -Encoding UTF8 | ConvertFrom-Json
-  $dependencyConsumer = 's3_end_to_end'
+  $dependencyConsumer = 'analyzer_transport'
   if (@($dependencyDocument.consumer_ids) -notcontains $dependencyConsumer) {
-    throw "S3 dependency consumer is not declared: $dependencyConsumer"
+    throw "PulseCapture dependency consumer is not declared: $dependencyConsumer"
   }
   $selectedDependencies = @(
     $dependencyDocument.dependencies |
@@ -218,7 +218,7 @@ try {
   if ($selectedDependencies.Count -eq 0 -or
       @($selectedDependencies.id | Select-Object -Unique).Count -ne
         $selectedDependencies.Count) {
-    throw 'S3 end-to-end dependency subset is empty or has duplicate identities.'
+    throw 'PulseCapture end-to-end dependency subset is empty or has duplicate identities.'
   }
   $dependencyIdentities = [ordered]@{}
   $dependencySnapshotPaths = @{}
@@ -227,11 +227,11 @@ try {
     if ([string]$dependency.id -eq 'rf_dependency_contract_snapshot') {
       $expectedSource = (
         'projects/rf_quadrupole_ion_optics/' +
-        'config/rf_to_oatof_s2_dependencies.json'
+        'config/rf_to_oatof_pre_pulse_dependencies.json'
       )
       $expectedFrozen = (
         'runtime_snapshot/projects/rf_quadrupole_ion_optics/' +
-        'config/rf_to_oatof_s2_dependencies.json'
+        'config/rf_to_oatof_pre_pulse_dependencies.json'
       )
       $declaredSnapshot = [IO.Path]::GetFullPath(
         (Join-Path $package.input_dir ([string]$dependency.frozen_filename))
@@ -249,7 +249,7 @@ try {
           ) -or
           (Get-FileHash -LiteralPath $dependencyContract -Algorithm SHA256).Hash -ne
             $dependencyContractIdentity.sha256) {
-        throw 'Frozen S3 dependency-contract self identity differs.'
+        throw 'Frozen PulseCapture dependency-contract self identity differs.'
       }
       $identity = [pscustomobject]@{
         id = [string]$dependency.id
@@ -274,7 +274,7 @@ try {
     }
     if ((Get-FileHash -LiteralPath $identity.snapshot_path -Algorithm SHA256).Hash -ne
         $identity.sha256) {
-      throw "S3 end-to-end dependency snapshot identity differs: $($identity.id)"
+      throw "PulseCapture end-to-end dependency snapshot identity differs: $($identity.id)"
     }
     $dependencyIdentities[$identity.id] = [ordered]@{
       provider_scope = $identity.provider_scope
@@ -292,7 +292,7 @@ try {
   }
   $requiredSnapshotIds = @(
     'rf_dependency_contract_snapshot',
-    'rf_s3_simion_input_adapter','rf_s3_end_to_end_analyzer',
+    'rf_analyzer_transport_simion_input_adapter','rf_analyzer_transport_analyzer',
     'rf_oatof_formal_release_validator',
     'rf_oatof_handoff_builder',
     'oatof_baseline','oatof_resolved_geometry','oatof_formal_validation',
@@ -309,15 +309,15 @@ try {
   foreach ($requiredId in $requiredSnapshotIds) {
     if ([string]::IsNullOrWhiteSpace(
         [string]$dependencySnapshotPaths[$requiredId])) {
-      throw "S3 end-to-end dependency consumer is missing required identity: $requiredId"
+      throw "PulseCapture end-to-end dependency consumer is missing required identity: $requiredId"
     }
   }
   $frozenArtifactNaming =
     $dependencySnapshotPaths['common_artifact_naming']
   $frozenManifestVerifier =
     $dependencySnapshotPaths['common_verify_run_manifest']
-  $frozenAdapter = $dependencySnapshotPaths['rf_s3_simion_input_adapter']
-  $frozenAnalyzer = $dependencySnapshotPaths['rf_s3_end_to_end_analyzer']
+  $frozenAdapter = $dependencySnapshotPaths['rf_analyzer_transport_simion_input_adapter']
+  $frozenAnalyzer = $dependencySnapshotPaths['rf_analyzer_transport_analyzer']
   $frozenFormalReleaseValidator =
     $dependencySnapshotPaths['rf_oatof_formal_release_validator']
   $frozenGeometry = $dependencySnapshotPaths['oatof_resolved_geometry']
@@ -334,9 +334,9 @@ try {
   $frozenSolverDiagnostics =
     $dependencySnapshotPaths['oatof_solver_diagnostics']
   $snapshotReady = $true
-  Invoke-S3EndToEndSnapshotPython -Python $python -SnapshotRoot $snapshotRoot `
+  Invoke-AnalyzerTransportSnapshotPython -Python $python -SnapshotRoot $snapshotRoot `
     -Arguments @($frozenArtifactNaming,'run',$RunId) `
-    -FailureMessage 'S3 end-to-end RunId failed frozen artifact naming.'
+    -FailureMessage 'PulseCapture end-to-end RunId failed frozen artifact naming.'
 
   $source = Resolve-RfDirectChildDirectory -ParentRoot $runsRoot `
     -ChildName $SourceRunId -Role 'SourceRunId'
@@ -345,22 +345,21 @@ try {
   $sourceManifestIdentity = Copy-RfStableFile -SourceRunRoot $source `
     -SourcePath $sourceManifestOriginal -Destination $sourceManifestPath `
     -Role 'source run manifest'
-  Invoke-S3EndToEndSnapshotPython -Python $python -SnapshotRoot $snapshotRoot `
+  Invoke-AnalyzerTransportSnapshotPython -Python $python -SnapshotRoot $snapshotRoot `
     -Arguments @(
       $frozenManifestVerifier,$sourceManifestPath,
       '--require-status','success','--require-run-id',$SourceRunId,
       '--require-project','rf_quadrupole_ion_optics',
-      '--require-mode','rf_to_oatof_s3_shared_clock_pulse_capture_n100'
-    ) -FailureMessage 'The frozen S3 source run manifest is invalid.'
+      '--require-mode','rf_to_oatof_pulse_capture_n100'
+    ) -FailureMessage 'The frozen PulseCapture source run manifest is invalid.'
   $sourceManifest = Get-Content -LiteralPath $sourceManifestPath `
     -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($sourceManifest.role -ne 'simulation_run_manifest' -or
       $sourceManifest.status -ne 'success' -or
       $sourceManifest.project -ne 'rf_quadrupole_ion_optics' -or
-      $sourceManifest.mode -ne
-        'rf_to_oatof_s3_shared_clock_pulse_capture_n100' -or
+      $sourceManifest.mode -ne 'rf_to_oatof_pulse_capture_n100' -or
       $sourceManifest.run_id -ne $SourceRunId) {
-    throw 'S3 source manifest identity or role is invalid.'
+    throw 'PulseCapture source manifest identity or role is invalid.'
   }
 
   $sourceConfigPath = Join-Path $package.input_dir 'source_run_config.json'
@@ -372,14 +371,13 @@ try {
     -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($sourceConfig.run_id -ne $SourceRunId -or
       $sourceConfig.project -ne 'rf_quadrupole_ion_optics' -or
-      $sourceConfig.mode -ne
-        'rf_to_oatof_s3_shared_clock_pulse_capture_n100') {
-    throw 'Downstream continuation requires the frozen S3 shared-clock source.'
+      $sourceConfig.mode -ne 'rf_to_oatof_pulse_capture_n100') {
+    throw 'Downstream continuation requires the frozen PulseCapture shared-clock source.'
   }
   $pulseTimeUs = [double]$sourceConfig.parameters.pulse_time_us
   $pulseWidthUs = [double]$sourceConfig.parameters.pulse_width_us
-  if ([bool]$sourceConfig.parameters.s3_stage_passed) {
-    throw 'Functional S3 source must not claim qualified S3 PASS.'
+  if ([bool]$sourceConfig.parameters.pulse_capture_stage_passed) {
+    throw 'Functional PulseCapture source must not claim qualified PulseCapture PASS.'
   }
 
   $sourceSummaryOriginal = Join-Path $source 'summary.json'
@@ -390,7 +388,7 @@ try {
     -SourcePath $sourceSummaryOriginal -Destination $sourceSummary `
     -ManifestRecord $sourceSummaryRecord -Role 'source summary'
   $sourceCanonicalOriginal = Join-Path $source `
-    'results\s3_local_accelerator_exit.csv'
+    'results\pulse_capture_local_accelerator_exit.csv'
   $sourceCanonicalRecord = Get-RfManifestOutputRecord -Manifest $sourceManifest `
     -ExpectedPath $sourceCanonicalOriginal -Role 'canonical local exit'
   $sourceCanonical = Join-Path $package.input_dir 'source_canonical.csv'
@@ -407,7 +405,7 @@ try {
   $rowMap = Join-Path $package.input_dir 'row_map.csv'
   $adapterMetadata = Join-Path $package.input_dir `
     'simion_adapter_metadata.json'
-  Invoke-S3EndToEndSnapshotPython -Python $python -SnapshotRoot $snapshotRoot `
+  Invoke-AnalyzerTransportSnapshotPython -Python $python -SnapshotRoot $snapshotRoot `
     -Arguments @(
       $frozenAdapter,'--source',$sourceCanonical,
       '--canonical-output',$canonical,'--ion-output',$ion,
@@ -431,7 +429,7 @@ try {
   $formalManifestIdentity = Copy-RfStableFile -SourceRunRoot $formalDir `
     -SourcePath $formalManifestOriginal -Destination $formalManifestPath `
     -Role 'oaTOF Formal release manifest'
-  Invoke-S3EndToEndSnapshotPython -Python $python -SnapshotRoot $snapshotRoot `
+  Invoke-AnalyzerTransportSnapshotPython -Python $python -SnapshotRoot $snapshotRoot `
     -Arguments @(
       $frozenFormalReleaseValidator,
       '--asset-manifest',$formalAssetManifestPath,
@@ -453,7 +451,7 @@ try {
     -SourcePath $checksumOriginal -Destination $checksumPath `
     -ManifestRecord $checksumRecord -Role 'Formal SHA256SUMS'
   $formalAssetRecords = @(
-    Get-S3FormalAssetRecords -ChecksumPath $checksumPath `
+    Get-AnalyzerTransportFormalAssetRecords -ChecksumPath $checksumPath `
       -FormalRoot $formalDir
   )
   $manifestIobRecord = Get-RfManifestOutputRecord -Manifest $formalManifest `
@@ -488,7 +486,7 @@ try {
   }
   $runtimeProgram = Join-Path $runtimeDir 'oatof_ideal_grounded.lua'
   $programMetadata = Join-Path $package.input_dir 'pulse_program_build.json'
-  Invoke-S3EndToEndSnapshotPython -Python $python -SnapshotRoot $snapshotRoot `
+  Invoke-AnalyzerTransportSnapshotPython -Python $python -SnapshotRoot $snapshotRoot `
     -Arguments @(
       $frozenProgramBuilder,'--formal',$frozenFormalLua,
       '--extension',$frozenPulseExtension,'--output',$runtimeProgram,
@@ -506,7 +504,7 @@ try {
     schema_version = 1
     run_id = $RunId
     project = 'rf_quadrupole_ion_optics'
-    mode = 'rf_to_oatof_s3_cumulative_end_to_end'
+    mode = 'rf_to_oatof_analyzer_transport_n100'
     project_root = $repoRoot
     inputs = [ordered]@{
       runner = $runner
@@ -557,14 +555,14 @@ try {
       pulse_time_us = $pulseTimeUs
       pulse_width_us = $pulseWidthUs
       dense_trajectories_saved = $false
-      s3_stage_passed = $false
+      pulse_capture_stage_passed = $false
     }
     formal_gate_passed = $false
   }
   Write-RfJson -Path $package.run_config -Depth 10 -Value $runConfiguration
   Write-RfJson -Path $package.summary -Value ([ordered]@{
     schema_version = 1
-    role = 'rf_oatof_s3_cumulative_end_to_end_summary'
+    role = 'rf_to_oatof_analyzer_transport_summary'
     status = 'interrupted'
     reason = 'Frozen inputs recorded; SIMION continuation not yet complete.'
   })
@@ -593,19 +591,19 @@ try {
   }
   $downstream = Join-Path $package.result_dir `
     'simion_downstream_particles.csv'
-  Invoke-S3EndToEndSnapshotPython -Python $python -SnapshotRoot $snapshotRoot `
+  Invoke-AnalyzerTransportSnapshotPython -Python $python -SnapshotRoot $snapshotRoot `
     -Arguments @(
       $frozenSolverDiagnostics,'analyze-simion-log',
       '--log',$stdout,'--ion-file',$ion,
-      '--mode','rf_oatof_s3_cumulative_end_to_end',
-      '--distribution','s3_local_accelerator_exit',
+      '--mode','rf_oatof_analyzer_transport_n100',
+      '--distribution','pulse_capture_local_accelerator_exit',
       '--particle-csv',$downstream,'--allow-incomplete-census'
     ) -FailureMessage 'Frozen SIMION log analysis failed.'
 
-  $metrics = Join-Path $package.result_dir 's3_end_to_end_metrics.json'
+  $metrics = Join-Path $package.result_dir 'analyzer_transport_metrics.json'
   $figure = Join-Path $package.result_dir `
-    's3_end_to_end_functional_chain.png'
-  Invoke-S3EndToEndSnapshotPython -Python $python -SnapshotRoot $snapshotRoot `
+    'analyzer_transport_functional_chain.png'
+  Invoke-AnalyzerTransportSnapshotPython -Python $python -SnapshotRoot $snapshotRoot `
     -Arguments @(
       $frozenAnalyzer,'--source-summary',$sourceSummary,
       '--canonical',$canonical,'--ion',$ion,'--row-map',$rowMap,
@@ -614,7 +612,7 @@ try {
       '--pulse-width-us',([string]$pulseWidthUs),
       '--geometry-contract',$frozenGeometry,
       '--output',$metrics,'--figure',$figure
-    ) -FailureMessage 'S3 end-to-end functional audit failed.'
+    ) -FailureMessage 'PulseCapture end-to-end functional audit failed.'
   $result = Get-Content -LiteralPath $metrics -Raw -Encoding UTF8 |
     ConvertFrom-Json
   $runConfiguration.parameters.particle_count =
@@ -622,13 +620,13 @@ try {
   Write-RfJson -Path $package.run_config -Depth 10 -Value $runConfiguration
   Write-RfJson -Path $package.summary -Depth 8 -Value ([ordered]@{
     schema_version = 1
-    role = 'rf_oatof_s3_cumulative_end_to_end_summary'
+    role = 'rf_to_oatof_analyzer_transport_summary'
     status = 'success'
     functional_audit = $result.status
     census = $result.census
     source_run_id = $SourceRunId
-    figure = 'results/s3_end_to_end_functional_chain.png'
-    s3_stage_passed = $false
+    figure = 'results/analyzer_transport_functional_chain.png'
+    pulse_capture_stage_passed = $false
     resolution_claim_allowed = $false
     formal_gate_passed = $false
   })
@@ -640,7 +638,7 @@ try {
     -RunConfig $package.run_config -Status success -Software $software `
     -Outputs $outputs
   Write-Output (
-    "S3_END_TO_END=PASS RUN_ID=$RunId " +
+    "ANALYZER_TRANSPORT=PASS RUN_ID=$RunId " +
     "HITS=$($result.census.detector_hit)/" +
     "$($result.census.local_accelerator_exit)"
   )
@@ -649,12 +647,12 @@ try {
     Complete-RfFrozenFailedRun -Python $python `
       -FrozenRepoRoot $manifestToolRoot `
       -RunConfig $package.run_config -Summary $package.summary `
-      -SummaryRole 'rf_oatof_s3_cumulative_end_to_end_summary' `
+      -SummaryRole 'rf_to_oatof_analyzer_transport_summary' `
       -Reason $_.Exception.Message -Software $software
   } else {
     Write-RfJson -Path $package.summary -Value ([ordered]@{
       schema_version = 1
-      role = 'rf_oatof_s3_cumulative_end_to_end_summary'
+      role = 'rf_to_oatof_analyzer_transport_summary'
       status = 'failed'
       reason = $_.Exception.Message
       manifest_written = $false

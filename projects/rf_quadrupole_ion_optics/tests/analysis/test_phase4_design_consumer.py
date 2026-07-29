@@ -73,7 +73,7 @@ class Phase4DesignConsumerTests(unittest.TestCase):
             / "workflows"
             / "mass_filter_reference"
             / "evaluate_comparison.py",
-            PROJECT_ROOT / "analysis" / "analyze_s3_end_to_end.py",
+            PROJECT_ROOT / "analysis" / "analyze_analyzer_transport.py",
             PROJECT_ROOT / "analysis" / "compare_rf_input_energy.py",
             PROJECT_ROOT / "analysis" / "plot_shared_pulse_geometry_snapshot.py",
         )

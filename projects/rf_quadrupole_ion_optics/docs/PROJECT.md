@@ -36,7 +36,7 @@ run编号、故障链和关闭过程冻结在
 | 圆柱家族三模式 | 三个N=100 baseline均双求解器100/100；无加速空间/时间矩阵完成；两加速模式COMSOL空间档资源受限 | 三模式功能分类闭合；连续数值资格仍INCONCLUSIVE |
 | 接口就绪输运 | v1双端100/100及严格相空间比较FAIL | 历史有效负结果；v2重跑待完成 |
 | RF+DC质量过滤 | L0/L1及v1双求解器功能扫描 | v2商业重跑与分辨能力资格待完成 |
-| RF四极杆离子光学→单次反射oa-TOF S2/S3 | v1真实孔/连接器/脉冲累积链贯通 | v2重跑待完成；stage与整机BLOCKED |
+| RF四极杆离子光学→单次反射oa-TOF pre_pulse_interface_transport/pulse_capture/analyzer_transport | v1真实孔/连接器/脉冲累积链贯通 | v2重跑待完成；stage与整机BLOCKED |
 | 机械/CAD/Formal | 无当前正式机械闭环 | BLOCKED |
 
 `Static`门禁当前可用；workflow blocking profile按各自声明执行；`Formal`在机械几何、CAD装配同步和
@@ -69,7 +69,7 @@ run编号、故障链和关闭过程冻结在
 runner CLI不暴露任意resolved、RF/DC、几何、轴向加速或数值标量路径。缺失绑定必须在商业软件启动前
 失败关闭。
 
-当前出口端口只绑定`official_transport`矩形参考外壳及S2/S3 oaTOF集成oracle。其
+当前出口端口只绑定`official_transport`矩形参考外壳及pre_pulse_interface_transport/pulse_capture/analyzer_transport oaTOF集成oracle。其
 `profile_scope.family_experiment_port=false`，不得解释为四、六、八极杆统一圆柱机械族的实验端口。
 
 两份COMSOL numerics合同不是同一workflow的双重权威：旧专用合同只服务接口就绪、质量过滤和其
@@ -138,22 +138,22 @@ SIMION空间档也保持100/100和精确身份；COMSOL空间档在`MESH_COMPLET
 
 ### RF四极杆离子光学→单次反射oa-TOF连接
 
-活动合同为`../config/rf_to_oatof_s2_passive_connector.json`、
-`../config/rf_to_oatof_s3_pulse_capture.json`及共享物理端口合同。唯一累积入口为
-`../tests/cross_solver/run_s3_cumulative_chain.ps1`。S2 resolved registration决定器件pose和接口面，
-共享端口决定法向、孔径与公共电位，S3合同决定frame、clock epoch和目标物种；任一身份冲突失败关闭。
-多极杆自身的源释放面、出口孔穿越面、规范交接面和近接口统计面仍按公共multipole术语区分；S2/S3
+活动合同为`../config/rf_to_oatof_pre_pulse_passive_connector.json`、
+`../config/rf_to_oatof_pulse_capture.json`、公共解析后的连接合同及共享物理端口合同。唯一累积入口为
+`../workflows/rf_to_oatof_integration/run_rf_to_oatof_transfer.ps1`。公共resolved connection决定器件pose和接口面，
+共享端口决定法向、孔径与公共电位，pulse_capture合同决定frame、clock epoch和目标物种；任一身份冲突失败关闭。
+多极杆自身的源释放面、出口孔穿越面、规范交接面和近接口统计面仍按公共multipole术语区分；pre_pulse_interface_transport/pulse_capture/analyzer_transport
 连接模型中的下游部件面不能反向改名或合并这些上游事件面。
 
 当前功能漏斗、诊断run ID和关闭过程不在本文件重复，统一从同日history快照追溯。单次反射oa-TOF Formal MPH、
 SIMION包与SolidWorks装配均未被该候选链修改。
-oaTOF handoff、S3 local-exit和legacy迁移仍分别保留其项目专用坐标、事件及迁移语义，但canonical
+oaTOF handoff、pulse_capture local-exit和legacy迁移仍分别保留其项目专用坐标、事件及迁移语义，但canonical
 component-state写出与即时校验统一调用公共合同入口，不再维护项目私有列序或序列化实现。
 
 ## 开放任务
 
 1. 按根[`COMPONENT_CONNECTION_ARCHITECTURE.md`](../../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md)
-   把当前S2/S3迁移为项目端口、公共编排器和connection profile，实例ID固定为
+   把当前pre_pulse_interface_transport/pulse_capture/analyzer_transport迁移为项目端口、公共编排器和connection profile，实例ID固定为
    `rf_quadrupole_ion_optics_to_single_reflection_oa_tof_mass_analyzer`；新旧等价复验通过前保留
    当前活动链，不在本项目复制六/八极杆连接。
 2. 若需声明束斑、发散、TOF、能量或逐粒子相空间等价，先为目标效应预注册独立误差预算，再完成

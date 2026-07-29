@@ -26,9 +26,19 @@ RUNTIME_PROFILES = PROJECT_ROOT / "config" / "runtime_profiles.json"
 MODE = PROJECT_ROOT / "config" / "modes" / "transport_interface_readiness.json"
 PROFILES = PROJECT_ROOT / "config" / "execution_profiles.json"
 RUNNER = PROJECT_ROOT / "workflows" / "interface_readiness" / "run_comsol.ps1"
-TASK = PROJECT_ROOT / "tests" / "comsol" / "run_nocollision_candidate.m"
+TASK = (
+    PROJECT_ROOT
+    / "workflows"
+    / "interface_readiness"
+    / "comsol"
+    / "run_nocollision_candidate.m"
+)
 GUI_VERIFY_TASK = (
-    PROJECT_ROOT / "tests" / "comsol" / "verify_nocollision_comsol.m"
+    PROJECT_ROOT
+    / "workflows"
+    / "interface_readiness"
+    / "comsol"
+    / "verify_nocollision_comsol.m"
 )
 RELEASE_GATE_TASK = (
     PROJECT_ROOT / "comsol" / "interface_readiness" / "run_release_construction_gate.m"

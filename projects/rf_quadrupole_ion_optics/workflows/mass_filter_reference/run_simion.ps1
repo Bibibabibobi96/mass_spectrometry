@@ -254,7 +254,7 @@ try {
         -IobBuilderScript $iobBuilder -ProgramSourcePath $programSource `
         -RunConfigLua $runConfigLua `
         -InspectScript (Join-Path $projectRoot `
-            'tests\simion\inspect_builtin_quad_reference.lua') `
+            'simion\workbench\inspect_builtin_quad_reference.lua') `
         -IobReport $iobReport -LogDir $logDir `
         -TrajectoryQuality ([int]$coreConfig.trajectory_quality) `
         -RfStepsPerPeriod ([int]$coreConfig.rf_steps_per_period)

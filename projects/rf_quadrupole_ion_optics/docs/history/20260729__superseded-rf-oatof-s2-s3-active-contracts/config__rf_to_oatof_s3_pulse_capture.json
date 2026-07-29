@@ -5,7 +5,7 @@
   "stage": "S3",
   "qualification_scope": "nominal_S2_geometry_shared_clock_finite_pulse_function_only",
   "implementation_level": {
-    "active_entry": "tests/cross_solver/run_s3_cumulative_chain.ps1",
+    "active_entry": "workflows/rf_to_oatof_integration/run_s3_cumulative_chain.ps1",
     "comsol_physical_port_connector_and_pulse_implemented": true,
     "simion_downstream_analyzer_continuation_implemented": true,
     "simion_connector_geometry_implemented": false,
@@ -74,7 +74,7 @@
     "claim_limit": "The ideal finite step is the first functional waveform model; finite electrical rise and fall remain a later qualification variable."
   },
   "runtime": {
-    "shared_geometry_builder": "tests/comsol/build_s2_passive_connector_model.m",
+    "shared_geometry_builder": "workflows/rf_to_oatof_integration/comsol/build_s2_passive_connector_model.m",
     "rf_steps_per_period_source": "s2_connector.functional_candidate.rf_steps_per_period",
     "dense_trajectories_saved": false,
     "required_outputs": [

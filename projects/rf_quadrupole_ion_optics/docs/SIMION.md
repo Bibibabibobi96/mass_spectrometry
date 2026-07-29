@@ -25,7 +25,7 @@ collision、drag、pressure或buffer-gas逻辑。物理量来自冻结resolved�
 | 无碰撞部件回归 | `../workflows/no_collision_transport/run_simion.ps1` |
 | RF+DC质量过滤 | `../workflows/mass_filter_reference/run_simion.ps1` |
 | PA场分辨率诊断 | `../tests/simion/test_pa_field_convergence.ps1` |
-| IOB结构检查 | `../tests/simion/inspect_builtin_quad_reference.lua` |
+| IOB结构检查 | `../simion/workbench/inspect_builtin_quad_reference.lua` |
 
 接口入口只接受配对bundle中的canonical表示；质量过滤入口只接受显式基础ION11并生成逐质量配对表。
 无碰撞入口的具名runtime profile可选择圆柱家族三种typed电气模式，但不接受自由design/source路径，
@@ -56,7 +56,7 @@ IOB加载门禁必须检查：
 出口带孔接口板和显式多级证据只属历史，不代表当前PA收敛、与COMSOL数值等价或机械资格。接口
 N=100双端100/100但相空间严格比较为FAIL。
 
-RF四极杆离子光学→单次反射oa-TOF下游由本项目累积S3入口驱动，以COMSOL真实局部出口canonical
+RF四极杆离子光学→单次反射oa-TOF下游由本项目累积pulse_capture入口驱动，以COMSOL真实局部出口canonical
 状态进入只读分析器；
 SIMION未独立建立同等侧孔/连接器场。功能贯通不得解释为接口场或整机Formal闭合。
 

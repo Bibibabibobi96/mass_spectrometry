@@ -20,47 +20,41 @@ from common.contracts.rigid_transform import (
     FramedPosition,
     FramedVector,
     RigidTransform,
-    relative_transform,
 )
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SPATIAL_REGISTRATION = (
-    PROJECT_ROOT / "config" / "resolved_rf_to_oatof_s2_spatial_registration.json"
-)
 
 
 def accelerator_geometry(
     baseline: dict,
-    joint: dict,
-    registration: dict,
+    resolved_connection: dict,
 ) -> dict[str, object]:
     """Validate and prepare oaTOF geometry in the resolved instrument frame."""
     geometry = baseline["geometry_mm"]
     source = baseline["particle_source"]
     rings = baseline["rings"]
-    port = joint["port_sweep"]
-    target = joint["physical_boundaries"]["target_entry_surface"]
-    resolved_target = registration["resolved_surfaces"]["target_entry"][
-        "in_instrument_frame"
-    ]
+    port = resolved_connection["transition_aperture"]
+    upstream = resolved_connection["port_geometry"]["upstream"]
+    target = resolved_connection["port_geometry"]["downstream"]
+    resolved_target = target["mating_surface"]
     frame_id = baseline["coordinate_convention"]["frame_id"]
     if (
-        registration.get("role") != "resolved_spatial_registration_do_not_edit"
-        or registration.get("instrument_frame_id") != frame_id
-        or target.get("frame_id") != frame_id
-        or resolved_target.get("frame_id") != frame_id
+        resolved_connection.get("role") != "resolved_connection_do_not_edit"
+        or resolved_connection.get("compatibility", {}).get("status") != "pass"
+        or target["coordinate_frame"]["frame_id"] != frame_id
+        or port["coordinate_frame_id"] != frame_id
     ):
-        raise ValueError("pulse geometry frame differs from resolved S2 authority")
-    target_center = np.asarray(target["center_mm"], dtype=float)
-    resolved_center = np.asarray(resolved_target["center_mm"], dtype=float)
-    target_normal = np.asarray(target["outward_normal"], dtype=float)
-    resolved_normal = np.asarray(resolved_target["normal"], dtype=float)
+        raise ValueError("pulse geometry frame differs from resolved connection")
+    target_center = np.asarray(resolved_target["center_mm"], dtype=float)
+    resolved_center = np.asarray(port["center_mm"], dtype=float)
+    target_normal = np.asarray(resolved_target["outward_normal"], dtype=float)
+    resolved_normal = np.asarray(port["surface_normal"], dtype=float)
     if (
         not np.allclose(target_center, resolved_center, rtol=0, atol=1e-12)
         or not np.allclose(target_normal, resolved_normal, rtol=0, atol=1e-12)
         or not np.isclose(
-            float(port["center_z_mm"]), target_center[2], rtol=0, atol=1e-12
+            float(port["center_mm"][2]), target_center[2], rtol=0, atol=1e-12
         )
     ):
         raise ValueError("physical port differs from resolved target-entry surface")
@@ -108,16 +102,27 @@ def accelerator_geometry(
         },
         "source_exit_center": {
             axis: float(
-                registration["resolved_surfaces"]["source_exit"][
-                    "in_instrument_frame"
-                ]["center_mm"][index]
+                sum(
+                    float(
+                        resolved_connection["spatial_registration"][
+                            "rotation_upstream_to_downstream"
+                        ][index][column]
+                    )
+                    * float(upstream["mating_surface"]["center_mm"][column])
+                    for column in range(3)
+                )
+                + float(
+                    resolved_connection["spatial_registration"]["translation_mm"][
+                        index
+                    ]
+                )
             )
             for index, axis in enumerate("xyz")
         },
         "port_center_y": float(target_center[1]),
         "port_center_z": float(target_center[2]),
-        "port_width_y": float(port["selected_n100_candidate_full_width_y_mm"]),
-        "port_height_z": float(port["full_height_z_mm"]),
+        "port_width_y": float(port["full_width_mm"]),
+        "port_height_z": float(port["full_height_mm"]),
         "detector_center_x": float(baseline["coordinate_convention"]["detector_x"]),
         "detector_center_y": float(
             baseline["coordinate_convention"].get("detector_y", 0.0)
@@ -132,42 +137,33 @@ def _filled_rect(ax, xy, width, height, **kwargs) -> None:
     ax.add_patch(Rectangle(xy, width, height, **kwargs))
 
 
-def registered_chain_geometry(
+def resolved_chain_geometry(
     baseline: dict,
     joint: dict,
-    registration: dict,
+    resolved_connection: dict,
     rf_resolved: dict,
-    s2_contract: dict,
 ) -> dict[str, object]:
-    """Resolve RF, S2 and accelerator geometry into the oa component frame."""
-    result = accelerator_geometry(baseline, joint, registration)
+    """Resolve RF, connection and accelerator geometry into the oa component frame."""
+    result = accelerator_geometry(baseline, resolved_connection)
     if rf_resolved.get("role") != "multipole_resolved_design_do_not_edit":
         raise ValueError("RF geometry is not an authoritative resolved design")
-    if s2_contract.get("role") != "rf_to_oatof_s2_passive_grounded_connector_candidate":
-        raise ValueError("S2 connector geometry contract role is invalid")
-
-    source_pose = RigidTransform.from_contract(
-        registration["component_poses"]["rf_quadrupole_component"]
-    )
-    target_pose = RigidTransform.from_contract(
-        registration["component_poses"]["oatof_global"]
-    )
-    source_to_target = relative_transform(source_pose, target_pose)
-    instrument_to_target = target_pose.inverse()
-    source_frame = source_to_target.from_frame_id
-    instrument_frame = instrument_to_target.from_frame_id
+    spatial = resolved_connection["spatial_registration"]
+    upstream = resolved_connection["port_geometry"]["upstream"]
+    downstream = resolved_connection["port_geometry"]["downstream"]
+    source_frame = upstream["coordinate_frame"]["frame_id"]
+    target_frame = downstream["coordinate_frame"]["frame_id"]
+    source_to_target = RigidTransform.from_contract({
+        "schema_version": 1,
+        "role": "rigid_transform",
+        "from_frame_id": source_frame,
+        "to_frame_id": target_frame,
+        "rotation": spatial["rotation_upstream_to_downstream"],
+        "translation_mm": spatial["translation_mm"],
+    })
 
     def source_point(values: list[float]) -> np.ndarray:
         position = FramedPosition(source_frame, tuple(float(value) for value in values))
         return np.asarray(source_to_target.transform_position(position).coordinates_mm)
-
-    def instrument_point(values: list[float]) -> np.ndarray:
-        position = FramedPosition(
-            instrument_frame, tuple(float(value) for value in values)
-        )
-        return np.asarray(
-            instrument_to_target.transform_position(position).coordinates_mm
-        )
 
     source_axis = np.asarray(source_to_target.transform_vector(
         FramedVector(source_frame, (0.0, 0.0, 1.0))
@@ -205,43 +201,33 @@ def registered_chain_geometry(
     shield_end = source_point([0.0, 0.0, exit_interface["aperture_plate_upstream_face_z_mm"]])
     plate_start = source_point([0.0, 0.0, exit_interface["aperture_plate_upstream_face_z_mm"]])
     plate_end = source_point([0.0, 0.0, exit_interface["aperture_plate_downstream_face_z_mm"]])
-    source_surface = instrument_point(list(
-        registration["resolved_surfaces"]["source_exit"][
-            "in_instrument_frame"
-        ]["center_mm"]
-    ))
-    target_surface = instrument_point(list(
-        registration["resolved_surfaces"]["target_entry"][
-            "in_instrument_frame"
-        ]["center_mm"]
-    ))
+    source_surface = np.asarray([
+        result["source_exit_center"][axis] for axis in "xyz"
+    ])
+    target_surface = np.asarray([
+        result["target_entry_center"][axis] for axis in "xyz"
+    ])
     expected_source_surface = source_point([
         0.0, 0.0, exit_interface["handoff_plane_z_mm"]
     ])
     if not np.allclose(
         source_surface, expected_source_surface, rtol=0, atol=1e-12
     ):
-        raise ValueError("RF exit surface differs from resolved registration")
+        raise ValueError("RF exit surface differs from resolved connection")
 
-    connector = s2_contract["passive_connector_geometry"]
-    downstream = connector["downstream_entry_aperture"]
-    connector_extent = connector["axial_extent_x_mm"]
-    connector_start = instrument_point([
-        connector_extent[0], downstream["center_mm"][1], downstream["center_mm"][2]
-    ])
-    connector_end = instrument_point([
-        connector_extent[1], downstream["center_mm"][1], downstream["center_mm"][2]
-    ])
-    downstream_center = instrument_point(list(downstream["center_mm"]))
+    connector = resolved_connection["connector"]
+    connector_start = source_surface
+    connector_end = target_surface
     if (
         not np.allclose(connector_start[1:], connector_end[1:], rtol=0, atol=1e-12)
-        or not np.allclose(downstream_center, target_surface, rtol=0, atol=1e-12)
         or not np.isclose(
             abs(connector_end[0] - connector_start[0]),
             float(connector["length_mm"]), rtol=0, atol=1e-12,
         )
     ):
-        raise ValueError("S2 connector differs from resolved interface surfaces")
+        raise ValueError(
+            "pre-pulse connector differs from resolved interface surfaces"
+        )
 
     result["target_entry_center"] = {
         axis: float(target_surface[index]) for index, axis in enumerate("xyz")
@@ -271,7 +257,7 @@ def registered_chain_geometry(
         "connector_length": float(connector["length_mm"]),
         "connector_center_y": float(connector_start[1]),
         "connector_center_z": float(connector_start[2]),
-        "connector_radius": float(connector["cavity"]["inner_radius_mm"]),
+        "connector_radius": float(connector["inner_radius_mm"]),
         "target_entry_x": float(target_surface[0]),
     }
     return result
@@ -420,14 +406,14 @@ def add_accelerator_geometry_outlines(
     return artists
 
 
-def add_rf_s2_geometry_outlines(
+def add_connection_geometry_outlines(
     ax: plt.Axes,
     geometry: dict[str, object],
     projection: str,
 ) -> dict[str, list[Artist]]:
-    """Draw registered RF and S2 geometry once per diagnostically useful view."""
+    """Draw registered RF and connector geometry for diagnostic views."""
     if projection not in {"xz", "yz"}:
-        raise ValueError("RF/S2 projection must be xz or yz")
+        raise ValueError("RF/connector projection must be xz or yz")
     chain = geometry["rf_chain"]
     rods = chain["rods"]
     artists: dict[str, list[Artist]] = {
@@ -495,9 +481,9 @@ def add_rf_s2_geometry_outlines(
                 line = ax.plot(
                     [float(chain["connector_x_min"]), float(chain["connector_x_max"])],
                     [z, z], color="#31a354", linewidth=1.4, zorder=2.8,
-                    label="S2 passive connector" if side_index == 0 else None,
+                    label="pre-pulse connector" if side_index == 0 else None,
                 )[0]
-                _geometry_artist(line, f"s2:xz:connector:{side_index}")
+                _geometry_artist(line, f"connection:xz:connector:{side_index}")
                 artists["connector"].append(line)
         ax.annotate(
             "rod end", (float(chain["rod_end_x"]), axis_z),
@@ -538,7 +524,9 @@ def add_rf_s2_geometry_outlines(
             float(chain["source_exit_aperture_radius"]), fill=False,
             edgecolor="#525252", linestyle="--", linewidth=1.2, zorder=2.5,
         )
-        _geometry_artist(clear, "rf:yz:clear_aperture", "RF/S2 clear aperture")
+        _geometry_artist(
+            clear, "rf:yz:clear_aperture", "RF/connector clear aperture"
+        )
         ax.add_patch(clear)
         artists["clear_aperture"].append(clear)
     return artists
@@ -649,7 +637,7 @@ def classify_snapshot(capture: pd.DataFrame, events: pd.DataFrame,
 
 
 def add_sparse_loss_positions(capture: pd.DataFrame, events: pd.DataFrame) -> pd.DataFrame:
-    """Add one terminal loss position when S3 stores only active pulse states."""
+    """Add one terminal loss position when pulse capture stores active states."""
     required = {"active_at_pulse", "x_mm", "y_mm", "z_mm"}
     if not required.issubset(events.columns):
         return capture
@@ -677,8 +665,7 @@ def prepare_snapshot_data(
     capture_path: Path,
     events_path: Path,
     baseline_path: Path,
-    joint_path: Path,
-    registration_path: Path = DEFAULT_SPATIAL_REGISTRATION,
+    resolved_connection_path: Path,
 ) -> tuple[pd.DataFrame, dict[str, object], str, str]:
     """Validate source states and prepare mutually exclusive snapshot classes."""
     capture = pd.read_csv(capture_path)
@@ -711,9 +698,10 @@ def prepare_snapshot_data(
     capture = add_sparse_loss_positions(capture, events)
 
     baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
-    joint = json.loads(joint_path.read_text(encoding="utf-8"))
-    registration = json.loads(registration_path.read_text(encoding="utf-8"))
-    g = accelerator_geometry(baseline, joint, registration)
+    resolved_connection = json.loads(
+        resolved_connection_path.read_text(encoding="utf-8")
+    )
+    g = accelerator_geometry(baseline, resolved_connection)
     if frame_id != g["frame_id"]:
         raise ValueError("pulse capture frame differs from geometry authority")
     capture = classify_snapshot(capture, events, g)
@@ -872,14 +860,13 @@ def plot_snapshot(
     capture_path: Path,
     events_path: Path,
     baseline_path: Path,
-    joint_path: Path,
+    resolved_connection_path: Path,
     figure_path: Path,
     metadata_path: Path,
-    registration_path: Path = DEFAULT_SPATIAL_REGISTRATION,
 ) -> dict[str, object]:
     """Prepare, render and export the standard run-diagnostic snapshot."""
     capture, g, frame_id, clock_epoch_id = prepare_snapshot_data(
-        capture_path, events_path, baseline_path, joint_path, registration_path
+        capture_path, events_path, baseline_path, resolved_connection_path
     )
     active = capture[capture["snapshot_class"].eq("active_at_pulse")]
     frozen_port_loss = capture[capture["snapshot_class"].eq("port_wall_loss")]
@@ -914,8 +901,7 @@ def plot_snapshot(
         "planes": ["x-z injection-acceleration", "x-y injection-cross-plane"],
         "geometry_sources": {
             "accelerator": str(baseline_path),
-            "physical_port": str(joint_path),
-            "resolved_registration": str(registration_path),
+            "resolved_connection": str(resolved_connection_path),
         },
         "geometry_mm": g,
         "plot_style": {
@@ -939,18 +925,21 @@ def main() -> None:
     parser.add_argument("--capture", type=Path, required=True)
     parser.add_argument("--events", type=Path, required=True)
     parser.add_argument("--oatof-baseline", type=Path, required=True)
-    parser.add_argument("--joint-contract", type=Path, required=True)
     parser.add_argument(
-        "--resolved-registration",
+        "--resolved-connection",
         type=Path,
-        default=DEFAULT_SPATIAL_REGISTRATION,
+        required=True,
     )
     parser.add_argument("--figure", type=Path, required=True)
     parser.add_argument("--metadata", type=Path, required=True)
     args = parser.parse_args()
     result = plot_snapshot(
-        args.capture, args.events, args.oatof_baseline, args.joint_contract,
-        args.figure, args.metadata, args.resolved_registration,
+        args.capture,
+        args.events,
+        args.oatof_baseline,
+        args.resolved_connection,
+        args.figure,
+        args.metadata,
     )
     print(f"SHARED_PULSE_GEOMETRY_SNAPSHOT=PASS ACTIVE={result['particles_active_at_pulse']} "
           f"PORT_LOSS={result['frozen_port_losses_before_pulse']} "

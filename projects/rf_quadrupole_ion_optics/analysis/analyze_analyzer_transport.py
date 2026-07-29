@@ -1,4 +1,4 @@
-"""Audit and plot the cumulative RF-to-oaTOF S3 functional chain."""
+"""Audit and plot the cumulative RF-to-oaTOF analyzer-transport chain."""
 
 from __future__ import annotations
 
@@ -33,7 +33,9 @@ def _read_csv(path: Path) -> list[dict[str, str]]:
 def _is_detector_crossing(row: dict[str, str]) -> bool:
     hit = row["Hit"].strip().lower()
     if hit not in {"true", "false"}:
-        raise ValueError(f"S3 downstream row has invalid Hit value: {row['Hit']!r}")
+        raise ValueError(
+            f"analyzer-transport row has invalid Hit value: {row['Hit']!r}"
+        )
     terminal_fields = ("TofUs", "InstrumentTimeUs", "XMm", "YMm")
     values: list[float | None] = []
     for field in terminal_fields:
@@ -45,7 +47,7 @@ def _is_detector_crossing(row: dict[str, str]) -> bool:
             value = float(text)
         except ValueError as exc:
             raise ValueError(
-                f"S3 downstream row has non-numeric {field}: {text!r}"
+                f"analyzer-transport row has non-numeric {field}: {text!r}"
             ) from exc
         if math.isnan(value):
             values.append(None)
@@ -53,14 +55,18 @@ def _is_detector_crossing(row: dict[str, str]) -> bool:
             values.append(value)
         else:
             raise ValueError(
-                f"S3 downstream row has non-finite {field}: {text!r}"
+                f"analyzer-transport row has non-finite {field}: {text!r}"
             )
     if all(value is None for value in values):
         if hit == "true":
-            raise ValueError("S3 downstream hit has no detector crossing state")
+            raise ValueError(
+                "analyzer-transport hit has no detector crossing state"
+            )
         return False
     if any(value is None for value in values):
-        raise ValueError("S3 downstream row has a partial detector crossing state")
+        raise ValueError(
+            "analyzer-transport row has a partial detector crossing state"
+        )
     return True
 
 
@@ -74,16 +80,23 @@ def analyze(source_summary_path: Path, canonical_path: Path, ion_path: Path,
     downstream = _read_csv(downstream_path)
     ion_rows = [line for line in ion_path.read_text(encoding="utf-8-sig").splitlines() if line.strip()]
     if not canonical or len({len(canonical), len(mapping), len(downstream), len(ion_rows)}) != 1:
-        raise ValueError("S3 downstream state and adapter censuses are inconsistent")
+        raise ValueError(
+            "analyzer-transport state and adapter censuses are inconsistent"
+        )
     downstream_required = {
         "Ion", "MassAmu", "ChargeState", "X0Mm", "Y0Mm", "Z0Mm",
         "TofUs", "InstrumentTimeUs", "XMm", "YMm", "Hit",
     }
     if not downstream_required.issubset(downstream[0]):
-        raise ValueError("S3 downstream state is missing identity or phase-space columns")
+        raise ValueError(
+            "analyzer-transport state is missing identity or phase-space columns"
+        )
     identities = {(row["frame_id"], row["clock_epoch_id"]) for row in canonical}
     if len(identities) != 1 or any(not value for value in next(iter(identities))):
-        raise ValueError("S3 canonical state must bind one non-empty frame and clock epoch")
+        raise ValueError(
+            "analyzer-transport canonical state must bind one non-empty "
+            "frame and clock epoch"
+        )
     frame_id, clock_epoch_id = next(iter(identities))
 
     solver_ids = {
@@ -91,7 +104,9 @@ def analyze(source_summary_path: Path, canonical_path: Path, ion_path: Path,
         for row in mapping
     }
     if len(solver_ids) != len(mapping):
-        raise ValueError("S3 SIMION row map contains duplicate solver indices")
+        raise ValueError(
+            "analyzer-transport SIMION row map contains duplicate solver indices"
+        )
     canonical_ids = {int(row["particle_id"]) for row in canonical}
     mapped_ids = set(solver_ids.values())
     canonical_by_id = {int(row["particle_id"]): row for row in canonical}
@@ -100,7 +115,9 @@ def analyze(source_summary_path: Path, canonical_path: Path, ion_path: Path,
     }
     downstream_indices = {int(row["Ion"]) for row in downstream}
     if downstream_indices != set(solver_ids):
-        raise ValueError("S3 downstream solver rows differ from the frozen row map")
+        raise ValueError(
+            "analyzer-transport solver rows differ from the frozen row map"
+        )
     detector_rows = [row for row in downstream if _is_detector_crossing(row)]
     hits = [row for row in detector_rows if row["Hit"].strip().lower() == "true"]
     initial_residual = max(
@@ -150,7 +167,7 @@ def analyze(source_summary_path: Path, canonical_path: Path, ion_path: Path,
         and math.isclose(float(matches[0][2]), pulse_width_us, abs_tol=1e-12)
     )
     checks = {
-        "source_s3_run_succeeded": source["status"] == "success",
+        "source_pulse_capture_run_succeeded": source["status"] == "success",
         "identity_preserved": canonical_ids == mapped_ids,
         "species_mass_and_charge_preserved": species_preserved,
         "canonical_position_reaches_simion_exactly": initial_residual <= 1e-12,
@@ -162,7 +179,7 @@ def analyze(source_summary_path: Path, canonical_path: Path, ion_path: Path,
     }
     return {
         "schema_version": 1,
-        "role": "rf_to_oatof_s3_end_to_end_function_audit",
+        "role": "rf_to_oatof_analyzer_transport_function_audit",
         "status": "PASS" if all(checks.values()) else "FAIL",
         "scope": "functional chain only; no convergence, resolution or Formal claim",
         "census": {
@@ -179,7 +196,7 @@ def analyze(source_summary_path: Path, canonical_path: Path, ion_path: Path,
         "frame_id": frame_id,
         "clock_epoch_id": clock_epoch_id,
         "checks": checks,
-        "s3_stage_passed": False,
+        "analyzer_transport_stage_passed": False,
         "resolution_claim_allowed": False,
     }
 
@@ -218,7 +235,7 @@ def plot(result: dict[str, object], downstream_path: Path, output: Path,
     if crossings:
         axes[1].legend(fontsize=8)
     figure.suptitle(
-        "RF quadrupole to oaTOF S3 functional connection\n"
+        "RF quadrupole to oaTOF analyzer transport\n"
         f"frame={result['frame_id']}; clock epoch={result['clock_epoch_id']}"
     )
     figure.tight_layout()
@@ -240,11 +257,16 @@ def main() -> None:
     geometry = json.loads(args.geometry_contract.read_text(encoding="utf-8"))
     coordinates = geometry["coordinate_convention"]
     if coordinates.get("frame_id") != result["frame_id"]:
-        raise ValueError("S3 downstream geometry frame differs from canonical state")
+        raise ValueError(
+            "analyzer-transport geometry frame differs from canonical state"
+        )
     plot(result, args.downstream, args.figure, float(coordinates["detector_x"]),
          float(coordinates.get("detector_y", 0.0)), float(geometry["geometry_mm"]["physical_detector_radius"]))
     args.output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
-    print(f"S3_END_TO_END={result['status']} HITS={result['census']['detector_hit']}")
+    print(
+        "ANALYZER_TRANSPORT="
+        f"{result['status']} HITS={result['census']['detector_hit']}"
+    )
     if result["status"] != "PASS":
         raise SystemExit(1)
 

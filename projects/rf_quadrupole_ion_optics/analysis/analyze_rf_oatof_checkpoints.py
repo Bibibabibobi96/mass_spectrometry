@@ -26,24 +26,21 @@ from common.contracts.rigid_transform import (
 try:
     from plot_shared_pulse_geometry_snapshot import (
         add_accelerator_geometry_outlines,
-        add_rf_s2_geometry_outlines,
+        add_connection_geometry_outlines,
         particle_marker_areas,
-        registered_chain_geometry,
+        resolved_chain_geometry,
     )
 except ModuleNotFoundError:
     from projects.rf_quadrupole_ion_optics.analysis.plot_shared_pulse_geometry_snapshot import (
         add_accelerator_geometry_outlines,
-        add_rf_s2_geometry_outlines,
+        add_connection_geometry_outlines,
         particle_marker_areas,
-        registered_chain_geometry,
+        resolved_chain_geometry,
     )
 
 
 AXES = ("x", "y", "z")
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SPATIAL_REGISTRATION = (
-    PROJECT_ROOT / "config" / "resolved_rf_to_oatof_s2_spatial_registration.json"
-)
 DEFAULT_RF_RESOLVED_GEOMETRY = PROJECT_ROOT / "config" / "resolved_design_official.json"
 
 
@@ -71,24 +68,36 @@ def _require_columns(data: pd.DataFrame, required: set[str], role: str) -> None:
         raise ValueError(f"{role} contains duplicate particle IDs")
 
 
-def _instrument_to_target_transform(
-    registration: dict[str, Any],
+def _state_to_analysis_transform(
+    resolved_connection: dict[str, Any],
 ) -> RigidTransform:
-    pose = registration["component_poses"]["oatof_global"]
-    return RigidTransform.from_contract(pose).inverse()
+    """Return the identity transform for states already in the downstream frame."""
+    frame_id = resolved_connection["port_geometry"]["downstream"][
+        "coordinate_frame"
+    ]["frame_id"]
+    return RigidTransform.from_contract({
+        "schema_version": 1,
+        "role": "rigid_transform",
+        "from_frame_id": frame_id,
+        "to_frame_id": frame_id,
+        "rotation": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+        "translation_mm": [0.0, 0.0, 0.0],
+    })
 
 
-def _registered_local_state(data: pd.DataFrame, registration: dict[str, Any],
+def _analysis_frame_state(data: pd.DataFrame, resolved_connection: dict[str, Any],
                             position_prefix: str, velocity_prefix: str) -> pd.DataFrame:
-    """Transform an instrument-frame state into the registered oaTOF local frame."""
-    expected_frame = registration["instrument_frame_id"]
+    """Validate and materialize a state already expressed in the analysis frame."""
+    expected_frame = resolved_connection["port_geometry"]["downstream"][
+        "coordinate_frame"
+    ]["frame_id"]
     if "frame_id" in data and not data["frame_id"].eq(expected_frame).all():
-        raise ValueError("checkpoint frame_id differs from the S2 instrument frame")
+        raise ValueError("checkpoint frame_id differs from the resolved downstream frame")
     positions = data[[f"{position_prefix}{axis}_mm" for axis in AXES]].to_numpy(float)
     velocities = data[[f"{velocity_prefix}{axis}_m_s" for axis in AXES]].to_numpy(float)
     if not np.isfinite(positions).all() or not np.isfinite(velocities).all():
         raise ValueError("checkpoint contains non-finite position or velocity")
-    transform = _instrument_to_target_transform(registration)
+    transform = _state_to_analysis_transform(resolved_connection)
     result = data.copy()
     local_positions = np.asarray([
         transform.transform_position(
@@ -108,15 +117,17 @@ def _registered_local_state(data: pd.DataFrame, registration: dict[str, Any],
     return result
 
 
-def _registered_local_positions(data: pd.DataFrame,
-                                registration: dict[str, Any]) -> pd.DataFrame:
-    expected_frame = registration["instrument_frame_id"]
+def _analysis_frame_positions(data: pd.DataFrame,
+                              resolved_connection: dict[str, Any]) -> pd.DataFrame:
+    expected_frame = resolved_connection["port_geometry"]["downstream"][
+        "coordinate_frame"
+    ]["frame_id"]
     if "frame_id" in data and not data["frame_id"].eq(expected_frame).all():
-        raise ValueError("terminal frame_id differs from the S2 instrument frame")
+        raise ValueError("terminal frame_id differs from the resolved downstream frame")
     positions = data[[f"{axis}_mm" for axis in AXES]].to_numpy(float)
     if not np.isfinite(positions).all():
         raise ValueError("terminal census contains non-finite loss positions")
-    transform = _instrument_to_target_transform(registration)
+    transform = _state_to_analysis_transform(resolved_connection)
     result = data.copy()
     local_positions = np.asarray([
         transform.transform_position(
@@ -244,7 +255,8 @@ def summarize_checkpoint(
 
 def _prepare_states(exit_state: pd.DataFrame, capture: pd.DataFrame,
                     terminal: pd.DataFrame, schedule: dict[str, Any],
-                    registration: dict[str, Any]) -> tuple[pd.DataFrame, float, set[int]]:
+                    resolved_connection: dict[str, Any],
+                    ) -> tuple[pd.DataFrame, float, set[int]]:
     exit_required = {
         "particle_id", "frame_id", "clock_epoch_id", "instrument_time_us", "mass_amu",
         "charge_state", "position_x_mm", "position_y_mm", "position_z_mm",
@@ -270,8 +282,11 @@ def _prepare_states(exit_state: pd.DataFrame, capture: pd.DataFrame,
     if exit_state["clock_epoch_id"].nunique() != 1:
         raise ValueError("source-exit state contains multiple clock epochs")
     clock_epoch = exit_state["clock_epoch_id"].iloc[0]
-    if not terminal["frame_id"].eq(registration["instrument_frame_id"]).all():
-        raise ValueError("terminal census frame differs from the S2 instrument frame")
+    expected_frame = resolved_connection["port_geometry"]["downstream"][
+        "coordinate_frame"
+    ]["frame_id"]
+    if not terminal["frame_id"].eq(expected_frame).all():
+        raise ValueError("terminal census frame differs from the resolved downstream frame")
     if not terminal["clock_epoch_id"].eq(clock_epoch).all():
         raise ValueError("terminal census clock epoch changed")
     pulse_time = float(schedule["derived_pulse_time_us"])
@@ -284,12 +299,14 @@ def _prepare_states(exit_state: pd.DataFrame, capture: pd.DataFrame,
     if not cohort.issubset(source_ids):
         raise ValueError("pulse schedule cohort contains an unknown particle ID")
 
-    exit_local = _registered_local_state(
-        exit_state, registration, "position_", "velocity_")
+    exit_local = _analysis_frame_state(
+        exit_state, resolved_connection, "position_", "velocity_")
     capture_full = capture.merge(
         exit_state[["particle_id", "mass_amu", "charge_state"]],
         on="particle_id", how="left", validate="one_to_one")
-    capture_local = _registered_local_state(capture_full, registration, "", "v")
+    capture_local = _analysis_frame_state(
+        capture_full, resolved_connection, "", "v"
+    )
     if not capture_local["clock_epoch_id"].eq(clock_epoch).all():
         raise ValueError("checkpoint clock epoch changed")
 
@@ -321,7 +338,7 @@ def _prepare_states(exit_state: pd.DataFrame, capture: pd.DataFrame,
     table = table.merge(capture_local, on="particle_id", how="left", validate="one_to_one")
     terminal_columns = ["particle_id", "event", "status", "terminal_reason"]
     if all(f"{axis}_mm" in terminal for axis in AXES):
-        terminal = _registered_local_positions(terminal, registration)
+        terminal = _analysis_frame_positions(terminal, resolved_connection)
         terminal_columns += [f"terminal_local_{axis}_mm" for axis in AXES]
     table = table.merge(terminal[terminal_columns], on="particle_id", how="left",
                         validate="one_to_one")
@@ -336,43 +353,18 @@ def _prepare_states(exit_state: pd.DataFrame, capture: pd.DataFrame,
     return table, pulse_time, cohort
 
 
-def _validate_s2_aperture(
-    s2_contract: dict[str, Any], geometry: dict[str, Any]
-) -> None:
-    aperture = s2_contract["passive_connector_geometry"][
-        "downstream_entry_aperture"
-    ]
-    center = np.asarray(aperture["center_mm"], dtype=float)
-    expected = np.asarray([
-        geometry["target_entry_center"][axis] for axis in AXES
-    ])
-    if (
-        aperture.get("shape") != "rectangle"
-        or not np.allclose(center, expected, rtol=0, atol=1e-12)
-        or not np.isclose(
-            float(aperture["full_width_y_mm"]),
-            float(geometry["port_width_y"]), rtol=0, atol=1e-12,
-        )
-        or not np.isclose(
-            float(aperture["full_height_z_mm"]),
-            float(geometry["port_height_z"]), rtol=0, atol=1e-12,
-        )
-    ):
-        raise ValueError("S2 aperture differs from shared physical-port authority")
-
-
 def _prepare_chain_states(
     table: pd.DataFrame,
-    s2_entry: pd.DataFrame,
+    interface_entry: pd.DataFrame,
     local_exit: pd.DataFrame,
     row_map: pd.DataFrame,
     downstream: pd.DataFrame,
-    registration: dict[str, Any],
+    resolved_connection: dict[str, Any],
     geometry: dict[str, Any],
     clock_epoch_id: str,
 ) -> pd.DataFrame:
     """Join all physical checkpoints and assign exhaustive final outcomes."""
-    s2_required = {
+    interface_required = {
         "particle_id", "frame_id", "clock_epoch_id", "first_forward_oatof_entry",
         "position_x_mm", "position_y_mm", "position_z_mm",
         "velocity_x_m_s", "velocity_y_m_s", "velocity_z_m_s",
@@ -386,8 +378,10 @@ def _prepare_chain_states(
     downstream_required = {
         "Ion", "InstrumentTimeUs", "XMm", "YMm", "Hit",
     }
-    _require_columns(s2_entry, s2_required, "S2 oa-entry state")
-    _require_columns(local_exit, local_required, "S3 local-exit state")
+    _require_columns(
+        interface_entry, interface_required, "pre-pulse interface-entry state"
+    )
+    _require_columns(local_exit, local_required, "pulse-capture local-exit state")
     _require_columns(row_map, map_required, "SIMION row map")
     missing_downstream = downstream_required - set(downstream.columns)
     if missing_downstream or downstream.empty:
@@ -396,54 +390,66 @@ def _prepare_chain_states(
             + ", ".join(sorted(missing_downstream))
         )
     source_ids = set(table["particle_id"].astype(int))
-    if set(s2_entry["particle_id"].astype(int)) != source_ids:
-        raise ValueError("S2 oa-entry census must contain every RF-exit ID")
-    for role, state in (("S2 oa-entry", s2_entry), ("S3 local-exit", local_exit)):
+    if set(interface_entry["particle_id"].astype(int)) != source_ids:
+        raise ValueError("interface-entry census must contain every RF-exit ID")
+    expected_frame = resolved_connection["port_geometry"]["downstream"][
+        "coordinate_frame"
+    ]["frame_id"]
+    for role, state in (
+        ("pre-pulse interface entry", interface_entry),
+        ("pulse-capture local exit", local_exit),
+    ):
         if (
-            not state["frame_id"].eq(registration["instrument_frame_id"]).all()
+            not state["frame_id"].eq(expected_frame).all()
             or not state["clock_epoch_id"].eq(clock_epoch_id).all()
         ):
             raise ValueError(f"{role} frame or clock epoch changed")
 
-    s2_local = _registered_local_state(
-        s2_entry, registration, "position_", "velocity_"
+    interface_local = _analysis_frame_state(
+        interface_entry, resolved_connection, "position_", "velocity_"
     )
     entry_mask = pd.to_numeric(
-        s2_local["first_forward_oatof_entry"], errors="raise"
+        interface_local["first_forward_oatof_entry"], errors="raise"
     ).astype(bool)
-    entry = s2_local.loc[entry_mask, [
+    entry = interface_local.loc[entry_mask, [
         "particle_id", *[f"local_{axis}_mm" for axis in AXES]
     ]].rename(columns={
-        **{f"local_{axis}_mm": f"s2_entry_local_{axis}_mm" for axis in AXES},
+        **{
+            f"local_{axis}_mm": f"interface_entry_local_{axis}_mm"
+            for axis in AXES
+        },
     })
     target = geometry["target_entry_center"]
     if not np.allclose(
-        entry["s2_entry_local_x_mm"], float(target["x"]), rtol=0, atol=1e-9
+        entry["interface_entry_local_x_mm"],
+        float(target["x"]),
+        rtol=0,
+        atol=1e-9,
     ):
-        raise ValueError("S2 oa-entry positions do not lie on the physical plane")
+        raise ValueError("interface-entry positions do not lie on the physical plane")
     inside = (
-        (entry["s2_entry_local_y_mm"] - float(target["y"])).abs()
+        (entry["interface_entry_local_y_mm"] - float(target["y"])).abs()
         <= float(geometry["port_width_y"]) / 2 + 1e-12
     ) & (
-        (entry["s2_entry_local_z_mm"] - float(target["z"])).abs()
+        (entry["interface_entry_local_z_mm"] - float(target["z"])).abs()
         <= float(geometry["port_height_z"]) / 2 + 1e-12
     )
     if not inside.all():
-        raise ValueError("S2 transmitted entry lies outside the physical aperture")
+        raise ValueError("interface entry lies outside the physical aperture")
     table = table.merge(entry, on="particle_id", how="left", validate="one_to_one")
-    table["inside_physical_aperture_at_s2_entry"] = table[
-        "s2_entry_local_x_mm"
+    table["inside_physical_aperture_at_interface_entry"] = table[
+        "interface_entry_local_x_mm"
     ].notna()
 
-    local = _registered_local_state(
-        local_exit, registration, "position_", "velocity_"
+    local = _analysis_frame_state(
+        local_exit, resolved_connection, "position_", "velocity_"
     )[["particle_id", *[f"local_{axis}_mm" for axis in AXES]]].rename(columns={
         **{f"local_{axis}_mm": f"local_exit_local_{axis}_mm" for axis in AXES},
     })
     local_ids = set(local["particle_id"].astype(int))
     active_ids = set(table.loc[table["active_at_pulse"], "particle_id"].astype(int))
     if not local_ids.issubset(active_ids):
-        raise ValueError("S3 local-exit IDs are not a subset of pulse-active IDs")
+        raise ValueError("local-exit IDs are not a subset of pulse-active IDs")
     table = table.merge(local, on="particle_id", how="left", validate="one_to_one")
     table["reached_local_accelerator_exit"] = table[
         "local_exit_local_x_mm"
@@ -457,7 +463,7 @@ def _prepare_chain_states(
         strict=True,
     ))
     if set(solver_to_particle.values()) != local_ids:
-        raise ValueError("SIMION row map differs from S3 local-exit IDs")
+        raise ValueError("SIMION row map differs from local-exit IDs")
     downstream = downstream.copy()
     downstream["solver_row_index"] = pd.to_numeric(
         downstream["Ion"], errors="raise"
@@ -488,13 +494,14 @@ def _prepare_chain_states(
     ]].fillna(False).astype(bool)
 
     entry_ids = set(table.loc[
-        table["inside_physical_aperture_at_s2_entry"], "particle_id"
+        table["inside_physical_aperture_at_interface_entry"], "particle_id"
     ].astype(int))
     if not active_ids.issubset(entry_ids):
-        raise ValueError("pulse-active IDs are not a subset of S2 oa-entry IDs")
+        raise ValueError("pulse-active IDs are not a subset of interface-entry IDs")
     conditions = [
-        ~table["inside_physical_aperture_at_s2_entry"],
-        table["inside_physical_aperture_at_s2_entry"] & ~table["active_at_pulse"],
+        ~table["inside_physical_aperture_at_interface_entry"],
+        table["inside_physical_aperture_at_interface_entry"]
+        & ~table["active_at_pulse"],
         table["active_at_pulse"] & ~table["reached_local_accelerator_exit"],
         table["reached_local_accelerator_exit"] & table["downstream_detector_hit"],
         table["reached_local_accelerator_exit"] & ~table["downstream_detector_hit"],
@@ -541,11 +548,11 @@ def _residual_metrics(table: pd.DataFrame) -> dict[str, Any]:
 
 
 def analyze_checkpoints(exit_path: Path, capture_path: Path, terminal_path: Path,
-                        s2_entry_path: Path, local_exit_path: Path,
+                        interface_entry_path: Path, local_exit_path: Path,
                         row_map_path: Path, downstream_path: Path,
-                        schedule_path: Path, baseline_path: Path, s2_path: Path,
-                        joint_path: Path, contract_path: Path,
-                        registration_path: Path = DEFAULT_SPATIAL_REGISTRATION,
+                        schedule_path: Path, baseline_path: Path,
+                        resolved_connection_path: Path, joint_path: Path,
+                        contract_path: Path,
                         rf_resolved_path: Path = DEFAULT_RF_RESOLVED_GEOMETRY,
                         ) -> tuple[dict[str, Any], pd.DataFrame, dict[str, Any]]:
     """Return metrics, the full-ID comparison table and plotting geometry."""
@@ -555,28 +562,29 @@ def analyze_checkpoints(exit_path: Path, capture_path: Path, terminal_path: Path
     exit_state = pd.read_csv(exit_path)
     capture = pd.read_csv(capture_path)
     terminal = pd.read_csv(terminal_path)
-    s2_entry = pd.read_csv(s2_entry_path)
+    interface_entry = pd.read_csv(interface_entry_path)
     local_exit = pd.read_csv(local_exit_path)
     row_map = pd.read_csv(row_map_path)
     downstream = pd.read_csv(downstream_path)
     schedule = load_json(schedule_path)
     baseline = load_json(baseline_path)
-    s2_contract = load_json(s2_path)
+    resolved_connection = load_json(resolved_connection_path)
     joint = load_json(joint_path)
-    registration = load_json(registration_path)
     rf_resolved = load_json(rf_resolved_path)
-    if registration.get("role") != "resolved_spatial_registration_do_not_edit":
-        raise ValueError("checkpoint spatial registration is not authoritative")
-    geometry = registered_chain_geometry(
-        baseline, joint, registration, rf_resolved, s2_contract
+    if (
+        resolved_connection.get("role") != "resolved_connection_do_not_edit"
+        or resolved_connection.get("compatibility", {}).get("status") != "pass"
+    ):
+        raise ValueError("checkpoint resolved connection is not authoritative")
+    geometry = resolved_chain_geometry(
+        baseline, joint, resolved_connection, rf_resolved
     )
-    _validate_s2_aperture(s2_contract, geometry)
     table, pulse_time, cohort = _prepare_states(
-        exit_state, capture, terminal, schedule, registration)
+        exit_state, capture, terminal, schedule, resolved_connection)
     clock_epoch_id = str(exit_state["clock_epoch_id"].iloc[0])
     table = _prepare_chain_states(
-        table, s2_entry, local_exit, row_map, downstream,
-        registration, geometry, clock_epoch_id,
+        table, interface_entry, local_exit, row_map, downstream,
+        resolved_connection, geometry, clock_epoch_id,
     )
     source = baseline["particle_source"]
     all_mask = pd.Series(True, index=table.index)
@@ -611,7 +619,9 @@ def analyze_checkpoints(exit_path: Path, capture_path: Path, terminal_path: Path
         "role": "rf_to_oatof_same_id_checkpoint_diagnostic",
         "status": "PASS",
         "analysis_frame": contract["frame_contract"]["analysis_frame"],
-        "input_frame": registration["instrument_frame_id"],
+        "input_frame": resolved_connection["port_geometry"]["downstream"][
+            "coordinate_frame"
+        ]["frame_id"],
         "clock_epoch_id": clock_epoch_id,
         "pulse_instrument_time_us": pulse_time,
         "state_time_semantics": "capture is the left limit immediately before t_pulse",
@@ -623,7 +633,9 @@ def analyze_checkpoints(exit_path: Path, capture_path: Path, terminal_path: Path
             "capture_outside_scheduler_cohort": int((active_mask & ~cohort_mask).sum()),
             "scheduler_cohort_lost_before_pulse": int((cohort_mask & ~active_mask).sum()),
             "all_exit_lost_before_pulse": int((~active_mask).sum()),
-            "s2_oatof_entry": int(table["inside_physical_aperture_at_s2_entry"].sum()),
+            "interface_entry": int(
+                table["inside_physical_aperture_at_interface_entry"].sum()
+            ),
             "local_accelerator_exit": int(table["reached_local_accelerator_exit"].sum()),
             "detector_crossing": int(table["downstream_detector_crossing"].sum()),
             "detector_hit": int(table["downstream_detector_hit"].sum()),
@@ -632,7 +644,9 @@ def analyze_checkpoints(exit_path: Path, capture_path: Path, terminal_path: Path
             "denominator": int(len(table)),
             "sets_are_nested_not_additive": True,
             "rf_exit": int(len(table)),
-            "s2_oatof_entry": int(table["inside_physical_aperture_at_s2_entry"].sum()),
+            "interface_entry": int(
+                table["inside_physical_aperture_at_interface_entry"].sum()
+            ),
             "pulse_active": int(table["active_at_pulse"].sum()),
             "local_accelerator_exit": int(table["reached_local_accelerator_exit"].sum()),
             "detector_hit": int(table["downstream_detector_hit"].sum()),
@@ -662,15 +676,17 @@ def analyze_checkpoints(exit_path: Path, capture_path: Path, terminal_path: Path
             "exit_state": {"path": str(exit_path.resolve()), "sha256": sha256(exit_path)},
             "capture_state": {"path": str(capture_path.resolve()), "sha256": sha256(capture_path)},
             "terminal_census": {"path": str(terminal_path.resolve()), "sha256": sha256(terminal_path)},
-            "s2_oatof_entry_state": {"path": str(s2_entry_path.resolve()), "sha256": sha256(s2_entry_path)},
+            "interface_entry_state": {
+                "path": str(interface_entry_path.resolve()),
+                "sha256": sha256(interface_entry_path),
+            },
             "local_accelerator_exit_state": {"path": str(local_exit_path.resolve()), "sha256": sha256(local_exit_path)},
             "simion_row_map": {"path": str(row_map_path.resolve()), "sha256": sha256(row_map_path)},
             "simion_downstream_state": {"path": str(downstream_path.resolve()), "sha256": sha256(downstream_path)},
             "pulse_schedule": {"path": str(schedule_path.resolve()), "sha256": sha256(schedule_path)},
-            "s2_contract": {"path": str(s2_path.resolve()), "sha256": sha256(s2_path)},
-            "registration": {
-                "path": str(registration_path.resolve()),
-                "sha256": sha256(registration_path),
+            "resolved_connection": {
+                "path": str(resolved_connection_path.resolve()),
+                "sha256": sha256(resolved_connection_path),
             },
             "rf_resolved_geometry": {
                 "path": str(rf_resolved_path.resolve()),
@@ -708,10 +724,10 @@ def _add_reference_boxes(ax_xz: plt.Axes, ax_yz: plt.Axes,
 
 def _plot_state_planes(axes: tuple[plt.Axes, plt.Axes], table: pd.DataFrame,
                        geometry: dict[str, Any]) -> None:
-    """Plot registered chain checkpoints and mutually exclusive loss locations."""
+    """Plot resolved-chain checkpoints and mutually exclusive loss locations."""
     ax_xz, ax_yz = axes
-    add_rf_s2_geometry_outlines(ax_xz, geometry, "xz")
-    add_rf_s2_geometry_outlines(ax_yz, geometry, "yz")
+    add_connection_geometry_outlines(ax_xz, geometry, "xz")
+    add_connection_geometry_outlines(ax_yz, geometry, "yz")
     add_accelerator_geometry_outlines(ax_xz, geometry, "x")
     add_accelerator_geometry_outlines(ax_yz, geometry, "y")
     _add_reference_boxes(ax_xz, ax_yz, geometry)
@@ -719,9 +735,9 @@ def _plot_state_planes(axes: tuple[plt.Axes, plt.Axes], table: pd.DataFrame,
     states = (
         ("exit", pd.Series(True, index=table.index), "#0072B2", "o",
          f"RF exit (N={len(table)})"),
-        ("s2_entry", table["inside_physical_aperture_at_s2_entry"],
-         "#56B4E9", "^", "S2 / oa entry"),
-        ("capture", table["active_at_pulse"], "#E69F00", "s", "S3 pulse left limit"),
+        ("interface_entry", table["inside_physical_aperture_at_interface_entry"],
+         "#56B4E9", "^", "pre-pulse interface entry"),
+        ("capture", table["active_at_pulse"], "#E69F00", "s", "pulse left limit"),
         ("local_exit", table["reached_local_accelerator_exit"],
          "#009E73", "D", "local accelerator exit"),
     )
@@ -851,9 +867,11 @@ def build_checkpoint_figure(metrics: dict[str, Any], table: pd.DataFrame,
     axes["exclusive_outcomes"].set_xlim(0, max(values + [1]) * 1.23)
 
     membership = metrics["stage_membership"]
-    stage_labels = ["RF exit", "S2 / oa entry", "pulse active", "local exit", "detector hit"]
+    stage_labels = [
+        "RF exit", "interface entry", "pulse active", "local exit", "detector hit"
+    ]
     stage_values = [membership[key] for key in (
-        "rf_exit", "s2_oatof_entry", "pulse_active",
+        "rf_exit", "interface_entry", "pulse_active",
         "local_accelerator_exit", "detector_hit",
     )]
     axes["stage_membership"].plot(
@@ -876,7 +894,8 @@ def build_checkpoint_figure(metrics: dict[str, Any], table: pd.DataFrame,
     figure.legend(legend_items.values(), legend_items.keys(),
                   loc="outside lower center", ncol=4, frameon=False, fontsize=8)
     figure.suptitle(
-        "RF exit → S2 port → S3 pulse → local exit → oaTOF detector diagnostic "
+        "RF exit → interface entry → pulse capture → local exit → oaTOF detector "
+        "diagnostic "
         f"(t = {metrics['pulse_instrument_time_us']:.6f} µs)\n"
         f"frame={metrics['analysis_frame']}; input={metrics['input_frame']}; "
         f"clock epoch={metrics['clock_epoch_id']}; source denominator N={denominator}",
@@ -895,18 +914,13 @@ def main() -> None:
     parser.add_argument("--exit-state", type=Path, required=True)
     parser.add_argument("--capture-state", type=Path, required=True)
     parser.add_argument("--terminal-census", type=Path, required=True)
-    parser.add_argument("--s2-entry-state", type=Path, required=True)
+    parser.add_argument("--interface-entry-state", type=Path, required=True)
     parser.add_argument("--local-exit-state", type=Path, required=True)
     parser.add_argument("--downstream-row-map", type=Path, required=True)
     parser.add_argument("--downstream-state", type=Path, required=True)
     parser.add_argument("--pulse-schedule", type=Path, required=True)
     parser.add_argument("--oatof-baseline", type=Path, required=True)
-    parser.add_argument("--s2-contract", type=Path, required=True)
-    parser.add_argument(
-        "--resolved-registration",
-        type=Path,
-        default=DEFAULT_SPATIAL_REGISTRATION,
-    )
+    parser.add_argument("--resolved-connection", type=Path, required=True)
     parser.add_argument("--rf-resolved-geometry", type=Path, required=True)
     parser.add_argument("--joint-contract", type=Path, required=True)
     parser.add_argument("--contract", type=Path, required=True)
@@ -916,10 +930,10 @@ def main() -> None:
     args = parser.parse_args()
     metrics, table, geometry = analyze_checkpoints(
         args.exit_state, args.capture_state, args.terminal_census,
-        args.s2_entry_state, args.local_exit_state,
+        args.interface_entry_state, args.local_exit_state,
         args.downstream_row_map, args.downstream_state,
-        args.pulse_schedule, args.oatof_baseline, args.s2_contract,
-        args.joint_contract, args.contract, args.resolved_registration,
+        args.pulse_schedule, args.oatof_baseline, args.resolved_connection,
+        args.joint_contract, args.contract,
         args.rf_resolved_geometry)
     args.metrics.parent.mkdir(parents=True, exist_ok=True)
     args.particles.parent.mkdir(parents=True, exist_ok=True)

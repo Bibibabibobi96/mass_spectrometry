@@ -23,10 +23,12 @@ def validate(path: Path = CONTRACT_PATH) -> dict:
     source_family = load(PROJECT_ROOT / contract["inputs"]["source_family"])
     distribution = load(PROJECT_ROOT / contract["inputs"]["distribution_shape"])
     transport = load(PROJECT_ROOT / contract["inputs"]["transport_mode"])
-    oatof = load(PROJECT_ROOT / contract["inputs"]["oatof_formal_validation"])
+    oatof = load(PROJECT_ROOT / contract["inputs"]["oatof_science_contract"])
+    if oatof.get("role") != "oa_tof_formal_science_contract" or oatof.get("mode") != "formal":
+        raise ValueError("OA-TOF energy target must come from its formal science contract")
     source_energy = distribution["kinetic_energy_eV"]
     source_mean = (float(source_energy["min"]) + float(source_energy["max"])) / 2
-    target = float(oatof["shared_particles"]["initial_energy_mean_eV"])
+    target = float(oatof["particle"]["initial_energy_mean_ev"])
     point = source_family["operating_points"].get(candidate.get("operating_point"), {})
     if candidate.get("particles") != 100 or candidate.get("mass_amu") != 100.0 or candidate.get("charge_state") != 1:
         raise ValueError("RF energy-match input identity changed")

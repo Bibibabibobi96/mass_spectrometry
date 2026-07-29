@@ -1,61 +1,70 @@
-% Track the RF-exit population through S2 geometry under one shared finite pulse.
+% Track the RF-exit population through PrePulse geometry under one shared finite pulse.
 
 reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
-metricsPath = getenv('RF_OATOF_S3_METRICS');
-terminalPath = getenv('RF_OATOF_S3_TERMINAL_OUTPUT');
-capturePath = getenv('RF_OATOF_S3_CAPTURE_OUTPUT');
-s3Path = getenv('RF_OATOF_S3_CONTRACT');
-s2Path = getenv('RF_OATOF_S3_S2_CONTRACT');
-sharedJointPath = getenv('RF_OATOF_S3_SHARED_JOINT_CONTRACT');
-rfPath = getenv('RF_OATOF_S3_RF_RESOLVED');
-oaPath = getenv('RF_OATOF_S3_OA_BASELINE');
-schedulePath = getenv('RF_OATOF_S3_PULSE_SCHEDULE');
-particlePath = getenv('RF_OATOF_S3_PARTICLE_INPUT');
-oaComsolDir = getenv('RF_OATOF_S3_OA_COMSOL_DIR');
-requiredFiles = {s3Path,s2Path,sharedJointPath,rfPath,oaPath,schedulePath,particlePath};
+metricsPath = getenv('RF_OATOF_PulseCapture_METRICS');
+terminalPath = getenv('RF_OATOF_PulseCapture_TERMINAL_OUTPUT');
+capturePath = getenv('RF_OATOF_PulseCapture_CAPTURE_OUTPUT');
+pulse_capturePath = getenv('RF_OATOF_PulseCapture_CONTRACT');
+pre_pulsePath = getenv('RF_OATOF_PulseCapture_PrePulse_CONTRACT');
+sharedJointPath = getenv('RF_OATOF_PulseCapture_SHARED_JOINT_CONTRACT');
+rfPath = getenv('RF_OATOF_PulseCapture_RF_RESOLVED');
+oaPath = getenv('RF_OATOF_PulseCapture_OA_BASELINE');
+schedulePath = getenv('RF_OATOF_PulseCapture_PULSE_SCHEDULE');
+particlePath = getenv('RF_OATOF_PulseCapture_PARTICLE_INPUT');
+resolvedConnectionPath = getenv('RF_OATOF_RESOLVED_CONNECTION');
+oaComsolDir = getenv('RF_OATOF_PulseCapture_OA_COMSOL_DIR');
+requiredFiles = {pulse_capturePath,pre_pulsePath,sharedJointPath,rfPath,oaPath, ...
+    schedulePath,particlePath,resolvedConnectionPath};
 assert(~isempty(reportPath) && ~isempty(metricsPath) && ...
     ~isempty(terminalPath) && ~isempty(capturePath), ...
-    'S3 output paths are incomplete.');
+    'PulseCapture output paths are incomplete.');
 assert(all(cellfun(@isfile, requiredFiles)) && isfolder(oaComsolDir), ...
-    'S3 frozen inputs are incomplete.');
+    'PulseCapture frozen inputs are incomplete.');
 
 fid = fopen(reportPath, 'w');
-assert(fid >= 0, 'Could not create the S3 task report.');
+assert(fid >= 0, 'Could not create the PulseCapture task report.');
 cleanup = onCleanup(@() fclose(fid));
-fprintf(fid, 'TASK=S3_SHARED_CLOCK_PULSE_CAPTURE\n');
+fprintf(fid, 'TASK=PulseCapture_SHARED_CLOCK_PULSE_CAPTURE\n');
 
 try
-    s3 = jsondecode(fileread(s3Path));
-    s2 = jsondecode(fileread(s2Path));
+    pulse_capture = jsondecode(fileread(pulse_capturePath));
+    pre_pulse = jsondecode(fileread(pre_pulsePath));
     sharedJoint = jsondecode(fileread(sharedJointPath));
     rf = jsondecode(fileread(rfPath));
     oa = jsondecode(fileread(oaPath));
     schedule = jsondecode(fileread(schedulePath));
-    assert(s3.permissions.nominal_particle_runtime_allowed && ...
-        ~s3.permissions.s3_stage_pass_allowed, ...
-        'S3 runtime authorization or qualification boundary differs.');
-    assert(strcmp(schedule.role, 'rf_to_oatof_s3_centroid_pulse_schedule') && ...
-        strcmp(schedule.status, 'PASS'), 'S3 pulse schedule is invalid.');
+    resolvedConnection = jsondecode(fileread(resolvedConnectionPath));
+    assert(pulse_capture.permissions.nominal_particle_runtime_allowed && ...
+        ~pulse_capture.permissions.phase_pass_allowed, ...
+        'PulseCapture runtime authorization or qualification boundary differs.');
+    assert(strcmp(resolvedConnection.role,'resolved_connection_do_not_edit') && ...
+        strcmp(resolvedConnection.compatibility.status,'pass') && ...
+        strcmp(resolvedConnection.clock_alignment.mode,'same_origin'), ...
+        'PulseCapture requires a compatible same-clock resolved connection.');
+    assert(strcmp(schedule.role, 'rf_to_oatof_pulse_capture_centroid_pulse_schedule') && ...
+        strcmp(schedule.status, 'PASS'), 'PulseCapture pulse schedule is invalid.');
 
     import com.comsol.model.util.*
-    tag = 'RFOATOF_S3_PULSE';
+    tag = 'RFOATOF_PulseCapture_PULSE';
     [model, comp, context, geometryInfo, meshElementCounts] = ...
-        prepare_s2_joint_field_model(s2, sharedJoint, rf, oa, oaComsolDir, tag);
+        prepare_pre_pulse_interface_transport_field_model( ...
+        pre_pulse, resolvedConnection, sharedJoint, rf, oa, oaComsolDir, tag);
     [terminal, capture] = track_pulsed_particles( ...
         model, comp, particlePath, fileparts(terminalPath), ...
-        s3, s2, rf, oa, schedule, context);
+        pulse_capture, pre_pulse, resolvedConnection, sharedJoint, ...
+        rf, oa, schedule, context);
     writetable(terminal, terminalPath);
     writetable(capture, capturePath);
     entryCount = nnz(string(terminal.oatof_entry_status) == "transmitted");
     activeCount = height(capture);
     localExitCount = nnz(string(terminal.event) == 'local_accelerator_exit');
-    assert(activeCount >= s3.runtime.minimum_active_at_pulse, ...
-        'S3 runtime has no active particle at the shared pulse.');
-    assert(localExitCount >= s3.runtime.minimum_local_accelerator_exit, ...
-        'S3 runtime has no local accelerator exit state.');
+    assert(activeCount >= pulse_capture.runtime.minimum_active_at_pulse, ...
+        'PulseCapture runtime has no active particle at the shared pulse.');
+    assert(localExitCount >= pulse_capture.runtime.minimum_local_accelerator_exit, ...
+        'PulseCapture runtime has no local accelerator exit state.');
     metrics = struct( ...
         'schema_version', 1, ...
-        'role', 'rf_to_oatof_s3_pulse_capture_metrics', ...
+        'role', 'rf_to_oatof_pulse_capture_metrics', ...
         'status', 'PASS', ...
         'source_particles', height(terminal), ...
         'oatof_entry_crossings', entryCount, ...
@@ -73,11 +82,11 @@ try
         'dense_trajectories_saved', false, ...
         'pulse_time_convergence_claimed', false, ...
         'time_step_convergence_claimed', false, ...
-        's2_stage_passed', false, ...
-        's3_stage_passed', false, ...
+        'pre_pulse_stage_passed', false, ...
+        'pulse_capture_stage_passed', false, ...
         'formal_gate_passed', false);
     metricsFid = fopen(metricsPath, 'w');
-    assert(metricsFid >= 0, 'Could not create S3 metrics.');
+    assert(metricsFid >= 0, 'Could not create PulseCapture metrics.');
     fprintf(metricsFid, '%s', jsonencode(metrics, 'PrettyPrint', true));
     fclose(metricsFid);
     fprintf(fid, ['SOURCE_PARTICLES=%d\nOATOF_ENTRY=%d\nACTIVE_AT_PULSE=%d\n' ...
@@ -95,41 +104,47 @@ end
 clear cleanup
 
 function [events, capture] = track_pulsed_particles( ...
-    model, comp, inputPath, runtimeDir, s3, s2, rf, oa, schedule, context)
+    model, comp, inputPath, runtimeDir, pulse_capture, pre_pulse, ...
+    resolved, sharedJoint, rf, oa, schedule, context)
 ions = readtable(inputPath, 'VariableNamingRule', 'preserve');
 required = {'particle_id','frame_id','clock_epoch_id','instrument_time_us', ...
     'lineage_age_us','particle_age_us','mass_amu','charge_state', ...
     'position_x_mm','position_y_mm','position_z_mm', ...
     'velocity_x_m_s','velocity_y_m_s','velocity_z_m_s'};
 assert(all(ismember(required, ions.Properties.VariableNames)), ...
-    'S3 canonical particle columns are incomplete.');
-assert(height(ions) == s3.source.source_particles, ...
-    'S3 source particle count differs from the contract.');
+    'PulseCapture canonical particle columns are incomplete.');
+assert(height(ions) == pre_pulse.particle_runtime.source_particles, ...
+    'PulseCapture source particle count differs from the contract.');
 assert(isscalar(unique(ions.mass_amu)) && isscalar(unique(ions.charge_state)), ...
-    'S3 minimal runtime requires one mass and charge state.');
-sourceCenter = s2.nominal_registration.source_exit_center_instrument_mm(:).';
-targetCenter = s2.nominal_registration.target_entry_center_instrument_mm(:).';
-assert(all(string(ions.frame_id) == string(s2.nominal_registration.instrument_frame)), ...
-    'S3 particle frame differs from S2.');
-assert(all(string(ions.clock_epoch_id) == string(s3.source.clock_epoch_id)), ...
-    'S3 particle clock epoch differs.');
+    'PulseCapture minimal runtime requires one mass and charge state.');
+rotation = resolved.spatial_registration.rotation_upstream_to_downstream;
+sourceCenter = (rotation*resolved.port_geometry.upstream.mating_surface.center_mm(:)+ ...
+    resolved.spatial_registration.translation_mm(:)).';
+targetCenter = resolved.port_geometry.downstream.mating_surface.center_mm(:).';
+assert(all(string(ions.frame_id) == string( ...
+    resolved.port_geometry.downstream.coordinate_frame.frame_id)), ...
+    'PulseCapture particle frame differs from PrePulse.');
+assert(all(string(ions.clock_epoch_id) == string( ...
+    pre_pulse.particle_runtime.clock_epoch_id)), ...
+    'PulseCapture particle clock epoch differs.');
 assert(all(abs(ions.position_x_mm-sourceCenter(1)) <= 1e-12), ...
-    'S3 particles must start on the physical RF exit plane.');
-assert(all(ions.velocity_x_m_s > 0), 'S3 particles must move toward oaTOF.');
+    'PulseCapture particles must start on the physical RF exit plane.');
+assert(all(ions.velocity_x_m_s > 0), 'PulseCapture particles must move toward oaTOF.');
 
 if ~isfolder(runtimeDir), mkdir(runtimeDir); end
 
 cpt = comp.physics.create('cpt', 'ChargedParticleTracing', 'geom1');
-cpt.label('S3 shared-clock finite pulse N=100');
+cpt.label('PulseCapture shared-clock finite pulse N=100');
 cpt.selection.named('sel_vac');
 cpt.feature('pp1').set('mp', sprintf('%.17g[kg]', ions.mass_amu(1)*1.66053906660e-27));
 cpt.feature('pp1').set('Z', sprintf('%d', round(ions.charge_state(1))));
-releaseOffset = s2.no_pulse_field_candidate.boundary_probe_inset_mm;
-directMating = abs(s2.nominal_registration.connector_gap_mm) <= 1e-12;
-aperture = s2.passive_connector_geometry.downstream_entry_aperture;
+releaseOffset = pre_pulse.field_runtime.boundary_probe_inset_mm;
+directMating = abs(resolved.connector.length_mm) <= ...
+    resolved.spatial_registration.position_tolerance_mm;
+aperture = resolved.transition_aperture;
 insidePhysicalAperture = ...
-    abs(ions.position_y_mm-targetCenter(2)) <= aperture.full_width_y_mm/2+1e-12 & ...
-    abs(ions.position_z_mm-targetCenter(3)) <= aperture.full_height_z_mm/2+1e-12;
+    abs(ions.position_y_mm-targetCenter(2)) <= aperture.full_width_mm/2+1e-12 & ...
+    abs(ions.position_z_mm-targetCenter(3)) <= aperture.full_height_mm/2+1e-12;
 if directMating
     releaseIndices = find(insidePhysicalAperture);
 else
@@ -149,7 +164,7 @@ for releaseColumn = 1:numel(releaseIndices)
         ions.position_y_mm(index)+ions.velocity_y_m_s(index)*restartDtS*1e3, ...
         ions.position_z_mm(index)+ions.velocity_z_m_s(index)*restartDtS*1e3, ...
         ions.velocity_x_m_s(index), ions.velocity_y_m_s(index), ions.velocity_z_m_s(index)];
-    releasePath = fullfile(runtimeDir, sprintf('s3_particle_%03d.txt', ions.particle_id(index)));
+    releasePath = fullfile(runtimeDir, sprintf('pulse_capture_particle_%03d.txt', ions.particle_id(index)));
     writematrix(releaseData, releasePath, 'Delimiter', 'tab');
     release = cpt.create(sprintf('rel%03d', releaseColumn), 'ReleaseFromDataFile', -1);
     release.set('Filename', releasePath);
@@ -161,7 +176,8 @@ for releaseColumn = 1:numel(releaseIndices)
     release.importData();
 end
 
-rfScale = rf.drive.rf_amplitude_V_zero_to_peak_per_group / s2.no_pulse_field_candidate.rf_unit_voltage_V;
+rfScale = rf.drive.rf_amplitude_V_zero_to_peak_per_group / ...
+    max(abs(sharedJoint.field_basis.rf_unit.rod_differential_pattern_V));
 frequency = rf.drive.frequency_Hz;
 phase = rf.drive.phase_rad;
 pulseTimeUs = schedule.derived_pulse_time_us;
@@ -175,9 +191,9 @@ electricForce.set('E', { ...
     sprintf('%.17g*(-d(Vrf,x))*sin(2*pi*%.17g[Hz]*t+%.17g)+(%s)*(-d(V,x))', rfScale, frequency, phase, gate), ...
     sprintf('%.17g*(-d(Vrf,y))*sin(2*pi*%.17g[Hz]*t+%.17g)+(%s)*(-d(V,y))', rfScale, frequency, phase, gate), ...
     sprintf('%.17g*(-d(Vrf,z))*sin(2*pi*%.17g[Hz]*t+%.17g)+(%s)*(-d(V,z))', rfScale, frequency, phase, gate)});
-timeStep = 1/frequency/s2.functional_candidate.rf_steps_per_period;
+timeStep = 1/frequency/pre_pulse.functional_candidate.rf_steps_per_period;
 timeStart = max(0, min(releaseTimeUs(releaseIndices))*1e-6-timeStep);
-timeEnd = (pulseTimeUs+pulseWidthUs+s3.waveform.post_pulse_tracking_time_us)*1e-6;
+timeEnd = (pulseTimeUs+pulseWidthUs+pulse_capture.waveform.post_pulse_tracking_time_us)*1e-6;
 study = model.study.create('std2');
 time = study.create('time1', 'Transient');
 time.set('tlist', sprintf('range(%.17g,%.17g,%.17g)', timeStart, timeStep, timeEnd));
@@ -202,7 +218,7 @@ particles = mphparticle(model, 'dataset', 'pdset1');
 x=squeeze(particles.p(:,:,1)); y=squeeze(particles.p(:,:,2)); z=squeeze(particles.p(:,:,3));
 vx=squeeze(particles.v(:,:,1)); vy=squeeze(particles.v(:,:,2)); vz=squeeze(particles.v(:,:,3));
 if isvector(x), x=x(:); y=y(:); z=z(:); vx=vx(:); vy=vy(:); vz=vz(:); end
-assert(size(x,2) == numel(releaseIndices), 'S3 solved particle count differs from released particles.');
+assert(size(x,2) == numel(releaseIndices), 'PulseCapture solved particle count differs from released particles.');
 localPlane = oa.geometry_mm.accelerator_grid2_z+context.oatof_downstream_buffer_mm-releaseOffset;
 eventRows = cell(height(ions), 24);
 captureRows = cell(height(ions), 12); captureCount = 0;
@@ -218,8 +234,8 @@ for index = 1:height(ions)
             vx(:,column), vy(:,column), vz(:,column), targetCenter(1));
     end
     insideEntry = crossed && ...
-        abs(entryState.y_mm-targetCenter(2)) <= aperture.full_width_y_mm/2+1e-12 && ...
-        abs(entryState.z_mm-targetCenter(3)) <= aperture.full_height_z_mm/2+1e-12;
+        abs(entryState.y_mm-targetCenter(2)) <= aperture.full_width_mm/2+1e-12 && ...
+        abs(entryState.z_mm-targetCenter(3)) <= aperture.full_height_mm/2+1e-12;
     activeAtPulse = false;
     if insideEntry
         column = releaseColumnByIon(index);
@@ -254,7 +270,7 @@ for index = 1:height(ions)
         column = releaseColumnByIon(index);
         valid = find(isfinite(x(:,column)) & isfinite(y(:,column)) & isfinite(z(:,column)) & ...
             isfinite(vx(:,column)) & isfinite(vy(:,column)) & isfinite(vz(:,column)));
-        assert(~isempty(valid), 'S3 released particle has no finite state.');
+        assert(~isempty(valid), 'PulseCapture released particle has no finite state.');
         last=valid(end); state=make_state(particles.t(last),x(last,column),y(last,column),z(last,column), ...
             vx(last,column),vy(last,column),vz(last,column));
         event='terminal'; status='lost';

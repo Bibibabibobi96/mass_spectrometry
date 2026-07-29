@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "role": "rf_to_oatof_pre_pulse_interface_transport",
+  "status": "functional_unqualified",
+  "phase": "pre_pulse_interface_transport",
+  "topology_source": "resolved_connection",
+  "inputs": {
+    "explicit_dependencies": "config/rf_to_oatof_pre_pulse_dependencies.json",
+    "rf_resolved_geometry": "config/resolved_design_official.json",
+    "oatof_baseline": "../single_reflection_oa_tof_mass_analyzer/config/baseline.json"
+  },
+  "field_runtime": {
+    "included_bases": ["time_dependent_rf", "oatof_static"],
+    "pulse_enabled": false,
+    "magnetic_field_enabled": false,
+    "collision_or_space_charge_enabled": false,
+    "mesh": {
+      "global_auto_level": 6,
+      "accelerator_hmax_mm": 1.0,
+      "interface_hmax_mm": 0.25
+    },
+    "required_probe_locations": ["rf_rod_region_off_axis", "rf_exit_center", "connector_midpoint", "oatof_entry_center", "oatof_ideal_source_center"],
+    "rf_off_axis_probe_radius_mm": 1.0,
+    "boundary_probe_inset_mm": 0.001
+  },
+  "particle_runtime": {
+    "source_particles": 100,
+    "source_run_id": "20260722_193000__sim__comsol__rf-input5ev-handoff__n100__r02",
+    "source_event_path": "results/rf_hybrid_mesh_n100_events.csv",
+    "source_metadata_path": "inputs/particle_source_metadata.json",
+    "clock_epoch_id": "instrument_clock_epoch.v1",
+    "rf_steps_per_period": 80,
+    "connector_transit_time_margin_factor": 3.0,
+    "required_census": ["rf_exit", "connector_entry", "connector_wall_loss", "downstream_entry_wall_loss", "oatof_entry"],
+    "minimum_oatof_entry_crossings": 1,
+    "dense_trajectories_saved": false,
+    "audit_tolerances": {
+      "plane_residual_mm": 1e-9,
+      "clock_residual_us": 1e-9,
+      "energy_velocity_relative_residual": 1e-10
+    }
+  },
+  "permissions": {
+    "field_solve_allowed": true,
+    "particle_runtime_allowed": true,
+    "phase_pass_allowed": false,
+    "formal_promotion_allowed": false
+  }
+}

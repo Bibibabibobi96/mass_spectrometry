@@ -18,13 +18,6 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'Interface-readiness contract gate failed.' }
   & $python -m projects.rf_quadrupole_ion_optics.analysis.resolve_contract --profile mass_filter --check
   if ($LASTEXITCODE -ne 0) { throw 'Mass-filter resolved contract gate failed.' }
-  foreach ($registrationStage in @('s2')) {
-    & $python -m projects.rf_quadrupole_ion_optics.analysis.resolve_spatial_registration `
-      --stage $registrationStage --check
-    if ($LASTEXITCODE -ne 0) {
-      throw "RF-to-oaTOF $registrationStage spatial-registration publication is stale."
-    }
-  }
   & $python -m projects.rf_quadrupole_ion_optics.analysis.sync_simion_geometry --check
   if ($LASTEXITCODE -ne 0) { throw 'SIMION geometry publication gate failed.' }
   & $python -m projects.rf_quadrupole_ion_optics.analysis.generate_official_particle_table --check `
@@ -57,11 +50,24 @@ try {
 if ($LASTEXITCODE -ne 0) { throw 'Quadrupole mass-filter L1 contract gate failed.' }
 & $python (Join-Path $projectRoot 'analysis\entry_aperture_l0.py') --check
 if ($LASTEXITCODE -ne 0) { throw 'Entry-aperture L0 reference gate failed.' }
+$connectionGateRoot = Join-Path ([IO.Path]::GetTempPath()) `
+  'rf_quadrupole_connection_gate'
+$resolvedConnection = Join-Path $connectionGateRoot 'resolved_connection.json'
+$compositionPlan = Join-Path $connectionGateRoot 'composition_plan.json'
+New-Item -ItemType Directory -Path $connectionGateRoot -Force | Out-Null
 Push-Location $repoRoot
 try {
+  & $python -m common.integration.resolve_connection `
+    --registry (Join-Path $repoRoot `
+      'integrations\rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer\config\connection_profiles.json') `
+    --profile-id 'rf_quadrupole_grounded_connector_gap_1mm' `
+    --resolved-output $resolvedConnection --plan-output $compositionPlan `
+    --repo-root $repoRoot
+  if ($LASTEXITCODE -ne 0) {
+    throw 'RF-to-oaTOF resolved-connection gate failed.'
+  }
   & $python -m projects.rf_quadrupole_ion_optics.analysis.build_oatof_handoff `
-    --check-contract `
-    --resolved-registration (Join-Path $projectRoot 'config\resolved_rf_to_oatof_s2_spatial_registration.json')
+    --check-contract --resolved-connection $resolvedConnection
 } finally { Pop-Location }
 if ($LASTEXITCODE -ne 0) { throw 'RF-to-oaTOF handoff contract gate failed.' }
 $candidateValidators = @(
@@ -71,8 +77,8 @@ $candidateValidators = @(
   'validate_rf_energy_match.py',
   'validate_rf_piecewise_swept_mesh.py',
   'validate_rf_rod_region_swept_mesh.py',
-  'validate_s2_passive_connector.py'
-  'validate_s3_pulse_capture.py',
+  'validate_pre_pulse_interface_transport.py',
+  'validate_pulse_capture.py',
   'validate_spatial_registration_migration.py'
 )
 $previousPythonPath = $env:PYTHONPATH

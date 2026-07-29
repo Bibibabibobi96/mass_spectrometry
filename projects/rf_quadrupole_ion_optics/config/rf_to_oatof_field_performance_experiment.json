@@ -6,7 +6,7 @@
     "E0": "S1 field characterization",
     "E1": "S1 connection-specific numerical qualification",
     "E2": "S1 N=100 functional gate",
-    "E3": "after the S3 N=100 pulse gate and before S5 formal promotion",
+    "E3": "after the N=100 pulse-capture gate and before Formal promotion",
     "E4": "S4 tolerance work when applicable and S5 cross-solver closure"
   },
   "formal_baseline_policy": {

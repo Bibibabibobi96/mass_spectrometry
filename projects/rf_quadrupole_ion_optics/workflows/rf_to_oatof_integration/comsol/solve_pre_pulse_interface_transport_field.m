@@ -1,56 +1,59 @@
-% Solve the two no-pulse S2 field bases on the shared passive-connector geometry.
+% Solve the two no-pulse PrePulse field bases on the shared passive-connector geometry.
 
 reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
-metricsPath = getenv('RF_OATOF_S2_FIELD_METRICS');
-samplesPath = getenv('RF_OATOF_S2_FIELD_SAMPLES');
-contractPath = getenv('RF_OATOF_S2_CONTRACT');
-sharedJointPath = getenv('RF_OATOF_S2_SHARED_JOINT_CONTRACT');
-rfResolvedPath = getenv('RF_OATOF_S2_RF_RESOLVED');
-oaBaselinePath = getenv('RF_OATOF_S2_OA_BASELINE');
-spatialRegistrationPath = getenv('RF_OATOF_SPATIAL_REGISTRATION');
-spatialRegistrationSha256 = getenv('RF_OATOF_SPATIAL_REGISTRATION_SHA256');
-oaComsolDir = getenv('RF_OATOF_S2_OA_COMSOL_DIR');
-particleInputPath = getenv('RF_OATOF_S2_PARTICLE_INPUT');
-particleOutputPath = getenv('RF_OATOF_S2_PARTICLE_OUTPUT');
+metricsPath = getenv('RF_OATOF_PrePulse_FIELD_METRICS');
+samplesPath = getenv('RF_OATOF_PrePulse_FIELD_SAMPLES');
+contractPath = getenv('RF_OATOF_PrePulse_CONTRACT');
+sharedJointPath = getenv('RF_OATOF_PrePulse_SHARED_JOINT_CONTRACT');
+rfResolvedPath = getenv('RF_OATOF_PrePulse_RF_RESOLVED');
+oaBaselinePath = getenv('RF_OATOF_PrePulse_OA_BASELINE');
+resolvedConnectionPath = getenv('RF_OATOF_RESOLVED_CONNECTION');
+resolvedConnectionSha256 = getenv('RF_OATOF_RESOLVED_CONNECTION_SHA256');
+oaComsolDir = getenv('RF_OATOF_PrePulse_OA_COMSOL_DIR');
+particleInputPath = getenv('RF_OATOF_PrePulse_PARTICLE_INPUT');
+particleOutputPath = getenv('RF_OATOF_PrePulse_PARTICLE_OUTPUT');
 assert(~isempty(reportPath) && ~isempty(metricsPath) && ~isempty(samplesPath), ...
-    'S2 field output paths are incomplete.');
+    'PrePulse field output paths are incomplete.');
 assert(isfile(contractPath) && isfile(sharedJointPath) && ...
     isfile(rfResolvedPath) && isfile(oaBaselinePath) && ...
-    isfile(spatialRegistrationPath) && ~isempty(spatialRegistrationSha256), ...
-    'S2 field contract inputs are incomplete.');
+    isfile(resolvedConnectionPath) && ~isempty(resolvedConnectionSha256), ...
+    'PrePulse field contract inputs are incomplete.');
 assert(isfolder(oaComsolDir), 'The oaTOF COMSOL source directory is missing.');
 
 fid = fopen(reportPath, 'w');
-assert(fid >= 0, 'Could not create the S2 field task report.');
+assert(fid >= 0, 'Could not create the PrePulse field task report.');
 cleanup = onCleanup(@() fclose(fid));
-fprintf(fid, 'TASK=S2_PASSIVE_CONNECTOR_NO_PULSE_FIELD\n');
+fprintf(fid, 'TASK=PrePulse_PASSIVE_CONNECTOR_NO_PULSE_FIELD\n');
 
 try
     contract = jsondecode(fileread(contractPath));
     sharedJoint = jsondecode(fileread(sharedJointPath));
     rf = jsondecode(fileread(rfResolvedPath));
     oa = jsondecode(fileread(oaBaselinePath));
-    spatial = jsondecode(fileread(spatialRegistrationPath));
-    assert(strcmp(spatial.role,'resolved_spatial_registration_do_not_edit'), ...
-        'S2 field metrics require the resolved spatial registration.');
+    resolvedConnection = jsondecode(fileread(resolvedConnectionPath));
+    assert(strcmp(resolvedConnection.role,'resolved_connection_do_not_edit') && ...
+        strcmp(resolvedConnection.compatibility.status,'pass'), ...
+        'PrePulse field metrics require a compatible resolved connection.');
     assert(contract.permissions.field_solve_allowed, ...
-        'The S2 contract does not authorize a field solve.');
-    assert(~contract.field_ownership.oa_extraction_pulse_included, ...
-        'The no-pulse S2 field task cannot include an oa extraction pulse.');
+        'The PrePulse contract does not authorize a field solve.');
+    assert(~contract.field_runtime.pulse_enabled, ...
+        'The no-pulse PrePulse field task cannot include an oa extraction pulse.');
     particleEnabled = ~isempty(particleInputPath);
     if particleEnabled
         assert(contract.permissions.particle_runtime_allowed, ...
-            'The S2 contract does not authorize particle runtime.');
+            'The PrePulse contract does not authorize particle runtime.');
         assert(isfile(particleInputPath) && ~isempty(particleOutputPath), ...
-            'S2 particle input or output is missing.');
+            'PrePulse particle input or output is missing.');
     end
 
     import com.comsol.model.util.*
-    tag = 'RFOATOF_S2_FIELD';
+    tag = 'RFOATOF_PrePulse_FIELD';
     [model, comp, context, geometryInfo, meshElementCounts] = ...
-        prepare_s2_joint_field_model(contract, sharedJoint, rf, oa, oaComsolDir, tag);
+        prepare_pre_pulse_interface_transport_field_model( ...
+        contract, resolvedConnection, sharedJoint, rf, oa, oaComsolDir, tag);
 
-    [probeNames, coordinates] = field_probe_coordinates(contract, rf, oa, spatial);
+    [probeNames, coordinates] = field_probe_coordinates( ...
+        contract, rf, oa, resolvedConnection);
     expressions = {'-d(V,x)','-d(V,y)','-d(V,z)','V', ...
         '-d(Vrf,x)','-d(Vrf,y)','-d(Vrf,z)','Vrf'};
     values = cell(1, numel(expressions));
@@ -58,7 +61,7 @@ try
         'dataset', 'dset1', 'matherr', 'on');
     matrix = zeros(size(coordinates,1), numel(expressions));
     for index = 1:numel(values), matrix(:,index) = values{index}(:); end
-    assert(all(isfinite(matrix), 'all'), 'S2 field probes contain nonfinite values.');
+    assert(all(isfinite(matrix), 'all'), 'PrePulse field probes contain nonfinite values.');
     rfOffAxisFieldNorm = norm(matrix(1,5:7));
     assert(rfOffAxisFieldNorm > 0, 'The RF off-axis probe did not resolve the RF-unit field.');
 
@@ -77,23 +80,25 @@ try
     connectorLosses = 0;
     if particleEnabled
         particleEvents = track_connector_particles( ...
-            model, comp, particleInputPath, fileparts(particleOutputPath), contract, rf);
+            model, comp, particleInputPath, fileparts(particleOutputPath), ...
+            contract, resolvedConnection, sharedJoint, rf);
         writetable(particleEvents, particleOutputPath);
         particleInputCount = height(particleEvents);
         oatofEntryCrossings = nnz(string(particleEvents.event) == "oatof_entry");
         connectorLosses = nnz(string(particleEvents.status) == "lost");
-        assert(oatofEntryCrossings >= contract.functional_candidate.minimum_oatof_entry_crossings, ...
-            'S2 particle runtime did not meet the minimum oa-entry crossing count.');
+        assert(oatofEntryCrossings >= ...
+            contract.particle_runtime.minimum_oatof_entry_crossings, ...
+            'PrePulse particle runtime did not meet the minimum oa-entry crossing count.');
     end
 
     meshElementTotal = sum(meshElementCounts);
     metrics = struct( ...
         'schema_version', 1, ...
-        'role', 'rf_to_oatof_s2_no_pulse_field_metrics', ...
+        'role', 'rf_to_oatof_pre_pulse_no_pulse_field_metrics', ...
         'status', 'SOLVED', ...
-        'frame_id', spatial.instrument_frame_id, ...
+        'frame_id', resolvedConnection.port_geometry.downstream.coordinate_frame.frame_id, ...
         'position_unit', 'mm', ...
-        'spatial_registration_sha256', spatialRegistrationSha256, ...
+        'resolved_connection_sha256', resolvedConnectionSha256, ...
         'gap_mm', context.gap_mm, ...
         'geometry_domains', geometryInfo.Ndomains, ...
         'mesh_element_counts_by_type', meshElementCounts, ...
@@ -109,11 +114,11 @@ try
         'oa_extraction_pulse_included', false, ...
         'model_saved', false, ...
         'mesh_convergence_claimed', false, ...
-        's2_stage_passed', false, ...
+        'pre_pulse_stage_passed', false, ...
         'formal_gate_passed', false, ...
-        'claim_limit', contract.no_pulse_field_candidate.claim_limit);
+        'claim_limit', 'functional_unqualified_no_numerical_or_formal_qualification');
     metricsFid = fopen(metricsPath, 'w');
-    assert(metricsFid >= 0, 'Could not create S2 field metrics.');
+    assert(metricsFid >= 0, 'Could not create PrePulse field metrics.');
     fprintf(metricsFid, '%s', jsonencode(metrics, 'PrettyPrint', true));
     fclose(metricsFid);
     fprintf(fid, ['GAP_MM=%.17g\nGEOMETRY_DOMAINS=%d\nMESH_ELEMENTS=%d\n' ...
@@ -130,61 +135,69 @@ catch exception
 end
 clear cleanup
 
-function [names, coordinates] = field_probe_coordinates(contract, rf, oa, spatial)
-source = spatial.resolved_surfaces.source_exit.in_instrument_frame.center_mm(:).';
-target = spatial.resolved_surfaces.target_entry.in_instrument_frame.center_mm(:).';
-offset = contract.no_pulse_field_candidate.boundary_probe_inset_mm;
-pose = spatial.component_poses.rf_quadrupole_component;
-rotation = pose.rotation;
-localProbe = [contract.no_pulse_field_candidate.rf_off_axis_probe_radius_mm; 0; ...
+function [names, coordinates] = field_probe_coordinates(contract, rf, oa, resolved)
+rotation = resolved.spatial_registration.rotation_upstream_to_downstream;
+translation = resolved.spatial_registration.translation_mm(:);
+source = (rotation*resolved.port_geometry.upstream.mating_surface.center_mm(:)+ ...
+    translation).';
+target = resolved.port_geometry.downstream.mating_surface.center_mm(:).';
+offset = contract.field_runtime.boundary_probe_inset_mm;
+localProbe = [contract.field_runtime.rf_off_axis_probe_radius_mm; 0; ...
     (rf.geometry_mm.rod_z_min+rf.geometry_mm.rod_z_max)/2];
-rfOffAxis = (rotation*localProbe + pose.translation_mm(:)).';
+rfOffAxis = (rotation*localProbe + translation).';
+axisDirection = resolved.spatial_registration.transformed_upstream_normal(:).';
 names = ["rf_rod_region_off_axis";"rf_exit_center";"connector_midpoint"; ...
     "oatof_entry_center";"oatof_ideal_source_center"];
-coordinates = [rfOffAxis; source+[offset,0,0]; (source+target)/2; target+[offset,0,0]; ...
+coordinates = [rfOffAxis; source+offset*axisDirection; (source+target)/2; ...
+    target+offset*axisDirection; ...
     [oa.particle_source.center_x_mm, oa.particle_source.center_y_mm, oa.particle_source.center_z_mm]];
 end
 
-function events = track_connector_particles(model, comp, inputPath, runtimeDir, contract, rf)
+function events = track_connector_particles( ...
+    model, comp, inputPath, runtimeDir, contract, resolved, sharedJoint, rf)
 ions = readtable(inputPath, 'VariableNamingRule', 'preserve');
 required = {'particle_id','frame_id','clock_epoch_id','instrument_time_us', ...
     'lineage_age_us','particle_age_us','mass_amu','charge_state', ...
     'position_x_mm','position_y_mm','position_z_mm', ...
     'velocity_x_m_s','velocity_y_m_s','velocity_z_m_s'};
 assert(all(ismember(required, ions.Properties.VariableNames)), ...
-    'S2 canonical particle columns are incomplete.');
-candidate = contract.functional_candidate;
+    'PrePulse canonical particle columns are incomplete.');
+candidate = contract.particle_runtime;
 assert(height(ions) == candidate.source_particles, ...
-    'S2 particle count differs from the frozen source contract.');
+    'PrePulse particle count differs from the frozen source contract.');
 assert(isscalar(unique(ions.mass_amu)) && isscalar(unique(ions.charge_state)), ...
-    'S2 minimal particle runtime requires one mass and charge state.');
-registration = contract.nominal_registration;
-sourceCenter = registration.source_exit_center_instrument_mm(:).';
-targetCenter = registration.target_entry_center_instrument_mm(:).';
-assert(all(string(ions.frame_id) == string(registration.instrument_frame)), ...
-    'S2 particle frame differs from the registered instrument frame.');
+    'PrePulse minimal particle runtime requires one mass and charge state.');
+rotation = resolved.spatial_registration.rotation_upstream_to_downstream;
+sourceCenter = (rotation*resolved.port_geometry.upstream.mating_surface.center_mm(:)+ ...
+    resolved.spatial_registration.translation_mm(:)).';
+targetCenter = resolved.port_geometry.downstream.mating_surface.center_mm(:).';
+targetFrame = resolved.port_geometry.downstream.coordinate_frame.frame_id;
+assert(all(string(ions.frame_id) == string(targetFrame)), ...
+    'PrePulse particle frame differs from the registered instrument frame.');
 assert(all(string(ions.clock_epoch_id) == string(candidate.clock_epoch_id)), ...
-    'S2 particle clock epoch differs from the candidate contract.');
+    'PrePulse particle clock epoch differs from the candidate contract.');
 assert(all(abs(ions.position_x_mm-sourceCenter(1)) <= 1e-12), ...
-    'S2 particles must begin on the physical RF exit plane.');
+    'PrePulse particles must begin on the physical RF exit plane.');
 assert(all(ions.velocity_x_m_s > 0), ...
-    'S2 particles must move from the RF exit toward the oa entry.');
+    'PrePulse particles must move from the RF exit toward the oa entry.');
 radial = hypot(ions.position_y_mm-sourceCenter(2), ions.position_z_mm-sourceCenter(3));
-assert(all(radial <= contract.passive_connector_geometry.upstream_clear_aperture.radius_mm+1e-12), ...
-    'S2 particle source exceeds the RF exit aperture.');
+assert(all(radial <= ...
+    resolved.port_geometry.upstream.mating_surface.aperture_radius_mm+1e-12), ...
+    'PrePulse particle source exceeds the RF exit aperture.');
 if ~isfolder(runtimeDir), mkdir(runtimeDir); end
 
 cpt = comp.physics.create('cpt', 'ChargedParticleTracing', 'geom1');
-cpt.label('S2 passive connector shared-clock N=100');
+cpt.label('PrePulse passive connector shared-clock N=100');
 cpt.selection.named('sel_vac');
 cpt.feature('pp1').set('mp', sprintf('%.17g[kg]', ions.mass_amu(1)*1.66053906660e-27));
 cpt.feature('pp1').set('Z', sprintf('%d', round(ions.charge_state(1))));
-releaseOffset = contract.no_pulse_field_candidate.boundary_probe_inset_mm;
-directMating = abs(contract.nominal_registration.connector_gap_mm) <= 1e-12;
-aperture = contract.passive_connector_geometry.downstream_entry_aperture;
+releaseOffset = contract.field_runtime.boundary_probe_inset_mm;
+directMating = abs(resolved.connector.length_mm) <= ...
+    resolved.spatial_registration.position_tolerance_mm;
+aperture = resolved.transition_aperture;
 insidePhysicalAperture = ...
-    abs(ions.position_y_mm-targetCenter(2)) <= aperture.full_width_y_mm/2+1e-12 & ...
-    abs(ions.position_z_mm-targetCenter(3)) <= aperture.full_height_z_mm/2+1e-12;
+    abs(ions.position_y_mm-targetCenter(2)) <= aperture.full_width_mm/2+1e-12 & ...
+    abs(ions.position_z_mm-targetCenter(3)) <= aperture.full_height_mm/2+1e-12;
 if directMating
     releaseIndices = find(insidePhysicalAperture);
 else
@@ -204,7 +217,7 @@ for releaseColumn = 1:numel(releaseIndices)
         ions.position_y_mm(index)+ions.velocity_y_m_s(index)*restartDtS*1e3, ...
         ions.position_z_mm(index)+ions.velocity_z_m_s(index)*restartDtS*1e3, ...
         ions.velocity_x_m_s(index), ions.velocity_y_m_s(index), ions.velocity_z_m_s(index)];
-    releasePath = fullfile(runtimeDir, sprintf('s2_connector_particle_%03d.txt', ions.particle_id(index)));
+    releasePath = fullfile(runtimeDir, sprintf('pre_pulse_connector_particle_%03d.txt', ions.particle_id(index)));
     writematrix(releaseData, releasePath, 'Delimiter', 'tab');
     release = cpt.create(sprintf('rel%03d', releaseColumn), 'ReleaseFromDataFile', -1);
     release.set('Filename', releasePath);
@@ -217,7 +230,7 @@ for releaseColumn = 1:numel(releaseIndices)
 end
 
 rfScale = rf.drive.rf_amplitude_V_zero_to_peak_per_group / ...
-    contract.no_pulse_field_candidate.rf_unit_voltage_V;
+    max(abs(sharedJoint.field_basis.rf_unit.rod_differential_pattern_V));
 frequency = rf.drive.frequency_Hz;
 phase = rf.drive.phase_rad;
 electricForce = cpt.create('ef1', 'ElectricForce', 3);
@@ -229,7 +242,7 @@ electricForce.set('E', { ...
     sprintf('(-d(V,z))+%.17g*(-d(Vrf,z))*sin(2*pi*%.17g[Hz]*t+%.17g)', rfScale, frequency, phase)});
 timeStep = 1 / frequency / candidate.rf_steps_per_period;
 minimumVx = min(ions.velocity_x_m_s);
-transitEstimate = contract.nominal_registration.connector_gap_mm*1e-3/minimumVx;
+transitEstimate = resolved.connector.length_mm*1e-3/minimumVx;
 timeStart = max(0, min(releaseTimeUs(releaseIndices))*1e-6-timeStep);
 timeEnd = max(releaseTimeUs(releaseIndices))*1e-6 + max(timeStep, ...
     candidate.connector_transit_time_margin_factor*transitEstimate);
@@ -259,7 +272,7 @@ vx = squeeze(particles.v(:,:,1)); vy = squeeze(particles.v(:,:,2)); vz = squeeze
 if isvector(x)
     x=x(:); y=y(:); z=z(:); vx=vx(:); vy=vy(:); vz=vz(:);
 end
-assert(size(x,2) == numel(releaseIndices), 'S2 solved particle count differs from released particles.');
+assert(size(x,2) == numel(releaseIndices), 'PrePulse solved particle count differs from released particles.');
 rows = cell(height(ions), 22);
 for index = 1:height(ions)
     if directMating
@@ -274,8 +287,8 @@ for index = 1:height(ions)
             vx(:,column), vy(:,column), vz(:,column), targetCenter(1));
     end
     insideAperture = crossed && ...
-        abs(state.y_mm-targetCenter(2)) <= aperture.full_width_y_mm/2+1e-12 && ...
-        abs(state.z_mm-targetCenter(3)) <= aperture.full_height_z_mm/2+1e-12;
+        abs(state.y_mm-targetCenter(2)) <= aperture.full_width_mm/2+1e-12 && ...
+        abs(state.z_mm-targetCenter(3)) <= aperture.full_height_mm/2+1e-12;
     if insideAperture
         event = 'oatof_entry'; status = 'transmitted'; reason = 'none';
     elseif crossed
@@ -284,7 +297,7 @@ for index = 1:height(ions)
         column = releaseColumnByIon(index);
         valid = find(isfinite(x(:,column)) & isfinite(y(:,column)) & isfinite(z(:,column)) & ...
             isfinite(vx(:,column)) & isfinite(vy(:,column)) & isfinite(vz(:,column)));
-        assert(~isempty(valid), 'S2 released particle has no finite state.');
+        assert(~isempty(valid), 'PrePulse released particle has no finite state.');
         last = valid(end);
         state = struct('t_s', particles.t(last), 'x_mm', x(last,column), ...
             'y_mm', y(last,column), 'z_mm', z(last,column), ...

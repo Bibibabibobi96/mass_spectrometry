@@ -1,4 +1,4 @@
-projectRoot = fileparts(fileparts(fileparts(mfilename('fullpath'))));
+projectRoot = fileparts(fileparts(fileparts(fileparts(mfilename('fullpath')))));
 addpath(projectRoot);
 addpath(fullfile(projectRoot, 'comsol'));
 reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');

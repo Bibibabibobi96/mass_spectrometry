@@ -573,7 +573,7 @@ class CandidateGateParameterContractTests(unittest.TestCase):
             "resolve_contract --check",
             "--profile interface --check",
             "--profile mass_filter --check",
-            "resolve_spatial_registration",
+            "common.integration.resolve_connection",
             "sync_simion_geometry --check",
             "generate_official_particle_table --check",
             "mass_filter_reference.theory",

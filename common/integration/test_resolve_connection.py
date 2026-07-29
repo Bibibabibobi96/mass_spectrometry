@@ -85,6 +85,13 @@ class ResolveConnectionTests(unittest.TestCase):
                 "inner_radius_mm": 2.0,
                 "wall_thickness_mm": 0.5,
             },
+            "transition_aperture": {
+                "shape": "rectangle",
+                "full_width_mm": 3.0,
+                "full_height_mm": 3.2,
+                "width_axis_downstream_frame": [1.0, 0.0, 0.0],
+                "height_axis_downstream_frame": [0.0, 1.0, 0.0],
+            },
             "minimum_clear_radius_mm": 1.5,
             "potential_alignment": {"mode": "continuous", "tolerance_V": 1e-9},
             "clock_alignment": {"mode": "same_origin", "offset_s": 0.0},
@@ -186,6 +193,38 @@ class ResolveConnectionTests(unittest.TestCase):
         )
         self.assertEqual(resolved["compatibility"]["status"], "pass")
         self.assertEqual(len(resolved["sources"]["profile_sha256"]), 64)
+        self.assertEqual(resolved["effective_clear_radius_mm"], 1.5)
+        self.assertEqual(
+            resolved["port_geometry"]["upstream"]["coordinate_frame"],
+            self.upstream["coordinate_frame"],
+        )
+        self.assertEqual(
+            resolved["port_geometry"]["downstream"]["mating_surface"],
+            self.downstream["mating_surface"],
+        )
+        self.assertEqual(
+            resolved["port_geometry"]["upstream"]["clock"],
+            {"time_unit": "s", "origin_id": "instrument_trigger"},
+        )
+        self.assertEqual(
+            resolved["port_geometry"]["downstream"]["clock"],
+            {"time_unit": "s", "origin_id": "instrument_trigger"},
+        )
+        self.assertEqual(
+            resolved["transition_aperture"],
+            {
+                "shape": "rectangle",
+                "coordinate_frame_id": "downstream_frame",
+                "center_mm": [0.0, 0.0, 1.0],
+                "surface_normal": [0.0, 0.0, -1.0],
+                "full_width_mm": 3.0,
+                "full_height_mm": 3.2,
+                "width_axis": [1.0, 0.0, 0.0],
+                "height_axis": [0.0, 1.0, 0.0],
+            },
+        )
+        self.assertNotIn("transition_aperture", self.upstream)
+        self.assertNotIn("transition_aperture", self.downstream)
 
     def test_writes_and_reverifies_frozen_composition_plan(self) -> None:
         resolved_path = self.repo_root / "output/resolved_connection.json"
@@ -283,6 +322,57 @@ class ResolveConnectionTests(unittest.TestCase):
         self._write_inputs()
         with self.assertRaisesRegex(ContractError, "clock alignment"):
             self._resolve()
+
+    def test_rejects_transition_aperture_axis_conflicts(self) -> None:
+        aperture = self.profile["transition_aperture"]
+        aperture["width_axis_downstream_frame"] = [2.0, 0.0, 0.0]
+        self._write_inputs()
+        with self.assertRaisesRegex(ContractError, "width axis is not a unit vector"):
+            self._resolve()
+
+        aperture["width_axis_downstream_frame"] = [0.0, 0.0, 1.0]
+        self._write_inputs()
+        with self.assertRaisesRegex(ContractError, "not in the downstream mating plane"):
+            self._resolve()
+
+        aperture["width_axis_downstream_frame"] = [1.0, 0.0, 0.0]
+        aperture["height_axis_downstream_frame"] = [1.0, 0.0, 0.0]
+        self._write_inputs()
+        with self.assertRaisesRegex(ContractError, "in-plane axes are not orthogonal"):
+            self._resolve()
+
+    def test_transition_aperture_is_an_effective_clearance_not_a_threshold(self) -> None:
+        self.profile["minimum_clear_radius_mm"] = 0.4
+        self.profile["transition_aperture"]["full_width_mm"] = 1.0
+        self.profile["transition_aperture"]["full_height_mm"] = 0.9
+        self._write_inputs()
+        resolved = self._resolve()
+        self.assertEqual(resolved["effective_clear_radius_mm"], 0.45)
+        self.assertEqual(self.profile["minimum_clear_radius_mm"], 0.4)
+
+    def test_profile_rejects_a_second_transition_aperture_center_authority(self) -> None:
+        self.profile["transition_aperture"]["center_mm"] = [0.0, 0.0, 1.0]
+        self._write_inputs()
+        with self.assertRaises(ContractError):
+            self._resolve()
+
+    def test_declared_clock_offset_preserves_both_materialized_origins(self) -> None:
+        self.downstream["clock"]["origin_id"] = "downstream_trigger"
+        self.profile["clock_alignment"] = {
+            "mode": "declared_offset",
+            "offset_s": 2.5e-6,
+        }
+        self._write_inputs()
+        resolved = self._resolve()
+        self.assertEqual(
+            resolved["port_geometry"]["upstream"]["clock"]["origin_id"],
+            "instrument_trigger",
+        )
+        self.assertEqual(
+            resolved["port_geometry"]["downstream"]["clock"]["origin_id"],
+            "downstream_trigger",
+        )
+        self.assertEqual(resolved["clock_alignment"]["offset_s"], 2.5e-6)
 
     def test_rejects_field_gap_overlap_and_missing_overlap_owner(self) -> None:
         self.profile["field_ownership_segments"] = [

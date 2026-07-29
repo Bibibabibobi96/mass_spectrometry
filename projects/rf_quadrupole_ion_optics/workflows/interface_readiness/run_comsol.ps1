@@ -368,7 +368,7 @@ try {
         Join-Path $projectRoot `
             'comsol\interface_readiness\run_release_construction_gate.m'
     }else{
-        Join-Path $projectRoot 'tests\comsol\run_nocollision_candidate.m'
+        Join-Path $projectRoot 'workflows\interface_readiness\comsol\run_nocollision_candidate.m'
     }
     $startupAttempts = if($ReleaseConstructionGate){2}else{1}
     & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') `
@@ -506,7 +506,7 @@ try {
     $env:RFQUAD_EXPECTED_RF_PEAK_V = [string]$resolved.drive.rf_amplitude_V_zero_to_peak_per_group
     $env:RFQUAD_EXPECTED_FREQUENCY_HZ = [string]$resolved.drive.frequency_Hz
     & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') `
-        -TaskScript (Join-Path $projectRoot 'tests\comsol\verify_nocollision_comsol.m') `
+        -TaskScript (Join-Path $projectRoot 'workflows\interface_readiness\comsol\verify_nocollision_comsol.m') `
         -ReportPath $guiVerifyReport -StartupAttempts 1
     if($LASTEXITCODE-ne 0){throw 'COMSOL GUI Compute verification failed.'}
     foreach ($name in $environmentNames | Where-Object {

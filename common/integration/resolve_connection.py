@@ -130,6 +130,25 @@ def _validate_rotation(matrix: list[list[float]], tolerance: float) -> None:
         raise ContractError("spatial registration rotation must be right-handed")
 
 
+def _validate_transition_aperture(
+    aperture: dict[str, Any],
+    downstream_normal: list[float],
+    angular_tolerance: float,
+) -> float:
+    width_axis = aperture["width_axis_downstream_frame"]
+    height_axis = aperture["height_axis_downstream_frame"]
+    for label, axis in (("width", width_axis), ("height", height_axis)):
+        if abs(_norm(axis) - 1.0) > angular_tolerance:
+            raise ContractError(f"transition aperture {label} axis is not a unit vector")
+        if abs(_dot(axis, downstream_normal)) > angular_tolerance:
+            raise ContractError(
+                f"transition aperture {label} axis is not in the downstream mating plane"
+            )
+    if abs(_dot(width_axis, height_axis)) > angular_tolerance:
+        raise ContractError("transition aperture in-plane axes are not orthogonal")
+    return 0.5 * min(aperture["full_width_mm"], aperture["full_height_mm"])
+
+
 def _validate_field_ownership(
     segments: list[dict[str, Any]], length_mm: float, tolerance_mm: float, mode: str
 ) -> None:
@@ -239,10 +258,17 @@ def _resolve_profile(
     if abs(profile["connector"]["length_mm"] - actual_gap) > position_tolerance:
         raise ContractError("connector length differs from mating surface gap")
 
+    transition_aperture = profile["transition_aperture"]
+    transition_clear_radius = _validate_transition_aperture(
+        transition_aperture,
+        downstream_normal,
+        angular_tolerance,
+    )
     effective_radius = min(
         upstream_surface["aperture_radius_mm"],
         downstream_surface["aperture_radius_mm"],
         profile["connector"]["inner_radius_mm"],
+        transition_clear_radius,
     )
     if effective_radius + position_tolerance < profile["minimum_clear_radius_mm"]:
         raise ContractError("connection aperture is below the required clear radius")
@@ -319,6 +345,32 @@ def _resolve_profile(
             "transformed_upstream_normal": transformed_normal,
         },
         "connector": copy.deepcopy(profile["connector"]),
+        "port_geometry": {
+            "upstream": {
+                "coordinate_frame": copy.deepcopy(upstream_port["coordinate_frame"]),
+                "mating_surface": copy.deepcopy(upstream_surface),
+                "clock": copy.deepcopy(upstream_port["clock"]),
+            },
+            "downstream": {
+                "coordinate_frame": copy.deepcopy(downstream_port["coordinate_frame"]),
+                "mating_surface": copy.deepcopy(downstream_surface),
+                "clock": copy.deepcopy(downstream_port["clock"]),
+            },
+        },
+        "transition_aperture": {
+            "shape": transition_aperture["shape"],
+            "coordinate_frame_id": downstream_port["coordinate_frame"]["frame_id"],
+            "center_mm": copy.deepcopy(downstream_surface["center_mm"]),
+            "surface_normal": copy.deepcopy(downstream_normal),
+            "full_width_mm": transition_aperture["full_width_mm"],
+            "full_height_mm": transition_aperture["full_height_mm"],
+            "width_axis": copy.deepcopy(
+                transition_aperture["width_axis_downstream_frame"]
+            ),
+            "height_axis": copy.deepcopy(
+                transition_aperture["height_axis_downstream_frame"]
+            ),
+        },
         "effective_clear_radius_mm": effective_radius,
         "potential_alignment": {
             **copy.deepcopy(potential),
@@ -334,6 +386,7 @@ def _resolve_profile(
                 "coordinate_units",
                 "mating_normals",
                 "surface_gap",
+                "transition_aperture_geometry",
                 "clear_aperture",
                 "potential_alignment",
                 "clock_alignment",

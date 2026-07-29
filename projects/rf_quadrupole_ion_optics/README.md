@@ -53,7 +53,7 @@
 多极杆分段杆和出口带孔接口板加速使用公共入口；具体命令与共同状态见公共multipole文档。
 RF四极杆离子光学→单次反射oa-TOF物理连接属于
 `rf_quadrupole_ion_optics_to_single_reflection_oa_tof_mass_analyzer`实例，当前累积入口为
-`tests/cross_solver/run_s3_cumulative_chain.ps1`。
+`workflows/rf_to_oatof_integration/run_rf_to_oatof_transfer.ps1`。
 
 ## 目录职责
 
@@ -101,3 +101,4 @@ rf_quadrupole_ion_optics/
 - [`docs/history/20260728__pre-document-consolidation-project.md`](docs/history/20260728__pre-document-consolidation-project.md)
 - [`docs/history/20260728__pre-document-consolidation-readme.md`](docs/history/20260728__pre-document-consolidation-readme.md)
 - [`docs/history/20260728__pre-document-consolidation-simion.md`](docs/history/20260728__pre-document-consolidation-simion.md)
+- [`docs/history/20260729__superseded-rf-oatof-s2-s3-active-contracts.md`](docs/history/20260729__superseded-rf-oatof-s2-s3-active-contracts.md)

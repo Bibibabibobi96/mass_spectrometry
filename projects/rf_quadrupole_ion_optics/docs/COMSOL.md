@@ -14,7 +14,7 @@
 | 无碰撞部件回归 | `../workflows/no_collision_transport/run_comsol.ps1` |
 | RF+DC质量过滤 | `../workflows/mass_filter_reference/run_comsol.ps1` |
 | release构造诊断 | `../comsol/interface_readiness/run_release_construction_gate.m` |
-| RF四极杆离子光学→单次反射oa-TOF S2/S3 | `../tests/cross_solver/run_s3_cumulative_chain.ps1` |
+| RF四极杆离子光学→单次反射oa-TOF pre_pulse_interface_transport/pulse_capture/analyzer_transport | `../workflows/rf_to_oatof_integration/run_rf_to_oatof_transfer.ps1` |
 
 所有任务通过仓库统一R2025b/COMSOL入口建立连接，不自行`mphstart`。版本、启动、重试及
 `EXECUTION_ENVIRONMENT_BLOCKED`分类只采用根README和`common/comsol/README.md`。
@@ -53,7 +53,7 @@
 - 分段杆轴向加速使用四段、0.4 mm绝缘间隙和公共模电势；出口带孔接口板加速与显式多级案例均由各自具名合同
   决定，不在MATLAB中维护第二份电势。
 - 当前模型无碰撞；旧碰撞脚本不得恢复。
-- RF四极杆离子光学→单次反射oa-TOF的S2/S3是候选局部联合链，不修改下游Formal资产，也不证明
+- RF四极杆离子光学→单次反射oa-TOF的pre_pulse_interface_transport/pulse_capture/analyzer_transport是候选局部联合链，不修改下游Formal资产，也不证明
   接口场连续或整机Formal。
 
 ## GUI验收

@@ -57,7 +57,7 @@
   },
   "design_authority": {
     "design_profiles": "projects/rf_quadrupole_ion_optics/config/design_profiles.json",
-    "design_profiles_sha256": "42534138485C94BE1344C67AA6CB79FEC12A658416ADF1D39F13D142EB330E93",
+    "design_profiles_sha256": "E84C7A46184D92EB3C470D2D38E7B7D5897D9AAB4F9B848C87F27649B19A97EA",
     "operating_modes": "projects/rf_quadrupole_ion_optics/config/operating_modes.json",
     "operating_modes_sha256": "FEC5FA1CE320194A4BB447FF82539A5C1047B44C972A1034B3332CFCD1B7F40D",
     "geometry_invariant": "projects/rf_quadrupole_ion_optics/config/family_experiment/geometry_invariant.json",

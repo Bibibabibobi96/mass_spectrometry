@@ -83,16 +83,16 @@ try {
   & $package.python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') `
     $sourceManifestPath --require-status success
   if ($LASTEXITCODE -ne 0) {
-    throw 'The source S3 run manifest is invalid.'
+    throw 'The source pulse-capture run manifest is invalid.'
   }
   $sourceManifestDocument = Get-Content -LiteralPath $sourceManifestPath `
     -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($sourceManifestDocument.project -ne 'rf_quadrupole_ion_optics' -or
-      $sourceManifestDocument.mode -ne 'rf_to_oatof_s3_shared_clock_pulse_capture_n100') {
-    throw 'Checkpoint diagnostics require a successful RF S3 pulse-capture N=100 manifest.'
+      $sourceManifestDocument.mode -ne 'rf_to_oatof_pulse_capture_n100') {
+    throw 'Checkpoint diagnostics require a successful RF pulse-capture N=100 manifest.'
   }
   if ([string]$sourceManifestDocument.run_id -ne (Split-Path -Leaf $sourceRun)) {
-    throw 'The source S3 run directory and manifest run_id differ.'
+    throw 'The source pulse-capture run directory and manifest run_id differ.'
   }
 
   $sourceRunConfigurationPath = [IO.Path]::GetFullPath(
@@ -100,10 +100,10 @@ try {
   $sourceRunConfiguration = Get-Content -LiteralPath $sourceRunConfigurationPath `
     -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($sourceRunConfiguration.run_id -ne $sourceManifestDocument.run_id -or
-      $sourceRunConfiguration.mode -ne 'rf_to_oatof_s3_shared_clock_pulse_capture_n100' -or
-      [bool]$sourceRunConfiguration.parameters.s3_stage_passed -or
+      $sourceRunConfiguration.mode -ne 'rf_to_oatof_pulse_capture_n100' -or
+      [bool]$sourceRunConfiguration.parameters.pulse_capture_stage_passed -or
       [bool]$sourceRunConfiguration.formal_gate_passed) {
-    throw 'The source S3 run configuration identity or qualification boundary is invalid.'
+    throw 'The source pulse-capture run identity or qualification boundary is invalid.'
   }
 
   $downstreamRun = [IO.Path]::GetFullPath((Join-Path $runsRoot $DownstreamRunId))
@@ -124,44 +124,43 @@ try {
   $downstreamRunConfiguration = Get-Content -LiteralPath $downstreamRunConfigurationPath `
     -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($downstreamManifestDocument.project -ne 'rf_quadrupole_ion_optics' -or
-      $downstreamManifestDocument.mode -ne 'rf_to_oatof_s3_cumulative_end_to_end' -or
+      $downstreamManifestDocument.mode -ne 'rf_to_oatof_analyzer_transport_n100' -or
       [string]$downstreamManifestDocument.run_id -ne $DownstreamRunId -or
       [string]$downstreamRunConfiguration.run_id -ne $DownstreamRunId -or
       [string]$downstreamRunConfiguration.parameters.source_run_id -ne
         [string]$sourceManifestDocument.run_id -or
-      [bool]$downstreamRunConfiguration.parameters.s3_stage_passed -or
+      [bool]$downstreamRunConfiguration.parameters.pulse_capture_stage_passed -or
       [bool]$downstreamRunConfiguration.formal_gate_passed) {
-    throw 'The downstream run is not explicitly linked to the selected S3 source.'
+    throw 'The analyzer run is not explicitly linked to the selected pulse-capture source.'
   }
 
   $sourceExitOriginal = [IO.Path]::GetFullPath(
     [string]$sourceRunConfiguration.inputs.particle_source)
   $pulseScheduleOriginal = [IO.Path]::GetFullPath(
     [string]$sourceRunConfiguration.inputs.pulse_schedule)
-  $s2ContractOriginal = [IO.Path]::GetFullPath(
-    [string]$sourceRunConfiguration.inputs.s2_contract)
-  $spatialRegistrationOriginal = [IO.Path]::GetFullPath(
-    [string]$sourceRunConfiguration.inputs.spatial_registration)
+  $resolvedConnectionOriginal = [IO.Path]::GetFullPath(
+    [string]$sourceRunConfiguration.inputs.resolved_connection)
   $jointContractOriginal = [IO.Path]::GetFullPath(
     [string]$sourceRunConfiguration.inputs.shared_physical_port_joint_geometry)
   $oatofBaselineOriginal = [IO.Path]::GetFullPath(
     [string]$sourceRunConfiguration.inputs.oatof_baseline)
   $rfResolvedGeometryOriginal = [IO.Path]::GetFullPath(
     [string]$sourceRunConfiguration.inputs.rf_resolved_geometry)
-  $captureOriginal = Join-Path $sourceRun 'results\s3_pulse_left_limit_state.csv'
-  $terminalOriginal = Join-Path $sourceRun 'results\s3_particle_terminal_census.csv'
-  $s2EntryOriginal = [IO.Path]::GetFullPath(
+  $captureOriginal = Join-Path $sourceRun 'results\pulse_capture_pulse_left_limit_state.csv'
+  $terminalOriginal = Join-Path $sourceRun 'results\pulse_capture_particle_terminal_census.csv'
+  $interfaceEntryOriginal = [IO.Path]::GetFullPath(
     [string]$sourceRunConfiguration.inputs.timing_state)
-  $localExitOriginal = Join-Path $sourceRun 'results\s3_local_accelerator_exit.csv'
-  $downstreamRowMapOriginal = Join-Path $downstreamRun 'inputs\row_map.csv'
+  $localExitOriginal = Join-Path $sourceRun 'results\pulse_capture_local_accelerator_exit.csv'
+  $downstreamRowMapOriginal = [IO.Path]::GetFullPath(
+    [string]$downstreamRunConfiguration.inputs.row_map)
   $downstreamStateOriginal = Join-Path $downstreamRun 'results\simion_downstream_particles.csv'
   $manifestInputPaths = Get-ManifestRecordPaths `
     -Records $sourceManifestDocument.inputs -Kind Inputs
   $manifestOutputPaths = Get-ManifestRecordPaths `
     -Records $sourceManifestDocument.outputs -Kind Outputs
   foreach ($path in @(
-      $sourceExitOriginal, $s2EntryOriginal, $pulseScheduleOriginal, $s2ContractOriginal,
-      $spatialRegistrationOriginal, $jointContractOriginal, $oatofBaselineOriginal,
+      $sourceExitOriginal, $interfaceEntryOriginal, $pulseScheduleOriginal,
+      $resolvedConnectionOriginal, $jointContractOriginal, $oatofBaselineOriginal,
       $rfResolvedGeometryOriginal
     )) {
     if ($manifestInputPaths -notcontains [IO.Path]::GetFullPath($path)) {
@@ -175,10 +174,15 @@ try {
   }
   $downstreamManifestOutputPaths = Get-ManifestRecordPaths `
     -Records $downstreamManifestDocument.outputs -Kind Outputs
-  foreach ($path in @($downstreamRowMapOriginal, $downstreamStateOriginal)) {
-    if ($downstreamManifestOutputPaths -notcontains [IO.Path]::GetFullPath($path)) {
-      throw "Required downstream state is not covered by its manifest: $path"
-    }
+  $downstreamManifestInputPaths = Get-ManifestRecordPaths `
+    -Records $downstreamManifestDocument.inputs -Kind Inputs
+  if ($downstreamManifestInputPaths -notcontains
+      [IO.Path]::GetFullPath($downstreamRowMapOriginal)) {
+    throw 'Required analyzer row map is not covered by its manifest.'
+  }
+  if ($downstreamManifestOutputPaths -notcontains
+      [IO.Path]::GetFullPath($downstreamStateOriginal)) {
+    throw 'Required analyzer downstream state is not covered by its manifest.'
   }
 
   $analysis = Join-Path $package.input_dir 'analyze_rf_oatof_checkpoints.py'
@@ -186,20 +190,19 @@ try {
   $contract = Join-Path $package.input_dir 'rf_to_oatof_checkpoint_diagnostic.json'
   $runner = Join-Path $package.input_dir 'run_rf_oatof_checkpoint_diagnostic.ps1.txt'
   $support = Join-Path $package.input_dir 'run_artifacts.ps1.txt'
-  $sourceManifestFrozen = Join-Path $package.input_dir 'source_s3_run_manifest.json'
-  $sourceRunConfigurationFrozen = Join-Path $package.input_dir 'source_s3_run_config.json'
+  $sourceManifestFrozen = Join-Path $package.input_dir 'source_pulse_capture_run_manifest.json'
+  $sourceRunConfigurationFrozen = Join-Path $package.input_dir 'source_pulse_capture_run_config.json'
   $downstreamManifestFrozen = Join-Path $package.input_dir 'downstream_run_manifest.json'
   $downstreamRunConfigurationFrozen = Join-Path $package.input_dir 'downstream_run_config.json'
   $sourceExit = Join-Path $package.input_dir 'rf_exit_particle_state.csv'
-  $capture = Join-Path $package.input_dir 's3_pulse_left_limit_state.csv'
-  $terminal = Join-Path $package.input_dir 's3_particle_terminal_census.csv'
-  $s2Entry = Join-Path $package.input_dir 's2_oatof_entry_state.csv'
-  $localExit = Join-Path $package.input_dir 's3_local_accelerator_exit.csv'
+  $capture = Join-Path $package.input_dir 'pulse_capture_pulse_left_limit_state.csv'
+  $terminal = Join-Path $package.input_dir 'pulse_capture_particle_terminal_census.csv'
+  $interfaceEntry = Join-Path $package.input_dir 'pre_pulse_interface_entry_state.csv'
+  $localExit = Join-Path $package.input_dir 'pulse_capture_local_accelerator_exit.csv'
   $downstreamRowMap = Join-Path $package.input_dir 'simion_row_map.csv'
   $downstreamState = Join-Path $package.input_dir 'simion_downstream_particles.csv'
-  $pulseSchedule = Join-Path $package.input_dir 's3_centroid_pulse_schedule.json'
-  $s2Contract = Join-Path $package.input_dir 'rf_to_oatof_s2_passive_connector.json'
-  $spatialRegistration = Join-Path $package.input_dir 'resolved_rf_to_oatof_s2_spatial_registration.json'
+  $pulseSchedule = Join-Path $package.input_dir 'pulse_capture_centroid_pulse_schedule.json'
+  $resolvedConnection = Join-Path $package.input_dir 'resolved_connection.json'
   $jointContract = Join-Path $package.input_dir 'rf_to_oatof_shared_physical_port_joint_geometry.json'
   $oatofBaseline = Join-Path $package.input_dir 'oatof_baseline.json'
   $rfResolvedGeometry = Join-Path $package.input_dir 'resolved_design_official.json'
@@ -219,8 +222,8 @@ try {
       -Source $captureOriginal -Destination $capture
     terminal_census_sha256 = Copy-CheckpointInput `
       -Source $terminalOriginal -Destination $terminal
-    s2_oatof_entry_state_sha256 = Copy-CheckpointInput `
-      -Source $s2EntryOriginal -Destination $s2Entry
+    interface_entry_state_sha256 = Copy-CheckpointInput `
+      -Source $interfaceEntryOriginal -Destination $interfaceEntry
     local_accelerator_exit_sha256 = Copy-CheckpointInput `
       -Source $localExitOriginal -Destination $localExit
     simion_row_map_sha256 = Copy-CheckpointInput `
@@ -229,10 +232,8 @@ try {
       -Source $downstreamStateOriginal -Destination $downstreamState
     pulse_schedule_sha256 = Copy-CheckpointInput `
       -Source $pulseScheduleOriginal -Destination $pulseSchedule
-    s2_contract_sha256 = Copy-CheckpointInput `
-      -Source $s2ContractOriginal -Destination $s2Contract
-    spatial_registration_sha256 = Copy-CheckpointInput `
-      -Source $spatialRegistrationOriginal -Destination $spatialRegistration
+    resolved_connection_sha256 = Copy-CheckpointInput `
+      -Source $resolvedConnectionOriginal -Destination $resolvedConnection
     shared_physical_port_joint_geometry_sha256 = Copy-CheckpointInput `
       -Source $jointContractOriginal -Destination $jointContract
     oatof_baseline_sha256 = Copy-CheckpointInput `
@@ -254,7 +255,7 @@ try {
   & $package.python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') `
     $sourceManifestPath --require-status success
   if ($LASTEXITCODE -ne 0) {
-    throw 'The source S3 manifest changed while checkpoint inputs were frozen.'
+    throw 'The pulse-capture source manifest changed while inputs were frozen.'
   }
 
   $metrics = Join-Path $package.result_dir 'rf-oatof-checkpoints__metrics.json'
@@ -273,20 +274,19 @@ try {
       diagnostic_contract = $contract
       runner = $runner
       run_artifact_support = $support
-      source_s3_run_manifest = $sourceManifestFrozen
-      source_s3_run_config = $sourceRunConfigurationFrozen
+      source_pulse_capture_run_manifest = $sourceManifestFrozen
+      source_pulse_capture_run_config = $sourceRunConfigurationFrozen
       downstream_run_manifest = $downstreamManifestFrozen
       downstream_run_config = $downstreamRunConfigurationFrozen
       source_exit_state = $sourceExit
       pulse_left_limit_state = $capture
       terminal_census = $terminal
-      s2_oatof_entry_state = $s2Entry
+      interface_entry_state = $interfaceEntry
       local_accelerator_exit_state = $localExit
       simion_row_map = $downstreamRowMap
       simion_downstream_state = $downstreamState
       pulse_schedule = $pulseSchedule
-      s2_contract = $s2Contract
-      spatial_registration = $spatialRegistration
+      resolved_connection = $resolvedConnection
       shared_physical_port_joint_geometry = $jointContract
       oatof_baseline = $oatofBaseline
       rf_resolved_geometry = $rfResolvedGeometry
@@ -302,7 +302,7 @@ try {
       solver_rerun = $false
       particle_count = 100
       diagnostic_only = $true
-      s3_stage_passed = $false
+      pulse_capture_stage_passed = $false
     }
     formal_gate_passed = $false
   }
@@ -323,14 +323,13 @@ try {
       --exit-state $sourceExit `
       --capture-state $capture `
       --terminal-census $terminal `
-      --s2-entry-state $s2Entry `
+      --interface-entry-state $interfaceEntry `
       --local-exit-state $localExit `
       --downstream-row-map $downstreamRowMap `
       --downstream-state $downstreamState `
       --pulse-schedule $pulseSchedule `
       --oatof-baseline $oatofBaseline `
-      --s2-contract $s2Contract `
-      --resolved-registration $spatialRegistration `
+      --resolved-connection $resolvedConnection `
       --rf-resolved-geometry $rfResolvedGeometry `
       --joint-contract $jointContract `
       --contract $contract `
@@ -367,7 +366,7 @@ try {
     scheduler_cohort_particles = [int]$result.population_counts.scheduler_cohort
     active_at_pulse_particles = [int]$result.population_counts.capture_all_active
     lost_before_pulse_particles = [int]$result.population_counts.all_exit_lost_before_pulse
-    s2_oatof_entry_particles = [int]$result.population_counts.s2_oatof_entry
+    interface_entry_particles = [int]$result.population_counts.interface_entry
     local_accelerator_exit_particles = [int]$result.population_counts.local_accelerator_exit
     detector_hit_particles = [int]$result.population_counts.detector_hit
     pulse_instrument_time_us = [double]$result.pulse_instrument_time_us
@@ -376,14 +375,14 @@ try {
     figure = 'results/rf-oatof-checkpoints__state-comparison.png'
     solver_rerun = $false
     diagnostic_only = $true
-    s3_stage_passed = $false
+    pulse_capture_stage_passed = $false
     formal_gate_passed = $false
   })
   $outputs = @($metrics, $particles, $figure, $analysisLog, $package.summary)
   Write-VerifiedRunManifest -Python $package.python -RepoRoot $repoRoot `
     -RunConfig $package.run_config -Status success -Software $software -Outputs $outputs
   Write-Output (
-    'STATUS=PASS RUN_ID={0} SOURCE_RUN_ID={1} EXIT={2} ACTIVE={3} LOSS={4} S3_STAGE_PASS=false FORMAL=false' -f
+    'STATUS=PASS RUN_ID={0} SOURCE_RUN_ID={1} EXIT={2} ACTIVE={3} LOSS={4} PULSE_CAPTURE_STAGE_PASS=false FORMAL=false' -f
     $RunId, $sourceManifestDocument.run_id,
     $result.population_counts.source_exit_all,
     $result.population_counts.capture_all_active,

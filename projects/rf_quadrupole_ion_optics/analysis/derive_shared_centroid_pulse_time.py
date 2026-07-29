@@ -11,19 +11,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-try:
-    from plot_shared_pulse_geometry_snapshot import accelerator_geometry
-except ModuleNotFoundError:
-    from projects.rf_quadrupole_ion_optics.analysis.plot_shared_pulse_geometry_snapshot import (
-        accelerator_geometry,
-    )
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 POLICY_PATH = PROJECT_ROOT / "config" / "rf_to_oatof_pulse_timing.json"
-REGISTRATION_PATH = (
-    PROJECT_ROOT / "config" / "resolved_rf_to_oatof_s2_spatial_registration.json"
-)
 
 
 def load_json(path: Path) -> dict:
@@ -59,11 +49,15 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest().upper()
 
 
-def derive_schedule(particle_path: Path, baseline_path: Path, joint_path: Path,
-                    policy_path: Path = POLICY_PATH, target_mass_amu: float | None = None,
-                    target_charge_state: int | None = None,
-                    s2_contract_path: Path | None = None,
-                    registration_path: Path = REGISTRATION_PATH) -> dict[str, object]:
+def derive_schedule(
+    particle_path: Path,
+    baseline_path: Path,
+    pre_pulse_contract_path: Path,
+    resolved_connection_path: Path,
+    policy_path: Path = POLICY_PATH,
+    target_mass_amu: float | None = None,
+    target_charge_state: int | None = None,
+) -> dict[str, object]:
     policy = validate_policy(policy_path)
     particles = pd.read_csv(particle_path)
     required = {
@@ -113,41 +107,37 @@ def derive_schedule(particle_path: Path, baseline_path: Path, joint_path: Path,
         raise ValueError("selected pulse population must move in the positive injection direction")
 
     baseline = load_json(baseline_path)
-    joint = load_json(joint_path)
-    registration = load_json(registration_path)
-    geometry = accelerator_geometry(baseline, joint, registration)
-    schedule_stage = "SHARED"
-    if s2_contract_path is None:
-        offset = float(joint["port_sweep"]["particle_release_offset_inside_outer_face_mm"])
-        entry_center = joint["nominal_registration"]["target_entry_center_instrument_mm"]
-        port_width = float(geometry["port_width_y"])
-        port_height = float(geometry["port_height_z"])
-    else:
-        s2 = load_json(s2_contract_path)
-        if s2.get("stage") != "S2":
-            raise ValueError("S3 timing requires an S2 connector contract")
-        if not {"event", "status", "frame_id", "clock_epoch_id"}.issubset(
-            selected.columns
-        ):
-            raise ValueError("S3 timing states must identify real S2 oa-entry events")
-        expected_frame = s2["nominal_registration"]["instrument_frame"]
-        expected_epoch = s2["functional_candidate"]["clock_epoch_id"]
-        if (
-            set(particles["frame_id"]) != {expected_frame}
-            or set(particles["clock_epoch_id"]) != {expected_epoch}
-        ):
-            raise ValueError("S3 timing frame or clock epoch differs from S2")
-        selected = selected[
-            selected["event"].eq("oatof_entry") & selected["status"].eq("transmitted")
-        ].copy()
-        if selected.empty:
-            raise ValueError("S3 timing states contain no transmitted oa-entry event")
-        offset = float(s2["no_pulse_field_candidate"]["boundary_probe_inset_mm"])
-        entry_center = s2["nominal_registration"]["target_entry_center_instrument_mm"]
-        port = s2["passive_connector_geometry"]["downstream_entry_aperture"]
-        port_width = float(port["full_width_y_mm"])
-        port_height = float(port["full_height_z_mm"])
-        schedule_stage = "S3"
+    pre_pulse = load_json(pre_pulse_contract_path)
+    resolved = load_json(resolved_connection_path)
+    if (
+        resolved.get("role") != "resolved_connection_do_not_edit"
+        or resolved.get("compatibility", {}).get("status") != "pass"
+    ):
+        raise ValueError("pulse scheduling requires a compatible resolved connection")
+    if not {"event", "status", "frame_id", "clock_epoch_id"}.issubset(
+        selected.columns
+    ):
+        raise ValueError("pulse timing states must identify real oa-entry events")
+    expected_frame = resolved["port_geometry"]["downstream"]["coordinate_frame"][
+        "frame_id"
+    ]
+    expected_epoch = pre_pulse["particle_runtime"]["clock_epoch_id"]
+    if (
+        set(particles["frame_id"]) != {expected_frame}
+        or set(particles["clock_epoch_id"]) != {expected_epoch}
+    ):
+        raise ValueError("pulse timing frame or clock epoch differs from the transfer")
+    selected = selected[
+        selected["event"].eq("oatof_entry") & selected["status"].eq("transmitted")
+    ].copy()
+    if selected.empty:
+        raise ValueError("pulse timing states contain no transmitted oa-entry event")
+    offset = float(pre_pulse["field_runtime"]["boundary_probe_inset_mm"])
+    aperture = resolved["transition_aperture"]
+    entry_center = aperture["center_mm"]
+    port_width = float(aperture["full_width_mm"])
+    port_height = float(aperture["full_height_mm"])
+    geometry = baseline["geometry_mm"]
     entry_surface_x = float(entry_center[0])
     if not np.allclose(selected["position_x_mm"], entry_surface_x, rtol=0, atol=1e-12):
         raise ValueError(
@@ -155,12 +145,12 @@ def derive_schedule(particle_path: Path, baseline_path: Path, joint_path: Path,
             "projection or silent coordinate replacement is forbidden"
         )
     release_x = entry_surface_x + offset
-    target_x = float(geometry["source_center"]["x"])
+    target_x = float(baseline["particle_source"]["center_x_mm"])
     port_center_y = float(entry_center[1])
     port_center_z = float(entry_center[2])
     half_y = port_width / 2
     half_z = port_height / 2
-    wall = float(geometry["shield_wall"])
+    wall = float(geometry["accelerator_shield_wall"])
 
     at_outer = (
         (selected["position_y_mm"] - port_center_y).abs().le(half_y + 1e-12)
@@ -192,8 +182,8 @@ def derive_schedule(particle_path: Path, baseline_path: Path, joint_path: Path,
     energy = cohort["kinetic_energy_eV"] if "kinetic_energy_eV" in cohort else None
     return {
         "schema_version": 1,
-        "role": f"rf_to_oatof_{schedule_stage.lower()}_centroid_pulse_schedule",
-        "stage": schedule_stage,
+        "role": "rf_to_oatof_pulse_capture_centroid_pulse_schedule",
+        "phase": "pulse_capture",
         "status": "PASS",
         "method": policy["method"],
         "source_particle_table": str(particle_path.resolve()),
@@ -245,9 +235,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--particle-state", type=Path)
     parser.add_argument("--oatof-baseline", type=Path)
-    parser.add_argument("--joint-contract", type=Path)
-    parser.add_argument("--s2-contract", type=Path)
-    parser.add_argument("--resolved-registration", type=Path, default=REGISTRATION_PATH)
+    parser.add_argument("--pre-pulse-contract", type=Path)
+    parser.add_argument("--resolved-connection", type=Path)
     parser.add_argument("--policy", type=Path, default=POLICY_PATH)
     parser.add_argument("--target-mass-amu", type=float)
     parser.add_argument("--target-charge-state", type=int)
@@ -258,15 +247,30 @@ def main() -> None:
         validate_policy(args.policy)
         print("SHARED_PULSE_TIMING_POLICY=PASS")
         return
-    required = (args.particle_state, args.oatof_baseline, args.joint_contract, args.output)
+    required = (
+        args.particle_state,
+        args.oatof_baseline,
+        args.pre_pulse_contract,
+        args.resolved_connection,
+        args.output,
+    )
     if any(value is None for value in required):
-        parser.error("derivation requires particle state, oaTOF baseline, joint contract and output")
-    result = derive_schedule(args.particle_state, args.oatof_baseline, args.joint_contract,
-                             args.policy, args.target_mass_amu, args.target_charge_state,
-                             args.s2_contract, args.resolved_registration)
+        parser.error(
+            "derivation requires particle state, oaTOF baseline, pre-pulse "
+            "contract, resolved connection and output"
+        )
+    result = derive_schedule(
+        args.particle_state,
+        args.oatof_baseline,
+        args.pre_pulse_contract,
+        args.resolved_connection,
+        args.policy,
+        args.target_mass_amu,
+        args.target_charge_state,
+    )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
-    print(f"{result['stage']}_CENTROID_PULSE_TIME=PASS TIME_US={result['derived_pulse_time_us']:.12f} "
+    print(f"PULSE_CAPTURE_CENTROID_PULSE_TIME=PASS TIME_US={result['derived_pulse_time_us']:.12f} "
           f"COHORT={result['population_counts']['predicted_finite_wall_survivors']}")
 
 

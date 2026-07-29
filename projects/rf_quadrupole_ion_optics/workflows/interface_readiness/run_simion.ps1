@@ -405,7 +405,7 @@ Invoke-RfSimionCoreRun -SimionExe $simion -CandidateDir $candidateDir `
     -IobPath ([string]$coreConfig.iob) -Fly2Path ([string]$coreConfig.fly2) `
     -IobBuilderScript $iobBuilder -ProgramSourcePath $programSource `
     -RunConfigLua $runConfigLua `
-    -InspectScript (Join-Path $projectRoot 'tests\simion\inspect_builtin_quad_reference.lua') `
+    -InspectScript (Join-Path $projectRoot 'simion\workbench\inspect_builtin_quad_reference.lua') `
     -IobReport $iobReport -LogDir $logDir `
     -TrajectoryQuality ([int]$coreConfig.trajectory_quality) `
     -RfStepsPerPeriod ([int]$coreConfig.rf_steps_per_period)

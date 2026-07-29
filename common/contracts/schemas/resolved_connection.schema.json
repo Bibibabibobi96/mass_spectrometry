@@ -7,7 +7,8 @@
   "required": [
     "schema_version", "role", "integration_id", "selection", "sources",
     "coupling_mode", "spatial_registration", "connector",
-    "effective_clear_radius_mm", "potential_alignment", "clock_alignment",
+    "port_geometry", "transition_aperture", "effective_clear_radius_mm",
+    "potential_alignment", "clock_alignment",
     "field_ownership_segments", "compatibility"
   ],
   "properties": {
@@ -70,6 +71,34 @@
     "connector": {
       "$ref": "https://mass-spectrometry.local/schemas/connection_profile.schema.json#/properties/connector"
     },
+    "port_geometry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["upstream", "downstream"],
+      "properties": {
+        "upstream": {"$ref": "#/$defs/materialized_port_geometry"},
+        "downstream": {"$ref": "#/$defs/materialized_port_geometry"}
+      }
+    },
+    "transition_aperture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "shape", "coordinate_frame_id", "center_mm", "surface_normal",
+        "full_width_mm", "full_height_mm",
+        "width_axis", "height_axis"
+      ],
+      "properties": {
+        "shape": {"const": "rectangle"},
+        "coordinate_frame_id": {"$ref": "#/$defs/identifier"},
+        "center_mm": {"$ref": "#/$defs/vector3"},
+        "surface_normal": {"$ref": "#/$defs/vector3"},
+        "full_width_mm": {"type": "number", "exclusiveMinimum": 0},
+        "full_height_mm": {"type": "number", "exclusiveMinimum": 0},
+        "width_axis": {"$ref": "#/$defs/vector3"},
+        "height_axis": {"$ref": "#/$defs/vector3"}
+      }
+    },
     "effective_clear_radius_mm": {"type": "number", "exclusiveMinimum": 0},
     "potential_alignment": {
       "type": "object",
@@ -122,6 +151,22 @@
       "properties": {
         "path": {"type": "string", "minLength": 1},
         "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "materialized_port_geometry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["coordinate_frame", "mating_surface", "clock"],
+      "properties": {
+        "coordinate_frame": {
+          "$ref": "https://mass-spectrometry.local/schemas/component_port.schema.json#/properties/coordinate_frame"
+        },
+        "mating_surface": {
+          "$ref": "https://mass-spectrometry.local/schemas/component_port.schema.json#/properties/mating_surface"
+        },
+        "clock": {
+          "$ref": "https://mass-spectrometry.local/schemas/component_port.schema.json#/properties/clock"
+        }
       }
     }
   }

@@ -10,6 +10,10 @@ from unittest import mock
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from common.integration.resolve_connection import (
+    load_connection_profile_registry,
+    resolve_connection_profile,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -18,6 +22,29 @@ from projects.rf_quadrupole_ion_optics.analysis import plot_shared_pulse_geometr
 
 
 class SharedPulseGeometrySnapshotTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.resolved_temp = tempfile.TemporaryDirectory()
+        registry_path = (
+            REPO_ROOT
+            / "integrations"
+            / "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
+            / "config"
+            / "connection_profiles.json"
+        )
+        registry = load_connection_profile_registry(registry_path)
+        resolved = resolve_connection_profile(
+            registry,
+            "rf_quadrupole_grounded_connector_gap_1mm",
+            repo_root=REPO_ROOT,
+        )
+        cls.resolved_path = Path(cls.resolved_temp.name) / "resolved_connection.json"
+        cls.resolved_path.write_text(json.dumps(resolved), encoding="utf-8")
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.resolved_temp.cleanup()
+
     def test_particle_markers_shrink_for_large_n(self) -> None:
         n100 = module.particle_marker_areas(100)
         n1000 = module.particle_marker_areas(1000)
@@ -27,15 +54,9 @@ class SharedPulseGeometrySnapshotTests(unittest.TestCase):
 
     def test_geometry_is_derived_from_contracts_and_plot_is_written(self) -> None:
         baseline_path = REPO_ROOT / "projects" / "single_reflection_oa_tof_mass_analyzer" / "config" / "baseline.json"
-        joint_path = PROJECT_ROOT / "config" / "rf_to_oatof_shared_physical_port_joint_geometry.json"
-        registration_path = (
-            PROJECT_ROOT / "config" /
-            "resolved_rf_to_oatof_s2_spatial_registration.json"
-        )
         baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
-        joint = json.loads(joint_path.read_text(encoding="utf-8"))
-        registration = json.loads(registration_path.read_text(encoding="utf-8"))
-        geometry = module.accelerator_geometry(baseline, joint, registration)
+        resolved = json.loads(self.resolved_path.read_text(encoding="utf-8"))
+        geometry = module.accelerator_geometry(baseline, resolved)
         self.assertAlmostEqual(geometry["shield_outer_half"], 19.0)
         self.assertAlmostEqual(geometry["ring_outer_half"], 10.0)
         self.assertEqual(len(geometry["ring_centers_z"]), 5)
@@ -75,7 +96,7 @@ class SharedPulseGeometrySnapshotTests(unittest.TestCase):
             ]).to_csv(events, index=False)
             prepared, prepared_geometry, frame_id, clock_epoch_id = (
                 module.prepare_snapshot_data(
-                    capture, events, baseline_path, joint_path, registration_path
+                    capture, events, baseline_path, self.resolved_path
                 )
             )
             self.assertEqual(frame_id, "oatof_global")
@@ -123,8 +144,12 @@ class SharedPulseGeometrySnapshotTests(unittest.TestCase):
                 plt.close(rendered)
 
             result = module.plot_snapshot(
-                capture, events, baseline_path, joint_path, figure, metadata,
-                registration_path,
+                capture,
+                events,
+                baseline_path,
+                self.resolved_path,
+                figure,
+                metadata,
             )
             self.assertEqual(result["particles_active_at_pulse"], 1)
             self.assertEqual(result["frozen_port_losses_before_pulse"], 1)
@@ -139,22 +164,15 @@ class SharedPulseGeometrySnapshotTests(unittest.TestCase):
 
     def test_geometry_uses_nonzero_authoritative_port_y_center(self) -> None:
         baseline_path = REPO_ROOT / "projects" / "single_reflection_oa_tof_mass_analyzer" / "config" / "baseline.json"
-        joint_path = PROJECT_ROOT / "config" / "rf_to_oatof_shared_physical_port_joint_geometry.json"
-        registration_path = PROJECT_ROOT / "config" / "resolved_rf_to_oatof_s2_spatial_registration.json"
         baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
-        joint = deepcopy(json.loads(joint_path.read_text(encoding="utf-8")))
-        registration = deepcopy(json.loads(registration_path.read_text(encoding="utf-8")))
-        joint["physical_boundaries"]["target_entry_surface"]["center_mm"][1] = 0.25
-        registration["resolved_surfaces"]["target_entry"]["in_instrument_frame"][
-            "center_mm"
-        ][1] = 0.25
-        geometry = module.accelerator_geometry(baseline, joint, registration)
+        resolved = deepcopy(json.loads(self.resolved_path.read_text(encoding="utf-8")))
+        resolved["port_geometry"]["downstream"]["mating_surface"]["center_mm"][1] = 0.25
+        resolved["transition_aperture"]["center_mm"][1] = 0.25
+        geometry = module.accelerator_geometry(baseline, resolved)
         self.assertEqual(geometry["port_center_y"], 0.25)
 
     def test_prepare_rejects_nonfinite_positions_and_wrong_frame(self) -> None:
         baseline = REPO_ROOT / "projects" / "single_reflection_oa_tof_mass_analyzer" / "config" / "baseline.json"
-        joint = PROJECT_ROOT / "config" / "rf_to_oatof_shared_physical_port_joint_geometry.json"
-        registration = PROJECT_ROOT / "config" / "resolved_rf_to_oatof_s2_spatial_registration.json"
         with tempfile.TemporaryDirectory() as temp:
             capture = Path(temp) / "capture.csv"
             events = Path(temp) / "events.csv"
@@ -173,13 +191,13 @@ class SharedPulseGeometrySnapshotTests(unittest.TestCase):
             pd.DataFrame([changed]).to_csv(capture, index=False)
             with self.assertRaisesRegex(ValueError, "finite"):
                 module.prepare_snapshot_data(
-                    capture, events, baseline, joint, registration
+                    capture, events, baseline, self.resolved_path
                 )
             changed = dict(base, frame_id="wrong_frame")
             pd.DataFrame([changed]).to_csv(capture, index=False)
             with self.assertRaisesRegex(ValueError, "frame"):
                 module.prepare_snapshot_data(
-                    capture, events, baseline, joint, registration
+                    capture, events, baseline, self.resolved_path
                 )
 
     def test_mixed_pulse_times_are_rejected(self) -> None:
@@ -204,10 +222,10 @@ class SharedPulseGeometrySnapshotTests(unittest.TestCase):
                 module.plot_snapshot(
                     capture, events,
                     REPO_ROOT / "projects" / "single_reflection_oa_tof_mass_analyzer" / "config" / "baseline.json",
-                    PROJECT_ROOT / "config" / "rf_to_oatof_shared_physical_port_joint_geometry.json",
+                    self.resolved_path,
                     Path(temp) / "out.png", Path(temp) / "out.json")
 
-    def test_sparse_s3_capture_adds_terminal_loss_positions(self) -> None:
+    def test_sparse_pulse_capture_adds_terminal_loss_positions(self) -> None:
         capture = pd.DataFrame([{
             "particle_id": 1, "instrument_time_us": 36.0,
             "x_mm": -48.8, "y_mm": 0.0, "z_mm": -18.4,

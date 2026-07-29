@@ -12,14 +12,30 @@ REPOSITORY_ROOT = PROJECT_ROOT.parents[1]
 POLICY = PROJECT_ROOT / "config" / "spatial_registration_migration_policy.json"
 PYTHON_FILES = (
     PROJECT_ROOT / "analysis" / "build_oatof_handoff.py",
-    PROJECT_ROOT / "analysis" / "resolve_s2_connector_case.py",
-    PROJECT_ROOT / "analysis" / "resolve_spatial_registration.py",
-    PROJECT_ROOT / "analysis" / "analyze_rf_oatof_checkpoints.py",
+    PROJECT_ROOT / "analysis" / "derive_shared_centroid_pulse_time.py",
+    PROJECT_ROOT / "analysis" / "plot_shared_pulse_geometry_snapshot.py",
+    PROJECT_ROOT
+    / "analysis"
+    / "build_pulse_capture_local_exit_component_state.py",
+    PROJECT_ROOT / "analysis" / "audit_pulse_capture_pulse_chain.py",
     REPOSITORY_ROOT / "projects" / "single_reflection_oa_tof_mass_analyzer" / "analysis" / "rf_handoff_adapter.py",
 )
 MATLAB_FILES = (
-    PROJECT_ROOT / "tests" / "comsol" / "build_s2_passive_connector_model.m",
-    PROJECT_ROOT / "tests" / "comsol" / "solve_s2_passive_connector_field.m",
+    PROJECT_ROOT
+    / "workflows"
+    / "rf_to_oatof_integration"
+    / "comsol"
+    / "build_pre_pulse_interface_transport_model.m",
+    PROJECT_ROOT
+    / "workflows"
+    / "rf_to_oatof_integration"
+    / "comsol"
+    / "solve_pre_pulse_interface_transport_field.m",
+    PROJECT_ROOT
+    / "workflows"
+    / "rf_to_oatof_integration"
+    / "comsol"
+    / "solve_pulse_capture.m",
 )
 LOCAL_PRIMITIVES = {"determinant3", "matvec", "matmul3", "transpose3"}
 
@@ -58,23 +74,25 @@ def scan_python(path: Path, source: str) -> list[str]:
                 violations.append(
                     f"no_second_resolved_authority:{path.name}:{node.lineno}"
                 )
-    if path.name == "resolve_spatial_registration.py":
-        for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.Constant)
-                and isinstance(node.value, (int, float))
-                and float(node.value) == 90.2
-            ):
-                violations.append(
-                    f"no_instance_surface_constant:{path.name}:{node.lineno}"
-                )
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, (int, float))
+            and float(node.value) == 90.2
+        ):
+            violations.append(
+                f"no_instance_surface_constant:{path.name}:{node.lineno}"
+            )
     return violations
 
 
 def scan_matlab(path: Path, source: str) -> list[str]:
     """Return ratchet violations in one active MATLAB supplier adapter."""
     violations: list[str] = []
-    if "RF_OATOF_SPATIAL_REGISTRATION" not in source:
+    if not (
+        "resolvedConnection" in source
+        or "RF_OATOF_RESOLVED_CONNECTION" in source
+    ):
         violations.append(
             f"commercial_adapters_consume_resolved:{path.name}:missing_input"
         )

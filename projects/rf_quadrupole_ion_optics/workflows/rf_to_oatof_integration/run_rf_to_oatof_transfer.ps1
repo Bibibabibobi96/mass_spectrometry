@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-  [string]$ConnectorCaseId = 'nominal_gap_1mm',
+  [Parameter(Mandatory)][string]$ConnectionProfileId,
+  [Parameter(Mandatory)][string]$ResolvedConnection,
   [string]$Stamp = '',
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$PythonExe = ''
@@ -17,28 +18,29 @@ $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Pat
 if ([string]::IsNullOrWhiteSpace($Stamp)) { $Stamp = Get-Date -Format 'yyyyMMdd_HHmmss' }
 if ($Stamp -notmatch '^\d{8}_\d{6}$') { throw 'Stamp must use yyyyMMdd_HHmmss.' }
 
-$casesPath = Join-Path $projectRoot 'config\rf_to_oatof_connector_cases.json'
-$cases = Get-Content -LiteralPath $casesPath -Raw -Encoding UTF8 | ConvertFrom-Json
-$selected = @($cases.cases | Where-Object { $_.case_id -eq $ConnectorCaseId })
-if ($selected.Count -ne 1) { throw "Connector case must resolve uniquely: $ConnectorCaseId" }
-$gapMm = [double]$selected[0].connector_gap_mm
+$resolved = Get-Content -LiteralPath $ResolvedConnection -Raw -Encoding UTF8 | ConvertFrom-Json
+if ($resolved.selection.connection_profile_id -ne $ConnectionProfileId) {
+  throw 'Resolved connection identity differs from ConnectionProfileId.'
+}
+$gapMm = [double]$resolved.connector.length_mm
 $gapLabel = ('{0:g}' -f $gapMm).Replace('.','p')
-$s2RunId = "${Stamp}__sim__comsol__rf-oatof-s2-connector-gap${gapLabel}__n100"
-$s3RunId = "${Stamp}__sim__comsol__rf-oatof-s3-pulse-gap${gapLabel}__n100"
-$endToEndRunId = "${Stamp}__sim__cross__rf-oatof-s3-end-to-end-gap${gapLabel}__n100"
+$prePulseRunId = "${Stamp}__sim__comsol__rf-oatof-pre-pulse-interface-gap${gapLabel}__n100"
+$pulseCaptureRunId = "${Stamp}__sim__comsol__rf-oatof-pulse-capture-gap${gapLabel}__n100"
+$analyzerRunId = "${Stamp}__sim__cross__rf-oatof-analyzer-transport-gap${gapLabel}__n100"
 
-& (Join-Path $projectRoot 'tests\comsol\run_s2_passive_connector_field.ps1') `
-  -RunId $s2RunId -Particles -ConnectorCaseId $ConnectorCaseId -PythonExe $python
-if ($LASTEXITCODE -ne 0) { throw 'S3 cumulative chain stopped at the S2 particle stage.' }
-& (Join-Path $projectRoot 'tests\comsol\run_s3_pulse_capture.ps1') `
-  -SourceRunId $s2RunId -RunId $s3RunId -PythonExe $python
-if ($LASTEXITCODE -ne 0) { throw 'S3 cumulative chain stopped at the pulse-capture stage.' }
-& (Join-Path $projectRoot 'tests\cross_solver\run_s3_end_to_end.ps1') `
-  -SourceRunId $s3RunId -RunId $endToEndRunId -SimionExe $SimionExe -PythonExe $python
-if ($LASTEXITCODE -ne 0) { throw 'S3 cumulative chain stopped at the oaTOF analyzer stage.' }
+& (Join-Path $projectRoot 'workflows\rf_to_oatof_integration\comsol\run_pre_pulse_interface_transport.ps1') `
+  -RunId $prePulseRunId -Particles -ConnectionProfileId $ConnectionProfileId `
+  -ResolvedConnection $ResolvedConnection -PythonExe $python
+if ($LASTEXITCODE -ne 0) { throw 'RF-to-oaTOF transfer stopped at pre_pulse_interface_transport.' }
+& (Join-Path $projectRoot 'workflows\rf_to_oatof_integration\comsol\run_pulse_capture.ps1') `
+  -SourceRunId $prePulseRunId -RunId $pulseCaptureRunId -PythonExe $python
+if ($LASTEXITCODE -ne 0) { throw 'RF-to-oaTOF transfer stopped at pulse_capture.' }
+& (Join-Path $projectRoot 'workflows\rf_to_oatof_integration\cross_solver\run_analyzer_transport.ps1') `
+  -SourceRunId $pulseCaptureRunId -RunId $analyzerRunId -SimionExe $SimionExe -PythonExe $python
+if ($LASTEXITCODE -ne 0) { throw 'RF-to-oaTOF transfer stopped at analyzer_transport.' }
 
 $endToEndRun = Resolve-RfDirectChildDirectory -ParentRoot $artifactRoot `
-  -ChildName $endToEndRunId -Role 'end-to-end run id'
+  -ChildName $analyzerRunId -Role 'analyzer transport run id'
 $snapshotRoot = Join-Path $endToEndRun 'inputs\runtime_snapshot'
 $manifestVerifier = Join-Path $snapshotRoot 'common\contracts\verify_run_manifest.py'
 if (-not (Test-Path -LiteralPath $manifestVerifier -PathType Leaf)) {
@@ -46,13 +48,13 @@ if (-not (Test-Path -LiteralPath $manifestVerifier -PathType Leaf)) {
 }
 $verificationCases = @(
   [pscustomobject]@{
-    run_id=$s2RunId; mode='rf_to_oatof_s2_passive_connector_n100'
+    run_id=$prePulseRunId; mode='rf_to_oatof_pre_pulse_interface_transport_n100'
   },
   [pscustomobject]@{
-    run_id=$s3RunId; mode='rf_to_oatof_s3_shared_clock_pulse_capture_n100'
+    run_id=$pulseCaptureRunId; mode='rf_to_oatof_pulse_capture_n100'
   },
   [pscustomobject]@{
-    run_id=$endToEndRunId; mode='rf_to_oatof_s3_cumulative_end_to_end'
+    run_id=$analyzerRunId; mode='rf_to_oatof_analyzer_transport_n100'
   }
 )
 $environmentNames = @('PYTHONPATH','PYTHONNOUSERSITE')
@@ -81,5 +83,5 @@ try {
 }
 $summary = Get-Content -LiteralPath (Join-Path $endToEndRun 'summary.json') `
   -Raw -Encoding UTF8 | ConvertFrom-Json
-Write-Output ("S3_CUMULATIVE_CHAIN=PASS CASE={0} GAP_MM={1:g} RUN_ID={2} HITS={3}/{4}" -f `
-  $ConnectorCaseId,$gapMm,$endToEndRunId,$summary.census.detector_hit,$summary.census.local_accelerator_exit)
+Write-Output ("RF_TO_OATOF_TRANSFER=PASS PROFILE={0} GAP_MM={1:g} RUN_ID={2} HITS={3}/{4}" -f `
+  $ConnectionProfileId,$gapMm,$analyzerRunId,$summary.census.detector_hit,$summary.census.local_accelerator_exit)

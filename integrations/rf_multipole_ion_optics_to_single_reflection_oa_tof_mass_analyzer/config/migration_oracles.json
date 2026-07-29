@@ -10,10 +10,10 @@
     "direct_mating_inner_radius_mm": "The 0.45 mm value represents the limiting half-height of the 1.0 mm by 0.9 mm downstream aperture when no connector entity exists."
   },
   "shared_sources": {
-    "s2_contract": "projects/rf_quadrupole_ion_optics/config/rf_to_oatof_s2_passive_connector.json",
-    "s3_contract": "projects/rf_quadrupole_ion_optics/config/rf_to_oatof_s3_pulse_capture.json",
-    "spatial_registration": "projects/rf_quadrupole_ion_optics/config/resolved_rf_to_oatof_s2_spatial_registration.json",
-    "stage_registry": "projects/rf_quadrupole_ion_optics/config/rf_to_oatof_interface_stages.json"
+    "s2_contract": "projects/rf_quadrupole_ion_optics/docs/history/20260729__superseded-rf-oatof-s2-s3-active-contracts/config__rf_to_oatof_s2_passive_connector.json",
+    "s3_contract": "projects/rf_quadrupole_ion_optics/docs/history/20260729__superseded-rf-oatof-s2-s3-active-contracts/config__rf_to_oatof_s3_pulse_capture.json",
+    "spatial_registration": "projects/rf_quadrupole_ion_optics/docs/history/20260729__superseded-rf-oatof-s2-s3-active-contracts/config__resolved_rf_to_oatof_s2_spatial_registration.json",
+    "stage_registry": "projects/rf_quadrupole_ion_optics/config/rf_to_oatof_transfer_phases.json"
   },
   "profiles": [
     {

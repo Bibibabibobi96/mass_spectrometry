@@ -1,14 +1,15 @@
 function [model, comp, context, geometryInfo, meshElementCounts] = ...
-    prepare_s2_joint_field_model(contract, sharedJoint, rf, oa, oaComsolDir, modelTag)
-% Build, mesh and solve the shared S2/S3 electrostatic field bases.
+    prepare_pre_pulse_interface_transport_field_model( ...
+    contract, resolvedConnection, sharedJoint, rf, oa, oaComsolDir, modelTag)
+% Build, mesh and solve the shared PrePulse/PulseCapture electrostatic field bases.
 
-[model, context] = build_s2_passive_connector_model( ...
-    contract, sharedJoint, rf, oa, oaComsolDir, modelTag);
+[model, context] = build_pre_pulse_interface_transport_model( ...
+    resolvedConnection, sharedJoint, rf, oa, oaComsolDir, modelTag);
 comp = model.component('comp1');
 geometryInfo = mphgeominfo(model, 'geom1');
-create_field_selections(comp, context, oa, contract);
-create_field_physics(model, comp, context, sharedJoint, oa);
-create_field_mesh(comp, contract, oa);
+create_field_selections(comp, context, oa);
+create_field_physics(model, comp, context, resolvedConnection, sharedJoint, oa);
+create_field_mesh(comp, context, contract, oa);
 
 study = model.study.create('std1');
 study.create('stat', 'Stationary');
@@ -21,7 +22,7 @@ meshInfo = mphmeshstats(model, 'mesh1');
 meshElementCounts = meshInfo.numelem(:).';
 end
 
-function create_field_selections(comp, context, oa, contract)
+function create_field_selections(comp, context, oa)
 solidTags = [{'repeller','accelshield'}, context.rf_ground_tags, ...
     context.accelerator_ring_tags, context.rf_rod_tags];
 solidSelections = cellfun(@(name) ['geom1_' name '_dom'], ...
@@ -40,12 +41,12 @@ create_grid_selection(comp, 'selb_grid2', oa.geometry_mm.accelerator_grid2_z, ..
     oa.coordinate_convention.accelerator_axis_x, ...
     oa.geometry_mm.accelerator_bore_half+oa.geometry_mm.accelerator_ring_width+ ...
     oa.geometry_mm.accelerator_insulation_gap, 0.05);
-if context.connector_present, create_connector_wall_selection(comp, contract); end
+if context.connector_present, create_connector_wall_selection(comp, context); end
 end
 
-function create_connector_wall_selection(comp, contract)
-xMin = contract.passive_connector_geometry.axial_extent_x_mm(1);
-xMax = contract.passive_connector_geometry.axial_extent_x_mm(2);
+function create_connector_wall_selection(comp, context)
+xMin = context.source_center_mm(1);
+xMax = context.target_center_mm(1);
 tolerance = 1e-6;
 comp.selection.create('selb_conn_all', 'Adjacent');
 comp.selection('selb_conn_all').set('input', {'geom1_connvac_dom'});
@@ -66,7 +67,7 @@ comp.selection('selb_connector_wall').set('add', {'selb_conn_all'});
 comp.selection('selb_connector_wall').set('subtract', {'selb_conn_ends'});
 end
 
-function create_field_physics(model, comp, context, sharedJoint, oa)
+function create_field_physics(model, comp, context, resolvedConnection, sharedJoint, oa)
 material = model.material.create('mat_vac', 'Common');
 material.selection.named('sel_vac');
 material.propertyGroup('def').set('relpermittivity', {'1'});
@@ -83,14 +84,17 @@ set_potential(esStatic, 'repeller', 'selb_repeller', oa.electrodes_V.repeller);
 set_potential(esStatic, 'accelshield', 'selb_accelshield', 0);
 set_potential(esStatic, 'grid1', 'selb_grid1', oa.electrodes_V.grid1);
 set_potential(esStatic, 'grid2', 'selb_grid2', 0);
-if context.connector_present, set_potential(esStatic, 'connector', 'selb_connector_wall', 0); end
+if context.connector_present
+    set_potential(esStatic, 'connector', 'selb_connector_wall', ...
+        context.interface_potential_V);
+end
 for index = 1:numel(context.rf_ground_tags)
     name = context.rf_ground_tags{index};
-    set_potential(esStatic, name, ['selb_' name], 0);
+    set_potential(esStatic, name, ['selb_' name], context.interface_potential_V);
 end
 for index = 1:numel(context.rf_rod_tags)
     name = context.rf_rod_tags{index};
-    set_potential(esStatic, name, ['selb_' name], 0);
+    set_potential(esStatic, name, ['selb_' name], context.interface_potential_V);
 end
 for index = 1:numel(context.accelerator_ring_tags)
     name = context.accelerator_ring_tags{index};
@@ -106,16 +110,22 @@ for index = 1:numel(groundedTags)
 end
 set_potential(esRf, 'g_grid1', 'selb_grid1', 0);
 set_potential(esRf, 'g_grid2', 'selb_grid2', 0);
-if context.connector_present, set_potential(esRf, 'g_connector', 'selb_connector_wall', 0); end
+if context.connector_present
+    set_potential(esRf, 'g_connector', 'selb_connector_wall', 0);
+end
 for index = 1:numel(context.rf_rod_tags)
     name = context.rf_rod_tags{index};
     set_potential(esRf, ['u_' name], ['selb_' name], ...
         sharedJoint.field_basis.rf_unit.rod_differential_pattern_V(index));
 end
+assert(abs(resolvedConnection.port_geometry.upstream.mating_surface.potential_V- ...
+    resolvedConnection.port_geometry.downstream.mating_surface.potential_V) <= ...
+    resolvedConnection.potential_alignment.tolerance_V, ...
+    'Resolved continuous interface potentials differ.');
 end
 
-function create_field_mesh(comp, contract, oa)
-meshContract = contract.no_pulse_field_candidate.mesh;
+function create_field_mesh(comp, context, contract, oa)
+meshContract = contract.field_runtime.mesh;
 g = oa.geometry_mm;
 mesh = comp.mesh.create('mesh1');
 mesh.feature('size').set('hauto', meshContract.global_auto_level);
@@ -131,7 +141,7 @@ comp.selection('sel_accel_mesh').set('zmax', g.accelerator_grid2_z);
 comp.selection('sel_accel_mesh').set('condition', 'inside');
 comp.selection.create('sel_connector_mesh', 'Union');
 connectorMeshInputs = {'geom1_portvac_dom'};
-if contract.nominal_registration.connector_gap_mm > 0
+if context.connector_present
     connectorMeshInputs = {'geom1_connvac_dom','geom1_portvac_dom'};
 end
 comp.selection('sel_connector_mesh').set('input', connectorMeshInputs);
@@ -147,7 +157,7 @@ mesh.feature('szconnector').selection.named('sel_connector_mesh');
 mesh.feature('szconnector').set('custom', 'on');
 mesh.feature('szconnector').set('hmaxactive', true);
 mesh.feature('szconnector').set('hmax', ...
-    sprintf('%.17g[mm]', meshContract.connector_and_port_hmax_mm));
+    sprintf('%.17g[mm]', meshContract.interface_hmax_mm));
 mesh.feature.create('ftet1', 'FreeTet');
 mesh.run;
 end

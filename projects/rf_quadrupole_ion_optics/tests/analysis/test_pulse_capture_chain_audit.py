@@ -13,15 +13,23 @@ from common.contracts.component_particle_state import (
     validate_component_particle_state_csv,
 )
 from common.contracts.particle_physics import kinetic_energy_ev, mass_to_charge_th
-from projects.rf_quadrupole_ion_optics.analysis import audit_s3_pulse_chain as module
 from projects.rf_quadrupole_ion_optics.analysis import (
-    build_s3_local_exit_component_state as adapter,
+    audit_pulse_capture_pulse_chain as module,
+)
+from projects.rf_quadrupole_ion_optics.analysis import (
+    build_pulse_capture_local_exit_component_state as adapter,
 )
 
 
-class S3PulseChainAuditTests(unittest.TestCase):
+class PulseCaptureChainAuditTests(unittest.TestCase):
     def test_matlab_emits_only_solver_local_terminal_census(self) -> None:
-        script = Path(__file__).parents[1] / "comsol" / "solve_s3_pulse_capture.m"
+        script = (
+            Path(__file__).parents[2]
+            / "workflows"
+            / "rf_to_oatof_integration"
+            / "comsol"
+            / "solve_pulse_capture.m"
+        )
         text = script.read_text(encoding="utf-8")
         self.assertIn("eventRows = cell(height(ions), 24)", text)
         self.assertIn("localExitCount = nnz(string(terminal.event)", text)
@@ -31,12 +39,18 @@ class S3PulseChainAuditTests(unittest.TestCase):
             "canonical_parent_particle_id",
             "kinetic_energy_eV",
             "1.602176634e-19",
-            "RF_OATOF_S3_LOCAL_EXIT_OUTPUT",
+            "RF_OATOF_PulseCapture_LOCAL_EXIT_OUTPUT",
         ):
             self.assertNotIn(forbidden, text)
 
-    def test_runner_validates_and_records_frozen_s3_particle_input(self) -> None:
-        runner = Path(__file__).parents[1] / "comsol" / "run_s3_pulse_capture.ps1"
+    def test_runner_validates_and_records_frozen_particle_input(self) -> None:
+        runner = (
+            Path(__file__).parents[2]
+            / "workflows"
+            / "rf_to_oatof_integration"
+            / "comsol"
+            / "run_pulse_capture.ps1"
+        )
         text = runner.read_text(encoding="utf-8")
         validation = text.index(
             "'-m','common.contracts.component_particle_state',"
@@ -77,11 +91,13 @@ class S3PulseChainAuditTests(unittest.TestCase):
         self.assertNotIn("$python $snapshotAnalysis", text)
         self.assertIn(
             "$localExitAdapter = "
-            "$dependencySnapshotPaths['rf_s3_local_exit_adapter']",
+            "$dependencySnapshotPaths['rf_pulse_capture_local_exit_adapter']",
             text,
         )
-        self.assertIn("s3_local_accelerator_exit_validation.json", text)
-        self.assertNotIn("RF_OATOF_S3_LOCAL_EXIT_OUTPUT", text)
+        self.assertIn(
+            "pulse_capture_local_accelerator_exit_validation.json", text
+        )
+        self.assertNotIn("RF_OATOF_PulseCapture_LOCAL_EXIT_OUTPUT", text)
         self.assertIn("canonical_rf_exit_component_state_validation.json", text)
         self.assertIn("particle_state_validation = $particleValidation", text)
         self.assertIn("particle_validation_sha256", text)
@@ -91,7 +107,8 @@ class S3PulseChainAuditTests(unittest.TestCase):
         row = {
             "particle_id": 2, "parent_particle_id": "", "generation": 0,
             "species_id": "ion_100amu_q1", "particle_weight": 1,
-            "source_component_id": "s2", "target_component_id": "s3",
+            "source_component_id": "pre_pulse_interface_transport",
+            "target_component_id": "pulse_capture",
             "state_event": "component_handoff", "frame_id": "oatof_global",
             "clock_epoch_id": "epoch", "instrument_time_us": 12,
             "lineage_age_us": 6, "particle_age_us": 6,
@@ -139,7 +156,8 @@ class S3PulseChainAuditTests(unittest.TestCase):
             source = pd.DataFrame([{
                 "particle_id": 1, "parent_particle_id": 42, "generation": 1,
                 "species_id": "ion_100amu_q1", "particle_weight": 1.0,
-                "source_component_id": "s2", "target_component_id": "s3",
+                "source_component_id": "rf_quadrupole_ion_optics",
+                "target_component_id": "single_reflection_oa_tof_mass_analyzer",
                 "state_event": "component_handoff", "frame_id": "laboratory_frame",
                 "clock_epoch_id": "epoch", "instrument_time_us": 10.0,
                 "lineage_age_us": 4.0, "particle_age_us": 4.0,
@@ -153,7 +171,7 @@ class S3PulseChainAuditTests(unittest.TestCase):
                 "phase_reference_id": "rf_drive.v1", "phase_rad": 0.0,
             }], columns=csv_columns())
             terminal = pd.DataFrame([{
-                "particle_id": 1, "event": "contract_local_exit",
+                "particle_id": 1, "event": "local_accelerator_exit",
                 "status": "transmitted", "frame_id": "laboratory_frame",
                 "clock_epoch_id": "epoch", "instrument_time_us": 12.0,
                 "lineage_age_us": 6.0, "particle_age_us": 6.0,
@@ -175,23 +193,12 @@ class S3PulseChainAuditTests(unittest.TestCase):
                                 ("capture", capture)):
                 frame.to_csv(root/f"{name}.csv", index=False)
             (root/"schedule.json").write_text(json.dumps({
-                "stage": "S3", "derived_pulse_time_us": 11.0,
+                "phase": "pulse_capture", "derived_pulse_time_us": 11.0,
                 "pulse_width_us": 1.0,
                 "target_species": {"mass_amu": 100.0, "charge_state": 1},
             }), encoding="utf-8")
             contract = {
-                "source": {
-                    "source_particles": 1, "clock_epoch_id": "epoch",
-                    "target_mass_amu": 100.0, "target_charge_state": 1,
-                },
-                "identity_contract": {"frame_id": "laboratory_frame"},
-                "local_exit_adapter": {
-                    "terminal_event": "contract_local_exit",
-                    "terminal_status": "transmitted",
-                    "source_component_id": "rf_quadrupole_to_oatof_s3",
-                    "target_component_id": "oatof_analyzer",
-                    "state_event": "canonical_contract_local_exit",
-                },
+                "role": "rf_to_oatof_pulse_capture",
                 "runtime": {
                     "minimum_active_at_pulse": 1,
                     "minimum_local_accelerator_exit": 1,
@@ -200,8 +207,37 @@ class S3PulseChainAuditTests(unittest.TestCase):
             (root/"contract.json").write_text(
                 json.dumps(contract), encoding="utf-8"
             )
+            pre_pulse = {
+                "role": "rf_to_oatof_pre_pulse_interface_transport",
+                "particle_runtime": {
+                    "source_particles": 1,
+                    "clock_epoch_id": "epoch",
+                },
+            }
+            (root / "pre_pulse.json").write_text(
+                json.dumps(pre_pulse), encoding="utf-8"
+            )
+            resolved_connection = {
+                "role": "resolved_connection_do_not_edit",
+                "integration_id": (
+                    "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
+                ),
+                "selection": {
+                    "downstream_project_id": (
+                        "single_reflection_oa_tof_mass_analyzer"
+                    )
+                },
+                "transition_aperture": {
+                    "coordinate_frame_id": "laboratory_frame"
+                },
+                "compatibility": {"status": "pass"},
+            }
+            (root / "resolved_connection.json").write_text(
+                json.dumps(resolved_connection), encoding="utf-8"
+            )
             validation = adapter.build_local_exit_component_state(
                 root/"source.csv", root/"terminal.csv", root/"contract.json",
+                root/"pre_pulse.json", root/"resolved_connection.json",
                 root/"exit.csv", root/"exit_validation.json",
             )
             self.assertEqual(validation["status"], "PASS")
@@ -265,6 +301,8 @@ class S3PulseChainAuditTests(unittest.TestCase):
                             changed_exit_path,
                             root / "schedule.json",
                             root / "contract.json",
+                            root / "pre_pulse.json",
+                            root / "resolved_connection.json",
                         )
 
             terminal_equivalence_changes = {
@@ -274,12 +312,12 @@ class S3PulseChainAuditTests(unittest.TestCase):
                     "local_accelerator_exit": True,
                 },
                 "status_only": {
-                    "event": "contract_local_exit",
+                    "event": "local_accelerator_exit",
                     "status": "lost",
                     "local_accelerator_exit": True,
                 },
                 "flag_only": {
-                    "event": "contract_local_exit",
+                    "event": "local_accelerator_exit",
                     "status": "transmitted",
                     "local_accelerator_exit": False,
                 },
@@ -301,6 +339,8 @@ class S3PulseChainAuditTests(unittest.TestCase):
                             root / "source.csv",
                             changed_terminal_path,
                             root / "contract.json",
+                            root / "pre_pulse.json",
+                            root / "resolved_connection.json",
                             root / f"exit_bad_{case}.csv",
                         )
                     with self.assertRaisesRegex(ValueError, "not equivalent"):
@@ -311,6 +351,8 @@ class S3PulseChainAuditTests(unittest.TestCase):
                             root / "exit.csv",
                             root / "schedule.json",
                             root / "contract.json",
+                            root / "pre_pulse.json",
+                            root / "resolved_connection.json",
                         )
 
             changed_terminal = terminal.copy()
@@ -319,10 +361,12 @@ class S3PulseChainAuditTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "species differs"):
                 adapter.build_local_exit_component_state(
                     root/"source.csv", root/"terminal_bad.csv",
-                    root/"contract.json", root/"exit_bad.csv",
+                    root/"contract.json", root/"pre_pulse.json",
+                    root/"resolved_connection.json", root/"exit_bad.csv",
                 )
             result = module.audit(root/"source.csv", root/"terminal.csv", root/"capture.csv",
-                                  root/"exit.csv", root/"schedule.json", root/"contract.json")
+                                  root/"exit.csv", root/"schedule.json", root/"contract.json",
+                                  root/"pre_pulse.json", root/"resolved_connection.json")
             self.assertEqual(result["local_accelerator_exit"], 1)
             self.assertEqual(result["maximum_clock_residual_us"], 0.0)
 
@@ -352,6 +396,8 @@ class S3PulseChainAuditTests(unittest.TestCase):
                 root / "exit.csv",
                 root / "schedule.json",
                 root / "contract.json",
+                root / "pre_pulse.json",
+                root / "resolved_connection.json",
             )
             self.assertEqual(false_result["oatof_entry_crossings"], 0)
             self.assertEqual(
@@ -372,6 +418,8 @@ class S3PulseChainAuditTests(unittest.TestCase):
                     root / "exit.csv",
                     root / "schedule.json",
                     root / "contract.json",
+                    root / "pre_pulse.json",
+                    root / "resolved_connection.json",
                 )
 
             changed_capture = capture.copy()
@@ -379,14 +427,16 @@ class S3PulseChainAuditTests(unittest.TestCase):
             changed_capture.to_csv(root/"capture.csv", index=False)
             with self.assertRaisesRegex(ValueError, "unknown particle ID"):
                 module.audit(root/"source.csv", root/"terminal.csv", root/"capture.csv",
-                             root/"exit.csv", root/"schedule.json", root/"contract.json")
+                             root/"exit.csv", root/"schedule.json", root/"contract.json",
+                             root/"pre_pulse.json", root/"resolved_connection.json")
 
             changed_capture = capture.copy()
             changed_capture.loc[0, "instrument_time_us"] = 11.001
             changed_capture.to_csv(root/"capture.csv", index=False)
             with self.assertRaisesRegex(ValueError, "scheduled pulse time"):
                 module.audit(root/"source.csv", root/"terminal.csv", root/"capture.csv",
-                             root/"exit.csv", root/"schedule.json", root/"contract.json")
+                             root/"exit.csv", root/"schedule.json", root/"contract.json",
+                             root/"pre_pulse.json", root/"resolved_connection.json")
 
 
 if __name__ == "__main__":

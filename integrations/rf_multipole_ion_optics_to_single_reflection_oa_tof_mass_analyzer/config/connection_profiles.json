@@ -6,7 +6,7 @@
     {
       "schema_version": 1,
       "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
-      "connection_profile_id": "rf_quadrupole_s2_s3_grounded_connector_gap_1mm",
+      "connection_profile_id": "rf_quadrupole_grounded_connector_gap_1mm",
       "upstream": {
         "project_id": "rf_quadrupole_ion_optics",
         "port_id": "rf_multipole_exit",
@@ -34,6 +34,13 @@
         "inner_radius_mm": 3.6,
         "wall_thickness_mm": 0.0
       },
+      "transition_aperture": {
+        "shape": "rectangle",
+        "full_width_mm": 1.0,
+        "full_height_mm": 0.9,
+        "width_axis_downstream_frame": [0.0, 1.0, 0.0],
+        "height_axis_downstream_frame": [0.0, 0.0, 1.0]
+      },
       "minimum_clear_radius_mm": 0.45,
       "potential_alignment": {
         "mode": "continuous",
@@ -54,7 +61,7 @@
     {
       "schema_version": 1,
       "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
-      "connection_profile_id": "rf_quadrupole_s2_s3_direct_mating_gap_0mm",
+      "connection_profile_id": "rf_quadrupole_direct_mating_gap_0mm",
       "upstream": {
         "project_id": "rf_quadrupole_ion_optics",
         "port_id": "rf_multipole_exit",
@@ -79,8 +86,15 @@
       },
       "connector": {
         "length_mm": 0.0,
-        "inner_radius_mm": 0.45,
+        "inner_radius_mm": 3.6,
         "wall_thickness_mm": 0.0
+      },
+      "transition_aperture": {
+        "shape": "rectangle",
+        "full_width_mm": 1.0,
+        "full_height_mm": 0.9,
+        "width_axis_downstream_frame": [0.0, 1.0, 0.0],
+        "height_axis_downstream_frame": [0.0, 0.0, 1.0]
       },
       "minimum_clear_radius_mm": 0.45,
       "potential_alignment": {

@@ -6,7 +6,7 @@
   "execution_status": "NOT_RUN",
   "legacy_oracle": {
     "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/migration_oracles.json",
-    "sha256": "E75D3C517E9D7E69898700F240AD3B33061EA4F9FC7893CF9AA17E243EE9DB46",
+    "sha256": "120EA5C90AC275B1C30D5B25A3378A5616C2215600F4A6E3C29138A95E1B0083",
     "access": "read_only"
   },
   "comparison_requirements": {
@@ -23,12 +23,12 @@
   },
   "profiles": [
     {
-      "connection_profile_id": "rf_quadrupole_s2_s3_grounded_connector_gap_1mm",
+      "connection_profile_id": "rf_quadrupole_grounded_connector_gap_1mm",
       "new_run_status": "NOT_RUN",
       "equivalence_decision": "NOT_RUN"
     },
     {
-      "connection_profile_id": "rf_quadrupole_s2_s3_direct_mating_gap_0mm",
+      "connection_profile_id": "rf_quadrupole_direct_mating_gap_0mm",
       "new_run_status": "NOT_RUN",
       "equivalence_decision": "NOT_RUN"
     }

@@ -7,7 +7,7 @@
   "required": [
     "schema_version", "integration_id", "connection_profile_id",
     "upstream", "downstream", "coupling_mode", "spatial_registration",
-    "connector", "minimum_clear_radius_mm", "potential_alignment",
+    "connector", "transition_aperture", "minimum_clear_radius_mm", "potential_alignment",
     "clock_alignment", "field_ownership_segments"
   ],
   "properties": {
@@ -43,6 +43,21 @@
         "length_mm": {"type": "number", "minimum": 0},
         "inner_radius_mm": {"type": "number", "exclusiveMinimum": 0},
         "wall_thickness_mm": {"type": "number", "minimum": 0}
+      }
+    },
+    "transition_aperture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "shape", "full_width_mm", "full_height_mm",
+        "width_axis_downstream_frame", "height_axis_downstream_frame"
+      ],
+      "properties": {
+        "shape": {"const": "rectangle"},
+        "full_width_mm": {"type": "number", "exclusiveMinimum": 0},
+        "full_height_mm": {"type": "number", "exclusiveMinimum": 0},
+        "width_axis_downstream_frame": {"$ref": "#/$defs/vector3"},
+        "height_axis_downstream_frame": {"$ref": "#/$defs/vector3"}
       }
     },
     "minimum_clear_radius_mm": {"type": "number", "exclusiveMinimum": 0},

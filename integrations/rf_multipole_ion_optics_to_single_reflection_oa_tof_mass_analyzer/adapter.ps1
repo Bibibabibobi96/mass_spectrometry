@@ -18,7 +18,7 @@ $preregistrationPath = Join-Path $integrationRoot 'config\migration_equivalence_
 $plan = Get-Content -LiteralPath $CompositionPlan -Raw -Encoding UTF8 | ConvertFrom-Json
 $resolved = Get-Content -LiteralPath $ResolvedConnection -Raw -Encoding UTF8 | ConvertFrom-Json
 $steps = @($plan.execution_steps)
-if ($steps.Count -ne 1 -or $steps[0].step_id -ne 'legacy_s2_s3_cumulative_migration') {
+if ($steps.Count -ne 1 -or $steps[0].step_id -ne 'rf_to_oatof_transfer') {
     throw 'Prepared composition plan does not contain one migration execution step.'
 }
 if ($plan.selection.connection_profile_id -ne $resolved.selection.connection_profile_id) {
@@ -38,9 +38,7 @@ foreach ($argument in @($steps[0].arguments)) {
     $frozenArguments[$name] = $value
 }
 $expectedArguments = @(
-    'legacy_s2_entrypoint',
-    'legacy_s3_entrypoint',
-    'connector_case_id',
+    'workflow_entrypoint',
     'adapter_registry_sha256'
 )
 if (@($frozenArguments.Keys | Where-Object { $_ -notin $expectedArguments }).Count -ne 0 -or
@@ -57,18 +55,16 @@ $mappings = @($registry.mappings | Where-Object {
 })
 if ($mappings.Count -ne 1) { throw 'Execution adapter mapping no longer resolves uniquely.' }
 $mapping = $mappings[0]
-if ($mapping.connector_case_id -ne $frozenArguments.connector_case_id -or
-    $mapping.legacy_entrypoints.s2_field -ne $frozenArguments.legacy_s2_entrypoint -or
-    $mapping.legacy_entrypoints.s3_cumulative -ne $frozenArguments.legacy_s3_entrypoint) {
+if ($mapping.workflow_entrypoint -ne $frozenArguments.workflow_entrypoint) {
     throw 'Prepared execution mapping differs from the current adapter registry.'
 }
-$s2Entrypoint = [IO.Path]::GetFullPath((Join-Path $RepoRoot $frozenArguments.legacy_s2_entrypoint))
-$s3Entrypoint = [IO.Path]::GetFullPath((Join-Path $RepoRoot $frozenArguments.legacy_s3_entrypoint))
-foreach ($entrypoint in @($s2Entrypoint, $s3Entrypoint)) {
-    if (-not (Test-Path -LiteralPath $entrypoint -PathType Leaf)) {
-        throw "Mapped legacy entrypoint is missing: $entrypoint"
-    }
+$workflowEntrypoint = [IO.Path]::GetFullPath(
+    (Join-Path $RepoRoot $frozenArguments.workflow_entrypoint)
+)
+if (-not (Test-Path -LiteralPath $workflowEntrypoint -PathType Leaf)) {
+    throw "Mapped workflow entrypoint is missing: $workflowEntrypoint"
 }
+$connectorLengthMm = [double]$resolved.connector.length_mm
 $preregistration = Get-Content -LiteralPath $preregistrationPath -Raw -Encoding UTF8 |
     ConvertFrom-Json
 if ($preregistration.equivalence_status -ne 'BLOCKED' -or
@@ -77,10 +73,10 @@ if ($preregistration.equivalence_status -ne 'BLOCKED' -or
 }
 if ($PrepareOnly) {
     Write-Output ((
-            'INTEGRATION_ADAPTER=PREPARED PROFILE={0} CASE={1} S2={2} S3={3} ' +
+            'INTEGRATION_ADAPTER=PREPARED CONNECTION_PROFILE_ID={0} CONNECTOR_MM={1:g} WORKFLOW={2} ' +
             'EQUIVALENCE=BLOCKED/NOT_RUN'
-        ) -f $plan.selection.connection_profile_id, $mapping.connector_case_id,
-            $frozenArguments.legacy_s2_entrypoint, $frozenArguments.legacy_s3_entrypoint)
+        ) -f $plan.selection.connection_profile_id, $connectorLengthMm,
+            $frozenArguments.workflow_entrypoint)
     exit 0
 }
 if (-not $SolverAuthorized) {
@@ -90,9 +86,10 @@ if ($RunId -notmatch '^(?<stamp>\d{8}_\d{6})__[a-z0-9][a-z0-9._-]*$') {
     throw 'RunId must begin with yyyyMMdd_HHmmss__ and contain a nonempty integration label.'
 }
 $stamp = $Matches.stamp
-& $s3Entrypoint -ConnectorCaseId $mapping.connector_case_id -Stamp $stamp -PythonExe $PythonExe
+& $workflowEntrypoint -ConnectionProfileId $plan.selection.connection_profile_id `
+    -ResolvedConnection $ResolvedConnection -Stamp $stamp -PythonExe $PythonExe
 if ($LASTEXITCODE -ne 0) {
-    throw 'Mapped S2/S3 cumulative runner failed.'
+    throw 'Mapped RF-to-oaTOF transfer runner failed.'
 }
 $receipt = [ordered]@{
     schema_version = 1
@@ -101,7 +98,7 @@ $receipt = [ordered]@{
     connection_profile_id = $plan.selection.connection_profile_id
     composition_plan_sha256 = (Get-FileHash -LiteralPath $CompositionPlan -Algorithm SHA256).Hash
     resolved_connection_sha256 = (Get-FileHash -LiteralPath $ResolvedConnection -Algorithm SHA256).Hash
-    connector_case_id = $mapping.connector_case_id
+    connector_length_mm = $connectorLengthMm
     execution_status = 'completed_not_equivalence_evaluated'
     equivalence_status = 'BLOCKED'
 }

@@ -11,7 +11,9 @@ from pathlib import Path
 
 from common.contracts.component_particle_state import csv_columns
 from common.contracts.particle_physics import kinetic_energy_ev
-from projects.rf_quadrupole_ion_optics.analysis import analyze_s3_end_to_end as analyze
+from projects.rf_quadrupole_ion_optics.analysis import (
+    analyze_analyzer_transport as analyze,
+)
 from projects.rf_quadrupole_ion_optics.analysis import build_simion_input_from_canonical as adapter
 from projects.rf_quadrupole_ion_optics.analysis import (
     validate_oatof_formal_analyzer_release as formal_release,
@@ -22,7 +24,8 @@ def canonical_row(particle_id: int) -> dict[str, object]:
     return {
         "particle_id": particle_id, "parent_particle_id": "", "generation": 0,
         "species_id": "ion_100amu_q1", "particle_weight": 1,
-        "source_component_id": "s3", "target_component_id": "oatof_analyzer",
+        "source_component_id": "pulse_capture",
+        "target_component_id": "oatof_analyzer",
         "state_event": "local_accelerator_exit", "frame_id": "oatof_global",
         "clock_epoch_id": "instrument_clock_epoch.v1", "instrument_time_us": 36.75,
         "lineage_age_us": 36.0, "particle_age_us": 36.0,
@@ -42,7 +45,7 @@ def write_csv(path: Path, fields: list[str], rows: list[dict[str, object]]) -> N
         writer.writeheader(); writer.writerows(rows)
 
 
-class S3EndToEndTests(unittest.TestCase):
+class AnalyzerTransportTests(unittest.TestCase):
     def _formal_release_fixture(self, root: Path) -> tuple[Path, ...]:
         formal = root / "formal" / "simion"
         formal.mkdir(parents=True)
@@ -214,11 +217,13 @@ class S3EndToEndTests(unittest.TestCase):
 
     def test_runner_freezes_dependencies_and_source_before_execution(self) -> None:
         runner = (
-            Path(__file__).parents[1]
+            Path(__file__).parents[2]
+            / "workflows"
+            / "rf_to_oatof_integration"
             / "cross_solver"
-            / "run_s3_end_to_end.ps1"
+            / "run_analyzer_transport.ps1"
         ).read_text(encoding="utf-8")
-        selection = runner.index("$dependencyConsumer = 's3_end_to_end'")
+        selection = runner.index("$dependencyConsumer = 'analyzer_transport'")
         snapshot = runner.index("Copy-RfFrozenDependency")
         naming = runner.index(
             "$frozenArtifactNaming,'run',$RunId"
@@ -262,8 +267,8 @@ class S3EndToEndTests(unittest.TestCase):
 
         for dependency_id in (
             "rf_dependency_contract_snapshot",
-            "rf_s3_simion_input_adapter",
-            "rf_s3_end_to_end_analyzer",
+            "rf_analyzer_transport_simion_input_adapter",
+            "rf_analyzer_transport_analyzer",
             "rf_oatof_formal_release_validator",
             "rf_oatof_handoff_builder",
             "oatof_resolved_geometry",
@@ -285,7 +290,7 @@ class S3EndToEndTests(unittest.TestCase):
         self.assertIn("$env:PYTHONNOUSERSITE = '1'", runner)
         self.assertIn("Push-Location -LiteralPath $SnapshotRoot", runner)
         self.assertIn(
-            "--require-mode','rf_to_oatof_s3_shared_clock_pulse_capture_n100'",
+            "--require-mode','rf_to_oatof_pulse_capture_n100'",
             runner,
         )
         self.assertIn("Get-RfManifestOutputRecord", runner)
@@ -295,7 +300,7 @@ class S3EndToEndTests(unittest.TestCase):
         self.assertIn("--validation-contract',$frozenFormalValidation", runner)
         self.assertNotIn("$frozenManifestVerifier,$formalManifestPath", runner)
         self.assertIn(
-            "Get-S3FormalAssetRecords -ChecksumPath $checksumPath",
+            "Get-AnalyzerTransportFormalAssetRecords -ChecksumPath $checksumPath",
             runner,
         )
         self.assertIn(
@@ -322,9 +327,11 @@ class S3EndToEndTests(unittest.TestCase):
 
     def test_dependency_contract_is_frozen_before_closure_selection(self) -> None:
         runner = (
-            Path(__file__).parents[1]
+            Path(__file__).parents[2]
+            / "workflows"
+            / "rf_to_oatof_integration"
             / "cross_solver"
-            / "run_s3_end_to_end.ps1"
+            / "run_analyzer_transport.ps1"
         ).read_text(encoding="utf-8")
         stable_copy = runner.index(
             "$dependencyContractIdentity = Copy-RfStableFile"
@@ -445,9 +452,11 @@ class S3EndToEndTests(unittest.TestCase):
 
     def test_early_snapshot_failure_cannot_fall_back_to_live_manifest(self) -> None:
         runner = (
-            Path(__file__).parents[1]
+            Path(__file__).parents[2]
+            / "workflows"
+            / "rf_to_oatof_integration"
             / "cross_solver"
-            / "run_s3_end_to_end.ps1"
+            / "run_analyzer_transport.ps1"
         ).read_text(encoding="utf-8")
         not_ready = runner.index("$snapshotReady = $false")
         copy = runner.index("Copy-RfFrozenDependency")
@@ -477,7 +486,7 @@ class S3EndToEndTests(unittest.TestCase):
             with mapping.open(encoding="utf-8") as handle:
                 self.assertEqual(list(csv.DictReader(handle))[0]["particle_id"], "2")
 
-    def test_s3_audit_requires_identity_clock_and_pulse(self) -> None:
+    def test_analyzer_audit_requires_identity_clock_and_pulse(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); canonical = root / "canonical.csv"
             write_csv(canonical, csv_columns(), [canonical_row(2)])
@@ -502,9 +511,9 @@ class S3EndToEndTests(unittest.TestCase):
                 summary, canonical, ion, mapping, downstream, stdout, 36.112, 1.0)
             self.assertEqual(result["status"], "PASS")
             self.assertEqual(result["census"]["detector_hit"], 1)
-            self.assertFalse(result["s3_stage_passed"])
+            self.assertFalse(result["analyzer_transport_stage_passed"])
 
-    def test_s3_audit_keeps_blank_non_crossing_rows_in_census(self) -> None:
+    def test_analyzer_audit_keeps_blank_non_crossing_rows_in_census(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); canonical = root / "canonical.csv"
             write_csv(
@@ -562,7 +571,7 @@ class S3EndToEndTests(unittest.TestCase):
             self.assertEqual(result["census"]["detector_crossing"], 1)
             self.assertEqual(result["census"]["detector_hit"], 1)
 
-    def test_s3_audit_rejects_incomplete_or_invalid_crossing_state(self) -> None:
+    def test_analyzer_audit_rejects_incomplete_or_invalid_crossing_state(self) -> None:
         base = {
             "TofUs": "", "InstrumentTimeUs": "", "XMm": "", "YMm": "",
             "Hit": "False",

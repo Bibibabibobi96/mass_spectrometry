@@ -1,4 +1,4 @@
-"""Audit S3 identity, clock, pulse-state and local-exit continuity."""
+"""Audit pulse-capture identity, clock, pulse-state and local-exit continuity."""
 
 from __future__ import annotations
 
@@ -11,6 +11,11 @@ import numpy as np
 import pandas as pd
 
 from common.contracts.component_particle_state import validate_component_particle_state_csv
+
+from projects.rf_quadrupole_ion_optics.analysis.build_pulse_capture_local_exit_component_state import (
+    LOCAL_EXIT_EVENT,
+    LOCAL_EXIT_STATUS,
+)
 
 
 
@@ -41,9 +46,16 @@ def _boolean_series(values: pd.Series, name: str) -> pd.Series:
     return normalized.map(accepted).astype(bool)
 
 
-def audit(source_path: Path, terminal_path: Path, capture_path: Path,
-          local_exit_path: Path, schedule_path: Path,
-          contract_path: Path) -> dict[str, Any]:
+def audit(
+    source_path: Path,
+    terminal_path: Path,
+    capture_path: Path,
+    local_exit_path: Path,
+    schedule_path: Path,
+    pulse_capture_contract_path: Path,
+    pre_pulse_contract_path: Path,
+    resolved_connection_path: Path,
+) -> dict[str, Any]:
     """Return compact continuity metrics or fail closed on any mismatch."""
     source = pd.read_csv(source_path, keep_default_na=False)
     terminal = pd.read_csv(terminal_path)
@@ -52,7 +64,17 @@ def audit(source_path: Path, terminal_path: Path, capture_path: Path,
     validate_component_particle_state_csv(local_exit_path)
     local_exit = pd.read_csv(local_exit_path, keep_default_na=False)
     schedule = _load(schedule_path)
-    contract = _load(contract_path)
+    pulse_capture = _load(pulse_capture_contract_path)
+    pre_pulse = _load(pre_pulse_contract_path)
+    resolved_connection = _load(resolved_connection_path)
+    if pulse_capture.get("role") != "rf_to_oatof_pulse_capture":
+        raise ValueError("pulse-capture contract role is invalid")
+    if pre_pulse.get("role") != "rf_to_oatof_pre_pulse_interface_transport":
+        raise ValueError("pre-pulse contract role is invalid")
+    if resolved_connection.get("role") != "resolved_connection_do_not_edit":
+        raise ValueError("resolved connection role is invalid")
+    if resolved_connection.get("compatibility", {}).get("status") != "pass":
+        raise ValueError("resolved connection compatibility did not pass")
     terminal_required = {
         "particle_id", "frame_id", "clock_epoch_id", "instrument_time_us",
         "lineage_age_us", "particle_age_us", "last_component_elapsed_time_us",
@@ -71,7 +93,7 @@ def audit(source_path: Path, terminal_path: Path, capture_path: Path,
             "first_forward_oatof_entry",
             "local_accelerator_exit",
         },
-        "S3 terminal census",
+        "pulse-capture terminal census",
     )
     capture_required = {
         "particle_id", "frame_id", "clock_epoch_id", "instrument_time_us",
@@ -88,21 +110,29 @@ def audit(source_path: Path, terminal_path: Path, capture_path: Path,
             "inside_oatof_ideal_reference_volume",
             "active_at_pulse",
         },
-        "S3 pulse state",
+        "pulse-capture state",
     )
-    if len(source) != int(contract["source"]["source_particles"]):
-        raise ValueError("S3 source count differs from the contract")
+    if len(source) != int(pre_pulse["particle_runtime"]["source_particles"]):
+        raise ValueError("pulse-capture source count differs from pre-pulse")
     if source["particle_id"].duplicated().any() or terminal["particle_id"].duplicated().any():
-        raise ValueError("S3 particle identity is not unique")
+        raise ValueError("pulse-capture particle identity is not unique")
     source_ids = set(source["particle_id"])
     if set(terminal["particle_id"]) != source_ids:
-        raise ValueError("S3 terminal census does not preserve every source ID")
+        raise ValueError(
+            "pulse-capture terminal census does not preserve every source ID"
+        )
     if not set(capture["particle_id"]).issubset(source_ids):
-        raise ValueError("S3 capture state contains an unknown particle ID")
+        raise ValueError(
+            "pulse-capture state contains an unknown particle ID"
+        )
     if not set(local_exit["particle_id"]).issubset(source_ids):
-        raise ValueError("S3 local exit contains an unknown particle ID")
-    expected_frame = contract["identity_contract"]["frame_id"]
-    expected_epoch = contract["source"]["clock_epoch_id"]
+        raise ValueError(
+            "pulse-capture local exit contains an unknown particle ID"
+        )
+    expected_frame = resolved_connection["transition_aperture"][
+        "coordinate_frame_id"
+    ]
+    expected_epoch = pre_pulse["particle_runtime"]["clock_epoch_id"]
     if (
         set(source["frame_id"]) != {expected_frame}
         or set(source["clock_epoch_id"]) != {expected_epoch}
@@ -113,28 +143,32 @@ def audit(source_path: Path, terminal_path: Path, capture_path: Path,
         or set(local_exit["frame_id"]) != {expected_frame}
         or set(local_exit["clock_epoch_id"]) != {expected_epoch}
     ):
-        raise ValueError("S3 frame or clock epoch is not continuous")
+        raise ValueError("pulse-capture frame or clock epoch is not continuous")
     target_species = schedule.get("target_species", {})
+    source_species = source[["mass_amu", "charge_state"]].drop_duplicates()
     if (
-        schedule.get("stage") != "S3"
+        schedule.get("phase") != "pulse_capture"
+        or len(source_species) != 1
         or float(target_species.get("mass_amu", float("nan")))
-        != float(contract["source"]["target_mass_amu"])
+        != float(source_species.iloc[0]["mass_amu"])
         or target_species.get("charge_state")
-        != contract["source"]["target_charge_state"]
+        != int(source_species.iloc[0]["charge_state"])
     ):
-        raise ValueError("S3 schedule target species differs from the contract")
+        raise ValueError(
+            "pulse-capture schedule target species differs from source identity"
+        )
     merged = terminal.merge(
         source[["particle_id", "frame_id", "clock_epoch_id", "instrument_time_us",
                 "lineage_age_us", "particle_age_us", "mass_amu", "charge_state"]],
         on="particle_id", suffixes=("_out", "_in"), validate="one_to_one")
     if not (merged["frame_id_out"] == merged["frame_id_in"]).all():
-        raise ValueError("S3 terminal frame changed")
+        raise ValueError("pulse-capture terminal frame changed")
     if not (merged["clock_epoch_id_out"] == merged["clock_epoch_id_in"]).all():
-        raise ValueError("S3 terminal clock epoch changed")
+        raise ValueError("pulse-capture terminal clock epoch changed")
     if not np.allclose(merged["mass_amu_out"], merged["mass_amu_in"], rtol=0, atol=0):
-        raise ValueError("S3 terminal mass changed")
+        raise ValueError("pulse-capture terminal mass changed")
     if not (merged["charge_state_out"] == merged["charge_state_in"]).all():
-        raise ValueError("S3 terminal charge changed")
+        raise ValueError("pulse-capture terminal charge changed")
     identity_columns = [
         "parent_particle_id",
         "generation",
@@ -167,35 +201,45 @@ def audit(source_path: Path, terminal_path: Path, capture_path: Path,
         else:
             continuous = np.allclose(output, source_value, rtol=0, atol=0)
         if not continuous:
-            raise ValueError(f"S3 canonical local-exit identity field {field} changed")
-    adapter = contract["local_exit_adapter"]
+            raise ValueError(
+                f"pulse-capture canonical local-exit identity field {field} changed"
+            )
+    source_component_id = resolved_connection["integration_id"]
+    target_component_id = resolved_connection["selection"][
+        "downstream_project_id"
+    ]
     if (
-        set(local_exit["source_component_id"]) != {adapter["source_component_id"]}
-        or set(local_exit["target_component_id"]) != {adapter["target_component_id"]}
-        or set(local_exit["state_event"]) != {adapter["state_event"]}
+        set(local_exit["source_component_id"]) != {source_component_id}
+        or set(local_exit["target_component_id"]) != {target_component_id}
+        or set(local_exit["state_event"]) != {LOCAL_EXIT_EVENT}
     ):
-        raise ValueError("S3 canonical local-exit event semantics differ from the contract")
-    terminal_event = terminal["event"].eq(adapter["terminal_event"])
-    terminal_status = terminal["status"].eq(adapter["terminal_status"])
+        raise ValueError(
+            "pulse-capture canonical local-exit event semantics differ from authority"
+        )
+    terminal_event = terminal["event"].eq(LOCAL_EXIT_EVENT)
+    terminal_status = terminal["status"].eq(LOCAL_EXIT_STATUS)
     terminal_flag = _boolean_series(
-        terminal["local_accelerator_exit"], "S3 terminal local-exit flag"
+        terminal["local_accelerator_exit"],
+        "pulse-capture terminal local-exit flag",
     )
     entry_flag = _boolean_series(
-        terminal["first_forward_oatof_entry"], "S3 terminal oaTOF-entry flag"
+        terminal["first_forward_oatof_entry"],
+        "pulse-capture terminal oaTOF-entry flag",
     )
     capture_active = _boolean_series(
-        capture["active_at_pulse"], "S3 capture active-at-pulse flag"
+        capture["active_at_pulse"], "pulse-capture active-at-pulse flag"
     )
     capture_inside = _boolean_series(
         capture["inside_oatof_ideal_reference_volume"],
-        "S3 capture inside-reference-volume flag",
+        "pulse-capture inside-reference-volume flag",
     )
     if not (
         terminal_event.equals(terminal_status)
         and terminal_event.equals(terminal_flag)
     ):
         raise ValueError(
-            "S3 terminal event, status and local-exit flag are not equivalent"
+            "pulse-capture terminal event, status and local-exit flag "
+            "are not equivalent"
         )
     terminal_exit = terminal[terminal_event]
     state_pairs = {
@@ -223,13 +267,16 @@ def audit(source_path: Path, terminal_path: Path, capture_path: Path,
         validate="one_to_one",
     )
     if len(state_check) != len(local_exit):
-        raise ValueError("S3 canonical local-exit rows do not match terminal exit rows")
+        raise ValueError(
+            "pulse-capture canonical local-exit rows do not match terminal exit rows"
+        )
     for canonical_name, terminal_name in state_pairs.items():
         canonical_values = state_check[f"{canonical_name}_canonical"]
         terminal_values = state_check[f"{canonical_name}_terminal"]
         if not np.allclose(canonical_values, terminal_values, rtol=0, atol=0):
             raise ValueError(
-                f"S3 canonical local-exit field {canonical_name} differs from terminal census"
+                "pulse-capture canonical local-exit field "
+                f"{canonical_name} differs from terminal census"
             )
     elapsed = merged["last_component_elapsed_time_us"]
     residuals = np.concatenate([
@@ -239,22 +286,32 @@ def audit(source_path: Path, terminal_path: Path, capture_path: Path,
     ])
     maximum_clock_residual = float(np.max(np.abs(residuals)))
     if maximum_clock_residual > 1e-9:
-        raise ValueError("S3 clock continuity residual exceeds tolerance")
+        raise ValueError("pulse-capture clock continuity residual exceeds tolerance")
 
     pulse_time = float(schedule["derived_pulse_time_us"])
     if not capture.empty and not np.allclose(capture["instrument_time_us"], pulse_time, rtol=0, atol=1e-9):
-        raise ValueError("S3 capture rows do not share the scheduled pulse time")
+        raise ValueError(
+            "pulse-capture rows do not share the scheduled pulse time"
+        )
     if not capture.empty and not capture_active.all():
-        raise ValueError("S3 capture table contains an inactive particle")
+        raise ValueError("pulse-capture table contains an inactive particle")
     if set(terminal_exit["particle_id"]) != set(local_exit["particle_id"]):
-        raise ValueError("S3 terminal and canonical local-exit ID sets differ")
-    if len(capture) < int(contract["runtime"]["minimum_active_at_pulse"]):
-        raise ValueError("S3 active pulse population misses the functional minimum")
-    if len(local_exit) < int(contract["runtime"]["minimum_local_accelerator_exit"]):
-        raise ValueError("S3 local exit population misses the functional minimum")
+        raise ValueError(
+            "pulse-capture terminal and canonical local-exit ID sets differ"
+        )
+    if len(capture) < int(pulse_capture["runtime"]["minimum_active_at_pulse"]):
+        raise ValueError(
+            "pulse-capture active population misses the functional minimum"
+        )
+    if len(local_exit) < int(
+        pulse_capture["runtime"]["minimum_local_accelerator_exit"]
+    ):
+        raise ValueError(
+            "pulse-capture local-exit population misses the functional minimum"
+        )
     return {
         "schema_version": 1,
-        "role": "rf_to_oatof_s3_particle_chain_audit",
+        "role": "rf_to_oatof_pulse_capture_particle_chain_audit",
         "status": "PASS",
         "source_particles": int(len(source)),
         "oatof_entry_crossings": int(entry_flag.sum()),
@@ -266,7 +323,7 @@ def audit(source_path: Path, terminal_path: Path, capture_path: Path,
         "maximum_clock_residual_us": maximum_clock_residual,
         "canonical_local_exit_validation_status": "PASS",
         "dense_trajectories_saved": False,
-        "s3_stage_passed": False,
+        "pulse_capture_stage_passed": False,
         "formal_gate_passed": False,
     }
 
@@ -278,15 +335,26 @@ def main() -> None:
     parser.add_argument("--capture", type=Path, required=True)
     parser.add_argument("--local-exit", type=Path, required=True)
     parser.add_argument("--schedule", type=Path, required=True)
-    parser.add_argument("--contract", type=Path, required=True)
+    parser.add_argument("--pulse-capture-contract", type=Path, required=True)
+    parser.add_argument("--pre-pulse-contract", type=Path, required=True)
+    parser.add_argument("--resolved-connection", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    result = audit(args.source, args.terminal, args.capture, args.local_exit,
-                   args.schedule, args.contract)
+    result = audit(
+        args.source,
+        args.terminal,
+        args.capture,
+        args.local_exit,
+        args.schedule,
+        args.pulse_capture_contract,
+        args.pre_pulse_contract,
+        args.resolved_connection,
+    )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2)+"\n", encoding="utf-8")
     print(
-        f"S3_PARTICLE_CHAIN_AUDIT=PASS SOURCE={result['source_particles']} "
+        "PULSE_CAPTURE_PARTICLE_CHAIN_AUDIT=PASS "
+        f"SOURCE={result['source_particles']} "
         f"ACTIVE={result['active_at_pulse']} LOCAL_EXIT={result['local_accelerator_exit']}"
     )
 

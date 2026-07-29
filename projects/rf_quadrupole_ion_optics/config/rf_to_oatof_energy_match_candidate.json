@@ -8,7 +8,7 @@
     "distribution_shape": "config/official_particle_source.json",
     "transport_mode": "config/modes/transport_no_collision.json",
     "hybrid_mesh": "config/rf_hybrid_mesh_candidate.json",
-    "oatof_formal_validation": "../single_reflection_oa_tof_mass_analyzer/config/formal_validation.json"
+    "oatof_science_contract": "../single_reflection_oa_tof_mass_analyzer/config/modes/formal.json"
   },
   "input_candidate": {
     "operating_point": "rf_to_oatof_100amu_5eV",

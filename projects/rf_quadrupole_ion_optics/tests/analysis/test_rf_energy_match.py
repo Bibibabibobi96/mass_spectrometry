@@ -13,6 +13,10 @@ class RfEnergyMatchTests(unittest.TestCase):
     def test_repository_contract_is_valid(self) -> None:
         contract = module.validate()
         self.assertEqual(contract["input_candidate"]["kinetic_energy_eV"], 5.0)
+        self.assertEqual(
+            contract["inputs"]["oatof_science_contract"],
+            "../single_reflection_oa_tof_mass_analyzer/config/modes/formal.json",
+        )
         self.assertFalse(contract["model_changes"]["velocity_rewrite_at_handoff_allowed"])
         evidence = contract["physical_port_pulse_evidence"]
         self.assertEqual(evidence["predicted_finite_wall_survivors"], 40)

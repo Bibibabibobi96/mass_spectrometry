@@ -1,4 +1,4 @@
-"""Validate the current oa-TOF Formal SIMION analyzer release for S3 use."""
+"""Validate the current oa-TOF Formal SIMION analyzer release for transport use."""
 
 from __future__ import annotations
 
@@ -61,7 +61,7 @@ def validate(
     resolved_geometry_path: Path,
     formal_lua_path: Path,
 ) -> dict[str, Any]:
-    """Validate current Formal authority and the analyzer assets consumed by S3."""
+    """Validate current Formal authority and the consumed analyzer assets."""
     asset_manifest = _load(asset_manifest_path)
     validation = _load(validation_contract_path)
     delivery = _load(delivery_manifest_path)

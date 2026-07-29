@@ -17,22 +17,12 @@
         "required": [
           "connection_profile_id",
           "adapter_entrypoint",
-          "legacy_entrypoints",
-          "connector_case_id"
+          "workflow_entrypoint"
         ],
         "properties": {
           "connection_profile_id": {"$ref": "#/$defs/identifier"},
           "adapter_entrypoint": {"$ref": "#/$defs/path"},
-          "legacy_entrypoints": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["s2_field", "s3_cumulative"],
-            "properties": {
-              "s2_field": {"$ref": "#/$defs/path"},
-              "s3_cumulative": {"$ref": "#/$defs/path"}
-            }
-          },
-          "connector_case_id": {"$ref": "#/$defs/identifier"}
+          "workflow_entrypoint": {"$ref": "#/$defs/path"}
         }
       }
     }

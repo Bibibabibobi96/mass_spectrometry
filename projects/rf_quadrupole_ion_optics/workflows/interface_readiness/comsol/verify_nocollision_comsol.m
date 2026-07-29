@@ -1,6 +1,6 @@
 reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
 testDir = fileparts(mfilename('fullpath'));
-projectRoot = fileparts(fileparts(testDir));
+projectRoot = fileparts(fileparts(fileparts(testDir)));
 addpath(projectRoot);
 paths = rf_quadrupole_paths();
 contract = load_rf_quadrupole_contract();

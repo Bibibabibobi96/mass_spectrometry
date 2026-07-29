@@ -10,6 +10,10 @@ from pathlib import Path
 
 from common.contracts.component_particle_state import csv_columns
 from common.contracts.particle_physics import kinetic_energy_ev
+from common.integration.resolve_connection import (
+    load_connection_profile_registry,
+    resolve_connection_profile,
+)
 
 PROJECT_ROOT = Path(__file__).parents[2]
 SCRIPT = PROJECT_ROOT / "analysis" / "build_oatof_handoff.py"
@@ -18,7 +22,22 @@ assert SPEC and SPEC.loader
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 CONTRACT = PROJECT_ROOT / "config" / "rf_to_oatof_handoff.json"
-REGISTRATION = PROJECT_ROOT / "config" / "resolved_rf_to_oatof_s2_spatial_registration.json"
+REPO_ROOT = PROJECT_ROOT.parents[1]
+PROFILE_REGISTRY = (
+    REPO_ROOT
+    / "integrations"
+    / "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
+    / "config"
+    / "connection_profiles.json"
+)
+PROFILE_ID = "rf_quadrupole_grounded_connector_gap_1mm"
+
+
+def write_resolved_connection(path: Path) -> Path:
+    registry = load_connection_profile_registry(PROFILE_REGISTRY)
+    resolved = resolve_connection_profile(registry, PROFILE_ID, repo_root=REPO_ROOT)
+    path.write_text(json.dumps(resolved), encoding="utf-8")
+    return path
 
 
 class ComponentChainClockTests(unittest.TestCase):
@@ -47,12 +66,21 @@ class ComponentChainClockTests(unittest.TestCase):
 
 
 class OatofHandoffContractTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.resolved = write_resolved_connection(
+            Path(self.temp.name) / "resolved_connection.json"
+        )
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
     def test_registration_must_be_supplied_explicitly(self) -> None:
         with self.assertRaisesRegex(ValueError, "must be supplied explicitly"):
             MODULE.validate_contract(CONTRACT)
 
     def test_draft_contract_is_coherent_but_not_package_qualified(self) -> None:
-        validated = MODULE.validate_contract(CONTRACT, REGISTRATION)
+        validated = MODULE.validate_contract(CONTRACT, self.resolved)
         contract = validated["contract"]
         self.assertAlmostEqual(validated["determinant"], 1.0, delta=1e-12)
         self.assertNotEqual(contract["status"], "frozen")
@@ -61,7 +89,7 @@ class OatofHandoffContractTests(unittest.TestCase):
         self.assertIn("time_dependent_fields", contract["timing_contract"]["solver_local_time_policy"])
 
     def test_rotation_maps_rf_axes_to_oatof_axes(self) -> None:
-        transform = MODULE.validate_contract(CONTRACT, REGISTRATION)["spatial_transform"]
+        transform = MODULE.validate_contract(CONTRACT, self.resolved)["spatial_transform"]
         vectors = (
             ((0.0, 0.0, 1.0), (1.0, 0.0, 0.0)),
             ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0)),
@@ -89,7 +117,7 @@ class OatofHandoffContractTests(unittest.TestCase):
                         "kinetic_energy_eV": 2.1,
                     })
             rows = MODULE.read_handoff_rows(
-                path, MODULE.validate_contract(CONTRACT, REGISTRATION)["contract"]
+                path, MODULE.validate_contract(CONTRACT, self.resolved)["contract"]
             )
             self.assertEqual(len(rows), 100)
             self.assertEqual(rows[0]["time_us"], "12.5")
@@ -144,6 +172,9 @@ class OatofHandoffBuildTests(unittest.TestCase):
         self.ion = self.root / "particles.ion"
         self.row_map = self.root / "row_map.csv"
         self.metadata = self.root / "metadata.json"
+        self.resolved = write_resolved_connection(
+            self.root / "resolved_connection.json"
+        )
 
     def tearDown(self) -> None:
         self.temp.cleanup()
@@ -157,7 +188,7 @@ class OatofHandoffBuildTests(unittest.TestCase):
             self.ion,
             self.row_map,
             self.metadata,
-            registration_path=REGISTRATION,
+            resolved_connection_path=self.resolved,
         )
 
     def test_build_preserves_global_clock_and_derives_local_ion(self) -> None:
@@ -187,7 +218,7 @@ class OatofHandoffBuildTests(unittest.TestCase):
         self.assertAlmostEqual(float(canonical[0]["particle_birth_time_us"]), 5.09)
         self.assertEqual(float(canonical[0]["mass_to_charge_Th"]), 100.0)
         self.assertEqual(float(canonical[0]["mass_amu"]), 100.0)
-        self.assertAlmostEqual(float(canonical[0]["position_x_mm"]), -48.8)
+        self.assertAlmostEqual(float(canonical[0]["position_x_mm"]), -68.8)
         self.assertAlmostEqual(float(canonical[0]["position_y_mm"]), 0.1)
         self.assertAlmostEqual(float(canonical[0]["position_z_mm"]), -18.22918680341103)
         self.assertAlmostEqual(float(canonical[0]["velocity_x_m_s"]), 2000.0)
@@ -198,7 +229,7 @@ class OatofHandoffBuildTests(unittest.TestCase):
         self.assertEqual(len(ion[0]), 11)
         self.assertEqual(float(ion[0][0]), 0.0)
         self.assertEqual(float(ion[0][1]), 100.0)
-        self.assertAlmostEqual(float(ion[0][3]), -48.8)
+        self.assertAlmostEqual(float(ion[0][3]), -68.8)
         self.assertAlmostEqual(float(ion[0][4]), 0.1)
         self.assertAlmostEqual(float(ion[0][5]), -18.22918680341103)
         self.assertAlmostEqual(
@@ -214,7 +245,7 @@ class OatofHandoffBuildTests(unittest.TestCase):
         metadata = MODULE.build_handoff(
             self.source, self.manifest, CONTRACT, self.canonical, self.ion,
             self.row_map, self.metadata, solver_clock="instrument_time",
-            registration_path=REGISTRATION,
+            resolved_connection_path=self.resolved,
         )
         with self.row_map.open("r", encoding="utf-8", newline="") as handle:
             row_map = list(csv.DictReader(handle))
@@ -223,18 +254,23 @@ class OatofHandoffBuildTests(unittest.TestCase):
         self.assertAlmostEqual(float(row_map[0]["solver_birth_time_us"]), 10.1)
         self.assertAlmostEqual(float(ion[0][0]), 10.1)
 
-    def test_functional_entry_projection_uses_explicit_target_origin(self) -> None:
-        target = [-62.8, 0.0, -18.42918680341103]
+    def test_projection_origin_comes_only_from_resolved_connection(self) -> None:
         metadata = MODULE.build_handoff(
             self.source, self.manifest, CONTRACT, self.canonical, self.ion,
             self.row_map, self.metadata, solver_clock="instrument_time",
-            target_origin_override_mm=target, registration_path=REGISTRATION,
+            resolved_connection_path=self.resolved,
         )
         with self.canonical.open("r", encoding="utf-8", newline="") as handle:
             canonical = list(csv.DictReader(handle))
-        self.assertTrue(metadata["diagnostics"]["target_origin_overridden"])
-        self.assertEqual(metadata["diagnostics"]["target_origin_mm"], target)
-        self.assertAlmostEqual(float(canonical[0]["position_x_mm"]), -62.8)
+        self.assertEqual(
+            metadata["diagnostics"]["target_origin_source"],
+            "resolved_connection",
+        )
+        self.assertEqual(
+            metadata["diagnostics"]["target_origin_mm"],
+            [-68.8, 0.0, -18.42918680341103],
+        )
+        self.assertAlmostEqual(float(canonical[0]["position_x_mm"]), -68.8)
 
     def test_manifest_hash_is_required(self) -> None:
         manifest = json.loads(self.manifest.read_text(encoding="utf-8"))

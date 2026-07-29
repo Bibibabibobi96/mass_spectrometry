@@ -18,7 +18,7 @@ class RfOatofCheckpointRunnerTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.runner = RUNNER.read_text(encoding="utf-8")
 
-    def test_source_is_explicit_verified_s3_pulse_capture_run(self) -> None:
+    def test_source_is_explicit_verified_pulse_capture_run(self) -> None:
         self.assertIn("ParameterSetName = 'SourceRun'", self.runner)
         self.assertIn("ParameterSetName = 'SourceManifest'", self.runner)
         self.assertIn("[string]$SourceRunId", self.runner)
@@ -26,7 +26,7 @@ class RfOatofCheckpointRunnerTests(unittest.TestCase):
         self.assertIn("[string]$DownstreamRunId", self.runner)
         self.assertGreaterEqual(self.runner.count("--require-status success"), 3)
         self.assertIn(
-            "rf_to_oatof_s3_shared_clock_pulse_capture_n100", self.runner
+            "rf_to_oatof_pulse_capture_n100", self.runner
         )
         self.assertIn(
             "The source manifest must belong to the RF project artifact runs directory",
@@ -37,7 +37,7 @@ class RfOatofCheckpointRunnerTests(unittest.TestCase):
             self.runner,
         )
         for binding in (
-            "$downstreamManifestDocument.mode -ne 'rf_to_oatof_s3_cumulative_end_to_end'",
+            "$downstreamManifestDocument.mode -ne 'rf_to_oatof_analyzer_transport_n100'",
             "$downstreamManifestDocument.run_id -ne $DownstreamRunId",
             "$downstreamRunConfiguration.run_id -ne $DownstreamRunId",
             "$downstreamRunConfiguration.parameters.source_run_id",
@@ -49,29 +49,29 @@ class RfOatofCheckpointRunnerTests(unittest.TestCase):
         required_source_roles = (
             "$sourceRunConfiguration.inputs.particle_source",
             "$sourceRunConfiguration.inputs.pulse_schedule",
-            "$sourceRunConfiguration.inputs.s2_contract",
+            "$sourceRunConfiguration.inputs.resolved_connection",
             "$sourceRunConfiguration.inputs.shared_physical_port_joint_geometry",
             "$sourceRunConfiguration.inputs.oatof_baseline",
             "$sourceRunConfiguration.inputs.rf_resolved_geometry",
             "$sourceRunConfiguration.inputs.timing_state",
-            "s3_pulse_left_limit_state.csv",
-            "s3_particle_terminal_census.csv",
-            "s3_local_accelerator_exit.csv",
-            "inputs\\row_map.csv",
+            "pulse_capture_pulse_left_limit_state.csv",
+            "pulse_capture_particle_terminal_census.csv",
+            "pulse_capture_local_accelerator_exit.csv",
+            "$downstreamRunConfiguration.inputs.row_map",
             "results\\simion_downstream_particles.csv",
         )
         for role in required_source_roles:
             self.assertIn(role, self.runner)
         self.assertIn("$manifestInputPaths -notcontains", self.runner)
         self.assertIn("$manifestOutputPaths -notcontains", self.runner)
-        self.assertIn("source_s3_run_manifest.json", self.runner)
-        self.assertIn("source_s3_run_config.json", self.runner)
+        self.assertIn("source_pulse_capture_run_manifest.json", self.runner)
+        self.assertIn("source_pulse_capture_run_config.json", self.runner)
         self.assertIn("downstream_run_manifest.json", self.runner)
         self.assertIn("downstream_run_config.json", self.runner)
         self.assertIn("$downstreamManifestOutputPaths -notcontains", self.runner)
         for frozen in (
-            "s2_oatof_entry_state.csv",
-            "s3_local_accelerator_exit.csv",
+            "pre_pulse_interface_entry_state.csv",
+            "pulse_capture_local_accelerator_exit.csv",
             "simion_row_map.csv",
             "simion_downstream_particles.csv",
             "resolved_design_official.json",
@@ -81,8 +81,8 @@ class RfOatofCheckpointRunnerTests(unittest.TestCase):
         self.assertIn("snapshot_analysis = $snapshotAnalysis", self.runner)
         self.assertIn("Copy-CheckpointInput", self.runner)
         self.assertIn("Get-FileHash -LiteralPath $Destination", self.runner)
-        self.assertNotIn(
-            "config\\rf_to_oatof_s2_passive_connector.json", self.runner
+        self.assertIn(
+            "$sourceRunConfiguration.inputs.resolved_connection", self.runner
         )
 
     def test_runner_calls_existing_analysis_and_freezes_all_outputs(self) -> None:
@@ -90,13 +90,13 @@ class RfOatofCheckpointRunnerTests(unittest.TestCase):
             "--exit-state $sourceExit",
             "--capture-state $capture",
             "--terminal-census $terminal",
-            "--s2-entry-state $s2Entry",
+            "--interface-entry-state $interfaceEntry",
             "--local-exit-state $localExit",
             "--downstream-row-map $downstreamRowMap",
             "--downstream-state $downstreamState",
             "--pulse-schedule $pulseSchedule",
             "--oatof-baseline $oatofBaseline",
-            "--s2-contract $s2Contract",
+            "--resolved-connection $resolvedConnection",
             "--rf-resolved-geometry $rfResolvedGeometry",
             "--joint-contract $jointContract",
             "--contract $contract",
@@ -126,11 +126,11 @@ class RfOatofCheckpointRunnerTests(unittest.TestCase):
         self.assertIn("Complete-RfFailedRun", self.runner)
         self.assertIn("--require-status failed", self.runner)
         self.assertIn("diagnostic_only = $true", self.runner)
-        self.assertIn("s3_stage_passed = $false", self.runner)
+        self.assertIn("pulse_capture_stage_passed = $false", self.runner)
         self.assertIn("formal_gate_passed = $false", self.runner)
         self.assertIn("solver_rerun = $false", self.runner)
         self.assertIn("STATUS=PASS RUN_ID={0} SOURCE_RUN_ID={1}", self.runner)
-        self.assertNotIn("' +\n    'S3_STAGE_PASS", self.runner)
+        self.assertNotIn("' +\n    'PULSE_CAPTURE_STAGE_PASS", self.runner)
         for commercial_entry in (
             "run_comsol_r2025b.ps1",
             "SIMION-2020",

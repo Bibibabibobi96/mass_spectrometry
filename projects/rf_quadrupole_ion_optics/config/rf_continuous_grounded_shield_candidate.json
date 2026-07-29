@@ -225,11 +225,11 @@
       "RF entrance plate",
       "RF exit grounded front plate"
     ],
-    "s1_direct_interface": [
+    "direct_mating_connection": [
       "nominal zero-gap field connection between the centered RF exit aperture and the parameterized oa shield opening",
       "no requirement that RF and oa outer shield dimensions or cross-section shapes match"
     ],
-    "s2_passive_connector": [
+    "finite_passive_connector": [
       "any finite separation",
       "grounded transition tube or collar",
       "diameter or rectangular-section transition",

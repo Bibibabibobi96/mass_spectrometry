@@ -50,8 +50,7 @@ def resolve_execution_mapping(
         raise ContractError(f"execution adapter mapping is not unique: {profile_id}")
     mapping = copy.deepcopy(matches[0])
     _repo_file(repo_root, mapping["adapter_entrypoint"])
-    for entrypoint in mapping["legacy_entrypoints"].values():
-        _repo_file(repo_root, entrypoint)
+    _repo_file(repo_root, mapping["workflow_entrypoint"])
     return mapping
 
 

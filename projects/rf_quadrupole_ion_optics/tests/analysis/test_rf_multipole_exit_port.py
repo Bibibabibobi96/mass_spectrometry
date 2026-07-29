@@ -7,6 +7,10 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.machine_contracts import validate_schema
+from common.integration.resolve_connection import (
+    load_connection_profile_registry,
+    resolve_connection_profile,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -14,8 +18,12 @@ REPO_ROOT = PROJECT_ROOT.parents[1]
 PORT_PATH = (
     PROJECT_ROOT / "config" / "interfaces" / "provided" / "rf_multipole_exit.json"
 )
-S2_REGISTRATION_PATH = (
-    PROJECT_ROOT / "config" / "resolved_rf_to_oatof_s2_spatial_registration.json"
+PROFILE_REGISTRY_PATH = (
+    REPO_ROOT
+    / "integrations"
+    / "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
+    / "config"
+    / "connection_profiles.json"
 )
 
 
@@ -35,7 +43,12 @@ class RfMultipoleExitPortTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.port = load(PORT_PATH)
-        cls.s2_registration = load(S2_REGISTRATION_PATH)
+        registry = load_connection_profile_registry(PROFILE_REGISTRY_PATH)
+        cls.resolved_connection = resolve_connection_profile(
+            registry,
+            "rf_quadrupole_grounded_connector_gap_1mm",
+            repo_root=REPO_ROOT,
+        )
         cls.source_path = REPO_ROOT / cls.port["authority"]["source_contract"]
         cls.source = load(cls.source_path)
 
@@ -70,7 +83,7 @@ class RfMultipoleExitPortTests(unittest.TestCase):
             "rectangular_bore",
         )
 
-    def test_exit_surface_and_potential_match_s2_oracle(self) -> None:
+    def test_exit_surface_and_potential_match_resolved_connection(self) -> None:
         handoff_z = self.source["interfaces_mm"]["exit"]["handoff_plane_z_mm"]
         self.assertEqual(
             self.port["mating_surface"]["center_mm"],
@@ -82,21 +95,15 @@ class RfMultipoleExitPortTests(unittest.TestCase):
         )
         self.assertEqual(
             self.port["mating_surface"]["center_mm"],
-            self.s2_registration["resolved_surfaces"]["source_exit"]["declared"][
-                "center_mm"
-            ],
+            self.resolved_connection["port_geometry"]["upstream"][
+                "mating_surface"
+            ]["center_mm"],
         )
         self.assertEqual(
             self.port["mating_surface"]["potential_V"],
-            self.s2_registration["authoritative_scalar_bindings"][
-                "interface_common_reference"
-            ]["value"],
-        )
-        self.assertEqual(
-            self.port["mating_surface"]["potential_V"],
-            self.s2_registration["authoritative_scalar_bindings"][
-                "rf_exit_enclosure_dc"
-            ]["value"],
+            self.resolved_connection["port_geometry"]["upstream"][
+                "mating_surface"
+            ]["potential_V"],
         )
         self.assertEqual(
             self.port["field_boundary"]["field_reaches_surface"],

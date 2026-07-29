@@ -11,6 +11,10 @@ import numpy as np
 import pandas as pd
 
 from common.contracts.particle_physics import kinetic_energy_ev
+from common.integration.resolve_connection import (
+    load_connection_profile_registry,
+    resolve_connection_profile,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
@@ -24,9 +28,25 @@ class RfOatofCheckpointTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         self.baseline = REPO_ROOT / "projects" / "single_reflection_oa_tof_mass_analyzer" / "config" / "baseline.json"
-        self.s2 = PROJECT_ROOT / "config" / "rf_to_oatof_s2_passive_connector.json"
         self.joint = PROJECT_ROOT / "config" / "rf_to_oatof_shared_physical_port_joint_geometry.json"
         self.contract = PROJECT_ROOT / "config" / "rf_to_oatof_checkpoint_diagnostic.json"
+        registry_path = (
+            REPO_ROOT
+            / "integrations"
+            / "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
+            / "config"
+            / "connection_profiles.json"
+        )
+        registry = load_connection_profile_registry(registry_path)
+        resolved = resolve_connection_profile(
+            registry,
+            "rf_quadrupole_grounded_connector_gap_1mm",
+            repo_root=REPO_ROOT,
+        )
+        self.resolved_connection = self.root / "resolved_connection.json"
+        self.resolved_connection.write_text(
+            json.dumps(resolved, indent=2) + "\n", encoding="utf-8"
+        )
         baseline = json.loads(self.baseline.read_text(encoding="utf-8"))
         center = baseline["particle_source"]
         self.center = np.array([center[f"center_{axis}_mm"] for axis in "xyz"], dtype=float)
@@ -100,7 +120,7 @@ class RfOatofCheckpointTests(unittest.TestCase):
             "selected_cohort": {"particle_ids": [1, 2, 4]},
         }), encoding="utf-8")
 
-        self.s2_entry_path = self.root / "s2_entry.csv"
+        self.interface_entry_path = self.root / "interface_entry.csv"
         pd.DataFrame([{
             "particle_id": particle_id,
             "frame_id": "oatof_global",
@@ -112,7 +132,9 @@ class RfOatofCheckpointTests(unittest.TestCase):
             "velocity_x_m_s": 1000.0,
             "velocity_y_m_s": 0.0,
             "velocity_z_m_s": 0.0,
-        } for particle_id in range(1, 6)]).to_csv(self.s2_entry_path, index=False)
+        } for particle_id in range(1, 6)]).to_csv(
+            self.interface_entry_path, index=False
+        )
 
         self.local_exit_path = self.root / "local_exit.csv"
         pd.DataFrame([{
@@ -146,8 +168,9 @@ class RfOatofCheckpointTests(unittest.TestCase):
     def _analyze(self):
         return module.analyze_checkpoints(
             self.exit_path, self.capture_path, self.terminal_path,
-            self.s2_entry_path, self.local_exit_path, self.row_map_path,
-            self.downstream_path, self.schedule_path, self.baseline, self.s2,
+            self.interface_entry_path, self.local_exit_path, self.row_map_path,
+            self.downstream_path, self.schedule_path, self.baseline,
+            self.resolved_connection,
             self.joint, self.contract,
         )
 
@@ -191,7 +214,7 @@ class RfOatofCheckpointTests(unittest.TestCase):
         self.assertTrue(stages["sets_are_nested_not_additive"])
         self.assertEqual(
             [stages[key] for key in (
-                "rf_exit", "s2_oatof_entry", "pulse_active",
+                "rf_exit", "interface_entry", "pulse_active",
                 "local_accelerator_exit", "detector_hit",
             )],
             [5, 4, 3, 2, 1],
@@ -220,36 +243,28 @@ class RfOatofCheckpointTests(unittest.TestCase):
             },
         )
 
-    def test_registered_transform_applies_translation_to_position_only(self) -> None:
-        rotation = np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
-        local_position = np.array([2.0, 3.0, 4.0])
-        local_velocity = np.array([5.0, 6.0, 7.0])
-        translation = np.array([10.0, 20.0, 30.0])
-        instrument_position = local_position @ rotation.T + translation
-        instrument_velocity = local_velocity @ rotation.T
+    def test_checkpoint_state_preserves_resolved_downstream_frame(self) -> None:
+        position = np.array([2.0, 3.0, 4.0])
+        velocity = np.array([5.0, 6.0, 7.0])
         state = pd.DataFrame([{
-            "particle_id": 1, "frame_id": "instrument",
-            **{f"{axis}_mm": instrument_position[index] for index, axis in enumerate("xyz")},
-            **{f"v{axis}_m_s": instrument_velocity[index] for index, axis in enumerate("xyz")},
-        }])
-        registration = {
-            "instrument_frame_id": "instrument",
-            "component_poses": {
-                "oatof_global": {
-                    "schema_version": 1,
-                    "role": "rigid_transform",
-                    "from_frame_id": "oatof_global",
-                    "to_frame_id": "instrument",
-                    "rotation": rotation.tolist(),
-                    "translation_mm": translation.tolist(),
-                },
+            "particle_id": 1, "frame_id": "oatof_global",
+            **{
+                f"{axis}_mm": position[index]
+                for index, axis in enumerate("xyz")
             },
-        }
-        transformed = module._registered_local_state(state, registration, "", "v")
+            **{
+                f"v{axis}_m_s": velocity[index]
+                for index, axis in enumerate("xyz")
+            },
+        }])
+        resolved = json.loads(
+            self.resolved_connection.read_text(encoding="utf-8")
+        )
+        transformed = module._analysis_frame_state(state, resolved, "", "v")
         np.testing.assert_allclose(
-            transformed[[f"local_{axis}_mm" for axis in "xyz"]], [local_position])
+            transformed[[f"local_{axis}_mm" for axis in "xyz"]], [position])
         np.testing.assert_allclose(
-            transformed[[f"local_v{axis}_m_s" for axis in "xyz"]], [local_velocity])
+            transformed[[f"local_v{axis}_m_s" for axis in "xyz"]], [velocity])
 
     def test_render_smoke_has_required_planes_and_units(self) -> None:
         metrics, table, geometry = self._analyze()
@@ -366,9 +381,9 @@ class RfOatofCheckpointTests(unittest.TestCase):
             self._analyze()
 
     def test_chain_states_reject_nonfinite_values_and_identity_drift(self) -> None:
-        s2_entry = pd.read_csv(self.s2_entry_path)
-        s2_entry.loc[0, "position_y_mm"] = np.nan
-        s2_entry.to_csv(self.s2_entry_path, index=False)
+        interface_entry = pd.read_csv(self.interface_entry_path)
+        interface_entry.loc[0, "position_y_mm"] = np.nan
+        interface_entry.to_csv(self.interface_entry_path, index=False)
         with self.assertRaisesRegex(ValueError, "non-finite"):
             self._analyze()
 

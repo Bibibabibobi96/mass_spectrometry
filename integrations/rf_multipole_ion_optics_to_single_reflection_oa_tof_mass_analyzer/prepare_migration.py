@@ -58,13 +58,11 @@ def prepare_migration(
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
     plan["execution_steps"] = [
         {
-            "step_id": "legacy_s2_s3_cumulative_migration",
+            "step_id": "rf_to_oatof_transfer",
             "adapter": "powershell",
             "entrypoint": mapping["adapter_entrypoint"],
             "arguments": [
-                f"legacy_s2_entrypoint={mapping['legacy_entrypoints']['s2_field']}",
-                f"legacy_s3_entrypoint={mapping['legacy_entrypoints']['s3_cumulative']}",
-                f"connector_case_id={mapping['connector_case_id']}",
+                f"workflow_entrypoint={mapping['workflow_entrypoint']}",
                 f"adapter_registry_sha256={file_sha256(adapter_registry_path)}",
             ],
         }

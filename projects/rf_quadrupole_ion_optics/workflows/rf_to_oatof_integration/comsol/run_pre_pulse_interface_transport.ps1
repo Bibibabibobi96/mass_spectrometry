@@ -1,19 +1,20 @@
 param(
   [string]$RunId = '',
   [switch]$Particles,
-  [string]$ConnectorCaseId = 'nominal_gap_1mm',
+  [Parameter(Mandatory)][string]$ConnectionProfileId,
+  [Parameter(Mandatory)][string]$ResolvedConnection,
   [string]$PythonExe = ''
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$supportSource = (Resolve-Path (Join-Path $PSScriptRoot '..\..\runtime\run_artifacts.ps1')).Path
+$supportSource = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\runtime\run_artifacts.ps1')).Path
 . $supportSource
-$projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+$projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 
-function Copy-S2LocalSnapshotInput {
+function Copy-PrePulseLocalSnapshotInput {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)][string]$RepoRoot,
@@ -29,18 +30,18 @@ function Copy-S2LocalSnapshotInput {
   if (-not $destination.StartsWith(
       $snapshot + [IO.Path]::DirectorySeparatorChar,
       [StringComparison]::OrdinalIgnoreCase
-  )) { throw "S2 local snapshot destination escapes inputs: $SourceRepoPath" }
+  )) { throw "PrePulse local snapshot destination escapes inputs: $SourceRepoPath" }
   if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
-    throw "S2 local snapshot source is missing: $SourceRepoPath"
+    throw "PrePulse local snapshot source is missing: $SourceRepoPath"
   }
   if (Test-Path -LiteralPath $destination) {
-    throw "S2 local snapshot destination already exists: $destination"
+    throw "PrePulse local snapshot destination already exists: $destination"
   }
   New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
   Copy-Item -LiteralPath $source -Destination $destination
   $sha256 = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
   if ($sha256 -ne (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash) {
-    throw "S2 local snapshot changed while copied: $SourceRepoPath"
+    throw "PrePulse local snapshot changed while copied: $SourceRepoPath"
   }
   return [pscustomobject]@{
     source_repo_path = $SourceRepoPath.Replace('\','/')
@@ -49,7 +50,7 @@ function Copy-S2LocalSnapshotInput {
   }
 }
 
-function Invoke-S2SnapshotPython {
+function Invoke-PrePulseSnapshotPython {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)][string]$Python,
@@ -76,33 +77,48 @@ function Invoke-S2SnapshotPython {
 
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_ion_optics'
-$contractSource = Join-Path $projectRoot 'config\rf_to_oatof_s2_passive_connector.json'
-$connectorCasesSource = Join-Path $projectRoot 'config\rf_to_oatof_connector_cases.json'
-$dependencyContractSource = Join-Path $projectRoot 'config\rf_to_oatof_s2_dependencies.json'
+$contractSource = Join-Path $projectRoot 'config\rf_to_oatof_pre_pulse_passive_connector.json'
+$dependencyContractSource = Join-Path $projectRoot 'config\rf_to_oatof_pre_pulse_dependencies.json'
 $baseContractDocument = Get-Content -LiteralPath $contractSource -Raw -Encoding UTF8 | ConvertFrom-Json
 if (-not [bool]$baseContractDocument.permissions.field_solve_allowed) {
-  throw 'The S2 contract does not authorize a field solve.'
+  throw 'The PrePulse contract does not authorize a field solve.'
 }
 if ($Particles -and -not [bool]$baseContractDocument.permissions.particle_runtime_allowed) {
-  throw 'The S2 contract does not authorize particle runtime.'
+  throw 'The PrePulse contract does not authorize particle runtime.'
 }
-$connectorCasesDocument = Get-Content -LiteralPath $connectorCasesSource -Raw -Encoding UTF8 | ConvertFrom-Json
-$selectedCases = @($connectorCasesDocument.cases | Where-Object { $_.case_id -eq $ConnectorCaseId })
-if ($selectedCases.Count -ne 1) { throw "Connector case must resolve uniquely: $ConnectorCaseId" }
-$gapMm = [double]$selectedCases[0].connector_gap_mm
+$resolvedConnectionDocument = Get-Content -LiteralPath $ResolvedConnection -Raw -Encoding UTF8 | ConvertFrom-Json
+if ($resolvedConnectionDocument.selection.connection_profile_id -ne $ConnectionProfileId) {
+  throw 'Resolved connection identity differs from ConnectionProfileId.'
+}
+if ($resolvedConnectionDocument.role -ne 'resolved_connection_do_not_edit' -or
+    $resolvedConnectionDocument.compatibility.status -ne 'pass' -or
+    $resolvedConnectionDocument.coupling_mode -ne 'monolithic_joint_solve') {
+  throw 'PrePulse requires one compatible monolithic resolved connection.'
+}
+$gapMm = [double]$resolvedConnectionDocument.connector.length_mm
 if (-not [double]::IsFinite($gapMm) -or $gapMm -lt 0) {
-  throw 'The S2 connector gap must be finite and non-negative.'
+  throw 'The PrePulse connector gap must be finite and non-negative.'
+}
+if ([double]$resolvedConnectionDocument.spatial_registration.actual_gap_mm -ne $gapMm) {
+  throw 'Resolved connector length differs from the resolved spatial gap.'
+}
+if ($resolvedConnectionDocument.potential_alignment.mode -ne 'continuous' -or
+    [Math]::Abs([double]$resolvedConnectionDocument.potential_alignment.actual_step_V) -gt
+      [double]$resolvedConnectionDocument.potential_alignment.tolerance_V -or
+    $resolvedConnectionDocument.clock_alignment.mode -ne 'same_origin' -or
+    [Math]::Abs([double]$resolvedConnectionDocument.clock_alignment.offset_s) -gt 1e-15) {
+  throw 'PrePulse requires continuous potential and one unchanged instrument clock.'
 }
 if ([string]::IsNullOrWhiteSpace($RunId)) {
   $gapLabel = ('{0:g}' -f $gapMm).Replace('.','p')
-  $suffix = if ($Particles) { "__sim__comsol__rf-oatof-s2-connector-gap${gapLabel}__n100" } `
-    else { "__analysis__comsol__rf-oatof-s2-no-pulse-field__gap${gapLabel}" }
+  $suffix = if ($Particles) { "__sim__comsol__rf-oatof-pre_pulse-connector-gap${gapLabel}__n100" } `
+    else { "__analysis__comsol__rf-oatof-pre_pulse-no-pulse-field__gap${gapLabel}" }
   $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + $suffix
 }
-$mode = if ($Particles) { 'rf_to_oatof_s2_passive_connector_n100' } `
-  else { 'rf_to_oatof_s2_passive_connector_no_pulse_field' }
-$summaryRole = if ($Particles) { 'rf_to_oatof_s2_passive_connector_n100_summary' } `
-  else { 'rf_to_oatof_s2_no_pulse_field_summary' }
+$mode = if ($Particles) { 'rf_to_oatof_pre_pulse_interface_transport_n100' } `
+  else { 'rf_to_oatof_pre_pulse_interface_transport_no_pulse_field' }
+$summaryRole = if ($Particles) { 'rf_to_oatof_pre_pulse_interface_transport_n100_summary' } `
+  else { 'rf_to_oatof_pre_pulse_no_pulse_field_summary' }
 $software = @('COMSOL 6.4','MATLAB R2025b','Python 3.11')
 $package = New-RfRunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project 'rf_quadrupole_ion_optics' -Mode $mode -Software $software
@@ -113,41 +129,43 @@ $resultDir = $package.result_dir
 $logDir = $package.log_dir
 
 try {
-  $task = Join-Path $inputDir 'solve_s2_passive_connector_field.m'
-  $geometryBuilder = Join-Path $inputDir 'build_s2_passive_connector_model.m'
-  $fieldBuilder = Join-Path $inputDir 'prepare_s2_joint_field_model.m'
-  $runner = Join-Path $inputDir 'run_s2_passive_connector_field.ps1.txt'
+  $task = Join-Path $inputDir 'solve_pre_pulse_interface_transport_field.m'
+  $geometryBuilder = Join-Path $inputDir 'build_pre_pulse_interface_transport_model.m'
+  $fieldBuilder = Join-Path $inputDir 'prepare_pre_pulse_interface_transport_field_model.m'
+  $runner = Join-Path $inputDir 'run_pre_pulse_interface_transport_field.ps1.txt'
   $support = Join-Path $inputDir 'run_artifacts.ps1.txt'
   $snapshotRoot = Join-Path $inputDir 'runtime_snapshot'
   $snapshotRfProject = Join-Path $snapshotRoot 'projects\rf_quadrupole_ion_optics'
-  $contract = Join-Path $inputDir 'rf_to_oatof_s2_passive_connector.json'
-  $baseContract = Join-Path $inputDir 'rf_to_oatof_s2_passive_connector_base.json'
-  $connectorCases = Join-Path $inputDir 'rf_to_oatof_connector_cases.json'
-  $connectorResolver = Join-Path $snapshotRfProject 'analysis\resolve_s2_connector_case.py'
-  $connectorValidator = Join-Path $snapshotRfProject 'analysis\validate_s2_passive_connector.py'
+  $contract = Join-Path $inputDir 'rf_to_oatof_pre_pulse_passive_connector.json'
   $oatofHandoff = Join-Path $snapshotRfProject 'analysis\build_oatof_handoff.py'
-  $spatialRegistration = Join-Path $inputDir 'resolved_rf_to_oatof_s2_spatial_registration.json'
-  $spatialResolver = Join-Path $snapshotRfProject 'analysis\resolve_spatial_registration.py'
+  $resolvedConnection = Join-Path $inputDir 'resolved_connection.json'
   $particleInput = $null
   $particleOutput = $null
-  Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'solve_s2_passive_connector_field.m') -Destination $task
-  Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'build_s2_passive_connector_model.m') -Destination $geometryBuilder
-  Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'prepare_s2_joint_field_model.m') -Destination $fieldBuilder
+  Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'solve_pre_pulse_interface_transport_field.m') -Destination $task
+  Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'build_pre_pulse_interface_transport_model.m') -Destination $geometryBuilder
+  Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'prepare_pre_pulse_interface_transport_field_model.m') -Destination $fieldBuilder
   Copy-Item -LiteralPath $PSCommandPath -Destination $runner
   Copy-Item -LiteralPath $supportSource -Destination $support
-  Copy-Item -LiteralPath $contractSource -Destination $baseContract
-  Copy-Item -LiteralPath $connectorCasesSource -Destination $connectorCases
+  Copy-Item -LiteralPath $contractSource -Destination $contract
+  Copy-Item -LiteralPath $ResolvedConnection -Destination $resolvedConnection
+  $resolvedConnectionSha256 = (
+    Get-FileHash -LiteralPath $ResolvedConnection -Algorithm SHA256
+  ).Hash
+  if ((Get-FileHash -LiteralPath $resolvedConnection -Algorithm SHA256).Hash -ne
+      $resolvedConnectionSha256) {
+    throw 'Resolved connection changed while frozen into the PrePulse run.'
+  }
 
   $dependencyContract = Join-Path $snapshotRoot `
-    'projects\rf_quadrupole_ion_optics\config\rf_to_oatof_s2_dependencies.json'
+    'projects\rf_quadrupole_ion_optics\config\rf_to_oatof_pre_pulse_dependencies.json'
   $dependencyContractIdentity = Copy-RfStableFile -SourceRunRoot $repoRoot `
     -SourcePath $dependencyContractSource -Destination $dependencyContract `
-    -Role 'S2 dependency contract'
+    -Role 'PrePulse dependency contract'
   $dependencyDocument = Get-Content -LiteralPath $dependencyContract -Raw -Encoding UTF8 |
     ConvertFrom-Json
-  $dependencyConsumer = 's2_passive_connector'
+  $dependencyConsumer = 'pre_pulse_interface_transport'
   if (@($dependencyDocument.consumer_ids) -notcontains $dependencyConsumer) {
-    throw "S2 dependency consumer is not declared: $dependencyConsumer"
+    throw "PrePulse dependency consumer is not declared: $dependencyConsumer"
   }
   $selectedDependencies = @(
     $dependencyDocument.dependencies |
@@ -155,7 +173,7 @@ try {
   )
   if ($selectedDependencies.Count -eq 0 -or
       @($selectedDependencies.id | Select-Object -Unique).Count -ne $selectedDependencies.Count) {
-    throw 'S2 dependency consumer subset is empty or has duplicate identities.'
+    throw 'PrePulse dependency consumer subset is empty or has duplicate identities.'
   }
   $dependencyIdentities = [ordered]@{}
   $dependencyPaths = @{}
@@ -172,7 +190,7 @@ try {
         -Dependency $dependency
     }
     if ((Get-FileHash -LiteralPath $identity.snapshot_path -Algorithm SHA256).Hash -ne $identity.sha256) {
-      throw "S2 dependency snapshot identity differs: $($identity.id)"
+      throw "PrePulse dependency snapshot identity differs: $($identity.id)"
     }
     $dependencyIdentities[$identity.id] = [ordered]@{
       provider_scope = $identity.provider_scope
@@ -190,12 +208,9 @@ try {
   }
   $localSnapshotIdentities = [ordered]@{}
   foreach ($sourceRepoPath in @(
-    'projects/rf_quadrupole_ion_optics/analysis/resolve_s2_connector_case.py',
-    'projects/rf_quadrupole_ion_optics/analysis/validate_s2_passive_connector.py',
-    'projects/rf_quadrupole_ion_optics/analysis/build_oatof_handoff.py',
-    'projects/rf_quadrupole_ion_optics/analysis/resolve_spatial_registration.py'
+    'projects/rf_quadrupole_ion_optics/analysis/build_oatof_handoff.py'
   )) {
-    $identity = Copy-S2LocalSnapshotInput -RepoRoot $repoRoot -SnapshotRoot $snapshotRoot `
+    $identity = Copy-PrePulseLocalSnapshotInput -RepoRoot $repoRoot -SnapshotRoot $snapshotRoot `
       -SourceRepoPath $sourceRepoPath
     $localSnapshotIdentities[[IO.Path]::GetFileNameWithoutExtension($sourceRepoPath)] = [ordered]@{
       source_repo_path = $identity.source_repo_path
@@ -206,7 +221,7 @@ try {
   $manifestToolRoot = $snapshotRoot
   if (-not $dependencySnapshotPaths['rf_dependency_contract_snapshot'].Equals(
       $dependencyContract, [StringComparison]::OrdinalIgnoreCase)) {
-    throw 'S2 dependency contract self identity is inconsistent.'
+    throw 'PrePulse dependency contract self identity is inconsistent.'
   }
   $sharedJoint = $dependencySnapshotPaths['rf_shared_joint_geometry']
   $rfResolved = $dependencySnapshotPaths['rf_resolved_design']
@@ -216,34 +231,16 @@ try {
   $frozenManifestVerifier = $dependencySnapshotPaths['common_verify_run_manifest']
   $frozenComsolRunner = $dependencySnapshotPaths['common_comsol_runner']
 
-  Invoke-S2SnapshotPython -Python $python -SnapshotRoot $snapshotRoot -Arguments @(
-    '-m','projects.rf_quadrupole_ion_optics.analysis.resolve_s2_connector_case',
-    '--base',$baseContract,'--cases',$connectorCases,
-    '--case-id',$ConnectorCaseId,'--output',$contract
-  ) -FailureMessage 'S2 connector-case resolution failed.'
   $contractDocument = Get-Content -LiteralPath $contract -Raw -Encoding UTF8 | ConvertFrom-Json
-  Invoke-S2SnapshotPython -Python $python -SnapshotRoot $snapshotRoot -Arguments @(
-    '-m','projects.rf_quadrupole_ion_optics.analysis.resolve_spatial_registration',
-    '--stage','s2','--stage-contract',$contract,'--shared-joint',$sharedJoint,
-    '--rf-resolved',$rfResolved,'--oatof-baseline',$oaBaselineSnapshot,
-    '--source-root',$inputDir,'--output',$spatialRegistration,'--write'
-  ) -FailureMessage 'S2 spatial-registration resolution failed.'
-  $spatialDocument = Get-Content -LiteralPath $spatialRegistration -Raw -Encoding UTF8 |
-    ConvertFrom-Json
-  Invoke-S2SnapshotPython -Python $python -SnapshotRoot $snapshotRoot -Arguments @(
-    '-m','projects.rf_quadrupole_ion_optics.analysis.validate_s2_passive_connector',
-    '--contract',$contract,'--reference-root',$snapshotRfProject,
-    '--resolved-registration',$spatialRegistration
-  ) -FailureMessage 'Resolved S2 connector-case contract is invalid.'
   if ($Particles) {
-    $candidate = $contractDocument.functional_candidate
+    $candidate = $contractDocument.particle_runtime
     $sourceRun = Join-Path (Join-Path $artifactRoot 'runs') ([string]$candidate.source_run_id)
     $sourceManifestOriginal = Join-Path $sourceRun 'run_manifest.json'
     $sourceEventsOriginal = Join-Path $sourceRun ([string]$candidate.source_event_path)
     $sourceMetadataOriginal = Join-Path $sourceRun ([string]$candidate.source_metadata_path)
-    Invoke-S2SnapshotPython -Python $python -SnapshotRoot $snapshotRoot -Arguments @(
+    Invoke-PrePulseSnapshotPython -Python $python -SnapshotRoot $snapshotRoot -Arguments @(
       $frozenManifestVerifier,$sourceManifestOriginal,'--require-status','success'
-    ) -FailureMessage 'The frozen S2 particle source manifest is invalid.'
+    ) -FailureMessage 'The frozen PrePulse particle source manifest is invalid.'
     $sourceManifest = Join-Path $inputDir 'source_run_manifest.json'
     $sourceEvents = Join-Path $inputDir ([System.IO.Path]::GetFileName([string]$candidate.source_event_path))
     $sourceMetadata = Join-Path $inputDir 'particle_source_metadata.json'
@@ -267,33 +264,31 @@ try {
     Copy-Item -LiteralPath $oaBaselineSnapshot -Destination $targetBaseline
     Copy-Item -LiteralPath $energyMatchContractSource -Destination $energyMatchContract
     Copy-Item -LiteralPath $sourceInterfaceContractSource -Destination $sourceInterfaceContract
-    $particleInput = Join-Path $inputDir 'canonical_rf_exit_at_s2_connector.csv'
-    $particleIon = Join-Path $inputDir 'rf_exit_at_s2_connector.ion'
+    $particleInput = Join-Path $inputDir 'canonical_rf_exit_at_pre_pulse_connector.csv'
+    $particleIon = Join-Path $inputDir 'rf_exit_at_pre_pulse_connector.ion'
     $particleRowMap = Join-Path $inputDir 'particle_row_map.csv'
-    $particleMetadata = Join-Path $inputDir 's2_handoff_metadata.json'
-    $sourceCenter = @($contractDocument.nominal_registration.source_exit_center_instrument_mm)
-    Invoke-S2SnapshotPython -Python $python -SnapshotRoot $snapshotRoot -Arguments @(
+    $particleMetadata = Join-Path $inputDir 'pre_pulse_handoff_metadata.json'
+    Invoke-PrePulseSnapshotPython -Python $python -SnapshotRoot $snapshotRoot -Arguments @(
       '-m','projects.rf_quadrupole_ion_optics.analysis.build_oatof_handoff',
       '--convert','--contract',$handoffContract,
-      '--resolved-registration',$spatialRegistration,
+      '--resolved-connection',$resolvedConnection,
       '--source-csv',$sourceEvents,'--source-manifest',$sourceManifest,
       '--canonical-output',$particleInput,'--ion-output',$particleIon,
       '--row-map-output',$particleRowMap,'--metadata-output',$particleMetadata,
-      '--solver-clock','instrument_time','--target-origin-mm',
-      [string]$sourceCenter[0],[string]$sourceCenter[1],[string]$sourceCenter[2]
+      '--solver-clock','instrument_time'
     ) -AdditionalEnvironment @{RF_HANDOFF_PROJECT_ROOT=$handoffProjectRoot} `
-      -FailureMessage 'S2 canonical particle-source conversion failed.'
+      -FailureMessage 'PrePulse canonical particle-source conversion failed.'
     $sourceIdentity = [ordered]@{
       run_id = [string]$candidate.source_run_id
       manifest_sha256 = (Get-FileHash -LiteralPath $sourceManifestOriginal -Algorithm SHA256).Hash
       event_sha256 = (Get-FileHash -LiteralPath $sourceEventsOriginal -Algorithm SHA256).Hash
       metadata_sha256 = (Get-FileHash -LiteralPath $sourceMetadataOriginal -Algorithm SHA256).Hash
     }
-    $particleOutput = Join-Path $resultDir 's2_passive_connector_particles.csv'
+    $particleOutput = Join-Path $resultDir 'pre_pulse_interface_transport_particles.csv'
   }
-  $metrics = Join-Path $resultDir 's2_no_pulse_field_metrics.json'
-  $samples = Join-Path $resultDir 's2_no_pulse_field_samples.csv'
-  $report = Join-Path $logDir 'comsol_s2_no_pulse_field.txt'
+  $metrics = Join-Path $resultDir 'pre_pulse_no_pulse_field_metrics.json'
+  $samples = Join-Path $resultDir 'pre_pulse_no_pulse_field_samples.csv'
+  $report = Join-Path $logDir 'comsol_pre_pulse_no_pulse_field.txt'
   $runConfiguration = [ordered]@{
     schema_version = 1
     run_id = $RunId
@@ -306,17 +301,12 @@ try {
       field_builder = $fieldBuilder
       runner = $runner
       run_artifact_support = $support
-      s2_contract = $contract
-      s2_base_contract = $baseContract
-      connector_cases = $connectorCases
-      connector_case_resolver = $connectorResolver
-      connector_case_validator = $connectorValidator
+      pre_pulse_contract = $contract
       oatof_handoff_library = $oatofHandoff
       dependency_contract = $dependencyContract
       shared_physical_port_joint_geometry = $sharedJoint
       rf_resolved_geometry = $rfResolved
-      spatial_registration = $spatialRegistration
-      spatial_registration_resolver = $spatialResolver
+      resolved_connection = $resolvedConnection
       oatof_baseline = $oaBaseline
       oatof_accelerator_builder = $oaBuilder
       particle_source = $particleInput
@@ -326,7 +316,8 @@ try {
     source_particle_identity = if ($Particles) { $sourceIdentity } else { $null }
     parameters = [ordered]@{
       connector_gap_mm = $gapMm
-      connector_case_id = $ConnectorCaseId
+      connection_profile_id = $ConnectionProfileId
+      resolved_connection_sha256 = $resolvedConnectionSha256
       dependency_consumer_id = $dependencyConsumer
       field_bases = @('oatof_static','rf_unit_100_V')
       oa_extraction_pulse = $false
@@ -369,59 +360,60 @@ try {
     -Status interrupted -Software $software
 
   $environmentNames = @(
-    'RF_OATOF_S2_FIELD_METRICS','RF_OATOF_S2_FIELD_SAMPLES','RF_OATOF_S2_CONTRACT',
-    'RF_OATOF_S2_SHARED_JOINT_CONTRACT','RF_OATOF_S2_RF_RESOLVED','RF_OATOF_S2_OA_BASELINE',
-    'RF_OATOF_SPATIAL_REGISTRATION','RF_OATOF_SPATIAL_REGISTRATION_SHA256',
-    'RF_OATOF_S2_OA_COMSOL_DIR',
-    'RF_OATOF_S2_PARTICLE_INPUT','RF_OATOF_S2_PARTICLE_OUTPUT'
+    'RF_OATOF_PrePulse_FIELD_METRICS','RF_OATOF_PrePulse_FIELD_SAMPLES','RF_OATOF_PrePulse_CONTRACT',
+    'RF_OATOF_PrePulse_SHARED_JOINT_CONTRACT','RF_OATOF_PrePulse_RF_RESOLVED','RF_OATOF_PrePulse_OA_BASELINE',
+    'RF_OATOF_RESOLVED_CONNECTION','RF_OATOF_RESOLVED_CONNECTION_SHA256',
+    'RF_OATOF_PrePulse_OA_COMSOL_DIR',
+    'RF_OATOF_PrePulse_PARTICLE_INPUT','RF_OATOF_PrePulse_PARTICLE_OUTPUT'
   )
   $oldEnvironment = Save-RfEnvironment -Names $environmentNames
   try {
-    $env:RF_OATOF_S2_FIELD_METRICS = $metrics
-    $env:RF_OATOF_S2_FIELD_SAMPLES = $samples
-    $env:RF_OATOF_S2_CONTRACT = $contract
-    $env:RF_OATOF_S2_SHARED_JOINT_CONTRACT = $sharedJoint
-    $env:RF_OATOF_S2_RF_RESOLVED = $rfResolved
-    $env:RF_OATOF_SPATIAL_REGISTRATION = $spatialRegistration
-    $env:RF_OATOF_SPATIAL_REGISTRATION_SHA256 = (
-      Get-FileHash -LiteralPath $spatialRegistration -Algorithm SHA256
-    ).Hash
-    $env:RF_OATOF_S2_OA_BASELINE = $oaBaseline
-    $env:RF_OATOF_S2_OA_COMSOL_DIR = $inputDir
+    $env:RF_OATOF_PrePulse_FIELD_METRICS = $metrics
+    $env:RF_OATOF_PrePulse_FIELD_SAMPLES = $samples
+    $env:RF_OATOF_PrePulse_CONTRACT = $contract
+    $env:RF_OATOF_PrePulse_SHARED_JOINT_CONTRACT = $sharedJoint
+    $env:RF_OATOF_PrePulse_RF_RESOLVED = $rfResolved
+    $env:RF_OATOF_RESOLVED_CONNECTION = $resolvedConnection
+    $env:RF_OATOF_RESOLVED_CONNECTION_SHA256 = $resolvedConnectionSha256
+    $env:RF_OATOF_PrePulse_OA_BASELINE = $oaBaseline
+    $env:RF_OATOF_PrePulse_OA_COMSOL_DIR = $inputDir
     if ($Particles) {
-      $env:RF_OATOF_S2_PARTICLE_INPUT = $particleInput
-      $env:RF_OATOF_S2_PARTICLE_OUTPUT = $particleOutput
+      $env:RF_OATOF_PrePulse_PARTICLE_INPUT = $particleInput
+      $env:RF_OATOF_PrePulse_PARTICLE_OUTPUT = $particleOutput
     }
     & $frozenComsolRunner `
       -TaskScript $task -ReportPath $report
-    if ($LASTEXITCODE -ne 0) { throw 'COMSOL S2 no-pulse field task failed.' }
+    if ($LASTEXITCODE -ne 0) { throw 'COMSOL PrePulse no-pulse field task failed.' }
   } finally {
     Restore-RfEnvironment -Names $environmentNames -Snapshot $oldEnvironment
   }
 
   $fieldMetrics = Get-Content -LiteralPath $metrics -Raw -Encoding UTF8 | ConvertFrom-Json
-  $expectedSpatialSha256 = (Get-FileHash -LiteralPath $spatialRegistration -Algorithm SHA256).Hash
+  $expectedResolvedSha256 = (Get-FileHash -LiteralPath $resolvedConnection -Algorithm SHA256).Hash
   if ($fieldMetrics.status -ne 'SOLVED' -or -not [bool]$fieldMetrics.all_probe_values_finite -or
-      [string]$fieldMetrics.frame_id -ne [string]$spatialDocument.instrument_frame_id -or
+      [string]$fieldMetrics.frame_id -ne
+        [string]$resolvedConnectionDocument.port_geometry.downstream.coordinate_frame.frame_id -or
       [string]$fieldMetrics.position_unit -ne 'mm' -or
-      [string]$fieldMetrics.spatial_registration_sha256 -ne $expectedSpatialSha256 -or
+      [string]$fieldMetrics.resolved_connection_sha256 -ne $expectedResolvedSha256 -or
       [double]$fieldMetrics.rf_off_axis_field_norm_V_per_m -le 0 -or
       [bool]$fieldMetrics.particle_runtime_executed -ne [bool]$Particles -or
       [bool]$fieldMetrics.oa_extraction_pulse_included -or
-      [bool]$fieldMetrics.mesh_convergence_claimed -or [bool]$fieldMetrics.s2_stage_passed) {
-    throw 'S2 field metrics violate the no-pulse functional contract.'
+      [bool]$fieldMetrics.mesh_convergence_claimed -or [bool]$fieldMetrics.pre_pulse_stage_passed) {
+    throw 'PrePulse field metrics violate the no-pulse functional contract.'
   }
   if ($Particles -and
-      ([int]$fieldMetrics.particle_input_count -ne [int]$contractDocument.functional_candidate.source_particles -or
-       [int]$fieldMetrics.oatof_entry_crossings -lt [int]$contractDocument.functional_candidate.minimum_oatof_entry_crossings)) {
-    throw 'S2 particle metrics violate the nominal functional contract.'
+      ([int]$fieldMetrics.particle_input_count -ne
+        [int]$contractDocument.particle_runtime.source_particles -or
+       [int]$fieldMetrics.oatof_entry_crossings -lt
+        [int]$contractDocument.particle_runtime.minimum_oatof_entry_crossings)) {
+    throw 'PrePulse particle metrics violate the nominal functional contract.'
   }
   Write-RfJson -Path $package.summary -Value ([ordered]@{
     schema_version = 1
     role = $summaryRole
     status = 'success'
-    metrics = 'results/s2_no_pulse_field_metrics.json'
-    samples = 'results/s2_no_pulse_field_samples.csv'
+    metrics = 'results/pre_pulse_no_pulse_field_metrics.json'
+    samples = 'results/pre_pulse_no_pulse_field_samples.csv'
     gap_mm = $gapMm
     field_bases_solved = 2
     finite_probe_rows = [int]$fieldMetrics.probe_count
@@ -431,7 +423,7 @@ try {
     connector_losses = [int]$fieldMetrics.connector_losses
     oa_extraction_pulse = $false
     mesh_convergence_claimed = $false
-    s2_stage_passed = $false
+    pre_pulse_stage_passed = $false
     formal_gate_passed = $false
   })
   $outputs = @($metrics,$samples,$report,$package.summary)

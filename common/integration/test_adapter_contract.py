@@ -23,7 +23,7 @@ INTEGRATION_ROOT = (
 
 
 class IntegrationAdapterContractTests(unittest.TestCase):
-    def test_both_profile_mappings_resolve_real_s2_s3_entries(self) -> None:
+    def test_both_profile_mappings_resolve_the_semantic_transfer_entry(self) -> None:
         registry = load_execution_adapter_registry(
             INTEGRATION_ROOT / "config" / "execution_adapter_profiles.json"
         )
@@ -37,7 +37,14 @@ class IntegrationAdapterContractTests(unittest.TestCase):
                 profile_id,
                 repo_root=REPO_ROOT,
             )
-            self.assertEqual(set(mapping["legacy_entrypoints"]), {"s2_field", "s3_cumulative"})
+            self.assertTrue(
+                mapping["workflow_entrypoint"].endswith(
+                    "workflows/rf_to_oatof_integration/run_rf_to_oatof_transfer.ps1"
+                )
+            )
+            self.assertNotIn("workflow_entrypoints", mapping)
+            self.assertNotIn("legacy_entrypoints", mapping)
+            self.assertNotIn("connector_case_id", mapping)
 
     def test_mapping_vocabulary_rejects_physical_overrides(self) -> None:
         path = INTEGRATION_ROOT / "config" / "execution_adapter_profiles.json"
@@ -58,8 +65,8 @@ class IntegrationAdapterContractTests(unittest.TestCase):
             / "migration_equivalence_preregistration.json",
             repo_root=REPO_ROOT,
             expected_profile_ids={
-                "rf_quadrupole_s2_s3_grounded_connector_gap_1mm",
-                "rf_quadrupole_s2_s3_direct_mating_gap_0mm",
+                "rf_quadrupole_grounded_connector_gap_1mm",
+                "rf_quadrupole_direct_mating_gap_0mm",
             },
         )
         self.assertEqual(document["equivalence_status"], "BLOCKED")

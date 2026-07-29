@@ -11,11 +11,11 @@
       "historical run reproduction"
     ],
     "superseded_by": [
-      "config/rf_to_oatof_s2_passive_connector.json",
-      "config/rf_to_oatof_s3_pulse_capture.json",
-      "tests/cross_solver/run_s3_cumulative_chain.ps1"
+      "config/rf_to_oatof_pre_pulse_passive_connector.json",
+      "config/rf_to_oatof_pulse_capture.json",
+      "workflows/rf_to_oatof_integration/run_rf_to_oatof_transfer.ps1"
     ],
-    "claim_limit": "Projection and adapter evidence remains valid only within its frozen diagnostic scope. The active physical-port and connector path is S2/S3; neither path is stage-qualified or Formal."
+    "claim_limit": "Projection and adapter evidence remains valid only within its frozen diagnostic scope. Active topology comes only from a runtime resolved_connection; no transfer phase is qualified or Formal."
   },
   "source_component": {
     "project_id": "rf_quadrupole_ion_optics",
@@ -47,22 +47,6 @@
     "row_order_policy": "sort_by_integer_particle_id_and_record_row_map",
     "lineage_policy": "new products require a new particle_id, parent_particle_id and generation",
     "current_generation": 0
-  },
-  "coordinate_transform": {
-    "status": "provisional_for_diagnostic_projection",
-    "source_frame_id": "rf_quadrupole_component",
-    "source_vector_order": ["transverse_x", "transverse_y", "axial_z"],
-    "source_origin_mm": [0.0, 0.0, 90.2],
-    "target_frame_id": "oatof_global",
-    "target_vector_order": ["x", "y", "z"],
-    "target_origin_mm": [-48.8, 0.0, -18.42918680341103],
-    "rotation_source_to_target": [
-      [0.0, 0.0, 1.0],
-      [1.0, 0.0, 0.0],
-      [0.0, 1.0, 0.0]
-    ],
-    "determinant_expected": 1.0,
-    "mapping_summary": "RF +z -> oa-TOF +x, RF +x -> oa-TOF +y, RF +y -> oa-TOF +z; handoff center maps to the current oa-TOF source center"
   },
   "timing_contract": {
     "clock_epoch_id": "instrument_clock_epoch.v1",

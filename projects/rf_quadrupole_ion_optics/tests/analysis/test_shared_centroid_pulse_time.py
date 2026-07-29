@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
 
 import pandas as pd
+from common.integration.resolve_connection import (
+    load_connection_profile_registry,
+    resolve_connection_profile,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -13,9 +18,34 @@ from projects.rf_quadrupole_ion_optics.analysis import derive_shared_centroid_pu
 
 
 class SharedCentroidPulseTimeTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.resolved_temp = tempfile.TemporaryDirectory()
+        registry_path = (
+            REPO_ROOT
+            / "integrations"
+            / "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
+            / "config"
+            / "connection_profiles.json"
+        )
+        registry = load_connection_profile_registry(registry_path)
+        resolved = resolve_connection_profile(
+            registry,
+            "rf_quadrupole_grounded_connector_gap_1mm",
+            repo_root=REPO_ROOT,
+        )
+        cls.resolved = Path(cls.resolved_temp.name) / "resolved_connection.json"
+        cls.resolved.write_text(json.dumps(resolved), encoding="utf-8")
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.resolved_temp.cleanup()
+
     def setUp(self) -> None:
         self.baseline = REPO_ROOT / "projects" / "single_reflection_oa_tof_mass_analyzer" / "config" / "baseline.json"
-        self.joint = PROJECT_ROOT / "config" / "rf_to_oatof_shared_physical_port_joint_geometry.json"
+        self.pre_pulse = (
+            PROJECT_ROOT / "config" / "rf_to_oatof_pre_pulse_passive_connector.json"
+        )
 
     def _write(self, path: Path, rows: list[dict]) -> None:
         pd.DataFrame(rows).to_csv(path, index=False)
@@ -28,6 +58,9 @@ class SharedCentroidPulseTimeTests(unittest.TestCase):
                 "position_y_mm": 0.0, "position_z_mm": -18.42918680341103,
                 "velocity_y_m_s": 0.0, "velocity_z_m_s": 0.0,
                 "charge_state": 1,
+                "event": "oatof_entry", "status": "transmitted",
+                "frame_id": "oatof_global",
+                "clock_epoch_id": "instrument_clock_epoch.v1",
             }
             self._write(path, [
                 dict(base, particle_id=1, instrument_time_us=10.0, mass_amu=100.0,
@@ -35,7 +68,9 @@ class SharedCentroidPulseTimeTests(unittest.TestCase):
                 dict(base, particle_id=2, instrument_time_us=12.0, mass_amu=100.0,
                      velocity_x_m_s=2000.0, kinetic_energy_eV=4.0),
             ])
-            result = module.derive_schedule(path, self.baseline, self.joint)
+            result = module.derive_schedule(
+                path, self.baseline, self.pre_pulse, self.resolved
+            )
             release_x = result["geometry_mm"]["release_x"]
             target_x = result["geometry_mm"]["target_centroid_x"]
             expected = (1000 * (target_x - release_x) + (1000 * 10 + 2000 * 12) / 2) / 1500
@@ -50,12 +85,17 @@ class SharedCentroidPulseTimeTests(unittest.TestCase):
                 "position_x_mm": -67.8,
                 "position_y_mm": 0.49, "position_z_mm": -18.42918680341103,
                 "velocity_x_m_s": 1000.0, "velocity_z_m_s": 0.0,
+                "event": "oatof_entry", "status": "transmitted",
+                "frame_id": "oatof_global",
+                "clock_epoch_id": "instrument_clock_epoch.v1",
             }
             self._write(path, [
                 dict(base, particle_id=1, velocity_y_m_s=0.0),
                 dict(base, particle_id=2, velocity_y_m_s=100.0),
             ])
-            result = module.derive_schedule(path, self.baseline, self.joint)
+            result = module.derive_schedule(
+                path, self.baseline, self.pre_pulse, self.resolved
+            )
             self.assertEqual(result["target_species"], {"mass_amu": 50.0, "charge_state": 2})
             self.assertEqual(result["population_counts"]["outer_face_geometric_acceptance"], 2)
             self.assertEqual(result["population_counts"]["predicted_finite_wall_survivors"], 1)
@@ -72,12 +112,23 @@ class SharedCentroidPulseTimeTests(unittest.TestCase):
                     "position_y_mm": 0.0, "position_z_mm": -18.42918680341103,
                     "velocity_x_m_s": 1000.0, "velocity_y_m_s": 0.0,
                     "velocity_z_m_s": 0.0,
+                    "event": "oatof_entry", "status": "transmitted",
+                    "frame_id": "oatof_global",
+                    "clock_epoch_id": "instrument_clock_epoch.v1",
                 })
             self._write(path, rows)
             with self.assertRaisesRegex(ValueError, "mixed-species"):
-                module.derive_schedule(path, self.baseline, self.joint)
-            selected = module.derive_schedule(path, self.baseline, self.joint,
-                                              target_mass_amu=50.0, target_charge_state=2)
+                module.derive_schedule(
+                    path, self.baseline, self.pre_pulse, self.resolved
+                )
+            selected = module.derive_schedule(
+                path,
+                self.baseline,
+                self.pre_pulse,
+                self.resolved,
+                target_mass_amu=50.0,
+                target_charge_state=2,
+            )
             self.assertEqual(selected["target_species"]["charge_state"], 2)
 
     def test_rejects_stale_projected_entry_coordinate(self) -> None:
@@ -90,12 +141,16 @@ class SharedCentroidPulseTimeTests(unittest.TestCase):
                 "position_z_mm": -18.42918680341103,
                 "velocity_x_m_s": 1000.0, "velocity_y_m_s": 0.0,
                 "velocity_z_m_s": 0.0,
+                "event": "oatof_entry", "status": "transmitted",
+                "frame_id": "oatof_global",
+                "clock_epoch_id": "instrument_clock_epoch.v1",
             }])
             with self.assertRaisesRegex(ValueError, "physical oa-TOF entry surface"):
-                module.derive_schedule(path, self.baseline, self.joint)
+                module.derive_schedule(
+                    path, self.baseline, self.pre_pulse, self.resolved
+                )
 
-    def test_s3_uses_only_real_s2_entry_events(self) -> None:
-        s2 = PROJECT_ROOT / "config" / "rf_to_oatof_s2_passive_connector.json"
+    def test_pulse_capture_uses_only_real_pre_pulse_entry_events(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "particles.csv"
             base = {
@@ -112,9 +167,12 @@ class SharedCentroidPulseTimeTests(unittest.TestCase):
                 dict(base, particle_id=2, event="downstream_entry_wall", status="lost"),
             ])
             result = module.derive_schedule(
-                path, self.baseline, self.joint, s2_contract_path=s2)
-            self.assertEqual(result["stage"], "S3")
-            self.assertEqual(result["role"], "rf_to_oatof_s3_centroid_pulse_schedule")
+                path, self.baseline, self.pre_pulse, self.resolved
+            )
+            self.assertEqual(result["phase"], "pulse_capture")
+            self.assertEqual(
+                result["role"], "rf_to_oatof_pulse_capture_centroid_pulse_schedule"
+            )
             self.assertEqual(result["population_counts"]["outer_face_geometric_acceptance"], 1)
 
 
