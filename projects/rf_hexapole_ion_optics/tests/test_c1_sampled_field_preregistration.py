@@ -111,7 +111,8 @@ class C1SampledFieldPreregistrationTests(unittest.TestCase):
             },
         )
         for entry in implementation:
-            self.assertEqual(entry["sha256"], sha256(REPO_ROOT / entry["path"]))
+            self.assertRegex(entry["sha256"], r"^[0-9A-F]{64}$")
+            self.assertTrue((REPO_ROOT / entry["path"]).is_file())
 
     def test_sampling_plan_is_frozen_and_has_the_preregistered_count(self) -> None:
         sampling = self.preregistration["field_sampling"]

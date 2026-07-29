@@ -22,6 +22,20 @@ PHYSICS_IDENTITY_FIELDS = (
     "operating_mode_id",
     "operating_point_id",
 )
+PARTICLE_ENVELOPE_FIELDS = (
+    "transverse_x_mm",
+    "transverse_y_mm",
+    "velocity_x_m_s",
+    "velocity_y_m_s",
+    "elapsed_time_us",
+    "kinetic_energy_eV",
+)
+CANDIDATE_OBSERVABLE_FIELDS = (
+    "rms_radius",
+    "rms_divergence",
+    "mean_energy",
+    "mean_tof",
+)
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -171,6 +185,8 @@ def run_data(manifest_path: Path) -> dict[str, Any]:
             "mean_source_energy_eV": mean_source_energy,
         },
         "handoff_particle_ids": sorted(handoff),
+        "source_particle_ids": sorted(source),
+        "lost_particle_ids": sorted(set(source) - set(handoff)),
         "_handoff": handoff,
         "observables": {
             "transmission": len(handoff) / len(source),
@@ -263,6 +279,203 @@ def observable_differences(a: dict[str, Any], b: dict[str, Any]) -> dict[str, fl
     return differences
 
 
+def _closed_interval(center: float, half_width: float) -> list[float]:
+    if not math.isfinite(center) or not math.isfinite(half_width) or half_width < 0:
+        raise ValueError("interval center and half-width must be finite and nonnegative")
+    return [center - half_width, center + half_width]
+
+
+def _same_particle_ids(runs: list[dict[str, Any]]) -> bool:
+    return all(
+        run["handoff_particle_ids"] == runs[0]["handoff_particle_ids"]
+        for run in runs[1:]
+    )
+
+
+def standalone_candidate_envelope(
+    solver_runs: dict[str, dict[str, dict[str, Any]]],
+    minimum_transmission: float = 0.8,
+) -> dict[str, Any]:
+    """Build a conservative union of converged COMSOL and SIMION intervals.
+
+    Each solver contributes a nominal run and its adjacent spatial and temporal
+    refinements.  The numerical half-width is the larger absolute change from
+    nominal along those two axes.  Solver intervals are then unioned; their
+    center-to-center difference is therefore never treated as a separately
+    invented percentage tolerance.
+    """
+
+    if set(solver_runs) != set(SUPPORTED_SOLVERS):
+        raise ValueError("candidate envelope requires COMSOL and SIMION")
+    required_levels = {"nominal", "spatial_refined", "temporal_refined"}
+    all_runs: list[dict[str, Any]] = []
+    per_solver: dict[str, Any] = {}
+    identity_errors: list[str] = []
+    for solver in SUPPORTED_SOLVERS:
+        levels = solver_runs[solver]
+        if set(levels) != required_levels:
+            raise ValueError(
+                f"{solver} candidate runs must be nominal, spatial_refined, "
+                "and temporal_refined"
+            )
+        nominal = levels["nominal"]
+        spatial = levels["spatial_refined"]
+        temporal = levels["temporal_refined"]
+        runs = [nominal, spatial, temporal]
+        all_runs.extend(runs)
+        if any(run["solver"] != solver for run in runs):
+            identity_errors.append(f"{solver} run labels differ from solver")
+        identity_errors.extend(
+            f"{solver} spatial: {error}"
+            for error in validate_identity(nominal, spatial, "spatial")
+        )
+        identity_errors.extend(
+            f"{solver} temporal: {error}"
+            for error in validate_identity(nominal, temporal, "temporal")
+        )
+        if not _same_particle_ids(runs):
+            identity_errors.append(f"{solver} adjacent numerical particle IDs differ")
+
+        particle_intervals: dict[str, Any] = {}
+        if _same_particle_ids(runs):
+            for particle_id in nominal["handoff_particle_ids"]:
+                fields = {}
+                for field in PARTICLE_ENVELOPE_FIELDS:
+                    center = float(nominal["_handoff"][particle_id][field])
+                    spatial_change = abs(
+                        center - float(spatial["_handoff"][particle_id][field])
+                    )
+                    temporal_change = abs(
+                        center - float(temporal["_handoff"][particle_id][field])
+                    )
+                    half_width = max(spatial_change, temporal_change)
+                    fields[field] = {
+                        "nominal": center,
+                        "numerical_half_width": half_width,
+                        "interval": _closed_interval(center, half_width),
+                    }
+                particle_intervals[str(particle_id)] = fields
+
+        observable_intervals = {}
+        for field in CANDIDATE_OBSERVABLE_FIELDS:
+            center = float(nominal["observables"][field])
+            half_width = max(
+                abs(center - float(spatial["observables"][field])),
+                abs(center - float(temporal["observables"][field])),
+            )
+            observable_intervals[field] = {
+                "nominal": center,
+                "numerical_half_width": half_width,
+                "interval": _closed_interval(center, half_width),
+            }
+        per_solver[solver] = {
+            "run_ids": {level: levels[level]["run_id"] for level in sorted(levels)},
+            "handoff_particle_ids": nominal["handoff_particle_ids"],
+            "lost_particle_ids": nominal.get("lost_particle_ids", []),
+            "particle_intervals": particle_intervals,
+            "observable_intervals": observable_intervals,
+        }
+
+    nominal_runs = [solver_runs[solver]["nominal"] for solver in SUPPORTED_SOLVERS]
+    if not _same_particle_ids(nominal_runs):
+        identity_errors.append("cross-solver nominal particle IDs differ")
+    for solver in SUPPORTED_SOLVERS[1:]:
+        identity_errors.extend(
+            f"cross-solver: {error}"
+            for error in validate_identity(
+                solver_runs[SUPPORTED_SOLVERS[0]]["nominal"],
+                solver_runs[solver]["nominal"],
+                "cross_solver",
+            )
+        )
+
+    union_observables = {}
+    for field in CANDIDATE_OBSERVABLE_FIELDS:
+        intervals = [
+            per_solver[solver]["observable_intervals"][field]["interval"]
+            for solver in SUPPORTED_SOLVERS
+        ]
+        union_observables[field] = [
+            min(interval[0] for interval in intervals),
+            max(interval[1] for interval in intervals),
+        ]
+
+    union_particles: dict[str, Any] = {}
+    common_ids = set(per_solver[SUPPORTED_SOLVERS[0]]["particle_intervals"])
+    common_ids &= set(per_solver[SUPPORTED_SOLVERS[1]]["particle_intervals"])
+    for particle_id in sorted(common_ids, key=int):
+        fields = {}
+        for field in PARTICLE_ENVELOPE_FIELDS:
+            intervals = [
+                per_solver[solver]["particle_intervals"][particle_id][field][
+                    "interval"
+                ]
+                for solver in SUPPORTED_SOLVERS
+            ]
+            fields[field] = [
+                min(interval[0] for interval in intervals),
+                max(interval[1] for interval in intervals),
+            ]
+        x_interval = fields["transverse_x_mm"]
+        y_interval = fields["transverse_y_mm"]
+        radial_upper = math.hypot(
+            max(abs(value) for value in x_interval),
+            max(abs(value) for value in y_interval),
+        )
+        union_particles[particle_id] = {
+            "fields": fields,
+            "worst_transverse_radius_mm": radial_upper,
+        }
+
+    aperture_radius = min(
+        float(run["scales"]["exit_aperture_radius_mm"]) for run in all_runs
+    )
+    worst_radius = max(
+        (
+            particle["worst_transverse_radius_mm"]
+            for particle in union_particles.values()
+        ),
+        default=math.inf,
+    )
+    checks = {
+        "identity": not identity_errors,
+        "minimum_transmission": all(
+            float(run["observables"]["transmission"]) >= minimum_transmission
+            for run in all_runs
+        ),
+        "exact_handoff_particle_ids": _same_particle_ids(all_runs),
+        "positive_rod_margin": all(
+            float(run["observables"]["minimum_working_radius_margin_fraction"]) > 0
+            for run in all_runs
+        ),
+        "positive_aperture_margin": worst_radius < aperture_radius,
+    }
+    return {
+        "schema_version": 1,
+        "role": "multipole_standalone_candidate_envelope",
+        "status": "PASS" if all(checks.values()) else "FAIL",
+        "method": (
+            "per-solver max(spatial adjacent change, temporal adjacent change), "
+            "followed by closed-interval union across solvers"
+        ),
+        "minimum_transmission": minimum_transmission,
+        "identity_errors": identity_errors,
+        "checks": checks,
+        "per_solver": per_solver,
+        "union": {
+            "observable_intervals": union_observables,
+            "particle_intervals": union_particles,
+            "exit_aperture_radius_mm": aperture_radius,
+            "worst_transverse_radius_mm": worst_radius,
+            "minimum_aperture_margin_mm": aperture_radius - worst_radius,
+        },
+        "claim_limit": (
+            "Numerical Candidate envelope only; no mode superiority or Formal "
+            "mechanical claim."
+        ),
+    }
+
+
 def without_path(value: dict[str, Any], path: tuple[str, ...]) -> dict[str, Any]:
     result = copy.deepcopy(value)
     parent: Any = result
@@ -335,13 +548,22 @@ def validate_identity(
             if coarse_mesh.get("strategy") == fine_mesh.get("strategy"):
                 errors.append("mesh strategies do not differ")
     elif axis == "spatial":
-        path = (
-            ("mesh", "working_region_maximum_element_size_mm")
-            if solver == "COMSOL"
-            else ("cell_mm",)
-        )
         coarse = baseline["numerics"]
         fine = refined["numerics"]
+        if solver == "COMSOL":
+            coarse_hybrid = coarse.get("mesh", {}).get("hybrid", {})
+            fine_hybrid = fine.get("mesh", {}).get("hybrid", {})
+            if "sensitive_region" in coarse_hybrid or "sensitive_region" in fine_hybrid:
+                path = (
+                    "mesh",
+                    "hybrid",
+                    "sensitive_region",
+                    "maximum_element_size_mm",
+                )
+            else:
+                path = ("mesh", "working_region_maximum_element_size_mm")
+        else:
+            path = ("cell_mm",)
         if without_path(coarse, path) != without_path(fine, path):
             errors.append("non-spatial solver numerics differ")
         coarse_value = coarse

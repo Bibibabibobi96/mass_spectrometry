@@ -49,6 +49,34 @@
       ],
       "both_solvers_independently_converged": true
     },
+    "standalone_candidate_envelope": {
+      "required_inputs_per_solver": [
+        "nominal",
+        "spatial_refined",
+        "temporal_refined"
+      ],
+      "numerical_half_width": "max(spatial_adjacent_absolute_change, temporal_adjacent_absolute_change)",
+      "cross_solver_operation": "closed_interval_union",
+      "required_particle_fields": [
+        "transverse_position",
+        "transverse_velocity",
+        "elapsed_time",
+        "kinetic_energy"
+      ],
+      "required_summary_intervals": [
+        "rms_radius",
+        "rms_divergence",
+        "mean_energy",
+        "mean_tof"
+      ],
+      "functional_requirements": {
+        "minimum_transmission": 0.8,
+        "handoff_particle_id_sets": "exact_match",
+        "worst_position_envelope": "strictly_inside_exit_aperture",
+        "rod_and_aperture_margins": "positive"
+      },
+      "forbidden_interpretation": "Do not replace the union envelope with an arbitrary cross-solver percentage tolerance or claim mode superiority."
+    },
     "three_mode_dispersion": {
       "method_contract": "common/multipole/three_mode_dispersion_contract.json",
       "required_observables": [

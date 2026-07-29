@@ -99,6 +99,48 @@
       "comsol_solver_numerics_profile_id": "hybrid_c1_mumps_field_screen",
       "simion_solver_numerics_profile_id": "baseline_finite_3d"
     },
+    "exit_aperture_plate_acceleration_n100_hybrid_local_sensitive_050_field_screen": {
+      "stop_stage": "field_solve",
+      "design_profile_id": "exit_aperture_plate_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "hybrid_local_sensitive_050_cg_amg_field_screen",
+      "simion_solver_numerics_profile_id": "baseline_finite_3d"
+    },
+    "exit_aperture_plate_acceleration_n100_hybrid_local_sensitive_040_field_screen": {
+      "stop_stage": "field_solve",
+      "design_profile_id": "exit_aperture_plate_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "hybrid_local_sensitive_040_cg_amg_field_screen",
+      "simion_solver_numerics_profile_id": "baseline_finite_3d"
+    },
+    "exit_aperture_plate_acceleration_n100_hybrid_local_sensitive_032_field_screen": {
+      "stop_stage": "field_solve",
+      "design_profile_id": "exit_aperture_plate_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "hybrid_local_sensitive_032_cg_amg_field_screen",
+      "simion_solver_numerics_profile_id": "baseline_finite_3d"
+    },
+    "segmented_rod_axial_acceleration_n100_hybrid_local_sensitive_050_field_screen": {
+      "stop_stage": "field_solve",
+      "design_profile_id": "segmented_rod_axial_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "hybrid_local_sensitive_050_cg_amg_field_screen",
+      "simion_solver_numerics_profile_id": "baseline_finite_3d"
+    },
+    "segmented_rod_axial_acceleration_n100_hybrid_local_sensitive_040_field_screen": {
+      "stop_stage": "field_solve",
+      "design_profile_id": "segmented_rod_axial_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "hybrid_local_sensitive_040_cg_amg_field_screen",
+      "simion_solver_numerics_profile_id": "baseline_finite_3d"
+    },
+    "segmented_rod_axial_acceleration_n100_hybrid_local_sensitive_032_field_screen": {
+      "stop_stage": "field_solve",
+      "design_profile_id": "segmented_rod_axial_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "hybrid_local_sensitive_032_cg_amg_field_screen",
+      "simion_solver_numerics_profile_id": "baseline_finite_3d"
+    },
     "exit_aperture_plate_acceleration_n100_hybrid_d3_axial14_cg_amg_field_screen": {
       "stop_stage": "field_solve",
       "design_profile_id": "exit_aperture_plate_acceleration",

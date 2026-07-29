@@ -97,14 +97,19 @@ def _field_rows(
     field_scale: float = 1.0,
 ) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
-    points = (("p0", 0.0, 0.0, 0.0), ("p1", 1.0, -1.0, 5.0))
+    points = (
+        ("p0", "entrance_aperture_plate_downstream_face", 0.0, 0.0, 0.0),
+        ("p1", "rod_span_uniform", 1.0, -1.0, 5.0),
+    )
     for field_case in ("differential", "static"):
         case_scale = 1.0 if field_case == "differential" else 2.0
-        for index, (point_id, x_mm, y_mm, z_mm) in enumerate(points, start=1):
+        for index, (point_id, region, x_mm, y_mm, z_mm) in enumerate(
+            points, start=1
+        ):
             rows.append(
                 {
                     "sample_id": point_id,
-                    "region": "rod_span_uniform",
+                    "region": region,
                     "field_case": field_case,
                     "x_mm": str(x_mm),
                     "y_mm": str(y_mm),
@@ -202,6 +207,16 @@ class StationaryFieldSamplingTest(unittest.TestCase):
         self.assertEqual(result["total_sample_count"], 4)
         differential = result["field_cases"]["differential"]
         self.assertEqual(differential["sample_count"], 2)
+        self.assertEqual(
+            tuple(differential["regions"]),
+            (
+                "entrance_aperture_plate_downstream_face",
+                "rod_span_uniform",
+            ),
+        )
+        self.assertEqual(
+            differential["regions"]["rod_span_uniform"]["sample_count"], 1
+        )
         self.assertGreater(
             differential["potential"]["rms_absolute_difference_V"], 0
         )

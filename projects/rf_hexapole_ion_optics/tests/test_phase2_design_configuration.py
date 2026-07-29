@@ -40,6 +40,9 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
         cls.comsol_numerics = load(
             PROJECT_ROOT / "config" / "comsol_solver_numerics.json"
         )
+        cls.runtime_profiles = load(
+            PROJECT_ROOT / "config" / "runtime_profiles.json"
+        )
         cls.identity = {
             "project_id": "rf_hexapole_ion_optics",
             "family_id": "rf_multipole_ion_optics",
@@ -162,6 +165,62 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
             profiles["n100_temporal_refined"]["trajectory"]["rf_steps_per_period"],
             160,
         )
+
+    def test_local_sensitive_mesh_sequence_changes_only_registered_size(
+        self,
+    ) -> None:
+        profile_ids = (
+            "hybrid_local_sensitive_050_cg_amg_field_screen",
+            "hybrid_local_sensitive_040_cg_amg_field_screen",
+            "hybrid_local_sensitive_032_cg_amg_field_screen",
+        )
+        profiles = [
+            self.comsol_numerics["profiles"][profile_id]
+            for profile_id in profile_ids
+        ]
+        sizes = [
+            profile["mesh"]["hybrid"]["sensitive_region"][
+                "maximum_element_size_mm"
+            ]
+            for profile in profiles
+        ]
+        self.assertEqual(sizes, [0.5, 0.4, 0.32])
+        self.assertEqual([sizes[0] / sizes[1], sizes[1] / sizes[2]], [1.25, 1.25])
+        for profile in profiles:
+            hybrid = profile["mesh"]["hybrid"]
+            self.assertEqual(
+                hybrid["sensitive_region"]["particle_corridor_radius_mm"], 3.6
+            )
+            self.assertEqual(hybrid["axial_layers_per_swept_segment"], 10)
+            self.assertEqual(profile["electric_potential_element_order"], "quadratic")
+            self.assertEqual(profile["stationary_linear_solver_backend"], "cg_amg")
+        normalized = copy.deepcopy(profiles[0])
+        del normalized["mesh"]["hybrid"]["sensitive_region"][
+            "maximum_element_size_mm"
+        ]
+        for profile in profiles[1:]:
+            peer = copy.deepcopy(profile)
+            del peer["mesh"]["hybrid"]["sensitive_region"][
+                "maximum_element_size_mm"
+            ]
+            self.assertEqual(peer, normalized)
+
+    def test_both_static_topologies_bind_all_local_field_levels(self) -> None:
+        runtime = self.runtime_profiles["profiles"]
+        for mode in (
+            "exit_aperture_plate_acceleration",
+            "segmented_rod_axial_acceleration",
+        ):
+            for size in ("050", "040", "032"):
+                profile = runtime[
+                    f"{mode}_n100_hybrid_local_sensitive_{size}_field_screen"
+                ]
+                self.assertEqual(profile["stop_stage"], "field_solve")
+                self.assertEqual(profile["design_profile_id"], mode)
+                self.assertEqual(
+                    profile["comsol_solver_numerics_profile_id"],
+                    f"hybrid_local_sensitive_{size}_cg_amg_field_screen",
+                )
 
 
 if __name__ == "__main__":

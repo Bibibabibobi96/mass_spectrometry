@@ -575,6 +575,40 @@ def _vector_metrics(
     }
 
 
+def _field_case_metrics(
+    reference_case: Sequence[StationaryFieldRecord],
+    candidate_case: Sequence[StationaryFieldRecord],
+) -> dict[str, Any]:
+    """Calculate one field case without applying an acceptance threshold."""
+
+    reference_vectors = [
+        (record.Ex_V_per_m, record.Ey_V_per_m, record.Ez_V_per_m)
+        for record in reference_case
+    ]
+    candidate_vectors = [
+        (record.Ex_V_per_m, record.Ey_V_per_m, record.Ez_V_per_m)
+        for record in candidate_case
+    ]
+    components: dict[str, Any] = {}
+    for name in ("Ex", "Ey", "Ez"):
+        attribute = f"{name}_V_per_m"
+        components[name] = _scalar_metrics(
+            [getattr(record, attribute) for record in reference_case],
+            [getattr(record, attribute) for record in candidate_case],
+            "V_per_m",
+        )
+    return {
+        "sample_count": len(reference_case),
+        "potential": _scalar_metrics(
+            [record.potential_V for record in reference_case],
+            [record.potential_V for record in candidate_case],
+            "V",
+        ),
+        "field_vector": _vector_metrics(reference_vectors, candidate_vectors),
+        "field_components": components,
+    }
+
+
 def compare_stationary_field_outputs(
     reference: Sequence[StationaryFieldRecord],
     candidate: Sequence[StationaryFieldRecord],
@@ -636,33 +670,21 @@ def compare_stationary_field_outputs(
             )
         reference_case = [reference_by_id[key] for key in ids]
         candidate_case = [candidate_by_id[key] for key in ids]
-        reference_vectors = [
-            (record.Ex_V_per_m, record.Ey_V_per_m, record.Ez_V_per_m)
-            for record in reference_case
-        ]
-        candidate_vectors = [
-            (record.Ex_V_per_m, record.Ey_V_per_m, record.Ez_V_per_m)
-            for record in candidate_case
-        ]
-        components: dict[str, Any] = {}
-        for name in ("Ex", "Ey", "Ez"):
-            attribute = f"{name}_V_per_m"
-            components[name] = _scalar_metrics(
-                [getattr(record, attribute) for record in reference_case],
-                [getattr(record, attribute) for record in candidate_case],
-                "V_per_m",
+        regions = sorted({record.region for record in reference_case})
+        region_metrics = {}
+        for region in regions:
+            reference_region = [
+                record for record in reference_case if record.region == region
+            ]
+            candidate_region = [
+                record for record in candidate_case if record.region == region
+            ]
+            region_metrics[region] = _field_case_metrics(
+                reference_region, candidate_region
             )
         field_cases[field_case] = {
-            "sample_count": len(ids),
-            "potential": _scalar_metrics(
-                [record.potential_V for record in reference_case],
-                [record.potential_V for record in candidate_case],
-                "V",
-            ),
-            "field_vector": _vector_metrics(
-                reference_vectors, candidate_vectors
-            ),
-            "field_components": components,
+            **_field_case_metrics(reference_case, candidate_case),
+            "regions": region_metrics,
         }
     return {
         "schema_version": 1,

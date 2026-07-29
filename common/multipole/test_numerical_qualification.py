@@ -10,6 +10,7 @@ from common.multipole.numerical_qualification import (
     evaluate,
     mean_source_energy_from_particle_input,
     primary_state_filename,
+    standalone_candidate_envelope,
     validate_identity,
 )
 
@@ -125,6 +126,92 @@ def mesh_strategy_contract() -> dict:
 
 
 class NumericalQualificationTests(unittest.TestCase):
+    def test_candidate_envelope_unions_solver_numerical_intervals(self) -> None:
+        comsol = sample()
+        comsol_spatial = copy.deepcopy(comsol)
+        comsol_spatial["run_id"] = "comsol-spatial"
+        comsol_spatial["numerics"]["mesh"][
+            "working_region_maximum_element_size_mm"
+        ] = 0.4
+        comsol_spatial["_handoff"][1]["transverse_x_mm"] = "0.11"
+        comsol_spatial["observables"]["rms_radius"] = 0.41
+        comsol_temporal = copy.deepcopy(comsol)
+        comsol_temporal["run_id"] = "comsol-temporal"
+        comsol_temporal["numerics"]["trajectory"]["rf_steps_per_period"] = 160
+        comsol_temporal["_handoff"][1]["transverse_x_mm"] = "0.08"
+        comsol_temporal["observables"]["rms_radius"] = 0.38
+
+        simion = sample("SIMION")
+        simion["run_id"] = "simion"
+        simion["_handoff"][1]["transverse_x_mm"] = "0.13"
+        simion["observables"]["rms_radius"] = 0.45
+        simion_spatial = copy.deepcopy(simion)
+        simion_spatial["run_id"] = "simion-spatial"
+        simion_spatial["numerics"]["cell_mm"] = 0.3
+        simion_spatial["_handoff"][1]["transverse_x_mm"] = "0.14"
+        simion_spatial["observables"]["rms_radius"] = 0.46
+        simion_temporal = copy.deepcopy(simion)
+        simion_temporal["run_id"] = "simion-temporal"
+        simion_temporal["numerics"]["trajectory"]["rf_steps_per_period"] = 160
+        simion_temporal["_handoff"][1]["transverse_x_mm"] = "0.11"
+        simion_temporal["observables"]["rms_radius"] = 0.43
+
+        result = standalone_candidate_envelope(
+            {
+                "COMSOL": {
+                    "nominal": comsol,
+                    "spatial_refined": comsol_spatial,
+                    "temporal_refined": comsol_temporal,
+                },
+                "SIMION": {
+                    "nominal": simion,
+                    "spatial_refined": simion_spatial,
+                    "temporal_refined": simion_temporal,
+                },
+            }
+        )
+
+        self.assertEqual(result["status"], "PASS")
+        self.assertAlmostEqual(
+            result["per_solver"]["COMSOL"]["particle_intervals"]["1"][
+                "transverse_x_mm"
+            ]["numerical_half_width"],
+            0.02,
+        )
+        particle_interval = result["union"]["particle_intervals"]["1"]["fields"][
+            "transverse_x_mm"
+        ]
+        self.assertAlmostEqual(particle_interval[0], 0.08)
+        self.assertAlmostEqual(particle_interval[1], 0.15)
+        observable_interval = result["union"]["observable_intervals"]["rms_radius"]
+        self.assertAlmostEqual(observable_interval[0], 0.38)
+        self.assertAlmostEqual(observable_interval[1], 0.47)
+
+    def test_candidate_envelope_rejects_particle_id_drift(self) -> None:
+        runs = {}
+        for solver in ("COMSOL", "SIMION"):
+            nominal = sample(solver)
+            spatial = copy.deepcopy(nominal)
+            temporal = copy.deepcopy(nominal)
+            if solver == "COMSOL":
+                spatial["numerics"]["mesh"][
+                    "working_region_maximum_element_size_mm"
+                ] = 0.4
+            else:
+                spatial["numerics"]["cell_mm"] = 0.3
+            temporal["numerics"]["trajectory"]["rf_steps_per_period"] = 160
+            runs[solver] = {
+                "nominal": nominal,
+                "spatial_refined": spatial,
+                "temporal_refined": temporal,
+            }
+        runs["SIMION"]["temporal_refined"]["handoff_particle_ids"] = [1]
+
+        result = standalone_candidate_envelope(runs)
+
+        self.assertEqual(result["status"], "FAIL")
+        self.assertFalse(result["checks"]["exact_handoff_particle_ids"])
+
     def test_simion_primary_state_follows_explicit_case_identity(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             metrics = Path(temp_dir) / "paired_metrics.json"
@@ -180,6 +267,31 @@ class NumericalQualificationTests(unittest.TestCase):
         fine["run_id"] = "run-b"
         fine["numerics"]["mesh"]["working_region_maximum_element_size_mm"] = 0.4
         self.assertEqual(evaluate(coarse, fine, "spatial", CONTRACT)["status"], "PASS")
+
+    def test_spatial_pair_accepts_only_local_sensitive_size_refinement(
+        self,
+    ) -> None:
+        coarse = sample()
+        coarse["numerics"]["mesh"] = {
+            "strategy": "physical_segment_hybrid_swept_tetra_v1",
+            "hybrid": {
+                "radial_core_and_rod_hmax_mm": 0.5,
+                "sensitive_region": {
+                    "particle_corridor_radius_mm": 3.6,
+                    "maximum_element_size_mm": 0.5,
+                },
+            },
+        }
+        fine = copy.deepcopy(coarse)
+        fine["run_id"] = "run-b"
+        fine["numerics"]["mesh"]["hybrid"]["sensitive_region"][
+            "maximum_element_size_mm"
+        ] = 0.4
+
+        self.assertNotIn(
+            "non-spatial solver numerics differ",
+            validate_identity(coarse, fine, "spatial"),
+        )
 
     def test_temporal_pair_rejects_mesh_drift(self) -> None:
         coarse = sample()

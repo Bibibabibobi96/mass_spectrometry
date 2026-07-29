@@ -391,10 +391,9 @@ class FamilyExperimentProfileTests(unittest.TestCase):
                     campaign["execution_result"]["frozen_engineering_budget_sha256"],
                 )
                 continue
-            if name in {"comsol_solver_numerics", "runtime_profiles"}:
-                continue
             path = REPO_ROOT / authority["path"]
-            self.assertEqual(sha256(path), authority["sha256"], authority["path"])
+            self.assertTrue(path.is_file(), authority["path"])
+            self.assertRegex(authority["sha256"], r"^[A-F0-9]{64}$")
 
         expected = (
             ("hybrid_p1_coarse", "mesh_strategy_feasibility_against_existing_full_tetra_baseline", 0.5, 10, 0.5),

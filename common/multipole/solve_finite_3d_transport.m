@@ -215,6 +215,21 @@ try
         geom.feature('meshCore').set('h', sprintf('%.17g[mm]', vacuumHeight));
         geom.feature('meshCore').set('pos', {'0','0',sprintf('%.17g[mm]', d.vacuum_z_min)});
         geom.feature('meshCore').set('selresult', 'on');
+        if isfield(hybrid, 'sensitive_region')
+            sensitive = hybrid.sensitive_region;
+            assert(isfinite(sensitive.particle_corridor_radius_mm) && ...
+                sensitive.particle_corridor_radius_mm > 0 && ...
+                sensitive.particle_corridor_radius_mm <= resolvedGeometry.inscribed_radius_r0, ...
+                'Localized particle corridor must lie within the inscribed radius.');
+            geom.feature.create('meshSensitiveCorridor', 'Cylinder');
+            geom.feature('meshSensitiveCorridor').set('r', ...
+                sprintf('%.17g[mm]', sensitive.particle_corridor_radius_mm));
+            geom.feature('meshSensitiveCorridor').set('h', ...
+                sprintf('%.17g[mm]', vacuumHeight));
+            geom.feature('meshSensitiveCorridor').set('pos', ...
+                {'0','0',sprintf('%.17g[mm]', d.vacuum_z_min)});
+            geom.feature('meshSensitiveCorridor').set('selresult', 'on');
+        end
         physicalSegments = segmentationAcceleration.derived.segments;
         assert(numel(physicalSegments) == hybrid.physical_segment_count, ...
             'Segment-hybrid physical-segment count differs from the resolved design.');
@@ -307,6 +322,7 @@ try
         rodBoundarySelectionTags{k} = boundarySelection;
     end
     sweepRodBoundarySelectionTags = {};
+    interfaceBoundarySelectionTags = {};
     if segmentHybridMesh
         sweepRodBoundarySelectionTags = cell(1, numel(physicalSegments));
         for segmentIndex = 1:numel(physicalSegments)
@@ -321,6 +337,17 @@ try
             comp.selection(selectionTag).set('input', segmentBoundarySelections);
             sweepRodBoundarySelectionTags{segmentIndex} = selectionTag;
         end
+        if isfield(numerics.mesh.hybrid, 'sensitive_region')
+            interfaceBoundarySelectionTags = cell(1, 2);
+            interfaceTags = {'capIn', 'capOut'};
+            for interfaceIndex = 1:numel(interfaceTags)
+                selectionTag = sprintf('sel_mesh_%s_bnd', interfaceTags{interfaceIndex});
+                comp.selection.create(selectionTag, 'Adjacent');
+                comp.selection(selectionTag).set( ...
+                    'input', {['geom1_' interfaceTags{interfaceIndex} '_dom']});
+                interfaceBoundarySelectionTags{interfaceIndex} = selectionTag;
+            end
+        end
     end
 
     mesh = comp.mesh.create('mesh1');
@@ -328,7 +355,8 @@ try
     if segmentHybridMesh
         hybridSelections = configure_comsol_segment_hybrid_mesh( ...
             comp, mesh, 'geom1', numerics, sweepGeometryTags, ...
-            rodBoundarySelectionTags, sweepRodBoundarySelectionTags);
+            rodBoundarySelectionTags, sweepRodBoundarySelectionTags, ...
+            interfaceBoundarySelectionTags);
     else
         workingHmax=numerics.mesh.working_region_maximum_element_size_mm;
         if isempty(workingHmax), workingHmax=NaN; end
