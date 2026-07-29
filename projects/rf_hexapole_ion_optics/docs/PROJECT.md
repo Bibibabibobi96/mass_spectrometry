@@ -313,7 +313,9 @@ V2沿用同一个`physical_segment_hybrid_swept_tetra_v1`公共实现和既有�
 继续使用`radial_core_and_rod_hmax_mm`，入口/出口端板边界继续使用
 `transition_and_end_tetra_hmax_mm`。这不是放宽网格，也不是建立第二套策略；它把走廊、杆面、端面
 恢复成可分别审计的正交误差轴。旧0.50/0.40 mm运行仍绑定旧实现SHA且保持原结论。V2必须以新身份
-重新预登记并先通过三档场-only门禁，才可授权粒子或资格跟进。
+重新预登记并先通过三档场-only门禁，才可授权粒子或资格跟进。当前
+[`V2 0.50 mm首臂`](../config/qualification/comsol_v2_corridor_only_050_field_preregistration.json)
+仅授权一次COMSOL field-only运行、零自动重试；其结果不得提前外推到后续档位。
 
 共享SIMION模板、GUI复核、`.wgem`绕过和跨机可移植性状态只由
 [`../../../common/multipole/README.md`](../../../common/multipole/README.md)维护；公共机制证据不授予

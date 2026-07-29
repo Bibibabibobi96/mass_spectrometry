@@ -67,19 +67,20 @@ class C1SampledFieldPreregistrationTests(unittest.TestCase):
         self.assertEqual(cg_numerics["stationary_linear_solver_backend"], "cg_amg")
         self.assertEqual(mumps_numerics["stationary_linear_solver_backend"], "mumps")
 
-    def test_live_budget_closes_c1_background_sequence(self) -> None:
+    def test_live_budget_reopens_only_v2_corridor_050_arm(self) -> None:
         budget = load(
             PROJECT_ROOT / "config" / "qualification" / "engineering_budget.json"
         )
         pilot = budget["pilot_authorization"]
-        self.assertFalse(pilot["authorized"])
+        self.assertTrue(pilot["authorized"])
+        self.assertFalse(budget["full_matrix_authorization"]["authorized"])
         self.assertNotIn(
             pilot["scope"]["runtime_profile_id"],
             {CG_RUNTIME_ID, MUMPS_RUNTIME_ID},
         )
         self.assertEqual(
             pilot["scope"]["runtime_profile_id"],
-            "exit_aperture_plate_acceleration_n100_hybrid_c1_background_sensitive_040_field_screen",
+            "exit_aperture_plate_acceleration_n100_hybrid_c1_background_sensitive_050_field_screen",
         )
         self.assertEqual(pilot["scope"]["stop_stage"], "field_solve")
         self.assertEqual(pilot["scope"]["allowed_solvers"], ["comsol"])
@@ -87,6 +88,15 @@ class C1SampledFieldPreregistrationTests(unittest.TestCase):
         self.assertEqual(pilot["limits"]["process_tree_working_set_bytes"], 12 * 1024**3)
         self.assertEqual(pilot["limits"]["maximum_mesh_cells"], 1_000_000)
         self.assertEqual(pilot["limits"]["automatic_retry_count"], 0)
+        trend = load(
+            PROJECT_ROOT
+            / "config"
+            / "qualification"
+            / "comsol_c1_background_sensitive_field_trend.json"
+        )
+        self.assertEqual(
+            trend["status"], "INCONCLUSIVE_MESH_STRATEGY_CHANGE_REQUIRED"
+        )
 
     def test_completed_c1_arm_preserves_frozen_authority_and_implementation_hashes(
         self,

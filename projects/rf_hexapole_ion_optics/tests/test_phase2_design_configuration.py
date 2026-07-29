@@ -338,6 +338,44 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
             685_215,
         )
 
+    def test_v2_corridor_only_050_preregistration_tracks_current_implementation(
+        self,
+    ) -> None:
+        preregistration = load(
+            PROJECT_ROOT
+            / "config"
+            / "qualification"
+            / "comsol_v2_corridor_only_050_field_preregistration.json"
+        )
+        self.assertEqual(preregistration["status"], "authorized_not_run")
+        self.assertEqual(
+            preregistration["frozen_mesh"]["refinement_semantics"],
+            "orthogonal_corridor_only_v2",
+        )
+        self.assertEqual(
+            preregistration["frozen_mesh"]["fixed_boundary_axes"],
+            {
+                "rod_boundary_hmax_source": "radial_core_and_rod_hmax_mm",
+                "interface_boundary_hmax_source": "transition_and_end_tetra_hmax_mm",
+            },
+        )
+        for entry in preregistration["frozen_implementation"]["files"]:
+            self.assertEqual(
+                entry["sha256"],
+                hashlib.sha256((PROJECT_ROOT.parents[1] / entry["path"]).read_bytes())
+                .hexdigest()
+                .upper(),
+            )
+        budget_path = (
+            PROJECT_ROOT / "config" / "qualification" / "engineering_budget.json"
+        )
+        budget = load(budget_path)
+        self.assertTrue(budget["pilot_authorization"]["authorized"])
+        self.assertEqual(
+            preregistration["frozen_identity"]["engineering_budget_sha256"],
+            hashlib.sha256(budget_path.read_bytes()).hexdigest().upper(),
+        )
+
     def test_c1_background_040_preregistration_binds_successful_parent(
         self,
     ) -> None:

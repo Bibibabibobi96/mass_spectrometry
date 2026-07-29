@@ -101,7 +101,9 @@
   后续V2没有增加CLI或配置字段，而是恢复既有三个正交控制轴：`sensitive_region.maximum_element_size_mm`
   只细化3.6 mm粒子走廊体积，杆表面继续由`radial_core_and_rod_hmax_mm`控制，端板边界继续由
   `transition_and_end_tetra_hmax_mm`控制。这样可先验证走廊空间误差，再分别验证杆面和端面误差，
-  避免单个局部参数把完整杆面和完整端板同步加密。V2尚未取得真实COMSOL结果，不能改变上述结论。
+  避免单个局部参数把完整杆面和完整端板同步加密。当前仅
+  [`V2 0.50 mm首臂`](config/qualification/comsol_v2_corridor_only_050_field_preregistration.json)
+  获得一次field-only、零重试授权；V2尚未取得真实COMSOL结果，不能改变上述结论。
   既有三模式baseline的两份
   求解器报告只具有`POSTHOC_DESCRIPTIVE`身份，统一
   比较见[`../../docs/history/20260729__multipole-three-mode-posthoc-n100.md`](../../docs/history/20260729__multipole-three-mode-posthoc-n100.md)。

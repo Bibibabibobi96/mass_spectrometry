@@ -2,19 +2,19 @@
   "schema_version": 1,
   "role": "multipole_engineering_budget_contract",
   "project_id": "rf_hexapole_ion_optics",
-  "contract_id": "hexapole_c1_background_sensitive_sequence_stopped_v1",
+  "contract_id": "hexapole_v2_corridor_only_050_field_authorized_v1",
   "preregistered_before_run": true,
   "pilot_authorization": {
-    "authorized": false,
+    "authorized": true,
     "scope": {
       "project_id": "rf_hexapole_ion_optics",
-      "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_c1_background_sensitive_040_field_screen",
+      "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_c1_background_sensitive_050_field_screen",
       "stop_stage": "field_solve",
       "design_profile_id": "exit_aperture_plate_acceleration",
       "particle_source_profile_id": "family_mother_sample_v1_n100",
       "particle_count": 100,
       "solver_numerics_profile_ids": {
-        "comsol": "hybrid_c1_background_sensitive_040_cg_amg_field_screen",
+        "comsol": "hybrid_c1_background_sensitive_050_cg_amg_field_screen",
         "simion": "baseline_finite_3d"
       },
       "allowed_solvers": [
@@ -38,8 +38,8 @@
   },
   "full_matrix_authorization": {
     "authorized": false,
-    "reason": "the_040_arm_left_only_9071_cells_and_032_is_not_credible_under_the_fixed_cap"
+    "reason": "v2_corridor_only_field_sequence_must_pass_before_any_particle_matrix"
   },
   "budget_exhaustion_result": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
-  "claim_limit": "The 0.50 and 0.40 mm C1-background arms succeeded, but the latter used 990,929 of one million allowed cells. The 0.32 mm arm and all particle, convergence, cross-solver, Candidate, Formal and N=1000 runs remain unauthorized."
+  "claim_limit": "Authorization covers exactly one V2 corridor-only COMSOL 0.50 mm field solve with zero retries. Later field levels, particles, cross-solver closure, Candidate, Formal and N=1000 remain unauthorized."
 }

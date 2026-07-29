@@ -306,10 +306,11 @@ class FamilyExperimentProfileTests(unittest.TestCase):
             self.assertTrue(contract["preregistered_before_run"])
             self.assertTrue(contract[content])
         engineering = load("config/qualification/engineering_budget.json")
-        self.assertFalse(engineering["pilot_authorization"]["authorized"])
+        self.assertTrue(engineering["pilot_authorization"]["authorized"])
+        self.assertFalse(engineering["full_matrix_authorization"]["authorized"])
         self.assertEqual(
             engineering["pilot_authorization"]["scope"]["runtime_profile_id"],
-            "exit_aperture_plate_acceleration_n100_hybrid_c1_background_sensitive_040_field_screen",
+            "exit_aperture_plate_acceleration_n100_hybrid_c1_background_sensitive_050_field_screen",
         )
         self.assertEqual(
             engineering["pilot_authorization"]["scope"]["allowed_solvers"],
@@ -322,7 +323,7 @@ class FamilyExperimentProfileTests(unittest.TestCase):
         self.assertFalse(engineering["full_matrix_authorization"]["authorized"])
         self.assertEqual(
             engineering["full_matrix_authorization"]["reason"],
-            "the_040_arm_left_only_9071_cells_and_032_is_not_credible_under_the_fixed_cap",
+            "v2_corridor_only_field_sequence_must_pass_before_any_particle_matrix",
         )
 
         result = load(
