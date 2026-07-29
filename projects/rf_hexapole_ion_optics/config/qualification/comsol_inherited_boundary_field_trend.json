@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "role": "multipole_stationary_field_refinement_trend",
+  "project_id": "rf_hexapole_ion_optics",
+  "status": "INCONCLUSIVE_THIRD_LEVEL_REQUIRED",
+  "comparison_method": "common/multipole/stationary_field_sampling.py compare",
+  "comparison_implementation_sha256": "EE12D4458F9D8F9EF82A2DCFC449CEDB02EA3F8810794368A9F6BD6BADA07350",
+  "comparison_output_sha256": "4F95ABAE97DA419357E445CF920B2594C5808A64100594CB33909D6CD59EE46E",
+  "field_sample_inputs": {
+    "inherited_boundary_050": {
+      "run_id": "20260730_081500__analysis__comsol__hex-inherited-050-field-qualification__r01",
+      "sha256": "B457536004569A06B89BD4AD509A2A97487E0BB3A139C1388194D5F6A11B31DE",
+      "mesh_global_elements": 434876
+    },
+    "inherited_boundary_040": {
+      "run_id": "20260730_084500__analysis__comsol__hex-inherited-040-field__r01",
+      "sha256": "4EBBD1281970264DD406E707F2A5A9E73BDD6830977C82AB8250E0F8F3CE19B0",
+      "mesh_global_elements": 537566
+    }
+  },
+  "reference_normalized_rms": {
+    "overall": {
+      "differential_potential": 0.0008461365177609011,
+      "differential_field_vector": 0.006137344751132674,
+      "static_potential": 0.00033421739219865234,
+      "static_field_vector": 0.015449343786086502
+    },
+    "rod_span_uniform_field_vector": {
+      "differential": 0.004863629491141072,
+      "static": 0.010385537829944171
+    },
+    "rod_exit_field_vector": {
+      "differential": 0.02339908014516371,
+      "static": 0.013475520238295915
+    },
+    "canonical_handoff_plane_field_vector": {
+      "differential": 0.05593406788622232,
+      "static": 0.018250195095030477
+    }
+  },
+  "near_zero_reference_diagnostic": {
+    "interpretation": "Relative normalization above unity in near-zero static regions is ill-conditioned; regular rod-span, rod-exit and interface regions govern this engineering decision."
+  },
+  "resource_boundary": {
+    "level_040_mesh_cells": 537566,
+    "maximum_mesh_cells": 1000000,
+    "remaining_cells": 462434,
+    "level_032_separately_preregistered": true
+  },
+  "decision": {
+    "field_convergence_established": false,
+    "particle_followup_authorized": false,
+    "reason": "Two valid levels cannot establish observed order, regular rod-span static-field change remains about 1.039%, interface changes are larger, and the 0.40 mm mesh leaves 46.24% of the cell budget. One 0.32 mm arm is justified."
+  },
+  "claim_limit": "This two-level comparison only authorizes the separately preregistered 0.32 mm field arm. It does not establish convergence, particle transport, cross-solver closure, Candidate or Formal qualification."
+}

@@ -340,7 +340,11 @@ best-effort诊断；API不可用只报告`UNAVAILABLE`，不放宽网格判据�
 以434,876单元、全局/真空/四面体/四个扫掠段`HAS_PROBLEMS=0`、双场和6660行采样完整PASS，
 实测100.227 s与4,939,431,936 bytes进程树峰值。它是首个有效继承边界场点，不是收敛或粒子资格。
 当前[`0.40 mm场臂`](../config/qualification/comsol_inherited_boundary_040_field_preregistration.json)
-已绑定该父点并只授权一次零重试field-only运行；0.32 mm须等待配对场差和剩余单元预算，粒子仍关闭。
+以537,566单元、全部权威网格区无问题、双场和6660行采样完整PASS。区域感知比较显示0.50→0.40 mm
+的常规杆跨区差分/静态场矢量normalized RMS约`0.486%/1.039%`，杆出口约`2.340%/1.348%`，
+canonical handoff约`5.593%/1.825%`；两点仍不能建立观测阶，且0.40 mm后尚余462,434单元。
+因此[`0.32 mm场臂`](../config/qualification/comsol_inherited_boundary_032_field_preregistration.json)
+已另行预注册一次零重试field-only运行；粒子仍关闭。
 
 共享SIMION模板、GUI复核、`.wgem`绕过和跨机可移植性状态只由
 [`../../../common/multipole/README.md`](../../../common/multipole/README.md)维护；公共机制证据不授予

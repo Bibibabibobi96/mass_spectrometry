@@ -118,7 +118,10 @@
   [`0.50 mm资格复验`](config/qualification/comsol_inherited_boundary_050_field_requalification.json)
   已以434,876单元、全部权威网格区无问题、双场和6660行采样完整PASS。当前据其另行预注册
   [`0.40 mm场臂`](config/qualification/comsol_inherited_boundary_040_field_preregistration.json)；
-  0.32 mm和粒子仍未授权。
+  该臂以537,566单元完整PASS。0.50→0.40 mm的常规杆跨区差分/静态场矢量normalized RMS约为
+  0.486%/1.039%，接口区变化更高，且仍有46.24%单元预算，因此当前另行预注册
+  [`0.32 mm场臂`](config/qualification/comsol_inherited_boundary_032_field_preregistration.json)；
+  粒子仍未授权。
   既有三模式baseline的两份
   求解器报告只具有`POSTHOC_DESCRIPTIVE`身份，统一
   比较见[`../../docs/history/20260729__multipole-three-mode-posthoc-n100.md`](../../docs/history/20260729__multipole-three-mode-posthoc-n100.md)。

@@ -502,7 +502,7 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
             / "qualification"
             / "comsol_inherited_boundary_040_field_preregistration.json"
         )
-        self.assertEqual(preregistration["status"], "authorized_not_run")
+        self.assertEqual(preregistration["status"], "completed_success")
         self.assertEqual(
             preregistration["mesh_contract"]["corridor_maximum_element_size_mm"],
             0.4,
@@ -510,6 +510,37 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
         self.assertEqual(
             preregistration["mesh_contract"]["parent"]["mesh_global_elements"],
             434_876,
+        )
+        for entry in preregistration["frozen_implementation"]["files"]:
+            self.assertRegex(entry["sha256"], r"^[0-9A-F]{64}$")
+        self.assertEqual(
+            preregistration["execution_result"]["observed"]["mesh_global_elements"],
+            537_566,
+        )
+
+    def test_inherited_boundary_032_preregistration_binds_trend_and_budget(
+        self,
+    ) -> None:
+        preregistration = load(
+            PROJECT_ROOT
+            / "config"
+            / "qualification"
+            / "comsol_inherited_boundary_032_field_preregistration.json"
+        )
+        trend = load(
+            PROJECT_ROOT
+            / "config"
+            / "qualification"
+            / "comsol_inherited_boundary_field_trend.json"
+        )
+        self.assertEqual(preregistration["status"], "authorized_not_run")
+        self.assertFalse(trend["decision"]["field_convergence_established"])
+        self.assertTrue(
+            trend["resource_boundary"]["level_032_separately_preregistered"]
+        )
+        self.assertEqual(
+            preregistration["mesh_contract"]["corridor_maximum_element_size_mm"],
+            0.32,
         )
         for entry in preregistration["frozen_implementation"]["files"]:
             path = PROJECT_ROOT.parents[1] / entry["path"]
