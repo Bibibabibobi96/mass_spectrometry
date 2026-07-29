@@ -347,7 +347,9 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
             / "qualification"
             / "comsol_v2_corridor_only_050_field_preregistration.json"
         )
-        self.assertEqual(preregistration["status"], "authorized_not_run")
+        self.assertEqual(
+            preregistration["status"], "completed_mesh_problem_gate_failed"
+        )
         self.assertEqual(
             preregistration["frozen_mesh"]["refinement_semantics"],
             "orthogonal_corridor_only_v2",
@@ -370,10 +372,19 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
             PROJECT_ROOT / "config" / "qualification" / "engineering_budget.json"
         )
         budget = load(budget_path)
-        self.assertTrue(budget["pilot_authorization"]["authorized"])
+        self.assertFalse(budget["pilot_authorization"]["authorized"])
         self.assertEqual(
-            preregistration["frozen_identity"]["engineering_budget_sha256"],
-            hashlib.sha256(budget_path.read_bytes()).hexdigest().upper(),
+            preregistration["execution_result"]["observed"]["mesh_global_elements"],
+            494_663,
+        )
+        self.assertEqual(
+            preregistration["execution_result"]["observed"][
+                "mesh_swept_segments_with_problems"
+            ],
+            4,
+        )
+        self.assertFalse(
+            preregistration["execution_result"]["particle_followup_authorized"]
         )
 
     def test_c1_background_040_preregistration_binds_successful_parent(

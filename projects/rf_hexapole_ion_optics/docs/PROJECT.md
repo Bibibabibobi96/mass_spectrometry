@@ -315,7 +315,10 @@ V2沿用同一个`physical_segment_hybrid_swept_tetra_v1`公共实现和既有�
 恢复成可分别审计的正交误差轴。旧0.50/0.40 mm运行仍绑定旧实现SHA且保持原结论。V2必须以新身份
 重新预登记并先通过三档场-only门禁，才可授权粒子或资格跟进。当前
 [`V2 0.50 mm首臂`](../config/qualification/comsol_v2_corridor_only_050_field_preregistration.json)
-仅授权一次COMSOL field-only运行、零自动重试；其结果不得提前外推到后续档位。
+实际将全局单元数从旧实现同档的685,215降到494,663，但COMSOL同时对四个扫掠段、四面体区和
+全局网格报告`HAS_PROBLEMS=1`，所以在创建场Study前由公共网格完整性门禁终止。一次授权已耗尽，
+零重试成立；0.40/0.32 mm、粒子和资格跟进继续关闭。该证据只说明正交解耦具有降低单元数的潜力，
+不说明V2网格有效。下一策略必须先解决扫掠截面与杆边界尺寸的兼容性，再以新身份预登记。
 
 共享SIMION模板、GUI复核、`.wgem`绕过和跨机可移植性状态只由
 [`../../../common/multipole/README.md`](../../../common/multipole/README.md)维护；公共机制证据不授予

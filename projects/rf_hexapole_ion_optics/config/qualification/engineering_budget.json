@@ -2,10 +2,10 @@
   "schema_version": 1,
   "role": "multipole_engineering_budget_contract",
   "project_id": "rf_hexapole_ion_optics",
-  "contract_id": "hexapole_v2_corridor_only_050_field_authorized_v1",
+  "contract_id": "hexapole_v2_corridor_only_050_field_closed_v1",
   "preregistered_before_run": true,
   "pilot_authorization": {
-    "authorized": true,
+    "authorized": false,
     "scope": {
       "project_id": "rf_hexapole_ion_optics",
       "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_c1_background_sensitive_050_field_screen",
@@ -38,8 +38,8 @@
   },
   "full_matrix_authorization": {
     "authorized": false,
-    "reason": "v2_corridor_only_field_sequence_must_pass_before_any_particle_matrix"
+    "reason": "v2_050_mesh_problem_gate_failed_before_field_solve"
   },
   "budget_exhaustion_result": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
-  "claim_limit": "Authorization covers exactly one V2 corridor-only COMSOL 0.50 mm field solve with zero retries. Later field levels, particles, cross-solver closure, Candidate, Formal and N=1000 remain unauthorized."
+  "claim_limit": "The single V2 corridor-only 0.50 mm run used 494,663 cells but COMSOL reported mesh problems in every swept segment and the tetrahedral selection. Its authorization is exhausted; later field levels, particles, cross-solver closure, Candidate, Formal and N=1000 remain unauthorized."
 }

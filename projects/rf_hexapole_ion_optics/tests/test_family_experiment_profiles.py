@@ -306,7 +306,7 @@ class FamilyExperimentProfileTests(unittest.TestCase):
             self.assertTrue(contract["preregistered_before_run"])
             self.assertTrue(contract[content])
         engineering = load("config/qualification/engineering_budget.json")
-        self.assertTrue(engineering["pilot_authorization"]["authorized"])
+        self.assertFalse(engineering["pilot_authorization"]["authorized"])
         self.assertFalse(engineering["full_matrix_authorization"]["authorized"])
         self.assertEqual(
             engineering["pilot_authorization"]["scope"]["runtime_profile_id"],
@@ -323,7 +323,7 @@ class FamilyExperimentProfileTests(unittest.TestCase):
         self.assertFalse(engineering["full_matrix_authorization"]["authorized"])
         self.assertEqual(
             engineering["full_matrix_authorization"]["reason"],
-            "v2_corridor_only_field_sequence_must_pass_before_any_particle_matrix",
+            "v2_050_mesh_problem_gate_failed_before_field_solve",
         )
 
         result = load(

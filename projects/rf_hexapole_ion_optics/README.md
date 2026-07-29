@@ -103,7 +103,8 @@
   `transition_and_end_tetra_hmax_mm`控制。这样可先验证走廊空间误差，再分别验证杆面和端面误差，
   避免单个局部参数把完整杆面和完整端板同步加密。当前仅
   [`V2 0.50 mm首臂`](config/qualification/comsol_v2_corridor_only_050_field_preregistration.json)
-  获得一次field-only、零重试授权；V2尚未取得真实COMSOL结果，不能改变上述结论。
+  已执行且将单元数降到494,663，但COMSOL把四个扫掠段和四面体区全部标为`HAS_PROBLEMS=1`，
+  因此公共门禁在场求解前停止。一次授权已耗尽且未重试；更少单元不能替代有效网格或收敛证据。
   既有三模式baseline的两份
   求解器报告只具有`POSTHOC_DESCRIPTIVE`身份，统一
   比较见[`../../docs/history/20260729__multipole-three-mode-posthoc-n100.md`](../../docs/history/20260729__multipole-three-mode-posthoc-n100.md)。
