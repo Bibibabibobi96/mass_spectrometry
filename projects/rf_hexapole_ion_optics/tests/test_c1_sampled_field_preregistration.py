@@ -252,6 +252,9 @@ class C1SampledFieldPreregistrationTests(unittest.TestCase):
             / "comsol_hybrid_d3_axial14_cg_amg_sampled_field_preregistration.json"
         )
         self.assertEqual(preregistration["status"], "authorized_not_run")
+        self.assertTrue(
+            preregistration["authorization"]["planned_run_id"].endswith("__r02")
+        )
         frozen = preregistration["frozen_identity"]
         authorities = {
             "runtime_profiles_sha256": PROJECT_ROOT
@@ -282,6 +285,9 @@ class C1SampledFieldPreregistrationTests(unittest.TestCase):
         self.assertFalse(
             preregistration["decision_policy"]["particle_followup_authorized"]
         )
+        pre_solver = preregistration["pre_solver_attempt"]
+        self.assertFalse(pre_solver["commercial_solver_launched"])
+        self.assertEqual(pre_solver["commercial_run_count_consumed"], 0)
 
 
 if __name__ == "__main__":

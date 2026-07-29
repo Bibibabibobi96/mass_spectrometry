@@ -8,7 +8,7 @@
   "authorization": {
     "maximum_commercial_run_count": 1,
     "automatic_retry_count": 0,
-    "planned_run_id": "20260730_015000__analysis__comsol__hex-hybrid-d3-axial14-cg-amg-field__r01",
+    "planned_run_id": "20260730_015000__analysis__comsol__hex-hybrid-d3-axial14-cg-amg-field__r02",
     "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_d3_axial14_cg_amg_field_screen",
     "design_profile_id": "exit_aperture_plate_acceleration",
     "particle_source_profile_id": "family_mother_sample_v1_n100",
@@ -144,6 +144,16 @@
     "result_if_hard_limit_exceeded": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
     "fallback_backend_or_retry_authorized": false,
     "particle_followup_authorized": false
+  },
+  "pre_solver_attempt": {
+    "run_id": "20260730_015000__analysis__comsol__hex-hybrid-d3-axial14-cg-amg-field__r01",
+    "manifest_status": "failed",
+    "classification": "INCONCLUSIVE_ORCHESTRATION_TIMEOUT_BEFORE_SOLVER_LAUNCH",
+    "failure_stage": "governed_design_compilation",
+    "commercial_solver_launched": false,
+    "commercial_run_count_consumed": 0,
+    "retry_classification": "same_frozen_input_relaunch_after_external_orchestration_termination",
+    "evidence_boundary": "The outer command was terminated after five seconds while the frozen design was being compiled. The run contains no COMSOL report, mesh, field, resource measurement or result file and therefore supplies no numerical evidence."
   },
   "claim_limit": "This arm changes only swept axial layers from 10 to 14 while D2 nonaxial local mesh limits and CG-AMG settings remain fixed. It can support a diagnostic axial-refinement comparison, but no sourced convergence PASS, particle transport, Candidate, Formal or N=1000 qualification."
 }
