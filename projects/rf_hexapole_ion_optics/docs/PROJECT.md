@@ -335,6 +335,10 @@ best-effort诊断；API不可用只报告`UNAVAILABLE`，不放宽网格判据�
 实测101.82 s和4,912,545,792 bytes进程树峰值。但该预注册漏写runner求解后才访问的
 `required_report`，最终manifest为failed。以上只属于`POSTHOC_ENGINEERING_OBSERVATION_ONLY`，
 不得授予本档预注册PASS；一次授权已耗尽，0.40/0.32 mm和粒子矩阵仍关闭。
+公共runner现已在创建run目录和启动商业工具前验证完整`required_report`。新的
+[`0.50 mm资格复验`](../config/qualification/comsol_inherited_boundary_050_field_requalification.json)
+冻结同一物理/网格输入、修复后runner和完整成功/禁入tokens，只授权一次零重试field-only运行；
+在该复验PASS前，0.40/0.32 mm和粒子矩阵仍关闭。
 
 共享SIMION模板、GUI复核、`.wgem`绕过和跨机可移植性状态只由
 [`../../../common/multipole/README.md`](../../../common/multipole/README.md)维护；公共机制证据不授予

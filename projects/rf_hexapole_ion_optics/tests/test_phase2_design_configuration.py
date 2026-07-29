@@ -454,10 +454,47 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
         self.assertFalse(execution["observed"]["mesh_global_has_problems"])
         self.assertEqual(execution["observed"]["field_sample_row_count"], 6_660)
         self.assertFalse(execution["authoritative_level_pass"])
-        budget = load(
+
+    def test_inherited_boundary_050_requalification_freezes_complete_report(
+        self,
+    ) -> None:
+        preregistration = load(
+            PROJECT_ROOT
+            / "config"
+            / "qualification"
+            / "comsol_inherited_boundary_050_field_requalification.json"
+        )
+        self.assertEqual(preregistration["status"], "authorized_not_run")
+        required_report = preregistration["required_report"]
+        for token in (
+            "MESH_GLOBAL_HAS_PROBLEMS=0",
+            "MESH_VACUUM_HAS_PROBLEMS=0",
+            "CHECKPOINT=STATIONARY_FIELD_SAMPLES_COMPLETE",
+            "FIELD_SOLVE_DIAGNOSTIC=PASS",
+            "STATUS=PASS",
+        ):
+            self.assertIn(token, required_report["tokens"])
+        self.assertEqual(
+            set(required_report["forbidden_checkpoints"]),
+            {
+                "PRIMARY_PARTICLE_CASE_COMPLETE",
+                "CONTROL_PARTICLE_CASE_COMPLETE",
+            },
+        )
+        for entry in preregistration["frozen_implementation"]["files"]:
+            path = PROJECT_ROOT.parents[1] / entry["path"]
+            self.assertEqual(
+                hashlib.sha256(path.read_bytes()).hexdigest().upper(),
+                entry["sha256"],
+            )
+        budget_path = (
             PROJECT_ROOT / "config" / "qualification" / "engineering_budget.json"
         )
-        self.assertFalse(budget["pilot_authorization"]["authorized"])
+        self.assertEqual(
+            hashlib.sha256(budget_path.read_bytes()).hexdigest().upper(),
+            preregistration["frozen_identity"]["engineering_budget_sha256"],
+        )
+        self.assertTrue(load(budget_path)["pilot_authorization"]["authorized"])
 
     def test_c1_background_040_preregistration_binds_successful_parent(
         self,

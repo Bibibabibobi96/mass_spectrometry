@@ -114,6 +114,9 @@
   执行一次真实COMSOL运行。该运行得到434,876单元、全部网格区`HAS_PROBLEMS=0`、双场和6660行
   采样PASS，但预注册漏写`required_report`，runner在求解后的合同复核失败；因此这些结果仅为
   `POSTHOC_ENGINEERING_OBSERVATION_ONLY`，一次授权耗尽，后续档和粒子仍未授权。
+  运行前报告合同门禁修复后，当前另以
+  [`0.50 mm资格复验`](config/qualification/comsol_inherited_boundary_050_field_requalification.json)
+  冻结完整`required_report`并授权一次同输入、零重试field-only运行；只有该复验PASS才可进入0.40 mm。
   既有三模式baseline的两份
   求解器报告只具有`POSTHOC_DESCRIPTIVE`身份，统一
   比较见[`../../docs/history/20260729__multipole-three-mode-posthoc-n100.md`](../../docs/history/20260729__multipole-three-mode-posthoc-n100.md)。
