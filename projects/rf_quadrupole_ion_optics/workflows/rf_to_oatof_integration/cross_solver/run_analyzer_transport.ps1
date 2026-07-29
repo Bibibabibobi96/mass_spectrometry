@@ -135,6 +135,46 @@ function Get-AnalyzerTransportFormalAssetRecords {
   return $assets
 }
 
+function Get-AnalyzerTransportReleaseAssetRecord {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][pscustomobject]$Manifest,
+    [Parameter(Mandatory)][string]$ExpectedRelativePath,
+    [Parameter(Mandatory)][string]$FormalProjectRoot
+  )
+  if ($Manifest.PSObject.Properties.Name -notcontains 'assets') {
+    throw 'oaTOF Formal asset manifest has no assets object.'
+  }
+  $matches = @(
+    $Manifest.assets.PSObject.Properties |
+      ForEach-Object { $_.Value } |
+      Where-Object { [string]$_.path -eq $ExpectedRelativePath }
+  )
+  if ($matches.Count -ne 1) {
+    throw "oaTOF Formal release requires exactly one $ExpectedRelativePath record."
+  }
+  $record = $matches[0]
+  $sourcePath = [IO.Path]::GetFullPath(
+    (Join-Path $FormalProjectRoot $ExpectedRelativePath.Replace('/','\'))
+  )
+  $formalProject = [IO.Path]::GetFullPath($FormalProjectRoot)
+  $expectedHash = ([string]$record.sha256).ToUpperInvariant()
+  if (-not (Test-RfDependencyPathWithin -Path $sourcePath -Root $formalProject) -or
+      -not (Test-Path -LiteralPath $sourcePath -PathType Leaf) -or
+      $expectedHash -notmatch '^[0-9A-F]{64}$' -or
+      (Get-Item -LiteralPath $sourcePath).Length -ne [long]$record.bytes -or
+      (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash -ne
+        $expectedHash) {
+    throw "oaTOF Formal release asset identity differs: $ExpectedRelativePath"
+  }
+  return [pscustomobject]@{
+    path = $sourcePath
+    exists = $true
+    bytes = [long]$record.bytes
+    sha256 = $expectedHash
+  }
+}
+
 $software = @('COMSOL 6.4','SIMION 2020','Python 3.11')
 $package = New-RfRunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot $artifactRoot -RunId $RunId `
@@ -414,11 +454,13 @@ try {
       '--resolved-geometry',$frozenGeometry,
       '--formal-lua',$frozenFormalLua
     ) -FailureMessage 'The current oaTOF Formal analyzer release is invalid.'
-  $formalManifest = Get-Content -LiteralPath $formalManifestPath `
+  $formalAssetManifest = Get-Content -LiteralPath $formalAssetManifestPath `
     -Raw -Encoding UTF8 | ConvertFrom-Json
   $checksumOriginal = Join-Path $formalDir 'SHA256SUMS.csv'
-  $checksumRecord = Get-RfManifestOutputRecord -Manifest $formalManifest `
-    -ExpectedPath $checksumOriginal -Role 'Formal SHA256SUMS'
+  $checksumRecord = Get-AnalyzerTransportReleaseAssetRecord `
+    -Manifest $formalAssetManifest `
+    -ExpectedRelativePath 'simion/SHA256SUMS.csv' `
+    -FormalProjectRoot $formalRoot
   $checksumPath = Join-Path $package.input_dir 'oatof_formal_SHA256SUMS.csv'
   $checksumIdentity = Copy-RfManifestBoundFile -SourceRunRoot $formalDir `
     -SourcePath $checksumOriginal -Destination $checksumPath `
@@ -427,9 +469,10 @@ try {
     Get-AnalyzerTransportFormalAssetRecords -ChecksumPath $checksumPath `
       -FormalRoot $formalDir
   )
-  $manifestIobRecord = Get-RfManifestOutputRecord -Manifest $formalManifest `
-    -ExpectedPath (Join-Path $formalDir 'oatof_ideal_grounded.iob') `
-    -Role 'Formal IOB'
+  $manifestIobRecord = Get-AnalyzerTransportReleaseAssetRecord `
+    -Manifest $formalAssetManifest `
+    -ExpectedRelativePath 'simion/oatof_ideal_grounded.iob' `
+    -FormalProjectRoot $formalRoot
   $checksumIobRecord = @(
     $formalAssetRecords |
       Where-Object { $_.file -eq 'oatof_ideal_grounded.iob' }
@@ -441,11 +484,14 @@ try {
   $formalAssetIdentities = @()
   foreach ($asset in $formalAssetRecords) {
     $assetPath = Join-Path $formalDir ([string]$asset.file)
-    $assetRecord = [pscustomobject]@{
-      path = $assetPath
-      exists = $true
-      bytes = [long]$asset.bytes
-      sha256 = ([string]$asset.sha256).ToUpperInvariant()
+    $assetRecord = Get-AnalyzerTransportReleaseAssetRecord `
+      -Manifest $formalAssetManifest `
+      -ExpectedRelativePath "simion/$([string]$asset.file)" `
+      -FormalProjectRoot $formalRoot
+    if ([long]$assetRecord.bytes -ne [long]$asset.bytes -or
+        [string]$assetRecord.sha256 -ne
+          ([string]$asset.sha256).ToUpperInvariant()) {
+      throw "oaTOF Formal asset manifest and SHA256SUMS differ: $($asset.file)"
     }
     $formalAssetIdentities += Copy-RfManifestBoundFile `
       -SourceRunRoot $formalDir -SourcePath $assetPath `

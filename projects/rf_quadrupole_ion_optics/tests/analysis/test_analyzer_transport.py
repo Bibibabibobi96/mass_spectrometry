@@ -50,10 +50,16 @@ class AnalyzerTransportTests(unittest.TestCase):
         formal = root / "formal" / "simion"
         formal.mkdir(parents=True)
         iob = formal / "oatof_ideal_grounded.iob"
+        con = formal / "oatof_ideal_grounded.con"
         program = formal / "oatof_ideal_grounded.lua"
+        fly2 = formal / "oatof_ideal_grounded.fly2"
+        ion = formal / "oatof_comsol_524amu_gaussian_N1000.ion"
         checksum = formal / "SHA256SUMS.csv"
         iob.write_bytes(b"iob")
+        con.write_text("con\n", encoding="utf-8")
         program.write_text("formal program\n", encoding="utf-8")
+        fly2.write_text("fly2\n", encoding="utf-8")
+        ion.write_text("ion\n", encoding="utf-8")
         checksum.write_text("file,bytes,sha256\n", encoding="utf-8")
 
         def identity(path: Path, relative: str) -> dict[str, object]:
@@ -63,32 +69,30 @@ class AnalyzerTransportTests(unittest.TestCase):
                 "sha256": hashlib.sha256(path.read_bytes()).hexdigest().upper(),
             }
 
+        def stable_identity(path: Path, relative: str) -> dict[str, object]:
+            record = identity(path, relative)
+            record["relative_path"] = record.pop("path")
+            return record
+
         delivery_path = formal / "run_manifest.json"
+        release_id = "20260720_191743__sim__cross__coupled-baseline-validation__n1000"
         delivery = {
-            "role": "simulation_run_manifest",
+            "schema_version": 1,
+            "role": "oa_tof_simion_formal_delivery_manifest",
             "status": "success",
-            "run_id": "20260724_120000__build__simion__formal-delivery__n1000",
+            "release_id": release_id,
             "project": "single_reflection_oa_tof_mass_analyzer",
-            "mode": "formal_delivery",
-            "formal_eligible": True,
-            "inputs": {
-                "historical_live_source": {
-                    "path": str(root / "changed_after_promotion.json"),
-                    "exists": True,
-                    "bytes": 1,
-                    "sha256": "0" * 64,
-                }
+            "assets": {
+                "bundle_001": identity(iob, iob.name),
+                "bundle_002": identity(con, con.name),
+                "bundle_003": identity(program, program.name),
+                "bundle_004": identity(fly2, fly2.name),
+                "bundle_005": identity(ion, ion.name),
             },
-            "outputs": [
-                {**identity(iob, str(iob)), "exists": True},
-                {**identity(program, str(program)), "exists": True},
-                {**identity(checksum, str(checksum)), "exists": True},
-            ],
         }
         delivery_path.write_text(json.dumps(delivery), encoding="utf-8")
 
         validation_path = root / "formal_validation.json"
-        release_id = "20260720_191743__sim__cross__coupled-baseline-validation__n1000"
         baseline_path = root / "baseline.json"
         baseline_path.write_text('{"coordinate_convention":{"frame_id":"oatof_global"}}', encoding="utf-8")
         baseline_sha256 = identity(baseline_path, "")["sha256"]
@@ -103,12 +107,12 @@ class AnalyzerTransportTests(unittest.TestCase):
             encoding="utf-8",
         )
         validation = {
+            "schema_version": 5,
             "status": "formal_cross_solver_validation",
             "run_id": release_id,
             "physical_contract": "baseline.json",
             "physical_contract_sha256": baseline_sha256,
             "simion": {
-                "model_role": "formal",
                 "iob_artifact_relative_path": "formal/simion/oatof_ideal_grounded.iob",
                 "iob_sha256": identity(iob, "")["sha256"],
                 "delivery_manifest_artifact_relative_path": "formal/simion/run_manifest.json",
@@ -136,42 +140,53 @@ class AnalyzerTransportTests(unittest.TestCase):
             "assets": {
                 "simion_delivery_manifest": identity(
                     delivery_path, "simion/run_manifest.json"
-                )
+                ),
+                "simion_iob": identity(iob, f"simion/{iob.name}"),
+                "simion_con": identity(con, f"simion/{con.name}"),
+                "simion_program": identity(program, f"simion/{program.name}"),
+                "simion_fly2": identity(fly2, f"simion/{fly2.name}"),
+                "shared_particle_table": identity(ion, f"simion/{ion.name}"),
+                "simion_sha256_manifest": identity(
+                    checksum, "simion/SHA256SUMS.csv"
+                ),
             },
         }
         asset_path.write_text(json.dumps(asset), encoding="utf-8")
         stable_path = root / "simion_stable_entry.json"
         stable = {
-            "schema_version": 1,
-            "role": "Implementation hash manifest for the current formal SIMION delivery.",
-            "artifact_workspace_relative": "formal/simion",
+            "schema_version": 2,
+            "role": (
+                "Stable runtime requirements and manifest bindings for the "
+                "current formal SIMION delivery."
+            ),
+            "artifact_workspace_relative": "formal",
             "entries": [
                 {
-                    "trajectory_quality": 8,
-                    "expected_instances": 4,
-                    "assets": [
-                        {"role": "iob", "relative_path": iob.name, **identity(iob, "")},
-                        {
-                            "role": "program",
-                            "relative_path": program.name,
-                            **identity(program, ""),
-                        },
-                        {
-                            "role": "sha256_manifest",
-                            "relative_path": checksum.name,
-                            **identity(checksum, ""),
-                        },
-                        {
-                            "role": "run_manifest",
-                            "relative_path": delivery_path.name,
-                            **identity(delivery_path, ""),
-                        },
-                    ],
+                    "id": "formal_vnext_fixture",
+                    "manifests": {
+                        "formal_asset_manifest": stable_identity(
+                            asset_path, "asset_manifest.json"
+                        ),
+                        "simion_delivery_manifest": stable_identity(
+                            delivery_path, "simion/run_manifest.json"
+                        ),
+                    },
+                    "required_assets": {
+                        "iob": "simion_iob",
+                        "con": "simion_con",
+                        "program": "simion_program",
+                        "fly2": "simion_fly2",
+                        "ion": "shared_particle_table",
+                    },
+                    "gui_requirements": {
+                        "expected_instances": 4,
+                        "trajectory_quality": 8,
+                        "program_enabled": True,
+                        "data_recording_enabled": True,
+                    },
                 }
             ],
         }
-        for record in stable["entries"][0]["assets"]:
-            record.pop("path", None)
         stable_path.write_text(json.dumps(stable), encoding="utf-8")
         return (
             asset_path,
@@ -204,7 +219,7 @@ class AnalyzerTransportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             paths = self._formal_release_fixture(Path(temp))
             (paths[3] / "oatof_ideal_grounded.iob").write_bytes(b"changed")
-            with self.assertRaisesRegex(ValueError, "output identity differs"):
+            with self.assertRaisesRegex(ValueError, "record identity differs"):
                 formal_release.validate(*paths)
 
     def test_formal_release_rejects_frozen_lua_drift(self) -> None:
@@ -305,6 +320,14 @@ class AnalyzerTransportTests(unittest.TestCase):
         self.assertNotIn("$frozenManifestVerifier,$formalManifestPath", runner)
         self.assertIn(
             "Get-AnalyzerTransportFormalAssetRecords -ChecksumPath $checksumPath",
+            runner,
+        )
+        self.assertIn(
+            "Get-AnalyzerTransportReleaseAssetRecord",
+            runner,
+        )
+        self.assertNotIn(
+            "Get-RfManifestOutputRecord -Manifest $formalManifest",
             runner,
         )
         self.assertIn(

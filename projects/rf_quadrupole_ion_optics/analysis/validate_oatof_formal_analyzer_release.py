@@ -26,29 +26,47 @@ def _verify_file_record(
         raise ValueError(f"Formal record identity differs: {path}")
 
 
-def _output_record(delivery: dict[str, Any], expected_path: Path) -> dict[str, Any]:
+def _verify_stable_manifest_record(
+    record: dict[str, Any], path: Path, expected_relative_path: str
+) -> None:
+    if record.get("relative_path") != expected_relative_path:
+        raise ValueError(
+            f"Stable manifest path differs: {record.get('relative_path')}"
+        )
+    if path.stat().st_size != int(record["bytes"]) or _sha256(path) != record["sha256"]:
+        raise ValueError(f"Stable manifest identity differs: {path}")
+
+
+def _delivery_asset_record(
+    delivery: dict[str, Any], expected_name: str, expected_path: Path
+) -> dict[str, Any]:
     matches = [
         record
-        for record in delivery.get("outputs", [])
-        if Path(record["path"]).resolve() == expected_path.resolve()
+        for record in delivery.get("assets", {}).values()
+        if record.get("path") == expected_name
     ]
     if len(matches) != 1:
-        raise ValueError(f"Formal delivery output must resolve uniquely: {expected_path}")
+        raise ValueError(f"Formal delivery asset must resolve uniquely: {expected_name}")
     record = matches[0]
     if (
-        not record.get("exists")
-        or expected_path.stat().st_size != int(record["bytes"])
+        expected_path.stat().st_size != int(record["bytes"])
         or _sha256(expected_path) != record["sha256"]
     ):
-        raise ValueError(f"Formal delivery output identity differs: {expected_path}")
+        raise ValueError(f"Formal delivery asset identity differs: {expected_path}")
     return record
 
 
-def _stable_asset(entry: dict[str, Any], role: str) -> dict[str, Any]:
-    matches = [asset for asset in entry.get("assets", []) if asset.get("role") == role]
-    if len(matches) != 1:
-        raise ValueError(f"SIMION stable entry requires one {role} asset")
-    return matches[0]
+def _release_asset_record(
+    asset_manifest: dict[str, Any],
+    role: str,
+    expected_relative_path: str,
+    expected_path: Path,
+) -> dict[str, Any]:
+    record = asset_manifest.get("assets", {}).get(role)
+    if not isinstance(record, dict):
+        raise ValueError(f"Formal asset manifest requires one {role} record")
+    _verify_file_record(record, expected_path, expected_relative_path)
+    return record
 
 
 def validate(
@@ -75,8 +93,8 @@ def validate(
     ):
         raise ValueError("oaTOF Formal asset-manifest identity differs")
     if (
-        validation.get("status") != "formal_cross_solver_validation"
-        or validation.get("simion", {}).get("model_role") != "formal"
+        validation.get("schema_version") != 5
+        or validation.get("status") != "formal_cross_solver_validation"
     ):
         raise ValueError("oaTOF Formal validation-contract identity differs")
     release_id = validation.get("run_id")
@@ -106,11 +124,11 @@ def validate(
         simion.get("delivery_manifest_artifact_relative_path")
         != "formal/simion/run_manifest.json"
         or simion.get("delivery_manifest_sha256") != delivery_record["sha256"]
-        or delivery.get("role") != "simulation_run_manifest"
+        or delivery.get("schema_version") != 1
+        or delivery.get("role") != "oa_tof_simion_formal_delivery_manifest"
         or delivery.get("status") != "success"
         or delivery.get("project") != "single_reflection_oa_tof_mass_analyzer"
-        or delivery.get("mode") != "formal_delivery"
-        or delivery.get("formal_eligible") is not True
+        or delivery.get("release_id") != release_id
     ):
         raise ValueError("oaTOF Formal SIMION delivery authority differs")
 
@@ -123,12 +141,40 @@ def validate(
     ):
         raise ValueError("oaTOF Formal physical-contract identity differs")
 
-    iob_path = formal_root / "oatof_ideal_grounded.iob"
     checksum_path = formal_root / "SHA256SUMS.csv"
-    program_path = formal_root / "oatof_ideal_grounded.lua"
-    iob_record = _output_record(delivery, iob_path)
-    checksum_record = _output_record(delivery, checksum_path)
-    program_record = _output_record(delivery, program_path)
+    required_assets = {
+        "iob": ("simion_iob", "oatof_ideal_grounded.iob"),
+        "con": ("simion_con", "oatof_ideal_grounded.con"),
+        "program": ("simion_program", "oatof_ideal_grounded.lua"),
+        "fly2": ("simion_fly2", "oatof_ideal_grounded.fly2"),
+        "ion": ("shared_particle_table", "oatof_comsol_524amu_gaussian_N1000.ion"),
+    }
+    release_records: dict[str, dict[str, Any]] = {}
+    for stable_role, (release_role, filename) in required_assets.items():
+        path = formal_root / filename
+        release_record = _release_asset_record(
+            asset_manifest,
+            release_role,
+            f"simion/{filename}",
+            path,
+        )
+        delivery_record_for_asset = _delivery_asset_record(delivery, filename, path)
+        if (
+            int(release_record["bytes"]) != int(delivery_record_for_asset["bytes"])
+            or release_record["sha256"] != delivery_record_for_asset["sha256"]
+        ):
+            raise ValueError(
+                f"oaTOF Formal {stable_role} release and delivery identities differ"
+            )
+        release_records[stable_role] = release_record
+    checksum_record = _release_asset_record(
+        asset_manifest,
+        "simion_sha256_manifest",
+        "simion/SHA256SUMS.csv",
+        checksum_path,
+    )
+    iob_record = release_records["iob"]
+    program_record = release_records["program"]
     if (
         simion.get("iob_artifact_relative_path")
         != "formal/simion/oatof_ideal_grounded.iob"
@@ -137,45 +183,46 @@ def validate(
         raise ValueError("oaTOF Formal SIMION IOB differs from validation contract")
 
     entries = stable.get("entries", [])
+    expected_required_assets = {
+        role: release_role
+        for role, (release_role, _filename) in required_assets.items()
+    }
     if (
-        stable.get("schema_version") not in (1, 2)
+        stable.get("schema_version") != 2
         or stable.get("role")
-        != "Implementation hash manifest for the current formal SIMION delivery."
-        or stable.get("artifact_workspace_relative") != "formal/simion"
+        != "Stable runtime requirements and manifest bindings for the current formal SIMION delivery."
+        or stable.get("artifact_workspace_relative") != "formal"
         or len(entries) != 1
-        or entries[0].get("trajectory_quality") != 8
-        or entries[0].get("expected_instances") != 4
+        or entries[0].get("required_assets") != expected_required_assets
+        or entries[0].get("gui_requirements")
+        != {
+            "expected_instances": 4,
+            "trajectory_quality": 8,
+            "program_enabled": True,
+            "data_recording_enabled": True,
+        }
     ):
         raise ValueError("oaTOF SIMION stable-entry identity differs")
     entry = entries[0]
-    stable_checks = {
-        "iob": ("oatof_ideal_grounded.iob", iob_record),
-        "program": ("oatof_ideal_grounded.lua", program_record),
-        "sha256_manifest": ("SHA256SUMS.csv", checksum_record),
-        "run_manifest": (
-            "run_manifest.json",
-            {
-                "sha256": delivery_record["sha256"],
-                "bytes": delivery_record["bytes"],
-            },
-        ),
-    }
-    for role, (relative_path, authority) in stable_checks.items():
-        record = _stable_asset(entry, role)
-        if (
-            record.get("relative_path") != relative_path
-            or int(record["bytes"]) != int(authority["bytes"])
-            or record["sha256"] != authority["sha256"]
-        ):
-            raise ValueError(f"oaTOF SIMION stable-entry {role} identity differs")
-    if _sha256(formal_lua_path) != _stable_asset(entry, "program")["sha256"]:
+    _verify_stable_manifest_record(
+        entry.get("manifests", {}).get("formal_asset_manifest", {}),
+        asset_manifest_path,
+        "asset_manifest.json",
+    )
+    _verify_stable_manifest_record(
+        entry.get("manifests", {}).get("simion_delivery_manifest", {}),
+        delivery_manifest_path,
+        "simion/run_manifest.json",
+    )
+    if _sha256(formal_lua_path) != program_record["sha256"]:
         raise ValueError("Frozen oaTOF Formal Lua differs from stable entry")
 
     return {
         "status": "PASS",
         "release_id": release_id,
-        "delivery_run_id": delivery["run_id"],
+        "delivery_run_id": delivery["release_id"],
         "iob_sha256": iob_record["sha256"],
+        "checksum_sha256": checksum_record["sha256"],
     }
 
 
