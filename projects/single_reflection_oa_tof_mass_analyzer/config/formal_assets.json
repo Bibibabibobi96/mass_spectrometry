@@ -1,29 +1,30 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "role": "oa_tof_formal_model_and_cad_asset_identity",
-  "verified_on": "2026-07-20",
+  "verified_on": "2026-07-29",
+  "release_id": "20260729_112246__sim__cross__vnext-n1000-r2",
   "comsol": {
     "geometry_status": "synchronized",
-    "artifact_relative_path": "formal/comsol/oa_tof__model.mph",
-    "sha256": "865AF07657CA38F2E5EDB72B240ACE7C9DBC1EF75659F280F0B10DA8BD3E4937"
+    "artifact_relative_path": "formal/comsol/single_reflection_oa_tof_mass_analyzer__model.mph",
+    "sha256": "9F4C3DCE51791B41B4A7649500F74C29366BAC431111E79AF6CE5399ECA72A4D"
   },
   "solidworks": {
     "geometry_status": "synchronized",
     "revision": "30.5.0",
     "component_count": 25,
-    "assembly_artifact_relative_path": "formal/cad/oa_tof__model_physical_components.sldasm",
-    "assembly_sha256": "9A6A9FAD25A952374A2044A3FE1236933C1B51D6643FE409113D058AA10B2827",
+    "assembly_artifact_relative_path": "formal/cad/single_reflection_oa_tof_mass_analyzer__model_physical_components.SLDASM",
+    "assembly_sha256": "81173CB2DD950A361949674A13671BF2A1BE834A5F287B0CDF592C8AB0C14216",
     "export_report_artifact_relative_path": "formal/cad/oaTOF_solidworks_export_report.json",
-    "export_report_sha256": "24541FC5ABEBCAE3214BF94635D9E388BCCC3F57E6E150EC3E7112DBBB4C9543"
+    "export_report_sha256": "FE1B2F7EE69D7F07746D25CC30823FF26EEA8137D81B4F31B73327F798D5BFEA"
   },
   "results": {
-    "status": "formal_n1000_coupled_longitudinal",
-    "source_run_id": "20260720_191743__sim__cross__coupled-baseline-validation__n1000",
+    "status": "formal_vnext_zero_physics_change_n1000",
+    "source_run_id": "20260729_112246__sim__cross__vnext-n1000-r2",
     "artifact_relative_path": "formal/results",
     "sha256_manifest_relative_path": "formal/results/SHA256SUMS.csv",
-    "sha256_manifest_bytes": 2183,
-    "sha256_manifest_sha256": "D4C4C7A2E7365407E9A392E81CC2F9FD7CBB991055653EBCB49A414C71B2599E",
-    "manifest_file_count": 18
+    "sha256_manifest_bytes": 483,
+    "sha256_manifest_sha256": "A05817CCC32DC3CA6FCCF7C51EE32D31866CB68FD0F8C8CEF8C4B1A62DE9DDBC",
+    "manifest_file_count": 5
   },
   "simion_manifest": "simion_stable_entry.json"
 }

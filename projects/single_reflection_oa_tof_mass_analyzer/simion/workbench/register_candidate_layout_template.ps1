@@ -91,7 +91,7 @@ $summaryPath = Join-Path $runRoot 'summary.json'
 $runtimeReport = Join-Path $runRoot 'simion_layout_runtime_report.txt'
 try {
   $runConfig | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $runConfigPath -Encoding UTF8
-  $verifier = Join-Path $projectRoot 'tests\simion\verify_iob_runtime_contract.ps1'
+  $verifier = Join-Path $projectRoot 'simion\workbench\verify_iob_runtime_contract.ps1'
   & $verifier -IobPath $sourceIob -ExpectedInstances 4 -TemplateStructureOnly -SimionExe $SimionExe |
     Set-Content -LiteralPath $runtimeReport -Encoding UTF8
   if ($LASTEXITCODE -ne 0) { throw "SIMION template structure verification failed with exit code $LASTEXITCODE" }

@@ -66,7 +66,7 @@ def prepare(
     contents = {
         "resolved_lua": render_resolved_lua(contract),
         "program": render_program(contract),
-        "fly2": render_fly2({**contract, "particle_source": {**contract["particle_source"], "seed": particle_source_seed}}),
+        "fly2": render_fly2(contract, particle_source_seed=particle_source_seed),
     }
     for key, path in generated.items():
         path.write_text(contents[key], encoding="utf-8", newline="\n")

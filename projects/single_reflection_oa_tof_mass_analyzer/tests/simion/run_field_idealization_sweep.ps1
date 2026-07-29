@@ -83,8 +83,8 @@ $analyzer = Join-Path $projectRoot 'simion\workbench\analyze_ideal_field_log.ps1
 $ionFile = Join-Path $OutputDir "oatof_N${N}.ion"
 $stableManifestPath = Join-Path $projectRoot 'config\simion_stable_entry.json'
 $stableManifest = Get-Content -LiteralPath $stableManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
-$formalEntry = @($stableManifest.entries | Where-Object { @($_.assets.relative_path) -match '^formal/' })
-if ($formalEntry.Count -ne 1) { throw 'Could not identify exactly one formal SIMION stable-entry record.' }
+$formalEntry = @($stableManifest.entries)
+if ($formalEntry.Count -ne 1) { throw 'Stable-entry contract must identify exactly one Formal SIMION delivery.' }
 $stableGate = Join-Path $projectRoot 'tests\simion\verify_stable_entry.ps1'
 & $stableGate -ManifestPath $stableManifestPath -EntryId $formalEntry[0].id -SimionExe $SimionExe
 

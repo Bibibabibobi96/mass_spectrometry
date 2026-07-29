@@ -1,6 +1,6 @@
 # oa-TOF SIMION复现参数交接单
 
-版本：2026-07-20耦合纵向正式基线。单位：长度mm，电压V，质量amu，能量eV。
+版本：2026-07-29拆层合同下的正式vNext release。单位：长度mm，电压V，质量amu，能量eV。
 
 本文件用于将SolidWorks/CAD中没有表达的理想栅网、SIMION数值网格、电压和粒子释放条件交给复现人员。
 物理参数来自`config/baseline.json`；SIMION实现不得反向修改这些数值。
@@ -147,8 +147,8 @@ N=100 ION文件SHA-256：
 5. 日常检查使用固定N=100 ION文件；峰形、FWHM和正式统计使用同源N=1000，N=100可由其确定性
    前缀复用。N=5000只用于明确的性能或统计收敛专项。
 6. 记录结果时至少保存Ion Number、TOF、X/Y/Z、PA instance和Event；当前正式运行命中应来自槽位4。
-7. 当前正式SIMION N=1000参考：1000/1000命中，平均TOF`71.3535844772 us`，直接质量FWHM
-   `0.010715355226 Da`，`R=48901.79`；机器权威以`config/formal_validation.json`为准。
+7. 当前正式SIMION N=1000参考：1000/1000命中，平均TOF`71.3536115331 us`，直接质量FWHM
+   `0.010994078427 Da`，`R=47662.02`；机器权威以`config/formal_validation.json`为准。
 
 注意：单独发送CAD、ION或一个PA0都不足以复现结果。可复现交付至少要包含IOB、CON、Lua、Fly2、
 固定ION文件、四套完整PA家族及本交接单。

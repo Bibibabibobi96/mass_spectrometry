@@ -4,9 +4,11 @@ return {
   role="oa_tof_resolved_contract_do_not_edit",
   inputs={
     baseline="config/baseline.json",
-    baseline_sha256="1170275D43E64AC18956C804B452172D4DB69D595D0E6098FA1995976C6BCF74",
+    baseline_sha256="A50A247F58093A2C0A030AA8BDAE2AE695AB5E972D1F41E49090B6A121042685",
     mode="config/modes/formal.json",
-    mode_sha256="83EE22C91CDF53FB905B17942D9FD6FA93C6164A6A6CCD72F6BC6C7A9FE64A3A"
+    mode_sha256="40842C72515AB70AC0C848AA87CACEB91FBB437E4EAEB7F92FBDBAA47DC88446",
+    solver_numerics="config/formal_solver_numerics.json",
+    solver_numerics_sha256="C5AC206901B4D9E4EB7E3A3923060AF6B332FC43A2BAC8C65CFD75FBDE54A1FB"
   },
   coordinate_convention={
     frame_id="oatof_global",
@@ -92,7 +94,6 @@ return {
     shield_outer_z_max=881.1563
   },
   particle_source={
-    seed=20260713,
     center_x_mm=-48.8,
     center_y_mm=0.0,
     center_z_mm=-18.42918680341103,

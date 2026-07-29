@@ -11,17 +11,17 @@ resolved、分析和资产合同管理；实现细节见[`COMSOL.md`](COMSOL.md)
   `5±0.4 eV`。
 - 统一坐标以检测器有效面中心和精确一阶时间焦点为`z=0`，`+z`从加速器指向反射器。SIMION局部PA
   必须通过IOB变换映射到同一坐标。
-- 2026-07-20的耦合纵向baseline曾完成N=1000双求解器验证、COMSOL MPH、SIMION四实例包和25组件
-  SolidWorks装配的原子晋升，证据由`../config/formal_validation.json`冻结。
-- 随后科学合同、solver numerics和run instance已拆层；`../config/project.json`的当前生命周期为
-  `formal_revalidation_pending`。因此历史Formal资产和验证记录仍可追溯，但当前Formal gate必须在
-  独立vNext重验证前失败关闭，Candidate不得读取旧Formal资产。
+- 2026-07-20的耦合纵向baseline是拆层前的历史Formal记录；它仍可追溯，但不再是当前资产身份。
+- 科学合同、solver numerics和run instance拆层后，2026-07-29已以零物理变化的同源N=1000输入完成
+  vNext验证与原子发布。`../config/project.json`、`formal_assets.json`、`formal_validation.json`和
+  `simion_stable_entry.json`共同冻结当前Formal release；COMSOL GUI、SIMION GUI与SolidWorks CAD
+  evidence均由独立evidence run及SHA绑定。一次性请求已
+  [`归档`](history/20260729__formal-vnext-zero-change-requests.md)，不再是活动入口。
 - 当前Formal加速器为闭合屏蔽结构，没有RF注入侧孔。RF项目的S2/S3候选链没有修改本项目baseline、
   MPH、SIMION包或CAD，也不构成整机Formal连接。
 
-`project.json`内capability/formal asset字段仍保留历史`formal`身份，而顶层lifecycle已经进入
-`formal_revalidation_pending`。解释当前可执行资格时以后者和门禁为准；完成vNext重验证时应在同一
-事务中消除该机器状态差异。
+当前生命周期、capability与Formal asset状态均为`formal`。历史资产和旧结论只按其原始manifest
+身份保留，不能替代或改写当前release。
 
 ## 物理与几何基线
 
@@ -41,18 +41,18 @@ resolved、分析和资产合同管理；实现细节见[`COMSOL.md`](COMSOL.md)
 
 ## 冻结验证记录
 
-`../config/formal_validation.json`冻结的2026-07-20同源N=1000结果为：
+`../config/formal_validation.json`冻结的当前vNext同源N=1000结果为：
 
 | 指标 | COMSOL | SIMION |
 |---|---:|---:|
 | 命中 | 1000/1000 | 1000/1000 |
-| 平均TOF (us) | 71.35283799 | 71.35358448 |
-| 直接质量FWHM (Da) | 0.01235942211 | 0.01071535523 |
-| 质量分辨率R | 42396.80 | 48901.79 |
+| 平均TOF (us) | 71.35281164 | 71.35361153 |
+| 直接质量FWHM (Da) | 0.01312031696 | 0.01099407843 |
+| 质量分辨率R | 39938.06 | 47662.02 |
 
-两端平均TOF差`0.74648 ns`，逐粒子TOF RMS差`1.00860 ns`，落点RMS差`0.29408 mm`。这些数字是
-拆层前已晋升baseline的可追溯记录，不代表当前`formal_revalidation_pending`已经关闭，也不能通过
-单独调网格、时间步或quality追平某个R值。
+两端平均TOF差`0.79989 ns`，逐粒子TOF RMS差`1.06557 ns`，落点RMS差`0.30225 mm`。该release
+通过冻结的Formal验证合同与独立GUI/CAD evidence；它是当前拆层合同下的可信Formal参考点，
+不把单一分辨率差异解释为需要通过单独调网格、时间步或quality追平的目标。
 
 质量分辨率统一定义为`R=m/FWHM_m`；窄峰时间域等价式为`R=T/(2·FWHM_t)`。近似高斯时才允许以
 `2.3548×sigma`代替直接半高宽。
@@ -64,7 +64,7 @@ resolved、分析和资产合同管理；实现细节见[`COMSOL.md`](COMSOL.md)
 | Static合同与候选编译 | baseline/science/numerics分层、resolved与源码冻结 | PASS |
 | 结构Candidate | 零变化和`reflectron_midgrid_voltage`、N=100、真实COMSOL/SIMION/CAD receipt | Candidate结构合同；无性能声明 |
 | 五质量候选 | 固定10/100/500/1000/2000 Da功能比较 | Candidate；不替代524 Da基线 |
-| Formal当前设计 | 2026-07-20历史验证可追溯 | revalidation pending |
+| Formal当前设计 | vNext同源N=1000、COMSOL/SIMION/CAD及GUI证据原子冻结 | Formal |
 | RF四极杆离子光学→本项目接口 | 下游只读分析器消费 | 整机Formal BLOCKED |
 
 Candidate唯一公开入口为`../workflows/design_candidate/run_candidate.py`；必须提供获批request、run ID和
@@ -84,16 +84,14 @@ Candidate唯一公开入口为`../workflows/design_candidate/run_candidate.py`�
 
 ## 开放任务
 
-1. **Formal vNext重验证。** 在当前拆层合同下重新冻结N=1000同源输入，独立运行COMSOL、SIMION、
-   CAD/GUI门禁和统一分析；成功晋升时同时更新生命周期、capability/formal asset状态与全部SHA。
-2. **RF接口架构迁移。** 本项目已按根
+1. **RF接口架构迁移。** 本项目已按根
    [`COMPONENT_CONNECTION_ARCHITECTURE.md`](../../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md)
    发布`oatof_accelerator_entry` required port并完成项目内静态校验；尚须把跨器件连接器和联合证据迁入
    `rf_quadrupole_ion_optics_to_single_reflection_oa_tof_mass_analyzer`实例，并完成新旧等价复验。
    迁移前的连接器、共享时钟、阶段指标和恢复条件仍以RF项目PROJECT为当前实现权威；等价复验通过前
    本项目保持Formal分析器只读。
-3. **复现交付。** 按需从自包含Formal目录生成不含日志和收敛参考的ZIP及独立SHA；ZIP不是第二资产权威。
-4. **按需求启动的物理候选。** 轴对称圆形加速器、真实丝网、制造/装配误差预算和二维轴对称混合
+2. **复现交付。** 按需从自包含Formal目录生成不含日志和收敛参考的ZIP及独立SHA；ZIP不是第二资产权威。
+3. **按需求启动的物理候选。** 轴对称圆形加速器、真实丝网、制造/装配误差预算和二维轴对称混合
    COMSOL模型均暂缓；任何一项启动都须重新闭合理论、三维场、传输、网格、跨求解器与CAD。
 
 开放任务只写未完成动作和关闭条件。已完成的Candidate bootstrap、路径修复、receipt治理、历史失败

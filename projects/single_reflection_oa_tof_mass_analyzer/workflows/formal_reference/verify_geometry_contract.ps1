@@ -61,6 +61,7 @@ $formalCadAssembly = Join-Path $artifactRoot $formalAssets.solidworks.assembly_a
 $formalCadReport = Join-Path $artifactRoot $formalAssets.solidworks.export_report_artifact_relative_path.Replace('/','\')
 $formalResultsDir = Join-Path $artifactRoot $formalAssets.results.artifact_relative_path.Replace('/','\')
 $formalResultsManifest = Join-Path $artifactRoot $formalAssets.results.sha256_manifest_relative_path.Replace('/','\')
+$simionStablePath = Join-Path $componentDir "config\$($formalAssets.simion_manifest)"
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 project runtime missing: $python" }
 $derivationOutput = & $python -m projects.single_reflection_oa_tof_mass_analyzer.workflows.formal_reference.verify_geometry_derivation $baselinePath
@@ -257,7 +258,11 @@ if (-not $SkipRuntime) {
   if ($formalAssets.solidworks.geometry_status -ne 'synchronized') {
     throw "Formal SolidWorks geometry is not synchronized: $($formalAssets.solidworks.geometry_status)."
   }
-  if ($formalAssets.results.status -ne 'formal_n1000_coupled_longitudinal') {
+  $allowedFormalResultStatuses = @(
+    'formal_n1000_coupled_longitudinal',
+    'formal_vnext_zero_physics_change_n1000'
+  )
+  if ($allowedFormalResultStatuses -cnotcontains [string]$formalAssets.results.status) {
     throw "Formal results status is not current: $($formalAssets.results.status)."
   }
   if (-not (Test-Path -LiteralPath $formalDir)) { throw "Formal SIMION runtime workspace missing: $formalDir" }
@@ -320,11 +325,10 @@ if (-not $SkipRuntime) {
   if ($cadReport.solidWorks.assembly.componentCount -ne $formalAssets.solidworks.component_count) { throw 'Formal SolidWorks assembly component count differs from the verified asset manifest.' }
   if ($cadReport.solidWorks.assembly.saveErrors -ne 0 -or $cadReport.solidWorks.assembly.saveWarnings -ne 0) { throw 'Formal SolidWorks assembly report contains save errors or warnings.' }
   if (($cadReport.solidWorks.parts | Measure-Object -Property saveErrors -Maximum).Maximum -ne 0 -or ($cadReport.solidWorks.parts | Measure-Object -Property saveWarnings -Maximum).Maximum -ne 0) { throw 'Formal SolidWorks part report contains save errors or warnings.' }
-  $runtimeLua = Join-Path $formalDir 'oatof_ideal_grounded.lua'
-  if ((Get-FileHash -LiteralPath $simionLua -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $runtimeLua -Algorithm SHA256).Hash) { throw 'Formal SIMION runtime Lua differs from source.' }
-  $runtimeFly2 = Join-Path $formalDir 'oatof_ideal_grounded.fly2'
-  if ((Get-FileHash -LiteralPath $simionFly2 -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $runtimeFly2 -Algorithm SHA256).Hash) { throw 'Formal SIMION runtime Fly2 differs from source.' }
-  $verifyLua = Join-Path $componentDir 'tests\simion\verify_formal_runtime.lua'
+  $stableGate = Join-Path $componentDir 'tests\simion\verify_stable_entry.ps1'
+  & $stableGate -ManifestPath $simionStablePath -SimionExe $SimionExe
+  if ($LASTEXITCODE -ne 0) { throw 'Formal SIMION stable-entry gate failed.' }
+  $verifyLua = Join-Path $componentDir 'simion\workbench\verify_formal_runtime.lua'
   $report = Join-Path $env:TEMP 'oatof_geometry_contract_simion.txt'
   try {
     Push-Location $formalDir

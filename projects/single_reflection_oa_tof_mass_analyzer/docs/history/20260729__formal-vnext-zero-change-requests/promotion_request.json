@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "role": "oa_tof_formal_vnext_promotion_request",
+  "project": "single_reflection_oa_tof_mass_analyzer",
+  "candidate_run_id": "20260729_105000__test__cross__vnext-r3-n100",
+  "validation_run_id": "20260729_112246__sim__cross__vnext-n1000-r2",
+  "evidence_run_id": "20260729_121452__test__cross__formal-vnext-evidence",
+  "simion_bundle": {
+    "source_run": "validation",
+    "source_root": "inputs/simion",
+    "destination": "simion"
+  },
+  "evidence": {
+    "candidate_acceptance": {
+      "source_run": "candidate",
+      "path": "results/candidate_acceptance.json"
+    },
+    "comsol_gui": {
+      "source_run": "evidence",
+      "path": "evidence/comsol_gui.json"
+    },
+    "simion_gui": {
+      "source_run": "evidence",
+      "path": "evidence/simion_gui.json"
+    },
+    "cad": {
+      "source_run": "evidence",
+      "path": "evidence/cad.json"
+    }
+  },
+  "assets": [
+    {
+      "role": "comsol_model",
+      "source_run": "validation",
+      "source": "inputs/comsol/single_reflection_oa_tof_mass_analyzer__candidate.mph",
+      "destination": "comsol/single_reflection_oa_tof_mass_analyzer__model.mph"
+    },
+    {
+      "role": "simion_iob",
+      "source_run": "validation",
+      "source": "inputs/simion/oatof_ideal_grounded.iob",
+      "destination": "simion/oatof_ideal_grounded.iob"
+    },
+    {
+      "role": "simion_con",
+      "source_run": "validation",
+      "source": "inputs/simion/oatof_ideal_grounded.con",
+      "destination": "simion/oatof_ideal_grounded.con"
+    },
+    {
+      "role": "simion_program",
+      "source_run": "validation",
+      "source": "inputs/simion/oatof_ideal_grounded.lua",
+      "destination": "simion/oatof_ideal_grounded.lua"
+    },
+    {
+      "role": "simion_fly2",
+      "source_run": "validation",
+      "source": "inputs/simion/oatof_ideal_grounded.fly2",
+      "destination": "simion/oatof_ideal_grounded.fly2"
+    },
+    {
+      "role": "shared_particle_table",
+      "source_run": "validation",
+      "source": "inputs/simion/oatof_comsol_524amu_gaussian_N1000.ion",
+      "destination": "simion/oatof_comsol_524amu_gaussian_N1000.ion"
+    },
+    {
+      "role": "solidworks_assembly",
+      "source_run": "candidate",
+      "source": "cad/single_reflection_oa_tof_mass_analyzer__candidate_physical_components.SLDASM",
+      "destination": "cad/single_reflection_oa_tof_mass_analyzer__model_physical_components.SLDASM"
+    },
+    {
+      "role": "cad_export_report",
+      "source_run": "candidate",
+      "source": "cad/oaTOF_solidworks_export_report.json",
+      "destination": "cad/oaTOF_solidworks_export_report.json"
+    },
+    {
+      "role": "comsol_particles",
+      "source_run": "validation",
+      "source": "results/comsol_particles.csv",
+      "destination": "results/comsol_particles.csv"
+    },
+    {
+      "role": "comsol_report",
+      "source_run": "validation",
+      "source": "logs/comsol_report.txt",
+      "destination": "results/comsol_report.txt"
+    },
+    {
+      "role": "simion_particles",
+      "source_run": "validation",
+      "source": "results/simion_particles.csv",
+      "destination": "results/simion_particles.csv"
+    },
+    {
+      "role": "simion_summary",
+      "source_run": "validation",
+      "source": "results/simion_summary.json",
+      "destination": "results/simion_summary.json"
+    },
+    {
+      "role": "comparison",
+      "source_run": "validation",
+      "source": "results/comparison_metrics.json",
+      "destination": "results/comparison_metrics.json"
+    }
+  ]
+}

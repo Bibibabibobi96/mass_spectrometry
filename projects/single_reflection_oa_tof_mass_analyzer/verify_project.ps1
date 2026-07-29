@@ -50,7 +50,7 @@ if ($Level -eq 'Candidate') {
     $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
     $runId = "${stamp}__gate__simion__parameterized-geometry__smoke"
     $output = Join-Path $workspaceRoot "artifacts\projects\single_reflection_oa_tof_mass_analyzer\runs\$runId\simion"
-    & (Join-Path $projectRoot 'tests\simion\test_parameterized_geometry_build.ps1') -SimionExe $SimionExe -OutputDir $output -RunId $runId
+    & (Join-Path $projectRoot 'simion\workbench\run_parameterized_geometry_smoke.ps1') -SimionExe $SimionExe -OutputDir $output -RunId $runId
     if ($LASTEXITCODE -ne 0) { throw 'Candidate SIMION geometry build failed.' }
   }
   elseif ($CandidateTarget -eq 'COMSOL') {
@@ -81,7 +81,7 @@ if ($Level -eq 'Candidate') {
         Remove-Item Env:OATOF_CONTRACT_PATH -ErrorAction SilentlyContinue
       }
       & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') `
-        -TaskScript (Join-Path $projectRoot 'tests\comsol\verify_oatof_comsol_sync.m') `
+        -TaskScript (Join-Path $projectRoot 'comsol\verify_oatof_comsol_sync.m') `
         -ReportPath $report
       if ($LASTEXITCODE -ne 0) { throw 'Candidate COMSOL MPH gate failed.' }
     }
@@ -142,7 +142,7 @@ elseif ($Level -eq 'Formal') {
     $env:OATOF_COMSOL_MODEL_PATH = $formalModel
     Remove-Item Env:OATOF_CONTRACT_PATH -ErrorAction SilentlyContinue
     & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') `
-      -TaskScript (Join-Path $projectRoot 'tests\comsol\verify_oatof_comsol_sync.m') `
+      -TaskScript (Join-Path $projectRoot 'comsol\verify_oatof_comsol_sync.m') `
       -ReportPath $comsolReport
     if ($LASTEXITCODE -ne 0) { throw 'Formal COMSOL GUI-equivalent MPH gate failed.' }
   }

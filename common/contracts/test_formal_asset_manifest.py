@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from verify_artifact_layout import verify_project
+from common.contracts.verify_artifact_layout import verify_project
 
 
 RUN_ID = "20260721_120000__sim__cross__formal-validation__n100"

@@ -90,32 +90,74 @@ def main() -> None:
             promotion = record.get("promotion_evidence")
             if not isinstance(promotion, dict):
                 raise ValueError("Promoted formal validation lacks promotion evidence")
-            for key in (
-                "validation_run_manifest_artifact_relative_path",
-                "comsol_promotion_report_artifact_relative_path",
-                "cad_sync_report_artifact_relative_path",
-            ):
+            required_paths = (
+                (
+                    "validation_run_manifest_artifact_relative_path",
+                    "evidence_run_manifest_artifact_relative_path",
+                    "comsol_gui_artifact_relative_path",
+                    "simion_gui_artifact_relative_path",
+                    "cad_artifact_relative_path",
+                )
+                if record.get("schema_version", 0) >= 5
+                else (
+                    "validation_run_manifest_artifact_relative_path",
+                    "comsol_promotion_report_artifact_relative_path",
+                    "cad_sync_report_artifact_relative_path",
+                )
+            )
+            for key in required_paths:
                 if key not in promotion:
                     raise ValueError(f"Promoted formal validation lacks {key}")
-            validation_manifest = json.loads(
-                (ARTIFACT_ROOT / promotion["validation_run_manifest_artifact_relative_path"])
-                .read_text(encoding="utf-8-sig")
-            )
-            if validation_manifest.get("status") != "success":
-                raise ValueError("Promotion source validation run is not successful")
-            for key in (
-                "comsol_promotion_report_artifact_relative_path",
-                "cad_sync_report_artifact_relative_path",
-            ):
-                report = (
-                    ARTIFACT_ROOT / promotion[key]
-                ).read_text(encoding="utf-8-sig")
-                if "STATUS=PASS" not in report.splitlines():
-                    raise ValueError(f"Promotion report is not PASS: {promotion[key]}")
+            manifest_keys = ["validation_run_manifest_artifact_relative_path"]
+            if record.get("schema_version", 0) >= 5:
+                manifest_keys.append("evidence_run_manifest_artifact_relative_path")
+            for key in manifest_keys:
+                source_manifest = json.loads(
+                    (ARTIFACT_ROOT / promotion[key]).read_text(encoding="utf-8-sig")
+                )
+                if source_manifest.get("status") != "success":
+                    raise ValueError(f"Promotion source run is not successful: {promotion[key]}")
+            if record.get("schema_version", 0) >= 5:
+                expected_roles = {
+                    "comsol_gui_artifact_relative_path": "oa_tof_comsol_gui_gate",
+                    "simion_gui_artifact_relative_path": "oa_tof_simion_gui_gate",
+                    "cad_artifact_relative_path": "oa_tof_cad_gate",
+                }
+                for key, expected_role in expected_roles.items():
+                    evidence = json.loads(
+                        (ARTIFACT_ROOT / promotion[key]).read_text(
+                            encoding="utf-8-sig"
+                        )
+                    )
+                    if (
+                        evidence.get("schema_version") != 1
+                        or evidence.get("role") != expected_role
+                        or evidence.get("project") != "single_reflection_oa_tof_mass_analyzer"
+                        or evidence.get("status") != "PASS"
+                    ):
+                        raise ValueError(f"GUI/CAD evidence is not PASS: {promotion[key]}")
+            else:
+                for key in (
+                    "comsol_promotion_report_artifact_relative_path",
+                    "cad_sync_report_artifact_relative_path",
+                ):
+                    report = (
+                        ARTIFACT_ROOT / promotion[key]
+                    ).read_text(encoding="utf-8-sig")
+                    if "STATUS=PASS" not in report.splitlines():
+                        raise ValueError(f"Promotion report is not PASS: {promotion[key]}")
     comparison_path = ARTIFACT_ROOT / record["comparison_artifact_relative_path"]
     comparison = json.loads(comparison_path.read_text(encoding="utf-8"))
     if comparison["status"] != "PASS":
         raise ValueError("Canonical comparison result did not pass")
+    if record.get("schema_version", 0) >= 5:
+        for side, solver in (("left", "comsol"), ("right", "simion")):
+            if comparison[side]["metrics"] != record[solver]["metrics"]:
+                raise ValueError(f"{solver} canonical metrics differ from Formal record")
+        if comparison["comparison"] != record["comparison"]:
+            raise ValueError("Canonical comparison block differs from Formal record")
+        print("FORMAL_VALIDATION_STATUS=PASS")
+        return
 
     for side, solver in (("left", "comsol"), ("right", "simion")):
         metrics = comparison[side]["metrics"]

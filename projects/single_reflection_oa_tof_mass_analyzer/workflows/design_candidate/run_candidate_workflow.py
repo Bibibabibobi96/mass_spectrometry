@@ -35,7 +35,6 @@ STAGE_SOURCE_PREFIXES = {
         "projects/single_reflection_oa_tof_mass_analyzer/oatof_assert_formal_write_authorized.m",
         "projects/single_reflection_oa_tof_mass_analyzer/oatof_lifecycle_preflight.ps1",
         "projects/single_reflection_oa_tof_mass_analyzer/oatof_paths.m",
-        "projects/single_reflection_oa_tof_mass_analyzer/tests/comsol/verify_oatof_comsol_sync.m",
         "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_contract_build.m",
         "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_workflow.py",
     ),
@@ -174,8 +173,11 @@ def _nonformal_template(stage: dict[str, Any], plan: dict[str, Any]) -> Path:
             raise RuntimeError("candidate SIMION template must be a frozen run input")
         if sha256(path).lower() != str(item.get("sha256", "")).lower():
             raise RuntimeError("candidate SIMION template changed after freezing")
-        if "formal" in path.as_posix().lower():
-            raise RuntimeError("candidate SIMION template must not reference a Formal path")
+        prohibited = {"formal", "archive", "history"}
+        if prohibited.intersection(part.lower() for part in path.parts):
+            raise RuntimeError(
+                "candidate SIMION template must not reference a Formal, archive, or history path"
+            )
         if path.suffix.lower() != f".{suffix}":
             raise RuntimeError("candidate SIMION template file suffix is invalid")
         verified[suffix] = path
@@ -252,7 +254,7 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
                 "-TaskScript",
                 frozen_source_path(
                     closure,
-                    "projects/single_reflection_oa_tof_mass_analyzer/tests/comsol/verify_oatof_comsol_sync.m",
+                    "projects/single_reflection_oa_tof_mass_analyzer/comsol/verify_oatof_comsol_sync.m",
                 ),
                 "-ReportPath",
                 str(sync_report),
@@ -295,7 +297,10 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
             logs / "simion_build.log",
         )
         iob = Path(stage["output_dir"]) / "oatof_ideal_grounded.iob"
-        verify = frozen_source_path(closure, "projects/single_reflection_oa_tof_mass_analyzer/tests/simion/verify_iob_runtime_contract.ps1")
+        verify = frozen_source_path(
+            closure,
+            "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/verify_iob_runtime_contract.ps1",
+        )
         _run_command(
             _powershell(verify, ["-IobPath", str(iob), "-SimionExe", simion_exe]),
             logs / "simion_runtime_verify.log",

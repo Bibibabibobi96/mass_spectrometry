@@ -1,3 +1,4 @@
+-- Production implementation invoked by verify_iob_runtime_contract.ps1.
 local report_path=assert(os.getenv('OATOF_SIMION_IOB_REPORT'),
   'OATOF_SIMION_IOB_REPORT is not set')
 local iob_path=assert(os.getenv('OATOF_SIMION_IOB_PATH'),

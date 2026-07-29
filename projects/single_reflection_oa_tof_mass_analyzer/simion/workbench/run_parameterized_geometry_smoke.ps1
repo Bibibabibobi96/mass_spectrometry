@@ -1,3 +1,4 @@
+# Candidate gate runner for parameterized accelerator and reflectron builds.
 param(
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$OutputDir = '',
@@ -12,7 +13,7 @@ $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\single_reflection_oa_tof_mass_analyzer'
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 if ([string]::IsNullOrWhiteSpace($RunId)) {
-  $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__test__simion__parameterized-geometry__smoke'
+  $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__gate__simion__parameterized-geometry__smoke'
 }
 & $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
 if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }

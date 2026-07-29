@@ -27,20 +27,20 @@
 | 程序几何发布 | [`config/resolved_geometry.json`](config/resolved_geometry.json) |
 | 下游集成required port | [`config/interfaces/required/oatof_accelerator_entry.json`](config/interfaces/required/oatof_accelerator_entry.json) |
 | 分析定义 | [`config/analysis_contract.json`](config/analysis_contract.json) |
-| 已冻结Formal历史结果 | [`config/formal_validation.json`](config/formal_validation.json) |
+| 已冻结Formal验证记录 | [`config/formal_validation.json`](config/formal_validation.json) |
 | SIMION资产身份 | [`config/simion_stable_entry.json`](config/simion_stable_entry.json) |
 | 可执行workflow | [`config/execution_profiles.json`](config/execution_profiles.json) |
 
 数据流固定为`baseline + science + solver numerics → resolved → COMSOL/SIMION/CAD`。seed、run ID和
 冻结路径只属于run instance；候选不得反写baseline或Formal资产。当前项目生命周期为
-`formal_revalidation_pending`，详见PROJECT。
+`formal`；当前Formal release、资格边界与开放任务详见PROJECT。
 
 ## 活动入口
 
 - COMSOL生产：[`comsol/run_oatof_model.m`](comsol/run_oatof_model.m)
 - SIMION交付构建：[`simion/workbench/build_formal_delivery.ps1`](simion/workbench/build_formal_delivery.ps1)
 - Candidate唯一入口：[`workflows/design_candidate/run_candidate.py`](workflows/design_candidate/run_candidate.py)
-- 当前Formal验证入口：
+- Formal验证、发布与复核唯一入口（`-Phase Validate|Publish|Verify`）：
   [`workflows/formal_reference/run_formal_validation.ps1`](workflows/formal_reference/run_formal_validation.ps1)
 - 五质量候选：
   [`workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1`](workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1)
@@ -96,6 +96,7 @@ single_reflection_oa_tof_mass_analyzer/
 - [`docs/history/20260728__pre-document-consolidation-project.md`](docs/history/20260728__pre-document-consolidation-project.md)
 - [`docs/history/20260728__pre-document-consolidation-readme.md`](docs/history/20260728__pre-document-consolidation-readme.md)
 - [`docs/history/20260728__pre-document-consolidation-simion.md`](docs/history/20260728__pre-document-consolidation-simion.md)
+- [`docs/history/20260729__formal-vnext-zero-change-requests.md`](docs/history/20260729__formal-vnext-zero-change-requests.md)
 - [`docs/history/CANDIDATE_WORKFLOW_VALIDATION_20260720.md`](docs/history/CANDIDATE_WORKFLOW_VALIDATION_20260720.md)
 - [`docs/history/COMSOL_EXTREME_N_CRASH_20260718_19.md`](docs/history/COMSOL_EXTREME_N_CRASH_20260718_19.md)
 - [`docs/history/COMSOL_EXTREME_N_CRASH_CLOSURE_20260719.md`](docs/history/COMSOL_EXTREME_N_CRASH_CLOSURE_20260719.md)

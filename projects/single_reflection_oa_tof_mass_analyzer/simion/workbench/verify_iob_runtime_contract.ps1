@@ -1,3 +1,4 @@
+# Production verifier for the persisted oa-TOF SIMION workbench contract.
 param(
   [Parameter(Mandatory = $true)]
   [string]$IobPath,

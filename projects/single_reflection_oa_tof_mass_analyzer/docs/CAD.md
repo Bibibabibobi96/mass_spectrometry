@@ -85,11 +85,16 @@ STEP导入会让SolidWorks为每个外部实体新建原生零件，因此会读
 
 ## 当前正式状态
 
-2026-07-20已从耦合纵向正式COMSOL MPH重新导出CAD，并用SolidWorks 2022（revision 30.5.0）
-生成25个SLDPRT和25组件SLDASM。组件世界中心相对COMSOL导出目标的最大误差为
-`6.82e-13 mm`，所有STEP加载、零件保存和装配体保存错误/警告均为0。晋升前整套Formal资产已归档到
+当前Formal CAD release由2026-07-29 vNext原子发布；它绑定拆层后的N=1000验证和独立CAD evidence。
+其SolidWorks 2022 revision为`30.5.0`，包含25个组件；当前装配和导出报告的精确身份只认
+`formal_assets.json`与Formal asset manifest。2026-07-20的耦合纵向CAD结果保留为来源历史：组件世界
+中心相对COMSOL导出目标的最大误差为`6.82e-13 mm`，所有STEP加载、零件保存和装配体保存错误/警告
+均为0；晋升前整套Formal资产已归档到
 `artifacts/projects/oa_tof/archive/20260720_204500__superseded__cross__pre-coupled-baseline/`，没有与新正式零件混放。可重复门禁入口为
-`../workflows/formal_reference/run_oatof_formal_cad_sync.m`。
+`../workflows/design_candidate/run_candidate_cad_sync.m`；它只在Candidate run内生成CAD资产。
+Formal发布只允许通过
+`../workflows/formal_reference/run_formal_validation.ps1 -Phase Publish`消费冻结装配与报告，
+不再提供直接写Formal CAD目录的脚本。
 
 当前CAD manifest把COMSOL的`accelshield`作为单一`accelerator_shield`实体导出，因此正式装配同样
 没有沿RF→oa注入方向的侧孔。未来侧孔、法兰或接地注入管一旦进入候选，必须先在候选MPH形成真实

@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "role": "design_candidate_proposal",
+  "candidate_id": "single_reflection_oa_tof_formal_vnext_zero_change_20260729",
+  "project_id": "single_reflection_oa_tof_mass_analyzer",
+  "request": {
+    "path": "design_request.json",
+    "sha256": "755DAB1899A98BAB354F8AB9F72256100AEDD64DF088D4E32357D8D5298AC8FF"
+  },
+  "values": []
+}

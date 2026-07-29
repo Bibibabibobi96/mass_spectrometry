@@ -1173,7 +1173,7 @@ class CandidateDesignTests(unittest.TestCase):
                     "con": {"path": str(formal.with_suffix('.con')), "sha256": "missing"},
                 },
             }
-            with self.assertRaisesRegex(RuntimeError, "must not reference a Formal path"):
+            with self.assertRaisesRegex(RuntimeError, "must not reference a Formal, archive, or history path"):
                 execute_stage(stage, {"run_root": str(run_root)}, "unused")
 
             template = run_root / "inputs" / "simion_template" / "layout.iob"
@@ -1192,7 +1192,6 @@ class CandidateDesignTests(unittest.TestCase):
 
     def test_formal_asset_entrypoints_preflight_before_paths_or_runs(self):
         scripts = [
-            PROJECT_ROOT / "workflows" / "formal_reference" / "run_formal_validation.ps1",
             PROJECT_ROOT / "workflows" / "formal_reference" / "verify_geometry_contract.ps1",
             PROJECT_ROOT / "workflows" / "formal_reference" / "run_coupled_baseline_validation.ps1",
             PROJECT_ROOT / "workflows" / "mass_spectrum_candidate" / "run_mass_spectrum_candidate.ps1",
@@ -1203,6 +1202,16 @@ class CandidateDesignTests(unittest.TestCase):
             preflight = text.index("Assert-OaTofFormalAssetsReadable")
             first_asset = min(index for index in (text.find("formal\\"), text.find("New-Item -ItemType Directory")) if index >= 0)
             self.assertLess(preflight, first_asset, script.name)
+
+        formal_cli = (
+            PROJECT_ROOT
+            / "workflows"
+            / "formal_reference"
+            / "run_formal_validation.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertIn("-Phase Verify", formal_cli)
+        validate_branch = formal_cli[formal_cli.index("$candidateRoot =") :]
+        self.assertNotIn("Assert-OaTofFormalAssetsReadable", validate_branch)
 
     def test_shared_builder_requires_explicit_seed_and_candidate_template(self):
         builder = (PROJECT_ROOT / "simion" / "workbench" / "build_formal_delivery.ps1").read_text(encoding="utf-8")

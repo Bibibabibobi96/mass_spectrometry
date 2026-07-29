@@ -1,6 +1,5 @@
 reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
-testDir = fileparts(mfilename('fullpath'));
-componentDir = fileparts(fileparts(testDir));
+componentDir = fileparts(fileparts(mfilename('fullpath')));
 addpath(componentDir);
 paths = oatof_paths();
 contractPath = getenv('OATOF_CONTRACT_PATH');

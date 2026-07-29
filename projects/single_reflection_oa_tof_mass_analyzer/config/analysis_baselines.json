@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "analysis_contract": "analysis_contract.json",
   "frozen_on": "2026-07-16",
   "role": "Immutable identities and legacy reference values for analysis migration. Artifact data remain outside Git.",
@@ -8,6 +8,8 @@
   "entries": [
     {
       "id": "comsol_524amu_fixedN100_real_dt0p2ns",
+      "lifecycle_status": "retired_historical_record",
+      "missing_artifact_policy": "retired_record_only",
       "solver": "COMSOL",
       "nominal_mass_Da": 524.0,
       "relative_path": "archive/20260719_212436__migration-snapshot__repo__pre-v2-layout/legacy-layout/runs/comsol_fixed_particle_closure/2026-07-15/candidate_524amu_fixedN100_real_dt0p2ns_particles.csv",
@@ -32,6 +34,8 @@
     },
     {
       "id": "simion_524amu_fixedN100_quality8",
+      "lifecycle_status": "retired_historical_record",
+      "missing_artifact_policy": "retired_record_only",
       "solver": "SIMION",
       "nominal_mass_Da": 524.0,
       "relative_path": "archive/20260719_212436__migration-snapshot__repo__pre-v2-layout/legacy-layout/runs/simion_comsol_fixed_particle_closure/2026-07-15/simion_real_fixedN100_particles.csv",
@@ -56,6 +60,8 @@
     },
     {
       "id": "simion_524amu_N5000_quality8_gui_equivalent",
+      "lifecycle_status": "retired_historical_record",
+      "missing_artifact_policy": "retired_record_only",
       "solver": "SIMION",
       "nominal_mass_Da": 524.0,
       "relative_path": "archive/20260719_212436__migration-snapshot__repo__pre-v2-layout/legacy-layout/results/simion/cli_same_iob_N5000_2026-07-15/simion_524amu_particle_mass.csv",
@@ -80,6 +86,8 @@
     },
     {
       "id": "simion_100amu_N5000_quality8",
+      "lifecycle_status": "retired_historical_record",
+      "missing_artifact_policy": "retired_record_only",
       "solver": "SIMION",
       "nominal_mass_Da": 100.0,
       "relative_path": "archive/20260719_212436__migration-snapshot__repo__pre-v2-layout/legacy-layout/results/simion/mass_spectrum/2026-07-15/grid_xy025_z0050_100amu_N5000/simion_100amu_particle_mass.csv",
@@ -106,6 +114,7 @@
   "comparisons": [
     {
       "id": "fixed_524amu_N100_cross_solver",
+      "lifecycle_status": "retired_historical_record",
       "left": "comsol_524amu_fixedN100_real_dt0p2ns",
       "right": "simion_524amu_fixedN100_quality8",
       "paired_particle_ids_required": true,

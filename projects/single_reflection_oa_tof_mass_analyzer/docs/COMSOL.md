@@ -44,8 +44,8 @@
 5. 复核固定粒子表、唯一terminal事件分类、输出列和manifest；terminal是事件终态，不是探测面别名；
 6. 几何改变时同步SolidWorks，并由PROJECT更新资格。
 
-当前项目处于`formal_revalidation_pending`。旧Formal MPH和2026-07-20结果可追溯，但不能替代当前拆层
-合同下的vNext重验证。
+当前项目为`formal`。当前MPH身份、N=1000结果与COMSOL GUI evidence由Formal release manifest和
+`formal_validation.json`冻结；2026-07-20拆层前Formal记录仅保留追溯价值，不能替代当前release。
 
 ## 兼容限制
 

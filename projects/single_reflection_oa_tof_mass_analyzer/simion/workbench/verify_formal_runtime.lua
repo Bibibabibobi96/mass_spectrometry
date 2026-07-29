@@ -1,3 +1,4 @@
+-- Production audit of Formal IOB geometry, priority, and static fields.
 local report_path = assert(arg[1], 'report path is required')
 local iob_path = assert(arg[2], 'IOB path is required')
 local resolved_path = assert(arg[3], 'resolved Lua contract is required')

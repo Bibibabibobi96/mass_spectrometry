@@ -17,8 +17,14 @@
   "family_id": "tof_mass_analyzers",
   "display_name": "单次反射正交加速飞行时间质量分析器",
   "purpose": "单次折返oa-TOF的质量分析、离子传输和正式跨求解器设计",
-  "lifecycle_status": "formal_revalidation_pending",
-  "toolchains": ["comsol", "simion", "matlab", "python", "solidworks"],
+  "lifecycle_status": "formal",
+  "toolchains": [
+    "comsol",
+    "simion",
+    "matlab",
+    "python",
+    "solidworks"
+  ],
   "contracts": {
     "baseline": "config/baseline.json",
     "science": "config/modes/formal.json",
@@ -35,8 +41,17 @@
       "capability_id": "single_reflection_mass_analysis",
       "function": "mass_analysis",
       "status": "formal",
-      "modes": ["formal", "mass_spectrum", "design_candidate"],
-      "metrics": ["mass_resolving_power", "transmission_fraction", "tof_centroid", "detector_landing"],
+      "modes": [
+        "formal",
+        "mass_spectrum",
+        "design_candidate"
+      ],
+      "metrics": [
+        "mass_resolving_power",
+        "transmission_fraction",
+        "tof_centroid",
+        "detector_landing"
+      ],
       "design_variables": [
         "accelerator_ring_thickness",
         "accelerator_ring_width",
@@ -70,7 +85,12 @@
   ],
   "formal_assets": {
     "status": "formal",
-    "types": ["comsol_model", "simion_package", "cad", "results"],
+    "types": [
+      "comsol_model",
+      "simion_package",
+      "cad",
+      "results"
+    ],
     "identity_contract": "config/formal_assets.json"
   },
   "known_gaps": [

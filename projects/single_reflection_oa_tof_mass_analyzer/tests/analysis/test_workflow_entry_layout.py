@@ -13,6 +13,11 @@ class WorkflowEntryLayoutTests(unittest.TestCase):
         expected = {
             "workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1",
             "comsol/run_fixed_particle_retrace.m",
+            "comsol/verify_oatof_comsol_sync.m",
+            "simion/workbench/verify_formal_runtime.lua",
+            "simion/workbench/verify_iob_runtime_contract.lua",
+            "simion/workbench/verify_iob_runtime_contract.ps1",
+            "simion/workbench/run_parameterized_geometry_smoke.ps1",
             "workflows/design_candidate/prepare_candidate_consumers.py",
             "workflows/design_candidate/run_candidate.py",
             "workflows/design_candidate/run_candidate_workflow.py",
@@ -25,6 +30,11 @@ class WorkflowEntryLayoutTests(unittest.TestCase):
         removed = {
             "tests/cross_solver/run_mass_spectrum_candidate.ps1",
             "tests/comsol/test_accelerator_mesh_particle_candidate.m",
+            "tests/comsol/verify_oatof_comsol_sync.m",
+            "tests/simion/verify_formal_runtime.lua",
+            "tests/simion/verify_iob_runtime_contract.lua",
+            "tests/simion/verify_iob_runtime_contract.ps1",
+            "tests/simion/test_parameterized_geometry_build.ps1",
             "analysis/prepare_candidate_consumers.py",
             "analysis/run_candidate_workflow.py",
             "tests/comsol/run_candidate_contract_build.m",
@@ -55,8 +65,13 @@ class WorkflowEntryLayoutTests(unittest.TestCase):
         self.assertIn("workflows/design_candidate/run_candidate.py", closure)
         self.assertIn("workflows/design_candidate/run_candidate_contract_build.m", closure)
         self.assertIn("workflows/design_candidate/run_candidate_cad_sync.m", closure)
+        self.assertIn("comsol/verify_oatof_comsol_sync.m", closure)
+        self.assertIn("simion/workbench/verify_iob_runtime_contract.lua", closure)
+        self.assertIn("simion/workbench/verify_iob_runtime_contract.ps1", closure)
         self.assertNotIn("tests/comsol/run_candidate_contract_build.m", closure)
         self.assertNotIn("tests/cad/run_candidate_cad_sync.m", closure)
+        self.assertNotIn("tests/comsol/verify_oatof_comsol_sync.m", closure)
+        self.assertNotIn("tests/simion/verify_iob_runtime_contract", closure)
 
         core = (
             PROJECT_ROOT
@@ -70,6 +85,17 @@ class WorkflowEntryLayoutTests(unittest.TestCase):
         self.assertNotIn("native_receipts", core)
         self.assertNotIn("def main(", core)
         self.assertNotIn("def main(", lifecycle)
+
+    def test_candidate_gate_uses_production_parameterized_geometry_runner(self):
+        gate = (PROJECT_ROOT / "verify_project.ps1").read_text(encoding="utf-8")
+        self.assertIn(
+            "simion\\workbench\\run_parameterized_geometry_smoke.ps1",
+            gate,
+        )
+        self.assertNotIn(
+            "tests\\simion\\test_parameterized_geometry_build.ps1",
+            gate,
+        )
 
 
 if __name__ == "__main__":

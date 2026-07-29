@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "request_id": "single_reflection_oa_tof_formal_vnext_zero_change_20260729",
+  "status": "approved",
+  "title": "Current split-layer contract zero-physics-change Formal vNext reference",
+  "target": {
+    "family_id": "tof_mass_analyzers",
+    "preferred_project_id": "single_reflection_oa_tof_mass_analyzer",
+    "function": "mass_analysis",
+    "mode": "design_candidate"
+  },
+  "operating_points": [
+    {
+      "mass": {
+        "value": 524,
+        "unit": "Da"
+      },
+      "charge_state": 1
+    }
+  ],
+  "objectives": [
+    {
+      "metric": "transmission_fraction",
+      "operator": "maximize",
+      "value": null,
+      "unit": "1",
+      "tolerance": null
+    }
+  ],
+  "constraints": [],
+  "design_variables": [],
+  "required_outputs": [
+    "simulation_results",
+    "validation_report",
+    "comsol_model",
+    "simion_model",
+    "cad"
+  ],
+  "evidence_level": "candidate",
+  "approval": {
+    "approved_by": "owner",
+    "approved_on": "2026-07-29"
+  }
+}

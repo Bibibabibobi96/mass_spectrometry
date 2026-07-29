@@ -24,7 +24,7 @@ if (Test-Path -LiteralPath $resultDir) { throw "Result directory already exists:
 New-Item -ItemType Directory -Path $runDir,$resultDir | Out-Null
 
 $ion = Join-Path $reference ("oatof_comsol_524amu_gaussian_N{0}.ion" -f $ParticleCount)
-$fieldVerifier = Join-Path $PSScriptRoot 'verify_formal_runtime.lua'
+$fieldVerifier = Join-Path $projectRoot 'simion\workbench\verify_formal_runtime.lua'
 $logAnalyzer = Join-Path $projectRoot 'simion\workbench\analyze_ideal_field_log.ps1'
 $referenceAnalysis = Join-Path $projectRoot 'analysis\reference_analysis.py'
 $runConfigPath = Join-Path $runDir 'run_config.json'

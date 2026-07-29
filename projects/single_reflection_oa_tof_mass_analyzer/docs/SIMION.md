@@ -9,15 +9,16 @@
 
 - 文本入口：`../simion/workbench/formal/oatof_ideal_grounded.lua/.fly2`
 - 交付构建：`../simion/workbench/build_formal_delivery.ps1`
+- 参数化几何Candidate门禁：`../simion/workbench/run_parameterized_geometry_smoke.ps1`
 - N=100源码构建与跟踪：`../tests/simion/run_n100_source_build_and_track.ps1`
-- IOB运行时合同：`../tests/simion/verify_iob_runtime_contract.ps1`
+- IOB运行时合同：`../simion/workbench/verify_iob_runtime_contract.ps1`
 - 稳定资产身份：`../config/simion_stable_entry.json`
 - 重命名前的只读Formal资产：工作区`artifacts/projects/oa_tof/formal/simion/`；不搬移、不改写、
   不追加新run
 - vNext活动产物：工作区`artifacts/projects/single_reflection_oa_tof_mass_analyzer/`
 
-当前项目处于`formal_revalidation_pending`。稳定清单和旧Formal包保留可追溯身份，但Candidate必须使用
-独立、已登记的非Formal IOB/CON模板，不能读取旧Formal或archive资产。
+当前项目处于`formal`。稳定清单绑定当前Formal SIMION交付包；重命名前和拆层前的Formal包只保留
+可追溯身份。Candidate仍必须使用独立、已登记的非Formal IOB/CON模板，不能读取旧Formal或archive资产。
 
 ## 几何与数值合同
 

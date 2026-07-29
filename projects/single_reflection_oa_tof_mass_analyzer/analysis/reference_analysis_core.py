@@ -1335,6 +1335,23 @@ def verify_baselines(
     entry_reports: list[dict[str, Any]] = []
     overall_pass = True
     for entry in manifest["entries"]:
+        lifecycle_status = entry.get("lifecycle_status", "active")
+        if lifecycle_status not in {"active", "retired_historical_record"}:
+            raise ValueError(
+                f"Unsupported analysis baseline lifecycle_status for {entry['id']}: "
+                f"{lifecycle_status}"
+            )
+        missing_policy = entry.get("missing_artifact_policy", "fail")
+        allowed_missing_policy = (
+            {"fail"}
+            if lifecycle_status == "active"
+            else {"retired_record_only"}
+        )
+        if missing_policy not in allowed_missing_policy:
+            raise ValueError(
+                f"Unsupported analysis baseline missing_artifact_policy for "
+                f"{entry['id']}: {missing_policy}"
+            )
         input_path = artifact_project / entry["relative_path"]
         identity = {
             "exists": input_path.is_file(),
@@ -1342,7 +1359,13 @@ def verify_baselines(
             "sha256_match": False,
             "rows_match": False,
         }
-        report: dict[str, Any] = {"id": entry["id"], "path": str(input_path), "identity": identity}
+        report: dict[str, Any] = {
+            "id": entry["id"],
+            "lifecycle_status": lifecycle_status,
+            "missing_artifact_policy": missing_policy,
+            "path": str(input_path),
+            "identity": identity,
+        }
         if input_path.is_file():
             identity["bytes_match"] = input_path.stat().st_size == int(entry["bytes"])
             identity["sha256_match"] = sha256_file(input_path) == entry["sha256"]
@@ -1372,6 +1395,14 @@ def verify_baselines(
                 "fwhm_mass_Da": _relative_difference_pct(metrics["direct_fwhm_mass_Da"], legacy["fwhm_mass_Da"]),
                 "mass_resolution": _relative_difference_pct(metrics["mass_resolution"], legacy["mass_resolution"]),
             }
+        elif lifecycle_status == "retired_historical_record":
+            report["status"] = "RETIRED_ARTIFACT_UNAVAILABLE"
+            report["note"] = (
+                "Historical identity and reference values are retained for provenance; "
+                "the retired external artifact is not a current Formal dependency."
+            )
+            entry_reports.append(report)
+            continue
         canonical_checks = report.get("canonical_reference_checks", {})
         entry_pass = all(identity.values()) and all(
             check["pass"] for check in canonical_checks.values()
@@ -1383,11 +1414,43 @@ def verify_baselines(
     comparison_reports: list[dict[str, Any]] = []
     entries = {entry["id"]: entry for entry in manifest["entries"]}
     for comparison in manifest.get("comparisons", []):
+        lifecycle_status = comparison.get("lifecycle_status", "active")
+        if lifecycle_status not in {"active", "retired_historical_record"}:
+            raise ValueError(
+                f"Unsupported analysis comparison lifecycle_status for "
+                f"{comparison['id']}: {lifecycle_status}"
+            )
         left_entry = entries[comparison["left"]]
         right_entry = entries[comparison["right"]]
+        left_path = artifact_project / left_entry["relative_path"]
+        right_path = artifact_project / right_entry["relative_path"]
+        if not left_path.is_file() or not right_path.is_file():
+            if lifecycle_status != "retired_historical_record":
+                overall_pass = False
+                comparison_reports.append(
+                    {
+                        "id": comparison["id"],
+                        "lifecycle_status": lifecycle_status,
+                        "status": "FAIL",
+                        "error": "Active comparison input artifact is unavailable.",
+                    }
+                )
+                continue
+            comparison_reports.append(
+                {
+                    "id": comparison["id"],
+                    "lifecycle_status": lifecycle_status,
+                    "status": "RETIRED_ARTIFACT_UNAVAILABLE",
+                    "note": (
+                        "Historical comparison values are retained for provenance; "
+                        "retired input artifacts are not current Formal dependencies."
+                    ),
+                }
+            )
+            continue
         result = analyze_comparison(
-            artifact_project / left_entry["relative_path"],
-            artifact_project / right_entry["relative_path"],
+            left_path,
+            right_path,
             output_dir / comparison["id"],
             float(left_entry["nominal_mass_Da"]),
             left_label=left_entry["solver"],

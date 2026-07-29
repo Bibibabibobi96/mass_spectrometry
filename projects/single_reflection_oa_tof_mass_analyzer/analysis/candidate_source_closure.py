@@ -47,6 +47,7 @@ RELATIVE_PATHS = (
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_extract_detector_arrivals.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_parse_field_idealization.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/run_oatof_model.m",
+    "projects/single_reflection_oa_tof_mass_analyzer/comsol/verify_oatof_comsol_sync.m",
     "projects/single_reflection_oa_tof_mass_analyzer/docs/SIMION_REPRODUCTION_PARAMETERS.md",
     "projects/single_reflection_oa_tof_mass_analyzer/load_oatof_contract.m",
     "projects/single_reflection_oa_tof_mass_analyzer/oatof_lifecycle_preflight.ps1",
@@ -65,13 +66,12 @@ RELATIVE_PATHS = (
     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/run_n100_transport.ps1",
     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/oatof_detector_ground.gem",
     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/oatof_flight_tube_ground.gem",
+    "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/verify_iob_runtime_contract.lua",
+    "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/verify_iob_runtime_contract.ps1",
     "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_cad_sync.m",
     "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_contract_build.m",
     "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate.py",
     "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_workflow.py",
-    "projects/single_reflection_oa_tof_mass_analyzer/tests/comsol/verify_oatof_comsol_sync.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/tests/simion/verify_iob_runtime_contract.lua",
-    "projects/single_reflection_oa_tof_mass_analyzer/tests/simion/verify_iob_runtime_contract.ps1",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/solver_diagnostics.py",
 )
 

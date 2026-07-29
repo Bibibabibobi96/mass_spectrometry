@@ -47,14 +47,20 @@ Python版本、隔离环境和重建方法只以仓库根
   `reference_analysis.py`。
 - 回归门禁：`verify_reference_analysis.ps1`。
 
-回归门禁同时验证冻结迁移基准和当前`formal_validation.json`：后者会核对物理/分析契约哈希、
-固定ION表、正式IOB、两侧逐粒子CSV以及Python比较指标，防止正式结果与外部artifacts静默漂移。
+回归门禁先验证当前`formal_validation.json`，核对物理/分析契约哈希、固定ION表、正式IOB、
+N=1000两侧逐粒子CSV以及Python比较指标，防止现役正式结果与外部artifacts静默漂移。随后审计
+`analysis_baselines.json`中的迁移历史：`active`条目缺失或身份不符必须失败；
+`retired_historical_record`保留旧SHA和参考数值作为来源记录，外部归档已删除时明确报告
+`RETIRED_ARTIFACT_UNAVAILABLE`，不再构成当前Formal依赖；若退役文件仍存在，仍须通过原SHA、
+大小、行数和指标校验。
 
-需要更新正式跨求解器记录时，只运行
-`../workflows/formal_reference/run_formal_validation.ps1`。它直接加载当前
-正式MPH和SIMION交付，使用同一正式N=1000 ION表重算两端、执行配对bootstrap，再由
-`publish_formal_validation.py`冻结全部输入、结果、报告和资产SHA。禁止手工从候选或staging结果摘抄
-数值更新`formal_validation.json`。
+Formal只有一个公共入口：
+`../workflows/formal_reference/run_formal_validation.ps1 -Phase Validate|Publish|Verify`。
+`Validate`只从成功、零物理变化的隔离Candidate冻结输入，以同一N=1000 ION表串行重算COMSOL和
+SIMION并完成统一分析；`Publish`只接受冻结的promotion request和独立GUI/CAD evidence run，由
+`publish_formal_release.py`在staging中构造完整release并原子更新Formal及四份配置；
+`Verify`只复核当前Formal。禁止手工从候选、run或staging摘抄数值更新
+`formal_validation.json`。
 
 正式机器输入优先使用CSV/JSON。XLSX只用于接收SIMION GUI人工导出；读取后立即输出
 `particles_normalized.csv`，Excel本身不是指标真值。
@@ -67,8 +73,8 @@ Python版本、隔离环境和重建方法只以仓库根
 .\projects\single_reflection_oa_tof_mass_analyzer\analysis\verify_reference_analysis.ps1
 ```
 
-默认验证四个冻结数据集的文件大小、行数和SHA-256，然后生成统一指标、谱图、落点图和固定粒子
-COMSOL/SIMION峰形对比。每次结果写入仓库外独立的
+默认严格验证当前Formal N=1000资产及其SHA，再审计四个退役迁移数据集；退役文件仍可用时才
+重算统一指标、谱图、落点图和固定粒子COMSOL/SIMION峰形对比。每次结果写入仓库外独立的
 `artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/<run_id>/results/`，并同时生成三件套。
 
 分析单个CSV或GUI导出的XLSX：

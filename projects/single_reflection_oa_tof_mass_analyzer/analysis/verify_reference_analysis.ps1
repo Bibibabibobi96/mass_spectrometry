@@ -42,6 +42,10 @@ if ($LASTEXITCODE -ne 0) {
     throw 'Formal Python dependencies are incomplete. See analysis/README.md.'
 }
 
+& $PythonExe (Join-Path $PSScriptRoot 'verify_formal_validation.py')
+if ($LASTEXITCODE -ne 0) {
+    throw "Formal cross-solver validation gate failed with exit code $LASTEXITCODE."
+}
 $arguments = @(
     '-m',
     'projects.single_reflection_oa_tof_mass_analyzer.analysis.reference_analysis',
@@ -52,11 +56,7 @@ $arguments += @('--output', $OutputDir)
 
 & $PythonExe @arguments
 if ($LASTEXITCODE -ne 0) {
-    throw "Reference analysis gate failed with exit code $LASTEXITCODE."
-}
-& $PythonExe (Join-Path $PSScriptRoot 'verify_formal_validation.py')
-if ($LASTEXITCODE -ne 0) {
-    throw "Formal cross-solver validation gate failed with exit code $LASTEXITCODE."
+    throw "Reference analysis migration-history gate failed with exit code $LASTEXITCODE."
 }
 $runConfig = Join-Path $runDir 'run_config.json'
 [ordered]@{schema_version=1;run_id=$runId;project='single_reflection_oa_tof_mass_analyzer';mode='reference_analysis_baseline_gate';project_root=$projectDir;inputs=[ordered]@{analysis_baselines=$ManifestPath;formal_validation='config/formal_validation.json'};formal_gate_passed=$false} |
