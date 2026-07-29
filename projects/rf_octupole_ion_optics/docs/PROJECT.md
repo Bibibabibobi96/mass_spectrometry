@@ -48,8 +48,9 @@ RF为1.1 MHz余弦、每组零到峰值139.81792 V；源为100 amu、+1、2 eV�
 分段杆轴向加速N=100 baseline已在两求解器保持100/100传输和精确粒子身份；SIMION空间档也
 保持100/100，RMS半径、发散角和平均能量相对baseline分别变化约`2.39%`、`7.98%`和`0.196%`。
 COMSOL空间档在`MESH_COMPLETE`后以19.180 GB超过17.180 GB进程树帽，记为
-`INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`，不重跑、不抬帽。当前没有授权任何商业求解器运行；
-时间档、出口孔板加速、N=1000和完整矩阵仍未授权。完整身份登记在
+`INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`，不重跑、不抬帽。
+当前只授权出口孔板加速N=100的一对双求解器baseline；其加密档、N=1000和完整矩阵仍未授权。
+完整身份登记在
 `../config/qualification/n100_no_acceleration_qualification.json`。
 分段杆轴向加速身份和资源结论登记在
 `../config/qualification/n100_segmented_rod_axial_acceleration_qualification.json`。
