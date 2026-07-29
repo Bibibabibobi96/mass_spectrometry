@@ -130,15 +130,13 @@ class CgAmgFieldScreenContractTests(unittest.TestCase):
             "comsol_6_4_generated_defaults_not_individually_qualified_or_reported",
         )
 
-    def test_live_budget_closes_r0_without_followup(self) -> None:
+    def test_live_budget_does_not_reauthorize_closed_r0(self) -> None:
         budget = load("config/qualification/engineering_budget.json")
         pilot = budget["pilot_authorization"]
-        self.assertFalse(pilot["authorized"])
-        self.assertEqual(pilot["scope"]["runtime_profile_id"], RUNTIME_ID)
-        self.assertEqual(
-            pilot["scope"]["solver_numerics_profile_ids"]["comsol"],
-            "hybrid_d2_cg_amg_field_screen",
-        )
+        if pilot["scope"]["runtime_profile_id"] == RUNTIME_ID:
+            self.assertFalse(pilot["authorized"])
+        else:
+            self.assertNotEqual(pilot["scope"]["runtime_profile_id"], RUNTIME_ID)
         self.assertEqual(pilot["scope"]["allowed_solvers"], ["comsol"])
         self.assertFalse(budget["full_matrix_authorization"]["authorized"])
 

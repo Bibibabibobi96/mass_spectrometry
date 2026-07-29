@@ -253,6 +253,15 @@ FreeTet baseline的9,422,286,848 bytes。
 该失败也不是COMSOL场求解FAIL。唯一商业运行和零重试授权已经耗尽，不重跑、不作粒子跟进，也不
 授予粒子传输、与MUMPS/PARDISO的直接数值等价、场或粒子收敛、Candidate、Formal或N=1000结论。
 
+当前后续不是重跑R0，而是独立的
+[`hybrid C1 sampled-field预登记`](../config/qualification/comsol_hybrid_c1_cg_amg_field_screen_preregistration.json)。
+C1保持二次电势、四段扫掠结构和每段10个轴向层，把径向core/rod与transition/end四面体上限从
+0.5 mm放宽为0.7 mm、outer从1.0 mm放宽为1.4 mm、minimum从0.02 mm改为0.028 mm。它先授权
+一次CG-AMG field-only运行，硬帽为60万单元、600 s、12 GiB且零重试；公共采样计划固定3330个
+空间点，双场输出6660行V/E。只有该臂完整闭合，才可用其实测网格/DOF身份另行预登记同配方MUMPS
+臂。两臂比较仍为`INCONCLUSIVE_DIAGNOSTIC_ONLY`，未定义物理误差预算前不得称为数值等价PASS，
+也不允许提前进入粒子追踪。
+
 共享SIMION模板、GUI复核、`.wgem`绕过和跨机可移植性状态只由
 [`../../../common/multipole/README.md`](../../../common/multipole/README.md)维护；公共机制证据不授予
 本项目Candidate或Formal资格。

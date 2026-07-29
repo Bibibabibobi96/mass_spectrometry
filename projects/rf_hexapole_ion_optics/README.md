@@ -67,6 +67,11 @@
   一个physics复用于两个Study/两个Solution，故终态manifest为`failed`。这些数值只具有
   `POSTHOC_ENGINEERING_OBSERVATION_ONLY`身份，不构成预登记PASS；一次授权已经耗尽，零重试且
   不授权粒子跟进、D3、时间档、直接求解器等价、收敛、N=1000、Candidate或Formal资格。
+  当前已另行预登记
+  [`C1共享采样CG-AMG场诊断`](config/qualification/comsol_hybrid_c1_cg_amg_field_screen_preregistration.json)：
+  将D2的非轴向局部尺寸统一放宽1.4倍、轴向每段10层保持不变，硬帽为60万单元、600 s、12 GiB，
+  先只运行CG-AMG并发布3330个公共空间点的双场V/E样本。该首臂成功后才能冻结其实测单元数/DOF并
+  单独预登记同配方MUMPS臂；当前不授权MUMPS、粒子或资格结论。
   既有三模式baseline的两份
   求解器报告只具有`POSTHOC_DESCRIPTIVE`身份，统一
   比较见[`../../docs/history/20260729__multipole-three-mode-posthoc-n100.md`](../../docs/history/20260729__multipole-three-mode-posthoc-n100.md)。

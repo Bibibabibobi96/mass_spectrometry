@@ -306,10 +306,10 @@ class FamilyExperimentProfileTests(unittest.TestCase):
             self.assertTrue(contract["preregistered_before_run"])
             self.assertTrue(contract[content])
         engineering = load("config/qualification/engineering_budget.json")
-        self.assertFalse(engineering["pilot_authorization"]["authorized"])
+        self.assertTrue(engineering["pilot_authorization"]["authorized"])
         self.assertEqual(
             engineering["pilot_authorization"]["scope"]["runtime_profile_id"],
-            "exit_aperture_plate_acceleration_n100_hybrid_d2_cg_amg_field_screen",
+            "exit_aperture_plate_acceleration_n100_hybrid_c1_cg_amg_field_screen",
         )
         self.assertEqual(
             engineering["pilot_authorization"]["scope"]["allowed_solvers"],
@@ -317,12 +317,12 @@ class FamilyExperimentProfileTests(unittest.TestCase):
         )
         self.assertEqual(
             engineering["pilot_authorization"]["limits"]["maximum_mesh_cells"],
-            1000000,
+            600000,
         )
         self.assertFalse(engineering["full_matrix_authorization"]["authorized"])
         self.assertEqual(
             engineering["full_matrix_authorization"]["reason"],
-            "the_only_same_mesh_p2_cg_amg_field_screen_was_executed_and_closed_with_a_preregistered_report_contract_mismatch",
+            "only_one_coarse_same_recipe_cg_amg_field_sampling_diagnostic_is_authorized",
         )
 
         result = load(

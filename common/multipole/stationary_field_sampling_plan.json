@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "role": "multipole_stationary_field_sampling_plan",
+  "coordinate_id": "multipole.cartesian.z_axis.v1",
+  "units": {
+    "length": "mm",
+    "potential": "V",
+    "electric_field": "V/m"
+  },
+  "axial_sampling": {
+    "uniform_range": "rod_span",
+    "uniform_sample_count": 81,
+    "named_plane_ids": [
+      "source_release_plane",
+      "entrance_aperture_plate_upstream_face",
+      "entrance_aperture_plate_downstream_face",
+      "rod_entrance",
+      "rod_exit",
+      "exit_aperture_plate_upstream_face",
+      "exit_aperture_plate_downstream_face",
+      "canonical_handoff_plane",
+      "near_interface_census_plane"
+    ]
+  },
+  "cross_section_sampling": {
+    "rod_inward_clear_radius_fractions": [
+      0.0,
+      0.25,
+      0.5,
+      0.75
+    ],
+    "azimuth_count": 12
+  }
+}

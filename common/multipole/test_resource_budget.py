@@ -184,7 +184,7 @@ class ResourceBudgetTests(unittest.TestCase):
 
     def test_mesh_cell_limit_is_optional_and_strictly_positive(self) -> None:
         runtime_profile_id = (
-            "exit_aperture_plate_acceleration_n100_hybrid_d2_cg_amg_field_screen"
+            "exit_aperture_plate_acceleration_n100_hybrid_c1_cg_amg_field_screen"
         )
         runtime = resolve_runtime_profile(REPO_ROOT, HEX, runtime_profile_id)
         budget_path = Path(runtime["engineering_budget"]["path"])

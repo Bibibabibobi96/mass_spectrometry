@@ -882,8 +882,9 @@ class MultipoleGovernanceSchemaTest(unittest.TestCase):
                 requests.mkdir(parents=True)
                 request_relative = "config/requests/baseline.json"
                 request_path = project_root / request_relative
+                request_document = design_request(project_id)
                 request_path.write_text(
-                    json.dumps(design_request(project_id), indent=2) + "\n",
+                    json.dumps(request_document, indent=2) + "\n",
                     encoding="utf-8",
                 )
                 baseline = {
@@ -929,6 +930,47 @@ class MultipoleGovernanceSchemaTest(unittest.TestCase):
                     json.dumps(envelope, indent=2) + "\n",
                     encoding="utf-8",
                 )
+                profiles = {
+                    "schema_version": 2,
+                    "role": "multipole_design_profile_registry",
+                    "project_id": project_id,
+                    "family_id": "rf_multipole_ion_optics",
+                    "profiles": [
+                        {
+                            "design_profile_id": "baseline",
+                            "design_request": request_relative,
+                            "design_variables": "config/design_variables.json",
+                            "optimization_envelope": (
+                                "config/optimization_envelope.json"
+                            ),
+                            "sha256": {
+                                "design_request": file_sha256(request_path),
+                                "design_variables": file_sha256(
+                                    config / "design_variables.json"
+                                ),
+                                "optimization_envelope": file_sha256(
+                                    config / "optimization_envelope.json"
+                                ),
+                            },
+                            "identity": request_document["identity"],
+                            "topology": {
+                                "enclosure_role": request_document["geometry_mm"][
+                                    "enclosure"
+                                ]["role"],
+                                "segmentation_strategy": request_document[
+                                    "segmentation"
+                                ]["strategy"],
+                                "axial_drive_topology": request_document[
+                                    "axial_drive"
+                                ]["topology"],
+                            },
+                        }
+                    ],
+                }
+                (config / "design_profiles.json").write_text(
+                    json.dumps(profiles, indent=2) + "\n",
+                    encoding="utf-8",
+                )
                 descriptor = {
                     "schema_version": 1,
                     "project_id": project_id,
@@ -938,13 +980,14 @@ class MultipoleGovernanceSchemaTest(unittest.TestCase):
                     "lifecycle_status": "static",
                     "toolchains": ["python"],
                     "contracts": {
-                        "baseline": "config/baseline.json",
+                        "baseline": None,
                         "resolved": None,
                         "analysis": None,
                         "interface": None,
                         "execution": None,
                         "design_variables": "config/design_variables.json",
                         "optimization_envelope": "config/optimization_envelope.json",
+                        "design_profiles": "config/design_profiles.json",
                     },
                     "capabilities": [
                         {

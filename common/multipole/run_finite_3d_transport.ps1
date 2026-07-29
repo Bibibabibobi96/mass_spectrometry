@@ -365,7 +365,8 @@ function Assert-MultipoleFieldPreregistration {
     throw 'COMSOL field-solve runtime requires an existing preregistration evidence contract.'
   }
   $document=Get-Content -LiteralPath $Path -Raw -Encoding UTF8|ConvertFrom-Json
-  if([string]$document.role-ne'multipole_comsol_field_solver_isolation_preregistration'-or
+  if([int64]$document.schema_version-ne 2-or
+    [string]$document.role-ne'multipole_comsol_field_solver_isolation_preregistration'-or
     [string]$document.status-ne'authorized_not_run'-or
     [string]$document.project_id-ne$ProjectId-or
     $document.preregistered_before_run-ne$true){
@@ -405,6 +406,19 @@ function Assert-MultipoleFieldPreregistration {
   if($implementationFiles.Count-ne 4){
     throw 'COMSOL field-solve preregistration implementation inventory differs.'
   }
+  $requiredImplementationPaths=@(
+    'common/multipole/run_finite_3d_transport.ps1',
+    'common/multipole/solve_finite_3d_transport.m',
+    'common/multipole/export_comsol_stationary_field_samples.m',
+    'common/multipole/stationary_field_sampling.py'
+  )
+  $declaredImplementationPaths=@(
+    $implementationFiles|ForEach-Object{[string]$_.path}
+  )
+  if((@($declaredImplementationPaths|Sort-Object)-join',')-ne
+    (@($requiredImplementationPaths|Sort-Object)-join',')){
+    throw 'COMSOL field-solve preregistration implementation paths differ.'
+  }
   $repoPrefix=[IO.Path]::GetFullPath($RepoRoot).TrimEnd('\')+'\'
   foreach($entry in $implementationFiles){
     $implementationPath=[IO.Path]::GetFullPath(
@@ -419,6 +433,25 @@ function Assert-MultipoleFieldPreregistration {
     if([string]$entry.sha256-ne$actual){
       throw "COMSOL field-solve preregistration implementation hash differs: $($entry.path)"
     }
+  }
+  $sampling=$document.field_sampling
+  if([string]$sampling.role-ne'multipole_stationary_field_sampling'-or
+    [int64]$sampling.expected_point_count-lt 1-or
+    [int64]$sampling.expected_row_count-ne 2*[int64]$sampling.expected_point_count-or
+    (@($sampling.field_cases)-join',')-ne'differential,static'){
+    throw 'COMSOL field-solve preregistration sampling contract is invalid.'
+  }
+  $samplingPlanPath=[IO.Path]::GetFullPath(
+    (Join-Path $RepoRoot ([string]$sampling.plan_path))
+  )
+  if(-not$samplingPlanPath.StartsWith(
+      $repoPrefix,[StringComparison]::OrdinalIgnoreCase
+    )-or-not(Test-Path -LiteralPath $samplingPlanPath -PathType Leaf)){
+    throw 'COMSOL field-solve preregistration sampling-plan path is invalid.'
+  }
+  $samplingPlanHash=(Get-FileHash -Algorithm SHA256 -LiteralPath $samplingPlanPath).Hash
+  if([string]$sampling.plan_sha256-ne$samplingPlanHash){
+    throw 'COMSOL field-solve preregistration sampling-plan hash differs.'
   }
   return $document
 }
@@ -513,6 +546,7 @@ try{
     $maximumMeshCells=[int64]$resolvedBudget.limits.maximum_mesh_cells
   }
   $fieldPreregistration=$null
+  $fieldSamplingPlanInput=$null
   if($StopStage-eq'field_solve'){
     $fieldPreregistration=Assert-MultipoleFieldPreregistration `
       -Path $EvidenceContractPath -RepoRoot $repoRoot -ProjectId $ProjectId `
@@ -523,6 +557,9 @@ try{
       -RetentionClass $RetentionClass `
       -ExpectedResolvedSha256 ([string]$resolvedBudget.expected_run_parent_resolved_design_sha256) `
       -EngineeringBudgetPath $engineeringBudgetInput
+    $fieldSamplingPlanInput=[IO.Path]::GetFullPath(
+      (Join-Path $repoRoot ([string]$fieldPreregistration.field_sampling.plan_path))
+    )
   }
   $authorizedHmax=$authorizedNumerics.mesh.working_region_maximum_element_size_mm
   if([int]$authorizedNumerics.mesh.global_auto_level-ne$MeshAutoLevel-or
@@ -628,6 +665,25 @@ try{
   if($expectedResolvedHash-and$resolvedHash-ne$expectedResolvedHash){
     throw "Compiled resolved design differs from the authorized run identity: expected=$expectedResolvedHash actual=$resolvedHash"
   }
+  $fieldSamplingPlan=$null
+  $fieldSamplePoints=$null
+  if($StopStage-eq'field_solve'){
+    $fieldSamplingPlan=Join-Path $inputDir 'stationary_field_sampling_plan.json'
+    $fieldSamplePoints=Join-Path $inputDir 'stationary_field_sample_points.csv'
+    Copy-Item -LiteralPath $fieldSamplingPlanInput -Destination $fieldSamplingPlan
+    Push-Location $codeRoot
+    try{
+      $env:PYTHONPATH=$codeRoot
+      & $python -m common.multipole.stationary_field_sampling generate `
+        --resolved-design $resolved --sampling-plan $fieldSamplingPlan `
+        --output $fieldSamplePoints
+    }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
+    if($LASTEXITCODE-ne 0){throw 'Governed stationary-field sample generation failed.'}
+    $fieldSamplePointCount=@(Import-Csv -LiteralPath $fieldSamplePoints).Count
+    if($fieldSamplePointCount-ne[int64]$fieldPreregistration.field_sampling.expected_point_count){
+      throw 'Generated stationary-field sample count differs from preregistration.'
+    }
+  }
   $axialTopology=[string]$design.axial_drive.topology
   $particleSource=Join-Path $inputDir 'particle_source.csv'
   Copy-Item -LiteralPath $particleSourceInput -Destination $particleSource
@@ -688,6 +744,8 @@ try{
   $primaryTrajectories=Join-Path $resultDir 'trajectory_samples__primary.csv'
   $controlTrajectories=Join-Path $resultDir 'trajectory_samples__control.csv'
   $report=Join-Path $logDir 'comsol_finite_3d_transport.txt';$evaluation=Join-Path $resultDir 'evidence_evaluation.json'
+  $fieldSamples=Join-Path $resultDir 'stationary_field_samples.csv'
+  $fieldSampleValidation=Join-Path $resultDir 'stationary_field_sample_validation.json'
   $task=Join-Path $codeRoot 'common\multipole\solve_finite_3d_transport.m'
   [ordered]@{schema_version=2;role='multipole_resolved_comsol_run_config';run_id=$RunId;project=$ProjectId;
     mode='resolved_design_transport';project_root=$profile.project_root;
@@ -703,7 +761,8 @@ try{
       multipole_resolved_design=$resolved;particle_source=$particleSource;
       particle_source_metadata=$sourceMetadata;particle_source_family=$sourceFamily;
       solver_numerics=$numerics;code_inventory=$codeInventory;
-      evidence_contract=$evidence;comsol_task=$task};
+      evidence_contract=$evidence;stationary_field_sampling_plan=$fieldSamplingPlan;
+      stationary_field_sample_points=$fieldSamplePoints;comsol_task=$task};
     parameters=[ordered]@{model_level='L3';runtime_profile_id=$RuntimeProfileId;design_profile_id=$DesignProfileId;
       operating_mode_id=$modeId;
       operating_point_id=$(if($sourceFamily){$OperatingPointId}else{$null});mesh_convergence=$false;
@@ -717,6 +776,7 @@ try{
     'MULTIPOLE_L3_CONTROL_CANONICAL_STATE','MULTIPOLE_L3_PRIMARY_TRAJECTORIES',
     'MULTIPOLE_L3_CONTROL_TRAJECTORIES','MULTIPOLE_L3_SOLVER_PROGRESS_DIR',
     'MULTIPOLE_L3_STOP_STAGE',
+    'MULTIPOLE_L3_FIELD_SAMPLE_POINTS','MULTIPOLE_L3_FIELD_SAMPLES',
     'MULTIPOLE_L3_MAXIMUM_MESH_CELLS')
   $oldEnvironment=Save-RunEnvironment -Names $environmentNames
   $resourceUsage=Join-Path $resultDir 'resource_usage.json'
@@ -732,6 +792,8 @@ try{
     $env:MULTIPOLE_L3_CONTROL_TRAJECTORIES=$controlTrajectories
     $env:MULTIPOLE_L3_SOLVER_PROGRESS_DIR=$solverProgressDir
     $env:MULTIPOLE_L3_STOP_STAGE=$StopStage
+    $env:MULTIPOLE_L3_FIELD_SAMPLE_POINTS=if($fieldSamplePoints){$fieldSamplePoints}else{''}
+    $env:MULTIPOLE_L3_FIELD_SAMPLES=if($StopStage-eq'field_solve'){$fieldSamples}else{''}
     $env:MULTIPOLE_L3_MAXIMUM_MESH_CELLS=if($null-ne$maximumMeshCells){[string]$maximumMeshCells}else{''}
     $pwsh=(Get-Process -Id $PID).Path
     $solverProcess=Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $resolvedResourceBudget `
@@ -803,6 +865,22 @@ try{
     return
   }
   if($StopStage-eq'field_solve'){
+    Push-Location $codeRoot
+    try{
+      $env:PYTHONPATH=$codeRoot
+      & $python -m common.multipole.stationary_field_sampling validate `
+        --input $fieldSamples --output $fieldSampleValidation
+    }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
+    if($LASTEXITCODE-ne 0){throw 'COMSOL stationary-field sample validation failed.'}
+    $fieldSampleValidationDocument=Get-Content -LiteralPath $fieldSampleValidation `
+      -Raw -Encoding UTF8|ConvertFrom-Json
+    if([string]$fieldSampleValidationDocument.status-ne'PASS'-or
+      [int64]$fieldSampleValidationDocument.point_count-ne
+        [int64]$fieldPreregistration.field_sampling.expected_point_count-or
+      [int64]$fieldSampleValidationDocument.row_count-ne
+        [int64]$fieldPreregistration.field_sampling.expected_row_count){
+      throw 'COMSOL stationary-field sample validation differs from preregistration.'
+    }
     $fieldSolve=Assert-MultipoleFieldSolveReport -Path $report
     $fieldReportContent=Get-Content -LiteralPath $report -Raw -Encoding UTF8
     foreach($token in $fieldPreregistration.required_report.tokens){
@@ -842,6 +920,8 @@ try{
       field_dof=$fieldSolve.field_dof;
       field_solver_evidence=$fieldSolve.field_solver_evidence;
       stationary_solver_configuration=$fieldSolve.stationary_solver_configuration;
+      field_sample_point_count=[int64]$fieldSampleValidationDocument.point_count;
+      field_sample_row_count=[int64]$fieldSampleValidationDocument.row_count;
       particle_physics_created=0;particle_studies_created=0;
       formal_gate_passed=$false}
     if($null-ne$maximumMeshCells){
@@ -856,7 +936,8 @@ try{
       $resourceBudgetExceeded=$true
       throw 'COMSOL field-solve retained-byte budget exceeded.'
     }
-    $outputs=@($report,$summary,$resourceUsage)|Where-Object{Test-Path -LiteralPath $_ -PathType Leaf}
+    $outputs=@($report,$summary,$resourceUsage,$fieldSamples,$fieldSampleValidation)|
+      Where-Object{Test-Path -LiteralPath $_ -PathType Leaf}
     $outputs+=@(Get-ChildItem -LiteralPath $solverProgressDir -File|ForEach-Object{$_.FullName})
     $outputs+=$retentionActions
     Write-VerifiedRunManifest -Python $python -RepoRoot $manifestRepoRoot -RunConfig $runConfig `

@@ -138,7 +138,6 @@ class HybridD2PreregistrationTests(unittest.TestCase):
             },
         )
         authorization = self.budget["pilot_authorization"]
-        self.assertFalse(authorization["authorized"])
         self.assertEqual(authorization["scope"]["allowed_solvers"], ["comsol"])
         self.assertNotEqual(
             authorization["scope"]["runtime_profile_id"], RUNTIME_PROFILE_ID
@@ -147,17 +146,11 @@ class HybridD2PreregistrationTests(unittest.TestCase):
             authorization["scope"]["solver_numerics_profile_ids"]["comsol"],
             NUMERICS_PROFILE_ID,
         )
-        self.assertEqual(
-            authorization["scope"]["runtime_profile_id"],
-            "exit_aperture_plate_acceleration_n100_hybrid_d2_cg_amg_field_screen",
-        )
-        self.assertEqual(
-            authorization["scope"]["solver_numerics_profile_ids"]["comsol"],
-            "hybrid_d2_cg_amg_field_screen",
-        )
         self.assertFalse(self.budget["full_matrix_authorization"]["authorized"])
-        self.assertIn("has been executed", self.budget["claim_limit"])
-        self.assertIn("posthoc engineering observations", self.budget["claim_limit"])
+        self.assertNotIn(
+            "hybrid_d2",
+            authorization["scope"]["runtime_profile_id"],
+        )
 
     def test_d2_solver_size_and_terminal_report_are_frozen(self) -> None:
         d2 = self.preregistration["d2"]

@@ -205,6 +205,17 @@ COMSOL数值profile必须显式声明`electric_potential_element_order`，当前
 progress日志取得每个稳态场的正`LinIt`与有限`LinRes`。缺失、零迭代或配置回读不一致均在success
 manifest前失败关闭；原生日志保留在本次run的`logs/solver_progress/`。
 
+新的field-only诊断还冻结
+[`stationary_field_sampling_plan.json`](stationary_field_sampling_plan.json)，由
+[`stationary_field_sampling.py`](stationary_field_sampling.py)从canonical resolved生成唯一
+`sample_id/region/x_mm/y_mm/z_mm`点表；项目wrapper不得增加同义采样字段或第二套transport CLI。
+COMSOL通过
+[`export_comsol_stationary_field_samples.m`](export_comsol_stationary_field_samples.m)在同一批坐标上
+显式绑定`differential/static`解，输出V与Ex/Ey/Ez。Python重新校验两场具备相同点身份、region和
+坐标，所有值有限且单位列固定；不同run的比较只发布
+`INCONCLUSIVE_DIAGNOSTIC_ONLY`误差量，不在缺少物理误差预算时伪造PASS阈值。采样CSV与校验摘要
+必须在retention前纳入manifest。
+
 runner创建run目录后立即写并验证`interrupted` manifest；所有编译、复制、预检和求解都在同一失败收尾
 边界内。终态只写一次，失败时递归收集现存inputs/results/logs/SIMION文件，避免负结果被第二次空manifest
 覆盖。实际Python、MATLAB、Lua及公共依赖冻结到`inputs/code/`，生成逐文件SHA-256 inventory，后续执行
@@ -220,7 +231,8 @@ COMSOL既有runner还可由受治理的薄wrapper传入单一`mesh_build` stop s
 输出选择、体积、覆盖/重叠、mesh feature及质量诊断，并在拓扑断言后停止；它从模型树实际报告零
 field physics、field Study、field solution、particle physics和particle Study，launcher验证这些终态及
 必需网格report token后才能发布success。它不是第二CLI、第二schema或场/粒子运行入口，必须由项目
-runtime profile、工程预算和预注册单独授权。
+runtime profile、工程预算和预注册单独授权。新的field-only授权采用schema v2，并额外冻结公共采样
+plan、生成器、COMSOL exporter及准确点数；schema v1只记录已关闭历史运行，不得重新执行。
 真实`mesh_build`报告以`MESH_GLOBAL_ELEMENTS`记录`mphmeshstats`返回的全局总单元数。若预算声明
 `maximum_mesh_cells`，runner要求该token恰好出现一次、值为正整数且不超过硬帽；缺报告、缺token、
 非法值或超帽均在success manifest前失败关闭，其中超帽归类为`resource_budget_exceeded`。
