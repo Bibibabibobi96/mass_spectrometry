@@ -309,7 +309,7 @@ class FamilyExperimentProfileTests(unittest.TestCase):
         self.assertTrue(engineering["pilot_authorization"]["authorized"])
         self.assertEqual(
             engineering["pilot_authorization"]["scope"]["runtime_profile_id"],
-            "exit_aperture_plate_acceleration_n100_hybrid_c1_cg_amg_field_screen",
+            "exit_aperture_plate_acceleration_n100_hybrid_c1_mumps_field_screen",
         )
         self.assertEqual(
             engineering["pilot_authorization"]["scope"]["allowed_solvers"],
@@ -322,7 +322,7 @@ class FamilyExperimentProfileTests(unittest.TestCase):
         self.assertFalse(engineering["full_matrix_authorization"]["authorized"])
         self.assertEqual(
             engineering["full_matrix_authorization"]["reason"],
-            "only_one_coarse_same_recipe_cg_amg_field_sampling_diagnostic_is_authorized",
+            "only_one_same_recipe_mumps_field_sampling_followup_is_authorized_after_the_cg_amg_arm_passed",
         )
 
         result = load(

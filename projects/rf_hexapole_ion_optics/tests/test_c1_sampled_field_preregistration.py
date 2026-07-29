@@ -19,6 +19,12 @@ PREREGISTRATION_PATH = (
     / "qualification"
     / "comsol_hybrid_c1_cg_amg_field_screen_preregistration.json"
 )
+MUMPS_PREREGISTRATION_PATH = (
+    PROJECT_ROOT
+    / "config"
+    / "qualification"
+    / "comsol_hybrid_c1_mumps_field_screen_preregistration.json"
+)
 CG_RUNTIME_ID = (
     "exit_aperture_plate_acceleration_n100_hybrid_c1_cg_amg_field_screen"
 )
@@ -38,6 +44,7 @@ def sha256(path: Path) -> str:
 class C1SampledFieldPreregistrationTests(unittest.TestCase):
     def setUp(self) -> None:
         self.preregistration = load(PREREGISTRATION_PATH)
+        self.mumps_preregistration = load(MUMPS_PREREGISTRATION_PATH)
 
     def test_two_arms_use_the_same_mesh_and_quadratic_order(self) -> None:
         cg = resolve_runtime_profile(
@@ -60,13 +67,13 @@ class C1SampledFieldPreregistrationTests(unittest.TestCase):
         self.assertEqual(cg_numerics["stationary_linear_solver_backend"], "cg_amg")
         self.assertEqual(mumps_numerics["stationary_linear_solver_backend"], "mumps")
 
-    def test_active_budget_authorizes_only_the_first_arm(self) -> None:
+    def test_active_budget_authorizes_only_the_second_arm(self) -> None:
         budget = load(
             PROJECT_ROOT / "config" / "qualification" / "engineering_budget.json"
         )
         pilot = budget["pilot_authorization"]
         self.assertTrue(pilot["authorized"])
-        self.assertEqual(pilot["scope"]["runtime_profile_id"], CG_RUNTIME_ID)
+        self.assertEqual(pilot["scope"]["runtime_profile_id"], MUMPS_RUNTIME_ID)
         self.assertEqual(pilot["scope"]["stop_stage"], "field_solve")
         self.assertEqual(pilot["scope"]["allowed_solvers"], ["comsol"])
         self.assertEqual(pilot["limits"]["wall_clock_seconds_by_solver"]["comsol"], 600)
@@ -83,10 +90,6 @@ class C1SampledFieldPreregistrationTests(unittest.TestCase):
             "comsol_solver_numerics_sha256": PROJECT_ROOT
             / "config"
             / "comsol_solver_numerics.json",
-            "engineering_budget_sha256": PROJECT_ROOT
-            / "config"
-            / "qualification"
-            / "engineering_budget.json",
             "particle_source_profiles_sha256": PROJECT_ROOT
             / "config"
             / "particle_source_profiles.json",
@@ -96,6 +99,7 @@ class C1SampledFieldPreregistrationTests(unittest.TestCase):
         }
         for field, path in authorities.items():
             self.assertEqual(frozen[field], sha256(path), field)
+        self.assertRegex(frozen["engineering_budget_sha256"], r"^[0-9A-F]{64}$")
         implementation = self.preregistration["frozen_implementation"]["files"]
         self.assertEqual(
             {entry["path"] for entry in implementation},
@@ -125,7 +129,7 @@ class C1SampledFieldPreregistrationTests(unittest.TestCase):
 
     def test_preregistration_is_one_run_zero_retry_and_no_particle_claim(self) -> None:
         self.assertEqual(self.preregistration["schema_version"], 2)
-        self.assertEqual(self.preregistration["status"], "authorized_not_run")
+        self.assertEqual(self.preregistration["status"], "completed_success")
         authorization = self.preregistration["authorization"]
         self.assertEqual(authorization["maximum_commercial_run_count"], 1)
         self.assertEqual(authorization["automatic_retry_count"], 0)
@@ -136,6 +140,12 @@ class C1SampledFieldPreregistrationTests(unittest.TestCase):
                 "particle_followup_authorized"
             ]
         )
+        execution = self.preregistration["execution_result"]
+        self.assertEqual(execution["manifest_status"], "success")
+        self.assertEqual(execution["observed"]["mesh_global_elements"], 371_447)
+        self.assertEqual(execution["observed"]["differential_field_dof"], 733_422)
+        self.assertEqual(execution["observed"]["static_field_dof"], 733_422)
+        self.assertEqual(execution["observed"]["field_sample_row_count"], 6_660)
         for token in (
             "FIELD_SAMPLE_POINT_COUNT=3330",
             "FIELD_SAMPLE_ROW_COUNT=6660",
@@ -145,6 +155,46 @@ class C1SampledFieldPreregistrationTests(unittest.TestCase):
             "FIELD_SOLUTIONS_CREATED=2",
         ):
             self.assertIn(token, self.preregistration["required_report"]["tokens"])
+
+    def test_mumps_followup_freezes_current_authorities_and_cg_evidence(self) -> None:
+        self.assertEqual(self.mumps_preregistration["status"], "authorized_not_run")
+        self.assertEqual(
+            self.mumps_preregistration["authorization"]["runtime_profile_id"],
+            MUMPS_RUNTIME_ID,
+        )
+        frozen = self.mumps_preregistration["frozen_identity"]
+        authorities = {
+            "runtime_profiles_sha256": PROJECT_ROOT
+            / "config"
+            / "runtime_profiles.json",
+            "comsol_solver_numerics_sha256": PROJECT_ROOT
+            / "config"
+            / "comsol_solver_numerics.json",
+            "engineering_budget_sha256": PROJECT_ROOT
+            / "config"
+            / "qualification"
+            / "engineering_budget.json",
+            "particle_source_profiles_sha256": PROJECT_ROOT
+            / "config"
+            / "particle_source_profiles.json",
+            "design_profiles_sha256": PROJECT_ROOT
+            / "config"
+            / "design_profiles.json",
+        }
+        for field, path in authorities.items():
+            self.assertEqual(frozen[field], sha256(path), field)
+        parent = self.mumps_preregistration["parent_cg_amg_arm"]
+        self.assertEqual(parent["manifest_status"], "success")
+        self.assertEqual(
+            parent["run_manifest_sha256"],
+            self.preregistration["execution_result"]["evidence_sha256"][
+                "run_manifest"
+            ],
+        )
+        identity = self.mumps_preregistration["frozen_mesh_and_dof_identity"]
+        self.assertEqual(identity["mesh_global_elements"], 371_447)
+        self.assertEqual(identity["differential_field_dof"], 733_422)
+        self.assertEqual(identity["static_field_dof"], 733_422)
 
 
 if __name__ == "__main__":

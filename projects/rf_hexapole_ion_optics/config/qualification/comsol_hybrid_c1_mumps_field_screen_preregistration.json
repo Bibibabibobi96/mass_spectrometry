@@ -1,0 +1,138 @@
+{
+  "schema_version": 2,
+  "role": "multipole_comsol_field_solver_isolation_preregistration",
+  "project_id": "rf_hexapole_ion_optics",
+  "experiment_id": "hexapole_hybrid_c1_p2_mumps_sampled_field_v1",
+  "preregistered_before_run": true,
+  "status": "authorized_not_run",
+  "authorization": {
+    "maximum_commercial_run_count": 1,
+    "automatic_retry_count": 0,
+    "planned_run_id": "20260730_013000__analysis__comsol__hex-hybrid-c1-mumps-field__r01",
+    "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_c1_mumps_field_screen",
+    "design_profile_id": "exit_aperture_plate_acceleration",
+    "particle_source_profile_id": "family_mother_sample_v1_n100",
+    "comsol_solver_numerics_profile_id": "hybrid_c1_mumps_field_screen",
+    "stop_stage": "field_solve",
+    "retention_class": "compact"
+  },
+  "frozen_identity": {
+    "expected_run_parent_resolved_design_sha256": "C9C3B00A5327825FCB138FB7EEDF2C6F7175497EAEB3CD1EB28A5D995AAC4B6E",
+    "physical_resolved_payload_sha256": "A868E5C06A6A98BF86C0D662D53118FCFF6EE51BA208214FACD7D39E32F6FD66",
+    "runtime_profiles_sha256": "7063CA94607D1D83C89D4D7FE56E67585CCCE2A7AF97D97EAD8F943AB40FD6A8",
+    "comsol_solver_numerics_sha256": "52CEC6B2F0760ADDBB02E09718DAEA5F154A7C4A6B46D58EF1FEBBF82DF85E7A",
+    "engineering_budget_sha256": "167994FBE14185D1CB5E66BBB55090EAABD8B3FD56F807784DF7E1D1458FB4F5",
+    "particle_source_profiles_sha256": "8162081232E0ABCA311DA9E9D10B8BDA78ED24E95C919E8E52B6787DDD1C0B30",
+    "design_profiles_sha256": "157EB846B0F3715A300EF9F3D994DD3B05A919C04FBFD83D6B8611A77FAA74B1"
+  },
+  "frozen_implementation": {
+    "files": [
+      {
+        "path": "common/multipole/run_finite_3d_transport.ps1",
+        "sha256": "5D1A652459B78C1C31C2CCA6E2DD68BB4A480A51F154D96CCA869C628BEB4BC0"
+      },
+      {
+        "path": "common/multipole/solve_finite_3d_transport.m",
+        "sha256": "3CD1BD8048252B1417C5BDB5E566DFA39A0E7A2D8C75AF88E6C6C33517A2CC47"
+      },
+      {
+        "path": "common/multipole/export_comsol_stationary_field_samples.m",
+        "sha256": "3992669B53EFC0DD27A01DE60C0580BDB23AF993F1CBC1CD750070B4B44AFA4E"
+      },
+      {
+        "path": "common/multipole/stationary_field_sampling.py",
+        "sha256": "69393842D5EA5541FE6FEEA3A6DA8B8A5486DFCED645959C2B8A1EB124AFC430"
+      }
+    ]
+  },
+  "field_sampling": {
+    "role": "multipole_stationary_field_sampling",
+    "plan_path": "common/multipole/stationary_field_sampling_plan.json",
+    "plan_sha256": "F5F865D6607DA92E5809A98CDF1A068E5C0B83DBEA1361E3281D6859D2E468D3",
+    "field_cases": [
+      "differential",
+      "static"
+    ],
+    "expected_point_count": 3330,
+    "expected_row_count": 6660,
+    "comparison_status_before_threshold_definition": "INCONCLUSIVE_DIAGNOSTIC_ONLY"
+  },
+  "frozen_mesh_and_dof_identity": {
+    "mesh_recipe": "hybrid_c1",
+    "mesh_global_elements": 371447,
+    "differential_field_dof": 733422,
+    "static_field_dof": 733422,
+    "source": "completed_cg_amg_arm"
+  },
+  "frozen_solver": {
+    "stationary_linear_solver_backend": "mumps",
+    "electric_potential_element_order": "quadratic",
+    "iterative_solver_settings_allowed": false,
+    "fallback_backend_or_retry_allowed": false
+  },
+  "parent_cg_amg_arm": {
+    "run_id": "20260730_012000__analysis__comsol__hex-hybrid-c1-cg-amg-field__r01",
+    "manifest_status": "success",
+    "run_manifest_sha256": "ACBF37D7CA6DFFC37C378CC5B4493462395C2904BBDC45FADBE29CC57F9634B1",
+    "comsol_report_sha256": "321D001DC2A13B7CC9854E8C5519888E38628123A0FE9A69707CE4AEF3A1AD60",
+    "solver_numerics_sha256": "015C19D64C2EE64312E960A23571E3AE5992A55786FBE997279BF61EFB5AC2EF",
+    "field_samples_sha256": "60E0040AC3A42931EF6E54E88A6A3913C12F326D5947D4DF6D39CB4EF812646C"
+  },
+  "resource_limits": {
+    "wall_clock_seconds": 600,
+    "process_tree_working_set_bytes": 12884901888,
+    "minimum_system_available_memory_bytes": 8589934592,
+    "transient_run_directory_bytes": 134217728,
+    "compact_final_retained_bytes": 10485760,
+    "maximum_mesh_cells": 600000,
+    "automatic_retry_count": 0
+  },
+  "required_report": {
+    "tokens": [
+      "CHECKPOINT=MESH_COMPLETE",
+      "MESH_GLOBAL_ELEMENTS=371447",
+      "CHECKPOINT=DIFFERENTIAL_FIELD_COMPLETE",
+      "CHECKPOINT=STATIONARY_FIELDS_COMPLETE",
+      "ELECTRIC_POTENTIAL_ELEMENT_ORDER=QUADRATIC",
+      "STATIONARY_LINEAR_SOLVER_BACKEND=MUMPS",
+      "DIFFERENTIAL_FIELD_DOF=733422",
+      "STATIC_FIELD_DOF=733422",
+      "STATIONARY_CONTROL=NOT_APPLICABLE",
+      "STATIONARY_RELATIVE_TOLERANCE=NOT_APPLICABLE",
+      "STATIONARY_FULLY_COUPLED_LINEAR_SOLVER=DDEF",
+      "STATIONARY_MAX_LINEAR_ITERATIONS=NOT_APPLICABLE",
+      "STATIONARY_LINEAR_ERROR_CHECK=NOT_APPLICABLE",
+      "STATIONARY_CONVERGENCE_LOG=NOT_APPLICABLE",
+      "FIELD_SAMPLE_POINT_COUNT=3330",
+      "FIELD_SAMPLE_ROW_COUNT=6660",
+      "CHECKPOINT=STATIONARY_FIELD_SAMPLES_COMPLETE",
+      "STOP_STAGE=field_solve",
+      "FIELD_PHYSICS_CREATED=1",
+      "FIELD_STUDIES_CREATED=2",
+      "FIELD_SOLUTIONS_CREATED=2",
+      "PARTICLE_PHYSICS_CREATED=0",
+      "PARTICLE_STUDIES_CREATED=0",
+      "FIELD_SOLVE_DIAGNOSTIC=PASS",
+      "STATUS=PASS"
+    ],
+    "positive_integer_fields": [
+      "MESH_GLOBAL_ELEMENTS",
+      "DIFFERENTIAL_FIELD_DOF",
+      "STATIC_FIELD_DOF"
+    ],
+    "finite_nonnegative_fields": [],
+    "forbidden_checkpoints": [
+      "PRIMARY_PARTICLE_CASE_COMPLETE",
+      "CONTROL_PARTICLE_CASE_COMPLETE"
+    ]
+  },
+  "decision_policy": {
+    "mumps_arm_success": "Both direct fields and all 6660 finite V/E sample rows complete within every hard limit while exact mesh-cell and DOF identities match the CG-AMG arm.",
+    "next_step_if_success": "Close all commercial authorization and compare the two retained sampled-field CSV files with the single public Python comparator.",
+    "result_if_hard_limit_exceeded": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
+    "result_if_identity_differs": "INCONCLUSIVE_NOT_SAME_RECIPE_REALIZATION",
+    "fallback_backend_or_retry_authorized": false,
+    "particle_followup_authorized": false
+  },
+  "claim_limit": "Even if successful, this arm permits only a same-recipe sampled-field diagnostic comparison. It does not by itself establish a sourced numerical-equivalence PASS, spatial or temporal convergence, particle transport, Candidate, Formal or N=1000 qualification."
+}

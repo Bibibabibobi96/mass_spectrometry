@@ -70,8 +70,10 @@
   当前已另行预登记
   [`C1共享采样CG-AMG场诊断`](config/qualification/comsol_hybrid_c1_cg_amg_field_screen_preregistration.json)：
   将D2的非轴向局部尺寸统一放宽1.4倍、轴向每段10层保持不变，硬帽为60万单元、600 s、12 GiB，
-  先只运行CG-AMG并发布3330个公共空间点的双场V/E样本。该首臂成功后才能冻结其实测单元数/DOF并
-  单独预登记同配方MUMPS臂；当前不授权MUMPS、粒子或资格结论。
+  已一次完成CG-AMG并发布3330个公共空间点的双场V/E样本：371,447单元、双场各733,422 DOF，
+  145.463 s、4,678,553,600 bytes进程树峰值，双场各5次迭代。当前仅以
+  [`同配方MUMPS预登记`](config/qualification/comsol_hybrid_c1_mumps_field_screen_preregistration.json)
+  授权第二臂一次、零重试，并冻结上述单元数/DOF；不授权粒子或资格结论。
   既有三模式baseline的两份
   求解器报告只具有`POSTHOC_DESCRIPTIVE`身份，统一
   比较见[`../../docs/history/20260729__multipole-three-mode-posthoc-n100.md`](../../docs/history/20260729__multipole-three-mode-posthoc-n100.md)。

@@ -258,9 +258,13 @@ FreeTet baseline的9,422,286,848 bytes。
 C1保持二次电势、四段扫掠结构和每段10个轴向层，把径向core/rod与transition/end四面体上限从
 0.5 mm放宽为0.7 mm、outer从1.0 mm放宽为1.4 mm、minimum从0.02 mm改为0.028 mm。它先授权
 一次CG-AMG field-only运行，硬帽为60万单元、600 s、12 GiB且零重试；公共采样计划固定3330个
-空间点，双场输出6660行V/E。只有该臂完整闭合，才可用其实测网格/DOF身份另行预登记同配方MUMPS
-臂。两臂比较仍为`INCONCLUSIVE_DIAGNOSTIC_ONLY`，未定义物理误差预算前不得称为数值等价PASS，
-也不允许提前进入粒子追踪。
+空间点，双场输出6660行V/E。该臂已一次成功：371,447单元，差分/静态场各733,422 DOF且各5次
+CG迭代，末残差分别为`1.6e-7/4.2e-7`；145.463 s，进程树峰值4,678,553,600 bytes，最终保留
+3,336,483 bytes。当前
+[`同配方MUMPS预登记`](../config/qualification/comsol_hybrid_c1_mumps_field_screen_preregistration.json)
+冻结这些实测网格/DOF身份、首臂manifest/report/numerics/field-sample SHA，并仅授权一次MUMPS
+field-only运行。两臂比较仍为`INCONCLUSIVE_DIAGNOSTIC_ONLY`，未定义物理误差预算前不得称为
+数值等价PASS，也不允许提前进入粒子追踪。
 
 共享SIMION模板、GUI复核、`.wgem`绕过和跨机可移植性状态只由
 [`../../../common/multipole/README.md`](../../../common/multipole/README.md)维护；公共机制证据不授予
