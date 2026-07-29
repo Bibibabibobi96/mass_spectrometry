@@ -131,7 +131,8 @@ baseline已在两求解器保持100/100传输和精确粒子身份；SIMION空�
 `MESH_COMPLETE`后以19.288 GB超过17.180 GB进程树帽，记为
 `INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`，不重跑、不抬帽。下述COMSOL D1 build-only网格诊断
 也已经结束。新身份D2随后完成唯一一次build-only网格诊断并耗尽一次性授权；独立预登记的N=100
-混合网格field+particle工程筛查也已关闭并拒绝当前候选，D3、时间档、N=1000和完整矩阵均未授权。完整
+混合网格field+particle工程筛查也已关闭并拒绝当时的粒子候选，该筛查本身未授权后续细化、时间档、
+N=1000或完整矩阵。后来独立完成的field-only C1/D2/D3序列见本文末尾；它同样不授权粒子。完整
 身份登记在`../config/qualification/n100_no_acceleration_qualification.json`。
 分段杆轴向加速身份和资源结论登记在
 `../config/qualification/n100_segmented_rod_axial_acceleration_qualification.json`。
@@ -275,11 +276,16 @@ field-sample SHA：CG-AMG相对MUMPS的差分场电势/场矢量normalized RMS�
 0.5 mm、outer从1.4 mm细化至1.0 mm、minimum从0.028 mm细化至0.02 mm。真实运行得到884,643
 单元、双场各1,657,156 DOF，差分/静态场分别6/7次CG迭代，130.145 s、6,360,670,208 bytes
 进程树峰值。公共采样显示C1→D2的差分场电势/场矢量normalized RMS为`0.165%/2.086%`，
-静态场为`0.107%/4.358%`；因此C1不接受为空间参考，空间收敛尚未建立，粒子跟进仍未授权。
-当前
+静态场为`0.107%/4.358%`；因此C1不接受为空间参考。随后
 [`D3 axial-14 sampled CG-AMG预登记`](../config/qualification/comsol_hybrid_d3_axial14_cg_amg_sampled_field_preregistration.json)
-只固定D2非轴向局部尺寸并把每物理段轴向层数从10增至14；硬帽100万单元、600 s、12 GiB，
-一次运行、零重试，只形成无阈值的轴向细化诊断。
+只固定D2非轴向局部尺寸并把每物理段轴向层数从10增至14。首个`r01`在进入MATLAB/COMSOL前被
+外层5 s编排时限终止，没有网格、场或资源证据，不消耗商业运行次数；同一冻结输入的`r02`一次成功，
+得到979,785单元、双场各2,016,046 DOF，差分/静态场分别5/6次CG迭代，145.026 s、
+7,004,827,648 bytes进程树峰值。D2→D3的差分场电势/场矢量normalized RMS为
+`0.0236%/0.1574%`，静态场为`0.0505%/0.8097%`，支持轴向离散的工程稳定性。总体空间收敛仍为
+`NOT_ESTABLISHED`：C1→D2非轴向变化明显，而D2之后没有第二个非轴向加密点；D3距100万单元硬帽
+只剩约2.02%。本轮场运行预算已经关闭，不继续加密、不抬帽，粒子、Candidate、Formal和N=1000
+跟进均未授权。
 
 共享SIMION模板、GUI复核、`.wgem`绕过和跨机可移植性状态只由
 [`../../../common/multipole/README.md`](../../../common/multipole/README.md)维护；公共机制证据不授予

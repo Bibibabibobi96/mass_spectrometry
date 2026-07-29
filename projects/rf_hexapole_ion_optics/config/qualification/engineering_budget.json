@@ -5,7 +5,7 @@
   "contract_id": "hexapole_hybrid_d3_axial14_cg_amg_sampled_axial_arm_v1",
   "preregistered_before_run": true,
   "pilot_authorization": {
-    "authorized": true,
+    "authorized": false,
     "scope": {
       "project_id": "rf_hexapole_ion_optics",
       "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_d3_axial14_cg_amg_field_screen",
@@ -38,7 +38,7 @@
   },
   "full_matrix_authorization": {
     "authorized": false,
-    "reason": "only_one_d3_axial14_cg_amg_sampled_field_arm_is_authorized_to_compare_axial_refinement_against_d2"
+    "reason": "d3_axial14_arm_completed_and_no_further_mesh_or_particle_matrix_is_authorized"
   },
   "budget_exhaustion_result": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
   "claim_limit": "This authorization covers exactly one quadratic hybrid-D3 CG-AMG field-only run with the governed V/E sampling plan, holding D2 nonaxial limits fixed while swept axial layers increase from 10 to 14. It authorizes no retry, fallback, direct-solver arm, particle tracing, convergence PASS, numerical-equivalence PASS, Candidate, Formal or N=1000 claim."

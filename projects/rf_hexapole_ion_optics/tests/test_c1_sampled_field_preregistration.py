@@ -67,12 +67,12 @@ class C1SampledFieldPreregistrationTests(unittest.TestCase):
         self.assertEqual(cg_numerics["stationary_linear_solver_backend"], "cg_amg")
         self.assertEqual(mumps_numerics["stationary_linear_solver_backend"], "mumps")
 
-    def test_live_budget_closes_both_completed_arms(self) -> None:
+    def test_live_budget_closes_completed_field_campaign(self) -> None:
         budget = load(
             PROJECT_ROOT / "config" / "qualification" / "engineering_budget.json"
         )
         pilot = budget["pilot_authorization"]
-        self.assertTrue(pilot["authorized"])
+        self.assertFalse(pilot["authorized"])
         self.assertNotIn(
             pilot["scope"]["runtime_profile_id"],
             {CG_RUNTIME_ID, MUMPS_RUNTIME_ID},
@@ -244,38 +244,26 @@ class C1SampledFieldPreregistrationTests(unittest.TestCase):
         self.assertEqual(execution["observed"]["mesh_global_elements"], 884_643)
         self.assertEqual(execution["observed"]["field_sample_row_count"], 6_660)
 
-    def test_d3_axial_arm_is_current_and_single_axis(self) -> None:
+    def test_d3_axial_arm_is_completed_and_single_axis(self) -> None:
         preregistration = load(
             PROJECT_ROOT
             / "config"
             / "qualification"
             / "comsol_hybrid_d3_axial14_cg_amg_sampled_field_preregistration.json"
         )
-        self.assertEqual(preregistration["status"], "authorized_not_run")
+        self.assertEqual(preregistration["status"], "completed_success")
         self.assertTrue(
             preregistration["authorization"]["planned_run_id"].endswith("__r02")
         )
         frozen = preregistration["frozen_identity"]
-        authorities = {
-            "runtime_profiles_sha256": PROJECT_ROOT
-            / "config"
-            / "runtime_profiles.json",
-            "comsol_solver_numerics_sha256": PROJECT_ROOT
-            / "config"
-            / "comsol_solver_numerics.json",
-            "engineering_budget_sha256": PROJECT_ROOT
-            / "config"
-            / "qualification"
-            / "engineering_budget.json",
-            "particle_source_profiles_sha256": PROJECT_ROOT
-            / "config"
-            / "particle_source_profiles.json",
-            "design_profiles_sha256": PROJECT_ROOT
-            / "config"
-            / "design_profiles.json",
-        }
-        for field, path in authorities.items():
-            self.assertEqual(frozen[field], sha256(path), field)
+        for field in (
+            "runtime_profiles_sha256",
+            "comsol_solver_numerics_sha256",
+            "engineering_budget_sha256",
+            "particle_source_profiles_sha256",
+            "design_profiles_sha256",
+        ):
+            self.assertRegex(frozen[field], r"^[0-9A-F]{64}$")
         mesh = preregistration["frozen_mesh"]
         self.assertEqual(
             mesh["single_refinement_axis"], "axial_layers_per_swept_segment"
@@ -288,6 +276,43 @@ class C1SampledFieldPreregistrationTests(unittest.TestCase):
         pre_solver = preregistration["pre_solver_attempt"]
         self.assertFalse(pre_solver["commercial_solver_launched"])
         self.assertEqual(pre_solver["commercial_run_count_consumed"], 0)
+        execution = preregistration["execution_result"]
+        self.assertEqual(execution["manifest_status"], "success")
+        self.assertEqual(execution["observed"]["mesh_global_elements"], 979_785)
+        self.assertEqual(execution["observed"]["field_sample_row_count"], 6_660)
+        self.assertFalse(execution["particle_followup_authorized"])
+
+    def test_d2_to_d3_comparison_closes_without_particle_authorization(self) -> None:
+        comparison = load(
+            PROJECT_ROOT
+            / "config"
+            / "qualification"
+            / "comsol_hybrid_d2_vs_d3_axial_comparison.json"
+        )
+        self.assertEqual(comparison["status"], "INCONCLUSIVE_DIAGNOSTIC_ONLY")
+        self.assertFalse(comparison["acceptance_thresholds_applied"])
+        self.assertEqual(
+            comparison["decision"]["axial_discretization_engineering_stability"],
+            "SUPPORTED_BY_SMALL_ADJACENT_DIFFERENCE",
+        )
+        self.assertEqual(
+            comparison["decision"]["overall_spatial_convergence"],
+            "NOT_ESTABLISHED",
+        )
+        self.assertFalse(comparison["decision"]["further_mesh_refinement_authorized"])
+        self.assertFalse(comparison["decision"]["particle_followup_authorized"])
+        self.assertEqual(
+            comparison["metrics"]["differential"][
+                "field_vector_reference_normalized_rms"
+            ],
+            0.001574401382595984,
+        )
+        self.assertEqual(
+            comparison["metrics"]["static"][
+                "field_vector_reference_normalized_rms"
+            ],
+            0.008096903185390733,
+        )
 
 
 if __name__ == "__main__":

@@ -65,8 +65,8 @@
   单元和双场完成返回`PASS`，实测142.829 s、6,342,643,712 bytes进程树峰值，较完整FreeTet
   baseline低32.6846676%。但运行后合同错误地要求两个Electrostatics physics，而有效配对架构是
   一个physics复用于两个Study/两个Solution，故终态manifest为`failed`。这些数值只具有
-  `POSTHOC_ENGINEERING_OBSERVATION_ONLY`身份，不构成预登记PASS；一次授权已经耗尽，零重试且
-  不授权粒子跟进、D3、时间档、直接求解器等价、收敛、N=1000、Candidate或Formal资格。
+  `POSTHOC_ENGINEERING_OBSERVATION_ONLY`身份，不构成预登记PASS；该次授权已经耗尽，零重试且
+  本身不授权粒子跟进、后续细化、时间档、直接求解器等价、收敛、N=1000、Candidate或Formal资格。
   当前已另行预登记
   [`C1共享采样CG-AMG场诊断`](config/qualification/comsol_hybrid_c1_cg_amg_field_screen_preregistration.json)：
   将D2的非轴向局部尺寸统一放宽1.4倍、轴向每段10层保持不变，硬帽为60万单元、600 s、12 GiB，
@@ -81,10 +81,13 @@
   [`D2 sampled CG-AMG非轴向细化臂`](config/qualification/comsol_hybrid_d2_cg_amg_sampled_field_preregistration.json)，
   保持轴向每段10层和CG-AMG不变，完成0.7→0.5 mm非轴向局部加密：884,643单元、双场各
   1,657,156 DOF，130.145 s、6,360,670,208 bytes进程树峰值。C1→D2的差分/静态场矢量
-  normalized RMS约为`2.09%/4.36%`，所以C1不接受为空间参考，空间收敛尚未建立。当前只预登记
+  normalized RMS约为`2.09%/4.36%`，所以C1不接受为空间参考。随后
   [`D3 axial-14 CG-AMG轴向细化臂`](config/qualification/comsol_hybrid_d3_axial14_cg_amg_sampled_field_preregistration.json)：
-  固定D2全部非轴向尺寸，只把每物理段轴向层数从10增至14，硬帽100万单元、600 s、12 GiB，
-  一次运行、零重试。它不授权粒子或资格结论。
+  固定D2全部非轴向尺寸，只把每物理段轴向层数从10增至14，并以979,785单元、双场各
+  2,016,046 DOF、145.026 s和7,004,827,648 bytes进程树峰值完成。D2→D3的差分/静态场矢量
+  normalized RMS约为`0.157%/0.810%`，支持轴向离散的工程稳定性；但D2之后没有第二个非轴向
+  加密点，且D3距100万单元硬帽只剩约2.02%，所以总体空间收敛仍未建立。本轮预算和全部场运行
+  授权均已关闭，不授权继续加密、粒子或资格结论。
   既有三模式baseline的两份
   求解器报告只具有`POSTHOC_DESCRIPTIVE`身份，统一
   比较见[`../../docs/history/20260729__multipole-three-mode-posthoc-n100.md`](../../docs/history/20260729__multipole-three-mode-posthoc-n100.md)。
