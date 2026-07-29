@@ -67,18 +67,25 @@ class C1SampledFieldPreregistrationTests(unittest.TestCase):
         self.assertEqual(cg_numerics["stationary_linear_solver_backend"], "cg_amg")
         self.assertEqual(mumps_numerics["stationary_linear_solver_backend"], "mumps")
 
-    def test_active_budget_authorizes_only_the_second_arm(self) -> None:
+    def test_live_budget_closes_both_completed_arms(self) -> None:
         budget = load(
             PROJECT_ROOT / "config" / "qualification" / "engineering_budget.json"
         )
         pilot = budget["pilot_authorization"]
         self.assertTrue(pilot["authorized"])
-        self.assertEqual(pilot["scope"]["runtime_profile_id"], MUMPS_RUNTIME_ID)
+        self.assertNotIn(
+            pilot["scope"]["runtime_profile_id"],
+            {CG_RUNTIME_ID, MUMPS_RUNTIME_ID},
+        )
+        self.assertEqual(
+            pilot["scope"]["runtime_profile_id"],
+            "exit_aperture_plate_acceleration_n100_hybrid_d2_cg_amg_field_screen",
+        )
         self.assertEqual(pilot["scope"]["stop_stage"], "field_solve")
         self.assertEqual(pilot["scope"]["allowed_solvers"], ["comsol"])
         self.assertEqual(pilot["limits"]["wall_clock_seconds_by_solver"]["comsol"], 600)
         self.assertEqual(pilot["limits"]["process_tree_working_set_bytes"], 12 * 1024**3)
-        self.assertEqual(pilot["limits"]["maximum_mesh_cells"], 600_000)
+        self.assertEqual(pilot["limits"]["maximum_mesh_cells"], 1_000_000)
         self.assertEqual(pilot["limits"]["automatic_retry_count"], 0)
 
     def test_authority_and_implementation_hashes_are_current(self) -> None:
@@ -157,12 +164,88 @@ class C1SampledFieldPreregistrationTests(unittest.TestCase):
             self.assertIn(token, self.preregistration["required_report"]["tokens"])
 
     def test_mumps_followup_freezes_current_authorities_and_cg_evidence(self) -> None:
-        self.assertEqual(self.mumps_preregistration["status"], "authorized_not_run")
+        self.assertEqual(self.mumps_preregistration["status"], "completed_success")
         self.assertEqual(
             self.mumps_preregistration["authorization"]["runtime_profile_id"],
             MUMPS_RUNTIME_ID,
         )
         frozen = self.mumps_preregistration["frozen_identity"]
+        authorities = {
+            "runtime_profiles_sha256": PROJECT_ROOT
+            / "config"
+            / "runtime_profiles.json",
+            "comsol_solver_numerics_sha256": PROJECT_ROOT
+            / "config"
+            / "comsol_solver_numerics.json",
+            "particle_source_profiles_sha256": PROJECT_ROOT
+            / "config"
+            / "particle_source_profiles.json",
+            "design_profiles_sha256": PROJECT_ROOT
+            / "config"
+            / "design_profiles.json",
+        }
+        for field, path in authorities.items():
+            self.assertEqual(frozen[field], sha256(path), field)
+        self.assertRegex(frozen["engineering_budget_sha256"], r"^[0-9A-F]{64}$")
+        parent = self.mumps_preregistration["parent_cg_amg_arm"]
+        self.assertEqual(parent["manifest_status"], "success")
+        self.assertEqual(
+            parent["run_manifest_sha256"],
+            self.preregistration["execution_result"]["evidence_sha256"][
+                "run_manifest"
+            ],
+        )
+        identity = self.mumps_preregistration["frozen_mesh_and_dof_identity"]
+        self.assertEqual(identity["mesh_global_elements"], 371_447)
+        self.assertEqual(identity["differential_field_dof"], 733_422)
+        self.assertEqual(identity["static_field_dof"], 733_422)
+        execution = self.mumps_preregistration["execution_result"]
+        self.assertEqual(execution["manifest_status"], "success")
+        self.assertEqual(execution["observed"]["mesh_global_elements"], 371_447)
+        self.assertEqual(execution["observed"]["field_sample_row_count"], 6_660)
+
+    def test_comparison_record_remains_diagnostic_only(self) -> None:
+        comparison = load(
+            PROJECT_ROOT
+            / "config"
+            / "qualification"
+            / "comsol_hybrid_c1_solver_comparison.json"
+        )
+        self.assertEqual(comparison["status"], "INCONCLUSIVE_DIAGNOSTIC_ONLY")
+        self.assertFalse(comparison["acceptance_thresholds_applied"])
+        self.assertEqual(
+            comparison["decision"]["solver_pair_functional_closure"], "PASS"
+        )
+        self.assertEqual(
+            comparison["decision"]["numerical_equivalence_qualification"],
+            "INCONCLUSIVE_NO_SOURCED_ERROR_BUDGET",
+        )
+        self.assertFalse(comparison["decision"]["particle_followup_authorized"])
+        self.assertFalse(
+            comparison["decision"]["commercial_run_authorization_open"]
+        )
+        self.assertEqual(
+            comparison["metrics"]["differential"][
+                "field_vector_reference_normalized_rms"
+            ],
+            2.29979687036153e-6,
+        )
+        self.assertEqual(
+            comparison["metrics"]["static"][
+                "field_vector_reference_normalized_rms"
+            ],
+            3.0298904548747926e-5,
+        )
+
+    def test_d2_sampled_spatial_arm_is_current_and_single_axis(self) -> None:
+        preregistration = load(
+            PROJECT_ROOT
+            / "config"
+            / "qualification"
+            / "comsol_hybrid_d2_cg_amg_sampled_field_preregistration.json"
+        )
+        self.assertEqual(preregistration["status"], "authorized_not_run")
+        frozen = preregistration["frozen_identity"]
         authorities = {
             "runtime_profiles_sha256": PROJECT_ROOT
             / "config"
@@ -183,18 +266,14 @@ class C1SampledFieldPreregistrationTests(unittest.TestCase):
         }
         for field, path in authorities.items():
             self.assertEqual(frozen[field], sha256(path), field)
-        parent = self.mumps_preregistration["parent_cg_amg_arm"]
-        self.assertEqual(parent["manifest_status"], "success")
-        self.assertEqual(
-            parent["run_manifest_sha256"],
-            self.preregistration["execution_result"]["evidence_sha256"][
-                "run_manifest"
-            ],
+        mesh = preregistration["frozen_mesh"]
+        self.assertEqual(mesh["single_refinement_axis"], "nonaxial_local_size_limits")
+        self.assertEqual(mesh["unchanged_axial_layers_per_swept_segment"], 10)
+        self.assertEqual(mesh["expected_mesh_global_elements"], 884_643)
+        self.assertEqual(mesh["expected_differential_field_dof"], 1_657_156)
+        self.assertFalse(
+            preregistration["decision_policy"]["particle_followup_authorized"]
         )
-        identity = self.mumps_preregistration["frozen_mesh_and_dof_identity"]
-        self.assertEqual(identity["mesh_global_elements"], 371_447)
-        self.assertEqual(identity["differential_field_dof"], 733_422)
-        self.assertEqual(identity["static_field_dof"], 733_422)
 
 
 if __name__ == "__main__":

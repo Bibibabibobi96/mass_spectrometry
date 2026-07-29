@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "role": "multipole_stationary_field_solver_comparison_record",
+  "project_id": "rf_hexapole_ion_optics",
+  "comparison_id": "hexapole_hybrid_c1_cg_amg_vs_mumps_sampled_field_v1",
+  "status": "INCONCLUSIVE_DIAGNOSTIC_ONLY",
+  "acceptance_thresholds_applied": false,
+  "same_recipe_identity": {
+    "parent_resolved_design_sha256": "C9C3B00A5327825FCB138FB7EEDF2C6F7175497EAEB3CD1EB28A5D995AAC4B6E",
+    "electric_potential_element_order": "quadratic",
+    "mesh_recipe": "hybrid_c1",
+    "mesh_global_elements": 371447,
+    "differential_field_dof": 733422,
+    "static_field_dof": 733422,
+    "sampling_plan_sha256": "F5F865D6607DA92E5809A98CDF1A068E5C0B83DBEA1361E3281D6859D2E468D3",
+    "field_sample_point_count": 3330,
+    "field_sample_row_count": 6660
+  },
+  "reference_mumps": {
+    "run_id": "20260730_013000__analysis__comsol__hex-hybrid-c1-mumps-field__r01",
+    "run_manifest_sha256": "9A46D554AF8F7E6D551EE9DEEA407E4B24359183C112DE1A081D96B038AED572",
+    "field_samples_sha256": "71C68705E79183AC0A641B9AFB863C07C512111341F6DA3281A262BB0AE1FD6B"
+  },
+  "candidate_cg_amg": {
+    "run_id": "20260730_012000__analysis__comsol__hex-hybrid-c1-cg-amg-field__r01",
+    "run_manifest_sha256": "ACBF37D7CA6DFFC37C378CC5B4493462395C2904BBDC45FADBE29CC57F9634B1",
+    "field_samples_sha256": "60E0040AC3A42931EF6E54E88A6A3913C12F326D5947D4DF6D39CB4EF812646C"
+  },
+  "comparison_artifact": {
+    "path": "artifacts/projects/rf_hexapole_ion_optics/comparisons/20260730__hex_hybrid_c1_cg_amg_vs_mumps_field.json",
+    "sha256": "8629F937A9C3F8B10FBC1F8C99907D1359C170C7E61F0A7A6912968185A3D6AA",
+    "bytes": 3213
+  },
+  "metrics": {
+    "differential": {
+      "potential_reference_normalized_rms": 1.6576221421454935e-6,
+      "field_vector_reference_normalized_rms": 2.29979687036153e-6,
+      "maximum_field_vector_difference_V_per_m": 0.46384333217480966
+    },
+    "static": {
+      "potential_reference_normalized_rms": 4.89133823826496e-6,
+      "field_vector_reference_normalized_rms": 3.0298904548747926e-5,
+      "maximum_field_vector_difference_V_per_m": 0.0828287574980318
+    }
+  },
+  "resource_observation": {
+    "cg_amg_wall_clock_seconds": 145.463,
+    "cg_amg_peak_process_tree_working_set_bytes": 4678553600,
+    "mumps_wall_clock_seconds": 145.532,
+    "mumps_peak_process_tree_working_set_bytes": 9637584896
+  },
+  "decision": {
+    "solver_pair_functional_closure": "PASS",
+    "numerical_equivalence_qualification": "INCONCLUSIVE_NO_SOURCED_ERROR_BUDGET",
+    "spatial_convergence": "NOT_ESTABLISHED",
+    "axial_convergence": "NOT_ESTABLISHED",
+    "particle_followup_authorized": false,
+    "commercial_run_authorization_open": false
+  },
+  "claim_limit": "The two solvers completed the same hybrid-C1 recipe with exact mesh-cell and DOF identities, and their governed sampled fields are numerically close. Without a preregistered physical error budget these observations do not constitute numerical-equivalence PASS, spatial or temporal convergence, particle transport, Candidate, Formal or N=1000 qualification."
+}

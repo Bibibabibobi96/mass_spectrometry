@@ -147,10 +147,6 @@ class HybridD2PreregistrationTests(unittest.TestCase):
             NUMERICS_PROFILE_ID,
         )
         self.assertFalse(self.budget["full_matrix_authorization"]["authorized"])
-        self.assertNotIn(
-            "hybrid_d2",
-            authorization["scope"]["runtime_profile_id"],
-        )
 
     def test_d2_solver_size_and_terminal_report_are_frozen(self) -> None:
         d2 = self.preregistration["d2"]

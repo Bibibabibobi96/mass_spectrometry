@@ -2,19 +2,19 @@
   "schema_version": 1,
   "role": "multipole_engineering_budget_contract",
   "project_id": "rf_hexapole_ion_optics",
-  "contract_id": "hexapole_hybrid_c1_mumps_field_sampling_v1",
+  "contract_id": "hexapole_hybrid_d2_cg_amg_sampled_spatial_arm_v1",
   "preregistered_before_run": true,
   "pilot_authorization": {
     "authorized": true,
     "scope": {
       "project_id": "rf_hexapole_ion_optics",
-      "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_c1_mumps_field_screen",
+      "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_d2_cg_amg_field_screen",
       "stop_stage": "field_solve",
       "design_profile_id": "exit_aperture_plate_acceleration",
       "particle_source_profile_id": "family_mother_sample_v1_n100",
       "particle_count": 100,
       "solver_numerics_profile_ids": {
-        "comsol": "hybrid_c1_mumps_field_screen",
+        "comsol": "hybrid_d2_cg_amg_field_screen",
         "simion": "baseline_finite_3d"
       },
       "allowed_solvers": [
@@ -32,14 +32,14 @@
       "process_tree_working_set_bytes": 12884901888,
       "minimum_system_available_memory_bytes": 8589934592,
       "compact_final_retained_bytes": 10485760,
-      "maximum_mesh_cells": 600000,
+      "maximum_mesh_cells": 1000000,
       "automatic_retry_count": 0
     }
   },
   "full_matrix_authorization": {
     "authorized": false,
-    "reason": "only_one_same_recipe_mumps_field_sampling_followup_is_authorized_after_the_cg_amg_arm_passed"
+    "reason": "only_one_d2_cg_amg_sampled_field_arm_is_authorized_to_compare_nonaxial_refinement_against_c1"
   },
   "budget_exhaustion_result": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
-  "claim_limit": "This authorization covers exactly one quadratic hybrid-C1 MUMPS field-only diagnostic with the same governed V/E sampling plan and the CG-AMG arm's observed mesh and DOF identities. It authorizes no retry, fallback, particle tracing, convergence PASS, numerical-equivalence PASS, Candidate, Formal or N=1000 claim."
+  "claim_limit": "This authorization covers exactly one quadratic hybrid-D2 CG-AMG field-only run with the governed V/E sampling plan, to compare nonaxial refinement against completed C1 while axial layers remain 10. It authorizes no retry, fallback, direct-solver arm, particle tracing, convergence PASS, numerical-equivalence PASS, Candidate, Formal or N=1000 claim."
 }

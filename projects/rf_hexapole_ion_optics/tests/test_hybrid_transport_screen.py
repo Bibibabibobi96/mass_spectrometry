@@ -117,7 +117,8 @@ class HybridTransportScreenTests(unittest.TestCase):
 
     def test_closed_transport_identity_is_not_reauthorized_by_field_screen(self) -> None:
         with self.assertRaisesRegex(
-            ValueError, "requested pilot identity differs from authorized scope"
+            ValueError,
+            "pilot is not authorized|requested pilot identity differs",
         ):
             validate_pilot_budget(
                 repo_root=REPO_ROOT,

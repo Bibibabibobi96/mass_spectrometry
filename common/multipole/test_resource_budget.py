@@ -183,11 +183,23 @@ class ResourceBudgetTests(unittest.TestCase):
         self.assertIn("differs from the authorized runtime profile", mismatch.stderr)
 
     def test_mesh_cell_limit_is_optional_and_strictly_positive(self) -> None:
-        runtime_profile_id = (
-            "exit_aperture_plate_acceleration_n100_hybrid_c1_mumps_field_screen"
+        budget_path = (
+            REPO_ROOT
+            / "projects"
+            / HEX
+            / "config"
+            / "qualification"
+            / "engineering_budget.json"
         )
+        active_budget = json.loads(budget_path.read_text(encoding="utf-8"))
+        runtime_profile_id = active_budget["pilot_authorization"]["scope"][
+            "runtime_profile_id"
+        ]
         runtime = resolve_runtime_profile(REPO_ROOT, HEX, runtime_profile_id)
-        budget_path = Path(runtime["engineering_budget"]["path"])
+        self.assertEqual(
+            budget_path.resolve(),
+            Path(runtime["engineering_budget"]["path"]).resolve(),
+        )
         authorized_fixture = json.loads(budget_path.read_text(encoding="utf-8"))
         authorized_fixture["pilot_authorization"]["authorized"] = True
         authorized_fixture["pilot_authorization"]["scope"]["stop_stage"] = runtime[

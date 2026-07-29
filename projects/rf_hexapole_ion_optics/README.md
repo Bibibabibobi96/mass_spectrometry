@@ -73,7 +73,14 @@
   已一次完成CG-AMG并发布3330个公共空间点的双场V/E样本：371,447单元、双场各733,422 DOF，
   145.463 s、4,678,553,600 bytes进程树峰值，双场各5次迭代。当前仅以
   [`同配方MUMPS预登记`](config/qualification/comsol_hybrid_c1_mumps_field_screen_preregistration.json)
-  授权第二臂一次、零重试，并冻结上述单元数/DOF；不授权粒子或资格结论。
+  完成第二臂一次、零重试：精确重现371,447单元及双场733,422 DOF，145.532 s、9,637,584,896
+  bytes进程树峰值。公共
+  [`场比较记录`](config/qualification/comsol_hybrid_c1_solver_comparison.json)显示差分/静态场矢量
+  normalized RMS分别约`2.300e-6/3.030e-5`；因尚无来源化误差预算，结论保持
+  `INCONCLUSIVE_DIAGNOSTIC_ONLY`。C1两臂授权均已关闭；当前仅另行预登记一次
+  [`D2 sampled CG-AMG非轴向细化臂`](config/qualification/comsol_hybrid_d2_cg_amg_sampled_field_preregistration.json)，
+  保持轴向每段10层和CG-AMG不变，以公共样本比较0.7→0.5 mm非轴向局部加密。它不授权粒子或
+  资格结论。
   既有三模式baseline的两份
   求解器报告只具有`POSTHOC_DESCRIPTIVE`身份，统一
   比较见[`../../docs/history/20260729__multipole-three-mode-posthoc-n100.md`](../../docs/history/20260729__multipole-three-mode-posthoc-n100.md)。

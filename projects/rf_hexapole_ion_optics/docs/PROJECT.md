@@ -263,8 +263,17 @@ CG迭代，末残差分别为`1.6e-7/4.2e-7`；145.463 s，进程树峰值4,678,
 3,336,483 bytes。当前
 [`同配方MUMPS预登记`](../config/qualification/comsol_hybrid_c1_mumps_field_screen_preregistration.json)
 冻结这些实测网格/DOF身份、首臂manifest/report/numerics/field-sample SHA，并仅授权一次MUMPS
-field-only运行。两臂比较仍为`INCONCLUSIVE_DIAGNOSTIC_ONLY`，未定义物理误差预算前不得称为
-数值等价PASS，也不允许提前进入粒子追踪。
+field-only运行。该臂也已一次成功，精确重现371,447单元及两个733,422 DOF场；145.532 s，
+进程树峰值9,637,584,896 bytes，最终保留3,338,418 bytes。统一
+[`比较记录`](../config/qualification/comsol_hybrid_c1_solver_comparison.json)绑定两份manifest与
+field-sample SHA：CG-AMG相对MUMPS的差分场电势/场矢量normalized RMS为
+`1.658e-6/2.300e-6`，静态场为`4.891e-6/3.030e-5`。这证明同配方双求解器功能闭合且数值非常接近，
+但比较仍为`INCONCLUSIVE_DIAGNOSTIC_ONLY`；未定义物理误差预算前不得称为数值等价PASS，也不允许
+提前进入粒子追踪。C1两臂一次性授权均已耗尽；当前仅
+[`D2 sampled CG-AMG预登记`](../config/qualification/comsol_hybrid_d2_cg_amg_sampled_field_preregistration.json)
+另行授权一次非轴向细化臂：轴向每段10层保持不变，core/rod及transition/end从0.7 mm细化至
+0.5 mm、outer从1.4 mm细化至1.0 mm、minimum从0.028 mm细化至0.02 mm。该臂硬帽为100万单元、
+600 s、12 GiB且零重试，只形成无阈值的空间细化诊断。
 
 共享SIMION模板、GUI复核、`.wgem`绕过和跨机可移植性状态只由
 [`../../../common/multipole/README.md`](../../../common/multipole/README.md)维护；公共机制证据不授予
