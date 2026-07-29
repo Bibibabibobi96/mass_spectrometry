@@ -62,13 +62,18 @@
   },
   "baseline_functional_transport": {
     "status": "PASS",
+    "observation_event": "handoff",
+    "paired_analysis_artifact_sha256": {
+      "simion": "DA3DFAEB8958BE24DB7F12FB6A25407BC74624E783F442D5B815DF0EBB8A30C8",
+      "comsol": "CE4288EA803D0529E2DDA479ED77976DCBE1314F830E3B5A3B1C6986661B76A5"
+    },
     "accelerated_transmitted_particle_count_each_solver": 100,
     "control_transmitted_particle_count_each_solver": 100,
     "cross_solver_handoff_particle_id_sets": "exact_match",
     "positive_working_radius_margin_each_solver": true,
     "mean_energy_gain_eV": {
-      "simion": 3.0208996409337003,
-      "comsol": 3.0010422039491984
+      "simion": 3.0208996409337,
+      "comsol": 3.00299813065383
     }
   },
   "same_solver_spatial": {

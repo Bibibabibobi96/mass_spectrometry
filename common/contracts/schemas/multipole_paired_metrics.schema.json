@@ -13,6 +13,7 @@
     "axial_drive_topology",
     "primary_case_id",
     "control_case_id",
+    "observation_event",
     "paired_population_policy",
     "particles",
     "accelerated_transmitted_particles",
@@ -55,6 +56,7 @@
     },
     "primary_case_id": {"type": "string", "minLength": 1},
     "control_case_id": {"type": "string", "minLength": 1},
+    "observation_event": {"const": "handoff"},
     "paired_population_policy": {
       "const": "intersection_of_transmitted_particle_ids"
     },

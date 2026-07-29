@@ -1,4 +1,4 @@
-"""Evaluate paired SIMION axial-drop and zero-drop RF-on runs."""
+"""Evaluate paired axial-drive and control states at the canonical handoff."""
 
 from __future__ import annotations
 
@@ -13,9 +13,10 @@ from common.contracts.machine_contracts import validate_schema
 
 
 PAIRED_POPULATION_POLICY = "intersection_of_transmitted_particle_ids"
+OBSERVATION_EVENT = "handoff"
 
 
-def _terminal_transmission(
+def _event_transmission(
     path: Path,
 ) -> tuple[dict[int, dict[str, float]], dict[int, dict[str, float]]]:
     sources: dict[int, dict[str, float]] = {}
@@ -29,7 +30,7 @@ def _terminal_transmission(
                     "divergence_angle_deg": float(row["divergence_angle_deg"]),
                     "radial_position_mm": float(row["radial_position_mm"]),
                 }
-            elif row["event"] == "terminal" and row["status"] == "transmitted":
+            elif row["event"] == OBSERVATION_EVENT and row["status"] == "transmitted":
                 transmitted[particle_id] = {
                     "kinetic_energy_eV": float(row["kinetic_energy_eV"]),
                     "divergence_angle_deg": float(row["divergence_angle_deg"]),
@@ -73,8 +74,8 @@ def evaluate(
         if topology == "exit_aperture_plate_potential_step"
         else "Resolved-design axial-drive metrics only; no formal claim."
     )
-    accelerated_sources, accelerated = _terminal_transmission(accelerated_state)
-    control_sources, control = _terminal_transmission(control_state)
+    accelerated_sources, accelerated = _event_transmission(accelerated_state)
+    control_sources, control = _event_transmission(control_state)
     if accelerated_sources != control_sources:
         raise ValueError("paired runs do not contain the same particle IDs")
     paired_ids = sorted(set(accelerated) & set(control))
@@ -125,6 +126,7 @@ def evaluate(
         "axial_drive_topology": topology,
         "primary_case_id": primary_case_id,
         "control_case_id": control_case_id,
+        "observation_event": OBSERVATION_EVENT,
         "paired_population_policy": PAIRED_POPULATION_POLICY,
         "particles": count,
         "accelerated_transmitted_particles": len(accelerated),

@@ -97,6 +97,7 @@ class TransportEvidenceTest(unittest.TestCase):
             "axial_drive_topology": "segmented_rod_axial_acceleration",
             "primary_case_id": "axial_acceleration_rf_on",
             "control_case_id": "zero_axial_drop_rf_on",
+            "observation_event": "handoff",
             "paired_population_policy": "intersection_of_transmitted_particle_ids",
             "particles": 100,
             "accelerated_transmitted_particles": 90,

@@ -73,6 +73,10 @@ enclosure必须显式声明职责：
 因此把统计面称为detector。活动多极杆文档禁止用无限定的`endcap/endplate/detector/particle plane`
 代替上表术语。
 
+配对加速与跨求解器连续比较统一使用规范`handoff`事件。`terminal/census`只有在两个求解器从
+handoff到统计面解析完全相同的场域和终止机制时才可比较；当前SIMION的无场投影terminal与COMSOL
+继续解析近接口场的terminal只能作各自求解器内诊断，不得混入跨求解器能量或发散结论。
+
 ## 粒子源和证据边界
 
 公共solver core的`ParticleSourcePath`指向canonical CSV，列顺序固定为：

@@ -2,16 +2,15 @@
   "schema_version": 1,
   "role": "multipole_project_acceleration_qualification_record",
   "project_id": "rf_octupole_ion_optics",
-  "design_profile_id": "segmented_rod_axial_acceleration",
+  "design_profile_id": "exit_aperture_plate_acceleration",
   "particle_count": 100,
   "recorded_after_runs": true,
   "preregistration": {
     "path": "projects/rf_octupole_ion_optics/config/qualification/n100_convergence_preregistration.json",
     "sha256_before_runs": "D3C965869A2CB715FE710C8C5507A7C6F1AABFD6C845378F8D60820376A27669",
-    "git_commits_before_runs": {
-      "baseline": "3aa966b",
-      "spatial": "1d67000"
-    }
+    "baseline_git_commit_before_runs": "424505d",
+    "spatial_engineering_budget_sha256_before_runs": "36A1FEBC7384AF4E069FAEC41965128BECF3359E55D8DC2EC5048BDF24DA0546",
+    "spatial_contract_frozen_by_each_run_manifest": true
   },
   "method": {
     "path": "common/multipole/numerical_qualification.json",
@@ -26,32 +25,32 @@
   "runs": {
     "simion": {
       "baseline": {
-        "run_id": "20260729_074000__sim__simion__oct-segaccel-n100__resolved-l3",
-        "manifest_sha256": "DB3AA742F646B22B952AA9578CC1B09118DE821B8F182946D406CF9D27F6BF0F"
+        "run_id": "20260729_090000__sim__simion__oct-exitplate-n100__resolved-l3",
+        "manifest_sha256": "BF5C52C261170D76604C15C35CE1EBBB9E02F0298F3B928B6CAB22AF233E9026"
       },
       "spatial_refined": {
-        "run_id": "20260729_082000__sim__simion__oct-segaccel-spatial-n100__resolved-l3",
-        "manifest_sha256": "E5E8F15EB1841E8237E3196679C84F137AD9D622401D51F1C715982634C11C7B"
+        "run_id": "20260729_113000__sim__simion__oct-exitplate-spatial-n100__resolved-l3",
+        "manifest_sha256": "4B6446656977513D58361D37B2B25F09EC171E4FC2DB3BE6C96B67129D26F7A9"
       }
     },
     "comsol": {
       "baseline": {
-        "run_id": "20260729_075000__sim__comsol__oct-segaccel-n100__resolved-l3",
-        "manifest_sha256": "9C30589CAADA7CB50786142BC2267ADFFCBD8C2053A7C4DA500849CA8288AF7E"
+        "run_id": "20260729_091000__sim__comsol__oct-exitplate-n100__resolved-l3",
+        "manifest_sha256": "700AC2D98B6E77AE91C2CFAE9374BB359FDB15C362D39EB8394B27466F4A45FF"
       },
       "spatial_failed": {
-        "run_id": "20260729_083000__sim__comsol__oct-segaccel-spatial-n100__resolved-l3",
-        "manifest_sha256": "134BE0DBA35AD574D83E7520D8CDA46C2D87F093DA47134B077A299201EAC1D1"
+        "run_id": "20260729_114500__sim__comsol__oct-exitplate-spatial-n100__resolved-l3",
+        "manifest_sha256": "DF1886CE14CE2585CEBDD9FE3A49AEBCAA3B4C1E7A609EA5BAE85322D64A7BF7"
       }
     }
   },
   "analysis_artifacts": {
     "baseline_cross_solver": {
-      "sha256": "BEBFB802F4C24562521F2D24FBF581CEEB7BA8A51A19B7C20859C682A6A10EEB",
+      "sha256": "0E6FCD8EB2B4AE8DE4495788769F2A7029EB17284CB26B540E6D5A6035F976AB",
       "status": "PASS"
     },
     "simion_spatial": {
-      "sha256": "0414F842A9A80A61B3868146269DFEE1910E801E1CE4880F9B6A46FBF973770A",
+      "sha256": "ED790EEFF6692563B40895207CE820A46C319F03FB0ED721B1B510DE61051C5C",
       "status": "PASS"
     }
   },
@@ -59,48 +58,49 @@
     "status": "PASS",
     "observation_event": "handoff",
     "paired_analysis_artifact_sha256": {
-      "simion": "7F88A41AC5A6708D9FB6B0F73EB4495C71A2AAD07445A1E32B1DF10A918F539B",
-      "comsol": "6878EAA021AE40248192C70D50F87C4366C59FBE2D174CB6A7DDDB45A79953A5"
+      "simion": "05EE6AAC1A7F6CB8EB1BAFA381784987B8769A529C35A486BE85F93017876E40",
+      "comsol": "4CAAE3CEE5DB9B23690C47BAA6CA48B7140B3DEB689FD8E8002CF40C0456DE98"
     },
     "accelerated_transmitted_particle_count_each_solver": 100,
     "control_transmitted_particle_count_each_solver": 100,
     "cross_solver_handoff_particle_id_sets": "exact_match",
     "positive_working_radius_margin_each_solver": true,
     "mean_energy_gain_eV": {
-      "simion": 2.9990083606494,
-      "comsol": 3.00012849409188
+      "simion": 2.6132997710371,
+      "comsol": 2.40673331171844
     }
   },
   "same_solver_spatial": {
     "simion": {
       "functional_status": "PASS",
       "handoff_particle_id_sets": "exact_match",
-      "rms_radius_relative_difference": 0.023892191741134553,
-      "rms_divergence_relative_difference": 0.07977996699793646,
-      "mean_energy_relative_difference": 0.001963707309625823
+      "rms_radius_relative_difference": 0.006698887920870713,
+      "rms_divergence_relative_difference": 0.0672366607502946,
+      "mean_energy_relative_difference": 0.007968763525034658
     },
     "comsol": {
       "status": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
-      "peak_process_tree_working_set_bytes": 19180437504,
+      "peak_process_tree_working_set_bytes": 17180848128,
       "process_tree_working_set_limit_bytes": 17179869184,
-      "minimum_system_available_memory_bytes": 11451305984,
+      "minimum_system_available_memory_bytes": 13244059648,
       "minimum_system_available_memory_limit_bytes": 8589934592,
       "last_checkpoint": "MESH_COMPLETE"
     }
   },
   "baseline_cross_solver_continuous_diagnostics": {
     "status": "INCONCLUSIVE_NO_SOURCED_ERROR_BUDGET",
-    "rms_radius_relative_difference": 0.009346103262704807,
-    "rms_divergence_relative_difference": 0.09656301586359932,
-    "mean_tof_relative_difference": 0.000014873042996969071,
-    "mean_energy_relative_difference": 0.0027389585104284774
+    "observation_event": "handoff",
+    "rms_radius_relative_difference": 0.14353443234666524,
+    "rms_divergence_relative_difference": 0.07111984581050725,
+    "mean_tof_relative_difference": 0.0011830935902766599,
+    "mean_energy_relative_difference": 0.049017618293401254
   },
   "decision": {
-    "functional_segmented_rod_axial_acceleration": "CLOSED",
+    "functional_exit_aperture_plate_acceleration": "CLOSED",
     "comsol_spatial_convergence": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
     "continuous_numerical_equivalence": "INCONCLUSIVE",
     "further_memory_limit_increase": "NOT_AUTHORIZED",
     "temporal_refinement": "NOT_AUTHORIZED"
   },
-  "claim_limit": "PASS covers only N=100 collision-free functional segmented-rod axial acceleration for the named octupole profile. It does not qualify COMSOL spatial convergence, continuous phase-space equivalence, exit-aperture-plate acceleration, N=1000, collision cooling, mechanical design, Candidate or Formal status."
+  "claim_limit": "PASS covers only N=100 collision-free functional exit-aperture-plate acceleration for the named octupole profile. It does not qualify COMSOL spatial convergence, continuous phase-space equivalence, N=1000 dispersion, segmented-rod acceleration, collision cooling, mechanical design, Candidate or Formal status."
 }

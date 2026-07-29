@@ -164,10 +164,10 @@ class ThreeModeRuntimeAndQualificationTests(unittest.TestCase):
             budget["budget_exhaustion_result"],
             "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
         )
-        self.assertTrue(budget["pilot_authorization"]["authorized"])
+        self.assertFalse(budget["pilot_authorization"]["authorized"])
         self.assertEqual(
             budget["pilot_authorization"]["scope"]["runtime_profile_id"],
-            "exit_aperture_plate_acceleration",
+            "exit_aperture_plate_acceleration_n100_spatial_refined",
         )
         result = load(
             "config/qualification/n100_no_acceleration_qualification.json"
@@ -190,6 +190,21 @@ class ThreeModeRuntimeAndQualificationTests(unittest.TestCase):
         )
         self.assertEqual(
             acceleration["same_solver_spatial"]["comsol"]["status"],
+            "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
+        )
+        exit_plate = load(
+            "config/qualification/n100_exit_aperture_plate_acceleration_qualification.json"
+        )
+        self.assertEqual(
+            exit_plate["baseline_functional_transport"]["status"],
+            "PASS",
+        )
+        self.assertEqual(
+            exit_plate["same_solver_spatial"]["simion"]["functional_status"],
+            "PASS",
+        )
+        self.assertEqual(
+            exit_plate["same_solver_spatial"]["comsol"]["status"],
             "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
         )
 

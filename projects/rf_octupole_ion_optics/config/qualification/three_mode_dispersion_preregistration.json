@@ -57,7 +57,7 @@
     },
     "project_engineering_budget_contract": {
       "path": "projects/rf_octupole_ion_optics/config/qualification/engineering_budget.json",
-      "sha256": "B27FF5E3BFC878F2DE941E0C5518FC47BFB88CEC564E2E8D376E37B4317F82B4"
+      "sha256": "7BB7B22B797CFFEDC0776B089891E188968DF3D0AB48C34DF9A1620CA02DD6A9"
     }
   },
   "formal_binding_generation": {

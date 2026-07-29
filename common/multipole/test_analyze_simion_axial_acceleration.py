@@ -33,7 +33,7 @@ class AnalyzeSimionAxialAccelerationTest(unittest.TestCase):
             },
         }
 
-    def test_segmented_pair_uses_only_common_terminal_transmitted_population(self):
+    def test_segmented_pair_uses_only_common_handoff_transmitted_population(self):
         resolved = self.resolved("segmented_rod_axial_acceleration")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -43,12 +43,12 @@ class AnalyzeSimionAxialAccelerationTest(unittest.TestCase):
             second_source = "2,source,alive,none,0,0,0,0,0,0,1,0,0,2,0,0,0\n"
             control.write_text(
                 HEADER + source + second_source
-                + "1,terminal,transmitted,acceptance_surface,1,1,0,1,0,0,1,0,0,2.0,1,2,0\n"
-                + "2,terminal,transmitted,acceptance_surface,1,1,0,1,0,0,1,0,0,100.0,9,9,0\n"
+                + "1,handoff,transmitted,none,1,1,0,1,0,0,1,0,0,2.0,1,2,0\n"
+                + "2,handoff,transmitted,none,1,1,0,1,0,0,1,0,0,100.0,9,9,0\n"
             )
             accelerated.write_text(
                 HEADER + source + second_source
-                + "1,terminal,transmitted,acceptance_surface,1,1,0,1,0,0,1,0,0,5.1,2,4,0\n"
+                + "1,handoff,transmitted,none,1,1,0,1,0,0,1,0,0,5.1,2,4,0\n"
             )
             result = evaluate(accelerated, control, resolved)
         self.assertEqual(result["status"], "UNQUALIFIED")
@@ -62,10 +62,11 @@ class AnalyzeSimionAxialAccelerationTest(unittest.TestCase):
             result["paired_population_policy"],
             "intersection_of_transmitted_particle_ids",
         )
+        self.assertEqual(result["observation_event"], "handoff")
         self.assertAlmostEqual(result["mean_divergence_change_deg"], 2.0)
         self.assertAlmostEqual(result["rms_radial_position_change_mm"], 1.0)
 
-    def test_handoff_transmission_cannot_mask_terminal_loss(self):
+    def test_terminal_loss_does_not_change_canonical_handoff_population(self):
         resolved = self.resolved("segmented_rod_axial_acceleration")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -76,10 +77,11 @@ class AnalyzeSimionAxialAccelerationTest(unittest.TestCase):
             terminal_loss = "1,terminal,lost,electrode,2,2,0,2,0,0,1,0,0,5,0,0,0\n"
             control.write_text(HEADER + source + handoff + terminal_loss)
             accelerated.write_text(HEADER + source + handoff + terminal_loss)
-            with self.assertRaisesRegex(ValueError, "no common transmitted particles"):
-                evaluate(accelerated, control, resolved)
+            result = evaluate(accelerated, control, resolved)
+        self.assertEqual(result["paired_transmitted_particles"], 1)
+        self.assertEqual(result["observation_event"], "handoff")
 
-    def test_exit_aperture_plate_terminal_transmitted_event_is_a_valid_output(self):
+    def test_exit_aperture_plate_handoff_event_is_the_canonical_output(self):
         resolved = self.resolved("exit_aperture_plate_potential_step")
         resolved["particle_source"]["energy_model"] = {
             "kind": "bounded_distribution",
@@ -93,9 +95,9 @@ class AnalyzeSimionAxialAccelerationTest(unittest.TestCase):
             control = root / "control.csv"
             accelerated = root / "accelerated.csv"
             source = "1,source,alive,none,0,0,0,0,0,0,1,0,0,2,0,0,0\n"
-            terminal = "1,terminal,transmitted,acceptance_surface,1,1,0,1,0,0,1,0,0"
-            control.write_text(HEADER + source + terminal + ",2.0,0,0,0\n")
-            accelerated.write_text(HEADER + source + terminal + ",5.0,0,0,0\n")
+            handoff = "1,handoff,transmitted,none,1,1,0,1,0,0,1,0,0"
+            control.write_text(HEADER + source + handoff + ",2.0,0,0,0\n")
+            accelerated.write_text(HEADER + source + handoff + ",5.0,0,0,0\n")
             result = evaluate(accelerated, control, resolved)
         self.assertEqual(result["status"], "UNQUALIFIED")
         self.assertEqual(result["paired_transmitted_particles"], 1)
