@@ -35,8 +35,8 @@ class MatlabContractBindingTests(unittest.TestCase):
         cls.loader = (PROJECT_ROOT / "load_wehnelt_contract.m").read_text(
             encoding="utf-8"
         )
-        cls.build_test = (
-            PROJECT_ROOT / "tests" / "comsol" / "test_build_only.m"
+        cls.build_task = (
+            PROJECT_ROOT / "comsol" / "build_only_smoke.m"
         ).read_text(encoding="utf-8")
         cls.build_runner = (
             PROJECT_ROOT / "run_build_only_smoke.ps1"
@@ -148,7 +148,7 @@ class MatlabContractBindingTests(unittest.TestCase):
             with self.subTest(token=token):
                 self.assertIn(token, self.loader)
 
-    def test_build_only_test_checks_identity_and_evidence_boundary(self) -> None:
+    def test_build_only_task_checks_identity_and_evidence_boundary(self) -> None:
         required = (
             "resolved_model.json",
             "contract_project_id",
@@ -158,7 +158,12 @@ class MatlabContractBindingTests(unittest.TestCase):
         )
         for token in required:
             with self.subTest(token=token):
-                self.assertIn(token, self.build_test)
+                self.assertIn(token, self.build_task)
+        self.assertIn(
+            "projectRoot = fileparts(fileparts(mfilename('fullpath')))",
+            self.build_task,
+        )
+        self.assertNotIn("fileparts(fileparts(fileparts(mfilename", self.build_task)
 
     def test_build_only_returns_before_electrostatic_and_particle_solvers(self) -> None:
         for name in (
@@ -214,7 +219,7 @@ class MatlabContractBindingTests(unittest.TestCase):
     def test_commercial_runner_freezes_inputs_and_writes_verified_manifest(self) -> None:
         required = (
             "New-RunPackage",
-            "tests\\comsol\\test_build_only.m",
+            "comsol\\build_only_smoke.m",
             "config\\resolved_model.json",
             "WEHNELT_ARTIFACT_ROOT",
             "common\\comsol\\run_comsol_r2025b.ps1",
@@ -225,6 +230,7 @@ class MatlabContractBindingTests(unittest.TestCase):
         for token in required:
             with self.subTest(token=token):
                 self.assertIn(token, self.build_runner)
+        self.assertNotIn("tests\\comsol\\", self.build_runner)
         self.assertIn("[string]$PythonExe", self.build_runner)
         self.assertIn("New-RunPackage -Python $python", self.build_runner)
         self.assertEqual(
@@ -618,7 +624,7 @@ class MatlabContractBindingTests(unittest.TestCase):
             return
         project_relatives = (
             "run_build_only_smoke.ps1",
-            "tests/comsol/test_build_only.m",
+            "comsol/build_only_smoke.m",
             "egun_paths.m",
             "load_wehnelt_contract.m",
             "apply_wehnelt_contract_parameters.m",

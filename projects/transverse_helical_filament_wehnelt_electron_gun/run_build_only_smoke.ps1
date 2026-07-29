@@ -341,7 +341,7 @@ try {
 
   $projectFrozenFiles = [ordered]@{
     runner = 'run_build_only_smoke.ps1'
-    task_script = 'tests\comsol\test_build_only.m'
+    task_script = 'comsol\build_only_smoke.m'
     paths = 'egun_paths.m'
     contract_loader = 'load_wehnelt_contract.m'
     parameter_binding = 'apply_wehnelt_contract_parameters.m'

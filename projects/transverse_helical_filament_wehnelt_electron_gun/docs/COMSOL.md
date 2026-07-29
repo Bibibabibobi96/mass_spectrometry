@@ -12,7 +12,7 @@
 - 合同绑定：`../apply_wehnelt_contract_parameters.m`
 - MATLAB路径：`../egun_paths.m`
 - 项目门禁：`../verify_project.ps1`
-- build-only复验：`../tests/comsol/test_build_only.m`
+- build-only生产任务：`../comsol/build_only_smoke.m`
 
 版本与启动只采用仓库根README。三阶段脚本不包含COMSOL安装路径或`mphstart`，只能由仓库统一
 R2025b/COMSOL入口调用。

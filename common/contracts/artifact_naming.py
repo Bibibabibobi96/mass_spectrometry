@@ -77,7 +77,8 @@ def validate_formal_asset_name(filename: str, project_id: str) -> dict[str, str]
     if not PROJECT_ID.fullmatch(project_id):
         raise ValueError("project_id must be stable snake_case")
     match = re.fullmatch(
-        rf"(?P<project>{re.escape(project_id)})__(?P<role>{TOKEN})\.(?P<extension>[A-Za-z0-9]+)",
+        rf"(?P<project>{re.escape(project_id)})__"
+        rf"(?P<role>[a-z0-9]+(?:_[a-z0-9]+)*)\.(?P<extension>[A-Za-z0-9]+)",
         filename,
     )
     if not match:

@@ -28,11 +28,31 @@ class ClocDeltaReportTests(unittest.TestCase):
     def _initialize_repo(self, root: Path) -> None:
         (root / "src").mkdir()
         (root / "config").mkdir()
+        (root / "docs" / "history" / "baseline_snapshot").mkdir(parents=True)
+        (root / "scratch" / "baseline_task").mkdir(parents=True)
+        (root / "projects" / "active_project").mkdir(parents=True)
+        (root / "projects" / "active_project" / "archive").mkdir()
         (root / "src" / "main.py").write_text("print('base')\n", encoding="utf-8")
         (root / "src" / "test_legacy.py").write_text(
             "def test_base(): pass\n", encoding="utf-8"
         )
         (root / "config" / "settings.json").write_text("{}\n", encoding="utf-8")
+        (root / "docs" / "history" / "baseline_snapshot" / "legacy.py").write_text(
+            "raise RuntimeError('history is not active code')\n", encoding="utf-8"
+        )
+        (root / "scratch" / "baseline_task" / "temporary.m").write_text(
+            "error('scratch is not active code');\n", encoding="utf-8"
+        )
+        (root / "projects" / "active_project" / "model.m").write_text(
+            "value = 1;\n", encoding="utf-8"
+        )
+        (
+            root
+            / "projects"
+            / "active_project"
+            / "archive"
+            / "active_authority.json"
+        ).write_text('{"active": true}\n', encoding="utf-8")
         for command in (
             ["git", "init", "-q"],
             ["git", "config", "user.name", "CLOC Test"],
@@ -61,7 +81,11 @@ class ClocDeltaReportTests(unittest.TestCase):
                 $languages=@{}
                 foreach($path in @(Get-Content -LiteralPath $listPath -Encoding UTF8)){
                   $normalized=$path.Replace('\','/').ToLowerInvariant()
-                  if($normalized-match '/(artifacts|generated|vendor|third_party|runs)/'){
+                  if(
+                    $normalized-match '/(artifacts|generated|vendor|third_party|runs)/' -or
+                    $normalized-match '/docs/history/' -or
+                    $normalized-match '/scratch/'
+                  ){
                     throw "Excluded path reached cloc: $path"
                   }
                   $language=switch([IO.Path]::GetExtension($path).ToLowerInvariant()){
@@ -104,6 +128,24 @@ class ClocDeltaReportTests(unittest.TestCase):
                 "print('base')\nprint('current')\n", encoding="utf-8"
             )
             (root / "src" / "new.lua").write_text("return 1\n", encoding="utf-8")
+            worktree_history = (
+                root
+                / "projects"
+                / "active_project"
+                / "docs"
+                / "history"
+                / "worktree_snapshot"
+            )
+            worktree_history.mkdir(parents=True)
+            (worktree_history / "superseded.py").write_text(
+                "raise RuntimeError('history is not active code')\n",
+                encoding="utf-8",
+            )
+            worktree_scratch = root / "scratch" / "worktree_task"
+            worktree_scratch.mkdir(parents=True)
+            (worktree_scratch / "temporary.m").write_text(
+                "error('scratch is not active code');\n", encoding="utf-8"
+            )
             test_dir = root / "project" / "tests"
             test_dir.mkdir(parents=True)
             (test_dir / "test_api.py").write_text(
@@ -156,6 +198,8 @@ class ClocDeltaReportTests(unittest.TestCase):
                 "RESULT=WORKTREE(head=",
                 "CLOC_VERSION=2.02-test-double",
                 "FILTER=extensions=",
+                "excluded_lifecycle_paths=any/docs/history/**|root/scratch/**|"
+                "artifacts/projects/<project>/(archive|scratch)/**",
                 "CATEGORY=total",
                 "CATEGORY=production",
                 "CATEGORY=tests",
@@ -179,6 +223,16 @@ class ClocDeltaReportTests(unittest.TestCase):
                 output,
                 r"(?s)CATEGORY=production.*LANGUAGE=PowerShell "
                 r"BASE_FILES=0 RESULT_FILES=1 DELTA_FILES=1",
+            )
+            self.assertRegex(
+                output,
+                r"(?s)CATEGORY=production.*LANGUAGE=Other "
+                r"BASE_FILES=1 RESULT_FILES=1 DELTA_FILES=0",
+            )
+            self.assertRegex(
+                output,
+                r"(?s)CATEGORY=production.*LANGUAGE=JSON "
+                r"BASE_FILES=2 RESULT_FILES=2 DELTA_FILES=0",
             )
             self.assertNotIn("Excluded path reached cloc", output)
 

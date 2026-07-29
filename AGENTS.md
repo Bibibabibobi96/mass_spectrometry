@@ -113,7 +113,8 @@ Agent实现或审查workflow时必须应用该合同，并按项目README路由�
   `*_test.py`、`*Test.m`、fixture及明确位于`test_support/`或`testing_support/`的纯测试support
   属于tests；普通`tests/support/`不自动视为测试，因为其中存在生产运行机制。无法由稳定规则判定的
   `tests/`下代码必须作为unclassified逐文件警告，不得静默归类。必须排除artifacts、generated、
-  vendor/third-party和run目录，不得把忽略的或排除目录中的untracked产物计入。统一只读入口为
+  vendor/third-party、run目录、任意`docs/history/`只读载荷和仓库根`scratch/`；不得把忽略的或
+  排除目录中的untracked产物计入，也不得因普通活动目录恰好名为`archive`而整类排除。统一只读入口为
   `common/report_cloc_delta.ps1 -Base <sha> [-Current <sha|WORKTREE>]`；CLOC不可用时必须明确失败，不得用
   `wc`、自制行计数或其他口径冒充。纯文档任务可在报告中写`CLOC_DELTA=N/A (docs-only)`。
 - 完成一次或多次测试后，最终交接必须给出测试报告。常规单阶段任务通常控制在**1000 tokens以内**；

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 try:
@@ -34,6 +35,13 @@ except ModuleNotFoundError:
 
 ALLOWED_PROJECT_ENTRIES = {"00_README.txt", "formal", "runs", "archive", "scratch"}
 REQUIRED_RUN_FILES = {"run_config.json", "summary.json", "run_manifest.json"}
+LEGACY_POLICY = {
+    "migration_kind": "administrative_rename_only",
+    "artifact_access": "read_only",
+    "new_runs_allowed": False,
+    "verification_identity": "recorded_project_id",
+    "claim_policy": "preserve_original_status_and_claim_limits_no_promotion",
+}
 
 
 def verify_record(root: Path, record: dict, verify_hashes: bool) -> Path:
@@ -51,9 +59,73 @@ def verify_record(root: Path, record: dict, verify_hashes: bool) -> Path:
     return path
 
 
+def legacy_identity(repository_root: Path, project_id: str) -> dict | None:
+    """Resolve one retired artifact identity without requiring its old source tree."""
+
+    matches: list[dict] = []
+    active_ids: set[str] = set()
+    for descriptor_path in sorted(
+        (repository_root / "projects").glob("*/config/project.json")
+    ):
+        descriptor = json.loads(descriptor_path.read_text(encoding="utf-8-sig"))
+        current_id = descriptor.get("project_id")
+        if current_id != descriptor_path.parents[1].name:
+            raise AssertionError(f"project descriptor identity differs: {descriptor_path}")
+        active_ids.add(current_id)
+        matches.extend(
+            mapping
+            for mapping in descriptor.get("legacy_identities", [])
+            if mapping.get("project_id") == project_id
+        )
+    if len(matches) > 1:
+        raise AssertionError(f"{project_id}: duplicate legacy identity mappings")
+    if not matches:
+        return None
+    if project_id in active_ids:
+        raise AssertionError(f"{project_id}: legacy identity is still an active project")
+    mapping = matches[0]
+    expected = {"artifact_root": f"artifacts/projects/{project_id}", **LEGACY_POLICY}
+    for field, value in expected.items():
+        if mapping.get(field) != value:
+            raise AssertionError(f"{project_id}: invalid legacy identity field {field}")
+    return mapping
+
+
+def verify_retired_validation_record(record: dict, project_id: str) -> None:
+    """Validate immutable provenance whose retired repository path no longer exists."""
+
+    try:
+        relative = Path(record["path"])
+        bytes_count = int(record["bytes"])
+        sha256 = str(record["sha256"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise AssertionError(
+            f"{project_id}: invalid retired validation contract record"
+        ) from exc
+    if (
+        relative.is_absolute()
+        or ".." in relative.parts
+        or len(relative.parts) < 4
+        or relative.parts[:3] != ("projects", project_id, "config")
+        or relative.suffix.lower() != ".json"
+    ):
+        raise AssertionError(
+            f"{project_id}: retired validation contract path differs"
+        )
+    if bytes_count <= 0 or re.fullmatch(r"[0-9A-Fa-f]{64}", sha256) is None:
+        raise AssertionError(
+            f"{project_id}: retired validation contract identity differs"
+        )
+
+
 def verify_formal(project: Path, verify_hashes: bool = False, repository_root: Path | None = None) -> None:
     formal = project / "formal"
     if formal.exists():
+        retired_identity = (
+            legacy_identity(repository_root, project.name)
+            if repository_root is not None
+            else None
+        )
         asset_manifest_path = formal / "asset_manifest.json"
         if not asset_manifest_path.is_file():
             raise AssertionError(f"{project.name}: formal/asset_manifest.json is missing")
@@ -75,10 +147,20 @@ def verify_formal(project: Path, verify_hashes: bool = False, repository_root: P
         for record in assets.values():
             verify_record(formal, record, verify_hashes)
         if repository_root is not None:
-            verify_record(repository_root, manifest["validation_contract"], verify_hashes)
-        for role in ("comsol_model", "solidworks_assembly"):
-            if role in assets and "naming_exception" not in assets[role]:
-                validate_formal_asset_name(Path(assets[role]["path"]).name, project.name)
+            if retired_identity is None:
+                verify_record(
+                    repository_root, manifest["validation_contract"], verify_hashes
+                )
+            else:
+                verify_retired_validation_record(
+                    manifest["validation_contract"], project.name
+                )
+        if retired_identity is None:
+            for role in ("comsol_model", "solidworks_assembly"):
+                if role in assets and "naming_exception" not in assets[role]:
+                    validate_formal_asset_name(
+                        Path(assets[role]["path"]).name, project.name
+                    )
 
 
 def verify_project(

@@ -46,6 +46,13 @@ class ArtifactNamingTests(unittest.TestCase):
             "single_reflection_oa_tof_mass_analyzer__assembly.SLDASM",
             "single_reflection_oa_tof_mass_analyzer",
         )
+        self.assertEqual(
+            validate_formal_asset_name(
+                "single_reflection_oa_tof_mass_analyzer__model_physical_components.SLDASM",
+                "single_reflection_oa_tof_mass_analyzer",
+            )["role"],
+            "model_physical_components",
+        )
         with self.assertRaises(ValueError):
             validate_formal_asset_name("main.mph", "single_reflection_oa_tof_mass_analyzer")
 

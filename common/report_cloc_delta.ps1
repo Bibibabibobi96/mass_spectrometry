@@ -25,6 +25,8 @@ $excludedComponents=@(
 $filterDescription=(
   "extensions=$($codeExtensions -join ',');" +
   "excluded_components=$($excludedComponents -join ',');" +
+  'excluded_lifecycle_paths=any/docs/history/**|root/scratch/**|' +
+  'artifacts/projects/<project>/(archive|scratch)/**;' +
   'production=execution_profile_entrypoint|run_*.ps1|verify_*.ps1|tests/support(non-test-named);' +
   'tests=fixture|test_support|testing_support_path|test_*.(py|ps1|m|lua)|*_test.py|*Test.m|*.Tests.*;' +
   'unclassified=other_code_below_test_or_tests_path;' +
@@ -51,6 +53,23 @@ function Test-IncludedPath {
   param([Parameter(Mandatory)][string]$RelativePath)
   $normalized=$RelativePath.Replace('\','/')
   $components=@($normalized.Split('/',[StringSplitOptions]::RemoveEmptyEntries))
+  $lowerComponents=@($components|ForEach-Object{$_.ToLowerInvariant()})
+  for($index=0;$index-lt($lowerComponents.Count-1);$index++){
+    if($lowerComponents[$index]-eq'docs' -and $lowerComponents[$index+1]-eq'history'){
+      return $false
+    }
+  }
+  if($lowerComponents.Count-gt 0 -and $lowerComponents[0]-eq'scratch'){
+    return $false
+  }
+  if(
+    $lowerComponents.Count-gt 3 -and
+    $lowerComponents[0]-eq'artifacts' -and
+    $lowerComponents[1]-eq'projects' -and
+    $lowerComponents[3]-in @('archive','scratch')
+  ){
+    return $false
+  }
   foreach($component in $components){
     if($component.ToLowerInvariant()-in $excludedComponents){return $false}
   }
@@ -66,6 +85,9 @@ function Get-ExecutionProfileEntrypoints {
   foreach($profilePath in @(
     Get-ChildItem -LiteralPath $rootPath -Recurse -File -Filter 'execution_profiles.json'
   )){
+    $profileRelative=$profilePath.FullName.Substring($rootPath.Length).
+      TrimStart('\','/')
+    if(-not(Test-IncludedPath $profileRelative)){continue}
     $document=Get-Content -LiteralPath $profilePath.FullName -Raw -Encoding UTF8 |
       ConvertFrom-Json
     $projectRoot=Split-Path -Parent (Split-Path -Parent $profilePath.FullName)

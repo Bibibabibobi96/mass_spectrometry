@@ -24,7 +24,7 @@
     },
     {
       "descriptor": "projects/single_reflection_oa_tof_mass_analyzer/config/project.json",
-      "sha256": "BF469A54E21741FB02CC0EF4CD870AD0571059C35B3B34AB8E8635F6478BF4E0"
+      "sha256": "91DFE6422565C86AC155D2E3FACFEE16C8F13F58EED2815DF719CFBDAAAAAD63"
     },
     {
       "descriptor": "projects/transverse_helical_filament_wehnelt_electron_gun/config/project.json",
@@ -560,7 +560,7 @@
       "family_id": "tof_mass_analyzers",
       "display_name": "单次反射正交加速飞行时间质量分析器",
       "purpose": "单次折返oa-TOF的质量分析、离子传输和正式跨求解器设计",
-      "lifecycle_status": "formal_revalidation_pending",
+      "lifecycle_status": "formal",
       "toolchains": [
         "comsol",
         "simion",
