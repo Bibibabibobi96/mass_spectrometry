@@ -222,6 +222,57 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
                     f"hybrid_local_sensitive_{size}_cg_amg_field_screen",
                 )
 
+    def test_c1_background_sequence_changes_only_sensitive_size(self) -> None:
+        profile_ids = (
+            "hybrid_c1_background_sensitive_050_cg_amg_field_screen",
+            "hybrid_c1_background_sensitive_040_cg_amg_field_screen",
+            "hybrid_c1_background_sensitive_032_cg_amg_field_screen",
+        )
+        profiles = [
+            self.comsol_numerics["profiles"][profile_id]
+            for profile_id in profile_ids
+        ]
+        sizes = [
+            profile["mesh"]["hybrid"]["sensitive_region"][
+                "maximum_element_size_mm"
+            ]
+            for profile in profiles
+        ]
+        self.assertEqual(sizes, [0.5, 0.4, 0.32])
+        for profile in profiles:
+            hybrid = profile["mesh"]["hybrid"]
+            self.assertEqual(hybrid["radial_core_and_rod_hmax_mm"], 0.7)
+            self.assertEqual(hybrid["transition_and_end_tetra_hmax_mm"], 0.7)
+            self.assertEqual(hybrid["outer_vacuum_hmax_mm"], 1.4)
+            self.assertEqual(hybrid["axial_layers_per_swept_segment"], 10)
+        normalized = copy.deepcopy(profiles[0])
+        del normalized["mesh"]["hybrid"]["sensitive_region"][
+            "maximum_element_size_mm"
+        ]
+        for profile in profiles[1:]:
+            peer = copy.deepcopy(profile)
+            del peer["mesh"]["hybrid"]["sensitive_region"][
+                "maximum_element_size_mm"
+            ]
+            self.assertEqual(peer, normalized)
+
+    def test_both_static_topologies_bind_c1_background_levels(self) -> None:
+        runtime = self.runtime_profiles["profiles"]
+        for mode in (
+            "exit_aperture_plate_acceleration",
+            "segmented_rod_axial_acceleration",
+        ):
+            for size in ("050", "040", "032"):
+                profile = runtime[
+                    f"{mode}_n100_hybrid_c1_background_sensitive_{size}_field_screen"
+                ]
+                self.assertEqual(profile["stop_stage"], "field_solve")
+                self.assertEqual(profile["design_profile_id"], mode)
+                self.assertEqual(
+                    profile["comsol_solver_numerics_profile_id"],
+                    f"hybrid_c1_background_sensitive_{size}_cg_amg_field_screen",
+                )
+
     def test_local_sensitive_050_preregistration_freezes_complete_runner(
         self,
     ) -> None:
