@@ -76,6 +76,9 @@ COMSOL空间档在`MESH_COMPLETE`后耗尽工程内存预算。
 项目preregistration只冻结母样本、几何、电压和三份资格前置合同。每个求解器必须在三种模式真实运行
 并验证canonical handoff-state路径、SHA和solver-numerics SHA之后，才能生成符合公共schema的正式
 dispersion binding；缺少真实状态时固定失败关闭，不允许用占位路径或哈希。
+现有preregistration还没有在运行前冻结公共方法要求的bootstrap seed和resample数，因此已完成的N=100
+run不能事后发布为正式dispersion binding；公共发布器必须在创建输出前失败关闭。未来统计实验须先登记
+这两个值再运行，不能回填到既有证据。
 
 运行产物只进入`artifacts/projects/rf_octupole_ion_optics/runs/`，不进入Git。旧request、旧证据和
 兼容快照在活动引用退出并取得删除授权前保留，但不得接收新参数或覆盖上述机器权威。

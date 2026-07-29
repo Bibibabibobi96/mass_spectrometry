@@ -18,8 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.component_particle_state import (
-    csv_columns as component_state_columns,
-    validate_component_particle_state_csv,
+    write_component_particle_state_csv,
 )
 from common.contracts.particle_physics import kinetic_energy_ev
 from common.contracts.rigid_transform import (
@@ -499,8 +498,7 @@ def build_handoff(
         ]
         ion_lines.append(",".join(f"{float(value):.15g}" for value in ion_values))
 
-    _write_csv(canonical_output, component_state_columns(), canonical_rows)
-    validate_component_particle_state_csv(canonical_output)
+    write_component_particle_state_csv(canonical_output, canonical_rows)
     _write_csv(row_map_output, ROW_MAP_COLUMNS, row_map_rows)
     ion_output.parent.mkdir(parents=True, exist_ok=True)
     ion_output.write_text("\n".join(ion_lines) + "\n", encoding="utf-8", newline="\n")

@@ -146,6 +146,8 @@ three-mode dispersion binding只能在真实三模式handoff文件及SHA产生�
 
 当前功能漏斗、诊断run ID和关闭过程不在本文件重复，统一从同日history快照追溯。单次反射oa-TOF Formal MPH、
 SIMION包与SolidWorks装配均未被该候选链修改。
+oaTOF handoff、S3 local-exit和legacy迁移仍分别保留其项目专用坐标、事件及迁移语义，但canonical
+component-state写出与即时校验统一调用公共合同入口，不再维护项目私有列序或序列化实现。
 
 ## 开放任务
 

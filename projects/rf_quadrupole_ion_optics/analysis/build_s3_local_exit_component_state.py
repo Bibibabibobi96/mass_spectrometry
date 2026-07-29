@@ -12,6 +12,7 @@ from typing import Any
 from common.contracts.component_particle_state import (
     csv_columns,
     validate_component_particle_state_csv,
+    write_component_particle_state_csv,
 )
 from common.contracts.particle_physics import kinetic_energy_ev, mass_to_charge_th
 
@@ -202,12 +203,7 @@ def build_local_exit_component_state(
     if len(canonical_rows) < int(contract["runtime"]["minimum_local_accelerator_exit"]):
         raise ValueError("S3 local-exit population misses the functional minimum")
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=csv_columns(), lineterminator="\n")
-        writer.writeheader()
-        writer.writerows(canonical_rows)
-    report = validate_component_particle_state_csv(output_path)
+    report = write_component_particle_state_csv(output_path, canonical_rows)
     if validation_path is not None:
         validation_path.parent.mkdir(parents=True, exist_ok=True)
         validation_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

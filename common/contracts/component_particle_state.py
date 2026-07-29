@@ -15,6 +15,7 @@ import argparse
 import csv
 import json
 import math
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -240,6 +241,28 @@ def validate_component_particle_state_csv(path: Path) -> dict[str, Any]:
         "frame_ids": sorted(frames),
         "clock_epoch_ids": sorted(epochs),
     }
+
+
+def write_component_particle_state_csv(
+    path: Path,
+    rows: Iterable[Mapping[str, object]],
+) -> dict[str, Any]:
+    """Write canonical version-1 rows and return the validation report.
+
+    The destination is created with the schema-owned column order. Unknown,
+    missing, empty, or physically inconsistent fields fail during writing or
+    immediate validation; callers remain responsible for constructing state.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=csv_columns(),
+            lineterminator="\n",
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+    return validate_component_particle_state_csv(path)
 
 
 def main() -> None:

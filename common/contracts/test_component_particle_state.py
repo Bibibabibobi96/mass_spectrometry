@@ -9,6 +9,7 @@ from common.contracts.component_particle_state import (
     csv_columns,
     load_schema,
     validate_component_particle_state_csv,
+    write_component_particle_state_csv,
 )
 from common.contracts.particle_physics import kinetic_energy_ev
 
@@ -74,6 +75,20 @@ class ComponentParticleStateTests(unittest.TestCase):
         self.assertEqual(report["particles"], 2)
         self.assertEqual(report["frame_ids"], ["instrument_global"])
         self.assertEqual(report["clock_epoch_ids"], ["instrument_clock_epoch.v1"])
+
+    def test_writer_uses_schema_order_and_validates_output(self) -> None:
+        report = write_component_particle_state_csv(
+            self.path, [valid_row(7), valid_row(9)]
+        )
+        with self.path.open(encoding="utf-8", newline="") as handle:
+            self.assertEqual(next(csv.reader(handle)), csv_columns())
+        self.assertEqual(report["particles"], 2)
+
+    def test_writer_rejects_unknown_fields(self) -> None:
+        row = valid_row()
+        row["project_private_field"] = "not canonical"
+        with self.assertRaisesRegex(ValueError, "fields not in fieldnames"):
+            write_component_particle_state_csv(self.path, [row])
 
     def test_schema_version_matches_validator(self) -> None:
         self.assertEqual(load_schema()["x-csv-schema-version"], SCHEMA_VERSION)

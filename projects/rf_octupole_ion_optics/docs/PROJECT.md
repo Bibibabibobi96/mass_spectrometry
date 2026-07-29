@@ -75,6 +75,10 @@ acceptance、effect-resolution、engineering-budget和三份电压合同，但�
 只防止事后挑阈值，不授予资格。项目preregistration不是公共正式binding：只有真实solver run已发布
 三份canonical handoff-state并冻结对应numerics SHA后，才生成一个solver专属正式binding；缺少真实
 状态固定`FAIL_CLOSED_NO_FORMAL_BINDING`。
+现有preregistration没有在这些run之前冻结bootstrap seed与resample数，因而即使三份N=100真实状态
+已经存在，也不得把运行后选择的bootstrap设置伪称为预注册。公共发布器对此固定失败关闭；本批结果
+只保留功能与工程诊断资格。若未来需要统计分散证据，必须先完成包含bootstrap设置的新预注册，再执行
+对应的新run。
 
 ## 权威入口
 

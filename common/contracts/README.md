@@ -61,6 +61,8 @@ version 1不允许重排列、缺列或追加项目列。新的公共必需字�
 项目专用状态、损失分类和求解器诊断应写入以`particle_id`关联的独立表。组件ID、事件名、frame ID、
 clock epoch ID、species ID和phase reference ID是开放的受控标识，不在公共层维护器件枚举。
 `phase_reference_id`与`phase_rad`必须同时为空或同时有值；因此无周期驱动器件不必伪造RF相位。
+所有新生产者统一调用`write_component_particle_state_csv`按Schema列序写出并立即校验；生产者仍负责
+事件选择、坐标变换和状态构造，不得在项目内复制canonical CSV序列化规则。
 
 `mass_amu`、`charge_state`和三维速度是物理主字段；`mass_to_charge_Th`与`kinetic_energy_eV`只是便于
 交换和审计的派生字段。validator使用`particle_physics.kinetic_energy_ev`中的唯一非相对论公式和冻结容差

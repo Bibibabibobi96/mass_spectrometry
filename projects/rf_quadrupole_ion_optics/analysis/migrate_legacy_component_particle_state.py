@@ -15,8 +15,7 @@ import math
 from pathlib import Path
 
 from common.contracts.component_particle_state import (
-    csv_columns,
-    validate_component_particle_state_csv,
+    write_component_particle_state_csv,
 )
 from common.contracts.particle_physics import kinetic_energy_ev, mass_to_charge_th
 
@@ -84,12 +83,7 @@ def migrate(
         })
         rows.append(row)
 
-    output.parent.mkdir(parents=True, exist_ok=True)
-    with output.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=csv_columns(), lineterminator="\n")
-        writer.writeheader()
-        writer.writerows(rows)
-    validate_component_particle_state_csv(output)
+    write_component_particle_state_csv(output, rows)
     if _sha256(source) != source_sha:
         raise RuntimeError("legacy source changed during migration")
 
