@@ -454,6 +454,47 @@ function Assert-MultipoleFieldPreregistration {
   if([string]$sampling.plan_sha256-ne$samplingPlanHash){
     throw 'COMSOL field-solve preregistration sampling-plan hash differs.'
   }
+  if($document.PSObject.Properties.Name-notcontains'required_report'){
+    throw 'COMSOL field-solve preregistration omits required_report.'
+  }
+  $requiredReport=$document.required_report
+  if($requiredReport.PSObject.Properties.Name-notcontains'tokens'-or
+    $requiredReport.PSObject.Properties.Name-notcontains'forbidden_checkpoints'){
+    throw 'COMSOL field-solve preregistration required_report fields differ.'
+  }
+  $requiredTokens=@($requiredReport.tokens|ForEach-Object{[string]$_})
+  $forbiddenCheckpoints=@(
+    $requiredReport.forbidden_checkpoints|ForEach-Object{[string]$_}
+  )
+  if($requiredTokens.Count-lt 1-or$forbiddenCheckpoints.Count-lt 1-or
+    @($requiredTokens|Where-Object{[string]::IsNullOrWhiteSpace($_)}).Count-gt 0-or
+    @($forbiddenCheckpoints|Where-Object{[string]::IsNullOrWhiteSpace($_)}).Count-gt 0-or
+    @($requiredTokens|Sort-Object -Unique).Count-ne$requiredTokens.Count-or
+    @($forbiddenCheckpoints|Sort-Object -Unique).Count-ne$forbiddenCheckpoints.Count){
+    throw 'COMSOL field-solve preregistration required_report values are invalid.'
+  }
+  foreach($token in @(
+      'CHECKPOINT=MESH_COMPLETE',
+      'CHECKPOINT=STATIONARY_FIELDS_COMPLETE',
+      'CHECKPOINT=STATIONARY_FIELD_SAMPLES_COMPLETE',
+      'STOP_STAGE=field_solve',
+      'PARTICLE_PHYSICS_CREATED=0',
+      'PARTICLE_STUDIES_CREATED=0',
+      'FIELD_SOLVE_DIAGNOSTIC=PASS',
+      'STATUS=PASS'
+    )){
+    if($requiredTokens-notcontains$token){
+      throw "COMSOL field-solve preregistration required_report omits core token: $token"
+    }
+  }
+  foreach($checkpoint in @(
+      'PRIMARY_PARTICLE_CASE_COMPLETE',
+      'CONTROL_PARTICLE_CASE_COMPLETE'
+    )){
+    if($forbiddenCheckpoints-notcontains$checkpoint){
+      throw "COMSOL field-solve preregistration required_report omits forbidden checkpoint: $checkpoint"
+    }
+  }
   return $document
 }
 

@@ -280,6 +280,30 @@ class MultipoleFamilyContractTests(unittest.TestCase):
         self.assertIn("common\\comsol\\run_comsol_r2025b.ps1", runner)
         self.assertIn("$env:PYTHONPATH=$codeRoot", runner)
 
+    def test_comsol_field_preregistration_is_complete_before_run_package(self) -> None:
+        runner = (
+            REPO_ROOT / "common/multipole/run_finite_3d_transport.ps1"
+        ).read_text(encoding="utf-8")
+        required_report_gate = runner.index(
+            "preregistration omits required_report"
+        )
+        package_creation = runner.index("$package=New-RunPackage")
+        postrun_report_use = runner.index(
+            "foreach($token in $fieldPreregistration.required_report.tokens)"
+        )
+        self.assertLess(required_report_gate, package_creation)
+        self.assertLess(package_creation, postrun_report_use)
+        for token in (
+            "preregistration required_report fields differ",
+            "preregistration required_report values are invalid",
+            "preregistration required_report omits core token",
+            "preregistration required_report omits forbidden checkpoint",
+            "CHECKPOINT=STATIONARY_FIELD_SAMPLES_COMPLETE",
+            "PRIMARY_PARTICLE_CASE_COMPLETE",
+            "CONTROL_PARTICLE_CASE_COMPLETE",
+        ):
+            self.assertIn(token, runner)
+
     def test_comsol_canonical_state_policy_is_resolved_design_only(self) -> None:
         runner = (REPO_ROOT / "common/multipole/run_finite_3d_transport.ps1").read_text(encoding="utf-8")
         self.assertIn("$env:MULTIPOLE_L3_CANONICAL_STATE=$canonicalState", runner)

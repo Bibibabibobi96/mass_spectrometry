@@ -233,6 +233,8 @@ field physics、field Study、field solution、particle physics和particle Study
 必需网格report token后才能发布success。它不是第二CLI、第二schema或场/粒子运行入口，必须由项目
 runtime profile、工程预算和预注册单独授权。新的field-only授权采用schema v2，并额外冻结公共采样
 plan、生成器、COMSOL exporter及准确点数；schema v1只记录已关闭历史运行，不得重新执行。
+field-only预检还必须在创建run目录和启动商业工具前完整验证`required_report`的成功tokens与禁入粒子
+checkpoints；缺字段、空值、重复项或缺核心终态均立即失败，不得把报告合同延迟到求解后才发现。
 真实`mesh_build`报告以`MESH_GLOBAL_ELEMENTS`记录`mphmeshstats`返回的全局总单元数。若预算声明
 `maximum_mesh_cells`，runner要求该token恰好出现一次、值为正整数且不超过硬帽；缺报告、缺token、
 非法值或超帽均在success manifest前失败关闭，其中超帽归类为`resource_budget_exceeded`。
