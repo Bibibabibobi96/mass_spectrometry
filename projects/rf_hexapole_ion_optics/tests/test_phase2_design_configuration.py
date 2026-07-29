@@ -311,6 +311,32 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
         self.assertEqual(execution["observed"]["mesh_global_elements"], 1_019_364)
         self.assertFalse(execution["later_field_levels_authorized"])
 
+    def test_c1_background_050_preregistration_is_single_run(self) -> None:
+        preregistration = load(
+            PROJECT_ROOT
+            / "config"
+            / "qualification"
+            / "comsol_c1_background_sensitive_050_field_preregistration.json"
+        )
+        self.assertEqual(preregistration["status"], "authorized_not_run")
+        self.assertEqual(
+            preregistration["authorization"]["maximum_commercial_run_count"], 1
+        )
+        self.assertEqual(
+            preregistration["authorization"]["automatic_retry_count"], 0
+        )
+        mesh = preregistration["frozen_mesh"]
+        self.assertEqual(mesh["radial_core_and_rod_hmax_mm"], 0.7)
+        self.assertEqual(mesh["transition_and_end_tetra_hmax_mm"], 0.7)
+        self.assertEqual(mesh["outer_vacuum_hmax_mm"], 1.4)
+        self.assertEqual(
+            mesh["sensitive_region"]["maximum_element_size_mm"], 0.5
+        )
+        self.assertEqual(
+            mesh["predecessor_failed_strategy"]["mesh_global_elements"],
+            1_019_364,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

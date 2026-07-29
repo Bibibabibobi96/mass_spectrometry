@@ -306,10 +306,10 @@ class FamilyExperimentProfileTests(unittest.TestCase):
             self.assertTrue(contract["preregistered_before_run"])
             self.assertTrue(contract[content])
         engineering = load("config/qualification/engineering_budget.json")
-        self.assertFalse(engineering["pilot_authorization"]["authorized"])
+        self.assertTrue(engineering["pilot_authorization"]["authorized"])
         self.assertEqual(
             engineering["pilot_authorization"]["scope"]["runtime_profile_id"],
-            "exit_aperture_plate_acceleration_n100_hybrid_local_sensitive_050_field_screen",
+            "exit_aperture_plate_acceleration_n100_hybrid_c1_background_sensitive_050_field_screen",
         )
         self.assertEqual(
             engineering["pilot_authorization"]["scope"]["allowed_solvers"],
@@ -322,7 +322,7 @@ class FamilyExperimentProfileTests(unittest.TestCase):
         self.assertFalse(engineering["full_matrix_authorization"]["authorized"])
         self.assertEqual(
             engineering["full_matrix_authorization"]["reason"],
-            "localized_050_mesh_exceeded_the_registered_cell_budget_and_the_shared_sequence_is_stopped",
+            "only_the_preregistered_c1_background_sensitive_050_field_arm_is_authorized",
         )
 
         result = load(

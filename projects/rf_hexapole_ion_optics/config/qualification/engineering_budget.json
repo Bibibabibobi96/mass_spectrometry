@@ -2,19 +2,19 @@
   "schema_version": 1,
   "role": "multipole_engineering_budget_contract",
   "project_id": "rf_hexapole_ion_optics",
-  "contract_id": "hexapole_local_sensitive_050_field_arm_completed_v1",
+  "contract_id": "hexapole_c1_background_sensitive_050_field_arm_v1",
   "preregistered_before_run": true,
   "pilot_authorization": {
-    "authorized": false,
+    "authorized": true,
     "scope": {
       "project_id": "rf_hexapole_ion_optics",
-      "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_local_sensitive_050_field_screen",
+      "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_c1_background_sensitive_050_field_screen",
       "stop_stage": "field_solve",
       "design_profile_id": "exit_aperture_plate_acceleration",
       "particle_source_profile_id": "family_mother_sample_v1_n100",
       "particle_count": 100,
       "solver_numerics_profile_ids": {
-        "comsol": "hybrid_local_sensitive_050_cg_amg_field_screen",
+        "comsol": "hybrid_c1_background_sensitive_050_cg_amg_field_screen",
         "simion": "baseline_finite_3d"
       },
       "allowed_solvers": [
@@ -38,8 +38,8 @@
   },
   "full_matrix_authorization": {
     "authorized": false,
-    "reason": "localized_050_mesh_exceeded_the_registered_cell_budget_and_the_shared_sequence_is_stopped"
+    "reason": "only_the_preregistered_c1_background_sensitive_050_field_arm_is_authorized"
   },
   "budget_exhaustion_result": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
-  "claim_limit": "The 0.50 mm localized sensitive-region arm ended at mesh build with 1,019,364 cells above the registered one-million-cell limit. No retry, later field level, particle tracing, convergence, cross-solver, Candidate, Formal or N=1000 run is authorized."
+  "claim_limit": "This authorization covers exactly one 0.50 mm localized sensitive-region field arm with C1-level insensitive background sizes. It authorizes no retry, later level, particle tracing, convergence, cross-solver, Candidate, Formal or N=1000 claim."
 }
