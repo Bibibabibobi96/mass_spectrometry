@@ -19,7 +19,7 @@ _SCOPE_KEYS = {
     "allowed_solvers",
     "retention_class",
 }
-_LIMIT_KEYS = {
+_REQUIRED_LIMIT_KEYS = {
     "wall_clock_seconds_by_solver",
     "transient_run_directory_bytes",
     "process_tree_working_set_bytes",
@@ -27,6 +27,7 @@ _LIMIT_KEYS = {
     "compact_final_retained_bytes",
     "automatic_retry_count",
 }
+_OPTIONAL_LIMIT_KEYS = {"maximum_mesh_cells"}
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -39,6 +40,13 @@ def _load(path: Path) -> dict[str, Any]:
 def _require_keys(value: dict[str, Any], expected: set[str], label: str) -> None:
     if set(value) != expected:
         raise ValueError(f"{label} keys differ: {sorted(value)}")
+
+
+def _require_limit_keys(limits: dict[str, Any]) -> None:
+    actual = set(limits)
+    allowed = _REQUIRED_LIMIT_KEYS | _OPTIONAL_LIMIT_KEYS
+    if not _REQUIRED_LIMIT_KEYS.issubset(actual) or not actual.issubset(allowed):
+        raise ValueError(f"pilot limits keys differ: {sorted(limits)}")
 
 
 def _particle_count(path: Path) -> int:
@@ -92,7 +100,7 @@ def validate_pilot_budget(
         raise ValueError("multipole commercial solver pilot is not authorized")
     scope, limits = pilot["scope"], pilot["limits"]
     _require_keys(scope, _SCOPE_KEYS, "pilot scope")
-    _require_keys(limits, _LIMIT_KEYS, "pilot limits")
+    _require_limit_keys(limits)
     allowed_solvers = scope["allowed_solvers"]
     if (
         not isinstance(allowed_solvers, list)
@@ -120,6 +128,10 @@ def validate_pilot_budget(
         raise ValueError(f"solver is not authorized: {solver}")
     if Path(runtime["particle_source"]["path"]).resolve() != particle_source_path.resolve():
         raise ValueError("particle source differs from authorized runtime profile")
+    if "maximum_mesh_cells" in limits and (
+        solver != "comsol" or not runtime_profile_id.endswith("_mesh_build")
+    ):
+        raise ValueError("maximum_mesh_cells requires a COMSOL mesh_build runtime profile")
     wall_clock = limits["wall_clock_seconds_by_solver"]
     if set(wall_clock) != {"comsol", "simion"}:
         raise ValueError("wall-clock solver keys differ")
@@ -135,6 +147,8 @@ def validate_pilot_budget(
             )
         ]
     )
+    if "maximum_mesh_cells" in limits:
+        positive_limits.append(limits["maximum_mesh_cells"])
     if any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in positive_limits):
         raise ValueError("resource limits must be positive integers")
     if limits["automatic_retry_count"] != 0:

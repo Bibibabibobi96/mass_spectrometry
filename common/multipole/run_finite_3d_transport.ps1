@@ -23,7 +23,10 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 
 function Assert-MultipoleMeshBuildReport {
-  param([Parameter(Mandatory=$true)][string]$Path)
+  param(
+    [Parameter(Mandatory=$true)][string]$Path,
+    [object]$MaximumMeshCells=$null
+  )
   if(-not(Test-Path -LiteralPath $Path -PathType Leaf)){
     throw 'COMSOL mesh-build report is missing.'
   }
@@ -69,6 +72,29 @@ function Assert-MultipoleMeshBuildReport {
       throw "COMSOL mesh-build report has an invalid positive $name value."
     }
   }
+  if($null-eq$MaximumMeshCells){return $null}
+  $matches=[regex]::Matches($content,'(?m)^MESH_GLOBAL_ELEMENTS=(?<value>[^\r\n]+)\r?$')
+  if($matches.Count-ne 1){
+    throw 'COMSOL mesh-build report must contain exactly one MESH_GLOBAL_ELEMENTS token when maximum_mesh_cells is declared.'
+  }
+  $meshCells=[int64]0
+  if(-not[int64]::TryParse(
+    $matches[0].Groups['value'].Value,
+    [Globalization.NumberStyles]::None,
+    [Globalization.CultureInfo]::InvariantCulture,
+    [ref]$meshCells
+  )-or$meshCells-le 0){
+    throw 'COMSOL mesh-build report has an invalid positive-integer MESH_GLOBAL_ELEMENTS value.'
+  }
+  if($meshCells-gt[int64]$MaximumMeshCells){
+    $failure=[InvalidOperationException]::new(
+      "COMSOL mesh-build cell budget exceeded: MESH_GLOBAL_ELEMENTS=$meshCells maximum_mesh_cells=$MaximumMeshCells"
+    )
+    $failure.Data['limit_name']='maximum_mesh_cells'
+    $failure.Data['measured_value']=$meshCells
+    throw $failure
+  }
+  return $meshCells
 }
 
 $runtimeDeclaresMeshBuild=$RuntimeProfileId -like '*_mesh_build'
@@ -108,7 +134,12 @@ try{
       --output $budgetPreflight
   }finally{Pop-Location}
   if($LASTEXITCODE-ne 0){throw 'COMSOL resource-budget preflight failed.'}
-  $authorizedNumerics=(Get-Content -LiteralPath $budgetPreflight -Raw -Encoding UTF8|ConvertFrom-Json).solver_numerics
+  $resolvedBudget=Get-Content -LiteralPath $budgetPreflight -Raw -Encoding UTF8|ConvertFrom-Json
+  $authorizedNumerics=$resolvedBudget.solver_numerics
+  $maximumMeshCells=$null
+  if($resolvedBudget.limits.PSObject.Properties.Name-contains'maximum_mesh_cells'){
+    $maximumMeshCells=[int64]$resolvedBudget.limits.maximum_mesh_cells
+  }
   $authorizedHmax=$authorizedNumerics.mesh.working_region_maximum_element_size_mm
   if([int]$authorizedNumerics.mesh.global_auto_level-ne$MeshAutoLevel-or
     [int]$authorizedNumerics.trajectory.rf_steps_per_period-ne$RfStepsPerPeriod-or
@@ -314,13 +345,32 @@ try{
     if($solverProcess.exit_code-ne 0){throw 'COMSOL finite 3D multipole transport failed.'}
   }finally{Restore-RunEnvironment -Names $environmentNames -Snapshot $oldEnvironment}
   if($StopStage-eq'mesh_build'){
-    Assert-MultipoleMeshBuildReport -Path $report
-    [ordered]@{schema_version=1;role='multipole_finite_3d_transport_summary';status='success';
+    try{
+      $meshCells=Assert-MultipoleMeshBuildReport -Path $report `
+        -MaximumMeshCells $maximumMeshCells
+    }catch{
+      if([string]$_.Exception.Data['limit_name']-eq'maximum_mesh_cells'){
+        $resourceBudgetExceeded=$true
+        $usage=Get-Content -LiteralPath $resourceUsage -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+        $usage.status='resource_budget_exceeded'
+        $usage.failure_class='resource_budget_exceeded'
+        $usage.limit_name='maximum_mesh_cells'
+        $usage.mesh_cells=[int64]$_.Exception.Data['measured_value']
+        Write-ResourceUsage -Usage $usage -Path $resourceUsage
+      }
+      throw
+    }
+    $summaryDocument=[ordered]@{schema_version=1;role='multipole_finite_3d_transport_summary';status='success';
       qualification_status='UNQUALIFIED_MESH_BUILD_DIAGNOSTIC_ONLY';project_id=$ProjectId;
       design_profile_id=$DesignProfileId;parent_resolved_design_sha256=$resolvedHash;
       model_level='L3';stop_stage='mesh_build';field_physics_created=0;field_studies_created=0;
       field_solutions_created=0;particle_physics_created=0;particle_studies_created=0;
-      formal_gate_passed=$false}|ConvertTo-Json -Depth 5|Set-Content -LiteralPath $summary -Encoding UTF8
+      formal_gate_passed=$false}
+    if($null-ne$maximumMeshCells){
+      $summaryDocument.mesh_cells=$meshCells
+      $summaryDocument.maximum_mesh_cells=$maximumMeshCells
+    }
+    $summaryDocument|ConvertTo-Json -Depth 5|Set-Content -LiteralPath $summary -Encoding UTF8
     $retentionActions=Apply-RunArtifactRetention -Python $python -RepoRoot $manifestRepoRoot `
       -RunConfig $runConfig
     if(-not(Complete-ResourceUsage -ResolvedBudgetPath $resolvedResourceBudget `

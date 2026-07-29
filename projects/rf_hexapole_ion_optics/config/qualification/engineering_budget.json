@@ -2,18 +2,18 @@
   "schema_version": 1,
   "role": "multipole_engineering_budget_contract",
   "project_id": "rf_hexapole_ion_optics",
-  "contract_id": "hexapole_hybrid_mesh_build_d1_diagnostic_closed_v15",
+  "contract_id": "hexapole_hybrid_mesh_build_d2_diagnostic_completed_closed_v17",
   "preregistered_before_run": true,
   "pilot_authorization": {
     "authorized": false,
     "scope": {
       "project_id": "rf_hexapole_ion_optics",
-      "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_d1_mesh_build",
+      "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_d2_mesh_build",
       "design_profile_id": "exit_aperture_plate_acceleration",
       "particle_source_profile_id": "family_mother_sample_v1_n100",
       "particle_count": 100,
       "solver_numerics_profile_ids": {
-        "comsol": "hybrid_d1_mesh_build",
+        "comsol": "hybrid_d2_mesh_build",
         "simion": "baseline_finite_3d"
       },
       "allowed_solvers": ["comsol"],
@@ -28,13 +28,14 @@
       "process_tree_working_set_bytes": 6442450944,
       "minimum_system_available_memory_bytes": 8589934592,
       "compact_final_retained_bytes": 10485760,
+      "maximum_mesh_cells": 3000000,
       "automatic_retry_count": 0
     }
   },
   "full_matrix_authorization": {
     "authorized": false,
-    "reason": "legacy_hybrid_p1_campaign_closed_mesh_build_diagnostic_does_not_authorize_field_or_transport"
+    "reason": "completed_d2_build_only_diagnostic_does_not_authorize_a_second_d2_run_field_particle_d3_or_any_closed_p1_p2_p3_p4_step"
   },
   "budget_exhaustion_result": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
-  "claim_limit": "The unique D1 mesh_build run ended INCONCLUSIVE_DIAGNOSTIC_IMPLEMENTATION_FAILURE before mesh.run and exhausted its zero-retry authorization. No commercial solver run is currently authorized. The closed P1 campaign remains closed: P1 retry and P2 through P4 are not authorized. Existing baseline function remains valid, while mesh feasibility, continuous convergence and equivalence remain INCONCLUSIVE."
+  "claim_limit": "The unique authorized D2 COMSOL mesh_build diagnostic completed successfully and exhausted its one-run zero-retry authorization. The retained scope and limits record the executed identity; they do not authorize another run. D1, P1 and D2 are closed. No commercial solver run, field physics, field Study, field solution, particle physics, particle Study, D3, P1 through P4, full matrix, continuous convergence or numerical-equivalence run is currently authorized."
 }

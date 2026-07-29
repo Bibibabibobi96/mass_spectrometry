@@ -46,8 +46,12 @@
   出口孔板加速N=100 baseline功能也已闭合，SIMION空间档保持100/100，但COMSOL空间档同样在
   `MESH_COMPLETE`后耗尽工程内存预算。COMSOL D1 build-only网格诊断的唯一一次运行在
   `mesh.run`前因诊断实现错误闭锁，登记为`INCONCLUSIVE_DIAGNOSTIC_IMPLEMENTATION_FAILURE`；
-  零重试授权已经耗尽，当前没有商业求解器运行授权，也没有网格、拓扑或资源可行性新证据。
-  field/particle求解、时间档、N=1000和完整矩阵仍未授权。既有三模式baseline的两份
+  D1零重试授权已经耗尽。随后
+  [`D2 build-only资格记录`](config/qualification/comsol_hybrid_mesh_build_d2_preregistration.json)
+  已以新身份完成一次COMSOL网格构建并通过拓扑、质量、全局单元数和资源门禁；其一次性授权也已耗尽，
+  当前没有商业求解器运行授权。D2边界与当前状态只以[`docs/PROJECT.md`](docs/PROJECT.md)为准；
+  field/particle求解、D3、时间档、N=1000和完整矩阵仍未授权。
+  既有三模式baseline的两份
   求解器报告只具有`POSTHOC_DESCRIPTIVE`身份，统一
   比较见[`../../docs/history/20260729__multipole-three-mode-posthoc-n100.md`](../../docs/history/20260729__multipole-three-mode-posthoc-n100.md)。
 - 执行组合：[`config/execution_profiles.json`](config/execution_profiles.json)保留compile-only门禁；

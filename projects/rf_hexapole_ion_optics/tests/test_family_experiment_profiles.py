@@ -309,16 +309,20 @@ class FamilyExperimentProfileTests(unittest.TestCase):
         self.assertFalse(engineering["pilot_authorization"]["authorized"])
         self.assertEqual(
             engineering["pilot_authorization"]["scope"]["runtime_profile_id"],
-            "exit_aperture_plate_acceleration_n100_hybrid_d1_mesh_build",
+            "exit_aperture_plate_acceleration_n100_hybrid_d2_mesh_build",
         )
         self.assertEqual(
             engineering["pilot_authorization"]["scope"]["allowed_solvers"],
             ["comsol"],
         )
+        self.assertEqual(
+            engineering["pilot_authorization"]["limits"]["maximum_mesh_cells"],
+            3000000,
+        )
         self.assertFalse(engineering["full_matrix_authorization"]["authorized"])
         self.assertEqual(
             engineering["full_matrix_authorization"]["reason"],
-            "legacy_hybrid_p1_campaign_closed_mesh_build_diagnostic_does_not_authorize_field_or_transport",
+            "completed_d2_build_only_diagnostic_does_not_authorize_a_second_d2_run_field_particle_d3_or_any_closed_p1_p2_p3_p4_step",
         )
 
         result = load(

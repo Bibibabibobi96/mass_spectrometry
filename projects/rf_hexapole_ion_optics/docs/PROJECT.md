@@ -129,7 +129,8 @@ baseline已在两求解器保持100/100传输和精确粒子身份；SIMION空�
 发散角和平均能量相对baseline分别变化约`8.16%`、`2.20%`和`0.152%`。COMSOL空间档在
 `MESH_COMPLETE`后以19.288 GB超过17.180 GB进程树帽，记为
 `INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`，不重跑、不抬帽。下述COMSOL D1 build-only网格诊断
-也已经结束，当前没有商业求解器运行授权；field/particle求解、时间档、N=1000和完整矩阵均未授权。完整
+也已经结束。新身份D2随后完成唯一一次build-only网格诊断并耗尽一次性授权；当前没有商业求解器
+运行授权，field/particle求解、D3、时间档、N=1000和完整矩阵均未授权。完整
 身份登记在`../config/qualification/n100_no_acceleration_qualification.json`。
 分段杆轴向加速身份和资源结论登记在
 `../config/qualification/n100_segmented_rod_axial_acceleration_qualification.json`。
@@ -172,7 +173,27 @@ problem、空真空选择或覆盖缺口；若要继续，必须另立小型buil
 D1预算原固定为300 s、128 MiB瞬态目录、6 GiB进程树、8 GiB可用系统内存、10 MiB最终保留及零重试；
 其一次运行和零重试授权已经耗尽，不重开P1，也不授权D1重跑或P2–P4。代码已静态修正为使用`domain`
 几何测量、不可测时显式输出`UNKNOWN`并闭锁，以及以cell保存异构诊断，但修复本身不产生新的商业
-求解器证据。D2仅保留条件性预注册入口，必须另以新的runtime profile、预算和预注册单独获批。
+求解器证据。
+
+新的
+[`D2 build-only资格记录`](../config/qualification/comsol_hybrid_mesh_build_d2_preregistration.json)
+使用独立runtime/numerics身份，于run
+`20260729_203000__build__comsol__hex-hybrid-d2-mesh-build__r01`完成唯一一次COMSOL N=100出口带孔
+接口板加速`mesh_build`，不属于D1或P1重试。它冻结`8.5 mm` core、径向core/杆边界`0.5 mm`、
+每物理段10个轴向层、过渡与端区
+`0.5 mm`、外部真空`1.0 mm`和最小单元`0.02 mm`；资源上限为300 s、128 MiB瞬态目录、
+6 GiB进程树、8 GiB最低系统可用内存、10 MiB最终compact保留、3,000,000个全局网格单元及零重试。
+该运行以`success / UNQUALIFIED_MESH_BUILD_DIAGNOSTIC_ONLY`结束：全局/真空/四面体单元数分别为
+`884,643 / 746,131 / 527,571`，四个扫掠段各`54,640`；全局与真空最小质量均为`0.1983`，扫掠段
+最小质量为`0.5311`。扫掠-四面体重叠、真空未覆盖和非真空分区domain均为0，field physics/study/
+solution及particle physics/study创建数均为0。运行耗时`56.488 s`，进程树峰值
+`3,137,204,224 bytes`，最低系统可用内存`24,665,997,312 bytes`，运行目录峰值和最终保留均为
+`1,664,539 bytes`，全部低于预登记上限。
+
+D2只建立该hybrid网格的构建、拓扑、质量、全局单元数和资源可行性，不产生场解、粒子传输、连续
+收敛、跨求解器数值等价、N=1000分散、机械、Candidate或Formal证据。其一次性零重试授权已经耗尽；
+当前预算保留原scope/limits只为记录，不授权第二次D2或任何D3、field、particle运行。后续动作仍须
+单独预登记。
 
 共享SIMION模板、GUI复核、`.wgem`绕过和跨机可移植性状态只由
 [`../../../common/multipole/README.md`](../../../common/multipole/README.md)维护；公共机制证据不授予

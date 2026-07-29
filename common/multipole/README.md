@@ -168,7 +168,9 @@ project/solver/N和批准状态属于项目权威；公共层只验证身份、�
 两个商业求解器入口还必须消费runtime profile绑定的engineering-budget合同。预算预检在创建run
 package前严格核对project、design、source、粒子数、solver numerics和retention；运行中监测累计墙钟、
 本次进程树working set、系统可用内存和run目录体积。越界只终止本次子进程树，manifest记为
-`interrupted / resource_budget_exceeded`，自动重试固定为零。
+`interrupted / resource_budget_exceeded`，自动重试固定为零。`pilot_authorization.limits`还可仅对
+COMSOL `mesh_build` runtime profile声明正整数`maximum_mesh_cells`；旧预算不声明时保持原行为，
+声明后不得在其他solver或普通transport profile中静默忽略。
 
 ## 求解器投影
 
@@ -212,6 +214,9 @@ COMSOL既有runner还可由受治理的薄wrapper传入单一`mesh_build` stop s
 field physics、field Study、field solution、particle physics和particle Study，launcher验证这些终态及
 必需网格report token后才能发布success。它不是第二CLI、第二schema或场/粒子运行入口，必须由项目
 runtime profile、工程预算和预注册单独授权。
+真实`mesh_build`报告以`MESH_GLOBAL_ELEMENTS`记录`mphmeshstats`返回的全局总单元数。若预算声明
+`maximum_mesh_cells`，runner要求该token恰好出现一次、值为正整数且不超过硬帽；缺报告、缺token、
+非法值或超帽均在success manifest前失败关闭，其中超帽归类为`resource_budget_exceeded`。
 
 ## 单PA GUI模板登记
 

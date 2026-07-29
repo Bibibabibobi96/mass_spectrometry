@@ -58,6 +58,12 @@
       "comsol_solver_numerics_profile_id": "n100_temporal_refined",
       "simion_solver_numerics_profile_id": "n100_temporal_refined"
     },
+    "exit_aperture_plate_acceleration_n100_hybrid_d2_mesh_build": {
+      "design_profile_id": "exit_aperture_plate_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "hybrid_d2_mesh_build",
+      "simion_solver_numerics_profile_id": "baseline_finite_3d"
+    },
     "no_acceleration_full_length_n1000": {
       "design_profile_id": "no_acceleration_full_length",
       "particle_source_profile_id": "family_mother_sample_v1_n1000",

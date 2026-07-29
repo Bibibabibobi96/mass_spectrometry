@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from common.multipole.resource_budget import validate_pilot_budget
 from common.multipole.runtime_profile import resolve_runtime_profile
@@ -40,40 +41,29 @@ class ResourceBudgetTests(unittest.TestCase):
         for project_id, profile in (
             (QUAD, "exit_aperture_plate_acceleration_n100_spatial_refined"),
             (OCT, "exit_aperture_plate_acceleration_n100_spatial_refined"),
+            (HEX, "exit_aperture_plate_acceleration_n100_spatial_refined"),
+            (HEX, "exit_aperture_plate_acceleration_n100_hybrid_d2_mesh_build"),
         ):
             with self.assertRaisesRegex(ValueError, "not authorized"):
                 self.validate(project_id, profile)
-        with self.assertRaisesRegex(ValueError, "not authorized"):
-            self.validate(
-                HEX,
-                "exit_aperture_plate_acceleration_n100_spatial_refined",
-            )
         with self.assertRaisesRegex(ValueError, "not authorized"):
             self.validate(
                 OCT,
                 "exit_aperture_plate_acceleration",
             )
 
-    def test_hexapole_mesh_build_d1_zero_retry_authorization_is_closed(self) -> None:
+    def test_hexapole_closed_mesh_build_profiles_are_not_authorized(self) -> None:
         for profile in (
             "exit_aperture_plate_acceleration_n100_hybrid_d1_mesh_build",
             "exit_aperture_plate_acceleration_n100_hybrid_p1_coarse",
         ):
             with self.assertRaisesRegex(ValueError, "unknown runtime profile"):
                 resolve_runtime_profile(REPO_ROOT, HEX, profile)
-        budget = json.loads(
-            (
-                REPO_ROOT
-                / "projects/rf_hexapole_ion_optics/config/qualification/engineering_budget.json"
-            ).read_text(encoding="utf-8")
-        )
-        self.assertFalse(budget["pilot_authorization"]["authorized"])
-        limits = budget["pilot_authorization"]["limits"]
-        self.assertEqual(limits["automatic_retry_count"], 0)
-        self.assertGreater(
-            limits["process_tree_working_set_bytes"],
-            limits["transient_run_directory_bytes"],
-        )
+        with self.assertRaisesRegex(ValueError, "not authorized"):
+            self.validate(
+                HEX,
+                "exit_aperture_plate_acceleration_n100_hybrid_d2_mesh_build",
+            )
 
     def test_high_cost_runners_validate_before_creating_run_package(self) -> None:
         for name in ("run_finite_3d_transport.ps1", "run_simion_finite_3d_transport.ps1"):
@@ -97,6 +87,137 @@ class ResourceBudgetTests(unittest.TestCase):
         self.assertIn("MULTIPOLE_L3_STOP_STAGE", comsol)
         self.assertIn("UNQUALIFIED_MESH_BUILD_DIAGNOSTIC_ONLY", comsol)
         self.assertIn("$runtimeDeclaresMeshBuild=$RuntimeProfileId -like '*_mesh_build'", comsol)
+        self.assertIn("MESH_GLOBAL_ELEMENTS", comsol)
+        self.assertIn("maximum_mesh_cells", comsol)
+        self.assertIn("$usage.limit_name='maximum_mesh_cells'", comsol)
+
+    def test_mesh_cell_limit_is_optional_and_strictly_positive(self) -> None:
+        runtime_profile_id = (
+            "exit_aperture_plate_acceleration_n100_hybrid_d2_mesh_build"
+        )
+        runtime = resolve_runtime_profile(REPO_ROOT, HEX, runtime_profile_id)
+        budget_path = Path(runtime["engineering_budget"]["path"])
+        authorized_fixture = json.loads(budget_path.read_text(encoding="utf-8"))
+        authorized_fixture["pilot_authorization"]["authorized"] = True
+        authorized_fixture["pilot_authorization"]["limits"][
+            "maximum_mesh_cells"
+        ] = 100
+
+        def validate_with(candidate: dict) -> dict:
+            with mock.patch(
+                "common.multipole.resource_budget._load",
+                return_value=candidate,
+            ):
+                return validate_pilot_budget(
+                    repo_root=REPO_ROOT,
+                    budget_path=budget_path,
+                    project_id=HEX,
+                    solver="comsol",
+                    runtime_profile_id=runtime_profile_id,
+                    design_profile_id=runtime["design_profile_id"],
+                    particle_source_path=Path(runtime["particle_source"]["path"]),
+                    retention_class="compact",
+                )
+
+        self.assertEqual(
+            validate_with(authorized_fixture)["limits"]["maximum_mesh_cells"],
+            100,
+        )
+        legacy_budget = json.loads(json.dumps(authorized_fixture))
+        del legacy_budget["pilot_authorization"]["limits"]["maximum_mesh_cells"]
+        self.assertNotIn("maximum_mesh_cells", validate_with(legacy_budget)["limits"])
+        for invalid in (True, 0, -1, 1.5, "3000000"):
+            with self.subTest(invalid=invalid):
+                invalid_budget = json.loads(json.dumps(authorized_fixture))
+                invalid_budget["pilot_authorization"]["limits"][
+                    "maximum_mesh_cells"
+                ] = invalid
+                with self.assertRaisesRegex(ValueError, "positive integers"):
+                    validate_with(invalid_budget)
+
+    def test_mesh_build_report_enforces_declared_cell_limit(self) -> None:
+        runner = (
+            REPO_ROOT / "common/multipole/run_finite_3d_transport.ps1"
+        ).read_text(encoding="utf-8")
+        start = runner.index("function Assert-MultipoleMeshBuildReport")
+        end = runner.index("\n$runtimeDeclaresMeshBuild", start)
+        assertion_function = runner[start:end]
+        required_lines = [
+            "STOP_STAGE=mesh_build",
+            "FIELD_PHYSICS_CREATED=0",
+            "FIELD_STUDIES_CREATED=0",
+            "FIELD_SOLUTIONS_CREATED=0",
+            "PARTICLE_PHYSICS_CREATED=0",
+            "PARTICLE_STUDIES_CREATED=0",
+            "MESH_FEATURE_ROD_BOUNDARY_SIZE_PRESENT=1",
+            "MESH_SWEPT_TETRAHEDRAL_OVERLAP_DOMAIN_COUNT=0",
+            "MESH_VACUUM_UNCOVERED_DOMAIN_COUNT=0",
+            "MESH_NONVACUUM_PARTITION_DOMAIN_COUNT=0",
+            "MESH_VACUUM_VOLUME_STATUS=MEASURED",
+            "MESH_BUILD_DIAGNOSTIC=PASS",
+            "STATUS=PASS",
+            "MESH_VACUUM_SELECTION_ENTITY_COUNT=1",
+            "MESH_VACUUM_VOLUME_MM3=1",
+            "MESH_VACUUM_MIN_QUALITY=0.5",
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / "mesh_report.txt"
+
+            def run_assertion(
+                element_value: str | None,
+                *,
+                report_present: bool = True,
+            ) -> subprocess.CompletedProcess[str]:
+                report_path = (
+                    report
+                    if report_present
+                    else Path(directory) / "missing_mesh_report.txt"
+                )
+                if report_present:
+                    lines = required_lines.copy()
+                    if element_value is not None:
+                        lines.append(f"MESH_GLOBAL_ELEMENTS={element_value}")
+                    report_path.write_text(
+                        "\n".join(lines) + "\n",
+                        encoding="utf-8",
+                    )
+                escaped_path = str(report_path).replace("'", "''")
+                command = (
+                    f"{assertion_function}\n"
+                    f"$cells=Assert-MultipoleMeshBuildReport -Path '{escaped_path}' "
+                    "-MaximumMeshCells 100;"
+                    'Write-Output "MESH_CELLS=$cells"'
+                )
+                return subprocess.run(
+                    ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                    cwd=REPO_ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=20,
+                )
+
+            accepted = run_assertion("100")
+            self.assertEqual(accepted.returncode, 0, accepted.stderr)
+            self.assertIn("MESH_CELLS=100", accepted.stdout)
+            for element_value, report_present, expected in (
+                (None, False, "mesh-build report is missing"),
+                (None, True, "exactly one MESH_GLOBAL_ELEMENTS"),
+                ("100.0", True, "invalid positive-integer"),
+                ("101", True, "cell budget exceeded"),
+            ):
+                with self.subTest(
+                    element_value=element_value,
+                    report_present=report_present,
+                ):
+                    rejected = run_assertion(
+                        element_value,
+                        report_present=report_present,
+                    )
+                    self.assertNotEqual(rejected.returncode, 0)
+                    self.assertIn(expected, rejected.stdout + rejected.stderr)
 
     def test_watchdog_interrupts_only_its_child_on_wall_clock_limit(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
