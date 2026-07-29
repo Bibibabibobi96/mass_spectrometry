@@ -33,6 +33,10 @@ class PulseCaptureChainAuditTests(unittest.TestCase):
         text = script.read_text(encoding="utf-8")
         self.assertIn("eventRows = cell(height(ions), 24)", text)
         self.assertIn("localExitCount = nnz(string(terminal.event)", text)
+        self.assertIn(
+            "pre_pulse.particle_runtime.rf_steps_per_period",
+            text,
+        )
         for forbidden in (
             "exitRows",
             "localExit=cell2table",
@@ -40,6 +44,7 @@ class PulseCaptureChainAuditTests(unittest.TestCase):
             "kinetic_energy_eV",
             "1.602176634e-19",
             "RF_OATOF_PulseCapture_LOCAL_EXIT_OUTPUT",
+            "pre_pulse.functional_candidate",
         ):
             self.assertNotIn(forbidden, text)
 
