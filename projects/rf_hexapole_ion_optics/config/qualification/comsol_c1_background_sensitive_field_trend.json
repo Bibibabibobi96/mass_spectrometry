@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "role": "multipole_stationary_field_refinement_trend",
+  "project_id": "rf_hexapole_ion_optics",
+  "status": "INCONCLUSIVE_MESH_STRATEGY_CHANGE_REQUIRED",
+  "comparison_method": "common/multipole/stationary_field_sampling.py compare",
+  "field_sample_inputs": {
+    "c1_background_070": {
+      "run_id": "20260730_012000__analysis__comsol__hex-hybrid-c1-cg-amg-field__r01",
+      "sha256": "60E0040AC3A42931EF6E54E88A6A3913C12F326D5947D4DF6D39CB4EF812646C"
+    },
+    "c1_background_sensitive_050": {
+      "run_id": "20260730_111000__analysis__comsol__hex-c1bg-sensitive-050-field__r01",
+      "sha256": "924A83C94D39AB20564D86BDCAFC253661AB7B7526EFEDCA6BBE658D68E15C13"
+    },
+    "c1_background_sensitive_040": {
+      "run_id": "20260730_114000__analysis__comsol__hex-c1bg-sensitive-040-field__r01",
+      "sha256": "A2A893252A2A4005F7E3B0242805A245BE9032516E933C9110DD67DBAC00D8B8"
+    }
+  },
+  "overall_reference_normalized_rms": {
+    "c1_to_sensitive_050": {
+      "differential_potential": 0.00164568754650464,
+      "differential_field_vector": 0.0208877333790449,
+      "static_potential": 0.00109350225648545,
+      "static_field_vector": 0.0434907922091507
+    },
+    "sensitive_050_to_040": {
+      "differential_potential": 0.00091731260229201,
+      "differential_field_vector": 0.00620914193354731,
+      "static_potential": 0.000295536219060376,
+      "static_field_vector": 0.0157867055888332
+    }
+  },
+  "regular_region_field_vector_reference_normalized_rms": {
+    "rod_span_uniform": {
+      "differential_c1_to_050": 0.0134072101143059,
+      "differential_050_to_040": 0.00490482683230666,
+      "static_c1_to_050": 0.0254629261060727,
+      "static_050_to_040": 0.0102984027628154
+    },
+    "rod_exit": {
+      "differential_c1_to_050": 0.0470817655369544,
+      "differential_050_to_040": 0.0238111057209424,
+      "static_c1_to_050": 0.0303713027367287,
+      "static_050_to_040": 0.0134256395050945
+    }
+  },
+  "near_zero_reference_diagnostic": {
+    "region": "rod_entrance",
+    "static_050_to_040_reference_normalized_rms": 3.22821461815977,
+    "static_050_to_040_absolute_rms_V_per_m": 0.000577367596529474,
+    "interpretation": "Relative normalization is ill-conditioned near a zero reference; the absolute value is reported and no threshold is applied."
+  },
+  "resource_boundary": {
+    "sensitive_050_mesh_cells": 685215,
+    "sensitive_040_mesh_cells": 990929,
+    "maximum_mesh_cells": 1000000,
+    "remaining_cells": 9071,
+    "sensitive_032_authorized": false
+  },
+  "decision": {
+    "regular_region_difference_direction": "DECREASING",
+    "three_level_observed_order_available": false,
+    "field_convergence_established": false,
+    "particle_followup_authorized": false,
+    "reason": "A third strict refinement is not credible within the unchanged solver-size budget; do not spend a commercial run to reconfirm the predicted cap violation."
+  },
+  "claim_limit": "Two successful localized levels show an improving field trend but cannot establish three-level spatial convergence, cross-solver closure, particle transport, Candidate or Formal qualification."
+}

@@ -297,6 +297,17 @@ D2的0.5 mm，新增分区后全局网格达到1,019,364单元，超过预登记
 新策略，应固定C1级非敏感背景，只在3.6 mm粒子走廊、杆表面和接口板边界沿0.50→0.40→0.32 mm
 细化，并重新预登记，不能修改本次冻结身份或放宽资源帽。
 
+该新策略随后已按两个独立预登记身份执行：0.50 mm臂以685,215单元、双场各1,173,721 DOF完成，
+0.40 mm臂以990,929单元、双场各1,616,442 DOF完成；两者均输出3330点/6660行公共V/E样本，
+没有创建粒子physics或Study。公共
+[`分区趋势记录`](../config/qualification/comsol_c1_background_sensitive_field_trend.json)
+显示常规杆区差分场normalized RMS由C1→0.50的1.341%降至0.50→0.40的0.490%，静态场由
+2.546%降至1.030%；近零静态入口只报告约`5.77e-4 V/m`绝对RMS，不解释其病态相对值。
+但0.40 mm网格距100万硬帽只剩9,071单元（0.91%），严格细化到0.32 mm不具备可信预算空间。
+因此不再启动可预见超帽的第三次商业运行，三点观测阶数不可计算，场收敛保持
+`INCONCLUSIVE_MESH_STRATEGY_CHANGE_REQUIRED`；分段杆静态场、粒子、跨求解器、Candidate、
+Formal和N=1000仍全部关闭。
+
 共享SIMION模板、GUI复核、`.wgem`绕过和跨机可移植性状态只由
 [`../../../common/multipole/README.md`](../../../common/multipole/README.md)维护；公共机制证据不授予
 本项目Candidate或Formal资格。

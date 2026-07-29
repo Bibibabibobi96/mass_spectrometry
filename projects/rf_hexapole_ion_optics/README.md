@@ -92,7 +92,12 @@
   正确建立了9个敏感走廊domain、28个接口边界实体和6个局部Size feature，但固定D2级背景网格后
   全局单元数为1,019,364，超过100万硬帽约1.94%，因此在场求解前登记为
   `INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`。0.40/0.32 mm、另一静电拓扑及全部粒子臂均未执行；
-  当前授权再次关闭。下一策略必须先粗化非敏感背景，不能抬帽或把本次身份当成可重试运行。
+  当前授权再次关闭。后续新身份把非敏感背景改为C1级粗度，局部0.50和0.40 mm臂分别以
+  685,215和990,929单元完成双场及6660行公共采样；常规杆区差分场normalized RMS由
+  C1→0.50的1.341%降至0.50→0.40的0.490%，变化方向改善。但0.40 mm后只剩9,071单元余量，
+  0.32 mm无法可信地留在同一硬帽内，因此不再浪费一次商业运行去确认预期超帽。
+  [`趋势记录`](config/qualification/comsol_c1_background_sensitive_field_trend.json)据此保持
+  `INCONCLUSIVE_MESH_STRATEGY_CHANGE_REQUIRED`；三点收敛、另一静电拓扑和粒子矩阵均未授权。
   既有三模式baseline的两份
   求解器报告只具有`POSTHOC_DESCRIPTIVE`身份，统一
   比较见[`../../docs/history/20260729__multipole-three-mode-posthoc-n100.md`](../../docs/history/20260729__multipole-three-mode-posthoc-n100.md)。

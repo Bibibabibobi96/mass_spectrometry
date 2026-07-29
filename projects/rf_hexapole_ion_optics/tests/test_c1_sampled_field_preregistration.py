@@ -67,12 +67,12 @@ class C1SampledFieldPreregistrationTests(unittest.TestCase):
         self.assertEqual(cg_numerics["stationary_linear_solver_backend"], "cg_amg")
         self.assertEqual(mumps_numerics["stationary_linear_solver_backend"], "mumps")
 
-    def test_live_budget_authorizes_only_c1_background_040_arm(self) -> None:
+    def test_live_budget_closes_c1_background_sequence(self) -> None:
         budget = load(
             PROJECT_ROOT / "config" / "qualification" / "engineering_budget.json"
         )
         pilot = budget["pilot_authorization"]
-        self.assertTrue(pilot["authorized"])
+        self.assertFalse(pilot["authorized"])
         self.assertNotIn(
             pilot["scope"]["runtime_profile_id"],
             {CG_RUNTIME_ID, MUMPS_RUNTIME_ID},

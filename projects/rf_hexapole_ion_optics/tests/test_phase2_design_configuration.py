@@ -350,7 +350,10 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
             / "qualification"
             / "comsol_c1_background_sensitive_040_field_preregistration.json"
         )
-        self.assertEqual(preregistration["status"], "authorized_not_run")
+        self.assertEqual(
+            preregistration["status"],
+            "completed_success_sequence_stopped_at_budget_boundary",
+        )
         self.assertEqual(
             preregistration["authorization"]["automatic_retry_count"], 0
         )
@@ -361,6 +364,36 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
             mesh["parent"]["field_samples_sha256"],
             "924A83C94D39AB20564D86BDCAFC253661AB7B7526EFEDCA6BBE658D68E15C13",
         )
+        execution = preregistration["execution_result"]
+        self.assertEqual(execution["observed"]["mesh_global_elements"], 990_929)
+        self.assertEqual(execution["observed"]["remaining_mesh_cell_budget"], 9_071)
+
+    def test_local_field_trend_stops_before_unaffordable_third_level(
+        self,
+    ) -> None:
+        trend = load(
+            PROJECT_ROOT
+            / "config"
+            / "qualification"
+            / "comsol_c1_background_sensitive_field_trend.json"
+        )
+        self.assertEqual(
+            trend["status"], "INCONCLUSIVE_MESH_STRATEGY_CHANGE_REQUIRED"
+        )
+        regular = trend["regular_region_field_vector_reference_normalized_rms"][
+            "rod_span_uniform"
+        ]
+        self.assertLess(
+            regular["differential_050_to_040"],
+            regular["differential_c1_to_050"],
+        )
+        self.assertLess(
+            regular["static_050_to_040"],
+            regular["static_c1_to_050"],
+        )
+        self.assertFalse(trend["resource_boundary"]["sensitive_032_authorized"])
+        self.assertFalse(trend["decision"]["field_convergence_established"])
+        self.assertFalse(trend["decision"]["particle_followup_authorized"])
 
 
 if __name__ == "__main__":

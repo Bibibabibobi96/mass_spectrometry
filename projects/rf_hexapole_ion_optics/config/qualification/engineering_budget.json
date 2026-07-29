@@ -2,10 +2,10 @@
   "schema_version": 1,
   "role": "multipole_engineering_budget_contract",
   "project_id": "rf_hexapole_ion_optics",
-  "contract_id": "hexapole_c1_background_sensitive_040_field_arm_v1",
+  "contract_id": "hexapole_c1_background_sensitive_sequence_stopped_v1",
   "preregistered_before_run": true,
   "pilot_authorization": {
-    "authorized": true,
+    "authorized": false,
     "scope": {
       "project_id": "rf_hexapole_ion_optics",
       "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_c1_background_sensitive_040_field_screen",
@@ -38,8 +38,8 @@
   },
   "full_matrix_authorization": {
     "authorized": false,
-    "reason": "only_the_preregistered_c1_background_sensitive_040_field_arm_is_authorized"
+    "reason": "the_040_arm_left_only_9071_cells_and_032_is_not_credible_under_the_fixed_cap"
   },
   "budget_exhaustion_result": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
-  "claim_limit": "This authorization covers exactly one 0.40 mm localized sensitive-region field arm after the successful 0.50 mm C1-background arm. It authorizes no retry, later level, particle tracing, convergence, cross-solver, Candidate, Formal or N=1000 claim."
+  "claim_limit": "The 0.50 and 0.40 mm C1-background arms succeeded, but the latter used 990,929 of one million allowed cells. The 0.32 mm arm and all particle, convergence, cross-solver, Candidate, Formal and N=1000 runs remain unauthorized."
 }

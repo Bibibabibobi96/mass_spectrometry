@@ -4,7 +4,7 @@
   "project_id": "rf_hexapole_ion_optics",
   "experiment_id": "hexapole_c1_background_sensitive_field_sequence_v1_level_040",
   "preregistered_before_run": true,
-  "status": "authorized_not_run",
+  "status": "completed_success_sequence_stopped_at_budget_boundary",
   "authorization": {
     "maximum_commercial_run_count": 1,
     "automatic_retry_count": 0,
@@ -134,6 +134,42 @@
     "shared_failure_stop": "Any mesh, solver, sampling or hard-budget failure stops the sequence and forbids particles.",
     "failure_result": "INCONCLUSIVE_MESH_STRATEGY_CHANGE_REQUIRED"
   },
-  "execution_result": null,
+  "execution_result": {
+    "terminal": true,
+    "run_id": "20260730_114000__analysis__comsol__hex-c1bg-sensitive-040-field__r01",
+    "manifest_status": "success",
+    "result": "C1_BACKGROUND_SENSITIVE_040_FIELD_ARM_PASS",
+    "commercial_run_count_executed": 1,
+    "automatic_retry_executed": 0,
+    "observed": {
+      "mesh_global_elements": 990929,
+      "mesh_global_min_quality": 0.1702,
+      "mesh_global_mean_quality": 0.686,
+      "mesh_vacuum_elements": 804263,
+      "mesh_tetrahedral_elements": 654183,
+      "mesh_swept_elements_per_segment": 37520,
+      "differential_field_dof": 1616442,
+      "differential_field_iterations": 7,
+      "differential_field_final_residual": 3.2e-7,
+      "static_field_dof": 1616442,
+      "static_field_iterations": 8,
+      "static_field_final_residual": 2.2e-7,
+      "field_sample_point_count": 3330,
+      "field_sample_row_count": 6660,
+      "remaining_mesh_cell_budget": 9071,
+      "remaining_mesh_cell_budget_fraction": 0.009071,
+      "retained_run_bytes": 3393336
+    },
+    "evidence_sha256": {
+      "run_config": "75DE2153D15EF96AAFDDFE72F22DFC412166E3F203C476782C4568FD89D5E142",
+      "run_manifest": "E921CA58744ECB2C294677ED6F4FEBF8C62FF99F3C305CD6413F23876BA679B3",
+      "summary": "8534228DA2C61ADB020E699D8D53E210B0646B609E1A77ECF8644BF077823E1F",
+      "resource_usage": "3235CF6581BCCE01728358118AE11E3DF71555E7A279D3F05B29989D336587B0",
+      "comsol_report": "90659544E349F64B70D7BE91366BD719FE76EF4AAE043A34A3648087C1624E73",
+      "field_samples": "A2A893252A2A4005F7E3B0242805A245BE9032516E933C9110DD67DBAC00D8B8",
+      "field_sample_validation": "B5F7689878D46C507704BC514F7125A984B839BACB85908489E9C3015345C513"
+    },
+    "decision": "Do not preregister or run 0.32 mm: only 9,071 cells remain and a strict refinement cannot credibly stay inside the unchanged one-million-cell budget. Particle runs remain forbidden because a three-level convergence sequence was not completed."
+  },
   "claim_limit": "This record authorizes only the C1-background 0.40 mm field arm. It cannot establish convergence, particle transport, cross-solver closure, Candidate, Formal or N=1000 claims."
 }

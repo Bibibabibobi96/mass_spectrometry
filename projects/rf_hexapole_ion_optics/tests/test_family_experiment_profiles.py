@@ -306,7 +306,7 @@ class FamilyExperimentProfileTests(unittest.TestCase):
             self.assertTrue(contract["preregistered_before_run"])
             self.assertTrue(contract[content])
         engineering = load("config/qualification/engineering_budget.json")
-        self.assertTrue(engineering["pilot_authorization"]["authorized"])
+        self.assertFalse(engineering["pilot_authorization"]["authorized"])
         self.assertEqual(
             engineering["pilot_authorization"]["scope"]["runtime_profile_id"],
             "exit_aperture_plate_acceleration_n100_hybrid_c1_background_sensitive_040_field_screen",
@@ -322,7 +322,7 @@ class FamilyExperimentProfileTests(unittest.TestCase):
         self.assertFalse(engineering["full_matrix_authorization"]["authorized"])
         self.assertEqual(
             engineering["full_matrix_authorization"]["reason"],
-            "only_the_preregistered_c1_background_sensitive_040_field_arm_is_authorized",
+            "the_040_arm_left_only_9071_cells_and_032_is_not_credible_under_the_fixed_cap",
         )
 
         result = load(
