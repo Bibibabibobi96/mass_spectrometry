@@ -12,15 +12,15 @@
     },
     {
       "descriptor": "projects/rf_hexapole_ion_optics/config/project.json",
-      "sha256": "6BE2E82D525C651390B16681A717062BF118C3D7B43A7491E22FC64E04AA86C2"
+      "sha256": "09D5BD383657A9CAD69B8624CB08F9EC8184EF6C11895DA59A41011A696C1415"
     },
     {
       "descriptor": "projects/rf_octupole_ion_optics/config/project.json",
-      "sha256": "A4BA077ED1AB5F234F31B7126468455F2E0F8302CF2C8F420C066C7E2CCB5D31"
+      "sha256": "22888CDB4126458596D413510FF39385C2B95B4EECEE89791B1F0127EADCF41A"
     },
     {
       "descriptor": "projects/rf_quadrupole_ion_optics/config/project.json",
-      "sha256": "01B69706EB01029BDD8A9484124F8A9FEC52DB55838D7C43EA1AFB9CD8F849FA"
+      "sha256": "39117C9C6B1BFF112A91A28386E6ED29D7F5B3B9A6D2B5CE2CE8660FA3D4C490"
     },
     {
       "descriptor": "projects/single_reflection_oa_tof_mass_analyzer/config/project.json",
@@ -172,7 +172,7 @@
         "simion"
       ],
       "contracts": {
-        "baseline": "config/baseline.json",
+        "baseline": null,
         "resolved": "config/resolved_design.json",
         "analysis": null,
         "interface": null,
@@ -302,7 +302,7 @@
         "simion"
       ],
       "contracts": {
-        "baseline": "config/baseline.json",
+        "baseline": null,
         "resolved": "config/resolved_design.json",
         "analysis": null,
         "interface": null,
@@ -433,7 +433,7 @@
         "python"
       ],
       "contracts": {
-        "baseline": "config/baseline.json",
+        "baseline": null,
         "resolved": "config/resolved_design_official.json",
         "analysis": null,
         "interface": "config/interface_contract.json",

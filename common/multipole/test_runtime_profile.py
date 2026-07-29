@@ -65,15 +65,29 @@ class RuntimeProfileTests(unittest.TestCase):
                 for token in forbidden:
                     self.assertNotIn(token, source)
 
-    def test_legacy_baseline_registration_is_identity_only(self) -> None:
+    def test_registration_identity_comes_from_all_design_profiles(self) -> None:
         for project_id in PROJECT_IDS:
+            project_root = REPO_ROOT / "projects" / project_id
             descriptor = json.loads(
-                (
-                    REPO_ROOT / "projects" / project_id / "config/project.json"
-                ).read_text(encoding="utf-8-sig")
+                (project_root / "config/project.json").read_text(encoding="utf-8-sig")
             )
+            self.assertIsNone(descriptor["contracts"]["baseline"])
+            profiles = json.loads(
+                (project_root / descriptor["contracts"]["design_profiles"]).read_text(
+                    encoding="utf-8-sig"
+                )
+            )
+            identities = {
+                json.dumps(profile["identity"], sort_keys=True)
+                for profile in profiles["profiles"]
+            }
+            self.assertEqual(len(identities), 1)
+            identity = json.loads(next(iter(identities)))
+            self.assertEqual(identity["project_id"], descriptor["project_id"])
+            self.assertEqual(identity["family_id"], descriptor["family_id"])
             self.assertEqual(
-                descriptor["contracts"]["baseline"], "config/baseline.json"
+                identity["electrode_count"],
+                2 * identity["radial_order_n"],
             )
         for project_id in HIGH_ORDER_PROJECT_IDS:
             for wrapper in (

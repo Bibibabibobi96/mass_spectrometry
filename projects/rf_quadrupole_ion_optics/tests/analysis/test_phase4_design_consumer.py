@@ -120,7 +120,11 @@ class Phase4DesignConsumerTests(unittest.TestCase):
                 self.assertNotIn(forbidden, source)
             self.assertIn("[string]$RuntimeProfileId", source)
             self.assertNotIn("[string]$ParticleSourcePath", source)
-            self.assertIn("common.multipole.runtime_profile", source)
+            self.assertIn(
+                "common\\multipole\\project_transport_launcher_support.ps1",
+                source,
+            )
+            self.assertIn("Invoke-MultipoleProjectFinite3dTransport", source)
             self.assertNotIn("[string]$DesignProfileId", source)
             self.assertNotIn("explicit_axial_reference", source)
             self.assertNotIn("exit_aperture_plate_acceleration_reference", source)

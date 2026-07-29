@@ -69,9 +69,10 @@ run编号、故障链和关闭过程冻结在
   `../config/interfaces/provided/rf_multipole_exit.json`；
 - execution profile：`../config/execution_profiles.json`。
 
-`../config/baseline.json`只承担尚未迁移的注册兼容，不接收新参数。科学mode不覆盖resolved物理量，
-runner CLI不暴露任意resolved、RF/DC、几何、轴向加速或数值标量路径。缺失绑定必须在商业软件启动前
-失败关闭。
+`../config/project.json`的注册身份由全部design profile的一致identity给出，不再绑定
+`../config/baseline.json`。该旧文件仍由尚未迁移的专用workflow只读消费且不接收新参数。科学mode
+不覆盖resolved物理量，runner CLI不暴露任意resolved、RF/DC、几何、轴向加速或数值标量路径。缺失
+绑定必须在商业软件启动前失败关闭。
 
 当前出口端口只绑定`official_transport`矩形参考外壳及pre_pulse_interface_transport/pulse_capture/analyzer_transport oaTOF集成oracle。其
 `profile_scope.family_experiment_port=false`，不得解释为四、六、八极杆统一圆柱机械族的实验端口。
@@ -163,8 +164,7 @@ component-state写出与即时校验统一调用公共合同入口，不再维�
 4. 若恢复RF四极杆离子光学→单次反射oa-TOF接口资格工作，先单独批准目标与指标，再完成连接场数值资格、N=1000、
    脉冲/时间步收敛、分辨率、容差及机械装配；当前功能链不自动进入该阶段。
 5. 若恢复碰撞冷却，必须从当前共享几何和新碰撞合同建立独立workflow，不恢复旧150 mm脚本。
-6. 迁移`config/project.json`仍指向旧`baseline.json`的注册兼容，并审计剩余
-   `finite_3d_transport.json`快照消费者；完成前只读保留。
+6. 迁移仍消费旧`baseline.json`的专用workflow；完成前只读保留，不把该文件重新接入项目注册身份。
 7. SIMION 2026 `.wgem`仍受许可证限制，活动路线使用已验证的SIMION 2020 legacy-GEM；许可证与
    跨工作区模板可移植性由公共multipole文档统一跟踪。
 

@@ -99,7 +99,8 @@ Mathieu稳定图。L1/L2/L3迁移前小样本及2 mm连接器数值只保留在
 - [`../verify_project.ps1`](../verify_project.ps1)
 
 `config/baseline.json`和`config/finite_3d_transport.json`仅为历史L1/L3兼容快照，不得接收新参数或
-供活动L3 solver直接消费。前者只因当前registry schema保留为旧格式项目身份检查，不构成solver权威。
+供活动L3 solver直接消费。项目注册身份已改由全部design profile的一致identity给出，不再绑定前者；
+尚未迁移的兼容消费者仍可只读访问这些快照，但它们不构成solver权威。
 `config/requests/baseline.json`、`requests/no_acceleration_full_length.json`、
 `requests/exit_aperture_plate.json`及其专属catalog/envelope只保留历史/兼容读取；当前家族实验不得引用。
 `config/evidence/no_acceleration_full_length.json`和
@@ -265,8 +266,7 @@ FreeTet baseline的9,422,286,848 bytes。
 
 本项目还保留两项项目专属退出任务：
 
-1. `project.json.contracts.baseline`暂因根registry builder的旧`multipole`身份检查保留只读
-   `config/baseline.json`。根schema/builder改由design profile/request或独立identity contract校验，
-   且三RF项目registry门禁通过后，解除该兼容绑定并按删除授权处理旧文件。
+1. 迁移仍只读消费`config/baseline.json`的旧L1/L2兼容路径；项目注册身份不得重新绑定该快照，
+   旧文件的后续处置仍须单独删除授权。
 2. `config/finite_3d_transport.json`仍供旧family/L1测试读取。测试改为消费design request、resolved和
    solver-numerics profile且活动引用归零后，按删除授权退出该快照。

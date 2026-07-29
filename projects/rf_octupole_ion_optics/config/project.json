@@ -20,7 +20,7 @@
   "lifecycle_status": "static",
   "toolchains": ["python", "comsol", "simion"],
   "contracts": {
-    "baseline": "config/baseline.json",
+    "baseline": null,
     "resolved": "config/resolved_design.json",
     "analysis": null,
     "interface": null,

@@ -37,8 +37,10 @@
 | oaTOF集成oracle专用出口端口 | [`config/interfaces/provided/rf_multipole_exit.json`](config/interfaces/provided/rf_multipole_exit.json) |
 | 多极杆轴向加速共同证据 | [`../../common/multipole/family_contract.json`](../../common/multipole/family_contract.json) |
 
-`config/baseline.json`只保留旧格式注册兼容，不是活动求解器参数源。活动runner只消费具名profile编译的
-完整request/resolved发布；不得用任意路径或CLI标量覆盖几何、RF/DC、静态电极或轴向加速合同。
+`config/project.json`的注册身份由全部design profile的一致identity给出，不再绑定
+`config/baseline.json`。后者仍由尚未迁移的专用workflow只读消费；活动圆柱家族runner只消费具名
+profile编译的完整request/resolved发布，不得用任意路径或CLI标量覆盖几何、RF/DC、静态电极或轴向
+加速合同。
 
 ## 工作流入口
 

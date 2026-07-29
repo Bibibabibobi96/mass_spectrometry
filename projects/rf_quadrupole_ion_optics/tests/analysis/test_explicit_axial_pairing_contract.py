@@ -69,7 +69,15 @@ class ExplicitAxialPairingContractTests(unittest.TestCase):
             "segmented_rod_axial_acceleration",
             "exit_aperture_plate_acceleration",
         ):
-            self.assertIn(runtime_profile_id, entry)
+            resolved_profile = resolve_runtime_profile(
+                REPO_ROOT,
+                "rf_quadrupole_ion_optics",
+                runtime_profile_id,
+            )
+            self.assertEqual(
+                resolved_profile["runtime_profile_id"],
+                runtime_profile_id,
+            )
         resolved = resolve_runtime_profile(
             REPO_ROOT, "rf_quadrupole_ion_optics", "no_acceleration_full_length"
         )
@@ -82,7 +90,11 @@ class ExplicitAxialPairingContractTests(unittest.TestCase):
                 "rf_quadrupole_ion_optics",
                 "explicit_axial_reference",
             )
-        self.assertIn("common\\multipole\\run_finite_3d_transport.ps1", entry)
+        self.assertIn(
+            "common\\multipole\\project_transport_launcher_support.ps1",
+            entry,
+        )
+        self.assertIn("Invoke-MultipoleProjectFinite3dTransport", entry)
 
 
 if __name__ == "__main__":

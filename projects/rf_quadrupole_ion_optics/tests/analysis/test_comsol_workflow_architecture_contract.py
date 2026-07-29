@@ -157,7 +157,11 @@ class ComsolWorkflowArchitectureContractTests(unittest.TestCase):
             wrapper = _read(
                 PROJECT_ROOT / "workflows" / "no_collision_transport" / name
             )
-            self.assertIn("common.multipole.runtime_profile", wrapper)
+            self.assertIn(
+                "common\\multipole\\project_transport_launcher_support.ps1",
+                wrapper,
+            )
+            self.assertIn("Invoke-MultipoleProjectFinite3dTransport", wrapper)
             self.assertNotIn("config\\comsol_solver_numerics.json", wrapper)
             self.assertNotIn(
                 "multipole_transport_comsol_solver_numerics.json", wrapper

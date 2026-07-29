@@ -63,6 +63,22 @@ def pointer_value(document: dict[str, Any], pointer: str) -> Any:
     return value
 
 
+def consistent_profile_identity(
+    identities: list[dict[str, Any]],
+    profiles_path: Path,
+) -> dict[str, Any]:
+    """Return the sole design-profile identity, rejecting empty or mixed registries."""
+    unique = {
+        json.dumps(identity, sort_keys=True, separators=(",", ":")): identity
+        for identity in identities
+    }
+    if not unique:
+        raise ContractError(f"{profiles_path}: design profiles require an identity")
+    if len(unique) != 1:
+        raise ContractError(f"{profiles_path}: design profile identities differ")
+    return next(iter(unique.values()))
+
+
 def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path) -> None:
     validate_schema(descriptor, "project.schema.json")
     project_root = path.parents[1]
@@ -90,6 +106,7 @@ def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path)
         if relative is not None and not (project_root / relative).is_file():
             raise ContractError(f"{path}: {role} contract is missing: {relative}")
 
+    multipole_profile_identity: dict[str, Any] | None = None
     profiles_relative = descriptor["contracts"].get("design_profiles")
     if profiles_relative is not None:
         profiles_path = project_root / profiles_relative
@@ -101,6 +118,7 @@ def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path)
         ):
             raise ContractError(f"{profiles_path}: design profile identity differs")
         profile_ids: set[str] = set()
+        profile_identities: list[dict[str, Any]] = []
         for profile in profiles["profiles"]:
             profile_id = profile["design_profile_id"]
             if profile_id in profile_ids:
@@ -140,10 +158,15 @@ def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path)
                     raise ContractError(f"{profiles_path}: profile variable is outside bounds")
             if request["identity"] != profile["identity"]:
                 raise ContractError(f"{profiles_path}: profile request identity differs")
+            profile_identities.append(profile["identity"])
             if request["geometry_mm"]["enclosure"]["role"] != profile["topology"]["enclosure_role"]:
                 raise ContractError(f"{profiles_path}: profile enclosure topology differs")
             if request["segmentation"]["strategy"] != profile["topology"]["segmentation_strategy"]:
                 raise ContractError(f"{profiles_path}: profile segmentation topology differs")
+        multipole_profile_identity = consistent_profile_identity(
+            profile_identities,
+            profiles_path,
+        )
 
     execution_relative = descriptor["contracts"]["execution"]
     if execution_relative is not None:
@@ -193,17 +216,19 @@ def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path)
             if catalog["family_id"] != descriptor["family_id"]:
                 raise ContractError(f"{variables_path}: family_id differs from project descriptor")
             reference = None
-            baseline_relative = descriptor["contracts"]["baseline"]
-            if baseline_relative is None:
-                raise ContractError(f"{variables_path}: multipole design variables require a baseline contract")
-            baseline = load_json(project_root / baseline_relative)
-            baseline_identity = baseline["multipole"]
-            expected_identity = {
-                "project_id": descriptor["project_id"],
-                "family_id": descriptor["family_id"],
-                "radial_order_n": baseline_identity["radial_order_n"],
-                "electrode_count": baseline_identity["electrode_count"],
-            }
+            if multipole_profile_identity is None:
+                raise ContractError(
+                    f"{variables_path}: multipole design variables require "
+                    "a consistent design profile identity"
+                )
+            expected_identity = multipole_profile_identity
+            if (
+                expected_identity["project_id"] != descriptor["project_id"]
+                or expected_identity["family_id"] != descriptor["family_id"]
+            ):
+                raise ContractError(
+                    f"{variables_path}: design profile identity differs from project descriptor"
+                )
             if expected_identity["electrode_count"] != 2 * expected_identity["radial_order_n"]:
                 raise ContractError(f"{variables_path}: electrode_count must equal twice radial_order_n")
         else:

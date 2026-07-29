@@ -19,8 +19,9 @@
 - 项目身份：[`config/project.json`](config/project.json)
 - 三项目共享运行合同：[`../../common/multipole/README.md`](../../common/multipole/README.md)
   （轴向实体与物理面只采用其中的“轴向部件与物理面术语”）。
-- 历史L1兼容输入：[`config/baseline.json`](config/baseline.json)，只读；`project.json`仅因当前registry
-  schema把它保留为旧格式身份检查，不是活动solver参数权威。
+- 历史L1兼容输入：[`config/baseline.json`](config/baseline.json)，只读；`project.json`的注册身份
+  已改由全部design profile的一致identity给出，不再绑定该文件。旧L1/L2兼容消费者尚未迁移，
+  该文件不是活动L3 solver参数权威。
 - 当前家族实验机械base、typed电气mode、变量目录和优化包络：
   [`config/requests/mechanical_base.json`](config/requests/mechanical_base.json)、
   [`config/operating_modes.json`](config/operating_modes.json)、

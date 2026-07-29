@@ -20,7 +20,7 @@
   "lifecycle_status": "candidate",
   "toolchains": ["comsol", "simion", "matlab", "python"],
   "contracts": {
-    "baseline": "config/baseline.json",
+    "baseline": null,
     "resolved": "config/resolved_design_official.json",
     "analysis": null,
     "interface": "config/interface_contract.json",

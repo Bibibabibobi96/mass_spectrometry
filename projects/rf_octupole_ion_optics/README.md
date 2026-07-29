@@ -21,6 +21,8 @@
 - typed电气模式：[`config/operating_modes.json`](config/operating_modes.json)。
 - 三个规范design profile及兼容别名：
   [`config/design_profiles.json`](config/design_profiles.json)。
+- `config/project.json`的注册身份由全部design profile的一致identity给出，不绑定历史
+  `config/baseline.json`；后者只供尚未迁移的兼容路径只读访问。
 - runtime、粒子源和求解器数值：
   [`config/runtime_profiles.json`](config/runtime_profiles.json)、
   [`config/particle_source_profiles.json`](config/particle_source_profiles.json)、

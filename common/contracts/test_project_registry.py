@@ -10,6 +10,7 @@ from build_project_registry import (
     ContractError,
     REPO_ROOT,
     build_registry,
+    consistent_profile_identity,
     descriptor_paths,
     serialized,
     validate_descriptor,
@@ -19,6 +20,44 @@ from machine_contracts import load_json, validate_schema
 
 
 class ProjectRegistryTests(unittest.TestCase):
+    def test_multipole_registration_uses_one_consistent_profile_identity(self) -> None:
+        identities = [
+            {
+                "project_id": "rf_hexapole_ion_optics",
+                "family_id": "rf_multipole_ion_optics",
+                "radial_order_n": 3,
+                "electrode_count": 6,
+            },
+            {
+                "project_id": "rf_hexapole_ion_optics",
+                "family_id": "rf_multipole_ion_optics",
+                "radial_order_n": 3,
+                "electrode_count": 6,
+            },
+        ]
+        profiles_path = REPO_ROOT / "profiles.json"
+        self.assertEqual(
+            consistent_profile_identity(identities, profiles_path),
+            identities[0],
+        )
+        identities[1] = {**identities[1], "radial_order_n": 4}
+        with self.assertRaisesRegex(ContractError, "design profile identities differ"):
+            consistent_profile_identity(identities, profiles_path)
+        with self.assertRaisesRegex(ContractError, "require an identity"):
+            consistent_profile_identity([], profiles_path)
+
+    def test_rf_multipole_descriptors_do_not_register_legacy_baselines(self) -> None:
+        project_ids = (
+            "rf_quadrupole_ion_optics",
+            "rf_hexapole_ion_optics",
+            "rf_octupole_ion_optics",
+        )
+        for project_id in project_ids:
+            path = REPO_ROOT / "projects" / project_id / "config" / "project.json"
+            descriptor = load_json(path)
+            self.assertIsNone(descriptor["contracts"]["baseline"])
+            validate_descriptor(descriptor, path, REPO_ROOT)
+
     def test_all_project_directories_have_descriptors(self) -> None:
         project_directories = sorted(path.name for path in (REPO_ROOT / "projects").iterdir() if path.is_dir())
         described = sorted(path.parents[1].name for path in descriptor_paths(REPO_ROOT))
