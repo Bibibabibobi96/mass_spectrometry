@@ -19,6 +19,7 @@ _SCOPE_KEYS = {
     "allowed_solvers",
     "retention_class",
 }
+_OPTIONAL_SCOPE_KEYS = {"expected_run_parent_resolved_design_sha256"}
 _REQUIRED_LIMIT_KEYS = {
     "wall_clock_seconds_by_solver",
     "transient_run_directory_bytes",
@@ -47,6 +48,13 @@ def _require_limit_keys(limits: dict[str, Any]) -> None:
     allowed = _REQUIRED_LIMIT_KEYS | _OPTIONAL_LIMIT_KEYS
     if not _REQUIRED_LIMIT_KEYS.issubset(actual) or not actual.issubset(allowed):
         raise ValueError(f"pilot limits keys differ: {sorted(limits)}")
+
+
+def _require_scope_keys(scope: dict[str, Any]) -> None:
+    actual = set(scope)
+    allowed = _SCOPE_KEYS | _OPTIONAL_SCOPE_KEYS
+    if not _SCOPE_KEYS.issubset(actual) or not actual.issubset(allowed):
+        raise ValueError(f"pilot scope keys differ: {sorted(scope)}")
 
 
 def _particle_count(path: Path) -> int:
@@ -99,7 +107,7 @@ def validate_pilot_budget(
     if pilot["authorized"] is not True:
         raise ValueError("multipole commercial solver pilot is not authorized")
     scope, limits = pilot["scope"], pilot["limits"]
-    _require_keys(scope, _SCOPE_KEYS, "pilot scope")
+    _require_scope_keys(scope)
     _require_limit_keys(limits)
     allowed_solvers = scope["allowed_solvers"]
     if (
@@ -122,16 +130,34 @@ def validate_pilot_budget(
         "allowed_solvers": allowed_solvers,
         "retention_class": retention_class,
     }
+    expected_run_hash = scope.get("expected_run_parent_resolved_design_sha256")
+    if expected_run_hash is not None:
+        if (
+            not isinstance(expected_run_hash, str)
+            or len(expected_run_hash) != 64
+            or any(character not in "0123456789ABCDEF" for character in expected_run_hash)
+        ):
+            raise ValueError(
+                "expected_run_parent_resolved_design_sha256 must be uppercase SHA-256"
+            )
+        expected_scope["expected_run_parent_resolved_design_sha256"] = (
+            expected_run_hash
+        )
     if scope != expected_scope:
         raise ValueError("requested pilot identity differs from authorized scope")
     if solver not in scope["allowed_solvers"]:
         raise ValueError(f"solver is not authorized: {solver}")
     if Path(runtime["particle_source"]["path"]).resolve() != particle_source_path.resolve():
         raise ValueError("particle source differs from authorized runtime profile")
-    if "maximum_mesh_cells" in limits and (
-        solver != "comsol" or not runtime_profile_id.endswith("_mesh_build")
-    ):
-        raise ValueError("maximum_mesh_cells requires a COMSOL mesh_build runtime profile")
+    if "maximum_mesh_cells" in limits:
+        mesh = runtime["solver_numerics"][solver]["values"].get("mesh", {})
+        if (
+            solver != "comsol"
+            or mesh.get("strategy") != "physical_segment_hybrid_swept_tetra_v1"
+        ):
+            raise ValueError(
+                "maximum_mesh_cells requires a COMSOL physical-segment hybrid mesh profile"
+            )
     wall_clock = limits["wall_clock_seconds_by_solver"]
     if set(wall_clock) != {"comsol", "simion"}:
         raise ValueError("wall-clock solver keys differ")
@@ -173,6 +199,7 @@ def validate_pilot_budget(
         "solver_numerics_profile_id": runtime["solver_numerics"][solver]["profile_id"],
         "solver_numerics": runtime["solver_numerics"][solver]["values"],
         "retention_class": retention_class,
+        "expected_run_parent_resolved_design_sha256": expected_run_hash,
         "limits": {**limits, "wall_clock_seconds": wall_clock[solver]},
         "budget_path": str(expected_budget),
     }

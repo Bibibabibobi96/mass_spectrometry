@@ -49,8 +49,10 @@
   D1零重试授权已经耗尽。随后
   [`D2 build-only资格记录`](config/qualification/comsol_hybrid_mesh_build_d2_preregistration.json)
   已以新身份完成一次COMSOL网格构建并通过拓扑、质量、全局单元数和资源门禁；其一次性授权也已耗尽，
-  当前没有商业求解器运行授权。D2边界与当前状态只以[`docs/PROJECT.md`](docs/PROJECT.md)为准；
-  field/particle求解、D3、时间档、N=1000和完整矩阵仍未授权。
+  随后以
+  [`混合网格粒子筛查预登记`](config/qualification/comsol_hybrid_transport_screen_preregistration.json)
+  完成COMSOL N=100 field+particle工程筛查：纠错身份在场求解完成前超过12 GiB进程树预算，当前
+  hybrid候选已拒绝且授权关闭；不授权D3、时间档、N=1000、完整矩阵或连续量资格。
   既有三模式baseline的两份
   求解器报告只具有`POSTHOC_DESCRIPTIVE`身份，统一
   比较见[`../../docs/history/20260729__multipole-three-mode-posthoc-n100.md`](../../docs/history/20260729__multipole-three-mode-posthoc-n100.md)。

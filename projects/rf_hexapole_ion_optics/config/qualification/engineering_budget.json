@@ -2,40 +2,41 @@
   "schema_version": 1,
   "role": "multipole_engineering_budget_contract",
   "project_id": "rf_hexapole_ion_optics",
-  "contract_id": "hexapole_hybrid_mesh_build_d2_diagnostic_completed_closed_v17",
+  "contract_id": "hexapole_hybrid_transport_screen_completed_closed_v20",
   "preregistered_before_run": true,
   "pilot_authorization": {
     "authorized": false,
     "scope": {
       "project_id": "rf_hexapole_ion_optics",
-      "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_d2_mesh_build",
+      "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_transport_screen",
       "design_profile_id": "exit_aperture_plate_acceleration",
       "particle_source_profile_id": "family_mother_sample_v1_n100",
       "particle_count": 100,
       "solver_numerics_profile_ids": {
-        "comsol": "hybrid_d2_mesh_build",
+        "comsol": "hybrid_d2_transport_screen",
         "simion": "baseline_finite_3d"
       },
       "allowed_solvers": ["comsol"],
-      "retention_class": "compact"
+      "retention_class": "compact",
+      "expected_run_parent_resolved_design_sha256": "C9C3B00A5327825FCB138FB7EEDF2C6F7175497EAEB3CD1EB28A5D995AAC4B6E"
     },
     "limits": {
       "wall_clock_seconds_by_solver": {
-        "comsol": 300,
+        "comsol": 900,
         "simion": 300
       },
-      "transient_run_directory_bytes": 134217728,
-      "process_tree_working_set_bytes": 6442450944,
+      "transient_run_directory_bytes": 1073741824,
+      "process_tree_working_set_bytes": 12884901888,
       "minimum_system_available_memory_bytes": 8589934592,
-      "compact_final_retained_bytes": 10485760,
-      "maximum_mesh_cells": 3000000,
+      "compact_final_retained_bytes": 26214400,
+      "maximum_mesh_cells": 1000000,
       "automatic_retry_count": 0
     }
   },
   "full_matrix_authorization": {
     "authorized": false,
-    "reason": "completed_d2_build_only_diagnostic_does_not_authorize_a_second_d2_run_field_particle_d3_or_any_closed_p1_p2_p3_p4_step"
+    "reason": "the_hybrid_transport_candidate_exceeded_its_memory_budget_before_field_completion_and_no_followup_is_authorized"
   },
   "budget_exhaustion_result": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
-  "claim_limit": "The unique authorized D2 COMSOL mesh_build diagnostic completed successfully and exhausted its one-run zero-retry authorization. The retained scope and limits record the executed identity; they do not authorize another run. D1, P1 and D2 are closed. No commercial solver run, field physics, field Study, field solution, particle physics, particle Study, D3, P1 through P4, full matrix, continuous convergence or numerical-equivalence run is currently authorized."
+  "claim_limit": "The hybrid transport screen is closed after one implementation-failure identity and one corrective identity that exceeded the 12 GiB process-tree limit before field completion. No retry, larger memory cap, followup refinement, matrix, continuous convergence, numerical equivalence, Candidate, Formal or N=1000 run is authorized."
 }

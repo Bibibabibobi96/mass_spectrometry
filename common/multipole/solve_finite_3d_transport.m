@@ -348,6 +348,17 @@ try
         end
     end
     fprintf(fid,'CHECKPOINT=MESH_COMPLETE\n');
+    maximumMeshCellsText = strtrim(getenv('MULTIPOLE_L3_MAXIMUM_MESH_CELLS'));
+    if ~isempty(maximumMeshCellsText)
+        maximumMeshCells = str2double(maximumMeshCellsText);
+        assert(isfinite(maximumMeshCells) && maximumMeshCells > 0 && ...
+            maximumMeshCells == floor(maximumMeshCells), ...
+            'MULTIPOLE_L3_MAXIMUM_MESH_CELLS must be a positive integer.');
+        assert(meshDiagnostics.global.element_count <= maximumMeshCells, ...
+            ['COMSOL mesh cell budget exceeded: MESH_GLOBAL_ELEMENTS=%d ' ...
+            'maximum_mesh_cells=%d'], ...
+            meshDiagnostics.global.element_count, maximumMeshCells);
+    end
     if meshBuildOnly
         physicsTags = cell(comp.physics.tags());
         studyTags = cell(model.study.tags());

@@ -31,7 +31,17 @@ def sample(solver: str = "COMSOL") -> dict:
         "run_id": "run-a",
         "project": "rf_hexapole_ion_optics",
         "solver": solver,
+        "config": {
+            "mode": "resolved_design_transport",
+            "parameters": {
+                "model_level": "L3",
+                "design_profile_id": "exit_aperture_plate_acceleration",
+                "operating_mode_id": "exit_aperture_plate_acceleration",
+                "operating_point_id": None,
+            },
+        },
         "resolved_design_sha256": "D",
+        "physical_resolved_design_sha256": "PD",
         "particle_source_sha256": "P",
         "numerics": numerics,
         "handoff_particle_ids": [1, 2],
@@ -99,6 +109,21 @@ CONTRACT = {
 }
 
 
+def mesh_strategy_contract() -> dict:
+    contract = copy.deepcopy(CONTRACT)
+    del contract["cross_solver_acceptance"]
+    contract["claim_profile"] = "mesh_strategy_functional_screen"
+    contract["same_solver_acceptance"]["maximum"] = {
+        "transmitted_particle_count_difference": 0
+    }
+    contract["same_solver_acceptance"]["minimum_each_run"]["transmission"] = 1.0
+    contract["claim_limit"] = (
+        "Functional mesh-strategy screen only; continuous numerical agreement "
+        "remains INCONCLUSIVE."
+    )
+    return contract
+
+
 class NumericalQualificationTests(unittest.TestCase):
     def test_simion_primary_state_follows_explicit_case_identity(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -162,6 +187,109 @@ class NumericalQualificationTests(unittest.TestCase):
         fine["numerics"]["trajectory"]["rf_steps_per_period"] = 160
         fine["numerics"]["mesh"]["global_auto_level"] = 5
         self.assertIn("non-temporal solver numerics differ", validate_identity(coarse, fine, "temporal"))
+
+    def test_mesh_strategy_pair_separates_functional_and_continuous_results(
+        self,
+    ) -> None:
+        full_tetra = sample()
+        hybrid = copy.deepcopy(full_tetra)
+        hybrid["run_id"] = "run-b"
+        hybrid["numerics"]["mesh"] = {
+            "strategy": "physical_segment_hybrid_swept_tetra_v1",
+            "radial_core_and_rod_hmax_mm": 0.5,
+            "axial_layers_per_segment": 10,
+        }
+
+        result = evaluate(
+            full_tetra,
+            hybrid,
+            "mesh_strategy",
+            mesh_strategy_contract(),
+        )
+
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(result["functional_status"], "PASS")
+        self.assertEqual(
+            result["continuous_status"],
+            "INCONCLUSIVE_NO_SOURCED_ERROR_BUDGET",
+        )
+        self.assertIn("rms_radius_relative_difference", result["differences"])
+        self.assertNotIn(
+            "rms_radius_exit_aperture_fraction_difference",
+            result["checks"],
+        )
+
+    def test_mesh_strategy_pair_rejects_non_mesh_numerics_drift(self) -> None:
+        full_tetra = sample()
+        hybrid = copy.deepcopy(full_tetra)
+        hybrid["numerics"]["mesh"]["strategy"] = (
+            "physical_segment_hybrid_swept_tetra_v1"
+        )
+        hybrid["numerics"]["trajectory"]["rf_steps_per_period"] = 160
+
+        self.assertIn(
+            "non-mesh solver numerics differ",
+            validate_identity(full_tetra, hybrid, "mesh_strategy"),
+        )
+
+    def test_mesh_strategy_pair_rejects_physics_identity_drift(self) -> None:
+        full_tetra = sample()
+        hybrid = copy.deepcopy(full_tetra)
+        hybrid["numerics"]["mesh"]["strategy"] = (
+            "physical_segment_hybrid_swept_tetra_v1"
+        )
+        hybrid["config"]["parameters"]["operating_mode_id"] = (
+            "segmented_rod_axial_acceleration"
+        )
+
+        self.assertIn(
+            "physics identity differs",
+            validate_identity(full_tetra, hybrid, "mesh_strategy"),
+        )
+
+    def test_mesh_strategy_uses_physical_resolved_identity(self) -> None:
+        full_tetra = sample()
+        hybrid = copy.deepcopy(full_tetra)
+        hybrid["resolved_design_sha256"] = "NEW_PROVENANCE_HASH"
+        hybrid["numerics"]["mesh"]["strategy"] = (
+            "physical_segment_hybrid_swept_tetra_v1"
+        )
+        self.assertNotIn(
+            "resolved_design_sha256 differs",
+            validate_identity(full_tetra, hybrid, "mesh_strategy"),
+        )
+        hybrid["physical_resolved_design_sha256"] = "DIFFERENT_PHYSICS"
+        self.assertIn(
+            "physical_resolved_design_sha256 differs",
+            validate_identity(full_tetra, hybrid, "mesh_strategy"),
+        )
+
+    def test_mesh_strategy_pair_requires_distinct_strategies(self) -> None:
+        baseline = sample()
+        peer = copy.deepcopy(baseline)
+        peer["numerics"]["mesh"]["working_region_maximum_element_size_mm"] = 0.4
+
+        self.assertIn(
+            "mesh strategies do not differ",
+            validate_identity(baseline, peer, "mesh_strategy"),
+        )
+
+    def test_mesh_strategy_contract_rejects_continuous_limits(self) -> None:
+        full_tetra = sample()
+        hybrid = copy.deepcopy(full_tetra)
+        hybrid["numerics"]["mesh"]["strategy"] = (
+            "physical_segment_hybrid_swept_tetra_v1"
+        )
+
+        contract = mesh_strategy_contract()
+        contract["same_solver_acceptance"]["maximum"][
+            "rms_radius_exit_aperture_fraction_difference"
+        ] = 0.1
+        with self.assertRaisesRegex(
+            ValueError,
+            "cannot apply continuous difference limits",
+        ):
+            evaluate(full_tetra, hybrid, "mesh_strategy", contract)
 
     def test_cross_solver_requires_exact_handoff_ids(self) -> None:
         comsol = sample()

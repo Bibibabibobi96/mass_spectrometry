@@ -309,7 +309,7 @@ class FamilyExperimentProfileTests(unittest.TestCase):
         self.assertFalse(engineering["pilot_authorization"]["authorized"])
         self.assertEqual(
             engineering["pilot_authorization"]["scope"]["runtime_profile_id"],
-            "exit_aperture_plate_acceleration_n100_hybrid_d2_mesh_build",
+            "exit_aperture_plate_acceleration_n100_hybrid_transport_screen",
         )
         self.assertEqual(
             engineering["pilot_authorization"]["scope"]["allowed_solvers"],
@@ -317,12 +317,12 @@ class FamilyExperimentProfileTests(unittest.TestCase):
         )
         self.assertEqual(
             engineering["pilot_authorization"]["limits"]["maximum_mesh_cells"],
-            3000000,
+            1000000,
         )
         self.assertFalse(engineering["full_matrix_authorization"]["authorized"])
         self.assertEqual(
             engineering["full_matrix_authorization"]["reason"],
-            "completed_d2_build_only_diagnostic_does_not_authorize_a_second_d2_run_field_particle_d3_or_any_closed_p1_p2_p3_p4_step",
+            "the_hybrid_transport_candidate_exceeded_its_memory_budget_before_field_completion_and_no_followup_is_authorized",
         )
 
         result = load(

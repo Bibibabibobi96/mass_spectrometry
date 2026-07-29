@@ -41,11 +41,15 @@ class ResourceBudgetTests(unittest.TestCase):
         for project_id, profile in (
             (QUAD, "exit_aperture_plate_acceleration_n100_spatial_refined"),
             (OCT, "exit_aperture_plate_acceleration_n100_spatial_refined"),
-            (HEX, "exit_aperture_plate_acceleration_n100_spatial_refined"),
-            (HEX, "exit_aperture_plate_acceleration_n100_hybrid_d2_mesh_build"),
         ):
             with self.assertRaisesRegex(ValueError, "not authorized"):
                 self.validate(project_id, profile)
+        for profile in (
+            "exit_aperture_plate_acceleration_n100_spatial_refined",
+            "exit_aperture_plate_acceleration_n100_hybrid_d2_mesh_build",
+        ):
+            with self.assertRaisesRegex(ValueError, "not authorized"):
+                self.validate(HEX, profile)
         with self.assertRaisesRegex(ValueError, "not authorized"):
             self.validate(
                 OCT,
@@ -90,11 +94,19 @@ class ResourceBudgetTests(unittest.TestCase):
         self.assertIn("MESH_GLOBAL_ELEMENTS", comsol)
         self.assertIn("maximum_mesh_cells", comsol)
         self.assertIn("$usage.limit_name='maximum_mesh_cells'", comsol)
+        self.assertIn("MULTIPOLE_L3_MAXIMUM_MESH_CELLS", comsol)
+        self.assertIn("Assert-MultipoleMeshCellBudgetReport", comsol)
+        self.assertIn("Compiled resolved design differs from the authorized run identity", comsol)
+        solver = (
+            REPO_ROOT / "common/multipole/solve_finite_3d_transport.m"
+        ).read_text(encoding="utf-8")
+        budget_gate = solver.index("MULTIPOLE_L3_MAXIMUM_MESH_CELLS")
+        self.assertGreater(budget_gate, solver.index("CHECKPOINT=MESH_COMPLETE"))
+        self.assertLess(budget_gate, solver.index("material = model.material.create"))
+        self.assertNotIn("fflush(", solver)
 
     def test_mesh_cell_limit_is_optional_and_strictly_positive(self) -> None:
-        runtime_profile_id = (
-            "exit_aperture_plate_acceleration_n100_hybrid_d2_mesh_build"
-        )
+        runtime_profile_id = "exit_aperture_plate_acceleration_n100_hybrid_transport_screen"
         runtime = resolve_runtime_profile(REPO_ROOT, HEX, runtime_profile_id)
         budget_path = Path(runtime["engineering_budget"]["path"])
         authorized_fixture = json.loads(budget_path.read_text(encoding="utf-8"))
@@ -134,6 +146,12 @@ class ResourceBudgetTests(unittest.TestCase):
                 ] = invalid
                 with self.assertRaisesRegex(ValueError, "positive integers"):
                     validate_with(invalid_budget)
+        invalid_identity = json.loads(json.dumps(authorized_fixture))
+        invalid_identity["pilot_authorization"]["scope"][
+            "expected_run_parent_resolved_design_sha256"
+        ] = "not-a-sha"
+        with self.assertRaisesRegex(ValueError, "must be uppercase SHA-256"):
+            validate_with(invalid_identity)
 
     def test_mesh_build_report_enforces_declared_cell_limit(self) -> None:
         runner = (

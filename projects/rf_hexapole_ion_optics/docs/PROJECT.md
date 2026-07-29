@@ -129,8 +129,8 @@ baseline已在两求解器保持100/100传输和精确粒子身份；SIMION空�
 发散角和平均能量相对baseline分别变化约`8.16%`、`2.20%`和`0.152%`。COMSOL空间档在
 `MESH_COMPLETE`后以19.288 GB超过17.180 GB进程树帽，记为
 `INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`，不重跑、不抬帽。下述COMSOL D1 build-only网格诊断
-也已经结束。新身份D2随后完成唯一一次build-only网格诊断并耗尽一次性授权；当前没有商业求解器
-运行授权，field/particle求解、D3、时间档、N=1000和完整矩阵均未授权。完整
+也已经结束。新身份D2随后完成唯一一次build-only网格诊断并耗尽一次性授权；独立预登记的N=100
+混合网格field+particle工程筛查也已关闭并拒绝当前候选，D3、时间档、N=1000和完整矩阵均未授权。完整
 身份登记在`../config/qualification/n100_no_acceleration_qualification.json`。
 分段杆轴向加速身份和资源结论登记在
 `../config/qualification/n100_segmented_rod_axial_acceleration_qualification.json`。
@@ -192,8 +192,27 @@ solution及particle physics/study创建数均为0。运行耗时`56.488 s`，进
 
 D2只建立该hybrid网格的构建、拓扑、质量、全局单元数和资源可行性，不产生场解、粒子传输、连续
 收敛、跨求解器数值等价、N=1000分散、机械、Candidate或Formal证据。其一次性零重试授权已经耗尽；
-当前预算保留原scope/limits只为记录，不授权第二次D2或任何D3、field、particle运行。后续动作仍须
-单独预登记。
+当前另以
+[`混合网格粒子筛查预登记`](../config/qualification/comsol_hybrid_transport_screen_preregistration.json)
+授权唯一一次COMSOL N=100真实场与粒子运行。它冻结旧FreeTet baseline run、resolved design、公共
+N=100源和80步/周期、80 us轨迹设置，只把网格替换为D2已经建网通过的混合策略；预算为900 s、
+12 GiB进程树、8 GiB最低系统可用内存、1 GiB瞬态目录、25 MiB compact终态、100万全局单元和零重试。
+硬PASS只要求双工况100/100、primary粒子ID不变、正孔径裕量、混合分区拓扑和全部资源帽成立，并据
+实测比较墙钟、内存和目录体积。RMS半径、发散、能量、TOF和逐粒子状态没有有来源误差预算，仍固定为
+`INCONCLUSIVE_NO_SOURCED_ERROR_BUDGET`；本次筛查不能声明连续数值等价、空间收敛、Candidate或Formal。
+首个运行身份`20260729_220000__sim__comsol__hex-exitplate-hybrid-n100__r01`再次在
+`MESH_COMPLETE`得到884,643单元和零分区缺口，但随后因任务脚本调用MATLAB不存在的`fflush`而在场
+创建前失败；110.915 s内峰值进程树为3,126,431,744 bytes，未触发资源帽，登记为
+`INCONCLUSIVE_DIAGNOSTIC_IMPLEMENTATION_FAILURE`，不是网格或物理FAIL，也不产生粒子证据。
+旧baseline与当前编译resolved的总SHA因optimization-envelope权威文件演化和run-local来源路径表示而
+不同，但剔除compiler、governance、sources和总SHA这些来源字段后的编译物理载荷SHA均为
+`A868E5C06A6A98BF86C0D662D53118FCFF6EE51BA208214FACD7D39E32F6FD66`；逐字段审计未发现几何、电压、
+源或接口差异。`fflush`移除后，纠错身份
+`20260729_223000__sim__comsol__hex-exitplate-hybrid-n100__r02`仍完成同一884,643单元建网，但在场
+求解完成前以13,661,315,072 bytes超过12 GiB进程树帽；当时系统可用内存仍有13,991,477,248 bytes，
+因此终态为`INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`而非整机资源枯竭。相比旧FreeTet完整baseline
+峰值9,422,286,848 bytes，未完成的hybrid候选已经高出44.989%，无法满足资源优化目标；当前策略登记为
+`REJECT_CURRENT_HYBRID_FOR_PARTICLE_TRACKING`，不抬帽、不重跑，也没有粒子输出可用于连续量比较。
 
 共享SIMION模板、GUI复核、`.wgem`绕过和跨机可移植性状态只由
 [`../../../common/multipole/README.md`](../../../common/multipole/README.md)维护；公共机制证据不授予

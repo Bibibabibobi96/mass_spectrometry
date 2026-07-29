@@ -73,9 +73,21 @@ function Assert-MultipoleMeshBuildReport {
     }
   }
   if($null-eq$MaximumMeshCells){return $null}
+  return Assert-MultipoleMeshCellBudgetReport -Path $Path -MaximumMeshCells $MaximumMeshCells
+}
+
+function Assert-MultipoleMeshCellBudgetReport {
+  param(
+    [Parameter(Mandatory=$true)][string]$Path,
+    [Parameter(Mandatory=$true)][int64]$MaximumMeshCells
+  )
+  if(-not(Test-Path -LiteralPath $Path -PathType Leaf)){
+    throw 'COMSOL report is missing for the mesh-cell budget check.'
+  }
+  $content=Get-Content -LiteralPath $Path -Raw -Encoding UTF8
   $matches=[regex]::Matches($content,'(?m)^MESH_GLOBAL_ELEMENTS=(?<value>[^\r\n]+)\r?$')
   if($matches.Count-ne 1){
-    throw 'COMSOL mesh-build report must contain exactly one MESH_GLOBAL_ELEMENTS token when maximum_mesh_cells is declared.'
+    throw 'COMSOL report must contain exactly one MESH_GLOBAL_ELEMENTS token when maximum_mesh_cells is declared.'
   }
   $meshCells=[int64]0
   if(-not[int64]::TryParse(
@@ -84,11 +96,11 @@ function Assert-MultipoleMeshBuildReport {
     [Globalization.CultureInfo]::InvariantCulture,
     [ref]$meshCells
   )-or$meshCells-le 0){
-    throw 'COMSOL mesh-build report has an invalid positive-integer MESH_GLOBAL_ELEMENTS value.'
+    throw 'COMSOL report has an invalid positive-integer MESH_GLOBAL_ELEMENTS value.'
   }
   if($meshCells-gt[int64]$MaximumMeshCells){
     $failure=[InvalidOperationException]::new(
-      "COMSOL mesh-build cell budget exceeded: MESH_GLOBAL_ELEMENTS=$meshCells maximum_mesh_cells=$MaximumMeshCells"
+      "COMSOL mesh cell budget exceeded: MESH_GLOBAL_ELEMENTS=$meshCells maximum_mesh_cells=$MaximumMeshCells"
     )
     $failure.Data['limit_name']='maximum_mesh_cells'
     $failure.Data['measured_value']=$meshCells
@@ -238,6 +250,10 @@ try{
   }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
   $design=Get-Content -LiteralPath $resolved -Raw -Encoding UTF8|ConvertFrom-Json
   $resolvedHash=[string]$design.resolved_sha256
+  $expectedResolvedHash=[string]$resolvedBudget.expected_run_parent_resolved_design_sha256
+  if($expectedResolvedHash-and$resolvedHash-ne$expectedResolvedHash){
+    throw "Compiled resolved design differs from the authorized run identity: expected=$expectedResolvedHash actual=$resolvedHash"
+  }
   $axialTopology=[string]$design.axial_drive.topology
   $particleSource=Join-Path $inputDir 'particle_source.csv'
   Copy-Item -LiteralPath $particleSourceInput -Destination $particleSource
@@ -319,7 +335,8 @@ try{
     'MULTIPOLE_L3_TRAJECTORIES','MULTIPOLE_L3_METRICS','MULTIPOLE_L3_PLOT','MULTIPOLE_L3_MODEL',
     'MULTIPOLE_L3_CANONICAL_STATE','MULTIPOLE_L3_PRIMARY_CANONICAL_STATE',
     'MULTIPOLE_L3_CONTROL_CANONICAL_STATE','MULTIPOLE_L3_PRIMARY_TRAJECTORIES',
-    'MULTIPOLE_L3_CONTROL_TRAJECTORIES','MULTIPOLE_L3_STOP_STAGE')
+    'MULTIPOLE_L3_CONTROL_TRAJECTORIES','MULTIPOLE_L3_STOP_STAGE',
+    'MULTIPOLE_L3_MAXIMUM_MESH_CELLS')
   $oldEnvironment=Save-RunEnvironment -Names $environmentNames
   $resourceUsage=Join-Path $resultDir 'resource_usage.json'
   try{
@@ -333,6 +350,7 @@ try{
     $env:MULTIPOLE_L3_PRIMARY_TRAJECTORIES=$primaryTrajectories
     $env:MULTIPOLE_L3_CONTROL_TRAJECTORIES=$controlTrajectories
     $env:MULTIPOLE_L3_STOP_STAGE=$StopStage
+    $env:MULTIPOLE_L3_MAXIMUM_MESH_CELLS=if($null-ne$maximumMeshCells){[string]$maximumMeshCells}else{''}
     $pwsh=(Get-Process -Id $PID).Path
     $solverProcess=Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $resolvedResourceBudget `
       -RunDir $runDir -UsagePath $resourceUsage -FilePath $pwsh -ArgumentList @(
@@ -342,12 +360,28 @@ try{
       $resourceBudgetExceeded=$true
       throw 'COMSOL resource budget exceeded.'
     }
+    if($null-ne$maximumMeshCells){
+      try{
+        $meshCells=Assert-MultipoleMeshCellBudgetReport -Path $report `
+          -MaximumMeshCells $maximumMeshCells
+      }catch{
+        if([string]$_.Exception.Data['limit_name']-eq'maximum_mesh_cells'){
+          $resourceBudgetExceeded=$true
+          $usage=Get-Content -LiteralPath $resourceUsage -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+          $usage.status='resource_budget_exceeded'
+          $usage.failure_class='resource_budget_exceeded'
+          $usage.limit_name='maximum_mesh_cells'
+          $usage.mesh_cells=[int64]$_.Exception.Data['measured_value']
+          Write-ResourceUsage -Usage $usage -Path $resourceUsage
+        }
+        throw
+      }
+    }
     if($solverProcess.exit_code-ne 0){throw 'COMSOL finite 3D multipole transport failed.'}
   }finally{Restore-RunEnvironment -Names $environmentNames -Snapshot $oldEnvironment}
   if($StopStage-eq'mesh_build'){
     try{
-      $meshCells=Assert-MultipoleMeshBuildReport -Path $report `
-        -MaximumMeshCells $maximumMeshCells
+      $meshCells=Assert-MultipoleMeshBuildReport -Path $report
     }catch{
       if([string]$_.Exception.Data['limit_name']-eq'maximum_mesh_cells'){
         $resourceBudgetExceeded=$true

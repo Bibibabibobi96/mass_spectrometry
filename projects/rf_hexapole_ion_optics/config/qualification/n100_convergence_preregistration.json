@@ -70,8 +70,8 @@
     "comsol": {
       "registry": "projects/rf_hexapole_ion_optics/config/comsol_solver_numerics.json",
       "registry_sha256_at_preregistration": "DB104E15BE1D9874931E136F1C3872D5058E30EC0A1CA3E87213C9F24D4D8BB2",
-      "active_registry_sha256": "3D7D8CF9FBE9DAB52E2DC59F25C77578C04CF5BDB07F974308431F898F7D9B90",
-      "active_registry_change_scope": "closed_hybrid_d1_p1_p2_p3_p4_profiles_retired_and_new_build_only_d2_diagnostic_added_without_changing_the_three_preregistered_profiles",
+      "active_registry_sha256": "14B825DABAD38473B55150657A064DAA68F1BCEFBA1FEA4DE25DAFF20EC2E2DB",
+      "active_registry_change_scope": "completed_d2_build_profile_retained_and_one_hybrid_transport_screen_profile_added_without_changing_the_three_preregistered_profiles",
       "tiers": {
         "baseline": {
           "profile_id": "baseline_finite_3d",

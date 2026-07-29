@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import copy
 import csv
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -15,10 +16,27 @@ from common.contracts.particle_physics import kinetic_energy_ev
 
 COMSOL_PRIMARY_STATE_FILE = "particle_state__primary.csv"
 SUPPORTED_SOLVERS = ("COMSOL", "SIMION")
+PHYSICS_IDENTITY_FIELDS = (
+    "model_level",
+    "design_profile_id",
+    "operating_mode_id",
+    "operating_point_id",
+)
 
 
 def load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8-sig"))
+
+
+def physical_resolved_design_sha256(resolved: dict[str, Any]) -> str:
+    """Hash compiled physics while excluding compiler and authority provenance."""
+    payload = copy.deepcopy(resolved)
+    for field in ("compiler", "governance", "sources", "resolved_sha256"):
+        payload.pop(field, None)
+    encoded = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest().upper()
 
 
 def solver_name(manifest: dict[str, Any]) -> str:
@@ -142,6 +160,9 @@ def run_data(manifest_path: Path) -> dict[str, Any]:
         "run_id": manifest["run_id"],
         "project": manifest["project"],
         "resolved_design_sha256": config["provenance"]["parent_resolved_design_sha256"],
+        "physical_resolved_design_sha256": physical_resolved_design_sha256(
+            resolved
+        ),
         "particle_source_sha256": config["provenance"]["particle_source_sha256"],
         "scales": {
             "exit_aperture_radius_mm": aperture_radius,
@@ -251,11 +272,35 @@ def without_path(value: dict[str, Any], path: tuple[str, ...]) -> dict[str, Any]
     return result
 
 
+def physics_identity(config: dict[str, Any]) -> dict[str, Any]:
+    """Return the run-config fields that bind one multipole physics case."""
+    parameters = config.get("parameters")
+    if not isinstance(parameters, dict):
+        raise ValueError("run config parameters must be an object")
+    missing = [name for name in PHYSICS_IDENTITY_FIELDS if name not in parameters]
+    if "mode" not in config:
+        missing.append("mode")
+    if missing:
+        raise ValueError(
+            "run config is missing physics identity fields: " + ", ".join(missing)
+        )
+    return {
+        "mode": config["mode"],
+        **{name: parameters[name] for name in PHYSICS_IDENTITY_FIELDS},
+    }
+
+
 def validate_identity(
     baseline: dict[str, Any], refined: dict[str, Any], axis: str
 ) -> list[str]:
     errors = []
-    for field in ("project", "resolved_design_sha256", "particle_source_sha256"):
+    identity_fields = ["project", "particle_source_sha256"]
+    identity_fields.append(
+        "physical_resolved_design_sha256"
+        if axis == "mesh_strategy"
+        else "resolved_design_sha256"
+    )
+    for field in identity_fields:
         if baseline[field] != refined[field]:
             errors.append(f"{field} differs")
     if baseline["scales"] != refined["scales"]:
@@ -268,7 +313,28 @@ def validate_identity(
         errors.append("same-solver comparison requires one solver")
         return errors
     solver = baseline["solver"]
-    if axis == "spatial":
+    if axis == "mesh_strategy":
+        try:
+            if physics_identity(baseline["config"]) != physics_identity(
+                refined["config"]
+            ):
+                errors.append("physics identity differs")
+        except (KeyError, ValueError) as exc:
+            errors.append(str(exc))
+        coarse = baseline["numerics"]
+        fine = refined["numerics"]
+        coarse_mesh = coarse.get("mesh")
+        fine_mesh = fine.get("mesh")
+        if not isinstance(coarse_mesh, dict) or not isinstance(fine_mesh, dict):
+            errors.append("mesh-strategy comparison requires mesh objects")
+        else:
+            if without_path(coarse, ("mesh",)) != without_path(fine, ("mesh",)):
+                errors.append("non-mesh solver numerics differ")
+            if coarse_mesh == fine_mesh:
+                errors.append("mesh objects do not differ")
+            if coarse_mesh.get("strategy") == fine_mesh.get("strategy"):
+                errors.append("mesh strategies do not differ")
+    elif axis == "spatial":
         path = (
             ("mesh", "working_region_maximum_element_size_mm")
             if solver == "COMSOL"
@@ -306,7 +372,12 @@ def evaluate(
     axis: str,
     contract: dict[str, Any],
 ) -> dict[str, Any]:
-    for name in ("same_solver_acceptance", "cross_solver_acceptance"):
+    required_acceptance = (
+        ("same_solver_acceptance",)
+        if axis == "mesh_strategy"
+        else ("same_solver_acceptance", "cross_solver_acceptance")
+    )
+    for name in required_acceptance:
         if name not in contract:
             raise ValueError(
                 "method-only contract cannot qualify results; supply a preregistered "
@@ -320,12 +391,38 @@ def evaluate(
     )
     acceptance = contract[acceptance_name]
     maximum = acceptance.get("maximum")
-    if not isinstance(maximum, dict) or not maximum:
+    if axis == "mesh_strategy" and maximum is not None and not isinstance(
+        maximum, dict
+    ):
+        raise ValueError(
+            "mesh-strategy same_solver_acceptance.maximum must be an object"
+        )
+    if axis == "mesh_strategy" and set(maximum or {}) - {
+        "transmitted_particle_count_difference"
+    }:
+        raise ValueError(
+            "mesh-strategy functional screening cannot apply continuous "
+            "difference limits"
+        )
+    if axis != "mesh_strategy" and (
+        not isinstance(maximum, dict) or not maximum
+    ):
         raise ValueError(f"{acceptance_name}.maximum must define accepted differences")
-    checks = {
-        name: differences[name] <= float(limit)
-        for name, limit in maximum.items()
-    }
+    checks = {}
+    if axis != "mesh_strategy":
+        checks.update(
+            {
+                name: differences[name] <= float(limit)
+                for name, limit in maximum.items()
+            }
+        )
+    elif maximum:
+        checks.update(
+            {
+                name: differences[name] <= float(limit)
+                for name, limit in maximum.items()
+            }
+        )
     for name, minimum in acceptance.get("minimum_each_run", {}).items():
         checks[f"baseline_{name}_minimum"] = (
             baseline["observables"][name] >= float(minimum)
@@ -342,7 +439,7 @@ def evaluate(
         baseline["handoff_particle_ids"] == refined["handoff_particle_ids"]
     )
     status = "PASS" if not errors and all(checks.values()) else "FAIL"
-    return {
+    result = {
         "schema_version": 1,
         "role": "multipole_l3_numerical_qualification_result",
         "status": status,
@@ -362,6 +459,10 @@ def evaluate(
         "checks": checks,
         "claim_limit": contract["claim_limit"],
     }
+    if axis == "mesh_strategy":
+        result["functional_status"] = status
+        result["continuous_status"] = "INCONCLUSIVE_NO_SOURCED_ERROR_BUDGET"
+    return result
 
 
 def main() -> int:
@@ -369,7 +470,9 @@ def main() -> int:
     parser.add_argument("--baseline-manifest", required=True, type=Path)
     parser.add_argument("--refined-manifest", required=True, type=Path)
     parser.add_argument(
-        "--axis", required=True, choices=("spatial", "temporal", "cross_solver")
+        "--axis",
+        required=True,
+        choices=("spatial", "temporal", "cross_solver", "mesh_strategy"),
     )
     parser.add_argument(
         "--contract",
@@ -387,10 +490,16 @@ def main() -> int:
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
-    print(
+    status_line = (
         f"MULTIPOLE_NUMERICAL_QUALIFICATION={result['status']} "
         f"AXIS={args.axis} OUTPUT={args.output.resolve()}"
     )
+    if args.axis == "mesh_strategy":
+        status_line += (
+            f" FUNCTIONAL={result['functional_status']} "
+            f"CONTINUOUS={result['continuous_status']}"
+        )
+    print(status_line)
     return 0 if result["status"] == "PASS" else 1
 
 
