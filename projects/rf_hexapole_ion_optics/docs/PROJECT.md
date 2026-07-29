@@ -124,12 +124,12 @@ RMS半径差约`7.67%`。功能传输闭合，但连续结果只能`INCONCLUSIVE
 为578.056 s、1.031 GB瞬态目录、8.893 GB进程树内存，零自动重试；分段杆轴向加速N=100
 baseline已在两求解器保持100/100传输和精确粒子身份，SIMION空间档也保持100/100；COMSOL空间档
 在`MESH_COMPLETE`后以19.453 GB超过17.180 GB进程树帽，记为
-`INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`，不重跑、不抬帽。当前只授权出口孔板加速N=100
+`INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`，不重跑、不抬帽。出口孔板加速N=100
 baseline已在两求解器保持100/100传输和精确粒子身份；SIMION空间档也保持100/100，RMS半径、
 发散角和平均能量相对baseline分别变化约`8.16%`、`2.20%`和`0.152%`。COMSOL空间档在
 `MESH_COMPLETE`后以19.288 GB超过17.180 GB进程树帽，记为
-`INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`，不重跑、不抬帽。当前没有授权任何商业求解器运行；
-时间档、N=1000和完整矩阵未授权。完整
+`INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`，不重跑、不抬帽。下述COMSOL D1 build-only网格诊断
+也已经结束，当前没有商业求解器运行授权；field/particle求解、时间档、N=1000和完整矩阵均未授权。完整
 身份登记在`../config/qualification/n100_no_acceleration_qualification.json`。
 分段杆轴向加速身份和资源结论登记在
 `../config/qualification/n100_segmented_rod_axial_acceleration_qualification.json`。
@@ -143,6 +143,36 @@ baseline已在两求解器保持100/100传输和精确粒子身份；SIMION空�
 继续推进，应使用当前typed runtime profile研究各段电势，同时另行研究分段数量、长度/间隙、
 馈电和机械实现；当前uniform四段参数是家族实验机械baseline，不是
 正式硬件选择。
+
+COMSOL全长工作域`0.35 mm` FreeTet细化已在出口带孔接口板加速和分段杆加速中重复于
+`MESH_COMPLETE`后触发MUMPS进程树内存门禁，因此下一轮不得继续全域暴力细化。新的
+[`已归档的 hybrid mesh pilot 预登记`](history/20260729__closed-hybrid-mesh-campaigns.md)
+只冻结出口带孔接口板加速N=100的四步MUMPS工程pilot：P1验证每个物理杆段中央
+`FreeTri + Sweep`及杆端、三个段隙、孔板/外部区`FreeTet`的粗网格；P2只加密径向core和杆边界，
+P3只增加每段轴向层数，P4只加密过渡/端区四面体。任一步拓扑、资源或功能门禁失败即停止，不重排、
+不重试、不追加第五次。四步原本采用逐次窄授权而非一次开放完整矩阵；P1失败后该campaign已经关闭，
+当前资源门禁不再授权P1或P2–P4。PARDISO和CG-AMG只能另立预注册，不属于本轮失败重试。即使未来
+另立并完成新序列，连续量仍因
+缺少有来源误差预算保持`INCONCLUSIVE`。
+
+P1随后在`88.817 s`内于场求解前触发真空网格拓扑门禁，进程树峰值仅
+`3,489,751,040 bytes`，不是资源耗尽。按预注册停止规则，当前campaign已经关闭，P1不得重试，
+P2–P4均未执行且未授权。冻结版本只输出了合并网格断言，因此不能从保留证据进一步区分全局mesh
+problem、空真空选择或覆盖缺口；若要继续，必须另立小型build-only诊断预注册，不能把诊断伪装成
+本轮重试。公共solver已补充逐项网格指标，供未来获批运行使用，不改变本次冻结证据。
+
+独立的[`已归档 build-only 诊断预登记`](history/20260729__closed-hybrid-mesh-campaigns.md)
+曾只授权一次D1 `mesh_build`：它复用既有COMSOL入口和hybrid策略，采用`8.5 mm` core以及
+`radial_core_and_rod_hmax_mm=0.5 mm`的显式杆边界尺寸，计划在断言前输出选择、体积、覆盖/重叠、feature和
+质量诊断，然后停止；field physics/Study/solution及particle physics/Study必须为0。唯一运行
+`20260729_155030__build__comsol__hex-hybrid-d1-mesh-build__r01`观测到31个真空domain，但旧实现把
+`mphmeasure`实体类型误写为`volume`并吞掉异常，所以体积只报告`NaN`；随后把带字段的诊断写入空结构体
+数组，在`mesh.run`前因MATLAB不同结构体下标赋值失败。该运行登记为
+`INCONCLUSIVE_DIAGNOSTIC_IMPLEMENTATION_FAILURE`：没有网格/拓扑证据，也没有资源门禁触发证据。
+D1预算原固定为300 s、128 MiB瞬态目录、6 GiB进程树、8 GiB可用系统内存、10 MiB最终保留及零重试；
+其一次运行和零重试授权已经耗尽，不重开P1，也不授权D1重跑或P2–P4。代码已静态修正为使用`domain`
+几何测量、不可测时显式输出`UNKNOWN`并闭锁，以及以cell保存异构诊断，但修复本身不产生新的商业
+求解器证据。D2仅保留条件性预注册入口，必须另以新的runtime profile、预算和预注册单独获批。
 
 共享SIMION模板、GUI复核、`.wgem`绕过和跨机可移植性状态只由
 [`../../../common/multipole/README.md`](../../../common/multipole/README.md)维护；公共机制证据不授予

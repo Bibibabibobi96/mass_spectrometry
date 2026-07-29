@@ -1,0 +1,217 @@
+{
+  "schema_version": 1,
+  "role": "multipole_comsol_hybrid_mesh_pilot_preregistration",
+  "project_id": "rf_hexapole_ion_optics",
+  "campaign_id": "hexapole_exit_aperture_plate_hybrid_mesh_n100_v1",
+  "status": "closed_after_p1_topology_failure",
+  "preregistered_before_run": true,
+  "maximum_commercial_run_count": 4,
+  "commercial_run_count_currently_authorized": 0,
+  "objective": "Replace the exhausted full-length working-region FreeTet refinement with a topology-aware segment hybrid mesh, then separate radial, axial and transition/end sensitivity without changing physics, particles, trajectory time discretization or the MUMPS stationary solver.",
+  "scope": {
+    "design_profile_id": "exit_aperture_plate_acceleration",
+    "particle_source_profile_id": "family_mother_sample_v1_n100",
+    "particle_count": 100,
+    "solver": "comsol",
+    "stationary_linear_solver_backend": "mumps",
+    "retention_class": "compact"
+  },
+  "frozen_authorities": {
+    "design_profiles": {
+      "path": "projects/rf_hexapole_ion_optics/config/design_profiles.json",
+      "sha256": "157EB846B0F3715A300EF9F3D994DD3B05A919C04FBFD83D6B8611A77FAA74B1"
+    },
+    "operating_modes": {
+      "path": "projects/rf_hexapole_ion_optics/config/operating_modes.json",
+      "sha256": "8B03C419A537B398048E9F379F015CCC66A51970348CBE533175E910B54F0EF5"
+    },
+    "comsol_solver_numerics": {
+      "path": "projects/rf_hexapole_ion_optics/config/comsol_solver_numerics.json",
+      "sha256": "4A926DF302489CCBB1947D51EC3EC715605FFD1075C0BF03A049A05891A15A5D"
+    },
+    "runtime_profiles": {
+      "path": "projects/rf_hexapole_ion_optics/config/runtime_profiles.json",
+      "sha256": "50EE8DF7954A7EE9F4362E8ED851518EA841573E71DFC57C43403434089CC32E"
+    },
+    "engineering_budget": {
+      "path": "projects/rf_hexapole_ion_optics/config/qualification/engineering_budget.json",
+      "sha256": "A68E133474DA4DFA913E6160E2F07D7C8B3F0E58CE3528F342A28FBD17080DE6"
+    },
+    "particle_source": {
+      "path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_100.csv",
+      "sha256": "0125C3AB02B2321EF26A3A913CF6EC04325FD0D48597D2CB439D0CE42411662F"
+    },
+    "functional_acceptance": {
+      "path": "common/multipole/functional_transport_acceptance.json",
+      "sha256": "A4C4F4A6395AAB0F59E0BC8F380E87CDA0F1AD265EC19E66F844C14FF12A98D9"
+    },
+    "numerical_method": {
+      "path": "common/multipole/numerical_qualification.json",
+      "sha256": "3919607C1F6E220D9DF11BE66A8C2CD01640F32D48D9A3AE82A1662F482925CD"
+    }
+  },
+  "existing_reference_evidence": {
+    "successful_full_tetra_baseline": {
+      "run_id": "20260729_065000__sim__comsol__hex-exitplate-n100__resolved-l3",
+      "manifest_sha256": "F36BB5304BF3446C2ADE6318222E17B4C2DACFDFB75E0CAA210D71B7D53B17AE",
+      "working_region_hmax_mm": 0.5,
+      "rf_steps_per_period": 80,
+      "peak_process_tree_working_set_bytes": 9422286848,
+      "wall_clock_seconds": 703.018,
+      "functional_status": "PASS"
+    },
+    "failed_full_tetra_spatial_refinement": {
+      "run_id": "20260729_072000__sim__comsol__hex-exitplate-spatial-n100__resolved-l3",
+      "manifest_sha256": "E5DC84AFC44C5D3279BF807FC6E5A82A6A35276DB44EAEC3715FD3C2599B946F",
+      "working_region_hmax_mm": 0.35,
+      "rf_steps_per_period": 80,
+      "peak_process_tree_working_set_bytes": 19288322048,
+      "process_tree_working_set_limit_bytes": 17179869184,
+      "last_checkpoint": "MESH_COMPLETE",
+      "status": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED"
+    },
+    "strategy_provenance": {
+      "successful_precedent": "projects/rf_quadrupole_ion_optics/config/rf_hybrid_mesh_candidate.json",
+      "uniform_sweep_precedent": "projects/rf_quadrupole_ion_optics/config/rf_rod_region_swept_mesh_candidate.json",
+      "rejected_strategy": "projects/rf_quadrupole_ion_optics/config/rf_piecewise_swept_mesh_candidate.json",
+      "reuse_rule": "Validate central per-segment sweeps plus tetrahedral topology transitions on the second rod order. Do not retry the rejected full-device piecewise sweep across topology-changing faces."
+    }
+  },
+  "hybrid_topology": {
+    "strategy_id": "physical_segment_hybrid_swept_tetra_v1",
+    "physical_segment_count": 4,
+    "intersegment_gap_mm": 0.4,
+    "physical_segment_length_mm": 19.6,
+    "segment_end_buffer_mm_each_end": 1.0,
+    "central_swept_length_per_segment_mm": 17.6,
+    "central_region_method": "FreeTri_source_plus_Sweep_prisms_per_physical_rod_segment",
+    "tetrahedral_regions": [
+      "entrance_and_exit_external_regions",
+      "entrance_and_exit_apertured_interface_plates",
+      "both_one_mm_end_buffers_of_each_physical_rod_segment",
+      "all_three_intersegment_gaps",
+      "all_topology_transition_regions"
+    ],
+    "core_radius_mm": 8.0,
+    "outer_vacuum_hmax_mm": 1.0,
+    "minimum_element_size_mm": 0.02,
+    "topology_gates": [
+      "all_four_physical_segments_have_nonzero_swept_prism_elements",
+      "all_segment_end_buffers_and_intersegment_gaps_have_nonzero_tetrahedral_elements",
+      "both_apertured_interface_regions_have_nonzero_tetrahedral_elements",
+      "electrostatics_vacuum_selection_is_complete_and_problem_free",
+      "no_domain_is_double_meshed_or_unmeshed"
+    ]
+  },
+  "ordered_pilots": [
+    {
+      "sequence": 1,
+      "pilot_id": "P1_hybrid_coarse",
+      "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_p1_coarse",
+      "comsol_solver_numerics_profile_id": "hybrid_p1_coarse",
+      "changed_axis_from_previous": "mesh_strategy_feasibility_against_existing_full_tetra_baseline",
+      "radial_core_and_rod_hmax_mm": 0.5,
+      "axial_layers_per_swept_segment": 10,
+      "transition_and_end_tetra_hmax_mm": 0.5
+    },
+    {
+      "sequence": 2,
+      "pilot_id": "P2_radial_only_refined",
+      "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_p2_radial_refined",
+      "comsol_solver_numerics_profile_id": "hybrid_p2_radial_refined",
+      "changed_axis_from_previous": "radial_core_and_rod_hmax_only",
+      "radial_core_and_rod_hmax_mm": 0.35,
+      "axial_layers_per_swept_segment": 10,
+      "transition_and_end_tetra_hmax_mm": 0.5
+    },
+    {
+      "sequence": 3,
+      "pilot_id": "P3_axial_only_refined",
+      "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_p3_axial_refined",
+      "comsol_solver_numerics_profile_id": "hybrid_p3_axial_refined",
+      "changed_axis_from_previous": "axial_layers_per_swept_segment_only",
+      "radial_core_and_rod_hmax_mm": 0.35,
+      "axial_layers_per_swept_segment": 20,
+      "transition_and_end_tetra_hmax_mm": 0.5
+    },
+    {
+      "sequence": 4,
+      "pilot_id": "P4_transition_and_end_only_refined",
+      "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_p4_transition_end_refined",
+      "comsol_solver_numerics_profile_id": "hybrid_p4_transition_end_refined",
+      "changed_axis_from_previous": "transition_and_end_tetra_hmax_only",
+      "radial_core_and_rod_hmax_mm": 0.35,
+      "axial_layers_per_swept_segment": 20,
+      "transition_and_end_tetra_hmax_mm": 0.35
+    }
+  ],
+  "sequential_stop_policy": {
+    "next_pilot_requires_previous_status": "PASS_FUNCTIONAL_AND_RESOURCE_FEASIBLE",
+    "stop_entire_campaign_on": [
+      "any_topology_gate_failure",
+      "any_mesh_problem_or_incomplete_vacuum_coverage",
+      "stationary_mumps_solve_failure",
+      "any_engineering_budget_limit",
+      "transmitted_particle_count_difference_nonzero",
+      "handoff_particle_id_set_difference",
+      "transmission_below_functional_acceptance",
+      "nonpositive_working_radius_margin"
+    ],
+    "automatic_retry_count": 0,
+    "branching_or_reordering_allowed": false,
+    "threshold_relaxation_allowed": false,
+    "additional_commercial_run_after_P4_allowed": false,
+    "terminal_failure_result": "INCONCLUSIVE_MESH_STRATEGY_CHANGE_REQUIRED",
+    "terminal_success_result": "HYBRID_MESH_PILOT_SEQUENCE_COMPLETE_CONTINUOUS_QUALIFICATION_STILL_INCONCLUSIVE"
+  },
+  "execution_result": {
+    "terminal": true,
+    "result": "INCONCLUSIVE_MESH_STRATEGY_CHANGE_REQUIRED",
+    "failed_pilot_id": "P1_hybrid_coarse",
+    "run_id": "20260729_133556__sim__comsol__hex-exitplate-hybrid-p1__n100",
+    "run_manifest_sha256": "B46CE763722623948F2F2AA915244A54B2369F9AD7F87DBEE43B707DDB72DDC8",
+    "frozen_engineering_budget_sha256": "A68E133474DA4DFA913E6160E2F07D7C8B3F0E58CE3528F342A28FBD17080DE6",
+    "status": "FAILED_TOPOLOGY_GATE_BEFORE_FIELD_SOLUTION",
+    "failure_message": "Finite 3D vacuum mesh failed.",
+    "wall_clock_seconds": 88.817,
+    "peak_process_tree_working_set_bytes": 3489751040,
+    "minimum_system_available_memory_bytes": 23649878016,
+    "peak_run_directory_bytes": 1636560,
+    "resource_limit_triggered": false,
+    "automatic_retry_count": 0,
+    "later_pilots_executed": false,
+    "diagnostic_limit": "The frozen implementation emitted a combined vacuum-mesh assertion, so the retained evidence cannot distinguish global mesh problems, an empty vacuum selection or incomplete vacuum coverage without a separately preregistered diagnostic build."
+  },
+  "resource_limits": {
+    "wall_clock_seconds": 1200,
+    "transient_run_directory_bytes": 2147483648,
+    "process_tree_working_set_bytes": 17179869184,
+    "minimum_system_available_memory_bytes": 8589934592,
+    "compact_final_retained_bytes": 26214400,
+    "automatic_retry_count": 0
+  },
+  "required_lightweight_outputs": [
+    "mesh_element_count_and_type_by_registered_region",
+    "degrees_of_freedom",
+    "minimum_mesh_quality_or_solver_problem_marker",
+    "checkpoint_resource_usage",
+    "functional_transport_acceptance_result",
+    "paired_handoff_continuous_diagnostics"
+  ],
+  "implementation_blockers": {
+    "commercial_authorization": false,
+    "required_common_changes": [],
+    "resolved_common_changes": [
+      "The resource-budget validator accepts an exact nonempty solver subset, and the active budget authorizes only COMSOL P1.",
+      "The common COMSOL runner freezes and consumes the complete governed mesh strategy.",
+      "The common solver implements physical_segment_hybrid_swept_tetra_v1 with per-segment swept and tetrahedral coverage gates.",
+      "Later pilots remain blocked by the single-active-step budget until the preceding result is reviewed."
+    ],
+    "future_solver_campaigns": [
+      "pardiso",
+      "cg_amg"
+    ],
+    "future_solver_campaign_rule": "PARDISO or CG-AMG requires a separate preregistration and is not a branch or retry of these four MUMPS pilots."
+  },
+  "claim_limit": "This preregistration terminated when P1 failed its topology gate before field solution. It authorizes no retry and no P2 through P4 execution. It cannot qualify continuous convergence, cross-solver numerical equivalence, N=1000 dispersion, mechanical, Candidate or Formal status."
+}

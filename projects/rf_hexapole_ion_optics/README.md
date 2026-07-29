@@ -44,8 +44,11 @@
   无加速N=100 baseline、空间和时间敏感性矩阵已完成，功能传输闭合；连续相空间仍为
   `INCONCLUSIVE`。分段杆轴向加速N=100 baseline功能已闭合，但COMSOL空间档耗尽工程内存预算。
   出口孔板加速N=100 baseline功能也已闭合，SIMION空间档保持100/100，但COMSOL空间档同样在
-  `MESH_COMPLETE`后耗尽工程内存预算。当前没有授权任何商业求解器运行；时间档、N=1000和
-  完整矩阵仍未授权。既有三模式baseline的两份求解器报告只具有`POSTHOC_DESCRIPTIVE`身份，统一
+  `MESH_COMPLETE`后耗尽工程内存预算。COMSOL D1 build-only网格诊断的唯一一次运行在
+  `mesh.run`前因诊断实现错误闭锁，登记为`INCONCLUSIVE_DIAGNOSTIC_IMPLEMENTATION_FAILURE`；
+  零重试授权已经耗尽，当前没有商业求解器运行授权，也没有网格、拓扑或资源可行性新证据。
+  field/particle求解、时间档、N=1000和完整矩阵仍未授权。既有三模式baseline的两份
+  求解器报告只具有`POSTHOC_DESCRIPTIVE`身份，统一
   比较见[`../../docs/history/20260729__multipole-three-mode-posthoc-n100.md`](../../docs/history/20260729__multipole-three-mode-posthoc-n100.md)。
 - 执行组合：[`config/execution_profiles.json`](config/execution_profiles.json)保留compile-only门禁；
   商业运行可由薄wrapper绑定同一profile，未提供evidence合同即为`UNQUALIFIED`。
@@ -64,3 +67,5 @@
 
 - [`docs/history/20260723__pre-n100-multipole-functional-evidence.md`](docs/history/20260723__pre-n100-multipole-functional-evidence.md)：
   N=100规范生效前的L1/L2/L3、正长度连接器和分段加速功能证据。
+- [`docs/history/20260729__closed-hybrid-mesh-campaigns.md`](docs/history/20260729__closed-hybrid-mesh-campaigns.md)：
+  已关闭 P1–P4 与 D1 hybrid mesh 预登记、终态和零重试边界。

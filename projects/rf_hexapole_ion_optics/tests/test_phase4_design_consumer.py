@@ -38,15 +38,18 @@ class Phase4DesignConsumerTests(unittest.TestCase):
             source = (PROJECT_ROOT / "analysis" / name).read_text(encoding="utf-8")
             for term in FORBIDDEN:
                 self.assertNotIn(term, source)
-            self.assertIn("DesignProfileId", source)
             if name == "run_round_rod_field_screen.ps1":
+                self.assertIn("DesignProfileId", source)
                 self.assertIn("baseline_finite_3d", source)
                 self.assertIn("ProjectId", source)
                 self.assertNotIn("ProjectRoot", source)
             else:
-                self.assertIn("ParticleSourcePath", source)
-                self.assertIn("exit_aperture_plate_acceleration_reference", source)
-                self.assertIn("no_acceleration_full_length", source)
+                self.assertIn("RuntimeProfileId", source)
+                self.assertIn("project_transport_launcher_support.ps1", source)
+                self.assertIn("Invoke-MultipoleProjectFinite3dTransport", source)
+                self.assertIn("rf_hexapole_ion_optics", source)
+                self.assertNotIn("ParticleSourcePath", source)
+                self.assertNotIn("DesignProfileId", source)
 
     def test_no_acceleration_profile_is_full_length_and_zero_reference(self) -> None:
         resolution = resolve_design_profile(

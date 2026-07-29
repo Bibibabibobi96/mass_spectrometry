@@ -246,9 +246,15 @@ class SimionRunnerContractTests(unittest.TestCase):
                 else project_root / "analysis" / "run_simion_finite_3d_transport.ps1"
             )
             wrapper = wrapper_path.read_text(encoding="utf-8-sig")
-            self.assertIn("DesignProfileId", wrapper)
-            self.assertIn("ParticleSourcePath", wrapper)
-            self.assertIn("common\\multipole\\run_simion_finite_3d_transport.ps1", wrapper)
+            self.assertIn("RuntimeProfileId", wrapper)
+            if project == "rf_quadrupole_ion_optics":
+                self.assertIn("DesignProfileId", wrapper)
+                self.assertIn("ParticleSourcePath", wrapper)
+                self.assertIn("common\\multipole\\run_simion_finite_3d_transport.ps1", wrapper)
+            else:
+                self.assertNotIn("DesignProfileId", wrapper)
+                self.assertNotIn("ParticleSourcePath", wrapper)
+                self.assertIn("project_transport_launcher_support.ps1", wrapper)
             self.assertNotIn("FieldScreenRunId", wrapper)
             self.assertNotIn("AxialAccelerationContractPath", wrapper)
 

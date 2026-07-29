@@ -38,6 +38,15 @@ class FamilyExperimentProfileTests(unittest.TestCase):
             for mode_id in MODE_IDS
         }
 
+    def assert_contract_values(
+        self, contract: dict[str, Any], expected: dict[str, Any]
+    ) -> None:
+        for dotted_path, expected_value in expected.items():
+            actual: Any = contract
+            for key in dotted_path.split("."):
+                actual = actual[key]
+            self.assertEqual(actual, expected_value, dotted_path)
+
     def test_profiles_share_one_governed_base_catalog_and_envelope(self) -> None:
         registry = load("config/design_profiles.json")
         validate_schema(registry, "design_profiles.schema.json")
@@ -70,6 +79,23 @@ class FamilyExperimentProfileTests(unittest.TestCase):
                 ),
             },
         )
+
+    def test_profile_source_hashes_use_repository_lf_bytes(self) -> None:
+        registry = load("config/design_profiles.json")
+        current = [
+            profile
+            for profile in registry["profiles"]
+            if profile["design_profile_id"] in MODE_IDS
+        ]
+        for field in ("design_request", "design_variables", "optimization_envelope"):
+            for profile in current:
+                path = PROJECT_ROOT / profile[field]
+                content = path.read_bytes()
+                self.assertNotIn(b"\r", content, profile[field])
+                self.assertEqual(
+                    hashlib.sha256(content).hexdigest().upper(),
+                    profile["sha256"][field],
+                )
 
     def test_three_modes_have_exactly_one_mechanical_geometry(self) -> None:
         baseline = self.resolved[MODE_IDS[0]]
@@ -246,9 +272,10 @@ class FamilyExperimentProfileTests(unittest.TestCase):
         ):
             plan = convergence["solver_plans"][solver_id]
             self.assertEqual(
-                plan["registry_sha256"],
+                plan["active_registry_sha256"],
                 sha256(REPO_ROOT / plan["registry"]),
             )
+            self.assertRegex(plan["registry_sha256_at_preregistration"], r"^[A-F0-9]{64}$")
             self.assertEqual(
                 plan["tiers"]["temporal_refined"][spatial_key],
                 plan["tiers"]["spatial_refined"][spatial_key],
@@ -282,9 +309,17 @@ class FamilyExperimentProfileTests(unittest.TestCase):
         self.assertFalse(engineering["pilot_authorization"]["authorized"])
         self.assertEqual(
             engineering["pilot_authorization"]["scope"]["runtime_profile_id"],
-            "exit_aperture_plate_acceleration_n100_spatial_refined",
+            "exit_aperture_plate_acceleration_n100_hybrid_d1_mesh_build",
+        )
+        self.assertEqual(
+            engineering["pilot_authorization"]["scope"]["allowed_solvers"],
+            ["comsol"],
         )
         self.assertFalse(engineering["full_matrix_authorization"]["authorized"])
+        self.assertEqual(
+            engineering["full_matrix_authorization"]["reason"],
+            "legacy_hybrid_p1_campaign_closed_mesh_build_diagnostic_does_not_authorize_field_or_transport",
+        )
 
         result = load(
             "config/qualification/n100_no_acceleration_qualification.json"
@@ -324,6 +359,143 @@ class FamilyExperimentProfileTests(unittest.TestCase):
             exit_plate["same_solver_spatial"]["comsol"]["status"],
             "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
         )
+
+    def test_hybrid_mesh_campaign_freezes_four_sequential_mumps_axes(self) -> None:
+        campaign = load(
+            "docs/history/20260729__closed-hybrid-mesh-campaigns/"
+            "comsol_hybrid_mesh_pilot_preregistration.json"
+        )
+        self.assert_contract_values(
+            campaign,
+            {
+                "preregistered_before_run": True, "maximum_commercial_run_count": 4,
+                "commercial_run_count_currently_authorized": 0, "implementation_blockers.commercial_authorization": False,
+                "status": "closed_after_p1_topology_failure", "execution_result.terminal": True,
+                "execution_result.status": "FAILED_TOPOLOGY_GATE_BEFORE_FIELD_SOLUTION",
+                "execution_result.resource_limit_triggered": False, "execution_result.later_pilots_executed": False,
+                "scope.stationary_linear_solver_backend": "mumps",
+            },
+        )
+        runtime_profiles = load("config/runtime_profiles.json")["profiles"]
+        for pilot in campaign["ordered_pilots"]:
+            self.assertNotIn(pilot["runtime_profile_id"], runtime_profiles)
+
+        for name, authority in campaign["frozen_authorities"].items():
+            if name == "engineering_budget":
+                self.assertEqual(
+                    authority["sha256"],
+                    campaign["execution_result"]["frozen_engineering_budget_sha256"],
+                )
+                continue
+            if name in {"comsol_solver_numerics", "runtime_profiles"}:
+                continue
+            path = REPO_ROOT / authority["path"]
+            self.assertEqual(sha256(path), authority["sha256"], authority["path"])
+
+        expected = (
+            ("hybrid_p1_coarse", "mesh_strategy_feasibility_against_existing_full_tetra_baseline", 0.5, 10, 0.5),
+            ("hybrid_p2_radial_refined", "radial_core_and_rod_hmax_only", 0.35, 10, 0.5),
+            ("hybrid_p3_axial_refined", "axial_layers_per_swept_segment_only", 0.35, 20, 0.5),
+            ("hybrid_p4_transition_end_refined", "transition_and_end_tetra_hmax_only", 0.35, 20, 0.35),
+        )
+        pilots = campaign["ordered_pilots"]
+        self.assertEqual(len(pilots), 4)
+        numerics_registry = load("config/comsol_solver_numerics.json")["profiles"]
+        for index, (pilot, frozen) in enumerate(zip(pilots, expected), start=1):
+            profile_id, changed_axis, radial, layers, tetra = frozen
+            self.assert_contract_values(pilot, {
+                "sequence": index, "comsol_solver_numerics_profile_id": profile_id,
+                "changed_axis_from_previous": changed_axis, "radial_core_and_rod_hmax_mm": radial,
+                "axial_layers_per_swept_segment": layers, "transition_and_end_tetra_hmax_mm": tetra,
+            })
+            self.assertNotIn(profile_id, numerics_registry)
+
+        topology = campaign["hybrid_topology"]
+        self.assert_contract_values(
+            topology,
+            {
+                "physical_segment_count": 4, "physical_segment_length_mm": 19.6,
+                "segment_end_buffer_mm_each_end": 1.0, "central_swept_length_per_segment_mm": 17.6,
+                "core_radius_mm": 8.0, "outer_vacuum_hmax_mm": 1.0, "minimum_element_size_mm": 0.02,
+            },
+        )
+        self.assert_contract_values(campaign["sequential_stop_policy"], {
+            "branching_or_reordering_allowed": False,
+            "additional_commercial_run_after_P4_allowed": False,
+        })
+        future_solvers = set(campaign["implementation_blockers"]["future_solver_campaigns"])
+        self.assertTrue({"pardiso", "cg_amg"} <= future_solvers)
+
+    def test_d1_mesh_build_is_bounded_and_d2_is_only_conditional(self) -> None:
+        diagnostic = load(
+            "docs/history/20260729__closed-hybrid-mesh-campaigns/"
+            "comsol_hybrid_mesh_build_diagnostic_preregistration.json"
+        )
+        self.assert_contract_values(
+            diagnostic,
+            {
+                "preregistered_before_run": True, "status": "closed_after_d1_diagnostic_implementation_failure",
+                "d1.authorized": False, "d2.authorized": False, "scope.stop_stage": "mesh_build",
+                "d1.hybrid_mesh.core_radius_mm": 8.5, "d1.hybrid_mesh.radial_core_and_rod_hmax_mm": 0.5,
+                "execution_result.terminal": True,
+                "execution_result.status": "INCONCLUSIVE_DIAGNOSTIC_IMPLEMENTATION_FAILURE",
+                "execution_result.run_id": "20260729_155030__build__comsol__hex-hybrid-d1-mesh-build__r01",
+                "execution_result.commercial_run_count": 1, "execution_result.automatic_retry_count": 0,
+                "execution_result.retry_budget_exhausted": True, "execution_result.retry_authorized": False,
+                "execution_result.mesh_run_reached": False, "execution_result.mesh_evidence_available": False,
+                "execution_result.topology_evidence_available": False, "execution_result.resource_limit_triggered": False,
+                "execution_result.observed_prebuild_diagnostics.vacuum_selection_entity_count": 31,
+                "execution_result.observed_prebuild_diagnostics.vacuum_volume_evidence_status": "UNKNOWN",
+                "legacy_p1_campaign.p1_retry_authorized": False, "legacy_p1_campaign.p2_p3_p4_authorized": False,
+            },
+        )
+        self.assertEqual(
+            diagnostic["d1"]["resource_limits"],
+            {
+                "wall_clock_seconds": 300,
+                "transient_run_directory_bytes": 128 * 1024**2,
+                "process_tree_working_set_bytes": 6 * 1024**3,
+                "minimum_system_available_memory_bytes": 8 * 1024**3,
+                "compact_final_retained_bytes": 10 * 1024**2,
+                "automatic_retry_count": 0,
+            },
+        )
+        resolved = self.resolved["exit_aperture_plate_acceleration"]
+        rod_tangent_radius = resolved["geometry_mm"]["rod_center_radius"] + resolved["geometry_mm"]["rod_radius"]
+        self.assertGreater(diagnostic["d1"]["hybrid_mesh"]["core_radius_mm"], rod_tangent_radius)
+        wrapper = (PROJECT_ROOT / "analysis/run_finite_3d_transport.ps1").read_text(encoding="utf-8-sig")
+        launcher_support = (REPO_ROOT / "common/multipole/project_transport_launcher_support.ps1").read_text(encoding="utf-8-sig")
+        self.assertNotIn(diagnostic["scope"]["runtime_profile_id"], wrapper)
+        self.assertIn("Invoke-MultipoleProjectFinite3dTransport", wrapper)
+        for token in ("$arguments.StopStage = 'mesh_build'", "profile_id"):
+            self.assertIn(token, launcher_support)
+
+        solver = (REPO_ROOT / "common/multipole/solve_finite_3d_transport.m").read_text(encoding="utf-8")
+        mesh_helper = (REPO_ROOT / "common/multipole/configure_comsol_segment_hybrid_mesh.m").read_text(encoding="utf-8")
+        runner = (REPO_ROOT / "common/multipole/run_finite_3d_transport.ps1").read_text(encoding="utf-8")
+        for before, after in (
+            ("emit_mesh_prebuild_diagnostics", "mesh.run;"),
+            ("if meshBuildOnly", "model.material.create('mat_vac'"),
+            ("return\n    end\n    material =", "comp.physics.create('es'"),
+        ):
+            self.assertLess(solver.index(before), solver.index(after))
+        for token in (
+            "FIELD_PHYSICS_CREATED=%d", "FIELD_STUDIES_CREATED=%d", "FIELD_SOLUTIONS_CREATED=%d",
+            "PARTICLE_PHYSICS_CREATED=%d", "PARTICLE_STUDIES_CREATED=%d",
+            "physicsTags = cell(comp.physics.tags())", "studyTags = cell(model.study.tags())",
+            "solutionTags = cell(model.sol.tags())", "a tangent core partition is forbidden",
+            "diagnostics.swept = cell(", "diagnostics.swept{index}",
+            "'domain', 'selection', entities", "%s_VOLUME_MM3=UNKNOWN",
+        ):
+            self.assertIn(token, solver)
+        self.assertNotIn("diagnostics.swept(index) =", solver)
+        self.assertNotIn("'volume', 'selection', entities", solver)
+        self.assertIn("add_size(sweep, sprintf('szRod%d'", mesh_helper)
+        self.assertIn("add_size(tetrahedra, 'szTetRod'", mesh_helper)
+        self.assertNotIn("add_size(mesh, 'szRodBnd'", mesh_helper)
+        self.assertIn("Assert-MultipoleMeshBuildReport -Path $report", runner)
+        for token in diagnostic["d1"]["required_report_tokens"]:
+            self.assertIn(token.split("=", 1)[0], runner)
 
 
 if __name__ == "__main__":

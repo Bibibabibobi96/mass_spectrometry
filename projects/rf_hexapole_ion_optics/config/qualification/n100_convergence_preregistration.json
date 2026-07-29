@@ -57,7 +57,7 @@
   },
   "design_authority": {
     "design_profiles": "projects/rf_hexapole_ion_optics/config/design_profiles.json",
-    "design_profiles_sha256": "F4BF0B37B1E06A3A605B5914804719893C1A7CF9845BF1057191E885FAD260E3",
+    "design_profiles_sha256": "157EB846B0F3715A300EF9F3D994DD3B05A919C04FBFD83D6B8611A77FAA74B1",
     "operating_modes": "projects/rf_hexapole_ion_optics/config/operating_modes.json",
     "operating_modes_sha256": "8B03C419A537B398048E9F379F015CCC66A51970348CBE533175E910B54F0EF5"
   },
@@ -69,7 +69,9 @@
   "solver_plans": {
     "comsol": {
       "registry": "projects/rf_hexapole_ion_optics/config/comsol_solver_numerics.json",
-      "registry_sha256": "E3BF0BAFF09E40D04D489A03DC72CBAB62E4AA5BA199FCD0DCF3534C334E56B2",
+      "registry_sha256_at_preregistration": "DB104E15BE1D9874931E136F1C3872D5058E30EC0A1CA3E87213C9F24D4D8BB2",
+      "active_registry_sha256": "E3BF0BAFF09E40D04D489A03DC72CBAB62E4AA5BA199FCD0DCF3534C334E56B2",
+      "active_registry_change_scope": "closed_hybrid_d1_p1_p2_p3_p4_profiles_retired_without_changing_the_three_preregistered_profiles",
       "tiers": {
         "baseline": {
           "profile_id": "baseline_finite_3d",
@@ -90,7 +92,9 @@
     },
     "simion": {
       "registry": "projects/rf_hexapole_ion_optics/config/simion_solver_numerics.json",
-      "registry_sha256": "C8A9A0A90ABD543BD424A0ADE15D7DDCE19AAFBAD5950E1A77F8B78A4F3BE9B3",
+      "registry_sha256_at_preregistration": "C8A9A0A90ABD543BD424A0ADE15D7DDCE19AAFBAD5950E1A77F8B78A4F3BE9B3",
+      "active_registry_sha256": "C8A9A0A90ABD543BD424A0ADE15D7DDCE19AAFBAD5950E1A77F8B78A4F3BE9B3",
+      "active_registry_change_scope": "unchanged",
       "tiers": {
         "baseline": {
           "profile_id": "baseline_finite_3d",

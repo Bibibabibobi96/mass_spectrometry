@@ -15,11 +15,66 @@ param(
   [ValidateSet('compact','qualification','solver_review')][string]$RetentionClass='compact',
   [string]$RetentionReason='',
   [string]$SourceFamilyPath='',
-  [string]$OperatingPointId=''
+  [string]$OperatingPointId='',
+  [ValidateSet('','mesh_build')][string]$StopStage=''
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
+
+function Assert-MultipoleMeshBuildReport {
+  param([Parameter(Mandatory=$true)][string]$Path)
+  if(-not(Test-Path -LiteralPath $Path -PathType Leaf)){
+    throw 'COMSOL mesh-build report is missing.'
+  }
+  $content=Get-Content -LiteralPath $Path -Raw -Encoding UTF8
+  foreach($token in @(
+    'STOP_STAGE=mesh_build',
+    'FIELD_PHYSICS_CREATED=0',
+    'FIELD_STUDIES_CREATED=0',
+    'FIELD_SOLUTIONS_CREATED=0',
+    'PARTICLE_PHYSICS_CREATED=0',
+    'PARTICLE_STUDIES_CREATED=0',
+    'MESH_FEATURE_ROD_BOUNDARY_SIZE_PRESENT=1',
+    'MESH_SWEPT_TETRAHEDRAL_OVERLAP_DOMAIN_COUNT=0',
+    'MESH_VACUUM_UNCOVERED_DOMAIN_COUNT=0',
+    'MESH_NONVACUUM_PARTITION_DOMAIN_COUNT=0',
+    'MESH_VACUUM_VOLUME_STATUS=MEASURED',
+    'MESH_BUILD_DIAGNOSTIC=PASS',
+    'STATUS=PASS'
+  )){
+    if($content-notmatch("(?m)^$([regex]::Escape($token))\r?$")){
+      throw "COMSOL mesh-build report is missing required terminal token: $token"
+    }
+  }
+  foreach($name in @(
+    'MESH_VACUUM_SELECTION_ENTITY_COUNT',
+    'MESH_VACUUM_VOLUME_MM3',
+    'MESH_VACUUM_MIN_QUALITY'
+  )){
+    $matches=[regex]::Matches(
+      $content,
+      "(?m)^$([regex]::Escape($name))=(?<value>[^\r\n]+)\r?$"
+    )
+    if($matches.Count-ne 1){
+      throw "COMSOL mesh-build report must contain exactly one $name token."
+    }
+    $value=[double]0
+    if(-not[double]::TryParse(
+      $matches[0].Groups['value'].Value,
+      [Globalization.NumberStyles]::Float,
+      [Globalization.CultureInfo]::InvariantCulture,
+      [ref]$value
+    )-or[double]::IsNaN($value)-or[double]::IsInfinity($value)-or$value-le 0){
+      throw "COMSOL mesh-build report has an invalid positive $name value."
+    }
+  }
+}
+
+$runtimeDeclaresMeshBuild=$RuntimeProfileId -like '*_mesh_build'
+if($runtimeDeclaresMeshBuild -ne ($StopStage-eq'mesh_build')){
+  throw 'The runtime profile and the finite-3D stop stage must agree on mesh_build.'
+}
 if(-not [double]::IsNaN($WorkingRegionMaximumElementSizeMm) -and $WorkingRegionMaximumElementSizeMm-le 0){
   throw 'WorkingRegionMaximumElementSizeMm must be positive when supplied.'
 }
@@ -188,8 +243,8 @@ try{
 
   $numerics=Join-Path $inputDir 'solver_numerics.json'
   [ordered]@{schema_version=1;role='multipole_comsol_solver_numerics';
-    mesh=[ordered]@{global_auto_level=$MeshAutoLevel;working_region_maximum_element_size_mm=$(if([double]::IsNaN($WorkingRegionMaximumElementSizeMm)){$null}else{$WorkingRegionMaximumElementSizeMm})};
-    trajectory=[ordered]@{rf_steps_per_period=$RfStepsPerPeriod;maximum_global_time_us=$MaximumTimeUs}}|
+    mesh=$authorizedNumerics.mesh;
+    trajectory=$authorizedNumerics.trajectory}|
     ConvertTo-Json -Depth 5|Set-Content -LiteralPath $numerics -Encoding UTF8
   $evidence=$null
   if(-not[string]::IsNullOrWhiteSpace($EvidenceContractPath)){
@@ -224,7 +279,8 @@ try{
       evidence_contract=$evidence;comsol_task=$task};
     parameters=[ordered]@{model_level='L3';runtime_profile_id=$RuntimeProfileId;design_profile_id=$DesignProfileId;
       operating_mode_id=$modeId;
-      operating_point_id=$(if($sourceFamily){$OperatingPointId}else{$null});mesh_convergence=$false};
+      operating_point_id=$(if($sourceFamily){$OperatingPointId}else{$null});mesh_convergence=$false;
+      stop_stage=$(if($StopStage){$StopStage}else{$null})};
     formal_gate_passed=$false}|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $runConfig -Encoding UTF8
 
   $environmentNames=@('MULTIPOLE_RESOLVED_DESIGN','MULTIPOLE_SOLVER_NUMERICS','MULTIPOLE_L3_PARTICLE_SOURCE',
@@ -232,7 +288,7 @@ try{
     'MULTIPOLE_L3_TRAJECTORIES','MULTIPOLE_L3_METRICS','MULTIPOLE_L3_PLOT','MULTIPOLE_L3_MODEL',
     'MULTIPOLE_L3_CANONICAL_STATE','MULTIPOLE_L3_PRIMARY_CANONICAL_STATE',
     'MULTIPOLE_L3_CONTROL_CANONICAL_STATE','MULTIPOLE_L3_PRIMARY_TRAJECTORIES',
-    'MULTIPOLE_L3_CONTROL_TRAJECTORIES')
+    'MULTIPOLE_L3_CONTROL_TRAJECTORIES','MULTIPOLE_L3_STOP_STAGE')
   $oldEnvironment=Save-RunEnvironment -Names $environmentNames
   $resourceUsage=Join-Path $resultDir 'resource_usage.json'
   try{
@@ -245,6 +301,7 @@ try{
     $env:MULTIPOLE_L3_CONTROL_CANONICAL_STATE=$controlState
     $env:MULTIPOLE_L3_PRIMARY_TRAJECTORIES=$primaryTrajectories
     $env:MULTIPOLE_L3_CONTROL_TRAJECTORIES=$controlTrajectories
+    $env:MULTIPOLE_L3_STOP_STAGE=$StopStage
     $pwsh=(Get-Process -Id $PID).Path
     $solverProcess=Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $resolvedResourceBudget `
       -RunDir $runDir -UsagePath $resourceUsage -FilePath $pwsh -ArgumentList @(
@@ -256,6 +313,28 @@ try{
     }
     if($solverProcess.exit_code-ne 0){throw 'COMSOL finite 3D multipole transport failed.'}
   }finally{Restore-RunEnvironment -Names $environmentNames -Snapshot $oldEnvironment}
+  if($StopStage-eq'mesh_build'){
+    Assert-MultipoleMeshBuildReport -Path $report
+    [ordered]@{schema_version=1;role='multipole_finite_3d_transport_summary';status='success';
+      qualification_status='UNQUALIFIED_MESH_BUILD_DIAGNOSTIC_ONLY';project_id=$ProjectId;
+      design_profile_id=$DesignProfileId;parent_resolved_design_sha256=$resolvedHash;
+      model_level='L3';stop_stage='mesh_build';field_physics_created=0;field_studies_created=0;
+      field_solutions_created=0;particle_physics_created=0;particle_studies_created=0;
+      formal_gate_passed=$false}|ConvertTo-Json -Depth 5|Set-Content -LiteralPath $summary -Encoding UTF8
+    $retentionActions=Apply-RunArtifactRetention -Python $python -RepoRoot $manifestRepoRoot `
+      -RunConfig $runConfig
+    if(-not(Complete-ResourceUsage -ResolvedBudgetPath $resolvedResourceBudget `
+      -RunDir $runDir -UsagePath $resourceUsage)){
+      $resourceBudgetExceeded=$true
+      throw 'COMSOL mesh-build retained-byte budget exceeded.'
+    }
+    $outputs=@($report,$summary,$resourceUsage)|Where-Object{Test-Path -LiteralPath $_ -PathType Leaf}
+    $outputs+=$retentionActions
+    Write-VerifiedRunManifest -Python $python -RepoRoot $manifestRepoRoot -RunConfig $runConfig `
+      -Status success -Software @('COMSOL 6.4','MATLAB R2025b','Python 3.11') -Outputs $outputs
+    Write-Output "MULTIPOLE_COMSOL_RESOLVED=PASS PROJECT=$ProjectId PROFILE=$DesignProfileId RUN_ID=$RunId STOP_STAGE=mesh_build QUALIFICATION=UNQUALIFIED"
+    return
+  }
   if($axialTopology-ne'none'){
     Push-Location $codeRoot
     try{

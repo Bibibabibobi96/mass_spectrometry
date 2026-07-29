@@ -312,18 +312,27 @@ class ThreeModeRuntimeAndQualificationTests(unittest.TestCase):
             ):
                 self.assertEqual(alias_design[key], canonical_design[key])
 
-    def test_wrappers_expose_only_registered_runtime_profiles(self) -> None:
+    def test_wrappers_delegate_registered_runtime_profile_resolution(self) -> None:
         runtime_ids = set(load("config/runtime_profiles.json")["profiles"])
         for name in (
             "analysis/run_finite_3d_transport.ps1",
             "analysis/run_simion_finite_3d_transport.ps1",
         ):
             source = (PROJECT_ROOT / name).read_text(encoding="utf-8")
-            for runtime_id in runtime_ids:
-                self.assertIn(f"'{runtime_id}'", source)
             self.assertIn("RuntimeProfileId", source)
-            self.assertNotIn("MeshAutoLevel =", source.split("$arguments = @{")[0])
-            self.assertNotIn("CellMm =", source.split("$arguments = @{")[0])
+            self.assertIn("project_transport_launcher_support.ps1", source)
+            self.assertIn("Invoke-MultipoleProjectFinite3dTransport", source)
+            self.assertIn("rf_octupole_ion_optics", source)
+            self.assertNotIn("MeshAutoLevel", source)
+            self.assertNotIn("CellMm", source)
+            self.assertEqual(
+                {
+                    runtime_id
+                    for runtime_id in runtime_ids
+                    if f"'{runtime_id}'" in source
+                },
+                {"no_acceleration_full_length"},
+            )
 
 
 if __name__ == "__main__":

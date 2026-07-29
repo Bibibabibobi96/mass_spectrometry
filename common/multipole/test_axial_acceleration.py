@@ -284,8 +284,10 @@ class AxialAccelerationTest(unittest.TestCase):
                     self.assertIn("common.multipole.runtime_profile", source)
                     self.assertNotIn("[string]$DesignProfileId", source)
                 else:
-                    self.assertIn("DesignProfileId", source)
-                self.assertIn("ParticleSourcePath", source)
+                    self.assertIn("project_transport_launcher_support.ps1", source)
+                    self.assertNotIn("DesignProfileId", source)
+                    self.assertNotIn("ParticleSourcePath", source)
+                self.assertIn("RuntimeProfileId", source)
                 self.assertIn("common\\multipole", source)
                 for legacy in (
                     "AxialAccelerationContractPath",

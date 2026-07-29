@@ -6,9 +6,23 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+
+from common.multipole import _transport_run_artifacts as artifacts
+from common.multipole.run_round_rod_transport import execute as execute_round_rod
 
 
 ROOT = Path(__file__).parents[2]
+PROJECT = ROOT / "projects/rf_hexapole_ion_optics"
+MODE = PROJECT / "config/modes/transport_no_collision.json"
+
+
+def _transport_run(run_id: str, outputs: tuple[str, ...]):
+    return artifacts.transport_run(
+        PROJECT, run_id, mode="transport_no_collision", run_config_role="fixture_config",
+        summary_role="fixture_summary", parameters={"model_level": "L1"},
+        identity_inputs={"implementation": MODE}, output_names=outputs,
+    )
 
 
 class FailedRunManifestTest(unittest.TestCase):
@@ -92,6 +106,42 @@ class FailedRunManifestTest(unittest.TestCase):
             self.assertTrue(
                 any(item["path"].endswith("solver.lua") for item in manifest["inputs"].values())
             )
+
+
+class TransportRunArtifactsTest(unittest.TestCase):
+    def test_success_freezes_inputs_and_terminalizes_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch.object(artifacts, "ARTIFACT_PROJECTS_ROOT", root / "artifacts/projects"):
+                with _transport_run("20260729_120000__test__python__transport-success", ("metrics.json",)) as run:
+                    provisional = json.loads((run.run_dir / "run_manifest.json").read_text(encoding="utf-8"))
+                    self.assertEqual(provisional["status"], "interrupted")
+                    run.outputs[0].write_text('{"status":"PASS"}\n', encoding="utf-8")
+                    run.complete({"project_id": "rf_hexapole_ion_optics"})
+            manifest = json.loads((run.run_dir / "run_manifest.json").read_text(encoding="utf-8"))
+            config = json.loads((run.run_dir / "run_config.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["status"], "success")
+            self.assertEqual(config["inputs"]["mode"], str(run.run_dir / "inputs/transport_no_collision.json"))
+            self.assertEqual([Path(item["path"]).name for item in manifest["outputs"]], ["metrics.json", "summary.json"])
+
+    def test_exception_replaces_interrupted_state_with_failed_partial_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch.object(artifacts, "ARTIFACT_PROJECTS_ROOT", root / "artifacts/projects"):
+                with self.assertRaisesRegex(RuntimeError, "scientific failure"):
+                    with _transport_run(
+                        "20260729_120001__test__python__transport-failure", ("partial.json", "absent.json")
+                    ) as run:
+                        run.outputs[0].write_text("{}\n", encoding="utf-8")
+                        raise RuntimeError("scientific failure")
+            manifest = json.loads((run.run_dir / "run_manifest.json").read_text(encoding="utf-8"))
+            summary = json.loads((run.run_dir / "summary.json").read_text(encoding="utf-8"))
+            self.assertEqual((manifest["status"], summary["reason"]), ("failed", "scientific failure"))
+            self.assertEqual([Path(item["path"]).name for item in manifest["outputs"]], ["summary.json", "partial.json"])
+
+    def test_round_rod_runner_rejects_destination_identity_before_source_access(self) -> None:
+        with self.assertRaisesRegex(ValueError, "run_id"):
+            execute_round_rod(Path("missing-project"), "missing-source", "invalid-run-id")
 
 
 if __name__ == "__main__":

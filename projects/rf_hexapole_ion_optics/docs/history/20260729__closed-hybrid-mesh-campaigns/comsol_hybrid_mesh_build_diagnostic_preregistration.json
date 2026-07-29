@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "role": "multipole_comsol_hybrid_mesh_build_diagnostic_preregistration",
+  "project_id": "rf_hexapole_ion_optics",
+  "diagnostic_id": "hexapole_exit_aperture_plate_hybrid_mesh_build_d1_v1",
+  "preregistered_before_run": true,
+  "status": "closed_after_d1_diagnostic_implementation_failure",
+  "scope": {
+    "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_d1_mesh_build",
+    "design_profile_id": "exit_aperture_plate_acceleration",
+    "particle_source_profile_id": "family_mother_sample_v1_n100",
+    "solver": "comsol",
+    "stop_stage": "mesh_build",
+    "stationary_linear_solver_backend": "mumps",
+    "retention_class": "compact"
+  },
+  "d1": {
+    "authorized": false,
+    "purpose": "Separate empty selections, vacuum coverage gaps, overlap and mesh-feature construction from the closed P1 combined topology assertion without creating field or particle physics, studies or solutions.",
+    "comsol_solver_numerics_profile_id": "hybrid_d1_mesh_build",
+    "hybrid_mesh": {
+      "strategy_id": "physical_segment_hybrid_swept_tetra_v1",
+      "core_radius_mm": 8.5,
+      "radial_core_and_rod_hmax_mm": 0.5,
+      "axial_layers_per_swept_segment": 10,
+      "transition_and_end_tetra_hmax_mm": 0.5,
+      "outer_vacuum_hmax_mm": 1.0,
+      "minimum_element_size_mm": 0.02
+    },
+    "required_report_tokens": [
+      "MESH_VACUUM_SELECTION_ENTITY_COUNT",
+      "MESH_VACUUM_VOLUME_STATUS=MEASURED",
+      "MESH_VACUUM_VOLUME_MM3",
+      "MESH_SWEPT_TETRAHEDRAL_OVERLAP_DOMAIN_COUNT",
+      "MESH_FEATURE_ROD_BOUNDARY_SIZE_PRESENT",
+      "MESH_VACUUM_MIN_QUALITY",
+      "FIELD_PHYSICS_CREATED=0",
+      "FIELD_STUDIES_CREATED=0",
+      "FIELD_SOLUTIONS_CREATED=0",
+      "PARTICLE_PHYSICS_CREATED=0",
+      "PARTICLE_STUDIES_CREATED=0"
+    ],
+    "resource_limits": {
+      "wall_clock_seconds": 300,
+      "transient_run_directory_bytes": 134217728,
+      "process_tree_working_set_bytes": 6442450944,
+      "minimum_system_available_memory_bytes": 8589934592,
+      "compact_final_retained_bytes": 10485760,
+      "automatic_retry_count": 0
+    }
+  },
+  "execution_result": {
+    "terminal": true,
+    "status": "INCONCLUSIVE_DIAGNOSTIC_IMPLEMENTATION_FAILURE",
+    "run_id": "20260729_155030__build__comsol__hex-hybrid-d1-mesh-build__r01",
+    "run_manifest_sha256": "C9D58B14F717D9391A1842B72E3B6A627B448EAE06FB959A45BF9FB2DC95BC58",
+    "report_sha256": "4922ADCE88BAE82F2490389F97F42E8CA20E111490F6B8011E544D612901F983",
+    "commercial_run_count": 1,
+    "automatic_retry_count": 0,
+    "retry_budget_exhausted": true,
+    "retry_authorized": false,
+    "mesh_run_reached": false,
+    "mesh_evidence_available": false,
+    "topology_evidence_available": false,
+    "field_or_particle_stage_reached": false,
+    "resource_limit_triggered": false,
+    "observed_prebuild_diagnostics": {
+      "vacuum_selection_entity_count": 31,
+      "vacuum_volume_reported_token": "NaN",
+      "vacuum_volume_evidence_status": "UNKNOWN"
+    },
+    "failure": {
+      "location": "emit_mesh_prebuild_diagnostics",
+      "classification": "MATLAB_DISSIMILAR_STRUCTURE_ASSIGNMENT",
+      "cause": "A selection diagnostic with fields was assigned into a repmat(struct()) element before mesh.run.",
+      "volume_diagnostic_cause": "The pre-run implementation passed volume instead of domain as the mphmeasure entity type and converted the resulting exception to NaN."
+    },
+    "observed_resources": {
+      "wall_clock_seconds": 41.72,
+      "peak_run_directory_bytes": 1677516,
+      "final_retained_bytes": 1677516,
+      "peak_process_tree_working_set_bytes": 2663485440,
+      "minimum_system_available_memory_bytes": 25162088448
+    },
+    "claim_limit": "The unique D1 run failed before mesh.run. It provides neither mesh/topology evidence nor resource-limit evidence and cannot authorize D2 or a D1 rerun."
+  },
+  "legacy_p1_campaign": {
+    "status": "closed_after_p1_topology_failure",
+    "p1_retry_authorized": false,
+    "p2_p3_p4_authorized": false,
+    "non_equivalence": "D1 is a build-only diagnostic and is neither a retry nor a continuation of P1."
+  },
+  "d2": {
+    "authorized": false,
+    "status": "conditional_preregistration_only",
+    "entry_conditions": [
+      "A newly authorized build-only diagnostic has completed within its frozen resource budget.",
+      "Its report is reviewed for selection, volume, overlap, mesh feature and quality diagnostics.",
+      "A new exact D2 runtime profile, budget scope and preregistration are approved before any commercial run."
+    ],
+    "prohibited_until_new_preregistration": [
+      "field_study",
+      "field_solution",
+      "particle_physics",
+      "particle_study",
+      "P1_retry",
+      "P2",
+      "P3",
+      "P4"
+    ]
+  },
+  "claim_limit": "The unique D1 run is terminal INCONCLUSIVE_DIAGNOSTIC_IMPLEMENTATION_FAILURE and exhausted its zero-retry authorization. It did not reach mesh.run and cannot establish mesh or topology success, resource feasibility, field validity, transport, convergence, cross-solver equivalence, Candidate or Formal status."
+}

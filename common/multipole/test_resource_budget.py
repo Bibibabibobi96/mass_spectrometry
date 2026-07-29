@@ -35,19 +35,44 @@ class ResourceBudgetTests(unittest.TestCase):
             retention_class=retention_class,
         )
 
-    def test_no_commercial_solver_pair_is_authorized(self) -> None:
+    def test_closed_projects_reject_commercial_solver_pairs(self) -> None:
         for project_id, profile in (
             (QUAD, "exit_aperture_plate_acceleration_n100_spatial_refined"),
-            (HEX, "exit_aperture_plate_acceleration_n100_spatial_refined"),
             (OCT, "exit_aperture_plate_acceleration_n100_spatial_refined"),
         ):
             with self.assertRaisesRegex(ValueError, "not authorized"):
                 self.validate(project_id, profile)
         with self.assertRaisesRegex(ValueError, "not authorized"):
             self.validate(
+                HEX,
+                "exit_aperture_plate_acceleration_n100_spatial_refined",
+            )
+        with self.assertRaisesRegex(ValueError, "not authorized"):
+            self.validate(
                 OCT,
                 "exit_aperture_plate_acceleration",
             )
+
+    def test_hexapole_mesh_build_d1_zero_retry_authorization_is_closed(self) -> None:
+        for profile in (
+            "exit_aperture_plate_acceleration_n100_hybrid_d1_mesh_build",
+            "exit_aperture_plate_acceleration_n100_hybrid_p1_coarse",
+        ):
+            with self.assertRaisesRegex(ValueError, "unknown runtime profile"):
+                resolve_runtime_profile(REPO_ROOT, HEX, profile)
+        budget = json.loads(
+            (
+                REPO_ROOT
+                / "projects/rf_hexapole_ion_optics/config/qualification/engineering_budget.json"
+            ).read_text(encoding="utf-8")
+        )
+        self.assertFalse(budget["pilot_authorization"]["authorized"])
+        limits = budget["pilot_authorization"]["limits"]
+        self.assertEqual(limits["automatic_retry_count"], 0)
+        self.assertGreater(
+            limits["process_tree_working_set_bytes"],
+            limits["transient_run_directory_bytes"],
+        )
 
     def test_high_cost_runners_validate_before_creating_run_package(self) -> None:
         for name in ("run_finite_3d_transport.ps1", "run_simion_finite_3d_transport.ps1"):
@@ -67,6 +92,10 @@ class ResourceBudgetTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("'-StartupAttempts','1'", comsol)
+        self.assertIn("[ValidateSet('','mesh_build')][string]$StopStage=''", comsol)
+        self.assertIn("MULTIPOLE_L3_STOP_STAGE", comsol)
+        self.assertIn("UNQUALIFIED_MESH_BUILD_DIAGNOSTIC_ONLY", comsol)
+        self.assertIn("$runtimeDeclaresMeshBuild=$RuntimeProfileId -like '*_mesh_build'", comsol)
 
     def test_watchdog_interrupts_only_its_child_on_wall_clock_limit(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

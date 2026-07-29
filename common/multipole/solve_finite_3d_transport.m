@@ -19,6 +19,10 @@ primaryCanonicalStatePath = getenv('MULTIPOLE_L3_PRIMARY_CANONICAL_STATE');
 controlCanonicalStatePath = getenv('MULTIPOLE_L3_CONTROL_CANONICAL_STATE');
 primaryTrajectoryPath = getenv('MULTIPOLE_L3_PRIMARY_TRAJECTORIES');
 controlTrajectoryPath = getenv('MULTIPOLE_L3_CONTROL_TRAJECTORIES');
+stopStage = getenv('MULTIPOLE_L3_STOP_STAGE');
+assert(any(strcmp(stopStage, {'', 'mesh_build'})), ...
+    'Finite 3D multipole stop stage is unsupported.');
+meshBuildOnly = strcmp(stopStage, 'mesh_build');
 required = {reportPath, resolvedDesignPath, numericsPath, sourcePath, sourceMetadataPath, ...
     runtimeDir, eventsPath, trajectoryPath, metricsPath, plotPath, modelPath};
 assert(all(~cellfun(@isempty, required)), 'Finite 3D multipole environment is incomplete.');
@@ -156,6 +160,50 @@ try
     geom.feature('workvol').set('h', sprintf('%.17g[mm]', vacuumHeight));
     geom.feature('workvol').set('pos', {'0','0',sprintf('%.17g[mm]', d.vacuum_z_min)});
     geom.feature('workvol').set('selresult', 'on');
+    meshStrategy = 'selected_region_free_tetrahedral';
+    if isfield(numerics.mesh, 'strategy')
+        meshStrategy = numerics.mesh.strategy;
+    end
+    segmentHybridMesh = strcmp(meshStrategy, 'physical_segment_hybrid_swept_tetra_v1');
+    assert(segmentHybridMesh || strcmp(meshStrategy, 'selected_region_free_tetrahedral'), ...
+        'Unsupported finite-3D multipole mesh strategy: %s', meshStrategy);
+    sweepGeometryTags = {};
+    if segmentHybridMesh
+        assert(~rectangularReference && segmentedRodGeometry, ...
+            'Segment-hybrid meshing requires cylindrical segmented-rod geometry.');
+        hybrid = numerics.mesh.hybrid;
+        assert(isfinite(hybrid.segment_end_buffer_mm) && hybrid.segment_end_buffer_mm > 0, ...
+            'Segment-hybrid end buffer must be positive and finite.');
+        assert(hybrid.core_radius_mm > ...
+            selected.rod_center_radius_mm + selected.rod_radius_mm, ...
+            ['Segment-hybrid core boundary must lie strictly outside every rod; ' ...
+            'a tangent core partition is forbidden.']);
+        geom.feature.create('meshCore', 'Cylinder');
+        geom.feature('meshCore').set('r', sprintf('%.17g[mm]', hybrid.core_radius_mm));
+        geom.feature('meshCore').set('h', sprintf('%.17g[mm]', vacuumHeight));
+        geom.feature('meshCore').set('pos', {'0','0',sprintf('%.17g[mm]', d.vacuum_z_min)});
+        geom.feature('meshCore').set('selresult', 'on');
+        physicalSegments = segmentationAcceleration.derived.segments;
+        assert(numel(physicalSegments) == hybrid.physical_segment_count, ...
+            'Segment-hybrid physical-segment count differs from the resolved design.');
+        sweepGeometryTags = cell(1, numel(physicalSegments));
+        for segmentIndex = 1:numel(physicalSegments)
+            segment = physicalSegments(segmentIndex);
+            sweepZMin = segment.z_min_mm + hybrid.segment_end_buffer_mm;
+            sweepZMax = segment.z_max_mm - hybrid.segment_end_buffer_mm;
+            assert(sweepZMax > sweepZMin, ...
+                'Segment-hybrid end buffers consume physical rod segment %d.', segmentIndex);
+            assert(abs((sweepZMax-sweepZMin)-hybrid.swept_length_per_segment_mm) < 1e-9, ...
+                'Segment-hybrid swept length differs for physical segment %d.', segmentIndex);
+            tag = sprintf('meshSweep%d', segmentIndex);
+            sweepGeometryTags{segmentIndex} = tag;
+            geom.feature.create(tag, 'Cylinder');
+            geom.feature(tag).set('r', sprintf('%.17g[mm]', enclosure.shield_inner_radius_mm));
+            geom.feature(tag).set('h', sprintf('%.17g[mm]', sweepZMax-sweepZMin));
+            geom.feature(tag).set('pos', {'0','0',sprintf('%.17g[mm]', sweepZMin)});
+            geom.feature(tag).set('selresult', 'on');
+        end
+    end
     if segmentedRodGeometry
         [rodTags,rodMetadata]=create_multipole_segmented_round_rods( ...
             geom,rodArray,segmentationAcceleration,'rod');
@@ -219,7 +267,111 @@ try
         'UniformOutput', false);
     comp.selection.create('sel_vac', 'Complement');
     comp.selection('sel_vac').set('input', electrodeDomains);
-    assert(~isempty(comp.selection('sel_vac').entities()), 'Finite 3D vacuum selection is empty.');
+    rodBoundarySelectionTags = cell(1, numel(rodTags));
+    for k = 1:numel(rodTags)
+        boundarySelection = ['selb_' rodTags{k}];
+        comp.selection.create(boundarySelection, 'Adjacent');
+        comp.selection(boundarySelection).set('input', {['geom1_' rodTags{k} '_dom']});
+        rodBoundarySelectionTags{k} = boundarySelection;
+    end
+    sweepRodBoundarySelectionTags = {};
+    if segmentHybridMesh
+        sweepRodBoundarySelectionTags = cell(1, numel(physicalSegments));
+        for segmentIndex = 1:numel(physicalSegments)
+            segmentBoundarySelections = rodBoundarySelectionTags( ...
+                [rodMetadata.segment_id] == physicalSegments(segmentIndex).segment_id);
+            assert(numel(segmentBoundarySelections) == electrodeCount, ...
+                'Segment-hybrid rod-boundary identity differs for physical segment %d.', ...
+                segmentIndex);
+            selectionTag = sprintf('sel_mesh_sweep_%d_rod_bnd', segmentIndex);
+            comp.selection.create(selectionTag, 'Union');
+            comp.selection(selectionTag).set('entitydim', 2);
+            comp.selection(selectionTag).set('input', segmentBoundarySelections);
+            sweepRodBoundarySelectionTags{segmentIndex} = selectionTag;
+        end
+    end
+
+    mesh = comp.mesh.create('mesh1');
+    hybridSelections = struct();
+    if segmentHybridMesh
+        hybridSelections = configure_comsol_segment_hybrid_mesh( ...
+            comp, mesh, 'geom1', numerics, sweepGeometryTags, ...
+            rodBoundarySelectionTags, sweepRodBoundarySelectionTags);
+    else
+        workingHmax=numerics.mesh.working_region_maximum_element_size_mm;
+        if isempty(workingHmax), workingHmax=NaN; end
+        if isfinite(workingHmax) && workingHmax>0
+            configure_comsol_mesh(mesh,'geom1',numerics.mesh.global_auto_level,'geom1_workvol_dom',workingHmax);
+        else
+            configure_comsol_mesh(mesh,'geom1',numerics.mesh.global_auto_level,'',workingHmax);
+        end
+    end
+    meshPrebuildDiagnostics = emit_mesh_prebuild_diagnostics(fid, model, comp, mesh, ...
+        segmentHybridMesh, hybridSelections);
+    assert(meshPrebuildDiagnostics.vacuum.entity_count > 0 && ...
+        strcmp(meshPrebuildDiagnostics.vacuum.volume_status, 'MEASURED') && ...
+        isfinite(meshPrebuildDiagnostics.vacuum.volume_mm3) && ...
+        meshPrebuildDiagnostics.vacuum.volume_mm3 > 0, ...
+        'Finite 3D vacuum selection is empty or has no measurable volume.');
+    if segmentHybridMesh
+        assert(meshPrebuildDiagnostics.tetrahedral.overlap_domain_count == 0 && ...
+            meshPrebuildDiagnostics.tetrahedral.uncovered_vacuum_domain_count == 0 && ...
+            meshPrebuildDiagnostics.tetrahedral.extra_domain_count == 0, ...
+            'Segment-hybrid vacuum partition coverage differs.');
+        assert(meshPrebuildDiagnostics.rod_boundary.entity_count > 0 && ...
+            meshPrebuildDiagnostics.rod_boundary.feature_present, ...
+            'Segment-hybrid rod-boundary sizing is incomplete.');
+    end
+    mesh.run;
+    meshInfo = mphmeshstats(model, 'mesh1');
+    vacuumMeshInfo = mphmeshstats(model, 'mesh1', 'selection', 'sel_vac');
+    meshDiagnostics = emit_mesh_postbuild_diagnostics(fid, model, ...
+        meshInfo, vacuumMeshInfo, segmentHybridMesh, hybridSelections, ...
+        meshPrebuildDiagnostics);
+    assert(~meshInfo.isempty && ~meshInfo.hasproblems && ...
+        ~vacuumMeshInfo.isempty && ~vacuumMeshInfo.hasproblems && ...
+        sum(vacuumMeshInfo.numelem) > 0, 'Finite 3D vacuum mesh failed.');
+    if ~segmentHybridMesh
+        assert(meshInfo.iscomplete, 'Finite 3D free-tetrahedral mesh is incomplete.');
+    end
+    if segmentHybridMesh
+        tetrahedralInfo = meshDiagnostics.tetrahedral;
+        assert(~tetrahedralInfo.isempty && ~tetrahedralInfo.hasproblems && ...
+            tetrahedralInfo.element_count > 0, ...
+            'Segment-hybrid tetrahedral transition coverage failed.');
+        for selectionIndex = 1:numel(meshDiagnostics.swept)
+            sweptInfo = meshDiagnostics.swept{selectionIndex};
+            assert(~sweptInfo.isempty && ~sweptInfo.hasproblems && ...
+                sweptInfo.element_count > 0, ...
+                'Segment-hybrid swept coverage failed for physical segment %d.', ...
+                selectionIndex);
+        end
+    end
+    fprintf(fid,'CHECKPOINT=MESH_COMPLETE\n');
+    if meshBuildOnly
+        physicsTags = cell(comp.physics.tags());
+        studyTags = cell(model.study.tags());
+        solutionTags = cell(model.sol.tags());
+        fieldPhysicsCreated = sum(ismember(physicsTags, {'es', 'es_static'}));
+        particlePhysicsCreated = sum(strcmp(physicsTags, 'cpt'));
+        fieldStudiesCreated = numel(studyTags);
+        particleStudiesCreated = numel(studyTags);
+        fieldSolutionsCreated = numel(solutionTags);
+        fprintf(fid, 'STOP_STAGE=mesh_build\n');
+        fprintf(fid, 'FIELD_PHYSICS_CREATED=%d\n', fieldPhysicsCreated);
+        fprintf(fid, 'FIELD_STUDIES_CREATED=%d\n', fieldStudiesCreated);
+        fprintf(fid, 'FIELD_SOLUTIONS_CREATED=%d\n', fieldSolutionsCreated);
+        fprintf(fid, 'PARTICLE_PHYSICS_CREATED=%d\n', particlePhysicsCreated);
+        fprintf(fid, 'PARTICLE_STUDIES_CREATED=%d\n', particleStudiesCreated);
+        assert(fieldPhysicsCreated == 0 && fieldStudiesCreated == 0 && ...
+            fieldSolutionsCreated == 0 && particlePhysicsCreated == 0 && ...
+            particleStudiesCreated == 0, ...
+            'Mesh-build stop stage created forbidden physics, Study or Solution nodes.');
+        fprintf(fid, 'MESH_BUILD_DIAGNOSTIC=PASS\n');
+        fprintf(fid, 'STATUS=PASS\n');
+        ModelUtil.remove(tag);
+        return
+    end
     material = model.material.create('mat_vac', 'Common');
     material.selection.named('sel_vac');
     material.propertyGroup('def').set('relpermittivity', {'1'});
@@ -230,11 +382,8 @@ try
     es.field('electricpotential').component({'Vdiff'});
     if accelerationEnabled, model.param.set('field_case','1'); end
     for k = 1:numel(rodTags)
-        boundarySelection = ['selb_' rodTags{k}];
-        comp.selection.create(boundarySelection, 'Adjacent');
-        comp.selection(boundarySelection).set('input', {['geom1_' rodTags{k} '_dom']});
         potential = es.create(sprintf('pot_rod%d', k), 'ElectricPotential', 2);
-        potential.selection.named(boundarySelection);
+        potential.selection.named(rodBoundarySelectionTags{k});
         differentialVoltage=100*(3-2*rodMetadata(k).electrode_group);
         if accelerationEnabled
             potential.set('V0',sprintf('if(field_case>0.5,%d[V],%.17g[V])', ...
@@ -265,7 +414,7 @@ try
         esStatic.field('electricpotential').component({'Vstatic'});
         for k = 1:numel(rodTags)
             potential = esStatic.create(sprintf('pot_rod%d', k), 'ElectricPotential', 2);
-            potential.selection.named(['selb_' rodTags{k}]);
+            potential.selection.named(rodBoundarySelectionTags{k});
             potential.set('V0', sprintf('%.17g[V]',rodMetadata(k).common_mode_V));
         end
         for groundIndex = 1:numel(groundTags)
@@ -276,20 +425,6 @@ try
             potential.set('V0', sprintf('%.17g[V]',staticVoltage));
         end
     end
-
-    mesh = comp.mesh.create('mesh1');
-    workingHmax=numerics.mesh.working_region_maximum_element_size_mm;
-    if isempty(workingHmax), workingHmax=NaN; end
-    if isfinite(workingHmax) && workingHmax>0
-        configure_comsol_mesh(mesh,'geom1',numerics.mesh.global_auto_level,'geom1_workvol_dom',workingHmax);
-    else
-        configure_comsol_mesh(mesh,'geom1',numerics.mesh.global_auto_level,'',workingHmax);
-    end
-    mesh.run;
-    meshInfo = mphmeshstats(model, 'mesh1');
-    assert(~meshInfo.isempty && meshInfo.iscomplete && ~meshInfo.hasproblems, ...
-        'Finite 3D mesh failed.');
-    fprintf(fid,'CHECKPOINT=MESH_COMPLETE\n');
     if accelerationEnabled
         studyDiff=model.study.create('std_es_diff');
         statDiff=studyDiff.create('stat','Stationary');
@@ -464,6 +599,160 @@ catch exception
     rethrow(exception)
 end
 clear cleanup
+
+function diagnostics = emit_mesh_prebuild_diagnostics(fid, model, comp, mesh, ...
+    segmentHybridMesh, hybridSelections)
+diagnostics = struct();
+diagnostics.vacuum = selection_region_diagnostic(model, comp, 'sel_vac');
+emit_selection_region(fid, 'MESH_VACUUM', diagnostics.vacuum);
+if ~segmentHybridMesh
+    fprintf(fid, 'MESH_STRATEGY=selected_region_free_tetrahedral\n');
+    return
+end
+
+featureTags = cell(mesh.feature.tags());
+diagnostics.tetrahedral = selection_region_diagnostic(model, comp, ...
+    hybridSelections.tetrahedral);
+tetrahedralFeatureTags = cell(mesh.feature('ftet1').feature.tags());
+rodBoundarySizeCount = double(any(strcmp(tetrahedralFeatureTags, 'szTetRod')));
+diagnostics.rod_boundary = struct( ...
+    'entity_count', numel(selection_entities(comp, hybridSelections.rod_boundary)), ...
+    'feature_present', false, ...
+    'size_feature_count', 0, ...
+    'expected_size_feature_count', numel(hybridSelections.sweep) + 1);
+diagnostics.swept = cell(1, numel(hybridSelections.sweep));
+sweptDomains = [];
+for index = 1:numel(hybridSelections.sweep)
+    diagnostics.swept{index} = selection_region_diagnostic(model, comp, ...
+        hybridSelections.sweep{index});
+    sweptDomains = union(sweptDomains, diagnostics.swept{index}.entities);
+    emit_selection_region(fid, sprintf('MESH_SWEPT_SEGMENT_%d', index), ...
+        diagnostics.swept{index});
+    sweepFeatureTags = cell(mesh.feature(sprintf('swe%d', index)).feature.tags());
+    rodBoundarySizeCount = rodBoundarySizeCount + ...
+        double(any(strcmp(sweepFeatureTags, sprintf('szRod%d', index))));
+end
+diagnostics.rod_boundary.size_feature_count = rodBoundarySizeCount;
+diagnostics.rod_boundary.feature_present = ...
+    rodBoundarySizeCount == diagnostics.rod_boundary.expected_size_feature_count;
+tetrahedralDomains = diagnostics.tetrahedral.entities;
+vacuumDomains = diagnostics.vacuum.entities;
+diagnostics.tetrahedral.overlap_domain_count = numel(intersect(sweptDomains, tetrahedralDomains));
+diagnostics.tetrahedral.uncovered_vacuum_domain_count = numel(setdiff( ...
+    vacuumDomains, union(sweptDomains, tetrahedralDomains)));
+diagnostics.tetrahedral.extra_domain_count = numel(setdiff( ...
+    union(sweptDomains, tetrahedralDomains), vacuumDomains));
+fprintf(fid, 'MESH_STRATEGY=physical_segment_hybrid_swept_tetra_v1\n');
+fprintf(fid, 'MESH_FEATURE_SWEEP_COUNT=%d\n', sum(cellfun(@(tag) strncmp(tag, 'swe', 3), featureTags)));
+fprintf(fid, 'MESH_FEATURE_TETRAHEDRAL_PRESENT=%d\n', any(strcmp(featureTags, 'ftet1')));
+fprintf(fid, 'MESH_FEATURE_ROD_BOUNDARY_SIZE_PRESENT=%d\n', diagnostics.rod_boundary.feature_present);
+fprintf(fid, 'MESH_FEATURE_ROD_BOUNDARY_SIZE_COUNT=%d\n', diagnostics.rod_boundary.size_feature_count);
+fprintf(fid, 'MESH_FEATURE_ROD_BOUNDARY_SIZE_EXPECTED_COUNT=%d\n', diagnostics.rod_boundary.expected_size_feature_count);
+fprintf(fid, 'MESH_ROD_BOUNDARY_ENTITY_COUNT=%d\n', diagnostics.rod_boundary.entity_count);
+fprintf(fid, 'MESH_SWEPT_TETRAHEDRAL_OVERLAP_DOMAIN_COUNT=%d\n', diagnostics.tetrahedral.overlap_domain_count);
+fprintf(fid, 'MESH_VACUUM_UNCOVERED_DOMAIN_COUNT=%d\n', diagnostics.tetrahedral.uncovered_vacuum_domain_count);
+fprintf(fid, 'MESH_NONVACUUM_PARTITION_DOMAIN_COUNT=%d\n', diagnostics.tetrahedral.extra_domain_count);
+emit_selection_region(fid, 'MESH_TETRAHEDRAL', diagnostics.tetrahedral);
+end
+
+function diagnostics = emit_mesh_postbuild_diagnostics(fid, model, ...
+    meshInfo, vacuumMeshInfo, segmentHybridMesh, hybridSelections, prebuild)
+diagnostics = prebuild;
+diagnostics.global = mesh_info_diagnostic(meshInfo);
+diagnostics.vacuum = mesh_region_post_diagnostic(prebuild.vacuum, vacuumMeshInfo);
+emit_mesh_info(fid, 'MESH_GLOBAL', diagnostics.global);
+emit_mesh_info(fid, 'MESH_VACUUM', diagnostics.vacuum);
+if ~segmentHybridMesh
+    return
+end
+diagnostics.tetrahedral = mesh_region_post_diagnostic( ...
+    prebuild.tetrahedral, mphmeshstats(model, 'mesh1', ...
+    'selection', hybridSelections.tetrahedral));
+emit_mesh_info(fid, 'MESH_TETRAHEDRAL', diagnostics.tetrahedral);
+for index = 1:numel(hybridSelections.sweep)
+    diagnostics.swept{index} = mesh_region_post_diagnostic( ...
+        prebuild.swept{index}, mphmeshstats(model, 'mesh1', ...
+        'selection', hybridSelections.sweep{index}));
+    emit_mesh_info(fid, sprintf('MESH_SWEPT_SEGMENT_%d', index), ...
+        diagnostics.swept{index});
+end
+end
+
+function diagnostic = selection_region_diagnostic(model, comp, selectionTag)
+diagnostic = struct();
+diagnostic.entities = selection_entities(comp, selectionTag);
+diagnostic.entity_count = numel(diagnostic.entities);
+[diagnostic.volume_mm3, diagnostic.volume_status] = ...
+    selection_volume_mm3(model, diagnostic.entities);
+end
+
+function diagnostic = mesh_region_post_diagnostic(selectionDiagnostic, info)
+diagnostic = selectionDiagnostic;
+meshDiagnostic = mesh_info_diagnostic(info);
+fields = fieldnames(meshDiagnostic);
+for index = 1:numel(fields)
+    diagnostic.(fields{index}) = meshDiagnostic.(fields{index});
+end
+end
+
+function diagnostic = mesh_info_diagnostic(info)
+diagnostic = struct( ...
+    'isempty', logical(info.isempty), ...
+    'iscomplete', logical(info.iscomplete), ...
+    'hasproblems', logical(info.hasproblems), ...
+    'element_count', sum(info.numelem), ...
+    'minimum_quality', mesh_info_scalar(info, 'minquality'), ...
+    'mean_quality', mesh_info_scalar(info, 'meanquality'));
+end
+
+function emit_mesh_info(fid, prefix, diagnostic)
+fprintf(fid, '%s_EMPTY=%d\n', prefix, diagnostic.isempty);
+fprintf(fid, '%s_COMPLETE=%d\n', prefix, diagnostic.iscomplete);
+fprintf(fid, '%s_HAS_PROBLEMS=%d\n', prefix, diagnostic.hasproblems);
+fprintf(fid, '%s_ELEMENTS=%d\n', prefix, diagnostic.element_count);
+fprintf(fid, '%s_MIN_QUALITY=%.17g\n', prefix, diagnostic.minimum_quality);
+fprintf(fid, '%s_MEAN_QUALITY=%.17g\n', prefix, diagnostic.mean_quality);
+end
+
+function emit_selection_region(fid, prefix, diagnostic)
+fprintf(fid, '%s_SELECTION_ENTITY_COUNT=%d\n', prefix, diagnostic.entity_count);
+fprintf(fid, '%s_VOLUME_STATUS=%s\n', prefix, diagnostic.volume_status);
+if strcmp(diagnostic.volume_status, 'MEASURED')
+    fprintf(fid, '%s_VOLUME_MM3=%.17g\n', prefix, diagnostic.volume_mm3);
+else
+    fprintf(fid, '%s_VOLUME_MM3=UNKNOWN\n', prefix);
+end
+end
+
+function entities = selection_entities(comp, selectionTag)
+entities = double(comp.selection(selectionTag).entities());
+entities = unique(entities(:)');
+end
+
+function [volume, status] = selection_volume_mm3(model, entities)
+volume = [];
+status = 'UNKNOWN';
+try
+    measurements = double(mphmeasure( ...
+        model, 'geom1', 'domain', 'selection', entities));
+    measuredVolume = sum(measurements(:));
+    if isscalar(measuredVolume) && isfinite(measuredVolume) && measuredVolume >= 0
+        volume = measuredVolume;
+        status = 'MEASURED';
+    end
+catch
+    % Selection diagnostics must emit UNKNOWN and fail closed when the
+    % geometry-domain measure is unavailable.
+end
+end
+
+function value = mesh_info_scalar(info, field)
+if isfield(info, field)
+    value = double(info.(field));
+else
+    value = NaN;
+end
+end
 
 function [pd, solutionTag] = solve_particle_case(model, cpt, label, rfScale, axialScale, dt, timeMaximum,stationarySolutionTag)
 studyTag = ['std_' label];

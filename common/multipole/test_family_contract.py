@@ -16,7 +16,10 @@ from common.multipole.family_contract import (
 from common.multipole.mass_response import aggregate_response, evaluate_functional_contrast, load_terminal_statuses
 from common.multipole.ideal_transport import source_particles
 from common.multipole.paired_mass_scan import build_paired_ion_rows
-from common.multipole.verify_family_foundation import validate_family_foundation
+from common.multipole.verify_family_foundation import (
+    validate_family_foundation,
+    validate_high_order_launcher_chain,
+)
 
 
 REPO_ROOT = Path(__file__).parents[2]
@@ -29,6 +32,37 @@ def load_json(path: Path) -> dict:
 class MultipoleFamilyContractTests(unittest.TestCase):
     def test_frozen_family_foundation_gate(self) -> None:
         validate_family_foundation()
+
+    def test_high_order_launcher_chain_rejects_bypass_and_second_resolution(self) -> None:
+        project_id = "rf_hexapole_ion_optics"
+        root = REPO_ROOT / "projects" / project_id / "analysis"
+        comsol = (root / "run_finite_3d_transport.ps1").read_text(encoding="utf-8")
+        simion = (root / "run_simion_finite_3d_transport.ps1").read_text(
+            encoding="utf-8"
+        )
+        support = (
+            REPO_ROOT
+            / "common/multipole/project_transport_launcher_support.ps1"
+        ).read_text(encoding="utf-8")
+        validate_high_order_launcher_chain(project_id, comsol, simion, support)
+        bypass = comsol.replace(
+            "common\\multipole\\project_transport_launcher_support.ps1",
+            "common\\multipole\\run_finite_3d_transport.ps1",
+        )
+        with self.assertRaisesRegex(ValueError, "unique launcher support"):
+            validate_high_order_launcher_chain(
+                project_id,
+                bypass,
+                simion,
+                support,
+            )
+        with self.assertRaisesRegex(ValueError, "exactly once"):
+            validate_high_order_launcher_chain(
+                project_id,
+                comsol,
+                simion,
+                support + "\n-m common.multipole.runtime_profile\n",
+            )
 
     def test_high_order_n100_source_is_n1000_prefix(self) -> None:
         baseline = load_json(REPO_ROOT / "projects" / "rf_hexapole_ion_optics" / "config" / "baseline.json")
@@ -125,6 +159,58 @@ class MultipoleFamilyContractTests(unittest.TestCase):
         self.assertIn("withsol(", shared_solver)
         self.assertIn("configure_comsol_stationary_direct_solver", shared_solver)
         self.assertIn("if isfinite(workingHmax) && workingHmax>0", shared_solver)
+        self.assertIn("configure_comsol_segment_hybrid_mesh", shared_solver)
+        self.assertIn("MESH_SWEPT_SEGMENT_", shared_solver)
+        self.assertIn("emit_selection_region(fid, 'MESH_TETRAHEDRAL'", shared_solver)
+        self.assertIn("emit_mesh_info(fid, 'MESH_GLOBAL'", shared_solver)
+        self.assertIn("emit_selection_region(fid, 'MESH_VACUUM'", shared_solver)
+        self.assertIn("emit_mesh_prebuild_diagnostics", shared_solver)
+        self.assertIn("emit_mesh_postbuild_diagnostics", shared_solver)
+        self.assertIn("MESH_SWEPT_TETRAHEDRAL_OVERLAP_DOMAIN_COUNT", shared_solver)
+        self.assertIn("MESH_FEATURE_ROD_BOUNDARY_SIZE_PRESENT", shared_solver)
+        self.assertIn("%s_MIN_QUALITY", shared_solver)
+        self.assertLess(
+            shared_solver.index("emit_mesh_prebuild_diagnostics"),
+            shared_solver.index("mesh.run;"),
+        )
+        self.assertLess(
+            shared_solver.index("emit_mesh_postbuild_diagnostics"),
+            shared_solver.index("Finite 3D vacuum mesh failed."),
+        )
+        mesh_build_return = shared_solver.index("return\n    end\n    material =")
+        for token in (
+            "model.material.create('mat_vac'",
+            "comp.physics.create('es'",
+            "studyDiff=model.study.create",
+            "model.sol.create('sol_es_diff'",
+            "comp.physics.create('cpt'",
+        ):
+            self.assertGreater(shared_solver.index(token), mesh_build_return)
+        for token in (
+            "FIELD_PHYSICS_CREATED=%d",
+            "FIELD_STUDIES_CREATED=%d",
+            "FIELD_SOLUTIONS_CREATED=%d",
+            "PARTICLE_PHYSICS_CREATED=%d",
+            "PARTICLE_STUDIES_CREATED=%d",
+        ):
+            self.assertIn(token, shared_solver)
+        hybrid = (
+            REPO_ROOT
+            / "common"
+            / "multipole"
+            / "configure_comsol_segment_hybrid_mesh.m"
+        ).read_text(encoding="utf-8")
+        for token in (
+            "'Sweep'",
+            "'Distribution'",
+            "'FreeTet'",
+            "'sel_mesh_rod_bnd'",
+            "sprintf('szRod%d'",
+            "'szTetRod'",
+            "minimum_element_size_mm, 2",
+        ):
+            self.assertIn(token, hybrid)
+        self.assertNotIn("add_size(mesh, 'szRodBnd'", hybrid)
 
     def test_comsol_run_freezes_executed_matlab_sources(self) -> None:
         runner = (REPO_ROOT / "common/multipole/run_finite_3d_transport.ps1").read_text(encoding="utf-8")

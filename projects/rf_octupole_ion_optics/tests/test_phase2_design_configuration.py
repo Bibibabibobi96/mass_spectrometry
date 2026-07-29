@@ -85,6 +85,22 @@ class ThreeModeDesignConfigurationTests(unittest.TestCase):
             hashlib.sha256(base_path.read_bytes()).hexdigest().upper(),
         )
 
+    def test_profile_source_hashes_use_repository_lf_bytes(self) -> None:
+        current = [
+            item
+            for item in self.profiles["profiles"]
+            if item["design_profile_id"] in MODE_IDS
+        ]
+        for field in ("design_request", "design_variables", "optimization_envelope"):
+            for item in current:
+                path = PROJECT_ROOT / item[field]
+                content = path.read_bytes()
+                self.assertNotIn(b"\r", content, item[field])
+                self.assertEqual(
+                    hashlib.sha256(content).hexdigest().upper(),
+                    item["sha256"][field],
+                )
+
     def test_catalog_matches_project_and_execution_capability(self) -> None:
         catalog_ids = {
             item["variable_id"] for item in self.catalog["variables"]

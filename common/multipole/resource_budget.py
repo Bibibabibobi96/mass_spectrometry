@@ -93,6 +93,14 @@ def validate_pilot_budget(
     scope, limits = pilot["scope"], pilot["limits"]
     _require_keys(scope, _SCOPE_KEYS, "pilot scope")
     _require_keys(limits, _LIMIT_KEYS, "pilot limits")
+    allowed_solvers = scope["allowed_solvers"]
+    if (
+        not isinstance(allowed_solvers, list)
+        or not allowed_solvers
+        or len(set(allowed_solvers)) != len(allowed_solvers)
+        or not set(allowed_solvers).issubset({"comsol", "simion"})
+    ):
+        raise ValueError("allowed_solvers must be a nonempty unique supported subset")
     expected_scope = {
         "project_id": project_id,
         "runtime_profile_id": runtime_profile_id,
@@ -103,7 +111,7 @@ def validate_pilot_budget(
             name: runtime["solver_numerics"][name]["profile_id"]
             for name in ("comsol", "simion")
         },
-        "allowed_solvers": ["comsol", "simion"],
+        "allowed_solvers": allowed_solvers,
         "retention_class": retention_class,
     }
     if scope != expected_scope:
@@ -131,10 +139,14 @@ def validate_pilot_budget(
         raise ValueError("resource limits must be positive integers")
     if limits["automatic_retry_count"] != 0:
         raise ValueError("automatic_retry_count must be zero")
-    if budget["full_matrix_authorization"] != {
-        "authorized": False,
-        "reason": "pilot_measurements_required",
-    }:
+    full_matrix = budget["full_matrix_authorization"]
+    if (
+        not isinstance(full_matrix, dict)
+        or set(full_matrix) != {"authorized", "reason"}
+        or full_matrix["authorized"] is not False
+        or not isinstance(full_matrix["reason"], str)
+        or not full_matrix["reason"]
+    ):
         raise ValueError("full matrix must remain unauthorized during pilot")
     return {
         "schema_version": 1,

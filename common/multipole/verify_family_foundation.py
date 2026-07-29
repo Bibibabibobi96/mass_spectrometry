@@ -67,6 +67,86 @@ def require(condition: bool, message: str) -> None:
         raise ValueError(message)
 
 
+def validate_high_order_launcher_chain(
+    project_id: str,
+    comsol_wrapper: str,
+    simion_wrapper: str,
+    launcher_support: str,
+) -> None:
+    """Validate the single governed high-order project-to-solver launch chain."""
+    support_name = "common\\multipole\\project_transport_launcher_support.ps1"
+    invocation = "Invoke-MultipoleProjectFinite3dTransport"
+    direct_entries = {
+        "comsol": "common\\multipole\\run_finite_3d_transport.ps1",
+        "simion": "common\\multipole\\run_simion_finite_3d_transport.ps1",
+    }
+    for solver, wrapper in (
+        ("comsol", comsol_wrapper),
+        ("simion", simion_wrapper),
+    ):
+        require(
+            wrapper.count(support_name) == 1,
+            f"{project_id} {solver} wrapper does not bind the unique launcher support",
+        )
+        require(
+            wrapper.count(invocation) == 1
+            and wrapper.count(f"-Solver {solver}") == 1,
+            f"{project_id} {solver} wrapper launch delegation differs",
+        )
+        require(
+            wrapper.count(f"-ProjectId '{project_id}'") == 1,
+            f"{project_id} {solver} wrapper project identity differs",
+        )
+        require(
+            all(entry not in wrapper for entry in direct_entries.values()),
+            f"{project_id} {solver} wrapper bypasses the launcher support",
+        )
+        require(
+            "common.multipole.runtime_profile" not in wrapper
+            and all(
+                token not in wrapper
+                for token in (
+                    "DesignProfileId",
+                    "ParticleSourcePath",
+                    "EngineeringBudgetPath",
+                    "MeshAutoLevel",
+                    "CellMm",
+                )
+            ),
+            f"{project_id} {solver} wrapper duplicates governed profile mapping",
+        )
+
+    require(
+        launcher_support.count("-m common.multipole.runtime_profile") == 1,
+        "multipole launcher support must resolve runtime profiles exactly once",
+    )
+    require(
+        launcher_support.count(invocation) == 1,
+        "multipole launcher support must define exactly one launch function",
+    )
+    require(
+        launcher_support.count("$commonEntry =") == 2
+        and all(
+            launcher_support.count(entry) == 1
+            for entry in direct_entries.values()
+        )
+        and launcher_support.count(
+            "& (Join-Path $RepoRoot $commonEntry) @arguments"
+        )
+        == 1,
+        "multipole launcher support solver delegation is duplicated or incomplete",
+    )
+    require(
+        "solver_numerics.$Solver.values" in launcher_support
+        and "[ValidateSet('comsol', 'simion')]" in launcher_support,
+        "multipole launcher support solver binding is not governed",
+    )
+    require(
+        all(project not in launcher_support for project in PROJECT_SPECS),
+        "multipole launcher support contains a project-specific identity",
+    )
+
+
 def validate_family_identity() -> dict[str, Any]:
     """Validate the frozen family identity, consumers, and capability boundary."""
     family = load_json(REPO_ROOT / "common" / "multipole" / "family_contract.json")
@@ -266,10 +346,33 @@ def validate_project_identity(project_id: str, order: int, electrode_count: int)
         finite_3d = load_json(root / "config" / "finite_3d_transport.json")
         resolved = resolve_contract(baseline, finite_3d)
         require(resolved["multipole"] == finite_3d["multipole"], f"{project_id} L3 identity differs")
-        wrapper = (root / "analysis" / "run_finite_3d_transport.ps1").read_text(encoding="utf-8")
-        require("common\\multipole\\run_finite_3d_transport.ps1" in wrapper, f"{project_id} L3 runner is duplicated")
-        require("DesignProfileId" in wrapper, f"{project_id} does not bind a governed design profile")
-        require("Adapter" not in wrapper, f"{project_id} retains the legacy shared-adapter switch")
+        comsol_wrapper = (
+            root / "analysis" / "run_finite_3d_transport.ps1"
+        ).read_text(encoding="utf-8")
+        simion_wrapper = (
+            root / "analysis" / "run_simion_finite_3d_transport.ps1"
+        ).read_text(encoding="utf-8")
+        launcher_support = (
+            REPO_ROOT
+            / "common"
+            / "multipole"
+            / "project_transport_launcher_support.ps1"
+        ).read_text(encoding="utf-8")
+        validate_high_order_launcher_chain(
+            project_id,
+            comsol_wrapper,
+            simion_wrapper,
+            launcher_support,
+        )
+        require(
+            "RuntimeProfileId" in comsol_wrapper
+            and "RuntimeProfileId" in simion_wrapper,
+            f"{project_id} does not expose governed runtime-profile selection",
+        )
+        require(
+            "Adapter" not in comsol_wrapper and "Adapter" not in simion_wrapper,
+            f"{project_id} retains the legacy shared-adapter switch",
+        )
         finite_capability = next(
             capability for capability in project["capabilities"] if capability["capability_id"].endswith("finite_3d_transport")
         )
