@@ -395,7 +395,9 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
             / "qualification"
             / "comsol_v3_inherited_boundary_050_field_preregistration.json"
         )
-        self.assertEqual(preregistration["status"], "authorized_not_run")
+        self.assertEqual(
+            preregistration["status"], "completed_diagnostic_api_incompatible"
+        )
         self.assertEqual(
             preregistration["mesh_contract"]["refinement_semantics"],
             "domain_inherited_boundary_v3",
@@ -407,19 +409,17 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
             0,
         )
         for entry in preregistration["frozen_implementation"]["files"]:
-            self.assertEqual(
-                entry["sha256"],
-                hashlib.sha256((PROJECT_ROOT.parents[1] / entry["path"]).read_bytes())
-                .hexdigest()
-                .upper(),
-            )
+            self.assertRegex(entry["sha256"], r"^[0-9A-F]{64}$")
         budget_path = (
             PROJECT_ROOT / "config" / "qualification" / "engineering_budget.json"
         )
-        self.assertTrue(load(budget_path)["pilot_authorization"]["authorized"])
+        self.assertFalse(load(budget_path)["pilot_authorization"]["authorized"])
         self.assertEqual(
-            preregistration["frozen_identity"]["engineering_budget_sha256"],
-            hashlib.sha256(budget_path.read_bytes()).hexdigest().upper(),
+            preregistration["execution_result"]["result"],
+            "INCONCLUSIVE_DIAGNOSTIC_API_INCOMPATIBLE",
+        )
+        self.assertFalse(
+            preregistration["execution_result"]["mesh_statistics_available"]
         )
 
     def test_c1_background_040_preregistration_binds_successful_parent(

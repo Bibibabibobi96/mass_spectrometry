@@ -107,7 +107,8 @@
   因此公共门禁在场求解前停止。一次授权已耗尽且未重试；更少单元不能替代有效网格或收敛证据。
   V3代码已移除局部模式下被更细域继承覆盖的边界Size，并增加逐feature问题消息；当前仅
   [`V3 0.50 mm首臂`](config/qualification/comsol_v3_inherited_boundary_050_field_preregistration.json)
-  获得一次field-only、零重试授权，尚未运行。
+  已执行，但新增诊断调用了当前COMSOL客户端未暴露的`MeshFeatureClient.hasProblems()`，在`mesh.run`
+  返回后、`mphmeshstats`之前中断。因而没有V3单元数或场结果，一次授权已耗尽且未重试。
   既有三模式baseline的两份
   求解器报告只具有`POSTHOC_DESCRIPTIVE`身份，统一
   比较见[`../../docs/history/20260729__multipole-three-mode-posthoc-n100.md`](../../docs/history/20260729__multipole-three-mode-posthoc-n100.md)。

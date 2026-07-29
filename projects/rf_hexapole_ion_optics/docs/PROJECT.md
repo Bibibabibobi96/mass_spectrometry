@@ -325,7 +325,9 @@ V3公共实现据COMSOL尺寸继承规则移除了局部模式下的扫掠杆边
 新增逐mesh feature的问题消息输出，以区分warning与真正无法建网。该代码尚未获得商业运行证据，
 不得据此改写V2终态或开放后续矩阵。当前仅
 [`V3 0.50 mm首臂`](../config/qualification/comsol_v3_inherited_boundary_050_field_preregistration.json)
-获得一次COMSOL field-only、零重试授权。
+在`mesh.run`返回后进入新增逐feature诊断，但当前COMSOL客户端不暴露
+`MeshFeatureClient.hasProblems()`，运行在`mphmeshstats`前中断。因此V3没有单元数、网格有效性或场
+证据，一次授权已耗尽且零重试成立。该失败属于诊断API兼容性，不得反向解释为V3网格成功或失败。
 
 共享SIMION模板、GUI复核、`.wgem`绕过和跨机可移植性状态只由
 [`../../../common/multipole/README.md`](../../../common/multipole/README.md)维护；公共机制证据不授予

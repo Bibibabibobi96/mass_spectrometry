@@ -4,7 +4,7 @@
   "project_id": "rf_hexapole_ion_optics",
   "experiment_id": "hexapole_v3_inherited_boundary_field_sequence_v1_level_050",
   "preregistered_before_run": true,
-  "status": "authorized_not_run",
+  "status": "completed_diagnostic_api_incompatible",
   "authorization": {
     "maximum_commercial_run_count": 1,
     "automatic_retry_count": 0,
@@ -89,6 +89,44 @@
     "level_success": "Mesh problem count is zero, both fields complete, and all 6660 finite V/E rows are retained inside every hard limit.",
     "next_level_authorization": "Success may authorize one separately preregistered V3 0.40 mm field arm; no automatic continuation or retry.",
     "shared_failure_stop": "Any mesh problem, solver failure, sampling failure or hard-budget failure closes this identity and forbids later levels and particles."
+  },
+  "execution_result": {
+    "terminal": true,
+    "run_id": "20260730_070500__analysis__comsol__hex-v3-inherited-050-field__r01",
+    "manifest_status": "failed",
+    "result": "INCONCLUSIVE_DIAGNOSTIC_API_INCOMPATIBLE",
+    "failure_stage": "post_mesh_pre_statistics_diagnostic",
+    "commercial_run_count_executed": 1,
+    "automatic_retry_executed": 0,
+    "mesh_run_returned": true,
+    "mesh_statistics_available": false,
+    "field_solve_started": false,
+    "particle_followup_authorized": false,
+    "later_field_levels_authorized": false,
+    "observed_prebuild": {
+      "vacuum_domain_count": 31,
+      "sensitive_domain_count": 9,
+      "interface_boundary_entity_count": 28,
+      "localized_size_feature_count": 5,
+      "localized_boundary_size_feature_count": 0,
+      "swept_tetrahedral_overlap_domain_count": 0,
+      "uncovered_vacuum_domain_count": 0,
+      "nonvacuum_partition_domain_count": 0
+    },
+    "resource_observation": {
+      "wall_clock_seconds": 48.095,
+      "peak_process_tree_working_set_bytes": 2901950464,
+      "retained_run_bytes": 2378878
+    },
+    "evidence_sha256": {
+      "run_config": "092E94054E9AFCCFC2D308939831C7BB47A86B12B7BEC7886E822481E46F9E14",
+      "run_manifest": "FB751EC84E1DAB56CAEDFCD2CDC5D6E76630FF95CE989AEAB3040CD06E2154E8",
+      "summary": "90E1E5AC30DBF2CC763A6148858C9EFDD143CBCA8DA25E36D4EF9A3A8F368DC8",
+      "resource_usage": "5B68D1A50B717F67DDCAD56ACB9F373E320C4F095AC46C6148F845CA07C11DD9",
+      "comsol_report": "49A1D1DFA0EC3FC63AA30CC1C99D2600DFA6CAE5986DE30DBD5A3D91DC11DA61",
+      "retention_actions": "3968ABAFC4FEE6A734B3F0C9F7BAD6E13E53707745036D355EB29AC17794562B"
+    },
+    "decision": "Close V3 without retry. The installed COMSOL client does not expose MeshFeatureClient.hasProblems(), so the new optional diagnostic aborted before mphmeshstats and no mesh or field claim is available."
   },
   "claim_limit": "This record authorizes exactly one V3 inherited-boundary 0.50 mm COMSOL field solve. It cannot establish convergence, particle transport, cross-solver closure, Candidate, Formal or N=1000 claims."
 }
