@@ -19,6 +19,9 @@ resolved、分析和资产合同管理；实现细节见[`COMSOL.md`](COMSOL.md)
   [`归档`](history/20260729__formal-vnext-zero-change-requests.md)，不再是活动入口。
 - 当前Formal加速器为闭合屏蔽结构，没有RF注入侧孔。RF项目的S2/S3候选链没有修改本项目baseline、
   MPH、SIMION包或CAD，也不构成整机Formal连接。
+- RF四极杆离子光学到本分析器的0 mm与1 mm连接profile已以冻结N=100源完成真实COMSOL→SIMION重跑，
+  并对只读oracle实现源身份、五级census和四组离散粒子事件集合精确一致。该结论只关闭零物理变化的
+  功能迁移；本项目Formal资产保持只读且未被连接运行修改，连续相空间和整机资格仍未评价。
 
 当前生命周期、capability与Formal asset状态均为`formal`。历史资产和旧结论只按其原始manifest
 身份保留，不能替代或改写当前release。
@@ -84,15 +87,8 @@ Candidate唯一公开入口为`../workflows/design_candidate/run_candidate.py`�
 
 ## 开放任务
 
-1. **RF接口迁移等价。** 本项目已按根
-   [`COMPONENT_CONNECTION_ARCHITECTURE.md`](../../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md)
-   发布`oatof_accelerator_entry` required port；跨器件连接profile、resolved connection、composition
-   plan和adapter也已进入
-   `rf_quadrupole_ion_optics_to_single_reflection_oa_tof_mass_analyzer`实例并通过静态校验。尚须以
-   冻结N=100源重跑0 mm与1 mm profile并和只读oracle完成等价判定；通过前迁移不验收，本项目保持
-   Formal分析器只读。
-2. **复现交付。** 按需从自包含Formal目录生成不含日志和收敛参考的ZIP及独立SHA；ZIP不是第二资产权威。
-3. **按需求启动的物理候选。** 轴对称圆形加速器、真实丝网、制造/装配误差预算和二维轴对称混合
+1. **复现交付。** 按需从自包含Formal目录生成不含日志和收敛参考的ZIP及独立SHA；ZIP不是第二资产权威。
+2. **按需求启动的物理候选。** 轴对称圆形加速器、真实丝网、制造/装配误差预算和二维轴对称混合
    COMSOL模型均暂缓；任何一项启动都须重新闭合理论、三维场、传输、网格、跨求解器与CAD。
 
 开放任务只写未完成动作和关闭条件。已完成的Candidate bootstrap、路径修复、receipt治理、历史失败

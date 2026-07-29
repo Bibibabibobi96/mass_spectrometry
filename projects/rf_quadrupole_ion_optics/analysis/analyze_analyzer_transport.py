@@ -261,7 +261,7 @@ def main() -> None:
             "analyzer-transport geometry frame differs from canonical state"
         )
     plot(result, args.downstream, args.figure, float(coordinates["detector_x"]),
-         float(coordinates.get("detector_y", 0.0)), float(geometry["geometry_mm"]["physical_detector_radius"]))
+         float(coordinates.get("detector_y", 0.0)), float(geometry["geometry_mm"]["detector_radius"]))
     args.output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(
         "ANALYZER_TRANSPORT="

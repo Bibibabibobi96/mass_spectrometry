@@ -28,6 +28,10 @@ run编号、故障链和关闭过程冻结在
   完成COMSOL与SIMION真实重跑：RF-on均为100/100，zero-RF均为21/100；这只恢复基线功能分类，
   空间/时间敏感性、连续相空间等价、机械、Candidate和Formal仍未完成。
 - 旧A/B/C/D四臂合同已由上述三模式实验取代；5 eV独立源不再被解释为一种轴向加速方式。
+- RF四极杆离子光学→单次反射oaTOF的0 mm direct-mating和1 mm grounded-connector profile已用同一
+  冻结N=100源完成真实COMSOL→SIMION重跑；源身份、五级census和四组离散粒子事件集合均与只读
+  migration oracle精确一致。零物理变化的功能迁移已闭合；连续相空间、场、分辨率、数值收敛及
+  Candidate/Formal资格均未由此建立。
 
 ## 资格边界
 
@@ -152,21 +156,16 @@ component-state写出与即时校验统一调用公共合同入口，不再维�
 
 ## 开放任务
 
-1. 完成根[`COMPONENT_CONNECTION_ARCHITECTURE.md`](../../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md)
-   规定的迁移等价验收。项目端口、公共编排器、connection profile及
-   `pre_pulse_interface_transport/pulse_capture/analyzer_transport` adapter已经实现，迁移前S2/S3具名
-   合同只作为history oracle。尚须补齐legacy source显式绑定、compact retention和工程预算后，以同一
-   N=100源重跑0 mm与1 mm profile并完成等价判定；通过前不得声明迁移闭合或复制六/八极杆连接。
-2. 若需声明束斑、发散、TOF、能量或逐粒子相空间等价，先为目标效应预注册独立误差预算，再完成
+1. 若需声明束斑、发散、TOF、能量或逐粒子相空间等价，先为目标效应预注册独立误差预算，再完成
    相应连续量数值资格；不得从当前传输分类PASS外推。
-3. 为RF-only、RF+DC及三模式轴向实验分别建立不互相替代的Candidate证据包；不得以功能run晋升。
-4. 将当前圆柱机器base升级为机械/CAD权威，补端部、屏蔽、馈通、装配与GUI/CAD同步，再开放Formal门禁。
-5. 若恢复RF四极杆离子光学→单次反射oa-TOF接口资格工作，先单独批准目标与指标，再完成连接场数值资格、N=1000、
+2. 为RF-only、RF+DC及三模式轴向实验分别建立不互相替代的Candidate证据包；不得以功能run晋升。
+3. 将当前圆柱机器base升级为机械/CAD权威，补端部、屏蔽、馈通、装配与GUI/CAD同步，再开放Formal门禁。
+4. 若恢复RF四极杆离子光学→单次反射oa-TOF接口资格工作，先单独批准目标与指标，再完成连接场数值资格、N=1000、
    脉冲/时间步收敛、分辨率、容差及机械装配；当前功能链不自动进入该阶段。
-6. 若恢复碰撞冷却，必须从当前共享几何和新碰撞合同建立独立workflow，不恢复旧150 mm脚本。
-7. 迁移`config/project.json`仍指向旧`baseline.json`的注册兼容，并审计剩余
+5. 若恢复碰撞冷却，必须从当前共享几何和新碰撞合同建立独立workflow，不恢复旧150 mm脚本。
+6. 迁移`config/project.json`仍指向旧`baseline.json`的注册兼容，并审计剩余
    `finite_3d_transport.json`快照消费者；完成前只读保留。
-8. SIMION 2026 `.wgem`仍受许可证限制，活动路线使用已验证的SIMION 2020 legacy-GEM；许可证与
+7. SIMION 2026 `.wgem`仍受许可证限制，活动路线使用已验证的SIMION 2020 legacy-GEM；许可证与
    跨工作区模板可移植性由公共multipole文档统一跟踪。
 
 每项关闭时把过程和完整run清单迁入日期化history；本节只保留未完成动作、进入条件和关闭条件。

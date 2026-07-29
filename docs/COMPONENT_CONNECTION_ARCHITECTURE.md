@@ -4,9 +4,9 @@
 
 本文冻结跨项目器件连接的目标架构。RF四极杆离子光学→单次反射oa-TOF实例的端口、公共解析器、
 composition plan、connection profile和integration adapter已经实现，当前状态为
-`migration_implemented_equivalence_pending`。迁移前S2/S3具名合同和输入已经冻结为只读oracle，不再是
-活动机器权威；新入口尚未完成同输入、同几何、同事件和同结果的真实等价复验，因此迁移尚未验收，
-也不得据此声明阶段或整机资格。
+`functional_migration_equivalence_passed`。迁移前S2/S3具名合同和输入已经冻结为只读oracle，不再是
+活动机器权威；新入口已用同一冻结N=100源完成0 mm与1 mm profile真实复验，离散源身份、census和
+粒子事件集合精确一致。该结论不声明连续相空间、场、分辨率、数值收敛、阶段或整机资格。
 本文定义职责和迁移门禁，不定义某次连接的数值参数、性能阈值或正式资格。
 
 项目改名、单器件求解器资格和artifact保留治理不依赖本架构，可以先行。若要新增第二种
@@ -143,6 +143,7 @@ adapter。
 完成判据是减少重复权威和专用编排代码，同时保持现有负结果、运行身份、GUI可检查几何及商业求解器
 证据可追溯；仅创建schema、空目录或自动生成计划不算完成。
 
-截至2026-07-29，上述第1至5步的合同、解析、投影和静态门禁已经完成；旧S2/S3具名活动载荷已按SHA
-冻结为history oracle。第6步真实配对等价复验仍为`BLOCKED/NOT_RUN`，第7步只完成了术语和活动权威
-退出，历史证据及其原artifact身份继续只读保留。该实现进度不改变第6步对迁移验收的阻断作用。
+截至2026-07-29，上述第1至7步已经完成。独立analysis run
+`20260729_195243__analysis__cross__rf-oatof-migration-equivalence`对两个profile给出功能迁移
+`PASS`；旧S2/S3具名活动载荷已按SHA冻结为history oracle并退出活动权威，历史证据及其原artifact
+身份继续只读保留。第8步六、八极杆profile及其相称数值和机械资格尚未开始。

@@ -15,16 +15,7 @@
 
 ## 当前跨项目开放任务
 
-1. **迁移到项目端口 + 公共编排器 + connection profile架构。** 以当前RF四极杆离子光学→单次反射
-   oa-TOF S2/S3为oracle，按
-   [`COMPONENT_CONNECTION_ARCHITECTURE.md`](COMPONENT_CONNECTION_ARCHITECTURE.md)
-   建立provided/required ports、显式连接器、solver-neutral resolved connection、公共composition plan
-   和独立integration证据；当前迁移实例ID固定为
-   `rf_quadrupole_ion_optics_to_single_reflection_oa_tof_mass_analyzer`，所属integration family固定为
-   `rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer`。完成新旧等价复验后才退出旧
-   专用编排。该任务优先于新增第二种RF多极杆离子光学→单次反射oa-TOF连接或复制S2/S3，但不阻断
-   行政项目ID迁移、既有单器件资格或artifact治理。
-2. **把行政改名前artifact受控迁入当前正式项目根。** 目标是让每个项目在
+1. **把行政改名前artifact受控迁入当前正式项目根。** 目标是让每个项目在
    `artifacts/projects/`下只保留当前正式`project_id`目录，同时把旧身份证据封装在该根的
    `archive/`内；当前`legacy_identities`只读根在迁移完成前继续原地保留。实施前必须建立版本化迁移
    manifest、旧绝对路径解析/重定位规则和legacy布局验证，盘点并更新全部活动合同、资格记录、模板与

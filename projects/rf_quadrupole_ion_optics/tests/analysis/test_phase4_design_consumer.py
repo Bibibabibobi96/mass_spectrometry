@@ -91,6 +91,9 @@ class Phase4DesignConsumerTests(unittest.TestCase):
             source = path.read_text(encoding="utf-8")
             self.assertIn("frame_id", source, path.name)
             self.assertIn("clock_epoch_id", source, path.name)
+        analyzer = managed[1].read_text(encoding="utf-8")
+        self.assertIn('geometry["geometry_mm"]["detector_radius"]', analyzer)
+        self.assertNotIn('geometry["geometry_mm"]["physical_detector_radius"]', analyzer)
 
     def test_named_profiles_resolve_from_canonical_project_identity(self) -> None:
         for profile_id in (
