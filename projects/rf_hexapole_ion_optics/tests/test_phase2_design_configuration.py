@@ -464,7 +464,7 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
             / "qualification"
             / "comsol_inherited_boundary_050_field_requalification.json"
         )
-        self.assertEqual(preregistration["status"], "authorized_not_run")
+        self.assertEqual(preregistration["status"], "completed_success")
         required_report = preregistration["required_report"]
         for token in (
             "MESH_GLOBAL_HAS_PROBLEMS=0",
@@ -480,6 +480,36 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
                 "PRIMARY_PARTICLE_CASE_COMPLETE",
                 "CONTROL_PARTICLE_CASE_COMPLETE",
             },
+        )
+        for entry in preregistration["frozen_implementation"]["files"]:
+            path = PROJECT_ROOT.parents[1] / entry["path"]
+            self.assertEqual(
+                hashlib.sha256(path.read_bytes()).hexdigest().upper(),
+                entry["sha256"],
+            )
+        self.assertEqual(
+            preregistration["execution_result"]["observed"]["mesh_global_elements"],
+            434_876,
+        )
+        self.assertTrue(preregistration["execution_result"]["authoritative_level_pass"])
+
+    def test_inherited_boundary_040_preregistration_binds_valid_parent(
+        self,
+    ) -> None:
+        preregistration = load(
+            PROJECT_ROOT
+            / "config"
+            / "qualification"
+            / "comsol_inherited_boundary_040_field_preregistration.json"
+        )
+        self.assertEqual(preregistration["status"], "authorized_not_run")
+        self.assertEqual(
+            preregistration["mesh_contract"]["corridor_maximum_element_size_mm"],
+            0.4,
+        )
+        self.assertEqual(
+            preregistration["mesh_contract"]["parent"]["mesh_global_elements"],
+            434_876,
         )
         for entry in preregistration["frozen_implementation"]["files"]:
             path = PROJECT_ROOT.parents[1] / entry["path"]

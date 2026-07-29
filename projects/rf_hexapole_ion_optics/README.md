@@ -116,7 +116,9 @@
   `POSTHOC_ENGINEERING_OBSERVATION_ONLY`，一次授权耗尽，后续档和粒子仍未授权。
   运行前报告合同门禁修复后，当前另以
   [`0.50 mm资格复验`](config/qualification/comsol_inherited_boundary_050_field_requalification.json)
-  冻结完整`required_report`并授权一次同输入、零重试field-only运行；只有该复验PASS才可进入0.40 mm。
+  已以434,876单元、全部权威网格区无问题、双场和6660行采样完整PASS。当前据其另行预注册
+  [`0.40 mm场臂`](config/qualification/comsol_inherited_boundary_040_field_preregistration.json)；
+  0.32 mm和粒子仍未授权。
   既有三模式baseline的两份
   求解器报告只具有`POSTHOC_DESCRIPTIVE`身份，统一
   比较见[`../../docs/history/20260729__multipole-three-mode-posthoc-n100.md`](../../docs/history/20260729__multipole-three-mode-posthoc-n100.md)。

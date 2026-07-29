@@ -337,8 +337,10 @@ best-effort诊断；API不可用只报告`UNAVAILABLE`，不放宽网格判据�
 不得授予本档预注册PASS；一次授权已耗尽，0.40/0.32 mm和粒子矩阵仍关闭。
 公共runner现已在创建run目录和启动商业工具前验证完整`required_report`。新的
 [`0.50 mm资格复验`](../config/qualification/comsol_inherited_boundary_050_field_requalification.json)
-冻结同一物理/网格输入、修复后runner和完整成功/禁入tokens，只授权一次零重试field-only运行；
-在该复验PASS前，0.40/0.32 mm和粒子矩阵仍关闭。
+以434,876单元、全局/真空/四面体/四个扫掠段`HAS_PROBLEMS=0`、双场和6660行采样完整PASS，
+实测100.227 s与4,939,431,936 bytes进程树峰值。它是首个有效继承边界场点，不是收敛或粒子资格。
+当前[`0.40 mm场臂`](../config/qualification/comsol_inherited_boundary_040_field_preregistration.json)
+已绑定该父点并只授权一次零重试field-only运行；0.32 mm须等待配对场差和剩余单元预算，粒子仍关闭。
 
 共享SIMION模板、GUI复核、`.wgem`绕过和跨机可移植性状态只由
 [`../../../common/multipole/README.md`](../../../common/multipole/README.md)维护；公共机制证据不授予

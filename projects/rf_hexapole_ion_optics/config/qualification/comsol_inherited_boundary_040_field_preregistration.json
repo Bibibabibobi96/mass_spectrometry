@@ -2,17 +2,17 @@
   "schema_version": 2,
   "role": "multipole_comsol_field_solver_isolation_preregistration",
   "project_id": "rf_hexapole_ion_optics",
-  "experiment_id": "hexapole_inherited_boundary_level_050_requalification",
+  "experiment_id": "hexapole_inherited_boundary_level_040",
   "preregistered_before_run": true,
-  "status": "completed_success",
+  "status": "authorized_not_run",
   "authorization": {
     "maximum_commercial_run_count": 1,
     "automatic_retry_count": 0,
-    "planned_run_id": "20260730_081500__analysis__comsol__hex-inherited-050-field-qualification__r01",
-    "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_c1_background_sensitive_050_field_screen",
+    "planned_run_id": "20260730_084500__analysis__comsol__hex-inherited-040-field__r01",
+    "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_c1_background_sensitive_040_field_screen",
     "design_profile_id": "exit_aperture_plate_acceleration",
     "particle_source_profile_id": "family_mother_sample_v1_n100",
-    "comsol_solver_numerics_profile_id": "hybrid_c1_background_sensitive_050_cg_amg_field_screen",
+    "comsol_solver_numerics_profile_id": "hybrid_c1_background_sensitive_040_cg_amg_field_screen",
     "stop_stage": "field_solve",
     "retention_class": "compact"
   },
@@ -20,7 +20,7 @@
     "expected_run_parent_resolved_design_sha256": "C9C3B00A5327825FCB138FB7EEDF2C6F7175497EAEB3CD1EB28A5D995AAC4B6E",
     "runtime_profiles_sha256": "C37EE13C740A47696417822B19C9D8A067D061F58E58E906C786E38E43BFBB63",
     "comsol_solver_numerics_sha256": "A91EB5122F58D072E09FE10D189E42449029430485169D91827EE5598C1D9C02",
-    "engineering_budget_sha256": "7CFEB22B196FA3BC7F48F1AEB82CFB788A5C2DE33CBE2DBBF47AF8C8726CB0E5",
+    "engineering_budget_sha256": "6C09166666CCDA5562F43A32A5E00A45C816DFB7D085F9C78E24AD58DB044682",
     "particle_source_profiles_sha256": "8162081232E0ABCA311DA9E9D10B8BDA78ED24E95C919E8E52B6787DDD1C0B30",
     "design_profiles_sha256": "157EB846B0F3715A300EF9F3D994DD3B05A919C04FBFD83D6B8611A77FAA74B1"
   },
@@ -63,13 +63,18 @@
     "strategy": "physical_segment_hybrid_swept_tetra_v1",
     "refinement_semantics": "domain_inherited_boundary",
     "particle_corridor_radius_mm": 3.6,
-    "corridor_maximum_element_size_mm": 0.5,
+    "corridor_maximum_element_size_mm": 0.4,
     "fixed_core_and_rod_domain_hmax_mm": 0.7,
     "fixed_transition_and_end_domain_hmax_mm": 0.7,
     "fixed_outer_domain_hmax_mm": 1.4,
     "fixed_axial_layers_per_swept_segment": 10,
     "localized_boundary_size_features_expected": 0,
-    "parent_engineering_observation": "projects/rf_hexapole_ion_optics/config/qualification/comsol_inherited_boundary_nonblocking_050_field_preregistration.json"
+    "parent": {
+      "record": "projects/rf_hexapole_ion_optics/config/qualification/comsol_inherited_boundary_050_field_requalification.json",
+      "run_manifest_sha256": "97A3441951475FF1E3DAFD92242DECDCCA23CE0B8B6ED3767E8139B316CABBD9",
+      "field_samples_sha256": "B457536004569A06B89BD4AD509A2A97487E0BB3A139C1388194D5F6A11B31DE",
+      "mesh_global_elements": 434876
+    }
   },
   "diagnostic_contract": {
     "mesh_validity_authority": "mphmeshstats.hasproblems",
@@ -126,53 +131,9 @@
   },
   "decision_policy": {
     "level_success": "Every required report token is present, no forbidden checkpoint is present, both fields and all 6660 samples complete, and every hard resource limit passes.",
-    "next_level_authorization": "Success may authorize one separately preregistered 0.40 mm field arm; no automatic continuation or retry.",
+    "comparison_after_success": "Compare the 0.50 and 0.40 mm common samples by preregistered region-aware field metrics before deciding whether a 0.32 mm arm is both necessary and affordable.",
+    "next_level_authorization": "Success alone does not automatically authorize 0.32 mm; the paired field difference and remaining mesh budget must first be evaluated.",
     "shared_failure_stop": "Any preregistration, authoritative mesh, solver, sampling or hard-budget failure closes this identity and forbids later levels and particles."
   },
-  "execution_result": {
-    "terminal": true,
-    "run_id": "20260730_081500__analysis__comsol__hex-inherited-050-field-qualification__r01",
-    "manifest_status": "success",
-    "result": "PASS_LEVEL_050_FIELD_ONLY",
-    "commercial_run_count_executed": 1,
-    "automatic_retry_executed": 0,
-    "authoritative_level_pass": true,
-    "particle_followup_authorized": false,
-    "next_level_separately_preregistered": true,
-    "observed": {
-      "mesh_global_elements": 434876,
-      "mesh_global_has_problems": false,
-      "mesh_vacuum_has_problems": false,
-      "mesh_tetrahedral_has_problems": false,
-      "mesh_swept_segments_with_problems": 0,
-      "mesh_minimum_quality": 0.1729,
-      "mesh_mean_quality": 0.7284,
-      "differential_field_dof": 835143,
-      "differential_field_iterations": 5,
-      "differential_field_final_residual": 7.2e-7,
-      "static_field_dof": 835143,
-      "static_field_iterations": 6,
-      "static_field_final_residual": 3.9e-7,
-      "field_sample_point_count": 3330,
-      "field_sample_row_count": 6660,
-      "field_sample_validation_status": "PASS"
-    },
-    "resource_observation": {
-      "wall_clock_seconds": 100.227,
-      "peak_process_tree_working_set_bytes": 4939431936,
-      "retained_run_bytes": 3397147
-    },
-    "evidence_sha256": {
-      "run_config": "55D15B28030F96586E5648CD45E003AAAFF52442FD7A94C26878FBA8321A42BA",
-      "run_manifest": "97A3441951475FF1E3DAFD92242DECDCCA23CE0B8B6ED3767E8139B316CABBD9",
-      "summary": "00DB1E44BC1819D935E2BCD7D661DF479C452835194094CFC522F33CC677DB2E",
-      "resource_usage": "576204C41A30844A447E1C55EC4F9CC21E76371C0771E6898186DD35EF254D8B",
-      "field_samples": "B457536004569A06B89BD4AD509A2A97487E0BB3A139C1388194D5F6A11B31DE",
-      "field_sample_validation": "B5F7689878D46C507704BC514F7125A984B839BACB85908489E9C3015345C513",
-      "comsol_report": "B3C6B1C96EBB578AE4E793CF8AA8DD8692CF952A556623582963701E7CF0B18D",
-      "retention_actions": "3968ABAFC4FEE6A734B3F0C9F7BAD6E13E53707745036D355EB29AC17794562B"
-    },
-    "decision": "Accept 0.50 mm as the first valid inherited-boundary field point. This authorizes only a separately preregistered 0.40 mm field arm and does not establish convergence or particle qualification."
-  },
-  "claim_limit": "This record authorizes exactly one 0.50 mm COMSOL field requalification with a complete report contract. It cannot establish convergence, particle transport, cross-solver closure, Candidate, Formal or N=1000 claims."
+  "claim_limit": "This record authorizes exactly one 0.40 mm COMSOL field solve. It cannot establish convergence by itself, particle transport, cross-solver closure, Candidate, Formal or N=1000 claims."
 }
