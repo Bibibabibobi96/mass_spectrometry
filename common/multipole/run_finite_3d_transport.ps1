@@ -403,15 +403,16 @@ function Assert-MultipoleFieldPreregistration {
     }
   }
   $implementationFiles=@($document.frozen_implementation.files)
-  if($implementationFiles.Count-ne 4){
-    throw 'COMSOL field-solve preregistration implementation inventory differs.'
-  }
   $requiredImplementationPaths=@(
     'common/multipole/run_finite_3d_transport.ps1',
     'common/multipole/solve_finite_3d_transport.m',
+    'common/multipole/configure_comsol_segment_hybrid_mesh.m',
     'common/multipole/export_comsol_stationary_field_samples.m',
     'common/multipole/stationary_field_sampling.py'
   )
+  if($implementationFiles.Count-ne$requiredImplementationPaths.Count){
+    throw 'COMSOL field-solve preregistration implementation inventory differs.'
+  }
   $declaredImplementationPaths=@(
     $implementationFiles|ForEach-Object{[string]$_.path}
   )

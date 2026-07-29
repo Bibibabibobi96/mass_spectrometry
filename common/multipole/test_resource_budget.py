@@ -106,6 +106,10 @@ class ResourceBudgetTests(unittest.TestCase):
         self.assertNotIn("$RuntimeProfileId -like '*_mesh_build'", comsol)
         self.assertIn("Assert-MultipoleFieldSolveReport", comsol)
         self.assertIn(
+            "'common/multipole/configure_comsol_segment_hybrid_mesh.m'",
+            comsol,
+        )
+        self.assertIn(
             "$resolvedBudget.PSObject.Properties.Name-notcontains'stop_stage'",
             comsol,
         )
@@ -141,6 +145,8 @@ class ResourceBudgetTests(unittest.TestCase):
         self.assertGreater(budget_gate, solver.index("CHECKPOINT=MESH_COMPLETE"))
         self.assertLess(budget_gate, solver.index("material = model.material.create"))
         self.assertNotIn("fflush(", solver)
+        self.assertIn("MESH_LOCAL_SENSITIVE_REGION_PRESENT=1", solver)
+        self.assertIn("MESH_LOCAL_SENSITIVE_SIZE_FEATURE_PRESENT=%d", solver)
 
     def test_comsol_runner_fails_closed_on_stop_stage_disagreement(self) -> None:
         runner = (

@@ -222,6 +222,36 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
                     f"hybrid_local_sensitive_{size}_cg_amg_field_screen",
                 )
 
+    def test_local_sensitive_050_preregistration_freezes_complete_runner(
+        self,
+    ) -> None:
+        preregistration = load(
+            PROJECT_ROOT
+            / "config"
+            / "qualification"
+            / "comsol_local_sensitive_050_field_preregistration.json"
+        )
+        self.assertEqual(preregistration["status"], "authorized_not_run")
+        self.assertEqual(
+            preregistration["frozen_mesh"]["planned_sequence_mm"],
+            [0.5, 0.4, 0.32],
+        )
+        self.assertEqual(preregistration["frozen_mesh"]["refinement_ratio"], 1.25)
+        frozen_paths = {
+            entry["path"] for entry in preregistration["frozen_implementation"]["files"]
+        }
+        self.assertIn(
+            "common/multipole/configure_comsol_segment_hybrid_mesh.m",
+            frozen_paths,
+        )
+        for entry in preregistration["frozen_implementation"]["files"]:
+            self.assertEqual(
+                entry["sha256"],
+                hashlib.sha256((PROJECT_ROOT.parents[1] / entry["path"]).read_bytes())
+                .hexdigest()
+                .upper(),
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
