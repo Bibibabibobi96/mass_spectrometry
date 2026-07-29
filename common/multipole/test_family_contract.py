@@ -30,6 +30,10 @@ def load_json(path: Path) -> dict:
 
 
 class MultipoleFamilyContractTests(unittest.TestCase):
+    def test_canonical_csv_bytes_are_cross_platform_stable(self) -> None:
+        attributes = (REPO_ROOT / ".gitattributes").read_text(encoding="utf-8")
+        self.assertIn("*.csv text eol=lf", attributes.splitlines())
+
     def test_frozen_family_foundation_gate(self) -> None:
         validate_family_foundation()
 
