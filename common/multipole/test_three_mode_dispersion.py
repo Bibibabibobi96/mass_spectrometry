@@ -213,6 +213,55 @@ class ThreeModeDispersionTests(unittest.TestCase):
             "bootstrap": {"seed": 731, "resamples": 20},
         }
 
+    def _posthoc_binding(self) -> dict:
+        formal = self._binding()
+        manifests = {}
+        for mode_id in MODE_IDS:
+            path = self.root / f"{mode_id}__run_manifest.json"
+            self._write_json(
+                path,
+                {
+                    "schema_version": 1,
+                    "role": "simulation_run_manifest",
+                    "status": "success",
+                    "project": self.project_id,
+                },
+            )
+            manifests[mode_id] = path
+        return {
+            "schema_version": 1,
+            "role": "multipole_three_mode_dispersion_posthoc_binding",
+            "analysis_class": "POSTHOC_DESCRIPTIVE",
+            "project_id": self.project_id,
+            "solver_id": "solver_fixture",
+            "solver_numerics_sha256": formal["solver_numerics_sha256"],
+            "analysis_plan_preregistered_before_run": False,
+            "recorded_after_runs": True,
+            "analysis_particle_count": 100,
+            "retention_class": "compact",
+            "frame_id": formal["frame_id"],
+            "clock_epoch_id": formal["clock_epoch_id"],
+            "handoff_state_event": formal["handoff_state_event"],
+            "geometry": formal["geometry"],
+            "source_family": formal["source_family"],
+            "modes": [
+                {
+                    "mode_id": item["mode_id"],
+                    "geometry_invariant_sha256": item[
+                        "geometry_invariant_sha256"
+                    ],
+                    "particle_source_sha256": item["particle_source_sha256"],
+                    "solver_numerics_sha256": item["solver_numerics_sha256"],
+                    "source_run_manifest": self._reference(
+                        manifests[item["mode_id"]]
+                    ),
+                    "handoff_state": item["handoff_state"],
+                }
+                for item in formal["modes"]
+            ],
+            "claim_limit": "Descriptive point diagnostics only; no qualification.",
+        }
+
     def test_analyzes_all_modes_losses_planes_and_pairs_deterministically(self) -> None:
         first = analyze_experiment(self.binding_path)
         second = analyze_experiment(self.binding_path)
@@ -239,6 +288,24 @@ class ThreeModeDispersionTests(unittest.TestCase):
         ]["paired_bootstrap_95_percent_interval"]
         self.assertEqual(len(interval), 2)
         self.assertLessEqual(interval[0], interval[1])
+
+    def test_posthoc_analysis_omits_bootstrap_and_qualification(self) -> None:
+        self._write_json(self.binding_path, self._posthoc_binding())
+        result = analyze_experiment(self.binding_path)
+        self.assertEqual(result["status"], "POSTHOC_DESCRIPTIVE")
+        self.assertEqual(result["qualification_status"], "NOT_EVALUATED")
+        self.assertNotIn("bootstrap", result)
+        metric = result["paired_comparisons"][
+            "segmented_vs_exit_plate"
+        ]["observations"]["handoff"]["continuous_metrics"]["radius_mm"]
+        self.assertNotIn("paired_bootstrap_95_percent_interval", metric)
+
+    def test_posthoc_binding_cannot_claim_preregistration(self) -> None:
+        binding = self._posthoc_binding()
+        binding["analysis_plan_preregistered_before_run"] = True
+        self._write_json(self.binding_path, binding)
+        with self.assertRaisesRegex(ValueError, "False was expected"):
+            analyze_experiment(self.binding_path)
 
     def test_ballistic_projection_uses_positive_vz_and_advances_tof(self) -> None:
         row = self._row(1, event="canonical_handoff", z_mm=10.0, x_mm=1.0, vx_m_s=10.0)

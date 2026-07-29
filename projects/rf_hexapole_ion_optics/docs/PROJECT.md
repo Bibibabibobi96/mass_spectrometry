@@ -7,8 +7,8 @@
 不在项目内维护第二份档位定义。分段杆轴向加速和出口带孔接口板加速（历史简称“端面加速”）曾分别
 通过COMSOL与SIMION N=100功能复验；这些run早于request/resolved schema v2，现只作为
 [`family_contract.json`](../../../common/multipole/family_contract.json)中的`superseded_evidence`
-保留，不构成当前功能PASS。v2须重新完成双求解器运行后才能恢复功能资格，更不授予网格收敛、
-跨求解器数值等价、机械或Formal资格。
+保留，不构成当前功能PASS。当前v2三模式后来均已完成双求解器N=100 baseline并恢复功能分类；
+这仍不授予连续量网格收敛、跨求解器数值等价、机械或Formal资格。
 
 当前家族实验已用[`../config/design_profiles.json`](../config/design_profiles.json)冻结
 `no_acceleration_full_length`、`segmented_rod_axial_acceleration`和
@@ -68,7 +68,8 @@ Mathieu稳定图。L1/L2/L3迁移前小样本及2 mm连接器数值只保留在
   只发布逐候选metrics，不选择或回写L3几何。未做网格收敛，不允许机械设计、Candidate或Formal声明。
 - L3使用20 mm内半径连续接地圆柱外壳、独立外壳封闭端盖、四段有限圆杆、两块带孔接地接口板和
   两段有限外部区；无加速模式已用公共N=100前缀完成双求解器baseline、空间和时间功能矩阵，
-  连续相空间仍为`INCONCLUSIVE`。两种加速模式尚未恢复当前v2功能资格，也未完成Candidate资格门禁。
+  连续相空间仍为`INCONCLUSIVE`。两种加速模式已恢复当前v2 N=100 baseline功能分类；连续量资格和
+  Candidate门禁仍未完成。
 
 ## 权威入口
 
@@ -134,8 +135,10 @@ baseline已在两求解器保持100/100传输和精确粒子身份；SIMION空�
 `../config/qualification/n100_segmented_rod_axial_acceleration_qualification.json`。
 出口孔板加速身份和资源结论登记在
 `../config/qualification/n100_exit_aperture_plate_acceleration_qualification.json`。
-`three_mode_dispersion_binding`还需要真实solver handoff state路径/SHA，只能在真实run后生成；静态阶段
-不得伪造。没有N=1000真实运行、GUI/CAD同步与formal asset promotion时不得
+2026-07-29已从三个真实baseline run为COMSOL和SIMION分别发布
+`POSTHOC_DESCRIPTIVE` binding和报告；它们固定声明非预注册、不计算bootstrap、不评价资格。正式
+`three_mode_dispersion_binding`仍须由运行前冻结完整统计设置的新run生成，不得把事后报告升级或
+伪造。没有N=1000真实运行、GUI/CAD同步与formal asset promotion时不得
 声明Formal。碰撞冷却与CAD仍为独立后续阶段。轴向加速若
 继续推进，应使用当前typed runtime profile研究各段电势，同时另行研究分段数量、长度/间隙、
 馈电和机械实现；当前uniform四段参数是家族实验机械baseline，不是

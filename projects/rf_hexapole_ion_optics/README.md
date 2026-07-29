@@ -45,7 +45,8 @@
   `INCONCLUSIVE`。分段杆轴向加速N=100 baseline功能已闭合，但COMSOL空间档耗尽工程内存预算。
   出口孔板加速N=100 baseline功能也已闭合，SIMION空间档保持100/100，但COMSOL空间档同样在
   `MESH_COMPLETE`后耗尽工程内存预算。当前没有授权任何商业求解器运行；时间档、N=1000和
-  完整矩阵仍未授权。
+  完整矩阵仍未授权。既有三模式baseline的两份求解器报告只具有`POSTHOC_DESCRIPTIVE`身份，统一
+  比较见[`../../docs/history/20260729__multipole-three-mode-posthoc-n100.md`](../../docs/history/20260729__multipole-three-mode-posthoc-n100.md)。
 - 执行组合：[`config/execution_profiles.json`](config/execution_profiles.json)保留compile-only门禁；
   商业运行可由薄wrapper绑定同一profile，未提供evidence合同即为`UNQUALIFIED`。
 - 运行入口：[`analysis/run_transport.ps1`](analysis/run_transport.ps1)

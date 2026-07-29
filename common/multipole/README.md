@@ -143,12 +143,20 @@ acceptance、effect-resolution和engineering-budget合同的路径与SHA，并�
 遵循[`numerical_qualification.json`](numerical_qualification.json)的工程stop policy，报告
 `INCONCLUSIVE`，不得放宽标准或继续暴力加密。
 
-分析方法和三份项目合同必须在运行前预登记；包含真实handoff文件及其SHA的binding只能在对应run完成
-后发布。binding分别记录`analysis_plan_preregistered_before_run=true`和
+正式统计分析的方法和三份项目合同必须在运行前预登记；包含真实handoff文件及其SHA的正式binding只能
+在对应run完成后发布。正式binding分别记录`analysis_plan_preregistered_before_run=true`和
 `published_after_real_runs=true`，不得把运行后才知道的输出哈希伪称为运行前已冻结。
 四、六、八极杆统一调用[`publish_three_mode_binding.py`](publish_three_mode_binding.py)，传入各项目
 预注册合同及三份同求解器run manifest；项目内不得建立同职责发布器。该入口只把公共17列handoff事件
 映射为跨组件canonical状态、核对三arm共同身份并发布binding，不运行求解器、不实施项目专用坐标变换。
+
+既有run若缺少事前统计设置，只能走独立
+[`three_mode_dispersion_posthoc_binding.schema.json`](../contracts/schemas/three_mode_dispersion_posthoc_binding.schema.json)
+入口。该binding固定写明`analysis_plan_preregistered_before_run=false`、
+`recorded_after_runs=true`和`analysis_class=POSTHOC_DESCRIPTIVE`；分析器只报告传输率、总体点估计、
+共同幸存粒子的配对点差和无场投影，不计算bootstrap区间，不读取事后验收阈值，也不输出等价、
+优化、Candidate或Formal判定。正式与事后入口复用同一发布器、canonical状态和指标内核，项目不得
+复制私有发布器。
 
 三份项目合同分别使用role `multipole_dispersion_acceptance_contract`、
 `multipole_dispersion_effect_resolution_contract`和`multipole_engineering_budget_contract`，并包含

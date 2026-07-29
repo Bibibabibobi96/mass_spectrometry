@@ -8,12 +8,11 @@ run编号、故障链和关闭过程冻结在
 
 ## 当前结论
 
-- 分段杆轴向加速和出口带孔接口板加速（历史简称“端面加速”）曾完成四、六、八极杆COMSOL与SIMION
-  N=100功能复验；这些run早于request/resolved schema v2，现只作为
-  [`family_contract.json`](../../../common/multipole/family_contract.json)中的`superseded_evidence`
-  保留，不构成当前功能PASS。
-- 四极杆具名`explicit`非等长、非等间隙、非线性逐段电势案例也只有v1双求解器N=100历史功能依据。
-  默认参考仍为`uniform`四段，但两者都须按v2重跑后才能恢复功能资格。
+- 当前v2圆柱机械base上的分段杆轴向加速和出口带孔接口板加速均已完成COMSOL与SIMION N=100
+  baseline，两个求解器均为100/100且交接粒子身份一致；功能分类已闭合。两者的COMSOL空间加密均受
+  预登记资源帽约束而`INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`，不构成连续量收敛或数值等价PASS。
+- 四极杆具名`explicit`非等长、非等间隙、非线性逐段电势案例仍只有v1双求解器N=100历史功能依据；
+  当前家族参考只使用`uniform`四段。
 - 同一79.6 mm杆长、4 mm场半径几何承载RF-only传输与RF+DC质量过滤。L1理论通带和双求解器有限
   几何功能响应均已建立，但质量过滤尚未获得网格、数值一致性或分辨能力资格。
 - 面向接口的N=100四极杆工况在COMSOL和SIMION中均100/100传输；出口束斑、发散与均能未满足暂定
@@ -34,7 +33,7 @@ run编号、故障链和关闭过程冻结在
 
 | 对象 | 当前证据 | 当前资格 |
 |---|---|---|
-| 圆柱家族三模式 | 无加速N=100双求解器基线分类一致；其余模式及refined档未运行 | 基线功能分类闭合；完整数值资格仍INCONCLUSIVE |
+| 圆柱家族三模式 | 三个N=100 baseline均双求解器100/100；无加速空间/时间矩阵完成；两加速模式COMSOL空间档资源受限 | 三模式功能分类闭合；连续数值资格仍INCONCLUSIVE |
 | 接口就绪输运 | v1双端100/100及严格相空间比较FAIL | 历史有效负结果；v2重跑待完成 |
 | RF+DC质量过滤 | L0/L1及v1双求解器功能扫描 | v2商业重跑与分辨能力资格待完成 |
 | RF四极杆离子光学→单次反射oa-TOF S2/S3 | v1真实孔/连接器/脉冲累积链贯通 | v2重跑待完成；stage与整机BLOCKED |
@@ -120,8 +119,10 @@ SIMION空间档也保持100/100和精确身份；COMSOL空间档在`MESH_COMPLET
 17.180 GB进程树帽，记为`INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`。结合分段杆替代运行已证明
 继续抬帽会触及系统内存底线，本模式不再重跑。当前无商业求解器授权。功能分类使用已有
 `functional_transport_acceptance.json`；连续相空间与minimum relevant effect仍缺少下游依据，必须保持
-`INCONCLUSIVE`。正式
-three-mode dispersion binding只能在真实三模式handoff文件及SHA产生后发布，禁止占位伪造。
+`INCONCLUSIVE`。现有三个N=100 baseline已在2026-07-29发布两个求解器各一份
+`POSTHOC_DESCRIPTIVE` binding和报告；它们不计算bootstrap、不评价资格，只提供同一观察面上的
+方向性点估计。正式three-mode dispersion binding仍须由运行前冻结完整统计设置的新实验发布，
+禁止把事后报告升级或占位伪造。
 完整运行身份和诊断值登记在
 `../config/family_experiment/n100_no_acceleration_qualification.json`。
 分段杆轴向加速的运行身份、功能结论和资源失败链登记在

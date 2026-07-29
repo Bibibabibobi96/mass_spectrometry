@@ -286,6 +286,7 @@ function New-RfSimionCoreRunConfig {
         rod_z_max_mm = $rodZMaxMm
         rod_exit_plane_mm = $rodExitPlaneMm
         handoff_plane_mm = $handoffPlaneMm
+        census_plane_mm = $censusPlaneMm
         numerical_census_marker_threshold_mm = $numericalCensusMarkerThresholdMm
         census_radius_mm = Get-RfSimionRequiredFiniteNumber -Object $enclosure `
             -Property 'physical_detector_radius_mm' -Name 'resolved census radius' -Positive

@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/three_mode_dispersion_posthoc_binding.schema.json",
+  "title": "Posthoc descriptive three-mode multipole dispersion binding",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "role", "analysis_class", "project_id", "solver_id",
+    "solver_numerics_sha256", "analysis_plan_preregistered_before_run",
+    "recorded_after_runs", "analysis_particle_count", "retention_class",
+    "frame_id", "clock_epoch_id", "handoff_state_event", "geometry",
+    "source_family", "modes", "claim_limit"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "multipole_three_mode_dispersion_posthoc_binding"},
+    "analysis_class": {"const": "POSTHOC_DESCRIPTIVE"},
+    "project_id": {"$ref": "#/$defs/identifier"},
+    "solver_id": {"$ref": "#/$defs/identifier"},
+    "solver_numerics_sha256": {"$ref": "#/$defs/sha256"},
+    "analysis_plan_preregistered_before_run": {"const": false},
+    "recorded_after_runs": {"const": true},
+    "analysis_particle_count": {"enum": [100, 1000]},
+    "retention_class": {"const": "compact"},
+    "frame_id": {"$ref": "#/$defs/identifier"},
+    "clock_epoch_id": {"$ref": "#/$defs/identifier"},
+    "handoff_state_event": {"$ref": "#/$defs/identifier"},
+    "geometry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "geometry_invariant_sha256", "rod_z_min_mm", "rod_z_max_mm",
+        "handoff_plane_z_mm", "near_interface_plane_z_mm"
+      ],
+      "properties": {
+        "geometry_invariant_sha256": {"$ref": "#/$defs/sha256"},
+        "rod_z_min_mm": {"type": "number"},
+        "rod_z_max_mm": {"type": "number"},
+        "handoff_plane_z_mm": {"type": "number"},
+        "near_interface_plane_z_mm": {"type": "number"}
+      }
+    },
+    "source_family": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["n100", "n1000"],
+      "properties": {
+        "n100": {"$ref": "#/$defs/source"},
+        "n1000": {"$ref": "#/$defs/source"}
+      }
+    },
+    "modes": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "mode_id", "geometry_invariant_sha256", "particle_source_sha256",
+          "solver_numerics_sha256", "source_run_manifest", "handoff_state"
+        ],
+        "properties": {
+          "mode_id": {"$ref": "#/$defs/identifier"},
+          "geometry_invariant_sha256": {"$ref": "#/$defs/sha256"},
+          "particle_source_sha256": {"$ref": "#/$defs/sha256"},
+          "solver_numerics_sha256": {"$ref": "#/$defs/sha256"},
+          "source_run_manifest": {"$ref": "#/$defs/source"},
+          "handoff_state": {"$ref": "#/$defs/source"}
+        }
+      }
+    },
+    "claim_limit": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+    },
+    "sha256": {"type": "string", "pattern": "^[A-F0-9]{64}$"},
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    }
+  }
+}

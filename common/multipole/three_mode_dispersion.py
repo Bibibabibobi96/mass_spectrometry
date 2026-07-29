@@ -1,4 +1,4 @@
-"""Analyze preregistered three-mode multipole particle dispersion experiments."""
+"""Analyze formal or explicitly posthoc three-mode multipole dispersion data."""
 
 from __future__ import annotations
 
@@ -107,6 +107,30 @@ def _load_rows(path: Path) -> list[dict[str, Any]]:
                     row[field] = None if value == "" else value
             rows.append(row)
     return rows
+
+
+def _load_source_rows(path: Path) -> list[dict[str, Any]]:
+    with path.open(encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        if reader.fieldnames == csv_columns():
+            return _load_rows(path)
+        required = {"particle_id", "mass_amu", "charge_state"}
+        _require(
+            required.issubset(reader.fieldnames or []),
+            "particle source identity columns differ",
+        )
+        return [
+            {
+                "particle_id": int(row["particle_id"]),
+                "species_id": (
+                    f"ion_{float(row['mass_amu']):g}amu_z{int(row['charge_state'])}"
+                ),
+                "mass_amu": float(row["mass_amu"]),
+                "charge_state": int(row["charge_state"]),
+                "particle_weight": float(row.get("particle_weight") or 1.0),
+            }
+            for row in reader
+        ]
 
 
 def _validate_method_contract(contract: dict[str, Any]) -> None:
@@ -292,6 +316,92 @@ def _validate_binding(
     }
 
 
+def _validate_posthoc_binding(
+    binding: dict[str, Any], binding_path: Path
+) -> dict[str, Any]:
+    try:
+        validate_schema(
+            binding, "three_mode_dispersion_posthoc_binding.schema.json"
+        )
+    except ContractError as error:
+        raise ValueError(f"three-mode posthoc binding: {error}") from error
+    _require(
+        binding.get("analysis_plan_preregistered_before_run") is False,
+        "posthoc binding must state that the analysis plan was not preregistered",
+    )
+    _require(
+        binding.get("recorded_after_runs") is True,
+        "posthoc binding must be recorded after real runs",
+    )
+    _require(
+        binding.get("analysis_class") == "POSTHOC_DESCRIPTIVE",
+        "posthoc binding analysis class differs",
+    )
+    _require(binding.get("retention_class") == "compact", "retention must be compact")
+    count = int(binding["analysis_particle_count"])
+    _require(count in (100, 1000), "analysis particle count must be N=100 or N=1000")
+    geometry = binding["geometry"]
+    handoff_z = float(geometry["handoff_plane_z_mm"])
+    near_z = float(geometry["near_interface_plane_z_mm"])
+    _require(near_z >= handoff_z, "near-interface plane precedes handoff")
+    invariant_sha = geometry["geometry_invariant_sha256"]
+    _require(_is_sha256(invariant_sha), "geometry invariant SHA-256 is invalid")
+    modes = binding["modes"]
+    _require(
+        [item["mode_id"] for item in modes] == list(MODE_IDS),
+        "binding must contain the exact three ordered voltage modes",
+    )
+    _require(
+        all(item["geometry_invariant_sha256"] == invariant_sha for item in modes),
+        "voltage modes do not preserve one geometry invariant",
+    )
+    for item in modes:
+        manifest_reference = item["source_run_manifest"]
+        manifest_path = _resolve_path(binding_path, manifest_reference["path"])
+        _validate_source(
+            manifest_path,
+            manifest_reference["sha256"],
+            f"{item['mode_id']} source run manifest",
+        )
+        manifest = load_json(manifest_path)
+        _require(
+            manifest.get("status") == "success"
+            and manifest.get("project") == binding["project_id"],
+            f"{item['mode_id']} source run manifest identity differs",
+        )
+    source = binding["source_family"]
+    n100_path = _resolve_path(binding_path, source["n100"]["path"])
+    n1000_path = _resolve_path(binding_path, source["n1000"]["path"])
+    validate_prefix_particle_sources(
+        n100_path,
+        n1000_path,
+        expected_n100_sha256=source["n100"]["sha256"],
+        expected_n1000_sha256=source["n1000"]["sha256"],
+    )
+    selected_source_sha256 = (
+        source["n100"]["sha256"] if count == 100 else source["n1000"]["sha256"]
+    )
+    numerics_sha256 = binding["solver_numerics_sha256"]
+    _require(_is_sha256(numerics_sha256), "solver numerics SHA-256 is invalid")
+    _require(
+        all(
+            item["particle_source_sha256"] == selected_source_sha256
+            and item["solver_numerics_sha256"] == numerics_sha256
+            for item in modes
+        ),
+        "voltage modes do not share one selected source and solver numerics identity",
+    )
+    return {
+        "count": count,
+        "handoff_z_mm": handoff_z,
+        "near_interface_offset_mm": near_z - handoff_z,
+        "n100_path": n100_path,
+        "n1000_path": n1000_path,
+        "geometry_invariant_sha256": invariant_sha,
+        "solver_numerics_sha256": numerics_sha256,
+    }
+
+
 def _percentile(values: list[float], probability: float) -> float:
     _require(bool(values), "percentile population is empty")
     ordered = sorted(values)
@@ -399,8 +509,8 @@ def _paired_bootstrap_ci(
 def _paired_summary(
     left: dict[int, dict[str, Any]],
     right: dict[int, dict[str, Any]],
-    resamples: int,
-    seed: int,
+    resamples: int | None,
+    seed: int | None,
     identity: str,
 ) -> dict[str, Any]:
     common_ids = sorted(set(left) & set(right))
@@ -414,16 +524,20 @@ def _paired_summary(
     weights = [left[item]["particle_weight"] for item in common_ids]
     for metric in CONTINUOUS_METRICS:
         differences = [left[item][metric] - right[item][metric] for item in common_ids]
-        metrics[metric] = {
+        metric_result = {
             "mean_difference": _weighted_mean(differences, weights),
             "rms_difference": _weighted_rms(differences, weights),
             "p95_absolute_difference": _weighted_percentile(
                 [abs(value) for value in differences], weights, 0.95
             ),
-            "paired_bootstrap_95_percent_interval": _paired_bootstrap_ci(
-                differences, weights, resamples, seed, f"{identity}:{metric}"
-            ),
         }
+        if resamples is not None and seed is not None:
+            metric_result["paired_bootstrap_95_percent_interval"] = (
+                _paired_bootstrap_ci(
+                    differences, weights, resamples, seed, f"{identity}:{metric}"
+                )
+            )
+        metrics[metric] = metric_result
     return {
         "common_survivor_ids": common_ids,
         "continuous_metrics_status": "AVAILABLE",
@@ -432,15 +546,23 @@ def _paired_summary(
 
 
 def analyze_experiment(binding_path: Path) -> dict[str, Any]:
-    """Validate all frozen inputs and return unqualified three-mode diagnostics."""
+    """Validate all frozen inputs and return bounded three-mode diagnostics."""
     contract = load_json(CONTRACT_PATH)
     _validate_method_contract(contract)
     binding = load_json(binding_path)
-    resolved = _validate_binding(binding, binding_path, contract)
+    is_posthoc = (
+        binding.get("role")
+        == "multipole_three_mode_dispersion_posthoc_binding"
+    )
+    resolved = (
+        _validate_posthoc_binding(binding, binding_path)
+        if is_posthoc
+        else _validate_binding(binding, binding_path, contract)
+    )
     source_path = (
         resolved["n100_path"] if resolved["count"] == 100 else resolved["n1000_path"]
     )
-    source_rows = _load_rows(source_path)
+    source_rows = _load_source_rows(source_path)
     source_ids = [row["particle_id"] for row in source_rows]
     _require(
         source_ids == list(range(1, resolved["count"] + 1)),
@@ -527,7 +649,7 @@ def analyze_experiment(binding_path: Path) -> dict[str, Any]:
         }
 
     comparisons: dict[str, Any] = {}
-    bootstrap = binding["bootstrap"]
+    bootstrap = None if is_posthoc else binding["bootstrap"]
     for comparison in contract["paired_comparisons"]:
         comparison_id = comparison["comparison_id"]
         left_id = comparison["left_mode"]
@@ -536,8 +658,8 @@ def analyze_experiment(binding_path: Path) -> dict[str, Any]:
             observation_id: _paired_summary(
                 projected_by_mode[left_id][observation_id],
                 projected_by_mode[right_id][observation_id],
-                bootstrap["resamples"],
-                bootstrap["seed"],
+                None if bootstrap is None else bootstrap["resamples"],
+                None if bootstrap is None else bootstrap["seed"],
                 f"{comparison_id}:{observation_id}",
             )
             for observation_id in observations
@@ -552,10 +674,18 @@ def analyze_experiment(binding_path: Path) -> dict[str, Any]:
             "observations": observations_result,
         }
 
-    return {
+    result = {
         "schema_version": 1,
-        "role": "multipole_three_mode_dispersion_analysis",
-        "status": "UNQUALIFIED_ANALYSIS_ONLY",
+        "role": (
+            "multipole_three_mode_dispersion_posthoc_analysis"
+            if is_posthoc
+            else "multipole_three_mode_dispersion_analysis"
+        ),
+        "status": (
+            "POSTHOC_DESCRIPTIVE"
+            if is_posthoc
+            else "UNQUALIFIED_ANALYSIS_ONLY"
+        ),
         "project_id": binding["project_id"],
         "solver_id": binding["solver_id"],
         "analysis_particle_count": resolved["count"],
@@ -565,15 +695,24 @@ def analyze_experiment(binding_path: Path) -> dict[str, Any]:
         "retention_class": "compact",
         "mode_results": mode_results,
         "paired_comparisons": comparisons,
-        "bootstrap": {
+        "engineering_stop_policy": contract["engineering_stop_policy"],
+        "claim_limit": (
+            binding["claim_limit"] if is_posthoc else contract["claim_limit"]
+        ),
+    }
+    if bootstrap is not None:
+        result["bootstrap"] = {
             **bootstrap,
             "confidence_level": 0.95,
             "paired_resampling_unit": "particle_id",
-        },
-        "qualification_bindings": binding["qualification_bindings"],
-        "engineering_stop_policy": contract["engineering_stop_policy"],
-        "claim_limit": contract["claim_limit"],
-    }
+        }
+        result["qualification_bindings"] = binding["qualification_bindings"]
+    else:
+        result["uncertainty_interval_status"] = (
+            "NOT_COMPUTED_ANALYSIS_PLAN_NOT_PREREGISTERED"
+        )
+        result["qualification_status"] = "NOT_EVALUATED"
+    return result
 
 
 def main() -> None:

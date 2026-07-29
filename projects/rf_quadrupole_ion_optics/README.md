@@ -45,7 +45,7 @@
 | 科学问题 | COMSOL | SIMION | 比较/判定 |
 |---|---|---|---|
 | 无碰撞部件回归 | `workflows/no_collision_transport/run_comsol.ps1` | `workflows/no_collision_transport/run_simion.ps1` | `workflows/no_collision_transport/compare_cross_solver.ps1` |
-| 圆柱家族三模式实验 | 同一入口选择具名runtime profile | 同一入口选择具名runtime profile | 真实handoff输出生成后发布dispersion binding |
+| 圆柱家族三模式实验 | 同一入口选择具名runtime profile | 同一入口选择具名runtime profile | 正式统计binding须事前完整预注册；既有run只可发布`POSTHOC_DESCRIPTIVE` binding |
 | 接口就绪输运 | `workflows/interface_readiness/run_comsol.ps1` | `workflows/interface_readiness/run_simion.ps1` | `workflows/interface_readiness/compare_cross_solver.ps1` |
 | RF+DC质量过滤 | `workflows/mass_filter_reference/run_comsol.ps1` | `workflows/mass_filter_reference/run_simion.ps1` | `workflows/mass_filter_reference/compare_responses.ps1` |
 | 同求解器数值筛选 | — | — | `workflows/same_solver_convergence/run_comparison.ps1` |

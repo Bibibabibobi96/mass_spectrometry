@@ -4,8 +4,8 @@
 
 2026-07-28起，八极杆三种传输/轴向加速工况已改为一个机械base、一个变量目录、一个优化包络和一个
 typed operating mode registry。三个规范profile由公共编译器在内存中只施加电气模式，机械实体、
-接口、RF和粒子源保持严格相同。该转型已具备静态合同和纯Python回归；本轮没有运行COMSOL、SIMION、
-GUI或CAD，因此不恢复旧run的功能、收敛、跨求解器、Candidate或Formal资格。
+接口、RF和粒子源保持严格相同。当前三个N=100 baseline均已完成COMSOL与SIMION真实运行并以
+100/100及相同交接粒子身份闭合功能分类；连续数值、Candidate和Formal资格仍未闭合。
 
 旧的`baseline_finite_3d`和`exit_aperture_plate_acceleration_reference`保留为兼容alias，分别映射
 `segmented_rod_axial_acceleration`和`exit_aperture_plate_acceleration`。alias不保存机械副本，
@@ -75,10 +75,10 @@ acceptance、effect-resolution、engineering-budget和三份电压合同，但�
 只防止事后挑阈值，不授予资格。项目preregistration不是公共正式binding：只有真实solver run已发布
 三份canonical handoff-state并冻结对应numerics SHA后，才生成一个solver专属正式binding；缺少真实
 状态固定`FAIL_CLOSED_NO_FORMAL_BINDING`。
-现有preregistration没有在这些run之前冻结bootstrap seed与resample数，因而即使三份N=100真实状态
-已经存在，也不得把运行后选择的bootstrap设置伪称为预注册。公共发布器对此固定失败关闭；本批结果
-只保留功能与工程诊断资格。若未来需要统计分散证据，必须先完成包含bootstrap设置的新预注册，再执行
-对应的新run。
+现有preregistration没有在这些run之前冻结bootstrap seed与resample数，因而不得把运行后选择的
+bootstrap设置伪称为预注册。公共正式发布入口对此固定失败关闭。2026-07-29已另行发布COMSOL和
+SIMION两份`POSTHOC_DESCRIPTIVE` binding和报告：只含点估计，不计算bootstrap、不评价资格。若未来
+需要统计分散证据，必须先完成包含bootstrap设置的新预注册，再执行对应的新run。
 
 ## 权威入口
 
@@ -106,7 +106,6 @@ acceptance、effect-resolution、engineering-budget和三份电压合同，但�
 
 1. 为接受尺度绑定真实下游器件的孔径/相空间预算，或建立可审查的项目误差预算；此前只能报告
    `INCONCLUSIVE`。
-2. 完成已登记wall clock与峰值内存预算的无加速N=100时间敏感性pair，再关闭无加速资格记录。
-3. 三种模式各自完成独立COMSOL/SIMION运行、共同幸存粒子配对和跨求解器闭合。
-4. 若推进Candidate/Formal，再建立机械制造基线、GUI/CAD同步和N=1000统计证据。
-5. 碰撞冷却和真实下游连接保持独立workflow，不由无碰撞三模式结果代替。
+2. 若推进连续量数值资格，为资源受限的加速模式建立有依据的新预算或替代离散策略；不得事后抬帽。
+3. 若推进Candidate/Formal，再建立机械制造基线、GUI/CAD同步和N=1000统计证据。
+4. 碰撞冷却和真实下游连接保持独立workflow，不由无碰撞三模式结果代替。

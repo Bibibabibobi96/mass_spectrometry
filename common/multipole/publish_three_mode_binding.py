@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -115,6 +116,75 @@ def _mechanical_signature(resolved: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _content_sha256(value: Any) -> str:
+    payload = json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest().upper()
+
+
+def _verified_mode_runs(
+    manifest_paths: list[Path],
+    *,
+    project_id: str,
+) -> tuple[
+    list[dict[str, Any]],
+    str,
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    set[str],
+    set[str],
+]:
+    if len(manifest_paths) != len(MODE_IDS):
+        raise ValueError("exactly three ordered mode manifests are required")
+    manifests = [load_json(path) for path in manifest_paths]
+    if any(
+        manifest.get("status") != "success"
+        or manifest.get("project") != project_id
+        for manifest in manifests
+    ):
+        raise ValueError("mode manifests must be successful runs from one project")
+    solvers = [solver_name(manifest) for manifest in manifests]
+    if len(set(solvers)) != 1:
+        raise ValueError("three-mode binding requires one solver")
+    run_configs = [_verified_run_config(manifest) for manifest in manifests]
+    if [
+        config["parameters"]["operating_mode_id"] for config in run_configs
+    ] != list(MODE_IDS):
+        raise ValueError("ordered run operating modes differ from the public method")
+    for manifest in manifests:
+        _verified_run_input(manifest, "solver_numerics")
+        _verified_run_input(manifest, "particle_source")
+    resolved_designs = [
+        load_json(_verified_run_input(manifest, "multipole_resolved_design"))
+        for manifest in manifests
+    ]
+    mechanical_signatures = [
+        _mechanical_signature(resolved) for resolved in resolved_designs
+    ]
+    if any(
+        signature != mechanical_signatures[0]
+        for signature in mechanical_signatures[1:]
+    ):
+        raise ValueError("three modes do not share one mechanical geometry")
+    numerics_sha = {
+        manifest["inputs"]["solver_numerics"]["sha256"] for manifest in manifests
+    }
+    particle_sha = {
+        manifest["inputs"]["particle_source"]["sha256"] for manifest in manifests
+    }
+    if len(numerics_sha) != 1 or len(particle_sha) != 1:
+        raise ValueError("three modes must share solver numerics and particle source")
+    return (
+        manifests,
+        solvers[0].lower(),
+        resolved_designs,
+        mechanical_signatures,
+        numerics_sha,
+        particle_sha,
+    )
+
+
 def publish_handoff(
     state_path: Path,
     source_path: Path,
@@ -207,45 +277,14 @@ def publish_binding(
         raise ValueError("analysis plan was not preregistered before the runs")
     if [mode["mode_id"] for mode in preregistration["modes"]] != list(MODE_IDS):
         raise ValueError("preregistered modes differ from the public method")
-    if len(manifest_paths) != len(MODE_IDS):
-        raise ValueError("exactly three ordered mode manifests are required")
-    manifests = [load_json(path) for path in manifest_paths]
-    if any(
-        manifest.get("status") != "success" or manifest.get("project") != project_id
-        for manifest in manifests
-    ):
-        raise ValueError("mode manifests must be successful runs from one project")
-    solvers = [solver_name(manifest) for manifest in manifests]
-    if len(set(solvers)) != 1:
-        raise ValueError("three-mode binding requires one solver")
-    solver_id = solvers[0].lower()
-    run_configs = [_verified_run_config(manifest) for manifest in manifests]
-    if [
-        config["parameters"]["operating_mode_id"] for config in run_configs
-    ] != list(MODE_IDS):
-        raise ValueError("ordered run operating modes differ from the public method")
-    for manifest in manifests:
-        _verified_run_input(manifest, "solver_numerics")
-    resolved_designs = [
-        load_json(_verified_run_input(manifest, "multipole_resolved_design"))
-        for manifest in manifests
-    ]
-    mechanical_signatures = [
-        _mechanical_signature(resolved) for resolved in resolved_designs
-    ]
-    if any(
-        signature != mechanical_signatures[0]
-        for signature in mechanical_signatures[1:]
-    ):
-        raise ValueError("three modes do not share one mechanical geometry")
-    numerics_sha = {
-        manifest["inputs"]["solver_numerics"]["sha256"] for manifest in manifests
-    }
-    particle_sha = {
-        manifest["inputs"]["particle_source"]["sha256"] for manifest in manifests
-    }
-    if len(numerics_sha) != 1 or len(particle_sha) != 1:
-        raise ValueError("three modes must share solver numerics and particle source")
+    (
+        manifests,
+        solver_id,
+        resolved_designs,
+        mechanical_signatures,
+        numerics_sha,
+        particle_sha,
+    ) = _verified_mode_runs(manifest_paths, project_id=project_id)
     source_references = {
         count: _preregistered_reference(repo_root, reference)
         for count, reference in preregistration["source_family"].items()
@@ -264,7 +303,7 @@ def publish_binding(
     handoff_references: list[dict[str, str]] = []
     for mode_id, manifest in zip(MODE_IDS, manifests, strict=True):
         state_path = _verified_run_output(
-            manifest, primary_state_filename(manifest, solvers[0])
+            manifest, primary_state_filename(manifest, solver_id.upper())
         )
         source_path = _verified_run_input(manifest, "particle_source")
         output_path = output_dir / f"{mode_id}__handoff.csv"
@@ -372,25 +411,150 @@ def publish_binding(
     return binding
 
 
+def publish_posthoc_binding(
+    repo_root: Path,
+    project_id: str,
+    manifest_paths: list[Path],
+    output_dir: Path,
+) -> dict[str, Any]:
+    """Publish a descriptive-only binding without creating formal evidence."""
+    (
+        manifests,
+        solver_id,
+        resolved_designs,
+        mechanical_signatures,
+        numerics_sha,
+        particle_sha,
+    ) = _verified_mode_runs(manifest_paths, project_id=project_id)
+    source_paths = {
+        "n100": (
+            repo_root
+            / "common/multipole/sources/rf_multipole_family_mother_sample_v1_100.csv"
+        ).resolve(),
+        "n1000": (
+            repo_root
+            / "common/multipole/sources/rf_multipole_family_mother_sample_v1_1000.csv"
+        ).resolve(),
+    }
+    source_references = {
+        name: _reference(path) for name, path in source_paths.items()
+    }
+    selected_counts = [
+        name
+        for name, reference in source_references.items()
+        if particle_sha == {reference["sha256"]}
+    ]
+    if len(selected_counts) != 1:
+        raise ValueError("run particle source differs from the public family source")
+    selected_count = selected_counts[0]
+    analysis_particle_count = {"n100": 100, "n1000": 1000}[selected_count]
+    resolved = resolved_designs[0]
+    geometry = resolved["geometry_mm"]
+    interfaces = resolved["interfaces_mm"]
+    invariant_sha = _content_sha256(mechanical_signatures[0])
+    output_dir.mkdir(parents=True, exist_ok=True)
+    modes = []
+    for mode_id, manifest, manifest_path in zip(
+        MODE_IDS, manifests, manifest_paths, strict=True
+    ):
+        state_path = _verified_run_output(
+            manifest, primary_state_filename(manifest, solver_id.upper())
+        )
+        source_path = _verified_run_input(manifest, "particle_source")
+        handoff_path = output_dir / f"{mode_id}__handoff.csv"
+        publish_handoff(
+            state_path,
+            source_path,
+            handoff_path,
+            project_id=project_id,
+        )
+        modes.append(
+            {
+                "mode_id": mode_id,
+                "geometry_invariant_sha256": invariant_sha,
+                "particle_source_sha256": source_references[selected_count]["sha256"],
+                "solver_numerics_sha256": next(iter(numerics_sha)),
+                "source_run_manifest": _reference(manifest_path),
+                "handoff_state": _reference(handoff_path),
+            }
+        )
+    binding = {
+        "schema_version": 1,
+        "role": "multipole_three_mode_dispersion_posthoc_binding",
+        "analysis_class": "POSTHOC_DESCRIPTIVE",
+        "project_id": project_id,
+        "solver_id": solver_id,
+        "solver_numerics_sha256": next(iter(numerics_sha)),
+        "analysis_plan_preregistered_before_run": False,
+        "recorded_after_runs": True,
+        "analysis_particle_count": analysis_particle_count,
+        "retention_class": "compact",
+        "frame_id": "multipole_exit_frame",
+        "clock_epoch_id": "instrument_trigger",
+        "handoff_state_event": "canonical_handoff",
+        "geometry": {
+            "geometry_invariant_sha256": invariant_sha,
+            "rod_z_min_mm": geometry["rod_z_min"],
+            "rod_z_max_mm": geometry["rod_z_max"],
+            "handoff_plane_z_mm": interfaces["exit"]["handoff_plane_z_mm"],
+            "near_interface_plane_z_mm": interfaces["exit"]["census_plane_z_mm"],
+        },
+        "source_family": source_references,
+        "modes": modes,
+        "claim_limit": (
+            "POSTHOC_DESCRIPTIVE reports point diagnostics from selected existing "
+            "runs only. It computes no uncertainty interval, acceptance decision, "
+            "numerical-equivalence decision, optimization claim, or Candidate/Formal "
+            "qualification."
+        ),
+    }
+    validate_schema(
+        binding, "three_mode_dispersion_posthoc_binding.schema.json"
+    )
+    (output_dir / "binding.json").write_text(
+        json.dumps(binding, indent=2) + "\n", encoding="utf-8"
+    )
+    return binding
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo-root", required=True, type=Path)
-    parser.add_argument("--preregistration", required=True, type=Path)
+    parser.add_argument(
+        "--analysis-class",
+        choices=("formal", "posthoc"),
+        default="formal",
+    )
+    parser.add_argument("--preregistration", type=Path)
+    parser.add_argument("--project-id")
     parser.add_argument("--no-acceleration-manifest", required=True, type=Path)
     parser.add_argument("--segmented-manifest", required=True, type=Path)
     parser.add_argument("--exit-plate-manifest", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
     args = parser.parse_args()
-    binding = publish_binding(
-        args.repo_root.resolve(),
-        args.preregistration.resolve(),
-        [
-            args.no_acceleration_manifest.resolve(),
-            args.segmented_manifest.resolve(),
-            args.exit_plate_manifest.resolve(),
-        ],
-        args.output_dir.resolve(),
-    )
+    manifest_paths = [
+        args.no_acceleration_manifest.resolve(),
+        args.segmented_manifest.resolve(),
+        args.exit_plate_manifest.resolve(),
+    ]
+    if args.analysis_class == "formal":
+        if args.preregistration is None:
+            parser.error("--preregistration is required for formal analysis")
+        binding = publish_binding(
+            args.repo_root.resolve(),
+            args.preregistration.resolve(),
+            manifest_paths,
+            args.output_dir.resolve(),
+        )
+    else:
+        if not args.project_id:
+            parser.error("--project-id is required for posthoc analysis")
+        binding = publish_posthoc_binding(
+            args.repo_root.resolve(),
+            args.project_id,
+            manifest_paths,
+            args.output_dir.resolve(),
+        )
     print(
         "MULTIPOLE_THREE_MODE_BINDING=PASS "
         f"PROJECT={binding['project_id']} SOLVER={binding['solver_id']}"
