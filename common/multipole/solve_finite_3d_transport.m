@@ -389,12 +389,12 @@ try
         end
     end
     mesh.run;
-    emit_mesh_problem_diagnostics(fid, mesh);
     meshInfo = mphmeshstats(model, 'mesh1');
     vacuumMeshInfo = mphmeshstats(model, 'mesh1', 'selection', 'sel_vac');
     meshDiagnostics = emit_mesh_postbuild_diagnostics(fid, model, ...
         meshInfo, vacuumMeshInfo, segmentHybridMesh, hybridSelections, ...
         meshPrebuildDiagnostics);
+    emit_mesh_problem_diagnostics(fid, mesh);
     assert(~meshInfo.isempty && ~meshInfo.hasproblems && ...
         ~vacuumMeshInfo.isempty && ~vacuumMeshInfo.hasproblems && ...
         sum(vacuumMeshInfo.numelem) > 0, 'Finite 3D vacuum mesh failed.');
@@ -983,24 +983,29 @@ emit_selection_region(fid, 'MESH_TETRAHEDRAL', diagnostics.tetrahedral);
 end
 
 function emit_mesh_problem_diagnostics(fid, mesh)
-featureTags = cell(mesh.feature.tags());
-problemCount = 0;
-for featureIndex = 1:numel(featureTags)
-    feature = mesh.feature(featureTags{featureIndex});
-    if ~feature.hasProblems()
-        continue
+try
+    featureTags = cell(mesh.feature.tags());
+    problemCount = 0;
+    for featureIndex = 1:numel(featureTags)
+        feature = mesh.feature(featureTags{featureIndex});
+        problemTags = cell(feature.problems());
+        for problemIndex = 1:numel(problemTags)
+            problemCount = problemCount + 1;
+            message = char(feature.problem(problemTags{problemIndex}).message());
+            message = regexprep(message, '[\r\n]+', ' ');
+            fprintf(fid, 'MESH_PROBLEM_%d_FEATURE=%s\n', problemCount, ...
+                upper(featureTags{featureIndex}));
+            fprintf(fid, 'MESH_PROBLEM_%d_MESSAGE=%s\n', problemCount, message);
+        end
     end
-    problemTags = cell(feature.problems());
-    for problemIndex = 1:numel(problemTags)
-        problemCount = problemCount + 1;
-        message = char(feature.problem(problemTags{problemIndex}).message());
-        message = regexprep(message, '[\r\n]+', ' ');
-        fprintf(fid, 'MESH_PROBLEM_%d_FEATURE=%s\n', problemCount, ...
-            upper(featureTags{featureIndex}));
-        fprintf(fid, 'MESH_PROBLEM_%d_MESSAGE=%s\n', problemCount, message);
-    end
+    fprintf(fid, 'MESH_PROBLEM_DIAGNOSTIC_STATUS=AVAILABLE\n');
+    fprintf(fid, 'MESH_PROBLEM_COUNT=%d\n', problemCount);
+catch exception
+    message = regexprep(exception.message, '[\r\n]+', ' ');
+    fprintf(fid, 'MESH_PROBLEM_DIAGNOSTIC_STATUS=UNAVAILABLE\n');
+    fprintf(fid, 'MESH_PROBLEM_DIAGNOSTIC_ERROR_ID=%s\n', exception.identifier);
+    fprintf(fid, 'MESH_PROBLEM_DIAGNOSTIC_ERROR_MESSAGE=%s\n', message);
 end
-fprintf(fid, 'MESH_PROBLEM_COUNT=%d\n', problemCount);
 end
 
 function diagnostics = emit_mesh_postbuild_diagnostics(fid, model, ...

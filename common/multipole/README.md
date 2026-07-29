@@ -239,8 +239,10 @@ plan、生成器、COMSOL exporter及准确点数；schema v1只记录已关闭�
 
 局部敏感区mesh必须遵守COMSOL尺寸继承：域级细网格自然传递到相邻边界，不得再在同一操作中为这些
 边界声明更粗Size；扫掠操作也不把边界级Size作为独立控制轴。公共helper因此只在非局部模式保留显式
-杆边界Size，局部模式由`outer/core/sensitive`域级Size和轴向Distribution控制。建网后runner逐feature
-输出`MESH_PROBLEM_*`消息，并继续把任何warning或error视为`hasproblems`，不得因单元数较低而放行。
+杆边界Size，局部模式由`outer/core/sensitive`域级Size和轴向Distribution控制。建网后runner以
+`mphmeshstats.hasproblems`作为网格有效性的唯一机器判据；逐feature的`MESH_PROBLEM_*`消息只是统计
+之后的best-effort诊断。当前COMSOL客户端不暴露详细问题API时，runner输出`UNAVAILABLE`但不阻断
+核心统计，也不因此放宽或替代`hasproblems`判据。
 
 ## 单PA GUI模板登记
 

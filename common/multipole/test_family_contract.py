@@ -264,6 +264,13 @@ class MultipoleFamilyContractTests(unittest.TestCase):
         self.assertNotIn("add_size(mesh, 'szRodBnd'", hybrid)
         self.assertIn("emit_mesh_problem_diagnostics(fid, mesh)", shared_solver)
         self.assertIn("MESH_PROBLEM_%d_MESSAGE=%s", shared_solver)
+        self.assertNotIn("feature.hasProblems()", shared_solver)
+        self.assertIn("MESH_PROBLEM_DIAGNOSTIC_STATUS=AVAILABLE", shared_solver)
+        self.assertIn("MESH_PROBLEM_DIAGNOSTIC_STATUS=UNAVAILABLE", shared_solver)
+        self.assertLess(
+            shared_solver.index("meshInfo = mphmeshstats(model, 'mesh1')"),
+            shared_solver.index("emit_mesh_problem_diagnostics(fid, mesh)"),
+        )
 
     def test_comsol_run_freezes_executed_matlab_sources(self) -> None:
         runner = (REPO_ROOT / "common/multipole/run_finite_3d_transport.ps1").read_text(encoding="utf-8")
