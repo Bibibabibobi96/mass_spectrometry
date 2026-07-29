@@ -318,7 +318,7 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
             / "qualification"
             / "comsol_c1_background_sensitive_050_field_preregistration.json"
         )
-        self.assertEqual(preregistration["status"], "authorized_not_run")
+        self.assertEqual(preregistration["status"], "completed_success")
         self.assertEqual(
             preregistration["authorization"]["maximum_commercial_run_count"], 1
         )
@@ -335,6 +335,31 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
         self.assertEqual(
             mesh["predecessor_failed_strategy"]["mesh_global_elements"],
             1_019_364,
+        )
+        self.assertEqual(
+            preregistration["execution_result"]["observed"]["mesh_global_elements"],
+            685_215,
+        )
+
+    def test_c1_background_040_preregistration_binds_successful_parent(
+        self,
+    ) -> None:
+        preregistration = load(
+            PROJECT_ROOT
+            / "config"
+            / "qualification"
+            / "comsol_c1_background_sensitive_040_field_preregistration.json"
+        )
+        self.assertEqual(preregistration["status"], "authorized_not_run")
+        self.assertEqual(
+            preregistration["authorization"]["automatic_retry_count"], 0
+        )
+        mesh = preregistration["frozen_mesh"]
+        self.assertEqual(mesh["sensitive_region"]["maximum_element_size_mm"], 0.4)
+        self.assertEqual(mesh["parent"]["mesh_global_elements"], 685_215)
+        self.assertEqual(
+            mesh["parent"]["field_samples_sha256"],
+            "924A83C94D39AB20564D86BDCAFC253661AB7B7526EFEDCA6BBE658D68E15C13",
         )
 
 

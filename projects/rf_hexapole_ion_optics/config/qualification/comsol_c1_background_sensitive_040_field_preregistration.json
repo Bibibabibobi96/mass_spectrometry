@@ -2,17 +2,17 @@
   "schema_version": 2,
   "role": "multipole_comsol_field_solver_isolation_preregistration",
   "project_id": "rf_hexapole_ion_optics",
-  "experiment_id": "hexapole_c1_background_sensitive_field_sequence_v1_level_050",
+  "experiment_id": "hexapole_c1_background_sensitive_field_sequence_v1_level_040",
   "preregistered_before_run": true,
-  "status": "completed_success",
+  "status": "authorized_not_run",
   "authorization": {
     "maximum_commercial_run_count": 1,
     "automatic_retry_count": 0,
-    "planned_run_id": "20260730_111000__analysis__comsol__hex-c1bg-sensitive-050-field__r01",
-    "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_c1_background_sensitive_050_field_screen",
+    "planned_run_id": "20260730_114000__analysis__comsol__hex-c1bg-sensitive-040-field__r01",
+    "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_c1_background_sensitive_040_field_screen",
     "design_profile_id": "exit_aperture_plate_acceleration",
     "particle_source_profile_id": "family_mother_sample_v1_n100",
-    "comsol_solver_numerics_profile_id": "hybrid_c1_background_sensitive_050_cg_amg_field_screen",
+    "comsol_solver_numerics_profile_id": "hybrid_c1_background_sensitive_040_cg_amg_field_screen",
     "stop_stage": "field_solve",
     "retention_class": "compact"
   },
@@ -20,7 +20,7 @@
     "expected_run_parent_resolved_design_sha256": "C9C3B00A5327825FCB138FB7EEDF2C6F7175497EAEB3CD1EB28A5D995AAC4B6E",
     "runtime_profiles_sha256": "C37EE13C740A47696417822B19C9D8A067D061F58E58E906C786E38E43BFBB63",
     "comsol_solver_numerics_sha256": "A91EB5122F58D072E09FE10D189E42449029430485169D91827EE5598C1D9C02",
-    "engineering_budget_sha256": "8BD398308369C03412AEE76DB6E93C3D5053D1263E53F35C3FA435DB638402FF",
+    "engineering_budget_sha256": "7C33DF4CE31A0D342ACE832BE871EBE46FDE01C99BB6A0FB0BFD70543E6EC405",
     "particle_source_profiles_sha256": "8162081232E0ABCA311DA9E9D10B8BDA78ED24E95C919E8E52B6787DDD1C0B30",
     "design_profiles_sha256": "157EB846B0F3715A300EF9F3D994DD3B05A919C04FBFD83D6B8611A77FAA74B1"
   },
@@ -61,10 +61,6 @@
   },
   "frozen_mesh": {
     "strategy": "physical_segment_hybrid_swept_tetra_v1",
-    "physical_segment_count": 4,
-    "segment_end_buffer_mm": 1.0,
-    "swept_length_per_segment_mm": 17.6,
-    "core_radius_mm": 8.5,
     "radial_core_and_rod_hmax_mm": 0.7,
     "axial_layers_per_swept_segment": 10,
     "transition_and_end_tetra_hmax_mm": 0.7,
@@ -72,19 +68,14 @@
     "minimum_element_size_mm": 0.028,
     "sensitive_region": {
       "particle_corridor_radius_mm": 3.6,
-      "maximum_element_size_mm": 0.5
+      "maximum_element_size_mm": 0.4
     },
     "single_refinement_axis": "sensitive_region.maximum_element_size_mm",
-    "planned_sequence_mm": [
-      0.5,
-      0.4,
-      0.32
-    ],
-    "refinement_ratio": 1.25,
-    "predecessor_failed_strategy": {
-      "record": "projects/rf_hexapole_ion_optics/config/qualification/comsol_local_sensitive_050_field_preregistration.json",
-      "mesh_global_elements": 1019364,
-      "change": "coarsen_insensitive_background_only"
+    "parent": {
+      "record": "projects/rf_hexapole_ion_optics/config/qualification/comsol_c1_background_sensitive_050_field_preregistration.json",
+      "run_id": "20260730_111000__analysis__comsol__hex-c1bg-sensitive-050-field__r01",
+      "mesh_global_elements": 685215,
+      "field_samples_sha256": "924A83C94D39AB20564D86BDCAFC253661AB7B7526EFEDCA6BBE658D68E15C13"
     }
   },
   "frozen_solver": {
@@ -138,52 +129,11 @@
     ]
   },
   "decision_policy": {
-    "level_success": "Both fields and all 6660 finite V/E rows complete inside all hard limits with nonempty local selections.",
-    "next_level_authorization": "Success may authorize a separately preregistered 0.40 mm level; no automatic continuation or retry.",
-    "shared_failure_stop": "Any mesh, solver, sampling or hard-budget failure stops the field sequence and forbids particle runs.",
-    "three_level_gate": "Only decreasing regular-region differences across both adjacent pairs may authorize particles; singular and near-zero-reference regions remain diagnostic.",
+    "level_success": "Both fields and all finite V/E rows complete inside every hard limit.",
+    "next_level_authorization": "Success plus a decreasing 0.50-to-0.40 regular-region difference may authorize a separately preregistered 0.32 mm arm.",
+    "shared_failure_stop": "Any mesh, solver, sampling or hard-budget failure stops the sequence and forbids particles.",
     "failure_result": "INCONCLUSIVE_MESH_STRATEGY_CHANGE_REQUIRED"
   },
-  "execution_result": {
-    "terminal": true,
-    "run_id": "20260730_111000__analysis__comsol__hex-c1bg-sensitive-050-field__r01",
-    "manifest_status": "success",
-    "result": "C1_BACKGROUND_SENSITIVE_050_FIELD_ARM_PASS",
-    "commercial_run_count_executed": 1,
-    "automatic_retry_executed": 0,
-    "particle_followup_authorized": false,
-    "observed": {
-      "mesh_global_elements": 685215,
-      "mesh_global_min_quality": 0.152,
-      "mesh_global_mean_quality": 0.6996,
-      "mesh_vacuum_elements": 545277,
-      "mesh_tetrahedral_elements": 416397,
-      "mesh_swept_segment_elements": [
-        32200,
-        32200,
-        32240,
-        32240
-      ],
-      "differential_field_dof": 1173721,
-      "differential_field_iterations": 5,
-      "differential_field_final_residual": 1.1e-6,
-      "static_field_dof": 1173721,
-      "static_field_iterations": 6,
-      "static_field_final_residual": 2.9e-7,
-      "field_sample_point_count": 3330,
-      "field_sample_row_count": 6660,
-      "retained_run_bytes": 3392690
-    },
-    "evidence_sha256": {
-      "run_config": "9952534BFCBA05A89A8F2E2271FE14C97C6999E0F6CAFECF3570A4FD797D35AB",
-      "run_manifest": "B0127F26F5318B9D01AB25DF003CE75BC7C72E9952A94A34923176F826E6ADAB",
-      "summary": "CB5786C671F621CC3CA8E90234D9BC982B04E6897CD962761D05AFBB1C2AD765",
-      "resource_usage": "9D0D8217587A5BD2BF512C4339FFB2E7AA5C1E676A62E5B340B31D6119BC85A1",
-      "comsol_report": "3B5DB8C9021EABF92D2B8EA0E03967BA3DAB6483133FA93B51113AE3FD857687",
-      "field_samples": "924A83C94D39AB20564D86BDCAFC253661AB7B7526EFEDCA6BBE658D68E15C13",
-      "field_sample_validation": "B5F7689878D46C507704BC514F7125A984B839BACB85908489E9C3015345C513"
-    },
-    "decision": "The separately preregistered 0.40 mm field arm may proceed. Particle runs remain forbidden until the three-level field gate passes."
-  },
-  "claim_limit": "This record authorizes only the C1-background 0.50 mm field arm. It cannot establish convergence, particle transport, cross-solver closure, Candidate, Formal or N=1000 claims."
+  "execution_result": null,
+  "claim_limit": "This record authorizes only the C1-background 0.40 mm field arm. It cannot establish convergence, particle transport, cross-solver closure, Candidate, Formal or N=1000 claims."
 }
