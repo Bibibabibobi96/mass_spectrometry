@@ -47,13 +47,13 @@
 - CAD入口：[`cad/ms_export_oatof_to_solidworks.m`](cad/ms_export_oatof_to_solidworks.m)
 - 项目门禁：`verify_project.ps1 -Level Static|Candidate|Formal`
 
-迁移前的RF四极杆离子光学→单次反射oa-TOF S2/S3物理连接、共享时钟、漏斗和恢复条件仍由
-[`../rf_quadrupole_ion_optics/docs/PROJECT.md`](../rf_quadrupole_ion_optics/docs/PROJECT.md)
-维护；本项目已发布从resolved合同派生的required port，描述对上游粒子、入口面、公共电位、场边界和
-时钟的接受要求，但不声称当前闭合Formal几何已有物理侧孔。跨器件连接器与联合证据仍须迁入
+迁移前的RF四极杆离子光学→单次反射oa-TOF S2/S3具名合同、共享时钟和漏斗已经冻结为只读oracle；
+活动实现由
 [`../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md`](../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md)
-规定的`rf_quadrupole_ion_optics_to_single_reflection_oa_tof_mass_analyzer`迁移实例；新旧等价复验前
-不替换当前链。
+规定的项目端口、公共解析器和
+`rf_quadrupole_ion_optics_to_single_reflection_oa_tof_mass_analyzer`实例承载。本项目required port描述
+对上游粒子、入口面、公共电位、场边界和时钟的接受要求，但不声称当前闭合Formal几何已有物理侧孔。
+新入口真实复验和oracle等价判定完成前，迁移保持`equivalence_pending`，本项目Formal分析器继续只读。
 
 ## 目录职责
 

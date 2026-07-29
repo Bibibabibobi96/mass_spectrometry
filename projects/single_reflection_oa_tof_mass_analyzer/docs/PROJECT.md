@@ -84,12 +84,13 @@ Candidate唯一公开入口为`../workflows/design_candidate/run_candidate.py`�
 
 ## 开放任务
 
-1. **RF接口架构迁移。** 本项目已按根
+1. **RF接口迁移等价。** 本项目已按根
    [`COMPONENT_CONNECTION_ARCHITECTURE.md`](../../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md)
-   发布`oatof_accelerator_entry` required port并完成项目内静态校验；尚须把跨器件连接器和联合证据迁入
-   `rf_quadrupole_ion_optics_to_single_reflection_oa_tof_mass_analyzer`实例，并完成新旧等价复验。
-   迁移前的连接器、共享时钟、阶段指标和恢复条件仍以RF项目PROJECT为当前实现权威；等价复验通过前
-   本项目保持Formal分析器只读。
+   发布`oatof_accelerator_entry` required port；跨器件连接profile、resolved connection、composition
+   plan和adapter也已进入
+   `rf_quadrupole_ion_optics_to_single_reflection_oa_tof_mass_analyzer`实例并通过静态校验。尚须以
+   冻结N=100源重跑0 mm与1 mm profile并和只读oracle完成等价判定；通过前迁移不验收，本项目保持
+   Formal分析器只读。
 2. **复现交付。** 按需从自包含Formal目录生成不含日志和收敛参考的ZIP及独立SHA；ZIP不是第二资产权威。
 3. **按需求启动的物理候选。** 轴对称圆形加速器、真实丝网、制造/装配误差预算和二维轴对称混合
    COMSOL模型均暂缓；任何一项启动都须重新闭合理论、三维场、传输、网格、跨求解器与CAD。

@@ -152,10 +152,11 @@ component-state写出与即时校验统一调用公共合同入口，不再维�
 
 ## 开放任务
 
-1. 按根[`COMPONENT_CONNECTION_ARCHITECTURE.md`](../../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md)
-   把当前pre_pulse_interface_transport/pulse_capture/analyzer_transport迁移为项目端口、公共编排器和connection profile，实例ID固定为
-   `rf_quadrupole_ion_optics_to_single_reflection_oa_tof_mass_analyzer`；新旧等价复验通过前保留
-   当前活动链，不在本项目复制六/八极杆连接。
+1. 完成根[`COMPONENT_CONNECTION_ARCHITECTURE.md`](../../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md)
+   规定的迁移等价验收。项目端口、公共编排器、connection profile及
+   `pre_pulse_interface_transport/pulse_capture/analyzer_transport` adapter已经实现，迁移前S2/S3具名
+   合同只作为history oracle。尚须补齐legacy source显式绑定、compact retention和工程预算后，以同一
+   N=100源重跑0 mm与1 mm profile并完成等价判定；通过前不得声明迁移闭合或复制六/八极杆连接。
 2. 若需声明束斑、发散、TOF、能量或逐粒子相空间等价，先为目标效应预注册独立误差预算，再完成
    相应连续量数值资格；不得从当前传输分类PASS外推。
 3. 为RF-only、RF+DC及三模式轴向实验分别建立不互相替代的Candidate证据包；不得以功能run晋升。

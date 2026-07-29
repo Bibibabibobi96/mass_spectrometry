@@ -2,14 +2,16 @@
 
 ## 状态与适用边界
 
-本文冻结跨项目器件连接的目标架构，当前状态为`approved_migration_target`。它不立即取代现有
-RF四极杆离子光学→单次反射oa-TOF S2/S3活动链；旧链在新架构完成同输入、同几何、同事件和同结果
-等价复验前仍是活动实现。
+本文冻结跨项目器件连接的目标架构。RF四极杆离子光学→单次反射oa-TOF实例的端口、公共解析器、
+composition plan、connection profile和integration adapter已经实现，当前状态为
+`migration_implemented_equivalence_pending`。迁移前S2/S3具名合同和输入已经冻结为只读oracle，不再是
+活动机器权威；新入口尚未完成同输入、同几何、同事件和同结果的真实等价复验，因此迁移尚未验收，
+也不得据此声明阶段或整机资格。
 本文定义职责和迁移门禁，不定义某次连接的数值参数、性能阈值或正式资格。
 
 项目改名、单器件求解器资格和artifact保留治理不依赖本架构，可以先行。若要新增第二种
 RF多极杆离子光学→单次反射oa-TOF
-连接、复制现有S2/S3或重写连接器联合模型，应先实施本文架构，避免继续积累项目间特例。
+连接、复制已归档S2/S3语义或重写连接器联合模型，应复用本文架构，避免继续积累项目间特例。
 
 ## 决策
 
@@ -120,8 +122,9 @@ integration family
 脉冲机制或耦合模式不同时增加具名connection profile；只有出现新拓扑时才增加geometry和solver
 adapter。
 
-现有四极杆S2 spatial registration、S3 canonical state/clock和单次反射oa-TOF handoff adapter是迁移oracle，
-不是未来公共API。迁移完成前不得删除、改写历史证据或把新框架的静态PASS解释为联合物理资格。
+已归档的四极杆S2 spatial registration、S3 canonical state/clock和单次反射oa-TOF handoff adapter是
+迁移oracle，不是未来公共API。迁移等价完成前不得删除、改写历史证据或把新框架的静态PASS解释为
+联合物理资格。
 
 ## 迁移顺序与完成门禁
 
@@ -139,3 +142,7 @@ adapter。
 
 完成判据是减少重复权威和专用编排代码，同时保持现有负结果、运行身份、GUI可检查几何及商业求解器
 证据可追溯；仅创建schema、空目录或自动生成计划不算完成。
+
+截至2026-07-29，上述第1至5步的合同、解析、投影和静态门禁已经完成；旧S2/S3具名活动载荷已按SHA
+冻结为history oracle。第6步真实配对等价复验仍为`BLOCKED/NOT_RUN`，第7步只完成了术语和活动权威
+退出，历史证据及其原artifact身份继续只读保留。该实现进度不改变第6步对迁移验收的阻断作用。
