@@ -105,6 +105,7 @@
   [`V2 0.50 mm首臂`](config/qualification/comsol_v2_corridor_only_050_field_preregistration.json)
   已执行且将单元数降到494,663，但COMSOL把四个扫掠段和四面体区全部标为`HAS_PROBLEMS=1`，
   因此公共门禁在场求解前停止。一次授权已耗尽且未重试；更少单元不能替代有效网格或收敛证据。
+  V3代码已移除局部模式下被更细域继承覆盖的边界Size，并增加逐feature问题消息；尚未预登记或运行。
   既有三模式baseline的两份
   求解器报告只具有`POSTHOC_DESCRIPTIVE`身份，统一
   比较见[`../../docs/history/20260729__multipole-three-mode-posthoc-n100.md`](../../docs/history/20260729__multipole-three-mode-posthoc-n100.md)。

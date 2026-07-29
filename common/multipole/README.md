@@ -237,6 +237,11 @@ plan、生成器、COMSOL exporter及准确点数；schema v1只记录已关闭�
 `maximum_mesh_cells`，runner要求该token恰好出现一次、值为正整数且不超过硬帽；缺报告、缺token、
 非法值或超帽均在success manifest前失败关闭，其中超帽归类为`resource_budget_exceeded`。
 
+局部敏感区mesh必须遵守COMSOL尺寸继承：域级细网格自然传递到相邻边界，不得再在同一操作中为这些
+边界声明更粗Size；扫掠操作也不把边界级Size作为独立控制轴。公共helper因此只在非局部模式保留显式
+杆边界Size，局部模式由`outer/core/sensitive`域级Size和轴向Distribution控制。建网后runner逐feature
+输出`MESH_PROBLEM_*`消息，并继续把任何warning或error视为`hasproblems`，不得因单元数较低而放行。
+
 ## 单PA GUI模板登记
 
 四、六、八极杆共用一个不含器件物理的单PA Workbench容器，沿用oa-TOF已经验证的

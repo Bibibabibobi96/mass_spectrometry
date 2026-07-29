@@ -320,6 +320,11 @@ V2沿用同一个`physical_segment_hybrid_swept_tetra_v1`公共实现和既有�
 零重试成立；0.40/0.32 mm、粒子和资格跟进继续关闭。该证据只说明正交解耦具有降低单元数的潜力，
 不说明V2网格有效。下一策略必须先解决扫掠截面与杆边界尺寸的兼容性，再以新身份预登记。
 
+V3公共实现据COMSOL尺寸继承规则移除了局部模式下的扫掠杆边界、四面体杆边界和完整端板边界Size；
+域级`outer/core/sensitive`尺寸会自然传递到相邻边界，非局部旧profile仍保留原边界Size。runner同时
+新增逐mesh feature的问题消息输出，以区分warning与真正无法建网。该代码尚未获得商业运行证据，
+不得据此改写V2终态或开放后续矩阵。
+
 共享SIMION模板、GUI复核、`.wgem`绕过和跨机可移植性状态只由
 [`../../../common/multipole/README.md`](../../../common/multipole/README.md)维护；公共机制证据不授予
 本项目Candidate或Formal资格。

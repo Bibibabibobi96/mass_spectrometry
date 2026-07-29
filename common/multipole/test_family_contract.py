@@ -255,12 +255,15 @@ class MultipoleFamilyContractTests(unittest.TestCase):
             "sprintf('szRod%d'",
             "'szTetRod'",
             "strategy.radial_core_and_rod_hmax_mm",
-            "strategy.transition_and_end_tetra_hmax_mm",
             "minimum_element_size_mm, 2",
         ):
             self.assertIn(token, hybrid)
+        self.assertGreaterEqual(hybrid.count("if ~localized"), 2)
+        self.assertNotIn("'szTetInterface'", hybrid)
         self.assertNotIn("localized_size(", hybrid)
         self.assertNotIn("add_size(mesh, 'szRodBnd'", hybrid)
+        self.assertIn("emit_mesh_problem_diagnostics(fid, mesh)", shared_solver)
+        self.assertIn("MESH_PROBLEM_%d_MESSAGE=%s", shared_solver)
 
     def test_comsol_run_freezes_executed_matlab_sources(self) -> None:
         runner = (REPO_ROOT / "common/multipole/run_finite_3d_transport.ps1").read_text(encoding="utf-8")

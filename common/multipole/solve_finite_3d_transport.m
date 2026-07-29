@@ -389,6 +389,7 @@ try
         end
     end
     mesh.run;
+    emit_mesh_problem_diagnostics(fid, mesh);
     meshInfo = mphmeshstats(model, 'mesh1');
     vacuumMeshInfo = mphmeshstats(model, 'mesh1', 'selection', 'sel_vac');
     meshDiagnostics = emit_mesh_postbuild_diagnostics(fid, model, ...
@@ -905,8 +906,7 @@ rodBoundarySizeCount = double(any(strcmp(tetrahedralFeatureTags, 'szTetRod')));
 localized = isfield(hybridSelections, 'tetrahedral_sensitive');
 if localized
     sensitiveSizeCount = double(any(strcmp( ...
-        tetrahedralFeatureTags, 'szTetSensitive'))) + ...
-        double(any(strcmp(tetrahedralFeatureTags, 'szTetInterface')));
+        tetrahedralFeatureTags, 'szTetSensitive')));
     sensitiveDomains = selection_entities( ...
         comp, hybridSelections.tetrahedral_sensitive);
 else
@@ -917,7 +917,8 @@ diagnostics.rod_boundary = struct( ...
     'entity_count', numel(selection_entities(comp, hybridSelections.rod_boundary)), ...
     'feature_present', false, ...
     'size_feature_count', 0, ...
-    'expected_size_feature_count', numel(hybridSelections.sweep) + 1);
+    'expected_size_feature_count', ...
+        (~localized) * (numel(hybridSelections.sweep) + 1));
 diagnostics.swept = cell(1, numel(hybridSelections.sweep));
 sweptDomains = [];
 for index = 1:numel(hybridSelections.sweep)
@@ -945,10 +946,11 @@ if localized
         'interface_boundary_entity_count', numel(selection_entities( ...
             comp, hybridSelections.interface_boundary)), ...
         'size_feature_count', sensitiveSizeCount, ...
-        'expected_size_feature_count', numel(hybridSelections.sweep) + 2, ...
+        'expected_size_feature_count', numel(hybridSelections.sweep) + 1, ...
         'feature_present', sensitiveSizeCount == ...
-            numel(hybridSelections.sweep) + 2);
+            numel(hybridSelections.sweep) + 1);
 end
+
 tetrahedralDomains = diagnostics.tetrahedral.entities;
 vacuumDomains = diagnostics.vacuum.entities;
 diagnostics.tetrahedral.overlap_domain_count = numel(intersect(sweptDomains, tetrahedralDomains));
@@ -978,6 +980,27 @@ fprintf(fid, 'MESH_SWEPT_TETRAHEDRAL_OVERLAP_DOMAIN_COUNT=%d\n', diagnostics.tet
 fprintf(fid, 'MESH_VACUUM_UNCOVERED_DOMAIN_COUNT=%d\n', diagnostics.tetrahedral.uncovered_vacuum_domain_count);
 fprintf(fid, 'MESH_NONVACUUM_PARTITION_DOMAIN_COUNT=%d\n', diagnostics.tetrahedral.extra_domain_count);
 emit_selection_region(fid, 'MESH_TETRAHEDRAL', diagnostics.tetrahedral);
+end
+
+function emit_mesh_problem_diagnostics(fid, mesh)
+featureTags = cell(mesh.feature.tags());
+problemCount = 0;
+for featureIndex = 1:numel(featureTags)
+    feature = mesh.feature(featureTags{featureIndex});
+    if ~feature.hasProblems()
+        continue
+    end
+    problemTags = cell(feature.problems());
+    for problemIndex = 1:numel(problemTags)
+        problemCount = problemCount + 1;
+        message = char(feature.problem(problemTags{problemIndex}).message());
+        message = regexprep(message, '[\r\n]+', ' ');
+        fprintf(fid, 'MESH_PROBLEM_%d_FEATURE=%s\n', problemCount, ...
+            upper(featureTags{featureIndex}));
+        fprintf(fid, 'MESH_PROBLEM_%d_MESSAGE=%s\n', problemCount, message);
+    end
+end
+fprintf(fid, 'MESH_PROBLEM_COUNT=%d\n', problemCount);
 end
 
 function diagnostics = emit_mesh_postbuild_diagnostics(fid, model, ...

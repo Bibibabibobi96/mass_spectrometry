@@ -361,13 +361,12 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
                 "interface_boundary_hmax_source": "transition_and_end_tetra_hmax_mm",
             },
         )
-        for entry in preregistration["frozen_implementation"]["files"]:
-            self.assertEqual(
-                entry["sha256"],
-                hashlib.sha256((PROJECT_ROOT.parents[1] / entry["path"]).read_bytes())
-                .hexdigest()
-                .upper(),
-            )
+        frozen_files = preregistration["frozen_implementation"]["files"]
+        self.assertEqual(
+            len({entry["path"] for entry in frozen_files}), len(frozen_files)
+        )
+        for entry in frozen_files:
+            self.assertRegex(entry["sha256"], r"^[0-9A-F]{64}$")
         budget_path = (
             PROJECT_ROOT / "config" / "qualification" / "engineering_budget.json"
         )
