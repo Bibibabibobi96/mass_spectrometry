@@ -161,6 +161,16 @@
       "consumers": ["pre_pulse_interface_transport", "pulse_capture"]
     },
     {
+      "id": "rf_project_descriptor",
+      "provider_scope": "project",
+      "provider_project": "rf_quadrupole_ion_optics",
+      "provider_repo_path": "projects/rf_quadrupole_ion_optics",
+      "source_repo_path": "projects/rf_quadrupole_ion_optics/config/project.json",
+      "frozen_filename": "runtime_snapshot/projects/rf_quadrupole_ion_optics/config/project.json",
+      "run_input_name": "rf_project_descriptor",
+      "consumers": ["pre_pulse_interface_transport"]
+    },
+    {
       "id": "rf_dependency_contract_snapshot",
       "provider_scope": "project",
       "provider_project": "rf_quadrupole_ion_optics",
@@ -298,6 +308,36 @@
       "source_repo_path": "common/contracts/file_identity.py",
       "frozen_filename": "runtime_snapshot/common/contracts/file_identity.py",
       "run_input_name": "common_file_identity",
+      "consumers": ["pre_pulse_interface_transport", "pulse_capture", "analyzer_transport"]
+    },
+    {
+      "id": "common_artifact_retention",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/artifact_retention.py",
+      "frozen_filename": "runtime_snapshot/common/contracts/artifact_retention.py",
+      "run_input_name": "common_artifact_retention",
+      "consumers": ["pre_pulse_interface_transport", "pulse_capture", "analyzer_transport"]
+    },
+    {
+      "id": "common_artifact_retention_policy",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/artifact_retention.json",
+      "frozen_filename": "runtime_snapshot/common/contracts/artifact_retention.json",
+      "run_input_name": "common_artifact_retention_policy",
+      "consumers": ["pre_pulse_interface_transport", "pulse_capture", "analyzer_transport"]
+    },
+    {
+      "id": "common_resource_budget_support",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/multipole/resource_budget_support.ps1",
+      "frozen_filename": "runtime_snapshot/common/multipole/resource_budget_support.ps1",
+      "run_input_name": "common_resource_budget_support",
       "consumers": ["pre_pulse_interface_transport", "pulse_capture", "analyzer_transport"]
     },
     {

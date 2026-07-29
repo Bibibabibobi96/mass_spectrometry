@@ -3,6 +3,7 @@ param(
   [switch]$Particles,
   [Parameter(Mandatory)][string]$ConnectionProfileId,
   [Parameter(Mandatory)][string]$ResolvedConnection,
+  [Parameter(Mandatory)][string]$ResolvedEngineeringBudget,
   [string]$PythonExe = ''
 )
 
@@ -121,8 +122,10 @@ $summaryRole = if ($Particles) { 'rf_to_oatof_pre_pulse_interface_transport_n100
   else { 'rf_to_oatof_pre_pulse_no_pulse_field_summary' }
 $software = @('COMSOL 6.4','MATLAB R2025b','Python 3.11')
 $package = New-RfRunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
-  -RunId $RunId -Project 'rf_quadrupole_ion_optics' -Mode $mode -Software $software
+  -RunId $RunId -Project 'rf_quadrupole_ion_optics' -Mode $mode -Software $software `
+  -RetentionContractEnabled -RetentionClass compact
 $manifestToolRoot = $repoRoot
+$resourceBudgetExceeded = $false
 $python = $package.python
 $inputDir = $package.input_dir
 $resultDir = $package.result_dir
@@ -138,7 +141,7 @@ try {
   $snapshotRfProject = Join-Path $snapshotRoot 'projects\rf_quadrupole_ion_optics'
   $contract = Join-Path $inputDir 'rf_to_oatof_pre_pulse_passive_connector.json'
   $oatofHandoff = Join-Path $snapshotRfProject 'analysis\build_oatof_handoff.py'
-  $resolvedConnection = Join-Path $inputDir 'resolved_connection.json'
+  $frozenResolvedConnection = Join-Path $inputDir 'resolved_connection.json'
   $particleInput = $null
   $particleOutput = $null
   Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'solve_pre_pulse_interface_transport_field.m') -Destination $task
@@ -147,11 +150,11 @@ try {
   Copy-Item -LiteralPath $PSCommandPath -Destination $runner
   Copy-Item -LiteralPath $supportSource -Destination $support
   Copy-Item -LiteralPath $contractSource -Destination $contract
-  Copy-Item -LiteralPath $ResolvedConnection -Destination $resolvedConnection
+  Copy-Item -LiteralPath $ResolvedConnection -Destination $frozenResolvedConnection
   $resolvedConnectionSha256 = (
     Get-FileHash -LiteralPath $ResolvedConnection -Algorithm SHA256
   ).Hash
-  if ((Get-FileHash -LiteralPath $resolvedConnection -Algorithm SHA256).Hash -ne
+  if ((Get-FileHash -LiteralPath $frozenResolvedConnection -Algorithm SHA256).Hash -ne
       $resolvedConnectionSha256) {
     throw 'Resolved connection changed while frozen into the PrePulse run.'
   }
@@ -230,12 +233,36 @@ try {
   $oaBuilder = $dependencyPaths['oatof_accelerator_geometry_builder']
   $frozenManifestVerifier = $dependencySnapshotPaths['common_verify_run_manifest']
   $frozenComsolRunner = $dependencySnapshotPaths['common_comsol_runner']
+  $frozenResourceBudgetSupport =
+    $dependencySnapshotPaths['common_resource_budget_support']
+  if (-not (Test-Path -LiteralPath $frozenResourceBudgetSupport -PathType Leaf)) {
+    throw 'PrePulse frozen resource-budget support is missing.'
+  }
+  . $frozenResourceBudgetSupport
+  $budgetBinding = Initialize-RfIntegrationStageBudget `
+    -ResolvedBudget $ResolvedEngineeringBudget -InputDir $inputDir `
+    -ExpectedIntegrationId `
+      'rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer' `
+    -ExpectedConnectionProfileId $ConnectionProfileId `
+    -StageId 'pre_pulse_interface_transport' -Solver comsol
+  $resourceUsage = Join-Path $logDir 'resource_usage.json'
 
   $contractDocument = Get-Content -LiteralPath $contract -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($Particles) {
     $candidate = $contractDocument.particle_runtime
-    $sourceRun = Join-Path (Join-Path $artifactRoot 'runs') ([string]$candidate.source_run_id)
-    $sourceManifestOriginal = Join-Path $sourceRun 'run_manifest.json'
+    $binding = $candidate.source_artifact_binding
+    $descriptorDependencyId = [string]$binding.project_descriptor_dependency_id
+    if (-not $dependencySnapshotPaths.ContainsKey($descriptorDependencyId)) {
+      throw 'PrePulse source artifact binding has no frozen project descriptor.'
+    }
+    $sourceIdentity = Resolve-RfDeclaredLegacyRunDirectory `
+      -WorkspaceRoot $workspaceRoot `
+      -ProjectDescriptor $dependencySnapshotPaths[$descriptorDependencyId] `
+      -MappingId ([string]$binding.legacy_mapping_id) `
+      -RecordedProjectId ([string]$binding.recorded_project_id) `
+      -RunId ([string]$candidate.source_run_id)
+    $sourceRun = $sourceIdentity.run_dir
+    $sourceManifestOriginal = $sourceIdentity.manifest_path
     $sourceEventsOriginal = Join-Path $sourceRun ([string]$candidate.source_event_path)
     $sourceMetadataOriginal = Join-Path $sourceRun ([string]$candidate.source_metadata_path)
     Invoke-PrePulseSnapshotPython -Python $python -SnapshotRoot $snapshotRoot -Arguments @(
@@ -271,15 +298,19 @@ try {
     Invoke-PrePulseSnapshotPython -Python $python -SnapshotRoot $snapshotRoot -Arguments @(
       '-m','projects.rf_quadrupole_ion_optics.analysis.build_oatof_handoff',
       '--convert','--contract',$handoffContract,
-      '--resolved-connection',$resolvedConnection,
+      '--resolved-connection',$frozenResolvedConnection,
       '--source-csv',$sourceEvents,'--source-manifest',$sourceManifest,
+      '--source-manifest-project-id',$sourceIdentity.recorded_project_id,
       '--canonical-output',$particleInput,'--ion-output',$particleIon,
       '--row-map-output',$particleRowMap,'--metadata-output',$particleMetadata,
       '--solver-clock','instrument_time'
     ) -AdditionalEnvironment @{RF_HANDOFF_PROJECT_ROOT=$handoffProjectRoot} `
       -FailureMessage 'PrePulse canonical particle-source conversion failed.'
-    $sourceIdentity = [ordered]@{
+    $sourceParticleIdentity = [ordered]@{
       run_id = [string]$candidate.source_run_id
+      legacy_mapping_id = $sourceIdentity.mapping_id
+      recorded_project_id = $sourceIdentity.recorded_project_id
+      artifact_root = $sourceIdentity.artifact_root
       manifest_sha256 = (Get-FileHash -LiteralPath $sourceManifestOriginal -Algorithm SHA256).Hash
       event_sha256 = (Get-FileHash -LiteralPath $sourceEventsOriginal -Algorithm SHA256).Hash
       metadata_sha256 = (Get-FileHash -LiteralPath $sourceMetadataOriginal -Algorithm SHA256).Hash
@@ -290,7 +321,7 @@ try {
   $samples = Join-Path $resultDir 'pre_pulse_no_pulse_field_samples.csv'
   $report = Join-Path $logDir 'comsol_pre_pulse_no_pulse_field.txt'
   $runConfiguration = [ordered]@{
-    schema_version = 1
+    schema_version = 2
     run_id = $RunId
     project = 'rf_quadrupole_ion_optics'
     mode = $mode
@@ -306,14 +337,16 @@ try {
       dependency_contract = $dependencyContract
       shared_physical_port_joint_geometry = $sharedJoint
       rf_resolved_geometry = $rfResolved
-      resolved_connection = $resolvedConnection
+      resolved_connection = $frozenResolvedConnection
       oatof_baseline = $oaBaseline
       oatof_accelerator_builder = $oaBuilder
       particle_source = $particleInput
+      resolved_integration_engineering_budget = $budgetBinding.frozen_budget
+      resolved_stage_resource_budget = $budgetBinding.stage_budget
     }
     dependency_identities = $dependencyIdentities
     local_snapshot_identities = $localSnapshotIdentities
-    source_particle_identity = if ($Particles) { $sourceIdentity } else { $null }
+    source_particle_identity = if ($Particles) { $sourceParticleIdentity } else { $null }
     parameters = [ordered]@{
       connector_gap_mm = $gapMm
       connection_profile_id = $ConnectionProfileId
@@ -324,6 +357,11 @@ try {
       particle_tracking = [bool]$Particles
       model_saved = $false
       mesh_convergence_claimed = $false
+    }
+    artifact_retention = [ordered]@{
+      policy_version = 1
+      class = 'compact'
+      reason = $null
     }
     formal_gate_passed = $false
   }
@@ -367,13 +405,15 @@ try {
     'RF_OATOF_PrePulse_PARTICLE_INPUT','RF_OATOF_PrePulse_PARTICLE_OUTPUT'
   )
   $oldEnvironment = Save-RfEnvironment -Names $environmentNames
+  $comsolWrapperStdout = Join-Path $logDir 'comsol_wrapper.stdout.log'
+  $comsolWrapperStderr = Join-Path $logDir 'comsol_wrapper.stderr.log'
   try {
     $env:RF_OATOF_PrePulse_FIELD_METRICS = $metrics
     $env:RF_OATOF_PrePulse_FIELD_SAMPLES = $samples
     $env:RF_OATOF_PrePulse_CONTRACT = $contract
     $env:RF_OATOF_PrePulse_SHARED_JOINT_CONTRACT = $sharedJoint
     $env:RF_OATOF_PrePulse_RF_RESOLVED = $rfResolved
-    $env:RF_OATOF_RESOLVED_CONNECTION = $resolvedConnection
+    $env:RF_OATOF_RESOLVED_CONNECTION = $frozenResolvedConnection
     $env:RF_OATOF_RESOLVED_CONNECTION_SHA256 = $resolvedConnectionSha256
     $env:RF_OATOF_PrePulse_OA_BASELINE = $oaBaseline
     $env:RF_OATOF_PrePulse_OA_COMSOL_DIR = $inputDir
@@ -381,15 +421,32 @@ try {
       $env:RF_OATOF_PrePulse_PARTICLE_INPUT = $particleInput
       $env:RF_OATOF_PrePulse_PARTICLE_OUTPUT = $particleOutput
     }
-    & $frozenComsolRunner `
-      -TaskScript $task -ReportPath $report
-    if ($LASTEXITCODE -ne 0) { throw 'COMSOL PrePulse no-pulse field task failed.' }
+    $powerShellExe = (Get-Process -Id $PID).Path
+    $processResult = Invoke-ResourceBudgetedProcess `
+      -ResolvedBudgetPath $budgetBinding.stage_budget `
+      -RunDir $package.run_dir -UsagePath $resourceUsage `
+      -FilePath $powerShellExe -WorkingDirectory $snapshotRoot `
+      -RedirectStandardOutput $comsolWrapperStdout `
+      -RedirectStandardError $comsolWrapperStderr `
+      -ArgumentList @(
+        '-NoLogo','-NoProfile','-NonInteractive','-File',$frozenComsolRunner,
+        '-TaskScript',$task,'-ReportPath',$report,'-StartupAttempts','1'
+      )
+    if ($processResult.resource_budget_exceeded) {
+      $resourceBudgetExceeded = $true
+      throw "COMSOL PrePulse resource budget exceeded: $($processResult.limit_name)"
+    }
+    if ($processResult.exit_code -ne 0) {
+      throw 'COMSOL PrePulse no-pulse field task failed.'
+    }
   } finally {
     Restore-RfEnvironment -Names $environmentNames -Snapshot $oldEnvironment
   }
 
   $fieldMetrics = Get-Content -LiteralPath $metrics -Raw -Encoding UTF8 | ConvertFrom-Json
-  $expectedResolvedSha256 = (Get-FileHash -LiteralPath $resolvedConnection -Algorithm SHA256).Hash
+  $expectedResolvedSha256 = (
+    Get-FileHash -LiteralPath $frozenResolvedConnection -Algorithm SHA256
+  ).Hash
   if ($fieldMetrics.status -ne 'SOLVED' -or -not [bool]$fieldMetrics.all_probe_values_finite -or
       [string]$fieldMetrics.frame_id -ne
         [string]$resolvedConnectionDocument.port_geometry.downstream.coordinate_frame.frame_id -or
@@ -426,8 +483,23 @@ try {
     pre_pulse_stage_passed = $false
     formal_gate_passed = $false
   })
-  $outputs = @($metrics,$samples,$report,$package.summary)
+  $outputs = @(
+    $metrics,$samples,$report,$comsolWrapperStdout,$comsolWrapperStderr,
+    $resourceUsage,$package.summary
+  )
   if ($Particles) { $outputs += $particleOutput }
+  $retentionActions = Apply-RunArtifactRetention -Python $python `
+    -RepoRoot $manifestToolRoot -RunConfig $package.run_config
+  $outputs = @($outputs | Where-Object {
+    Test-Path -LiteralPath $_ -PathType Leaf
+  })
+  $outputs += $retentionActions
+  if (-not (Complete-ResourceUsage `
+      -ResolvedBudgetPath $budgetBinding.stage_budget `
+      -RunDir $package.run_dir -UsagePath $resourceUsage)) {
+    $resourceBudgetExceeded = $true
+    throw 'COMSOL PrePulse compact final retained-byte budget exceeded.'
+  }
   Write-RfFrozenRunManifest -Python $python -FrozenRepoRoot $manifestToolRoot `
     -RunConfig $package.run_config `
     -Status success -Software $software -Outputs $outputs
@@ -436,6 +508,11 @@ try {
   Complete-RfFrozenFailedRun -Python $python -FrozenRepoRoot $manifestToolRoot `
     -RunConfig $package.run_config `
     -Summary $package.summary -SummaryRole $summaryRole `
-    -Reason $_.Exception.Message -Software $software
+    -Reason $_.Exception.Message -Software $software `
+    -Status $(if ($resourceBudgetExceeded) { 'interrupted' } else { 'failed' }) `
+    -FailureClass $(if ($resourceBudgetExceeded) {
+      'resource_budget_exceeded'
+    } else { '' }) `
+    -ResourceUsagePath $(if ($resourceBudgetExceeded) { $resourceUsage } else { '' })
   throw
 }

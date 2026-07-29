@@ -26,6 +26,11 @@
   "particle_runtime": {
     "source_particles": 100,
     "source_run_id": "20260722_193000__sim__comsol__rf-input5ev-handoff__n100__r02",
+    "source_artifact_binding": {
+      "project_descriptor_dependency_id": "rf_project_descriptor",
+      "legacy_mapping_id": "rf_quad_rename_20260728",
+      "recorded_project_id": "rf_quadrupole_collision_cooling"
+    },
     "source_event_path": "results/rf_hybrid_mesh_n100_events.csv",
     "source_metadata_path": "inputs/particle_source_metadata.json",
     "clock_epoch_id": "instrument_clock_epoch.v1",

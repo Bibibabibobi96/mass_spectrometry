@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import validate_schema
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.prepare_migration import (
     prepare_migration,
@@ -228,7 +229,18 @@ class IntegrationProfileContractTests(unittest.TestCase):
                     )
                     self.assertEqual(
                         set(arguments),
-                        {"workflow_entrypoint", "adapter_registry_sha256"},
+                        {
+                            "workflow_entrypoint",
+                            "adapter_registry_sha256",
+                            "resolved_budget_filename",
+                            "resolved_budget_sha256",
+                        },
+                    )
+                    budget_path = output / arguments["resolved_budget_filename"]
+                    self.assertTrue(budget_path.is_file())
+                    self.assertEqual(
+                        file_sha256(budget_path),
+                        arguments["resolved_budget_sha256"],
                     )
 
     def test_prepare_only_runs_both_profiles_without_solver_execution(self) -> None:
@@ -283,6 +295,8 @@ class IntegrationProfileContractTests(unittest.TestCase):
             common_execute,
         )
         self.assertIn("& $workflowEntrypoint", adapter)
+        self.assertIn("publish_integration_run", adapter)
+        self.assertIn("-ResolvedEngineeringBudget $resolvedBudgetPath", adapter)
         self.assertNotIn("Start-Job", adapter)
         self.assertNotIn("ForEach-Object -Parallel", adapter)
 

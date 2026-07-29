@@ -55,7 +55,10 @@ class PulseCaptureChainAuditTests(unittest.TestCase):
         validation = text.index(
             "'-m','common.contracts.component_particle_state',"
         )
-        comsol = text.index("& $frozenComsolRunner")
+        comsol = text.index(
+            "Invoke-ResourceBudgetedProcess `\n"
+            "      -ResolvedBudgetPath $budgetBinding.stage_budget"
+        )
         adapter_call = text.index(
             "$localExitAdapter,'--source',$particleInput"
         )
@@ -69,6 +72,7 @@ class PulseCaptureChainAuditTests(unittest.TestCase):
         self.assertLess(comsol, adapter_call)
         self.assertLess(adapter_call, audit_call)
         self.assertLess(audit_call, snapshot_call)
+        self.assertIn("'-File',$frozenComsolRunner", text[comsol:])
         self.assertIn("$manifestToolRoot = $snapshotRoot", text)
         self.assertIn(
             "$frozenManifestVerifier = "

@@ -246,7 +246,10 @@ class AnalyzerTransportTests(unittest.TestCase):
         program = runner.index(
             "$frozenProgramBuilder,'--formal',$frozenFormalLua"
         )
-        simion = runner.index("Start-Process -FilePath $SimionExe")
+        simion = runner.index(
+            "Invoke-ResourceBudgetedProcess `\n"
+            "    -ResolvedBudgetPath $budgetBinding.stage_budget"
+        )
         diagnostics = runner.index(
             "$frozenSolverDiagnostics,'analyze-simion-log'"
         )
@@ -264,6 +267,7 @@ class AnalyzerTransportTests(unittest.TestCase):
         self.assertLess(program, simion)
         self.assertLess(simion, diagnostics)
         self.assertLess(diagnostics, analyzer)
+        self.assertIn("-FilePath $SimionExe", runner[simion:])
 
         for dependency_id in (
             "rf_dependency_contract_snapshot",
@@ -319,7 +323,8 @@ class AnalyzerTransportTests(unittest.TestCase):
             runner,
         )
         self.assertNotIn("& $package.python $frozen", runner)
-        self.assertNotIn("New-RfRunPackage", runner)
+        self.assertEqual(runner.count("New-RfRunPackage"), 1)
+        self.assertIn("-RetentionContractEnabled -RetentionClass compact", runner)
         self.assertNotIn(
             "Complete-RfFailedRun -Python", runner
         )

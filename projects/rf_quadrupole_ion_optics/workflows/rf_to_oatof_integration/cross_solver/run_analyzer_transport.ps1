@@ -2,6 +2,7 @@
 param(
   [Parameter(Mandatory)][string]$SourceRunId,
   [Parameter(Mandatory)][string]$RunId,
+  [Parameter(Mandatory)][string]$ResolvedEngineeringBudget,
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$PythonExe = ''
 )
@@ -135,53 +136,15 @@ function Get-AnalyzerTransportFormalAssetRecords {
 }
 
 $software = @('COMSOL 6.4','SIMION 2020','Python 3.11')
-if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
-  throw "Run Python environment is missing: $python"
-}
-if ([string]::IsNullOrWhiteSpace($RunId) -or
-    [IO.Path]::IsPathRooted($RunId) -or
-    $RunId.IndexOfAny([char[]]@('\','/')) -ge 0 -or
-    $RunId -in @('.','..')) {
-  throw 'RunId must be a direct-child artifact name.'
-}
+$package = New-RfRunPackage -Python $python -RepoRoot $repoRoot `
+  -ArtifactRoot $artifactRoot -RunId $RunId `
+  -Project 'rf_quadrupole_ion_optics' `
+  -Mode 'rf_to_oatof_analyzer_transport_n100' -Software $software `
+  -RetentionContractEnabled -RetentionClass compact `
+  -AdditionalDirectories @('simion')
+$python = $package.python
 $runsRoot = Join-Path $artifactRoot 'runs'
-$runDir = [IO.Path]::GetFullPath((Join-Path $runsRoot $RunId))
-$fullRunsRoot = [IO.Path]::GetFullPath($runsRoot)
-if (-not (Split-Path -Parent $runDir).Equals(
-    $fullRunsRoot, [StringComparison]::OrdinalIgnoreCase)) {
-  throw 'RunId escapes the project run directory.'
-}
-if (Test-Path -LiteralPath $runDir) {
-  throw "Run already exists: $runDir"
-}
-$package = [pscustomobject]@{
-  python = $python
-  run_dir = $runDir
-  input_dir = Join-Path $runDir 'inputs'
-  result_dir = Join-Path $runDir 'results'
-  log_dir = Join-Path $runDir 'logs'
-  run_config = Join-Path $runDir 'run_config.json'
-  summary = Join-Path $runDir 'summary.json'
-}
-New-Item -ItemType Directory -Force -Path @(
-  $package.input_dir,$package.result_dir,$package.log_dir
-) | Out-Null
-Write-RfJson -Path $package.run_config -Value ([ordered]@{
-  schema_version = 1
-  run_id = $RunId
-  project = 'rf_quadrupole_ion_optics'
-  mode = 'rf_to_oatof_analyzer_transport_n100'
-  project_root = $repoRoot
-  inputs = [ordered]@{}
-  parameters = [ordered]@{ lifecycle_stage = 'bootstrap_before_snapshot' }
-  formal_gate_passed = $false
-})
-Write-RfJson -Path $package.summary -Value ([ordered]@{
-  schema_version = 1
-  role = 'rf_to_oatof_analyzer_transport_summary'
-  status = 'interrupted'
-  reason = 'Run directory initialized; dependency snapshot not yet complete.'
-})
+$resourceBudgetExceeded = $false
 $snapshotRoot = Join-Path $package.input_dir 'runtime_snapshot'
 $manifestToolRoot = $snapshotRoot
 $snapshotReady = $false
@@ -302,7 +265,9 @@ try {
     'oatof_simion_log_analyzer_wrapper','oatof_solver_diagnostics',
     'common_rigid_transform','common_particle_physics',
     'common_component_particle_state','common_component_particle_state_schema',
-    'common_file_identity','common_verify_run_manifest',
+    'common_file_identity','common_artifact_retention',
+    'common_artifact_retention_policy','common_resource_budget_support',
+    'common_verify_run_manifest',
     'common_artifact_naming','common_write_run_manifest',
     'common_run_artifact_support','common_require_powershell7'
   )
@@ -333,6 +298,7 @@ try {
     $dependencySnapshotPaths['oatof_handoff_pulse_extension_lua']
   $frozenSolverDiagnostics =
     $dependencySnapshotPaths['oatof_solver_diagnostics']
+  . $dependencySnapshotPaths['common_resource_budget_support']
   $snapshotReady = $true
   Invoke-AnalyzerTransportSnapshotPython -Python $python -SnapshotRoot $snapshotRoot `
     -Arguments @($frozenArtifactNaming,'run',$RunId) `
@@ -379,6 +345,14 @@ try {
   if ([bool]$sourceConfig.parameters.pulse_capture_stage_passed) {
     throw 'Functional PulseCapture source must not claim qualified PulseCapture PASS.'
   }
+  $connectionProfileId = [string]$sourceConfig.parameters.connection_profile_id
+  $budgetBinding = Initialize-RfIntegrationStageBudget `
+    -ResolvedBudget $ResolvedEngineeringBudget -InputDir $package.input_dir `
+    -ExpectedIntegrationId `
+      'rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer' `
+    -ExpectedConnectionProfileId $connectionProfileId `
+    -StageId 'analyzer_transport' -Solver simion
+  $resourceUsage = Join-Path $package.log_dir 'resource_usage.json'
 
   $sourceSummaryOriginal = Join-Path $source 'summary.json'
   $sourceSummaryRecord = Get-RfManifestOutputRecord -Manifest $sourceManifest `
@@ -397,7 +371,6 @@ try {
     -ManifestRecord $sourceCanonicalRecord -Role 'canonical local exit'
 
   $runtimeDir = Join-Path $package.run_dir 'simion'
-  New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
   $canonical = Join-Path $package.input_dir `
     'canonical_local_accelerator_exit.csv'
   $ion = Join-Path $package.input_dir `
@@ -501,7 +474,7 @@ try {
     canonical_local_exit_sha256 = $sourceCanonicalIdentity.sha256
   }
   $runConfiguration = [ordered]@{
-    schema_version = 1
+    schema_version = 2
     run_id = $RunId
     project = 'rf_quadrupole_ion_optics'
     mode = 'rf_to_oatof_analyzer_transport_n100'
@@ -512,6 +485,8 @@ try {
       dependency_contract = $dependencyContract
       source_run_manifest = $sourceManifestPath
       source_run_config = $sourceConfigPath
+      resolved_integration_engineering_budget = $budgetBinding.frozen_budget
+      resolved_stage_resource_budget = $budgetBinding.stage_budget
       source_summary = $sourceSummary
       source_canonical = $sourceCanonical
       canonical = $canonical
@@ -557,6 +532,11 @@ try {
       dense_trajectories_saved = $false
       pulse_capture_stage_passed = $false
     }
+    artifact_retention = [ordered]@{
+      policy_version = 1
+      class = 'compact'
+      reason = $null
+    }
     formal_gate_passed = $false
   }
   Write-RfJson -Path $package.run_config -Depth 10 -Value $runConfiguration
@@ -571,8 +551,10 @@ try {
 
   $stdout = Join-Path $package.log_dir 'simion.stdout.log'
   $stderr = Join-Path $package.log_dir 'simion.stderr.log'
-  $process = Start-Process -FilePath $SimionExe `
-    -WorkingDirectory $runtimeDir -WindowStyle Hidden -Wait -PassThru `
+  $processResult = Invoke-ResourceBudgetedProcess `
+    -ResolvedBudgetPath $budgetBinding.stage_budget `
+    -RunDir $package.run_dir -UsagePath $resourceUsage `
+    -FilePath $SimionExe -WorkingDirectory $runtimeDir `
     -RedirectStandardOutput $stdout -RedirectStandardError $stderr `
     -ArgumentList @(
       '--default-num-particles','100','--nogui','fly',
@@ -586,7 +568,11 @@ try {
       '--adjustable',("handoff_pulse_width_us={0:R}" -f $pulseWidthUs),
       $runtimeIob
     )
-  if ($process.ExitCode -ne 0) {
+  if ($processResult.resource_budget_exceeded) {
+    $resourceBudgetExceeded = $true
+    throw "SIMION downstream resource budget exceeded: $($processResult.limit_name)"
+  }
+  if ($processResult.exit_code -ne 0) {
     throw "SIMION downstream continuation failed: $stderr"
   }
   $downstream = Join-Path $package.result_dir `
@@ -632,8 +618,20 @@ try {
   })
   $outputs = @(
     $canonical,$ion,$rowMap,$adapterMetadata,$programMetadata,$runtimeProgram,
-    $downstream,$metrics,$figure,$stdout,$stderr,$package.summary
+    $downstream,$metrics,$figure,$stdout,$stderr,$resourceUsage,$package.summary
   )
+  $retentionActions = Apply-RunArtifactRetention -Python $python `
+    -RepoRoot $manifestToolRoot -RunConfig $package.run_config
+  $outputs = @($outputs | Where-Object {
+    Test-Path -LiteralPath $_ -PathType Leaf
+  })
+  $outputs += $retentionActions
+  if (-not (Complete-ResourceUsage `
+      -ResolvedBudgetPath $budgetBinding.stage_budget `
+      -RunDir $package.run_dir -UsagePath $resourceUsage)) {
+    $resourceBudgetExceeded = $true
+    throw 'SIMION analyzer compact final retained-byte budget exceeded.'
+  }
   Write-RfFrozenRunManifest -Python $python -FrozenRepoRoot $manifestToolRoot `
     -RunConfig $package.run_config -Status success -Software $software `
     -Outputs $outputs
@@ -648,7 +646,14 @@ try {
       -FrozenRepoRoot $manifestToolRoot `
       -RunConfig $package.run_config -Summary $package.summary `
       -SummaryRole 'rf_to_oatof_analyzer_transport_summary' `
-      -Reason $_.Exception.Message -Software $software
+      -Reason $_.Exception.Message -Software $software `
+      -Status $(if ($resourceBudgetExceeded) { 'interrupted' } else { 'failed' }) `
+      -FailureClass $(if ($resourceBudgetExceeded) {
+        'resource_budget_exceeded'
+      } else { '' }) `
+      -ResourceUsagePath $(if ($resourceBudgetExceeded) {
+        $resourceUsage
+      } else { '' })
   } else {
     Write-RfJson -Path $package.summary -Value ([ordered]@{
       schema_version = 1

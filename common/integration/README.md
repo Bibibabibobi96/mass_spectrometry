@@ -20,7 +20,9 @@
 
 `adapter_contract.py`只为执行映射和迁移等价预登记提供窄schema：映射可声明profile ID、adapter路径、
 已有stage入口和已有case ID，不允许几何、电压或粒子参数。具体integration负责把映射SHA和路径冻结进
-composition plan，并在执行前再次核对。
+composition plan，并在执行前再次核对。`resolve_integration_engineering_budget(...)`复核integration、
+profile、同源粒子身份和compact留存后，只返回该次profile的三个stage硬帽；它复用公共进程树监控器，
+不建立integration私有资源门禁。
 
 port是项目物理合同的发布视图，不是第二权威。每个port必须通过`authority.source_contract`和
 `source_sha256`锁定仓库内来源，并用`bindings`逐项声明port JSON Pointer与source JSON Pointer；

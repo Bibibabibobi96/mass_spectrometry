@@ -202,10 +202,16 @@ def validate_contract(
     }
 
 
-def verify_source_manifest(source_csv: Path, manifest_path: Path, contract: dict[str, Any]) -> str:
+def verify_source_manifest(
+    source_csv: Path,
+    manifest_path: Path,
+    contract: dict[str, Any],
+    source_manifest_project_id: str | None = None,
+) -> str:
     manifest = load_json(manifest_path)
     source = contract["source_component"]
-    if manifest.get("project") != source["project_id"]:
+    expected_project_id = source_manifest_project_id or source["project_id"]
+    if manifest.get("project") != expected_project_id:
         raise ValueError("source manifest project mismatch")
     if manifest.get("status") != "success":
         raise ValueError("source manifest is not successful")
@@ -339,10 +345,16 @@ def build_handoff(
     metadata_output: Path,
     solver_clock: str = "local_zero",
     resolved_connection_path: Path | None = None,
+    source_manifest_project_id: str | None = None,
 ) -> dict[str, Any]:
     validated = validate_contract(contract_path, resolved_connection_path)
     contract = validated["contract"]
-    source_sha = verify_source_manifest(source_csv, source_manifest, contract)
+    source_sha = verify_source_manifest(
+        source_csv,
+        source_manifest,
+        contract,
+        source_manifest_project_id,
+    )
     rows = read_handoff_rows(source_csv, contract)
     spatial_transform = validated["spatial_transform"]
     resolved = validated["resolved_connection"]
@@ -493,6 +505,9 @@ def build_handoff(
             "particle_state_sha256": source_sha,
             "run_manifest": str(source_manifest.resolve()),
             "run_manifest_sha256": sha256(source_manifest),
+            "recorded_project_id": (
+                source_manifest_project_id or source["project_id"]
+            ),
         },
         "contract": {"path": str(contract_path.resolve()), "sha256": sha256(contract_path)},
         "resolved_connection": {
@@ -538,6 +553,7 @@ def main() -> None:
     action.add_argument("--convert", action="store_true")
     parser.add_argument("--source-csv", type=Path)
     parser.add_argument("--source-manifest", type=Path)
+    parser.add_argument("--source-manifest-project-id")
     parser.add_argument("--canonical-output", type=Path)
     parser.add_argument("--ion-output", type=Path)
     parser.add_argument("--row-map-output", type=Path)
@@ -574,6 +590,7 @@ def main() -> None:
         args.metadata_output,
         args.solver_clock,
         args.resolved_connection,
+        args.source_manifest_project_id,
     )
     print(f"COMPONENT_HANDOFF_PROJECTION=PASS PARTICLES={metadata['particles']}")
 

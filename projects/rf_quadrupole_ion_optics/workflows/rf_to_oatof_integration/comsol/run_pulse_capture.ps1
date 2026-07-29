@@ -1,6 +1,7 @@
 param(
   [Parameter(Mandatory)][string]$SourceRunId,
   [string]$RunId = '',
+  [Parameter(Mandatory)][string]$ResolvedEngineeringBudget,
   [string]$PythonExe = ''
 )
 
@@ -47,8 +48,10 @@ if ([string]::IsNullOrWhiteSpace($RunId)) {
 $software = @('COMSOL 6.4','MATLAB R2025b','Python 3.11')
 $package = New-RfRunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project 'rf_quadrupole_ion_optics' `
-  -Mode 'rf_to_oatof_pulse_capture_n100' -Software $software
+  -Mode 'rf_to_oatof_pulse_capture_n100' -Software $software `
+  -RetentionContractEnabled -RetentionClass compact
 $manifestToolRoot = $repoRoot
+$resourceBudgetExceeded = $false
 $python = $package.python
 $inputDir = $package.input_dir
 $resultDir = $package.result_dir
@@ -155,6 +158,8 @@ try {
     'rf_pulse_capture_pulse_scheduler','rf_pulse_capture_geometry_snapshot_plotter',
     'rf_pulse_capture_pulse_chain_auditor','rf_pulse_capture_local_exit_adapter',
     'common_component_particle_state','common_particle_physics',
+    'common_artifact_retention','common_artifact_retention_policy',
+    'common_resource_budget_support',
     'common_verify_run_manifest','common_write_run_manifest',
     'common_run_artifact_support','common_comsol_runner'
   )
@@ -163,6 +168,7 @@ try {
       throw "PulseCapture dependency consumer is missing required identity: $requiredId"
     }
   }
+  . $dependencySnapshotPaths['common_resource_budget_support']
 
   $timingRun = Resolve-RfDirectChildDirectory `
     -ParentRoot (Join-Path $artifactRoot 'runs') -ChildName $SourceRunId `
@@ -233,6 +239,19 @@ try {
       $resolvedConnectionDocument.clock_alignment.mode -ne 'same_origin') {
     throw 'PulseCapture requires the compatible resolved connection frozen by PrePulse.'
   }
+  $connectionProfileId =
+    [string]$sourceRunConfiguration.parameters.connection_profile_id
+  if ($resolvedConnectionDocument.selection.connection_profile_id -ne
+      $connectionProfileId) {
+    throw 'PulseCapture source profile differs from its resolved connection.'
+  }
+  $budgetBinding = Initialize-RfIntegrationStageBudget `
+    -ResolvedBudget $ResolvedEngineeringBudget -InputDir $inputDir `
+    -ExpectedIntegrationId `
+      'rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer' `
+    -ExpectedConnectionProfileId $connectionProfileId `
+    -StageId 'pulse_capture' -Solver comsol
+  $resourceUsage = Join-Path $logDir 'resource_usage.json'
 
   $particleValidation = Join-Path $inputDir 'canonical_rf_exit_component_state_validation.json'
   Invoke-PulseCaptureSnapshotPython -Python $python -SnapshotRoot $snapshotRoot -Arguments @(
@@ -285,7 +304,7 @@ try {
     timing_state_sha256 = $sourceTimingIdentity.sha256
   }
   $runConfiguration = [ordered]@{
-    schema_version = 1
+    schema_version = 2
     run_id = $RunId
     project = 'rf_quadrupole_ion_optics'
     mode = 'rf_to_oatof_pulse_capture_n100'
@@ -307,6 +326,8 @@ try {
       oatof_accelerator_builder_matlab_compatibility = $oaBuilderMatlab
       source_run_manifest = $sourceManifest
       source_run_config = $sourceRunConfig
+      resolved_integration_engineering_budget = $budgetBinding.frozen_budget
+      resolved_stage_resource_budget = $budgetBinding.stage_budget
       particle_source = $particleInput; particle_state_validation = $particleValidation
       timing_state = $timingState; pulse_schedule = $pulseSchedule
     }
@@ -322,6 +343,11 @@ try {
       pre_pulse_oatof_field_scale = 0.0; pulse_oatof_field_scale = 1.0
       post_pulse_oatof_field_scale = 0.0; solver_rerun = $true
       dense_trajectories_saved = $false; pulse_capture_stage_passed = $false
+    }
+    artifact_retention = [ordered]@{
+      policy_version = 1
+      class = 'compact'
+      reason = $null
     }
     formal_gate_passed = $false
   }
@@ -342,6 +368,8 @@ try {
     'RF_OATOF_PulseCapture_PARTICLE_INPUT','RF_OATOF_PulseCapture_OA_COMSOL_DIR'
   )
   $oldEnvironment = Save-RfEnvironment -Names $environmentNames
+  $comsolWrapperStdout = Join-Path $logDir 'comsol_wrapper.stdout.log'
+  $comsolWrapperStderr = Join-Path $logDir 'comsol_wrapper.stderr.log'
   try {
     $env:RF_OATOF_PulseCapture_METRICS=$metrics; $env:RF_OATOF_PulseCapture_TERMINAL_OUTPUT=$terminal
     $env:RF_OATOF_PulseCapture_CAPTURE_OUTPUT=$capture
@@ -351,9 +379,24 @@ try {
     $env:RF_OATOF_PulseCapture_OA_BASELINE=$oaBaselineMatlab
     $env:RF_OATOF_PulseCapture_PULSE_SCHEDULE=$pulseSchedule
     $env:RF_OATOF_PulseCapture_PARTICLE_INPUT=$particleInput; $env:RF_OATOF_PulseCapture_OA_COMSOL_DIR=$inputDir
-    & $frozenComsolRunner `
-      -TaskScript $task -ReportPath $report
-    if ($LASTEXITCODE -ne 0) { throw 'COMSOL PulseCapture pulse-capture task failed.' }
+    $powerShellExe = (Get-Process -Id $PID).Path
+    $processResult = Invoke-ResourceBudgetedProcess `
+      -ResolvedBudgetPath $budgetBinding.stage_budget `
+      -RunDir $package.run_dir -UsagePath $resourceUsage `
+      -FilePath $powerShellExe -WorkingDirectory $snapshotRoot `
+      -RedirectStandardOutput $comsolWrapperStdout `
+      -RedirectStandardError $comsolWrapperStderr `
+      -ArgumentList @(
+        '-NoLogo','-NoProfile','-NonInteractive','-File',$frozenComsolRunner,
+        '-TaskScript',$task,'-ReportPath',$report,'-StartupAttempts','1'
+      )
+    if ($processResult.resource_budget_exceeded) {
+      $resourceBudgetExceeded = $true
+      throw "COMSOL PulseCapture resource budget exceeded: $($processResult.limit_name)"
+    }
+    if ($processResult.exit_code -ne 0) {
+      throw 'COMSOL PulseCapture pulse-capture task failed.'
+    }
   } finally {
     Restore-RfEnvironment -Names $environmentNames -Snapshot $oldEnvironment
   }
@@ -404,7 +447,23 @@ try {
     pulse_snapshot_figure = 'results/pulse_capture_pulse_geometry_snapshot.png'
     dense_trajectories_saved = $false; pulse_capture_stage_passed = $false; formal_gate_passed = $false
   })
-  $outputs = @($terminal,$capture,$localExit,$localExitValidation,$metrics,$audit, $snapshotFigure,$snapshotMetadata,$report,$package.summary)
+  $outputs = @(
+    $terminal,$capture,$localExit,$localExitValidation,$metrics,$audit,
+    $snapshotFigure,$snapshotMetadata,$report,$comsolWrapperStdout,
+    $comsolWrapperStderr,$resourceUsage,$package.summary
+  )
+  $retentionActions = Apply-RunArtifactRetention -Python $python `
+    -RepoRoot $manifestToolRoot -RunConfig $package.run_config
+  $outputs = @($outputs | Where-Object {
+    Test-Path -LiteralPath $_ -PathType Leaf
+  })
+  $outputs += $retentionActions
+  if (-not (Complete-ResourceUsage `
+      -ResolvedBudgetPath $budgetBinding.stage_budget `
+      -RunDir $package.run_dir -UsagePath $resourceUsage)) {
+    $resourceBudgetExceeded = $true
+    throw 'COMSOL PulseCapture compact final retained-byte budget exceeded.'
+  }
   Write-RfFrozenRunManifest -Python $python -FrozenRepoRoot $manifestToolRoot `
     -RunConfig $package.run_config `
     -Status success -Software $software -Outputs $outputs
@@ -413,6 +472,11 @@ try {
   Complete-RfFrozenFailedRun -Python $python -FrozenRepoRoot $manifestToolRoot `
     -RunConfig $package.run_config `
     -Summary $package.summary -SummaryRole 'rf_to_oatof_pulse_capture_summary' `
-    -Reason $_.Exception.Message -Software $software
+    -Reason $_.Exception.Message -Software $software `
+    -Status $(if ($resourceBudgetExceeded) { 'interrupted' } else { 'failed' }) `
+    -FailureClass $(if ($resourceBudgetExceeded) {
+      'resource_budget_exceeded'
+    } else { '' }) `
+    -ResourceUsagePath $(if ($resourceBudgetExceeded) { $resourceUsage } else { '' })
   throw
 }

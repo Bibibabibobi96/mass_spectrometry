@@ -16,6 +16,9 @@ connector case 或由间隙推断拓扑。
 composition plan；adapter 将二者直接交给
 `workflows/rf_to_oatof_integration/run_rf_to_oatof_transfer.ps1`。内部 phase 固定为
 `pre_pulse_interface_transport`、`pulse_capture`、`analyzer_transport`，不构成独立公开入口或资格声明。
+每次prepare还会从[`engineering_budget.json`](../config/engineering_budget.json)冻结当前profile的
+`resolved_engineering_budget.json`。三个phase都执行公共进程树内存、墙钟、瞬态目录和compact终态硬帽，
+自动重试固定为零。
 
 ## 历史证据
 
@@ -24,8 +27,12 @@ run ID 和 census。它不定义活动 profile、执行步骤或拓扑。两个 
 比较完成前，`migration_equivalence_preregistration.json`固定为`BLOCKED/NOT_RUN`；不得宣称等价、晋升或
 Formal资格。
 
+真实执行成功后，adapter只发布一个轻量integration父运行；大型COMSOL/SIMION资产仍由三个子运行拥有，
+并按compact合同清理。`evaluate_migration_equivalence.py`随后对两个父运行核对同一N=100源、精确census和
+四组粒子事件集合；连续相空间保持`NOT_EVALUATED`，不得借功能迁移PASS扩大物理声明。
+
 ## 静态门禁
 
 [`verify_integration.ps1`](../verify_integration.ps1)只运行无求解器的合同测试：profile 唯一性、公共解析、
-非空 transfer composition step、adapter registry SHA 与显式授权边界。它不运行COMSOL、SIMION、MATLAB、CAD，
-也不替代真实迁移等价复验。
+非空 transfer composition step、adapter registry SHA、预算冻结SHA、父运行发布fixture、等价PASS/FAIL
+fixture与显式授权边界。它不运行COMSOL、SIMION、MATLAB、CAD，也不替代真实迁移等价复验。

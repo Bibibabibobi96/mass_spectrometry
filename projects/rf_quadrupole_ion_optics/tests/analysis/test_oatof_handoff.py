@@ -241,6 +241,28 @@ class OatofHandoffBuildTests(unittest.TestCase):
             delta=1e-12,
         )
 
+    def test_legacy_recorded_project_requires_one_explicit_identity(self) -> None:
+        manifest = json.loads(self.manifest.read_text(encoding="utf-8"))
+        manifest["project"] = "rf_quadrupole_collision_cooling"
+        self.manifest.write_text(json.dumps(manifest), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "project mismatch"):
+            self.build()
+        metadata = MODULE.build_handoff(
+            self.source,
+            self.manifest,
+            CONTRACT,
+            self.canonical,
+            self.ion,
+            self.row_map,
+            self.metadata,
+            resolved_connection_path=self.resolved,
+            source_manifest_project_id="rf_quadrupole_collision_cooling",
+        )
+        self.assertEqual(
+            metadata["source"]["recorded_project_id"],
+            "rf_quadrupole_collision_cooling",
+        )
+
     def test_time_dependent_consumer_uses_instrument_time_as_solver_birth(self) -> None:
         metadata = MODULE.build_handoff(
             self.source, self.manifest, CONTRACT, self.canonical, self.ion,

@@ -2,6 +2,7 @@
 param(
   [Parameter(Mandatory)][string]$ConnectionProfileId,
   [Parameter(Mandatory)][string]$ResolvedConnection,
+  [Parameter(Mandatory)][string]$ResolvedEngineeringBudget,
   [string]$Stamp = '',
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$PythonExe = ''
@@ -30,13 +31,17 @@ $analyzerRunId = "${Stamp}__sim__cross__rf-oatof-analyzer-transport-gap${gapLabe
 
 & (Join-Path $projectRoot 'workflows\rf_to_oatof_integration\comsol\run_pre_pulse_interface_transport.ps1') `
   -RunId $prePulseRunId -Particles -ConnectionProfileId $ConnectionProfileId `
-  -ResolvedConnection $ResolvedConnection -PythonExe $python
+  -ResolvedConnection $ResolvedConnection `
+  -ResolvedEngineeringBudget $ResolvedEngineeringBudget -PythonExe $python
 if ($LASTEXITCODE -ne 0) { throw 'RF-to-oaTOF transfer stopped at pre_pulse_interface_transport.' }
 & (Join-Path $projectRoot 'workflows\rf_to_oatof_integration\comsol\run_pulse_capture.ps1') `
-  -SourceRunId $prePulseRunId -RunId $pulseCaptureRunId -PythonExe $python
+  -SourceRunId $prePulseRunId -RunId $pulseCaptureRunId `
+  -ResolvedEngineeringBudget $ResolvedEngineeringBudget -PythonExe $python
 if ($LASTEXITCODE -ne 0) { throw 'RF-to-oaTOF transfer stopped at pulse_capture.' }
 & (Join-Path $projectRoot 'workflows\rf_to_oatof_integration\cross_solver\run_analyzer_transport.ps1') `
-  -SourceRunId $pulseCaptureRunId -RunId $analyzerRunId -SimionExe $SimionExe -PythonExe $python
+  -SourceRunId $pulseCaptureRunId -RunId $analyzerRunId `
+  -ResolvedEngineeringBudget $ResolvedEngineeringBudget `
+  -SimionExe $SimionExe -PythonExe $python
 if ($LASTEXITCODE -ne 0) { throw 'RF-to-oaTOF transfer stopped at analyzer_transport.' }
 
 $endToEndRun = Resolve-RfDirectChildDirectory -ParentRoot $artifactRoot `

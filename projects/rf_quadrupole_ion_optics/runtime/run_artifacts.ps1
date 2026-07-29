@@ -49,7 +49,10 @@ function Complete-RfFrozenFailedRun {
     [Parameter(Mandatory)][string]$Summary,
     [Parameter(Mandatory)][string]$SummaryRole,
     [Parameter(Mandatory)][string]$Reason,
-    [Parameter(Mandatory)][string[]]$Software
+    [Parameter(Mandatory)][string[]]$Software,
+    [ValidateSet('failed','interrupted')][string]$Status = 'failed',
+    [string]$FailureClass = '',
+    [string]$ResourceUsagePath = ''
   )
   $environmentNames = @('PYTHONPATH','PYTHONNOUSERSITE')
   $savedEnvironment = Save-RfEnvironment -Names $environmentNames
@@ -60,7 +63,8 @@ function Complete-RfFrozenFailedRun {
     try {
       Complete-RfFailedRun -Python $Python -RepoRoot $FrozenRepoRoot `
         -RunConfig $RunConfig -Summary $Summary -SummaryRole $SummaryRole `
-        -Reason $Reason -Software $Software
+        -Reason $Reason -Software $Software -Status $Status `
+        -FailureClass $FailureClass -ResourceUsagePath $ResourceUsagePath
     } finally {
       Pop-Location
     }
@@ -95,6 +99,69 @@ function Resolve-RfDirectChildDirectory {
     throw "$Role directory is missing: $child"
   }
   return $child
+}
+
+function Resolve-RfDeclaredLegacyRunDirectory {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$WorkspaceRoot,
+    [Parameter(Mandatory)][string]$ProjectDescriptor,
+    [Parameter(Mandatory)][string]$MappingId,
+    [Parameter(Mandatory)][string]$RecordedProjectId,
+    [Parameter(Mandatory)][string]$RunId
+  )
+  $descriptor = Get-Content -LiteralPath $ProjectDescriptor -Raw -Encoding UTF8 |
+    ConvertFrom-Json
+  $mappings = @($descriptor.legacy_identities | Where-Object {
+    $_.mapping_id -eq $MappingId -and $_.project_id -eq $RecordedProjectId
+  })
+  if ($mappings.Count -ne 1) {
+    throw 'Legacy run source must resolve through one declared project mapping.'
+  }
+  $mapping = $mappings[0]
+  if ($mapping.artifact_access -ne 'read_only' -or
+      [bool]$mapping.new_runs_allowed -or
+      $mapping.verification_identity -ne 'recorded_project_id') {
+    throw 'Legacy run source mapping is not an immutable evidence provider.'
+  }
+  $expectedRelativeRoot = "artifacts/projects/$RecordedProjectId"
+  if ([string]$mapping.artifact_root -ne $expectedRelativeRoot) {
+    throw 'Legacy run source artifact root differs from its recorded project identity.'
+  }
+  $workspace = [IO.Path]::GetFullPath($WorkspaceRoot).TrimEnd(
+    [IO.Path]::DirectorySeparatorChar,
+    [IO.Path]::AltDirectorySeparatorChar
+  )
+  $artifactRoot = [IO.Path]::GetFullPath(
+    (Join-Path $workspace ([string]$mapping.artifact_root))
+  )
+  if (-not $artifactRoot.StartsWith(
+      $workspace + [IO.Path]::DirectorySeparatorChar,
+      [StringComparison]::OrdinalIgnoreCase
+  )) {
+    throw 'Legacy run source artifact root escapes the workspace.'
+  }
+  $run = Resolve-RfDirectChildDirectory -ParentRoot (Join-Path $artifactRoot 'runs') `
+    -ChildName $RunId -Role 'legacy source run id'
+  $manifestPath = Join-Path $run 'run_manifest.json'
+  if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+    throw 'Legacy source run manifest is missing.'
+  }
+  $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 |
+    ConvertFrom-Json
+  if ($manifest.role -ne 'simulation_run_manifest' -or
+      $manifest.run_id -ne $RunId -or
+      $manifest.project -ne $RecordedProjectId -or
+      $manifest.status -ne 'success') {
+    throw 'Legacy source run manifest identity or status differs.'
+  }
+  return [pscustomobject]@{
+    run_dir = $run
+    manifest_path = $manifestPath
+    mapping_id = $MappingId
+    recorded_project_id = $RecordedProjectId
+    artifact_root = [string]$mapping.artifact_root
+  }
 }
 
 function Get-RfManifestInputRecord {
@@ -173,6 +240,66 @@ function Copy-RfStableFile {
     frozen_path = $destinationPath
     bytes = $sourceBytes
     sha256 = $sourceHash
+  }
+}
+
+function Initialize-RfIntegrationStageBudget {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$ResolvedBudget,
+    [Parameter(Mandatory)][string]$InputDir,
+    [Parameter(Mandatory)][string]$ExpectedIntegrationId,
+    [Parameter(Mandatory)][string]$ExpectedConnectionProfileId,
+    [Parameter(Mandatory)][string]$StageId,
+    [Parameter(Mandatory)][ValidateSet('comsol','simion')][string]$Solver
+  )
+  $frozen = Join-Path $InputDir 'resolved_integration_engineering_budget.json'
+  $identity = Copy-RfStableFile `
+    -SourceRunRoot (Split-Path -Parent ([IO.Path]::GetFullPath($ResolvedBudget))) `
+    -SourcePath $ResolvedBudget -Destination $frozen `
+    -Role 'resolved integration engineering budget'
+  $document = Get-Content -LiteralPath $frozen -Raw -Encoding UTF8 |
+    ConvertFrom-Json
+  if ($document.schema_version -ne 1 -or
+      $document.role -ne 'integration_resolved_engineering_budget' -or
+      $document.integration_id -ne $ExpectedIntegrationId -or
+      $document.connection_profile_id -ne $ExpectedConnectionProfileId -or
+      $document.retention_class -ne 'compact' -or
+      [int]$document.particle_count -ne 100) {
+    throw 'Resolved integration engineering-budget identity differs.'
+  }
+  if ($document.stage_limits.PSObject.Properties.Name -notcontains $StageId) {
+    throw "Resolved integration engineering budget omits stage: $StageId"
+  }
+  $limits = $document.stage_limits.$StageId
+  if ($limits.solver -ne $Solver -or
+      [int]$limits.automatic_retry_count -ne 0) {
+    throw "Resolved integration engineering-budget stage differs: $StageId"
+  }
+  $stageBudget = Join-Path $InputDir "resolved_resource_budget__$StageId.json"
+  Write-RfJson -Path $stageBudget -Value ([ordered]@{
+    schema_version = 1
+    role = 'integration_resolved_stage_resource_budget'
+    integration_id = $ExpectedIntegrationId
+    connection_profile_id = $ExpectedConnectionProfileId
+    stage_id = $StageId
+    solver = $Solver
+    source_identity = $document.source_identity
+    retention_class = 'compact'
+    limits = [ordered]@{
+      wall_clock_seconds = [int]$limits.wall_clock_seconds
+      transient_run_directory_bytes = [long]$limits.transient_run_directory_bytes
+      process_tree_working_set_bytes = [long]$limits.process_tree_working_set_bytes
+      minimum_system_available_memory_bytes =
+        [long]$limits.minimum_system_available_memory_bytes
+      compact_final_retained_bytes = [long]$limits.compact_final_retained_bytes
+      automatic_retry_count = 0
+    }
+  })
+  return [pscustomobject]@{
+    frozen_budget = $frozen
+    stage_budget = $stageBudget
+    sha256 = $identity.sha256
   }
 }
 

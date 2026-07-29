@@ -10,6 +10,7 @@ from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import ContractError, validate_schema
 from common.integration.adapter_contract import (
     load_execution_adapter_registry,
+    resolve_integration_engineering_budget,
     resolve_execution_mapping,
     validate_migration_preregistration,
 )
@@ -43,10 +44,26 @@ def prepare_migration(
         profile_id,
         repo_root=root,
     )
-    validate_migration_preregistration(
+    preregistration = validate_migration_preregistration(
         preregistration_path,
         repo_root=root,
         expected_profile_ids=profile_ids,
+    )
+    oracle_path = root / preregistration["legacy_oracle"]["path"]
+    oracle = json.loads(oracle_path.read_text(encoding="utf-8"))
+    budget_path = root / preregistration["engineering_budget"]["path"]
+    resolved_budget = resolve_integration_engineering_budget(
+        budget_path,
+        repo_root=root,
+        integration_id=profile_registry["integration_id"],
+        profile_id=profile_id,
+        source_identity=oracle["source_identity"],
+    )
+    resolved_budget_path = plan_output.with_name("resolved_engineering_budget.json")
+    resolved_budget_path.parent.mkdir(parents=True, exist_ok=True)
+    resolved_budget_path.write_text(
+        json.dumps(resolved_budget, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
     )
     resolved_path, plan_path = write_resolved_and_plan(
         profile_registry_path,
@@ -64,6 +81,8 @@ def prepare_migration(
             "arguments": [
                 f"workflow_entrypoint={mapping['workflow_entrypoint']}",
                 f"adapter_registry_sha256={file_sha256(adapter_registry_path)}",
+                "resolved_budget_filename=resolved_engineering_budget.json",
+                f"resolved_budget_sha256={file_sha256(resolved_budget_path)}",
             ],
         }
     ]

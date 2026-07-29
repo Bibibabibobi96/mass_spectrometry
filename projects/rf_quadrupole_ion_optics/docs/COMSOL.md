@@ -75,8 +75,8 @@ release构造Gate只验证完整N=100输入下100个GUI可见`ReleaseFromDataFil
 
 ## 当前限制
 
-- 圆柱家族三模式的COMSOL N=100完整数值矩阵未运行；当前只有四极杆无加速空间档完成，
-  acceptance预算不足时结论固定为INCONCLUSIVE。
+- 圆柱家族三模式的COMSOL N=100完整数值矩阵未运行；四极杆无加速模式已有空间档和时间档
+  诊断，但连续量仍缺少来源充分的接受尺度，因此结论固定为INCONCLUSIVE。
 - RF四极杆离子光学→单次反射oa-TOF连接场、时间步、N=1000和机械资格未完成。
 - 正式机械几何与CAD同步前不得提升Formal。
 - 已关闭的连续屏蔽、piecewise swept和hybrid网格筛选数字不再保留在current文档；需要复核时使用
