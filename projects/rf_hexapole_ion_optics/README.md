@@ -87,7 +87,12 @@
   2,016,046 DOF、145.026 s和7,004,827,648 bytes进程树峰值完成。D2→D3的差分/静态场矢量
   normalized RMS约为`0.157%/0.810%`，支持轴向离散的工程稳定性；但D2之后没有第二个非轴向
   加密点，且D3距100万单元硬帽只剩约2.02%，所以总体空间收敛仍未建立。本轮预算和全部场运行
-  授权均已关闭，不授权继续加密、粒子或资格结论。
+  授权均已关闭，不授权继续加密、粒子或资格结论。随后独立预登记的
+  [`0.50 mm局部敏感区首臂`](config/qualification/comsol_local_sensitive_050_field_preregistration.json)
+  正确建立了9个敏感走廊domain、28个接口边界实体和6个局部Size feature，但固定D2级背景网格后
+  全局单元数为1,019,364，超过100万硬帽约1.94%，因此在场求解前登记为
+  `INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`。0.40/0.32 mm、另一静电拓扑及全部粒子臂均未执行；
+  当前授权再次关闭。下一策略必须先粗化非敏感背景，不能抬帽或把本次身份当成可重试运行。
   既有三模式baseline的两份
   求解器报告只具有`POSTHOC_DESCRIPTIVE`身份，统一
   比较见[`../../docs/history/20260729__multipole-three-mode-posthoc-n100.md`](../../docs/history/20260729__multipole-three-mode-posthoc-n100.md)。

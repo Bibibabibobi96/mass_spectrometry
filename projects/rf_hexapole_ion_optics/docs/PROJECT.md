@@ -287,6 +287,16 @@ field-sample SHA：CG-AMG相对MUMPS的差分场电势/场矢量normalized RMS�
 只剩约2.02%。本轮场运行预算已经关闭，不继续加密、不抬帽，粒子、Candidate、Formal和N=1000
 跟进均未授权。
 
+之后按独立身份执行的
+[`局部敏感区0.50 mm首臂`](../config/qualification/comsol_local_sensitive_050_field_preregistration.json)
+证明新选择和Size feature均真实存在：9个敏感走廊domain、28个入口/出口带孔接口板边界实体、
+6个局部Size feature，且扫掠/四面体覆盖门禁通过。但该臂仍把非敏感core和transition背景固定在
+D2的0.5 mm，新增分区后全局网格达到1,019,364单元，超过预登记100万硬帽约1.94%；运行在任何
+场求解前以`INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`终止。零重试成立，0.40/0.32 mm、分段杆
+静电拓扑和全部粒子运行均未启动。该结果表明问题不是局部选择缺失，而是背景网格不够粗；若建立
+新策略，应固定C1级非敏感背景，只在3.6 mm粒子走廊、杆表面和接口板边界沿0.50→0.40→0.32 mm
+细化，并重新预登记，不能修改本次冻结身份或放宽资源帽。
+
 共享SIMION模板、GUI复核、`.wgem`绕过和跨机可移植性状态只由
 [`../../../common/multipole/README.md`](../../../common/multipole/README.md)维护；公共机制证据不授予
 本项目Candidate或Formal资格。

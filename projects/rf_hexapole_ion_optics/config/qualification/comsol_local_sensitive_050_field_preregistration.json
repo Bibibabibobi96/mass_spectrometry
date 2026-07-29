@@ -4,7 +4,7 @@
   "project_id": "rf_hexapole_ion_optics",
   "experiment_id": "hexapole_local_sensitive_field_sequence_v1_level_050",
   "preregistered_before_run": true,
-  "status": "authorized_not_run",
+  "status": "completed_resource_budget_exceeded",
   "authorization": {
     "maximum_commercial_run_count": 1,
     "automatic_retry_count": 0,
@@ -139,6 +139,38 @@
     "three_level_gate": "Only decreasing regular-region differences across both adjacent pairs may authorize particle pilots; singular and near-zero-reference regions remain diagnostic.",
     "failure_result": "INCONCLUSIVE_MESH_STRATEGY_CHANGE_REQUIRED"
   },
-  "execution_result": null,
+  "execution_result": {
+    "terminal": true,
+    "run_id": "20260730_103000__analysis__comsol__hex-local-sensitive-050-field__r01",
+    "manifest_status": "interrupted",
+    "result": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
+    "failure_stage": "mesh_build",
+    "commercial_run_count_executed": 1,
+    "automatic_retry_executed": 0,
+    "field_solve_started": false,
+    "particle_followup_authorized": false,
+    "later_field_levels_authorized": false,
+    "observed": {
+      "mesh_global_elements": 1019364,
+      "mesh_global_min_quality": 0.1861,
+      "mesh_global_mean_quality": 0.7141,
+      "mesh_vacuum_elements": 848366,
+      "mesh_tetrahedral_elements": 629806,
+      "mesh_swept_elements_per_segment": 54640,
+      "localized_sensitive_domain_count": 9,
+      "localized_interface_boundary_entity_count": 28,
+      "localized_size_feature_count": 6,
+      "retained_run_bytes": 2382749
+    },
+    "evidence_sha256": {
+      "run_config": "53DBE583F8B5C1BF7069EC7A1F7CCFD711AD6E163BF4BA53A7DB5B675D7CFE41",
+      "run_manifest": "9105AF03C6E5A4F4C54F850BC6A3E607ABACFB1F8ABD88CEEDB82E412C9DC5E1",
+      "summary": "20035FB16F0B5488BB13EACC38D6BAAF551879198ED1F93C867CD376B850BAF7",
+      "resource_usage": "85179E1E9D015D7AF7EE385DD9E6B3AF0826100BD11AB7FBC36BADE9EDA4F758",
+      "comsol_report": "9345CB692F066FEAA616B0AD7CC3F4C236665B77D9430C72F97AEAE076A68269",
+      "retention_actions": "3968ABAFC4FEE6A734B3F0C9F7BAD6E13E53707745036D355EB29AC17794562B"
+    },
+    "decision": "Stop the shared field sequence. Do not run 0.40 mm, 0.32 mm, segmented-static, particle, cross-solver, Candidate or N=1000 arms under this strategy."
+  },
   "claim_limit": "This record authorizes only the 0.50 mm field arm. It cannot establish mesh convergence, particle transport, cross-solver closure, Candidate, Formal or N=1000 claims."
 }

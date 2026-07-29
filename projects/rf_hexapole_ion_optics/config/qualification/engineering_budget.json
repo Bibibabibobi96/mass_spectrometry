@@ -2,10 +2,10 @@
   "schema_version": 1,
   "role": "multipole_engineering_budget_contract",
   "project_id": "rf_hexapole_ion_optics",
-  "contract_id": "hexapole_local_sensitive_050_field_arm_v1",
+  "contract_id": "hexapole_local_sensitive_050_field_arm_completed_v1",
   "preregistered_before_run": true,
   "pilot_authorization": {
-    "authorized": true,
+    "authorized": false,
     "scope": {
       "project_id": "rf_hexapole_ion_optics",
       "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_local_sensitive_050_field_screen",
@@ -38,8 +38,8 @@
   },
   "full_matrix_authorization": {
     "authorized": false,
-    "reason": "only_the_preregistered_local_sensitive_050_field_arm_is_authorized"
+    "reason": "localized_050_mesh_exceeded_the_registered_cell_budget_and_the_shared_sequence_is_stopped"
   },
   "budget_exhaustion_result": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
-  "claim_limit": "This authorization covers exactly one quadratic CG-AMG field-only run at the 0.50 mm localized sensitive-region level with the governed V/E sampling plan. It authorizes no retry, fallback, particle tracing, convergence PASS, numerical-equivalence PASS, Candidate, Formal or N=1000 claim."
+  "claim_limit": "The 0.50 mm localized sensitive-region arm ended at mesh build with 1,019,364 cells above the registered one-million-cell limit. No retry, later field level, particle tracing, convergence, cross-solver, Candidate, Formal or N=1000 run is authorized."
 }

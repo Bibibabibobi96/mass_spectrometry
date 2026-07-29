@@ -231,7 +231,9 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
             / "qualification"
             / "comsol_local_sensitive_050_field_preregistration.json"
         )
-        self.assertEqual(preregistration["status"], "authorized_not_run")
+        self.assertEqual(
+            preregistration["status"], "completed_resource_budget_exceeded"
+        )
         self.assertEqual(
             preregistration["frozen_mesh"]["planned_sequence_mm"],
             [0.5, 0.4, 0.32],
@@ -251,6 +253,12 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
                 .hexdigest()
                 .upper(),
             )
+        execution = preregistration["execution_result"]
+        self.assertEqual(
+            execution["result"], "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED"
+        )
+        self.assertEqual(execution["observed"]["mesh_global_elements"], 1_019_364)
+        self.assertFalse(execution["later_field_levels_authorized"])
 
 
 if __name__ == "__main__":
