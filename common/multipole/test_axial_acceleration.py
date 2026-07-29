@@ -281,8 +281,9 @@ class AxialAccelerationTest(unittest.TestCase):
                     path = root / "projects" / project / "analysis" / name
                 source = path.read_text(encoding="utf-8-sig")
                 if project == "rf_quadrupole_ion_optics":
-                    self.assertIn("common.multipole.runtime_profile", source)
-                    self.assertNotIn("[string]$DesignProfileId", source)
+                    self.assertIn("project_transport_launcher_support.ps1", source)
+                    self.assertNotIn("DesignProfileId", source)
+                    self.assertNotIn("ParticleSourcePath", source)
                 else:
                     self.assertIn("project_transport_launcher_support.ps1", source)
                     self.assertNotIn("DesignProfileId", source)

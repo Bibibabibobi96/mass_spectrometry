@@ -106,6 +106,15 @@ class ResourceBudgetTests(unittest.TestCase):
         self.assertNotIn("$RuntimeProfileId -like '*_mesh_build'", comsol)
         self.assertIn("Assert-MultipoleFieldSolveReport", comsol)
         self.assertIn(
+            "$resolvedBudget.PSObject.Properties.Name-notcontains'stop_stage'",
+            comsol,
+        )
+        self.assertIn("$StopStage-ne$authorizedStopStage", comsol)
+        self.assertLess(
+            comsol.index("$StopStage-ne$authorizedStopStage"),
+            comsol.index("New-RunPackage"),
+        )
+        self.assertIn(
             "stationary_linear_solver_backend="
             "$authorizedBackend",
             comsol,
@@ -133,6 +142,46 @@ class ResourceBudgetTests(unittest.TestCase):
         self.assertLess(budget_gate, solver.index("material = model.material.create"))
         self.assertNotIn("fflush(", solver)
 
+    def test_comsol_runner_fails_closed_on_stop_stage_disagreement(self) -> None:
+        runner = (
+            REPO_ROOT / "common/multipole/run_finite_3d_transport.ps1"
+        ).read_text(encoding="utf-8")
+        start = runner.index(
+            "  if($resolvedBudget.PSObject.Properties.Name-notcontains'stop_stage')"
+        )
+        end = runner.index("  $authorizedNumerics=$resolvedBudget.solver_numerics", start)
+        stop_stage_gate = runner[start:end]
+
+        def run_gate(resolved_budget: str, cli_stop_stage: str) -> subprocess.CompletedProcess[str]:
+            command = (
+                f"$resolvedBudget={resolved_budget};"
+                f"$StopStage='{cli_stop_stage}';"
+                f"{stop_stage_gate}"
+                'Write-Output "STOP_STAGE=$authorizedStopStage"'
+            )
+            return subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                cwd=REPO_ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=20,
+            )
+
+        matching = run_gate("[pscustomobject]@{stop_stage='field_solve'}", "field_solve")
+        self.assertEqual(matching.returncode, 0, matching.stderr)
+        self.assertIn("STOP_STAGE=field_solve", matching.stdout)
+
+        missing = run_gate("[pscustomobject]@{}", "field_solve")
+        self.assertNotEqual(missing.returncode, 0)
+        self.assertIn("omits the runtime-profile stop stage", missing.stderr)
+
+        mismatch = run_gate("[pscustomobject]@{stop_stage='mesh_build'}", "field_solve")
+        self.assertNotEqual(mismatch.returncode, 0)
+        self.assertIn("differs from the authorized runtime profile", mismatch.stderr)
+
     def test_mesh_cell_limit_is_optional_and_strictly_positive(self) -> None:
         runtime_profile_id = (
             "exit_aperture_plate_acceleration_n100_hybrid_d2_cg_amg_field_screen"
@@ -141,6 +190,9 @@ class ResourceBudgetTests(unittest.TestCase):
         budget_path = Path(runtime["engineering_budget"]["path"])
         authorized_fixture = json.loads(budget_path.read_text(encoding="utf-8"))
         authorized_fixture["pilot_authorization"]["authorized"] = True
+        authorized_fixture["pilot_authorization"]["scope"]["stop_stage"] = runtime[
+            "stop_stage"
+        ]
         authorized_fixture["pilot_authorization"]["limits"][
             "maximum_mesh_cells"
         ] = 100
@@ -161,10 +213,32 @@ class ResourceBudgetTests(unittest.TestCase):
                     retention_class="compact",
                 )
 
-        self.assertEqual(
-            validate_with(authorized_fixture)["limits"]["maximum_mesh_cells"],
-            100,
-        )
+        resolved = validate_with(authorized_fixture)
+        self.assertEqual(resolved["limits"]["maximum_mesh_cells"], 100)
+        self.assertEqual(resolved["stop_stage"], "field_solve")
+        runtime_without_stop_stage = json.loads(json.dumps(runtime))
+        del runtime_without_stop_stage["stop_stage"]
+        with (
+            mock.patch(
+                "common.multipole.resource_budget.resolve_runtime_profile",
+                return_value=runtime_without_stop_stage,
+            ),
+            mock.patch(
+                "common.multipole.resource_budget._load",
+                return_value=authorized_fixture,
+            ),
+            self.assertRaisesRegex(ValueError, "stop stage is missing or unsupported"),
+        ):
+            validate_pilot_budget(
+                repo_root=REPO_ROOT,
+                budget_path=budget_path,
+                project_id=HEX,
+                solver="comsol",
+                runtime_profile_id=runtime_profile_id,
+                design_profile_id=runtime["design_profile_id"],
+                particle_source_path=Path(runtime["particle_source"]["path"]),
+                retention_class="compact",
+            )
         legacy_budget = json.loads(json.dumps(authorized_fixture))
         del legacy_budget["pilot_authorization"]["limits"]["maximum_mesh_cells"]
         self.assertNotIn("maximum_mesh_cells", validate_with(legacy_budget)["limits"])

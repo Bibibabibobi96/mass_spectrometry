@@ -73,7 +73,7 @@ def validate_high_order_launcher_chain(
     simion_wrapper: str,
     launcher_support: str,
 ) -> None:
-    """Validate the single governed high-order project-to-solver launch chain."""
+    """Validate one governed project-to-solver launch chain."""
     support_name = "common\\multipole\\project_transport_launcher_support.ps1"
     invocation = "Invoke-MultipoleProjectFinite3dTransport"
     direct_entries = {
@@ -315,11 +315,24 @@ def validate_project_identity(project_id: str, order: int, electrode_count: int)
         for mode_name in ("transport_no_collision.json", "mass_filter_reference.json"):
             operating = from_quadrupole_contract(baseline, load_json(modes / mode_name))
             require(operating.identity.radial_order_n == order, "quadrupole operating order differs")
-        wrapper = (
+        comsol_wrapper = (
             root / "workflows" / "no_collision_transport" / "run_comsol.ps1"
         ).read_text(encoding="utf-8")
-        require("common\\multipole\\run_finite_3d_transport.ps1" in wrapper, "quadrupole L3 runner is duplicated")
-        require("common.multipole.runtime_profile" in wrapper, "quadrupole does not use governed runtime profiles")
+        simion_wrapper = (
+            root / "workflows" / "no_collision_transport" / "run_simion.ps1"
+        ).read_text(encoding="utf-8")
+        launcher_support = (
+            REPO_ROOT
+            / "common"
+            / "multipole"
+            / "project_transport_launcher_support.ps1"
+        ).read_text(encoding="utf-8")
+        validate_high_order_launcher_chain(
+            project_id,
+            comsol_wrapper,
+            simion_wrapper,
+            launcher_support,
+        )
         runtime_profiles = load_json(root / "config" / "runtime_profiles.json")
         require(
             {
@@ -333,7 +346,10 @@ def validate_project_identity(project_id: str, order: int, electrode_count: int)
             },
             "quadrupole family runtime profiles do not fix the three governed modes",
         )
-        require("Adapter" not in wrapper, "quadrupole retains the legacy shared-adapter switch")
+        require(
+            "Adapter" not in comsol_wrapper and "Adapter" not in simion_wrapper,
+            "quadrupole retains the legacy shared-adapter switch",
+        )
         builder = (
             root / "comsol" / "solve_deterministic_rf_quadrupole_particles.m"
         ).read_text(encoding="utf-8")

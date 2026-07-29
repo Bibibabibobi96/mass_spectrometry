@@ -12,6 +12,7 @@ from common.multipole.runtime_profile import resolve_runtime_profile
 _SCOPE_KEYS = {
     "project_id",
     "runtime_profile_id",
+    "stop_stage",
     "design_profile_id",
     "particle_source_profile_id",
     "particle_count",
@@ -76,6 +77,9 @@ def validate_pilot_budget(
     """Resolve the runtime profile and validate the exact authorized pilot."""
 
     runtime = resolve_runtime_profile(repo_root.resolve(), project_id, runtime_profile_id)
+    stop_stage = runtime.get("stop_stage")
+    if stop_stage not in {"transport", "mesh_build", "field_solve"}:
+        raise ValueError("resolved runtime profile stop stage is missing or unsupported")
     expected_budget = Path(runtime["engineering_budget"]["path"]).resolve()
     if budget_path.resolve() != expected_budget:
         raise ValueError("engineering-budget path differs from runtime profile")
@@ -120,6 +124,7 @@ def validate_pilot_budget(
     expected_scope = {
         "project_id": project_id,
         "runtime_profile_id": runtime_profile_id,
+        "stop_stage": stop_stage,
         "design_profile_id": design_profile_id,
         "particle_source_profile_id": runtime["particle_source"]["profile_id"],
         "particle_count": _particle_count(Path(runtime["particle_source"]["path"])),
@@ -194,6 +199,7 @@ def validate_pilot_budget(
         "project_id": project_id,
         "solver": solver,
         "runtime_profile_id": runtime_profile_id,
+        "stop_stage": stop_stage,
         "design_profile_id": design_profile_id,
         "particle_source_profile_id": runtime["particle_source"]["profile_id"],
         "solver_numerics_profile_id": runtime["solver_numerics"][solver]["profile_id"],

@@ -457,6 +457,16 @@ try{
   }finally{Pop-Location}
   if($LASTEXITCODE-ne 0){throw 'COMSOL resource-budget preflight failed.'}
   $resolvedBudget=Get-Content -LiteralPath $budgetPreflight -Raw -Encoding UTF8|ConvertFrom-Json
+  if($resolvedBudget.PSObject.Properties.Name-notcontains'stop_stage'){
+    throw 'COMSOL resolved resource budget omits the runtime-profile stop stage.'
+  }
+  $authorizedStopStage=[string]$resolvedBudget.stop_stage
+  if($authorizedStopStage-notin@('transport','mesh_build','field_solve')){
+    throw 'COMSOL resolved resource budget has an unsupported runtime-profile stop stage.'
+  }
+  if($StopStage-ne$authorizedStopStage){
+    throw 'COMSOL StopStage differs from the authorized runtime profile.'
+  }
   $authorizedNumerics=$resolvedBudget.solver_numerics
   $authorizedBackend=[string]$authorizedNumerics.stationary_linear_solver_backend
   if($authorizedBackend-notin@('mumps','pardiso','cg_amg')){

@@ -136,6 +136,7 @@ class HybridTransportScreenTests(unittest.TestCase):
                     "authorized": True,
                     "scope": {
                         **self.budget["pilot_authorization"]["scope"],
+                        "stop_stage": self.runtime["stop_stage"],
                         "runtime_profile_id": (
                             "exit_aperture_plate_acceleration_n100_hybrid_d2_mesh_build"
                         ),
