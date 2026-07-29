@@ -35,19 +35,15 @@ class ResourceBudgetTests(unittest.TestCase):
             retention_class=retention_class,
         )
 
-    def test_only_octupole_segmented_acceleration_spatial_pair_is_authorized(self) -> None:
-        validated = self.validate()
-        self.assertEqual(
-            validated["runtime_profile_id"],
-            "segmented_rod_axial_acceleration_n100_spatial_refined",
-        )
+    def test_no_commercial_solver_pair_is_authorized(self) -> None:
         for project_id, profile in (
             (QUAD, "exit_aperture_plate_acceleration_n100_spatial_refined"),
             (HEX, "exit_aperture_plate_acceleration_n100_spatial_refined"),
+            (OCT, "segmented_rod_axial_acceleration_n100_spatial_refined"),
         ):
             with self.assertRaisesRegex(ValueError, "not authorized"):
                 self.validate(project_id, profile)
-        with self.assertRaisesRegex(ValueError, "differs from authorized scope"):
+        with self.assertRaisesRegex(ValueError, "not authorized"):
             self.validate(
                 OCT,
                 "segmented_rod_axial_acceleration",

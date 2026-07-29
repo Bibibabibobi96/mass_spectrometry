@@ -65,8 +65,9 @@ baseline pilot后登记的N=100三档只包含相邻的空间、时间离散比�
 当前没有得到下游验收、物理相空间预算或可辩护的误差尺度，因此acceptance和effect-resolution合同
 明确返回`INCONCLUSIVE`，不包含任意百分比。当前只授权
 无加速N=100 baseline、空间和时间敏感性矩阵已完成，功能传输闭合；连续相空间仍为
-`INCONCLUSIVE`。分段杆轴向加速N=100 baseline功能已闭合；当前只授权其一对双求解器空间
-敏感性运行，时间档、出口孔板加速、N=1000和完整矩阵仍未授权。项目合同
+`INCONCLUSIVE`。分段杆轴向加速N=100 baseline功能已闭合，SIMION空间档保持100/100，但
+COMSOL空间档在`MESH_COMPLETE`后耗尽工程内存预算。当前没有授权任何商业求解器运行；
+时间档、出口孔板加速、N=1000和完整矩阵仍未授权。项目合同
 不能把求解器运行、Candidate或Formal状态从旧证据继承到新机械基线。
 
 项目preregistration只冻结母样本、几何、电压和三份资格前置合同。每个求解器必须在三种模式真实运行

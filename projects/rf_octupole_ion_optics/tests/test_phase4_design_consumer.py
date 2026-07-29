@@ -164,7 +164,7 @@ class ThreeModeRuntimeAndQualificationTests(unittest.TestCase):
             budget["budget_exhaustion_result"],
             "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
         )
-        self.assertTrue(budget["pilot_authorization"]["authorized"])
+        self.assertFalse(budget["pilot_authorization"]["authorized"])
         self.assertEqual(
             budget["pilot_authorization"]["scope"]["runtime_profile_id"],
             "segmented_rod_axial_acceleration_n100_spatial_refined",
@@ -176,6 +176,21 @@ class ThreeModeRuntimeAndQualificationTests(unittest.TestCase):
         self.assertEqual(
             result["continuous_diagnostics"]["status"],
             "INCONCLUSIVE_NO_SOURCED_ERROR_BUDGET",
+        )
+        acceleration = load(
+            "config/qualification/n100_segmented_rod_axial_acceleration_qualification.json"
+        )
+        self.assertEqual(
+            acceleration["baseline_functional_transport"]["status"],
+            "PASS",
+        )
+        self.assertEqual(
+            acceleration["same_solver_spatial"]["simion"]["functional_status"],
+            "PASS",
+        )
+        self.assertEqual(
+            acceleration["same_solver_spatial"]["comsol"]["status"],
+            "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
         )
 
     def test_geometry_and_voltage_contracts_match_typed_resolved_modes(self) -> None:

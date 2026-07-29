@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "role": "multipole_project_acceleration_qualification_record",
+  "project_id": "rf_octupole_ion_optics",
+  "design_profile_id": "segmented_rod_axial_acceleration",
+  "particle_count": 100,
+  "recorded_after_runs": true,
+  "preregistration": {
+    "path": "projects/rf_octupole_ion_optics/config/qualification/n100_convergence_preregistration.json",
+    "sha256_before_runs": "D3C965869A2CB715FE710C8C5507A7C6F1AABFD6C845378F8D60820376A27669",
+    "git_commits_before_runs": {
+      "baseline": "3aa966b",
+      "spatial": "1d67000"
+    }
+  },
+  "method": {
+    "path": "common/multipole/numerical_qualification.json",
+    "sha256": "3919607C1F6E220D9DF11BE66A8C2CD01640F32D48D9A3AE82A1662F482925CD",
+    "acceptance_path": "common/multipole/functional_transport_acceptance.json",
+    "acceptance_sha256": "A4C4F4A6395AAB0F59E0BC8F380E87CDA0F1AD265EC19E66F844C14FF12A98D9"
+  },
+  "particle_source": {
+    "path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_100.csv",
+    "sha256": "0125C3AB02B2321EF26A3A913CF6EC04325FD0D48597D2CB439D0CE42411662F"
+  },
+  "runs": {
+    "simion": {
+      "baseline": {
+        "run_id": "20260729_074000__sim__simion__oct-segaccel-n100__resolved-l3",
+        "manifest_sha256": "DB3AA742F646B22B952AA9578CC1B09118DE821B8F182946D406CF9D27F6BF0F"
+      },
+      "spatial_refined": {
+        "run_id": "20260729_082000__sim__simion__oct-segaccel-spatial-n100__resolved-l3",
+        "manifest_sha256": "E5E8F15EB1841E8237E3196679C84F137AD9D622401D51F1C715982634C11C7B"
+      }
+    },
+    "comsol": {
+      "baseline": {
+        "run_id": "20260729_075000__sim__comsol__oct-segaccel-n100__resolved-l3",
+        "manifest_sha256": "9C30589CAADA7CB50786142BC2267ADFFCBD8C2053A7C4DA500849CA8288AF7E"
+      },
+      "spatial_failed": {
+        "run_id": "20260729_083000__sim__comsol__oct-segaccel-spatial-n100__resolved-l3",
+        "manifest_sha256": "134BE0DBA35AD574D83E7520D8CDA46C2D87F093DA47134B077A299201EAC1D1"
+      }
+    }
+  },
+  "analysis_artifacts": {
+    "baseline_cross_solver": {
+      "sha256": "BEBFB802F4C24562521F2D24FBF581CEEB7BA8A51A19B7C20859C682A6A10EEB",
+      "status": "PASS"
+    },
+    "simion_spatial": {
+      "sha256": "0414F842A9A80A61B3868146269DFEE1910E801E1CE4880F9B6A46FBF973770A",
+      "status": "PASS"
+    }
+  },
+  "baseline_functional_transport": {
+    "status": "PASS",
+    "accelerated_transmitted_particle_count_each_solver": 100,
+    "control_transmitted_particle_count_each_solver": 100,
+    "cross_solver_handoff_particle_id_sets": "exact_match",
+    "positive_working_radius_margin_each_solver": true,
+    "mean_energy_gain_eV": {
+      "simion": 3.0131215283905,
+      "comsol": 2.999409574752558
+    }
+  },
+  "same_solver_spatial": {
+    "simion": {
+      "functional_status": "PASS",
+      "handoff_particle_id_sets": "exact_match",
+      "rms_radius_relative_difference": 0.023892191741134553,
+      "rms_divergence_relative_difference": 0.07977996699793646,
+      "mean_energy_relative_difference": 0.001963707309625823
+    },
+    "comsol": {
+      "status": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
+      "peak_process_tree_working_set_bytes": 19180437504,
+      "process_tree_working_set_limit_bytes": 17179869184,
+      "minimum_system_available_memory_bytes": 11451305984,
+      "minimum_system_available_memory_limit_bytes": 8589934592,
+      "last_checkpoint": "MESH_COMPLETE"
+    }
+  },
+  "baseline_cross_solver_continuous_diagnostics": {
+    "status": "INCONCLUSIVE_NO_SOURCED_ERROR_BUDGET",
+    "rms_radius_relative_difference": 0.009346103262704807,
+    "rms_divergence_relative_difference": 0.09656301586359932,
+    "mean_tof_relative_difference": 0.000014873042996969071,
+    "mean_energy_relative_difference": 0.0027389585104284774
+  },
+  "decision": {
+    "functional_segmented_rod_axial_acceleration": "CLOSED",
+    "comsol_spatial_convergence": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
+    "continuous_numerical_equivalence": "INCONCLUSIVE",
+    "further_memory_limit_increase": "NOT_AUTHORIZED",
+    "temporal_refinement": "NOT_AUTHORIZED"
+  },
+  "claim_limit": "PASS covers only N=100 collision-free functional segmented-rod axial acceleration for the named octupole profile. It does not qualify COMSOL spatial convergence, continuous phase-space equivalence, exit-aperture-plate acceleration, N=1000, collision cooling, mechanical design, Candidate or Formal status."
+}
