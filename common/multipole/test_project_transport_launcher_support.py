@@ -29,7 +29,10 @@ class ProjectTransportLauncherSupportTests(unittest.TestCase):
             source.count("common\\multipole\\run_simion_finite_3d_transport.ps1"),
             1,
         )
-        self.assertIn("$arguments.StopStage = 'mesh_build'", source)
+        self.assertIn("$arguments.StopStage = $stopStage", source)
+        self.assertIn("$stopStage = [string]$profile.stop_stage", source)
+        self.assertNotIn("-like '*_mesh_build'", source)
+        self.assertIn("SIMION transport does not support stop stage", source)
         self.assertIn("solver_numerics.$Solver.values", source)
 
     def test_public_wrappers_keep_identity_defaults_and_no_profile_catalog(self) -> None:

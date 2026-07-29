@@ -309,7 +309,7 @@ class FamilyExperimentProfileTests(unittest.TestCase):
         self.assertFalse(engineering["pilot_authorization"]["authorized"])
         self.assertEqual(
             engineering["pilot_authorization"]["scope"]["runtime_profile_id"],
-            "exit_aperture_plate_acceleration_n100_hybrid_transport_screen",
+            "exit_aperture_plate_acceleration_n100_hybrid_d2_pardiso_field_screen",
         )
         self.assertEqual(
             engineering["pilot_authorization"]["scope"]["allowed_solvers"],
@@ -322,7 +322,7 @@ class FamilyExperimentProfileTests(unittest.TestCase):
         self.assertFalse(engineering["full_matrix_authorization"]["authorized"])
         self.assertEqual(
             engineering["full_matrix_authorization"]["reason"],
-            "the_hybrid_transport_candidate_exceeded_its_memory_budget_before_field_completion_and_no_followup_is_authorized",
+            "the_same_mesh_pardiso_field_screen_exceeded_12_gib_before_the_first_field_completed",
         )
 
         result = load(
@@ -471,7 +471,7 @@ class FamilyExperimentProfileTests(unittest.TestCase):
         launcher_support = (REPO_ROOT / "common/multipole/project_transport_launcher_support.ps1").read_text(encoding="utf-8-sig")
         self.assertNotIn(diagnostic["scope"]["runtime_profile_id"], wrapper)
         self.assertIn("Invoke-MultipoleProjectFinite3dTransport", wrapper)
-        for token in ("$arguments.StopStage = 'mesh_build'", "profile_id"):
+        for token in ("$arguments.StopStage = $stopStage", "profile_id"):
             self.assertIn(token, launcher_support)
 
         solver = (REPO_ROOT / "common/multipole/solve_finite_3d_transport.m").read_text(encoding="utf-8")

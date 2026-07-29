@@ -87,10 +87,25 @@ class ResourceBudgetTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("'-StartupAttempts','1'", comsol)
-        self.assertIn("[ValidateSet('','mesh_build')][string]$StopStage=''", comsol)
+        self.assertIn(
+            "[ValidateSet('transport','mesh_build','field_solve')]"
+            "[string]$StopStage='transport'",
+            comsol,
+        )
         self.assertIn("MULTIPOLE_L3_STOP_STAGE", comsol)
         self.assertIn("UNQUALIFIED_MESH_BUILD_DIAGNOSTIC_ONLY", comsol)
-        self.assertIn("$runtimeDeclaresMeshBuild=$RuntimeProfileId -like '*_mesh_build'", comsol)
+        self.assertIn("UNQUALIFIED_FIELD_SOLVE_DIAGNOSTIC_ONLY", comsol)
+        self.assertNotIn("$RuntimeProfileId -like '*_mesh_build'", comsol)
+        self.assertIn("Assert-MultipoleFieldSolveReport", comsol)
+        self.assertIn(
+            "stationary_linear_solver_backend="
+            "$authorizedBackend",
+            comsol,
+        )
+        self.assertIn(
+            "$authorizedBackend-notin@('mumps','pardiso')",
+            comsol,
+        )
         self.assertIn("MESH_GLOBAL_ELEMENTS", comsol)
         self.assertIn("maximum_mesh_cells", comsol)
         self.assertIn("$usage.limit_name='maximum_mesh_cells'", comsol)
@@ -106,7 +121,9 @@ class ResourceBudgetTests(unittest.TestCase):
         self.assertNotIn("fflush(", solver)
 
     def test_mesh_cell_limit_is_optional_and_strictly_positive(self) -> None:
-        runtime_profile_id = "exit_aperture_plate_acceleration_n100_hybrid_transport_screen"
+        runtime_profile_id = (
+            "exit_aperture_plate_acceleration_n100_hybrid_d2_pardiso_field_screen"
+        )
         runtime = resolve_runtime_profile(REPO_ROOT, HEX, runtime_profile_id)
         budget_path = Path(runtime["engineering_budget"]["path"])
         authorized_fixture = json.loads(budget_path.read_text(encoding="utf-8"))
@@ -158,7 +175,7 @@ class ResourceBudgetTests(unittest.TestCase):
             REPO_ROOT / "common/multipole/run_finite_3d_transport.ps1"
         ).read_text(encoding="utf-8")
         start = runner.index("function Assert-MultipoleMeshBuildReport")
-        end = runner.index("\n$runtimeDeclaresMeshBuild", start)
+        end = runner.index("\nfunction Assert-MultipoleFieldSolveReport", start)
         assertion_function = runner[start:end]
         required_lines = [
             "STOP_STAGE=mesh_build",
@@ -234,6 +251,89 @@ class ResourceBudgetTests(unittest.TestCase):
                         element_value,
                         report_present=report_present,
                     )
+                    self.assertNotEqual(rejected.returncode, 0)
+                    self.assertIn(expected, rejected.stdout + rejected.stderr)
+
+    def test_field_solve_report_requires_complete_fields_and_no_particles(self) -> None:
+        runner = (
+            REPO_ROOT / "common/multipole/run_finite_3d_transport.ps1"
+        ).read_text(encoding="utf-8")
+        start = runner.index("function Assert-MultipoleFieldSolveReport")
+        end = runner.index(
+            "\nif(-not [double]::IsNaN($WorkingRegionMaximumElementSizeMm)",
+            start,
+        )
+        assertion_function = runner[start:end]
+        required_lines = [
+            "CHECKPOINT=STATIONARY_FIELDS_COMPLETE",
+            "STOP_STAGE=field_solve",
+            "STATIONARY_LINEAR_SOLVER_BACKEND=PARDISO",
+            "FIELD_PHYSICS_CREATED=2",
+            "FIELD_STUDIES_CREATED=2",
+            "FIELD_SOLUTIONS_CREATED=2",
+            "PARTICLE_PHYSICS_CREATED=0",
+            "PARTICLE_STUDIES_CREATED=0",
+            "DIFFERENTIAL_FIELD_DOF=100",
+            "STATIC_FIELD_DOF=100",
+            "FIELD_SOLVE_DIAGNOSTIC=PASS",
+            "STATUS=PASS",
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / "field_report.txt"
+
+            def run_assertion(lines: list[str]) -> subprocess.CompletedProcess[str]:
+                report.write_text("\n".join(lines) + "\n", encoding="utf-8")
+                escaped_path = str(report).replace("'", "''")
+                command = (
+                    f"{assertion_function}\n"
+                    f"$result=Assert-MultipoleFieldSolveReport -Path '{escaped_path}';"
+                    'Write-Output "BACKEND=$($result.stationary_linear_solver_backend)"'
+                )
+                return subprocess.run(
+                    ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                    cwd=REPO_ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=20,
+                )
+
+            accepted = run_assertion(required_lines)
+            self.assertEqual(accepted.returncode, 0, accepted.stderr)
+            self.assertIn("BACKEND=pardiso", accepted.stdout)
+            invalid_cases = (
+                (
+                    [
+                        line
+                        for line in required_lines
+                        if line != "PARTICLE_PHYSICS_CREATED=0"
+                    ]
+                    + ["PARTICLE_PHYSICS_CREATED=1"],
+                    "PARTICLE_PHYSICS_CREATED=0",
+                ),
+                (
+                    [
+                        line
+                        for line in required_lines
+                        if line != "STATIC_FIELD_DOF=100"
+                    ],
+                    "incomplete field-DOF identity",
+                ),
+                (
+                    [
+                        "STATIONARY_LINEAR_SOLVER_BACKEND=ITERATIVE"
+                        if line == "STATIONARY_LINEAR_SOLVER_BACKEND=PARDISO"
+                        else line
+                        for line in required_lines
+                    ],
+                    "invalid stationary solver backend",
+                ),
+            )
+            for lines, expected in invalid_cases:
+                with self.subTest(expected=expected):
+                    rejected = run_assertion(lines)
                     self.assertNotEqual(rejected.returncode, 0)
                     self.assertIn(expected, rejected.stdout + rejected.stderr)
 

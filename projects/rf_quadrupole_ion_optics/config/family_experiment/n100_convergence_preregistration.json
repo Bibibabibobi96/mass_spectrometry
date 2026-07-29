@@ -71,7 +71,7 @@
   "solver_plans": {
     "comsol": {
       "registry": "projects/rf_quadrupole_ion_optics/config/multipole_transport_comsol_solver_numerics.json",
-      "registry_sha256": "17B21A505E0DCBB298711944F80E71035C1282D79342D7290C4D65DA8BD01CD1",
+      "registry_sha256": "8D64B3578ABF1CFE4F498E7780AE57E5A4376BA8A8D7FFB6748D6AE8C9B7A95F",
       "tiers": {
         "baseline": {
           "profile_id": "baseline_finite_3d",

@@ -52,16 +52,18 @@ def resolve_runtime_profile(
     if not isinstance(profiles, dict) or runtime_profile_id not in profiles:
         raise ValueError(f"unknown runtime profile: {runtime_profile_id}")
     profile = profiles[runtime_profile_id]
-    _require_keys(
-        profile,
-        {
-            "design_profile_id",
-            "particle_source_profile_id",
-            "comsol_solver_numerics_profile_id",
-            "simion_solver_numerics_profile_id",
-        },
-        "runtime profile",
-    )
+    required_profile_keys = {
+        "design_profile_id",
+        "particle_source_profile_id",
+        "comsol_solver_numerics_profile_id",
+        "simion_solver_numerics_profile_id",
+    }
+    allowed_profile_keys = required_profile_keys | {"stop_stage"}
+    if not required_profile_keys.issubset(profile) or set(profile) - allowed_profile_keys:
+        raise ValueError(f"runtime profile keys differ: {sorted(profile)}")
+    stop_stage = profile.get("stop_stage", "transport")
+    if stop_stage not in {"transport", "mesh_build", "field_solve"}:
+        raise ValueError(f"unsupported runtime stop stage: {stop_stage}")
     design = resolve_design_profile(repo_root, project_id, profile["design_profile_id"])
     design_serializable = {
         **design,
@@ -153,6 +155,7 @@ def resolve_runtime_profile(
         "runtime_profile_id": runtime_profile_id,
         "runtime_profile_registry_path": str(registry_path.resolve()),
         "runtime_profile_registry_sha256": _sha256(registry_path),
+        "stop_stage": stop_stage,
         "design_profile_id": profile["design_profile_id"],
         "design_profile_resolution": design_serializable,
         "particle_source": {

@@ -74,7 +74,7 @@ class RfToOatofTransferRunnerTests(unittest.TestCase):
             / "run_pre_pulse_interface_transport.ps1"
         ).read_text(encoding="utf-8")
         for required in (
-            "resolved_connection = $resolvedConnection",
+            "resolved_connection = $frozenResolvedConnection",
             "RF_OATOF_RESOLVED_CONNECTION",
             "port_geometry.downstream.coordinate_frame.frame_id",
             "spatial_registration.actual_gap_mm",

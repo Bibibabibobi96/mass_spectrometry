@@ -59,6 +59,7 @@
       "simion_solver_numerics_profile_id": "n100_temporal_refined"
     },
     "exit_aperture_plate_acceleration_n100_hybrid_d2_mesh_build": {
+      "stop_stage": "mesh_build",
       "design_profile_id": "exit_aperture_plate_acceleration",
       "particle_source_profile_id": "family_mother_sample_v1_n100",
       "comsol_solver_numerics_profile_id": "hybrid_d2_mesh_build",
@@ -68,6 +69,13 @@
       "design_profile_id": "exit_aperture_plate_acceleration",
       "particle_source_profile_id": "family_mother_sample_v1_n100",
       "comsol_solver_numerics_profile_id": "hybrid_d2_transport_screen",
+      "simion_solver_numerics_profile_id": "baseline_finite_3d"
+    },
+    "exit_aperture_plate_acceleration_n100_hybrid_d2_pardiso_field_screen": {
+      "stop_stage": "field_solve",
+      "design_profile_id": "exit_aperture_plate_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "hybrid_d2_pardiso_field_screen",
       "simion_solver_numerics_profile_id": "baseline_finite_3d"
     },
     "no_acceleration_full_length_n1000": {

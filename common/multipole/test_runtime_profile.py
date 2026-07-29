@@ -91,6 +91,26 @@ class RuntimeProfileTests(unittest.TestCase):
                 REPO_ROOT, "rf_hexapole_ion_optics", "not-a-profile"
             )
 
+    def test_runtime_stop_stage_is_explicit_or_normalized_to_transport(self) -> None:
+        normal = resolve_runtime_profile(
+            REPO_ROOT,
+            "rf_hexapole_ion_optics",
+            "no_acceleration_full_length",
+        )
+        self.assertEqual(normal["stop_stage"], "transport")
+        registry_path = (
+            REPO_ROOT
+            / "projects/rf_hexapole_ion_optics/config/runtime_profiles.json"
+        )
+        registry = json.loads(registry_path.read_text(encoding="utf-8-sig"))
+        special_profiles = [
+            profile
+            for profile in registry["profiles"].values()
+            if profile.get("stop_stage", "transport") != "transport"
+        ]
+        for profile in special_profiles:
+            self.assertIn(profile["stop_stage"], {"mesh_build", "field_solve"})
+
     def test_quadrupole_uses_the_same_governed_runtime_chain(self) -> None:
         resolved = resolve_runtime_profile(
             REPO_ROOT,

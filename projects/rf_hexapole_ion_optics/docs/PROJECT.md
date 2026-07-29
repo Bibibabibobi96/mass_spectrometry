@@ -214,6 +214,17 @@ N=100源和80步/周期、80 us轨迹设置，只把网格替换为D2已经建�
 峰值9,422,286,848 bytes，未完成的hybrid候选已经高出44.989%，无法满足资源优化目标；当前策略登记为
 `REJECT_CURRENT_HYBRID_FOR_PARTICLE_TRACKING`，不抬帽、不重跑，也没有粒子输出可用于连续量比较。
 
+独立的
+[`PARDISO field-only隔离预登记`](../config/qualification/comsol_hybrid_d2_pardiso_field_screen_preregistration.json)
+已完成唯一一次`20260729_233000__analysis__comsol__hex-hybrid-d2-pardiso-field__r01`。它冻结上述D2
+网格、出口孔板加速resolved、N=100源身份及全部物理量，唯一变量为两次stationary direct solve由
+MUMPS改为显式PARDISO；计划在双场后停止且禁止创建粒子。真实运行再次得到884,643单元和零拓扑
+缺口，但在首个差分场完成前于111.635 s达到13,716,545,536 bytes，超过12 GiB进程树硬帽；当时系统
+仍有13,179,715,584 bytes可用，运行目录峰值仅1,738,045 bytes。该峰值比MUMPS失败身份高约0.404%，
+比完整FreeTet baseline高约45.576%，因此PARDISO没有建立field-only可运行性或资源改进。运行登记为
+`INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED / REJECT_SAME_MESH_PARDISO_FIELD_SOLVE`；一次性授权已经耗尽，
+不重跑、不抬帽，也不授权粒子、CG-AMG、后续细化、连续数值等价、收敛、Candidate、Formal或N=1000。
+
 共享SIMION模板、GUI复核、`.wgem`绕过和跨机可移植性状态只由
 [`../../../common/multipole/README.md`](../../../common/multipole/README.md)维护；公共机制证据不授予
 本项目Candidate或Formal资格。

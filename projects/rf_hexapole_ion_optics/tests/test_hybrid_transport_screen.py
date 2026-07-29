@@ -115,7 +115,7 @@ class HybridTransportScreenTests(unittest.TestCase):
             ],
         )
 
-    def test_completed_budget_rejects_every_followup(self) -> None:
+    def test_closed_transport_identity_is_not_reauthorized_by_field_screen(self) -> None:
         with self.assertRaisesRegex(ValueError, "not authorized"):
             validate_pilot_budget(
                 repo_root=REPO_ROOT,

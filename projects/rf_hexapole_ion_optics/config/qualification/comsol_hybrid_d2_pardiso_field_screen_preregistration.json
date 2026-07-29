@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "role": "multipole_comsol_field_solver_isolation_preregistration",
+  "project_id": "rf_hexapole_ion_optics",
+  "experiment_id": "hexapole_hybrid_d2_pardiso_field_only_v1",
+  "preregistered_before_run": true,
+  "status": "completed_closed_resource_budget_exceeded",
+  "authorization": {
+    "maximum_commercial_run_count": 1,
+    "automatic_retry_count": 0,
+    "planned_run_id": "20260729_233000__analysis__comsol__hex-hybrid-d2-pardiso-field__r01",
+    "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_d2_pardiso_field_screen",
+    "design_profile_id": "exit_aperture_plate_acceleration",
+    "particle_source_profile_id": "family_mother_sample_v1_n100",
+    "comsol_solver_numerics_profile_id": "hybrid_d2_pardiso_field_screen",
+    "stop_stage": "field_solve",
+    "retention_class": "compact"
+  },
+  "frozen_identity": {
+    "expected_run_parent_resolved_design_sha256": "C9C3B00A5327825FCB138FB7EEDF2C6F7175497EAEB3CD1EB28A5D995AAC4B6E",
+    "physical_resolved_payload_sha256": "A868E5C06A6A98BF86C0D662D53118FCFF6EE51BA208214FACD7D39E32F6FD66",
+    "runtime_profiles_sha256": "983C8FAB4784667197F3C378FE71309A479AF9C7EF9850A0CE87BF03789EF319",
+    "comsol_solver_numerics_sha256": "81D323FED0423452EC5F961ECB1E7E2E1C387AB911B5EA9810805C08DB22EC68",
+    "engineering_budget_sha256": "19FC6FDB0C30F8478DBBD7EA65533E2AEAEB37EF59AA0B9957A3996B4AF4209B",
+    "particle_source_profiles_sha256": "8162081232E0ABCA311DA9E9D10B8BDA78ED24E95C919E8E52B6787DDD1C0B30",
+    "design_profiles_sha256": "157EB846B0F3715A300EF9F3D994DD3B05A919C04FBFD83D6B8611A77FAA74B1"
+  },
+  "single_changed_variable": {
+    "name": "stationary_linear_solver_backend",
+    "rejected_reference": "mumps",
+    "candidate": "pardiso",
+    "unchanged_mesh_profile": "hybrid_d2",
+    "unchanged_global_mesh_element_count": 884643
+  },
+  "frozen_mesh": {
+    "strategy": "physical_segment_hybrid_swept_tetra_v1",
+    "physical_segment_count": 4,
+    "segment_end_buffer_mm": 1.0,
+    "swept_length_per_segment_mm": 17.6,
+    "core_radius_mm": 8.5,
+    "radial_core_and_rod_hmax_mm": 0.5,
+    "axial_layers_per_swept_segment": 10,
+    "transition_and_end_tetra_hmax_mm": 0.5,
+    "outer_vacuum_hmax_mm": 1.0,
+    "minimum_element_size_mm": 0.02
+  },
+  "resource_limits": {
+    "wall_clock_seconds": 300,
+    "process_tree_working_set_bytes": 12884901888,
+    "minimum_system_available_memory_bytes": 8589934592,
+    "transient_run_directory_bytes": 134217728,
+    "compact_final_retained_bytes": 10485760,
+    "maximum_mesh_cells": 1000000,
+    "automatic_retry_count": 0
+  },
+  "required_report": {
+    "tokens": [
+      "CHECKPOINT=MESH_COMPLETE",
+      "MESH_GLOBAL_ELEMENTS=884643",
+      "CHECKPOINT=DIFFERENTIAL_FIELD_COMPLETE",
+      "CHECKPOINT=STATIONARY_FIELDS_COMPLETE",
+      "STATIONARY_LINEAR_SOLVER_BACKEND=PARDISO",
+      "STOP_STAGE=field_solve",
+      "PARTICLE_PHYSICS_CREATED=0",
+      "PARTICLE_STUDIES_CREATED=0",
+      "FIELD_SOLVE_DIAGNOSTIC=PASS",
+      "STATUS=PASS"
+    ],
+    "positive_integer_fields": [
+      "DIFFERENTIAL_FIELD_DOF",
+      "STATIC_FIELD_DOF"
+    ],
+    "forbidden_checkpoints": [
+      "PRIMARY_PARTICLE_CASE_COMPLETE",
+      "CONTROL_PARTICLE_CASE_COMPLETE"
+    ]
+  },
+  "decision_policy": {
+    "completed_freetet_baseline_process_tree_peak_bytes": 9422286848,
+    "viability_pass": "Both governed stationary fields complete with explicit PARDISO and every preregistered hard limit remains satisfied.",
+    "resource_improvement_pass": "The measured process-tree peak is strictly less than 9422286848 bytes.",
+    "particle_followup_condition": "A separate N=100 transport authorization may be created only after viability_pass and resource_improvement_pass are both true.",
+    "result_if_viable_without_improvement": "FIELD_ONLY_VIABLE_NOT_RESOURCE_IMPROVING",
+    "result_if_hard_limit_exceeded": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
+    "fallback_backend_or_retry_authorized": false
+  },
+  "execution_result": {
+    "terminal": true,
+    "run_id": "20260729_233000__analysis__comsol__hex-hybrid-d2-pardiso-field__r01",
+    "run_manifest_status": "interrupted",
+    "result": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
+    "failure_class": "resource_budget_exceeded",
+    "limit_name": "process_tree_working_set_bytes",
+    "wall_clock_seconds": 111.635,
+    "peak_process_tree_working_set_bytes": 13716545536,
+    "minimum_system_available_memory_bytes": 13179715584,
+    "peak_run_directory_bytes": 1738045,
+    "final_retained_bytes": 1738045,
+    "mesh_complete": true,
+    "global_mesh_element_count": 884643,
+    "mesh_topology_problem_detected": false,
+    "differential_field_complete": false,
+    "static_field_complete": false,
+    "particle_physics_created": false,
+    "particle_study_created": false,
+    "field_only_viability_pass": false,
+    "resource_improvement_pass": false,
+    "particle_followup_authorized": false,
+    "automatic_retry_count": 0,
+    "commercial_run_authorization_exhausted": true,
+    "completed_engineering_budget_sha256": "3B491D5CADEFF7FA20D3457B6733A741299F54A2E55738668538E014683A117E",
+    "comparison": {
+      "rejected_mumps_peak_process_tree_working_set_bytes": 13661315072,
+      "pardiso_relative_change_from_mumps_percent": 0.404283655774829,
+      "completed_freetet_baseline_peak_process_tree_working_set_bytes": 9422286848,
+      "pardiso_relative_change_from_completed_freetet_percent": 45.5755461203297
+    },
+    "decision": "REJECT_SAME_MESH_PARDISO_FIELD_SOLVE"
+  },
+  "claim_limit": "The single PARDISO field-only run exceeded its process-tree budget before the first field completed. It supplies a governed negative engineering result only and does not establish field viability, particle transport, continuous numerical equivalence, convergence, Candidate, Formal or N=1000 qualification."
+}

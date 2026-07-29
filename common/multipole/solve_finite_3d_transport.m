@@ -20,9 +20,10 @@ controlCanonicalStatePath = getenv('MULTIPOLE_L3_CONTROL_CANONICAL_STATE');
 primaryTrajectoryPath = getenv('MULTIPOLE_L3_PRIMARY_TRAJECTORIES');
 controlTrajectoryPath = getenv('MULTIPOLE_L3_CONTROL_TRAJECTORIES');
 stopStage = getenv('MULTIPOLE_L3_STOP_STAGE');
-assert(any(strcmp(stopStage, {'', 'mesh_build'})), ...
+assert(any(strcmp(stopStage, {'transport', 'mesh_build', 'field_solve'})), ...
     'Finite 3D multipole stop stage is unsupported.');
 meshBuildOnly = strcmp(stopStage, 'mesh_build');
+fieldSolveOnly = strcmp(stopStage, 'field_solve');
 required = {reportPath, resolvedDesignPath, numericsPath, sourcePath, sourceMetadataPath, ...
     runtimeDir, eventsPath, trajectoryPath, metricsPath, plotPath, modelPath};
 assert(all(~cellfun(@isempty, required)), 'Finite 3D multipole environment is incomplete.');
@@ -43,6 +44,11 @@ try
         'COMSOL requires the canonical multipole resolved design.');
     assert(strcmp(numerics.role,'multipole_comsol_solver_numerics'), ...
         'COMSOL numerical contract role differs.');
+    assert(isfield(numerics,'stationary_linear_solver_backend'), ...
+        'COMSOL numerical contract omits the stationary linear-solver backend.');
+    stationaryLinearSolverBackend=lower(char(numerics.stationary_linear_solver_backend));
+    assert(any(strcmp(stationaryLinearSolverBackend, {'mumps', 'pardiso'})), ...
+        'COMSOL stationary linear-solver backend is unsupported.');
     assert(strcmp(sourceMetadata.role,'multipole_canonical_particle_source_metadata'), ...
         'COMSOL particle-source metadata role differs.');
     assert(strcmp(sourceMetadata.parent_resolved_design_sha256,design.resolved_sha256), ...
@@ -443,7 +449,8 @@ try
         solutionDiff=model.sol.create('sol_es_diff');
         solutionDiff.study('std_es_diff');
         solutionDiff.createAutoSequence('std_es_diff');
-        configure_comsol_stationary_direct_solver(solutionDiff);
+        actualDiffBackend=configure_comsol_stationary_direct_solver( ...
+            solutionDiff,stationaryLinearSolverBackend);
         solutionDiff.attach('std_es_diff');
         solutionDiff.runAll;
         fprintf(fid,'CHECKPOINT=DIFFERENTIAL_FIELD_COMPLETE\n');
@@ -454,7 +461,8 @@ try
         solutionStatic=model.sol.create('sol_es_static');
         solutionStatic.study('std_es_static');
         solutionStatic.createAutoSequence('std_es_static');
-        configure_comsol_stationary_direct_solver(solutionStatic);
+        actualStaticBackend=configure_comsol_stationary_direct_solver( ...
+            solutionStatic,stationaryLinearSolverBackend);
         solutionStatic.attach('std_es_static');
         solutionStatic.runAll;
         model.param.set('field_case','1');
@@ -464,10 +472,56 @@ try
         solutionEs = model.sol.create('sol_es');
         solutionEs.study('std_es');
         solutionEs.createAutoSequence('std_es');
+        actualFieldBackend=configure_comsol_stationary_direct_solver( ...
+            solutionEs,stationaryLinearSolverBackend);
         solutionEs.attach('std_es');
         solutionEs.runAll;
     end
     fprintf(fid,'CHECKPOINT=STATIONARY_FIELDS_COMPLETE\n');
+    fprintf(fid,'STATIONARY_LINEAR_SOLVER_BACKEND=%s\n', ...
+        upper(stationaryLinearSolverBackend));
+
+    if fieldSolveOnly
+        physicsTags = cell(comp.physics.tags());
+        studyTags = cell(model.study.tags());
+        solutionTags = cell(model.sol.tags());
+        particlePhysicsCreated = sum(strcmp(physicsTags, 'cpt'));
+        if accelerationEnabled
+            differentialInfo=mphsolinfo(model,'soltag','sol_es_diff');
+            staticInfo=mphsolinfo(model,'soltag','sol_es_static');
+            differentialDof=double(differentialInfo.size);
+            staticDof=double(staticInfo.size);
+            assert(strcmp(actualDiffBackend,stationaryLinearSolverBackend) && ...
+                strcmp(actualStaticBackend,stationaryLinearSolverBackend), ...
+                'Acceleration field solvers did not retain the governed backend.');
+            fprintf(fid,'DIFFERENTIAL_FIELD_DOF=%d\n',differentialDof);
+            fprintf(fid,'STATIC_FIELD_DOF=%d\n',staticDof);
+            assert(isfinite(differentialDof) && differentialDof > 0 && ...
+                isfinite(staticDof) && staticDof > 0, ...
+                'Acceleration field solution sizes are invalid.');
+        else
+            fieldInfo=mphsolinfo(model,'soltag','sol_es');
+            fieldDof=double(fieldInfo.size);
+            assert(strcmp(actualFieldBackend,stationaryLinearSolverBackend), ...
+                'Stationary field solver did not retain the governed backend.');
+            fprintf(fid,'STATIONARY_FIELD_DOF=%d\n',fieldDof);
+            assert(isfinite(fieldDof) && fieldDof > 0, ...
+                'Stationary field solution size is invalid.');
+        end
+        fprintf(fid,'STOP_STAGE=field_solve\n');
+        fprintf(fid,'FIELD_PHYSICS_CREATED=%d\n', ...
+            sum(ismember(physicsTags, {'es', 'es_static'})));
+        fprintf(fid,'FIELD_STUDIES_CREATED=%d\n',numel(studyTags));
+        fprintf(fid,'FIELD_SOLUTIONS_CREATED=%d\n',numel(solutionTags));
+        fprintf(fid,'PARTICLE_PHYSICS_CREATED=%d\n',particlePhysicsCreated);
+        fprintf(fid,'PARTICLE_STUDIES_CREATED=0\n');
+        assert(particlePhysicsCreated == 0, ...
+            'Field-solve stop stage created forbidden particle physics.');
+        fprintf(fid,'FIELD_SOLVE_DIAGNOSTIC=PASS\n');
+        fprintf(fid,'STATUS=PASS\n');
+        ModelUtil.remove(tag);
+        return
+    end
 
     cpt = comp.physics.create('cpt', 'ChargedParticleTracing', 'geom1');
     cpt.selection.named('sel_vac');

@@ -48,6 +48,7 @@ function Invoke-MultipoleProjectFinite3dTransport {
     $profile = Get-Content -LiteralPath $resolutionPath -Raw -Encoding UTF8 |
       ConvertFrom-Json
     $numerics = $profile.solver_numerics.$Solver.values
+    $stopStage = [string]$profile.stop_stage
     $arguments = @{
       ProjectId = $ProjectId
       RuntimeProfileId = $RuntimeProfileId
@@ -66,21 +67,18 @@ function Invoke-MultipoleProjectFinite3dTransport {
     }
 
     if ($Solver -eq 'comsol') {
+      $arguments.StopStage = $stopStage
       $arguments.MeshAutoLevel = [int]$numerics.mesh.global_auto_level
       if ($null -ne $numerics.mesh.working_region_maximum_element_size_mm) {
         $arguments.WorkingRegionMaximumElementSizeMm = [double](
           $numerics.mesh.working_region_maximum_element_size_mm
         )
       }
-      $numericsProfileId = [string]$profile.solver_numerics.comsol.profile_id
-      if ($numericsProfileId -like '*_mesh_build') {
-        if ($RuntimeProfileId -notlike '*_mesh_build') {
-          throw 'A mesh-build numerics profile requires a mesh-build runtime identity.'
-        }
-        $arguments.StopStage = 'mesh_build'
-      }
       $commonEntry = 'common\multipole\run_finite_3d_transport.ps1'
     } else {
+      if ($stopStage -ne 'transport') {
+        throw "SIMION transport does not support stop stage '$stopStage'."
+      }
       $arguments.ReferenceComsolRunId = $ReferenceComsolRunId
       $arguments.CellMm = [double]$numerics.cell_mm
       $arguments.TrajectoryQuality = [int]$numerics.trajectory_quality

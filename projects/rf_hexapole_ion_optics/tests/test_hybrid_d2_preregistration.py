@@ -128,6 +128,7 @@ class HybridD2PreregistrationTests(unittest.TestCase):
         self.assertEqual(
             profile,
             {
+                "stop_stage": "mesh_build",
                 "design_profile_id": "exit_aperture_plate_acceleration",
                 "particle_source_profile_id": "family_mother_sample_v1_n100",
                 "comsol_solver_numerics_profile_id": NUMERICS_PROFILE_ID,
@@ -145,7 +146,7 @@ class HybridD2PreregistrationTests(unittest.TestCase):
             NUMERICS_PROFILE_ID,
         )
         self.assertFalse(self.budget["full_matrix_authorization"]["authorized"])
-        self.assertIn("screen is closed", self.budget["claim_limit"])
+        self.assertIn("field-only run", self.budget["claim_limit"])
 
     def test_d2_solver_size_and_terminal_report_are_frozen(self) -> None:
         d2 = self.preregistration["d2"]

@@ -16,7 +16,7 @@ param(
   [string]$RetentionReason='',
   [string]$SourceFamilyPath='',
   [string]$OperatingPointId='',
-  [ValidateSet('','mesh_build')][string]$StopStage=''
+  [ValidateSet('transport','mesh_build','field_solve')][string]$StopStage='transport'
 )
 
 Set-StrictMode -Version Latest
@@ -109,9 +109,77 @@ function Assert-MultipoleMeshCellBudgetReport {
   return $meshCells
 }
 
-$runtimeDeclaresMeshBuild=$RuntimeProfileId -like '*_mesh_build'
-if($runtimeDeclaresMeshBuild -ne ($StopStage-eq'mesh_build')){
-  throw 'The runtime profile and the finite-3D stop stage must agree on mesh_build.'
+function Assert-MultipoleFieldSolveReport {
+  param([Parameter(Mandatory=$true)][string]$Path)
+  if(-not(Test-Path -LiteralPath $Path -PathType Leaf)){
+    throw 'COMSOL field-solve report is missing.'
+  }
+  $content=Get-Content -LiteralPath $Path -Raw -Encoding UTF8
+  foreach($token in @(
+    'CHECKPOINT=STATIONARY_FIELDS_COMPLETE',
+    'STOP_STAGE=field_solve',
+    'PARTICLE_PHYSICS_CREATED=0',
+    'PARTICLE_STUDIES_CREATED=0',
+    'FIELD_SOLVE_DIAGNOSTIC=PASS',
+    'STATUS=PASS'
+  )){
+    if($content-notmatch("(?m)^$([regex]::Escape($token))\r?$")){
+      throw "COMSOL field-solve report is missing required terminal token: $token"
+    }
+  }
+  $backendMatches=[regex]::Matches(
+    $content,'(?m)^STATIONARY_LINEAR_SOLVER_BACKEND=(?<value>[^\r\n]+)\r?$'
+  )
+  if($backendMatches.Count-ne 1-or
+    $backendMatches[0].Groups['value'].Value-notin@('MUMPS','PARDISO')){
+    throw 'COMSOL field-solve report has an invalid stationary solver backend.'
+  }
+  $counts=[ordered]@{}
+  foreach($name in @(
+    'FIELD_PHYSICS_CREATED',
+    'FIELD_STUDIES_CREATED',
+    'FIELD_SOLUTIONS_CREATED'
+  )){
+    $matches=[regex]::Matches(
+      $content,
+      "(?m)^$([regex]::Escape($name))=(?<value>[^\r\n]+)\r?$"
+    )
+    $value=[int64]0
+    if($matches.Count-ne 1-or
+      -not[int64]::TryParse($matches[0].Groups['value'].Value,[ref]$value)-or
+      $value-le 0){
+      throw "COMSOL field-solve report has an invalid positive $name value."
+    }
+    $counts[$name]=$value
+  }
+  $dofMatches=[regex]::Matches(
+    $content,
+    '(?m)^(?<name>DIFFERENTIAL_FIELD_DOF|STATIC_FIELD_DOF|STATIONARY_FIELD_DOF)=(?<value>[^\r\n]+)\r?$'
+  )
+  $dofs=[ordered]@{}
+  foreach($match in $dofMatches){
+    $value=[int64]0
+    $name=$match.Groups['name'].Value
+    if($dofs.Contains($name)-or
+      -not[int64]::TryParse($match.Groups['value'].Value,[ref]$value)-or
+      $value-le 0){
+      throw "COMSOL field-solve report has an invalid positive $name value."
+    }
+    $dofs[$name]=$value
+  }
+  $stationaryOnly=$dofs.Count-eq 1-and$dofs.Contains('STATIONARY_FIELD_DOF')
+  $pairedFields=$dofs.Count-eq 2-and
+    $dofs.Contains('DIFFERENTIAL_FIELD_DOF')-and$dofs.Contains('STATIC_FIELD_DOF')
+  if(-not($stationaryOnly-or$pairedFields)){
+    throw 'COMSOL field-solve report has an incomplete field-DOF identity.'
+  }
+  return [ordered]@{
+    stationary_linear_solver_backend=$backendMatches[0].Groups['value'].Value.ToLowerInvariant()
+    field_physics_created=$counts.FIELD_PHYSICS_CREATED
+    field_studies_created=$counts.FIELD_STUDIES_CREATED
+    field_solutions_created=$counts.FIELD_SOLUTIONS_CREATED
+    field_dof=$dofs
+  }
 }
 if(-not [double]::IsNaN($WorkingRegionMaximumElementSizeMm) -and $WorkingRegionMaximumElementSizeMm-le 0){
   throw 'WorkingRegionMaximumElementSizeMm must be positive when supplied.'
@@ -148,6 +216,10 @@ try{
   if($LASTEXITCODE-ne 0){throw 'COMSOL resource-budget preflight failed.'}
   $resolvedBudget=Get-Content -LiteralPath $budgetPreflight -Raw -Encoding UTF8|ConvertFrom-Json
   $authorizedNumerics=$resolvedBudget.solver_numerics
+  $authorizedBackend=[string]$authorizedNumerics.stationary_linear_solver_backend
+  if($authorizedBackend-notin@('mumps','pardiso')){
+    throw 'COMSOL runtime profile has an unsupported stationary linear-solver backend.'
+  }
   $maximumMeshCells=$null
   if($resolvedBudget.limits.PSObject.Properties.Name-contains'maximum_mesh_cells'){
     $maximumMeshCells=[int64]$resolvedBudget.limits.maximum_mesh_cells
@@ -290,6 +362,7 @@ try{
 
   $numerics=Join-Path $inputDir 'solver_numerics.json'
   [ordered]@{schema_version=1;role='multipole_comsol_solver_numerics';
+    stationary_linear_solver_backend=$authorizedBackend;
     mesh=$authorizedNumerics.mesh;
     trajectory=$authorizedNumerics.trajectory}|
     ConvertTo-Json -Depth 5|Set-Content -LiteralPath $numerics -Encoding UTF8
@@ -327,7 +400,7 @@ try{
     parameters=[ordered]@{model_level='L3';runtime_profile_id=$RuntimeProfileId;design_profile_id=$DesignProfileId;
       operating_mode_id=$modeId;
       operating_point_id=$(if($sourceFamily){$OperatingPointId}else{$null});mesh_convergence=$false;
-      stop_stage=$(if($StopStage){$StopStage}else{$null})};
+      stop_stage=$StopStage};
     formal_gate_passed=$false}|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $runConfig -Encoding UTF8
 
   $environmentNames=@('MULTIPOLE_RESOLVED_DESIGN','MULTIPOLE_SOLVER_NUMERICS','MULTIPOLE_L3_PARTICLE_SOURCE',
@@ -417,6 +490,38 @@ try{
     Write-VerifiedRunManifest -Python $python -RepoRoot $manifestRepoRoot -RunConfig $runConfig `
       -Status success -Software @('COMSOL 6.4','MATLAB R2025b','Python 3.11') -Outputs $outputs
     Write-Output "MULTIPOLE_COMSOL_RESOLVED=PASS PROJECT=$ProjectId PROFILE=$DesignProfileId RUN_ID=$RunId STOP_STAGE=mesh_build QUALIFICATION=UNQUALIFIED"
+    return
+  }
+  if($StopStage-eq'field_solve'){
+    $fieldSolve=Assert-MultipoleFieldSolveReport -Path $report
+    $summaryDocument=[ordered]@{schema_version=1;role='multipole_finite_3d_transport_summary';status='success';
+      qualification_status='UNQUALIFIED_FIELD_SOLVE_DIAGNOSTIC_ONLY';project_id=$ProjectId;
+      design_profile_id=$DesignProfileId;parent_resolved_design_sha256=$resolvedHash;
+      model_level='L3';stop_stage='field_solve';
+      stationary_linear_solver_backend=$fieldSolve.stationary_linear_solver_backend;
+      field_physics_created=$fieldSolve.field_physics_created;
+      field_studies_created=$fieldSolve.field_studies_created;
+      field_solutions_created=$fieldSolve.field_solutions_created;
+      field_dof=$fieldSolve.field_dof;
+      particle_physics_created=0;particle_studies_created=0;
+      formal_gate_passed=$false}
+    if($null-ne$maximumMeshCells){
+      $summaryDocument.mesh_cells=$meshCells
+      $summaryDocument.maximum_mesh_cells=$maximumMeshCells
+    }
+    $summaryDocument|ConvertTo-Json -Depth 5|Set-Content -LiteralPath $summary -Encoding UTF8
+    $retentionActions=Apply-RunArtifactRetention -Python $python -RepoRoot $manifestRepoRoot `
+      -RunConfig $runConfig
+    if(-not(Complete-ResourceUsage -ResolvedBudgetPath $resolvedResourceBudget `
+      -RunDir $runDir -UsagePath $resourceUsage)){
+      $resourceBudgetExceeded=$true
+      throw 'COMSOL field-solve retained-byte budget exceeded.'
+    }
+    $outputs=@($report,$summary,$resourceUsage)|Where-Object{Test-Path -LiteralPath $_ -PathType Leaf}
+    $outputs+=$retentionActions
+    Write-VerifiedRunManifest -Python $python -RepoRoot $manifestRepoRoot -RunConfig $runConfig `
+      -Status success -Software @('COMSOL 6.4','MATLAB R2025b','Python 3.11') -Outputs $outputs
+    Write-Output "MULTIPOLE_COMSOL_RESOLVED=PASS PROJECT=$ProjectId PROFILE=$DesignProfileId RUN_ID=$RunId STOP_STAGE=field_solve QUALIFICATION=UNQUALIFIED"
     return
   }
   if($axialTopology-ne'none'){
