@@ -213,6 +213,34 @@ model.sol('sol2').attach('std2');
 用同一点在稳态和粒子数据集上的场值交叉检查。`notsolnum`、`notstudy`、`notsollist`等猜测
 属性已确认无效。
 
+### 稳态CG-AMG与电势阶次
+
+COMSOL 6.4的自动稳态序列可在`Stationary`下保留默认direct节点，同时把`FullyCoupled`的活动
+`linsolver`显式切换到迭代节点；未被引用的默认direct兄弟节点不等于运行时fallback。当前R2025b
+LiveLink最小模型已验证：
+
+```matlab
+stationary = solution.feature('s1');
+advanced = stationary.feature('aDef');
+advanced.set('convinfo', 'detailed');
+iterative = stationary.feature.create('i1', 'Iterative');
+iterative.set('linsolver', 'cg');
+iterative.set('maxlinit', 500);
+iterative.set('errorchk', 'on');
+multigrid = iterative.feature.create('mg1', 'Multigrid');
+multigrid.set('prefun', 'amg');
+stationary.feature('fc1').set('linsolver', 'i1');
+```
+
+稳态容差由`stationary.set('control','user')`和`stationary.set('stol',value)`设置；详细收敛信息属于
+`Advanced`子节点，不写到`Stationary`本身。电势单元阶次通过
+`es.prop('ShapeProperty').set('order_electricpotential',1|2)`设置。该`PhysicsPropClient`在当前版本
+没有MATLAB可调用的`getInt`；应使用`getString`后显式转换并回读核对。
+
+`ModelUtil.showProgress(path)`可保存原生求解日志，完成后用`ModelUtil.showProgress(false)`恢复。
+详细日志表头包含`LinIt`和`LinRes`；需要证明实际迭代执行时，应保留原生日志并要求正`LinIt`与有限
+`LinRes`，不能用求解器节点存在或Study成功代替。
+
 ## GPU求解器
 
 cuDSS不是默认加速开关。是否启用必须用相同模型、网格和容差比较CPU/GPU总耗时、峰值内存和

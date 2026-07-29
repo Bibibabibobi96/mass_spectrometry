@@ -291,6 +291,12 @@ function Complete-FailedRun {
   if(-not[string]::IsNullOrWhiteSpace($ResourceUsagePath)-and
     (Test-Path -LiteralPath $ResourceUsagePath -PathType Leaf)){
     $usage=Get-Content -LiteralPath $ResourceUsagePath -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+    if([string]$usage.status-eq'running'){
+      $usage.status=$Status
+    }
+    if(-not[string]::IsNullOrWhiteSpace($FailureClass)){
+      $usage.failure_class=$FailureClass
+    }
     $finalBytes=[int64](Get-ChildItem -LiteralPath $runDir -Recurse -File|
       Measure-Object -Property Length -Sum).Sum
     $usage.final_retained_bytes=$finalBytes

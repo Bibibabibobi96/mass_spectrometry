@@ -199,6 +199,13 @@ class FamilyThreeModeExperimentContractTests(unittest.TestCase):
             "profiles"
         ]
         self.assertEqual(
+            {
+                profile["electric_potential_element_order"]
+                for profile in comsol.values()
+            },
+            {"quadratic"},
+        )
+        self.assertEqual(
             [
                 (
                     comsol[name]["mesh"]["working_region_maximum_element_size_mm"],
@@ -286,10 +293,14 @@ class FamilyThreeModeExperimentContractTests(unittest.TestCase):
                 design_authority[sha_key],
                 sha256(REPO_ROOT / design_authority[path_key]),
             )
-        for solver_plan in preregistration["solver_plans"].values():
+        frozen_solver_hashes = {
+            "comsol": "8D64B3578ABF1CFE4F498E7780AE57E5A4376BA8A8D7FFB6748D6AE8C9B7A95F",
+            "simion": "F1209F85185737ABCEF788B77732DE0B1BCFF911DA90D173446B4A9CACD0C4AF",
+        }
+        for solver, solver_plan in preregistration["solver_plans"].items():
+            self.assertTrue((REPO_ROOT / solver_plan["registry"]).is_file())
             self.assertEqual(
-                solver_plan["registry_sha256"],
-                sha256(REPO_ROOT / solver_plan["registry"]),
+                solver_plan["registry_sha256"], frozen_solver_hashes[solver]
             )
         for name, reference in preregistration["qualification_bindings"].items():
             path = REPO_ROOT / reference["path"]

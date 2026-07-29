@@ -1,0 +1,186 @@
+{
+  "schema_version": 1,
+  "role": "multipole_comsol_field_solver_isolation_preregistration",
+  "project_id": "rf_hexapole_ion_optics",
+  "experiment_id": "hexapole_hybrid_d2_p2_cg_amg_field_only_v1",
+  "preregistered_before_run": true,
+  "status": "completed_preregistered_report_contract_mismatch",
+  "authorization": {
+    "maximum_commercial_run_count": 1,
+    "automatic_retry_count": 0,
+    "planned_run_id": "20260729_234500__analysis__comsol__hex-hybrid-d2-cg-amg-field__r01",
+    "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_d2_cg_amg_field_screen",
+    "design_profile_id": "exit_aperture_plate_acceleration",
+    "particle_source_profile_id": "family_mother_sample_v1_n100",
+    "comsol_solver_numerics_profile_id": "hybrid_d2_cg_amg_field_screen",
+    "stop_stage": "field_solve",
+    "retention_class": "compact"
+  },
+  "frozen_identity": {
+    "expected_run_parent_resolved_design_sha256": "C9C3B00A5327825FCB138FB7EEDF2C6F7175497EAEB3CD1EB28A5D995AAC4B6E",
+    "physical_resolved_payload_sha256": "A868E5C06A6A98BF86C0D662D53118FCFF6EE51BA208214FACD7D39E32F6FD66",
+    "runtime_profiles_sha256": "D70329FDD81F80AA319321F82B7C4D2DD46137E36F198209C028E3CB66241664",
+    "comsol_solver_numerics_sha256": "36FD834AFE7128AECEF381058D3A5792C9288C007CE91F28115EB55CDA8F0E95",
+    "engineering_budget_sha256": "197F9945BB64B3C93F99587F81985D59E3D498E6258F3CBFDCD8479174F5A24D",
+    "particle_source_profiles_sha256": "8162081232E0ABCA311DA9E9D10B8BDA78ED24E95C919E8E52B6787DDD1C0B30",
+    "design_profiles_sha256": "157EB846B0F3715A300EF9F3D994DD3B05A919C04FBFD83D6B8611A77FAA74B1"
+  },
+  "frozen_implementation": {
+    "files": [
+      {
+        "path": "common/multipole/configure_comsol_stationary_solver.m",
+        "sha256": "2964CE151C53A3165F45163E48CC2CB3ACF80AC9270CBACB448F02C2FCEDDAB6"
+      },
+      {
+        "path": "common/multipole/solve_finite_3d_transport.m",
+        "sha256": "BABDB5F307F152C85AB13DFADE4CB6D49E218C4AD1CD540C8E44ABBC241F61BE"
+      },
+      {
+        "path": "common/multipole/run_finite_3d_transport.ps1",
+        "sha256": "302EF2516B8DDD7DDE94A03B1870FCCB9CE675E7EF84D12343A7D0EC8BD34957"
+      },
+      {
+        "path": "common/multipole/test_comsol_stationary_solver_smoke.m",
+        "sha256": "0939BE0D804578B8137F60064A205C4196D6307FA41ED5167F56C134147C1DA4"
+      }
+    ]
+  },
+  "single_changed_variable": {
+    "name": "stationary_linear_solver_configuration",
+    "rejected_direct_references": [
+      "mumps",
+      "pardiso"
+    ],
+    "candidate": "cg_amg",
+    "unchanged_electric_potential_element_order": "quadratic",
+    "unchanged_mesh_profile": "hybrid_d2",
+    "unchanged_global_mesh_element_count": 884643
+  },
+  "frozen_iterative_solver": {
+    "outer_solver": "cg",
+    "preconditioner": "amg",
+    "relative_tolerance": 0.001,
+    "maximum_iterations": 500,
+    "error_check_mode": "on",
+    "direct_fallback_allowed": false,
+    "unlisted_amg_properties": "comsol_6_4_generated_defaults_not_individually_qualified_or_reported"
+  },
+  "frozen_mesh": {
+    "strategy": "physical_segment_hybrid_swept_tetra_v1",
+    "physical_segment_count": 4,
+    "segment_end_buffer_mm": 1.0,
+    "swept_length_per_segment_mm": 17.6,
+    "core_radius_mm": 8.5,
+    "radial_core_and_rod_hmax_mm": 0.5,
+    "axial_layers_per_swept_segment": 10,
+    "transition_and_end_tetra_hmax_mm": 0.5,
+    "outer_vacuum_hmax_mm": 1.0,
+    "minimum_element_size_mm": 0.02
+  },
+  "resource_limits": {
+    "wall_clock_seconds": 703,
+    "process_tree_working_set_bytes": 12884901888,
+    "minimum_system_available_memory_bytes": 8589934592,
+    "transient_run_directory_bytes": 134217728,
+    "compact_final_retained_bytes": 10485760,
+    "maximum_mesh_cells": 1000000,
+    "automatic_retry_count": 0
+  },
+  "required_report": {
+    "tokens": [
+      "CHECKPOINT=MESH_COMPLETE",
+      "MESH_GLOBAL_ELEMENTS=884643",
+      "CHECKPOINT=DIFFERENTIAL_FIELD_COMPLETE",
+      "CHECKPOINT=STATIONARY_FIELDS_COMPLETE",
+      "ELECTRIC_POTENTIAL_ELEMENT_ORDER=QUADRATIC",
+      "STATIONARY_LINEAR_SOLVER_BACKEND=CG_AMG",
+      "STATIONARY_CONTROL=USER",
+      "STATIONARY_RELATIVE_TOLERANCE=0.001",
+      "STATIONARY_FULLY_COUPLED_LINEAR_SOLVER=I1",
+      "STATIONARY_MAX_LINEAR_ITERATIONS=500",
+      "STATIONARY_LINEAR_ERROR_CHECK=ON",
+      "STATIONARY_CONVERGENCE_LOG=DETAILED",
+      "DIFFERENTIAL_FIELD_SOLVER_EVIDENCE_SOURCE=COMSOL_PROGRESS_LINIT_LINRES",
+      "STATIC_FIELD_SOLVER_EVIDENCE_SOURCE=COMSOL_PROGRESS_LINIT_LINRES",
+      "STOP_STAGE=field_solve",
+      "FIELD_PHYSICS_CREATED=2",
+      "FIELD_STUDIES_CREATED=2",
+      "FIELD_SOLUTIONS_CREATED=2",
+      "PARTICLE_PHYSICS_CREATED=0",
+      "PARTICLE_STUDIES_CREATED=0",
+      "FIELD_SOLVE_DIAGNOSTIC=PASS",
+      "STATUS=PASS"
+    ],
+    "positive_integer_fields": [
+      "DIFFERENTIAL_FIELD_DOF",
+      "STATIC_FIELD_DOF",
+      "DIFFERENTIAL_FIELD_ITERATIONS",
+      "STATIC_FIELD_ITERATIONS"
+    ],
+    "finite_nonnegative_fields": [
+      "DIFFERENTIAL_FIELD_FINAL_RESIDUAL",
+      "STATIC_FIELD_FINAL_RESIDUAL"
+    ],
+    "forbidden_checkpoints": [
+      "PRIMARY_PARTICLE_CASE_COMPLETE",
+      "CONTROL_PARTICLE_CASE_COMPLETE"
+    ]
+  },
+  "decision_policy": {
+    "completed_freetet_baseline_process_tree_peak_bytes": 9422286848,
+    "completed_freetet_baseline_wall_clock_seconds": 703.018,
+    "viability_pass": "Both governed stationary fields complete with explicit quadratic CG-AMG, complete native iteration evidence and every preregistered hard limit remains satisfied.",
+    "resource_improvement_pass": "The measured process-tree peak is strictly less than 9422286848 bytes.",
+    "particle_followup_condition": "A separate N=100 transport authorization may be created only after viability_pass, resource_improvement_pass and a same-mesh coarse direct-versus-iterative field check all pass.",
+    "result_if_viable_without_improvement": "FIELD_ONLY_VIABLE_NOT_RESOURCE_IMPROVING",
+    "result_if_hard_limit_exceeded": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
+    "result_if_solver_evidence_is_incomplete": "INCONCLUSIVE_SOLVER_EVIDENCE_UNAVAILABLE",
+    "fallback_backend_or_retry_authorized": false
+  },
+  "execution_result": {
+    "terminal": true,
+    "run_id": "20260729_234500__analysis__comsol__hex-hybrid-d2-cg-amg-field__r01",
+    "manifest_status": "failed",
+    "result": "INCONCLUSIVE_PREREGISTERED_REPORT_CONTRACT_MISMATCH",
+    "failure_stage": "post_solver_field_report_validation",
+    "failure_reason": "The preregistration and validator required FIELD_PHYSICS_CREATED=2, but the governed acceleration implementation correctly reused one Electrostatics physics interface across two stationary Studies and two Solutions.",
+    "preregistered_viability_pass": false,
+    "preregistered_resource_improvement_pass": false,
+    "commercial_run_count_executed": 1,
+    "retry_authorized": false,
+    "particle_followup_authorized": false,
+    "raw_solver_observation": {
+      "observation_class": "POSTHOC_ENGINEERING_OBSERVATION_ONLY",
+      "mesh_global_elements": 884643,
+      "electric_potential_element_order": "quadratic",
+      "stationary_linear_solver_backend": "cg_amg",
+      "field_physics_created": 1,
+      "field_studies_created": 2,
+      "field_solutions_created": 2,
+      "particle_physics_created": 0,
+      "particle_studies_created": 0,
+      "differential_field_dof": 1657156,
+      "differential_field_iterations": 6,
+      "differential_field_final_residual": 5.5e-7,
+      "static_field_dof": 1657156,
+      "static_field_iterations": 7,
+      "static_field_final_residual": 2.9e-7,
+      "wall_clock_seconds": 142.829,
+      "peak_process_tree_working_set_bytes": 6342643712,
+      "minimum_system_available_memory_bytes": 20599001088,
+      "peak_run_directory_bytes": 1788736,
+      "observed_memory_reduction_vs_completed_freetet_baseline_fraction": 0.326846675937667,
+      "all_preregistered_resource_limits_observed_satisfied": true
+    },
+    "evidence_sha256": {
+      "run_config": "1A95B6941E54CC01E167D25D55876387287A1A8D4763D4533599BDCA059C46C5",
+      "run_manifest": "2DE09E93CCC75E8CD91F204E95DD3A54A1B93A00F3D79D640D2761B75E85E333",
+      "summary": "788AAE39D3F3037E147FCE0DAB7D44C0F36E175D377CB178BAE01F830E2094AE",
+      "resource_usage": "29807B50D012D00AEA366DF87C106B9EEB8273663CA99A3BC9916C620DBE0B60",
+      "comsol_report": "726BC355A47E76D971D71E56CFF0194C9C872724D1FBA032A5249AC9C7E0D18C",
+      "differential_progress_log": "68AA38BF7E8443E7E735F575EA2FDC82C4ED5E2344BB598DB8B2E5F677A0523C",
+      "static_progress_log": "2F007782F1F1CCA4A5E44657426BE50CFCFECE887E9419131E5E29AA7CBC60D2"
+    }
+  },
+  "claim_limit": "The failed manifest prevents a preregistered viability or resource-improvement PASS. The retained native outputs may be cited only as posthoc engineering observations that the same-D2 quadratic CG-AMG solve completed both fields within every resource limit. They cannot establish particle transport, field or particle convergence, cross-solver numerical equivalence, Candidate, Formal or N=1000 qualification."
+}

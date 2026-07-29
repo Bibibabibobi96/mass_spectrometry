@@ -161,7 +161,50 @@ class MultipoleFamilyContractTests(unittest.TestCase):
         self.assertNotIn("axial_acceleration_reference", quadrupole_solver)
         self.assertNotIn("exit_aperture_plate_acceleration_reference", quadrupole_solver)
         self.assertIn("withsol(", shared_solver)
-        self.assertIn("configure_comsol_stationary_direct_solver", shared_solver)
+        self.assertIn("configure_comsol_stationary_solver", shared_solver)
+        self.assertNotIn("configure_comsol_stationary_direct_solver", shared_solver)
+        self.assertIn("electric_potential_element_order", shared_solver)
+        self.assertIn("apply_electric_potential_element_order(", shared_solver)
+        self.assertIn("'order_electricpotential'", shared_solver)
+        stationary_helper = (
+            REPO_ROOT
+            / "common"
+            / "multipole"
+            / "configure_comsol_stationary_solver.m"
+        ).read_text(encoding="utf-8")
+        self.assertFalse(
+            (
+                REPO_ROOT
+                / "common"
+                / "multipole"
+                / "configure_comsol_stationary_direct_solver.m"
+            ).exists()
+        )
+        for token in (
+            "'cg_amg'",
+            "feature.create('i1', 'Iterative')",
+            "iterative.set('linsolver', 'cg')",
+            "iterative.set('maxlinit', maximumIterations)",
+            "iterative.set('errorchk', errorCheckMode)",
+            "feature.create('mg1', 'Multigrid')",
+            "feature('mg1').set('prefun', 'amg')",
+            "feature('fc1').set('linsolver', 'i1')",
+            "stationary.set('control', 'user')",
+            "stationary.set('stol', relativeTolerance)",
+            "stationary.feature('aDef')",
+            "stationary.feature.create('a1', 'Advanced')",
+            "advanced.set('convinfo', 'detailed')",
+        ):
+            self.assertIn(token, stationary_helper)
+        self.assertNotIn("stationary.set('convinfo'", stationary_helper)
+        self.assertIn("stationary_iterative_solver", shared_solver)
+        self.assertIn("COMSOL_PROGRESS_LINIT_LINRES", shared_solver)
+        self.assertNotIn("getSolverLog", shared_solver)
+        self.assertIn("getString('order_electricpotential')", shared_solver)
+        self.assertIn(
+            "isequaln(first.relative_tolerance,second.relative_tolerance)",
+            shared_solver,
+        )
         self.assertIn("if isfinite(workingHmax) && workingHmax>0", shared_solver)
         self.assertIn("configure_comsol_segment_hybrid_mesh", shared_solver)
         self.assertIn("MESH_SWEPT_SEGMENT_", shared_solver)
@@ -227,6 +270,9 @@ class MultipoleFamilyContractTests(unittest.TestCase):
     def test_comsol_canonical_state_policy_is_resolved_design_only(self) -> None:
         runner = (REPO_ROOT / "common/multipole/run_finite_3d_transport.ps1").read_text(encoding="utf-8")
         self.assertIn("$env:MULTIPOLE_L3_CANONICAL_STATE=$canonicalState", runner)
+        self.assertIn("$env:MULTIPOLE_L3_SOLVER_PROGRESS_DIR=$solverProgressDir", runner)
+        self.assertIn("$solverProgressDir=Join-Path $logDir 'solver_progress'", runner)
+        self.assertIn("Get-ChildItem -LiteralPath $solverProgressDir -File", runner)
         self.assertIn("MULTIPOLE_L3_PARTICLE_SOURCE_METADATA", runner)
         self.assertIn("$outputs=@($events,$trajectories,$metrics,$plot,$model,$canonicalState", runner)
         self.assertNotIn("AxialAccelerationContractPath", runner)

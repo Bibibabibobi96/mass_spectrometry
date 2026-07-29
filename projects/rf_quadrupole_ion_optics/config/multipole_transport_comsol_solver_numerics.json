@@ -5,6 +5,7 @@
   "profiles": {
     "baseline_finite_3d": {
       "stationary_linear_solver_backend": "mumps",
+      "electric_potential_element_order": "quadratic",
       "mesh": {
         "global_auto_level": 6,
         "working_region_maximum_element_size_mm": 0.5
@@ -16,6 +17,7 @@
     },
     "n100_spatial_refined": {
       "stationary_linear_solver_backend": "mumps",
+      "electric_potential_element_order": "quadratic",
       "mesh": {
         "global_auto_level": 6,
         "working_region_maximum_element_size_mm": 0.35
@@ -27,6 +29,7 @@
     },
     "n100_temporal_refined": {
       "stationary_linear_solver_backend": "mumps",
+      "electric_potential_element_order": "quadratic",
       "mesh": {
         "global_auto_level": 6,
         "working_region_maximum_element_size_mm": 0.35

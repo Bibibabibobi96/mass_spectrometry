@@ -83,6 +83,13 @@ class ThreeModeRuntimeAndQualificationTests(unittest.TestCase):
         comsol = load("config/comsol_solver_numerics.json")["profiles"]
         simion = load("config/simion_solver_numerics.json")["profiles"]
         self.assertEqual(
+            {
+                profile["electric_potential_element_order"]
+                for profile in comsol.values()
+            },
+            {"quadratic"},
+        )
+        self.assertEqual(
             (
                 comsol["baseline_finite_3d"]["mesh"][
                     "working_region_maximum_element_size_mm"

@@ -131,8 +131,71 @@ function Assert-MultipoleFieldSolveReport {
     $content,'(?m)^STATIONARY_LINEAR_SOLVER_BACKEND=(?<value>[^\r\n]+)\r?$'
   )
   if($backendMatches.Count-ne 1-or
-    $backendMatches[0].Groups['value'].Value-notin@('MUMPS','PARDISO')){
+    $backendMatches[0].Groups['value'].Value-notin@('MUMPS','PARDISO','CG_AMG')){
     throw 'COMSOL field-solve report has an invalid stationary solver backend.'
+  }
+  $orderMatches=[regex]::Matches(
+    $content,'(?m)^ELECTRIC_POTENTIAL_ELEMENT_ORDER=(?<value>[^\r\n]+)\r?$'
+  )
+  if($orderMatches.Count-ne 1-or
+    $orderMatches[0].Groups['value'].Value-notin@('LINEAR','QUADRATIC')){
+    throw 'COMSOL field-solve report has an invalid electric-potential element order.'
+  }
+  $configurationTokens=[ordered]@{}
+  foreach($name in @(
+    'STATIONARY_CONTROL',
+    'STATIONARY_RELATIVE_TOLERANCE',
+    'STATIONARY_FULLY_COUPLED_LINEAR_SOLVER',
+    'STATIONARY_MAX_LINEAR_ITERATIONS',
+    'STATIONARY_LINEAR_ERROR_CHECK',
+    'STATIONARY_CONVERGENCE_LOG'
+  )){
+    $matches=[regex]::Matches(
+      $content,
+      "(?m)^$([regex]::Escape($name))=(?<value>[^\r\n]+)\r?$"
+    )
+    if($matches.Count-ne 1){
+      throw "COMSOL field-solve report must contain exactly one $name token."
+    }
+    $configurationTokens[$name]=$matches[0].Groups['value'].Value
+  }
+  $actualBackend=$backendMatches[0].Groups['value'].Value
+  if($actualBackend-eq'CG_AMG'){
+    $stationaryTolerance=[double]0
+    $maximumLinearIterations=[int64]0
+    if($configurationTokens.STATIONARY_CONTROL-ne'USER'-or
+      -not[double]::TryParse(
+        $configurationTokens.STATIONARY_RELATIVE_TOLERANCE,
+        [Globalization.NumberStyles]::Float,
+        [Globalization.CultureInfo]::InvariantCulture,
+        [ref]$stationaryTolerance
+      )-or[double]::IsNaN($stationaryTolerance)-or
+      [double]::IsInfinity($stationaryTolerance)-or
+      $stationaryTolerance-le 0-or$stationaryTolerance-ge 1-or
+      -not[int64]::TryParse(
+        $configurationTokens.STATIONARY_MAX_LINEAR_ITERATIONS,
+        [ref]$maximumLinearIterations
+      )-or$maximumLinearIterations-lt 1){
+      throw 'COMSOL field-solve report has invalid governed CG-AMG convergence control.'
+    }
+    if($configurationTokens.STATIONARY_FULLY_COUPLED_LINEAR_SOLVER-ne'I1'-or
+      $configurationTokens.STATIONARY_LINEAR_ERROR_CHECK-ne'ON'-or
+      $configurationTokens.STATIONARY_CONVERGENCE_LOG-ne'DETAILED'){
+      throw 'COMSOL field-solve report has invalid governed CG-AMG configuration.'
+    }
+    $linearErrorCheck='on'
+  }else{
+    if($configurationTokens.STATIONARY_CONTROL-ne'NOT_APPLICABLE'-or
+      $configurationTokens.STATIONARY_RELATIVE_TOLERANCE-ne'NOT_APPLICABLE'-or
+      $configurationTokens.STATIONARY_FULLY_COUPLED_LINEAR_SOLVER-ne'DDEF'-or
+      $configurationTokens.STATIONARY_MAX_LINEAR_ITERATIONS-ne'NOT_APPLICABLE'-or
+      $configurationTokens.STATIONARY_LINEAR_ERROR_CHECK-ne'NOT_APPLICABLE'-or
+      $configurationTokens.STATIONARY_CONVERGENCE_LOG-ne'NOT_APPLICABLE'){
+      throw 'COMSOL field-solve report has invalid governed direct-solver configuration.'
+    }
+    $stationaryTolerance=$null
+    $maximumLinearIterations=$null
+    $linearErrorCheck=$null
   }
   $counts=[ordered]@{}
   foreach($name in @(
@@ -173,14 +236,193 @@ function Assert-MultipoleFieldSolveReport {
   if(-not($stationaryOnly-or$pairedFields)){
     throw 'COMSOL field-solve report has an incomplete field-DOF identity.'
   }
+  $expectedFieldCounts=if($stationaryOnly){
+    [ordered]@{
+      FIELD_PHYSICS_CREATED=[int64]2
+      FIELD_STUDIES_CREATED=[int64]1
+      FIELD_SOLUTIONS_CREATED=[int64]1
+    }
+  }else{
+    [ordered]@{
+      FIELD_PHYSICS_CREATED=[int64]1
+      FIELD_STUDIES_CREATED=[int64]2
+      FIELD_SOLUTIONS_CREATED=[int64]2
+    }
+  }
+  foreach($name in $counts.Keys){
+    if($counts[$name]-ne$expectedFieldCounts[$name]){
+      throw "COMSOL field-solve report has an invalid exact $name value."
+    }
+  }
+  $solverEvidence=[ordered]@{}
+  $fieldPrefixes=if($stationaryOnly){@('STATIONARY_FIELD')}else{
+    @('DIFFERENTIAL_FIELD','STATIC_FIELD')
+  }
+  foreach($prefix in $fieldPrefixes){
+    $iterationMatches=[regex]::Matches(
+      $content,
+      "(?m)^$([regex]::Escape($prefix))_ITERATIONS=(?<value>[^\r\n]+)\r?$"
+    )
+    $residualMatches=[regex]::Matches(
+      $content,
+      "(?m)^$([regex]::Escape($prefix))_FINAL_RESIDUAL=(?<value>[^\r\n]+)\r?$"
+    )
+    $sourceMatches=[regex]::Matches(
+      $content,
+      "(?m)^$([regex]::Escape($prefix))_SOLVER_EVIDENCE_SOURCE=(?<value>[^\r\n]+)\r?$"
+    )
+    if($iterationMatches.Count-ne 1-or$residualMatches.Count-ne 1-or$sourceMatches.Count-ne 1){
+      throw "COMSOL field-solve report has incomplete $prefix iterative evidence."
+    }
+    $iteration=$null
+    $iterationText=$iterationMatches[0].Groups['value'].Value
+    if($iterationText-ne'UNKNOWN'){
+      $parsedIteration=[int64]0
+      if(-not[int64]::TryParse($iterationText,[ref]$parsedIteration)-or$parsedIteration-lt 0){
+        throw "COMSOL field-solve report has an invalid $prefix iteration count."
+      }
+      $iteration=$parsedIteration
+    }
+    $residual=$null
+    $residualText=$residualMatches[0].Groups['value'].Value
+    if($residualText-ne'UNKNOWN'){
+      $parsedResidual=[double]0
+      if(-not[double]::TryParse(
+        $residualText,
+        [Globalization.NumberStyles]::Float,
+        [Globalization.CultureInfo]::InvariantCulture,
+        [ref]$parsedResidual
+      )-or[double]::IsNaN($parsedResidual)-or
+        [double]::IsInfinity($parsedResidual)-or$parsedResidual-lt 0){
+        throw "COMSOL field-solve report has an invalid $prefix final residual."
+      }
+      $residual=$parsedResidual
+    }
+    $evidenceSource=$sourceMatches[0].Groups['value'].Value
+    if($evidenceSource-notin@(
+      'NOT_APPLICABLE_DIRECT_SOLVER',
+      'UNAVAILABLE_FROM_COMSOL_PROGRESS_LOG',
+      'COMSOL_PROGRESS_LINIT_LINRES'
+    )){
+      throw "COMSOL field-solve report has an invalid $prefix solver-evidence source."
+    }
+    if($backendMatches[0].Groups['value'].Value-in@('MUMPS','PARDISO')-and
+      ($null-ne$iteration-or$null-ne$residual-or
+        $evidenceSource-ne'NOT_APPLICABLE_DIRECT_SOLVER')){
+      throw "COMSOL direct field solve reported contradictory $prefix iterative evidence."
+    }
+    if($backendMatches[0].Groups['value'].Value-eq'CG_AMG'){
+      $completeProgressEvidence=$evidenceSource-eq'COMSOL_PROGRESS_LINIT_LINRES'-and
+        $null-ne$iteration-and$iteration-gt 0-and$null-ne$residual
+      if(-not$completeProgressEvidence){
+        throw "COMSOL CG-AMG field solve lacks positive $prefix LinIt/LinRes evidence."
+      }
+    }
+    $solverEvidence[$prefix.ToLowerInvariant()]=[ordered]@{
+      dof=$dofs["${prefix}_DOF"]
+      iteration_count=$iteration
+      final_residual=$residual
+      evidence_source=$evidenceSource.ToLowerInvariant()
+    }
+  }
   return [ordered]@{
     stationary_linear_solver_backend=$backendMatches[0].Groups['value'].Value.ToLowerInvariant()
+    electric_potential_element_order=$orderMatches[0].Groups['value'].Value.ToLowerInvariant()
     field_physics_created=$counts.FIELD_PHYSICS_CREATED
     field_studies_created=$counts.FIELD_STUDIES_CREATED
     field_solutions_created=$counts.FIELD_SOLUTIONS_CREATED
     field_dof=$dofs
+    field_solver_evidence=$solverEvidence
+    stationary_solver_configuration=[ordered]@{
+      control=$configurationTokens.STATIONARY_CONTROL.ToLowerInvariant()
+      relative_tolerance=$stationaryTolerance
+      fully_coupled_linear_solver=(
+        $configurationTokens.STATIONARY_FULLY_COUPLED_LINEAR_SOLVER.ToLowerInvariant()
+      )
+      maximum_linear_iterations=$maximumLinearIterations
+      linear_error_check=$linearErrorCheck
+      convergence_log=$configurationTokens.STATIONARY_CONVERGENCE_LOG.ToLowerInvariant()
+    }
   }
 }
+
+function Assert-MultipoleFieldPreregistration {
+  param(
+    [Parameter(Mandatory=$true)][string]$Path,
+    [Parameter(Mandatory=$true)][string]$RepoRoot,
+    [Parameter(Mandatory=$true)][string]$ProjectId,
+    [Parameter(Mandatory=$true)][string]$RunId,
+    [Parameter(Mandatory=$true)][string]$RuntimeProfileId,
+    [Parameter(Mandatory=$true)][string]$DesignProfileId,
+    [Parameter(Mandatory=$true)][string]$ParticleSourceProfileId,
+    [Parameter(Mandatory=$true)][string]$SolverNumericsProfileId,
+    [Parameter(Mandatory=$true)][string]$RetentionClass,
+    [Parameter(Mandatory=$true)][string]$ExpectedResolvedSha256,
+    [Parameter(Mandatory=$true)][string]$EngineeringBudgetPath
+  )
+  if([string]::IsNullOrWhiteSpace($Path)-or
+    -not(Test-Path -LiteralPath $Path -PathType Leaf)){
+    throw 'COMSOL field-solve runtime requires an existing preregistration evidence contract.'
+  }
+  $document=Get-Content -LiteralPath $Path -Raw -Encoding UTF8|ConvertFrom-Json
+  if([string]$document.role-ne'multipole_comsol_field_solver_isolation_preregistration'-or
+    [string]$document.status-ne'authorized_not_run'-or
+    [string]$document.project_id-ne$ProjectId-or
+    $document.preregistered_before_run-ne$true){
+    throw 'COMSOL field-solve preregistration identity or status is invalid.'
+  }
+  $authorization=$document.authorization
+  if([int64]$authorization.maximum_commercial_run_count-ne 1-or
+    [int64]$authorization.automatic_retry_count-ne 0-or
+    [string]$authorization.planned_run_id-ne$RunId-or
+    [string]$authorization.runtime_profile_id-ne$RuntimeProfileId-or
+    [string]$authorization.design_profile_id-ne$DesignProfileId-or
+    [string]$authorization.particle_source_profile_id-ne$ParticleSourceProfileId-or
+    [string]$authorization.comsol_solver_numerics_profile_id-ne$SolverNumericsProfileId-or
+    [string]$authorization.stop_stage-ne'field_solve'-or
+    [string]$authorization.retention_class-ne$RetentionClass){
+    throw 'COMSOL field-solve invocation differs from its preregistered authorization.'
+  }
+  $frozen=$document.frozen_identity
+  if([string]$frozen.expected_run_parent_resolved_design_sha256-ne$ExpectedResolvedSha256){
+    throw 'COMSOL field-solve preregistration resolved-design identity differs.'
+  }
+  $projectRoot=Join-Path $RepoRoot "projects\$ProjectId"
+  $authorities=[ordered]@{
+    runtime_profiles_sha256=Join-Path $projectRoot 'config\runtime_profiles.json'
+    comsol_solver_numerics_sha256=Join-Path $projectRoot 'config\comsol_solver_numerics.json'
+    engineering_budget_sha256=$EngineeringBudgetPath
+    particle_source_profiles_sha256=Join-Path $projectRoot 'config\particle_source_profiles.json'
+    design_profiles_sha256=Join-Path $projectRoot 'config\design_profiles.json'
+  }
+  foreach($field in $authorities.Keys){
+    $actual=(Get-FileHash -Algorithm SHA256 -LiteralPath $authorities[$field]).Hash
+    if([string]$frozen.$field-ne$actual){
+      throw "COMSOL field-solve preregistration authority hash differs: $field"
+    }
+  }
+  $implementationFiles=@($document.frozen_implementation.files)
+  if($implementationFiles.Count-ne 4){
+    throw 'COMSOL field-solve preregistration implementation inventory differs.'
+  }
+  $repoPrefix=[IO.Path]::GetFullPath($RepoRoot).TrimEnd('\')+'\'
+  foreach($entry in $implementationFiles){
+    $implementationPath=[IO.Path]::GetFullPath(
+      (Join-Path $RepoRoot ([string]$entry.path))
+    )
+    if(-not$implementationPath.StartsWith(
+        $repoPrefix,[StringComparison]::OrdinalIgnoreCase
+      )-or-not(Test-Path -LiteralPath $implementationPath -PathType Leaf)){
+      throw 'COMSOL field-solve preregistration implementation path is invalid.'
+    }
+    $actual=(Get-FileHash -Algorithm SHA256 -LiteralPath $implementationPath).Hash
+    if([string]$entry.sha256-ne$actual){
+      throw "COMSOL field-solve preregistration implementation hash differs: $($entry.path)"
+    }
+  }
+  return $document
+}
+
 if(-not [double]::IsNaN($WorkingRegionMaximumElementSizeMm) -and $WorkingRegionMaximumElementSizeMm-le 0){
   throw 'WorkingRegionMaximumElementSizeMm must be positive when supplied.'
 }
@@ -217,12 +459,60 @@ try{
   $resolvedBudget=Get-Content -LiteralPath $budgetPreflight -Raw -Encoding UTF8|ConvertFrom-Json
   $authorizedNumerics=$resolvedBudget.solver_numerics
   $authorizedBackend=[string]$authorizedNumerics.stationary_linear_solver_backend
-  if($authorizedBackend-notin@('mumps','pardiso')){
+  if($authorizedBackend-notin@('mumps','pardiso','cg_amg')){
     throw 'COMSOL runtime profile has an unsupported stationary linear-solver backend.'
+  }
+  $hasIterativeSolver=$authorizedNumerics.PSObject.Properties.Name-contains'stationary_iterative_solver'
+  if($authorizedBackend-eq'cg_amg'){
+    if(-not$hasIterativeSolver){
+      throw 'CG-AMG runtime profile omits stationary_iterative_solver.'
+    }
+    $authorizedIterativeSolver=$authorizedNumerics.stationary_iterative_solver
+    $iterativeKeys=@($authorizedIterativeSolver.PSObject.Properties.Name|Sort-Object)
+    if(($iterativeKeys-join',')-ne'error_check_mode,maximum_iterations,relative_tolerance'){
+      throw 'CG-AMG stationary_iterative_solver fields differ.'
+    }
+    $authorizedRelativeTolerance=[double]$authorizedIterativeSolver.relative_tolerance
+    $authorizedMaximumIterations=[double]$authorizedIterativeSolver.maximum_iterations
+    $authorizedErrorCheck=[string]$authorizedIterativeSolver.error_check_mode
+    if([double]::IsNaN($authorizedRelativeTolerance)-or
+      [double]::IsInfinity($authorizedRelativeTolerance)-or
+      $authorizedRelativeTolerance-le 0-or$authorizedRelativeTolerance-ge 1-or
+      [double]::IsNaN($authorizedMaximumIterations)-or
+      [double]::IsInfinity($authorizedMaximumIterations)-or
+      $authorizedMaximumIterations-lt 1-or
+      $authorizedMaximumIterations-ne[math]::Truncate($authorizedMaximumIterations)-or
+      $authorizedErrorCheck-ne'on'){
+      throw 'CG-AMG stationary_iterative_solver values are invalid.'
+    }
+  }else{
+    if($hasIterativeSolver){
+      throw 'Direct stationary solver profiles forbid stationary_iterative_solver.'
+    }
+    $authorizedIterativeSolver=$null
+  }
+  if($authorizedNumerics.PSObject.Properties.Name-notcontains'electric_potential_element_order'){
+    throw 'COMSOL runtime profile omits the required electric-potential element order.'
+  }
+  $authorizedElementOrder=[string]$authorizedNumerics.electric_potential_element_order
+  if($authorizedElementOrder-notin@('linear','quadratic')){
+    throw 'COMSOL runtime profile has an unsupported electric-potential element order.'
   }
   $maximumMeshCells=$null
   if($resolvedBudget.limits.PSObject.Properties.Name-contains'maximum_mesh_cells'){
     $maximumMeshCells=[int64]$resolvedBudget.limits.maximum_mesh_cells
+  }
+  $fieldPreregistration=$null
+  if($StopStage-eq'field_solve'){
+    $fieldPreregistration=Assert-MultipoleFieldPreregistration `
+      -Path $EvidenceContractPath -RepoRoot $repoRoot -ProjectId $ProjectId `
+      -RunId $RunId -RuntimeProfileId $RuntimeProfileId `
+      -DesignProfileId $DesignProfileId `
+      -ParticleSourceProfileId ([string]$resolvedBudget.particle_source_profile_id) `
+      -SolverNumericsProfileId ([string]$resolvedBudget.solver_numerics_profile_id) `
+      -RetentionClass $RetentionClass `
+      -ExpectedResolvedSha256 ([string]$resolvedBudget.expected_run_parent_resolved_design_sha256) `
+      -EngineeringBudgetPath $engineeringBudgetInput
   }
   $authorizedHmax=$authorizedNumerics.mesh.working_region_maximum_element_size_mm
   if([int]$authorizedNumerics.mesh.global_auto_level-ne$MeshAutoLevel-or
@@ -245,9 +535,11 @@ $package=New-RunPackage -Python $python -RepoRoot $repoRoot `
 $runDir=$package.run_dir;$inputDir=$package.input_dir;$resultDir=$package.result_dir
 $logDir=$package.log_dir;$runConfig=$package.run_config;$summary=$package.summary
 $runtimeDir=Join-Path $logDir 'runtime'
+$solverProgressDir=Join-Path $logDir 'solver_progress'
 $manifestRepoRoot=$repoRoot
 $resourceBudgetExceeded=$false
 New-Item -ItemType Directory -Force -Path $runtimeDir|Out-Null
+New-Item -ItemType Directory -Force -Path $solverProgressDir|Out-Null
 
 try{
   $codeRoot=Join-Path $inputDir 'code'
@@ -361,10 +653,15 @@ try{
   }
 
   $numerics=Join-Path $inputDir 'solver_numerics.json'
-  [ordered]@{schema_version=1;role='multipole_comsol_solver_numerics';
+  $solverNumericsDocument=[ordered]@{schema_version=1;role='multipole_comsol_solver_numerics';
     stationary_linear_solver_backend=$authorizedBackend;
+    electric_potential_element_order=$authorizedElementOrder;
     mesh=$authorizedNumerics.mesh;
-    trajectory=$authorizedNumerics.trajectory}|
+    trajectory=$authorizedNumerics.trajectory}
+  if($authorizedBackend-eq'cg_amg'){
+    $solverNumericsDocument.stationary_iterative_solver=$authorizedIterativeSolver
+  }
+  $solverNumericsDocument|
     ConvertTo-Json -Depth 5|Set-Content -LiteralPath $numerics -Encoding UTF8
   $evidence=$null
   if(-not[string]::IsNullOrWhiteSpace($EvidenceContractPath)){
@@ -408,7 +705,8 @@ try{
     'MULTIPOLE_L3_TRAJECTORIES','MULTIPOLE_L3_METRICS','MULTIPOLE_L3_PLOT','MULTIPOLE_L3_MODEL',
     'MULTIPOLE_L3_CANONICAL_STATE','MULTIPOLE_L3_PRIMARY_CANONICAL_STATE',
     'MULTIPOLE_L3_CONTROL_CANONICAL_STATE','MULTIPOLE_L3_PRIMARY_TRAJECTORIES',
-    'MULTIPOLE_L3_CONTROL_TRAJECTORIES','MULTIPOLE_L3_STOP_STAGE',
+    'MULTIPOLE_L3_CONTROL_TRAJECTORIES','MULTIPOLE_L3_SOLVER_PROGRESS_DIR',
+    'MULTIPOLE_L3_STOP_STAGE',
     'MULTIPOLE_L3_MAXIMUM_MESH_CELLS')
   $oldEnvironment=Save-RunEnvironment -Names $environmentNames
   $resourceUsage=Join-Path $resultDir 'resource_usage.json'
@@ -422,6 +720,7 @@ try{
     $env:MULTIPOLE_L3_CONTROL_CANONICAL_STATE=$controlState
     $env:MULTIPOLE_L3_PRIMARY_TRAJECTORIES=$primaryTrajectories
     $env:MULTIPOLE_L3_CONTROL_TRAJECTORIES=$controlTrajectories
+    $env:MULTIPOLE_L3_SOLVER_PROGRESS_DIR=$solverProgressDir
     $env:MULTIPOLE_L3_STOP_STAGE=$StopStage
     $env:MULTIPOLE_L3_MAXIMUM_MESH_CELLS=if($null-ne$maximumMeshCells){[string]$maximumMeshCells}else{''}
     $pwsh=(Get-Process -Id $PID).Path
@@ -486,6 +785,7 @@ try{
       throw 'COMSOL mesh-build retained-byte budget exceeded.'
     }
     $outputs=@($report,$summary,$resourceUsage)|Where-Object{Test-Path -LiteralPath $_ -PathType Leaf}
+    $outputs+=@(Get-ChildItem -LiteralPath $solverProgressDir -File|ForEach-Object{$_.FullName})
     $outputs+=$retentionActions
     Write-VerifiedRunManifest -Python $python -RepoRoot $manifestRepoRoot -RunConfig $runConfig `
       -Status success -Software @('COMSOL 6.4','MATLAB R2025b','Python 3.11') -Outputs $outputs
@@ -494,15 +794,44 @@ try{
   }
   if($StopStage-eq'field_solve'){
     $fieldSolve=Assert-MultipoleFieldSolveReport -Path $report
+    $fieldReportContent=Get-Content -LiteralPath $report -Raw -Encoding UTF8
+    foreach($token in $fieldPreregistration.required_report.tokens){
+      if($fieldReportContent-notmatch("(?m)^$([regex]::Escape([string]$token))\r?$")){
+        throw "COMSOL field-solve report is missing preregistered token: $token"
+      }
+    }
+    foreach($checkpoint in $fieldPreregistration.required_report.forbidden_checkpoints){
+      if($fieldReportContent-match("(?m)^$([regex]::Escape([string]$checkpoint))\r?$")){
+        throw "COMSOL field-solve report contains forbidden checkpoint: $checkpoint"
+      }
+    }
+    if($fieldSolve.stationary_linear_solver_backend-ne$authorizedBackend-or
+      $fieldSolve.electric_potential_element_order-ne$authorizedElementOrder){
+      throw 'COMSOL field-solve report differs from the authorized solver numerics.'
+    }
+    if($authorizedBackend-eq'cg_amg'){
+      $actualConfiguration=$fieldSolve.stationary_solver_configuration
+      if([double]$actualConfiguration.relative_tolerance-ne
+          [double]$authorizedIterativeSolver.relative_tolerance-or
+        [int64]$actualConfiguration.maximum_linear_iterations-ne
+          [int64]$authorizedIterativeSolver.maximum_iterations-or
+        [string]$actualConfiguration.linear_error_check-ne
+          [string]$authorizedIterativeSolver.error_check_mode){
+        throw 'COMSOL field-solve convergence settings differ from the authorized solver numerics.'
+      }
+    }
     $summaryDocument=[ordered]@{schema_version=1;role='multipole_finite_3d_transport_summary';status='success';
       qualification_status='UNQUALIFIED_FIELD_SOLVE_DIAGNOSTIC_ONLY';project_id=$ProjectId;
       design_profile_id=$DesignProfileId;parent_resolved_design_sha256=$resolvedHash;
       model_level='L3';stop_stage='field_solve';
       stationary_linear_solver_backend=$fieldSolve.stationary_linear_solver_backend;
+      electric_potential_element_order=$fieldSolve.electric_potential_element_order;
       field_physics_created=$fieldSolve.field_physics_created;
       field_studies_created=$fieldSolve.field_studies_created;
       field_solutions_created=$fieldSolve.field_solutions_created;
       field_dof=$fieldSolve.field_dof;
+      field_solver_evidence=$fieldSolve.field_solver_evidence;
+      stationary_solver_configuration=$fieldSolve.stationary_solver_configuration;
       particle_physics_created=0;particle_studies_created=0;
       formal_gate_passed=$false}
     if($null-ne$maximumMeshCells){
@@ -518,6 +847,7 @@ try{
       throw 'COMSOL field-solve retained-byte budget exceeded.'
     }
     $outputs=@($report,$summary,$resourceUsage)|Where-Object{Test-Path -LiteralPath $_ -PathType Leaf}
+    $outputs+=@(Get-ChildItem -LiteralPath $solverProgressDir -File|ForEach-Object{$_.FullName})
     $outputs+=$retentionActions
     Write-VerifiedRunManifest -Python $python -RepoRoot $manifestRepoRoot -RunConfig $runConfig `
       -Status success -Software @('COMSOL 6.4','MATLAB R2025b','Python 3.11') -Outputs $outputs
@@ -568,6 +898,7 @@ try{
   }
   $outputs=@($events,$trajectories,$metrics,$plot,$model,$canonicalState,$resourceUsage,
     $primaryState,$controlState,$primaryTrajectories,$controlTrajectories,$report,$summary)
+  $outputs+=@(Get-ChildItem -LiteralPath $solverProgressDir -File|ForEach-Object{$_.FullName})
   if(Test-Path -LiteralPath $pairedMetrics){$outputs+=$pairedMetrics}
   if(Test-Path -LiteralPath $evaluation){$outputs+=$evaluation}
   $outputs=@($outputs|Where-Object{Test-Path -LiteralPath $_ -PathType Leaf})

@@ -42,15 +42,21 @@ class ResourceBudgetTests(unittest.TestCase):
             (QUAD, "exit_aperture_plate_acceleration_n100_spatial_refined"),
             (OCT, "exit_aperture_plate_acceleration_n100_spatial_refined"),
         ):
-            with self.assertRaisesRegex(ValueError, "not authorized"):
+            with self.assertRaisesRegex(
+                ValueError, "not authorized|differs from authorized scope"
+            ):
                 self.validate(project_id, profile)
         for profile in (
             "exit_aperture_plate_acceleration_n100_spatial_refined",
             "exit_aperture_plate_acceleration_n100_hybrid_d2_mesh_build",
         ):
-            with self.assertRaisesRegex(ValueError, "not authorized"):
+            with self.assertRaisesRegex(
+                ValueError, "not authorized|differs from authorized scope"
+            ):
                 self.validate(HEX, profile)
-        with self.assertRaisesRegex(ValueError, "not authorized"):
+        with self.assertRaisesRegex(
+            ValueError, "not authorized|differs from authorized scope"
+        ):
             self.validate(
                 OCT,
                 "exit_aperture_plate_acceleration",
@@ -63,7 +69,9 @@ class ResourceBudgetTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(ValueError, "unknown runtime profile"):
                 resolve_runtime_profile(REPO_ROOT, HEX, profile)
-        with self.assertRaisesRegex(ValueError, "not authorized"):
+        with self.assertRaisesRegex(
+            ValueError, "not authorized|differs from authorized scope"
+        ):
             self.validate(
                 HEX,
                 "exit_aperture_plate_acceleration_n100_hybrid_d2_mesh_build",
@@ -103,9 +111,14 @@ class ResourceBudgetTests(unittest.TestCase):
             comsol,
         )
         self.assertIn(
-            "$authorizedBackend-notin@('mumps','pardiso')",
+            "$authorizedBackend-notin@('mumps','pardiso','cg_amg')",
             comsol,
         )
+        self.assertIn(
+            "electric_potential_element_order=$authorizedElementOrder",
+            comsol,
+        )
+        self.assertIn("omits the required electric-potential element order", comsol)
         self.assertIn("MESH_GLOBAL_ELEMENTS", comsol)
         self.assertIn("maximum_mesh_cells", comsol)
         self.assertIn("$usage.limit_name='maximum_mesh_cells'", comsol)
@@ -122,7 +135,7 @@ class ResourceBudgetTests(unittest.TestCase):
 
     def test_mesh_cell_limit_is_optional_and_strictly_positive(self) -> None:
         runtime_profile_id = (
-            "exit_aperture_plate_acceleration_n100_hybrid_d2_pardiso_field_screen"
+            "exit_aperture_plate_acceleration_n100_hybrid_d2_cg_amg_field_screen"
         )
         runtime = resolve_runtime_profile(REPO_ROOT, HEX, runtime_profile_id)
         budget_path = Path(runtime["engineering_budget"]["path"])
@@ -268,13 +281,26 @@ class ResourceBudgetTests(unittest.TestCase):
             "CHECKPOINT=STATIONARY_FIELDS_COMPLETE",
             "STOP_STAGE=field_solve",
             "STATIONARY_LINEAR_SOLVER_BACKEND=PARDISO",
-            "FIELD_PHYSICS_CREATED=2",
+            "ELECTRIC_POTENTIAL_ELEMENT_ORDER=QUADRATIC",
+            "STATIONARY_CONTROL=NOT_APPLICABLE",
+            "STATIONARY_RELATIVE_TOLERANCE=NOT_APPLICABLE",
+            "STATIONARY_FULLY_COUPLED_LINEAR_SOLVER=DDEF",
+            "STATIONARY_MAX_LINEAR_ITERATIONS=NOT_APPLICABLE",
+            "STATIONARY_LINEAR_ERROR_CHECK=NOT_APPLICABLE",
+            "STATIONARY_CONVERGENCE_LOG=NOT_APPLICABLE",
+            "FIELD_PHYSICS_CREATED=1",
             "FIELD_STUDIES_CREATED=2",
             "FIELD_SOLUTIONS_CREATED=2",
             "PARTICLE_PHYSICS_CREATED=0",
             "PARTICLE_STUDIES_CREATED=0",
             "DIFFERENTIAL_FIELD_DOF=100",
+            "DIFFERENTIAL_FIELD_ITERATIONS=UNKNOWN",
+            "DIFFERENTIAL_FIELD_FINAL_RESIDUAL=UNKNOWN",
+            "DIFFERENTIAL_FIELD_SOLVER_EVIDENCE_SOURCE=NOT_APPLICABLE_DIRECT_SOLVER",
             "STATIC_FIELD_DOF=100",
+            "STATIC_FIELD_ITERATIONS=UNKNOWN",
+            "STATIC_FIELD_FINAL_RESIDUAL=UNKNOWN",
+            "STATIC_FIELD_SOLVER_EVIDENCE_SOURCE=NOT_APPLICABLE_DIRECT_SOLVER",
             "FIELD_SOLVE_DIAGNOSTIC=PASS",
             "STATUS=PASS",
         ]
@@ -287,7 +313,8 @@ class ResourceBudgetTests(unittest.TestCase):
                 command = (
                     f"{assertion_function}\n"
                     f"$result=Assert-MultipoleFieldSolveReport -Path '{escaped_path}';"
-                    'Write-Output "BACKEND=$($result.stationary_linear_solver_backend)"'
+                    'Write-Output "BACKEND=$($result.stationary_linear_solver_backend) '
+                    'CONTROL=$($result.stationary_solver_configuration.control)"'
                 )
                 return subprocess.run(
                     ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
@@ -302,7 +329,44 @@ class ResourceBudgetTests(unittest.TestCase):
 
             accepted = run_assertion(required_lines)
             self.assertEqual(accepted.returncode, 0, accepted.stderr)
-            self.assertIn("BACKEND=pardiso", accepted.stdout)
+            self.assertIn("BACKEND=pardiso CONTROL=not_applicable", accepted.stdout)
+            cg_lines = [
+                (
+                    "STATIONARY_LINEAR_SOLVER_BACKEND=CG_AMG"
+                    if line == "STATIONARY_LINEAR_SOLVER_BACKEND=PARDISO"
+                    else "STATIONARY_CONTROL=USER"
+                    if line == "STATIONARY_CONTROL=NOT_APPLICABLE"
+                    else "STATIONARY_RELATIVE_TOLERANCE=0.001"
+                    if line == "STATIONARY_RELATIVE_TOLERANCE=NOT_APPLICABLE"
+                    else "STATIONARY_FULLY_COUPLED_LINEAR_SOLVER=I1"
+                    if line == "STATIONARY_FULLY_COUPLED_LINEAR_SOLVER=DDEF"
+                    else "STATIONARY_MAX_LINEAR_ITERATIONS=500"
+                    if line == "STATIONARY_MAX_LINEAR_ITERATIONS=NOT_APPLICABLE"
+                    else "STATIONARY_LINEAR_ERROR_CHECK=ON"
+                    if line == "STATIONARY_LINEAR_ERROR_CHECK=NOT_APPLICABLE"
+                    else "STATIONARY_CONVERGENCE_LOG=DETAILED"
+                    if line == "STATIONARY_CONVERGENCE_LOG=NOT_APPLICABLE"
+                    else "DIFFERENTIAL_FIELD_ITERATIONS=12"
+                    if line == "DIFFERENTIAL_FIELD_ITERATIONS=UNKNOWN"
+                    else "DIFFERENTIAL_FIELD_FINAL_RESIDUAL=1e-8"
+                    if line == "DIFFERENTIAL_FIELD_FINAL_RESIDUAL=UNKNOWN"
+                    else "DIFFERENTIAL_FIELD_SOLVER_EVIDENCE_SOURCE=COMSOL_PROGRESS_LINIT_LINRES"
+                    if line
+                    == "DIFFERENTIAL_FIELD_SOLVER_EVIDENCE_SOURCE=NOT_APPLICABLE_DIRECT_SOLVER"
+                    else "STATIC_FIELD_ITERATIONS=9"
+                    if line == "STATIC_FIELD_ITERATIONS=UNKNOWN"
+                    else "STATIC_FIELD_FINAL_RESIDUAL=2e-8"
+                    if line == "STATIC_FIELD_FINAL_RESIDUAL=UNKNOWN"
+                    else "STATIC_FIELD_SOLVER_EVIDENCE_SOURCE=COMSOL_PROGRESS_LINIT_LINRES"
+                    if line
+                    == "STATIC_FIELD_SOLVER_EVIDENCE_SOURCE=NOT_APPLICABLE_DIRECT_SOLVER"
+                    else line
+                )
+                for line in required_lines
+            ]
+            accepted_cg = run_assertion(cg_lines)
+            self.assertEqual(accepted_cg.returncode, 0, accepted_cg.stderr)
+            self.assertIn("BACKEND=cg_amg CONTROL=user", accepted_cg.stdout)
             invalid_cases = (
                 (
                     [
@@ -329,6 +393,23 @@ class ResourceBudgetTests(unittest.TestCase):
                         for line in required_lines
                     ],
                     "invalid stationary solver backend",
+                ),
+                (
+                    [
+                        line
+                        for line in required_lines
+                        if line != "ELECTRIC_POTENTIAL_ELEMENT_ORDER=QUADRATIC"
+                    ],
+                    "invalid electric-potential element order",
+                ),
+                (
+                    [
+                        "DIFFERENTIAL_FIELD_ITERATIONS=0"
+                        if line == "DIFFERENTIAL_FIELD_ITERATIONS=12"
+                        else line
+                        for line in cg_lines
+                    ],
+                    "lacks positive DIFFERENTIAL_FIELD LinIt/LinRes evidence",
                 ),
             )
             for lines, expected in invalid_cases:

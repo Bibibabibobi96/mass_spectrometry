@@ -223,7 +223,34 @@ MUMPS改为显式PARDISO；计划在双场后停止且禁止创建粒子。真�
 仍有13,179,715,584 bytes可用，运行目录峰值仅1,738,045 bytes。该峰值比MUMPS失败身份高约0.404%，
 比完整FreeTet baseline高约45.576%，因此PARDISO没有建立field-only可运行性或资源改进。运行登记为
 `INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED / REJECT_SAME_MESH_PARDISO_FIELD_SOLVE`；一次性授权已经耗尽，
-不重跑、不抬帽，也不授权粒子、CG-AMG、后续细化、连续数值等价、收敛、Candidate、Formal或N=1000。
+不重跑、不抬帽，也不授权粒子或后续细化。
+
+此前独立
+[`CG-AMG field-only隔离预登记`](../config/qualification/comsol_hybrid_d2_cg_amg_field_screen_preregistration.json)
+在运行前授权唯一一次R0
+`20260729_234500__analysis__comsol__hex-hybrid-d2-cg-amg-field__r01`。它保持出口带孔接口板加速的
+resolved物理、D2的884,643单元网格目标、N=100源身份、80步/周期和80 us轨迹设置不变，显式冻结
+二次电势单元阶次，只把两次稳态线性求解改为CG+AMG，容差`0.001`、最多500次迭代并开启误差检查。
+运行在双场后停止，禁止创建粒子；成功还必须从COMSOL原生progress日志取得每个场的正`LinIt`和有限
+`LinRes`，并证明没有全系统direct fallback。硬上限为703 s、12 GiB进程树、8 GiB最低系统可用内存、
+128 MiB瞬态目录、10 MiB compact终态、100万单元和零重试；资源改进判据仍要求峰值低于旧完整
+FreeTet baseline的9,422,286,848 bytes。
+
+该R0已经执行一次。COMSOL原始报告自身以`STATUS=PASS`结束：网格仍为884,643单元，电势单元阶次
+为二次，每个差分场和静态场均为1,657,156 DOF；差分场为6次线性迭代、末残差`5.5e-7`，静态场
+为7次线性迭代、末残差`2.9e-7`。两者均从原生progress日志取得`LinIt/LinRes`，且报告CG+AMG、
+一个Electrostatics physics、两个Study、两个Solution及零粒子physics/Study。资源监测记录
+142.829 s、6,342,643,712 bytes进程树峰值、20,599,001,088 bytes最低系统可用内存，运行目录
+峰值与最终保留均为1,788,736 bytes；观测内存峰值比已完成FreeTet baseline低32.6846676%，所有
+预登记资源上限在观测值上均满足。
+
+但预登记及运行后报告校验器错误地要求`FIELD_PHYSICS_CREATED=2`，而该有效配对架构正确地复用
+一个Electrostatics physics，通过两个Study和两个Solution分别求解差分场与静态场。原始求解
+完成后，后处理合同因此拒绝报告，summary和manifest登记为
+`failed / INCONCLUSIVE_PREREGISTERED_REPORT_CONTRACT_MISMATCH`。所以以上原始求解与资源数值只
+具有`POSTHOC_ENGINEERING_OBSERVATION_ONLY`身份，不能升级为预登记可运行性PASS或资源改进PASS；
+该失败也不是COMSOL场求解FAIL。唯一商业运行和零重试授权已经耗尽，不重跑、不作粒子跟进，也不
+授予粒子传输、与MUMPS/PARDISO的直接数值等价、场或粒子收敛、Candidate、Formal或N=1000结论。
 
 共享SIMION模板、GUI复核、`.wgem`绕过和跨机可移植性状态只由
 [`../../../common/multipole/README.md`](../../../common/multipole/README.md)维护；公共机制证据不授予

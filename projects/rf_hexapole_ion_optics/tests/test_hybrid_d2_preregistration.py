@@ -123,7 +123,9 @@ class HybridD2PreregistrationTests(unittest.TestCase):
         self.assertEqual(numerics["trajectory"]["rf_steps_per_period"], 80)
         self.assertEqual(numerics["trajectory"]["maximum_global_time_us"], 80.0)
 
-    def test_d2_runtime_is_retained_but_no_longer_authorized(self) -> None:
+    def test_d2_runtime_is_retained_but_cg_field_screen_is_closed(
+        self,
+    ) -> None:
         profile = self.runtime_registry["profiles"][RUNTIME_PROFILE_ID]
         self.assertEqual(
             profile,
@@ -145,8 +147,17 @@ class HybridD2PreregistrationTests(unittest.TestCase):
             authorization["scope"]["solver_numerics_profile_ids"]["comsol"],
             NUMERICS_PROFILE_ID,
         )
+        self.assertEqual(
+            authorization["scope"]["runtime_profile_id"],
+            "exit_aperture_plate_acceleration_n100_hybrid_d2_cg_amg_field_screen",
+        )
+        self.assertEqual(
+            authorization["scope"]["solver_numerics_profile_ids"]["comsol"],
+            "hybrid_d2_cg_amg_field_screen",
+        )
         self.assertFalse(self.budget["full_matrix_authorization"]["authorized"])
-        self.assertIn("field-only run", self.budget["claim_limit"])
+        self.assertIn("has been executed", self.budget["claim_limit"])
+        self.assertIn("posthoc engineering observations", self.budget["claim_limit"])
 
     def test_d2_solver_size_and_terminal_report_are_frozen(self) -> None:
         d2 = self.preregistration["d2"]

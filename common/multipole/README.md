@@ -198,6 +198,13 @@ COMSOL与SIMION消费同一resolved hash、杆阵列、enclosure、interfaces、
 Lua对`sine`与`cosine`显式分支，未知波形失败；两组电压保持
 `common_mode ± (DC + RF waveform)`。分段设计的两个功能arm保持同一几何和RF，只改变axial scale。
 
+COMSOL数值profile必须显式声明`electric_potential_element_order`，当前活动四/六/八极杆profile统一
+使用`quadratic`，不得依赖供应商默认阶次。稳态线性求解器由同一公共runner选择`mumps`、`pardiso`
+或`cg_amg`；只有`cg_amg`额外消费唯一的`stationary_iterative_solver`对象，不建立第二CLI或同义字段。
+迭代路径必须从模型树回读CG、AMG、容差、最大迭代数、误差检查和详细收敛日志，并从COMSOL原生
+progress日志取得每个稳态场的正`LinIt`与有限`LinRes`。缺失、零迭代或配置回读不一致均在success
+manifest前失败关闭；原生日志保留在本次run的`logs/solver_progress/`。
+
 runner创建run目录后立即写并验证`interrupted` manifest；所有编译、复制、预检和求解都在同一失败收尾
 边界内。终态只写一次，失败时递归收集现存inputs/results/logs/SIMION文件，避免负结果被第二次空manifest
 覆盖。实际Python、MATLAB、Lua及公共依赖冻结到`inputs/code/`，生成逐文件SHA-256 inventory，后续执行

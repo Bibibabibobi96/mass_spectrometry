@@ -9,6 +9,7 @@ numericsPath = getenv('MULTIPOLE_SOLVER_NUMERICS');
 sourcePath = getenv('MULTIPOLE_L3_PARTICLE_SOURCE');
 sourceMetadataPath = getenv('MULTIPOLE_L3_PARTICLE_SOURCE_METADATA');
 runtimeDir = getenv('MULTIPOLE_L3_RUNTIME_DIR');
+solverProgressDir = getenv('MULTIPOLE_L3_SOLVER_PROGRESS_DIR');
 eventsPath = getenv('MULTIPOLE_L3_EVENTS');
 trajectoryPath = getenv('MULTIPOLE_L3_TRAJECTORIES');
 metricsPath = getenv('MULTIPOLE_L3_METRICS');
@@ -25,11 +26,13 @@ assert(any(strcmp(stopStage, {'transport', 'mesh_build', 'field_solve'})), ...
 meshBuildOnly = strcmp(stopStage, 'mesh_build');
 fieldSolveOnly = strcmp(stopStage, 'field_solve');
 required = {reportPath, resolvedDesignPath, numericsPath, sourcePath, sourceMetadataPath, ...
-    runtimeDir, eventsPath, trajectoryPath, metricsPath, plotPath, modelPath};
+    runtimeDir, solverProgressDir, eventsPath, trajectoryPath, metricsPath, plotPath, modelPath};
 assert(all(~cellfun(@isempty, required)), 'Finite 3D multipole environment is incomplete.');
 assert(isfile(resolvedDesignPath) && isfile(numericsPath) && isfile(sourcePath) && isfile(sourceMetadataPath), ...
     'Resolved-design finite 3D multipole inputs are missing.');
 if ~isfolder(runtimeDir), mkdir(runtimeDir); end
+assert(isfolder(solverProgressDir), ...
+    'Finite 3D multipole solver-progress directory is missing.');
 
 fid = fopen(reportPath, 'w');
 assert(fid >= 0, 'Could not create the finite 3D transport report.');
@@ -47,8 +50,23 @@ try
     assert(isfield(numerics,'stationary_linear_solver_backend'), ...
         'COMSOL numerical contract omits the stationary linear-solver backend.');
     stationaryLinearSolverBackend=lower(char(numerics.stationary_linear_solver_backend));
-    assert(any(strcmp(stationaryLinearSolverBackend, {'mumps', 'pardiso'})), ...
+    assert(any(strcmp(stationaryLinearSolverBackend, {'mumps', 'pardiso', 'cg_amg'})), ...
         'COMSOL stationary linear-solver backend is unsupported.');
+    hasIterativeSettings=isfield(numerics,'stationary_iterative_solver');
+    if strcmp(stationaryLinearSolverBackend,'cg_amg')
+        assert(hasIterativeSettings, ...
+            'CG-AMG requires stationary iterative-solver settings.');
+        stationaryIterativeSettings=numerics.stationary_iterative_solver;
+    else
+        assert(~hasIterativeSettings, ...
+            'Direct stationary solvers forbid iterative-solver settings.');
+        stationaryIterativeSettings=struct();
+    end
+    assert(isfield(numerics,'electric_potential_element_order'), ...
+        'COMSOL numerical contract omits the electric-potential element order.');
+    electricPotentialElementOrder=lower(char(numerics.electric_potential_element_order));
+    assert(any(strcmp(electricPotentialElementOrder, {'linear', 'quadratic'})), ...
+        'COMSOL electric-potential element order is unsupported.');
     assert(strcmp(sourceMetadata.role,'multipole_canonical_particle_source_metadata'), ...
         'COMSOL particle-source metadata role differs.');
     assert(strcmp(sourceMetadata.parent_resolved_design_sha256,design.resolved_sha256), ...
@@ -397,6 +415,8 @@ try
     es.selection.named('sel_vac');
     es.field('electricpotential').field('Vdiff');
     es.field('electricpotential').component({'Vdiff'});
+    actualEsElementOrder=apply_electric_potential_element_order( ...
+        es,electricPotentialElementOrder);
     if accelerationEnabled, model.param.set('field_case','1'); end
     for k = 1:numel(rodTags)
         potential = es.create(sprintf('pot_rod%d', k), 'ElectricPotential', 2);
@@ -429,6 +449,8 @@ try
         esStatic.selection.named('sel_vac');
         esStatic.field('electricpotential').field('Vstatic');
         esStatic.field('electricpotential').component({'Vstatic'});
+        actualEsStaticElementOrder=apply_electric_potential_element_order( ...
+            esStatic,electricPotentialElementOrder);
         for k = 1:numel(rodTags)
             potential = esStatic.create(sprintf('pot_rod%d', k), 'ElectricPotential', 2);
             potential.selection.named(rodBoundarySelectionTags{k});
@@ -449,10 +471,15 @@ try
         solutionDiff=model.sol.create('sol_es_diff');
         solutionDiff.study('std_es_diff');
         solutionDiff.createAutoSequence('std_es_diff');
-        actualDiffBackend=configure_comsol_stationary_direct_solver( ...
-            solutionDiff,stationaryLinearSolverBackend);
+        actualDiffSolver=configure_comsol_stationary_solver( ...
+            solutionDiff,stationaryLinearSolverBackend,stationaryIterativeSettings);
         solutionDiff.attach('std_es_diff');
-        solutionDiff.runAll;
+        differentialProgressPath=fullfile(solverProgressDir,'stationary_differential_progress.log');
+        run_stationary_solution(solutionDiff,differentialProgressPath);
+        differentialInfo=mphsolinfo(model,'soltag','sol_es_diff');
+        differentialDof=double(differentialInfo.size);
+        differentialSolverEvidence=collect_stationary_solver_evidence( ...
+            differentialProgressPath,actualDiffSolver.backend);
         fprintf(fid,'CHECKPOINT=DIFFERENTIAL_FIELD_COMPLETE\n');
         model.param.set('field_case','0');
         studyStatic=model.study.create('std_es_static');
@@ -461,10 +488,15 @@ try
         solutionStatic=model.sol.create('sol_es_static');
         solutionStatic.study('std_es_static');
         solutionStatic.createAutoSequence('std_es_static');
-        actualStaticBackend=configure_comsol_stationary_direct_solver( ...
-            solutionStatic,stationaryLinearSolverBackend);
+        actualStaticSolver=configure_comsol_stationary_solver( ...
+            solutionStatic,stationaryLinearSolverBackend,stationaryIterativeSettings);
         solutionStatic.attach('std_es_static');
-        solutionStatic.runAll;
+        staticProgressPath=fullfile(solverProgressDir,'stationary_static_progress.log');
+        run_stationary_solution(solutionStatic,staticProgressPath);
+        staticInfo=mphsolinfo(model,'soltag','sol_es_static');
+        staticDof=double(staticInfo.size);
+        staticSolverEvidence=collect_stationary_solver_evidence( ...
+            staticProgressPath,actualStaticSolver.backend);
         model.param.set('field_case','1');
     else
         studyEs = model.study.create('std_es');
@@ -472,14 +504,43 @@ try
         solutionEs = model.sol.create('sol_es');
         solutionEs.study('std_es');
         solutionEs.createAutoSequence('std_es');
-        actualFieldBackend=configure_comsol_stationary_direct_solver( ...
-            solutionEs,stationaryLinearSolverBackend);
+        actualFieldSolver=configure_comsol_stationary_solver( ...
+            solutionEs,stationaryLinearSolverBackend,stationaryIterativeSettings);
         solutionEs.attach('std_es');
-        solutionEs.runAll;
+        fieldProgressPath=fullfile(solverProgressDir,'stationary_field_progress.log');
+        run_stationary_solution(solutionEs,fieldProgressPath);
+        fieldInfo=mphsolinfo(model,'soltag','sol_es');
+        fieldDof=double(fieldInfo.size);
+        fieldSolverEvidence=collect_stationary_solver_evidence( ...
+            fieldProgressPath,actualFieldSolver.backend);
     end
     fprintf(fid,'CHECKPOINT=STATIONARY_FIELDS_COMPLETE\n');
-    fprintf(fid,'STATIONARY_LINEAR_SOLVER_BACKEND=%s\n', ...
-        upper(stationaryLinearSolverBackend));
+    fprintf(fid,'ELECTRIC_POTENTIAL_ELEMENT_ORDER=%s\n',upper(actualEsElementOrder));
+    if exist('actualEsStaticElementOrder','var')
+        assert(strcmp(actualEsStaticElementOrder,electricPotentialElementOrder), ...
+            'Static electric-potential element order differs from the governed order.');
+    end
+    assert(strcmp(actualEsElementOrder,electricPotentialElementOrder), ...
+        'Differential electric-potential element order differs from the governed order.');
+    if accelerationEnabled
+        assert(stationary_solver_configurations_match(actualDiffSolver,actualStaticSolver) && ...
+            strcmp(actualDiffSolver.backend,stationaryLinearSolverBackend), ...
+            'Acceleration field solvers did not retain the governed backend.');
+        actualStationarySolver=actualDiffSolver;
+        fprintf(fid,'STATIONARY_LINEAR_SOLVER_BACKEND=%s\n', ...
+            upper(actualStationarySolver.backend));
+        emit_field_solver_evidence(fid,'DIFFERENTIAL_FIELD',differentialDof, ...
+            differentialSolverEvidence);
+        emit_field_solver_evidence(fid,'STATIC_FIELD',staticDof,staticSolverEvidence);
+    else
+        assert(strcmp(actualFieldSolver.backend,stationaryLinearSolverBackend), ...
+            'Stationary field solver did not retain the governed backend.');
+        actualStationarySolver=actualFieldSolver;
+        fprintf(fid,'STATIONARY_LINEAR_SOLVER_BACKEND=%s\n', ...
+            upper(actualStationarySolver.backend));
+        emit_field_solver_evidence(fid,'STATIONARY_FIELD',fieldDof,fieldSolverEvidence);
+    end
+    emit_stationary_solver_configuration(fid,actualStationarySolver);
 
     if fieldSolveOnly
         physicsTags = cell(comp.physics.tags());
@@ -487,24 +548,10 @@ try
         solutionTags = cell(model.sol.tags());
         particlePhysicsCreated = sum(strcmp(physicsTags, 'cpt'));
         if accelerationEnabled
-            differentialInfo=mphsolinfo(model,'soltag','sol_es_diff');
-            staticInfo=mphsolinfo(model,'soltag','sol_es_static');
-            differentialDof=double(differentialInfo.size);
-            staticDof=double(staticInfo.size);
-            assert(strcmp(actualDiffBackend,stationaryLinearSolverBackend) && ...
-                strcmp(actualStaticBackend,stationaryLinearSolverBackend), ...
-                'Acceleration field solvers did not retain the governed backend.');
-            fprintf(fid,'DIFFERENTIAL_FIELD_DOF=%d\n',differentialDof);
-            fprintf(fid,'STATIC_FIELD_DOF=%d\n',staticDof);
             assert(isfinite(differentialDof) && differentialDof > 0 && ...
                 isfinite(staticDof) && staticDof > 0, ...
                 'Acceleration field solution sizes are invalid.');
         else
-            fieldInfo=mphsolinfo(model,'soltag','sol_es');
-            fieldDof=double(fieldInfo.size);
-            assert(strcmp(actualFieldBackend,stationaryLinearSolverBackend), ...
-                'Stationary field solver did not retain the governed backend.');
-            fprintf(fid,'STATIONARY_FIELD_DOF=%d\n',fieldDof);
             assert(isfinite(fieldDof) && fieldDof > 0, ...
                 'Stationary field solution size is invalid.');
         end
@@ -664,6 +711,113 @@ catch exception
     rethrow(exception)
 end
 clear cleanup
+
+function actualOrder = apply_electric_potential_element_order(physics, requestedOrder)
+requestedOrder = lower(char(requestedOrder));
+if strcmp(requestedOrder, 'linear')
+    orderCode = 1;
+elseif strcmp(requestedOrder, 'quadratic')
+    orderCode = 2;
+else
+    error('Unsupported electric-potential element order: %s', requestedOrder);
+end
+shapeProperty = physics.prop('ShapeProperty');
+shapeProperty.set('order_electricpotential', orderCode);
+actualCode = str2double(char(shapeProperty.getString('order_electricpotential')));
+assert(actualCode == orderCode, ...
+    'Electric-potential element order was not retained by COMSOL.');
+actualOrder = requestedOrder;
+end
+
+function matches = stationary_solver_configurations_match(first, second)
+matches = strcmp(first.backend,second.backend) && ...
+    strcmp(first.fully_coupled_linsolver,second.fully_coupled_linsolver) && ...
+    strcmp(first.control,second.control) && ...
+    isequaln(first.relative_tolerance,second.relative_tolerance) && ...
+    isequaln(first.maximum_linear_iterations,second.maximum_linear_iterations) && ...
+    strcmp(first.linear_error_check,second.linear_error_check) && ...
+    strcmp(first.convergence_log,second.convergence_log);
+end
+
+function emit_stationary_solver_configuration(fid, actual)
+fprintf(fid,'STATIONARY_CONTROL=%s\n',upper(actual.control));
+if isfinite(actual.relative_tolerance)
+    fprintf(fid,'STATIONARY_RELATIVE_TOLERANCE=%.17g\n',actual.relative_tolerance);
+else
+    fprintf(fid,'STATIONARY_RELATIVE_TOLERANCE=NOT_APPLICABLE\n');
+end
+fprintf(fid,'STATIONARY_FULLY_COUPLED_LINEAR_SOLVER=%s\n', ...
+    upper(actual.fully_coupled_linsolver));
+if isfinite(actual.maximum_linear_iterations)
+    fprintf(fid,'STATIONARY_MAX_LINEAR_ITERATIONS=%d\n', ...
+        actual.maximum_linear_iterations);
+else
+    fprintf(fid,'STATIONARY_MAX_LINEAR_ITERATIONS=NOT_APPLICABLE\n');
+end
+fprintf(fid,'STATIONARY_LINEAR_ERROR_CHECK=%s\n',upper(actual.linear_error_check));
+fprintf(fid,'STATIONARY_CONVERGENCE_LOG=%s\n',upper(actual.convergence_log));
+end
+
+function run_stationary_solution(solution, progressPath)
+com.comsol.model.util.ModelUtil.showProgress(progressPath);
+progressCleanup=onCleanup(@() com.comsol.model.util.ModelUtil.showProgress(false));
+solution.runAll;
+clear progressCleanup
+end
+
+function evidence = collect_stationary_solver_evidence(progressPath, actualBackend)
+evidence = struct('iteration_count',NaN,'final_residual',NaN, ...
+    'source','UNAVAILABLE_FROM_COMSOL_PROGRESS_LOG');
+if any(strcmp(actualBackend, {'mumps', 'pardiso'}))
+    evidence.source = 'NOT_APPLICABLE_DIRECT_SOLVER';
+    return
+end
+if ~isfile(progressPath), return; end
+lines = regexp(fileread(progressPath), '\r?\n', 'split');
+for lineIndex = 1:numel(lines)
+    columns = regexp(strtrim(lines{lineIndex}), '\s+', 'split');
+    iterationColumn=find(strcmpi(columns,'LinIt'),1);
+    residualColumn=find(strcmpi(columns,'LinRes'),1);
+    if isempty(iterationColumn) || isempty(residualColumn), continue; end
+    parsedAny = false;
+    for dataIndex = lineIndex+1:numel(lines)
+        values = regexp(strtrim(lines{dataIndex}), '\s+', 'split');
+        if numel(values) < max(iterationColumn,residualColumn)
+            if parsedAny, break; end
+            continue
+        end
+        iterationValue=str2double(values{iterationColumn});
+        residualValue=str2double(values{residualColumn});
+        if ~isfinite(iterationValue) || iterationValue < 0 || ...
+            iterationValue ~= fix(iterationValue) || ...
+            ~isfinite(residualValue) || residualValue < 0
+            if parsedAny, break; end
+            continue
+        end
+        parsedAny = true;
+        evidence.iteration_count = iterationValue;
+        evidence.final_residual = residualValue;
+        evidence.source = 'COMSOL_PROGRESS_LINIT_LINRES';
+    end
+end
+end
+
+function emit_field_solver_evidence(fid, prefix, dof, evidence)
+assert(isfinite(dof) && dof > 0, ...
+    '%s solution size is invalid.', lower(strrep(prefix,'_',' ')));
+fprintf(fid,'%s_DOF=%d\n',prefix,dof);
+if isfinite(evidence.iteration_count)
+    fprintf(fid,'%s_ITERATIONS=%d\n',prefix,evidence.iteration_count);
+else
+    fprintf(fid,'%s_ITERATIONS=UNKNOWN\n',prefix);
+end
+if isfinite(evidence.final_residual) && evidence.final_residual >= 0
+    fprintf(fid,'%s_FINAL_RESIDUAL=%.17g\n',prefix,evidence.final_residual);
+else
+    fprintf(fid,'%s_FINAL_RESIDUAL=UNKNOWN\n',prefix);
+end
+fprintf(fid,'%s_SOLVER_EVIDENCE_SOURCE=%s\n',prefix,evidence.source);
+end
 
 function diagnostics = emit_mesh_prebuild_diagnostics(fid, model, comp, mesh, ...
     segmentHybridMesh, hybridSelections)

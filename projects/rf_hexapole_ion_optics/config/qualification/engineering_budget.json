@@ -2,18 +2,18 @@
   "schema_version": 1,
   "role": "multipole_engineering_budget_contract",
   "project_id": "rf_hexapole_ion_optics",
-  "contract_id": "hexapole_hybrid_d2_pardiso_field_screen_completed_closed_v22",
+  "contract_id": "hexapole_hybrid_d2_p2_cg_amg_field_screen_closed_v24",
   "preregistered_before_run": true,
   "pilot_authorization": {
     "authorized": false,
     "scope": {
       "project_id": "rf_hexapole_ion_optics",
-      "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_d2_pardiso_field_screen",
+      "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_d2_cg_amg_field_screen",
       "design_profile_id": "exit_aperture_plate_acceleration",
       "particle_source_profile_id": "family_mother_sample_v1_n100",
       "particle_count": 100,
       "solver_numerics_profile_ids": {
-        "comsol": "hybrid_d2_pardiso_field_screen",
+        "comsol": "hybrid_d2_cg_amg_field_screen",
         "simion": "baseline_finite_3d"
       },
       "allowed_solvers": ["comsol"],
@@ -22,7 +22,7 @@
     },
     "limits": {
       "wall_clock_seconds_by_solver": {
-        "comsol": 300,
+        "comsol": 703,
         "simion": 300
       },
       "transient_run_directory_bytes": 134217728,
@@ -35,8 +35,8 @@
   },
   "full_matrix_authorization": {
     "authorized": false,
-    "reason": "the_same_mesh_pardiso_field_screen_exceeded_12_gib_before_the_first_field_completed"
+    "reason": "the_only_same_mesh_p2_cg_amg_field_screen_was_executed_and_closed_with_a_preregistered_report_contract_mismatch"
   },
   "budget_exhaustion_result": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
-  "claim_limit": "The one authorized same-mesh PARDISO field-only run is complete and closed after exceeding 12 GiB before the first differential field completed. PARDISO did not improve the rejected D2 hybrid field solve, and no retry, larger cap, fallback backend, refinement, particle run, matrix, convergence, numerical equivalence, Candidate, Formal or N=1000 run is authorized."
+  "claim_limit": "The only same-D2-mesh, quadratic-potential CG-AMG field-only run has been executed. Its solver and resource outputs are retained as posthoc engineering observations, but the run manifest failed because the preregistration incorrectly required two Electrostatics physics nodes instead of one physics node reused by two Studies. No retry, larger cap, fallback backend, refinement, particle run, matrix, convergence, numerical equivalence, Candidate, Formal or N=1000 run is authorized."
 }

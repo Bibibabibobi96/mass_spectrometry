@@ -309,7 +309,7 @@ class FamilyExperimentProfileTests(unittest.TestCase):
         self.assertFalse(engineering["pilot_authorization"]["authorized"])
         self.assertEqual(
             engineering["pilot_authorization"]["scope"]["runtime_profile_id"],
-            "exit_aperture_plate_acceleration_n100_hybrid_d2_pardiso_field_screen",
+            "exit_aperture_plate_acceleration_n100_hybrid_d2_cg_amg_field_screen",
         )
         self.assertEqual(
             engineering["pilot_authorization"]["scope"]["allowed_solvers"],
@@ -322,7 +322,7 @@ class FamilyExperimentProfileTests(unittest.TestCase):
         self.assertFalse(engineering["full_matrix_authorization"]["authorized"])
         self.assertEqual(
             engineering["full_matrix_authorization"]["reason"],
-            "the_same_mesh_pardiso_field_screen_exceeded_12_gib_before_the_first_field_completed",
+            "the_only_same_mesh_p2_cg_amg_field_screen_was_executed_and_closed_with_a_preregistered_report_contract_mismatch",
         )
 
         result = load(

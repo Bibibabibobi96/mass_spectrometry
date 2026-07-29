@@ -56,8 +56,16 @@
   [`PARDISO field-only隔离预登记`](config/qualification/comsol_hybrid_d2_pardiso_field_screen_preregistration.json)
   完成同一884,643单元D2网格的一次双场预检；它只改变stationary direct backend，但在首个差分场
   完成前以13,716,545,536 bytes超过12 GiB进程树硬帽。PARDISO比MUMPS失败峰值还高约0.40%，没有
-  建立field-only可运行性或资源改进；授权已经关闭，不授权N=100粒子、D3、时间档、N=1000、完整
-  矩阵或连续量资格。
+  建立field-only可运行性或资源改进；该授权已经关闭。随后
+  [`CG-AMG field-only隔离预登记`](config/qualification/comsol_hybrid_d2_cg_amg_field_screen_preregistration.json)
+  曾在运行前授权同一D2网格、显式二次电势阶次和双场的唯一一次R0
+  `20260729_234500__analysis__comsol__hex-hybrid-d2-cg-amg-field__r01`；唯一求解因素是CG+AMG
+  稳态线性求解配置，禁止创建粒子并冻结零重试。该次COMSOL原始报告以884,643单元、二次电势
+  单元和双场完成返回`PASS`，实测142.829 s、6,342,643,712 bytes进程树峰值，较完整FreeTet
+  baseline低32.6846676%。但运行后合同错误地要求两个Electrostatics physics，而有效配对架构是
+  一个physics复用于两个Study/两个Solution，故终态manifest为`failed`。这些数值只具有
+  `POSTHOC_ENGINEERING_OBSERVATION_ONLY`身份，不构成预登记PASS；一次授权已经耗尽，零重试且
+  不授权粒子跟进、D3、时间档、直接求解器等价、收敛、N=1000、Candidate或Formal资格。
   既有三模式baseline的两份
   求解器报告只具有`POSTHOC_DESCRIPTIVE`身份，统一
   比较见[`../../docs/history/20260729__multipole-three-mode-posthoc-n100.md`](../../docs/history/20260729__multipole-three-mode-posthoc-n100.md)。

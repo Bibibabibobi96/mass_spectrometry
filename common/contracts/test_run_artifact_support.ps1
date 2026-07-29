@@ -79,8 +79,8 @@ try {
     -Software @('contract test') -RetentionContractEnabled -RetentionClass compact
   $usagePath=Join-Path $budgetPackage.result_dir 'resource_usage.json'
   Write-RunJson -Path $usagePath -Value ([ordered]@{
-    schema_version=1;role='multipole_resource_usage';status='resource_budget_exceeded'
-    failure_class='resource_budget_exceeded';limit_name='wall_clock_seconds'
+    schema_version=1;role='multipole_resource_usage';status='running'
+    failure_class=$null;limit_name='wall_clock_seconds'
     peak_run_directory_bytes=0;final_retained_bytes=$null
     limits=[ordered]@{compact_final_retained_bytes=26214400}
   })
@@ -91,9 +91,13 @@ try {
     -FailureClass resource_budget_exceeded -ResourceUsagePath $usagePath
   $budgetSummary=Get-Content -LiteralPath $budgetPackage.summary -Raw|ConvertFrom-Json
   $budgetManifest=Get-Content -LiteralPath (Join-Path $budgetPackage.run_dir 'run_manifest.json') -Raw|ConvertFrom-Json
+  $budgetUsage=Get-Content -LiteralPath $usagePath -Raw|ConvertFrom-Json
   Assert-Equal $budgetSummary.status 'interrupted' 'Resource budget summary must be interrupted.'
   Assert-Equal $budgetSummary.failure_class 'resource_budget_exceeded' 'Resource budget failure class changed.'
   Assert-Equal $budgetManifest.status 'interrupted' 'Resource budget manifest must be interrupted.'
+  Assert-Equal $budgetUsage.status 'interrupted' 'Resource usage must leave running state on failure.'
+  Assert-Equal $budgetUsage.failure_class 'resource_budget_exceeded' `
+    'Resource usage failure class changed.'
 
   $writeError = ''
   try {

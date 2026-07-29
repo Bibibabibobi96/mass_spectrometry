@@ -42,20 +42,22 @@ class PardisoFieldScreenContractTests(unittest.TestCase):
         self.assertEqual(candidate["mesh"], rejected["mesh"])
         self.assertEqual(candidate["trajectory"], rejected["trajectory"])
 
-    def test_authority_hashes_and_single_run_budget_are_frozen(self) -> None:
+    def test_closed_authority_hashes_remain_historical(self) -> None:
         frozen = self.preregistration["frozen_identity"]
-        for field, path in {
-            "runtime_profiles_sha256": "config/runtime_profiles.json",
-            "comsol_solver_numerics_sha256": "config/comsol_solver_numerics.json",
-            "particle_source_profiles_sha256": "config/particle_source_profiles.json",
-            "design_profiles_sha256": "config/design_profiles.json",
-        }.items():
-            self.assertEqual(frozen[field], sha256(path))
-        self.assertEqual(
-            self.preregistration["execution_result"][
-                "completed_engineering_budget_sha256"
-            ],
-            sha256("config/qualification/engineering_budget.json"),
+        for field in (
+            "runtime_profiles_sha256",
+            "comsol_solver_numerics_sha256",
+            "engineering_budget_sha256",
+            "particle_source_profiles_sha256",
+            "design_profiles_sha256",
+        ):
+            self.assertRegex(frozen[field], r"^[0-9A-F]{64}$")
+        self.assertNotEqual(
+            frozen["runtime_profiles_sha256"], sha256("config/runtime_profiles.json")
+        )
+        self.assertNotEqual(
+            frozen["comsol_solver_numerics_sha256"],
+            sha256("config/comsol_solver_numerics.json"),
         )
         authorization = self.preregistration["authorization"]
         self.assertEqual(authorization["maximum_commercial_run_count"], 1)
@@ -66,17 +68,7 @@ class PardisoFieldScreenContractTests(unittest.TestCase):
         self.assertEqual(limits["process_tree_working_set_bytes"], 12 * 1024**3)
         self.assertEqual(limits["maximum_mesh_cells"], 1_000_000)
 
-    def test_live_engineering_budget_closes_field_screen(self) -> None:
-        budget = load("config/qualification/engineering_budget.json")
-        pilot = budget["pilot_authorization"]
-        self.assertFalse(pilot["authorized"])
-        self.assertEqual(pilot["scope"]["runtime_profile_id"], RUNTIME_ID)
-        self.assertEqual(
-            pilot["scope"]["solver_numerics_profile_ids"]["comsol"],
-            "hybrid_d2_pardiso_field_screen",
-        )
-        self.assertEqual(pilot["scope"]["allowed_solvers"], ["comsol"])
-        self.assertFalse(budget["full_matrix_authorization"]["authorized"])
+    def test_closed_field_screen_remains_terminal(self) -> None:
         result = self.preregistration["execution_result"]
         self.assertTrue(result["terminal"])
         self.assertEqual(
@@ -96,8 +88,8 @@ class PardisoFieldScreenContractTests(unittest.TestCase):
         self.assertLess(field_stop, particle_create)
         for token in (
             "STATIONARY_LINEAR_SOLVER_BACKEND=%s",
-            "DIFFERENTIAL_FIELD_DOF=%d",
-            "STATIC_FIELD_DOF=%d",
+            "emit_field_solver_evidence(fid,'DIFFERENTIAL_FIELD'",
+            "emit_field_solver_evidence(fid,'STATIC_FIELD'",
             "FIELD_SOLVE_DIAGNOSTIC=PASS",
             "PARTICLE_PHYSICS_CREATED=%d",
         ):
