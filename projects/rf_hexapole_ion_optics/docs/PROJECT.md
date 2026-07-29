@@ -330,7 +330,11 @@ V3公共实现据COMSOL尺寸继承规则移除了局部模式下的扫掠杆边
 公共实现现已把`mphmeshstats.hasproblems`恢复为唯一网格有效性权威，并把详细问题API降为统计之后的
 best-effort诊断；API不可用只报告`UNAVAILABLE`，不放宽网格判据。新的
 [`0.50 mm继承边界场臂`](../config/qualification/comsol_inherited_boundary_nonblocking_050_field_preregistration.json)
-冻结修复后实现并只授权一次COMSOL field-only运行；0.40/0.32 mm和粒子矩阵仍须等待该臂结果。
+冻结修复后实现并执行了一次COMSOL field-only运行。原生报告显示434,876单元，全局、真空、四面体
+及四个扫掠段均`HAS_PROBLEMS=0`；双场各835,143 DOF并在5/6次迭代完成，3330点/6660行采样PASS，
+实测101.82 s和4,912,545,792 bytes进程树峰值。但该预注册漏写runner求解后才访问的
+`required_report`，最终manifest为failed。以上只属于`POSTHOC_ENGINEERING_OBSERVATION_ONLY`，
+不得授予本档预注册PASS；一次授权已耗尽，0.40/0.32 mm和粒子矩阵仍关闭。
 
 共享SIMION模板、GUI复核、`.wgem`绕过和跨机可移植性状态只由
 [`../../../common/multipole/README.md`](../../../common/multipole/README.md)维护；公共机制证据不授予

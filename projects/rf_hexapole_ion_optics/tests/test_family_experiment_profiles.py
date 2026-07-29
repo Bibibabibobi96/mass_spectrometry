@@ -306,7 +306,7 @@ class FamilyExperimentProfileTests(unittest.TestCase):
             self.assertTrue(contract["preregistered_before_run"])
             self.assertTrue(contract[content])
         engineering = load("config/qualification/engineering_budget.json")
-        self.assertTrue(engineering["pilot_authorization"]["authorized"])
+        self.assertFalse(engineering["pilot_authorization"]["authorized"])
         self.assertFalse(engineering["full_matrix_authorization"]["authorized"])
         self.assertEqual(
             engineering["pilot_authorization"]["scope"]["runtime_profile_id"],
@@ -323,7 +323,7 @@ class FamilyExperimentProfileTests(unittest.TestCase):
         self.assertFalse(engineering["full_matrix_authorization"]["authorized"])
         self.assertEqual(
             engineering["full_matrix_authorization"]["reason"],
-            "inherited_boundary_050_field_arm_must_pass_before_later_levels_or_particles",
+            "postrun_preregistration_report_contract_failure",
         )
 
         result = load(

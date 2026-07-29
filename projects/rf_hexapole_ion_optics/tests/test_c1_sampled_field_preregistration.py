@@ -67,12 +67,12 @@ class C1SampledFieldPreregistrationTests(unittest.TestCase):
         self.assertEqual(cg_numerics["stationary_linear_solver_backend"], "cg_amg")
         self.assertEqual(mumps_numerics["stationary_linear_solver_backend"], "mumps")
 
-    def test_live_budget_authorizes_nonblocking_diagnostic_field_arm(self) -> None:
+    def test_live_budget_closes_postrun_contract_failure(self) -> None:
         budget = load(
             PROJECT_ROOT / "config" / "qualification" / "engineering_budget.json"
         )
         pilot = budget["pilot_authorization"]
-        self.assertTrue(pilot["authorized"])
+        self.assertFalse(pilot["authorized"])
         self.assertFalse(budget["full_matrix_authorization"]["authorized"])
         self.assertNotIn(
             pilot["scope"]["runtime_profile_id"],

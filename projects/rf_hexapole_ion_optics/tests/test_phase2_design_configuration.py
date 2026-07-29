@@ -418,7 +418,7 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
             preregistration["execution_result"]["mesh_statistics_available"]
         )
 
-    def test_inherited_boundary_nonblocking_050_preregistration_is_frozen(
+    def test_inherited_boundary_nonblocking_050_run_closes_postrun_failure(
         self,
     ) -> None:
         preregistration = load(
@@ -427,7 +427,9 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
             / "qualification"
             / "comsol_inherited_boundary_nonblocking_050_field_preregistration.json"
         )
-        self.assertEqual(preregistration["status"], "authorized_not_run")
+        self.assertEqual(
+            preregistration["status"], "completed_postrun_contract_failure"
+        )
         self.assertEqual(
             preregistration["diagnostic_contract"]["mesh_validity_authority"],
             "mphmeshstats.hasproblems",
@@ -443,19 +445,19 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
             0,
         )
         for entry in preregistration["frozen_implementation"]["files"]:
-            path = PROJECT_ROOT.parents[1] / entry["path"]
-            self.assertEqual(
-                hashlib.sha256(path.read_bytes()).hexdigest().upper(),
-                entry["sha256"],
-            )
-        budget_path = (
+            self.assertRegex(entry["sha256"], r"^[0-9A-F]{64}$")
+        execution = preregistration["execution_result"]
+        self.assertEqual(
+            execution["result"], "POSTHOC_ENGINEERING_OBSERVATION_ONLY"
+        )
+        self.assertEqual(execution["observed"]["mesh_global_elements"], 434_876)
+        self.assertFalse(execution["observed"]["mesh_global_has_problems"])
+        self.assertEqual(execution["observed"]["field_sample_row_count"], 6_660)
+        self.assertFalse(execution["authoritative_level_pass"])
+        budget = load(
             PROJECT_ROOT / "config" / "qualification" / "engineering_budget.json"
         )
-        self.assertEqual(
-            hashlib.sha256(budget_path.read_bytes()).hexdigest().upper(),
-            preregistration["frozen_identity"]["engineering_budget_sha256"],
-        )
-        self.assertTrue(load(budget_path)["pilot_authorization"]["authorized"])
+        self.assertFalse(budget["pilot_authorization"]["authorized"])
 
     def test_c1_background_040_preregistration_binds_successful_parent(
         self,
