@@ -24,6 +24,13 @@
    `rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer`。完成新旧等价复验后才退出旧
    专用编排。该任务优先于新增第二种RF多极杆离子光学→单次反射oa-TOF连接或复制S2/S3，但不阻断
    行政项目ID迁移、既有单器件资格或artifact治理。
+2. **把行政改名前artifact受控迁入当前正式项目根。** 目标是让每个项目在
+   `artifacts/projects/`下只保留当前正式`project_id`目录，同时把旧身份证据封装在该根的
+   `archive/`内；当前`legacy_identities`只读根在迁移完成前继续原地保留。实施前必须建立版本化迁移
+   manifest、旧绝对路径解析/重定位规则和legacy布局验证，盘点并更新全部活动合同、资格记录、模板与
+   文档引用，逐文件复核SHA-256、recorded project identity和原声明边界。只有所有消费者在新位置通过
+   回归、旧路径达到零活动引用并再次取得删除授权后，才可删除旧顶层目录。该任务不自动删除MPH/PA、
+   不减少磁盘占用，也不阻断当前多极杆资格与三模式分析；减容另行执行manifest级保留审计。
 
 ## 面向大规模代码库的扩展护栏
 
