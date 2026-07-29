@@ -371,7 +371,7 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
             PROJECT_ROOT / "config" / "qualification" / "engineering_budget.json"
         )
         budget = load(budget_path)
-        self.assertFalse(budget["pilot_authorization"]["authorized"])
+        self.assertFalse(budget["full_matrix_authorization"]["authorized"])
         self.assertEqual(
             preregistration["execution_result"]["observed"]["mesh_global_elements"],
             494_663,
@@ -384,6 +384,42 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
         )
         self.assertFalse(
             preregistration["execution_result"]["particle_followup_authorized"]
+        )
+
+    def test_v3_inherited_boundary_050_preregistration_tracks_current_code(
+        self,
+    ) -> None:
+        preregistration = load(
+            PROJECT_ROOT
+            / "config"
+            / "qualification"
+            / "comsol_v3_inherited_boundary_050_field_preregistration.json"
+        )
+        self.assertEqual(preregistration["status"], "authorized_not_run")
+        self.assertEqual(
+            preregistration["mesh_contract"]["refinement_semantics"],
+            "domain_inherited_boundary_v3",
+        )
+        self.assertEqual(
+            preregistration["mesh_contract"][
+                "localized_boundary_size_features_expected"
+            ],
+            0,
+        )
+        for entry in preregistration["frozen_implementation"]["files"]:
+            self.assertEqual(
+                entry["sha256"],
+                hashlib.sha256((PROJECT_ROOT.parents[1] / entry["path"]).read_bytes())
+                .hexdigest()
+                .upper(),
+            )
+        budget_path = (
+            PROJECT_ROOT / "config" / "qualification" / "engineering_budget.json"
+        )
+        self.assertTrue(load(budget_path)["pilot_authorization"]["authorized"])
+        self.assertEqual(
+            preregistration["frozen_identity"]["engineering_budget_sha256"],
+            hashlib.sha256(budget_path.read_bytes()).hexdigest().upper(),
         )
 
     def test_c1_background_040_preregistration_binds_successful_parent(
