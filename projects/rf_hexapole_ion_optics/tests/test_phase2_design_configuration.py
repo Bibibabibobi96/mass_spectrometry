@@ -410,10 +410,6 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
         )
         for entry in preregistration["frozen_implementation"]["files"]:
             self.assertRegex(entry["sha256"], r"^[0-9A-F]{64}$")
-        budget_path = (
-            PROJECT_ROOT / "config" / "qualification" / "engineering_budget.json"
-        )
-        self.assertFalse(load(budget_path)["pilot_authorization"]["authorized"])
         self.assertEqual(
             preregistration["execution_result"]["result"],
             "INCONCLUSIVE_DIAGNOSTIC_API_INCOMPATIBLE",
@@ -421,6 +417,45 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
         self.assertFalse(
             preregistration["execution_result"]["mesh_statistics_available"]
         )
+
+    def test_inherited_boundary_nonblocking_050_preregistration_is_frozen(
+        self,
+    ) -> None:
+        preregistration = load(
+            PROJECT_ROOT
+            / "config"
+            / "qualification"
+            / "comsol_inherited_boundary_nonblocking_050_field_preregistration.json"
+        )
+        self.assertEqual(preregistration["status"], "authorized_not_run")
+        self.assertEqual(
+            preregistration["diagnostic_contract"]["mesh_validity_authority"],
+            "mphmeshstats.hasproblems",
+        )
+        self.assertEqual(
+            preregistration["diagnostic_contract"]["per_feature_problem_messages"],
+            "best_effort_nonblocking",
+        )
+        self.assertEqual(
+            preregistration["mesh_contract"][
+                "localized_boundary_size_features_expected"
+            ],
+            0,
+        )
+        for entry in preregistration["frozen_implementation"]["files"]:
+            path = PROJECT_ROOT.parents[1] / entry["path"]
+            self.assertEqual(
+                hashlib.sha256(path.read_bytes()).hexdigest().upper(),
+                entry["sha256"],
+            )
+        budget_path = (
+            PROJECT_ROOT / "config" / "qualification" / "engineering_budget.json"
+        )
+        self.assertEqual(
+            hashlib.sha256(budget_path.read_bytes()).hexdigest().upper(),
+            preregistration["frozen_identity"]["engineering_budget_sha256"],
+        )
+        self.assertTrue(load(budget_path)["pilot_authorization"]["authorized"])
 
     def test_c1_background_040_preregistration_binds_successful_parent(
         self,

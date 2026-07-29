@@ -322,12 +322,15 @@ V2沿用同一个`physical_segment_hybrid_swept_tetra_v1`公共实现和既有�
 
 V3公共实现据COMSOL尺寸继承规则移除了局部模式下的扫掠杆边界、四面体杆边界和完整端板边界Size；
 域级`outer/core/sensitive`尺寸会自然传递到相邻边界，非局部旧profile仍保留原边界Size。runner同时
-新增逐mesh feature的问题消息输出，以区分warning与真正无法建网。该代码尚未获得商业运行证据，
-不得据此改写V2终态或开放后续矩阵。当前仅
+新增逐mesh feature的问题消息输出。当前仅
 [`V3 0.50 mm首臂`](../config/qualification/comsol_v3_inherited_boundary_050_field_preregistration.json)
 在`mesh.run`返回后进入新增逐feature诊断，但当前COMSOL客户端不暴露
 `MeshFeatureClient.hasProblems()`，运行在`mphmeshstats`前中断。因此V3没有单元数、网格有效性或场
 证据，一次授权已耗尽且零重试成立。该失败属于诊断API兼容性，不得反向解释为V3网格成功或失败。
+公共实现现已把`mphmeshstats.hasproblems`恢复为唯一网格有效性权威，并把详细问题API降为统计之后的
+best-effort诊断；API不可用只报告`UNAVAILABLE`，不放宽网格判据。新的
+[`0.50 mm继承边界场臂`](../config/qualification/comsol_inherited_boundary_nonblocking_050_field_preregistration.json)
+冻结修复后实现并只授权一次COMSOL field-only运行；0.40/0.32 mm和粒子矩阵仍须等待该臂结果。
 
 共享SIMION模板、GUI复核、`.wgem`绕过和跨机可移植性状态只由
 [`../../../common/multipole/README.md`](../../../common/multipole/README.md)维护；公共机制证据不授予

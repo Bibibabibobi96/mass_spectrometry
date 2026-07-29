@@ -109,6 +109,9 @@
   [`V3 0.50 mm首臂`](config/qualification/comsol_v3_inherited_boundary_050_field_preregistration.json)
   已执行，但新增诊断调用了当前COMSOL客户端未暴露的`MeshFeatureClient.hasProblems()`，在`mesh.run`
   返回后、`mphmeshstats`之前中断。因而没有V3单元数或场结果，一次授权已耗尽且未重试。
+  公共实现现已把详细问题消息降为`mphmeshstats`之后的非阻断诊断，并以新身份
+  [`0.50 mm继承边界场臂`](config/qualification/comsol_inherited_boundary_nonblocking_050_field_preregistration.json)
+  预登记一次真实COMSOL运行；后续档和粒子仍未授权。
   既有三模式baseline的两份
   求解器报告只具有`POSTHOC_DESCRIPTIVE`身份，统一
   比较见[`../../docs/history/20260729__multipole-three-mode-posthoc-n100.md`](../../docs/history/20260729__multipole-three-mode-posthoc-n100.md)。
