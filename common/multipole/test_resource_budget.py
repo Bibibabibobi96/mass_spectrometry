@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -197,7 +198,7 @@ class ResourceBudgetTests(unittest.TestCase):
                 "-RunId",
                 run_id,
                 "-PythonExe",
-                str(REPO_ROOT / ".venv/Scripts/python.exe"),
+                sys.executable,
                 *extra,
             ]
             completed = subprocess.run(
