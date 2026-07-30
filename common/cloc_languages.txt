@@ -1,0 +1,5 @@
+SIMION GEM
+    filter remove_matches ^\s*$
+    filter remove_matches ^\s*;
+    extension gem
+    3rd_gen_scale 1.00

@@ -27,11 +27,13 @@ $filterDescription=(
   "excluded_components=$($excludedComponents -join ',');" +
   'excluded_lifecycle_paths=any/docs/history/**|root/scratch/**|' +
   'artifacts/projects/<project>/(archive|scratch)/**;' +
+  'language_overrides=.m:MATLAB|.fly2:Lua|.gem:SIMION_GEM;' +
   'production=execution_profile_entrypoint|run_*.ps1|verify_*.ps1|tests/support(non-test-named);' +
   'tests=fixture|test_support|testing_support_path|test_*.(py|ps1|m|lua)|*_test.py|*Test.m|*.Tests.*;' +
   'unclassified=other_code_below_test_or_tests_path;' +
   'worktree_source=git_tracked_plus_nonignored_untracked'
 )
+$languageDefinitionPath=Join-Path $PSScriptRoot 'cloc_languages.txt'
 
 function Invoke-GitText {
   param([Parameter(Mandatory)][string[]]$Arguments)
@@ -77,20 +79,20 @@ function Test-IncludedPath {
 }
 
 function Get-ExecutionProfileEntrypoints {
-  param([Parameter(Mandatory)][string]$Root)
+  param(
+    [Parameter(Mandatory)][string]$Root,
+    [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$SelectedFiles
+  )
   $rootPath=[IO.Path]::GetFullPath($Root).TrimEnd('\','/')
   $entrypoints=[Collections.Generic.HashSet[string]]::new(
     [StringComparer]::OrdinalIgnoreCase
   )
-  foreach($profilePath in @(
-    Get-ChildItem -LiteralPath $rootPath -Recurse -File -Filter 'execution_profiles.json'
-  )){
-    $profileRelative=$profilePath.FullName.Substring($rootPath.Length).
-      TrimStart('\','/')
-    if(-not(Test-IncludedPath $profileRelative)){continue}
-    $document=Get-Content -LiteralPath $profilePath.FullName -Raw -Encoding UTF8 |
+  foreach($profileFile in @($SelectedFiles|Where-Object{
+    [IO.Path]::GetFileName($_.relative)-ieq'execution_profiles.json'
+  })){
+    $document=Get-Content -LiteralPath $profileFile.full -Raw -Encoding UTF8 |
       ConvertFrom-Json
-    $projectRoot=Split-Path -Parent (Split-Path -Parent $profilePath.FullName)
+    $projectRoot=Split-Path -Parent (Split-Path -Parent $profileFile.full)
     foreach($profile in @($document.profiles)){
       foreach($step in @($profile.steps)){
         if($null-eq$step -or [string]::IsNullOrWhiteSpace([string]$step.entrypoint)){continue}
@@ -167,17 +169,25 @@ function Get-SnapshotFiles {
         ForEach-Object{$_.FullName.Substring($Root.Length).TrimStart('\','/')}
     )
   }
-  $activeEntrypoints=Get-ExecutionProfileEntrypoints -Root $Root
-  $records=[Collections.Generic.List[object]]::new()
+  $selectedFiles=[Collections.Generic.List[object]]::new()
   foreach($relative in $RelativePaths){
     if(-not(Test-IncludedPath $relative)){continue}
     $full=[IO.Path]::GetFullPath((Join-Path $Root $relative))
     if(-not(Test-Path -LiteralPath $full -PathType Leaf)){continue}
-    $classification=Get-PathClassification -RelativePath $relative `
-      -ActiveEntrypoints $activeEntrypoints
-    $records.Add([pscustomobject]@{
+    $selectedFiles.Add([pscustomobject]@{
       relative=$relative.Replace('\','/')
       full=$full
+    })
+  }
+  $activeEntrypoints=Get-ExecutionProfileEntrypoints -Root $Root `
+    -SelectedFiles @($selectedFiles)
+  $records=[Collections.Generic.List[object]]::new()
+  foreach($selectedFile in $selectedFiles){
+    $classification=Get-PathClassification -RelativePath $selectedFile.relative `
+      -ActiveEntrypoints $activeEntrypoints
+    $records.Add([pscustomobject]@{
+      relative=$selectedFile.relative
+      full=$selectedFile.full
       category=$classification.category
       reason=$classification.reason
     })
@@ -224,29 +234,153 @@ function Invoke-ClocText {
   }
 }
 
-function Invoke-ClocSummary {
+function Add-ClocMetric {
+  param(
+    [Parameter(Mandatory)][hashtable]$Summary,
+    [Parameter(Mandatory)][string]$Language,
+    [Parameter(Mandatory)]$Item
+  )
+  if(-not$Summary.ContainsKey($Language)){
+    $Summary[$Language]=[ordered]@{files=0;blank=0;comment=0;code=0}
+  }
+  $Summary[$Language].files+=1
+  foreach($metric in @('blank','comment','code')){
+    $Summary[$Language][$metric]+=[int]$Item.$metric
+  }
+}
+
+function Get-InputIdentity {
+  param([Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Records)
+  $hash=[Security.Cryptography.IncrementalHash]::CreateHash(
+    [Security.Cryptography.HashAlgorithmName]::SHA256
+  )
+  $buffer=New-Object byte[] (64*1024)
+  try{
+    foreach($record in @($Records|Sort-Object relative)){
+      $identityPrefix=[Text.Encoding]::UTF8.GetBytes(
+        "$($record.relative)`0$($record.category)`0$($record.reason)`0"
+      )
+      $hash.AppendData($identityPrefix)
+      $stream=[IO.File]::OpenRead($record.full)
+      try{
+        while(($read=$stream.Read($buffer,0,$buffer.Length))-gt 0){
+          $hash.AppendData($buffer,0,$read)
+        }
+      }finally{
+        $stream.Dispose()
+      }
+      $hash.AppendData([byte[]]@(0))
+    }
+    return [Convert]::ToHexString($hash.GetHashAndReset()).ToLowerInvariant()
+  }finally{
+    $hash.Dispose()
+  }
+}
+
+function Invoke-ClocSnapshot {
   param(
     [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Records,
     [Parameter(Mandatory)][string]$ListPath
   )
-  if($Records.Count-eq 0){return @{}}
-  @($Records|ForEach-Object{$_.full})|Set-Content -LiteralPath $ListPath -Encoding UTF8
-  $result=Invoke-ClocText @('--json','--quiet',"--list-file=$ListPath")
-  if($result.exit_code-ne 0){throw "cloc failed for list: $ListPath $($result.stderr.Trim())"}
-  $raw=$result.stdout
-  try{$document=$raw|ConvertFrom-Json -AsHashtable}catch{throw 'cloc returned invalid JSON.'}
-  $summary=@{}
-  foreach($language in $document.Keys){
-    if($language-in @('header','SUM')){continue}
-    $item=$document[$language]
-    $summary[$language]=[ordered]@{
-      files=[int]$item.nFiles
-      blank=[int]$item.blank
-      comment=[int]$item.comment
-      code=[int]$item.code
+  $summaries=@{
+    total=@{}
+    production=@{}
+    tests=@{}
+    unclassified=@{}
+  }
+  if($Records.Count-eq 0){
+    return [pscustomobject]@{
+      summaries=$summaries
+      input_identity=(Get-InputIdentity -Records @())
     }
   }
-  return $summary
+  @($Records|ForEach-Object{$_.full.Replace('\','/')})|
+    Set-Content -LiteralPath $ListPath -Encoding UTF8
+  $result=Invoke-ClocText @(
+    '--json',
+    '--quiet',
+    '--by-file',
+    '--skip-uniqueness',
+    '--force-lang=MATLAB,m',
+    '--force-lang=Lua,fly2',
+    "--read-lang-def=$languageDefinitionPath",
+    "--list-file=$ListPath"
+  )
+  if($result.exit_code-ne 0){throw "cloc failed for list: $ListPath $($result.stderr.Trim())"}
+  $raw=$result.stdout
+  try{
+    $document=$raw|ConvertFrom-Json -AsHashtable
+  }catch{
+    $preview=$raw.Substring(0,[Math]::Min(400,$raw.Length)).Replace("`r",' ').Replace("`n",' ')
+    throw "cloc returned invalid JSON. stdout preview: $preview"
+  }
+  $recordByPath=[Collections.Generic.Dictionary[string,object]]::new(
+    [StringComparer]::OrdinalIgnoreCase
+  )
+  foreach($record in $Records){
+    $recordByPath.Add([IO.Path]::GetFullPath($record.full),$record)
+  }
+  $seen=[Collections.Generic.HashSet[string]]::new(
+    [StringComparer]::OrdinalIgnoreCase
+  )
+  foreach($path in $document.Keys){
+    if($path-in @('header','SUM')){continue}
+    $fullPath=[IO.Path]::GetFullPath($path)
+    if(-not$recordByPath.ContainsKey($fullPath)){
+      throw "cloc returned an unexpected file: $path"
+    }
+    if(-not$seen.Add($fullPath)){throw "cloc returned a duplicate file: $path"}
+    $record=$recordByPath[$fullPath]
+    $item=$document[$path]
+    $language=[string]$item.language
+    if([string]::IsNullOrWhiteSpace($language)){
+      throw "cloc omitted the language for file: $path"
+    }
+    Add-ClocMetric -Summary $summaries.total -Language $language -Item $item
+    Add-ClocMetric -Summary $summaries[$record.category] -Language $language -Item $item
+  }
+  if($seen.Count-ne$Records.Count){
+    $missing=@($Records|Where-Object{
+      -not$seen.Contains([IO.Path]::GetFullPath($_.full))
+    }|Select-Object -First 5 -ExpandProperty relative)
+    throw "cloc omitted selected files: $($missing -join ', ')"
+  }
+  return [pscustomobject]@{
+    summaries=$summaries
+    input_identity=(Get-InputIdentity -Records $Records)
+  }
+}
+
+function Assert-ClocClassificationAdditivity {
+  param(
+    [Parameter(Mandatory)][string]$Snapshot,
+    [Parameter(Mandatory)][hashtable]$Summaries
+  )
+  $classifiedCategories=@('production','tests','unclassified')
+  $languages=@(
+    $Summaries.total.Keys+
+    @($classifiedCategories|ForEach-Object{$Summaries[$_].Keys})|
+      Sort-Object -Unique
+  )
+  foreach($language in $languages){
+    foreach($metric in @('files','blank','comment','code')){
+      $total=$(if($Summaries.total.ContainsKey($language)){
+        [int]$Summaries.total[$language][$metric]
+      }else{0})
+      $classified=0
+      foreach($category in $classifiedCategories){
+        if($Summaries[$category].ContainsKey($language)){
+          $classified+=[int]$Summaries[$category][$language][$metric]
+        }
+      }
+      if($total-ne$classified){
+        throw (
+          "CLOC_CLASSIFICATION_MISMATCH: snapshot=$Snapshot language=$language " +
+          "metric=$metric total=$total classified=$classified"
+        )
+      }
+    }
+  }
 }
 
 function Write-DeltaSection {
@@ -285,6 +419,9 @@ function Write-DeltaSection {
 
 $repoPath=[IO.Path]::GetFullPath($RepoRoot)
 if(-not(Test-Path -LiteralPath (Join-Path $repoPath '.git'))){throw "Not a Git worktree: $repoPath"}
+if(-not(Test-Path -LiteralPath $languageDefinitionPath -PathType Leaf)){
+  throw "CLOC_LANGUAGE_DEFINITION_MISSING: $languageDefinitionPath"
+}
 $clocCommand=Get-Command $ClocExe -ErrorAction SilentlyContinue
 if($null-eq$clocCommand -and $ClocExe-eq'cloc'){
   $originalPath=$env:PATH
@@ -307,6 +444,15 @@ $clocVersion=$versionResult.stdout.Trim()
 if($versionResult.exit_code-ne 0 -or [string]::IsNullOrWhiteSpace($clocVersion)){
   throw "CLOC_UNAVAILABLE: '$ClocExe --version' failed."
 }
+$createdUtc=[DateTimeOffset]::UtcNow.ToString('o')
+$classifierSha=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant()
+$languageDefinitionSha=(
+  Get-FileHash -LiteralPath $languageDefinitionPath -Algorithm SHA256
+).Hash.ToLowerInvariant()
+$worktreeStatus=@(Invoke-GitText @('status','--porcelain=v1','--untracked-files=all'))
+$trackedDirtyCount=@($worktreeStatus|Where-Object{-not$_.StartsWith('?? ')}).Count
+$untrackedCount=@($worktreeStatus|Where-Object{$_.StartsWith('?? ')}).Count
+$worktreeDirty=($worktreeStatus.Count-gt 0).ToString().ToLowerInvariant()
 
 $baseSha=Resolve-Commit $Base
 $temporaryRoot=Join-Path ([IO.Path]::GetTempPath()) ("cloc_delta_"+[guid]::NewGuid().ToString('N'))
@@ -333,20 +479,33 @@ try{
     $currentRecords=Get-SnapshotFiles -Root $currentRoot
   }
 
-  $summaries=@{}
-  foreach($category in @('total','production','tests','unclassified')){
-    $baseSelection=$(if($category-eq'total'){$baseRecords}else{@($baseRecords|Where-Object{$_.category-eq$category})})
-    $currentSelection=$(if($category-eq'total'){$currentRecords}else{@($currentRecords|Where-Object{$_.category-eq$category})})
-    $summaries["base_$category"]=Invoke-ClocSummary -Records @($baseSelection) `
-      -ListPath (Join-Path $temporaryRoot "base_$category.txt")
-    $summaries["current_$category"]=Invoke-ClocSummary -Records @($currentSelection) `
-      -ListPath (Join-Path $temporaryRoot "current_$category.txt")
-  }
+  $baseSnapshot=Invoke-ClocSnapshot -Records $baseRecords `
+    -ListPath (Join-Path $temporaryRoot 'base.txt')
+  $currentSnapshot=Invoke-ClocSnapshot -Records $currentRecords `
+    -ListPath (Join-Path $temporaryRoot 'current.txt')
+  Assert-ClocClassificationAdditivity -Snapshot baseline `
+    -Summaries $baseSnapshot.summaries
+  Assert-ClocClassificationAdditivity -Snapshot result `
+    -Summaries $currentSnapshot.summaries
 
   Write-Output 'CLOC_DELTA=PASS'
   Write-Output "BASELINE=$baseSha"
   Write-Output "RESULT=$currentLabel"
   Write-Output "CLOC_VERSION=$clocVersion"
+  Write-Output "CREATED_UTC=$createdUtc"
+  Write-Output "CLASSIFIER_SHA256=$classifierSha"
+  Write-Output "LANGUAGE_DEFINITION_SHA256=$languageDefinitionSha"
+  Write-Output "WORKTREE_DIRTY=$worktreeDirty"
+  Write-Output "WORKTREE_TRACKED_DIRTY_COUNT=$trackedDirtyCount"
+  Write-Output "WORKTREE_UNTRACKED_COUNT=$untrackedCount"
+  Write-Output (
+    "INPUT_IDENTITY SNAPSHOT=baseline FILES=$($baseRecords.Count) " +
+    "SHA256=$($baseSnapshot.input_identity)"
+  )
+  Write-Output (
+    "INPUT_IDENTITY SNAPSHOT=result FILES=$($currentRecords.Count) " +
+    "SHA256=$($currentSnapshot.input_identity)"
+  )
   Write-Output "FILTER=$filterDescription"
   foreach($snapshot in @(
     [pscustomobject]@{name='baseline';records=$baseRecords},
@@ -367,8 +526,9 @@ try{
     }
   }
   foreach($category in @('total','production','tests','unclassified')){
-    Write-DeltaSection -Category $category -Baseline $summaries["base_$category"] `
-      -Result $summaries["current_$category"]
+    Write-DeltaSection -Category $category `
+      -Baseline $baseSnapshot.summaries[$category] `
+      -Result $currentSnapshot.summaries[$category]
   }
 }finally{
   if(Test-Path -LiteralPath $temporaryRoot){
