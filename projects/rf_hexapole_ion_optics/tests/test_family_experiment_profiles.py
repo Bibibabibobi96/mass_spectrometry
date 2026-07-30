@@ -306,11 +306,11 @@ class FamilyExperimentProfileTests(unittest.TestCase):
             self.assertTrue(contract["preregistered_before_run"])
             self.assertTrue(contract[content])
         engineering = load("config/qualification/engineering_budget.json")
-        self.assertFalse(engineering["pilot_authorization"]["authorized"])
+        self.assertTrue(engineering["pilot_authorization"]["authorized"])
         self.assertFalse(engineering["full_matrix_authorization"]["authorized"])
         self.assertEqual(
             engineering["pilot_authorization"]["scope"]["runtime_profile_id"],
-            "exit_aperture_plate_acceleration_n100_hybrid_c1_background_sensitive_032_field_screen",
+            "exit_aperture_plate_acceleration_n100_hybrid_c1_corridor040_exit020_field_screen",
         )
         self.assertEqual(
             engineering["pilot_authorization"]["scope"]["allowed_solvers"],
@@ -323,7 +323,7 @@ class FamilyExperimentProfileTests(unittest.TestCase):
         self.assertFalse(engineering["full_matrix_authorization"]["authorized"])
         self.assertEqual(
             engineering["full_matrix_authorization"]["reason"],
-            "three_level_field_trend_requires_new_mesh_strategy_or_sourced_tolerance",
+            "exit_interface_mesh_strategy_field_pilot_must_close_before_particles",
         )
 
         result = load(

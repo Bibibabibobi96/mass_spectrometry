@@ -67,12 +67,12 @@ class C1SampledFieldPreregistrationTests(unittest.TestCase):
         self.assertEqual(cg_numerics["stationary_linear_solver_backend"], "cg_amg")
         self.assertEqual(mumps_numerics["stationary_linear_solver_backend"], "mumps")
 
-    def test_live_budget_closes_three_level_field_sequence(self) -> None:
+    def test_live_budget_authorizes_only_exit_interface_field_pilot(self) -> None:
         budget = load(
             PROJECT_ROOT / "config" / "qualification" / "engineering_budget.json"
         )
         pilot = budget["pilot_authorization"]
-        self.assertFalse(pilot["authorized"])
+        self.assertTrue(pilot["authorized"])
         self.assertFalse(budget["full_matrix_authorization"]["authorized"])
         self.assertNotIn(
             pilot["scope"]["runtime_profile_id"],
@@ -80,7 +80,7 @@ class C1SampledFieldPreregistrationTests(unittest.TestCase):
         )
         self.assertEqual(
             pilot["scope"]["runtime_profile_id"],
-            "exit_aperture_plate_acceleration_n100_hybrid_c1_background_sensitive_032_field_screen",
+            "exit_aperture_plate_acceleration_n100_hybrid_c1_corridor040_exit020_field_screen",
         )
         self.assertEqual(pilot["scope"]["stop_stage"], "field_solve")
         self.assertEqual(pilot["scope"]["allowed_solvers"], ["comsol"])

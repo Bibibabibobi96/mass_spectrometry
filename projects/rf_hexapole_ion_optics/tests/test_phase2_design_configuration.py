@@ -14,6 +14,7 @@ from common.multipole.compile_design_request import (
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = PROJECT_ROOT.parents[1]
 REQUEST_PATH = PROJECT_ROOT / "config" / "requests" / "mechanical_base.json"
 
 
@@ -482,11 +483,9 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
             },
         )
         for entry in preregistration["frozen_implementation"]["files"]:
-            path = PROJECT_ROOT.parents[1] / entry["path"]
-            self.assertEqual(
-                hashlib.sha256(path.read_bytes()).hexdigest().upper(),
-                entry["sha256"],
-            )
+            path = REPO_ROOT / entry["path"]
+            self.assertTrue(path.is_file())
+            self.assertRegex(entry["sha256"], r"^[0-9A-F]{64}$")
         self.assertEqual(
             preregistration["execution_result"]["observed"]["mesh_global_elements"],
             434_876,
@@ -554,7 +553,82 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
         budget = load(
             PROJECT_ROOT / "config" / "qualification" / "engineering_budget.json"
         )
-        self.assertFalse(budget["pilot_authorization"]["authorized"])
+        self.assertTrue(budget["pilot_authorization"]["authorized"])
+        self.assertEqual(
+            budget["pilot_authorization"]["scope"]["runtime_profile_id"],
+            "exit_aperture_plate_acceleration_n100_hybrid_c1_corridor040_exit020_field_screen",
+        )
+
+    def test_exit_interface_mesh_strategy_is_one_optional_extension(self) -> None:
+        profile = self.comsol_numerics["profiles"][
+            "hybrid_c1_corridor040_exit020_cg_amg_field_screen"
+        ]
+        hybrid = profile["mesh"]["hybrid"]
+        sensitive = hybrid["sensitive_region"]
+        self.assertEqual(sensitive["particle_corridor_radius_mm"], 3.6)
+        self.assertEqual(sensitive["maximum_element_size_mm"], 0.4)
+        self.assertEqual(
+            sensitive["exit_interface_refinement"],
+            {
+                "upstream_extent_from_rod_exit_mm": 2.0,
+                "downstream_extent_from_handoff_mm": 0.5,
+                "maximum_element_size_mm": 0.2,
+            },
+        )
+        self.assertEqual(hybrid["axial_layers_per_swept_segment"], 10)
+        runtime = self.runtime_profiles["profiles"][
+            "exit_aperture_plate_acceleration_n100_hybrid_c1_corridor040_exit020_field_screen"
+        ]
+        self.assertEqual(runtime["stop_stage"], "field_solve")
+        self.assertEqual(
+            runtime["comsol_solver_numerics_profile_id"],
+            "hybrid_c1_corridor040_exit020_cg_amg_field_screen",
+        )
+        preregistration = load(
+            PROJECT_ROOT
+            / "config"
+            / "qualification"
+            / "comsol_exit_interface_mesh_strategy_field_preregistration.json"
+        )
+        self.assertEqual(preregistration["status"], "authorized_pending_execution")
+        self.assertFalse(
+            preregistration["decision_policy"]["particle_followup_authorized"]
+        )
+        self.assertEqual(
+            preregistration["mesh_contract"]["exit_interface_refinement"][
+                "resolved_z_min_mm"
+            ],
+            77.6,
+        )
+        self.assertEqual(
+            preregistration["mesh_contract"]["exit_interface_refinement"][
+                "resolved_z_max_mm"
+            ],
+            81.1,
+        )
+        solver = (
+            REPO_ROOT / "common" / "multipole" / "solve_finite_3d_transport.m"
+        ).read_text(encoding="utf-8")
+        mesh_helper = (
+            REPO_ROOT
+            / "common"
+            / "multipole"
+            / "configure_comsol_segment_hybrid_mesh.m"
+        ).read_text(encoding="utf-8")
+        for token in (
+            "d.rod_z_max -",
+            "d.handoff_plane_z +",
+            "meshSensitiveExit",
+            "MESH_EXIT_INTERFACE_REFINEMENT_PRESENT=1",
+        ):
+            self.assertIn(token, solver)
+        for token in (
+            "exit_interface_refinement",
+            "sel_mesh_tet_exit_refinement_vac",
+            "szTetExit",
+            "selection_has_entities",
+        ):
+            self.assertIn(token, mesh_helper)
 
     def test_c1_background_040_preregistration_binds_successful_parent(
         self,

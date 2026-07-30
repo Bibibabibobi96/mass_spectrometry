@@ -351,6 +351,17 @@ canonical handoff约`5.593%/1.825%`；两点仍不能建立观测阶，且0.40 m
 `INCONCLUSIVE_MESH_STRATEGY_CHANGE_REQUIRED`，禁止继续暴力细化或进入粒子矩阵；下一步必须改变
 局部网格策略，或先由下游孔径/相空间裕量建立适用于本声明的来源化容差。
 
+当前已据上述残差位置建立
+[`出口接口定向网格pilot预登记`](../config/qualification/comsol_exit_interface_mesh_strategy_field_preregistration.json)。
+它仍复用唯一`physical_segment_hybrid_swept_tetra_v1`实现和`sensitive_region`合同，不建立第二CLI或
+同义尺寸字段：径向上以C1背景包围3.6 mm粒子走廊，走廊全长保持0.40 mm；轴向上只在
+`rod_exit-2.0 mm`到`handoff+0.5 mm`（当前解析坐标77.6–81.1 mm）叠加0.20 mm出口接口区。
+扫掠段轴向层数保持10，因此本轮检验的是一次明确命名的网格策略变化，不冒充单轴空间收敛。
+唯一一次COMSOL field-only、3330点/6660行采样和零重试已经授权；硬帽仍为100万单元、600 s和
+12 GiB。优选判据是单元数低于当前0.32 mm全长参考的713,396，并在该参考的最后相邻档差异范围内
+复现常规杆区、杆出口和canonical handoff场。该差异范围只用于筛选新策略是否值得继续，不是来源化
+功能容差；在真实结果完成、登记并另行决策前，粒子、跨求解器、Candidate、Formal和N=1000均未授权。
+
 共享SIMION模板、GUI复核、`.wgem`绕过和跨机可移植性状态只由
 [`../../../common/multipole/README.md`](../../../common/multipole/README.md)维护；公共机制证据不授予
 本项目Candidate或Formal资格。

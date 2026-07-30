@@ -124,7 +124,11 @@
   该臂以713,396单元完整PASS。0.40→0.32 mm的常规杆跨区差分/静态场变化仍约
   0.386%/0.800%，handoff仍约2.736%/1.068%；没有来源化功能容差可接受这些差异，且按单元增量
   外推0.256 mm约为1,014,490单元、超过硬帽。因此场序列以
-  `INCONCLUSIVE_MESH_STRATEGY_CHANGE_REQUIRED`关闭，粒子仍未授权。
+  `INCONCLUSIVE_MESH_STRATEGY_CHANGE_REQUIRED`关闭，粒子仍未授权。当前另以
+  [`出口接口定向网格pilot`](config/qualification/comsol_exit_interface_mesh_strategy_field_preregistration.json)
+  授权唯一一次field-only诊断：全长3.6 mm粒子走廊保持0.40 mm，只在杆出口上游2.0 mm至handoff
+  下游0.5 mm的区域使用0.20 mm，轴向扫掠层数固定为10。该pilot只检验能否以少于0.32 mm全长档的
+  713,396单元复现其区域场结果；预登记比较带不是功能容差，不授权粒子、收敛或资格结论。
   既有三模式baseline的两份
   求解器报告只具有`POSTHOC_DESCRIPTIVE`身份，统一
   比较见[`../../docs/history/20260729__multipole-three-mode-posthoc-n100.md`](../../docs/history/20260729__multipole-three-mode-posthoc-n100.md)。
