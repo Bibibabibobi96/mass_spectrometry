@@ -525,7 +525,7 @@ Python 3.9至3.12；本机默认Python 3.14和旧Python 3.8均不得作为本仓
 
 ## Git 规则
 
-仓库根是 `simulation_repo/`，远程私有仓库为
+仓库根是 `simulation_repo/`，远程公开仓库为
 `https://github.com/Bibibabibobi96/mass_spectrometry.git`。提交只包含一个可审阅主题；使用明确
 路径或 `git add -p`，不习惯性执行 `git add .`。提交前运行：
 
