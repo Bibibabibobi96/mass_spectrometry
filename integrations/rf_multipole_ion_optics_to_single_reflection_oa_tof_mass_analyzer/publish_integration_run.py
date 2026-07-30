@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import subprocess
 import sys
 from pathlib import Path
 
+from common.contracts.artifact_naming import validate_run_id
 from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import ContractError
 from common.contracts.verify_run_manifest import verify_record
@@ -107,7 +107,7 @@ def canonical_source_identity(pre_pulse_run: Path) -> dict[str, str]:
         raise ContractError("pre-pulse run lacks source_particle_identity")
     canonical = {
         "run_id": identity.get("run_id"),
-        "project_id": identity.get("recorded_project_id"),
+        "project_id": identity.get("project_id"),
         "manifest_sha256": identity.get("manifest_sha256"),
         "event_sha256": identity.get("event_sha256"),
         "metadata_sha256": identity.get("metadata_sha256"),
@@ -141,10 +141,12 @@ def publish_integration_run(
         )
     receipt = load_json(receipt_path)
     resolved = load_json(resolved_path)
+    plan = load_json(plan_path)
     run_id = integration_run_dir.name
-    match = re.fullmatch(r"(?P<stamp>\d{8}_\d{6})__[a-z0-9][a-z0-9._-]*", run_id)
-    if not match:
-        raise ContractError("integration run id does not begin with yyyyMMdd_HHmmss__")
+    try:
+        run_identity = validate_run_id(run_id)
+    except ValueError as exc:
+        raise ContractError("integration run id is invalid") from exc
     profile_id = resolved.get("selection", {}).get("connection_profile_id")
     expected_receipt = {
         "role": "integration_migration_execution_receipt",
@@ -157,6 +159,24 @@ def publish_integration_run(
         raise ContractError("execution receipt identity/state differs")
     if receipt.get("composition_plan_sha256") != file_sha256(plan_path):
         raise ContractError("receipt does not bind the current composition plan")
+    steps = plan.get("execution_steps")
+    if not isinstance(steps, list) or len(steps) != 1:
+        raise ContractError("composition plan does not contain one execution step")
+    arguments: dict[str, str] = {}
+    for item in steps[0].get("arguments", []):
+        if not isinstance(item, str) or "=" not in item:
+            raise ContractError("composition plan adapter argument is invalid")
+        name, value = item.split("=", 1)
+        if not name or name in arguments:
+            raise ContractError("composition plan adapter arguments are not unique")
+        arguments[name] = value
+    for name in (
+        "runtime_binding_sha256",
+        "preregistration_sha256",
+        "oracle_sha256",
+    ):
+        if receipt.get(name) != arguments.get(name):
+            raise ContractError(f"receipt does not bind plan {name}")
     if receipt.get("resolved_connection_sha256") != file_sha256(resolved_path):
         raise ContractError("receipt does not bind the current resolved connection")
     if receipt.get("resolved_engineering_budget_sha256") != file_sha256(
@@ -174,7 +194,7 @@ def publish_integration_run(
         raise ContractError("resolved engineering-budget identity/scope differs")
 
     gap = gap_label(resolved.get("connector", {}).get("length_mm"))
-    stamp = match.group("stamp")
+    stamp = str(run_identity["stamp"])
     stages = [
         verify_stage(
             stage_root=project_runs_root,
@@ -216,6 +236,10 @@ def publish_integration_run(
         },
         "connection_profile_id": profile_id,
         "source_particle_identity": source_identity,
+        "migration_governance": {
+            "preregistration_sha256": receipt["preregistration_sha256"],
+            "oracle_sha256": receipt["oracle_sha256"],
+        },
         "stage_runs": stages,
         "artifact_retention": {
             "policy_version": 1,

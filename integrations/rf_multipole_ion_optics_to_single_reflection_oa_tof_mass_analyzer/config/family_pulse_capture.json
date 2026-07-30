@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "role": "rf_to_oatof_pulse_capture",
+  "status": "functional_unqualified",
+  "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+  "consumer_scope": "rf_multipole_no_acceleration_full_length_family",
+  "phase": "pulse_capture",
+  "topology_source": "resolved_connection",
+  "inputs": {
+    "pulse_timing_policy": "runtime_binding.contracts.pulse_timing_contract",
+    "oatof_baseline": "dependency_contract:oatof_baseline"
+  },
+  "waveform": {
+    "pre_pulse_oatof_field_scale": 0.0,
+    "pulse_oatof_field_scale": 1.0,
+    "post_pulse_oatof_field_scale": 0.0,
+    "rise_fall_model": "ideal_finite_step",
+    "post_pulse_tracking_time_us": 8.0
+  },
+  "runtime": {
+    "dense_trajectories_saved": false,
+    "minimum_active_at_pulse": 1,
+    "minimum_local_accelerator_exit": 1,
+    "detector_tracking_included": false
+  },
+  "permissions": {
+    "schedule_derivation_allowed": true,
+    "nominal_particle_runtime_allowed": true,
+    "downstream_handoff_allowed_after_local_exit_audit": true,
+    "phase_pass_allowed": false,
+    "formal_promotion_allowed": false
+  }
+}

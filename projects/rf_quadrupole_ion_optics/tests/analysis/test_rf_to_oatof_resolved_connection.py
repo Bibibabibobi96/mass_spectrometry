@@ -6,6 +6,11 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
+INTEGRATION_ROOT = (
+    REPO_ROOT
+    / "integrations"
+    / "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
+)
 
 
 class ResolvedConnectionAuthorityTests(unittest.TestCase):
@@ -19,7 +24,8 @@ class ResolvedConnectionAuthorityTests(unittest.TestCase):
     def test_active_code_does_not_import_retired_project_resolvers(self) -> None:
         active_paths = (
             PROJECT_ROOT / "analysis",
-            PROJECT_ROOT / "workflows" / "rf_to_oatof_integration",
+            INTEGRATION_ROOT / "runtime",
+            INTEGRATION_ROOT / "stages",
             PROJECT_ROOT / "verify_project.ps1",
         )
         text_parts: list[str] = []

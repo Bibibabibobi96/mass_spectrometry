@@ -13,13 +13,13 @@ $repoRoot=Split-Path -Parent (Split-Path -Parent $projectRoot)
 $workspaceRoot=Split-Path -Parent $repoRoot
 $artifactRoot=Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_ion_optics'
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
-. (Join-Path $projectRoot 'runtime\run_artifacts.ps1')
+. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 . (Join-Path $projectRoot 'runtime\comsol_solver_numerics.ps1')
 if([string]::IsNullOrWhiteSpace($RunId)){
   $RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__sim__comsol__mass-filter__rf-dc-scan'
 }
 $software=@('COMSOL 6.4','MATLAB R2025b','Python 3.11')
-$package=New-RfRunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RunId $RunId `
+$package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RunId $RunId `
   -Project 'rf_quadrupole_ion_optics' -Mode 'mass_filter_reference' -Software $software `
   -AdditionalDirectories @('comsol','runtime')
 $runDir=$package.run_dir;$inputDir=$package.input_dir;$resultDir=$package.result_dir;$logDir=$package.log_dir
@@ -129,10 +129,10 @@ try {
         write_detailed_outputs=$false
       }
     }
-    Write-RfJson -Value $caseConfig -Path $caseConfigPath
+    Write-RunJson -Value $caseConfig -Path $caseConfigPath
     $cases+=,[ordered]@{mass_Th=$mass;run_config=$caseConfigPath;solver_summary=(Join-Path $caseResultDir 'solver_summary.json');particle_state=(Join-Path $caseResultDir 'particle_state.csv')}
   }
-  Write-RfJson -Value ([ordered]@{schema_version=1;role='rf_quadrupole_comsol_mass_filter_scan_execution';cases=$cases}) -Path $scanConfig
+  Write-RunJson -Value ([ordered]@{schema_version=1;role='rf_quadrupole_comsol_mass_filter_scan_execution';cases=$cases}) -Path $scanConfig
   $runConfiguration=[ordered]@{
     schema_version=1;role='rf_quadrupole_comsol_mass_filter_run_config'
     run_id=$RunId;project='rf_quadrupole_ion_optics';mode='mass_filter_reference';project_root=$repoRoot
@@ -155,16 +155,16 @@ try {
     parameters=[ordered]@{particles_per_mass=$particlesPerMass;masses=$massCount;total_particles=$totalParticles;rf_steps_per_period=$compiledNumerics.trajectory.rf_steps_per_period;mesh_auto_level=$compiledNumerics.mesh.global_auto_level;compact_outputs=$true;saved_model_mass_Th=$centerMass;lifecycle_stage='inputs_frozen'}
     formal_gate_passed=$false
   }
-  Write-RfJson -Value $runConfiguration -Path $package.run_config
+  Write-RunJson -Value $runConfiguration -Path $package.run_config
 
-  $environment=Save-RfEnvironment -Names @('RFQUAD_SCAN_CONFIG','COMSOL_BOOTSTRAP_REPORT')
+  $environment=Save-RunEnvironment -Names @('RFQUAD_SCAN_CONFIG','COMSOL_BOOTSTRAP_REPORT')
   try {
     $env:RFQUAD_SCAN_CONFIG=$scanConfig;$env:COMSOL_BOOTSTRAP_REPORT=$report
     & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') `
       -TaskScript $massScanTask -ReportPath $report `
       -StartupAttempts 1 -StartupReportTimeoutSeconds 1200
     if($LASTEXITCODE-ne 0){throw 'COMSOL RF+DC mass-filter scan failed.'}
-  } finally { Restore-RfEnvironment -Names @('RFQUAD_SCAN_CONFIG','COMSOL_BOOTSTRAP_REPORT') -Snapshot $environment }
+  } finally { Restore-RunEnvironment -Names @('RFQUAD_SCAN_CONFIG','COMSOL_BOOTSTRAP_REPORT') -Snapshot $environment }
 
   foreach($case in $cases){
     foreach($path in @($case.solver_summary,$case.particle_state)){
@@ -179,7 +179,7 @@ try {
     --response $response --metrics $metrics
   if($LASTEXITCODE-ne 0){throw 'COMSOL mass-filter functional analysis failed.'}
   $metricDocument=Get-Content -LiteralPath $metrics -Raw -Encoding UTF8|ConvertFrom-Json
-  Write-RfJson -Path $package.summary -Value ([ordered]@{
+  Write-RunJson -Path $package.summary -Value ([ordered]@{
     schema_version=1;role='rf_quadrupole_comsol_mass_filter_summary';status='success';mode='mass_filter_reference'
     particles=$totalParticles;masses=$massCount;functional_gate=$metricDocument.status;response='results/mass-response__comsol.csv'
     metrics='results/mass-filter__comsol-functional-metrics.json'
@@ -190,11 +190,11 @@ try {
   $centerToken=('{0:g}' -f $centerMass).Replace('.','p')
   $centerModel=Join-Path $runDir "comsol\mass_$centerToken`_Th\rf_quadrupole_ion_optics__model.mph"
   if(Test-Path -LiteralPath $centerModel -PathType Leaf){$outputs+=$centerModel}
-  Write-RfRunManifest -Python $package.python -RepoRoot $repoRoot -RunConfig $package.run_config `
+  Write-RunManifest -Python $package.python -RepoRoot $repoRoot -RunConfig $package.run_config `
     -Status success -Software $software -Outputs $outputs
   "STATUS=PASS RUN_ID=$RunId FUNCTIONAL_GATE=$($metricDocument.status)"
 } catch {
-  Complete-RfFailedRun -Python $package.python -RepoRoot $repoRoot -RunConfig $package.run_config `
+  Complete-FailedRun -Python $package.python -RepoRoot $repoRoot -RunConfig $package.run_config `
     -Summary $package.summary -SummaryRole 'rf_quadrupole_comsol_mass_filter_summary' -Reason $_.Exception.Message -Software $software
   throw
 }

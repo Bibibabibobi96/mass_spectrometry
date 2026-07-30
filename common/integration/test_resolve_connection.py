@@ -408,7 +408,7 @@ class ResolveConnectionTests(unittest.TestCase):
             self._resolve()
 
     def test_zero_length_direct_handoff_has_no_connector_field_segment(self) -> None:
-        self.downstream["mating_surface"]["center_mm"] = [0.0, 0.0, 0.0]
+        self.downstream["mating_surface"]["center_mm"] = [0.0, 0.0, 1e-14]
         registration = self.profile["spatial_registration"]
         registration["expected_gap_mm"] = 0.0
         self.profile["connector"]["length_mm"] = 0.0

@@ -5,13 +5,13 @@
   "port_id": "rf_multipole_exit",
   "direction": "provided",
   "profile_scope": {
-    "scope_id": "baseline_finite_3d",
+    "scope_id": "no_acceleration_full_length",
     "scope_kind": "design_profile",
-    "family_experiment_port": false
+    "family_experiment_port": true
   },
   "authority": {
-    "source_contract": "projects/rf_hexapole_ion_optics/config/resolved_design.json",
-    "source_sha256": "F5ACC4A12F4689666EAB3FFD186F3F42D3CA4DB84355612A706033C3AE2E5FA3",
+    "source_contract": "projects/rf_hexapole_ion_optics/config/resolved_design_no_acceleration_full_length.json",
+    "source_sha256": "A9FF4B4A78B366E77C97B0890923B5E5F0C444CBFAE000D316063CB545451E07",
     "bindings": [
       {
         "port_json_pointer": "/project_id",
@@ -52,7 +52,7 @@
       1.0
     ],
     "aperture_radius_mm": 3.6,
-    "potential_V": -3.0
+    "potential_V": 0.0
   },
   "clock": {
     "time_unit": "s",

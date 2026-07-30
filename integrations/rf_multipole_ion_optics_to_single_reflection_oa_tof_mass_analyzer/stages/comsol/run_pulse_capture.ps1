@@ -1,16 +1,27 @@
 param(
   [Parameter(Mandatory)][string]$SourceRunId,
   [string]$RunId = '',
+  [Parameter(Mandatory)][string]$ExpectedConnectionProfileId,
+  [Parameter(Mandatory)][string]$ResolvedConnection,
   [Parameter(Mandatory)][string]$ResolvedEngineeringBudget,
+  [Parameter(Mandatory)][string]$RuntimeBinding,
+  [string]$SourceBranchId = '',
   [string]$PythonExe = ''
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$supportSource = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\runtime\run_artifacts.ps1')).Path
+$integrationRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+$repoRoot = (Resolve-Path (Join-Path $integrationRoot '..\..')).Path
+. (Join-Path $integrationRoot 'runtime\runtime_binding.ps1')
+$runtime = Resolve-RfOatofRuntimeBinding -RepoRoot $repoRoot `
+  -ResolvedConnection $ResolvedConnection -RuntimeBinding $RuntimeBinding `
+  -ExpectedConnectionProfileId $ExpectedConnectionProfileId `
+  -SourceBranchId $SourceBranchId
+$upstreamProjectId = $runtime.upstream_project_id
+$projectRoot = Join-Path $repoRoot "projects\$upstreamProjectId"
+$supportSource = $runtime.run_artifact_support
 . $supportSource
-$projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
-$repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 
 function Invoke-PulseCaptureSnapshotPython {
@@ -35,8 +46,10 @@ function Invoke-PulseCaptureSnapshotPython {
 }
 
 $workspaceRoot = Split-Path -Parent $repoRoot
-$artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_ion_optics'
-$pulse_captureSource = Join-Path $projectRoot 'config\rf_to_oatof_pulse_capture.json'
+$artifactRoot = Join-Path $workspaceRoot "artifacts\projects\$upstreamProjectId"
+$pulse_captureSource = $runtime.contracts.pulse_capture_contract
+$pulsePolicySource = $runtime.contracts.pulse_timing_contract
+$dependencyContractSource = $runtime.contracts.dependency_contract
 $pulse_captureDocument = Get-Content -LiteralPath $pulse_captureSource -Raw -Encoding UTF8 | ConvertFrom-Json
 if (-not [bool]$pulse_captureDocument.permissions.nominal_particle_runtime_allowed -or
     [bool]$pulse_captureDocument.permissions.phase_pass_allowed) {
@@ -47,7 +60,7 @@ if ([string]::IsNullOrWhiteSpace($RunId)) {
 }
 $software = @('COMSOL 6.4','MATLAB R2025b','Python 3.11')
 $package = New-RfRunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
-  -RunId $RunId -Project 'rf_quadrupole_ion_optics' `
+  -RunId $RunId -Project $upstreamProjectId `
   -Mode 'rf_to_oatof_pulse_capture_n100' -Software $software `
   -RetentionContractEnabled -RetentionClass compact
 $manifestToolRoot = $repoRoot
@@ -67,19 +80,29 @@ try {
   $pulse_capture = Join-Path $inputDir 'rf_to_oatof_pulse_capture.json'
   $pre_pulse = Join-Path $inputDir 'rf_to_oatof_pre_pulse_passive_connector.json'
   $resolvedConnection = Join-Path $inputDir 'resolved_connection.json'
+  $runtimeBindingFrozen = Join-Path $inputDir 'runtime_binding.json'
   $pulsePolicy = Join-Path $inputDir 'rf_to_oatof_pulse_timing.json'
-  $dependencyContractSource = Join-Path $projectRoot 'config\rf_to_oatof_pre_pulse_dependencies.json'
   Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'solve_pulse_capture.m') -Destination $task
   Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'build_pre_pulse_interface_transport_model.m') -Destination $geometryBuilder
   Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'prepare_pre_pulse_interface_transport_field_model.m') -Destination $fieldBuilder
   Copy-Item -LiteralPath $PSCommandPath -Destination $runner
   Copy-Item -LiteralPath $supportSource -Destination $support
   Copy-Item -LiteralPath $pulse_captureSource -Destination $pulse_capture
-  Copy-Item -LiteralPath (Join-Path $projectRoot 'config\rf_to_oatof_pulse_timing.json') -Destination $pulsePolicy
+  Copy-Item -LiteralPath $pulsePolicySource -Destination $pulsePolicy
+  Copy-Item -LiteralPath $runtime.binding_path -Destination $runtimeBindingFrozen
   $pulse_captureDocument = Get-Content -LiteralPath $pulse_capture -Raw -Encoding UTF8 | ConvertFrom-Json
 
-  $dependencyContract = Join-Path $snapshotRoot `
-    'projects\rf_quadrupole_ion_optics\config\rf_to_oatof_pre_pulse_dependencies.json'
+  $dependencySourceDocument = Get-Content -LiteralPath $dependencyContractSource `
+    -Raw -Encoding UTF8 | ConvertFrom-Json
+  $dependencySelf = @(
+    $dependencySourceDocument.dependencies |
+      Where-Object { [string]$_.id -eq 'rf_dependency_contract_snapshot' }
+  )
+  if ($dependencySelf.Count -ne 1) {
+    throw 'PulseCapture dependency contract requires one self-snapshot identity.'
+  }
+  $dependencyContract = Join-Path $inputDir `
+    ([string]$dependencySelf[0].frozen_filename)
   $dependencyContractIdentity = Copy-RfStableFile -SourceRunRoot $repoRoot `
     -SourcePath $dependencyContractSource -Destination $dependencyContract `
     -Role 'PulseCapture dependency contract'
@@ -141,6 +164,8 @@ try {
   $snapshotAnalysis = $dependencySnapshotPaths['rf_pulse_capture_geometry_snapshot_plotter']
   $auditAnalysis = $dependencySnapshotPaths['rf_pulse_capture_pulse_chain_auditor']
   $localExitAdapter = $dependencySnapshotPaths['rf_pulse_capture_local_exit_adapter']
+  $multipoleRodBuilder =
+    $dependencySnapshotPaths['common_create_multipole_round_rods']
   $oaBaselineSnapshot = $dependencySnapshotPaths['oatof_baseline']
   $oaBuilderSnapshot = $dependencySnapshotPaths['oatof_accelerator_geometry_builder']
   $oaBaselineMatlab = $dependencyCompatibilityPaths['oatof_baseline']
@@ -161,7 +186,8 @@ try {
     'common_artifact_retention','common_artifact_retention_policy',
     'common_resource_budget_support',
     'common_verify_run_manifest','common_write_run_manifest',
-    'common_run_artifact_support','common_comsol_runner'
+    'common_run_artifact_support','common_comsol_runner',
+    'common_create_multipole_round_rods'
   )
   foreach ($requiredId in $requiredSnapshotIds) {
     if ([string]::IsNullOrWhiteSpace([string]$dependencySnapshotPaths[$requiredId])) {
@@ -181,14 +207,14 @@ try {
   Invoke-PulseCaptureSnapshotPython -Python $python -SnapshotRoot $snapshotRoot -Arguments @(
     $frozenManifestVerifier,$sourceManifest,
     '--require-status','success','--require-run-id',$SourceRunId,
-    '--require-project','rf_quadrupole_ion_optics',
+    '--require-project',$upstreamProjectId,
     '--require-mode','rf_to_oatof_pre_pulse_interface_transport_n100'
   ) -FailureMessage 'The frozen PrePulse timing/source run manifest is invalid.'
   $sourceManifestDocument = Get-Content -LiteralPath $sourceManifest -Raw -Encoding UTF8 |
     ConvertFrom-Json
   if ($sourceManifestDocument.role -ne 'simulation_run_manifest' -or
       $sourceManifestDocument.status -ne 'success' -or
-      $sourceManifestDocument.project -ne 'rf_quadrupole_ion_optics' -or
+      $sourceManifestDocument.project -ne $upstreamProjectId -or
       $sourceManifestDocument.mode -ne 'rf_to_oatof_pre_pulse_interface_transport_n100' -or
       $sourceManifestDocument.run_id -ne $SourceRunId) {
     throw 'PulseCapture source manifest identity or role is invalid.'
@@ -202,11 +228,15 @@ try {
   $sourceRunConfiguration = Get-Content -LiteralPath $sourceRunConfig -Raw -Encoding UTF8 |
     ConvertFrom-Json
   if ($sourceRunConfiguration.run_id -ne $SourceRunId -or
-      $sourceRunConfiguration.project -ne 'rf_quadrupole_ion_optics' -or
+      $sourceRunConfiguration.project -ne $upstreamProjectId -or
       $sourceRunConfiguration.mode -ne 'rf_to_oatof_pre_pulse_interface_transport_n100' -or
       -not [bool]$sourceRunConfiguration.parameters.particle_tracking) {
     throw 'PulseCapture requires a successful PrePulse N=100 particle source run.'
   }
+  Assert-RfOatofSourceIdentityMatches `
+    -Actual $sourceRunConfiguration.source_particle_identity `
+    -Expected $runtime.source_identity `
+    -Role 'PulseCapture upstream particle source'
 
   $sourcePrePulseContract = [string]$sourceRunConfiguration.inputs.pre_pulse_contract
   $sourceResolvedConnection = [string]$sourceRunConfiguration.inputs.resolved_connection
@@ -242,7 +272,8 @@ try {
   $connectionProfileId =
     [string]$sourceRunConfiguration.parameters.connection_profile_id
   if ($resolvedConnectionDocument.selection.connection_profile_id -ne
-      $connectionProfileId) {
+      $connectionProfileId -or
+      $connectionProfileId -ne $ExpectedConnectionProfileId) {
     throw 'PulseCapture source profile differs from its resolved connection.'
   }
   $budgetBinding = Initialize-RfIntegrationStageBudget `
@@ -306,7 +337,7 @@ try {
   $runConfiguration = [ordered]@{
     schema_version = 2
     run_id = $RunId
-    project = 'rf_quadrupole_ion_optics'
+    project = $upstreamProjectId
     mode = 'rf_to_oatof_pulse_capture_n100'
     project_root = $repoRoot
     inputs = [ordered]@{
@@ -316,6 +347,7 @@ try {
       rf_resolved_geometry = $rf
       interface_stage_plan = $interfaceStagePlan
       resolved_connection = $resolvedConnection
+      runtime_binding = $runtimeBindingFrozen
       pulse_timing_policy = $pulsePolicy; pulse_scheduler = $scheduler
       snapshot_analysis = $snapshotAnalysis; audit_analysis = $auditAnalysis
       local_exit_adapter = $localExitAdapter
@@ -332,11 +364,17 @@ try {
       timing_state = $timingState; pulse_schedule = $pulseSchedule
     }
     dependency_identities = $dependencyIdentities
+    resource_budget_identity = [ordered]@{
+      resolved_budget_sha256 = $budgetBinding.resolved_budget_sha256
+      stage_budget_sha256 = $budgetBinding.stage_budget_sha256
+    }
     source_particle_identity = $sourceIdentity
+    upstream_source_identity = $runtime.source_identity
     parameters = [ordered]@{
       source_particles = [int]$resolvedPrePulseDocument.particle_runtime.source_particles
       connector_gap_mm = [double]$resolvedConnectionDocument.connector.length_mm
       connection_profile_id = [string]$sourceRunConfiguration.parameters.connection_profile_id
+      source_branch_id = $runtime.source_branch_id
       pulse_time_us = [double]$scheduleDocument.derived_pulse_time_us
       pulse_width_us = [double]$scheduleDocument.pulse_width_us
       rise_fall_model = [string]$pulse_captureDocument.waveform.rise_fall_model
@@ -365,7 +403,8 @@ try {
     'RF_OATOF_PulseCapture_CONTRACT','RF_OATOF_PulseCapture_PrePulse_CONTRACT',
     'RF_OATOF_PulseCapture_SHARED_JOINT_CONTRACT','RF_OATOF_PulseCapture_RF_RESOLVED','RF_OATOF_PulseCapture_OA_BASELINE',
     'RF_OATOF_RESOLVED_CONNECTION','RF_OATOF_PulseCapture_PULSE_SCHEDULE',
-    'RF_OATOF_PulseCapture_PARTICLE_INPUT','RF_OATOF_PulseCapture_OA_COMSOL_DIR'
+    'RF_OATOF_PulseCapture_PARTICLE_INPUT','RF_OATOF_PulseCapture_OA_COMSOL_DIR',
+    'RF_OATOF_MULTIPOLE_COMSOL_DIR'
   )
   $oldEnvironment = Save-RfEnvironment -Names $environmentNames
   $comsolWrapperStdout = Join-Path $logDir 'comsol_wrapper.stdout.log'
@@ -379,6 +418,8 @@ try {
     $env:RF_OATOF_PulseCapture_OA_BASELINE=$oaBaselineMatlab
     $env:RF_OATOF_PulseCapture_PULSE_SCHEDULE=$pulseSchedule
     $env:RF_OATOF_PulseCapture_PARTICLE_INPUT=$particleInput; $env:RF_OATOF_PulseCapture_OA_COMSOL_DIR=$inputDir
+    $env:RF_OATOF_MULTIPOLE_COMSOL_DIR =
+      Split-Path -Parent $multipoleRodBuilder
     $powerShellExe = (Get-Process -Id $PID).Path
     $processResult = Invoke-ResourceBudgetedProcess `
       -ResolvedBudgetPath $budgetBinding.stage_budget `

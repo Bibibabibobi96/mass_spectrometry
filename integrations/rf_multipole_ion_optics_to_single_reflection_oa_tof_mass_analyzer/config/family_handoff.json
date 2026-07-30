@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "role": "component_chain_handoff_contract",
+  "status": "functional_unqualified",
+  "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+  "consumer_scope": "rf_multipole_no_acceleration_full_length_family",
+  "source_component": {
+    "project_id": "runtime_binding.upstream_project_id",
+    "profile": "resolved_design_no_acceleration_full_length",
+    "event": "handoff",
+    "required_status": "transmitted",
+    "minimum_particles": 100
+  },
+  "target_component": {
+    "project_id": "single_reflection_oa_tof_mass_analyzer",
+    "candidate_consumer": "fixed_particle_table_runtime_qualified_candidate_only",
+    "formal_assets_read_only": true
+  },
+  "identity_contract": {
+    "particle_id_policy": "stable_across_transport_components",
+    "row_order_policy": "sort_by_integer_particle_id_and_record_row_map",
+    "lineage_policy": "new products require a new particle_id, parent_particle_id and generation",
+    "current_generation": 0
+  },
+  "timing_contract": {
+    "clock_epoch_id": "instrument_clock_epoch_v1",
+    "instrument_time_rule": "instrument_time_out = instrument_time_in + component_elapsed_time",
+    "lineage_age_rule": "lineage_age_out = lineage_age_in + component_elapsed_time",
+    "particle_age_rule": "particle_age_out_without_reaction = particle_age_in + component_elapsed_time",
+    "solver_local_time_policy": "local zero is allowed only when canonical instrument time is retained and restored"
+  },
+  "spatial_contract": {
+    "source_frame_id": "multipole_cartesian_z_axis_v1",
+    "target_frame_id": "oatof_global",
+    "transform_source": "resolved_connection.spatial_registration",
+    "coordinate_relabel_without_rigid_transform_forbidden": true
+  },
+  "derived_solver_inputs": {
+    "canonical_handoff_csv": "authoritative transformed particle state and chain clock",
+    "oatof_ion": "derived 11-column fixed-particle table",
+    "row_map_csv": "stable link between solver row order, particle identity and canonical time",
+    "metadata_json": "input, contract and output SHA-256 plus transformation diagnostics"
+  },
+  "permissions": {
+    "functional_chain_execution_allowed": true,
+    "continuous_phase_space_claim_allowed": false,
+    "resolution_claim_allowed": false,
+    "formal_promotion_allowed": false
+  }
+}

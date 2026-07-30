@@ -245,18 +245,26 @@ def _resolve_profile(
         raise ContractError("mating surface normals are not opposed")
 
     separation = _subtract(downstream_surface["center_mm"], transformed_center)
-    actual_gap = _dot(separation, transformed_normal)
+    measured_gap = _dot(separation, transformed_normal)
     transverse = _subtract(
-        separation, [actual_gap * component for component in transformed_normal]
+        separation, [measured_gap * component for component in transformed_normal]
     )
-    if actual_gap < -position_tolerance:
+    if measured_gap < -position_tolerance:
         raise ContractError("downstream mating surface lies behind upstream port")
-    if abs(actual_gap - registration["expected_gap_mm"]) > position_tolerance:
+    if abs(measured_gap - registration["expected_gap_mm"]) > position_tolerance:
         raise ContractError("mating surface gap differs from connection profile")
     if _norm(transverse) > position_tolerance:
         raise ContractError("mating surface centers have transverse misalignment")
-    if abs(profile["connector"]["length_mm"] - actual_gap) > position_tolerance:
+    if (
+        abs(profile["connector"]["length_mm"] - measured_gap)
+        > position_tolerance
+    ):
         raise ContractError("connector length differs from mating surface gap")
+    direct_mating = (
+        registration["expected_gap_mm"] == 0.0
+        and profile["connector"]["length_mm"] == 0.0
+    )
+    actual_gap = 0.0 if direct_mating else measured_gap
 
     transition_aperture = profile["transition_aperture"]
     transition_clear_radius = _validate_transition_aperture(

@@ -17,12 +17,16 @@
         "required": [
           "connection_profile_id",
           "adapter_entrypoint",
-          "workflow_entrypoint"
+          "adapter_sha256",
+          "runtime_binding_path",
+          "runtime_binding_sha256"
         ],
         "properties": {
           "connection_profile_id": {"$ref": "#/$defs/identifier"},
           "adapter_entrypoint": {"$ref": "#/$defs/path"},
-          "workflow_entrypoint": {"$ref": "#/$defs/path"}
+          "adapter_sha256": {"$ref": "#/$defs/sha256"},
+          "runtime_binding_path": {"$ref": "#/$defs/path"},
+          "runtime_binding_sha256": {"$ref": "#/$defs/sha256"}
         }
       }
     }
@@ -36,6 +40,10 @@
       "type": "string",
       "minLength": 1,
       "pattern": "^(?![A-Za-z]:|/|.*\\.\\.).+"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9A-F]{64}$"
     }
   }
 }

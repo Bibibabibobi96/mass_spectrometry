@@ -3,6 +3,8 @@ param(
   [Parameter(Mandatory)][string]$ConnectionProfileId,
   [Parameter(Mandatory)][string]$ResolvedConnection,
   [Parameter(Mandatory)][string]$ResolvedEngineeringBudget,
+  [Parameter(Mandatory)][string]$RuntimeBinding,
+  [string]$SourceBranchId = '',
   [string]$Stamp = '',
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$PythonExe = ''
@@ -10,37 +12,49 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
+$integrationRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$repoRoot = (Resolve-Path (Join-Path $integrationRoot '..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
-$artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_ion_optics\runs'
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
-. (Join-Path $projectRoot 'runtime\run_artifacts.ps1')
+. (Join-Path $PSScriptRoot 'runtime_binding.ps1')
 if ([string]::IsNullOrWhiteSpace($Stamp)) { $Stamp = Get-Date -Format 'yyyyMMdd_HHmmss' }
 if ($Stamp -notmatch '^\d{8}_\d{6}$') { throw 'Stamp must use yyyyMMdd_HHmmss.' }
 
-$resolved = Get-Content -LiteralPath $ResolvedConnection -Raw -Encoding UTF8 | ConvertFrom-Json
-if ($resolved.selection.connection_profile_id -ne $ConnectionProfileId) {
-  throw 'Resolved connection identity differs from ConnectionProfileId.'
-}
+$runtime = Resolve-RfOatofRuntimeBinding -RepoRoot $repoRoot `
+  -ResolvedConnection $ResolvedConnection -RuntimeBinding $RuntimeBinding `
+  -ExpectedConnectionProfileId $ConnectionProfileId `
+  -SourceBranchId $SourceBranchId
+$upstreamProjectId = $runtime.upstream_project_id
+$artifactRoot = Join-Path $workspaceRoot "artifacts\projects\$upstreamProjectId\runs"
+. $runtime.run_artifact_support
+$resolved = $runtime.resolved_connection
 $gapMm = [double]$resolved.connector.length_mm
 $gapLabel = ('{0:g}' -f $gapMm).Replace('.','p')
 $prePulseRunId = "${Stamp}__sim__comsol__rf-oatof-pre-pulse-interface-gap${gapLabel}__n100"
 $pulseCaptureRunId = "${Stamp}__sim__comsol__rf-oatof-pulse-capture-gap${gapLabel}__n100"
 $analyzerRunId = "${Stamp}__sim__cross__rf-oatof-analyzer-transport-gap${gapLabel}__n100"
 
-& (Join-Path $projectRoot 'workflows\rf_to_oatof_integration\comsol\run_pre_pulse_interface_transport.ps1') `
+& $runtime.implementation.pre_pulse_runner `
   -RunId $prePulseRunId -Particles -ConnectionProfileId $ConnectionProfileId `
   -ResolvedConnection $ResolvedConnection `
-  -ResolvedEngineeringBudget $ResolvedEngineeringBudget -PythonExe $python
-if ($LASTEXITCODE -ne 0) { throw 'RF-to-oaTOF transfer stopped at pre_pulse_interface_transport.' }
-& (Join-Path $projectRoot 'workflows\rf_to_oatof_integration\comsol\run_pulse_capture.ps1') `
-  -SourceRunId $prePulseRunId -RunId $pulseCaptureRunId `
-  -ResolvedEngineeringBudget $ResolvedEngineeringBudget -PythonExe $python
-if ($LASTEXITCODE -ne 0) { throw 'RF-to-oaTOF transfer stopped at pulse_capture.' }
-& (Join-Path $projectRoot 'workflows\rf_to_oatof_integration\cross_solver\run_analyzer_transport.ps1') `
-  -SourceRunId $pulseCaptureRunId -RunId $analyzerRunId `
   -ResolvedEngineeringBudget $ResolvedEngineeringBudget `
+  -RuntimeBinding $RuntimeBinding -SourceBranchId $SourceBranchId `
+  -PythonExe $python
+if ($LASTEXITCODE -ne 0) { throw 'RF-to-oaTOF transfer stopped at pre_pulse_interface_transport.' }
+& $runtime.implementation.pulse_capture_runner `
+  -SourceRunId $prePulseRunId -RunId $pulseCaptureRunId `
+  -ExpectedConnectionProfileId $ConnectionProfileId `
+  -ResolvedConnection $ResolvedConnection `
+  -ResolvedEngineeringBudget $ResolvedEngineeringBudget `
+  -RuntimeBinding $RuntimeBinding -SourceBranchId $SourceBranchId `
+  -PythonExe $python
+if ($LASTEXITCODE -ne 0) { throw 'RF-to-oaTOF transfer stopped at pulse_capture.' }
+& $runtime.implementation.analyzer_transport_runner `
+  -SourceRunId $pulseCaptureRunId -RunId $analyzerRunId `
+  -ExpectedConnectionProfileId $ConnectionProfileId `
+  -ResolvedConnection $ResolvedConnection `
+  -ResolvedEngineeringBudget $ResolvedEngineeringBudget `
+  -RuntimeBinding $RuntimeBinding -SourceBranchId $SourceBranchId `
   -SimionExe $SimionExe -PythonExe $python
 if ($LASTEXITCODE -ne 0) { throw 'RF-to-oaTOF transfer stopped at analyzer_transport.' }
 
@@ -74,7 +88,7 @@ try {
         -ChildName $case.run_id -Role 'cumulative stage run id'
       & $python $manifestVerifier (Join-Path $run 'run_manifest.json') `
         --require-status success --require-run-id $case.run_id `
-        --require-project rf_quadrupole_ion_optics `
+        --require-project $upstreamProjectId `
         --require-mode $case.mode
       if ($LASTEXITCODE -ne 0) {
         throw "Cumulative-chain manifest verification failed: $($case.run_id)"

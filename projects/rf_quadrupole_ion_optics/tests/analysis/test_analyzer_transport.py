@@ -19,6 +19,13 @@ from projects.rf_quadrupole_ion_optics.analysis import (
     validate_oatof_formal_analyzer_release as formal_release,
 )
 
+REPO_ROOT = Path(__file__).resolve().parents[4]
+INTEGRATION_ROOT = (
+    REPO_ROOT
+    / "integrations"
+    / "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
+)
+
 
 def canonical_row(particle_id: int) -> dict[str, object]:
     return {
@@ -232,9 +239,8 @@ class AnalyzerTransportTests(unittest.TestCase):
 
     def test_runner_freezes_dependencies_and_source_before_execution(self) -> None:
         runner = (
-            Path(__file__).parents[2]
-            / "workflows"
-            / "rf_to_oatof_integration"
+            INTEGRATION_ROOT
+            / "stages"
             / "cross_solver"
             / "run_analyzer_transport.ps1"
         ).read_text(encoding="utf-8")
@@ -289,7 +295,7 @@ class AnalyzerTransportTests(unittest.TestCase):
             "rf_analyzer_transport_simion_input_adapter",
             "rf_analyzer_transport_analyzer",
             "rf_oatof_formal_release_validator",
-            "rf_oatof_handoff_builder",
+            "oatof_rf_handoff_adapter",
             "oatof_resolved_geometry",
             "oatof_formal_validation",
             "oatof_handoff_pulse_program_builder",
@@ -355,9 +361,8 @@ class AnalyzerTransportTests(unittest.TestCase):
 
     def test_dependency_contract_is_frozen_before_closure_selection(self) -> None:
         runner = (
-            Path(__file__).parents[2]
-            / "workflows"
-            / "rf_to_oatof_integration"
+            INTEGRATION_ROOT
+            / "stages"
             / "cross_solver"
             / "run_analyzer_transport.ps1"
         ).read_text(encoding="utf-8")
@@ -365,7 +370,7 @@ class AnalyzerTransportTests(unittest.TestCase):
             "$dependencyContractIdentity = Copy-RfStableFile"
         )
         frozen_parse = runner.index(
-            "Get-Content -LiteralPath $dependencyContract"
+            "$dependencyDocument = Get-Content -LiteralPath $dependencyContract"
         )
         selection = runner.index("$selectedDependencies = @(")
         self_identity = runner.index(
@@ -383,9 +388,13 @@ class AnalyzerTransportTests(unittest.TestCase):
         self.assertLess(selection, self_identity)
         self.assertLess(self_identity, identity_hash)
         self.assertLess(identity_hash, ordinary_copy)
-        self.assertNotIn(
-            "Get-Content -LiteralPath $dependencyContractSource",
+        self.assertIn(
+            "$dependencySourceDocument.dependencies",
             runner,
+        )
+        self.assertIn(
+            "$dependencyDocument.dependencies",
+            runner[selection:],
         )
 
     def test_snapshot_adapter_imports_nested_handoff_builder_under_poison(self) -> None:
@@ -480,9 +489,8 @@ class AnalyzerTransportTests(unittest.TestCase):
 
     def test_early_snapshot_failure_cannot_fall_back_to_live_manifest(self) -> None:
         runner = (
-            Path(__file__).parents[2]
-            / "workflows"
-            / "rf_to_oatof_integration"
+            INTEGRATION_ROOT
+            / "stages"
             / "cross_solver"
             / "run_analyzer_transport.ps1"
         ).read_text(encoding="utf-8")

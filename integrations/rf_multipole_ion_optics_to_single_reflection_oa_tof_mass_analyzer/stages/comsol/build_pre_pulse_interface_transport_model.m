@@ -1,6 +1,7 @@
 function [model, context] = build_pre_pulse_interface_transport_model( ...
-    resolvedConnection, sharedJoint, rf, oa, oaComsolDir, modelTag)
-% Build the shared PrePulse passive-connector geometry and return its selections.
+    resolvedConnection, sharedJoint, rf, oa, oaComsolDir, ...
+    multipoleComsolDir, modelTag)
+% Build the shared RF-multipole PrePulse connector geometry and return selections.
 % REPOSITORY_CONTRACT: MATLAB_BUILD_ONLY
 
 arguments
@@ -9,6 +10,7 @@ arguments
     rf struct
     oa struct
     oaComsolDir (1,:) char
+    multipoleComsolDir (1,:) char
     modelTag (1,:) char
 end
 
@@ -24,7 +26,8 @@ downstreamSurface = resolvedConnection.port_geometry.downstream.mating_surface;
 sourceCenter = (sourceRotation*upstreamSurface.center_mm(:)+sourceTranslation).';
 targetCenter = downstreamSurface.center_mm(:).';
 gapMm = registration.actual_gap_mm;
-connectorPresent = gapMm > 0;
+positionToleranceMm = registration.position_tolerance_mm;
+connectorPresent = gapMm > positionToleranceMm;
 assert_connection_geometry(sourceCenter, targetCenter, sourceAxis, ...
     connector, transitionAperture, resolvedConnection);
 
@@ -65,7 +68,7 @@ geom.feature('univacgrid').selection('input').set(vacuumInputs);
 geom.feature('univacgrid').set('intbnd', true);
 geom.feature('univacgrid').set('selresult', 'on');
 
-addpath(oaComsolDir);
+addpath(oaComsolDir, multipoleComsolDir);
 interfacePort = struct('enabled', true, ...
     'full_width_y_mm', transitionAperture.full_width_mm, ...
     'full_height_z_mm', transitionAperture.full_height_mm, ...
@@ -77,8 +80,8 @@ geom.feature('accelshield').set('selresult', 'on');
 for index = 1:numel(acceleratorRingTags)
     geom.feature(acceleratorRingTags{index}).set('selresult', 'on');
 end
-add_rf_hardware(geom, rfGeometry, rf.interfaces_mm, sourcePose, sourceAxis, ...
-    shieldInnerRadius, numericalWallMm);
+rfRodTags = add_rf_hardware(geom, rfGeometry, rf.interfaces_mm, sourcePose, ...
+    sourceAxis, shieldInnerRadius, numericalWallMm);
 geom.run;
 
 if connectorPresent
@@ -113,7 +116,8 @@ context = struct( ...
     'oatof_vacuum_domain_count', numel(oaVacuumDomains), ...
     'accelerator_ring_tags', {acceleratorRingTags}, ...
     'rf_ground_tags', {{'rfshield','rfentrance','rfexit'}}, ...
-    'rf_rod_tags', {{'rfrod1','rfrod2','rfrod3','rfrod4'}});
+    'rf_rod_tags', {rfRodTags}, ...
+    'rf_rod_electrode_groups', [rfGeometry.rod_array.rods.electrode_group]);
 end
 
 function assert_resolved_connection(resolved)
@@ -231,15 +235,16 @@ for specification = specifications
 end
 end
 
-function add_rf_hardware(geom, g, interfaces, sourcePose, sourceAxis, shieldRadius, wallMm)
-for index = 1:4
-    tag = sprintf('rfrod%d', index);
-    angleDeg = (index-1)*90;
-    localStart = [g.rod_center_radius*cosd(angleDeg), ...
-        g.rod_center_radius*sind(angleDeg), g.rod_z_min];
-    add_cylinder(geom, tag, g.rod_radius, g.rod_length, ...
-        transform_source_position(sourcePose, localStart), sourceAxis, true);
-end
+function rodTags = add_rf_hardware( ...
+    geom, g, interfaces, sourcePose, sourceAxis, shieldRadius, wallMm)
+assert(isfield(g,'rod_array') && isfield(g.rod_array,'rods') && ...
+    ~isempty(g.rod_array.rods), ...
+    'RF multipole geometry must provide a nonempty resolved rod_array.');
+assert(all(abs(sourcePose.rotation_component_to_instrument(:)- ...
+    [0;1;0;0;0;1;1;0;0]) <= 1e-12,'all'), ...
+    'The common rod builder requires the resolved RF +z to oaTOF +x mapping.');
+rodTags = create_multipole_round_rods(geom, g.rod_array, 'rfrod', 'x', ...
+    sourcePose.translation_mm(:).');
 add_cylinder(geom, 'rfshieldO', shieldRadius+wallMm, ...
     interfaces.exit.aperture_plate_upstream_face_z_mm-interfaces.entrance.aperture_plate_downstream_face_z_mm, ...
     transform_source_position(sourcePose, ...

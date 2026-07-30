@@ -1,0 +1,692 @@
+{
+  "schema_version": 2,
+  "role": "rf_to_oatof_semantic_transfer_explicit_source_dependencies",
+  "consumer_project": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+  "consumer_ids": [
+    "pre_pulse_interface_transport",
+    "pulse_capture",
+    "analyzer_transport"
+  ],
+  "dependencies": [
+    {
+      "id": "oatof_baseline",
+      "provider_scope": "project",
+      "provider_project": "single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "projects/single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/config/baseline.json",
+      "frozen_filename": "runtime_snapshot/projects/single_reflection_oa_tof_mass_analyzer/config/baseline.json",
+      "compatibility_frozen_filename": "oatof_baseline.json",
+      "run_input_name": "oatof_baseline",
+      "consumers": [
+        "pre_pulse_interface_transport",
+        "pulse_capture",
+        "analyzer_transport"
+      ]
+    },
+    {
+      "id": "oatof_accelerator_geometry_builder",
+      "provider_scope": "project",
+      "provider_project": "single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "projects/single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_accelerator_geometry.m",
+      "frozen_filename": "runtime_snapshot/projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_accelerator_geometry.m",
+      "compatibility_frozen_filename": "oatof_build_accelerator_geometry.m",
+      "run_input_name": "oatof_accelerator_builder",
+      "consumers": [
+        "pre_pulse_interface_transport",
+        "pulse_capture"
+      ]
+    },
+    {
+      "id": "oatof_rf_handoff_adapter",
+      "provider_scope": "project",
+      "provider_project": "single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "projects/single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/rf_handoff_adapter.py",
+      "frozen_filename": "runtime_snapshot/projects/single_reflection_oa_tof_mass_analyzer/analysis/rf_handoff_adapter.py",
+      "run_input_name": "oatof_rf_handoff_adapter",
+      "consumers": [
+        "pre_pulse_interface_transport",
+        "analyzer_transport"
+      ]
+    },
+    {
+      "id": "oatof_resolved_geometry",
+      "provider_scope": "project",
+      "provider_project": "single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "projects/single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json",
+      "frozen_filename": "runtime_snapshot/projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json",
+      "run_input_name": "oatof_resolved_geometry",
+      "consumers": [
+        "analyzer_transport"
+      ]
+    },
+    {
+      "id": "oatof_formal_validation",
+      "provider_scope": "project",
+      "provider_project": "single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "projects/single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/config/formal_validation.json",
+      "frozen_filename": "runtime_snapshot/projects/single_reflection_oa_tof_mass_analyzer/config/formal_validation.json",
+      "run_input_name": "oatof_formal_validation",
+      "consumers": [
+        "analyzer_transport"
+      ]
+    },
+    {
+      "id": "oatof_simion_stable_entry",
+      "provider_scope": "project",
+      "provider_project": "single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "projects/single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/config/simion_stable_entry.json",
+      "frozen_filename": "runtime_snapshot/projects/single_reflection_oa_tof_mass_analyzer/config/simion_stable_entry.json",
+      "run_input_name": "oatof_simion_stable_entry",
+      "consumers": [
+        "analyzer_transport"
+      ]
+    },
+    {
+      "id": "oatof_handoff_pulse_program_builder",
+      "provider_scope": "project",
+      "provider_project": "single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "projects/single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/build_handoff_pulse_program.py",
+      "frozen_filename": "runtime_snapshot/projects/single_reflection_oa_tof_mass_analyzer/analysis/build_handoff_pulse_program.py",
+      "run_input_name": "oatof_handoff_pulse_program_builder",
+      "consumers": [
+        "analyzer_transport"
+      ]
+    },
+    {
+      "id": "oatof_formal_lua",
+      "provider_scope": "project",
+      "provider_project": "single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "projects/single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/formal/oatof_ideal_grounded.lua",
+      "frozen_filename": "runtime_snapshot/projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/formal/oatof_ideal_grounded.lua",
+      "run_input_name": "oatof_formal_lua",
+      "consumers": [
+        "analyzer_transport"
+      ]
+    },
+    {
+      "id": "oatof_handoff_pulse_extension_lua",
+      "provider_scope": "project",
+      "provider_project": "single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "projects/single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/candidates/oatof_handoff_pulse.lua",
+      "frozen_filename": "runtime_snapshot/projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/candidates/oatof_handoff_pulse.lua",
+      "run_input_name": "oatof_handoff_pulse_extension_lua",
+      "consumers": [
+        "analyzer_transport"
+      ]
+    },
+    {
+      "id": "oatof_simion_log_analyzer_wrapper",
+      "provider_scope": "project",
+      "provider_project": "single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "projects/single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/analyze_ideal_field_log.ps1",
+      "frozen_filename": "runtime_snapshot/projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/analyze_ideal_field_log.ps1",
+      "run_input_name": "oatof_simion_log_analyzer_wrapper",
+      "consumers": [
+        "analyzer_transport"
+      ]
+    },
+    {
+      "id": "oatof_solver_diagnostics",
+      "provider_scope": "project",
+      "provider_project": "single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "projects/single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/solver_diagnostics.py",
+      "frozen_filename": "runtime_snapshot/projects/single_reflection_oa_tof_mass_analyzer/analysis/solver_diagnostics.py",
+      "run_input_name": "oatof_solver_diagnostics",
+      "consumers": [
+        "analyzer_transport"
+      ]
+    },
+    {
+      "id": "rf_interface_stage_plan",
+      "provider_scope": "integration",
+      "provider_project": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_transfer_phases.json",
+      "frozen_filename": "runtime_snapshot/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_transfer_phases.json",
+      "run_input_name": "rf_interface_stage_plan",
+      "consumers": [
+        "pre_pulse_interface_transport",
+        "pulse_capture"
+      ]
+    },
+    {
+      "id": "rf_shared_joint_geometry",
+      "provider_scope": "integration",
+      "provider_project": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_shared_physical_port_joint_geometry.json",
+      "frozen_filename": "runtime_snapshot/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_shared_physical_port_joint_geometry.json",
+      "run_input_name": "rf_shared_joint_geometry",
+      "consumers": [
+        "pre_pulse_interface_transport",
+        "pulse_capture"
+      ]
+    },
+    {
+      "id": "rf_resolved_design",
+      "provider_scope": "project",
+      "provider_project": "rf_quadrupole_ion_optics",
+      "provider_repo_path": "projects/rf_quadrupole_ion_optics",
+      "source_repo_path": "projects/rf_quadrupole_ion_optics/config/resolved_design_no_acceleration_full_length.json",
+      "frozen_filename": "runtime_snapshot/projects/rf_quadrupole_ion_optics/config/resolved_design_no_acceleration_full_length.json",
+      "run_input_name": "rf_resolved_design",
+      "consumers": [
+        "pre_pulse_interface_transport",
+        "pulse_capture"
+      ]
+    },
+    {
+      "id": "rf_project_descriptor",
+      "provider_scope": "project",
+      "provider_project": "rf_quadrupole_ion_optics",
+      "provider_repo_path": "projects/rf_quadrupole_ion_optics",
+      "source_repo_path": "projects/rf_quadrupole_ion_optics/config/project.json",
+      "frozen_filename": "runtime_snapshot/projects/rf_quadrupole_ion_optics/config/project.json",
+      "run_input_name": "rf_project_descriptor",
+      "consumers": [
+        "pre_pulse_interface_transport"
+      ]
+    },
+    {
+      "id": "rf_dependency_contract_snapshot",
+      "provider_scope": "integration",
+      "provider_project": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_quadrupole_dependencies.json",
+      "frozen_filename": "runtime_snapshot/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_quadrupole_dependencies.json",
+      "run_input_name": "rf_dependency_contract_snapshot",
+      "consumers": [
+        "pre_pulse_interface_transport",
+        "pulse_capture",
+        "analyzer_transport"
+      ]
+    },
+    {
+      "id": "rf_pulse_capture_pulse_scheduler",
+      "provider_scope": "project",
+      "provider_project": "rf_quadrupole_ion_optics",
+      "provider_repo_path": "projects/rf_quadrupole_ion_optics",
+      "source_repo_path": "projects/rf_quadrupole_ion_optics/analysis/derive_shared_centroid_pulse_time.py",
+      "frozen_filename": "runtime_snapshot/projects/rf_quadrupole_ion_optics/analysis/derive_shared_centroid_pulse_time.py",
+      "run_input_name": "rf_pulse_capture_pulse_scheduler",
+      "consumers": [
+        "pulse_capture"
+      ]
+    },
+    {
+      "id": "rf_pulse_capture_geometry_snapshot_plotter",
+      "provider_scope": "project",
+      "provider_project": "rf_quadrupole_ion_optics",
+      "provider_repo_path": "projects/rf_quadrupole_ion_optics",
+      "source_repo_path": "projects/rf_quadrupole_ion_optics/analysis/plot_shared_pulse_geometry_snapshot.py",
+      "frozen_filename": "runtime_snapshot/projects/rf_quadrupole_ion_optics/analysis/plot_shared_pulse_geometry_snapshot.py",
+      "run_input_name": "rf_pulse_capture_geometry_snapshot_plotter",
+      "consumers": [
+        "pulse_capture"
+      ]
+    },
+    {
+      "id": "rf_pulse_capture_pulse_chain_auditor",
+      "provider_scope": "project",
+      "provider_project": "rf_quadrupole_ion_optics",
+      "provider_repo_path": "projects/rf_quadrupole_ion_optics",
+      "source_repo_path": "projects/rf_quadrupole_ion_optics/analysis/audit_pulse_capture_pulse_chain.py",
+      "frozen_filename": "runtime_snapshot/projects/rf_quadrupole_ion_optics/analysis/audit_pulse_capture_pulse_chain.py",
+      "run_input_name": "rf_pulse_capture_pulse_chain_auditor",
+      "consumers": [
+        "pulse_capture"
+      ]
+    },
+    {
+      "id": "rf_pulse_capture_local_exit_adapter",
+      "provider_scope": "project",
+      "provider_project": "rf_quadrupole_ion_optics",
+      "provider_repo_path": "projects/rf_quadrupole_ion_optics",
+      "source_repo_path": "projects/rf_quadrupole_ion_optics/analysis/build_pulse_capture_local_exit_component_state.py",
+      "frozen_filename": "runtime_snapshot/projects/rf_quadrupole_ion_optics/analysis/build_pulse_capture_local_exit_component_state.py",
+      "run_input_name": "rf_pulse_capture_local_exit_adapter",
+      "consumers": [
+        "pulse_capture"
+      ]
+    },
+    {
+      "id": "rf_family_source_bundle_publisher",
+      "provider_scope": "integration",
+      "provider_project": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/analysis/publish_family_source_bundle.py",
+      "frozen_filename": "runtime_snapshot/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/analysis/publish_family_source_bundle.py",
+      "run_input_name": "rf_family_source_bundle_publisher",
+      "consumers": [
+        "pre_pulse_interface_transport"
+      ]
+    },
+    {
+      "id": "rf_analyzer_transport_simion_input_adapter",
+      "provider_scope": "integration",
+      "provider_project": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/analysis/write_oatof_simion_input.py",
+      "frozen_filename": "runtime_snapshot/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/analysis/write_oatof_simion_input.py",
+      "run_input_name": "rf_analyzer_transport_simion_input_adapter",
+      "consumers": [
+        "pre_pulse_interface_transport",
+        "analyzer_transport"
+      ]
+    },
+    {
+      "id": "rf_analyzer_transport_analyzer",
+      "provider_scope": "project",
+      "provider_project": "rf_quadrupole_ion_optics",
+      "provider_repo_path": "projects/rf_quadrupole_ion_optics",
+      "source_repo_path": "projects/rf_quadrupole_ion_optics/analysis/analyze_analyzer_transport.py",
+      "frozen_filename": "runtime_snapshot/projects/rf_quadrupole_ion_optics/analysis/analyze_analyzer_transport.py",
+      "run_input_name": "rf_analyzer_transport_analyzer",
+      "consumers": [
+        "analyzer_transport"
+      ]
+    },
+    {
+      "id": "rf_oatof_formal_release_validator",
+      "provider_scope": "project",
+      "provider_project": "rf_quadrupole_ion_optics",
+      "provider_repo_path": "projects/rf_quadrupole_ion_optics",
+      "source_repo_path": "projects/rf_quadrupole_ion_optics/analysis/validate_oatof_formal_analyzer_release.py",
+      "frozen_filename": "runtime_snapshot/projects/rf_quadrupole_ion_optics/analysis/validate_oatof_formal_analyzer_release.py",
+      "run_input_name": "rf_oatof_formal_release_validator",
+      "consumers": [
+        "analyzer_transport"
+      ]
+    },
+    {
+      "id": "common_connection_profile_schema",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/schemas/connection_profile.schema.json",
+      "frozen_filename": "runtime_snapshot/common/contracts/schemas/connection_profile.schema.json",
+      "run_input_name": "common_connection_profile_schema",
+      "consumers": [
+        "pre_pulse_interface_transport"
+      ]
+    },
+    {
+      "id": "common_component_port_schema",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/schemas/component_port.schema.json",
+      "frozen_filename": "runtime_snapshot/common/contracts/schemas/component_port.schema.json",
+      "run_input_name": "common_component_port_schema",
+      "consumers": [
+        "pre_pulse_interface_transport"
+      ]
+    },
+    {
+      "id": "common_resolved_connection_schema",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/schemas/resolved_connection.schema.json",
+      "frozen_filename": "runtime_snapshot/common/contracts/schemas/resolved_connection.schema.json",
+      "run_input_name": "common_resolved_connection_schema",
+      "consumers": [
+        "pre_pulse_interface_transport"
+      ]
+    },
+    {
+      "id": "common_machine_contracts",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/machine_contracts.py",
+      "frozen_filename": "runtime_snapshot/common/contracts/machine_contracts.py",
+      "run_input_name": "common_machine_contracts",
+      "consumers": [
+        "pre_pulse_interface_transport"
+      ]
+    },
+    {
+      "id": "common_particle_state",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/particle_state.py",
+      "frozen_filename": "runtime_snapshot/common/contracts/particle_state.py",
+      "run_input_name": "common_particle_state",
+      "consumers": [
+        "pre_pulse_interface_transport"
+      ]
+    },
+    {
+      "id": "common_particle_count_policy",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/particle_count_policy.py",
+      "frozen_filename": "runtime_snapshot/common/contracts/particle_count_policy.py",
+      "run_input_name": "common_particle_count_policy",
+      "consumers": [
+        "pre_pulse_interface_transport"
+      ]
+    },
+    {
+      "id": "common_multipole_numerical_qualification",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/multipole/numerical_qualification.py",
+      "frozen_filename": "runtime_snapshot/common/multipole/numerical_qualification.py",
+      "run_input_name": "common_multipole_numerical_qualification",
+      "consumers": [
+        "pre_pulse_interface_transport"
+      ]
+    },
+    {
+      "id": "common_multipole_three_mode_dispersion",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/multipole/three_mode_dispersion.py",
+      "frozen_filename": "runtime_snapshot/common/multipole/three_mode_dispersion.py",
+      "run_input_name": "common_multipole_three_mode_dispersion",
+      "consumers": [
+        "pre_pulse_interface_transport"
+      ]
+    },
+    {
+      "id": "common_multipole_handoff_publisher",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/multipole/publish_three_mode_binding.py",
+      "frozen_filename": "runtime_snapshot/common/multipole/publish_three_mode_binding.py",
+      "run_input_name": "common_multipole_handoff_publisher",
+      "consumers": [
+        "pre_pulse_interface_transport"
+      ]
+    },
+    {
+      "id": "common_rigid_transform",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/rigid_transform.py",
+      "frozen_filename": "runtime_snapshot/common/contracts/rigid_transform.py",
+      "run_input_name": "common_rigid_transform",
+      "consumers": [
+        "pre_pulse_interface_transport",
+        "pulse_capture",
+        "analyzer_transport"
+      ]
+    },
+    {
+      "id": "common_particle_physics",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/particle_physics.py",
+      "frozen_filename": "runtime_snapshot/common/contracts/particle_physics.py",
+      "run_input_name": "common_particle_physics",
+      "consumers": [
+        "pre_pulse_interface_transport",
+        "pulse_capture",
+        "analyzer_transport"
+      ]
+    },
+    {
+      "id": "common_component_particle_state",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/component_particle_state.py",
+      "frozen_filename": "runtime_snapshot/common/contracts/component_particle_state.py",
+      "run_input_name": "common_component_particle_state",
+      "consumers": [
+        "pre_pulse_interface_transport",
+        "pulse_capture",
+        "analyzer_transport"
+      ]
+    },
+    {
+      "id": "common_component_particle_state_schema",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/schemas/component_particle_state.schema.json",
+      "frozen_filename": "runtime_snapshot/common/contracts/schemas/component_particle_state.schema.json",
+      "run_input_name": "common_component_particle_state_schema",
+      "consumers": [
+        "pre_pulse_interface_transport",
+        "pulse_capture",
+        "analyzer_transport"
+      ]
+    },
+    {
+      "id": "common_file_identity",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/file_identity.py",
+      "frozen_filename": "runtime_snapshot/common/contracts/file_identity.py",
+      "run_input_name": "common_file_identity",
+      "consumers": [
+        "pre_pulse_interface_transport",
+        "pulse_capture",
+        "analyzer_transport"
+      ]
+    },
+    {
+      "id": "common_artifact_retention",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/artifact_retention.py",
+      "frozen_filename": "runtime_snapshot/common/contracts/artifact_retention.py",
+      "run_input_name": "common_artifact_retention",
+      "consumers": [
+        "pre_pulse_interface_transport",
+        "pulse_capture",
+        "analyzer_transport"
+      ]
+    },
+    {
+      "id": "common_artifact_retention_policy",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/artifact_retention.json",
+      "frozen_filename": "runtime_snapshot/common/contracts/artifact_retention.json",
+      "run_input_name": "common_artifact_retention_policy",
+      "consumers": [
+        "pre_pulse_interface_transport",
+        "pulse_capture",
+        "analyzer_transport"
+      ]
+    },
+    {
+      "id": "common_resource_budget_support",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/multipole/resource_budget_support.ps1",
+      "frozen_filename": "runtime_snapshot/common/multipole/resource_budget_support.ps1",
+      "run_input_name": "common_resource_budget_support",
+      "consumers": [
+        "pre_pulse_interface_transport",
+        "pulse_capture",
+        "analyzer_transport"
+      ]
+    },
+    {
+      "id": "common_verify_run_manifest",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/verify_run_manifest.py",
+      "frozen_filename": "runtime_snapshot/common/contracts/verify_run_manifest.py",
+      "run_input_name": "common_verify_run_manifest",
+      "consumers": [
+        "pre_pulse_interface_transport",
+        "pulse_capture",
+        "analyzer_transport"
+      ]
+    },
+    {
+      "id": "common_artifact_naming",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/artifact_naming.py",
+      "frozen_filename": "runtime_snapshot/common/contracts/artifact_naming.py",
+      "run_input_name": "common_artifact_naming",
+      "consumers": [
+        "pre_pulse_interface_transport",
+        "pulse_capture",
+        "analyzer_transport"
+      ]
+    },
+    {
+      "id": "common_write_run_manifest",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/write_run_manifest.py",
+      "frozen_filename": "runtime_snapshot/common/contracts/write_run_manifest.py",
+      "run_input_name": "common_write_run_manifest",
+      "consumers": [
+        "pre_pulse_interface_transport",
+        "pulse_capture",
+        "analyzer_transport"
+      ]
+    },
+    {
+      "id": "common_run_artifact_support",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/run_artifact_support.ps1",
+      "frozen_filename": "runtime_snapshot/common/contracts/run_artifact_support.ps1",
+      "run_input_name": "common_run_artifact_support",
+      "consumers": [
+        "pre_pulse_interface_transport",
+        "pulse_capture",
+        "analyzer_transport"
+      ]
+    },
+    {
+      "id": "common_require_powershell7",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/require_powershell7.ps1",
+      "frozen_filename": "runtime_snapshot/common/require_powershell7.ps1",
+      "run_input_name": "common_require_powershell7",
+      "consumers": [
+        "pre_pulse_interface_transport",
+        "pulse_capture",
+        "analyzer_transport"
+      ]
+    },
+    {
+      "id": "common_create_multipole_round_rods",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/comsol/create_multipole_round_rods.m",
+      "frozen_filename": "runtime_snapshot/common/comsol/create_multipole_round_rods.m",
+      "run_input_name": "common_create_multipole_round_rods",
+      "sha256": "F0B8FEA2FA79E03C0C8C76B67D1C894D2904904593FE218AE5641A9F1491CBBD",
+      "consumers": [
+        "pre_pulse_interface_transport",
+        "pulse_capture"
+      ]
+    },
+    {
+      "id": "common_comsol_runner",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/comsol/run_comsol_r2025b.ps1",
+      "frozen_filename": "runtime_snapshot/common/comsol/run_comsol_r2025b.ps1",
+      "run_input_name": "common_comsol_runner",
+      "consumers": [
+        "pre_pulse_interface_transport",
+        "pulse_capture"
+      ]
+    },
+    {
+      "id": "common_comsol_resolver",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/comsol/resolve_comsol_64.ps1",
+      "frozen_filename": "runtime_snapshot/common/comsol/resolve_comsol_64.ps1",
+      "run_input_name": "common_comsol_resolver",
+      "consumers": [
+        "pre_pulse_interface_transport",
+        "pulse_capture"
+      ]
+    },
+    {
+      "id": "common_comsol_failure_classifier",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/comsol/livelink_failure_classification.ps1",
+      "frozen_filename": "runtime_snapshot/common/comsol/livelink_failure_classification.ps1",
+      "run_input_name": "common_comsol_failure_classifier",
+      "consumers": [
+        "pre_pulse_interface_transport",
+        "pulse_capture"
+      ]
+    },
+    {
+      "id": "common_comsol_environment",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/comsol/livelink_environment.ps1",
+      "frozen_filename": "runtime_snapshot/common/comsol/livelink_environment.ps1",
+      "run_input_name": "common_comsol_environment",
+      "consumers": [
+        "pre_pulse_interface_transport",
+        "pulse_capture"
+      ]
+    },
+    {
+      "id": "common_comsol_startup",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/comsol/livelink_r2025b/comsolstartup.m",
+      "frozen_filename": "runtime_snapshot/common/comsol/livelink_r2025b/comsolstartup.m",
+      "run_input_name": "common_comsol_startup",
+      "consumers": [
+        "pre_pulse_interface_transport",
+        "pulse_capture"
+      ]
+    }
+  ],
+  "runtime_policy": {
+    "copy_into_run_inputs": true,
+    "record_provider_project": true,
+    "record_provider_repo_path": true,
+    "record_source_repo_path": true,
+    "verify_source_and_frozen_sha256_equal": true,
+    "preserve_repo_relative_snapshot_paths": true,
+    "consumer_scoped_selection_required": true,
+    "allow_directory_search": false
+  },
+  "consumer_scope": "rf_multipole_no_acceleration_full_length_family"
+}

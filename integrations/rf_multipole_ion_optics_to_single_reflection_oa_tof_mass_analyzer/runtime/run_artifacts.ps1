@@ -101,69 +101,6 @@ function Resolve-RfDirectChildDirectory {
   return $child
 }
 
-function Resolve-RfDeclaredLegacyRunDirectory {
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory)][string]$WorkspaceRoot,
-    [Parameter(Mandatory)][string]$ProjectDescriptor,
-    [Parameter(Mandatory)][string]$MappingId,
-    [Parameter(Mandatory)][string]$RecordedProjectId,
-    [Parameter(Mandatory)][string]$RunId
-  )
-  $descriptor = Get-Content -LiteralPath $ProjectDescriptor -Raw -Encoding UTF8 |
-    ConvertFrom-Json
-  $mappings = @($descriptor.legacy_identities | Where-Object {
-    $_.mapping_id -eq $MappingId -and $_.project_id -eq $RecordedProjectId
-  })
-  if ($mappings.Count -ne 1) {
-    throw 'Legacy run source must resolve through one declared project mapping.'
-  }
-  $mapping = $mappings[0]
-  if ($mapping.artifact_access -ne 'read_only' -or
-      [bool]$mapping.new_runs_allowed -or
-      $mapping.verification_identity -ne 'recorded_project_id') {
-    throw 'Legacy run source mapping is not an immutable evidence provider.'
-  }
-  $expectedRelativeRoot = "artifacts/projects/$RecordedProjectId"
-  if ([string]$mapping.artifact_root -ne $expectedRelativeRoot) {
-    throw 'Legacy run source artifact root differs from its recorded project identity.'
-  }
-  $workspace = [IO.Path]::GetFullPath($WorkspaceRoot).TrimEnd(
-    [IO.Path]::DirectorySeparatorChar,
-    [IO.Path]::AltDirectorySeparatorChar
-  )
-  $artifactRoot = [IO.Path]::GetFullPath(
-    (Join-Path $workspace ([string]$mapping.artifact_root))
-  )
-  if (-not $artifactRoot.StartsWith(
-      $workspace + [IO.Path]::DirectorySeparatorChar,
-      [StringComparison]::OrdinalIgnoreCase
-  )) {
-    throw 'Legacy run source artifact root escapes the workspace.'
-  }
-  $run = Resolve-RfDirectChildDirectory -ParentRoot (Join-Path $artifactRoot 'runs') `
-    -ChildName $RunId -Role 'legacy source run id'
-  $manifestPath = Join-Path $run 'run_manifest.json'
-  if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
-    throw 'Legacy source run manifest is missing.'
-  }
-  $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 |
-    ConvertFrom-Json
-  if ($manifest.role -ne 'simulation_run_manifest' -or
-      $manifest.run_id -ne $RunId -or
-      $manifest.project -ne $RecordedProjectId -or
-      $manifest.status -ne 'success') {
-    throw 'Legacy source run manifest identity or status differs.'
-  }
-  return [pscustomobject]@{
-    run_dir = $run
-    manifest_path = $manifestPath
-    mapping_id = $MappingId
-    recorded_project_id = $RecordedProjectId
-    artifact_root = [string]$mapping.artifact_root
-  }
-}
-
 function Get-RfManifestInputRecord {
   [CmdletBinding()]
   param(
@@ -276,6 +213,18 @@ function Initialize-RfIntegrationStageBudget {
       [int]$limits.automatic_retry_count -ne 0) {
     throw "Resolved integration engineering-budget stage differs: $StageId"
   }
+  foreach ($limitName in @(
+      'wall_clock_seconds',
+      'transient_run_directory_bytes',
+      'process_tree_working_set_bytes',
+      'minimum_system_available_memory_bytes',
+      'compact_final_retained_bytes'
+    )) {
+    if ($limits.PSObject.Properties.Name -notcontains $limitName -or
+        [long]$limits.$limitName -le 0) {
+      throw "Resolved integration engineering-budget stage has no positive ${limitName}: $StageId"
+    }
+  }
   $stageBudget = Join-Path $InputDir "resolved_resource_budget__$StageId.json"
   Write-RfJson -Path $stageBudget -Value ([ordered]@{
     schema_version = 1
@@ -296,10 +245,14 @@ function Initialize-RfIntegrationStageBudget {
       automatic_retry_count = 0
     }
   })
+  $stageBudgetSha256 = (
+    Get-FileHash -LiteralPath $stageBudget -Algorithm SHA256
+  ).Hash
   return [pscustomobject]@{
     frozen_budget = $frozen
     stage_budget = $stageBudget
-    sha256 = $identity.sha256
+    resolved_budget_sha256 = $identity.sha256
+    stage_budget_sha256 = $stageBudgetSha256
   }
 }
 
@@ -392,17 +345,8 @@ function Confirm-RfFrozenDependencyIdentity {
   $scope = [string]$Dependency.provider_scope
   $provider = [string]$Dependency.provider_project
   $providerRelative = ([string]$Dependency.provider_repo_path).Replace('\','/')
-  if ($scope -eq 'project') {
-    if ($providerRelative -ne "projects/$provider") {
-      throw "Frozen dependency $($Dependency.id) provider identity differs."
-    }
-  } elseif ($scope -eq 'repository_common') {
-    if ($provider -ne 'common' -or $providerRelative -ne 'common') {
-      throw "Frozen dependency $($Dependency.id) common provider identity differs."
-    }
-  } else {
-    throw "Frozen dependency $($Dependency.id) provider scope is invalid."
-  }
+  Assert-RfDependencyProviderIdentity -DependencyId $Dependency.id `
+    -Scope $scope -Provider $provider -ProviderRelative $providerRelative
   $providerRoot = [IO.Path]::GetFullPath((Join-Path $repo $providerRelative))
   if (-not (Test-RfDependencyPathWithin -Path $source -Root $providerRoot)) {
     throw "Frozen dependency $($Dependency.id) source escapes its provider."
@@ -457,6 +401,32 @@ function Test-RfDependencyPathWithin {
   )
 }
 
+function Assert-RfDependencyProviderIdentity {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$DependencyId,
+    [Parameter(Mandatory)][string]$Scope,
+    [Parameter(Mandatory)][string]$Provider,
+    [Parameter(Mandatory)][string]$ProviderRelative
+  )
+  $normalized = $ProviderRelative.Replace('\','/')
+  if ($Scope -eq 'project') {
+    if ($normalized -ne "projects/$Provider") {
+      throw "Dependency $DependencyId provider root differs from project $Provider."
+    }
+  } elseif ($Scope -eq 'repository_common') {
+    if ($Provider -ne 'common' -or $normalized -ne 'common') {
+      throw "Dependency $DependencyId has an invalid repository-common provider."
+    }
+  } elseif ($Scope -eq 'integration') {
+    if ($normalized -ne "integrations/$Provider") {
+      throw "Dependency $DependencyId provider root differs from integration $Provider."
+    }
+  } else {
+    throw "Dependency $DependencyId has unsupported provider scope: $Scope"
+  }
+}
+
 function Copy-RfFrozenDependency {
   [CmdletBinding()]
   param(
@@ -479,18 +449,8 @@ function Copy-RfFrozenDependency {
   $scope = [string]$Dependency.provider_scope
   $provider = [string]$Dependency.provider_project
   $providerRelative = [string]$Dependency.provider_repo_path
-  if ($scope -eq 'project') {
-    $expectedProvider = "projects/$provider"
-    if ($providerRelative.Replace('\','/') -ne $expectedProvider) {
-      throw "Dependency $($Dependency.id) provider root differs from project $provider."
-    }
-  } elseif ($scope -eq 'repository_common') {
-    if ($provider -ne 'common' -or $providerRelative.Replace('\','/') -ne 'common') {
-      throw "Dependency $($Dependency.id) has an invalid repository-common provider."
-    }
-  } else {
-    throw "Dependency $($Dependency.id) has unsupported provider scope: $scope"
-  }
+  Assert-RfDependencyProviderIdentity -DependencyId $Dependency.id `
+    -Scope $scope -Provider $provider -ProviderRelative $providerRelative
 
   $repo = [IO.Path]::GetFullPath($RepoRoot)
   $inputs = [IO.Path]::GetFullPath($InputDir)

@@ -24,6 +24,33 @@ if (-not (Test-Path -LiteralPath $PythonExe -PathType Leaf)) {
     throw "Python 3.11 executable not found: $PythonExe"
 }
 $outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
+if ($SolverAuthorized) {
+    & $PythonExe -m common.contracts.artifact_naming run $RunId
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Solver-authorized execution requires one valid explicit RunId.'
+    }
+    $workspaceRoot = Split-Path -Parent $repoRoot
+    $canonicalRunsRoot = [IO.Path]::GetFullPath(
+        (Join-Path $workspaceRoot (
+            'artifacts\projects\' +
+            'rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer' +
+            '\runs'
+        ))
+    )
+    $canonicalOutput = [IO.Path]::GetFullPath(
+        (Join-Path $canonicalRunsRoot $RunId)
+    )
+    if (-not $outputRoot.Equals(
+            $canonicalOutput,
+            [StringComparison]::OrdinalIgnoreCase
+        ) -or
+        -not ([IO.Path]::GetFileName($outputRoot)).Equals(
+            $RunId,
+            [StringComparison]::Ordinal
+        )) {
+        throw 'Solver execution OutputDirectory must be the canonical RunId directory.'
+    }
+}
 New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
 $resolvedPath = Join-Path $outputRoot 'resolved_connection.json'
 $planPath = Join-Path $outputRoot 'composition_plan.json'

@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "role": "rf_to_oatof_semantic_transfer_phases",
+  "status": "functional_unqualified",
+  "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+  "consumer_scope": "rf_multipole_no_acceleration_full_length_family",
+  "topology_source": "resolved_connection",
+  "active_entrypoint": "workflows/family_source_closure/execute.ps1",
+  "phases": [
+    {
+      "id": "pre_pulse_interface_transport",
+      "solver": "comsol",
+      "entrypoint": "stages/comsol/run_pre_pulse_interface_transport.ps1",
+      "contract": "config/family_pre_pulse_interface_transport.json"
+    },
+    {
+      "id": "pulse_capture",
+      "solver": "comsol",
+      "entrypoint": "stages/comsol/run_pulse_capture.ps1",
+      "contract": "config/family_pulse_capture.json"
+    },
+    {
+      "id": "analyzer_transport",
+      "solver": "simion",
+      "entrypoint": "stages/cross_solver/run_analyzer_transport.ps1",
+      "contract": "config/family_handoff.json"
+    }
+  ],
+  "claims": {
+    "functional_chain_demonstrated": false,
+    "phase_qualification_allowed": false,
+    "formal_promotion_allowed": false
+  }
+}

@@ -235,7 +235,7 @@ def plot(result: dict[str, object], downstream_path: Path, output: Path,
     if crossings:
         axes[1].legend(fontsize=8)
     figure.suptitle(
-        "RF quadrupole to oaTOF analyzer transport\n"
+        "RF multipole to oaTOF analyzer transport\n"
         f"frame={result['frame_id']}; clock epoch={result['clock_epoch_id']}"
     )
     figure.tight_layout()

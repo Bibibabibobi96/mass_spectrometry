@@ -1,4 +1,4 @@
-% Solve the two no-pulse PrePulse field bases on the shared passive-connector geometry.
+% Solve the two no-pulse PrePulse field bases on the shared multipole connector geometry.
 
 reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
 metricsPath = getenv('RF_OATOF_PrePulse_FIELD_METRICS');
@@ -10,6 +10,7 @@ oaBaselinePath = getenv('RF_OATOF_PrePulse_OA_BASELINE');
 resolvedConnectionPath = getenv('RF_OATOF_RESOLVED_CONNECTION');
 resolvedConnectionSha256 = getenv('RF_OATOF_RESOLVED_CONNECTION_SHA256');
 oaComsolDir = getenv('RF_OATOF_PrePulse_OA_COMSOL_DIR');
+multipoleComsolDir = getenv('RF_OATOF_MULTIPOLE_COMSOL_DIR');
 particleInputPath = getenv('RF_OATOF_PrePulse_PARTICLE_INPUT');
 particleOutputPath = getenv('RF_OATOF_PrePulse_PARTICLE_OUTPUT');
 assert(~isempty(reportPath) && ~isempty(metricsPath) && ~isempty(samplesPath), ...
@@ -18,7 +19,8 @@ assert(isfile(contractPath) && isfile(sharedJointPath) && ...
     isfile(rfResolvedPath) && isfile(oaBaselinePath) && ...
     isfile(resolvedConnectionPath) && ~isempty(resolvedConnectionSha256), ...
     'PrePulse field contract inputs are incomplete.');
-assert(isfolder(oaComsolDir), 'The oaTOF COMSOL source directory is missing.');
+assert(isfolder(oaComsolDir) && isfolder(multipoleComsolDir), ...
+    'The oaTOF or common multipole COMSOL source directory is missing.');
 
 fid = fopen(reportPath, 'w');
 assert(fid >= 0, 'Could not create the PrePulse field task report.');
@@ -50,7 +52,8 @@ try
     tag = 'RFOATOF_PrePulse_FIELD';
     [model, comp, context, geometryInfo, meshElementCounts] = ...
         prepare_pre_pulse_interface_transport_field_model( ...
-        contract, resolvedConnection, sharedJoint, rf, oa, oaComsolDir, tag);
+        contract, resolvedConnection, sharedJoint, rf, oa, oaComsolDir, ...
+        multipoleComsolDir, tag);
 
     [probeNames, coordinates] = field_probe_coordinates( ...
         contract, rf, oa, resolvedConnection);

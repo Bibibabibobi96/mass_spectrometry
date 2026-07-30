@@ -306,7 +306,7 @@ class MigrationFixture:
             run = stage_root / stage_run_id(stamp, phase, gap)
             source_identity = {
                 "run_id": source["run_id"],
-                "recorded_project_id": source["project_id"],
+                "project_id": source["project_id"],
                 "manifest_sha256": source["manifest"]["sha256"],
                 "event_sha256": source["events"]["sha256"],
                 "metadata_sha256": source["metadata"]["sha256"],
@@ -367,7 +367,25 @@ class MigrationFixture:
         resolved = parent / "resolved_connection.json"
         receipt = parent / "execution_receipt.json"
         budget = parent / "resolved_engineering_budget.json"
-        write_json(plan, {"selection": {"connection_profile_id": profile_id}})
+        governance = {
+            "runtime_binding_sha256": "A" * 64,
+            "preregistration_sha256": "B" * 64,
+            "oracle_sha256": "C" * 64,
+        }
+        write_json(
+            plan,
+            {
+                "selection": {"connection_profile_id": profile_id},
+                "execution_steps": [
+                    {
+                        "arguments": [
+                            f"{name}={value}"
+                            for name, value in governance.items()
+                        ]
+                    }
+                ],
+            },
+        )
         write_json(
             resolved,
             {
@@ -405,6 +423,7 @@ class MigrationFixture:
                 "composition_plan_sha256": file_sha256(plan),
                 "resolved_connection_sha256": file_sha256(resolved),
                 "resolved_engineering_budget_sha256": file_sha256(budget),
+                **governance,
                 "execution_status": "completed_not_equivalence_evaluated",
                 "equivalence_status": "BLOCKED",
             },
@@ -444,6 +463,13 @@ class MigrationEquivalenceTests(unittest.TestCase):
             parent = fixture.profile_runs[PROFILE_GAP_ONE]
             parent_config_path = parent / "run_config.json"
             parent_config = json.loads(parent_config_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                parent_config["migration_governance"],
+                {
+                    "preregistration_sha256": "B" * 64,
+                    "oracle_sha256": "C" * 64,
+                },
+            )
             analyzer = next(
                 item
                 for item in parent_config["stage_runs"]

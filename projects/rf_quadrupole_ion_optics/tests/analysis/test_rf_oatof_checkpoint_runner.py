@@ -119,11 +119,14 @@ class RfOatofCheckpointRunnerTests(unittest.TestCase):
 
     def test_lifecycle_is_verified_and_never_promotes_stage(self) -> None:
         self.assertIn("[string]$PythonExe", self.runner)
-        self.assertIn("New-RfRunPackage -Python $python", self.runner)
+        self.assertIn(
+            "common\\contracts\\run_artifact_support.ps1", self.runner
+        )
+        self.assertIn("New-RunPackage -Python $python", self.runner)
         self.assertGreaterEqual(
             self.runner.count("Write-VerifiedRunManifest"), 2
         )
-        self.assertIn("Complete-RfFailedRun", self.runner)
+        self.assertIn("Complete-FailedRun", self.runner)
         self.assertIn("--require-status failed", self.runner)
         self.assertIn("diagnostic_only = $true", self.runner)
         self.assertIn("pulse_capture_stage_passed = $false", self.runner)

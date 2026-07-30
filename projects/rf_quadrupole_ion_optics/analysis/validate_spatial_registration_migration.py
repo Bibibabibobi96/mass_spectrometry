@@ -9,6 +9,11 @@ import re
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOT = PROJECT_ROOT.parents[1]
+INTEGRATION_ROOT = (
+    REPOSITORY_ROOT
+    / "integrations"
+    / "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
+)
 POLICY = PROJECT_ROOT / "config" / "spatial_registration_migration_policy.json"
 PYTHON_FILES = (
     PROJECT_ROOT / "analysis" / "build_oatof_handoff.py",
@@ -21,19 +26,16 @@ PYTHON_FILES = (
     REPOSITORY_ROOT / "projects" / "single_reflection_oa_tof_mass_analyzer" / "analysis" / "rf_handoff_adapter.py",
 )
 MATLAB_FILES = (
-    PROJECT_ROOT
-    / "workflows"
-    / "rf_to_oatof_integration"
+    INTEGRATION_ROOT
+    / "stages"
     / "comsol"
     / "build_pre_pulse_interface_transport_model.m",
-    PROJECT_ROOT
-    / "workflows"
-    / "rf_to_oatof_integration"
+    INTEGRATION_ROOT
+    / "stages"
     / "comsol"
     / "solve_pre_pulse_interface_transport_field.m",
-    PROJECT_ROOT
-    / "workflows"
-    / "rf_to_oatof_integration"
+    INTEGRATION_ROOT
+    / "stages"
     / "comsol"
     / "solve_pulse_capture.m",
 )

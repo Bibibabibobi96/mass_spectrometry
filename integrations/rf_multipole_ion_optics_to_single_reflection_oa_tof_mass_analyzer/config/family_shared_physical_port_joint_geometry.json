@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "role": "rf_to_oatof_shared_physical_port_joint_geometry",
+  "status": "authoritative_for_family_connector_and_pulse_stages",
+  "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+  "consumer_scope": "rf_multipole_no_acceleration_full_length_family",
+  "scope": "Family-neutral direct-mating physical port and local joint geometry; family rod count, drive pattern and resolved geometry are consumed from the selected runtime binding.",
+  "authoritative_inputs": {
+    "rf_resolved_geometry": "runtime_binding.contracts.upstream_resolved_design",
+    "resolved_connection": "runtime_resolved_connection",
+    "oatof_baseline": "dependency_contract:oatof_baseline"
+  },
+  "physical_boundaries": {
+    "source_exit_surface": {
+      "frame_id": "multipole_cartesian_z_axis_v1",
+      "geometry": "plane",
+      "local_center_mm": [0.0, 0.0, 80.6],
+      "outward_normal": [0.0, 0.0, 1.0],
+      "bindings": {
+        "local_center_z_mm": {
+          "source_input": "rf_resolved_geometry",
+          "json_pointer": "/interfaces_mm/exit/handoff_plane_z_mm"
+        },
+        "outward_normal": {
+          "source_input": "rf_resolved_geometry",
+          "json_pointer": "/coordinate/axial_axis",
+          "expected_source_value": "+z"
+        }
+      },
+      "physical_aperture": {
+        "shape": "circle",
+        "radius_mm": 3.6,
+        "source_binding": {
+          "source_input": "rf_resolved_geometry",
+          "json_pointer": "/interfaces_mm/exit/aperture_radius_mm"
+        }
+      }
+    },
+    "target_entry_surface": {
+      "frame_id": "oatof_global",
+      "geometry": "plane_on_negative_x_outer_shield_face",
+      "center_mm": [-67.8, 0.0, -18.42918680341103],
+      "outward_normal": [-1.0, 0.0, 0.0],
+      "reference_binding": {
+        "source_input": "oatof_baseline",
+        "derivation": "center_x_mm = accelerator_axis_x - accelerator_bore_half - accelerator_ring_width - accelerator_insulation_gap - accelerator_shield_wall; center_y_mm and center_z_mm use particle_source center"
+      }
+    }
+  },
+  "electrical_interface": {
+    "common_potential_reference": {
+      "potential_V": 0.0,
+      "unit": "V",
+      "source_bindings": [
+        "rf_resolved_geometry:/drive/common_mode_offset_V",
+        "oatof_baseline:/electrodes_V/shield"
+      ],
+      "scope": "Nominal ideal direct-mating reference only."
+    }
+  },
+  "nominal_registration": {
+    "instrument_frame": "oatof_global",
+    "source_component_pose": "resolved_connection.spatial_registration",
+    "source_exit_center_local_mm": [0.0, 0.0, 80.6],
+    "source_exit_center_instrument_mm": [-67.8, 0.0, -18.42918680341103],
+    "target_entry_center_instrument_mm": [-67.8, 0.0, -18.42918680341103],
+    "direct_mating_gap_mm": 0.0,
+    "axis_mapping": "multipole +z -> oa +x; multipole +x -> oa +y; multipole +y -> oa +z"
+  },
+  "local_domain": {
+    "rf_shield_inner_radius_mm": 19.776,
+    "rf_shield_numerical_wall_thickness_mm": 1.0,
+    "oatof_downstream_buffer_after_grid2_mm": 5.0
+  },
+  "port_sweep": {
+    "shape": "rectangle",
+    "center_z_mm": -18.42918680341103,
+    "full_height_z_mm": 0.9,
+    "selected_n100_candidate_full_width_y_mm": 1.0,
+    "particle_release_offset_inside_outer_face_mm": 0.001
+  },
+  "field_basis": {
+    "shared_geometry_required": true,
+    "rf_unit": {
+      "rod_differential_pattern_V": [100.0, -100.0],
+      "rod_assignment_source": "rf_resolved_geometry:/geometry_mm/rod_array/rods[*]/electrode_group",
+      "all_oatof_electrodes_and_grounded_hardware_V": 0.0,
+      "runtime_scale": "V_rf_peak/100[V] * sin(2*pi*f_rf*instrument_time + phase)"
+    }
+  }
+}

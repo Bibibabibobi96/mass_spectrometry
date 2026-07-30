@@ -4,52 +4,25 @@ param(
   [Parameter(Mandatory)][string]$ConnectionProfileId,
   [Parameter(Mandatory)][string]$ResolvedConnection,
   [Parameter(Mandatory)][string]$ResolvedEngineeringBudget,
+  [Parameter(Mandatory)][string]$RuntimeBinding,
+  [string]$SourceBranchId = '',
   [string]$PythonExe = ''
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$supportSource = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\runtime\run_artifacts.ps1')).Path
+$integrationRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+$repoRoot = (Resolve-Path (Join-Path $integrationRoot '..\..')).Path
+. (Join-Path $integrationRoot 'runtime\runtime_binding.ps1')
+$runtime = Resolve-RfOatofRuntimeBinding -RepoRoot $repoRoot `
+  -ResolvedConnection $ResolvedConnection -RuntimeBinding $RuntimeBinding `
+  -ExpectedConnectionProfileId $ConnectionProfileId `
+  -SourceBranchId $SourceBranchId
+$upstreamProjectId = $runtime.upstream_project_id
+$projectRoot = Join-Path $repoRoot "projects\$upstreamProjectId"
+$supportSource = $runtime.run_artifact_support
 . $supportSource
-$projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
-$repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
-
-function Copy-PrePulseLocalSnapshotInput {
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory)][string]$RepoRoot,
-    [Parameter(Mandatory)][string]$SnapshotRoot,
-    [Parameter(Mandatory)][string]$SourceRepoPath
-  )
-  $source = [IO.Path]::GetFullPath((Join-Path $RepoRoot $SourceRepoPath))
-  $destination = [IO.Path]::GetFullPath((Join-Path $SnapshotRoot $SourceRepoPath))
-  $snapshot = [IO.Path]::GetFullPath($SnapshotRoot).TrimEnd(
-    [IO.Path]::DirectorySeparatorChar,
-    [IO.Path]::AltDirectorySeparatorChar
-  )
-  if (-not $destination.StartsWith(
-      $snapshot + [IO.Path]::DirectorySeparatorChar,
-      [StringComparison]::OrdinalIgnoreCase
-  )) { throw "PrePulse local snapshot destination escapes inputs: $SourceRepoPath" }
-  if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
-    throw "PrePulse local snapshot source is missing: $SourceRepoPath"
-  }
-  if (Test-Path -LiteralPath $destination) {
-    throw "PrePulse local snapshot destination already exists: $destination"
-  }
-  New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
-  Copy-Item -LiteralPath $source -Destination $destination
-  $sha256 = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
-  if ($sha256 -ne (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash) {
-    throw "PrePulse local snapshot changed while copied: $SourceRepoPath"
-  }
-  return [pscustomobject]@{
-    source_repo_path = $SourceRepoPath.Replace('\','/')
-    frozen_path = $destination
-    sha256 = $sha256
-  }
-}
 
 function Invoke-PrePulseSnapshotPython {
   [CmdletBinding()]
@@ -77,9 +50,11 @@ function Invoke-PrePulseSnapshotPython {
 }
 
 $workspaceRoot = Split-Path -Parent $repoRoot
-$artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_ion_optics'
-$contractSource = Join-Path $projectRoot 'config\rf_to_oatof_pre_pulse_passive_connector.json'
-$dependencyContractSource = Join-Path $projectRoot 'config\rf_to_oatof_pre_pulse_dependencies.json'
+$artifactRoot = Join-Path $workspaceRoot "artifacts\projects\$upstreamProjectId"
+$contractSource = $runtime.contracts.pre_pulse_contract
+$dependencyContractSource = $runtime.contracts.dependency_contract
+$sourceContractSource = $runtime.contracts.source_contract
+$handoffContractSource = $runtime.contracts.handoff_contract
 $baseContractDocument = Get-Content -LiteralPath $contractSource -Raw -Encoding UTF8 | ConvertFrom-Json
 if (-not [bool]$baseContractDocument.permissions.field_solve_allowed) {
   throw 'The PrePulse contract does not authorize a field solve.'
@@ -100,7 +75,15 @@ $gapMm = [double]$resolvedConnectionDocument.connector.length_mm
 if (-not [double]::IsFinite($gapMm) -or $gapMm -lt 0) {
   throw 'The PrePulse connector gap must be finite and non-negative.'
 }
-if ([double]$resolvedConnectionDocument.spatial_registration.actual_gap_mm -ne $gapMm) {
+$positionToleranceMm = [double](
+  $resolvedConnectionDocument.spatial_registration.position_tolerance_mm
+)
+if (-not [double]::IsFinite($positionToleranceMm) -or
+    $positionToleranceMm -le 0 -or
+    [Math]::Abs(
+      [double]$resolvedConnectionDocument.spatial_registration.actual_gap_mm -
+      $gapMm
+    ) -gt $positionToleranceMm) {
   throw 'Resolved connector length differs from the resolved spatial gap.'
 }
 if ($resolvedConnectionDocument.potential_alignment.mode -ne 'continuous' -or
@@ -122,7 +105,7 @@ $summaryRole = if ($Particles) { 'rf_to_oatof_pre_pulse_interface_transport_n100
   else { 'rf_to_oatof_pre_pulse_no_pulse_field_summary' }
 $software = @('COMSOL 6.4','MATLAB R2025b','Python 3.11')
 $package = New-RfRunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
-  -RunId $RunId -Project 'rf_quadrupole_ion_optics' -Mode $mode -Software $software `
+  -RunId $RunId -Project $upstreamProjectId -Mode $mode -Software $software `
   -RetentionContractEnabled -RetentionClass compact
 $manifestToolRoot = $repoRoot
 $resourceBudgetExceeded = $false
@@ -138,9 +121,9 @@ try {
   $runner = Join-Path $inputDir 'run_pre_pulse_interface_transport_field.ps1.txt'
   $support = Join-Path $inputDir 'run_artifacts.ps1.txt'
   $snapshotRoot = Join-Path $inputDir 'runtime_snapshot'
-  $snapshotRfProject = Join-Path $snapshotRoot 'projects\rf_quadrupole_ion_optics'
   $contract = Join-Path $inputDir 'rf_to_oatof_pre_pulse_passive_connector.json'
-  $oatofHandoff = Join-Path $snapshotRfProject 'analysis\build_oatof_handoff.py'
+  $sourceContract = Join-Path $inputDir 'rf_multipole_oatof_source_contract.json'
+  $runtimeBindingFrozen = Join-Path $inputDir 'runtime_binding.json'
   $frozenResolvedConnection = Join-Path $inputDir 'resolved_connection.json'
   $particleInput = $null
   $particleOutput = $null
@@ -150,6 +133,8 @@ try {
   Copy-Item -LiteralPath $PSCommandPath -Destination $runner
   Copy-Item -LiteralPath $supportSource -Destination $support
   Copy-Item -LiteralPath $contractSource -Destination $contract
+  Copy-Item -LiteralPath $sourceContractSource -Destination $sourceContract
+  Copy-Item -LiteralPath $runtime.binding_path -Destination $runtimeBindingFrozen
   Copy-Item -LiteralPath $ResolvedConnection -Destination $frozenResolvedConnection
   $resolvedConnectionSha256 = (
     Get-FileHash -LiteralPath $ResolvedConnection -Algorithm SHA256
@@ -159,8 +144,17 @@ try {
     throw 'Resolved connection changed while frozen into the PrePulse run.'
   }
 
-  $dependencyContract = Join-Path $snapshotRoot `
-    'projects\rf_quadrupole_ion_optics\config\rf_to_oatof_pre_pulse_dependencies.json'
+  $dependencySourceDocument = Get-Content -LiteralPath $dependencyContractSource `
+    -Raw -Encoding UTF8 | ConvertFrom-Json
+  $dependencySelf = @(
+    $dependencySourceDocument.dependencies |
+      Where-Object { [string]$_.id -eq 'rf_dependency_contract_snapshot' }
+  )
+  if ($dependencySelf.Count -ne 1) {
+    throw 'PrePulse dependency contract requires one self-snapshot identity.'
+  }
+  $dependencyContract = Join-Path $inputDir `
+    ([string]$dependencySelf[0].frozen_filename)
   $dependencyContractIdentity = Copy-RfStableFile -SourceRunRoot $repoRoot `
     -SourcePath $dependencyContractSource -Destination $dependencyContract `
     -Role 'PrePulse dependency contract'
@@ -181,6 +175,7 @@ try {
   $dependencyIdentities = [ordered]@{}
   $dependencyPaths = @{}
   $dependencySnapshotPaths = @{}
+  $dependencyCompatibilityPaths = @{}
   foreach ($dependency in $selectedDependencies) {
     if ([string]$dependency.id -eq 'rf_dependency_contract_snapshot') {
       $identity = Confirm-RfFrozenDependencyIdentity -RepoRoot $repoRoot `
@@ -208,18 +203,7 @@ try {
     }
     $dependencyPaths[$identity.id] = $identity.frozen_path
     $dependencySnapshotPaths[$identity.id] = $identity.snapshot_path
-  }
-  $localSnapshotIdentities = [ordered]@{}
-  foreach ($sourceRepoPath in @(
-    'projects/rf_quadrupole_ion_optics/analysis/build_oatof_handoff.py'
-  )) {
-    $identity = Copy-PrePulseLocalSnapshotInput -RepoRoot $repoRoot -SnapshotRoot $snapshotRoot `
-      -SourceRepoPath $sourceRepoPath
-    $localSnapshotIdentities[[IO.Path]::GetFileNameWithoutExtension($sourceRepoPath)] = [ordered]@{
-      source_repo_path = $identity.source_repo_path
-      frozen_path = $identity.frozen_path
-      sha256 = $identity.sha256
-    }
+    $dependencyCompatibilityPaths[$identity.id] = $identity.compatibility_path
   }
   $manifestToolRoot = $snapshotRoot
   if (-not $dependencySnapshotPaths['rf_dependency_contract_snapshot'].Equals(
@@ -231,12 +215,25 @@ try {
   $oaBaseline = $dependencyPaths['oatof_baseline']
   $oaBaselineSnapshot = $dependencySnapshotPaths['oatof_baseline']
   $oaBuilder = $dependencyPaths['oatof_accelerator_geometry_builder']
+  $oatofHandoff = if ($runtime.source_contract.adapter.callable -eq
+      'build_handoff') {
+    $dependencySnapshotPaths['rf_oatof_handoff_builder']
+  } else {
+    $dependencySnapshotPaths['rf_family_source_bundle_publisher']
+  }
+  $multipoleRodBuilder =
+    $dependencySnapshotPaths['common_create_multipole_round_rods']
   $frozenManifestVerifier = $dependencySnapshotPaths['common_verify_run_manifest']
   $frozenComsolRunner = $dependencySnapshotPaths['common_comsol_runner']
+  $handoffBuilder = $oatofHandoff
   $frozenResourceBudgetSupport =
     $dependencySnapshotPaths['common_resource_budget_support']
   if (-not (Test-Path -LiteralPath $frozenResourceBudgetSupport -PathType Leaf)) {
     throw 'PrePulse frozen resource-budget support is missing.'
+  }
+  if (-not (Test-Path -LiteralPath $oatofHandoff -PathType Leaf) -or
+      -not (Test-Path -LiteralPath $multipoleRodBuilder -PathType Leaf)) {
+    throw 'PrePulse handoff adapter or common multipole rod builder is missing.'
   }
   . $frozenResourceBudgetSupport
   $budgetBinding = Initialize-RfIntegrationStageBudget `
@@ -250,70 +247,130 @@ try {
   $contractDocument = Get-Content -LiteralPath $contract -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($Particles) {
     $candidate = $contractDocument.particle_runtime
-    $binding = $candidate.source_artifact_binding
-    $descriptorDependencyId = [string]$binding.project_descriptor_dependency_id
-    if (-not $dependencySnapshotPaths.ContainsKey($descriptorDependencyId)) {
-      throw 'PrePulse source artifact binding has no frozen project descriptor.'
+    $sourceContractDocument = $runtime.source_contract
+    $sourceRecord = $runtime.source_record
+    $recordedProjectId = $runtime.recorded_project_id
+    if ([int]$candidate.source_particles -ne
+        [int]$sourceRecord.particle_count) {
+      throw 'PrePulse contract particle count differs from the runtime-bound source.'
     }
-    $sourceIdentity = Resolve-RfDeclaredLegacyRunDirectory `
-      -WorkspaceRoot $workspaceRoot `
-      -ProjectDescriptor $dependencySnapshotPaths[$descriptorDependencyId] `
-      -MappingId ([string]$binding.legacy_mapping_id) `
-      -RecordedProjectId ([string]$binding.recorded_project_id) `
-      -RunId ([string]$candidate.source_run_id)
-    $sourceRun = $sourceIdentity.run_dir
-    $sourceManifestOriginal = $sourceIdentity.manifest_path
-    $sourceEventsOriginal = Join-Path $sourceRun ([string]$candidate.source_event_path)
-    $sourceMetadataOriginal = Join-Path $sourceRun ([string]$candidate.source_metadata_path)
+    $sourceManifestOriginal = $runtime.source_manifest
+    $sourceEventsOriginal = $runtime.source_state
+    $sourceMetadataOriginal = $runtime.source_metadata
     Invoke-PrePulseSnapshotPython -Python $python -SnapshotRoot $snapshotRoot -Arguments @(
-      $frozenManifestVerifier,$sourceManifestOriginal,'--require-status','success'
+      $frozenManifestVerifier,$sourceManifestOriginal,
+      '--require-status','success',
+      '--require-run-id',([string]$sourceRecord.run_id),
+      '--require-project',$recordedProjectId
     ) -FailureMessage 'The frozen PrePulse particle source manifest is invalid.'
     $sourceManifest = Join-Path $inputDir 'source_run_manifest.json'
-    $sourceEvents = Join-Path $inputDir ([System.IO.Path]::GetFileName([string]$candidate.source_event_path))
+    $sourceEvents = Join-Path $inputDir (
+      [System.IO.Path]::GetFileName($sourceEventsOriginal)
+    )
     $sourceMetadata = Join-Path $inputDir 'particle_source_metadata.json'
     $handoffBuilder = $oatofHandoff
-    $handoffProjectRoot = Join-Path $inputDir 'handoff_project_snapshot'
-    $handoffConfigDir = Join-Path $handoffProjectRoot 'config'
-    $handoffTargetConfigDir = Join-Path $inputDir 'single_reflection_oa_tof_mass_analyzer\config'
-    New-Item -ItemType Directory -Path $handoffConfigDir,$handoffTargetConfigDir -Force | Out-Null
-    $handoffContract = Join-Path $handoffConfigDir 'rf_to_oatof_handoff.json'
-    $energyMatchContract = Join-Path $handoffConfigDir 'rf_to_oatof_energy_match_candidate.json'
-    $sourceInterfaceContract = Join-Path $handoffConfigDir 'interface_contract.json'
-    $energyMatchContractSource = Join-Path $projectRoot 'config\rf_to_oatof_energy_match_candidate.json'
-    $sourceInterfaceContractSource = Join-Path $projectRoot 'config\interface_contract.json'
-    $sourceBaseline = Join-Path $handoffConfigDir 'baseline.json'
-    $targetBaseline = Join-Path $handoffTargetConfigDir 'baseline.json'
-    Copy-Item -LiteralPath $sourceManifestOriginal -Destination $sourceManifest
-    Copy-Item -LiteralPath $sourceEventsOriginal -Destination $sourceEvents
-    Copy-Item -LiteralPath $sourceMetadataOriginal -Destination $sourceMetadata
-    Copy-Item -LiteralPath (Join-Path $projectRoot 'config\rf_to_oatof_handoff.json') -Destination $handoffContract
-    Copy-Item -LiteralPath (Join-Path $projectRoot 'config\baseline.json') -Destination $sourceBaseline
-    Copy-Item -LiteralPath $oaBaselineSnapshot -Destination $targetBaseline
-    Copy-Item -LiteralPath $energyMatchContractSource -Destination $energyMatchContract
-    Copy-Item -LiteralPath $sourceInterfaceContractSource -Destination $sourceInterfaceContract
+    $sourceManifestIdentity = Copy-RfStableFile -SourceRunRoot $workspaceRoot `
+      -SourcePath $sourceManifestOriginal -Destination $sourceManifest `
+      -Role 'runtime-bound source manifest'
+    $sourceEventsIdentity = Copy-RfStableFile -SourceRunRoot $workspaceRoot `
+      -SourcePath $sourceEventsOriginal -Destination $sourceEvents `
+      -Role 'runtime-bound source state'
+    $sourceMetadataIdentity = Copy-RfStableFile -SourceRunRoot $workspaceRoot `
+      -SourcePath $sourceMetadataOriginal -Destination $sourceMetadata `
+      -Role 'runtime-bound source metadata'
     $particleInput = Join-Path $inputDir 'canonical_rf_exit_at_pre_pulse_connector.csv'
     $particleIon = Join-Path $inputDir 'rf_exit_at_pre_pulse_connector.ion'
     $particleRowMap = Join-Path $inputDir 'particle_row_map.csv'
     $particleMetadata = Join-Path $inputDir 'pre_pulse_handoff_metadata.json'
-    Invoke-PrePulseSnapshotPython -Python $python -SnapshotRoot $snapshotRoot -Arguments @(
-      '-m','projects.rf_quadrupole_ion_optics.analysis.build_oatof_handoff',
-      '--convert','--contract',$handoffContract,
-      '--resolved-connection',$frozenResolvedConnection,
-      '--source-csv',$sourceEvents,'--source-manifest',$sourceManifest,
-      '--source-manifest-project-id',$sourceIdentity.recorded_project_id,
-      '--canonical-output',$particleInput,'--ion-output',$particleIon,
-      '--row-map-output',$particleRowMap,'--metadata-output',$particleMetadata,
-      '--solver-clock','instrument_time'
-    ) -AdditionalEnvironment @{RF_HANDOFF_PROJECT_ROOT=$handoffProjectRoot} `
-      -FailureMessage 'PrePulse canonical particle-source conversion failed.'
+    if ($sourceContractDocument.adapter.callable -eq 'build_handoff') {
+      if ((Get-FileHash -LiteralPath $handoffBuilder -Algorithm SHA256).Hash -ne
+          (Get-FileHash -LiteralPath $runtime.source_adapter -Algorithm SHA256).Hash) {
+        throw 'Frozen dependency adapter differs from the runtime-bound source adapter.'
+      }
+      $handoffProjectRoot = Join-Path $inputDir 'handoff_project_snapshot'
+      $handoffConfigDir = Join-Path $handoffProjectRoot 'config'
+      $handoffTargetConfigDir =
+        Join-Path $inputDir 'single_reflection_oa_tof_mass_analyzer\config'
+      New-Item -ItemType Directory -Path `
+        $handoffConfigDir,$handoffTargetConfigDir -Force | Out-Null
+      $handoffContract = Join-Path $handoffConfigDir 'rf_to_oatof_handoff.json'
+      $energyMatchContract =
+        Join-Path $handoffConfigDir 'rf_to_oatof_energy_match_candidate.json'
+      $sourceInterfaceContract =
+        Join-Path $handoffConfigDir 'interface_contract.json'
+      $sourceBaseline = Join-Path $handoffConfigDir 'baseline.json'
+      $targetBaseline = Join-Path $handoffTargetConfigDir 'baseline.json'
+      Copy-Item -LiteralPath $handoffContractSource -Destination $handoffContract
+      Copy-Item -LiteralPath `
+        $runtime.source_adapter_dependencies.source_baseline `
+        -Destination $sourceBaseline
+      Copy-Item -LiteralPath $oaBaselineSnapshot -Destination $targetBaseline
+      Copy-Item -LiteralPath `
+        $runtime.source_adapter_dependencies.energy_match_contract `
+        -Destination $energyMatchContract
+      Copy-Item -LiteralPath `
+        $runtime.source_adapter_dependencies.source_interface_contract `
+        -Destination $sourceInterfaceContract
+      Invoke-PrePulseSnapshotPython -Python $python -SnapshotRoot $snapshotRoot `
+        -Arguments @(
+          $handoffBuilder,
+          '--convert','--contract',$handoffContract,
+          '--resolved-connection',$frozenResolvedConnection,
+          '--source-csv',$sourceEvents,'--source-manifest',$sourceManifest,
+          '--source-manifest-project-id',$recordedProjectId,
+          '--canonical-output',$particleInput,'--ion-output',$particleIon,
+          '--row-map-output',$particleRowMap,'--metadata-output',$particleMetadata,
+          '--solver-clock','instrument_time'
+        ) -AdditionalEnvironment @{RF_HANDOFF_PROJECT_ROOT=$handoffProjectRoot} `
+        -FailureMessage 'PrePulse legacy particle-source conversion failed.'
+    } elseif ($sourceContractDocument.adapter.callable -eq
+        'publish_family_source_bundle') {
+      $handoffBuilder = $runtime.source_adapter
+      if ((Get-FileHash -LiteralPath $oatofHandoff -Algorithm SHA256).Hash -ne
+          (Get-FileHash -LiteralPath $handoffBuilder -Algorithm SHA256).Hash) {
+        throw 'Frozen family publisher differs from the runtime-bound source adapter.'
+      }
+      $handoffBuilder = $oatofHandoff
+      $handoffContract = Join-Path $inputDir 'handoff_publication_contract.json'
+      $sourceParticleSource = Join-Path $inputDir 'particle_source.csv'
+      Copy-Item -LiteralPath `
+        $runtime.source_adapter_dependencies.handoff_publication_contract `
+        -Destination $handoffContract
+      $sourceParticleSourceIdentity = Copy-RfStableFile `
+        -SourceRunRoot $workspaceRoot `
+        -SourcePath $runtime.source_particle_source `
+        -Destination $sourceParticleSource `
+        -Role 'runtime-bound canonical mother source'
+      Invoke-PrePulseSnapshotPython -Python $python -SnapshotRoot $snapshotRoot `
+        -Arguments @(
+          $handoffBuilder,
+          '--handoff-contract',$handoffContract,
+          '--resolved-connection',$frozenResolvedConnection,
+          '--state',$sourceEvents,'--source',$sourceParticleSource,
+          '--canonical-output',$particleInput,'--ion-output',$particleIon,
+          '--row-map-output',$particleRowMap,'--metadata-output',$particleMetadata
+        ) -FailureMessage 'PrePulse family particle-source publication failed.'
+    } else {
+      throw 'Runtime source adapter callable is unsupported by PrePulse.'
+    }
     $sourceParticleIdentity = [ordered]@{
-      run_id = [string]$candidate.source_run_id
-      legacy_mapping_id = $sourceIdentity.mapping_id
-      recorded_project_id = $sourceIdentity.recorded_project_id
-      artifact_root = $sourceIdentity.artifact_root
-      manifest_sha256 = (Get-FileHash -LiteralPath $sourceManifestOriginal -Algorithm SHA256).Hash
-      event_sha256 = (Get-FileHash -LiteralPath $sourceEventsOriginal -Algorithm SHA256).Hash
-      metadata_sha256 = (Get-FileHash -LiteralPath $sourceMetadataOriginal -Algorithm SHA256).Hash
+      run_id = [string]$sourceRecord.run_id
+      project_id = $recordedProjectId
+      particle_count = [int]$sourceRecord.particle_count
+      manifest_sha256 = $sourceManifestIdentity.sha256
+      event_sha256 = $sourceEventsIdentity.sha256
+      metadata_sha256 = $sourceMetadataIdentity.sha256
+      adapter_sha256 = (
+        Get-FileHash -LiteralPath $handoffBuilder -Algorithm SHA256
+      ).Hash
+    }
+    if (-not [string]::IsNullOrWhiteSpace($runtime.source_branch_id)) {
+      $sourceParticleIdentity.source_branch_id = $runtime.source_branch_id
+      $sourceParticleIdentity.solver_id = $runtime.source_solver_id
+      $sourceParticleIdentity.particle_source_sha256 = (
+        Get-FileHash -LiteralPath $runtime.source_particle_source `
+          -Algorithm SHA256
+      ).Hash
     }
     $particleOutput = Join-Path $resultDir 'pre_pulse_interface_transport_particles.csv'
   }
@@ -323,7 +380,7 @@ try {
   $runConfiguration = [ordered]@{
     schema_version = 2
     run_id = $RunId
-    project = 'rf_quadrupole_ion_optics'
+    project = $upstreamProjectId
     mode = $mode
     project_root = $repoRoot
     inputs = [ordered]@{
@@ -332,8 +389,10 @@ try {
       field_builder = $fieldBuilder
       runner = $runner
       run_artifact_support = $support
+      runtime_binding = $runtimeBindingFrozen
+      source_contract = $sourceContract
       pre_pulse_contract = $contract
-      oatof_handoff_library = $oatofHandoff
+      oatof_handoff_library = $handoffBuilder
       dependency_contract = $dependencyContract
       shared_physical_port_joint_geometry = $sharedJoint
       rf_resolved_geometry = $rfResolved
@@ -345,11 +404,15 @@ try {
       resolved_stage_resource_budget = $budgetBinding.stage_budget
     }
     dependency_identities = $dependencyIdentities
-    local_snapshot_identities = $localSnapshotIdentities
+    resource_budget_identity = [ordered]@{
+      resolved_budget_sha256 = $budgetBinding.resolved_budget_sha256
+      stage_budget_sha256 = $budgetBinding.stage_budget_sha256
+    }
     source_particle_identity = if ($Particles) { $sourceParticleIdentity } else { $null }
     parameters = [ordered]@{
       connector_gap_mm = $gapMm
       connection_profile_id = $ConnectionProfileId
+      source_branch_id = $runtime.source_branch_id
       resolved_connection_sha256 = $resolvedConnectionSha256
       dependency_consumer_id = $dependencyConsumer
       field_bases = @('oatof_static','rf_unit_100_V')
@@ -378,10 +441,14 @@ try {
     $runConfiguration.inputs.source_metadata = $sourceMetadata
     $runConfiguration.inputs.handoff_builder = $handoffBuilder
     $runConfiguration.inputs.handoff_contract = $handoffContract
-    $runConfiguration.inputs.handoff_source_baseline = $sourceBaseline
-    $runConfiguration.inputs.handoff_target_baseline = $targetBaseline
-    $runConfiguration.inputs.energy_match_contract = $energyMatchContract
-    $runConfiguration.inputs.source_interface_contract = $sourceInterfaceContract
+    if ($sourceContractDocument.adapter.callable -eq 'build_handoff') {
+      $runConfiguration.inputs.handoff_source_baseline = $sourceBaseline
+      $runConfiguration.inputs.handoff_target_baseline = $targetBaseline
+      $runConfiguration.inputs.energy_match_contract = $energyMatchContract
+      $runConfiguration.inputs.source_interface_contract = $sourceInterfaceContract
+    } else {
+      $runConfiguration.inputs.canonical_mother_source = $sourceParticleSource
+    }
     $runConfiguration.inputs.particle_ion = $particleIon
     $runConfiguration.inputs.particle_row_map = $particleRowMap
     $runConfiguration.inputs.particle_handoff_metadata = $particleMetadata
@@ -401,7 +468,7 @@ try {
     'RF_OATOF_PrePulse_FIELD_METRICS','RF_OATOF_PrePulse_FIELD_SAMPLES','RF_OATOF_PrePulse_CONTRACT',
     'RF_OATOF_PrePulse_SHARED_JOINT_CONTRACT','RF_OATOF_PrePulse_RF_RESOLVED','RF_OATOF_PrePulse_OA_BASELINE',
     'RF_OATOF_RESOLVED_CONNECTION','RF_OATOF_RESOLVED_CONNECTION_SHA256',
-    'RF_OATOF_PrePulse_OA_COMSOL_DIR',
+    'RF_OATOF_PrePulse_OA_COMSOL_DIR','RF_OATOF_MULTIPOLE_COMSOL_DIR',
     'RF_OATOF_PrePulse_PARTICLE_INPUT','RF_OATOF_PrePulse_PARTICLE_OUTPUT'
   )
   $oldEnvironment = Save-RfEnvironment -Names $environmentNames
@@ -417,6 +484,8 @@ try {
     $env:RF_OATOF_RESOLVED_CONNECTION_SHA256 = $resolvedConnectionSha256
     $env:RF_OATOF_PrePulse_OA_BASELINE = $oaBaseline
     $env:RF_OATOF_PrePulse_OA_COMSOL_DIR = $inputDir
+    $env:RF_OATOF_MULTIPOLE_COMSOL_DIR =
+      Split-Path -Parent $multipoleRodBuilder
     if ($Particles) {
       $env:RF_OATOF_PrePulse_PARTICLE_INPUT = $particleInput
       $env:RF_OATOF_PrePulse_PARTICLE_OUTPUT = $particleOutput

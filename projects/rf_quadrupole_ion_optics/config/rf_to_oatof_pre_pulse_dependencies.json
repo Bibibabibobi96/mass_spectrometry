@@ -258,7 +258,8 @@
       "source_repo_path": "projects/rf_quadrupole_ion_optics/analysis/build_oatof_handoff.py",
       "frozen_filename": "runtime_snapshot/projects/rf_quadrupole_ion_optics/analysis/build_oatof_handoff.py",
       "run_input_name": "rf_oatof_handoff_builder",
-      "consumers": ["analyzer_transport"]
+      "sha256": "4F83E5FABB44D58C4E70CF7EB16EA5C5EC5D0F0410FB18D4F7834451B32EF26E",
+      "consumers": ["pre_pulse_interface_transport", "analyzer_transport"]
     },
     {
       "id": "common_rigid_transform",
@@ -389,6 +390,17 @@
       "frozen_filename": "runtime_snapshot/common/require_powershell7.ps1",
       "run_input_name": "common_require_powershell7",
       "consumers": ["pre_pulse_interface_transport", "pulse_capture", "analyzer_transport"]
+    },
+    {
+      "id": "common_create_multipole_round_rods",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/comsol/create_multipole_round_rods.m",
+      "frozen_filename": "runtime_snapshot/common/comsol/create_multipole_round_rods.m",
+      "run_input_name": "common_create_multipole_round_rods",
+      "sha256": "F0B8FEA2FA79E03C0C8C76B67D1C894D2904904593FE218AE5641A9F1491CBBD",
+      "consumers": ["pre_pulse_interface_transport", "pulse_capture"]
     },
     {
       "id": "common_comsol_runner",

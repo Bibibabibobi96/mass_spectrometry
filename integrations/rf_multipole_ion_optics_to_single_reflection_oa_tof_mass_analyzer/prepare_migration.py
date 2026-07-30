@@ -36,6 +36,24 @@ def prepare_migration(
     profile_ids = {
         profile["connection_profile_id"] for profile in profile_registry["profiles"]
     }
+    preregistration_document = json.loads(
+        preregistration_path.read_text(encoding="utf-8-sig")
+    )
+    preregistered_profile_ids = {
+        item["connection_profile_id"]
+        for item in preregistration_document.get("profiles", [])
+    }
+    if (
+        not preregistered_profile_ids
+        or not preregistered_profile_ids.issubset(profile_ids)
+    ):
+        raise ContractError(
+            "migration preregistration profiles are not registered connections"
+        )
+    if profile_id not in preregistered_profile_ids:
+        raise ContractError(
+            "connection profile is not a migration-preregistered profile"
+        )
     adapter_registry = load_execution_adapter_registry(adapter_registry_path)
     if adapter_registry["integration_id"] != profile_registry["integration_id"]:
         raise ContractError("execution adapter integration identity differs")
@@ -44,10 +62,30 @@ def prepare_migration(
         profile_id,
         repo_root=root,
     )
+    runtime_binding_path = (root / mapping["runtime_binding_path"]).resolve()
+    runtime_binding = json.loads(
+        runtime_binding_path.read_text(encoding="utf-8-sig")
+    )
+    validate_schema(
+        runtime_binding,
+        "rf_multipole_oatof_runtime_binding.schema.json",
+    )
+    source_record = runtime_binding["contracts"]["source_contract"]
+    source_contract_path = (root / source_record["path"]).resolve()
+    if (
+        not source_contract_path.is_relative_to(root)
+        or not source_contract_path.is_file()
+        or file_sha256(source_contract_path) != source_record["sha256"]
+    ):
+        raise ContractError("runtime source contract is missing, stale or escapes repo")
+    validate_schema(
+        json.loads(source_contract_path.read_text(encoding="utf-8-sig")),
+        "rf_multipole_oatof_source_contract.schema.json",
+    )
     preregistration = validate_migration_preregistration(
         preregistration_path,
         repo_root=root,
-        expected_profile_ids=profile_ids,
+        expected_profile_ids=preregistered_profile_ids,
     )
     oracle_path = root / preregistration["legacy_oracle"]["path"]
     oracle = json.loads(oracle_path.read_text(encoding="utf-8"))
@@ -79,8 +117,11 @@ def prepare_migration(
             "adapter": "powershell",
             "entrypoint": mapping["adapter_entrypoint"],
             "arguments": [
-                f"workflow_entrypoint={mapping['workflow_entrypoint']}",
                 f"adapter_registry_sha256={file_sha256(adapter_registry_path)}",
+                f"preregistration_sha256={file_sha256(preregistration_path)}",
+                f"oracle_sha256={file_sha256(oracle_path)}",
+                f"runtime_binding_path={mapping['runtime_binding_path']}",
+                f"runtime_binding_sha256={mapping['runtime_binding_sha256']}",
                 "resolved_budget_filename=resolved_engineering_budget.json",
                 f"resolved_budget_sha256={file_sha256(resolved_budget_path)}",
             ],

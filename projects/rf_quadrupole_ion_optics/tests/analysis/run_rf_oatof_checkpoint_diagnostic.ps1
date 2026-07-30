@@ -54,7 +54,7 @@ $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_ion_optics'
 $runsRoot = Join-Path $artifactRoot 'runs'
 $supportSource = (
-  Resolve-Path (Join-Path $projectRoot 'runtime\run_artifacts.ps1')
+  Resolve-Path (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 ).Path
 . $supportSource
 
@@ -75,7 +75,7 @@ if ([string]::IsNullOrWhiteSpace($RunId)) {
     '__analysis__python__rf-oatof-checkpoint-diagnostic__n100'
 }
 $software = @('Python 3.11')
-$package = New-RfRunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
+$package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project 'rf_quadrupole_ion_optics' `
   -Mode 'rf_to_oatof_checkpoint_diagnostic_n100' -Software $software
 
@@ -306,8 +306,8 @@ try {
     }
     formal_gate_passed = $false
   }
-  Write-RfJson -Path $package.run_config -Depth 9 -Value $runConfiguration
-  Write-RfJson -Path $package.summary -Value ([ordered]@{
+  Write-RunJson -Path $package.run_config -Depth 9 -Value $runConfiguration
+  Write-RunJson -Path $package.summary -Value ([ordered]@{
     schema_version = 1
     role = 'rf_to_oatof_checkpoint_diagnostic_summary'
     status = 'interrupted'
@@ -316,7 +316,7 @@ try {
   Write-VerifiedRunManifest -Python $package.python -RepoRoot $repoRoot `
     -RunConfig $package.run_config -Status interrupted -Software $software
 
-  $analysisEnvironment = Save-RfEnvironment -Names @('PYTHONPATH')
+  $analysisEnvironment = Save-RunEnvironment -Names @('PYTHONPATH')
   try {
     $env:PYTHONPATH = $repoRoot
     & $package.python $analysis `
@@ -340,7 +340,7 @@ try {
       throw 'RF-to-oaTOF checkpoint analysis failed.'
     }
   } finally {
-    Restore-RfEnvironment -Names @('PYTHONPATH') -Snapshot $analysisEnvironment
+    Restore-RunEnvironment -Names @('PYTHONPATH') -Snapshot $analysisEnvironment
   }
   $result = Get-Content -LiteralPath $metrics -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($result.role -ne 'rf_to_oatof_same_id_checkpoint_diagnostic' -or
@@ -356,7 +356,7 @@ try {
     throw 'Checkpoint output violates the diagnostic-only N=100 contract.'
   }
 
-  Write-RfJson -Path $package.summary -Depth 6 -Value ([ordered]@{
+  Write-RunJson -Path $package.summary -Depth 6 -Value ([ordered]@{
     schema_version = 1
     role = 'rf_to_oatof_checkpoint_diagnostic_summary'
     status = 'success'
@@ -391,7 +391,7 @@ try {
 } catch {
   $failureReason = $_.Exception.Message
   try {
-    Complete-RfFailedRun -Python $package.python -RepoRoot $repoRoot `
+    Complete-FailedRun -Python $package.python -RepoRoot $repoRoot `
       -RunConfig $package.run_config -Summary $package.summary `
       -SummaryRole 'rf_to_oatof_checkpoint_diagnostic_summary' `
       -Reason $failureReason -Software $software

@@ -143,6 +143,28 @@ class ChangedGateContractTests(unittest.TestCase):
             integration_source,
         )
 
+    def test_handoff_publisher_routes_only_its_direct_integration_consumer(
+        self,
+    ) -> None:
+        self.assertIn("$hasIntegrationHandoffPublisherChange", self.source)
+        self.assertIn(
+            "$_ -eq 'common/multipole/publish_three_mode_binding.py'",
+            self.source,
+        )
+        integration_change_start = self.source.index("$hasIntegrationChange =")
+        integration_change_end = self.source.index(
+            "$hasSolidWorksChange",
+            integration_change_start,
+        )
+        integration_change_block = self.source[
+            integration_change_start:integration_change_end
+        ]
+        self.assertIn(
+            "$hasIntegrationHandoffPublisherChange",
+            integration_change_block,
+        )
+        self.assertNotIn("$hasMultipoleChange", integration_change_block)
+
     def test_gate_entrypoints_run_their_contract_tests(self) -> None:
         self.assertIn("$hasGateContractChange", self.source)
         self.assertIn("gate_contract_tests", self.source)

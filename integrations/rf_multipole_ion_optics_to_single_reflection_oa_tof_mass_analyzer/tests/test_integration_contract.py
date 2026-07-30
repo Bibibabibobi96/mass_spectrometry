@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 
 from common.contracts.file_identity import file_sha256
-from common.contracts.machine_contracts import validate_schema
+from common.contracts.machine_contracts import ContractError, validate_schema
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.prepare_migration import (
     prepare_migration,
 )
@@ -68,6 +68,15 @@ class IntegrationProfileContractTests(unittest.TestCase):
             profile["connection_profile_id"]: profile
             for profile in cls.registry["profiles"]
         }
+        cls.preregistration = load_json(PREREGISTRATION_PATH)
+        cls.migration_profile_ids = {
+            profile["connection_profile_id"]
+            for profile in cls.preregistration["profiles"]
+        }
+        cls.migration_profiles = {
+            profile_id: cls.profiles[profile_id]
+            for profile_id in cls.migration_profile_ids
+        }
         cls.oracle = load_json(ORACLE_PATH)
 
     def test_global_registry_points_to_single_profile_authority(self) -> None:
@@ -84,11 +93,21 @@ class IntegrationProfileContractTests(unittest.TestCase):
             PROFILE_REGISTRY_PATH.resolve(),
         )
 
-    def test_only_resolved_quadrupole_profiles_are_registered(self) -> None:
+    def test_only_two_profiles_are_preregistered_for_legacy_migration(self) -> None:
         self.assertEqual(len(self.profiles), len(self.registry["profiles"]))
-        self.assertEqual(len(self.profiles), 2)
+        self.assertEqual(len(self.profiles), 5)
         self.assertEqual(
-            {profile["upstream"]["project_id"] for profile in self.profiles.values()},
+            self.migration_profile_ids,
+            {
+                "rf_quadrupole_grounded_connector_gap_1mm",
+                "rf_quadrupole_direct_mating_gap_0mm",
+            },
+        )
+        self.assertEqual(
+            {
+                profile["upstream"]["project_id"]
+                for profile in self.migration_profiles.values()
+            },
             {"rf_quadrupole_ion_optics"},
         )
         validate_schema(
@@ -97,10 +116,10 @@ class IntegrationProfileContractTests(unittest.TestCase):
         )
 
     def test_quadrupole_oracles_preserve_gap_and_census(self) -> None:
-        gap_one = self.profiles[
+        gap_one = self.migration_profiles[
             "rf_quadrupole_grounded_connector_gap_1mm"
         ]
-        gap_zero = self.profiles[
+        gap_zero = self.migration_profiles[
             "rf_quadrupole_direct_mating_gap_0mm"
         ]
         self.assertEqual(gap_one["connector"]["length_mm"], 1.0)
@@ -201,7 +220,7 @@ class IntegrationProfileContractTests(unittest.TestCase):
         temporary_root = REPO_ROOT / ".tmp"
         temporary_root.mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(dir=temporary_root) as directory:
-            for profile_id in sorted(self.profiles):
+            for profile_id in sorted(self.migration_profiles):
                 with self.subTest(profile_id=profile_id):
                     output = Path(directory) / profile_id
                     resolved_path, plan_path = prepare_migration(
@@ -219,22 +238,33 @@ class IntegrationProfileContractTests(unittest.TestCase):
                     step = plan["execution_steps"][0]
                     self.assertTrue((REPO_ROOT / step["entrypoint"]).is_file())
                     arguments = dict(item.split("=", 1) for item in step["arguments"])
-                    self.assertTrue(
-                        (REPO_ROOT / arguments["workflow_entrypoint"]).is_file()
+                    runtime_binding = (
+                        REPO_ROOT / arguments["runtime_binding_path"]
                     )
+                    self.assertTrue(runtime_binding.is_file())
                     self.assertEqual(
-                        arguments["workflow_entrypoint"],
-                        "projects/rf_quadrupole_ion_optics/workflows/"
-                        "rf_to_oatof_integration/run_rf_to_oatof_transfer.ps1",
+                        file_sha256(runtime_binding),
+                        arguments["runtime_binding_sha256"],
                     )
                     self.assertEqual(
                         set(arguments),
                         {
-                            "workflow_entrypoint",
                             "adapter_registry_sha256",
+                            "preregistration_sha256",
+                            "oracle_sha256",
+                            "runtime_binding_path",
+                            "runtime_binding_sha256",
                             "resolved_budget_filename",
                             "resolved_budget_sha256",
                         },
+                    )
+                    self.assertEqual(
+                        arguments["preregistration_sha256"],
+                        file_sha256(PREREGISTRATION_PATH),
+                    )
+                    self.assertEqual(
+                        arguments["oracle_sha256"],
+                        file_sha256(ORACLE_PATH),
                     )
                     budget_path = output / arguments["resolved_budget_filename"]
                     self.assertTrue(budget_path.is_file())
@@ -251,7 +281,7 @@ class IntegrationProfileContractTests(unittest.TestCase):
         temporary_root.mkdir(exist_ok=True)
         entrypoint = INTEGRATION_ROOT / "execute_integration.ps1"
         with tempfile.TemporaryDirectory(dir=temporary_root) as directory:
-            for profile_id in sorted(self.profiles):
+            for profile_id in sorted(self.migration_profiles):
                 completed = subprocess.run(
                     [
                         pwsh,
@@ -295,6 +325,8 @@ class IntegrationProfileContractTests(unittest.TestCase):
             common_execute,
         )
         self.assertIn("& $workflowEntrypoint", adapter)
+        self.assertIn("-RuntimeBinding $runtimeBinding", adapter)
+        self.assertNotIn("workflow_entrypoint", adapter)
         self.assertIn("publish_integration_run", adapter)
         self.assertIn("-ResolvedEngineeringBudget $resolvedBudgetPath", adapter)
         self.assertNotIn("Start-Job", adapter)
@@ -337,7 +369,7 @@ class IntegrationProfileContractTests(unittest.TestCase):
                     "-OutputDirectory",
                     str(Path(directory) / "missing_authorization"),
                     "-RunId",
-                    "20260728_120000__integration_migration_test",
+                    "20260728_120000__migration__cross__rf-oatof-test",
                 ],
                 cwd=REPO_ROOT,
                 capture_output=True,
@@ -351,6 +383,130 @@ class IntegrationProfileContractTests(unittest.TestCase):
             self.assertIn(
                 "explicit solver authorization",
                 missing_authorization.stdout + missing_authorization.stderr,
+            )
+
+    def test_solver_authorization_rejects_noncanonical_output_before_prepare(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("pwsh is unavailable")
+        run_id = "20260728_120000__migration__cross__rf-oatof-test"
+        with tempfile.TemporaryDirectory(dir=REPO_ROOT / ".tmp") as directory:
+            completed = subprocess.run(
+                [
+                    pwsh,
+                    "-NoProfile",
+                    "-File",
+                    str(INTEGRATION_ROOT / "execute_integration.ps1"),
+                    "-ConnectionProfileId",
+                    "rf_quadrupole_grounded_connector_gap_1mm",
+                    "-OutputDirectory",
+                    str(Path(directory) / run_id),
+                    "-RunId",
+                    run_id,
+                    "-PythonExe",
+                    sys.executable,
+                    "-SolverAuthorized",
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+                timeout=30,
+            )
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn(
+                "canonical RunId directory",
+                completed.stdout + completed.stderr,
+            )
+
+    def test_adapter_rejects_wrong_source_identity_before_prepare_only(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("pwsh is unavailable")
+        with tempfile.TemporaryDirectory(dir=REPO_ROOT / ".tmp") as directory:
+            output = Path(directory)
+            resolved_path, plan_path = prepare_migration(
+                repo_root=REPO_ROOT,
+                profile_registry_path=PROFILE_REGISTRY_PATH,
+                adapter_registry_path=ADAPTER_REGISTRY_PATH,
+                preregistration_path=PREREGISTRATION_PATH,
+                profile_id="rf_quadrupole_grounded_connector_gap_1mm",
+                resolved_output=output / "resolved.json",
+                plan_output=output / "plan.json",
+            )
+            budget_path = output / "resolved_engineering_budget.json"
+            budget = load_json(budget_path)
+            budget["source_identity"]["project_id"] = "wrong_recorded_project"
+            budget_path.write_text(
+                json.dumps(budget, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            plan = load_json(plan_path)
+            plan["execution_steps"][0]["arguments"] = [
+                (
+                    f"resolved_budget_sha256={file_sha256(budget_path)}"
+                    if item.startswith("resolved_budget_sha256=")
+                    else item
+                )
+                for item in plan["execution_steps"][0]["arguments"]
+            ]
+            plan_path.write_text(
+                json.dumps(plan, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            completed = subprocess.run(
+                [
+                    pwsh,
+                    "-NoProfile",
+                    "-File",
+                    str(INTEGRATION_ROOT / "adapter.ps1"),
+                    "-CompositionPlan",
+                    str(plan_path),
+                    "-ResolvedConnection",
+                    str(resolved_path),
+                    "-PythonExe",
+                    sys.executable,
+                    "-RepoRoot",
+                    str(REPO_ROOT),
+                    "-PrepareOnly",
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+                timeout=30,
+            )
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn(
+                "source identity differ before stage 1",
+                completed.stdout + completed.stderr,
+            )
+
+    def test_runtime_and_source_schemas_reject_unknown_synonym_fields(self) -> None:
+        adapter_registry = load_json(ADAPTER_REGISTRY_PATH)
+        binding_path = REPO_ROOT / adapter_registry["mappings"][0][
+            "runtime_binding_path"
+        ]
+        binding = load_json(binding_path)
+        binding["workflow_entrypoint"] = "forbidden-synonym"
+        with self.assertRaises(ContractError):
+            validate_schema(
+                binding,
+                "rf_multipole_oatof_runtime_binding.schema.json",
+            )
+        source_path = REPO_ROOT / load_json(binding_path)["contracts"][
+            "source_contract"
+        ]["path"]
+        source = load_json(source_path)
+        source["source"]["project_id"] = source["recorded_project_id"]
+        with self.assertRaises(ContractError):
+            validate_schema(
+                source,
+                "rf_multipole_oatof_source_contract.schema.json",
             )
 
     def test_phase_configuration_has_no_connection_topology_authority(self) -> None:
@@ -387,11 +543,8 @@ class IntegrationProfileContractTests(unittest.TestCase):
 
     def test_active_pre_pulse_runner_requires_resolved_connection(self) -> None:
         runner = (
-            REPO_ROOT
-            / "projects"
-            / "rf_quadrupole_ion_optics"
-            / "workflows"
-            / "rf_to_oatof_integration"
+            INTEGRATION_ROOT
+            / "stages"
             / "comsol"
             / "run_pre_pulse_interface_transport.ps1"
         ).read_text(encoding="utf-8")

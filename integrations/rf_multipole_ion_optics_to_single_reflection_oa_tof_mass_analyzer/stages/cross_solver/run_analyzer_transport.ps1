@@ -2,23 +2,33 @@
 param(
   [Parameter(Mandatory)][string]$SourceRunId,
   [Parameter(Mandatory)][string]$RunId,
+  [Parameter(Mandatory)][string]$ExpectedConnectionProfileId,
+  [Parameter(Mandatory)][string]$ResolvedConnection,
   [Parameter(Mandatory)][string]$ResolvedEngineeringBudget,
+  [Parameter(Mandatory)][string]$RuntimeBinding,
+  [string]$SourceBranchId = '',
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$PythonExe = ''
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
-$repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
+$integrationRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+$repoRoot = (Resolve-Path (Join-Path $integrationRoot '..\..')).Path
+. (Join-Path $integrationRoot 'runtime\runtime_binding.ps1')
+$runtime = Resolve-RfOatofRuntimeBinding -RepoRoot $repoRoot `
+  -ResolvedConnection $ResolvedConnection -RuntimeBinding $RuntimeBinding `
+  -ExpectedConnectionProfileId $ExpectedConnectionProfileId `
+  -SourceBranchId $SourceBranchId
+$upstreamProjectId = $runtime.upstream_project_id
 $python = if ($PythonExe) {
   [IO.Path]::GetFullPath($PythonExe)
 } else {
   Join-Path $repoRoot '.venv\Scripts\python.exe'
 }
 $workspaceRoot = Split-Path -Parent $repoRoot
-$artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_quadrupole_ion_optics'
-$supportSource = Join-Path $projectRoot 'runtime\run_artifacts.ps1'
+$artifactRoot = Join-Path $workspaceRoot "artifacts\projects\$upstreamProjectId"
+$supportSource = $runtime.run_artifact_support
 . $supportSource
 
 function Invoke-AnalyzerTransportSnapshotPython {
@@ -178,7 +188,7 @@ function Get-AnalyzerTransportReleaseAssetRecord {
 $software = @('COMSOL 6.4','SIMION 2020','Python 3.11')
 $package = New-RfRunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot $artifactRoot -RunId $RunId `
-  -Project 'rf_quadrupole_ion_optics' `
+  -Project $upstreamProjectId `
   -Mode 'rf_to_oatof_analyzer_transport_n100' -Software $software `
   -RetentionContractEnabled -RetentionClass compact `
   -AdditionalDirectories @('simion')
@@ -196,15 +206,29 @@ try {
 
   $runner = Join-Path $package.input_dir 'run_analyzer_transport.ps1.txt'
   $support = Join-Path $package.input_dir 'run_artifacts.ps1.txt'
+  $runtimeBindingFrozen = Join-Path $package.input_dir 'runtime_binding.json'
+  $resolvedConnectionFrozen =
+    Join-Path $package.input_dir 'resolved_connection.json'
   $runnerIdentity = Copy-RfStableFile -SourceRunRoot $repoRoot `
     -SourcePath $PSCommandPath -Destination $runner -Role 'end-to-end runner'
   $supportIdentity = Copy-RfStableFile -SourceRunRoot $repoRoot `
     -SourcePath $supportSource -Destination $support -Role 'run artifact support'
+  Copy-Item -LiteralPath $runtime.binding_path -Destination $runtimeBindingFrozen
+  Copy-Item -LiteralPath $runtime.resolved_connection_path `
+    -Destination $resolvedConnectionFrozen
 
-  $dependencyContractSource = Join-Path $projectRoot `
-    'config\rf_to_oatof_pre_pulse_dependencies.json'
-  $dependencyContract = Join-Path $snapshotRoot `
-    'projects\rf_quadrupole_ion_optics\config\rf_to_oatof_pre_pulse_dependencies.json'
+  $dependencyContractSource = $runtime.contracts.dependency_contract
+  $dependencySourceDocument = Get-Content -LiteralPath $dependencyContractSource `
+    -Raw -Encoding UTF8 | ConvertFrom-Json
+  $dependencySelf = @(
+    $dependencySourceDocument.dependencies |
+      Where-Object { [string]$_.id -eq 'rf_dependency_contract_snapshot' }
+  )
+  if ($dependencySelf.Count -ne 1) {
+    throw 'Analyzer dependency contract requires one self-snapshot identity.'
+  }
+  $dependencyContract = Join-Path $package.input_dir `
+    ([string]$dependencySelf[0].frozen_filename)
   $dependencyContractIdentity = Copy-RfStableFile -SourceRunRoot $repoRoot `
     -SourcePath $dependencyContractSource -Destination $dependencyContract `
     -Role 'dependency contract'
@@ -228,49 +252,11 @@ try {
   $dependencyCompatibilityPaths = @{}
   foreach ($dependency in $selectedDependencies) {
     if ([string]$dependency.id -eq 'rf_dependency_contract_snapshot') {
-      $expectedSource = (
-        'projects/rf_quadrupole_ion_optics/' +
-        'config/rf_to_oatof_pre_pulse_dependencies.json'
-      )
-      $expectedFrozen = (
-        'runtime_snapshot/projects/rf_quadrupole_ion_optics/' +
-        'config/rf_to_oatof_pre_pulse_dependencies.json'
-      )
-      $declaredSnapshot = [IO.Path]::GetFullPath(
-        (Join-Path $package.input_dir ([string]$dependency.frozen_filename))
-      )
-      if ([string]$dependency.provider_scope -ne 'project' -or
-          [string]$dependency.provider_project -ne
-            'rf_quadrupole_ion_optics' -or
-          [string]$dependency.provider_repo_path -ne
-            'projects/rf_quadrupole_ion_optics' -or
-          [string]$dependency.source_repo_path -ne $expectedSource -or
-          [string]$dependency.frozen_filename -ne $expectedFrozen -or
-          -not $declaredSnapshot.Equals(
-            [IO.Path]::GetFullPath($dependencyContract),
-            [StringComparison]::OrdinalIgnoreCase
-          ) -or
-          (Get-FileHash -LiteralPath $dependencyContract -Algorithm SHA256).Hash -ne
-            $dependencyContractIdentity.sha256) {
-        throw 'Frozen PulseCapture dependency-contract self identity differs.'
-      }
-      $identity = [pscustomobject]@{
-        id = [string]$dependency.id
-        provider_scope = [string]$dependency.provider_scope
-        provider_project = [string]$dependency.provider_project
-        provider_repo_path = (
-          [string]$dependency.provider_repo_path
-        ).Replace('\','/')
-        source_repo_path = (
-          [string]$dependency.source_repo_path
-        ).Replace('\','/')
-        frozen_input_name = [string]$dependency.run_input_name
-        consumers = @($dependency.consumers)
-        frozen_path = $dependencyContract
-        snapshot_path = $dependencyContract
-        compatibility_path = $null
-        sha256 = $dependencyContractIdentity.sha256
-      }
+      $identity = Confirm-RfFrozenDependencyIdentity -RepoRoot $repoRoot `
+        -InputDir $package.input_dir -Dependency $dependency `
+        -ExpectedSourcePath $dependencyContractSource `
+        -ExistingSnapshotPath $dependencyContract `
+        -ExpectedSha256 $dependencyContractIdentity.sha256
     } else {
       $identity = Copy-RfFrozenDependency -RepoRoot $repoRoot `
         -InputDir $package.input_dir -Dependency $dependency
@@ -297,7 +283,7 @@ try {
     'rf_dependency_contract_snapshot',
     'rf_analyzer_transport_simion_input_adapter','rf_analyzer_transport_analyzer',
     'rf_oatof_formal_release_validator',
-    'rf_oatof_handoff_builder',
+    'oatof_rf_handoff_adapter',
     'oatof_baseline','oatof_resolved_geometry','oatof_formal_validation',
     'oatof_simion_stable_entry',
     'oatof_handoff_pulse_program_builder',
@@ -355,14 +341,14 @@ try {
     -Arguments @(
       $frozenManifestVerifier,$sourceManifestPath,
       '--require-status','success','--require-run-id',$SourceRunId,
-      '--require-project','rf_quadrupole_ion_optics',
+      '--require-project',$upstreamProjectId,
       '--require-mode','rf_to_oatof_pulse_capture_n100'
     ) -FailureMessage 'The frozen PulseCapture source run manifest is invalid.'
   $sourceManifest = Get-Content -LiteralPath $sourceManifestPath `
     -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($sourceManifest.role -ne 'simulation_run_manifest' -or
       $sourceManifest.status -ne 'success' -or
-      $sourceManifest.project -ne 'rf_quadrupole_ion_optics' -or
+      $sourceManifest.project -ne $upstreamProjectId -or
       $sourceManifest.mode -ne 'rf_to_oatof_pulse_capture_n100' -or
       $sourceManifest.run_id -ne $SourceRunId) {
     throw 'PulseCapture source manifest identity or role is invalid.'
@@ -376,16 +362,23 @@ try {
   $sourceConfig = Get-Content -LiteralPath $sourceConfigPath `
     -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($sourceConfig.run_id -ne $SourceRunId -or
-      $sourceConfig.project -ne 'rf_quadrupole_ion_optics' -or
+      $sourceConfig.project -ne $upstreamProjectId -or
       $sourceConfig.mode -ne 'rf_to_oatof_pulse_capture_n100') {
     throw 'Downstream continuation requires the frozen PulseCapture shared-clock source.'
   }
+  Assert-RfOatofSourceIdentityMatches `
+    -Actual $sourceConfig.upstream_source_identity `
+    -Expected $runtime.source_identity `
+    -Role 'Analyzer upstream particle source'
   $pulseTimeUs = [double]$sourceConfig.parameters.pulse_time_us
   $pulseWidthUs = [double]$sourceConfig.parameters.pulse_width_us
   if ([bool]$sourceConfig.parameters.pulse_capture_stage_passed) {
     throw 'Functional PulseCapture source must not claim qualified PulseCapture PASS.'
   }
   $connectionProfileId = [string]$sourceConfig.parameters.connection_profile_id
+  if ($connectionProfileId -ne $ExpectedConnectionProfileId) {
+    throw 'Analyzer source profile differs from the runtime binding.'
+  }
   $budgetBinding = Initialize-RfIntegrationStageBudget `
     -ResolvedBudget $ResolvedEngineeringBudget -InputDir $package.input_dir `
     -ExpectedIntegrationId `
@@ -522,12 +515,14 @@ try {
   $runConfiguration = [ordered]@{
     schema_version = 2
     run_id = $RunId
-    project = 'rf_quadrupole_ion_optics'
+    project = $upstreamProjectId
     mode = 'rf_to_oatof_analyzer_transport_n100'
     project_root = $repoRoot
     inputs = [ordered]@{
       runner = $runner
       run_artifact_support = $support
+      runtime_binding = $runtimeBindingFrozen
+      resolved_connection = $resolvedConnectionFrozen
       dependency_contract = $dependencyContract
       source_run_manifest = $sourceManifestPath
       source_run_config = $sourceConfigPath
@@ -550,7 +545,12 @@ try {
       oatof_formal_sha256sums = $checksumPath
     }
     dependency_identities = $dependencyIdentities
+    resource_budget_identity = [ordered]@{
+      resolved_budget_sha256 = $budgetBinding.resolved_budget_sha256
+      stage_budget_sha256 = $budgetBinding.stage_budget_sha256
+    }
     source_run_identity = $sourceIdentity
+    upstream_source_identity = $runtime.source_identity
     run_local_identity = [ordered]@{
       runner_sha256 = $runnerIdentity.sha256
       support_sha256 = $supportIdentity.sha256
@@ -570,6 +570,8 @@ try {
     )
     parameters = [ordered]@{
       source_run_id = $SourceRunId
+      connection_profile_id = $connectionProfileId
+      source_branch_id = $runtime.source_branch_id
       authoritative_frame_id = 'oatof_global'
       solver_clock = 'instrument_time'
       position_projection_applied = $false

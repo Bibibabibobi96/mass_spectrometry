@@ -12,6 +12,12 @@ from projects.rf_quadrupole_ion_optics.analysis import (
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = PROJECT_ROOT.parents[1]
+INTEGRATION_ROOT = (
+    REPO_ROOT
+    / "integrations"
+    / "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
+)
 
 
 class PulseCaptureContractTests(unittest.TestCase):
@@ -46,9 +52,8 @@ class PulseCaptureContractTests(unittest.TestCase):
 
     def test_runner_uses_pre_pulse_and_resolved_authorities(self) -> None:
         runner = (
-            PROJECT_ROOT
-            / "workflows"
-            / "rf_to_oatof_integration"
+            INTEGRATION_ROOT
+            / "stages"
             / "comsol"
             / "run_pulse_capture.ps1"
         ).read_text(encoding="utf-8")

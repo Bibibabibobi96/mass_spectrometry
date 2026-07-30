@@ -20,15 +20,20 @@ from projects.rf_quadrupole_ion_optics.analysis import (
     build_pulse_capture_local_exit_component_state as adapter,
 )
 
+REPO_ROOT = Path(__file__).resolve().parents[4]
+INTEGRATION_COMSOL_ROOT = (
+    REPO_ROOT
+    / "integrations"
+    / "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
+    / "stages"
+    / "comsol"
+)
+
 
 class PulseCaptureChainAuditTests(unittest.TestCase):
     def test_matlab_emits_only_solver_local_terminal_census(self) -> None:
         script = (
-            Path(__file__).parents[2]
-            / "workflows"
-            / "rf_to_oatof_integration"
-            / "comsol"
-            / "solve_pulse_capture.m"
+            INTEGRATION_COMSOL_ROOT / "solve_pulse_capture.m"
         )
         text = script.read_text(encoding="utf-8")
         self.assertIn("eventRows = cell(height(ions), 24)", text)
@@ -50,11 +55,7 @@ class PulseCaptureChainAuditTests(unittest.TestCase):
 
     def test_runner_validates_and_records_frozen_particle_input(self) -> None:
         runner = (
-            Path(__file__).parents[2]
-            / "workflows"
-            / "rf_to_oatof_integration"
-            / "comsol"
-            / "run_pulse_capture.ps1"
+            INTEGRATION_COMSOL_ROOT / "run_pulse_capture.ps1"
         )
         text = runner.read_text(encoding="utf-8")
         validation = text.index(

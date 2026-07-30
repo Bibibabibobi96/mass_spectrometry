@@ -367,7 +367,13 @@ class FamilyThreeModeExperimentContractTests(unittest.TestCase):
         )
         self.assertEqual(
             result["method"]["sha256"],
+            "3919607C1F6E220D9DF11BE66A8C2CD01640F32D48D9A3AE82A1662F482925CD",
+        )
+        self.assertNotEqual(
+            result["method"]["sha256"],
             sha256(REPO_ROOT / result["method"]["path"]),
+            "Completed evidence must retain its run-time method identity when "
+            "the active numerical method later gains independent capabilities.",
         )
         self.assertEqual(
             result["method"]["acceptance_sha256"],

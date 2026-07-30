@@ -12,6 +12,14 @@ class SpatialRegistrationMigrationRatchetTests(unittest.TestCase):
     def test_active_sources_have_no_legacy_exceptions(self) -> None:
         migration.validate()
 
+    def test_commercial_adapters_follow_integration_ownership(self) -> None:
+        self.assertTrue(migration.MATLAB_FILES)
+        for path in migration.MATLAB_FILES:
+            self.assertTrue(path.is_file())
+            self.assertTrue(
+                path.is_relative_to(migration.INTEGRATION_ROOT / "stages" / "comsol")
+            )
+
     def test_new_manual_matrix_primitive_is_rejected(self) -> None:
         violations = migration.scan_python(
             Path("new_adapter.py"),

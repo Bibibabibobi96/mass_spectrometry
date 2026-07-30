@@ -7,11 +7,11 @@
   "profile_scope": {
     "scope_id": "no_acceleration_full_length",
     "scope_kind": "design_profile",
-    "family_experiment_port": false
+    "family_experiment_port": true
   },
   "authority": {
-    "source_contract": "projects/rf_octupole_ion_optics/config/resolved_design.json",
-    "source_sha256": "53E4B97344FBB126BC1BE2E458500018D7CA0FA53072904B44FBD389B079E54F",
+    "source_contract": "projects/rf_octupole_ion_optics/config/resolved_design_no_acceleration_full_length.json",
+    "source_sha256": "D64B134D6460F17ABB70C64FE89B48793F01239C5A4D417D3BD6AEF81A4ACF4E",
     "bindings": [
       {
         "port_json_pointer": "/project_id",

@@ -1,0 +1,467 @@
+{
+  "schema_version": 2,
+  "role": "multipole_resolved_design_do_not_edit",
+  "compiler": {
+    "name": "common.multipole.compile_design_request",
+    "version": 2
+  },
+  "governance": {
+    "design_variables_sha256": "181F635F984704F21FAB35F2AC607EDAABCC9F8FD8ACDCC0B311D32E40E61357",
+    "optimization_envelope_sha256": "1991154C64D643BA46CA2DE081DCF29CD5E73CCEDFAEF835E43843DD04C981F6",
+    "design_request_file_sha256": "A75721393601D18A0BE4C1B05E91A23AA13F6AC16DE605D9AEB2606AFD7468A3"
+  },
+  "request": {
+    "request_id": "quadrupole_family_full_length_mechanical_base",
+    "sha256": "6CA0D58D2357230872E4F695B5B5F509363A324BFD80C04FA157831483DA9128"
+  },
+  "sources": [
+    {
+      "label": "design_request",
+      "path": "projects/rf_quadrupole_ion_optics/config/requests/baseline.json",
+      "sha256": "A75721393601D18A0BE4C1B05E91A23AA13F6AC16DE605D9AEB2606AFD7468A3"
+    },
+    {
+      "label": "design_variables",
+      "path": "projects/rf_quadrupole_ion_optics/config/design_variables.json",
+      "sha256": "181F635F984704F21FAB35F2AC607EDAABCC9F8FD8ACDCC0B311D32E40E61357"
+    },
+    {
+      "label": "operating_mode_registry__no_acceleration_full_length",
+      "path": "projects/rf_quadrupole_ion_optics/config/operating_modes.json",
+      "sha256": "FEC5FA1CE320194A4BB447FF82539A5C1047B44C972A1034B3332CFCD1B7F40D"
+    },
+    {
+      "label": "optimization_envelope",
+      "path": "projects/rf_quadrupole_ion_optics/config/optimization_envelope.json",
+      "sha256": "1991154C64D643BA46CA2DE081DCF29CD5E73CCEDFAEF835E43843DD04C981F6"
+    }
+  ],
+  "identity": {
+    "project_id": "rf_quadrupole_ion_optics",
+    "family_id": "rf_multipole_ion_optics",
+    "radial_order_n": 2,
+    "electrode_count": 4
+  },
+  "units": {
+    "length": "mm",
+    "voltage": "V",
+    "frequency": "Hz",
+    "phase": "rad",
+    "energy": "eV"
+  },
+  "coordinate": {
+    "coordinate_id": "multipole.cartesian.z_axis.v1",
+    "axial_axis": "+z",
+    "orientation_rad": 0.0
+  },
+  "geometry_mm": {
+    "inscribed_radius_r0": 4.0,
+    "rod_radius_ratio": 0.5,
+    "rod_radius": 2.0,
+    "rod_center_radius": 6.0,
+    "rod_z_min": 0.0,
+    "rod_z_max": 79.6,
+    "rod_length": 79.6,
+    "enclosure": {
+      "model": "cylindrical_grounded_shield_v1",
+      "role": "full_length_grounded_shield",
+      "working_region_radius_mm": 3.6,
+      "vacuum_z_min_mm": -2.5,
+      "vacuum_z_max_mm": 82.1,
+      "shield_inner_radius_mm": 20.0,
+      "shield_outer_radius_mm": 21.0,
+      "entrance_outer_endcap_upstream_face_z_mm": -2.5,
+      "entrance_outer_endcap_downstream_face_z_mm": -2.0,
+      "exit_outer_endcap_upstream_face_z_mm": 81.6,
+      "exit_outer_endcap_downstream_face_z_mm": 82.1
+    },
+    "rod_array": {
+      "inscribed_radius_r0": 4.0,
+      "rod_radius": 2.0,
+      "rod_center_radius": 6.0,
+      "rod_length": 79.6,
+      "rods": [
+        {
+          "rod_id": 1,
+          "electrode_group": 1,
+          "angle_rad": 0.0,
+          "center_x_mm": 6.0,
+          "center_y_mm": 0.0,
+          "radius_mm": 2.0,
+          "z_min_mm": 0.0,
+          "z_max_mm": 79.6
+        },
+        {
+          "rod_id": 2,
+          "electrode_group": 2,
+          "angle_rad": 1.5707963267948966,
+          "center_x_mm": 3.6739403974420594e-16,
+          "center_y_mm": 6.0,
+          "radius_mm": 2.0,
+          "z_min_mm": 0.0,
+          "z_max_mm": 79.6
+        },
+        {
+          "rod_id": 3,
+          "electrode_group": 1,
+          "angle_rad": 3.141592653589793,
+          "center_x_mm": -6.0,
+          "center_y_mm": 7.347880794884119e-16,
+          "radius_mm": 2.0,
+          "z_min_mm": 0.0,
+          "z_max_mm": 79.6
+        },
+        {
+          "rod_id": 4,
+          "electrode_group": 2,
+          "angle_rad": 4.71238898038469,
+          "center_x_mm": -1.102182119232618e-15,
+          "center_y_mm": -6.0,
+          "radius_mm": 2.0,
+          "z_min_mm": 0.0,
+          "z_max_mm": 79.6
+        }
+      ]
+    }
+  },
+  "interfaces_mm": {
+    "entrance": {
+      "aperture_radius_mm": 3.6,
+      "aperture_plate_upstream_face_z_mm": -1.0,
+      "aperture_plate_downstream_face_z_mm": -0.5,
+      "connector_length_mm": 0.0,
+      "connector_upstream_face_z_mm": -1.0,
+      "connector_downstream_face_z_mm": -1.0,
+      "release_plane_z_mm": -1.5,
+      "connector_shape": "cylindrical_bore"
+    },
+    "exit": {
+      "aperture_radius_mm": 3.6,
+      "aperture_plate_upstream_face_z_mm": 80.1,
+      "aperture_plate_downstream_face_z_mm": 80.6,
+      "aperture_crossing_plane_z_mm": 80.6,
+      "connector_length_mm": 0.0,
+      "connector_upstream_face_z_mm": 80.6,
+      "connector_downstream_face_z_mm": 80.6,
+      "handoff_plane_z_mm": 80.6,
+      "census_plane_z_mm": 81.1,
+      "connector_shape": "cylindrical_bore"
+    }
+  },
+  "drive": {
+    "waveform": "cosine",
+    "rf_amplitude_V_zero_to_peak_per_group": 139.81792,
+    "dc_amplitude_V_per_group": 0.0,
+    "common_mode_offset_V": 0.0,
+    "frequency_Hz": 1100000.0,
+    "phase_rad": 0.0
+  },
+  "axial_drive": {
+    "topology": "none",
+    "source_reference_V": 0.0,
+    "output_reference_V": 0.0,
+    "predicted_energy_gain_eV": 0.0,
+    "predicted_output_energy_eV": 2.0
+  },
+  "static_electrodes_V": {
+    "role": "cylindrical_shield_static_electrodes",
+    "shield_entrance_outer_endcap_aperture_plate_connector_V": 0.0,
+    "exit_outer_endcap_aperture_plate_connector_V": 0.0
+  },
+  "particle_source": {
+    "energy_model": {
+      "kind": "bounded_distribution",
+      "minimum_energy_eV": 1.8,
+      "maximum_energy_eV": 2.2,
+      "nominal_energy_eV": 2.0,
+      "authority": "config/official_particle_source.json"
+    },
+    "charge_state": 1
+  },
+  "segmentation": {
+    "strategy": "uniform",
+    "axial_acceleration": {
+      "schema_version": 2,
+      "role": "multipole_axial_acceleration_resolved_contract",
+      "project_id": "rf_quadrupole_ion_optics",
+      "model_id": "multipole.segmented_rod_common_mode_staircase.v2",
+      "segmentation": {
+        "strategy": "uniform",
+        "segment_count": 4,
+        "intersegment_gap_mm": 0.4,
+        "entrance_common_mode_V": 0.0,
+        "exit_common_mode_V": 0.0
+      },
+      "output_reference_V": 0.0,
+      "derived": {
+        "rod_z_min_mm": 0.0,
+        "rod_z_max_mm": 79.6,
+        "segmentation_strategy": "uniform",
+        "segments": [
+          {
+            "segment_id": 1,
+            "z_min_mm": 0.0,
+            "z_max_mm": 19.599999999999998,
+            "common_mode_V": 0.0
+          },
+          {
+            "segment_id": 2,
+            "z_min_mm": 19.999999999999996,
+            "z_max_mm": 39.599999999999994,
+            "common_mode_V": 0.0
+          },
+          {
+            "segment_id": 3,
+            "z_min_mm": 39.99999999999999,
+            "z_max_mm": 59.599999999999994,
+            "common_mode_V": 0.0
+          },
+          {
+            "segment_id": 4,
+            "z_min_mm": 59.99999999999999,
+            "z_max_mm": 79.6,
+            "common_mode_V": 0.0
+          }
+        ],
+        "voltage_profile_monotonic": true,
+        "charge_state": 1,
+        "source_kinetic_energy_eV": 2.0,
+        "predicted_energy_gain_eV": 0.0,
+        "predicted_output_energy_eV": 2.0
+      }
+    },
+    "segmented_rod_array": {
+      "schema_version": 1,
+      "role": "multipole_segmented_round_rod_array",
+      "segment_count": 4,
+      "electrode_count_per_segment": 4,
+      "electrodes": [
+        {
+          "rod_id": 1,
+          "electrode_group": 1,
+          "angle_rad": 0.0,
+          "center_x_mm": 6.0,
+          "center_y_mm": 0.0,
+          "radius_mm": 2.0,
+          "z_min_mm": 0.0,
+          "z_max_mm": 19.599999999999998,
+          "parent_rod_id": 1,
+          "segment_id": 1,
+          "common_mode_V": 0.0,
+          "electrode_id": 1
+        },
+        {
+          "rod_id": 2,
+          "electrode_group": 2,
+          "angle_rad": 1.5707963267948966,
+          "center_x_mm": 3.6739403974420594e-16,
+          "center_y_mm": 6.0,
+          "radius_mm": 2.0,
+          "z_min_mm": 0.0,
+          "z_max_mm": 19.599999999999998,
+          "parent_rod_id": 2,
+          "segment_id": 1,
+          "common_mode_V": 0.0,
+          "electrode_id": 2
+        },
+        {
+          "rod_id": 3,
+          "electrode_group": 1,
+          "angle_rad": 3.141592653589793,
+          "center_x_mm": -6.0,
+          "center_y_mm": 7.347880794884119e-16,
+          "radius_mm": 2.0,
+          "z_min_mm": 0.0,
+          "z_max_mm": 19.599999999999998,
+          "parent_rod_id": 3,
+          "segment_id": 1,
+          "common_mode_V": 0.0,
+          "electrode_id": 1
+        },
+        {
+          "rod_id": 4,
+          "electrode_group": 2,
+          "angle_rad": 4.71238898038469,
+          "center_x_mm": -1.102182119232618e-15,
+          "center_y_mm": -6.0,
+          "radius_mm": 2.0,
+          "z_min_mm": 0.0,
+          "z_max_mm": 19.599999999999998,
+          "parent_rod_id": 4,
+          "segment_id": 1,
+          "common_mode_V": 0.0,
+          "electrode_id": 2
+        },
+        {
+          "rod_id": 1,
+          "electrode_group": 1,
+          "angle_rad": 0.0,
+          "center_x_mm": 6.0,
+          "center_y_mm": 0.0,
+          "radius_mm": 2.0,
+          "z_min_mm": 19.999999999999996,
+          "z_max_mm": 39.599999999999994,
+          "parent_rod_id": 1,
+          "segment_id": 2,
+          "common_mode_V": 0.0,
+          "electrode_id": 3
+        },
+        {
+          "rod_id": 2,
+          "electrode_group": 2,
+          "angle_rad": 1.5707963267948966,
+          "center_x_mm": 3.6739403974420594e-16,
+          "center_y_mm": 6.0,
+          "radius_mm": 2.0,
+          "z_min_mm": 19.999999999999996,
+          "z_max_mm": 39.599999999999994,
+          "parent_rod_id": 2,
+          "segment_id": 2,
+          "common_mode_V": 0.0,
+          "electrode_id": 4
+        },
+        {
+          "rod_id": 3,
+          "electrode_group": 1,
+          "angle_rad": 3.141592653589793,
+          "center_x_mm": -6.0,
+          "center_y_mm": 7.347880794884119e-16,
+          "radius_mm": 2.0,
+          "z_min_mm": 19.999999999999996,
+          "z_max_mm": 39.599999999999994,
+          "parent_rod_id": 3,
+          "segment_id": 2,
+          "common_mode_V": 0.0,
+          "electrode_id": 3
+        },
+        {
+          "rod_id": 4,
+          "electrode_group": 2,
+          "angle_rad": 4.71238898038469,
+          "center_x_mm": -1.102182119232618e-15,
+          "center_y_mm": -6.0,
+          "radius_mm": 2.0,
+          "z_min_mm": 19.999999999999996,
+          "z_max_mm": 39.599999999999994,
+          "parent_rod_id": 4,
+          "segment_id": 2,
+          "common_mode_V": 0.0,
+          "electrode_id": 4
+        },
+        {
+          "rod_id": 1,
+          "electrode_group": 1,
+          "angle_rad": 0.0,
+          "center_x_mm": 6.0,
+          "center_y_mm": 0.0,
+          "radius_mm": 2.0,
+          "z_min_mm": 39.99999999999999,
+          "z_max_mm": 59.599999999999994,
+          "parent_rod_id": 1,
+          "segment_id": 3,
+          "common_mode_V": 0.0,
+          "electrode_id": 5
+        },
+        {
+          "rod_id": 2,
+          "electrode_group": 2,
+          "angle_rad": 1.5707963267948966,
+          "center_x_mm": 3.6739403974420594e-16,
+          "center_y_mm": 6.0,
+          "radius_mm": 2.0,
+          "z_min_mm": 39.99999999999999,
+          "z_max_mm": 59.599999999999994,
+          "parent_rod_id": 2,
+          "segment_id": 3,
+          "common_mode_V": 0.0,
+          "electrode_id": 6
+        },
+        {
+          "rod_id": 3,
+          "electrode_group": 1,
+          "angle_rad": 3.141592653589793,
+          "center_x_mm": -6.0,
+          "center_y_mm": 7.347880794884119e-16,
+          "radius_mm": 2.0,
+          "z_min_mm": 39.99999999999999,
+          "z_max_mm": 59.599999999999994,
+          "parent_rod_id": 3,
+          "segment_id": 3,
+          "common_mode_V": 0.0,
+          "electrode_id": 5
+        },
+        {
+          "rod_id": 4,
+          "electrode_group": 2,
+          "angle_rad": 4.71238898038469,
+          "center_x_mm": -1.102182119232618e-15,
+          "center_y_mm": -6.0,
+          "radius_mm": 2.0,
+          "z_min_mm": 39.99999999999999,
+          "z_max_mm": 59.599999999999994,
+          "parent_rod_id": 4,
+          "segment_id": 3,
+          "common_mode_V": 0.0,
+          "electrode_id": 6
+        },
+        {
+          "rod_id": 1,
+          "electrode_group": 1,
+          "angle_rad": 0.0,
+          "center_x_mm": 6.0,
+          "center_y_mm": 0.0,
+          "radius_mm": 2.0,
+          "z_min_mm": 59.99999999999999,
+          "z_max_mm": 79.6,
+          "parent_rod_id": 1,
+          "segment_id": 4,
+          "common_mode_V": 0.0,
+          "electrode_id": 7
+        },
+        {
+          "rod_id": 2,
+          "electrode_group": 2,
+          "angle_rad": 1.5707963267948966,
+          "center_x_mm": 3.6739403974420594e-16,
+          "center_y_mm": 6.0,
+          "radius_mm": 2.0,
+          "z_min_mm": 59.99999999999999,
+          "z_max_mm": 79.6,
+          "parent_rod_id": 2,
+          "segment_id": 4,
+          "common_mode_V": 0.0,
+          "electrode_id": 8
+        },
+        {
+          "rod_id": 3,
+          "electrode_group": 1,
+          "angle_rad": 3.141592653589793,
+          "center_x_mm": -6.0,
+          "center_y_mm": 7.347880794884119e-16,
+          "radius_mm": 2.0,
+          "z_min_mm": 59.99999999999999,
+          "z_max_mm": 79.6,
+          "parent_rod_id": 3,
+          "segment_id": 4,
+          "common_mode_V": 0.0,
+          "electrode_id": 7
+        },
+        {
+          "rod_id": 4,
+          "electrode_group": 2,
+          "angle_rad": 4.71238898038469,
+          "center_x_mm": -1.102182119232618e-15,
+          "center_y_mm": -6.0,
+          "radius_mm": 2.0,
+          "z_min_mm": 59.99999999999999,
+          "z_max_mm": 79.6,
+          "parent_rod_id": 4,
+          "segment_id": 4,
+          "common_mode_V": 0.0,
+          "electrode_id": 8
+        }
+      ]
+    }
+  },
+  "resolved_sha256": "21A886F31D876E56B8A508907F984ABFB0121BD8831572B56FEF097AEFB4D247"
+}

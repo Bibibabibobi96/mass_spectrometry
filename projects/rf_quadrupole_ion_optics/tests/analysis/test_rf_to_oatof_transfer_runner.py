@@ -4,19 +4,28 @@ import unittest
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parents[2]
+REPO_ROOT = PROJECT_ROOT.parents[1]
+INTEGRATION_ROOT = (
+    REPO_ROOT
+    / "integrations"
+    / "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
+)
 
 
 class RfToOatofTransferRunnerTests(unittest.TestCase):
     def test_runner_orders_transfer_phases_and_forwards_source_runs(self) -> None:
         runner = (
-            PROJECT_ROOT
-            / "workflows"
-            / "rf_to_oatof_integration"
-            / "run_rf_to_oatof_transfer.ps1"
+            INTEGRATION_ROOT / "runtime" / "run_transfer.ps1"
         ).read_text(encoding="utf-8")
-        pre_pulse_index = runner.index("run_pre_pulse_interface_transport.ps1")
-        pulse_capture_index = runner.index("run_pulse_capture.ps1")
-        analyzer_index = runner.index("run_analyzer_transport.ps1")
+        pre_pulse_index = runner.index(
+            "& $runtime.implementation.pre_pulse_runner"
+        )
+        pulse_capture_index = runner.index(
+            "& $runtime.implementation.pulse_capture_runner"
+        )
+        analyzer_index = runner.index(
+            "& $runtime.implementation.analyzer_transport_runner"
+        )
         self.assertLess(pre_pulse_index, pulse_capture_index)
         self.assertLess(pulse_capture_index, analyzer_index)
         self.assertIn("-SourceRunId $prePulseRunId", runner)
@@ -41,7 +50,7 @@ class RfToOatofTransferRunnerTests(unittest.TestCase):
         for requirement in (
             "--require-status success",
             "--require-run-id $case.run_id",
-            "--require-project rf_quadrupole_ion_optics",
+            "--require-project $upstreamProjectId",
             "--require-mode $case.mode",
         ):
             self.assertIn(requirement, runner)
@@ -52,9 +61,8 @@ class RfToOatofTransferRunnerTests(unittest.TestCase):
 
     def test_pulse_capture_requires_explicit_pre_pulse_source(self) -> None:
         runner = (
-            PROJECT_ROOT
-            / "workflows"
-            / "rf_to_oatof_integration"
+            INTEGRATION_ROOT
+            / "stages"
             / "comsol"
             / "run_pulse_capture.ps1"
         ).read_text(encoding="utf-8")
@@ -67,9 +75,8 @@ class RfToOatofTransferRunnerTests(unittest.TestCase):
         self,
     ) -> None:
         runner = (
-            PROJECT_ROOT
-            / "workflows"
-            / "rf_to_oatof_integration"
+            INTEGRATION_ROOT
+            / "stages"
             / "comsol"
             / "run_pre_pulse_interface_transport.ps1"
         ).read_text(encoding="utf-8")

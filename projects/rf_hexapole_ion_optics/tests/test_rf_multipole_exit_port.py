@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.machine_contracts import validate_schema
+from common.multipole.design_profile import resolve_design_profile
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -35,8 +36,14 @@ class RfMultipoleExitPortTests(unittest.TestCase):
         source_relative = cls.port["authority"]["source_contract"]
         cls.source_path = REPO_ROOT / source_relative
         cls.source = load(cls.source_path)
+        cls.resolved = resolve_design_profile(
+            REPO_ROOT,
+            "rf_hexapole_ion_optics",
+            "no_acceleration_full_length",
+        )["resolved_design"]
 
     def test_schema_authority_bindings_and_freshness(self) -> None:
+        self.assertEqual(self.source, self.resolved)
         validate_schema(self.port, "component_port.schema.json")
         self.assertEqual(
             self.port["authority"]["source_sha256"],
@@ -53,9 +60,9 @@ class RfMultipoleExitPortTests(unittest.TestCase):
         self.assertEqual(
             self.port["profile_scope"],
             {
-                "scope_id": "baseline_finite_3d",
+                "scope_id": "no_acceleration_full_length",
                 "scope_kind": "design_profile",
-                "family_experiment_port": False,
+                "family_experiment_port": True,
             },
         )
         coordinate = self.source["coordinate"]

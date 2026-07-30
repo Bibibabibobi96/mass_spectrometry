@@ -17,11 +17,6 @@ from common.contracts.particle_physics import (
     kinetic_energy_ev,
 )
 from common.contracts.rigid_transform import FramedVector, RigidTransform
-from projects.rf_quadrupole_ion_optics.analysis.migrate_legacy_component_particle_state import (
-    LEGACY_25_COLUMNS as LEGACY_PROJECTION_COLUMNS,
-)
-
-
 _ACCELERATOR_PA_TO_GLOBAL = RigidTransform(
     "oatof_accelerator_pa",
     "oatof_global",
@@ -56,6 +51,10 @@ def load_handoff_particle_states(
     migration, so this adapter only exposes it to modes already marked inactive.
     """
     if legacy_projection:
+        from projects.rf_quadrupole_ion_optics.analysis.migrate_legacy_component_particle_state import (
+            LEGACY_25_COLUMNS as LEGACY_PROJECTION_COLUMNS,
+        )
+
         rows = _read_exact_csv(path, LEGACY_PROJECTION_COLUMNS)
         return rows, {
             "format": "legacy_25_column_component_handoff",

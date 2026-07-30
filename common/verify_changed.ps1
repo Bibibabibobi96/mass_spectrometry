@@ -99,6 +99,9 @@ $isDocumentationOnly = $changedPaths.Count -gt 0 -and -not (Test-AnyPath {
 })
 $hasRegistryChange = Test-PathPrefix 'config/project_registry.json'
 $hasMultipoleChange = Test-PathPrefix 'common/multipole/'
+$hasIntegrationHandoffPublisherChange = Test-AnyPath {
+    $_ -eq 'common/multipole/publish_three_mode_binding.py'
+}
 $hasCommonIntegrationChange = Test-PathPrefix 'common/integration/'
 $hasIntegrationInstanceChange = Test-PathPrefix 'integrations/'
 $hasComponentPortChange = Test-AnyPath {
@@ -118,7 +121,8 @@ $hasIntegrationSchemaChange = Test-AnyPath {
     )
 }
 $hasIntegrationChange = $hasCommonIntegrationChange -or $hasIntegrationInstanceChange -or
-    $hasComponentPortChange -or $hasIntegrationSchemaChange
+    $hasComponentPortChange -or $hasIntegrationSchemaChange -or
+    $hasIntegrationHandoffPublisherChange
 $hasSolidWorksChange = Test-PathPrefix 'common/solidworks/'
 $hasContractsChange = Test-PathPrefix 'common/contracts/'
 $hasComsolCommonChange = Test-PathPrefix 'common/comsol/'
@@ -201,7 +205,7 @@ if ($hasCommonIntegrationChange -or $hasIntegrationSchemaChange) {
 }
 
 if ($hasIntegrationChange) {
-    Invoke-ChangedGateStage 'rf_multipole_to_single_reflection_oatof_integration' 'integration_contract_or_port_changed' {
+    Invoke-ChangedGateStage 'rf_multipole_to_single_reflection_oatof_integration' 'integration_contract_port_or_handoff_publisher_changed' {
         & (Join-Path $repoRoot 'integrations\rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer\verify_integration.ps1') -PythonExe $PythonExe
     }
 } else {

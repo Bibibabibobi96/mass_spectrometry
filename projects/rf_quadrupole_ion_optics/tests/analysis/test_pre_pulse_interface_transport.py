@@ -12,6 +12,12 @@ from projects.rf_quadrupole_ion_optics.analysis import (
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = PROJECT_ROOT.parents[1]
+INTEGRATION_ROOT = (
+    REPO_ROOT
+    / "integrations"
+    / "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
+)
 
 
 class PrePulseInterfaceTransportTests(unittest.TestCase):
@@ -39,10 +45,7 @@ class PrePulseInterfaceTransportTests(unittest.TestCase):
 
     def test_comsol_consumers_require_resolved_connection(self) -> None:
         root = (
-            PROJECT_ROOT
-            / "workflows"
-            / "rf_to_oatof_integration"
-            / "comsol"
+            INTEGRATION_ROOT / "stages" / "comsol"
         )
         sources = "\n".join(
             (root / name).read_text(encoding="utf-8")
@@ -56,6 +59,11 @@ class PrePulseInterfaceTransportTests(unittest.TestCase):
         self.assertIn("resolvedConnection", sources)
         self.assertIn("RF_OATOF_RESOLVED_CONNECTION", sources)
         self.assertIn("upstreamSurface.center_mm(3)", sources)
+        self.assertIn(
+            "connectorPresent = gapMm > positionToleranceMm;",
+            sources,
+        )
+        self.assertNotIn("connectorPresent = gapMm > 0;", sources)
         for forbidden in (
             "resolve_spatial_registration",
             "resolve_s2_connector_case",

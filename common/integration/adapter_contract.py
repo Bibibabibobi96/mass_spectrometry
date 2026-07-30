@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import ContractError, validate_schema
 
 
@@ -49,8 +50,12 @@ def resolve_execution_mapping(
     if len(matches) != 1:
         raise ContractError(f"execution adapter mapping is not unique: {profile_id}")
     mapping = copy.deepcopy(matches[0])
-    _repo_file(repo_root, mapping["adapter_entrypoint"])
-    _repo_file(repo_root, mapping["workflow_entrypoint"])
+    adapter = _repo_file(repo_root, mapping["adapter_entrypoint"])
+    if file_sha256(adapter) != mapping["adapter_sha256"]:
+        raise ContractError("execution adapter SHA-256 is stale")
+    runtime_binding = _repo_file(repo_root, mapping["runtime_binding_path"])
+    if file_sha256(runtime_binding) != mapping["runtime_binding_sha256"]:
+        raise ContractError("execution runtime binding SHA-256 is stale")
     return mapping
 
 
@@ -63,8 +68,6 @@ def validate_migration_preregistration(
     document = _load(path)
     validate_schema(document, "migration_equivalence_preregistration.schema.json")
     oracle = _repo_file(repo_root, document["legacy_oracle"]["path"])
-    from common.contracts.file_identity import file_sha256
-
     if file_sha256(oracle) != document["legacy_oracle"]["sha256"]:
         raise ContractError("migration oracle SHA-256 is stale")
     actual_ids = {item["connection_profile_id"] for item in document["profiles"]}

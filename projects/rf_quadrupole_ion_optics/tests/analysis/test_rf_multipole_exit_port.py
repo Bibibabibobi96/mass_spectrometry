@@ -11,12 +11,16 @@ from common.integration.resolve_connection import (
     load_connection_profile_registry,
     resolve_connection_profile,
 )
+from common.multipole.design_profile import resolve_design_profile
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 PORT_PATH = (
     PROJECT_ROOT / "config" / "interfaces" / "provided" / "rf_multipole_exit.json"
+)
+FAMILY_PORT_PATH = PORT_PATH.with_name(
+    "rf_multipole_exit_no_acceleration_full_length.json"
 )
 PROFILE_REGISTRY_PATH = (
     REPO_ROOT
@@ -112,6 +116,51 @@ class RfMultipoleExitPortTests(unittest.TestCase):
         self.assertEqual(
             self.port["clock"],
             {"time_unit": "s", "origin_id": "instrument_clock_epoch_v1"},
+        )
+
+
+class NoAccelerationFamilyExitPortTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.oracle_port = load(PORT_PATH)
+        cls.port = load(FAMILY_PORT_PATH)
+        cls.source_path = REPO_ROOT / cls.port["authority"]["source_contract"]
+        cls.source = load(cls.source_path)
+        cls.resolved = resolve_design_profile(
+            REPO_ROOT,
+            "rf_quadrupole_ion_optics",
+            "no_acceleration_full_length",
+        )["resolved_design"]
+
+    def test_publication_and_port_are_fresh_from_the_governed_profile(self) -> None:
+        self.assertEqual(self.source, self.resolved)
+        validate_schema(self.port, "component_port.schema.json")
+        self.assertEqual(
+            self.port["authority"]["source_sha256"],
+            hashlib.sha256(self.source_path.read_bytes()).hexdigest().upper(),
+        )
+        for binding in self.port["authority"]["bindings"]:
+            self.assertEqual(
+                pointer_value(self.port, binding["port_json_pointer"]),
+                pointer_value(self.source, binding["source_json_pointer"]),
+            )
+
+    def test_family_scope_does_not_replace_the_oatof_oracle_scope(self) -> None:
+        self.assertEqual(
+            self.port["profile_scope"],
+            {
+                "scope_id": "no_acceleration_full_length",
+                "scope_kind": "design_profile",
+                "family_experiment_port": True,
+            },
+        )
+        self.assertNotEqual(
+            self.port["mating_surface"]["center_mm"],
+            self.oracle_port["mating_surface"]["center_mm"],
+        )
+        self.assertEqual(
+            self.oracle_port["profile_scope"]["scope_kind"],
+            "integration_oracle",
         )
 
 

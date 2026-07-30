@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import ContractError
 from common.integration.adapter_contract import (
     load_execution_adapter_registry,
@@ -23,28 +24,59 @@ INTEGRATION_ROOT = (
 
 
 class IntegrationAdapterContractTests(unittest.TestCase):
-    def test_both_profile_mappings_resolve_the_semantic_transfer_entry(self) -> None:
+    def test_all_profile_mappings_resolve_frozen_runtime_bindings(self) -> None:
         registry = load_execution_adapter_registry(
             INTEGRATION_ROOT / "config" / "execution_adapter_profiles.json"
         )
         profile_ids = {
             item["connection_profile_id"] for item in registry["mappings"]
         }
-        self.assertEqual(len(profile_ids), 2)
+        self.assertEqual(
+            profile_ids,
+            {
+                "rf_quadrupole_grounded_connector_gap_1mm",
+                "rf_quadrupole_direct_mating_gap_0mm",
+                (
+                    "rf_quadrupole_no_acceleration_full_length_"
+                    "direct_mating_gap_0mm"
+                ),
+                (
+                    "rf_hexapole_no_acceleration_full_length_"
+                    "direct_mating_gap_0mm"
+                ),
+                (
+                    "rf_octupole_no_acceleration_full_length_"
+                    "direct_mating_gap_0mm"
+                ),
+            },
+        )
         for profile_id in profile_ids:
             mapping = resolve_execution_mapping(
                 registry,
                 profile_id,
                 repo_root=REPO_ROOT,
             )
-            self.assertTrue(
-                mapping["workflow_entrypoint"].endswith(
-                    "workflows/rf_to_oatof_integration/run_rf_to_oatof_transfer.ps1"
-                )
+            adapter = REPO_ROOT / mapping["adapter_entrypoint"]
+            self.assertEqual(file_sha256(adapter), mapping["adapter_sha256"])
+            binding = REPO_ROOT / mapping["runtime_binding_path"]
+            self.assertTrue(binding.is_file())
+            self.assertEqual(
+                file_sha256(binding),
+                mapping["runtime_binding_sha256"],
             )
-            self.assertNotIn("workflow_entrypoints", mapping)
-            self.assertNotIn("legacy_entrypoints", mapping)
+            self.assertNotIn("workflow_entrypoint", mapping)
             self.assertNotIn("connector_case_id", mapping)
+
+    def test_mapping_rejects_stale_adapter_sha256(self) -> None:
+        path = INTEGRATION_ROOT / "config" / "execution_adapter_profiles.json"
+        invalid = copy.deepcopy(json.loads(path.read_text(encoding="utf-8")))
+        invalid["mappings"][0]["adapter_sha256"] = "0" * 64
+        with self.assertRaisesRegex(ContractError, "adapter SHA-256 is stale"):
+            resolve_execution_mapping(
+                invalid,
+                invalid["mappings"][0]["connection_profile_id"],
+                repo_root=REPO_ROOT,
+            )
 
     def test_mapping_vocabulary_rejects_physical_overrides(self) -> None:
         path = INTEGRATION_ROOT / "config" / "execution_adapter_profiles.json"
