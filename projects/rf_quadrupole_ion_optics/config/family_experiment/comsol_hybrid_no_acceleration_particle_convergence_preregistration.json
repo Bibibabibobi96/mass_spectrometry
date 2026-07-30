@@ -1,0 +1,123 @@
+{
+  "schema_version": 1,
+  "role": "multipole_comsol_hybrid_particle_convergence_preregistration",
+  "campaign_id": "quadrupole_no_acceleration_hybrid_exit_interface_n100_v1",
+  "status": "PREREGISTERED_AWAITING_EXPLICIT_COMMERCIAL_RUN_AUTHORIZATION",
+  "preregistered_before_run": true,
+  "maximum_commercial_run_count": 3,
+  "commercial_run_count_executed": 0,
+  "automatic_retry_count": 0,
+  "scope": {
+    "project_id": "rf_quadrupole_ion_optics",
+    "solver": "comsol",
+    "design_profile_id": "no_acceleration_full_length",
+    "particle_source_profile_id": "family_mother_sample_v1_n100",
+    "particle_source_sha256": "0125C3AB02B2321EF26A3A913CF6EC04325FD0D48597D2CB439D0CE42411662F",
+    "particle_count": 100,
+    "retention_class": "compact",
+    "expected_run_parent_resolved_design_sha256": "21A886F31D876E56B8A508907F984ABFB0121BD8831572B56FEF097AEFB4D247"
+  },
+  "family_transfer_basis": {
+    "source_project_id": "rf_hexapole_ion_optics",
+    "source_campaign_id": "hexapole_no_acceleration_hybrid_exit_interface_n100_v2",
+    "shared_mechanical_basis": "The cylindrical family mechanical base has the same r0, rod radius, axial segmentation, interface plates, release plane, handoff plane and near-interface census plane.",
+    "shared_implementation_basis": "The common physical-segment swept/tetra mesh, governed CG-AMG stationary solver and numerical comparator support radial orders 2, 3 and 4.",
+    "not_inherited": "Hexapole cell counts, DOF, resource use, particle metrics and convergence conclusions are not transferred to the quadrupole."
+  },
+  "frozen_authorities": {
+    "runtime_profiles": {
+      "path": "projects/rf_quadrupole_ion_optics/config/runtime_profiles.json",
+      "sha256": "83162764800A1992678E7B747AEE3716C97AD5F426A795735E7B9C94F3386D5C"
+    },
+    "comsol_solver_numerics": {
+      "path": "projects/rf_quadrupole_ion_optics/config/multipole_transport_comsol_solver_numerics.json",
+      "sha256": "6634D9D2634F799903CBDACC2605E92E42B008BE72EB36B7750097A0E9AB35A1"
+    },
+    "particle_source_profiles": {
+      "path": "projects/rf_quadrupole_ion_optics/config/particle_source_profiles.json",
+      "sha256": "1A30735BF8CCEB08764329D1AF3D98EE04A3798E131E59CB948424A3B7618C02"
+    },
+    "engineering_budget": {
+      "path": "projects/rf_quadrupole_ion_optics/config/family_experiment/comsol_hybrid_no_acceleration_particle_convergence_budget.json",
+      "sha256": "E4481F2539A6C1CBE7179BD6C172E9C4F0EA63C8423217515F6E0042FE7DC16E"
+    },
+    "comparison_method": {
+      "path": "common/multipole/numerical_qualification.json",
+      "sha256": "956FD171D3D6E16F4EA04587BAC036925ADCEAEF4D1BE8084BFA28CE5FD70D04"
+    },
+    "functional_acceptance": {
+      "path": "common/multipole/functional_transport_acceptance.json",
+      "sha256": "A4C4F4A6395AAB0F59E0BC8F380E87CDA0F1AD265EC19E66F844C14FF12A98D9"
+    },
+    "stationary_solver_implementation": {
+      "path": "common/multipole/configure_comsol_stationary_solver.m",
+      "sha256": "5E77E47E4D133504067D99C0799BD1E622BD2508289928DC5BC5FF1C8914A748"
+    }
+  },
+  "ordered_arms": [
+    {
+      "sequence": 1,
+      "role": "reference",
+      "runtime_profile_id": "no_acceleration_full_length_n100_hybrid_exit025_temporal_refined",
+      "comsol_solver_numerics_profile_id": "hybrid_c1_corridor040_exit025_nosweep_cg_amg_temporal_refined",
+      "exit_interface_maximum_element_size_mm": 0.25,
+      "rf_steps_per_period": 160,
+      "authorized": false,
+      "executed": false,
+      "run_id": null
+    },
+    {
+      "sequence": 2,
+      "role": "spatial_refined",
+      "runtime_profile_id": "no_acceleration_full_length_n100_hybrid_exit020_spatial_temporal_refined",
+      "comsol_solver_numerics_profile_id": "hybrid_c1_corridor040_exit020_nosweep_cg_amg_spatial_temporal_refined",
+      "exit_interface_maximum_element_size_mm": 0.2,
+      "rf_steps_per_period": 160,
+      "authorized": false,
+      "executed": false,
+      "run_id": null
+    },
+    {
+      "sequence": 3,
+      "role": "temporal_coarse",
+      "runtime_profile_id": "no_acceleration_full_length_n100_hybrid_exit025_temporal_coarse",
+      "comsol_solver_numerics_profile_id": "hybrid_c1_corridor040_exit025_nosweep_cg_amg_field_screen",
+      "exit_interface_maximum_element_size_mm": 0.25,
+      "rf_steps_per_period": 80,
+      "authorized": false,
+      "executed": false,
+      "run_id": null
+    }
+  ],
+  "comparison_plan": {
+    "spatial": "reference_0.25_mm_160_steps_vs_spatial_refined_0.20_mm_160_steps",
+    "temporal": "temporal_coarse_0.25_mm_80_steps_vs_reference_0.25_mm_160_steps",
+    "functional_acceptance_only": true,
+    "continuous_metrics": [
+      "rms_radius",
+      "rms_divergence",
+      "mean_energy",
+      "mean_tof",
+      "paired_transverse_position_velocity_time_energy"
+    ],
+    "continuous_acceptance_threshold_status": "UNAVAILABLE_NO_SOURCED_ERROR_BUDGET"
+  },
+  "resource_limits_each_arm": {
+    "wall_clock_seconds": 900,
+    "transient_run_directory_bytes": 1610612736,
+    "process_tree_working_set_bytes": 12884901888,
+    "minimum_system_available_memory_bytes": 8589934592,
+    "compact_final_retained_bytes": 10485760,
+    "maximum_mesh_cells": 1000000,
+    "automatic_retry_count": 0
+  },
+  "sequential_stop_policy": {
+    "first_arm_requires_explicit_user_authorization": true,
+    "later_arm_requires_prior_successful_manifest_and_separate_budget_rebinding": true,
+    "resource_or_solver_failure": "close_campaign_without_automatic_retry",
+    "functional_particle_identity_change": "report_FAIL_and_do_not_claim_continuous_convergence",
+    "continuous_result": "INCONCLUSIVE_NO_SOURCED_ERROR_BUDGET",
+    "forbidden": "Do not inherit hexapole numerical results, invent a percentage threshold, add a fourth brute-force tier, or run any arm while its authorization is false."
+  },
+  "claim_limit": "Configuration and preregistration only. No commercial run, numerical convergence, solver equivalence, Candidate, Formal or N=1000 claim is granted."
+}

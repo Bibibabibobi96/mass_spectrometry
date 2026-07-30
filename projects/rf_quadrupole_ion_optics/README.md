@@ -28,6 +28,7 @@
 | 圆柱全尺寸家族机械base与三种电气模式 | [`config/requests/baseline.json`](config/requests/baseline.json)与[`config/operating_modes.json`](config/operating_modes.json) |
 | 家族N=100/N=1000母样本绑定 | [`config/particle_source_profiles.json`](config/particle_source_profiles.json) |
 | 三模式N=100数值预注册与资格输入 | [`config/family_experiment/n100_convergence_preregistration.json`](config/family_experiment/n100_convergence_preregistration.json) |
+| 无加速混合网格粒子收敛预登记与独立预算 | [`config/family_experiment/comsol_hybrid_no_acceleration_particle_convergence_preregistration.json`](config/family_experiment/comsol_hybrid_no_acceleration_particle_convergence_preregistration.json)与[`config/family_experiment/comsol_hybrid_no_acceleration_particle_convergence_budget.json`](config/family_experiment/comsol_hybrid_no_acceleration_particle_convergence_budget.json) |
 | 官方传输物理发布 | [`config/resolved_design_official.json`](config/resolved_design_official.json) |
 | 质量过滤物理发布 | [`config/resolved_design_mass_filter.json`](config/resolved_design_mass_filter.json) |
 | 接口、质量过滤与旧同求解器比较的COMSOL数值 | [`config/comsol_solver_numerics.json`](config/comsol_solver_numerics.json) |
@@ -87,6 +88,8 @@ rf_quadrupole_ion_optics/
   商业求解器运行。分段杆和出口孔板两种轴向加速的baseline功能均已闭合，但各自COMSOL空间档
   均耗尽工程内存预算；时间档、N=1000及完整矩阵仍未授权。公共runner会在创建run目录前复核身份和数值参数，
   并执行`config/family_experiment/engineering_budget.json`的时间、内存和磁盘硬帽。
+- 六极杆已验证的混合网格机制已按相同profile语义登记到本项目，但没有继承六极杆数值结果。新活动
+  的三个arm均为`authorized=false`、`executed=false`，只允许在单独预算明确授权后顺序运行。
 - 正式机械几何与CAD同步完成前，`verify_project.ps1 -Level Formal`必须失败关闭。
 
 历史完整状态、实现清单和关闭过程冻结于

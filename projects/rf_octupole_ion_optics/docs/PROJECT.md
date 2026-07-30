@@ -70,6 +70,11 @@ N=100 baseline runtime key直接使用三种完整mode ID；加密key分别追�
 solver numerics ID与四/六极杆统一为`baseline_finite_3d`、`n100_spatial_refined`和
 `n100_temporal_refined`。
 
+另有独立的无加速混合网格粒子收敛预登记：
+`../config/qualification/comsol_hybrid_no_acceleration_particle_convergence_preregistration.json`。
+它登记`0.25 mm/160`参考、`0.20 mm/160`空间加密和`0.25 mm/80`时间粗档，使用独立工程预算；
+三个arm均未授权、未执行，不继承六极杆结果。
+
 三模式发散实验的方法来自`common/multipole/three_mode_dispersion_contract.json`。本项目已登记
 acceptance、effect-resolution、engineering-budget和三份电压合同，但前两者尚无可辩护尺度；它们
 只防止事后挑阈值，不授予资格。项目preregistration不是公共正式binding：只有真实solver run已发布
@@ -92,6 +97,7 @@ SIMION两份`POSTHOC_DESCRIPTIVE` binding和报告：只含点估计，不计算
 - [`../config/comsol_solver_numerics.json`](../config/comsol_solver_numerics.json)
 - [`../config/simion_solver_numerics.json`](../config/simion_solver_numerics.json)
 - [`../config/qualification/n100_convergence_preregistration.json`](../config/qualification/n100_convergence_preregistration.json)
+- [`../config/qualification/comsol_hybrid_no_acceleration_particle_convergence_preregistration.json`](../config/qualification/comsol_hybrid_no_acceleration_particle_convergence_preregistration.json)
 - [`../config/qualification/three_mode_dispersion_preregistration.json`](../config/qualification/three_mode_dispersion_preregistration.json)
 - [`../analysis/run_finite_3d_transport.ps1`](../analysis/run_finite_3d_transport.ps1)
 - [`../analysis/run_simion_finite_3d_transport.ps1`](../analysis/run_simion_finite_3d_transport.ps1)
@@ -108,6 +114,7 @@ SIMION两份`POSTHOC_DESCRIPTIVE` binding和报告：只含点估计，不计算
 
 1. 为接受尺度绑定真实下游器件的孔径/相空间预算，或建立可审查的项目误差预算；此前只能报告
    `INCONCLUSIVE`。
-2. 若推进连续量数值资格，为资源受限的加速模式建立有依据的新预算或替代离散策略；不得事后抬帽。
-3. 若推进Candidate/Formal，再建立机械制造基线、GUI/CAD同步和N=1000统计证据。
-4. 碰撞冷却和真实下游连接保持独立workflow，不由无碰撞三模式结果代替。
+2. 若批准混合网格粒子收敛活动，严格按预登记的参考、空间、时间顺序执行；任一资源或结构门禁失败即停止。
+3. 若推进连续量数值资格，为资源受限的加速模式建立有依据的新预算或替代离散策略；不得事后抬帽。
+4. 若推进Candidate/Formal，再建立机械制造基线、GUI/CAD同步和N=1000统计证据。
+5. 碰撞冷却和真实下游连接保持独立workflow，不由无碰撞三模式结果代替。

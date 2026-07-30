@@ -27,6 +27,11 @@ COMPATIBILITY_RUNTIME_IDS = {
     "baseline_finite_3d",
     "exit_aperture_plate_acceleration_reference",
 }
+HYBRID_RUNTIME_IDS = {
+    "no_acceleration_full_length_n100_hybrid_exit025_temporal_coarse",
+    "no_acceleration_full_length_n100_hybrid_exit025_temporal_refined",
+    "no_acceleration_full_length_n100_hybrid_exit020_spatial_temporal_refined",
+}
 
 
 def load(relative: str) -> dict[str, Any]:
@@ -43,6 +48,7 @@ class ThreeModeRuntimeAndQualificationTests(unittest.TestCase):
         }
         expected_ids |= {f"{mode_id}_n1000" for mode_id in MODE_IDS}
         expected_ids |= COMPATIBILITY_RUNTIME_IDS
+        expected_ids |= HYBRID_RUNTIME_IDS
         self.assertEqual(set(registry["profiles"]), expected_ids)
         source_identities = set()
         for runtime_id in sorted(expected_ids):
@@ -213,6 +219,79 @@ class ThreeModeRuntimeAndQualificationTests(unittest.TestCase):
         self.assertEqual(
             exit_plate["same_solver_spatial"]["comsol"]["status"],
             "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
+        )
+
+    def test_hybrid_particle_campaign_is_preregistered_without_authorization(
+        self,
+    ) -> None:
+        campaign = load(
+            "config/qualification/"
+            "comsol_hybrid_no_acceleration_particle_convergence_preregistration.json"
+        )
+        self.assertEqual(
+            campaign["status"],
+            "PREREGISTERED_AWAITING_EXPLICIT_COMMERCIAL_RUN_AUTHORIZATION",
+        )
+        self.assertEqual(campaign["commercial_run_count_executed"], 0)
+        self.assertEqual(campaign["maximum_commercial_run_count"], 3)
+        resolved = resolve_design_profile(
+            REPO_ROOT,
+            "rf_octupole_ion_optics",
+            "no_acceleration_full_length",
+        )["resolved_design"]
+        self.assertEqual(
+            campaign["scope"]["expected_run_parent_resolved_design_sha256"],
+            resolved["resolved_sha256"],
+        )
+        for authority in campaign["frozen_authorities"].values():
+            path = REPO_ROOT / authority["path"]
+            self.assertEqual(
+                authority["sha256"],
+                hashlib.sha256(path.read_bytes()).hexdigest().upper(),
+            )
+
+        numerics = load("config/comsol_solver_numerics.json")["profiles"]
+        runtime = load("config/runtime_profiles.json")["profiles"]
+        arms = campaign["ordered_arms"]
+        self.assertEqual([arm["sequence"] for arm in arms], [1, 2, 3])
+        self.assertTrue(all(not arm["authorized"] for arm in arms))
+        self.assertTrue(all(not arm["executed"] for arm in arms))
+        self.assertTrue(all(arm["run_id"] is None for arm in arms))
+        for arm in arms:
+            binding = runtime[arm["runtime_profile_id"]]
+            self.assertEqual(
+                binding["comsol_solver_numerics_profile_id"],
+                arm["comsol_solver_numerics_profile_id"],
+            )
+            self.assertEqual(
+                binding["simion_solver_numerics_profile_id"],
+                "baseline_finite_3d",
+            )
+
+        coarse = numerics[arms[2]["comsol_solver_numerics_profile_id"]]
+        reference = numerics[arms[0]["comsol_solver_numerics_profile_id"]]
+        spatial = numerics[arms[1]["comsol_solver_numerics_profile_id"]]
+        coarse_normalized = json.loads(json.dumps(coarse))
+        coarse_normalized["trajectory"]["rf_steps_per_period"] = 160
+        self.assertEqual(coarse_normalized, reference)
+        spatial_normalized = json.loads(json.dumps(spatial))
+        spatial_normalized["mesh"]["hybrid"]["sensitive_region"][
+            "exit_interface_refinement"
+        ]["maximum_element_size_mm"] = 0.25
+        self.assertEqual(spatial_normalized, reference)
+
+        budget = load(
+            "config/qualification/"
+            "comsol_hybrid_no_acceleration_particle_convergence_budget.json"
+        )
+        self.assertFalse(budget["pilot_authorization"]["authorized"])
+        self.assertEqual(
+            budget["pilot_authorization"]["scope"]["runtime_profile_id"],
+            arms[0]["runtime_profile_id"],
+        )
+        self.assertEqual(
+            budget["pilot_authorization"]["limits"]["maximum_mesh_cells"],
+            1000000,
         )
 
     def test_geometry_and_voltage_contracts_match_typed_resolved_modes(self) -> None:

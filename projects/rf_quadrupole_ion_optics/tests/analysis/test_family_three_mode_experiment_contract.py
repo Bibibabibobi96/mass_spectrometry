@@ -20,6 +20,11 @@ MODE_IDS = (
     "segmented_rod_axial_acceleration",
     "exit_aperture_plate_acceleration",
 )
+HYBRID_RUNTIME_IDS = (
+    "no_acceleration_full_length_n100_hybrid_exit025_temporal_coarse",
+    "no_acceleration_full_length_n100_hybrid_exit025_temporal_refined",
+    "no_acceleration_full_length_n100_hybrid_exit020_spatial_temporal_refined",
+)
 
 
 def load(path: Path) -> dict[str, Any]:
@@ -234,12 +239,80 @@ class FamilyThreeModeExperimentContractTests(unittest.TestCase):
             [(0.4, 40), (0.3, 40), (0.3, 80)],
         )
         runtime = load(CONFIG / "runtime_profiles.json")["profiles"]
-        self.assertEqual(len(runtime), 12)
+        self.assertEqual(len(runtime), 15)
         for mode_id in MODE_IDS:
             self.assertIn(mode_id, runtime)
             self.assertIn(f"{mode_id}_n100_spatial_refined", runtime)
             self.assertIn(f"{mode_id}_n100_temporal_refined", runtime)
             self.assertIn(f"{mode_id}_n1000", runtime)
+        self.assertTrue(set(HYBRID_RUNTIME_IDS).issubset(runtime))
+
+    def test_hybrid_particle_campaign_is_preregistered_without_authorization(
+        self,
+    ) -> None:
+        family = CONFIG / "family_experiment"
+        campaign = load(
+            family
+            / "comsol_hybrid_no_acceleration_particle_convergence_preregistration.json"
+        )
+        self.assertEqual(
+            campaign["status"],
+            "PREREGISTERED_AWAITING_EXPLICIT_COMMERCIAL_RUN_AUTHORIZATION",
+        )
+        self.assertEqual(campaign["commercial_run_count_executed"], 0)
+        self.assertEqual(campaign["maximum_commercial_run_count"], 3)
+        self.assertEqual(
+            campaign["scope"]["expected_run_parent_resolved_design_sha256"],
+            self.resolved["no_acceleration_full_length"]["resolved_sha256"],
+        )
+        for authority in campaign["frozen_authorities"].values():
+            self.assertEqual(authority["sha256"], sha256(REPO_ROOT / authority["path"]))
+
+        numerics = load(
+            CONFIG / "multipole_transport_comsol_solver_numerics.json"
+        )["profiles"]
+        runtime = load(CONFIG / "runtime_profiles.json")["profiles"]
+        arms = campaign["ordered_arms"]
+        self.assertEqual([arm["sequence"] for arm in arms], [1, 2, 3])
+        self.assertTrue(all(not arm["authorized"] for arm in arms))
+        self.assertTrue(all(not arm["executed"] for arm in arms))
+        self.assertTrue(all(arm["run_id"] is None for arm in arms))
+        for arm in arms:
+            binding = runtime[arm["runtime_profile_id"]]
+            self.assertEqual(
+                binding["comsol_solver_numerics_profile_id"],
+                arm["comsol_solver_numerics_profile_id"],
+            )
+            self.assertEqual(
+                binding["simion_solver_numerics_profile_id"],
+                "baseline_finite_3d",
+            )
+
+        coarse = numerics[arms[2]["comsol_solver_numerics_profile_id"]]
+        reference = numerics[arms[0]["comsol_solver_numerics_profile_id"]]
+        spatial = numerics[arms[1]["comsol_solver_numerics_profile_id"]]
+        coarse_normalized = json.loads(json.dumps(coarse))
+        coarse_normalized["trajectory"]["rf_steps_per_period"] = 160
+        self.assertEqual(coarse_normalized, reference)
+        spatial_normalized = json.loads(json.dumps(spatial))
+        spatial_normalized["mesh"]["hybrid"]["sensitive_region"][
+            "exit_interface_refinement"
+        ]["maximum_element_size_mm"] = 0.25
+        self.assertEqual(spatial_normalized, reference)
+
+        budget = load(
+            family
+            / "comsol_hybrid_no_acceleration_particle_convergence_budget.json"
+        )
+        self.assertFalse(budget["pilot_authorization"]["authorized"])
+        self.assertEqual(
+            budget["pilot_authorization"]["scope"]["runtime_profile_id"],
+            arms[0]["runtime_profile_id"],
+        )
+        self.assertEqual(
+            budget["pilot_authorization"]["limits"]["maximum_mesh_cells"],
+            1000000,
+        )
 
     def test_acceptance_effect_resolution_and_budget_fail_inconclusive(self) -> None:
         family = CONFIG / "family_experiment"

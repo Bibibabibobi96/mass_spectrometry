@@ -32,6 +32,9 @@
   [`config/qualification/n100_convergence_preregistration.json`](config/qualification/n100_convergence_preregistration.json)
   和
   [`config/qualification/three_mode_dispersion_preregistration.json`](config/qualification/three_mode_dispersion_preregistration.json)。
+- 无加速混合网格粒子收敛活动：
+  [`config/qualification/comsol_hybrid_no_acceleration_particle_convergence_preregistration.json`](config/qualification/comsol_hybrid_no_acceleration_particle_convergence_preregistration.json)
+  与独立预算合同；三个arm均未授权、未执行。
 
 三个规范模式为`no_acceleration_full_length`、`segmented_rod_axial_acceleration`和
 `exit_aperture_plate_acceleration`。旧名`baseline_finite_3d`与
@@ -72,6 +75,8 @@ COMSOL空间档在`MESH_COMPLETE`后耗尽工程内存预算。
 出口孔板加速N=100 baseline功能也已闭合，SIMION空间档保持100/100，但COMSOL空间档同样在
 `MESH_COMPLETE`后耗尽工程内存预算。当前没有授权任何商业求解器运行；时间档、N=1000和
 完整矩阵仍未授权。
+六极杆已验证的混合网格机制已经按相同profile语义登记到本项目；这里只复用机制和比较设计，不继承
+六极杆数值结果。新活动在取得明确商业运行授权前不会创建run。
 项目合同
 不能把求解器运行、Candidate或Formal状态从旧证据继承到新机械基线。
 

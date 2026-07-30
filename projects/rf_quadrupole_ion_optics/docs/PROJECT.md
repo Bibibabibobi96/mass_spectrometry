@@ -57,6 +57,9 @@ run编号、故障链和关闭过程冻结在
 - 家族N=100/N=1000母样本：`../config/particle_source_profiles.json`；
 - N=100数值矩阵、acceptance、effect-resolution和engineering-budget：
   `../config/family_experiment/n100_convergence_preregistration.json`及同目录资格合同；
+- 无加速混合网格粒子收敛活动：
+  `../config/family_experiment/comsol_hybrid_no_acceleration_particle_convergence_preregistration.json`
+  及其独立budget；它不改写既有冻结预算；
 - 质量过滤：`../config/resolved_design_mass_filter.json`；
 - 接口就绪、质量过滤和旧同求解器比较的COMSOL数值：
   `../config/comsol_solver_numerics.json`；
@@ -107,6 +110,9 @@ run编号、故障链和关闭过程冻结在
 ### 轴向加速
 
 当前三模式只允许typed operating-mode registry中的电气差异，严格共享圆柱机械base、RF和粒子母样本。
+项目已补齐与六极杆同语义的无加速混合网格COMSOL三个arm：`0.25 mm/160`参考、
+`0.20 mm/160`空间加密和`0.25 mm/80`时间粗档。这里只迁移网格机制和比较设计，不继承六极杆结果；
+三臂均未授权、未执行，也不授予收敛或资格结论。
 基线pilot后登记的v2空间敏感性pair已经完成：COMSOL局部`0.5→0.35 mm`的RMS半径相对变化约
 `0.92%`，SIMION全局`0.4→0.3 mm`约`9.57%`；两者的100个RF-on粒子身份和功能分类均保持一致，
 但这些连续量没有来源充分的误差预算，仍为`INCONCLUSIVE`。空间结果后、时间档运行前登记的v3
@@ -159,13 +165,14 @@ component-state写出与即时校验统一调用公共合同入口，不再维�
 
 1. 若需声明束斑、发散、TOF、能量或逐粒子相空间等价，先为目标效应预注册独立误差预算，再完成
    相应连续量数值资格；不得从当前传输分类PASS外推。
-2. 为RF-only、RF+DC及三模式轴向实验分别建立不互相替代的Candidate证据包；不得以功能run晋升。
-3. 将当前圆柱机器base升级为机械/CAD权威，补端部、屏蔽、馈通、装配与GUI/CAD同步，再开放Formal门禁。
-4. 若恢复RF四极杆离子光学→单次反射oa-TOF接口资格工作，先单独批准目标与指标，再完成连接场数值资格、N=1000、
+2. 若批准混合网格粒子收敛活动，严格按预登记的参考、空间、时间顺序执行；任一资源或结构门禁失败即停止。
+3. 为RF-only、RF+DC及三模式轴向实验分别建立不互相替代的Candidate证据包；不得以功能run晋升。
+4. 将当前圆柱机器base升级为机械/CAD权威，补端部、屏蔽、馈通、装配与GUI/CAD同步，再开放Formal门禁。
+5. 若恢复RF四极杆离子光学→单次反射oa-TOF接口资格工作，先单独批准目标与指标，再完成连接场数值资格、N=1000、
    脉冲/时间步收敛、分辨率、容差及机械装配；当前功能链不自动进入该阶段。
-5. 若恢复碰撞冷却，必须从当前共享几何和新碰撞合同建立独立workflow，不恢复旧150 mm脚本。
-6. 迁移仍消费旧`baseline.json`的专用workflow；完成前只读保留，不把该文件重新接入项目注册身份。
-7. SIMION 2026 `.wgem`仍受许可证限制，活动路线使用已验证的SIMION 2020 legacy-GEM；许可证与
+6. 若恢复碰撞冷却，必须从当前共享几何和新碰撞合同建立独立workflow，不恢复旧150 mm脚本。
+7. 迁移仍消费旧`baseline.json`的专用workflow；完成前只读保留，不把该文件重新接入项目注册身份。
+8. SIMION 2026 `.wgem`仍受许可证限制，活动路线使用已验证的SIMION 2020 legacy-GEM；许可证与
    跨工作区模板可移植性由公共multipole文档统一跟踪。
 
 每项关闭时把过程和完整run清单迁入日期化history；本节只保留未完成动作、进入条件和关闭条件。
