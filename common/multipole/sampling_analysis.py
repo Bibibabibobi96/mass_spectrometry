@@ -11,7 +11,10 @@ import random
 from pathlib import Path
 from typing import Any, Iterable
 
+from common.multipole.followup_analysis import load_resolution, paired_report
 from common.multipole.numerical_qualification import (
+    load_json,
+    manifest_record,
     observable_differences,
     run_data,
 )
@@ -197,6 +200,58 @@ def _relative_change(n100: float, n1000: float) -> float:
     return (n1000 - n100) / n100 if n100 else 0.0
 
 
+def wilson_interval(successes: int, total: int) -> dict[str, float]:
+    if total <= 0 or successes < 0 or successes > total:
+        raise ValueError("Wilson interval requires 0 <= successes <= positive total")
+    z = 1.959963984540054
+    proportion = successes / total
+    denominator = 1.0 + z * z / total
+    center = (proportion + z * z / (2.0 * total)) / denominator
+    half_width = (
+        z
+        * math.sqrt(
+            proportion * (1.0 - proportion) / total
+            + z * z / (4.0 * total * total)
+        )
+        / denominator
+    )
+    return {
+        "estimate": proportion,
+        "lower": max(0.0, center - half_width),
+        "upper": min(1.0, center + half_width),
+    }
+
+
+def case_transmission_summary(data: dict[str, Any]) -> dict[str, Any]:
+    metrics = load_json(
+        manifest_record(data["manifest"], "finite_3d_transport_metrics.json")
+    )
+    cases = metrics.get("cases", {})
+    primary_id = metrics.get("primary_case_id")
+    control_id = metrics.get("control_case_id")
+    if primary_id not in cases or control_id not in cases:
+        raise ValueError("transport metrics do not contain primary and control cases")
+
+    def summarize(case_id: str) -> dict[str, Any]:
+        case = cases[case_id]
+        particles = int(case["particles"])
+        transmitted = int(
+            case.get("transmitted", case.get("hits", case.get("census_plane_crossings")))
+        )
+        return {
+            "case_id": case_id,
+            "particles": particles,
+            "transmitted": transmitted,
+            "transmission_fraction": transmitted / particles,
+            "wilson_95_interval": wilson_interval(transmitted, particles),
+        }
+
+    return {
+        "primary": summarize(str(primary_id)),
+        "zero_rf_control": summarize(str(control_id)),
+    }
+
+
 def analyze(
     *,
     repo_root: Path,
@@ -204,6 +259,9 @@ def analyze(
     n100_manifest: Path,
     n1000_manifest: Path,
     comsol_manifest: Path,
+    comsol_n1000_manifest: Path | None = None,
+    comsol_n100_t320_manifest: Path | None = None,
+    resolution_path: Path | None = None,
 ) -> dict[str, Any]:
     preregistration = _load_json(preregistration_path)
     analysis_contract = preregistration["analysis_contract"]
@@ -234,7 +292,7 @@ def analyze(
     seed = int(analysis_contract["bootstrap_seed"])
     resamples = int(analysis_contract["bootstrap_resamples"])
     confidence = float(analysis_contract["confidence_level"])
-    return {
+    result = {
         "schema_version": 1,
         "role": "multipole_n1000_sampling_result",
         "status": "PASS",
@@ -323,6 +381,89 @@ def analyze(
         },
         "claim_limit": preregistration["claim_limit"],
     }
+    if comsol_n1000_manifest is None:
+        return result
+    if comsol_n100_t320_manifest is None or resolution_path is None:
+        raise ValueError(
+            "COMSOL N=1000 bridge requires the N=100 t320 and resolution inputs"
+        )
+    comsol_n1000 = run_data(comsol_n1000_manifest)
+    comsol_n100_t320 = run_data(comsol_n100_t320_manifest)
+    if comsol_n1000["solver"] != "COMSOL" or comsol_n100_t320["solver"] != "COMSOL":
+        raise ValueError("COMSOL bridge inputs are mislabeled")
+    if comsol["numerics"] != comsol_n1000["numerics"]:
+        raise ValueError("COMSOL N=100 and N=1000 t160 numerics differ")
+    physical_hashes = {
+        n100["physical_resolved_design_sha256"],
+        n1000["physical_resolved_design_sha256"],
+        comsol["physical_resolved_design_sha256"],
+        comsol_n1000["physical_resolved_design_sha256"],
+        comsol_n100_t320["physical_resolved_design_sha256"],
+    }
+    if len(physical_hashes) != 1:
+        raise ValueError("bridge runs contain different physical resolved designs")
+    if (
+        comsol["source_particle_ids"]
+        != comsol_n1000["source_particle_ids"][: len(comsol["source_particle_ids"])]
+    ):
+        raise ValueError("COMSOL N=100 source IDs are not the N=1000 prefix")
+    if n1000["particle_source_sha256"] != comsol_n1000["particle_source_sha256"]:
+        raise ValueError("SIMION and COMSOL N=1000 particle sources differ")
+
+    resolution = load_resolution(resolution_path)
+    comsol_n1000_values = observables_for_ids(
+        comsol_n1000, comsol_n1000["source_particle_ids"]
+    )
+    simion_shift = result["sampling_comparison"]["relative_change_n100_to_n1000"]
+    comsol_shift = {
+        name: _relative_change(comsol_values[name], comsol_n1000_values[name])
+        for name in comsol_values
+    }
+    result["comsol_bridge"] = {
+        "run_ids": {
+            "comsol_n100_t160": comsol["run_id"],
+            "comsol_n100_t320": comsol_n100_t320["run_id"],
+            "comsol_n1000_t160": comsol_n1000["run_id"],
+            "simion_n1000": n1000["run_id"],
+        },
+        "comsol_n100_to_n1000_prefix_reproduction": prefix_reproduction(
+            comsol, comsol_n1000
+        ),
+        "comsol_n1000": comsol_n1000_values,
+        "comsol_n1000_bootstrap": bootstrap_intervals(
+            comsol_n1000,
+            resamples=resamples,
+            seed=seed + 3,
+            confidence_level=confidence,
+        ),
+        "relative_sampling_shift_by_solver": {
+            "simion": simion_shift,
+            "comsol": comsol_shift,
+            "comsol_minus_simion": {
+                name: comsol_shift[name] - simion_shift[name]
+                for name in simion_shift
+            },
+        },
+        "paired_comparisons": {
+            "comsol_n100_t160_to_t320": paired_report(
+                comsol, comsol_n100_t320, resolution
+            ),
+            "simion_to_comsol_n1000": paired_report(
+                n1000, comsol_n1000, resolution
+            ),
+        },
+        "transmission_cases": {
+            "simion_n100": case_transmission_summary(n100),
+            "simion_n1000": case_transmission_summary(n1000),
+            "comsol_n100": case_transmission_summary(comsol),
+            "comsol_n1000": case_transmission_summary(comsol_n1000),
+        },
+        "interpretation_limit": (
+            "Sampling shifts and common-source paired differences are descriptive. "
+            "They do not establish solver equivalence, superiority, or absolute accuracy."
+        ),
+    }
+    return result
 
 
 def plot_sampling_result(result: dict[str, Any], output: Path) -> None:
@@ -354,6 +495,7 @@ def plot_sampling_result(result: dict[str, Any], output: Path) -> None:
         n100 = bootstrap["n100"][name]
         n1000 = bootstrap["n1000"][name]
         estimates = [n100["estimate"], n1000["estimate"], comsol[name]]
+        tick_labels = ("SIMION\nN=100", "SIMION\nN=1000", "COMSOL\nN=100")
         lower = [
             n100["estimate"] - n100["lower"],
             n1000["estimate"] - n1000["lower"],
@@ -364,7 +506,23 @@ def plot_sampling_result(result: dict[str, Any], output: Path) -> None:
             n1000["upper"] - n1000["estimate"],
             comsol_bootstrap[name]["upper"] - comsol[name],
         ]
-        for index, (estimate, color) in enumerate(zip(estimates, colors, strict=True)):
+        if "comsol_bridge" in result:
+            bridge = result["comsol_bridge"]
+            comsol_n1000 = bridge["comsol_n1000"][name]
+            comsol_n1000_bootstrap = bridge["comsol_n1000_bootstrap"][name]
+            estimates.append(comsol_n1000)
+            lower.append(comsol_n1000 - comsol_n1000_bootstrap["lower"])
+            upper.append(comsol_n1000_bootstrap["upper"] - comsol_n1000)
+            tick_labels = (
+                "SIMION\nN=100",
+                "SIMION\nN=1000",
+                "COMSOL\nN=100",
+                "COMSOL\nN=1000",
+            )
+        plot_colors = colors if len(estimates) == 3 else (*colors, "#AA4499")
+        for index, (estimate, color) in enumerate(
+            zip(estimates, plot_colors, strict=True)
+        ):
             axis.errorbar(
                 index,
                 estimate,
@@ -374,9 +532,7 @@ def plot_sampling_result(result: dict[str, Any], output: Path) -> None:
                 capsize=4,
                 markersize=7,
             )
-        axis.set_xticks(
-            (0, 1, 2), ("SIMION\nN=100", "SIMION\nN=1000", "COMSOL\nN=100")
-        )
+        axis.set_xticks(range(len(tick_labels)), tick_labels)
         axis.set_title(labels[name])
         axis.set_ylabel(units[name])
         axis.grid(axis="y", alpha=0.25)
@@ -397,6 +553,9 @@ def main() -> int:
     parser.add_argument("--n100-manifest", required=True, type=Path)
     parser.add_argument("--n1000-manifest", required=True, type=Path)
     parser.add_argument("--comsol-manifest", required=True, type=Path)
+    parser.add_argument("--comsol-n1000-manifest", type=Path)
+    parser.add_argument("--comsol-n100-t320-manifest", type=Path)
+    parser.add_argument("--resolution", type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--plot", type=Path)
     args = parser.parse_args()
@@ -406,6 +565,19 @@ def main() -> int:
         n100_manifest=args.n100_manifest.resolve(),
         n1000_manifest=args.n1000_manifest.resolve(),
         comsol_manifest=args.comsol_manifest.resolve(),
+        comsol_n1000_manifest=(
+            args.comsol_n1000_manifest.resolve()
+            if args.comsol_n1000_manifest is not None
+            else None
+        ),
+        comsol_n100_t320_manifest=(
+            args.comsol_n100_t320_manifest.resolve()
+            if args.comsol_n100_t320_manifest is not None
+            else None
+        ),
+        resolution_path=(
+            args.resolution.resolve() if args.resolution is not None else None
+        ),
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(

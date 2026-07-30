@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import unittest
 
-from common.multipole.sampling_analysis import _percentile, _relative_change, _metric
+from common.multipole.sampling_analysis import (
+    _metric,
+    _percentile,
+    _relative_change,
+    wilson_interval,
+)
 
 
 class SamplingAnalysisTests(unittest.TestCase):
@@ -18,6 +23,16 @@ class SamplingAnalysisTests(unittest.TestCase):
 
     def test_relative_change_preserves_direction(self) -> None:
         self.assertAlmostEqual(_relative_change(10.0, 8.0), -0.2)
+
+    def test_wilson_interval_contains_observed_fraction(self) -> None:
+        interval = wilson_interval(21, 100)
+        self.assertLess(interval["lower"], 0.21)
+        self.assertGreater(interval["upper"], 0.21)
+        self.assertEqual(interval["estimate"], 0.21)
+
+    def test_wilson_interval_rejects_invalid_counts(self) -> None:
+        with self.assertRaises(ValueError):
+            wilson_interval(2, 1)
 
 
 if __name__ == "__main__":

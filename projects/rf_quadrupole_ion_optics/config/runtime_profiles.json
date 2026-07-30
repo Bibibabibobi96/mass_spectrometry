@@ -163,6 +163,13 @@
       "particle_source_profile_id": "family_mother_sample_v1_n1000",
       "comsol_solver_numerics_profile_id": "baseline_finite_3d",
       "simion_solver_numerics_profile_id": "simion_followup_T_r020_z020_t160"
+    },
+    "no_acceleration_full_length_n1000_comsol_bridge_exit020_t160": {
+      "engineering_budget_path": "config/family_experiment/no_acceleration_n1000_comsol_bridge/comsol_t160_budget.json",
+      "design_profile_id": "no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n1000",
+      "comsol_solver_numerics_profile_id": "hybrid_c1_corridor040_exit020_nosweep_cg_amg_spatial_temporal_refined",
+      "simion_solver_numerics_profile_id": "baseline_finite_3d"
     }
   }
 }
