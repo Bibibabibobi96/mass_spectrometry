@@ -553,7 +553,7 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
         budget = load(
             PROJECT_ROOT / "config" / "qualification" / "engineering_budget.json"
         )
-        self.assertTrue(budget["pilot_authorization"]["authorized"])
+        self.assertFalse(budget["pilot_authorization"]["authorized"])
         self.assertEqual(
             budget["pilot_authorization"]["scope"]["runtime_profile_id"],
             "exit_aperture_plate_acceleration_n100_hybrid_c1_corridor040_exit025_nosweep_field_screen",
@@ -646,7 +646,7 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
             / "qualification"
             / "comsol_exit_interface_025_final_field_preregistration.json"
         )
-        self.assertEqual(final["status"], "authorized_not_run")
+        self.assertEqual(final["status"], "completed_success_strategy_accepted")
         self.assertEqual(
             final["mesh_contract"]["exit_interface_refinement"][
                 "maximum_element_size_mm"
@@ -658,6 +658,14 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
                 "mesh_global_elements_less_than"
             ],
             713_396,
+        )
+        self.assertEqual(
+            final["execution_result"]["observed"]["mesh_global_elements"],
+            630_010,
+        )
+        self.assertTrue(final["execution_result"]["strategy_acceptance_pass"])
+        self.assertFalse(
+            final["execution_result"]["particle_followup_authorized"]
         )
         solver = (
             REPO_ROOT / "common" / "multipole" / "solve_finite_3d_transport.m"

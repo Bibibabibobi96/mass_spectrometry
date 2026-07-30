@@ -133,9 +133,13 @@
   [`不侵入扫掠区的纠正pilot`](config/qualification/comsol_exit_interface_nosweep_mesh_strategy_field_preregistration.json)
   把上游范围收回到固定1.0 mm segment-end buffer边界，并在共享实现中禁止局部区进入swept interior。
   该0.20 mm局部档以742,973单元完成双场和6660行采样，六个区域参考带全部满足，但仍比0.32 mm
-  全长参考多29,577单元，不能作为更省的替代网格。当前只再授权
+  全长参考多29,577单元，不能作为更省的替代网格。随后执行的
   [`0.25 mm最终插值pilot`](config/qualification/comsol_exit_interface_025_final_field_preregistration.json)；
-  它必须同时低于713,396单元并满足全部六个冻结参考带，否则关闭该尺寸策略且不再追加粒子或插值档。
+  以630,010单元完成双场和6660行采样，全部六个冻结参考带满足，并比0.32 mm全长参考减少83,386单元
+  （11.689%）。0.25→0.20 mm相邻局部档在常规杆区、杆出口和handoff的差分场变化分别约
+  `0.041%/0.479%/0.982%`，只支持局部尺寸轴的工程稳定性，不建立完整空间收敛。该0.25 mm策略现接受为
+  较低成本工程场参考；进一步COMSOL场/粒子加密保持关闭，优先处理公共handoff、RF→oaTOF贯通和
+  同条件跨求解器功能/相空间/能量印证。
   既有三模式baseline的两份
   求解器报告只具有`POSTHOC_DESCRIPTIVE`身份，统一
   比较见[`../../docs/history/20260729__multipole-three-mode-posthoc-n100.md`](../../docs/history/20260729__multipole-three-mode-posthoc-n100.md)。

@@ -306,7 +306,7 @@ class FamilyExperimentProfileTests(unittest.TestCase):
             self.assertTrue(contract["preregistered_before_run"])
             self.assertTrue(contract[content])
         engineering = load("config/qualification/engineering_budget.json")
-        self.assertTrue(engineering["pilot_authorization"]["authorized"])
+        self.assertFalse(engineering["pilot_authorization"]["authorized"])
         self.assertFalse(engineering["full_matrix_authorization"]["authorized"])
         self.assertEqual(
             engineering["pilot_authorization"]["scope"]["runtime_profile_id"],
@@ -323,7 +323,7 @@ class FamilyExperimentProfileTests(unittest.TestCase):
         self.assertFalse(engineering["full_matrix_authorization"]["authorized"])
         self.assertEqual(
             engineering["full_matrix_authorization"]["reason"],
-            "exit_interface_025_final_interpolation_field_pilot_must_close_before_particles",
+            "claim_specific_integration_and_cross_solver_work_precedes_further_convergence",
         )
 
         result = load(
