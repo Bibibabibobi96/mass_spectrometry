@@ -47,6 +47,13 @@ class ProjectTransportLauncherSupportTests(unittest.TestCase):
         self.assertNotIn("-like '*_mesh_build'", source)
         self.assertIn("SIMION transport does not support stop stage", source)
         self.assertIn("solver_numerics.$Solver.values", source)
+        for axis in ("X", "Y", "Z"):
+            self.assertIn(
+                f"$arguments.CellMm{axis} = [double]$numerics.cell_mm_xyz."
+                f"{axis.lower()}",
+                source,
+            )
+        self.assertNotIn("$arguments.CellMm =", source)
 
     def test_public_wrappers_keep_identity_defaults_and_no_profile_catalog(self) -> None:
         for project_id, entry_directory, default_profile_id in PROJECTS:

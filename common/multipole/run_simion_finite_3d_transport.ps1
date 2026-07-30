@@ -1,4 +1,4 @@
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName='IsotropicCell')]
 param(
   [Parameter(Mandatory=$true)][string]$ProjectId,
   [Parameter(Mandatory=$true)][string]$RuntimeProfileId,
@@ -8,7 +8,14 @@ param(
   [string]$EvidenceContractPath='',
   [string]$RunId='',
   [string]$ReferenceComsolRunId='',
+  [Parameter(ParameterSetName='IsotropicCell')]
   [ValidateRange(0.001,100)][double]$CellMm=0.4,
+  [Parameter(Mandatory=$true,ParameterSetName='AnisotropicCell')]
+  [ValidateRange(0.001,100)][double]$CellMmX,
+  [Parameter(Mandatory=$true,ParameterSetName='AnisotropicCell')]
+  [ValidateRange(0.001,100)][double]$CellMmY,
+  [Parameter(Mandatory=$true,ParameterSetName='AnisotropicCell')]
+  [ValidateRange(0.001,100)][double]$CellMmZ,
   [string]$SimionExe='',
   [string]$PythonExe='',
   [ValidateRange(4,10000)][int]$RfStepsPerPeriod=80,
@@ -22,6 +29,40 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
+$resolvedCellMmX=if($PSCmdlet.ParameterSetName-eq'AnisotropicCell'){$CellMmX}else{$CellMm}
+$resolvedCellMmY=if($PSCmdlet.ParameterSetName-eq'AnisotropicCell'){$CellMmY}else{$CellMm}
+$resolvedCellMmZ=if($PSCmdlet.ParameterSetName-eq'AnisotropicCell'){$CellMmZ}else{$CellMm}
+
+function Get-SimionPaGridAudit {
+  param(
+    [Parameter(Mandatory=$true)][string]$GemPath,
+    $MaximumPaGridPoints=$null
+  )
+  $gemText=Get-Content -LiteralPath $GemPath -Raw -Encoding ASCII
+  $matches=[regex]::Matches(
+    $gemText,
+    '(?m)^\s*pa_define\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,'
+  )
+  if($matches.Count-ne 1){
+    throw 'SIMION GEM must contain exactly one parseable pa_define grid.'
+  }
+  $nx=[int64]::Parse($matches[0].Groups[1].Value)
+  $ny=[int64]::Parse($matches[0].Groups[2].Value)
+  $nz=[int64]::Parse($matches[0].Groups[3].Value)
+  $gridPoints=[decimal]$nx*[decimal]$ny*[decimal]$nz
+  $maximum=if($null-eq$MaximumPaGridPoints){$null}else{[decimal]$MaximumPaGridPoints}
+  $status=if($null-eq$maximum){'NOT_CONFIGURED'}elseif($gridPoints-le$maximum){'PASS'}else{'FAIL'}
+  return [ordered]@{
+    schema_version=1
+    role='multipole_simion_pa_grid_audit'
+    nx=$nx
+    ny=$ny
+    nz=$nz
+    grid_points=$gridPoints
+    maximum_pa_grid_points=$maximum
+    status=$status
+  }
+}
 
 function ConvertTo-TransportMetricCase {
   param([Parameter(Mandatory)]$CaseSummary)
@@ -50,6 +91,7 @@ $registryPreflight=Get-Content -LiteralPath (Join-Path $repoRoot 'config\project
 $projectMatches=@($registryPreflight.projects|Where-Object{[string]$_.project_id-eq$ProjectId})
 if($projectMatches.Count-ne 1){throw "ProjectId is not unique in the canonical project registry: $ProjectId"}
 $simion=if($SimionExe){[IO.Path]::GetFullPath($SimionExe)}else{Join-Path $env:ProgramFiles 'SIMION-2020\simion.exe'}
+$runIdWasExplicit=-not[string]::IsNullOrWhiteSpace($RunId)
 if([string]::IsNullOrWhiteSpace($RunId)){
   $RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+"__sim__simion__$($ProjectId.Replace('_','-'))-$($DesignProfileId.Replace('_','-'))__resolved-l3"
 }
@@ -57,15 +99,31 @@ $budgetPreflight=Join-Path ([IO.Path]::GetTempPath()) ("multipole_budget_{0}.jso
 try{
   Push-Location $repoRoot
   try{
-    & $python -m common.multipole.resource_budget --repo-root $repoRoot `
-      --budget $engineeringBudgetInput --project-id $ProjectId --solver simion `
-      --runtime-profile-id $RuntimeProfileId --design-profile-id $DesignProfileId `
-      --particle-source $particleSourceInput --retention-class $RetentionClass `
-      --output $budgetPreflight
+    $budgetArguments=@('-m','common.multipole.resource_budget',
+      '--repo-root',$repoRoot,'--budget',$engineeringBudgetInput,
+      '--project-id',$ProjectId,'--solver','simion',
+      '--runtime-profile-id',$RuntimeProfileId,
+      '--design-profile-id',$DesignProfileId,
+      '--particle-source',$particleSourceInput,
+      '--retention-class',$RetentionClass,'--output',$budgetPreflight)
+    if($runIdWasExplicit){$budgetArguments+=@('--run-id',$RunId)}
+    & $python @budgetArguments
   }finally{Pop-Location}
   if($LASTEXITCODE-ne 0){throw 'SIMION resource-budget preflight failed.'}
-  $authorizedNumerics=(Get-Content -LiteralPath $budgetPreflight -Raw -Encoding UTF8|ConvertFrom-Json).solver_numerics
-  if([double]$authorizedNumerics.cell_mm-ne$CellMm-or
+  $resolvedBudgetPreflight=Get-Content -LiteralPath $budgetPreflight -Raw -Encoding UTF8|ConvertFrom-Json
+  $authorizedNumerics=$resolvedBudgetPreflight.solver_numerics
+  $authorizedCell=$authorizedNumerics.cell_mm_xyz
+  if($null-eq$authorizedCell){
+    throw 'Authorized SIMION numerics omit canonical cell_mm_xyz.'
+  }
+  if($runIdWasExplicit-and
+    -not[string]::IsNullOrWhiteSpace([string]$resolvedBudgetPreflight.authorized_run_id)-and
+    [string]$resolvedBudgetPreflight.authorized_run_id-cne$RunId){
+    throw 'Explicit RunId differs from the authorized resource-budget scope.'
+  }
+  if([double]$authorizedCell.x-ne$resolvedCellMmX-or
+    [double]$authorizedCell.y-ne$resolvedCellMmY-or
+    [double]$authorizedCell.z-ne$resolvedCellMmZ-or
     [int]$authorizedNumerics.trajectory_quality-ne$TrajectoryQuality-or
     [int]$authorizedNumerics.trajectory.rf_steps_per_period-ne$RfStepsPerPeriod-or
     [double]$authorizedNumerics.trajectory.maximum_global_time_us-ne$MaximumTimeUs){
@@ -246,7 +304,8 @@ try{
     $referenceComsolSourceRunId=$ReferenceComsolRunId
   }
   $numerics=Join-Path $inputDir 'solver_numerics.json'
-  [ordered]@{schema_version=1;role='multipole_simion_solver_numerics';cell_mm=$CellMm;
+  [ordered]@{schema_version=2;role='multipole_simion_solver_numerics';
+    cell_mm_xyz=[ordered]@{x=$resolvedCellMmX;y=$resolvedCellMmY;z=$resolvedCellMmZ};
     trajectory_quality=$TrajectoryQuality;
     trajectory=[ordered]@{rf_steps_per_period=$RfStepsPerPeriod;maximum_global_time_us=$MaximumTimeUs}}|
     ConvertTo-Json -Depth 5|Set-Content -LiteralPath $numerics -Encoding UTF8
@@ -261,7 +320,9 @@ try{
   Push-Location $codeRoot
   try{
     $env:PYTHONPATH=$codeRoot
-    & $python -m common.multipole.simion_geometry --resolved-design $resolved --cell-mm $CellMm --output $gem
+    & $python -m common.multipole.simion_geometry --resolved-design $resolved `
+      --cell-mm-x $resolvedCellMmX --cell-mm-y $resolvedCellMmY `
+      --cell-mm-z $resolvedCellMmZ --output $gem
     if($LASTEXITCODE-ne 0){throw 'SIMION GEM projection failed.'}
     $sourceProjectionArguments=@('-m','common.multipole.simion_particle_source',
       '--particles',$particleSource,'--resolved-design',$resolved,
@@ -274,6 +335,17 @@ try{
     & $python @sourceProjectionArguments
     if($LASTEXITCODE-ne 0){throw 'SIMION particle projection failed.'}
   }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
+  $maximumPaGridPoints=if(
+    $resolvedBudgetPreflight.limits.PSObject.Properties.Name-contains'maximum_pa_grid_points'
+  ){[int64]$resolvedBudgetPreflight.limits.maximum_pa_grid_points}else{$null}
+  $gridAudit=Join-Path $inputDir 'simion_grid_audit.json'
+  $gridAuditDocument=Get-SimionPaGridAudit -GemPath $gem `
+    -MaximumPaGridPoints $maximumPaGridPoints
+  $gridAuditDocument|ConvertTo-Json -Depth 4|
+    Set-Content -LiteralPath $gridAudit -Encoding UTF8
+  if($gridAuditDocument.status-eq'FAIL'){
+    throw "SIMION PA grid point budget exceeded: $($gridAuditDocument.grid_points) > $maximumPaGridPoints"
+  }
   Copy-Item -LiteralPath $templateIob -Destination (Join-Path $solverDir 'quad_monolithic.iob')
   Copy-Item -LiteralPath $templateCon -Destination (Join-Path $solverDir 'quad_monolithic.con')
   Copy-VerifiedRunInput `
@@ -333,7 +405,7 @@ try{
     optimization_envelope=$envelope;operating_mode_registry=$modeRegistry;
     multipole_resolved_design=$resolved;particle_source=$particleSource;
     particle_source_metadata=$sourceMetadata;particle_source_family=$sourceFamily;
-    solver_numerics=$numerics;code_inventory=$codeInventory;
+    solver_numerics=$numerics;simion_grid_audit=$gridAudit;code_inventory=$codeInventory;
     evidence_contract=$evidence;simion_gem=$gem;simion_fly2=$fly2;
     simion_layout_template_resolution=$templateResolution;
     simion_layout_template_registry=$templateRegistryInput;
@@ -382,7 +454,9 @@ try{
     $caseTrajectory=Join-Path $resultDir "trajectory_samples__$name.csv"
     $caseSummary=Join-Path $resultDir "simion_summary__$name.json"
     $luaConfig=Join-Path $inputDir "simion_config__$name.lua"
-    $surfaceToleranceMm=[Math]::Max(1e-6*$CellMm,1e-9)
+    # The registered Workbench transform maps GEM +z to flight +x.  Axial
+    # sampling and the census-marker threshold must therefore use GEM dz.
+    $surfaceToleranceMm=[Math]::Max(1e-6*$resolvedCellMmZ,1e-9)
     $phaseDeg=[double]$drive.phase_rad*180/[Math]::PI
     @"
 return {iob=[[$(Join-Path $solverDir 'quad_monolithic.iob')]], fly2=[[$fly2]], source_states=dofile([[$states]]),
@@ -398,11 +472,11 @@ has_electrode_4=true, has_electrode_5=$($rectangular.ToString().ToLowerInvariant
 $segmentedLua ground_electrode_id=$groundElectrodeId, ground_reference_v=$entranceVoltage,
 output_electrode_id=$outputElectrodeId, output_reference_v=$exitVoltage,
 physical_detector_electrode_id=$physicalDetectorElectrodeId,
-maximum_time_us=$MaximumTimeUs, trajectory_plane_step_mm=$CellMm,
+maximum_time_us=$MaximumTimeUs, trajectory_plane_step_mm=$resolvedCellMmZ,
 rod_z_min_mm=$($geometry.rod_z_min), rod_z_max_mm=$($geometry.rod_z_max),
 rod_exit_plane_mm=$($geometry.rod_z_max), handoff_plane_mm=$handoffPlaneMm,
     census_plane_mm=$censusPlaneMm,
-    numerical_census_marker_threshold_mm=$($censusPlaneMm-2*$CellMm-$surfaceToleranceMm),
+    numerical_census_marker_threshold_mm=$($censusPlaneMm-2*$resolvedCellMmZ-$surfaceToleranceMm),
 census_radius_mm=$censusRadius, radial_escape_radius_mm=$($enclosure.working_region_radius_mm),
 numerical_census_marker_is_handoff=false, axial_axis="x", origin_x_mm=$zShift, origin_y_mm=$(-$origin),
 origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}

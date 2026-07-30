@@ -275,6 +275,114 @@ class ResourceBudgetTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "must be uppercase SHA-256"):
             validate_with(invalid_identity)
 
+    def test_optional_authorized_run_id_is_exact_and_legacy_compatible(self) -> None:
+        budget_path = (
+            REPO_ROOT
+            / "projects"
+            / HEX
+            / "config"
+            / "qualification"
+            / "engineering_budget.json"
+        )
+        fixture = json.loads(budget_path.read_text(encoding="utf-8"))
+        runtime_profile_id = fixture["pilot_authorization"]["scope"][
+            "runtime_profile_id"
+        ]
+        runtime = resolve_runtime_profile(REPO_ROOT, HEX, runtime_profile_id)
+        fixture["pilot_authorization"]["authorized"] = True
+        fixture["pilot_authorization"]["scope"]["stop_stage"] = runtime["stop_stage"]
+        authorized_run_id = "20260731_010203__sim__simion__authorized-run"
+        fixture["pilot_authorization"]["scope"][
+            "authorized_run_id"
+        ] = authorized_run_id
+
+        def validate_with(candidate: dict, run_id: str | None) -> dict:
+            with mock.patch(
+                "common.multipole.resource_budget._load",
+                return_value=candidate,
+            ):
+                return validate_pilot_budget(
+                    repo_root=REPO_ROOT,
+                    budget_path=budget_path,
+                    project_id=HEX,
+                    solver="comsol",
+                    runtime_profile_id=runtime_profile_id,
+                    design_profile_id=runtime["design_profile_id"],
+                    particle_source_path=Path(runtime["particle_source"]["path"]),
+                    retention_class="compact",
+                    run_id=run_id,
+                )
+
+        resolved = validate_with(fixture, authorized_run_id)
+        self.assertEqual(resolved["authorized_run_id"], authorized_run_id)
+        with self.assertRaisesRegex(ValueError, "differs from authorized_run_id"):
+            validate_with(fixture, authorized_run_id + "__r02")
+        self.assertEqual(
+            validate_with(fixture, None)["authorized_run_id"],
+            authorized_run_id,
+        )
+        legacy = json.loads(json.dumps(fixture))
+        del legacy["pilot_authorization"]["scope"]["authorized_run_id"]
+        self.assertIsNone(validate_with(legacy, authorized_run_id)["authorized_run_id"])
+
+    def test_simion_pa_grid_limit_is_optional_solver_specific_and_positive(
+        self,
+    ) -> None:
+        budget_path = (
+            REPO_ROOT
+            / "projects"
+            / HEX
+            / "config"
+            / "qualification"
+            / "engineering_budget.json"
+        )
+        fixture = json.loads(budget_path.read_text(encoding="utf-8"))
+        runtime_profile_id = fixture["pilot_authorization"]["scope"][
+            "runtime_profile_id"
+        ]
+        runtime = resolve_runtime_profile(REPO_ROOT, HEX, runtime_profile_id)
+        fixture["pilot_authorization"]["authorized"] = True
+        fixture["pilot_authorization"]["scope"]["stop_stage"] = runtime["stop_stage"]
+        fixture["pilot_authorization"]["scope"]["allowed_solvers"] = [
+            "comsol",
+            "simion",
+        ]
+        limits = fixture["pilot_authorization"]["limits"]
+        del limits["maximum_mesh_cells"]
+        limits["maximum_pa_grid_points"] = 20_000_000
+
+        def validate_with(candidate: dict, solver: str = "simion") -> dict:
+            with mock.patch(
+                "common.multipole.resource_budget._load",
+                return_value=candidate,
+            ):
+                return validate_pilot_budget(
+                    repo_root=REPO_ROOT,
+                    budget_path=budget_path,
+                    project_id=HEX,
+                    solver=solver,
+                    runtime_profile_id=runtime_profile_id,
+                    design_profile_id=runtime["design_profile_id"],
+                    particle_source_path=Path(runtime["particle_source"]["path"]),
+                    retention_class="compact",
+                )
+
+        resolved = validate_with(fixture)
+        self.assertEqual(resolved["limits"]["maximum_pa_grid_points"], 20_000_000)
+        legacy = json.loads(json.dumps(fixture))
+        del legacy["pilot_authorization"]["limits"]["maximum_pa_grid_points"]
+        self.assertNotIn("maximum_pa_grid_points", validate_with(legacy)["limits"])
+        with self.assertRaisesRegex(ValueError, "only valid for SIMION"):
+            validate_with(fixture, solver="comsol")
+        for invalid in (True, 0, -1, 1.5, "20000000"):
+            with self.subTest(invalid=invalid):
+                invalid_budget = json.loads(json.dumps(fixture))
+                invalid_budget["pilot_authorization"]["limits"][
+                    "maximum_pa_grid_points"
+                ] = invalid
+                with self.assertRaisesRegex(ValueError, "positive integers"):
+                    validate_with(invalid_budget)
+
     def test_mesh_build_report_enforces_declared_cell_limit(self) -> None:
         runner = (
             REPO_ROOT / "common/multipole/run_finite_3d_transport.ps1"

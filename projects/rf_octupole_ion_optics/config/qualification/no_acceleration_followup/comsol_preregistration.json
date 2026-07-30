@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "role": "multipole_comsol_no_acceleration_temporal_followup_preregistration",
+  "campaign_id": "octupole_comsol_no_acceleration_exit020_temporal_followup_v1",
+  "status": "PREREGISTERED_NOT_EXECUTED",
+  "preregistered_before_run": true,
+  "scope": {
+    "project_id": "rf_octupole_ion_optics",
+    "solver": "comsol",
+    "design_profile_id": "no_acceleration_full_length",
+    "particle_source_profile_id": "family_mother_sample_v1_n100",
+    "particle_count": 100,
+    "retention_class": "compact"
+  },
+  "resolution_contract": {
+    "path": "common/multipole/no_acceleration_followup_resolution.json",
+    "contract_id": "multipole_no_acceleration_followup_fixed_bins_v1",
+    "sha256": "FF941874DD54A32CD05C119894FD6633D795266EAC8C9EAAF4AE0D9EBEF691DD"
+  },
+  "frozen_authorities": {
+    "runtime_profiles": {
+      "path": "projects/rf_octupole_ion_optics/config/runtime_profiles.json",
+      "sha256": "FA5B0AF8C3879A446844FA2A9F5404C07D349932B1804A82E8D04C98C06D26F9"
+    },
+    "comsol_solver_numerics": {
+      "path": "projects/rf_octupole_ion_optics/config/comsol_solver_numerics.json",
+      "sha256": "B277A50E492054FD04471613A0DD56BF0FB92E0FD7E8467188EB2055D5EAFB3D"
+    },
+    "budgets": [
+      {
+        "path": "projects/rf_octupole_ion_optics/config/qualification/no_acceleration_followup/comsol_exit020_t160_budget.json",
+        "sha256": "FDD00B2D85B1F386200462D1F74333C1327BE046063E17E47E1E102B67C0C3DC"
+      },
+      {
+        "path": "projects/rf_octupole_ion_optics/config/qualification/no_acceleration_followup/comsol_exit020_t320_budget.json",
+        "sha256": "80529096E7ADE73F3C0041374F6D4A29FC54CFF2664C3762F30515CA02A3961F"
+      }
+    ]
+  },
+  "ordered_arms": [
+    {
+      "sequence": 1,
+      "arm": "exit020_t160",
+      "role": "temporal_anchor",
+      "runtime_profile_id": "no_acceleration_full_length_n100_comsol_followup_exit020_t160",
+      "comsol_solver_numerics_profile_id": "hybrid_c1_corridor040_exit020_nosweep_cg_amg_spatial_temporal_refined",
+      "engineering_budget_path": "config/qualification/no_acceleration_followup/comsol_exit020_t160_budget.json",
+      "authorized_run_id": "20260731_020201__sim__comsol__oct-noacc-followup-exit020-t160",
+      "exit_radius_mm": 0.2,
+      "rf_steps_per_period": 160,
+      "executed": false
+    },
+    {
+      "sequence": 2,
+      "arm": "exit020_t320",
+      "role": "temporal_refined",
+      "runtime_profile_id": "no_acceleration_full_length_n100_comsol_followup_exit020_t320",
+      "comsol_solver_numerics_profile_id": "hybrid_c1_corridor040_exit020_nosweep_cg_amg_temporal_refined_320",
+      "engineering_budget_path": "config/qualification/no_acceleration_followup/comsol_exit020_t320_budget.json",
+      "authorized_run_id": "20260731_020202__sim__comsol__oct-noacc-followup-exit020-t320",
+      "exit_radius_mm": 0.2,
+      "rf_steps_per_period": 320,
+      "executed": false
+    }
+  ],
+  "comparison_plan": {
+    "temporal": "exit020_t160_vs_exit020_t320",
+    "controlled_variables": [
+      "design_profile_id",
+      "particle_source_profile_id",
+      "exit_radius_mm",
+      "mesh_policy",
+      "linear_solver"
+    ]
+  },
+  "sequential_stop_policy": {
+    "required_order": [
+      "exit020_t160",
+      "exit020_t320"
+    ],
+    "next_arm_requires_prior_success_manifest": true,
+    "source_and_handoff_particle_identity_must_match": true,
+    "resource_or_solver_failure": "STOP_CAMPAIGN_INCONCLUSIVE_NO_RETRY",
+    "automatic_retry_count": 0
+  },
+  "claim_limit": "Preregistered N=100 COMSOL exit-radius 0.20 mm temporal sensitivity only; no run result exists and no qualification is granted."
+}

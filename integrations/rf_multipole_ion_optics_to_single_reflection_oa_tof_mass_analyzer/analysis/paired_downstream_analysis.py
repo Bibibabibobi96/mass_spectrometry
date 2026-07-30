@@ -524,14 +524,19 @@ def _differences(values: Sequence[float]) -> dict[str, float]:
     }
 
 
-def _vector_differences(left: Sequence[tuple[float, ...]], right: Sequence[tuple[float, ...]]) -> dict[str, Any]:
+def _vector_differences(
+    left: Sequence[tuple[float, ...]],
+    right: Sequence[tuple[float, ...]],
+    *,
+    component_key: str = "components_simion_minus_comsol",
+) -> dict[str, Any]:
     components = {
         axis: _differences([b[index] - a[index] for a, b in zip(left, right, strict=True)])
         for index, axis in enumerate("xyz")
     }
     distances = [math.dist(a, b) for a, b in zip(left, right, strict=True)]
     return {
-        "components_simion_minus_comsol": components,
+        component_key: components,
         "distance": {
             "mean": math.fsum(distances) / len(distances),
             "rms": math.sqrt(math.fsum(value * value for value in distances) / len(distances)),
@@ -572,29 +577,53 @@ def _detector_metrics(branch: BranchData) -> dict[str, Any]:
     }
 
 
-def _paired(comsol: BranchData, simion: BranchData) -> dict[str, Any]:
-    common = sorted(set(comsol.states) & set(simion.states))
+def _paired(
+    left_branch: BranchData,
+    right_branch: BranchData,
+    *,
+    left_label: str = "comsol",
+    right_label: str = "simion",
+    schema_version: int = 1,
+) -> dict[str, Any]:
+    if (
+        not left_label
+        or not right_label
+        or left_label == right_label
+        or schema_version not in {1, 2}
+    ):
+        raise DownstreamAnalysisError("paired comparison labels/schema are invalid")
+    common = sorted(set(left_branch.states) & set(right_branch.states))
     for particle_id in common:
         changed = [
             field
             for field in SEMANTIC_FIELDS
-            if comsol.states[particle_id][field] != simion.states[particle_id][field]
+            if left_branch.states[particle_id][field]
+            != right_branch.states[particle_id][field]
         ]
         if changed:
             raise DownstreamAnalysisError(
                 f"paired canonical species/lineage differs for particle {particle_id}: {', '.join(changed)}"
             )
-    left = [comsol.states[item] for item in common]
-    right = [simion.states[item] for item in common]
-    return {
+    left = [left_branch.states[item] for item in common]
+    right = [right_branch.states[item] for item in common]
+    component_key = (
+        "components_simion_minus_comsol"
+        if schema_version == 1
+        else "components_right_minus_left"
+    )
+    result = {
         "observation_plane": "local_accelerator_exit",
         "paired_particle_count": len(common),
         "paired_particle_ids": common,
         "position_mm": _vector_differences(
-            [item["position"] for item in left], [item["position"] for item in right]
+            [item["position"] for item in left],
+            [item["position"] for item in right],
+            component_key=component_key,
         ),
         "velocity_m_s": _vector_differences(
-            [item["velocity"] for item in left], [item["velocity"] for item in right]
+            [item["velocity"] for item in left],
+            [item["velocity"] for item in right],
+            component_key=component_key,
         ),
         "instrument_time_us": _differences(
             [b["instrument_time_us"] - a["instrument_time_us"] for a, b in zip(left, right, strict=True)]
@@ -605,6 +634,17 @@ def _paired(comsol: BranchData, simion: BranchData) -> dict[str, Any]:
         "detector_velocity": {"status": "not_observed"},
         "detector_kinetic_energy": {"status": "not_observed"},
     }
+    if schema_version == 2:
+        result = {
+            "schema_version": 2,
+            "pair": {
+                "left_label": left_label,
+                "right_label": right_label,
+                "difference_convention": "right_minus_left",
+            },
+            **result,
+        }
+    return result
 
 
 def _objective(candidate: Mapping[str, Any]) -> dict[str, float]:

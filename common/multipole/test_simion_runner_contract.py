@@ -2,6 +2,7 @@ import csv
 import hashlib
 import json
 import math
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -115,14 +116,122 @@ class SimionRunnerContractTests(unittest.TestCase):
         self.assertIn("handoff_plane_mm=$handoffPlaneMm", source)
         self.assertIn("census_plane_mm=$censusPlaneMm", source)
         self.assertIn("numerical_census_marker_is_handoff=false", source)
-        self.assertIn("$surfaceToleranceMm=[Math]::Max(1e-6*$CellMm,1e-9)", source)
-        self.assertIn("$censusPlaneMm-2*$CellMm-$surfaceToleranceMm", source)
+        self.assertIn(
+            "$surfaceToleranceMm=[Math]::Max(1e-6*$resolvedCellMmZ,1e-9)",
+            source,
+        )
+        self.assertIn(
+            "$censusPlaneMm-2*$resolvedCellMmZ-$surfaceToleranceMm",
+            source,
+        )
         program = (RUNNER.parent / "simion_transport.lua").read_text(encoding="utf-8")
         self.assertIn("census_plane_mm = assert(run_config.census_plane_mm)", program)
         self.assertIn(
             "project_state_to_plane(handoff_state[particle], census_plane_mm)",
             program,
         )
+
+    def test_gem_z_spacing_maps_to_the_flight_axis_controls(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8")
+        self.assertIn("DefaultParameterSetName='IsotropicCell'", source)
+        for axis in ("X", "Y", "Z"):
+            self.assertIn(
+                f"ParameterSetName='AnisotropicCell')]\n"
+                f"  [ValidateRange(0.001,100)][double]$CellMm{axis}",
+                source,
+            )
+            self.assertIn(f"--cell-mm-{axis.lower()} $resolvedCellMm{axis}", source)
+        self.assertIn("trajectory_plane_step_mm=$resolvedCellMmZ", source)
+        self.assertIn('axial_axis="x"', source)
+        self.assertIn("maps GEM +z to flight +x", source)
+
+    def test_explicit_run_id_is_forwarded_to_budget_authorization(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8")
+        self.assertIn("$runIdWasExplicit", source)
+        self.assertIn("$budgetArguments+=@('--run-id',$RunId)", source)
+        self.assertIn("authorized_run_id", source)
+        self.assertLess(
+            source.index("authorized_run_id"),
+            source.index("New-RunPackage"),
+        )
+
+    def test_pa_grid_budget_is_audited_before_simion_starts(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8")
+        for token in (
+            "Get-SimionPaGridAudit",
+            "maximum_pa_grid_points",
+            "simion_grid_audit.json",
+            "multipole_simion_pa_grid_audit",
+            "SIMION PA grid point budget exceeded",
+        ):
+            self.assertIn(token, source)
+        audit = source.index(
+            "$gridAuditDocument=Get-SimionPaGridAudit -GemPath $gem"
+        )
+        persisted = source.index(
+            "Set-Content -LiteralPath $gridAudit -Encoding UTF8",
+            audit,
+        )
+        rejected = source.index("if($gridAuditDocument.status-eq'FAIL')", persisted)
+        simion_start = source.index("Invoke-SimionStep 'gem2pa'")
+        self.assertLess(audit, persisted)
+        self.assertLess(persisted, rejected)
+        self.assertLess(rejected, simion_start)
+        self.assertIn("simion_grid_audit=$gridAudit", source)
+
+    def test_pa_grid_budget_accepts_below_cap_and_rejects_over_cap(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8")
+        start = source.index("function Get-SimionPaGridAudit")
+        end = source.index("\nfunction ConvertTo-TransportMetricCase", start)
+        audit_function = source[start:end]
+        with tempfile.TemporaryDirectory() as directory:
+            gem = Path(directory) / "anisotropic.gem"
+            gem.write_text(
+                "pa_define(101, 41, 51, planar, non-mirrored)\n",
+                encoding="ascii",
+            )
+
+            def audit(maximum: int | None) -> dict:
+                maximum_argument = "$null" if maximum is None else str(maximum)
+                command = (
+                    f"{audit_function}\n"
+                    f"Get-SimionPaGridAudit -GemPath '{gem}' "
+                    f"-MaximumPaGridPoints {maximum_argument} | "
+                    "ConvertTo-Json -Compress"
+                )
+                result = subprocess.run(
+                    [
+                        "pwsh",
+                        "-NoProfile",
+                        "-NonInteractive",
+                        "-Command",
+                        command,
+                    ],
+                    cwd=REPO_ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=20,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                return json.loads(result.stdout)
+
+            grid_points = 101 * 41 * 51
+            below_cap = audit(grid_points + 1)
+            self.assertEqual(below_cap["status"], "PASS")
+            self.assertEqual(below_cap["grid_points"], grid_points)
+            self.assertEqual(
+                below_cap["maximum_pa_grid_points"],
+                grid_points + 1,
+            )
+            over_cap = audit(grid_points - 1)
+            self.assertEqual(over_cap["status"], "FAIL")
+            self.assertEqual(over_cap["grid_points"], grid_points)
+            unconfigured = audit(None)
+            self.assertEqual(unconfigured["status"], "NOT_CONFIGURED")
+            self.assertIsNone(unconfigured["maximum_pa_grid_points"])
 
     def test_rejected_handoff_writes_a_unique_terminal_event(self) -> None:
         program = (REPO_ROOT / "common" / "multipole" / "simion_transport.lua").read_text(

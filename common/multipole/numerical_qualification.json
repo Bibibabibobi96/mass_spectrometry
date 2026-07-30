@@ -12,6 +12,37 @@
     "same_solver_time_convergence",
     "cross_solver_comparison_of_converged_solutions"
   ],
+  "simion_spatial_comparison_axes": {
+    "canonical_field": "cell_mm_xyz",
+    "legacy_field": "cell_mm",
+    "legacy_normalization": "expand_scalar_to_equal_x_y_z",
+    "spatial_radial": {
+      "refined_axes": [
+        "x",
+        "y"
+      ],
+      "fixed_axes": [
+        "z"
+      ]
+    },
+    "spatial_axial": {
+      "refined_axes": [
+        "z"
+      ],
+      "fixed_axes": [
+        "x",
+        "y"
+      ]
+    },
+    "spatial_isotropic": {
+      "refined_axes": [
+        "x",
+        "y",
+        "z"
+      ],
+      "fixed_axes": []
+    }
+  },
   "claim_profiles": {
     "functional_transport": {
       "required_observables": [

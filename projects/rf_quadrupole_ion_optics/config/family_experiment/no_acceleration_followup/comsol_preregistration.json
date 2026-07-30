@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "role": "multipole_comsol_no_acceleration_temporal_followup_preregistration",
+  "campaign_id": "quadrupole_comsol_no_acceleration_exit020_temporal_followup_v1",
+  "status": "PREREGISTERED_NOT_EXECUTED",
+  "preregistered_before_run": true,
+  "scope": {
+    "project_id": "rf_quadrupole_ion_optics",
+    "solver": "comsol",
+    "design_profile_id": "no_acceleration_full_length",
+    "particle_source_profile_id": "family_mother_sample_v1_n100",
+    "particle_count": 100,
+    "retention_class": "compact"
+  },
+  "resolution_contract": {
+    "path": "common/multipole/no_acceleration_followup_resolution.json",
+    "contract_id": "multipole_no_acceleration_followup_fixed_bins_v1",
+    "sha256": "FF941874DD54A32CD05C119894FD6633D795266EAC8C9EAAF4AE0D9EBEF691DD"
+  },
+  "frozen_authorities": {
+    "runtime_profiles": {
+      "path": "projects/rf_quadrupole_ion_optics/config/runtime_profiles.json",
+      "sha256": "D22D0A6E239BD319F12B01D25FD3874204FA8AD7238A2A29CCDC9045C3F6413B"
+    },
+    "comsol_solver_numerics": {
+      "path": "projects/rf_quadrupole_ion_optics/config/multipole_transport_comsol_solver_numerics.json",
+      "sha256": "9F866B7FBA171E954D6B61E58B677402775A6E06303BEFCF8B9E66EBD8A710F8"
+    },
+    "budgets": [
+      {
+        "path": "projects/rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_followup/comsol_exit020_t160_budget.json",
+        "sha256": "630CF1FF62F22F409242AA30CD56D792D21812A6A4E56CC8DEAAB0B38F707CCB"
+      },
+      {
+        "path": "projects/rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_followup/comsol_exit020_t320_budget.json",
+        "sha256": "25C483CDB5642238A7721722C6E3992C2A8C0F0EE57B72C5EAEACB7DE9C0A67B"
+      }
+    ]
+  },
+  "ordered_arms": [
+    {
+      "sequence": 1,
+      "arm": "exit020_t160",
+      "role": "temporal_anchor",
+      "runtime_profile_id": "no_acceleration_full_length_n100_comsol_followup_exit020_t160",
+      "comsol_solver_numerics_profile_id": "hybrid_c1_corridor040_exit020_nosweep_cg_amg_spatial_temporal_refined",
+      "engineering_budget_path": "config/family_experiment/no_acceleration_followup/comsol_exit020_t160_budget.json",
+      "authorized_run_id": "20260731_020001__sim__comsol__quad-noacc-followup-exit020-t160",
+      "exit_radius_mm": 0.2,
+      "rf_steps_per_period": 160,
+      "executed": false
+    },
+    {
+      "sequence": 2,
+      "arm": "exit020_t320",
+      "role": "temporal_refined",
+      "runtime_profile_id": "no_acceleration_full_length_n100_comsol_followup_exit020_t320",
+      "comsol_solver_numerics_profile_id": "hybrid_c1_corridor040_exit020_nosweep_cg_amg_temporal_refined_320",
+      "engineering_budget_path": "config/family_experiment/no_acceleration_followup/comsol_exit020_t320_budget.json",
+      "authorized_run_id": "20260731_020002__sim__comsol__quad-noacc-followup-exit020-t320",
+      "exit_radius_mm": 0.2,
+      "rf_steps_per_period": 320,
+      "executed": false
+    }
+  ],
+  "comparison_plan": {
+    "temporal": "exit020_t160_vs_exit020_t320",
+    "controlled_variables": [
+      "design_profile_id",
+      "particle_source_profile_id",
+      "exit_radius_mm",
+      "mesh_policy",
+      "linear_solver"
+    ]
+  },
+  "sequential_stop_policy": {
+    "required_order": [
+      "exit020_t160",
+      "exit020_t320"
+    ],
+    "next_arm_requires_prior_success_manifest": true,
+    "source_and_handoff_particle_identity_must_match": true,
+    "resource_or_solver_failure": "STOP_CAMPAIGN_INCONCLUSIVE_NO_RETRY",
+    "automatic_retry_count": 0
+  },
+  "claim_limit": "Preregistered N=100 COMSOL exit-radius 0.20 mm temporal sensitivity only; no run result exists and no qualification is granted."
+}

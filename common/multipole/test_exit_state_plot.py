@@ -146,6 +146,52 @@ class ExitStatePlotTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "empty"):
                 load_exit_state(empty, "empty")
 
+    def test_duplicate_or_unknown_selected_particle_id_fails_closed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            duplicate = root / "duplicate.csv"
+            write_fixture(duplicate)
+            with duplicate.open("a", encoding="utf-8", newline="") as stream:
+                writer = csv.DictWriter(stream, fieldnames=COLUMNS)
+                writer.writerow(
+                    {
+                        "particle_id": 1,
+                        "event": "handoff",
+                        "status": "transmitted",
+                        "terminal_reason": "none",
+                        "time_us": 1.0,
+                        "elapsed_time_us": 41.0,
+                        "rf_phase_rad": 0.0,
+                        "axial_z_mm": 0.0,
+                        "transverse_x_mm": 0.1,
+                        "transverse_y_mm": 0.0,
+                        "velocity_axial_m_s": 2000.0,
+                        "velocity_x_m_s": 1.0,
+                        "velocity_y_m_s": 2.0,
+                        "kinetic_energy_eV": 2.0,
+                        "radial_position_mm": 0.1,
+                        "divergence_angle_deg": 1.0,
+                        "max_rod_radius_mm": 0.5,
+                    }
+                )
+            with self.assertRaisesRegex(ValueError, "duplicated"):
+                load_exit_state(duplicate, "duplicate")
+
+            unknown = root / "unknown.csv"
+            write_fixture(unknown)
+            with unknown.open(encoding="utf-8", newline="") as stream:
+                rows = list(csv.DictReader(stream))
+            for row in rows:
+                if row["event"] == "handoff" and row["particle_id"] == "1":
+                    row["particle_id"] = "999"
+                    break
+            with unknown.open("w", encoding="utf-8", newline="") as stream:
+                writer = csv.DictWriter(stream, fieldnames=COLUMNS)
+                writer.writeheader()
+                writer.writerows(rows)
+            with self.assertRaisesRegex(ValueError, "do not belong"):
+                load_exit_state(unknown, "unknown")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -94,6 +94,13 @@ oaTOF入口、脉冲时active、局部加速器出口、探测面crossing和hit�
 `INCONCLUSIVE_DIAGNOSTIC_ONLY`，不授予分辨率、优化、Candidate或Formal资格。任何加速多极杆实验
 必须作为新的单变量预注册活动，不能把本次无加速source revision差异与加速电压效应混在同一结论中。
 
+当前source-revision发布器使用schema v2：每个profile必须显式绑定旧COMSOL、混合COMSOL和旧SIMION
+三个父run，并发布三个`right_minus_left`有向pair、共同/差异粒子ID、局部加速器出口与探测器事件集合。
+同一profile的三条series使用共同尺度和固定bin绘图，figure JSON、PNG及终态summary均进入manifest；
+发布过程始终保留`interrupted`、`failed`或`success`之一作为当前权威终态。上述
+`20260730_234500__analysis__cross__hybrid-source-revision__n100`仍是不可变schema v1历史artifact；
+读取器保持兼容，但不会把它重写为schema v2，也不得把新的方向命名倒灌到历史结果。
+
 ## 迁移等价结论
 
 [`migration_oracles.json`](../config/migration_oracles.json)是只读的迁移前证据索引，保留当时的术语、路径、

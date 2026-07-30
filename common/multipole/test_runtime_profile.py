@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 from common.multipole.runtime_profile import resolve_runtime_profile
+from common.multipole.simion_numerics import normalize_simion_solver_numerics
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -17,6 +18,45 @@ HIGH_ORDER_PROJECT_IDS = PROJECT_IDS[1:]
 
 
 class RuntimeProfileTests(unittest.TestCase):
+    def test_legacy_scalar_simion_cells_normalize_to_canonical_xyz(self) -> None:
+        resolved = resolve_runtime_profile(
+            REPO_ROOT,
+            "rf_hexapole_ion_optics",
+            "no_acceleration_full_length",
+        )
+        numerics = resolved["solver_numerics"]["simion"]["values"]
+        self.assertNotIn("cell_mm", numerics)
+        self.assertEqual(
+            numerics["cell_mm_xyz"],
+            {"x": 0.4, "y": 0.4, "z": 0.4},
+        )
+
+    def test_simion_cell_forms_are_mutually_exclusive_and_fail_closed(self) -> None:
+        canonical = normalize_simion_solver_numerics(
+            {
+                "cell_mm_xyz": {"x": 0.2, "y": 0.3, "z": 0.4},
+                "trajectory_quality": 10,
+            }
+        )
+        self.assertEqual(
+            canonical["cell_mm_xyz"],
+            {"x": 0.2, "y": 0.3, "z": 0.4},
+        )
+        with self.assertRaisesRegex(ValueError, "exactly one"):
+            normalize_simion_solver_numerics(
+                {
+                    "cell_mm": 0.4,
+                    "cell_mm_xyz": {"x": 0.4, "y": 0.4, "z": 0.4},
+                }
+            )
+        for invalid in (
+            {"cell_mm_xyz": {"x": 0.2, "y": 0.3}},
+            {"cell_mm_xyz": {"x": 0.2, "y": 0.3, "z": 0.0}},
+        ):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ValueError):
+                    normalize_simion_solver_numerics(invalid)
+
     def test_multipole_family_profiles_freeze_one_shared_source(self) -> None:
         resolved = [
             resolve_runtime_profile(

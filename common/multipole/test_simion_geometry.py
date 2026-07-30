@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import copy
+import json
+import subprocess
+import sys
+import tempfile
 import unittest
+from pathlib import Path
 
 from common.multipole.simion_geometry import render_gem
 
@@ -87,6 +92,90 @@ def resolved_design(
 
 
 class SimionGeometryTests(unittest.TestCase):
+    def test_cli_accepts_xyz_and_rejects_mixed_cell_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            resolved = root / "resolved.json"
+            output = root / "geometry.gem"
+            resolved.write_text(
+                json.dumps(resolved_design("cylindrical_bore", 0.0)),
+                encoding="utf-8",
+            )
+            base = [
+                sys.executable,
+                "-m",
+                "common.multipole.simion_geometry",
+                "--resolved-design",
+                str(resolved),
+                "--output",
+                str(output),
+            ]
+            accepted = subprocess.run(
+                [
+                    *base,
+                    "--cell-mm-x",
+                    "0.2",
+                    "--cell-mm-y",
+                    "0.5",
+                    "--cell-mm-z",
+                    "0.4",
+                ],
+                check=False,
+                capture_output=True,
+                cwd=Path(__file__).resolve().parents[2],
+                text=True,
+                timeout=20,
+            )
+            self.assertEqual(accepted.returncode, 0, accepted.stderr)
+            self.assertIn("pa_define(101,41,51", output.read_text(encoding="ascii"))
+            rejected = subprocess.run(
+                [
+                    *base,
+                    "--cell-mm",
+                    "0.4",
+                    "--cell-mm-x",
+                    "0.2",
+                    "--cell-mm-y",
+                    "0.5",
+                    "--cell-mm-z",
+                    "0.4",
+                ],
+                check=False,
+                capture_output=True,
+                cwd=Path(__file__).resolve().parents[2],
+                text=True,
+                timeout=20,
+            )
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn("mutually exclusive", rejected.stderr)
+
+    def test_anisotropic_cells_define_independent_pa_axes(self) -> None:
+        gem = render_gem(
+            resolved_design("cylindrical_bore", 0.0),
+            {"x": 0.2, "y": 0.5, "z": 0.4},
+        )
+        self.assertIn(
+            "pa_define(101,41,51,planar,none,electrostatic,,0.2,0.5,0.4",
+            gem,
+        )
+        self.assertIn("cylinder(0,0,19.4,1.2,,0.4)", gem)
+        self.assertIn("cylinder(0,0,20.4,9,,20.8)", gem)
+
+    def test_rectangular_anisotropic_cells_use_z_for_axial_padding(self) -> None:
+        gem = render_gem(
+            resolved_design(
+                "rectangular_bore",
+                0.0,
+                enclosure_model="rectangular_reference_enclosure_v1",
+            ),
+            {"x": 0.2, "y": 0.5, "z": 0.4},
+        )
+        self.assertIn(
+            "pa_define(51,21,54,planar,xy,electrostatic,,0.2,0.5,0.4",
+            gem,
+        )
+        self.assertIn("cylinder(0,0,5.4,1.2,,0.4)", gem)
+
     def test_rectangular_connector_is_box_minus_cylinder(self) -> None:
         source = resolved_design(
             "rectangular_bore",

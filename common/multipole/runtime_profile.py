@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from common.multipole.design_profile import resolve_design_profile
+from common.multipole.simion_numerics import normalize_simion_solver_numerics
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -135,6 +136,8 @@ def resolve_runtime_profile(
         selected = contract["profiles"].get(profile_id)
         if not isinstance(selected, dict):
             raise ValueError(f"unknown {solver} solver-numerics profile: {profile_id}")
+        if solver == "simion":
+            selected = normalize_simion_solver_numerics(selected)
         numerics[solver] = {
             "profile_id": profile_id,
             "values": selected,

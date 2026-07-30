@@ -12,10 +12,9 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.particle_physics import kinetic_energy_ev
-
-
 COMSOL_PRIMARY_STATE_FILE = "particle_state__primary.csv"
 SUPPORTED_SOLVERS = ("COMSOL", "SIMION")
+CELL_AXES = ("x", "y", "z")
 PHYSICS_IDENTITY_FIELDS = (
     "model_level",
     "design_profile_id",
@@ -35,6 +34,41 @@ CANDIDATE_OBSERVABLE_FIELDS = (
     "rms_divergence",
     "mean_energy",
     "mean_tof",
+)
+
+
+def normalize_simion_solver_numerics(
+    numerics: dict[str, Any],
+) -> dict[str, Any]:
+    """Normalize SIMION spacing while keeping this frozen analysis module portable."""
+
+    has_legacy = "cell_mm" in numerics
+    has_canonical = "cell_mm_xyz" in numerics
+    if has_legacy == has_canonical:
+        raise ValueError(
+            "SIMION numerics must define exactly one of cell_mm or cell_mm_xyz"
+        )
+    result = dict(numerics)
+    spacing = result.pop("cell_mm") if has_legacy else result["cell_mm_xyz"]
+    if has_legacy:
+        spacing = {axis: spacing for axis in CELL_AXES}
+    if not isinstance(spacing, dict) or set(spacing) != set(CELL_AXES):
+        raise ValueError("cell_mm_xyz must contain exactly x, y, and z")
+    normalized: dict[str, float] = {}
+    for axis in CELL_AXES:
+        value = spacing[axis]
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError("SIMION cell spacing must be positive finite numbers")
+        normalized[axis] = float(value)
+        if not math.isfinite(normalized[axis]) or normalized[axis] <= 0:
+            raise ValueError("SIMION cell spacing must be positive finite numbers")
+    result["cell_mm_xyz"] = normalized
+    return result
+SPATIAL_COMPARISON_AXES = (
+    "spatial",
+    "spatial_radial",
+    "spatial_axial",
+    "spatial_isotropic",
 )
 
 
@@ -124,6 +158,8 @@ def run_data(manifest_path: Path) -> dict[str, Any]:
     solver = solver_name(manifest)
     config = load_json(Path(manifest["run_config"]["path"]))
     numerics = load_json(Path(manifest["inputs"]["solver_numerics"]["path"]))
+    if solver == "SIMION":
+        numerics = normalize_simion_solver_numerics(numerics)
     resolved = load_json(Path(manifest["inputs"]["multipole_resolved_design"]["path"]))
     state_path = manifest_record(manifest, primary_state_filename(manifest, solver))
     with state_path.open(encoding="utf-8-sig", newline="") as handle:
@@ -547,10 +583,15 @@ def validate_identity(
                 errors.append("mesh objects do not differ")
             if coarse_mesh.get("strategy") == fine_mesh.get("strategy"):
                 errors.append("mesh strategies do not differ")
-    elif axis == "spatial":
+    elif axis in SPATIAL_COMPARISON_AXES:
         coarse = baseline["numerics"]
         fine = refined["numerics"]
         if solver == "COMSOL":
+            if axis != "spatial":
+                errors.append(
+                    "COMSOL supports only the generic spatial comparison axis"
+                )
+                return errors
             candidate_paths = (
                 ("mesh", "working_region_maximum_element_size_mm"),
                 (
@@ -586,17 +627,48 @@ def validate_identity(
                 )
                 return errors
             path = changed_paths[0]
+            if without_path(coarse, path) != without_path(fine, path):
+                errors.append("non-spatial solver numerics differ")
+            coarse_value = coarse
+            fine_value = fine
+            for key in path:
+                coarse_value = coarse_value[key]
+                fine_value = fine_value[key]
+            if not float(fine_value) < float(coarse_value):
+                errors.append("refined spatial discretization is not smaller")
         else:
-            path = ("cell_mm",)
-        if without_path(coarse, path) != without_path(fine, path):
-            errors.append("non-spatial solver numerics differ")
-        coarse_value = coarse
-        fine_value = fine
-        for key in path:
-            coarse_value = coarse_value[key]
-            fine_value = fine_value[key]
-        if not float(fine_value) < float(coarse_value):
-            errors.append("refined spatial discretization is not smaller")
+            try:
+                coarse = normalize_simion_solver_numerics(coarse)
+                fine = normalize_simion_solver_numerics(fine)
+            except ValueError as exc:
+                errors.append(str(exc))
+                return errors
+            coarse_cell = coarse["cell_mm_xyz"]
+            fine_cell = fine["cell_mm_xyz"]
+            coarse_without_cell = dict(coarse)
+            fine_without_cell = dict(fine)
+            del coarse_without_cell["cell_mm_xyz"]
+            del fine_without_cell["cell_mm_xyz"]
+            if coarse_without_cell != fine_without_cell:
+                errors.append("non-spatial solver numerics differ")
+            refined_axes = {
+                "spatial": set(CELL_AXES),
+                "spatial_radial": {"x", "y"},
+                "spatial_axial": {"z"},
+                "spatial_isotropic": set(CELL_AXES),
+            }[axis]
+            for cell_axis in CELL_AXES:
+                coarse_value = float(coarse_cell[cell_axis])
+                fine_value = float(fine_cell[cell_axis])
+                if cell_axis in refined_axes:
+                    if not fine_value < coarse_value:
+                        errors.append(
+                            f"refined SIMION {cell_axis}-cell spacing is not smaller"
+                        )
+                elif fine_value != coarse_value:
+                    errors.append(
+                        f"non-target SIMION {cell_axis}-cell spacing differs"
+                    )
     elif axis == "temporal":
         path = ("trajectory", "rf_steps_per_period")
         coarse = baseline["numerics"]
@@ -718,7 +790,15 @@ def main() -> int:
     parser.add_argument(
         "--axis",
         required=True,
-        choices=("spatial", "temporal", "cross_solver", "mesh_strategy"),
+        choices=(
+            "spatial",
+            "spatial_radial",
+            "spatial_axial",
+            "spatial_isotropic",
+            "temporal",
+            "cross_solver",
+            "mesh_strategy",
+        ),
     )
     parser.add_argument(
         "--contract",

@@ -268,6 +268,51 @@ class NumericalQualificationTests(unittest.TestCase):
         fine["numerics"]["mesh"]["working_region_maximum_element_size_mm"] = 0.4
         self.assertEqual(evaluate(coarse, fine, "spatial", CONTRACT)["status"], "PASS")
 
+    def test_legacy_simion_scalar_spatial_pair_remains_isotropic(self) -> None:
+        coarse = sample("SIMION")
+        fine = copy.deepcopy(coarse)
+        fine["numerics"]["cell_mm"] = 0.3
+        self.assertEqual(validate_identity(coarse, fine, "spatial"), [])
+
+    def test_simion_radial_spatial_pair_refines_x_and_y_only(self) -> None:
+        coarse = sample("SIMION")
+        coarse["numerics"].pop("cell_mm")
+        coarse["numerics"]["cell_mm_xyz"] = {"x": 0.4, "y": 0.4, "z": 0.6}
+        fine = copy.deepcopy(coarse)
+        fine["numerics"]["cell_mm_xyz"] = {"x": 0.3, "y": 0.3, "z": 0.6}
+        self.assertEqual(validate_identity(coarse, fine, "spatial_radial"), [])
+        fine["numerics"]["cell_mm_xyz"]["z"] = 0.5
+        self.assertIn(
+            "non-target SIMION z-cell spacing differs",
+            validate_identity(coarse, fine, "spatial_radial"),
+        )
+
+    def test_simion_axial_spatial_pair_refines_z_only(self) -> None:
+        coarse = sample("SIMION")
+        coarse["numerics"].pop("cell_mm")
+        coarse["numerics"]["cell_mm_xyz"] = {"x": 0.4, "y": 0.5, "z": 0.6}
+        fine = copy.deepcopy(coarse)
+        fine["numerics"]["cell_mm_xyz"]["z"] = 0.3
+        self.assertEqual(validate_identity(coarse, fine, "spatial_axial"), [])
+        fine["numerics"]["cell_mm_xyz"]["x"] = 0.3
+        self.assertIn(
+            "non-target SIMION x-cell spacing differs",
+            validate_identity(coarse, fine, "spatial_axial"),
+        )
+
+    def test_simion_isotropic_spatial_pair_refines_all_axes(self) -> None:
+        coarse = sample("SIMION")
+        coarse["numerics"].pop("cell_mm")
+        coarse["numerics"]["cell_mm_xyz"] = {"x": 0.4, "y": 0.4, "z": 0.4}
+        fine = copy.deepcopy(coarse)
+        fine["numerics"]["cell_mm_xyz"] = {"x": 0.3, "y": 0.3, "z": 0.3}
+        self.assertEqual(validate_identity(coarse, fine, "spatial_isotropic"), [])
+        fine["numerics"]["cell_mm_xyz"]["y"] = 0.4
+        self.assertIn(
+            "refined SIMION y-cell spacing is not smaller",
+            validate_identity(coarse, fine, "spatial_isotropic"),
+        )
+
     def test_spatial_pair_accepts_only_local_sensitive_size_refinement(
         self,
     ) -> None:

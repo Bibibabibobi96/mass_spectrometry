@@ -80,7 +80,9 @@ function Invoke-MultipoleProjectFinite3dTransport {
         throw "SIMION transport does not support stop stage '$stopStage'."
       }
       $arguments.ReferenceComsolRunId = $ReferenceComsolRunId
-      $arguments.CellMm = [double]$numerics.cell_mm
+      $arguments.CellMmX = [double]$numerics.cell_mm_xyz.x
+      $arguments.CellMmY = [double]$numerics.cell_mm_xyz.y
+      $arguments.CellMmZ = [double]$numerics.cell_mm_xyz.z
       $arguments.TrajectoryQuality = [int]$numerics.trajectory_quality
       if ($SimionExe) {
         $arguments.SimionExe = $SimionExe

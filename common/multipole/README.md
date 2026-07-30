@@ -103,9 +103,18 @@ CSV SHA-256和parent resolved hash的metadata；MATLAB和SIMION投影只消费�
 legacy functional兼容，四极杆旧官方源只供oa-TOF oracle；两者都不是新家族实验源。求解器数值profile
 保持项目独立，以允许后续收敛结果分化。
 
+SIMION空间离散的规范表示为`cell_mm_xyz.{x,y,z}`；旧profile中的标量`cell_mm`只在解析边界被
+等轴展开，运行快照不再保存第二份标量真相。各向异性比较把`x=y`作为径向因子、`z`作为轴向因子，
+并分别登记`spatial_radial`、`spatial_axial`和`spatial_isotropic`，不得把方向矩阵压成单一
+“空间收敛”序列。生产runner在启动SIMION前从生成的唯一`pa_define`回读`nx/ny/nz`，将
+`simion_grid_audit.json`冻结为run input，并执行预登记的PA点数硬上限。
+
 证据阈值不是物理设计，也不藏在resolved或numerics中。runner可显式接受版本化
 `EvidenceContractPath`；`evaluate_transport_evidence.py`只对已产生metrics评分。未给证据合同时仍可完成
 求解和metrics输出，但`qualification_status=UNQUALIFIED`；给出后身份或阈值不匹配会失败关闭。
+无加速方向follow-up的内部工程分辨率由
+[`no_acceleration_followup_resolution.json`](no_acceleration_followup_resolution.json)冻结；它只允许
+发布固定分箱下的工程稳定性和配对数值敏感性，不授予绝对精度或求解器优越性。
 
 L2 `analyze_round_rod_screen.py`同样只报告每个输入ratio的场谐波指标与score，不输出
 `selected_candidate`，不派生杆半径/中心或决定L3几何。L2商业入口同样要求

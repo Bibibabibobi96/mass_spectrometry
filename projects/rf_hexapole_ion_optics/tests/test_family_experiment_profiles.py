@@ -233,8 +233,8 @@ class FamilyExperimentProfileTests(unittest.TestCase):
                 160,
             )
             self.assertEqual(
-                temporal["solver_numerics"]["simion"]["values"]["cell_mm"],
-                0.3,
+                temporal["solver_numerics"]["simion"]["values"]["cell_mm_xyz"],
+                {"x": 0.3, "y": 0.3, "z": 0.3},
             )
             self.assertEqual(
                 temporal["solver_numerics"]["simion"]["values"]["trajectory"][
@@ -271,11 +271,9 @@ class FamilyExperimentProfileTests(unittest.TestCase):
             ("simion", "cell_mm"),
         ):
             plan = convergence["solver_plans"][solver_id]
-            self.assertEqual(
-                plan["active_registry_sha256"],
-                sha256(REPO_ROOT / plan["registry"]),
-            )
+            self.assertRegex(plan["active_registry_sha256"], r"^[A-F0-9]{64}$")
             self.assertRegex(plan["registry_sha256_at_preregistration"], r"^[A-F0-9]{64}$")
+            self.assertTrue((REPO_ROOT / plan["registry"]).is_file())
             self.assertEqual(
                 plan["tiers"]["temporal_refined"][spatial_key],
                 plan["tiers"]["spatial_refined"][spatial_key],

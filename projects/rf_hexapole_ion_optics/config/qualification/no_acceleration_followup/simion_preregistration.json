@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "role": "multipole_simion_no_acceleration_followup_preregistration",
+  "campaign_id": "hexapole_simion_no_acceleration_directional_followup_v1",
+  "status": "PREREGISTERED_NOT_EXECUTED",
+  "preregistered_before_run": true,
+  "scope": {"project_id": "rf_hexapole_ion_optics", "solver": "simion", "design_profile_id": "no_acceleration_full_length", "particle_source_profile_id": "family_mother_sample_v1_n100", "particle_count": 100, "retention_class": "compact"},
+  "resolution_contract": {"path": "common/multipole/no_acceleration_followup_resolution.json", "contract_id": "multipole_no_acceleration_followup_fixed_bins_v1", "sha256": "FF941874DD54A32CD05C119894FD6633D795266EAC8C9EAAF4AE0D9EBEF691DD"},
+  "frozen_authorities": {
+    "runtime_profiles": {"path": "projects/rf_hexapole_ion_optics/config/runtime_profiles.json", "sha256": "17342251BC2A0BB0205D9F3F04BA9AC0BB92933008A423D56B7DEEAD047462EC"},
+    "simion_solver_numerics": {"path": "projects/rf_hexapole_ion_optics/config/simion_solver_numerics.json", "sha256": "56EB9C631C71E8EE3A8853BC401EB42BA261D821136E6B3E9AFBBF9C654278A2"},
+    "budgets": [
+      {"path": "projects/rf_hexapole_ion_optics/config/qualification/no_acceleration_followup/simion_A_budget.json", "sha256": "B924B62EB2520B3BA0F2D29A3EF30D11969A12AEB655FC8E9B9A1422AA8E36B8"},
+      {"path": "projects/rf_hexapole_ion_optics/config/qualification/no_acceleration_followup/simion_R_budget.json", "sha256": "CF8AA61F215721300789129B4C62B4869AE872CBFAEAA3FE41E162D5D7728DAD"},
+      {"path": "projects/rf_hexapole_ion_optics/config/qualification/no_acceleration_followup/simion_Z_budget.json", "sha256": "1BAE9A879FF3ED8B036BAF5F0FFDE3FFEEDDD9E9954A6FD06FA173C6F1897E9B"},
+      {"path": "projects/rf_hexapole_ion_optics/config/qualification/no_acceleration_followup/simion_I_budget.json", "sha256": "92EA730C832F359E2DE61C9FD6624CAABA99FDDC39FD55542B6985D4D92C2FE1"},
+      {"path": "projects/rf_hexapole_ion_optics/config/qualification/no_acceleration_followup/simion_T_budget.json", "sha256": "70FE9EB5AA74D895227FB677BC42FAC414656F9F2D037799F096DF9E4DD2D50E"}
+    ]
+  },
+  "ordered_arms": [
+    {"sequence": 1, "arm": "A", "role": "anchor", "runtime_profile_id": "no_acceleration_full_length_n100_simion_followup_A_r030_z030_t080", "simion_solver_numerics_profile_id": "simion_followup_A_r030_z030_t080", "engineering_budget_path": "config/qualification/no_acceleration_followup/simion_A_budget.json", "authorized_run_id": "20260731_010101__sim__simion__hex-noacc-followup-a-r030-z030-t080", "cell_mm_xyz": {"x": 0.3, "y": 0.3, "z": 0.3}, "rf_steps_per_period": 80, "executed": false},
+    {"sequence": 2, "arm": "R", "role": "radial_refined", "runtime_profile_id": "no_acceleration_full_length_n100_simion_followup_R_r020_z030_t080", "simion_solver_numerics_profile_id": "simion_followup_R_r020_z030_t080", "engineering_budget_path": "config/qualification/no_acceleration_followup/simion_R_budget.json", "authorized_run_id": "20260731_010102__sim__simion__hex-noacc-followup-r-r020-z030-t080", "cell_mm_xyz": {"x": 0.2, "y": 0.2, "z": 0.3}, "rf_steps_per_period": 80, "executed": false},
+    {"sequence": 3, "arm": "Z", "role": "axial_refined", "runtime_profile_id": "no_acceleration_full_length_n100_simion_followup_Z_r030_z020_t080", "simion_solver_numerics_profile_id": "simion_followup_Z_r030_z020_t080", "engineering_budget_path": "config/qualification/no_acceleration_followup/simion_Z_budget.json", "authorized_run_id": "20260731_010103__sim__simion__hex-noacc-followup-z-r030-z020-t080", "cell_mm_xyz": {"x": 0.3, "y": 0.3, "z": 0.2}, "rf_steps_per_period": 80, "executed": false},
+    {"sequence": 4, "arm": "I", "role": "isotropic_refined", "runtime_profile_id": "no_acceleration_full_length_n100_simion_followup_I_r020_z020_t080", "simion_solver_numerics_profile_id": "simion_followup_I_r020_z020_t080", "engineering_budget_path": "config/qualification/no_acceleration_followup/simion_I_budget.json", "authorized_run_id": "20260731_010104__sim__simion__hex-noacc-followup-i-r020-z020-t080", "cell_mm_xyz": {"x": 0.2, "y": 0.2, "z": 0.2}, "rf_steps_per_period": 80, "executed": false},
+    {"sequence": 5, "arm": "T", "role": "temporal_refined", "runtime_profile_id": "no_acceleration_full_length_n100_simion_followup_T_r020_z020_t160", "simion_solver_numerics_profile_id": "simion_followup_T_r020_z020_t160", "engineering_budget_path": "config/qualification/no_acceleration_followup/simion_T_budget.json", "authorized_run_id": "20260731_010105__sim__simion__hex-noacc-followup-t-r020-z020-t160", "cell_mm_xyz": {"x": 0.2, "y": 0.2, "z": 0.2}, "rf_steps_per_period": 160, "executed": false}
+  ],
+  "comparison_plan": {"radial": "A_vs_R", "axial": "A_vs_Z", "factor_interaction": "I_minus_R_minus_Z_plus_A", "temporal": "I_vs_T"},
+  "sequential_stop_policy": {"required_order": ["A", "R", "Z", "I", "T"], "next_arm_requires_prior_success_manifest": true, "source_and_handoff_particle_identity_must_match": true, "resource_or_solver_failure": "STOP_CAMPAIGN_INCONCLUSIVE_NO_RETRY", "effect_resolution_range_exceeded": "STOP_CAMPAIGN_INCONCLUSIVE", "automatic_retry_count": 0},
+  "claim_limit": "Preregistered N=100 directional and temporal SIMION sensitivity only; no run result exists and no qualification is granted."
+}

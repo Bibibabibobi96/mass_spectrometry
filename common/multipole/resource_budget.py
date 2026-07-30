@@ -20,7 +20,10 @@ _SCOPE_KEYS = {
     "allowed_solvers",
     "retention_class",
 }
-_OPTIONAL_SCOPE_KEYS = {"expected_run_parent_resolved_design_sha256"}
+_OPTIONAL_SCOPE_KEYS = {
+    "authorized_run_id",
+    "expected_run_parent_resolved_design_sha256",
+}
 _REQUIRED_LIMIT_KEYS = {
     "wall_clock_seconds_by_solver",
     "transient_run_directory_bytes",
@@ -29,7 +32,10 @@ _REQUIRED_LIMIT_KEYS = {
     "compact_final_retained_bytes",
     "automatic_retry_count",
 }
-_OPTIONAL_LIMIT_KEYS = {"maximum_mesh_cells"}
+_OPTIONAL_LIMIT_KEYS = {
+    "maximum_mesh_cells",
+    "maximum_pa_grid_points",
+}
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -73,6 +79,7 @@ def validate_pilot_budget(
     design_profile_id: str,
     particle_source_path: Path,
     retention_class: str,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     """Resolve the runtime profile and validate the exact authorized pilot."""
 
@@ -148,8 +155,19 @@ def validate_pilot_budget(
         expected_scope["expected_run_parent_resolved_design_sha256"] = (
             expected_run_hash
         )
+    authorized_run_id = scope.get("authorized_run_id")
+    if authorized_run_id is not None:
+        if (
+            not isinstance(authorized_run_id, str)
+            or not authorized_run_id
+            or authorized_run_id != authorized_run_id.strip()
+        ):
+            raise ValueError("authorized_run_id must be a nonempty trimmed string")
+        expected_scope["authorized_run_id"] = authorized_run_id
     if scope != expected_scope:
         raise ValueError("requested pilot identity differs from authorized scope")
+    if run_id is not None and authorized_run_id is not None and run_id != authorized_run_id:
+        raise ValueError("explicit run ID differs from authorized_run_id")
     if solver not in scope["allowed_solvers"]:
         raise ValueError(f"solver is not authorized: {solver}")
     if Path(runtime["particle_source"]["path"]).resolve() != particle_source_path.resolve():
@@ -163,6 +181,8 @@ def validate_pilot_budget(
             raise ValueError(
                 "maximum_mesh_cells requires a COMSOL physical-segment hybrid mesh profile"
             )
+    if "maximum_pa_grid_points" in limits and solver != "simion":
+        raise ValueError("maximum_pa_grid_points is only valid for SIMION")
     wall_clock = limits["wall_clock_seconds_by_solver"]
     if set(wall_clock) != {"comsol", "simion"}:
         raise ValueError("wall-clock solver keys differ")
@@ -180,6 +200,8 @@ def validate_pilot_budget(
     )
     if "maximum_mesh_cells" in limits:
         positive_limits.append(limits["maximum_mesh_cells"])
+    if "maximum_pa_grid_points" in limits:
+        positive_limits.append(limits["maximum_pa_grid_points"])
     if any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in positive_limits):
         raise ValueError("resource limits must be positive integers")
     if limits["automatic_retry_count"] != 0:
@@ -205,6 +227,7 @@ def validate_pilot_budget(
         "solver_numerics_profile_id": runtime["solver_numerics"][solver]["profile_id"],
         "solver_numerics": runtime["solver_numerics"][solver]["values"],
         "retention_class": retention_class,
+        "authorized_run_id": authorized_run_id,
         "expected_run_parent_resolved_design_sha256": expected_run_hash,
         "limits": {**limits, "wall_clock_seconds": wall_clock[solver]},
         "budget_path": str(expected_budget),
@@ -221,6 +244,7 @@ def main() -> int:
     parser.add_argument("--design-profile-id", required=True)
     parser.add_argument("--particle-source", required=True, type=Path)
     parser.add_argument("--retention-class", required=True)
+    parser.add_argument("--run-id")
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     result = validate_pilot_budget(
@@ -232,6 +256,7 @@ def main() -> int:
         design_profile_id=args.design_profile_id,
         particle_source_path=args.particle_source,
         retention_class=args.retention_class,
+        run_id=args.run_id,
     )
     args.output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(f"MULTIPOLE_RESOURCE_BUDGET=PASS PROJECT={args.project_id} SOLVER={args.solver}")

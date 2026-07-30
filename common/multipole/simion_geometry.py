@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from common.multipole.connector_geometry import CONNECTOR_SHAPES
+from common.multipole.simion_numerics import normalize_cell_mm_xyz
 
 
 def render_grouped_rod_array_gem(array: dict[str, Any]) -> str:
@@ -60,11 +61,11 @@ def render_segmented_rod_array_gem(segmented: dict[str, Any]) -> str:
 
 def render_gem(
     resolved: dict[str, Any],
-    cell_mm: float,
+    cell_mm_xyz: dict[str, float] | float,
 ) -> str:
     """Render one finite multipole directly from its authoritative resolved design."""
-    if not math.isfinite(cell_mm) or cell_mm <= 0:
-        raise ValueError("cell_mm must be positive")
+    cell = normalize_cell_mm_xyz(cell_mm_xyz)
+    dx, dy, dz = cell["x"], cell["y"], cell["z"]
     if resolved.get("role") != "multipole_resolved_design_do_not_edit":
         raise ValueError("SIMION geometry requires a multipole resolved design")
     geometry = resolved["geometry_mm"]
@@ -93,7 +94,7 @@ def render_gem(
         return _render_rectangular_reference_gem(
             geometry,
             interface,
-            cell_mm,
+            cell,
             segmented_rods,
             resolved["resolved_sha256"],
         )
@@ -115,16 +116,17 @@ def render_gem(
     z_min = float(enclosure["vacuum_z_min_mm"])
     z_max = float(enclosure["vacuum_z_max_mm"])
     census_plane_z = float(interface["census_plane_z"])
-    numerical_census_marker_thickness = cell_mm
+    numerical_census_marker_thickness = dz
     if census_plane_z + numerical_census_marker_thickness > z_max + 1e-12:
         raise ValueError("numerical census marker must fit inside the cylindrical PA")
     span = z_max - z_min
-    nx = math.ceil(2 * outer / cell_mm) + 1
-    nz = math.ceil(span / cell_mm) + 1
+    nx = math.ceil(2 * outer / dx) + 1
+    ny = math.ceil(2 * outer / dy) + 1
+    nz = math.ceil(span / dz) + 1
     lines = [
         "; Generated from multipole_resolved_design; do not edit.",
         f"; parent_resolved_sha256={resolved['resolved_sha256']}",
-        f"pa_define({nx},{nx},{nz},planar,none,electrostatic,,{cell_mm:.12g},{cell_mm:.12g},{cell_mm:.12g},surface=fractional)",
+        f"pa_define({nx},{ny},{nz},planar,none,electrostatic,,{dx:.12g},{dy:.12g},{dz:.12g},surface=fractional)",
         f"locate({outer:.12g},{outer:.12g},{-z_min:.12g}) {{",
     ]
     for rod in rods:
@@ -134,17 +136,17 @@ def render_gem(
     lines.extend([
         f"  e({ground_electrode}) {{ fill {{",
         f"    within {{ cylinder(0,0,{z_max:.12g},{outer:.12g},,{span:.12g}) }}",
-        f"    notin_inside {{ cylinder(0,0,{z_max+cell_mm:.12g},{inner:.12g},,{span+2*cell_mm:.12g}) }}",
+        f"    notin_inside {{ cylinder(0,0,{z_max+dz:.12g},{inner:.12g},,{span+2*dz:.12g}) }}",
         "  } }",
         f"  e({ground_electrode}) {{ fill {{ within {{ cylinder(0,0,{float(enclosure['entrance_outer_endcap_downstream_face_z_mm']):.12g},{outer:.12g},,{float(enclosure['entrance_outer_endcap_downstream_face_z_mm'])-float(enclosure['entrance_outer_endcap_upstream_face_z_mm']):.12g}) }} }} }}",
         f"  e({output_electrode}) {{ fill {{ within {{ cylinder(0,0,{float(enclosure['exit_outer_endcap_downstream_face_z_mm']):.12g},{outer:.12g},,{float(enclosure['exit_outer_endcap_downstream_face_z_mm'])-float(enclosure['exit_outer_endcap_upstream_face_z_mm']):.12g}) }} }} }}",
         f"  e({ground_electrode}) {{ fill {{",
         f"    within {{ cylinder(0,0,{interface['entrance_plate_z_max']:.12g},{outer:.12g},,{interface['entrance_plate_z_max']-interface['entrance_plate_z_min']:.12g}) }}",
-        f"    notin_inside {{ cylinder(0,0,{interface['entrance_plate_z_max']+cell_mm:.12g},{interface['entrance_aperture_radius']:.12g},,{interface['entrance_plate_z_max']-interface['entrance_plate_z_min']+2*cell_mm:.12g}) }}",
+        f"    notin_inside {{ cylinder(0,0,{interface['entrance_plate_z_max']+dz:.12g},{interface['entrance_aperture_radius']:.12g},,{interface['entrance_plate_z_max']-interface['entrance_plate_z_min']+2*dz:.12g}) }}",
         "  } }",
         f"  e({output_electrode}) {{ fill {{",
         f"    within {{ cylinder(0,0,{interface['exit_plate_z_max']:.12g},{outer:.12g},,{interface['exit_plate_z_max']-interface['exit_plate_z_min']:.12g}) }}",
-        f"    notin_inside {{ cylinder(0,0,{interface['exit_plate_z_max']+cell_mm:.12g},{interface['exit_aperture_radius']:.12g},,{interface['exit_plate_z_max']-interface['exit_plate_z_min']+2*cell_mm:.12g}) }}",
+        f"    notin_inside {{ cylinder(0,0,{interface['exit_plate_z_max']+dz:.12g},{interface['exit_aperture_radius']:.12g},,{interface['exit_plate_z_max']-interface['exit_plate_z_min']+2*dz:.12g}) }}",
         "  } }",
         "  ; GUI-visible numerical absorber: its front face is the resolved census plane.",
         f"  e({numerical_census_marker_electrode}) {{ fill {{ within {{ cylinder(0,0,{census_plane_z+numerical_census_marker_thickness:.12g},{interface['census_radius']:.12g},,{numerical_census_marker_thickness:.12g}) }} }} }}",
@@ -160,7 +162,7 @@ def render_gem(
             interface["entrance_aperture_radius"],
             float(interface["entrance_plate_z_min"]) - entrance_length,
             entrance_length,
-            cell_mm,
+            dz,
         )
     if exit_length > 0:
         _append_translated_connector(
@@ -171,7 +173,7 @@ def render_gem(
             interface["exit_aperture_radius"],
             interface["exit_plate_z_max"],
             exit_length,
-            cell_mm,
+            dz,
         )
     lines.extend(["}", ""])
     return "\n".join(lines)
@@ -192,7 +194,7 @@ def _append_translated_connector(
     aperture_radius_mm: float,
     z_min_mm: float,
     length_mm: float,
-    cell_mm: float,
+    cell_mm_z: float,
 ) -> None:
     """Append a connector inside the cylindrical renderer's enclosing locate."""
     z_min = float(z_min_mm)
@@ -210,8 +212,8 @@ def _append_translated_connector(
         )
     lines.extend(
         [
-            f"    notin_inside {{ cylinder(0,0,{z_max+cell_mm:.12g},"
-            f"{float(aperture_radius_mm):.12g},,{length+2*cell_mm:.12g}) }}",
+            f"    notin_inside {{ cylinder(0,0,{z_max+cell_mm_z:.12g},"
+            f"{float(aperture_radius_mm):.12g},,{length+2*cell_mm_z:.12g}) }}",
             "  } }",
         ]
     )
@@ -220,10 +222,15 @@ def _append_translated_connector(
 def _render_rectangular_reference_gem(
     geometry: dict[str, Any],
     interface: dict[str, Any],
-    cell_mm: float,
+    cell_mm_xyz: dict[str, float],
     segmented_rods: dict[str, Any] | None,
     parent_hash: str,
 ) -> str:
+    dx, dy, dz = (
+        cell_mm_xyz["x"],
+        cell_mm_xyz["y"],
+        cell_mm_xyz["z"],
+    )
     enclosure = geometry["enclosure"]
     rods = geometry["rod_array"]["rods"]
     if segmented_rods is not None:
@@ -241,13 +248,14 @@ def _render_rectangular_reference_gem(
     inner = float(enclosure["inner_half_width_mm"])
     z_min = float(enclosure["vacuum_z_min_mm"])
     z_max = float(enclosure["vacuum_z_max_mm"])
-    nx = math.ceil(outer / cell_mm) + 1
-    computational_z_max = z_max + 3 * cell_mm
-    nz = math.ceil((computational_z_max - z_min) / cell_mm) + 1
+    nx = math.ceil(outer / dx) + 1
+    ny = math.ceil(outer / dy) + 1
+    computational_z_max = z_max + 3 * dz
+    nz = math.ceil((computational_z_max - z_min) / dz) + 1
     lines = [
         "; Generated from multipole_resolved_design; do not edit.",
         f"; parent_resolved_sha256={parent_hash}",
-        f"pa_define({nx},{nx},{nz},planar,xy,electrostatic,,{cell_mm:.12g},{cell_mm:.12g},{cell_mm:.12g},surface=fractional)",
+        f"pa_define({nx},{ny},{nz},planar,xy,electrostatic,,{dx:.12g},{dy:.12g},{dz:.12g},surface=fractional)",
     ]
     for rod in rods:
         z0 = float(rod["z_min_mm"])
@@ -277,10 +285,10 @@ def _render_rectangular_reference_gem(
             f"  e({output_electrode}) {{ fill {{",
             f"    within {{ box3d({outer:.12g},{outer:.12g},0,{-outer:.12g},{-outer:.12g},{exit_z_max-exit_z_min:.12g}) }}",
             f"    notin_inside {{ box3d({inner:.12g},{inner:.12g},{front_end-exit_z_min:.12g},{-inner:.12g},{-inner:.12g},1E+6) }}",
-            f"    notin_inside {{ cylinder(0,0,{exit_z_max-exit_z_min+cell_mm:.12g},{float(interface['exit_aperture_radius']):.12g},,{exit_z_max-exit_z_min+2*cell_mm:.12g}) }}",
+            f"    notin_inside {{ cylinder(0,0,{exit_z_max-exit_z_min+dz:.12g},{float(interface['exit_aperture_radius']):.12g},,{exit_z_max-exit_z_min+2*dz:.12g}) }}",
             "  } }",
             "  ; GUI-visible numerical absorber downstream of the census plane; not a physical detector.",
-            f"  e({physical_detector_electrode}) {{ fill {{ within {{ cylinder(0,0,{float(interface['census_plane_z'])-exit_z_min+cell_mm:.12g},{float(interface['census_radius']):.12g},,{cell_mm:.12g}) }} }} }}",
+            f"  e({physical_detector_electrode}) {{ fill {{ within {{ cylinder(0,0,{float(interface['census_plane_z'])-exit_z_min+dz:.12g},{float(interface['census_radius']):.12g},,{dz:.12g}) }} }} }}",
             "}",
         ]
     )
@@ -292,7 +300,7 @@ def _render_rectangular_reference_gem(
         interface["entrance_aperture_radius"],
         float(interface["entrance_plate_z_min"]) - float(interface["entrance_connector_length"]),
         interface["entrance_connector_length"],
-        cell_mm,
+        dz,
     )
     _append_connector(
         lines,
@@ -302,7 +310,7 @@ def _render_rectangular_reference_gem(
         interface["exit_aperture_radius"],
         interface["exit_plate_z_max"],
         interface["exit_connector_length"],
-        cell_mm,
+        dz,
     )
     lines.append("")
     return "\n".join(lines)
@@ -336,7 +344,7 @@ def _append_connector(
     aperture_radius_mm: float,
     z_min_mm: float,
     length_mm: float,
-    cell_mm: float,
+    cell_mm_z: float,
 ) -> None:
     length = float(length_mm)
     if length == 0:
@@ -350,7 +358,7 @@ def _append_connector(
         lines.append(f"    within {{ cylinder(0,0,{length:.12g},{outer_size_mm:.12g},,{length:.12g}) }}")
     lines.extend(
         [
-            f"    notin_inside {{ cylinder(0,0,{length+cell_mm:.12g},{float(aperture_radius_mm):.12g},,{length+2*cell_mm:.12g}) }}",
+            f"    notin_inside {{ cylinder(0,0,{length+cell_mm_z:.12g},{float(aperture_radius_mm):.12g},,{length+2*cell_mm_z:.12g}) }}",
             "  } }",
             "}",
         ]
@@ -360,13 +368,26 @@ def _append_connector(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--resolved-design", required=True, type=Path)
-    parser.add_argument("--cell-mm", required=True, type=float)
+    parser.add_argument("--cell-mm", type=float)
+    parser.add_argument("--cell-mm-x", type=float)
+    parser.add_argument("--cell-mm-y", type=float)
+    parser.add_argument("--cell-mm-z", type=float)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
+    axis_values = (args.cell_mm_x, args.cell_mm_y, args.cell_mm_z)
+    if args.cell_mm is not None and any(value is not None for value in axis_values):
+        parser.error("--cell-mm is mutually exclusive with three-axis cell spacing")
+    if args.cell_mm is None and not all(value is not None for value in axis_values):
+        parser.error("provide --cell-mm or all of --cell-mm-x/y/z")
+    cell_mm_xyz: dict[str, float] | float = (
+        args.cell_mm
+        if args.cell_mm is not None
+        else {"x": args.cell_mm_x, "y": args.cell_mm_y, "z": args.cell_mm_z}
+    )
     resolved = json.loads(args.resolved_design.read_text(encoding="utf-8-sig"))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
-        render_gem(resolved, args.cell_mm),
+        render_gem(resolved, cell_mm_xyz),
         encoding="ascii",
     )
     return 0

@@ -75,9 +75,14 @@ def load_exit_state(path: Path, label: str) -> ExitState:
     missing = sorted(required.difference(rows[0]))
     if missing:
         raise ValueError(f"Canonical particle-state table is missing columns: {missing}")
-    source_ids = {row["particle_id"] for row in rows if row["event"] == "source"}
+    source_particle_ids = [
+        row["particle_id"] for row in rows if row["event"] == "source"
+    ]
+    source_ids = set(source_particle_ids)
     if not source_ids:
         raise ValueError("Canonical particle-state table has no source rows.")
+    if "" in source_ids or len(source_ids) != len(source_particle_ids):
+        raise ValueError("Canonical particle-state source particle IDs are invalid.")
     selected: list[dict[str, str]] = []
     selected_event = ""
     selected_statuses: tuple[str, ...] = ()
@@ -91,6 +96,18 @@ def load_exit_state(path: Path, label: str) -> ExitState:
             break
     if not selected:
         raise ValueError("No supported transmitted exit-state rows were found.")
+    selected_particle_ids = [row["particle_id"] for row in selected]
+    if (
+        "" in selected_particle_ids
+        or len(set(selected_particle_ids)) != len(selected_particle_ids)
+    ):
+        raise ValueError("Selected exit-state particle IDs are invalid or duplicated.")
+    unknown_particle_ids = sorted(set(selected_particle_ids) - source_ids)
+    if unknown_particle_ids:
+        raise ValueError(
+            "Selected exit-state particle IDs do not belong to the source: "
+            + ", ".join(unknown_particle_ids[:5])
+        )
     values = {
         column: np.asarray([float(row[column]) for row in selected], dtype=float)
         for column in NUMERIC_COLUMNS

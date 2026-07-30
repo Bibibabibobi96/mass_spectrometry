@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "role": "multipole_no_acceleration_followup_effect_resolution",
+  "contract_id": "multipole_no_acceleration_followup_fixed_bins_v1",
+  "preregistered_before_followup_runs": true,
+  "scope": [
+    "rf_quadrupole_ion_optics",
+    "rf_hexapole_ion_optics",
+    "rf_octupole_ion_optics"
+  ],
+  "observation": {
+    "event": "handoff",
+    "status": "transmitted",
+    "coordinate_frame": "multipole local frame; axial z and transverse x/y",
+    "particle_pairing_key": "particle_id"
+  },
+  "fixed_bins": {
+    "transverse_x_mm": {"minimum": -4.0, "maximum": 4.0, "count": 32},
+    "transverse_y_mm": {"minimum": -4.0, "maximum": 4.0, "count": 32},
+    "radial_position_mm": {"minimum": 0.0, "maximum": 4.0, "count": 24},
+    "divergence_angle_deg": {"minimum": 0.0, "maximum": 24.0, "count": 24},
+    "kinetic_energy_eV": {"minimum": 1.8, "maximum": 2.25, "count": 24},
+    "elapsed_time_us": {"minimum": 41.0, "maximum": 47.0, "count": 24}
+  },
+  "engineering_stability": {
+    "source_particle_id_set": "exact_match",
+    "handoff_particle_id_set": "exact_match",
+    "required_per_particle_bin_stability": [
+      "transverse_x_mm",
+      "transverse_y_mm",
+      "radial_position_mm",
+      "divergence_angle_deg",
+      "kinetic_energy_eV",
+      "elapsed_time_us"
+    ],
+    "out_of_range_result": "INCONCLUSIVE_EFFECT_RESOLUTION_RANGE_EXCEEDED",
+    "changed_bin_result": "SENSITIVE_AT_PREREGISTERED_ENGINEERING_RESOLUTION",
+    "unchanged_bin_result": "STABLE_AT_PREREGISTERED_ENGINEERING_RESOLUTION"
+  },
+  "scientific_claim_policy": {
+    "absolute_accuracy": "NOT_QUALIFIED_WITHOUT_EXPERIMENTAL_OR_EXTERNAL_ERROR_STANDARD",
+    "solver_superiority": "FORBIDDEN",
+    "allowed": [
+      "paired numerical sensitivity",
+      "directional sensitivity",
+      "factor interaction",
+      "engineering stability at the frozen bin resolution"
+    ]
+  },
+  "basis": {
+    "position": "The range is bounded by the shared 4 mm radial working scale and exit-interface acceptance geometry.",
+    "energy": "The range brackets the frozen nominal 2 eV source and all retained no-acceleration reference states.",
+    "time": "The range brackets all retained no-acceleration reference handoff times under the frozen source and geometry.",
+    "angle": "The range brackets all retained no-acceleration reference handoff divergence values.",
+    "percentage_tolerance": "No arbitrary relative percentage is introduced."
+  },
+  "claim_limit": "This is an internal downstream-resolution contract. It may issue engineering stability at its fixed bin resolution, but it cannot establish absolute physical accuracy, solver equivalence, Candidate, Formal or N=1000 status."
+}
