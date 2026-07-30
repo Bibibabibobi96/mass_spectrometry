@@ -590,7 +590,7 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
             / "qualification"
             / "comsol_exit_interface_mesh_strategy_field_preregistration.json"
         )
-        self.assertEqual(preregistration["status"], "authorized_pending_execution")
+        self.assertEqual(preregistration["status"], "authorized_not_run")
         self.assertFalse(
             preregistration["decision_policy"]["particle_followup_authorized"]
         )

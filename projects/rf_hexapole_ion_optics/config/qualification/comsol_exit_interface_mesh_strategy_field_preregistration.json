@@ -4,7 +4,7 @@
   "project_id": "rf_hexapole_ion_optics",
   "experiment_id": "hexapole_exit_interface_mesh_strategy_field_pilot",
   "preregistered_before_run": true,
-  "status": "authorized_pending_execution",
+  "status": "authorized_not_run",
   "authorization": {
     "maximum_commercial_run_count": 1,
     "automatic_retry_count": 0,
