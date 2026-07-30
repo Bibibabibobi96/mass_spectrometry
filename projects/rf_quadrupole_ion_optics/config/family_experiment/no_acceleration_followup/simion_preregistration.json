@@ -21,7 +21,7 @@
     "runtime_profiles": {"path": "projects/rf_quadrupole_ion_optics/config/runtime_profiles.json", "sha256": "D22D0A6E239BD319F12B01D25FD3874204FA8AD7238A2A29CCDC9045C3F6413B"},
     "simion_solver_numerics": {"path": "projects/rf_quadrupole_ion_optics/config/multipole_transport_simion_solver_numerics.json", "sha256": "0BFD69CE6723FC91ADE95790E904DEC760D337D70C7269EED41E825A928AFCA5"},
     "budgets": [
-      {"path": "projects/rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_followup/simion_A_budget.json", "sha256": "39456FF18D0C289BC3754221F344516D6638730AE16F6591B88A7E5B2E8C5A30"},
+      {"path": "projects/rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_followup/simion_A_budget.json", "sha256": "E34DFE1F914BA9F62D48D59CE055A68FBF85DE9A7B1E4241960ADD641198E0F3"},
       {"path": "projects/rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_followup/simion_R_budget.json", "sha256": "15FD963FCED7911DDF13585A3C3A450F069DEEA633C2440CEA32D9B34326E4F0"},
       {"path": "projects/rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_followup/simion_Z_budget.json", "sha256": "5E100FD2BED53E7790CCE3D3DCE08DA0D3FB842E386E3039DCC11B09956FEF37"},
       {"path": "projects/rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_followup/simion_I_budget.json", "sha256": "56977FE9980158A33419C76AAF3C3FC2F3781927ED7DA533092ED55E6DB446CB"},
@@ -29,11 +29,21 @@
     ]
   },
   "ordered_arms": [
-    {"sequence": 1, "arm": "A", "role": "anchor", "runtime_profile_id": "no_acceleration_full_length_n100_simion_followup_A_r030_z030_t080", "simion_solver_numerics_profile_id": "simion_followup_A_r030_z030_t080", "engineering_budget_path": "config/family_experiment/no_acceleration_followup/simion_A_budget.json", "authorized_run_id": "20260731_010001__sim__simion__quad-noacc-followup-a-r030-z030-t080", "cell_mm_xyz": {"x": 0.3, "y": 0.3, "z": 0.3}, "rf_steps_per_period": 80, "executed": false},
+    {"sequence": 1, "arm": "A", "role": "anchor", "runtime_profile_id": "no_acceleration_full_length_n100_simion_followup_A_r030_z030_t080", "simion_solver_numerics_profile_id": "simion_followup_A_r030_z030_t080", "engineering_budget_path": "config/family_experiment/no_acceleration_followup/simion_A_budget.json", "authorized_run_id": "20260731_010001__sim__simion__quad-noacc-followup-a-r030-z030-t080__r02", "cell_mm_xyz": {"x": 0.3, "y": 0.3, "z": 0.3}, "rf_steps_per_period": 80, "executed": false},
     {"sequence": 2, "arm": "R", "role": "radial_refined", "runtime_profile_id": "no_acceleration_full_length_n100_simion_followup_R_r020_z030_t080", "simion_solver_numerics_profile_id": "simion_followup_R_r020_z030_t080", "engineering_budget_path": "config/family_experiment/no_acceleration_followup/simion_R_budget.json", "authorized_run_id": "20260731_010002__sim__simion__quad-noacc-followup-r-r020-z030-t080", "cell_mm_xyz": {"x": 0.2, "y": 0.2, "z": 0.3}, "rf_steps_per_period": 80, "executed": false},
     {"sequence": 3, "arm": "Z", "role": "axial_refined", "runtime_profile_id": "no_acceleration_full_length_n100_simion_followup_Z_r030_z020_t080", "simion_solver_numerics_profile_id": "simion_followup_Z_r030_z020_t080", "engineering_budget_path": "config/family_experiment/no_acceleration_followup/simion_Z_budget.json", "authorized_run_id": "20260731_010003__sim__simion__quad-noacc-followup-z-r030-z020-t080", "cell_mm_xyz": {"x": 0.3, "y": 0.3, "z": 0.2}, "rf_steps_per_period": 80, "executed": false},
     {"sequence": 4, "arm": "I", "role": "isotropic_refined", "runtime_profile_id": "no_acceleration_full_length_n100_simion_followup_I_r020_z020_t080", "simion_solver_numerics_profile_id": "simion_followup_I_r020_z020_t080", "engineering_budget_path": "config/family_experiment/no_acceleration_followup/simion_I_budget.json", "authorized_run_id": "20260731_010004__sim__simion__quad-noacc-followup-i-r020-z020-t080", "cell_mm_xyz": {"x": 0.2, "y": 0.2, "z": 0.2}, "rf_steps_per_period": 80, "executed": false},
     {"sequence": 5, "arm": "T", "role": "temporal_refined", "runtime_profile_id": "no_acceleration_full_length_n100_simion_followup_T_r020_z020_t160", "simion_solver_numerics_profile_id": "simion_followup_T_r020_z020_t160", "engineering_budget_path": "config/family_experiment/no_acceleration_followup/simion_T_budget.json", "authorized_run_id": "20260731_010005__sim__simion__quad-noacc-followup-t-r020-z020-t160", "cell_mm_xyz": {"x": 0.2, "y": 0.2, "z": 0.2}, "rf_steps_per_period": 160, "executed": false}
+  ],
+  "execution_environment_attempts": [
+    {
+      "run_id": "20260731_010001__sim__simion__quad-noacc-followup-a-r030-z030-t080",
+      "status": "EXECUTION_ENVIRONMENT_BLOCKED",
+      "commercial_solver_started": true,
+      "result_available": false,
+      "automatic_retry_consumed": false,
+      "reason": "The command host timed out after launch and detached the SIMION child before the governed parent could freeze inputs or terminalize the run manifest. The orphan exited, but the run remained interrupted and is excluded from analysis."
+    }
   ],
   "comparison_plan": {
     "radial": "A_vs_R",

@@ -19,7 +19,7 @@
       },
       "allowed_solvers": ["simion"],
       "retention_class": "compact",
-      "authorized_run_id": "20260731_010001__sim__simion__quad-noacc-followup-a-r030-z030-t080"
+      "authorized_run_id": "20260731_010001__sim__simion__quad-noacc-followup-a-r030-z030-t080__r02"
     },
     "limits": {
       "wall_clock_seconds_by_solver": {"comsol": 1800, "simion": 1800},
