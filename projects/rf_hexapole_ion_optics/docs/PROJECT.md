@@ -356,11 +356,21 @@ canonical handoff约`5.593%/1.825%`；两点仍不能建立观测阶，且0.40 m
 它仍复用唯一`physical_segment_hybrid_swept_tetra_v1`实现和`sensitive_region`合同，不建立第二CLI或
 同义尺寸字段：径向上以C1背景包围3.6 mm粒子走廊，走廊全长保持0.40 mm；轴向上只在
 `rod_exit-2.0 mm`到`handoff+0.5 mm`（当前解析坐标77.6–81.1 mm）叠加0.20 mm出口接口区。
-扫掠段轴向层数保持10，因此本轮检验的是一次明确命名的网格策略变化，不冒充单轴空间收敛。
-唯一一次COMSOL field-only、3330点/6660行采样和零重试已经授权；硬帽仍为100万单元、600 s和
-12 GiB。优选判据是单元数低于当前0.32 mm全长参考的713,396，并在该参考的最后相邻档差异范围内
-复现常规杆区、杆出口和canonical handoff场。该差异范围只用于筛选新策略是否值得继续，不是来源化
-功能容差；在真实结果完成、登记并另行决策前，粒子、跨求解器、Candidate、Formal和N=1000均未授权。
+真实运行在55.072 s内建出747,632单元，峰值进程树3,108,835,328 bytes，未触发任何资源帽；但局部区
+侵入最后扫掠段内部1.0 mm并新增轴向分区，`swe4`报告“Generated different number of element layers
+than requested”。全局、真空、四面体和四个扫掠段均据此`HAS_PROBLEMS=1`，场physics、Study、
+solution和采样均未创建。该策略同时比0.32 mm全长参考多34,236单元，因此以
+`FAILED_MESH_TOPOLOGY_GATE_BEFORE_FIELD_SOLUTION`拒绝；一次授权耗尽，零重试成立。
+
+共享实现现增加闭锁：出口接口区的上游范围不得大于`segment_end_buffer_mm`，防止未来配置再次切入
+swept interior。新的
+[`不侵入扫掠区纠正pilot`](../config/qualification/comsol_exit_interface_nosweep_mesh_strategy_field_preregistration.json)
+保持0.40 mm全长走廊、0.20 mm局部尺寸、0.5 mm handoff下游范围和10层扫掠不变，只把局部区起点从
+`rod_exit-2.0 mm`移到最后扫掠段终点`rod_exit-1.0 mm`（当前78.6–81.1 mm）。它是从明确拓扑失败
+派生的新网格身份，不是旧run重试；唯一一次field-only、3330点/6660行采样和零自动重试已另行预登记，
+硬帽仍为100万单元、600 s和12 GiB。优选判据仍要求低于713,396单元并在当前0.32 mm参考的最后相邻档
+差异范围内复现区域场；该差异带只筛选策略，不是功能容差。粒子、跨求解器、Candidate、Formal和
+N=1000继续关闭。
 
 共享SIMION模板、GUI复核、`.wgem`绕过和跨机可移植性状态只由
 [`../../../common/multipole/README.md`](../../../common/multipole/README.md)维护；公共机制证据不授予

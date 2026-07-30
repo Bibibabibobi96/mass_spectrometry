@@ -80,7 +80,7 @@ class C1SampledFieldPreregistrationTests(unittest.TestCase):
         )
         self.assertEqual(
             pilot["scope"]["runtime_profile_id"],
-            "exit_aperture_plate_acceleration_n100_hybrid_c1_corridor040_exit020_field_screen",
+            "exit_aperture_plate_acceleration_n100_hybrid_c1_corridor040_exit020_nosweep_field_screen",
         )
         self.assertEqual(pilot["scope"]["stop_stage"], "field_solve")
         self.assertEqual(pilot["scope"]["allowed_solvers"], ["comsol"])

@@ -126,9 +126,13 @@
   外推0.256 mm约为1,014,490单元、超过硬帽。因此场序列以
   `INCONCLUSIVE_MESH_STRATEGY_CHANGE_REQUIRED`关闭，粒子仍未授权。当前另以
   [`出口接口定向网格pilot`](config/qualification/comsol_exit_interface_mesh_strategy_field_preregistration.json)
-  授权唯一一次field-only诊断：全长3.6 mm粒子走廊保持0.40 mm，只在杆出口上游2.0 mm至handoff
-  下游0.5 mm的区域使用0.20 mm，轴向扫掠层数固定为10。该pilot只检验能否以少于0.32 mm全长档的
-  713,396单元复现其区域场结果；预登记比较带不是功能容差，不授权粒子、收敛或资格结论。
+  执行唯一一次field-only诊断：全长3.6 mm粒子走廊保持0.40 mm，在杆出口上游2.0 mm至handoff
+  下游0.5 mm的区域使用0.20 mm。该区侵入最后扫掠段1.0 mm，使`swe4`报告层数与请求不一致；
+  747,632单元的网格在场求解前失败，且已比0.32 mm全长参考多34,236单元，旧策略据此拒绝且不重跑。
+  当前另以
+  [`不侵入扫掠区的纠正pilot`](config/qualification/comsol_exit_interface_nosweep_mesh_strategy_field_preregistration.json)
+  把上游范围收回到固定1.0 mm segment-end buffer边界，并在共享实现中禁止局部区进入swept interior。
+  新身份只授权一次field-only诊断；比较带仍不是功能容差，不授权粒子、收敛或资格结论。
   既有三模式baseline的两份
   求解器报告只具有`POSTHOC_DESCRIPTIVE`身份，统一
   比较见[`../../docs/history/20260729__multipole-three-mode-posthoc-n100.md`](../../docs/history/20260729__multipole-three-mode-posthoc-n100.md)。
