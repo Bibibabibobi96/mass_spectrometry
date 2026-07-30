@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "role": "integration_family_source_closure_budget",
+  "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+  "contract_id": "rf_octupole_hybrid_reference_n100_v1",
+  "preregistered_before_run": true,
+  "authorization": {
+    "authorized": true,
+    "scope": {
+      "profile_source_contracts": [
+        {
+          "connection_profile_id": "rf_octupole_no_acceleration_full_length_direct_mating_gap_0mm",
+          "source_contract": {
+            "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_hybrid_reference_n100_source_contract.json",
+            "sha256": "1932D75681D5E874B0CE81667B87E65AAED3F8EAF809FA9B0778698F7044B685"
+          }
+        }
+      ],
+      "source_branch_ids": ["comsol"],
+      "particle_count": 100,
+      "retention_class": "compact"
+    },
+    "stage_limits": {
+      "pre_pulse_interface_transport": {
+        "solver": "comsol",
+        "wall_clock_seconds": 1200,
+        "transient_run_directory_bytes": 2147483648,
+        "process_tree_working_set_bytes": 17179869184,
+        "minimum_system_available_memory_bytes": 8589934592,
+        "compact_final_retained_bytes": 26214400,
+        "automatic_retry_count": 0
+      },
+      "pulse_capture": {
+        "solver": "comsol",
+        "wall_clock_seconds": 1200,
+        "transient_run_directory_bytes": 2147483648,
+        "process_tree_working_set_bytes": 17179869184,
+        "minimum_system_available_memory_bytes": 8589934592,
+        "compact_final_retained_bytes": 26214400,
+        "automatic_retry_count": 0
+      },
+      "analyzer_transport": {
+        "solver": "simion",
+        "wall_clock_seconds": 300,
+        "transient_run_directory_bytes": 2147483648,
+        "process_tree_working_set_bytes": 2147483648,
+        "minimum_system_available_memory_bytes": 8589934592,
+        "compact_final_retained_bytes": 26214400,
+        "automatic_retry_count": 0
+      }
+    }
+  },
+  "full_matrix_authorization": {
+    "authorized": false,
+    "reason": "Only one compact octupole hybrid-reference COMSOL-source downstream run is authorized by the frozen hexapole expansion decision."
+  },
+  "budget_exhaustion_result": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
+  "claim_limit": "This budget authorizes one compact N=100 functional source-revision diagnostic. It does not authorize convergence, optimization, resolution, Candidate or Formal claims."
+}

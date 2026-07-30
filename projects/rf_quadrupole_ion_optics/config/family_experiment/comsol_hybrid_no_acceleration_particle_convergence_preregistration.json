@@ -2,10 +2,10 @@
   "schema_version": 1,
   "role": "multipole_comsol_hybrid_particle_convergence_preregistration",
   "campaign_id": "quadrupole_no_acceleration_hybrid_exit_interface_n100_v1",
-  "status": "PREREGISTERED_AWAITING_EXPLICIT_COMMERCIAL_RUN_AUTHORIZATION",
+  "status": "REFERENCE_ARM_COMPLETED_FOR_DOWNSTREAM_SOURCE_REVISION_SCREEN",
   "preregistered_before_run": true,
   "maximum_commercial_run_count": 3,
-  "commercial_run_count_executed": 0,
+  "commercial_run_count_executed": 1,
   "automatic_retry_count": 0,
   "scope": {
     "project_id": "rf_quadrupole_ion_optics",
@@ -15,7 +15,7 @@
     "particle_source_sha256": "0125C3AB02B2321EF26A3A913CF6EC04325FD0D48597D2CB439D0CE42411662F",
     "particle_count": 100,
     "retention_class": "compact",
-    "expected_run_parent_resolved_design_sha256": "21A886F31D876E56B8A508907F984ABFB0121BD8831572B56FEF097AEFB4D247"
+    "expected_run_parent_resolved_design_sha256": "F63A63A376F66F3C3F4106FB2C84E36B1DF4005E7592D5331D07FC857FCFA3EA"
   },
   "family_transfer_basis": {
     "source_project_id": "rf_hexapole_ion_optics",
@@ -27,7 +27,7 @@
   "frozen_authorities": {
     "runtime_profiles": {
       "path": "projects/rf_quadrupole_ion_optics/config/runtime_profiles.json",
-      "sha256": "83162764800A1992678E7B747AEE3716C97AD5F426A795735E7B9C94F3386D5C"
+      "sha256": "49C43EB94EECFFB6CCA1FBB7165614D30431778D526AF02DC9CBB4A9D4A1DF69"
     },
     "comsol_solver_numerics": {
       "path": "projects/rf_quadrupole_ion_optics/config/multipole_transport_comsol_solver_numerics.json",
@@ -39,7 +39,7 @@
     },
     "engineering_budget": {
       "path": "projects/rf_quadrupole_ion_optics/config/family_experiment/comsol_hybrid_no_acceleration_particle_convergence_budget.json",
-      "sha256": "E4481F2539A6C1CBE7179BD6C172E9C4F0EA63C8423217515F6E0042FE7DC16E"
+      "sha256": "AA5D1189A8510FC5967E37B7BD3E6CB92069650735EF07B254D291BFBBD5F592"
     },
     "comparison_method": {
       "path": "common/multipole/numerical_qualification.json",
@@ -63,8 +63,20 @@
       "exit_interface_maximum_element_size_mm": 0.25,
       "rf_steps_per_period": 160,
       "authorized": false,
-      "executed": false,
-      "run_id": null
+      "executed": true,
+      "run_id": "20260730_231700__sim__comsol__quad-noacc-hybrid-exit025-t160__r02",
+      "result": {
+        "status": "PASS",
+        "mesh_global_elements": 647134,
+        "stationary_field_dof": 2340414,
+        "wall_clock_seconds": 308.321,
+        "peak_process_tree_working_set_bytes": 7097384960,
+        "peak_run_directory_bytes": 597810595,
+        "primary_transmitted": 100,
+        "control_transmitted": 21,
+        "primary_exit_rms_radius_mm": 0.42428091001195006,
+        "primary_mean_output_energy_eV": 2.012660708798047
+      }
     },
     {
       "sequence": 2,
@@ -87,6 +99,14 @@
       "authorized": false,
       "executed": false,
       "run_id": null
+    }
+  ],
+  "preflight_history": [
+    {
+      "run_id": "20260730_224315__sim__comsol__quad-noacc-hybrid-exit025-t160__r01",
+      "status": "FAILED_BEFORE_COMSOL_START",
+      "reason": "The repository-relative resolved-design hash was bound instead of the frozen-run portable provenance hash.",
+      "commercial_run_count_consumed": 0
     }
   ],
   "comparison_plan": {
@@ -119,5 +139,5 @@
     "continuous_result": "INCONCLUSIVE_NO_SOURCED_ERROR_BUDGET",
     "forbidden": "Do not inherit hexapole numerical results, invent a percentage threshold, add a fourth brute-force tier, or run any arm while its authorization is false."
   },
-  "claim_limit": "Configuration and preregistration only. No commercial run, numerical convergence, solver equivalence, Candidate, Formal or N=1000 claim is granted."
+  "claim_limit": "Only the N=100 reference arm is authorized to create a COMSOL source for the downstream revision screen after the hexapole expansion rule was met. Spatial/temporal arms remain unauthorized; no convergence, solver equivalence, Candidate, Formal or N=1000 claim is granted."
 }

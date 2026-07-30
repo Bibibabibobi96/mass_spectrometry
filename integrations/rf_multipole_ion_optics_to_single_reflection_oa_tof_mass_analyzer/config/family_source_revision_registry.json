@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "role": "integration_family_source_revision_registry",
+  "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+  "revisions": [
+    {
+      "source_revision_id": "baseline",
+      "connection_profile_id": "rf_quadrupole_no_acceleration_full_length_direct_mating_gap_0mm",
+      "source_branch_ids": [
+        "comsol",
+        "simion"
+      ],
+      "preregistration": {
+        "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_source_closure_preregistration.json",
+        "sha256": "371140A5E7A0CA874BCA5BADB2D61BC05EAF120523D8FD1075870D76EC1B202F"
+      },
+      "runtime_binding": {
+        "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_quadrupole_direct_mating_gap_0mm_runtime_binding.json",
+        "sha256": "71EF88AD6301F69C9CCFCA6D033A7C919776DBA2371F0D0E95E6FF35BCA52578"
+      }
+    },
+    {
+      "source_revision_id": "baseline",
+      "connection_profile_id": "rf_hexapole_no_acceleration_full_length_direct_mating_gap_0mm",
+      "source_branch_ids": [
+        "comsol",
+        "simion"
+      ],
+      "preregistration": {
+        "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_source_closure_preregistration.json",
+        "sha256": "371140A5E7A0CA874BCA5BADB2D61BC05EAF120523D8FD1075870D76EC1B202F"
+      },
+      "runtime_binding": {
+        "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_hexapole_direct_mating_gap_0mm_runtime_binding.json",
+        "sha256": "308F632A58CB6E676D52ADDA24DD2E9D573BD970028EAC012DA4DEA0BE73DBCB"
+      }
+    },
+    {
+      "source_revision_id": "baseline",
+      "connection_profile_id": "rf_octupole_no_acceleration_full_length_direct_mating_gap_0mm",
+      "source_branch_ids": [
+        "comsol",
+        "simion"
+      ],
+      "preregistration": {
+        "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_source_closure_preregistration.json",
+        "sha256": "371140A5E7A0CA874BCA5BADB2D61BC05EAF120523D8FD1075870D76EC1B202F"
+      },
+      "runtime_binding": {
+        "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_direct_mating_gap_0mm_runtime_binding.json",
+        "sha256": "F6AA804BE462FBE43EA8380699BC33E40319E6E4D24B453C6225E65C1A12F9A0"
+      }
+    },
+    {
+      "source_revision_id": "hexapole_hybrid_reference",
+      "connection_profile_id": "rf_hexapole_no_acceleration_full_length_direct_mating_gap_0mm",
+      "source_branch_ids": [
+        "comsol"
+      ],
+      "preregistration": {
+        "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_hexapole_hybrid_reference_source_revision_preregistration.json",
+        "sha256": "2C22BB2E884FC627BEAC603EB345993BF7A2DAF143E22B6AA376B8B548BAAE33"
+      },
+      "runtime_binding": {
+        "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_hexapole_hybrid_reference_direct_mating_gap_0mm_runtime_binding.json",
+        "sha256": "BF4B04DC565A01638AEDFC2C8BA3E8B73B2D6F9EE9C913ECFEB56B4F569B4D7A"
+      }
+    },
+    {
+      "source_revision_id": "quadrupole_hybrid_reference",
+      "connection_profile_id": "rf_quadrupole_no_acceleration_full_length_direct_mating_gap_0mm",
+      "source_branch_ids": [
+        "comsol"
+      ],
+      "preregistration": {
+        "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_quadrupole_hybrid_reference_source_revision_preregistration.json",
+        "sha256": "06D23DC7DE57A719EEAFDC25D3C7716391D39CB06667369A643D3749A5AF59E1"
+      },
+      "runtime_binding": {
+        "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_quadrupole_hybrid_reference_direct_mating_gap_0mm_runtime_binding.json",
+        "sha256": "B0CBB9FD5EDE550CF6932D26C198B9D7A76BC679AA56BCC71F59105CAE91B805"
+      }
+    },
+    {
+      "source_revision_id": "octupole_hybrid_reference",
+      "connection_profile_id": "rf_octupole_no_acceleration_full_length_direct_mating_gap_0mm",
+      "source_branch_ids": [
+        "comsol"
+      ],
+      "preregistration": {
+        "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_hybrid_reference_source_revision_preregistration.json",
+        "sha256": "03BDF23A08462B0CC1528836606B6FC2E4A80AE0A581BF56FE3397EA9ADF76DD"
+      },
+      "runtime_binding": {
+        "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_hybrid_reference_direct_mating_gap_0mm_runtime_binding.json",
+        "sha256": "008E79A1A69BB38EC5F77BA17E0EED3187455D03680315DA4F23C4498D222BB9"
+      }
+    }
+  ]
+}

@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 
 from common.contracts.file_identity import file_sha256
-from common.contracts.machine_contracts import ContractError
+from common.contracts.machine_contracts import ContractError, validate_schema
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.prepare import (
     prepare_family_source_closure,
 )
@@ -30,6 +30,9 @@ PREREGISTRATION = (
     INTEGRATION_ROOT
     / "config"
     / "family_source_closure_preregistration.json"
+)
+REVISION_REGISTRY = (
+    INTEGRATION_ROOT / "config" / "family_source_revision_registry.json"
 )
 FAMILY_EXECUTE = (
     INTEGRATION_ROOT / "workflows" / "family_source_closure" / "execute.ps1"
@@ -129,6 +132,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                                 profile_registry_path=PROFILE_REGISTRY,
                                 adapter_registry_path=ADAPTER_REGISTRY,
                                 preregistration_path=PREREGISTRATION,
+                                revision_registry_path=REVISION_REGISTRY,
                                 profile_id=profile_id,
                                 source_branch_id=branch_id,
                                 resolved_output=output / "resolved.json",
@@ -201,6 +205,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                 "profile_registry_path": PROFILE_REGISTRY,
                 "adapter_registry_path": ADAPTER_REGISTRY,
                 "preregistration_path": PREREGISTRATION,
+                "revision_registry_path": REVISION_REGISTRY,
                 "resolved_output": output / "resolved.json",
                 "plan_output": output / "plan.json",
             }
@@ -313,6 +318,259 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                         completed.stdout,
                     )
 
+    def test_hexapole_hybrid_revision_is_closed_and_comsol_only(self) -> None:
+        profile_id = (
+            "rf_hexapole_no_acceleration_full_length_"
+            "direct_mating_gap_0mm"
+        )
+        with tempfile.TemporaryDirectory(dir=REPO_ROOT / ".tmp") as directory:
+            output = Path(directory)
+            _, plan_path = prepare_family_source_closure(
+                repo_root=REPO_ROOT,
+                profile_registry_path=PROFILE_REGISTRY,
+                adapter_registry_path=ADAPTER_REGISTRY,
+                preregistration_path=PREREGISTRATION,
+                revision_registry_path=REVISION_REGISTRY,
+                profile_id=profile_id,
+                source_branch_id="comsol",
+                source_revision_id="hexapole_hybrid_reference",
+                resolved_output=output / "resolved.json",
+                plan_output=output / "plan.json",
+            )
+            frozen = arguments(load(plan_path))
+            self.assertEqual(
+                frozen["source_revision_id"],
+                "hexapole_hybrid_reference",
+            )
+            self.assertIn(
+                "hybrid_reference",
+                frozen["runtime_binding_path"],
+            )
+            budget = load(
+                plan_path.with_name("resolved_engineering_budget.json")
+            )
+            self.assertEqual(
+                budget["source_identity"]["run_id"],
+                "20260730_152000__sim__comsol__"
+                "hex-noacc-hybrid-exit025-t160__r04",
+            )
+            self.assertEqual(
+                budget["source_revision_id"],
+                "hexapole_hybrid_reference",
+            )
+            with self.assertRaisesRegex(
+                ContractError,
+                "source branch is not authorized by the revision",
+            ):
+                prepare_family_source_closure(
+                    repo_root=REPO_ROOT,
+                    profile_registry_path=PROFILE_REGISTRY,
+                    adapter_registry_path=ADAPTER_REGISTRY,
+                    preregistration_path=PREREGISTRATION,
+                    revision_registry_path=REVISION_REGISTRY,
+                    profile_id=profile_id,
+                    source_branch_id="simion",
+                    source_revision_id="hexapole_hybrid_reference",
+                    resolved_output=output / "rejected_resolved.json",
+                    plan_output=output / "rejected_plan.json",
+                )
+
+    def test_revision_registry_rejects_duplicate_unselected_key(self) -> None:
+        registry = load(REVISION_REGISTRY)
+        registry["revisions"].append(
+            json.loads(json.dumps(registry["revisions"][0]))
+        )
+        with tempfile.TemporaryDirectory(dir=REPO_ROOT / ".tmp") as directory:
+            output = Path(directory)
+            duplicate_registry = output / "revision_registry.json"
+            write_json(duplicate_registry, registry)
+            with self.assertRaisesRegex(
+                ContractError,
+                "source revision registry contains duplicate keys",
+            ):
+                prepare_family_source_closure(
+                    repo_root=REPO_ROOT,
+                    profile_registry_path=PROFILE_REGISTRY,
+                    adapter_registry_path=ADAPTER_REGISTRY,
+                    preregistration_path=PREREGISTRATION,
+                    revision_registry_path=duplicate_registry,
+                    profile_id=next(iter(sorted(FAMILY_PROFILES))),
+                    source_branch_id="comsol",
+                    resolved_output=output / "resolved.json",
+                    plan_output=output / "plan.json",
+                )
+
+    def test_revision_preregistration_requires_all_frozen_metrics(self) -> None:
+        preregistration = load(
+            INTEGRATION_ROOT
+            / "config"
+            / (
+                "family_hexapole_hybrid_reference_"
+                "source_revision_preregistration.json"
+            )
+        )
+        preregistration["comparison"]["required_metrics"].pop()
+        with self.assertRaises(ContractError):
+            validate_schema(
+                preregistration,
+                (
+                    "integration_family_source_revision_"
+                    "preregistration.schema.json"
+                ),
+            )
+
+    def test_public_hybrid_prepare_and_revision_fail_closed(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("pwsh is unavailable")
+        profile_id = (
+            "rf_hexapole_no_acceleration_full_length_"
+            "direct_mating_gap_0mm"
+        )
+        with tempfile.TemporaryDirectory(dir=REPO_ROOT / ".tmp") as directory:
+            output = Path(directory) / "hybrid"
+            command = [
+                pwsh,
+                "-NoProfile",
+                "-File",
+                str(FAMILY_EXECUTE),
+                "-ConnectionProfileId",
+                profile_id,
+                "-SourceBranchId",
+                "comsol",
+                "-SourceRevisionId",
+                "hexapole_hybrid_reference",
+                "-OutputDirectory",
+                str(output),
+                "-PythonExe",
+                sys.executable,
+                "-PrepareOnly",
+            ]
+            completed = subprocess.run(
+                command,
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+                timeout=60,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stdout + completed.stderr,
+            )
+            self.assertIn(
+                "SOURCE_REVISION=hexapole_hybrid_reference",
+                completed.stdout,
+            )
+
+            rejected = command.copy()
+            rejected[rejected.index("comsol")] = "simion"
+            rejected[rejected.index(str(output))] = str(output.parent / "simion")
+            completed = subprocess.run(
+                rejected,
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+                timeout=60,
+            )
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn(
+                "source branch is not authorized by the revision",
+                completed.stdout + completed.stderr,
+            )
+
+            plan_path = output / "composition_plan.json"
+            plan = load(plan_path)
+            arguments = plan["execution_steps"][0]["arguments"]
+            arguments[
+                next(
+                    index
+                    for index, value in enumerate(arguments)
+                    if value.startswith("runtime_binding_sha256=")
+                )
+            ] = "runtime_binding_sha256=" + "A" * 64
+            write_json(plan_path, plan)
+            completed = subprocess.run(
+                [
+                    pwsh,
+                    "-NoProfile",
+                    "-File",
+                    str(FAMILY_ADAPTER),
+                    "-CompositionPlan",
+                    str(plan_path),
+                    "-ResolvedConnection",
+                    str(output / "resolved_connection.json"),
+                    "-PythonExe",
+                    sys.executable,
+                    "-RepoRoot",
+                    str(REPO_ROOT),
+                    "-PrepareOnly",
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+                timeout=60,
+            )
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn(
+                "runtime binding differs from its revision registry",
+                completed.stdout + completed.stderr,
+            )
+
+    def test_parent_publisher_requires_explicit_source_revision(self) -> None:
+        with tempfile.TemporaryDirectory(dir=REPO_ROOT / ".tmp") as directory:
+            root = Path(directory)
+            run_id = (
+                "20260730_120000__analysis__cross__"
+                "family-source-closure"
+            )
+            run_dir = root / run_id
+            run_dir.mkdir()
+            receipt = run_dir / "receipt.json"
+            resolved = run_dir / "resolved.json"
+            plan = run_dir / "plan.json"
+            budget = run_dir / "budget.json"
+            write_json(
+                receipt,
+                {
+                    "role": (
+                        "integration_family_source_closure_execution_receipt"
+                    ),
+                    "integration_run_id": run_id,
+                    "execution_status": (
+                        "completed_pending_paired_analysis"
+                    ),
+                },
+            )
+            write_json(
+                resolved,
+                {"integration_id": INTEGRATION_ROOT.name},
+            )
+            write_json(plan, {"integration_id": INTEGRATION_ROOT.name})
+            write_json(budget, {"source_revision_id": "baseline"})
+            with self.assertRaisesRegex(
+                ContractError,
+                "source revision identity is missing",
+            ):
+                publish_family_source_closure_run(
+                    repo_root=REPO_ROOT,
+                    workspace_root=root,
+                    integration_run_dir=run_dir,
+                    receipt_path=receipt,
+                    resolved_path=resolved,
+                    plan_path=plan,
+                    budget_path=budget,
+                )
+
     def test_parent_publisher_rejects_pulse_or_analyzer_identity_mismatch(
         self,
     ) -> None:
@@ -369,6 +627,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                             ),
                             "connection_profile_id": profile_id,
                             "source_branch_id": "comsol",
+                            "source_revision_id": "baseline",
                             "source_identity": source_identity,
                             "runtime_binding_sha256": file_sha256(runtime),
                             "stage_run_ids": {
@@ -398,6 +657,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                         budget,
                         {
                             "connection_profile_id": profile_id,
+                            "source_revision_id": "baseline",
                             "source_identity": source_identity,
                         },
                     )

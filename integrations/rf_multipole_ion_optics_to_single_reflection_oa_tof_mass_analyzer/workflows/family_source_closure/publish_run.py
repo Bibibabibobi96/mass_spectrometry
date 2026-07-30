@@ -157,14 +157,21 @@ def publish_family_source_closure_run(
         or resolved.get("integration_id") != INTEGRATION_ID
     ):
         raise ContractError("family parent receipt or integration identity differs")
+    if (
+        "source_revision_id" not in receipt
+        or "source_revision_id" not in budget
+    ):
+        raise ContractError("family parent source revision identity is missing")
     profile_id = receipt["connection_profile_id"]
     source_branch_id = receipt["source_branch_id"]
+    source_revision_id = receipt["source_revision_id"]
     if (
         plan["selection"]["connection_profile_id"] != profile_id
         or resolved["selection"]["connection_profile_id"] != profile_id
         or budget["connection_profile_id"] != profile_id
         or budget["source_identity"] != receipt["source_identity"]
         or budget["source_identity"]["source_branch_id"] != source_branch_id
+        or budget["source_revision_id"] != source_revision_id
     ):
         raise ContractError("family parent profile or source identity differs")
     upstream_project_id = resolved["selection"]["upstream_project_id"]
@@ -279,6 +286,7 @@ def publish_family_source_closure_run(
         },
         "connection_profile_id": profile_id,
         "source_branch_id": source_branch_id,
+        "source_revision_id": source_revision_id,
         "source_particle_identity": receipt["source_identity"],
         "stage_runtime_binding_sha256s": stage_runtime_binding_sha256s,
         "stage_runs": stages,
@@ -295,6 +303,7 @@ def publish_family_source_closure_run(
         "status": "success",
         "connection_profile_id": profile_id,
         "source_branch_id": source_branch_id,
+        "source_revision_id": source_revision_id,
         "stage_runs_verified": 3,
         "census": analyzer_summary.get("census"),
         "claim_status": "FUNCTIONAL_SCREEN_ONLY",

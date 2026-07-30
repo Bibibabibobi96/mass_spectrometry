@@ -247,7 +247,7 @@ class FamilyThreeModeExperimentContractTests(unittest.TestCase):
             self.assertIn(f"{mode_id}_n1000", runtime)
         self.assertTrue(set(HYBRID_RUNTIME_IDS).issubset(runtime))
 
-    def test_hybrid_particle_campaign_is_preregistered_without_authorization(
+    def test_hybrid_reference_arm_is_authorized_without_full_matrix(
         self,
     ) -> None:
         family = CONFIG / "family_experiment"
@@ -257,13 +257,25 @@ class FamilyThreeModeExperimentContractTests(unittest.TestCase):
         )
         self.assertEqual(
             campaign["status"],
-            "PREREGISTERED_AWAITING_EXPLICIT_COMMERCIAL_RUN_AUTHORIZATION",
+            "REFERENCE_ARM_COMPLETED_FOR_DOWNSTREAM_SOURCE_REVISION_SCREEN",
         )
-        self.assertEqual(campaign["commercial_run_count_executed"], 0)
+        self.assertEqual(campaign["commercial_run_count_executed"], 1)
         self.assertEqual(campaign["maximum_commercial_run_count"], 3)
+        budget = load(
+            family / "comsol_hybrid_no_acceleration_particle_convergence_budget.json"
+        )
         self.assertEqual(
             campaign["scope"]["expected_run_parent_resolved_design_sha256"],
-            self.resolved["no_acceleration_full_length"]["resolved_sha256"],
+            budget["pilot_authorization"]["scope"][
+                "expected_run_parent_resolved_design_sha256"
+            ],
+        )
+        self.assertEqual(
+            campaign["preflight_history"][0]["status"],
+            "FAILED_BEFORE_COMSOL_START",
+        )
+        self.assertEqual(
+            campaign["preflight_history"][0]["commercial_run_count_consumed"], 0
         )
         for authority in campaign["frozen_authorities"].values():
             self.assertEqual(authority["sha256"], sha256(REPO_ROOT / authority["path"]))
@@ -274,9 +286,9 @@ class FamilyThreeModeExperimentContractTests(unittest.TestCase):
         runtime = load(CONFIG / "runtime_profiles.json")["profiles"]
         arms = campaign["ordered_arms"]
         self.assertEqual([arm["sequence"] for arm in arms], [1, 2, 3])
-        self.assertTrue(all(not arm["authorized"] for arm in arms))
-        self.assertTrue(all(not arm["executed"] for arm in arms))
-        self.assertTrue(all(arm["run_id"] is None for arm in arms))
+        self.assertTrue(arms[0]["executed"])
+        self.assertTrue(all(not arm["executed"] for arm in arms[1:]))
+        self.assertTrue(all(arm["run_id"] is None for arm in arms[1:]))
         for arm in arms:
             binding = runtime[arm["runtime_profile_id"]]
             self.assertEqual(
@@ -304,7 +316,14 @@ class FamilyThreeModeExperimentContractTests(unittest.TestCase):
             family
             / "comsol_hybrid_no_acceleration_particle_convergence_budget.json"
         )
-        self.assertFalse(budget["pilot_authorization"]["authorized"])
+        self.assertTrue(budget["pilot_authorization"]["authorized"])
+        self.assertFalse(arms[0]["authorized"])
+        self.assertTrue(arms[0]["executed"])
+        self.assertTrue(arms[0]["run_id"].startswith("20260730_231700__"))
+        self.assertEqual(arms[0]["result"]["status"], "PASS")
+        self.assertEqual(arms[0]["result"]["primary_transmitted"], 100)
+        self.assertTrue(all(not arm["authorized"] for arm in arms[1:]))
+        self.assertFalse(budget["full_matrix_authorization"]["authorized"])
         self.assertEqual(
             budget["pilot_authorization"]["scope"]["runtime_profile_id"],
             arms[0]["runtime_profile_id"],

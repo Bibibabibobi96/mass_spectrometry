@@ -227,6 +227,14 @@ canonical粒子终态/事件、必要日志和轻量图，终态前移除可重�
 只有预注册最终参考点选择`qualification`，确需GUI/网格重开时选择`solver_review`，两者都必须在运行前
 提供`RetentionReason`。这项存储选择不改变物理输入、判据或资格。
 
+成功的COMSOL/SIMION L3传输run还统一调用
+[`exit_state_plot.py`](exit_state_plot.py)，从本次canonical状态自动发布
+`results/exit_state_diagnostics.png`及figure manifest。单run图固定包含横向空间、半径、发散角、动能、
+到达时间和半径—发散关系；缺失、空集或非有限状态失败关闭。跨run比较必须在一次调用中提供全部
+`--series`，由程序从合并样本冻结共享坐标范围和固定24分箱，不能分别自动缩放后再横向比较。
+figure manifest记录源状态SHA、run ID、单位、筛选事件、共享范围、bin edges和Git身份；图是诊断产物，
+不自行授予收敛、精度或资格。
+
 COMSOL既有runner还可由受治理的薄wrapper传入单一`mesh_build` stop stage。该阶段只在几何和网格生成后
 输出选择、体积、覆盖/重叠、mesh feature及质量诊断，并在拓扑断言后停止；它从模型树实际报告零
 field physics、field Study、field solution、particle physics和particle Study，launcher验证这些终态及

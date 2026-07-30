@@ -26,6 +26,11 @@ connector case 或由间隙推断拓扑。
 COMSOL `pre_pulse_interface_transport`、COMSOL `pulse_capture`、SIMION
 `analyzer_transport`。内部phase不构成独立公开入口或资格声明。
 
+同一公开入口还接受可选`SourceRevisionId`，默认值`baseline`保持上述六分支原绑定。
+[`family_source_revision_registry.json`](../config/family_source_revision_registry.json)是修订选择的机器权威；
+每个修订必须冻结自己的预注册、预算、runtime binding、允许的profile与source branch，不能覆盖
+`baseline`记录或把任意路径作为运行参数注入。
+
 两个公开入口都冻结resolved connection、composition plan、runtime binding和工程预算，并复用
 [`runtime/run_transfer.ps1`](../runtime/run_transfer.ps1)及同一组三个stage。family workflow的每个
 profile/source branch只授权冻结同源N=100母样本的compact功能运行；预算耗尽记为
@@ -64,6 +69,31 @@ analysis run及六个父run均保持`FUNCTIONAL_SCREEN_ONLY / INCONCLUSIVE_DIAGN
 已经贯通，但**不授予**逐粒子跨求解器等价、连续相空间等价、收敛、分辨率、优化、Candidate或Formal
 资格。后续若比较混合网格粒子源，必须建立显式source revision对照，不能改写本次基准。
 
+2026-07-30在读取新下游结果前预注册六极杆`hexapole_hybrid_reference`修订；其首次A/B满足冻结的
+扩展规则后，又在读取四、八极杆结果前分别预注册`quadrupole_hybrid_reference`和
+`octupole_hybrid_reference`。三个修订都只改变上游COMSOL source revision；下游三阶段、0 mm
+connection profile、N=100母样本和compact预算不变。对应轻量父run为：
+
+- 四极杆`20260730_232500__sim__cross__rf-quadrupole-hybrid-source-comsol-gap0__n100`；
+- 六极杆`20260730_223347__sim__cross__rf-hexapole-hybrid-source-comsol-gap0__n100`；
+- 八极杆`20260730_232501__sim__cross__rf-octupole-hybrid-source-comsol-gap0__n100`。
+
+正式source-revision分析run为
+`20260730_234500__analysis__cross__hybrid-source-revision__n100`，结果SHA-256为
+`16645FD1C5478AC1456CD633E0F0BB958359F87592B44BC3B84CE18F80599574`。表中census仍依次为RF出口、
+oaTOF入口、脉冲时active、局部加速器出口、探测面crossing和hit；括号内为混合源减旧COMSOL源：
+
+|profile|混合源census（逐级差）|共同局部出口粒子|位置RMS / mm|速度RMS / m/s|时间RMS / µs|能量RMS / eV|
+|---|---|---:|---:|---:|---:|---:|
+|quadrupole|`100→86→30→30→7→7`（`0,0,0,0,+1,+1`）|30|0.2606|469.6|0.03649|17.36|
+|hexapole|`100→67→39→39→9→9`（`0,-16,-10,-10,-5,-5`）|18|2.0564|3589.5|0.03558|141.35|
+|octupole|`100→46→34→34→10→10`（`0,-12,-2,-2,-6,-6`）|15|1.1674|2357.1|0.07206|107.56|
+
+这证明混合网格源会实质改变下游功能结果，尤其六、八极杆；它不证明新结果更准确。三个源参考run仍缺
+空间/时间收敛闭合，N=100下游也没有预注册接受阈值，因此分析固定为
+`INCONCLUSIVE_DIAGNOSTIC_ONLY`，不授予分辨率、优化、Candidate或Formal资格。任何加速多极杆实验
+必须作为新的单变量预注册活动，不能把本次无加速source revision差异与加速电压效应混在同一结论中。
+
 ## 迁移等价结论
 
 [`migration_oracles.json`](../config/migration_oracles.json)是只读的迁移前证据索引，保留当时的术语、路径、
@@ -94,5 +124,5 @@ oaTOF项目，不为迁移制造同义CLI或配置字段。
 
 [`verify_integration.ps1`](../verify_integration.ps1)只运行无求解器的合同测试：profile 唯一性、公共解析、
 非空transfer composition step、adapter registry SHA、预算冻结SHA、source branch身份传播、父运行发布
-fixture、paired analysis失败关闭、迁移等价PASS/FAIL fixture与显式授权边界。它不运行COMSOL、SIMION、
+fixture、source revision注册与失败关闭、paired analysis失败关闭、迁移等价PASS/FAIL fixture与显式授权边界。它不运行COMSOL、SIMION、
 MATLAB、CAD，也不替代真实迁移等价复验或family六分支真实运行。

@@ -58,7 +58,10 @@ def resolve_runtime_profile(
         "comsol_solver_numerics_profile_id",
         "simion_solver_numerics_profile_id",
     }
-    allowed_profile_keys = required_profile_keys | {"stop_stage"}
+    allowed_profile_keys = required_profile_keys | {
+        "stop_stage",
+        "engineering_budget_path",
+    }
     if not required_profile_keys.issubset(profile) or set(profile) - allowed_profile_keys:
         raise ValueError(f"runtime profile keys differ: {sorted(profile)}")
     stop_stage = profile.get("stop_stage", "transport")
@@ -139,7 +142,10 @@ def resolve_runtime_profile(
         }
         numerics_paths[solver] = str(path.resolve())
 
-    budget_relative_path = registry.get("engineering_budget_path")
+    budget_relative_path = profile.get(
+        "engineering_budget_path",
+        registry.get("engineering_budget_path"),
+    )
     if not isinstance(budget_relative_path, str) or not budget_relative_path:
         raise ValueError("runtime profile registry engineering_budget_path is missing")
     budget_path = (project_root / budget_relative_path).resolve()

@@ -463,6 +463,21 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
       claim_limit='Resolved-design SIMION metrics only; no evidence claim.'}|
       ConvertTo-Json -Depth 8|Set-Content -LiteralPath $metrics -Encoding UTF8
   }
+  $exitStatePlot=Join-Path $resultDir 'exit_state_diagnostics.png'
+  $exitStatePlotManifest=Join-Path $resultDir 'exit_state_diagnostics.json'
+  $primaryState=Join-Path $resultDir "particle_states__$primaryName.csv"
+  Push-Location $codeRoot
+  try{
+    $env:PYTHONPATH=$codeRoot
+    $exitStatePlotLabel=$ProjectId.Replace('_',' ')
+    & $python -m common.multipole.exit_state_plot `
+      --series "$exitStatePlotLabel=$primaryState=$RunId" `
+      --output $exitStatePlot --manifest $exitStatePlotManifest `
+      --title "$exitStatePlotLabel exit-state diagnostic" `
+      --purpose 'Regular single-run multipole exit-state diagnostic' `
+      --repo-root $repoRoot
+    if($LASTEXITCODE-ne 0){throw 'SIMION exit-state diagnostic plot failed.'}
+  }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
   $qualification='UNQUALIFIED';$evaluation=Join-Path $resultDir 'evidence_evaluation.json'
   if($evidence){
     Push-Location $codeRoot
@@ -487,7 +502,8 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
     $resourceBudgetExceeded=$true
     throw 'SIMION compact final retained-byte budget exceeded.'
   }
-  $outputs=@($summary,$metrics,$resourceUsage,(Join-Path $solverDir 'quad_monolithic.pa0'),
+  $outputs=@($summary,$metrics,$resourceUsage,$exitStatePlot,$exitStatePlotManifest,
+    (Join-Path $solverDir 'quad_monolithic.pa0'),
     (Join-Path $solverDir 'quad_monolithic.iob'),
     (Join-Path $solverDir 'quad_monolithic.con'),$gem,$fly2,
     (Join-Path $resultDir "simion_summary__$primaryName.json"),

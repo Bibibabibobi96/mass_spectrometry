@@ -1,0 +1,79 @@
+{
+  "schema_version": 2,
+  "role": "rf_multipole_oatof_source_contract",
+  "upstream_project_id": "rf_quadrupole_ion_optics",
+  "selector": {
+    "event": "handoff",
+    "status": "transmitted"
+  },
+  "adapter": {
+    "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/analysis/publish_family_source_bundle.py",
+    "sha256": "165A300CAE84BEA9D62050B5BB25D8AF4571DD327730643EC2B19891D4546628",
+    "callable": "publish_family_source_bundle",
+    "output_schema": "component_particle_state_v1",
+    "dependencies": {
+      "handoff_publication_contract": {
+        "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_quadrupole_handoff_publication_contract.json",
+        "sha256": "0CF87CC48B06BD874E17D2D75CF011DF5F7ED2C28E0B6CF50C7550EE69ADECA6"
+      }
+    }
+  },
+  "canonical_state": {
+    "frame_id": "multipole_cartesian_z_axis_v1",
+    "clock_epoch_id": "instrument_clock_epoch_v1",
+    "lineage_policy": "preserve_root_birth_time_and_component_elapsed_time",
+    "species_policy": "frozen_particle_source_mass_and_charge"
+  },
+  "source_branches": {
+    "comsol": {
+      "solver_id": "comsol",
+      "recorded_project_id": "rf_quadrupole_ion_optics",
+      "source": {
+        "run_id": "20260730_231700__sim__comsol__quad-noacc-hybrid-exit025-t160__r02",
+        "particle_count": 100,
+        "particle_source_manifest_input_role": "particle_source",
+        "manifest": {
+          "path": "artifacts/projects/rf_quadrupole_ion_optics/runs/20260730_231700__sim__comsol__quad-noacc-hybrid-exit025-t160__r02/run_manifest.json",
+          "sha256": "7EDA0B8171EE959533084A41A6FFA4A4E3A52FE0AB2B40B24EF30BCF3834B172"
+        },
+        "state": {
+          "path": "artifacts/projects/rf_quadrupole_ion_optics/runs/20260730_231700__sim__comsol__quad-noacc-hybrid-exit025-t160__r02/results/particle_state__primary.csv",
+          "sha256": "7393704D56121AA2ED834681977E3E0CB6846649D276F03E462BCDAA4F51C18B"
+        },
+        "particle_source": {
+          "path": "artifacts/projects/rf_quadrupole_ion_optics/runs/20260730_231700__sim__comsol__quad-noacc-hybrid-exit025-t160__r02/inputs/particle_source.csv",
+          "sha256": "0125C3AB02B2321EF26A3A913CF6EC04325FD0D48597D2CB439D0CE42411662F"
+        },
+        "metadata": {
+          "path": "artifacts/projects/rf_quadrupole_ion_optics/runs/20260730_231700__sim__comsol__quad-noacc-hybrid-exit025-t160__r02/inputs/particle_source_metadata.json",
+          "sha256": "A23B144DE2366C392604DF91DAB9A97A599300CD2256F79C86BFDF80047910F5"
+        }
+      }
+    },
+    "simion": {
+      "solver_id": "simion",
+      "recorded_project_id": "rf_quadrupole_ion_optics",
+      "source": {
+        "run_id": "20260728_202457__sim__simion__rf-quadrupole-ion-optics-no-acceleration-full-length__resolved-l3",
+        "particle_count": 100,
+        "particle_source_manifest_input_role": "particle_source",
+        "manifest": {
+          "path": "artifacts/projects/rf_quadrupole_ion_optics/runs/20260728_202457__sim__simion__rf-quadrupole-ion-optics-no-acceleration-full-length__resolved-l3/run_manifest.json",
+          "sha256": "0B24F33E9514222B84C0431D96B88A97C64CC2B80B2AF3465C323FFF8D019742"
+        },
+        "state": {
+          "path": "artifacts/projects/rf_quadrupole_ion_optics/runs/20260728_202457__sim__simion__rf-quadrupole-ion-optics-no-acceleration-full-length__resolved-l3/results/particle_states__rf_on.csv",
+          "sha256": "A73523D4A45679DAF97A9D74F5C6438FFAAEA313EA54F96352B3DBF7722F6E40"
+        },
+        "particle_source": {
+          "path": "artifacts/projects/rf_quadrupole_ion_optics/runs/20260728_202457__sim__simion__rf-quadrupole-ion-optics-no-acceleration-full-length__resolved-l3/inputs/particle_source.csv",
+          "sha256": "0125C3AB02B2321EF26A3A913CF6EC04325FD0D48597D2CB439D0CE42411662F"
+        },
+        "metadata": {
+          "path": "artifacts/projects/rf_quadrupole_ion_optics/runs/20260728_202457__sim__simion__rf-quadrupole-ion-optics-no-acceleration-full-length__resolved-l3/inputs/particle_source_metadata.json",
+          "sha256": "7BE27BEDD149F0C25776B710C385C88F9354FE3AD52D690DE0FAA091B5F02781"
+        }
+      }
+    }
+  }
+}

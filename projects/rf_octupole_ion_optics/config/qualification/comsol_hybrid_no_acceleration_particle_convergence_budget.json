@@ -5,7 +5,7 @@
   "contract_id": "octupole_no_acceleration_hybrid_particle_convergence_preregistered_v1",
   "preregistered_before_run": true,
   "pilot_authorization": {
-    "authorized": false,
+    "authorized": true,
     "scope": {
       "project_id": "rf_octupole_ion_optics",
       "runtime_profile_id": "no_acceleration_full_length_n100_hybrid_exit025_temporal_refined",
@@ -21,7 +21,7 @@
         "comsol"
       ],
       "retention_class": "compact",
-      "expected_run_parent_resolved_design_sha256": "821DE8E206FE6962F09BC6A02D09CF0416A5F66D35194F48D3697E586B91449D"
+      "expected_run_parent_resolved_design_sha256": "FFCDAB96C26D3A439DB86EC8C8F1D1F9894C6511971605B6037A8EB65A38DF3F"
     },
     "limits": {
       "wall_clock_seconds_by_solver": {
@@ -38,8 +38,8 @@
   },
   "full_matrix_authorization": {
     "authorized": false,
-    "reason": "the_preregistered_octupole_hybrid_campaign_awaits_explicit_first_arm_authorization"
+    "reason": "Only the preregistered reference arm is authorized by the user after the hexapole downstream source-revision screen met its frozen expansion rule."
   },
   "budget_exhaustion_result": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
-  "claim_limit": "The octupole N=100 no-acceleration hybrid particle campaign is preregistered but no commercial run is authorized. The first arm requires explicit user authorization; no convergence, solver-equivalence, Candidate, Formal or N=1000 claim is granted."
+  "claim_limit": "One octupole N=100 no-acceleration hybrid reference arm is authorized solely to create a frozen source for the downstream revision screen. No spatial/temporal arm, convergence, solver-equivalence, Candidate, Formal or N=1000 claim is authorized."
 }

@@ -781,6 +781,8 @@ try{
   $metrics=Join-Path $resultDir 'finite_3d_transport_metrics.json'
   $pairedMetrics=Join-Path $resultDir 'paired_axial_drive_metrics.json'
   $plot=Join-Path $resultDir 'finite_3d_transport.png'
+  $exitStatePlot=Join-Path $resultDir 'exit_state_diagnostics.png'
+  $exitStatePlotManifest=Join-Path $resultDir 'exit_state_diagnostics.json'
   $model=Join-Path $resultDir 'finite_3d_transport.mph';$canonicalState=Join-Path $resultDir 'particle_state.csv'
   $primaryState=Join-Path $resultDir 'particle_state__primary.csv';$controlState=Join-Path $resultDir 'particle_state__control.csv'
   $primaryTrajectories=Join-Path $resultDir 'trajectory_samples__primary.csv'
@@ -987,8 +989,20 @@ try{
     Write-Output "MULTIPOLE_COMSOL_RESOLVED=PASS PROJECT=$ProjectId PROFILE=$DesignProfileId RUN_ID=$RunId STOP_STAGE=field_solve QUALIFICATION=UNQUALIFIED"
     return
   }
+  Push-Location $codeRoot
+  try{
+    $env:PYTHONPATH=$codeRoot
+    $exitStatePlotLabel=$ProjectId.Replace('_',' ')
+    & $python -m common.multipole.exit_state_plot `
+      --series "$exitStatePlotLabel=$primaryState=$RunId" `
+      --output $exitStatePlot --manifest $exitStatePlotManifest `
+      --title "$exitStatePlotLabel exit-state diagnostic" `
+      --purpose 'Regular single-run multipole exit-state diagnostic' `
+      --repo-root $repoRoot
+    if($LASTEXITCODE-ne 0){throw 'COMSOL exit-state diagnostic plot failed.'}
+  }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
   if($axialTopology-ne'none'){
-    Push-Location $codeRoot
+  Push-Location $codeRoot
     try{
       $env:PYTHONPATH=$codeRoot
       & $python -m common.multipole.analyze_simion_axial_acceleration `
@@ -1029,7 +1043,8 @@ try{
     $resourceBudgetExceeded=$true
     throw 'COMSOL compact final retained-byte budget exceeded.'
   }
-  $outputs=@($events,$trajectories,$metrics,$plot,$model,$canonicalState,$resourceUsage,
+  $outputs=@($events,$trajectories,$metrics,$plot,$exitStatePlot,$exitStatePlotManifest,
+    $model,$canonicalState,$resourceUsage,
     $primaryState,$controlState,$primaryTrajectories,$controlTrajectories,$report,$summary)
   $outputs+=@(Get-ChildItem -LiteralPath $solverProgressDir -File|ForEach-Object{$_.FullName})
   if(Test-Path -LiteralPath $pairedMetrics){$outputs+=$pairedMetrics}

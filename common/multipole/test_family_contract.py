@@ -329,7 +329,12 @@ class MultipoleFamilyContractTests(unittest.TestCase):
         self.assertIn("$solverProgressDir=Join-Path $logDir 'solver_progress'", runner)
         self.assertIn("Get-ChildItem -LiteralPath $solverProgressDir -File", runner)
         self.assertIn("MULTIPOLE_L3_PARTICLE_SOURCE_METADATA", runner)
-        self.assertIn("$outputs=@($events,$trajectories,$metrics,$plot,$model,$canonicalState", runner)
+        self.assertIn(
+            "$outputs=@($events,$trajectories,$metrics,$plot,$exitStatePlot,$exitStatePlotManifest,",
+            runner,
+        )
+        self.assertIn("$model,$canonicalState,$resourceUsage", runner)
+        self.assertIn("-m common.multipole.exit_state_plot", runner)
         self.assertNotIn("AxialAccelerationContractPath", runner)
         self.assertNotIn("Adapter", runner)
         solver = (

@@ -148,6 +148,38 @@ class RuntimeProfileTests(unittest.TestCase):
             self.assertIn("[string]$RuntimeProfileId", source)
             self.assertNotIn("[string]$ParticleSourcePath", source)
 
+    def test_hybrid_profiles_bind_their_separate_campaign_budget(self) -> None:
+        for project_id in (
+            "rf_quadrupole_ion_optics",
+            "rf_octupole_ion_optics",
+        ):
+            baseline = resolve_runtime_profile(
+                REPO_ROOT,
+                project_id,
+                "no_acceleration_full_length",
+            )
+            hybrid = resolve_runtime_profile(
+                REPO_ROOT,
+                project_id,
+                (
+                    "no_acceleration_full_length_n100_"
+                    "hybrid_exit025_temporal_refined"
+                ),
+            )
+            self.assertTrue(
+                baseline["engineering_budget"]["path"].endswith(
+                    "engineering_budget.json"
+                )
+            )
+            self.assertIn(
+                "comsol_hybrid_no_acceleration_particle_convergence_budget",
+                hybrid["engineering_budget"]["path"],
+            )
+            self.assertNotEqual(
+                baseline["engineering_budget"]["path"],
+                hybrid["engineering_budget"]["path"],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

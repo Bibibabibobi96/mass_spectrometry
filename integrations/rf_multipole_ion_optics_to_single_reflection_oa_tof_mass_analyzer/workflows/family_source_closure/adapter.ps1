@@ -16,8 +16,8 @@ $workflowRoot = $PSScriptRoot
 $integrationRoot = (Resolve-Path (Join-Path $workflowRoot '..\..')).Path
 $registryPath =
   Join-Path $integrationRoot 'config\execution_adapter_profiles.json'
-$preregistrationPath = Join-Path $integrationRoot (
-  'config\family_source_closure_preregistration.json'
+$sourceRevisionRegistryPath = Join-Path $integrationRoot (
+  'config\family_source_revision_registry.json'
 )
 $plan = Get-Content -LiteralPath $CompositionPlan -Raw -Encoding UTF8 |
   ConvertFrom-Json
@@ -46,6 +46,10 @@ foreach ($argument in @($steps[0].arguments)) {
 }
 $expectedArguments = @(
   'adapter_registry_sha256',
+  'source_revision_registry_path',
+  'source_revision_registry_sha256',
+  'source_revision_id',
+  'preregistration_path',
   'preregistration_sha256',
   'runtime_binding_path',
   'runtime_binding_sha256',
@@ -62,16 +66,52 @@ if (@($frozenArguments.Keys | Where-Object {
   throw 'Prepared family adapter arguments differ from the closed contract.'
 }
 $sourceBranchId = [string]$frozenArguments.source_branch_id
+$sourceRevisionId = [string]$frozenArguments.source_revision_id
 if ($sourceBranchId -notin @('comsol','simion')) {
   throw 'Prepared family source branch is invalid.'
 }
 if ((Get-FileHash -LiteralPath $registryPath -Algorithm SHA256).Hash -ne
-    $frozenArguments.adapter_registry_sha256 -or
-    (Get-FileHash -LiteralPath $preregistrationPath -Algorithm SHA256).Hash -ne
-    $frozenArguments.preregistration_sha256) {
-  throw 'Family registry or preregistration changed after preparation.'
+    $frozenArguments.adapter_registry_sha256) {
+  throw 'Family adapter registry changed after preparation.'
 }
 
+$repo = [IO.Path]::GetFullPath($RepoRoot)
+$expectedRevisionRegistryPath = [IO.Path]::GetFullPath(
+  (Join-Path $repo $frozenArguments.source_revision_registry_path)
+)
+if (-not $expectedRevisionRegistryPath.Equals(
+      [IO.Path]::GetFullPath($sourceRevisionRegistryPath),
+      [StringComparison]::OrdinalIgnoreCase
+    ) -or
+    (Get-FileHash -LiteralPath $sourceRevisionRegistryPath `
+      -Algorithm SHA256).Hash -ne
+    $frozenArguments.source_revision_registry_sha256) {
+  throw 'Family source revision registry changed after preparation.'
+}
+$sourceRevisionRegistry = Get-Content -LiteralPath `
+  $sourceRevisionRegistryPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$sourceRevisions = @($sourceRevisionRegistry.revisions | Where-Object {
+  $_.source_revision_id -eq $sourceRevisionId -and
+  $_.connection_profile_id -eq $plan.selection.connection_profile_id
+})
+if ($sourceRevisions.Count -ne 1 -or
+    $sourceBranchId -notin @($sourceRevisions[0].source_branch_ids)) {
+  throw 'Prepared family source revision no longer resolves uniquely.'
+}
+$sourceRevision = $sourceRevisions[0]
+$preregistrationPath = [IO.Path]::GetFullPath(
+  (Join-Path $repo $frozenArguments.preregistration_path)
+)
+if ($sourceRevision.preregistration.path -ne
+      $frozenArguments.preregistration_path -or
+    $sourceRevision.preregistration.sha256 -ne
+      $frozenArguments.preregistration_sha256 -or
+    -not (Test-Path -LiteralPath $preregistrationPath -PathType Leaf) -or
+    (Get-FileHash -LiteralPath $preregistrationPath `
+      -Algorithm SHA256).Hash -ne
+      $frozenArguments.preregistration_sha256) {
+  throw 'Family source revision preregistration changed after preparation.'
+}
 $registry = Get-Content -LiteralPath $registryPath -Raw -Encoding UTF8 |
   ConvertFrom-Json
 $mappings = @($registry.mappings | Where-Object {
@@ -91,14 +131,19 @@ if ($mapping.adapter_entrypoint -ne $expectedAdapterPath -or
     $mapping.adapter_sha256) {
   throw 'Family adapter implementation differs from its registry identity.'
 }
-if ($mapping.runtime_binding_path -ne
-    $frozenArguments.runtime_binding_path -or
-    $mapping.runtime_binding_sha256 -ne
-    $frozenArguments.runtime_binding_sha256) {
-  throw 'Prepared family runtime binding differs from the registry.'
+if ($sourceRevision.runtime_binding.path -ne
+      $frozenArguments.runtime_binding_path -or
+    $sourceRevision.runtime_binding.sha256 -ne
+      $frozenArguments.runtime_binding_sha256 -or
+    ($sourceRevisionId -eq 'baseline' -and (
+      $mapping.runtime_binding_path -ne
+        $frozenArguments.runtime_binding_path -or
+      $mapping.runtime_binding_sha256 -ne
+        $frozenArguments.runtime_binding_sha256
+    ))) {
+  throw 'Prepared family runtime binding differs from its revision registry.'
 }
 
-$repo = [IO.Path]::GetFullPath($RepoRoot)
 $runtimeBinding = [IO.Path]::GetFullPath(
   (Join-Path $repo $frozenArguments.runtime_binding_path)
 )
@@ -131,6 +176,7 @@ if ($budget.role -ne 'integration_resolved_engineering_budget' -or
     $budget.integration_id -ne $plan.integration_id -or
     $budget.connection_profile_id -ne
     $plan.selection.connection_profile_id -or
+    $budget.source_revision_id -ne $sourceRevisionId -or
     $budget.source_identity.source_branch_id -ne $sourceBranchId -or
     $budget.source_identity.solver_id -ne
     $runtime.source_identity.solver_id -or
@@ -153,7 +199,8 @@ if ($budget.role -ne 'integration_resolved_engineering_budget' -or
 if ($PrepareOnly) {
   Write-Output (
     "FAMILY_SOURCE_CLOSURE_ADAPTER=PREPARED PROFILE=" +
-    "$($plan.selection.connection_profile_id) SOURCE_BRANCH=$sourceBranchId"
+    "$($plan.selection.connection_profile_id) SOURCE_BRANCH=$sourceBranchId " +
+    "SOURCE_REVISION=$sourceRevisionId"
   )
   exit 0
 }
@@ -195,6 +242,7 @@ $receipt = [ordered]@{
   integration_run_id = $RunId
   connection_profile_id = $plan.selection.connection_profile_id
   source_branch_id = $sourceBranchId
+  source_revision_id = $sourceRevisionId
   source_identity = $budget.source_identity
   composition_plan_sha256 =
     (Get-FileHash -LiteralPath $CompositionPlan -Algorithm SHA256).Hash
@@ -250,5 +298,5 @@ try {
 }
 Write-Output (
   "FAMILY_SOURCE_CLOSURE_ADAPTER=EXECUTED RUN_ID=$RunId " +
-  "SOURCE_BRANCH=$sourceBranchId"
+  "SOURCE_BRANCH=$sourceBranchId SOURCE_REVISION=$sourceRevisionId"
 )

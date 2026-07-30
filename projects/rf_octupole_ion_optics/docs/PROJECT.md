@@ -72,8 +72,13 @@ solver numerics ID与四/六极杆统一为`baseline_finite_3d`、`n100_spatial_
 
 另有独立的无加速混合网格粒子收敛预登记：
 `../config/qualification/comsol_hybrid_no_acceleration_particle_convergence_preregistration.json`。
-它登记`0.25 mm/160`参考、`0.20 mm/160`空间加密和`0.25 mm/80`时间粗档，使用独立工程预算；
-三个arm均未授权、未执行，不继承六极杆结果。
+它登记`0.25 mm/160`参考、`0.20 mm/160`空间加密和`0.25 mm/80`时间粗档，使用独立工程预算。
+六极杆混合源下游A/B在2026-07-30满足预注册扩展规则后，只授权首个参考arm用于生成八极杆
+oaTOF source revision。参考run
+`20260730_231701__sim__comsol__oct-noacc-hybrid-exit025-t160__r01`为100/100传输；接入固定oaTOF链后
+得到`100→46→34→34→10→10`，相对旧COMSOL源为`0,-12,-2,-2,-6,-6`。15个共同局部出口粒子的
+位置、速度、时间、能量RMS差分别为1.1674 mm、2357.1 m/s、0.07206 µs和107.56 eV。空间和时间arm仍
+未授权，且不继承六极杆结果或收敛结论；当前差异只支持source revision敏感性诊断。
 
 三模式发散实验的方法来自`common/multipole/three_mode_dispersion_contract.json`。本项目已登记
 acceptance、effect-resolution、engineering-budget和三份电压合同，但前两者尚无可辩护尺度；它们

@@ -3,6 +3,7 @@ param(
   [Parameter(Mandatory)][string]$ConnectionProfileId,
   [Parameter(Mandatory)][ValidateSet('comsol','simion')]
   [string]$SourceBranchId,
+  [string]$SourceRevisionId = 'baseline',
   [Parameter(Mandatory)][string]$OutputDirectory,
   [string]$RunId = '',
   [string]$PythonExe = '',
@@ -56,6 +57,9 @@ $adapterRegistry =
 $preregistration = Join-Path $integrationRoot (
   'config\family_source_closure_preregistration.json'
 )
+$revisionRegistry = Join-Path $integrationRoot (
+  'config\family_source_revision_registry.json'
+)
 $prepareModule = (
   'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.' +
   'workflows.family_source_closure.prepare'
@@ -68,8 +72,10 @@ try {
     --profile-registry $profileRegistry `
     --adapter-registry $adapterRegistry `
     --preregistration $preregistration `
+    --revision-registry $revisionRegistry `
     --profile-id $ConnectionProfileId `
     --source-branch-id $SourceBranchId `
+    --source-revision-id $SourceRevisionId `
     --resolved-output $resolvedPath `
     --plan-output $planPath
   if ($LASTEXITCODE -ne 0) {

@@ -27,18 +27,21 @@
       "simion_solver_numerics_profile_id": "n100_temporal_refined"
     },
     "no_acceleration_full_length_n100_hybrid_exit025_temporal_coarse": {
+      "engineering_budget_path": "config/family_experiment/comsol_hybrid_no_acceleration_particle_convergence_budget.json",
       "design_profile_id": "no_acceleration_full_length",
       "particle_source_profile_id": "family_mother_sample_v1_n100",
       "comsol_solver_numerics_profile_id": "hybrid_c1_corridor040_exit025_nosweep_cg_amg_field_screen",
       "simion_solver_numerics_profile_id": "baseline_finite_3d"
     },
     "no_acceleration_full_length_n100_hybrid_exit025_temporal_refined": {
+      "engineering_budget_path": "config/family_experiment/comsol_hybrid_no_acceleration_particle_convergence_budget.json",
       "design_profile_id": "no_acceleration_full_length",
       "particle_source_profile_id": "family_mother_sample_v1_n100",
       "comsol_solver_numerics_profile_id": "hybrid_c1_corridor040_exit025_nosweep_cg_amg_temporal_refined",
       "simion_solver_numerics_profile_id": "baseline_finite_3d"
     },
     "no_acceleration_full_length_n100_hybrid_exit020_spatial_temporal_refined": {
+      "engineering_budget_path": "config/family_experiment/comsol_hybrid_no_acceleration_particle_convergence_budget.json",
       "design_profile_id": "no_acceleration_full_length",
       "particle_source_profile_id": "family_mother_sample_v1_n100",
       "comsol_solver_numerics_profile_id": "hybrid_c1_corridor040_exit020_nosweep_cg_amg_spatial_temporal_refined",
