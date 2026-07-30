@@ -126,6 +126,11 @@ run编号、故障链和关闭过程冻结在
 全部传输粒子身份闭合，RMS半径诊断差约`3.59%`；连续相空间仍不能贴数值等价PASS。实测最大值为
 592.194 s、1.031 GB瞬态目录、8.808 GB进程树内存，零自动重试。分段杆轴向加速N=100 baseline
 已在两求解器完成并保持100/100传输与精确粒子身份；SIMION空间档也保持100/100和精确身份。
+2026-07-31无加速定向跟进进一步完成SIMION A/R/Z/I/T五臂和COMSOL局部0.20 mm的160→320步时间
+pair。SIMION径向/轴向RMS半径变化为`2.597%/0.246%`，I→T为`0.00595%`且只在固定分箱下稳定；
+COMSOL时间变化为`0.0807%`但仍有粒子跨固定分箱。功能仍100/100，连续结论保持
+`INCONCLUSIVE_NUMERICAL_CONVERGENCE_NOT_ESTABLISHED`；机器身份见
+[`followup_result.json`](../config/family_experiment/no_acceleration_followup/followup_result.json)。
 COMSOL首次空间档在`MESH_COMPLETE`
 后以17.752 GB超过原17.180 GB进程树帽而失败关闭，当时系统仍有11.35 GB可用。预算v7保留
 8.59 GB系统可用内存底线、把进程树帽调整为21.475 GB后，唯一人工替代运行仍升至21.835 GB，

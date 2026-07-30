@@ -5,6 +5,9 @@
 
 ## 已完成审计
 
+- [2026-07-31 无加速多极杆离散跟进](history/20260731__no-acceleration-multipole-discretization-followup.md)：
+  记录四、六、八极杆SIMION各向异性空间/时间矩阵、COMSOL 160→320步时间臂、统一出口状态图组，
+  以及一次性审计与常规复验的边界。
 - [2026-07-30 Production边界处置](history/20260730__production-maintenance-boundary-disposition.md)：
   记录测试support与生产workflow迁移、RF旧网格实验包退役、只读兼容描述符及处置后CLOC。
 - [2026-07-30 Production维护面一次性基线](history/20260730__production-maintenance-surface-baseline.md)：

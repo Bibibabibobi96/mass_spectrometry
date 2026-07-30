@@ -206,6 +206,8 @@ class ArtifactRetentionTests(unittest.TestCase):
     def test_new_run_package_callers_are_explicitly_migrated_or_baselined(self) -> None:
         migrated = {
             "common/multipole/run_finite_3d_transport.ps1",
+            "common/multipole/run_no_acceleration_followup_analysis.ps1",
+            "common/multipole/run_no_acceleration_pair_analysis.ps1",
             "common/multipole/run_simion_finite_3d_transport.ps1",
         }
         legacy = {

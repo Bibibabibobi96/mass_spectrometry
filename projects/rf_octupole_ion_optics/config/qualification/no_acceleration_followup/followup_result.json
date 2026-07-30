@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "role": "multipole_no_acceleration_followup_result",
+  "campaign_id": "octupole_no_acceleration_followup_v1",
+  "status": "INCONCLUSIVE_NUMERICAL_CONVERGENCE_NOT_ESTABLISHED",
+  "project_id": "rf_octupole_ion_optics",
+  "particle_count": 100,
+  "functional_result": "PASS_100_OF_100_ALL_SUCCESSFUL_ARMS",
+  "simion": {
+    "run_manifests": {
+      "A": {"run_id": "20260731_010201__sim__simion__oct-noacc-followup-a-r030-z030-t080", "sha256": "B177A11508978E0CD1FA991594807A833E9951D2C6B3C2465A2EAA7EE32A861F"},
+      "R": {"run_id": "20260731_010202__sim__simion__oct-noacc-followup-r-r020-z030-t080", "sha256": "FF27CF5B2EDAE840EEEFEBB8368E1022B05EF3FD4F73910640A3C24203764354"},
+      "Z": {"run_id": "20260731_010203__sim__simion__oct-noacc-followup-z-r030-z020-t080", "sha256": "AC8ED9549F52E2A5E1ADC62654C99AB60B1E3188E751157B99DAE246D21B56C3"},
+      "I": {"run_id": "20260731_010204__sim__simion__oct-noacc-followup-i-r020-z020-t080", "sha256": "5B0D075486CCE3FCF84219E59593BF91B69824424D76E405EAAFF04C2E79E300"},
+      "T": {"run_id": "20260731_010205__sim__simion__oct-noacc-followup-t-r020-z020-t160", "sha256": "F714BB6DC9E235F58AEC669B3259025AC9F26DDA68C785252C37F4BCAA7C3007"}
+    },
+    "analysis_manifest": {"run_id": "20260731_011201__analysis__python__oct-noacc-followup-factorial", "sha256": "E85BAE538BE89DCA513D452D6E8ABEB66F567343909CD7D3E47B589ADC5B5A52"},
+    "rms_radius_relative_differences": {
+      "A_to_R_radial": 0.030663197999939513,
+      "A_to_Z_axial": 0.0030857948265131706,
+      "Z_to_I_radial": 0.02808923745117148,
+      "R_to_I_axial": 0.0005112809320153938,
+      "I_to_T_temporal": 0.000001328936892668212
+    },
+    "spatial_status": "SENSITIVE_AT_PREREGISTERED_ENGINEERING_RESOLUTION",
+    "temporal_status": "STABLE_AT_PREREGISTERED_ENGINEERING_RESOLUTION"
+  },
+  "comsol": {
+    "run_manifests": {
+      "exit020_t160": {"run_id": "20260731_020201__sim__comsol__oct-noacc-followup-exit020-t160", "sha256": "0F533BBCB70C2C8C3D7337B979FDBE7D5680D2D56110722E7021007B4E006713"},
+      "exit020_t320": {"run_id": "20260731_020202__sim__comsol__oct-noacc-followup-exit020-t320", "sha256": "BFC401B6F412F9782268E5C596978EEB568B585FA3AD3145C95605F4FC5D90A3"}
+    },
+    "analysis_manifest": {"run_id": "20260731_021201__analysis__python__oct-comsol-t160-t320", "sha256": "68A273D031E414EF7A3928CAA104B05ED82F062C643DAF939B6C566C904467A9"},
+    "rms_radius_relative_difference": 0.03979632380469276,
+    "temporal_status": "SENSITIVE_AT_PREREGISTERED_ENGINEERING_RESOLUTION"
+  },
+  "decision": "SIMION is temporally stable only at the frozen engineering-bin resolution, but its spatial arms remain sensitive. COMSOL remains temporally sensitive. No continuous numerical convergence claim is granted.",
+  "claim_limit": "N=100 solver-internal discretization sensitivity only; no absolute accuracy, cross-solver equivalence, Candidate, Formal, optimization, collision, space-charge or N=1000 claim is granted."
+}

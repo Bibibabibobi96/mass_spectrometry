@@ -131,5 +131,23 @@ class NoAccelerationFollowupConfigurationTests(unittest.TestCase):
         self.assertFalse(list(CAMPAIGN.glob("*qualification*.json")))
 
 
+    def test_followup_result_preserves_inconclusive_claim_boundary(self) -> None:
+        result = load(CAMPAIGN / "followup_result.json")
+        self.assertEqual(result["role"], "multipole_no_acceleration_followup_result")
+        self.assertEqual(
+            result["status"],
+            "INCONCLUSIVE_NUMERICAL_CONVERGENCE_NOT_ESTABLISHED",
+        )
+        self.assertEqual(result["functional_result"], "PASS_100_OF_100_ALL_SUCCESSFUL_ARMS")
+        self.assertEqual(
+            result["simion"]["temporal_status"],
+            "STABLE_AT_PREREGISTERED_ENGINEERING_RESOLUTION",
+        )
+        self.assertEqual(
+            result["comsol"]["temporal_status"],
+            "SENSITIVE_AT_PREREGISTERED_ENGINEERING_RESOLUTION",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -45,6 +45,11 @@ RF为1.1 MHz余弦、每组零到峰值139.81792 V；源为100 amu、+1、2 eV�
 固定0.35/0.3 mm的时间敏感性pair也已完成；SIMION时间RMS半径变化约`0.0033%`，COMSOL约
 `2.19%`，最终跨求解器RMS半径/发散角差约`3.85%/4.62%`。功能传输闭合，连续结果仍为
 `INCONCLUSIVE`，不得增加第四档。最大实测为572.776 s、1.047 GB瞬态目录和8.673 GB进程树内存；
+2026-07-31无加速定向跟进完成SIMION A/R/Z/I/T五臂和COMSOL局部0.20 mm的160→320步时间pair。
+SIMION径向/轴向RMS半径变化为`3.066%/0.309%`，I→T为`0.000133%`且只在固定分箱下稳定；
+COMSOL时间变化为`3.980%`且仍跨固定分箱。功能保持100/100，连续结论为
+`INCONCLUSIVE_NUMERICAL_CONVERGENCE_NOT_ESTABLISHED`；机器身份见
+[`followup_result.json`](../config/qualification/no_acceleration_followup/followup_result.json)。
 分段杆轴向加速N=100 baseline已在两求解器保持100/100传输和精确粒子身份；SIMION空间档也
 保持100/100，RMS半径、发散角和平均能量相对baseline分别变化约`2.39%`、`7.98%`和`0.196%`。
 COMSOL空间档在`MESH_COMPLETE`后以19.180 GB超过17.180 GB进程树帽，记为

@@ -138,6 +138,11 @@ N=1000或完整矩阵。后来独立完成的field-only C1/D2/D3序列见本文�
 `../config/qualification/n100_segmented_rod_axial_acceleration_qualification.json`。
 出口孔板加速身份和资源结论登记在
 `../config/qualification/n100_exit_aperture_plate_acceleration_qualification.json`。
+2026-07-31无加速定向跟进完成SIMION A/R/Z/I/T五臂和COMSOL局部0.20 mm的160→320步时间pair。
+SIMION径向/轴向RMS半径变化为`16.953%/1.077%`，I→T为`0.000529%`且只在固定分箱下稳定；
+COMSOL时间变化为`2.265%`并跨越大量固定分箱。径向离散是当前最显著风险，功能仍100/100，但连续
+结论保持`INCONCLUSIVE_NUMERICAL_CONVERGENCE_NOT_ESTABLISHED`；机器身份见
+[`followup_result.json`](../config/qualification/no_acceleration_followup/followup_result.json)。
 2026-07-29已从三个真实baseline run为COMSOL和SIMION分别发布
 `POSTHOC_DESCRIPTIVE` binding和报告；它们固定声明非预注册、不计算bootstrap、不评价资格。正式
 `three_mode_dispersion_binding`仍须由运行前冻结完整统计设置的新run生成，不得把事后报告升级或

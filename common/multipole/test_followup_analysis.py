@@ -1,6 +1,8 @@
 import unittest
+from pathlib import Path
 
 from common.multipole.followup_analysis import (
+    analyze_pair,
     factorial_interaction,
     fixed_bin_index,
     normalized_cell_xyz,
@@ -8,6 +10,15 @@ from common.multipole.followup_analysis import (
 
 
 class FollowupAnalysisTests(unittest.TestCase):
+    def test_pair_rejects_empty_comparison_id_before_loading_runs(self) -> None:
+        with self.assertRaisesRegex(ValueError, "comparison_id"):
+            analyze_pair(
+                Path("left.json"),
+                Path("right.json"),
+                Path("resolution.json"),
+                " ",
+            )
+
     def test_legacy_and_anisotropic_cells_normalize(self) -> None:
         self.assertEqual(
             normalized_cell_xyz({"cell_mm": 0.3}),

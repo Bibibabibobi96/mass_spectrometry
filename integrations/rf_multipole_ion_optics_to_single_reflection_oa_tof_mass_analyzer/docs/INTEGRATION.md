@@ -101,6 +101,12 @@ oaTOF入口、脉冲时active、局部加速器出口、探测面crossing和hit�
 `20260730_234500__analysis__cross__hybrid-source-revision__n100`仍是不可变schema v1历史artifact；
 读取器保持兼容，但不会把它重写为schema v2，也不得把新的方向命名倒灌到历史结果。
 
+2026-07-31已用schema v2发布只读三源横向图组
+`20260731_030000__analysis__cross__source-triangle__n100`，状态保持
+`POSTHOC_DESCRIPTIVE / INCONCLUSIVE_DIAGNOSTIC_ONLY`。同日新增的上游无加速离散跟进臂没有冻结
+新的`SourceRevisionId`、runtime binding或下游预登记，因此未接入本集成、未启动新的oaTOF商业运行；
+不得用现有triangle替代这些新源的下游证据。
+
 ## 迁移等价结论
 
 [`migration_oracles.json`](../config/migration_oracles.json)是只读的迁移前证据索引，保留当时的术语、路径、

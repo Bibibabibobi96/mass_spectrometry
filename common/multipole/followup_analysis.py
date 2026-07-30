@@ -271,6 +271,33 @@ def analyze_triangle(
     }
 
 
+def analyze_pair(
+    left_manifest: Path,
+    right_manifest: Path,
+    resolution_path: Path,
+    comparison_id: str,
+) -> dict[str, Any]:
+    if not comparison_id.strip():
+        raise ValueError("comparison_id must not be empty")
+    contract = load_resolution(resolution_path)
+    left = run_data(left_manifest)
+    right = run_data(right_manifest)
+    comparison = paired_report(left, right, contract)
+    return {
+        "schema_version": 1,
+        "role": "multipole_no_acceleration_paired_followup_analysis",
+        "status": "DIAGNOSTIC_COMPLETE",
+        "comparison_id": comparison_id,
+        "project_id": left["project"],
+        "comparison": comparison,
+        "scientific_claim": (
+            "Paired engineering sensitivity at the preregistered fixed-bin "
+            "resolution only; absolute physical accuracy and solver superiority "
+            "are not qualified."
+        ),
+    }
+
+
 def write_json(path: Path, document: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -290,6 +317,10 @@ def main() -> int:
     triangle.add_argument("--legacy-comsol", required=True, type=Path)
     triangle.add_argument("--hybrid-comsol", required=True, type=Path)
     triangle.add_argument("--simion", required=True, type=Path)
+    pair = subparsers.add_parser("pair")
+    pair.add_argument("--left", required=True, type=Path)
+    pair.add_argument("--right", required=True, type=Path)
+    pair.add_argument("--comparison-id", required=True)
     arguments = parser.parse_args()
     if arguments.command == "factorial":
         document = analyze_factorial(
@@ -299,12 +330,19 @@ def main() -> int:
             },
             arguments.resolution,
         )
-    else:
+    elif arguments.command == "triangle":
         document = analyze_triangle(
             arguments.legacy_comsol,
             arguments.hybrid_comsol,
             arguments.simion,
             arguments.resolution,
+        )
+    else:
+        document = analyze_pair(
+            arguments.left,
+            arguments.right,
+            arguments.resolution,
+            arguments.comparison_id,
         )
     write_json(arguments.output, document)
     return 0
