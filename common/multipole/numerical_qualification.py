@@ -551,17 +551,41 @@ def validate_identity(
         coarse = baseline["numerics"]
         fine = refined["numerics"]
         if solver == "COMSOL":
-            coarse_hybrid = coarse.get("mesh", {}).get("hybrid", {})
-            fine_hybrid = fine.get("mesh", {}).get("hybrid", {})
-            if "sensitive_region" in coarse_hybrid or "sensitive_region" in fine_hybrid:
-                path = (
+            candidate_paths = (
+                ("mesh", "working_region_maximum_element_size_mm"),
+                (
                     "mesh",
                     "hybrid",
                     "sensitive_region",
                     "maximum_element_size_mm",
+                ),
+                (
+                    "mesh",
+                    "hybrid",
+                    "sensitive_region",
+                    "exit_interface_refinement",
+                    "maximum_element_size_mm",
+                ),
+            )
+            changed_paths = []
+            for candidate_path in candidate_paths:
+                coarse_value: Any = coarse
+                fine_value: Any = fine
+                try:
+                    for key in candidate_path:
+                        coarse_value = coarse_value[key]
+                        fine_value = fine_value[key]
+                except (KeyError, TypeError):
+                    continue
+                if coarse_value != fine_value:
+                    changed_paths.append(candidate_path)
+            if len(changed_paths) != 1:
+                errors.append(
+                    "COMSOL spatial comparison must change exactly one supported "
+                    "mesh-size axis"
                 )
-            else:
-                path = ("mesh", "working_region_maximum_element_size_mm")
+                return errors
+            path = changed_paths[0]
         else:
             path = ("cell_mm",)
         if without_path(coarse, path) != without_path(fine, path):

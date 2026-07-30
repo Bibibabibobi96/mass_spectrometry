@@ -32,6 +32,18 @@ try
     ground = electrostatics.feature.create('gnd1', 'Ground', 1);
     ground.selection.set(4);
 
+    electrostaticsStatic = component.physics.create( ...
+        'es_static', 'Electrostatics', 'geom1');
+    electrostaticsStatic.selection.all;
+    electrostaticsStatic.field('electricpotential').field('Vstatic');
+    electrostaticsStatic.field('electricpotential').component({'Vstatic'});
+    staticPotential = electrostaticsStatic.feature.create( ...
+        'pot1', 'ElectricPotential', 1);
+    staticPotential.selection.set(1);
+    staticPotential.set('V0', '0.5[V]');
+    staticGround = electrostaticsStatic.feature.create('gnd1', 'Ground', 1);
+    staticGround.selection.set(4);
+
     material = component.material.create('mat1', 'Common');
     material.selection.all;
     material.propertyGroup('def').set('relpermittivity', '1');
@@ -41,7 +53,8 @@ try
     mesh.autoMeshSize(1);
     mesh.run;
     study = model.study.create('std1');
-    study.create('stat', 'Stationary');
+    stationaryStep = study.create('stat', 'Stationary');
+    stationaryStep.setEntry('activate', 'es_static', false);
     solution = model.sol.create('sol1');
     solution.study('std1');
     solution.createAutoSequence('std1');
@@ -62,6 +75,68 @@ try
         shapeProperty.getString('order_electricpotential'))) == 2, ...
         'COMSOL did not retain quadratic electric-potential elements.');
 
+    dualStudy = model.study.create('std2');
+    dualStudy.create('stat', 'Stationary');
+    dualSolution = model.sol.create('sol2');
+    dualSolution.study('std2');
+    dualSolution.createAutoSequence('std2');
+    dualStationary = dualSolution.feature('s1');
+    dualTagsBefore = cell(dualSolution.feature('s1').feature.tags());
+    if any(strcmp(dualTagsBefore, 'fc1'))
+        dualStationary.feature.create('se1', 'Segregated');
+        dualStationary.feature.remove('fc1');
+        if ~any(strcmp(dualTagsBefore, 'i1'))
+            dualStationary.feature.create('i1', 'Iterative');
+        end
+        if ~any(strcmp(dualTagsBefore, 'i2'))
+            dualStationary.feature.create('i2', 'Iterative');
+        end
+        dualTagsBefore = cell(dualStationary.feature.tags());
+    end
+    assert(any(strcmp(dualTagsBefore, 'se1')) && ...
+        ~any(strcmp(dualTagsBefore, 'fc1')), ...
+        'Dual-electrostatics smoke fixture did not expose a segregated tree.');
+    dualActual = configure_comsol_stationary_solver( ...
+        dualSolution, 'cg_amg', ...
+        struct('relative_tolerance', 0.001, 'maximum_iterations', 500, ...
+        'error_check_mode', 'on'));
+    dualSolution.attach('std2');
+    dualTagsAfter = cell(dualSolution.feature('s1').feature.tags());
+    assert(any(strcmp(dualTagsAfter, 'fc1')) && ...
+        ~any(strcmp(dualTagsAfter, 'se1')) && ...
+        any(strcmp(dualTagsAfter, 'i2')) && ...
+        strcmp(dualActual.fully_coupled_linsolver, 'i1'), ...
+        'Dual-electrostatics solver was not normalized to governed fully coupled CG-AMG.');
+    dualSolution.runAll;
+
+    directStudy = model.study.create('std3');
+    directStudy.create('stat', 'Stationary');
+    directSolution = model.sol.create('sol3');
+    directSolution.study('std3');
+    directSolution.createAutoSequence('std3');
+    directStationary = directSolution.feature('s1');
+    directTagsBefore = cell(directStationary.feature.tags());
+    if any(strcmp(directTagsBefore, 'fc1'))
+        directStationary.feature.create('se1', 'Segregated');
+        directStationary.feature.remove('fc1');
+        if ~any(strcmp(directTagsBefore, 'i1'))
+            directStationary.feature.create('i1', 'Iterative');
+        end
+        if ~any(strcmp(directTagsBefore, 'i2'))
+            directStationary.feature.create('i2', 'Iterative');
+        end
+    end
+    directActual = configure_comsol_stationary_solver( ...
+        directSolution, 'mumps', struct());
+    directSolution.attach('std3');
+    directSolution.runAll;
+    directTags = cell(directSolution.feature('s1').feature.tags());
+    assert(any(strcmp(directTags, 'fc1')) && ...
+        ~any(strcmp(directTags, 'se1')) && ...
+        strcmp(directActual.fully_coupled_linsolver, 'dDef') && ...
+        strcmp(directActual.backend, 'mumps'), ...
+        'Dual-electrostatics direct solver was not normalized to governed MUMPS.');
+
     fprintf(fid, 'TASK=MULTIPOLE_STATIONARY_SOLVER_SMOKE\n');
     fprintf(fid, 'STATIONARY_LINEAR_SOLVER_BACKEND=%s\n', upper(actual.backend));
     fprintf(fid, 'STATIONARY_CONTROL=%s\n', upper(actual.control));
@@ -74,6 +149,9 @@ try
         upper(actual.linear_error_check));
     fprintf(fid, 'STATIONARY_CONVERGENCE_LOG=%s\n', upper(actual.convergence_log));
     fprintf(fid, 'ELECTRIC_POTENTIAL_ELEMENT_ORDER=QUADRATIC\n');
+    fprintf(fid, 'DUAL_PHYSICS_SEGREGATED_TREE_NORMALIZED=1\n');
+    fprintf(fid, 'DUAL_PHYSICS_DIRECT_TREE_NORMALIZED=1\n');
+    fprintf(fid, 'UNUSED_AUTOMATIC_ITERATIVE_FEATURE_TOLERATED=1\n');
     fprintf(fid, 'PROGRESS_HAS_LINIT_LINRES=1\n');
     fprintf(fid, 'STATUS=PASS\n');
     ModelUtil.remove(tag);

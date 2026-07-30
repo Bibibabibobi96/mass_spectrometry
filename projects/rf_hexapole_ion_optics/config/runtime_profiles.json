@@ -183,6 +183,24 @@
       "comsol_solver_numerics_profile_id": "hybrid_c1_corridor040_exit025_nosweep_cg_amg_field_screen",
       "simion_solver_numerics_profile_id": "baseline_finite_3d"
     },
+    "no_acceleration_full_length_n100_hybrid_exit025_temporal_coarse": {
+      "design_profile_id": "no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "hybrid_c1_corridor040_exit025_nosweep_cg_amg_field_screen",
+      "simion_solver_numerics_profile_id": "baseline_finite_3d"
+    },
+    "no_acceleration_full_length_n100_hybrid_exit025_temporal_refined": {
+      "design_profile_id": "no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "hybrid_c1_corridor040_exit025_nosweep_cg_amg_temporal_refined",
+      "simion_solver_numerics_profile_id": "baseline_finite_3d"
+    },
+    "no_acceleration_full_length_n100_hybrid_exit020_spatial_temporal_refined": {
+      "design_profile_id": "no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "hybrid_c1_corridor040_exit020_nosweep_cg_amg_spatial_temporal_refined",
+      "simion_solver_numerics_profile_id": "baseline_finite_3d"
+    },
     "segmented_rod_axial_acceleration_n100_hybrid_c1_background_sensitive_050_field_screen": {
       "stop_stage": "field_solve",
       "design_profile_id": "segmented_rod_axial_acceleration",

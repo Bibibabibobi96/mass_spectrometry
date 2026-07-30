@@ -308,9 +308,20 @@ class FamilyExperimentProfileTests(unittest.TestCase):
         engineering = load("config/qualification/engineering_budget.json")
         self.assertFalse(engineering["pilot_authorization"]["authorized"])
         self.assertFalse(engineering["full_matrix_authorization"]["authorized"])
+        campaign = load(
+            "config/qualification/"
+            "comsol_hybrid_no_acceleration_particle_convergence_preregistration.json"
+        )
+        self.assertEqual(
+            campaign["status"],
+            "COMPLETED_FUNCTIONAL_PASS_TEMPORAL_CONVERGENCE_NOT_ESTABLISHED",
+        )
+        final_arm = campaign["ordered_arms"][-1]
+        self.assertTrue(final_arm["executed"])
+        self.assertFalse(final_arm["authorized"])
         self.assertEqual(
             engineering["pilot_authorization"]["scope"]["runtime_profile_id"],
-            "exit_aperture_plate_acceleration_n100_hybrid_c1_corridor040_exit025_nosweep_field_screen",
+            final_arm["runtime_profile_id"],
         )
         self.assertEqual(
             engineering["pilot_authorization"]["scope"]["allowed_solvers"],
@@ -323,8 +334,39 @@ class FamilyExperimentProfileTests(unittest.TestCase):
         self.assertFalse(engineering["full_matrix_authorization"]["authorized"])
         self.assertEqual(
             engineering["full_matrix_authorization"]["reason"],
-            "claim_specific_integration_and_cross_solver_work_precedes_further_convergence",
+            "the_preregistered_three_arm_hexapole_hybrid_particle_campaign_is_complete_and_closed",
         )
+        comparisons = campaign["comparison_results"]
+        self.assertEqual(comparisons["functional_status"], "PASS")
+        self.assertEqual(
+            comparisons["continuous_status"],
+            "INCONCLUSIVE_TEMPORAL_CONVERGENCE_NOT_ESTABLISHED",
+        )
+        self.assertEqual(
+            comparisons["analysis_run"]["run_id"],
+            "20260730_161519__analysis__python__hex-hybrid-particle-convergence",
+        )
+        self.assertEqual(comparisons["analysis_run"]["status"], "success")
+        self.assertFalse(comparisons["analysis_run"]["formal_eligible"])
+        self.assertEqual(
+            comparisons["spatial_0p25_to_0p20_at_160_steps"][
+                "analysis_run_relative_path"
+            ],
+            "results/spatial_comparison.json",
+        )
+        self.assertEqual(
+            comparisons["temporal_80_to_160_at_0p25_mm"][
+                "analysis_run_relative_path"
+            ],
+            "results/temporal_comparison.json",
+        )
+        self.assertGreater(
+            comparisons["temporal_80_to_160_at_0p25_mm"][
+                "rms_divergence_relative_difference"
+            ],
+            0.1,
+        )
+        self.assertEqual(len(campaign["ordered_arms"]), 3)
 
         result = load(
             "config/qualification/n100_no_acceleration_qualification.json"

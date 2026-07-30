@@ -386,6 +386,56 @@ class NumericalQualificationTests(unittest.TestCase):
             validate_identity(baseline, peer, "mesh_strategy"),
         )
 
+    def test_spatial_pair_supports_exit_interface_refinement_axis(self) -> None:
+        coarse = sample()
+        coarse["numerics"]["mesh"] = {
+            "strategy": "physical_segment_hybrid_swept_tetra_v1",
+            "global_auto_level": 6,
+            "working_region_maximum_element_size_mm": None,
+            "hybrid": {
+                "sensitive_region": {
+                    "maximum_element_size_mm": 0.4,
+                    "exit_interface_refinement": {
+                        "maximum_element_size_mm": 0.25
+                    },
+                }
+            },
+        }
+        fine = copy.deepcopy(coarse)
+        fine["numerics"]["mesh"]["hybrid"]["sensitive_region"][
+            "exit_interface_refinement"
+        ]["maximum_element_size_mm"] = 0.2
+
+        self.assertEqual(validate_identity(coarse, fine, "spatial"), [])
+
+    def test_spatial_pair_rejects_multiple_changed_mesh_size_axes(self) -> None:
+        coarse = sample()
+        coarse["numerics"]["mesh"] = {
+            "strategy": "physical_segment_hybrid_swept_tetra_v1",
+            "global_auto_level": 6,
+            "working_region_maximum_element_size_mm": None,
+            "hybrid": {
+                "sensitive_region": {
+                    "maximum_element_size_mm": 0.5,
+                    "exit_interface_refinement": {
+                        "maximum_element_size_mm": 0.25
+                    },
+                }
+            },
+        }
+        fine = copy.deepcopy(coarse)
+        fine["numerics"]["mesh"]["hybrid"]["sensitive_region"][
+            "maximum_element_size_mm"
+        ] = 0.4
+        fine["numerics"]["mesh"]["hybrid"]["sensitive_region"][
+            "exit_interface_refinement"
+        ]["maximum_element_size_mm"] = 0.2
+
+        self.assertIn(
+            "COMSOL spatial comparison must change exactly one supported mesh-size axis",
+            validate_identity(coarse, fine, "spatial"),
+        )
+
     def test_mesh_strategy_contract_rejects_continuous_limits(self) -> None:
         full_tetra = sample()
         hybrid = copy.deepcopy(full_tetra)

@@ -138,8 +138,10 @@
   以630,010单元完成双场和6660行采样，全部六个冻结参考带满足，并比0.32 mm全长参考减少83,386单元
   （11.689%）。0.25→0.20 mm相邻局部档在常规杆区、杆出口和handoff的差分场变化分别约
   `0.041%/0.479%/0.982%`，只支持局部尺寸轴的工程稳定性，不建立完整空间收敛。该0.25 mm策略现接受为
-  较低成本工程场参考；进一步COMSOL场/粒子加密保持关闭，优先处理公共handoff、RF→oaTOF贯通和
-  同条件跨求解器功能/相空间/能量印证。
+  较低成本工程场参考。后来另行授权的
+  [`无加速混合网格N=100粒子三臂`](config/qualification/comsol_hybrid_no_acceleration_particle_convergence_preregistration.json)
+  已完成并功能PASS；0.25→0.20 mm空间档连续变化较小，但80→160步的RMS发散仍变化约13.576%，
+  因此时间收敛未建立，预算已关闭且不增加第四档。完整数值和边界见`docs/PROJECT.md`。
   既有三模式baseline的两份
   求解器报告只具有`POSTHOC_DESCRIPTIVE`身份，统一
   比较见[`../../docs/history/20260729__multipole-three-mode-posthoc-n100.md`](../../docs/history/20260729__multipole-three-mode-posthoc-n100.md)。

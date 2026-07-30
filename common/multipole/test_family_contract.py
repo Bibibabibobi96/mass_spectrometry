@@ -182,6 +182,7 @@ class MultipoleFamilyContractTests(unittest.TestCase):
         )
         for token in (
             "'cg_amg'",
+            "xor(hasFullyCoupled, hasSegregated)",
             "feature.create('i1', 'Iterative')",
             "iterative.set('linsolver', 'cg')",
             "iterative.set('maxlinit', maximumIterations)",
@@ -196,7 +197,24 @@ class MultipoleFamilyContractTests(unittest.TestCase):
             "advanced.set('convinfo', 'detailed')",
         ):
             self.assertIn(token, stationary_helper)
+        self.assertLess(
+            stationary_helper.index("feature.create('fc1', 'FullyCoupled')"),
+            stationary_helper.index("feature.remove('se1')"),
+        )
+        self.assertNotIn("feature.remove('i2')", stationary_helper)
         self.assertNotIn("stationary.set('convinfo'", stationary_helper)
+        stationary_smoke = (
+            REPO_ROOT
+            / "common"
+            / "multipole"
+            / "test_comsol_stationary_solver_smoke.m"
+        ).read_text(encoding="utf-8")
+        for token in (
+            "DUAL_PHYSICS_SEGREGATED_TREE_NORMALIZED=1",
+            "DUAL_PHYSICS_DIRECT_TREE_NORMALIZED=1",
+            "UNUSED_AUTOMATIC_ITERATIVE_FEATURE_TOLERATED=1",
+        ):
+            self.assertIn(token, stationary_smoke)
         self.assertIn("stationary_iterative_solver", shared_solver)
         self.assertIn("COMSOL_PROGRESS_LINIT_LINRES", shared_solver)
         self.assertNotIn("getSolverLog", shared_solver)

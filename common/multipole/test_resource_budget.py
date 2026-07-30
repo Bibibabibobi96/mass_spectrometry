@@ -233,7 +233,7 @@ class ResourceBudgetTests(unittest.TestCase):
 
         resolved = validate_with(authorized_fixture)
         self.assertEqual(resolved["limits"]["maximum_mesh_cells"], 100)
-        self.assertEqual(resolved["stop_stage"], "field_solve")
+        self.assertEqual(resolved["stop_stage"], runtime["stop_stage"])
         runtime_without_stop_stage = json.loads(json.dumps(runtime))
         del runtime_without_stop_stage["stop_stage"]
         with (

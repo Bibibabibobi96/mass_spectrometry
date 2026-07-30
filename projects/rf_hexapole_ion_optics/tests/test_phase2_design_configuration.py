@@ -550,15 +550,6 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
             trend["resource_boundary"]["next_level_0256_extrapolated_cells"],
             1_014_459,
         )
-        budget = load(
-            PROJECT_ROOT / "config" / "qualification" / "engineering_budget.json"
-        )
-        self.assertFalse(budget["pilot_authorization"]["authorized"])
-        self.assertEqual(
-            budget["pilot_authorization"]["scope"]["runtime_profile_id"],
-            "exit_aperture_plate_acceleration_n100_hybrid_c1_corridor040_exit025_nosweep_field_screen",
-        )
-
     def test_exit_interface_mesh_strategy_closes_failed_zone_and_corrects_scope(
         self,
     ) -> None:
@@ -604,6 +595,7 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
         self.assertFalse(
             preregistration["decision_policy"]["particle_followup_authorized"]
         )
+
         self.assertEqual(
             preregistration["mesh_contract"]["exit_interface_refinement"][
                 "resolved_z_min_mm"
@@ -691,6 +683,55 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
             "selection_has_entities",
         ):
             self.assertIn(token, mesh_helper)
+
+    def test_hybrid_particle_convergence_profiles_change_one_axis(self) -> None:
+        profiles = self.comsol_numerics["profiles"]
+        coarse = copy.deepcopy(
+            profiles["hybrid_c1_corridor040_exit025_nosweep_cg_amg_field_screen"]
+        )
+        reference = copy.deepcopy(
+            profiles[
+                "hybrid_c1_corridor040_exit025_nosweep_cg_amg_temporal_refined"
+            ]
+        )
+        spatial = copy.deepcopy(
+            profiles[
+                "hybrid_c1_corridor040_exit020_nosweep_cg_amg_spatial_temporal_refined"
+            ]
+        )
+        self.assertEqual(coarse["trajectory"]["rf_steps_per_period"], 80)
+        self.assertEqual(reference["trajectory"]["rf_steps_per_period"], 160)
+        coarse["trajectory"]["rf_steps_per_period"] = 160
+        self.assertEqual(coarse, reference)
+
+        exit_refinement = spatial["mesh"]["hybrid"]["sensitive_region"][
+            "exit_interface_refinement"
+        ]
+        self.assertEqual(exit_refinement["maximum_element_size_mm"], 0.2)
+        exit_refinement["maximum_element_size_mm"] = 0.25
+        self.assertEqual(spatial, reference)
+
+        runtime = self.runtime_profiles["profiles"]
+        expected = {
+            "no_acceleration_full_length_n100_hybrid_exit025_temporal_coarse":
+                "hybrid_c1_corridor040_exit025_nosweep_cg_amg_field_screen",
+            "no_acceleration_full_length_n100_hybrid_exit025_temporal_refined":
+                "hybrid_c1_corridor040_exit025_nosweep_cg_amg_temporal_refined",
+            "no_acceleration_full_length_n100_hybrid_exit020_spatial_temporal_refined":
+                "hybrid_c1_corridor040_exit020_nosweep_cg_amg_spatial_temporal_refined",
+        }
+        for runtime_id, numerics_id in expected.items():
+            profile = runtime[runtime_id]
+            self.assertEqual(
+                profile["design_profile_id"], "no_acceleration_full_length"
+            )
+            self.assertEqual(
+                profile["particle_source_profile_id"],
+                "family_mother_sample_v1_n100",
+            )
+            self.assertEqual(
+                profile["comsol_solver_numerics_profile_id"], numerics_id
+            )
 
     def test_c1_background_040_preregistration_binds_successful_parent(
         self,

@@ -2,15 +2,15 @@
   "schema_version": 1,
   "role": "multipole_engineering_budget_contract",
   "project_id": "rf_hexapole_ion_optics",
-  "contract_id": "hexapole_exit_interface_field_strategy_closed_v1",
+  "contract_id": "hexapole_no_acceleration_hybrid_particle_convergence_closed_v1",
   "preregistered_before_run": true,
   "pilot_authorization": {
     "authorized": false,
     "scope": {
       "project_id": "rf_hexapole_ion_optics",
-      "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_c1_corridor040_exit025_nosweep_field_screen",
-      "stop_stage": "field_solve",
-      "design_profile_id": "exit_aperture_plate_acceleration",
+      "runtime_profile_id": "no_acceleration_full_length_n100_hybrid_exit025_temporal_coarse",
+      "stop_stage": "transport",
+      "design_profile_id": "no_acceleration_full_length",
       "particle_source_profile_id": "family_mother_sample_v1_n100",
       "particle_count": 100,
       "solver_numerics_profile_ids": {
@@ -21,14 +21,14 @@
         "comsol"
       ],
       "retention_class": "compact",
-      "expected_run_parent_resolved_design_sha256": "C9C3B00A5327825FCB138FB7EEDF2C6F7175497EAEB3CD1EB28A5D995AAC4B6E"
+      "expected_run_parent_resolved_design_sha256": "C8B58862A764915778BF4C4B193769D07B0E825CC8AE8B8EAE1591DC7F0E85FF"
     },
     "limits": {
       "wall_clock_seconds_by_solver": {
-        "comsol": 600,
+        "comsol": 900,
         "simion": 300
       },
-      "transient_run_directory_bytes": 134217728,
+      "transient_run_directory_bytes": 1610612736,
       "process_tree_working_set_bytes": 12884901888,
       "minimum_system_available_memory_bytes": 8589934592,
       "compact_final_retained_bytes": 10485760,
@@ -38,8 +38,8 @@
   },
   "full_matrix_authorization": {
     "authorized": false,
-    "reason": "claim_specific_integration_and_cross_solver_work_precedes_further_convergence"
+    "reason": "the_preregistered_three_arm_hexapole_hybrid_particle_campaign_is_complete_and_closed"
   },
   "budget_exhaustion_result": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
-  "claim_limit": "The 630,010-cell field strategy is accepted as a lower-cost engineering reference, not as full numerical convergence. Commercial field and particle authorization is closed while claim-specific RF-to-oaTOF integration, common-handoff cross-solver checks and downstream tolerances take priority."
+  "claim_limit": "Commercial authorization is closed after the completed three-arm N=100 no-acceleration hybrid particle campaign. Functional transport passed, but temporal convergence was not established; no additional brute-force tier is authorized."
 }

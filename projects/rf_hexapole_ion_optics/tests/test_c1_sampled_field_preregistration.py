@@ -67,7 +67,7 @@ class C1SampledFieldPreregistrationTests(unittest.TestCase):
         self.assertEqual(cg_numerics["stationary_linear_solver_backend"], "cg_amg")
         self.assertEqual(mumps_numerics["stationary_linear_solver_backend"], "mumps")
 
-    def test_live_budget_closes_exit_interface_field_campaign(self) -> None:
+    def test_live_budget_does_not_reopen_c1_solver_campaign(self) -> None:
         budget = load(
             PROJECT_ROOT / "config" / "qualification" / "engineering_budget.json"
         )
@@ -78,13 +78,7 @@ class C1SampledFieldPreregistrationTests(unittest.TestCase):
             pilot["scope"]["runtime_profile_id"],
             {CG_RUNTIME_ID, MUMPS_RUNTIME_ID},
         )
-        self.assertEqual(
-            pilot["scope"]["runtime_profile_id"],
-            "exit_aperture_plate_acceleration_n100_hybrid_c1_corridor040_exit025_nosweep_field_screen",
-        )
-        self.assertEqual(pilot["scope"]["stop_stage"], "field_solve")
         self.assertEqual(pilot["scope"]["allowed_solvers"], ["comsol"])
-        self.assertEqual(pilot["limits"]["wall_clock_seconds_by_solver"]["comsol"], 600)
         self.assertEqual(pilot["limits"]["process_tree_working_set_bytes"], 12 * 1024**3)
         self.assertEqual(pilot["limits"]["maximum_mesh_cells"], 1_000_000)
         self.assertEqual(pilot["limits"]["automatic_retry_count"], 0)

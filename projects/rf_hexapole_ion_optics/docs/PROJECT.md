@@ -387,6 +387,22 @@ normalized RMS分别为`0.380%/0.671%`、`1.293%/0.865%`和`1.721%/0.584%`，六
 关闭，当前优先级改为公共handoff、RF→oaTOF贯通，以及同条件COMSOL/SIMION功能、相空间和能量印证；
 Candidate、Formal和N=1000资格仍未授予。
 
+后续经用户另行授权的
+[`无加速混合网格N=100粒子三臂`](../config/qualification/comsol_hybrid_no_acceleration_particle_convergence_preregistration.json)
+已完成。公共求解器先修复了无加速双Electrostatics自动生成`se1+i1+i2`时无法应用既有CG-AMG配置的
+缺口：活动coupling现统一转换为`fc1`，CG-AMG绑定`i1`，MUMPS绑定`dDef`，未激活的COMSOL自动节点
+允许保留；微型单场/双场CG-AMG及双场MUMPS smoke均真实求解PASS。三份科学run使用同一N=100母样本
+前缀和无加速resolved设计：参考档0.25 mm/160步为630,010单元、364.044 s、7,085,850,624 bytes；
+空间档0.20 mm/160步为742,973单元、363.813 s、7,322,972,160 bytes；时间粗档0.25 mm/80步为
+630,010单元、268.031 s、6,658,109,440 bytes。三档RF-on均100/100传输，handoff粒子ID集合完全一致。
+
+0.25→0.20 mm且固定160步的RMS半径、RMS发散、平均能量和平均TOF相对变化分别约
+`1.215%/0.147%/0.076%/0.0016%`。固定0.25 mm的80→160步变化分别约
+`0.760%/13.576%/0.225%/0.0147%`，其中RMS发散从约5.694°变为4.970°。因此本轮只建立
+`FUNCTIONAL_PASS`和局部出口网格粒子敏感度证据；时间收敛明确未建立，连续结论保持
+`INCONCLUSIVE_TEMPORAL_CONVERGENCE_NOT_ESTABLISHED`。预算和商业运行授权已关闭，不增加320步
+第四档，也不得把本结果外推为完整空间收敛、跨求解器数值等价、Candidate、Formal或N=1000资格。
+
 共享SIMION模板、GUI复核、`.wgem`绕过和跨机可移植性状态只由
 [`../../../common/multipole/README.md`](../../../common/multipole/README.md)维护；公共机制证据不授予
 本项目Candidate或Formal资格。
