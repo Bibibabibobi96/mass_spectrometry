@@ -1,26 +1,27 @@
 {
   "schema_version": 1,
   "role": "rf_to_oatof_semantic_transfer_phases",
-  "status": "functional_unqualified",
+  "status": "functional_migration_equivalence_passed_compatibility_index",
+  "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
   "topology_source": "resolved_connection",
-  "active_entrypoint": "workflows/rf_to_oatof_integration/run_rf_to_oatof_transfer.ps1",
+  "active_entrypoint": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/execute_integration.ps1",
   "phases": [
     {
       "id": "pre_pulse_interface_transport",
       "solver": "comsol",
-      "entrypoint": "workflows/rf_to_oatof_integration/comsol/run_pre_pulse_interface_transport.ps1",
+      "entrypoint": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/stages/comsol/run_pre_pulse_interface_transport.ps1",
       "contract": "config/rf_to_oatof_pre_pulse_passive_connector.json"
     },
     {
       "id": "pulse_capture",
       "solver": "comsol",
-      "entrypoint": "workflows/rf_to_oatof_integration/comsol/run_pulse_capture.ps1",
+      "entrypoint": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/stages/comsol/run_pulse_capture.ps1",
       "contract": "config/rf_to_oatof_pulse_capture.json"
     },
     {
       "id": "analyzer_transport",
       "solver": "simion",
-      "entrypoint": "workflows/rf_to_oatof_integration/cross_solver/run_analyzer_transport.ps1",
+      "entrypoint": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/stages/cross_solver/run_analyzer_transport.ps1",
       "contract": null
     }
   ],

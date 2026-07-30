@@ -40,7 +40,7 @@ run编号、故障链和关闭过程冻结在
 | 圆柱家族三模式 | 三个N=100 baseline均双求解器100/100；无加速空间/时间矩阵完成；两加速模式COMSOL空间档资源受限 | 三模式功能分类闭合；连续数值资格仍INCONCLUSIVE |
 | 接口就绪输运 | v1双端100/100及严格相空间比较FAIL | 历史有效负结果；v2重跑待完成 |
 | RF+DC质量过滤 | L0/L1及v1双求解器功能扫描 | v2商业重跑与分辨能力资格待完成 |
-| RF四极杆离子光学→单次反射oa-TOF pre_pulse_interface_transport/pulse_capture/analyzer_transport | v1真实孔/连接器/脉冲累积链贯通 | v2重跑待完成；stage与整机BLOCKED |
+| RF四极杆离子光学→单次反射oa-TOF pre_pulse_interface_transport/pulse_capture/analyzer_transport | 当前integration入口下0 mm/1 mm同源N=100真实重跑与oracle离散等价PASS | 零物理变化功能迁移闭合；连续量、stage资格与整机Formal仍未评价 |
 | 机械/CAD/Formal | 无当前正式机械闭环 | BLOCKED |
 
 `Static`门禁当前可用；workflow blocking profile按各自声明执行；`Formal`在机械几何、CAD装配同步和
@@ -151,7 +151,10 @@ SIMION空间档也保持100/100和精确身份；COMSOL空间档在`MESH_COMPLET
 
 活动合同为`../config/rf_to_oatof_pre_pulse_passive_connector.json`、
 `../config/rf_to_oatof_pulse_capture.json`、公共解析后的连接合同及共享物理端口合同。唯一累积入口为
-`../workflows/rf_to_oatof_integration/run_rf_to_oatof_transfer.ps1`。公共resolved connection决定器件pose和接口面，
+[`../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/execute_integration.ps1`](../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/execute_integration.ps1)。
+四、六、八极杆同源功能闭合只使用同一integration的
+[`workflows/family_source_closure/execute.ps1`](../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/workflows/family_source_closure/execute.ps1)；
+内部phase不构成公开入口。公共resolved connection决定器件pose和接口面，
 共享端口决定法向、孔径与公共电位，pulse_capture合同决定frame、clock epoch和目标物种；任一身份冲突失败关闭。
 多极杆自身的源释放面、出口孔穿越面、规范交接面和近接口统计面仍按公共multipole术语区分；pre_pulse_interface_transport/pulse_capture/analyzer_transport
 连接模型中的下游部件面不能反向改名或合并这些上游事件面。

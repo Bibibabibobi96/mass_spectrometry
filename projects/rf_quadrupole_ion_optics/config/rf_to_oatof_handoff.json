@@ -13,7 +13,7 @@
     "superseded_by": [
       "config/rf_to_oatof_pre_pulse_passive_connector.json",
       "config/rf_to_oatof_pulse_capture.json",
-      "workflows/rf_to_oatof_integration/run_rf_to_oatof_transfer.ps1"
+      "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/execute_integration.ps1"
     ],
     "claim_limit": "Projection and adapter evidence remains valid only within its frozen diagnostic scope. Active topology comes only from a runtime resolved_connection; no transfer phase is qualified or Formal."
   },

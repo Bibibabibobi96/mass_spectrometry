@@ -27,7 +27,7 @@
     }
   ],
   "claims": {
-    "functional_chain_demonstrated": false,
+    "functional_chain_demonstrated": true,
     "phase_qualification_allowed": false,
     "formal_promotion_allowed": false
   }

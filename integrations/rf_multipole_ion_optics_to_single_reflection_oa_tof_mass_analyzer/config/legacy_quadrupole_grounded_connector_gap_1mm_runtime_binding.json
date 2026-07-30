@@ -23,7 +23,7 @@
     },
     "handoff_contract": {
       "path": "projects/rf_quadrupole_ion_optics/config/rf_to_oatof_handoff.json",
-      "sha256": "813ED8FC398D4F79A9AC219A592B8F2FE5EF2EAF7137017CC390CA26B1DDBD62"
+      "sha256": "3AF2CF9A40682A31F9FA7524348A776872623C72957EBBDFF93F3F826A09868C"
     },
     "source_contract": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/legacy_quadrupole_n100_source_contract.json",

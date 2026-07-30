@@ -56,7 +56,10 @@ profile编译的完整request/resolved发布，不得用任意路径或CLI标量
 多极杆分段杆和出口带孔接口板加速使用公共入口；具体命令与共同状态见公共multipole文档。
 RF四极杆离子光学→单次反射oa-TOF物理连接属于
 `rf_quadrupole_ion_optics_to_single_reflection_oa_tof_mass_analyzer`实例，当前累积入口为
-`workflows/rf_to_oatof_integration/run_rf_to_oatof_transfer.ps1`。
+[`../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/execute_integration.ps1`](../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/execute_integration.ps1)。
+四、六、八极杆同源功能闭合使用同一integration内的
+[`workflows/family_source_closure/execute.ps1`](../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/workflows/family_source_closure/execute.ps1)；
+内部stage不构成独立公开入口。
 
 ## 目录职责
 

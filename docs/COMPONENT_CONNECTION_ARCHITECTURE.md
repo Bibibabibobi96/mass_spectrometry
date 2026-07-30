@@ -117,8 +117,9 @@ COMSOL/SIMION renderer在第二个不同integration真实复用前留在具体in
 四、六、八极杆共享同一种多极杆家族出口端口，各项目profile提供具体几何和工作点。一个
 integration family
 `rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer`覆盖三者；当前迁移实例ID为
-`rf_quadrupole_ion_optics_to_single_reflection_oa_tof_mass_analyzer`。六、八极杆后续分别建立同family
-下的独立实例/profile，不得复制完整S2/S3。真实连接器、压力区、
+`rf_quadrupole_ion_optics_to_single_reflection_oa_tof_mass_analyzer`。六、八极杆已在同family下建立
+无加速全尺寸直接对接profile，并与四极杆profile分别完成COMSOL/SIMION上游源分支的真实功能链；
+它们不得复制完整S2/S3。真实连接器、压力区、
 脉冲机制或耦合模式不同时增加具名connection profile；只有出现新拓扑时才增加geometry和solver
 adapter。
 
@@ -146,4 +147,7 @@ adapter。
 截至2026-07-29，上述第1至7步已经完成。独立analysis run
 `20260729_195243__analysis__cross__rf-oatof-migration-equivalence`对两个profile给出功能迁移
 `PASS`；旧S2/S3具名活动载荷已按SHA冻结为history oracle并退出活动权威，历史证据及其原artifact
-身份继续只读保留。第8步六、八极杆profile及其相称数值和机械资格尚未开始。
+身份继续只读保留。2026-07-30，四、六、八极杆三个无加速profile的COMSOL/SIMION上游源六个
+分支又通过family公开入口完成真实链和统一paired analysis；结论严格保持
+`FUNCTIONAL_SCREEN_ONLY / INCONCLUSIVE_DIAGNOSTIC_ONLY`。因此第8步的profile与功能链已经完成，
+但连续相空间、收敛、分辨率、优化、机械、Candidate和Formal资格均未建立。

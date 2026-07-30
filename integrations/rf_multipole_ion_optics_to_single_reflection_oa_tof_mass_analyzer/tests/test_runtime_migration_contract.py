@@ -24,6 +24,14 @@ DEPENDENCY_CONTRACT = (
     / "config"
     / "rf_to_oatof_pre_pulse_dependencies.json"
 )
+LEGACY_COMPATIBILITY_PHASES = (
+    REPO_ROOT
+    / "projects"
+    / "rf_quadrupole_ion_optics"
+    / "config"
+    / "rf_to_oatof_transfer_phases.json"
+)
+FAMILY_PHASES = INTEGRATION_ROOT / "config" / "family_transfer_phases.json"
 FAMILY_DEPENDENCY_CONTRACTS = tuple(
     INTEGRATION_ROOT / "config" / f"family_{multipole}_dependencies.json"
     for multipole in ("quadrupole", "hexapole", "octupole")
@@ -85,6 +93,54 @@ def workspace_record(path: Path) -> dict[str, str]:
 
 
 class RuntimeDependencyContractTests(unittest.TestCase):
+    def test_current_public_and_phase_entrypoints_exist(self) -> None:
+        retired_entrypoint_fragments = (
+            (
+                "projects/rf_quadrupole_ion_optics/"
+                "workflows/rf_to_oatof_integration/"
+            ),
+            "workflows/rf_to_oatof_integration/",
+        )
+        phase_contracts = (
+            (
+                LEGACY_COMPATIBILITY_PHASES,
+                REPO_ROOT,
+                (
+                    "integrations/"
+                    "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
+                    "execute_integration.ps1"
+                ),
+            ),
+            (
+                FAMILY_PHASES,
+                INTEGRATION_ROOT,
+                "workflows/family_source_closure/execute.ps1",
+            ),
+        )
+        for contract_path, entrypoint_root, expected_public_entrypoint in phase_contracts:
+            with self.subTest(contract=contract_path.name):
+                contract = json.loads(contract_path.read_text(encoding="utf-8"))
+                self.assertEqual(
+                    contract["active_entrypoint"],
+                    expected_public_entrypoint,
+                )
+                entrypoints = [
+                    contract["active_entrypoint"],
+                    *(phase["entrypoint"] for phase in contract["phases"]),
+                ]
+                for entrypoint in entrypoints:
+                    self.assertFalse(
+                        any(
+                            fragment in entrypoint
+                            for fragment in retired_entrypoint_fragments
+                        ),
+                        entrypoint,
+                    )
+                    self.assertTrue(
+                        (entrypoint_root / entrypoint).is_file(),
+                        entrypoint,
+                    )
+
     def test_stage_dependency_references_are_consumer_authorized(self) -> None:
         document = json.loads(DEPENDENCY_CONTRACT.read_text(encoding="utf-8"))
         records = {item["id"]: item for item in document["dependencies"]}
