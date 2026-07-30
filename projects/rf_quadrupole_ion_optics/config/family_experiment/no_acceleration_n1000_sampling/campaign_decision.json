@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "role": "multipole_n1000_sampling_campaign_decision",
+  "campaign_id": "quadrupole_no_acceleration_n1000_sampling_v1",
+  "decision": "PAUSE_REMAINING_COMMERCIAL_RUNS",
+  "completed_science_arm": {
+    "arm": "I",
+    "run_id": "20260731_040001__sim__simion__quad-n1000-sampling-i-r020-z020-t080__r01",
+    "status": "success",
+    "wall_clock_seconds": 1607.4
+  },
+  "excluded_operational_attempt": {
+    "run_id": "20260731_040001__sim__simion__quad-n1000-sampling-i-r020-z020-t080",
+    "status": "interrupted",
+    "reason": "External orchestration timeout before governed completion; orphan process stopped and output excluded from science evidence."
+  },
+  "paused_arms": [
+    {
+      "arm": "T",
+      "run_id": "20260731_040002__sim__simion__quad-n1000-sampling-t-r020-z020-t160",
+      "executed": false
+    }
+  ],
+  "result": {
+    "path": "projects/rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_n1000_sampling/sampling_result.json",
+    "sha256": "A2C9F5879B9A1F9FDDDC718DA54204714FB9BC8347D72B09088A4AFB1062ECA0"
+  },
+  "plot": {
+    "path": "projects/rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_n1000_sampling/sampling_comparison.png",
+    "sha256": "4A750B4B2435651D1572FD819BEE41C2D17F16140D7F0FC5EBD58AAB267F1E15"
+  },
+  "rationale": [
+    "The exact N=100 prefix reproduced with zero recorded state difference.",
+    "N=1000 RMS radius and divergence shifted by -5.28% and -6.77%, but remained inside the preregistered N=100 95% source-sample intervals.",
+    "Paired same-source numerical convergence comparisons cancel most source-sample variation and do not justify the remaining N=1000 runtime cost.",
+    "Larger samples remain useful for absolute distribution and tail-statistics publication."
+  ],
+  "next_step": "Use N=100 for paired discretization arms; require a separate targeted budget before any larger-sample absolute-distribution or tail-statistics campaign.",
+  "claim_limit": "This decision concerns sampling cost and precision only; it grants no absolute-accuracy, solver-equivalence, Candidate or Formal qualification."
+}

@@ -1,0 +1,325 @@
+{
+  "schema_version": 1,
+  "role": "multipole_n1000_sampling_result",
+  "status": "PASS",
+  "project_id": "rf_quadrupole_ion_optics",
+  "source_contract": {
+    "status": "PASS",
+    "n100_count": 100,
+    "n1000_count": 1000,
+    "exact_ordered_prefix": true
+  },
+  "run_ids": {
+    "simion_n100": "20260731_010004__sim__simion__quad-noacc-followup-i-r020-z020-t080",
+    "simion_n1000": "20260731_040001__sim__simion__quad-n1000-sampling-i-r020-z020-t080__r01",
+    "comsol_n100_reference": "20260731_020001__sim__comsol__quad-noacc-followup-exit020-t160"
+  },
+  "prefix_reproduction": {
+    "status": "PASS",
+    "particle_count": 100,
+    "field_differences": {
+      "elapsed_time_us": {
+        "maximum_absolute_difference": 0.0,
+        "rms_difference": 0.0
+      },
+      "axial_z_mm": {
+        "maximum_absolute_difference": 0.0,
+        "rms_difference": 0.0
+      },
+      "transverse_x_mm": {
+        "maximum_absolute_difference": 0.0,
+        "rms_difference": 0.0
+      },
+      "transverse_y_mm": {
+        "maximum_absolute_difference": 0.0,
+        "rms_difference": 0.0
+      },
+      "velocity_axial_m_s": {
+        "maximum_absolute_difference": 0.0,
+        "rms_difference": 0.0
+      },
+      "velocity_x_m_s": {
+        "maximum_absolute_difference": 0.0,
+        "rms_difference": 0.0
+      },
+      "velocity_y_m_s": {
+        "maximum_absolute_difference": 0.0,
+        "rms_difference": 0.0
+      },
+      "kinetic_energy_eV": {
+        "maximum_absolute_difference": 0.0,
+        "rms_difference": 0.0
+      }
+    }
+  },
+  "sampling_comparison": {
+    "simion_n100": {
+      "transmission_fraction": 1.0,
+      "rms_radius_mm": 0.3773597467997667,
+      "rms_divergence_deg": 8.618590402614029,
+      "mean_energy_eV": 2.0164636962648994,
+      "mean_tof_us": 43.293827952201
+    },
+    "simion_n1000_prefix100": {
+      "transmission_fraction": 1.0,
+      "rms_radius_mm": 0.3773597467997667,
+      "rms_divergence_deg": 8.618590402614029,
+      "mean_energy_eV": 2.0164636962648994,
+      "mean_tof_us": 43.293827952201
+    },
+    "simion_n1000_full": {
+      "transmission_fraction": 1.0,
+      "rms_radius_mm": 0.35745297962022254,
+      "rms_divergence_deg": 8.034834615116397,
+      "mean_energy_eV": 2.0149661659449296,
+      "mean_tof_us": 43.216558918020176
+    },
+    "relative_change_n100_to_n1000": {
+      "transmission_fraction": 0.0,
+      "rms_radius_mm": -0.05275275741084014,
+      "rms_divergence_deg": -0.06773216503252989,
+      "mean_energy_eV": -0.0007426517634528589,
+      "mean_tof_us": -0.0017847586558096121
+    },
+    "bootstrap": {
+      "method": "source-particle nonparametric percentile bootstrap",
+      "resamples": 2000,
+      "seed": 20260731,
+      "confidence_level": 0.95,
+      "n100": {
+        "transmission_fraction": {
+          "estimate": 1.0,
+          "lower": 1.0,
+          "upper": 1.0
+        },
+        "rms_radius_mm": {
+          "estimate": 0.3773597467997667,
+          "lower": 0.34417197169565134,
+          "upper": 0.4074959839872499
+        },
+        "rms_divergence_deg": {
+          "estimate": 8.618590402614029,
+          "lower": 7.588636163523942,
+          "upper": 9.611071527263222
+        },
+        "mean_energy_eV": {
+          "estimate": 2.0164636962648994,
+          "lower": 2.0052117154800997,
+          "upper": 2.02883874813426
+        },
+        "mean_tof_us": {
+          "estimate": 43.293827952201,
+          "lower": 43.10838611286185,
+          "upper": 43.48046949421243
+        }
+      },
+      "n1000": {
+        "transmission_fraction": {
+          "estimate": 1.0,
+          "lower": 1.0,
+          "upper": 1.0
+        },
+        "rms_radius_mm": {
+          "estimate": 0.35745297962022254,
+          "lower": 0.3466956932971832,
+          "upper": 0.36764249925351566
+        },
+        "rms_divergence_deg": {
+          "estimate": 8.034834615116397,
+          "lower": 7.720938952284445,
+          "upper": 8.328055384715094
+        },
+        "mean_energy_eV": {
+          "estimate": 2.0149661659449296,
+          "lower": 2.0108754648329694,
+          "upper": 2.0193536719149927
+        },
+        "mean_tof_us": {
+          "estimate": 43.216558918020176,
+          "lower": 43.1621563117128,
+          "upper": 43.27043897836705
+        }
+      }
+    },
+    "interpretation_limit": "The samples are nested, not independent. Intervals quantify source-sample uncertainty only, not numerical or physical-model error."
+  },
+  "cross_solver_n100_reference": {
+    "simion": {
+      "transmission_fraction": 1.0,
+      "rms_radius_mm": 0.3773597467997667,
+      "rms_divergence_deg": 8.618590402614029,
+      "mean_energy_eV": 2.0164636962648994,
+      "mean_tof_us": 43.293827952201
+    },
+    "comsol": {
+      "transmission_fraction": 1.0,
+      "rms_radius_mm": 0.3766105751781841,
+      "rms_divergence_deg": 8.88702403055734,
+      "mean_energy_eV": 2.0116051690931385,
+      "mean_tof_us": 43.277434419662924
+    },
+    "comsol_bootstrap": {
+      "transmission_fraction": {
+        "estimate": 1.0,
+        "lower": 1.0,
+        "upper": 1.0
+      },
+      "rms_radius_mm": {
+        "estimate": 0.3766105751781841,
+        "lower": 0.34494853700314343,
+        "upper": 0.4055417585211087
+      },
+      "rms_divergence_deg": {
+        "estimate": 8.88702403055734,
+        "lower": 7.838296233142466,
+        "upper": 9.941347547365131
+      },
+      "mean_energy_eV": {
+        "estimate": 2.0116051690931385,
+        "lower": 2.0016490991753777,
+        "upper": 2.021095621807182
+      },
+      "mean_tof_us": {
+        "estimate": 43.277434419662924,
+        "lower": 43.09730151179575,
+        "upper": 43.45449928645915
+      }
+    },
+    "relative_change_simion_to_comsol": {
+      "transmission_fraction": 0.0,
+      "rms_radius_mm": -0.0019852981880977743,
+      "rms_divergence_deg": 0.031145885278629236,
+      "mean_energy_eV": -0.0024094295279207863,
+      "mean_tof_us": -0.00037865749723434714
+    },
+    "existing_normalized_and_paired_differences": {
+      "transmitted_particle_count_difference": 0,
+      "rms_radius_exit_aperture_fraction_difference": 0.00020810322821739058,
+      "projected_divergence_exit_aperture_fraction_difference": 0.0006661277794414375,
+      "mean_tof_rf_period_difference": 0.018032885791882336,
+      "mean_energy_source_fraction_difference": 0.00242926358588047,
+      "transmission_absolute_difference": 0.0,
+      "mean_tof_relative_difference": 0.0003787292015601433,
+      "rms_radius_relative_difference": 0.0019872708507073585,
+      "rms_divergence_relative_difference": 0.030668289761330163,
+      "mean_energy_relative_difference": 0.002412335704359457,
+      "paired_transverse_position_rms_difference_mm": 0.05719897064416341,
+      "paired_transverse_velocity_rms_difference_m_s": 79.56760416856439,
+      "paired_elapsed_time_rms_difference_us": 0.08758299222561955,
+      "paired_energy_rms_difference_eV": 0.028107845262709857
+    },
+    "interpretation_limit": "This is a common-source N=100 reference comparison. Solver and numerical-discretization effects remain combined; it is not an accuracy ranking."
+  },
+  "posthoc_sample_size_diagnostic": {
+    "status": "POSTHOC_DESCRIPTIVE",
+    "method": "Bootstrap samples of size 100, 300, 500 and 1000 drawn from the completed SIMION N=1000 empirical distribution.",
+    "intervals_by_sample_size": {
+      "100": {
+        "rms_radius_mm": {
+          "full_n1000_reference": 0.35745297962022254,
+          "lower": 0.32278538167842935,
+          "upper": 0.3885899890794027,
+          "relative_half_width": 0.09204652241378393
+        },
+        "rms_divergence_deg": {
+          "full_n1000_reference": 8.034834615116397,
+          "lower": 7.048745196259958,
+          "upper": 8.98961693320011,
+          "relative_half_width": 0.12077857416558888
+        },
+        "mean_energy_eV": {
+          "full_n1000_reference": 2.0149661659449296,
+          "lower": 2.00249297921173,
+          "upper": 2.0287282170415493,
+          "relative_half_width": 0.006510093884756625
+        },
+        "mean_tof_us": {
+          "full_n1000_reference": 43.216558918020176,
+          "lower": 43.04990547696421,
+          "upper": 43.394749675590774,
+          "relative_half_width": 0.0039897230050258544
+        }
+      },
+      "300": {
+        "rms_radius_mm": {
+          "full_n1000_reference": 0.35745297962022254,
+          "lower": 0.337576295610685,
+          "upper": 0.3773173876088488,
+          "relative_half_width": 0.0555892582576692
+        },
+        "rms_divergence_deg": {
+          "full_n1000_reference": 8.034834615116397,
+          "lower": 7.463577812895137,
+          "upper": 8.622542259473354,
+          "relative_half_width": 0.07212123846319068
+        },
+        "mean_energy_eV": {
+          "full_n1000_reference": 2.0149661659449296,
+          "lower": 2.0077980776707385,
+          "upper": 2.0233542386974688,
+          "relative_half_width": 0.003860154401013267
+        },
+        "mean_tof_us": {
+          "full_n1000_reference": 43.216558918020176,
+          "lower": 43.11436245189717,
+          "upper": 43.31909503114037,
+          "relative_half_width": 0.0023686821020568456
+        }
+      },
+      "500": {
+        "rms_radius_mm": {
+          "full_n1000_reference": 0.35745297962022254,
+          "lower": 0.3420541146258743,
+          "upper": 0.3718356028347664,
+          "relative_half_width": 0.04165791014042401
+        },
+        "rms_divergence_deg": {
+          "full_n1000_reference": 8.034834615116397,
+          "lower": 7.628655672079665,
+          "upper": 8.466638171131017,
+          "relative_half_width": 0.05214684179527522
+        },
+        "mean_energy_eV": {
+          "full_n1000_reference": 2.0149661659449296,
+          "lower": 2.0094717192571885,
+          "upper": 2.020986028081406,
+          "relative_half_width": 0.0028571965670742753
+        },
+        "mean_tof_us": {
+          "full_n1000_reference": 43.216558918020176,
+          "lower": 43.13509013798695,
+          "upper": 43.298297010801925,
+          "relative_half_width": 0.0018882446555332022
+        }
+      },
+      "1000": {
+        "rms_radius_mm": {
+          "full_n1000_reference": 0.35745297962022254,
+          "lower": 0.34736745399986446,
+          "upper": 0.3678797098139824,
+          "relative_half_width": 0.028692243432844305
+        },
+        "rms_divergence_deg": {
+          "full_n1000_reference": 8.034834615116397,
+          "lower": 7.7506525016524686,
+          "upper": 8.330387864367903,
+          "relative_half_width": 0.036076371853674835
+        },
+        "mean_energy_eV": {
+          "full_n1000_reference": 2.0149661659449296,
+          "lower": 2.0109561059524155,
+          "upper": 2.019198272421143,
+          "relative_half_width": 0.0020452369394654626
+        },
+        "mean_tof_us": {
+          "full_n1000_reference": 43.216558918020176,
+          "lower": 43.16334693316745,
+          "upper": 43.27483594573135,
+          "relative_half_width": 0.0012898876652278491
+        }
+      }
+    },
+    "interpretation_limit": "This diagnostic was selected after observing the N=1000 result. It estimates source-sample precision and is not a preregistered acceptance test or a substitute for a new independent sample."
+  },
+  "claim_limit": "Tests sampling stability and fixed-numerics temporal sensitivity only. It cannot establish absolute accuracy, physical-model validity or solver superiority."
+}

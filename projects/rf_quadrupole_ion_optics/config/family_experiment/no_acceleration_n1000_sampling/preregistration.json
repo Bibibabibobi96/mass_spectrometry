@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "role": "multipole_n1000_sampling_preregistration",
+  "campaign_id": "quadrupole_no_acceleration_n1000_sampling_v1",
+  "status": "PREREGISTERED_NOT_EXECUTED",
+  "preregistered_before_run": true,
+  "scope": {
+    "project_id": "rf_quadrupole_ion_optics",
+    "design_profile_id": "no_acceleration_full_length",
+    "particle_source_profile_id": "family_mother_sample_v1_n1000",
+    "particle_count": 1000,
+    "retention_class": "compact"
+  },
+  "nested_source_contract": {
+    "n100_path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_100.csv",
+    "n100_sha256": "0125C3AB02B2321EF26A3A913CF6EC04325FD0D48597D2CB439D0CE42411662F",
+    "n1000_path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_1000.csv",
+    "n1000_sha256": "CE68A6B47DC5726D9C45CBE28E4397A2321D782FAED265067824891AAF4D0FBF",
+    "n100_is_exact_ordered_prefix": true
+  },
+  "frozen_authorities": {
+    "runtime_profiles": {"path": "projects/rf_quadrupole_ion_optics/config/runtime_profiles.json", "sha256": "DCDC975C32827941A277AD26987D7598BF02B6A535F25900F432E201B8945435"},
+    "budgets": [
+      {"path": "projects/rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_n1000_sampling/simion_I_budget.json", "sha256": "B395705C2F013B73BE2BF39EC3F7639FC29F8157356E682B9A41C5B4FB0555CC"},
+      {"path": "projects/rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_n1000_sampling/simion_T_budget.json", "sha256": "23DE7560AB75A1B6F38F242CA7AEB4FFF79F01F5CED465AEF86745F9571871F9"}
+    ]
+  },
+  "ordered_arms": [
+    {"sequence": 1, "arm": "I", "solver": "simion", "runtime_profile_id": "no_acceleration_full_length_n1000_sampling_I_r020_z020_t080", "prior_n100_run_id": "20260731_010004__sim__simion__quad-noacc-followup-i-r020-z020-t080", "authorized_run_id": "20260731_040001__sim__simion__quad-n1000-sampling-i-r020-z020-t080__r01", "executed": false},
+    {"sequence": 2, "arm": "T", "solver": "simion", "runtime_profile_id": "no_acceleration_full_length_n1000_sampling_T_r020_z020_t160", "prior_n100_run_id": "20260731_010005__sim__simion__quad-noacc-followup-t-r020-z020-t160", "authorized_run_id": "20260731_040002__sim__simion__quad-n1000-sampling-t-r020-z020-t160", "executed": false}
+  ],
+  "analysis_contract": {
+    "bootstrap_method": "source-particle nonparametric percentile bootstrap",
+    "bootstrap_resamples": 2000,
+    "bootstrap_seed": 20260731,
+    "confidence_level": 0.95,
+    "reported_observables": ["transmission_fraction", "rms_radius_mm", "rms_divergence_deg", "mean_energy_eV", "mean_tof_us"],
+    "nested_samples_are_not_independent": true,
+    "comparisons": ["prior_n100_vs_n1000_same_numerics", "n1000_I_vs_T"]
+  },
+  "stop_policy": {"required_order": ["I", "T"], "resource_or_solver_failure": "STOP_PROJECT_CAMPAIGN_INCONCLUSIVE_NO_RETRY", "automatic_retry_count": 0},
+  "operational_amendment": {
+    "recorded_before_replacement_run": true,
+    "superseded_run_id": "20260731_040001__sim__simion__quad-n1000-sampling-i-r020-z020-t080",
+    "replacement_run_id": "20260731_040001__sim__simion__quad-n1000-sampling-i-r020-z020-t080__r01",
+    "reason": "The orchestration shell was terminated by an external 10-second tool timeout after package initialization. Its orphaned SIMION process was stopped; the interrupted package is retained and excluded from science evidence.",
+    "scientific_contract_changed": false
+  },
+  "claim_limit": "Tests sampling stability and fixed-numerics temporal sensitivity only. It cannot establish absolute accuracy, physical-model validity or solver superiority."
+}
