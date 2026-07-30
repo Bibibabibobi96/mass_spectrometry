@@ -121,7 +121,10 @@
   该臂以537,566单元完整PASS。0.50→0.40 mm的常规杆跨区差分/静态场矢量normalized RMS约为
   0.486%/1.039%，接口区变化更高，且仍有46.24%单元预算，因此当前另行预注册
   [`0.32 mm场臂`](config/qualification/comsol_inherited_boundary_032_field_preregistration.json)；
-  粒子仍未授权。
+  该臂以713,396单元完整PASS。0.40→0.32 mm的常规杆跨区差分/静态场变化仍约
+  0.386%/0.800%，handoff仍约2.736%/1.068%；没有来源化功能容差可接受这些差异，且按单元增量
+  外推0.256 mm约为1,014,490单元、超过硬帽。因此场序列以
+  `INCONCLUSIVE_MESH_STRATEGY_CHANGE_REQUIRED`关闭，粒子仍未授权。
   既有三模式baseline的两份
   求解器报告只具有`POSTHOC_DESCRIPTIVE`身份，统一
   比较见[`../../docs/history/20260729__multipole-three-mode-posthoc-n100.md`](../../docs/history/20260729__multipole-three-mode-posthoc-n100.md)。

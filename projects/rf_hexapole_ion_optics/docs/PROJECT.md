@@ -344,7 +344,12 @@ best-effort诊断；API不可用只报告`UNAVAILABLE`，不放宽网格判据�
 的常规杆跨区差分/静态场矢量normalized RMS约`0.486%/1.039%`，杆出口约`2.340%/1.348%`，
 canonical handoff约`5.593%/1.825%`；两点仍不能建立观测阶，且0.40 mm后尚余462,434单元。
 因此[`0.32 mm场臂`](../config/qualification/comsol_inherited_boundary_032_field_preregistration.json)
-已另行预注册一次零重试field-only运行；粒子仍关闭。
+以713,396单元、全部权威网格区无问题、双场和6660行采样完整PASS。0.40→0.32 mm的常规杆跨区
+差分/静态场矢量normalized RMS约`0.386%/0.800%`，杆出口约`1.549%/1.055%`，canonical handoff
+约`2.736%/1.068%`。三点差异单调下降，但没有来源化功能误差预算可把它们判为PASS；单元增量
+`102,690→175,830`外推下一档0.256 mm约1,014,490单元，超过100万硬帽。因此当前场序列登记为
+`INCONCLUSIVE_MESH_STRATEGY_CHANGE_REQUIRED`，禁止继续暴力细化或进入粒子矩阵；下一步必须改变
+局部网格策略，或先由下游孔径/相空间裕量建立适用于本声明的来源化容差。
 
 共享SIMION模板、GUI复核、`.wgem`绕过和跨机可移植性状态只由
 [`../../../common/multipole/README.md`](../../../common/multipole/README.md)维护；公共机制证据不授予

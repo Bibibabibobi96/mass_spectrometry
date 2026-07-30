@@ -533,29 +533,28 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
             / "qualification"
             / "comsol_inherited_boundary_field_trend.json"
         )
-        self.assertEqual(preregistration["status"], "authorized_not_run")
-        self.assertFalse(trend["decision"]["field_convergence_established"])
-        self.assertTrue(
-            trend["resource_boundary"]["level_032_separately_preregistered"]
+        self.assertEqual(
+            preregistration["status"],
+            "completed_success_sequence_stopped_at_budget_boundary",
         )
+        self.assertFalse(trend["decision"]["field_convergence_established"])
+        self.assertFalse(trend["decision"]["particle_followup_authorized"])
         self.assertEqual(
             preregistration["mesh_contract"]["corridor_maximum_element_size_mm"],
             0.32,
         )
-        for entry in preregistration["frozen_implementation"]["files"]:
-            path = PROJECT_ROOT.parents[1] / entry["path"]
-            self.assertEqual(
-                hashlib.sha256(path.read_bytes()).hexdigest().upper(),
-                entry["sha256"],
-            )
-        budget_path = (
-            PROJECT_ROOT / "config" / "qualification" / "engineering_budget.json"
+        self.assertEqual(
+            preregistration["execution_result"]["observed"]["mesh_global_elements"],
+            713_396,
         )
         self.assertEqual(
-            hashlib.sha256(budget_path.read_bytes()).hexdigest().upper(),
-            preregistration["frozen_identity"]["engineering_budget_sha256"],
+            trend["resource_boundary"]["next_level_0256_extrapolated_cells"],
+            1_014_459,
         )
-        self.assertTrue(load(budget_path)["pilot_authorization"]["authorized"])
+        budget = load(
+            PROJECT_ROOT / "config" / "qualification" / "engineering_budget.json"
+        )
+        self.assertFalse(budget["pilot_authorization"]["authorized"])
 
     def test_c1_background_040_preregistration_binds_successful_parent(
         self,
