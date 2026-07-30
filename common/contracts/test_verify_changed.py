@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import re
 import shutil
 import subprocess
 import sys
@@ -9,6 +11,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CHANGED_GATE = REPO_ROOT / "common" / "verify_changed.ps1"
+ROUTE_TABLE = REPO_ROOT / "common" / "changed_scope_routes.json"
 INTEGRATION_GATE = REPO_ROOT / "common" / "verify_repository_integration.ps1"
 LIGHTWEIGHT_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "lightweight-gate.yml"
 QUADRUPOLE_GATE = (
@@ -20,14 +23,40 @@ class ChangedGateContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.source = CHANGED_GATE.read_text(encoding="utf-8")
+        cls.route_contract = json.loads(ROUTE_TABLE.read_text(encoding="utf-8"))
+        cls.routes = cls.route_contract["routes"]
+
+    def routed_stages(self, path: str) -> dict[str, str]:
+        selected: dict[str, str] = {}
+        for route in self.routes:
+            for match in route["matches"]:
+                matched = (
+                    ("exact" in match and path.casefold() == match["exact"].casefold())
+                    or (
+                        "prefix" in match
+                        and path.casefold().startswith(match["prefix"].casefold())
+                    )
+                    or (
+                        "regex" in match
+                        and re.search(match["regex"], path, re.IGNORECASE) is not None
+                    )
+                )
+                if matched:
+                    selected[route["stage"]] = match["reason"]
+                    break
+        return selected
 
     def test_accepts_explicit_paths_and_discovers_worktree_changes(self) -> None:
         self.assertIn("[string[]]$ChangedPath", self.source)
+        self.assertIn("[switch]$FullScope", self.source)
+        self.assertIn("FullScope and ChangedPath are mutually exclusive", self.source)
         self.assertIn("git -C $repoRoot diff --name-only", self.source)
         self.assertIn("git -C $repoRoot ls-files --others --exclude-standard", self.source)
         self.assertIn("ChangedPath must be inside repository", self.source)
         self.assertIn("Changed-files gate cannot determine Git HEAD", self.source)
         self.assertIn("CHANGED_GATE_INPUT_SOURCE", self.source)
+        self.assertIn("changed_scope_routes.json", self.source)
+        self.assertIn("FULL_SCOPE", self.source)
 
     def test_reports_run_skip_reasons_and_elapsed_time(self) -> None:
         self.assertIn("GATE_STAGE=RUN", self.source)
@@ -83,57 +112,109 @@ class ChangedGateContractTests(unittest.TestCase):
         self.assertNotIn("@pythonFiles", self.source)
 
     def test_routes_project_config_to_its_own_static_gate(self) -> None:
-        self.assertIn("projects/single_reflection_oa_tof_mass_analyzer/", self.source)
-        self.assertIn("projects/rf_quadrupole_ion_optics/", self.source)
-        self.assertIn("projects/rf_hexapole_ion_optics/", self.source)
-        self.assertIn("projects/rf_octupole_ion_optics/", self.source)
-        self.assertIn("projects/transverse_helical_filament_wehnelt_electron_gun/", self.source)
-        self.assertIn("projects/apertured_tube_electron_impact_ion_source/", self.source)
+        project_gates = sorted(
+            path.relative_to(REPO_ROOT).as_posix()
+            for path in (REPO_ROOT / "projects").glob("*/verify_project.ps1")
+        )
+        project_routes = [route for route in self.routes if "project_id" in route]
+        routed_gates = sorted(route["command"]["script"] for route in project_routes)
+        self.assertEqual(routed_gates, project_gates)
+        self.assertEqual(
+            len(project_routes),
+            len({route["project_id"] for route in project_routes}),
+        )
+        for route in project_routes:
+            project_id = route["project_id"]
+            self.assertEqual(
+                route["command"]["script"],
+                f"projects/{project_id}/verify_project.ps1",
+            )
+            selected = self.routed_stages(
+                f"projects/{project_id}/config/example.json"
+            )
+            self.assertIn(route["stage"], selected)
 
-    def test_ci_fallback_uses_current_rf_project_paths(self) -> None:
+    def test_ci_fallback_uses_full_scope_without_a_second_path_table(self) -> None:
         workflow = LIGHTWEIGHT_WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("common/integration/README.md", workflow)
-        self.assertIn("integrations/registry.json", workflow)
+        self.assertIn("verify_changed.ps1", workflow)
+        self.assertEqual(workflow.count("-FullScope"), 2)
+        self.assertNotIn("$fallbackChangedPaths", workflow)
+        self.assertNotIn("projects/rf_quadrupole_ion_optics/README.md", workflow)
+
+    def test_shared_dependencies_route_to_actual_consumers(self) -> None:
+        multipole = self.routed_stages("common/multipole/simion_particle_source.py")
+        self.assertTrue(
+            {
+                "multipole_common",
+                "multipole_foundation",
+                "rf_multipole_to_single_reflection_oatof_integration",
+                "rf_quadrupole_generated_publications",
+                "rf_quadrupole_ion_optics_static",
+                "rf_hexapole_ion_optics_static",
+                "rf_octupole_ion_optics_static",
+            }.issubset(multipole)
+        )
+        self.assertNotIn("single_reflection_oa_tof_mass_analyzer_static", multipole)
+
+        for shared_path in (
+            "common/simion/particle_source.py",
+            "common/comsol/create_multipole_round_rods.m",
+        ):
+            routed = self.routed_stages(shared_path)
+            self.assertIn("multipole_common", routed)
+            self.assertIn("multipole_foundation", routed)
+            self.assertIn(
+                "rf_multipole_to_single_reflection_oatof_integration", routed
+            )
+            for project_id in (
+                "rf_quadrupole_ion_optics",
+                "rf_hexapole_ion_optics",
+                "rf_octupole_ion_optics",
+            ):
+                self.assertIn(f"{project_id}_static", routed)
+
+    def test_common_contracts_routes_to_declared_direct_consumers(self) -> None:
+        routed = self.routed_stages("common/contracts/machine_contracts.py")
+        self.assertIn("common_contracts", routed)
+        self.assertIn("rf_quadrupole_generated_publications", routed)
+        self.assertIn("rf_multipole_to_single_reflection_oatof_integration", routed)
         for project_id in (
+            "single_reflection_oa_tof_mass_analyzer",
             "rf_quadrupole_ion_optics",
             "rf_hexapole_ion_optics",
             "rf_octupole_ion_optics",
+            "transverse_helical_filament_wehnelt_electron_gun",
+            "apertured_tube_electron_impact_ion_source",
         ):
-            self.assertIn(f"projects/{project_id}/README.md", workflow)
-        for legacy_id in (
-            "rf_quadrupole_collision_cooling",
-            "rf_hexapole_ion_guide",
-            "rf_octupole_ion_guide",
-        ):
-            self.assertNotIn(f"projects/{legacy_id}/README.md", workflow)
+            self.assertIn(f"{project_id}_static", routed)
 
-    def test_multipole_common_routes_only_its_direct_family(self) -> None:
-        self.assertIn("$hasMultipoleChange", self.source)
-        self.assertIn("multipole_common", self.source)
-        self.assertIn("multipole_foundation", self.source)
-        self.assertIn("common_multipole_direct_dependency_changed", self.source)
-        self.assertNotIn("single_reflection_oa_tof_mass_analyzer = (Test-PathPrefix 'projects/single_reflection_oa_tof_mass_analyzer/') -or $hasMultipoleChange", self.source)
+    def test_cloc_entrypoint_routes_to_its_focused_contract_tests(self) -> None:
+        routed = self.routed_stages("common/report_cloc_delta.ps1")
+        self.assertEqual(routed, {"cloc_contract_tests": "cloc_entrypoint_changed"})
 
-    def test_common_contracts_routes_to_declared_direct_consumers(self) -> None:
-        self.assertIn("common_contracts_direct_dependency_changed", self.source)
-        self.assertIn("single_reflection_oa_tof_mass_analyzer = (Test-PathPrefix 'projects/single_reflection_oa_tof_mass_analyzer/') -or $hasContractsChange", self.source)
-        self.assertIn("rf_quadrupole_ion_optics = (Test-PathPrefix 'projects/rf_quadrupole_ion_optics/') -or $hasContractsChange", self.source)
-        self.assertIn("transverse_helical_filament_wehnelt_electron_gun = (Test-PathPrefix 'projects/transverse_helical_filament_wehnelt_electron_gun/') -or $hasContractsChange", self.source)
-        self.assertIn("apertured_tube_electron_impact_ion_source = (Test-PathPrefix 'projects/apertured_tube_electron_impact_ion_source/') -or $hasContractsChange", self.source)
+    def test_full_scope_does_not_repeat_contract_tests(self) -> None:
+        routes_by_stage = {route["stage"]: route for route in self.routes}
+        for stage in ("gate_contract_tests", "cloc_contract_tests"):
+            route = routes_by_stage[stage]
+            self.assertFalse(route["run_on_full_scope"])
+            self.assertEqual(route["full_scope_coverage_stage"], "common_contracts")
+        self.assertIn("covered_by_", self.source)
 
     def test_integration_changes_route_only_to_connection_gates(self) -> None:
-        self.assertIn("$hasCommonIntegrationChange", self.source)
-        self.assertIn("$hasIntegrationInstanceChange", self.source)
-        self.assertIn("$hasComponentPortChange", self.source)
-        self.assertIn("$hasIntegrationSchemaChange", self.source)
-        self.assertIn("integration_common", self.source)
-        self.assertIn(
-            "rf_multipole_to_single_reflection_oatof_integration",
-            self.source,
+        routed = self.routed_stages("common/integration/connection_profiles.py")
+        self.assertEqual(
+            set(routed),
+            {
+                "integration_common",
+                "rf_multipole_to_single_reflection_oatof_integration",
+            },
+        )
+        interface_route = self.routed_stages(
+            "projects/rf_hexapole_ion_optics/config/interfaces/output_port.json"
         )
         self.assertIn(
-            "integrations\\rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer\\verify_integration.ps1",
-            self.source,
+            "rf_multipole_to_single_reflection_oatof_integration",
+            interface_route,
         )
 
         integration_source = INTEGRATION_GATE.read_text(encoding="utf-8")
@@ -146,57 +227,39 @@ class ChangedGateContractTests(unittest.TestCase):
     def test_handoff_publisher_routes_only_its_direct_integration_consumer(
         self,
     ) -> None:
-        self.assertIn("$hasIntegrationHandoffPublisherChange", self.source)
+        routed = self.routed_stages(
+            "common/multipole/publish_three_mode_binding.py"
+        )
         self.assertIn(
-            "$_ -eq 'common/multipole/publish_three_mode_binding.py'",
-            self.source,
+            "rf_multipole_to_single_reflection_oatof_integration",
+            routed,
         )
-        integration_change_start = self.source.index("$hasIntegrationChange =")
-        integration_change_end = self.source.index(
-            "$hasSolidWorksChange",
-            integration_change_start,
-        )
-        integration_change_block = self.source[
-            integration_change_start:integration_change_end
-        ]
-        self.assertIn(
-            "$hasIntegrationHandoffPublisherChange",
-            integration_change_block,
-        )
-        self.assertNotIn("$hasMultipoleChange", integration_change_block)
+        self.assertNotIn("single_reflection_oa_tof_mass_analyzer_static", routed)
 
     def test_gate_entrypoints_run_their_contract_tests(self) -> None:
-        self.assertIn("$hasGateContractChange", self.source)
-        self.assertIn("gate_contract_tests", self.source)
-        self.assertIn("common.contracts.test_verify_changed", self.source)
-        self.assertIn("common.contracts.test_development_standards", self.source)
-        gate_contract_start = self.source.index("if ($hasGateContractChange)")
-        gate_contract_end = self.source.index("} else { Skip-ChangedGateStage 'gate_contract_tests'", gate_contract_start)
-        gate_contract_block = self.source[gate_contract_start:gate_contract_end]
-        self.assertIn("Push-Location $repoRoot", gate_contract_block)
-        self.assertIn("finally { Pop-Location }", gate_contract_block)
         for path in (
             "common/verify_changed.ps1",
+            "common/changed_scope_routes.json",
+            "common/contracts/test_verify_changed.py",
             "common/verify_repository_integration.ps1",
             "common/verify_lightweight.ps1",
             "common/require_powershell7.ps1",
             ".github/workflows/lightweight-gate.yml",
         ):
-            self.assertIn(path, self.source)
+            self.assertIn("gate_contract_tests", self.routed_stages(path))
 
     def test_generated_publications_fail_before_long_test_suites(self) -> None:
-        freshness = self.source.index(
-            "Invoke-ChangedGateStage 'rf_quadrupole_generated_publications'"
-        )
-        common_contracts = self.source.index(
-            "Invoke-ChangedGateStage 'common_contracts'"
-        )
-        multipole_common = self.source.index(
-            "Invoke-ChangedGateStage 'multipole_common'"
-        )
+        stage_order = [route["stage"] for route in self.routes]
+        freshness = stage_order.index("rf_quadrupole_generated_publications")
+        common_contracts = stage_order.index("common_contracts")
+        multipole_common = stage_order.index("multipole_common")
         self.assertLess(freshness, common_contracts)
         self.assertLess(freshness, multipole_common)
-        self.assertIn("-Level Freshness -PythonExe $PythonExe", self.source)
+        freshness_route = self.routes[freshness]
+        self.assertEqual(
+            freshness_route["command"]["parameters"],
+            {"Level": "Freshness", "PythonExe": "{python}"},
+        )
 
         integration_source = INTEGRATION_GATE.read_text(encoding="utf-8")
         integration_freshness = integration_source.index(
@@ -221,8 +284,15 @@ class ChangedGateContractTests(unittest.TestCase):
         self.assertLess(freshness_return, analysis_suite)
 
     def test_rf_quadrupole_uses_core_in_l1_and_static_in_l2(self) -> None:
-        self.assertIn("$project -eq 'rf_quadrupole_ion_optics'", self.source)
-        self.assertIn("& $projectScript -Level Core -PythonExe $PythonExe", self.source)
+        quadrupole_route = next(
+            route
+            for route in self.routes
+            if route.get("project_id") == "rf_quadrupole_ion_optics"
+        )
+        self.assertEqual(
+            quadrupole_route["command"]["parameters"],
+            {"Level": "Core", "PythonExe": "{python}"},
+        )
         integration_source = INTEGRATION_GATE.read_text(encoding="utf-8")
         self.assertIn(
             "rf_quadrupole_ion_optics\\verify_project.ps1') -Level Static",
@@ -230,10 +300,15 @@ class ChangedGateContractTests(unittest.TestCase):
         )
 
     def test_excludes_commercial_and_formal_gate_levels(self) -> None:
-        self.assertNotIn("-Level Candidate", self.source)
-        self.assertNotIn("-Level Formal", self.source)
-        self.assertNotIn("run_comsol_r2025b", self.source)
-        self.assertNotIn("simion.exe", self.source)
+        serialized_routes = json.dumps(self.route_contract)
+        for forbidden in (
+            "-Level Candidate",
+            "-Level Formal",
+            "run_comsol_r2025b",
+            "simion.exe",
+        ):
+            self.assertNotIn(forbidden, self.source)
+            self.assertNotIn(forbidden, serialized_routes)
 
 
 if __name__ == "__main__":

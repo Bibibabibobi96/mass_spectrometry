@@ -462,9 +462,10 @@ PowerShell时必须使用`pwsh`；PowerShell脚本内部继承当前宿主，不
 `common/verify_lightweight.ps1`保留为L1兼容入口，并委托给`verify_changed.ps1`；新脚本、文档与CI应直接使用
 `verify_changed.ps1`。`.github/workflows/lightweight-gate.yml`在push只运行L1；L2仅可由
 `workflow_dispatch`人工启动，不对pull request自动运行全仓回归。纯Markdown提交应在数十秒内结束；
-RF四极杆Core的实测约21秒，故GitHub L1的5分钟超时仍为正常单项目改动、直接公共依赖和安全全范围
-fallback保留了足够余量；完整RF Static不占用该预算。L2是显式全仓审计，当前基线可达十分钟级，不得
-作为纯文档提交的默认门禁。
+RF四极杆Core的实测约21秒，正常单项目改动和直接公共依赖仍按changed-scope运行；安全全范围
+fallback的脚本层实测约4分26秒。GitHub L1的8分钟超时同时覆盖checkout、Python环境和锁定依赖安装，
+不改变普通push的运行集合；完整RF Static不占用该预算。L2是显式全仓审计，当前基线可达十分钟级，
+不得作为纯文档提交的默认门禁。
 
 数值探索参数可在活动项目的声明范围内自由修改：L1只校验该项目的参数schema、单位/范围、resolved合同和
 必要输入生成，不自动启动商业求解器，也不检查无关项目。若改变几何、电压、粒子源、网格、RF相位或跨项目

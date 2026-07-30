@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$PythonExe = '',
-    [string[]]$ChangedPath = @()
+    [string[]]$ChangedPath = @(),
+    [switch]$FullScope
 )
 
 Set-StrictMode -Version Latest
@@ -58,6 +59,142 @@ function Test-AnyPath {
     return @($script:changedPaths | Where-Object $Predicate).Count -gt 0
 }
 
+function Read-ChangedScopeRoutes {
+    $routePath = Join-Path $PSScriptRoot 'changed_scope_routes.json'
+    if (-not (Test-Path -LiteralPath $routePath -PathType Leaf)) {
+        throw "Changed-scope route table missing: $routePath"
+    }
+    $contract = Get-Content -Raw -LiteralPath $routePath | ConvertFrom-Json -Depth 32
+    if ($contract.schema_version -ne 1 -or $contract.role -ne 'changed_scope_gate_routes') {
+        throw 'Changed-scope route table has an unsupported identity.'
+    }
+    $routes = @($contract.routes)
+    if ($routes.Count -eq 0) { throw 'Changed-scope route table must contain routes.' }
+
+    $stageNames = @($routes | ForEach-Object { [string]$_.stage })
+    if (@($stageNames | Where-Object { -not $_ }).Count -gt 0) {
+        throw 'Every changed-scope route must define a stage.'
+    }
+    if (@($stageNames | Sort-Object -Unique).Count -ne $stageNames.Count) {
+        throw 'Changed-scope route stage names must be unique.'
+    }
+
+    foreach ($route in $routes) {
+        if (@($route.matches).Count -eq 0) {
+            throw "Changed-scope route has no path matches: $($route.stage)"
+        }
+        foreach ($match in @($route.matches)) {
+            $matchKinds = @(
+                @('exact', 'prefix', 'regex') | Where-Object {
+                    $null -ne $match.PSObject.Properties[$_]
+                }
+            )
+            if ($matchKinds.Count -ne 1 -or -not [string]$match.reason) {
+                throw "Changed-scope route match must define one matcher and a reason: $($route.stage)"
+            }
+        }
+        if ([string]$route.command.runner -notin @('python', 'powershell')) {
+            throw "Unsupported changed-scope route runner: $($route.stage)"
+        }
+        if ($route.command.runner -eq 'powershell') {
+            $scriptPath = [string]$route.command.script
+            if (-not $scriptPath) {
+                throw "PowerShell changed-scope route is missing its script: $($route.stage)"
+            }
+            $resolvedScript = Join-Path $repoRoot $scriptPath
+            if (-not (Test-Path -LiteralPath $resolvedScript -PathType Leaf)) {
+                throw "Changed-scope route script missing: $scriptPath"
+            }
+        }
+        if ($null -ne $route.PSObject.Properties['run_on_full_scope'] -and
+            -not [bool]$route.run_on_full_scope) {
+            $coverageStage = [string]$route.full_scope_coverage_stage
+            if (-not $coverageStage -or $coverageStage -notin $stageNames) {
+                throw "Full-scope route coverage stage is invalid: $($route.stage)"
+            }
+            if ([array]::IndexOf($stageNames, $coverageStage) -ge
+                [array]::IndexOf($stageNames, [string]$route.stage)) {
+                throw "Full-scope route coverage must run before the covered route: $($route.stage)"
+            }
+        }
+    }
+
+    $projectRoutes = @($routes | Where-Object {
+        $null -ne $_.PSObject.Properties['project_id'] -and [string]$_.project_id
+    })
+    $discoveredProjectGates = @(
+        Get-ChildItem -LiteralPath (Join-Path $repoRoot 'projects') -Directory |
+            ForEach-Object {
+                $gatePath = Join-Path $_.FullName 'verify_project.ps1'
+                if (Test-Path -LiteralPath $gatePath -PathType Leaf) {
+                    "projects/$($_.Name)/verify_project.ps1"
+                }
+            } |
+            Sort-Object
+    )
+    $routedProjectGates = @(
+        $projectRoutes |
+            ForEach-Object { ([string]$_.command.script).Replace('\', '/') } |
+            Sort-Object
+    )
+    if ($projectRoutes.Count -ne @($projectRoutes.project_id | Sort-Object -Unique).Count -or
+        $routedProjectGates.Count -ne @($routedProjectGates | Sort-Object -Unique).Count) {
+        throw 'Each project gate must have exactly one changed-scope project route.'
+    }
+    if (($discoveredProjectGates -join "`n") -cne ($routedProjectGates -join "`n")) {
+        throw "Changed-scope project routes do not match discovered project gates.`nDISCOVERED=$($discoveredProjectGates -join ',')`nROUTED=$($routedProjectGates -join ',')"
+    }
+    return $routes
+}
+
+function Get-ChangedRouteReason {
+    param([Parameter(Mandatory)]$Route)
+    foreach ($match in @($Route.matches)) {
+        foreach ($path in $script:changedPaths) {
+            if ($null -ne $match.PSObject.Properties['exact'] -and
+                $path.Equals([string]$match.exact, [StringComparison]::OrdinalIgnoreCase)) {
+                return [string]$match.reason
+            }
+            if ($null -ne $match.PSObject.Properties['prefix'] -and
+                $path.StartsWith([string]$match.prefix, [StringComparison]::OrdinalIgnoreCase)) {
+                return [string]$match.reason
+            }
+            if ($null -ne $match.PSObject.Properties['regex'] -and
+                [regex]::IsMatch($path, [string]$match.regex, [Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
+                return [string]$match.reason
+            }
+        }
+    }
+    return ''
+}
+
+function Invoke-ChangedRouteCommand {
+    param([Parameter(Mandatory)]$Command)
+    Push-Location $repoRoot
+    try {
+        if ($Command.runner -eq 'python') {
+            $arguments = @(
+                @($Command.arguments) | ForEach-Object {
+                    ([string]$_).Replace('{python}', $PythonExe)
+                }
+            )
+            & $PythonExe @arguments
+        } else {
+            $scriptPath = Join-Path $repoRoot ([string]$Command.script)
+            $parameters = @{}
+            foreach ($property in $Command.parameters.PSObject.Properties) {
+                $parameters[$property.Name] = ([string]$property.Value).Replace('{python}', $PythonExe)
+            }
+            & $scriptPath @parameters
+        }
+        if ($LASTEXITCODE -ne 0) {
+            throw "Changed-scope route command failed with exit code $LASTEXITCODE."
+        }
+    } finally {
+        Pop-Location
+    }
+}
+
 function Invoke-ChangedGateStage {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -77,64 +214,37 @@ function Skip-ChangedGateStage {
     Write-Output "GATE_STAGE=SKIP NAME=$Name REASON=$Reason"
 }
 
-$changedPaths = @(Get-ChangedRepositoryPaths)
+if ($FullScope -and $ChangedPath.Count -gt 0) {
+    throw 'FullScope and ChangedPath are mutually exclusive.'
+}
+$changedPaths = @()
+if ($FullScope) {
+    $changedPathSource = 'FULL_SCOPE'
+} else {
+    $changedPaths = @(Get-ChangedRepositoryPaths)
+}
+$routes = @(Read-ChangedScopeRoutes)
 Write-Output "CHANGED_GATE_INPUT_SOURCE=$changedPathSource"
 Write-Output "CHANGED_GATE_INPUTS=COUNT=$($changedPaths.Count) PATHS=$($changedPaths -join ',')"
 
 Invoke-ChangedGateStage 'repository_hygiene' 'always' { & (Join-Path $PSScriptRoot 'verify_repository_hygiene.ps1') }
 
 $codeExtensions = @('.py', '.ps1', '.m', '.lua', '.gem')
-$hasCodeChange = Test-AnyPath { $codeExtensions -contains [IO.Path]::GetExtension($_).ToLowerInvariant() }
+$hasCodeChange = $FullScope -or (Test-AnyPath {
+    $codeExtensions -contains [IO.Path]::GetExtension($_).ToLowerInvariant()
+})
 $changedPython = @($changedPaths | Where-Object { [IO.Path]::GetExtension($_).ToLowerInvariant() -eq '.py' })
 $existingPythonFiles = @(
     $changedPython |
         ForEach-Object { Join-Path $repoRoot $_ } |
         Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }
 )
-$hasDocumentationChange = Test-AnyPath {
+$hasDocumentationChange = $FullScope -or (Test-AnyPath {
     [IO.Path]::GetExtension($_).ToLowerInvariant() -eq '.md'
-}
-$isDocumentationOnly = $changedPaths.Count -gt 0 -and -not (Test-AnyPath {
+})
+$isDocumentationOnly = -not $FullScope -and $changedPaths.Count -gt 0 -and -not (Test-AnyPath {
     [IO.Path]::GetExtension($_).ToLowerInvariant() -ne '.md'
 })
-$hasRegistryChange = Test-PathPrefix 'config/project_registry.json'
-$hasMultipoleChange = Test-PathPrefix 'common/multipole/'
-$hasIntegrationHandoffPublisherChange = Test-AnyPath {
-    $_ -eq 'common/multipole/publish_three_mode_binding.py'
-}
-$hasCommonIntegrationChange = Test-PathPrefix 'common/integration/'
-$hasIntegrationInstanceChange = Test-PathPrefix 'integrations/'
-$hasComponentPortChange = Test-AnyPath {
-    $_ -match '^projects/[^/]+/config/interfaces/'
-}
-$hasIntegrationSchemaChange = Test-AnyPath {
-    $_ -in @(
-        'common/contracts/schemas/component_port.schema.json',
-        'common/contracts/schemas/composition_plan.schema.json',
-        'common/contracts/schemas/connection_profile.schema.json',
-        'common/contracts/schemas/connection_profile_registry.schema.json',
-        'common/contracts/schemas/execution_adapter_registry.schema.json',
-        'common/contracts/schemas/integration_artifact_identity.schema.json',
-        'common/contracts/schemas/integration_registry.schema.json',
-        'common/contracts/schemas/migration_equivalence_preregistration.schema.json',
-        'common/contracts/schemas/resolved_connection.schema.json'
-    )
-}
-$hasIntegrationChange = $hasCommonIntegrationChange -or $hasIntegrationInstanceChange -or
-    $hasComponentPortChange -or $hasIntegrationSchemaChange -or
-    $hasIntegrationHandoffPublisherChange
-$hasSolidWorksChange = Test-PathPrefix 'common/solidworks/'
-$hasContractsChange = Test-PathPrefix 'common/contracts/'
-$hasComsolCommonChange = Test-PathPrefix 'common/comsol/'
-$hasGateContractChange = Test-AnyPath {
-    $_ -in @(
-        'common/verify_changed.ps1',
-        'common/verify_repository_integration.ps1',
-        'common/verify_lightweight.ps1',
-        'common/require_powershell7.ps1',
-        '.github/workflows/lightweight-gate.yml'
-    )
-}
 
 if ($hasDocumentationChange) {
     Invoke-ChangedGateStage 'documentation' 'documentation_or_project_docs_changed' { & (Join-Path $PSScriptRoot 'verify_documentation.ps1') }
@@ -150,7 +260,11 @@ if ($hasCodeChange) {
     Invoke-ChangedGateStage 'development_standards' 'source_code_changed' { & $PythonExe (Join-Path $PSScriptRoot 'verify_development_standards.py') }
 } else { Skip-ChangedGateStage 'development_standards' 'no_source_code_path_changed' }
 
-if ($existingPythonFiles.Count -gt 0) {
+if ($FullScope) {
+    Invoke-ChangedGateStage 'ruff_changed_python' 'full_scope' {
+        & $PythonExe -m ruff check (Join-Path $repoRoot 'common') (Join-Path $repoRoot 'projects') (Join-Path $repoRoot 'integrations')
+    }
+} elseif ($existingPythonFiles.Count -gt 0) {
     Invoke-ChangedGateStage 'ruff_changed_python' 'existing_python_source_changed' {
         & $PythonExe -m ruff check -- @existingPythonFiles
     }
@@ -158,98 +272,23 @@ if ($existingPythonFiles.Count -gt 0) {
     Skip-ChangedGateStage 'ruff_changed_python' 'only_deleted_python_paths_changed'
 } else { Skip-ChangedGateStage 'ruff_changed_python' 'no_python_path_changed' }
 
-if ($hasRegistryChange -or (Test-AnyPath { $_ -match '^projects/[^/]+/config/project\.json$' })) {
-    Invoke-ChangedGateStage 'project_registry' 'project_descriptor_or_registry_changed' { & $PythonExe (Join-Path $PSScriptRoot 'contracts\build_project_registry.py') --check }
-} else { Skip-ChangedGateStage 'project_registry' 'no_project_descriptor_or_registry_changed' }
-
-$needsQuadrupoleFreshness = (Test-PathPrefix 'projects/rf_quadrupole_ion_optics/') -or
-    $hasContractsChange -or $hasMultipoleChange -or $hasComsolCommonChange
-if ($needsQuadrupoleFreshness) {
-    $quadrupoleGate = Join-Path $repoRoot 'projects\rf_quadrupole_ion_optics\verify_project.ps1'
-    Invoke-ChangedGateStage 'rf_quadrupole_generated_publications' 'quadrupole_or_direct_dependency_changed' {
-        & $quadrupoleGate -Level Freshness -PythonExe $PythonExe
+foreach ($route in $routes) {
+    $coveredByFullScopeStage = $FullScope -and
+        $null -ne $route.PSObject.Properties['run_on_full_scope'] -and
+        -not [bool]$route.run_on_full_scope
+    if ($coveredByFullScopeStage) {
+        Skip-ChangedGateStage ([string]$route.stage) "covered_by_$([string]$route.full_scope_coverage_stage)"
+        continue
     }
-} else {
-    Skip-ChangedGateStage 'rf_quadrupole_generated_publications' 'quadrupole_and_direct_dependencies_unchanged'
-}
-
-if ($hasContractsChange) {
-    Invoke-ChangedGateStage 'common_contracts' 'common_contracts_changed' { & $PythonExe -m unittest discover -s (Join-Path $PSScriptRoot 'contracts') -p 'test_*.py' }
-} else { Skip-ChangedGateStage 'common_contracts' 'common_contracts_not_changed' }
-
-if ($hasGateContractChange) {
-    Push-Location $repoRoot
-    try {
-        Invoke-ChangedGateStage 'gate_contract_tests' 'gate_entrypoint_or_workflow_changed' {
-            & $PythonExe -m unittest common.contracts.test_verify_changed common.contracts.test_development_standards
+    $reason = if ($FullScope) { 'full_scope' } else { Get-ChangedRouteReason -Route $route }
+    if ($reason) {
+        $command = $route.command
+        Invoke-ChangedGateStage ([string]$route.stage) $reason {
+            Invoke-ChangedRouteCommand -Command $command
         }
-    } finally { Pop-Location }
-} else { Skip-ChangedGateStage 'gate_contract_tests' 'no_gate_entrypoint_or_workflow_changed' }
-
-if ($hasMultipoleChange) {
-    Invoke-ChangedGateStage 'multipole_common' 'common_multipole_changed' { & $PythonExe -m unittest discover -s (Join-Path $PSScriptRoot 'multipole') -p 'test_*.py' }
-    Push-Location $repoRoot
-    try { Invoke-ChangedGateStage 'multipole_foundation' 'common_multipole_changed' { & $PythonExe -m common.multipole.verify_family_foundation } }
-    finally { Pop-Location }
-} else {
-    Skip-ChangedGateStage 'multipole_common' 'common_multipole_not_changed'
-    Skip-ChangedGateStage 'multipole_foundation' 'common_multipole_not_changed'
-}
-
-if ($hasCommonIntegrationChange -or $hasIntegrationSchemaChange) {
-    Invoke-ChangedGateStage 'integration_common' 'common_integration_or_schema_changed' {
-        & $PythonExe -m unittest discover -s (Join-Path $PSScriptRoot 'integration') -p 'test_*.py'
+    } else {
+        Skip-ChangedGateStage ([string]$route.stage) 'no_route_match'
     }
-} else {
-    Skip-ChangedGateStage 'integration_common' 'common_integration_and_schemas_unchanged'
 }
 
-if ($hasIntegrationChange) {
-    Invoke-ChangedGateStage 'rf_multipole_to_single_reflection_oatof_integration' 'integration_contract_port_or_handoff_publisher_changed' {
-        & (Join-Path $repoRoot 'integrations\rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer\verify_integration.ps1') -PythonExe $PythonExe
-    }
-} else {
-    Skip-ChangedGateStage 'rf_multipole_to_single_reflection_oatof_integration' 'integration_contracts_and_ports_unchanged'
-}
-
-if ($hasSolidWorksChange) {
-    Invoke-ChangedGateStage 'solidworks_common' 'common_solidworks_changed' { & $PythonExe -m unittest discover -s (Join-Path $PSScriptRoot 'solidworks') -p 'test_*.py' }
-} else { Skip-ChangedGateStage 'solidworks_common' 'common_solidworks_not_changed' }
-
-$projectTriggers = [ordered]@{
-    single_reflection_oa_tof_mass_analyzer = (Test-PathPrefix 'projects/single_reflection_oa_tof_mass_analyzer/') -or $hasContractsChange -or $hasComsolCommonChange
-    rf_quadrupole_ion_optics = (Test-PathPrefix 'projects/rf_quadrupole_ion_optics/') -or $hasContractsChange -or $hasMultipoleChange -or $hasComsolCommonChange
-    rf_hexapole_ion_optics = (Test-PathPrefix 'projects/rf_hexapole_ion_optics/') -or $hasMultipoleChange
-    rf_octupole_ion_optics = (Test-PathPrefix 'projects/rf_octupole_ion_optics/') -or $hasMultipoleChange
-    transverse_helical_filament_wehnelt_electron_gun = (Test-PathPrefix 'projects/transverse_helical_filament_wehnelt_electron_gun/') -or $hasContractsChange -or $hasComsolCommonChange
-    apertured_tube_electron_impact_ion_source = (Test-PathPrefix 'projects/apertured_tube_electron_impact_ion_source/') -or $hasContractsChange
-}
-$projectReasons = @{
-    single_reflection_oa_tof_mass_analyzer = if (Test-PathPrefix 'projects/single_reflection_oa_tof_mass_analyzer/') { 'single_reflection_oa_tof_mass_analyzer_path_changed' } elseif ($hasContractsChange) { 'common_contracts_direct_dependency_changed' } elseif ($hasComsolCommonChange) { 'common_comsol_direct_dependency_changed' } else { 'no_direct_dependency_changed' }
-    rf_quadrupole_ion_optics = if (Test-PathPrefix 'projects/rf_quadrupole_ion_optics/') { 'rf_quadrupole_path_changed' } elseif ($hasContractsChange) { 'common_contracts_direct_dependency_changed' } elseif ($hasMultipoleChange) { 'common_multipole_direct_dependency_changed' } elseif ($hasComsolCommonChange) { 'common_comsol_direct_dependency_changed' } else { 'no_direct_dependency_changed' }
-    rf_hexapole_ion_optics = if (Test-PathPrefix 'projects/rf_hexapole_ion_optics/') { 'rf_hexapole_path_changed' } elseif ($hasMultipoleChange) { 'common_multipole_direct_dependency_changed' } else { 'no_direct_dependency_changed' }
-    rf_octupole_ion_optics = if (Test-PathPrefix 'projects/rf_octupole_ion_optics/') { 'rf_octupole_path_changed' } elseif ($hasMultipoleChange) { 'common_multipole_direct_dependency_changed' } else { 'no_direct_dependency_changed' }
-    transverse_helical_filament_wehnelt_electron_gun = if (Test-PathPrefix 'projects/transverse_helical_filament_wehnelt_electron_gun/') { 'wehnelt_path_changed' } elseif ($hasContractsChange) { 'common_contracts_direct_dependency_changed' } elseif ($hasComsolCommonChange) { 'common_comsol_direct_dependency_changed' } else { 'no_direct_dependency_changed' }
-    apertured_tube_electron_impact_ion_source = if (Test-PathPrefix 'projects/apertured_tube_electron_impact_ion_source/') { 'electron_impact_path_changed' } elseif ($hasContractsChange) { 'common_contracts_direct_dependency_changed' } else { 'no_direct_dependency_changed' }
-}
-$projectScripts = @{
-    single_reflection_oa_tof_mass_analyzer = 'projects\single_reflection_oa_tof_mass_analyzer\verify_project.ps1'
-    rf_quadrupole_ion_optics = 'projects\rf_quadrupole_ion_optics\verify_project.ps1'
-    rf_hexapole_ion_optics = 'projects\rf_hexapole_ion_optics\verify_project.ps1'
-    rf_octupole_ion_optics = 'projects\rf_octupole_ion_optics\verify_project.ps1'
-    transverse_helical_filament_wehnelt_electron_gun = 'projects\transverse_helical_filament_wehnelt_electron_gun\verify_project.ps1'
-    apertured_tube_electron_impact_ion_source = 'projects\apertured_tube_electron_impact_ion_source\verify_project.ps1'
-}
-foreach ($project in $projectTriggers.Keys) {
-    $stage = "${project}_static"
-    if ($projectTriggers[$project]) {
-        $projectScript = Join-Path $repoRoot $projectScripts[$project]
-        if ($project -eq 'rf_quadrupole_ion_optics') {
-            Invoke-ChangedGateStage $stage $projectReasons[$project] { & $projectScript -Level Core -PythonExe $PythonExe }
-        } else {
-            Invoke-ChangedGateStage $stage $projectReasons[$project] { & $projectScript -PythonExe $PythonExe }
-        }
-    } else { Skip-ChangedGateStage $stage $projectReasons[$project] }
-}
-
-Write-Output "CHANGED_GATE=PASS PYTHON=$pythonVersion CHANGED_PATHS=$($changedPaths.Count)"
+Write-Output "CHANGED_GATE=PASS PYTHON=$pythonVersion CHANGED_PATHS=$($changedPaths.Count) FULL_SCOPE=$([bool]$FullScope)"

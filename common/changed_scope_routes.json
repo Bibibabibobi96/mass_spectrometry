@@ -1,0 +1,489 @@
+{
+  "schema_version": 1,
+  "role": "changed_scope_gate_routes",
+  "routes": [
+    {
+      "stage": "project_registry",
+      "matches": [
+        {
+          "exact": "config/project_registry.json",
+          "reason": "project_registry_changed"
+        },
+        {
+          "regex": "^projects/[^/]+/config/project\\.json$",
+          "reason": "project_descriptor_changed"
+        }
+      ],
+      "command": {
+        "runner": "python",
+        "arguments": [
+          "common/contracts/build_project_registry.py",
+          "--check"
+        ]
+      }
+    },
+    {
+      "stage": "rf_quadrupole_generated_publications",
+      "matches": [
+        {
+          "prefix": "projects/rf_quadrupole_ion_optics/",
+          "reason": "quadrupole_path_changed"
+        },
+        {
+          "prefix": "common/contracts/",
+          "reason": "common_contracts_direct_dependency_changed"
+        },
+        {
+          "prefix": "common/multipole/",
+          "reason": "common_multipole_direct_dependency_changed"
+        },
+        {
+          "prefix": "common/comsol/",
+          "reason": "common_comsol_direct_dependency_changed"
+        },
+        {
+          "prefix": "common/simion/",
+          "reason": "common_simion_direct_dependency_changed"
+        }
+      ],
+      "command": {
+        "runner": "powershell",
+        "script": "projects/rf_quadrupole_ion_optics/verify_project.ps1",
+        "parameters": {
+          "Level": "Freshness",
+          "PythonExe": "{python}"
+        }
+      }
+    },
+    {
+      "stage": "common_contracts",
+      "matches": [
+        {
+          "prefix": "common/contracts/",
+          "reason": "common_contracts_changed"
+        }
+      ],
+      "command": {
+        "runner": "python",
+        "arguments": [
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "common/contracts",
+          "-p",
+          "test_*.py"
+        ]
+      }
+    },
+    {
+      "stage": "gate_contract_tests",
+      "run_on_full_scope": false,
+      "full_scope_coverage_stage": "common_contracts",
+      "matches": [
+        {
+          "exact": "common/verify_changed.ps1",
+          "reason": "changed_scope_entrypoint_changed"
+        },
+        {
+          "exact": "common/changed_scope_routes.json",
+          "reason": "changed_scope_routes_changed"
+        },
+        {
+          "exact": "common/contracts/test_verify_changed.py",
+          "reason": "changed_scope_contract_tests_changed"
+        },
+        {
+          "exact": "common/verify_repository_integration.ps1",
+          "reason": "repository_integration_entrypoint_changed"
+        },
+        {
+          "exact": "common/verify_lightweight.ps1",
+          "reason": "compatibility_gate_entrypoint_changed"
+        },
+        {
+          "exact": "common/require_powershell7.ps1",
+          "reason": "powershell_host_contract_changed"
+        },
+        {
+          "exact": ".github/workflows/lightweight-gate.yml",
+          "reason": "verification_workflow_changed"
+        }
+      ],
+      "command": {
+        "runner": "python",
+        "arguments": [
+          "-m",
+          "unittest",
+          "common.contracts.test_verify_changed",
+          "common.contracts.test_development_standards"
+        ]
+      }
+    },
+    {
+      "stage": "cloc_contract_tests",
+      "run_on_full_scope": false,
+      "full_scope_coverage_stage": "common_contracts",
+      "matches": [
+        {
+          "exact": "common/report_cloc_delta.ps1",
+          "reason": "cloc_entrypoint_changed"
+        },
+        {
+          "exact": "common/contracts/test_report_cloc_delta.py",
+          "reason": "cloc_contract_tests_changed"
+        }
+      ],
+      "command": {
+        "runner": "python",
+        "arguments": [
+          "-m",
+          "unittest",
+          "common.contracts.test_report_cloc_delta"
+        ]
+      }
+    },
+    {
+      "stage": "multipole_common",
+      "matches": [
+        {
+          "prefix": "common/multipole/",
+          "reason": "common_multipole_changed"
+        },
+        {
+          "prefix": "common/simion/",
+          "reason": "common_simion_dependency_changed"
+        },
+        {
+          "prefix": "common/comsol/",
+          "reason": "common_comsol_dependency_changed"
+        }
+      ],
+      "command": {
+        "runner": "python",
+        "arguments": [
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "common/multipole",
+          "-p",
+          "test_*.py"
+        ]
+      }
+    },
+    {
+      "stage": "multipole_foundation",
+      "matches": [
+        {
+          "prefix": "common/multipole/",
+          "reason": "common_multipole_changed"
+        },
+        {
+          "prefix": "common/simion/",
+          "reason": "common_simion_dependency_changed"
+        },
+        {
+          "prefix": "common/comsol/",
+          "reason": "common_comsol_dependency_changed"
+        }
+      ],
+      "command": {
+        "runner": "python",
+        "arguments": [
+          "-m",
+          "common.multipole.verify_family_foundation"
+        ]
+      }
+    },
+    {
+      "stage": "integration_common",
+      "matches": [
+        {
+          "prefix": "common/integration/",
+          "reason": "common_integration_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/component_port.schema.json",
+          "reason": "integration_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/composition_plan.schema.json",
+          "reason": "integration_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/connection_profile.schema.json",
+          "reason": "integration_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/connection_profile_registry.schema.json",
+          "reason": "integration_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/execution_adapter_registry.schema.json",
+          "reason": "integration_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/integration_artifact_identity.schema.json",
+          "reason": "integration_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/integration_registry.schema.json",
+          "reason": "integration_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/migration_equivalence_preregistration.schema.json",
+          "reason": "integration_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/resolved_connection.schema.json",
+          "reason": "integration_schema_changed"
+        }
+      ],
+      "command": {
+        "runner": "python",
+        "arguments": [
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "common/integration",
+          "-p",
+          "test_*.py"
+        ]
+      }
+    },
+    {
+      "stage": "rf_multipole_to_single_reflection_oatof_integration",
+      "matches": [
+        {
+          "prefix": "common/integration/",
+          "reason": "common_integration_changed"
+        },
+        {
+          "prefix": "integrations/",
+          "reason": "integration_instance_changed"
+        },
+        {
+          "regex": "^projects/[^/]+/config/interfaces/",
+          "reason": "component_port_changed"
+        },
+        {
+          "prefix": "common/multipole/",
+          "reason": "common_multipole_direct_dependency_changed"
+        },
+        {
+          "prefix": "common/contracts/",
+          "reason": "common_contracts_direct_dependency_changed"
+        },
+        {
+          "prefix": "common/comsol/",
+          "reason": "common_comsol_direct_dependency_changed"
+        },
+        {
+          "prefix": "common/simion/",
+          "reason": "common_simion_direct_dependency_changed"
+        }
+      ],
+      "command": {
+        "runner": "powershell",
+        "script": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/verify_integration.ps1",
+        "parameters": {
+          "PythonExe": "{python}"
+        }
+      }
+    },
+    {
+      "stage": "solidworks_common",
+      "matches": [
+        {
+          "prefix": "common/solidworks/",
+          "reason": "common_solidworks_changed"
+        }
+      ],
+      "command": {
+        "runner": "python",
+        "arguments": [
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "common/solidworks",
+          "-p",
+          "test_*.py"
+        ]
+      }
+    },
+    {
+      "stage": "single_reflection_oa_tof_mass_analyzer_static",
+      "project_id": "single_reflection_oa_tof_mass_analyzer",
+      "matches": [
+        {
+          "prefix": "projects/single_reflection_oa_tof_mass_analyzer/",
+          "reason": "single_reflection_oa_tof_mass_analyzer_path_changed"
+        },
+        {
+          "prefix": "common/contracts/",
+          "reason": "common_contracts_direct_dependency_changed"
+        },
+        {
+          "prefix": "common/comsol/",
+          "reason": "common_comsol_direct_dependency_changed"
+        }
+      ],
+      "command": {
+        "runner": "powershell",
+        "script": "projects/single_reflection_oa_tof_mass_analyzer/verify_project.ps1",
+        "parameters": {
+          "PythonExe": "{python}"
+        }
+      }
+    },
+    {
+      "stage": "rf_quadrupole_ion_optics_static",
+      "project_id": "rf_quadrupole_ion_optics",
+      "matches": [
+        {
+          "prefix": "projects/rf_quadrupole_ion_optics/",
+          "reason": "rf_quadrupole_path_changed"
+        },
+        {
+          "prefix": "common/contracts/",
+          "reason": "common_contracts_direct_dependency_changed"
+        },
+        {
+          "prefix": "common/multipole/",
+          "reason": "common_multipole_direct_dependency_changed"
+        },
+        {
+          "prefix": "common/comsol/",
+          "reason": "common_comsol_direct_dependency_changed"
+        },
+        {
+          "prefix": "common/simion/",
+          "reason": "common_simion_direct_dependency_changed"
+        }
+      ],
+      "command": {
+        "runner": "powershell",
+        "script": "projects/rf_quadrupole_ion_optics/verify_project.ps1",
+        "parameters": {
+          "Level": "Core",
+          "PythonExe": "{python}"
+        }
+      }
+    },
+    {
+      "stage": "rf_hexapole_ion_optics_static",
+      "project_id": "rf_hexapole_ion_optics",
+      "matches": [
+        {
+          "prefix": "projects/rf_hexapole_ion_optics/",
+          "reason": "rf_hexapole_path_changed"
+        },
+        {
+          "prefix": "common/contracts/",
+          "reason": "common_contracts_direct_dependency_changed"
+        },
+        {
+          "prefix": "common/multipole/",
+          "reason": "common_multipole_direct_dependency_changed"
+        },
+        {
+          "prefix": "common/comsol/",
+          "reason": "common_comsol_direct_dependency_changed"
+        },
+        {
+          "prefix": "common/simion/",
+          "reason": "common_simion_direct_dependency_changed"
+        }
+      ],
+      "command": {
+        "runner": "powershell",
+        "script": "projects/rf_hexapole_ion_optics/verify_project.ps1",
+        "parameters": {
+          "PythonExe": "{python}"
+        }
+      }
+    },
+    {
+      "stage": "rf_octupole_ion_optics_static",
+      "project_id": "rf_octupole_ion_optics",
+      "matches": [
+        {
+          "prefix": "projects/rf_octupole_ion_optics/",
+          "reason": "rf_octupole_path_changed"
+        },
+        {
+          "prefix": "common/contracts/",
+          "reason": "common_contracts_direct_dependency_changed"
+        },
+        {
+          "prefix": "common/multipole/",
+          "reason": "common_multipole_direct_dependency_changed"
+        },
+        {
+          "prefix": "common/comsol/",
+          "reason": "common_comsol_direct_dependency_changed"
+        },
+        {
+          "prefix": "common/simion/",
+          "reason": "common_simion_direct_dependency_changed"
+        }
+      ],
+      "command": {
+        "runner": "powershell",
+        "script": "projects/rf_octupole_ion_optics/verify_project.ps1",
+        "parameters": {
+          "PythonExe": "{python}"
+        }
+      }
+    },
+    {
+      "stage": "transverse_helical_filament_wehnelt_electron_gun_static",
+      "project_id": "transverse_helical_filament_wehnelt_electron_gun",
+      "matches": [
+        {
+          "prefix": "projects/transverse_helical_filament_wehnelt_electron_gun/",
+          "reason": "wehnelt_path_changed"
+        },
+        {
+          "prefix": "common/contracts/",
+          "reason": "common_contracts_direct_dependency_changed"
+        },
+        {
+          "prefix": "common/comsol/",
+          "reason": "common_comsol_direct_dependency_changed"
+        }
+      ],
+      "command": {
+        "runner": "powershell",
+        "script": "projects/transverse_helical_filament_wehnelt_electron_gun/verify_project.ps1",
+        "parameters": {
+          "PythonExe": "{python}"
+        }
+      }
+    },
+    {
+      "stage": "apertured_tube_electron_impact_ion_source_static",
+      "project_id": "apertured_tube_electron_impact_ion_source",
+      "matches": [
+        {
+          "prefix": "projects/apertured_tube_electron_impact_ion_source/",
+          "reason": "electron_impact_path_changed"
+        },
+        {
+          "prefix": "common/contracts/",
+          "reason": "common_contracts_direct_dependency_changed"
+        }
+      ],
+      "command": {
+        "runner": "powershell",
+        "script": "projects/apertured_tube_electron_impact_ion_source/verify_project.ps1",
+        "parameters": {
+          "PythonExe": "{python}"
+        }
+      }
+    }
+  ]
+}

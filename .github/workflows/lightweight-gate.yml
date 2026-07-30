@@ -16,7 +16,7 @@ jobs:
     if: github.event_name == 'push'
     runs-on: windows-latest
     # RF quadrupole L1 uses the measured ~21 s Core contract gate; full Static is L2.
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -41,41 +41,25 @@ jobs:
         run: |
           $before = '${{ github.event.before }}'
           $after = '${{ github.sha }}'
-          $fallbackChangedPaths = @(
-            'README.md',
-            'config/project_registry.json',
-            'common/verify_changed.ps1',
-            'common/contracts/README.md',
-            'common/multipole/README.md',
-            'common/integration/README.md',
-            'common/comsol/README.md',
-            'common/solidworks/README.md',
-            'integrations/registry.json',
-            'projects/single_reflection_oa_tof_mass_analyzer/README.md',
-            'projects/rf_quadrupole_ion_optics/README.md',
-            'projects/rf_hexapole_ion_optics/README.md',
-            'projects/rf_octupole_ion_optics/README.md',
-            'projects/transverse_helical_filament_wehnelt_electron_gun/README.md',
-            'projects/apertured_tube_electron_impact_ion_source/README.md'
-          )
           $baseAvailable = $false
           if ($before -notmatch '^[0]+$') {
             & git cat-file -e "$before^{commit}" 2>$null
             $baseAvailable = $LASTEXITCODE -eq 0
           }
           if (-not $baseAvailable) {
-            Write-Warning 'Push base is unavailable; using full-project changed-scope fallback.'
-            $changedPaths = $fallbackChangedPaths
+            Write-Warning 'Push base is unavailable; using the full changed-scope route table.'
+            .\common\verify_changed.ps1 -PythonExe (Get-Command python).Source -FullScope
           } else {
             $changedPaths = @(& git diff --name-only --diff-filter=ACMRD "$before..$after")
             if ($LASTEXITCODE -ne 0) { throw 'Unable to calculate changed paths for push gate.' }
             if ($changedPaths.Count -eq 0) {
-              Write-Warning 'Push diff is empty; using full-project changed-scope fallback.'
-              $changedPaths = $fallbackChangedPaths
+              Write-Warning 'Push diff is empty; using the full changed-scope route table.'
+              .\common\verify_changed.ps1 -PythonExe (Get-Command python).Source -FullScope
+            } else {
+              Write-Output "CHANGED_SCOPE_CI_BASE=$before HEAD=$after PATHS=$($changedPaths.Count)"
+              .\common\verify_changed.ps1 -PythonExe (Get-Command python).Source -ChangedPath $changedPaths
             }
           }
-          Write-Output "CHANGED_SCOPE_CI_BASE=$before HEAD=$after PATHS=$($changedPaths.Count)"
-          .\common\verify_changed.ps1 -PythonExe (Get-Command python).Source -ChangedPath $changedPaths
   repository_integration:
     if: github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
