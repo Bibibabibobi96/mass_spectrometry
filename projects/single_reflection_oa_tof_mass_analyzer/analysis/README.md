@@ -132,7 +132,8 @@ Program Off只允许作为诊断组，可用`single`和对应`.1`列导入；它
   `es.Ez`差、跨求解器Ez差及初始z对逐粒子TOF差的解释率；它不启动求解器，也不替代正式重算。
 - `analyze_accelerator_transverse_field_uniformity.py`比较轴心与严格正负对称偏轴位置的加速场轮廓、
   势轮廓和横向杂散场，三个指标按AND形成闭合屏蔽L0参考。保存解导出入口为
-  `../tests/comsol/run_accelerator_transverse_field_uniformity.ps1`；它不重求解或追踪粒子，结果不能
+  `../workflows/accelerator_transverse_field_uniformity/run_accelerator_transverse_field_uniformity.ps1`；
+  它调用`../comsol/export_accelerator_transverse_field_uniformity.m`，不重求解或追踪粒子，结果不能
   替代开孔联合场和最终分辨率门禁。
 - `mass_spectrum.py`按`config/modes/mass_spectrum.json`拟合
   `sqrt(m/z)=slope*TOF+intercept`，输出五点宽质量谱、标定残差、传输率、跨求解器质心差以及逐质量

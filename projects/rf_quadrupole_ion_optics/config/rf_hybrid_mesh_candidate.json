@@ -1,98 +1,24 @@
 {
   "schema_version": 1,
-  "role": "rf_full_device_hybrid_mesh_candidate",
-  "status": "approved_for_solver_validation",
-  "inputs": {
-    "resolved_geometry": "config/resolved_design_official.json",
-    "shield_contract": "config/rf_continuous_grounded_shield_candidate.json",
-    "uniform_mesh_contract": "config/rf_rod_region_swept_mesh_candidate.json",
-    "uniform_mesh_evidence_run": "20260721_220000__analysis__python__rf-swept-mesh-convergence"
+  "role": "rf_legacy_hybrid_mesh_compatibility_descriptor",
+  "status": "compatibility_retained_read_only",
+  "current_scientific_authority": false,
+  "active_execution_allowed": false,
+  "generation_allowed": false,
+  "promotion_allowed": false,
+  "historical_identity": {
+    "original_role": "rf_full_device_hybrid_mesh_candidate",
+    "original_status": "approved_for_solver_validation",
+    "original_repository_path": "projects/rf_quadrupole_ion_optics/config/rf_hybrid_mesh_candidate.json",
+    "pre_compaction_repository_sha256": "143917752A0DD2C41BBE1161B272D57AC47FA854521B63CB3A32BEBA1AB3FF40"
   },
-  "geometry_mm": {
-    "model_z_min": 0.0,
-    "model_z_max": 90.2,
-    "shield_inner_radius": 19.776,
-    "uniform_region_z_min": 9.8,
-    "uniform_region_z_max": 81.4,
-    "fine_core_radius": 8.0
+  "historical_evidence_pointer": {
+    "source_run_id": "20260722_193000__sim__comsol__rf-input5ev-handoff__n100__r02",
+    "contract_basename": "rf_hybrid_mesh_candidate.json",
+    "artifact_contract_sha256": "9D54CE5AB5456AA487F4F534BBDB372BCB1018339C70F246936122C98D57C6A8"
   },
-  "uniform_region_mesh": {
-    "method": "free_triangular_source_and_swept_prisms",
-    "fine_core_and_rod_boundary_hmax_mm": 0.2,
-    "outer_vacuum_hmax_mm": 1.0,
-    "axial_layers": 40
-  },
-  "end_region_mesh": {
-    "method": "free_tetrahedral",
-    "fine_core_hmax_mm_sequence": [0.5, 0.25, 0.125],
-    "outer_vacuum_hmax_mm": 1.0,
-    "stop_after_first_converged_pair": true
-  },
-  "field_sampling": {
-    "sample_z_mm": [1.801, 5.8, 9.799, 9.801, 45.6, 81.399, 81.401, 83.4, 85.4, 87.4, 89.4, 90.199],
-    "sample_radius_fraction_of_r0": [0.25, 0.5, 0.75, 0.9],
-    "azimuth_samples_per_radius": 72,
-    "aperture_edge_radius_mm": 3.6,
-    "hard_field_convergence_radius_max_mm": 3.0
-  },
-  "acceptance": {
-    "logical_operator": "AND",
-    "mesh_problem_free": true,
-    "maximum_relative_vector_rms_last_two_end_meshes_r_le_3_mm": 0.001,
-    "maximum_relative_vector_rms_at_partition_pairs_r_le_3_mm": 0.001,
-    "aperture_edge_is_diagnostic_not_a_standalone_veto": true,
-    "particle_tracking_allowed_only_after_field_pass": false,
-    "particle_diagnostic_allowed_after_problem_free_paired_fields": true,
-    "functional_arbitration_policy": "When localized field ratios fail but both meshes are problem-free, run the same frozen N=100 particles on both meshes. Do not refine again unless particle classification or paired exit phase space changes enough to affect the transport or integration decision.",
-    "local_field_maximum_is_diagnostic_not_a_standalone_veto": true
-  },
-  "n100_functional_arbitration_evidence": {
-    "status": "low_cost_mesh_and_shared_clock_functional_chain_qualified",
-    "coarse_run_id": "20260722_030000__sim__comsol__rf-hybrid-n100__hend0p5__r02",
-    "fine_run_id": "20260722_031000__sim__comsol__rf-hybrid-n100__hend0p25",
-    "comparison_run_id": "20260722_033000__analysis__python__rf-hybrid-n100-functional-arbitration__r02",
-    "vacuum_elements": {"end_hmax_0p5_mm": 1584535, "end_hmax_0p25_mm": 4184759},
-    "transmitted_particles": {"end_hmax_0p5_mm": 100, "end_hmax_0p25_mm": 100},
-    "classification_change_count": 0,
-    "relative_rms_radius_difference": 0.005140748869724905,
-    "relative_rms_divergence_difference": 0.010421052322714758,
-    "relative_mean_energy_difference": 0.0004996487652845809,
-    "paired_position_difference_rms_mm": 0.043418280095643996,
-    "paired_time_difference_rms_us": 0.053449550057926724,
-    "paired_rf_phase_difference_rms_rad": 0.3694167703592515,
-    "paired_rf_phase_difference_max_abs_rad": 1.0581713254309801,
-    "retained_low_cost_mesh_end_hmax_mm": 0.5,
-    "retained_reference_mesh_end_hmax_mm": 0.25,
-    "hmax_0p125_run_allowed": false,
-    "static_oatof_projection": {
-      "run_id": "20260722_050000__sim__cross__rf-hybrid-mesh-projection__n100__r03",
-      "downstream_solver": "SIMION",
-      "transmitted_particles": {"end_hmax_0p5_mm": 96, "end_hmax_0p25_mm": 97},
-      "transmission_absolute_difference": 0.01,
-      "mean_tof_symmetric_relative_difference": 9.250999794448969e-7,
-      "rms_physical_detector_radius_symmetric_relative_difference": 0.0005671795913418237,
-      "detector_classification_change_count": 3,
-      "minimum_detected_radius_fraction_of_active_radius_among_changed_particles": 0.9828322374226272,
-      "detector_r99_mm": {"end_hmax_0p5_mm": 39.60495671551609, "end_hmax_0p25_mm": 39.62645903644795},
-      "detector_r99_limit_mm": 36.0,
-      "mesh_decision": "RETAIN_LOW_COST_FOR_NEXT_STAGE"
-    },
-    "shared_clock_pulse": {
-      "run_id": "20260722_083000__sim__simion__rf-entry-finite-pulse__n100__r13",
-      "effective_entry_origin_x_mm": -62.8,
-      "pulse_time_us": 54.45242561132196,
-      "pulse_width_us": 1.0,
-      "arrival_window_us": 6.3863487306946,
-      "particles_reaching_pulse": 95,
-      "timed_pulse_hits": 44,
-      "held_off_control_hits": 0,
-      "pre_pulse_accelerator_electrodes_v": 0.0,
-      "status": "PASS",
-      "sparse_event_rows": 295,
-      "dense_trajectories_saved": false,
-      "diagnostic_figures": ["rf_handoff_pulse_timeline.png", "rf_handoff_pulse_snapshot.png"]
-    },
-    "decision": "Retain end hmax=0.5 mm and accept the selected RF-COMSOL to projected oaTOF-SIMION functional chain. Particles are born in time order at the effective entry plane, follow continuous pre-pulse trajectories with the accelerator electrodes at 0 V, then receive one shared 1 us Formal-voltage pulse; 95/100 reach the pulse and 44/100 reach the detector versus 0/100 in the all-zero control. Do not run 0.125 mm. Physical connector transport, finite edge rise/fall and N=1000 resolution regression are deferred refinements, not blockers for functional workflow integration."
-  },
-  "claim_limit": "Candidate full-device unit-field mesh only. It does not validate particles, select a shield radius, include feedthroughs or authorize a physical RF-to-oa connection."
+  "current_runtime_authority": {
+    "repository_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/legacy_quadrupole_n100_source_contract.json",
+    "note": "The integration runtime freezes its own source contract and artifact identities; this descriptor is not a solver input."
+  }
 }

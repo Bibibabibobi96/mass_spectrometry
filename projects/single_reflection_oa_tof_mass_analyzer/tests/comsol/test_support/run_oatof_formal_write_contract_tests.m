@@ -1,7 +1,8 @@
 reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
 assert(~isempty(reportPath), 'COMSOL_BOOTSTRAP_REPORT is required.');
 
-testDir = fileparts(mfilename('fullpath'));
+testSupportDir = fileparts(mfilename('fullpath'));
+testDir = fileparts(testSupportDir);
 projectRoot = fileparts(fileparts(testDir));
 addpath(projectRoot);
 addpath(fullfile(projectRoot, 'comsol'));

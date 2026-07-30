@@ -23,6 +23,11 @@ class WorkflowEntryLayoutTests(unittest.TestCase):
             "workflows/design_candidate/run_candidate_workflow.py",
             "workflows/design_candidate/run_candidate_contract_build.m",
             "workflows/design_candidate/run_candidate_cad_sync.m",
+            "workflows/accelerator_transverse_field_uniformity/run_accelerator_transverse_field_uniformity.ps1",
+            "comsol/export_accelerator_transverse_field_uniformity.m",
+            "tests/comsol/test_support/run_oatof_matlab_unit_tests.m",
+            "tests/comsol/test_support/run_oatof_formal_write_contract_tests.m",
+            "tests/simion/test_support/export_accelerator_grid_phase_field.lua",
         }
         for relative in expected:
             self.assertTrue((PROJECT_ROOT / relative).is_file(), relative)
@@ -39,6 +44,11 @@ class WorkflowEntryLayoutTests(unittest.TestCase):
             "analysis/run_candidate_workflow.py",
             "tests/comsol/run_candidate_contract_build.m",
             "tests/cad/run_candidate_cad_sync.m",
+            "tests/comsol/run_accelerator_transverse_field_uniformity.ps1",
+            "tests/comsol/export_accelerator_transverse_field_uniformity.m",
+            "tests/comsol/run_oatof_matlab_unit_tests.m",
+            "tests/comsol/run_oatof_formal_write_contract_tests.m",
+            "tests/simion/export_accelerator_grid_phase_field.lua",
         }
         for relative in removed:
             self.assertFalse((PROJECT_ROOT / relative).exists(), relative)

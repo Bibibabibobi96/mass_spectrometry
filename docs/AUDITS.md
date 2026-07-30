@@ -5,6 +5,8 @@
 
 ## 已完成审计
 
+- [2026-07-30 Production边界处置](history/20260730__production-maintenance-boundary-disposition.md)：
+  记录测试support与生产workflow迁移、RF旧网格实验包退役、只读兼容描述符及处置后CLOC。
 - [2026-07-30 Production维护面一次性基线](history/20260730__production-maintenance-surface-baseline.md)：
   记录当前CLOC的项目热点、production保守二级分区、25个未分类脚本的消费者核验，以及是否固化为
   常规审计的进入条件。

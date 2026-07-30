@@ -72,11 +72,7 @@ try {
 if ($LASTEXITCODE -ne 0) { throw 'RF-to-oaTOF handoff contract gate failed.' }
 $candidateValidators = @(
   'validate_field_performance_experiment.py',
-  'validate_rf_continuous_shield.py',
-  'validate_rf_hybrid_mesh.py',
   'validate_rf_energy_match.py',
-  'validate_rf_piecewise_swept_mesh.py',
-  'validate_rf_rod_region_swept_mesh.py',
   'validate_pre_pulse_interface_transport.py',
   'validate_pulse_capture.py',
   'validate_spatial_registration_migration.py'

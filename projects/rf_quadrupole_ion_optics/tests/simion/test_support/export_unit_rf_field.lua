@@ -1,4 +1,4 @@
--- Export the refined official PA's unit RF field in PA/COMSOL coordinates.
+-- Test support: export the refined official PA's unit RF field in PA/COMSOL coordinates.
 -- The field is static: electrode 1 = +100 V and electrode 2 = -100 V.
 
 local iob_path = os.getenv('RFQUAD_SIMION_IOB')

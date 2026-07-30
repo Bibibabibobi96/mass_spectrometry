@@ -51,7 +51,7 @@ try {
     $env:RFQUAD_FIELD_Z_MIN_MM = [string]$baselineCellMm
     $env:RFQUAD_FIELD_Z_MAX_MM = [string]($resolved.interfaces_mm.exit.census_plane_z_mm-2*$baselineCellMm)
     $env:RFQUAD_FIELD_STEP_MM = [string]$baselineCellMm
-    & $simion --nogui lua (Join-Path $PSScriptRoot 'export_unit_rf_field.lua')
+    & $simion --nogui lua (Join-Path $PSScriptRoot 'test_support\export_unit_rf_field.lua')
     if ($LASTEXITCODE -ne 0) { throw 'SIMION unit-field export failed.' }
 }
 finally {

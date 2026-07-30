@@ -1,4 +1,4 @@
--- Export a common-axis field profile from a grid-phase accelerator candidate.
+-- Test support: export a common-axis field profile from a grid-phase accelerator candidate.
 -- The candidate geometry is shifted inside the PA and the PA instance is moved
 -- by the opposite amount, leaving all global mechanical coordinates unchanged.
 

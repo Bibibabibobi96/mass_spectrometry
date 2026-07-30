@@ -23,7 +23,7 @@ $task = Join-Path $inputDir 'export_accelerator_transverse_field_uniformity.m'
 $analysis = Join-Path $inputDir 'analyze_accelerator_transverse_field_uniformity.py'
 $baseline = Join-Path $inputDir 'baseline.json'
 $runner = Join-Path $inputDir 'run_accelerator_transverse_field_uniformity.ps1.txt'
-Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'export_accelerator_transverse_field_uniformity.m') -Destination $task
+Copy-Item -LiteralPath (Join-Path $projectRoot 'comsol\export_accelerator_transverse_field_uniformity.m') -Destination $task
 Copy-Item -LiteralPath (Join-Path $projectRoot 'analysis\analyze_accelerator_transverse_field_uniformity.py') -Destination $analysis
 Copy-Item -LiteralPath (Join-Path $projectRoot 'config\baseline.json') -Destination $baseline
 Copy-Item -LiteralPath $PSCommandPath -Destination $runner

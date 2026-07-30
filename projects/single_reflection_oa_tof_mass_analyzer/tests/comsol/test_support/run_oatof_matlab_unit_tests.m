@@ -1,7 +1,8 @@
 reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
 assert(~isempty(reportPath), 'COMSOL_BOOTSTRAP_REPORT is required.');
 
-testDir = fileparts(mfilename('fullpath'));
+testSupportDir = fileparts(mfilename('fullpath'));
+testDir = fileparts(testSupportDir);
 detectorSuite = testsuite(fullfile(testDir, 'OaTofDetectorArrivalTest.m'));
 fieldSuite = testsuite(fullfile(testDir, 'OaTofFieldIdealizationTest.m'));
 suite = [detectorSuite(:).', fieldSuite(:).'];

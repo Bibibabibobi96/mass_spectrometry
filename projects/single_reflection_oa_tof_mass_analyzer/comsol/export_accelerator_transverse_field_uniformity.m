@@ -1,4 +1,4 @@
-% Export systematic transverse accelerator-field profiles from a saved solution.
+% Production diagnostic: export systematic transverse accelerator-field profiles from a saved solution.
 
 reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
 outputCsv = getenv('OATOF_TRANSVERSE_FIELD_CSV');
