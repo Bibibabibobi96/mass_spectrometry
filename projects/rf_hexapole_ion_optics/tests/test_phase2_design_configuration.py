@@ -556,7 +556,7 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
         self.assertTrue(budget["pilot_authorization"]["authorized"])
         self.assertEqual(
             budget["pilot_authorization"]["scope"]["runtime_profile_id"],
-            "exit_aperture_plate_acceleration_n100_hybrid_c1_corridor040_exit020_nosweep_field_screen",
+            "exit_aperture_plate_acceleration_n100_hybrid_c1_corridor040_exit025_nosweep_field_screen",
         )
 
     def test_exit_interface_mesh_strategy_closes_failed_zone_and_corrects_scope(
@@ -622,7 +622,10 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
             / "qualification"
             / "comsol_exit_interface_nosweep_mesh_strategy_field_preregistration.json"
         )
-        self.assertEqual(corrected["status"], "authorized_not_run")
+        self.assertEqual(
+            corrected["status"],
+            "completed_success_strategy_screen_failed_efficiency",
+        )
         self.assertEqual(
             corrected["mesh_contract"]["exit_interface_refinement"][
                 "resolved_z_min_mm"
@@ -631,6 +634,30 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
         )
         self.assertEqual(
             corrected["mesh_contract"]["fixed_segment_end_buffer_mm"], 1.0
+        )
+        self.assertFalse(
+            corrected["execution_result"]["comparison_to_inherited_032_reference"][
+                "mesh_efficiency_pass"
+            ]
+        )
+        final = load(
+            PROJECT_ROOT
+            / "config"
+            / "qualification"
+            / "comsol_exit_interface_025_final_field_preregistration.json"
+        )
+        self.assertEqual(final["status"], "authorized_not_run")
+        self.assertEqual(
+            final["mesh_contract"]["exit_interface_refinement"][
+                "maximum_element_size_mm"
+            ],
+            0.25,
+        )
+        self.assertEqual(
+            final["decision_policy"]["strategy_acceptance"][
+                "mesh_global_elements_less_than"
+            ],
+            713_396,
         )
         solver = (
             REPO_ROOT / "common" / "multipole" / "solve_finite_3d_transport.m"

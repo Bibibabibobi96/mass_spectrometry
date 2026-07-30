@@ -467,6 +467,44 @@
         "maximum_global_time_us": 80.0
       }
     },
+    "hybrid_c1_corridor040_exit025_nosweep_cg_amg_field_screen": {
+      "stationary_linear_solver_backend": "cg_amg",
+      "electric_potential_element_order": "quadratic",
+      "stationary_iterative_solver": {
+        "relative_tolerance": 0.001,
+        "maximum_iterations": 500,
+        "error_check_mode": "on"
+      },
+      "mesh": {
+        "strategy": "physical_segment_hybrid_swept_tetra_v1",
+        "global_auto_level": 6,
+        "working_region_maximum_element_size_mm": null,
+        "hybrid": {
+          "physical_segment_count": 4,
+          "segment_end_buffer_mm": 1.0,
+          "swept_length_per_segment_mm": 17.6,
+          "core_radius_mm": 8.5,
+          "radial_core_and_rod_hmax_mm": 0.7,
+          "axial_layers_per_swept_segment": 10,
+          "transition_and_end_tetra_hmax_mm": 0.7,
+          "outer_vacuum_hmax_mm": 1.4,
+          "minimum_element_size_mm": 0.028,
+          "sensitive_region": {
+            "particle_corridor_radius_mm": 3.6,
+            "maximum_element_size_mm": 0.4,
+            "exit_interface_refinement": {
+              "upstream_extent_from_rod_exit_mm": 1.0,
+              "downstream_extent_from_handoff_mm": 0.5,
+              "maximum_element_size_mm": 0.25
+            }
+          }
+        }
+      },
+      "trajectory": {
+        "rf_steps_per_period": 80,
+        "maximum_global_time_us": 80.0
+      }
+    },
     "hybrid_d3_axial14_cg_amg_field_screen": {
       "stationary_linear_solver_backend": "cg_amg",
       "electric_potential_element_order": "quadratic",

@@ -310,7 +310,7 @@ class FamilyExperimentProfileTests(unittest.TestCase):
         self.assertFalse(engineering["full_matrix_authorization"]["authorized"])
         self.assertEqual(
             engineering["pilot_authorization"]["scope"]["runtime_profile_id"],
-            "exit_aperture_plate_acceleration_n100_hybrid_c1_corridor040_exit020_nosweep_field_screen",
+            "exit_aperture_plate_acceleration_n100_hybrid_c1_corridor040_exit025_nosweep_field_screen",
         )
         self.assertEqual(
             engineering["pilot_authorization"]["scope"]["allowed_solvers"],
@@ -323,7 +323,7 @@ class FamilyExperimentProfileTests(unittest.TestCase):
         self.assertFalse(engineering["full_matrix_authorization"]["authorized"])
         self.assertEqual(
             engineering["full_matrix_authorization"]["reason"],
-            "exit_interface_nosweep_mesh_strategy_field_pilot_must_close_before_particles",
+            "exit_interface_025_final_interpolation_field_pilot_must_close_before_particles",
         )
 
         result = load(

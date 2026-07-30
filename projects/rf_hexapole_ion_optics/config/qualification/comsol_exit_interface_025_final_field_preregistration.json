@@ -2,25 +2,25 @@
   "schema_version": 2,
   "role": "multipole_comsol_field_solver_isolation_preregistration",
   "project_id": "rf_hexapole_ion_optics",
-  "experiment_id": "hexapole_exit_interface_nosweep_mesh_strategy_field_pilot",
+  "experiment_id": "hexapole_exit_interface_025_final_interpolation_field_pilot",
   "preregistered_before_run": true,
-  "status": "completed_success_strategy_screen_failed_efficiency",
+  "status": "authorized_not_run",
   "authorization": {
     "maximum_commercial_run_count": 1,
     "automatic_retry_count": 0,
-    "planned_run_id": "20260730_113000__analysis__comsol__hex-exit-interface-nosweep-field__r01",
-    "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_c1_corridor040_exit020_nosweep_field_screen",
+    "planned_run_id": "20260730_123000__analysis__comsol__hex-exit-interface-025-field__r01",
+    "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_c1_corridor040_exit025_nosweep_field_screen",
     "design_profile_id": "exit_aperture_plate_acceleration",
     "particle_source_profile_id": "family_mother_sample_v1_n100",
-    "comsol_solver_numerics_profile_id": "hybrid_c1_corridor040_exit020_nosweep_cg_amg_field_screen",
+    "comsol_solver_numerics_profile_id": "hybrid_c1_corridor040_exit025_nosweep_cg_amg_field_screen",
     "stop_stage": "field_solve",
     "retention_class": "compact"
   },
   "frozen_identity": {
     "expected_run_parent_resolved_design_sha256": "C9C3B00A5327825FCB138FB7EEDF2C6F7175497EAEB3CD1EB28A5D995AAC4B6E",
-    "runtime_profiles_sha256": "7327AAAE214C834E0E4F69586787D88D65572C8B44FC9B3FE3D98D9695864E6E",
-    "comsol_solver_numerics_sha256": "AA2424AE801CA24F9448C6B24DE0BC9EB58E4E2FF3104BF8900AF9D9A6C97CDB",
-    "engineering_budget_sha256": "0C35180E57995B88BA40115917C3B8D966674C1E29F6CAF4BC6DAF97E028F542",
+    "runtime_profiles_sha256": "EA35A764E0BBF35B2DB63CEDB2F54AA24213EA83514C9C9BBD58B1DABCC317D7",
+    "comsol_solver_numerics_sha256": "368BDE972098132FE602E3184C5D6DE1E6A514327A682F38241995BAEEA90E79",
+    "engineering_budget_sha256": "C3BD9013D6331730FCCDCD9B472B6C24F967D0498A36DC307B18A6153F83BB68",
     "particle_source_profiles_sha256": "8162081232E0ABCA311DA9E9D10B8BDA78ED24E95C919E8E52B6787DDD1C0B30",
     "design_profiles_sha256": "157EB846B0F3715A300EF9F3D994DD3B05A919C04FBFD83D6B8611A77FAA74B1"
   },
@@ -61,13 +61,13 @@
   },
   "mesh_contract": {
     "strategy": "physical_segment_hybrid_swept_tetra_v1",
-    "refinement_semantics": "radial_corridor_plus_exit_interface_zone_outside_swept_interior",
+    "refinement_semantics": "final_interpolation_outside_swept_interior",
     "particle_corridor_radius_mm": 3.6,
     "full_length_corridor_maximum_element_size_mm": 0.4,
     "exit_interface_refinement": {
       "upstream_extent_from_rod_exit_mm": 1.0,
       "downstream_extent_from_handoff_mm": 0.5,
-      "maximum_element_size_mm": 0.2,
+      "maximum_element_size_mm": 0.25,
       "resolved_z_min_mm": 78.6,
       "resolved_z_max_mm": 81.1
     },
@@ -76,11 +76,13 @@
     "fixed_transition_and_end_domain_hmax_mm": 0.7,
     "fixed_outer_domain_hmax_mm": 1.4,
     "fixed_axial_layers_per_swept_segment": 10,
-    "failed_parent_diagnostic": {
-      "record": "projects/rf_hexapole_ion_optics/config/qualification/comsol_exit_interface_mesh_strategy_field_preregistration.json",
-      "run_manifest_sha256": "8F139DD2F35E17F632B50C6C3EF1E82EABED3DC9D01EFBD5CC2CBE8D9D92A6E2",
-      "mesh_global_elements": 747632,
-      "failure": "The 2.0 mm upstream zone entered the final swept interior and caused SWE4 to generate a different number of layers than requested."
+    "parent_local_020": {
+      "record": "projects/rf_hexapole_ion_optics/config/qualification/comsol_exit_interface_nosweep_mesh_strategy_field_preregistration.json",
+      "run_manifest_sha256": "147CF04E420FD33756FFDF93ABB8D9E60D57D7D6290C9F191751527C13515507",
+      "field_samples_sha256": "9ED909A04ED190DF1CC96A41BE5ACAB4933A9797A368B54726B02D8B12F96F9F",
+      "mesh_global_elements": 742973,
+      "reference_agreement_band_pass": true,
+      "mesh_efficiency_pass": false
     },
     "field_reference": {
       "record": "projects/rf_hexapole_ion_optics/config/qualification/comsol_inherited_boundary_032_field_preregistration.json",
@@ -141,8 +143,9 @@
   },
   "decision_policy": {
     "run_success": "Every required report token is present, no forbidden checkpoint is present, both fields and all 6660 samples complete, and every hard resource limit passes.",
-    "strategy_screen": {
-      "preferred_mesh_global_elements_less_than": 713396,
+    "strategy_acceptance": {
+      "all_conditions_required": true,
+      "mesh_global_elements_less_than": 713396,
       "reference_agreement_bands_from_040_to_032_last_step": {
         "rod_span_uniform_field_vector_reference_normalized_rms": {
           "differential": 0.00386104075192649,
@@ -157,77 +160,11 @@
           "static": 0.0106828568733458
         }
       },
-      "interpretation": "These bands only screen whether the corrected directional mesh reproduces the current finest reference at lower cost. They are not sourced functional tolerances and cannot establish convergence."
+      "failure_action": "Close this local-size strategy without another interpolation level or particle run.",
+      "interpretation": "Passing accepts only the mesh strategy as a lower-cost reproduction of the current finest reference. It does not establish sourced functional tolerance or numerical convergence."
     },
     "particle_followup_authorized": false,
-    "shared_failure_stop": "Any preregistration, authoritative mesh, solver, sampling or hard-budget failure closes this one-run pilot without retry or particle work."
+    "shared_failure_stop": "Any preregistration, authoritative mesh, solver, sampling or hard-budget failure closes this final interpolation pilot without retry or particle work."
   },
-  "execution_result": {
-    "terminal": true,
-    "run_id": "20260730_113000__analysis__comsol__hex-exit-interface-nosweep-field__r01",
-    "manifest_status": "success",
-    "result": "PASS_FIELD_RUN_REJECT_STRATEGY_EFFICIENCY",
-    "commercial_run_count_executed": 1,
-    "automatic_retry_executed": 0,
-    "authoritative_field_run_pass": true,
-    "particle_followup_authorized": false,
-    "observed": {
-      "mesh_global_elements": 742973,
-      "mesh_global_has_problems": false,
-      "mesh_vacuum_has_problems": false,
-      "mesh_tetrahedral_has_problems": false,
-      "mesh_swept_segments_with_problems": 0,
-      "mesh_minimum_quality": 0.1702,
-      "mesh_mean_quality": 0.6991,
-      "differential_field_dof": 1273154,
-      "differential_field_iterations": 7,
-      "differential_field_final_residual": 2.8e-7,
-      "static_field_dof": 1273154,
-      "static_field_iterations": 9,
-      "static_field_final_residual": 3.2e-7,
-      "field_sample_point_count": 3330,
-      "field_sample_row_count": 6660,
-      "field_sample_validation_status": "PASS"
-    },
-    "resource_observation": {
-      "wall_clock_seconds": 130.067,
-      "peak_process_tree_working_set_bytes": 5557870592,
-      "minimum_system_available_memory_bytes": 20572401664,
-      "retained_run_bytes": 3377834
-    },
-    "comparison_to_inherited_032_reference": {
-      "output_sha256": "7BA1FAB6B9E34732215E2D181B8EAF69AB5A557D6F09FA3C78EEF0F40FE2A7A8",
-      "preferred_mesh_global_elements_less_than": 713396,
-      "mesh_efficiency_pass": false,
-      "mesh_element_excess": 29577,
-      "mesh_element_excess_fraction": 0.04146225519010382,
-      "reference_agreement_band_pass": true,
-      "field_vector_reference_normalized_rms": {
-        "rod_span_uniform": {
-          "differential": 0.003798374051048629,
-          "static": 0.006749282098936804
-        },
-        "rod_exit": {
-          "differential": 0.012983435717636518,
-          "static": 0.008640096800165432
-        },
-        "canonical_handoff_plane": {
-          "differential": 0.017730520536885966,
-          "static": 0.0057049981081545974
-        }
-      }
-    },
-    "evidence_sha256": {
-      "run_config": "9242DBE589B9F443C5D845D49FCA82D42383F6D73167BF6928AA3A372DF89B3A",
-      "run_manifest": "147CF04E420FD33756FFDF93ABB8D9E60D57D7D6290C9F191751527C13515507",
-      "summary": "1E18BD1C5C37668AD559FB7ACB7525FEDBFF9CAEB0C36341756602CA556B8C67",
-      "resource_usage": "4E4B148E233AB525AE784EAF6D9AE5463306F6999044ABDE635CF82154E9B7A7",
-      "field_samples": "9ED909A04ED190DF1CC96A41BE5ACAB4933A9797A368B54726B02D8B12F96F9F",
-      "field_sample_validation": "B5F7689878D46C507704BC514F7125A984B839BACB85908489E9C3015345C513",
-      "comsol_report": "07647DECB27C72703718928883836511B49EF989B0718BD00C847A5C92A6310F",
-      "retention_actions": "3968ABAFC4FEE6A734B3F0C9F7BAD6E13E53707745036D355EB29AC17794562B"
-    },
-    "decision": "The no-sweep topology and all six reference-agreement bands pass, but the candidate uses 29,577 more cells than the 0.32 mm full-length reference. Reject 0.20 mm as an efficient replacement; authorize no particles from this result."
-  },
-  "claim_limit": "This record authorizes exactly one corrected COMSOL field-only mesh-strategy pilot. It cannot establish particle transport, numerical convergence, cross-solver closure, Candidate, Formal or N=1000 claims by itself."
+  "claim_limit": "This record authorizes exactly one final 0.25 mm COMSOL field-only interpolation pilot. It cannot establish particle transport, numerical convergence, cross-solver closure, Candidate, Formal or N=1000 claims by itself."
 }

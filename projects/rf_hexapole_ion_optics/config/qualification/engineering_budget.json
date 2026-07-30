@@ -2,19 +2,19 @@
   "schema_version": 1,
   "role": "multipole_engineering_budget_contract",
   "project_id": "rf_hexapole_ion_optics",
-  "contract_id": "hexapole_exit_interface_nosweep_mesh_strategy_pilot_v1",
+  "contract_id": "hexapole_exit_interface_025_final_interpolation_pilot_v1",
   "preregistered_before_run": true,
   "pilot_authorization": {
     "authorized": true,
     "scope": {
       "project_id": "rf_hexapole_ion_optics",
-      "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_c1_corridor040_exit020_nosweep_field_screen",
+      "runtime_profile_id": "exit_aperture_plate_acceleration_n100_hybrid_c1_corridor040_exit025_nosweep_field_screen",
       "stop_stage": "field_solve",
       "design_profile_id": "exit_aperture_plate_acceleration",
       "particle_source_profile_id": "family_mother_sample_v1_n100",
       "particle_count": 100,
       "solver_numerics_profile_ids": {
-        "comsol": "hybrid_c1_corridor040_exit020_nosweep_cg_amg_field_screen",
+        "comsol": "hybrid_c1_corridor040_exit025_nosweep_cg_amg_field_screen",
         "simion": "baseline_finite_3d"
       },
       "allowed_solvers": [
@@ -38,8 +38,8 @@
   },
   "full_matrix_authorization": {
     "authorized": false,
-    "reason": "exit_interface_nosweep_mesh_strategy_field_pilot_must_close_before_particles"
+    "reason": "exit_interface_025_final_interpolation_field_pilot_must_close_before_particles"
   },
   "budget_exhaustion_result": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
-  "claim_limit": "Exactly one COMSOL field-only pilot is authorized for the 0.40 mm full-length corridor plus a 0.20 mm exit-interface zone that begins at the final swept-section boundary. It is a mesh-strategy diagnostic against the completed 0.32 mm reference, not a convergence, particle, cross-solver, Candidate or Formal authorization."
+  "claim_limit": "Exactly one final COMSOL field-only interpolation pilot is authorized for the 0.40 mm full-length corridor plus a 0.25 mm exit-interface zone beginning at the final swept-section boundary. It must beat 713,396 cells and satisfy all six frozen reference-agreement bands; failure closes this strategy without another size trial or particles."
 }

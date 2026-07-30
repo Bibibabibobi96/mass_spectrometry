@@ -367,10 +367,20 @@ swept interior。新的
 [`不侵入扫掠区纠正pilot`](../config/qualification/comsol_exit_interface_nosweep_mesh_strategy_field_preregistration.json)
 保持0.40 mm全长走廊、0.20 mm局部尺寸、0.5 mm handoff下游范围和10层扫掠不变，只把局部区起点从
 `rod_exit-2.0 mm`移到最后扫掠段终点`rod_exit-1.0 mm`（当前78.6–81.1 mm）。它是从明确拓扑失败
-派生的新网格身份，不是旧run重试；唯一一次field-only、3330点/6660行采样和零自动重试已另行预登记，
-硬帽仍为100万单元、600 s和12 GiB。优选判据仍要求低于713,396单元并在当前0.32 mm参考的最后相邻档
-差异范围内复现区域场；该差异带只筛选策略，不是功能容差。粒子、跨求解器、Candidate、Formal和
-N=1000继续关闭。
+派生的新网格身份，不是旧run重试。该运行以742,973单元、全局/真空/四面体/四个扫掠段无问题、
+双场各1,273,154 DOF和3330点/6660行采样完整PASS；实测130.067 s、5,557,870,592 bytes进程树峰值。
+相对0.32 mm全长参考，常规杆区差分/静态场矢量normalized RMS为`0.380%/0.675%`，杆出口为
+`1.298%/0.864%`，canonical handoff为`1.773%/0.570%`，六个预登记参考带全部满足。但网格仍比
+713,396单元参考多29,577单元（4.146%），所以策略筛查结论为
+`PASS_FIELD_RUN_REJECT_STRATEGY_EFFICIENCY`；不授权粒子。
+
+0.20 mm局部档相对0.40 mm全长父档增加205,407单元。按局部三维尺寸比例估算，0.25 mm档的增量约为
+`205,407×(0.20/0.25)^3≈105,168`，预计总量约642,734单元；其场值也应位于已观测的0.40和0.20 mm
+两端之间。当前因此只另行预登记
+[`0.25 mm最终插值pilot`](../config/qualification/comsol_exit_interface_025_final_field_preregistration.json)。
+它保持区域、背景、扫掠层和求解器不变，只改变局部最大单元尺寸；必须同时低于713,396单元并满足
+全部六个冻结参考带。任一条件失败即关闭该局部尺寸策略，不再增加插值档或粒子运行。参考带仍只筛选
+低成本复现策略，不是来源化功能容差；跨求解器、Candidate、Formal和N=1000继续关闭。
 
 共享SIMION模板、GUI复核、`.wgem`绕过和跨机可移植性状态只由
 [`../../../common/multipole/README.md`](../../../common/multipole/README.md)维护；公共机制证据不授予

@@ -132,7 +132,10 @@
   当前另以
   [`不侵入扫掠区的纠正pilot`](config/qualification/comsol_exit_interface_nosweep_mesh_strategy_field_preregistration.json)
   把上游范围收回到固定1.0 mm segment-end buffer边界，并在共享实现中禁止局部区进入swept interior。
-  新身份只授权一次field-only诊断；比较带仍不是功能容差，不授权粒子、收敛或资格结论。
+  该0.20 mm局部档以742,973单元完成双场和6660行采样，六个区域参考带全部满足，但仍比0.32 mm
+  全长参考多29,577单元，不能作为更省的替代网格。当前只再授权
+  [`0.25 mm最终插值pilot`](config/qualification/comsol_exit_interface_025_final_field_preregistration.json)；
+  它必须同时低于713,396单元并满足全部六个冻结参考带，否则关闭该尺寸策略且不再追加粒子或插值档。
   既有三模式baseline的两份
   求解器报告只具有`POSTHOC_DESCRIPTIVE`身份，统一
   比较见[`../../docs/history/20260729__multipole-three-mode-posthoc-n100.md`](../../docs/history/20260729__multipole-three-mode-posthoc-n100.md)。
