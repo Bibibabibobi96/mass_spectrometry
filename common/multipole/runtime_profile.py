@@ -62,12 +62,24 @@ def resolve_runtime_profile(
     allowed_profile_keys = required_profile_keys | {
         "stop_stage",
         "engineering_budget_path",
+        "comsol_particle_release_strategy",
     }
     if not required_profile_keys.issubset(profile) or set(profile) - allowed_profile_keys:
         raise ValueError(f"runtime profile keys differ: {sorted(profile)}")
     stop_stage = profile.get("stop_stage", "transport")
     if stop_stage not in {"transport", "mesh_build", "field_solve"}:
         raise ValueError(f"unsupported runtime stop stage: {stop_stage}")
+    comsol_particle_release_strategy = profile.get(
+        "comsol_particle_release_strategy", "individual_features"
+    )
+    if comsol_particle_release_strategy not in {
+        "individual_features",
+        "vectorized_phase",
+    }:
+        raise ValueError(
+            "unsupported COMSOL particle release strategy: "
+            f"{comsol_particle_release_strategy}"
+        )
     design = resolve_design_profile(repo_root, project_id, profile["design_profile_id"])
     design_serializable = {
         **design,
@@ -165,6 +177,7 @@ def resolve_runtime_profile(
         "runtime_profile_registry_path": str(registry_path.resolve()),
         "runtime_profile_registry_sha256": _sha256(registry_path),
         "stop_stage": stop_stage,
+        "comsol_particle_release_strategy": comsol_particle_release_strategy,
         "design_profile_id": profile["design_profile_id"],
         "design_profile_resolution": design_serializable,
         "particle_source": {

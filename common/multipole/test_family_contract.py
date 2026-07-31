@@ -341,7 +341,8 @@ class MultipoleFamilyContractTests(unittest.TestCase):
             REPO_ROOT / "common/multipole/solve_finite_3d_transport.m"
         ).read_text(encoding="utf-8")
         self.assertIn(
-            "write_canonical_particle_state(pdOn,source,canonicalStatePath",
+            "canonical_particle_state_table( ...\n"
+            "            pdOn,batchSource",
             solver,
         )
         self.assertIn("'handoff_plane_z',interfaces.exit.handoff_plane_z_mm", solver)

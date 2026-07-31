@@ -165,6 +165,26 @@ class RuntimeProfileTests(unittest.TestCase):
         for profile in special_profiles:
             self.assertIn(profile["stop_stage"], {"mesh_build", "field_solve"})
 
+    def test_comsol_release_strategy_is_explicit_or_normalized_to_individual(self) -> None:
+        baseline = resolve_runtime_profile(
+            REPO_ROOT,
+            "rf_quadrupole_ion_optics",
+            "no_acceleration_full_length_n100_comsol_followup_exit020_t160",
+        )
+        vectorized = resolve_runtime_profile(
+            REPO_ROOT,
+            "rf_quadrupole_ion_optics",
+            "no_acceleration_full_length_n100_vectorized_release_exit020_t160",
+        )
+        self.assertEqual(
+            baseline["comsol_particle_release_strategy"],
+            "individual_features",
+        )
+        self.assertEqual(
+            vectorized["comsol_particle_release_strategy"],
+            "vectorized_phase",
+        )
+
     def test_quadrupole_uses_the_same_governed_runtime_chain(self) -> None:
         resolved = resolve_runtime_profile(
             REPO_ROOT,

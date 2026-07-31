@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "role": "multipole_comsol_particle_release_strategy_validation_preregistration",
+  "campaign_id": "quadrupole_comsol_vectorized_release_n100_v1",
+  "status": "PREREGISTERED_NOT_EXECUTED",
+  "preregistered_before_run": true,
+  "scope": {
+    "project_id": "rf_quadrupole_ion_optics",
+    "solver": "comsol",
+    "design_profile_id": "no_acceleration_full_length",
+    "particle_source_profile_id": "family_mother_sample_v1_n100",
+    "particle_count": 100,
+    "comsol_solver_numerics_profile_id": "hybrid_c1_corridor040_exit020_nosweep_cg_amg_spatial_temporal_refined",
+    "retention_class": "compact",
+    "only_intended_variable": "comsol_particle_release_strategy"
+  },
+  "reference_run": {
+    "run_id": "20260731_020001__sim__comsol__quad-noacc-followup-exit020-t160",
+    "status": "success",
+    "wall_clock_seconds": 312.02,
+    "parent_resolved_design_sha256": "F63A63A376F66F3C3F4106FB2C84E36B1DF4005E7592D5331D07FC857FCFA3EA",
+    "particle_source_sha256": "0125C3AB02B2321EF26A3A913CF6EC04325FD0D48597D2CB439D0CE42411662F",
+    "run_manifest_sha256": "992EDC2ECB3B203967EC8E804848A7030D08A38B5C8786B5381E5532A3CDE4D5",
+    "primary_state_sha256": "C5F50B1258453DDA42AB39A83C42BC55F26B866EB979EF64018151B86173E593",
+    "control_state_sha256": "C69497584462A3169E842FBE9ABD5867372F0D25A0E0D5EF6495E4C09C772DC8",
+    "particle_events_sha256": "5A976A55FEC2ACCB9AAEA26D846D421827DA831DAC95D73FF29EB977640640FA",
+    "metrics_sha256": "B17B5AB9E0E56B2553D6E019E67E25A4A057980CBEE2825D023805E166EE861D"
+  },
+  "authorized_validation_run": {
+    "runtime_profile_id": "no_acceleration_full_length_n100_vectorized_release_exit020_t160",
+    "engineering_budget_path": "config/family_experiment/vectorized_release_validation/comsol_n100_budget.json",
+    "authorized_run_id": "20260731_070001__sim__comsol__quad-n100-vectorized-release-validation",
+    "comsol_particle_release_strategy": "vectorized_phase",
+    "executed": false
+  },
+  "frozen_authorities": {
+    "runtime_profiles": {
+      "path": "projects/rf_quadrupole_ion_optics/config/runtime_profiles.json",
+      "sha256": "41BB277BE96517C6E77C1D6427FD8A2F1F8D60DFD5543D74A6AA7737E658F9F1"
+    },
+    "comsol_solver_numerics": {
+      "path": "projects/rf_quadrupole_ion_optics/config/multipole_transport_comsol_solver_numerics.json",
+      "sha256": "9F866B7FBA171E954D6B61E58B677402775A6E06303BEFCF8B9E66EBD8A710F8"
+    },
+    "engineering_budget": {
+      "path": "projects/rf_quadrupole_ion_optics/config/family_experiment/vectorized_release_validation/comsol_n100_budget.json",
+      "sha256": "C3606C06DD3B169AC927A402EA508B742481ED52C2D5619DCA17E2270A06E2A3"
+    },
+    "effect_resolution": {
+      "path": "common/multipole/no_acceleration_followup_resolution.json",
+      "sha256": "FF941874DD54A32CD05C119894FD6633D795266EAC8C9EAAF4AE0D9EBEF691DD"
+    },
+    "implementation": [
+      {
+        "path": "common/multipole/solve_finite_3d_transport.m",
+        "sha256": "017B5E61B5CCBB239683C83E4E5FF15DEC9966AC43D1861BF5872716377D38C4"
+      },
+      {
+        "path": "common/multipole/runtime_profile.py",
+        "sha256": "38A6AB771A4A39982A1040AD526AB22FA7F4D764D4370939F3DF17D07CCDED20"
+      },
+      {
+        "path": "common/multipole/resource_budget.py",
+        "sha256": "9892114ED6CE8B6C2AE21AC8D3F14B610D3A8E3DAE0712A78551AF8E9809906A"
+      },
+      {
+        "path": "common/multipole/run_finite_3d_transport.ps1",
+        "sha256": "3F6F493D1AA0C2A6DC8C61460AFFE57CB79DA5F026E13E3A8ACA9B9F6ABB123A"
+      },
+      {
+        "path": "common/multipole/project_transport_launcher_support.ps1",
+        "sha256": "4BECE12AA18C49B08D0397A501A6B198FA2894B1A5E8BEAF8B589A552AD71AD1"
+      }
+    ]
+  },
+  "equivalence_acceptance": {
+    "required_run_status": "success",
+    "source_particle_id_set": "exact_match",
+    "primary_handoff_particle_id_set": "exact_match",
+    "control_handoff_particle_id_set": "exact_match",
+    "event_status_and_terminal_reason_by_case_and_particle": "exact_match",
+    "required_per_particle_fixed_bin_stability": [
+      "transverse_x_mm",
+      "transverse_y_mm",
+      "radial_position_mm",
+      "divergence_angle_deg",
+      "kinetic_energy_eV",
+      "elapsed_time_us"
+    ],
+    "fixed_bins_authority": "common/multipole/no_acceleration_followup_resolution.json",
+    "external_region_or_timeout_count": "exact_match",
+    "report_unthresholded_maximum_absolute_differences": [
+      "time_us",
+      "elapsed_time_us",
+      "transverse_x_mm",
+      "transverse_y_mm",
+      "velocity_axial_m_s",
+      "velocity_x_m_s",
+      "velocity_y_m_s",
+      "kinetic_energy_eV",
+      "radial_position_mm",
+      "divergence_angle_deg"
+    ],
+    "failure_result": "VECTOR_RELEASE_NOT_EQUIVALENT_RETAIN_INDIVIDUAL_FEATURES"
+  },
+  "performance_evaluation": {
+    "reference_wall_clock_seconds": 312.02,
+    "report_wall_clock_ratio": true,
+    "correctness_is_not_waived_if_no_speedup": true,
+    "single_run_timing_is_engineering_evidence_not_a_stable_benchmark": true
+  },
+  "known_semantic_risk": "Vectorized release advances every particle for the full global horizon after shifting RF phase; legacy absolute-time release leaves a shorter remaining horizon for later births. Exact terminal classifications and timeout counts therefore remain mandatory.",
+  "stop_policy": {
+    "equivalence_failure": "STOP_NO_N1000_PROMOTION",
+    "resource_or_solver_failure": "STOP_INCONCLUSIVE_NO_RETRY",
+    "execution_environment_blocked": "CORRECT_ENVIRONMENT_AND_RETRY_SAME_FROZEN_INPUT",
+    "automatic_retry_count": 0
+  },
+  "claim_limit": "Implementation equivalence and one-host wall-clock evidence only; no physical accuracy, numerical convergence, cross-solver equivalence, Candidate, Formal or N=1000 claim."
+}

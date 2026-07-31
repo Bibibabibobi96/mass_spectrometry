@@ -222,6 +222,9 @@ def validate_pilot_budget(
         "solver": solver,
         "runtime_profile_id": runtime_profile_id,
         "stop_stage": stop_stage,
+        "comsol_particle_release_strategy": runtime[
+            "comsol_particle_release_strategy"
+        ],
         "design_profile_id": design_profile_id,
         "particle_source_profile_id": runtime["particle_source"]["profile_id"],
         "solver_numerics_profile_id": runtime["solver_numerics"][solver]["profile_id"],

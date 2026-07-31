@@ -44,6 +44,16 @@ class ProjectTransportLauncherSupportTests(unittest.TestCase):
         )
         self.assertIn("$arguments.StopStage = $stopStage", source)
         self.assertIn("$stopStage = [string]$profile.stop_stage", source)
+        self.assertIn(
+            "$comsolParticleReleaseStrategy = "
+            "[string]$profile.comsol_particle_release_strategy",
+            source,
+        )
+        self.assertIn(
+            "$arguments.ComsolParticleReleaseStrategy = "
+            "$comsolParticleReleaseStrategy",
+            source,
+        )
         self.assertNotIn("-like '*_mesh_build'", source)
         self.assertIn("SIMION transport does not support stop stage", source)
         self.assertIn("solver_numerics.$Solver.values", source)
