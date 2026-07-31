@@ -174,7 +174,7 @@ class FollowupAnalysisTests(unittest.TestCase):
             self.assertEqual(len(result["plan"]["sha256"]), 64)
             self.assertEqual(
                 result["contracts"]["policy"]["status"],
-                "DRAFT_PENDING_ENERGY_THRESHOLDS",
+                "ACTIVE_ENGINEERING_PROGRESSION_POLICY",
             )
 
     def test_engineering_batch_fail_precedes_not_evaluated(self) -> None:
@@ -203,6 +203,9 @@ class FollowupAnalysisTests(unittest.TestCase):
     def test_draft_engineering_policy_cannot_aggregate_to_pass(self) -> None:
         with TemporaryDirectory() as directory:
             plan, policy, functional = self.engineering_fixture(Path(directory))
+            policy_document = json.loads(policy.read_text(encoding="utf-8"))
+            policy_document["status"] = "DRAFT_PENDING_ENERGY_THRESHOLDS"
+            policy.write_text(json.dumps(policy_document), encoding="utf-8")
             result = engineering_batch(
                 plan,
                 policy,

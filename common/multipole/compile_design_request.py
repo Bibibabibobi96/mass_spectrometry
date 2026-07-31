@@ -185,8 +185,17 @@ def _validate_enclosure(
             raise MultipoleDesignCompileError(
                 f"{label} plane must remain inside the explicit vacuum z range"
             )
-    if float(enclosure["working_region_radius_mm"]) <= 0:
+    working_region_radius = float(enclosure["working_region_radius_mm"])
+    if working_region_radius <= 0:
         raise MultipoleDesignCompileError("working region radius must be positive")
+    for side in ("entrance", "exit"):
+        if (
+            float(interfaces[side]["aperture_radius_mm"])
+            > working_region_radius + GEOMETRY_EQUALITY_ABS_TOL_MM
+        ):
+            raise MultipoleDesignCompileError(
+                f"{side} aperture radius exceeds the working region radius"
+            )
 
     model = enclosure["model"]
     role = enclosure["role"]

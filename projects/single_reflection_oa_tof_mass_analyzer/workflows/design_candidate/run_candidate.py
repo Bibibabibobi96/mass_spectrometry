@@ -81,6 +81,8 @@ def prepare_execution(
     *,
     particle_source_seed: int,
     artifact_project_root: Path | None = None,
+    campaign_table: Path | None = None,
+    campaign_selection: Path | None = None,
 ) -> Path:
     if not isinstance(particle_source_seed, int):
         raise ValueError("candidate entry requires an explicit integer particle source seed")
@@ -111,6 +113,8 @@ def prepare_execution(
         artifact_root,
         particle_source_seed=particle_source_seed,
         simion_template_run=template,
+        campaign_table=campaign_table,
+        campaign_selection=campaign_selection,
     )
     plan_path = Path(plan["planning_root"]) / "candidate_workflow_plan.json"
     document = load_json(plan_path)
@@ -142,12 +146,16 @@ def execute_request(
     reuse_parent: Path | None = None,
     reuse_through: str | None = None,
     stage_executor: Any = None,
+    campaign_table: Path | None = None,
+    campaign_selection: Path | None = None,
 ) -> tuple[Path, dict[str, Any]]:
     plan = prepare_execution(
         request_path,
         run_id,
         particle_source_seed=particle_source_seed,
         artifact_project_root=artifact_project_root,
+        campaign_table=campaign_table,
+        campaign_selection=campaign_selection,
     )
     runtime = load_json(RUNTIME_CONFIG)
     kwargs: dict[str, Any] = {
@@ -171,12 +179,16 @@ def main() -> None:
     parser.add_argument("--reuse-parent", type=Path)
     parser.add_argument("--reuse-through", choices=REUSABLE_STAGES)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--campaign-table", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--campaign-selection", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     try:
         plan = prepare_execution(
             args.request,
             args.run_id,
             particle_source_seed=args.particle_source_seed,
+            campaign_table=args.campaign_table,
+            campaign_selection=args.campaign_selection,
         )
         if args.dry_run:
             print(f"OATOF_CANDIDATE=EXECUTION_READY PLAN={plan}")

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "role": "multipole_engineering_progression_acceptance_contract",
   "contract_id": "rf_multipole_temporary_downstream_engineering_progression_v1",
-  "status": "DRAFT_PENDING_ENERGY_THRESHOLDS",
+  "status": "ACTIVE_ENGINEERING_PROGRESSION_POLICY",
   "decision_date": "2026-07-31",
   "decision_authority": "user-approved family engineering progression direction",
   "scope": {
@@ -49,12 +49,14 @@
     },
     "energy_observables": {
       "mean_energy_difference_eV": {
-        "maximum": null,
-        "status": "PENDING_DOWNSTREAM_ACCEPTANCE"
+        "maximum": 0.2,
+        "status": "APPROVED",
+        "basis": "Ten percent of the frozen upstream mean source energy of 2.0 eV."
       },
       "centered_energy_spread_difference_eV": {
-        "maximum": null,
-        "status": "PENDING_DOWNSTREAM_ACCEPTANCE"
+        "maximum": 0.2,
+        "status": "APPROVED",
+        "basis": "Temporary absolute difference limit because the frozen upstream centered RMS energy spread is 0 eV."
       }
     },
     "comparison_operator": "absolute_difference_less_than_or_equal",
@@ -78,10 +80,10 @@
   },
   "decision_policy": {
     "numerical_convergence": "DEFERRED_NOT_WAIVED",
-    "engineering_progression_pass": "Not active until the required downstream energy acceptance thresholds are approved.",
+    "engineering_progression_pass": "All functional checks and all six continuous engineering limits must pass.",
     "engineering_progression_fail": "Any functional failure, missing required metric, basis mismatch, or violation of any approved threshold in continuous_engineering_acceptance blocks progression.",
     "existing_convergence_results": "Keep their original INCONCLUSIVE or sensitivity status; do not relabel them as converged.",
     "future_review": "Replace or revise this temporary policy when downstream oa-TOF acceptance, resolution and tolerance budgets are validated."
   },
-  "claim_limit": "This draft records the approved family-wide spatial and angular direction and the verified shared evaluator, but cannot issue PASS until both required energy thresholds are approved. A future engineering-progression PASS will not establish numerical convergence, solver equivalence, absolute accuracy, solver superiority, optimization, Candidate or Formal qualification."
+  "claim_limit": "This temporary active policy records the approved family-wide spatial, angular, 0.2 eV mean-energy-difference and 0.2 eV centered-energy-spread-difference limits. An engineering-progression PASS does not establish numerical convergence, solver equivalence, absolute accuracy, solver superiority, optimization, Candidate or Formal qualification."
 }

@@ -97,9 +97,45 @@ def _write_manifest(
         "formal_eligible": False,
         "promotion_authorized": False,
         "execution_source_closure": config.get("execution_source_closure", {}),
+        **(
+            {"campaign_binding": config["campaign_binding"]}
+            if "campaign_binding" in config
+            else {}
+        ),
     }
     _write_json(run_root / "run_manifest.json", manifest)
     return manifest
+
+
+def _verify_campaign_binding(config: dict[str, Any]) -> None:
+    binding = config.get("campaign_binding")
+    if binding is None:
+        return
+    inputs = config.get("inputs", {})
+    hashes = config.get("input_sha256", {})
+    table = Path(inputs.get("experiment_campaign", ""))
+    selection_path = Path(inputs.get("campaign_selection", ""))
+    if (
+        not table.is_file()
+        or not selection_path.is_file()
+        or sha256(table) != hashes.get("experiment_campaign")
+        or sha256(selection_path) != hashes.get("campaign_selection")
+        or sha256(table) != binding.get("campaign_sha256")
+        or sha256(selection_path) != binding.get("selection_sha256")
+    ):
+        raise ValueError("candidate campaign binding inputs changed")
+    selection = load_json(selection_path)
+    if (
+        selection.get("role") != "oatof_campaign_selection"
+        or selection.get("campaign_id") != binding.get("campaign_id")
+        or selection.get("campaign_run_id") != binding.get("campaign_run_id")
+        or selection.get("experiment_id") != binding.get("experiment_id")
+        or selection.get("candidate_run_id") != config.get("run_id")
+        or selection.get("particle_source_seed")
+        != config.get("run_instance", {}).get("particle_source_seed")
+        or selection.get("campaign_sha256") != sha256(table)
+    ):
+        raise ValueError("candidate campaign selection identity differs")
 
 
 def _summary(status: str, stage_results: list[dict[str, Any]], failure_stage: str | None = None) -> dict[str, Any]:
@@ -148,6 +184,9 @@ def start_candidate_run(plan_path: Path, *, provisional_manifest: bool = True) -
         raise ValueError("formal baseline changed after candidate planning; regenerate the plan")
     verify_candidate_source_closure(plan.get("execution_source_closure", {}))
     config_template = load_json(planning_root / "run_config.template.json")
+    if plan.get("campaign_binding") != config_template.get("campaign_binding"):
+        raise ValueError("candidate plan and run config campaign bindings differ")
+    _verify_campaign_binding(config_template)
     for key, value in config_template.get("inputs", {}).items():
         expected = config_template.get("input_sha256", {}).get(key, "")
         if not expected or sha256(Path(value)).lower() != expected.lower():
@@ -278,6 +317,7 @@ def finalize_candidate_run(
     config = load_json(run_root / "run_config.json")
     if run_root.name != config.get("run_id"):
         raise ValueError("run folder and run_config run_id differ")
+    _verify_campaign_binding(config)
     runtime_plan = load_json(run_root / "candidate_workflow_plan.json")
     if status == "success":
         verify_candidate_source_closure(runtime_plan.get("execution_source_closure", {}))

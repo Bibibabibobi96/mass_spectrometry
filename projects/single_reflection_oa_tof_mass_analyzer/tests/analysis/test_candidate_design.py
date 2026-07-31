@@ -669,6 +669,85 @@ class CandidateDesignTests(unittest.TestCase):
                 )
             self.assertFalse(Path(plan["run_root"]).exists())
 
+    def test_campaign_table_and_selection_are_frozen_into_child_manifest(self):
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            source = root_path / "source"
+            source.mkdir()
+            self.candidate_run_inputs(source)
+            artifact_root = (
+                root_path
+                / "artifacts"
+                / "projects"
+                / "single_reflection_oa_tof_mass_analyzer"
+            )
+            registration = self.registered_template_run(
+                artifact_root,
+                "20260727_102100__build__simion__candidate-layout-template-workspace",
+            )
+            runtime = root_path / "candidate_runtime.json"
+            runtime.write_text(
+                json.dumps(
+                    {
+                        "role": "oa_tof_candidate_runtime",
+                        "simion_executable": sys.executable,
+                        "simion_template_run_id": registration.name,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            run_id = "20260731_232000__test__cross__campaign-child"
+            campaign = root_path / "experiment_campaign.json"
+            campaign.write_text(
+                json.dumps({"campaign_id": "fixture_campaign"}), encoding="utf-8"
+            )
+            selection = root_path / "campaign_selection.json"
+            selection.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "role": "oatof_campaign_selection",
+                        "campaign_id": "fixture_campaign",
+                        "campaign_run_id": "20260731_231900__test__cross__campaign-parent",
+                        "experiment_id": "fixture_row",
+                        "candidate_run_id": run_id,
+                        "particle_source_seed": 20260720,
+                        "campaign_sha256": sha256(campaign),
+                        "request": {
+                            "path": str(source / "design_request.json"),
+                            "sha256": sha256(source / "design_request.json"),
+                        },
+                        "proposal": {
+                            "path": str(source / "candidate_proposal.json"),
+                            "sha256": sha256(source / "candidate_proposal.json"),
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with mock.patch.object(candidate_entry, "RUNTIME_CONFIG", runtime):
+                plan_path = candidate_entry.prepare_execution(
+                    source / "design_request.json",
+                    run_id,
+                    particle_source_seed=20260720,
+                    artifact_project_root=artifact_root,
+                    campaign_table=campaign,
+                    campaign_selection=selection,
+                )
+            plan = load_json(plan_path)
+            self.assertEqual(plan["campaign_binding"]["experiment_id"], "fixture_row")
+            self.assertIn("experiment_campaign", plan["candidate_inputs"])
+            self.assertIn("campaign_selection", plan["candidate_inputs"])
+            child_root = start_candidate_run(plan_path)
+            manifest = load_json(child_root / "run_manifest.json")
+            self.assertEqual(
+                manifest["campaign_binding"]["campaign_sha256"], sha256(campaign)
+            )
+            self.assertEqual(
+                manifest["inputs"]["campaign_selection"]["sha256"],
+                plan["campaign_binding"]["selection_sha256"],
+            )
+
     def test_candidate_template_requires_successful_registered_template_build_run(self):
         with tempfile.TemporaryDirectory() as root:
             root_path = Path(root)

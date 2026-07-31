@@ -30,6 +30,8 @@ RELATIVE_PATHS = (
     "common/solidworks/import_step_to_solidworks.py",
     "common/solidworks/installation.py",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/generate_ion_source.py",
+    "projects/single_reflection_oa_tof_mass_analyzer/analysis/candidate_run_lifecycle.py",
+    "projects/single_reflection_oa_tof_mass_analyzer/analysis/prepare_candidate_run.py",
     "projects/single_reflection_oa_tof_mass_analyzer/cad/export_oatof_cad_step.m",
     "projects/single_reflection_oa_tof_mass_analyzer/cad/ms_export_oatof_to_solidworks.m",
     "projects/single_reflection_oa_tof_mass_analyzer/cad/oatof_cad_export_manifest.m",

@@ -17,6 +17,20 @@ REPO_ROOT = Path(__file__).parents[2]
 
 
 class SimionRunnerContractTests(unittest.TestCase):
+    def test_runner_freezes_resolved_campaign_selection_before_solver_launch(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8-sig")
+        self.assertIn("[string]$ResolvedRuntimeProfilePath=''", source)
+        self.assertIn(
+            "Campaign transport requires the resolved runtime-profile snapshot.",
+            source,
+        )
+        self.assertIn("resolved_runtime_profile.json", source)
+        self.assertIn("campaign_sha256=[string]$campaignSelection.sha256", source)
+        self.assertLess(
+            source.index("Campaign authority changed before it was frozen."),
+            source.index("Invoke-SimionStep 'gem2pa'"),
+        )
+
     def test_default_run_ids_delimit_the_design_profile_variable(self) -> None:
         for name in (
             "run_finite_3d_transport.ps1",
@@ -145,9 +159,9 @@ class SimionRunnerContractTests(unittest.TestCase):
         self.assertIn('axial_axis="x"', source)
         self.assertIn("maps GEM +z to flight +x", source)
 
-    def test_explicit_run_id_is_forwarded_to_budget_authorization(self) -> None:
+    def test_final_run_id_is_always_forwarded_to_budget_authorization(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
-        self.assertIn("$runIdWasExplicit", source)
+        self.assertNotIn("$runIdWasExplicit", source)
         self.assertIn("$budgetArguments+=@('--run-id',$RunId)", source)
         self.assertIn("authorized_run_id", source)
         self.assertLess(

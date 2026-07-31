@@ -7,7 +7,10 @@ import json
 from pathlib import Path
 from typing import Any
 
-from common.multipole.runtime_profile import resolve_runtime_profile
+from common.multipole.runtime_profile import (
+    resolve_runtime_profile,
+    resolve_runtime_selection,
+)
 
 _SCOPE_KEYS = {
     "project_id",
@@ -83,14 +86,26 @@ def validate_pilot_budget(
 ) -> dict[str, Any]:
     """Resolve the runtime profile and validate the exact authorized pilot."""
 
-    runtime = resolve_runtime_profile(repo_root.resolve(), project_id, runtime_profile_id)
+    budget_source = _load(budget_path.resolve())
+    if budget_source.get("role") == "multipole_transport_experiment_campaign":
+        runtime = resolve_runtime_selection(
+            repo_root.resolve(),
+            project_id,
+            campaign_path=budget_path.resolve(),
+            experiment_id=runtime_profile_id,
+        )
+        budget = runtime["engineering_budget"]["inline_contract"]
+    else:
+        runtime = resolve_runtime_profile(
+            repo_root.resolve(), project_id, runtime_profile_id
+        )
+        budget = budget_source
     stop_stage = runtime.get("stop_stage")
     if stop_stage not in {"transport", "mesh_build", "field_solve"}:
         raise ValueError("resolved runtime profile stop stage is missing or unsupported")
     expected_budget = Path(runtime["engineering_budget"]["path"]).resolve()
     if budget_path.resolve() != expected_budget:
         raise ValueError("engineering-budget path differs from runtime profile")
-    budget = _load(expected_budget)
     _require_keys(
         budget,
         {

@@ -9,11 +9,8 @@ the same segmented geometry without claiming segmented-rod acceleration.
 
 from __future__ import annotations
 
-import argparse
 import copy
-import json
 import math
-from pathlib import Path
 from typing import Any
 
 
@@ -228,37 +225,3 @@ def segment_rod_array(array: dict[str, Any], resolved: dict[str, Any]) -> dict[s
         "electrode_count_per_segment": len(rods),
         "electrodes": expanded,
     }
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--contract", required=True, type=Path)
-    parser.add_argument("--rod-geometry", required=True, type=Path)
-    parser.add_argument("--source-energy-ev", required=True, type=float)
-    parser.add_argument("--charge-state", required=True, type=int)
-    parser.add_argument("--output", required=True, type=Path)
-    parser.add_argument("--segmented-rods-output", type=Path)
-    args = parser.parse_args()
-    contract = json.loads(args.contract.read_text(encoding="utf-8-sig"))
-    geometry = json.loads(args.rod_geometry.read_text(encoding="utf-8-sig"))
-    array = geometry["array_mm"] if "array_mm" in geometry else geometry["rod_array_mm"]
-    rods = array["rods"]
-    resolved = resolve_axial_acceleration(
-        contract,
-        rod_z_min_mm=float(rods[0]["z_min_mm"]),
-        rod_z_max_mm=float(rods[0]["z_max_mm"]),
-        source_kinetic_energy_ev=args.source_energy_ev,
-        charge_state=args.charge_state,
-    )
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(resolved, indent=2) + "\n", encoding="utf-8")
-    if args.segmented_rods_output is not None:
-        args.segmented_rods_output.parent.mkdir(parents=True, exist_ok=True)
-        args.segmented_rods_output.write_text(
-            json.dumps(segment_rod_array(array, resolved), indent=2) + "\n", encoding="utf-8"
-        )
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

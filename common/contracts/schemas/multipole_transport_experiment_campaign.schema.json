@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/multipole_transport_experiment_campaign.schema.json",
+  "title": "Declarative SIMION multipole transport experiment campaign",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "role",
+    "family_id",
+    "campaign_id",
+    "preregistered_before_run",
+    "experiments",
+    "claim_limit"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "multipole_transport_experiment_campaign"},
+    "family_id": {"const": "rf_multipole_ion_optics"},
+    "campaign_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+    },
+    "preregistered_before_run": {"const": true},
+    "experiments": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/experiment"}
+    },
+    "claim_limit": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "experiment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "experiment_id",
+        "project_id",
+        "authorized_run_id",
+        "solver",
+        "stop_stage",
+        "design_profile_id",
+        "particle_source_profile_id",
+        "comsol_solver_numerics_profile_id",
+        "simion_solver_numerics",
+        "retention_class",
+        "resource_authorization",
+        "claim_limit"
+      ],
+      "properties": {
+        "experiment_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+        },
+        "project_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+        },
+        "authorized_run_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+        },
+        "solver": {"const": "simion"},
+        "stop_stage": {"const": "transport"},
+        "design_profile_id": {"type": "string", "minLength": 1},
+        "particle_source_profile_id": {"type": "string", "minLength": 1},
+        "comsol_solver_numerics_profile_id": {"type": "string", "minLength": 1},
+        "simion_solver_numerics": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "profile_id"],
+              "properties": {
+                "kind": {"const": "profile"},
+                "profile_id": {"type": "string", "minLength": 1}
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "numerics_id", "values"],
+              "properties": {
+                "kind": {"const": "inline"},
+                "numerics_id": {"type": "string", "minLength": 1},
+                "values": {"$ref": "#/$defs/simion_numerics"}
+              }
+            }
+          ]
+        },
+        "retention_class": {
+          "enum": ["compact", "qualification", "solver_review"]
+        },
+        "resource_authorization": {"$ref": "#/$defs/resource_authorization"},
+        "claim_limit": {"type": "string", "minLength": 1}
+      }
+    },
+    "simion_numerics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cell_mm_xyz",
+        "trajectory_quality",
+        "trajectory"
+      ],
+      "properties": {
+        "cell_mm_xyz": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["x", "y", "z"],
+          "properties": {
+            "x": {"type": "number", "minimum": 0.001, "maximum": 100},
+            "y": {"type": "number", "minimum": 0.001, "maximum": 100},
+            "z": {"type": "number", "minimum": 0.001, "maximum": 100}
+          }
+        },
+        "trajectory_quality": {"type": "integer", "minimum": 0, "maximum": 100},
+        "trajectory": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["rf_steps_per_period", "maximum_global_time_us"],
+          "properties": {
+            "rf_steps_per_period": {
+              "type": "integer",
+              "minimum": 4,
+              "maximum": 10000
+            },
+            "maximum_global_time_us": {
+              "type": "number",
+              "minimum": 0.001,
+              "maximum": 1000000
+            }
+          }
+        }
+      }
+    },
+    "resource_authorization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authorized",
+        "limits",
+        "full_matrix_authorization",
+        "budget_exhaustion_result"
+      ],
+      "properties": {
+        "authorized": {"const": true},
+        "limits": {"$ref": "#/$defs/limits"},
+        "full_matrix_authorization": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["authorized", "reason"],
+          "properties": {
+            "authorized": {"const": false},
+            "reason": {"type": "string", "minLength": 1}
+          }
+        },
+        "budget_exhaustion_result": {"type": "string", "minLength": 1}
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "wall_clock_seconds_by_solver",
+        "transient_run_directory_bytes",
+        "process_tree_working_set_bytes",
+        "minimum_system_available_memory_bytes",
+        "compact_final_retained_bytes",
+        "maximum_pa_grid_points",
+        "automatic_retry_count"
+      ],
+      "properties": {
+        "wall_clock_seconds_by_solver": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["comsol", "simion"],
+          "properties": {
+            "comsol": {"type": "integer", "minimum": 1},
+            "simion": {"type": "integer", "minimum": 1}
+          }
+        },
+        "transient_run_directory_bytes": {"type": "integer", "minimum": 1},
+        "process_tree_working_set_bytes": {"type": "integer", "minimum": 1},
+        "minimum_system_available_memory_bytes": {"type": "integer", "minimum": 1},
+        "compact_final_retained_bytes": {"type": "integer", "minimum": 1},
+        "maximum_pa_grid_points": {"type": "integer", "minimum": 1},
+        "automatic_retry_count": {"const": 0}
+      }
+    }
+  }
+}

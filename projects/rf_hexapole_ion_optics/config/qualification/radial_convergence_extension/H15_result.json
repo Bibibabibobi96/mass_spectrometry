@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "role": "multipole_simion_radial_convergence_extension_result",
+  "project_id": "rf_hexapole_ion_optics",
+  "arm": "H15",
+  "status": "PASS_ENGINEERING_PROGRESSION_CONTINUE_FAMILY_CAMPAIGN",
+  "run": {
+    "run_id": "20260731_133000__sim__simion__hex-noacc-radial-h15-r015-z020-t160",
+    "run_manifest_sha256": "E68677F6E624F46CD575547D64CEFA8CA28E08A40DE01C571A7E7FE92E6069A9",
+    "summary_sha256": "B623C73200FA9CF62FE863E902E536BDB65F1442900F011F97EDF1ACC539680F",
+    "resource_usage_sha256": "5F6FD1376D4697C831C546221AF0D11D6C46AB6F9B5E2F949AE4C0F7FD7E9F87",
+    "particle_count": 100,
+    "cell_mm_xyz": {"x": 0.15, "y": 0.15, "z": 0.2},
+    "rf_steps_per_period": 160,
+    "pa_grid_points": 33479464,
+    "wall_clock_seconds": 548.215,
+    "peak_run_directory_bytes": 3511838913,
+    "peak_process_tree_working_set_bytes": 3399606272,
+    "primary_transmission": 1.0
+  },
+  "analysis": {
+    "run_id": "20260731_135000__analysis__python__hex-simion-radial-h15-engineering-reanalysis",
+    "plan_sha256": "B1D371261F55FFBFE63CCB9B440BAD475AEB14E97171D0E374785E3A93DB33B1",
+    "result_sha256": "6D48D91B5E988A4BB7A5667F1C158A26B612A553C8B137A162EC5C7A9501ACE5",
+    "decision_status": "PASS",
+    "comparison_id": "hex_T_to_H15_radial_extension"
+  },
+  "adjacent_difference": {
+    "transverse_centroid_vector_difference_mm": 0.02057107132294037,
+    "centered_spatial_rms_spread_absolute_difference_mm": 0.01384685966459559,
+    "mean_beam_direction_separation_deg": 0.16706902566537132,
+    "centered_angular_rms_spread_absolute_difference_deg": 0.011958782403534762,
+    "mean_energy_absolute_difference_eV": 0.0024057894386002587,
+    "centered_rms_energy_spread_absolute_difference_eV": 0.0013129891227086632
+  },
+  "trend_against_previous_Z_to_I_interval": {
+    "transverse_centroid_vector_difference_decreased": false,
+    "centered_spatial_rms_spread_difference_decreased": true,
+    "mean_beam_direction_separation_decreased": true,
+    "centered_angular_rms_spread_difference_decreased": true,
+    "mean_energy_difference_decreased": true,
+    "centered_rms_energy_spread_difference_decreased": true
+  },
+  "decision": {
+    "engineering_authority": "user",
+    "decision_date": "2026-07-31",
+    "centroid_shift_assessment": "Accepted as negligible for engineering progression because 0.0205711 mm is about ten percent of the approved 0.2 mm limit. Its cause is unresolved and is not asserted to be numerical error.",
+    "next_authorized_step": "Use the governed experiment campaign to execute quadrupole and octupole H15 transverse arms, then compare no-acceleration and segmented-rod acceleration at the existing 1.0 mm rod-to-grounded-shield-metal spacing.",
+    "hexapole_H10": "Not authorized in the revised campaign; the user accepted the H15 engineering differences and directed progression to the other family members.",
+    "quadrupole_and_octupole_expansion": "Authorized by the user after accepting the H15 centroid shift as negligible relative to the approved engineering limit.",
+    "claim_limit": "Engineering progression only for the frozen N=100 source and current no-acceleration design. Numerical convergence remains deferred and is not waived."
+  }
+}

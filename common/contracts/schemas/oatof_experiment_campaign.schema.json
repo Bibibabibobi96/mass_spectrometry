@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/oatof_experiment_campaign.schema.json",
+  "title": "Declarative oa-TOF structural Candidate experiment campaign",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "role",
+    "project_id",
+    "campaign_id",
+    "status",
+    "execution_authorized",
+    "preregistered_before_run",
+    "execution_profile",
+    "base_request",
+    "authorities",
+    "allowed_variation_axes",
+    "fixed_runtime_bindings",
+    "resource_budget",
+    "claim_limit",
+    "experiments"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "oatof_structural_candidate_experiment_campaign"},
+    "project_id": {"const": "single_reflection_oa_tof_mass_analyzer"},
+    "campaign_id": {"$ref": "#/$defs/identifier"},
+    "status": {"enum": ["draft", "authorized", "retired"]},
+    "execution_authorized": {"type": "boolean"},
+    "preregistered_before_run": {"type": "boolean"},
+    "execution_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile_id", "authority"],
+      "properties": {
+        "profile_id": {"const": "validated_structural_candidate"},
+        "authority": {"$ref": "#/$defs/file_record"}
+      }
+    },
+    "base_request": {"$ref": "#/$defs/file_record"},
+    "authorities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "baseline",
+        "science_profile",
+        "solver_numerics",
+        "design_variable_catalog",
+        "optimization_envelope",
+        "candidate_workflow"
+      ],
+      "properties": {
+        "baseline": {"$ref": "#/$defs/file_record"},
+        "science_profile": {"$ref": "#/$defs/file_record"},
+        "solver_numerics": {"$ref": "#/$defs/file_record"},
+        "design_variable_catalog": {"$ref": "#/$defs/file_record"},
+        "optimization_envelope": {"$ref": "#/$defs/file_record"},
+        "candidate_workflow": {"$ref": "#/$defs/file_record"}
+      }
+    },
+    "allowed_variation_axes": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/variation_axis"}
+    },
+    "fixed_runtime_bindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "particle_source_seed",
+        "particle_count",
+        "statistical_pairing"
+      ],
+      "properties": {
+        "particle_source_seed": {"type": "integer"},
+        "particle_count": {"const": 100},
+        "statistical_pairing": {"const": "common_random_numbers_across_rows"}
+      }
+    },
+    "resource_budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stage_wall_clock_seconds",
+        "commercial_solver_parallelism",
+        "automatic_retry_count"
+      ],
+      "properties": {
+        "stage_wall_clock_seconds": {"const": 14400},
+        "commercial_solver_parallelism": {"const": 1},
+        "automatic_retry_count": {"const": 0}
+      }
+    },
+    "claim_limit": {"type": "string", "minLength": 1},
+    "experiments": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/experiment"}
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[A-F0-9]{64}$"
+    },
+    "file_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "variation_axis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "axis_id",
+        "parameter_role",
+        "derivation_direction",
+        "variable_id",
+        "unit"
+      ],
+      "properties": {
+        "axis_id": {"$ref": "#/$defs/identifier"},
+        "parameter_role": {"const": "physical_compiler_governed"},
+        "derivation_direction": {"const": "campaign_input_to_compiler_derived_fields"},
+        "variable_id": {"$ref": "#/$defs/identifier"},
+        "unit": {"type": "string", "minLength": 1}
+      }
+    },
+    "variation_value": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["axis_id", "value", "unit"],
+      "properties": {
+        "axis_id": {"$ref": "#/$defs/identifier"},
+        "value": {"type": "number"},
+        "unit": {"type": "string", "minLength": 1}
+      }
+    },
+    "experiment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sequence",
+        "experiment_id",
+        "authorized_run_id",
+        "variation_values"
+      ],
+      "properties": {
+        "sequence": {"type": "integer", "minimum": 1},
+        "experiment_id": {"$ref": "#/$defs/identifier"},
+        "authorized_run_id": {
+          "type": "string",
+          "pattern": "^\\d{8}_\\d{6}__[a-z0-9]+(?:-[a-z0-9]+)*__[a-z0-9]+(?:-[a-z0-9]+)*__[a-z0-9]+(?:-[a-z0-9]+)*(?:__[a-z0-9]+(?:-[a-z0-9]+)*)?$"
+        },
+        "variation_values": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/variation_value"}
+        }
+      }
+    }
+  }
+}

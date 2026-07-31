@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "role": "oatof_structural_candidate_experiment_campaign",
+  "project_id": "single_reflection_oa_tof_mass_analyzer",
+  "campaign_id": "reflectron_midgrid_structural_draft_v1",
+  "status": "draft",
+  "execution_authorized": false,
+  "preregistered_before_run": false,
+  "execution_profile": {
+    "profile_id": "validated_structural_candidate",
+    "authority": {
+      "path": "config/execution_profiles.json",
+      "sha256": "42F78C4933182D1DC07D5AC75558759DDAD5309B220C232E0A6DFC4A41D32395"
+    }
+  },
+  "base_request": {
+    "path": "config/requests/reflectron_midgrid_structural_campaign_draft.json",
+    "sha256": "58AB8CC3475B2B35419977B8F808858E9E73A52EAD226687E916BB6C56BEFA98"
+  },
+  "authorities": {
+    "baseline": {
+      "path": "config/baseline.json",
+      "sha256": "A50A247F58093A2C0A030AA8BDAE2AE695AB5E972D1F41E49090B6A121042685"
+    },
+    "science_profile": {
+      "path": "config/modes/design_candidate.json",
+      "sha256": "71A42F9904C335A615FA095C6B0EE9A111F0D76024CB2DC27645ED01276AC887"
+    },
+    "solver_numerics": {
+      "path": "config/formal_solver_numerics.json",
+      "sha256": "C5AC206901B4D9E4EB7E3A3923060AF6B332FC43A2BAC8C65CFD75FBDE54A1FB"
+    },
+    "design_variable_catalog": {
+      "path": "config/design_variables.json",
+      "sha256": "AD9CD7C349A4602CE9665FBA12F83FABCC5173BB24B2F5C77CBA05D303609252"
+    },
+    "optimization_envelope": {
+      "path": "config/optimization_envelope.json",
+      "sha256": "1F862AA5B707B393B16F870758348B031828D119DAC6E187C65AC3B21EED9D51"
+    },
+    "candidate_workflow": {
+      "path": "config/candidate_workflow.json",
+      "sha256": "2A9B1242092D6C801DC59DC3680AFF21DC60DED10262CCF9F4C0BF29E3AFEF3B"
+    }
+  },
+  "allowed_variation_axes": [
+    {
+      "axis_id": "reflectron_midgrid_voltage",
+      "parameter_role": "physical_compiler_governed",
+      "derivation_direction": "campaign_input_to_compiler_derived_fields",
+      "variable_id": "reflectron_midgrid_voltage",
+      "unit": "V"
+    }
+  ],
+  "fixed_runtime_bindings": {
+    "particle_source_seed": 20260720,
+    "particle_count": 100,
+    "statistical_pairing": "common_random_numbers_across_rows"
+  },
+  "resource_budget": {
+    "stage_wall_clock_seconds": 14400,
+    "commercial_solver_parallelism": 1,
+    "automatic_retry_count": 0
+  },
+  "claim_limit": "Draft structural fixture only; no solver launch, optimization, resolution claim, promotion, or formal qualification is authorized.",
+  "experiments": [
+    {
+      "sequence": 1,
+      "experiment_id": "midgrid_reference",
+      "authorized_run_id": "20260731_230000__sim__cross__midgrid-reference",
+      "variation_values": [
+        {"axis_id": "reflectron_midgrid_voltage", "value": 1628.8001, "unit": "V"}
+      ]
+    },
+    {
+      "sequence": 2,
+      "experiment_id": "midgrid_diagnostic",
+      "authorized_run_id": "20260731_230100__sim__cross__midgrid-diagnostic",
+      "variation_values": [
+        {"axis_id": "reflectron_midgrid_voltage", "value": 1600.0, "unit": "V"}
+      ]
+    }
+  ]
+}

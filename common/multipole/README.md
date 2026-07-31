@@ -97,6 +97,14 @@ CSV SHA-256和parent resolved hash的metadata；MATLAB和SIMION投影只消费�
 由项目`runtime_profiles.json`绑定design、particle-source和solver-numerics profile。四、六、八极杆
 项目入口通过内部`project_transport_launcher_support.ps1`复用一次解析和COMSOL/SIMION参数映射；
 该support不是第二CLI，不保存profile目录、项目默认值或物理参数，公开入口及其项目身份保持不变。
+需要跨四、六、八极杆连续执行多个SIMION工况时，家族级公开入口为
+[`run_simion_transport_campaign.ps1`](run_simion_transport_campaign.ps1)：它从
+`campaigns/`内一张受schema约束的表选择`-ExperimentId`或按表顺序执行`-All`，逐行绑定项目、设计、
+粒子源、完整数值设置、资源硬帽和唯一run ID。该入口只预检并串行调用既有单工况runner，不复制物理
+或求解器逻辑，不并行商业求解器；每个run仍独立冻结resolved snapshot、campaign SHA和标准产物。
+同一入口的`-Status`只读逐文件验证各行manifest，并保守报告`NOT_STARTED`、非终态目录或已验证终态；
+目录存在不等于成功。跨行出口汇总统一使用`campaign_analysis.py`，图仍由`exit_state_plot.py`以共享
+坐标和固定分箱生成；两者只发布事后工程描述，不授予收敛或资格。
 圆柱家族实验共同使用`rf_multipole_family_mother_sample_v1_1000.csv`及其精确
 `rf_multipole_family_mother_sample_v1_100.csv`前缀；生成算法、seed、分布、消费者和SHA由同目录
 `rf_multipole_family_mother_sample_v1.json`冻结。旧`hex_oct_baseline_fixed_100.csv`只供六/八极杆
@@ -211,6 +219,12 @@ COMSOL `mesh_build` runtime profile声明正整数`maximum_mesh_cells`；旧预�
   -ProjectId <id> -DesignProfileId <profile> -ParticleSourcePath <canonical.csv> `
   [-SourceFamilyPath <source-family.json> -OperatingPointId <point-id>]
 
+.\common\multipole\run_simion_transport_campaign.ps1 `
+  -CampaignPath <campaign.json> (-ExperimentId <id> | -All)
+
+.\common\multipole\run_simion_transport_campaign.ps1 `
+  -CampaignPath <campaign.json> -Status
+
 .\common\multipole\run_round_rod_field_screen.ps1 `
   -ProjectId <id> -DesignProfileId <profile>
 ```
@@ -321,13 +335,11 @@ GEM+Workbench受控流程绕过；只有确有新版能力需求且许可证更�
 
 ## 公共遗留兼容边界
 
-本节只登记`common/multipole/`自身仍有活动引用的兼容边界；三个项目各自的退出任务只在对应PROJECT
-维护。下列旧实现不再是生产入口，但仍被公共测试或项目专项诊断引用，删除前必须按`AGENTS.md`取得
-用户确认并完成引用审计：
-
-- `resolve_finite_3d_contract.py`：由request接口编译替代；
-- `round_rod_geometry.py`中的legacy CLI/field-screen selection输入：保留纯`build_round_rod_array`；
-- `axial_acceleration.py`的独立CLI：保留compiler调用的纯resolver/segment函数。
+旧finite-3D resolver、项目`finite_3d_transport.json`快照、独立轴向加速mode快照，以及
+`round_rod_geometry.py`和`axial_acceleration.py`的独立CLI已经退出。活动测试和family门禁直接消费
+governed design profile、机械request、typed operating mode、resolved design与solver-numerics
+profile；公共模块只保留compiler和求解器实际调用的纯`build_round_rod_array`、
+`resolve_axial_acceleration`与`segment_rod_array`。
 
 旧family operating resolver、quadrupole输入准备器和独立endplate resolver已经删除；对应生产入口分别由
 governed profile/compiler、canonical source preflight和resolved

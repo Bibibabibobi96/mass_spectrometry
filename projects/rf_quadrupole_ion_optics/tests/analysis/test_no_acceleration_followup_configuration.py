@@ -203,11 +203,36 @@ class NoAccelerationFollowupConfigurationTests(unittest.TestCase):
         )
         self.assertEqual(
             contract["status"],
-            "DRAFT_PENDING_ENERGY_THRESHOLDS",
+            "ACTIVE_ENGINEERING_PROGRESSION_POLICY",
         )
         self.assertEqual(
             contract["scope"]["comparison_kinds"],
             ["same_solver_discretization", "cross_solver"],
+        )
+        energy = contract["continuous_engineering_acceptance"][
+            "energy_observables"
+        ]
+        self.assertEqual(
+            energy["mean_energy_difference_eV"],
+            {
+                "maximum": 0.2,
+                "status": "APPROVED",
+                "basis": (
+                    "Ten percent of the frozen upstream mean source energy "
+                    "of 2.0 eV."
+                ),
+            },
+        )
+        self.assertEqual(
+            energy["centered_energy_spread_difference_eV"],
+            {
+                "maximum": 0.2,
+                "status": "APPROVED",
+                "basis": (
+                    "Temporary absolute difference limit because the frozen "
+                    "upstream centered RMS energy spread is 0 eV."
+                ),
+            },
         )
         functional = contract["functional_acceptance"]
         self.assertEqual(
@@ -219,7 +244,7 @@ class NoAccelerationFollowupConfigurationTests(unittest.TestCase):
             "DEFERRED_NOT_WAIVED",
         )
         self.assertIn(
-            "will not establish numerical convergence",
+            "does not establish numerical convergence",
             contract["claim_limit"],
         )
 

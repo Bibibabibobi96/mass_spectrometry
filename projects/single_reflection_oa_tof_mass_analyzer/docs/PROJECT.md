@@ -87,8 +87,16 @@ Candidate唯一公开入口为`../workflows/design_candidate/run_candidate.py`�
 
 ## 开放任务
 
-1. **复现交付。** 按需从自包含Formal目录生成不含日志和收敛参考的ZIP及独立SHA；ZIP不是第二资产权威。
-2. **按需求启动的物理候选。** 轴对称圆形加速器、真实丝网、制造/装配误差预算和二维轴对称混合
+1. **声明式experiment campaign授权闭合。** v1表schema、参数角色、全表预检、单行/全表串行调度、
+   campaign→selection→Candidate manifest哈希链和只读status/receipt入口已经实现；五质量点继续是
+   `mass_spectrum_candidate`单run的联合内部条件，不展开为campaign行。活动
+   `config/experiment_campaign.json`仍为`draft`且`execution_authorized=false`：当前
+   `config/modes/design_candidate.json`仍声明非零设计变量为空，而execution profile只提供
+   `reflectron_midgrid_voltage`运行覆盖，且optimization envelope没有该电压的窄物理范围。关闭条件为
+   经批准后原子对齐science profile、批准request与窄物理envelope，重算表内authority SHA，将表改为
+   preregistered/authorized，并在不改变串行、retry=0、无复用与无晋升边界下完成首次受控运行。
+2. **复现交付。** 按需从自包含Formal目录生成不含日志和收敛参考的ZIP及独立SHA；ZIP不是第二资产权威。
+3. **按需求启动的物理候选。** 轴对称圆形加速器、真实丝网、制造/装配误差预算和二维轴对称混合
    COMSOL模型均暂缓；任何一项启动都须重新闭合理论、三维场、传输、网格、跨求解器与CAD。
 
 开放任务只写未完成动作和关闭条件。已完成的Candidate bootstrap、路径修复、receipt治理、历史失败

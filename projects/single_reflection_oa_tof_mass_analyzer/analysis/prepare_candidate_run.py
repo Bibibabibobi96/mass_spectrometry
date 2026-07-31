@@ -197,6 +197,8 @@ def prepare_candidate_run(
     artifact_project_root: Path | None = None,
     particle_source_seed: int | None = None,
     simion_template_run: Path | None = None,
+    campaign_table: Path | None = None,
+    campaign_selection: Path | None = None,
 ) -> dict:
     run_identity = validate_run_id(run_id)
     workflow = load_json(WORKFLOW_PATH)
@@ -214,6 +216,10 @@ def prepare_candidate_run(
 
     if not isinstance(particle_source_seed, int):
         raise ValueError("candidate run requires an explicit integer particle source seed")
+    if (campaign_table is None) != (campaign_selection is None):
+        raise ValueError(
+            "campaign table and selection must be supplied together"
+        )
     primary_sources = [candidate_baseline.resolve(), candidate_resolved.resolve(), candidate_diff.resolve()]
     if any(not path.is_file() for path in primary_sources):
         raise FileNotFoundError("candidate baseline, resolved contract, and diff must all exist")
@@ -250,6 +256,40 @@ def prepare_candidate_run(
         target = inputs_dir / name
         shutil.copy2(source, target)
         frozen[name] = target
+    campaign_binding = None
+    if campaign_table is not None and campaign_selection is not None:
+        table_source = campaign_table.resolve(strict=True)
+        selection_source = campaign_selection.resolve(strict=True)
+        selection = load_json(selection_source)
+        if (
+            selection.get("role") != "oatof_campaign_selection"
+            or selection.get("candidate_run_id") != run_id
+            or selection.get("particle_source_seed") != particle_source_seed
+            or selection.get("campaign_sha256") != sha256(table_source)
+        ):
+            raise ValueError("campaign selection does not bind this Candidate run")
+        request_record = selection.get("request", {})
+        proposal_record = selection.get("proposal", {})
+        if (
+            request_record.get("sha256") != sha256(Path(request_record.get("path", "")))
+            or proposal_record.get("sha256") != sha256(Path(proposal_record.get("path", "")))
+        ):
+            raise ValueError("campaign selection request or proposal binding changed")
+        table_target = inputs_dir / "experiment_campaign.json"
+        selection_target = inputs_dir / "campaign_selection.json"
+        shutil.copy2(table_source, table_target)
+        shutil.copy2(selection_source, selection_target)
+        frozen["experiment_campaign"] = table_target
+        frozen["campaign_selection"] = selection_target
+        campaign_binding = {
+            "campaign_id": selection["campaign_id"],
+            "campaign_run_id": selection["campaign_run_id"],
+            "experiment_id": selection["experiment_id"],
+            "campaign_sha256": sha256(table_target),
+            "selection_sha256": sha256(selection_target),
+            "candidate_run_id": run_id,
+            "particle_source_seed": particle_source_seed,
+        }
     frozen_template = None
     if template_registration is not None:
         template_dir = inputs_dir / "simion_template"
@@ -287,6 +327,7 @@ def prepare_candidate_run(
         "formal_root": {"path": str(formal_root), "mutation_allowed": False},
         "formal_baseline_sha256_at_planning": sha256(FORMAL_BASELINE_PATH),
         "candidate_inputs": {key: {"path": str(path), "sha256": sha256(path)} for key, path in frozen.items()},
+        **({"campaign_binding": campaign_binding} if campaign_binding is not None else {}),
         "execution_source_closure": source_closure,
         "stages": [
             {
@@ -400,6 +441,7 @@ def prepare_candidate_run(
         "project_root": str(PROJECT_ROOT),
         "inputs": {key: value["path"] for key, value in workflow_plan["candidate_inputs"].items()},
         "input_sha256": {key: value["sha256"] for key, value in workflow_plan["candidate_inputs"].items()},
+        **({"campaign_binding": campaign_binding} if campaign_binding is not None else {}),
         "formal_gate_passed": False,
         "promotion_authorized": False,
     }

@@ -103,11 +103,12 @@ Mathieu稳定图。L1/L2/L3迁移前小样本及2 mm连接器数值只保留在
 - [`../analysis/run_simion_finite_3d_transport.ps1`](../analysis/run_simion_finite_3d_transport.ps1)
 - [`../verify_project.ps1`](../verify_project.ps1)
 
-`config/baseline.json`和`config/finite_3d_transport.json`仅为历史L1/L3兼容快照，不得接收新参数或
-供活动L3 solver直接消费。项目注册身份已改由全部design profile的一致identity给出，不再绑定前者；
-尚未迁移的兼容消费者仍可只读访问这些快照，但它们不构成solver权威。
-`config/requests/baseline.json`、`requests/no_acceleration_full_length.json`、
-`requests/exit_aperture_plate.json`及其专属catalog/envelope只保留历史/兼容读取；当前家族实验不得引用。
+`config/baseline.json`仅为历史L1兼容快照，不得接收新参数或供活动solver直接消费。项目注册身份
+已改由全部design profile的一致identity给出，不再绑定该快照；尚未迁移的兼容消费者只能只读访问，
+且它不构成solver权威。旧finite-3D快照及resolver已在消费者迁移到current合同后退出。
+`config/requests/baseline.json`仍由兼容静态发布读取，不得成为新实验的可编辑请求；旧的无加速和
+出口带孔接口板专属request/catalog/envelope已在活动消费者归零后退出，当前三模式只使用单一
+`requests/mechanical_base.json`与typed operating-mode registry。
 `config/evidence/no_acceleration_full_length.json`和
 `config/evidence/exit_aperture_plate_acceleration_reference.json`中的固定功能阈值同样只保留给旧profile复现，
 不得绑定当前公共母样本三模式，也不得替代`config/qualification/`中显式保持`INCONCLUSIVE`的资格判据。
@@ -148,6 +149,16 @@ SIMION径向/轴向RMS半径变化为`16.953%/1.077%`，I→T为`0.000529%`且�
 COMSOL时间变化为`2.265%`并跨越大量固定分箱。径向离散是当前最显著风险，功能仍100/100，但连续
 结论保持`INCONCLUSIVE_NUMERICAL_CONVERGENCE_NOT_ESTABLISHED`；机器身份见
 [`followup_result.json`](../config/qualification/no_acceleration_followup/followup_result.json)。
+随后只增加SIMION横向H15臂，将`x/y`从0.20 mm细化至0.15 mm，保持`z=0.20 mm`、每RF周期160步和
+同一N=100母样本前缀。该臂以33,479,464个PA点、548.215 s、3,511,838,913 bytes瞬态目录峰值和
+3,399,606,272 bytes进程树峰值完成，RF传输仍为100/100。T→H15的质心位置、质心化空间展宽、
+平均方向、质心化角展宽、平均能量和质心化能量展宽差依次为`0.020571 mm`、`0.013847 mm`、
+`0.167069°`、`0.011959°`、`0.002406 eV`和`0.001313 eV`，均通过当前家族工程推进阈值。
+相对旧Z→I区间，后五项下降；质心位置差由`0.010123 mm`增至`0.020571 mm`，用户因其仍只有
+0.2 mm限值约10%而接受继续工程推进，但其原因未判定，不得表述为已证明的数值误差。结果身份见
+[`H15_result.json`](../config/qualification/radial_convergence_extension/H15_result.json)；数值收敛仍为
+`DEFERRED_NOT_WAIVED`。后续改用声明式实验计划表达四/八极杆和加速实验，不再为每一臂复制runtime、
+numerics、budget及历史SHA绑定。
 2026-07-29已从三个真实baseline run为COMSOL和SIMION分别发布
 `POSTHOC_DESCRIPTIVE` binding和报告；它们固定声明非预注册、不计算bootstrap、不评价资格。正式
 `three_mode_dispersion_binding`仍须由运行前冻结完整统计设置的新run生成，不得把事后报告升级或
@@ -424,9 +435,7 @@ Candidate、Formal和N=1000资格仍未授予。
 `config/project.json`登记的legacy artifact根，不搬移、不改写旧manifest、不追加新run，也不改变其
 原身份、状态和声明边界。
 
-本项目还保留两项项目专属退出任务：
+本项目还保留一项项目专属退出任务：
 
 1. 迁移仍只读消费`config/baseline.json`的旧L1/L2兼容路径；项目注册身份不得重新绑定该快照，
    旧文件的后续处置仍须单独删除授权。
-2. `config/finite_3d_transport.json`仍供旧family/L1测试读取。测试改为消费design request、resolved和
-   solver-numerics profile且活动引用归零后，按删除授权退出该快照。

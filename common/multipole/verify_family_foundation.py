@@ -11,8 +11,7 @@ from common.contracts.particle_count_policy import (
     validate_standard_particle_count,
 )
 from common.multipole.family_contract import from_high_order_baseline, from_quadrupole_contract
-from common.multipole.axial_acceleration import resolve_axial_acceleration
-from common.multipole.resolve_finite_3d_contract import resolve_contract
+from common.multipole.design_profile import resolve_design_profile
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -275,32 +274,62 @@ def validate_project_identity(project_id: str, order: int, electrode_count: int)
         f"{project_id} baseline multipole identity differs",
     )
     functional_count = int(load_particle_count_policy()["functional_check_count"])
-    axial = load_json(root / "config" / "modes" / "axial_acceleration_reference.json")
-    require(axial.get("project_id") == project_id, f"{project_id} axial-acceleration identity differs")
-    if order == 2:
-        official = load_json(root / "config" / "resolved_design_official.json")
-        require(
-            official.get("role") == "multipole_resolved_design_do_not_edit",
-            "quadrupole official publication role differs",
-        )
-        first_rod = official["geometry_mm"]["rod_array"]["rods"][0]
-        source_energy = 2.0
-        charge_state = 1
-    else:
-        first_rod = {
-            "z_min_mm": 0.0,
-            "z_max_mm": baseline["geometry_mm"]["effective_length"],
-        }
-        source_energy = baseline["particle_source"]["kinetic_energy_eV"]
-        charge_state = baseline["particle_source"]["charge_state"]
-    acceleration = resolve_axial_acceleration(
-        axial,
-        rod_z_min_mm=first_rod["z_min_mm"],
-        rod_z_max_mm=first_rod["z_max_mm"],
-        source_kinetic_energy_ev=source_energy,
-        charge_state=charge_state,
+    modes = load_json(root / "config" / "operating_modes.json")
+    require(
+        modes.get("role") == "multipole_typed_operating_mode_registry"
+        and modes.get("project_id") == project_id
+        and {mode.get("mode_id") for mode in modes.get("modes", [])}
+        == {
+            "no_acceleration_full_length",
+            "segmented_rod_axial_acceleration",
+            "exit_aperture_plate_acceleration",
+        },
+        f"{project_id} typed operating-mode registry differs",
     )
-    require(acceleration["derived"]["predicted_output_energy_eV"] == 5.0, f"{project_id} energy target differs")
+    no_acceleration = resolve_design_profile(
+        REPO_ROOT, project_id, "no_acceleration_full_length"
+    )["resolved_design"]
+    segmented = resolve_design_profile(
+        REPO_ROOT, project_id, "segmented_rod_axial_acceleration"
+    )["resolved_design"]
+    require(
+        no_acceleration["identity"]["radial_order_n"] == order
+        and no_acceleration["identity"]["electrode_count"] == electrode_count,
+        f"{project_id} governed resolved identity differs",
+    )
+    require(
+        segmented["axial_drive"]["predicted_output_energy_eV"] == 5.0,
+        f"{project_id} energy target differs",
+    )
+    require(
+        len(no_acceleration["geometry_mm"]["rod_array"]["rods"]) == electrode_count
+        and no_acceleration["interfaces_mm"]["entrance"]["release_plane_z_mm"]
+        < no_acceleration["interfaces_mm"]["entrance"][
+            "aperture_plate_upstream_face_z_mm"
+        ]
+        and no_acceleration["interfaces_mm"]["exit"]["census_plane_z_mm"]
+        > no_acceleration["interfaces_mm"]["exit"][
+            "aperture_plate_downstream_face_z_mm"
+        ],
+        f"{project_id} governed finite-3D geometry differs",
+    )
+    runtime_profiles = load_json(root / "config" / "runtime_profiles.json")
+    for solver in ("comsol", "simion"):
+        numerics_path = (
+            root
+            / "config"
+            / (
+                f"multipole_transport_{solver}_solver_numerics.json"
+                if order == 2
+                else f"{solver}_solver_numerics.json"
+            )
+        )
+        numerics = load_json(numerics_path)
+        require(
+            numerics.get("project_id") == project_id
+            and "baseline_finite_3d" in numerics.get("profiles", {}),
+            f"{project_id} {solver} solver numerics differ",
+        )
     if order == 2:
         source = load_json(root / "config" / "official_particle_source.json")
         source_count = validate_standard_particle_count(int(source["particles"]))
@@ -333,7 +362,6 @@ def validate_project_identity(project_id: str, order: int, electrode_count: int)
             simion_wrapper,
             launcher_support,
         )
-        runtime_profiles = load_json(root / "config" / "runtime_profiles.json")
         require(
             {
                 profile["design_profile_id"]
@@ -359,9 +387,6 @@ def validate_project_identity(project_id: str, order: int, electrode_count: int)
         require(source_count == functional_count, f"{project_id} functional source count differs")
         operating = from_high_order_baseline(baseline)
         require(operating.identity.electrode_count == electrode_count, f"{project_id} drive identity differs")
-        finite_3d = load_json(root / "config" / "finite_3d_transport.json")
-        resolved = resolve_contract(baseline, finite_3d)
-        require(resolved["multipole"] == finite_3d["multipole"], f"{project_id} L3 identity differs")
         comsol_wrapper = (
             root / "analysis" / "run_finite_3d_transport.ps1"
         ).read_text(encoding="utf-8")

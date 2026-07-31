@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "request_id": "reflectron_midgrid_structural_campaign_draft",
+  "status": "proposed",
+  "title": "Draft structural Candidate campaign for the reflectron midgrid voltage axis",
+  "target": {
+    "family_id": "tof_mass_analyzers",
+    "preferred_project_id": "single_reflection_oa_tof_mass_analyzer",
+    "function": "mass_analysis",
+    "mode": "design_candidate"
+  },
+  "operating_points": [
+    {
+      "mass": {"value": 524.0, "unit": "Da"},
+      "charge_state": 1
+    }
+  ],
+  "objectives": [
+    {
+      "metric": "transmission_fraction",
+      "operator": "maximize",
+      "value": null,
+      "unit": "fraction",
+      "tolerance": null
+    }
+  ],
+  "constraints": [],
+  "design_variables": ["reflectron_midgrid_voltage"],
+  "required_outputs": [
+    "simulation_results",
+    "comsol_model",
+    "simion_model",
+    "cad",
+    "validation_report"
+  ],
+  "evidence_level": "candidate",
+  "approval": null
+}

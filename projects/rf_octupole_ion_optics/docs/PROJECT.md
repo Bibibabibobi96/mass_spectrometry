@@ -119,12 +119,12 @@ SIMION两份`POSTHOC_DESCRIPTIVE` binding和报告：只含点估计，不计算
 - [`../analysis/run_simion_finite_3d_transport.ps1`](../analysis/run_simion_finite_3d_transport.ps1)
 - [`../verify_project.ps1`](../verify_project.ps1)
 
-`config/requests/baseline.json`、`config/requests/no_acceleration_full_length.json`、
-`config/requests/exit_aperture_plate.json`、各自旧catalog/envelope以及`config/finite_3d_transport.json`
-都是兼容或历史快照，不得成为新run输入。`config/resolved_design.json`是无加速规范profile的静态发布
-视图；其他模式在runtime解析时由同一base和typed registry生成。`config/project.json`的注册身份由
-全部design profile的一致identity给出，不绑定历史`config/baseline.json`；尚未迁移的兼容路径只能
-只读访问该旧文件。
+旧的baseline/no-acceleration/exit-aperture-plate request及其专属catalog/envelope已在活动消费者
+归零后退出；当前三模式只使用单一`config/requests/mechanical_base.json`与typed operating-mode
+registry。旧finite-3D快照及resolver已在消费者迁移到current合同后退出。
+`config/resolved_design.json`是无加速规范profile的静态发布视图；其他模式在runtime解析时由同一base
+和typed registry生成。`config/project.json`的注册身份由全部design profile的一致identity给出，
+不绑定历史`config/baseline.json`；尚未迁移的兼容路径只能只读访问该旧文件。
 
 ## 未决
 

@@ -48,16 +48,16 @@ jobs:
           }
           if (-not $baseAvailable) {
             Write-Warning 'Push base is unavailable; using the full changed-scope route table.'
-            .\common\verify_changed.ps1 -PythonExe (Get-Command python).Source -FullScope
+            .\common\verify_changed.ps1 -PythonExe (Get-Command python).Source -FullScope -MaxConcurrency 2
           } else {
             $changedPaths = @(& git diff --name-only --diff-filter=ACMRD "$before..$after")
             if ($LASTEXITCODE -ne 0) { throw 'Unable to calculate changed paths for push gate.' }
             if ($changedPaths.Count -eq 0) {
               Write-Warning 'Push diff is empty; using the full changed-scope route table.'
-              .\common\verify_changed.ps1 -PythonExe (Get-Command python).Source -FullScope
+              .\common\verify_changed.ps1 -PythonExe (Get-Command python).Source -FullScope -MaxConcurrency 2
             } else {
               Write-Output "CHANGED_SCOPE_CI_BASE=$before HEAD=$after PATHS=$($changedPaths.Count)"
-              .\common\verify_changed.ps1 -PythonExe (Get-Command python).Source -ChangedPath $changedPaths
+              .\common\verify_changed.ps1 -PythonExe (Get-Command python).Source -ChangedPath $changedPaths -MaxConcurrency 2
             }
           }
   repository_integration:

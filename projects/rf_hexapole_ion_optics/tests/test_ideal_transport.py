@@ -1,3 +1,4 @@
+import copy
 import json
 import math
 import unittest
@@ -13,7 +14,10 @@ from common.multipole.ideal_transport import (
     pseudopotential_ev,
     source_particles,
 )
-from common.multipole.resolve_finite_3d_contract import Finite3DContractError, resolve_contract
+from common.multipole.compile_design_request import (
+    MultipoleDesignCompileError,
+    compile_design_request,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -23,6 +27,11 @@ class HexapoleIdealTransportTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.contract = json.loads((PROJECT_ROOT / "config" / "baseline.json").read_text(encoding="utf-8"))
+        cls.request = json.loads(
+            (
+                PROJECT_ROOT / "config" / "requests" / "mechanical_base.json"
+            ).read_text(encoding="utf-8")
+        )
 
     def test_identity_and_angular_symmetry(self):
         self.assertEqual(self.contract["multipole"], {"electrode_count": 6, "radial_order_n": 3, "orientation_rad": 0.0})
@@ -85,27 +94,58 @@ class HexapoleIdealTransportTests(unittest.TestCase):
         self.assertEqual(len(rows), 200)
         self.assertEqual(len({row["particle_id"] for row in rows}), 100)
 
-    def test_finite_3d_contract_preserves_baseline_source_and_length(self):
-        l3 = json.loads((PROJECT_ROOT / "config" / "finite_3d_transport.json").read_text(encoding="utf-8"))
-        resolved = resolve_contract(self.contract, l3)
-        self.assertEqual(l3["multipole"], {"radial_order_n": 3, "electrode_count": 6})
-        self.assertEqual(resolved["derived_geometry_mm"]["rod_length"], self.contract["geometry_mm"]["effective_length"])
-        self.assertLess(resolved["derived_geometry_mm"]["vacuum_z_min"], resolved["derived_geometry_mm"]["release_plane_z"])
-        self.assertLess(resolved["derived_geometry_mm"]["release_plane_z"], resolved["derived_geometry_mm"]["entrance_aperture_plate_upstream_face_z"])
-        self.assertGreater(resolved["derived_geometry_mm"]["census_plane_z"], resolved["derived_geometry_mm"]["exit_aperture_plate_downstream_face_z"])
+    def test_design_request_preserves_source_identity_and_axial_layout(self):
+        resolved = compile_design_request(
+            self.request, expected_identity=self.request["identity"]
+        )
+        self.assertEqual(resolved["identity"]["radial_order_n"], 3)
+        self.assertEqual(
+            resolved["geometry_mm"]["rod_length"],
+            self.contract["geometry_mm"]["effective_length"],
+        )
+        self.assertLess(
+            resolved["geometry_mm"]["enclosure"]["vacuum_z_min_mm"],
+            resolved["interfaces_mm"]["entrance"]["release_plane_z_mm"],
+        )
+        self.assertLess(
+            resolved["interfaces_mm"]["entrance"]["release_plane_z_mm"],
+            resolved["interfaces_mm"]["entrance"][
+                "aperture_plate_upstream_face_z_mm"
+            ],
+        )
+        self.assertGreater(
+            resolved["interfaces_mm"]["exit"]["census_plane_z_mm"],
+            resolved["interfaces_mm"]["exit"][
+                "aperture_plate_downstream_face_z_mm"
+            ],
+        )
         self.assertEqual(len(source_particles(self.contract)), self.contract["particle_source"]["count"])
 
-    def test_finite_3d_contract_rejects_aperture_beyond_working_region(self):
-        l3 = json.loads((PROJECT_ROOT / "config" / "finite_3d_transport.json").read_text(encoding="utf-8"))
-        l3["geometry_mm"]["entrance_interface"]["aperture_radius_mm"] = 3.7
-        with self.assertRaises(Finite3DContractError):
-            resolve_contract(self.contract, l3)
+    def test_design_request_rejects_aperture_beyond_working_region(self):
+        request = copy.deepcopy(self.request)
+        request["geometry_mm"]["entrance_interface"]["aperture_radius_mm"] = 3.7
+        with self.assertRaises(MultipoleDesignCompileError):
+            compile_design_request(request, expected_identity=request["identity"])
 
-    def test_finite_3d_contract_allows_negative_coordinate_origin(self):
-        l3 = json.loads((PROJECT_ROOT / "config" / "finite_3d_transport.json").read_text(encoding="utf-8"))
-        l3["geometry_mm"]["rod_z_min"] = -40.0
-        resolved = resolve_contract(self.contract, l3)
-        self.assertAlmostEqual(resolved["derived_geometry_mm"]["rod_z_max"], 39.6)
+    def test_design_request_allows_negative_coordinate_origin(self):
+        request = copy.deepcopy(self.request)
+        geometry = request["geometry_mm"]
+        for key in ("rod_z_min", "rod_z_max"):
+            geometry[key] -= 40.0
+        enclosure = geometry["enclosure"]
+        for key in (
+            "vacuum_z_min_mm",
+            "vacuum_z_max_mm",
+            "entrance_outer_endcap_upstream_face_z_mm",
+            "entrance_outer_endcap_downstream_face_z_mm",
+            "exit_outer_endcap_upstream_face_z_mm",
+            "exit_outer_endcap_downstream_face_z_mm",
+        ):
+            enclosure[key] -= 40.0
+        resolved = compile_design_request(
+            request, expected_identity=request["identity"]
+        )
+        self.assertAlmostEqual(resolved["geometry_mm"]["rod_z_max"], 39.6)
 
 
 if __name__ == "__main__":

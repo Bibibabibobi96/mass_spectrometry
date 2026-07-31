@@ -36,7 +36,6 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
         cls.catalog = load(PROJECT_ROOT / "config" / "design_variables.json")
         cls.envelope = load(PROJECT_ROOT / "config" / "optimization_envelope.json")
         cls.baseline = load(PROJECT_ROOT / "config" / "baseline.json")
-        cls.finite = load(PROJECT_ROOT / "config" / "finite_3d_transport.json")
         cls.screen = load(PROJECT_ROOT / "config" / "round_rod_field_screen.json")
         cls.comsol_numerics = load(
             PROJECT_ROOT / "config" / "comsol_solver_numerics.json"
@@ -68,7 +67,7 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
         self.assertEqual(geometry["inscribed_radius_r0"], self.baseline["geometry_mm"]["inscribed_radius_r0"])
         self.assertEqual(geometry["rod_radius_ratio"], 0.5)
         self.assertIn(geometry["rod_radius_ratio"], self.screen["geometry_mm"]["rod_radius_ratio_sweep"])
-        self.assertEqual(geometry["rod_z_min"], self.finite["geometry_mm"]["rod_z_min"])
+        self.assertEqual(geometry["rod_z_min"], 0.0)
         self.assertEqual(geometry["rod_z_max"], self.baseline["geometry_mm"]["effective_length"])
         self.assertEqual(compiled["geometry_mm"]["enclosure"], geometry["enclosure"])
         self.assertEqual(
@@ -76,10 +75,10 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
             {
                 "model": "cylindrical_grounded_shield_v1",
                 "role": "full_length_grounded_shield",
-                "working_region_radius_mm": self.finite["geometry_mm"]["working_region_radius"],
+                "working_region_radius_mm": 3.6,
                 "vacuum_z_min_mm": -2.5,
                 "vacuum_z_max_mm": 82.1,
-                "shield_inner_radius_mm": self.finite["geometry_mm"]["grounded_shield_inner_radius"],
+                "shield_inner_radius_mm": 20.0,
                 "shield_outer_radius_mm": 21.0,
                 "entrance_outer_endcap_upstream_face_z_mm": -2.5,
                 "entrance_outer_endcap_downstream_face_z_mm": -2.0,
@@ -88,14 +87,11 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
             },
         )
         for side in ("entrance_interface", "exit_interface"):
-            self.assertEqual(
-                geometry[side],
-                {
-                    key: value
-                    for key, value in self.finite["geometry_mm"][side].items()
-                    if key != "outer_ground_clearance_mm"
-                },
-            )
+            self.assertEqual(geometry[side]["aperture_radius_mm"], 3.6)
+            self.assertEqual(geometry[side]["plate_thickness_mm"], 0.5)
+            self.assertEqual(geometry[side]["rod_clearance_mm"], 0.5)
+            self.assertEqual(geometry[side]["connector_length_mm"], 0.0)
+            self.assertEqual(geometry[side]["connector_shape"], "cylindrical_bore")
         rf = self.baseline["rf"]
         self.assertEqual(
             self.request["drive"],

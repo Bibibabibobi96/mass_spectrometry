@@ -5,6 +5,7 @@ param(
   [Parameter(Mandatory=$true)][string]$DesignProfileId,
   [Parameter(Mandatory=$true)][string]$ParticleSourcePath,
   [Parameter(Mandatory=$true)][string]$EngineeringBudgetPath,
+  [string]$ResolvedRuntimeProfilePath='',
   [string]$EvidenceContractPath='',
   [string]$RunId='',
   [string]$ReferenceComsolRunId='',
@@ -81,6 +82,36 @@ $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRo
 . (Join-Path $repoRoot 'common\multipole\resource_budget_support.ps1')
 $particleSourceInput=(Resolve-Path -LiteralPath $ParticleSourcePath).Path
 $engineeringBudgetInput=(Resolve-Path -LiteralPath $EngineeringBudgetPath).Path
+$engineeringBudgetAuthority=Get-Content -LiteralPath $engineeringBudgetInput -Raw -Encoding UTF8|ConvertFrom-Json
+$resolvedRuntimeInput=$null
+$resolvedRuntimeDocument=$null
+$resolvedRuntimeInputSha=$null
+if(-not[string]::IsNullOrWhiteSpace($ResolvedRuntimeProfilePath)){
+  $resolvedRuntimeInput=(Resolve-Path -LiteralPath $ResolvedRuntimeProfilePath).Path
+  $resolvedRuntimeInputSha=(Get-FileHash -LiteralPath $resolvedRuntimeInput -Algorithm SHA256).Hash
+  $resolvedRuntimeDocument=Get-Content -LiteralPath $resolvedRuntimeInput -Raw -Encoding UTF8|ConvertFrom-Json
+  if([int]$resolvedRuntimeDocument.schema_version-ne 1-or
+    [string]$resolvedRuntimeDocument.role-ne'multipole_resolved_runtime_profile'-or
+    [string]$resolvedRuntimeDocument.project_id-ne$ProjectId-or
+    [string]$resolvedRuntimeDocument.runtime_profile_id-ne$RuntimeProfileId-or
+    [string]$resolvedRuntimeDocument.design_profile_id-ne$DesignProfileId-or
+    [string]$resolvedRuntimeDocument.particle_source.path-ne$particleSourceInput-or
+    [string]$resolvedRuntimeDocument.engineering_budget.path-ne$engineeringBudgetInput
+  ){throw 'Resolved runtime-profile snapshot identity differs from runner arguments.'}
+}
+$campaignSelection=$null
+if([string]$engineeringBudgetAuthority.role-eq'multipole_transport_experiment_campaign'){
+  if($null-eq$resolvedRuntimeDocument-or
+    -not($resolvedRuntimeDocument.PSObject.Properties.Name-contains'campaign')
+  ){throw 'Campaign transport requires the resolved runtime-profile snapshot.'}
+  $campaignSelection=$resolvedRuntimeDocument.campaign
+  if([string]$campaignSelection.path-ne$engineeringBudgetInput-or
+    [string]$campaignSelection.experiment_id-ne$RuntimeProfileId-or
+    [string]$campaignSelection.sha256-ne(
+      Get-FileHash -LiteralPath $engineeringBudgetInput -Algorithm SHA256
+    ).Hash
+  ){throw 'Campaign authority differs from the resolved runtime-profile snapshot.'}
+}
 $hasSourceFamily=-not[string]::IsNullOrWhiteSpace($SourceFamilyPath)
 $hasOperatingPoint=-not[string]::IsNullOrWhiteSpace($OperatingPointId)
 if($hasSourceFamily-ne$hasOperatingPoint){
@@ -91,7 +122,6 @@ $registryPreflight=Get-Content -LiteralPath (Join-Path $repoRoot 'config\project
 $projectMatches=@($registryPreflight.projects|Where-Object{[string]$_.project_id-eq$ProjectId})
 if($projectMatches.Count-ne 1){throw "ProjectId is not unique in the canonical project registry: $ProjectId"}
 $simion=if($SimionExe){[IO.Path]::GetFullPath($SimionExe)}else{Join-Path $env:ProgramFiles 'SIMION-2020\simion.exe'}
-$runIdWasExplicit=-not[string]::IsNullOrWhiteSpace($RunId)
 if([string]::IsNullOrWhiteSpace($RunId)){
   $RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+"__sim__simion__$($ProjectId.Replace('_','-'))-$($DesignProfileId.Replace('_','-'))__resolved-l3"
 }
@@ -106,7 +136,7 @@ try{
       '--design-profile-id',$DesignProfileId,
       '--particle-source',$particleSourceInput,
       '--retention-class',$RetentionClass,'--output',$budgetPreflight)
-    if($runIdWasExplicit){$budgetArguments+=@('--run-id',$RunId)}
+    $budgetArguments+=@('--run-id',$RunId)
     & $python @budgetArguments
   }finally{Pop-Location}
   if($LASTEXITCODE-ne 0){throw 'SIMION resource-budget preflight failed.'}
@@ -116,10 +146,9 @@ try{
   if($null-eq$authorizedCell){
     throw 'Authorized SIMION numerics omit canonical cell_mm_xyz.'
   }
-  if($runIdWasExplicit-and
-    -not[string]::IsNullOrWhiteSpace([string]$resolvedBudgetPreflight.authorized_run_id)-and
+  if(-not[string]::IsNullOrWhiteSpace([string]$resolvedBudgetPreflight.authorized_run_id)-and
     [string]$resolvedBudgetPreflight.authorized_run_id-cne$RunId){
-    throw 'Explicit RunId differs from the authorized resource-budget scope.'
+    throw 'RunId differs from the authorized resource-budget scope.'
   }
   if([double]$authorizedCell.x-ne$resolvedCellMmX-or
     [double]$authorizedCell.y-ne$resolvedCellMmY-or
@@ -191,9 +220,26 @@ try{
     -Destination (Join-Path $templateDir 'quad_monolithic.con')
 
   $profileResolution=Join-Path $inputDir 'design_profile_resolution.json'
+  $resolvedRuntimeProfile=$null
+  if($resolvedRuntimeInput){
+    if((Get-FileHash -LiteralPath $resolvedRuntimeInput -Algorithm SHA256).Hash-ne$resolvedRuntimeInputSha){
+      throw 'Resolved runtime-profile snapshot changed before it was frozen.'
+    }
+    $resolvedRuntimeProfile=Copy-VerifiedRunInput -Source $resolvedRuntimeInput `
+      -Destination (Join-Path $inputDir 'resolved_runtime_profile.json')
+    if($campaignSelection-and
+      (Get-FileHash -LiteralPath $engineeringBudgetInput -Algorithm SHA256).Hash-ne
+        [string]$campaignSelection.sha256
+    ){throw 'Campaign authority changed before it was frozen.'}
+  }
   $engineeringBudget=Join-Path $inputDir 'engineering_budget.json'
   $resolvedResourceBudget=Join-Path $inputDir 'resolved_resource_budget.json'
-  Copy-Item -LiteralPath $engineeringBudgetInput -Destination $engineeringBudget
+  $engineeringBudget=Copy-VerifiedRunInput -Source $engineeringBudgetInput `
+    -Destination $engineeringBudget
+  if($campaignSelection-and
+    (Get-FileHash -LiteralPath $engineeringBudget -Algorithm SHA256).Hash-ne
+      [string]$campaignSelection.sha256
+  ){throw 'Frozen campaign authority differs from the resolved runtime-profile snapshot.'}
   Move-Item -LiteralPath $budgetPreflight -Destination $resolvedResourceBudget
   Push-Location $codeRoot
   try{
@@ -399,6 +445,19 @@ try{
       iob_sha256=[string]$templateProfile.bundle.iob.sha256
       con_sha256=[string]$templateProfile.bundle.con.sha256
     }}
+  if($resolvedRuntimeProfile){
+    $provenance.resolved_runtime_profile_sha256=(
+      Get-FileHash -LiteralPath $resolvedRuntimeProfile -Algorithm SHA256
+    ).Hash
+  }
+  if($campaignSelection){
+    $provenance.runtime_selection_kind='campaign_experiment'
+    $provenance.campaign_id=[string]$campaignSelection.campaign_id
+    $provenance.experiment_id=[string]$campaignSelection.experiment_id
+    $provenance.campaign_sha256=[string]$campaignSelection.sha256
+  }else{
+    $provenance.runtime_selection_kind='runtime_profile'
+  }
   $runInputs=[ordered]@{project_registry=$registry;project_descriptor=$descriptor;design_profiles=$profiles;
     engineering_budget=$engineeringBudget;resolved_resource_budget=$resolvedResourceBudget;
     design_profile_resolution=$profileResolution;design_request=$request;design_variables=$variables;
@@ -407,6 +466,7 @@ try{
     particle_source_metadata=$sourceMetadata;particle_source_family=$sourceFamily;
     solver_numerics=$numerics;simion_grid_audit=$gridAudit;code_inventory=$codeInventory;
     evidence_contract=$evidence;simion_gem=$gem;simion_fly2=$fly2;
+    resolved_runtime_profile=$resolvedRuntimeProfile;
     simion_layout_template_resolution=$templateResolution;
     simion_layout_template_registry=$templateRegistryInput;
     simion_layout_registration_manifest=$templateRegistrationManifest;
@@ -422,6 +482,7 @@ try{
       reason=$(if($RetentionClass-eq'compact'){$null}else{$RetentionReason})};
     provenance=$provenance;inputs=$runInputs;
     parameters=[ordered]@{model_level='L3';runtime_profile_id=$RuntimeProfileId;design_profile_id=$DesignProfileId;
+      experiment_id=$(if($campaignSelection){[string]$campaignSelection.experiment_id}else{$null});
       operating_mode_id=$modeId;
       operating_point_id=$(if($sourceFamily){$OperatingPointId}else{$null});
       reference_comsol_run_id=$ReferenceComsolRunId};

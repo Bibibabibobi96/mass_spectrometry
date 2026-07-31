@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "role": "multipole_simion_radial_convergence_extension_preregistration",
+  "project_id": "rf_hexapole_ion_optics",
+  "status": "EXECUTED_ENGINEERING_PASS_FAMILY_PROGRESSION_AUTHORIZED",
+  "decision_date": "2026-07-31",
+  "purpose": "Test whether the dominant SIMION transverse-grid sensitivity decreases beyond the existing 0.20 mm level.",
+  "frozen_authorities": {
+    "runtime_profiles": {
+      "path": "projects/rf_hexapole_ion_optics/config/runtime_profiles.json",
+      "sha256": "73A71A45DC52FA813DD38D87A3486FA1D18005A2BDB5B178937A35691956044C"
+    },
+    "simion_solver_numerics": {
+      "path": "projects/rf_hexapole_ion_optics/config/simion_solver_numerics.json",
+      "sha256": "3A34D49A019E1B637F49DADF9AD9A01354C468015AC55FF219097BAE5000E866"
+    },
+    "engineering_budget": {
+      "path": "projects/rf_hexapole_ion_optics/config/qualification/radial_convergence_extension/simion_H15_budget.json",
+      "sha256": "8652DECFC2FD7CF364DDACC5F216CD1CEC936C6A11C63A049228E256AE28C32B"
+    },
+    "engineering_progression_acceptance": {
+      "path": "common/multipole/engineering_progression_acceptance.json",
+      "sha256": "7BA2C24A6142E52124378D12670615E94CBB7EF65EEBC5EDDA4569EE83105FE6"
+    }
+  },
+  "frozen_basis": {
+    "baseline_run_id": "20260731_010105__sim__simion__hex-noacc-followup-t-r020-z020-t160",
+    "particle_source_profile_id": "family_mother_sample_v1_n100",
+    "design_profile_id": "no_acceleration_full_length",
+    "cell_mm_xyz_baseline": {"x": 0.2, "y": 0.2, "z": 0.2},
+    "rf_steps_per_period": 160,
+    "particle_count": 100
+  },
+  "authorized_arm": {
+    "arm": "H15",
+    "role": "transverse_refined",
+    "runtime_profile_id": "no_acceleration_full_length_n100_simion_radial_extension_H15_r015_z020_t160",
+    "simion_solver_numerics_profile_id": "simion_radial_extension_H15_r015_z020_t160",
+    "engineering_budget_path": "config/qualification/radial_convergence_extension/simion_H15_budget.json",
+    "authorized_run_id": "20260731_133000__sim__simion__hex-noacc-radial-h15-r015-z020-t160",
+    "cell_mm_xyz": {"x": 0.15, "y": 0.15, "z": 0.2},
+    "rf_steps_per_period": 160,
+    "executed": true,
+    "evidence_status": "PASS_ENGINEERING_PROGRESSION"
+  },
+  "decision_rule": {
+    "reference_previous_radial_interval": "Z_r030_z020_t080_to_I_r020_z020_t080",
+    "continue_hexapole_to_0p10_mm": "Only if the H15 adjacent differences decrease materially relative to the previous transverse interval without a functional failure.",
+    "expand_to_quadrupole_and_octupole": "Only after the hexapole has at least two decreasing adjacent transverse intervals.",
+    "otherwise": "Stop and report non-monotonic or insufficiently decreasing transverse sensitivity."
+  },
+  "prohibited_claims": [
+    "numerical convergence from this single new interval",
+    "solver equivalence",
+    "absolute accuracy",
+    "Candidate or Formal qualification"
+  ],
+  "execution_result": {
+    "path": "config/qualification/radial_convergence_extension/H15_result.json",
+    "decision": "CONTINUE_FAMILY_ENGINEERING_CAMPAIGN_WITHOUT_H10",
+    "engineering_progression_status": "PASS",
+    "numerical_convergence_status": "DEFERRED_NOT_WAIVED"
+  }
+}

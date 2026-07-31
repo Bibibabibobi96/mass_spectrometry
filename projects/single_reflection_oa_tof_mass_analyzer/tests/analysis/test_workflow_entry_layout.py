@@ -21,6 +21,7 @@ class WorkflowEntryLayoutTests(unittest.TestCase):
             "workflows/design_candidate/prepare_candidate_consumers.py",
             "workflows/design_candidate/run_candidate.py",
             "workflows/design_candidate/run_candidate_workflow.py",
+            "workflows/experiment_campaign/run_campaign.py",
             "workflows/design_candidate/run_candidate_contract_build.m",
             "workflows/design_candidate/run_candidate_cad_sync.m",
             "workflows/accelerator_transverse_field_uniformity/run_accelerator_transverse_field_uniformity.ps1",
@@ -67,6 +68,14 @@ class WorkflowEntryLayoutTests(unittest.TestCase):
         )
         self.assertIn(
             "workflows/design_candidate/run_candidate.py", entries
+        )
+        campaign_entry = (
+            PROJECT_ROOT / "workflows" / "experiment_campaign" / "run_campaign.py"
+        )
+        self.assertTrue(campaign_entry.is_file())
+        self.assertIn(
+            "workflows.experiment_campaign.run_campaign",
+            (PROJECT_ROOT / "README.md").read_text(encoding="utf-8"),
         )
 
         closure = (PROJECT_ROOT / "analysis" / "candidate_source_closure.py").read_text(

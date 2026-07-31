@@ -3,21 +3,17 @@ import math
 import unittest
 from pathlib import Path
 
-from common.multipole.resolve_finite_3d_contract import (
-    Finite3DContractError,
-    apply_connector_length_overrides,
-    resolve_contract,
+from common.multipole.compile_design_request import (
+    MultipoleDesignCompileError,
+    compile_design_request,
 )
 from common.multipole.interface_geometry import build_axial_interface_layout
-from common.multipole.round_rod_geometry import build_round_rod_array, resolve_round_rod_geometry
+from common.multipole.round_rod_geometry import build_round_rod_array
 from common.multipole.simion_geometry import (
     render_gem,
     render_grouped_rod_array_gem,
     render_segmented_rod_array_gem,
 )
-from common.multipole.compile_design_request import compile_design_request
-
-
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -80,15 +76,11 @@ class RoundRodGeometryTest(unittest.TestCase):
 
     def resolve(self, project: str, ratio: float):
         root = ROOT / "projects" / project
-        baseline = json.loads((root / "config/baseline.json").read_text(encoding="utf-8"))
-        contract = json.loads((root / "config/finite_3d_transport.json").read_text(encoding="utf-8"))
-        finite = resolve_contract(baseline, contract)
-        r0 = baseline["geometry_mm"]["inscribed_radius_r0"]
-        metrics = {"selected_candidate": {
-            "rod_radius_mm": ratio * r0,
-            "rod_center_radius_mm": (1 + ratio) * r0,
-        }}
-        return resolve_round_rod_geometry(baseline, finite, metrics)
+        request = json.loads(
+            (root / "config/requests/mechanical_base.json").read_text(encoding="utf-8")
+        )
+        request["geometry_mm"]["rod_radius_ratio"] = ratio
+        return compile_design_request(request, expected_identity=request["identity"])
 
     def test_hexapole_and_octupole_share_one_generator(self):
         for project, count, ratio in (
@@ -96,18 +88,23 @@ class RoundRodGeometryTest(unittest.TestCase):
             ("rf_octupole_ion_optics", 8, 0.36),
         ):
             geometry = self.resolve(project, ratio)
-            rods = geometry["array_mm"]["rods"]
+            rods = geometry["geometry_mm"]["rod_array"]["rods"]
             self.assertEqual(len(rods), count)
             self.assertEqual([rod["electrode_group"] for rod in rods], [1, 2] * (count // 2))
             for rod in rods:
                 radius = math.hypot(rod["center_x_mm"], rod["center_y_mm"])
-                self.assertAlmostEqual(radius, geometry["array_mm"]["rod_center_radius"])
+                self.assertAlmostEqual(
+                    radius, geometry["geometry_mm"]["rod_array"]["rod_center_radius"]
+                )
 
     def test_zero_length_connector_is_direct_connection(self):
         geometry = self.resolve("rf_hexapole_ion_optics", 0.55)
-        self.assertEqual(geometry["interfaces_mm"]["entrance_connector_length"], 0.0)
-        self.assertEqual(geometry["interfaces_mm"]["exit_connector_length"], 0.0)
-        self.assertEqual(geometry["interfaces_mm"]["entrance_connector_shape"], "cylindrical_bore")
+        self.assertEqual(geometry["interfaces_mm"]["entrance"]["connector_length_mm"], 0.0)
+        self.assertEqual(geometry["interfaces_mm"]["exit"]["connector_length_mm"], 0.0)
+        self.assertEqual(
+            geometry["interfaces_mm"]["entrance"]["connector_shape"],
+            "cylindrical_bore",
+        )
 
     def test_same_geometry_exports_all_rods_to_simion(self):
         resolved = json.loads(
@@ -129,13 +126,14 @@ class RoundRodGeometryTest(unittest.TestCase):
         self.assertEqual(resolved["interfaces_mm"]["exit"]["connector_length_mm"], 2.0)
         self.assertIn(",,2)", render_gem(resolved, 0.2))
 
-    def test_finite_3d_contract_rejects_unknown_connector_shape(self):
+    def test_design_request_rejects_unknown_connector_shape(self):
         root = ROOT / "projects/rf_hexapole_ion_optics"
-        baseline = json.loads((root / "config/baseline.json").read_text(encoding="utf-8"))
-        contract = json.loads((root / "config/finite_3d_transport.json").read_text(encoding="utf-8"))
-        contract["geometry_mm"]["entrance_interface"]["connector_shape"] = "square"
-        with self.assertRaisesRegex(Finite3DContractError, "connector_shape"):
-            resolve_contract(baseline, contract)
+        request = json.loads(
+            (root / "config/requests/mechanical_base.json").read_text(encoding="utf-8")
+        )
+        request["geometry_mm"]["entrance_interface"]["connector_shape"] = "square"
+        with self.assertRaisesRegex(MultipoleDesignCompileError, "connector_shape"):
+            compile_design_request(request, expected_identity=request["identity"])
 
     def test_segmented_simion_geometry_separates_rods_ground_and_output(self):
         resolved = json.loads(
@@ -163,11 +161,14 @@ class RoundRodGeometryTest(unittest.TestCase):
         with self.assertRaises(TypeError):
             render_gem(resolved, 0.2, separate_output_electrode=True)
 
-    def test_connector_override_rejects_negative_length(self):
+    def test_design_request_rejects_negative_connector_length(self):
         root = ROOT / "projects/rf_hexapole_ion_optics"
-        contract = json.loads((root / "config/finite_3d_transport.json").read_text(encoding="utf-8"))
-        with self.assertRaises(Finite3DContractError):
-            apply_connector_length_overrides(contract, entrance_connector_length_mm=-0.1)
+        request = json.loads(
+            (root / "config/requests/mechanical_base.json").read_text(encoding="utf-8")
+        )
+        request["geometry_mm"]["entrance_interface"]["connector_length_mm"] = -0.1
+        with self.assertRaises(MultipoleDesignCompileError):
+            compile_design_request(request, expected_identity=request["identity"])
 
 
 if __name__ == "__main__":

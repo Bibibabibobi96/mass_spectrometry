@@ -2,15 +2,19 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 function Invoke-MultipoleProjectFinite3dTransport {
-  [CmdletBinding()]
+  [CmdletBinding(DefaultParameterSetName = 'RuntimeProfile')]
   param(
     [Parameter(Mandatory = $true)]
     [ValidateSet('comsol', 'simion')]
     [string]$Solver,
     [Parameter(Mandatory = $true)]
     [string]$ProjectId,
-    [Parameter(Mandatory = $true)]
+    [Parameter(Mandatory = $true, ParameterSetName = 'RuntimeProfile')]
     [string]$RuntimeProfileId,
+    [Parameter(Mandatory = $true, ParameterSetName = 'CampaignExperiment')]
+    [string]$CampaignPath,
+    [Parameter(Mandatory = $true, ParameterSetName = 'CampaignExperiment')]
+    [string]$ExperimentId,
     [Parameter(Mandatory = $true)]
     [string]$RepoRoot,
     [string]$EvidenceContractPath = '',
@@ -35,9 +39,16 @@ function Invoke-MultipoleProjectFinite3dTransport {
   try {
     Push-Location $RepoRoot
     try {
+      if ($PSCmdlet.ParameterSetName -eq 'CampaignExperiment') {
+        $selectionArguments = @(
+          '--campaign-path', $CampaignPath,
+          '--experiment-id', $ExperimentId
+        )
+      } else {
+        $selectionArguments = @('--runtime-profile-id', $RuntimeProfileId)
+      }
       & $python -m common.multipole.runtime_profile --repo-root $RepoRoot `
-        --project-id $ProjectId --runtime-profile-id $RuntimeProfileId `
-        --output $resolutionPath
+        --project-id $ProjectId @selectionArguments --output $resolutionPath
     } finally {
       Pop-Location
     }
@@ -47,11 +58,24 @@ function Invoke-MultipoleProjectFinite3dTransport {
 
     $profile = Get-Content -LiteralPath $resolutionPath -Raw -Encoding UTF8 |
       ConvertFrom-Json
+    $resolvedRuntimeProfileId = [string]$profile.runtime_profile_id
+    if ($PSCmdlet.ParameterSetName -eq 'CampaignExperiment') {
+      $authorizedRunId = [string](
+        $profile.engineering_budget.inline_contract.pilot_authorization.scope.authorized_run_id
+      )
+      if ([string]::IsNullOrWhiteSpace($authorizedRunId)) {
+        throw "Campaign experiment '$ExperimentId' omits authorized_run_id."
+      }
+      if ($RunId -and $RunId -cne $authorizedRunId) {
+        throw "RunId differs from campaign experiment '$ExperimentId'."
+      }
+      $RunId = $authorizedRunId
+    }
     $numerics = $profile.solver_numerics.$Solver.values
     $stopStage = [string]$profile.stop_stage
     $arguments = @{
       ProjectId = $ProjectId
-      RuntimeProfileId = $RuntimeProfileId
+      RuntimeProfileId = $resolvedRuntimeProfileId
       DesignProfileId = [string]$profile.design_profile_id
       ParticleSourcePath = [string]$profile.particle_source.path
       EngineeringBudgetPath = [string]$profile.engineering_budget.path
@@ -84,6 +108,7 @@ function Invoke-MultipoleProjectFinite3dTransport {
       $arguments.CellMmY = [double]$numerics.cell_mm_xyz.y
       $arguments.CellMmZ = [double]$numerics.cell_mm_xyz.z
       $arguments.TrajectoryQuality = [int]$numerics.trajectory_quality
+      $arguments.ResolvedRuntimeProfilePath = $resolutionPath
       if ($SimionExe) {
         $arguments.SimionExe = $SimionExe
       }

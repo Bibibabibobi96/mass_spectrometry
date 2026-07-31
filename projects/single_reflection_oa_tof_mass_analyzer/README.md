@@ -30,6 +30,7 @@
 | 已冻结Formal验证记录 | [`config/formal_validation.json`](config/formal_validation.json) |
 | SIMION资产身份 | [`config/simion_stable_entry.json`](config/simion_stable_entry.json) |
 | 可执行workflow | [`config/execution_profiles.json`](config/execution_profiles.json) |
+| 声明式Candidate campaign | [`config/experiment_campaign.json`](config/experiment_campaign.json) |
 
 数据流固定为`baseline + science + solver numerics → resolved → COMSOL/SIMION/CAD`。seed、run ID和
 冻结路径只属于run instance；候选不得反写baseline或Formal资产。当前项目生命周期为
@@ -40,6 +41,11 @@
 - COMSOL生产：[`comsol/run_oatof_model.m`](comsol/run_oatof_model.m)
 - SIMION交付构建：[`simion/workbench/build_formal_delivery.ps1`](simion/workbench/build_formal_delivery.ps1)
 - Candidate唯一入口：[`workflows/design_candidate/run_candidate.py`](workflows/design_candidate/run_candidate.py)
+- Candidate campaign唯一入口：
+  [`workflows/experiment_campaign/run_campaign.py`](workflows/experiment_campaign/run_campaign.py)；
+  从仓库根以
+  `python -m projects.single_reflection_oa_tof_mass_analyzer.workflows.experiment_campaign.run_campaign`
+  调用；`--status`和`--receipt`只读，执行必须显式选择`--experiment-id`或`--all`
 - Formal验证、发布与复核唯一入口（`-Phase Validate|Publish|Verify`）：
   [`workflows/formal_reference/run_formal_validation.ps1`](workflows/formal_reference/run_formal_validation.ps1)
 - 五质量候选：

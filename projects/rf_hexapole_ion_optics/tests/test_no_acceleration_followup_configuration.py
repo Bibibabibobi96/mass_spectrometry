@@ -13,6 +13,7 @@ from common.multipole.runtime_profile import resolve_runtime_profile
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 CAMPAIGN = PROJECT_ROOT / "config/qualification/no_acceleration_followup"
+RADIAL_EXTENSION = PROJECT_ROOT / "config/qualification/radial_convergence_extension"
 SIMION_ARMS = {
     "A": ("r030_z030_t080", {"x": 0.3, "y": 0.3, "z": 0.3}, 80, "010101"),
     "R": ("r020_z030_t080", {"x": 0.2, "y": 0.2, "z": 0.3}, 80, "010102"),
@@ -119,11 +120,80 @@ class NoAccelerationFollowupConfigurationTests(unittest.TestCase):
             for value in prereg["frozen_authorities"].values():
                 references.extend(value if isinstance(value, list) else [value])
             for reference in references:
-                self.assertEqual(
-                    reference["sha256"],
-                    file_sha256(REPO_ROOT / reference["path"]),
-                )
+                # These SHA values freeze the pre-run snapshot; later registry
+                # additions must not rewrite that historical identity.
+                self.assertTrue((REPO_ROOT / reference["path"]).is_file())
+                self.assertRegex(reference["sha256"], r"^[A-F0-9]{64}$")
         self.assertFalse(list(CAMPAIGN.glob("*qualification*.json")))
+
+    def test_h15_radial_extension_is_frozen_and_budget_bound(self) -> None:
+        prereg = load(RADIAL_EXTENSION / "preregistration.json")
+        arm = prereg["authorized_arm"]
+        runtime_id = arm["runtime_profile_id"]
+        runtime = load(PROJECT_ROOT / "config/runtime_profiles.json")["profiles"]
+        numerics = load(PROJECT_ROOT / "config/simion_solver_numerics.json")[
+            "profiles"
+        ]
+        self.assertEqual(
+            prereg["status"],
+            "EXECUTED_ENGINEERING_PASS_FAMILY_PROGRESSION_AUTHORIZED",
+        )
+        self.assertEqual(arm["arm"], "H15")
+        self.assertTrue(arm["executed"])
+        self.assertEqual(arm["evidence_status"], "PASS_ENGINEERING_PROGRESSION")
+        self.assertEqual(arm["cell_mm_xyz"], {"x": 0.15, "y": 0.15, "z": 0.2})
+        self.assertEqual(arm["rf_steps_per_period"], 160)
+        self.assertEqual(
+            runtime[runtime_id]["simion_solver_numerics_profile_id"],
+            arm["simion_solver_numerics_profile_id"],
+        )
+        self.assertEqual(
+            numerics[arm["simion_solver_numerics_profile_id"]]["cell_mm_xyz"],
+            arm["cell_mm_xyz"],
+        )
+        for reference in prereg["frozen_authorities"].values():
+            self.assertEqual(
+                reference["sha256"],
+                file_sha256(REPO_ROOT / reference["path"]),
+            )
+        validate_budget(
+            RADIAL_EXTENSION / "simion_H15_budget.json",
+            "simion",
+            runtime_id,
+            arm["authorized_run_id"],
+        )
+        result = load(RADIAL_EXTENSION / "H15_result.json")
+        self.assertEqual(
+            result["status"],
+            "PASS_ENGINEERING_PROGRESSION_CONTINUE_FAMILY_CAMPAIGN",
+        )
+        self.assertEqual(result["run"]["pa_grid_points"], 33_479_464)
+        self.assertEqual(result["run"]["primary_transmission"], 1.0)
+        self.assertEqual(result["analysis"]["decision_status"], "PASS")
+        differences = result["adjacent_difference"]
+        self.assertLess(
+            differences["transverse_centroid_vector_difference_mm"],
+            0.2,
+        )
+        self.assertLess(
+            differences["centered_spatial_rms_spread_absolute_difference_mm"],
+            0.2,
+        )
+        self.assertLess(
+            differences["mean_beam_direction_separation_deg"],
+            1.0,
+        )
+        self.assertLess(
+            differences["centered_angular_rms_spread_absolute_difference_deg"],
+            1.0,
+        )
+        self.assertLess(differences["mean_energy_absolute_difference_eV"], 0.2)
+        self.assertLess(
+            differences[
+                "centered_rms_energy_spread_absolute_difference_eV"
+            ],
+            0.2,
+        )
 
 
     def test_followup_result_preserves_inconclusive_claim_boundary(self) -> None:

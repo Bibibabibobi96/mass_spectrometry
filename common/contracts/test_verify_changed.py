@@ -146,6 +146,7 @@ class ChangedGateContractTests(unittest.TestCase):
         workflow = LIGHTWEIGHT_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("verify_changed.ps1", workflow)
         self.assertEqual(workflow.count("-FullScope"), 2)
+        self.assertEqual(workflow.count("-MaxConcurrency 2"), 3)
         self.assertNotIn("$fallbackChangedPaths", workflow)
         self.assertNotIn("projects/rf_quadrupole_ion_optics/README.md", workflow)
 

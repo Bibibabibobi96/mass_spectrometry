@@ -18,11 +18,12 @@ MULTIPOLE = ROOT / "common" / "multipole"
 
 
 class ResolvedDesignConsumerContractTest(unittest.TestCase):
-    def test_family_gate_uses_quadrupole_official_publication_only(self) -> None:
+    def test_family_gate_uses_the_unified_profile_resolver(self) -> None:
         source = (MULTIPOLE / "verify_family_foundation.py").read_text(
             encoding="utf-8"
         )
-        self.assertIn("resolved_design_official.json", source)
+        self.assertIn("resolve_design_profile", source)
+        self.assertNotIn("resolved_design_official.json", source)
         for legacy in (
             "resolved_geometry.json",
             "resolved_interface_readiness.json",
