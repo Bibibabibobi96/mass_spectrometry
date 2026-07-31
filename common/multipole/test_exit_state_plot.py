@@ -396,7 +396,7 @@ class ExitStatePlotTests(unittest.TestCase):
                 return real_replace(source_path, destination_path)
 
             with patch(
-                "common.multipole.exit_state_plot.os.replace",
+                "common.multipole.exit_state_plot._replace_path",
                 side_effect=fail_manifest_install,
             ):
                 with self.assertRaisesRegex(OSError, "manifest commit"):

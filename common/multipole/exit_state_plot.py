@@ -486,6 +486,12 @@ def _series_manifest(
     ]
 
 
+def _replace_path(source: Path, destination: Path) -> None:
+    """Narrow atomic-replace seam used by transactional publication tests."""
+
+    os.replace(source, destination)
+
+
 def _publish_figure(
     figure: plt.Figure, output: Path, manifest: Path, dpi: int, document: dict
 ) -> None:
@@ -507,10 +513,10 @@ def _publish_figure(
         for target in (output, manifest):
             if target.exists():
                 backup = target.with_name(f".{target.name}.{token}.backup")
-                os.replace(target, backup)
+                _replace_path(target, backup)
                 backups[target] = backup
         for temporary, target in ((temporary_output, output), (temporary_manifest, manifest)):
-            os.replace(temporary, target)
+            _replace_path(temporary, target)
             installed.append(target)
         committed = True
     except Exception:
@@ -518,7 +524,7 @@ def _publish_figure(
             target.unlink(missing_ok=True)
         for target, backup in backups.items():
             if backup.exists():
-                os.replace(backup, target)
+                _replace_path(backup, target)
         raise
     finally:
         plt.close(figure)
