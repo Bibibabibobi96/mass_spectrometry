@@ -27,6 +27,9 @@ run编号、故障链和关闭过程冻结在
   极杆共同的2 eV N=100/N=1000母样本。无加速N=100基线已在统一四段机械几何和统一近接口统计面上
   完成COMSOL与SIMION真实重跑：RF-on均为100/100，zero-RF均为21/100；这只恢复基线功能分类，
   空间/时间敏感性、连续相空间等价、机械、Candidate和Formal仍未完成。
+- 本项目适用公共多极杆家族工程推进合同；阈值、状态和判定只读取
+  `../../../common/multipole/engineering_progression_acceptance.json`，不在项目文件保存副本。
+  工程推进不回写既有`INCONCLUSIVE`收敛结论，也不代表求解器等价、绝对准确度、Candidate或Formal。
 - 旧A/B/C/D四臂合同已由上述三模式实验取代；5 eV独立源不再被解释为一种轴向加速方式。
 - RF四极杆离子光学→单次反射oaTOF的0 mm direct-mating和1 mm grounded-connector profile已用同一
   冻结N=100源完成真实COMSOL→SIMION重跑；源身份、五级census和四组离散粒子事件集合均与只读
@@ -57,6 +60,8 @@ run编号、故障链和关闭过程冻结在
 - 家族N=100/N=1000母样本：`../config/particle_source_profiles.json`；
 - N=100数值矩阵、acceptance、effect-resolution和engineering-budget：
   `../config/family_experiment/n100_convergence_preregistration.json`及同目录资格合同；
+- 暂时下游工程推进判据：
+  `../../../common/multipole/engineering_progression_acceptance.json`；
 - 无加速混合网格粒子收敛活动：
   `../config/family_experiment/comsol_hybrid_no_acceleration_particle_convergence_preregistration.json`
   及其独立budget；它不改写既有冻结预算；
@@ -131,6 +136,18 @@ pair。SIMION径向/轴向RMS半径变化为`2.597%/0.246%`，I→T为`0.00595%`
 COMSOL时间变化为`0.0807%`但仍有粒子跨固定分箱。功能仍100/100，连续结论保持
 `INCONCLUSIVE_NUMERICAL_CONVERGENCE_NOT_ESTABLISHED`；机器身份见
 [`followup_result.json`](../config/family_experiment/no_acceleration_followup/followup_result.json)。
+随后唯一授权的无加速COMSOL N=1000 bridge在7200 s执行边界前完成760106单元网格和2635598
+自由度静电场，但逐粒子`ReleaseFromDataFile`只构造到746/1000，未进入粒子求解，也没有出口状态。
+该run已终结为`interrupted`，746份release日志以校验清单保留；campaign结论为
+`EXECUTED_INTERRUPTED_INCONCLUSIVE`且关闭自动重试。机器状态见
+[`preregistration.json`](../config/family_experiment/no_acceleration_n1000_comsol_bridge/preregistration.json)。
+为降低大样本release构造开销而登记的单节点向量化phase释放在N=100 v3中完成真实COMSOL运行，
+但未通过预登记的实现等价门禁：RF-on虽仍为100/100且终态分类精确一致，仍有1个粒子跨y分箱、
+8个跨发散角分箱、5个跨能量分箱；最大连续差分别达到0.00909 mm、0.398°和0.00724 eV。
+候选用时312.606 s，旧逐粒子release参考为312.020 s，且峰值进程树内存略高，因此没有N=100
+性能收益。该路线固定为`EXECUTED_NOT_EQUIVALENT`，不得推广到N=1000；生产和既有profile继续使用
+逐粒子`ReleaseFromDataFile`语义。机器判定见
+[`preregistration_v3.json`](../config/family_experiment/vectorized_release_validation/preregistration_v3.json)。
 COMSOL首次空间档在`MESH_COMPLETE`
 后以17.752 GB超过原17.180 GB进程树帽而失败关闭，当时系统仍有11.35 GB可用。预算v7保留
 8.59 GB系统可用内存底线、把进程树帽调整为21.475 GB后，唯一人工替代运行仍升至21.835 GB，

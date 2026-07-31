@@ -36,6 +36,9 @@
   [`config/qualification/comsol_hybrid_no_acceleration_particle_convergence_preregistration.json`](config/qualification/comsol_hybrid_no_acceleration_particle_convergence_preregistration.json)
   与独立预算合同；具体已执行 arm、关闭状态和后续授权只以该预登记及
   [`docs/PROJECT.md`](docs/PROJECT.md)为准，本页不复制运行状态。
+- 家族暂时工程推进指标：
+  [`../../common/multipole/engineering_progression_acceptance.json`](../../common/multipole/engineering_progression_acceptance.json)；
+  本项目只引用，不复制阈值、状态或判定。
 
 三个规范模式为`no_acceleration_full_length`、`segmented_rod_axial_acceleration`和
 `exit_aperture_plate_acceleration`。旧名`baseline_finite_3d`与

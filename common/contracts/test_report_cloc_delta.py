@@ -198,6 +198,11 @@ class ClocDeltaReportTests(unittest.TestCase):
             (worktree_scratch / "temporary.m").write_text(
                 "error('scratch is not active code');\n", encoding="utf-8"
             )
+            worktree_tmp = root / ".tmp" / "worktree_task"
+            worktree_tmp.mkdir(parents=True)
+            (worktree_tmp / "temporary.json").write_text(
+                '{"temporary": true}\n', encoding="utf-8"
+            )
             test_dir = root / "project" / "tests"
             test_dir.mkdir(parents=True)
             (test_dir / "test_api.py").write_text(

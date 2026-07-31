@@ -143,22 +143,6 @@
       "comsol_solver_numerics_profile_id": "hybrid_c1_corridor040_exit020_nosweep_cg_amg_spatial_temporal_refined",
       "simion_solver_numerics_profile_id": "baseline_finite_3d"
     },
-    "no_acceleration_full_length_n100_vectorized_release_exit020_t160": {
-      "engineering_budget_path": "config/family_experiment/vectorized_release_validation/comsol_n100_budget.json",
-      "comsol_particle_release_strategy": "vectorized_phase",
-      "design_profile_id": "no_acceleration_full_length",
-      "particle_source_profile_id": "family_mother_sample_v1_n100",
-      "comsol_solver_numerics_profile_id": "hybrid_c1_corridor040_exit020_nosweep_cg_amg_spatial_temporal_refined",
-      "simion_solver_numerics_profile_id": "baseline_finite_3d"
-    },
-    "no_acceleration_full_length_n100_vectorized_force_release_exit020_t160": {
-      "engineering_budget_path": "config/family_experiment/vectorized_release_validation/comsol_n100_v2_budget.json",
-      "comsol_particle_release_strategy": "vectorized_phase",
-      "design_profile_id": "no_acceleration_full_length",
-      "particle_source_profile_id": "family_mother_sample_v1_n100",
-      "comsol_solver_numerics_profile_id": "hybrid_c1_corridor040_exit020_nosweep_cg_amg_spatial_temporal_refined",
-      "simion_solver_numerics_profile_id": "baseline_finite_3d"
-    },
     "no_acceleration_full_length_n100_comsol_followup_exit020_t320": {
       "engineering_budget_path": "config/family_experiment/no_acceleration_followup/comsol_exit020_t320_budget.json",
       "design_profile_id": "no_acceleration_full_length",

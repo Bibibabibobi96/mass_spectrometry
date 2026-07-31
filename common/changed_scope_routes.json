@@ -86,6 +86,10 @@
           "reason": "changed_scope_entrypoint_changed"
         },
         {
+          "exact": "common/parallel_gate_support.ps1",
+          "reason": "parallel_gate_support_changed"
+        },
+        {
           "exact": "common/changed_scope_routes.json",
           "reason": "changed_scope_routes_changed"
         },

@@ -20,6 +20,11 @@
 CSV的SHA和各求解器数值profile；任意粒子路径和自由数值不再属于生产入口。公共runner保留为低层
 投影机制。无evidence contract的运行固定为`UNQUALIFIED`。
 
+四、六、八极杆共同的临时下游工程方向由
+[`engineering_progression_acceptance.json`](../../../common/multipole/engineering_progression_acceptance.json)
+统一记录；本项目只声明适用性，不复制阈值、状态或判定。后续先复用现有SIMION状态并只补最小相邻
+加密臂；任何工程PASS都不得改称数值收敛或求解器等价。
+
 当前`no_acceleration_full_length`保持79.6 mm杆、圆柱外壳、紧邻接口几何及四段物理导体，把四段和
 出口带孔接口板电位全部冻结为0 V。2026-07-28完成的同名双求解器功能复验和随后数值矩阵属于改名前
 `rf_hexapole_ion_guide`、旧固定N=100源（SHA-256

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "role": "multipole_comsol_particle_release_strategy_validation_preregistration",
   "campaign_id": "quadrupole_comsol_vectorized_force_release_n100_v2",
-  "status": "PREREGISTERED_NOT_EXECUTED",
+  "status": "EXECUTED_FAILED",
   "preregistered_before_run": true,
   "supersedes_failed_campaign": {
     "campaign_id": "quadrupole_comsol_vectorized_release_n100_v1",
@@ -37,7 +37,21 @@
     "engineering_budget_path": "config/family_experiment/vectorized_release_validation/comsol_n100_v2_budget.json",
     "authorized_run_id": "20260731_070002__sim__comsol__quad-n100-vectorized-force-release-validation",
     "comsol_particle_release_strategy": "vectorized_phase",
-    "executed": false
+    "executed": true
+  },
+  "observed_result": {
+    "run_id": "20260731_070002__sim__comsol__quad-n100-vectorized-force-release-validation",
+    "status": "failed",
+    "wall_clock_seconds": 264.537,
+    "failure_stage": "post_solve_metrics_aggregation",
+    "failure_reason": "MATLAB rejected first indexed assignment from a populated metrics struct into an empty struct with no fields.",
+    "mesh_global_elements": 760106,
+    "stationary_field_dof": 2635598,
+    "peak_process_tree_working_set_bytes": 6148894720,
+    "particle_solve_stage_reached": true,
+    "equivalence_evaluated": false,
+    "automatic_retry_count": 0,
+    "n1000_promotion_allowed": false
   },
   "frozen_authorities": {
     "runtime_profiles": {

@@ -19,7 +19,7 @@ $codeExtensions=@(
   '.sh','.bash','.zsh','.bat','.cmd'
 )
 $excludedComponents=@(
-  '.git','.venv','artifacts','generated','vendor','vendors',
+  '.git','.venv','.tmp','artifacts','generated','vendor','vendors',
   'third_party','third-party','thirdparty','run','runs'
 )
 $filterDescription=(

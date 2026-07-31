@@ -3,16 +3,23 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
+import os
+import re
+import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from common.multipole.numerical_qualification import (
     CANDIDATE_OBSERVABLE_FIELDS,
     PARTICLE_ENVELOPE_FIELDS,
+    evaluate,
+    load_engineering_progression_contract,
     observable_differences,
     run_data,
+    sha256_file,
 )
 
 
@@ -23,6 +30,15 @@ FACTORIAL_ARMS = {
     "I": ((0.2, 0.2, 0.2), 80),
     "T": ((0.2, 0.2, 0.2), 160),
 }
+ENGINEERING_AXES = {
+    "spatial",
+    "spatial_radial",
+    "spatial_axial",
+    "spatial_isotropic",
+    "temporal",
+    "cross_solver",
+}
+PLAN_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
 
 def load_resolution(path: Path) -> dict[str, Any]:
@@ -298,16 +314,261 @@ def analyze_pair(
     }
 
 
+def _strict_keys(value: dict[str, Any], expected: set[str], label: str) -> None:
+    if set(value) != expected:
+        raise ValueError(f"{label} keys differ")
+
+
+def _plan_relative_file(plan_root: Path, value: Any, label: str) -> Path:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{label} path must be a nonempty string")
+    relative = Path(value)
+    if relative.is_absolute():
+        raise ValueError(f"{label} path must be relative to the plan")
+    resolved = (plan_root / relative).resolve()
+    try:
+        resolved.relative_to(plan_root)
+    except ValueError as exc:
+        raise ValueError(f"{label} path escapes the plan directory") from exc
+    if not resolved.is_file():
+        raise ValueError(f"{label} file does not exist")
+    return resolved
+
+
+def _load_engineering_batch_plan(
+    plan_path: Path,
+) -> tuple[dict[str, Path], list[dict[str, str]], str]:
+    plan_path = plan_path.resolve()
+    payload = plan_path.read_bytes()
+    plan_sha256 = hashlib.sha256(payload).hexdigest().upper()
+    document = json.loads(payload.decode("utf-8-sig"))
+    if not isinstance(document, dict):
+        raise ValueError("engineering batch plan must be an object")
+    _strict_keys(
+        document,
+        {"schema_version", "role", "runs", "comparisons"},
+        "engineering batch plan",
+    )
+    if (
+        type(document["schema_version"]) is not int
+        or document["schema_version"] != 1
+        or document["role"] != "multipole_engineering_reanalysis_plan"
+    ):
+        raise ValueError("engineering batch plan identity differs")
+    run_specs = document["runs"]
+    comparisons = document["comparisons"]
+    if not isinstance(run_specs, dict) or not run_specs:
+        raise ValueError("engineering batch plan has no runs")
+    if not isinstance(comparisons, list) or not comparisons:
+        raise ValueError("engineering batch plan has no comparisons")
+
+    run_paths: dict[str, Path] = {}
+    for key, specification in run_specs.items():
+        if not isinstance(key, str) or not PLAN_IDENTIFIER.fullmatch(key):
+            raise ValueError("engineering batch run key is invalid")
+        if not isinstance(specification, dict):
+            raise ValueError(f"engineering batch run {key} must be an object")
+        _strict_keys(specification, {"manifest"}, f"engineering batch run {key}")
+        run_paths[key] = _plan_relative_file(
+            plan_path.parent, specification["manifest"], f"run {key} manifest"
+        )
+    if len(set(run_paths.values())) != len(run_paths):
+        raise ValueError("engineering batch run manifests must be unique")
+
+    validated: list[dict[str, str]] = []
+    comparison_ids: set[str] = set()
+    comparison_keys: set[tuple[str, str, str]] = set()
+    used_runs: set[str] = set()
+    for index, comparison in enumerate(comparisons):
+        if not isinstance(comparison, dict):
+            raise ValueError(f"engineering comparison {index} must be an object")
+        _strict_keys(
+            comparison,
+            {"comparison_id", "baseline", "peer", "axis"},
+            f"engineering comparison {index}",
+        )
+        comparison_id = comparison["comparison_id"]
+        baseline = comparison["baseline"]
+        peer = comparison["peer"]
+        axis = comparison["axis"]
+        if (
+            not isinstance(comparison_id, str)
+            or not PLAN_IDENTIFIER.fullmatch(comparison_id)
+            or comparison_id in comparison_ids
+        ):
+            raise ValueError("engineering comparison_id is invalid or duplicated")
+        if (
+            not isinstance(baseline, str)
+            or not PLAN_IDENTIFIER.fullmatch(baseline)
+            or not isinstance(peer, str)
+            or not PLAN_IDENTIFIER.fullmatch(peer)
+        ):
+            raise ValueError("engineering comparison run reference is invalid")
+        if baseline not in run_paths or peer not in run_paths or baseline == peer:
+            raise ValueError("engineering comparison run reference is invalid")
+        if not isinstance(axis, str) or axis not in ENGINEERING_AXES:
+            raise ValueError("engineering comparison axis is unsupported")
+        comparison_key = (baseline, peer, axis)
+        if comparison_key in comparison_keys:
+            raise ValueError("engineering comparison pair is duplicated")
+        comparison_ids.add(comparison_id)
+        comparison_keys.add(comparison_key)
+        used_runs.update((baseline, peer))
+        validated.append(
+            {
+                "comparison_id": comparison_id,
+                "baseline": baseline,
+                "peer": peer,
+                "axis": axis,
+            }
+        )
+    if used_runs != set(run_paths):
+        raise ValueError("engineering batch plan contains unused runs")
+    return run_paths, validated, plan_sha256
+
+
+def load_engineering_batch_plan(
+    plan_path: Path,
+) -> tuple[dict[str, Path], list[dict[str, str]]]:
+    run_paths, comparisons, _ = _load_engineering_batch_plan(plan_path)
+    return run_paths, comparisons
+
+
+def engineering_batch(
+    plan_path: Path,
+    policy_path: Path,
+    functional_contract_path: Path,
+    *,
+    run_loader: Callable[[Path], dict[str, Any]] = run_data,
+    evaluator: Callable[
+        [dict[str, Any], dict[str, Any], str, dict[str, Any]],
+        dict[str, Any],
+    ] = evaluate,
+) -> dict[str, Any]:
+    run_paths, comparisons, plan_sha256 = _load_engineering_batch_plan(plan_path)
+    contract, contract_provenance = load_engineering_progression_contract(
+        policy_path, functional_contract_path
+    )
+    manifest_sha256 = {
+        key: sha256_file(path) for key, path in run_paths.items()
+    }
+    runs = {key: run_loader(path) for key, path in run_paths.items()}
+    if any(
+        sha256_file(run_paths[key]) != digest
+        for key, digest in manifest_sha256.items()
+    ):
+        raise ValueError("engineering batch run manifest changed during loading")
+    if sha256_file(plan_path.resolve()) != plan_sha256:
+        raise ValueError("engineering batch plan changed during analysis")
+    required_provenance = ("run_id", "project", "solver")
+    for key, run in runs.items():
+        if not isinstance(run, dict) or any(
+            not isinstance(run.get(field), str) or not run[field]
+            for field in required_provenance
+        ):
+            raise ValueError(f"engineering batch run {key} provenance is invalid")
+    run_ids = [run["run_id"] for run in runs.values()]
+    if len(run_ids) != len(set(run_ids)):
+        raise ValueError("engineering batch run IDs must be unique")
+
+    results = []
+    statuses = []
+    for comparison in comparisons:
+        result = evaluator(
+            runs[comparison["baseline"]],
+            runs[comparison["peer"]],
+            comparison["axis"],
+            contract,
+        )
+        status = result.get("engineering_progression_status")
+        if (
+            result.get("claim_profile") != "engineering_progression"
+            or result.get("status") != status
+            or status
+            not in {"PASS", "FAIL", "NOT_EVALUATED_DO_NOT_PROGRESS"}
+        ):
+            raise ValueError("engineering evaluator returned an invalid result")
+        statuses.append(status)
+        results.append({**comparison, "result": result})
+
+    if sha256_file(plan_path.resolve()) != plan_sha256:
+        raise ValueError("engineering batch plan changed during analysis")
+    if any(
+        sha256_file(run_paths[key]) != digest
+        for key, digest in manifest_sha256.items()
+    ):
+        raise ValueError("engineering batch run manifest changed during analysis")
+
+    policy_status = contract["engineering_progression_policy"]["status"]
+    if "FAIL" in statuses:
+        decision_status = "FAIL"
+    elif "NOT_EVALUATED_DO_NOT_PROGRESS" in statuses:
+        decision_status = "NOT_EVALUATED_DO_NOT_PROGRESS"
+    elif policy_status != "ACTIVE_ENGINEERING_PROGRESSION_POLICY":
+        decision_status = "NOT_EVALUATED_DO_NOT_PROGRESS"
+    elif statuses and all(status == "PASS" for status in statuses):
+        decision_status = "PASS"
+    else:
+        raise ValueError("engineering batch decision cannot be aggregated")
+    counts = {
+        status: statuses.count(status)
+        for status in ("PASS", "FAIL", "NOT_EVALUATED_DO_NOT_PROGRESS")
+    }
+    plan_path = plan_path.resolve()
+    return {
+        "schema_version": 1,
+        "role": "multipole_engineering_reanalysis_batch",
+        "execution_status": "ANALYSIS_COMPLETE",
+        "decision_status": decision_status,
+        "numerical_convergence_status": "DEFERRED_NOT_WAIVED",
+        "plan": {
+            "path": str(plan_path),
+            "sha256": plan_sha256,
+        },
+        "contracts": contract_provenance,
+        "runs": {
+            key: {
+                "manifest": {
+                    "path": str(run_paths[key]),
+                    "sha256": manifest_sha256[key],
+                },
+                "run_id": run["run_id"],
+                "project": run["project"],
+                "solver": run["solver"],
+            }
+            for key, run in runs.items()
+        },
+        "comparison_counts": counts,
+        "comparisons": results,
+        "claim_limit": contract["claim_limit"],
+    }
+
+
 def write_json(path: Path, document: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(document, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
-    )
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as stream:
+            temporary = Path(stream.name)
+            stream.write(
+                json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+            )
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--resolution", required=True, type=Path)
+    parser.add_argument("--resolution", type=Path)
     parser.add_argument("--output", required=True, type=Path)
     subparsers = parser.add_subparsers(dest="command", required=True)
     factorial = subparsers.add_parser("factorial")
@@ -321,8 +582,20 @@ def main() -> int:
     pair.add_argument("--left", required=True, type=Path)
     pair.add_argument("--right", required=True, type=Path)
     pair.add_argument("--comparison-id", required=True)
+    engineering = subparsers.add_parser("engineering-batch")
+    engineering.add_argument("--plan", required=True, type=Path)
+    engineering.add_argument("--engineering-policy", required=True, type=Path)
+    engineering.add_argument("--functional-contract", required=True, type=Path)
     arguments = parser.parse_args()
-    if arguments.command == "factorial":
+    if arguments.command == "engineering-batch":
+        document = engineering_batch(
+            arguments.plan,
+            arguments.engineering_policy,
+            arguments.functional_contract,
+        )
+    elif arguments.resolution is None:
+        parser.error("--resolution is required for diagnostic follow-up commands")
+    elif arguments.command == "factorial":
         document = analyze_factorial(
             {
                 arm: getattr(arguments, arm.lower())
@@ -345,6 +618,11 @@ def main() -> int:
             arguments.comparison_id,
         )
     write_json(arguments.output, document)
+    if arguments.command == "engineering-batch":
+        print(
+            "MULTIPOLE_ENGINEERING_REANALYSIS="
+            f"{document['decision_status']} OUTPUT={arguments.output.resolve()}"
+        )
     return 0
 
 

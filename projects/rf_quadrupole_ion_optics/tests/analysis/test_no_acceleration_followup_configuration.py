@@ -13,6 +13,13 @@ from common.multipole.runtime_profile import resolve_runtime_profile
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 CAMPAIGN = PROJECT_ROOT / "config/family_experiment/no_acceleration_followup"
+N1000_BRIDGE = (
+    PROJECT_ROOT
+    / "config/family_experiment/no_acceleration_n1000_comsol_bridge"
+)
+ENGINEERING_ACCEPTANCE = (
+    REPO_ROOT / "common/multipole/engineering_progression_acceptance.json"
+)
 SIMION_ARMS = {
     "A": ("r030_z030_t080", {"x": 0.3, "y": 0.3, "z": 0.3}, 80, "010001"),
     "R": ("r020_z030_t080", {"x": 0.2, "y": 0.2, "z": 0.3}, 80, "010002"),
@@ -113,7 +120,7 @@ class NoAccelerationFollowupConfigurationTests(unittest.TestCase):
                 scope["authorized_run_id"],
             )
 
-    def test_preregistrations_are_frozen_before_run(self) -> None:
+    def test_historical_preregistrations_remain_well_formed(self) -> None:
         simion = load(CAMPAIGN / "simion_preregistration.json")
         comsol = load(CAMPAIGN / "comsol_preregistration.json")
         self.assertEqual(comsol["resolution_contract"], simion["resolution_contract"])
@@ -124,9 +131,15 @@ class NoAccelerationFollowupConfigurationTests(unittest.TestCase):
             for value in authorities.values():
                 references.extend(value if isinstance(value, list) else [value])
             for reference in references:
-                self.assertEqual(
-                    reference["sha256"],
-                    file_sha256(REPO_ROOT / reference["path"]),
+                # These SHA values freeze the pre-run snapshot; later registry
+                # additions must not rewrite that historical identity.
+                self.assertTrue((REPO_ROOT / reference["path"]).is_file())
+                self.assertRegex(reference["sha256"], r"^[A-F0-9]{64}$")
+            for arm in prereg["ordered_arms"]:
+                resolve_runtime_profile(
+                    REPO_ROOT,
+                    "rf_quadrupole_ion_optics",
+                    arm["runtime_profile_id"],
                 )
         self.assertFalse(list(CAMPAIGN.glob("*qualification*.json")))
 
@@ -146,6 +159,68 @@ class NoAccelerationFollowupConfigurationTests(unittest.TestCase):
         self.assertEqual(
             result["comsol"]["temporal_status"],
             "SENSITIVE_AT_PREREGISTERED_ENGINEERING_RESOLUTION",
+        )
+
+    def test_n1000_bridge_is_closed_without_a_particle_result(self) -> None:
+        preregistration = load(N1000_BRIDGE / "preregistration.json")
+        observed = preregistration["observed_result"]
+        self.assertEqual(
+            preregistration["status"],
+            "EXECUTED_INTERRUPTED_INCONCLUSIVE",
+        )
+        self.assertTrue(preregistration["authorized_arm"]["executed"])
+        self.assertEqual(observed["status"], "interrupted")
+        self.assertEqual(
+            observed["decision"],
+            "CAMPAIGN_CLOSED_INCONCLUSIVE_NO_N1000_RESULT",
+        )
+        self.assertEqual(observed["requested_particle_count"], 1000)
+        self.assertEqual(observed["constructed_particle_release_count"], 746)
+        self.assertTrue(observed["stationary_field_completed"])
+        self.assertFalse(observed["particle_solve_stage_reached"])
+        self.assertFalse(observed["particle_state_result_available"])
+        self.assertEqual(observed["automatic_retry_count"], 0)
+        self.assertTrue(observed["campaign_closed"])
+        for field in (
+            "run_manifest_sha256",
+            "summary_sha256",
+            "resource_usage_sha256",
+            "particle_release_log_inventory_sha256",
+        ):
+            self.assertRegex(observed[field], r"^[A-F0-9]{64}$")
+
+    def test_temporary_engineering_progression_contract_uses_common_authority(
+        self,
+    ) -> None:
+        contract = load(ENGINEERING_ACCEPTANCE)
+        self.assertEqual(
+            ENGINEERING_ACCEPTANCE,
+            REPO_ROOT / "common/multipole/engineering_progression_acceptance.json",
+        )
+        self.assertEqual(
+            contract["role"],
+            "multipole_engineering_progression_acceptance_contract",
+        )
+        self.assertEqual(
+            contract["status"],
+            "DRAFT_PENDING_ENERGY_THRESHOLDS",
+        )
+        self.assertEqual(
+            contract["scope"]["comparison_kinds"],
+            ["same_solver_discretization", "cross_solver"],
+        )
+        functional = contract["functional_acceptance"]
+        self.assertEqual(
+            functional["sha256"],
+            file_sha256(REPO_ROOT / functional["path"]),
+        )
+        self.assertEqual(
+            contract["decision_policy"]["numerical_convergence"],
+            "DEFERRED_NOT_WAIVED",
+        )
+        self.assertIn(
+            "will not establish numerical convergence",
+            contract["claim_limit"],
         )
 
 

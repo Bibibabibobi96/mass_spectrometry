@@ -30,9 +30,25 @@ def load_json(path: Path) -> dict:
 
 
 class MultipoleFamilyContractTests(unittest.TestCase):
-    def test_canonical_csv_bytes_are_cross_platform_stable(self) -> None:
+    def test_machine_contract_text_bytes_are_cross_platform_stable(self) -> None:
         attributes = (REPO_ROOT / ".gitattributes").read_text(encoding="utf-8")
-        self.assertIn("*.csv text eol=lf", attributes.splitlines())
+        lines = attributes.splitlines()
+        for extension in (
+            "json",
+            "csv",
+            "py",
+            "ps1",
+            "m",
+            "lua",
+            "gem",
+            "toml",
+            "yaml",
+            "yml",
+            "txt",
+            "md",
+        ):
+            with self.subTest(extension=extension):
+                self.assertIn(f"*.{extension} text eol=lf", lines)
 
     def test_frozen_family_foundation_gate(self) -> None:
         validate_family_foundation()
@@ -156,9 +172,7 @@ class MultipoleFamilyContractTests(unittest.TestCase):
             / "solve_deterministic_rf_quadrupole_particles.m"
         ).read_text(encoding="utf-8")
         self.assertIn("if accelerationEnabled\n        studyDiff=", shared_solver)
-        self.assertIn("if accelerationEnabled\n        electricField = {", shared_solver)
-        self.assertIn("force.set('E',electricField)", shared_solver)
-        self.assertIn("force.set('F',{[chargeFactor electricField{1}]", shared_solver)
+        self.assertIn("if accelerationEnabled\n        force.set('E'", shared_solver)
         self.assertNotIn("withsol(", quadrupole_solver)
         self.assertNotIn("axial_acceleration_reference", quadrupole_solver)
         self.assertNotIn("exit_aperture_plate_acceleration_reference", quadrupole_solver)
@@ -343,8 +357,7 @@ class MultipoleFamilyContractTests(unittest.TestCase):
             REPO_ROOT / "common/multipole/solve_finite_3d_transport.m"
         ).read_text(encoding="utf-8")
         self.assertIn(
-            "canonical_particle_state_table( ...\n"
-            "            pdOn,batchSource",
+            "write_canonical_particle_state(pdOn,source,canonicalStatePath",
             solver,
         )
         self.assertIn("'handoff_plane_z',interfaces.exit.handoff_plane_z_mm", solver)

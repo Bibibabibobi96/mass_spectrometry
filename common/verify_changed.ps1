@@ -2,14 +2,32 @@
 param(
     [string]$PythonExe = '',
     [string[]]$ChangedPath = @(),
-    [switch]$FullScope
+    [switch]$FullScope,
+    [ValidateRange(1, 32)][int]$MaxConcurrency = 4,
+    [string]$InternalStage = '',
+    [string]$InternalRequestPath = '',
+    [string]$InternalLogPath = ''
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'require_powershell7.ps1')
+. (Join-Path $PSScriptRoot 'parallel_gate_support.ps1')
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
+if ($InternalStage) {
+    if (-not $InternalRequestPath -or
+        -not (Test-Path -LiteralPath $InternalRequestPath -PathType Leaf)) {
+        throw 'InternalRequestPath is required for an internal changed-gate stage.'
+    }
+    $internalRequest = Get-Content -Raw -LiteralPath $InternalRequestPath |
+        ConvertFrom-Json -Depth 8
+    $PythonExe = [string]$internalRequest.python_exe
+    $ChangedPath = @($internalRequest.changed_paths)
+    $FullScope = [Management.Automation.SwitchParameter]::new(
+        [bool]$internalRequest.full_scope
+    )
+}
 if (-not $PythonExe) {
     $venvPython = Join-Path $repoRoot '.venv\Scripts\python.exe'
     if (Test-Path -LiteralPath $venvPython -PathType Leaf) { $PythonExe = $venvPython }
@@ -224,11 +242,6 @@ if ($FullScope) {
     $changedPaths = @(Get-ChangedRepositoryPaths)
 }
 $routes = @(Read-ChangedScopeRoutes)
-Write-Output "CHANGED_GATE_INPUT_SOURCE=$changedPathSource"
-Write-Output "CHANGED_GATE_INPUTS=COUNT=$($changedPaths.Count) PATHS=$($changedPaths -join ',')"
-
-Invoke-ChangedGateStage 'repository_hygiene' 'always' { & (Join-Path $PSScriptRoot 'verify_repository_hygiene.ps1') }
-
 $codeExtensions = @('.py', '.ps1', '.m', '.lua', '.gem')
 $hasCodeChange = $FullScope -or (Test-AnyPath {
     $codeExtensions -contains [IO.Path]::GetExtension($_).ToLowerInvariant()
@@ -246,9 +259,155 @@ $isDocumentationOnly = -not $FullScope -and $changedPaths.Count -gt 0 -and -not 
     [IO.Path]::GetExtension($_).ToLowerInvariant() -ne '.md'
 })
 
-if ($hasDocumentationChange) {
-    Invoke-ChangedGateStage 'documentation' 'documentation_or_project_docs_changed' { & (Join-Path $PSScriptRoot 'verify_documentation.ps1') }
-} else { Skip-ChangedGateStage 'documentation' 'no_documentation_path_changed' }
+$stageItems = [ordered]@{}
+function Add-ChangedStageItem {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][bool]$Run,
+        [Parameter(Mandatory)][string]$Reason,
+        [scriptblock]$Action
+    )
+    $stageItems[$Name] = [pscustomobject]@{
+        Name = $Name
+        Run = $Run
+        Reason = $Reason
+        Action = $Action
+    }
+}
+
+Add-ChangedStageItem 'repository_hygiene' $true 'always' {
+    & (Join-Path $PSScriptRoot 'verify_repository_hygiene.ps1')
+}
+$documentationReason = if ($hasDocumentationChange) {
+    'documentation_or_project_docs_changed'
+} else {
+    'no_documentation_path_changed'
+}
+Add-ChangedStageItem 'documentation' $hasDocumentationChange `
+    $documentationReason {
+    & (Join-Path $PSScriptRoot 'verify_documentation.ps1')
+}
+$developmentReason = if ($hasCodeChange) {
+    'source_code_changed'
+} else {
+    'no_source_code_path_changed'
+}
+Add-ChangedStageItem 'development_standards' $hasCodeChange `
+    $developmentReason {
+    & $PythonExe (Join-Path $PSScriptRoot 'verify_development_standards.py')
+}
+if ($FullScope) {
+    Add-ChangedStageItem 'ruff_changed_python' $true 'full_scope' {
+        & $PythonExe -m ruff check (Join-Path $repoRoot 'common') `
+            (Join-Path $repoRoot 'projects') (Join-Path $repoRoot 'integrations')
+    }
+} elseif ($existingPythonFiles.Count -gt 0) {
+    Add-ChangedStageItem 'ruff_changed_python' $true `
+        'existing_python_source_changed' {
+        & $PythonExe -m ruff check -- @existingPythonFiles
+    }
+} elseif ($changedPython.Count -gt 0) {
+    Add-ChangedStageItem 'ruff_changed_python' $false `
+        'only_deleted_python_paths_changed'
+} else {
+    Add-ChangedStageItem 'ruff_changed_python' $false 'no_python_path_changed'
+}
+
+foreach ($route in $routes) {
+    $name = [string]$route.stage
+    $coveredByFullScopeStage = $FullScope -and
+        $null -ne $route.PSObject.Properties['run_on_full_scope'] -and
+        -not [bool]$route.run_on_full_scope
+    if ($coveredByFullScopeStage) {
+        Add-ChangedStageItem $name $false (
+            "covered_by_$([string]$route.full_scope_coverage_stage)"
+        )
+        continue
+    }
+    $reason = if ($FullScope) {
+        'full_scope'
+    } else {
+        Get-ChangedRouteReason -Route $route
+    }
+    if ($reason) {
+        $command = $route.command
+        Add-ChangedStageItem $name $true $reason {
+            Invoke-ChangedRouteCommand -Command $command
+        }.GetNewClosure()
+    } else {
+        Add-ChangedStageItem $name $false 'no_route_match'
+    }
+}
+
+function Invoke-InternalChangedStage {
+    if (-not $stageItems.Contains($InternalStage)) {
+        throw "Unknown changed-gate stage: $InternalStage"
+    }
+    $item = $stageItems[$InternalStage]
+    if (-not $item.Run) {
+        throw "Internal changed-gate stage was not selected: $InternalStage"
+    }
+    if (-not $InternalLogPath) {
+        throw 'InternalLogPath is required for an internal changed-gate stage.'
+    }
+    $passed = Invoke-LoggedGateStage -Name $InternalStage `
+        -LogPath $InternalLogPath -Action {
+            Invoke-ChangedGateStage $item.Name $item.Reason $item.Action
+        }
+    if ($passed) { exit 0 }
+    exit 1
+}
+
+function Invoke-ChangedStageGroup {
+    param([Parameter(Mandatory)][string[]]$Names)
+    $items = @($Names | ForEach-Object { $stageItems[$_] })
+    $request = @{
+        python_exe = $PythonExe
+        full_scope = [bool]$FullScope
+        changed_paths = @($changedPaths)
+    }
+    Invoke-IndependentGateStageGroup -Items $items `
+        -MaxConcurrency $MaxConcurrency -GateScriptPath $PSCommandPath `
+        -ChildBaseArguments @(
+            '-MaxConcurrency', [string]$MaxConcurrency
+        ) `
+        -TempNamePrefix 'changed_gate_' `
+        -FailureMessage 'Changed-files gate stages failed' `
+        -RequestPayload $request `
+        -InternalRequestParameter '-InternalRequestPath' `
+        -InvokeInlineStage {
+            param($item)
+            Invoke-ChangedGateStage $item.Name $item.Reason $item.Action
+        } `
+        -InvokeSkipStage {
+            param($item)
+            Skip-ChangedGateStage $item.Name $item.Reason
+        }
+}
+
+if ($InternalStage) {
+    Invoke-InternalChangedStage
+}
+
+Write-Output "CHANGED_GATE_INPUT_SOURCE=$changedPathSource"
+Write-Output "CHANGED_GATE_INPUTS=COUNT=$($changedPaths.Count) PATHS=$($changedPaths -join ',')"
+
+$env:PYTHONDONTWRITEBYTECODE = '1'
+$env:RUFF_NO_CACHE = 'true'
+Invoke-ChangedGateStage 'repository_hygiene' 'always' (
+    $stageItems['repository_hygiene'].Action
+)
+
+# Documentation recursively enumerates the repository and therefore runs
+# exclusively before any test stage can create randomized repo/.tmp fixtures.
+$documentation = $stageItems['documentation']
+if ($documentation.Run) {
+    Invoke-ChangedGateStage $documentation.Name $documentation.Reason (
+        $documentation.Action
+    )
+} else {
+    Skip-ChangedGateStage $documentation.Name $documentation.Reason
+}
 
 if ($isDocumentationOnly) {
     Write-Output 'CHANGED_GATE_FAST_PATH=DOCUMENTATION_ONLY'
@@ -256,39 +415,26 @@ if ($isDocumentationOnly) {
     return
 }
 
-if ($hasCodeChange) {
-    Invoke-ChangedGateStage 'development_standards' 'source_code_changed' { & $PythonExe (Join-Path $PSScriptRoot 'verify_development_standards.py') }
-} else { Skip-ChangedGateStage 'development_standards' 'no_source_code_path_changed' }
+$preFreshnessBarrier = @(
+    'development_standards',
+    'ruff_changed_python',
+    'project_registry',
+    'rf_quadrupole_generated_publications'
+)
+Invoke-ChangedStageGroup $preFreshnessBarrier
 
-if ($FullScope) {
-    Invoke-ChangedGateStage 'ruff_changed_python' 'full_scope' {
-        & $PythonExe -m ruff check (Join-Path $repoRoot 'common') (Join-Path $repoRoot 'projects') (Join-Path $repoRoot 'integrations')
-    }
-} elseif ($existingPythonFiles.Count -gt 0) {
-    Invoke-ChangedGateStage 'ruff_changed_python' 'existing_python_source_changed' {
-        & $PythonExe -m ruff check -- @existingPythonFiles
-    }
-} elseif ($changedPython.Count -gt 0) {
-    Skip-ChangedGateStage 'ruff_changed_python' 'only_deleted_python_paths_changed'
-} else { Skip-ChangedGateStage 'ruff_changed_python' 'no_python_path_changed' }
-
-foreach ($route in $routes) {
-    $coveredByFullScopeStage = $FullScope -and
-        $null -ne $route.PSObject.Properties['run_on_full_scope'] -and
-        -not [bool]$route.run_on_full_scope
-    if ($coveredByFullScopeStage) {
-        Skip-ChangedGateStage ([string]$route.stage) "covered_by_$([string]$route.full_scope_coverage_stage)"
-        continue
-    }
-    $reason = if ($FullScope) { 'full_scope' } else { Get-ChangedRouteReason -Route $route }
-    if ($reason) {
-        $command = $route.command
-        Invoke-ChangedGateStage ([string]$route.stage) $reason {
-            Invoke-ChangedRouteCommand -Command $command
+$postFreshnessStages = @(
+    $routes |
+        ForEach-Object { [string]$_.stage } |
+        Where-Object {
+            $_ -notin @(
+                'project_registry',
+                'rf_quadrupole_generated_publications'
+            )
         }
-    } else {
-        Skip-ChangedGateStage ([string]$route.stage) 'no_route_match'
-    }
-}
+)
+# Any selected quadrupole Core gate is now separated from its Freshness gate by
+# the completed group above; no two quadrupole gate instances run concurrently.
+Invoke-ChangedStageGroup $postFreshnessStages
 
 Write-Output "CHANGED_GATE=PASS PYTHON=$pythonVersion CHANGED_PATHS=$($changedPaths.Count) FULL_SCOPE=$([bool]$FullScope)"

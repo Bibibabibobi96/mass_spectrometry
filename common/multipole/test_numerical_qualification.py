@@ -2,13 +2,20 @@ from __future__ import annotations
 
 import copy
 import csv
+import hashlib
+import json
+import math
 import tempfile
 import unittest
 from pathlib import Path
 
 from common.multipole.numerical_qualification import (
+    compose_engineering_progression_contract,
     evaluate,
+    handoff_observables,
+    load_engineering_progression_contract,
     mean_source_energy_from_particle_input,
+    observable_differences,
     primary_state_filename,
     standalone_candidate_envelope,
     validate_identity,
@@ -28,7 +35,7 @@ def sample(solver: str = "COMSOL") -> dict:
         }
     else:
         numerics.update({"cell_mm": 0.4, "trajectory_quality": 10})
-    return {
+    result = {
         "run_id": "run-a",
         "project": "rf_hexapole_ion_optics",
         "solver": solver,
@@ -50,11 +57,13 @@ def sample(solver: str = "COMSOL") -> dict:
             1: {
                 "transverse_x_mm": "0.1", "transverse_y_mm": "0.2",
                 "velocity_x_m_s": "1", "velocity_y_m_s": "2",
+                "velocity_axial_m_s": "100",
                 "elapsed_time_us": "40", "kinetic_energy_eV": "2",
             },
             2: {
                 "transverse_x_mm": "0.2", "transverse_y_mm": "0.1",
                 "velocity_x_m_s": "2", "velocity_y_m_s": "1",
+                "velocity_axial_m_s": "100",
                 "elapsed_time_us": "40", "kinetic_energy_eV": "2",
             },
         },
@@ -79,6 +88,19 @@ def sample(solver: str = "COMSOL") -> dict:
             "mean_energy_source_fraction": 1.0,
         },
     }
+    derived = handoff_observables(list(result["_handoff"].values()))
+    for name in (
+        "transverse_centroid_x_mm",
+        "transverse_centroid_y_mm",
+        "centered_spatial_rms_spread_mm",
+        "mean_beam_direction_unit_x",
+        "mean_beam_direction_unit_y",
+        "mean_beam_direction_unit_z",
+        "centered_angular_rms_spread_deg",
+        "centered_rms_energy_spread_eV",
+    ):
+        result["observables"][name] = derived[name]
+    return result
 
 
 CONTRACT = {
@@ -108,6 +130,79 @@ CONTRACT = {
     },
     "claim_limit": "candidate",
 }
+
+
+FUNCTIONAL_SHA256 = "A" * 64
+
+
+def engineering_policy(*, active: bool = False) -> dict:
+    status = (
+        "ACTIVE_ENGINEERING_PROGRESSION_POLICY"
+        if active
+        else "DRAFT_PENDING_ENERGY_THRESHOLDS"
+    )
+    continuous = {
+        "spatial_observables": {
+            "centroid_position_difference_mm": {"maximum": 0.2},
+            "centered_spatial_spread_difference_mm": {"maximum": 0.2},
+        },
+        "angular_observables": {
+            "mean_direction_difference_deg": {"maximum": 1.0},
+            "centered_angular_spread_difference_deg": {"maximum": 1.0},
+        },
+        "energy_observables": {
+            "mean_energy_difference_eV": {
+                "maximum": None,
+                "status": "PENDING_DOWNSTREAM_ACCEPTANCE",
+            },
+            "centered_energy_spread_difference_eV": {
+                "maximum": None,
+                "status": "PENDING_DOWNSTREAM_ACCEPTANCE",
+            },
+        },
+        "comparison_operator": "absolute_difference_less_than_or_equal",
+        "all_approved_thresholds_required": True,
+        "energy_thresholds_required_before_activation": True,
+        "missing_metric_result": "NOT_EVALUATED_DO_NOT_PROGRESS",
+    }
+    if active:
+        continuous["energy_observables"]["mean_energy_difference_eV"] = {
+            "maximum": 0.5,
+            "status": "APPROVED",
+        }
+        continuous["energy_observables"][
+            "centered_energy_spread_difference_eV"
+        ] = {"maximum": 0.25, "status": "APPROVED"}
+    return {
+        "role": "multipole_engineering_progression_acceptance_contract",
+        "contract_id": "test-engineering-progression",
+        "status": status,
+        "scope": {
+            "comparison_kinds": [
+                "same_solver_discretization",
+                "cross_solver",
+            ]
+        },
+        "functional_acceptance": {
+            "required_result": "PASS",
+            "sha256": FUNCTIONAL_SHA256,
+        },
+        "continuous_engineering_acceptance": continuous,
+        "claim_limit": (
+            "Engineering progression only; this is not numerical convergence, "
+            "solver equivalence, or Formal qualification."
+        ),
+    }
+
+
+def engineering_contract(*, active: bool = False) -> dict:
+    functional = copy.deepcopy(CONTRACT)
+    functional["claim_profile"] = "functional_transport"
+    return compose_engineering_progression_contract(
+        engineering_policy(active=active),
+        functional,
+        functional_contract_sha256=FUNCTIONAL_SHA256,
+    )
 
 
 def mesh_strategy_contract() -> dict:
@@ -505,6 +600,318 @@ class NumericalQualificationTests(unittest.TestCase):
         result = evaluate(comsol, simion, "cross_solver", CONTRACT)
         self.assertEqual(result["status"], "FAIL")
         self.assertFalse(result["checks"]["handoff_particle_id_sets"])
+
+    def test_handoff_observables_use_primitives_and_center_each_beam(self) -> None:
+        values = [
+            {
+                "transverse_x_mm": "1",
+                "transverse_y_mm": "0",
+                "velocity_x_m_s": "0",
+                "velocity_y_m_s": "0",
+                "velocity_axial_m_s": "2",
+                "elapsed_time_us": "4",
+                "kinetic_energy_eV": "2",
+                "radial_position_mm": "999",
+                "divergence_angle_deg": "999",
+            },
+            {
+                "transverse_x_mm": "3",
+                "transverse_y_mm": "0",
+                "velocity_x_m_s": "2",
+                "velocity_y_m_s": "0",
+                "velocity_axial_m_s": "2",
+                "elapsed_time_us": "6",
+                "kinetic_energy_eV": "4",
+                "radial_position_mm": "999",
+                "divergence_angle_deg": "999",
+            },
+        ]
+
+        result = handoff_observables(values)
+
+        self.assertEqual(result["transverse_centroid_x_mm"], 2.0)
+        self.assertEqual(result["centered_spatial_rms_spread_mm"], 1.0)
+        self.assertEqual(result["rms_radius"], math.sqrt(5))
+        self.assertEqual(result["mean_energy"], 3.0)
+        self.assertEqual(result["centered_rms_energy_spread_eV"], 1.0)
+        self.assertGreater(result["centered_angular_rms_spread_deg"], 0)
+        self.assertLess(result["centered_angular_rms_spread_deg"], 45)
+
+    def test_handoff_observables_reject_nonfinite_canonical_primitive(self) -> None:
+        values = [
+            {
+                "transverse_x_mm": "nan",
+                "transverse_y_mm": "0",
+                "velocity_x_m_s": "0",
+                "velocity_y_m_s": "0",
+                "velocity_axial_m_s": "1",
+                "elapsed_time_us": "1",
+                "kinetic_energy_eV": "1",
+            }
+        ]
+        with self.assertRaisesRegex(ValueError, "non-finite transverse_x_mm"):
+            handoff_observables(values)
+
+    def test_decomposed_engineering_differences_are_centered(self) -> None:
+        baseline = sample()
+        peer = copy.deepcopy(baseline)
+        peer_observables = peer["observables"]
+        peer_observables["transverse_centroid_x_mm"] += 0.3
+        peer_observables["transverse_centroid_y_mm"] += 0.4
+        peer_observables["centered_spatial_rms_spread_mm"] += 0.2
+        angle = math.radians(2.0)
+        peer_observables["mean_beam_direction_unit_x"] = math.sin(angle)
+        peer_observables["mean_beam_direction_unit_y"] = 0.0
+        peer_observables["mean_beam_direction_unit_z"] = math.cos(angle)
+        baseline["observables"]["mean_beam_direction_unit_x"] = 0.0
+        baseline["observables"]["mean_beam_direction_unit_y"] = 0.0
+        baseline["observables"]["mean_beam_direction_unit_z"] = 1.0
+        peer_observables["centered_angular_rms_spread_deg"] += 0.75
+        peer_observables["mean_energy"] += 0.4
+        peer_observables["centered_rms_energy_spread_eV"] += 0.1
+
+        differences = observable_differences(baseline, peer)
+
+        self.assertAlmostEqual(
+            differences["transverse_centroid_vector_difference_mm"], 0.5
+        )
+        self.assertAlmostEqual(
+            differences[
+                "centered_spatial_rms_spread_absolute_difference_mm"
+            ],
+            0.2,
+        )
+        self.assertAlmostEqual(
+            differences["mean_beam_direction_separation_deg"], 2.0
+        )
+        self.assertAlmostEqual(
+            differences[
+                "centered_angular_rms_spread_absolute_difference_deg"
+            ],
+            0.75,
+        )
+        self.assertAlmostEqual(
+            differences["mean_energy_absolute_difference_eV"], 0.4
+        )
+        self.assertAlmostEqual(
+            differences[
+                "centered_rms_energy_spread_absolute_difference_eV"
+            ],
+            0.1,
+        )
+
+    def test_draft_contract_exposes_capability_but_cannot_pass(self) -> None:
+        contract = engineering_contract()
+        maximum = contract["same_solver_acceptance"]["maximum"]
+        self.assertIn("transverse_centroid_vector_difference_mm", maximum)
+        self.assertIn(
+            "centered_spatial_rms_spread_absolute_difference_mm", maximum
+        )
+        self.assertIn("mean_beam_direction_separation_deg", maximum)
+        self.assertIn(
+            "centered_angular_rms_spread_absolute_difference_deg", maximum
+        )
+        self.assertNotIn("rms_radius_absolute_difference_mm", maximum)
+        self.assertNotIn("rms_divergence_absolute_difference_deg", maximum)
+        self.assertNotIn("mean_energy_absolute_difference_eV", maximum)
+        self.assertEqual(
+            set(contract["pending_required_threshold_metrics"]),
+            {
+                "mean_energy_absolute_difference_eV",
+                "centered_rms_energy_spread_absolute_difference_eV",
+            },
+        )
+
+        baseline = sample()
+        refined = copy.deepcopy(baseline)
+        refined["numerics"]["trajectory"]["rf_steps_per_period"] = 160
+        result = evaluate(baseline, refined, "temporal", contract)
+        self.assertEqual(result["status"], "NOT_EVALUATED_DO_NOT_PROGRESS")
+        self.assertEqual(
+            result["numerical_convergence_status"], "DEFERRED_NOT_WAIVED"
+        )
+
+    def test_active_engineering_contract_passes_all_six_metrics(self) -> None:
+        baseline = sample()
+        peer = sample("SIMION")
+        peer_observables = peer["observables"]
+        peer_observables["transverse_centroid_x_mm"] += 0.2
+        peer_observables["centered_spatial_rms_spread_mm"] += 0.2
+        peer_observables["centered_angular_rms_spread_deg"] += 1.0
+        peer_observables["mean_energy"] += 0.5
+        peer_observables["centered_rms_energy_spread_eV"] += 0.25
+
+        result = evaluate(
+            baseline, peer, "cross_solver", engineering_contract(active=True)
+        )
+
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(result["engineering_progression_status"], "PASS")
+        self.assertIn("not numerical convergence", result["claim_limit"])
+        self.assertIn("solver equivalence", result["claim_limit"])
+        self.assertIn("Formal qualification", result["claim_limit"])
+
+    def test_active_engineering_contract_blocks_one_exceeded_metric(self) -> None:
+        baseline = sample()
+        peer = sample("SIMION")
+        peer["observables"]["centered_spatial_rms_spread_mm"] += 0.2001
+
+        result = evaluate(
+            baseline, peer, "cross_solver", engineering_contract(active=True)
+        )
+
+        self.assertEqual(result["status"], "FAIL")
+        self.assertFalse(
+            result["checks"][
+                "centered_spatial_rms_spread_absolute_difference_mm"
+            ]
+        )
+
+    def test_active_engineering_contract_missing_metric_does_not_progress(
+        self,
+    ) -> None:
+        baseline = sample()
+        peer = sample("SIMION")
+        peer["observables"]["centered_angular_rms_spread_deg"] = math.nan
+
+        result = evaluate(
+            baseline, peer, "cross_solver", engineering_contract(active=True)
+        )
+
+        self.assertEqual(result["status"], "NOT_EVALUATED_DO_NOT_PROGRESS")
+        self.assertEqual(
+            result["missing_required_metrics"],
+            ["centered_angular_rms_spread_absolute_difference_deg"],
+        )
+
+    def test_engineering_contract_functional_or_identity_failure_blocks(
+        self,
+    ) -> None:
+        baseline = sample()
+        peer = sample("SIMION")
+        peer["observables"]["transmission"] = 0.79
+        functional_failure = evaluate(
+            baseline, peer, "cross_solver", engineering_contract(active=True)
+        )
+        self.assertEqual(functional_failure["status"], "FAIL")
+
+        peer = sample("SIMION")
+        peer["particle_source_sha256"] = "different"
+        identity_failure = evaluate(
+            baseline, peer, "cross_solver", engineering_contract(active=True)
+        )
+        self.assertEqual(identity_failure["status"], "FAIL")
+        self.assertIn(
+            "particle_source_sha256 differs",
+            identity_failure["identity_errors"],
+        )
+
+    def test_engineering_contract_rejects_stale_binding_or_active_gap(
+        self,
+    ) -> None:
+        functional = copy.deepcopy(CONTRACT)
+        functional["claim_profile"] = "functional_transport"
+        with self.assertRaisesRegex(ValueError, "binding is stale"):
+            compose_engineering_progression_contract(
+                engineering_policy(),
+                functional,
+                functional_contract_sha256="B" * 64,
+            )
+        with self.assertRaisesRegex(ValueError, "lacks required energy"):
+            compose_engineering_progression_contract(
+                {
+                    **engineering_policy(),
+                    "status": "ACTIVE_ENGINEERING_PROGRESSION_POLICY",
+                },
+                functional,
+                functional_contract_sha256=FUNCTIONAL_SHA256,
+            )
+
+    def test_trusted_engineering_loader_hashes_and_binds_files(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            common = Path(directory) / "common" / "multipole"
+            common.mkdir(parents=True)
+            functional_path = common / "functional_transport_acceptance.json"
+            policy_path = common / "engineering_progression_acceptance.json"
+            functional = copy.deepcopy(CONTRACT)
+            functional.update(
+                {
+                    "contract_id": "functional-test",
+                    "claim_profile": "functional_transport",
+                }
+            )
+            functional_path.write_text(
+                json.dumps(functional) + "\n", encoding="utf-8"
+            )
+            functional_sha = hashlib.sha256(
+                functional_path.read_bytes()
+            ).hexdigest().upper()
+            policy = engineering_policy()
+            policy["functional_acceptance"].update(
+                {
+                    "path": "common/multipole/"
+                    "functional_transport_acceptance.json",
+                    "sha256": functional_sha,
+                }
+            )
+            policy_path.write_text(json.dumps(policy) + "\n", encoding="utf-8")
+
+            contract, provenance = load_engineering_progression_contract(
+                policy_path, functional_path
+            )
+
+            self.assertEqual(contract["claim_profile"], "engineering_progression")
+            self.assertEqual(
+                provenance["functional_contract"]["sha256"], functional_sha
+            )
+            self.assertEqual(
+                provenance["policy"]["status"],
+                "DRAFT_PENDING_ENERGY_THRESHOLDS",
+            )
+
+    def test_trusted_engineering_loader_rejects_path_or_hash_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            functional_path = root / "functional.json"
+            policy_path = root / "policy.json"
+            functional = copy.deepcopy(CONTRACT)
+            functional.update(
+                {
+                    "contract_id": "functional-test",
+                    "claim_profile": "functional_transport",
+                }
+            )
+            functional_path.write_text(json.dumps(functional), encoding="utf-8")
+            policy = engineering_policy()
+            policy["functional_acceptance"]["path"] = "other/functional.json"
+            policy_path.write_text(json.dumps(policy), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "path differs"):
+                load_engineering_progression_contract(
+                    policy_path, functional_path
+                )
+
+            policy["functional_acceptance"]["path"] = "functional.json"
+            policy_path.write_text(json.dumps(policy), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "binding is stale"):
+                load_engineering_progression_contract(
+                    policy_path, functional_path
+                )
+
+    def test_engineering_contract_preserves_mesh_strategy_prohibition(
+        self,
+    ) -> None:
+        full_tetra = sample()
+        hybrid = copy.deepcopy(full_tetra)
+        hybrid["numerics"]["mesh"]["strategy"] = "hybrid"
+        with self.assertRaisesRegex(
+            ValueError, "cannot apply continuous difference limits"
+        ):
+            evaluate(
+                full_tetra,
+                hybrid,
+                "mesh_strategy",
+                engineering_contract(active=True),
+            )
 
 
 if __name__ == "__main__":

@@ -56,13 +56,13 @@ PROJECTS = {
 }
 EXPECTED_RESOLVED_SHA256 = {
     "quadrupole": (
-        "A544C46BB5808DE1D327E18833693B0D5704F444BCE0873DAE1856115EC34ED4"
+        "7D7419F88A52D2C2EEFF4E8ACDFD6081399B8187D970D07AE3E0D4E582920414"
     ),
     "hexapole": (
-        "A9FF4B4A78B366E77C97B0890923B5E5F0C444CBFAE000D316063CB545451E07"
+        "AA0C3A0DFF443BBCFD1EB009E1150F3492F7E08A3FC586A26389DEE8B9973B6A"
     ),
     "octupole": (
-        "D64B134D6460F17ABB70C64FE89B48793F01239C5A4D417D3BD6AEF81A4ACF4E"
+        "D35CE1A125EF32FDC89D12D7E8D900D2079EC84DBDDE73BE1B115131F8393DF2"
     ),
 }
 EXPECTED_RUN_IDS = {
@@ -99,6 +99,31 @@ def load(path: Path) -> dict:
 
 def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest().upper()
+
+
+def family_source_evidence_available() -> bool:
+    for family in FAMILY_NAMES:
+        contract = load(
+            INTEGRATION_ROOT
+            / "config"
+            / f"family_{family}_n100_source_contract.json"
+        )
+        for branch in contract["source_branches"].values():
+            for record_name in (
+                "manifest",
+                "state",
+                "particle_source",
+                "metadata",
+            ):
+                if not (
+                    WORKSPACE_ROOT
+                    / branch["source"][record_name]["path"]
+                ).is_file():
+                    return False
+    return True
+
+
+FAMILY_SOURCE_EVIDENCE_AVAILABLE = family_source_evidence_available()
 
 
 class NoAccelerationFamilyProfileTests(unittest.TestCase):
@@ -228,6 +253,10 @@ class NoAccelerationFamilyProfileTests(unittest.TestCase):
                         (group_name, name, frozen),
                     )
 
+    @unittest.skipUnless(
+        FAMILY_SOURCE_EVIDENCE_AVAILABLE,
+        "family source manifest/state/source evidence is incomplete",
+    )
     def test_family_source_contracts_freeze_two_real_solver_branches(self) -> None:
         mother_source_sha256 = {
             "0125C3AB02B2321EF26A3A913CF6EC04325FD0D48597D2CB439D0CE42411662F"

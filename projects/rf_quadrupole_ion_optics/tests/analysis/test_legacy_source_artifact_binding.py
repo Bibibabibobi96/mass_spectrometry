@@ -29,6 +29,14 @@ RUNTIME_BINDING = (
 SOURCE_CONTRACT = (
     INTEGRATION_ROOT / "config" / "legacy_quadrupole_n100_source_contract.json"
 )
+SOURCE_CONTRACT_DOCUMENT = json.loads(SOURCE_CONTRACT.read_text(encoding="utf-8"))
+REQUIRED_EXTERNAL_EVIDENCE_PATHS = tuple(
+    (WORKSPACE_ROOT / SOURCE_CONTRACT_DOCUMENT["source"][role]["path"]).resolve()
+    for role in ("manifest", "state", "particle_source", "metadata")
+)
+EXTERNAL_EVIDENCE_AVAILABLE = all(
+    path.is_file() for path in REQUIRED_EXTERNAL_EVIDENCE_PATHS
+)
 RUNNER = (
     INTEGRATION_ROOT
     / "stages"
@@ -133,8 +141,12 @@ class LegacySourceArtifactBindingTests(unittest.TestCase):
         )
         return self.run_powershell(command)
 
+    @unittest.skipUnless(
+        EXTERNAL_EVIDENCE_AVAILABLE,
+        "external run evidence is unavailable in a repository-only checkout",
+    )
     def test_current_contract_resolves_recorded_legacy_source(self) -> None:
-        with tempfile.TemporaryDirectory(dir=REPO_ROOT / ".tmp") as directory:
+        with tempfile.TemporaryDirectory(dir=REPO_ROOT) as directory:
             resolved = Path(directory) / "resolved_connection.json"
             self.write_minimal_resolved_connection(resolved)
             completed = self.resolve_binding(resolved)
@@ -155,7 +167,7 @@ class LegacySourceArtifactBindingTests(unittest.TestCase):
             )
 
     def test_recorded_project_mismatch_fails_closed(self) -> None:
-        with tempfile.TemporaryDirectory(dir=REPO_ROOT / ".tmp") as directory:
+        with tempfile.TemporaryDirectory(dir=REPO_ROOT) as directory:
             root = Path(directory)
             resolved = root / "resolved_connection.json"
             self.write_minimal_resolved_connection(resolved)
@@ -163,6 +175,50 @@ class LegacySourceArtifactBindingTests(unittest.TestCase):
                 **self.source_contract,
                 "recorded_project_id": "rf_quadrupole_ion_optics",
             }
+            particle_source_path = root / "particle_source.ion"
+            particle_source_path.write_text("fixture\n", encoding="utf-8")
+            state_path = root / "particle_state.csv"
+            state_path.write_text(
+                "particle_id,event,status\n", encoding="utf-8"
+            )
+            metadata_path = root / "particle_source_metadata.json"
+            metadata_path.write_text("{}\n", encoding="utf-8")
+            manifest_path = root / "run_manifest.json"
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "role": "simulation_run_manifest",
+                        "status": "success",
+                        "project": "rf_quadrupole_collision_cooling",
+                        "run_id": changed_contract["source"]["run_id"],
+                        "inputs": {
+                            "particle_table": {
+                                "exists": True,
+                                "path": str(particle_source_path.resolve()),
+                                "sha256": sha256(particle_source_path),
+                            }
+                        },
+                        "outputs": [
+                            {
+                                "exists": True,
+                                "path": str(state_path.resolve()),
+                                "sha256": sha256(state_path),
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            for role, path in (
+                ("manifest", manifest_path),
+                ("state", state_path),
+                ("particle_source", particle_source_path),
+                ("metadata", metadata_path),
+            ):
+                changed_contract["source"][role] = {
+                    "path": path.relative_to(WORKSPACE_ROOT).as_posix(),
+                    "sha256": sha256(path),
+                }
             contract_path = root / "source_contract.json"
             contract_path.write_text(
                 json.dumps(changed_contract), encoding="utf-8"
@@ -183,6 +239,10 @@ class LegacySourceArtifactBindingTests(unittest.TestCase):
                 completed.stdout + completed.stderr,
             )
 
+    @unittest.skipUnless(
+        EXTERNAL_EVIDENCE_AVAILABLE,
+        "external run evidence is unavailable in a repository-only checkout",
+    )
     def test_source_contract_freezes_manifest_state_and_particle_source(
         self,
     ) -> None:
@@ -289,7 +349,7 @@ class LegacySourceArtifactBindingTests(unittest.TestCase):
         self.assertNotIn("Start-Process -FilePath $SimionExe", analyzer)
 
     def test_resolved_stage_budget_is_frozen_and_narrowed(self) -> None:
-        with tempfile.TemporaryDirectory(dir=REPO_ROOT / ".tmp") as directory:
+        with tempfile.TemporaryDirectory(dir=REPO_ROOT) as directory:
             root = Path(directory)
             budget = root / "resolved.json"
             input_dir = root / "inputs"

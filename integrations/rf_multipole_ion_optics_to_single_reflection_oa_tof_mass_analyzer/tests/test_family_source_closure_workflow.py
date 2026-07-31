@@ -21,6 +21,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+WORKSPACE_ROOT = REPO_ROOT.parent
 INTEGRATION_ROOT = Path(__file__).resolve().parents[1]
 PROFILE_REGISTRY = INTEGRATION_ROOT / "config" / "connection_profiles.json"
 ADAPTER_REGISTRY = (
@@ -52,6 +53,44 @@ BRANCHES = {"comsol", "simion"}
 
 def load(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8-sig"))
+
+
+def source_evidence_available(*contract_paths: Path) -> bool:
+    for contract_path in contract_paths:
+        contract = load(contract_path)
+        sources = (
+            [contract["source"]]
+            if contract["schema_version"] == 1
+            else [
+                branch["source"]
+                for branch in contract["source_branches"].values()
+            ]
+        )
+        for source in sources:
+            for record_name in (
+                "manifest",
+                "state",
+                "particle_source",
+                "metadata",
+            ):
+                if not (WORKSPACE_ROOT / source[record_name]["path"]).is_file():
+                    return False
+    return True
+
+
+FAMILY_SOURCE_EVIDENCE_AVAILABLE = source_evidence_available(
+    *(
+        INTEGRATION_ROOT
+        / "config"
+        / f"family_{family}_n100_source_contract.json"
+        for family in ("quadrupole", "hexapole", "octupole")
+    )
+)
+HEXAPOLE_HYBRID_EVIDENCE_AVAILABLE = source_evidence_available(
+    INTEGRATION_ROOT
+    / "config"
+    / "family_hexapole_hybrid_reference_n100_source_contract.json"
+)
 
 
 def write_json(path: Path, value: dict) -> None:
@@ -272,6 +311,10 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                     text,
                 )
 
+    @unittest.skipUnless(
+        FAMILY_SOURCE_EVIDENCE_AVAILABLE,
+        "family source manifest/state/source evidence is incomplete",
+    )
     def test_public_prepare_runs_without_commercial_software(self) -> None:
         pwsh = shutil.which("pwsh")
         if pwsh is None:
@@ -419,7 +462,11 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                 ),
             )
 
-    def test_public_hybrid_prepare_and_revision_fail_closed(self) -> None:
+    @unittest.skipUnless(
+        HEXAPOLE_HYBRID_EVIDENCE_AVAILABLE,
+        "hexapole hybrid manifest/state/source evidence is incomplete",
+    )
+    def test_public_hybrid_prepare_with_external_evidence(self) -> None:
         pwsh = shutil.which("pwsh")
         if pwsh is None:
             self.skipTest("pwsh is unavailable")
@@ -466,11 +513,34 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                 completed.stdout,
             )
 
-            rejected = command.copy()
-            rejected[rejected.index("comsol")] = "simion"
-            rejected[rejected.index(str(output))] = str(output.parent / "simion")
+    def test_public_hybrid_rejects_unauthorized_source_branch(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("pwsh is unavailable")
+        profile_id = (
+            "rf_hexapole_no_acceleration_full_length_"
+            "direct_mating_gap_0mm"
+        )
+        with tempfile.TemporaryDirectory(dir=REPO_ROOT / ".tmp") as directory:
+            output = Path(directory) / "simion"
             completed = subprocess.run(
-                rejected,
+                [
+                    pwsh,
+                    "-NoProfile",
+                    "-File",
+                    str(FAMILY_EXECUTE),
+                    "-ConnectionProfileId",
+                    profile_id,
+                    "-SourceBranchId",
+                    "simion",
+                    "-SourceRevisionId",
+                    "hexapole_hybrid_reference",
+                    "-OutputDirectory",
+                    str(output),
+                    "-PythonExe",
+                    sys.executable,
+                    "-PrepareOnly",
+                ],
                 cwd=REPO_ROOT,
                 capture_output=True,
                 text=True,
@@ -485,6 +555,28 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                 completed.stdout + completed.stderr,
             )
 
+    def test_family_adapter_rejects_tampered_revision_binding(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("pwsh is unavailable")
+        profile_id = (
+            "rf_hexapole_no_acceleration_full_length_"
+            "direct_mating_gap_0mm"
+        )
+        with tempfile.TemporaryDirectory(dir=REPO_ROOT / ".tmp") as directory:
+            output = Path(directory) / "hybrid"
+            _, plan_path = prepare_family_source_closure(
+                repo_root=REPO_ROOT,
+                profile_registry_path=PROFILE_REGISTRY,
+                adapter_registry_path=ADAPTER_REGISTRY,
+                preregistration_path=PREREGISTRATION,
+                revision_registry_path=REVISION_REGISTRY,
+                profile_id=profile_id,
+                source_branch_id="comsol",
+                source_revision_id="hexapole_hybrid_reference",
+                resolved_output=output / "resolved_connection.json",
+                plan_output=output / "composition_plan.json",
+            )
             plan_path = output / "composition_plan.json"
             plan = load(plan_path)
             arguments = plan["execution_steps"][0]["arguments"]

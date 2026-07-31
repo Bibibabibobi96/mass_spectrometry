@@ -2,7 +2,7 @@
   "schema_version": 1,
   "role": "multipole_n1000_comsol_bridge_preregistration",
   "campaign_id": "quadrupole_no_acceleration_n1000_comsol_bridge_v1",
-  "status": "PREREGISTERED_NOT_EXECUTED",
+  "status": "EXECUTED_INTERRUPTED_INCONCLUSIVE",
   "preregistered_before_run": true,
   "scope": {
     "project_id": "rf_quadrupole_ion_optics",
@@ -53,7 +53,30 @@
     "authorized_run_id": "20260731_060001__sim__comsol__quad-n1000-bridge-exit020-t160",
     "exit_interface_refinement_radius_mm": 0.2,
     "rf_steps_per_period": 160,
-    "executed": false
+    "executed": true
+  },
+  "observed_result": {
+    "run_id": "20260731_060001__sim__comsol__quad-n1000-bridge-exit020-t160",
+    "status": "interrupted",
+    "decision": "CAMPAIGN_CLOSED_INCONCLUSIVE_NO_N1000_RESULT",
+    "failure_class": "execution_interrupted_at_wall_clock_boundary",
+    "failure_stage": "individual_particle_release_construction",
+    "wall_clock_seconds_recorded": 7192.359,
+    "requested_particle_count": 1000,
+    "constructed_particle_release_count": 746,
+    "mesh_global_elements": 760106,
+    "stationary_field_dof": 2635598,
+    "stationary_field_iterations": 7,
+    "stationary_field_completed": true,
+    "particle_solve_stage_reached": false,
+    "particle_state_result_available": false,
+    "automatic_retry_count": 0,
+    "run_manifest_sha256": "65CD6AA6483F70F20C642D15012EE3DAAA856E68466C4949E17A67FB27441989",
+    "summary_sha256": "EA04B3DF7075B41023D0977B30B3C44D45D6E9090BD7023179DD7B5ECBC0E9D0",
+    "resource_usage_sha256": "0684353643A24F1BBB4A0DA44D9B9FF0B17BE73E69EC777CD60EE798B96C7FAA",
+    "particle_release_log_inventory_sha256": "69CB98A95D44B188CE849B2BE62E960874C38DB46FF9932CDB096A1714205C97",
+    "partial_release_logs_retained": 746,
+    "campaign_closed": true
   },
   "existing_read_only_evidence": {
     "simion_n100_I": "20260731_010004__sim__simion__quad-noacc-followup-i-r020-z020-t080",
@@ -90,5 +113,5 @@
     "execution_environment_blocked": "CORRECT_ENVIRONMENT_AND_RETRY_SAME_FROZEN_INPUT",
     "automatic_retry_count": 0
   },
-  "claim_limit": "Sampling stability and common-source descriptive solver differences only; no absolute accuracy, solver equivalence, solver superiority, Candidate or Formal claim."
+  "claim_limit": "The attempted COMSOL N=1000 arm ended during individual release construction and produced no particle result. Existing N=100 and SIMION N=1000 evidence remains descriptive only; no COMSOL N=1000, absolute accuracy, solver equivalence, solver superiority, Candidate or Formal claim."
 }

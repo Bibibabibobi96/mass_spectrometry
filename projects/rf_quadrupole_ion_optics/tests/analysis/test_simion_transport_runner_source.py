@@ -544,6 +544,66 @@ class SimionTransportRunnerSourceTests(unittest.TestCase):
             root = Path(directory)
             particles = root / "empty canonical.csv"
             particles.write_text(",".join(COLUMNS) + "\n", encoding="utf-8")
+            layout_asset = root / "self-contained layout fixture"
+            layout_asset.write_text("test-only layout fixture\n", encoding="utf-8")
+            layout_resolution = root / "layout resolution.json"
+            layout_resolution.write_text(
+                json.dumps(
+                    {
+                        "registry_path": str(layout_asset),
+                        "run_manifest": {"path": str(layout_asset)},
+                        "bundle": {
+                            "iob": {"path": str(layout_asset)},
+                            "con": {"path": str(layout_asset)},
+                        },
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            layout_stub = root / "resolve_layout_fixture.py"
+            layout_stub.write_text(
+                "\n".join(
+                    (
+                        "import os",
+                        "import shutil",
+                        "import sys",
+                        "from pathlib import Path",
+                        "",
+                        "arguments = sys.argv[1:]",
+                        "output = Path(arguments[arguments.index('--output') + 1])",
+                        "output.parent.mkdir(parents=True, exist_ok=True)",
+                        "shutil.copyfile(os.environ['RF_TEST_LAYOUT_RESOLUTION'], output)",
+                        "print('MULTIPOLE_SIMION_LAYOUT_TEMPLATE=PASS TEMPLATE=test_single_pa_v1')",
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            python_wrapper = root / "python_with_layout_fixture.cmd"
+            python_wrapper.write_text(
+                "\r\n".join(
+                    (
+                        "@echo off",
+                        'if "%~1"=="-m" if "%~2"=="common.multipole.simion_layout_template" goto layout',
+                        '"%RF_TEST_REAL_PYTHON%" %*',
+                        "exit /b %ERRORLEVEL%",
+                        ":layout",
+                        '"%RF_TEST_REAL_PYTHON%" "%RF_TEST_LAYOUT_STUB%" %*',
+                        "exit /b %ERRORLEVEL%",
+                    )
+                )
+                + "\r\n",
+                encoding="ascii",
+            )
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "RF_TEST_REAL_PYTHON": sys.executable,
+                    "RF_TEST_LAYOUT_STUB": str(layout_stub),
+                    "RF_TEST_LAYOUT_RESOLUTION": str(layout_resolution),
+                }
+            )
             artifact_root = root / "artifacts"
             run_id = "20260725_120000__test__simion__source-preflight"
             result = subprocess.run(
@@ -570,13 +630,14 @@ class SimionTransportRunnerSourceTests(unittest.TestCase):
                     "-ArtifactRootPath",
                     str(artifact_root),
                     "-PythonExe",
-                    sys.executable,
+                    str(python_wrapper),
                 ],
                 cwd=REPO_ROOT,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
                 errors="replace",
+                env=environment,
                 timeout=60,
             )
             process_diagnostics = (

@@ -31,7 +31,7 @@
     },
     "upstream_resolved_design": {
       "path": "projects/rf_octupole_ion_optics/config/resolved_design_no_acceleration_full_length.json",
-      "sha256": "D64B134D6460F17ABB70C64FE89B48793F01239C5A4D417D3BD6AEF81A4ACF4E"
+      "sha256": "D35CE1A125EF32FDC89D12D7E8D900D2079EC84DBDDE73BE1B115131F8393DF2"
     }
   },
   "implementation": {

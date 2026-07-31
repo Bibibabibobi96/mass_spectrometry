@@ -11,7 +11,7 @@
   },
   "authority": {
     "source_contract": "projects/rf_hexapole_ion_optics/config/resolved_design_no_acceleration_full_length.json",
-    "source_sha256": "A9FF4B4A78B366E77C97B0890923B5E5F0C444CBFAE000D316063CB545451E07",
+    "source_sha256": "AA0C3A0DFF443BBCFD1EB009E1150F3492F7E08A3FC586A26389DEE8B9973B6A",
     "bindings": [
       {
         "port_json_pointer": "/project_id",

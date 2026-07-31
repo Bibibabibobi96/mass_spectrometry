@@ -135,6 +135,23 @@ N=100源完成五项矩阵：COMSOL空间加密、COMSOL时间加密、SIMION空
 相空间差异只是诊断输出，不在这项PASS内。它也不授予碰撞冷却、轴向加速、RF+DC质量过滤、机械、
 Candidate或Formal资格。
 
+### 暂时工程推进指标
+
+[`engineering_progression_acceptance.json`](engineering_progression_acceptance.json)记录四、六、八极杆
+共同的临时下游工程推进方向。空间必须分别比较束流质心和围绕各自质心的展宽；角度必须分别比较平均
+束流方向和围绕各自平均方向的发散；能量必须分别比较平均能量和围绕平均能量的展宽。普通的轴线RMS
+半径或非负偏轴角RMS可保留为历史诊断，但不能代替上述分解指标。
+
+阈值、激活状态和缺失指标处置只以该JSON为机器权威，本节不复制数值或状态。能量中心与能量展宽须
+等待真实下游接受预算；合同未激活时不得产生工程PASS。新数值活动先从低成本SIMION相邻加密臂开始；
+达到工程稳定或发现方向敏感性后停止，再选择少量COMSOL对照。
+
+未来激活的工程PASS还必须同时通过[`functional_transport_acceptance.json`](functional_transport_acceptance.json)，
+并验证同一冻结源、物理mode、规范handoff面、透射粒子身份集和观测定义。该PASS只允许推进下一阶段
+工程模拟，不回写既有`INCONCLUSIVE`数值收敛结论，也不代表求解器等价、绝对准确度、Candidate或
+Formal资格。质心分量、p95/p99尾部、时间中心/展宽及位置—角度相关量必须同时报告；无批准阈值时不
+擅自判PASS。
+
 ### 三模式粒子分散方法
 
 [`three_mode_dispersion_contract.json`](three_mode_dispersion_contract.json)冻结同一多极杆硬件的三arm

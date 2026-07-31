@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "role": "multipole_engineering_progression_acceptance_contract",
+  "contract_id": "rf_multipole_temporary_downstream_engineering_progression_v1",
+  "status": "DRAFT_PENDING_ENERGY_THRESHOLDS",
+  "decision_date": "2026-07-31",
+  "decision_authority": "user-approved family engineering progression direction",
+  "scope": {
+    "family_id": "rf_multipole_ion_optics",
+    "radial_orders": [2, 3, 4],
+    "physics": "collision_free multipole transport",
+    "comparison_kinds": [
+      "same_solver_discretization",
+      "cross_solver"
+    ],
+    "required_common_basis": [
+      "same frozen particle source",
+      "same physical operating mode",
+      "same governed exit handoff surface",
+      "same transmitted particle identity set",
+      "same observable definitions"
+    ]
+  },
+  "functional_acceptance": {
+    "path": "common/multipole/functional_transport_acceptance.json",
+    "sha256": "A4C4F4A6395AAB0F59E0BC8F380E87CDA0F1AD265EC19E66F844C14FF12A98D9",
+    "required_result": "PASS"
+  },
+  "continuous_engineering_acceptance": {
+    "spatial_observables": {
+      "centroid_position_difference_mm": {
+        "maximum": 0.2,
+        "meaning": "Difference between the two transverse beam-centroid vectors."
+      },
+      "centered_spatial_spread_difference_mm": {
+        "maximum": 0.2,
+        "meaning": "Difference between the transverse spreads measured about each beam's own centroid."
+      }
+    },
+    "angular_observables": {
+      "mean_direction_difference_deg": {
+        "maximum": 1.0,
+        "meaning": "Separation between the two mean forward beam directions."
+      },
+      "centered_angular_spread_difference_deg": {
+        "maximum": 1.0,
+        "meaning": "Difference between the angular spreads measured about each beam's own mean direction."
+      }
+    },
+    "energy_observables": {
+      "mean_energy_difference_eV": {
+        "maximum": null,
+        "status": "PENDING_DOWNSTREAM_ACCEPTANCE"
+      },
+      "centered_energy_spread_difference_eV": {
+        "maximum": null,
+        "status": "PENDING_DOWNSTREAM_ACCEPTANCE"
+      }
+    },
+    "comparison_operator": "absolute_difference_less_than_or_equal",
+    "all_approved_thresholds_required": true,
+    "energy_thresholds_required_before_activation": true,
+    "missing_metric_result": "NOT_EVALUATED_DO_NOT_PROGRESS",
+    "unthresholded_report_only_observables": [
+      "p05_to_p95_energy_width_eV",
+      "mean_tof_us",
+      "centered_time_spread_us",
+      "centroid_x_mm",
+      "centroid_y_mm",
+      "p95_centered_radius_mm",
+      "p99_centered_radius_mm",
+      "p95_centered_divergence_deg",
+      "transverse_position_angle_covariance",
+      "transverse_emittance",
+      "rf_phase_rad",
+      "distribution_tails"
+    ]
+  },
+  "decision_policy": {
+    "numerical_convergence": "DEFERRED_NOT_WAIVED",
+    "engineering_progression_pass": "Not active until the required downstream energy acceptance thresholds are approved.",
+    "engineering_progression_fail": "Any functional failure, missing required metric, basis mismatch, or violation of any approved threshold in continuous_engineering_acceptance blocks progression.",
+    "existing_convergence_results": "Keep their original INCONCLUSIVE or sensitivity status; do not relabel them as converged.",
+    "future_review": "Replace or revise this temporary policy when downstream oa-TOF acceptance, resolution and tolerance budgets are validated."
+  },
+  "claim_limit": "This draft records the approved family-wide spatial and angular direction and the verified shared evaluator, but cannot issue PASS until both required energy thresholds are approved. A future engineering-progression PASS will not establish numerical convergence, solver equivalence, absolute accuracy, solver superiority, optimization, Candidate or Formal qualification."
+}

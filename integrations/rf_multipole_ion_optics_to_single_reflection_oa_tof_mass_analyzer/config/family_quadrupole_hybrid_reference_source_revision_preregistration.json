@@ -18,7 +18,7 @@
     },
     "runtime_binding": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_quadrupole_hybrid_reference_direct_mating_gap_0mm_runtime_binding.json",
-      "sha256": "B0CBB9FD5EDE550CF6932D26C198B9D7A76BC679AA56BCC71F59105CAE91B805"
+      "sha256": "897E9F9E8E961D0B1D92CCEF43EC59844BD59CA682E13F56C6FDE585DDC70238"
     },
     "source_branch_ids": ["comsol"],
     "particle_count": 100,

@@ -13,6 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 CHANGED_GATE = REPO_ROOT / "common" / "verify_changed.ps1"
 ROUTE_TABLE = REPO_ROOT / "common" / "changed_scope_routes.json"
 INTEGRATION_GATE = REPO_ROOT / "common" / "verify_repository_integration.ps1"
+PARALLEL_GATE_SUPPORT = REPO_ROOT / "common" / "parallel_gate_support.ps1"
 LIGHTWEIGHT_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "lightweight-gate.yml"
 QUADRUPOLE_GATE = (
     REPO_ROOT / "projects" / "rf_quadrupole_ion_optics" / "verify_project.ps1"
@@ -23,6 +24,7 @@ class ChangedGateContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.source = CHANGED_GATE.read_text(encoding="utf-8")
+        cls.parallel_source = PARALLEL_GATE_SUPPORT.read_text(encoding="utf-8")
         cls.route_contract = json.loads(ROUTE_TABLE.read_text(encoding="utf-8"))
         cls.routes = cls.route_contract["routes"]
 
@@ -69,8 +71,14 @@ class ChangedGateContractTests(unittest.TestCase):
         self.assertIn("GetExtension($_).ToLowerInvariant() -ne '.md'", self.source)
         self.assertIn("CHANGED_GATE_FAST_PATH=DOCUMENTATION_ONLY", self.source)
         fast_path = self.source.index("if ($isDocumentationOnly)")
-        development_gate = self.source.index("if ($hasCodeChange)")
-        self.assertLess(fast_path, development_gate)
+        parallel_gate = self.source.index(
+            "Invoke-ChangedStageGroup $preFreshnessBarrier"
+        )
+        documentation_gate = self.source.index(
+            "Invoke-ChangedGateStage $documentation.Name"
+        )
+        self.assertLess(documentation_gate, fast_path)
+        self.assertLess(fast_path, parallel_gate)
 
     def test_documentation_only_fast_path_runs_without_project_gates(self) -> None:
         pwsh = shutil.which("pwsh")
@@ -239,6 +247,7 @@ class ChangedGateContractTests(unittest.TestCase):
     def test_gate_entrypoints_run_their_contract_tests(self) -> None:
         for path in (
             "common/verify_changed.ps1",
+            "common/parallel_gate_support.ps1",
             "common/changed_scope_routes.json",
             "common/contracts/test_verify_changed.py",
             "common/verify_repository_integration.ps1",
@@ -262,13 +271,26 @@ class ChangedGateContractTests(unittest.TestCase):
         )
 
         integration_source = INTEGRATION_GATE.read_text(encoding="utf-8")
-        integration_freshness = integration_source.index(
-            "Invoke-IntegrationStage 'rf_quadrupole_generated_publications'"
+        self.assertIn(
+            "'rf_quadrupole_generated_publications'",
+            integration_source[
+                integration_source.index("$fastFailStages")
+                : integration_source.index("$fullRegressionStages")
+            ],
         )
-        integration_contracts = integration_source.index(
-            "Invoke-IntegrationStage 'common_contracts'"
+        self.assertIn(
+            "'rf_quadrupole_static'",
+            integration_source[
+                integration_source.index("$fullRegressionStages") :
+            ],
         )
-        self.assertLess(integration_freshness, integration_contracts)
+        fast_barrier = integration_source.index(
+            "Invoke-ParallelIntegrationGroup $fastFailStages"
+        )
+        full_regression = integration_source.index(
+            "Invoke-ParallelIntegrationGroup $fullRegressionStages"
+        )
+        self.assertLess(fast_barrier, full_regression)
 
         quadrupole_source = QUADRUPOLE_GATE.read_text(encoding="utf-8")
         self.assertIn(
@@ -310,6 +332,62 @@ class ChangedGateContractTests(unittest.TestCase):
             self.assertNotIn(forbidden, self.source)
             self.assertNotIn(forbidden, serialized_routes)
 
+    def test_parallel_scheduler_is_bounded_isolated_and_deterministic(self) -> None:
+        integration_source = INTEGRATION_GATE.read_text(encoding="utf-8")
+        for source in (self.source, integration_source):
+            self.assertIn(
+                "[ValidateRange(1, 32)][int]$MaxConcurrency = 4",
+                source,
+            )
+            self.assertIn("parallel_gate_support.ps1", source)
+        self.assertIn("PYTHONDONTWRITEBYTECODE", self.parallel_source)
+        self.assertIn("RUFF_NO_CACHE", self.parallel_source)
+        self.assertIn("MPLCONFIGDIR", self.parallel_source)
+        self.assertIn("Start-Process", self.parallel_source)
+        self.assertIn("(Get-Command pwsh).Source", self.parallel_source)
+        self.assertIn("$record.Process.WaitForExit()", self.parallel_source)
+        self.assertIn("foreach ($item in $Items)", self.parallel_source)
+        self.assertIn("missing_stage_log_serial_fallback", self.parallel_source)
+        self.assertIn("& $InvokeInlineStage $item", self.parallel_source)
+        self.assertIn("$failed.Add", self.parallel_source)
+
+    def test_parallel_scheduler_validates_temporary_cleanup_target(self) -> None:
+        self.assertIn("GetFullPath([IO.Path]::GetTempPath())", self.parallel_source)
+        self.assertIn("ExpectedNamePrefix", self.parallel_source)
+        self.assertIn(
+            "Refusing to remove unverified gate temporary directory",
+            self.parallel_source,
+        )
+        self.assertIn(
+            "Remove-GateTemporaryDirectory -Path $groupRoot",
+            self.parallel_source,
+        )
+
+    def test_documentation_is_exclusive_and_freshness_is_a_barrier(self) -> None:
+        integration_source = INTEGRATION_GATE.read_text(encoding="utf-8")
+        documentation = integration_source.index(
+            "Invoke-IntegrationStage 'documentation'"
+        )
+        fast_group = integration_source.index(
+            "Invoke-ParallelIntegrationGroup $fastFailStages"
+        )
+        full_group = integration_source.index(
+            "Invoke-ParallelIntegrationGroup $fullRegressionStages"
+        )
+        self.assertLess(documentation, fast_group)
+        self.assertLess(fast_group, full_group)
+
+        changed_documentation = self.source.index(
+            "Invoke-ChangedGateStage $documentation.Name"
+        )
+        changed_pre_barrier = self.source.index(
+            "Invoke-ChangedStageGroup $preFreshnessBarrier"
+        )
+        changed_post_barrier = self.source.index(
+            "Invoke-ChangedStageGroup $postFreshnessStages"
+        )
+        self.assertLess(changed_documentation, changed_pre_barrier)
+        self.assertLess(changed_pre_barrier, changed_post_barrier)
 
 if __name__ == "__main__":
     unittest.main()

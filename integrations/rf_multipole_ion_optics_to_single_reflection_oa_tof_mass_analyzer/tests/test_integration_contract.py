@@ -17,6 +17,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+WORKSPACE_ROOT = REPO_ROOT.parent
 INTEGRATION_ROOT = Path(__file__).resolve().parents[1]
 PROFILE_REGISTRY_PATH = INTEGRATION_ROOT / "config" / "connection_profiles.json"
 ORACLE_PATH = INTEGRATION_ROOT / "config" / "migration_oracles.json"
@@ -58,6 +59,18 @@ PULSE_CAPTURE_PHASE_PATH = PRE_PULSE_PHASE_PATH.with_name(
 def load_json(path: Path) -> dict:
     """Load a UTF-8 JSON object used by this integration."""
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+LEGACY_SOURCE_CONTRACT_PATH = (
+    INTEGRATION_ROOT
+    / "config"
+    / "legacy_quadrupole_n100_source_contract.json"
+)
+LEGACY_SOURCE = load_json(LEGACY_SOURCE_CONTRACT_PATH)["source"]
+LEGACY_SOURCE_EVIDENCE_AVAILABLE = all(
+    (WORKSPACE_ROOT / LEGACY_SOURCE[record_name]["path"]).is_file()
+    for record_name in ("manifest", "state", "particle_source", "metadata")
+)
 
 
 class IntegrationProfileContractTests(unittest.TestCase):
@@ -273,6 +286,10 @@ class IntegrationProfileContractTests(unittest.TestCase):
                         arguments["resolved_budget_sha256"],
                     )
 
+    @unittest.skipUnless(
+        LEGACY_SOURCE_EVIDENCE_AVAILABLE,
+        "legacy source manifest/state/source evidence is incomplete",
+    )
     def test_prepare_only_runs_both_profiles_without_solver_execution(self) -> None:
         pwsh = shutil.which("pwsh")
         if pwsh is None:
@@ -425,35 +442,132 @@ class IntegrationProfileContractTests(unittest.TestCase):
         pwsh = shutil.which("pwsh")
         if pwsh is None:
             self.skipTest("pwsh is unavailable")
-        with tempfile.TemporaryDirectory(dir=REPO_ROOT / ".tmp") as directory:
+        with tempfile.TemporaryDirectory(dir=REPO_ROOT) as directory:
             output = Path(directory)
-            resolved_path, plan_path = prepare_migration(
+            particle_source_path = output / "particles.ion"
+            particle_source_path.write_text("fixture\n", encoding="utf-8")
+            state_path = output / "particle_state.csv"
+            state_path.write_text(
+                "particle_id,event,status\n"
+                + "".join(
+                    f"{particle_id},handoff,transmitted\n"
+                    for particle_id in range(1, 101)
+                ),
+                encoding="utf-8",
+            )
+            metadata_path = output / "particle_source_metadata.json"
+            metadata_path.write_text("{}\n", encoding="utf-8")
+            source_contract = load_json(LEGACY_SOURCE_CONTRACT_PATH)
+            source = source_contract["source"]
+            manifest_path = output / "run_manifest.json"
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "role": "simulation_run_manifest",
+                        "status": "success",
+                        "project": source_contract["recorded_project_id"],
+                        "run_id": source["run_id"],
+                        "inputs": {
+                            "particle_table": {
+                                "exists": True,
+                                "path": str(particle_source_path.resolve()),
+                                "sha256": file_sha256(particle_source_path),
+                            }
+                        },
+                        "outputs": [
+                            {
+                                "exists": True,
+                                "path": str(state_path.resolve()),
+                                "sha256": file_sha256(state_path),
+                            }
+                        ],
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            for record_name, path in (
+                ("manifest", manifest_path),
+                ("state", state_path),
+                ("particle_source", particle_source_path),
+                ("metadata", metadata_path),
+            ):
+                source[record_name] = {
+                    "path": path.relative_to(WORKSPACE_ROOT).as_posix(),
+                    "sha256": file_sha256(path),
+                }
+            source_contract_path = output / "source_contract.json"
+            source_contract_path.write_text(
+                json.dumps(source_contract) + "\n",
+                encoding="utf-8",
+            )
+            runtime_binding_path = output / "runtime_binding.json"
+            runtime_binding = load_json(
+                INTEGRATION_ROOT
+                / "config"
+                / (
+                    "legacy_quadrupole_grounded_connector_"
+                    "gap_1mm_runtime_binding.json"
+                )
+            )
+            runtime_binding["contracts"]["source_contract"] = {
+                "path": source_contract_path.relative_to(REPO_ROOT).as_posix(),
+                "sha256": file_sha256(source_contract_path),
+            }
+            runtime_binding_path.write_text(
+                json.dumps(runtime_binding) + "\n",
+                encoding="utf-8",
+            )
+            adapter_registry = load_json(ADAPTER_REGISTRY_PATH)
+            mapping = next(
+                item
+                for item in adapter_registry["mappings"]
+                if item["connection_profile_id"]
+                == "rf_quadrupole_grounded_connector_gap_1mm"
+            )
+            mapping["runtime_binding_path"] = (
+                runtime_binding_path.relative_to(REPO_ROOT).as_posix()
+            )
+            mapping["runtime_binding_sha256"] = file_sha256(
+                runtime_binding_path
+            )
+            adapter_registry_path = output / "adapter_registry.json"
+            adapter_registry_path.write_text(
+                json.dumps(adapter_registry) + "\n",
+                encoding="utf-8",
+            )
+            resolved_path, _ = prepare_migration(
                 repo_root=REPO_ROOT,
                 profile_registry_path=PROFILE_REGISTRY_PATH,
-                adapter_registry_path=ADAPTER_REGISTRY_PATH,
+                adapter_registry_path=adapter_registry_path,
                 preregistration_path=PREREGISTRATION_PATH,
                 profile_id="rf_quadrupole_grounded_connector_gap_1mm",
                 resolved_output=output / "resolved.json",
                 plan_output=output / "plan.json",
             )
-            budget_path = output / "resolved_engineering_budget.json"
-            budget = load_json(budget_path)
-            budget["source_identity"]["project_id"] = "wrong_recorded_project"
-            budget_path.write_text(
-                json.dumps(budget, indent=2) + "\n",
-                encoding="utf-8",
-            )
-            plan = load_json(plan_path)
-            plan["execution_steps"][0]["arguments"] = [
-                (
-                    f"resolved_budget_sha256={file_sha256(budget_path)}"
-                    if item.startswith("resolved_budget_sha256=")
-                    else item
+            assertion_path = output / "assert_wrong_source_identity.ps1"
+            assertion_path.write_text(
+                "\n".join(
+                    (
+                        f". '{INTEGRATION_ROOT / 'runtime' / 'runtime_binding.ps1'}'",
+                        (
+                            "$runtime = Resolve-RfOatofRuntimeBinding "
+                            f"-RepoRoot '{REPO_ROOT}' "
+                            f"-ResolvedConnection '{resolved_path}' "
+                            f"-RuntimeBinding '{runtime_binding_path}' "
+                            "-ExpectedConnectionProfileId "
+                            "'rf_quadrupole_grounded_connector_gap_1mm'"
+                        ),
+                        "$expected = $runtime.source_identity.PSObject.Copy()",
+                        "$expected.project_id = 'wrong_recorded_project'",
+                        (
+                            "Assert-RfOatofSourceIdentityMatches "
+                            "-Actual $runtime.source_identity "
+                            "-Expected $expected -Role 'Budget source identity'"
+                        ),
+                    )
                 )
-                for item in plan["execution_steps"][0]["arguments"]
-            ]
-            plan_path.write_text(
-                json.dumps(plan, indent=2) + "\n",
+                + "\n",
                 encoding="utf-8",
             )
             completed = subprocess.run(
@@ -461,16 +575,7 @@ class IntegrationProfileContractTests(unittest.TestCase):
                     pwsh,
                     "-NoProfile",
                     "-File",
-                    str(INTEGRATION_ROOT / "adapter.ps1"),
-                    "-CompositionPlan",
-                    str(plan_path),
-                    "-ResolvedConnection",
-                    str(resolved_path),
-                    "-PythonExe",
-                    sys.executable,
-                    "-RepoRoot",
-                    str(REPO_ROOT),
-                    "-PrepareOnly",
+                    str(assertion_path),
                 ],
                 cwd=REPO_ROOT,
                 capture_output=True,
@@ -482,7 +587,10 @@ class IntegrationProfileContractTests(unittest.TestCase):
             )
             self.assertNotEqual(completed.returncode, 0)
             self.assertIn(
-                "source identity differ before stage 1",
+                (
+                    "Budget source identity differs from the runtime "
+                    "source identity: project_id"
+                ),
                 completed.stdout + completed.stderr,
             )
 

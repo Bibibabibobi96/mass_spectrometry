@@ -49,7 +49,6 @@ function Invoke-MultipoleProjectFinite3dTransport {
       ConvertFrom-Json
     $numerics = $profile.solver_numerics.$Solver.values
     $stopStage = [string]$profile.stop_stage
-    $comsolParticleReleaseStrategy = [string]$profile.comsol_particle_release_strategy
     $arguments = @{
       ProjectId = $ProjectId
       RuntimeProfileId = $RuntimeProfileId
@@ -69,7 +68,6 @@ function Invoke-MultipoleProjectFinite3dTransport {
 
     if ($Solver -eq 'comsol') {
       $arguments.StopStage = $stopStage
-      $arguments.ComsolParticleReleaseStrategy = $comsolParticleReleaseStrategy
       $arguments.MeshAutoLevel = [int]$numerics.mesh.global_auto_level
       if ($null -ne $numerics.mesh.working_region_maximum_element_size_mm) {
         $arguments.WorkingRegionMaximumElementSizeMm = [double](

@@ -1,0 +1,210 @@
+{
+  "schema_version": 1,
+  "role": "multipole_comsol_particle_release_strategy_validation_preregistration",
+  "campaign_id": "quadrupole_comsol_vectorized_force_release_n100_v3",
+  "status": "EXECUTED_NOT_EQUIVALENT",
+  "preregistered_before_run": true,
+  "prior_failed_campaigns": [
+    {
+      "campaign_id": "quadrupole_comsol_vectorized_release_n100_v1",
+      "run_id": "20260731_070001__sim__comsol__quad-n100-vectorized-release-validation",
+      "failure_stage": "primary_particle_time_dependent_solver",
+      "automatic_retry_count": 0
+    },
+    {
+      "campaign_id": "quadrupole_comsol_vectorized_force_release_n100_v2",
+      "run_id": "20260731_070002__sim__comsol__quad-n100-vectorized-force-release-validation",
+      "failure_stage": "post_solve_metrics_aggregation",
+      "automatic_retry_count": 0
+    }
+  ],
+  "scope": {
+    "project_id": "rf_quadrupole_ion_optics",
+    "solver": "comsol",
+    "design_profile_id": "no_acceleration_full_length",
+    "particle_source_profile_id": "family_mother_sample_v1_n100",
+    "particle_count": 100,
+    "comsol_solver_numerics_profile_id": "hybrid_c1_corridor040_exit020_nosweep_cg_amg_spatial_temporal_refined",
+    "retention_class": "compact",
+    "only_intended_physical_variable": "none",
+    "implementation_change_from_v2": "Initialize the metrics struct array from the first completed batch before indexed append."
+  },
+  "reference_run": {
+    "run_id": "20260731_020001__sim__comsol__quad-noacc-followup-exit020-t160",
+    "status": "success",
+    "wall_clock_seconds": 312.02,
+    "parent_resolved_design_sha256": "F63A63A376F66F3C3F4106FB2C84E36B1DF4005E7592D5331D07FC857FCFA3EA",
+    "particle_source_sha256": "0125C3AB02B2321EF26A3A913CF6EC04325FD0D48597D2CB439D0CE42411662F",
+    "run_manifest_sha256": "992EDC2ECB3B203967EC8E804848A7030D08A38B5C8786B5381E5532A3CDE4D5",
+    "primary_state_sha256": "C5F50B1258453DDA42AB39A83C42BC55F26B866EB979EF64018151B86173E593",
+    "control_state_sha256": "C69497584462A3169E842FBE9ABD5867372F0D25A0E0D5EF6495E4C09C772DC8"
+  },
+  "authorized_validation_run": {
+    "runtime_profile_id": "no_acceleration_full_length_n100_vectorized_force_release_v3_exit020_t160",
+    "engineering_budget_path": "config/family_experiment/vectorized_release_validation/comsol_n100_v3_budget.json",
+    "authorized_run_id": "20260731_070003__sim__comsol__quad-n100-vectorized-force-release-v3",
+    "comsol_particle_release_strategy": "vectorized_phase",
+    "executed": true
+  },
+  "observed_result": {
+    "run_id": "20260731_070003__sim__comsol__quad-n100-vectorized-force-release-v3",
+    "status": "success",
+    "decision": "VECTOR_RELEASE_NOT_EQUIVALENT_RETAIN_INDIVIDUAL_FEATURES",
+    "run_manifest_sha256": "99C1B76F9525630AD333431FC98AE10097FB17311CC49546D4CD201837873325",
+    "primary_state_sha256": "FB1CA4FC8C3E1BA6C98C346EADCF32E4233B8D98889DC53993F295D36E0B7585",
+    "control_state_sha256": "6D2D880666FC2FF2CE088ADB21DF9C0F150EE087ED8FA095FC57A095AC229EE2",
+    "particle_events_sha256": "5ADAC995544E48D3AED09D996B169327C7D02240CAC4C6D56BF4A0B63AE941EA",
+    "resource_usage_sha256": "ADABCAF7B7D8452B47EFFC0B43EE9D7BA1F97037BA997FE6590718AEEC8751EC",
+    "discrete_checks": {
+      "source_particle_id_set_exact": true,
+      "primary_handoff_particle_id_set_exact": true,
+      "control_handoff_particle_id_set_exact": true,
+      "event_status_and_terminal_reason_exact": true,
+      "external_region_or_timeout_count_exact": true,
+      "primary_transmitted": {
+        "reference": 100,
+        "candidate": 100
+      },
+      "control_transmitted": {
+        "reference": 21,
+        "candidate": 21
+      }
+    },
+    "fixed_bin_checks": {
+      "primary": {
+        "status": "SENSITIVE_AT_PREREGISTERED_ENGINEERING_RESOLUTION",
+        "changed_particle_ids_by_field": {
+          "transverse_y_mm": [11],
+          "divergence_angle_deg": [3, 23, 38, 55, 64, 68, 75, 100],
+          "kinetic_energy_eV": [14, 30, 34, 50, 98]
+        },
+        "unchanged_fields": [
+          "transverse_x_mm",
+          "radial_position_mm",
+          "elapsed_time_us"
+        ],
+        "out_of_range_particle_ids_by_field": {}
+      },
+      "control": {
+        "status": "STABLE_AT_PREREGISTERED_ENGINEERING_RESOLUTION",
+        "changed_particle_ids_by_field": {},
+        "out_of_range_particle_ids_by_field": {}
+      }
+    },
+    "maximum_absolute_handoff_differences": {
+      "primary": {
+        "time_us": 0.014254373580897095,
+        "elapsed_time_us": 0.014254373580797619,
+        "rf_phase_rad": 0.09851915771081998,
+        "axial_z_mm": 0.0,
+        "transverse_x_mm": 0.00783837652833735,
+        "transverse_y_mm": 0.009088794261818009,
+        "velocity_axial_m_s": 3.426203188550062,
+        "velocity_x_m_s": 14.992371241543992,
+        "velocity_y_m_s": 16.664723493443006,
+        "kinetic_energy_eV": 0.0072427596247597315,
+        "radial_position_mm": 0.008603772634097992,
+        "divergence_angle_deg": 0.3980422145597,
+        "max_rod_radius_mm": 0.004220251037755973
+      },
+      "control": {
+        "time_us": 4.050093593832571e-13,
+        "elapsed_time_us": 4.050093593832571e-13,
+        "rf_phase_rad": 2.4993340730361524e-12,
+        "axial_z_mm": 0.0,
+        "transverse_x_mm": 2.999822612537173e-13,
+        "transverse_y_mm": 5.995204332975845e-14,
+        "velocity_axial_m_s": 0.0,
+        "velocity_x_m_s": 0.0,
+        "velocity_y_m_s": 0.0,
+        "kinetic_energy_eV": 0.0,
+        "radial_position_mm": 2.999822612537173e-13,
+        "divergence_angle_deg": 0.0,
+        "max_rod_radius_mm": 0.0003878796899901005
+      }
+    },
+    "performance": {
+      "reference_wall_clock_seconds": 312.02,
+      "candidate_wall_clock_seconds": 312.606,
+      "wall_clock_ratio_candidate_over_reference": 1.00187808473816,
+      "reference_peak_process_tree_working_set_bytes": 7185371136,
+      "candidate_peak_process_tree_working_set_bytes": 7226048512,
+      "peak_working_set_ratio_candidate_over_reference": 1.00566113777981,
+      "single_run_interpretation": "No measured N=100 speed or memory benefit."
+    },
+    "automatic_retry_count": 0,
+    "n1000_promotion_allowed": false
+  },
+  "frozen_authorities": {
+    "runtime_profiles": {
+      "path": "projects/rf_quadrupole_ion_optics/config/runtime_profiles.json",
+      "sha256": "4E7A92E8472CF1BD3FCFE0BEBFDAFE797E2A82A8731B6213FB970C4988140B2C"
+    },
+    "comsol_solver_numerics": {
+      "path": "projects/rf_quadrupole_ion_optics/config/multipole_transport_comsol_solver_numerics.json",
+      "sha256": "9F866B7FBA171E954D6B61E58B677402775A6E06303BEFCF8B9E66EBD8A710F8"
+    },
+    "engineering_budget": {
+      "path": "projects/rf_quadrupole_ion_optics/config/family_experiment/vectorized_release_validation/comsol_n100_v3_budget.json",
+      "sha256": "CE938C729C788FA2FBC650491114B4EB7D956D852CF21DA8339FEB335CB27C53"
+    },
+    "effect_resolution": {
+      "path": "common/multipole/no_acceleration_followup_resolution.json",
+      "sha256": "FF941874DD54A32CD05C119894FD6633D795266EAC8C9EAAF4AE0D9EBEF691DD"
+    },
+    "implementation": [
+      {
+        "path": "common/multipole/solve_finite_3d_transport.m",
+        "sha256": "720DE40EF5FD5907F5D1421A9B79D8FFF2521FB977EA3823B7EE47AEB23C0540"
+      },
+      {
+        "path": "common/multipole/runtime_profile.py",
+        "sha256": "38A6AB771A4A39982A1040AD526AB22FA7F4D764D4370939F3DF17D07CCDED20"
+      },
+      {
+        "path": "common/multipole/resource_budget.py",
+        "sha256": "9892114ED6CE8B6C2AE21AC8D3F14B610D3A8E3DAE0712A78551AF8E9809906A"
+      },
+      {
+        "path": "common/multipole/run_finite_3d_transport.ps1",
+        "sha256": "3F6F493D1AA0C2A6DC8C61460AFFE57CB79DA5F026E13E3A8ACA9B9F6ABB123A"
+      },
+      {
+        "path": "common/multipole/project_transport_launcher_support.ps1",
+        "sha256": "4BECE12AA18C49B08D0397A501A6B198FA2894B1A5E8BEAF8B589A552AD71AD1"
+      }
+    ]
+  },
+  "equivalence_acceptance": {
+    "required_run_status": "success",
+    "source_particle_id_set": "exact_match",
+    "primary_handoff_particle_id_set": "exact_match",
+    "control_handoff_particle_id_set": "exact_match",
+    "event_status_and_terminal_reason_by_case_and_particle": "exact_match",
+    "required_per_particle_fixed_bin_stability": [
+      "transverse_x_mm",
+      "transverse_y_mm",
+      "radial_position_mm",
+      "divergence_angle_deg",
+      "kinetic_energy_eV",
+      "elapsed_time_us"
+    ],
+    "fixed_bins_authority": "common/multipole/no_acceleration_followup_resolution.json",
+    "external_region_or_timeout_count": "exact_match",
+    "report_all_unthresholded_continuous_differences": true,
+    "failure_result": "VECTOR_RELEASE_NOT_EQUIVALENT_RETAIN_INDIVIDUAL_FEATURES"
+  },
+  "performance_evaluation": {
+    "reference_wall_clock_seconds": 312.02,
+    "report_wall_clock_ratio": true,
+    "correctness_is_not_waived_if_no_speedup": true,
+    "single_run_timing_is_engineering_evidence_not_a_stable_benchmark": true
+  },
+  "stop_policy": {
+    "equivalence_failure": "STOP_NO_N1000_PROMOTION",
+    "resource_or_solver_failure": "STOP_INCONCLUSIVE_NO_RETRY",
+    "execution_environment_blocked": "CORRECT_ENVIRONMENT_AND_RETRY_SAME_FROZEN_INPUT",
+    "automatic_retry_count": 0
+  },
+  "claim_limit": "Implementation equivalence and one-host wall-clock evidence only; no physical accuracy, numerical convergence, cross-solver equivalence, Candidate, Formal or N=1000 claim."
+}

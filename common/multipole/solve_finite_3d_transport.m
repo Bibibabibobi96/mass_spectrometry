@@ -21,14 +21,10 @@ controlCanonicalStatePath = getenv('MULTIPOLE_L3_CONTROL_CANONICAL_STATE');
 primaryTrajectoryPath = getenv('MULTIPOLE_L3_PRIMARY_TRAJECTORIES');
 controlTrajectoryPath = getenv('MULTIPOLE_L3_CONTROL_TRAJECTORIES');
 stopStage = getenv('MULTIPOLE_L3_STOP_STAGE');
-particleReleaseStrategy = getenv('MULTIPOLE_L3_PARTICLE_RELEASE_STRATEGY');
 fieldSamplePointsPath = getenv('MULTIPOLE_L3_FIELD_SAMPLE_POINTS');
 fieldSamplesPath = getenv('MULTIPOLE_L3_FIELD_SAMPLES');
 assert(any(strcmp(stopStage, {'transport', 'mesh_build', 'field_solve'})), ...
     'Finite 3D multipole stop stage is unsupported.');
-assert(any(strcmp(particleReleaseStrategy, ...
-    {'individual_features', 'vectorized_phase'})), ...
-    'Finite 3D multipole particle release strategy is unsupported.');
 meshBuildOnly = strcmp(stopStage, 'mesh_build');
 fieldSolveOnly = strcmp(stopStage, 'field_solve');
 if fieldSolveOnly
@@ -164,7 +160,11 @@ try
     model.param.set('phi_rf', sprintf('%.17g[rad]', rf.phase_rad));
     model.param.set('rf_scale', '1');
     model.param.set('axial_scale', '1');
-    if ~any(strcmp(rf.waveform, {'sine','cosine'}))
+    if strcmp(rf.waveform, 'sine')
+        rfWaveform = 'sin(2*pi*f_rf*t+phi_rf)';
+    elseif strcmp(rf.waveform, 'cosine')
+        rfWaveform = 'cos(2*pi*f_rf*t+phi_rf)';
+    else
         error('Unsupported shared multipole RF waveform: %s', rf.waveform);
     end
     model.param.set('m_ion', sprintf('%.17g[kg]', sourceMetadata.mass_amu*1.66053906660e-27));
@@ -672,17 +672,39 @@ try
         return
     end
 
-    vectorizedPhaseRelease = strcmp(particleReleaseStrategy, 'vectorized_phase');
-    particleBatchSize = height(source);
-    particleBatchCount = ceil(height(source)/particleBatchSize);
-    fprintf(fid,'PARTICLE_RELEASE_STRATEGY=%s\n',particleReleaseStrategy);
-    fprintf(fid,'PARTICLE_BATCH_SIZE=%d\nPARTICLE_BATCH_COUNT=%d\n', ...
-        particleBatchSize,particleBatchCount);
-    allOnMetrics = struct([]);
-    allZeroMetrics = struct([]);
-    onEvents = table(); zeroEvents = table();
-    onTrajectories = table(); zeroTrajectories = table();
-    onCanonicalStates = table(); zeroCanonicalStates = table();
+    cpt = comp.physics.create('cpt', 'ChargedParticleTracing', 'geom1');
+    cpt.selection.named('sel_vac');
+    cpt.feature('pp1').set('mp', 'm_ion');
+    cpt.feature('pp1').set('Z', sprintf('%d', design.particle_source.charge_state));
+    for index = 1:height(source)
+        releaseData = [source.x_mm(index), source.y_mm(index), source.z_mm(index), ...
+            source.vx_m_s(index), source.vy_m_s(index), source.vz_m_s(index)];
+        releasePath = fullfile(runtimeDir, sprintf('particle_%03d.txt', source.particle_id(index)));
+        writematrix(releaseData, releasePath, 'Delimiter', 'tab');
+        release = cpt.create(sprintf('rel%03d', index), 'ReleaseFromDataFile', -1);
+        release.set('Filename', releasePath);
+        release.set('icolp', '0');
+        release.set('VelocitySpecification', 'SpecifyVelocity');
+        release.set('InitialVelocity', 'FromFile');
+        release.set('icolv', '3');
+        release.set('rt', sprintf('%.17g[s]', source.birth_time_s(index)));
+        release.importData();
+    end
+    force = cpt.create('ef1', 'ElectricForce', 3);
+    force.selection.named('sel_vac');
+    force.set('E_src', 'userdef');
+    differentialScale = ['((V_dc+rf_scale*V_rf*' rfWaveform ')/100[V])'];
+    if accelerationEnabled
+        force.set('E', { ...
+            [differentialScale '*withsol(''sol_es_diff'',-d(Vdiff,x))+axial_scale*withsol(''sol_es_static'',-d(Vdiff,x))'], ...
+            [differentialScale '*withsol(''sol_es_diff'',-d(Vdiff,y))+axial_scale*withsol(''sol_es_static'',-d(Vdiff,y))'], ...
+            [differentialScale '*withsol(''sol_es_diff'',-d(Vdiff,z))+axial_scale*withsol(''sol_es_static'',-d(Vdiff,z))']});
+    else
+        force.set('E', { ...
+            [differentialScale '*(-d(Vdiff,x))-axial_scale*d(Vstatic,x)'], ...
+            [differentialScale '*(-d(Vdiff,y))-axial_scale*d(Vstatic,y)'], ...
+            [differentialScale '*(-d(Vdiff,z))-axial_scale*d(Vstatic,z)']});
+    end
     dt = 1/rf.frequency_Hz/numerics.trajectory.rf_steps_per_period;
     timeMaximum = numerics.trajectory.maximum_global_time_us*1e-6;
     if accelerationEnabled, stationarySolutionTag=''; else, stationarySolutionTag='sol_es'; end
@@ -694,124 +716,26 @@ try
             primaryCaseId='axial_acceleration_rf_on';
             controlCaseId='zero_axial_drop_rf_on';
         end
+        [pdOn, solutionOn] = solve_particle_case(model, cpt, 'on', 1, 1, dt, timeMaximum,stationarySolutionTag);
+        fprintf(fid,'CHECKPOINT=PRIMARY_PARTICLE_CASE_COMPLETE\n');
+        [pdZero, solutionZero] = solve_particle_case(model, cpt, 'zero', 1, 0, dt, timeMaximum,stationarySolutionTag);
+        fprintf(fid,'CHECKPOINT=CONTROL_PARTICLE_CASE_COMPLETE\n');
     else
         primaryCaseId='finite_3d_rf_on'; controlCaseId='zero_rf_control';
+        [pdOn, solutionOn] = solve_particle_case(model, cpt, 'on', 1, 1, dt, timeMaximum,stationarySolutionTag);
+        fprintf(fid,'CHECKPOINT=PRIMARY_PARTICLE_CASE_COMPLETE\n');
+        [pdZero, solutionZero] = solve_particle_case(model, cpt, 'zero', 0, 1, dt, timeMaximum,stationarySolutionTag);
+        fprintf(fid,'CHECKPOINT=CONTROL_PARTICLE_CASE_COMPLETE\n');
     end
     massKg=sourceMetadata.mass_amu*1.66053906660e-27;
-    for batchIndex = 1:particleBatchCount
-        if batchIndex > 1
-            remove_particle_batch(model,comp);
-        end
-        firstIndex=(batchIndex-1)*particleBatchSize+1;
-        lastIndex=min(batchIndex*particleBatchSize,height(source));
-        batchSource=source(firstIndex:lastIndex,:);
-        fprintf(fid,'PARTICLE_BATCH_%03d_RANGE=%d:%d\n', ...
-            batchIndex,batchSource.particle_id(1),batchSource.particle_id(end));
-        cpt = comp.physics.create('cpt', 'ChargedParticleTracing', 'geom1');
-        cpt.selection.named('sel_vac');
-        cpt.feature('pp1').set('mp', 'm_ion');
-        cpt.feature('pp1').set('Z', sprintf('%d', design.particle_source.charge_state));
-        if vectorizedPhaseRelease
-            phaseOffset = 2*pi*rf.frequency_Hz*batchSource.birth_time_s;
-            releaseData = [batchSource.x_mm, batchSource.y_mm, batchSource.z_mm, ...
-                batchSource.vx_m_s, batchSource.vy_m_s, batchSource.vz_m_s, ...
-                phaseOffset];
-            releasePath = fullfile(runtimeDir, sprintf( ...
-                'particle_batch_%03d.txt', batchIndex));
-            writematrix(releaseData, releasePath, 'Delimiter', 'tab');
-            auxiliary = cpt.feature.create('auxphase', 'AuxiliaryField', -1);
-            auxiliary.set('fieldVariableName', 'particle_phase_offset');
-            auxiliary.set('R', '0');
-            release = cpt.create('rel001', 'ReleaseFromDataFile', -1);
-            configure_release_from_file(release,releasePath);
-            release.set('DistributionFunction_auxphase', 'FromFile');
-            release.set('icol_auxphase', '6');
-            release.set('rt', '0[s]');
-            release.importData();
-            if strcmp(rf.waveform, 'sine')
-                batchRfWaveform = ...
-                    'sin(2*pi*f_rf*t+phi_rf+particle_phase_offset)';
-            else
-                batchRfWaveform = ...
-                    'cos(2*pi*f_rf*t+phi_rf+particle_phase_offset)';
-            end
-        else
-            for index = 1:height(batchSource)
-                releaseData = [batchSource.x_mm(index),batchSource.y_mm(index), ...
-                    batchSource.z_mm(index),batchSource.vx_m_s(index), ...
-                    batchSource.vy_m_s(index),batchSource.vz_m_s(index)];
-                releasePath = fullfile(runtimeDir,sprintf( ...
-                    'particle_%03d.txt',batchSource.particle_id(index)));
-                writematrix(releaseData,releasePath,'Delimiter','tab');
-                release = cpt.create(sprintf('rel%03d',index), ...
-                    'ReleaseFromDataFile',-1);
-                configure_release_from_file(release,releasePath);
-                release.set('rt',sprintf('%.17g[s]', ...
-                    batchSource.birth_time_s(index)));
-                release.importData();
-            end
-            batchRfWaveform = rfWaveform;
-        end
-    differentialScale = ['((V_dc+rf_scale*V_rf*' batchRfWaveform ')/100[V])'];
-    if accelerationEnabled
-        electricField = { ...
-            [differentialScale '*withsol(''sol_es_diff'',-d(Vdiff,x))+axial_scale*withsol(''sol_es_static'',-d(Vdiff,x))'], ...
-            [differentialScale '*withsol(''sol_es_diff'',-d(Vdiff,y))+axial_scale*withsol(''sol_es_static'',-d(Vdiff,y))'], ...
-            [differentialScale '*withsol(''sol_es_diff'',-d(Vdiff,z))+axial_scale*withsol(''sol_es_static'',-d(Vdiff,z))']};
-    else
-        electricField = { ...
-            [differentialScale '*(-d(Vdiff,x))-axial_scale*d(Vstatic,x)'], ...
-            [differentialScale '*(-d(Vdiff,y))-axial_scale*d(Vstatic,y)'], ...
-            [differentialScale '*(-d(Vdiff,z))-axial_scale*d(Vstatic,z)']};
-    end
-    if vectorizedPhaseRelease
-        force = cpt.create('force1','Force',3);
-        force.selection.named('sel_vac');
-        force.set('SpecifyForce','Directly');
-        chargeFactor=sprintf('(%d*e_const)*', ...
-            design.particle_source.charge_state);
-        force.set('F',{[chargeFactor electricField{1}], ...
-            [chargeFactor electricField{2}],[chargeFactor electricField{3}]});
-    else
-        force = cpt.create('ef1','ElectricForce',3);
-        force.selection.named('sel_vac');
-        force.set('E_src','userdef');
-        force.set('E',electricField);
-    end
-    if accelerationEnabled
-        [pdOn, solutionOn] = solve_particle_case(model, cpt, 'on', 1, 1, dt, timeMaximum,stationarySolutionTag);
-        [pdZero, solutionZero] = solve_particle_case(model, cpt, 'zero', 1, 0, dt, timeMaximum,stationarySolutionTag);
-    else
-        [pdOn, solutionOn] = solve_particle_case(model, cpt, 'on', 1, 1, dt, timeMaximum,stationarySolutionTag);
-        [pdZero, solutionZero] = solve_particle_case(model, cpt, 'zero', 0, 1, dt, timeMaximum,stationarySolutionTag);
-    end
-    [batchOnMetrics, batchOnEvents, batchOnTrajectories] = analyze_particle_case( ...
-        pdOn, batchSource, primaryCaseId, d.census_plane_z, g.working_region_radius, censusRadius, ...
+    [onMetrics, onEvents, onTrajectories] = analyze_particle_case( ...
+        pdOn, source, primaryCaseId, d.census_plane_z, g.working_region_radius, censusRadius, ...
         d.rod_z_min, d.rod_z_max, d.entrance_aperture_plate_downstream_face_z, d.exit_aperture_crossing_plane_z, ...
-        g.entrance_interface.aperture_radius_mm, g.exit_interface.aperture_radius_mm, ...
-        massKg,vectorizedPhaseRelease);
-    [batchZeroMetrics, batchZeroEvents, batchZeroTrajectories] = analyze_particle_case( ...
-        pdZero, batchSource, controlCaseId, d.census_plane_z, g.working_region_radius, censusRadius, ...
+        g.entrance_interface.aperture_radius_mm, g.exit_interface.aperture_radius_mm,massKg);
+    [zeroMetrics, zeroEvents, zeroTrajectories] = analyze_particle_case( ...
+        pdZero, source, controlCaseId, d.census_plane_z, g.working_region_radius, censusRadius, ...
         d.rod_z_min, d.rod_z_max, d.entrance_aperture_plate_downstream_face_z, d.exit_aperture_crossing_plane_z, ...
-        g.entrance_interface.aperture_radius_mm, g.exit_interface.aperture_radius_mm, ...
-        massKg,vectorizedPhaseRelease);
-        allOnMetrics(end+1)=batchOnMetrics; %#ok<AGROW>
-        allZeroMetrics(end+1)=batchZeroMetrics; %#ok<AGROW>
-        onEvents=[onEvents;batchOnEvents]; zeroEvents=[zeroEvents;batchZeroEvents]; %#ok<AGROW>
-        onTrajectories=[onTrajectories;batchOnTrajectories]; %#ok<AGROW>
-        zeroTrajectories=[zeroTrajectories;batchZeroTrajectories]; %#ok<AGROW>
-        onCanonicalStates=[onCanonicalStates;canonical_particle_state_table( ...
-            pdOn,batchSource,d.rod_z_max,d.handoff_plane_z,d.census_plane_z, ...
-            g.working_region_radius,censusRadius,massKg,rf.frequency_Hz,rf.phase_rad, ...
-            vectorizedPhaseRelease)]; %#ok<AGROW>
-        zeroCanonicalStates=[zeroCanonicalStates;canonical_particle_state_table( ...
-            pdZero,batchSource,d.rod_z_max,d.handoff_plane_z,d.census_plane_z, ...
-            g.working_region_radius,censusRadius,massKg,rf.frequency_Hz,rf.phase_rad, ...
-            vectorizedPhaseRelease)]; %#ok<AGROW>
-        fprintf(fid,'CHECKPOINT=PARTICLE_BATCH_%03d_COMPLETE\n',batchIndex);
-    end
-    onMetrics=aggregate_particle_metrics(allOnMetrics);
-    zeroMetrics=aggregate_particle_metrics(allZeroMetrics);
+        g.entrance_interface.aperture_radius_mm, g.exit_interface.aperture_radius_mm,massKg);
     events = [onEvents; zeroEvents];
     trajectories = [onTrajectories; zeroTrajectories];
     outputDir = fileparts(eventsPath);
@@ -831,13 +755,19 @@ try
         (~isempty(primaryCanonicalStatePath) && ~isempty(controlCanonicalStatePath)), ...
         'Paired canonical particle-state outputs must be configured together.');
     if pairedCanonicalStates
-        writetable(onCanonicalStates,primaryCanonicalStatePath);
-        writetable(zeroCanonicalStates,controlCanonicalStatePath);
+        write_canonical_particle_state(pdOn,source,primaryCanonicalStatePath,d.rod_z_max, ...
+            d.handoff_plane_z,d.census_plane_z,g.working_region_radius,censusRadius, ...
+            massKg,rf.frequency_Hz,rf.phase_rad);
+        write_canonical_particle_state(pdZero,source,controlCanonicalStatePath,d.rod_z_max, ...
+            d.handoff_plane_z,d.census_plane_z,g.working_region_radius,censusRadius, ...
+            massKg,rf.frequency_Hz,rf.phase_rad);
         if ~isempty(canonicalStatePath)
             copyfile(primaryCanonicalStatePath,canonicalStatePath,'f');
         end
     elseif ~isempty(canonicalStatePath)
-        writetable(onCanonicalStates,canonicalStatePath);
+        write_canonical_particle_state(pdOn,source,canonicalStatePath,d.rod_z_max, ...
+            d.handoff_plane_z,d.census_plane_z,g.working_region_radius,censusRadius, ...
+            massKg,rf.frequency_Hz,rf.phase_rad);
     end
     improvement = onMetrics.transmission_fraction-zeroMetrics.transmission_fraction;
     checks = struct();
@@ -1265,15 +1195,11 @@ physicsTags=cell(model.component('comp1').physics.tags());
 if any(strcmp(physicsTags,'es_static'))
     time.setEntry('activate', 'es_static', false);
 end
-
 time.setEntry('activate', 'cpt', true);
 featureTags = cell(cpt.feature.tags());
 releaseTags = featureTags(startsWith(featureTags, 'rel'));
 for index = 1:numel(releaseTags)
     cpt.feature(releaseTags{index}).set('StudyStep', [studyTag '/' stepTag]);
-end
-if any(strcmp(featureTags,'auxphase'))
-    cpt.feature('auxphase').set('StudyStep',[studyTag '/' stepTag]);
 end
 cpt.feature('pp1').set('StudyStep', [studyTag '/' stepTag]);
 solution = model.sol.create(solutionTag);
@@ -1292,63 +1218,9 @@ pd = mphparticle(model, 'dataset', datasetTag);
 model.result.dataset.remove(datasetTag);
 end
 
-function remove_particle_batch(model,comp)
-for tag={'sol_on','sol_zero'}
-    if any(strcmp(cell(model.sol.tags()),tag{1})),model.sol.remove(tag{1});end
-end
-for tag={'std_on','std_zero'}
-    if any(strcmp(cell(model.study.tags()),tag{1})),model.study.remove(tag{1});end
-end
-if any(strcmp(cell(comp.physics.tags()),'cpt')),comp.physics.remove('cpt');end
-end
-
-function configure_release_from_file(release,releasePath)
-release.set('Filename',releasePath);
-release.set('icolp','0');
-release.set('VelocitySpecification','SpecifyVelocity');
-release.set('InitialVelocity','FromFile');
-release.set('icolv','3');
-end
-
-function combined=aggregate_particle_metrics(parts)
-internalFields={'exit_radius_square_sum_mm2','output_energy_count', ...
-    'output_energy_sum_eV','output_energy_square_sum_eV2'};
-if numel(parts)==1
-    combined=rmfield(parts,internalFields);
-    return
-end
-particles=sum([parts.particles]);
-transmitted=sum([parts.transmitted]);
-energyCount=sum([parts.output_energy_count]);
-energySum=sum([parts.output_energy_sum_eV]);
-energySquareSum=sum([parts.output_energy_square_sum_eV2]);
-if transmitted>0
-    exitRms=sqrt(sum([parts.exit_radius_square_sum_mm2])/transmitted);
-else
-    exitRms=NaN;
-end
-if energyCount>0
-    energyMean=energySum/energyCount;
-else
-    energyMean=NaN;
-end
-if energyCount>1
-    energyStd=sqrt(max(0,(energySquareSum-energyCount*energyMean^2)/(energyCount-1)));
-else
-    energyStd=NaN;
-end
-combined=struct('particles',particles,'transmitted',transmitted, ...
-    'transmission_fraction',transmitted/particles, ...
-    'entrance_passed',sum([parts.entrance_passed]), ...
-    'exit_passed',sum([parts.exit_passed]), ...
-    'exit_rms_radius_mm',exitRms,'mean_output_energy_eV',energyMean, ...
-    'output_energy_standard_deviation_eV',energyStd, ...
-    'maximum_rod_radius_mm',max([parts.maximum_rod_radius_mm]));
-end
-
 function [metrics, events, trajectories] = analyze_particle_case(pd, source, caseId, ...
     censusPlaneZ, usableRadius, censusRadius, rodZMin, rodZMax, entranceCrossingZ, exitCrossingZ, ...
-    entranceApertureRadius, exitApertureRadius,massKg,addBirthTimeOffset)
+    entranceApertureRadius, exitApertureRadius,massKg)
 if ismatrix(pd.p) && size(pd.p,2)==3
     x=pd.p(:,1); y=pd.p(:,2); z=pd.p(:,3);
     vx=pd.v(:,1); vy=pd.v(:,2); vz=pd.v(:,3);
@@ -1368,7 +1240,6 @@ entranceRadii = nan(1, particleCount);
 exitRadiiAtPlate = nan(1, particleCount);
 outputEnergyEv=nan(1,particleCount);
 for particle = 1:particleCount
-    absoluteTimeOffset=double(addBirthTimeOffset)*source.birth_time_s(particle);
     valid = find(isfinite(x(:,particle)) & isfinite(y(:,particle)) & isfinite(z(:,particle)));
     assert(~isempty(valid), 'A finite 3D particle has no trajectory samples.');
     rodSamples = valid(z(valid,particle) >= rodZMin & z(valid,particle) <= rodZMax);
@@ -1404,14 +1275,12 @@ for particle = 1:particleCount
     end
     status = 'lost'; if transmitted(particle), status = 'transmitted'; end
     eventRows(particle,:) = {caseId, source.particle_id(particle), status, reason, ...
-        source.birth_time_s(particle), ...
-        pd.t(terminal)+absoluteTimeOffset, x(terminal,particle), ...
+        source.birth_time_s(particle), pd.t(terminal), x(terminal,particle), ...
         y(terminal,particle), z(terminal,particle), radius(terminal,particle), ...
         maximumRodRadius(particle), entranceRadii(particle), exitRadiiAtPlate(particle)};
     sampled = unique([valid(1:20:end); valid(end)]);
     for sample = sampled'
-        trajectoryRows(end+1,:) = {caseId, source.particle_id(particle), ...
-            pd.t(sample)+absoluteTimeOffset, ...
+        trajectoryRows(end+1,:) = {caseId, source.particle_id(particle), pd.t(sample), ...
             x(sample,particle), y(sample,particle), z(sample,particle), radius(sample,particle)}; %#ok<AGROW>
     end
 end
@@ -1429,11 +1298,7 @@ metrics = struct('particles', particleCount, 'transmitted', sum(transmitted), ..
     'exit_rms_radius_mm', sqrt(mean(exitRadii(transmitted).^2)), ...
     'mean_output_energy_eV',mean(outputEnergyEv(transmitted)), ...
     'output_energy_standard_deviation_eV',std(outputEnergyEv(transmitted)), ...
-    'maximum_rod_radius_mm', max(maximumRodRadius), ...
-    'exit_radius_square_sum_mm2',sum(exitRadii(transmitted).^2), ...
-    'output_energy_count',sum(transmitted), ...
-    'output_energy_sum_eV',sum(outputEnergyEv(transmitted)), ...
-    'output_energy_square_sum_eV2',sum(outputEnergyEv(transmitted).^2));
+    'maximum_rod_radius_mm', max(maximumRodRadius));
 end
 
 function create_rectangular_reference_enclosure(geom,enclosure,g,d,physicalDetectorRadius)
@@ -1458,12 +1323,11 @@ geom.feature.create('physical_detector','Cylinder'); geom.feature('physical_dete
 geom.feature('physical_detector').set('h',sprintf('%.17g[mm]',enclosure.physical_detector_thickness_mm)); geom.feature('physical_detector').set('pos',{'0','0',sprintf('%.17g[mm]',d.census_plane_z)}); geom.feature('physical_detector').set('selresult','on');
 end
 
-function tableValue=canonical_particle_state_table(pd,source,rodExitZ,handoffZ,censusPlaneZ, ...
-    usableRadius,censusRadius,massKg,frequencyHz,phaseRad,addBirthTimeOffset)
+function write_canonical_particle_state(pd,source,path,rodExitZ,handoffZ,censusPlaneZ, ...
+    usableRadius,censusRadius,massKg,frequencyHz,phaseRad)
 [x,y,z,vx,vy,vz]=particle_arrays(pd);
 radius=sqrt(x.^2+y.^2); rows=cell(0,17);
 for particle=1:size(z,2)
-    absoluteTimeOffset=double(addBirthTimeOffset)*source.birth_time_s(particle);
     valid=find(isfinite(x(:,particle))&isfinite(y(:,particle))&isfinite(z(:,particle)));
     rodSamples=valid(z(valid,particle)>=min(source.z_mm(particle),rodExitZ)&z(valid,particle)<=rodExitZ);
     if isempty(rodSamples), maxRodRadius=radius(valid(1),particle); else, maxRodRadius=max(radius(rodSamples,particle)); end
@@ -1475,14 +1339,12 @@ for particle=1:size(z,2)
     [rodState,rodFound]=interpolate_particle_plane(pd.t,x(:,particle),y(:,particle),z(:,particle), ...
         vx(:,particle),vy(:,particle),vz(:,particle),rodExitZ);
     if rodFound
-        rodState.t_s=rodState.t_s+absoluteTimeOffset;
         rows(end+1,:)=canonical_state_row(source.particle_id(particle),'rod_exit','alive','none', ...
             rodState,source.birth_time_s(particle),frequencyHz,phaseRad,massKg,maxRodRadius); %#ok<AGROW>
     end
     [handoffState,handoffFound]=interpolate_particle_plane(pd.t,x(:,particle),y(:,particle),z(:,particle), ...
         vx(:,particle),vy(:,particle),vz(:,particle),handoffZ);
     if handoffFound
-        handoffState.t_s=handoffState.t_s+absoluteTimeOffset;
         rows(end+1,:)=canonical_state_row(source.particle_id(particle),'handoff','transmitted','none', ...
             handoffState,source.birth_time_s(particle),frequencyHz,phaseRad,massKg,maxRodRadius); %#ok<AGROW>
     end
@@ -1492,8 +1354,7 @@ for particle=1:size(z,2)
         terminal=crossing;status='transmitted';reason='acceptance_surface';
     elseif z(terminal,particle)<source.z_mm(particle),reason='backward_escape';
     end
-    terminalState=struct('t_s',pd.t(terminal)+absoluteTimeOffset, ...
-        'x_mm',x(terminal,particle),'y_mm',y(terminal,particle), ...
+    terminalState=struct('t_s',pd.t(terminal),'x_mm',x(terminal,particle),'y_mm',y(terminal,particle), ...
         'z_mm',z(terminal,particle),'vx_m_s',vx(terminal,particle),'vy_m_s',vy(terminal,particle), ...
         'vz_m_s',vz(terminal,particle));
     rows(end+1,:)=canonical_state_row(source.particle_id(particle),'terminal',status,reason, ...
@@ -1502,7 +1363,7 @@ end
 names={'particle_id','event','status','terminal_reason','time_us','elapsed_time_us','rf_phase_rad', ...
     'axial_z_mm','transverse_x_mm','transverse_y_mm','velocity_axial_m_s','velocity_x_m_s', ...
     'velocity_y_m_s','kinetic_energy_eV','radial_position_mm','divergence_angle_deg','max_rod_radius_mm'};
-tableValue=cell2table(rows,'VariableNames',names);
+writetable(cell2table(rows,'VariableNames',names),path);
 end
 
 function row=canonical_state_row(particleId,event,status,reason,state,birthTime,frequencyHz,phaseRad,massKg,maxRodRadius)

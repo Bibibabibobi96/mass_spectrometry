@@ -55,6 +55,13 @@
 - 分段杆轴向加速使用四段、0.4 mm绝缘间隙和公共模电势；出口带孔接口板加速与显式多级案例均由各自具名合同
   决定，不在MATLAB中维护第二份电势。
 - 当前模型无碰撞；旧碰撞脚本不得恢复。
+- 唯一授权的无加速COMSOL N=1000 bridge在7200 s边界只完成746/1000个逐粒子release构造；
+  静电场已完成，但粒子求解未启动且无出口状态。该run按`interrupted`终结并保留release日志
+  校验清单，campaign关闭且不自动重试，不能作为COMSOL N=1000结果。
+- 单节点向量化phase release只完成了隔离的N=100诊断，结果为
+  `EXECUTED_NOT_EQUIVALENT`：离散传输分类保持不变，但RF-on逐粒子状态未在预登记固定分箱下稳定，
+  且312.606 s相对逐粒子release参考312.020 s没有性能收益。不得把该实验profile用于生产或
+  N=1000；活动默认仍为逐粒子`ReleaseFromDataFile`。
 - RF四极杆离子光学→单次反射oa-TOF的pre_pulse_interface_transport/pulse_capture/analyzer_transport是候选局部联合链，不修改下游Formal资产，也不证明
   接口场连续或整机Formal。
 

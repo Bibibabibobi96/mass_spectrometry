@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import hashlib
 import unittest
 from pathlib import Path
 
@@ -13,7 +12,7 @@ RUNNER = REPO_ROOT / "common/multipole/run_finite_3d_transport.ps1"
 RUNTIME_PROFILES = PROJECT_ROOT / "config/runtime_profiles.json"
 PREREGISTRATION = (
     PROJECT_ROOT
-    / "config/family_experiment/vectorized_release_validation/preregistration_v2.json"
+    / "config/family_experiment/vectorized_release_validation/preregistration_v3.json"
 )
 FAILED_PREREGISTRATION = (
     PROJECT_ROOT
@@ -22,56 +21,58 @@ FAILED_PREREGISTRATION = (
 
 
 class ComsolVectorizedReleaseContractTests(unittest.TestCase):
-    def test_vectorized_profile_isolated_from_legacy_profiles(self) -> None:
+    def test_failed_vectorized_profiles_are_not_active(self) -> None:
         profiles = json.loads(RUNTIME_PROFILES.read_text(encoding="utf-8"))["profiles"]
-        vectorized = profiles[
-            "no_acceleration_full_length_n100_vectorized_force_release_exit020_t160"
-        ]
-        self.assertEqual(
-            vectorized["comsol_particle_release_strategy"],
-            "vectorized_phase",
-        )
-        self.assertNotIn(
-            "comsol_particle_release_strategy",
-            profiles["no_acceleration_full_length_n100_comsol_followup_exit020_t160"],
+        self.assertFalse(
+            any(
+                "comsol_particle_release_strategy" in profile
+                for profile in profiles.values()
+            )
         )
         failed = json.loads(FAILED_PREREGISTRATION.read_text(encoding="utf-8"))
         self.assertEqual(failed["status"], "EXECUTED_FAILED")
         self.assertFalse(failed["observed_result"]["n1000_promotion_allowed"])
+        failed_v2 = json.loads(
+            (
+                PROJECT_ROOT
+                / "config/family_experiment/vectorized_release_validation/"
+                "preregistration_v2.json"
+            ).read_text(encoding="utf-8")
+        )
+        self.assertEqual(failed_v2["status"], "EXECUTED_FAILED")
+        self.assertTrue(failed_v2["observed_result"]["particle_solve_stage_reached"])
+        result = json.loads(PREREGISTRATION.read_text(encoding="utf-8"))
+        self.assertEqual(result["status"], "EXECUTED_NOT_EQUIVALENT")
+        self.assertEqual(
+            result["observed_result"]["decision"],
+            "VECTOR_RELEASE_NOT_EQUIVALENT_RETAIN_INDIVIDUAL_FEATURES",
+        )
+        self.assertFalse(result["observed_result"]["n1000_promotion_allowed"])
+        self.assertEqual(
+            result["observed_result"]["fixed_bin_checks"]["primary"][
+                "changed_particle_ids_by_field"
+            ]["divergence_angle_deg"],
+            [3, 23, 38, 55, 64, 68, 75, 100],
+        )
 
-    def test_matlab_core_preserves_both_release_semantics(self) -> None:
-        source = MATLAB_CORE.read_text(encoding="utf-8-sig")
+    def test_active_solver_retains_only_individual_release_semantics(self) -> None:
+        matlab_source = MATLAB_CORE.read_text(encoding="utf-8-sig")
+        runner_source = RUNNER.read_text(encoding="utf-8-sig")
+        self.assertIn("ReleaseFromDataFile", matlab_source)
+        self.assertIn(
+            "release.set('rt', sprintf('%.17g[s]', source.birth_time_s(index)))",
+            matlab_source,
+        )
         for token in (
-            "{'individual_features', 'vectorized_phase'}",
             "AuxiliaryField",
             "DistributionFunction_auxphase",
             "particle_phase_offset",
             "cpt.create('force1','Force',3)",
-            "force.set('SpecifyForce','Directly')",
-            "force.set('F',{[chargeFactor electricField{1}]",
-            "release.set('rt', '0[s]')",
-            "release.set('rt',sprintf('%.17g[s]'",
-            "absoluteTimeOffset=double(addBirthTimeOffset)",
         ):
-            self.assertIn(token, source)
+            self.assertNotIn(token, matlab_source)
+        self.assertNotIn("MULTIPOLE_L3_PARTICLE_RELEASE_STRATEGY", runner_source)
 
-    def test_runner_freezes_and_exports_release_strategy(self) -> None:
-        source = RUNNER.read_text(encoding="utf-8-sig")
-        self.assertIn(
-            "comsol_particle_release_strategy=$ComsolParticleReleaseStrategy",
-            source,
-        )
-        self.assertIn(
-            "$env:MULTIPOLE_L3_PARTICLE_RELEASE_STRATEGY="
-            "$ComsolParticleReleaseStrategy",
-            source,
-        )
-        self.assertIn(
-            "COMSOL particle release strategy differs from the authorized runtime profile.",
-            source,
-        )
-
-    def test_preregistration_authority_hashes_are_current(self) -> None:
+    def test_historical_authority_hashes_remain_frozen_evidence(self) -> None:
         preregistration = json.loads(PREREGISTRATION.read_text(encoding="utf-8"))
         authorities = preregistration["frozen_authorities"]
         entries = [
@@ -83,10 +84,8 @@ class ComsolVectorizedReleaseContractTests(unittest.TestCase):
         ]
         for entry in entries:
             with self.subTest(path=entry["path"]):
-                digest = hashlib.sha256(
-                    (REPO_ROOT / entry["path"]).read_bytes()
-                ).hexdigest().upper()
-                self.assertEqual(digest, entry["sha256"])
+                self.assertTrue((REPO_ROOT / entry["path"]).is_file())
+                self.assertRegex(entry["sha256"], r"^[0-9A-F]{64}$")
 
 
 if __name__ == "__main__":

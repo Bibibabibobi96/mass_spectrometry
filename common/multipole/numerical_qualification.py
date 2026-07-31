@@ -76,6 +76,22 @@ def load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest().upper()
+
+
+def _load_hashed_json(path: Path) -> tuple[dict[str, Any], str]:
+    payload = path.read_bytes()
+    document = json.loads(payload.decode("utf-8-sig"))
+    if not isinstance(document, dict):
+        raise ValueError(f"{path} must contain a JSON object")
+    return document, hashlib.sha256(payload).hexdigest().upper()
+
+
 def physical_resolved_design_sha256(resolved: dict[str, Any]) -> str:
     """Hash compiled physics while excluding compiler and authority provenance."""
     payload = copy.deepcopy(resolved)
@@ -151,6 +167,107 @@ def mean_source_energy_from_particle_input(path: Path) -> float:
     return sum(energies) / len(energies)
 
 
+def _finite_row_value(row: dict[str, Any], field: str) -> float:
+    try:
+        value = float(row[field])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(f"handoff state has invalid {field}") from exc
+    if not math.isfinite(value):
+        raise ValueError(f"handoff state has non-finite {field}")
+    return value
+
+
+def handoff_observables(values: list[dict[str, Any]]) -> dict[str, float]:
+    """Derive beam observables from canonical particle-state primitives."""
+    if not values:
+        raise ValueError("run has no transmitted handoff states")
+    positions: list[tuple[float, float]] = []
+    directions: list[tuple[float, float, float]] = []
+    elapsed_times: list[float] = []
+    energies: list[float] = []
+    divergence_angles: list[float] = []
+    for row in values:
+        x = _finite_row_value(row, "transverse_x_mm")
+        y = _finite_row_value(row, "transverse_y_mm")
+        vx = _finite_row_value(row, "velocity_x_m_s")
+        vy = _finite_row_value(row, "velocity_y_m_s")
+        vz = _finite_row_value(row, "velocity_axial_m_s")
+        speed = math.sqrt(vx * vx + vy * vy + vz * vz)
+        if speed <= 0:
+            raise ValueError("handoff state has zero velocity magnitude")
+        positions.append((x, y))
+        directions.append((vx / speed, vy / speed, vz / speed))
+        divergence_angles.append(
+            math.degrees(math.atan2(math.hypot(vx, vy), vz))
+        )
+        elapsed_times.append(_finite_row_value(row, "elapsed_time_us"))
+        energies.append(_finite_row_value(row, "kinetic_energy_eV"))
+
+    count = len(values)
+    centroid_x = math.fsum(point[0] for point in positions) / count
+    centroid_y = math.fsum(point[1] for point in positions) / count
+    centered_spatial_spread = math.sqrt(
+        math.fsum(
+            (x - centroid_x) ** 2 + (y - centroid_y) ** 2
+            for x, y in positions
+        )
+        / count
+    )
+    mean_direction = tuple(
+        math.fsum(direction[index] for direction in directions) / count
+        for index in range(3)
+    )
+    mean_direction_norm = math.sqrt(
+        math.fsum(component * component for component in mean_direction)
+    )
+    if mean_direction_norm <= 0:
+        raise ValueError("handoff states have undefined mean beam direction")
+    mean_direction_unit = tuple(
+        component / mean_direction_norm for component in mean_direction
+    )
+    angular_offsets = [
+        math.degrees(
+            math.acos(
+                max(
+                    -1.0,
+                    min(
+                        1.0,
+                        math.fsum(
+                            direction[index] * mean_direction_unit[index]
+                            for index in range(3)
+                        ),
+                    ),
+                )
+            )
+        )
+        for direction in directions
+    ]
+    mean_energy = math.fsum(energies) / count
+    return {
+        "transverse_centroid_x_mm": centroid_x,
+        "transverse_centroid_y_mm": centroid_y,
+        "centered_spatial_rms_spread_mm": centered_spatial_spread,
+        "mean_beam_direction_unit_x": mean_direction_unit[0],
+        "mean_beam_direction_unit_y": mean_direction_unit[1],
+        "mean_beam_direction_unit_z": mean_direction_unit[2],
+        "centered_angular_rms_spread_deg": math.sqrt(
+            math.fsum(offset * offset for offset in angular_offsets) / count
+        ),
+        "mean_energy": mean_energy,
+        "centered_rms_energy_spread_eV": math.sqrt(
+            math.fsum((energy - mean_energy) ** 2 for energy in energies) / count
+        ),
+        "mean_tof": math.fsum(elapsed_times) / count,
+        # Historical, uncentered observables retained for existing contracts.
+        "rms_radius": math.sqrt(
+            math.fsum(x * x + y * y for x, y in positions) / count
+        ),
+        "rms_divergence": math.sqrt(
+            math.fsum(angle * angle for angle in divergence_angles) / count
+        ),
+    }
+
+
 def run_data(manifest_path: Path) -> dict[str, Any]:
     manifest = load_json(manifest_path)
     if manifest.get("status") != "success":
@@ -164,25 +281,26 @@ def run_data(manifest_path: Path) -> dict[str, Any]:
     state_path = manifest_record(manifest, primary_state_filename(manifest, solver))
     with state_path.open(encoding="utf-8-sig", newline="") as handle:
         rows = list(csv.DictReader(handle))
-    handoff = {
-        int(row["particle_id"]): row
+    handoff_rows = [
+        row
         for row in rows
         if row["event"] == "handoff" and row["status"] == "transmitted"
-    }
+    ]
+    handoff_ids = [int(row["particle_id"]) for row in handoff_rows]
+    if len(handoff_ids) != len(set(handoff_ids)):
+        raise ValueError("transmitted handoff particle IDs must be unique")
+    handoff = dict(zip(handoff_ids, handoff_rows, strict=True))
     if not handoff:
         raise ValueError("run has no transmitted handoff states")
-    source = {
-        int(row["particle_id"]): row
-        for row in rows
-        if row["event"] == "source"
-    }
+    source_rows = [row for row in rows if row["event"] == "source"]
+    source_ids = [int(row["particle_id"]) for row in source_rows]
+    if len(source_ids) != len(set(source_ids)):
+        raise ValueError("source particle IDs must be unique")
+    source = dict(zip(source_ids, source_rows, strict=True))
     if set(source) != set(range(1, len(source) + 1)):
         raise ValueError("source particle IDs must be contiguous and one-based")
     values = list(handoff.values())
-    mean = lambda field: sum(float(row[field]) for row in values) / len(values)
-    rms = lambda field: math.sqrt(
-        sum(float(row[field]) ** 2 for row in values) / len(values)
-    )
+    derived_observables = handoff_observables(values)
     exit_interface = resolved["interfaces_mm"]["exit"]
     aperture_radius = float(exit_interface["aperture_radius_mm"])
     projection_distance = float(exit_interface["census_plane_z_mm"]) - float(
@@ -195,11 +313,13 @@ def run_data(manifest_path: Path) -> dict[str, Any]:
     if not particle_source_path.is_file():
         raise ValueError("manifest particle_source input does not exist")
     mean_source_energy = mean_source_energy_from_particle_input(particle_source_path)
-    rms_radius = rms("radial_position_mm")
-    rms_divergence = rms("divergence_angle_deg")
-    mean_tof = mean("elapsed_time_us")
-    mean_energy = mean("kinetic_energy_eV")
-    maximum_rod_radius = max(float(row["max_rod_radius_mm"]) for row in rows)
+    rms_radius = derived_observables["rms_radius"]
+    rms_divergence = derived_observables["rms_divergence"]
+    mean_tof = derived_observables["mean_tof"]
+    mean_energy = derived_observables["mean_energy"]
+    maximum_rod_radius = max(
+        _finite_row_value(row, "max_rod_radius_mm") for row in rows
+    )
     working_radius = float(resolved["geometry_mm"]["enclosure"]["working_region_radius_mm"])
     margin_fraction = (working_radius - maximum_rod_radius) / working_radius
     return {
@@ -225,12 +345,9 @@ def run_data(manifest_path: Path) -> dict[str, Any]:
         "lost_particle_ids": sorted(set(source) - set(handoff)),
         "_handoff": handoff,
         "observables": {
+            **derived_observables,
             "transmission": len(handoff) / len(source),
             "transmitted_particle_count": len(handoff),
-            "mean_tof": mean_tof,
-            "rms_radius": rms_radius,
-            "rms_divergence": rms_divergence,
-            "mean_energy": mean_energy,
             "maximum_rod_radius": maximum_rod_radius,
             "minimum_working_radius_margin_fraction": margin_fraction,
             "rms_radius_exit_aperture_fraction": rms_radius / aperture_radius,
@@ -250,7 +367,63 @@ def symmetric_relative(a: float, b: float) -> float:
     return abs(a - b) / scale if scale else 0.0
 
 
-def observable_differences(a: dict[str, Any], b: dict[str, Any]) -> dict[str, float]:
+def optional_absolute_difference(
+    a: float | int | None, b: float | int | None
+) -> float | None:
+    """Return a finite absolute difference, or None for an unavailable metric."""
+    if a is None or b is None:
+        return None
+    left = float(a)
+    right = float(b)
+    if not math.isfinite(left) or not math.isfinite(right):
+        return None
+    return abs(left - right)
+
+
+def optional_direction_separation(
+    a: dict[str, Any], b: dict[str, Any]
+) -> float | None:
+    """Return the angle between finite unit mean-direction vectors."""
+    fields = (
+        "mean_beam_direction_unit_x",
+        "mean_beam_direction_unit_y",
+        "mean_beam_direction_unit_z",
+    )
+    try:
+        left = tuple(float(a[field]) for field in fields)
+        right = tuple(float(b[field]) for field in fields)
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not all(math.isfinite(value) for value in (*left, *right)):
+        return None
+    left_norm = math.sqrt(math.fsum(value * value for value in left))
+    right_norm = math.sqrt(math.fsum(value * value for value in right))
+    if left_norm <= 0 or right_norm <= 0:
+        return None
+    cosine = math.fsum(
+        left[index] * right[index] for index in range(3)
+    ) / (left_norm * right_norm)
+    return math.degrees(math.acos(max(-1.0, min(1.0, cosine))))
+
+
+def optional_centroid_separation(
+    a: dict[str, Any], b: dict[str, Any]
+) -> float | None:
+    """Return transverse centroid-vector separation for finite components."""
+    fields = ("transverse_centroid_x_mm", "transverse_centroid_y_mm")
+    try:
+        left = tuple(float(a[field]) for field in fields)
+        right = tuple(float(b[field]) for field in fields)
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not all(math.isfinite(value) for value in (*left, *right)):
+        return None
+    return math.hypot(left[0] - right[0], left[1] - right[1])
+
+
+def observable_differences(
+    a: dict[str, Any], b: dict[str, Any]
+) -> dict[str, float | None]:
     ao = a["observables"]
     bo = b["observables"]
     differences = {
@@ -283,6 +456,48 @@ def observable_differences(a: dict[str, Any], b: dict[str, Any]) -> dict[str, fl
         "mean_energy_relative_difference": symmetric_relative(
             ao["mean_energy"], bo["mean_energy"]
         ),
+        "rms_radius_absolute_difference_mm": optional_absolute_difference(
+            ao["rms_radius"], bo["rms_radius"]
+        ),
+        "rms_divergence_absolute_difference_deg": optional_absolute_difference(
+            ao["rms_divergence"], bo["rms_divergence"]
+        ),
+        "mean_energy_absolute_difference_eV": optional_absolute_difference(
+            ao["mean_energy"], bo["mean_energy"]
+        ),
+        "rms_energy_spread_absolute_difference_eV": optional_absolute_difference(
+            ao.get("rms_energy_spread"), bo.get("rms_energy_spread")
+        ),
+        "sample_std_energy_spread_absolute_difference_eV": (
+            optional_absolute_difference(
+                ao.get("sample_std_energy_spread"),
+                bo.get("sample_std_energy_spread"),
+            )
+        ),
+        "transverse_centroid_vector_difference_mm": optional_centroid_separation(
+            ao, bo
+        ),
+        "centered_spatial_rms_spread_absolute_difference_mm": (
+            optional_absolute_difference(
+                ao.get("centered_spatial_rms_spread_mm"),
+                bo.get("centered_spatial_rms_spread_mm"),
+            )
+        ),
+        "mean_beam_direction_separation_deg": optional_direction_separation(
+            ao, bo
+        ),
+        "centered_angular_rms_spread_absolute_difference_deg": (
+            optional_absolute_difference(
+                ao.get("centered_angular_rms_spread_deg"),
+                bo.get("centered_angular_rms_spread_deg"),
+            )
+        ),
+        "centered_rms_energy_spread_absolute_difference_eV": (
+            optional_absolute_difference(
+                ao.get("centered_rms_energy_spread_eV"),
+                bo.get("centered_rms_energy_spread_eV"),
+            )
+        ),
     }
     common_ids = sorted(set(a["_handoff"]) & set(b["_handoff"]))
     if common_ids:
@@ -313,6 +528,185 @@ def observable_differences(a: dict[str, Any], b: dict[str, Any]) -> dict[str, fl
             paired_energy_rms_difference_eV=paired_rms(("kinetic_energy_eV",)),
         )
     return differences
+
+
+def compose_engineering_progression_contract(
+    policy: dict[str, Any],
+    functional_contract: dict[str, Any],
+    *,
+    functional_contract_sha256: str,
+) -> dict[str, Any]:
+    """Bind functional acceptance to the decomposed engineering capability."""
+    supported_statuses = {
+        "DRAFT_PENDING_ENERGY_THRESHOLDS",
+        "ACTIVE_ENGINEERING_PROGRESSION_POLICY",
+    }
+    policy_status = policy.get("status")
+    if (
+        policy.get("role")
+        != "multipole_engineering_progression_acceptance_contract"
+        or policy_status not in supported_statuses
+    ):
+        raise ValueError("engineering progression policy identity differs")
+    functional_binding = policy.get("functional_acceptance")
+    if not isinstance(functional_binding, dict):
+        raise ValueError("engineering progression functional binding is missing")
+    if (
+        functional_binding.get("required_result") != "PASS"
+        or str(functional_binding.get("sha256", "")).upper()
+        != functional_contract_sha256.upper()
+    ):
+        raise ValueError("engineering progression functional binding is stale")
+    if functional_contract.get("claim_profile") != "functional_transport":
+        raise ValueError("functional acceptance claim profile differs")
+
+    comparison_kinds = policy.get("scope", {}).get("comparison_kinds")
+    if comparison_kinds != ["same_solver_discretization", "cross_solver"]:
+        raise ValueError("engineering progression comparison kinds differ")
+    continuous = policy.get("continuous_engineering_acceptance")
+    if not isinstance(continuous, dict):
+        raise ValueError("continuous engineering acceptance is missing")
+    if (
+        continuous.get("comparison_operator")
+        != "absolute_difference_less_than_or_equal"
+        or continuous.get("all_approved_thresholds_required") is not True
+        or continuous.get("energy_thresholds_required_before_activation")
+        is not True
+    ):
+        raise ValueError("engineering progression observable contract differs")
+    missing_result = continuous.get("missing_metric_result")
+    if missing_result != "NOT_EVALUATED_DO_NOT_PROGRESS":
+        raise ValueError("engineering progression missing-metric policy differs")
+
+    policy_metrics = {
+        ("spatial_observables", "centroid_position_difference_mm"): (
+            "transverse_centroid_vector_difference_mm",
+            False,
+        ),
+        ("spatial_observables", "centered_spatial_spread_difference_mm"): (
+            "centered_spatial_rms_spread_absolute_difference_mm",
+            False,
+        ),
+        ("angular_observables", "mean_direction_difference_deg"): (
+            "mean_beam_direction_separation_deg",
+            False,
+        ),
+        ("angular_observables", "centered_angular_spread_difference_deg"): (
+            "centered_angular_rms_spread_absolute_difference_deg",
+            False,
+        ),
+        ("energy_observables", "mean_energy_difference_eV"): (
+            "mean_energy_absolute_difference_eV",
+            True,
+        ),
+        ("energy_observables", "centered_energy_spread_difference_eV"): (
+            "centered_rms_energy_spread_absolute_difference_eV",
+            True,
+        ),
+    }
+    maximum_limits = {}
+    pending_metrics = []
+    for (section_name, policy_name), (
+        metric,
+        may_be_pending,
+    ) in policy_metrics.items():
+        section = continuous.get(section_name)
+        entry = section.get(policy_name) if isinstance(section, dict) else None
+        if not isinstance(entry, dict):
+            raise ValueError(
+                f"engineering progression policy lacks {section_name}.{policy_name}"
+            )
+        value = entry.get("maximum")
+        if value is None:
+            if not may_be_pending:
+                raise ValueError(
+                    "approved spatial and angular limits must be present"
+                )
+            pending_metrics.append(metric)
+            continue
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(float(value))
+            or float(value) < 0
+        ):
+            raise ValueError(
+                "engineering progression limits must be finite and nonnegative"
+            )
+        maximum_limits[metric] = float(value)
+    if policy_status == "ACTIVE_ENGINEERING_PROGRESSION_POLICY" and pending_metrics:
+        raise ValueError("active engineering policy lacks required energy thresholds")
+
+    result = copy.deepcopy(functional_contract)
+    for acceptance_name in (
+        "same_solver_acceptance",
+        "cross_solver_acceptance",
+    ):
+        acceptance = result.get(acceptance_name)
+        if not isinstance(acceptance, dict):
+            raise ValueError(
+                f"functional contract lacks {acceptance_name}"
+            )
+        maximum = acceptance.get("maximum")
+        if not isinstance(maximum, dict):
+            raise ValueError(f"{acceptance_name}.maximum must be an object")
+        maximum.update(maximum_limits)
+    result["claim_profile"] = "engineering_progression"
+    result["claim_limit"] = policy["claim_limit"]
+    result["missing_metric_result"] = missing_result
+    result["engineering_required_difference_metrics"] = [
+        *maximum_limits,
+        *pending_metrics,
+    ]
+    result["pending_required_threshold_metrics"] = pending_metrics
+    result["engineering_progression_policy"] = {
+        "contract_id": policy["contract_id"],
+        "functional_contract_sha256": functional_contract_sha256.upper(),
+        "status": policy_status,
+    }
+    return result
+
+
+def load_engineering_progression_contract(
+    policy_path: Path,
+    functional_contract_path: Path,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Load, hash, bind, and compose the shared engineering contract."""
+    policy_path = policy_path.resolve()
+    functional_contract_path = functional_contract_path.resolve()
+    policy, policy_sha256 = _load_hashed_json(policy_path)
+    functional_contract, functional_sha256 = _load_hashed_json(
+        functional_contract_path
+    )
+    binding = policy.get("functional_acceptance")
+    if not isinstance(binding, dict) or not isinstance(binding.get("path"), str):
+        raise ValueError("engineering progression functional path is missing")
+    declared_path = binding["path"].replace("\\", "/").strip("/")
+    actual_path = functional_contract_path.as_posix()
+    if not declared_path or not (
+        actual_path == declared_path
+        or actual_path.endswith("/" + declared_path)
+    ):
+        raise ValueError("engineering progression functional path differs")
+    contract = compose_engineering_progression_contract(
+        policy,
+        functional_contract,
+        functional_contract_sha256=functional_sha256,
+    )
+    provenance = {
+        "policy": {
+            "path": str(policy_path),
+            "sha256": policy_sha256,
+            "contract_id": policy["contract_id"],
+            "status": policy["status"],
+        },
+        "functional_contract": {
+            "path": str(functional_contract_path),
+            "sha256": functional_sha256,
+            "contract_id": functional_contract["contract_id"],
+        },
+    }
+    return contract, provenance
 
 
 def _closed_interval(center: float, half_width: float) -> list[float]:
@@ -726,37 +1120,99 @@ def evaluate(
         not isinstance(maximum, dict) or not maximum
     ):
         raise ValueError(f"{acceptance_name}.maximum must define accepted differences")
-    checks = {}
-    if axis != "mesh_strategy":
-        checks.update(
-            {
-                name: differences[name] <= float(limit)
-                for name, limit in maximum.items()
-            }
-        )
-    elif maximum:
-        checks.update(
-            {
-                name: differences[name] <= float(limit)
-                for name, limit in maximum.items()
-            }
-        )
+    checks: dict[str, bool] = {}
+    missing_metric_checks: set[str] = set()
+    for name, limit in (maximum or {}).items():
+        if name not in differences:
+            raise ValueError(f"{acceptance_name}.maximum has unknown metric {name}")
+        if (
+            isinstance(limit, bool)
+            or not isinstance(limit, (int, float))
+            or not math.isfinite(float(limit))
+            or float(limit) < 0
+        ):
+            raise ValueError(f"{acceptance_name}.maximum.{name} must be finite")
+        value = differences[name]
+        if value is None or not math.isfinite(float(value)):
+            checks[name] = False
+            missing_metric_checks.add(name)
+        else:
+            checks[name] = float(value) <= float(limit)
     for name, minimum in acceptance.get("minimum_each_run", {}).items():
+        if (
+            isinstance(minimum, bool)
+            or not isinstance(minimum, (int, float))
+            or not math.isfinite(float(minimum))
+        ):
+            raise ValueError(f"{acceptance_name}.minimum_each_run.{name} is invalid")
+        baseline_value = baseline["observables"].get(name)
+        refined_value = refined["observables"].get(name)
         checks[f"baseline_{name}_minimum"] = (
-            baseline["observables"][name] >= float(minimum)
+            isinstance(baseline_value, (int, float))
+            and not isinstance(baseline_value, bool)
+            and math.isfinite(float(baseline_value))
+            and float(baseline_value) >= float(minimum)
         )
         checks[f"refined_or_peer_{name}_minimum"] = (
-            refined["observables"][name] >= float(minimum)
+            isinstance(refined_value, (int, float))
+            and not isinstance(refined_value, bool)
+            and math.isfinite(float(refined_value))
+            and float(refined_value) >= float(minimum)
         )
     for name in acceptance.get("positive_each_run", []):
-        checks[f"baseline_{name}_positive"] = baseline["observables"][name] > 0
-        checks[f"refined_or_peer_{name}_positive"] = (
-            refined["observables"][name] > 0
+        baseline_value = baseline["observables"].get(name)
+        refined_value = refined["observables"].get(name)
+        checks[f"baseline_{name}_positive"] = (
+            isinstance(baseline_value, (int, float))
+            and not isinstance(baseline_value, bool)
+            and math.isfinite(float(baseline_value))
+            and float(baseline_value) > 0
         )
-    checks["handoff_particle_id_sets"] = (
-        baseline["handoff_particle_ids"] == refined["handoff_particle_ids"]
+        checks[f"refined_or_peer_{name}_positive"] = (
+            isinstance(refined_value, (int, float))
+            and not isinstance(refined_value, bool)
+            and math.isfinite(float(refined_value))
+            and float(refined_value) > 0
+        )
+    baseline_ids = baseline.get("handoff_particle_ids")
+    refined_ids = refined.get("handoff_particle_ids")
+    baseline_handoff = baseline.get("_handoff")
+    refined_handoff = refined.get("_handoff")
+    exact_handoff_ids = (
+        isinstance(baseline_ids, list)
+        and isinstance(refined_ids, list)
+        and len(baseline_ids) == len(set(baseline_ids))
+        and len(refined_ids) == len(set(refined_ids))
+        and isinstance(baseline_handoff, dict)
+        and isinstance(refined_handoff, dict)
+        and baseline_ids == sorted(baseline_handoff)
+        and refined_ids == sorted(refined_handoff)
+        and baseline_ids == refined_ids
     )
-    status = "PASS" if not errors and all(checks.values()) else "FAIL"
+    checks["handoff_particle_id_sets"] = exact_handoff_ids
+    nonmissing_failure = any(
+        not passed and name not in missing_metric_checks
+        for name, passed in checks.items()
+    )
+    engineering = contract.get("claim_profile") == "engineering_progression"
+    policy_status = contract.get("engineering_progression_policy", {}).get(
+        "status"
+    )
+    pending_thresholds = contract.get("pending_required_threshold_metrics", [])
+    if errors or nonmissing_failure:
+        status = "FAIL"
+    elif missing_metric_checks or (
+        engineering
+        and (
+            policy_status != "ACTIVE_ENGINEERING_PROGRESSION_POLICY"
+            or pending_thresholds
+        )
+    ):
+        status = contract.get(
+            "missing_metric_result", "NOT_EVALUATED_DO_NOT_PROGRESS"
+        )
+    else:
+        status = "PASS"
     result = {
         "schema_version": 1,
         "role": "multipole_l3_numerical_qualification_result",
@@ -777,6 +1233,11 @@ def evaluate(
         "checks": checks,
         "claim_limit": contract["claim_limit"],
     }
+    if engineering:
+        result["engineering_progression_status"] = status
+        result["numerical_convergence_status"] = "DEFERRED_NOT_WAIVED"
+        result["missing_required_metrics"] = sorted(missing_metric_checks)
+        result["pending_required_threshold_metrics"] = list(pending_thresholds)
     if axis == "mesh_strategy":
         result["functional_status"] = status
         result["continuous_status"] = "INCONCLUSIVE_NO_SOURCED_ERROR_BUDGET"

@@ -19,6 +19,9 @@
 - 项目身份：[`config/project.json`](config/project.json)
 - 三项目共享运行合同：[`../../common/multipole/README.md`](../../common/multipole/README.md)
   （轴向实体与物理面只采用其中的“轴向部件与物理面术语”）。
+- 家族暂时工程推进指标：
+  [`../../common/multipole/engineering_progression_acceptance.json`](../../common/multipole/engineering_progression_acceptance.json)；
+  本项目只引用，不复制阈值、状态或判定。
 - 历史L1兼容输入：[`config/baseline.json`](config/baseline.json)，只读；`project.json`的注册身份
   已改由全部design profile的一致identity给出，不再绑定该文件。旧L1/L2兼容消费者尚未迁移，
   该文件不是活动L3 solver参数权威。

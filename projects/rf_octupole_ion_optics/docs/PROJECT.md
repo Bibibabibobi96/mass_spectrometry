@@ -7,6 +7,11 @@ typed operating mode registry。三个规范profile由公共编译器在内存�
 接口、RF和粒子源保持严格相同。当前三个N=100 baseline均已完成COMSOL与SIMION真实运行并以
 100/100及相同交接粒子身份闭合功能分类；连续数值、Candidate和Formal资格仍未闭合。
 
+四、六、八极杆共同的临时下游工程方向由
+[`engineering_progression_acceptance.json`](../../../common/multipole/engineering_progression_acceptance.json)
+统一记录；本项目只声明适用性，不复制阈值、状态或判定。后续先复用现有SIMION状态并只补最小相邻
+加密臂；任何工程PASS都不得改称数值收敛或求解器等价。
+
 旧的`baseline_finite_3d`和`exit_aperture_plate_acceleration_reference`保留为兼容alias，分别映射
 `segmented_rod_axial_acceleration`和`exit_aperture_plate_acceleration`。alias不保存机械副本，
 不构成额外实验arm；新文档和新run应使用规范mode名称。
@@ -109,6 +114,7 @@ SIMION两份`POSTHOC_DESCRIPTIVE` binding和报告：只含点估计，不计算
 - [`../config/qualification/n100_convergence_preregistration.json`](../config/qualification/n100_convergence_preregistration.json)
 - [`../config/qualification/comsol_hybrid_no_acceleration_particle_convergence_preregistration.json`](../config/qualification/comsol_hybrid_no_acceleration_particle_convergence_preregistration.json)
 - [`../config/qualification/three_mode_dispersion_preregistration.json`](../config/qualification/three_mode_dispersion_preregistration.json)
+- [`../../../common/multipole/engineering_progression_acceptance.json`](../../../common/multipole/engineering_progression_acceptance.json)
 - [`../analysis/run_finite_3d_transport.ps1`](../analysis/run_finite_3d_transport.ps1)
 - [`../analysis/run_simion_finite_3d_transport.ps1`](../analysis/run_simion_finite_3d_transport.ps1)
 - [`../verify_project.ps1`](../verify_project.ps1)

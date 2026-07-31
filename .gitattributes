@@ -1,5 +1,15 @@
 *.json text eol=lf
 *.csv text eol=lf
+*.py text eol=lf
+*.ps1 text eol=lf
+*.m text eol=lf
+*.lua text eol=lf
+*.gem text eol=lf
+*.toml text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.txt text eol=lf
+*.md text eol=lf
 # History is immutable payload. Preserve its exact Git bytes on every OS so
 # frozen SHA-256 lists remain valid after directory renames and clean checkout.
 projects/*/docs/history/** -text

@@ -16,9 +16,7 @@ param(
   [string]$RetentionReason='',
   [string]$SourceFamilyPath='',
   [string]$OperatingPointId='',
-  [ValidateSet('transport','mesh_build','field_solve')][string]$StopStage='transport',
-  [ValidateSet('individual_features','vectorized_phase')]
-  [string]$ComsolParticleReleaseStrategy='individual_features'
+  [ValidateSet('transport','mesh_build','field_solve')][string]$StopStage='transport'
 )
 
 Set-StrictMode -Version Latest
@@ -545,13 +543,6 @@ try{
     throw 'COMSOL StopStage differs from the authorized runtime profile.'
   }
   $authorizedNumerics=$resolvedBudget.solver_numerics
-  $authorizedParticleReleaseStrategy=[string]$resolvedBudget.comsol_particle_release_strategy
-  if($authorizedParticleReleaseStrategy-notin@('individual_features','vectorized_phase')){
-    throw 'COMSOL resolved resource budget has an unsupported particle release strategy.'
-  }
-  if($ComsolParticleReleaseStrategy-ne$authorizedParticleReleaseStrategy){
-    throw 'COMSOL particle release strategy differs from the authorized runtime profile.'
-  }
   $authorizedBackend=[string]$authorizedNumerics.stationary_linear_solver_backend
   if($authorizedBackend-notin@('mumps','pardiso','cg_amg')){
     throw 'COMSOL runtime profile has an unsupported stationary linear-solver backend.'
@@ -819,7 +810,7 @@ try{
     parameters=[ordered]@{model_level='L3';runtime_profile_id=$RuntimeProfileId;design_profile_id=$DesignProfileId;
       operating_mode_id=$modeId;
       operating_point_id=$(if($sourceFamily){$OperatingPointId}else{$null});mesh_convergence=$false;
-      stop_stage=$StopStage;comsol_particle_release_strategy=$ComsolParticleReleaseStrategy};
+      stop_stage=$StopStage};
     formal_gate_passed=$false}|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $runConfig -Encoding UTF8
 
   $environmentNames=@('MULTIPOLE_RESOLVED_DESIGN','MULTIPOLE_SOLVER_NUMERICS','MULTIPOLE_L3_PARTICLE_SOURCE',
@@ -828,7 +819,7 @@ try{
     'MULTIPOLE_L3_CANONICAL_STATE','MULTIPOLE_L3_PRIMARY_CANONICAL_STATE',
     'MULTIPOLE_L3_CONTROL_CANONICAL_STATE','MULTIPOLE_L3_PRIMARY_TRAJECTORIES',
     'MULTIPOLE_L3_CONTROL_TRAJECTORIES','MULTIPOLE_L3_SOLVER_PROGRESS_DIR',
-    'MULTIPOLE_L3_STOP_STAGE','MULTIPOLE_L3_PARTICLE_RELEASE_STRATEGY',
+    'MULTIPOLE_L3_STOP_STAGE',
     'MULTIPOLE_L3_FIELD_SAMPLE_POINTS','MULTIPOLE_L3_FIELD_SAMPLES',
     'MULTIPOLE_L3_MAXIMUM_MESH_CELLS')
   $oldEnvironment=Save-RunEnvironment -Names $environmentNames
@@ -845,7 +836,6 @@ try{
     $env:MULTIPOLE_L3_CONTROL_TRAJECTORIES=$controlTrajectories
     $env:MULTIPOLE_L3_SOLVER_PROGRESS_DIR=$solverProgressDir
     $env:MULTIPOLE_L3_STOP_STAGE=$StopStage
-    $env:MULTIPOLE_L3_PARTICLE_RELEASE_STRATEGY=$ComsolParticleReleaseStrategy
     $env:MULTIPOLE_L3_FIELD_SAMPLE_POINTS=if($fieldSamplePoints){$fieldSamplePoints}else{''}
     $env:MULTIPOLE_L3_FIELD_SAMPLES=if($StopStage-eq'field_solve'){$fieldSamples}else{''}
     $env:MULTIPOLE_L3_MAXIMUM_MESH_CELLS=if($null-ne$maximumMeshCells){[string]$maximumMeshCells}else{''}
