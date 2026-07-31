@@ -70,6 +70,11 @@ COMSOL空间档在`MESH_COMPLETE`后以17.181 GB超过17.180 GB进程树帽，�
 `../config/qualification/n100_no_acceleration_qualification.json`。
 分段杆轴向加速身份和资源结论登记在
 `../config/qualification/n100_segmented_rod_axial_acceleration_qualification.json`。
+2026-07-31声明式SIMION H15 N=100三模式对照中，出口孔板加速相对无加速把中心化空间/角RMS降低
+`0.0995 mm/0.6912°`；相对分段加速，空间RMS低`0.1563 mm`，但角RMS高`0.6438°`。它避免了同一
+H15条件下分段加速空间RMS略增的信号；统一九臂证据见
+[`../../../docs/history/20260731__multipole-three-mode-h15-n100.md`](../../../docs/history/20260731__multipole-three-mode-h15-n100.md)。
+该结果只用于工程取舍，不改变数值资格。
 COMSOL/SIMION分别受1200/720 s、2 GiB瞬态目录、16 GiB进程树内存、8 GiB最低
 可用内存、25 MiB compact保留和零自动重试约束；其他runtime由
 [`../config/qualification/engineering_budget.json`](../config/qualification/engineering_budget.json)

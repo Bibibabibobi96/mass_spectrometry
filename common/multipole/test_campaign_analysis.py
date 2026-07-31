@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from common.multipole.campaign_analysis import compare_pair
+from common.multipole.campaign_analysis import compare_modes, compare_pair
 
 
 def arm(project: str, run_id: str, *, offset: float = 0.0) -> dict:
@@ -42,6 +42,20 @@ class CampaignAnalysisTests(unittest.TestCase):
         changed["particle_source_sha256"] = "B" * 64
         with self.assertRaisesRegex(ValueError, "project or particle source"):
             compare_pair(arm("left", "a"), changed)
+
+    def test_named_pair_freezes_right_minus_left_direction(self) -> None:
+        result = compare_modes(
+            arm("p", "segmented"),
+            arm("p", "endface", offset=-0.2),
+            left_mode="segmented_acceleration",
+            right_mode="exit_aperture_plate_acceleration",
+        )
+        self.assertEqual(result["left_mode"], "segmented_acceleration")
+        self.assertEqual(result["right_mode"], "exit_aperture_plate_acceleration")
+        self.assertAlmostEqual(
+            result["right_minus_left"]["centered_angular_rms_spread_deg"],
+            -0.2,
+        )
 
 
 if __name__ == "__main__":

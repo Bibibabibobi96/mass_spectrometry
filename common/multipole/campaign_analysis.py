@@ -11,7 +11,28 @@ from typing import Any
 from common.multipole.numerical_qualification import run_data
 
 
-MODES = {"no_acceleration", "segmented_acceleration"}
+MODES = {
+    "no_acceleration",
+    "segmented_acceleration",
+    "exit_aperture_plate_acceleration",
+}
+PAIR_DEFINITIONS = (
+    (
+        "segmented_vs_no_acceleration",
+        "no_acceleration",
+        "segmented_acceleration",
+    ),
+    (
+        "exit_aperture_plate_vs_no_acceleration",
+        "no_acceleration",
+        "exit_aperture_plate_acceleration",
+    ),
+    (
+        "exit_aperture_plate_vs_segmented",
+        "segmented_acceleration",
+        "exit_aperture_plate_acceleration",
+    ),
+)
 
 
 def _mean(values: list[float]) -> float:
@@ -170,6 +191,49 @@ def compare_pair(
     }
 
 
+def compare_modes(
+    left: dict[str, Any],
+    right: dict[str, Any],
+    *,
+    left_mode: str,
+    right_mode: str,
+) -> dict[str, Any]:
+    """Compare two declared modes with an explicit right-minus-left direction."""
+
+    if (
+        left["project_id"] != right["project_id"]
+        or left["particle_source_sha256"] != right["particle_source_sha256"]
+    ):
+        raise ValueError("paired campaign arms differ in project or particle source")
+    fields = (
+        "transmission",
+        "centered_spatial_rms_spread_mm",
+        "mean_direction_tilt_deg",
+        "centered_angular_rms_spread_deg",
+        "mean_energy_eV",
+        "centered_rms_energy_spread_eV",
+        "mean_elapsed_time_us",
+        "centered_rms_elapsed_time_spread_us",
+        "p95_radius_mm",
+        "p99_radius_mm",
+        "p95_divergence_deg",
+        "p99_divergence_deg",
+    )
+    return {
+        "left_mode": left_mode,
+        "right_mode": right_mode,
+        "left_run_id": left["run_id"],
+        "right_run_id": right["run_id"],
+        "centroid_shift_mm": math.hypot(
+            _delta(left, right, "centroid_x_mm"),
+            _delta(left, right, "centroid_y_mm"),
+        ),
+        "right_minus_left": {
+            field: _delta(left, right, field) for field in fields
+        },
+    }
+
+
 def analyze(arms: list[tuple[str, str, str, Path]]) -> dict[str, Any]:
     grouped: dict[str, dict[str, dict[str, Any]]] = {}
     series: list[dict[str, Any]] = []
@@ -182,21 +246,32 @@ def analyze(arms: list[tuple[str, str, str, Path]]) -> dict[str, Any]:
         summary.update({"family": family, "mode": mode, "label": label})
         grouped[family][mode] = summary
         series.append(summary)
-    comparisons = {}
+    comparisons: dict[str, dict[str, dict[str, Any]]] = {}
     for family, modes in grouped.items():
-        if set(modes) != MODES:
-            raise ValueError(f"family does not contain exactly two modes: {family}")
-        comparisons[family] = compare_pair(
-            modes["no_acceleration"], modes["segmented_acceleration"]
-        )
+        required_modes = {"no_acceleration", "segmented_acceleration"}
+        if not required_modes.issubset(modes):
+            raise ValueError(
+                "family must contain no-acceleration and segmented modes: "
+                f"{family}"
+            )
+        family_pairs = {}
+        for pair_id, left_mode, right_mode in PAIR_DEFINITIONS:
+            if left_mode in modes and right_mode in modes:
+                family_pairs[pair_id] = compare_modes(
+                    modes[left_mode],
+                    modes[right_mode],
+                    left_mode=left_mode,
+                    right_mode=right_mode,
+                )
+        comparisons[family] = family_pairs
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "role": "multipole_campaign_engineering_summary",
         "analysis_class": "POSTHOC_DESCRIPTIVE",
         "series": series,
         "comparisons": comparisons,
         "claim_limit": (
-            "N=100 SIMION handoff diagnostics for the declared six arms; "
+            "N=100 SIMION handoff diagnostics for the declared arms; "
             "not a convergence, optimization, solver-equivalence, Candidate, or Formal claim."
         ),
     }
@@ -204,12 +279,12 @@ def analyze(arms: list[tuple[str, str, str, Path]]) -> dict[str, Any]:
 
 def markdown_report(document: dict[str, Any]) -> str:
     lines = [
-        "# 多极杆无加速与分段加速 H15 对照",
+        "# 多极杆无加速、分段加速与出口带孔接口板加速 H15 对照",
         "",
         "本报告为 N=100 SIMION 事后工程描述。全部指标取规范 handoff 事件；"
         "它不证明数值收敛、最优设计、求解器等价、Candidate 或 Formal 资格。",
         "",
-        "## 六臂出口状态",
+        "## 各臂出口状态",
         "",
         "|系列|透射|质心 x / y (mm)|中心化空间 RMS (mm)|平均方向倾角 (°)|中心化角 RMS (°)|平均能量 / 展宽 (eV)|平均时间 / 展宽 (µs)|p95 半径 / 角度|",
         "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
@@ -227,26 +302,31 @@ def markdown_report(document: dict[str, Any]) -> str:
     lines.extend(
         [
             "",
-            "## 分段加速相对无加速的变化",
+            "## 模式间变化",
             "",
-            "正值表示分段加速更大，负值表示更小。",
+            "正值表示右侧模式更大，负值表示更小。",
             "",
-            "|家族|质心位移 (mm)|空间 RMS Δ (mm)|平均方向倾角 Δ (°)|角 RMS Δ (°)|平均能量 Δ (eV)|能量展宽 Δ (eV)|平均时间 Δ (µs)|p95 角度 Δ (°)|",
-            "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+            "|家族|比较（右−左）|质心位移 (mm)|空间 RMS Δ (mm)|平均方向倾角 Δ (°)|角 RMS Δ (°)|平均能量 Δ (eV)|能量展宽 Δ (eV)|平均时间 Δ (µs)|p95 角度 Δ (°)|",
+            "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|",
         ]
     )
-    for family, comparison in document["comparisons"].items():
-        delta = comparison["segmented_minus_no_acceleration"]
-        lines.append(
-            f"|{family}|{comparison['centroid_shift_mm']:.4f}|"
-            f"{delta['centered_spatial_rms_spread_mm']:.4f}|"
-            f"{delta['mean_direction_tilt_deg']:.4f}|"
-            f"{delta['centered_angular_rms_spread_deg']:.4f}|"
-            f"{delta['mean_energy_eV']:.4f}|"
-            f"{delta['centered_rms_energy_spread_eV']:.4f}|"
-            f"{delta['mean_elapsed_time_us']:.4f}|"
-            f"{delta['p95_divergence_deg']:.4f}|"
-        )
+    for family, family_pairs in document["comparisons"].items():
+        for comparison in family_pairs.values():
+            delta = comparison["right_minus_left"]
+            pair_label = (
+                f"{comparison['right_mode']} − {comparison['left_mode']}"
+            )
+            lines.append(
+                f"|{family}|{pair_label}|"
+                f"{comparison['centroid_shift_mm']:.4f}|"
+                f"{delta['centered_spatial_rms_spread_mm']:.4f}|"
+                f"{delta['mean_direction_tilt_deg']:.4f}|"
+                f"{delta['centered_angular_rms_spread_deg']:.4f}|"
+                f"{delta['mean_energy_eV']:.4f}|"
+                f"{delta['centered_rms_energy_spread_eV']:.4f}|"
+                f"{delta['mean_elapsed_time_us']:.4f}|"
+                f"{delta['p95_divergence_deg']:.4f}|"
+            )
     lines.extend(["", f"声明边界：{document['claim_limit']}", ""])
     return "\n".join(lines)
 

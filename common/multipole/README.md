@@ -167,6 +167,16 @@ Formal资格。质心分量、p95/p99尾部、时间中心/展宽及位置—角
 `exit_aperture_plate_acceleration`。三个arm必须绑定同一轴向几何identity、同一N=100/N=1000母样本
 前缀、同一求解器与除电压模式外的数值设置；公共层不保存项目电压值或验收阈值。
 
+2026-07-31又以声明式campaign完成SIMION H15 N=100三模式工程对照。已执行的无加速/分段加速表因
+run config冻结其SHA而保持不变；出口带孔接口板加速使用独立三行补充表，并由同一
+`campaign_analysis.py`合并九份manifest。九臂均为100/100。出口接口板加速相对无加速在四/六/八极杆
+分别把中心化空间RMS降低`0.0788/0.0542/0.0995 mm`，把中心化角RMS降低
+`2.5445/1.2797/0.6912°`。分段加速相对出口接口板加速的中心化角RMS再低
+`0.8558/0.2327/0.6438°`且平均飞行时间短约`8.30–8.69 µs`，但中心化空间RMS分别高
+`0.0076/0.0182/0.1563 mm`。因此前者是本批更强的空间收缩方案，后者是更强的角发散/快速通过方案；
+这只是同一H15离散下的N=100工程趋势，不是数值收敛或设计最优。完整表、运行身份和图路径见
+[`../../docs/history/20260731__multipole-three-mode-h15-n100.md`](../../docs/history/20260731__multipole-three-mode-h15-n100.md)。
+
 [`three_mode_dispersion.py`](three_mode_dispersion.py)只读取既有canonical component particle-state
 CSV。它保留完整源ID集合和各arm损失ID；传输以全源集合统计，半径、角发散、能量和TOF的配对连续量
 只在两个arm的共同幸存ID上计算。状态从规范交接面按`vz>0`作无场弹道投影，报告近接口统计面及

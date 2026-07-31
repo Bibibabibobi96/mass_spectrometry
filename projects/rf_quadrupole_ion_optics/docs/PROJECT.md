@@ -167,6 +167,10 @@ SIMION空间档也保持100/100和精确身份；COMSOL空间档在`MESH_COMPLET
 `../config/family_experiment/n100_segmented_rod_axial_acceleration_qualification.json`。
 出口孔板加速的对应记录在
 `../config/family_experiment/n100_exit_aperture_plate_acceleration_qualification.json`。
+2026-07-31声明式SIMION H15 N=100三模式对照中，出口孔板加速相对无加速把中心化空间/角RMS降低
+`0.0788 mm/2.5445°`；相对分段加速，空间RMS低`0.0076 mm`，但角RMS高`0.8558°`。统一九臂证据见
+[`../../../docs/history/20260731__multipole-three-mode-h15-n100.md`](../../../docs/history/20260731__multipole-three-mode-h15-n100.md)；
+该结果只用于工程取舍，不改变数值资格。
 
 ### RF+DC质量过滤
 

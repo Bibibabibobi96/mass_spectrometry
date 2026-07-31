@@ -137,6 +137,45 @@ class TransportCampaignTests(unittest.TestCase):
                 pilot["limits"]["maximum_pa_grid_points"], 35_000_000
             )
 
+    def test_checked_in_endface_campaign_resolves_canonical_third_arm(self) -> None:
+        path = (
+            REPO_ROOT
+            / "common"
+            / "multipole"
+            / "campaigns"
+            / "20260731__endface_h15_n100.json"
+        )
+        campaign = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(len(campaign["experiments"]), 3)
+        self.assertEqual(
+            {item["project_id"] for item in campaign["experiments"]},
+            {
+                "rf_quadrupole_ion_optics",
+                "rf_hexapole_ion_optics",
+                "rf_octupole_ion_optics",
+            },
+        )
+        for experiment in campaign["experiments"]:
+            self.assertEqual(
+                experiment["design_profile_id"],
+                "exit_aperture_plate_acceleration",
+            )
+            resolved = resolve_runtime_selection(
+                REPO_ROOT,
+                experiment["project_id"],
+                campaign_path=path,
+                experiment_id=experiment["experiment_id"],
+            )
+            design = resolved["design_profile_resolution"]["resolved_design"]
+            self.assertEqual(
+                design["axial_drive"]["topology"],
+                "exit_aperture_plate_potential_step",
+            )
+            self.assertEqual(
+                resolved["solver_numerics"]["simion"]["values"]["cell_mm_xyz"],
+                {"x": 0.15, "y": 0.15, "z": 0.2},
+            )
+
     def test_family_campaign_launcher_is_a_serial_thin_selector(self) -> None:
         source = (
             REPO_ROOT

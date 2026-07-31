@@ -159,6 +159,10 @@ COMSOL时间变化为`2.265%`并跨越大量固定分箱。径向离散是当前
 [`H15_result.json`](../config/qualification/radial_convergence_extension/H15_result.json)；数值收敛仍为
 `DEFERRED_NOT_WAIVED`。后续改用声明式实验计划表达四/八极杆和加速实验，不再为每一臂复制runtime、
 numerics、budget及历史SHA绑定。
+随后完成的声明式SIMION H15 N=100三模式对照中，出口孔板加速相对无加速把中心化空间/角RMS降低
+`0.0542 mm/1.2797°`；相对分段加速，空间RMS低`0.0182 mm`，但角RMS高`0.2327°`。统一九臂证据见
+[`../../../docs/history/20260731__multipole-three-mode-h15-n100.md`](../../../docs/history/20260731__multipole-three-mode-h15-n100.md)；
+该结果只用于工程取舍，不改变数值资格。
 2026-07-29已从三个真实baseline run为COMSOL和SIMION分别发布
 `POSTHOC_DESCRIPTIVE` binding和报告；它们固定声明非预注册、不计算bootstrap、不评价资格。正式
 `three_mode_dispersion_binding`仍须由运行前冻结完整统计设置的新run生成，不得把事后报告升级或
