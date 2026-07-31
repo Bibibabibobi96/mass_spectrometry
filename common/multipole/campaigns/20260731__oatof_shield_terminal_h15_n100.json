@@ -1,0 +1,126 @@
+{
+  "schema_version": 2,
+  "role": "multipole_transport_experiment_campaign",
+  "family_id": "rf_multipole_ion_optics",
+  "campaign_id": "20260731__oatof_shield_terminal_h15_n100",
+  "preregistered_before_run": true,
+  "downstream_terminal_profile": {
+    "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+    "terminal_profile_id": "oatof_shield_entry_gap1mm",
+    "registry_sha256": "10F26E707FE4D2E020B27112BED0C44537E314A0F8F7FA02C8081F4D0C42EDCC"
+  },
+  "experiments": [
+    {
+      "experiment_id": "quad_noacc_oatof_terminal_h15_n100",
+      "project_id": "rf_quadrupole_ion_optics",
+      "authorized_run_id": "20260731_233000__sim__simion__quad-noacc-oatof-terminal-h15-n100-r04",
+      "solver": "simion",
+      "stop_stage": "transport",
+      "design_profile_id": "no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "baseline_finite_3d",
+      "simion_solver_numerics": {
+        "kind": "inline",
+        "numerics_id": "campaign_h15_r015_z020_t160",
+        "values": {"cell_mm_xyz": {"x": 0.15, "y": 0.15, "z": 0.2}, "trajectory_quality": 10, "trajectory": {"rf_steps_per_period": 160, "maximum_global_time_us": 80.0}}
+      },
+      "retention_class": "compact",
+      "resource_authorization": {
+        "authorized": true,
+        "limits": {"wall_clock_seconds_by_solver": {"comsol": 1800, "simion": 2400}, "transient_run_directory_bytes": 8589934592, "process_tree_working_set_bytes": 8589934592, "minimum_system_available_memory_bytes": 8589934592, "compact_final_retained_bytes": 26214400, "maximum_pa_grid_points": 35000000, "automatic_retry_count": 0},
+        "full_matrix_authorization": {"authorized": false, "reason": "Only the nine explicitly preregistered SIMION rows are authorized."},
+        "budget_exhaustion_result": "Stop without retry and record the exhausted limit."
+      },
+      "claim_limit": "N=100 SIMION engineering arm for the unified downstream-owned oaTOF shield terminal; no convergence claim."
+    },
+    {
+      "experiment_id": "quad_segmented_oatof_terminal_h15_n100",
+      "project_id": "rf_quadrupole_ion_optics",
+      "authorized_run_id": "20260731_234000__sim__simion__quad-segmented-oatof-terminal-h15-n100-r02",
+      "solver": "simion", "stop_stage": "transport", "design_profile_id": "segmented_rod_axial_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100", "comsol_solver_numerics_profile_id": "baseline_finite_3d",
+      "simion_solver_numerics": {"kind": "inline", "numerics_id": "campaign_h15_r015_z020_t160", "values": {"cell_mm_xyz": {"x": 0.15, "y": 0.15, "z": 0.2}, "trajectory_quality": 10, "trajectory": {"rf_steps_per_period": 160, "maximum_global_time_us": 80.0}}},
+      "retention_class": "compact",
+      "resource_authorization": {"authorized": true, "limits": {"wall_clock_seconds_by_solver": {"comsol": 1800, "simion": 2400}, "transient_run_directory_bytes": 8589934592, "process_tree_working_set_bytes": 8589934592, "minimum_system_available_memory_bytes": 8589934592, "compact_final_retained_bytes": 26214400, "maximum_pa_grid_points": 35000000, "automatic_retry_count": 0}, "full_matrix_authorization": {"authorized": false, "reason": "Only the nine explicitly preregistered SIMION rows are authorized."}, "budget_exhaustion_result": "Stop without retry and record the exhausted limit."},
+      "claim_limit": "N=100 SIMION engineering arm for the unified downstream-owned oaTOF shield terminal; no convergence claim."
+    },
+    {
+      "experiment_id": "quad_terminal_step_oatof_terminal_h15_n100",
+      "project_id": "rf_quadrupole_ion_optics",
+      "authorized_run_id": "20260731_234100__sim__simion__quad-terminal-step-oatof-terminal-h15-n100-r02",
+      "solver": "simion", "stop_stage": "transport", "design_profile_id": "exit_aperture_plate_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100", "comsol_solver_numerics_profile_id": "baseline_finite_3d",
+      "simion_solver_numerics": {"kind": "inline", "numerics_id": "campaign_h15_r015_z020_t160", "values": {"cell_mm_xyz": {"x": 0.15, "y": 0.15, "z": 0.2}, "trajectory_quality": 10, "trajectory": {"rf_steps_per_period": 160, "maximum_global_time_us": 80.0}}},
+      "retention_class": "compact",
+      "resource_authorization": {"authorized": true, "limits": {"wall_clock_seconds_by_solver": {"comsol": 1800, "simion": 2400}, "transient_run_directory_bytes": 8589934592, "process_tree_working_set_bytes": 8589934592, "minimum_system_available_memory_bytes": 8589934592, "compact_final_retained_bytes": 26214400, "maximum_pa_grid_points": 35000000, "automatic_retry_count": 0}, "full_matrix_authorization": {"authorized": false, "reason": "Only the nine explicitly preregistered SIMION rows are authorized."}, "budget_exhaustion_result": "Stop without retry and record the exhausted limit."},
+      "claim_limit": "N=100 SIMION engineering arm for the unified downstream-owned oaTOF shield terminal; no convergence claim."
+    },
+    {
+      "experiment_id": "hex_noacc_oatof_terminal_h15_n100",
+      "project_id": "rf_hexapole_ion_optics",
+      "authorized_run_id": "20260731_210300__sim__simion__hex-noacc-oatof-terminal-h15-n100",
+      "solver": "simion", "stop_stage": "transport", "design_profile_id": "no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100", "comsol_solver_numerics_profile_id": "baseline_finite_3d",
+      "simion_solver_numerics": {"kind": "inline", "numerics_id": "campaign_h15_r015_z020_t160", "values": {"cell_mm_xyz": {"x": 0.15, "y": 0.15, "z": 0.2}, "trajectory_quality": 10, "trajectory": {"rf_steps_per_period": 160, "maximum_global_time_us": 80.0}}},
+      "retention_class": "compact",
+      "resource_authorization": {"authorized": true, "limits": {"wall_clock_seconds_by_solver": {"comsol": 1800, "simion": 2400}, "transient_run_directory_bytes": 8589934592, "process_tree_working_set_bytes": 8589934592, "minimum_system_available_memory_bytes": 8589934592, "compact_final_retained_bytes": 26214400, "maximum_pa_grid_points": 35000000, "automatic_retry_count": 0}, "full_matrix_authorization": {"authorized": false, "reason": "Only the nine explicitly preregistered SIMION rows are authorized."}, "budget_exhaustion_result": "Stop without retry and record the exhausted limit."},
+      "claim_limit": "N=100 SIMION engineering arm for the unified downstream-owned oaTOF shield terminal; no convergence claim."
+    },
+    {
+      "experiment_id": "hex_segmented_oatof_terminal_h15_n100",
+      "project_id": "rf_hexapole_ion_optics",
+      "authorized_run_id": "20260731_210400__sim__simion__hex-segmented-oatof-terminal-h15-n100",
+      "solver": "simion", "stop_stage": "transport", "design_profile_id": "segmented_rod_axial_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100", "comsol_solver_numerics_profile_id": "baseline_finite_3d",
+      "simion_solver_numerics": {"kind": "inline", "numerics_id": "campaign_h15_r015_z020_t160", "values": {"cell_mm_xyz": {"x": 0.15, "y": 0.15, "z": 0.2}, "trajectory_quality": 10, "trajectory": {"rf_steps_per_period": 160, "maximum_global_time_us": 80.0}}},
+      "retention_class": "compact",
+      "resource_authorization": {"authorized": true, "limits": {"wall_clock_seconds_by_solver": {"comsol": 1800, "simion": 2400}, "transient_run_directory_bytes": 8589934592, "process_tree_working_set_bytes": 8589934592, "minimum_system_available_memory_bytes": 8589934592, "compact_final_retained_bytes": 26214400, "maximum_pa_grid_points": 35000000, "automatic_retry_count": 0}, "full_matrix_authorization": {"authorized": false, "reason": "Only the nine explicitly preregistered SIMION rows are authorized."}, "budget_exhaustion_result": "Stop without retry and record the exhausted limit."},
+      "claim_limit": "N=100 SIMION engineering arm for the unified downstream-owned oaTOF shield terminal; no convergence claim."
+    },
+    {
+      "experiment_id": "hex_terminal_step_oatof_terminal_h15_n100",
+      "project_id": "rf_hexapole_ion_optics",
+      "authorized_run_id": "20260731_210500__sim__simion__hex-terminal-step-oatof-terminal-h15-n100",
+      "solver": "simion", "stop_stage": "transport", "design_profile_id": "exit_aperture_plate_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100", "comsol_solver_numerics_profile_id": "baseline_finite_3d",
+      "simion_solver_numerics": {"kind": "inline", "numerics_id": "campaign_h15_r015_z020_t160", "values": {"cell_mm_xyz": {"x": 0.15, "y": 0.15, "z": 0.2}, "trajectory_quality": 10, "trajectory": {"rf_steps_per_period": 160, "maximum_global_time_us": 80.0}}},
+      "retention_class": "compact",
+      "resource_authorization": {"authorized": true, "limits": {"wall_clock_seconds_by_solver": {"comsol": 1800, "simion": 2400}, "transient_run_directory_bytes": 8589934592, "process_tree_working_set_bytes": 8589934592, "minimum_system_available_memory_bytes": 8589934592, "compact_final_retained_bytes": 26214400, "maximum_pa_grid_points": 35000000, "automatic_retry_count": 0}, "full_matrix_authorization": {"authorized": false, "reason": "Only the nine explicitly preregistered SIMION rows are authorized."}, "budget_exhaustion_result": "Stop without retry and record the exhausted limit."},
+      "claim_limit": "N=100 SIMION engineering arm for the unified downstream-owned oaTOF shield terminal; no convergence claim."
+    },
+    {
+      "experiment_id": "oct_noacc_oatof_terminal_h15_n100",
+      "project_id": "rf_octupole_ion_optics",
+      "authorized_run_id": "20260731_210600__sim__simion__oct-noacc-oatof-terminal-h15-n100",
+      "solver": "simion", "stop_stage": "transport", "design_profile_id": "no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100", "comsol_solver_numerics_profile_id": "baseline_finite_3d",
+      "simion_solver_numerics": {"kind": "inline", "numerics_id": "campaign_h15_r015_z020_t160", "values": {"cell_mm_xyz": {"x": 0.15, "y": 0.15, "z": 0.2}, "trajectory_quality": 10, "trajectory": {"rf_steps_per_period": 160, "maximum_global_time_us": 80.0}}},
+      "retention_class": "compact",
+      "resource_authorization": {"authorized": true, "limits": {"wall_clock_seconds_by_solver": {"comsol": 1800, "simion": 2400}, "transient_run_directory_bytes": 8589934592, "process_tree_working_set_bytes": 8589934592, "minimum_system_available_memory_bytes": 8589934592, "compact_final_retained_bytes": 26214400, "maximum_pa_grid_points": 35000000, "automatic_retry_count": 0}, "full_matrix_authorization": {"authorized": false, "reason": "Only the nine explicitly preregistered SIMION rows are authorized."}, "budget_exhaustion_result": "Stop without retry and record the exhausted limit."},
+      "claim_limit": "N=100 SIMION engineering arm for the unified downstream-owned oaTOF shield terminal; no convergence claim."
+    },
+    {
+      "experiment_id": "oct_segmented_oatof_terminal_h15_n100",
+      "project_id": "rf_octupole_ion_optics",
+      "authorized_run_id": "20260731_210700__sim__simion__oct-segmented-oatof-terminal-h15-n100",
+      "solver": "simion", "stop_stage": "transport", "design_profile_id": "segmented_rod_axial_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100", "comsol_solver_numerics_profile_id": "baseline_finite_3d",
+      "simion_solver_numerics": {"kind": "inline", "numerics_id": "campaign_h15_r015_z020_t160", "values": {"cell_mm_xyz": {"x": 0.15, "y": 0.15, "z": 0.2}, "trajectory_quality": 10, "trajectory": {"rf_steps_per_period": 160, "maximum_global_time_us": 80.0}}},
+      "retention_class": "compact",
+      "resource_authorization": {"authorized": true, "limits": {"wall_clock_seconds_by_solver": {"comsol": 1800, "simion": 2400}, "transient_run_directory_bytes": 8589934592, "process_tree_working_set_bytes": 8589934592, "minimum_system_available_memory_bytes": 8589934592, "compact_final_retained_bytes": 26214400, "maximum_pa_grid_points": 35000000, "automatic_retry_count": 0}, "full_matrix_authorization": {"authorized": false, "reason": "Only the nine explicitly preregistered SIMION rows are authorized."}, "budget_exhaustion_result": "Stop without retry and record the exhausted limit."},
+      "claim_limit": "N=100 SIMION engineering arm for the unified downstream-owned oaTOF shield terminal; no convergence claim."
+    },
+    {
+      "experiment_id": "oct_terminal_step_oatof_terminal_h15_n100",
+      "project_id": "rf_octupole_ion_optics",
+      "authorized_run_id": "20260731_210800__sim__simion__oct-terminal-step-oatof-terminal-h15-n100",
+      "solver": "simion", "stop_stage": "transport", "design_profile_id": "exit_aperture_plate_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100", "comsol_solver_numerics_profile_id": "baseline_finite_3d",
+      "simion_solver_numerics": {"kind": "inline", "numerics_id": "campaign_h15_r015_z020_t160", "values": {"cell_mm_xyz": {"x": 0.15, "y": 0.15, "z": 0.2}, "trajectory_quality": 10, "trajectory": {"rf_steps_per_period": 160, "maximum_global_time_us": 80.0}}},
+      "retention_class": "compact",
+      "resource_authorization": {"authorized": true, "limits": {"wall_clock_seconds_by_solver": {"comsol": 1800, "simion": 2400}, "transient_run_directory_bytes": 8589934592, "process_tree_working_set_bytes": 8589934592, "minimum_system_available_memory_bytes": 8589934592, "compact_final_retained_bytes": 26214400, "maximum_pa_grid_points": 35000000, "automatic_retry_count": 0}, "full_matrix_authorization": {"authorized": false, "reason": "Only the nine explicitly preregistered SIMION rows are authorized."}, "budget_exhaustion_result": "Stop without retry and record the exhausted limit."},
+      "claim_limit": "N=100 SIMION engineering arm for the unified downstream-owned oaTOF shield terminal; no convergence claim."
+    }
+  ],
+  "claim_limit": "Nine N=100 SIMION engineering arms share one downstream-owned oaTOF shield terminal profile and H15 numerics; results cannot establish numerical convergence, cross-solver equivalence, Candidate, or Formal status."
+}

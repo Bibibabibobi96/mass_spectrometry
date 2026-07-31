@@ -4,7 +4,7 @@
   "project_id": "rf_octupole_ion_optics",
   "family_id": "rf_multipole_ion_optics",
   "operating_mode_registry": "config/operating_modes.json",
-  "operating_mode_registry_sha256": "72438035FB63582D993992337543DDCB39C999196FFD720756428C654F1907F9",
+  "operating_mode_registry_sha256": "6A3B16EB5E1D37A7AA5130ED61B5F108581F36397F598534E2C06FBCE83606E6",
   "profiles": [
     {
       "design_profile_id": "no_acceleration_full_length",

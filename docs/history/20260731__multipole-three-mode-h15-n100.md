@@ -10,12 +10,13 @@
 - 出口带孔接口板加速（历史简称“端面加速”）：四段杆均为`0 V`，出口带孔接口板为`-3 V`。
 
 本报告是N=100 SIMION事后工程描述，不证明数值收敛、最优设计、求解器等价、Candidate或Formal资格。
-统一坐标范围和固定24分箱图位于：
+统一坐标范围和固定24分箱图已从临时scratch正式发布到analysis run：
 
-`artifacts/projects/rf_hexapole_ion_optics/scratch/20260731__family-three-mode-h15-n100/exit_state_comparison.png`
+`artifacts/projects/rf_hexapole_ion_optics/runs/20260731_223000__analysis__python__multipole-three-mode-h15-n100/results/exit_state_comparison.png`
 
-对应figure manifest和机器摘要位于同一scratch目录。已执行的无加速/分段加速表由其run config冻结，
-因此未改写；新增出口接口板加速使用
+对应figure manifest、机器摘要和人类表格位于同一run的`results/`；该run的`run_config.json`、
+`summary.json`和成功`run_manifest.json`共同冻结九份来源manifest、canonical出口状态、当前绘图代码
+及全部输出。已执行的无加速/分段加速表由其run config冻结，因此未改写；新增出口接口板加速使用
 `common/multipole/campaigns/20260731__endface_h15_n100.json`三行补充表，再由同一分析器合并九份
 manifest。三个新run均完成26项输出复核，墙钟分别为`539.073/589.542/613.019 s`，自动重试为零。
 

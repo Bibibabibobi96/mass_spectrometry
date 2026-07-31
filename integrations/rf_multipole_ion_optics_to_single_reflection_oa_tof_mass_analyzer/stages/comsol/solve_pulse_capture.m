@@ -191,17 +191,18 @@ electricForce = cpt.create('ef1', 'ElectricForce', 3);
 electricForce.selection.named('sel_vac');
 electricForce.set('E_src', 'userdef');
 electricForce.set('E', { ...
-    sprintf('%.17g*(-d(Vrf,x))*sin(2*pi*%.17g[Hz]*t+%.17g)+(%s)*(-d(V,x))', rfScale, frequency, phase, gate), ...
-    sprintf('%.17g*(-d(Vrf,y))*sin(2*pi*%.17g[Hz]*t+%.17g)+(%s)*(-d(V,y))', rfScale, frequency, phase, gate), ...
-    sprintf('%.17g*(-d(Vrf,z))*sin(2*pi*%.17g[Hz]*t+%.17g)+(%s)*(-d(V,z))', rfScale, frequency, phase, gate)});
+    sprintf('(-d(Vaxial,x))+%.17g*(-d(Vrf,x))*sin(2*pi*%.17g[Hz]*t+%.17g)+(%s)*(-d(Voatof,x))', rfScale, frequency, phase, gate), ...
+    sprintf('(-d(Vaxial,y))+%.17g*(-d(Vrf,y))*sin(2*pi*%.17g[Hz]*t+%.17g)+(%s)*(-d(Voatof,y))', rfScale, frequency, phase, gate), ...
+    sprintf('(-d(Vaxial,z))+%.17g*(-d(Vrf,z))*sin(2*pi*%.17g[Hz]*t+%.17g)+(%s)*(-d(Voatof,z))', rfScale, frequency, phase, gate)});
 timeStep = 1/frequency/pre_pulse.particle_runtime.rf_steps_per_period;
 timeStart = max(0, min(releaseTimeUs(releaseIndices))*1e-6-timeStep);
 timeEnd = (pulseTimeUs+pulseWidthUs+pulse_capture.waveform.post_pulse_tracking_time_us)*1e-6;
 study = model.study.create('std2');
 time = study.create('time1', 'Transient');
 time.set('tlist', sprintf('range(%.17g,%.17g,%.17g)', timeStart, timeStep, timeEnd));
-time.setEntry('activate', 'es_static', false);
+time.setEntry('activate', 'es_axial_dc', false);
 time.setEntry('activate', 'es_rf', false);
+time.setEntry('activate', 'es_oatof_pulse', false);
 time.setEntry('activate', 'cpt', true);
 for releaseColumn = 1:numel(releaseIndices)
     cpt.feature(sprintf('rel%03d', releaseColumn)).set('StudyStep', 'std2/time1');

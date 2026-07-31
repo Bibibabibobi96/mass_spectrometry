@@ -5,7 +5,8 @@
     {
       "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
       "root": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
-      "profile_registry": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/connection_profiles.json"
+      "profile_registry": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/connection_profiles.json",
+      "downstream_terminal_profile_registry": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/downstream_terminal_profiles.json"
     }
   ]
 }

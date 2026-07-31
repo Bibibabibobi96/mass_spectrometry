@@ -107,6 +107,48 @@ def written_campaign(document: dict) -> Iterator[Path]:
 
 
 class TransportCampaignTests(unittest.TestCase):
+    def test_oatof_terminal_campaign_resolves_one_shared_terminal_for_nine_rows(
+        self,
+    ) -> None:
+        path = CAMPAIGN_ROOT / "20260731__oatof_shield_terminal_h15_n100.json"
+        campaign = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(campaign["schema_version"], 2)
+        self.assertEqual(len(campaign["experiments"]), 9)
+        self.assertEqual(
+            set(campaign["downstream_terminal_profile"]),
+            {"integration_id", "terminal_profile_id", "registry_sha256"},
+        )
+        for experiment in campaign["experiments"]:
+            self.assertNotIn("downstream_terminal_profile", experiment)
+            resolved = resolve_runtime_selection(
+                REPO_ROOT,
+                experiment["project_id"],
+                campaign_path=path,
+                experiment_id=experiment["experiment_id"],
+            )
+            terminal = resolved["design_profile_resolution"]["resolved_design"][
+                "downstream_terminal"
+            ]
+            self.assertEqual(terminal["owner"], "downstream")
+            self.assertEqual(terminal["surface_plane_z_mm"], 80.6)
+            self.assertEqual(terminal["rod_end_clearance_mm"], 1.0)
+            self.assertEqual(
+                terminal["aperture"],
+                {
+                    "shape": "rectangular",
+                    "width_mm": 1.0,
+                    "height_mm": 0.9,
+                    "width_axis": "multipole_x",
+                    "height_axis": "multipole_y",
+                },
+            )
+            self.assertFalse(terminal["upstream_terminal_electrode_present"])
+            self.assertEqual(
+                resolved["design_profile_resolution"]["resolved_design"]["axial_dc"]
+                ["terminal_electrode_potential_V"],
+                0.0,
+            )
+
     def test_checked_in_family_campaign_resolves_every_declared_row(self) -> None:
         path = (
             REPO_ROOT

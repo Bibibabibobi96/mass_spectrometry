@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "role": "multipole_downstream_terminal_profile_registry",
+  "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+  "compatible_upstream_family_id": "rf_multipole_ion_optics",
+  "allowed_upstream_project_ids": [
+    "rf_quadrupole_ion_optics",
+    "rf_hexapole_ion_optics",
+    "rf_octupole_ion_optics"
+  ],
+  "profiles": [
+    {
+      "terminal_profile_id": "oatof_shield_entry_gap1mm",
+      "owner": "downstream",
+      "surface_role": "aperture_outer_tangent_plane",
+      "rod_end_clearance_mm": 1.0,
+      "upstream_enclosure_end_plane_binding": "interfaces_mm.exit.aperture_plate_upstream_face_z_mm",
+      "electrode_thickness_mm": 4.0,
+      "outer_envelope": {
+        "shape": "rectangular",
+        "width_mm": 38.0,
+        "height_mm": 38.0
+      },
+      "aperture": {
+        "shape": "rectangular",
+        "width_mm": 1.0,
+        "height_mm": 0.9,
+        "width_axis": "multipole_x",
+        "height_axis": "multipole_y"
+      },
+      "terminal_potential_V": 0.0
+    }
+  ]
+}

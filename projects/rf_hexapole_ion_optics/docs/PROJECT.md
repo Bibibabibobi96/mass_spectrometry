@@ -162,7 +162,21 @@ numerics、budget及历史SHA绑定。
 随后完成的声明式SIMION H15 N=100三模式对照中，出口孔板加速相对无加速把中心化空间/角RMS降低
 `0.0542 mm/1.2797°`；相对分段加速，空间RMS低`0.0182 mm`，但角RMS高`0.2327°`。统一九臂证据见
 [`../../../docs/history/20260731__multipole-three-mode-h15-n100.md`](../../../docs/history/20260731__multipole-three-mode-h15-n100.md)；
-该结果只用于工程取舍，不改变数值资格。
+该结果只用于工程取舍，不改变数值资格。统一图组和机器摘要已发布为成功analysis run
+`20260731_223000__analysis__python__multipole-three-mode-h15-n100`，不再依赖scratch。包含本项目在内的
+家族18项既有比较已按当前ACTIVE六指标工程合同重分析为18/18 PASS；全矩阵最大质心位置、中心化
+空间展宽、平均方向、中心化角展宽、平均能量和中心化能量展宽差依次为`0.056798 mm`、
+`0.118671 mm`、`0.669877°`、`0.580952°`、`0.019592 eV`和`0.024395 eV`。机器run为
+`20260731_223100__analysis__python__multipole-engineering-reanalysis-active__r03`，统一记录见
+[`../../../docs/history/20260731__multipole-engineering-reanalysis-18-comparisons.md`](../../../docs/history/20260731__multipole-engineering-reanalysis-18-comparisons.md)；
+数值收敛仍为`DEFERRED_NOT_WAIVED`。
+随后统一oaTOF屏蔽罩终端H15 campaign完成9/9；六极杆无加速/分段/终端阶跃的handoff分别为
+`84/89/96`，穿过4 mm厚矩形孔后的terminal分别为`57/81/74`。分段模式给出全九臂最高terminal透射
+`81/100`、最高terminal/handoff`91.0%`和本项目最低中心化角RMS`2.8748°`；终端阶跃的handoff最多，
+但不能以入口计数替代厚孔后透射。完整对照见
+[`../../../docs/history/20260731__multipole-oatof-shield-terminal-h15-n100.md`](../../../docs/history/20260731__multipole-oatof-shield-terminal-h15-n100.md)。
+这是新矩形厚孔拓扑下的N=100事后工程结果，不可与旧独立末端板H15表作仅模式变化的配对比较；数值
+收敛仍未建立。
 2026-07-29已从三个真实baseline run为COMSOL和SIMION分别发布
 `POSTHOC_DESCRIPTIVE` binding和报告；它们固定声明非预注册、不计算bootstrap、不评价资格。正式
 `three_mode_dispersion_binding`仍须由运行前冻结完整统计设置的新run生成，不得把事后报告升级或

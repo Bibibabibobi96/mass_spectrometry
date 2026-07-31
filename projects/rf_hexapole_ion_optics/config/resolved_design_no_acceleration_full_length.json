@@ -28,7 +28,7 @@
     {
       "label": "operating_mode_registry__no_acceleration_full_length",
       "path": "projects/rf_hexapole_ion_optics/config/operating_modes.json",
-      "sha256": "8B03C419A537B398048E9F379F015CCC66A51970348CBE533175E910B54F0EF5"
+      "sha256": "6561E3EDD64E4443373BBD6B6A1EE4839C4D2BB61C8C78998A1CF4AD01850B67"
     },
     {
       "label": "optimization_envelope",
@@ -592,5 +592,5 @@
       ]
     }
   },
-  "resolved_sha256": "2195AD7789C1876EC81A1B4456D5DB2349EB27D91E7F88DA5D1335554B2BE059"
+  "resolved_sha256": "37C2ED1858B1A707E09DA9229932D7CE27A7ED2B9A8EC49560C3557239B15B5F"
 }

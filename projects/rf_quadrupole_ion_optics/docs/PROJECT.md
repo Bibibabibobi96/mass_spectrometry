@@ -170,7 +170,22 @@ SIMION空间档也保持100/100和精确身份；COMSOL空间档在`MESH_COMPLET
 2026-07-31声明式SIMION H15 N=100三模式对照中，出口孔板加速相对无加速把中心化空间/角RMS降低
 `0.0788 mm/2.5445°`；相对分段加速，空间RMS低`0.0076 mm`，但角RMS高`0.8558°`。统一九臂证据见
 [`../../../docs/history/20260731__multipole-three-mode-h15-n100.md`](../../../docs/history/20260731__multipole-three-mode-h15-n100.md)；
-该结果只用于工程取舍，不改变数值资格。
+该结果只用于工程取舍，不改变数值资格。统一图组和机器摘要已发布为成功analysis run
+`20260731_223000__analysis__python__multipole-three-mode-h15-n100`，不再依赖scratch。
+同日另以当前ACTIVE六指标工程合同正式评价无加速T→H15相邻横向加密：质心位置、中心化空间展宽、
+平均方向、中心化角展宽、平均能量和中心化能量展宽差依次为`0.008413 mm`、`0.000188 mm`、
+`0.250108°`、`0.142313°`、`0.002427 eV`和`0.000739 eV`，机器结论为`PASS`；analysis run为
+`20260731_223200__analysis__python__quad-simion-t-to-h15`。它只允许工程推进，数值收敛仍为
+`DEFERRED_NOT_WAIVED`。包含本项目在内的家族18项既有比较也已按ACTIVE合同重分析为18/18 PASS，
+统一记录见
+[`../../../docs/history/20260731__multipole-engineering-reanalysis-18-comparisons.md`](../../../docs/history/20260731__multipole-engineering-reanalysis-18-comparisons.md)。
+随后统一oaTOF屏蔽罩终端H15 campaign完成9/9；四极杆无加速/分段/终端阶跃的handoff分别为
+`83/95/94`，穿过4 mm厚矩形孔后的terminal分别为`31/59/38`。分段模式给出本项目最高terminal透射
+`59/100`和最低中心化角RMS`5.7398°`，终端阶跃给出最小handoff中心化空间RMS`0.2737 mm`。
+handoff是屏蔽罩开孔外侧切平面入口，不能与terminal混称；完整对照见
+[`../../../docs/history/20260731__multipole-oatof-shield-terminal-h15-n100.md`](../../../docs/history/20260731__multipole-oatof-shield-terminal-h15-n100.md)。
+这是新矩形厚孔拓扑下的N=100事后工程结果，不可与旧独立末端板H15表作仅模式变化的配对比较，也不
+改变数值资格。
 
 ### RF+DC质量过滤
 

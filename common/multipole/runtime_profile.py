@@ -10,6 +10,10 @@ from typing import Any
 
 from common.contracts.machine_contracts import ContractError, validate_schema
 from common.multipole.design_profile import resolve_design_profile
+from common.multipole.downstream_terminal import (
+    compose_downstream_terminal,
+    select_downstream_terminal_profile,
+)
 from common.multipole.simion_numerics import normalize_simion_solver_numerics
 
 
@@ -207,6 +211,60 @@ def _campaign_file(repo_root: Path, path: Path) -> Path:
     return candidate
 
 
+def _resolve_downstream_terminal_profile(
+    repo_root: Path, binding: dict[str, Any]
+) -> dict[str, Any]:
+    """Resolve one integration-owned terminal profile without project copies."""
+
+    _require_keys(
+        binding,
+        {"integration_id", "terminal_profile_id", "registry_sha256"},
+        "downstream-terminal campaign binding",
+    )
+    discovery_path = repo_root / "integrations" / "registry.json"
+    discovery = _load(discovery_path)
+    validate_schema(discovery, "integration_registry.schema.json")
+    matches = [
+        item
+        for item in discovery["integrations"]
+        if item["integration_id"] == binding["integration_id"]
+    ]
+    if len(matches) != 1:
+        raise ValueError("downstream-terminal integration identity is not unique")
+    relative = matches[0].get("downstream_terminal_profile_registry")
+    if not isinstance(relative, str) or not relative:
+        raise ValueError("integration omits its downstream-terminal profile registry")
+    registry_path = (repo_root / relative).resolve()
+    if not registry_path.is_relative_to(repo_root) or not registry_path.is_file():
+        raise ValueError("downstream-terminal profile registry is missing or escapes the repository")
+    registry_sha256 = _sha256(registry_path)
+    if registry_sha256 != binding["registry_sha256"]:
+        raise ValueError("downstream-terminal profile registry SHA-256 differs")
+    registry = _load(registry_path)
+    validate_schema(registry, "multipole_downstream_terminal_profiles.schema.json")
+    if (
+        registry["integration_id"] != binding["integration_id"]
+        or registry["compatible_upstream_family_id"] != "rf_multipole_ion_optics"
+    ):
+        raise ValueError("downstream-terminal profile registry identity differs")
+    selected = [
+        item
+        for item in registry["profiles"]
+        if item["terminal_profile_id"] == binding["terminal_profile_id"]
+    ]
+    if len(selected) != 1:
+        raise ValueError("downstream-terminal profile identity is not unique")
+    return {
+        "integration_id": binding["integration_id"],
+        "terminal_profile_id": binding["terminal_profile_id"],
+        "registry_path": str(registry_path),
+        "registry_sha256": registry_sha256,
+        "profile": selected[0],
+        "discovery_path": str(discovery_path.resolve()),
+        "discovery_sha256": _sha256(discovery_path),
+    }
+
+
 def _serializable_design(design: dict[str, Any]) -> dict[str, Any]:
     return {
         **design,
@@ -345,9 +403,24 @@ def resolve_campaign_experiment(
     if experiment["project_id"] != project_id:
         raise ValueError("campaign experiment project identity differs")
 
+    downstream_terminal = None
+    if campaign["schema_version"] == 2:
+        downstream_terminal = _resolve_downstream_terminal_profile(
+            repo_root, campaign["downstream_terminal_profile"]
+        )
+
     design = resolve_design_profile(
         repo_root, project_id, experiment["design_profile_id"]
     )
+    if downstream_terminal is not None:
+        terminal_profile = select_downstream_terminal_profile(
+            _load(Path(downstream_terminal["registry_path"])),
+            downstream_terminal["terminal_profile_id"],
+            upstream_project_id=project_id,
+        )
+        design["resolved_design"] = compose_downstream_terminal(
+            design["resolved_design"], terminal_profile
+        )
     source = _resolve_particle_source(
         repo_root,
         project_root,
@@ -411,7 +484,7 @@ def resolve_campaign_experiment(
         "budget_exhaustion_result": authorization["budget_exhaustion_result"],
         "claim_limit": experiment["claim_limit"],
     }
-    return {
+    result = {
         "schema_version": 1,
         "role": "multipole_resolved_runtime_profile",
         "project_id": project_id,
@@ -441,6 +514,9 @@ def resolve_campaign_experiment(
             "runtime_profile_registry_sha256": _sha256(runtime_registry_path),
         },
     }
+    if downstream_terminal is not None:
+        result["downstream_terminal_profile"] = downstream_terminal
+    return result
 
 
 def resolve_runtime_selection(

@@ -308,12 +308,17 @@ class ThreeModeRuntimeAndQualificationTests(unittest.TestCase):
         invariant = json.loads(invariant_path.read_text(encoding="utf-8"))
         invariant_sha256 = hashlib.sha256(invariant_path.read_bytes()).hexdigest().upper()
         mechanical = invariant["mechanical_baseline"]
-        expected_voltages = {
+        frozen_voltages = {
             "no_acceleration_full_length": [0.0, 0.0, 0.0, 0.0],
             "segmented_rod_axial_acceleration": [0.0, -1.0, -2.0, -3.0],
             "exit_aperture_plate_acceleration": [0.0, 0.0, 0.0, 0.0],
         }
-        for mode_id, expected in expected_voltages.items():
+        active_voltages = {
+            "no_acceleration_full_length": [0.0, 0.0, 0.0, 0.0],
+            "segmented_rod_axial_acceleration": [3.0, 2.0, 1.0, 0.0],
+            "exit_aperture_plate_acceleration": [3.0, 3.0, 3.0, 3.0],
+        }
+        for mode_id, expected in active_voltages.items():
             resolved = resolve_design_profile(
                 REPO_ROOT,
                 "rf_octupole_ion_optics",
@@ -324,7 +329,10 @@ class ThreeModeRuntimeAndQualificationTests(unittest.TestCase):
                 voltage["geometry_invariant_sha256"],
                 invariant_sha256,
             )
-            self.assertEqual(voltage["rod_segment_common_mode_V"], expected)
+            self.assertEqual(
+                voltage["rod_segment_common_mode_V"],
+                frozen_voltages[mode_id],
+            )
             self.assertEqual(
                 [
                     item["common_mode_V"]

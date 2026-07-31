@@ -46,6 +46,17 @@ class ThreeModeDesignConfigurationTests(unittest.TestCase):
         validate_schema(self.envelope, "optimization_envelope.schema.json")
         validate_schema(self.modes, "multipole_operating_modes.schema.json")
         validate_schema(self.profiles, "design_profiles.schema.json")
+        self.assertEqual(self.modes["terminal_reference_V"], 0.0)
+        self.assertEqual(
+            [
+                (
+                    item["rod_entrance_relative_to_terminal_V"],
+                    item["rod_exit_relative_to_terminal_V"],
+                )
+                for item in self.modes["modes"]
+            ],
+            [(0.0, 0.0), (3.0, 0.0), (3.0, 3.0)],
+        )
         profile_items = self.profiles["profiles"]
         canonical_profiles = [
             item for item in profile_items if item["design_profile_id"] in MODE_IDS
@@ -181,7 +192,18 @@ class ThreeModeDesignConfigurationTests(unittest.TestCase):
         for resolved in self.resolved.values():
             self.assertEqual(resolved["geometry_mm"], reference["geometry_mm"])
             self.assertEqual(resolved["interfaces_mm"], reference["interfaces_mm"])
-            self.assertEqual(resolved["drive"], reference["drive"])
+            self.assertEqual(
+                {
+                    key: value
+                    for key, value in resolved["drive"].items()
+                    if key != "common_mode_offset_V"
+                },
+                {
+                    key: value
+                    for key, value in reference["drive"].items()
+                    if key != "common_mode_offset_V"
+                },
+            )
             self.assertEqual(resolved["particle_source"], reference["particle_source"])
             physical_electrodes = [
                 {key: value for key, value in item.items() if key != "common_mode_V"}
@@ -198,8 +220,8 @@ class ThreeModeDesignConfigurationTests(unittest.TestCase):
             self.assertEqual(physical_electrodes, reference_electrodes)
         expected = {
             "no_acceleration_full_length": ([0.0, 0.0, 0.0, 0.0], 0.0),
-            "segmented_rod_axial_acceleration": ([0.0, -1.0, -2.0, -3.0], -3.0),
-            "exit_aperture_plate_acceleration": ([0.0, 0.0, 0.0, 0.0], -3.0),
+            "segmented_rod_axial_acceleration": ([3.0, 2.0, 1.0, 0.0], 0.0),
+            "exit_aperture_plate_acceleration": ([3.0, 3.0, 3.0, 3.0], 0.0),
         }
         for mode_id, (rod_voltages, plate_voltage) in expected.items():
             resolved = self.resolved[mode_id]

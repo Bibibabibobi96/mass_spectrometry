@@ -39,7 +39,7 @@ if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
 $campaign = Get-Content -LiteralPath $candidate -Raw -Encoding UTF8 |
   ConvertFrom-Json
 if (
-  [int]$campaign.schema_version -ne 1 -or
+  [int]$campaign.schema_version -notin @(1, 2) -or
   [string]$campaign.role -ne 'multipole_transport_experiment_campaign'
 ) {
   throw 'Campaign identity differs.'

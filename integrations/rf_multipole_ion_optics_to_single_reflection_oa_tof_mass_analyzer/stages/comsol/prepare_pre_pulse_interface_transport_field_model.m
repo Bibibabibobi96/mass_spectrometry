@@ -73,35 +73,38 @@ function create_field_physics(model, comp, context, resolvedConnection, sharedJo
 material = model.material.create('mat_vac', 'Common');
 material.selection.named('sel_vac');
 material.propertyGroup('def').set('relpermittivity', {'1'});
-esStatic = comp.physics.create('es_static', 'Electrostatics', 'geom1');
-esStatic.selection.named('sel_vac');
-esStatic.field('electricpotential').field('V');
-esStatic.field('electricpotential').component({'V'});
+esAxial = comp.physics.create('es_axial_dc', 'Electrostatics', 'geom1');
+esAxial.selection.named('sel_vac');
+esAxial.field('electricpotential').field('Vaxial');
+esAxial.field('electricpotential').component({'Vaxial'});
 esRf = comp.physics.create('es_rf', 'Electrostatics', 'geom1');
 esRf.selection.named('sel_vac');
 esRf.field('electricpotential').field('Vrf');
 esRf.field('electricpotential').component({'Vrf'});
+esOatof = comp.physics.create('es_oatof_pulse', 'Electrostatics', 'geom1');
+esOatof.selection.named('sel_vac');
+esOatof.field('electricpotential').field('Voatof');
+esOatof.field('electricpotential').component({'Voatof'});
 
-set_potential(esStatic, 'repeller', 'selb_repeller', oa.electrodes_V.repeller);
-set_potential(esStatic, 'accelshield', 'selb_accelshield', 0);
-set_potential(esStatic, 'grid1', 'selb_grid1', oa.electrodes_V.grid1);
-set_potential(esStatic, 'grid2', 'selb_grid2', 0);
+oatofTags = [{'repeller','accelshield'}, context.accelerator_ring_tags];
+for index = 1:numel(oatofTags)
+    name = oatofTags{index};
+    set_potential(esAxial, ['g_' name], ['selb_' name], 0);
+end
+set_potential(esAxial, 'g_grid1', 'selb_grid1', 0);
+set_potential(esAxial, 'g_grid2', 'selb_grid2', 0);
 if context.connector_present
-    set_potential(esStatic, 'connector', 'selb_connector_wall', ...
-        context.interface_potential_V);
+    set_potential(esAxial, 'connector', 'selb_connector_wall', 0);
 end
 for index = 1:numel(context.rf_ground_tags)
     name = context.rf_ground_tags{index};
-    set_potential(esStatic, name, ['selb_' name], context.interface_potential_V);
+    set_potential(esAxial, name, ['selb_' name], ...
+        context.rf_upstream_hardware_potential_V);
 end
 for index = 1:numel(context.rf_rod_tags)
     name = context.rf_rod_tags{index};
-    set_potential(esStatic, name, ['selb_' name], context.interface_potential_V);
-end
-for index = 1:numel(context.accelerator_ring_tags)
-    name = context.accelerator_ring_tags{index};
-    set_potential(esStatic, sprintf('ring%d', index), ['selb_' name], ...
-        oa.electrodes_V.grid1*(1-index/(numel(context.accelerator_ring_tags)+1)));
+    set_potential(esAxial, name, ['selb_' name], ...
+        context.rf_rod_common_mode_V(index));
 end
 
 groundedTags = [{'repeller','accelshield'}, context.rf_ground_tags, ...
@@ -134,6 +137,27 @@ if numel(unitPattern) == numel(context.rf_rod_tags)
     expectedPattern = unitMagnitude*(3-2*context.rf_rod_electrode_groups);
     assert(all(abs(unitPattern-expectedPattern) <= 1e-12,'all'), ...
         'Legacy per-rod RF unit pattern differs from resolved electrode groups.');
+end
+
+set_potential(esOatof, 'repeller', 'selb_repeller', oa.electrodes_V.repeller);
+set_potential(esOatof, 'accelshield', 'selb_accelshield', 0);
+set_potential(esOatof, 'grid1', 'selb_grid1', oa.electrodes_V.grid1);
+set_potential(esOatof, 'grid2', 'selb_grid2', 0);
+if context.connector_present
+    set_potential(esOatof, 'connector', 'selb_connector_wall', 0);
+end
+for index = 1:numel(context.rf_ground_tags)
+    name = context.rf_ground_tags{index};
+    set_potential(esOatof, ['g_' name], ['selb_' name], 0);
+end
+for index = 1:numel(context.rf_rod_tags)
+    name = context.rf_rod_tags{index};
+    set_potential(esOatof, ['g_' name], ['selb_' name], 0);
+end
+for index = 1:numel(context.accelerator_ring_tags)
+    name = context.accelerator_ring_tags{index};
+    set_potential(esOatof, sprintf('ring%d', index), ['selb_' name], ...
+        oa.electrodes_V.grid1*(1-index/(numel(context.accelerator_ring_tags)+1)));
 end
 assert(abs(resolvedConnection.port_geometry.upstream.mating_surface.potential_V- ...
     resolvedConnection.port_geometry.downstream.mating_surface.potential_V) <= ...

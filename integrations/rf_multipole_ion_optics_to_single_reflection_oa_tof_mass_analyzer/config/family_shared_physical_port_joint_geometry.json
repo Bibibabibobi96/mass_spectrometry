@@ -1,14 +1,16 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "role": "rf_to_oatof_shared_physical_port_joint_geometry",
   "status": "authoritative_for_family_connector_and_pulse_stages",
   "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
   "consumer_scope": "rf_multipole_no_acceleration_full_length_family",
-  "scope": "Family-neutral direct-mating physical port and local joint geometry; family rod count, drive pattern and resolved geometry are consumed from the selected runtime binding.",
+  "scope": "Family-neutral oaTOF-shield terminal electrode and local joint geometry; family rod count, drive pattern and resolved geometry are consumed from the selected runtime binding.",
   "authoritative_inputs": {
     "rf_resolved_geometry": "runtime_binding.contracts.upstream_resolved_design",
     "resolved_connection": "runtime_resolved_connection",
-    "oatof_baseline": "dependency_contract:oatof_baseline"
+    "oatof_baseline": "dependency_contract:oatof_baseline",
+    "downstream_terminal_profile_registry": "config/downstream_terminal_profiles.json",
+    "downstream_terminal_profile_id": "oatof_shield_entry_gap1mm"
   },
   "physical_boundaries": {
     "source_exit_surface": {
@@ -28,12 +30,10 @@
         }
       },
       "physical_aperture": {
-        "shape": "circle",
-        "radius_mm": 3.6,
-        "source_binding": {
-          "source_input": "rf_resolved_geometry",
-          "json_pointer": "/interfaces_mm/exit/aperture_radius_mm"
-        }
+        "shape": "rectangle",
+        "full_width_y_mm": 1.0,
+        "full_height_z_mm": 0.9,
+        "source_binding": "resolved_connection:/transition_aperture"
       }
     },
     "target_entry_surface": {
@@ -55,7 +55,17 @@
         "rf_resolved_geometry:/drive/common_mode_offset_V",
         "oatof_baseline:/electrodes_V/shield"
       ],
-      "scope": "Nominal ideal direct-mating reference only."
+      "scope": "The oaTOF shield is the downstream-owned terminal electrode and remains the zero-volt reference."
+    },
+    "terminal_electrode": {
+      "owner": "downstream",
+      "terminal_profile_id": "oatof_shield_entry_gap1mm",
+      "component_id": "single_reflection_oa_tof_mass_analyzer",
+      "geometry_tag": "accelshield",
+      "serves_as_multipole_exit_aperture_electrode": true,
+      "separate_upstream_exit_plate_allowed": false,
+      "potential_V": 0.0,
+      "potential_binding": "rf_resolved_geometry:/downstream_terminal/terminal_potential_V"
     }
   },
   "nominal_registration": {
@@ -66,6 +76,14 @@
     "target_entry_center_instrument_mm": [-67.8, 0.0, -18.42918680341103],
     "direct_mating_gap_mm": 0.0,
     "axis_mapping": "multipole +z -> oa +x; multipole +x -> oa +y; multipole +y -> oa +z"
+  },
+  "terminal_geometry": {
+    "rod_end_to_terminal_outer_face_mm": 1.0,
+    "rod_end_binding": "rf_resolved_geometry:/geometry_mm/rod_array/rods[*]/z_max_mm",
+    "terminal_outer_face_binding": "rf_resolved_geometry:/interfaces_mm/exit/handoff_plane_z_mm",
+    "terminal_aperture_shape": "rectangle",
+    "terminal_aperture_binding": "rf_resolved_geometry:/downstream_terminal/aperture",
+    "interference_policy": "downstream_owned_terminal_replaces_upstream_exit_plate"
   },
   "local_domain": {
     "rf_shield_inner_radius_mm": 19.776,
@@ -81,11 +99,26 @@
   },
   "field_basis": {
     "shared_geometry_required": true,
+    "superposition_order": ["axial_dc", "rf_unit", "oatof_pulse"],
+    "axial_dc": {
+      "always_enabled": true,
+      "rod_common_mode_source": "rf_resolved_geometry:/axial_dc/rod_electrodes",
+      "upstream_grounded_hardware_source": "rf_resolved_geometry:/axial_dc",
+      "terminal_electrode_potential_source": "rf_resolved_geometry:/axial_dc/terminal_electrode_potential_V",
+      "all_oatof_pulse_electrodes_V": 0.0
+    },
     "rf_unit": {
       "rod_differential_pattern_V": [100.0, -100.0],
       "rod_assignment_source": "rf_resolved_geometry:/geometry_mm/rod_array/rods[*]/electrode_group",
       "all_oatof_electrodes_and_grounded_hardware_V": 0.0,
       "runtime_scale": "V_rf_peak/100[V] * sin(2*pi*f_rf*instrument_time + phase)"
+    },
+    "oatof_pulse": {
+      "runtime_scale": "pulse_schedule_gate",
+      "shield_potential_V": 0.0,
+      "grid2_potential_V": 0.0,
+      "nominal_electrode_differences_source": "oatof_baseline:/electrodes_V",
+      "all_multipole_hardware_V": 0.0
     }
   }
 }

@@ -1,29 +1,27 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "role": "multipole_typed_operating_mode_registry",
   "project_id": "rf_quadrupole_ion_optics",
   "family_id": "rf_multipole_ion_optics",
+  "terminal_reference_V": 0.0,
   "modes": [
     {
       "mode_id": "no_acceleration_full_length",
       "axial_drive_topology": "none",
-      "rod_segment_entrance_common_mode_V": 0.0,
-      "rod_segment_exit_common_mode_V": 0.0,
-      "exit_aperture_plate_and_connector_V": 0.0
+      "rod_entrance_relative_to_terminal_V": 0.0,
+      "rod_exit_relative_to_terminal_V": 0.0
     },
     {
       "mode_id": "segmented_rod_axial_acceleration",
       "axial_drive_topology": "segmented_rod_axial_acceleration",
-      "rod_segment_entrance_common_mode_V": 0.0,
-      "rod_segment_exit_common_mode_V": -3.0,
-      "exit_aperture_plate_and_connector_V": -3.0
+      "rod_entrance_relative_to_terminal_V": 3.0,
+      "rod_exit_relative_to_terminal_V": 0.0
     },
     {
       "mode_id": "exit_aperture_plate_acceleration",
       "axial_drive_topology": "exit_aperture_plate_potential_step",
-      "rod_segment_entrance_common_mode_V": 0.0,
-      "rod_segment_exit_common_mode_V": 0.0,
-      "exit_aperture_plate_and_connector_V": -3.0
+      "rod_entrance_relative_to_terminal_V": 3.0,
+      "rod_exit_relative_to_terminal_V": 3.0
     }
   ]
 }

@@ -12,7 +12,7 @@
     "oatof_baseline": "dependency_contract:oatof_baseline"
   },
   "field_runtime": {
-    "included_bases": ["time_dependent_rf", "oatof_static"],
+    "included_bases": ["axial_dc", "time_dependent_rf"],
     "pulse_enabled": false,
     "magnetic_field_enabled": false,
     "collision_or_space_charge_enabled": false,

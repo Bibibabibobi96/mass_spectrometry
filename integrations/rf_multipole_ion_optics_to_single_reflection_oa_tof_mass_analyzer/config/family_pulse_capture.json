@@ -11,6 +11,8 @@
     "oatof_baseline": "dependency_contract:oatof_baseline"
   },
   "waveform": {
+    "always_enabled_bases": ["axial_dc", "time_dependent_rf"],
+    "pulsed_basis": "oatof_pulse",
     "pre_pulse_oatof_field_scale": 0.0,
     "pulse_oatof_field_scale": 1.0,
     "post_pulse_oatof_field_scale": 0.0,

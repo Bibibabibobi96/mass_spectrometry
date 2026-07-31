@@ -53,6 +53,7 @@ local handoff_plane_mm
 local census_plane_mm
 local numerical_census_marker_threshold_mm
 local census_radius_mm
+local handoff_aperture
 local radial_escape_radius_mm
 local axial_axis
 local origin_x_mm
@@ -99,6 +100,15 @@ handoff_plane_mm = assert(run_config.handoff_plane_mm)
 census_plane_mm = assert(run_config.census_plane_mm)
 numerical_census_marker_threshold_mm = assert(run_config.numerical_census_marker_threshold_mm)
 census_radius_mm = assert(run_config.census_radius_mm)
+handoff_aperture = run_config.handoff_aperture
+if handoff_aperture then
+  assert(handoff_aperture.shape == 'rectangular' or handoff_aperture.shape == 'circular',
+    'handoff aperture shape must be rectangular or circular')
+  assert(handoff_aperture.width_mm and handoff_aperture.width_mm > 0,
+    'handoff aperture width must be positive')
+  assert(handoff_aperture.height_mm and handoff_aperture.height_mm > 0,
+    'handoff aperture height must be positive')
+end
 radial_escape_radius_mm = assert(run_config.radial_escape_radius_mm)
 axial_axis = run_config.axial_axis or 'x'
 assert(axial_axis == 'x' or axial_axis == 'z', 'axial_axis must be x or z')
@@ -112,12 +122,13 @@ axial_scale = run_config.axial_scale or 0
 assert(axial_scale == 0 or axial_scale == 1, 'axial_scale must be zero or one')
 segmented_rod_electrodes = run_config.segmented_rod_electrodes
 if segmented_rod_electrodes then
-  assert(#segmented_rod_electrodes >= 4, 'segmented rod electrode table is incomplete')
+  assert(#segmented_rod_electrodes >= 2, 'rod electrode table is incomplete')
   assert(run_config.ground_electrode_id, 'ground electrode id is missing')
   assert(run_config.output_electrode_id, 'output electrode id is missing')
   assert(run_config.ground_reference_v, 'ground reference voltage is missing')
   assert(run_config.output_reference_v, 'output reference voltage is missing')
 end
+
 local omega = transport_frequency_hz * 1E-6 * 2 * math.pi
 local phase = transport_phase_deg * math.pi / 180
 
@@ -138,6 +149,17 @@ end
 
 local function radial_mm(state)
   return math.sqrt(state.y^2 + state.z^2)
+end
+
+local function inside_handoff_aperture(state)
+  if not handoff_aperture then
+    return radial_mm(state) <= census_radius_mm
+  end
+  if handoff_aperture.shape == 'rectangular' then
+    return math.abs(state.y) <= handoff_aperture.width_mm / 2 and
+      math.abs(state.z) <= handoff_aperture.height_mm / 2
+  end
+  return radial_mm(state) <= handoff_aperture.width_mm / 2
 end
 
 local function write_trajectory(particle, state)
@@ -315,13 +337,13 @@ function segment.other_actions()
     end
     if not crossed_handoff[ion_number] and previous.x < handoff_plane_mm and current_x >= handoff_plane_mm then
       local handoff = interpolate_state(previous, current, handoff_plane_mm)
-      local accepted = radial_mm(handoff) <= census_radius_mm
+      local accepted = inside_handoff_aperture(handoff)
       write_particle_state(ion_number, 'handoff', accepted and 'transmitted' or 'lost',
-        accepted and 'none' or 'acceptance_radius', handoff)
+        accepted and 'none' or 'acceptance_aperture', handoff)
       crossed_handoff[ion_number] = true
       handoff_state[ion_number] = handoff
       if not accepted then
-        write_particle_state(ion_number, 'terminal', 'lost', 'acceptance_radius', handoff)
+        write_particle_state(ion_number, 'terminal', 'lost', 'acceptance_aperture', handoff)
         write_trajectory(ion_number, handoff)
         terminal_written[ion_number] = true
         ion_splat = -6
@@ -354,7 +376,7 @@ local function finalize_particle(particle, current)
   end
   local radius = radial_mm(terminal_state)
   local hit = census_counted[particle] and census_hit[particle] or
-    (crossed and radius <= census_radius_mm)
+    (crossed and inside_handoff_aperture(terminal_state))
   if not census_counted[particle] then
     if crossed then crossings = crossings + 1 end
     if hit then hits = hits + 1 end

@@ -56,6 +56,18 @@ class FamilyExperimentProfileTests(unittest.TestCase):
             if profile["design_profile_id"] in MODE_IDS
         ]
         self.assertEqual({profile["mode_id"] for profile in current}, set(MODE_IDS))
+        modes = load("config/operating_modes.json")
+        self.assertEqual(modes["terminal_reference_V"], 0.0)
+        self.assertEqual(
+            [
+                (
+                    item["rod_entrance_relative_to_terminal_V"],
+                    item["rod_exit_relative_to_terminal_V"],
+                )
+                for item in modes["modes"]
+            ],
+            [(0.0, 0.0), (3.0, 0.0), (3.0, 3.0)],
+        )
         for key in ("design_request", "design_variables", "optimization_envelope"):
             self.assertEqual({profile[key] for profile in current}, {
                 {
@@ -162,8 +174,8 @@ class FamilyExperimentProfileTests(unittest.TestCase):
     def test_modes_differ_only_by_registered_electrical_assignments(self) -> None:
         expected = {
             "no_acceleration_full_length": ([0.0, 0.0, 0.0, 0.0], 0.0),
-            "segmented_rod_axial_acceleration": ([0.0, -1.0, -2.0, -3.0], -3.0),
-            "exit_aperture_plate_acceleration": ([0.0, 0.0, 0.0, 0.0], -3.0),
+            "segmented_rod_axial_acceleration": ([3.0, 2.0, 1.0, 0.0], 0.0),
+            "exit_aperture_plate_acceleration": ([3.0, 3.0, 3.0, 3.0], 0.0),
         }
         for mode_id, resolved in self.resolved.items():
             segment_voltages = [

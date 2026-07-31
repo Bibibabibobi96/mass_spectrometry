@@ -74,7 +74,22 @@ COMSOL空间档在`MESH_COMPLETE`后以17.181 GB超过17.180 GB进程树帽，�
 `0.0995 mm/0.6912°`；相对分段加速，空间RMS低`0.1563 mm`，但角RMS高`0.6438°`。它避免了同一
 H15条件下分段加速空间RMS略增的信号；统一九臂证据见
 [`../../../docs/history/20260731__multipole-three-mode-h15-n100.md`](../../../docs/history/20260731__multipole-three-mode-h15-n100.md)。
-该结果只用于工程取舍，不改变数值资格。
+该结果只用于工程取舍，不改变数值资格。统一图组和机器摘要已发布为成功analysis run
+`20260731_223000__analysis__python__multipole-three-mode-h15-n100`，不再依赖scratch。
+同日另以当前ACTIVE六指标工程合同正式评价无加速T→H15相邻横向加密：质心位置、中心化空间展宽、
+平均方向、中心化角展宽、平均能量和中心化能量展宽差依次为`0.003254 mm`、`0.017724 mm`、
+`0.161877°`、`0.017208°`、`0.001544 eV`和`0.009394 eV`，机器结论为`PASS`；analysis run为
+`20260731_223300__analysis__python__oct-simion-t-to-h15`。它只允许工程推进，数值收敛仍为
+`DEFERRED_NOT_WAIVED`。包含本项目在内的家族18项既有比较也已按ACTIVE合同重分析为18/18 PASS，
+统一记录见
+[`../../../docs/history/20260731__multipole-engineering-reanalysis-18-comparisons.md`](../../../docs/history/20260731__multipole-engineering-reanalysis-18-comparisons.md)。
+随后统一oaTOF屏蔽罩终端H15 campaign完成9/9；八极杆无加速/分段/终端阶跃的handoff分别为
+`59/41/70`，穿过4 mm厚矩形孔后的terminal分别为`43/34/62`。终端阶跃同时给出本项目最高terminal
+透射`62/100`、最高terminal/handoff`88.6%`和最小handoff中心化空间RMS`0.3215 mm`；分段模式的
+中心化角RMS更小，为`2.1969°`。完整对照见
+[`../../../docs/history/20260731__multipole-oatof-shield-terminal-h15-n100.md`](../../../docs/history/20260731__multipole-oatof-shield-terminal-h15-n100.md)。
+这是新矩形厚孔拓扑下的N=100事后工程结果，不可与旧独立末端板H15表作仅模式变化的配对比较，也不
+改变数值资格。
 COMSOL/SIMION分别受1200/720 s、2 GiB瞬态目录、16 GiB进程树内存、8 GiB最低
 可用内存、25 MiB compact保留和零自动重试约束；其他runtime由
 [`../config/qualification/engineering_budget.json`](../config/qualification/engineering_budget.json)

@@ -11,7 +11,7 @@
   },
   "authority": {
     "source_contract": "projects/rf_quadrupole_ion_optics/config/resolved_design_no_acceleration_full_length.json",
-    "source_sha256": "7D7419F88A52D2C2EEFF4E8ACDFD6081399B8187D970D07AE3E0D4E582920414",
+    "source_sha256": "612FB75C645D0DC1FF260D410B611572008F77658554F62DA70A86F0BDCBF65D",
     "bindings": [
       {
         "port_json_pointer": "/project_id",

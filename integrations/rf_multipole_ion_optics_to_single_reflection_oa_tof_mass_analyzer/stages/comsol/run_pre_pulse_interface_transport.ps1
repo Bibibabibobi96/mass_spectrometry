@@ -415,7 +415,7 @@ try {
       source_branch_id = $runtime.source_branch_id
       resolved_connection_sha256 = $resolvedConnectionSha256
       dependency_consumer_id = $dependencyConsumer
-      field_bases = @('oatof_static','rf_unit_100_V')
+      field_bases = @('axial_dc','rf_unit_100_V','oatof_pulse')
       oa_extraction_pulse = $false
       particle_tracking = [bool]$Particles
       model_saved = $false
@@ -541,7 +541,7 @@ try {
     metrics = 'results/pre_pulse_no_pulse_field_metrics.json'
     samples = 'results/pre_pulse_no_pulse_field_samples.csv'
     gap_mm = $gapMm
-    field_bases_solved = 2
+    field_bases_solved = 3
     finite_probe_rows = [int]$fieldMetrics.probe_count
     particle_runtime = [bool]$Particles
     particle_input_count = [int]$fieldMetrics.particle_input_count

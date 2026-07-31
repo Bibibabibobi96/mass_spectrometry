@@ -50,6 +50,7 @@ class FamilyThreeModeExperimentContractTests(unittest.TestCase):
         modes = load(CONFIG / "operating_modes.json")
         validate_schema(profiles, "design_profiles.schema.json")
         validate_schema(modes, "multipole_operating_modes.schema.json")
+        self.assertEqual(modes["terminal_reference_V"], 0.0)
         selected = {
             item["design_profile_id"]: item
             for item in profiles["profiles"]
@@ -70,6 +71,16 @@ class FamilyThreeModeExperimentContractTests(unittest.TestCase):
         self.assertEqual(
             [item["mode_id"] for item in modes["modes"]],
             list(MODE_IDS),
+        )
+        self.assertEqual(
+            [
+                (
+                    item["rod_entrance_relative_to_terminal_V"],
+                    item["rod_exit_relative_to_terminal_V"],
+                )
+                for item in modes["modes"]
+            ],
+            [(0.0, 0.0), (3.0, 0.0), (3.0, 3.0)],
         )
 
     def test_profile_source_hashes_use_repository_lf_bytes(self) -> None:
@@ -94,7 +105,18 @@ class FamilyThreeModeExperimentContractTests(unittest.TestCase):
         for resolved in self.resolved.values():
             self.assertEqual(resolved["geometry_mm"], reference["geometry_mm"])
             self.assertEqual(resolved["interfaces_mm"], reference["interfaces_mm"])
-            self.assertEqual(resolved["drive"], reference["drive"])
+            self.assertEqual(
+                {
+                    key: value
+                    for key, value in resolved["drive"].items()
+                    if key != "common_mode_offset_V"
+                },
+                {
+                    key: value
+                    for key, value in reference["drive"].items()
+                    if key != "common_mode_offset_V"
+                },
+            )
             self.assertEqual(resolved["particle_source"], reference["particle_source"])
             physical_segments = [
                 {key: value for key, value in electrode.items() if key != "common_mode_V"}
@@ -139,13 +161,13 @@ class FamilyThreeModeExperimentContractTests(unittest.TestCase):
     def test_only_typed_electrical_assignments_differ(self) -> None:
         expected_segments = {
             MODE_IDS[0]: [0.0, 0.0, 0.0, 0.0],
-            MODE_IDS[1]: [0.0, -1.0, -2.0, -3.0],
-            MODE_IDS[2]: [0.0, 0.0, 0.0, 0.0],
+            MODE_IDS[1]: [3.0, 2.0, 1.0, 0.0],
+            MODE_IDS[2]: [3.0, 3.0, 3.0, 3.0],
         }
         expected_exit = {
             MODE_IDS[0]: 0.0,
-            MODE_IDS[1]: -3.0,
-            MODE_IDS[2]: -3.0,
+            MODE_IDS[1]: 0.0,
+            MODE_IDS[2]: 0.0,
         }
         expected_topology = {
             MODE_IDS[0]: "none",
@@ -376,15 +398,21 @@ class FamilyThreeModeExperimentContractTests(unittest.TestCase):
             sha256(REPO_ROOT / particle_source["n1000_path"]),
         )
         design_authority = preregistration["design_authority"]
+        # This completed preregistration freezes the pre-relative-voltage
+        # authorities.  New terminal-composed experiments use the v2 campaign
+        # instead of mutating the identity of these earlier runs.
         for path_key, sha_key in (
             ("design_profiles", "design_profiles_sha256"),
             ("operating_modes", "operating_modes_sha256"),
-            ("geometry_invariant", "geometry_invariant_sha256"),
         ):
-            self.assertEqual(
+            self.assertNotEqual(
                 design_authority[sha_key],
                 sha256(REPO_ROOT / design_authority[path_key]),
             )
+        self.assertEqual(
+            design_authority["geometry_invariant_sha256"],
+            sha256(REPO_ROOT / design_authority["geometry_invariant"]),
+        )
         frozen_solver_hashes = {
             "comsol": "8D64B3578ABF1CFE4F498E7780AE57E5A4376BA8A8D7FFB6748D6AE8C9B7A95F",
             "simion": "F1209F85185737ABCEF788B77732DE0B1BCFF911DA90D173446B4A9CACD0C4AF",

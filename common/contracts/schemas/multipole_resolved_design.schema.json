@@ -4,6 +4,11 @@
   "title": "Compiled solver-neutral RF multipole design",
   "type": "object",
   "additionalProperties": false,
+  "dependentRequired": {
+    "terminal_composition": ["downstream_terminal", "axial_dc"],
+    "downstream_terminal": ["terminal_composition", "axial_dc"],
+    "axial_dc": ["terminal_composition", "downstream_terminal"]
+  },
   "required": [
     "schema_version",
     "role",
@@ -196,6 +201,9 @@
         "predicted_output_energy_eV": {"type": "number"}
       }
     },
+    "terminal_composition": {"$ref": "#/$defs/terminal_composition"},
+    "downstream_terminal": {"$ref": "#/$defs/downstream_terminal"},
+    "axial_dc": {"$ref": "#/$defs/axial_dc"},
     "static_electrodes_V": {"$ref": "#/$defs/static_electrodes"},
     "particle_source": {
       "type": "object",
@@ -472,6 +480,69 @@
         "common_mode_offset_V": {"type": "number"},
         "frequency_Hz": {"type": "number", "exclusiveMinimum": 0},
         "phase_rad": {"type": "number"}
+      }
+    },
+    "terminal_composition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["composer", "base_resolved_sha256", "terminal_profile_sha256"],
+      "properties": {
+        "composer": {"const": "common.multipole.downstream_terminal.compose_downstream_terminal"},
+        "base_resolved_sha256": {"$ref": "#/$defs/sha256"},
+        "terminal_profile_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "downstream_terminal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "terminal_profile_id", "owner", "surface_role", "surface_plane_z_mm",
+        "rod_end_clearance_mm", "upstream_enclosure_end_plane_z_mm",
+        "upstream_enclosure_to_terminal_clearance_mm", "electrode_thickness_mm",
+        "electrode_outer_shape", "electrode_outer_width_mm", "electrode_outer_height_mm",
+        "aperture", "terminal_potential_V", "upstream_terminal_electrode_present"
+      ],
+      "properties": {
+        "terminal_profile_id": {"type": "string", "minLength": 1},
+        "owner": {"enum": ["upstream", "downstream"]},
+        "surface_role": {"const": "aperture_outer_tangent_plane"},
+        "surface_plane_z_mm": {"type": "number"},
+        "rod_end_clearance_mm": {"type": "number", "exclusiveMinimum": 0},
+        "upstream_enclosure_end_plane_z_mm": {"type": "number"},
+        "upstream_enclosure_to_terminal_clearance_mm": {"type": "number", "minimum": 0},
+        "electrode_thickness_mm": {"type": "number", "exclusiveMinimum": 0},
+        "electrode_outer_shape": {"const": "rectangular"},
+        "electrode_outer_width_mm": {"type": "number", "exclusiveMinimum": 0},
+        "electrode_outer_height_mm": {"type": "number", "exclusiveMinimum": 0},
+        "aperture": {
+          "type": "object", "additionalProperties": false,
+          "required": ["shape", "width_mm", "height_mm", "width_axis", "height_axis"],
+          "properties": {
+            "shape": {"enum": ["rectangular", "circular"]},
+            "width_mm": {"type": "number", "exclusiveMinimum": 0},
+            "height_mm": {"type": "number", "exclusiveMinimum": 0},
+            "width_axis": {"const": "multipole_x"},
+            "height_axis": {"const": "multipole_y"}
+          }
+        },
+        "terminal_potential_V": {"type": "number"},
+        "upstream_terminal_electrode_present": {"const": false}
+      }
+    },
+    "axial_dc": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rod_electrodes", "upstream_shield_potential_V", "entrance_plate_potential_V", "terminal_electrode_potential_V"],
+      "properties": {
+        "rod_electrodes": {
+          "type": "array", "minItems": 1,
+          "items": {"type": "object", "additionalProperties": false, "required": ["electrode_id", "potential_V"], "properties": {
+            "electrode_id": {"type": "integer", "minimum": 1}, "potential_V": {"type": "number"}
+          }}
+        },
+        "upstream_shield_potential_V": {"type": "number"},
+        "entrance_plate_potential_V": {"type": "number"},
+        "terminal_electrode_potential_V": {"type": "number"}
       }
     },
     "static_electrodes": {

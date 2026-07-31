@@ -6,29 +6,34 @@
     "version": 2
   },
   "governance": {
-    "design_variables_sha256": "EE61F0EFD993608EF93393EF7CDA92C873B680CDA8EB95C02C14C3E7E92A0713",
-    "optimization_envelope_sha256": "AC7924920F86D8BB4AA3BADF337D6FFF1C09404F18F0DBC3B2106207B4DFC9BB",
-    "design_request_file_sha256": "16DF61BE4B1E915D5E9360FC60AB81068936D9D621874256094436F00DD11198"
+    "design_variables_sha256": "9780DFC58129062B737A802D644A541EBBE7702CDE26946A64F0C8AF39A5DD83",
+    "optimization_envelope_sha256": "D7945D7D2F7807F8CF8373266F8512DEE6F0FED9A5C060B9D698475CA463EB69",
+    "design_request_file_sha256": "9358BE0D815C281EC8721F07CA39909AE832D92EAAB7C5D502E03F1E728145C1"
   },
   "request": {
-    "request_id": "hexapole_current_baseline",
-    "sha256": "5B196FFFE4E90810213C6D00251AD60B59E3A9B34A564684D6C8DB8A93A34520"
+    "request_id": "hexapole_family_experiment_mechanical_base",
+    "sha256": "2E72D76B759411E0923B2A1F3F1E9E2F62D309D8D569E6EAE848BAE9FAA2F1C1"
   },
   "sources": [
     {
       "label": "design_request",
-      "path": "projects/rf_hexapole_ion_optics/config/requests/baseline.json",
-      "sha256": "16DF61BE4B1E915D5E9360FC60AB81068936D9D621874256094436F00DD11198"
+      "path": "projects/rf_hexapole_ion_optics/config/requests/mechanical_base.json",
+      "sha256": "9358BE0D815C281EC8721F07CA39909AE832D92EAAB7C5D502E03F1E728145C1"
     },
     {
       "label": "design_variables",
       "path": "projects/rf_hexapole_ion_optics/config/design_variables.json",
-      "sha256": "EE61F0EFD993608EF93393EF7CDA92C873B680CDA8EB95C02C14C3E7E92A0713"
+      "sha256": "9780DFC58129062B737A802D644A541EBBE7702CDE26946A64F0C8AF39A5DD83"
+    },
+    {
+      "label": "operating_mode_registry__no_acceleration_full_length",
+      "path": "projects/rf_hexapole_ion_optics/config/operating_modes.json",
+      "sha256": "6561E3EDD64E4443373BBD6B6A1EE4839C4D2BB61C8C78998A1CF4AD01850B67"
     },
     {
       "label": "optimization_envelope",
       "path": "projects/rf_hexapole_ion_optics/config/optimization_envelope.json",
-      "sha256": "AC7924920F86D8BB4AA3BADF337D6FFF1C09404F18F0DBC3B2106207B4DFC9BB"
+      "sha256": "D7945D7D2F7807F8CF8373266F8512DEE6F0FED9A5C060B9D698475CA463EB69"
     }
   ],
   "identity": {
@@ -172,16 +177,16 @@
     "phase_rad": 0.0
   },
   "axial_drive": {
-    "topology": "segmented_rod_axial_acceleration",
+    "topology": "none",
     "source_reference_V": 0.0,
-    "output_reference_V": -3.0,
-    "predicted_energy_gain_eV": 3.0,
-    "predicted_output_energy_eV": 5.0
+    "output_reference_V": 0.0,
+    "predicted_energy_gain_eV": 0.0,
+    "predicted_output_energy_eV": 2.0
   },
   "static_electrodes_V": {
     "role": "cylindrical_shield_static_electrodes",
     "shield_entrance_outer_endcap_aperture_plate_connector_V": 0.0,
-    "exit_outer_endcap_aperture_plate_connector_V": -3.0
+    "exit_outer_endcap_aperture_plate_connector_V": 0.0
   },
   "particle_source": {
     "energy_model": {
@@ -202,9 +207,9 @@
         "segment_count": 4,
         "intersegment_gap_mm": 0.4,
         "entrance_common_mode_V": 0.0,
-        "exit_common_mode_V": -3.0
+        "exit_common_mode_V": 0.0
       },
-      "output_reference_V": -3.0,
+      "output_reference_V": 0.0,
       "derived": {
         "rod_z_min_mm": 0.0,
         "rod_z_max_mm": 79.6,
@@ -220,26 +225,26 @@
             "segment_id": 2,
             "z_min_mm": 19.999999999999996,
             "z_max_mm": 39.599999999999994,
-            "common_mode_V": -1.0
+            "common_mode_V": 0.0
           },
           {
             "segment_id": 3,
             "z_min_mm": 39.99999999999999,
             "z_max_mm": 59.599999999999994,
-            "common_mode_V": -2.0
+            "common_mode_V": 0.0
           },
           {
             "segment_id": 4,
             "z_min_mm": 59.99999999999999,
             "z_max_mm": 79.6,
-            "common_mode_V": -3.0
+            "common_mode_V": 0.0
           }
         ],
         "voltage_profile_monotonic": true,
         "charge_state": 1,
         "source_kinetic_energy_eV": 2.0,
-        "predicted_energy_gain_eV": 3.0,
-        "predicted_output_energy_eV": 5.0
+        "predicted_energy_gain_eV": 0.0,
+        "predicted_output_energy_eV": 2.0
       }
     },
     "segmented_rod_array": {
@@ -343,7 +348,7 @@
           "z_max_mm": 39.599999999999994,
           "parent_rod_id": 1,
           "segment_id": 2,
-          "common_mode_V": -1.0,
+          "common_mode_V": 0.0,
           "electrode_id": 3
         },
         {
@@ -357,7 +362,7 @@
           "z_max_mm": 39.599999999999994,
           "parent_rod_id": 2,
           "segment_id": 2,
-          "common_mode_V": -1.0,
+          "common_mode_V": 0.0,
           "electrode_id": 4
         },
         {
@@ -371,7 +376,7 @@
           "z_max_mm": 39.599999999999994,
           "parent_rod_id": 3,
           "segment_id": 2,
-          "common_mode_V": -1.0,
+          "common_mode_V": 0.0,
           "electrode_id": 3
         },
         {
@@ -385,7 +390,7 @@
           "z_max_mm": 39.599999999999994,
           "parent_rod_id": 4,
           "segment_id": 2,
-          "common_mode_V": -1.0,
+          "common_mode_V": 0.0,
           "electrode_id": 4
         },
         {
@@ -399,7 +404,7 @@
           "z_max_mm": 39.599999999999994,
           "parent_rod_id": 5,
           "segment_id": 2,
-          "common_mode_V": -1.0,
+          "common_mode_V": 0.0,
           "electrode_id": 3
         },
         {
@@ -413,7 +418,7 @@
           "z_max_mm": 39.599999999999994,
           "parent_rod_id": 6,
           "segment_id": 2,
-          "common_mode_V": -1.0,
+          "common_mode_V": 0.0,
           "electrode_id": 4
         },
         {
@@ -427,7 +432,7 @@
           "z_max_mm": 59.599999999999994,
           "parent_rod_id": 1,
           "segment_id": 3,
-          "common_mode_V": -2.0,
+          "common_mode_V": 0.0,
           "electrode_id": 5
         },
         {
@@ -441,7 +446,7 @@
           "z_max_mm": 59.599999999999994,
           "parent_rod_id": 2,
           "segment_id": 3,
-          "common_mode_V": -2.0,
+          "common_mode_V": 0.0,
           "electrode_id": 6
         },
         {
@@ -455,7 +460,7 @@
           "z_max_mm": 59.599999999999994,
           "parent_rod_id": 3,
           "segment_id": 3,
-          "common_mode_V": -2.0,
+          "common_mode_V": 0.0,
           "electrode_id": 5
         },
         {
@@ -469,7 +474,7 @@
           "z_max_mm": 59.599999999999994,
           "parent_rod_id": 4,
           "segment_id": 3,
-          "common_mode_V": -2.0,
+          "common_mode_V": 0.0,
           "electrode_id": 6
         },
         {
@@ -483,7 +488,7 @@
           "z_max_mm": 59.599999999999994,
           "parent_rod_id": 5,
           "segment_id": 3,
-          "common_mode_V": -2.0,
+          "common_mode_V": 0.0,
           "electrode_id": 5
         },
         {
@@ -497,7 +502,7 @@
           "z_max_mm": 59.599999999999994,
           "parent_rod_id": 6,
           "segment_id": 3,
-          "common_mode_V": -2.0,
+          "common_mode_V": 0.0,
           "electrode_id": 6
         },
         {
@@ -511,7 +516,7 @@
           "z_max_mm": 79.6,
           "parent_rod_id": 1,
           "segment_id": 4,
-          "common_mode_V": -3.0,
+          "common_mode_V": 0.0,
           "electrode_id": 7
         },
         {
@@ -525,7 +530,7 @@
           "z_max_mm": 79.6,
           "parent_rod_id": 2,
           "segment_id": 4,
-          "common_mode_V": -3.0,
+          "common_mode_V": 0.0,
           "electrode_id": 8
         },
         {
@@ -539,7 +544,7 @@
           "z_max_mm": 79.6,
           "parent_rod_id": 3,
           "segment_id": 4,
-          "common_mode_V": -3.0,
+          "common_mode_V": 0.0,
           "electrode_id": 7
         },
         {
@@ -553,7 +558,7 @@
           "z_max_mm": 79.6,
           "parent_rod_id": 4,
           "segment_id": 4,
-          "common_mode_V": -3.0,
+          "common_mode_V": 0.0,
           "electrode_id": 8
         },
         {
@@ -567,7 +572,7 @@
           "z_max_mm": 79.6,
           "parent_rod_id": 5,
           "segment_id": 4,
-          "common_mode_V": -3.0,
+          "common_mode_V": 0.0,
           "electrode_id": 7
         },
         {
@@ -581,11 +586,11 @@
           "z_max_mm": 79.6,
           "parent_rod_id": 6,
           "segment_id": 4,
-          "common_mode_V": -3.0,
+          "common_mode_V": 0.0,
           "electrode_id": 8
         }
       ]
     }
   },
-  "resolved_sha256": "6D0377A77E61245E18548504C2022633FE44B6EFF8FD54A25866B7269BC68783"
+  "resolved_sha256": "37C2ED1858B1A707E09DA9229932D7CE27A7ED2B9A8EC49560C3557239B15B5F"
 }

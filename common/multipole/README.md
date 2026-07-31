@@ -36,6 +36,27 @@ run内编译以`inputs/`为root，只记录run-relative冻结路径。绝对路�
 `validate_resolved_design`仅用于publication复核：它必须取得原request与source root，重新编译并要求完整
 canonical相等。它不是runner的resolved导入口。
 
+### 下游终端组合
+
+活动`multipole_typed_operating_mode_registry` v2只保存杆入口、杆出口相对真实下游终端的电位差；
+项目编译器以机械base现有输出参考派生绝对杆电位，旧v1绝对电位registry只用于既有历史重建。
+下游终端不是三个多极杆项目的设计副本：唯一profile由integration拥有，并按
+[`multipole_downstream_terminal_profiles.schema.json`](../contracts/schemas/multipole_downstream_terminal_profiles.schema.json)
+登记。
+
+[`downstream_terminal.py`](downstream_terminal.py)的`compose_downstream_terminal`把一个已验证resolved
+design与integration选定profile确定性组合。组合结果直接提供`downstream_terminal`几何、所有权和
+`axial_dc`实体电位；`owner=downstream`固定禁止重复上游末端电极。求解器适配器不得再按mode名称推导
+电位，也不得把保留在未组合机械base中的旧出口板faces解释为活动集成实体。
+
+2026-07-31的`20260731__oatof_shield_terminal_h15_n100` campaign已在SIMION完成9/9行。统一终端的
+`handoff`是屏蔽罩开孔外侧切平面的矩形孔入口，`terminal`是穿过4 mm厚孔后的终态；九臂handoff为
+`83/95/94、84/89/96、59/41/70`，对应terminal为`31/59/38、57/81/74、43/34/62`（每组三个数字依次
+为无加速/分段/终端阶跃）。相空间图和连续指标只使用handoff群体，terminal透射单独报告。完整表、
+图组与声明边界见
+[`../../docs/history/20260731__multipole-oatof-shield-terminal-h15-n100.md`](../../docs/history/20260731__multipole-oatof-shield-terminal-h15-n100.md)；
+该事后N=100工程对照不建立数值收敛或资格。
+
 ## 几何和拓扑闭合
 
 enclosure必须显式声明职责：

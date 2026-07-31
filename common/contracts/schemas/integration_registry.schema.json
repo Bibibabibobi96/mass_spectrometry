@@ -22,6 +22,10 @@
           "profile_registry": {
             "type": "string",
             "pattern": "^integrations/[a-z][a-z0-9_]*/config/[A-Za-z0-9._-]+\\.json$"
+          },
+          "downstream_terminal_profile_registry": {
+            "type": "string",
+            "pattern": "^integrations/[a-z][a-z0-9_]*/config/[A-Za-z0-9._-]+\\.json$"
           }
         }
       }

@@ -99,6 +99,9 @@ def render_gem(
             resolved["resolved_sha256"],
         )
     rods = geometry["rod_array"]["rods"]
+    downstream_terminal = resolved.get("downstream_terminal")
+    if downstream_terminal is not None and downstream_terminal["owner"] != "downstream":
+        raise ValueError("SIMION only accepts a downstream-owned composed terminal")
     axial_mode = segmented_rods is not None
     if axial_mode:
         rods = segmented_rods.get("electrodes", [])
@@ -109,48 +112,94 @@ def render_gem(
         output_electrode = ground_electrode + 1
     else:
         ground_electrode = 3
-        output_electrode = 3
+        output_electrode = 4 if downstream_terminal is not None else 3
     numerical_census_marker_electrode = output_electrode + 1
     outer = float(enclosure["shield_outer_radius_mm"])
     inner = float(enclosure["shield_inner_radius_mm"])
     z_min = float(enclosure["vacuum_z_min_mm"])
     z_max = float(enclosure["vacuum_z_max_mm"])
-    census_plane_z = float(interface["census_plane_z"])
+    terminal_end_z = None
+    if downstream_terminal is not None:
+        if downstream_terminal["electrode_outer_shape"] != "rectangular":
+            raise ValueError("composed downstream terminal outer shape must be rectangular")
+        terminal_end_z = (
+            float(downstream_terminal["surface_plane_z_mm"])
+            + float(downstream_terminal["electrode_thickness_mm"])
+        )
+        census_plane_z = terminal_end_z
+        z_max = max(z_max, terminal_end_z + dz)
+    else:
+        census_plane_z = float(interface["census_plane_z"])
     numerical_census_marker_thickness = dz
     if census_plane_z + numerical_census_marker_thickness > z_max + 1e-12:
         raise ValueError("numerical census marker must fit inside the cylindrical PA")
     span = z_max - z_min
-    nx = math.ceil(2 * outer / dx) + 1
-    ny = math.ceil(2 * outer / dy) + 1
+    half_width = max(
+        outer,
+        float(downstream_terminal["electrode_outer_width_mm"]) / 2
+        if downstream_terminal is not None else outer,
+    )
+    half_height = max(
+        outer,
+        float(downstream_terminal["electrode_outer_height_mm"]) / 2
+        if downstream_terminal is not None else outer,
+    )
+    nx = math.ceil(2 * half_width / dx) + 1
+    ny = math.ceil(2 * half_height / dy) + 1
     nz = math.ceil(span / dz) + 1
     lines = [
         "; Generated from multipole_resolved_design; do not edit.",
         f"; parent_resolved_sha256={resolved['resolved_sha256']}",
         f"pa_define({nx},{ny},{nz},planar,none,electrostatic,,{dx:.12g},{dy:.12g},{dz:.12g},surface=fractional)",
-        f"locate({outer:.12g},{outer:.12g},{-z_min:.12g}) {{",
+        f"locate({half_width:.12g},{half_height:.12g},{-z_min:.12g}) {{",
     ]
     for rod in rods:
         lines.extend([
             f"  e({rod.get('electrode_id', rod['electrode_group'])}) {{ fill {{ within {{ cylinder({rod['center_x_mm']:.12g},{rod['center_y_mm']:.12g},{rod['z_max_mm']:.12g},{rod['radius_mm']:.12g},,{rod['z_max_mm']-rod['z_min_mm']:.12g}) }} }} }}",
         ])
+    shield_end_z = (
+        float(downstream_terminal["upstream_enclosure_end_plane_z_mm"])
+        if downstream_terminal is not None else z_max
+    )
+    shield_span = shield_end_z - z_min
     lines.extend([
         f"  e({ground_electrode}) {{ fill {{",
-        f"    within {{ cylinder(0,0,{z_max:.12g},{outer:.12g},,{span:.12g}) }}",
-        f"    notin_inside {{ cylinder(0,0,{z_max+dz:.12g},{inner:.12g},,{span+2*dz:.12g}) }}",
+        f"    within {{ cylinder(0,0,{shield_end_z:.12g},{outer:.12g},,{shield_span:.12g}) }}",
+        f"    notin_inside {{ cylinder(0,0,{shield_end_z+dz:.12g},{inner:.12g},,{shield_span+2*dz:.12g}) }}",
         "  } }",
         f"  e({ground_electrode}) {{ fill {{ within {{ cylinder(0,0,{float(enclosure['entrance_outer_endcap_downstream_face_z_mm']):.12g},{outer:.12g},,{float(enclosure['entrance_outer_endcap_downstream_face_z_mm'])-float(enclosure['entrance_outer_endcap_upstream_face_z_mm']):.12g}) }} }} }}",
-        f"  e({output_electrode}) {{ fill {{ within {{ cylinder(0,0,{float(enclosure['exit_outer_endcap_downstream_face_z_mm']):.12g},{outer:.12g},,{float(enclosure['exit_outer_endcap_downstream_face_z_mm'])-float(enclosure['exit_outer_endcap_upstream_face_z_mm']):.12g}) }} }} }}",
         f"  e({ground_electrode}) {{ fill {{",
         f"    within {{ cylinder(0,0,{interface['entrance_plate_z_max']:.12g},{outer:.12g},,{interface['entrance_plate_z_max']-interface['entrance_plate_z_min']:.12g}) }}",
         f"    notin_inside {{ cylinder(0,0,{interface['entrance_plate_z_max']+dz:.12g},{interface['entrance_aperture_radius']:.12g},,{interface['entrance_plate_z_max']-interface['entrance_plate_z_min']+2*dz:.12g}) }}",
         "  } }",
-        f"  e({output_electrode}) {{ fill {{",
-        f"    within {{ cylinder(0,0,{interface['exit_plate_z_max']:.12g},{outer:.12g},,{interface['exit_plate_z_max']-interface['exit_plate_z_min']:.12g}) }}",
-        f"    notin_inside {{ cylinder(0,0,{interface['exit_plate_z_max']+dz:.12g},{interface['exit_aperture_radius']:.12g},,{interface['exit_plate_z_max']-interface['exit_plate_z_min']+2*dz:.12g}) }}",
-        "  } }",
-        "  ; GUI-visible numerical absorber: its front face is the resolved census plane.",
-        f"  e({numerical_census_marker_electrode}) {{ fill {{ within {{ cylinder(0,0,{census_plane_z+numerical_census_marker_thickness:.12g},{interface['census_radius']:.12g},,{numerical_census_marker_thickness:.12g}) }} }} }}",
     ])
+    if downstream_terminal is None:
+        lines.extend([
+            f"  e({output_electrode}) {{ fill {{ within {{ cylinder(0,0,{float(enclosure['exit_outer_endcap_downstream_face_z_mm']):.12g},{outer:.12g},,{float(enclosure['exit_outer_endcap_downstream_face_z_mm'])-float(enclosure['exit_outer_endcap_upstream_face_z_mm']):.12g}) }} }} }}",
+            f"  e({output_electrode}) {{ fill {{",
+            f"    within {{ cylinder(0,0,{interface['exit_plate_z_max']:.12g},{outer:.12g},,{interface['exit_plate_z_max']-interface['exit_plate_z_min']:.12g}) }}",
+            f"    notin_inside {{ cylinder(0,0,{interface['exit_plate_z_max']+dz:.12g},{interface['exit_aperture_radius']:.12g},,{interface['exit_plate_z_max']-interface['exit_plate_z_min']+2*dz:.12g}) }}",
+            "  } }",
+            "  ; GUI-visible numerical absorber: its front face is the resolved census plane.",
+            f"  e({numerical_census_marker_electrode}) {{ fill {{ within {{ cylinder(0,0,{census_plane_z+numerical_census_marker_thickness:.12g},{interface['census_radius']:.12g},,{numerical_census_marker_thickness:.12g}) }} }} }}",
+        ])
+    else:
+        aperture = downstream_terminal["aperture"]
+        surface = float(downstream_terminal["surface_plane_z_mm"])
+        width = float(downstream_terminal["electrode_outer_width_mm"])
+        height = float(downstream_terminal["electrode_outer_height_mm"])
+        aperture_width = float(aperture["width_mm"])
+        aperture_height = float(aperture["height_mm"])
+        lines.extend([
+            "; Exactly one physical terminal: the downstream oaTOF shield entry electrode.",
+            f"  ; rod_end_clearance_mm={float(downstream_terminal['rod_end_clearance_mm']):.12g}",
+            f"  e({output_electrode}) {{ fill {{",
+            f"    within {{ box3d({width/2:.12g},{height/2:.12g},{terminal_end_z:.12g},{-width/2:.12g},{-height/2:.12g},{surface:.12g}) }}",
+            f"    notin_inside {{ box3d({aperture_width/2:.12g},{aperture_height/2:.12g},{terminal_end_z+dz:.12g},{-aperture_width/2:.12g},{-aperture_height/2:.12g},{surface-dz:.12g}) }}",
+            "  } }",
+            "; Numerical absorber fills only the rectangular aperture after the terminal.",
+            f"  e({numerical_census_marker_electrode}) {{ fill {{ within {{ box3d({aperture_width/2:.12g},{aperture_height/2:.12g},{census_plane_z+dz:.12g},{-aperture_width/2:.12g},{-aperture_height/2:.12g},{census_plane_z:.12g}) }} }} }}",
+        ])
     entrance_length = float(interface["entrance_connector_length"])
     exit_length = float(interface["exit_connector_length"])
     if entrance_length > 0:
@@ -164,7 +213,7 @@ def render_gem(
             entrance_length,
             dz,
         )
-    if exit_length > 0:
+    if exit_length > 0 and downstream_terminal is None:
         _append_translated_connector(
             lines,
             output_electrode,

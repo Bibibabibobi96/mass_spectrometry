@@ -221,6 +221,7 @@ try{
 
   $profileResolution=Join-Path $inputDir 'design_profile_resolution.json'
   $resolvedRuntimeProfile=$null
+  $terminalRegistry=$null
   if($resolvedRuntimeInput){
     if((Get-FileHash -LiteralPath $resolvedRuntimeInput -Algorithm SHA256).Hash-ne$resolvedRuntimeInputSha){
       throw 'Resolved runtime-profile snapshot changed before it was frozen.'
@@ -231,6 +232,15 @@ try{
       (Get-FileHash -LiteralPath $engineeringBudgetInput -Algorithm SHA256).Hash-ne
         [string]$campaignSelection.sha256
     ){throw 'Campaign authority changed before it was frozen.'}
+    if($resolvedRuntimeDocument.PSObject.Properties.Name-contains'downstream_terminal_profile'){
+      $terminalBinding=$resolvedRuntimeDocument.downstream_terminal_profile
+      $terminalRegistrySource=(Resolve-Path -LiteralPath ([string]$terminalBinding.registry_path)).Path
+      if((Get-FileHash -LiteralPath $terminalRegistrySource -Algorithm SHA256).Hash-ne
+        [string]$terminalBinding.registry_sha256
+      ){throw 'Downstream-terminal registry changed before it was frozen.'}
+      $terminalRegistry=Copy-VerifiedRunInput -Source $terminalRegistrySource `
+        -Destination (Join-Path $inputDir 'downstream_terminal_profiles.json')
+    }
   }
   $engineeringBudget=Join-Path $inputDir 'engineering_budget.json'
   $resolvedResourceBudget=Join-Path $inputDir 'resolved_resource_budget.json'
@@ -268,24 +278,60 @@ try{
     $modeRegistry=Join-Path $inputDir 'operating_modes.json'
     Copy-Item -LiteralPath $profile.paths.operating_mode_registry -Destination $modeRegistry
   }
+  $compileRequest=$request;$compileVariables=$variables;$compileEnvelope=$envelope
+  $compileModeRegistry=$modeRegistry;$compileProvenanceRoot=$inputDir
+  if($terminalRegistry){
+    $authorityRoot=Join-Path $inputDir 'authority_repo'
+    function Copy-FrozenAuthorityPath([string]$source,[string]$frozenSource){
+      $relative=[IO.Path]::GetRelativePath($repoRoot,[IO.Path]::GetFullPath($source))
+      if($relative -eq '..' -or $relative.StartsWith(('..'+[IO.Path]::DirectorySeparatorChar))){
+        throw "Terminal authority path escapes the repository: $source"
+      }
+      $destination=Join-Path $authorityRoot $relative
+      New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination)|Out-Null
+      Copy-Item -LiteralPath $frozenSource -Destination $destination
+      return $destination
+    }
+    $compileRequest=Copy-FrozenAuthorityPath ([string]$profile.paths.design_request) $request
+    $compileVariables=Copy-FrozenAuthorityPath ([string]$profile.paths.design_variables) $variables
+    $compileEnvelope=Copy-FrozenAuthorityPath ([string]$profile.paths.optimization_envelope) $envelope
+    if($modeRegistry){
+      $compileModeRegistry=Copy-FrozenAuthorityPath `
+        ([string]$profile.paths.operating_mode_registry) $modeRegistry
+    }
+    $compileProvenanceRoot=$authorityRoot
+  }
   $resolved=Join-Path $inputDir 'multipole_resolved_design.json'
+  $baseResolved=if($terminalRegistry){
+    Join-Path $inputDir 'multipole_base_resolved_design.json'
+  }else{$resolved}
   Push-Location $codeRoot
   try{
     $env:PYTHONPATH=$codeRoot
     $compileArguments=@('-m','common.multipole.compile_design_request',
-      '--request',$request,'--design-variables',$variables,
-      '--optimization-envelope',$envelope,'--output',$resolved,
-      '--provenance-root',$inputDir,'--project-id',$ProjectId,
+      '--request',$compileRequest,'--design-variables',$compileVariables,
+      '--optimization-envelope',$compileEnvelope,'--output',$baseResolved,
+      '--provenance-root',$compileProvenanceRoot,'--project-id',$ProjectId,
       '--radial-order-n',([string][int]$identity.radial_order_n),
       '--electrode-count',([string][int]$identity.electrode_count))
     if($modeRegistry){
-      $compileArguments+=@('--operating-mode-registry',$modeRegistry,'--mode-id',$modeId)
+      $compileArguments+=@('--operating-mode-registry',$compileModeRegistry,'--mode-id',$modeId)
     }
     & $python @compileArguments
     if($LASTEXITCODE-ne 0){throw 'Governed multipole design compilation failed.'}
+    if($terminalRegistry){
+      & $python -m common.multipole.downstream_terminal `
+        --resolved-design $baseResolved --terminal-registry $terminalRegistry `
+        --terminal-profile-id ([string]$resolvedRuntimeDocument.downstream_terminal_profile.terminal_profile_id) `
+        --output $resolved
+      if($LASTEXITCODE-ne 0){throw 'Downstream-terminal composition failed.'}
+    }
   }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
   $design=Get-Content -LiteralPath $resolved -Raw -Encoding UTF8|ConvertFrom-Json
   $resolvedHash=[string]$design.resolved_sha256
+  if($terminalRegistry-and $resolvedHash-ne
+    [string]$resolvedRuntimeDocument.design_profile_resolution.resolved_design.resolved_sha256
+  ){throw 'Frozen downstream-terminal composition differs from the resolved runtime snapshot.'}
   $particleSource=Join-Path $inputDir 'particle_source.csv'
   Copy-Item -LiteralPath $particleSourceInput -Destination $particleSource
   $sourceFamily=$null;$sourceFamilySha=$null
@@ -405,8 +451,13 @@ try{
   $segmented=($axialTopology-eq'segmented_rod_axial_acceleration')
   $segmentedRodGeometry=($null-ne$design.segmentation.segmented_rod_array)
   $exitAperturePlateStep=($axialTopology-eq'exit_aperture_plate_potential_step')
-  $handoffPlaneMm=[double]$interfaces.exit.handoff_plane_z_mm
-  $censusPlaneMm=[double]$interfaces.exit.census_plane_z_mm
+  $hasDownstreamTerminal=($design.PSObject.Properties.Name-contains'downstream_terminal')
+  $handoffPlaneMm=if($hasDownstreamTerminal){
+    [double]$design.downstream_terminal.surface_plane_z_mm
+  }else{[double]$interfaces.exit.handoff_plane_z_mm}
+  $censusPlaneMm=if($hasDownstreamTerminal){
+    $handoffPlaneMm+[double]$design.downstream_terminal.electrode_thickness_mm
+  }else{[double]$interfaces.exit.census_plane_z_mm}
   $censusRadius=if($enclosure.PSObject.Properties.Name-contains'physical_detector_radius_mm'){
     [double]$enclosure.physical_detector_radius_mm
   }else{[double]$interfaces.exit.aperture_radius_mm}
@@ -424,7 +475,32 @@ try{
   }
   $segmentedLua='';$groundElectrodeId=3;$outputElectrodeId=4
   $physicalDetectorElectrodeId=if($rectangular){5}else{4}
-  if($segmentedRodGeometry){
+  if($hasDownstreamTerminal){
+    $axialDc=$design.axial_dc
+    $entries=@($axialDc.rod_electrodes|ForEach-Object{
+      $rodId=[int]$_.electrode_id
+      $rodGroup=if($rodId%2-eq 1){1}else{2}
+      if($segmentedRodGeometry){
+        $segmentMatch=@($design.segmentation.segmented_rod_array.electrodes|Where-Object{
+          [int]$_.electrode_id-eq$rodId
+        })
+        $rodGroups=@($segmentMatch|ForEach-Object{[int]$_.electrode_group}|Select-Object -Unique)
+        if($segmentMatch.Count -eq 0 -or $rodGroups.Count -ne 1){
+          throw "Axial-DC rod electrode group is missing or inconsistent: $rodId"
+        }
+        $rodGroup=[int]$rodGroups[0]
+      }
+      "{electrode_id=$rodId,electrode_group=$rodGroup,common_mode_v=$([double]$_.potential_V)}"
+    })
+    $segmentedLua="segmented_rod_electrodes={$($entries -join ',')},"
+    $maxRodElectrode=($axialDc.rod_electrodes|Measure-Object -Property electrode_id -Maximum).Maximum
+    $groundElectrodeId=[int]$maxRodElectrode+1
+    $outputElectrodeId=$groundElectrodeId+1
+    $physicalDetectorElectrodeId=$outputElectrodeId+1
+    $entranceVoltage=[double]$axialDc.upstream_shield_potential_V
+    $exitVoltage=[double]$axialDc.terminal_electrode_potential_V
+    $physicalDetectorVoltage=$exitVoltage
+  }elseif($segmentedRodGeometry){
     $segments=$design.segmentation.segmented_rod_array
     $entries=@($segments.electrodes|ForEach-Object{
       "{electrode_id=$([int]$_.electrode_id),electrode_group=$([int]$_.electrode_group),common_mode_v=$([double]$_.common_mode_V)}"
@@ -471,6 +547,7 @@ try{
     simion_layout_template_registry=$templateRegistryInput;
     simion_layout_registration_manifest=$templateRegistrationManifest;
     simion_layout_template_iob=$templateIob;simion_layout_template_con=$templateCon}
+  if($terminalRegistry){$runInputs.downstream_terminal_profiles=$terminalRegistry}
   if($referenceComsolManifest){
     $provenance.reference_comsol_run_manifest_sha256=$referenceComsolManifestSha
     $provenance.reference_comsol_source_run_id=$referenceComsolSourceRunId
@@ -519,6 +596,10 @@ try{
     # sampling and the census-marker threshold must therefore use GEM dz.
     $surfaceToleranceMm=[Math]::Max(1e-6*$resolvedCellMmZ,1e-9)
     $phaseDeg=[double]$drive.phase_rad*180/[Math]::PI
+    $handoffApertureLua=if($hasDownstreamTerminal){
+      $terminalAperture=$design.downstream_terminal.aperture
+      "handoff_aperture={shape=`"$([string]$terminalAperture.shape)`",width_mm=$([double]$terminalAperture.width_mm),height_mm=$([double]$terminalAperture.height_mm)},"
+    }else{''}
     @"
 return {iob=[[$(Join-Path $solverDir 'quad_monolithic.iob')]], fly2=[[$fly2]], source_states=dofile([[$states]]),
 trajectory_csv=[[$caseTrajectory]], particle_state_csv=[[$caseState]], summary_json=[[$caseSummary]],
@@ -536,7 +617,7 @@ physical_detector_electrode_id=$physicalDetectorElectrodeId,
 maximum_time_us=$MaximumTimeUs, trajectory_plane_step_mm=$resolvedCellMmZ,
 rod_z_min_mm=$($geometry.rod_z_min), rod_z_max_mm=$($geometry.rod_z_max),
 rod_exit_plane_mm=$($geometry.rod_z_max), handoff_plane_mm=$handoffPlaneMm,
-    census_plane_mm=$censusPlaneMm,
+    census_plane_mm=$censusPlaneMm, $handoffApertureLua
     numerical_census_marker_threshold_mm=$($censusPlaneMm-2*$resolvedCellMmZ-$surfaceToleranceMm),
 census_radius_mm=$censusRadius, radial_escape_radius_mm=$($enclosure.working_region_radius_mm),
 numerical_census_marker_is_handoff=false, axial_axis="x", origin_x_mm=$zShift, origin_y_mm=$(-$origin),
@@ -580,10 +661,16 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
       if($LASTEXITCODE-ne 0){throw 'SIMION axial-drive metrics analysis failed.'}
     }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
     $metricsDoc=Get-Content -LiteralPath $metrics -Raw -Encoding UTF8|ConvertFrom-Json
+    $primaryHandoffTransmission=@(Import-Csv -LiteralPath (
+      Join-Path $resultDir "particle_states__$primaryName.csv"
+    )|Where-Object{$_.event-eq'handoff'-and$_.status-eq'transmitted'}).Count/[double]$primary.particles
+    $controlHandoffTransmission=@(Import-Csv -LiteralPath (
+      Join-Path $resultDir "particle_states__$controlName.csv"
+    )|Where-Object{$_.event-eq'handoff'-and$_.status-eq'transmitted'}).Count/[double]$control.particles
     if(
-      [Math]::Abs([double]$metricsDoc.accelerated_transmission-[double]$primary.transmission)-gt 1e-12 -or
-      [Math]::Abs([double]$metricsDoc.control_transmission-[double]$control.transmission)-gt 1e-12
-    ){throw 'SIMION paired metrics transmission differs from the raw case summaries.'}
+      [Math]::Abs([double]$metricsDoc.accelerated_transmission-$primaryHandoffTransmission)-gt 1e-12 -or
+      [Math]::Abs([double]$metricsDoc.control_transmission-$controlHandoffTransmission)-gt 1e-12
+    ){throw 'SIMION paired metrics transmission differs from the raw handoff states.'}
   }else{
     $primaryName='rf_on';$controlName='zero_rf_control'
     $primary=Invoke-TransportCase $primaryName 1 0;$control=Invoke-TransportCase $controlName 0 0

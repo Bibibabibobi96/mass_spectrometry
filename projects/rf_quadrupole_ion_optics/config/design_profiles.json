@@ -4,7 +4,7 @@
   "project_id": "rf_quadrupole_ion_optics",
   "family_id": "rf_multipole_ion_optics",
   "operating_mode_registry": "config/operating_modes.json",
-  "operating_mode_registry_sha256": "FEC5FA1CE320194A4BB447FF82539A5C1047B44C972A1034B3332CFCD1B7F40D",
+  "operating_mode_registry_sha256": "8877DA7F272D7945CD852495F4A94095D65FF6288D1AD6BA72D6C8F900C343F3",
   "profiles": [
     {
       "design_profile_id": "official_transport",

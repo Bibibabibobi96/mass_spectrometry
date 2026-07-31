@@ -286,13 +286,32 @@ def _resolve_segmentation(
         for key, value in segmentation.items()
         if key != "output_reference_V"
     }
+    if source_segmentation["strategy"] == "uniform":
+        rod_exit_reference = source_segmentation["exit_common_mode_V"]
+    else:
+        rod_exit_reference = source_segmentation["segments"][-1]["common_mode_V"]
+    if (
+        request["axial_drive"]["topology"] == "segmented_rod_axial_acceleration"
+        and not math.isclose(
+            float(segmentation["output_reference_V"]),
+            float(rod_exit_reference),
+            rel_tol=0,
+            abs_tol=1e-12,
+        )
+    ):
+        raise MultipoleDesignCompileError(
+            "segmented acceleration output reference must equal the final rod segment"
+        )
     axial_contract = {
         "schema_version": 2,
         "role": "multipole_axial_acceleration_contract",
         "project_id": identity["project_id"],
         "model_id": MODEL_ID,
         "segmentation": source_segmentation,
-        "output_reference_V": segmentation["output_reference_V"],
+        # The segmented-rod helper ends at the final rod segment.  The request-level
+        # output_reference_V is the actual downstream terminal and may differ for a
+        # terminal potential-step topology.
+        "output_reference_V": rod_exit_reference,
         "functional_acceptance": {
             "minimum_transmission": 0.0,
             "minimum_mean_energy_gain_eV": 0.0,
@@ -645,22 +664,50 @@ def apply_typed_operating_mode(
             "typed operating modes require one uniform physical rod segmentation baseline"
         )
     mode = selected[0]
+    if registry["schema_version"] == 2:
+        terminal_voltage = float(registry["terminal_reference_V"])
+        entrance_relative = float(mode["rod_entrance_relative_to_terminal_V"])
+        exit_relative = float(mode["rod_exit_relative_to_terminal_V"])
+        topology = mode["axial_drive_topology"]
+        if topology == "none" and not (
+            math.isclose(entrance_relative, 0.0, rel_tol=0, abs_tol=1e-12)
+            and math.isclose(exit_relative, 0.0, rel_tol=0, abs_tol=1e-12)
+        ):
+            raise MultipoleDesignCompileError(
+                "topology none requires zero rod potentials relative to the terminal"
+            )
+        if topology == "segmented_rod_axial_acceleration" and not math.isclose(
+            exit_relative, 0.0, rel_tol=0, abs_tol=1e-12
+        ):
+            raise MultipoleDesignCompileError(
+                "segmented acceleration must end at the terminal potential"
+            )
+        if topology == "exit_aperture_plate_potential_step" and not math.isclose(
+            entrance_relative, exit_relative, rel_tol=0, abs_tol=1e-12
+        ):
+            raise MultipoleDesignCompileError(
+                "terminal potential-step topology requires one common rod potential"
+            )
+        entrance_voltage = terminal_voltage + entrance_relative
+        exit_voltage = terminal_voltage + exit_relative
+    else:
+        terminal_voltage = _static_reference_voltages(request)[1]
+        entrance_voltage = float(mode["rod_segment_entrance_common_mode_V"])
+        exit_voltage = float(mode["rod_segment_exit_common_mode_V"])
+        terminal_voltage = float(mode["exit_aperture_plate_and_connector_V"])
     request["axial_drive"]["topology"] = mode["axial_drive_topology"]
-    segmentation["entrance_common_mode_V"] = mode[
-        "rod_segment_entrance_common_mode_V"
-    ]
-    segmentation["exit_common_mode_V"] = mode[
-        "rod_segment_exit_common_mode_V"
-    ]
-    segmentation["output_reference_V"] = mode[
-        "rod_segment_exit_common_mode_V"
-    ]
+    segmentation["entrance_common_mode_V"] = entrance_voltage
+    segmentation["exit_common_mode_V"] = exit_voltage
+    segmentation["output_reference_V"] = terminal_voltage
+    request["drive"]["common_mode_offset_V"] = entrance_voltage
     static = request["static_electrodes_V"]
-    exit_voltage = mode["exit_aperture_plate_and_connector_V"]
     if static["role"] == "cylindrical_shield_static_electrodes":
-        static["exit_outer_endcap_aperture_plate_connector_V"] = exit_voltage
+        static["shield_entrance_outer_endcap_aperture_plate_connector_V"] = entrance_voltage
+        static["exit_outer_endcap_aperture_plate_connector_V"] = terminal_voltage
     elif static["role"] == "rectangular_reference_static_electrodes":
-        static["exit_outer_enclosure_and_connector_V"] = exit_voltage
+        static["entrance_aperture_plate_and_connector_V"] = entrance_voltage
+        static["exit_outer_enclosure_and_connector_V"] = terminal_voltage
+        static["physical_detector_V"] = terminal_voltage
     else:
         raise MultipoleDesignCompileError(
             "typed operating mode cannot map the static-electrode role"

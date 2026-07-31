@@ -108,7 +108,10 @@ class HybridTransportScreenTests(unittest.TestCase):
             PROJECT_ID,
             "exit_aperture_plate_acceleration",
         )["resolved_design"]
-        self.assertEqual(
+        # The completed screen freezes the former absolute-voltage gauge.
+        # Active v2 modes use the oaTOF terminal as 0 V and therefore must not
+        # be mistaken for the immutable run identity.
+        self.assertNotEqual(
             physical_resolved_design_sha256(current_resolved),
             self.preregistration["unique_change"][
                 "candidate_physical_resolved_design_sha256"

@@ -92,6 +92,33 @@ def resolved_design(
 
 
 class SimionGeometryTests(unittest.TestCase):
+    def test_composed_downstream_terminal_replaces_legacy_exit_electrodes(self) -> None:
+        source = resolved_design("cylindrical_bore", 0.0)
+        source["downstream_terminal"] = {
+            "owner": "downstream",
+            "surface_plane_z_mm": 16.0,
+            "rod_end_clearance_mm": 1.0,
+            "upstream_enclosure_end_plane_z_mm": 15.5,
+            "electrode_thickness_mm": 4.0,
+            "electrode_outer_shape": "rectangular",
+            "electrode_outer_width_mm": 38.0,
+            "electrode_outer_height_mm": 38.0,
+            "aperture": {
+                "shape": "rectangular",
+                "width_mm": 1.0,
+                "height_mm": 0.9,
+            },
+        }
+        gem = render_gem(source, 0.2)
+        self.assertIn("pa_define(191,191,102", gem)
+        self.assertEqual(gem.count("Exactly one physical terminal"), 1)
+        self.assertIn("rod_end_clearance_mm=1", gem)
+        self.assertIn("box3d(19,19,20,-19,-19,16)", gem)
+        self.assertIn("box3d(0.5,0.45,20.2,-0.5,-0.45,15.8)", gem)
+        self.assertIn("box3d(0.5,0.45,20.2,-0.5,-0.45,20)", gem)
+        self.assertNotIn("GUI-visible numerical absorber", gem)
+        self.assertNotIn("; connector_shape=", gem)
+
     def test_cli_accepts_xyz_and_rejects_mixed_cell_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

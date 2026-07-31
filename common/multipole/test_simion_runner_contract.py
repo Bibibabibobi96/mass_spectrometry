@@ -31,6 +31,23 @@ class SimionRunnerContractTests(unittest.TestCase):
             source.index("Invoke-SimionStep 'gem2pa'"),
         )
 
+    def test_runner_freezes_and_recomposes_downstream_terminal(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8-sig")
+        for token in (
+            "downstream_terminal_profiles.json",
+            "common.multipole.downstream_terminal",
+            "Downstream-terminal registry changed before it was frozen.",
+            "Frozen downstream-terminal composition differs",
+            "$design.axial_dc",
+            "$design.downstream_terminal.surface_plane_z_mm",
+            "handoff_aperture={shape=",
+        ):
+            self.assertIn(token, source)
+        self.assertLess(
+            source.index("common.multipole.downstream_terminal"),
+            source.index("common.multipole.simion_geometry"),
+        )
+
     def test_default_run_ids_delimit_the_design_profile_variable(self) -> None:
         for name in (
             "run_finite_3d_transport.ps1",
@@ -253,9 +270,10 @@ class SimionRunnerContractTests(unittest.TestCase):
         )
         self.assertIn(
             "write_particle_state(ion_number, 'terminal', 'lost', "
-            "'acceptance_radius', handoff)",
+            "'acceptance_aperture', handoff)",
             program,
         )
+        self.assertIn("inside_handoff_aperture(handoff)", program)
         self.assertIn("terminal_written[ion_number] = true", program)
         self.assertIn("if terminal_written[particle] then return end", program)
         self.assertIn(
@@ -267,9 +285,11 @@ class SimionRunnerContractTests(unittest.TestCase):
     def test_raw_and_paired_transmission_cannot_diverge(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
         self.assertIn(
-            "SIMION paired metrics transmission differs from the raw case summaries.",
+            "SIMION paired metrics transmission differs from the raw handoff states.",
             source,
         )
+        self.assertIn("$primaryHandoffTransmission", source)
+        self.assertIn("$controlHandoffTransmission", source)
 
     def test_waveform_and_all_drive_scalars_come_from_resolved_design(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
