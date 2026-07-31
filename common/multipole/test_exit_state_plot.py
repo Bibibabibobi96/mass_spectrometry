@@ -387,11 +387,15 @@ class ExitStatePlotTests(unittest.TestCase):
             contract = prepare_shared_scale_contract([state])
             output.write_bytes(b"old-png")
             manifest.write_text("old-manifest", encoding="utf-8")
+            resolved_manifest = manifest.resolve()
             real_replace = __import__("os").replace
 
             def fail_manifest_install(source_path, destination_path):
                 source_path, destination_path = Path(source_path), Path(destination_path)
-                if destination_path == manifest and source_path.name.endswith(".tmp"):
+                if (
+                    destination_path == resolved_manifest
+                    and source_path.name.endswith(".tmp")
+                ):
                     raise OSError("simulated manifest commit failure")
                 return real_replace(source_path, destination_path)
 
