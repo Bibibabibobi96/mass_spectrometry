@@ -351,6 +351,9 @@ class ChangedGateContractTests(unittest.TestCase):
         self.assertIn("missing_stage_log_serial_fallback", self.parallel_source)
         self.assertIn("& $InvokeInlineStage $item", self.parallel_source)
         self.assertIn("$failed.Add", self.parallel_source)
+        self.assertIn("DIAGNOSTIC_TAIL_BEGIN", self.parallel_source)
+        self.assertIn("DIAGNOSTIC_TAIL_END", self.parallel_source)
+        self.assertIn("-Tail 80", self.parallel_source)
 
     def test_parallel_scheduler_validates_temporary_cleanup_target(self) -> None:
         self.assertIn("GetFullPath([IO.Path]::GetTempPath())", self.parallel_source)

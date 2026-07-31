@@ -137,6 +137,7 @@ function Invoke-IndependentGateStageGroup {
         foreach ($record in $records.Values) { $record.Process.WaitForExit() }
 
         $failed = [Collections.Generic.List[string]]::new()
+        $failedRecords = [Collections.Generic.List[object]]::new()
         foreach ($item in $Items) {
             if (-not $item.Run) {
                 & $InvokeSkipStage $item
@@ -147,6 +148,11 @@ function Invoke-IndependentGateStageGroup {
                 Get-Content -LiteralPath $record.LogPath -Encoding UTF8
                 if ($record.Process.ExitCode -ne 0) {
                     $failed.Add("$($item.Name)=$($record.Process.ExitCode)")
+                    $failedRecords.Add([pscustomobject]@{
+                        Name = [string]$item.Name
+                        ExitCode = $record.Process.ExitCode
+                        LogPath = $record.LogPath
+                    })
                 }
             } else {
                 Write-Output (
@@ -165,6 +171,17 @@ function Invoke-IndependentGateStageGroup {
             }
         }
         if ($failed.Count -gt 0) {
+            foreach ($failedRecord in $failedRecords) {
+                Write-Output (
+                    "GATE_STAGE=FAIL NAME=$($failedRecord.Name) " +
+                    "EXIT_CODE=$($failedRecord.ExitCode) DIAGNOSTIC_TAIL_BEGIN"
+                )
+                Get-Content -LiteralPath $failedRecord.LogPath -Encoding UTF8 -Tail 80
+                Write-Output (
+                    "GATE_STAGE=FAIL NAME=$($failedRecord.Name) " +
+                    'DIAGNOSTIC_TAIL_END'
+                )
+            }
             throw "$FailureMessage`: $($failed -join ', ')"
         }
     } finally {
