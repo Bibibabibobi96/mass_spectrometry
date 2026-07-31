@@ -15,6 +15,7 @@ from common.multipole.exit_state_plot import (
     export_figure,
     prepare_scales,
     prepare_shared_scale_contract,
+    prepare_visual_style_map,
     render_four_domain_comparison,
     render_exit_state_figure,
     validate_comparison_states,
@@ -126,6 +127,10 @@ class ExitStatePlotTests(unittest.TestCase):
                 self.assertIn("(mm)", axes[0, 0].get_xlabel())
                 self.assertIn("(deg)", axes[0, 2].get_xlabel())
                 self.assertIn("(eV)", axes[1, 0].get_xlabel())
+                self.assertIsNone(axes[0, 0].get_legend())
+                self.assertEqual(len(figure.legends), 1)
+                self.assertEqual(len(axes[0, 1].lines), 2)
+                self.assertEqual(len(axes[0, 1].patches), 0)
             finally:
                 import matplotlib.pyplot as plt
 
@@ -211,12 +216,29 @@ class ExitStatePlotTests(unittest.TestCase):
             self.assertEqual(
                 len(
                     {
-                        (style["color"], style["linestyle"])
+                        (
+                            style["color"],
+                            style["marker"],
+                            style["linestyle"],
+                        )
                         for style in six_styles.values()
                     }
                 ),
                 6,
             )
+            nine_styles = prepare_visual_style_map(
+                [f"series-{index}" for index in range(9)]
+            )
+            self.assertEqual(
+                len({style["color"] for style in nine_styles.values()}), 9
+            )
+            self.assertEqual(
+                len({style["marker"] for style in nine_styles.values()}), 9
+            )
+            with self.assertRaisesRegex(ValueError, "style capacity"):
+                prepare_visual_style_map(
+                    [f"series-{index}" for index in range(11)]
+                )
             document = export_four_domain_figure(
                 list(reversed(states)),
                 output,
@@ -241,10 +263,12 @@ class ExitStatePlotTests(unittest.TestCase):
             self.assertNotEqual(
                 (
                     contract["style_map"]["baseline"]["color"],
+                    contract["style_map"]["baseline"]["marker"],
                     contract["style_map"]["baseline"]["linestyle"],
                 ),
                 (
                     contract["style_map"]["refined"]["color"],
+                    contract["style_map"]["refined"]["marker"],
                     contract["style_map"]["refined"]["linestyle"],
                 ),
             )

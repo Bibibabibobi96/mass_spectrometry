@@ -40,10 +40,22 @@ HISTOGRAMS = (
     ("kinetic_energy_eV", "Kinetic energy (eV)"),
     ("elapsed_time_us", "Elapsed time (us)"),
 )
-COLORS = ("#0072B2", "#D55E00", "#009E73", "#CC79A7", "#E69F00")
-MARKERS = ("o", "s", "^", "D", "v")
-COMPARISON_COLORS = ("#0072B2", "#E69F00", "#009E73", "#D55E00", "#56B4E9", "#CC79A7", "#000000")
+COLORS = (
+    "#000000",
+    "#E69F00",
+    "#56B4E9",
+    "#009E73",
+    "#B8860B",
+    "#0072B2",
+    "#D55E00",
+    "#CC79A7",
+    "#6B6B6B",
+    "#7A3E9D",
+)
+MARKERS = ("o", "s", "^", "D", "v", "P", "X", "<", ">", "*")
+COMPARISON_COLORS = COLORS
 LINESTYLES = ("-", "--", "-.", ":")
+MAX_AUTO_STYLE_SERIES = min(len(COMPARISON_COLORS), len(MARKERS))
 
 
 @dataclass(frozen=True)
@@ -220,6 +232,27 @@ def validate_comparison_states(
     }
 
 
+def prepare_visual_style_map(labels: Sequence[str]) -> dict[str, dict[str, str]]:
+    """Return deterministic, non-repeating styles for a readable combined figure."""
+
+    ordered = sorted(labels)
+    if any(not label for label in ordered) or len(set(ordered)) != len(ordered):
+        raise ValueError("Plot series labels must be non-empty and unique.")
+    if len(ordered) > MAX_AUTO_STYLE_SERIES:
+        raise ValueError(
+            "Combined figure exceeds the non-repeating automatic style capacity; "
+            "split the comparison into smaller figure groups."
+        )
+    return {
+        label: {
+            "color": COMPARISON_COLORS[index],
+            "marker": MARKERS[index],
+            "linestyle": LINESTYLES[index % len(LINESTYLES)],
+        }
+        for index, label in enumerate(ordered)
+    }
+
+
 def prepare_shared_scale_contract(
     states: Sequence[ExitState],
     *,
@@ -227,15 +260,7 @@ def prepare_shared_scale_contract(
     require_paired_ids: bool = False,
 ) -> dict:
     labels = sorted(state.label for state in states)
-    styles = {
-        label: {
-            "color": COMPARISON_COLORS[index % len(COMPARISON_COLORS)],
-            "linestyle": LINESTYLES[
-                (index // len(COMPARISON_COLORS)) % len(LINESTYLES)
-            ],
-        }
-        for index, label in enumerate(labels)
-    }
+    styles = prepare_visual_style_map(labels)
     scales = prepare_scales(states, bin_count=bin_count)
     return {
         "comparison": validate_comparison_states(states, require_paired_ids=require_paired_ids),
@@ -275,14 +300,25 @@ def validate_shared_scale_contract(
     active_styles = []
     for state in states:
         style = styles[state.label]
+        style_keys = set(style) if isinstance(style, dict) else set()
         if (
             not isinstance(style, dict)
-            or set(style) != {"color", "linestyle"}
+            or style_keys
+            not in (
+                {"color", "linestyle"},
+                {"color", "marker", "linestyle"},
+            )
             or not matplotlib.colors.is_color_like(style["color"])
+            or (
+                "marker" in style
+                and style["marker"] not in MARKERS
+            )
             or style["linestyle"] not in LINESTYLES
         ):
             raise ValueError(f"Shared scale contract style is invalid for {state.label}.")
-        active_styles.append((style["color"], style["linestyle"]))
+        active_styles.append(
+            (style["color"], style.get("marker"), style["linestyle"])
+        )
     if len(set(active_styles)) != len(active_styles):
         raise ValueError("Active comparison series must use unique styles.")
     observed = validate_comparison_states(
@@ -328,17 +364,21 @@ def _plot_histograms(
         for index, state in enumerate(states):
             style = styles[state.label] if styles else {
                 "color": COLORS[index % len(COLORS)],
+                "marker": MARKERS[index % len(MARKERS)],
                 "linestyle": "-",
             }
             label = state.label
             if styles:
                 label += f" (N={state.selected_count}/{state.source_particle_count})"
-            axis.hist(
-                state.values[column],
-                bins=edges,
-                weights=np.full(state.selected_count, 1.0 / state.selected_count),
-                histtype="step",
-                linewidth=1.6,
+            probability, _ = np.histogram(state.values[column], bins=edges)
+            probability = probability.astype(float) / state.selected_count
+            centers = 0.5 * (edges[:-1] + edges[1:])
+            axis.plot(
+                centers,
+                probability,
+                linewidth=1.7,
+                markersize=3.5,
+                markevery=2,
                 label=label,
                 **style,
             )
@@ -347,41 +387,50 @@ def _plot_histograms(
 
 
 def render_exit_state_figure(
-    states: Sequence[ExitState], scales: dict, title: str
+    states: Sequence[ExitState],
+    scales: dict,
+    title: str,
+    *,
+    style_map: dict[str, dict[str, str]] | None = None,
 ) -> tuple[plt.Figure, np.ndarray]:
-    figure, axes = plt.subplots(2, 3, figsize=(12.0, 7.2), constrained_layout=True)
+    styles = style_map or prepare_visual_style_map(
+        [state.label for state in states]
+    )
+    figure, axes = plt.subplots(2, 3, figsize=(14.5, 7.2))
     xy = axes[0, 0]
-    for index, state in enumerate(states):
+    for state in states:
+        style = styles[state.label]
         xy.scatter(
             state.values["transverse_x_mm"],
             state.values["transverse_y_mm"],
-            s=18,
-            alpha=0.72,
-            color=COLORS[index % len(COLORS)],
-            marker=MARKERS[index % len(MARKERS)],
+            s=17,
+            alpha=0.62,
+            color=style["color"],
+            marker=style["marker"],
             label=f"{state.label} (N={state.selected_count})",
         )
     xy.set(xlabel="Transverse x (mm)", ylabel="Transverse y (mm)")
     xy.set_xlim(scales["transverse_mm"])
     xy.set_ylim(scales["transverse_mm"])
     xy.set_aspect("equal", adjustable="box")
-    xy.legend(fontsize=8)
 
     _plot_histograms(
         (axes[0, 1], axes[0, 2], axes[1, 0], axes[1, 1]),
         states,
         scales["histogram_edges"],
+        styles,
     )
 
     correlation = axes[1, 2]
-    for index, state in enumerate(states):
+    for state in states:
+        style = styles[state.label]
         correlation.scatter(
             state.values["radial_position_mm"],
             state.values["divergence_angle_deg"],
-            s=18,
-            alpha=0.72,
-            color=COLORS[index % len(COLORS)],
-            marker=MARKERS[index % len(MARKERS)],
+            s=17,
+            alpha=0.62,
+            color=style["color"],
+            marker=style["marker"],
             label=state.label,
         )
     correlation.set(xlabel="Radial position (mm)", ylabel="Divergence angle (deg)")
@@ -389,7 +438,17 @@ def render_exit_state_figure(
     correlation.set_ylim(scales["radial_vs_divergence"]["y"])
     for axis in axes.flat:
         axis.grid(True, alpha=0.22)
-    figure.suptitle(title)
+    handles, labels = xy.get_legend_handles_labels()
+    figure.legend(
+        handles,
+        labels,
+        loc="center left",
+        bbox_to_anchor=(0.80, 0.5),
+        fontsize=8,
+        frameon=False,
+    )
+    figure.suptitle(title, y=0.99)
+    figure.tight_layout(rect=(0.0, 0.0, 0.79, 0.96))
     return figure, axes
 
 
@@ -557,9 +616,12 @@ def export_figure(
     series = _series_manifest(states, run_ids)
     if scale_contract is None:
         scales = prepare_scales(states, bin_count=bin_count)
-        figure, _ = render_exit_state_figure(states, scales, title)
+        styles = prepare_visual_style_map([state.label for state in states])
+        figure, _ = render_exit_state_figure(
+            states, scales, title, style_map=styles
+        )
         shared_scales = _jsonable_scales(scales)
-        figure_size = [12.0, 7.2]
+        figure_size = [14.5, 7.2]
     else:
         validate_shared_scale_contract(scale_contract, states)
         figure, _ = render_four_domain_comparison(states, scale_contract, title)
@@ -596,6 +658,8 @@ def export_figure(
         document["layout"] = "four_domain_fixed_bin_comparison"
         document["comparison"] = scale_contract["comparison"]
         document["style_map"] = scale_contract["style_map"]
+    else:
+        document["style_map"] = styles
     _publish_figure(figure, output, manifest, dpi, document)
     return document
 

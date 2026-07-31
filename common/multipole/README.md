@@ -282,6 +282,9 @@ canonical粒子终态/事件、必要日志和轻量图，终态前移除可重�
 `results/exit_state_diagnostics.png`及figure manifest。单run图固定包含横向空间、半径、发散角、动能、
 到达时间和半径—发散关系；缺失、空集或非有限状态失败关闭。跨run比较必须在一次调用中提供全部
 `--series`，由程序从合并样本冻结共享坐标范围和固定24分箱，不能分别自动缩放后再横向比较。
+固定分箱概率以bin center折线发布，不作KDE平滑；综合图legend置于绘图区外。自动样式最多支持10条
+series，并保证其高对比颜色和marker分别不重复；超过容量必须拆分为多个共享contract图组，不能静默
+循环颜色或形状。
 figure manifest记录源状态SHA、run ID、单位、筛选事件、共享范围、bin edges和Git身份；图是诊断产物，
 不自行授予收敛、精度或资格。
 
