@@ -174,7 +174,7 @@ class RuntimeProfileTests(unittest.TestCase):
         vectorized = resolve_runtime_profile(
             REPO_ROOT,
             "rf_quadrupole_ion_optics",
-            "no_acceleration_full_length_n100_vectorized_release_exit020_t160",
+            "no_acceleration_full_length_n100_vectorized_force_release_exit020_t160",
         )
         self.assertEqual(
             baseline["comsol_particle_release_strategy"],

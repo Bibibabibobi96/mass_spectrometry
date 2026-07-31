@@ -156,7 +156,9 @@ class MultipoleFamilyContractTests(unittest.TestCase):
             / "solve_deterministic_rf_quadrupole_particles.m"
         ).read_text(encoding="utf-8")
         self.assertIn("if accelerationEnabled\n        studyDiff=", shared_solver)
-        self.assertIn("if accelerationEnabled\n        force.set('E'", shared_solver)
+        self.assertIn("if accelerationEnabled\n        electricField = {", shared_solver)
+        self.assertIn("force.set('E',electricField)", shared_solver)
+        self.assertIn("force.set('F',{[chargeFactor electricField{1}]", shared_solver)
         self.assertNotIn("withsol(", quadrupole_solver)
         self.assertNotIn("axial_acceleration_reference", quadrupole_solver)
         self.assertNotIn("exit_aperture_plate_acceleration_reference", quadrupole_solver)

@@ -42,6 +42,38 @@ for index = 1:numel(properties)
             property, value, allowedText);
     end
 end
+forceTypes = {'Force', 'UserDefinedForce'};
+for index = 1:numel(forceTypes)
+    forceType = forceTypes{index};
+    forceTag = sprintf('forceprobe%d', index);
+    try
+        force = cpt.feature.create(forceTag, forceType, 3);
+        forceProperties = cell(force.properties());
+        fprintf(fid, 'FORCE_TYPE=%s STATUS=AVAILABLE PROPERTIES=%s\n', ...
+            forceType, strjoin(forceProperties, ','));
+        for propertyIndex = 1:numel(forceProperties)
+            property = forceProperties{propertyIndex};
+            try
+                value = char(force.getString(property));
+            catch
+                value = '<non-string>';
+            end
+            try
+                allowed = cell(force.getAllowedPropertyValues(property));
+                allowedText = strjoin(allowed, '|');
+            catch
+                allowedText = '<unavailable>';
+            end
+            fprintf(fid, ...
+                'FORCE_PROPERTY=%s VALUE=%s ALLOWED=%s\n', ...
+                property, value, allowedText);
+        end
+        cpt.feature.remove(forceTag);
+    catch exception
+        fprintf(fid, 'FORCE_TYPE=%s STATUS=UNAVAILABLE ERROR=%s\n', ...
+            forceType, replace(exception.message, newline, ' | '));
+    end
+end
 fprintf(fid, 'STATUS=PASS\n');
 
 clear cleanup

@@ -752,20 +752,31 @@ try
             end
             batchRfWaveform = rfWaveform;
         end
-    force = cpt.create('ef1', 'ElectricForce', 3);
-    force.selection.named('sel_vac');
-    force.set('E_src', 'userdef');
     differentialScale = ['((V_dc+rf_scale*V_rf*' batchRfWaveform ')/100[V])'];
     if accelerationEnabled
-        force.set('E', { ...
+        electricField = { ...
             [differentialScale '*withsol(''sol_es_diff'',-d(Vdiff,x))+axial_scale*withsol(''sol_es_static'',-d(Vdiff,x))'], ...
             [differentialScale '*withsol(''sol_es_diff'',-d(Vdiff,y))+axial_scale*withsol(''sol_es_static'',-d(Vdiff,y))'], ...
-            [differentialScale '*withsol(''sol_es_diff'',-d(Vdiff,z))+axial_scale*withsol(''sol_es_static'',-d(Vdiff,z))']});
+            [differentialScale '*withsol(''sol_es_diff'',-d(Vdiff,z))+axial_scale*withsol(''sol_es_static'',-d(Vdiff,z))']};
     else
-        force.set('E', { ...
+        electricField = { ...
             [differentialScale '*(-d(Vdiff,x))-axial_scale*d(Vstatic,x)'], ...
             [differentialScale '*(-d(Vdiff,y))-axial_scale*d(Vstatic,y)'], ...
-            [differentialScale '*(-d(Vdiff,z))-axial_scale*d(Vstatic,z)']});
+            [differentialScale '*(-d(Vdiff,z))-axial_scale*d(Vstatic,z)']};
+    end
+    if vectorizedPhaseRelease
+        force = cpt.create('force1','Force',3);
+        force.selection.named('sel_vac');
+        force.set('SpecifyForce','Directly');
+        chargeFactor=sprintf('(%d*e_const)*', ...
+            design.particle_source.charge_state);
+        force.set('F',{[chargeFactor electricField{1}], ...
+            [chargeFactor electricField{2}],[chargeFactor electricField{3}]});
+    else
+        force = cpt.create('ef1','ElectricForce',3);
+        force.selection.named('sel_vac');
+        force.set('E_src','userdef');
+        force.set('E',electricField);
     end
     if accelerationEnabled
         [pdOn, solutionOn] = solve_particle_case(model, cpt, 'on', 1, 1, dt, timeMaximum,stationarySolutionTag);
@@ -1260,6 +1271,9 @@ featureTags = cell(cpt.feature.tags());
 releaseTags = featureTags(startsWith(featureTags, 'rel'));
 for index = 1:numel(releaseTags)
     cpt.feature(releaseTags{index}).set('StudyStep', [studyTag '/' stepTag]);
+end
+if any(strcmp(featureTags,'auxphase'))
+    cpt.feature('auxphase').set('StudyStep',[studyTag '/' stepTag]);
 end
 cpt.feature('pp1').set('StudyStep', [studyTag '/' stepTag]);
 solution = model.sol.create(solutionTag);

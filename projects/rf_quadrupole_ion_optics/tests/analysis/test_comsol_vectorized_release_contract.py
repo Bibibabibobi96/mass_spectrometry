@@ -13,6 +13,10 @@ RUNNER = REPO_ROOT / "common/multipole/run_finite_3d_transport.ps1"
 RUNTIME_PROFILES = PROJECT_ROOT / "config/runtime_profiles.json"
 PREREGISTRATION = (
     PROJECT_ROOT
+    / "config/family_experiment/vectorized_release_validation/preregistration_v2.json"
+)
+FAILED_PREREGISTRATION = (
+    PROJECT_ROOT
     / "config/family_experiment/vectorized_release_validation/preregistration.json"
 )
 
@@ -21,7 +25,7 @@ class ComsolVectorizedReleaseContractTests(unittest.TestCase):
     def test_vectorized_profile_isolated_from_legacy_profiles(self) -> None:
         profiles = json.loads(RUNTIME_PROFILES.read_text(encoding="utf-8"))["profiles"]
         vectorized = profiles[
-            "no_acceleration_full_length_n100_vectorized_release_exit020_t160"
+            "no_acceleration_full_length_n100_vectorized_force_release_exit020_t160"
         ]
         self.assertEqual(
             vectorized["comsol_particle_release_strategy"],
@@ -31,6 +35,9 @@ class ComsolVectorizedReleaseContractTests(unittest.TestCase):
             "comsol_particle_release_strategy",
             profiles["no_acceleration_full_length_n100_comsol_followup_exit020_t160"],
         )
+        failed = json.loads(FAILED_PREREGISTRATION.read_text(encoding="utf-8"))
+        self.assertEqual(failed["status"], "EXECUTED_FAILED")
+        self.assertFalse(failed["observed_result"]["n1000_promotion_allowed"])
 
     def test_matlab_core_preserves_both_release_semantics(self) -> None:
         source = MATLAB_CORE.read_text(encoding="utf-8-sig")
@@ -39,6 +46,9 @@ class ComsolVectorizedReleaseContractTests(unittest.TestCase):
             "AuxiliaryField",
             "DistributionFunction_auxphase",
             "particle_phase_offset",
+            "cpt.create('force1','Force',3)",
+            "force.set('SpecifyForce','Directly')",
+            "force.set('F',{[chargeFactor electricField{1}]",
             "release.set('rt', '0[s]')",
             "release.set('rt',sprintf('%.17g[s]'",
             "absoluteTimeOffset=double(addBirthTimeOffset)",
