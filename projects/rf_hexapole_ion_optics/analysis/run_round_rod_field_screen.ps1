@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-  [ValidateSet('baseline_finite_3d')][string]$DesignProfileId = 'baseline_finite_3d',
+  [ValidateSet('no_acceleration_full_length')][string]$DesignProfileId = 'no_acceleration_full_length',
   [string]$RunId = ''
 )
 

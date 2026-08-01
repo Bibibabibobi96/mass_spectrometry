@@ -82,15 +82,7 @@ class FamilyExperimentProfileTests(unittest.TestCase):
             for profile in registry["profiles"]
             if profile["design_profile_id"] not in MODE_IDS
         }
-        self.assertEqual(
-            aliases,
-            {
-                "baseline_finite_3d": "segmented_rod_axial_acceleration",
-                "exit_aperture_plate_acceleration_reference": (
-                    "exit_aperture_plate_acceleration"
-                ),
-            },
-        )
+        self.assertEqual(aliases, {})
 
     def test_profile_source_hashes_use_repository_lf_bytes(self) -> None:
         registry = load("config/design_profiles.json")
@@ -262,19 +254,12 @@ class FamilyExperimentProfileTests(unittest.TestCase):
                 statistical["particle_source"]["profile_id"],
                 "family_mother_sample_v1_n1000",
             )
-        for alias in (
-            "baseline_finite_3d",
+        runtime_profiles = load("config/runtime_profiles.json")
+        self.assertNotIn("baseline_finite_3d", runtime_profiles["profiles"])
+        self.assertNotIn(
             "exit_aperture_plate_acceleration_reference",
-        ):
-            resolved_alias = resolve_runtime_profile(
-                REPO_ROOT,
-                "rf_hexapole_ion_optics",
-                alias,
-            )
-            self.assertEqual(
-                resolved_alias["particle_source"]["profile_id"],
-                "family_mother_sample_v1_n100",
-            )
+            runtime_profiles["profiles"],
+        )
 
     def test_preregistration_refuses_unsourced_numerical_thresholds(self) -> None:
         convergence = load("config/qualification/n100_convergence_preregistration.json")

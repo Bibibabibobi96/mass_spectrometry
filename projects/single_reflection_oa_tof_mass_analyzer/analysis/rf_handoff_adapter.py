@@ -2,76 +2,21 @@
 
 from __future__ import annotations
 
-import csv
 import math
 from collections.abc import Mapping, Sequence
-from pathlib import Path
-
-from common.contracts.component_particle_state import (
-    csv_columns as component_particle_state_columns,
-    validate_component_particle_state_csv,
-)
 from common.contracts.particle_physics import (
     AMU_KG,
     ELEMENTARY_CHARGE_C,
     kinetic_energy_ev,
 )
 from common.contracts.rigid_transform import FramedVector, RigidTransform
+
 _ACCELERATOR_PA_TO_GLOBAL = RigidTransform(
     "oatof_accelerator_pa",
     "oatof_global",
     ((1.0, 0.0, 0.0), (0.0, 0.0, 1.0), (0.0, -1.0, 0.0)),
     (0.0, 0.0, 0.0),
 )
-
-
-def _read_exact_csv(path: Path, expected_columns: Sequence[str]) -> list[dict[str, str]]:
-    with path.open("r", encoding="utf-8-sig", newline="") as handle:
-        reader = csv.DictReader(handle)
-        if reader.fieldnames != list(expected_columns):
-            raise ValueError(
-                f"handoff particle-state columns differ: {reader.fieldnames}; "
-                f"expected {list(expected_columns)}"
-            )
-        rows = list(reader)
-    if not rows:
-        raise ValueError("handoff particle-state CSV must contain at least one row")
-    return rows
-
-
-def load_handoff_particle_states(
-    path: Path,
-    *,
-    legacy_projection: bool,
-) -> tuple[list[dict[str, str]], dict[str, object]]:
-    """Load either public v1 state or the explicitly historical projection table.
-
-    The legacy table is intentionally not padded or renamed into public v1. Its
-    missing species, weight, and phase-reference bindings require an upstream
-    migration, so this adapter only exposes it to modes already marked inactive.
-    """
-    if legacy_projection:
-        from projects.rf_quadrupole_ion_optics.analysis.migrate_legacy_component_particle_state import (
-            LEGACY_25_COLUMNS as LEGACY_PROJECTION_COLUMNS,
-        )
-
-        rows = _read_exact_csv(path, LEGACY_PROJECTION_COLUMNS)
-        return rows, {
-            "format": "legacy_25_column_component_handoff",
-            "schema_version": None,
-            "validated_by": "oa_tof_explicit_legacy_projection_adapter",
-            "rows": len(rows),
-            "public_v1": False,
-        }
-    report = validate_component_particle_state_csv(path)
-    rows = _read_exact_csv(path, component_particle_state_columns())
-    return rows, {
-        "format": "component_particle_state_csv_v1",
-        "schema_version": report["schema_version"],
-        "validated_by": "common.contracts.component_particle_state",
-        "rows": report["rows"],
-        "public_v1": True,
-    }
 
 
 def _finite_float(row: Mapping[str, str], field: str, source: str) -> float:

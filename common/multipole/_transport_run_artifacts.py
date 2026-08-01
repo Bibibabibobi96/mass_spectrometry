@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 import subprocess
 import sys
 from contextlib import contextmanager
@@ -13,7 +12,12 @@ from typing import Any, Iterator, Mapping
 
 from common.contracts.artifact_naming import validate_run_id
 from common.contracts.artifact_project import ensure_artifact_project
-from common.multipole.family_contract import from_high_order_baseline, operating_contract_document
+from common.multipole.design_profile import resolve_design_profile
+from common.multipole.family_contract import (
+    from_high_order_resolved_design,
+    l1_l2_transport_contract_from_resolved_design,
+    operating_contract_document,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -55,24 +59,32 @@ def transport_run(
 ) -> Iterator[TransportRun]:
     """Prepare, freeze, and terminalize one analytic multipole transport run."""
     validate_run_id(run_id)
-    baseline_source = project_root / "config/baseline.json"
-    contract = json.loads(baseline_source.read_text(encoding="utf-8"))
-    project_id = contract["project_id"]
+    descriptor = json.loads((project_root / "config/project.json").read_text(encoding="utf-8"))
+    project_id = descriptor["project_id"]
+    resolution = resolve_design_profile(REPO_ROOT, project_id, "no_acceleration_full_length")
+    resolved_design = resolution["resolved_design"]
+    contract = l1_l2_transport_contract_from_resolved_design(resolved_design)
     run_dir = ensure_artifact_project(ARTIFACT_PROJECTS_ROOT, project_id) / "runs" / run_id
     if run_dir.exists():
         raise FileExistsError(f"run directory already exists: {run_dir}")
     input_dir, result_dir = run_dir / "inputs", run_dir / "results"
     for directory in (input_dir, result_dir, run_dir / "logs"):
         directory.mkdir(parents=True)
-    frozen_baseline, frozen_mode = input_dir / "baseline.json", input_dir / f"{mode}.json"
+    frozen_resolved, frozen_mode = input_dir / "resolved_design.json", input_dir / f"{mode}.json"
     family_operating = input_dir / "family_operating_contract.json"
-    shutil.copy2(baseline_source, frozen_baseline)
-    shutil.copy2(project_root / f"config/modes/{mode}.json", frozen_mode)
-    contract = json.loads(frozen_baseline.read_text(encoding="utf-8"))
-    if contract["project_id"] != project_id:
-        raise RuntimeError("project identity changed while baseline input was frozen")
-    _write_json(family_operating, operating_contract_document(from_high_order_baseline(contract)))
-    inputs = {**identity_inputs, "baseline": frozen_baseline, "mode": frozen_mode, "family_operating_contract": family_operating}
+    _write_json(frozen_resolved, resolved_design)
+    _write_json(
+        frozen_mode,
+        json.loads((project_root / f"config/modes/{mode}.json").read_text(encoding="utf-8")),
+    )
+    frozen_design = json.loads(frozen_resolved.read_text(encoding="utf-8"))
+    if frozen_design["identity"]["project_id"] != project_id:
+        raise RuntimeError("project identity changed while resolved design input was frozen")
+    _write_json(
+        family_operating,
+        operating_contract_document(from_high_order_resolved_design(frozen_design)),
+    )
+    inputs = {**identity_inputs, "resolved_design": frozen_resolved, "mode": frozen_mode, "family_operating_contract": family_operating}
     _write_json(run_dir / "run_config.json", {
         "schema_version": 1, "role": run_config_role, "run_id": run_id, "project": project_id,
         "mode": mode, "project_root": str(project_root),

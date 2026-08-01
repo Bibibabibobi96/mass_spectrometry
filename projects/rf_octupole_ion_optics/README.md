@@ -19,10 +19,10 @@
   [`config/design_variables.json`](config/design_variables.json)和
   [`config/optimization_envelope.json`](config/optimization_envelope.json)。
 - typed电气模式：[`config/operating_modes.json`](config/operating_modes.json)。
-- 三个规范design profile及兼容别名：
+- 三个规范design profile：
   [`config/design_profiles.json`](config/design_profiles.json)。
-- `config/project.json`的注册身份由全部design profile的一致identity给出，不绑定历史
-  `config/baseline.json`；后者只供尚未迁移的兼容路径只读访问。
+- `config/project.json`的注册身份由全部design profile的一致identity给出；L1/L2/L3均由公共
+  resolver/compiler读取规范profile，不再维护项目级历史baseline。
 - runtime、粒子源和求解器数值：
   [`config/runtime_profiles.json`](config/runtime_profiles.json)、
   [`config/particle_source_profiles.json`](config/particle_source_profiles.json)、
@@ -40,10 +40,9 @@
   [`../../common/multipole/engineering_progression_acceptance.json`](../../common/multipole/engineering_progression_acceptance.json)；
   本项目只引用，不复制阈值、状态或判定。
 
-三个规范模式为`no_acceleration_full_length`、`segmented_rod_axial_acceleration`和
-`exit_aperture_plate_acceleration`。旧名`baseline_finite_3d`与
-`exit_aperture_plate_acceleration_reference`仅是分别映射到后两种typed mode的兼容别名；它们仍
-消费同一机械请求、目录、包络和mode registry，不是第二机械权威，也不是第四或第五种实验模式。
+三个且仅三个规范模式为`no_acceleration_full_length`、`segmented_rod_axial_acceleration`和
+`exit_aperture_plate_acceleration`。设计及runtime兼容别名已经退役；solver numerics中同名的
+`baseline_finite_3d`仍是数值profile，不是设计模式。
 
 runtime命名与四/六极杆一致：N=100 baseline直接使用完整mode ID；空间和时间加密分别追加
 `_n100_spatial_refined`、`_n100_temporal_refined`；N=1000追加`_n1000`。solver numerics ID固定为

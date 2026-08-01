@@ -573,14 +573,11 @@ class CandidateGateParameterContractTests(unittest.TestCase):
             "resolve_contract --check",
             "--profile interface --check",
             "--profile mass_filter --check",
-            "common.integration.resolve_connection",
             "sync_simion_geometry --check",
             "generate_official_particle_table --check",
             "mass_filter_reference.theory",
             "mass_filter_reference.run_finite_length",
             "entry_aperture_l0.py",
-            "build_oatof_handoff",
-            "$candidateValidators",
         ):
             with self.subTest(required=required):
                 self.assertLess(project_gate.index(required), core_return)

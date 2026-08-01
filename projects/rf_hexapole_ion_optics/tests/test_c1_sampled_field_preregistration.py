@@ -123,7 +123,11 @@ class C1SampledFieldPreregistrationTests(unittest.TestCase):
         plan_path = REPO_ROOT / sampling["plan_path"]
         self.assertEqual(sampling["plan_sha256"], sha256(plan_path))
         rows = generate_stationary_field_sample_rows(
-            load(PROJECT_ROOT / "config" / "resolved_design.json"),
+            load(
+                PROJECT_ROOT
+                / "config"
+                / "resolved_design_no_acceleration_full_length.json"
+            ),
             load(plan_path),
         )
         self.assertEqual(len(rows), sampling["expected_point_count"])

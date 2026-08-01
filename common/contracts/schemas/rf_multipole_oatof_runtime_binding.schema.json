@@ -10,10 +10,10 @@
     "connection_profile_id",
     "upstream_project_id",
     "contracts",
-    "implementation"
+    "implementation_binding"
   ],
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"const": 2},
     "role": {"const": "rf_multipole_oatof_runtime_binding"},
     "integration_id": {"const": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"},
     "connection_profile_id": {"$ref": "#/$defs/identifier"},
@@ -31,7 +31,15 @@
         "upstream_resolved_design"
       ],
       "properties": {
-        "dependency_contract": {"$ref": "#/$defs/file"},
+        "dependency_contract": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["base", "overlay"],
+          "properties": {
+            "base": {"$ref": "#/$defs/file"},
+            "overlay": {"$ref": "#/$defs/file"}
+          }
+        },
         "pre_pulse_contract": {"$ref": "#/$defs/file"},
         "pulse_capture_contract": {"$ref": "#/$defs/file"},
         "pulse_timing_contract": {"$ref": "#/$defs/file"},
@@ -40,34 +48,7 @@
         "upstream_resolved_design": {"$ref": "#/$defs/file"}
       }
     },
-    "implementation": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "run_artifact_support",
-        "runtime_binding_support",
-        "transfer_runner",
-        "pre_pulse_runner",
-        "pre_pulse_builder",
-        "pre_pulse_field_preparer",
-        "pre_pulse_field_solver",
-        "pulse_capture_runner",
-        "pulse_capture_solver",
-        "analyzer_transport_runner"
-      ],
-      "properties": {
-        "run_artifact_support": {"$ref": "#/$defs/file"},
-        "runtime_binding_support": {"$ref": "#/$defs/file"},
-        "transfer_runner": {"$ref": "#/$defs/file"},
-        "pre_pulse_runner": {"$ref": "#/$defs/file"},
-        "pre_pulse_builder": {"$ref": "#/$defs/file"},
-        "pre_pulse_field_preparer": {"$ref": "#/$defs/file"},
-        "pre_pulse_field_solver": {"$ref": "#/$defs/file"},
-        "pulse_capture_runner": {"$ref": "#/$defs/file"},
-        "pulse_capture_solver": {"$ref": "#/$defs/file"},
-        "analyzer_transport_runner": {"$ref": "#/$defs/file"}
-      }
-    }
+    "implementation_binding": {"$ref": "#/$defs/file"}
   },
   "$defs": {
     "identifier": {

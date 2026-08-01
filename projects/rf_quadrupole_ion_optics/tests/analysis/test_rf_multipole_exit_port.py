@@ -7,10 +7,6 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.machine_contracts import validate_schema
-from common.integration.resolve_connection import (
-    load_connection_profile_registry,
-    resolve_connection_profile,
-)
 from common.multipole.design_profile import resolve_design_profile
 
 
@@ -22,15 +18,6 @@ PORT_PATH = (
 FAMILY_PORT_PATH = PORT_PATH.with_name(
     "rf_multipole_exit_no_acceleration_full_length.json"
 )
-PROFILE_REGISTRY_PATH = (
-    REPO_ROOT
-    / "integrations"
-    / "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
-    / "config"
-    / "connection_profiles.json"
-)
-
-
 def load(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -47,12 +34,6 @@ class RfMultipoleExitPortTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.port = load(PORT_PATH)
-        registry = load_connection_profile_registry(PROFILE_REGISTRY_PATH)
-        cls.resolved_connection = resolve_connection_profile(
-            registry,
-            "rf_quadrupole_grounded_connector_gap_1mm",
-            repo_root=REPO_ROOT,
-        )
         cls.source_path = REPO_ROOT / cls.port["authority"]["source_contract"]
         cls.source = load(cls.source_path)
 
@@ -87,7 +68,7 @@ class RfMultipoleExitPortTests(unittest.TestCase):
             "rectangular_bore",
         )
 
-    def test_exit_surface_and_potential_match_resolved_connection(self) -> None:
+    def test_exit_surface_and_potential_match_source_authority(self) -> None:
         handoff_z = self.source["interfaces_mm"]["exit"]["handoff_plane_z_mm"]
         self.assertEqual(
             self.port["mating_surface"]["center_mm"],
@@ -96,18 +77,6 @@ class RfMultipoleExitPortTests(unittest.TestCase):
         self.assertEqual(
             self.port["mating_surface"]["outward_normal"],
             [0.0, 0.0, 1.0],
-        )
-        self.assertEqual(
-            self.port["mating_surface"]["center_mm"],
-            self.resolved_connection["port_geometry"]["upstream"][
-                "mating_surface"
-            ]["center_mm"],
-        )
-        self.assertEqual(
-            self.port["mating_surface"]["potential_V"],
-            self.resolved_connection["port_geometry"]["upstream"][
-                "mating_surface"
-            ]["potential_V"],
         )
         self.assertEqual(
             self.port["field_boundary"]["field_reaches_surface"],

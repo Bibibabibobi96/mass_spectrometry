@@ -1,4 +1,4 @@
-"""Strict loading for integration-owned execution mappings and migration preregistration."""
+"""Strict loading for integration-owned execution mappings and budgets."""
 
 from __future__ import annotations
 
@@ -57,23 +57,6 @@ def resolve_execution_mapping(
     if file_sha256(runtime_binding) != mapping["runtime_binding_sha256"]:
         raise ContractError("execution runtime binding SHA-256 is stale")
     return mapping
-
-
-def validate_migration_preregistration(
-    path: Path,
-    *,
-    repo_root: Path,
-    expected_profile_ids: set[str],
-) -> dict[str, Any]:
-    document = _load(path)
-    validate_schema(document, "migration_equivalence_preregistration.schema.json")
-    oracle = _repo_file(repo_root, document["legacy_oracle"]["path"])
-    if file_sha256(oracle) != document["legacy_oracle"]["sha256"]:
-        raise ContractError("migration oracle SHA-256 is stale")
-    actual_ids = {item["connection_profile_id"] for item in document["profiles"]}
-    if actual_ids != expected_profile_ids or len(actual_ids) != len(document["profiles"]):
-        raise ContractError("migration preregistration profile set differs")
-    return document
 
 
 def resolve_integration_engineering_budget(

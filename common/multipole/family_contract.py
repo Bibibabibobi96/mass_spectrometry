@@ -137,6 +137,131 @@ def from_high_order_baseline(baseline: dict[str, Any]) -> MultipoleOperatingCont
     )
 
 
+def from_high_order_resolved_design(
+    resolved: dict[str, Any],
+) -> MultipoleOperatingContract:
+    """Normalize one compiler-produced hexapole or octupole resolved design."""
+    identity_source = resolved["identity"]
+    family = load_family_contract()
+    if identity_source.get("family_id") != family["family_id"]:
+        raise ValueError("resolved design family_id differs from the RF multipole family")
+    order = int(identity_source["radial_order_n"])
+    electrode_count = int(identity_source["electrode_count"])
+    if order < 3 or order not in family["supported_radial_orders"]:
+        raise ValueError("high-order resolved adapter requires radial_order_n >= 3")
+    if electrode_count != 2 * order:
+        raise ValueError("electrode_count must equal twice radial_order_n")
+    coordinate_id = str(resolved["coordinate"]["coordinate_id"])
+    if coordinate_id != family["coordinate_convention_id"]:
+        raise ValueError("resolved design coordinate convention differs from the family contract")
+    geometry = resolved["geometry_mm"]
+    drive = resolved["drive"]
+    return MultipoleOperatingContract(
+        identity=MultipoleIdentity(
+            family_id=family["family_id"],
+            project_id=str(identity_source["project_id"]),
+            radial_order_n=order,
+            electrode_count=electrode_count,
+            coordinate_convention_id=coordinate_id,
+            voltage_convention_id=family["voltage_convention_id"],
+            r0_convention_id=family["r0_convention_id"],
+        ),
+        geometry=MultipoleGeometry(
+            r0_mm=_positive("inscribed_radius_r0", geometry["inscribed_radius_r0"]),
+            effective_length_mm=_positive("rod_length", geometry["rod_length"]),
+        ),
+        voltage=VoltageDrive(
+            waveform=str(drive["waveform"]),
+            rf_amplitude_v_per_group=_positive(
+                "rf_amplitude_V_zero_to_peak_per_group",
+                drive["rf_amplitude_V_zero_to_peak_per_group"],
+            ),
+            dc_amplitude_v_per_group=_finite(
+                "dc_amplitude_V_per_group", drive["dc_amplitude_V_per_group"]
+            ),
+            common_mode_offset_v=_finite(
+                "common_mode_offset_V", drive["common_mode_offset_V"]
+            ),
+            frequency_hz=_positive("frequency_Hz", drive["frequency_Hz"]),
+            phase_rad=_finite("phase_rad", drive["phase_rad"]),
+        ),
+    )
+
+
+def l1_l2_transport_contract_from_resolved_design(
+    resolved: dict[str, Any],
+) -> dict[str, Any]:
+    """Project a governed resolved design onto the legacy analytic solver API.
+
+    The projection keeps the deterministic L1/L2 validation policy local to the
+    analytic runner while taking every physical geometry and drive value from the
+    current profile compiler.  It is deliberately not a design authority.
+    """
+    operating = from_high_order_resolved_design(resolved)
+    enclosure = resolved["geometry_mm"]["enclosure"]
+    energy = resolved["particle_source"]["energy_model"]
+    if energy.get("kind") != "monoenergetic":
+        raise ValueError("analytic L1/L2 projection requires a monoenergetic source")
+    return {
+        "schema_version": 1,
+        "role": "multipole_l1_l2_internal_transport_projection",
+        "status": "generated_from_current_resolved_design",
+        "project_id": operating.identity.project_id,
+        "family_contract_id": operating.identity.family_id,
+        "field_model_id": "multipole.ideal_2n.v1",
+        "trajectory_model_id": "multipole.ideal_finite_length.time_domain.v1",
+        "model_level": "L1",
+        "multipole": {
+            "electrode_count": operating.identity.electrode_count,
+            "radial_order_n": operating.identity.radial_order_n,
+            "orientation_rad": float(resolved["coordinate"]["orientation_rad"]),
+        },
+        "conventions": {
+            "coordinate_id": operating.identity.coordinate_convention_id,
+            "voltage_id": operating.identity.voltage_convention_id,
+            "r0_id": operating.identity.r0_convention_id,
+        },
+        "geometry_mm": {
+            "inscribed_radius_r0": operating.geometry.r0_mm,
+            "usable_radius": _positive(
+                "working_region_radius_mm", enclosure["working_region_radius_mm"]
+            ),
+            "effective_length": operating.geometry.effective_length_mm,
+            "round_rod_geometry_selected": False,
+        },
+        "rf": {
+            "waveform": operating.voltage.waveform,
+            "amplitude_V_peak": operating.voltage.rf_amplitude_v_per_group,
+            "frequency_Hz": operating.voltage.frequency_hz,
+            "phase_rad": operating.voltage.phase_rad,
+            "common_mode_offset_V": operating.voltage.common_mode_offset_v,
+        },
+        "particle_source": {
+            "count": 100,
+            "seed": 20260722,
+            "mass_amu": 100.0,
+            "charge_state": int(resolved["particle_source"]["charge_state"]),
+            "kinetic_energy_eV": _positive("kinetic_energy_eV", energy["kinetic_energy_eV"]),
+            "maximum_source_radius_mm": 0.5,
+            "maximum_divergence_deg": 5.0,
+            "birth_phase_distribution": "uniform_one_rf_period",
+        },
+        "numerics": {"rf_steps_per_period": 80},
+        "assumptions": {
+            "collision_model": "disabled",
+            "space_charge_model": "disabled",
+            "magnetic_field_model": "disabled",
+            "axial_field_model": "disabled",
+        },
+        "functional_acceptance": {
+            "minimum_rf_transmission": 0.8,
+            "minimum_improvement_over_zero_rf": 0.2,
+        },
+        "claim_limit": (
+            "Generated internal L1/L2 analytic projection; physical values come from the "
+            "current governed resolved design and this document is not a design authority."
+        ),
+    }
 def from_quadrupole_contract(
     baseline: dict[str, Any],
     mode: dict[str, Any],

@@ -217,21 +217,10 @@ try {
   Copy-Item -LiteralPath $runtime.resolved_connection_path `
     -Destination $resolvedConnectionFrozen
 
-  $dependencyContractSource = $runtime.contracts.dependency_contract
-  $dependencySourceDocument = Get-Content -LiteralPath $dependencyContractSource `
-    -Raw -Encoding UTF8 | ConvertFrom-Json
-  $dependencySelf = @(
-    $dependencySourceDocument.dependencies |
-      Where-Object { [string]$_.id -eq 'rf_dependency_contract_snapshot' }
-  )
-  if ($dependencySelf.Count -ne 1) {
-    throw 'Analyzer dependency contract requires one self-snapshot identity.'
-  }
-  $dependencyContract = Join-Path $package.input_dir `
-    ([string]$dependencySelf[0].frozen_filename)
-  $dependencyContractIdentity = Copy-RfStableFile -SourceRunRoot $repoRoot `
-    -SourcePath $dependencyContractSource -Destination $dependencyContract `
-    -Role 'dependency contract'
+  $dependencyPublication = Publish-RfOatofDependencyInventory `
+    -Runtime $runtime -RepoRoot $repoRoot -InputDir $package.input_dir `
+    -Role 'AnalyzerTransport'
+  $dependencyContract = $dependencyPublication.code_inventory_path
   $dependencyDocument = Get-Content -LiteralPath $dependencyContract `
     -Raw -Encoding UTF8 | ConvertFrom-Json
   $dependencyConsumer = 'analyzer_transport'
@@ -251,16 +240,8 @@ try {
   $dependencySnapshotPaths = @{}
   $dependencyCompatibilityPaths = @{}
   foreach ($dependency in $selectedDependencies) {
-    if ([string]$dependency.id -eq 'rf_dependency_contract_snapshot') {
-      $identity = Confirm-RfFrozenDependencyIdentity -RepoRoot $repoRoot `
-        -InputDir $package.input_dir -Dependency $dependency `
-        -ExpectedSourcePath $dependencyContractSource `
-        -ExistingSnapshotPath $dependencyContract `
-        -ExpectedSha256 $dependencyContractIdentity.sha256
-    } else {
-      $identity = Copy-RfFrozenDependency -RepoRoot $repoRoot `
-        -InputDir $package.input_dir -Dependency $dependency
-    }
+    $identity = Copy-RfFrozenDependency -RepoRoot $repoRoot `
+      -InputDir $package.input_dir -Dependency $dependency
     if ((Get-FileHash -LiteralPath $identity.snapshot_path -Algorithm SHA256).Hash -ne
         $identity.sha256) {
       throw "PulseCapture end-to-end dependency snapshot identity differs: $($identity.id)"
@@ -280,7 +261,6 @@ try {
     $dependencyCompatibilityPaths[$identity.id] = $identity.compatibility_path
   }
   $requiredSnapshotIds = @(
-    'rf_dependency_contract_snapshot',
     'rf_analyzer_transport_simion_input_adapter','rf_analyzer_transport_analyzer',
     'rf_oatof_formal_release_validator',
     'oatof_rf_handoff_adapter',
@@ -523,7 +503,9 @@ try {
       run_artifact_support = $support
       runtime_binding = $runtimeBindingFrozen
       resolved_connection = $resolvedConnectionFrozen
-      dependency_contract = $dependencyContract
+      code_inventory = $dependencyContract
+      dependency_contract_base = $dependencyPublication.base_path
+      dependency_contract_overlay = $dependencyPublication.overlay_path
       source_run_manifest = $sourceManifestPath
       source_run_config = $sourceConfigPath
       resolved_integration_engineering_budget = $budgetBinding.frozen_budget

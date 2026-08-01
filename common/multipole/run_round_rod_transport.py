@@ -30,7 +30,7 @@ def _load_source(project_id: str, source_run_id: str) -> tuple[Path, dict, list[
 
 def execute(project_root: Path, source_run_id: str, run_id: str) -> Path:
     validate_run_id(run_id)
-    project_id = json.loads((project_root / "config/baseline.json").read_text(encoding="utf-8"))["project_id"]
+    project_id = json.loads((project_root / "config/project.json").read_text(encoding="utf-8"))["project_id"]
     source_dir, screen_contract, screen_rows = _load_source(project_id, source_run_id)
     screen_metrics = analyze(screen_rows, screen_contract)
     with transport_run(

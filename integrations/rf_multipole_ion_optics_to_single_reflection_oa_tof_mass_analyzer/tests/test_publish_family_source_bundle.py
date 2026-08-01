@@ -35,8 +35,13 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.rf_handoff_adapter
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 INTEGRATION_ROOT = Path(__file__).resolve().parents[1]
-DEPENDENCY_CONTRACT_PATH = (
-    INTEGRATION_ROOT / "config" / "family_quadrupole_dependencies.json"
+DEPENDENCY_BASE_PATH = (
+    INTEGRATION_ROOT / "config" / "family_dependencies_base.json"
+)
+DEPENDENCY_OVERLAY_PATH = (
+    INTEGRATION_ROOT
+    / "config"
+    / "family_quadrupole_dependencies_overlay.json"
 )
 PROFILE_REGISTRY_PATH = INTEGRATION_ROOT / "config" / "connection_profiles.json"
 SOURCE_CONTRACT_PATH = (
@@ -234,7 +239,13 @@ class FamilySourceBundlePublisherTests(unittest.TestCase):
 
     def _build_pre_pulse_runtime_snapshot(self) -> tuple[Path, Path]:
         dependency_contract = json.loads(
-            DEPENDENCY_CONTRACT_PATH.read_text(encoding="utf-8")
+            DEPENDENCY_BASE_PATH.read_text(encoding="utf-8")
+        )
+        dependency_overlay = json.loads(
+            DEPENDENCY_OVERLAY_PATH.read_text(encoding="utf-8")
+        )
+        dependency_contract["dependencies"].extend(
+            dependency_overlay["dependencies"]
         )
         dependencies = [
             dependency

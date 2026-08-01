@@ -70,14 +70,7 @@ class ThreeModeDesignConfigurationTests(unittest.TestCase):
             for item in profile_items
             if item["design_profile_id"] not in MODE_IDS
         }
-        self.assertEqual(
-            aliases,
-            {
-                "baseline_finite_3d": "segmented_rod_axial_acceleration",
-                "exit_aperture_plate_acceleration_reference":
-                    "exit_aperture_plate_acceleration",
-            },
-        )
+        self.assertEqual(aliases, {})
         self.assertEqual(
             {item["design_request"] for item in profile_items},
             {"config/requests/mechanical_base.json"},

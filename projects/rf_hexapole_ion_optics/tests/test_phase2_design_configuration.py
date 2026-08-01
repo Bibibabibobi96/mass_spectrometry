@@ -35,7 +35,9 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
         cls.request = load(REQUEST_PATH)
         cls.catalog = load(PROJECT_ROOT / "config" / "design_variables.json")
         cls.envelope = load(PROJECT_ROOT / "config" / "optimization_envelope.json")
-        cls.baseline = load(PROJECT_ROOT / "config" / "baseline.json")
+        cls.published = load(
+            PROJECT_ROOT / "config" / "resolved_design_no_acceleration_full_length.json"
+        )
         cls.screen = load(PROJECT_ROOT / "config" / "round_rod_field_screen.json")
         cls.comsol_numerics = load(
             PROJECT_ROOT / "config" / "comsol_solver_numerics.json"
@@ -64,11 +66,11 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
         compiled = compile_design_request(self.request, expected_identity=self.identity)
         geometry = self.request["geometry_mm"]
         self.assertEqual(len(compiled["geometry_mm"]["rod_array"]["rods"]), 6)
-        self.assertEqual(geometry["inscribed_radius_r0"], self.baseline["geometry_mm"]["inscribed_radius_r0"])
+        self.assertEqual(geometry["inscribed_radius_r0"], self.published["geometry_mm"]["inscribed_radius_r0"])
         self.assertEqual(geometry["rod_radius_ratio"], 0.5)
         self.assertIn(geometry["rod_radius_ratio"], self.screen["geometry_mm"]["rod_radius_ratio_sweep"])
         self.assertEqual(geometry["rod_z_min"], 0.0)
-        self.assertEqual(geometry["rod_z_max"], self.baseline["geometry_mm"]["effective_length"])
+        self.assertEqual(geometry["rod_z_max"], self.published["geometry_mm"]["rod_length"])
         self.assertEqual(compiled["geometry_mm"]["enclosure"], geometry["enclosure"])
         self.assertEqual(
             geometry["enclosure"],
@@ -92,18 +94,7 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
             self.assertEqual(geometry[side]["rod_clearance_mm"], 0.5)
             self.assertEqual(geometry[side]["connector_length_mm"], 0.0)
             self.assertEqual(geometry[side]["connector_shape"], "cylindrical_bore")
-        rf = self.baseline["rf"]
-        self.assertEqual(
-            self.request["drive"],
-            {
-                "waveform": rf["waveform"],
-                "rf_amplitude_V_zero_to_peak_per_group": rf["amplitude_V_peak"],
-                "dc_amplitude_V_per_group": 0.0,
-                "common_mode_offset_V": rf["common_mode_offset_V"],
-                "frequency_Hz": rf["frequency_Hz"],
-                "phase_rad": rf["phase_rad"],
-            },
-        )
+        self.assertEqual(self.request["drive"], self.published["drive"])
         self.assertEqual(
             self.request["segmentation"],
             {

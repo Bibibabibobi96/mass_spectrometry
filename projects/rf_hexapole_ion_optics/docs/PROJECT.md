@@ -14,8 +14,7 @@
 `no_acceleration_full_length`、`segmented_rod_axial_acceleration`和
 `exit_aperture_plate_acceleration`三个canonical profile。三者共享唯一
 `mechanical_base.json + design_variables.json + optimization_envelope.json`，只由
-`operating_modes.json`映射三项电气量；`baseline_finite_3d`和
-`exit_aperture_plate_acceleration_reference`仅为兼容alias，不是第二机械权威。项目L3薄wrapper只接受
+`operating_modes.json`映射三项电气量；旧设计/runtime alias已经退役。项目L3薄wrapper只接受
 `RuntimeProfileId`，由版本化profile绑定design profile、canonical粒子
 CSV的SHA和各求解器数值profile；任意粒子路径和自由数值不再属于生产入口。公共runner保留为低层
 投影机制。无evidence contract的运行固定为`UNQUALIFIED`。
@@ -69,7 +68,8 @@ Mathieu稳定图。L1/L2/L3迁移前小样本及2 mm连接器数值只保留在
   不属于失去物理意义的远距离，但这是尺度相容的设计判断，不是本机械实现的直接复现。当前近接口
   统计面不得解释为数厘米下游远场；真实下游匹配须另建带独立漂移距离/观察面的workflow。
 - 碰撞、空间电荷、磁场、支撑和机械公差均未启用。
-- L2从兼容alias `baseline_finite_3d`即时编译resolved，再使用二维COMSOL场的谐波展开；
+- L1/L2从规范`no_acceleration_full_length` profile即时编译resolved，再生成内部分析投影；L2使用
+  二维COMSOL场的谐波展开；
   只发布逐候选metrics，不选择或回写L3几何。未做网格收敛，不允许机械设计、Candidate或Formal声明。
 - L3使用20 mm内半径连续接地圆柱外壳、独立外壳封闭端盖、四段有限圆杆、两块带孔接地接口板和
   两段有限外部区；无加速模式已用公共N=100前缀完成双求解器baseline、空间和时间功能矩阵，
@@ -84,7 +84,7 @@ Mathieu稳定图。L1/L2/L3迁移前小样本及2 mm连接器数值只保留在
 - [`../config/optimization_envelope.json`](../config/optimization_envelope.json)
 - [`../config/execution_profiles.json`](../config/execution_profiles.json)
 - [`../config/design_profiles.json`](../config/design_profiles.json)
-- [`../config/resolved_design.json`](../config/resolved_design.json)
+- [`../config/resolved_design_no_acceleration_full_length.json`](../config/resolved_design_no_acceleration_full_length.json)
 - [`../config/interfaces/provided/rf_multipole_exit.json`](../config/interfaces/provided/rf_multipole_exit.json)
 - [`../config/runtime_profiles.json`](../config/runtime_profiles.json)
 - [`../config/particle_source_profiles.json`](../config/particle_source_profiles.json)
@@ -103,21 +103,18 @@ Mathieu稳定图。L1/L2/L3迁移前小样本及2 mm连接器数值只保留在
 - [`../analysis/run_simion_finite_3d_transport.ps1`](../analysis/run_simion_finite_3d_transport.ps1)
 - [`../verify_project.ps1`](../verify_project.ps1)
 
-`config/baseline.json`仅为历史L1兼容快照，不得接收新参数或供活动solver直接消费。项目注册身份
-已改由全部design profile的一致identity给出，不再绑定该快照；尚未迁移的兼容消费者只能只读访问，
-且它不构成solver权威。旧finite-3D快照及resolver已在消费者迁移到current合同后退出。
+L1/L2/L3统一通过current profile resolver/compiler取得物理设计；历史L1 baseline和无模式名的
+`resolved_design.json`重复发布物已经退出。历史格式reader仍只为旧记录复核保留，不参与当前运行。
 `config/requests/baseline.json`仍由兼容静态发布读取，不得成为新实验的可编辑请求；旧的无加速和
 出口带孔接口板专属request/catalog/envelope已在活动消费者归零后退出，当前三模式只使用单一
 `requests/mechanical_base.json`与typed operating-mode registry。
-`config/evidence/no_acceleration_full_length.json`和
-`config/evidence/exit_aperture_plate_acceleration_reference.json`中的固定功能阈值同样只保留给旧profile复现，
-不得绑定当前公共母样本三模式，也不得替代`config/qualification/`中显式保持`INCONCLUSIVE`的资格判据。
-`rf_multipole_exit`只发布`resolved_design.json`的出口交接视图；其来源SHA和逐值binding防止陈旧，
+零消费者的旧出口孔板兼容evidence合同已经退出；规范无加速evidence身份保留，但不得替代
+`config/qualification/`中显式保持`INCONCLUSIVE`的资格判据。`rf_multipole_exit`只发布具名无加速resolved design的出口交接视图；
+其来源SHA和逐值binding防止陈旧，
 frame、轴向法向、中心向量、RF相位零点clock及场是否到达交接面的派生前提由项目直接测试冻结。
 四/六/八极杆当前家族实验共同使用
 `common/multipole/sources/rf_multipole_family_mother_sample_v1_1000.csv`及其精确
-`..._100.csv`前缀；metadata冻结单一生成算法、seed、分布和SHA。旧
-`hex_oct_baseline_fixed_100.csv`不属于新实验。
+`..._100.csv`前缀；metadata冻结单一生成算法、seed、分布和SHA。旧六/八极杆专属N=100副本已退役。
 
 ## 下一步
 
@@ -453,7 +450,4 @@ Candidate、Formal和N=1000资格仍未授予。
 `config/project.json`登记的legacy artifact根，不搬移、不改写旧manifest、不追加新run，也不改变其
 原身份、状态和声明边界。
 
-本项目还保留一项项目专属退出任务：
-
-1. 迁移仍只读消费`config/baseline.json`的旧L1/L2兼容路径；项目注册身份不得重新绑定该快照，
-   旧文件的后续处置仍须单独删除授权。
+本项目没有剩余的baseline/alias兼容退出任务；如需复核旧格式，只从Git历史恢复到隔离工作区。

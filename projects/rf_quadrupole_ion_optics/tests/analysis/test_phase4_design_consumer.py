@@ -61,21 +61,23 @@ class Phase4DesignConsumerTests(unittest.TestCase):
             "rf_quadrupole_interface_readiness_cross_solver_result",
         ):
             self.assertNotIn(forbidden, lifecycle)
-        retired = (
-            PROJECT_ROOT / "analysis" / "verify_cross_solver_transport.py"
-        ).read_text(encoding="utf-8")
-        self.assertIn("HISTORY_ONLY", retired)
-        self.assertNotIn("cross_solver_transmission_absolute_tolerance", retired)
-
     def test_managed_plotters_bind_explicit_png_and_state_identity(self) -> None:
         managed = (
             PROJECT_ROOT
             / "workflows"
             / "mass_filter_reference"
             / "evaluate_comparison.py",
-            PROJECT_ROOT / "analysis" / "analyze_analyzer_transport.py",
+            REPO_ROOT
+            / "integrations"
+            / "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
+            / "analysis"
+            / "analyze_analyzer_transport.py",
             PROJECT_ROOT / "analysis" / "compare_rf_input_energy.py",
-            PROJECT_ROOT / "analysis" / "plot_shared_pulse_geometry_snapshot.py",
+            REPO_ROOT
+            / "integrations"
+            / "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
+            / "analysis"
+            / "plot_shared_pulse_geometry_snapshot.py",
         )
         for path in managed:
             source = path.read_text(encoding="utf-8")

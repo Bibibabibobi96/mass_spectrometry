@@ -48,12 +48,5 @@
     },
     "float_serialization": "python_repr_binary64",
     "rebuild_rule": "Generate all 1000 rows in one deterministic stream, then publish rows 1 through 100 as the exact N100 prefix."
-  },
-  "legacy_compatibility": {
-    "path": "common/multipole/sources/hex_oct_baseline_fixed_100.csv",
-    "sha256": "494CB26FA128C475CB2DC1DB1A3437342DFBB5D1C1900E811E4BEBF47D7A6385",
-    "scope": "legacy_hexapole_octupole_functional_runtime_only",
-    "family_experiment_source": false,
-    "quadrupole_oa_tof_oracle_replaced": false
   }
 }

@@ -3,15 +3,15 @@
 ## 状态与适用边界
 
 本文冻结跨项目器件连接的目标架构。RF四极杆离子光学→单次反射oa-TOF实例的端口、公共解析器、
-composition plan、connection profile和integration adapter已经实现，当前状态为
-`functional_migration_equivalence_passed`。迁移前S2/S3具名合同和输入已经冻结为只读oracle，不再是
-活动机器权威；新入口已用同一冻结N=100源完成0 mm与1 mm profile真实复验，离散源身份、census和
-粒子事件集合精确一致。该结论不声明连续相空间、场、分辨率、数值收敛、阶段或整机资格。
+composition plan、connection profile和integration adapter已经实现。旧四极杆S2/S3迁移专用profile、
+执行器和活动oracle已在功能等价闭合后退役；既有结论与输入身份只保留在Git、history及不可变run证据中。
+当前活动入口只覆盖四、六、八极杆无加速全尺寸family source closure，并不声明连续相空间、场、分辨率、
+数值收敛、阶段或整机资格。
 本文定义职责和迁移门禁，不定义某次连接的数值参数、性能阈值或正式资格。
 
 项目改名、单器件求解器资格和artifact保留治理不依赖本架构，可以先行。若要新增第二种
 RF多极杆离子光学→单次反射oa-TOF
-连接、复制已归档S2/S3语义或重写连接器联合模型，应复用本文架构，避免继续积累项目间特例。
+连接或重写连接器联合模型，应复用本文架构，避免恢复已退役S2/S3特例。
 
 ## 决策
 

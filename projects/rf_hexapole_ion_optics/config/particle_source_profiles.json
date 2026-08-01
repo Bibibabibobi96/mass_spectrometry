@@ -3,10 +3,6 @@
   "role": "multipole_particle_source_profiles",
   "project_id": "rf_hexapole_ion_optics",
   "profiles": {
-    "baseline_fixed_100": {
-      "path": "common/multipole/sources/hex_oct_baseline_fixed_100.csv",
-      "sha256": "494CB26FA128C475CB2DC1DB1A3437342DFBB5D1C1900E811E4BEBF47D7A6385"
-    },
     "family_mother_sample_v1_n100": {
       "path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_100.csv",
       "sha256": "0125C3AB02B2321EF26A3A913CF6EC04325FD0D48597D2CB439D0CE42411662F"

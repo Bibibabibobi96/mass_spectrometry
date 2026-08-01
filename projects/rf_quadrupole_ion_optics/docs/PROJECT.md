@@ -195,10 +195,10 @@ handoff是屏蔽罩开孔外侧切平面入口，不能与terminal混称；完�
 
 ### RF四极杆离子光学→单次反射oa-TOF连接
 
-活动合同为`../config/rf_to_oatof_pre_pulse_passive_connector.json`、
-`../config/rf_to_oatof_pulse_capture.json`、公共解析后的连接合同及共享物理端口合同。唯一累积入口为
-[`../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/execute_integration.ps1`](../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/execute_integration.ps1)。
-四、六、八极杆同源功能闭合只使用同一integration的
+旧四极杆S2/S3活动合同和专用迁移入口已在功能等价闭合后退出活动树；历史合同快照与结果只按
+`docs/history/`及既有artifact身份追溯。当前连接合同、共享物理端口、pulse timing和stage分析均由
+`rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer` integration拥有。四、六、八极杆
+同源功能闭合只使用该integration的
 [`workflows/family_source_closure/execute.ps1`](../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/workflows/family_source_closure/execute.ps1)；
 内部phase不构成公开入口。公共resolved connection决定器件pose和接口面，
 共享端口决定法向、孔径与公共电位，pulse_capture合同决定frame、clock epoch和目标物种；任一身份冲突失败关闭。
@@ -207,8 +207,8 @@ handoff是屏蔽罩开孔外侧切平面入口，不能与terminal混称；完�
 
 当前功能漏斗、诊断run ID和关闭过程不在本文件重复，统一从同日history快照追溯。单次反射oa-TOF Formal MPH、
 SIMION包与SolidWorks装配均未被该候选链修改。
-oaTOF handoff、pulse_capture local-exit和legacy迁移仍分别保留其项目专用坐标、事件及迁移语义，但canonical
-component-state写出与即时校验统一调用公共合同入口，不再维护项目私有列序或序列化实现。
+oaTOF handoff与pulse_capture local-exit仍保留其坐标和事件语义，但canonical component-state写出与即时
+校验统一调用公共合同入口；已退役的legacy迁移不再维护活动解析器、wrapper或项目私有序列化实现。
 
 ## 开放任务
 

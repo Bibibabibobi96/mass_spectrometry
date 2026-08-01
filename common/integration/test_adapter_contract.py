@@ -11,7 +11,6 @@ from common.contracts.machine_contracts import ContractError
 from common.integration.adapter_contract import (
     load_execution_adapter_registry,
     resolve_execution_mapping,
-    validate_migration_preregistration,
 )
 
 
@@ -34,8 +33,6 @@ class IntegrationAdapterContractTests(unittest.TestCase):
         self.assertEqual(
             profile_ids,
             {
-                "rf_quadrupole_grounded_connector_gap_1mm",
-                "rf_quadrupole_direct_mating_gap_0mm",
                 (
                     "rf_quadrupole_no_acceleration_full_length_"
                     "direct_mating_gap_0mm"
@@ -89,21 +86,6 @@ class IntegrationAdapterContractTests(unittest.TestCase):
             temporary.write_text(json.dumps(invalid), encoding="utf-8")
             with self.assertRaises(ContractError):
                 load_execution_adapter_registry(temporary)
-
-    def test_equivalence_preregistration_is_blocked_and_oracle_bound(self) -> None:
-        document = validate_migration_preregistration(
-            INTEGRATION_ROOT
-            / "config"
-            / "migration_equivalence_preregistration.json",
-            repo_root=REPO_ROOT,
-            expected_profile_ids={
-                "rf_quadrupole_grounded_connector_gap_1mm",
-                "rf_quadrupole_direct_mating_gap_0mm",
-            },
-        )
-        self.assertEqual(document["equivalence_status"], "BLOCKED")
-        self.assertEqual(document["execution_status"], "NOT_RUN")
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -52,7 +52,6 @@ function Invoke-PrePulseSnapshotPython {
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot "artifacts\projects\$upstreamProjectId"
 $contractSource = $runtime.contracts.pre_pulse_contract
-$dependencyContractSource = $runtime.contracts.dependency_contract
 $sourceContractSource = $runtime.contracts.source_contract
 $handoffContractSource = $runtime.contracts.handoff_contract
 $baseContractDocument = Get-Content -LiteralPath $contractSource -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -144,22 +143,11 @@ try {
     throw 'Resolved connection changed while frozen into the PrePulse run.'
   }
 
-  $dependencySourceDocument = Get-Content -LiteralPath $dependencyContractSource `
+  $dependencyPublication = Publish-RfOatofDependencyInventory `
+    -Runtime $runtime -RepoRoot $repoRoot -InputDir $inputDir -Role 'PrePulse'
+  $dependencyContract = $dependencyPublication.code_inventory_path
+  $dependencyDocument = Get-Content -LiteralPath $dependencyContract `
     -Raw -Encoding UTF8 | ConvertFrom-Json
-  $dependencySelf = @(
-    $dependencySourceDocument.dependencies |
-      Where-Object { [string]$_.id -eq 'rf_dependency_contract_snapshot' }
-  )
-  if ($dependencySelf.Count -ne 1) {
-    throw 'PrePulse dependency contract requires one self-snapshot identity.'
-  }
-  $dependencyContract = Join-Path $inputDir `
-    ([string]$dependencySelf[0].frozen_filename)
-  $dependencyContractIdentity = Copy-RfStableFile -SourceRunRoot $repoRoot `
-    -SourcePath $dependencyContractSource -Destination $dependencyContract `
-    -Role 'PrePulse dependency contract'
-  $dependencyDocument = Get-Content -LiteralPath $dependencyContract -Raw -Encoding UTF8 |
-    ConvertFrom-Json
   $dependencyConsumer = 'pre_pulse_interface_transport'
   if (@($dependencyDocument.consumer_ids) -notcontains $dependencyConsumer) {
     throw "PrePulse dependency consumer is not declared: $dependencyConsumer"
@@ -177,16 +165,8 @@ try {
   $dependencySnapshotPaths = @{}
   $dependencyCompatibilityPaths = @{}
   foreach ($dependency in $selectedDependencies) {
-    if ([string]$dependency.id -eq 'rf_dependency_contract_snapshot') {
-      $identity = Confirm-RfFrozenDependencyIdentity -RepoRoot $repoRoot `
-        -InputDir $inputDir -Dependency $dependency `
-        -ExpectedSourcePath $dependencyContractSource `
-        -ExistingSnapshotPath $dependencyContract `
-        -ExpectedSha256 $dependencyContractIdentity.sha256
-    } else {
-      $identity = Copy-RfFrozenDependency -RepoRoot $repoRoot -InputDir $inputDir `
-        -Dependency $dependency
-    }
+    $identity = Copy-RfFrozenDependency -RepoRoot $repoRoot -InputDir $inputDir `
+      -Dependency $dependency
     if ((Get-FileHash -LiteralPath $identity.snapshot_path -Algorithm SHA256).Hash -ne $identity.sha256) {
       throw "PrePulse dependency snapshot identity differs: $($identity.id)"
     }
@@ -206,10 +186,6 @@ try {
     $dependencyCompatibilityPaths[$identity.id] = $identity.compatibility_path
   }
   $manifestToolRoot = $snapshotRoot
-  if (-not $dependencySnapshotPaths['rf_dependency_contract_snapshot'].Equals(
-      $dependencyContract, [StringComparison]::OrdinalIgnoreCase)) {
-    throw 'PrePulse dependency contract self identity is inconsistent.'
-  }
   $sharedJoint = $dependencySnapshotPaths['rf_shared_joint_geometry']
   $rfResolved = $dependencySnapshotPaths['rf_resolved_design']
   $oaBaseline = $dependencyPaths['oatof_baseline']
@@ -393,7 +369,9 @@ try {
       source_contract = $sourceContract
       pre_pulse_contract = $contract
       oatof_handoff_library = $handoffBuilder
-      dependency_contract = $dependencyContract
+      code_inventory = $dependencyContract
+      dependency_contract_base = $dependencyPublication.base_path
+      dependency_contract_overlay = $dependencyPublication.overlay_path
       shared_physical_port_joint_geometry = $sharedJoint
       rf_resolved_geometry = $rfResolved
       resolved_connection = $frozenResolvedConnection

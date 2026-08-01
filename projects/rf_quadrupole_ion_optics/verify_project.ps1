@@ -50,46 +50,6 @@ try {
 if ($LASTEXITCODE -ne 0) { throw 'Quadrupole mass-filter L1 contract gate failed.' }
 & $python (Join-Path $projectRoot 'analysis\entry_aperture_l0.py') --check
 if ($LASTEXITCODE -ne 0) { throw 'Entry-aperture L0 reference gate failed.' }
-$connectionGateRoot = Join-Path ([IO.Path]::GetTempPath()) `
-  'rf_quadrupole_connection_gate'
-$resolvedConnection = Join-Path $connectionGateRoot 'resolved_connection.json'
-$compositionPlan = Join-Path $connectionGateRoot 'composition_plan.json'
-New-Item -ItemType Directory -Path $connectionGateRoot -Force | Out-Null
-Push-Location $repoRoot
-try {
-  & $python -m common.integration.resolve_connection `
-    --registry (Join-Path $repoRoot `
-      'integrations\rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer\config\connection_profiles.json') `
-    --profile-id 'rf_quadrupole_grounded_connector_gap_1mm' `
-    --resolved-output $resolvedConnection --plan-output $compositionPlan `
-    --repo-root $repoRoot
-  if ($LASTEXITCODE -ne 0) {
-    throw 'RF-to-oaTOF resolved-connection gate failed.'
-  }
-  & $python -m projects.rf_quadrupole_ion_optics.analysis.build_oatof_handoff `
-    --check-contract --resolved-connection $resolvedConnection
-} finally { Pop-Location }
-if ($LASTEXITCODE -ne 0) { throw 'RF-to-oaTOF handoff contract gate failed.' }
-$candidateValidators = @(
-  'validate_field_performance_experiment.py',
-  'validate_rf_energy_match.py',
-  'validate_pre_pulse_interface_transport.py',
-  'validate_pulse_capture.py',
-  'validate_spatial_registration_migration.py'
-)
-$previousPythonPath = $env:PYTHONPATH
-try {
-  $env:PYTHONPATH = $repoRoot
-  foreach ($validator in $candidateValidators) {
-    & $python (Join-Path $projectRoot "analysis\$validator")
-    if ($LASTEXITCODE -ne 0) {
-      throw "Candidate-contract static gate failed: $validator"
-    }
-  }
-} finally {
-  $env:PYTHONPATH = $previousPythonPath
-}
-
 # Core is the no-solver, active-design contract gate.  It deliberately stops
 # before the repository-wide RF analysis suite and PowerShell tree parse; those
 # broader regressions remain part of Static integration verification.

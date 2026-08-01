@@ -18,10 +18,8 @@ function paths = workspace_paths(projectName)
 
     if strlength(projectName) == 0
         paths.projectArtifactRoot = '';
-        paths.componentArtifactRoot = ''; % Backward-compatible field name.
         return;
     end
 
     paths.projectArtifactRoot = fullfile(paths.artifactRoot, 'projects', projectName);
-    paths.componentArtifactRoot = paths.projectArtifactRoot;
 end

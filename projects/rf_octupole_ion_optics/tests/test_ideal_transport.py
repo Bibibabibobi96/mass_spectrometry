@@ -18,15 +18,21 @@ from common.multipole.compile_design_request import (
     MultipoleDesignCompileError,
     compile_design_request,
 )
+from common.multipole.design_profile import resolve_design_profile
+from common.multipole.family_contract import l1_l2_transport_contract_from_resolved_design
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = PROJECT_ROOT.parents[1]
 
 
 class OctupoleIdealTransportTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.contract = json.loads((PROJECT_ROOT / "config" / "baseline.json").read_text(encoding="utf-8"))
+        resolved = resolve_design_profile(
+            REPO_ROOT, "rf_octupole_ion_optics", "no_acceleration_full_length"
+        )["resolved_design"]
+        cls.contract = l1_l2_transport_contract_from_resolved_design(resolved)
         cls.request = json.loads(
             (
                 PROJECT_ROOT / "config" / "requests" / "mechanical_base.json"

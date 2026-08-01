@@ -7,7 +7,7 @@
   "scope": {"project_id": "rf_octupole_ion_optics", "solver": "simion", "design_profile_id": "no_acceleration_full_length", "particle_source_profile_id": "family_mother_sample_v1_n100", "particle_count": 100, "retention_class": "compact"},
   "resolution_contract": {"path": "common/multipole/no_acceleration_followup_resolution.json", "contract_id": "multipole_no_acceleration_followup_fixed_bins_v1", "sha256": "FF941874DD54A32CD05C119894FD6633D795266EAC8C9EAAF4AE0D9EBEF691DD"},
   "frozen_authorities": {
-    "runtime_profiles": {"path": "projects/rf_octupole_ion_optics/config/runtime_profiles.json", "sha256": "FA5B0AF8C3879A446844FA2A9F5404C07D349932B1804A82E8D04C98C06D26F9"},
+    "runtime_profiles": {"path": "projects/rf_octupole_ion_optics/config/runtime_profiles.json", "sha256": "DB297B3739D8715C517DDE80BAA1B712F9F00EDD9C263FE565AE07981AE40635"},
     "simion_solver_numerics": {"path": "projects/rf_octupole_ion_optics/config/simion_solver_numerics.json", "sha256": "135833CDE4EFC3A759DC28DE6658F5B236B5EECEFE95F381E8CD928334B44DB9"},
     "budgets": [
       {"path": "projects/rf_octupole_ion_optics/config/qualification/no_acceleration_followup/simion_A_budget.json", "sha256": "EDF162753321DDBB9EF4C08402D0E94D071286B5A503D9294AED7ADC98B257EB"},

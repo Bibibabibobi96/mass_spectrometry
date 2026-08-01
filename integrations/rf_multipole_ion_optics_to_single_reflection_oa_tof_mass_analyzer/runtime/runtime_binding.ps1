@@ -75,6 +75,177 @@ function Resolve-RfOatofBoundFile {
   return $path
 }
 
+function Merge-RfOatofDependencyContracts {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][string]$BasePath,
+    [Parameter(Mandatory)][string]$OverlayPath,
+    [Parameter(Mandatory)][string]$ExpectedUpstreamProjectId
+  )
+  $base = Get-Content -LiteralPath $BasePath -Raw -Encoding UTF8 |
+    ConvertFrom-Json
+  $overlay = Get-Content -LiteralPath $OverlayPath -Raw -Encoding UTF8 |
+    ConvertFrom-Json
+  Assert-RfOatofExactProperties -Object $base -Role 'Family dependency base' `
+    -Expected @(
+      'schema_version','role','consumer_project','consumer_ids','dependencies',
+      'runtime_policy','consumer_scope'
+    )
+  Assert-RfOatofExactProperties -Object $overlay -Role 'Family dependency overlay' `
+    -Expected @('schema_version','role','upstream_project_id','dependencies')
+  if ([int]$base.schema_version -ne 2 -or
+      $base.role -ne 'rf_multipole_oatof_family_dependency_base' -or
+      $base.consumer_project -ne $script:RfOatofIntegrationId -or
+      $base.consumer_scope -ne 'rf_multipole_no_acceleration_full_length_family') {
+    throw 'Family dependency base identity differs from the closed contract.'
+  }
+  if ([int]$overlay.schema_version -ne 1 -or
+      $overlay.role -ne 'rf_multipole_oatof_family_dependency_overlay' -or
+      $overlay.upstream_project_id -ne $ExpectedUpstreamProjectId) {
+    throw 'Family dependency overlay identity differs from the selected project.'
+  }
+  $expectedBaseIds = @(
+    'oatof_baseline','oatof_accelerator_geometry_builder',
+    'oatof_rf_handoff_adapter','oatof_resolved_geometry',
+    'oatof_formal_validation','oatof_simion_stable_entry',
+    'oatof_handoff_pulse_program_builder','oatof_formal_lua',
+    'oatof_handoff_pulse_extension_lua','oatof_simion_log_analyzer_wrapper',
+    'oatof_solver_diagnostics','rf_interface_stage_plan',
+    'rf_shared_joint_geometry','rf_pulse_capture_pulse_scheduler',
+    'rf_pulse_capture_geometry_snapshot_plotter',
+    'rf_pulse_capture_pulse_chain_auditor',
+    'rf_pulse_capture_local_exit_adapter','rf_family_source_bundle_publisher',
+    'rf_analyzer_transport_simion_input_adapter',
+    'rf_analyzer_transport_analyzer','rf_oatof_formal_release_validator',
+    'common_connection_profile_schema','common_component_port_schema',
+    'common_resolved_connection_schema','common_machine_contracts',
+    'common_particle_state','common_particle_count_policy',
+    'common_multipole_numerical_qualification',
+    'common_multipole_three_mode_dispersion','common_multipole_handoff_publisher',
+    'common_rigid_transform','common_particle_physics',
+    'common_component_particle_state','common_component_particle_state_schema',
+    'common_file_identity','common_artifact_retention',
+    'common_artifact_retention_policy','common_resource_budget_support',
+    'common_verify_run_manifest','common_artifact_naming',
+    'common_write_run_manifest','common_run_artifact_support',
+    'common_require_powershell7','common_create_multipole_round_rods',
+    'common_comsol_runner','common_comsol_resolver',
+    'common_comsol_failure_classifier','common_comsol_environment',
+    'common_comsol_startup'
+  )
+  $baseIds = @($base.dependencies | ForEach-Object { [string]$_.id })
+  if ([string]::Join("`n", $baseIds) -ne
+      [string]::Join("`n", $expectedBaseIds)) {
+    throw 'Family dependency base set or stable order differs.'
+  }
+  $overlayIds = @($overlay.dependencies | ForEach-Object { [string]$_.id })
+  if ([string]::Join("`n", $overlayIds) -ne
+      [string]::Join("`n", @('rf_resolved_design','rf_project_descriptor'))) {
+    throw 'Family dependency overlay may define only the two project authorities.'
+  }
+  $allDependencies = @($base.dependencies) + @($overlay.dependencies)
+  $allIds = @($allDependencies | ForEach-Object { [string]$_.id })
+  $runInputNames = @(
+    $allDependencies | ForEach-Object { [string]$_.run_input_name }
+  )
+  $frozenFilenames = @(
+    $allDependencies | ForEach-Object { [string]$_.frozen_filename }
+  )
+  if (@($allIds | Select-Object -Unique).Count -ne 51 -or
+      @($runInputNames | Select-Object -Unique).Count -ne 51 -or
+      @($frozenFilenames | Select-Object -Unique).Count -ne 51) {
+    throw 'Resolved family dependency inventory contains duplicate identities or paths.'
+  }
+  foreach ($dependency in $allDependencies) {
+    if ($dependency.PSObject.Properties.Name -notcontains 'source_repo_path' -or
+        $dependency.PSObject.Properties.Name -notcontains 'frozen_filename' -or
+        [string]::IsNullOrWhiteSpace([string]$dependency.source_repo_path) -or
+        [IO.Path]::IsPathRooted([string]$dependency.source_repo_path) -or
+        [string]$dependency.source_repo_path -match '(^|[\\/])\.\.([\\/]|$)' -or
+        [IO.Path]::IsPathRooted([string]$dependency.frozen_filename) -or
+        [string]$dependency.frozen_filename -match '(^|[\\/])\.\.([\\/]|$)') {
+      throw "Family dependency path is missing or escapes the repository: $($dependency.id)"
+    }
+    $sourcePath = [IO.Path]::GetFullPath(
+      (Join-Path $RepoRoot ([string]$dependency.source_repo_path))
+    )
+    if (-not (Test-RfOatofPathWithin -Path $sourcePath -Root $RepoRoot) -or
+        -not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+      throw "Family dependency source is missing or escapes the repository: $($dependency.id)"
+    }
+  }
+  return [pscustomobject]@{
+    schema_version = 3
+    role = 'rf_to_oatof_semantic_transfer_resolved_dependencies'
+    consumer_project = [string]$base.consumer_project
+    consumer_ids = @($base.consumer_ids)
+    dependencies = $allDependencies
+    runtime_policy = $base.runtime_policy
+    consumer_scope = [string]$base.consumer_scope
+    authority = [pscustomobject]@{
+      base_path = [IO.Path]::GetFullPath($BasePath)
+      overlay_path = [IO.Path]::GetFullPath($OverlayPath)
+    }
+  }
+}
+
+function Publish-RfOatofDependencyInventory {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][psobject]$Runtime,
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][string]$InputDir,
+    [Parameter(Mandatory)][string]$Role
+  )
+  $baseRelative = [string]$Runtime.binding.contracts.dependency_contract.base.path
+  $overlayRelative = [string]$Runtime.binding.contracts.dependency_contract.overlay.path
+  $baseFrozen = Join-Path $InputDir ('runtime_snapshot/' + $baseRelative)
+  $overlayFrozen = Join-Path $InputDir ('runtime_snapshot/' + $overlayRelative)
+  $baseIdentity = Copy-RfStableFile -SourceRunRoot $RepoRoot `
+    -SourcePath $Runtime.contracts.dependency_contract_base `
+    -Destination $baseFrozen -Role "$Role dependency base"
+  $overlayIdentity = Copy-RfStableFile -SourceRunRoot $RepoRoot `
+    -SourcePath $Runtime.contracts.dependency_contract_overlay `
+    -Destination $overlayFrozen -Role "$Role dependency overlay"
+  $inventory = [ordered]@{
+    schema_version = 1
+    role = 'rf_multipole_oatof_resolved_code_inventory'
+    consumer_project = [string]$Runtime.dependency_contract.consumer_project
+    consumer_ids = @($Runtime.dependency_contract.consumer_ids)
+    dependencies = @($Runtime.dependency_contract.dependencies)
+    runtime_policy = $Runtime.dependency_contract.runtime_policy
+    consumer_scope = [string]$Runtime.dependency_contract.consumer_scope
+    authority = [ordered]@{
+      base = [ordered]@{
+        path = $baseRelative
+        sha256 = $baseIdentity.sha256
+      }
+      overlay = [ordered]@{
+        path = $overlayRelative
+        sha256 = $overlayIdentity.sha256
+      }
+    }
+  }
+  if (@($inventory.dependencies).Count -ne 51) {
+    throw "$Role resolved code inventory must contain exactly 51 dependencies."
+  }
+  $inventoryPath = Join-Path $InputDir 'code_inventory.json'
+  $inventoryJson = $inventory | ConvertTo-Json -Depth 20
+  [IO.File]::WriteAllText(
+    $inventoryPath,
+    $inventoryJson + "`n",
+    [Text.UTF8Encoding]::new($false)
+  )
+  return [pscustomobject]@{
+    base_path = $baseFrozen
+    overlay_path = $overlayFrozen
+    code_inventory_path = $inventoryPath
+    base_identity = $baseIdentity
+    overlay_identity = $overlayIdentity
+  }
+}
+
 function Resolve-RfOatofRuntimeBinding {
   [CmdletBinding()]
   param(
@@ -102,7 +273,7 @@ function Resolve-RfOatofRuntimeBinding {
   Assert-RfOatofExactProperties -Object $binding -Role 'Runtime binding' `
     -Expected @(
       'schema_version','role','integration_id','connection_profile_id',
-      'upstream_project_id','contracts','implementation'
+      'upstream_project_id','contracts','implementation_binding'
     )
   if ($resolved.role -ne 'resolved_connection_do_not_edit' -or
       $resolved.compatibility.status -ne 'pass' -or
@@ -110,7 +281,7 @@ function Resolve-RfOatofRuntimeBinding {
         $ExpectedConnectionProfileId) {
     throw 'Runtime binding requires the selected compatible resolved connection.'
   }
-  if ([int]$binding.schema_version -ne 1 -or
+  if ([int]$binding.schema_version -ne 2 -or
       $binding.role -ne 'rf_multipole_oatof_runtime_binding' -or
       $binding.integration_id -ne $script:RfOatofIntegrationId -or
       $binding.connection_profile_id -ne $ExpectedConnectionProfileId) {
@@ -134,13 +305,25 @@ function Resolve-RfOatofRuntimeBinding {
   Assert-RfOatofExactProperties -Object $binding.contracts `
     -Expected $requiredContracts -Role 'Runtime binding contracts'
   $contractPaths = [ordered]@{}
-  foreach ($name in $requiredContracts) {
+  foreach ($name in @($requiredContracts | Where-Object { $_ -ne 'dependency_contract' })) {
     if ($binding.contracts.PSObject.Properties.Name -notcontains $name) {
       throw "Runtime binding is missing required contract: $name"
     }
     $contractPaths[$name] = Resolve-RfOatofBoundFile -Root $repo `
       -Record $binding.contracts.$name -Role "runtime $name"
   }
+  Assert-RfOatofExactProperties -Object $binding.contracts.dependency_contract `
+    -Expected @('base','overlay') -Role 'Runtime dependency contract binding'
+  $contractPaths.dependency_contract_base = Resolve-RfOatofBoundFile `
+    -Root $repo -Record $binding.contracts.dependency_contract.base `
+    -Role 'runtime dependency contract base'
+  $contractPaths.dependency_contract_overlay = Resolve-RfOatofBoundFile `
+    -Root $repo -Record $binding.contracts.dependency_contract.overlay `
+    -Role 'runtime dependency contract overlay'
+  $dependencyContract = Merge-RfOatofDependencyContracts -RepoRoot $repo `
+    -BasePath $contractPaths.dependency_contract_base `
+    -OverlayPath $contractPaths.dependency_contract_overlay `
+    -ExpectedUpstreamProjectId $upstreamProjectId
   $authority = $resolved.sources.upstream_authority
   if ([string]$binding.contracts.upstream_resolved_design.path -ne
         [string]$authority.path -or
@@ -161,7 +344,20 @@ function Resolve-RfOatofRuntimeBinding {
     pulse_capture_solver = 'stages/comsol/solve_pulse_capture.m'
     analyzer_transport_runner = 'stages/cross_solver/run_analyzer_transport.ps1'
   }
-  Assert-RfOatofExactProperties -Object $binding.implementation `
+  $implementationBindingPath = Resolve-RfOatofBoundFile -Root $repo `
+    -Record $binding.implementation_binding -Role 'runtime implementation binding'
+  $implementationBinding = Get-Content -LiteralPath $implementationBindingPath `
+    -Raw -Encoding UTF8 | ConvertFrom-Json
+  Assert-RfOatofExactProperties -Object $implementationBinding `
+    -Expected @('schema_version','role','integration_id','implementation') `
+    -Role 'Runtime implementation registry'
+  if ([int]$implementationBinding.schema_version -ne 1 -or
+      $implementationBinding.role -ne
+        'rf_multipole_oatof_family_runtime_implementation' -or
+      $implementationBinding.integration_id -ne $script:RfOatofIntegrationId) {
+    throw 'Runtime implementation registry identity differs.'
+  }
+  Assert-RfOatofExactProperties -Object $implementationBinding.implementation `
     -Expected @($implementationPaths.Keys) -Role 'Runtime implementation binding'
   $implementation = [ordered]@{}
   $integrationRelativeRoot = (
@@ -169,7 +365,7 @@ function Resolve-RfOatofRuntimeBinding {
   )
   foreach ($name in $implementationPaths.Keys) {
     $expectedPath = $integrationRelativeRoot + $implementationPaths[$name]
-    $record = $binding.implementation.$name
+    $record = $implementationBinding.implementation.$name
     if ([string]$record.path -ne $expectedPath) {
       throw "Runtime implementation path differs for $name."
     }
@@ -428,6 +624,8 @@ function Resolve-RfOatofRuntimeBinding {
     source_branch_id = $SourceBranchId
     source_solver_id = $sourceBranchSolverId
     contracts = [pscustomobject]$contractPaths
+    dependency_contract = $dependencyContract
+    implementation_binding = $implementationBindingPath
     implementation = [pscustomobject]$implementation
     run_artifact_support = $runArtifactSupport
     source_contract = $sourceContract

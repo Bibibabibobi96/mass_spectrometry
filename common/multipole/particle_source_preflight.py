@@ -10,12 +10,8 @@ import math
 from pathlib import Path
 from typing import Any
 
-from common.contracts import particle_physics
+from common.contracts.particle_physics import kinetic_energy_ev
 from common.contracts.particle_count_policy import validate_standard_particle_count
-
-# Backward-compatible public names for existing source builders and tests.
-AMU_KG = particle_physics.AMU_KG
-E_CHARGE_C = particle_physics.ELEMENTARY_CHARGE_C
 
 COLUMNS = [
     "particle_id",
@@ -181,7 +177,7 @@ def validate_source(
             raise ValueError(f"particle {particle_id} source plane differs from resolved design")
         if float(row["birth_time_s"]) < 0:
             raise ValueError(f"particle {particle_id} has a negative source clock")
-        energy_ev = particle_physics.kinetic_energy_ev(
+        energy_ev = kinetic_energy_ev(
             mass,
             *(float(row[name]) for name in ("vx_m_s", "vy_m_s", "vz_m_s")),
         )

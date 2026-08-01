@@ -49,7 +49,6 @@ $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot "artifacts\projects\$upstreamProjectId"
 $pulse_captureSource = $runtime.contracts.pulse_capture_contract
 $pulsePolicySource = $runtime.contracts.pulse_timing_contract
-$dependencyContractSource = $runtime.contracts.dependency_contract
 $pulse_captureDocument = Get-Content -LiteralPath $pulse_captureSource -Raw -Encoding UTF8 | ConvertFrom-Json
 if (-not [bool]$pulse_captureDocument.permissions.nominal_particle_runtime_allowed -or
     [bool]$pulse_captureDocument.permissions.phase_pass_allowed) {
@@ -92,20 +91,9 @@ try {
   Copy-Item -LiteralPath $runtime.binding_path -Destination $runtimeBindingFrozen
   $pulse_captureDocument = Get-Content -LiteralPath $pulse_capture -Raw -Encoding UTF8 | ConvertFrom-Json
 
-  $dependencySourceDocument = Get-Content -LiteralPath $dependencyContractSource `
-    -Raw -Encoding UTF8 | ConvertFrom-Json
-  $dependencySelf = @(
-    $dependencySourceDocument.dependencies |
-      Where-Object { [string]$_.id -eq 'rf_dependency_contract_snapshot' }
-  )
-  if ($dependencySelf.Count -ne 1) {
-    throw 'PulseCapture dependency contract requires one self-snapshot identity.'
-  }
-  $dependencyContract = Join-Path $inputDir `
-    ([string]$dependencySelf[0].frozen_filename)
-  $dependencyContractIdentity = Copy-RfStableFile -SourceRunRoot $repoRoot `
-    -SourcePath $dependencyContractSource -Destination $dependencyContract `
-    -Role 'PulseCapture dependency contract'
+  $dependencyPublication = Publish-RfOatofDependencyInventory `
+    -Runtime $runtime -RepoRoot $repoRoot -InputDir $inputDir -Role 'PulseCapture'
+  $dependencyContract = $dependencyPublication.code_inventory_path
   $dependencyDocument = Get-Content -LiteralPath $dependencyContract -Raw -Encoding UTF8 |
     ConvertFrom-Json
   $dependencyConsumer = 'pulse_capture'
@@ -124,16 +112,8 @@ try {
   $dependencySnapshotPaths = @{}
   $dependencyCompatibilityPaths = @{}
   foreach ($dependency in $selectedDependencies) {
-    if ([string]$dependency.id -eq 'rf_dependency_contract_snapshot') {
-      $identity = Confirm-RfFrozenDependencyIdentity -RepoRoot $repoRoot `
-        -InputDir $inputDir -Dependency $dependency `
-        -ExpectedSourcePath $dependencyContractSource `
-        -ExistingSnapshotPath $dependencyContract `
-        -ExpectedSha256 $dependencyContractIdentity.sha256
-    } else {
-      $identity = Copy-RfFrozenDependency -RepoRoot $repoRoot -InputDir $inputDir `
-        -Dependency $dependency
-    }
+    $identity = Copy-RfFrozenDependency -RepoRoot $repoRoot -InputDir $inputDir `
+      -Dependency $dependency
     if ((Get-FileHash -LiteralPath $identity.snapshot_path -Algorithm SHA256).Hash -ne
         $identity.sha256) {
       throw "PulseCapture dependency snapshot identity differs: $($identity.id)"
@@ -153,10 +133,6 @@ try {
     $dependencyCompatibilityPaths[$identity.id] = $identity.compatibility_path
   }
   $manifestToolRoot = $snapshotRoot
-  if (-not $dependencySnapshotPaths['rf_dependency_contract_snapshot'].Equals(
-      $dependencyContract, [StringComparison]::OrdinalIgnoreCase)) {
-    throw 'PulseCapture dependency contract self identity is inconsistent.'
-  }
   $interfaceStagePlan = $dependencySnapshotPaths['rf_interface_stage_plan']
   $sharedJoint = $dependencySnapshotPaths['rf_shared_joint_geometry']
   $rf = $dependencySnapshotPaths['rf_resolved_design']
@@ -178,7 +154,7 @@ try {
   $frozenComsolRunner = $dependencySnapshotPaths['common_comsol_runner']
 
   $requiredSnapshotIds = @(
-    'rf_dependency_contract_snapshot','rf_interface_stage_plan',
+    'rf_interface_stage_plan',
     'rf_shared_joint_geometry','rf_resolved_design',
     'rf_pulse_capture_pulse_scheduler','rf_pulse_capture_geometry_snapshot_plotter',
     'rf_pulse_capture_pulse_chain_auditor','rf_pulse_capture_local_exit_adapter',
@@ -351,7 +327,9 @@ try {
       pulse_timing_policy = $pulsePolicy; pulse_scheduler = $scheduler
       snapshot_analysis = $snapshotAnalysis; audit_analysis = $auditAnalysis
       local_exit_adapter = $localExitAdapter
-      dependency_contract = $dependencyContract
+      code_inventory = $dependencyContract
+      dependency_contract_base = $dependencyPublication.base_path
+      dependency_contract_overlay = $dependencyPublication.overlay_path
       oatof_baseline = $oaBaselineSnapshot
       oatof_baseline_matlab_compatibility = $oaBaselineMatlab
       oatof_accelerator_builder = $oaBuilderSnapshot

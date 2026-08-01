@@ -243,15 +243,34 @@ class NoAccelerationFamilyProfileTests(unittest.TestCase):
                 binding["connection_profile_id"],
                 mapping["connection_profile_id"],
             )
-            for group_name in ("contracts", "implementation"):
-                for name, record in binding[group_name].items():
-                    frozen = REPO_ROOT / record["path"]
-                    self.assertTrue(frozen.is_file(), (group_name, name, frozen))
-                    self.assertEqual(
-                        record["sha256"],
-                        sha256(frozen),
-                        (group_name, name, frozen),
-                    )
+            contract_records = {
+                name: record
+                for name, record in binding["contracts"].items()
+                if name != "dependency_contract"
+            }
+            contract_records.update(
+                {
+                    f"dependency_contract_{name}": record
+                    for name, record in binding["contracts"][
+                        "dependency_contract"
+                    ].items()
+                }
+            )
+            contract_records["implementation_binding"] = binding[
+                "implementation_binding"
+            ]
+            for name, record in contract_records.items():
+                frozen = REPO_ROOT / record["path"]
+                self.assertTrue(frozen.is_file(), (name, frozen))
+                self.assertEqual(record["sha256"], sha256(frozen), name)
+            implementation_registry = load(
+                REPO_ROOT / binding["implementation_binding"]["path"]
+            )
+            self.assertEqual(len(implementation_registry["implementation"]), 10)
+            for name, record in implementation_registry["implementation"].items():
+                frozen = REPO_ROOT / record["path"]
+                self.assertTrue(frozen.is_file(), (name, frozen))
+                self.assertEqual(record["sha256"], sha256(frozen), name)
 
     @unittest.skipUnless(
         FAMILY_SOURCE_EVIDENCE_AVAILABLE,
@@ -358,11 +377,20 @@ class NoAccelerationFamilyProfileTests(unittest.TestCase):
                 sha256(REPO_ROOT / resolved["path"]),
                 EXPECTED_RESOLVED_SHA256[family],
             )
-            dependency = load(
-                REPO_ROOT / binding["contracts"]["dependency_contract"]["path"]
+            dependency_binding = binding["contracts"]["dependency_contract"]
+            dependency_base = load(REPO_ROOT / dependency_binding["base"]["path"])
+            dependency_overlay = load(
+                REPO_ROOT / dependency_binding["overlay"]["path"]
             )
-            records = {item["id"]: item for item in dependency["dependencies"]}
-            self.assertEqual(dependency["consumer_project"], INTEGRATION_ROOT.name)
+            dependencies = (
+                dependency_base["dependencies"]
+                + dependency_overlay["dependencies"]
+            )
+            records = {item["id"]: item for item in dependencies}
+            self.assertEqual(len(records), 51)
+            self.assertEqual(
+                dependency_base["consumer_project"], INTEGRATION_ROOT.name
+            )
             self.assertNotIn("rf_oatof_handoff_builder", records)
             family_publisher = records["rf_family_source_bundle_publisher"]
             self.assertEqual(
@@ -393,10 +421,7 @@ class NoAccelerationFamilyProfileTests(unittest.TestCase):
                 records["rf_project_descriptor"]["provider_project"],
                 project,
             )
-            self.assertEqual(
-                records["rf_dependency_contract_snapshot"]["provider_project"],
-                INTEGRATION_ROOT.name,
-            )
+            self.assertNotIn("rf_dependency_contract_snapshot", records)
             self.assertTrue(
                 records["rf_shared_joint_geometry"]["source_repo_path"].endswith(
                     "/config/family_shared_physical_port_joint_geometry.json"
@@ -468,7 +493,7 @@ class NoAccelerationFamilyProfileTests(unittest.TestCase):
                 },
                 {
                     item["source_repo_path"]
-                    for item in dependency["dependencies"]
+                    for item in dependencies
                 },
             )
             current_shared = {

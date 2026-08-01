@@ -22,17 +22,17 @@
 - 家族暂时工程推进指标：
   [`../../common/multipole/engineering_progression_acceptance.json`](../../common/multipole/engineering_progression_acceptance.json)；
   本项目只引用，不复制阈值、状态或判定。
-- 历史L1兼容输入：[`config/baseline.json`](config/baseline.json)，只读；`project.json`的注册身份
-  已改由全部design profile的一致identity给出，不再绑定该文件。旧L1/L2兼容消费者尚未迁移，
-  该文件不是活动L3 solver参数权威。
+- L1/L2分析入口与L3相同，均从规范`no_acceleration_full_length` profile经公共resolver/compiler
+  取得物理参数；内部分析投影不是第二设计权威。
 - 当前家族实验机械base、typed电气mode、变量目录和优化包络：
   [`config/requests/mechanical_base.json`](config/requests/mechanical_base.json)、
   [`config/operating_modes.json`](config/operating_modes.json)、
   [`config/design_variables.json`](config/design_variables.json)、
   [`config/optimization_envelope.json`](config/optimization_envelope.json)
-- 设计profile注册与解析发布：[`config/design_profiles.json`](config/design_profiles.json)、
-  [`config/resolved_design.json`](config/resolved_design.json)。后者是兼容静态快照；当前三个家族实验
-  resolved均由profile resolver从同一mechanical base和typed mode即时编译。
+- 设计profile注册与具名发布：[`config/design_profiles.json`](config/design_profiles.json)、
+  [`config/resolved_design_no_acceleration_full_length.json`](config/resolved_design_no_acceleration_full_length.json)。
+  当前三个家族实验resolved均由profile resolver从同一mechanical base和typed mode即时编译；
+  不再维护无模式名的重复`resolved_design.json`。
 - L3运行profile：[`config/runtime_profiles.json`](config/runtime_profiles.json)只绑定设计、
   粒子源和求解器数值profile身份；粒子源与COMSOL/SIMION数值分别由
   [`config/particle_source_profiles.json`](config/particle_source_profiles.json)、
@@ -42,7 +42,7 @@
   `exit_aperture_plate_acceleration`；三者机械严格相同，只允许typed registry改变杆段和出口板电位。
 - 共享粒子源：四/六/八极杆家族实验使用
   [`../../common/multipole/sources/rf_multipole_family_mother_sample_v1.json`](../../common/multipole/sources/rf_multipole_family_mother_sample_v1.json)
-  发布的N=1000母样本及其精确N=100前缀。旧`hex_oct_baseline_fixed_100.csv`仅供legacy功能兼容。
+  发布的N=1000母样本及其精确N=100前缀；旧六/八极杆专属N=100副本已经退役。
 - 数值与dispersion预登记位于[`config/qualification/`](config/qualification/)；当前没有有依据的连续量
   阈值和完整矩阵资源预算，因此连续资格结论必须为`INCONCLUSIVE`。当前只授权
   无加速N=100 baseline、空间和时间敏感性矩阵已完成，功能传输闭合；连续相空间仍为
@@ -152,7 +152,7 @@
   商业运行可由薄wrapper绑定同一profile，未提供evidence合同即为`UNQUALIFIED`。
 - 运行入口：[`analysis/run_transport.ps1`](analysis/run_transport.ps1)
 - L2圆杆筛选：[`analysis/run_round_rod_field_screen.ps1`](analysis/run_round_rod_field_screen.ps1)，
-  固定通过兼容alias `baseline_finite_3d`编译resolved，只发布逐候选场指标，不选择L3几何。
+  固定通过规范`no_acceleration_full_length` profile编译resolved，只发布逐候选场指标，不选择L3几何。
 - L2传输：[`analysis/run_round_rod_transport.ps1`](analysis/run_round_rod_transport.ps1)
 - L3 COMSOL薄wrapper：[`analysis/run_finite_3d_transport.ps1`](analysis/run_finite_3d_transport.ps1)，
   公开入口只接受具名runtime profile，不接受粒子路径或自由数值。

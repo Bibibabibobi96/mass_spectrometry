@@ -8,7 +8,7 @@
   "frozen_authorities": {
     "runtime_profiles": {
       "path": "projects/rf_hexapole_ion_optics/config/runtime_profiles.json",
-      "sha256": "73A71A45DC52FA813DD38D87A3486FA1D18005A2BDB5B178937A35691956044C"
+      "sha256": "40C09479AC4FA7F4248C8D9B6BA978E23C8F52F6B1218358DD1EFBDA423444A1"
     },
     "simion_solver_numerics": {
       "path": "projects/rf_hexapole_ion_optics/config/simion_solver_numerics.json",

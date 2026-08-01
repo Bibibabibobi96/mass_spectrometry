@@ -16,7 +16,7 @@ function result = ms_export_oatof_to_solidworks(modelPath, outputDir, visibleSol
     componentRoot = fileparts(thisDir);
     addpath(componentRoot);
     paths = oatof_paths();
-    addpath(thisDir, paths.commonDir);
+    addpath(thisDir, paths.commonSolidWorksDir);
     if strlength(modelPath) == 0
         modelPath = fullfile(paths.comsolFormalDir, ...
             "single_reflection_oa_tof_mass_analyzer__model.mph");

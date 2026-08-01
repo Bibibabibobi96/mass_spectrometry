@@ -8,7 +8,7 @@ classdef OaTofCadExportTest < matlab.unittest.TestCase
             testCase.applyFixture(matlab.unittest.fixtures.PathFixture(componentRoot));
             paths = oatof_paths();
             testCase.applyFixture(matlab.unittest.fixtures.PathFixture(paths.cadDir));
-            testCase.applyFixture(matlab.unittest.fixtures.PathFixture(paths.commonDir));
+            testCase.applyFixture(matlab.unittest.fixtures.PathFixture(paths.commonSolidWorksDir));
         end
     end
 

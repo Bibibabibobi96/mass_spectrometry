@@ -23,8 +23,6 @@ class Phase4DesignConsumerTests(unittest.TestCase):
             "no_acceleration_full_length",
             "segmented_rod_axial_acceleration",
             "exit_aperture_plate_acceleration",
-            "baseline_finite_3d",
-            "exit_aperture_plate_acceleration_reference",
         ):
             profile = resolve_design_profile(
                 REPO_ROOT, "rf_hexapole_ion_optics", profile_id
@@ -40,7 +38,7 @@ class Phase4DesignConsumerTests(unittest.TestCase):
                 self.assertNotIn(term, source)
             if name == "run_round_rod_field_screen.ps1":
                 self.assertIn("DesignProfileId", source)
-                self.assertIn("baseline_finite_3d", source)
+                self.assertIn("no_acceleration_full_length", source)
                 self.assertIn("ProjectId", source)
                 self.assertNotIn("ProjectRoot", source)
             else:
@@ -63,14 +61,12 @@ class Phase4DesignConsumerTests(unittest.TestCase):
         self.assertEqual(compiled["interfaces_mm"]["exit"]["handoff_plane_z_mm"], 80.6)
         self.assertEqual(compiled["interfaces_mm"]["exit"]["census_plane_z_mm"], 81.1)
         evidence = json.loads(
-            (
-                PROJECT_ROOT
-                / "config"
-                / "evidence"
-                / "no_acceleration_full_length.json"
-            ).read_text(encoding="utf-8")
+            (PROJECT_ROOT / "config/evidence/no_acceleration_full_length.json").read_text(
+                encoding="utf-8"
+            )
         )
         validate_schema(evidence, "multipole_evidence_contract.schema.json")
+        self.assertEqual(evidence["design_profile_id"], "no_acceleration_full_length")
 
 
 if __name__ == "__main__":

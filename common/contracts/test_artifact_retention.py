@@ -214,7 +214,6 @@ class ArtifactRetentionTests(unittest.TestCase):
             "projects/single_reflection_oa_tof_mass_analyzer/tests/comsol/run_n100_candidate_functional.ps1",
             "projects/single_reflection_oa_tof_mass_analyzer/tests/simion/run_n100_source_build_and_track.ps1",
             "projects/rf_quadrupole_ion_optics/runtime/cross_solver_analysis_lifecycle.ps1",
-            "projects/rf_quadrupole_ion_optics/tests/analysis/run_rf_oatof_checkpoint_diagnostic.ps1",
             "projects/rf_quadrupole_ion_optics/workflows/interface_readiness/run_comsol.ps1",
             "projects/rf_quadrupole_ion_optics/workflows/interface_readiness/run_simion.ps1",
             "projects/rf_quadrupole_ion_optics/workflows/mass_filter_reference/compare_responses.ps1",

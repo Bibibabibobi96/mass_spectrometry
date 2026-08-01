@@ -12,9 +12,8 @@ typed operating mode registry。三个规范profile由公共编译器在内存�
 统一记录；本项目只声明适用性，不复制阈值、状态或判定。后续先复用现有SIMION状态并只补最小相邻
 加密臂；任何工程PASS都不得改称数值收敛或求解器等价。
 
-旧的`baseline_finite_3d`和`exit_aperture_plate_acceleration_reference`保留为兼容alias，分别映射
-`segmented_rod_axial_acceleration`和`exit_aperture_plate_acceleration`。alias不保存机械副本，
-不构成额外实验arm；新文档和新run应使用规范mode名称。
+旧的design/runtime alias `baseline_finite_3d`和`exit_aperture_plate_acceleration_reference`已经退役；
+solver numerics内的`baseline_finite_3d`仍保留为数值档身份，不构成额外实验arm。
 
 ## 机械与电气合同
 
@@ -142,9 +141,9 @@ SIMION两份`POSTHOC_DESCRIPTIVE` binding和报告：只含点估计，不计算
 旧的baseline/no-acceleration/exit-aperture-plate request及其专属catalog/envelope已在活动消费者
 归零后退出；当前三模式只使用单一`config/requests/mechanical_base.json`与typed operating-mode
 registry。旧finite-3D快照及resolver已在消费者迁移到current合同后退出。
-`config/resolved_design.json`是无加速规范profile的静态发布视图；其他模式在runtime解析时由同一base
-和typed registry生成。`config/project.json`的注册身份由全部design profile的一致identity给出，
-不绑定历史`config/baseline.json`；尚未迁移的兼容路径只能只读访问该旧文件。
+`config/resolved_design_no_acceleration_full_length.json`是无加速规范profile的具名发布视图；其他模式
+在runtime解析时由同一base和typed registry生成。L1/L2/L3统一通过current resolver/compiler取值，
+历史baseline和无模式名的重复resolved发布物已经退出；旧格式reader仅用于历史记录复核。
 
 ## 未决
 

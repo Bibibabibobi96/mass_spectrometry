@@ -44,10 +44,6 @@ FAMILY_PROFILES = {
     "rf_hexapole_no_acceleration_full_length_direct_mating_gap_0mm",
     "rf_octupole_no_acceleration_full_length_direct_mating_gap_0mm",
 }
-MIGRATION_PROFILES = {
-    "rf_quadrupole_grounded_connector_gap_1mm",
-    "rf_quadrupole_direct_mating_gap_0mm",
-}
 BRANCHES = {"comsol", "simion"}
 
 
@@ -118,9 +114,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
     def setUp(self) -> None:
         (REPO_ROOT / ".tmp").mkdir(exist_ok=True)
 
-    def test_family_and_migration_profiles_are_disjoint_and_exhaust_registry(
-        self,
-    ) -> None:
+    def test_family_profiles_exhaust_current_registry(self) -> None:
         registry_ids = {
             item["connection_profile_id"]
             for item in load(PROFILE_REGISTRY)["profiles"]
@@ -129,9 +123,8 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             item["connection_profile_id"]
             for item in load(PREREGISTRATION)["profiles"]
         }
-        self.assertFalse(FAMILY_PROFILES & MIGRATION_PROFILES)
         self.assertEqual(preregistered, FAMILY_PROFILES)
-        self.assertEqual(registry_ids, FAMILY_PROFILES | MIGRATION_PROFILES)
+        self.assertEqual(registry_ids, FAMILY_PROFILES)
 
     def test_public_execute_requires_branch_without_solver_selector(self) -> None:
         text = FAMILY_EXECUTE.read_text(encoding="utf-8")
@@ -236,7 +229,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                             ),
                         )
 
-    def test_prepare_rejects_wrong_branch_and_migration_profile(self) -> None:
+    def test_prepare_rejects_wrong_branch_and_unknown_profile(self) -> None:
         with tempfile.TemporaryDirectory(dir=REPO_ROOT / ".tmp") as directory:
             output = Path(directory)
             common = {
@@ -263,7 +256,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             ):
                 prepare_family_source_closure(
                     **common,
-                    profile_id=next(iter(MIGRATION_PROFILES)),
+                    profile_id="unknown_profile",
                     source_branch_id="comsol",
                 )
 

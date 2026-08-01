@@ -108,7 +108,10 @@ class RoundRodGeometryTest(unittest.TestCase):
 
     def test_same_geometry_exports_all_rods_to_simion(self):
         resolved = json.loads(
-            (ROOT / "projects/rf_octupole_ion_optics/config/resolved_design.json").read_text()
+            (
+                ROOT
+                / "projects/rf_octupole_ion_optics/config/resolved_design_no_acceleration_full_length.json"
+            ).read_text()
         )
         gem = render_gem(resolved, 0.2)
         self.assertEqual(gem.count("e(1) { fill { within { cylinder"), 4)
@@ -137,9 +140,10 @@ class RoundRodGeometryTest(unittest.TestCase):
 
     def test_segmented_simion_geometry_separates_rods_ground_and_output(self):
         resolved = json.loads(
-            (ROOT / "projects/rf_hexapole_ion_optics/config/resolved_design.json").read_text(
-                encoding="utf-8"
-            )
+            (
+                ROOT
+                / "projects/rf_hexapole_ion_optics/config/resolved_design_no_acceleration_full_length.json"
+            ).read_text(encoding="utf-8")
         )
         segmented = resolved["segmentation"]["segmented_rod_array"]
         gem = render_gem(resolved, 0.2)
@@ -156,7 +160,10 @@ class RoundRodGeometryTest(unittest.TestCase):
 
     def test_exit_aperture_plate_mode_keeps_continuous_rods_and_separates_output(self):
         resolved = json.loads(
-            (ROOT / "projects/rf_hexapole_ion_optics/config/resolved_design.json").read_text()
+            (
+                ROOT
+                / "projects/rf_hexapole_ion_optics/config/resolved_design_no_acceleration_full_length.json"
+            ).read_text()
         )
         with self.assertRaises(TypeError):
             render_gem(resolved, 0.2, separate_output_electrode=True)

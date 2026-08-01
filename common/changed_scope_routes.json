@@ -236,10 +236,6 @@
           "reason": "integration_schema_changed"
         },
         {
-          "exact": "common/contracts/schemas/migration_equivalence_preregistration.schema.json",
-          "reason": "integration_schema_changed"
-        },
-        {
           "exact": "common/contracts/schemas/resolved_connection.schema.json",
           "reason": "integration_schema_changed"
         }
@@ -260,6 +256,10 @@
     {
       "stage": "rf_multipole_to_single_reflection_oatof_integration",
       "matches": [
+        {
+          "regex": "^projects/rf_quadrupole_ion_optics/analysis/(derive_shared_centroid_pulse_time|plot_shared_pulse_geometry_snapshot|audit_pulse_capture_pulse_chain|build_pulse_capture_local_exit_component_state|analyze_analyzer_transport|validate_oatof_formal_analyzer_release)\\.py$",
+          "reason": "integration_analysis_ownership_changed"
+        },
         {
           "prefix": "common/integration/",
           "reason": "common_integration_changed"

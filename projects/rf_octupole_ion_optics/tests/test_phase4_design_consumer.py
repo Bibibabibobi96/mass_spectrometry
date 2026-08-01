@@ -23,10 +23,7 @@ N100_TIER_SUFFIXES = (
     "_n100_spatial_refined",
     "_n100_temporal_refined",
 )
-COMPATIBILITY_RUNTIME_IDS = {
-    "baseline_finite_3d",
-    "exit_aperture_plate_acceleration_reference",
-}
+COMPATIBILITY_RUNTIME_IDS: set[str] = set()
 HYBRID_RUNTIME_IDS = {
     "no_acceleration_full_length_n100_hybrid_exit025_temporal_coarse",
     "no_acceleration_full_length_n100_hybrid_exit025_temporal_refined",
@@ -386,31 +383,12 @@ class ThreeModeRuntimeAndQualificationTests(unittest.TestCase):
             "FAIL_CLOSED_NO_FORMAL_BINDING",
         )
 
-    def test_compatibility_aliases_resolve_the_same_typed_modes(self) -> None:
-        aliases = {
-            "baseline_finite_3d": "segmented_rod_axial_acceleration",
-            "exit_aperture_plate_acceleration_reference":
-                "exit_aperture_plate_acceleration",
-        }
-        for alias, canonical in aliases.items():
-            alias_design = resolve_design_profile(
-                REPO_ROOT,
-                "rf_octupole_ion_optics",
-                alias,
-            )["resolved_design"]
-            canonical_design = resolve_design_profile(
-                REPO_ROOT,
-                "rf_octupole_ion_optics",
-                canonical,
-            )["resolved_design"]
-            for key in (
-                "geometry_mm",
-                "interfaces_mm",
-                "drive",
-                "static_electrodes_V",
-                "segmentation",
-            ):
-                self.assertEqual(alias_design[key], canonical_design[key])
+    def test_design_profile_registry_contains_only_typed_modes(self) -> None:
+        profiles = load("config/design_profiles.json")["profiles"]
+        self.assertEqual(
+            {profile["design_profile_id"] for profile in profiles},
+            set(MODE_IDS),
+        )
 
     def test_wrappers_delegate_registered_runtime_profile_resolution(self) -> None:
         runtime_ids = set(load("config/runtime_profiles.json")["profiles"])

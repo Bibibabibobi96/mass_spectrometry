@@ -6,9 +6,6 @@ import unittest
 from pathlib import Path
 
 from common.multipole.analyze_round_rod_screen import analyze
-from common.multipole.compile_design_request import (
-    compile_governed_design_request_file,
-)
 from common.multipole.design_profile import resolve_design_profile
 from common.multipole.simion_geometry import render_gem
 
@@ -60,16 +57,9 @@ class ResolvedDesignConsumerContractTest(unittest.TestCase):
                 self.assertNotIn(token, source)
 
     def test_simion_projection_preserves_resolved_parent_geometry_and_interfaces(self) -> None:
-        profile = resolve_design_profile(
-            ROOT, "rf_hexapole_ion_optics", "baseline_finite_3d"
-        )
-        resolved = compile_governed_design_request_file(
-            profile["paths"]["design_request"],
-            profile["paths"]["design_variables"],
-            profile["paths"]["optimization_envelope"],
-            expected_identity=profile["profile"]["identity"],
-            provenance_root=ROOT,
-        )
+        resolved = resolve_design_profile(
+            ROOT, "rf_hexapole_ion_optics", "no_acceleration_full_length"
+        )["resolved_design"]
         gem = render_gem(resolved, 0.2)
         self.assertIn(f"parent_resolved_sha256={resolved['resolved_sha256']}", gem)
         for rod in resolved["segmentation"]["segmented_rod_array"]["electrodes"]:

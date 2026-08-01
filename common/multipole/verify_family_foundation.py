@@ -10,7 +10,10 @@ from common.contracts.particle_count_policy import (
     load_particle_count_policy,
     validate_standard_particle_count,
 )
-from common.multipole.family_contract import from_high_order_baseline, from_quadrupole_contract
+from common.multipole.family_contract import (
+    from_high_order_resolved_design,
+    from_quadrupole_contract,
+)
 from common.multipole.design_profile import resolve_design_profile
 
 
@@ -245,7 +248,7 @@ def validate_project_identity(project_id: str, order: int, electrode_count: int)
     """Validate one project's registry metadata and normalized operating identity."""
     root = REPO_ROOT / "projects" / project_id
     project = load_json(root / "config" / "project.json")
-    baseline = load_json(root / "config" / "baseline.json")
+    baseline = load_json(root / "config" / "baseline.json") if order == 2 else None
     require(project.get("project_id") == project_id, f"{project_id} project identity differs")
     evidence_location = LEGACY_EVIDENCE_SPECS[project_id]
     matching_mappings = [
@@ -268,11 +271,6 @@ def validate_project_identity(project_id: str, order: int, electrode_count: int)
     )
     require(project.get("family_id") == "rf_multipole_ion_optics", f"{project_id} family differs")
     require("simion" in project.get("toolchains", []), f"{project_id} omits its SIMION adapter")
-    require(
-        baseline.get("multipole", {}).get("radial_order_n") == order
-        and baseline.get("multipole", {}).get("electrode_count") == electrode_count,
-        f"{project_id} baseline multipole identity differs",
-    )
     functional_count = int(load_particle_count_policy()["functional_check_count"])
     modes = load_json(root / "config" / "operating_modes.json")
     require(
@@ -331,6 +329,7 @@ def validate_project_identity(project_id: str, order: int, electrode_count: int)
             f"{project_id} {solver} solver numerics differ",
         )
     if order == 2:
+        assert baseline is not None
         source = load_json(root / "config" / "official_particle_source.json")
         source_count = validate_standard_particle_count(int(source["particles"]))
         require(source_count == functional_count, "quadrupole functional source count differs")
@@ -383,9 +382,9 @@ def validate_project_identity(project_id: str, order: int, electrode_count: int)
         ).read_text(encoding="utf-8")
         require("axial_acceleration_reference" not in builder, "legacy quadrupole builder retains acceleration")
     else:
-        source_count = validate_standard_particle_count(int(baseline["particle_source"]["count"]))
+        source_count = validate_standard_particle_count(functional_count)
         require(source_count == functional_count, f"{project_id} functional source count differs")
-        operating = from_high_order_baseline(baseline)
+        operating = from_high_order_resolved_design(no_acceleration)
         require(operating.identity.electrode_count == electrode_count, f"{project_id} drive identity differs")
         comsol_wrapper = (
             root / "analysis" / "run_finite_3d_transport.ps1"

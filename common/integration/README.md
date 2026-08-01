@@ -18,8 +18,8 @@
 `RunId`和`-SolverAuthorized`，并由adapter串行调用其冻结入口。公共层不会从两个project ID猜测端口、
 自动发明连接器、复制物理参数或执行profile中未冻结的命令；缺少adapter、RunId或授权均失败关闭。
 
-`adapter_contract.py`只为执行映射和迁移等价预登记提供窄schema：映射可声明profile ID、adapter路径、
-已有stage入口和已有case ID，不允许几何、电压或粒子参数。具体integration负责把映射SHA和路径冻结进
+`adapter_contract.py`只为当前执行映射和工程预算提供窄合同：映射可声明profile ID、adapter路径及
+runtime binding，不允许几何、电压或粒子参数。具体integration负责把映射SHA和路径冻结进
 composition plan，并在执行前再次核对。`resolve_integration_engineering_budget(...)`复核integration、
 profile、同源粒子身份和compact留存后，只返回该次profile的三个stage硬帽；它复用公共进程树监控器，
 不建立integration私有资源门禁。

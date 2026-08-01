@@ -74,52 +74,6 @@
         "segmentation_strategy": "uniform",
         "axial_drive_topology": "exit_aperture_plate_potential_step"
       }
-    },
-    {
-      "design_profile_id": "baseline_finite_3d",
-      "mode_id": "segmented_rod_axial_acceleration",
-      "design_request": "config/requests/mechanical_base.json",
-      "design_variables": "config/design_variables.json",
-      "optimization_envelope": "config/optimization_envelope.json",
-      "sha256": {
-        "design_request": "4B7E7910C0FFA866F946E28F17F2AA65D8755932A8FE9A95E0852C98F453891F",
-        "design_variables": "370927F4104971E38331490F7785643A7C3FA831D037980C6A86FBB4C3E256FF",
-        "optimization_envelope": "6FCC9862D77DEE8FD40F190BCCBDD701DD958FCA93625C1CEF6746CB662A84F2"
-      },
-      "identity": {
-        "project_id": "rf_octupole_ion_optics",
-        "family_id": "rf_multipole_ion_optics",
-        "radial_order_n": 4,
-        "electrode_count": 8
-      },
-      "topology": {
-        "enclosure_role": "full_length_grounded_shield",
-        "segmentation_strategy": "uniform",
-        "axial_drive_topology": "segmented_rod_axial_acceleration"
-      }
-    },
-    {
-      "design_profile_id": "exit_aperture_plate_acceleration_reference",
-      "mode_id": "exit_aperture_plate_acceleration",
-      "design_request": "config/requests/mechanical_base.json",
-      "design_variables": "config/design_variables.json",
-      "optimization_envelope": "config/optimization_envelope.json",
-      "sha256": {
-        "design_request": "4B7E7910C0FFA866F946E28F17F2AA65D8755932A8FE9A95E0852C98F453891F",
-        "design_variables": "370927F4104971E38331490F7785643A7C3FA831D037980C6A86FBB4C3E256FF",
-        "optimization_envelope": "6FCC9862D77DEE8FD40F190BCCBDD701DD958FCA93625C1CEF6746CB662A84F2"
-      },
-      "identity": {
-        "project_id": "rf_octupole_ion_optics",
-        "family_id": "rf_multipole_ion_optics",
-        "radial_order_n": 4,
-        "electrode_count": 8
-      },
-      "topology": {
-        "enclosure_role": "full_length_grounded_shield",
-        "segmentation_strategy": "uniform",
-        "axial_drive_topology": "exit_aperture_plate_potential_step"
-      }
     }
   ]
 }

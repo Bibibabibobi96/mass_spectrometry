@@ -7,19 +7,13 @@
 `ConnectionProfileId`。解析后的 connection 决定刚性位姿、连接器、公共电位、时钟和场责任区，运行器不得再消费
 connector case 或由间隙推断拓扑。
 
-迁移等价workflow保留两个四极杆冻结profile：
-
-- `rf_quadrupole_grounded_connector_gap_1mm`；
-- `rf_quadrupole_direct_mating_gap_0mm`。
-
 多极杆族同源闭合workflow使用三个无加速全尺寸直接对接profile：
 
 - `rf_quadrupole_no_acceleration_full_length_direct_mating_gap_0mm`；
 - `rf_hexapole_no_acceleration_full_length_direct_mating_gap_0mm`；
 - `rf_octupole_no_acceleration_full_length_direct_mating_gap_0mm`。
 
-两个workflow的声明边界和公开入口不同。迁移等价只使用
-[`execute_integration.ps1`](../execute_integration.ps1)；多极杆族同源闭合只使用
+当前唯一公开入口为
 [`workflows/family_source_closure/execute.ps1`](../workflows/family_source_closure/execute.ps1)。
 后者要求显式提供`ConnectionProfileId`和`SourceBranchId`。`SourceBranchId=comsol|simion`只选择冻结的
 上游多极杆粒子源分支，不是接口求解器选择器；两种分支进入完全相同的固定下游链：
@@ -31,10 +25,14 @@ COMSOL `pre_pulse_interface_transport`、COMSOL `pulse_capture`、SIMION
 每个修订必须冻结自己的预注册、预算、runtime binding、允许的profile与source branch，不能覆盖
 `baseline`记录或把任意路径作为运行参数注入。
 
-两个公开入口都冻结resolved connection、composition plan、runtime binding和工程预算，并复用
+该公开入口冻结resolved connection、composition plan、runtime binding和工程预算，并复用
 [`runtime/run_transfer.ps1`](../runtime/run_transfer.ps1)及同一组三个stage。family workflow的每个
 profile/source branch只授权冻结同源N=100母样本的compact功能运行；预算耗尽记为
 `INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`，自动重试固定为零。
+
+family runtime binding schema v2只冻结公共49项dependency base、家族2项overlay和单一10项
+implementation registry；运行时由base与overlay生成51项code inventory，并分别冻结两层身份，不再
+建立dependency合同的self-snapshot。
 
 ## 多极杆族同源闭合状态与声明边界
 
@@ -107,35 +105,16 @@ oaTOF入口、脉冲时active、局部加速器出口、探测面crossing和hit�
 新的`SourceRevisionId`、runtime binding或下游预登记，因此未接入本集成、未启动新的oaTOF商业运行；
 不得用现有triangle替代这些新源的下游证据。
 
-## 迁移等价结论
+## 已关闭迁移
 
-[`migration_oracles.json`](../config/migration_oracles.json)是只读的迁移前证据索引，保留当时的术语、路径、
-run ID 和 census。它不定义活动 profile、执行步骤或拓扑。
-`migration_equivalence_preregistration.json`继续作为读取结果前冻结的`BLOCKED/NOT_RUN`预注册快照，
-不得事后改写。
-
-2026-07-29，两个profile均以冻结的同源N=100输入完成首次真实COMSOL→SIMION重跑。集成runtime和三个
-phase迁入integration所有权、父运行统一采用仓库run ID合同后，2026-07-30再次通过公开入口完整重跑。
-当前独立analysis run
-`20260730_113401__analysis__cross__rf-oatof-migration-equivalence`核对源身份、五级census和四组逐粒子
-离散事件集合，两个profile均为精确`PASS`，因此零物理变化的功能迁移在当前实现下保持闭合。结果
-SHA-256为`90321241BCF6C5CE2F13E1B7D036682539E3F94C9D23303FA2733D095BA4B078`。首次结果仍按原
-run身份保留，仅用于追溯。
-
-adapter仍只发布轻量integration父运行；大型COMSOL/SIMION资产由三个子运行拥有，并按compact合同保留。
-连续相空间保持`NOT_EVALUATED`；本结论不声明场、分辨率、数值收敛、Candidate、Formal或整机资格。
-
-## 开放实现任务
-
-当前若干被三个family profile共同消费的pulse/analyzer阶段分析脚本仍位于
-`projects/rf_quadrupole_ion_optics/analysis/`，并由各family依赖合同显式冻结。它们不是第二套stage或
-第二套统计实现，但所有权仍偏向四极杆项目。待当前真实同源闭合链完成后，应把确属本连接实例的脚本迁入
-本integration的`analysis/`，同步更新三份依赖合同及runtime SHA；oaTOF项目专属的正式资产校验继续留在
-oaTOF项目，不为迁移制造同义CLI或配置字段。
+旧四极杆S2/S3迁移等价workflow已在功能等价闭合后退出活动树；专用profile、执行器、adapter、
+oracle/prereg配置和schema均不再是当前入口。完整处置、保留边界和当时结果索引见
+[2026-08-01 活动兼容层退役](../../../docs/history/20260801__active-compatibility-retirement.md)。当前只保留
+family source closure；连接级pulse/analyzer分析统一位于本integration的`analysis/`，不提供四极杆旧路径wrapper。
 
 ## 静态门禁
 
 [`verify_integration.ps1`](../verify_integration.ps1)只运行无求解器的合同测试：profile 唯一性、公共解析、
 非空transfer composition step、adapter registry SHA、预算冻结SHA、source branch身份传播、父运行发布
-fixture、source revision注册与失败关闭、paired analysis失败关闭、迁移等价PASS/FAIL fixture与显式授权边界。它不运行COMSOL、SIMION、
+fixture、source revision注册与失败关闭及paired analysis失败关闭。它不运行COMSOL、SIMION、
 MATLAB、CAD，也不替代真实迁移等价复验或family六分支真实运行。

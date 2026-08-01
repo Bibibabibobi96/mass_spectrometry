@@ -22,10 +22,6 @@ RUNTIME_ROOT = PROJECT_ROOT / "runtime"
 RUN_ARTIFACT_SUPPORT = REPO_ROOT / "common" / "contracts" / "run_artifact_support.ps1"
 SHARED_SIMION_LUA = REPO_ROOT / "common" / "multipole" / "simion_transport.lua"
 EXECUTION_PROFILES = PROJECT_ROOT / "config" / "execution_profiles.json"
-ACTIVE_INTERFACE_CONFIGS = (
-    PROJECT_ROOT / "config" / "rf_to_oatof_transfer_phases.json",
-    PROJECT_ROOT / "config" / "rf_to_oatof_pulse_capture.json",
-)
 OFFICIAL_RESOLVED = PROJECT_ROOT / "config" / "resolved_design_official.json"
 MASS_FILTER_RESOLVED = PROJECT_ROOT / "config" / "resolved_design_mass_filter.json"
 INTERFACE_MODE = (
@@ -172,12 +168,6 @@ class WorkflowArchitectureContractTests(unittest.TestCase):
                 forbidden.search(_read(path)),
                 f"{path.relative_to(PROJECT_ROOT)} depends on a tests/ production entry",
             )
-        for path in ACTIVE_INTERFACE_CONFIGS:
-            self.assertIsNone(
-                forbidden.search(_read(path)),
-                f"{path.relative_to(PROJECT_ROOT)} publishes a tests/ entrypoint",
-            )
-
     def test_runtime_modules_have_exact_responsibility_inventory(self) -> None:
         self.assertEqual(
             {path.name for path in RUNTIME_ROOT.glob("*.ps1")},

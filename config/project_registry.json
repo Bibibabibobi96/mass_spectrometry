@@ -12,11 +12,11 @@
     },
     {
       "descriptor": "projects/rf_hexapole_ion_optics/config/project.json",
-      "sha256": "09D5BD383657A9CAD69B8624CB08F9EC8184EF6C11895DA59A41011A696C1415"
+      "sha256": "9E6FAC4E5D29BE89FDD4DDF2F69C540E5BB76C89EEF47FAC2A49E10472F30DF0"
     },
     {
       "descriptor": "projects/rf_octupole_ion_optics/config/project.json",
-      "sha256": "22888CDB4126458596D413510FF39385C2B95B4EECEE89791B1F0127EADCF41A"
+      "sha256": "41C3196DD7F8120948BEAFC49BD0BADB3CF642CF3C4B35433120CA9E3BC0460F"
     },
     {
       "descriptor": "projects/rf_quadrupole_ion_optics/config/project.json",
@@ -173,7 +173,7 @@
       ],
       "contracts": {
         "baseline": null,
-        "resolved": "config/resolved_design.json",
+        "resolved": "config/resolved_design_no_acceleration_full_length.json",
         "analysis": null,
         "interface": null,
         "execution": "config/execution_profiles.json",
@@ -303,7 +303,7 @@
       ],
       "contracts": {
         "baseline": null,
-        "resolved": "config/resolved_design.json",
+        "resolved": "config/resolved_design_no_acceleration_full_length.json",
         "analysis": null,
         "interface": null,
         "execution": "config/execution_profiles.json",

@@ -10,9 +10,12 @@ from common.multipole.family_contract import (
     VoltageDrive,
     electrode_group_voltages,
     from_high_order_baseline,
+    from_high_order_resolved_design,
+    l1_l2_transport_contract_from_resolved_design,
     from_quadrupole_contract,
     load_family_contract,
 )
+from common.multipole.design_profile import resolve_design_profile
 from common.multipole.mass_response import aggregate_response, evaluate_functional_contrast, load_terminal_statuses
 from common.multipole.ideal_transport import source_particles
 from common.multipole.paired_mass_scan import build_paired_ion_rows
@@ -85,10 +88,17 @@ class MultipoleFamilyContractTests(unittest.TestCase):
             )
 
     def test_high_order_n100_source_is_n1000_prefix(self) -> None:
-        baseline = load_json(REPO_ROOT / "projects" / "rf_hexapole_ion_optics" / "config" / "baseline.json")
-        statistical = copy.deepcopy(baseline)
+        resolved = resolve_design_profile(
+            REPO_ROOT, "rf_hexapole_ion_optics", "no_acceleration_full_length"
+        )["resolved_design"]
+        projection = l1_l2_transport_contract_from_resolved_design(resolved)
+        statistical = copy.deepcopy(projection)
         statistical["particle_source"]["count"] = 1000
-        self.assertEqual(source_particles(baseline), source_particles(statistical)[:100])
+        self.assertEqual(source_particles(projection), source_particles(statistical)[:100])
+        self.assertEqual(
+            from_high_order_baseline(projection),
+            from_high_order_resolved_design(resolved),
+        )
 
     def test_obsolete_family_schema_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -98,11 +108,15 @@ class MultipoleFamilyContractTests(unittest.TestCase):
                 load_family_contract(path)
 
     def test_three_projects_share_one_family_identity(self) -> None:
-        hexapole = from_high_order_baseline(
-            load_json(REPO_ROOT / "projects" / "rf_hexapole_ion_optics" / "config" / "baseline.json")
+        hexapole = from_high_order_resolved_design(
+            resolve_design_profile(
+                REPO_ROOT, "rf_hexapole_ion_optics", "no_acceleration_full_length"
+            )["resolved_design"]
         )
-        octupole = from_high_order_baseline(
-            load_json(REPO_ROOT / "projects" / "rf_octupole_ion_optics" / "config" / "baseline.json")
+        octupole = from_high_order_resolved_design(
+            resolve_design_profile(
+                REPO_ROOT, "rf_octupole_ion_optics", "no_acceleration_full_length"
+            )["resolved_design"]
         )
         quad_root = REPO_ROOT / "projects" / "rf_quadrupole_ion_optics" / "config"
         quadrupole = from_quadrupole_contract(

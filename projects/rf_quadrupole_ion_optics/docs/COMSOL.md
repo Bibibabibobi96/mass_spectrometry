@@ -14,12 +14,11 @@
 | 无碰撞部件回归 | `../workflows/no_collision_transport/run_comsol.ps1` |
 | RF+DC质量过滤 | `../workflows/mass_filter_reference/run_comsol.ps1` |
 | release构造诊断 | `../comsol/interface_readiness/run_release_construction_gate.m` |
-| RF四极杆离子光学→单次反射oa-TOF迁移等价 | [`integration/execute_integration.ps1`](../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/execute_integration.ps1) |
 | 四、六、八极杆同源功能闭合 | [`integration/workflows/family_source_closure/execute.ps1`](../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/workflows/family_source_closure/execute.ps1) |
 
 所有任务通过仓库统一R2025b/COMSOL入口建立连接，不自行`mphstart`。版本、启动、重试及
 `EXECUTION_ENVIRONMENT_BLOCKED`分类只采用根README和`common/comsol/README.md`。
-两个integration入口内部顺序调用COMSOL/SIMION stage；内部stage不是可独立运行或取得资格的公开入口。
+integration入口内部顺序调用COMSOL/SIMION stage；内部stage不是可独立运行或取得资格的公开入口。
 
 ## 模型与合同
 

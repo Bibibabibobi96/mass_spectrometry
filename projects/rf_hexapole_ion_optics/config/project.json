@@ -21,7 +21,7 @@
   "toolchains": ["python", "comsol", "simion"],
   "contracts": {
     "baseline": null,
-    "resolved": "config/resolved_design.json",
+    "resolved": "config/resolved_design_no_acceleration_full_length.json",
     "analysis": null,
     "interface": null,
     "execution": "config/execution_profiles.json",

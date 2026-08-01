@@ -128,9 +128,9 @@ CSV SHA-256和parent resolved hash的metadata；MATLAB和SIMION投影只消费�
 坐标和固定分箱生成；两者只发布事后工程描述，不授予收敛或资格。
 圆柱家族实验共同使用`rf_multipole_family_mother_sample_v1_1000.csv`及其精确
 `rf_multipole_family_mother_sample_v1_100.csv`前缀；生成算法、seed、分布、消费者和SHA由同目录
-`rf_multipole_family_mother_sample_v1.json`冻结。旧`hex_oct_baseline_fixed_100.csv`只供六/八极杆
-legacy functional兼容，四极杆旧官方源只供oa-TOF oracle；两者都不是新家族实验源。求解器数值profile
-保持项目独立，以允许后续收敛结果分化。
+`rf_multipole_family_mother_sample_v1.json`冻结；这是当前四/六/八极杆家族实验的唯一粒子源入口。
+四极杆旧官方源只供oa-TOF oracle，不是新家族实验源。求解器数值profile保持项目独立，以允许后续
+收敛结果分化。
 
 SIMION空间离散的规范表示为`cell_mm_xyz.{x,y,z}`；旧profile中的标量`cell_mm`只在解析边界被
 等轴展开，运行快照不再保存第二份标量真相。各向异性比较把`x=y`作为径向因子、`z`作为轴向因子，

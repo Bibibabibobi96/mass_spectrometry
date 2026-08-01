@@ -10,11 +10,13 @@ import unittest
 from pathlib import Path
 from collections.abc import Callable
 
+from common.contracts.particle_physics import (
+    AMU_KG,
+    ELEMENTARY_CHARGE_C as E_CHARGE_C,
+)
 from common.multipole.compile_design_request import compile_design_request
 from common.multipole.particle_source_preflight import (
-    AMU_KG,
     COLUMNS,
-    E_CHARGE_C,
     validate_source,
 )
 from common.multipole.test_compile_design_request import design_request
