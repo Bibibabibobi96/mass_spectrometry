@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "artifact_identity_archive_manifest.schema.json",
+  "title": "Retired project identity archive manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "role", "archive_id", "project", "reason",
+    "recorded_at_utc", "source_layout", "replacement_layout",
+    "legacy_project_id", "payload", "identity_migration_manifest",
+    "deletion_performed"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "artifact_identity_archive_manifest"},
+    "archive_id": {"type": "string", "minLength": 1},
+    "project": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+    "reason": {"const": "migration-snapshot"},
+    "recorded_at_utc": {"type": "string", "format": "date-time"},
+    "source_layout": {"const": "retired-project-root"},
+    "replacement_layout": {"const": "current-project-archive"},
+    "legacy_project_id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+    "payload": {"const": "legacy-project-root"},
+    "identity_migration_manifest": {"const": "identity_migration_manifest.json"},
+    "deletion_performed": {"type": "boolean"},
+    "pruning_manifest": {"const": "pruning_manifest.json"}
+  }
+}

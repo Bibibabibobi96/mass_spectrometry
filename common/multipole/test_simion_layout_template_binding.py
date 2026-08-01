@@ -46,9 +46,16 @@ class SimionLayoutTemplateBindingTests(unittest.TestCase):
         )
 
         evidence_identity = registry["legacy_evidence_identity"]
+        provider_mapping = provider_descriptor["legacy_identities"][0]
+        artifact_location = provider_mapping.get("artifact_location")
+        artifact_root = (
+            artifact_location["source_root"]
+            if artifact_location is not None
+            else provider_mapping["artifact_root"]
+        )
         run_root = (
             fixture_root
-            / evidence_identity["artifact_root"]
+            / artifact_root
             / "runs"
             / registry["registration_run_id"]
         )
@@ -151,7 +158,6 @@ class SimionLayoutTemplateBindingTests(unittest.TestCase):
             {
                 "mapping_id": "rf_quad_rename_20260728",
                 "recorded_project_id": "rf_quadrupole_collision_cooling",
-                "artifact_root": "artifacts/projects/rf_quadrupole_collision_cooling",
                 "artifact_access": "read_only",
             },
         )

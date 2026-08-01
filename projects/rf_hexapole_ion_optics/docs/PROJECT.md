@@ -28,7 +28,7 @@ CSV的SHA和各求解器数值profile；任意粒子路径和自由数值不再�
 出口带孔接口板电位全部冻结为0 V。2026-07-28完成的同名双求解器功能复验和随后数值矩阵属于改名前
 `rf_hexapole_ion_guide`、旧固定N=100源（SHA-256
 `494CB26FA128C475CB2DC1DB1A3437342DFBB5D1C1900E811E4BEBF47D7A6385`）及旧resolved几何；其run只在
-`project.json`登记的legacy artifact根中只读保留。当前家族实验改为始终存在的四物理段和公共母样本
+`project.json`登记的legacy location当前以`source_pending_relocation`只读旧根。当前家族实验改为始终存在的四物理段和公共母样本
 前缀后，这些结果不得继承为功能、收敛、跨求解器数值等价或Candidate资格。
 
 Phase 2设计配置把当前`n=3`、6根电极身份、`r0=4 mm`、圆杆比0.5、有限杆范围、圆柱接地屏蔽及
@@ -447,7 +447,8 @@ Candidate、Formal和N=1000资格仍未授予。
 完整轨迹时，必须在运行前显式选择非compact类并写明理由。该设置只管理产物，不是数值或资格参数。
 
 活动产物位于`artifacts/projects/rf_hexapole_ion_optics/`；改名前证据继续只读保存在
-`config/project.json`登记的legacy artifact根，不搬移、不改写旧manifest、不追加新run，也不改变其
-原身份、状态和声明边界。
+`config/project.json`登记的legacy location治理：唯一archive目的地已冻结但真实移动尚未执行；迁移
+不改写旧manifest、不追加旧身份run，也不改变其原身份、状态和声明边界。切为
+`archived_verified`后resolver不再回退旧顶层路径。
 
 本项目没有剩余的baseline/alias兼容退出任务；如需复核旧格式，只从Git历史恢复到隔离工作区。

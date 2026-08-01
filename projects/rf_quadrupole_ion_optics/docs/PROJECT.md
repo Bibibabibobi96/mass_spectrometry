@@ -232,8 +232,9 @@ oaTOF handoff与pulse_capture local-exit仍保留其坐标和事件语义，但c
 结果和证据身份；本文件不复制全部run ID。2026-07-28以前的实现目录清单、数值表、诊断失败链和
 既有开放任务原文均冻结于`history/20260728__pre-document-consolidation-*.md`，不得用其“当前”
 覆盖本文件。
-改名前证据继续只读保存在`config/project.json`登记的legacy artifact根，不搬入活动根、不改写旧
-manifest、不追加新run，并保持原身份、状态与声明边界。
+改名前证据继续按`config/project.json`的legacy location合同只读；当前为
+`source_pending_relocation`，已冻结迁入本项目具名archive的唯一目的地但尚未真实移动。迁移不改写旧
+manifest、不追加旧身份run，并保持原身份、状态与声明边界；切为`archived_verified`后不再回退旧根。
 
 无碰撞L3薄wrapper默认使用根README定义的`compact`产物保留类；数值资格或GUI复核需要MPH、PA解阵列
 或完整轨迹时，必须在运行前显式选择非compact类并写明理由。该设置只管理产物，不是数值或资格参数。

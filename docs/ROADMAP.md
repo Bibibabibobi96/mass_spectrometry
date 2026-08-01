@@ -47,7 +47,9 @@ species、particle identity和lineage之间显式转换并冻结来源。
    manifest、旧绝对路径解析/重定位规则和legacy布局验证，盘点并更新全部活动合同、资格记录、模板与
    文档引用，逐文件复核SHA-256、recorded project identity和原声明边界。只有所有消费者在新位置通过
    回归、旧路径达到零活动引用并再次取得删除授权后，才可删除旧顶层目录。该任务不自动删除MPH/PA、
-   不减少磁盘占用，也不阻断当前多极杆资格与三模式分析；减容另行执行manifest级保留审计。
+   不减少磁盘占用，也不阻断当前多极杆资格与三模式分析；减容另行执行manifest级保留审计。当前三个
+   多极杆描述符已进入`source_pending_relocation`并冻结唯一archive目的地；事务工具、重定位reader、
+   完整SHA计划和可恢复裁剪journal已建立，但真实move/prune尚未执行。
 
 ## 面向大规模代码库的扩展护栏
 
@@ -114,7 +116,8 @@ species、particle identity和lineage之间显式转换并冻结来源。
 ### RF多极杆离子光学族
 
 - 四、六、八极杆已统一采用平级`rf_*_ion_optics`项目身份；行政改名前的artifact按各项目描述符中的
-  `legacy_identities`只读保留，不搬移、不改写旧manifest，也不因改名扩大资格声明。
+  `legacy_identities[].artifact_location`治理。迁移前只读旧根，复核后只读当前项目archive；全过程
+  不改写旧manifest，也不因改名或迁移扩大资格声明。
 - 已建立平级的`rf_hexapole_ion_optics`和`rf_octupole_ion_optics`，分别维护六极杆、八极杆离子导引的
   独立合同和证据；未来可继续建立`rf_quadrupole_mass_filter`、`rf_hexapole_collision_cell`等设计线。
 - 同一正式硬件的无碰撞传输、碰撞冷却、气体或RF工况可作为mode；不同杆数、主要电极拓扑或独立

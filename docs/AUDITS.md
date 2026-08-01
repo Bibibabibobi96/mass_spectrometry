@@ -5,6 +5,8 @@
 
 ## 已完成审计
 
+- [2026-08-01 多极杆旧项目身份 artifact 迁移审计](history/20260801__multipole-legacy-artifact-migration-audit.md)：
+  冻结三棵legacy根的映射、逐文件身份、活动/history引用、重型裁剪边界及无损事务顺序。
 - [2026-08-01 活动兼容层退役](history/20260801__active-compatibility-retirement.md)：记录旧migration/S2-S3
   活动链、family重复依赖与implementation、六/八极杆旧baseline及小型零消费者代码的处置和CLOC结果。
 - [2026-07-31 无加速多极杆离散跟进](history/20260731__no-acceleration-multipole-discretization-followup.md)：

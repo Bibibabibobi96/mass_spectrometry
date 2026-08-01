@@ -124,23 +124,20 @@
           "rf_quadrupole_ion_optics": {
             "identity_mapping_id": "rf_quad_rename_20260728",
             "recorded_project_id": "rf_quadrupole_collision_cooling",
-            "artifact_root": "artifacts/projects/rf_quadrupole_collision_cooling",
             "relative_path_pattern": "results/numerical_qualification/20260728_functional_transport/<comparison>.json"
           },
           "rf_hexapole_ion_optics": {
             "identity_mapping_id": "rf_hex_rename_20260728",
             "recorded_project_id": "rf_hexapole_ion_guide",
-            "artifact_root": "artifacts/projects/rf_hexapole_ion_guide",
             "relative_path_pattern": "results/numerical_qualification/20260728_functional_transport/<comparison>.json"
           },
           "rf_octupole_ion_optics": {
             "identity_mapping_id": "rf_oct_rename_20260728",
             "recorded_project_id": "rf_octupole_ion_guide",
-            "artifact_root": "artifacts/projects/rf_octupole_ion_guide",
             "relative_path_pattern": "results/numerical_qualification/20260728_functional_transport/<comparison>.json"
           }
         },
-        "identity_migration_basis": "Each evidence location explicitly names one administrative rename mapping. Evidence is verified under its recorded legacy project_id, remains read-only with its original status and claim limit, and cannot authorize new runs under the legacy identity. Future runs use the current project_id artifact root."
+        "identity_migration_basis": "Each evidence location names one administrative rename mapping; the project descriptor is the sole artifact location authority. Evidence is verified under its recorded legacy project_id, remains read-only with its original status and claim limit, and cannot authorize new runs under the legacy identity."
       },
       "claim_limit": "PASS covers only N=100 collision-free RF transport classification, exact transmitted-ID closure and positive working-radius margin for the named no-acceleration profile. It does not qualify continuous phase-space equivalence, collision cooling, axial acceleration, RF+DC mass filtering, mechanical design, Candidate or Formal status."
     },

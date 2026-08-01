@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from common.contracts.artifact_identity_migration import legacy_artifact_location
 from common.contracts.particle_count_policy import (
     load_particle_count_policy,
     validate_standard_particle_count,
@@ -27,21 +28,18 @@ LEGACY_EVIDENCE_SPECS = {
     "rf_quadrupole_ion_optics": {
         "identity_mapping_id": "rf_quad_rename_20260728",
         "recorded_project_id": "rf_quadrupole_collision_cooling",
-        "artifact_root": "artifacts/projects/rf_quadrupole_collision_cooling",
         "relative_path_pattern":
             "results/numerical_qualification/20260728_functional_transport/<comparison>.json",
     },
     "rf_hexapole_ion_optics": {
         "identity_mapping_id": "rf_hex_rename_20260728",
         "recorded_project_id": "rf_hexapole_ion_guide",
-        "artifact_root": "artifacts/projects/rf_hexapole_ion_guide",
         "relative_path_pattern":
             "results/numerical_qualification/20260728_functional_transport/<comparison>.json",
     },
     "rf_octupole_ion_optics": {
         "identity_mapping_id": "rf_oct_rename_20260728",
         "recorded_project_id": "rf_octupole_ion_guide",
-        "artifact_root": "artifacts/projects/rf_octupole_ion_guide",
         "relative_path_pattern":
             "results/numerical_qualification/20260728_functional_transport/<comparison>.json",
     },
@@ -260,7 +258,6 @@ def validate_project_identity(project_id: str, order: int, electrode_count: int)
     mapping = matching_mappings[0]
     require(
         mapping.get("project_id") == evidence_location["recorded_project_id"]
-        and mapping.get("artifact_root") == evidence_location["artifact_root"]
         and mapping.get("migration_kind") == "administrative_rename_only"
         and mapping.get("artifact_access") == "read_only"
         and mapping.get("new_runs_allowed") is False
@@ -269,6 +266,10 @@ def validate_project_identity(project_id: str, order: int, electrode_count: int)
         == "preserve_original_status_and_claim_limits_no_promotion",
         f"{project_id} legacy evidence policy differs",
     )
+    try:
+        legacy_artifact_location(mapping, project_id)
+    except ValueError as exc:
+        raise ValueError(f"{project_id} legacy evidence location differs") from exc
     require(project.get("family_id") == "rf_multipole_ion_optics", f"{project_id} family differs")
     require("simion" in project.get("toolchains", []), f"{project_id} omits its SIMION adapter")
     functional_count = int(load_particle_count_policy()["functional_check_count"])

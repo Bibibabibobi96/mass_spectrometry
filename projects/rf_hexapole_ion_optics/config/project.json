@@ -7,7 +7,14 @@
       "project_id": "rf_hexapole_ion_guide",
       "retired_at_utc": "2026-07-28T08:19:11Z",
       "migration_kind": "administrative_rename_only",
-      "artifact_root": "artifacts/projects/rf_hexapole_ion_guide",
+      "artifact_location": {
+        "schema_version": 1,
+        "state": "source_pending_relocation",
+        "source_root": "artifacts/projects/rf_hexapole_ion_guide",
+        "archive_id": "20260801_120001__migration-snapshot__repo__rf-hexapole-ion-guide",
+        "archive_root": "artifacts/projects/rf_hexapole_ion_optics/archive/20260801_120001__migration-snapshot__repo__rf-hexapole-ion-guide/legacy-project-root",
+        "migration_manifest": "artifacts/projects/rf_hexapole_ion_optics/archive/20260801_120001__migration-snapshot__repo__rf-hexapole-ion-guide/identity_migration_manifest.json"
+      },
       "artifact_access": "read_only",
       "new_runs_allowed": false,
       "verification_identity": "recorded_project_id",

@@ -127,7 +127,7 @@ class ProjectRegistryTests(unittest.TestCase):
         with self.assertRaises(ContractError):
             validate_schema(descriptor, "project.schema.json")
 
-    def test_legacy_identity_rejects_active_id_and_wrong_artifact_root(self) -> None:
+    def test_legacy_identity_rejects_active_id_and_wrong_artifact_location(self) -> None:
         descriptors = [
             {
                 "project_id": "current_project",
@@ -146,8 +146,30 @@ class ProjectRegistryTests(unittest.TestCase):
 
         descriptors.pop()
         descriptors[0]["legacy_identities"][0]["project_id"] = "retired_project"
-        with self.assertRaisesRegex(ContractError, "legacy artifact root must be"):
+        with self.assertRaisesRegex(ContractError, "legacy artifact location differs"):
             validate_legacy_identity_mappings(descriptors)
+
+    def test_multipole_pending_relocation_has_one_governed_future_archive(self) -> None:
+        for project_id in (
+            "rf_quadrupole_ion_optics",
+            "rf_hexapole_ion_optics",
+            "rf_octupole_ion_optics",
+        ):
+            descriptor = load_json(
+                REPO_ROOT / "projects" / project_id / "config" / "project.json"
+            )
+            mapping = descriptor["legacy_identities"][0]
+            location = mapping["artifact_location"]
+            self.assertEqual(location["state"], "source_pending_relocation")
+            self.assertNotIn("artifact_root", mapping)
+            self.assertTrue(location["archive_root"].startswith(
+                f"artifacts/projects/{project_id}/archive/"
+            ))
+            self.assertEqual(
+                location["migration_manifest"],
+                location["archive_root"].removesuffix("/legacy-project-root")
+                + "/identity_migration_manifest.json",
+            )
 
     def test_legacy_identity_rejects_duplicate_ids_and_mapping_ids(self) -> None:
         descriptors = [

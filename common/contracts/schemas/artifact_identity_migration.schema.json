@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "artifact_identity_migration.schema.json",
+  "title": "Retired artifact project identity migration manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "role", "migration_id", "status", "recorded_at_utc",
+    "current_project_id", "legacy_project_id", "legacy_mapping_id",
+    "source_root", "destination_root", "relocation", "inventory", "files"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "artifact_identity_migration_manifest"},
+    "migration_id": {"type": "string", "minLength": 1},
+    "status": {"enum": ["planned", "relocated_verified"]},
+    "recorded_at_utc": {"type": "string", "format": "date-time"},
+    "current_project_id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+    "legacy_project_id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+    "legacy_mapping_id": {"type": "string", "minLength": 1},
+    "source_root": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+    "destination_root": {"type": "string", "minLength": 1},
+    "relocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "legacy_manifests_rewritten", "recorded_project_identity_preserved"],
+      "properties": {
+        "kind": {"const": "exact_root_prefix"},
+        "legacy_manifests_rewritten": {"const": false},
+        "recorded_project_identity_preserved": {"const": true}
+      }
+    },
+    "inventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file_count", "bytes", "prune_candidate_file_count", "prune_candidate_bytes"],
+      "properties": {
+        "file_count": {"type": "integer", "minimum": 1},
+        "bytes": {"type": "integer", "minimum": 0},
+        "prune_candidate_file_count": {"type": "integer", "minimum": 0},
+        "prune_candidate_bytes": {"type": "integer", "minimum": 0}
+      }
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path", "bytes", "sha256", "disposition", "reason", "run_id", "reference_classes"
+        ],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "bytes": {"type": "integer", "minimum": 0},
+          "sha256": {"type": "string", "pattern": "^[0-9A-F]{64}$"},
+          "disposition": {"enum": ["retain", "prune_after_verified_migration"]},
+          "reason": {
+            "type": ["string", "null"],
+            "enum": [null, "non_authoritative_workspace", "rebuildable_solver_or_cad_binary"]
+          },
+          "run_id": {"type": ["string", "null"]},
+          "reference_classes": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"enum": ["active", "formal", "history"]}
+          }
+        }
+      }
+    }
+  }
+}

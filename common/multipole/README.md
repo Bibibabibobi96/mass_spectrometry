@@ -155,10 +155,11 @@ L2 `analyze_round_rod_screen.py`同样只报告每个输入ratio的场谐波指�
 2026-07-28，四、六、八极杆的`no_acceleration_full_length`均以真实COMSOL和SIMION、同一项目内冻结
 N=100源完成五项矩阵：COMSOL空间加密、COMSOL时间加密、SIMION空间加密、SIMION时间加密，以及两边
 各自收敛解之间的跨求解器比较，全部`PASS`。机器结果位于
-三个项目描述符`legacy_identities[].artifact_root`所登记的改名前只读artifact根下
+三个项目描述符`legacy_identities[].artifact_location`所解析的唯一只读artifact根下
 `results/numerical_qualification/20260728_functional_transport/`；验收合同为
 [`functional_transport_acceptance.json`](functional_transport_acceptance.json)。
-2026-07-28改名后的新run进入当前project ID对应artifact根，不移动、复制或改写既有证据。
+2026-07-28改名后的新run进入当前project ID对应artifact根。旧证据当前处于受控迁移前状态；移动时
+保持manifest原字节并逐文件复核SHA，完成后resolver只读具名archive，不复制或改写既有证据。
 
 该闭合只证明无碰撞RF传输分类、透射粒子ID和正工作半径裕量稳定；连续束斑、发散、TOF、能量及逐粒子
 相空间差异只是诊断输出，不在这项PASS内。它也不授予碰撞冷却、轴向加速、RF+DC质量过滤、机械、
@@ -341,8 +342,9 @@ checkpoints；缺字段、空值、重复项或缺核心终态均立即失败，
 
 当前活动登记由[`simion_layout_template.json`](simion_layout_template.json)绑定到
 `20260727_232047__build__simion__multipole-layout-template`的manifest、IOB/CON SHA及2026-07-27人工GUI
-复核。该登记run仍按`rf_quad_rename_20260728`映射，以recorded project ID
-`rf_quadrupole_collision_cooling`只读保存在旧artifact根；resolver同时复核当前provider descriptor的
+复核。该登记run仍按`rf_quad_rename_20260728`映射，并以recorded project ID
+`rf_quadrupole_collision_cooling`验证；resolver从当前provider descriptor的
+唯一location合同解析迁移前旧根或复核后的archive，并同时复核
 legacy mapping、旧run config/manifest身份与文件SHA。新登记入口仍只向
 `artifacts/projects/rf_quadrupole_ion_optics/`写入新run，不复用旧身份。
 [`simion_layout_template.py`](simion_layout_template.py)只执行与oa-TOF

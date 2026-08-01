@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "artifact_identity_pruning_journal.schema.json",
+  "title": "Resume-safe retired artifact pruning journal",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "role", "archive_id", "state", "created_at_utc",
+    "updated_at_utc", "removed_file_count", "removed_bytes", "removed"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "artifact_identity_pruning_journal"},
+    "archive_id": {"type": "string", "minLength": 1},
+    "state": {"enum": ["planned", "in_progress", "quarantined", "deleting", "complete"]},
+    "created_at_utc": {"type": "string", "format": "date-time"},
+    "updated_at_utc": {"type": "string", "format": "date-time"},
+    "removed_file_count": {"type": "integer", "minimum": 0},
+    "removed_bytes": {"type": "integer", "minimum": 0},
+    "removed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "original_path", "archive_path", "quarantine_path", "bytes",
+          "sha256", "reason"
+        ],
+        "properties": {
+          "original_path": {"type": "string", "minLength": 1},
+          "archive_path": {"type": "string", "pattern": "^legacy-project-root/"},
+          "quarantine_path": {"type": "string", "pattern": "^\\.prune-quarantine/"},
+          "bytes": {"type": "integer", "minimum": 0},
+          "sha256": {"type": "string", "pattern": "^[0-9A-F]{64}$"},
+          "reason": {
+            "enum": ["non_authoritative_workspace", "rebuildable_solver_or_cad_binary"]
+          }
+        }
+      }
+    }
+  }
+}

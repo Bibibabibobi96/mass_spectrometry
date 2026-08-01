@@ -7,6 +7,11 @@ import hashlib
 import json
 from pathlib import Path
 
+from common.contracts.artifact_identity_migration import (
+    relocated_manifest_path,
+    resolve_legacy_artifact_root,
+)
+
 
 EXPECTED_TRANSFORM = {
     "x": 0,
@@ -72,7 +77,6 @@ def resolve_simion_layout_template(
     expected_evidence_keys = {
         "mapping_id",
         "recorded_project_id",
-        "artifact_root",
         "artifact_access",
     }
     if (
@@ -81,8 +85,6 @@ def resolve_simion_layout_template(
         or evidence_identity["mapping_id"] != "rf_quad_rename_20260728"
         or evidence_identity["recorded_project_id"]
         != "rf_quadrupole_collision_cooling"
-        or evidence_identity["artifact_root"]
-        != "artifacts/projects/rf_quadrupole_collision_cooling"
         or evidence_identity["artifact_access"] != "read_only"
     ):
         raise ValueError("template legacy evidence identity differs")
@@ -101,8 +103,6 @@ def resolve_simion_layout_template(
         provider_descriptor.get("project_id") != provider
         or provider_mapping.get("project_id")
         != evidence_identity["recorded_project_id"]
-        or provider_mapping.get("artifact_root")
-        != evidence_identity["artifact_root"]
         or provider_mapping.get("artifact_access")
         != evidence_identity["artifact_access"]
         or provider_mapping.get("verification_identity") != "recorded_project_id"
@@ -121,12 +121,12 @@ def resolve_simion_layout_template(
 
     recorded_project = evidence_identity["recorded_project_id"]
     run_id = registry["registration_run_id"]
-    artifact_root = (repo_root.parent / evidence_identity["artifact_root"]).resolve()
-    expected_artifact_root = (
+    artifact_root = resolve_legacy_artifact_root(
+        repo_root.parent, provider_mapping, provider
+    )
+    recorded_artifact_root = (
         repo_root.parent / "artifacts" / "projects" / recorded_project
     ).resolve()
-    if artifact_root != expected_artifact_root:
-        raise ValueError("template legacy artifact root differs")
     runs_root = (artifact_root / "runs").resolve()
     run_root = (runs_root / run_id).resolve()
     if run_root.parent != runs_root or not run_root.is_dir():
@@ -179,7 +179,11 @@ def resolve_simion_layout_template(
         ("con", "template_con", registry["con_sha256"]),
     ):
         manifest_record = manifest_inputs.get(manifest_role, {})
-        path = Path(str(manifest_record.get("path", ""))).resolve()
+        path = relocated_manifest_path(
+            str(manifest_record.get("path", "")),
+            recorded_artifact_root,
+            artifact_root,
+        )
         expected_sha = str(expected_sha).upper()
         if (
             not path.is_file()

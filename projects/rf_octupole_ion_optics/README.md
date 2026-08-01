@@ -92,8 +92,9 @@ run不能事后发布为正式dispersion binding；公共发布器必须在创�
 点估计报告；统一比较见
 [`../../docs/history/20260729__multipole-three-mode-posthoc-n100.md`](../../docs/history/20260729__multipole-three-mode-posthoc-n100.md)。
 
-运行产物只进入`artifacts/projects/rf_octupole_ion_optics/runs/`，不进入Git。旧request、旧证据和
-兼容快照在活动引用退出并取得删除授权前保留，但不得接收新参数或覆盖上述机器权威。
+运行产物只进入`artifacts/projects/rf_octupole_ion_optics/runs/`，不进入Git。改名前证据由项目
+descriptor的legacy location合同只读治理；当前已冻结唯一archive目的地但尚未真实移动，完成复核并
+切为`archived_verified`后不再回退旧顶层路径。旧证据不得接收新参数或覆盖上述机器权威。
 
 ## 历史
 

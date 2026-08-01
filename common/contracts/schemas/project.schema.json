@@ -32,11 +32,20 @@
           "project_id",
           "retired_at_utc",
           "migration_kind",
-          "artifact_root",
           "artifact_access",
           "new_runs_allowed",
           "verification_identity",
           "claim_policy"
+        ],
+        "oneOf": [
+          {
+            "required": ["artifact_root"],
+            "not": {"required": ["artifact_location"]}
+          },
+          {
+            "required": ["artifact_location"],
+            "not": {"required": ["artifact_root"]}
+          }
         ],
         "properties": {
           "mapping_id": {"$ref": "#/$defs/identifier"},
@@ -50,6 +59,12 @@
           "artifact_root": {
             "type": "string",
             "pattern": "^artifacts/projects/[a-z][a-z0-9_]*$"
+          },
+          "artifact_location": {
+            "oneOf": [
+              {"$ref": "#/$defs/pendingLegacyArtifactLocation"},
+              {"$ref": "#/$defs/archivedLegacyArtifactLocation"}
+            ]
           },
           "artifact_access": {"const": "read_only"},
           "new_runs_allowed": {"const": false},
@@ -159,6 +174,50 @@
     "nullablePath": {
       "type": ["string", "null"],
       "minLength": 1
+    },
+    "legacyArtifactLocationBase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version", "state", "archive_id", "archive_root", "migration_manifest"
+      ],
+      "properties": {
+        "schema_version": {"const": 1},
+        "state": {"enum": ["source_pending_relocation", "archived_verified"]},
+        "archive_id": {"type": "string", "minLength": 1},
+        "source_root": {
+          "type": "string",
+          "pattern": "^artifacts/projects/[a-z][a-z0-9_]*$"
+        },
+        "archive_root": {
+          "type": "string",
+          "pattern": "^artifacts/projects/[a-z][a-z0-9_]*/archive/[a-z0-9_-]+/legacy-project-root$"
+        },
+        "migration_manifest": {
+          "type": "string",
+          "pattern": "^artifacts/projects/[a-z][a-z0-9_]*/archive/[a-z0-9_-]+/identity_migration_manifest\\.json$"
+        }
+      }
+    },
+    "pendingLegacyArtifactLocation": {
+      "allOf": [
+        {"$ref": "#/$defs/legacyArtifactLocationBase"},
+        {
+          "type": "object",
+          "required": ["source_root"],
+          "properties": {"state": {"const": "source_pending_relocation"}}
+        }
+      ]
+    },
+    "archivedLegacyArtifactLocation": {
+      "allOf": [
+        {"$ref": "#/$defs/legacyArtifactLocationBase"},
+        {
+          "type": "object",
+          "not": {"required": ["source_root"]},
+          "properties": {"state": {"const": "archived_verified"}}
+        }
+      ]
     }
   }
 }

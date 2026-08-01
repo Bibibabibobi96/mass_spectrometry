@@ -32,6 +32,23 @@ try:
 except ModuleNotFoundError:
     from file_identity import file_sha256
 
+try:
+    from common.contracts.artifact_identity_migration import (
+        legacy_artifact_location,
+        validate_identity_archive_manifest,
+        validate_plan,
+        validate_pruning_journal,
+        verify_pruned_inventory,
+    )
+except ModuleNotFoundError:
+    from artifact_identity_migration import (
+        legacy_artifact_location,
+        validate_identity_archive_manifest,
+        validate_plan,
+        validate_pruning_journal,
+        verify_pruned_inventory,
+    )
+
 
 ALLOWED_PROJECT_ENTRIES = {"00_README.txt", "formal", "runs", "archive", "scratch"}
 REQUIRED_RUN_FILES = {"run_config.json", "summary.json", "run_manifest.json"}
@@ -62,7 +79,7 @@ def verify_record(root: Path, record: dict, verify_hashes: bool) -> Path:
 def legacy_identity(repository_root: Path, project_id: str) -> dict | None:
     """Resolve one retired artifact identity without requiring its old source tree."""
 
-    matches: list[dict] = []
+    matches: list[tuple[str, dict]] = []
     active_ids: set[str] = set()
     for descriptor_path in sorted(
         (repository_root / "projects").glob("*/config/project.json")
@@ -73,7 +90,7 @@ def legacy_identity(repository_root: Path, project_id: str) -> dict | None:
             raise AssertionError(f"project descriptor identity differs: {descriptor_path}")
         active_ids.add(current_id)
         matches.extend(
-            mapping
+            (current_id, mapping)
             for mapping in descriptor.get("legacy_identities", [])
             if mapping.get("project_id") == project_id
         )
@@ -83,11 +100,15 @@ def legacy_identity(repository_root: Path, project_id: str) -> dict | None:
         return None
     if project_id in active_ids:
         raise AssertionError(f"{project_id}: legacy identity is still an active project")
-    mapping = matches[0]
-    expected = {"artifact_root": f"artifacts/projects/{project_id}", **LEGACY_POLICY}
+    current_id, mapping = matches[0]
+    expected = LEGACY_POLICY
     for field, value in expected.items():
         if mapping.get(field) != value:
             raise AssertionError(f"{project_id}: invalid legacy identity field {field}")
+    try:
+        legacy_artifact_location(mapping, current_id)
+    except ValueError as exc:
+        raise AssertionError(f"{project_id}: invalid legacy artifact location") from exc
     return mapping
 
 
@@ -206,6 +227,39 @@ def verify_project(
             manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
             if manifest.get("archive_id") != archive.name:
                 raise AssertionError(f"{archive}: folder and manifest archive_id differ")
+            if manifest.get("role") == "artifact_identity_archive_manifest":
+                migration_path = archive / "identity_migration_manifest.json"
+                if not migration_path.is_file():
+                    raise AssertionError(f"{archive}: identity migration manifest is missing")
+                migration = json.loads(migration_path.read_text(encoding="utf-8-sig"))
+                try:
+                    validate_plan(migration)
+                    validate_identity_archive_manifest(manifest, migration)
+                except ValueError as exc:
+                    raise AssertionError(f"{archive}: identity migration contract differs") from exc
+                if (
+                    migration.get("status") != "relocated_verified"
+                    or migration.get("current_project_id") != project.name
+                    or migration.get("destination_root")
+                    != f"{project.name}/archive/{archive.name}/legacy-project-root"
+                ):
+                    raise AssertionError(f"{archive}: relocated identity differs")
+                pruning_path = archive / "pruning_manifest.json"
+                if pruning_path.exists():
+                    pruning = json.loads(pruning_path.read_text(encoding="utf-8-sig"))
+                    try:
+                        validate_pruning_journal(pruning, migration)
+                    except ValueError as exc:
+                        raise AssertionError(f"{archive}: pruning journal differs") from exc
+                    if pruning.get("state") != "complete":
+                        raise AssertionError(f"{archive}: pruning journal is incomplete")
+                    verify_pruned_inventory(
+                        migration,
+                        project.parent,
+                        verify_hashes=verify_hashes,
+                    )
+                elif manifest.get("deletion_performed"):
+                    raise AssertionError(f"{archive}: pruning journal is missing")
             archive_count += 1
     scratch = project / "scratch"
     if scratch.exists():

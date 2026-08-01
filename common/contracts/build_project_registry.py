@@ -8,8 +8,10 @@ from pathlib import Path
 from typing import Any
 
 if __package__:
+    from .artifact_identity_migration import legacy_artifact_location
     from .machine_contracts import ContractError, REPO_ROOT, load_json, sha256, validate_schema
 else:
+    from artifact_identity_migration import legacy_artifact_location
     from machine_contracts import ContractError, REPO_ROOT, load_json, sha256, validate_schema
 
 
@@ -42,11 +44,12 @@ def validate_legacy_identity_mappings(descriptors: list[dict[str, Any]]) -> None
                     f"duplicate legacy project_id {legacy_id}: "
                     f"{legacy_owners[legacy_id]} and {current_id}"
                 )
-            expected_root = f"artifacts/projects/{legacy_id}"
-            if legacy["artifact_root"] != expected_root:
+            try:
+                legacy_artifact_location(legacy, current_id)
+            except (TypeError, ValueError) as exc:
                 raise ContractError(
-                    f"{current_id}: legacy artifact root must be {expected_root}"
-                )
+                    f"{current_id}: legacy artifact location differs"
+                ) from exc
             if mapping_id in mapping_owners:
                 raise ContractError(
                     f"duplicate legacy mapping_id {mapping_id}: "
@@ -385,7 +388,7 @@ def main() -> None:
         print(f"PROJECT_REGISTRY=PASS PROJECTS={len(registry['projects'])} PATH={output}")
         return
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(expected, encoding="utf-8")
+    output.write_bytes(expected.encode("utf-8"))
     print(f"PROJECT_REGISTRY=BUILT PROJECTS={len(registry['projects'])} PATH={output}")
 
 

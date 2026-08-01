@@ -173,9 +173,11 @@ simulation_repo/
 每个项目用`config/project.json`声明稳定项目身份、设计族、可选择能力及其真实成熟度；
 `common/contracts/build_project_registry.py`据此生成根`config/project_registry.json`。根注册表只用于
 项目发现和自动选择，不取代项目`PROJECT.md`、baseline/resolved参数合同或Roadmap，也不得手改。
-发生行政改名时，活动源码、新run和新artifact只使用当前`project_id`。描述符`legacy_identities`登记的
-旧artifact根保持只读：不搬移、不改写旧manifest、不追加新run，并继续按旧manifest记录的项目身份
-验证；行政改名本身不得改变原资格、状态或声明边界。
+发生行政改名时，活动源码、新run和新artifact只使用当前`project_id`。描述符`legacy_identities`保留
+旧项目身份及唯一artifact位置合同：未迁移时`source_pending_relocation`只读旧根，完成逐文件身份复核
+后原子切为`archived_verified`且只指向当前项目的具名`archive/`载荷；不得长期回退或搜索旧顶层路径。
+旧manifest不改写、不追加新run，并始终按其recorded project identity验证；行政改名和路径迁移均不得
+改变原资格、状态或声明边界。
 
 ## 参数权威与单向派生
 
