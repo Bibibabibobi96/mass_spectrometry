@@ -71,8 +71,8 @@ archive。活动或history引用的run不能整run删除。`formal/`、`archive/
 |合计|1,398|56,211,741,459|2,329,178,610|
 
 三行均来自唯一schema v2 planner。v2终态manifest已经选择保留的输出优先于历史后缀分类；`.iob`及
-CAD文件不再被笼统视为可重建solver binary。六、八极杆已按收紧后的计划无损迁入但尚未裁剪；四极杆
-源树已重新冻结，但Windows仍拒绝原子目录移动，因此其候选不是可立即执行的裁剪授权。
+CAD文件不再被笼统视为可重建solver binary。六、八极杆已按收紧后的计划完成裁剪；四极杆源树已重新
+冻结，但Windows仍拒绝原子目录移动，因此其候选不是可立即执行的裁剪授权。
 
 除顶层scratch外，候选必须同时位于`runs/<run_id>/`且不在任何输入、冻结或snapshot容器中；允许后缀
 严格限于`.mph`、`.iob`、SolidWorks/STEP文件和SIMION `.pa/.pa#/.paN/.pa-surf`。CSV、完整轨迹、
@@ -98,7 +98,12 @@ CAD文件不再被笼统视为可重建solver binary。六、八极杆已按收�
 续跑，不能伪称字节级可逆；日志先完成而归档包装尚未发布的崩溃窗口可幂等修复。相关fixture覆盖
 迁移、目的端SHA复核、旧manifest身份保持、隔离中断、删除中断、发布中断、回滚和结构门禁。
 
-截至本文更新时，六、八极杆已无损迁入当前项目具名archive且descriptor为`archived_verified`，尚未
-裁剪；四极杆源树和v2计划完整，目标archive不存在，descriptor保持`source_pending_relocation`。
+截至本文更新时，六、八极杆已迁入当前项目具名archive且descriptor为`archived_verified`。两次裁剪
+journal均为`complete`，archive manifest均发布`deletion_performed=true`，同卷quarantine已清空：
+六极杆删除268个文件、20,291,483,243字节，八极杆删除75个文件、4,482,568,733字节，合计释放
+24,774,051,976字节（23.073 GiB）。已删内容只能由冻结输入和Git版本化执行链重新计算，不能字节级
+回滚；IOB、v2已保留输出、manifest、输入、数值结果、报告和图均保留。
+
+四极杆源树和v2计划完整，目标archive不存在，descriptor保持`source_pending_relocation`。
 四极杆在沙箱和用户账户下执行同卷`os.replace`均遇到WinError 5，Restart Manager未找到明确持有者；
-重启或解除过滤驱动/不可见目录句柄后可直接重试标准apply。现阶段没有删除任何历史产物字节。
+重启或解除过滤驱动/不可见目录句柄后可直接重试标准apply；四极杆尚未删除任何历史产物字节。
