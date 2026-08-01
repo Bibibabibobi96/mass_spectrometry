@@ -8,6 +8,7 @@ from pathlib import Path
 from common.contracts.artifact_identity_migration import (
     apply_migration,
     build_plan,
+    build_pruning_plan,
     legacy_artifact_location,
     prune_migration,
     relocated_manifest_path,
@@ -45,7 +46,20 @@ class ArtifactIdentityMigrationTests(unittest.TestCase):
                             "mapping_id": "hex-rename",
                             "project_id": LEGACY,
                             "migration_kind": "administrative_rename_only",
-                            "artifact_root": f"artifacts/projects/{LEGACY}",
+                            "artifact_location": {
+                                "schema_version": 1,
+                                "state": "source_pending_relocation",
+                                "source_root": f"artifacts/projects/{LEGACY}",
+                                "archive_id": ARCHIVE_ID,
+                                "archive_root": (
+                                    f"artifacts/projects/{CURRENT}/archive/{ARCHIVE_ID}/"
+                                    "legacy-project-root"
+                                ),
+                                "migration_manifest": (
+                                    f"artifacts/projects/{CURRENT}/archive/{ARCHIVE_ID}/"
+                                    "identity_migration_manifest.json"
+                                ),
+                            },
                             "artifact_access": "read_only",
                             "new_runs_allowed": False,
                             "verification_identity": "recorded_project_id",
@@ -139,6 +153,14 @@ class ArtifactIdentityMigrationTests(unittest.TestCase):
     def plan(self) -> dict:
         return build_plan(self.repository, self.artifacts, CURRENT, ARCHIVE_ID)
 
+    def mark_archived_verified(self) -> None:
+        descriptor = self.repository / "projects" / CURRENT / "config" / "project.json"
+        value = json.loads(descriptor.read_text(encoding="utf-8"))
+        location = value["legacy_identities"][0]["artifact_location"]
+        location["state"] = "archived_verified"
+        location.pop("source_root")
+        descriptor.write_text(json.dumps(value), encoding="utf-8")
+
     def test_plan_freezes_complete_inventory_and_reference_classes(self) -> None:
         plan = self.plan()
         validate_plan(plan)
@@ -172,6 +194,54 @@ class ArtifactIdentityMigrationTests(unittest.TestCase):
         ):
             self.assertEqual(records[protected]["disposition"], "retain", protected)
         self.assertGreater(plan["inventory"]["prune_candidate_bytes"], 0)
+
+    def test_formal_bearing_legacy_root_is_migration_only(self) -> None:
+        formal_manifest = self.artifacts / LEGACY / "formal" / "asset_manifest.json"
+        formal_manifest.write_text(
+            json.dumps(
+                {
+                    "project": LEGACY,
+                    "source_run": {"run_id": ACTIVE_RUN},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        plan = self.plan()
+
+        self.assertEqual(plan["inventory"]["prune_candidate_file_count"], 0)
+        self.assertEqual(plan["inventory"]["prune_candidate_bytes"], 0)
+        records = {record["path"]: record for record in plan["files"]}
+        self.assertIn("formal", records[f"runs/{ACTIVE_RUN}/results/model.mph"]["reference_classes"])
+        self.assertTrue(all(record["disposition"] == "retain" for record in plan["files"]))
+
+    def test_archived_formal_root_can_be_independently_pruned(self) -> None:
+        formal_manifest = self.artifacts / LEGACY / "formal" / "asset_manifest.json"
+        formal_manifest.write_text(
+            json.dumps({"project": LEGACY, "source_run": {"run_id": ACTIVE_RUN}}),
+            encoding="utf-8",
+        )
+        migration = self.plan()
+        apply_migration(migration, self.artifacts)
+        self.mark_archived_verified()
+
+        plan = build_pruning_plan(self.repository, self.artifacts, CURRENT)
+        records = {record["path"]: record for record in plan["files"]}
+        self.assertEqual(
+            records[f"runs/{HISTORY_RUN}/results/model.mph"]["disposition"],
+            "prune_after_verified_migration",
+        )
+        self.assertEqual(
+            records[f"runs/{ACTIVE_RUN}/results/model.mph"]["disposition"], "retain"
+        )
+        self.assertEqual(records["formal/published-model.mph"]["disposition"], "retain")
+        self.assertEqual(
+            records["scratch/20260801_120000__repo__old-work/temporary.txt"]["disposition"],
+            "prune_after_verified_migration",
+        )
+
+        journal = prune_migration(plan, self.artifacts)
+        self.assertEqual(journal["state"], "complete")
 
     def test_inventory_rejects_content_change(self) -> None:
         plan = self.plan()
@@ -276,7 +346,22 @@ class ArtifactIdentityMigrationTests(unittest.TestCase):
         second = dict(value["legacy_identities"][0])
         second["mapping_id"] = "older-rename"
         second["project_id"] = "rf_hexapole_older_name"
-        second["artifact_root"] = "artifacts/projects/rf_hexapole_older_name"
+        second["artifact_location"] = {
+            "schema_version": 1,
+            "state": "source_pending_relocation",
+            "source_root": "artifacts/projects/rf_hexapole_older_name",
+            "archive_id": "20260801_120001__migration-snapshot__repo__rf-hexapole-older-name",
+            "archive_root": (
+                "artifacts/projects/rf_hexapole_ion_optics/archive/"
+                "20260801_120001__migration-snapshot__repo__rf-hexapole-older-name/"
+                "legacy-project-root"
+            ),
+            "migration_manifest": (
+                "artifacts/projects/rf_hexapole_ion_optics/archive/"
+                "20260801_120001__migration-snapshot__repo__rf-hexapole-older-name/"
+                "identity_migration_manifest.json"
+            ),
+        }
         value["legacy_identities"].append(second)
         descriptor.write_text(json.dumps(value), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "selection must resolve exactly once"):

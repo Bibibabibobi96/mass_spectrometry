@@ -13,7 +13,8 @@
 - N=100源码构建与跟踪：`../tests/simion/run_n100_source_build_and_track.ps1`
 - IOB运行时合同：`../simion/workbench/verify_iob_runtime_contract.ps1`
 - 稳定资产身份：`../config/simion_stable_entry.json`
-- 重命名前的只读Formal资产：工作区`artifacts/projects/oa_tof/formal/simion/`；不搬移、不改写、
+- 重命名前的只读Formal资产：工作区`artifacts/projects/single_reflection_oa_tof_mass_analyzer/archive/`
+  `20260801_130003__migration-snapshot__repo__oa-tof/legacy-project-root/formal/simion/`；不改写、
   不追加新run
 - vNext活动产物：工作区`artifacts/projects/single_reflection_oa_tof_mass_analyzer/`
 

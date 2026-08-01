@@ -80,9 +80,10 @@ single_reflection_oa_tof_mass_analyzer/
 ```
 
 新运行和未来vNext Formal只写入工作区
-`artifacts/projects/single_reflection_oa_tof_mass_analyzer/`。重命名前的Formal、run与archive仍按
-原manifest身份只读保存在`artifacts/projects/oa_tof/`，不得搬移、改写、追加新run或在新身份下晋升；
-映射由
+`artifacts/projects/single_reflection_oa_tof_mass_analyzer/`。重命名前的Formal、run与archive已按
+原manifest身份只读迁入该根的
+`archive/20260801_130003__migration-snapshot__repo__oa-tof/legacy-project-root/`；不得改写、追加新run
+或在新身份下晋升。映射由
 [`config/project.json`](config/project.json)的`legacy_identities`声明。两处产物的生命周期均采用
 根README，不在本项目复制。
 

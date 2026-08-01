@@ -47,9 +47,12 @@ species、particle identity和lineage之间显式转换并冻结来源。
    manifest、旧绝对路径解析/重定位规则和legacy布局验证，盘点并更新全部活动合同、资格记录、模板与
    文档引用，逐文件复核SHA-256、recorded project identity和原声明边界。只有所有消费者在新位置通过
    回归、旧路径达到零活动引用并再次取得删除授权后，才可删除旧顶层目录。该任务不自动删除MPH/PA、
-   不减少磁盘占用，也不阻断当前多极杆资格与三模式分析；减容另行执行manifest级保留审计。当前三个
-   多极杆描述符已进入`source_pending_relocation`并冻结唯一archive目的地；事务工具、重定位reader、
-   完整SHA计划和可恢复裁剪journal已建立，但真实move/prune尚未执行。
+   不减少磁盘占用，也不阻断当前多极杆资格与三模式分析；减容另行执行manifest级保留审计。六、八
+   极杆已按唯一schema v2计划迁入当前根并完成有journal的可重建载荷裁剪；四极杆完整源和计划保留，
+   因Windows拒绝同卷原子目录移动而继续处于`source_pending_relocation`，恢复契约见同日迁移审计。
+   oaTOF旧根已迁入当前项目archive并通过全量SHA-256、SIMION四实例运行时加载及SolidWorks 25组件
+   引用复核；旧定位已从活动合同移除，历史manifest保持原字节和原身份。减容已作为迁移后的独立
+   manifest级保留审计完成，删除规则没有把文件大小本身当作授权依据。
 
 ## 面向大规模代码库的扩展护栏
 

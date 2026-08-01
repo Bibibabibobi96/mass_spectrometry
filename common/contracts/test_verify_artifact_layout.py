@@ -102,7 +102,22 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
                 "legacy_identities": [
                     {
                         "project_id": "retired",
-                        "artifact_root": "artifacts/projects/retired",
+                        "artifact_location": {
+                            "schema_version": 1,
+                            "state": "source_pending_relocation",
+                            "source_root": "artifacts/projects/retired",
+                            "archive_id": "20260801_130000__migration-snapshot__repo__retired",
+                            "archive_root": (
+                                "artifacts/projects/current/archive/"
+                                "20260801_130000__migration-snapshot__repo__retired/"
+                                "legacy-project-root"
+                            ),
+                            "migration_manifest": (
+                                "artifacts/projects/current/archive/"
+                                "20260801_130000__migration-snapshot__repo__retired/"
+                                "identity_migration_manifest.json"
+                            ),
+                        },
                         "migration_kind": "administrative_rename_only",
                         "artifact_access": "read_only",
                         "new_runs_allowed": False,

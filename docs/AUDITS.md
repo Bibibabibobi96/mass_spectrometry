@@ -5,6 +5,8 @@
 
 ## 已完成审计
 
+- [2026-08-01 oaTOF旧身份artifact迁移与减容审计](history/20260801__oatof-legacy-artifact-migration-audit.md)：
+  记录唯一archive定位、全量SHA、SIMION/SolidWorks嵌入引用实证及事务式重型载荷裁剪。
 - [2026-08-01 多极杆旧项目身份 artifact 迁移审计](history/20260801__multipole-legacy-artifact-migration-audit.md)：
   冻结三棵legacy根的映射、逐文件身份、活动/history引用、重型裁剪边界及无损事务顺序。
 - [2026-08-01 活动兼容层退役](history/20260801__active-compatibility-retirement.md)：记录旧migration/S2-S3

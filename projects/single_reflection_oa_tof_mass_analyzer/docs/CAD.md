@@ -8,7 +8,8 @@
 - 实体发现与导出清单：`../cad/oatof_cad_export_manifest.m`
 - STEP导出实现：`../cad/export_oatof_cad_step.m`
 - CAD测试：`../tests/cad/OaTofCadExportTest.m`
-- 重命名前的只读Formal产物：工作区`artifacts/projects/oa_tof/formal/cad/`；历史主装配为
+- 重命名前的只读Formal产物：工作区`artifacts/projects/single_reflection_oa_tof_mass_analyzer/archive/`
+  `20260801_130003__migration-snapshot__repo__oa-tof/legacy-project-root/formal/cad/`；历史主装配为
   `oa_tof__model_physical_components.SLDASM`，准确路径和SHA以
   [`../config/formal_assets.json`](../config/formal_assets.json)为机器权威。该文件名是正式资产清单
   记录的既有命名例外，不得只按通用命名示例猜测或擅自重命名。
@@ -48,7 +49,7 @@ STEP导入会让SolidWorks为每个外部实体新建原生零件，因此会读
 ## 2026-07-27 Candidate CAD 闭合
 
 零变化N=100运行
-`artifacts/projects/oa_tof/runs/20260727_154500__test__cross__zero-change-candidate-bytecodefix-n100/`
+`artifacts/projects/single_reflection_oa_tof_mass_analyzer/archive/20260801_130003__migration-snapshot__repo__oa-tof/legacy-project-root/runs/20260727_154500__test__cross__zero-change-candidate-bytecodefix-n100/`
 通过完整Candidate结构链。CAD从本次候选MPH导出25个STEP，生成25个原生SLDPRT和一个25组件SLDASM；
 全部零件及装配保存错误/警告为0，SolidWorks revision为`30.5.0`。根summary的五个阶段均为
 `success`，manifest以`success`冻结130个输出；Formal目录没有修改。该证据只支持
@@ -90,7 +91,7 @@ STEP导入会让SolidWorks为每个外部实体新建原生零件，因此会读
 `formal_assets.json`与Formal asset manifest。2026-07-20的耦合纵向CAD结果保留为来源历史：组件世界
 中心相对COMSOL导出目标的最大误差为`6.82e-13 mm`，所有STEP加载、零件保存和装配体保存错误/警告
 均为0；晋升前整套Formal资产已归档到
-`artifacts/projects/oa_tof/archive/20260720_204500__superseded__cross__pre-coupled-baseline/`，没有与新正式零件混放。可重复门禁入口为
+`artifacts/projects/single_reflection_oa_tof_mass_analyzer/archive/20260801_130003__migration-snapshot__repo__oa-tof/legacy-project-root/archive/20260720_204500__superseded__cross__pre-coupled-baseline/`，没有与新正式零件混放。可重复门禁入口为
 `../workflows/design_candidate/run_candidate_cad_sync.m`；它只在Candidate run内生成CAD资产。
 Formal发布只允许通过
 `../workflows/formal_reference/run_formal_validation.ps1 -Phase Publish`消费冻结装配与报告，

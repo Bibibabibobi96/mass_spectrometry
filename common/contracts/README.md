@@ -18,6 +18,11 @@ LF，从而使Windows工作树与干净checkout得到同一身份。调用者仍
 writer/verifier同时扫描未列出的重型文件，防止通过漏报output绕过。schema v1只承担历史兼容，不因
 新增合同而失效；未迁移入口由测试中的具名棘轮清单约束，新建或实质修改时必须退出该清单。
 
+`artifact_identity_migration.py`是行政改名artifact的唯一迁移与裁剪入口：`plan/apply`先完成无损迁移，
+descriptor原子切为`archived_verified`后，`plan-prune/prune`才可独立裁剪旧run内可重建原生二进制和
+非权威scratch。两阶段都冻结逐文件SHA并使用可恢复journal；活动Formal、旧archive、冻结输入、v2
+已选输出和manifest异常文件失败关闭地保留，不提供旧顶层路径fallback。
+
 `stage_reuse.py`提供跨项目、单父run的阶段续跑合同。它不是缓存或DAG调度器，也不定义项目阶段顺序。
 未来原生runner只可用`write_stage_receipt`为summary中明确标为`success`的阶段写
 `stage_receipts/<stage_id>.json`，随后在父run最终manifest中冻结该receipt、summary、全部阶段输出及

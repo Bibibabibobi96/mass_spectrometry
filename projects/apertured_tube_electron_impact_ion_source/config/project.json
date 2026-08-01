@@ -7,7 +7,14 @@
       "project_id": "electron_impact_ion_source",
       "retired_at_utc": "2026-07-28T08:19:11Z",
       "migration_kind": "administrative_rename_only",
-      "artifact_root": "artifacts/projects/electron_impact_ion_source",
+      "artifact_location": {
+        "schema_version": 1,
+        "state": "source_pending_relocation",
+        "source_root": "artifacts/projects/electron_impact_ion_source",
+        "archive_id": "20260801_130001__migration-snapshot__repo__electron-impact-ion-source",
+        "archive_root": "artifacts/projects/apertured_tube_electron_impact_ion_source/archive/20260801_130001__migration-snapshot__repo__electron-impact-ion-source/legacy-project-root",
+        "migration_manifest": "artifacts/projects/apertured_tube_electron_impact_ion_source/archive/20260801_130001__migration-snapshot__repo__electron-impact-ion-source/identity_migration_manifest.json"
+      },
       "artifact_access": "read_only",
       "new_runs_allowed": false,
       "verification_identity": "recorded_project_id",

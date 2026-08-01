@@ -113,8 +113,9 @@ run和非零变量复验全部冻结在同日PROJECT history快照。
 ## 产物与历史
 
 新活动产物根为`artifacts/projects/single_reflection_oa_tof_mass_analyzer/`。重命名前的Formal、
-Candidate run及归档仍以原manifest项目身份只读保存在`artifacts/projects/oa_tof/`，各自保留原文件名
-与SHA，不迁入新根、不改写身份、不追加新run，也不改变原资格或声明边界。current文档不复制完整run
-ID清单。旧RF投影诊断只见
+Candidate run及归档已以原manifest项目身份只读迁入该根的
+`archive/20260801_130003__migration-snapshot__repo__oa-tof/legacy-project-root/`。保留证据保持原文件名、
+SHA、身份、资格和声明边界；迁移后按根README独立裁剪的可重建重型载荷只由pruning manifest追溯，
+不得追加新run。current文档不复制完整run ID清单。旧RF投影诊断只见
 [`history/20260727__superseded-rf-handoff-diagnostics.md`](history/20260727__superseded-rf-handoff-diagnostics.md)，
 不得恢复为活动生产入口。

@@ -80,16 +80,6 @@ def legacy_artifact_location(mapping: dict, current_project_id: str) -> dict[str
 
     legacy_project_id = mapping.get("project_id")
     expected_source = f"artifacts/projects/{legacy_project_id}"
-    if "artifact_root" in mapping:
-        if "artifact_location" in mapping or mapping["artifact_root"] != expected_source:
-            raise ValueError(f"{current_project_id}: legacy artifact root differs")
-        return {
-            "state": "unmigrated",
-            "active_root": expected_source,
-            "source_root": expected_source,
-            "archive_root": None,
-            "migration_manifest": None,
-        }
     location = mapping.get("artifact_location")
     if not isinstance(location, dict) or location.get("schema_version") != LOCATION_SCHEMA_VERSION:
         raise ValueError(f"{current_project_id}: legacy artifact location differs")
@@ -383,6 +373,8 @@ def _build_inventory(
     current_root: Path,
     inventory_root: Path,
     legacy_project_id: str,
+    *,
+    protect_formal_bearing_root: bool = True,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]], dict[str, int]]:
     """Freeze one legacy payload and classify only explicitly rebuildable files."""
 
@@ -393,16 +385,20 @@ def _build_inventory(
         else set()
     )
     references = _repository_run_references(repository_root, run_ids)
-    for run_id in _formal_run_references(current_root):
+    formal_run_ids = _formal_run_references(current_root) | _formal_run_references(
+        inventory_root
+    )
+    for run_id in formal_run_ids:
         if run_id in references:
             references[run_id].add("formal")
 
+    formal_bearing_root = (inventory_root / "formal" / "asset_manifest.json").is_file()
     v2_outputs = _v2_manifest_outputs(inventory_root, legacy_project_id)
     files: list[dict[str, object]] = []
     for path in sorted(item for item in inventory_root.rglob("*") if item.is_file()):
         relative = path.relative_to(inventory_root)
         reason = _pruning_reason(relative)
-        if relative.as_posix() in v2_outputs:
+        if (protect_formal_bearing_root and formal_bearing_root) or relative.as_posix() in v2_outputs:
             reason = None
         run_id = (
             relative.parts[1]
@@ -473,7 +469,7 @@ def build_plan(
     mapping = _legacy_mapping(repository_root, current_project_id, legacy_project_id)
     legacy_project_id = str(mapping["project_id"])
     location = legacy_artifact_location(mapping, current_project_id)
-    if location["state"] not in {"unmigrated", "source_pending_relocation"}:
+    if location["state"] != "source_pending_relocation":
         raise ValueError(f"{current_project_id}: legacy artifacts are already relocated")
     source = repository_root.parent / _relative_path(str(location["source_root"]))
     current = artifact_projects_root / current_project_id
@@ -508,6 +504,44 @@ def build_plan(
         "identity_anomalies": identity_anomalies,
         "files": files,
     }
+
+
+def build_pruning_plan(
+    repository_root: Path,
+    artifact_projects_root: Path,
+    current_project_id: str,
+    legacy_project_id: str | None = None,
+) -> dict:
+    """Reclassify one verified migration archive for independent pruning."""
+
+    repository_root = repository_root.resolve()
+    artifact_projects_root = artifact_projects_root.resolve()
+    mapping = _legacy_mapping(repository_root, current_project_id, legacy_project_id)
+    legacy_project_id = str(mapping["project_id"])
+    location = legacy_artifact_location(mapping, current_project_id)
+    if location["state"] != "archived_verified":
+        raise ValueError(f"{current_project_id}: legacy artifacts are not archived_verified")
+    archive_manifest_path = (
+        repository_root.parent / _relative_path(str(location["migration_manifest"]))
+    ).resolve()
+    published = _load_plan(archive_manifest_path)
+    verify_inventory(published, artifact_projects_root, "destination")
+    current = artifact_projects_root / current_project_id
+    payload = artifact_projects_root / _relative_path(published["destination_root"])
+    files, identity_anomalies, inventory = _build_inventory(
+        repository_root,
+        current,
+        payload,
+        legacy_project_id,
+        protect_formal_bearing_root=False,
+    )
+    plan = dict(published)
+    plan["recorded_at_utc"] = datetime.now(timezone.utc).isoformat()
+    plan["inventory"] = inventory
+    plan["identity_anomalies"] = identity_anomalies
+    plan["files"] = files
+    validate_plan(plan)
+    return plan
 
 
 def validate_plan(plan: dict) -> None:
@@ -878,6 +912,9 @@ def prune_migration(
             return journal
     else:
         verify_inventory(plan, artifact_projects_root, "destination")
+        published = dict(plan)
+        published["status"] = "relocated_verified"
+        _atomic_json(archive / "identity_migration_manifest.json", published)
         records = _pruning_records(plan)
         journal = {
             "schema_version": 1,
@@ -983,21 +1020,34 @@ def main(argv: Iterable[str] | None = None) -> None:
     plan_parser.add_argument("--legacy-project")
     plan_parser.add_argument("--archive-id", required=True)
     plan_parser.add_argument("--output", type=Path)
+    prune_plan_parser = subparsers.add_parser("plan-prune")
+    prune_plan_parser.add_argument("--repository-root", required=True, type=Path)
+    prune_plan_parser.add_argument("--artifact-projects-root", required=True, type=Path)
+    prune_plan_parser.add_argument("--current-project", required=True)
+    prune_plan_parser.add_argument("--legacy-project")
+    prune_plan_parser.add_argument("--output", type=Path)
     for command in ("verify-source", "verify-destination", "apply", "rollback", "prune"):
         command_parser = subparsers.add_parser(command)
         command_parser.add_argument("--artifact-projects-root", required=True, type=Path)
         command_parser.add_argument("--manifest", required=True, type=Path)
     args = parser.parse_args(argv)
-    if args.command == "plan":
-        plan = build_plan(
-            args.repository_root, args.artifact_projects_root,
-            args.current_project, args.archive_id, args.legacy_project,
+    if args.command in {"plan", "plan-prune"}:
+        plan = (
+            build_plan(
+                args.repository_root, args.artifact_projects_root,
+                args.current_project, args.archive_id, args.legacy_project,
+            )
+            if args.command == "plan"
+            else build_pruning_plan(
+                args.repository_root, args.artifact_projects_root,
+                args.current_project, args.legacy_project,
+            )
         )
         if args.output:
             _write_plan(args.output, plan)
         inventory = plan["inventory"]
         print(
-            "ARTIFACT_IDENTITY_MIGRATION_PLAN=PASS "
+            f"ARTIFACT_IDENTITY_MIGRATION_{args.command.upper().replace('-', '_')}=PASS "
             f"FILES={inventory['file_count']} BYTES={inventory['bytes']} "
             f"PRUNE_FILES={inventory['prune_candidate_file_count']} "
             f"PRUNE_BYTES={inventory['prune_candidate_bytes']} "

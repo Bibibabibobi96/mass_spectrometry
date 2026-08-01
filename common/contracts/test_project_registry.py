@@ -19,6 +19,19 @@ from build_project_registry import (
 from machine_contracts import load_json, validate_schema
 
 
+def pending_location(current: str, retired: str, suffix: str) -> dict:
+    archive_id = f"20260801_130000__migration-snapshot__repo__{suffix}"
+    archive = f"artifacts/projects/{current}/archive/{archive_id}"
+    return {
+        "schema_version": 1,
+        "state": "source_pending_relocation",
+        "source_root": f"artifacts/projects/{retired}",
+        "archive_id": archive_id,
+        "archive_root": f"{archive}/legacy-project-root",
+        "migration_manifest": f"{archive}/identity_migration_manifest.json",
+    }
+
+
 class ProjectRegistryTests(unittest.TestCase):
     def test_multipole_registration_uses_one_consistent_profile_identity(self) -> None:
         identities = [
@@ -127,6 +140,13 @@ class ProjectRegistryTests(unittest.TestCase):
         with self.assertRaises(ContractError):
             validate_schema(descriptor, "project.schema.json")
 
+        descriptor = copy.deepcopy(load_json(path))
+        legacy = descriptor["legacy_identities"][0]
+        legacy.pop("artifact_location")
+        legacy["artifact_root"] = "artifacts/projects/oa_tof"
+        with self.assertRaises(ContractError):
+            validate_schema(descriptor, "project.schema.json")
+
     def test_legacy_identity_rejects_active_id_and_wrong_artifact_location(self) -> None:
         descriptors = [
             {
@@ -135,7 +155,9 @@ class ProjectRegistryTests(unittest.TestCase):
                     {
                         "mapping_id": "rename_1",
                         "project_id": "other_active_project",
-                        "artifact_root": "artifacts/projects/other_active_project",
+                        "artifact_location": pending_location(
+                            "current_project", "other_active_project", "other-active"
+                        ),
                     }
                 ],
             },
@@ -188,7 +210,9 @@ class ProjectRegistryTests(unittest.TestCase):
                     {
                         "mapping_id": "rename_shared",
                         "project_id": "retired_shared",
-                        "artifact_root": "artifacts/projects/retired_shared",
+                        "artifact_location": pending_location(
+                            "current_a", "retired_shared", "retired-shared-a"
+                        ),
                     }
                 ],
             },
@@ -198,7 +222,9 @@ class ProjectRegistryTests(unittest.TestCase):
                     {
                         "mapping_id": "rename_other",
                         "project_id": "retired_shared",
-                        "artifact_root": "artifacts/projects/retired_shared",
+                        "artifact_location": pending_location(
+                            "current_b", "retired_shared", "retired-shared-b"
+                        ),
                     }
                 ],
             },
@@ -210,7 +236,9 @@ class ProjectRegistryTests(unittest.TestCase):
             {
                 "mapping_id": "rename_shared",
                 "project_id": "retired_other",
-                "artifact_root": "artifacts/projects/retired_other",
+                "artifact_location": pending_location(
+                    "current_b", "retired_other", "retired-other"
+                ),
             }
         )
         with self.assertRaisesRegex(ContractError, "duplicate legacy mapping_id"):

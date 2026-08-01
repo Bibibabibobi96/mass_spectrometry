@@ -107,3 +107,29 @@ journal均为`complete`，archive manifest均发布`deletion_performed=true`，�
 四极杆源树和v2计划完整，目标archive不存在，descriptor保持`source_pending_relocation`。
 四极杆在沙箱和用户账户下执行同卷`os.replace`均遇到WinError 5，Restart Manager未找到明确持有者；
 重启或解除过滤驱动/不可见目录句柄后可直接重试标准apply；四极杆尚未删除任何历史产物字节。
+
+## 四极杆未闭合迁移恢复记录
+
+本项是未完成工作，不得因会话中断视为已关闭。恢复时只认以下身份：
+
+- 完整源根：`artifacts/projects/rf_quadrupole_collision_cooling/`；
+- 唯一目的端：
+  `artifacts/projects/rf_quadrupole_ion_optics/archive/20260801_120000__migration-snapshot__repo__rf-quadrupole-collision-cooling/legacy-project-root/`；
+- 工作区冻结计划：
+  `artifact_migration_audit/rf_quadrupole_collision_cooling_migration_plan_v2.json`；
+- 冻结盘点：13,325个文件、33,494,631,276字节；裁剪候选1,055个、31,437,689,483字节；
+  manifest身份异常1条，必须强制保留；
+- 当前安全状态：源根存在，目的archive不存在，没有半迁移、quarantine或删除，项目描述符为
+  `source_pending_relocation`。
+
+机器重启后先确认源存在且目的不存在，再从仓库根执行标准唯一入口：
+
+```powershell
+.\.venv\Scripts\python.exe common\contracts\artifact_identity_migration.py apply `
+  --artifact-projects-root C:\Users\Liao\mass_spectrometry\artifacts\projects `
+  --manifest C:\Users\Liao\mass_spectrometry\artifact_migration_audit\rf_quadrupole_collision_cooling_migration_plan_v2.json
+```
+
+apply成功并完成目的端复核后，才可把四极杆描述符切为`archived_verified`、移除`source_root`并重建
+registry。不得改ACL、强删旧根、跳过全量SHA、复制后假定等价或在迁移前执行prune。若同一WinError 5
+再次出现，保持当前状态并重新诊断文件系统过滤驱动；不得扩大为非事务搬运。

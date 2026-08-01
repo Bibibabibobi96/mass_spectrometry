@@ -7,7 +7,13 @@
       "project_id": "oa_tof",
       "retired_at_utc": "2026-07-28T08:19:11Z",
       "migration_kind": "administrative_rename_only",
-      "artifact_root": "artifacts/projects/oa_tof",
+      "artifact_location": {
+        "schema_version": 1,
+        "state": "archived_verified",
+        "archive_id": "20260801_130003__migration-snapshot__repo__oa-tof",
+        "archive_root": "artifacts/projects/single_reflection_oa_tof_mass_analyzer/archive/20260801_130003__migration-snapshot__repo__oa-tof/legacy-project-root",
+        "migration_manifest": "artifacts/projects/single_reflection_oa_tof_mass_analyzer/archive/20260801_130003__migration-snapshot__repo__oa-tof/identity_migration_manifest.json"
+      },
       "artifact_access": "read_only",
       "new_runs_allowed": false,
       "verification_identity": "recorded_project_id",
