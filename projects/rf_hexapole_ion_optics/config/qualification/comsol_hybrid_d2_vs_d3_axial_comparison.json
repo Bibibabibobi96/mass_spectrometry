@@ -29,7 +29,7 @@
     "field_samples_sha256": "886B98D69447FF85D5744E1CB52BA8CF7604CDC8696BF746674333F652F5F90B"
   },
   "comparison_artifact": {
-    "path": "artifacts/projects/rf_hexapole_ion_optics/comparisons/20260730__hex_hybrid_d2_vs_d3_axial_cg_amg_field.json",
+    "path": "artifacts/projects/rf_hexapole_ion_optics/archive/20260801_233056__superseded__repo__hexapole-nonstandard-layout/legacy-layout/comparisons/20260730__hex_hybrid_d2_vs_d3_axial_cg_amg_field.json",
     "sha256": "E0454547643483A761A3DD8596819704F9CC96E510E941F98E0C9C3514251E9C",
     "bytes": 3175
   },

@@ -170,6 +170,12 @@ class NoAccelerationFollowupConfigurationTests(unittest.TestCase):
         self.assertEqual(result["run"]["pa_grid_points"], 33_479_464)
         self.assertEqual(result["run"]["primary_transmission"], 1.0)
         self.assertEqual(result["analysis"]["decision_status"], "PASS")
+        self.assertEqual(
+            result["analysis"]["identity_status"],
+            "ARCHIVED_INCOMPLETE_RUN_NO_MANIFEST",
+        )
+        self.assertNotIn("run_id", result["analysis"])
+        self.assertTrue(result["analysis"]["artifact_path"].startswith("artifacts/"))
         differences = result["adjacent_difference"]
         self.assertLess(
             differences["transverse_centroid_vector_difference_mm"],

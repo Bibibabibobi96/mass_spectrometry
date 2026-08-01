@@ -27,7 +27,7 @@
     "field_samples_sha256": "60E0040AC3A42931EF6E54E88A6A3913C12F326D5947D4DF6D39CB4EF812646C"
   },
   "comparison_artifact": {
-    "path": "artifacts/projects/rf_hexapole_ion_optics/comparisons/20260730__hex_hybrid_c1_cg_amg_vs_mumps_field.json",
+    "path": "artifacts/projects/rf_hexapole_ion_optics/archive/20260801_233056__superseded__repo__hexapole-nonstandard-layout/legacy-layout/comparisons/20260730__hex_hybrid_c1_cg_amg_vs_mumps_field.json",
     "sha256": "8629F937A9C3F8B10FBC1F8C99907D1359C170C7E61F0A7A6912968185A3D6AA",
     "bytes": 3213
   },

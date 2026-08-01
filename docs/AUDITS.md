@@ -5,6 +5,8 @@
 
 ## 已完成审计
 
+- [2026-08-01 artifact顶层布局闭合](history/20260801__artifact-top-level-layout-closure.md)：
+  关闭oaTOF零字节空run、六极杆非标准顶层及全仓同类不完整run身份，统一冻结到具名archive。
 - [2026-08-01 oaTOF旧身份artifact迁移与减容审计](history/20260801__oatof-legacy-artifact-migration-audit.md)：
   记录唯一archive定位、全量SHA、SIMION/SolidWorks嵌入引用实证及事务式重型载荷裁剪。
 - [2026-08-01 多极杆旧项目身份 artifact 迁移审计](history/20260801__multipole-legacy-artifact-migration-audit.md)：
