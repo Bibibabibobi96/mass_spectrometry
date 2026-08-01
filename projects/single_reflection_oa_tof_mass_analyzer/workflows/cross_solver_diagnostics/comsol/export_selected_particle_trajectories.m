@@ -9,12 +9,13 @@ particleIds = str2double(split(string(particleText), ','));
 assert(all(isfinite(particleIds)) && all(particleIds >= 1) && ...
     all(particleIds == round(particleIds)), 'Invalid particle identifiers.');
 
-testDir = fileparts(mfilename('fullpath'));
-projectDir = fileparts(fileparts(testDir));
+projectDir = getenv('OATOF_PROJECT_ROOT');
+assert(~isempty(projectDir) && isfolder(projectDir), ...
+    'OATOF_PROJECT_ROOT is missing.');
 addpath(projectDir);
-paths = oatof_paths();
-modelPath = fullfile(paths.comsolFormalDir, ...
-        'single_reflection_oa_tof_mass_analyzer__model.mph');
+modelPath = getenv('OATOF_COMSOL_MODEL_PATH');
+assert(~isempty(modelPath) && isfile(modelPath), ...
+    'OATOF_COMSOL_MODEL_PATH is missing.');
 
 fid = fopen(reportPath, 'w');
 assert(fid >= 0, 'Could not open report: %s', reportPath);

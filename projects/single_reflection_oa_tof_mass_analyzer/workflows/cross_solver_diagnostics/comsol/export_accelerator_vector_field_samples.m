@@ -7,15 +7,11 @@ assert(~isempty(inputCsv) && isfile(inputCsv), ...
     'OATOF_ACCELERATOR_SAMPLE_CSV is missing.');
 assert(~isempty(outputCsv), 'OATOF_COMSOL_VECTOR_FIELD_CSV is not set.');
 
-testDir = fileparts(mfilename('fullpath'));
-projectDir = fileparts(fileparts(testDir));
+projectDir = getenv('OATOF_PROJECT_ROOT');
+assert(~isempty(projectDir) && isfolder(projectDir), ...
+    'OATOF_PROJECT_ROOT is missing.');
 addpath(projectDir);
-paths = oatof_paths();
 modelPath = getenv('OATOF_COMSOL_MODEL_PATH');
-if isempty(modelPath)
-    modelPath = fullfile(paths.comsolFormalDir, ...
-        'single_reflection_oa_tof_mass_analyzer__model.mph');
-end
 assert(isfile(modelPath), 'COMSOL model is absent: %s', modelPath);
 
 fid = fopen(reportPath, 'w');
@@ -26,9 +22,9 @@ try
     required = {'particle_id','time_us','x_mm','y_mm','z_mm'};
     assert(all(ismember(required, samples.Properties.VariableNames)), ...
         'Sample CSV does not follow the trajectory-coordinate contract.');
-    % The accelerator PA instance ends at z=20.0 mm.  Stay 0.4 mm inside
-    % both solvers' shared interpolation volume; the exit grid is at 19.83 mm.
-    samples = samples(samples.time_us <= 2 & samples.z_mm <= 19.6, :);
+    % The upstream SIMION adapter has already restricted these coordinates
+    % to the accelerator PA interpolation domain.  COMSOL must evaluate the
+    % exact same rows without applying a second geometric filter.
     model = mphopen(modelPath);
     coords = [samples.x_mm.'; samples.y_mm.'; samples.z_mm.'];
     [ex, ey, ez] = mphinterp(model, {'es.Ex','es.Ey','es.Ez'}, ...

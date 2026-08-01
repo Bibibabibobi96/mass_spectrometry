@@ -50,6 +50,9 @@
   [`workflows/formal_reference/run_formal_validation.ps1`](workflows/formal_reference/run_formal_validation.ps1)
 - 五质量候选：
   [`workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1`](workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1)
+- 当前Formal跨求解器诊断：
+  [`workflows/cross_solver_diagnostics/run_cross_solver_diagnostics.ps1`](workflows/cross_solver_diagnostics/run_cross_solver_diagnostics.ps1)；
+  从唯一Formal资产身份导出轴场、同坐标三维场和代表粒子轨迹，只发布diagnostic结果
 - CAD入口：[`cad/ms_export_oatof_to_solidworks.m`](cad/ms_export_oatof_to_solidworks.m)
 - 项目门禁：`verify_project.ps1 -Level Static|Candidate|Formal`
 

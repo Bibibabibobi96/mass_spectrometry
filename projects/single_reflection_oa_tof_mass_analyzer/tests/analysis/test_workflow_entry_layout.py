@@ -25,6 +25,12 @@ class WorkflowEntryLayoutTests(unittest.TestCase):
             "workflows/design_candidate/run_candidate_contract_build.m",
             "workflows/design_candidate/run_candidate_cad_sync.m",
             "workflows/accelerator_transverse_field_uniformity/run_accelerator_transverse_field_uniformity.ps1",
+            "workflows/cross_solver_diagnostics/run_cross_solver_diagnostics.ps1",
+            "workflows/cross_solver_diagnostics/comsol/export_accelerator_vector_field_samples.m",
+            "workflows/cross_solver_diagnostics/comsol/export_axis_field_profiles.m",
+            "workflows/cross_solver_diagnostics/comsol/export_selected_particle_trajectories.m",
+            "workflows/cross_solver_diagnostics/simion/export_accelerator_vector_field_samples.lua",
+            "workflows/cross_solver_diagnostics/simion/export_axis_field_profiles.lua",
             "comsol/export_accelerator_transverse_field_uniformity.m",
             "tests/comsol/test_support/run_oatof_matlab_unit_tests.m",
             "tests/comsol/test_support/run_oatof_formal_write_contract_tests.m",
@@ -50,6 +56,13 @@ class WorkflowEntryLayoutTests(unittest.TestCase):
             "tests/comsol/run_oatof_matlab_unit_tests.m",
             "tests/comsol/run_oatof_formal_write_contract_tests.m",
             "tests/simion/export_accelerator_grid_phase_field.lua",
+            "tests/comsol/compare_oatof_particle_exports.ps1",
+            "tests/comsol/export_accelerator_vector_field_samples.m",
+            "tests/comsol/export_axis_field_profiles.m",
+            "tests/comsol/export_selected_particle_trajectories.m",
+            "tests/simion/export_accelerator_vector_field_samples.lua",
+            "tests/simion/export_axis_field_profiles.lua",
+            "tests/simion/export_axis_field_profiles.ps1",
         }
         for relative in removed:
             self.assertFalse((PROJECT_ROOT / relative).exists(), relative)
@@ -68,6 +81,10 @@ class WorkflowEntryLayoutTests(unittest.TestCase):
         )
         self.assertIn(
             "workflows/design_candidate/run_candidate.py", entries
+        )
+        self.assertIn(
+            "workflows/cross_solver_diagnostics/run_cross_solver_diagnostics.ps1",
+            entries,
         )
         campaign_entry = (
             PROJECT_ROOT / "workflows" / "experiment_campaign" / "run_campaign.py"
@@ -115,6 +132,46 @@ class WorkflowEntryLayoutTests(unittest.TestCase):
             "tests\\simion\\test_parameterized_geometry_build.ps1",
             gate,
         )
+
+    def test_cross_solver_diagnostics_uses_current_formal_instance_roles(self):
+        workflow = (
+            PROJECT_ROOT
+            / "workflows"
+            / "cross_solver_diagnostics"
+            / "run_cross_solver_diagnostics.ps1"
+        ).read_text(encoding="utf-8")
+        for dependency in (
+            "export_axis_field_profiles.m",
+            "export_selected_particle_trajectories.m",
+            "export_accelerator_vector_field_samples.m",
+            "export_axis_field_profiles.lua",
+            "export_accelerator_vector_field_samples.lua",
+            "compare_field_profiles.py",
+            "compare_particle_trajectories.py",
+            "compare_vector_field_samples.py",
+        ):
+            self.assertIn(dependency, workflow)
+        axis_adapter = (
+            PROJECT_ROOT
+            / "workflows"
+            / "cross_solver_diagnostics"
+            / "simion"
+            / "export_axis_field_profiles.lua"
+        ).read_text(encoding="utf-8")
+        self.assertIn("local reflectron_instance = 2", axis_adapter)
+        self.assertIn("local accelerator_instance = 3", axis_adapter)
+        self.assertIn("math.floor((z_end-z_start)/z_step+1e-9)+1", axis_adapter)
+        self.assertNotIn("sample('accelerator_source',2,", axis_adapter)
+        self.assertNotIn("sample('reflectron',1,", axis_adapter)
+        vector_adapter = (
+            PROJECT_ROOT
+            / "workflows"
+            / "cross_solver_diagnostics"
+            / "simion"
+            / "export_accelerator_vector_field_samples.lua"
+        ).read_text(encoding="utf-8")
+        self.assertIn("local inside_pa =", vector_adapter)
+        self.assertIn("SKIPPED_OUTSIDE_PA", vector_adapter)
 
 
 if __name__ == "__main__":

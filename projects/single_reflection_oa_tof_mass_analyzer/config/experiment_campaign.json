@@ -10,7 +10,7 @@
     "profile_id": "validated_structural_candidate",
     "authority": {
       "path": "config/execution_profiles.json",
-      "sha256": "42F78C4933182D1DC07D5AC75558759DDAD5309B220C232E0A6DFC4A41D32395"
+      "sha256": "3E4BFD6781474F60AC432E7B4E2B4E0CCB676E529A013C0B52F980098C9E673F"
     }
   },
   "base_request": {

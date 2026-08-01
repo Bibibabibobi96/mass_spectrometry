@@ -67,8 +67,16 @@ resolved、分析和资产合同管理；实现细节见[`COMSOL.md`](COMSOL.md)
 | Static合同与候选编译 | baseline/science/numerics分层、resolved与源码冻结 | PASS |
 | 结构Candidate | 零变化和`reflectron_midgrid_voltage`、N=100、真实COMSOL/SIMION/CAD receipt | Candidate结构合同；无性能声明 |
 | 五质量候选 | 固定10/100/500/1000/2000 Da功能比较 | Candidate；不替代524 Da基线 |
+| Formal跨求解器诊断 | 当前冻结资产的轴场、同坐标三维场和代表粒子轨迹 | Diagnostic；不改变Formal资格 |
 | Formal当前设计 | vNext同源N=1000、COMSOL/SIMION/CAD及GUI证据原子冻结 | Formal |
 | RF四极杆离子光学→本项目接口 | 下游只读分析器消费 | 整机Formal BLOCKED |
+
+统一Formal跨求解器诊断入口已由成功run
+`20260801_011500__analysis__cross__formal-diagnostics`完成真实只读验收：轴场比较覆盖源区101点、完整
+加速段389点和反射器863点，同坐标三维场覆盖当前SIMION加速器PA共同插值域内75点，代表轨迹固定为
+18/52/97号粒子。源区、完整加速段和反射器内部轴向场RMS相对差分别为`0.8437%`、`5.1833%`和
+`0.000204%`；75点轴向分量RMS相对差为`10.3674%`。这些是无接受阈值的diagnostic结果，`PASS`只
+表示导出、坐标配对、分析和manifest执行成功，不表示场或轨迹等价，也不改变Formal资格。
 
 Candidate唯一公开入口为`../workflows/design_candidate/run_candidate.py`；必须提供获批request、run ID和
 显式seed，依次执行粒子表、COMSOL、SIMION、CAD和结构验收。成功结果固定为

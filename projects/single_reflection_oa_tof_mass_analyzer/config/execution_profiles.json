@@ -49,7 +49,7 @@
       "capability_id": "single_reflection_mass_analysis",
       "mode": "formal",
       "evidence_levels": ["formal"],
-      "supported_objectives": ["mass_resolving_power", "transmission_fraction", "tof_centroid", "detector_landing"],
+      "supported_objectives": ["mass_resolving_power", "transmission_fraction", "tof_centroid", "detector_landing", "field_comparison", "trajectory_comparison"],
       "supported_operating_points": [
         {"mass": {"value": 524, "unit": "Da"}, "charge_state": 1}
       ],
@@ -65,11 +65,20 @@
           "entrypoint": "verify_project.ps1",
           "run_id_template": null,
           "arguments": ["-Level", "Formal", "-PythonExe", "{python_exe}"]
+        },
+        {
+          "step_id": "formal_cross_solver_diagnostics_run",
+          "kind": "analyze",
+          "shell": "powershell",
+          "entrypoint": "workflows/cross_solver_diagnostics/run_cross_solver_diagnostics.ps1",
+          "run_id_template": "{timestamp}__analysis__cross__formal-diagnostics",
+          "arguments": ["-RunId", "{run_id}"]
         }
       ],
       "limitations": [
         "Validates and packages the current approved 524 Da formal design only",
-        "Does not synthesize a new geometry from optimization variables"
+        "Does not synthesize a new geometry from optimization variables",
+        "The diagnostic step reads frozen assets without solving, particle retracing, design changes, promotion, or a new equivalence claim"
       ]
     },
     {

@@ -313,6 +313,7 @@ if ($FullScope) {
     Add-ChangedStageItem 'ruff_changed_python' $false 'no_python_path_changed'
 }
 
+$routeCommandInvoker = ${function:Invoke-ChangedRouteCommand}.GetNewClosure()
 foreach ($route in $routes) {
     $name = [string]$route.stage
     $coveredByFullScopeStage = $FullScope -and
@@ -332,7 +333,7 @@ foreach ($route in $routes) {
     if ($reason) {
         $command = $route.command
         Add-ChangedStageItem $name $true $reason {
-            Invoke-ChangedRouteCommand -Command $command
+            & $routeCommandInvoker -Command $command
         }.GetNewClosure()
     } else {
         Add-ChangedStageItem $name $false 'no_route_match'

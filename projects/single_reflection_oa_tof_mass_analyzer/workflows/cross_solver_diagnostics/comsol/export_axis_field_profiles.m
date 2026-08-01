@@ -3,12 +3,19 @@
 reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
 outputCsv = getenv('OATOF_COMSOL_FIELD_CSV');
 assert(~isempty(outputCsv), 'OATOF_COMSOL_FIELD_CSV is not set.');
-testDir = fileparts(mfilename('fullpath'));
-projectDir = fileparts(fileparts(testDir));
+projectDir = getenv('OATOF_PROJECT_ROOT');
+contractPath = getenv('OATOF_RESOLVED_GEOMETRY_JSON');
+assert(~isempty(projectDir) && isfolder(projectDir), ...
+    'OATOF_PROJECT_ROOT is missing.');
+assert(~isempty(contractPath) && isfile(contractPath), ...
+    'OATOF_RESOLVED_GEOMETRY_JSON is missing.');
 addpath(projectDir);
-paths = oatof_paths();
-modelPath = fullfile(paths.comsolFormalDir, ...
-    'single_reflection_oa_tof_mass_analyzer__model.mph');
+modelPath = getenv('OATOF_COMSOL_MODEL_PATH');
+assert(~isempty(modelPath) && isfile(modelPath), ...
+    'OATOF_COMSOL_MODEL_PATH is missing.');
+contract = jsondecode(fileread(contractPath));
+geometry = contract.geometry_mm;
+source = contract.particle_source;
 
 fid = fopen(reportPath, 'w');
 assert(fid >= 0, 'Could not open report: %s', reportPath);
@@ -18,16 +25,21 @@ fprintf(fid, 'OUTPUT_CSV=%s\n', outputCsv);
 
 try
     model = mphopen(modelPath);
-    zSource = 0.2:0.01:2.8;
-    zAccelerator = 3.2:0.05:19.6;
-    zReflectron = 620.08:0.25:826.58;
-    [sourceV, sourceEz] = sample_profile(model, -48.8, zSource);
-    [acceleratorV, acceleratorEz] = sample_profile(model, -48.8, zAccelerator);
-    [reflectronV, reflectronEz] = sample_profile(model, 0, zReflectron);
+    zSource = (source.center_z_mm-source.size_z_mm/2):0.01: ...
+        (source.center_z_mm+source.size_z_mm/2);
+    zAccelerator = (geometry.accelerator_repeller_z+0.2):0.05: ...
+        (geometry.accelerator_grid2_z-0.2);
+    zReflectron = (geometry.L_flight+0.25):0.25: ...
+        (geometry.L_flight+geometry.L_reflectron-0.25);
+    acceleratorX = contract.coordinate_convention.accelerator_axis_x;
+    reflectronX = contract.coordinate_convention.reflectron_axis(1);
+    [sourceV, sourceEz] = sample_profile(model, acceleratorX, zSource);
+    [acceleratorV, acceleratorEz] = sample_profile(model, acceleratorX, zAccelerator);
+    [reflectronV, reflectronEz] = sample_profile(model, reflectronX, zReflectron);
 
-    result = [profile_table('accelerator_source', zSource, -48.8, sourceV, sourceEz); ...
-        profile_table('accelerator_full', zAccelerator, -48.8, acceleratorV, acceleratorEz); ...
-        profile_table('reflectron', zReflectron, 0, reflectronV, reflectronEz)];
+    result = [profile_table('accelerator_source', zSource, acceleratorX, sourceV, sourceEz); ...
+        profile_table('accelerator_full', zAccelerator, acceleratorX, acceleratorV, acceleratorEz); ...
+        profile_table('reflectron', zReflectron, reflectronX, reflectronV, reflectronEz)];
     outputDir = fileparts(outputCsv);
     if ~isfolder(outputDir), mkdir(outputDir); end
     writetable(result, outputCsv);

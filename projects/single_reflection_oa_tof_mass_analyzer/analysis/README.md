@@ -124,6 +124,12 @@ Program Off只允许作为诊断组，可用`single`和对应`.1`列导入；它
 
 ## 跨求解器诊断
 
+统一执行入口为
+[`../workflows/cross_solver_diagnostics/run_cross_solver_diagnostics.ps1`](../workflows/cross_solver_diagnostics/run_cross_solver_diagnostics.ps1)。
+该workflow从`formal_validation.json`解析当前Formal资产和来源run，在独立run中冻结身份后调用其
+COMSOL/SIMION适配器；本目录只保留求解器无关比较算法，不直接启动商业软件。旧`tests/comsol`与
+`tests/simion`下的人工导出入口已退役，不保留兼容路径。
+
 - `compare_field_profiles.py`比较同坐标轴向场，并把电极边界插值点与反射器内部指标分开。
 - `compare_particle_trajectories.py`比较代表粒子的同时间位置、同z横向路径、转向深度和关键平面
   到达时间；SIMION输入必须是启用稀疏TRACE的正式quality=8日志。

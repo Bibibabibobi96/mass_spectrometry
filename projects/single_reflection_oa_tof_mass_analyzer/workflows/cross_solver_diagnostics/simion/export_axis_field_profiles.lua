@@ -1,3 +1,4 @@
+-- SIMION adapter for the cross-solver diagnostics workflow.
 local output_path = assert(os.getenv('OATOF_SIMION_FIELD_CSV'),
   'OATOF_SIMION_FIELD_CSV is not set')
 local report_path = assert(os.getenv('OATOF_SIMION_FIELD_REPORT'),
@@ -20,6 +21,8 @@ local iob_path = os.getenv('OATOF_FORMAL_IOB_PATH') or 'oatof_ideal_grounded.iob
 simion.command('"' .. iob_path .. '"')
 local wb = simion.wb
 assert(#wb.instances == 4, 'formal IOB must contain exactly four PA instances')
+local reflectron_instance = 2
+local accelerator_instance = 3
 output:write('region,sample_index,x_mm,y_mm,z_mm,Ez_V_per_m\n')
 
 local function global_ez_vpm(instance_index, x_mm, y_mm, z_mm, local_component)
@@ -35,7 +38,8 @@ local function global_ez_vpm(instance_index, x_mm, y_mm, z_mm, local_component)
 end
 
 local function sample(region, instance_index, x_mm, z_start, z_end, z_step, component)
-  local count=math.floor((z_end-z_start)/z_step+0.5)+1
+  -- Never round a non-integral interval upward beyond the shared end plane.
+  local count=math.floor((z_end-z_start)/z_step+1e-9)+1
   local minimum,maximum
   for index=1,count do
     local z_mm = z_start+(index-1)*z_step
@@ -50,9 +54,9 @@ local function sample(region, instance_index, x_mm, z_start, z_end, z_step, comp
     string.upper(region),minimum,maximum))
 end
 
-sample('accelerator_source',2,accelerator_axis_x,source_z_min,source_z_max,0.01,3)
-sample('accelerator_full',2,accelerator_axis_x,accelerator_z_min,accelerator_z_max,0.05,3)
-sample('reflectron',1,reflectron_axis_x,reflectron_z_min,reflectron_z_max,0.25,1)
+sample('accelerator_source',accelerator_instance,accelerator_axis_x,source_z_min,source_z_max,0.01,3)
+sample('accelerator_full',accelerator_instance,accelerator_axis_x,accelerator_z_min,accelerator_z_max,0.05,3)
+sample('reflectron',reflectron_instance,reflectron_axis_x,reflectron_z_min,reflectron_z_max,0.25,1)
 report:write('STATUS=PASS\n')
 output:close()
 report:close()

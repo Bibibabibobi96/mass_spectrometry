@@ -119,6 +119,17 @@ class ChangedGateContractTests(unittest.TestCase):
         self.assertIn("only_deleted_python_paths_changed", self.source)
         self.assertNotIn("@pythonFiles", self.source)
 
+    def test_internal_route_closure_carries_its_command_invoker(self) -> None:
+        self.assertIn(
+            "$routeCommandInvoker = ${function:Invoke-ChangedRouteCommand}.GetNewClosure()",
+            self.source,
+        )
+        self.assertIn("& $routeCommandInvoker -Command $command", self.source)
+        self.assertNotIn(
+            "Invoke-ChangedRouteCommand -Command $command\n        }.GetNewClosure()",
+            self.source,
+        )
+
     def test_routes_project_config_to_its_own_static_gate(self) -> None:
         project_gates = sorted(
             path.relative_to(REPO_ROOT).as_posix()
