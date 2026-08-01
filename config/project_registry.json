@@ -12,11 +12,11 @@
     },
     {
       "descriptor": "projects/rf_hexapole_ion_optics/config/project.json",
-      "sha256": "EC48F7B79E4C6B22B028E2EE9408FF480BA466C9AB1873F3DEB2B610AEA26E95"
+      "sha256": "65F2C7B8125A953E37A9AC53CCA24FA22CCE4665B7778FE292DFBC7610B607B0"
     },
     {
       "descriptor": "projects/rf_octupole_ion_optics/config/project.json",
-      "sha256": "760B50F3F1041CC29DB4ECA71238E5EF52CAA7C54DB10FE1BF6207843964A9AF"
+      "sha256": "68FE9A5FFDDDFD66479A6D41E6758DFC17CE2ECEF6F55425527BDF83274D78F0"
     },
     {
       "descriptor": "projects/rf_quadrupole_ion_optics/config/project.json",
@@ -157,8 +157,7 @@
           "migration_kind": "administrative_rename_only",
           "artifact_location": {
             "schema_version": 1,
-            "state": "source_pending_relocation",
-            "source_root": "artifacts/projects/rf_hexapole_ion_guide",
+            "state": "archived_verified",
             "archive_id": "20260801_120001__migration-snapshot__repo__rf-hexapole-ion-guide",
             "archive_root": "artifacts/projects/rf_hexapole_ion_optics/archive/20260801_120001__migration-snapshot__repo__rf-hexapole-ion-guide/legacy-project-root",
             "migration_manifest": "artifacts/projects/rf_hexapole_ion_optics/archive/20260801_120001__migration-snapshot__repo__rf-hexapole-ion-guide/identity_migration_manifest.json"
@@ -294,8 +293,7 @@
           "migration_kind": "administrative_rename_only",
           "artifact_location": {
             "schema_version": 1,
-            "state": "source_pending_relocation",
-            "source_root": "artifacts/projects/rf_octupole_ion_guide",
+            "state": "archived_verified",
             "archive_id": "20260801_120002__migration-snapshot__repo__rf-octupole-ion-guide",
             "archive_root": "artifacts/projects/rf_octupole_ion_optics/archive/20260801_120002__migration-snapshot__repo__rf-octupole-ion-guide/legacy-project-root",
             "migration_manifest": "artifacts/projects/rf_octupole_ion_optics/archive/20260801_120002__migration-snapshot__repo__rf-octupole-ion-guide/identity_migration_manifest.json"

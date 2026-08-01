@@ -149,7 +149,7 @@ class ProjectRegistryTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "legacy artifact location differs"):
             validate_legacy_identity_mappings(descriptors)
 
-    def test_multipole_pending_relocation_has_one_governed_future_archive(self) -> None:
+    def test_multipole_relocation_has_one_governed_archive(self) -> None:
         for project_id in (
             "rf_quadrupole_ion_optics",
             "rf_hexapole_ion_optics",
@@ -160,7 +160,16 @@ class ProjectRegistryTests(unittest.TestCase):
             )
             mapping = descriptor["legacy_identities"][0]
             location = mapping["artifact_location"]
-            self.assertEqual(location["state"], "source_pending_relocation")
+            self.assertIn(
+                location["state"], {"source_pending_relocation", "archived_verified"}
+            )
+            if location["state"] == "source_pending_relocation":
+                self.assertEqual(
+                    location["source_root"],
+                    f"artifacts/projects/{mapping['project_id']}",
+                )
+            else:
+                self.assertNotIn("source_root", location)
             self.assertNotIn("artifact_root", mapping)
             self.assertTrue(location["archive_root"].startswith(
                 f"artifacts/projects/{project_id}/archive/"

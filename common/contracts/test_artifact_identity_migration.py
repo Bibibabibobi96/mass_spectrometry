@@ -25,6 +25,7 @@ LEGACY = "rf_hexapole_ion_guide"
 ARCHIVE_ID = "20260801_120000__migration-snapshot__repo__rf-hexapole-ion-guide"
 ACTIVE_RUN = "20260722_120000__sim__python__active-evidence"
 HISTORY_RUN = "20260722_120001__sim__python__history-evidence"
+ANOMALY_RUN = "20260722_120002__sim__python__identity-anomaly"
 
 
 class ArtifactIdentityMigrationTests(unittest.TestCase):
@@ -66,7 +67,7 @@ class ArtifactIdentityMigrationTests(unittest.TestCase):
         legacy = self.artifacts / LEGACY
         legacy.mkdir(parents=True)
         (legacy / "00_README.txt").write_text(f"PROJECT: {LEGACY}\n", encoding="utf-8")
-        for run_id in (ACTIVE_RUN, HISTORY_RUN):
+        for run_id in (ACTIVE_RUN, HISTORY_RUN, ANOMALY_RUN):
             run = legacy / "runs" / run_id
             (run / "results").mkdir(parents=True)
             (run / "run_config.json").write_text(
@@ -94,6 +95,26 @@ class ArtifactIdentityMigrationTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+        anomaly_manifest_path = (
+            legacy / "runs" / ANOMALY_RUN / "run_manifest.json"
+        )
+        anomaly_manifest = json.loads(
+            anomaly_manifest_path.read_text(encoding="utf-8")
+        )
+        anomaly_manifest["schema_version"] = 2
+        anomaly_manifest["outputs"][0]["sha256"] = "0" * 64
+        retained_iob = anomaly_manifest_path.parent / "results" / "retained.iob"
+        retained_iob.write_bytes(b"v2-retained-workbench")
+        anomaly_manifest["outputs"].append(
+            {
+                "path": str(retained_iob),
+                "bytes": retained_iob.stat().st_size,
+                "retention_role": "lightweight_optional",
+            }
+        )
+        anomaly_manifest_path.write_text(
+            json.dumps(anomaly_manifest), encoding="utf-8"
+        )
         scratch = legacy / "scratch" / "20260801_120000__repo__old-work"
         scratch.mkdir(parents=True)
         (scratch / "temporary.txt").write_text("temporary", encoding="utf-8")
@@ -125,8 +146,19 @@ class ArtifactIdentityMigrationTests(unittest.TestCase):
         records = {record["path"]: record for record in plan["files"]}
         active_model = records[f"runs/{ACTIVE_RUN}/results/model.mph"]
         history_model = records[f"runs/{HISTORY_RUN}/results/model.mph"]
+        anomaly_model = records[f"runs/{ANOMALY_RUN}/results/model.mph"]
+        retained_iob = records[f"runs/{ANOMALY_RUN}/results/retained.iob"]
         self.assertEqual(active_model["reference_classes"], ["active"])
         self.assertEqual(history_model["reference_classes"], ["history"])
+        self.assertEqual(anomaly_model["disposition"], "retain")
+        self.assertEqual(anomaly_model["reason"], "manifest_identity_anomaly")
+        self.assertEqual(retained_iob["disposition"], "retain")
+        self.assertEqual(plan["inventory"]["identity_anomaly_count"], 1)
+        self.assertEqual(plan["inventory"]["identity_anomaly_file_count"], 1)
+        self.assertEqual(plan["identity_anomalies"][0]["path"], anomaly_model["path"])
+        self.assertEqual(
+            plan["identity_anomalies"][0]["mismatches"], ["sha256_mismatch"]
+        )
         self.assertEqual(active_model["disposition"], "prune_after_verified_migration")
         self.assertEqual(
             records[f"runs/{ACTIVE_RUN}/results/metrics.csv"]["disposition"], "retain"
@@ -162,7 +194,9 @@ class ArtifactIdentityMigrationTests(unittest.TestCase):
         old = self.artifacts / LEGACY
         new = self.artifacts / CURRENT / "archive" / ARCHIVE_ID / "legacy-project-root"
         result = relocated_manifest_path(str(old / "runs" / "a" / "summary.json"), old, new)
-        self.assertEqual(result, new / "runs" / "a" / "summary.json")
+        self.assertEqual(
+            result, new.resolve() / "runs" / "a" / "summary.json"
+        )
         with self.assertRaises(ValueError):
             relocated_manifest_path(str(self.artifacts / "other" / "file.json"), old, new)
 
@@ -226,6 +260,15 @@ class ArtifactIdentityMigrationTests(unittest.TestCase):
         destination.mkdir(parents=True)
         with self.assertRaises(FileExistsError):
             apply_migration(plan, self.artifacts)
+
+    def test_legacy_plan_is_rejected_without_anomaly_audit(self) -> None:
+        plan = self.plan()
+        plan["schema_version"] = 1
+        plan.pop("identity_anomalies")
+        plan["inventory"].pop("identity_anomaly_count")
+        plan["inventory"].pop("identity_anomaly_file_count")
+        with self.assertRaisesRegex(ValueError, "migration manifest identity differs"):
+            validate_plan(plan)
 
     def test_multiple_legacy_identities_require_explicit_selection(self) -> None:
         descriptor = self.repository / "projects" / CURRENT / "config" / "project.json"

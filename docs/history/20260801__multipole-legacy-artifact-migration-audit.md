@@ -41,6 +41,19 @@
 重新冻结六极杆全树并再次完整复核，三份当前计划才全部通过。该事件说明执行真实迁移前仍必须即时
 重验，不能把较早的计划当作永久快照。
 
+随后六极杆apply前复核又发现另一份3,378,869,955字节MPH的当前SHA与其不可变run manifest记录值
+不同。schema v2 planner因此增加manifest input/output身份交叉审计：迁移计划冻结当前观察字节，同时
+把recorded/observed差异列为`identity_anomalies`并强制保留。仓库不保留schema v1兼容入口，所有计划
+必须重新由唯一v2 planner生成。
+
+|项目|run / 文件|manifest SHA-256|当前冻结 SHA-256|异常|处置|
+|---|---|---|---|---|---|
+|四极杆|`20260722_213000__sim__cross__rf-oatof-s1-physical-5ev__n100`引用的`20260722_210000__sim__comsol__rf-oatof-s1-physical-port-5ev__n100/run_manifest.json`|`19CB07DA6764B90FCF98BF847E403814C3117C8B41FDF81927008EED2F2B5C1F`、9,486字节|`5817AAB2B25E05EAE49E25548C3D20EEE1224F04F180E0A799B60B5104C98A04`、10,615字节|跨run冻结引用与当前文件不一致|`manifest_identity_anomaly`，强制保留|
+
+六极杆目的端复核时上述MPH已连续三遍稳定读回旧manifest记录的原始SHA，且无活动COMSOL求解进程；
+因此先对完整目的端重新冻结，再按标准v2路径回滚、重新plan并迁回，最终异常数为0。该过程没有改写旧
+manifest，也没有把一次性upgrade/repair入口留在生产代码。四极杆当前异常数为1，异常文件强制保留。
+
 ## 保留与减容结论
 
 必须保留run三件套、冻结输入、canonical states/events、metrics、数值结果、报告、图、必要日志和旧
@@ -52,10 +65,14 @@ archive。活动或history引用的run不能整run删除。`formal/`、`archive/
 
 |旧根|裁剪候选文件|候选字节|迁移后保留字节|
 |---|---:|---:|---:|
-|四极杆旧身份|1,107|31,438,774,551|2,055,856,725|
-|六极杆旧身份|299|20,292,126,311|232,666,907|
-|八极杆旧身份|86|4,482,798,061|38,697,514|
-|合计|1,492|56,213,698,923|2,327,221,146|
+|四极杆旧身份|1,055|31,437,689,483|2,056,941,793|
+|六极杆旧身份|268|20,291,483,243|233,309,975|
+|八极杆旧身份|75|4,482,568,733|38,926,842|
+|合计|1,398|56,211,741,459|2,329,178,610|
+
+三行均来自唯一schema v2 planner。v2终态manifest已经选择保留的输出优先于历史后缀分类；`.iob`及
+CAD文件不再被笼统视为可重建solver binary。六、八极杆已按收紧后的计划无损迁入但尚未裁剪；四极杆
+源树已重新冻结，但Windows仍拒绝原子目录移动，因此其候选不是可立即执行的裁剪授权。
 
 除顶层scratch外，候选必须同时位于`runs/<run_id>/`且不在任何输入、冻结或snapshot容器中；允许后缀
 严格限于`.mph`、`.iob`、SolidWorks/STEP文件和SIMION `.pa/.pa#/.paN/.pa-surf`。CSV、完整轨迹、
@@ -81,6 +98,7 @@ archive。活动或history引用的run不能整run删除。`formal/`、`archive/
 续跑，不能伪称字节级可逆；日志先完成而归档包装尚未发布的崩溃窗口可幂等修复。相关fixture覆盖
 迁移、目的端SHA复核、旧manifest身份保持、隔离中断、删除中断、发布中断、回滚和结构门禁。
 
-截至本文更新时，真实旧顶层目录尚未移动，56,213,698,923字节（52.353 GiB）候选也尚未裁剪；
-描述符仍处于
-`source_pending_relocation`。因此当前改动只建立可审计执行路径，不改变任何历史产物字节。
+截至本文更新时，六、八极杆已无损迁入当前项目具名archive且descriptor为`archived_verified`，尚未
+裁剪；四极杆源树和v2计划完整，目标archive不存在，descriptor保持`source_pending_relocation`。
+四极杆在沙箱和用户账户下执行同卷`os.replace`均遇到WinError 5，Restart Manager未找到明确持有者；
+重启或解除过滤驱动/不可见目录句柄后可直接重试标准apply。现阶段没有删除任何历史产物字节。

@@ -23,7 +23,7 @@ except ModuleNotFoundError:
     from file_identity import file_sha256
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 ROLE = "artifact_identity_migration_manifest"
 ARCHIVE_ROLE = "artifact_identity_archive_manifest"
 PRUNING_ROLE = "artifact_identity_pruning_journal"
@@ -36,7 +36,7 @@ LEGACY_POLICY = {
     "claim_policy": "preserve_original_status_and_claim_limits_no_promotion",
 }
 LOCATION_SCHEMA_VERSION = 1
-MODEL_BINARY_SUFFIXES = {".mph", ".iob", ".sldasm", ".sldprt", ".step", ".stp"}
+MODEL_BINARY_SUFFIXES = {".mph"}
 FROZEN_INPUT_CONTAINER_NAMES = {
     "input",
     "inputs",
@@ -227,6 +227,131 @@ def _formal_run_references(current_root: Path) -> set[str]:
     return references
 
 
+def _manifest_identity_records(value: object) -> Iterable[dict]:
+    if isinstance(value, dict):
+        if "path" in value and ("bytes" in value or "sha256" in value):
+            yield value
+            return
+        for child in value.values():
+            yield from _manifest_identity_records(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _manifest_identity_records(child)
+
+
+def _manifest_local_relative(
+    recorded_path: str,
+    manifest_path: Path,
+    source: Path,
+    recorded_project_id: str,
+) -> Path | None:
+    raw = Path(recorded_path)
+    candidate = raw if raw.is_absolute() else manifest_path.parent / raw
+    try:
+        return candidate.resolve(strict=False).relative_to(source.resolve())
+    except ValueError:
+        parts = raw.parts
+        lowered = [part.lower() for part in parts]
+        anchor = ["artifacts", "projects", recorded_project_id.lower()]
+        matches = [
+            index
+            for index in range(len(parts) - 2)
+            if lowered[index : index + 3] == anchor
+        ]
+        if len(matches) != 1 or matches[0] + 3 >= len(parts):
+            return None
+        return Path(*parts[matches[0] + 3 :])
+
+
+def _manifest_identity_anomalies(
+    source: Path,
+    files_by_path: dict[str, dict[str, object]],
+    recorded_project_id: str,
+) -> list[dict[str, object]]:
+    """Cross-check frozen local input/output identities without rewriting history."""
+
+    anomalies: list[dict[str, object]] = []
+    for manifest_path in sorted((source / "runs").glob("*/run_manifest.json")):
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+        run_id = manifest_path.parent.name
+        manifest_relative = manifest_path.relative_to(source).as_posix()
+        for section in ("inputs", "outputs"):
+            for recorded in _manifest_identity_records(manifest.get(section)):
+                if recorded.get("exists") is False or not isinstance(
+                    recorded.get("path"), str
+                ):
+                    continue
+                relative = _manifest_local_relative(
+                    str(recorded["path"]),
+                    manifest_path,
+                    source,
+                    recorded_project_id,
+                )
+                if relative is None:
+                    continue
+                normalized = relative.as_posix()
+                actual = files_by_path.get(normalized)
+                recorded_bytes = recorded.get("bytes")
+                recorded_sha256 = recorded.get("sha256")
+                mismatches: list[str] = []
+                if actual is None:
+                    mismatches.append("missing_local_file")
+                else:
+                    if "bytes" in recorded:
+                        if not isinstance(recorded_bytes, int) or recorded_bytes < 0:
+                            mismatches.append("invalid_recorded_bytes")
+                        elif recorded_bytes != actual["bytes"]:
+                            mismatches.append("bytes_mismatch")
+                    if "sha256" in recorded:
+                        if not isinstance(recorded_sha256, str) or re.fullmatch(
+                            r"[0-9A-Fa-f]{64}", recorded_sha256
+                        ) is None:
+                            mismatches.append("invalid_recorded_sha256")
+                        elif recorded_sha256.upper() != actual["sha256"]:
+                            mismatches.append("sha256_mismatch")
+                if mismatches:
+                    anomalies.append(
+                        {
+                            "path": normalized,
+                            "run_id": run_id,
+                            "manifest_path": manifest_relative,
+                            "manifest_section": section,
+                            "recorded_path": str(recorded["path"]),
+                            "recorded_bytes": (
+                                recorded_bytes if isinstance(recorded_bytes, int) else None
+                            ),
+                            "actual_bytes": actual["bytes"] if actual else None,
+                            "recorded_sha256": (
+                                recorded_sha256.upper()
+                                if isinstance(recorded_sha256, str)
+                                else None
+                            ),
+                            "actual_sha256": actual["sha256"] if actual else None,
+                            "mismatches": mismatches,
+                        }
+                    )
+    return anomalies
+
+
+def _v2_manifest_outputs(source: Path, recorded_project_id: str) -> set[str]:
+    """Return outputs that a v2 terminal manifest already chose to retain."""
+
+    protected: set[str] = set()
+    for manifest_path in sorted((source / "runs").glob("*/run_manifest.json")):
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+        if manifest.get("schema_version") != 2:
+            continue
+        for recorded in _manifest_identity_records(manifest.get("outputs")):
+            if not isinstance(recorded.get("path"), str):
+                continue
+            relative = _manifest_local_relative(
+                str(recorded["path"]), manifest_path, source, recorded_project_id
+            )
+            if relative is not None:
+                protected.add(relative.as_posix())
+    return protected
+
+
 def _legacy_mapping(
     repository_root: Path,
     current_project_id: str,
@@ -251,6 +376,79 @@ def _legacy_mapping(
             raise ValueError(f"{current_project_id}: legacy policy differs for {field}")
     legacy_artifact_location(mapping, current_project_id)
     return mapping
+
+
+def _build_inventory(
+    repository_root: Path,
+    current_root: Path,
+    inventory_root: Path,
+    legacy_project_id: str,
+) -> tuple[list[dict[str, object]], list[dict[str, object]], dict[str, int]]:
+    """Freeze one legacy payload and classify only explicitly rebuildable files."""
+
+    run_root = inventory_root / "runs"
+    run_ids = (
+        {item.name for item in run_root.iterdir() if item.is_dir()}
+        if run_root.is_dir()
+        else set()
+    )
+    references = _repository_run_references(repository_root, run_ids)
+    for run_id in _formal_run_references(current_root):
+        if run_id in references:
+            references[run_id].add("formal")
+
+    v2_outputs = _v2_manifest_outputs(inventory_root, legacy_project_id)
+    files: list[dict[str, object]] = []
+    for path in sorted(item for item in inventory_root.rglob("*") if item.is_file()):
+        relative = path.relative_to(inventory_root)
+        reason = _pruning_reason(relative)
+        if relative.as_posix() in v2_outputs:
+            reason = None
+        run_id = (
+            relative.parts[1]
+            if len(relative.parts) >= 2 and relative.parts[0] == "runs"
+            else None
+        )
+        reference_classes = sorted(references.get(run_id, set())) if run_id else []
+        if "formal" in reference_classes:
+            reason = None
+        files.append(
+            {
+                "path": relative.as_posix(),
+                "bytes": path.stat().st_size,
+                "sha256": file_sha256(path),
+                "disposition": "prune_after_verified_migration" if reason else "retain",
+                "reason": reason,
+                "run_id": run_id,
+                "reference_classes": reference_classes,
+            }
+        )
+    files_by_path = {str(record["path"]): record for record in files}
+    identity_anomalies = _manifest_identity_anomalies(
+        inventory_root, files_by_path, legacy_project_id
+    )
+    anomaly_paths = {
+        str(anomaly["path"])
+        for anomaly in identity_anomalies
+        if str(anomaly["path"]) in files_by_path
+    }
+    for path in anomaly_paths:
+        files_by_path[path]["disposition"] = "retain"
+        files_by_path[path]["reason"] = "manifest_identity_anomaly"
+    prune = [
+        item
+        for item in files
+        if item["disposition"] == "prune_after_verified_migration"
+    ]
+    inventory = {
+        "file_count": len(files),
+        "bytes": sum(int(item["bytes"]) for item in files),
+        "prune_candidate_file_count": len(prune),
+        "prune_candidate_bytes": sum(int(item["bytes"]) for item in prune),
+        "identity_anomaly_count": len(identity_anomalies),
+        "identity_anomaly_file_count": len(anomaly_paths),
+    }
+    return files, identity_anomalies, inventory
 
 
 def build_plan(
@@ -281,34 +479,9 @@ def build_plan(
     current = artifact_projects_root / current_project_id
     if not source.is_dir() or not current.is_dir():
         raise FileNotFoundError("both legacy and current artifact project roots must exist")
-    run_root = source / "runs"
-    run_ids = {item.name for item in run_root.iterdir() if item.is_dir()} if run_root.is_dir() else set()
-    references = _repository_run_references(repository_root, run_ids)
-    for run_id in _formal_run_references(current):
-        if run_id in references:
-            references[run_id].add("formal")
-
-    files: list[dict[str, object]] = []
-    for path in sorted(item for item in source.rglob("*") if item.is_file()):
-        relative = path.relative_to(source)
-        reason = _pruning_reason(relative)
-        run_id = relative.parts[1] if len(relative.parts) >= 2 and relative.parts[0] == "runs" else None
-        reference_classes = sorted(references.get(run_id, set())) if run_id else []
-        if "formal" in reference_classes:
-            reason = None
-        files.append(
-            {
-                "path": relative.as_posix(),
-                "bytes": path.stat().st_size,
-                "sha256": file_sha256(path),
-                "disposition": "prune_after_verified_migration" if reason else "retain",
-                "reason": reason,
-                "run_id": run_id,
-                "reference_classes": reference_classes,
-            }
-        )
-    total_bytes = sum(int(item["bytes"]) for item in files)
-    prune = [item for item in files if item["disposition"] == "prune_after_verified_migration"]
+    files, identity_anomalies, inventory = _build_inventory(
+        repository_root, current, source, legacy_project_id
+    )
     destination = Path(current_project_id) / "archive" / archive_id / "legacy-project-root"
     if location["archive_root"] is not None and (
         str(location["archive_root"]).removeprefix("artifacts/projects/")
@@ -331,12 +504,8 @@ def build_plan(
             "legacy_manifests_rewritten": False,
             "recorded_project_identity_preserved": True,
         },
-        "inventory": {
-            "file_count": len(files),
-            "bytes": total_bytes,
-            "prune_candidate_file_count": len(prune),
-            "prune_candidate_bytes": sum(int(item["bytes"]) for item in prune),
-        },
+        "inventory": inventory,
+        "identity_anomalies": identity_anomalies,
         "files": files,
     }
 
@@ -344,7 +513,8 @@ def build_plan(
 def validate_plan(plan: dict) -> None:
     """Validate closed-world plan structure before reading either tree."""
 
-    if plan.get("schema_version") != SCHEMA_VERSION or plan.get("role") != ROLE:
+    schema_version = plan.get("schema_version")
+    if schema_version != SCHEMA_VERSION or plan.get("role") != ROLE:
         raise ValueError("migration manifest identity differs")
     validate_archive_id(plan.get("migration_id"))
     source = _relative_path(plan.get("source_root"))
@@ -376,7 +546,12 @@ def validate_plan(plan: dict) -> None:
         if disposition not in {"retain", "prune_after_verified_migration"}:
             raise ValueError(f"invalid disposition: {normalized}")
         reason = record.get("reason")
-        if (disposition == "retain") != (reason is None):
+        if disposition == "prune_after_verified_migration" and reason not in {
+            "non_authoritative_workspace",
+            "rebuildable_solver_or_cad_binary",
+        }:
+            raise ValueError(f"migration disposition/reason differs: {normalized}")
+        if disposition == "retain" and reason not in {None, "manifest_identity_anomaly"}:
             raise ValueError(f"migration disposition/reason differs: {normalized}")
     inventory = plan.get("inventory", {})
     if inventory.get("file_count") != len(records) or inventory.get("bytes") != sum(
@@ -390,6 +565,32 @@ def validate_plan(plan: dict) -> None:
         != sum(int(record["bytes"]) for record in prune)
     ):
         raise ValueError("migration prune inventory totals differ")
+    if schema_version == SCHEMA_VERSION:
+        anomalies = plan.get("identity_anomalies")
+        if not isinstance(anomalies, list):
+            raise ValueError("migration identity anomaly audit is missing")
+        anomaly_paths: set[str] = set()
+        for anomaly in anomalies:
+            if not isinstance(anomaly, dict):
+                raise ValueError("migration identity anomaly record differs")
+            path = _relative_path(anomaly.get("path")).as_posix()
+            mismatches = anomaly.get("mismatches")
+            if not isinstance(mismatches, list) or not mismatches:
+                raise ValueError(f"migration identity anomaly kinds differ: {path}")
+            if path in paths:
+                anomaly_paths.add(path)
+        marked_paths = {
+            str(record["path"])
+            for record in records
+            if record.get("reason") == "manifest_identity_anomaly"
+        }
+        if marked_paths != anomaly_paths:
+            raise ValueError("migration identity anomaly retention differs")
+        if (
+            inventory.get("identity_anomaly_count") != len(anomalies)
+            or inventory.get("identity_anomaly_file_count") != len(anomaly_paths)
+        ):
+            raise ValueError("migration identity anomaly totals differ")
 
 
 def validate_identity_archive_manifest(manifest: dict, plan: dict) -> None:
@@ -457,6 +658,12 @@ def verify_inventory(plan: dict, artifact_projects_root: Path, phase: str) -> No
             raise ValueError(f"migration byte count differs: {relative}")
         if file_sha256(path) != record["sha256"]:
             raise ValueError(f"migration SHA-256 differs: {relative}")
+    if plan.get("schema_version") == SCHEMA_VERSION:
+        live_anomalies = _manifest_identity_anomalies(
+            root, expected, str(plan["legacy_project_id"])
+        )
+        if live_anomalies != plan["identity_anomalies"]:
+            raise ValueError("migration manifest identity anomaly audit differs")
     runs = root / "runs"
     if runs.is_dir():
         for manifest_path in runs.glob("*/run_manifest.json"):
@@ -468,6 +675,8 @@ def verify_inventory(plan: dict, artifact_projects_root: Path, phase: str) -> No
 def apply_migration(plan: dict, artifact_projects_root: Path) -> Path:
     """Move a verified legacy root on-volume and publish its archive manifests."""
 
+    if plan.get("schema_version") != SCHEMA_VERSION:
+        raise ValueError("migration apply requires current identity anomaly audit")
     verify_inventory(plan, artifact_projects_root, "source")
     projects = artifact_projects_root.resolve()
     source = projects / _relative_path(plan["source_root"])
@@ -655,6 +864,8 @@ def prune_migration(
 ) -> dict:
     """Resume-safe quarantine and deletion of preclassified rebuildable payload."""
 
+    if plan.get("schema_version") != SCHEMA_VERSION:
+        raise ValueError("migration pruning requires current identity anomaly audit")
     projects = artifact_projects_root.resolve()
     payload = projects / _relative_path(plan["destination_root"])
     archive = payload.parent
@@ -789,7 +1000,8 @@ def main(argv: Iterable[str] | None = None) -> None:
             "ARTIFACT_IDENTITY_MIGRATION_PLAN=PASS "
             f"FILES={inventory['file_count']} BYTES={inventory['bytes']} "
             f"PRUNE_FILES={inventory['prune_candidate_file_count']} "
-            f"PRUNE_BYTES={inventory['prune_candidate_bytes']}"
+            f"PRUNE_BYTES={inventory['prune_candidate_bytes']} "
+            f"IDENTITY_ANOMALIES={inventory['identity_anomaly_count']}"
         )
         return
     plan = _load_plan(args.manifest)

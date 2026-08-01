@@ -7,10 +7,11 @@
   "required": [
     "schema_version", "role", "migration_id", "status", "recorded_at_utc",
     "current_project_id", "legacy_project_id", "legacy_mapping_id",
-    "source_root", "destination_root", "relocation", "inventory", "files"
+    "source_root", "destination_root", "relocation", "inventory",
+    "identity_anomalies", "files"
   ],
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"const": 2},
     "role": {"const": "artifact_identity_migration_manifest"},
     "migration_id": {"type": "string", "minLength": 1},
     "status": {"enum": ["planned", "relocated_verified"]},
@@ -33,12 +34,54 @@
     "inventory": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["file_count", "bytes", "prune_candidate_file_count", "prune_candidate_bytes"],
+      "required": [
+        "file_count", "bytes", "prune_candidate_file_count", "prune_candidate_bytes",
+        "identity_anomaly_count", "identity_anomaly_file_count"
+      ],
       "properties": {
         "file_count": {"type": "integer", "minimum": 1},
         "bytes": {"type": "integer", "minimum": 0},
         "prune_candidate_file_count": {"type": "integer", "minimum": 0},
-        "prune_candidate_bytes": {"type": "integer", "minimum": 0}
+        "prune_candidate_bytes": {"type": "integer", "minimum": 0},
+        "identity_anomaly_count": {"type": "integer", "minimum": 0},
+        "identity_anomaly_file_count": {"type": "integer", "minimum": 0}
+      }
+    },
+    "identity_anomalies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path", "run_id", "manifest_path", "manifest_section", "recorded_path",
+          "recorded_bytes", "actual_bytes", "recorded_sha256", "actual_sha256",
+          "mismatches"
+        ],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "run_id": {"type": "string", "minLength": 1},
+          "manifest_path": {"type": "string", "minLength": 1},
+          "manifest_section": {"enum": ["inputs", "outputs"]},
+          "recorded_path": {"type": "string", "minLength": 1},
+          "recorded_bytes": {"type": ["integer", "null"], "minimum": 0},
+          "actual_bytes": {"type": ["integer", "null"], "minimum": 0},
+          "recorded_sha256": {"type": ["string", "null"]},
+          "actual_sha256": {
+            "type": ["string", "null"],
+            "pattern": "^[0-9A-F]{64}$"
+          },
+          "mismatches": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "missing_local_file", "invalid_recorded_bytes", "bytes_mismatch",
+                "invalid_recorded_sha256", "sha256_mismatch"
+              ]
+            }
+          }
+        }
       }
     },
     "files": {
@@ -57,7 +100,10 @@
           "disposition": {"enum": ["retain", "prune_after_verified_migration"]},
           "reason": {
             "type": ["string", "null"],
-            "enum": [null, "non_authoritative_workspace", "rebuildable_solver_or_cad_binary"]
+            "enum": [
+              null, "non_authoritative_workspace", "rebuildable_solver_or_cad_binary",
+              "manifest_identity_anomaly"
+            ]
           },
           "run_id": {"type": ["string", "null"]},
           "reference_classes": {

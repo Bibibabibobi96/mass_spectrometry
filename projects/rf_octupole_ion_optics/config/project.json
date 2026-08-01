@@ -9,8 +9,7 @@
       "migration_kind": "administrative_rename_only",
       "artifact_location": {
         "schema_version": 1,
-        "state": "source_pending_relocation",
-        "source_root": "artifacts/projects/rf_octupole_ion_guide",
+        "state": "archived_verified",
         "archive_id": "20260801_120002__migration-snapshot__repo__rf-octupole-ion-guide",
         "archive_root": "artifacts/projects/rf_octupole_ion_optics/archive/20260801_120002__migration-snapshot__repo__rf-octupole-ion-guide/legacy-project-root",
         "migration_manifest": "artifacts/projects/rf_octupole_ion_optics/archive/20260801_120002__migration-snapshot__repo__rf-octupole-ion-guide/identity_migration_manifest.json"
