@@ -278,6 +278,9 @@ function Add-ChangedStageItem {
 Add-ChangedStageItem 'repository_hygiene' $true 'always' {
     & (Join-Path $PSScriptRoot 'verify_repository_hygiene.ps1')
 }
+Add-ChangedStageItem 'repository_text_bytes' $true 'always' {
+    & $PythonExe (Join-Path $PSScriptRoot 'verify_repository_text_bytes.py')
+}
 $documentationReason = if ($hasDocumentationChange) {
     'documentation_or_project_docs_changed'
 } else {

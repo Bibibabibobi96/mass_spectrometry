@@ -37,6 +37,20 @@ function Test-RfOatofPathWithin {
     )
 }
 
+function Get-RfOatofRepositoryTextSha256 {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$Path)
+  $text = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes($Path))
+  $canonical = $text.Replace("`r`n", "`n").Replace("`r", "`n")
+  $bytes = [Text.UTF8Encoding]::new($false).GetBytes($canonical)
+  $algorithm = [Security.Cryptography.SHA256]::Create()
+  try {
+    return [Convert]::ToHexString($algorithm.ComputeHash($bytes))
+  } finally {
+    $algorithm.Dispose()
+  }
+}
+
 function Resolve-RfOatofBoundFile {
   [CmdletBinding()]
   param(
@@ -67,9 +81,13 @@ function Resolve-RfOatofBoundFile {
     throw "$Role is missing or escapes its allowed root: $declaredPath"
   }
   $expectedSha256 = ([string]$Record.sha256).ToUpperInvariant()
+  $actualSha256 = if ($AllowWorkspaceArtifact) {
+    (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+  } else {
+    Get-RfOatofRepositoryTextSha256 -Path $path
+  }
   if ($expectedSha256 -notmatch '^[0-9A-F]{64}$' -or
-      (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ne
-        $expectedSha256) {
+      $actualSha256 -ne $expectedSha256) {
     throw "$Role SHA-256 differs: $declaredPath"
   }
   return $path

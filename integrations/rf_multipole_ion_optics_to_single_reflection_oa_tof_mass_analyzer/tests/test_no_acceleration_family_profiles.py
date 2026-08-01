@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import json
-import hashlib
 import unittest
 from pathlib import Path
 
 from common.contracts.machine_contracts import ContractError, validate_schema
+from common.contracts.file_identity import file_sha256, repository_text_sha256
 from common.integration.resolve_connection import (
     load_connection_profile_registry,
     resolve_connection_profile,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.refresh_family_repository_bindings import (
+    publication_differences,
 )
 
 
@@ -54,17 +57,6 @@ PROJECTS = {
     "hexapole": "rf_hexapole_ion_optics",
     "octupole": "rf_octupole_ion_optics",
 }
-EXPECTED_RESOLVED_SHA256 = {
-    "quadrupole": (
-        "612FB75C645D0DC1FF260D410B611572008F77658554F62DA70A86F0BDCBF65D"
-    ),
-    "hexapole": (
-        "BFC1965531EE5DD69B65F51CB5594C202E08565C14E3A4CFD7DF3B61A850140D"
-    ),
-    "octupole": (
-        "C6901C2473DC7A88EF12FA8199E39FA04F02EF82ADDAC9E791FA8E715165BA71"
-    ),
-}
 EXPECTED_RUN_IDS = {
     ("quadrupole", "comsol"): (
         "20260728_202856__sim__comsol__rf-quadrupole-ion-optics-"
@@ -95,10 +87,6 @@ EXPECTED_RUN_IDS = {
 
 def load(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
-
-
-def sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
 
 
 def family_source_evidence_available() -> bool:
@@ -135,6 +123,9 @@ class NoAccelerationFamilyProfileTests(unittest.TestCase):
             for profile in cls.registry["profiles"]
             if "_no_acceleration_full_length_" in profile["connection_profile_id"]
         }
+
+    def test_family_repository_publications_are_compiler_fresh(self) -> None:
+        self.assertEqual(publication_differences(REPO_ROOT), [])
 
     def test_first_round_contains_exactly_three_direct_mating_profiles(self) -> None:
         self.assertEqual(set(self.family_profiles), FAMILY_PROFILE_IDS)
@@ -233,7 +224,10 @@ class NoAccelerationFamilyProfileTests(unittest.TestCase):
         )
         for mapping in family_mappings:
             binding_path = REPO_ROOT / mapping["runtime_binding_path"]
-            self.assertEqual(mapping["runtime_binding_sha256"], sha256(binding_path))
+            self.assertEqual(
+                mapping["runtime_binding_sha256"],
+                repository_text_sha256(binding_path),
+            )
             binding = load(binding_path)
             validate_schema(
                 binding,
@@ -262,7 +256,9 @@ class NoAccelerationFamilyProfileTests(unittest.TestCase):
             for name, record in contract_records.items():
                 frozen = REPO_ROOT / record["path"]
                 self.assertTrue(frozen.is_file(), (name, frozen))
-                self.assertEqual(record["sha256"], sha256(frozen), name)
+                self.assertEqual(
+                    record["sha256"], repository_text_sha256(frozen), name
+                )
             implementation_registry = load(
                 REPO_ROOT / binding["implementation_binding"]["path"]
             )
@@ -270,7 +266,9 @@ class NoAccelerationFamilyProfileTests(unittest.TestCase):
             for name, record in implementation_registry["implementation"].items():
                 frozen = REPO_ROOT / record["path"]
                 self.assertTrue(frozen.is_file(), (name, frozen))
-                self.assertEqual(record["sha256"], sha256(frozen), name)
+                self.assertEqual(
+                    record["sha256"], repository_text_sha256(frozen), name
+                )
 
     @unittest.skipUnless(
         FAMILY_SOURCE_EVIDENCE_AVAILABLE,
@@ -313,14 +311,14 @@ class NoAccelerationFamilyProfileTests(unittest.TestCase):
             adapter = source_contract["adapter"]
             self.assertEqual(
                 adapter["sha256"],
-                sha256(REPO_ROOT / adapter["path"]),
+                repository_text_sha256(REPO_ROOT / adapter["path"]),
             )
             publication = adapter["dependencies"][
                 "handoff_publication_contract"
             ]
             self.assertEqual(
                 publication["sha256"],
-                sha256(REPO_ROOT / publication["path"]),
+                repository_text_sha256(REPO_ROOT / publication["path"]),
             )
             for branch_id, branch in source_contract["source_branches"].items():
                 self.assertEqual(branch["solver_id"], branch_id)
@@ -344,7 +342,7 @@ class NoAccelerationFamilyProfileTests(unittest.TestCase):
                     record = source[record_name]
                     artifact = WORKSPACE_ROOT / record["path"]
                     self.assertTrue(artifact.is_file(), artifact)
-                    self.assertEqual(record["sha256"], sha256(artifact))
+                    self.assertEqual(record["sha256"], file_sha256(artifact))
                 manifest_hashes.add(source["manifest"]["sha256"])
                 state_hashes.add(source["state"]["sha256"])
                 mother_source_sha256.add(source["particle_source"]["sha256"])
@@ -372,10 +370,9 @@ class NoAccelerationFamilyProfileTests(unittest.TestCase):
                 f"projects/{project}/config/"
                 "resolved_design_no_acceleration_full_length.json",
             )
-            self.assertEqual(resolved["sha256"], EXPECTED_RESOLVED_SHA256[family])
             self.assertEqual(
-                sha256(REPO_ROOT / resolved["path"]),
-                EXPECTED_RESOLVED_SHA256[family],
+                repository_text_sha256(REPO_ROOT / resolved["path"]),
+                resolved["sha256"],
             )
             dependency_binding = binding["contracts"]["dependency_contract"]
             dependency_base = load(REPO_ROOT / dependency_binding["base"]["path"])
@@ -589,7 +586,7 @@ class NoAccelerationFamilyProfileTests(unittest.TestCase):
         self.assertNotIn("comparison_requirements", preregistration)
         self.assertEqual(
             preregistration["engineering_budget"]["sha256"],
-            sha256(BUDGET_PATH),
+            repository_text_sha256(BUDGET_PATH),
         )
         self.assertEqual(
             {

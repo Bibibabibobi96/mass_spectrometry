@@ -32,6 +32,7 @@ function Invoke-IntegrationStage {
 
 $stageActions = [ordered]@{
     documentation = { & (Join-Path $PSScriptRoot 'verify_documentation.ps1') }
+    repository_text_bytes = { & $PythonExe (Join-Path $PSScriptRoot 'verify_repository_text_bytes.py') }
     livelink_failure_classification = { & (Join-Path $PSScriptRoot 'comsol\test_livelink_failure_classification.ps1') }
     livelink_environment = { & (Join-Path $PSScriptRoot 'comsol\test_livelink_environment.ps1') }
     development_standards = { & $PythonExe (Join-Path $PSScriptRoot 'verify_development_standards.py') }
@@ -118,6 +119,7 @@ if ($InternalStage) {
 }
 
 $fastFailStages = @(
+    'repository_text_bytes',
     'livelink_failure_classification',
     'livelink_environment',
     'development_standards',

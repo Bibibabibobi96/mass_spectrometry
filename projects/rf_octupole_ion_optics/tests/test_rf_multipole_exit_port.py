@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import unittest
 from pathlib import Path
+
+from common.contracts.file_identity import repository_text_sha256
 from typing import Any
 
 from common.contracts.machine_contracts import validate_schema
@@ -47,7 +48,7 @@ class RfMultipoleExitPortTests(unittest.TestCase):
         validate_schema(self.port, "component_port.schema.json")
         self.assertEqual(
             self.port["authority"]["source_sha256"],
-            hashlib.sha256(self.source_path.read_bytes()).hexdigest().upper(),
+            repository_text_sha256(self.source_path),
         )
         for binding in self.port["authority"]["bindings"]:
             self.assertEqual(

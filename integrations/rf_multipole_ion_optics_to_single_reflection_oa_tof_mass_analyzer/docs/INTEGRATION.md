@@ -34,6 +34,11 @@ family runtime binding schema v2只冻结公共49项dependency base、家族2项
 implementation registry；运行时由base与overlay生成51项code inventory，并分别冻结两层身份，不再
 建立dependency合同的self-snapshot。
 
+这些repository-text身份由`runtime/refresh_family_repository_bindings.py`单向编译。端口、resolved、
+依赖、实现或source publication变化后只运行一次该入口，不手改下游SHA；`--check`由静态测试失败
+关闭。编译和运行时校验统一使用UTF-8/LF规范文本身份，因此Windows CRLF与GitHub LF checkout不会
+产生不同仓库身份；artifact、run输入和求解器结果仍使用原始字节SHA，不改变历史证据语义。
+
 ## 多极杆族同源闭合状态与声明边界
 
 三个family profile及其COMSOL/SIMION上游source branch已经完成机器合同、runtime binding、源状态和

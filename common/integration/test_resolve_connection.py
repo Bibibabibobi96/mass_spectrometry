@@ -11,9 +11,9 @@ from pathlib import Path
 from common.contracts.machine_contracts import (
     ContractError,
     REPO_ROOT,
-    sha256,
     validate_schema,
 )
+from common.contracts.file_identity import repository_text_sha256
 from common.integration.resolve_connection import (
     load_connection_profile_registry,
     resolve_connection_profile,
@@ -147,7 +147,7 @@ class ResolveConnectionTests(unittest.TestCase):
     def _authority(relative: str, source_path: Path) -> dict:
         return {
             "source_contract": relative,
-            "source_sha256": sha256(source_path),
+            "source_sha256": repository_text_sha256(source_path),
             "bindings": [
                 {
                     "port_json_pointer": "/mating_surface/aperture_radius_mm",
@@ -265,7 +265,7 @@ class ResolveConnectionTests(unittest.TestCase):
         self._write_inputs()
         with self.assertRaisesRegex(ContractError, "authority source SHA-256 is stale"):
             self._resolve()
-        self.upstream["authority"]["source_sha256"] = sha256(
+        self.upstream["authority"]["source_sha256"] = repository_text_sha256(
             self.upstream_source_path
         )
         self.upstream["mating_surface"]["aperture_radius_mm"] = 2.4

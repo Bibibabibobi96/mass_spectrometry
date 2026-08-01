@@ -6,7 +6,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from common.contracts.file_identity import HASH_CHUNK_BYTES, file_sha256
+from common.contracts.file_identity import (
+    HASH_CHUNK_BYTES,
+    file_sha256,
+    repository_text_sha256,
+)
 from common.contracts import (
     migrate_artifacts_v2,
     write_formal_asset_manifest,
@@ -52,6 +56,20 @@ class FileIdentityTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(FileNotFoundError):
                 file_sha256(Path(directory) / "missing.bin")
+
+    def test_repository_text_identity_is_line_ending_invariant(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            lf = root / "lf.json"
+            crlf = root / "crlf.json"
+            legacy_cr = root / "cr.json"
+            lf.write_bytes(b'{"value": 1}\n')
+            crlf.write_bytes(b'{"value": 1}\r\n')
+            legacy_cr.write_bytes(b'{"value": 1}\r')
+            expected = repository_text_sha256(lf)
+            self.assertEqual(repository_text_sha256(crlf), expected)
+            self.assertEqual(repository_text_sha256(legacy_cr), expected)
+            self.assertNotEqual(file_sha256(crlf), expected)
 
     def test_manifest_record_fields_are_byte_for_byte_unchanged(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

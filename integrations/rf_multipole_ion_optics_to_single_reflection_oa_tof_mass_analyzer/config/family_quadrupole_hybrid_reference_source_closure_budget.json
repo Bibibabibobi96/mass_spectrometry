@@ -16,7 +16,9 @@
           }
         }
       ],
-      "source_branch_ids": ["comsol"],
+      "source_branch_ids": [
+        "comsol"
+      ],
       "particle_count": 100,
       "retention_class": "compact"
     },

@@ -17,6 +17,7 @@ from common.contracts.machine_contracts import (
     sha256,
     validate_schema,
 )
+from common.contracts.file_identity import repository_text_sha256
 
 
 def _canonical_sha256(value: Any) -> str:
@@ -84,7 +85,7 @@ def _validate_port_authority(
     source_path = _repo_file(repo_root, authority["source_contract"])
     if source_path == port_path.resolve():
         raise ContractError("component port cannot cite itself as physical authority")
-    source_hash = sha256(source_path)
+    source_hash = repository_text_sha256(source_path)
     if source_hash != authority["source_sha256"]:
         raise ContractError("component port authority source SHA-256 is stale")
     source = load_json(source_path)
@@ -331,11 +332,11 @@ def _resolve_profile(
             "profile_sha256": _canonical_sha256(profile),
             "upstream_port": {
                 "path": upstream_ref["port_contract"],
-                "sha256": sha256(upstream_path),
+                "sha256": repository_text_sha256(upstream_path),
             },
             "downstream_port": {
                 "path": downstream_ref["port_contract"],
-                "sha256": sha256(downstream_path),
+                "sha256": repository_text_sha256(downstream_path),
             },
             "upstream_authority": {
                 "path": upstream_port["authority"]["source_contract"],
@@ -468,7 +469,7 @@ def write_resolved_and_plan(
     resolved = resolve_connection_profile(registry, profile_id, repo_root=root)
     resolved["sources"]["profile_registry"] = {
         "path": registry_file.relative_to(root).as_posix(),
-        "sha256": sha256(registry_file),
+        "sha256": repository_text_sha256(registry_file),
     }
     validate_schema(resolved, "resolved_connection.schema.json")
     resolved_path = Path(resolved_output)
@@ -515,7 +516,7 @@ def verify_composition_plan(
         if source is None:
             continue
         source_path = _repo_file(root, source["path"])
-        if source["sha256"] != sha256(source_path):
+        if source["sha256"] != repository_text_sha256(source_path):
             raise ContractError(f"resolved connection source SHA-256 is stale: {source_name}")
 
 
