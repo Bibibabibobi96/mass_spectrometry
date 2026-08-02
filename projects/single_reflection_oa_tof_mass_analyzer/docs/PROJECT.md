@@ -82,6 +82,13 @@ Candidate唯一公开入口为`../workflows/design_candidate/run_candidate.py`�
 显式seed，依次执行粒子表、COMSOL、SIMION、CAD和结构验收。成功结果固定为
 `candidate_accepted_not_promoted`，不含晋升。晋升必须由独立事务完成。
 
+首个声明式campaign `20260802_130000__sim__cross__midgrid-campaign`已完成：1628.8001 V名义行和
+1600 V诊断行均以同一seed、N=100串行通过COMSOL、SIMION、SolidWorks与结构验收，两个子manifest和
+campaign receipt完整。两行SIMION均100/100命中；名义行/诊断行飞行时间标准差分别为0.234492 ns和
+46.486615 ns，FWHM分辨率分别为64610.15和325.67，而最大命中半径仅相差0.00286 mm。该固定样本结果
+表明midgrid电压对时间聚焦高度敏感，并支持保留理论名义值；它不含COMSOL粒子级比较、统计重复或数值
+收敛，仍是`candidate_accepted_not_promoted`，不构成Formal性能资格。
+
 ## 已知兼容边界
 
 - COMSOL 6.4当前模型在极小求解粒子数路径存在非单调原生不稳定；日常使用N=100，逻辑小样本仅在
@@ -95,14 +102,8 @@ Candidate唯一公开入口为`../workflows/design_candidate/run_candidate.py`�
 
 ## 开放任务
 
-1. **完成首次声明式experiment campaign运行。** v1表schema、参数角色、全表预检、单行/全表串行调度、
-   campaign→selection→Candidate manifest哈希链和只读status/receipt入口已经实现；五质量点继续是
-   `mass_spectrum_candidate`单run的联合内部条件，不展开为campaign行。活动
-   `config/experiment_campaign.json`已预登记并授权`reflectron_midgrid_voltage`两行N=100结构比较；
-   request、science profile与1600–1650 V窄物理envelope已原子对齐。剩余关闭条件是在保持商业求解器
-   并发1、retry=0、无复用与无晋升边界下完成首次全表受控运行并冻结各行三件套与campaign receipt。
-2. **复现交付。** 按需从自包含Formal目录生成不含日志和收敛参考的ZIP及独立SHA；ZIP不是第二资产权威。
-3. **按需求启动的物理候选。** 轴对称圆形加速器、真实丝网、制造/装配误差预算和二维轴对称混合
+1. **复现交付。** 按需从自包含Formal目录生成不含日志和收敛参考的ZIP及独立SHA；ZIP不是第二资产权威。
+2. **按需求启动的物理候选。** 轴对称圆形加速器、真实丝网、制造/装配误差预算和二维轴对称混合
    COMSOL模型均暂缓；任何一项启动都须重新闭合理论、三维场、传输、网格、跨求解器与CAD。
 
 开放任务只写未完成动作和关闭条件。已完成的Candidate bootstrap、路径修复、receipt治理、历史失败

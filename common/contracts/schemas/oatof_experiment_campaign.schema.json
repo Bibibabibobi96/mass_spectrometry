@@ -48,7 +48,8 @@
         "solver_numerics",
         "design_variable_catalog",
         "optimization_envelope",
-        "candidate_workflow"
+        "candidate_workflow",
+        "candidate_runtime"
       ],
       "properties": {
         "baseline": {"$ref": "#/$defs/file_record"},
@@ -56,7 +57,8 @@
         "solver_numerics": {"$ref": "#/$defs/file_record"},
         "design_variable_catalog": {"$ref": "#/$defs/file_record"},
         "optimization_envelope": {"$ref": "#/$defs/file_record"},
-        "candidate_workflow": {"$ref": "#/$defs/file_record"}
+        "candidate_workflow": {"$ref": "#/$defs/file_record"},
+        "candidate_runtime": {"$ref": "#/$defs/file_record"}
       }
     },
     "allowed_variation_axes": {

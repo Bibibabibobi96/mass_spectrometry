@@ -29,6 +29,36 @@ RUNTIME_CONFIG = PROJECT_ROOT / "config" / "candidate_runtime.json"
 EXECUTION_PROFILES = PROJECT_ROOT / "config" / "execution_profiles.json"
 
 
+def validate_candidate_runtime(
+    artifact_project_root: Path | None = None,
+) -> dict[str, Any]:
+    """Validate the machine binding and its registered SIMION template."""
+    artifact_root = (
+        artifact_project_root
+        or WORKSPACE_ROOT / "artifacts" / "projects" / "single_reflection_oa_tof_mass_analyzer"
+    ).resolve()
+    runtime = load_json(RUNTIME_CONFIG)
+    if runtime.get("role") != "oa_tof_candidate_runtime":
+        raise ValueError("candidate runtime config has an unsupported role")
+    executable = Path(str(runtime.get("simion_executable", "")))
+    if not executable.is_file():
+        raise ValueError("candidate SIMION executable is absent")
+    template_run_id = str(runtime.get("simion_template_run_id", ""))
+    validate_run_id(template_run_id)
+    template = artifact_root / "runs" / template_run_id
+    from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import (
+        _registered_candidate_template,
+    )
+
+    registration = _registered_candidate_template(template, artifact_root)
+    return {
+        "runtime": runtime,
+        "artifact_root": artifact_root,
+        "template": template,
+        "registration": registration,
+    }
+
+
 def _proposal_for_request(request_path: Path) -> Path:
     request = request_path.resolve(strict=True)
     proposal = request.parent / "candidate_proposal.json"
@@ -101,10 +131,8 @@ def prepare_execution(
     contracts = preparation / "candidate_contracts"
     baseline, resolved, diff = write_candidate(proposal, contracts)
     _runtime_coverage(request, diff)
-    runtime = load_json(RUNTIME_CONFIG)
-    if runtime.get("role") != "oa_tof_candidate_runtime":
-        raise ValueError("candidate runtime config has an unsupported role")
-    template = artifact_root / "runs" / runtime["simion_template_run_id"]
+    runtime_preflight = validate_candidate_runtime(artifact_root)
+    template = runtime_preflight["template"]
     plan = prepare_candidate_run(
         baseline,
         resolved,

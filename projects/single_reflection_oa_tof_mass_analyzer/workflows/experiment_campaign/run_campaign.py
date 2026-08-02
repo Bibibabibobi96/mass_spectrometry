@@ -14,6 +14,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.experiment_campaig
 )
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate import (
     execute_request,
+    validate_candidate_runtime,
 )
 
 
@@ -41,6 +42,9 @@ def main() -> None:
     if not args.campaign_run_id:
         parser.error("execution requires --campaign-run-id")
 
+    # Machine/runtime evidence is intentionally outside CI artifacts. Validate it
+    # before execute_campaign is allowed to allocate campaign or child evidence.
+    validate_candidate_runtime()
     run_root, summary = execute_campaign(
         args.campaign,
         args.campaign_run_id,

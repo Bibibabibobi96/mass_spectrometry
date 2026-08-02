@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from common.contracts.artifact_naming import validate_run_id
+from common.contracts.artifact_naming import validate_run_id, validate_task_id
 from common.contracts.machine_contracts import load_json, sha256, validate_schema
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.compile_candidate_design import (
     compile_proposal,
@@ -186,6 +186,13 @@ def _authorization_blockers(
         blockers.append("campaign is not preregistered")
     if request["status"] != "approved" or request["approval"] is None:
         blockers.append("base request is not approved")
+    runtime = authorities["candidate_runtime"]
+    if (
+        runtime.get("role") != "oa_tof_candidate_runtime"
+        or not runtime.get("simion_executable")
+        or not runtime.get("simion_template_run_id")
+    ):
+        blockers.append("candidate runtime authority is incomplete")
     validated = set(
         authorities["science_profile"]
         .get("current_validated_extent", {})
@@ -440,7 +447,7 @@ def preflight_campaign(
 ) -> dict[str, Any]:
     if (experiment_id is None) == (not run_all):
         raise ValueError("select exactly one experiment_id or run_all")
-    validate_run_id(campaign_run_id)
+    run_identity = validate_run_id(campaign_run_id)
     resolved = validate_campaign(campaign_path, require_authorized=True)
     document = resolved["document"]
     available = {item["experiment_id"] for item in document["experiments"]}
@@ -459,7 +466,12 @@ def preflight_campaign(
             raise FileExistsError(
                 f"candidate run already exists: {experiment['authorized_run_id']}"
             )
-    scratch = artifact_root / "scratch" / f"{campaign_run_id}__campaign-preflight"
+    task_id = (
+        f"{run_identity['stamp']}__cross__campaign-preflight-"
+        f"{resolved['sha256'][:8].lower()}"
+    )
+    validate_task_id(task_id)
+    scratch = artifact_root / "scratch" / task_id
     if scratch.exists():
         raise FileExistsError(f"campaign preflight already exists: {scratch}")
     all_rows = _materialize_rows(resolved, scratch / "rows", available)
@@ -520,6 +532,7 @@ def execute_campaign(
     frozen_table = inputs / "experiment_campaign.json"
     shutil.copy2(resolved["path"], frozen_table)
     shutil.copytree(prepared["scratch"] / "rows", rows_root)
+    shutil.rmtree(prepared["scratch"])
     config = {
         "schema_version": 1,
         "role": "oatof_experiment_campaign_run_config",

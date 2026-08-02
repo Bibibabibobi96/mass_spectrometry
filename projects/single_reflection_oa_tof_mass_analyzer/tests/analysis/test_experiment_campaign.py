@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest import mock
 
 from common.contracts.machine_contracts import load_json, sha256
+from common.contracts.artifact_naming import validate_task_id
 from projects.single_reflection_oa_tof_mass_analyzer.analysis import (
     experiment_campaign as campaign_module,
 )
@@ -116,6 +117,7 @@ class ExperimentCampaignTests(unittest.TestCase):
                 artifact_root=artifact_root,
             )
             self.assertEqual(len(prepared["rows"]), 2)
+            validate_task_id(prepared["scratch"].name)
 
     def test_campaign_value_outside_narrow_envelope_is_rejected(self):
         with authorized_campaign_fixture() as (campaign_path, campaign):
@@ -243,6 +245,9 @@ class ExperimentCampaignTests(unittest.TestCase):
                 )
                 self.assertEqual(calls, [campaign["experiments"][0]["authorized_run_id"]])
                 self.assertEqual(summary["status"], "failed")
+                self.assertFalse(
+                    any((Path(root) / "scratch").glob("*campaign-preflight*"))
+                )
                 self.assertEqual(
                     [item["status"] for item in summary["rows"]],
                     ["failed", "not_started_due_to_prior_failure"],

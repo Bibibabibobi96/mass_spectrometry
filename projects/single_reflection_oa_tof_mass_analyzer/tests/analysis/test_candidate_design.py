@@ -83,6 +83,35 @@ class CandidateDesignTests(unittest.TestCase):
         (run_root / "run_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
         return run_root
 
+    def test_candidate_runtime_preflight_validates_registered_source_hashes(self):
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            artifact_root = (
+                root_path
+                / "artifacts"
+                / "projects"
+                / "single_reflection_oa_tof_mass_analyzer"
+            )
+            registration = self.registered_template_run(artifact_root)
+            runtime = root_path / "candidate_runtime.json"
+            runtime.write_text(
+                json.dumps(
+                    {
+                        "role": "oa_tof_candidate_runtime",
+                        "simion_executable": sys.executable,
+                        "simion_template_run_id": registration.name,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with mock.patch.object(candidate_entry, "RUNTIME_CONFIG", runtime):
+                preflight = candidate_entry.validate_candidate_runtime(artifact_root)
+                self.assertEqual(preflight["template"], registration)
+                source_iob = Path(preflight["registration"]["source_iob"])
+                source_iob.write_bytes(b"mutated-after-registration")
+                with self.assertRaisesRegex(ValueError, "SHA-256 changed"):
+                    candidate_entry.validate_candidate_runtime(artifact_root)
+
     def base_request(self):
         request = load_json(REPO_ROOT / "common" / "contracts" / "examples" / "oa_tof_500da_r30000.example.json")
         request["status"] = "approved"
