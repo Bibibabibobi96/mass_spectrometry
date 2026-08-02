@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-PYTHON_EXE = REPO_ROOT / ".venv" / "Scripts" / "python.exe"
 SOURCE_GATE = REPO_ROOT / "integrations" / Path(__file__).resolve().parents[1].name / "verify_integration.ps1"
 
 
@@ -41,8 +41,8 @@ class IntegrationGateFailureTests(unittest.TestCase):
                     "-NoProfile",
                     "-File",
                     str(integration / "verify_integration.ps1"),
-                "-PythonExe",
-                str(PYTHON_EXE),
+                    "-PythonExe",
+                    sys.executable,
                 ],
                 cwd=root,
                 capture_output=True,
