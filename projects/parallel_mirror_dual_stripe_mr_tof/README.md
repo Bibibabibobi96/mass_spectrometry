@@ -16,8 +16,8 @@
 另一条单 Stripe 项目，也不自动成为本项目baseline。
 
 仓库结构、产物生命周期、正式化和 Git 规则统一继承根[`README.md`](../../README.md)。原始 CAD
-二进制以迁移前身份保存在同级 `artifacts/projects/mr_tof/archive/` 的只读快照中，不进入 Git；
-新运行只能使用当前项目身份和 `artifacts/projects/open_path_parallel_mirror_dual_stripe_mr_tof_mass_analyzer/`。
+二进制已以迁移前`mr_tof`身份逐文件验证并只读迁入当前项目具名archive，不进入 Git；新运行只能使用当前
+`parallel_mirror_dual_stripe_mr_tof`身份和同名artifact根。
 
 ## 当前权威入口
 

@@ -5,6 +5,8 @@
 
 ## 已完成审计
 
+- [2026-08-02 MR-TOF项目身份整合](history/20260802__mrtof-project-identity-consolidation.md)：
+  将活动项目统一为短名称，完整迁移旧`mr_tof` CAD artifact，并关闭长路径和旧根兼容面。
 - [2026-08-01 artifact顶层布局闭合](history/20260801__artifact-top-level-layout-closure.md)：
   关闭oaTOF零字节空run、六极杆非标准顶层及全仓同类不完整run身份，统一冻结到具名archive。
 - [2026-08-01 oaTOF旧身份artifact迁移与减容审计](history/20260801__oatof-legacy-artifact-migration-audit.md)：

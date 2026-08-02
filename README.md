@@ -126,7 +126,7 @@ simulation_repo/
 │  └─ multipoles/              # 多极杆设计族通用理论与可复现图示
 ├─ projects/                 # 平级项目；不再按软件或器件类别嵌套
 │  ├─ single_reflection_oa_tof_mass_analyzer/
-│  ├─ open_path_parallel_mirror_dual_stripe_mr_tof_mass_analyzer/
+│  ├─ parallel_mirror_dual_stripe_mr_tof/
 │  ├─ apertured_tube_electron_impact_ion_source/
 │  ├─ rf_quadrupole_ion_optics/
 │  ├─ rf_hexapole_ion_optics/
@@ -163,7 +163,7 @@ simulation_repo/
 | `project_id` / 目录 | `display_name` |
 |---|---|
 | `single_reflection_oa_tof_mass_analyzer` | 单次反射正交加速飞行时间质量分析器 |
-| `open_path_parallel_mirror_dual_stripe_mr_tof_mass_analyzer` | 开放路径平行镜双条带多次反射飞行时间质量分析器 |
+| `parallel_mirror_dual_stripe_mr_tof` | 开放路径平行镜双条带多次反射飞行时间质量分析器 |
 | `apertured_tube_electron_impact_ion_source` | 开孔长管电子轰击离子源 |
 | `rf_quadrupole_ion_optics` | RF四极杆离子光学 |
 | `rf_hexapole_ion_optics` | RF六极杆离子光学 |

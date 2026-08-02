@@ -52,7 +52,9 @@ species、particle identity和lineage之间显式转换并冻结来源。
    因Windows拒绝同卷原子目录移动而继续处于`source_pending_relocation`，恢复契约见同日迁移审计。
    oaTOF旧根已迁入当前项目archive并通过全量SHA-256、SIMION四实例运行时加载及SolidWorks 25组件
    引用复核；旧定位已从活动合同移除，历史manifest保持原字节和原身份。减容已作为迁移后的独立
-   manifest级保留审计完成，删除规则没有把文件大小本身当作授权依据。
+   manifest级保留审计完成，删除规则没有把文件大小本身当作授权依据。MR-TOF旧`mr_tof`根也已完整
+   迁入`parallel_mirror_dual_stripe_mr_tof`具名archive，121个文件逐项复核且无身份异常；其原始CAD
+   manifest继续保留旧身份和原声明边界。
 
 ## 面向大规模代码库的扩展护栏
 
@@ -112,7 +114,7 @@ species、particle identity和lineage之间显式转换并冻结来源。
 - 环厚、环宽、间距、孔径、屏蔽、漂移长度和电压的优化属于当前设计的候选run。
 - 飞行拓扑变为两次独立折返时，建立`double_reflection_oa_tof_mass_analyzer`等新的平级项目。
 - MR-TOF具有多次往返和独立验收体系，已建立独立
-  `open_path_parallel_mirror_dual_stripe_mr_tof_mass_analyzer`原型项目接收用户自绘CAD种子；后续理论、
+  `parallel_mirror_dual_stripe_mr_tof`原型项目接收用户自绘CAD种子；后续理论、
   参数化和验证在该项目内逐步建立，不放进单次反射oa-TOF的Formal资产。
 - 若多个TOF项目实际复用同一分析或生成器，再将经验证的部分提升到`common/tof/`。
 

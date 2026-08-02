@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "project_id": "open_path_parallel_mirror_dual_stripe_mr_tof_mass_analyzer",
+  "project_id": "parallel_mirror_dual_stripe_mr_tof",
   "legacy_identities": [
     {
       "mapping_id": "mr_tof_rename_20260728",
@@ -9,11 +9,10 @@
       "migration_kind": "administrative_rename_only",
       "artifact_location": {
         "schema_version": 1,
-        "state": "source_pending_relocation",
-        "source_root": "artifacts/projects/mr_tof",
+        "state": "archived_verified",
         "archive_id": "20260801_130002__migration-snapshot__repo__mr-tof",
-        "archive_root": "artifacts/projects/open_path_parallel_mirror_dual_stripe_mr_tof_mass_analyzer/archive/20260801_130002__migration-snapshot__repo__mr-tof/legacy-project-root",
-        "migration_manifest": "artifacts/projects/open_path_parallel_mirror_dual_stripe_mr_tof_mass_analyzer/archive/20260801_130002__migration-snapshot__repo__mr-tof/identity_migration_manifest.json"
+        "archive_root": "artifacts/projects/parallel_mirror_dual_stripe_mr_tof/archive/20260801_130002__migration-snapshot__repo__mr-tof/legacy-project-root",
+        "migration_manifest": "artifacts/projects/parallel_mirror_dual_stripe_mr_tof/archive/20260801_130002__migration-snapshot__repo__mr-tof/identity_migration_manifest.json"
       },
       "artifact_access": "read_only",
       "new_runs_allowed": false,

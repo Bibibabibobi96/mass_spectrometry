@@ -22,10 +22,14 @@ baseline、参数化几何、独立求解器验证到 SolidWorks CAD 和性能�
 - 不得把该快照放入 `formal/`，也不得据此声明仓库已经具备 MR-TOF 模拟或自动优化能力。
 
 本机证据入口为
-`artifacts/projects/mr_tof/archive/20260721_102322__migration-snapshot__cad__initial-user-design/archive_manifest.json`；
+`artifacts/projects/parallel_mirror_dual_stripe_mr_tof/archive/`
+`20260801_130002__migration-snapshot__repo__mr-tof/legacy-project-root/archive/`
+`20260721_102322__migration-snapshot__cad__initial-user-design/archive_manifest.json`；
 manifest保存原始来源、119个文件（9个SLDASM、110个SLDPRT）、48,392,256字节和逐文件SHA-256。
-该路径及manifest中的`mr_tof`是迁移前记录身份，只读保留且不允许接收新运行。新运行使用当前项目
-身份和新artifact根。二进制不进入Git，因此换机后须单独迁移artifacts并复核哈希。
+manifest中的`mr_tof`是迁移前记录身份，只读保留且不允许接收新运行。新运行使用当前
+`parallel_mirror_dual_stripe_mr_tof`身份和同名artifact根。二进制不进入Git，因此换机后须单独迁移
+artifacts并复核哈希。旧artifact根已经逐文件迁入并删除，描述符状态为`archived_verified`，解析器不再
+回退或搜索迁移前顶层路径。
 
 ## 分阶段建立顺序
 
