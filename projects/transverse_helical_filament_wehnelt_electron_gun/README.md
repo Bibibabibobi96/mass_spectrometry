@@ -52,8 +52,9 @@ runner在run目录建立后立即写入`interrupted`预置summary和已复核man
 - 新运行只写入
   `artifacts/projects/transverse_helical_filament_wehnelt_electron_gun/`。
 - 当前没有通过现行门禁的formal资产；改名前的旧“formal”、中间模型和结果按原manifest身份只读冻结在
-  `artifacts/projects/wehnelt_electron_gun/archive/20260719_212436__migration-snapshot__repo__pre-v2-layout/legacy-layout/`。
-- 旧根不搬移、不改写、不接收新运行，也不得在新项目身份下晋升。
+  当前项目根的`archive/20260801_130004__migration-snapshot__repo__wehnelt-electron-gun/
+  legacy-project-root/archive/20260719_212436__migration-snapshot__repo__pre-v2-layout/legacy-layout/`。
+- 旧身份证据已完成全树SHA迁移；归档载荷不改写、不接收新运行，也不得在新项目身份下晋升。
 - 新运行必须写入活动根的`runs/<run_id>/{comsol,results,logs}`并形成run config、summary和manifest。
 - 历史模型和结果位于上述migration snapshot的
   `legacy-layout/{models,results}/comsol/archive/lineages/{solid_cathode,axial_coil}/`；这些路径只用于追溯。

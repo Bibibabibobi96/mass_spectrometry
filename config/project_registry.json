@@ -4,7 +4,7 @@
   "generated_from": [
     {
       "descriptor": "projects/apertured_tube_electron_impact_ion_source/config/project.json",
-      "sha256": "186AD56AF86DB191E6FBDAAFAEC429BB17DDDEFC4EADE91DAAA270AC1908A0D4"
+      "sha256": "D528FF6FB6481620D85D914E1504BE072F94EBC60F52B4DE4C7B388E419A3423"
     },
     {
       "descriptor": "projects/parallel_mirror_dual_stripe_mr_tof/config/project.json",
@@ -28,7 +28,7 @@
     },
     {
       "descriptor": "projects/transverse_helical_filament_wehnelt_electron_gun/config/project.json",
-      "sha256": "01612FA682C053F89F5A2ABB4BE4F7C9D4117257B7C1DC19F2F6E3EE67067320"
+      "sha256": "572DC04628DFB2C49E1D5F0BBC9B372C09A79333EFB3D8EBC5AC7F12F403B1CF"
     }
   ],
   "projects": [
@@ -43,8 +43,7 @@
           "migration_kind": "administrative_rename_only",
           "artifact_location": {
             "schema_version": 1,
-            "state": "source_pending_relocation",
-            "source_root": "artifacts/projects/electron_impact_ion_source",
+            "state": "archived_verified",
             "archive_id": "20260801_130001__migration-snapshot__repo__electron-impact-ion-source",
             "archive_root": "artifacts/projects/apertured_tube_electron_impact_ion_source/archive/20260801_130001__migration-snapshot__repo__electron-impact-ion-source/legacy-project-root",
             "migration_manifest": "artifacts/projects/apertured_tube_electron_impact_ion_source/archive/20260801_130001__migration-snapshot__repo__electron-impact-ion-source/identity_migration_manifest.json"
@@ -692,8 +691,7 @@
           "migration_kind": "administrative_rename_only",
           "artifact_location": {
             "schema_version": 1,
-            "state": "source_pending_relocation",
-            "source_root": "artifacts/projects/wehnelt_electron_gun",
+            "state": "archived_verified",
             "archive_id": "20260801_130004__migration-snapshot__repo__wehnelt-electron-gun",
             "archive_root": "artifacts/projects/transverse_helical_filament_wehnelt_electron_gun/archive/20260801_130004__migration-snapshot__repo__wehnelt-electron-gun/legacy-project-root",
             "migration_manifest": "artifacts/projects/transverse_helical_filament_wehnelt_electron_gun/archive/20260801_130004__migration-snapshot__repo__wehnelt-electron-gun/identity_migration_manifest.json"

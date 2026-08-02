@@ -55,5 +55,6 @@ config/resolved_model.json`。MATLAB只消费resolved并绑定GUI参数，不从
 
 新活动产物根为`artifacts/projects/transverse_helical_filament_wehnelt_electron_gun/`。当前没有通过
 现行门禁的Formal资产。旧模型、结果与谱系按原manifest身份只读保存在
-`artifacts/projects/wehnelt_electron_gun/`，不搬移、不改写、不追加新run，也不改变原资格和声明边界；
+该根的`archive/20260801_130004__migration-snapshot__repo__wehnelt-electron-gun/legacy-project-root/`，
+不改写、不追加新run，也不改变原资格和声明边界；
 新运行只进入活动根的`runs/<run_id>/`并遵守根README三件套与manifest合同。

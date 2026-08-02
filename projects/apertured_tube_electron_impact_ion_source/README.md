@@ -7,8 +7,8 @@
 当前实现入口是[`comsol/ms_stage1_ei_source.m`](comsol/ms_stage1_ei_source.m)，路径解析器为
 [`ei_source_paths.m`](ei_source_paths.m)。新模型与结果写入
 `artifacts/projects/apertured_tube_electron_impact_ion_source/`，不进入Git。重命名前的旧运行和归档
-按原manifest身份只读保存在`artifacts/projects/electron_impact_ion_source/`，不得在新身份下改写或
-晋升。当前正式/候选资格、已知限制和下一步只以PROJECT为准，本入口不复制具体参数或运行结论。
+已按原manifest身份迁入该根的具名migration archive；不得在新身份下改写或晋升。当前正式/候选资格、
+已知限制和下一步只以PROJECT为准，本入口不复制具体参数或运行结论。
 
 机器身份、能力边界和当前`prototype`成熟度由[`config/project.json`](config/project.json)声明；
 它用于项目发现，不把现有脚本自动提升为候选或正式资产。

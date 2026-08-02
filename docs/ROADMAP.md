@@ -54,7 +54,8 @@ species、particle identity和lineage之间显式转换并冻结来源。
    引用复核；旧定位已从活动合同移除，历史manifest保持原字节和原身份。减容已作为迁移后的独立
    manifest级保留审计完成，删除规则没有把文件大小本身当作授权依据。MR-TOF旧`mr_tof`根也已完整
    迁入`parallel_mirror_dual_stripe_mr_tof`具名archive，121个文件逐项复核且无身份异常；其原始CAD
-   manifest继续保留旧身份和原声明边界。
+   manifest继续保留旧身份和原声明边界。电子轰击离子源与Wehnelt电子枪旧根也已分别迁入当前项目
+   具名archive，13个/409个文件完成全量SHA-256复核且无身份异常；本轮没有执行可重建载荷裁剪。
 
 ## 面向大规模代码库的扩展护栏
 

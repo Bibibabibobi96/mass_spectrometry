@@ -9,8 +9,7 @@
       "migration_kind": "administrative_rename_only",
       "artifact_location": {
         "schema_version": 1,
-        "state": "source_pending_relocation",
-        "source_root": "artifacts/projects/wehnelt_electron_gun",
+        "state": "archived_verified",
         "archive_id": "20260801_130004__migration-snapshot__repo__wehnelt-electron-gun",
         "archive_root": "artifacts/projects/transverse_helical_filament_wehnelt_electron_gun/archive/20260801_130004__migration-snapshot__repo__wehnelt-electron-gun/legacy-project-root",
         "migration_manifest": "artifacts/projects/transverse_helical_filament_wehnelt_electron_gun/archive/20260801_130004__migration-snapshot__repo__wehnelt-electron-gun/identity_migration_manifest.json"

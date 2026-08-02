@@ -9,8 +9,7 @@
       "migration_kind": "administrative_rename_only",
       "artifact_location": {
         "schema_version": 1,
-        "state": "source_pending_relocation",
-        "source_root": "artifacts/projects/electron_impact_ion_source",
+        "state": "archived_verified",
         "archive_id": "20260801_130001__migration-snapshot__repo__electron-impact-ion-source",
         "archive_root": "artifacts/projects/apertured_tube_electron_impact_ion_source/archive/20260801_130001__migration-snapshot__repo__electron-impact-ion-source/legacy-project-root",
         "migration_manifest": "artifacts/projects/apertured_tube_electron_impact_ion_source/archive/20260801_130001__migration-snapshot__repo__electron-impact-ion-source/identity_migration_manifest.json"
