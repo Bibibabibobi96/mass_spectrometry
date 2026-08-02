@@ -106,7 +106,7 @@ class CandidateDesignTests(unittest.TestCase):
             )
             with mock.patch.object(candidate_entry, "RUNTIME_CONFIG", runtime):
                 preflight = candidate_entry.validate_candidate_runtime(artifact_root)
-                self.assertEqual(preflight["template"], registration)
+                self.assertTrue(preflight["template"].samefile(registration))
                 source_iob = Path(preflight["registration"]["source_iob"])
                 source_iob.write_bytes(b"mutated-after-registration")
                 with self.assertRaisesRegex(ValueError, "SHA-256 changed"):
