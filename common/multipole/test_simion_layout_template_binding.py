@@ -6,6 +6,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from common.contracts.artifact_identity_migration import (
+    apply_migration,
+    build_plan,
+    legacy_artifact_location,
+)
 from common.multipole.simion_layout_template import resolve_simion_layout_template
 
 
@@ -36,23 +41,29 @@ class SimionLayoutTemplateBindingTests(unittest.TestCase):
                 REPO_ROOT / "projects" / provider / "config/project.json"
             ).read_text(encoding="utf-8")
         )
-        provider_descriptor = {
+        archived_descriptor = {
             "project_id": source_descriptor["project_id"],
             "legacy_identities": source_descriptor["legacy_identities"],
         }
+        provider_descriptor = json.loads(json.dumps(archived_descriptor))
+        provider_mapping = provider_descriptor["legacy_identities"][0]
+        provider_mapping["artifact_location"]["state"] = "source_pending_relocation"
+        provider_mapping["artifact_location"]["source_root"] = (
+            f"artifacts/projects/{provider_mapping['project_id']}"
+        )
         _write_json(
             self.repo_root / "projects" / provider / "config/project.json",
             provider_descriptor,
         )
 
         evidence_identity = registry["legacy_evidence_identity"]
-        provider_mapping = provider_descriptor["legacy_identities"][0]
-        artifact_location = provider_mapping.get("artifact_location")
-        artifact_root = (
-            artifact_location["source_root"]
-            if artifact_location is not None
-            else provider_mapping["artifact_root"]
+        artifact_root = legacy_artifact_location(
+            provider_mapping, provider_descriptor["project_id"]
+        )["active_root"]
+        current_artifact_root = (
+            fixture_root / "artifacts" / "projects" / provider
         )
+        current_artifact_root.mkdir(parents=True)
         run_root = (
             fixture_root
             / artifact_root
@@ -139,6 +150,18 @@ class SimionLayoutTemplateBindingTests(unittest.TestCase):
             self.repo_root / "common/multipole/simion_layout_template.json"
         )
         _write_json(self.registry_path, registry)
+        archive_id = provider_mapping["artifact_location"]["archive_id"]
+        plan = build_plan(
+            self.repo_root,
+            fixture_root / "artifacts" / "projects",
+            provider,
+            archive_id,
+        )
+        apply_migration(plan, fixture_root / "artifacts" / "projects")
+        _write_json(
+            self.repo_root / "projects" / provider / "config/project.json",
+            archived_descriptor,
+        )
 
     def _write_modified_registry(self, modified: dict, name: str) -> Path:
         registry_path = self.repo_root / "test_registries" / name

@@ -20,7 +20,7 @@
     },
     {
       "descriptor": "projects/rf_quadrupole_ion_optics/config/project.json",
-      "sha256": "0B4CE3E343F73761CDF232A60AE636044B6D113F77E8F34FE1433DC5B90204F6"
+      "sha256": "5D19642AA384C1037A27F0CB21E33DB205948FCDA0FD1103D4A2E4418445F5ED"
     },
     {
       "descriptor": "projects/single_reflection_oa_tof_mass_analyzer/config/project.json",
@@ -441,8 +441,7 @@
           "migration_kind": "administrative_rename_only",
           "artifact_location": {
             "schema_version": 1,
-            "state": "source_pending_relocation",
-            "source_root": "artifacts/projects/rf_quadrupole_collision_cooling",
+            "state": "archived_verified",
             "archive_id": "20260801_120000__migration-snapshot__repo__rf-quadrupole-collision-cooling",
             "archive_root": "artifacts/projects/rf_quadrupole_ion_optics/archive/20260801_120000__migration-snapshot__repo__rf-quadrupole-collision-cooling/legacy-project-root",
             "migration_manifest": "artifacts/projects/rf_quadrupole_ion_optics/archive/20260801_120000__migration-snapshot__repo__rf-quadrupole-collision-cooling/identity_migration_manifest.json"

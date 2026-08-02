@@ -232,12 +232,12 @@ oaTOF handoff与pulse_capture local-exit仍保留其坐标和事件语义，但c
 结果和证据身份；本文件不复制全部run ID。2026-07-28以前的实现目录清单、数值表、诊断失败链和
 既有开放任务原文均冻结于`history/20260728__pre-document-consolidation-*.md`，不得用其“当前”
 覆盖本文件。
-改名前证据继续按`config/project.json`的legacy location合同只读；当前为
-`source_pending_relocation`，已冻结迁入本项目具名archive的唯一目的地但尚未真实移动。迁移不改写旧
-manifest、不追加旧身份run，并保持原身份、状态与声明边界；切为`archived_verified`后不再回退旧根。
-2026-08-02重新生成的v3闭世界计划已对13,326个文件、33,494,632,927字节完成两遍源SHA验证；v2因
-旧根内部新增一次受控archive包装而过期。当前仍未执行移动、复制、删除或裁剪；恢复时只使用history
-记录的v3计划和标准同卷原子入口。
+改名前证据继续按`config/project.json`的legacy location合同从本项目具名archive只读；状态为
+`archived_verified`，旧顶层项目根已退出。2026-08-02标准同卷原子迁移对13,326个文件、
+33,494,632,927字节完成源端和目的端全量SHA验证，没有改写旧manifest或追加旧身份run。随后按冻结
+裁剪计划删除1,055个可重建求解器/CAD二进制及非权威工作区文件，共31,437,689,483字节；保留
+12,271个文件、2,056,943,444字节以及唯一身份异常证据。archive manifest和完成态pruning journal是
+该不可逆裁剪的机器审计依据，具体计划身份与执行过程见仓库级history。
 
 无碰撞L3薄wrapper默认使用根README定义的`compact`产物保留类；数值资格或GUI复核需要MPH、PA解阵列
 或完整轨迹时，必须在运行前显式选择非compact类并写明理由。该设置只管理产物，不是数值或资格参数。

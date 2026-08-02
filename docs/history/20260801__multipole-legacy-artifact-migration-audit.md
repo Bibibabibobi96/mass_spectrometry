@@ -146,3 +146,26 @@ registry。不得改ACL、强删旧根、跳过全量SHA、复制后假定等价
 `verify-source`；仅调用一次标准`apply`；全量`verify-destination`；确认旧根消失且无quarantine；随后
 在同一仓库事务中更新descriptor/registry并跑artifact layout。裁剪是迁移闭合后的另一项独立授权，
 不得与31.194 GiB身份搬移合并。
+
+## 2026-08-02四极杆执行闭合
+
+v3计划按上述唯一入口真实执行。首次全量源校验后，Windows在根目录`os.replace`返回WinError 5；空目录
+跨同一对父目录的原子移动和ACL检查均通过。微软签名的Sysinternals Handle最终定位到Explorer持有
+`scratch/20260727_201500__simion__multipole-layout-placeholder/gui_source`的两个目录句柄。临时关闭
+Explorer后，标准`apply`在229.9秒内完成源校验、同卷原子切换、目的端全量SHA复核和两份archive
+manifest发布；随后恢复Explorer。没有改ACL、复制数据、改写旧manifest或采用非事务搬运。
+
+项目descriptor已切为`archived_verified`并移除`source_root`，根registry由descriptor重新生成；旧顶层
+`artifacts/projects/rf_quadrupole_collision_cooling/`已消失。独立裁剪计划
+`artifact_migration_audit/rf_quadrupole_collision_cooling_pruning_plan_v1.json`的SHA-256为
+`C62AE981C6D74C8A914A6303EAEA13612C08AD7B3C3E5BFC19E8DFEEC3D86A96`。计划重新核对全部13,326个文件，
+只选择1,055个、31,437,689,483字节：1,007个可重建求解器/CAD二进制和48个非权威工作区文件。
+`prune`以隔离、逐文件SHA复核、删除和保留集验证完成，journal为`complete`且quarantine不存在；最终
+保留12,271个文件、2,056,943,444字节，包括全部受保护输入、指标、manifest和唯一身份异常证据。
+
+无哈希artifact layout在迁移前后均PASS。裁剪后的全仓`--verify-hashes`继续检查到与本迁移无关的既有
+oaTOF Formal漂移：`formal/simion/accelerator.pa2`实际SHA-256为
+`8B11CB24DAB4C5E8B0C136C7079D30F5E70A072AE65FBA0C0D5252DB48055092`，而formal manifest记录
+`6B93D04BF939A89D98EA94627CB4A827829688D132A15C1D6AC4951DF272B2DE`。该失败不得通过刷新manifest掩盖，
+也不改变四极杆迁移工具内部已经完成的源端、目的端、裁剪候选和保留集SHA闭合；oaTOF Formal需另案
+从发布源恢复或重新发布。

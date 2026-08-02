@@ -9,8 +9,7 @@
       "migration_kind": "administrative_rename_only",
       "artifact_location": {
         "schema_version": 1,
-        "state": "source_pending_relocation",
-        "source_root": "artifacts/projects/rf_quadrupole_collision_cooling",
+        "state": "archived_verified",
         "archive_id": "20260801_120000__migration-snapshot__repo__rf-quadrupole-collision-cooling",
         "archive_root": "artifacts/projects/rf_quadrupole_ion_optics/archive/20260801_120000__migration-snapshot__repo__rf-quadrupole-collision-cooling/legacy-project-root",
         "migration_manifest": "artifacts/projects/rf_quadrupole_ion_optics/archive/20260801_120000__migration-snapshot__repo__rf-quadrupole-collision-cooling/identity_migration_manifest.json"
