@@ -116,20 +116,33 @@ journal均为`complete`，archive manifest均发布`deletion_performed=true`，�
 - 唯一目的端：
   `artifacts/projects/rf_quadrupole_ion_optics/archive/20260801_120000__migration-snapshot__repo__rf-quadrupole-collision-cooling/legacy-project-root/`；
 - 工作区冻结计划：
-  `artifact_migration_audit/rf_quadrupole_collision_cooling_migration_plan_v2.json`；
-- 冻结盘点：13,325个文件、33,494,631,276字节；裁剪候选1,055个、31,437,689,483字节；
+  `artifact_migration_audit/rf_quadrupole_collision_cooling_migration_plan_v3.json`，SHA-256
+  `471DD14E59D1DC387E7E5B99D9BC94D63070E30239B86710B8DDA47BAEA816CF`；
+- 2026-08-02即时盘点：13,326个文件、33,494,632,927字节（31.194 GiB）；裁剪候选1,055个、
+  31,437,689,483字节（29.279 GiB），迁移后裁剪前保留约1.916 GiB；
   manifest身份异常1条，必须强制保留；
 - 当前安全状态：源根存在，目的archive不存在，没有半迁移、quarantine或删除，项目描述符为
   `source_pending_relocation`。
+
+v2冻结后，五份数值资格JSON以原SHA移入旧根内部的
+`archive/20260801_233933__superseded__repo__collision-cooling-nonstandard-layout/`，并新增1,651字节
+archive manifest；因此v2已过期，不能执行。v3重新读取全树并在独立第二遍`verify-source`中PASS；
+五份JSON内容未改变，文件数净增1、字节净增1,651，裁剪集合与身份异常集合不变。本次只形成和验证
+计划，没有调用`apply`、`rollback`或`prune`。
 
 机器重启后先确认源存在且目的不存在，再从仓库根执行标准唯一入口：
 
 ```powershell
 .\.venv\Scripts\python.exe common\contracts\artifact_identity_migration.py apply `
   --artifact-projects-root C:\Users\Liao\mass_spectrometry\artifacts\projects `
-  --manifest C:\Users\Liao\mass_spectrometry\artifact_migration_audit\rf_quadrupole_collision_cooling_migration_plan_v2.json
+  --manifest C:\Users\Liao\mass_spectrometry\artifact_migration_audit\rf_quadrupole_collision_cooling_migration_plan_v3.json
 ```
 
 apply成功并完成目的端复核后，才可把四极杆描述符切为`archived_verified`、移除`source_root`并重建
 registry。不得改ACL、强删旧根、跳过全量SHA、复制后假定等价或在迁移前执行prune。若同一WinError 5
 再次出现，保持当前状态并重新诊断文件系统过滤驱动；不得扩大为非事务搬运。
+
+实际执行顺序固定为：机器重启并停止会写旧根的求解/同步程序；确认源存在、目的不存在且同卷；再次
+`verify-source`；仅调用一次标准`apply`；全量`verify-destination`；确认旧根消失且无quarantine；随后
+在同一仓库事务中更新descriptor/registry并跑artifact layout。裁剪是迁移闭合后的另一项独立授权，
+不得与31.194 GiB身份搬移合并。
