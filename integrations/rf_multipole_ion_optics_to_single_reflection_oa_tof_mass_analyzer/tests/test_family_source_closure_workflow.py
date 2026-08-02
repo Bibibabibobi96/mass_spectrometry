@@ -141,7 +141,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             item["connection_profile_id"]: item
             for item in load(PREREGISTRATION)["profiles"]
         }
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory(dir=REPO_ROOT.parent) as directory:
             root = Path(directory)
             for profile_id in sorted(FAMILY_PROFILES):
                 source_contract_path = (
@@ -227,7 +227,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                         )
 
     def test_prepare_rejects_wrong_branch_and_unknown_profile(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory(dir=REPO_ROOT.parent) as directory:
             output = Path(directory)
             common = {
                 "repo_root": REPO_ROOT,
@@ -356,7 +356,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             "rf_hexapole_no_acceleration_full_length_"
             "direct_mating_gap_0mm"
         )
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory(dir=REPO_ROOT.parent) as directory:
             output = Path(directory)
             _, plan_path = prepare_family_source_closure(
                 repo_root=REPO_ROOT,
@@ -413,7 +413,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         registry["revisions"].append(
             json.loads(json.dumps(registry["revisions"][0]))
         )
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory(dir=REPO_ROOT.parent) as directory:
             output = Path(directory)
             duplicate_registry = output / "revision_registry.json"
             write_json(duplicate_registry, registry)
@@ -511,7 +511,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             "rf_hexapole_no_acceleration_full_length_"
             "direct_mating_gap_0mm"
         )
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory(dir=REPO_ROOT.parent) as directory:
             output = Path(directory) / "simion"
             completed = subprocess.run(
                 [
@@ -553,7 +553,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             "rf_hexapole_no_acceleration_full_length_"
             "direct_mating_gap_0mm"
         )
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory(dir=REPO_ROOT.parent) as directory:
             output = Path(directory) / "hybrid"
             _, plan_path = prepare_family_source_closure(
                 repo_root=REPO_ROOT,
@@ -609,7 +609,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             )
 
     def test_parent_publisher_requires_explicit_source_revision(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory(dir=REPO_ROOT.parent) as directory:
             root = Path(directory)
             run_id = (
                 "20260730_120000__analysis__cross__"
@@ -658,7 +658,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
     ) -> None:
         for tampered_phase in ("pulse_capture", "analyzer_transport"):
             with self.subTest(tampered_phase=tampered_phase):
-                with tempfile.TemporaryDirectory() as directory:
+                with tempfile.TemporaryDirectory(dir=REPO_ROOT.parent) as directory:
                     workspace = Path(directory)
                     run_id = (
                         "20260730_120000__analysis__cross__"
