@@ -1,7 +1,8 @@
 param(
   [string]$ManifestPath = '',
   [string]$EntryId = '',
-  [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe'
+  [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
+  [switch]$SkipRuntime
 )
 
 Set-StrictMode -Version Latest
@@ -9,6 +10,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $repoRoot = Split-Path -Parent (Split-Path -Parent $projectRoot)
 $workspaceRoot = Split-Path -Parent $repoRoot
+. (Join-Path $projectRoot 'oatof_lifecycle_preflight.ps1')
 if (-not $ManifestPath) {
   $ManifestPath = Join-Path $projectRoot 'config\simion_stable_entry.json'
 }
@@ -166,9 +168,20 @@ foreach ($required in $expectedRoles.GetEnumerator()) {
 }
 
 $runtimeVerifier = Join-Path $projectRoot 'simion\workbench\verify_iob_runtime_contract.ps1'
-& $runtimeVerifier -IobPath $iobPath `
-  -ExpectedTrajectoryQuality ([int]$entry.gui_requirements.trajectory_quality) `
-  -ExpectedInstances ([int]$entry.gui_requirements.expected_instances) `
-  -SimionExe $SimionExe
+if (-not $SkipRuntime) {
+  $runtimeTaskId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__simion__stable-entry-runtime'
+  $runtimeRoot = Join-Path $artifactRoot "scratch\$runtimeTaskId"
+  $runtimeRoot = New-OaTofFormalSimionRuntime -ProjectRoot $projectRoot `
+    -ArtifactRoot $artifactRoot -PythonExe (Join-Path $repoRoot '.venv\Scripts\python.exe') `
+    -Destination $runtimeRoot -Receipt (Join-Path $runtimeRoot 'runtime_receipt.json')
+  try {
+    & $runtimeVerifier -IobPath (Join-Path $runtimeRoot (Split-Path -Leaf $iobPath)) `
+      -ExpectedTrajectoryQuality ([int]$entry.gui_requirements.trajectory_quality) `
+      -ExpectedInstances ([int]$entry.gui_requirements.expected_instances) `
+      -SimionExe $SimionExe
+  } finally {
+    Remove-OaTofFormalSimionRuntime -ArtifactRoot $artifactRoot -RuntimeRoot $runtimeRoot
+  }
+}
 Write-Output ("STABLE_ENTRY_{0}=PASS" -f $entry.id)
 Write-Output 'SIMION_STABLE_ENTRY_STATUS=PASS'

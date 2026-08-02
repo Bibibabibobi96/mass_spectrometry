@@ -324,15 +324,26 @@ if ($ReanalyzeOnly) {
   }
   $summary = Get-Content -LiteralPath $simionSummary -Raw -Encoding UTF8 | ConvertFrom-Json
 } else {
-  $process = Start-Process -FilePath $SimionExe -WorkingDirectory $formalSimion `
-    -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput $simionLog `
-    -RedirectStandardError $simionStderr -ArgumentList @(
-      '--default-num-particles',[string]$totalParticles,'--nogui','fly',
-      '--trajectory-quality','8','--retain-trajectories','0','--particles',$combinedIon,
-      '--programs','1','--adjustable','trajectory_quality=8','--adjustable',
-      'trajectory_log_enable=1','--adjustable',
-      ("diagnostic_max_tof_us={0}" -f $simionMaxTofUs),$formalIob)
-  if ($process.ExitCode -ne 0) { throw "SIMION mixed-species fly failed: $simionStderr" }
+  $runtimeTaskId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__simion__mass-spectrum-runtime'
+  $runtimeRoot = Join-Path $artifactRoot "scratch\$runtimeTaskId"
+  $runtimeReceipt = Join-Path $inputDir 'formal_simion_runtime_receipt.json'
+  $runtimeRoot = New-OaTofFormalSimionRuntime -ProjectRoot $projectRoot `
+    -ArtifactRoot $artifactRoot -PythonExe $python -Destination $runtimeRoot `
+    -Receipt $runtimeReceipt
+  $runtimeIob = Join-Path $runtimeRoot 'oatof_ideal_grounded.iob'
+  try {
+    $process = Start-Process -FilePath $SimionExe -WorkingDirectory $runtimeRoot `
+      -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput $simionLog `
+      -RedirectStandardError $simionStderr -ArgumentList @(
+        '--default-num-particles',[string]$totalParticles,'--nogui','fly',
+        '--trajectory-quality','8','--retain-trajectories','0','--particles',$combinedIon,
+        '--programs','1','--adjustable','trajectory_quality=8','--adjustable',
+        'trajectory_log_enable=1','--adjustable',
+        ("diagnostic_max_tof_us={0}" -f $simionMaxTofUs),$runtimeIob)
+    if ($process.ExitCode -ne 0) { throw "SIMION mixed-species fly failed: $simionStderr" }
+  } finally {
+    Remove-OaTofFormalSimionRuntime -ArtifactRoot $artifactRoot -RuntimeRoot $runtimeRoot
+  }
   $summary = & $simionAnalyzer -Log $simionLog -IonFile $combinedIon `
     -Mode 'mass_spectrum_candidate' -Distribution 'five_species_shared_source' `
     -ParticleCsv $simionCsv
@@ -352,6 +363,7 @@ $runInputs = [ordered]@{
   resolved_geometry = $resolvedPath
   formal_comsol_mph = $formalMph
   formal_simion_iob = $formalIob
+  formal_simion_runtime_receipt = Join-Path $inputDir 'formal_simion_runtime_receipt.json'
 }
 $runConfig = [ordered]@{
   schema_version = 1

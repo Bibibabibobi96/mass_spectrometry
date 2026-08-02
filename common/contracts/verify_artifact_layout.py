@@ -273,11 +273,17 @@ def main() -> None:
     parser.add_argument("root", type=Path)
     parser.add_argument("--verify-hashes", action="store_true")
     parser.add_argument("--formal-only", action="store_true")
+    parser.add_argument("--project")
     parser.add_argument("--repository-root", type=Path)
     args = parser.parse_args()
     projects = args.root.resolve()
     repository_root = args.repository_root.resolve() if args.repository_root else None
     project_dirs = [project for project in projects.iterdir() if project.is_dir()]
+    if args.project:
+        selected = projects / args.project
+        if not selected.is_dir():
+            raise FileNotFoundError(f"artifact project is absent: {selected}")
+        project_dirs = [selected]
     if args.formal_only:
         for project in project_dirs:
             verify_formal(project, args.verify_hashes, repository_root)

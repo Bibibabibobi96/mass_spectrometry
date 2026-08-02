@@ -7,7 +7,7 @@ import csv
 import json
 import os
 import shutil
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path, PurePosixPath
 from typing import Callable
 
@@ -425,60 +425,210 @@ def write_release_asset_manifest(artifact_root: Path, staging: Path, validation_
             raise ValueError(f"staged asset verification failed: {path}")
 
 
-def identify_partial_release(formal: Path, release_id: str) -> dict:
-    if not (formal / "asset_manifest.json").is_file():
-        raise FileExistsError("existing Formal root is not a recognized partial release")
-    manifest = load_json(formal / "asset_manifest.json")
+def validate_recovery_release(formal: Path, release_id: str) -> dict:
+    """Validate the immutable identity around a same-release byte recovery."""
+    manifest_path = formal / "asset_manifest.json"
+    manifest = load_json(manifest_path)
     if (
-        manifest.get("role") != "formal_asset_manifest"
+        manifest.get("schema_version") != 1
+        or manifest.get("role") != "formal_asset_manifest"
         or manifest.get("project") != PROJECT_ID
         or manifest.get("release_id") != release_id
     ):
-        raise FileExistsError("existing Formal root is not the same release")
-    expected = {
-        "oatof_comsol_524amu_gaussian_N1000.ion", "oatof_ideal_grounded.con",
-        "oatof_ideal_grounded.fly2", "oatof_ideal_grounded.iob",
-        "oatof_ideal_grounded.lua", "run_manifest.json", "SHA256SUMS.csv",
-    }
-    actual = {path.name for path in (formal / "simion").iterdir() if path.is_file()}
-    if actual != expected:
-        raise FileExistsError("existing Formal root is not a recognized partial release")
-    for item in manifest["assets"].values():
-        path = formal / item["path"]
-        if (
-            not path.is_file() or path.stat().st_size != item["bytes"]
-            or sha256(path) != item["sha256"]
-        ):
-            raise ValueError(f"existing partial Formal asset changed: {path}")
+        raise ValueError("current Formal manifest is not the requested release")
     validation = load_json(CONFIG_PATHS["formal_validation"])
-    if validation.get("run_id") != release_id:
-        raise ValueError("current Formal validation differs from repair release")
+    assets = load_json(CONFIG_PATHS["formal_assets"])
+    project = load_json(CONFIG_PATHS["project"])
     stable = load_json(CONFIG_PATHS["simion_stable_entry"])
     entries = stable.get("entries", [])
     entry = entries[0] if len(entries) == 1 else {}
-    bindings = entry.get("manifests", {})
-    delivery_asset = manifest.get("assets", {}).get("simion_delivery_manifest", {})
-    expected_delivery = {
-        "relative_path": delivery_asset.get("path"),
-        "bytes": delivery_asset.get("bytes"),
-        "sha256": delivery_asset.get("sha256"),
-    }
     if (
-        stable.get("schema_version") != 2
+        validation.get("run_id") != release_id
+        or assets.get("release_id") != release_id
+        or project.get("lifecycle_status") != "formal"
         or stable.get("artifact_workspace_relative") != "formal"
-        or bindings.get("formal_asset_manifest") != file_record(
-            formal / "asset_manifest.json", formal, key="relative_path")
-        or bindings.get("simion_delivery_manifest") != expected_delivery
+        or entry.get("manifests", {}).get("formal_asset_manifest")
+        != file_record(manifest_path, formal, key="relative_path")
     ):
-        raise ValueError("current stable entry is not the recognized partial release")
+        raise ValueError("current Formal contracts do not bind the requested release")
     return manifest
 
 
-def repair_backup_path(artifact_root: Path, release_id: str) -> Path:
-    stamp = release_id.split("__", 1)[0]
-    archive_id = f"{stamp}__superseded__simion__formal-vnext-partial"
+def recovery_sources(
+    request: dict, roots: dict[str, Path], verified: dict[str, set[Path]]
+) -> dict[str, Path]:
+    """Map Formal-relative paths to immutable run files without copying them."""
+    sources: dict[str, Path] = {}
+    for mapping in request.get("assets", []):
+        scope = mapping.get("source_run")
+        if scope not in roots:
+            raise ValueError(f"invalid recovery asset mapping: {mapping!r}")
+        relative = relative_path(
+            mapping["destination"], {"comsol", "simion", "cad", "results"}
+        ).as_posix()
+        if relative in sources:
+            raise ValueError(f"duplicate recovery destination: {relative}")
+        sources[relative] = source_file(
+            roots[scope], mapping["source"], verified[scope]
+        )
+    spec = request.get("simion_bundle", {})
+    if spec.get("source_run") != "validation" or spec.get("destination") != "simion":
+        raise ValueError("SIMION recovery source must be the validation bundle")
+    source_root = (
+        roots["validation"] / relative_path(str(spec.get("source_root", "")))
+    ).resolve(strict=True)
+    source_root.relative_to(roots["validation"].resolve())
+    actual = sorted(path.resolve() for path in source_root.rglob("*") if path.is_file())
+    frozen = sorted(path for path in verified["validation"] if source_root in path.parents)
+    if actual != frozen:
+        raise ValueError("SIMION recovery bundle differs from validation manifest")
+    for source in actual:
+        source_relative = source.relative_to(source_root).as_posix()
+        name = "source_SHA256SUMS.csv" if source_relative == "SHA256SUMS.csv" else source_relative
+        destination = f"simion/{name}"
+        prior = sources.get(destination)
+        if prior is not None and sha256(prior) != sha256(source):
+            raise ValueError(f"recovery sources disagree for {destination}")
+        sources[destination] = source
+    return sources
+
+
+def verify_manifest_assets(formal: Path, manifest: dict) -> list[dict]:
+    """Return manifest records whose current bytes are absent or changed."""
+    drifted: list[dict] = []
+    for role, record in manifest.get("assets", {}).items():
+        relative = relative_path(str(record.get("path", "")))
+        path = (formal / relative).resolve()
+        path.relative_to(formal.resolve())
+        matches = (
+            path.is_file()
+            and path.stat().st_size == int(record.get("bytes", -1))
+            and sha256(path) == str(record.get("sha256", "")).upper()
+        )
+        if not matches:
+            drifted.append({"role": role, "record": record, "path": path})
+    return drifted
+
+
+def recover(
+    request_path: Path,
+    artifact_root: Path = DEFAULT_ARTIFACT_ROOT,
+    *,
+    replace: Callable[[os.PathLike, os.PathLike], None] = os.replace,
+) -> dict:
+    """Restore changed assets of the current release from manifest-frozen sources."""
+    request_path = request_path.resolve(strict=True)
+    artifact_root = artifact_root.resolve(strict=True)
+    request = load_json(request_path)
+    if (request.get("schema_version"), request.get("role"), request.get("project")) != (
+        1, "oa_tof_formal_vnext_promotion_request", PROJECT_ID
+    ):
+        raise ValueError("invalid recovery request identity")
+    release_id = request["validation_run_id"]
+    formal = (artifact_root / "formal").resolve(strict=True)
+    manifest = validate_recovery_release(formal, release_id)
+    ids = {
+        "candidate": request["candidate_run_id"],
+        "validation": release_id,
+        "evidence": request["evidence_run_id"],
+    }
+    roots = {name: artifact_root / "runs" / run_id for name, run_id in ids.items()}
+    verified = {name: verify_run(roots[name], ids[name]) for name in roots}
+    validate_runs(request, roots["candidate"], roots["validation"], verified)
+    sources = recovery_sources(request, roots, verified)
+    drifted = verify_manifest_assets(formal, manifest)
+    if not drifted:
+        return {"status": "already_verified", "release_id": release_id, "asset_count": 0}
+
+    transaction = sha256(request_path)[:16].lower()
+    staging = artifact_root / f".formal-recovery-staging-{transaction}"
+    if staging.exists():
+        raise FileExistsError(f"recovery staging already exists: {staging}")
+    try:
+        for item in drifted:
+            record = item["record"]
+            relative = str(record["path"])
+            source = sources.get(relative)
+            if source is None:
+                raise ValueError(f"drifted generated Formal asset requires republication: {relative}")
+            if source.stat().st_size != int(record["bytes"]) or sha256(source) != record["sha256"]:
+                raise ValueError(f"immutable recovery source differs from Formal manifest: {source}")
+            destination = staging / relative_path(relative)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+            if destination.stat().st_size != int(record["bytes"]) or sha256(destination) != record["sha256"]:
+                raise ValueError(f"staged recovery asset differs: {destination}")
+    except Exception:
+        if staging.exists():
+            shutil.rmtree(staging)
+        raise
+
+    archive_id = datetime.now().strftime("%Y%m%d_%H%M%S") + "__failed-evidence__simion__formal-asset-drift"
     validate_archive_id(archive_id)
-    return artifact_root / "archive" / archive_id
+    archive = artifact_root / "archive" / archive_id
+    if archive.exists():
+        raise FileExistsError(f"recovery archive already exists: {archive}")
+    archive.mkdir(parents=True)
+    archived_records: list[dict] = []
+    for item in drifted:
+        relative = str(item["record"]["path"])
+        current = item["path"]
+        archived = archive / "changed-assets" / relative_path(relative)
+        archived.parent.mkdir(parents=True, exist_ok=True)
+        if current.is_file():
+            shutil.copy2(current, archived)
+            archived_records.append({
+                "role": item["role"], "formal_path": relative,
+                "expected_sha256": item["record"]["sha256"],
+                "actual_bytes": archived.stat().st_size,
+                "actual_sha256": sha256(archived),
+                "archived_path": archived.relative_to(archive).as_posix(),
+            })
+        else:
+            archived_records.append({
+                "role": item["role"], "formal_path": relative,
+                "expected_sha256": item["record"]["sha256"],
+                "actual_bytes": None, "actual_sha256": None, "archived_path": None,
+            })
+    archive_manifest = {
+        "schema_version": 1, "role": "formal_asset_recovery_archive",
+        "archive_id": archive_id, "project": PROJECT_ID, "status": "prepared",
+        "release_id": release_id, "promotion_request_sha256": sha256(request_path),
+        "assets": archived_records,
+    }
+    write_json(archive / "archive_manifest.json", archive_manifest)
+
+    replaced: list[dict] = []
+    try:
+        for item in drifted:
+            relative = str(item["record"]["path"])
+            replace(staging / relative_path(relative), item["path"])
+            replaced.append(item)
+        remaining = verify_manifest_assets(formal, manifest)
+        if remaining:
+            raise ValueError("Formal assets still differ after recovery")
+    except Exception:
+        for item in reversed(replaced):
+            relative = str(item["record"]["path"])
+            archived = archive / "changed-assets" / relative_path(relative)
+            if archived.is_file():
+                rollback = staging / "rollback" / relative_path(relative)
+                rollback.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(archived, rollback)
+                os.replace(rollback, item["path"])
+        archive_manifest["status"] = "failed_and_rolled_back"
+        write_json(archive / "archive_manifest.json", archive_manifest)
+        raise
+    finally:
+        if staging.exists():
+            shutil.rmtree(staging)
+    archive_manifest["status"] = "complete"
+    archive_manifest["restored_asset_count"] = len(drifted)
+    write_json(archive / "archive_manifest.json", archive_manifest)
+    return {
+        "status": "success", "release_id": release_id,
+        "asset_count": len(drifted), "archive": str(archive),
+    }
 
 
 def replace_configs(payloads: dict[str, dict], transaction: str,
@@ -522,8 +672,10 @@ def promote(request_path: Path, artifact_root: Path = DEFAULT_ARTIFACT_ROOT, *,
     roots = {name: artifact_root / "runs" / run_id for name, run_id in ids.items()}
     verified = {name: verify_run(roots[name], ids[name]) for name in roots}
     validate_runs(request, roots["candidate"], roots["validation"], verified)
-    repair = formal.exists()
-    prior_manifest = identify_partial_release(formal, ids["validation"]) if repair else None
+    if formal.exists():
+        raise FileExistsError(
+            "current Formal release already exists; Publish cannot repair or overwrite it"
+        )
     transaction = sha256(request_path)[:16].lower()
     staging = artifact_root / f".formal-vnext-staging-{transaction}"
     if staging.exists():
@@ -540,49 +692,32 @@ def promote(request_path: Path, artifact_root: Path = DEFAULT_ARTIFACT_ROOT, *,
         artifact_root, staging, ids["validation"], assets, bundle, payloads
     )
     payloads["simion_stable_entry"] = build_stable_entry(staging)
-    backup = repair_backup_path(artifact_root, ids["validation"]) if repair else None
-    if repair:
-        if backup.exists():
-            raise FileExistsError(f"repair backup already exists: {backup}")
-        backup.parent.mkdir(parents=True, exist_ok=True)
-        replace(formal, backup)
-    try:
-        replace(staging, formal)
-    except Exception:
-        if repair:
-            os.replace(backup, formal)
-        raise
+    replace(staging, formal)
     try:
         replace_configs(payloads, transaction, replace)
     except Exception:
         os.replace(formal, staging)
-        if repair:
-            os.replace(backup, formal)
         raise
-    if repair:
-        write_json(backup / "archive_manifest.json", {
-            "schema_version": 1, "role": "formal_repair_backup",
-            "archive_id": backup.name, "project": PROJECT_ID,
-            "reason": "same_release_partial_formal_repaired_without_deletion",
-            "release_id": ids["validation"],
-            "prior_asset_manifest_sha256": sha256(
-                backup / "asset_manifest.json"
-            ),
-            "prior_asset_count": len(prior_manifest["assets"]),
-        })
     return {"status": "success", "release_id": ids["validation"],
             "transaction_id": transaction,
-            "asset_manifest_sha256": sha256(formal / "asset_manifest.json"),
-            "repair_backup": str(backup) if repair else None}
+            "asset_manifest_sha256": sha256(formal / "asset_manifest.json")}
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--request", type=Path, required=True)
     parser.add_argument("--artifact-root", type=Path, default=DEFAULT_ARTIFACT_ROOT)
+    parser.add_argument("--recover", action="store_true")
     args = parser.parse_args()
-    result = promote(args.request, args.artifact_root)
-    print(f"FORMAL_RELEASE_PUBLICATION=PASS RELEASE_ID={result['release_id']}")
+    if args.recover:
+        result = recover(args.request, args.artifact_root)
+        print(
+            f"FORMAL_RELEASE_RECOVERY=PASS RELEASE_ID={result['release_id']} "
+            f"ASSETS={result['asset_count']}"
+        )
+    else:
+        result = promote(args.request, args.artifact_root)
+        print(f"FORMAL_RELEASE_PUBLICATION=PASS RELEASE_ID={result['release_id']}")
 
 
 if __name__ == "__main__":

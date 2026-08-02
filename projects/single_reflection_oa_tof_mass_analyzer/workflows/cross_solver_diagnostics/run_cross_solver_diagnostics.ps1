@@ -155,6 +155,13 @@ $simionEnvironment = @{
   OATOF_SIMION_VECTOR_FIELD_REPORT = $simionVectorReport
 }
 $oldSimionEnvironment = @{}
+$runtimeTaskId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__simion__formal-diagnostics-runtime'
+$runtimeReceipt = Join-Path $inputDir 'formal_simion_runtime_receipt.json'
+$runtimeRoot = New-OaTofFormalSimionRuntime -ProjectRoot $projectRoot `
+  -ArtifactRoot $artifactRoot -PythonExe $python `
+  -Destination (Join-Path $artifactRoot "scratch\$runtimeTaskId") `
+  -Receipt $runtimeReceipt
+$simionEnvironment.OATOF_FORMAL_IOB_PATH = Join-Path $runtimeRoot 'oatof_ideal_grounded.iob'
 try {
   foreach ($entry in $simionEnvironment.GetEnumerator()) {
     $oldSimionEnvironment[$entry.Key] = [Environment]::GetEnvironmentVariable($entry.Key,'Process')
@@ -168,6 +175,7 @@ try {
   foreach ($entry in $simionEnvironment.GetEnumerator()) {
     [Environment]::SetEnvironmentVariable($entry.Key,$oldSimionEnvironment[$entry.Key],'Process')
   }
+  Remove-OaTofFormalSimionRuntime -ArtifactRoot $artifactRoot -RuntimeRoot $runtimeRoot
 }
 
 $comsolVectorEnvironment = @{
@@ -230,6 +238,7 @@ $runConfig = Join-Path $runDir 'run_config.json'
   inputs=[ordered]@{
     formal_validation=$formalValidationPath;resolved_geometry=$resolvedGeometryPath
     formal_comsol_model=$formalMph;formal_simion_iob=$formalIob
+    formal_simion_runtime_receipt=$runtimeReceipt
     formal_comsol_particles=$formalComsolCsv;formal_simion_particles=$formalSimionCsv
     formal_source_manifest=$sourceManifest;formal_simion_trace_log=$sourceTraceLog
     comsol_axis_adapter=$comsolAxisTask;comsol_trajectory_adapter=$comsolTrajectoryTask

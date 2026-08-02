@@ -17,6 +17,10 @@ resolved、分析和资产合同管理；实现细节见[`COMSOL.md`](COMSOL.md)
   `simion_stable_entry.json`共同冻结当前Formal release；COMSOL GUI、SIMION GUI与SolidWorks CAD
   evidence均由独立evidence run及SHA绑定。一次性请求已
   [`归档`](history/20260729__formal-vnext-zero-change-requests.md)，不再是活动入口。
+- 2026-08-02逐文件审计发现并从原validation run精确恢复`accelerator.pa2`与`accelerator.pa7`两个Formal
+  解数组漂移；恢复后全Formal哈希与运行时门禁通过，四份Formal合同及既有资格身份未改变。SIMION活动
+  入口现只运行manifest验证后的scratch副本，完整处置见
+  [`history快照`](history/20260802__formal-simion-integrity-recovery.md)。
 - 当前Formal加速器为闭合屏蔽结构，没有RF注入侧孔。RF项目的S2/S3候选链没有修改本项目baseline、
   MPH、SIMION包或CAD，也不构成整机Formal连接。
 - RF四极杆离子光学到本分析器的0 mm与1 mm连接profile已以冻结N=100源完成真实COMSOL→SIMION重跑，

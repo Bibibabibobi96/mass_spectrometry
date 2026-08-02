@@ -70,10 +70,17 @@ class FormalReferenceWorkflowLayoutTests(unittest.TestCase):
             / "run_formal_validation.ps1"
         ).read_text(encoding="utf-8")
         self.assertIn(
-            "[ValidateSet('Validate','Publish','Verify')]",
+            "[ValidateSet('Validate','Publish','Recover','Verify')]",
             runner,
         )
-        self.assertIn("analysis\\publish_formal_release.py", runner)
+        self.assertIn("--recover", runner)
+        self.assertIn("--verify-hashes", runner)
+        self.assertIn("--project single_reflection_oa_tof_mass_analyzer", runner)
+        self.assertIn(
+            "projects.single_reflection_oa_tof_mass_analyzer.analysis."
+            "publish_formal_release",
+            runner,
+        )
         self.assertIn("Copy-VerifiedRunInput", runner)
         self.assertIn("Complete-FailedRun", runner)
         self.assertLess(

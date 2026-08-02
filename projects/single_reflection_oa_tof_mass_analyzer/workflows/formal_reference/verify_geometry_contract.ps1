@@ -326,17 +326,27 @@ if (-not $SkipRuntime) {
   if ($cadReport.solidWorks.assembly.saveErrors -ne 0 -or $cadReport.solidWorks.assembly.saveWarnings -ne 0) { throw 'Formal SolidWorks assembly report contains save errors or warnings.' }
   if (($cadReport.solidWorks.parts | Measure-Object -Property saveErrors -Maximum).Maximum -ne 0 -or ($cadReport.solidWorks.parts | Measure-Object -Property saveWarnings -Maximum).Maximum -ne 0) { throw 'Formal SolidWorks part report contains save errors or warnings.' }
   $stableGate = Join-Path $componentDir 'tests\simion\verify_stable_entry.ps1'
-  & $stableGate -ManifestPath $simionStablePath -SimionExe $SimionExe
+  & $stableGate -ManifestPath $simionStablePath -SimionExe $SimionExe -SkipRuntime
   if ($LASTEXITCODE -ne 0) { throw 'Formal SIMION stable-entry gate failed.' }
   $verifyLua = Join-Path $componentDir 'simion\workbench\verify_formal_runtime.lua'
   $report = Join-Path $env:TEMP 'oatof_geometry_contract_simion.txt'
+  $runtimeTaskId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__simion__formal-verify-runtime'
+  $runtimeRoot = New-OaTofFormalSimionRuntime -ProjectRoot $componentDir `
+    -ArtifactRoot $artifactRoot -PythonExe $python `
+    -Destination (Join-Path $artifactRoot "scratch\$runtimeTaskId") `
+    -Receipt (Join-Path $artifactRoot "scratch\$runtimeTaskId\runtime_receipt.json")
+  $runtimeIob = Join-Path $runtimeRoot 'oatof_ideal_grounded.iob'
   try {
-    Push-Location $formalDir
-    & $SimionExe --nogui lua $verifyLua $report (Join-Path $formalDir 'oatof_ideal_grounded.iob') $resolvedLuaPath
+    & (Join-Path $componentDir 'simion\workbench\verify_iob_runtime_contract.ps1') `
+      -IobPath $runtimeIob -ExpectedTrajectoryQuality 8 -ExpectedInstances 4 `
+      -SimionExe $SimionExe
+    Push-Location $runtimeRoot
+    & $SimionExe --nogui lua $verifyLua $report $runtimeIob $resolvedLuaPath
     if ($LASTEXITCODE -ne 0) { throw "SIMION runtime geometry verification failed with exit code $LASTEXITCODE" }
     if (-not (Select-String -LiteralPath $report -Pattern '^STATUS=PASS$' -Quiet)) { throw 'SIMION runtime geometry report did not pass.' }
   } finally {
     Pop-Location
+    Remove-OaTofFormalSimionRuntime -ArtifactRoot $artifactRoot -RuntimeRoot $runtimeRoot
   }
 }
 

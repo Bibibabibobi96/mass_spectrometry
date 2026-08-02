@@ -1,5 +1,5 @@
 param(
-  [ValidateSet('Validate','Publish','Verify')][string]$Phase = 'Validate',
+  [ValidateSet('Validate','Publish','Recover','Verify')][string]$Phase = 'Validate',
   [string]$CandidateRunRoot,
   [string]$PromotionRequest,
   [string]$RunId = ((Get-Date -Format 'yyyyMMdd_HHmmss') + '__sim__cross__formal-vnext-zero-change__n1000'),
@@ -15,14 +15,20 @@ $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\single_reflection_oa_tof_mass_analyzer'
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+$runRecordComplete = $true
 
-if ($Phase -eq 'Publish') {
+if ($Phase -in @('Publish','Recover')) {
   if ([string]::IsNullOrWhiteSpace($PromotionRequest)) {
-    throw 'Formal Publish requires -PromotionRequest.'
+    throw "Formal $Phase requires -PromotionRequest."
   }
-  & $python (Join-Path $projectRoot 'analysis\publish_formal_release.py') `
-    --request ([IO.Path]::GetFullPath($PromotionRequest)) --artifact-root $artifactRoot
-  if ($LASTEXITCODE -ne 0) { throw 'Formal release publication failed.' }
+  $publicationArgs = @(
+    '-m','projects.single_reflection_oa_tof_mass_analyzer.analysis.publish_formal_release',
+    '--request',([IO.Path]::GetFullPath($PromotionRequest)),
+    '--artifact-root',$artifactRoot
+  )
+  if ($Phase -eq 'Recover') { $publicationArgs += '--recover' }
+  & $python @publicationArgs
+  if ($LASTEXITCODE -ne 0) { throw "Formal release $($Phase.ToLowerInvariant()) failed." }
   & $PSCommandPath -Phase Verify -SimionExe $SimionExe
   if ($LASTEXITCODE -ne 0) { throw 'Published Formal release did not verify.' }
   return
@@ -31,7 +37,8 @@ if ($Phase -eq 'Verify') {
   . (Join-Path $projectRoot 'oatof_lifecycle_preflight.ps1')
   Assert-OaTofFormalAssetsReadable -ProjectRoot $projectRoot
   & $python (Join-Path $repoRoot 'common\contracts\verify_artifact_layout.py') `
-    (Join-Path $workspaceRoot 'artifacts\projects') --formal-only --repository-root $repoRoot
+    (Join-Path $workspaceRoot 'artifacts\projects') --formal-only --verify-hashes `
+    --project single_reflection_oa_tof_mass_analyzer --repository-root $repoRoot
   if ($LASTEXITCODE -ne 0) { throw 'Formal asset-manifest structure gate failed.' }
   & (Join-Path $projectRoot 'workflows\formal_reference\verify_geometry_contract.ps1') `
     -SimionExe $SimionExe -PythonExe $python

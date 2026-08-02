@@ -15,6 +15,8 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
 $projectRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $projectRoot 'artifacts\projects\single_reflection_oa_tof_mass_analyzer'
 $formalDir = Join-Path $artifactRoot 'formal\simion'
+$componentRoot = Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer'
+. (Join-Path $componentRoot 'oatof_lifecycle_preflight.ps1')
 if (-not $OutputDir) {
   if (-not $RunId) { $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + "__test__simion__ideal-field-matrix__n${N}" }
   $OutputDir = Join-Path $artifactRoot "runs\$RunId"
@@ -26,7 +28,8 @@ if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
 $resultDir = Join-Path $OutputDir 'results'
 $logDir = Join-Path $OutputDir 'logs'
 $simionDir = Join-Path $OutputDir 'simion'
-New-Item -ItemType Directory -Force -Path $OutputDir,$resultDir,$logDir,$simionDir | Out-Null
+$inputDir = Join-Path $OutputDir 'inputs'
+New-Item -ItemType Directory -Force -Path $OutputDir,$inputDir,$resultDir,$logDir,$simionDir | Out-Null
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 Initialize-RunRecord -RunDir $OutputDir -RunId $RunId -Project 'single_reflection_oa_tof_mass_analyzer' `
   -Mode 'simion_ideal_field_matrix' -ProjectRoot (Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer') `
@@ -44,12 +47,23 @@ trap {
 
 $sourceLua = Join-Path $PSScriptRoot 'formal\oatof_ideal_grounded.lua'
 $runtimeLua = Join-Path $formalDir 'oatof_ideal_grounded.lua'
-$iob = Join-Path $formalDir 'oatof_ideal_grounded.iob'
+$formalIob = Join-Path $formalDir 'oatof_ideal_grounded.iob'
+$iob = $formalIob
 if ((Get-FileHash $sourceLua -Algorithm SHA256).Hash -ne (Get-FileHash $runtimeLua -Algorithm SHA256).Hash) {
   throw 'Formal SIMION Lua differs from source; rebuild the formal delivery before diagnosis.'
 }
 $geometryGate = Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer\workflows\formal_reference\verify_geometry_contract.ps1'
 & $geometryGate -SimionExe $SimionExe | ForEach-Object { Write-Host $_ }
+$runtimeRoot = $null
+$runtimeReceipt = Join-Path $inputDir 'formal_simion_runtime_receipt.json'
+if (-not $AnalyzeOnly) {
+  $runtimeTaskId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__simion__ideal-field-runtime'
+  $runtimeRoot = New-OaTofFormalSimionRuntime -ProjectRoot $componentRoot `
+    -ArtifactRoot $artifactRoot -PythonExe $python `
+    -Destination (Join-Path $artifactRoot "scratch\$runtimeTaskId") `
+    -Receipt $runtimeReceipt
+  $iob = Join-Path $runtimeRoot 'oatof_ideal_grounded.iob'
+}
 
 $generator = Join-Path $PSScriptRoot 'generate_comsol_consistent_ions.ps1'
 $analyzer = Join-Path $PSScriptRoot 'analyze_ideal_field_log.ps1'
@@ -79,8 +93,9 @@ foreach ($d in $distributions) {
 }
 
 $summaries = [Collections.Generic.List[object]]::new()
-foreach ($d in $distributions) {
-  foreach ($m in $modes) {
+try {
+  foreach ($d in $distributions) {
+    foreach ($m in $modes) {
     $stem = "{0}__{1}" -f $d.Name,$m.Name
     $stdout = Join-Path $logDir ($stem + '.log')
     $stderr = Join-Path $logDir ($stem + '.stderr.log')
@@ -100,20 +115,25 @@ foreach ($d in $distributions) {
     )
     if (-not $AnalyzeOnly) {
       Write-Host ("Running {0} / {1}" -f $d.Name,$m.Name)
-      $p = Start-Process -FilePath $SimionExe -ArgumentList $args -WorkingDirectory $formalDir -NoNewWindow -Wait -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+      $p = Start-Process -FilePath $SimionExe -ArgumentList $args -WorkingDirectory $runtimeRoot -NoNewWindow -Wait -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
       if ($p.ExitCode -ne 0) { throw "SIMION failed for $stem with exit code $($p.ExitCode); see $stderr" }
     } elseif (-not (Test-Path -LiteralPath $stdout)) {
       throw "AnalyzeOnly requested but log is missing: $stdout"
     }
     $summary = & $analyzer -Log $stdout -IonFile $ionFiles[$d.Name] -Mode $m.Name -Distribution $d.Name -ParticleCsv $particleCsv
     $summaries.Add($summary)
+    }
+  }
+} finally {
+  if ($null -ne $runtimeRoot) {
+    Remove-OaTofFormalSimionRuntime -ArtifactRoot $artifactRoot -RuntimeRoot $runtimeRoot
   }
 }
 
 $summaryCsv = Join-Path $resultDir 'ideal_field_matrix_summary.csv'
 $summaries | Export-Csv -LiteralPath $summaryCsv -NoTypeInformation -Encoding UTF8
 $runConfig = Join-Path $OutputDir 'run_config.json'
-[ordered]@{schema_version=1;run_id=$RunId;project='single_reflection_oa_tof_mass_analyzer';mode='simion_ideal_field_matrix';project_root=(Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer');inputs=[ordered]@{formal_iob=$iob};formal_gate_passed=$false;particles=$N;seed=$Seed} |
+[ordered]@{schema_version=1;run_id=$RunId;project='single_reflection_oa_tof_mass_analyzer';mode='simion_ideal_field_matrix';project_root=(Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer');inputs=[ordered]@{formal_iob=$formalIob;formal_simion_runtime_receipt=$runtimeReceipt};formal_gate_passed=$false;particles=$N;seed=$Seed} |
   ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $runConfig -Encoding UTF8
 $summaryPath = Join-Path $OutputDir 'summary.json'
 [ordered]@{schema_version=1;role='oa_tof_ideal_field_matrix_summary';status='success';cases=$summaries.Count;results='results/ideal_field_matrix_summary.csv'} |

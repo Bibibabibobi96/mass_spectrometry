@@ -20,6 +20,9 @@
 
 当前项目处于`formal`。稳定清单绑定当前Formal SIMION交付包；重命名前和拆层前的Formal包只保留
 可追溯身份。Candidate仍必须使用独立、已登记的非Formal IOB/CON模板，不能读取旧Formal或archive资产。
+当前Formal是只读发布源：任何SIMION进程均不得以`formal/simion`为工作目录或直接打开其中IOB。
+活动入口先逐项验证Formal manifest，再通过`analysis/stage_formal_simion_runtime.py`复制到项目scratch，
+只运行该临时副本并在终止时清理；run以runtime receipt冻结实际消费的release与资产SHA。
 
 ## 几何与数值合同
 

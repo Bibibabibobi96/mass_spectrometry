@@ -51,7 +51,7 @@ foreach ($pattern in @('reflectron.pa*','flight_tube_ground.pa*','detector_groun
   Copy-Item -Path (Join-Path $formalDir $pattern) -Destination $workbenchDir -Force
 }
 $candidateIob = Join-Path $workbenchDir 'oatof_ideal_grounded.iob'
-$fieldIob = Join-Path $formalDir 'oatof_ideal_grounded.iob'
+$fieldIob = Join-Path $workbenchDir 'oatof_ideal_grounded.iob'
 $singleIon = Join-Path $modelScratch 'fixed_single_particle.ion'
 Get-Content -LiteralPath $fixedN100 -TotalCount 1 | Set-Content -LiteralPath $singleIon -Encoding ascii
 

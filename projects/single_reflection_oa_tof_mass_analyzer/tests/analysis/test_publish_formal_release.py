@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import tempfile
@@ -28,11 +27,6 @@ SIMION_SOURCES = {
 }
 PA_FILES = ("accelerator.pa#", "accelerator.pa0", "reflectron.pa#",
             "detector_ground.pa#", "flight_tube_ground.pa#")
-PARTIAL_SIMION_FILES = {
-    *(canonical for _, canonical in SIMION_SOURCES.values()),
-    "run_manifest.json",
-    "SHA256SUMS.csv",
-}
 DESTINATIONS = {
     **promotion.CANONICAL_DESTINATIONS,
     "comsol_particles": "results/comsol_particles.csv",
@@ -324,50 +318,6 @@ class FormalReleasePublisherTests(unittest.TestCase):
 
         return replace
 
-    def _make_current_release_partial(self) -> None:
-        formal = self.artifact / "formal"
-        simion = formal / "simion"
-        for path in simion.iterdir():
-            if path.name not in PARTIAL_SIMION_FILES:
-                path.unlink()
-        sha_manifest = promotion.write_hash_list(
-            simion, exclude=frozenset({"run_manifest.json"})
-        )
-        delivery = write_json(
-            simion / "run_manifest.json",
-            {
-                "schema_version": 1, "role": "oa_tof_simion_formal_delivery_manifest",
-                "project": promotion.PROJECT_ID, "release_id": VALIDATION_ID,
-                "status": "success", "assets": {},
-            },
-        )
-        validation = json.loads(self.config_paths["formal_validation"].read_text())
-        validation["simion"]["delivery_manifest_sha256"] = promotion.sha256(delivery)
-        write_json(self.config_paths["formal_validation"], validation)
-        manifest = json.loads((formal / "asset_manifest.json").read_text())
-        manifest["assets"] = {
-            role: item
-            for role, item in manifest["assets"].items()
-            if not item["path"].startswith("simion/")
-            or Path(item["path"]).name in PARTIAL_SIMION_FILES
-        }
-        for role, path in (("simion_delivery_manifest", delivery),
-                           ("simion_sha256_manifest", sha_manifest)):
-            manifest["assets"][role] = promotion.file_record(path, formal)
-        validation_bytes = self.config_paths["formal_validation"].read_bytes()
-        manifest["validation_contract"].update(
-            bytes=len(validation_bytes),
-            sha256=hashlib.sha256(validation_bytes).hexdigest().upper(),
-        )
-        write_json(formal / "asset_manifest.json", manifest)
-        stable = json.loads(self.config_paths["simion_stable_entry"].read_text())
-        stable["entries"][0]["manifests"] = {
-            "formal_asset_manifest": promotion.file_record(
-                formal / "asset_manifest.json", formal, key="relative_path"),
-            "simion_delivery_manifest": promotion.file_record(delivery, formal, key="relative_path"),
-        }
-        write_json(self.config_paths["simion_stable_entry"], stable)
-
     def test_success_publishes_atomic_release_and_updates_four_contracts(self) -> None:
         source_manifests = (
             self.candidate / "run_manifest.json",
@@ -443,33 +393,74 @@ class FormalReleasePublisherTests(unittest.TestCase):
         write_json(self.request, request)
         self._assert_rejected("promotion request lacks roles")
 
-    def test_same_release_partial_formal_is_repaired_without_deletion(self) -> None:
+    def test_same_release_changed_asset_is_recovered_without_contract_changes(self) -> None:
         promotion.promote(self.request, self.artifact)
-        self._make_current_release_partial()
-        result = promotion.promote(self.request, self.artifact)
-        backup = Path(result["repair_backup"])
-        self.assertTrue(
-            (self.artifact / "formal/simion/accelerator.pa#").is_file()
-        )
-        self.assertTrue((backup / "archive_manifest.json").is_file())
-        self.assertEqual({path.name for path in (backup / "simion").iterdir()},
-                         PARTIAL_SIMION_FILES)
-
-    def test_same_release_repair_rolls_back_formal_swap_and_configs(self) -> None:
-        promotion.promote(self.request, self.artifact)
-        self._make_current_release_partial()
         original_configs = self._config_snapshot()
-        with self.assertRaisesRegex(OSError, "injected repair"):
-            promotion.promote(
+        changed = self.artifact / "formal/simion/accelerator.pa0"
+        expected = promotion.sha256(changed)
+        changed.write_bytes(b"changed formal bytes")
+
+        result = promotion.recover(self.request, self.artifact)
+
+        archive = Path(result["archive"])
+        recovery = json.loads((archive / "archive_manifest.json").read_text())
+        archived = archive / "changed-assets/simion/accelerator.pa0"
+        self.assertEqual(result["asset_count"], 1)
+        self.assertEqual(promotion.sha256(changed), expected)
+        self.assertEqual(archived.read_bytes(), b"changed formal bytes")
+        self.assertEqual(recovery["status"], "complete")
+        self.assertEqual(recovery["assets"][0]["actual_sha256"], promotion.sha256(archived))
+        self.assertEqual(original_configs, self._config_snapshot())
+
+    def test_same_release_recovery_rejects_changed_immutable_source(self) -> None:
+        promotion.promote(self.request, self.artifact)
+        changed = self.artifact / "formal/simion/accelerator.pa0"
+        changed.write_bytes(b"changed formal bytes")
+        source = self.validation / "inputs/simion/accelerator.pa0"
+        source.write_bytes(b"changed source bytes")
+
+        with self.assertRaisesRegex(ValueError, "manifest record changed|bundle differs"):
+            promotion.recover(self.request, self.artifact)
+
+        self.assertEqual(changed.read_bytes(), b"changed formal bytes")
+
+    def test_same_release_recovery_rolls_back_atomic_replace_failure(self) -> None:
+        promotion.promote(self.request, self.artifact)
+        changed = self.artifact / "formal/simion/accelerator.pa0"
+        changed.write_bytes(b"changed formal bytes")
+
+        with self.assertRaisesRegex(OSError, "injected recovery"):
+            promotion.recover(
                 self.request,
                 self.artifact,
-                replace=self._failing_replace(3, "injected repair config failure"),
+                replace=self._failing_replace(1, "injected recovery failure"),
             )
-        self.assertEqual(
-            {path.name for path in (self.artifact / "formal/simion").iterdir()},
-            PARTIAL_SIMION_FILES,
-        )
-        self.assertEqual(original_configs, self._config_snapshot())
+
+        self.assertEqual(changed.read_bytes(), b"changed formal bytes")
+
+    def test_same_release_recovery_rejects_generated_manifest_drift(self) -> None:
+        promotion.promote(self.request, self.artifact)
+        generated = self.artifact / "formal/simion/run_manifest.json"
+        generated.write_bytes(b"changed generated manifest")
+
+        with self.assertRaisesRegex(ValueError, "requires republication"):
+            promotion.recover(self.request, self.artifact)
+
+        self.assertEqual(generated.read_bytes(), b"changed generated manifest")
+
+    def test_same_release_recovery_cleans_failed_staging(self) -> None:
+        promotion.promote(self.request, self.artifact)
+        changed = self.artifact / "formal/simion/accelerator.pa0"
+        changed.write_bytes(b"changed formal bytes")
+
+        with (
+            mock.patch.object(promotion.shutil, "copy2", side_effect=OSError("copy failed")),
+            self.assertRaisesRegex(OSError, "copy failed"),
+        ):
+            promotion.recover(self.request, self.artifact)
+
+        self.assertEqual(list(self.artifact.glob(".formal-recovery-staging-*")), [])
+        self.assertEqual(changed.read_bytes(), b"changed formal bytes")
 
     def test_unrecognized_existing_formal_root_fails_closed(self) -> None:
         formal = self.artifact / "formal"
