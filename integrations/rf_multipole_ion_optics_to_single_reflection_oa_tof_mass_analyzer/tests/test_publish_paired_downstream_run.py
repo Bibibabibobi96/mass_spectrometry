@@ -203,15 +203,19 @@ class PublishPairedDownstreamRunTests(unittest.TestCase):
             pairs=self.fixture.pairs,
         )
         run_root = manifest_path.parent
-        self.assertEqual(
-            {path.relative_to(run_root).as_posix() for path in run_root.rglob("*") if path.is_file()},
+        retained = {
+            path.relative_to(run_root).as_posix()
+            for path in run_root.rglob("*")
+            if path.is_file()
+        }
+        self.assertTrue(
             {
                 "inputs/paired_analysis_request.json",
                 "results/paired_downstream_analysis.json",
                 "run_config.json",
                 "summary.json",
                 "run_manifest.json",
-            },
+            }.issubset(retained)
         )
         config = json.loads((run_root / "run_config.json").read_text(encoding="utf-8"))
         summary = json.loads((run_root / "summary.json").read_text(encoding="utf-8"))
@@ -221,6 +225,13 @@ class PublishPairedDownstreamRunTests(unittest.TestCase):
         self.assertEqual(config["parameters"]["profile_ids"], sorted(PROFILES))
         self.assertEqual(len(config["parameters"]["parent_run_ids"]), 3)
         self.assertFalse(config["formal_gate_passed"])
+        for name in (
+            "family_source_closure_preregistration",
+            "paired_analysis_implementation",
+            "publisher_implementation",
+            "requirements_lock",
+        ):
+            self.assertIn("inputs/repository_snapshot/", config["inputs"][name])
         self.assertEqual(summary["analysis_status"], "INCONCLUSIVE_DIAGNOSTIC_ONLY")
         self.assertEqual(summary["candidate_count"], 3)
         self.assertFalse(summary["acceptance_thresholds_applied"])

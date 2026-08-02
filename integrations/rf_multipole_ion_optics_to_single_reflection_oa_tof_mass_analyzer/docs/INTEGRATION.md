@@ -100,7 +100,8 @@ oaTOF入口、脉冲时active、局部加速器出口、探测面crossing和hit�
 当前source-revision发布器使用schema v2：每个profile必须显式绑定旧COMSOL、混合COMSOL和旧SIMION
 三个父run，并发布三个`right_minus_left`有向pair、共同/差异粒子ID、局部加速器出口与探测器事件集合。
 同一profile的三条series使用共同尺度和固定bin绘图，figure JSON、PNG及终态summary均进入manifest；
-发布过程始终保留`interrupted`、`failed`或`success`之一作为当前权威终态。上述
+活动仓库内的实现、lock和预登记合同必须先逐字节冻结到本次`inputs/repository_snapshot/`，manifest
+不得指向会随Git变化的活动文件。发布过程始终保留`interrupted`、`failed`或`success`之一作为当前权威终态。上述
 `20260730_234500__analysis__cross__hybrid-source-revision__n100`仍是不可变schema v1历史artifact；
 读取器保持兼容，但不会把它重写为schema v2，也不得把新的方向命名倒灌到历史结果。
 
@@ -109,6 +110,11 @@ oaTOF入口、脉冲时active、局部加速器出口、探测面crossing和hit�
 `POSTHOC_DESCRIPTIVE / INCONCLUSIVE_DIAGNOSTIC_ONLY`。同日新增的上游无加速离散跟进臂没有冻结
 新的`SourceRevisionId`、runtime binding或下游预登记，因此未接入本集成、未启动新的oaTOF商业运行；
 不得用现有triangle替代这些新源的下游证据。
+
+2026-08-02证据审计确认上述paired、source-revision与triangle旧分析run曾把活动仓库文件直接列为
+manifest输入，因后续代码演进已不能逐字节复核这些记录。其数值只保留原有历史诊断边界，不得作为新
+资格或派生run输入；完整异常清单与未来发布器闭合见
+[`活动run与campaign证据审计`](../../../docs/history/20260802__run-campaign-evidence-audit.md)。
 
 ## 已关闭迁移
 

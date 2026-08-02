@@ -70,18 +70,9 @@ baseline pilot后登记的N=100三档只包含相邻的空间、时间离散比�
 空间比较先选择相邻网格，时间比较随后固定COMSOL `0.35 mm`和SIMION `0.3 mm`。不得事后改变输入、
 观察量或接受尺度。
 
-当前没有得到下游验收、物理相空间预算或可辩护的误差尺度，因此acceptance和effect-resolution合同
-明确返回`INCONCLUSIVE`，不包含任意百分比。当前只授权
-无加速N=100 baseline、空间和时间敏感性矩阵已完成，功能传输闭合；连续相空间仍为
-`INCONCLUSIVE`。分段杆轴向加速N=100 baseline功能已闭合，SIMION空间档保持100/100，但
-COMSOL空间档在`MESH_COMPLETE`后耗尽工程内存预算。
-出口孔板加速N=100 baseline功能也已闭合，SIMION空间档保持100/100，但COMSOL空间档同样在
-`MESH_COMPLETE`后耗尽工程内存预算。当前没有授权任何商业求解器运行；时间档、N=1000和
-完整矩阵仍未授权。
-六极杆已验证的混合网格机制已经按相同profile语义登记到本项目；这里只复用机制和比较设计，不继承
-六极杆数值结果。新活动在取得明确商业运行授权前不会创建run。
-项目合同
-不能把求解器运行、Candidate或Formal状态从旧证据继承到新机械基线。
+当前完成的实验臂、资源终态、连续量边界与商业运行授权只以
+[`docs/PROJECT.md`](docs/PROJECT.md)为准。本入口不复制运行结果或开放任务。项目合同不能把求解器
+运行、Candidate或Formal状态从旧证据继承到新机械基线。
 
 项目preregistration只冻结母样本、几何、电压和三份资格前置合同。每个求解器必须在三种模式真实运行
 并验证canonical handoff-state路径、SHA和solver-numerics SHA之后，才能生成符合公共schema的正式
@@ -92,9 +83,9 @@ run不能事后发布为正式dispersion binding；公共发布器必须在创�
 点估计报告；统一比较见
 [`../../docs/history/20260729__multipole-three-mode-posthoc-n100.md`](../../docs/history/20260729__multipole-three-mode-posthoc-n100.md)。
 
-运行产物只进入`artifacts/projects/rf_octupole_ion_optics/runs/`，不进入Git。改名前证据由项目
-descriptor的legacy location合同只读治理；当前已冻结唯一archive目的地但尚未真实移动，完成复核并
-切为`archived_verified`后不再回退旧顶层路径。旧证据不得接收新参数或覆盖上述机器权威。
+运行产物只进入`artifacts/projects/rf_octupole_ion_optics/runs/`，不进入Git。改名前证据已按项目
+descriptor的`archived_verified`位置只读迁入具名archive；解析器不再回退旧顶层路径。旧证据不得
+接收新参数或覆盖上述机器权威。
 
 ## 历史
 

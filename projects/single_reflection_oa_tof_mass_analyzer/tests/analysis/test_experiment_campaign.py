@@ -253,8 +253,15 @@ class ExperimentCampaignTests(unittest.TestCase):
                     ["failed", "not_started_due_to_prior_failure"],
                 )
                 config = load_json(run_root / "run_config.json")
-                self.assertEqual(config["commercial_solver_parallelism"], 1)
-                self.assertEqual(config["automatic_retry_count"], 0)
+                manifest = load_json(run_root / "run_manifest.json")
+                self.assertEqual(config["schema_version"], 2)
+                self.assertEqual(manifest["schema_version"], 2)
+                self.assertEqual(manifest["artifact_retention"]["class"], "compact")
+                self.assertEqual(manifest["lifecycle_state"], "terminal")
+                self.assertEqual(
+                    config["parameters"]["commercial_solver_parallelism"], 1
+                )
+                self.assertEqual(config["parameters"]["automatic_retry_count"], 0)
 
     def test_parameter_roles_and_named_profiles_cannot_drift_by_row(self):
         with authorized_campaign_fixture() as (campaign_path, campaign):

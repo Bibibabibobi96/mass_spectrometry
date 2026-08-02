@@ -31,8 +31,19 @@ def retention_api() -> tuple[Any, Any, Any]:
     return classify_file, validate_retained_files, validate_retention
 
 
-def verify_record(name: str, record: dict) -> None:
+def record_path(record: dict, *, base_dir: Path | None = None) -> Path:
+    """Resolve an absolute record or a historical run-relative record."""
+
     path = Path(record["path"])
+    if not path.is_absolute() and base_dir is not None:
+        path = base_dir / path
+    return path.resolve()
+
+
+def verify_record(
+    name: str, record: dict, *, base_dir: Path | None = None
+) -> None:
+    path = record_path(record, base_dir=base_dir)
     if not path.is_file():
         raise AssertionError(f"manifest {name} is missing: {path}")
     if path.stat().st_size != record.get("bytes"):
@@ -62,7 +73,9 @@ def main() -> None:
     parser.add_argument("--require-parent-resolved-design-sha256")
     parser.add_argument("--require-particle-source-sha256")
     args = parser.parse_args()
-    manifest = json.loads(args.manifest.read_text(encoding="utf-8-sig"))
+    manifest_path = args.manifest.resolve()
+    manifest_dir = manifest_path.parent
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
     schema_version = manifest.get("schema_version", 1)
     if schema_version not in {1, 2}:
         raise AssertionError(f"unsupported run manifest schema_version: {schema_version!r}")
@@ -70,9 +83,9 @@ def main() -> None:
         raise AssertionError(
             f"manifest status is {manifest.get('status')!r}, expected {args.require_status!r}"
         )
-    verify_record("run_config", manifest["run_config"])
-    run_config_path = Path(manifest["run_config"]["path"]).resolve()
-    if args.require_local_run_config and run_config_path.parent != args.manifest.resolve().parent:
+    verify_record("run_config", manifest["run_config"], base_dir=manifest_dir)
+    run_config_path = record_path(manifest["run_config"], base_dir=manifest_dir)
+    if args.require_local_run_config and run_config_path.parent != manifest_dir:
         raise AssertionError(
             f"manifest run_config is outside its run directory: {run_config_path}"
         )
@@ -120,12 +133,13 @@ def main() -> None:
             sha256=True,
         )
     for name, record in manifest.get("inputs", {}).items():
-        verify_record(f"input {name}", record)
+        verify_record(f"input {name}", record, base_dir=manifest_dir)
     for index, record in enumerate(manifest.get("outputs", []), start=1):
-        verify_record(f"output {index}", record)
+        verify_record(f"output {index}", record, base_dir=manifest_dir)
         if retention is not None:
             expected_role = classify_file(
-                Path(record["path"]), bytes_count=int(record["bytes"])
+                record_path(record, base_dir=manifest_dir),
+                bytes_count=int(record["bytes"]),
             )
             if record.get("retention_role") != expected_role:
                 raise AssertionError(
@@ -134,10 +148,10 @@ def main() -> None:
     if retention is not None and manifest.get("status") != "interrupted":
         run_files = [
             path
-            for path in args.manifest.resolve().parent.rglob("*")
+            for path in manifest_dir.rglob("*")
             if path.is_file()
             and not path.is_symlink()
-            and path.resolve() != args.manifest.resolve()
+            and path.resolve() != manifest_path
         ]
         validate_retained_files(retention, run_files)
     print(

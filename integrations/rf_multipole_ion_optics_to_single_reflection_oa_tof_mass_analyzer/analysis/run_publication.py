@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 from common.contracts.machine_contracts import ContractError
+from common.contracts.file_identity import file_sha256
 from common.contracts.verify_run_manifest import verify_record
 
 
@@ -53,6 +55,32 @@ def portable_path(path: Path, workspace_root: Path) -> str:
         return path.resolve().relative_to(workspace_root.resolve()).as_posix()
     except ValueError as error:
         raise ContractError(f"path is outside workspace: {path}") from error
+
+
+def freeze_repository_inputs(
+    paths: Mapping[str, Path], *, repo_root: Path, run_dir: Path
+) -> dict[str, Path]:
+    """Copy mutable repository inputs into one run-local provenance snapshot."""
+
+    repo_root = repo_root.resolve()
+    frozen: dict[str, Path] = {}
+    for name, source in paths.items():
+        source = source.resolve()
+        try:
+            relative = source.relative_to(repo_root)
+        except ValueError:
+            frozen[name] = source
+            continue
+        destination = run_dir / "inputs" / "repository_snapshot" / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+        if (
+            destination.stat().st_size != source.stat().st_size
+            or file_sha256(destination) != file_sha256(source)
+        ):
+            raise ContractError(f"repository input snapshot identity failed: {source}")
+        frozen[name] = destination
+    return frozen
 
 
 def write_pending_json(path: Path, value: Mapping[str, Any]) -> None:

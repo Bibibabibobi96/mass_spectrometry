@@ -101,6 +101,14 @@ class VerifyRunManifestIntegrationTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("RUN_MANIFEST_VERIFY=PASS", result.stdout)
 
+    def test_historical_run_relative_records_resolve_from_manifest(self) -> None:
+        document = json.loads(self.manifest.read_text(encoding="utf-8"))
+        document["run_config"]["path"] = "run_config.json"
+        self.manifest.write_text(json.dumps(document), encoding="utf-8")
+        result = self._verify()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("RUN_MANIFEST_VERIFY=PASS", result.stdout)
+
     def test_reference_constraints_fail_closed_on_failed_status(self) -> None:
         self._write_manifest("failed")
         result = self._verify()

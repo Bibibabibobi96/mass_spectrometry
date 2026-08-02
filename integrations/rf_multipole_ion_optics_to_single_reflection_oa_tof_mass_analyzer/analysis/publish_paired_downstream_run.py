@@ -17,6 +17,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.run_publication import (
     load_json as _load,
+    freeze_repository_inputs as _freeze_repository_inputs,
     portable_path as _portable,
     publish_manifest as _shared_publish_manifest,
     record_for_path as _record_for_path,
@@ -525,26 +526,20 @@ def publish_paired_downstream_run(
     run_config_path = run_dir / "run_config.json"
     summary_path = run_dir / "summary.json"
     manifest_path = run_dir / "run_manifest.json"
-    run_inputs = {
-        "family_source_closure_preregistration": _portable(
-            preregistration_path, workspace_root
-        ),
-        "paired_analysis_request": _portable(request_path, workspace_root),
+    input_paths = {
+        "family_source_closure_preregistration": preregistration_path,
+        "paired_analysis_request": request_path,
         **{
-            f"{key}_parent_manifest": _portable(path, workspace_root)
+            f"{key}_parent_manifest": path
             for key, path in sorted(parent_manifests.items())
         },
         **{
-            f"{key}_terminal_manifest": _portable(path, workspace_root)
+            f"{key}_terminal_manifest": path
             for key, path in sorted(terminal_manifests.items())
         },
-        "paired_analysis_implementation": _portable(
-            analyzer_implementation, workspace_root
-        ),
-        "publisher_implementation": _portable(
-            publisher_implementation, workspace_root
-        ),
-        "requirements_lock": _portable(requirements_lock, workspace_root),
+        "paired_analysis_implementation": analyzer_implementation,
+        "publisher_implementation": publisher_implementation,
+        "requirements_lock": requirements_lock,
     }
     run_config = {
         "schema_version": 2,
@@ -552,7 +547,7 @@ def publish_paired_downstream_run(
         "project": INTEGRATION_ID,
         "mode": OUTPUT_MODE,
         "project_root": str(workspace_root),
-        "inputs": run_inputs,
+        "inputs": {},
         "parameters": {
             "particle_count": 100,
             "profile_ids": profile_ids,
@@ -580,6 +575,13 @@ def publish_paired_downstream_run(
     }
     run_dir.mkdir(parents=True, exist_ok=False)
     _write_pending_json(request_path, request)
+    input_paths = _freeze_repository_inputs(
+        input_paths, repo_root=repo_root, run_dir=run_dir
+    )
+    run_config["inputs"] = {
+        name: _portable(path, workspace_root)
+        for name, path in sorted(input_paths.items())
+    }
     _write_pending_json(run_config_path, run_config)
     interrupted_summary = {
         **summary_base,

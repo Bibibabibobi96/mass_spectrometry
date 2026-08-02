@@ -5,6 +5,12 @@
 
 ## 已完成审计
 
+- [2026-08-02 活动run与campaign证据审计](history/20260802__run-campaign-evidence-audit.md)：
+  核对8个项目的活动run三件套、manifest记录、终态和全部声明式campaign，区分不可变历史缺陷与
+  当前证据，并关闭相对路径验证和oaTOF campaign公共生命周期缺口。
+- [2026-08-02 文档内容、权威与格式审计](history/20260802__documentation-authority-content-audit.md)：
+  核对全部活动与历史Markdown的职责、状态新鲜度、重复规范和格式，移除已完成开放任务及项目入口中的
+  运行结果副本，并收敛MR-TOF重复理论系数表。
 - [2026-08-02 MR-TOF项目身份整合](history/20260802__mrtof-project-identity-consolidation.md)：
   将活动项目统一为短名称，完整迁移旧`mr_tof` CAD artifact，并关闭长路径和旧根兼容面。
 - [2026-08-01 artifact顶层布局闭合](history/20260801__artifact-top-level-layout-closure.md)：

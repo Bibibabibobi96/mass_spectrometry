@@ -27,6 +27,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     _terminal_branch,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.run_publication import (
+    freeze_repository_inputs as _freeze_repository_inputs,
     portable_path as _portable,
     publish_manifest as _shared_publish_manifest,
     restore_interrupted as _shared_restore_interrupted,
@@ -611,10 +612,7 @@ def publish_source_revision_comparison_run(
         "project": INTEGRATION_ID,
         "mode": OUTPUT_MODE,
         "project_root": str(workspace_root),
-        "inputs": {
-            name: _portable(path, workspace_root)
-            for name, path in sorted(input_paths.items())
-        },
+        "inputs": {},
         "parameters": {
             "comparison_schema_version": 2,
             "particle_count": 100,
@@ -652,6 +650,13 @@ def publish_source_revision_comparison_run(
 
     run_dir.mkdir(parents=True, exist_ok=False)
     _write_pending_json(request_path, request)
+    input_paths = _freeze_repository_inputs(
+        input_paths, repo_root=repo_root, run_dir=run_dir
+    )
+    run_config["inputs"] = {
+        name: _portable(path, workspace_root)
+        for name, path in sorted(input_paths.items())
+    }
     _write_pending_json(run_config_path, run_config)
     interrupted_summary = {
         **summary_base,

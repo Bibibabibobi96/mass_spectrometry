@@ -39,24 +39,6 @@ species、particle identity和lineage之间显式转换并冻结来源。
 根据风险、已有证据或验收要求跳过SIMION-first，直接进入同源双求解器实施；跳过阶段不得降低合同、
 证据或资格门禁。
 
-## 当前跨项目开放任务
-
-1. **把行政改名前artifact受控迁入当前正式项目根。** 目标是让每个项目在
-   `artifacts/projects/`下只保留当前正式`project_id`目录，同时把旧身份证据封装在该根的
-   `archive/`内；当前`legacy_identities`只读根在迁移完成前继续原地保留。实施前必须建立版本化迁移
-   manifest、旧绝对路径解析/重定位规则和legacy布局验证，盘点并更新全部活动合同、资格记录、模板与
-   文档引用，逐文件复核SHA-256、recorded project identity和原声明边界。只有所有消费者在新位置通过
-   回归、旧路径达到零活动引用并再次取得删除授权后，才可删除旧顶层目录。该任务不自动删除MPH/PA、
-   不减少磁盘占用，也不阻断当前多极杆资格与三模式分析；减容另行执行manifest级保留审计。六、八
-   极杆已按唯一schema v2计划迁入当前根并完成有journal的可重建载荷裁剪；四极杆完整源和计划保留，
-   因Windows拒绝同卷原子目录移动而继续处于`source_pending_relocation`，恢复契约见同日迁移审计。
-   oaTOF旧根已迁入当前项目archive并通过全量SHA-256、SIMION四实例运行时加载及SolidWorks 25组件
-   引用复核；旧定位已从活动合同移除，历史manifest保持原字节和原身份。减容已作为迁移后的独立
-   manifest级保留审计完成，删除规则没有把文件大小本身当作授权依据。MR-TOF旧`mr_tof`根也已完整
-   迁入`parallel_mirror_dual_stripe_mr_tof`具名archive，121个文件逐项复核且无身份异常；其原始CAD
-   manifest继续保留旧身份和原声明边界。电子轰击离子源与Wehnelt电子枪旧根也已分别迁入当前项目
-   具名archive，13个/409个文件完成全量SHA-256复核且无身份异常；本轮没有执行可重建载荷裁剪。
-
 ## 面向大规模代码库的扩展护栏
 
 仓库增长到十万行乃至更大规模时，主要风险不是源码行数本身，而是求解器入口、物理合同、派生参数、

@@ -49,13 +49,9 @@ design与integration选定profile确定性组合。组合结果直接提供`down
 `axial_dc`实体电位；`owner=downstream`固定禁止重复上游末端电极。求解器适配器不得再按mode名称推导
 电位，也不得把保留在未组合机械base中的旧出口板faces解释为活动集成实体。
 
-2026-07-31的`20260731__oatof_shield_terminal_h15_n100` campaign已在SIMION完成9/9行。统一终端的
-`handoff`是屏蔽罩开孔外侧切平面的矩形孔入口，`terminal`是穿过4 mm厚孔后的终态；九臂handoff为
-`83/95/94、84/89/96、59/41/70`，对应terminal为`31/59/38、57/81/74、43/34/62`（每组三个数字依次
-为无加速/分段/终端阶跃）。相空间图和连续指标只使用handoff群体，terminal透射单独报告。完整表、
-图组与声明边界见
+已执行的统一终端campaign、数值结果和声明边界只在日期化报告中保存：
 [`../../docs/history/20260731__multipole-oatof-shield-terminal-h15-n100.md`](../../docs/history/20260731__multipole-oatof-shield-terminal-h15-n100.md)；
-该事后N=100工程对照不建立数值收敛或资格。
+公共实现文档不复制结果表或项目状态。
 
 ## 几何和拓扑闭合
 
@@ -150,19 +146,13 @@ L2 `analyze_round_rod_screen.py`同样只报告每个输入ratio的场谐波指�
 `ProjectId + DesignProfileId`，在run内解析profile并编译唯一resolved design；二维求解器只从该resolved
 读取多极阶数、电极数和`r0`，筛选合同仅定义候选采样与数值参数。
 
-## 当前功能数值资格
+## 资格合同与状态路由
 
-2026-07-28，四、六、八极杆的`no_acceleration_full_length`均以真实COMSOL和SIMION、同一项目内冻结
-N=100源完成五项矩阵：COMSOL空间加密、COMSOL时间加密、SIMION空间加密、SIMION时间加密，以及两边
-各自收敛解之间的跨求解器比较，全部`PASS`。机器结果位于
-三个项目描述符`legacy_identities[].artifact_location`所解析的唯一只读artifact根下
-`results/numerical_qualification/20260728_functional_transport/`；验收合同为
-[`functional_transport_acceptance.json`](functional_transport_acceptance.json)。
-2026-07-28改名后的新run进入当前project ID对应artifact根。旧证据当前处于受控迁移前状态；移动时
-保持manifest原字节并逐文件复核SHA，完成后resolver只读具名archive，不复制或改写既有证据。
-
-该闭合只证明无碰撞RF传输分类、透射粒子ID和正工作半径裕量稳定；连续束斑、发散、TOF、能量及逐粒子
-相空间差异只是诊断输出，不在这项PASS内。它也不授予碰撞冷却、轴向加速、RF+DC质量过滤、机械、
+共享功能验收合同为
+[`functional_transport_acceptance.json`](functional_transport_acceptance.json)。四、六、八极杆的当前
+完成状态、数值结果和开放任务只查各项目`docs/PROJECT.md`；日期化跨家族比较只查根`docs/history/`。
+旧身份证据只从项目描述符的`archived_verified`位置读取，公共层不搜索迁移前顶层路径，也不复制或
+改写历史manifest。公共合同的PASS范围不得扩展为碰撞冷却、轴向加速、RF+DC质量过滤、机械、
 Candidate或Formal资格。
 
 ### 暂时工程推进指标
@@ -189,14 +179,7 @@ Formal资格。质心分量、p95/p99尾部、时间中心/展宽及位置—角
 `exit_aperture_plate_acceleration`。三个arm必须绑定同一轴向几何identity、同一N=100/N=1000母样本
 前缀、同一求解器与除电压模式外的数值设置；公共层不保存项目电压值或验收阈值。
 
-2026-07-31又以声明式campaign完成SIMION H15 N=100三模式工程对照。已执行的无加速/分段加速表因
-run config冻结其SHA而保持不变；出口带孔接口板加速使用独立三行补充表，并由同一
-`campaign_analysis.py`合并九份manifest。九臂均为100/100。出口接口板加速相对无加速在四/六/八极杆
-分别把中心化空间RMS降低`0.0788/0.0542/0.0995 mm`，把中心化角RMS降低
-`2.5445/1.2797/0.6912°`。分段加速相对出口接口板加速的中心化角RMS再低
-`0.8558/0.2327/0.6438°`且平均飞行时间短约`8.30–8.69 µs`，但中心化空间RMS分别高
-`0.0076/0.0182/0.1563 mm`。因此前者是本批更强的空间收缩方案，后者是更强的角发散/快速通过方案；
-这只是同一H15离散下的N=100工程趋势，不是数值收敛或设计最优。完整表、运行身份和图路径见
+已执行三模式campaign的结果、运行身份和图路径只保存于
 [`../../docs/history/20260731__multipole-three-mode-h15-n100.md`](../../docs/history/20260731__multipole-three-mode-h15-n100.md)。
 
 [`three_mode_dispersion.py`](three_mode_dispersion.py)只读取既有canonical component particle-state

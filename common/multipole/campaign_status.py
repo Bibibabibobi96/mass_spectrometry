@@ -54,7 +54,18 @@ def campaign_status(
 
     repo_root = repo_root.resolve()
     workspace_root = repo_root.parent
-    campaign = _load(campaign_path.resolve())
+    if not campaign_path.is_absolute():
+        repository_relative = repo_root / campaign_path
+        campaign_path = (
+            repository_relative
+            if repository_relative.is_file()
+            else repo_root / "common" / "multipole" / "campaigns" / campaign_path
+        )
+    campaign_path = campaign_path.resolve()
+    campaign_root = (repo_root / "common" / "multipole" / "campaigns").resolve()
+    if not campaign_path.is_relative_to(campaign_root) or not campaign_path.is_file():
+        raise ValueError("campaign path must name a file in common/multipole/campaigns")
+    campaign = _load(campaign_path)
     rows: list[dict[str, Any]] = []
     counts: dict[str, int] = {}
     for experiment in campaign.get("experiments", []):

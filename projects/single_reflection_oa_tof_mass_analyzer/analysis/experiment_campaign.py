@@ -6,7 +6,10 @@ import copy
 import hashlib
 import json
 import math
+import os
 import shutil
+import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -19,6 +22,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.compile_candidate_
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = PROJECT_ROOT.parents[1]
 WORKSPACE_ROOT = PROJECT_ROOT.parents[2]
 DEFAULT_CAMPAIGN = PROJECT_ROOT / "config" / "experiment_campaign.json"
 DEFAULT_ARTIFACT_ROOT = (
@@ -504,6 +508,54 @@ def _record(path: Path, root: Path) -> dict[str, Any]:
     }
 
 
+def _publish_campaign_manifest(
+    run_root: Path,
+    *,
+    status: str,
+    lifecycle_state: str,
+    outputs: list[Path],
+) -> None:
+    """Publish one campaign manifest through the repository lifecycle writer."""
+
+    manifest_path = run_root / "run_manifest.json"
+    pending = run_root / ".run_manifest.json.pending"
+    command = [
+        sys.executable,
+        "-m",
+        "common.contracts.write_run_manifest",
+        "--run-config",
+        str(run_root / "run_config.json"),
+        "--manifest",
+        str(pending),
+        "--status",
+        status,
+        "--software",
+        f"Python {sys.version_info.major}.{sys.version_info.minor}",
+    ]
+    for output in outputs:
+        command.extend(("--output", str(output)))
+    completed = subprocess.run(
+        command,
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=60,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            "campaign manifest publication failed: "
+            + (completed.stdout + completed.stderr).strip()
+        )
+    manifest = load_json(pending)
+    manifest["lifecycle_state"] = lifecycle_state
+    manifest["promotion_authorized"] = False
+    _write_json(pending, manifest)
+    os.replace(pending, manifest_path)
+
+
 def execute_campaign(
     campaign_path: Path,
     campaign_run_id: str,
@@ -533,46 +585,46 @@ def execute_campaign(
     shutil.copy2(resolved["path"], frozen_table)
     shutil.copytree(prepared["scratch"] / "rows", rows_root)
     shutil.rmtree(prepared["scratch"])
+    campaign_id = resolved["document"]["campaign_id"]
+    campaign_selection = "all" if run_all else experiment_id
     config = {
-        "schema_version": 1,
+        "schema_version": 2,
         "role": "oatof_experiment_campaign_run_config",
         "run_id": campaign_run_id,
         "project": PROJECT_ID,
         "mode": "experiment_campaign",
-        "campaign_id": resolved["document"]["campaign_id"],
+        "project_root": str(run_root),
+        "inputs": {"campaign": "inputs/experiment_campaign.json"},
+        "parameters": {
+            "campaign_id": campaign_id,
+            "selection": campaign_selection,
+            "commercial_solver_parallelism": 1,
+            "automatic_retry_count": 0,
+        },
+        "artifact_retention": {
+            "policy_version": 1,
+            "class": "compact",
+            "reason": None,
+        },
+        "formal_gate_passed": False,
         "campaign_sha256": sha256(frozen_table),
-        "selection": "all" if run_all else experiment_id,
-        "commercial_solver_parallelism": 1,
-        "automatic_retry_count": 0,
         "started_at_utc": _utc_now(),
     }
     _write_json(run_root / "run_config.json", config)
     summary: dict[str, Any] = {
         "schema_version": 1,
         "role": "oatof_experiment_campaign_summary",
-        "status": "running",
-        "campaign_id": config["campaign_id"],
+        "status": "interrupted",
+        "campaign_id": campaign_id,
         "rows": [],
         "recorded_at_utc": _utc_now(),
     }
     _write_json(run_root / "summary.json", summary)
-    _write_json(
-        run_root / "run_manifest.json",
-        {
-            "schema_version": 1,
-            "role": "simulation_run_manifest",
-            "run_id": campaign_run_id,
-            "project": PROJECT_ID,
-            "mode": "experiment_campaign",
-            "status": "interrupted",
-            "lifecycle_state": "provisional",
-            "run_config": _record(run_root / "run_config.json", run_root),
-            "inputs": {"campaign": _record(frozen_table, run_root)},
-            "outputs": [_record(run_root / "summary.json", run_root)],
-            "formal_eligible": False,
-            "promotion_authorized": False,
-            "recorded_at_utc": _utc_now(),
-        },
+    _publish_campaign_manifest(
+        run_root,
+        status="interrupted",
+        lifecycle_state="provisional",
+        outputs=[run_root / "summary.json"],
     )
 
     failure = False
@@ -591,7 +643,7 @@ def execute_campaign(
         selection = {
             "schema_version": 1,
             "role": "oatof_campaign_selection",
-            "campaign_id": config["campaign_id"],
+            "campaign_id": campaign_id,
             "campaign_sha256": sha256(frozen_table),
             "campaign_run_id": campaign_run_id,
             "row_sha256": _canonical_sha(experiment),
@@ -630,7 +682,7 @@ def execute_campaign(
             receipt = {
                 "schema_version": 1,
                 "role": "oatof_campaign_experiment_receipt",
-                "campaign_id": config["campaign_id"],
+                "campaign_id": campaign_id,
                 "experiment_id": experiment["experiment_id"],
                 "status": "success",
                 "selection_sha256": sha256(selection_path),
@@ -644,7 +696,7 @@ def execute_campaign(
             receipt = {
                 "schema_version": 1,
                 "role": "oatof_campaign_experiment_receipt",
-                "campaign_id": config["campaign_id"],
+                "campaign_id": campaign_id,
                 "experiment_id": experiment["experiment_id"],
                 "status": "failed",
                 "selection_sha256": sha256(selection_path),
@@ -665,26 +717,12 @@ def execute_campaign(
     summary["status"] = "failed" if failure else "success"
     summary["recorded_at_utc"] = _utc_now()
     _write_json(run_root / "summary.json", summary)
-    manifest = {
-        "schema_version": 1,
-        "role": "simulation_run_manifest",
-        "run_id": campaign_run_id,
-        "project": PROJECT_ID,
-        "mode": "experiment_campaign",
-        "status": summary["status"],
-        "lifecycle_state": "terminal",
-        "run_config": _record(run_root / "run_config.json", run_root),
-        "inputs": {"campaign": _record(frozen_table, run_root)},
-        "outputs": [
-            _record(path, run_root)
-            for path in sorted(receipts_root.glob("*.json"))
-        ]
-        + [_record(run_root / "summary.json", run_root)],
-        "formal_eligible": False,
-        "promotion_authorized": False,
-        "recorded_at_utc": _utc_now(),
-    }
-    _write_json(run_root / "run_manifest.json", manifest)
+    _publish_campaign_manifest(
+        run_root,
+        status=summary["status"],
+        lifecycle_state="terminal",
+        outputs=[*sorted(receipts_root.glob("*.json")), run_root / "summary.json"],
+    )
     return run_root, summary
 
 

@@ -144,10 +144,8 @@ adapter。
 完成判据是减少重复权威和专用编排代码，同时保持现有负结果、运行身份、GUI可检查几何及商业求解器
 证据可追溯；仅创建schema、空目录或自动生成计划不算完成。
 
-截至2026-07-29，上述第1至7步已经完成。独立analysis run
-`20260729_195243__analysis__cross__rf-oatof-migration-equivalence`对两个profile给出功能迁移
-`PASS`；旧S2/S3具名活动载荷已按SHA冻结为history oracle并退出活动权威，历史证据及其原artifact
-身份继续只读保留。2026-07-30，四、六、八极杆三个无加速profile的COMSOL/SIMION上游源六个
-分支又通过family公开入口完成真实链和统一paired analysis；结论严格保持
-`FUNCTIONAL_SCREEN_ONLY / INCONCLUSIVE_DIAGNOSTIC_ONLY`。因此第8步的profile与功能链已经完成，
-但连续相空间、收敛、分辨率、优化、机械、Candidate和Formal资格均未建立。
+当前第1至8步的profile与功能链均已完成，旧S2/S3专用活动载荷已退出活动权威；本页不保存run ID、
+日期化结果或迁移数值。当前连接实现与资格边界见integration文档，完整退役过程与证据完整性分别见
+[`2026-08-01 活动兼容层退役`](history/20260801__active-compatibility-retirement.md)和
+[`2026-08-02 活动run与campaign证据审计`](history/20260802__run-campaign-evidence-audit.md)。现有证据仍只
+支持功能贯通与诊断，不建立连续相空间、收敛、分辨率、优化、机械、Candidate或Formal资格。

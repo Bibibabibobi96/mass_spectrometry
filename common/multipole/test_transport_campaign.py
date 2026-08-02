@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Iterator
 
 from common.multipole.resource_budget import validate_pilot_budget
+from common.multipole.campaign_status import campaign_status
 from common.multipole.runtime_profile import (
     resolve_runtime_profile,
     resolve_runtime_selection,
@@ -107,6 +108,19 @@ def written_campaign(document: dict) -> Iterator[Path]:
 
 
 class TransportCampaignTests(unittest.TestCase):
+    def test_campaign_status_accepts_repository_relative_path(self) -> None:
+        status = campaign_status(
+            REPO_ROOT,
+            Path(
+                "common/multipole/campaigns/"
+                "20260731__oatof_shield_terminal_h15_n100.json"
+            ),
+        )
+        self.assertEqual(
+            status["campaign_id"], "20260731__oatof_shield_terminal_h15_n100"
+        )
+        self.assertEqual(len(status["experiments"]), 9)
+
     def test_oatof_terminal_campaign_resolves_one_shared_terminal_for_nine_rows(
         self,
     ) -> None:

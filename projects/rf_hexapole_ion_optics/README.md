@@ -47,9 +47,8 @@ COMSOL mesh/solver试验和SIMION定向跟进不再是可执行profile，结论�
 
 ## 资格边界
 
-三模式当前N=100 baseline功能传输已闭合；无加速模式已有空间/时间敏感性结果，两种加速模式的
-COMSOL空间档在冻结资源帽处停止。连续数值收敛和跨求解器等价均未建立，状态保持
-`DEFERRED_NOT_WAIVED`/`INCONCLUSIVE`；工程阈值PASS不得改称数值收敛、Candidate或Formal资格。
+当前实验、资源终态、数值资格和商业运行授权只以[`docs/PROJECT.md`](docs/PROJECT.md)为准；本入口
+不复制运行结果。工程阈值PASS不得改称数值收敛、Candidate或Formal资格。
 
 历史材料：
 

@@ -88,22 +88,9 @@ rf_quadrupole_ion_optics/
 - 功能PASS不代表跨求解器数值等价、网格收敛、机械、Candidate或Formal资格。
 - 本项目适用公共多极杆家族工程推进合同；阈值、状态、缺失指标处置和判定只读取上表链接的共同
   JSON，不在项目文件保存副本。工程推进不回写既有`INCONCLUSIVE`数值敏感性/收敛结论。
-- 无加速N=100双求解器baseline、空间和时间敏感性矩阵已经完成；最终两求解器的100个RF-on粒子身份
-  完全一致，功能传输闭合。连续相空间因无来源充分的误差预算仍为`INCONCLUSIVE`。2026-07-31另完成
-  一个定向SIMION N=1000抽样臂：N=100源是N=1000源的精确有序前缀，前100个出口状态逐字段完全复现；
-  N=1000相对N=100的RMS半径和角散分别变化`-5.28%`和`-6.77%`，但均落入N=100的预注册95% bootstrap
-  区间。共同N=100来源下，SIMION与既有COMSOL t160的半径、角散、能量和飞行时间差分别约
-  `0.20%`、`3.11%`、`0.24%`和`0.038%`；这是求解器与离散设置合并的描述性差异，不是准确度排名。
-  结果见[`config/family_experiment/no_acceleration_n1000_sampling/sampling_result.json`](config/family_experiment/no_acceleration_n1000_sampling/sampling_result.json)
-  和[`sampling_comparison.png`](config/family_experiment/no_acceleration_n1000_sampling/sampling_comparison.png)。
-  唯一COMSOL N=1000 bridge尝试在7200 s边界仅构造到746/1000个逐粒子release，尚未进入粒子求解，
-  因而没有COMSOL N=1000出口结果；该campaign已按`interrupted`关闭且不自动重试。当前决策是暂停
-  其余N=1000商业运行：配对数值收敛臂继续允许用同源N=100消除抽样共模，而绝对分布
-  或尾部统计发布应使用更大样本并单独预算。分段杆和出口孔板两种轴向加速的baseline功能均已闭合，但各自COMSOL空间档
-  均耗尽工程内存预算；时间档、N=1000及完整矩阵仍未授权。公共runner会在创建run目录前复核身份和数值参数，
-  并执行`config/family_experiment/engineering_budget.json`的时间、内存和磁盘硬帽。
-- 六极杆已验证的混合网格机制已按相同profile语义登记到本项目，但没有继承六极杆数值结果。新活动
-  的三个arm均为`authorized=false`、`executed=false`，只允许在单独预算明确授权后顺序运行。
+- 已完成实验、资源终态、N=1000抽样结论与后续授权只以[`docs/PROJECT.md`](docs/PROJECT.md)为准；
+  本入口不复制运行数值、campaign状态或开放任务。公共runner仍必须在创建run目录前复核身份、数值
+  参数及工程预算。
 - 正式机械几何与CAD同步完成前，`verify_project.ps1 -Level Formal`必须失败关闭。
 
 历史完整状态、实现清单和关闭过程冻结于
