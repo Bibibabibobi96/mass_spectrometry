@@ -85,7 +85,7 @@ class ArtifactIdentityArchiveTests(unittest.TestCase):
             manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
             self.assertEqual(
                 resolve_legacy_artifact_root(workspace, mapping, CURRENT),
-                workspace / mapping["artifact_location"]["archive_root"],
+                (workspace / mapping["artifact_location"]["archive_root"]).resolve(),
             )
 
     def test_plan_rejects_duplicate_and_lowercase_hashes(self) -> None:
