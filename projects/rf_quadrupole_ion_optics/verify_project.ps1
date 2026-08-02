@@ -1,6 +1,7 @@
 param(
   [ValidateSet('Freshness','Core','Static','Formal')][string]$Level = 'Static',
-  [string]$PythonExe = ''
+  [string]$PythonExe = '',
+  [switch]$FreshnessPrevalidated
 )
 
 Set-StrictMode -Version Latest
@@ -9,27 +10,34 @@ $projectRoot = $PSScriptRoot
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 runtime missing: $python" }
+if ($FreshnessPrevalidated -and $Level -eq 'Freshness') {
+  throw 'FreshnessPrevalidated cannot be combined with Level=Freshness.'
+}
 
-Push-Location $repoRoot
-try {
-  & $python -m projects.rf_quadrupole_ion_optics.analysis.resolve_contract --check
-  if ($LASTEXITCODE -ne 0) { throw 'Resolved-contract gate failed.' }
-  & $python -m projects.rf_quadrupole_ion_optics.analysis.resolve_contract --profile interface --check
-  if ($LASTEXITCODE -ne 0) { throw 'Interface-readiness contract gate failed.' }
-  & $python -m projects.rf_quadrupole_ion_optics.analysis.resolve_contract --profile mass_filter --check
-  if ($LASTEXITCODE -ne 0) { throw 'Mass-filter resolved contract gate failed.' }
-  & $python -m projects.rf_quadrupole_ion_optics.analysis.sync_simion_geometry --check
-  if ($LASTEXITCODE -ne 0) { throw 'SIMION geometry publication gate failed.' }
-  & $python -m projects.rf_quadrupole_ion_optics.analysis.generate_official_particle_table --check `
-    (Join-Path $projectRoot 'config\particles\official_fixed_100.ion') --check-canonical `
-    (Join-Path $projectRoot 'config\particles\official_fixed_100_canonical.csv') --resolved-design `
-    (Join-Path $projectRoot 'config\resolved_design_official.json')
-  if ($LASTEXITCODE -ne 0) { throw 'Paired-particle identity gate failed.' }
-  & $python -m common.multipole.runtime_profile --repo-root $repoRoot `
-    --project-id rf_quadrupole_ion_optics --runtime-profile-id no_acceleration_full_length `
-    --output (Join-Path ([IO.Path]::GetTempPath()) 'rfquad_runtime_profile_gate.json')
-  if ($LASTEXITCODE -ne 0) { throw 'Multipole runtime-profile gate failed.' }
-} finally { Pop-Location }
+if (-not $FreshnessPrevalidated) {
+  Push-Location $repoRoot
+  try {
+    & $python -m projects.rf_quadrupole_ion_optics.analysis.resolve_contract --check
+    if ($LASTEXITCODE -ne 0) { throw 'Resolved-contract gate failed.' }
+    & $python -m projects.rf_quadrupole_ion_optics.analysis.resolve_contract --profile interface --check
+    if ($LASTEXITCODE -ne 0) { throw 'Interface-readiness contract gate failed.' }
+    & $python -m projects.rf_quadrupole_ion_optics.analysis.resolve_contract --profile mass_filter --check
+    if ($LASTEXITCODE -ne 0) { throw 'Mass-filter resolved contract gate failed.' }
+    & $python -m projects.rf_quadrupole_ion_optics.analysis.sync_simion_geometry --check
+    if ($LASTEXITCODE -ne 0) { throw 'SIMION geometry publication gate failed.' }
+    & $python -m projects.rf_quadrupole_ion_optics.analysis.generate_official_particle_table --check `
+      (Join-Path $projectRoot 'config\particles\official_fixed_100.ion') --check-canonical `
+      (Join-Path $projectRoot 'config\particles\official_fixed_100_canonical.csv') --resolved-design `
+      (Join-Path $projectRoot 'config\resolved_design_official.json')
+    if ($LASTEXITCODE -ne 0) { throw 'Paired-particle identity gate failed.' }
+    & $python -m common.multipole.runtime_profile --repo-root $repoRoot `
+      --project-id rf_quadrupole_ion_optics --runtime-profile-id no_acceleration_full_length `
+      --output (Join-Path ([IO.Path]::GetTempPath()) 'rfquad_runtime_profile_gate.json')
+    if ($LASTEXITCODE -ne 0) { throw 'Multipole runtime-profile gate failed.' }
+  } finally { Pop-Location }
+} else {
+  'QUADRUPOLE_FRESHNESS=PREVALIDATED'
+}
 if ($Level -eq 'Freshness') {
   "PROJECT_GATE=PASS PROJECT=rf_quadrupole_ion_optics LEVEL=$Level"
   return

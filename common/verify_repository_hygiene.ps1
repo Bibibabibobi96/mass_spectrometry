@@ -6,6 +6,13 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $errors = [Collections.Generic.List[string]]::new()
 
+foreach ($directoryName in @('.tmp', 'scratch')) {
+  $directory = Join-Path $repoRoot $directoryName
+  if (Test-Path -LiteralPath $directory) {
+    $errors.Add("repository root must not contain temporary directory: $directoryName")
+  }
+}
+
 $rootDebrisPatterns = @('hs_err_pid*.log','java_error_in_*.log','matlab_crash_dump.*','core.*','*.dmp')
 foreach ($pattern in $rootDebrisPatterns) {
   foreach ($file in @(Get-ChildItem -LiteralPath $repoRoot -File -Filter $pattern -ErrorAction SilentlyContinue)) {

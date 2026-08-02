@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import unittest
 from pathlib import Path
 
@@ -20,6 +21,11 @@ class StaticGateTests(unittest.TestCase):
         cls.integration_gate = (
             REPO_ROOT / "common" / "verify_repository_integration.ps1"
         ).read_text(encoding="utf-8")
+        cls.gate_catalog = json.loads(
+            (REPO_ROOT / "common" / "gate_catalog.json").read_text(
+                encoding="utf-8"
+            )
+        )
 
     def test_public_gate_requires_powershell_core_7(self) -> None:
         self.assertIn(
@@ -45,13 +51,23 @@ class StaticGateTests(unittest.TestCase):
         )
 
     def test_repository_integration_gate_runs_wehnelt_static_once(self) -> None:
-        invocation = (
-            "& (Join-Path $repoRoot "
-            "'projects\\transverse_helical_filament_wehnelt_electron_gun"
-            "\\verify_project.ps1') "
-            "-PythonExe $PythonExe"
+        routes = [
+            route
+            for route in self.gate_catalog["routes"]
+            if route.get("project_id")
+            == "transverse_helical_filament_wehnelt_electron_gun"
+        ]
+        self.assertEqual(len(routes), 1)
+        self.assertEqual(
+            routes[0]["command"]["script"],
+            "projects/transverse_helical_filament_wehnelt_electron_gun/verify_project.ps1",
         )
-        self.assertEqual(self.integration_gate.count(invocation), 1)
+        self.assertEqual(routes[0]["repository_integration_group"], "regression")
+        self.assertIn("Read-GateCatalog", self.integration_gate)
+        self.assertNotIn(
+            "projects\\transverse_helical_filament_wehnelt_electron_gun",
+            self.integration_gate,
+        )
 
 
 if __name__ == "__main__":

@@ -1,9 +1,11 @@
 {
-  "schema_version": 1,
-  "role": "changed_scope_gate_routes",
+  "schema_version": 2,
+  "role": "repository_gate_catalog",
   "routes": [
     {
       "stage": "project_registry",
+      "dependency_profile": "locked",
+      "repository_integration_group": "fast",
       "matches": [
         {
           "exact": "config/project_registry.json",
@@ -24,6 +26,8 @@
     },
     {
       "stage": "rf_quadrupole_generated_publications",
+      "dependency_profile": "locked",
+      "repository_integration_group": "fast",
       "matches": [
         {
           "prefix": "projects/rf_quadrupole_ion_optics/",
@@ -57,6 +61,8 @@
     },
     {
       "stage": "common_contracts",
+      "dependency_profile": "locked",
+      "repository_integration_group": "regression",
       "matches": [
         {
           "prefix": "common/contracts/",
@@ -78,6 +84,8 @@
     },
     {
       "stage": "gate_contract_tests",
+      "dependency_profile": "stdlib",
+      "repository_integration_group": "covered",
       "run_on_full_scope": false,
       "full_scope_coverage_stage": "common_contracts",
       "matches": [
@@ -90,8 +98,12 @@
           "reason": "parallel_gate_support_changed"
         },
         {
-          "exact": "common/changed_scope_routes.json",
-          "reason": "changed_scope_routes_changed"
+          "exact": "common/gate_catalog.json",
+          "reason": "gate_catalog_changed"
+        },
+        {
+          "exact": "common/gate_catalog_support.ps1",
+          "reason": "gate_catalog_support_changed"
         },
         {
           "exact": "common/contracts/test_verify_changed.py",
@@ -100,10 +112,6 @@
         {
           "exact": "common/verify_repository_integration.ps1",
           "reason": "repository_integration_entrypoint_changed"
-        },
-        {
-          "exact": "common/verify_lightweight.ps1",
-          "reason": "compatibility_gate_entrypoint_changed"
         },
         {
           "exact": "common/require_powershell7.ps1",
@@ -126,6 +134,8 @@
     },
     {
       "stage": "cloc_contract_tests",
+      "dependency_profile": "locked",
+      "repository_integration_group": "covered",
       "run_on_full_scope": false,
       "full_scope_coverage_stage": "common_contracts",
       "matches": [
@@ -148,7 +158,34 @@
       }
     },
     {
+      "stage": "python_dependency_contract",
+      "dependency_profile": "locked",
+      "repository_integration_group": "covered",
+      "run_on_full_scope": false,
+      "full_scope_coverage_stage": "common_contracts",
+      "matches": [
+        {
+          "exact": "pyproject.toml",
+          "reason": "python_dependency_declaration_changed"
+        },
+        {
+          "exact": "requirements-lock.txt",
+          "reason": "python_dependency_lock_changed"
+        }
+      ],
+      "command": {
+        "runner": "python",
+        "arguments": [
+          "-m",
+          "unittest",
+          "common.contracts.test_python_dependency_contract"
+        ]
+      }
+    },
+    {
       "stage": "multipole_common",
+      "dependency_profile": "locked",
+      "repository_integration_group": "regression",
       "matches": [
         {
           "prefix": "common/multipole/",
@@ -178,6 +215,8 @@
     },
     {
       "stage": "multipole_foundation",
+      "dependency_profile": "locked",
+      "repository_integration_group": "regression",
       "matches": [
         {
           "prefix": "common/multipole/",
@@ -202,6 +241,8 @@
     },
     {
       "stage": "integration_common",
+      "dependency_profile": "locked",
+      "repository_integration_group": "regression",
       "matches": [
         {
           "prefix": "common/integration/",
@@ -255,6 +296,8 @@
     },
     {
       "stage": "rf_multipole_to_single_reflection_oatof_integration",
+      "dependency_profile": "locked",
+      "repository_integration_group": "regression",
       "matches": [
         {
           "regex": "^projects/rf_quadrupole_ion_optics/analysis/(derive_shared_centroid_pulse_time|plot_shared_pulse_geometry_snapshot|audit_pulse_capture_pulse_chain|build_pulse_capture_local_exit_component_state|analyze_analyzer_transport|validate_oatof_formal_analyzer_release)\\.py$",
@@ -299,6 +342,8 @@
     },
     {
       "stage": "solidworks_common",
+      "dependency_profile": "locked",
+      "repository_integration_group": "regression",
       "matches": [
         {
           "prefix": "common/solidworks/",
@@ -320,6 +365,8 @@
     },
     {
       "stage": "single_reflection_oa_tof_mass_analyzer_static",
+      "dependency_profile": "locked",
+      "repository_integration_group": "regression",
       "project_id": "single_reflection_oa_tof_mass_analyzer",
       "matches": [
         {
@@ -345,6 +392,11 @@
     },
     {
       "stage": "rf_quadrupole_ion_optics_static",
+      "dependency_profile": "locked",
+      "repository_integration_group": "regression",
+      "requires_stages": [
+        "rf_quadrupole_generated_publications"
+      ],
       "project_id": "rf_quadrupole_ion_optics",
       "matches": [
         {
@@ -373,12 +425,24 @@
         "script": "projects/rf_quadrupole_ion_optics/verify_project.ps1",
         "parameters": {
           "Level": "Core",
+          "FreshnessPrevalidated": true,
+          "PythonExe": "{python}"
+        }
+      },
+      "repository_integration_command": {
+        "runner": "powershell",
+        "script": "projects/rf_quadrupole_ion_optics/verify_project.ps1",
+        "parameters": {
+          "Level": "Static",
+          "FreshnessPrevalidated": true,
           "PythonExe": "{python}"
         }
       }
     },
     {
       "stage": "rf_hexapole_ion_optics_static",
+      "dependency_profile": "locked",
+      "repository_integration_group": "regression",
       "project_id": "rf_hexapole_ion_optics",
       "matches": [
         {
@@ -412,6 +476,8 @@
     },
     {
       "stage": "rf_octupole_ion_optics_static",
+      "dependency_profile": "locked",
+      "repository_integration_group": "regression",
       "project_id": "rf_octupole_ion_optics",
       "matches": [
         {
@@ -445,6 +511,8 @@
     },
     {
       "stage": "transverse_helical_filament_wehnelt_electron_gun_static",
+      "dependency_profile": "locked",
+      "repository_integration_group": "regression",
       "project_id": "transverse_helical_filament_wehnelt_electron_gun",
       "matches": [
         {
@@ -470,6 +538,8 @@
     },
     {
       "stage": "apertured_tube_electron_impact_ion_source_static",
+      "dependency_profile": "locked",
+      "repository_integration_group": "regression",
       "project_id": "apertured_tube_electron_impact_ion_source",
       "matches": [
         {

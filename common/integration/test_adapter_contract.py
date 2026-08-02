@@ -79,9 +79,7 @@ class IntegrationAdapterContractTests(unittest.TestCase):
         path = INTEGRATION_ROOT / "config" / "execution_adapter_profiles.json"
         invalid = copy.deepcopy(json.loads(path.read_text(encoding="utf-8")))
         invalid["mappings"][0]["connector_length_mm"] = 1.0
-        temporary_root = REPO_ROOT / ".tmp"
-        temporary_root.mkdir(exist_ok=True)
-        with tempfile.TemporaryDirectory(dir=temporary_root) as directory:
+        with tempfile.TemporaryDirectory() as directory:
             temporary = Path(directory) / "invalid_adapter.json"
             temporary.write_text(json.dumps(invalid), encoding="utf-8")
             with self.assertRaises(ContractError):

@@ -3,7 +3,8 @@ param(
     [string]$PythonExe = '',
     [string[]]$ChangedPath = @(),
     [switch]$FullScope,
-    [ValidateRange(1, 32)][int]$MaxConcurrency = 4,
+    [switch]$PlanOnly,
+    [ValidateRange(0, 32)][int]$MaxConcurrency = 0,
     [string]$InternalStage = '',
     [string]$InternalRequestPath = '',
     [string]$InternalLogPath = ''
@@ -13,6 +14,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'require_powershell7.ps1')
 . (Join-Path $PSScriptRoot 'parallel_gate_support.ps1')
+. (Join-Path $PSScriptRoot 'gate_catalog_support.ps1')
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 if ($InternalStage) {
@@ -39,6 +41,8 @@ $pythonVersion = (& $PythonExe -c "import sys; print(f'{sys.version_info.major}.
 if ($LASTEXITCODE -ne 0 -or $pythonVersion -ne '3.11') {
     throw "Changed-files gate requires Python 3.11, found $pythonVersion at $PythonExe"
 }
+$concurrencyMode = if ($MaxConcurrency -eq 0) { 'auto' } else { 'explicit' }
+$MaxConcurrency = Resolve-GateConcurrency -Requested $MaxConcurrency
 
 function ConvertTo-RepositoryPath {
     param([Parameter(Mandatory)][string]$Path)
@@ -77,94 +81,6 @@ function Test-AnyPath {
     return @($script:changedPaths | Where-Object $Predicate).Count -gt 0
 }
 
-function Read-ChangedScopeRoutes {
-    $routePath = Join-Path $PSScriptRoot 'changed_scope_routes.json'
-    if (-not (Test-Path -LiteralPath $routePath -PathType Leaf)) {
-        throw "Changed-scope route table missing: $routePath"
-    }
-    $contract = Get-Content -Raw -LiteralPath $routePath | ConvertFrom-Json -Depth 32
-    if ($contract.schema_version -ne 1 -or $contract.role -ne 'changed_scope_gate_routes') {
-        throw 'Changed-scope route table has an unsupported identity.'
-    }
-    $routes = @($contract.routes)
-    if ($routes.Count -eq 0) { throw 'Changed-scope route table must contain routes.' }
-
-    $stageNames = @($routes | ForEach-Object { [string]$_.stage })
-    if (@($stageNames | Where-Object { -not $_ }).Count -gt 0) {
-        throw 'Every changed-scope route must define a stage.'
-    }
-    if (@($stageNames | Sort-Object -Unique).Count -ne $stageNames.Count) {
-        throw 'Changed-scope route stage names must be unique.'
-    }
-
-    foreach ($route in $routes) {
-        if (@($route.matches).Count -eq 0) {
-            throw "Changed-scope route has no path matches: $($route.stage)"
-        }
-        foreach ($match in @($route.matches)) {
-            $matchKinds = @(
-                @('exact', 'prefix', 'regex') | Where-Object {
-                    $null -ne $match.PSObject.Properties[$_]
-                }
-            )
-            if ($matchKinds.Count -ne 1 -or -not [string]$match.reason) {
-                throw "Changed-scope route match must define one matcher and a reason: $($route.stage)"
-            }
-        }
-        if ([string]$route.command.runner -notin @('python', 'powershell')) {
-            throw "Unsupported changed-scope route runner: $($route.stage)"
-        }
-        if ($route.command.runner -eq 'powershell') {
-            $scriptPath = [string]$route.command.script
-            if (-not $scriptPath) {
-                throw "PowerShell changed-scope route is missing its script: $($route.stage)"
-            }
-            $resolvedScript = Join-Path $repoRoot $scriptPath
-            if (-not (Test-Path -LiteralPath $resolvedScript -PathType Leaf)) {
-                throw "Changed-scope route script missing: $scriptPath"
-            }
-        }
-        if ($null -ne $route.PSObject.Properties['run_on_full_scope'] -and
-            -not [bool]$route.run_on_full_scope) {
-            $coverageStage = [string]$route.full_scope_coverage_stage
-            if (-not $coverageStage -or $coverageStage -notin $stageNames) {
-                throw "Full-scope route coverage stage is invalid: $($route.stage)"
-            }
-            if ([array]::IndexOf($stageNames, $coverageStage) -ge
-                [array]::IndexOf($stageNames, [string]$route.stage)) {
-                throw "Full-scope route coverage must run before the covered route: $($route.stage)"
-            }
-        }
-    }
-
-    $projectRoutes = @($routes | Where-Object {
-        $null -ne $_.PSObject.Properties['project_id'] -and [string]$_.project_id
-    })
-    $discoveredProjectGates = @(
-        Get-ChildItem -LiteralPath (Join-Path $repoRoot 'projects') -Directory |
-            ForEach-Object {
-                $gatePath = Join-Path $_.FullName 'verify_project.ps1'
-                if (Test-Path -LiteralPath $gatePath -PathType Leaf) {
-                    "projects/$($_.Name)/verify_project.ps1"
-                }
-            } |
-            Sort-Object
-    )
-    $routedProjectGates = @(
-        $projectRoutes |
-            ForEach-Object { ([string]$_.command.script).Replace('\', '/') } |
-            Sort-Object
-    )
-    if ($projectRoutes.Count -ne @($projectRoutes.project_id | Sort-Object -Unique).Count -or
-        $routedProjectGates.Count -ne @($routedProjectGates | Sort-Object -Unique).Count) {
-        throw 'Each project gate must have exactly one changed-scope project route.'
-    }
-    if (($discoveredProjectGates -join "`n") -cne ($routedProjectGates -join "`n")) {
-        throw "Changed-scope project routes do not match discovered project gates.`nDISCOVERED=$($discoveredProjectGates -join ',')`nROUTED=$($routedProjectGates -join ',')"
-    }
-    return $routes
-}
-
 function Get-ChangedRouteReason {
     param([Parameter(Mandatory)]$Route)
     foreach ($match in @($Route.matches)) {
@@ -184,33 +100,6 @@ function Get-ChangedRouteReason {
         }
     }
     return ''
-}
-
-function Invoke-ChangedRouteCommand {
-    param([Parameter(Mandatory)]$Command)
-    Push-Location $repoRoot
-    try {
-        if ($Command.runner -eq 'python') {
-            $arguments = @(
-                @($Command.arguments) | ForEach-Object {
-                    ([string]$_).Replace('{python}', $PythonExe)
-                }
-            )
-            & $PythonExe @arguments
-        } else {
-            $scriptPath = Join-Path $repoRoot ([string]$Command.script)
-            $parameters = @{}
-            foreach ($property in $Command.parameters.PSObject.Properties) {
-                $parameters[$property.Name] = ([string]$property.Value).Replace('{python}', $PythonExe)
-            }
-            & $scriptPath @parameters
-        }
-        if ($LASTEXITCODE -ne 0) {
-            throw "Changed-scope route command failed with exit code $LASTEXITCODE."
-        }
-    } finally {
-        Pop-Location
-    }
 }
 
 function Invoke-ChangedGateStage {
@@ -241,7 +130,7 @@ if ($FullScope) {
 } else {
     $changedPaths = @(Get-ChangedRepositoryPaths)
 }
-$routes = @(Read-ChangedScopeRoutes)
+$routes = @(Read-GateCatalog -RepoRoot $repoRoot)
 $codeExtensions = @('.py', '.ps1', '.m', '.lua', '.gem')
 $hasCodeChange = $FullScope -or (Test-AnyPath {
     $codeExtensions -contains [IO.Path]::GetExtension($_).ToLowerInvariant()
@@ -265,20 +154,23 @@ function Add-ChangedStageItem {
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)][bool]$Run,
         [Parameter(Mandatory)][string]$Reason,
+        [Parameter(Mandatory)][ValidateSet('stdlib', 'locked')]
+        [string]$DependencyProfile,
         [scriptblock]$Action
     )
     $stageItems[$Name] = [pscustomobject]@{
         Name = $Name
         Run = $Run
         Reason = $Reason
+        DependencyProfile = $DependencyProfile
         Action = $Action
     }
 }
 
-Add-ChangedStageItem 'repository_hygiene' $true 'always' {
+Add-ChangedStageItem 'repository_hygiene' $true 'always' 'stdlib' {
     & (Join-Path $PSScriptRoot 'verify_repository_hygiene.ps1')
 }
-Add-ChangedStageItem 'repository_text_bytes' $true 'always' {
+Add-ChangedStageItem 'repository_text_bytes' $true 'always' 'stdlib' {
     & $PythonExe (Join-Path $PSScriptRoot 'verify_repository_text_bytes.py')
 }
 $documentationReason = if ($hasDocumentationChange) {
@@ -287,7 +179,7 @@ $documentationReason = if ($hasDocumentationChange) {
     'no_documentation_path_changed'
 }
 Add-ChangedStageItem 'documentation' $hasDocumentationChange `
-    $documentationReason {
+    $documentationReason 'stdlib' {
     & (Join-Path $PSScriptRoot 'verify_documentation.ps1')
 }
 $developmentReason = if ($hasCodeChange) {
@@ -296,27 +188,33 @@ $developmentReason = if ($hasCodeChange) {
     'no_source_code_path_changed'
 }
 Add-ChangedStageItem 'development_standards' $hasCodeChange `
-    $developmentReason {
+    $developmentReason 'stdlib' {
     & $PythonExe (Join-Path $PSScriptRoot 'verify_development_standards.py')
 }
 if ($FullScope) {
-    Add-ChangedStageItem 'ruff_changed_python' $true 'full_scope' {
+    Add-ChangedStageItem 'ruff_changed_python' $true 'full_scope' 'locked' {
         & $PythonExe -m ruff check (Join-Path $repoRoot 'common') `
             (Join-Path $repoRoot 'projects') (Join-Path $repoRoot 'integrations')
     }
 } elseif ($existingPythonFiles.Count -gt 0) {
     Add-ChangedStageItem 'ruff_changed_python' $true `
-        'existing_python_source_changed' {
+        'existing_python_source_changed' 'locked' {
         & $PythonExe -m ruff check -- @existingPythonFiles
     }
 } elseif ($changedPython.Count -gt 0) {
     Add-ChangedStageItem 'ruff_changed_python' $false `
-        'only_deleted_python_paths_changed'
+        'only_deleted_python_paths_changed' 'locked'
 } else {
-    Add-ChangedStageItem 'ruff_changed_python' $false 'no_python_path_changed'
+    Add-ChangedStageItem 'ruff_changed_python' $false `
+        'no_python_path_changed' 'locked'
 }
 
-$routeCommandInvoker = ${function:Invoke-ChangedRouteCommand}.GetNewClosure()
+$catalogCommandInvoker = ${function:Invoke-GateCatalogCommand}.GetNewClosure()
+$routeCommandInvoker = {
+    param($Command)
+    & $catalogCommandInvoker -Command $Command -RepoRoot $repoRoot `
+        -PythonExe $PythonExe
+}.GetNewClosure()
 foreach ($route in $routes) {
     $name = [string]$route.stage
     $coveredByFullScopeStage = $FullScope -and
@@ -325,7 +223,7 @@ foreach ($route in $routes) {
     if ($coveredByFullScopeStage) {
         Add-ChangedStageItem $name $false (
             "covered_by_$([string]$route.full_scope_coverage_stage)"
-        )
+        ) ([string]$route.dependency_profile)
         continue
     }
     $reason = if ($FullScope) {
@@ -335,11 +233,30 @@ foreach ($route in $routes) {
     }
     if ($reason) {
         $command = $route.command
-        Add-ChangedStageItem $name $true $reason {
+        Add-ChangedStageItem $name $true $reason `
+            ([string]$route.dependency_profile) {
             & $routeCommandInvoker -Command $command
         }.GetNewClosure()
     } else {
-        Add-ChangedStageItem $name $false 'no_route_match'
+        Add-ChangedStageItem $name $false 'no_route_match' `
+            ([string]$route.dependency_profile)
+    }
+}
+
+foreach ($route in $routes) {
+    $item = $stageItems[[string]$route.stage]
+    if (-not $item.Run) { continue }
+    $requiredStages = if (
+        $null -ne $route.PSObject.Properties['requires_stages']
+    ) {
+        @($route.requires_stages)
+    } else {
+        @()
+    }
+    foreach ($requiredStage in $requiredStages) {
+        if (-not $stageItems[[string]$requiredStage].Run) {
+            throw "Selected gate stage is missing prerequisite: $($route.stage) -> $requiredStage"
+        }
     }
 }
 
@@ -395,11 +312,39 @@ if ($InternalStage) {
 
 Write-Output "CHANGED_GATE_INPUT_SOURCE=$changedPathSource"
 Write-Output "CHANGED_GATE_INPUTS=COUNT=$($changedPaths.Count) PATHS=$($changedPaths -join ',')"
+Write-Output (
+    "GATE_CONCURRENCY=$MaxConcurrency MODE=$concurrencyMode " +
+    "LOGICAL_PROCESSORS=$([Environment]::ProcessorCount)"
+)
+
+if ($PlanOnly) {
+    $selectedStages = @(
+        $stageItems.Values | Where-Object { $_.Run } |
+            ForEach-Object { $_.Name }
+    )
+    $dependencyProfile = if (@(
+            $stageItems.Values | Where-Object {
+                $_.Run -and $_.DependencyProfile -eq 'locked'
+            }
+        ).Count -gt 0) {
+        'locked'
+    } else {
+        'stdlib'
+    }
+    Write-Output (
+        "CHANGED_GATE_PLAN=PASS DEPENDENCY_PROFILE=$dependencyProfile " +
+        "SELECTED_STAGES=$($selectedStages -join ',')"
+    )
+    return
+}
 
 $env:PYTHONDONTWRITEBYTECODE = '1'
 $env:RUFF_NO_CACHE = 'true'
 Invoke-ChangedGateStage 'repository_hygiene' 'always' (
     $stageItems['repository_hygiene'].Action
+)
+Invoke-ChangedGateStage 'repository_text_bytes' 'always' (
+    $stageItems['repository_text_bytes'].Action
 )
 
 # Documentation recursively enumerates the repository and therefore runs

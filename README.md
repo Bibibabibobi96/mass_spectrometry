@@ -458,17 +458,22 @@ PowerShell时必须使用`pwsh`；PowerShell脚本内部继承当前宿主，不
 
 |层级|入口|何时运行|范围|
 |---|---|---|---|
-|L1 changed-scope|`common/verify_changed.ps1`|每次提交、push和日常参数探索|全部改动均为Markdown时只运行仓库卫生与文档门禁；其他改动只运行活动项目、其直接公共依赖及必要静态合同。RF四极杆或其直接公共依赖变化时，先运行生成物`Freshness`快速失败，再运行无求解器的`Core`合同门禁；输出`RUN/SKIP`原因或显式`DOCUMENTATION_ONLY`快速路径|
-|L2 repository integration|`common/verify_repository_integration.ps1`|修改门禁实现、项目注册表、机器合同语义、共享运行机制或跨项目接口时；GitHub手动触发|在长测试前检查RF四极杆生成物`Freshness`，随后运行完整无商业软件的仓库静态回归，包括RF四极杆完整`Static`分析测试及所有项目的Static gate；纯文档和规则文字调整不触发|
+|L1 changed-scope|`common/verify_changed.ps1`|每次提交、push和日常参数探索|始终先运行仓库卫生与受管文本字节门禁；全部改动均为Markdown时再运行文档门禁并结束。其他改动只运行活动项目、其直接公共依赖及必要静态合同。RF四极杆或其直接公共依赖变化时，先运行生成物`Freshness`快速失败，随后以已验证前置条件运行无求解器的`Core`合同；输出`RUN/SKIP`原因或显式`DOCUMENTATION_ONLY`快速路径|
+|L2 repository integration|`common/verify_repository_integration.ps1`|修改门禁实现、项目注册表、机器合同语义、共享运行机制或跨项目接口时；GitHub手动触发|在长测试前检查RF四极杆生成物`Freshness`，随后从统一门禁目录发现并运行全部活动项目、integration和公共静态回归；四极杆`Static`复用已通过的Freshness，不重复生成物检查。纯文档和规则文字调整不触发|
 |L3 project evidence|各项目`verify_project.ps1`的Candidate/Formal级别|Candidate、Formal、promotion或真实物理资产变化时|商业求解、GUI/CAD复验、冻结输入、manifest和物理证据链|
 
-`common/verify_lightweight.ps1`保留为L1兼容入口，并委托给`verify_changed.ps1`；新脚本、文档与CI应直接使用
-`verify_changed.ps1`。`.github/workflows/lightweight-gate.yml`在push只运行L1；L2仅可由
-`workflow_dispatch`人工启动，不对pull request自动运行全仓回归。纯Markdown提交应在数十秒内结束；
-RF四极杆Core的实测约21秒，正常单项目改动和直接公共依赖仍按changed-scope运行；安全全范围
-fallback的脚本层实测约4分26秒。GitHub L1的8分钟超时同时覆盖checkout、Python环境和锁定依赖安装，
-不改变普通push的运行集合；完整RF Static不占用该预算。L2是显式全仓审计，当前基线可达十分钟级，
-不得作为纯文档提交的默认门禁。
+`common/gate_catalog.json`是L1路径路由、依赖等级、阶段前置关系和L2成员身份的唯一机器目录；项目或
+integration新增公开门禁时必须注册，目录与文件系统不一致即失败。仓库只保留
+`common/verify_changed.ps1`这一个L1入口，不提供旧名称兼容脚本。`.github/workflows/lightweight-gate.yml`
+在push只运行L1；L2仅可由`workflow_dispatch`人工启动，不对pull request自动运行全仓回归。
+
+L1的`-PlanOnly`使用同一目录先给出`stdlib`或`locked`依赖等级；GitHub对只需标准库的文档和门禁
+合同范围跳过完整科学Python环境安装，任何未明确分类、项目注册表、Python lint、项目/集成、依赖声明或
+FullScope均失败关闭为`locked`。本地并发默认为`min(8, logical_processors)`，可用
+`-MaxConcurrency 1..32`显式覆盖；GitHub托管runner固定为2。并行阶段即时报告进程启动与完成，随后按
+稳定顺序回放完整日志。2026-08-02审计基线为本机L2四路209.5秒、八路183.1秒；远端一次标准库范围
+push的73秒中45秒用于完整依赖安装。该次push包含项目注册表变化，按新规则仍属于`locked`；45秒节省
+适用于纯文档或其他完整`stdlib`范围。L2仍是显式全仓审计，不得成为纯文档提交的默认门禁。
 
 数值探索参数可在活动项目的声明范围内自由修改：L1只校验该项目的参数schema、单位/范围、resolved合同和
 必要输入生成，不自动启动商业求解器，也不检查无关项目。若改变几何、电压、粒子源、网格、RF相位或跨项目

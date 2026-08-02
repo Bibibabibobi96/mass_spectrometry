@@ -644,7 +644,8 @@ class MatlabContractBindingTests(unittest.TestCase):
         common_relatives = (
             "pyproject.toml",
             "common/require_powershell7.ps1",
-            "common/verify_lightweight.ps1",
+            "common/verify_changed.ps1",
+            "common/gate_catalog.json",
             "common/verify_repository_integration.ps1",
             "common/contracts/run_artifact_support.ps1",
             "common/contracts/write_run_manifest.py",

@@ -374,7 +374,8 @@ try {
   $commonFrozenFiles = [ordered]@{
     python_project_config = 'pyproject.toml'
     powershell_runtime_gate = 'common\require_powershell7.ps1'
-    lightweight_gate = 'common\verify_lightweight.ps1'
+    changed_scope_gate = 'common\verify_changed.ps1'
+    gate_catalog = 'common\gate_catalog.json'
     artifact_support = 'common\contracts\run_artifact_support.ps1'
     manifest_writer = 'common\contracts\write_run_manifest.py'
     manifest_verifier = 'common\contracts\verify_run_manifest.py'

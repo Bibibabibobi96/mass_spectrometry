@@ -1,6 +1,12 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function Resolve-GateConcurrency {
+    param([Parameter(Mandatory)][ValidateRange(0, 32)][int]$Requested)
+    if ($Requested -gt 0) { return $Requested }
+    return [Math]::Max(1, [Math]::Min(8, [Environment]::ProcessorCount))
+}
+
 function ConvertTo-GateProcessArgument {
     param([Parameter(Mandatory)][string]$Value)
     return '"' + $Value.Replace('"', '\"') + '"'
@@ -83,8 +89,27 @@ function Invoke-IndependentGateStageGroup {
         $TempNamePrefix + [guid]::NewGuid().ToString('N')
     )
     New-Item -ItemType Directory -Path $groupRoot | Out-Null
-    $records = @{}
-    try {
+        $records = @{}
+        $reportedCompletions = [Collections.Generic.HashSet[string]]::new(
+            [StringComparer]::Ordinal
+        )
+        $reportCompletions = {
+            foreach ($recordName in @($records.Keys)) {
+                $record = $records[$recordName]
+                if ($record.Process.HasExited -and
+                    $reportedCompletions.Add([string]$recordName)) {
+                    $record.Process.WaitForExit()
+                    $elapsed = [DateTime]::UtcNow - $record.StartedAt
+                    Write-Output (
+                        "GATE_PROCESS=COMPLETE NAME=$recordName " +
+                        "EXIT_CODE=$($record.Process.ExitCode) " +
+                        "ELAPSED_SECONDS=$([Math]::Round($elapsed.TotalSeconds, 3)) " +
+                        'LOG_REPLAY=PENDING'
+                    )
+                }
+            }
+        }.GetNewClosure()
+        try {
         $childArguments = [Collections.Generic.List[string]]::new()
         foreach ($argument in $ChildBaseArguments) {
             $childArguments.Add([string]$argument)
@@ -106,6 +131,7 @@ function Invoke-IndependentGateStageGroup {
             while (@($records.Values | Where-Object {
                 -not $_.Process.HasExited
             }).Count -ge $MaxConcurrency) {
+                & $reportCompletions
                 Start-Sleep -Milliseconds 50
             }
             $logPath = Join-Path $groupRoot (
@@ -132,9 +158,17 @@ function Invoke-IndependentGateStageGroup {
             $records[$item.Name] = [pscustomobject]@{
                 LogPath = $logPath
                 Process = $process
+                StartedAt = [DateTime]::UtcNow
             }
+            Write-Output "GATE_PROCESS=START NAME=$($item.Name) PID=$($process.Id)"
         }
-        foreach ($record in $records.Values) { $record.Process.WaitForExit() }
+        while (@($records.Values | Where-Object {
+            -not $_.Process.HasExited
+        }).Count -gt 0) {
+            & $reportCompletions
+            Start-Sleep -Milliseconds 50
+        }
+        & $reportCompletions
 
         $failed = [Collections.Generic.List[string]]::new()
         $failedRecords = [Collections.Generic.List[object]]::new()

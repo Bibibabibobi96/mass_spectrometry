@@ -83,9 +83,6 @@ class LightweightGateIntegrationTests(unittest.TestCase):
         workflow = (
             self.repo_root / ".github" / "workflows" / "lightweight-gate.yml"
         ).read_text(encoding="utf-8")
-        lightweight = (self.repo_root / "common" / "verify_lightweight.ps1").read_text(
-            encoding="utf-8"
-        )
         integration = (
             self.repo_root / "common" / "verify_repository_integration.ps1"
         ).read_text(encoding="utf-8")
@@ -104,19 +101,34 @@ class LightweightGateIntegrationTests(unittest.TestCase):
         self.assertIn("$baseAvailable = $LASTEXITCODE -eq 0", workflow)
         self.assertNotIn("-not (& git cat-file", workflow)
         self.assertIn('"$before..$after"', workflow)
-        self.assertIn("-ChangedPath $changedPaths", workflow)
+        self.assertIn("-ChangedPath $scope.changed_paths", workflow)
+        self.assertIn("-ChangedPath @($scope.changed_paths)", workflow)
         self.assertIn("-FullScope", workflow)
         self.assertNotIn("$fallbackChangedPaths", workflow)
-        self.assertIn("verify_changed.ps1", lightweight)
-        self.assertNotIn("exit $LASTEXITCODE", lightweight)
-        self.assertIn("Changed-scope gate failed", lightweight)
         self.assertIn("verify_development_standards.py", integration)
-        self.assertIn("electron_impact_static", integration)
-        self.assertIn(
-            "projects\\apertured_tube_electron_impact_ion_source\\verify_project.ps1",
-            integration,
-        )
+        self.assertIn("Read-GateCatalog", integration)
+        self.assertIn("repository_integration_group -eq 'regression'", integration)
         self.assertNotIn("verify_lightweight.ps1", hook)
+        self.assertFalse((self.repo_root / "common" / "verify_lightweight.ps1").exists())
+
+    def test_repository_root_temporary_directories_fail_hygiene(self):
+        hygiene = (
+            self.repo_root / "common" / "verify_repository_hygiene.ps1"
+        ).read_text(encoding="utf-8")
+        adapter_test = (
+            self.repo_root / "common" / "integration" / "test_adapter_contract.py"
+        ).read_text(encoding="utf-8")
+        family_test = (
+            self.repo_root
+            / "integrations"
+            / "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
+            / "tests"
+            / "test_family_source_closure_workflow.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("@('.tmp', 'scratch')", hygiene)
+        self.assertIn("repository root must not contain temporary directory", hygiene)
+        self.assertNotIn('REPO_ROOT / ".tmp"', adapter_test)
+        self.assertNotIn('REPO_ROOT / ".tmp"', family_test)
 
 
 if __name__ == "__main__":
