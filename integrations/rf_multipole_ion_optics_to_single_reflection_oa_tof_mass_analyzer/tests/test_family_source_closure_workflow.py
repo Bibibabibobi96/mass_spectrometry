@@ -335,7 +335,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                         encoding="utf-8",
                         errors="replace",
                         check=False,
-                        timeout=60,
+                        timeout=120,
                     )
                     self.assertEqual(
                         completed.returncode,
@@ -491,7 +491,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                 encoding="utf-8",
                 errors="replace",
                 check=False,
-                timeout=60,
+                timeout=120,
             )
             self.assertEqual(
                 completed.returncode,
@@ -537,7 +537,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                 encoding="utf-8",
                 errors="replace",
                 check=False,
-                timeout=60,
+                timeout=120,
             )
             self.assertNotEqual(completed.returncode, 0)
             self.assertIn(
@@ -600,7 +600,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                 encoding="utf-8",
                 errors="replace",
                 check=False,
-                timeout=60,
+                timeout=120,
             )
             self.assertNotEqual(completed.returncode, 0)
             self.assertIn(

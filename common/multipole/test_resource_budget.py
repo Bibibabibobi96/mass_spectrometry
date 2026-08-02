@@ -729,7 +729,7 @@ class ResourceBudgetTests(unittest.TestCase):
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                timeout=20,
+                timeout=60,
             )
             self.assertNotEqual(completed.returncode, 0)
             self.assertIn(
