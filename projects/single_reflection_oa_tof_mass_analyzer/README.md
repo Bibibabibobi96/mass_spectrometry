@@ -108,6 +108,7 @@ single_reflection_oa_tof_mass_analyzer/
 - [`docs/history/20260728__pre-document-consolidation-readme.md`](docs/history/20260728__pre-document-consolidation-readme.md)
 - [`docs/history/20260728__pre-document-consolidation-simion.md`](docs/history/20260728__pre-document-consolidation-simion.md)
 - [`docs/history/20260729__formal-vnext-zero-change-requests.md`](docs/history/20260729__formal-vnext-zero-change-requests.md)
+- [`docs/history/20260802__reflectron-midgrid-campaign-authorization.md`](docs/history/20260802__reflectron-midgrid-campaign-authorization.md)
 - [`docs/history/CANDIDATE_WORKFLOW_VALIDATION_20260720.md`](docs/history/CANDIDATE_WORKFLOW_VALIDATION_20260720.md)
 - [`docs/history/COMSOL_EXTREME_N_CRASH_20260718_19.md`](docs/history/COMSOL_EXTREME_N_CRASH_20260718_19.md)
 - [`docs/history/COMSOL_EXTREME_N_CRASH_CLOSURE_20260719.md`](docs/history/COMSOL_EXTREME_N_CRASH_CLOSURE_20260719.md)

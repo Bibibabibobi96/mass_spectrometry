@@ -22,7 +22,7 @@
   },
   "current_validated_extent": {
     "zero_change_reference_reproduction": true,
-    "nonzero_design_variables": [],
-    "reason": "The commercial end-to-end gate has been run only for the zero-change reference candidate"
+    "nonzero_design_variables": ["reflectron_midgrid_voltage"],
+    "reason": "The commercial end-to-end structural gate passed for the 1601 V reflectron midgrid runtime point as well as zero-change reference reproduction"
   }
 }

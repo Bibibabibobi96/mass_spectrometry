@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "request_id": "reflectron_midgrid_structural_campaign_draft",
-  "status": "proposed",
-  "title": "Draft structural Candidate campaign for the reflectron midgrid voltage axis",
+  "request_id": "reflectron_midgrid_structural_campaign",
+  "status": "approved",
+  "title": "Controlled structural Candidate campaign for the reflectron midgrid voltage axis",
   "target": {
     "family_id": "tof_mass_analyzers",
     "preferred_project_id": "single_reflection_oa_tof_mass_analyzer",
@@ -34,5 +34,8 @@
     "validation_report"
   ],
   "evidence_level": "candidate",
-  "approval": null
+  "approval": {
+    "approved_by": "repository_owner",
+    "approved_on": "2026-08-02"
+  }
 }

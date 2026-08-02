@@ -236,6 +236,16 @@ class CandidateDesignTests(unittest.TestCase):
         with self.assertRaisesRegex(EnvelopeReviewRequired, "NEEDS_ENVELOPE_REVIEW"):
             self.compile(request, [{"variable": "flight_length", "value": 700.0, "unit": "mm"}])
 
+    def test_midgrid_voltage_outside_narrow_envelope_requires_review(self):
+        request = self.base_request()
+        request["constraints"] = []
+        request["design_variables"] = ["reflectron_midgrid_voltage"]
+        with self.assertRaisesRegex(EnvelopeReviewRequired, "NEEDS_ENVELOPE_REVIEW"):
+            self.compile(
+                request,
+                [{"variable": "reflectron_midgrid_voltage", "value": 1599.0, "unit": "V"}],
+            )
+
     def test_candidate_generates_nonformal_simion_text_from_frozen_contract(self):
         with tempfile.TemporaryDirectory() as root:
             output = Path(root) / "prepared"

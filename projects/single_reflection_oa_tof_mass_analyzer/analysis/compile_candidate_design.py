@@ -199,6 +199,28 @@ def _envelope_excesses(baseline: dict[str, Any], envelope: dict[str, Any]) -> li
     return [f"{name}: candidate={value:g} approved_max={limits[name]:g}" for name, value in values.items() if value > limits[name] + 1e-10]
 
 
+def _variable_envelope_excesses(
+    values: dict[str, dict[str, Any]], envelope: dict[str, Any]
+) -> list[str]:
+    limits = {
+        item["variable_id"]: item
+        for item in envelope["design_variable_limits"]
+    }
+    excesses: list[str] = []
+    for variable_id, item in values.items():
+        limit = limits.get(variable_id)
+        if limit is None:
+            continue
+        elif item["unit"] != limit["unit"]:
+            excesses.append(f"{variable_id}: envelope unit differs")
+        elif not limit["minimum"] <= item["value"] <= limit["maximum"]:
+            excesses.append(
+                f"{variable_id}: candidate={item['value']:g} approved="
+                f"[{limit['minimum']:g}, {limit['maximum']:g}]"
+            )
+    return excesses
+
+
 def _constraint_passes(value: float, operator: str, threshold: float) -> bool:
     return {">=": value >= threshold, ">": value > threshold, "<=": value <= threshold,
             "<": value < threshold, "=": math.isclose(value, threshold, rel_tol=0.0, abs_tol=1e-12)}[operator]
@@ -289,7 +311,9 @@ def compile_proposal(proposal_path: Path) -> tuple[dict[str, Any], dict[str, Any
         definitions[variable_id]["optimization_role"] != "accelerator_bidirectional"
         for variable_id in values
     )
-    excesses = _envelope_excesses(candidate, envelope) if envelope_applies else []
+    excesses = _variable_envelope_excesses(values, envelope)
+    if envelope_applies:
+        excesses.extend(_envelope_excesses(candidate, envelope))
     if excesses:
         raise EnvelopeReviewRequired("NEEDS_ENVELOPE_REVIEW: " + "; ".join(excesses))
     for constraint in request["constraints"]:

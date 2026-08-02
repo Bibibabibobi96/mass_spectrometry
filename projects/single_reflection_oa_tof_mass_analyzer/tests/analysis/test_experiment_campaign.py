@@ -34,7 +34,7 @@ def authorized_campaign_fixture():
             PROJECT_ROOT
             / "config"
             / "requests"
-            / "reflectron_midgrid_structural_campaign_draft.json"
+            / "reflectron_midgrid_structural_campaign.json"
         )
         request["status"] = "approved"
         request["approval"] = {
@@ -95,27 +95,34 @@ class ExperimentCampaignTests(unittest.TestCase):
             timeout=30,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertEqual(json.loads(completed.stdout)["status"], "draft")
+        self.assertEqual(json.loads(completed.stdout)["status"], "authorized")
 
-    def test_checked_in_campaign_is_valid_draft_and_cannot_execute(self):
+    def test_checked_in_campaign_is_authorized_and_preflights(self):
         with tempfile.TemporaryDirectory() as root:
-            status = campaign_status(artifact_root=Path(root))
-        self.assertEqual(status["status"], "draft")
-        self.assertFalse(status["execution_authorized"])
-        self.assertIn("campaign status is not authorized", status["authorization_blockers"])
-        self.assertFalse(status["mass_spectrum_internal_species_are_campaign_rows"])
-        self.assertEqual(
-            [item["status"] for item in status["experiments"]],
-            ["NOT_STARTED", "NOT_STARTED"],
-        )
-        with tempfile.TemporaryDirectory() as root:
-            with self.assertRaisesRegex(ValueError, "not authorized"):
-                preflight_campaign(
-                    DEFAULT_CAMPAIGN,
-                    "20260731_231000__test__cross__draft-campaign",
-                    run_all=True,
-                    artifact_root=Path(root),
-                )
+            artifact_root = Path(root)
+            status = campaign_status(artifact_root=artifact_root)
+            self.assertEqual(status["status"], "authorized")
+            self.assertTrue(status["execution_authorized"])
+            self.assertEqual(status["authorization_blockers"], [])
+            self.assertFalse(status["mass_spectrum_internal_species_are_campaign_rows"])
+            self.assertEqual(
+                [item["status"] for item in status["experiments"]],
+                ["NOT_STARTED", "NOT_STARTED"],
+            )
+            prepared = preflight_campaign(
+                DEFAULT_CAMPAIGN,
+                "20260802_122900__test__cross__campaign-preflight",
+                run_all=True,
+                artifact_root=artifact_root,
+            )
+            self.assertEqual(len(prepared["rows"]), 2)
+
+    def test_campaign_value_outside_narrow_envelope_is_rejected(self):
+        with authorized_campaign_fixture() as (campaign_path, campaign):
+            campaign["experiments"][1]["variation_values"][0]["value"] = 1599.0
+            campaign_path.write_text(json.dumps(campaign), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "invalid value"):
+                validate_campaign(campaign_path, require_authorized=True)
 
     def test_status_requires_complete_bound_terminal_child_evidence(self):
         with authorized_campaign_fixture() as (campaign_path, campaign):

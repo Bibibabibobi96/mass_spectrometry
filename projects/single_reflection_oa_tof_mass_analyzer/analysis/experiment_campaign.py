@@ -111,6 +111,10 @@ def _axis_map(
         item["variable_id"]: item
         for item in authorities["design_variable_catalog"]["variables"]
     }
+    envelope_limits = {
+        item["variable_id"]: item
+        for item in authorities["optimization_envelope"]["design_variable_limits"]
+    }
     result: dict[str, dict[str, Any]] = {}
     for axis in axes:
         definition = catalog.get(axis["variable_id"])
@@ -120,7 +124,23 @@ def _axis_map(
             or definition.get("unit") != axis["unit"]
         ):
             raise ValueError(f"campaign axis is not compiler-governed: {axis['axis_id']}")
-        result[axis["axis_id"]] = {**axis, "definition": definition}
+        limit = envelope_limits.get(axis["variable_id"])
+        if (
+            limit is None
+            or limit["unit"] != axis["unit"]
+            or limit["minimum"] > limit["reference_value"]
+            or limit["reference_value"] > limit["maximum"]
+            or limit["minimum"] < definition["minimum"]
+            or limit["maximum"] > definition["maximum"]
+        ):
+            raise ValueError(
+                f"campaign axis lacks a valid narrow optimization envelope: {axis['axis_id']}"
+            )
+        result[axis["axis_id"]] = {
+            **axis,
+            "definition": definition,
+            "envelope": limit,
+        }
     return result
 
 
@@ -223,11 +243,13 @@ def validate_campaign(
         for value in values:
             axis = axes[value["axis_id"]]
             definition = axis["definition"]
+            envelope = axis["envelope"]
             number = value["value"]
             if (
                 value["unit"] != axis["unit"]
                 or not math.isfinite(number)
                 or not definition["minimum"] <= number <= definition["maximum"]
+                or not envelope["minimum"] <= number <= envelope["maximum"]
                 or (
                     definition["kind"] == "integer"
                     and not float(number).is_integer()

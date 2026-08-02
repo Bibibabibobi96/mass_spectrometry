@@ -23,7 +23,8 @@
         "status",
         "policy",
         "reference",
-        "tof_limits"
+        "tof_limits",
+        "design_variable_limits"
       ],
       "properties": {
         "schema_version": {"const": 1},
@@ -59,6 +60,26 @@
             "max_outer_radius_mm": {"type": "number", "exclusiveMinimum": 0},
             "max_stage1_electrode_count": {"type": "integer", "minimum": 1},
             "max_stage2_electrode_count": {"type": "integer", "minimum": 1}
+          }
+        },
+        "design_variable_limits": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "variable_id", "unit", "minimum", "maximum",
+              "reference_value", "rationale"
+            ],
+            "properties": {
+              "variable_id": {"$ref": "#/$defs/identifier"},
+              "unit": {"type": "string", "minLength": 1},
+              "minimum": {"type": "number"},
+              "maximum": {"type": "number"},
+              "reference_value": {"type": "number"},
+              "rationale": {"type": "string", "minLength": 1}
+            }
           }
         }
       }

@@ -15,5 +15,15 @@
     "max_outer_radius_mm": 360.0,
     "max_stage1_electrode_count": 10,
     "max_stage2_electrode_count": 5
-  }
+  },
+  "design_variable_limits": [
+    {
+      "variable_id": "reflectron_midgrid_voltage",
+      "unit": "V",
+      "minimum": 1600.0,
+      "maximum": 1650.0,
+      "reference_value": 1628.8001,
+      "rationale": "Narrow structural envelope spanning the validated 1601 V runtime point and the 1628.8001 V coupled-theory nominal, with only a small positive-side diagnostic margin."
+    }
+  ]
 }

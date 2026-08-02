@@ -2,10 +2,10 @@
   "schema_version": 1,
   "role": "oatof_structural_candidate_experiment_campaign",
   "project_id": "single_reflection_oa_tof_mass_analyzer",
-  "campaign_id": "reflectron_midgrid_structural_draft_v1",
-  "status": "draft",
-  "execution_authorized": false,
-  "preregistered_before_run": false,
+  "campaign_id": "reflectron_midgrid_structural_v1",
+  "status": "authorized",
+  "execution_authorized": true,
+  "preregistered_before_run": true,
   "execution_profile": {
     "profile_id": "validated_structural_candidate",
     "authority": {
@@ -14,8 +14,8 @@
     }
   },
   "base_request": {
-    "path": "config/requests/reflectron_midgrid_structural_campaign_draft.json",
-    "sha256": "58AB8CC3475B2B35419977B8F808858E9E73A52EAD226687E916BB6C56BEFA98"
+    "path": "config/requests/reflectron_midgrid_structural_campaign.json",
+    "sha256": "3400177A3DFE1A1FCC2447A2CF149FD1239801E41958C615EB0AAF9F76A22783"
   },
   "authorities": {
     "baseline": {
@@ -24,7 +24,7 @@
     },
     "science_profile": {
       "path": "config/modes/design_candidate.json",
-      "sha256": "71A42F9904C335A615FA095C6B0EE9A111F0D76024CB2DC27645ED01276AC887"
+      "sha256": "864517D93F146F5420E88FD871751AC2CF1F8DCEEBA5AEA22513DB80DF9B7BAA"
     },
     "solver_numerics": {
       "path": "config/formal_solver_numerics.json",
@@ -36,7 +36,7 @@
     },
     "optimization_envelope": {
       "path": "config/optimization_envelope.json",
-      "sha256": "1F862AA5B707B393B16F870758348B031828D119DAC6E187C65AC3B21EED9D51"
+      "sha256": "1E1F2289242541E968962C73C29E5153FA963B1626402DA050AA02DF307CF562"
     },
     "candidate_workflow": {
       "path": "config/candidate_workflow.json",
@@ -62,12 +62,12 @@
     "commercial_solver_parallelism": 1,
     "automatic_retry_count": 0
   },
-  "claim_limit": "Draft structural fixture only; no solver launch, optimization, resolution claim, promotion, or formal qualification is authorized.",
+  "claim_limit": "Authorized N=100 structural comparison only; execution success does not establish optimization, resolution, performance superiority, promotion, or formal qualification.",
   "experiments": [
     {
       "sequence": 1,
       "experiment_id": "midgrid_reference",
-      "authorized_run_id": "20260731_230000__sim__cross__midgrid-reference",
+      "authorized_run_id": "20260802_123000__sim__cross__midgrid-reference",
       "variation_values": [
         {"axis_id": "reflectron_midgrid_voltage", "value": 1628.8001, "unit": "V"}
       ]
@@ -75,7 +75,7 @@
     {
       "sequence": 2,
       "experiment_id": "midgrid_diagnostic",
-      "authorized_run_id": "20260731_230100__sim__cross__midgrid-diagnostic",
+      "authorized_run_id": "20260802_123100__sim__cross__midgrid-diagnostic",
       "variation_values": [
         {"axis_id": "reflectron_midgrid_voltage", "value": 1600.0, "unit": "V"}
       ]
