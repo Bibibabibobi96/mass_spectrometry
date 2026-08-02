@@ -95,6 +95,7 @@ function Invoke-ParallelIntegrationGroup {
     )
     Invoke-IndependentGateStageGroup -Items $items `
         -MaxConcurrency $MaxConcurrency -GateScriptPath $PSCommandPath `
+        -PythonExe $PythonExe `
         -ChildBaseArguments @(
             '-PythonExe', $PythonExe,
             '-MaxConcurrency', [string]$MaxConcurrency

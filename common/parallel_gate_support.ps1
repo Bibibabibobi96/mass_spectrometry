@@ -45,8 +45,10 @@ function Invoke-LoggedGateStage {
     )
     $env:PYTHONDONTWRITEBYTECODE = '1'
     $env:RUFF_NO_CACHE = 'true'
-    $env:MPLCONFIGDIR = Join-Path (Split-Path -Parent $LogPath) ("mpl_$Name")
-    New-Item -ItemType Directory -Path $env:MPLCONFIGDIR -Force | Out-Null
+    if (-not $env:MPLCONFIGDIR) {
+        $env:MPLCONFIGDIR = Join-Path (Split-Path -Parent $LogPath) ("mpl_$Name")
+        New-Item -ItemType Directory -Path $env:MPLCONFIGDIR -Force | Out-Null
+    }
     $lines = [Collections.Generic.List[string]]::new()
     $succeeded = $true
     try {
@@ -68,6 +70,7 @@ function Invoke-IndependentGateStageGroup {
         [Parameter(Mandatory)][object[]]$Items,
         [Parameter(Mandatory)][ValidateRange(1, 32)][int]$MaxConcurrency,
         [Parameter(Mandatory)][string]$GateScriptPath,
+        [Parameter(Mandatory)][string]$PythonExe,
         [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$ChildBaseArguments,
         [Parameter(Mandatory)][string]$TempNamePrefix,
         [Parameter(Mandatory)][string]$FailureMessage,
@@ -89,6 +92,9 @@ function Invoke-IndependentGateStageGroup {
         $TempNamePrefix + [guid]::NewGuid().ToString('N')
     )
     New-Item -ItemType Directory -Path $groupRoot | Out-Null
+        $originalMatplotlibConfig = [Environment]::GetEnvironmentVariable(
+            'MPLCONFIGDIR', 'Process'
+        )
         $records = @{}
         $reportedCompletions = [Collections.Generic.HashSet[string]]::new(
             [StringComparer]::Ordinal
@@ -110,6 +116,16 @@ function Invoke-IndependentGateStageGroup {
             }
         }.GetNewClosure()
         try {
+        $env:MPLCONFIGDIR = Join-Path $groupRoot 'matplotlib'
+        New-Item -ItemType Directory -Path $env:MPLCONFIGDIR | Out-Null
+        & $PythonExe -c (
+            "import importlib.util; spec=importlib.util.find_spec('matplotlib'); " +
+            "spec and __import__('matplotlib.font_manager')"
+        )
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Gate Matplotlib cache initialization failed.'
+        }
+        Write-Output "GATE_MATPLOTLIB_CACHE=READY PATH=$env:MPLCONFIGDIR"
         $childArguments = [Collections.Generic.List[string]]::new()
         foreach ($argument in $ChildBaseArguments) {
             $childArguments.Add([string]$argument)
@@ -219,6 +235,11 @@ function Invoke-IndependentGateStageGroup {
             throw "$FailureMessage`: $($failed -join ', ')"
         }
     } finally {
+        if ($null -eq $originalMatplotlibConfig) {
+            Remove-Item Env:MPLCONFIGDIR -ErrorAction SilentlyContinue
+        } else {
+            $env:MPLCONFIGDIR = $originalMatplotlibConfig
+        }
         Remove-GateTemporaryDirectory -Path $groupRoot `
             -ExpectedNamePrefix $TempNamePrefix
     }

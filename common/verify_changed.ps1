@@ -289,6 +289,7 @@ function Invoke-ChangedStageGroup {
     }
     Invoke-IndependentGateStageGroup -Items $items `
         -MaxConcurrency $MaxConcurrency -GateScriptPath $PSCommandPath `
+        -PythonExe $PythonExe `
         -ChildBaseArguments @(
             '-MaxConcurrency', [string]$MaxConcurrency
         ) `

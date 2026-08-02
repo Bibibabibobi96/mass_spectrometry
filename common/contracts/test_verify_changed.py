@@ -434,6 +434,8 @@ class ChangedGateContractTests(unittest.TestCase):
         self.assertIn("PYTHONDONTWRITEBYTECODE", self.parallel_source)
         self.assertIn("RUFF_NO_CACHE", self.parallel_source)
         self.assertIn("MPLCONFIGDIR", self.parallel_source)
+        self.assertIn("GATE_MATPLOTLIB_CACHE=READY", self.parallel_source)
+        self.assertIn("__import__('matplotlib.font_manager')", self.parallel_source)
         self.assertIn("Start-Process", self.parallel_source)
         self.assertIn("(Get-Command pwsh).Source", self.parallel_source)
         self.assertIn("$record.Process.WaitForExit()", self.parallel_source)
