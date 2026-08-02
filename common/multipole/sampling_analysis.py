@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from common.multipole.followup_analysis import load_resolution, paired_report
-from common.multipole.numerical_qualification import (
+from common.multipole.numerical_observables import (
     load_json,
     manifest_record,
     observable_differences,

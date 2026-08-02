@@ -381,7 +381,7 @@ try {
     manifest_verifier = 'common\contracts\verify_run_manifest.py'
     artifact_naming = 'common\contracts\artifact_naming.py'
     file_identity = 'common\contracts\file_identity.py'
-    artifact_identity_migration = 'common\contracts\artifact_identity_migration.py'
+    artifact_identity_archive = 'common\contracts\artifact_identity_archive.py'
     particle_physics = 'common\contracts\particle_physics.py'
     project_registry_builder = 'common\contracts\build_project_registry.py'
     machine_contracts = 'common\contracts\machine_contracts.py'

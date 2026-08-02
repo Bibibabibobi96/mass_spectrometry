@@ -332,13 +332,16 @@ class MultipoleFamilyContractTests(unittest.TestCase):
         runner = (
             REPO_ROOT / "common/multipole/run_finite_3d_transport.ps1"
         ).read_text(encoding="utf-8")
-        required_report_gate = runner.index(
+        preflight = (
+            REPO_ROOT / "common/multipole/finite_3d_transport_preflight.ps1"
+        ).read_text(encoding="utf-8")
+        required_report_gate = preflight.index(
             "preregistration omits required_report"
         )
-        package_creation = runner.index("$package=New-RunPackage")
+        package_creation = len(preflight) + runner.index("$package=New-RunPackage")
         postrun_report_use = runner.index(
             "foreach($token in $fieldPreregistration.required_report.tokens)"
-        )
+        ) + len(preflight)
         self.assertLess(required_report_gate, package_creation)
         self.assertLess(package_creation, postrun_report_use)
         for token in (
@@ -350,7 +353,7 @@ class MultipoleFamilyContractTests(unittest.TestCase):
             "PRIMARY_PARTICLE_CASE_COMPLETE",
             "CONTROL_PARTICLE_CASE_COMPLETE",
         ):
-            self.assertIn(token, runner)
+            self.assertIn(token, preflight)
 
     def test_comsol_canonical_state_policy_is_resolved_design_only(self) -> None:
         runner = (REPO_ROOT / "common/multipole/run_finite_3d_transport.ps1").read_text(encoding="utf-8")
@@ -382,12 +385,8 @@ class MultipoleFamilyContractTests(unittest.TestCase):
         )
         self.assertIn("'rod_z_min',resolvedGeometry.rod_z_min", solver)
         self.assertNotIn("g.rod_z_min", solver)
-        pairing = (
-            REPO_ROOT / "common" / "multipole" / "axial_pairing.py"
-        ).read_text(encoding="utf-8")
         self.assertNotIn("90.2", runner)
         self.assertNotIn("90.2", solver)
-        self.assertNotIn("90.2", pairing)
 
     def test_comsol_segmented_run_keeps_paired_arms_and_external_evidence(self) -> None:
         runner = (

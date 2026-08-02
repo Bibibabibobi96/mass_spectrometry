@@ -384,7 +384,7 @@ class NoAccelerationFamilyProfileTests(unittest.TestCase):
                 + dependency_overlay["dependencies"]
             )
             records = {item["id"]: item for item in dependencies}
-            self.assertEqual(len(records), 51)
+            self.assertEqual(len(records), 52)
             self.assertEqual(
                 dependency_base["consumer_project"], INTEGRATION_ROOT.name
             )
@@ -485,6 +485,7 @@ class NoAccelerationFamilyProfileTests(unittest.TestCase):
                     "common/contracts/particle_state.py",
                     "common/contracts/particle_count_policy.py",
                     "common/multipole/numerical_qualification.py",
+                    "common/multipole/numerical_observables.py",
                     "common/multipole/three_mode_dispersion.py",
                     "common/multipole/publish_three_mode_binding.py",
                 },

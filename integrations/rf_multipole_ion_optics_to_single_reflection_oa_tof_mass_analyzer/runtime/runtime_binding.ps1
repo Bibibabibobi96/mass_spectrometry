@@ -140,6 +140,7 @@ function Merge-RfOatofDependencyContracts {
     'common_resolved_connection_schema','common_machine_contracts',
     'common_particle_state','common_particle_count_policy',
     'common_multipole_numerical_qualification',
+    'common_multipole_numerical_observables',
     'common_multipole_three_mode_dispersion','common_multipole_handoff_publisher',
     'common_rigid_transform','common_particle_physics',
     'common_component_particle_state','common_component_particle_state_schema',
@@ -170,9 +171,9 @@ function Merge-RfOatofDependencyContracts {
   $frozenFilenames = @(
     $allDependencies | ForEach-Object { [string]$_.frozen_filename }
   )
-  if (@($allIds | Select-Object -Unique).Count -ne 51 -or
-      @($runInputNames | Select-Object -Unique).Count -ne 51 -or
-      @($frozenFilenames | Select-Object -Unique).Count -ne 51) {
+  if (@($allIds | Select-Object -Unique).Count -ne 52 -or
+      @($runInputNames | Select-Object -Unique).Count -ne 52 -or
+      @($frozenFilenames | Select-Object -Unique).Count -ne 52) {
     throw 'Resolved family dependency inventory contains duplicate identities or paths.'
   }
   foreach ($dependency in $allDependencies) {
@@ -245,8 +246,8 @@ function Publish-RfOatofDependencyInventory {
       }
     }
   }
-  if (@($inventory.dependencies).Count -ne 51) {
-    throw "$Role resolved code inventory must contain exactly 51 dependencies."
+  if (@($inventory.dependencies).Count -ne 52) {
+    throw "$Role resolved code inventory must contain exactly 52 dependencies."
   }
   $inventoryPath = Join-Path $InputDir 'code_inventory.json'
   $inventoryJson = $inventory | ConvertTo-Json -Depth 20

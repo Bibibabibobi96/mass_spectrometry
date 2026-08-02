@@ -652,7 +652,7 @@ class MatlabContractBindingTests(unittest.TestCase):
             "common/contracts/verify_run_manifest.py",
             "common/contracts/artifact_naming.py",
             "common/contracts/file_identity.py",
-            "common/contracts/artifact_identity_migration.py",
+            "common/contracts/artifact_identity_archive.py",
             "common/contracts/particle_physics.py",
             "common/contracts/build_project_registry.py",
             "common/contracts/machine_contracts.py",

@@ -2,44 +2,40 @@
   "schema_version": 1,
   "role": "multipole_engineering_budget_contract",
   "project_id": "rf_hexapole_ion_optics",
-  "contract_id": "hexapole_no_acceleration_hybrid_particle_convergence_closed_v1",
+  "contract_id": "hexapole_exit_aperture_plate_acceleration_n100_resource_closed_v1",
   "preregistered_before_run": true,
   "pilot_authorization": {
     "authorized": false,
     "scope": {
       "project_id": "rf_hexapole_ion_optics",
-      "runtime_profile_id": "no_acceleration_full_length_n100_hybrid_exit025_temporal_coarse",
+      "runtime_profile_id": "exit_aperture_plate_acceleration_n100_spatial_refined",
       "stop_stage": "transport",
-      "design_profile_id": "no_acceleration_full_length",
+      "design_profile_id": "exit_aperture_plate_acceleration",
       "particle_source_profile_id": "family_mother_sample_v1_n100",
       "particle_count": 100,
       "solver_numerics_profile_ids": {
-        "comsol": "hybrid_c1_corridor040_exit025_nosweep_cg_amg_field_screen",
-        "simion": "baseline_finite_3d"
+        "comsol": "n100_spatial_refined",
+        "simion": "n100_spatial_refined"
       },
-      "allowed_solvers": [
-        "comsol"
-      ],
-      "retention_class": "compact",
-      "expected_run_parent_resolved_design_sha256": "C8B58862A764915778BF4C4B193769D07B0E825CC8AE8B8EAE1591DC7F0E85FF"
+      "allowed_solvers": ["comsol", "simion"],
+      "retention_class": "compact"
     },
     "limits": {
       "wall_clock_seconds_by_solver": {
-        "comsol": 900,
-        "simion": 300
+        "comsol": 1200,
+        "simion": 720
       },
-      "transient_run_directory_bytes": 1610612736,
-      "process_tree_working_set_bytes": 12884901888,
+      "transient_run_directory_bytes": 2147483648,
+      "process_tree_working_set_bytes": 17179869184,
       "minimum_system_available_memory_bytes": 8589934592,
-      "compact_final_retained_bytes": 10485760,
-      "maximum_mesh_cells": 1000000,
+      "compact_final_retained_bytes": 26214400,
       "automatic_retry_count": 0
     }
   },
   "full_matrix_authorization": {
     "authorized": false,
-    "reason": "the_preregistered_three_arm_hexapole_hybrid_particle_campaign_is_complete_and_closed"
+    "reason": "closed_profiles_retired_and_comsol_spatial_resource_budget_exhausted"
   },
   "budget_exhaustion_result": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
-  "claim_limit": "Commercial authorization is closed after the completed three-arm N=100 no-acceleration hybrid particle campaign. Functional transport passed, but temporal convergence was not established; no additional brute-force tier is authorized."
+  "claim_limit": "No commercial-solver run is currently authorized. Baseline functional results remain valid; continuous convergence and cross-solver equivalence remain INCONCLUSIVE."
 }

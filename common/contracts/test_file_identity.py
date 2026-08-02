@@ -11,11 +11,7 @@ from common.contracts.file_identity import (
     file_sha256,
     repository_text_sha256,
 )
-from common.contracts import (
-    migrate_artifacts_v2,
-    write_formal_asset_manifest,
-    write_run_manifest,
-)
+from common.contracts import write_formal_asset_manifest, write_run_manifest
 
 
 def legacy_sha256(path: Path) -> str:
@@ -92,14 +88,7 @@ class FileIdentityTest(unittest.TestCase):
                 json.dumps(write_run_manifest.file_record(path), separators=(",", ":")),
                 json.dumps(expected_absolute, separators=(",", ":")),
             )
-            self.assertEqual(
-                json.dumps(migrate_artifacts_v2.file_record(path), separators=(",", ":")),
-                json.dumps(expected_absolute, separators=(",", ":")),
-            )
-            for actual in (
-                migrate_artifacts_v2.relative_file_record(path, root),
-                write_formal_asset_manifest.record(path, root),
-            ):
+            for actual in (write_formal_asset_manifest.record(path, root),):
                 self.assertEqual(
                     json.dumps(actual, separators=(",", ":")),
                     json.dumps(expected_relative, separators=(",", ":")),

@@ -382,7 +382,7 @@ class AnalyzerTransportTests(unittest.TestCase):
         self.assertLess(selection, ordinary_copy)
         self.assertIn("$baseIdentity = Copy-RfStableFile", runtime)
         self.assertIn("$overlayIdentity = Copy-RfStableFile", runtime)
-        self.assertIn("resolved code inventory must contain exactly 51", runtime)
+        self.assertIn("resolved code inventory must contain exactly 52", runtime)
         self.assertIn("base = [ordered]@{", runtime)
         self.assertIn("overlay = [ordered]@{", runtime)
         self.assertNotIn("rf_dependency_contract_snapshot", runner)

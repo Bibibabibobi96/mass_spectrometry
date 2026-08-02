@@ -354,6 +354,18 @@
       ]
     },
     {
+      "id": "common_multipole_numerical_observables",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/multipole/numerical_observables.py",
+      "frozen_filename": "runtime_snapshot/common/multipole/numerical_observables.py",
+      "run_input_name": "common_multipole_numerical_observables",
+      "consumers": [
+        "pre_pulse_interface_transport"
+      ]
+    },
+    {
       "id": "common_multipole_three_mode_dispersion",
       "provider_scope": "repository_common",
       "provider_project": "common",

@@ -70,8 +70,8 @@
     "comsol": {
       "registry": "projects/rf_hexapole_ion_optics/config/comsol_solver_numerics.json",
       "registry_sha256_at_preregistration": "DB104E15BE1D9874931E136F1C3872D5058E30EC0A1CA3E87213C9F24D4D8BB2",
-      "active_registry_sha256": "C7CA03B170F5B44953A394088A6733EE8512B2046E0AFD03157F8A8D4EB24841",
-      "active_registry_change_scope": "all_active_profiles_explicitly_freeze_quadratic_electric_potential_order; later hybrid exit-interface transport profiles are separate identities and do not change the three preregistered full-tetrahedral profiles",
+      "active_registry_sha256": "1CADD6E9261D8DDEEBB921B5B5D76D5A8C0DCA3CDBF7078A7190446819A2B9F1",
+      "active_registry_change_scope": "only the three preregistered full-tetrahedral profiles remain active; closed hybrid and solver-isolation profiles were retired",
       "tiers": {
         "baseline": {
           "profile_id": "baseline_finite_3d",

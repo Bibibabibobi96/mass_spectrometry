@@ -17,7 +17,7 @@ from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import validate_schema
 from common.contracts.particle_physics import kinetic_energy_ev, mass_to_charge_th
 from common.contracts.particle_state import PARTICLE_STATE_COLUMNS
-from common.multipole.numerical_qualification import (
+from common.multipole.numerical_observables import (
     load_json,
     manifest_record,
     primary_state_filename,

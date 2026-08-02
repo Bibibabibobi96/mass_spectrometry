@@ -6,11 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from common.contracts.artifact_identity_migration import (
-    apply_migration,
-    build_plan,
-    legacy_artifact_location,
-)
+from common.contracts.artifact_identity_archive import legacy_artifact_location
 from common.multipole.simion_layout_template import resolve_simion_layout_template
 
 
@@ -150,18 +146,6 @@ class SimionLayoutTemplateBindingTests(unittest.TestCase):
             self.repo_root / "common/multipole/simion_layout_template.json"
         )
         _write_json(self.registry_path, registry)
-        archive_id = provider_mapping["artifact_location"]["archive_id"]
-        plan = build_plan(
-            self.repo_root,
-            fixture_root / "artifacts" / "projects",
-            provider,
-            archive_id,
-        )
-        apply_migration(plan, fixture_root / "artifacts" / "projects")
-        _write_json(
-            self.repo_root / "projects" / provider / "config/project.json",
-            archived_descriptor,
-        )
 
     def _write_modified_registry(self, modified: dict, name: str) -> Path:
         registry_path = self.repo_root / "test_registries" / name

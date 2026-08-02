@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from common.contracts.artifact_identity_migration import legacy_artifact_location
+from common.contracts.artifact_identity_archive import legacy_artifact_location
 from common.contracts.particle_count_policy import (
     load_particle_count_policy,
     validate_standard_particle_count,

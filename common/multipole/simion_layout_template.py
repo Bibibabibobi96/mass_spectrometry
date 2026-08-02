@@ -7,7 +7,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from common.contracts.artifact_identity_migration import (
+from common.contracts.artifact_identity_archive import (
     relocated_manifest_path,
     resolve_legacy_artifact_root,
 )

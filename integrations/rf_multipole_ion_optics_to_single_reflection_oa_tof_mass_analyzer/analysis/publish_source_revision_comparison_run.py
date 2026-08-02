@@ -5,8 +5,6 @@ from __future__ import annotations
 import argparse
 import os
 import re
-import subprocess
-import sys
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -26,11 +24,14 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     INTEGRATION_ID,
     _load,
     _parent_run,
-    _portable,
-    _record_for_path,
     _terminal_branch,
-    _verify_record,
-    _write_pending_json,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.run_publication import (
+    portable_path as _portable,
+    publish_manifest as _shared_publish_manifest,
+    restore_interrupted as _shared_restore_interrupted,
+    terminalize_failure as _shared_terminalize_failure,
+    write_pending_json as _write_pending_json,
 )
 
 OUTPUT_MODE = "multipole_family_source_revision_comparison_n100"
@@ -102,84 +103,16 @@ def _publish_source_revision_manifest(
     status: str,
     outputs: Sequence[Path],
 ) -> None:
-    command = [
-        sys.executable,
-        "-m",
-        "common.contracts.write_run_manifest",
-        "--run-config",
-        str(run_config),
-        "--manifest",
-        str(manifest_path),
-        "--status",
-        status,
-        "--software",
-        f"Python {sys.version_info.major}.{sys.version_info.minor}",
-    ]
-    for output in outputs:
-        command.extend(("--output", str(output)))
-    completed = subprocess.run(
-        command,
-        cwd=repo_root,
-        check=False,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
+    _shared_publish_manifest(
+        repo_root=repo_root,
+        run_config=run_config,
+        manifest_path=manifest_path,
+        status=status,
+        outputs=outputs,
+        project=INTEGRATION_ID,
+        mode=OUTPUT_MODE,
+        label="source-revision",
     )
-    if completed.returncode != 0:
-        raise ContractError(
-            f"source-revision {status} manifest publication failed: "
-            + (completed.stdout + completed.stderr).strip()
-        )
-    manifest = _load(manifest_path, f"source-revision {status} manifest")
-    run_config_value = _load(run_config, "source-revision run_config")
-    if (
-        manifest.get("role") != "simulation_run_manifest"
-        or manifest.get("status") != status
-        or manifest.get("run_id") != run_config_value.get("run_id")
-        or manifest.get("project") != INTEGRATION_ID
-        or manifest.get("mode") != OUTPUT_MODE
-        or manifest.get("formal_eligible") is not False
-    ):
-        raise ContractError(f"source-revision {status} manifest identity differs")
-    _verify_record(
-        f"source-revision {status} manifest run_config",
-        manifest.get("run_config"),
-    )
-    for output in outputs:
-        _record_for_path(
-            manifest.get("outputs"),
-            output,
-            f"source-revision {status} output {output.name}",
-        )
-    verify = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "common.contracts.verify_run_manifest",
-            str(manifest_path),
-            "--require-status",
-            status,
-            "--require-local-run-config",
-            "--require-run-id",
-            str(run_config_value["run_id"]),
-            "--require-project",
-            INTEGRATION_ID,
-            "--require-mode",
-            OUTPUT_MODE,
-        ],
-        cwd=repo_root,
-        check=False,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    if verify.returncode != 0:
-        raise ContractError(
-            f"source-revision {status} manifest verification failed: "
-            + (verify.stdout + verify.stderr).strip()
-        )
 
 
 def _restore_interrupted(
@@ -190,11 +123,13 @@ def _restore_interrupted(
     summary_bytes: bytes,
     manifest_bytes: bytes,
 ) -> None:
-    summary_pending = summary_path.with_name(f".{summary_path.name}.pending")
-    summary_pending.write_bytes(summary_bytes)
-    os.replace(summary_pending, summary_path)
-    manifest_pending.write_bytes(manifest_bytes)
-    os.replace(manifest_pending, manifest_path)
+    _shared_restore_interrupted(
+        summary_path=summary_path,
+        manifest_path=manifest_path,
+        manifest_pending=manifest_pending,
+        summary_bytes=summary_bytes,
+        manifest_bytes=manifest_bytes,
+    )
 
 
 def _terminalize_failure(
@@ -209,36 +144,18 @@ def _terminalize_failure(
     interrupted_summary_bytes: bytes,
     interrupted_manifest_bytes: bytes,
 ) -> None:
-    try:
-        _write_pending_json(summary_path, failed_summary)
-        outputs = [path for path in planned_outputs if path.is_file()]
-        if summary_path not in outputs:
-            outputs.append(summary_path)
-        _publish_source_revision_manifest(
-            repo_root=repo_root,
-            run_config=run_config_path,
-            manifest_path=manifest_pending,
-            status="failed",
-            outputs=outputs,
-        )
-        os.replace(manifest_pending, manifest_path)
-    except (KeyboardInterrupt, SystemExit):
-        _restore_interrupted(
-            summary_path=summary_path,
-            manifest_path=manifest_path,
-            manifest_pending=manifest_pending,
-            summary_bytes=interrupted_summary_bytes,
-            manifest_bytes=interrupted_manifest_bytes,
-        )
-        raise
-    except Exception:
-        _restore_interrupted(
-            summary_path=summary_path,
-            manifest_path=manifest_path,
-            manifest_pending=manifest_pending,
-            summary_bytes=interrupted_summary_bytes,
-            manifest_bytes=interrupted_manifest_bytes,
-        )
+    _shared_terminalize_failure(
+        publish=_publish_source_revision_manifest,
+        repo_root=repo_root,
+        run_config_path=run_config_path,
+        summary_path=summary_path,
+        manifest_path=manifest_path,
+        manifest_pending=manifest_pending,
+        failed_summary=failed_summary,
+        candidate_outputs=planned_outputs,
+        interrupted_summary_bytes=interrupted_summary_bytes,
+        interrupted_manifest_bytes=interrupted_manifest_bytes,
+    )
 
 
 def _particle_set_comparison(

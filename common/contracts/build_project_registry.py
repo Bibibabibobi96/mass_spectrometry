@@ -8,10 +8,10 @@ from pathlib import Path
 from typing import Any
 
 if __package__:
-    from .artifact_identity_migration import legacy_artifact_location
+    from .artifact_identity_archive import legacy_artifact_location
     from .machine_contracts import ContractError, REPO_ROOT, load_json, sha256, validate_schema
 else:
-    from artifact_identity_migration import legacy_artifact_location
+    from artifact_identity_archive import legacy_artifact_location
     from machine_contracts import ContractError, REPO_ROOT, load_json, sha256, validate_schema
 
 

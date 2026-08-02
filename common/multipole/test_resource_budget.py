@@ -46,14 +46,10 @@ class ResourceBudgetTests(unittest.TestCase):
                 ValueError, "not authorized|differs from authorized scope"
             ):
                 self.validate(project_id, profile)
-        for profile in (
-            "exit_aperture_plate_acceleration_n100_spatial_refined",
-            "exit_aperture_plate_acceleration_n100_hybrid_d2_mesh_build",
+        with self.assertRaisesRegex(
+            ValueError, "not authorized|differs from authorized scope"
         ):
-            with self.assertRaisesRegex(
-                ValueError, "not authorized|differs from authorized scope"
-            ):
-                self.validate(HEX, profile)
+            self.validate(HEX, "exit_aperture_plate_acceleration_n100_spatial_refined")
         with self.assertRaisesRegex(
             ValueError, "not authorized|differs from authorized scope"
         ):
@@ -66,16 +62,10 @@ class ResourceBudgetTests(unittest.TestCase):
         for profile in (
             "exit_aperture_plate_acceleration_n100_hybrid_d1_mesh_build",
             "exit_aperture_plate_acceleration_n100_hybrid_p1_coarse",
+            "exit_aperture_plate_acceleration_n100_hybrid_d2_mesh_build",
         ):
             with self.assertRaisesRegex(ValueError, "unknown runtime profile"):
                 resolve_runtime_profile(REPO_ROOT, HEX, profile)
-        with self.assertRaisesRegex(
-            ValueError, "not authorized|differs from authorized scope"
-        ):
-            self.validate(
-                HEX,
-                "exit_aperture_plate_acceleration_n100_hybrid_d2_mesh_build",
-            )
 
     def test_high_cost_runners_validate_before_creating_run_package(self) -> None:
         for name in ("run_finite_3d_transport.ps1", "run_simion_finite_3d_transport.ps1"):
@@ -94,6 +84,9 @@ class ResourceBudgetTests(unittest.TestCase):
         comsol = (REPO_ROOT / "common/multipole/run_finite_3d_transport.ps1").read_text(
             encoding="utf-8"
         )
+        comsol += (
+            REPO_ROOT / "common/multipole/finite_3d_transport_preflight.ps1"
+        ).read_text(encoding="utf-8")
         self.assertIn("'-StartupAttempts','1'", comsol)
         self.assertIn(
             "[ValidateSet('transport','mesh_build','field_solve')]"
@@ -214,11 +207,21 @@ class ResourceBudgetTests(unittest.TestCase):
         authorized_fixture["pilot_authorization"]["limits"][
             "maximum_mesh_cells"
         ] = 100
+        hybrid_runtime = json.loads(json.dumps(runtime))
+        hybrid_runtime["solver_numerics"]["comsol"]["values"]["mesh"][
+            "strategy"
+        ] = "physical_segment_hybrid_swept_tetra_v1"
 
         def validate_with(candidate: dict) -> dict:
-            with mock.patch(
-                "common.multipole.resource_budget._load",
-                return_value=candidate,
+            with (
+                mock.patch(
+                    "common.multipole.resource_budget._load",
+                    return_value=candidate,
+                ),
+                mock.patch(
+                    "common.multipole.resource_budget.resolve_runtime_profile",
+                    return_value=hybrid_runtime,
+                ),
             ):
                 return validate_pilot_budget(
                     repo_root=REPO_ROOT,
@@ -348,7 +351,7 @@ class ResourceBudgetTests(unittest.TestCase):
             "simion",
         ]
         limits = fixture["pilot_authorization"]["limits"]
-        del limits["maximum_mesh_cells"]
+        limits.pop("maximum_mesh_cells", None)
         limits["maximum_pa_grid_points"] = 20_000_000
 
         def validate_with(candidate: dict, solver: str = "simion") -> dict:
@@ -385,7 +388,7 @@ class ResourceBudgetTests(unittest.TestCase):
 
     def test_mesh_build_report_enforces_declared_cell_limit(self) -> None:
         runner = (
-            REPO_ROOT / "common/multipole/run_finite_3d_transport.ps1"
+            REPO_ROOT / "common/multipole/finite_3d_transport_preflight.ps1"
         ).read_text(encoding="utf-8")
         start = runner.index("function Assert-MultipoleMeshBuildReport")
         end = runner.index("\nfunction Assert-MultipoleFieldSolveReport", start)
@@ -469,13 +472,10 @@ class ResourceBudgetTests(unittest.TestCase):
 
     def test_field_solve_report_requires_complete_fields_and_no_particles(self) -> None:
         runner = (
-            REPO_ROOT / "common/multipole/run_finite_3d_transport.ps1"
+            REPO_ROOT / "common/multipole/finite_3d_transport_preflight.ps1"
         ).read_text(encoding="utf-8")
         start = runner.index("function Assert-MultipoleFieldSolveReport")
-        end = runner.index(
-            "\nif(-not [double]::IsNaN($WorkingRegionMaximumElementSizeMm)",
-            start,
-        )
+        end = len(runner)
         assertion_function = runner[start:end]
         required_lines = [
             "CHECKPOINT=STATIONARY_FIELDS_COMPLETE",

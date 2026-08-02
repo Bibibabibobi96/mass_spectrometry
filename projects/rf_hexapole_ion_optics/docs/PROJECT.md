@@ -2,455 +2,53 @@
 
 ## 当前结论
 
-自2026-07-23起，本项目粒子数只遵循仓库根README“通用验证口径”和
-[`../../../common/contracts/particle_count_policy.json`](../../../common/contracts/particle_count_policy.json)，
-不在项目内维护第二份档位定义。分段杆轴向加速和出口带孔接口板加速（历史简称“端面加速”）曾分别
-通过COMSOL与SIMION N=100功能复验；这些run早于request/resolved schema v2，现只作为
-[`family_contract.json`](../../../common/multipole/family_contract.json)中的`superseded_evidence`
-保留，不构成当前功能PASS。当前v2三模式后来均已完成双求解器N=100 baseline并恢复功能分类；
-这仍不授予连续量网格收敛、跨求解器数值等价、机械或Formal资格。
-
-当前家族实验已用[`../config/design_profiles.json`](../config/design_profiles.json)冻结
+本项目当前只承认由 `mechanical_base + operating_modes + design_profiles` 编译的三种模式：
 `no_acceleration_full_length`、`segmented_rod_axial_acceleration`和
-`exit_aperture_plate_acceleration`三个canonical profile。三者共享唯一
-`mechanical_base.json + design_variables.json + optimization_envelope.json`，只由
-`operating_modes.json`映射三项电气量；旧设计/runtime alias已经退役。项目L3薄wrapper只接受
-`RuntimeProfileId`，由版本化profile绑定design profile、canonical粒子
-CSV的SHA和各求解器数值profile；任意粒子路径和自由数值不再属于生产入口。公共runner保留为低层
-投影机制。无evidence contract的运行固定为`UNQUALIFIED`。
+`exit_aperture_plate_acceleration`。三者机械相同，仅由typed registry改变杆段和出口孔板电位。
+项目入口只接受具名runtime profile；粒子源和求解器数值均由profile绑定，不能从命令行自由覆盖。
 
-四、六、八极杆共同的临时下游工程方向由
-[`engineering_progression_acceptance.json`](../../../common/multipole/engineering_progression_acceptance.json)
-统一记录；本项目只声明适用性，不复制阈值、状态或判定。后续先复用现有SIMION状态并只补最小相邻
-加密臂；任何工程PASS都不得改称数值收敛或求解器等价。
-
-当前`no_acceleration_full_length`保持79.6 mm杆、圆柱外壳、紧邻接口几何及四段物理导体，把四段和
-出口带孔接口板电位全部冻结为0 V。2026-07-28完成的同名双求解器功能复验和随后数值矩阵属于改名前
-`rf_hexapole_ion_guide`、旧固定N=100源（SHA-256
-`494CB26FA128C475CB2DC1DB1A3437342DFBB5D1C1900E811E4BEBF47D7A6385`）及旧resolved几何；其run只在
-`project.json`登记的legacy location已以`archived_verified`只读迁入当前项目archive。当前家族实验改为始终存在的四物理段和公共母样本
-前缀后，这些结果不得继承为功能、收敛、跨求解器数值等价或Candidate资格。
-
-Phase 2设计配置把当前`n=3`、6根电极身份、`r0=4 mm`、圆杆比0.5、有限杆范围、圆柱接地屏蔽及
-真空域、圆孔接口、canonical驱动和uniform四段参考冻结为单一求解器无关请求。34个数值变量均以
-请求JSON pointer、单位和双向边界声明；pole count保持项目身份，外壳model与连接器shape保持受支持
-的锁定拓扑。注册execution profile仍是compile-only；薄wrapper运行公共runner时，无evidence合同只能
-生成`UNQUALIFIED`结果。
-
-项目已建立独立身份和理想有限长度L1传输合同。模型使用六根交替极性电极对应的理想六极场，直接积分
-RF相位分辨的非线性横向运动，并以0 V对照判断RF是否产生功能性约束。它不是四极杆mode，也不使用
-Mathieu稳定图。L1/L2/L3迁移前小样本及2 mm连接器数值只保留在
-[`history/20260723__pre-n100-multipole-functional-evidence.md`](history/20260723__pre-n100-multipole-functional-evidence.md)，
-不构成当前Candidate证据。
+三模式N=100 baseline均已在COMSOL与SIMION闭合功能传输。无加速空间/时间敏感性、两种加速模式
+空间臂及后续工程比较不支持连续数值收敛或跨求解器等价；当前状态仍为
+`DEFERRED_NOT_WAIVED`/`INCONCLUSIVE`。家族工程六指标可用于下游推进，但不得升级为数值、
+机械、Candidate或Formal资格。
 
 ## 当前参数与边界
 
-- 阶数`n=3`，电极数6，`r0=4 mm`，理想可用半径3.6 mm，有效长度79.6 mm。
-- 单相位组相对共同偏置的RF零到峰值为139.81792 V，频率1.1 MHz。
-- 坐标、`r0`和双极性组电压语义由`common/multipole/family_contract.json`统一；具体物理量只由项目
-  design request编译，数值设置只由solver-numerics profile发布，并在每个run冻结。
-- 新家族实验的N=100和N=1000源由同一版本化算法/seed生成，前者是后者精确前缀；100 amu、+1、
-  2 eV，最大源半径0.5 mm，最大入射发散5°。旧六/八N=100只供legacy功能兼容。
-- baseline pilot后、refined运行前登记的N=100数值三档为：COMSOL基线
-  `0.5 mm/80 steps per RF period`、空间敏感性`0.35 mm/80`、在同一`0.35 mm`网格上的时间
-  敏感性`160`；SIMION对应为`0.4 mm/40`、`0.3 mm/40`和在同一`0.3 mm`网格上的`80`。
-  时间比较必须使用空间敏感性档作为对照，
-  不得回到粗网格，也不增加第四档。
-- 入口和出口孔半径均为3.6 mm；入口、出口连接器长度当前均为0 mm（直连合同）。入口带孔接口板
-  上/下游面为`z=-1.0/-0.5 mm`，源释放面为`z=-1.5 mm`；出口带孔接口板上/下游面为
-  `z=80.1/80.6 mm`，出口孔穿越面与零长度连接器的规范交接面在`z=80.6 mm`，近接口统计面为
-  `z=81.1 mm`。外壳封闭端盖是屏蔽外壳的独立实体面，不是上述带孔接口板。绝对位置只由request
-  编译后的接口合同派生；即使穿越面与交接面坐标重合，事件职责仍不同。
-- Gate 0把源释放面和近接口统计面限定为紧邻接口发散：两者分别距杆入口/出口1.5 mm，统计面仅在
-  出口带孔接口板下游面后0.5 mm。Pittman与O'Connor的真实FT-ICR六极杆接口设计报告9.53 mm内径导引器之间
-  5.21 mm总间距和2.67 mm剩余边缘场区
-  （[JASMS 16 (2005) 441–445](https://doi.org/10.1016/j.jasms.2004.12.010)）；据此当前毫米级间距
-  不属于失去物理意义的远距离，但这是尺度相容的设计判断，不是本机械实现的直接复现。当前近接口
-  统计面不得解释为数厘米下游远场；真实下游匹配须另建带独立漂移距离/观察面的workflow。
-- 碰撞、空间电荷、磁场、支撑和机械公差均未启用。
-- L1/L2从规范`no_acceleration_full_length` profile即时编译resolved，再生成内部分析投影；L2使用
-  二维COMSOL场的谐波展开；
-  只发布逐候选metrics，不选择或回写L3几何。未做网格收敛，不允许机械设计、Candidate或Formal声明。
-- L3使用20 mm内半径连续接地圆柱外壳、独立外壳封闭端盖、四段有限圆杆、两块带孔接地接口板和
-  两段有限外部区；无加速模式已用公共N=100前缀完成双求解器baseline、空间和时间功能矩阵，
-  连续相空间仍为`INCONCLUSIVE`。两种加速模式已恢复当前v2 N=100 baseline功能分类；连续量资格和
-  Candidate门禁仍未完成。
+- 六根电极，径向阶数`n=3`，`r0=4 mm`，圆杆半径比0.5，有效杆长79.6 mm。
+- RF单相位组相对共同偏置的零到峰值139.81792 V，频率1.1 MHz。
+- N=100与N=1000源来自同一母样本；N=100是N=1000的精确前缀。
+- COMSOL baseline/空间/时间档为`0.5 mm,80`、`0.35 mm,80`、
+  `0.35 mm,160 steps/RF period`。
+- SIMION baseline/空间/时间档为`0.4 mm,40`、`0.3 mm,40`、
+  `0.3 mm,80 steps/RF period`。
+- 入口、出口孔半径3.6 mm；当前是零长度直连合同。碰撞、空间电荷、磁场、支撑和机械公差未启用。
+- 坐标、物理面和事件角色只按公共多极杆README解释。
 
 ## 权威入口
 
-- [`../config/requests/mechanical_base.json`](../config/requests/mechanical_base.json)
-- [`../config/operating_modes.json`](../config/operating_modes.json)
-- [`../config/design_variables.json`](../config/design_variables.json)
-- [`../config/optimization_envelope.json`](../config/optimization_envelope.json)
-- [`../config/execution_profiles.json`](../config/execution_profiles.json)
-- [`../config/design_profiles.json`](../config/design_profiles.json)
-- [`../config/resolved_design_no_acceleration_full_length.json`](../config/resolved_design_no_acceleration_full_length.json)
-- [`../config/interfaces/provided/rf_multipole_exit.json`](../config/interfaces/provided/rf_multipole_exit.json)
-- [`../config/runtime_profiles.json`](../config/runtime_profiles.json)
-- [`../config/particle_source_profiles.json`](../config/particle_source_profiles.json)
-- [`../config/comsol_solver_numerics.json`](../config/comsol_solver_numerics.json)
-- [`../config/simion_solver_numerics.json`](../config/simion_solver_numerics.json)
-- [`../config/qualification/n100_convergence_preregistration.json`](../config/qualification/n100_convergence_preregistration.json)
-- [`../config/qualification/dispersion_acceptance.json`](../config/qualification/dispersion_acceptance.json)
-- [`../config/qualification/dispersion_effect_resolution.json`](../config/qualification/dispersion_effect_resolution.json)
-- [`../config/qualification/engineering_budget.json`](../config/qualification/engineering_budget.json)
-- [`../config/modes/transport_no_collision.json`](../config/modes/transport_no_collision.json)
-- [`../analysis/run_transport.ps1`](../analysis/run_transport.ps1)
-- [`../config/round_rod_field_screen.json`](../config/round_rod_field_screen.json)
-- [`../analysis/run_round_rod_field_screen.ps1`](../analysis/run_round_rod_field_screen.ps1)
-- [`../analysis/run_round_rod_transport.ps1`](../analysis/run_round_rod_transport.ps1)
-- [`../analysis/run_finite_3d_transport.ps1`](../analysis/run_finite_3d_transport.ps1)
-- [`../analysis/run_simion_finite_3d_transport.ps1`](../analysis/run_simion_finite_3d_transport.ps1)
-- [`../verify_project.ps1`](../verify_project.ps1)
+- [机械base](../config/requests/mechanical_base.json)
+- [typed模式](../config/operating_modes.json)
+- [设计变量](../config/design_variables.json)与[优化包络](../config/optimization_envelope.json)
+- [设计profile](../config/design_profiles.json)
+- [运行profile](../config/runtime_profiles.json)
+- [粒子源profile](../config/particle_source_profiles.json)
+- [COMSOL数值profile](../config/comsol_solver_numerics.json)
+- [SIMION数值profile](../config/simion_solver_numerics.json)
+- [N=100共同预登记](../config/qualification/n100_convergence_preregistration.json)
+- [无加速资格记录](../config/qualification/n100_no_acceleration_qualification.json)
+- [分段加速资格记录](../config/qualification/n100_segmented_rod_axial_acceleration_qualification.json)
+- [出口孔板加速资格记录](../config/qualification/n100_exit_aperture_plate_acceleration_qualification.json)
+- [dispersion接受合同](../config/qualification/dispersion_acceptance.json)
+- [工程预算](../config/qualification/engineering_budget.json)
 
-L1/L2/L3统一通过current profile resolver/compiler取得物理设计；历史L1 baseline和无模式名的
-`resolved_design.json`重复发布物已经退出。历史格式reader仍只为旧记录复核保留，不参与当前运行。
-`config/requests/baseline.json`仍由兼容静态发布读取，不得成为新实验的可编辑请求；旧的无加速和
-出口带孔接口板专属request/catalog/envelope已在活动消费者归零后退出，当前三模式只使用单一
-`requests/mechanical_base.json`与typed operating-mode registry。
-零消费者的旧出口孔板兼容evidence合同已经退出；规范无加速evidence身份保留，但不得替代
-`config/qualification/`中显式保持`INCONCLUSIVE`的资格判据。`rf_multipole_exit`只发布具名无加速resolved design的出口交接视图；
-其来源SHA和逐值binding防止陈旧，
-frame、轴向法向、中心向量、RF相位零点clock及场是否到达交接面的派生前提由项目直接测试冻结。
-四/六/八极杆当前家族实验共同使用
-`common/multipole/sources/rf_multipole_family_mother_sample_v1_1000.csv`及其精确
-`..._100.csv`前缀；metadata冻结单一生成算法、seed、分布和SHA。旧六/八极杆专属N=100副本已退役。
+旧项目身份的artifact只按`project.json`的`archived_verified`位置只读解析，不提供旧顶层路径
+fallback。已关闭的逐臂profile、预登记和专用测试不再位于活动配置；它们的工程结论见
+[退役campaign摘要](history/20260802__retired-comsol-qualification-campaigns.md)，原始机器记录可从Git历史恢复。
 
 ## 下一步
 
-多极杆公共机制已冻结，后续不再为本项目复制公共杆阵列、运行时或接口实现。v1离子导引和接口功能链
-曾由COMSOL与SIMION独立贯通，但不能继承为当前三模式资格。新的三模式机械base、typed电气合同、
-N=100/N=1000源和N=100三档数值矩阵已经预登记，但没有有依据的连续量阈值。当前只授权无加速
-N=100 baseline和空间敏感性双求解器pair已经完成：各档两边均为RF 100/100、zero-RF 21/100且
-传输粒子身份一致；0.35/0.3 mm加密解间的RMS半径相对差约`2.47%`。当前只授权固定该空间离散的
-时间敏感性pair也已完成；SIMION时间RMS半径变化约`0.092%`，COMSOL约`5.11%`，最终跨求解器
-RMS半径差约`7.67%`。功能传输闭合，但连续结果只能`INCONCLUSIVE`，不得增加第四档。实测最大值
-为578.056 s、1.031 GB瞬态目录、8.893 GB进程树内存，零自动重试；分段杆轴向加速N=100
-baseline已在两求解器保持100/100传输和精确粒子身份，SIMION空间档也保持100/100；COMSOL空间档
-在`MESH_COMPLETE`后以19.453 GB超过17.180 GB进程树帽，记为
-`INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`，不重跑、不抬帽。出口孔板加速N=100
-baseline已在两求解器保持100/100传输和精确粒子身份；SIMION空间档也保持100/100，RMS半径、
-发散角和平均能量相对baseline分别变化约`8.16%`、`2.20%`和`0.152%`。COMSOL空间档在
-`MESH_COMPLETE`后以19.288 GB超过17.180 GB进程树帽，记为
-`INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`，不重跑、不抬帽。下述COMSOL D1 build-only网格诊断
-也已经结束。新身份D2随后完成唯一一次build-only网格诊断并耗尽一次性授权；独立预登记的N=100
-混合网格field+particle工程筛查也已关闭并拒绝当时的粒子候选，该筛查本身未授权后续细化、时间档、
-N=1000或完整矩阵。后来独立完成的field-only C1/D2/D3序列见本文末尾；它同样不授权粒子。完整
-身份登记在`../config/qualification/n100_no_acceleration_qualification.json`。
-分段杆轴向加速身份和资源结论登记在
-`../config/qualification/n100_segmented_rod_axial_acceleration_qualification.json`。
-出口孔板加速身份和资源结论登记在
-`../config/qualification/n100_exit_aperture_plate_acceleration_qualification.json`。
-2026-07-31无加速定向跟进完成SIMION A/R/Z/I/T五臂和COMSOL局部0.20 mm的160→320步时间pair。
-SIMION径向/轴向RMS半径变化为`16.953%/1.077%`，I→T为`0.000529%`且只在固定分箱下稳定；
-COMSOL时间变化为`2.265%`并跨越大量固定分箱。径向离散是当前最显著风险，功能仍100/100，但连续
-结论保持`INCONCLUSIVE_NUMERICAL_CONVERGENCE_NOT_ESTABLISHED`；机器身份见
-[`followup_result.json`](../config/qualification/no_acceleration_followup/followup_result.json)。
-随后只增加SIMION横向H15臂，将`x/y`从0.20 mm细化至0.15 mm，保持`z=0.20 mm`、每RF周期160步和
-同一N=100母样本前缀。该臂以33,479,464个PA点、548.215 s、3,511,838,913 bytes瞬态目录峰值和
-3,399,606,272 bytes进程树峰值完成，RF传输仍为100/100。T→H15的质心位置、质心化空间展宽、
-平均方向、质心化角展宽、平均能量和质心化能量展宽差依次为`0.020571 mm`、`0.013847 mm`、
-`0.167069°`、`0.011959°`、`0.002406 eV`和`0.001313 eV`，均通过当前家族工程推进阈值。
-相对旧Z→I区间，后五项下降；质心位置差由`0.010123 mm`增至`0.020571 mm`，用户因其仍只有
-0.2 mm限值约10%而接受继续工程推进，但其原因未判定，不得表述为已证明的数值误差。结果身份见
-[`H15_result.json`](../config/qualification/radial_convergence_extension/H15_result.json)；数值收敛仍为
-`DEFERRED_NOT_WAIVED`。后续改用声明式实验计划表达四/八极杆和加速实验，不再为每一臂复制runtime、
-numerics、budget及历史SHA绑定。
-随后完成的声明式SIMION H15 N=100三模式对照中，出口孔板加速相对无加速把中心化空间/角RMS降低
-`0.0542 mm/1.2797°`；相对分段加速，空间RMS低`0.0182 mm`，但角RMS高`0.2327°`。统一九臂证据见
-[`../../../docs/history/20260731__multipole-three-mode-h15-n100.md`](../../../docs/history/20260731__multipole-three-mode-h15-n100.md)；
-该结果只用于工程取舍，不改变数值资格。统一图组和机器摘要已发布为成功analysis run
-`20260731_223000__analysis__python__multipole-three-mode-h15-n100`，不再依赖scratch。包含本项目在内的
-家族18项既有比较已按当前ACTIVE六指标工程合同重分析为18/18 PASS；全矩阵最大质心位置、中心化
-空间展宽、平均方向、中心化角展宽、平均能量和中心化能量展宽差依次为`0.056798 mm`、
-`0.118671 mm`、`0.669877°`、`0.580952°`、`0.019592 eV`和`0.024395 eV`。机器run为
-`20260731_223100__analysis__python__multipole-engineering-reanalysis-active__r03`，统一记录见
-[`../../../docs/history/20260731__multipole-engineering-reanalysis-18-comparisons.md`](../../../docs/history/20260731__multipole-engineering-reanalysis-18-comparisons.md)；
-数值收敛仍为`DEFERRED_NOT_WAIVED`。
-随后统一oaTOF屏蔽罩终端H15 campaign完成9/9；六极杆无加速/分段/终端阶跃的handoff分别为
-`84/89/96`，穿过4 mm厚矩形孔后的terminal分别为`57/81/74`。分段模式给出全九臂最高terminal透射
-`81/100`、最高terminal/handoff`91.0%`和本项目最低中心化角RMS`2.8748°`；终端阶跃的handoff最多，
-但不能以入口计数替代厚孔后透射。完整对照见
-[`../../../docs/history/20260731__multipole-oatof-shield-terminal-h15-n100.md`](../../../docs/history/20260731__multipole-oatof-shield-terminal-h15-n100.md)。
-这是新矩形厚孔拓扑下的N=100事后工程结果，不可与旧独立末端板H15表作仅模式变化的配对比较；数值
-收敛仍未建立。
-2026-07-29已从三个真实baseline run为COMSOL和SIMION分别发布
-`POSTHOC_DESCRIPTIVE` binding和报告；它们固定声明非预注册、不计算bootstrap、不评价资格。正式
-`three_mode_dispersion_binding`仍须由运行前冻结完整统计设置的新run生成，不得把事后报告升级或
-伪造。没有N=1000真实运行、GUI/CAD同步与formal asset promotion时不得
-声明Formal。碰撞冷却与CAD仍为独立后续阶段。轴向加速若
-继续推进，应使用当前typed runtime profile研究各段电势，同时另行研究分段数量、长度/间隙、
-馈电和机械实现；当前uniform四段参数是家族实验机械baseline，不是
-正式硬件选择。
-
-COMSOL全长工作域`0.35 mm` FreeTet细化已在出口带孔接口板加速和分段杆加速中重复于
-`MESH_COMPLETE`后触发MUMPS进程树内存门禁，因此下一轮不得继续全域暴力细化。新的
-[`已归档的 hybrid mesh pilot 预登记`](history/20260729__closed-hybrid-mesh-campaigns.md)
-只冻结出口带孔接口板加速N=100的四步MUMPS工程pilot：P1验证每个物理杆段中央
-`FreeTri + Sweep`及杆端、三个段隙、孔板/外部区`FreeTet`的粗网格；P2只加密径向core和杆边界，
-P3只增加每段轴向层数，P4只加密过渡/端区四面体。任一步拓扑、资源或功能门禁失败即停止，不重排、
-不重试、不追加第五次。四步原本采用逐次窄授权而非一次开放完整矩阵；P1失败后该campaign已经关闭，
-当前资源门禁不再授权P1或P2–P4。PARDISO和CG-AMG只能另立预注册，不属于本轮失败重试。即使未来
-另立并完成新序列，连续量仍因
-缺少有来源误差预算保持`INCONCLUSIVE`。
-
-P1随后在`88.817 s`内于场求解前触发真空网格拓扑门禁，进程树峰值仅
-`3,489,751,040 bytes`，不是资源耗尽。按预注册停止规则，当前campaign已经关闭，P1不得重试，
-P2–P4均未执行且未授权。冻结版本只输出了合并网格断言，因此不能从保留证据进一步区分全局mesh
-problem、空真空选择或覆盖缺口；若要继续，必须另立小型build-only诊断预注册，不能把诊断伪装成
-本轮重试。公共solver已补充逐项网格指标，供未来获批运行使用，不改变本次冻结证据。
-
-独立的[`已归档 build-only 诊断预登记`](history/20260729__closed-hybrid-mesh-campaigns.md)
-曾只授权一次D1 `mesh_build`：它复用既有COMSOL入口和hybrid策略，采用`8.5 mm` core以及
-`radial_core_and_rod_hmax_mm=0.5 mm`的显式杆边界尺寸，计划在断言前输出选择、体积、覆盖/重叠、feature和
-质量诊断，然后停止；field physics/Study/solution及particle physics/Study必须为0。唯一运行
-`20260729_155030__build__comsol__hex-hybrid-d1-mesh-build__r01`观测到31个真空domain，但旧实现把
-`mphmeasure`实体类型误写为`volume`并吞掉异常，所以体积只报告`NaN`；随后把带字段的诊断写入空结构体
-数组，在`mesh.run`前因MATLAB不同结构体下标赋值失败。该运行登记为
-`INCONCLUSIVE_DIAGNOSTIC_IMPLEMENTATION_FAILURE`：没有网格/拓扑证据，也没有资源门禁触发证据。
-D1预算原固定为300 s、128 MiB瞬态目录、6 GiB进程树、8 GiB可用系统内存、10 MiB最终保留及零重试；
-其一次运行和零重试授权已经耗尽，不重开P1，也不授权D1重跑或P2–P4。代码已静态修正为使用`domain`
-几何测量、不可测时显式输出`UNKNOWN`并闭锁，以及以cell保存异构诊断，但修复本身不产生新的商业
-求解器证据。
-
-新的
-[`D2 build-only资格记录`](../config/qualification/comsol_hybrid_mesh_build_d2_preregistration.json)
-使用独立runtime/numerics身份，于run
-`20260729_203000__build__comsol__hex-hybrid-d2-mesh-build__r01`完成唯一一次COMSOL N=100出口带孔
-接口板加速`mesh_build`，不属于D1或P1重试。它冻结`8.5 mm` core、径向core/杆边界`0.5 mm`、
-每物理段10个轴向层、过渡与端区
-`0.5 mm`、外部真空`1.0 mm`和最小单元`0.02 mm`；资源上限为300 s、128 MiB瞬态目录、
-6 GiB进程树、8 GiB最低系统可用内存、10 MiB最终compact保留、3,000,000个全局网格单元及零重试。
-该运行以`success / UNQUALIFIED_MESH_BUILD_DIAGNOSTIC_ONLY`结束：全局/真空/四面体单元数分别为
-`884,643 / 746,131 / 527,571`，四个扫掠段各`54,640`；全局与真空最小质量均为`0.1983`，扫掠段
-最小质量为`0.5311`。扫掠-四面体重叠、真空未覆盖和非真空分区domain均为0，field physics/study/
-solution及particle physics/study创建数均为0。运行耗时`56.488 s`，进程树峰值
-`3,137,204,224 bytes`，最低系统可用内存`24,665,997,312 bytes`，运行目录峰值和最终保留均为
-`1,664,539 bytes`，全部低于预登记上限。
-
-D2只建立该hybrid网格的构建、拓扑、质量、全局单元数和资源可行性，不产生场解、粒子传输、连续
-收敛、跨求解器数值等价、N=1000分散、机械、Candidate或Formal证据。其一次性零重试授权已经耗尽；
-当前另以
-[`混合网格粒子筛查预登记`](../config/qualification/comsol_hybrid_transport_screen_preregistration.json)
-授权唯一一次COMSOL N=100真实场与粒子运行。它冻结旧FreeTet baseline run、resolved design、公共
-N=100源和80步/周期、80 us轨迹设置，只把网格替换为D2已经建网通过的混合策略；预算为900 s、
-12 GiB进程树、8 GiB最低系统可用内存、1 GiB瞬态目录、25 MiB compact终态、100万全局单元和零重试。
-硬PASS只要求双工况100/100、primary粒子ID不变、正孔径裕量、混合分区拓扑和全部资源帽成立，并据
-实测比较墙钟、内存和目录体积。RMS半径、发散、能量、TOF和逐粒子状态没有有来源误差预算，仍固定为
-`INCONCLUSIVE_NO_SOURCED_ERROR_BUDGET`；本次筛查不能声明连续数值等价、空间收敛、Candidate或Formal。
-首个运行身份`20260729_220000__sim__comsol__hex-exitplate-hybrid-n100__r01`再次在
-`MESH_COMPLETE`得到884,643单元和零分区缺口，但随后因任务脚本调用MATLAB不存在的`fflush`而在场
-创建前失败；110.915 s内峰值进程树为3,126,431,744 bytes，未触发资源帽，登记为
-`INCONCLUSIVE_DIAGNOSTIC_IMPLEMENTATION_FAILURE`，不是网格或物理FAIL，也不产生粒子证据。
-旧baseline与当前编译resolved的总SHA因optimization-envelope权威文件演化和run-local来源路径表示而
-不同，但剔除compiler、governance、sources和总SHA这些来源字段后的编译物理载荷SHA均为
-`A868E5C06A6A98BF86C0D662D53118FCFF6EE51BA208214FACD7D39E32F6FD66`；逐字段审计未发现几何、电压、
-源或接口差异。`fflush`移除后，纠错身份
-`20260729_223000__sim__comsol__hex-exitplate-hybrid-n100__r02`仍完成同一884,643单元建网，但在场
-求解完成前以13,661,315,072 bytes超过12 GiB进程树帽；当时系统可用内存仍有13,991,477,248 bytes，
-因此终态为`INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`而非整机资源枯竭。相比旧FreeTet完整baseline
-峰值9,422,286,848 bytes，未完成的hybrid候选已经高出44.989%，无法满足资源优化目标；当前策略登记为
-`REJECT_CURRENT_HYBRID_FOR_PARTICLE_TRACKING`，不抬帽、不重跑，也没有粒子输出可用于连续量比较。
-
-独立的
-[`PARDISO field-only隔离预登记`](../config/qualification/comsol_hybrid_d2_pardiso_field_screen_preregistration.json)
-已完成唯一一次`20260729_233000__analysis__comsol__hex-hybrid-d2-pardiso-field__r01`。它冻结上述D2
-网格、出口孔板加速resolved、N=100源身份及全部物理量，唯一变量为两次stationary direct solve由
-MUMPS改为显式PARDISO；计划在双场后停止且禁止创建粒子。真实运行再次得到884,643单元和零拓扑
-缺口，但在首个差分场完成前于111.635 s达到13,716,545,536 bytes，超过12 GiB进程树硬帽；当时系统
-仍有13,179,715,584 bytes可用，运行目录峰值仅1,738,045 bytes。该峰值比MUMPS失败身份高约0.404%，
-比完整FreeTet baseline高约45.576%，因此PARDISO没有建立field-only可运行性或资源改进。运行登记为
-`INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED / REJECT_SAME_MESH_PARDISO_FIELD_SOLVE`；一次性授权已经耗尽，
-不重跑、不抬帽，也不授权粒子或后续细化。
-
-此前独立
-[`CG-AMG field-only隔离预登记`](../config/qualification/comsol_hybrid_d2_cg_amg_field_screen_preregistration.json)
-在运行前授权唯一一次R0
-`20260729_234500__analysis__comsol__hex-hybrid-d2-cg-amg-field__r01`。它保持出口带孔接口板加速的
-resolved物理、D2的884,643单元网格目标、N=100源身份、80步/周期和80 us轨迹设置不变，显式冻结
-二次电势单元阶次，只把两次稳态线性求解改为CG+AMG，容差`0.001`、最多500次迭代并开启误差检查。
-运行在双场后停止，禁止创建粒子；成功还必须从COMSOL原生progress日志取得每个场的正`LinIt`和有限
-`LinRes`，并证明没有全系统direct fallback。硬上限为703 s、12 GiB进程树、8 GiB最低系统可用内存、
-128 MiB瞬态目录、10 MiB compact终态、100万单元和零重试；资源改进判据仍要求峰值低于旧完整
-FreeTet baseline的9,422,286,848 bytes。
-
-该R0已经执行一次。COMSOL原始报告自身以`STATUS=PASS`结束：网格仍为884,643单元，电势单元阶次
-为二次，每个差分场和静态场均为1,657,156 DOF；差分场为6次线性迭代、末残差`5.5e-7`，静态场
-为7次线性迭代、末残差`2.9e-7`。两者均从原生progress日志取得`LinIt/LinRes`，且报告CG+AMG、
-一个Electrostatics physics、两个Study、两个Solution及零粒子physics/Study。资源监测记录
-142.829 s、6,342,643,712 bytes进程树峰值、20,599,001,088 bytes最低系统可用内存，运行目录
-峰值与最终保留均为1,788,736 bytes；观测内存峰值比已完成FreeTet baseline低32.6846676%，所有
-预登记资源上限在观测值上均满足。
-
-但预登记及运行后报告校验器错误地要求`FIELD_PHYSICS_CREATED=2`，而该有效配对架构正确地复用
-一个Electrostatics physics，通过两个Study和两个Solution分别求解差分场与静态场。原始求解
-完成后，后处理合同因此拒绝报告，summary和manifest登记为
-`failed / INCONCLUSIVE_PREREGISTERED_REPORT_CONTRACT_MISMATCH`。所以以上原始求解与资源数值只
-具有`POSTHOC_ENGINEERING_OBSERVATION_ONLY`身份，不能升级为预登记可运行性PASS或资源改进PASS；
-该失败也不是COMSOL场求解FAIL。唯一商业运行和零重试授权已经耗尽，不重跑、不作粒子跟进，也不
-授予粒子传输、与MUMPS/PARDISO的直接数值等价、场或粒子收敛、Candidate、Formal或N=1000结论。
-
-当前后续不是重跑R0，而是独立的
-[`hybrid C1 sampled-field预登记`](../config/qualification/comsol_hybrid_c1_cg_amg_field_screen_preregistration.json)。
-C1保持二次电势、四段扫掠结构和每段10个轴向层，把径向core/rod与transition/end四面体上限从
-0.5 mm放宽为0.7 mm、outer从1.0 mm放宽为1.4 mm、minimum从0.02 mm改为0.028 mm。它先授权
-一次CG-AMG field-only运行，硬帽为60万单元、600 s、12 GiB且零重试；公共采样计划固定3330个
-空间点，双场输出6660行V/E。该臂已一次成功：371,447单元，差分/静态场各733,422 DOF且各5次
-CG迭代，末残差分别为`1.6e-7/4.2e-7`；145.463 s，进程树峰值4,678,553,600 bytes，最终保留
-3,336,483 bytes。当前
-[`同配方MUMPS预登记`](../config/qualification/comsol_hybrid_c1_mumps_field_screen_preregistration.json)
-冻结这些实测网格/DOF身份、首臂manifest/report/numerics/field-sample SHA，并仅授权一次MUMPS
-field-only运行。该臂也已一次成功，精确重现371,447单元及两个733,422 DOF场；145.532 s，
-进程树峰值9,637,584,896 bytes，最终保留3,338,418 bytes。统一
-[`比较记录`](../config/qualification/comsol_hybrid_c1_solver_comparison.json)绑定两份manifest与
-field-sample SHA：CG-AMG相对MUMPS的差分场电势/场矢量normalized RMS为
-`1.658e-6/2.300e-6`，静态场为`4.891e-6/3.030e-5`。这证明同配方双求解器功能闭合且数值非常接近，
-但比较仍为`INCONCLUSIVE_DIAGNOSTIC_ONLY`；未定义物理误差预算前不得称为数值等价PASS，也不允许
-提前进入粒子追踪。C1两臂一次性授权均已耗尽。随后
-[`D2 sampled CG-AMG预登记`](../config/qualification/comsol_hybrid_d2_cg_amg_sampled_field_preregistration.json)
-完成一次非轴向细化臂：轴向每段10层保持不变，core/rod及transition/end从0.7 mm细化至
-0.5 mm、outer从1.4 mm细化至1.0 mm、minimum从0.028 mm细化至0.02 mm。真实运行得到884,643
-单元、双场各1,657,156 DOF，差分/静态场分别6/7次CG迭代，130.145 s、6,360,670,208 bytes
-进程树峰值。公共采样显示C1→D2的差分场电势/场矢量normalized RMS为`0.165%/2.086%`，
-静态场为`0.107%/4.358%`；因此C1不接受为空间参考。随后
-[`D3 axial-14 sampled CG-AMG预登记`](../config/qualification/comsol_hybrid_d3_axial14_cg_amg_sampled_field_preregistration.json)
-只固定D2非轴向局部尺寸并把每物理段轴向层数从10增至14。首个`r01`在进入MATLAB/COMSOL前被
-外层5 s编排时限终止，没有网格、场或资源证据，不消耗商业运行次数；同一冻结输入的`r02`一次成功，
-得到979,785单元、双场各2,016,046 DOF，差分/静态场分别5/6次CG迭代，145.026 s、
-7,004,827,648 bytes进程树峰值。D2→D3的差分场电势/场矢量normalized RMS为
-`0.0236%/0.1574%`，静态场为`0.0505%/0.8097%`，支持轴向离散的工程稳定性。总体空间收敛仍为
-`NOT_ESTABLISHED`：C1→D2非轴向变化明显，而D2之后没有第二个非轴向加密点；D3距100万单元硬帽
-只剩约2.02%。本轮场运行预算已经关闭，不继续加密、不抬帽，粒子、Candidate、Formal和N=1000
-跟进均未授权。
-
-之后按独立身份执行的
-[`局部敏感区0.50 mm首臂`](../config/qualification/comsol_local_sensitive_050_field_preregistration.json)
-证明新选择和Size feature均真实存在：9个敏感走廊domain、28个入口/出口带孔接口板边界实体、
-6个局部Size feature，且扫掠/四面体覆盖门禁通过。但该臂仍把非敏感core和transition背景固定在
-D2的0.5 mm，新增分区后全局网格达到1,019,364单元，超过预登记100万硬帽约1.94%；运行在任何
-场求解前以`INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`终止。零重试成立，0.40/0.32 mm、分段杆
-静电拓扑和全部粒子运行均未启动。该结果表明问题不是局部选择缺失，而是背景网格不够粗；若建立
-新策略，应固定C1级非敏感背景，只在3.6 mm粒子走廊、杆表面和接口板边界沿0.50→0.40→0.32 mm
-细化，并重新预登记，不能修改本次冻结身份或放宽资源帽。
-
-该新策略随后已按两个独立预登记身份执行：0.50 mm臂以685,215单元、双场各1,173,721 DOF完成，
-0.40 mm臂以990,929单元、双场各1,616,442 DOF完成；两者均输出3330点/6660行公共V/E样本，
-没有创建粒子physics或Study。公共
-[`分区趋势记录`](../config/qualification/comsol_c1_background_sensitive_field_trend.json)
-显示常规杆区差分场normalized RMS由C1→0.50的1.341%降至0.50→0.40的0.490%，静态场由
-2.546%降至1.030%；近零静态入口只报告约`5.77e-4 V/m`绝对RMS，不解释其病态相对值。
-但0.40 mm网格距100万硬帽只剩9,071单元（0.91%），严格细化到0.32 mm不具备可信预算空间。
-因此不再启动可预见超帽的第三次商业运行，三点观测阶数不可计算，场收敛保持
-`INCONCLUSIVE_MESH_STRATEGY_CHANGE_REQUIRED`；分段杆静态场、粒子、跨求解器、Candidate、
-Formal和N=1000仍全部关闭。
-
-V2沿用同一个`physical_segment_hybrid_swept_tetra_v1`公共实现和既有字段，但修正了细化轴的职责：
-`sensitive_region.maximum_element_size_mm`只控制3.6 mm粒子走廊domain；扫掠段和四面体段的杆边界
-继续使用`radial_core_and_rod_hmax_mm`，入口/出口端板边界继续使用
-`transition_and_end_tetra_hmax_mm`。这不是放宽网格，也不是建立第二套策略；它把走廊、杆面、端面
-恢复成可分别审计的正交误差轴。旧0.50/0.40 mm运行仍绑定旧实现SHA且保持原结论。V2必须以新身份
-重新预登记并先通过三档场-only门禁，才可授权粒子或资格跟进。当前
-[`V2 0.50 mm首臂`](../config/qualification/comsol_v2_corridor_only_050_field_preregistration.json)
-实际将全局单元数从旧实现同档的685,215降到494,663，但COMSOL同时对四个扫掠段、四面体区和
-全局网格报告`HAS_PROBLEMS=1`，所以在创建场Study前由公共网格完整性门禁终止。一次授权已耗尽，
-零重试成立；0.40/0.32 mm、粒子和资格跟进继续关闭。该证据只说明正交解耦具有降低单元数的潜力，
-不说明V2网格有效。下一策略必须先解决扫掠截面与杆边界尺寸的兼容性，再以新身份预登记。
-
-V3公共实现据COMSOL尺寸继承规则移除了局部模式下的扫掠杆边界、四面体杆边界和完整端板边界Size；
-域级`outer/core/sensitive`尺寸会自然传递到相邻边界，非局部旧profile仍保留原边界Size。runner同时
-新增逐mesh feature的问题消息输出。当前仅
-[`V3 0.50 mm首臂`](../config/qualification/comsol_v3_inherited_boundary_050_field_preregistration.json)
-在`mesh.run`返回后进入新增逐feature诊断，但当前COMSOL客户端不暴露
-`MeshFeatureClient.hasProblems()`，运行在`mphmeshstats`前中断。因此V3没有单元数、网格有效性或场
-证据，一次授权已耗尽且零重试成立。该失败属于诊断API兼容性，不得反向解释为V3网格成功或失败。
-公共实现现已把`mphmeshstats.hasproblems`恢复为唯一网格有效性权威，并把详细问题API降为统计之后的
-best-effort诊断；API不可用只报告`UNAVAILABLE`，不放宽网格判据。新的
-[`0.50 mm继承边界场臂`](../config/qualification/comsol_inherited_boundary_nonblocking_050_field_preregistration.json)
-冻结修复后实现并执行了一次COMSOL field-only运行。原生报告显示434,876单元，全局、真空、四面体
-及四个扫掠段均`HAS_PROBLEMS=0`；双场各835,143 DOF并在5/6次迭代完成，3330点/6660行采样PASS，
-实测101.82 s和4,912,545,792 bytes进程树峰值。但该预注册漏写runner求解后才访问的
-`required_report`，最终manifest为failed。以上只属于`POSTHOC_ENGINEERING_OBSERVATION_ONLY`，
-不得授予本档预注册PASS；一次授权已耗尽，0.40/0.32 mm和粒子矩阵仍关闭。
-公共runner现已在创建run目录和启动商业工具前验证完整`required_report`。新的
-[`0.50 mm资格复验`](../config/qualification/comsol_inherited_boundary_050_field_requalification.json)
-以434,876单元、全局/真空/四面体/四个扫掠段`HAS_PROBLEMS=0`、双场和6660行采样完整PASS，
-实测100.227 s与4,939,431,936 bytes进程树峰值。它是首个有效继承边界场点，不是收敛或粒子资格。
-当前[`0.40 mm场臂`](../config/qualification/comsol_inherited_boundary_040_field_preregistration.json)
-以537,566单元、全部权威网格区无问题、双场和6660行采样完整PASS。区域感知比较显示0.50→0.40 mm
-的常规杆跨区差分/静态场矢量normalized RMS约`0.486%/1.039%`，杆出口约`2.340%/1.348%`，
-canonical handoff约`5.593%/1.825%`；两点仍不能建立观测阶，且0.40 mm后尚余462,434单元。
-因此[`0.32 mm场臂`](../config/qualification/comsol_inherited_boundary_032_field_preregistration.json)
-以713,396单元、全部权威网格区无问题、双场和6660行采样完整PASS。0.40→0.32 mm的常规杆跨区
-差分/静态场矢量normalized RMS约`0.386%/0.800%`，杆出口约`1.549%/1.055%`，canonical handoff
-约`2.736%/1.068%`。三点差异单调下降，但没有来源化功能误差预算可把它们判为PASS；单元增量
-`102,690→175,830`外推下一档0.256 mm约1,014,490单元，超过100万硬帽。因此当前场序列登记为
-`INCONCLUSIVE_MESH_STRATEGY_CHANGE_REQUIRED`，禁止继续暴力细化或进入粒子矩阵；下一步必须改变
-局部网格策略，或先由下游孔径/相空间裕量建立适用于本声明的来源化容差。
-
-当前已据上述残差位置建立
-[`出口接口定向网格pilot预登记`](../config/qualification/comsol_exit_interface_mesh_strategy_field_preregistration.json)。
-它仍复用唯一`physical_segment_hybrid_swept_tetra_v1`实现和`sensitive_region`合同，不建立第二CLI或
-同义尺寸字段：径向上以C1背景包围3.6 mm粒子走廊，走廊全长保持0.40 mm；轴向上只在
-`rod_exit-2.0 mm`到`handoff+0.5 mm`（当前解析坐标77.6–81.1 mm）叠加0.20 mm出口接口区。
-真实运行在55.072 s内建出747,632单元，峰值进程树3,108,835,328 bytes，未触发任何资源帽；但局部区
-侵入最后扫掠段内部1.0 mm并新增轴向分区，`swe4`报告“Generated different number of element layers
-than requested”。全局、真空、四面体和四个扫掠段均据此`HAS_PROBLEMS=1`，场physics、Study、
-solution和采样均未创建。该策略同时比0.32 mm全长参考多34,236单元，因此以
-`FAILED_MESH_TOPOLOGY_GATE_BEFORE_FIELD_SOLUTION`拒绝；一次授权耗尽，零重试成立。
-
-共享实现现增加闭锁：出口接口区的上游范围不得大于`segment_end_buffer_mm`，防止未来配置再次切入
-swept interior。新的
-[`不侵入扫掠区纠正pilot`](../config/qualification/comsol_exit_interface_nosweep_mesh_strategy_field_preregistration.json)
-保持0.40 mm全长走廊、0.20 mm局部尺寸、0.5 mm handoff下游范围和10层扫掠不变，只把局部区起点从
-`rod_exit-2.0 mm`移到最后扫掠段终点`rod_exit-1.0 mm`（当前78.6–81.1 mm）。它是从明确拓扑失败
-派生的新网格身份，不是旧run重试。该运行以742,973单元、全局/真空/四面体/四个扫掠段无问题、
-双场各1,273,154 DOF和3330点/6660行采样完整PASS；实测130.067 s、5,557,870,592 bytes进程树峰值。
-相对0.32 mm全长参考，常规杆区差分/静态场矢量normalized RMS为`0.380%/0.675%`，杆出口为
-`1.298%/0.864%`，canonical handoff为`1.773%/0.570%`，六个预登记参考带全部满足。但网格仍比
-713,396单元参考多29,577单元（4.146%），所以策略筛查结论为
-`PASS_FIELD_RUN_REJECT_STRATEGY_EFFICIENCY`；不授权粒子。
-
-0.20 mm局部档相对0.40 mm全长父档增加205,407单元。按局部三维尺寸比例估算，0.25 mm档的增量约为
-`205,407×(0.20/0.25)^3≈105,168`，预计总量约642,734单元；据此预登记并完成
-[`0.25 mm最终插值pilot`](../config/qualification/comsol_exit_interface_025_final_field_preregistration.json)。
-它保持区域、背景、扫掠层和求解器不变，只改变局部最大单元尺寸。运行以630,010单元、全部权威网格区
-无问题、双场各1,125,584 DOF和3330点/6660行采样完整PASS；实测121.2 s、5,195,624,448 bytes
-进程树峰值。相对0.32 mm全长参考，常规杆区、杆出口和canonical handoff的差分/静态场矢量
-normalized RMS分别为`0.380%/0.671%`、`1.293%/0.865%`和`1.721%/0.584%`，六个冻结参考带全部满足；
-网格减少83,386单元（11.689%），因此接受为较低成本工程场参考。0.25→0.20 mm相邻局部档在三区域的
-差分/静态变化分别为`0.041%/0.248%`、`0.479%/0.320%`和`0.982%/0.316%`，只支持局部尺寸轴的
-工程稳定性；没有来源化功能容差，不能据此声称完整空间收敛。进一步COMSOL场/粒子加密和完整资格矩阵
-关闭，当前优先级改为公共handoff、RF→oaTOF贯通，以及同条件COMSOL/SIMION功能、相空间和能量印证；
-Candidate、Formal和N=1000资格仍未授予。
-
-后续经用户另行授权的
-[`无加速混合网格N=100粒子三臂`](../config/qualification/comsol_hybrid_no_acceleration_particle_convergence_preregistration.json)
-已完成。公共求解器先修复了无加速双Electrostatics自动生成`se1+i1+i2`时无法应用既有CG-AMG配置的
-缺口：活动coupling现统一转换为`fc1`，CG-AMG绑定`i1`，MUMPS绑定`dDef`，未激活的COMSOL自动节点
-允许保留；微型单场/双场CG-AMG及双场MUMPS smoke均真实求解PASS。三份科学run使用同一N=100母样本
-前缀和无加速resolved设计：参考档0.25 mm/160步为630,010单元、364.044 s、7,085,850,624 bytes；
-空间档0.20 mm/160步为742,973单元、363.813 s、7,322,972,160 bytes；时间粗档0.25 mm/80步为
-630,010单元、268.031 s、6,658,109,440 bytes。三档RF-on均100/100传输，handoff粒子ID集合完全一致。
-
-0.25→0.20 mm且固定160步的RMS半径、RMS发散、平均能量和平均TOF相对变化分别约
-`1.215%/0.147%/0.076%/0.0016%`。固定0.25 mm的80→160步变化分别约
-`0.760%/13.576%/0.225%/0.0147%`，其中RMS发散从约5.694°变为4.970°。因此本轮只建立
-`FUNCTIONAL_PASS`和局部出口网格粒子敏感度证据；时间收敛明确未建立，连续结论保持
-`INCONCLUSIVE_TEMPORAL_CONVERGENCE_NOT_ESTABLISHED`。预算和商业运行授权已关闭，不增加320步
-第四档，也不得把本结果外推为完整空间收敛、跨求解器数值等价、Candidate、Formal或N=1000资格。
-
-共享SIMION模板、GUI复核、`.wgem`绕过和跨机可移植性状态只由
-[`../../../common/multipole/README.md`](../../../common/multipole/README.md)维护；公共机制证据不授予
-本项目Candidate或Formal资格。
-
-项目L3薄wrapper默认使用根README定义的`compact`产物保留类；数值资格或GUI复核需要MPH、PA解阵列或
-完整轨迹时，必须在运行前显式选择非compact类并写明理由。该设置只管理产物，不是数值或资格参数。
-
-活动产物位于`artifacts/projects/rf_hexapole_ion_optics/`；改名前证据已只读迁入
-`config/project.json`登记的具名archive。迁移没有改写旧manifest、追加旧身份run或改变其原身份、
-状态和声明边界；resolver只认`archived_verified`位置，不回退旧顶层路径。历史上误置于项目根的
-`analysis/`和`comparisons/`已冻结到独立archive；以后所有分析与跨run比较都必须形成具备三件套的
-`runs/<run_id>/`，不扩展项目根目录类型。H15工程复分析的历史目录因缺失三件套已作为
-`failed-evidence`归档；`H15_result.json`保留工程判定和原SHA，但明确声明它不是有效run身份。
-
-本项目没有剩余的baseline/alias兼容退出任务；如需复核旧格式，只从Git历史恢复到隔离工作区。
+1. 使用当前12个runtime profile和声明式campaign入口完成真正需要的N=100/N=1000实验，不恢复一次性
+   solver/mesh诊断profile。
+2. 以家族六指标判断下游可接受性，同时显式保留数值收敛未豁免状态。
+3. 需要新的网格或求解器研究时，新建有窄变量轴、资源帽和终止条件的campaign；不得复制旧JSON后改SHA。
+4. 只有新证据通过当前资格合同后，才讨论Candidate/Formal提升。

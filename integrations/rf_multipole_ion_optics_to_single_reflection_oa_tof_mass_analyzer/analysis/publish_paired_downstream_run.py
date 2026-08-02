@@ -3,21 +3,27 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
-import subprocess
-import sys
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from common.contracts.artifact_naming import validate_run_id
 from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import ContractError
-from common.contracts.verify_run_manifest import verify_record
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.paired_downstream_analysis import (
     INTEGRATION_ID,
     REQUEST_ROLE,
     analyze_request,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.run_publication import (
+    load_json as _load,
+    portable_path as _portable,
+    publish_manifest as _shared_publish_manifest,
+    record_for_path as _record_for_path,
+    restore_interrupted as _shared_restore_interrupted,
+    terminalize_failure as _shared_terminalize_failure,
+    verified_record as _verify_record,
+    write_pending_json as _write_pending_json,
 )
 
 
@@ -43,47 +49,12 @@ PREREGISTRATION_RELATIVE_PATH = (
 )
 
 
-def _load(path: Path, label: str) -> dict[str, Any]:
-    try:
-        value = json.loads(path.read_text(encoding="utf-8-sig"))
-    except (OSError, json.JSONDecodeError) as error:
-        raise ContractError(f"cannot load {label}: {path}") from error
-    if not isinstance(value, dict):
-        raise ContractError(f"{label} must be a JSON object")
-    return value
-
-
-def _verify_record(label: str, record: Any) -> dict[str, Any]:
-    if not isinstance(record, dict):
-        raise ContractError(f"{label} record is missing")
-    try:
-        verify_record(label, record)
-    except (AssertionError, KeyError, TypeError) as error:
-        raise ContractError(f"{label} record identity failed: {error}") from error
-    return record
-
-
 def _record_path(label: str, record: Any) -> Path:
     verified = _verify_record(label, record)
     path = Path(str(verified["path"])).resolve()
     if not path.is_file():
         raise ContractError(f"{label} path is missing: {path}")
     return path
-
-
-def _record_for_path(records: Any, path: Path, label: str) -> dict[str, Any]:
-    iterable = records.values() if isinstance(records, Mapping) else records
-    if not isinstance(iterable, (list, tuple, type({}.values()))):
-        raise ContractError(f"{label} records are invalid")
-    matches = [
-        record
-        for record in iterable
-        if isinstance(record, dict)
-        and Path(str(record.get("path", ""))).resolve() == path.resolve()
-    ]
-    if len(matches) != 1:
-        raise ContractError(f"{label} is not bound exactly once")
-    return _verify_record(label, matches[0])
 
 
 def _output_named(manifest: Mapping[str, Any], name: str, label: str) -> Path:
@@ -99,13 +70,6 @@ def _output_named(manifest: Mapping[str, Any], name: str, label: str) -> Path:
     if len(matches) != 1:
         raise ContractError(f"{label} output {name} is not bound exactly once")
     return _record_path(f"{label} output {name}", matches[0])
-
-
-def _portable(path: Path, workspace_root: Path) -> str:
-    try:
-        return path.resolve().relative_to(workspace_root.resolve()).as_posix()
-    except ValueError as error:
-        raise ContractError(f"path is outside workspace: {path}") from error
 
 
 def _declared_reference(
@@ -405,16 +369,6 @@ def _validate_preregistration(
             raise ContractError(f"preregistered profile differs: {profile_id}")
 
 
-def _write_pending_json(path: Path, value: Mapping[str, Any]) -> None:
-    pending = path.with_name(f".{path.name}.pending")
-    pending.parent.mkdir(parents=True, exist_ok=True)
-    pending.write_text(
-        json.dumps(value, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-    os.replace(pending, path)
-
-
 def _publish_manifest(
     *,
     repo_root: Path,
@@ -423,80 +377,16 @@ def _publish_manifest(
     status: str,
     outputs: Sequence[Path],
 ) -> None:
-    command = [
-        sys.executable,
-        "-m",
-        "common.contracts.write_run_manifest",
-        "--run-config",
-        str(run_config),
-        "--manifest",
-        str(manifest_path),
-        "--status",
-        status,
-        "--software",
-        f"Python {sys.version_info.major}.{sys.version_info.minor}",
-    ]
-    for output in outputs:
-        command.extend(("--output", str(output)))
-    completed = subprocess.run(
-        command,
-        cwd=repo_root,
-        check=False,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
+    _shared_publish_manifest(
+        repo_root=repo_root,
+        run_config=run_config,
+        manifest_path=manifest_path,
+        status=status,
+        outputs=outputs,
+        project=INTEGRATION_ID,
+        mode=OUTPUT_MODE,
+        label="paired",
     )
-    if completed.returncode != 0:
-        raise ContractError(
-            f"paired {status} manifest publication failed: "
-            + (completed.stdout + completed.stderr).strip()
-        )
-    manifest = _load(manifest_path, f"paired {status} manifest")
-    run_config_value = _load(run_config, "paired run_config")
-    if (
-        manifest.get("role") != "simulation_run_manifest"
-        or manifest.get("status") != status
-        or manifest.get("run_id") != run_config_value.get("run_id")
-        or manifest.get("project") != INTEGRATION_ID
-        or manifest.get("mode") != OUTPUT_MODE
-        or manifest.get("formal_eligible") is not False
-    ):
-        raise ContractError(f"paired {status} manifest identity differs")
-    _verify_record(f"paired {status} manifest run_config", manifest.get("run_config"))
-    for output in outputs:
-        _record_for_path(
-            manifest.get("outputs"), output, f"paired {status} output {output.name}"
-        )
-    verify_command = [
-        sys.executable,
-        "-m",
-        "common.contracts.verify_run_manifest",
-        str(manifest_path),
-        "--require-status",
-        status,
-        "--require-local-run-config",
-        "--require-run-id",
-        str(run_config_value["run_id"]),
-        "--require-project",
-        INTEGRATION_ID,
-        "--require-mode",
-        OUTPUT_MODE,
-    ]
-    verified = subprocess.run(
-        verify_command,
-        cwd=repo_root,
-        check=False,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    if verified.returncode != 0:
-        raise ContractError(
-            f"paired {status} manifest verification failed: "
-            + (verified.stdout + verified.stderr).strip()
-        )
 
 
 def _restore_interrupted(
@@ -507,11 +397,13 @@ def _restore_interrupted(
     interrupted_summary_bytes: bytes,
     interrupted_manifest_bytes: bytes,
 ) -> None:
-    summary_pending = summary_path.with_name(f".{summary_path.name}.pending")
-    summary_pending.write_bytes(interrupted_summary_bytes)
-    os.replace(summary_pending, summary_path)
-    manifest_pending.write_bytes(interrupted_manifest_bytes)
-    os.replace(manifest_pending, manifest_path)
+    _shared_restore_interrupted(
+        summary_path=summary_path,
+        manifest_path=manifest_path,
+        manifest_pending=manifest_pending,
+        summary_bytes=interrupted_summary_bytes,
+        manifest_bytes=interrupted_manifest_bytes,
+    )
 
 
 def _terminalize_failure(
@@ -526,38 +418,18 @@ def _terminalize_failure(
     interrupted_summary_bytes: bytes,
     interrupted_manifest_bytes: bytes,
 ) -> None:
-    try:
-        _write_pending_json(summary_path, failed_summary)
-        outputs = (
-            (result_path, summary_path)
-            if result_path.is_file()
-            else (summary_path,)
-        )
-        _publish_manifest(
-            repo_root=repo_root,
-            run_config=run_config_path,
-            manifest_path=manifest_pending,
-            status="failed",
-            outputs=outputs,
-        )
-        os.replace(manifest_pending, manifest_path)
-    except (KeyboardInterrupt, SystemExit):
-        _restore_interrupted(
-            summary_path=summary_path,
-            manifest_path=manifest_path,
-            manifest_pending=manifest_pending,
-            interrupted_summary_bytes=interrupted_summary_bytes,
-            interrupted_manifest_bytes=interrupted_manifest_bytes,
-        )
-        raise
-    except Exception:
-        _restore_interrupted(
-            summary_path=summary_path,
-            manifest_path=manifest_path,
-            manifest_pending=manifest_pending,
-            interrupted_summary_bytes=interrupted_summary_bytes,
-            interrupted_manifest_bytes=interrupted_manifest_bytes,
-        )
+    _shared_terminalize_failure(
+        publish=_publish_manifest,
+        repo_root=repo_root,
+        run_config_path=run_config_path,
+        summary_path=summary_path,
+        manifest_path=manifest_path,
+        manifest_pending=manifest_pending,
+        failed_summary=failed_summary,
+        candidate_outputs=(result_path,),
+        interrupted_summary_bytes=interrupted_summary_bytes,
+        interrupted_manifest_bytes=interrupted_manifest_bytes,
+    )
 
 
 def publish_paired_downstream_run(

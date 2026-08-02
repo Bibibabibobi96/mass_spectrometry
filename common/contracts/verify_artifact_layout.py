@@ -33,7 +33,7 @@ except ModuleNotFoundError:
     from file_identity import file_sha256
 
 try:
-    from common.contracts.artifact_identity_migration import (
+    from common.contracts.artifact_identity_archive import (
         legacy_artifact_location,
         validate_identity_archive_manifest,
         validate_plan,
@@ -41,7 +41,7 @@ try:
         verify_pruned_inventory,
     )
 except ModuleNotFoundError:
-    from artifact_identity_migration import (
+    from artifact_identity_archive import (
         legacy_artifact_location,
         validate_identity_archive_manifest,
         validate_plan,

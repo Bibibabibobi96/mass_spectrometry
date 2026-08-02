@@ -68,14 +68,14 @@ class FamilyDependencyResolutionTests(unittest.TestCase):
         self.base = json.loads(BASE.read_text(encoding="utf-8"))
         self.overlay = json.loads(OVERLAY.read_text(encoding="utf-8"))
 
-    def test_resolves_exact_stable_51_item_inventory(self) -> None:
+    def test_resolves_exact_stable_52_item_inventory(self) -> None:
         first = self._run_merge(self.base, self.overlay)
         second = self._run_merge(self.base, self.overlay)
         self.assertEqual(first.returncode, 0, first.stderr)
         self.assertEqual(second.returncode, 0, second.stderr)
         first_ids = json.loads(first.stdout)
         self.assertEqual(first_ids, json.loads(second.stdout))
-        self.assertEqual(len(first_ids), 51)
+        self.assertEqual(len(first_ids), 52)
         self.assertEqual(
             first_ids[-2:],
             ["rf_resolved_design", "rf_project_descriptor"],
@@ -136,7 +136,7 @@ class FamilyDependencyResolutionTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("SHA-256 differs", result.stderr)
 
-    def test_publishes_separate_authorities_and_51_item_inventory(self) -> None:
+    def test_publishes_separate_authorities_and_52_item_inventory(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             environment = os.environ.copy()
             environment.update(
@@ -187,7 +187,7 @@ class FamilyDependencyResolutionTests(unittest.TestCase):
             )
         self.assertEqual(result.returncode, 0, result.stderr)
         publication = json.loads(result.stdout)
-        self.assertEqual(publication["count"], 51)
+        self.assertEqual(publication["count"], 52)
         self.assertTrue(publication["base"])
         self.assertTrue(publication["overlay"])
         self.assertEqual(len(publication["base_sha"]), 64)
