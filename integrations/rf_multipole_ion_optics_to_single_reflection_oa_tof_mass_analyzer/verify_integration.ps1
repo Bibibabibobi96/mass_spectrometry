@@ -20,20 +20,56 @@ if ($LASTEXITCODE -ne 0 -or $pythonVersion -ne '3.11') {
     throw "Integration gate requires Python 3.11, found $pythonVersion at $PythonExe"
 }
 
+function Invoke-CheckedPythonCommand {
+    param(
+        [Parameter(Mandatory)][string[]]$CommandArguments,
+        [Parameter(Mandatory)][string]$FailureMessage
+    )
+    $startInfo = [Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $PythonExe
+    $startInfo.WorkingDirectory = $repoRoot
+    $startInfo.UseShellExecute = $false
+    $startInfo.Arguments = (($CommandArguments | ForEach-Object {
+        if ($_ -notmatch '[\s"]') {
+            $_
+        }
+        else {
+            '"' + ($_ -replace '(\\*)"', '$1$1\"' -replace '(\\+)$', '$1$1') + '"'
+        }
+    }) -join ' ')
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    try {
+        if (-not $process.Start()) {
+            throw "Failed to start Python integration gate command."
+        }
+        $process.WaitForExit()
+        $exitCode = $process.ExitCode
+    }
+    finally {
+        $process.Dispose()
+    }
+    if ($exitCode -ne 0) {
+        throw "$FailureMessage Exit code: $exitCode."
+    }
+}
+
 Push-Location $repoRoot
 try {
-    & $PythonExe -m ruff check `
-        (Join-Path $repoRoot 'common\integration') `
+    Invoke-CheckedPythonCommand -CommandArguments @(
+        '-m', 'ruff', 'check',
+        (Join-Path $repoRoot 'common\integration'),
         $integrationRoot
-    if ($LASTEXITCODE -ne 0) {
-        throw 'RF multipole to single-reflection oaTOF integration Ruff gate failed.'
-    }
-    & $PythonExe -m unittest discover `
-        -s (Join-Path $integrationRoot 'tests') `
-        -p 'test_*.py'
-    if ($LASTEXITCODE -ne 0) {
-        throw 'RF multipole to single-reflection oaTOF integration tests failed.'
-    }
+    ) -FailureMessage (
+        'RF multipole to single-reflection oaTOF integration Ruff gate failed.'
+    )
+    Invoke-CheckedPythonCommand -CommandArguments @(
+        '-m', 'unittest', 'discover',
+        '-s', (Join-Path $integrationRoot 'tests'),
+        '-p', 'test_*.py'
+    ) -FailureMessage (
+        'RF multipole to single-reflection oaTOF integration tests failed.'
+    )
 }
 finally {
     Pop-Location
