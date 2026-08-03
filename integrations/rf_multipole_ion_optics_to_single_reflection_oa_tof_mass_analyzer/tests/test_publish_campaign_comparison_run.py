@@ -7,10 +7,14 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
+
+import pandas as pd
 
 from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import ContractError
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis import (
+    plot_chain_checkpoint_diagnostics as checkpoint_plot,
     publish_campaign_comparison_run as publisher,
 )
 
@@ -40,6 +44,8 @@ def build_current_parent(root: Path) -> tuple[Path, Path, str]:
         / "runs"
     )
     parent_id = "20260803_210000__sim__cross__current-campaign-parent"
+    pre_id = "20260803_205300__sim__comsol__current-pre-pulse"
+    pulse_id = "20260803_205400__sim__comsol__current-pulse"
     terminal_id = "20260803_205500__sim__simion__current-analyzer"
     profile_id = "rf_hexapole_oatof_shield_terminal_direct_mating_gap_0mm"
     source_identity = {
@@ -81,9 +87,48 @@ def build_current_parent(root: Path) -> tuple[Path, Path, str]:
         },
     )
 
-    terminal_root = (
+    source_runs = (
         workspace / "artifacts" / "projects" /
-        source_identity["project_id"] / "runs" / terminal_id
+        source_identity["project_id"] / "runs"
+    )
+    pre_root = source_runs / pre_id
+    pulse_root = source_runs / pulse_id
+    terminal_root = source_runs / terminal_id
+    rf_exit = pre_root / "canonical_rf_exit_at_pre_pulse_connector.csv"
+    oatof_entry = pre_root / "pre_pulse_interface_transport_particles.csv"
+    rf_exit.parent.mkdir(parents=True, exist_ok=True)
+    rf_exit.write_text("particle_id\n1\n", encoding="utf-8")
+    oatof_entry.write_text("particle_id\n1\n", encoding="utf-8")
+    pre_manifest_path = pre_root / "run_manifest.json"
+    write_json(
+        pre_manifest_path,
+        {
+            "inputs": [record(rf_exit)],
+            "outputs": [record(oatof_entry)],
+        },
+    )
+    pulse_state = pulse_root / "pulse_capture_pulse_left_limit_state.csv"
+    pulse_census = pulse_root / "pulse_capture_particle_terminal_census.csv"
+    local_exit = pulse_root / "pulse_capture_local_accelerator_exit.csv"
+    oatof_baseline = pulse_root / "oatof_baseline.json"
+    resolved_connection = pulse_root / "resolved_connection.json"
+    rf_design = pulse_root / "upstream_resolved_design.json"
+    for path in (pulse_state, pulse_census, local_exit):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("particle_id\n1\n", encoding="utf-8")
+    for path in (oatof_baseline, resolved_connection, rf_design):
+        write_json(path, {})
+    pulse_manifest_path = pulse_root / "run_manifest.json"
+    write_json(
+        pulse_manifest_path,
+        {
+            "inputs": [
+                record(oatof_baseline), record(resolved_connection), record(rf_design)
+            ],
+            "outputs": [
+                record(pulse_state), record(pulse_census), record(local_exit)
+            ],
+        },
     )
     terminal_config_path = terminal_root / "run_config.json"
     write_json(
@@ -102,8 +147,10 @@ def build_current_parent(root: Path) -> tuple[Path, Path, str]:
     )
     terminal_metrics = terminal_root / "analyzer_transport_metrics.json"
     downstream = terminal_root / "simion_downstream_particles.csv"
+    row_map = terminal_root / "row_map.csv"
     write_json(terminal_metrics, {"census": {}})
     downstream.write_text("Ion,TofUs,RadiusMm,Hit\n", encoding="utf-8")
+    row_map.write_text("solver_row_index,particle_id\n1,1\n", encoding="utf-8")
     terminal_manifest_path = terminal_root / "run_manifest.json"
     write_json(
         terminal_manifest_path,
@@ -115,6 +162,7 @@ def build_current_parent(root: Path) -> tuple[Path, Path, str]:
             "mode": publisher.TERMINAL_MODE,
             "status": "success",
             "run_config": record(terminal_config_path),
+            "inputs": [record(row_map)],
             "outputs": [record(terminal_metrics), record(downstream)],
         },
     )
@@ -144,6 +192,18 @@ def build_current_parent(root: Path) -> tuple[Path, Path, str]:
             "particle_count": 10,
             "source_particle_identity": source_identity,
             "stage_runs": [
+                {
+                    "phase": "pre_pulse_interface_transport",
+                    "run_id": pre_id,
+                    "path": str(pre_root),
+                    "manifest_sha256": file_sha256(pre_manifest_path),
+                },
+                {
+                    "phase": "pulse_capture",
+                    "run_id": pulse_id,
+                    "path": str(pulse_root),
+                    "manifest_sha256": file_sha256(pulse_manifest_path),
+                },
                 {
                     "phase": "analyzer_transport",
                     "run_id": terminal_id,
@@ -262,6 +322,15 @@ class CampaignComparisonFixture:
             terminal_manifest=self.terminal_manifest,
             terminal_metrics=self.terminal_metrics,
             downstream_particles=self.downstream_particles,
+            rf_exit_state=self.parent_summary,
+            oatof_entry_state=self.parent_summary,
+            pulse_state=self.parent_summary,
+            pulse_terminal_census=self.parent_summary,
+            local_exit_state=self.parent_summary,
+            downstream_row_map=self.parent_summary,
+            oatof_baseline=self.parent_summary,
+            resolved_connection=self.parent_summary,
+            rf_resolved_design=self.parent_summary,
         )
 
 
@@ -369,6 +438,52 @@ class PublishCampaignComparisonRunTests(unittest.TestCase):
         report = publisher._render_report_markdown(cases)
         self.assertIn("must not be used to rank performance", report)
         self.assertIn("INCONCLUSIVE_DIAGNOSTIC_ONLY", report)
+
+    def test_checkpoint_detector_panel_uses_detector_centered_coordinates(self) -> None:
+        rf_exit = pd.DataFrame({
+            "particle_id": [1], "position_x_mm": [0.0],
+            "position_y_mm": [0.0], "position_z_mm": [0.0],
+        })
+        entry = pd.DataFrame({
+            "particle_id": [1], "status": ["transmitted"],
+            "instrument_time_us": [0.0], "position_x_mm": [0.0],
+            "position_y_mm": [0.0], "position_z_mm": [0.0],
+            "velocity_x_m_s": [0.0], "velocity_y_m_s": [0.0],
+            "velocity_z_m_s": [0.0],
+        })
+        pulse = pd.DataFrame({
+            "particle_id": [1], "instrument_time_us": [1.0],
+            "x_mm": [0.0], "y_mm": [0.0], "z_mm": [0.0],
+        })
+        terminal = pd.DataFrame({
+            "particle_id": [1], "oatof_entry_status": ["transmitted"],
+            "active_at_pulse": [1], "local_accelerator_exit": [1],
+            "y_mm": [0.0], "z_mm": [0.0],
+        })
+        downstream = pd.DataFrame({
+            "particle_id": [1], "Hit": [True], "XMm": [110.0],
+            "YMm": [20.0],
+        })
+        geometry = {
+            "grid2_z": 0.0, "detector_center_x": 100.0,
+            "detector_center_y": 5.0, "physical_detector_radius": 40.0,
+        }
+        with (
+            mock.patch.object(checkpoint_plot, "add_connection_geometry_outlines"),
+            mock.patch.object(checkpoint_plot, "add_accelerator_geometry_outlines"),
+        ):
+            figure, _ = checkpoint_plot.build_figure(
+                label="fixture", rf_exit=rf_exit, oatof_entry=entry,
+                pulse=pulse, terminal=terminal, local_exit=rf_exit,
+                downstream=downstream, geometry=geometry, pulse_time_us=1.0,
+            )
+        try:
+            offsets = figure.axes[2].collections[0].get_offsets()
+            self.assertEqual(offsets.tolist(), [[10.0, 15.0]])
+        finally:
+            import matplotlib.pyplot as plt
+
+            plt.close(figure)
 
 
 if __name__ == "__main__":

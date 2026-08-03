@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "role": "rf_multipole_oatof_analysis_capability_catalog",
+  "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+  "capabilities": [
+    {
+      "capability_id": "rf_oatof_pulse_geometry_snapshot_v1",
+      "consumer": "analysis/plot_shared_pulse_geometry_snapshot.py",
+      "scope": "COMSOL particle positions and losses immediately before the shared pulse",
+      "fixed_output_role": "results/pulse_capture_pulse_geometry_snapshot.png",
+      "claim_class": "UNQUALIFIED_DIAGNOSTIC_ONLY"
+    },
+    {
+      "capability_id": "rf_oatof_analyzer_functional_chain_v1",
+      "consumer": "analysis/analyze_analyzer_transport.py",
+      "scope": "single-case downstream SIMION census and detector-hit TOF",
+      "fixed_output_role": "results/analyzer_transport_functional_chain.png",
+      "claim_class": "UNQUALIFIED_DIAGNOSTIC_ONLY"
+    },
+    {
+      "capability_id": "rf_oatof_campaign_comparison_v1",
+      "consumer": "analysis/publish_campaign_comparison_run.py",
+      "scope": "two-to-four-case normalized retention and detector-hit TOF comparison",
+      "fixed_output_role": "results/campaign_comparison.png",
+      "claim_class": "POSTHOC_DESCRIPTIVE"
+    },
+    {
+      "capability_id": "rf_oatof_chain_checkpoint_six_panel_v1",
+      "consumer": "analysis/plot_chain_checkpoint_diagnostics.py",
+      "scope": "per-case six-panel RF-exit, oaTOF-entry, pulse, grid2-exit and detector diagnostic",
+      "required_event_plane": "diagnostic_events.local_accelerator_exit",
+      "fixed_output_role": "results/<case>__chain_checkpoint_diagnostics.png",
+      "claim_class": "UNQUALIFIED_DIAGNOSTIC_ONLY"
+    }
+  ]
+}

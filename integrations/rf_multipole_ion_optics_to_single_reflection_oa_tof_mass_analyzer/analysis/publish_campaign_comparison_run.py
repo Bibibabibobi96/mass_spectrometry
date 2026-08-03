@@ -31,6 +31,10 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     verified_record,
     write_pending_json,
 )
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.plot_chain_checkpoint_diagnostics import (
+    CAPABILITY_ID as CHECKPOINT_CAPABILITY_ID,
+    publish_checkpoint_figure,
+)
 
 
 INTEGRATION_ID = (
@@ -47,6 +51,27 @@ IMPLEMENTATION_RELATIVE_PATH = (
     "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
     "analysis/publish_campaign_comparison_run.py"
 )
+CHECKPOINT_IMPLEMENTATION_RELATIVE_PATH = (
+    "integrations/"
+    "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
+    "analysis/plot_chain_checkpoint_diagnostics.py"
+)
+GEOMETRY_IMPLEMENTATION_RELATIVE_PATH = (
+    "integrations/"
+    "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
+    "analysis/plot_shared_pulse_geometry_snapshot.py"
+)
+CAPABILITY_CATALOG_RELATIVE_PATH = (
+    "integrations/"
+    "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
+    "config/analysis_capabilities.json"
+)
+JOINT_CONTRACT_RELATIVE_PATH = (
+    "integrations/"
+    "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
+    "config/family_shared_physical_port_joint_geometry.json"
+)
+COMPARISON_CAPABILITY_ID = "rf_oatof_campaign_comparison_v1"
 STAGES = (
     "rf_exit",
     "oatof_entry",
@@ -81,6 +106,15 @@ class CaseInputs:
     terminal_manifest: Path
     terminal_metrics: Path
     downstream_particles: Path
+    rf_exit_state: Path
+    oatof_entry_state: Path
+    pulse_state: Path
+    pulse_terminal_census: Path
+    local_exit_state: Path
+    downstream_row_map: Path
+    oatof_baseline: Path
+    resolved_connection: Path
+    rf_resolved_design: Path
 
 
 def _canonical_sha256(value: Any) -> str:
@@ -98,19 +132,35 @@ def _record_path(label: str, record: Any) -> Path:
     return path
 
 
-def _output_named(manifest: Mapping[str, Any], name: str, label: str) -> Path:
-    records = manifest.get("outputs")
-    if not isinstance(records, list):
-        raise ContractError(f"{label} outputs are invalid")
+def _record_named(
+    manifest: Mapping[str, Any], collection: str, name: str, label: str
+) -> Path:
+    records = manifest.get(collection)
+    if isinstance(records, Mapping):
+        candidates = records.values()
+    elif isinstance(records, list):
+        candidates = records
+    else:
+        raise ContractError(f"{label} {collection} are invalid")
     matches = [
         record
-        for record in records
+        for record in candidates
         if isinstance(record, dict)
         and Path(str(record.get("path", ""))).name == name
     ]
     if len(matches) != 1:
-        raise ContractError(f"{label} output {name} is not bound exactly once")
-    return _record_path(f"{label} output {name}", matches[0])
+        raise ContractError(
+            f"{label} {collection[:-1]} {name} is not bound exactly once"
+        )
+    return _record_path(f"{label} {collection[:-1]} {name}", matches[0])
+
+
+def _output_named(manifest: Mapping[str, Any], name: str, label: str) -> Path:
+    return _record_named(manifest, "outputs", name, label)
+
+
+def _input_named(manifest: Mapping[str, Any], name: str, label: str) -> Path:
+    return _record_named(manifest, "inputs", name, label)
 
 
 def _workspace_path(raw: Any, workspace_root: Path) -> Path:
@@ -295,27 +345,45 @@ def _load_case_inputs(
         raise ContractError(f"{label} parent summary identity differs")
 
     stages = parent_config.get("stage_runs")
-    analyzer = (
-        [stage for stage in stages if isinstance(stage, dict) and stage.get("phase") == "analyzer_transport"]
-        if isinstance(stages, list)
-        else []
+    required_phases = (
+        "pre_pulse_interface_transport", "pulse_capture", "analyzer_transport"
     )
-    if len(analyzer) != 1:
-        raise ContractError(f"{label} parent must bind one analyzer stage")
-    stage = analyzer[0]
-    stage_root = _workspace_path(stage.get("path", ""), workspace_root)
-    terminal_manifest_path = stage_root / "run_manifest.json"
+    phase_rows = {
+        phase: [
+            stage for stage in stages
+            if isinstance(stage, dict) and stage.get("phase") == phase
+        ]
+        for phase in required_phases
+    } if isinstance(stages, list) else {}
+    if any(len(phase_rows.get(phase, [])) != 1 for phase in required_phases):
+        raise ContractError(f"{label} parent must bind each fixed stage exactly once")
+    stage_roots = {
+        phase: _workspace_path(phase_rows[phase][0].get("path", ""), workspace_root)
+        for phase in required_phases
+    }
     stage_project = parent_config["source_particle_identity"]["project_id"]
     expected_stage_runs_root = (
         workspace_root / "artifacts" / "projects" / stage_project / "runs"
     ).resolve()
-    if (
-        stage_root.parent != expected_stage_runs_root
-        or stage.get("run_id") != stage_root.name
-        or not terminal_manifest_path.is_file()
-        or stage.get("manifest_sha256") != file_sha256(terminal_manifest_path)
-    ):
-        raise ContractError(f"{label} analyzer stage identity differs")
+    manifests: dict[str, tuple[Path, Mapping[str, Any]]] = {}
+    for phase in required_phases:
+        stage = phase_rows[phase][0]
+        stage_root = stage_roots[phase]
+        manifest_path = stage_root / "run_manifest.json"
+        if (
+            stage_root.parent != expected_stage_runs_root
+            or stage.get("run_id") != stage_root.name
+            or not manifest_path.is_file()
+            or stage.get("manifest_sha256") != file_sha256(manifest_path)
+        ):
+            raise ContractError(f"{label} {phase} stage identity differs")
+        manifests[phase] = (
+            manifest_path,
+            load_json(manifest_path, f"{label} {phase} manifest"),
+        )
+    terminal_manifest_path, terminal_manifest = manifests["analyzer_transport"]
+    analyzer_stage = phase_rows["analyzer_transport"][0]
+    analyzer_root = stage_roots["analyzer_transport"]
     parent_inputs = parent_config.get("inputs")
     if (
         not isinstance(parent_inputs, dict)
@@ -326,12 +394,9 @@ def _load_case_inputs(
     parent_manifest_record = record_for_path(
         parent_manifest.get("inputs"), terminal_manifest_path, f"{label} terminal manifest"
     )
-    if parent_manifest_record.get("sha256") != stage.get("manifest_sha256"):
+    if parent_manifest_record.get("sha256") != analyzer_stage.get("manifest_sha256"):
         raise ContractError(f"{label} parent analyzer SHA-256 differs")
 
-    terminal_manifest = load_json(
-        terminal_manifest_path, f"{label} analyzer terminal manifest"
-    )
     if any(
         terminal_manifest.get(name) != value
         for name, value in {
@@ -345,12 +410,12 @@ def _load_case_inputs(
     terminal_config_path = _record_path(
         f"{label} analyzer run_config", terminal_manifest.get("run_config")
     )
-    if terminal_config_path.parent != stage_root:
+    if terminal_config_path.parent != analyzer_root:
         raise ContractError(f"{label} analyzer run_config is nonlocal")
     terminal_config = load_json(terminal_config_path, f"{label} analyzer run_config")
     parameters = terminal_config.get("parameters")
     if (
-        terminal_config.get("run_id") != stage.get("run_id")
+        terminal_config.get("run_id") != analyzer_stage.get("run_id")
         or terminal_config.get("project") != source_identity.get("project_id")
         or terminal_config.get("mode") != TERMINAL_MODE
         or terminal_config.get("upstream_source_identity") != source_identity
@@ -376,6 +441,43 @@ def _load_case_inputs(
             terminal_manifest,
             "simion_downstream_particles.csv",
             f"{label} analyzer terminal",
+        ),
+        rf_exit_state=_input_named(
+            manifests["pre_pulse_interface_transport"][1],
+            "canonical_rf_exit_at_pre_pulse_connector.csv",
+            f"{label} pre-pulse",
+        ),
+        oatof_entry_state=_output_named(
+            manifests["pre_pulse_interface_transport"][1],
+            "pre_pulse_interface_transport_particles.csv",
+            f"{label} pre-pulse",
+        ),
+        pulse_state=_output_named(
+            manifests["pulse_capture"][1],
+            "pulse_capture_pulse_left_limit_state.csv",
+            f"{label} pulse",
+        ),
+        pulse_terminal_census=_output_named(
+            manifests["pulse_capture"][1],
+            "pulse_capture_particle_terminal_census.csv",
+            f"{label} pulse",
+        ),
+        local_exit_state=_output_named(
+            manifests["pulse_capture"][1],
+            "pulse_capture_local_accelerator_exit.csv",
+            f"{label} pulse",
+        ),
+        downstream_row_map=_input_named(
+            terminal_manifest, "row_map.csv", f"{label} analyzer terminal"
+        ),
+        oatof_baseline=_input_named(
+            manifests["pulse_capture"][1], "oatof_baseline.json", f"{label} pulse"
+        ),
+        resolved_connection=_input_named(
+            manifests["pulse_capture"][1], "resolved_connection.json", f"{label} pulse"
+        ),
+        rf_resolved_design=_input_named(
+            manifests["pulse_capture"][1], "upstream_resolved_design.json", f"{label} pulse"
         ),
     )
 
@@ -754,12 +856,33 @@ def publish_campaign_comparison_run(
     report_path = run_dir / "results" / "campaign_comparison.md"
     figure_path = run_dir / "results" / "campaign_comparison.png"
     figure_manifest_path = run_dir / "results" / "campaign_comparison.figure.json"
+    checkpoint_outputs = [
+        (
+            run_dir / "results" / f"case_{index:02d}__chain_checkpoint_diagnostics.png",
+            run_dir / "results" / f"case_{index:02d}__chain_checkpoint_diagnostics.figure.json",
+        )
+        for index in range(1, len(case_inputs) + 1)
+    ]
     run_config_path = run_dir / "run_config.json"
     summary_path = run_dir / "summary.json"
     manifest_path = run_dir / "run_manifest.json"
     implementation_path = repo_root / IMPLEMENTATION_RELATIVE_PATH
+    checkpoint_implementation_path = (
+        repo_root / CHECKPOINT_IMPLEMENTATION_RELATIVE_PATH
+    )
+    geometry_implementation_path = repo_root / GEOMETRY_IMPLEMENTATION_RELATIVE_PATH
+    capability_catalog_path = repo_root / CAPABILITY_CATALOG_RELATIVE_PATH
+    joint_contract_path = repo_root / JOINT_CONTRACT_RELATIVE_PATH
     requirements_lock = repo_root / "requirements-lock.txt"
-    if not implementation_path.is_file() or not requirements_lock.is_file():
+    required_repository_inputs = (
+        implementation_path,
+        checkpoint_implementation_path,
+        geometry_implementation_path,
+        capability_catalog_path,
+        joint_contract_path,
+        requirements_lock,
+    )
+    if any(not path.is_file() for path in required_repository_inputs):
         raise ContractError("campaign comparison implementation inputs are missing")
     request = {
         "schema_version": 1,
@@ -774,11 +897,19 @@ def publish_campaign_comparison_run(
             for case in case_inputs
         ],
         "analysis_class": "POSTHOC_DESCRIPTIVE",
+        "analysis_capability_ids": [
+            COMPARISON_CAPABILITY_ID,
+            CHECKPOINT_CAPABILITY_ID,
+        ],
         "qualification_decision_made": False,
     }
     input_paths: dict[str, Path] = {
         "campaign_comparison_request": request_path,
         "campaign_comparison_implementation": implementation_path,
+        "chain_checkpoint_implementation": checkpoint_implementation_path,
+        "pulse_geometry_implementation": geometry_implementation_path,
+        "analysis_capability_catalog": capability_catalog_path,
+        "joint_geometry_contract": joint_contract_path,
         "requirements_lock": requirements_lock,
     }
     for index, case in enumerate(case_inputs, start=1):
@@ -789,6 +920,15 @@ def publish_campaign_comparison_run(
                 f"case_{index}_terminal_manifest": case.terminal_manifest,
                 f"case_{index}_terminal_metrics": case.terminal_metrics,
                 f"case_{index}_downstream_particles": case.downstream_particles,
+                f"case_{index}_rf_exit_state": case.rf_exit_state,
+                f"case_{index}_oatof_entry_state": case.oatof_entry_state,
+                f"case_{index}_pulse_state": case.pulse_state,
+                f"case_{index}_pulse_terminal_census": case.pulse_terminal_census,
+                f"case_{index}_local_exit_state": case.local_exit_state,
+                f"case_{index}_downstream_row_map": case.downstream_row_map,
+                f"case_{index}_oatof_baseline": case.oatof_baseline,
+                f"case_{index}_resolved_connection": case.resolved_connection,
+                f"case_{index}_rf_resolved_design": case.rf_resolved_design,
             }
         )
     run_config: dict[str, Any] = {
@@ -802,6 +942,10 @@ def publish_campaign_comparison_run(
             "case_count": len(case_inputs),
             "parent_run_ids": parent_ids,
             "analysis_class": "POSTHOC_DESCRIPTIVE",
+            "analysis_capability_ids": [
+                COMPARISON_CAPABILITY_ID,
+                CHECKPOINT_CAPABILITY_ID,
+            ],
             "retention_denominator": "per_case_rf_exit",
             "acceptance_thresholds_applied": False,
             "qualification_decision_made": False,
@@ -859,6 +1003,7 @@ def publish_campaign_comparison_run(
         report_path,
         figure_path,
         figure_manifest_path,
+        *(path for pair in checkpoint_outputs for path in pair),
         summary_path,
     )
 
@@ -885,6 +1030,28 @@ def publish_campaign_comparison_run(
             figure_manifest=figure_manifest_path,
             repo_root=repo_root,
         )
+        checkpoint_census: list[dict[str, Any]] = []
+        for case, (checkpoint_figure, checkpoint_manifest) in zip(
+            case_inputs, checkpoint_outputs, strict=True
+        ):
+            checkpoint_census.append(
+                publish_checkpoint_figure(
+                    label=case.label,
+                    rf_exit_path=case.rf_exit_state,
+                    oatof_entry_path=case.oatof_entry_state,
+                    pulse_state_path=case.pulse_state,
+                    terminal_census_path=case.pulse_terminal_census,
+                    local_exit_path=case.local_exit_state,
+                    row_map_path=case.downstream_row_map,
+                    downstream_path=case.downstream_particles,
+                    baseline_path=case.oatof_baseline,
+                    joint_path=joint_contract_path,
+                    resolved_connection_path=case.resolved_connection,
+                    rf_resolved_design_path=case.rf_resolved_design,
+                    output_path=checkpoint_figure,
+                    metadata_path=checkpoint_manifest,
+                )
+            )
         summary = {
             **summary_base,
             "status": "success",
@@ -892,6 +1059,17 @@ def publish_campaign_comparison_run(
             "result": "results/campaign_comparison.json",
             "report": "results/campaign_comparison.md",
             "figure": "results/campaign_comparison.png",
+            "checkpoint_figures": [
+                {
+                    "case": case.label,
+                    "figure": portable_path(pair[0], run_dir),
+                    "figure_manifest": portable_path(pair[1], run_dir),
+                    "census": census,
+                }
+                for case, pair, census in zip(
+                    case_inputs, checkpoint_outputs, checkpoint_census, strict=True
+                )
+            ],
         }
         write_pending_json(summary_path, summary)
         failure_stage = "success_manifest_publication"

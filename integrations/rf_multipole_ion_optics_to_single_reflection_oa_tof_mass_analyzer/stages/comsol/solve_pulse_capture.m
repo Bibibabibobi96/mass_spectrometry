@@ -223,7 +223,10 @@ x=squeeze(particles.p(:,:,1)); y=squeeze(particles.p(:,:,2)); z=squeeze(particle
 vx=squeeze(particles.v(:,:,1)); vy=squeeze(particles.v(:,:,2)); vz=squeeze(particles.v(:,:,3));
 if isvector(x), x=x(:); y=y(:); z=z(:); vx=vx(:); vy=vy(:); vz=vz(:); end
 assert(size(x,2) == numel(releaseIndices), 'PulseCapture solved particle count differs from released particles.');
-localPlane = oa.geometry_mm.accelerator_grid2_z+context.oatof_downstream_buffer_mm-releaseOffset;
+% The cross-solver event is the physical grid2 plane.  The downstream
+% buffer remains a numerical-domain boundary and must never redefine the
+% local_accelerator_exit event consumed by SIMION or analysis.
+localPlane = oa.geometry_mm.accelerator_grid2_z;
 eventRows = cell(height(ions), 24);
 captureRows = cell(height(ions), 12); captureCount = 0;
 for index = 1:height(ions)

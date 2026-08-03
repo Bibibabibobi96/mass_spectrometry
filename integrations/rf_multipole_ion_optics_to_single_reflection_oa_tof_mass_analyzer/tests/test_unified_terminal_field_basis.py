@@ -48,6 +48,21 @@ class UnifiedTerminalFieldBasisTests(unittest.TestCase):
             "rf_resolved_geometry:/downstream_terminal/aperture",
         )
 
+    def test_local_exit_is_the_physical_grid2_surface(self) -> None:
+        joint = load_json(CONFIG_ROOT / "family_shared_physical_port_joint_geometry.json")
+        event = joint["diagnostic_events"]["local_accelerator_exit"]
+        pulse = (STAGE_ROOT / "solve_pulse_capture.m").read_text(encoding="utf-8")
+
+        self.assertEqual(event["physical_surface_role"], "accelerator_grid2")
+        self.assertEqual(event["sampling_offset_mm"], 0.0)
+        self.assertFalse(event["numerical_domain_boundary_allowed"])
+        self.assertIn(
+            "localPlane = oa.geometry_mm.accelerator_grid2_z;", pulse
+        )
+        self.assertNotIn(
+            "accelerator_grid2_z+context.oatof_downstream_buffer_mm", pulse
+        )
+
     def test_current_family_geometry_has_one_millimeter_rod_clearance(self) -> None:
         for family in ("quadrupole", "hexapole", "octupole"):
             project = f"rf_{family}_ion_optics"

@@ -126,6 +126,19 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
     def test_active_publication_closure_is_fresh(self) -> None:
         self.assertEqual(publication_differences(REPO_ROOT), [])
 
+    def test_analysis_capabilities_are_unique_and_lifecycle_bounded(self) -> None:
+        catalog = load(CONFIG_ROOT / "analysis_capabilities.json")
+        self.assertEqual(
+            catalog["role"], "rf_multipole_oatof_analysis_capability_catalog"
+        )
+        capabilities = catalog["capabilities"]
+        identities = [row["capability_id"] for row in capabilities]
+        self.assertEqual(len(identities), len(set(identities)))
+        self.assertIn("rf_oatof_chain_checkpoint_six_panel_v1", identities)
+        self.assertTrue(
+            all(row["claim_class"] != "FORMAL" for row in capabilities)
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

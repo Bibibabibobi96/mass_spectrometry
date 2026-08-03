@@ -91,6 +91,17 @@
     "rf_shield_numerical_wall_thickness_mm": 1.0,
     "oatof_downstream_buffer_after_grid2_mm": 5.0
   },
+  "diagnostic_events": {
+    "local_accelerator_exit": {
+      "frame_id": "oatof_global",
+      "geometry": "plane",
+      "physical_surface_role": "accelerator_grid2",
+      "z_binding": "oatof_baseline:/geometry_mm/accelerator_grid2_z",
+      "sampling_offset_mm": 0.0,
+      "numerical_domain_boundary_allowed": false,
+      "required_consumers": ["comsol_pulse_capture", "simion_interface_transport", "cross_solver_analysis"]
+    }
+  },
   "port_sweep": {
     "shape": "rectangle",
     "center_z_mm": -18.42918680341103,
