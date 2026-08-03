@@ -275,7 +275,7 @@ class PublishCampaignComparisonRunTests(unittest.TestCase):
         loaded = publisher._load_case_inputs(
             repo_root=repo,
             workspace_root=repo.parent,
-            runs_root=runs,
+            runs_root=runs / ".." / "runs",
             label="current",
             parent_run_id=parent_id,
         )
