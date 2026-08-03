@@ -273,8 +273,8 @@ class PublishCampaignComparisonRunTests(unittest.TestCase):
     def test_loads_only_current_campaign_parent_and_verifies_campaign_row(self) -> None:
         repo, runs, parent_id = build_current_parent(Path(self.temporary.name))
         loaded = publisher._load_case_inputs(
-            repo_root=repo,
-            workspace_root=repo.parent,
+            repo_root=repo / ".." / "simulation_repo",
+            workspace_root=repo.parent / "simulation_repo" / "..",
             runs_root=runs / ".." / "runs",
             label="current",
             parent_run_id=parent_id,

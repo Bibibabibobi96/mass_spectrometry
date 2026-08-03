@@ -156,6 +156,8 @@ def _load_case_inputs(
         validate_run_id(parent_run_id)
     except ValueError as error:
         raise ContractError(f"{label} parent run_id is invalid") from error
+    repo_root = repo_root.resolve()
+    workspace_root = workspace_root.resolve()
     runs_root = runs_root.resolve()
     parent_root = (runs_root / parent_run_id).resolve()
     if parent_root.parent != runs_root or not parent_root.is_dir():
