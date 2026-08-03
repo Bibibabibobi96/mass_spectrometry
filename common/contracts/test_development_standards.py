@@ -1,5 +1,9 @@
 import ast
+import shutil
+import subprocess
+import tempfile
 import unittest
+from pathlib import Path
 
 from common import verify_development_standards as standards
 
@@ -129,6 +133,49 @@ class LightweightGateIntegrationTests(unittest.TestCase):
         self.assertIn("repository root must not contain temporary directory", hygiene)
         self.assertNotIn('REPO_ROOT / ".tmp"', adapter_test)
         self.assertNotIn('REPO_ROOT / ".tmp"', family_test)
+
+    def test_hygiene_accepts_a_standalone_ci_checkout(self):
+        hygiene = (
+            self.repo_root / "common" / "verify_repository_hygiene.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertIn("$workspaceManaged", hygiene)
+        self.assertIn("standalone_repository_checkout", hygiene)
+        self.assertIn("if ($workspaceManaged)", hygiene)
+        artifacts_enumeration = (
+            "Get-ChildItem -Force -LiteralPath $artifactsRoot"
+        )
+        self.assertGreater(
+            hygiene.index(artifacts_enumeration),
+            hygiene.index("if ($workspaceManaged)"),
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            checkout = Path(temporary) / "checkout"
+            common = checkout / "common"
+            common.mkdir(parents=True)
+            script = common / "verify_repository_hygiene.ps1"
+            shutil.copy2(
+                self.repo_root / "common" / "verify_repository_hygiene.ps1",
+                script,
+            )
+            subprocess.run(
+                ["git", "init", "--quiet", str(checkout)],
+                cwd=checkout,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-File", str(script)],
+                cwd=checkout,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("standalone_repository_checkout", completed.stdout)
+            self.assertIn("REPOSITORY_HYGIENE=PASS", completed.stdout)
 
 
 if __name__ == "__main__":

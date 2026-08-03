@@ -12,21 +12,30 @@ $allowedWorkspaceEntries = @(
   '.matlab_pref','.matlab_pref25','.mcp.json','AGENTS.md','CLAUDE.md',
   'README.md','artifacts','simulation_repo'
 )
-foreach ($entry in Get-ChildItem -Force -LiteralPath $workspaceRoot) {
-  if ($entry.Name -notin $allowedWorkspaceEntries) {
-    $errors.Add("workspace root contains unregistered entry: $($entry.Name)")
+$workspaceManaged =
+  (Split-Path -Leaf $repoRoot) -eq 'simulation_repo' -or
+  (Test-Path -LiteralPath (Join-Path $workspaceRoot 'AGENTS.md') -PathType Leaf)
+if ($workspaceManaged) {
+  foreach ($entry in Get-ChildItem -Force -LiteralPath $workspaceRoot) {
+    if ($entry.Name -notin $allowedWorkspaceEntries) {
+      $errors.Add("workspace root contains unregistered entry: $($entry.Name)")
+    }
   }
-}
-foreach ($required in @('AGENTS.md','README.md','simulation_repo','artifacts')) {
-  if (-not (Test-Path -LiteralPath (Join-Path $workspaceRoot $required))) {
-    $errors.Add("workspace root is missing required entry: $required")
+  foreach ($required in @('AGENTS.md','README.md','simulation_repo','artifacts')) {
+    if (-not (Test-Path -LiteralPath (Join-Path $workspaceRoot $required))) {
+      $errors.Add("workspace root is missing required entry: $required")
+    }
   }
-}
-$artifactsRoot = Join-Path $workspaceRoot 'artifacts'
-foreach ($entry in Get-ChildItem -Force -LiteralPath $artifactsRoot) {
-  if ($entry.Name -ne 'projects' -or -not $entry.PSIsContainer) {
-    $errors.Add("artifacts root contains unregistered entry: $($entry.Name)")
+  $artifactsRoot = Join-Path $workspaceRoot 'artifacts'
+  if (Test-Path -LiteralPath $artifactsRoot -PathType Container) {
+    foreach ($entry in Get-ChildItem -Force -LiteralPath $artifactsRoot) {
+      if ($entry.Name -ne 'projects' -or -not $entry.PSIsContainer) {
+        $errors.Add("artifacts root contains unregistered entry: $($entry.Name)")
+      }
+    }
   }
+} else {
+  Write-Output 'WORKSPACE_HYGIENE=SKIP REASON=standalone_repository_checkout'
 }
 
 foreach ($directoryName in @('.tmp', 'scratch')) {
