@@ -55,6 +55,7 @@ class IntegrationGateFailureTests(unittest.TestCase):
         output = completed.stdout + completed.stderr
         self.assertNotEqual(completed.returncode, 0, output)
         self.assertNotIn("INTEGRATION_GATE=PASS", output)
+        self.assertIn("intentional gate failure", output)
         self.assertIn("integration tests failed", output)
 
 

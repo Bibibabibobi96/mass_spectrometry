@@ -25,30 +25,8 @@ function Invoke-CheckedPythonCommand {
         [Parameter(Mandatory)][string[]]$CommandArguments,
         [Parameter(Mandatory)][string]$FailureMessage
     )
-    $startInfo = [Diagnostics.ProcessStartInfo]::new()
-    $startInfo.FileName = $PythonExe
-    $startInfo.WorkingDirectory = $repoRoot
-    $startInfo.UseShellExecute = $false
-    $startInfo.Arguments = (($CommandArguments | ForEach-Object {
-        if ($_ -notmatch '[\s"]') {
-            $_
-        }
-        else {
-            '"' + ($_ -replace '(\\*)"', '$1$1\"' -replace '(\\+)$', '$1$1') + '"'
-        }
-    }) -join ' ')
-    $process = [Diagnostics.Process]::new()
-    $process.StartInfo = $startInfo
-    try {
-        if (-not $process.Start()) {
-            throw "Failed to start Python integration gate command."
-        }
-        $process.WaitForExit()
-        $exitCode = $process.ExitCode
-    }
-    finally {
-        $process.Dispose()
-    }
+    & $PythonExe @CommandArguments
+    $exitCode = $LASTEXITCODE
     if ($exitCode -ne 0) {
         throw "$FailureMessage Exit code: $exitCode."
     }
