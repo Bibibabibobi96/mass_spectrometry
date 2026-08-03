@@ -14,7 +14,7 @@
     "claim_limit"
   ],
   "properties": {
-    "schema_version": {"enum": [1, 2]},
+    "schema_version": {"enum": [1, 2, 3, 4]},
     "role": {"const": "multipole_transport_experiment_campaign"},
     "family_id": {"const": "rf_multipole_ion_optics"},
     "campaign_id": {
@@ -41,6 +41,64 @@
         }
       }
     },
+    "design_variable_authorization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowed_variable_ids", "variable_limits"],
+      "properties": {
+        "allowed_variable_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"enum": ["rf_amplitude", "rf_frequency"]}
+        },
+        "variable_limits": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["variable_id", "unit", "minimum", "maximum"],
+            "properties": {
+              "variable_id": {"enum": ["rf_amplitude", "rf_frequency"]},
+              "unit": {"enum": ["V", "Hz"]},
+              "minimum": {"type": "number"},
+              "maximum": {"type": "number"}
+            }
+          }
+        }
+      }
+    },
+    "analysis_requests": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/analysis_request"}
+    },
+    "particle_source_phase_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "baseline_frequency_Hz",
+        "frequency_variable_id",
+        "n1000_reference_profile_id"
+      ],
+      "properties": {
+        "kind": {"const": "match_baseline_rf_phase"},
+        "baseline_frequency_Hz": {"type": "number", "exclusiveMinimum": 0},
+        "frequency_variable_id": {"const": "rf_frequency"},
+        "n1000_reference_profile_id": {"type": "string", "minLength": 1}
+      }
+    },
+    "simion_pa_basis_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "reuse_scope"],
+      "properties": {
+        "kind": {"const": "content_addressed_geometry_basis"},
+        "reuse_scope": {"const": "same_project_same_fingerprint"}
+      }
+    },
     "experiments": {
       "type": "array",
       "minItems": 1,
@@ -51,14 +109,126 @@
   "allOf": [
     {
       "if": {
-        "properties": {"schema_version": {"const": 2}},
+        "properties": {"schema_version": {"enum": [2, 3, 4]}},
         "required": ["schema_version"]
       },
       "then": {"required": ["downstream_terminal_profile"]},
       "else": {"not": {"required": ["downstream_terminal_profile"]}}
+    },
+    {
+      "if": {
+        "properties": {"schema_version": {"enum": [3, 4]}},
+        "required": ["schema_version"]
+      },
+      "then": {
+        "required": ["design_variable_authorization", "particle_source_phase_policy"],
+        "properties": {
+          "experiments": {
+            "items": {
+              "allOf": [
+                {"$ref": "#/$defs/experiment"},
+                {"required": ["execution_profile_id", "design_variable_values"]}
+              ]
+            }
+          }
+        }
+      },
+      "else": {
+        "allOf": [
+          {"not": {"required": ["design_variable_authorization"]}},
+          {"not": {"required": ["particle_source_phase_policy"]}},
+          {"not": {"required": ["simion_pa_basis_policy"]}},
+          {
+            "properties": {
+              "experiments": {
+                "items": {
+                  "allOf": [
+                    {"not": {"required": ["execution_profile_id"]}},
+                    {"not": {"required": ["design_variable_values"]}}
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {"schema_version": {"const": 4}},
+        "required": ["schema_version"]
+      },
+      "then": {
+        "required": ["analysis_requests"],
+        "properties": {
+          "experiments": {
+            "items": {
+              "allOf": [
+                {"$ref": "#/$defs/experiment"},
+                {"required": ["case_set"]}
+              ]
+            }
+          }
+        }
+      },
+      "else": {
+        "allOf": [
+          {"not": {"required": ["analysis_requests"]}},
+          {
+            "properties": {
+              "experiments": {
+                "items": {"not": {"required": ["case_set"]}}
+              }
+            }
+          }
+        ]
+      }
     }
   ],
   "$defs": {
+    "analysis_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capability_id",
+        "experiment_ids",
+        "baseline_experiment_id",
+        "analysis_run_id",
+        "parameters"
+      ],
+      "properties": {
+        "capability_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+        },
+        "experiment_ids": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+          }
+        },
+        "baseline_experiment_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+        },
+        "analysis_run_id": {
+          "type": "string",
+          "pattern": "^[0-9]{8}_[0-9]{6}__analysis__(?:comsol|simion|cross|cad|python|repo)__[a-z0-9]+(?:-[a-z0-9]+)*(?:__[a-z0-9]+(?:-[a-z0-9]+)*)*(?:__r[0-9]{2})?$"
+        },
+        "parameters": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+          },
+          "additionalProperties": {
+            "type": ["string", "number", "integer", "boolean"]
+          }
+        }
+      }
+    },
     "experiment": {
       "type": "object",
       "additionalProperties": false,
@@ -91,7 +261,17 @@
         },
         "solver": {"const": "simion"},
         "stop_stage": {"const": "transport"},
+        "case_set": {"enum": ["primary_only", "primary_and_zero_axial_control"]},
         "design_profile_id": {"type": "string", "minLength": 1},
+        "execution_profile_id": {"type": "string", "minLength": 1},
+        "design_variable_values": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "rf_amplitude": {"type": "number"},
+            "rf_frequency": {"type": "number"}
+          }
+        },
         "particle_source_profile_id": {"type": "string", "minLength": 1},
         "comsol_solver_numerics_profile_id": {"type": "string", "minLength": 1},
         "simion_solver_numerics": {

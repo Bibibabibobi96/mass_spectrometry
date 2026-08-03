@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from common.contracts.verify_artifact_layout import verify_formal
+from common.contracts.verify_artifact_layout import verify_cache, verify_formal
 
 
 RUN_ID = "20260721_120000__sim__cross__formal-validation__n100"
@@ -26,6 +26,33 @@ def record(path: Path, root: Path) -> dict[str, object]:
 
 
 class ArtifactLayoutIdentityTests(unittest.TestCase):
+    def test_content_addressed_pa_cache_is_narrow_and_verified(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory) / "rf_hexapole_ion_optics"
+            basis = project / "cache" / "simion_pa_basis" / ("A" * 64)
+            basis.mkdir(parents=True)
+            records = []
+            for index in range(3):
+                path = basis / f"quad_monolithic.pa{index}"
+                path.write_text(f"basis {index}\n", encoding="utf-8")
+                records.append({"name": path.name, **record(path, basis)})
+                records[-1].pop("path")
+            write_json(
+                basis / "manifest.json",
+                {
+                    "schema_version": 1,
+                    "role": "multipole_simion_pa_basis_cache",
+                    "fingerprint_sha256": "A" * 64,
+                    "identity": {"project_id": project.name},
+                    "files": records,
+                },
+            )
+
+            verify_cache(project, verify_hashes=True)
+            (basis / "unexpected.bin").write_bytes(b"unexpected")
+            with self.assertRaisesRegex(AssertionError, "cache inventory differs"):
+                verify_cache(project, verify_hashes=True)
+
     def make_formal(
         self,
         artifacts: Path,

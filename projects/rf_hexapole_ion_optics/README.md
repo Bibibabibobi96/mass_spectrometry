@@ -55,3 +55,5 @@ COMSOL mesh/solver试验和SIMION定向跟进不再是可执行profile，结论�
 - [N=100规范前证据](docs/history/20260723__pre-n100-multipole-functional-evidence.md)
 - [早期closed hybrid mesh campaign](docs/history/20260729__closed-hybrid-mesh-campaigns.md)
 - [已退役数值资格campaign摘要](docs/history/20260802__retired-comsol-qualification-campaigns.md)
+- [RF幅值—频率相位匹配H15筛选](docs/history/20260803__hex-rf-drive-phase-matched-h15-n100.md)
+- [RF幅值—频率相位匹配N=1000复核](docs/history/20260803__hex-rf-drive-phase-matched-h15-n1000.md)

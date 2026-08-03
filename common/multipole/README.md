@@ -122,6 +122,13 @@ CSV SHA-256和parent resolved hash的metadata；MATLAB和SIMION投影只消费�
 同一入口的`-Status`只读逐文件验证各行manifest，并保守报告`NOT_STARTED`、非终态目录或已验证终态；
 目录存在不等于成功。跨行出口汇总统一使用`campaign_analysis.py`，图仍由`exit_state_plot.py`以共享
 坐标和固定分箱生成；两者只发布事后工程描述，不授予收敛或资格。
+schema v4 campaign还可通过`analysis_requests`引用
+[`analysis_capabilities.json`](analysis_capabilities.json)中的版本化能力ID。能力目录是消费者模块、输入
+角色、一致性条件、开放参数包络、固定输出角色和声明边界的唯一机器权威；campaign不得写模块、脚本、
+命令或任意路径。所引用实验全部形成已验证success manifest后，同一入口自动创建标准analysis run；
+`-Status`只读报告分析请求的`PENDING/COMPLETE/FAILED`，不会为补齐输入而写文件。未知能力、外表实验、
+越界参数、混合事件/轴面/源ID或不完整输出均失败关闭。v1--v3合同保持原有语义，不因新增能力被事后
+解释为预注册分析。
 圆柱家族实验共同使用`rf_multipole_family_mother_sample_v1_1000.csv`及其精确
 `rf_multipole_family_mother_sample_v1_100.csv`前缀；生成算法、seed、分布、消费者和SHA由同目录
 `rf_multipole_family_mother_sample_v1.json`冻结；这是当前四/六/八极杆家族实验的唯一粒子源入口。

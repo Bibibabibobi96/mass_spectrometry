@@ -22,6 +22,8 @@ param(
   [ValidateRange(4,10000)][int]$RfStepsPerPeriod=80,
   [ValidateRange(0,100)][int]$TrajectoryQuality=10,
   [ValidateRange(0.001,1000000)][double]$MaximumTimeUs=80.0,
+  [ValidateSet('primary_and_zero_axial_control','primary_only')]
+  [string]$CaseSet='primary_and_zero_axial_control',
   [ValidateSet('compact','qualification','solver_review')][string]$RetentionClass='compact',
   [string]$RetentionReason='',
   [string]$SourceFamilyPath='',
@@ -33,6 +35,9 @@ $ErrorActionPreference='Stop'
 $resolvedCellMmX=if($PSCmdlet.ParameterSetName-eq'AnisotropicCell'){$CellMmX}else{$CellMm}
 $resolvedCellMmY=if($PSCmdlet.ParameterSetName-eq'AnisotropicCell'){$CellMmY}else{$CellMm}
 $resolvedCellMmZ=if($PSCmdlet.ParameterSetName-eq'AnisotropicCell'){$CellMmZ}else{$CellMm}
+if($CaseSet-eq'primary_only'-and-not[string]::IsNullOrWhiteSpace($EvidenceContractPath)){
+  throw 'Primary-only SIMION runs cannot consume a paired-case evidence contract.'
+}
 
 function Get-SimionPaGridAudit {
   param(
@@ -73,6 +78,42 @@ function ConvertTo-TransportMetricCase {
   }
   $metricCase.transmission_fraction=[double]$CaseSummary.transmission
   return $metricCase
+}
+
+function Get-TextSha256 {
+  param([Parameter(Mandatory=$true)][string]$Text)
+  $bytes=[Text.Encoding]::UTF8.GetBytes($Text)
+  return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes))
+}
+
+function Get-VerifiedPaBasisFiles {
+  param(
+    [Parameter(Mandatory=$true)][string]$ManifestPath,
+    [Parameter(Mandatory=$true)][string]$ExpectedFingerprint
+  )
+  $manifest=Get-Content -LiteralPath $ManifestPath -Raw -Encoding UTF8|ConvertFrom-Json
+  if([int]$manifest.schema_version-ne 1-or
+    [string]$manifest.role-ne'multipole_simion_pa_basis_cache'-or
+    [string]$manifest.fingerprint_sha256-ne$ExpectedFingerprint-or
+    $null-eq$manifest.files
+  ){throw 'SIMION PA-basis cache manifest identity differs.'}
+  $root=Split-Path -Parent ([IO.Path]::GetFullPath($ManifestPath))
+  $verified=@()
+  foreach($record in @($manifest.files)){
+    $name=[string]$record.name
+    if($name-notmatch'^quad_monolithic\.pa(?:#|-surf|\d+)$'){
+      throw "SIMION PA-basis cache filename is invalid: $name"
+    }
+    $path=[IO.Path]::GetFullPath((Join-Path $root $name))
+    if(-not $path.StartsWith($root+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)-or
+      -not(Test-Path -LiteralPath $path -PathType Leaf)-or
+      (Get-Item -LiteralPath $path).Length-ne[int64]$record.bytes-or
+      (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash-ne[string]$record.sha256
+    ){throw "SIMION PA-basis cache file identity differs: $name"}
+    $verified+=[pscustomobject]@{name=$name;path=$path}
+  }
+  if($verified.Count-lt 3){throw 'SIMION PA-basis cache is incomplete.'}
+  return $verified
 }
 
 $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
@@ -302,38 +343,96 @@ try{
     $compileProvenanceRoot=$authorityRoot
   }
   $resolved=Join-Path $inputDir 'multipole_resolved_design.json'
-  $baseResolved=if($terminalRegistry){
-    Join-Path $inputDir 'multipole_base_resolved_design.json'
-  }else{$resolved}
-  Push-Location $codeRoot
-  try{
-    $env:PYTHONPATH=$codeRoot
-    $compileArguments=@('-m','common.multipole.compile_design_request',
-      '--request',$compileRequest,'--design-variables',$compileVariables,
-      '--optimization-envelope',$compileEnvelope,'--output',$baseResolved,
-      '--provenance-root',$compileProvenanceRoot,'--project-id',$ProjectId,
-      '--radial-order-n',([string][int]$identity.radial_order_n),
-      '--electrode-count',([string][int]$identity.electrode_count))
-    if($modeRegistry){
-      $compileArguments+=@('--operating-mode-registry',$compileModeRegistry,'--mode-id',$modeId)
+  if($resolvedRuntimeDocument){
+    $snapshotDesign=$resolvedRuntimeDocument.design_profile_resolution.resolved_design
+    if($null-eq$snapshotDesign){
+      throw 'Resolved runtime-profile snapshot omits its resolved design.'
     }
-    & $python @compileArguments
-    if($LASTEXITCODE-ne 0){throw 'Governed multipole design compilation failed.'}
-    if($terminalRegistry){
-      & $python -m common.multipole.downstream_terminal `
-        --resolved-design $baseResolved --terminal-registry $terminalRegistry `
-        --terminal-profile-id ([string]$resolvedRuntimeDocument.downstream_terminal_profile.terminal_profile_id) `
-        --output $resolved
-      if($LASTEXITCODE-ne 0){throw 'Downstream-terminal composition failed.'}
-    }
-  }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
+    $snapshotDesign|ConvertTo-Json -Depth 100|Set-Content -LiteralPath $resolved -Encoding UTF8
+    Push-Location $codeRoot
+    try{
+      $env:PYTHONPATH=$codeRoot
+      & $python -m common.multipole.verify_resolved_design $resolved
+      if($LASTEXITCODE-ne 0){throw 'Resolved runtime-profile design identity is invalid.'}
+    }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
+  }else{
+    $baseResolved=if($terminalRegistry){
+      Join-Path $inputDir 'multipole_base_resolved_design.json'
+    }else{$resolved}
+    Push-Location $codeRoot
+    try{
+      $env:PYTHONPATH=$codeRoot
+      $compileArguments=@('-m','common.multipole.compile_design_request',
+        '--request',$compileRequest,'--design-variables',$compileVariables,
+        '--optimization-envelope',$compileEnvelope,'--output',$baseResolved,
+        '--provenance-root',$compileProvenanceRoot,'--project-id',$ProjectId,
+        '--radial-order-n',([string][int]$identity.radial_order_n),
+        '--electrode-count',([string][int]$identity.electrode_count))
+      if($modeRegistry){
+        $compileArguments+=@('--operating-mode-registry',$compileModeRegistry,'--mode-id',$modeId)
+      }
+      & $python @compileArguments
+      if($LASTEXITCODE-ne 0){throw 'Governed multipole design compilation failed.'}
+      if($terminalRegistry){
+        & $python -m common.multipole.downstream_terminal `
+          --resolved-design $baseResolved --terminal-registry $terminalRegistry `
+          --terminal-profile-id ([string]$resolvedRuntimeDocument.downstream_terminal_profile.terminal_profile_id) `
+          --output $resolved
+        if($LASTEXITCODE-ne 0){throw 'Downstream-terminal composition failed.'}
+      }
+    }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
+  }
   $design=Get-Content -LiteralPath $resolved -Raw -Encoding UTF8|ConvertFrom-Json
   $resolvedHash=[string]$design.resolved_sha256
-  if($terminalRegistry-and $resolvedHash-ne
+  if($resolvedRuntimeDocument-and $resolvedHash-ne
     [string]$resolvedRuntimeDocument.design_profile_resolution.resolved_design.resolved_sha256
-  ){throw 'Frozen downstream-terminal composition differs from the resolved runtime snapshot.'}
+  ){throw 'Frozen resolved design differs from the resolved runtime snapshot.'}
+  $candidateRequest=$null
+  if($resolvedRuntimeDocument-and
+    $resolvedRuntimeDocument.design_profile_resolution.PSObject.Properties.Name-contains'candidate_request'){
+    $candidateRequest=Join-Path $inputDir 'multipole_candidate_design_request.json'
+    $resolvedRuntimeDocument.design_profile_resolution.candidate_request|
+      ConvertTo-Json -Depth 100|Set-Content -LiteralPath $candidateRequest -Encoding UTF8
+    if([string]$design.request.sha256-ne
+      [string]$resolvedRuntimeDocument.design_profile_resolution.candidate_request_sha256
+    ){throw 'Candidate design request identity differs from the frozen resolved design.'}
+  }
   $particleSource=Join-Path $inputDir 'particle_source.csv'
-  Copy-Item -LiteralPath $particleSourceInput -Destination $particleSource
+  $phaseDerivationMetadata=$null
+  $phaseAuthoritySource=$null
+  $phaseReferenceSource=$null
+  if($resolvedRuntimeDocument-and
+    $resolvedRuntimeDocument.PSObject.Properties.Name-contains'particle_source_phase_derivation'){
+    $phaseBinding=$resolvedRuntimeDocument.particle_source_phase_derivation
+    $phaseAuthoritySource=Join-Path $inputDir 'particle_source_authority.csv'
+    $phaseReferenceSource=Join-Path $inputDir 'particle_source_n1000_reference.csv'
+    Copy-VerifiedRunInput -Source ([string]$phaseBinding.authority_source.path) `
+      -Destination $phaseAuthoritySource|Out-Null
+    Copy-VerifiedRunInput -Source ([string]$phaseBinding.n1000_reference_source.path) `
+      -Destination $phaseReferenceSource|Out-Null
+    if((Get-FileHash -LiteralPath $phaseAuthoritySource -Algorithm SHA256).Hash-ne
+      [string]$phaseBinding.authority_source.sha256-or
+      (Get-FileHash -LiteralPath $phaseReferenceSource -Algorithm SHA256).Hash-ne
+      [string]$phaseBinding.n1000_reference_source.sha256
+    ){throw 'Frozen phase-matched source authorities differ from the runtime snapshot.'}
+    $phaseDerivationMetadata=Join-Path $inputDir 'particle_source_phase_derivation.json'
+    Push-Location $codeRoot
+    try{
+      $env:PYTHONPATH=$codeRoot
+      $phaseArguments=@('-m','common.multipole.phase_matched_particle_source',
+        '--source',$phaseAuthoritySource,
+        '--baseline-frequency-hz',([string]$phaseBinding.baseline_frequency_Hz),
+        '--candidate-frequency-hz',([string]$phaseBinding.candidate_frequency_Hz),
+        '--output-csv',$particleSource,'--output-metadata',$phaseDerivationMetadata)
+      if([int]$phaseBinding.authority_particle_count-eq 100){
+        $phaseArguments+=@('--n1000-reference',$phaseReferenceSource)
+      }
+      & $python @phaseArguments
+      if($LASTEXITCODE-ne 0){throw 'Phase-matched canonical source derivation failed.'}
+    }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
+  }else{
+    Copy-Item -LiteralPath $particleSourceInput -Destination $particleSource
+  }
   $sourceFamily=$null;$sourceFamilySha=$null
   if($sourceFamilyInput){
     $sourceFamily=Join-Path $inputDir 'particle_source_family.json'
@@ -438,6 +537,38 @@ try{
   if($gridAuditDocument.status-eq'FAIL'){
     throw "SIMION PA grid point budget exceeded: $($gridAuditDocument.grid_points) > $maximumPaGridPoints"
   }
+  $normalizedGem=(Get-Content -LiteralPath $gem -Encoding ASCII|Where-Object{
+    $_-notmatch'^; parent_resolved_sha256='
+  })-join"`n"
+  $paBasisIdentity=[ordered]@{
+    schema_version=1
+    role='multipole_simion_pa_basis_identity'
+    project_id=$ProjectId
+    normalized_gem_sha256=(Get-TextSha256 $normalizedGem)
+    simion_executable_sha256=(Get-FileHash -LiteralPath $simion -Algorithm SHA256).Hash
+    refine_arguments=@('--nogui','--noprompt','refine','quad_monolithic.pa#')
+  }
+  $paBasisFingerprint=Get-TextSha256 ($paBasisIdentity|ConvertTo-Json -Depth 5 -Compress)
+  $paBasisCacheRoot=[IO.Path]::GetFullPath((
+    Join-Path $workspaceRoot "artifacts\projects\$ProjectId\cache\simion_pa_basis"
+  ))
+  $paBasisCacheDir=Join-Path $paBasisCacheRoot $paBasisFingerprint
+  $paBasisCacheManifest=Join-Path $paBasisCacheDir 'manifest.json'
+  $paBasisCacheManifestInput=$null
+  $paBasisReuseAuthorized=($resolvedRuntimeDocument-and
+    $resolvedRuntimeDocument.PSObject.Properties.Name-contains'simion_pa_basis_policy'-and
+    [string]$resolvedRuntimeDocument.simion_pa_basis_policy.kind-eq'content_addressed_geometry_basis'-and
+    [string]$resolvedRuntimeDocument.simion_pa_basis_policy.reuse_scope-eq'same_project_same_fingerprint')
+  $paBasisReuse=$false
+  $paBasisFiles=@()
+  if($paBasisReuseAuthorized-and(Test-Path -LiteralPath $paBasisCacheManifest -PathType Leaf)){
+    $paBasisFiles=@(Get-VerifiedPaBasisFiles -ManifestPath $paBasisCacheManifest `
+      -ExpectedFingerprint $paBasisFingerprint)
+    $paBasisCacheManifestInput=Copy-VerifiedRunInput -Source $paBasisCacheManifest `
+      -Destination (Join-Path $inputDir 'simion_pa_basis_cache_manifest.json')
+    $paBasisReuse=$true
+  }
+  $publishedPaBasisManifest=$null
   Copy-Item -LiteralPath $templateIob -Destination (Join-Path $solverDir 'quad_monolithic.iob')
   Copy-Item -LiteralPath $templateCon -Destination (Join-Path $solverDir 'quad_monolithic.con')
   Copy-VerifiedRunInput `
@@ -520,6 +651,11 @@ try{
       registration_manifest_sha256=[string]$templateProfile.run_manifest.sha256
       iob_sha256=[string]$templateProfile.bundle.iob.sha256
       con_sha256=[string]$templateProfile.bundle.con.sha256
+    }
+    simion_pa_basis=[ordered]@{
+      fingerprint_sha256=$paBasisFingerprint
+      authorized=$paBasisReuseAuthorized
+      action=$(if(-not$paBasisReuseAuthorized){'independent_refine'}elseif($paBasisReuse){'reuse'}else{'publish'})
     }}
   if($resolvedRuntimeProfile){
     $provenance.resolved_runtime_profile_sha256=(
@@ -531,8 +667,19 @@ try{
     $provenance.campaign_id=[string]$campaignSelection.campaign_id
     $provenance.experiment_id=[string]$campaignSelection.experiment_id
     $provenance.campaign_sha256=[string]$campaignSelection.sha256
+    if($campaignSelection.PSObject.Properties.Name-contains'experiment_row_sha256'){
+      $provenance.campaign_experiment_row_sha256=[string]$campaignSelection.experiment_row_sha256
+    }
   }else{
     $provenance.runtime_selection_kind='runtime_profile'
+  }
+  if($phaseDerivationMetadata){
+    $phaseMetadata=Get-Content -LiteralPath $phaseDerivationMetadata -Raw -Encoding UTF8|ConvertFrom-Json
+    $provenance.particle_source_authority_sha256=[string]$phaseMetadata.baseline_source_sha256
+    $provenance.particle_source_phase_derivation_sha256=(
+      Get-FileHash -LiteralPath $phaseDerivationMetadata -Algorithm SHA256
+    ).Hash
+    $provenance.particle_source_phase_matched=$true
   }
   $runInputs=[ordered]@{project_registry=$registry;project_descriptor=$descriptor;design_profiles=$profiles;
     engineering_budget=$engineeringBudget;resolved_resource_budget=$resolvedResourceBudget;
@@ -548,6 +695,15 @@ try{
     simion_layout_registration_manifest=$templateRegistrationManifest;
     simion_layout_template_iob=$templateIob;simion_layout_template_con=$templateCon}
   if($terminalRegistry){$runInputs.downstream_terminal_profiles=$terminalRegistry}
+  if($paBasisCacheManifestInput){
+    $runInputs.simion_pa_basis_cache_manifest=$paBasisCacheManifestInput
+  }
+  if($candidateRequest){$runInputs.candidate_design_request=$candidateRequest}
+  if($phaseDerivationMetadata){
+    $runInputs.particle_source_authority=$phaseAuthoritySource
+    $runInputs.particle_source_n1000_reference=$phaseReferenceSource
+    $runInputs.particle_source_phase_derivation=$phaseDerivationMetadata
+  }
   if($referenceComsolManifest){
     $provenance.reference_comsol_run_manifest_sha256=$referenceComsolManifestSha
     $provenance.reference_comsol_source_run_id=$referenceComsolSourceRunId
@@ -560,6 +716,7 @@ try{
     provenance=$provenance;inputs=$runInputs;
     parameters=[ordered]@{model_level='L3';runtime_profile_id=$RuntimeProfileId;design_profile_id=$DesignProfileId;
       experiment_id=$(if($campaignSelection){[string]$campaignSelection.experiment_id}else{$null});
+      case_set=$CaseSet;
       operating_mode_id=$modeId;
       operating_point_id=$(if($sourceFamily){$OperatingPointId}else{$null});
       reference_comsol_run_id=$ReferenceComsolRunId};
@@ -577,8 +734,53 @@ try{
     }
     if($step.exit_code-ne 0){throw "SIMION $name failed with exit code $($step.exit_code)."}
   }
-  Invoke-SimionStep 'gem2pa' @('--nogui','--noprompt','gem2pa','quad_monolithic.gem','quad_monolithic.pa#')
-  Invoke-SimionStep 'refine' @('--nogui','--noprompt','refine','quad_monolithic.pa#')
+  if($paBasisReuse){
+    foreach($basisFile in $paBasisFiles){
+      $destination=Join-Path $solverDir $basisFile.name
+      New-Item -ItemType HardLink -Path $destination -Target $basisFile.path|Out-Null
+    }
+    Write-Output "MULTIPOLE_SIMION_PA_BASIS=REUSE FINGERPRINT=$paBasisFingerprint"
+  }else{
+    Invoke-SimionStep 'gem2pa' @('--nogui','--noprompt','gem2pa','quad_monolithic.gem','quad_monolithic.pa#')
+    Invoke-SimionStep 'refine' @('--nogui','--noprompt','refine','quad_monolithic.pa#')
+    if($paBasisReuseAuthorized){
+    New-Item -ItemType Directory -Force -Path $paBasisCacheRoot|Out-Null
+    $staging=Join-Path $paBasisCacheRoot ('.staging_'+$paBasisFingerprint+'_'+[guid]::NewGuid())
+    New-Item -ItemType Directory -Path $staging|Out-Null
+    try{
+      $records=@()
+      foreach($source in @(Get-ChildItem -LiteralPath $solverDir -File|Where-Object{
+        $_.Name-match'^quad_monolithic\.pa(?:#|-surf|\d+)$'
+      }|Sort-Object Name)){
+        $destination=Join-Path $staging $source.Name
+        New-Item -ItemType HardLink -Path $destination -Target $source.FullName|Out-Null
+        $records+=[ordered]@{name=$source.Name;bytes=$source.Length;
+          sha256=(Get-FileHash -LiteralPath $source.FullName -Algorithm SHA256).Hash}
+      }
+      if($records.Count-lt 3){throw 'Refined SIMION PA basis is incomplete.'}
+      $stagingManifest=Join-Path $staging 'manifest.json'
+      [ordered]@{schema_version=1;role='multipole_simion_pa_basis_cache';
+        fingerprint_sha256=$paBasisFingerprint;provider_run_id=$RunId;
+        identity=$paBasisIdentity;files=$records}|ConvertTo-Json -Depth 8|
+        Set-Content -LiteralPath $stagingManifest -Encoding UTF8
+      if(Test-Path -LiteralPath $paBasisCacheDir){
+        throw "SIMION PA-basis cache destination appeared during publication: $paBasisCacheDir"
+      }
+      Move-Item -LiteralPath $staging -Destination $paBasisCacheDir
+      $publishedPaBasisManifest=$paBasisCacheManifest
+      Get-VerifiedPaBasisFiles -ManifestPath $publishedPaBasisManifest `
+        -ExpectedFingerprint $paBasisFingerprint|Out-Null
+      Write-Output "MULTIPOLE_SIMION_PA_BASIS=PUBLISH FINGERPRINT=$paBasisFingerprint"
+    }catch{
+      $resolvedStaging=[IO.Path]::GetFullPath($staging)
+      if($resolvedStaging.StartsWith(
+        $paBasisCacheRoot+[IO.Path]::DirectorySeparatorChar,
+        [StringComparison]::OrdinalIgnoreCase
+      )){Remove-Item -LiteralPath $resolvedStaging -Recurse -Force -ErrorAction SilentlyContinue}
+      throw
+    }
+    }
+  }
   Copy-VerifiedRunInput `
     -Source (Join-Path $codeRoot 'common\multipole\build_simion_runtime_iob.lua') `
     -Destination (Join-Path $solverDir 'build_simion_runtime_iob.lua')|Out-Null
@@ -643,47 +845,69 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
     return Get-Content -LiteralPath $caseSummary -Raw -Encoding UTF8|ConvertFrom-Json
   }
 
+  $control=$null;$controlName=$null
   if($segmented -or $exitAperturePlateStep){
     if($exitAperturePlateStep){
       $primaryName='exit_aperture_plate_acceleration_rf_on';$controlName='zero_exit_aperture_plate_drop_rf_on'
     }else{
       $primaryName='axial_acceleration_rf_on';$controlName='zero_axial_drop_rf_on'
     }
-    $primary=Invoke-TransportCase $primaryName 1 1;$control=Invoke-TransportCase $controlName 1 0
-    $metrics=Join-Path $resultDir $(if($exitAperturePlateStep){'exit_aperture_plate_acceleration_metrics.json'}else{'axial_acceleration_metrics.json'})
-    Push-Location $codeRoot
-    try{
-      $env:PYTHONPATH=$codeRoot
-      & $python -m common.multipole.analyze_simion_axial_acceleration `
-        --accelerated-state (Join-Path $resultDir "particle_states__$primaryName.csv") `
-        --control-state (Join-Path $resultDir "particle_states__$controlName.csv") `
-        --resolved-contract $resolved --output $metrics
-      if($LASTEXITCODE-ne 0){throw 'SIMION axial-drive metrics analysis failed.'}
-    }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
-    $metricsDoc=Get-Content -LiteralPath $metrics -Raw -Encoding UTF8|ConvertFrom-Json
+    $primary=Invoke-TransportCase $primaryName 1 1
     $primaryHandoffTransmission=@(Import-Csv -LiteralPath (
       Join-Path $resultDir "particle_states__$primaryName.csv"
     )|Where-Object{$_.event-eq'handoff'-and$_.status-eq'transmitted'}).Count/[double]$primary.particles
-    $controlHandoffTransmission=@(Import-Csv -LiteralPath (
-      Join-Path $resultDir "particle_states__$controlName.csv"
-    )|Where-Object{$_.event-eq'handoff'-and$_.status-eq'transmitted'}).Count/[double]$control.particles
-    if(
-      [Math]::Abs([double]$metricsDoc.accelerated_transmission-$primaryHandoffTransmission)-gt 1e-12 -or
-      [Math]::Abs([double]$metricsDoc.control_transmission-$controlHandoffTransmission)-gt 1e-12
-    ){throw 'SIMION paired metrics transmission differs from the raw handoff states.'}
+    if($CaseSet-eq'primary_and_zero_axial_control'){
+      $control=Invoke-TransportCase $controlName 1 0
+      $metrics=Join-Path $resultDir $(if($exitAperturePlateStep){'exit_aperture_plate_acceleration_metrics.json'}else{'axial_acceleration_metrics.json'})
+      Push-Location $codeRoot
+      try{
+        $env:PYTHONPATH=$codeRoot
+        & $python -m common.multipole.analyze_simion_axial_acceleration `
+          --accelerated-state (Join-Path $resultDir "particle_states__$primaryName.csv") `
+          --control-state (Join-Path $resultDir "particle_states__$controlName.csv") `
+          --resolved-contract $resolved --output $metrics
+        if($LASTEXITCODE-ne 0){throw 'SIMION axial-drive metrics analysis failed.'}
+      }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
+      $metricsDoc=Get-Content -LiteralPath $metrics -Raw -Encoding UTF8|ConvertFrom-Json
+      $controlHandoffTransmission=@(Import-Csv -LiteralPath (
+        Join-Path $resultDir "particle_states__$controlName.csv"
+      )|Where-Object{$_.event-eq'handoff'-and$_.status-eq'transmitted'}).Count/[double]$control.particles
+      if(
+        [Math]::Abs([double]$metricsDoc.accelerated_transmission-$primaryHandoffTransmission)-gt 1e-12 -or
+        [Math]::Abs([double]$metricsDoc.control_transmission-$controlHandoffTransmission)-gt 1e-12
+      ){throw 'SIMION paired metrics transmission differs from the raw handoff states.'}
+    }else{
+      $metrics=Join-Path $resultDir 'primary_transport_metrics.json'
+      [ordered]@{schema_version=1;role='multipole_simion_primary_transport_metrics';status='UNQUALIFIED';
+        project_id=$ProjectId;parent_resolved_design_sha256=$resolvedHash;model_level='L3';
+        case_set=$CaseSet;primary_case_id=$primaryName;
+        primary_case=(ConvertTo-TransportMetricCase $primary);
+        primary_handoff_transmission=$primaryHandoffTransmission;
+        claim_limit='Primary-case SIMION metrics only; no paired-control or evidence claim.'}|
+        ConvertTo-Json -Depth 8|Set-Content -LiteralPath $metrics -Encoding UTF8
+    }
   }else{
     $primaryName='rf_on';$controlName='zero_rf_control'
-    $primary=Invoke-TransportCase $primaryName 1 0;$control=Invoke-TransportCase $controlName 0 0
+    $primary=Invoke-TransportCase $primaryName 1 0
     $primaryMetricCase=ConvertTo-TransportMetricCase $primary
-    $controlMetricCase=ConvertTo-TransportMetricCase $control
     $metrics=Join-Path $resultDir 'finite_3d_transport_metrics.json'
-    [ordered]@{schema_version=1;role='multipole_simion_finite_3d_transport_metrics';status='UNQUALIFIED';
-      project_id=$ProjectId;parent_resolved_design_sha256=$resolvedHash;model_level='L3';
-      primary_case_id=$primaryName;control_case_id=$controlName;
-      cases=[ordered]@{rf_on=$primaryMetricCase;zero_rf_control=$controlMetricCase};
-      rf_minus_zero_transmission=($primary.transmission-$control.transmission);
-      claim_limit='Resolved-design SIMION metrics only; no evidence claim.'}|
-      ConvertTo-Json -Depth 8|Set-Content -LiteralPath $metrics -Encoding UTF8
+    if($CaseSet-eq'primary_and_zero_axial_control'){
+      $control=Invoke-TransportCase $controlName 0 0
+      $controlMetricCase=ConvertTo-TransportMetricCase $control
+      [ordered]@{schema_version=1;role='multipole_simion_finite_3d_transport_metrics';status='UNQUALIFIED';
+        project_id=$ProjectId;parent_resolved_design_sha256=$resolvedHash;model_level='L3';case_set=$CaseSet;
+        primary_case_id=$primaryName;control_case_id=$controlName;
+        cases=[ordered]@{rf_on=$primaryMetricCase;zero_rf_control=$controlMetricCase};
+        rf_minus_zero_transmission=($primary.transmission-$control.transmission);
+        claim_limit='Resolved-design SIMION metrics only; no evidence claim.'}|
+        ConvertTo-Json -Depth 8|Set-Content -LiteralPath $metrics -Encoding UTF8
+    }else{
+      [ordered]@{schema_version=1;role='multipole_simion_primary_transport_metrics';status='UNQUALIFIED';
+        project_id=$ProjectId;parent_resolved_design_sha256=$resolvedHash;model_level='L3';case_set=$CaseSet;
+        primary_case_id=$primaryName;primary_case=$primaryMetricCase;
+        claim_limit='Primary-case SIMION metrics only; no zero-RF control or evidence claim.'}|
+        ConvertTo-Json -Depth 8|Set-Content -LiteralPath $metrics -Encoding UTF8
+    }
   }
   $exitStatePlot=Join-Path $resultDir 'exit_state_diagnostics.png'
   $exitStatePlotManifest=Join-Path $resultDir 'exit_state_diagnostics.json'
@@ -715,7 +939,9 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
   [ordered]@{schema_version=1;role='multipole_simion_finite_3d_transport_summary';status='success';
     qualification_status=$qualification;project_id=$ProjectId;design_profile_id=$DesignProfileId;
     parent_resolved_design_sha256=$resolvedHash;primary_transmission=$primary.transmission;
-    control_transmission=$control.transmission;model_level='L3';formal_gate_passed=$false}|
+    case_set=$CaseSet;
+    control_transmission=$(if($null-ne$control){$control.transmission}else{$null});
+    model_level='L3';formal_gate_passed=$false}|
     ConvertTo-Json -Depth 5|Set-Content -LiteralPath $summary -Encoding UTF8
   $retentionActions=Apply-RunArtifactRetention -Python $python -RepoRoot $manifestRepoRoot `
     -RunConfig $runConfig
@@ -729,15 +955,20 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
     (Join-Path $solverDir 'quad_monolithic.iob'),
     (Join-Path $solverDir 'quad_monolithic.con'),$gem,$fly2,
     (Join-Path $resultDir "simion_summary__$primaryName.json"),
-    (Join-Path $resultDir "simion_summary__$controlName.json"),
     (Join-Path $resultDir "particle_states__$primaryName.csv"),
-    (Join-Path $resultDir "particle_states__$controlName.csv"),
     (Join-Path $resultDir "trajectory_samples__$primaryName.csv"),
-    (Join-Path $resultDir "trajectory_samples__$controlName.csv"),
-    (Join-Path $resultDir "particle_state_contract__$primaryName.json"),
-    (Join-Path $resultDir "particle_state_contract__$controlName.json"))
+    (Join-Path $resultDir "particle_state_contract__$primaryName.json"))
+  if($null-ne$control){
+    $outputs+=@(
+      (Join-Path $resultDir "simion_summary__$controlName.json"),
+      (Join-Path $resultDir "particle_states__$controlName.csv"),
+      (Join-Path $resultDir "trajectory_samples__$controlName.csv"),
+      (Join-Path $resultDir "particle_state_contract__$controlName.json")
+    )
+  }
   $outputs+=@(Get-ChildItem -LiteralPath $logDir -Recurse -File|Select-Object -ExpandProperty FullName)
   if(Test-Path -LiteralPath $evaluation){$outputs+=$evaluation}
+  if($publishedPaBasisManifest){$outputs+=$publishedPaBasisManifest}
   $outputs=@($outputs|Where-Object{Test-Path -LiteralPath $_ -PathType Leaf})
   $outputs+=$retentionActions
   Write-VerifiedRunManifest -Python $python -RepoRoot $manifestRepoRoot -RunConfig $runConfig `

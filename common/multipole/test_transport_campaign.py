@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import copy
 import json
+import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from contextlib import contextmanager
@@ -85,21 +88,98 @@ def campaign_fixture() -> dict:
     }
 
 
+def analysis_campaign_fixture() -> dict:
+    source = json.loads(
+        (
+            CAMPAIGN_ROOT / "20260731__oatof_shield_terminal_h15_n100.json"
+        ).read_text(encoding="utf-8-sig")
+    )
+    template = next(
+        item
+        for item in source["experiments"]
+        if item["experiment_id"] == "hex_segmented_oatof_terminal_h15_n100"
+    )
+    rows = []
+    for index, suffix in enumerate(("baseline", "drive")):
+        row = copy.deepcopy(template)
+        row["experiment_id"] = f"analysis_contract_{suffix}"
+        row["authorized_run_id"] = (
+            f"20260803_120{index:02d}__sim__simion__analysis-contract-{suffix}"
+        )
+        row["execution_profile_id"] = "simion_transport_campaign_engineering"
+        row["case_set"] = "primary_only"
+        row["design_variable_values"] = {
+            "rf_amplitude": 139.81792 if index == 0 else 153.799712,
+            "rf_frequency": 1_100_000.0 if index == 0 else 1_210_000.0,
+        }
+        rows.append(row)
+    return {
+        "schema_version": 4,
+        "role": source["role"],
+        "family_id": source["family_id"],
+        "campaign_id": "analysis_contract_v4",
+        "preregistered_before_run": True,
+        "downstream_terminal_profile": source["downstream_terminal_profile"],
+        "design_variable_authorization": {
+            "allowed_variable_ids": ["rf_amplitude", "rf_frequency"],
+            "variable_limits": [
+                {
+                    "variable_id": "rf_amplitude",
+                    "unit": "V",
+                    "minimum": 139.81792,
+                    "maximum": 169.179683,
+                },
+                {
+                    "variable_id": "rf_frequency",
+                    "unit": "Hz",
+                    "minimum": 1_100_000.0,
+                    "maximum": 1_210_000.0,
+                },
+            ],
+        },
+        "particle_source_phase_policy": {
+            "kind": "match_baseline_rf_phase",
+            "baseline_frequency_Hz": 1_100_000.0,
+            "frequency_variable_id": "rf_frequency",
+            "n1000_reference_profile_id": "family_mother_sample_v1_n1000",
+        },
+        "experiments": rows,
+        "analysis_requests": [
+            {
+                "capability_id": "multipole_exit_state_comparison_v1",
+                "experiment_ids": [row["experiment_id"] for row in rows],
+                "baseline_experiment_id": rows[0]["experiment_id"],
+                "analysis_run_id": (
+                    "20260803_120200__analysis__cross__campaign-diagnostic-test"
+                ),
+                "parameters": {},
+            }
+        ],
+        "claim_limit": "Analysis contract test only; no physical claim.",
+    }
+
+
 @contextmanager
 def written_campaign(document: dict) -> Iterator[Path]:
     campaign_root_existed = CAMPAIGN_ROOT.is_dir()
     CAMPAIGN_ROOT.mkdir(exist_ok=True)
+    path: Path | None = None
     try:
-        with tempfile.TemporaryDirectory(
-            prefix=".transport_campaign_test_", dir=CAMPAIGN_ROOT
-        ) as directory:
-            path = Path(directory) / "campaign.json"
-            path.write_text(
-                json.dumps(document, indent=2, allow_nan=False) + "\n",
-                encoding="utf-8",
-            )
-            yield path
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            prefix=".transport_campaign_test_",
+            suffix=".json",
+            dir=CAMPAIGN_ROOT,
+            delete=False,
+            encoding="utf-8",
+        ) as stream:
+            json.dump(document, stream, indent=2, allow_nan=False)
+            stream.write("\n")
+            path = Path(stream.name)
+        yield path
     finally:
+        if path is not None:
+            path.unlink(missing_ok=True)
         if not campaign_root_existed:
             try:
                 CAMPAIGN_ROOT.rmdir()
@@ -108,6 +188,173 @@ def written_campaign(document: dict) -> Iterator[Path]:
 
 
 class TransportCampaignTests(unittest.TestCase):
+    def test_analysis_capability_catalog_is_single_governed_authority(self) -> None:
+        path = REPO_ROOT / "common/multipole/analysis_capabilities.json"
+        catalog = json.loads(path.read_text(encoding="utf-8-sig"))
+        self.assertEqual(
+            set(catalog), {"schema_version", "role", "capabilities"}
+        )
+        self.assertEqual(
+            catalog["role"], "multipole_campaign_analysis_capability_catalog"
+        )
+        capability = catalog["capabilities"][0]
+        self.assertEqual(
+            capability["capability_id"],
+            "multipole_exit_state_comparison_v1",
+        )
+        self.assertEqual(
+            set(capability["allowed_parameters"]), {"bin_count", "dpi"}
+        )
+        for module in capability["consumer"].values():
+            self.assertRegex(module, r"^common\.multipole\.[a-z][a-z0-9_]*$")
+            self.assertTrue(
+                (REPO_ROOT / (module.replace(".", "/") + ".py")).is_file()
+            )
+
+    def test_campaign_v4_status_validates_analysis_without_writing_runs(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell Core is unavailable")
+        campaign = analysis_campaign_fixture()
+        run_dirs = [
+            REPO_ROOT.parent
+            / "artifacts/projects"
+            / row["project_id"]
+            / "runs"
+            / row["authorized_run_id"]
+            for row in campaign["experiments"]
+        ]
+        analysis_dir = (
+            REPO_ROOT.parent
+            / "artifacts/projects"
+            / campaign["experiments"][0]["project_id"]
+            / "runs"
+            / campaign["analysis_requests"][0]["analysis_run_id"]
+        )
+        self.assertFalse(any(path.exists() for path in (*run_dirs, analysis_dir)))
+        with written_campaign(campaign) as path:
+            completed = subprocess.run(
+                [
+                    pwsh,
+                    "-NoProfile",
+                    "-File",
+                    str(REPO_ROOT / "common/multipole/run_simion_transport_campaign.ps1"),
+                    "-CampaignPath",
+                    str(path),
+                    "-Status",
+                    "-RepoRoot",
+                    str(REPO_ROOT),
+                    "-PythonExe",
+                    sys.executable,
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=120,
+                check=False,
+            )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn("MULTIPOLE_CAMPAIGN_ANALYSIS_STATUS=PENDING", completed.stdout)
+        self.assertFalse(any(path.exists() for path in (*run_dirs, analysis_dir)))
+
+    def test_campaign_v4_rejects_capability_reference_and_parameter_escape(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell Core is unavailable")
+        cases = (
+            ("capability_id", "unknown_capability"),
+            ("experiment_ids", None),
+            ("dpi", 301),
+        )
+        for field, value in cases:
+            campaign = analysis_campaign_fixture()
+            if field in {"capability_id", "experiment_ids"}:
+                if field == "experiment_ids":
+                    value = [
+                        campaign["analysis_requests"][0]["baseline_experiment_id"],
+                        "outside_campaign",
+                    ]
+                campaign["analysis_requests"][0][field] = value
+            else:
+                campaign["analysis_requests"][0]["parameters"][field] = value
+            with self.subTest(field=field), written_campaign(campaign) as path:
+                completed = subprocess.run(
+                    [
+                        pwsh,
+                        "-NoProfile",
+                        "-File",
+                        str(REPO_ROOT / "common/multipole/run_simion_transport_campaign.ps1"),
+                        "-CampaignPath",
+                        str(path),
+                        "-Status",
+                        "-RepoRoot",
+                        str(REPO_ROOT),
+                        "-PythonExe",
+                        sys.executable,
+                    ],
+                    cwd=REPO_ROOT,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=120,
+                    check=False,
+                )
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertRegex(
+                completed.stdout + completed.stderr,
+                "Unknown analysis capability|missing campaign experiment|"
+                "outside its capability envelope",
+            )
+
+    def test_campaign_v4_requires_case_set(self) -> None:
+        campaign = analysis_campaign_fixture()
+        del campaign["experiments"][0]["case_set"]
+        with written_campaign(campaign) as path:
+            with self.assertRaisesRegex(ValueError, "invalid multipole transport campaign"):
+                resolve_runtime_selection(
+                    REPO_ROOT,
+                    campaign["experiments"][0]["project_id"],
+                    campaign_path=path,
+                    experiment_id=campaign["experiments"][0]["experiment_id"],
+                )
+
+    def test_campaign_v1_to_v3_forbid_case_set(self) -> None:
+        v3 = analysis_campaign_fixture()
+        v3["schema_version"] = 3
+        del v3["analysis_requests"]
+        for row in v3["experiments"]:
+            del row["case_set"]
+        campaigns = []
+        for version in (1, 2, 3):
+            campaign = copy.deepcopy(v3)
+            campaign["schema_version"] = version
+            if version < 3:
+                del campaign["design_variable_authorization"]
+                del campaign["particle_source_phase_policy"]
+                for row in campaign["experiments"]:
+                    del row["execution_profile_id"]
+                    del row["design_variable_values"]
+            if version == 1:
+                del campaign["downstream_terminal_profile"]
+            campaign["experiments"][0]["case_set"] = "primary_only"
+            campaigns.append(campaign)
+        for campaign in campaigns:
+            with self.subTest(schema_version=campaign["schema_version"]), written_campaign(
+                campaign
+            ) as path:
+                with self.assertRaisesRegex(
+                    ValueError, "invalid multipole transport campaign"
+                ):
+                    resolve_runtime_selection(
+                        REPO_ROOT,
+                        campaign["experiments"][0]["project_id"],
+                        campaign_path=path,
+                        experiment_id=campaign["experiments"][0]["experiment_id"],
+                    )
+
     def test_campaign_status_accepts_repository_relative_path(self) -> None:
         status = campaign_status(
             REPO_ROOT,
@@ -246,6 +493,12 @@ class TransportCampaignTests(unittest.TestCase):
         self.assertNotIn("start-job", source)
         self.assertNotIn("foreach-object -parallel", source)
         self.assertNotIn("automaticretry", source)
+        self.assertRegex(
+            source,
+            r"if\s*\(\[int\]\$campaign\.schema_version\s*-eq\s*4\)\s*"
+            r"\{\s*\$arguments\.caseset\s*=\s*\[string\]\$experiment\.case_set\s*\}",
+        )
+        self.assertEqual(source.count("$arguments.caseset"), 1)
 
 
     def test_campaign_resolves_existing_authorities_and_inline_simion_numerics(

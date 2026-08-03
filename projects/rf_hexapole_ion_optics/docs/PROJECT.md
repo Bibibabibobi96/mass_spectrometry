@@ -12,6 +12,11 @@
 `DEFERRED_NOT_WAIVED`/`INCONCLUSIVE`。家族工程六指标可用于下游推进，但不得升级为数值、
 机械、Candidate或Formal资格。
 
+2026-08-03完成分段加速模式的相位匹配RF幅值—频率H15筛选及N=1000复核。七个实际评价点的空间
+RMS差不超过0.011 mm、角RMS差不超过0.109°，全部属于工程等效；N=100中的微小排序不稳定，不能
+用于参数优选。维持P0 RF基线并停止扩大RF扫描。详见
+[N=1000日期化报告](history/20260803__hex-rf-drive-phase-matched-h15-n1000.md)。
+
 ## 当前参数与边界
 
 - 六根电极，径向阶数`n=3`，`r0=4 mm`，圆杆半径比0.5，有效杆长79.6 mm。
@@ -47,8 +52,9 @@ fallback。已关闭的逐臂profile、预登记和专用测试不再位于活�
 
 ## 下一步
 
-1. 出口准直筛选按[通用出口相空间方法](../../../docs/multipoles/exit_phase_space_control.md)执行：以既有
-   `segmented_rod_axial_acceleration`为首选基线，在固定总电位差和非变化合同下优化分段电位分配；
+1. 出口准直筛选按[通用出口相空间方法](../../../docs/multipoles/exit_phase_space_control.md)执行：维持
+   `segmented_rod_axial_acceleration`的P0 RF基线，在固定总电位差和非变化合同下优化更直接控制出口
+   轴向场的分段电位分配或端部几何；
    canonical handoff为主评价面，杆端只作边缘场诊断，terminal传输和损失作为硬约束。候选通过该筛选
    后才运行完整oaTOF链。
 2. 使用当前12个runtime profile和声明式campaign入口完成真正需要的N=100/N=1000实验，不恢复一次性

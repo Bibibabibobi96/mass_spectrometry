@@ -45,7 +45,7 @@ COLORS = (
     "#E69F00",
     "#56B4E9",
     "#009E73",
-    "#B8860B",
+    "#7F3C8D",
     "#0072B2",
     "#D55E00",
     "#CC79A7",
@@ -615,6 +615,7 @@ def export_figure(
         raise ValueError("Figure output and manifest paths must differ.")
     series = _series_manifest(states, run_ids)
     if scale_contract is None:
+        comparison = validate_comparison_states(states)
         scales = prepare_scales(states, bin_count=bin_count)
         styles = prepare_visual_style_map([state.label for state in states])
         figure, _ = render_exit_state_figure(
@@ -649,6 +650,9 @@ def export_figure(
         ),
         "bin_count": bin_count,
         "shared_scales": shared_scales,
+        "comparison": (
+            comparison if scale_contract is None else scale_contract["comparison"]
+        ),
         "series": series,
         "random_selection": None,
         "fitting": None,
@@ -656,7 +660,6 @@ def export_figure(
     }
     if scale_contract is not None:
         document["layout"] = "four_domain_fixed_bin_comparison"
-        document["comparison"] = scale_contract["comparison"]
         document["style_map"] = scale_contract["style_map"]
     else:
         document["style_map"] = styles

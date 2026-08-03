@@ -155,8 +155,28 @@ class ExitStatePlotTests(unittest.TestCase):
             self.assertEqual(document["series"][0]["selection"]["event"], "handoff")
             self.assertEqual(document["series"][0]["selection"]["selected_particle_count"], 3)
             self.assertEqual(document["figure"]["dpi"], 200)
+            self.assertEqual(document["comparison"]["event"], "handoff")
+            self.assertEqual(
+                document["comparison"]["source_particle_ids"], ["1", "2", "3"]
+            )
             self.assertEqual(len(document["shared_scales"]["histogram_edges"]["elapsed_time_us"]), 25)
             self.assertEqual(json.loads(manifest.read_text(encoding="utf-8")), document)
+
+    def test_default_multi_series_export_rejects_mixed_events(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "state.csv"
+            write_fixture(source)
+            baseline = load_exit_state(source, "baseline")
+            mixed = replace(baseline, label="mixed", event="rod_exit")
+            with self.assertRaisesRegex(ValueError, "different events"):
+                export_figure(
+                    [baseline, mixed],
+                    root / "plot.png",
+                    root / "plot.json",
+                    "comparison",
+                    "comparison consistency regression",
+                )
 
     def test_shared_scale_contract_roundtrip_and_subset_reuse(self):
         with tempfile.TemporaryDirectory() as temporary:

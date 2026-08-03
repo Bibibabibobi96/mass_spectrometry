@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+import copy
 import json
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from common.multipole.runtime_profile import resolve_runtime_profile
+from common.multipole import runtime_profile
+from common.multipole.runtime_profile import (
+    resolve_campaign_experiment,
+    resolve_runtime_profile,
+)
 from common.multipole.simion_numerics import normalize_simion_solver_numerics
 
 
@@ -18,6 +25,247 @@ HIGH_ORDER_PROJECT_IDS = PROJECT_IDS[1:]
 
 
 class RuntimeProfileTests(unittest.TestCase):
+    def _v3_campaign(self) -> dict[str, object]:
+        campaign = json.loads(
+            (
+                REPO_ROOT
+                / "common/multipole/campaigns/"
+                "20260731__oatof_shield_terminal_h15_n100.json"
+            ).read_text(encoding="utf-8-sig")
+        )
+        experiment = next(
+            item
+            for item in campaign["experiments"]
+            if item["experiment_id"] == "hex_segmented_oatof_terminal_h15_n100"
+        )
+        campaign["schema_version"] = 3
+        campaign["campaign_id"] = "test_drive_variation_v3"
+        campaign["design_variable_authorization"] = {
+            "allowed_variable_ids": ["rf_amplitude", "rf_frequency"],
+            "variable_limits": [
+                {
+                    "variable_id": "rf_amplitude",
+                    "unit": "V",
+                    "minimum": 139.81792,
+                    "maximum": 169.179683,
+                },
+                {
+                    "variable_id": "rf_frequency",
+                    "unit": "Hz",
+                    "minimum": 1_100_000.0,
+                    "maximum": 1_210_000.0,
+                },
+            ],
+        }
+        campaign["particle_source_phase_policy"] = {
+            "kind": "match_baseline_rf_phase",
+            "baseline_frequency_Hz": 1_100_000.0,
+            "frequency_variable_id": "rf_frequency",
+            "n1000_reference_profile_id": "family_mother_sample_v1_n1000",
+        }
+        experiment["execution_profile_id"] = "simion_transport_campaign_engineering"
+        experiment["design_variable_values"] = {
+            "rf_amplitude": 153.799712,
+            "rf_frequency": 1_210_000.0,
+        }
+        campaign["experiments"] = [experiment]
+        return campaign
+
+    def _resolve_campaign_document(self, campaign: dict[str, object]) -> dict[str, object]:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "campaign.json"
+            path.write_text(json.dumps(campaign), encoding="utf-8")
+            with patch.object(runtime_profile, "_campaign_file", return_value=path):
+                return resolve_campaign_experiment(
+                    REPO_ROOT,
+                    "rf_hexapole_ion_optics",
+                    path,
+                    "hex_segmented_oatof_terminal_h15_n100",
+                )
+
+    def test_campaign_v3_compiles_governed_drive_candidate(self) -> None:
+        resolved = self._resolve_campaign_document(self._v3_campaign())
+        design = resolved["design_profile_resolution"]
+        self.assertEqual(design["profile"]["design_profile_id"], "segmented_rod_axial_acceleration")
+        self.assertEqual(
+            design["resolved_design"]["drive"]["rf_amplitude_V_zero_to_peak_per_group"],
+            153.799712,
+        )
+        self.assertEqual(design["resolved_design"]["drive"]["frequency_Hz"], 1_210_000.0)
+        self.assertEqual(
+            set(design["campaign_design_variables"]["applied_values"]),
+            {"rf_amplitude", "rf_frequency"},
+        )
+        self.assertEqual(
+            design["candidate_request_sha256"],
+            design["resolved_design"]["request"]["sha256"],
+        )
+        self.assertIn(
+            "base_design_request",
+            {item["label"] for item in design["resolved_design"]["sources"]},
+        )
+        self.assertNotIn(
+            "design_request",
+            {item["label"] for item in design["resolved_design"]["sources"]},
+        )
+        self.assertIn("downstream_terminal_profile", resolved)
+        self.assertIn("downstream_terminal", design["resolved_design"])
+        self.assertRegex(resolved["campaign"]["experiment_row_sha256"], r"^[A-F0-9]{64}$")
+        self.assertRegex(
+            resolved["campaign"]["design_variable_authorization_sha256"],
+            r"^[A-F0-9]{64}$",
+        )
+        self.assertEqual(
+            resolved["particle_source_phase_derivation"]["candidate_frequency_Hz"],
+            1_210_000.0,
+        )
+
+    def test_campaign_v4_accepts_n1000_phase_matched_primary_only_row(self) -> None:
+        resolved = resolve_campaign_experiment(
+            REPO_ROOT,
+            "rf_hexapole_ion_optics",
+            Path("20260803__hex_rf_drive_phase_matched_h15_n1000.json"),
+            "hex_rf_p0_n1000",
+        )
+        self.assertEqual(
+            resolved["engineering_budget"]["inline_contract"]
+            ["pilot_authorization"]["scope"]["particle_count"],
+            1000,
+        )
+        self.assertEqual(
+            resolved["particle_source_phase_derivation"][
+                "authority_particle_count"
+            ],
+            1000,
+        )
+        self.assertEqual(
+            resolved["simion_pa_basis_policy"]["kind"],
+            "content_addressed_geometry_basis",
+        )
+
+    def test_historical_campaign_v1_and_v2_remain_resolvable(self) -> None:
+        cases = (
+            (
+                "20260731__noacc_vs_segmented_h15_n100.json",
+                "rf_hexapole_ion_optics",
+                "hex_segmented_h15_n100",
+            ),
+            (
+                "20260731__oatof_shield_terminal_h15_n100.json",
+                "rf_hexapole_ion_optics",
+                "hex_segmented_oatof_terminal_h15_n100",
+            ),
+        )
+        for filename, project_id, experiment_id in cases:
+            with self.subTest(filename=filename):
+                resolved = resolve_campaign_experiment(
+                    REPO_ROOT,
+                    project_id,
+                    Path(filename),
+                    experiment_id,
+                )
+                self.assertNotIn("campaign_design_variables", resolved["design_profile_resolution"])
+
+    def test_campaign_v3_rejects_unauthorized_derived_and_out_of_range_values(self) -> None:
+        derived = self._v3_campaign()
+        derived["experiments"][0]["design_variable_values"] = {"rod_radius": 2.0}
+        with self.assertRaisesRegex(ValueError, "invalid multipole transport campaign"):
+            self._resolve_campaign_document(derived)
+
+        out_of_range = self._v3_campaign()
+        out_of_range["experiments"][0]["design_variable_values"]["rf_frequency"] = 1_300_000.0
+        with self.assertRaisesRegex(ValueError, "outside its narrow range"):
+            self._resolve_campaign_document(out_of_range)
+
+        missing_axis = self._v3_campaign()
+        del missing_axis["experiments"][0]["design_variable_values"]["rf_frequency"]
+        with self.assertRaisesRegex(ValueError, "keys differ from its authorization"):
+            self._resolve_campaign_document(missing_axis)
+
+    def test_campaign_v3_rejects_execution_profile_and_authority_mismatches(self) -> None:
+        unsupported = self._v3_campaign()
+        unsupported["experiments"][0]["execution_profile_id"] = (
+            "transport_no_collision_candidate"
+        )
+        with self.assertRaisesRegex(ValueError, "execution profile is not unique"):
+            self._resolve_campaign_document(unsupported)
+
+        campaign = self._v3_campaign()
+        design = runtime_profile.resolve_design_profile(
+            REPO_ROOT,
+            "rf_hexapole_ion_optics",
+            "segmented_rod_axial_acceleration",
+        )
+        execution = runtime_profile._resolve_execution_profile(
+            REPO_ROOT / "projects/rf_hexapole_ion_optics",
+            "rf_hexapole_ion_optics",
+            "simion_transport_campaign_engineering",
+        )
+        unsupported_execution = copy.deepcopy(execution)
+        unsupported_execution["profile"]["supported_design_variables"].remove(
+            "rf_frequency"
+        )
+        with patch.object(
+            runtime_profile,
+            "_resolve_execution_profile",
+            return_value=unsupported_execution,
+        ):
+            with self.assertRaisesRegex(ValueError, "does not support design variable"):
+                runtime_profile._compile_campaign_design_candidate(
+                    REPO_ROOT,
+                    "rf_hexapole_ion_optics",
+                    campaign,
+                    campaign["experiments"][0],
+                    design,
+                )
+
+        wide_campaign = copy.deepcopy(campaign)
+        wide_campaign["design_variable_authorization"]["variable_limits"][0][
+            "maximum"
+        ] = 501.0
+        with self.assertRaisesRegex(ValueError, "range exceeds catalog bounds"):
+            runtime_profile._compile_campaign_design_candidate(
+                REPO_ROOT,
+                "rf_hexapole_ion_optics",
+                wide_campaign,
+                wide_campaign["experiments"][0],
+                design,
+            )
+
+        original_load = runtime_profile._load
+
+        def stale_envelope(path: Path) -> dict[str, object]:
+            document = original_load(path)
+            if Path(path) == design["paths"]["optimization_envelope"]:
+                document = copy.deepcopy(document)
+                document["reference"]["design_request_sha256"] = "0" * 64
+            return document
+
+        with patch.object(runtime_profile, "_load", side_effect=stale_envelope):
+            with self.assertRaisesRegex(ValueError, "base request SHA-256 differs"):
+                runtime_profile._compile_campaign_design_candidate(
+                    REPO_ROOT,
+                    "rf_hexapole_ion_optics",
+                    campaign,
+                    campaign["experiments"][0],
+                    design,
+                )
+
+        wrong_identity = copy.deepcopy(design)
+        wrong_identity["profile"] = copy.deepcopy(design["profile"])
+        wrong_identity["profile"]["identity"] = copy.deepcopy(
+            design["profile"]["identity"]
+        )
+        wrong_identity["profile"]["identity"]["radial_order_n"] = 4
+        with self.assertRaisesRegex(ValueError, "base design identity differs"):
+            runtime_profile._compile_campaign_design_candidate(
+                REPO_ROOT,
+                "rf_hexapole_ion_optics",
+                campaign,
+                campaign["experiments"][0],
+                wrong_identity,
+            )
+
     def test_legacy_scalar_simion_cells_normalize_to_canonical_xyz(self) -> None:
         resolved = resolve_runtime_profile(
             REPO_ROOT,

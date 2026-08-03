@@ -24,6 +24,8 @@ function Invoke-MultipoleProjectFinite3dTransport {
     [string]$RetentionReason = '',
     [string]$PythonExe = '',
     [string]$ReferenceComsolRunId = '',
+    [ValidateSet('primary_and_zero_axial_control', 'primary_only')]
+    [string]$CaseSet = 'primary_and_zero_axial_control',
     [string]$SimionExe = ''
   )
 
@@ -108,6 +110,7 @@ function Invoke-MultipoleProjectFinite3dTransport {
       $arguments.CellMmY = [double]$numerics.cell_mm_xyz.y
       $arguments.CellMmZ = [double]$numerics.cell_mm_xyz.z
       $arguments.TrajectoryQuality = [int]$numerics.trajectory_quality
+      $arguments.CaseSet = $CaseSet
       $arguments.ResolvedRuntimeProfilePath = $resolutionPath
       if ($SimionExe) {
         $arguments.SimionExe = $SimionExe

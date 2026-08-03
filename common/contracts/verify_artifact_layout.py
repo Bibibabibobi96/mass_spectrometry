@@ -50,7 +50,14 @@ except ModuleNotFoundError:
     )
 
 
-ALLOWED_PROJECT_ENTRIES = {"00_README.txt", "formal", "runs", "archive", "scratch"}
+ALLOWED_PROJECT_ENTRIES = {
+    "00_README.txt",
+    "formal",
+    "runs",
+    "archive",
+    "scratch",
+    "cache",
+}
 REQUIRED_RUN_FILES = {"run_config.json", "summary.json", "run_manifest.json"}
 LEGACY_POLICY = {
     "migration_kind": "administrative_rename_only",
@@ -74,6 +81,48 @@ def verify_record(root: Path, record: dict, verify_hashes: bool) -> Path:
     if verify_hashes and file_sha256(path) != record["sha256"]:
         raise AssertionError(f"manifest SHA-256 differs: {path}")
     return path
+
+
+def verify_cache(project: Path, verify_hashes: bool = False) -> None:
+    """Validate the narrowly registered, disposable project cache layout."""
+
+    cache = project / "cache"
+    if not cache.exists():
+        return
+    unexpected = {entry.name for entry in cache.iterdir()} - {"simion_pa_basis"}
+    if unexpected:
+        raise AssertionError(f"{project.name}: unexpected cache entries: {sorted(unexpected)}")
+    basis_root = cache / "simion_pa_basis"
+    if not basis_root.exists():
+        return
+    for basis in (item for item in basis_root.iterdir() if item.is_dir()):
+        if re.fullmatch(r"[A-F0-9]{64}", basis.name) is None:
+            raise AssertionError(f"{basis}: invalid PA-basis fingerprint directory")
+        manifest_path = basis / "manifest.json"
+        if not manifest_path.is_file():
+            raise AssertionError(f"{basis}: cache manifest is missing")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+        identity = manifest.get("identity", {})
+        if (
+            manifest.get("schema_version") != 1
+            or manifest.get("role") != "multipole_simion_pa_basis_cache"
+            or manifest.get("fingerprint_sha256") != basis.name
+            or identity.get("project_id") != project.name
+        ):
+            raise AssertionError(f"{basis}: cache manifest identity differs")
+        records = manifest.get("files")
+        if not isinstance(records, list) or len(records) < 3:
+            raise AssertionError(f"{basis}: cache file inventory is incomplete")
+        expected = {"manifest.json"}
+        for record in records:
+            name = record.get("name")
+            if not isinstance(name, str) or Path(name).name != name:
+                raise AssertionError(f"{basis}: invalid cache filename")
+            expected.add(name)
+            verify_record(basis, {**record, "path": name}, verify_hashes)
+        actual = {item.name for item in basis.iterdir() if item.is_file()}
+        if actual != expected:
+            raise AssertionError(f"{basis}: cache inventory differs")
 
 
 def legacy_identity(repository_root: Path, project_id: str) -> dict | None:
@@ -193,6 +242,7 @@ def verify_project(
     if not (project / "00_README.txt").is_file():
         raise AssertionError(f"{project.name}: 00_README.txt is missing")
     verify_formal(project, verify_hashes, repository_root)
+    verify_cache(project, verify_hashes)
 
     run_count = 0
     runs = project / "runs"

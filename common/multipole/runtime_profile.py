@@ -3,12 +3,22 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
+import math
 from pathlib import Path
 from typing import Any
 
 from common.contracts.machine_contracts import ContractError, validate_schema
+from common.contracts.build_project_registry import pointer_value
+from common.multipole.compile_design_request import (
+    MultipoleDesignCompileError,
+    apply_typed_operating_mode,
+    canonical_sha256,
+    compile_design_request,
+    operating_mode_source_label,
+)
 from common.multipole.design_profile import resolve_design_profile
 from common.multipole.downstream_terminal import (
     compose_downstream_terminal,
@@ -370,6 +380,290 @@ def _particle_count(path: Path) -> int:
         return max(sum(1 for line in stream if line.strip()) - 1, 0)
 
 
+def _set_pointer(document: dict[str, Any], pointer: str, value: int | float) -> None:
+    """Replace one existing scalar selected by a catalog JSON Pointer."""
+
+    tokens = [token.replace("~1", "/").replace("~0", "~") for token in pointer[1:].split("/")]
+    parent: Any = document
+    for token in tokens[:-1]:
+        if not isinstance(parent, dict) or token not in parent:
+            raise ValueError(f"catalog pointer is missing from the base request: {pointer}")
+        parent = parent[token]
+    leaf = tokens[-1]
+    if not isinstance(parent, dict) or leaf not in parent:
+        raise ValueError(f"catalog pointer is missing from the base request: {pointer}")
+    parent[leaf] = value
+
+
+def _resolve_execution_profile(
+    project_root: Path, project_id: str, execution_profile_id: str
+) -> dict[str, Any]:
+    path = project_root / "config" / "execution_profiles.json"
+    registry = _load(path)
+    try:
+        validate_schema(registry, "execution_profiles.schema.json")
+    except ContractError as error:
+        raise ValueError(f"invalid execution-profile registry: {error}") from error
+    if registry["project_id"] != project_id:
+        raise ValueError("execution-profile registry project identity differs")
+    selected = [
+        item for item in registry["profiles"] if item["profile_id"] == execution_profile_id
+    ]
+    if len(selected) != 1:
+        raise ValueError(f"execution profile is not unique: {execution_profile_id}")
+    profile = selected[0]
+    run_steps = [item for item in profile["steps"] if item["kind"] == "run"]
+    if (
+        profile["mode"] != "finite_3d_no_collision"
+        or profile["evidence_levels"] != ["plan"]
+        or set(profile["required_bindings"]) != {"campaign_path", "experiment_id"}
+        or not {"simulation_results", "simion_model", "interface_state"}.issubset(
+            profile["deliverable_outputs"]
+        )
+        or len(run_steps) != 1
+        or not run_steps[0]["entrypoint"].replace("\\", "/").endswith(
+            "common/multipole/run_simion_transport_campaign.ps1"
+        )
+    ):
+        raise ValueError(
+            "execution profile is not the governed SIMION campaign engineering workflow"
+        )
+    return {
+        "profile_id": execution_profile_id,
+        "path": path.resolve(),
+        "sha256": _sha256(path),
+        "profile": profile,
+    }
+
+
+def _resolve_phase_policy(
+    repo_root: Path,
+    project_root: Path,
+    project_id: str,
+    campaign: dict[str, Any],
+    experiment: dict[str, Any],
+    design: dict[str, Any],
+) -> dict[str, Any]:
+    """Bind phase-matched source derivation without materializing run artifacts."""
+
+    policy = campaign["particle_source_phase_policy"]
+    baseline_frequency = float(policy["baseline_frequency_Hz"])
+    candidate_frequency = float(design["resolved_design"]["drive"]["frequency_Hz"])
+    declared_frequency = float(
+        experiment["design_variable_values"][policy["frequency_variable_id"]]
+    )
+    if not math.isclose(candidate_frequency, declared_frequency, rel_tol=0, abs_tol=0):
+        raise ValueError("candidate RF frequency differs from the campaign row")
+    authority = _resolve_particle_source(
+        repo_root,
+        project_root,
+        project_id,
+        experiment["particle_source_profile_id"],
+    )
+    reference = _resolve_particle_source(
+        repo_root,
+        project_root,
+        project_id,
+        policy["n1000_reference_profile_id"],
+    )
+    authority_count = _particle_count(Path(authority["path"]))
+    if authority_count not in (100, 1000):
+        raise ValueError("phase-matched screening source must contain N=100 or N=1000 particles")
+    if _particle_count(Path(reference["path"])) != 1000:
+        raise ValueError("phase-matched reference source must contain N=1000 particles")
+    if authority_count == 1000 and authority["sha256"] != reference["sha256"]:
+        raise ValueError("N=1000 phase-matched authority differs from its reference")
+    return {
+        "kind": policy["kind"],
+        "baseline_frequency_Hz": baseline_frequency,
+        "candidate_frequency_Hz": candidate_frequency,
+        "frequency_variable_id": policy["frequency_variable_id"],
+        "authority_source": authority,
+        "authority_particle_count": authority_count,
+        "n1000_reference_source": reference,
+        "formula": "t_new = t_old * baseline_frequency_Hz / candidate_frequency_Hz",
+    }
+
+
+def _typed_base_request(design: dict[str, Any]) -> dict[str, Any]:
+    request = _load(design["paths"]["design_request"])
+    mode_id = design["profile"].get("mode_id")
+    if mode_id is None:
+        return request
+    mode_path = design["paths"].get("operating_mode_registry")
+    if mode_path is None:
+        raise ValueError("typed design profile omits its operating-mode registry")
+    try:
+        return apply_typed_operating_mode(request, _load(mode_path), mode_id)
+    except MultipoleDesignCompileError as error:
+        raise ValueError(f"typed base design is invalid: {error}") from error
+
+
+def _compile_campaign_design_candidate(
+    repo_root: Path,
+    project_id: str,
+    campaign: dict[str, Any],
+    experiment: dict[str, Any],
+    design: dict[str, Any],
+) -> dict[str, Any]:
+    """Compile one v3 row through catalog, profile and envelope authorities."""
+
+    authorization = campaign["design_variable_authorization"]
+    allowed_ids = authorization["allowed_variable_ids"]
+    limits = authorization["variable_limits"]
+    limit_ids = [item["variable_id"] for item in limits]
+    if len(limit_ids) != len(set(limit_ids)) or set(limit_ids) != set(allowed_ids):
+        raise ValueError(
+            "campaign variable limits must identify every allowed variable exactly once"
+        )
+    limit_by_id = {item["variable_id"]: item for item in limits}
+    for item in limits:
+        if not math.isfinite(float(item["minimum"])) or not math.isfinite(
+            float(item["maximum"])
+        ):
+            raise ValueError("campaign design-variable limits must be finite")
+        if float(item["minimum"]) > float(item["maximum"]):
+            raise ValueError("campaign design-variable minimum exceeds maximum")
+
+    execution = _resolve_execution_profile(
+        repo_root / "projects" / project_id,
+        project_id,
+        experiment["execution_profile_id"],
+    )
+    catalog = _load(design["paths"]["design_variables"])
+    envelope = _load(design["paths"]["optimization_envelope"])
+    try:
+        validate_schema(catalog, "design_variable_catalog.schema.json")
+        validate_schema(envelope, "optimization_envelope.schema.json")
+    except ContractError as error:
+        raise ValueError(f"invalid design-variable authority: {error}") from error
+    if (
+        catalog["project_id"] != project_id
+        or envelope["project_id"] != project_id
+        or catalog["family_id"] != campaign["family_id"]
+        or envelope["family_id"] != campaign["family_id"]
+    ):
+        raise ValueError("design-variable authority identity differs")
+    if envelope["status"] == "retired":
+        raise ValueError("retired optimization envelope cannot authorize a campaign")
+    if envelope["reference"]["design_request_sha256"] != _sha256(
+        design["paths"]["design_request"]
+    ):
+        raise ValueError("optimization envelope base request SHA-256 differs")
+
+    catalog_items = {item["variable_id"]: item for item in catalog["variables"]}
+    if len(catalog_items) != len(catalog["variables"]):
+        raise ValueError("design-variable catalog identifiers must be unique")
+    bounded_pointers = {
+        pointer
+        for constraint in envelope["constraints"]
+        if constraint["kind"] == "bounded_variable"
+        for pointer in constraint["request_json_pointers"]
+    }
+    supported = set(execution["profile"]["supported_design_variables"])
+    for variable_id in allowed_ids:
+        item = catalog_items.get(variable_id)
+        if item is None:
+            raise ValueError(f"campaign authorizes unknown design variable: {variable_id}")
+        if item["json_pointer"] not in bounded_pointers:
+            raise ValueError(
+                f"campaign design variable is outside the optimization envelope: {variable_id}"
+            )
+        if variable_id not in supported:
+            raise ValueError(
+                f"execution profile does not support design variable: {variable_id}"
+            )
+        campaign_limit = limit_by_id[variable_id]
+        if campaign_limit["unit"] != item["unit"]:
+            raise ValueError(f"campaign design-variable unit differs: {variable_id}")
+        if (
+            float(campaign_limit["minimum"]) < float(item["minimum"])
+            or float(campaign_limit["maximum"]) > float(item["maximum"])
+        ):
+            raise ValueError(
+                f"campaign design-variable range exceeds catalog bounds: {variable_id}"
+            )
+
+    values = experiment["design_variable_values"]
+    missing = set(allowed_ids) - set(values)
+    unknown = set(values) - set(allowed_ids)
+    if missing or unknown:
+        raise ValueError(
+            "campaign row design-variable keys differ from its authorization: "
+            f"missing={sorted(missing)}, unknown={sorted(unknown)}"
+        )
+    request = _typed_base_request(design)
+    applied: dict[str, dict[str, Any]] = {}
+    for variable_id, value in values.items():
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(
+            float(value)
+        ):
+            raise ValueError(f"campaign design-variable value must be finite: {variable_id}")
+        catalog_item = catalog_items[variable_id]
+        if catalog_item["kind"] == "integer" and not isinstance(value, int):
+            raise ValueError(f"campaign integer design variable is not integer: {variable_id}")
+        campaign_limit = limit_by_id[variable_id]
+        if not float(campaign_limit["minimum"]) <= float(value) <= float(
+            campaign_limit["maximum"]
+        ):
+            raise ValueError(f"campaign design-variable value is outside its narrow range: {variable_id}")
+        if not float(catalog_item["minimum"]) <= float(value) <= float(
+            catalog_item["maximum"]
+        ):
+            raise ValueError(f"campaign design-variable value is outside catalog bounds: {variable_id}")
+        _set_pointer(request, catalog_item["json_pointer"], value)
+        applied[variable_id] = {
+            "value": value,
+            "unit": catalog_item["unit"],
+            "json_pointer": catalog_item["json_pointer"],
+        }
+    if request["identity"] != design["profile"]["identity"]:
+        raise ValueError("campaign candidate base design identity differs")
+    for item in applied.values():
+        if pointer_value(request, item["json_pointer"]) != item["value"]:
+            raise ValueError("campaign design-variable application did not round-trip")
+
+    candidate_request_sha256 = canonical_sha256(request)
+    source_files = {
+        "base_design_request": design["paths"]["design_request"],
+        "design_variables": design["paths"]["design_variables"],
+        "optimization_envelope": design["paths"]["optimization_envelope"],
+        "execution_profiles": execution["path"],
+    }
+    mode_id = design["profile"].get("mode_id")
+    if mode_id is not None:
+        source_files[operating_mode_source_label(mode_id)] = design["paths"][
+            "operating_mode_registry"
+        ]
+    try:
+        resolved = compile_design_request(
+            request,
+            expected_identity=design["profile"]["identity"],
+            source_files=source_files,
+            source_root=repo_root,
+        )
+    except MultipoleDesignCompileError as error:
+        raise ValueError(f"campaign design candidate does not compile: {error}") from error
+    if resolved["request"]["sha256"] != candidate_request_sha256:
+        raise ValueError("compiled candidate request SHA-256 differs")
+    design["resolved_design"] = resolved
+    design["candidate_request"] = request
+    design["candidate_request_sha256"] = candidate_request_sha256
+    design["campaign_design_variables"] = {
+        "execution_profile_id": execution["profile_id"],
+        "execution_profile_registry_path": str(execution["path"]),
+        "execution_profile_registry_sha256": execution["sha256"],
+        "catalog_sha256": _sha256(design["paths"]["design_variables"]),
+        "optimization_envelope_sha256": _sha256(
+            design["paths"]["optimization_envelope"]
+        ),
+        "allowed_variable_ids": copy.deepcopy(allowed_ids),
+        "variable_limits": copy.deepcopy(limits),
+        "applied_values": applied,
+    }
+    return design
+
+
 def resolve_campaign_experiment(
     repo_root: Path,
     project_id: str,
@@ -404,7 +698,7 @@ def resolve_campaign_experiment(
         raise ValueError("campaign experiment project identity differs")
 
     downstream_terminal = None
-    if campaign["schema_version"] == 2:
+    if campaign["schema_version"] in (2, 3, 4):
         downstream_terminal = _resolve_downstream_terminal_profile(
             repo_root, campaign["downstream_terminal_profile"]
         )
@@ -412,6 +706,14 @@ def resolve_campaign_experiment(
     design = resolve_design_profile(
         repo_root, project_id, experiment["design_profile_id"]
     )
+    if campaign["schema_version"] in (3, 4):
+        design = _compile_campaign_design_candidate(
+            repo_root,
+            project_id,
+            campaign,
+            experiment,
+            design,
+        )
     if downstream_terminal is not None:
         terminal_profile = select_downstream_terminal_profile(
             _load(Path(downstream_terminal["registry_path"])),
@@ -427,6 +729,18 @@ def resolve_campaign_experiment(
         project_id,
         experiment["particle_source_profile_id"],
     )
+    phase_derivation = None
+    if campaign["schema_version"] in (3, 4):
+        phase_derivation = _resolve_phase_policy(
+            repo_root,
+            project_root,
+            project_id,
+            campaign,
+            experiment,
+            design,
+        )
+        if phase_derivation["authority_source"]["sha256"] != source["sha256"]:
+            raise ValueError("phase-policy authority source differs from the selected source")
     registry_paths, _, runtime_registry_path = _solver_registry_paths(
         project_root, project_id
     )
@@ -508,12 +822,28 @@ def resolve_campaign_experiment(
         "campaign": {
             "campaign_id": campaign["campaign_id"],
             "experiment_id": experiment_id,
+            "experiment_row_sha256": canonical_sha256(experiment),
             "path": str(path),
             "sha256": _sha256(path),
             "runtime_profile_registry_path": str(runtime_registry_path.resolve()),
             "runtime_profile_registry_sha256": _sha256(runtime_registry_path),
         },
     }
+    if campaign["schema_version"] in (3, 4):
+        result["campaign"]["design_variable_authorization_sha256"] = canonical_sha256(
+            campaign["design_variable_authorization"]
+        )
+        result["campaign"]["particle_source_phase_policy_sha256"] = canonical_sha256(
+            campaign["particle_source_phase_policy"]
+        )
+        result["particle_source_phase_derivation"] = phase_derivation
+        if "simion_pa_basis_policy" in campaign:
+            result["simion_pa_basis_policy"] = copy.deepcopy(
+                campaign["simion_pa_basis_policy"]
+            )
+            result["campaign"]["simion_pa_basis_policy_sha256"] = canonical_sha256(
+                campaign["simion_pa_basis_policy"]
+            )
     if downstream_terminal is not None:
         result["downstream_terminal_profile"] = downstream_terminal
     return result

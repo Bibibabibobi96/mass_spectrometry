@@ -31,20 +31,21 @@ class SimionRunnerContractTests(unittest.TestCase):
             source.index("Invoke-SimionStep 'gem2pa'"),
         )
 
-    def test_runner_freezes_and_recomposes_downstream_terminal(self) -> None:
+    def test_runner_freezes_terminal_authority_and_consumes_resolved_snapshot(self) -> None:
         source = RUNNER.read_text(encoding="utf-8-sig")
         for token in (
             "downstream_terminal_profiles.json",
             "common.multipole.downstream_terminal",
             "Downstream-terminal registry changed before it was frozen.",
-            "Frozen downstream-terminal composition differs",
+            "Frozen resolved design differs from the resolved runtime snapshot.",
+            "Resolved runtime-profile design identity is invalid.",
             "$design.axial_dc",
             "$design.downstream_terminal.surface_plane_z_mm",
             "handoff_aperture={shape=",
         ):
             self.assertIn(token, source)
         self.assertLess(
-            source.index("common.multipole.downstream_terminal"),
+            source.index("Resolved runtime-profile design identity is invalid."),
             source.index("common.multipole.simion_geometry"),
         )
 
@@ -493,6 +494,25 @@ class SimionRunnerContractTests(unittest.TestCase):
             )
             self.assertEqual(drift_count, 100)
             self.assertEqual(drifting_family.read_count, 1)
+
+    def test_primary_only_case_set_skips_control_and_records_null_control(self) -> None:
+        runner = RUNNER.read_text(encoding="utf-8")
+        self.assertIn(
+            "[ValidateSet('primary_and_zero_axial_control','primary_only')]",
+            runner,
+        )
+        self.assertIn("if($CaseSet-eq'primary_and_zero_axial_control')", runner)
+        self.assertIn("case_set=$CaseSet", runner)
+        self.assertIn("$control=$null;$controlName=$null", runner)
+        self.assertIn(
+            "Primary-only SIMION runs cannot consume a paired-case evidence contract.",
+            runner,
+        )
+        self.assertIn("role='multipole_simion_primary_transport_metrics'", runner)
+        self.assertIn(
+            "control_transmission=$(if($null-ne$control){$control.transmission}else{$null})",
+            runner,
+        )
 
 
 if __name__ == "__main__":

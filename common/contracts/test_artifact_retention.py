@@ -207,6 +207,7 @@ class ArtifactRetentionTests(unittest.TestCase):
         migrated = {
             "common/multipole/run_finite_3d_transport.ps1",
             "common/multipole/run_simion_finite_3d_transport.ps1",
+            "common/multipole/run_simion_transport_campaign.ps1",
         }
         legacy = {
             "projects/single_reflection_oa_tof_mass_analyzer/tests/comsol/run_n100_candidate_functional.ps1",

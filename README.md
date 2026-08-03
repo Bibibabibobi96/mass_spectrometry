@@ -229,6 +229,7 @@ Git 只管理可复现、可审阅的轻量源码与文档。MPH、PA/PA#、IOB�
 ```text
 artifacts/projects/<project>/
 ├─ 00_README.txt
+├─ cache/                       # 可删除的、内容寻址且经机器校验的性能缓存
 ├─ formal/
 │  ├─ comsol/
 │  ├─ simion/
@@ -254,6 +255,10 @@ artifacts/projects/<project>/
 `results/`或`logs/`，不按软件或工作类型拆第二棵运行树。`00_README.txt`只提供面向资源管理器的导航，
 不得成为项目状态或规则权威。各目录的状态、保留与清理条件由本节末尾统一定义。脚本必须通过项目
 路径解析器定位这里，禁止硬编码用户名或重建旧 `artifacts/components/`。
+`cache/`不是运行证据或第二份项目状态，只允许机器校验器显式注册的内容寻址性能缓存；缓存命中必须
+复核内容身份，删除后只能造成重算，不能破坏既有run三件套或结论。当前唯一注册角色是
+`cache/simion_pa_basis/<SHA-256>/`，用于同项目同几何/网格/求解器身份的SIMION PA basis复用。
+不得在`cache/`保存唯一输入、canonical结果、正式资产或未登记的任意文件。
 SIMION IOB 可能嵌入 PA 的绝对路径，移动工作区后必须重新打开/保存或重建 IOB，并验证四个 PA
 实例；文件存在不等于迁移成功。SolidWorks 装配移动后必须检查外部引用。
 

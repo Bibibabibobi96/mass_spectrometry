@@ -4,34 +4,34 @@
   "project_id": "rf_hexapole_ion_optics",
   "profiles": [
     {
-      "profile_id": "finite_3d_design_compile_static",
+      "profile_id": "simion_transport_campaign_engineering",
       "capability_id": "hexapole_finite_3d_transport",
       "mode": "finite_3d_no_collision",
-      "evidence_levels": ["static"],
-      "supported_objectives": ["transmission_fraction", "exit_rms_radius", "maximum_rod_radius"],
+      "evidence_levels": ["plan"],
+      "supported_objectives": [
+        "transmission_fraction",
+        "exit_rms_radius",
+        "exit_rms_divergence",
+        "exit_energy_spread"
+      ],
       "supported_operating_points": [
         {"mass": {"value": 100.0, "unit": "Da"}, "charge_state": 1}
       ],
-      "supported_design_variables": [
-        "inscribed_radius_r0", "rod_radius_ratio", "rod_z_min", "rod_z_max",
-        "enclosure_working_region_radius", "vacuum_z_min", "vacuum_z_max",
-        "shield_inner_radius", "shield_outer_radius", "entrance_outer_endcap_upstream_face_z",
-        "entrance_outer_endcap_downstream_face_z", "exit_outer_endcap_upstream_face_z", "exit_outer_endcap_downstream_face_z",
-        "entrance_aperture_radius", "entrance_plate_thickness", "entrance_rod_clearance",
-        "entrance_connector_length", "entrance_release_offset",
-        "exit_aperture_radius", "exit_plate_thickness", "exit_rod_clearance",
-        "exit_connector_length", "exit_census_offset",
-        "rf_amplitude", "dc_amplitude", "common_mode_offset", "rf_frequency", "rf_phase",
-        "segment_count", "intersegment_gap", "segment_entrance_common_mode",
-        "segment_exit_common_mode", "segment_output_reference", "exit_interface_common_mode"
-      ],
+      "supported_design_variables": ["rf_amplitude", "rf_frequency"],
       "supported_constraints": [
-        "locked_multipole_identity", "catalog_variable_bounds", "positive_rod_span",
-        "nonoverlapping_interfaces", "segmented_length_conservation",
-        "supported_connector_shapes"
+        "locked_multipole_identity",
+        "catalog_variable_bounds",
+        "campaign_variable_bounds",
+        "phase_matched_particle_source",
+        "downstream_terminal_geometry"
       ],
-      "deliverable_outputs": ["validation_report"],
-      "required_bindings": ["compiled_output_path"],
+      "deliverable_outputs": [
+        "simulation_results",
+        "simion_model",
+        "validation_report",
+        "interface_state"
+      ],
+      "required_bindings": ["campaign_path", "experiment_id"],
       "steps": [
         {
           "step_id": "static_gate",
@@ -42,22 +42,21 @@
           "arguments": ["-PythonExe", "{python_exe}"]
         },
         {
-          "step_id": "compile_design_request",
-          "kind": "analyze",
-          "shell": "python",
-          "entrypoint": "../../common/multipole/design_profile.py",
-          "run_id_template": null,
+          "step_id": "simion_campaign_run",
+          "kind": "run",
+          "shell": "powershell",
+          "entrypoint": "../../common/multipole/run_simion_transport_campaign.ps1",
+          "run_id_template": "{authorized_run_id}",
           "arguments": [
-            "--repo-root", "../..",
-            "--project-id", "rf_hexapole_ion_optics",
-            "--design-profile-id", "segmented_rod_axial_acceleration",
-            "--output", "{compiled_output_path}"
+            "-CampaignPath", "{campaign_path}",
+            "-ExperimentId", "{experiment_id}",
+            "-PythonExe", "{python_exe}"
           ]
         }
       ],
       "limitations": [
-        "This governed profile validates the canonical segmented family-experiment profile through the typed mode resolver.",
-        "It does not invoke COMSOL, SIMION, CAD or claim Candidate qualification."
+        "Only explicitly preregistered SIMION engineering rows may run through this profile.",
+        "A successful run does not establish numerical convergence, cross-solver equivalence or Candidate maturity."
       ]
     }
   ]
