@@ -5,7 +5,12 @@ param(
   [Parameter(Mandatory)][string]$ResolvedConnection,
   [Parameter(Mandatory)][string]$ResolvedEngineeringBudget,
   [Parameter(Mandatory)][string]$RuntimeBinding,
-  [string]$SourceBranchId = '',
+  [Parameter(Mandatory)][ValidateSet('comsol','simion')]
+  [string]$SourceBranchId,
+  [Parameter(Mandatory)][string]$ResolvedSourceContract,
+  [Parameter(Mandatory)][string]$ResolvedSourceContractSha256,
+  [Parameter(Mandatory)][string]$UpstreamResolvedDesign,
+  [Parameter(Mandatory)][string]$UpstreamResolvedDesignSha256,
   [string]$PythonExe = ''
 )
 
@@ -17,7 +22,11 @@ $repoRoot = (Resolve-Path (Join-Path $integrationRoot '..\..')).Path
 $runtime = Resolve-RfOatofRuntimeBinding -RepoRoot $repoRoot `
   -ResolvedConnection $ResolvedConnection -RuntimeBinding $RuntimeBinding `
   -ExpectedConnectionProfileId $ConnectionProfileId `
-  -SourceBranchId $SourceBranchId
+  -SourceBranchId $SourceBranchId `
+  -ResolvedSourceContract $ResolvedSourceContract `
+  -ResolvedSourceContractSha256 $ResolvedSourceContractSha256 `
+  -UpstreamResolvedDesign $UpstreamResolvedDesign `
+  -UpstreamResolvedDesignSha256 $UpstreamResolvedDesignSha256
 $upstreamProjectId = $runtime.upstream_project_id
 $projectRoot = Join-Path $repoRoot "projects\$upstreamProjectId"
 $supportSource = $runtime.run_artifact_support
@@ -52,8 +61,7 @@ function Invoke-PrePulseSnapshotPython {
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot "artifacts\projects\$upstreamProjectId"
 $contractSource = $runtime.contracts.pre_pulse_contract
-$sourceContractSource = $runtime.contracts.source_contract
-$handoffContractSource = $runtime.contracts.handoff_contract
+$sourceContractSource = $runtime.contracts.resolved_source_contract
 $baseContractDocument = Get-Content -LiteralPath $contractSource -Raw -Encoding UTF8 | ConvertFrom-Json
 if (-not [bool]$baseContractDocument.permissions.field_solve_allowed) {
   throw 'The PrePulse contract does not authorize a field solve.'
@@ -94,13 +102,14 @@ if ($resolvedConnectionDocument.potential_alignment.mode -ne 'continuous' -or
 }
 if ([string]::IsNullOrWhiteSpace($RunId)) {
   $gapLabel = ('{0:g}' -f $gapMm).Replace('.','p')
-  $suffix = if ($Particles) { "__sim__comsol__rf-oatof-pre_pulse-connector-gap${gapLabel}__n100" } `
+  $sourceParticleCount = [int]$runtime.source_record.particle_count
+  $suffix = if ($Particles) { "__sim__comsol__rf-oatof-pre_pulse-connector-gap${gapLabel}__n${sourceParticleCount}" } `
     else { "__analysis__comsol__rf-oatof-pre_pulse-no-pulse-field__gap${gapLabel}" }
   $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + $suffix
 }
-$mode = if ($Particles) { 'rf_to_oatof_pre_pulse_interface_transport_n100' } `
+$mode = if ($Particles) { 'rf_to_oatof_pre_pulse_interface_transport' } `
   else { 'rf_to_oatof_pre_pulse_interface_transport_no_pulse_field' }
-$summaryRole = if ($Particles) { 'rf_to_oatof_pre_pulse_interface_transport_n100_summary' } `
+$summaryRole = if ($Particles) { 'rf_to_oatof_pre_pulse_interface_transport_summary' } `
   else { 'rf_to_oatof_pre_pulse_no_pulse_field_summary' }
 $software = @('COMSOL 6.4','MATLAB R2025b','Python 3.11')
 $package = New-RfRunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
@@ -121,8 +130,9 @@ try {
   $support = Join-Path $inputDir 'run_artifacts.ps1.txt'
   $snapshotRoot = Join-Path $inputDir 'runtime_snapshot'
   $contract = Join-Path $inputDir 'rf_to_oatof_pre_pulse_passive_connector.json'
-  $sourceContract = Join-Path $inputDir 'rf_multipole_oatof_source_contract.json'
+  $sourceContract = Join-Path $inputDir 'resolved_source_contract.json'
   $runtimeBindingFrozen = Join-Path $inputDir 'runtime_binding.json'
+  $rfResolved = Join-Path $inputDir 'upstream_resolved_design.json'
   $frozenResolvedConnection = Join-Path $inputDir 'resolved_connection.json'
   $particleInput = $null
   $particleOutput = $null
@@ -134,6 +144,8 @@ try {
   Copy-Item -LiteralPath $contractSource -Destination $contract
   Copy-Item -LiteralPath $sourceContractSource -Destination $sourceContract
   Copy-Item -LiteralPath $runtime.binding_path -Destination $runtimeBindingFrozen
+  Copy-Item -LiteralPath $runtime.contracts.upstream_resolved_design `
+    -Destination $rfResolved
   Copy-Item -LiteralPath $ResolvedConnection -Destination $frozenResolvedConnection
   $resolvedConnectionSha256 = (
     Get-FileHash -LiteralPath $ResolvedConnection -Algorithm SHA256
@@ -187,16 +199,13 @@ try {
   }
   $manifestToolRoot = $snapshotRoot
   $sharedJoint = $dependencySnapshotPaths['rf_shared_joint_geometry']
-  $rfResolved = $dependencySnapshotPaths['rf_resolved_design']
   $oaBaseline = $dependencyPaths['oatof_baseline']
   $oaBaselineSnapshot = $dependencySnapshotPaths['oatof_baseline']
   $oaBuilder = $dependencyPaths['oatof_accelerator_geometry_builder']
-  $oatofHandoff = if ($runtime.source_contract.adapter.callable -eq
-      'build_handoff') {
-    $dependencySnapshotPaths['rf_oatof_handoff_builder']
-  } else {
-    $dependencySnapshotPaths['rf_family_source_bundle_publisher']
-  }
+  $oatofHandoff = Join-Path $inputDir 'source_adapter.py'
+  $null = Copy-RfStableFile -SourceRunRoot $repoRoot `
+    -SourcePath $runtime.source_adapter -Destination $oatofHandoff `
+    -Role 'resolved source adapter'
   $multipoleRodBuilder =
     $dependencySnapshotPaths['common_create_multipole_round_rods']
   $frozenManifestVerifier = $dependencySnapshotPaths['common_verify_run_manifest']
@@ -222,14 +231,18 @@ try {
 
   $contractDocument = Get-Content -LiteralPath $contract -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($Particles) {
-    $candidate = $contractDocument.particle_runtime
-    $sourceContractDocument = $runtime.source_contract
+    $sourceContractDocument = $runtime.resolved_source_contract
     $sourceRecord = $runtime.source_record
     $recordedProjectId = $runtime.recorded_project_id
-    if ([int]$candidate.source_particles -ne
-        [int]$sourceRecord.particle_count) {
-      throw 'PrePulse contract particle count differs from the runtime-bound source.'
+    if ($contractDocument.particle_runtime.source_particle_count_policy -ne
+        'runtime_selected_handoff_rows') {
+      throw 'PrePulse source-particle count policy differs.'
     }
+    $contractDocument.particle_runtime.source_particles =
+      [int]$sourceRecord.particle_count
+    $contractDocument | ConvertTo-Json -Depth 20 |
+      Set-Content -LiteralPath $contract -Encoding UTF8
+    $candidate = $contractDocument.particle_runtime
     $sourceManifestOriginal = $runtime.source_manifest
     $sourceEventsOriginal = $runtime.source_state
     $sourceMetadataOriginal = $runtime.source_metadata
@@ -258,54 +271,8 @@ try {
     $particleIon = Join-Path $inputDir 'rf_exit_at_pre_pulse_connector.ion'
     $particleRowMap = Join-Path $inputDir 'particle_row_map.csv'
     $particleMetadata = Join-Path $inputDir 'pre_pulse_handoff_metadata.json'
-    if ($sourceContractDocument.adapter.callable -eq 'build_handoff') {
-      if ((Get-FileHash -LiteralPath $handoffBuilder -Algorithm SHA256).Hash -ne
-          (Get-FileHash -LiteralPath $runtime.source_adapter -Algorithm SHA256).Hash) {
-        throw 'Frozen dependency adapter differs from the runtime-bound source adapter.'
-      }
-      $handoffProjectRoot = Join-Path $inputDir 'handoff_project_snapshot'
-      $handoffConfigDir = Join-Path $handoffProjectRoot 'config'
-      $handoffTargetConfigDir =
-        Join-Path $inputDir 'single_reflection_oa_tof_mass_analyzer\config'
-      New-Item -ItemType Directory -Path `
-        $handoffConfigDir,$handoffTargetConfigDir -Force | Out-Null
-      $handoffContract = Join-Path $handoffConfigDir 'rf_to_oatof_handoff.json'
-      $energyMatchContract =
-        Join-Path $handoffConfigDir 'rf_to_oatof_energy_match_candidate.json'
-      $sourceInterfaceContract =
-        Join-Path $handoffConfigDir 'interface_contract.json'
-      $sourceBaseline = Join-Path $handoffConfigDir 'baseline.json'
-      $targetBaseline = Join-Path $handoffTargetConfigDir 'baseline.json'
-      Copy-Item -LiteralPath $handoffContractSource -Destination $handoffContract
-      Copy-Item -LiteralPath `
-        $runtime.source_adapter_dependencies.source_baseline `
-        -Destination $sourceBaseline
-      Copy-Item -LiteralPath $oaBaselineSnapshot -Destination $targetBaseline
-      Copy-Item -LiteralPath `
-        $runtime.source_adapter_dependencies.energy_match_contract `
-        -Destination $energyMatchContract
-      Copy-Item -LiteralPath `
-        $runtime.source_adapter_dependencies.source_interface_contract `
-        -Destination $sourceInterfaceContract
-      Invoke-PrePulseSnapshotPython -Python $python -SnapshotRoot $snapshotRoot `
-        -Arguments @(
-          $handoffBuilder,
-          '--convert','--contract',$handoffContract,
-          '--resolved-connection',$frozenResolvedConnection,
-          '--source-csv',$sourceEvents,'--source-manifest',$sourceManifest,
-          '--source-manifest-project-id',$recordedProjectId,
-          '--canonical-output',$particleInput,'--ion-output',$particleIon,
-          '--row-map-output',$particleRowMap,'--metadata-output',$particleMetadata,
-          '--solver-clock','instrument_time'
-        ) -AdditionalEnvironment @{RF_HANDOFF_PROJECT_ROOT=$handoffProjectRoot} `
-        -FailureMessage 'PrePulse legacy particle-source conversion failed.'
-    } elseif ($sourceContractDocument.adapter.callable -eq
+    if ($sourceContractDocument.adapter.callable -eq
         'publish_family_source_bundle') {
-      $handoffBuilder = $runtime.source_adapter
-      if ((Get-FileHash -LiteralPath $oatofHandoff -Algorithm SHA256).Hash -ne
-          (Get-FileHash -LiteralPath $handoffBuilder -Algorithm SHA256).Hash) {
-        throw 'Frozen family publisher differs from the runtime-bound source adapter.'
-      }
       $handoffBuilder = $oatofHandoff
       $handoffContract = Join-Path $inputDir 'handoff_publication_contract.json'
       $sourceParticleSource = Join-Path $inputDir 'particle_source.csv'
@@ -366,14 +333,13 @@ try {
       runner = $runner
       run_artifact_support = $support
       runtime_binding = $runtimeBindingFrozen
-      source_contract = $sourceContract
+      resolved_source_contract = $sourceContract
       pre_pulse_contract = $contract
       oatof_handoff_library = $handoffBuilder
       code_inventory = $dependencyContract
-      dependency_contract_base = $dependencyPublication.base_path
-      dependency_contract_overlay = $dependencyPublication.overlay_path
+      dependency_contract = $dependencyPublication.dependency_contract_path
       shared_physical_port_joint_geometry = $sharedJoint
-      rf_resolved_geometry = $rfResolved
+      upstream_resolved_design = $rfResolved
       resolved_connection = $frozenResolvedConnection
       oatof_baseline = $oaBaseline
       oatof_accelerator_builder = $oaBuilder
@@ -419,14 +385,7 @@ try {
     $runConfiguration.inputs.source_metadata = $sourceMetadata
     $runConfiguration.inputs.handoff_builder = $handoffBuilder
     $runConfiguration.inputs.handoff_contract = $handoffContract
-    if ($sourceContractDocument.adapter.callable -eq 'build_handoff') {
-      $runConfiguration.inputs.handoff_source_baseline = $sourceBaseline
-      $runConfiguration.inputs.handoff_target_baseline = $targetBaseline
-      $runConfiguration.inputs.energy_match_contract = $energyMatchContract
-      $runConfiguration.inputs.source_interface_contract = $sourceInterfaceContract
-    } else {
-      $runConfiguration.inputs.canonical_mother_source = $sourceParticleSource
-    }
+    $runConfiguration.inputs.canonical_mother_source = $sourceParticleSource
     $runConfiguration.inputs.particle_ion = $particleIon
     $runConfiguration.inputs.particle_row_map = $particleRowMap
     $runConfiguration.inputs.particle_handoff_metadata = $particleMetadata

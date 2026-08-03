@@ -3,15 +3,20 @@
   "role": "rf_to_oatof_pulse_capture",
   "status": "functional_unqualified",
   "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
-  "consumer_scope": "rf_multipole_no_acceleration_full_length_family",
+  "consumer_scope": "rf_multipole_registered_handoff_family",
   "phase": "pulse_capture",
   "topology_source": "resolved_connection",
   "inputs": {
     "pulse_timing_policy": "runtime_binding.contracts.pulse_timing_contract",
+    "source_contract": "run_input:resolved_source_contract",
+    "rf_resolved_geometry": "run_input:upstream_resolved_design",
     "oatof_baseline": "dependency_contract:oatof_baseline"
   },
   "waveform": {
-    "always_enabled_bases": ["axial_dc", "time_dependent_rf"],
+    "always_enabled_bases": [
+      "axial_dc",
+      "time_dependent_rf"
+    ],
     "pulsed_basis": "oatof_pulse",
     "pre_pulse_oatof_field_scale": 0.0,
     "pulse_oatof_field_scale": 1.0,

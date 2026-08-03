@@ -9,10 +9,12 @@ from typing import Any
 
 if __package__:
     from .artifact_identity_archive import legacy_artifact_location
-    from .machine_contracts import ContractError, REPO_ROOT, load_json, sha256, validate_schema
+    from .file_identity import repository_text_sha256
+    from .machine_contracts import ContractError, REPO_ROOT, load_json, validate_schema
 else:
     from artifact_identity_archive import legacy_artifact_location
-    from machine_contracts import ContractError, REPO_ROOT, load_json, sha256, validate_schema
+    from file_identity import repository_text_sha256
+    from machine_contracts import ContractError, REPO_ROOT, load_json, validate_schema
 
 
 MATURITY = {"prototype": 0, "static": 1, "candidate": 2, "formal": 3}
@@ -120,6 +122,17 @@ def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path)
             or profiles["family_id"] != descriptor["family_id"]
         ):
             raise ContractError(f"{profiles_path}: design profile identity differs")
+        modes_relative = profiles.get("operating_mode_registry")
+        if modes_relative is not None:
+            modes_path = project_root / modes_relative
+            if (
+                not modes_path.is_file()
+                or repository_text_sha256(modes_path)
+                != profiles["operating_mode_registry_sha256"]
+            ):
+                raise ContractError(
+                    f"{profiles_path}: stale operating mode registry"
+                )
         profile_ids: set[str] = set()
         profile_identities: list[dict[str, Any]] = []
         for profile in profiles["profiles"]:
@@ -129,7 +142,11 @@ def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path)
             profile_ids.add(profile_id)
             for label in ("design_request", "design_variables", "optimization_envelope"):
                 source = project_root / profile[label]
-                if not source.is_file() or sha256(source) != profile["sha256"][label]:
+                if (
+                    not source.is_file()
+                    or repository_text_sha256(source)
+                    != profile["sha256"][label]
+                ):
                     raise ContractError(f"{profiles_path}: stale design profile source {label!r}")
             request = load_json(project_root / profile["design_request"])
             validate_schema(request, "multipole_design_request.schema.json")
@@ -144,7 +161,7 @@ def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path)
                 or envelope["family_id"] != descriptor["family_id"]
             ):
                 raise ContractError(f"{profiles_path}: profile governance identity differs")
-            if envelope["reference"]["design_request_sha256"] != sha256(
+            if envelope["reference"]["design_request_sha256"] != repository_text_sha256(
                 project_root / profile["design_request"]
             ):
                 raise ContractError(f"{profiles_path}: profile envelope request hash is stale")
@@ -278,7 +295,9 @@ def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path)
         if strategy == "expandable_reference_envelope_compaction":
             if envelope["reference"]["baseline"] != reference_relative:
                 raise ContractError(f"{envelope_path}: reference baseline differs from project descriptor")
-            if envelope["reference"]["baseline_sha256"] != sha256(reference_path):
+            if envelope["reference"]["baseline_sha256"] != repository_text_sha256(
+                reference_path
+            ):
                 raise ContractError(f"{envelope_path}: reference baseline hash is stale")
             geometry = reference["geometry_mm"]
             rings = reference["rings"]
@@ -298,7 +317,9 @@ def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path)
                 raise ContractError(f"{envelope_path}: family_id differs from project descriptor")
             if envelope["reference"]["design_request"] != reference_relative:
                 raise ContractError(f"{envelope_path}: reference design request differs from catalog")
-            if envelope["reference"]["design_request_sha256"] != sha256(reference_path):
+            if envelope["reference"]["design_request_sha256"] != repository_text_sha256(
+                reference_path
+            ):
                 raise ContractError(f"{envelope_path}: reference design request hash is stale")
             constraint_ids: set[str] = set()
             for constraint in envelope["constraints"]:
@@ -356,7 +377,7 @@ def build_registry(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
         source_records.append(
             {
                 "descriptor": path.relative_to(repo_root).as_posix(),
-                "sha256": sha256(path),
+                "sha256": repository_text_sha256(path),
             }
         )
     validate_legacy_identity_mappings(descriptors)

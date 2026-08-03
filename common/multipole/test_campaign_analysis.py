@@ -144,6 +144,20 @@ class CampaignAnalysisTests(unittest.TestCase):
             -0.2,
         )
 
+    def test_named_pair_accepts_derived_sources_with_one_frozen_authority(self) -> None:
+        baseline = arm("p", "baseline")
+        derived = arm("p", "derived")
+        baseline["particle_source_authority_sha256"] = "C" * 64
+        derived["particle_source_authority_sha256"] = "C" * 64
+        derived["particle_source_sha256"] = "B" * 64
+        result = compare_modes(
+            baseline,
+            derived,
+            left_mode="no_acceleration",
+            right_mode="no_acceleration_5ev",
+        )
+        self.assertEqual(result["right_mode"], "no_acceleration_5ev")
+
     def test_variable_series_comparison_and_markdown(self) -> None:
         baseline = arm("p", "baseline")
         candidate = arm("p", "candidate", offset=-0.1)

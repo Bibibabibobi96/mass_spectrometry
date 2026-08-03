@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 from common.contracts.build_project_registry import validate_descriptor
-from common.contracts.file_identity import file_sha256
+from common.contracts.file_identity import file_sha256, repository_text_sha256
 from common.contracts.machine_contracts import ContractError, REPO_ROOT, validate_schema
 from common.multipole.axial_acceleration import MAX_SEGMENT_COUNT
 from common.multipole.compile_design_request import (
@@ -668,6 +668,110 @@ class MultipoleDesignCompilerTest(unittest.TestCase):
             )
             self.assertNotEqual(first["resolved_sha256"], changed["resolved_sha256"])
 
+    def test_repository_sources_normalize_line_endings_but_run_inputs_do_not(
+        self,
+    ) -> None:
+        request_text = json.dumps(design_request(), indent=2) + "\n"
+        auxiliary_text = json.dumps({"role": "repository_source"}, indent=2) + "\n"
+
+        def compile_tree(
+            root: Path,
+            newline: str,
+            repository: bool | None,
+        ) -> dict:
+            root.mkdir()
+            request_path = root / "request.json"
+            auxiliary_path = root / "additional.json"
+            request_path.write_bytes(request_text.replace("\n", newline).encode())
+            auxiliary_path.write_bytes(auxiliary_text.replace("\n", newline).encode())
+            return compile_design_request_file(
+                request_path,
+                expected_identity=identity("rf_quadrupole_ion_optics"),
+                source_files={"additional_repository_source": auxiliary_path},
+                source_root=root,
+                repository_text_sources=repository,
+            )
+
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            repository_lf = compile_tree(base / "repo_lf", "\n", True)
+            repository_crlf = compile_tree(base / "repo_crlf", "\r\n", True)
+            self.assertEqual(repository_lf, repository_crlf)
+            self.assertEqual(
+                repository_lf["sources"][0]["sha256"],
+                repository_text_sha256(base / "repo_lf" / "additional.json"),
+            )
+
+            run_lf = compile_tree(base / "run_lf", "\n", None)
+            run_crlf = compile_tree(base / "run_crlf", "\r\n", None)
+            self.assertEqual(run_lf["request"], run_crlf["request"])
+            self.assertNotEqual(run_lf["sources"], run_crlf["sources"])
+            self.assertNotEqual(
+                run_lf["resolved_sha256"],
+                run_crlf["resolved_sha256"],
+            )
+
+    def test_governed_repository_provenance_is_lf_crlf_equivalent(self) -> None:
+        request = design_request(segmentation={"strategy": "off"})
+        project_id = request["identity"]["project_id"]
+        catalog = multipole_catalog(project_id, "request.json")
+        envelope = {
+            "schema_version": 1,
+            "role": "project_optimization_envelope",
+            "project_id": project_id,
+            "family_id": "rf_multipole_ion_optics",
+            "envelope_id": "line_ending_fixture",
+            "status": "candidate",
+            "policy": "Repository line endings do not change source identity.",
+            "reference": {
+                "design_request": "request.json",
+                "design_request_sha256": "",
+            },
+            "constraints": [
+                {
+                    "constraint_id": "r0_bound",
+                    "kind": "bounded_variable",
+                    "request_json_pointers": [
+                        catalog["variables"][0]["json_pointer"]
+                    ],
+                    "description": "Keep r0 inside the catalog bounds.",
+                }
+            ],
+        }
+
+        def compile_tree(root: Path, newline: str) -> dict:
+            root.mkdir()
+            request_path = root / "request.json"
+            catalog_path = root / "catalog.json"
+            envelope_path = root / "envelope.json"
+
+            def write_json(path: Path, document: dict) -> None:
+                text = json.dumps(document, indent=2) + "\n"
+                path.write_bytes(text.replace("\n", newline).encode())
+
+            write_json(request_path, request)
+            local_envelope = copy.deepcopy(envelope)
+            local_envelope["reference"]["design_request_sha256"] = (
+                repository_text_sha256(request_path)
+            )
+            write_json(catalog_path, catalog)
+            write_json(envelope_path, local_envelope)
+            return compile_governed_design_request_file(
+                request_path,
+                catalog_path,
+                envelope_path,
+                expected_identity=request["identity"],
+                provenance_root=root,
+                repository_text_sources=True,
+            )
+
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            lf = compile_tree(base / "lf", "\n")
+            crlf = compile_tree(base / "crlf", "\r\n")
+            self.assertEqual(lf, crlf)
+            self.assertEqual(lf["resolved_sha256"], resolved_design_sha256(lf))
+
     def test_governed_bounds_hash_unit_and_portable_provenance(self) -> None:
         request = design_request(segmentation={"strategy": "off"})
         catalog = multipole_catalog(request["identity"]["project_id"], "unused")
@@ -912,7 +1016,9 @@ class MultipoleGovernanceSchemaTest(unittest.TestCase):
                     "policy": "Candidates remain inside compiled request bounds.",
                     "reference": {
                         "design_request": request_relative,
-                        "design_request_sha256": file_sha256(request_path),
+                        "design_request_sha256": repository_text_sha256(
+                            request_path
+                        ),
                     },
                     "constraints": [
                         {
@@ -944,11 +1050,13 @@ class MultipoleGovernanceSchemaTest(unittest.TestCase):
                                 "config/optimization_envelope.json"
                             ),
                             "sha256": {
-                                "design_request": file_sha256(request_path),
-                                "design_variables": file_sha256(
+                                "design_request": repository_text_sha256(
+                                    request_path
+                                ),
+                                "design_variables": repository_text_sha256(
                                     config / "design_variables.json"
                                 ),
-                                "optimization_envelope": file_sha256(
+                                "optimization_envelope": repository_text_sha256(
                                     config / "optimization_envelope.json"
                                 ),
                             },

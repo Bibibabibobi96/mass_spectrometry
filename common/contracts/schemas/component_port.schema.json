@@ -34,7 +34,7 @@
       "properties": {
         "source_contract": {
           "type": "string",
-          "pattern": "^projects/[a-z][a-z0-9_]*(?:/[A-Za-z0-9._-]+)+\\.json$"
+          "pattern": "^(?:projects/[a-z][a-z0-9_]*|artifacts/projects/[a-z][a-z0-9_]*)(?:/(?!\\.{1,2}(?:/|$))[A-Za-z0-9._-]+)+\\.json$"
         },
         "source_sha256": {"type": "string", "pattern": "^[A-F0-9]{64}$"},
         "bindings": {

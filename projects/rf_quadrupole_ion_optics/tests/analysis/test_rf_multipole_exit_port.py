@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import unittest
 from pathlib import Path
 from typing import Any
 
+from common.contracts.file_identity import repository_text_sha256
 from common.contracts.machine_contracts import validate_schema
 from common.multipole.design_profile import resolve_design_profile
 
@@ -41,7 +41,7 @@ class RfMultipoleExitPortTests(unittest.TestCase):
         validate_schema(self.port, "component_port.schema.json")
         self.assertEqual(
             self.port["authority"]["source_sha256"],
-            hashlib.sha256(self.source_path.read_bytes()).hexdigest().upper(),
+            repository_text_sha256(self.source_path),
         )
         for binding in self.port["authority"]["bindings"]:
             self.assertEqual(
@@ -106,7 +106,7 @@ class NoAccelerationFamilyExitPortTests(unittest.TestCase):
         validate_schema(self.port, "component_port.schema.json")
         self.assertEqual(
             self.port["authority"]["source_sha256"],
-            hashlib.sha256(self.source_path.read_bytes()).hexdigest().upper(),
+            repository_text_sha256(self.source_path),
         )
         for binding in self.port["authority"]["bindings"]:
             self.assertEqual(

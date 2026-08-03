@@ -1,47 +1,45 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "role": "rf_multipole_oatof_runtime_binding",
   "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
-  "connection_profile_id": "rf_octupole_no_acceleration_full_length_direct_mating_gap_0mm",
+  "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm",
   "upstream_project_id": "rf_octupole_ion_optics",
   "contracts": {
     "dependency_contract": {
-      "base": {
-        "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_dependencies_base.json",
-        "sha256": "4013DD7603C823717251B3B3C3F887A53D119FA8356E90A2AA67ED8E847324B8"
-      },
-      "overlay": {
-        "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_dependencies_overlay.json",
-        "sha256": "E593799069FF40FE109703603D1F98CE062ED7CA23609B96C0521C08F8B3E44A"
-      }
+      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_runtime_dependencies.json",
+      "sha256": "FDA6E4F51BFE30177D95971494D03CAA1C4DB4A93705E7A0A3568B115A0CFA64"
     },
     "pre_pulse_contract": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_pre_pulse_interface_transport.json",
-      "sha256": "FFAE774A9FC6F61B8684DF8F44F2C0A2D5EFFDA7E2CFA3EF20471C7A7B793022"
+      "sha256": "31F0E423E9D05612B9A2E055A3E5F52E0940D458D0DC5C89D59D240588E02AE6"
     },
     "pulse_capture_contract": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_pulse_capture.json",
-      "sha256": "17B1A2FA7F56C5BEE07FB9A412E791EAC8534C372A8D7DF6C8010164296547CC"
+      "sha256": "00009E9211E6EB871C94B9803CF7E8B00F00BFF3E9919DF8DE269434B8BB2E53"
     },
     "pulse_timing_contract": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_pulse_timing.json",
-      "sha256": "AFF743DDB7188699B65B763A420F30977667A18C1988C63B27964FC0A38A5962"
+      "sha256": "8EF5D963F602225E1C2E5DA65AC6D49812B3D17A21D1402014D9A499860B59A2"
     },
     "handoff_contract": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_handoff.json",
-      "sha256": "52D73FA2968D2D54C3613F181D498F5FB1E3021CCD60F2D238BB7EDFEBE38B2B"
+      "sha256": "FED3E8BA8629155FF12C38764D683672D1CB6B241113DD22E9C6DC5617C3068F"
     },
-    "source_contract": {
-      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_n100_source_contract.json",
-      "sha256": "523DE46E4254FB2A4840866C2B33493C87908BD41A24D3D82A8D008AC5EA782C"
+    "handoff_publication_contract": {
+      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_handoff_publication_contract.json",
+      "sha256": "4A79A6259A299FCD1E9AE9DD0650495FC94BDA618F0D5795FD7736BF400964F3"
     },
-    "upstream_resolved_design": {
-      "path": "projects/rf_octupole_ion_optics/config/resolved_design_no_acceleration_full_length.json",
-      "sha256": "EEA9C5B3AF8D56A609B68AC6ABC53F7ACFE2434074C46A50E2D8A20F29E6A168"
+    "source_adapter_contract": {
+      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_source_adapter.json",
+      "sha256": "5A3A5DCC072B1AA48D101AB1A23328C24B6DA901948EAE9F6CFF70C4DF423B00"
+    },
+    "execution_policy_contract": {
+      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_policy.json",
+      "sha256": "EF8D30796357A59318AF3BE31D09CB9135CE10C544AB697FAA60E23E3ECEDA49"
     }
   },
   "implementation_binding": {
     "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_runtime_implementation.json",
-    "sha256": "D905C6DE6174156D95CCE2CFB03D5C4FA7EAEA0F926E85F2DE3D9EC5F6D66B14"
+    "sha256": "FDF3D30C5E1B44AB86FCD7BAEF09FAF6BC865C75364FECBAA319AEE74A0C7616"
   }
 }

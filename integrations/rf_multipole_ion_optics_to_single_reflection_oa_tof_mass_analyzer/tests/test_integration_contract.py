@@ -31,6 +31,7 @@ PRE_PULSE_PHASE_PATH = (
     INTEGRATION_ROOT / "config" / "family_pre_pulse_interface_transport.json"
 )
 PULSE_CAPTURE_PHASE_PATH = INTEGRATION_ROOT / "config" / "family_pulse_capture.json"
+SOURCE_ADAPTER_PATH = INTEGRATION_ROOT / "config" / "family_source_adapter.json"
 
 
 def load_json(path: Path) -> dict:
@@ -57,7 +58,7 @@ class IntegrationProfileContractTests(unittest.TestCase):
             PROFILE_REGISTRY_PATH.resolve(),
         )
 
-    def test_ports_and_common_resolver_close_all_current_profiles(self) -> None:
+    def test_static_profiles_require_run_local_port_materialization(self) -> None:
         registry = load_connection_profile_registry(PROFILE_REGISTRY_PATH)
         downstream_port = load_json(OATOF_REQUIRED_PORT_PATH)
         self.assertEqual(
@@ -68,41 +69,25 @@ class IntegrationProfileContractTests(unittest.TestCase):
         self.assertEqual(
             set(self.profiles),
             {
-                "rf_quadrupole_no_acceleration_full_length_direct_mating_gap_0mm",
-                "rf_hexapole_no_acceleration_full_length_direct_mating_gap_0mm",
-                "rf_octupole_no_acceleration_full_length_direct_mating_gap_0mm",
+                "rf_quadrupole_oatof_shield_terminal_direct_mating_gap_0mm",
+                "rf_hexapole_oatof_shield_terminal_direct_mating_gap_0mm",
+                "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm",
             },
         )
         for profile_id in sorted(self.profiles):
             with self.subTest(profile_id=profile_id):
-                resolved = resolve_connection_profile(
-                    registry,
-                    profile_id,
-                    repo_root=REPO_ROOT,
-                )
+                upstream = self.profiles[profile_id]["upstream"]
                 self.assertEqual(
-                    resolved["selection"]["connection_profile_id"],
-                    profile_id,
+                    upstream.get("port_binding"),
+                    "source_run_resolved_design",
                 )
-                self.assertEqual(resolved["effective_clear_radius_mm"], 0.45)
-                self.assertEqual(
-                    resolved["port_geometry"]["downstream"]["mating_surface"],
-                    downstream_port["mating_surface"],
-                )
-                self.assertEqual(
-                    resolved["transition_aperture"]["center_mm"],
-                    downstream_port["mating_surface"]["center_mm"],
-                )
-                self.assertEqual(
-                    resolved["transition_aperture"]["coordinate_frame_id"],
-                    downstream_port["coordinate_frame"]["frame_id"],
-                )
-                self.assertEqual(resolved["transition_aperture"]["full_width_mm"], 1.0)
-                self.assertEqual(resolved["transition_aperture"]["full_height_mm"], 0.9)
-                self.assertNotIn(
-                    "aperture_radius_mm",
-                    resolved["transition_aperture"],
-                )
+                self.assertNotIn("port_contract", upstream)
+                with self.assertRaisesRegex(ContractError, "binding is unresolved"):
+                    resolve_connection_profile(
+                        registry,
+                        profile_id,
+                        repo_root=REPO_ROOT,
+                    )
 
     def test_runtime_and_source_schemas_reject_unknown_synonym_fields(self) -> None:
         adapter_registry = load_json(ADAPTER_REGISTRY_PATH)
@@ -116,15 +101,12 @@ class IntegrationProfileContractTests(unittest.TestCase):
                 binding,
                 "rf_multipole_oatof_runtime_binding.schema.json",
             )
-        source_path = REPO_ROOT / load_json(binding_path)["contracts"][
-            "source_contract"
-        ]["path"]
-        source = load_json(source_path)
+        source = load_json(SOURCE_ADAPTER_PATH)
         source["project_id"] = "forbidden-synonym"
         with self.assertRaises(ContractError):
             validate_schema(
                 source,
-                "rf_multipole_oatof_source_contract.schema.json",
+                "rf_multipole_oatof_source_adapter.schema.json",
             )
 
     def test_phase_configuration_has_no_connection_topology_authority(self) -> None:

@@ -118,6 +118,7 @@ def validate_source(
     source_family_path: Path | None = None,
     operating_point_id: str | None = None,
     expected_source_family_sha256: str | None = None,
+    expected_kinetic_energy_ev: float | None = None,
 ) -> dict[str, Any]:
     """Return frozen metadata after binding every source row to the resolved design."""
     if resolved.get("role") != "multipole_resolved_design_do_not_edit":
@@ -137,6 +138,16 @@ def validate_source(
         if operating_point is not None
         else resolved["particle_source"]["energy_model"]
     )
+    if expected_kinetic_energy_ev is not None:
+        expected_kinetic_energy_ev = float(expected_kinetic_energy_ev)
+        if not math.isfinite(expected_kinetic_energy_ev) or expected_kinetic_energy_ev <= 0.0:
+            raise ValueError("expected kinetic energy must be finite and positive")
+        if operating_point is not None:
+            raise ValueError("campaign source-energy override cannot replace an operating point")
+        energy_model = {
+            "kind": "monoenergetic",
+            "kinetic_energy_eV": expected_kinetic_energy_ev,
+        }
     expected_mass = (
         float(operating_point["mass_amu"])
         if operating_point is not None
@@ -203,6 +214,11 @@ def validate_source(
         "charge_state": expected_charge,
         "source_plane_z_mm": source_plane,
         "energy_model": energy_model,
+        "energy_model_authority": (
+            "campaign_particle_source_derivation"
+            if expected_kinetic_energy_ev is not None
+            else "resolved_design_or_operating_point"
+        ),
         "operating_point_binding": (
             {
                 "operating_point_id": operating_point_id,
@@ -227,6 +243,7 @@ def main() -> int:
     parser.add_argument("--source-family", type=Path)
     parser.add_argument("--operating-point")
     parser.add_argument("--expected-source-family-sha256")
+    parser.add_argument("--expected-kinetic-energy-ev", type=float)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     resolved = json.loads(args.resolved_design.read_text(encoding="utf-8-sig"))
@@ -236,6 +253,7 @@ def main() -> int:
         source_family_path=args.source_family,
         operating_point_id=args.operating_point,
         expected_source_family_sha256=args.expected_source_family_sha256,
+        expected_kinetic_energy_ev=args.expected_kinetic_energy_ev,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")

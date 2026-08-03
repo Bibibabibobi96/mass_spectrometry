@@ -93,35 +93,25 @@ function Resolve-RfOatofBoundFile {
   return $path
 }
 
-function Merge-RfOatofDependencyContracts {
+function Resolve-RfOatofDependencyContract {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)][string]$RepoRoot,
-    [Parameter(Mandatory)][string]$BasePath,
-    [Parameter(Mandatory)][string]$OverlayPath,
-    [Parameter(Mandatory)][string]$ExpectedUpstreamProjectId
+    [Parameter(Mandatory)][string]$ContractPath
   )
-  $base = Get-Content -LiteralPath $BasePath -Raw -Encoding UTF8 |
+  $contract = Get-Content -LiteralPath $ContractPath -Raw -Encoding UTF8 |
     ConvertFrom-Json
-  $overlay = Get-Content -LiteralPath $OverlayPath -Raw -Encoding UTF8 |
-    ConvertFrom-Json
-  Assert-RfOatofExactProperties -Object $base -Role 'Family dependency base' `
+  Assert-RfOatofExactProperties -Object $contract `
+    -Role 'Family runtime dependency contract' `
     -Expected @(
       'schema_version','role','consumer_project','consumer_ids','dependencies',
       'runtime_policy','consumer_scope'
     )
-  Assert-RfOatofExactProperties -Object $overlay -Role 'Family dependency overlay' `
-    -Expected @('schema_version','role','upstream_project_id','dependencies')
-  if ([int]$base.schema_version -ne 2 -or
-      $base.role -ne 'rf_multipole_oatof_family_dependency_base' -or
-      $base.consumer_project -ne $script:RfOatofIntegrationId -or
-      $base.consumer_scope -ne 'rf_multipole_no_acceleration_full_length_family') {
-    throw 'Family dependency base identity differs from the closed contract.'
-  }
-  if ([int]$overlay.schema_version -ne 1 -or
-      $overlay.role -ne 'rf_multipole_oatof_family_dependency_overlay' -or
-      $overlay.upstream_project_id -ne $ExpectedUpstreamProjectId) {
-    throw 'Family dependency overlay identity differs from the selected project.'
+  if ([int]$contract.schema_version -ne 2 -or
+      $contract.role -ne 'rf_multipole_oatof_family_runtime_dependencies' -or
+      $contract.consumer_project -ne $script:RfOatofIntegrationId -or
+      $contract.consumer_scope -ne 'rf_multipole_registered_handoff_family') {
+    throw 'Family runtime dependency identity differs from the closed contract.'
   }
   $expectedBaseIds = @(
     'oatof_baseline','oatof_accelerator_geometry_builder',
@@ -133,7 +123,7 @@ function Merge-RfOatofDependencyContracts {
     'rf_shared_joint_geometry','rf_pulse_capture_pulse_scheduler',
     'rf_pulse_capture_geometry_snapshot_plotter',
     'rf_pulse_capture_pulse_chain_auditor',
-    'rf_pulse_capture_local_exit_adapter','rf_family_source_bundle_publisher',
+    'rf_pulse_capture_local_exit_adapter',
     'rf_analyzer_transport_simion_input_adapter',
     'rf_analyzer_transport_analyzer','rf_oatof_formal_release_validator',
     'common_connection_profile_schema','common_component_port_schema',
@@ -153,17 +143,12 @@ function Merge-RfOatofDependencyContracts {
     'common_comsol_failure_classifier','common_comsol_environment',
     'common_comsol_startup'
   )
-  $baseIds = @($base.dependencies | ForEach-Object { [string]$_.id })
-  if ([string]::Join("`n", $baseIds) -ne
+  $dependencyIds = @($contract.dependencies | ForEach-Object { [string]$_.id })
+  if ([string]::Join("`n", $dependencyIds) -ne
       [string]::Join("`n", $expectedBaseIds)) {
-    throw 'Family dependency base set or stable order differs.'
+    throw 'Family runtime dependency set or stable order differs.'
   }
-  $overlayIds = @($overlay.dependencies | ForEach-Object { [string]$_.id })
-  if ([string]::Join("`n", $overlayIds) -ne
-      [string]::Join("`n", @('rf_resolved_design','rf_project_descriptor'))) {
-    throw 'Family dependency overlay may define only the two project authorities.'
-  }
-  $allDependencies = @($base.dependencies) + @($overlay.dependencies)
+  $allDependencies = @($contract.dependencies)
   $allIds = @($allDependencies | ForEach-Object { [string]$_.id })
   $runInputNames = @(
     $allDependencies | ForEach-Object { [string]$_.run_input_name }
@@ -171,9 +156,9 @@ function Merge-RfOatofDependencyContracts {
   $frozenFilenames = @(
     $allDependencies | ForEach-Object { [string]$_.frozen_filename }
   )
-  if (@($allIds | Select-Object -Unique).Count -ne 52 -or
-      @($runInputNames | Select-Object -Unique).Count -ne 52 -or
-      @($frozenFilenames | Select-Object -Unique).Count -ne 52) {
+  if (@($allIds | Select-Object -Unique).Count -ne 49 -or
+      @($runInputNames | Select-Object -Unique).Count -ne 49 -or
+      @($frozenFilenames | Select-Object -Unique).Count -ne 49) {
     throw 'Resolved family dependency inventory contains duplicate identities or paths.'
   }
   foreach ($dependency in $allDependencies) {
@@ -197,14 +182,13 @@ function Merge-RfOatofDependencyContracts {
   return [pscustomobject]@{
     schema_version = 3
     role = 'rf_to_oatof_semantic_transfer_resolved_dependencies'
-    consumer_project = [string]$base.consumer_project
-    consumer_ids = @($base.consumer_ids)
+    consumer_project = [string]$contract.consumer_project
+    consumer_ids = @($contract.consumer_ids)
     dependencies = $allDependencies
-    runtime_policy = $base.runtime_policy
-    consumer_scope = [string]$base.consumer_scope
+    runtime_policy = $contract.runtime_policy
+    consumer_scope = [string]$contract.consumer_scope
     authority = [pscustomobject]@{
-      base_path = [IO.Path]::GetFullPath($BasePath)
-      overlay_path = [IO.Path]::GetFullPath($OverlayPath)
+      path = [IO.Path]::GetFullPath($ContractPath)
     }
   }
 }
@@ -217,16 +201,11 @@ function Publish-RfOatofDependencyInventory {
     [Parameter(Mandatory)][string]$InputDir,
     [Parameter(Mandatory)][string]$Role
   )
-  $baseRelative = [string]$Runtime.binding.contracts.dependency_contract.base.path
-  $overlayRelative = [string]$Runtime.binding.contracts.dependency_contract.overlay.path
-  $baseFrozen = Join-Path $InputDir ('runtime_snapshot/' + $baseRelative)
-  $overlayFrozen = Join-Path $InputDir ('runtime_snapshot/' + $overlayRelative)
-  $baseIdentity = Copy-RfStableFile -SourceRunRoot $RepoRoot `
-    -SourcePath $Runtime.contracts.dependency_contract_base `
-    -Destination $baseFrozen -Role "$Role dependency base"
-  $overlayIdentity = Copy-RfStableFile -SourceRunRoot $RepoRoot `
-    -SourcePath $Runtime.contracts.dependency_contract_overlay `
-    -Destination $overlayFrozen -Role "$Role dependency overlay"
+  $contractRelative = [string]$Runtime.binding.contracts.dependency_contract.path
+  $contractFrozen = Join-Path $InputDir ('runtime_snapshot/' + $contractRelative)
+  $contractIdentity = Copy-RfStableFile -SourceRunRoot $RepoRoot `
+    -SourcePath $Runtime.contracts.dependency_contract `
+    -Destination $contractFrozen -Role "$Role dependency contract"
   $inventory = [ordered]@{
     schema_version = 1
     role = 'rf_multipole_oatof_resolved_code_inventory'
@@ -236,18 +215,12 @@ function Publish-RfOatofDependencyInventory {
     runtime_policy = $Runtime.dependency_contract.runtime_policy
     consumer_scope = [string]$Runtime.dependency_contract.consumer_scope
     authority = [ordered]@{
-      base = [ordered]@{
-        path = $baseRelative
-        sha256 = $baseIdentity.sha256
-      }
-      overlay = [ordered]@{
-        path = $overlayRelative
-        sha256 = $overlayIdentity.sha256
-      }
+      path = $contractRelative
+      sha256 = $contractIdentity.sha256
     }
   }
-  if (@($inventory.dependencies).Count -ne 52) {
-    throw "$Role resolved code inventory must contain exactly 52 dependencies."
+  if (@($inventory.dependencies).Count -ne 49) {
+    throw "$Role resolved code inventory must contain exactly 49 dependencies."
   }
   $inventoryPath = Join-Path $InputDir 'code_inventory.json'
   $inventoryJson = $inventory | ConvertTo-Json -Depth 20
@@ -257,11 +230,9 @@ function Publish-RfOatofDependencyInventory {
     [Text.UTF8Encoding]::new($false)
   )
   return [pscustomobject]@{
-    base_path = $baseFrozen
-    overlay_path = $overlayFrozen
+    dependency_contract_path = $contractFrozen
     code_inventory_path = $inventoryPath
-    base_identity = $baseIdentity
-    overlay_identity = $overlayIdentity
+    dependency_contract_identity = $contractIdentity
   }
 }
 
@@ -272,11 +243,19 @@ function Resolve-RfOatofRuntimeBinding {
     [Parameter(Mandatory)][string]$ResolvedConnection,
     [Parameter(Mandatory)][string]$RuntimeBinding,
     [Parameter(Mandatory)][string]$ExpectedConnectionProfileId,
-    [string]$SourceBranchId = ''
+    [Parameter(Mandatory)][ValidateSet('comsol','simion')]
+    [string]$SourceBranchId,
+    [Parameter(Mandatory)][string]$ResolvedSourceContract,
+    [Parameter(Mandatory)][string]$ResolvedSourceContractSha256,
+    [Parameter(Mandatory)][string]$UpstreamResolvedDesign,
+    [Parameter(Mandatory)][string]$UpstreamResolvedDesignSha256
   )
   $repo = [IO.Path]::GetFullPath($RepoRoot)
   $resolvedPath = [IO.Path]::GetFullPath($ResolvedConnection)
   $bindingPath = [IO.Path]::GetFullPath($RuntimeBinding)
+  $parentRunRoot = [IO.Path]::GetFullPath((Split-Path -Parent $resolvedPath))
+  $resolvedSourceContractPath = [IO.Path]::GetFullPath($ResolvedSourceContract)
+  $upstreamResolvedDesignPath = [IO.Path]::GetFullPath($UpstreamResolvedDesign)
   if (-not (Test-RfOatofPathWithin -Path $resolvedPath -Root $repo) -and
       -not (Test-RfOatofPathWithin -Path $resolvedPath -Root (Split-Path -Parent $repo))) {
     throw 'Resolved connection must remain within the repository workspace.'
@@ -284,6 +263,30 @@ function Resolve-RfOatofRuntimeBinding {
   if (-not (Test-RfOatofPathWithin -Path $bindingPath -Root $repo) -or
       -not (Test-Path -LiteralPath $bindingPath -PathType Leaf)) {
     throw 'Runtime binding must be one repository-local file.'
+  }
+  $runLocalInputs = @(
+    [pscustomobject]@{
+      path = $resolvedSourceContractPath
+      filename = 'resolved_source_contract.json'
+      sha256 = $ResolvedSourceContractSha256
+      role = 'Resolved source contract'
+    },
+    [pscustomobject]@{
+      path = $upstreamResolvedDesignPath
+      filename = 'upstream_resolved_design.json'
+      sha256 = $UpstreamResolvedDesignSha256
+      role = 'Upstream resolved design'
+    }
+  )
+  foreach ($inputRecord in $runLocalInputs) {
+    if (-not (Test-RfOatofPathWithin -Path $inputRecord.path -Root $parentRunRoot) -or
+        -not (Test-Path -LiteralPath $inputRecord.path -PathType Leaf) -or
+        [IO.Path]::GetFileName($inputRecord.path) -ne $inputRecord.filename -or
+        [string]$inputRecord.sha256 -notmatch '^[A-F0-9]{64}$' -or
+        (Get-FileHash -LiteralPath $inputRecord.path -Algorithm SHA256).Hash -ne
+          [string]$inputRecord.sha256) {
+      throw "$($inputRecord.role) must be one current parent-run input with its raw SHA-256."
+    }
   }
   $resolved = Get-Content -LiteralPath $resolvedPath -Raw -Encoding UTF8 |
     ConvertFrom-Json
@@ -300,7 +303,7 @@ function Resolve-RfOatofRuntimeBinding {
         $ExpectedConnectionProfileId) {
     throw 'Runtime binding requires the selected compatible resolved connection.'
   }
-  if ([int]$binding.schema_version -ne 2 -or
+  if ([int]$binding.schema_version -ne 3 -or
       $binding.role -ne 'rf_multipole_oatof_runtime_binding' -or
       $binding.integration_id -ne $script:RfOatofIntegrationId -or
       $binding.connection_profile_id -ne $ExpectedConnectionProfileId) {
@@ -318,8 +321,9 @@ function Resolve-RfOatofRuntimeBinding {
     'pulse_capture_contract',
     'pulse_timing_contract',
     'handoff_contract',
-    'source_contract',
-    'upstream_resolved_design'
+    'handoff_publication_contract',
+    'source_adapter_contract',
+    'execution_policy_contract'
   )
   Assert-RfOatofExactProperties -Object $binding.contracts `
     -Expected $requiredContracts -Role 'Runtime binding contracts'
@@ -331,24 +335,23 @@ function Resolve-RfOatofRuntimeBinding {
     $contractPaths[$name] = Resolve-RfOatofBoundFile -Root $repo `
       -Record $binding.contracts.$name -Role "runtime $name"
   }
-  Assert-RfOatofExactProperties -Object $binding.contracts.dependency_contract `
-    -Expected @('base','overlay') -Role 'Runtime dependency contract binding'
-  $contractPaths.dependency_contract_base = Resolve-RfOatofBoundFile `
-    -Root $repo -Record $binding.contracts.dependency_contract.base `
-    -Role 'runtime dependency contract base'
-  $contractPaths.dependency_contract_overlay = Resolve-RfOatofBoundFile `
-    -Root $repo -Record $binding.contracts.dependency_contract.overlay `
-    -Role 'runtime dependency contract overlay'
-  $dependencyContract = Merge-RfOatofDependencyContracts -RepoRoot $repo `
-    -BasePath $contractPaths.dependency_contract_base `
-    -OverlayPath $contractPaths.dependency_contract_overlay `
-    -ExpectedUpstreamProjectId $upstreamProjectId
+  $contractPaths.resolved_source_contract = $resolvedSourceContractPath
+  $contractPaths.upstream_resolved_design = $upstreamResolvedDesignPath
+  $contractPaths.dependency_contract = Resolve-RfOatofBoundFile `
+    -Root $repo -Record $binding.contracts.dependency_contract `
+    -Role 'runtime dependency contract'
+  $dependencyContract = Resolve-RfOatofDependencyContract -RepoRoot $repo `
+    -ContractPath $contractPaths.dependency_contract
   $authority = $resolved.sources.upstream_authority
-  if ([string]$binding.contracts.upstream_resolved_design.path -ne
-        [string]$authority.path -or
-      ([string]$binding.contracts.upstream_resolved_design.sha256).ToUpperInvariant() -ne
-        ([string]$authority.sha256).ToUpperInvariant()) {
+  if (([string]$authority.sha256).ToUpperInvariant() -ne
+      $UpstreamResolvedDesignSha256.ToUpperInvariant()) {
     throw 'Runtime resolved design differs from the upstream port authority.'
+  }
+  $upstreamDesign = Get-Content -LiteralPath $upstreamResolvedDesignPath `
+    -Raw -Encoding UTF8 | ConvertFrom-Json
+  if ($upstreamDesign.PSObject.Properties.Name -notcontains 'identity' -or
+      [string]$upstreamDesign.identity.project_id -ne $upstreamProjectId) {
+    throw 'Run-local upstream resolved design project identity differs.'
   }
 
   $implementationPaths = [ordered]@{
@@ -393,49 +396,33 @@ function Resolve-RfOatofRuntimeBinding {
   }
   $runArtifactSupport = $implementation.run_artifact_support
 
-  $sourceContract = Get-Content -LiteralPath $contractPaths.source_contract `
+  $sourceContract = Get-Content -LiteralPath $contractPaths.resolved_source_contract `
     -Raw -Encoding UTF8 | ConvertFrom-Json
-  if ($sourceContract.role -ne 'rf_multipole_oatof_source_contract' -or
+  if ([int]$sourceContract.schema_version -ne 2 -or
+      $sourceContract.role -ne 'rf_multipole_oatof_source_contract' -or
       $sourceContract.upstream_project_id -ne $upstreamProjectId) {
     throw 'Runtime source contract identity differs from the upstream project.'
   }
-  $sourceBranchSolverId = ''
-  if ([int]$sourceContract.schema_version -eq 1) {
-    Assert-RfOatofExactProperties -Object $sourceContract `
-      -Expected @(
-        'schema_version','role','upstream_project_id','recorded_project_id',
-        'selector','adapter','canonical_state','source'
-      ) -Role 'Runtime source contract'
-    if (-not [string]::IsNullOrWhiteSpace($SourceBranchId)) {
-      throw 'Legacy single-source runtime does not accept SourceBranchId.'
-    }
-    $recordedProjectId = [string]$sourceContract.recorded_project_id
-    $sourceRecord = $sourceContract.source
-  } elseif ([int]$sourceContract.schema_version -eq 2) {
-    Assert-RfOatofExactProperties -Object $sourceContract `
-      -Expected @(
-        'schema_version','role','upstream_project_id','selector','adapter',
-        'canonical_state','source_branches'
-      ) -Role 'Runtime source contract'
-    if ($SourceBranchId -notin @('comsol','simion') -or
-        $sourceContract.source_branches.PSObject.Properties.Name -notcontains
-          $SourceBranchId) {
-      throw 'Family source runtime requires SourceBranchId comsol or simion.'
-    }
-    $sourceBranch = $sourceContract.source_branches.PSObject.Properties[
-      $SourceBranchId
-    ].Value
-    Assert-RfOatofExactProperties -Object $sourceBranch `
-      -Expected @('solver_id','recorded_project_id','source') `
-      -Role 'Runtime source branch'
-    $sourceBranchSolverId = [string]$sourceBranch.solver_id
-    $recordedProjectId = [string]$sourceBranch.recorded_project_id
-    $sourceRecord = $sourceBranch.source
-    if ($sourceBranchSolverId -ne $SourceBranchId) {
-      throw 'Runtime source branch solver identity differs from SourceBranchId.'
-    }
-  } else {
-    throw 'Runtime source contract schema version is unsupported.'
+  Assert-RfOatofExactProperties -Object $sourceContract `
+    -Expected @(
+      'schema_version','role','upstream_project_id','selector','adapter',
+      'canonical_state','source_branches'
+    ) -Role 'Runtime resolved source contract'
+  if ($sourceContract.source_branches.PSObject.Properties.Name -notcontains
+      $SourceBranchId) {
+    throw 'Resolved source contract omits the selected comsol or simion branch.'
+  }
+  $sourceBranch = $sourceContract.source_branches.PSObject.Properties[
+    $SourceBranchId
+  ].Value
+  Assert-RfOatofExactProperties -Object $sourceBranch `
+    -Expected @('solver_id','recorded_project_id','source') `
+    -Role 'Runtime source branch'
+  $sourceBranchSolverId = [string]$sourceBranch.solver_id
+  $recordedProjectId = [string]$sourceBranch.recorded_project_id
+  $sourceRecord = $sourceBranch.source
+  if ($sourceBranchSolverId -ne $SourceBranchId) {
+    throw 'Runtime source branch solver identity differs from SourceBranchId.'
   }
   if ([string]::IsNullOrWhiteSpace($recordedProjectId)) {
     throw 'Runtime source contract recorded project identity is empty.'
@@ -450,60 +437,61 @@ function Resolve-RfOatofRuntimeBinding {
       $sourceContract.selector.status -ne 'transmitted') {
     throw 'Runtime source selector must freeze transmitted handoff rows.'
   }
-  if ($sourceContract.adapter.callable -notin
-        @('build_handoff','publish_handoff','publish_family_source_bundle') -or
+  if ($sourceContract.adapter.callable -ne 'publish_family_source_bundle' -or
       $sourceContract.adapter.output_schema -ne 'component_particle_state_v1') {
     throw 'Runtime source adapter identity or canonical output schema differs.'
   }
-  if ([int]$sourceContract.schema_version -eq 2 -and
-      $sourceContract.adapter.callable -ne 'publish_family_source_bundle') {
-    throw 'Family source runtime requires the integration source bundle adapter.'
-  }
-  $expectedAdapterFields = @('path','sha256','callable','output_schema')
-  if ($sourceContract.adapter.callable -eq 'build_handoff' -or
-      [int]$sourceContract.schema_version -eq 2) {
-    $expectedAdapterFields += 'dependencies'
-  }
   Assert-RfOatofExactProperties -Object $sourceContract.adapter `
-    -Expected $expectedAdapterFields -Role 'Runtime source adapter'
+    -Expected @('path','sha256','callable','output_schema','dependencies') `
+    -Role 'Runtime source adapter'
+  $stableSourceAdapter = Get-Content `
+    -LiteralPath $contractPaths.source_adapter_contract -Raw -Encoding UTF8 |
+    ConvertFrom-Json
+  Assert-RfOatofExactProperties -Object $stableSourceAdapter `
+    -Expected @(
+      'schema_version','role','integration_id','selector','adapter','canonical_state'
+    ) -Role 'Stable source adapter contract'
+  if ([int]$stableSourceAdapter.schema_version -ne 1 -or
+      $stableSourceAdapter.role -ne 'rf_multipole_oatof_source_adapter' -or
+      $stableSourceAdapter.integration_id -ne $script:RfOatofIntegrationId -or
+      [string]$stableSourceAdapter.selector.event -ne
+        [string]$sourceContract.selector.event -or
+      [string]$stableSourceAdapter.selector.status -ne
+        [string]$sourceContract.selector.status) {
+    throw 'Resolved source selector differs from the stable source adapter contract.'
+  }
+  foreach ($name in @('path','sha256','callable','output_schema')) {
+    if ([string]$sourceContract.adapter.$name -ne
+        [string]$stableSourceAdapter.adapter.$name) {
+      throw "Resolved source adapter differs from its stable contract: $name"
+    }
+  }
+  foreach ($name in @(
+      'frame_id','clock_epoch_id','lineage_policy','species_policy'
+    )) {
+    if ([string]$sourceContract.canonical_state.$name -ne
+        [string]$stableSourceAdapter.canonical_state.$name) {
+      throw "Resolved source canonical state differs from its stable contract: $name"
+    }
+  }
   $sourceAdapter = Resolve-RfOatofBoundFile -Root $repo `
     -Record $sourceContract.adapter -Role 'runtime source adapter'
-  $sourceAdapterDependencies = [ordered]@{}
-  if ($sourceContract.adapter.callable -eq 'build_handoff') {
-    if ($sourceContract.adapter.PSObject.Properties.Name -notcontains
-        'dependencies') {
-      throw 'build_handoff adapter must freeze its supporting contracts.'
-    }
-    $dependencyNames = @(
-        'source_baseline',
-        'energy_match_contract',
-        'source_interface_contract'
-    )
-    Assert-RfOatofExactProperties -Object $sourceContract.adapter.dependencies `
-      -Expected $dependencyNames -Role 'Runtime source adapter dependencies'
-    foreach ($name in $dependencyNames) {
-      if ($sourceContract.adapter.dependencies.PSObject.Properties.Name `
-          -notcontains $name) {
-        throw "build_handoff adapter is missing frozen dependency: $name"
-      }
-      $sourceAdapterDependencies[$name] = Resolve-RfOatofBoundFile `
-        -Root $repo -Record $sourceContract.adapter.dependencies.$name `
-        -Role "runtime source adapter $name"
-    }
-  } elseif ([int]$sourceContract.schema_version -eq 2) {
-    Assert-RfOatofExactProperties -Object $sourceContract.adapter.dependencies `
-      -Expected @('handoff_publication_contract') `
-      -Role 'Runtime family source adapter dependencies'
-    $sourceAdapterDependencies.handoff_publication_contract =
-      Resolve-RfOatofBoundFile -Root $repo `
-        -Record $sourceContract.adapter.dependencies.handoff_publication_contract `
-        -Role 'runtime source adapter handoff publication contract'
+  Assert-RfOatofExactProperties -Object $sourceContract.adapter.dependencies `
+    -Expected @('handoff_publication_contract') `
+    -Role 'Runtime family source adapter dependencies'
+  $publicationRecord =
+    $sourceContract.adapter.dependencies.handoff_publication_contract
+  if ([string]$publicationRecord.path -ne
+        [string]$binding.contracts.handoff_publication_contract.path -or
+      ([string]$publicationRecord.sha256).ToUpperInvariant() -ne
+        ([string]$binding.contracts.handoff_publication_contract.sha256).ToUpperInvariant()) {
+    throw 'Resolved source handoff publication contract differs from the stable binding.'
   }
-  $expectedCanonicalFrameId = if ([int]$sourceContract.schema_version -eq 1) {
-    [string]$resolved.port_geometry.downstream.coordinate_frame.frame_id
-  } else {
+  $sourceAdapterDependencies = [ordered]@{
+    handoff_publication_contract = $contractPaths.handoff_publication_contract
+  }
+  $expectedCanonicalFrameId =
     [string]$resolved.port_geometry.upstream.coordinate_frame.frame_id
-  }
   if ($sourceContract.canonical_state.frame_id -ne
         $expectedCanonicalFrameId -or
       $sourceContract.canonical_state.clock_epoch_id -ne
@@ -536,18 +524,30 @@ function Resolve-RfOatofRuntimeBinding {
   if ($sourceRecord.PSObject.Properties.Name -contains 'metadata') {
     $expectedSourceFields += 'metadata'
   }
+  if ($sourceRecord.PSObject.Properties.Name -contains
+      'launched_particle_count') {
+    $expectedSourceFields += 'launched_particle_count'
+  }
   Assert-RfOatofExactProperties -Object $sourceRecord `
     -Expected $expectedSourceFields -Role 'Runtime source run'
   if ([string]::IsNullOrWhiteSpace([string]$sourceRecord.run_id) -or
-      [int]$sourceRecord.particle_count -ne 100 -or
+      [int]$sourceRecord.particle_count -lt 1 -or
       [string]::IsNullOrWhiteSpace(
         [string]$sourceRecord.particle_source_manifest_input_role
       )) {
     throw 'Runtime source run identity or particle-source binding differs.'
   }
-  if ($sourceContract.adapter.callable -eq 'build_handoff' -and
-      [string]::IsNullOrWhiteSpace([string]$sourceMetadata)) {
-    throw 'build_handoff adapter requires one frozen source metadata file.'
+  $launchedParticleCount = if (
+    $sourceRecord.PSObject.Properties.Name -contains 'launched_particle_count'
+  ) {
+    [int]$sourceRecord.launched_particle_count
+  } else {
+    [int]$sourceRecord.particle_count
+  }
+  $particleSourceRowCount = @(Import-Csv -LiteralPath $sourceParticleSource).Count
+  if ($launchedParticleCount -lt [int]$sourceRecord.particle_count -or
+      $particleSourceRowCount -ne $launchedParticleCount) {
+    throw 'Runtime launched and selected particle populations differ from their frozen files.'
   }
   $sourceManifestDocument = Get-Content -LiteralPath $sourceManifest `
     -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -560,6 +560,14 @@ function Resolve-RfOatofRuntimeBinding {
     throw 'Runtime source manifest omits its particle source or outputs.'
   }
   $manifestParticleSource = $sourceManifestDocument.inputs.$particleSourceRole
+  $manifestResolvedDesign =
+    $sourceManifestDocument.inputs.PSObject.Properties['multipole_resolved_design']
+  if ($null -eq $manifestResolvedDesign -or
+      -not [bool]$manifestResolvedDesign.Value.exists -or
+      ([string]$manifestResolvedDesign.Value.sha256).ToUpperInvariant() -ne
+        $UpstreamResolvedDesignSha256.ToUpperInvariant()) {
+    throw 'Runtime source manifest does not freeze the selected upstream resolved design.'
+  }
   $manifestStateMatches = @(
     $sourceManifestDocument.outputs | Where-Object {
       $_.PSObject.Properties.Name -contains 'path' -and
@@ -594,10 +602,12 @@ function Resolve-RfOatofRuntimeBinding {
   )
   if ($selectedStateRows.Count -ne
       [int]$sourceRecord.particle_count) {
-    throw 'Runtime source state does not contain exactly 100 selected handoff rows.'
+    throw 'Runtime source state does not contain the declared selected handoff population.'
   }
 
   $sourceIdentity = [ordered]@{
+    source_branch_id = $SourceBranchId
+    solver_id = $sourceBranchSolverId
     run_id = [string]$sourceRecord.run_id
     project_id = $recordedProjectId
     manifest_sha256 = (
@@ -606,30 +616,13 @@ function Resolve-RfOatofRuntimeBinding {
     event_sha256 = (
       [string]$sourceRecord.state.sha256
     ).ToUpperInvariant()
+    particle_source_sha256 = (
+      [string]$sourceRecord.particle_source.sha256
+    ).ToUpperInvariant()
     metadata_sha256 = if ($null -ne $sourceMetadata) {
       ([string]$sourceRecord.metadata.sha256).ToUpperInvariant()
     } else {
       ''
-    }
-  }
-  if ([int]$sourceContract.schema_version -eq 2) {
-    $sourceIdentity = [ordered]@{
-      source_branch_id = $SourceBranchId
-      solver_id = $sourceBranchSolverId
-      run_id = [string]$sourceRecord.run_id
-      project_id = $recordedProjectId
-      manifest_sha256 = (
-        [string]$sourceRecord.manifest.sha256
-      ).ToUpperInvariant()
-      event_sha256 = (
-        [string]$sourceRecord.state.sha256
-      ).ToUpperInvariant()
-      particle_source_sha256 = (
-        [string]$sourceRecord.particle_source.sha256
-      ).ToUpperInvariant()
-      metadata_sha256 = (
-        [string]$sourceRecord.metadata.sha256
-      ).ToUpperInvariant()
     }
   }
 
@@ -647,7 +640,7 @@ function Resolve-RfOatofRuntimeBinding {
     implementation_binding = $implementationBindingPath
     implementation = [pscustomobject]$implementation
     run_artifact_support = $runArtifactSupport
-    source_contract = $sourceContract
+    resolved_source_contract = $sourceContract
     source_record = $sourceRecord
     source_adapter = $sourceAdapter
     source_adapter_dependencies = [pscustomobject]$sourceAdapterDependencies

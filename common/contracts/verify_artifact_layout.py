@@ -58,6 +58,7 @@ ALLOWED_PROJECT_ENTRIES = {
     "scratch",
     "cache",
 }
+ALLOWED_ARTIFACT_ROOT_ENTRIES = {"projects"}
 REQUIRED_RUN_FILES = {"run_config.json", "summary.json", "run_manifest.json"}
 LEGACY_POLICY = {
     "migration_kind": "administrative_rename_only",
@@ -318,6 +319,18 @@ def verify_project(
     return run_count, archive_count
 
 
+def verify_artifacts_root(projects: Path) -> None:
+    """Reject unregistered files or sibling trees beside artifacts/projects."""
+    if projects.name != "projects" or not projects.is_dir():
+        raise AssertionError("artifact layout root must be the artifacts/projects directory")
+    artifacts = projects.parent
+    unexpected = {entry.name for entry in artifacts.iterdir()} - ALLOWED_ARTIFACT_ROOT_ENTRIES
+    if unexpected:
+        raise AssertionError(
+            f"artifacts: unexpected top-level entries: {sorted(unexpected)}"
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("root", type=Path)
@@ -327,6 +340,7 @@ def main() -> None:
     parser.add_argument("--repository-root", type=Path)
     args = parser.parse_args()
     projects = args.root.resolve()
+    verify_artifacts_root(projects)
     repository_root = args.repository_root.resolve() if args.repository_root else None
     project_dirs = [project for project in projects.iterdir() if project.is_dir()]
     if args.project:

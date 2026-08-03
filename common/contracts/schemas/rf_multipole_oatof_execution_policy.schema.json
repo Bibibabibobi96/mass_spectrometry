@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/rf_multipole_oatof_execution_policy.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "role", "integration_id", "policy_id", "workflow_id", "retention_class", "commercial_solver_concurrency_limit", "stop_after_first_failure", "budget_exhaustion_result", "stage_limits"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "rf_multipole_oatof_execution_policy"},
+    "integration_id": {"const": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"},
+    "policy_id": {"const": "compact_serial_commercial_solvers"},
+    "workflow_id": {"const": "family_source_closure"},
+    "retention_class": {"const": "compact"},
+    "commercial_solver_concurrency_limit": {"const": 1},
+    "stop_after_first_failure": {"const": true},
+    "budget_exhaustion_result": {"const": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED"},
+    "stage_limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pre_pulse_interface_transport", "pulse_capture", "analyzer_transport"],
+      "properties": {
+        "pre_pulse_interface_transport": {"$ref": "#/$defs/comsol_stage"},
+        "pulse_capture": {"$ref": "#/$defs/comsol_stage"},
+        "analyzer_transport": {"$ref": "#/$defs/simion_stage"}
+      }
+    }
+  },
+  "$defs": {
+    "stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["solver", "wall_clock_seconds", "transient_run_directory_bytes", "process_tree_working_set_bytes", "minimum_system_available_memory_bytes", "compact_final_retained_bytes", "automatic_retry_count"],
+      "properties": {
+        "solver": {"enum": ["comsol", "simion"]},
+        "wall_clock_seconds": {"type": "integer", "minimum": 1},
+        "transient_run_directory_bytes": {"type": "integer", "minimum": 1},
+        "process_tree_working_set_bytes": {"type": "integer", "minimum": 1},
+        "minimum_system_available_memory_bytes": {"type": "integer", "minimum": 1},
+        "compact_final_retained_bytes": {"type": "integer", "minimum": 1},
+        "automatic_retry_count": {"const": 0}
+      }
+    },
+    "comsol_stage": {"allOf": [{"$ref": "#/$defs/stage"}, {"properties": {"solver": {"const": "comsol"}}}]},
+    "simion_stage": {"allOf": [{"$ref": "#/$defs/stage"}, {"properties": {"solver": {"const": "simion"}}}]}
+  }
+}

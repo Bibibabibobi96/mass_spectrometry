@@ -6,7 +6,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from common.contracts.verify_artifact_layout import verify_cache, verify_formal
+from common.contracts.verify_artifact_layout import (
+    verify_artifacts_root,
+    verify_cache,
+    verify_formal,
+)
 
 
 RUN_ID = "20260721_120000__sim__cross__formal-validation__n100"
@@ -26,6 +30,16 @@ def record(path: Path, root: Path) -> dict[str, object]:
 
 
 class ArtifactLayoutIdentityTests(unittest.TestCase):
+    def test_artifacts_root_rejects_files_beside_projects(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory) / "artifacts"
+            projects = artifacts / "projects"
+            projects.mkdir(parents=True)
+            verify_artifacts_root(projects)
+            (artifacts / "probe.txt").write_text("stray\n", encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "unexpected top-level"):
+                verify_artifacts_root(projects)
+
     def test_content_addressed_pa_cache_is_narrow_and_verified(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             project = Path(directory) / "rf_hexapole_ion_optics"

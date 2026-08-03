@@ -17,6 +17,11 @@ RMS差不超过0.011 mm、角RMS差不超过0.109°，全部属于工程等效�
 用于参数优选。维持P0 RF基线并停止扩大RF扫描。详见
 [N=1000日期化报告](history/20260803__hex-rf-drive-phase-matched-h15-n1000.md)。
 
+同日补齐无加速5 eV初始源并复用既有三模式N=100 H15证据：六极杆分段加速相对无加速5 eV同时
+降低空间RMS`0.0519 mm`、角RMS`0.7844°`和能量展宽`0.0076 eV`；末端加速则以0.96给出最高
+handoff透射，空间RMS与分段加速仅差`0.0012 mm`。完整12臂对照见
+[`../../../docs/history/20260803__multipole-four-mode-source-energy-h15-n100.md`](../../../docs/history/20260803__multipole-four-mode-source-energy-h15-n100.md)。
+
 ## 当前参数与边界
 
 - 六根电极，径向阶数`n=3`，`r0=4 mm`，圆杆半径比0.5，有效杆长79.6 mm。

@@ -20,16 +20,16 @@ INTEGRATION_ID = (
 )
 STAGES = {
     "pre_pulse_interface_transport": {
-        "run_suffix": "__sim__comsol__rf-oatof-pre-pulse-interface-gap0__n100",
-        "mode": "rf_to_oatof_pre_pulse_interface_transport_n100",
+        "run_stem": "__sim__comsol__rf-oatof-pre-pulse-interface-gap0__n",
+        "mode": "rf_to_oatof_pre_pulse_interface_transport",
     },
     "pulse_capture": {
-        "run_suffix": "__sim__comsol__rf-oatof-pulse-capture-gap0__n100",
-        "mode": "rf_to_oatof_pulse_capture_n100",
+        "run_stem": "__sim__comsol__rf-oatof-pulse-capture-gap0__n",
+        "mode": "rf_to_oatof_pulse_capture",
     },
     "analyzer_transport": {
-        "run_suffix": "__sim__cross__rf-oatof-analyzer-transport-gap0__n100",
-        "mode": "rf_to_oatof_analyzer_transport_n100",
+        "run_stem": "__sim__cross__rf-oatof-analyzer-transport-gap0__n",
+        "mode": "rf_to_oatof_analyzer_transport",
     },
 }
 
@@ -157,23 +157,60 @@ def publish_family_source_closure_run(
         or resolved.get("integration_id") != INTEGRATION_ID
     ):
         raise ContractError("family parent receipt or integration identity differs")
-    if (
-        "source_revision_id" not in receipt
-        or "source_revision_id" not in budget
-    ):
-        raise ContractError("family parent source revision identity is missing")
+    campaign_keys = (
+        "campaign_id",
+        "experiment_id",
+        "experiment_row_sha256",
+        "launched_particle_count",
+        "particle_count",
+        "policy_id",
+        "retention_class",
+    )
+    if any(key not in receipt or key not in budget for key in campaign_keys):
+        raise ContractError("family parent campaign identity is missing")
     profile_id = receipt["connection_profile_id"]
     source_branch_id = receipt["source_branch_id"]
-    source_revision_id = receipt["source_revision_id"]
     if (
         plan["selection"]["connection_profile_id"] != profile_id
         or resolved["selection"]["connection_profile_id"] != profile_id
         or budget["connection_profile_id"] != profile_id
         or budget["source_identity"] != receipt["source_identity"]
         or budget["source_identity"]["source_branch_id"] != source_branch_id
-        or budget["source_revision_id"] != source_revision_id
+        or any(budget[key] != receipt[key] for key in campaign_keys)
+        or receipt.get("campaign_sha256") is None
+        or receipt.get("campaign_path") is None
     ):
-        raise ContractError("family parent profile or source identity differs")
+        raise ContractError("family parent campaign, profile or source identity differs")
+    launched_particle_count = receipt["launched_particle_count"]
+    particle_count = receipt["particle_count"]
+    if (
+        not isinstance(launched_particle_count, int)
+        or not isinstance(particle_count, int)
+        or particle_count < 1
+        or launched_particle_count < particle_count
+    ):
+        raise ContractError("family parent particle census is invalid")
+    campaign_path = (repo_root / receipt["campaign_path"]).resolve()
+    resolved_source_contract_path = (
+        receipt_path.parent / receipt.get("resolved_source_contract_filename", "")
+    ).resolve()
+    upstream_resolved_design_path = (
+        receipt_path.parent / receipt.get("upstream_resolved_design_filename", "")
+    ).resolve()
+    if (
+        not campaign_path.is_relative_to(repo_root.resolve())
+        or not campaign_path.is_file()
+        or file_sha256(campaign_path) != receipt["campaign_sha256"]
+        or resolved_source_contract_path.parent != receipt_path.parent.resolve()
+        or not resolved_source_contract_path.is_file()
+        or file_sha256(resolved_source_contract_path)
+        != receipt.get("resolved_source_contract_sha256")
+        or upstream_resolved_design_path.parent != receipt_path.parent.resolve()
+        or not upstream_resolved_design_path.is_file()
+        or file_sha256(upstream_resolved_design_path)
+        != receipt.get("upstream_resolved_design_sha256")
+    ):
+        raise ContractError("family parent frozen campaign inputs differ")
     upstream_project_id = resolved["selection"]["upstream_project_id"]
     stage_run_ids = receipt.get("stage_run_ids")
     stage_runtime_binding_sha256s = receipt.get(
@@ -188,9 +225,15 @@ def publish_family_source_closure_run(
         raise ContractError("family receipt stage identities are incomplete")
     for phase in STAGES:
         validate_run_id(stage_run_ids[phase])
+        expected_run_id = (
+            run_id[:15]
+            + STAGES[phase]["run_stem"]
+            + str(launched_particle_count)
+        )
         binding_hash = stage_runtime_binding_sha256s[phase]
         if (
-            not isinstance(binding_hash, str)
+            stage_run_ids[phase] != expected_run_id
+            or not isinstance(binding_hash, str)
             or len(binding_hash) != 64
             or any(character not in "0123456789ABCDEF" for character in binding_hash)
         ):
@@ -268,12 +311,19 @@ def publish_family_source_closure_run(
         "schema_version": 2,
         "run_id": run_id,
         "project": INTEGRATION_ID,
-        "mode": "multipole_family_source_closure_n100",
+        "mode": "multipole_family_source_closure",
         "project_root": str(workspace_root),
         "inputs": {
+            "campaign": _portable(campaign_path, workspace_root),
             "execution_receipt": _portable(receipt_path, workspace_root),
             "resolved_connection": _portable(resolved_path, workspace_root),
             "composition_plan": _portable(plan_path, workspace_root),
+            "resolved_source_contract": _portable(
+                resolved_source_contract_path, workspace_root
+            ),
+            "upstream_resolved_design": _portable(
+                upstream_resolved_design_path, workspace_root
+            ),
             "resolved_engineering_budget": _portable(
                 budget_path, workspace_root
             ),
@@ -285,14 +335,21 @@ def publish_family_source_closure_run(
             },
         },
         "connection_profile_id": profile_id,
+        "campaign_path": receipt["campaign_path"],
+        "campaign_sha256": receipt["campaign_sha256"],
+        "campaign_id": receipt["campaign_id"],
+        "experiment_id": receipt["experiment_id"],
+        "experiment_row_sha256": receipt["experiment_row_sha256"],
         "source_branch_id": source_branch_id,
-        "source_revision_id": source_revision_id,
+        "launched_particle_count": launched_particle_count,
+        "particle_count": particle_count,
+        "policy_id": receipt["policy_id"],
         "source_particle_identity": receipt["source_identity"],
         "stage_runtime_binding_sha256s": stage_runtime_binding_sha256s,
         "stage_runs": stages,
         "artifact_retention": {
             "policy_version": 1,
-            "class": "compact",
+            "class": receipt["retention_class"],
             "reason": None,
         },
         "formal_gate_passed": False,
@@ -302,8 +359,13 @@ def publish_family_source_closure_run(
         "role": "integration_family_source_closure_summary",
         "status": "success",
         "connection_profile_id": profile_id,
+        "campaign_id": receipt["campaign_id"],
+        "experiment_id": receipt["experiment_id"],
+        "experiment_row_sha256": receipt["experiment_row_sha256"],
         "source_branch_id": source_branch_id,
-        "source_revision_id": source_revision_id,
+        "launched_particle_count": launched_particle_count,
+        "particle_count": particle_count,
+        "policy_id": receipt["policy_id"],
         "stage_runs_verified": 3,
         "census": analyzer_summary.get("census"),
         "claim_status": "FUNCTIONAL_SCREEN_ONLY",

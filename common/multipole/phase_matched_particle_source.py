@@ -1,9 +1,10 @@
-"""Derive a canonical source whose particle RF phases match a baseline source.
+"""Derive a phase-matched canonical source with optional kinetic-energy scaling.
 
 The module is solver independent.  It reads one governed canonical CSV, changes
-only ``birth_time_s`` according to ``t_new = t_old * f0 / f_new``, validates the
-result, and publishes a new CSV plus provenance metadata without modifying or
-overwriting any existing file.
+``birth_time_s`` follows ``t_new = t_old * f0 / f_new``.  When requested, all
+three velocity components receive one per-particle scale factor so kinetic
+energy changes while direction is preserved.  The module publishes a new CSV
+plus provenance metadata without modifying or overwriting existing files.
 """
 
 from __future__ import annotations
@@ -40,7 +41,13 @@ COLUMNS = (
     "charge_state",
 )
 PRESERVED_COLUMNS = tuple(column for column in COLUMNS if column != "birth_time_s")
+ENERGY_SCALED_PRESERVED_COLUMNS = tuple(
+    column
+    for column in COLUMNS
+    if column not in {"birth_time_s", "vx_m_s", "vy_m_s", "vz_m_s"}
+)
 FORMULA = "t_new = t_old * baseline_frequency_Hz / candidate_frequency_Hz"
+ENERGY_FORMULA = "v_new = v_old * sqrt(target_kinetic_energy_eV / source_kinetic_energy_eV)"
 PHASE_DEFINITION = "fractional_part(birth_time_s * frequency_Hz)"
 METADATA_ROLE = "multipole_phase_matched_canonical_source_derivation"
 SHA256_CHARACTERS = frozenset("0123456789ABCDEF")
@@ -115,10 +122,13 @@ def _derive_rows(
     rows: list[dict[str, str]],
     baseline_frequency_hz: float,
     candidate_frequency_hz: float,
-) -> tuple[list[dict[str, str]], dict[str, Any]]:
+    target_kinetic_energy_ev: float | None = None,
+) -> tuple[list[dict[str, str]], dict[str, Any], dict[str, Any] | None]:
     derived_rows: list[dict[str, str]] = []
     maximum_error = 0.0
     maximum_tolerance = 0.0
+    source_energies: list[float] = []
+    maximum_energy_error = 0.0
     for row in rows:
         old_time = float(row["birth_time_s"])
         new_time = old_time * baseline_frequency_hz / candidate_frequency_hz
@@ -145,10 +155,27 @@ def _derive_rows(
             )
         derived = dict(row)
         derived["birth_time_s"] = rendered_time
+        if target_kinetic_energy_ev is not None:
+            mass_kg = float(row["mass_amu"]) * 1.66053906660e-27
+            velocities = [float(row[column]) for column in ("vx_m_s", "vy_m_s", "vz_m_s")]
+            source_energy = 0.5 * mass_kg * sum(value * value for value in velocities) / 1.602176634e-19
+            if not math.isfinite(source_energy) or source_energy <= 0.0:
+                raise ValueError(f"particle {row['particle_id']} has nonpositive source energy")
+            scale = math.sqrt(target_kinetic_energy_ev / source_energy)
+            for column, velocity in zip(("vx_m_s", "vy_m_s", "vz_m_s"), velocities, strict=True):
+                derived[column] = repr(velocity * scale)
+            derived_energy = (
+                0.5
+                * mass_kg
+                * sum(float(derived[column]) ** 2 for column in ("vx_m_s", "vy_m_s", "vz_m_s"))
+                / 1.602176634e-19
+            )
+            maximum_energy_error = max(maximum_energy_error, abs(derived_energy - target_kinetic_energy_ev))
+            source_energies.append(source_energy)
         derived_rows.append(derived)
         maximum_error = max(maximum_error, error)
         maximum_tolerance = max(maximum_tolerance, tolerance)
-    return derived_rows, {
+    phase = {
         "phase_definition": PHASE_DEFINITION,
         "verification_scope": "every_particle",
         "verified_particle_count": len(rows),
@@ -156,6 +183,18 @@ def _derive_rows(
         "maximum_circular_phase_error_cycles": maximum_error,
         "maximum_allowed_error_cycles": maximum_tolerance,
     }
+    energy = None
+    if target_kinetic_energy_ev is not None:
+        energy = {
+            "formula": ENERGY_FORMULA,
+            "target_kinetic_energy_eV": target_kinetic_energy_ev,
+            "source_energy_minimum_eV": min(source_energies),
+            "source_energy_maximum_eV": max(source_energies),
+            "direction_preserved_by_positive_scalar": True,
+            "verified_particle_count": len(rows),
+            "maximum_absolute_energy_error_eV": maximum_energy_error,
+        }
+    return derived_rows, phase, energy
 
 
 def _is_sha256(value: Any) -> bool:
@@ -168,7 +207,7 @@ def _is_sha256(value: Any) -> bool:
 
 def validate_phase_matched_source_metadata(metadata: dict[str, Any]) -> None:
     """Validate version 1 phase-matched source provenance metadata."""
-    if metadata.get("schema_version") != 1 or metadata.get("role") != METADATA_ROLE:
+    if metadata.get("schema_version") not in (1, 2) or metadata.get("role") != METADATA_ROLE:
         raise ValueError("phase-matched source metadata identity is invalid")
     if metadata.get("formula") != FORMULA:
         raise ValueError("phase-matched source metadata formula is invalid")
@@ -181,8 +220,28 @@ def validate_phase_matched_source_metadata(metadata: dict[str, Any]) -> None:
             raise ValueError(f"phase-matched source metadata {key} is invalid")
     _validate_frequency(metadata.get("baseline_frequency_Hz"), "baseline_frequency_Hz")
     _validate_frequency(metadata.get("candidate_frequency_Hz"), "candidate_frequency_Hz")
-    if metadata.get("preserved_columns") != list(PRESERVED_COLUMNS):
+    expected_preserved = (
+        ENERGY_SCALED_PRESERVED_COLUMNS
+        if metadata.get("schema_version") == 2
+        else PRESERVED_COLUMNS
+    )
+    if metadata.get("preserved_columns") != list(expected_preserved):
         raise ValueError("phase-matched source preserved columns are invalid")
+    if metadata.get("schema_version") == 2:
+        energy = metadata.get("kinetic_energy_scaling")
+        if not isinstance(energy, dict) or energy.get("formula") != ENERGY_FORMULA:
+            raise ValueError("phase-matched source energy scaling is invalid")
+        target = float(energy.get("target_kinetic_energy_eV", math.nan))
+        maximum_error = float(energy.get("maximum_absolute_energy_error_eV", math.nan))
+        if (
+            not math.isfinite(target)
+            or target <= 0.0
+            or not math.isfinite(maximum_error)
+            or maximum_error < 0.0
+            or energy.get("direction_preserved_by_positive_scalar") is not True
+            or energy.get("verified_particle_count") != particle_count
+        ):
+            raise ValueError("phase-matched source energy verification is invalid")
     prefix = metadata.get("particle_count_policy")
     if not isinstance(prefix, dict) or prefix.get("standard_count_verified") is not True:
         raise ValueError("phase-matched source particle-count policy is invalid")
@@ -256,6 +315,7 @@ def derive_phase_matched_source(
     baseline_frequency_hz: float,
     candidate_frequency_hz: float,
     n1000_reference_path: Path | None = None,
+    target_kinetic_energy_ev: float | None = None,
 ) -> dict[str, Any]:
     """Publish a deterministic phase-matched canonical source and metadata.
 
@@ -273,6 +333,10 @@ def derive_phase_matched_source(
     candidate_frequency = _validate_frequency(
         candidate_frequency_hz, "candidate_frequency_hz"
     )
+    if target_kinetic_energy_ev is not None:
+        target_kinetic_energy_ev = float(target_kinetic_energy_ev)
+        if not math.isfinite(target_kinetic_energy_ev) or target_kinetic_energy_ev <= 0.0:
+            raise ValueError("target_kinetic_energy_ev must be finite and positive")
     paths = {
         "source_path": source_path,
         "output_csv_path": output_csv_path,
@@ -307,18 +371,23 @@ def derive_phase_matched_source(
     elif n1000_reference_path is not None:
         raise ValueError("N=1000 derivation does not accept n1000_reference_path")
 
-    derived_rows, phase_verification = _derive_rows(
-        rows, baseline_frequency, candidate_frequency
+    derived_rows, phase_verification, energy_verification = _derive_rows(
+        rows, baseline_frequency, candidate_frequency, target_kinetic_energy_ev
     )
     derived_payload = _render_rows(derived_rows)
     reloaded_rows = _load_rows_from_bytes(derived_payload, "derived source")
     for original, derived in zip(rows, reloaded_rows, strict=True):
-        for column in PRESERVED_COLUMNS:
+        preserved_columns = (
+            ENERGY_SCALED_PRESERVED_COLUMNS
+            if target_kinetic_energy_ev is not None
+            else PRESERVED_COLUMNS
+        )
+        for column in preserved_columns:
             if original[column] != derived[column]:
                 raise ValueError(f"derived source changed preserved column {column}")
     if reference_rows is not None:
-        projected_rows, _ = _derive_rows(
-            reference_rows, baseline_frequency, candidate_frequency
+        projected_rows, _, _ = _derive_rows(
+            reference_rows, baseline_frequency, candidate_frequency, target_kinetic_energy_ev
         )
         projected_prefix = _render_rows(projected_rows[:100])
         if projected_prefix != derived_payload:
@@ -326,7 +395,7 @@ def derive_phase_matched_source(
         prefix_metadata["derived_n100_prefix_projection_verified"] = True
 
     metadata: dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": 2 if target_kinetic_energy_ev is not None else 1,
         "role": METADATA_ROLE,
         "formula": FORMULA,
         "baseline_frequency_Hz": baseline_frequency,
@@ -334,10 +403,12 @@ def derive_phase_matched_source(
         "particle_count": len(rows),
         "baseline_source_sha256": hashlib.sha256(source_payload).hexdigest().upper(),
         "derived_source_sha256": hashlib.sha256(derived_payload).hexdigest().upper(),
-        "preserved_columns": list(PRESERVED_COLUMNS),
+        "preserved_columns": list(preserved_columns),
         "particle_count_policy": prefix_metadata,
         "rf_phase_invariance": phase_verification,
     }
+    if energy_verification is not None:
+        metadata["kinetic_energy_scaling"] = energy_verification
     validate_phase_matched_source_metadata(metadata)
     if file_sha256(source_path) != metadata["baseline_source_sha256"]:
         raise ValueError("baseline source changed during phase-matched derivation")
@@ -361,6 +432,7 @@ def main() -> int:
     parser.add_argument("--baseline-frequency-hz", required=True, type=float)
     parser.add_argument("--candidate-frequency-hz", required=True, type=float)
     parser.add_argument("--n1000-reference", type=Path)
+    parser.add_argument("--target-kinetic-energy-ev", type=float)
     parser.add_argument("--output-csv", required=True, type=Path)
     parser.add_argument("--output-metadata", required=True, type=Path)
     args = parser.parse_args()
@@ -371,6 +443,7 @@ def main() -> int:
         baseline_frequency_hz=args.baseline_frequency_hz,
         candidate_frequency_hz=args.candidate_frequency_hz,
         n1000_reference_path=args.n1000_reference,
+        target_kinetic_energy_ev=args.target_kinetic_energy_ev,
     )
     print(
         "PHASE_MATCHED_CANONICAL_SOURCE=PASS "

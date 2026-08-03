@@ -422,12 +422,13 @@ def publish_handoff(
         if reader.fieldnames != PARTICLE_STATE_COLUMNS:
             raise ValueError("solver state must use the exact 17-column schema")
         states = [
-            row for row in reader if row["event"] == selector["event"]
+            row
+            for row in reader
+            if row["event"] == selector["event"]
+            and row["status"] == selector["status"]
         ]
     if not states:
         raise ValueError("solver state has no selected handoff rows")
-    if any(row["status"] != selector["status"] for row in states):
-        raise ValueError("selected handoff row status differs from contract")
     raw_state_ids = [row["particle_id"].strip() for row in states]
     state_ids = [int(value) for value in raw_state_ids]
     if any(str(value) != raw for value, raw in zip(state_ids, raw_state_ids)):

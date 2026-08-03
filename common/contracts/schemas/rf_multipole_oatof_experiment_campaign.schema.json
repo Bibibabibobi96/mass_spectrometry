@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/rf_multipole_oatof_experiment_campaign.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "role", "integration_id", "campaign_id", "status", "execution_policy", "claim_limit", "experiments"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "rf_multipole_oatof_experiment_campaign"},
+    "integration_id": {"const": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"},
+    "campaign_id": {"$ref": "#/$defs/id"},
+    "status": {"const": "authorized"},
+    "execution_policy": {"$ref": "#/$defs/file"},
+    "claim_limit": {"type": "string", "minLength": 1},
+    "experiments": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/experiment"}}
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
+    "sha": {"type": "string", "pattern": "^[A-F0-9]{64}$"},
+    "file": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"], "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha"}}},
+    "source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["run_id", "launched_particle_count", "particle_count", "particle_source_manifest_input_role", "manifest", "state", "particle_source", "metadata"],
+      "properties": {
+        "run_id": {"type": "string", "minLength": 1},
+        "launched_particle_count": {"type": "integer", "enum": [100, 1000]},
+        "particle_count": {"type": "integer", "minimum": 1, "maximum": 1000},
+        "particle_source_manifest_input_role": {"type": "string", "minLength": 1},
+        "manifest": {"$ref": "#/$defs/file"}, "state": {"$ref": "#/$defs/file"},
+        "particle_source": {"$ref": "#/$defs/file"}, "metadata": {"$ref": "#/$defs/file"}
+      }
+    },
+    "experiment": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sequence", "experiment_id", "connection_profile_id", "run_id", "source"],
+      "properties": {
+        "sequence": {"type": "integer", "minimum": 1},
+        "experiment_id": {"$ref": "#/$defs/id"},
+        "connection_profile_id": {"$ref": "#/$defs/id"},
+        "run_id": {"type": "string", "minLength": 1},
+        "source": {"$ref": "#/$defs/source"}
+      }
+    }
+  }
+}

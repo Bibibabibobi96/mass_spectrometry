@@ -401,9 +401,16 @@ try{
   $phaseDerivationMetadata=$null
   $phaseAuthoritySource=$null
   $phaseReferenceSource=$null
-  if($resolvedRuntimeDocument-and
+  $sourceEnergyOverride=$null
+  $sourceDerivationProperty=if($resolvedRuntimeDocument-and
+    $resolvedRuntimeDocument.PSObject.Properties.Name-contains'particle_source_derivation'){
+    'particle_source_derivation'
+  }elseif($resolvedRuntimeDocument-and
     $resolvedRuntimeDocument.PSObject.Properties.Name-contains'particle_source_phase_derivation'){
-    $phaseBinding=$resolvedRuntimeDocument.particle_source_phase_derivation
+    'particle_source_phase_derivation'
+  }else{$null}
+  if($sourceDerivationProperty){
+    $phaseBinding=$resolvedRuntimeDocument.$sourceDerivationProperty
     $phaseAuthoritySource=Join-Path $inputDir 'particle_source_authority.csv'
     $phaseReferenceSource=Join-Path $inputDir 'particle_source_n1000_reference.csv'
     Copy-VerifiedRunInput -Source ([string]$phaseBinding.authority_source.path) `
@@ -427,6 +434,10 @@ try{
       if([int]$phaseBinding.authority_particle_count-eq 100){
         $phaseArguments+=@('--n1000-reference',$phaseReferenceSource)
       }
+      if($phaseBinding.PSObject.Properties.Name-contains'target_kinetic_energy_eV'){
+        $sourceEnergyOverride=[double]$phaseBinding.target_kinetic_energy_eV
+        $phaseArguments+=@('--target-kinetic-energy-ev',([string]$sourceEnergyOverride))
+      }
       & $python @phaseArguments
       if($LASTEXITCODE-ne 0){throw 'Phase-matched canonical source derivation failed.'}
     }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
@@ -449,6 +460,9 @@ try{
       $preflightArguments+=@('--source-family',$sourceFamily,
         '--operating-point',$OperatingPointId,
         '--expected-source-family-sha256',$sourceFamilySha)
+    }
+    if($null-ne$sourceEnergyOverride){
+      $preflightArguments+=@('--expected-kinetic-energy-ev',([string]$sourceEnergyOverride))
     }
     & $python @preflightArguments
     if($LASTEXITCODE-ne 0){throw 'Canonical particle source preflight failed.'}
@@ -522,6 +536,9 @@ try{
       $sourceProjectionArguments+=@('--source-family',$sourceFamily,
         '--operating-point',$OperatingPointId,
         '--expected-source-family-sha256',$sourceFamilySha)
+    }
+    if($null-ne$sourceEnergyOverride){
+      $sourceProjectionArguments+=@('--expected-kinetic-energy-ev',([string]$sourceEnergyOverride))
     }
     & $python @sourceProjectionArguments
     if($LASTEXITCODE-ne 0){throw 'SIMION particle projection failed.'}
@@ -680,6 +697,10 @@ try{
       Get-FileHash -LiteralPath $phaseDerivationMetadata -Algorithm SHA256
     ).Hash
     $provenance.particle_source_phase_matched=$true
+    if($null-ne$sourceEnergyOverride){
+      $provenance.particle_source_target_kinetic_energy_eV=$sourceEnergyOverride
+      $provenance.particle_source_direction_and_birth_time_preserved=$true
+    }
   }
   $runInputs=[ordered]@{project_registry=$registry;project_descriptor=$descriptor;design_profiles=$profiles;
     engineering_budget=$engineeringBudget;resolved_resource_budget=$resolvedResourceBudget;

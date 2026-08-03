@@ -134,7 +134,7 @@ if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
 }
 
 $campaign = Get-Content -LiteralPath $candidate -Raw -Encoding UTF8 | ConvertFrom-Json
-if ([int]$campaign.schema_version -notin @(1, 2, 3, 4) -or
+if ([int]$campaign.schema_version -notin @(1, 2, 3, 4, 5) -or
   [string]$campaign.role -ne 'multipole_transport_experiment_campaign') {
   throw 'Campaign identity differs.'
 }
@@ -189,7 +189,7 @@ try {
       ExperimentId=[string]$experiment.experiment_id;RepoRoot=$repo;RunId=[string]$experiment.authorized_run_id;
       RetentionClass=[string]$experiment.retention_class;PythonExe=$python}
     if ($SimionExe) {$arguments.SimionExe = $SimionExe}
-    if ([int]$campaign.schema_version -eq 4) {$arguments.CaseSet = [string]$experiment.case_set}
+    if ([int]$campaign.schema_version -in @(4, 5)) {$arguments.CaseSet = [string]$experiment.case_set}
     Invoke-MultipoleProjectFinite3dTransport @arguments
     Write-Host ('MULTIPOLE_CAMPAIGN=PASS CAMPAIGN={0} EXPERIMENT={1}' -f `
       [string]$campaign.campaign_id,[string]$experiment.experiment_id)

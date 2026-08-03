@@ -8,6 +8,7 @@
   "preregistered_before_run": true,
   "execution_profile": {
     "profile_id": "validated_structural_candidate",
+    "capability_id": "single_reflection_mass_analysis",
     "authority": {
       "path": "config/execution_profiles.json",
       "sha256": "3E4BFD6781474F60AC432E7B4E2B4E0CCB676E529A013C0B52F980098C9E673F"

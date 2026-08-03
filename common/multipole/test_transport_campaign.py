@@ -495,7 +495,7 @@ class TransportCampaignTests(unittest.TestCase):
         self.assertNotIn("automaticretry", source)
         self.assertRegex(
             source,
-            r"if\s*\(\[int\]\$campaign\.schema_version\s*-eq\s*4\)\s*"
+            r"if\s*\(\[int\]\$campaign\.schema_version\s*-in\s*@\(4,\s*5\)\)\s*"
             r"\{\s*\$arguments\.caseset\s*=\s*\[string\]\$experiment\.case_set\s*\}",
         )
         self.assertEqual(source.count("$arguments.caseset"), 1)

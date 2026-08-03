@@ -313,7 +313,7 @@ class AnalyzerTransportTests(unittest.TestCase):
         self.assertIn("$env:PYTHONNOUSERSITE = '1'", runner)
         self.assertIn("Push-Location -LiteralPath $SnapshotRoot", runner)
         self.assertIn(
-            "--require-mode','rf_to_oatof_pulse_capture_n100'",
+            "--require-mode','rf_to_oatof_pulse_capture'",
             runner,
         )
         self.assertIn("Get-RfManifestOutputRecord", runner)
@@ -357,9 +357,7 @@ class AnalyzerTransportTests(unittest.TestCase):
         )
         self.assertNotIn("-FrozenRepoRoot $repoRoot", runner)
 
-    def test_resolved_inventory_freezes_base_and_overlay_without_self_entry(
-        self,
-    ) -> None:
+    def test_resolved_inventory_freezes_single_runtime_contract(self) -> None:
         runner = (
             INTEGRATION_ROOT
             / "stages"
@@ -380,11 +378,11 @@ class AnalyzerTransportTests(unittest.TestCase):
         self.assertLess(publication, frozen_parse)
         self.assertLess(frozen_parse, selection)
         self.assertLess(selection, ordinary_copy)
-        self.assertIn("$baseIdentity = Copy-RfStableFile", runtime)
-        self.assertIn("$overlayIdentity = Copy-RfStableFile", runtime)
-        self.assertIn("resolved code inventory must contain exactly 52", runtime)
-        self.assertIn("base = [ordered]@{", runtime)
-        self.assertIn("overlay = [ordered]@{", runtime)
+        self.assertIn("$contractIdentity = Copy-RfStableFile", runtime)
+        self.assertIn("resolved code inventory must contain exactly 49", runtime)
+        self.assertIn("path = $contractRelative", runtime)
+        self.assertNotIn("base = [ordered]@{", runtime)
+        self.assertNotIn("overlay = [ordered]@{", runtime)
         self.assertNotIn("rf_dependency_contract_snapshot", runner)
         self.assertNotIn("rf_dependency_contract_snapshot", runtime)
 

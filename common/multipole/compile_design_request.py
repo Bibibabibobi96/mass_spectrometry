@@ -11,9 +11,13 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from common.contracts.file_identity import file_sha256
+from common.contracts.file_identity import file_sha256, repository_text_sha256
 from common.contracts.build_project_registry import pointer_value
-from common.contracts.machine_contracts import ContractError, validate_schema
+from common.contracts.machine_contracts import (
+    REPO_ROOT,
+    ContractError,
+    validate_schema,
+)
 from common.multipole.axial_acceleration import (
     MODEL_ID,
     AxialAccelerationError,
@@ -121,10 +125,28 @@ def _normalize_expected_identity(expected_identity: Mapping[str, Any]) -> dict[s
     return normalized
 
 
+def _repository_text_source_policy(
+    source_root: Path | None,
+    requested: bool | None,
+) -> bool:
+    """Select LF-normalized identities only for repository text authorities."""
+    if requested is not None:
+        return requested
+    return (
+        source_root is not None
+        and Path(source_root).resolve() == REPO_ROOT.resolve()
+    )
+
+
 def _source_records(
     source_files: Mapping[str, Path] | None,
     source_root: Path | None = None,
+    *,
+    repository_text_sources: bool = False,
 ) -> list[dict[str, str]]:
+    source_sha256 = (
+        repository_text_sha256 if repository_text_sources else file_sha256
+    )
     records: list[dict[str, str]] = []
     for label, source in sorted((source_files or {}).items()):
         if not isinstance(label, str) or not label:
@@ -144,7 +166,7 @@ def _source_records(
             {
                 "label": label,
                 "path": logical_path.as_posix(),
-                "sha256": file_sha256(path),
+                "sha256": source_sha256(path),
             }
         )
     return records
@@ -472,6 +494,7 @@ def compile_design_request(
     expected_identity: Mapping[str, Any],
     source_files: Mapping[str, Path] | None = None,
     source_root: Path | None = None,
+    repository_text_sources: bool = False,
 ) -> dict[str, Any]:
     """Validate and compile one request against an immutable project identity."""
     request_document = copy.deepcopy(dict(request))
@@ -552,7 +575,11 @@ def compile_design_request(
             "request_id": request_document["request_id"],
             "sha256": canonical_sha256(request_document),
         },
-        "sources": _source_records(source_files, source_root),
+        "sources": _source_records(
+            source_files,
+            source_root,
+            repository_text_sources=repository_text_sources,
+        ),
         "identity": copy.deepcopy(locked_identity),
         "units": copy.deepcopy(request_document["units"]),
         "coordinate": copy.deepcopy(request_document["coordinate"]),
@@ -590,8 +617,9 @@ def compile_design_request_file(
     expected_identity: Mapping[str, Any],
     source_files: Mapping[str, Path] | None = None,
     source_root: Path | None = None,
+    repository_text_sources: bool | None = None,
 ) -> dict[str, Any]:
-    """Load a request and include its byte identity in resolved provenance."""
+    """Load a request and include its governed source identity in provenance."""
     path = Path(request_path)
     request = json.loads(path.read_text(encoding="utf-8-sig"))
     sources = dict(source_files or {})
@@ -600,11 +628,16 @@ def compile_design_request_file(
             "source label design_request is reserved for the request file"
         )
     sources["design_request"] = path
+    use_repository_text = _repository_text_source_policy(
+        source_root,
+        repository_text_sources,
+    )
     return compile_design_request(
         request,
         expected_identity=expected_identity,
         source_files=sources,
         source_root=source_root,
+        repository_text_sources=use_repository_text,
     )
 
 
@@ -728,6 +761,7 @@ def compile_governed_design_request_file(
     provenance_root: Path,
     operating_mode_registry_path: Path | None = None,
     mode_id: str | None = None,
+    repository_text_sources: bool | None = None,
 ) -> dict[str, Any]:
     """Validate a governed base and compile it or one typed in-memory mode."""
     request_path = Path(request_path)
@@ -748,6 +782,13 @@ def compile_governed_design_request_file(
         mode_sources[operating_mode_source_label(mode_id)] = mode_path
     variables = json.loads(variables_path.read_text(encoding="utf-8-sig"))
     envelope = json.loads(envelope_path.read_text(encoding="utf-8-sig"))
+    use_repository_text = _repository_text_source_policy(
+        provenance_root,
+        repository_text_sources,
+    )
+    source_sha256 = (
+        repository_text_sha256 if use_repository_text else file_sha256
+    )
     try:
         validate_schema(variables, "design_variable_catalog.schema.json")
         validate_schema(envelope, "optimization_envelope.schema.json")
@@ -759,7 +800,7 @@ def compile_governed_design_request_file(
             raise MultipoleDesignCompileError(f"{label} project identity differs")
         if document["family_id"] != identity["family_id"]:
             raise MultipoleDesignCompileError(f"{label} family identity differs")
-    if envelope["reference"]["design_request_sha256"] != file_sha256(request_path):
+    if envelope["reference"]["design_request_sha256"] != source_sha256(request_path):
         raise MultipoleDesignCompileError("optimization envelope request hash is stale")
     catalog_pointers: set[str] = set()
     for variable in variables["variables"]:
@@ -803,11 +844,12 @@ def compile_governed_design_request_file(
             **mode_sources,
         },
         source_root=provenance_root,
+        repository_text_sources=use_repository_text,
     )
     resolved["governance"] = {
-        "design_variables_sha256": file_sha256(variables_path),
-        "optimization_envelope_sha256": file_sha256(envelope_path),
-        "design_request_file_sha256": file_sha256(request_path),
+        "design_variables_sha256": source_sha256(variables_path),
+        "optimization_envelope_sha256": source_sha256(envelope_path),
+        "design_request_file_sha256": source_sha256(request_path),
     }
     resolved["resolved_sha256"] = resolved_design_sha256(resolved)
     validate_schema(resolved, RESOLVED_SCHEMA)
@@ -820,6 +862,7 @@ def validate_resolved_design(
     request_path: Path,
     source_root: Path,
     expected_identity: Mapping[str, Any],
+    repository_text_sources: bool | None = None,
 ) -> dict[str, Any]:
     """Recompile a resolved design's original request and require exact equality."""
     document = copy.deepcopy(dict(resolved))
@@ -836,6 +879,13 @@ def validate_resolved_design(
     source_files: dict[str, Path] = {}
     design_request_source = None
     root = Path(source_root).resolve()
+    use_repository_text = _repository_text_source_policy(
+        root,
+        repository_text_sources,
+    )
+    source_sha256 = (
+        repository_text_sha256 if use_repository_text else file_sha256
+    )
     for record in document["sources"]:
         logical = Path(record["path"])
         if logical.is_absolute() or ".." in logical.parts:
@@ -847,7 +897,7 @@ def validate_resolved_design(
             raise MultipoleDesignCompileError(
                 f"resolved design source escapes its provenance root: {record['path']}"
             )
-        if not path.is_file() or file_sha256(path) != record["sha256"]:
+        if not path.is_file() or source_sha256(path) != record["sha256"]:
             raise MultipoleDesignCompileError(
                 f"resolved design source cannot be verified: {path}"
             )
@@ -866,6 +916,7 @@ def validate_resolved_design(
             expected_identity=locked_identity,
             source_files=source_files,
             source_root=source_root,
+            repository_text_sources=use_repository_text,
         )
     else:
         try:
@@ -897,6 +948,7 @@ def validate_resolved_design(
             provenance_root=source_root,
             operating_mode_registry_path=mode_registry_path,
             mode_id=mode_id,
+            repository_text_sources=use_repository_text,
         )
     if document != rebuilt:
         raise MultipoleDesignCompileError(
@@ -911,6 +963,7 @@ def validate_resolved_design_file(
     request_path: Path,
     source_root: Path,
     expected_identity: Mapping[str, Any],
+    repository_text_sources: bool | None = None,
 ) -> dict[str, Any]:
     """Load a resolved design and compare it with deterministic recompilation."""
     document = json.loads(Path(path).read_text(encoding="utf-8-sig"))
@@ -919,6 +972,7 @@ def validate_resolved_design_file(
         request_path=request_path,
         source_root=source_root,
         expected_identity=expected_identity,
+        repository_text_sources=repository_text_sources,
     )
 
 

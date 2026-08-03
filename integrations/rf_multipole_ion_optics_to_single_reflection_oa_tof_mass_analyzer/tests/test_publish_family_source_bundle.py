@@ -35,23 +35,15 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.rf_handoff_adapter
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 INTEGRATION_ROOT = Path(__file__).resolve().parents[1]
-DEPENDENCY_BASE_PATH = (
-    INTEGRATION_ROOT / "config" / "family_dependencies_base.json"
+DEPENDENCY_INVENTORY_PATH = (
+    INTEGRATION_ROOT / "config" / "family_runtime_dependencies.json"
 )
-DEPENDENCY_OVERLAY_PATH = (
-    INTEGRATION_ROOT
-    / "config"
-    / "family_quadrupole_dependencies_overlay.json"
-)
+SOURCE_ADAPTER_PATH = INTEGRATION_ROOT / "config" / "family_source_adapter.json"
 PROFILE_REGISTRY_PATH = INTEGRATION_ROOT / "config" / "connection_profiles.json"
-SOURCE_CONTRACT_PATH = (
-    INTEGRATION_ROOT / "config" / "family_quadrupole_n100_source_contract.json"
-)
 FAMILY_PROFILE_ID = (
-    "rf_quadrupole_no_acceleration_full_length_direct_mating_gap_0mm"
+    "rf_quadrupole_oatof_shield_terminal_direct_mating_gap_0mm"
 )
 PRE_PULSE_CONSUMER = "pre_pulse_interface_transport"
-PUBLISHER_DEPENDENCY_ID = "rf_family_source_bundle_publisher"
 
 SOURCE_COLUMNS = [
     "particle_id",
@@ -239,13 +231,7 @@ class FamilySourceBundlePublisherTests(unittest.TestCase):
 
     def _build_pre_pulse_runtime_snapshot(self) -> tuple[Path, Path]:
         dependency_contract = json.loads(
-            DEPENDENCY_BASE_PATH.read_text(encoding="utf-8")
-        )
-        dependency_overlay = json.loads(
-            DEPENDENCY_OVERLAY_PATH.read_text(encoding="utf-8")
-        )
-        dependency_contract["dependencies"].extend(
-            dependency_overlay["dependencies"]
+            DEPENDENCY_INVENTORY_PATH.read_text(encoding="utf-8")
         )
         dependencies = [
             dependency
@@ -253,13 +239,16 @@ class FamilySourceBundlePublisherTests(unittest.TestCase):
             if PRE_PULSE_CONSUMER in dependency["consumers"]
         ]
         self.assertTrue(dependencies)
-        publisher_dependencies = [
-            dependency
-            for dependency in dependencies
-            if dependency["id"] == PUBLISHER_DEPENDENCY_ID
-        ]
-        self.assertEqual(len(publisher_dependencies), 1)
-        publisher_dependency = publisher_dependencies[0]
+        self.assertNotIn(
+            "rf_family_source_bundle_publisher",
+            {dependency["id"] for dependency in dependencies},
+        )
+        source_adapter = json.loads(SOURCE_ADAPTER_PATH.read_text(encoding="utf-8"))
+        publisher_path = source_adapter["adapter"]["path"]
+        publisher_dependency = {
+            "source_repo_path": publisher_path,
+            "frozen_filename": f"runtime_snapshot/{publisher_path}",
+        }
 
         frozen_names = {
             dependency["frozen_filename"] for dependency in dependencies
@@ -300,12 +289,14 @@ class FamilySourceBundlePublisherTests(unittest.TestCase):
             )
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, destination)
+        publisher_source = REPO_ROOT / publisher_dependency["source_repo_path"]
+        publisher_destination = self.root / publisher_dependency["frozen_filename"]
+        publisher_destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(publisher_source, publisher_destination)
         snapshot_root = self.root / "runtime_snapshot"
         snapshot_publisher = self.root / publisher_dependency["frozen_filename"]
         live_publisher = REPO_ROOT / publisher_dependency["source_repo_path"]
-        source_contract = json.loads(
-            SOURCE_CONTRACT_PATH.read_text(encoding="utf-8")
-        )
+        source_contract = json.loads(SOURCE_ADAPTER_PATH.read_text(encoding="utf-8"))
         self.assertEqual(
             source_contract["adapter"]["path"],
             publisher_dependency["source_repo_path"],
@@ -436,8 +427,15 @@ class FamilySourceBundlePublisherTests(unittest.TestCase):
     def test_repository_publisher_closes_over_frozen_pre_pulse_snapshot(
         self,
     ) -> None:
+        registry = load_connection_profile_registry(PROFILE_REGISTRY_PATH)
+        upstream = registry["profiles"][0]["upstream"]
+        upstream.pop("port_binding")
+        upstream["port_contract"] = (
+            "projects/rf_quadrupole_ion_optics/config/interfaces/provided/"
+            "rf_multipole_exit_no_acceleration_full_length.json"
+        )
         resolved = resolve_connection_profile(
-            load_connection_profile_registry(PROFILE_REGISTRY_PATH),
+            registry,
             FAMILY_PROFILE_ID,
             repo_root=REPO_ROOT,
         )

@@ -63,6 +63,7 @@ def render_canonical_source(
     source_family_path: Path | None = None,
     operating_point_id: str | None = None,
     expected_source_family_sha256: str | None = None,
+    expected_kinetic_energy_ev: float | None = None,
 ) -> tuple[str, str, int]:
     """Project canonical particles into the SIMION workbench frame."""
     resolved = json.loads(resolved_design.read_text(encoding="utf-8-sig"))
@@ -72,6 +73,7 @@ def render_canonical_source(
         source_family_path=source_family_path,
         operating_point_id=operating_point_id,
         expected_source_family_sha256=expected_source_family_sha256,
+        expected_kinetic_energy_ev=expected_kinetic_energy_ev,
     )
     mass_amu = float(metadata["mass_amu"])
     enclosure = resolved["geometry_mm"]["enclosure"]
@@ -118,6 +120,7 @@ def main() -> int:
     parser.add_argument("--source-family", type=Path)
     parser.add_argument("--operating-point")
     parser.add_argument("--expected-source-family-sha256")
+    parser.add_argument("--expected-kinetic-energy-ev", type=float)
     parser.add_argument("--fly2", required=True, type=Path)
     parser.add_argument("--source-states-lua", required=True, type=Path)
     args = parser.parse_args()
@@ -129,6 +132,7 @@ def main() -> int:
         source_family_path=args.source_family,
         operating_point_id=args.operating_point,
         expected_source_family_sha256=args.expected_source_family_sha256,
+        expected_kinetic_energy_ev=args.expected_kinetic_energy_ev,
     )
     args.fly2.write_text(fly, encoding="ascii")
     args.source_states_lua.write_text(states, encoding="ascii")

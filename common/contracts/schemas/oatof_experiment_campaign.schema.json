@@ -32,11 +32,12 @@
     "execution_profile": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["profile_id", "authority"],
       "properties": {
         "profile_id": {"const": "validated_structural_candidate"},
+        "capability_id": {"const": "single_reflection_mass_analysis"},
         "authority": {"$ref": "#/$defs/file_record"}
-      }
+      },
+      "required": ["profile_id", "capability_id", "authority"]
     },
     "base_request": {"$ref": "#/$defs/file_record"},
     "authorities": {
@@ -76,7 +77,7 @@
       ],
       "properties": {
         "particle_source_seed": {"type": "integer"},
-        "particle_count": {"const": 100},
+        "particle_count": {"type": "integer", "enum": [100, 1000]},
         "statistical_pairing": {"const": "common_random_numbers_across_rows"}
       }
     },

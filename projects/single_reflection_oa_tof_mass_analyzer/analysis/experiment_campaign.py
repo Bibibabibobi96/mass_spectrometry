@@ -31,7 +31,6 @@ DEFAULT_ARTIFACT_ROOT = (
     / "projects"
     / "single_reflection_oa_tof_mass_analyzer"
 )
-PROFILE_ID = "validated_structural_candidate"
 ENTRYPOINT = "workflows/design_candidate/run_candidate.py"
 PROJECT_ID = "single_reflection_oa_tof_mass_analyzer"
 
@@ -82,7 +81,9 @@ def _profile(document: dict[str, Any]) -> dict[str, Any]:
     profile = matches[0]
     run_steps = [item for item in profile["steps"] if item.get("kind") == "run"]
     if (
-        profile["profile_id"] != PROFILE_ID
+        profile["profile_id"] != document["execution_profile"]["profile_id"]
+        or profile.get("capability_id")
+        != document["execution_profile"]["capability_id"]
         or profile.get("mode") != "design_candidate"
         or profile.get("required_bindings") != ["particle_source_seed"]
         or len(run_steps) != 1

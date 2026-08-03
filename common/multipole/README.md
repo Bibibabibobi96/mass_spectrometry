@@ -128,7 +128,10 @@ schema v4 campaign还可通过`analysis_requests`引用
 命令或任意路径。所引用实验全部形成已验证success manifest后，同一入口自动创建标准analysis run；
 `-Status`只读报告分析请求的`PENDING/COMPLETE/FAILED`，不会为补齐输入而写文件。未知能力、外表实验、
 越界参数、混合事件/轴面/源ID或不完整输出均失败关闭。v1--v3合同保持原有语义，不因新增能力被事后
-解释为预注册分析。
+解释为预注册分析。schema v5只扩展同一公共入口的受治理初始粒子源变换：campaign逐行声明目标
+单能初始能量，公共派生器保持粒子ID、位置、速度方向、出生时刻和N=100/N=1000前缀关系，仅按正标量
+缩放三维速度；源预检和SIMION投影以冻结的派生metadata显式验证目标能量。该字段属于初始条件，不是
+电极设计变量，不复制三个项目的execution profile，也不得用来改写项目baseline。
 圆柱家族实验共同使用`rf_multipole_family_mother_sample_v1_1000.csv`及其精确
 `rf_multipole_family_mother_sample_v1_100.csv`前缀；生成算法、seed、分布、消费者和SHA由同目录
 `rf_multipole_family_mother_sample_v1.json`冻结；这是当前四/六/八极杆家族实验的唯一粒子源入口。

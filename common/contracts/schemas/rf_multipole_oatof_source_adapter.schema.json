@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/rf_multipole_oatof_source_adapter.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "role", "integration_id", "selector", "adapter", "canonical_state"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "rf_multipole_oatof_source_adapter"},
+    "integration_id": {"const": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"},
+    "selector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event", "status"],
+      "properties": {
+        "event": {"const": "handoff"},
+        "status": {"const": "transmitted"}
+      }
+    },
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "callable", "output_schema"],
+      "properties": {
+        "path": {"const": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/analysis/publish_family_source_bundle.py"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "callable": {"const": "publish_family_source_bundle"},
+        "output_schema": {"const": "component_particle_state_v1"}
+      }
+    },
+    "canonical_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["frame_id", "clock_epoch_id", "lineage_policy", "species_policy"],
+      "properties": {
+        "frame_id": {"const": "multipole_cartesian_z_axis_v1"},
+        "clock_epoch_id": {"const": "instrument_clock_epoch_v1"},
+        "lineage_policy": {"const": "preserve_root_birth_time_and_component_elapsed_time"},
+        "species_policy": {"const": "frozen_particle_source_mass_and_charge"}
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9A-F]{64}$"}
+  }
+}

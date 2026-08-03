@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import copy
-import hashlib
 import json
 import unittest
 from pathlib import Path
 
+from common.contracts.file_identity import repository_text_sha256
 from common.contracts.machine_contracts import validate_schema
 from common.multipole.compile_design_request import (
     MultipoleDesignCompileError,
@@ -124,7 +124,7 @@ class Phase2DesignConfigurationTests(unittest.TestCase):
         self.assertEqual(set(bounded["request_json_pointers"]), pointers)
         self.assertEqual(
             self.envelope["reference"]["design_request_sha256"],
-            hashlib.sha256(REQUEST_PATH.read_bytes()).hexdigest().upper(),
+            repository_text_sha256(REQUEST_PATH),
         )
         self.assertIn("connector_shape_supported", self.catalog["invariants"])
 

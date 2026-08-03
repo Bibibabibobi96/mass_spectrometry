@@ -3,12 +3,12 @@
   "role": "component_chain_handoff_contract",
   "status": "functional_unqualified",
   "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
-  "consumer_scope": "rf_multipole_no_acceleration_full_length_family",
+  "consumer_scope": "rf_multipole_registered_handoff_family",
   "source_component": {
     "project_id": "runtime_binding.upstream_project_id",
-    "profile": "resolved_design_no_acceleration_full_length",
-    "event": "handoff",
-    "required_status": "transmitted",
+    "profile": "run_input:upstream_resolved_design:/design_profile_id",
+    "event": "run_input:resolved_source_contract:/selector/event",
+    "required_status": "run_input:resolved_source_contract:/selector/status",
     "minimum_particles": 100
   },
   "target_component": {

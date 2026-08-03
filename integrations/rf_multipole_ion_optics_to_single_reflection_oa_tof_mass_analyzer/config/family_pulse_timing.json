@@ -11,7 +11,10 @@
     "shared_physical_port_joint_geometry": "dependency_contract:rf_shared_joint_geometry"
   },
   "population": {
-    "species_key": ["mass_amu", "charge_state"],
+    "species_key": [
+      "mass_amu",
+      "charge_state"
+    ],
     "mixed_species_policy": "require an explicit target species or emit a separate schedule for each species; never average different species into one hidden pulse time",
     "energy_policy": "consume each particle's actual velocity; kinetic energy is reported but is not converted through a hard-coded mass-energy formula",
     "minimum_particles_after_port_prediction": 1

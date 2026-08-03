@@ -30,21 +30,16 @@ class IntegrationAdapterContractTests(unittest.TestCase):
         profile_ids = {
             item["connection_profile_id"] for item in registry["mappings"]
         }
+        connection_registry = json.loads(
+            (
+                INTEGRATION_ROOT / "config" / "connection_profiles.json"
+            ).read_text(encoding="utf-8")
+        )
         self.assertEqual(
             profile_ids,
             {
-                (
-                    "rf_quadrupole_no_acceleration_full_length_"
-                    "direct_mating_gap_0mm"
-                ),
-                (
-                    "rf_hexapole_no_acceleration_full_length_"
-                    "direct_mating_gap_0mm"
-                ),
-                (
-                    "rf_octupole_no_acceleration_full_length_"
-                    "direct_mating_gap_0mm"
-                ),
+                item["connection_profile_id"]
+                for item in connection_registry["profiles"]
             },
         )
         for profile_id in profile_ids:

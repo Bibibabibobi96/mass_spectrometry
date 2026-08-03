@@ -4,7 +4,30 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
+$workspaceRoot = Split-Path -Parent $repoRoot
 $errors = [Collections.Generic.List[string]]::new()
+
+$allowedWorkspaceEntries = @(
+  '.agents','.claude','.comsol_runtime','.comsol_server_config','.git','.idea',
+  '.matlab_pref','.matlab_pref25','.mcp.json','AGENTS.md','CLAUDE.md',
+  'README.md','artifacts','simulation_repo'
+)
+foreach ($entry in Get-ChildItem -Force -LiteralPath $workspaceRoot) {
+  if ($entry.Name -notin $allowedWorkspaceEntries) {
+    $errors.Add("workspace root contains unregistered entry: $($entry.Name)")
+  }
+}
+foreach ($required in @('AGENTS.md','README.md','simulation_repo','artifacts')) {
+  if (-not (Test-Path -LiteralPath (Join-Path $workspaceRoot $required))) {
+    $errors.Add("workspace root is missing required entry: $required")
+  }
+}
+$artifactsRoot = Join-Path $workspaceRoot 'artifacts'
+foreach ($entry in Get-ChildItem -Force -LiteralPath $artifactsRoot) {
+  if ($entry.Name -ne 'projects' -or -not $entry.PSIsContainer) {
+    $errors.Add("artifacts root contains unregistered entry: $($entry.Name)")
+  }
+}
 
 foreach ($directoryName in @('.tmp', 'scratch')) {
   $directory = Join-Path $repoRoot $directoryName

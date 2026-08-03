@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "role": "rf_multipole_oatof_source_adapter",
+  "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+  "selector": {
+    "event": "handoff",
+    "status": "transmitted"
+  },
+  "adapter": {
+    "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/analysis/publish_family_source_bundle.py",
+    "sha256": "165A300CAE84BEA9D62050B5BB25D8AF4571DD327730643EC2B19891D4546628",
+    "callable": "publish_family_source_bundle",
+    "output_schema": "component_particle_state_v1"
+  },
+  "canonical_state": {
+    "frame_id": "multipole_cartesian_z_axis_v1",
+    "clock_epoch_id": "instrument_clock_epoch_v1",
+    "lineage_policy": "preserve_root_birth_time_and_component_elapsed_time",
+    "species_policy": "frozen_particle_source_mass_and_charge"
+  }
+}

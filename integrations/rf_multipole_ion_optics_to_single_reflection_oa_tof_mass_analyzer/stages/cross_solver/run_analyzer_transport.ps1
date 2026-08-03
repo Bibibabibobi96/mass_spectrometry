@@ -6,7 +6,12 @@ param(
   [Parameter(Mandatory)][string]$ResolvedConnection,
   [Parameter(Mandatory)][string]$ResolvedEngineeringBudget,
   [Parameter(Mandatory)][string]$RuntimeBinding,
-  [string]$SourceBranchId = '',
+  [Parameter(Mandatory)][ValidateSet('comsol','simion')]
+  [string]$SourceBranchId,
+  [Parameter(Mandatory)][string]$ResolvedSourceContract,
+  [Parameter(Mandatory)][string]$ResolvedSourceContractSha256,
+  [Parameter(Mandatory)][string]$UpstreamResolvedDesign,
+  [Parameter(Mandatory)][string]$UpstreamResolvedDesignSha256,
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$PythonExe = ''
 )
@@ -19,7 +24,11 @@ $repoRoot = (Resolve-Path (Join-Path $integrationRoot '..\..')).Path
 $runtime = Resolve-RfOatofRuntimeBinding -RepoRoot $repoRoot `
   -ResolvedConnection $ResolvedConnection -RuntimeBinding $RuntimeBinding `
   -ExpectedConnectionProfileId $ExpectedConnectionProfileId `
-  -SourceBranchId $SourceBranchId
+  -SourceBranchId $SourceBranchId `
+  -ResolvedSourceContract $ResolvedSourceContract `
+  -ResolvedSourceContractSha256 $ResolvedSourceContractSha256 `
+  -UpstreamResolvedDesign $UpstreamResolvedDesign `
+  -UpstreamResolvedDesignSha256 $UpstreamResolvedDesignSha256
 $upstreamProjectId = $runtime.upstream_project_id
 $python = if ($PythonExe) {
   [IO.Path]::GetFullPath($PythonExe)
@@ -189,7 +198,7 @@ $software = @('COMSOL 6.4','SIMION 2020','Python 3.11')
 $package = New-RfRunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot $artifactRoot -RunId $RunId `
   -Project $upstreamProjectId `
-  -Mode 'rf_to_oatof_analyzer_transport_n100' -Software $software `
+  -Mode 'rf_to_oatof_analyzer_transport' -Software $software `
   -RetentionContractEnabled -RetentionClass compact `
   -AdditionalDirectories @('simion')
 $python = $package.python
@@ -209,6 +218,10 @@ try {
   $runtimeBindingFrozen = Join-Path $package.input_dir 'runtime_binding.json'
   $resolvedConnectionFrozen =
     Join-Path $package.input_dir 'resolved_connection.json'
+  $resolvedSourceContractFrozen =
+    Join-Path $package.input_dir 'resolved_source_contract.json'
+  $upstreamResolvedDesignFrozen =
+    Join-Path $package.input_dir 'upstream_resolved_design.json'
   $runnerIdentity = Copy-RfStableFile -SourceRunRoot $repoRoot `
     -SourcePath $PSCommandPath -Destination $runner -Role 'end-to-end runner'
   $supportIdentity = Copy-RfStableFile -SourceRunRoot $repoRoot `
@@ -216,6 +229,10 @@ try {
   Copy-Item -LiteralPath $runtime.binding_path -Destination $runtimeBindingFrozen
   Copy-Item -LiteralPath $runtime.resolved_connection_path `
     -Destination $resolvedConnectionFrozen
+  Copy-Item -LiteralPath $runtime.contracts.resolved_source_contract `
+    -Destination $resolvedSourceContractFrozen
+  Copy-Item -LiteralPath $runtime.contracts.upstream_resolved_design `
+    -Destination $upstreamResolvedDesignFrozen
 
   $dependencyPublication = Publish-RfOatofDependencyInventory `
     -Runtime $runtime -RepoRoot $repoRoot -InputDir $package.input_dir `
@@ -322,14 +339,14 @@ try {
       $frozenManifestVerifier,$sourceManifestPath,
       '--require-status','success','--require-run-id',$SourceRunId,
       '--require-project',$upstreamProjectId,
-      '--require-mode','rf_to_oatof_pulse_capture_n100'
+      '--require-mode','rf_to_oatof_pulse_capture'
     ) -FailureMessage 'The frozen PulseCapture source run manifest is invalid.'
   $sourceManifest = Get-Content -LiteralPath $sourceManifestPath `
     -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($sourceManifest.role -ne 'simulation_run_manifest' -or
       $sourceManifest.status -ne 'success' -or
       $sourceManifest.project -ne $upstreamProjectId -or
-      $sourceManifest.mode -ne 'rf_to_oatof_pulse_capture_n100' -or
+      $sourceManifest.mode -ne 'rf_to_oatof_pulse_capture' -or
       $sourceManifest.run_id -ne $SourceRunId) {
     throw 'PulseCapture source manifest identity or role is invalid.'
   }
@@ -343,7 +360,7 @@ try {
     -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($sourceConfig.run_id -ne $SourceRunId -or
       $sourceConfig.project -ne $upstreamProjectId -or
-      $sourceConfig.mode -ne 'rf_to_oatof_pulse_capture_n100') {
+      $sourceConfig.mode -ne 'rf_to_oatof_pulse_capture') {
     throw 'Downstream continuation requires the frozen PulseCapture shared-clock source.'
   }
   Assert-RfOatofSourceIdentityMatches `
@@ -397,6 +414,10 @@ try {
       '--canonical-output',$canonical,'--ion-output',$ion,
       '--row-map-output',$rowMap,'--metadata-output',$adapterMetadata
     ) -FailureMessage 'Canonical-to-SIMION adapter failed.'
+  $analyzerParticleCount = @(Import-Csv -LiteralPath $canonical).Count
+  if ($analyzerParticleCount -lt 1) {
+    throw 'Canonical analyzer input contains no particles.'
+  }
 
   $formalProjectRoot = Join-Path $workspaceRoot 'artifacts\projects\single_reflection_oa_tof_mass_analyzer'
   $formalRoot = Join-Path $formalProjectRoot 'formal'
@@ -496,16 +517,17 @@ try {
     schema_version = 2
     run_id = $RunId
     project = $upstreamProjectId
-    mode = 'rf_to_oatof_analyzer_transport_n100'
+    mode = 'rf_to_oatof_analyzer_transport'
     project_root = $repoRoot
     inputs = [ordered]@{
       runner = $runner
       run_artifact_support = $support
       runtime_binding = $runtimeBindingFrozen
       resolved_connection = $resolvedConnectionFrozen
+      resolved_source_contract = $resolvedSourceContractFrozen
+      upstream_resolved_design = $upstreamResolvedDesignFrozen
       code_inventory = $dependencyContract
-      dependency_contract_base = $dependencyPublication.base_path
-      dependency_contract_overlay = $dependencyPublication.overlay_path
+      dependency_contract = $dependencyPublication.dependency_contract_path
       source_run_manifest = $sourceManifestPath
       source_run_config = $sourceConfigPath
       resolved_integration_engineering_budget = $budgetBinding.frozen_budget
@@ -587,7 +609,7 @@ try {
     -FilePath $SimionExe -WorkingDirectory $runtimeDir `
     -RedirectStandardOutput $stdout -RedirectStandardError $stderr `
     -ArgumentList @(
-      '--default-num-particles','100','--nogui','fly',
+      '--default-num-particles',([string]$analyzerParticleCount),'--nogui','fly',
       '--trajectory-quality','8','--retain-trajectories','0',
       '--particles',$ion,'--programs','1',
       '--adjustable','trajectory_quality=8',
@@ -611,7 +633,7 @@ try {
     -Arguments @(
       $frozenSolverDiagnostics,'analyze-simion-log',
       '--log',$stdout,'--ion-file',$ion,
-      '--mode','rf_oatof_analyzer_transport_n100',
+      '--mode','rf_oatof_analyzer_transport',
       '--distribution','pulse_capture_local_accelerator_exit',
       '--particle-csv',$downstream,'--allow-incomplete-census'
     ) -FailureMessage 'Frozen SIMION log analysis failed.'

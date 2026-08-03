@@ -7,41 +7,42 @@
 `ConnectionProfileId`。解析后的 connection 决定刚性位姿、连接器、公共电位、时钟和场责任区，运行器不得再消费
 connector case 或由间隙推断拓扑。
 
-多极杆族同源闭合workflow使用三个无加速全尺寸直接对接profile：
+多极杆族到oaTOF的活动workflow使用三个模式中性的直接对接profile：
 
-- `rf_quadrupole_no_acceleration_full_length_direct_mating_gap_0mm`；
-- `rf_hexapole_no_acceleration_full_length_direct_mating_gap_0mm`；
-- `rf_octupole_no_acceleration_full_length_direct_mating_gap_0mm`。
+- `rf_quadrupole_oatof_shield_terminal_direct_mating_gap_0mm`；
+- `rf_hexapole_oatof_shield_terminal_direct_mating_gap_0mm`；
+- `rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm`。
 
 当前唯一公开入口为
 [`workflows/family_source_closure/execute.ps1`](../workflows/family_source_closure/execute.ps1)。
-后者要求显式提供`ConnectionProfileId`和`SourceBranchId`。`SourceBranchId=comsol|simion`只选择冻结的
-上游多极杆粒子源分支，不是接口求解器选择器；两种分支进入完全相同的固定下游链：
-COMSOL `pre_pulse_interface_transport`、COMSOL `pulse_capture`、SIMION
-`analyzer_transport`。内部phase不构成独立公开入口或资格声明。
+调用者只选择一份[`experiment_campaign.json`](../config/experiment_campaign.json)和其中的
+`ExperimentId`；每行冻结上游run及其manifest、粒子状态、母样本和元数据，并选择一个模式中性的
+连接profile。上游家族、COMSOL/SIMION来源、实际多极杆工况、母样本规模和resolved design均从冻结的
+source run证据派生，不能在入口重复声明或由静态无加速配置回填。当前标准母样本规模为N=100或
+N=1000，行内`particle_count`可以选择其非空子集，但不得伪装成新的母样本规模。
 
-同一公开入口还接受可选`SourceRevisionId`，默认值`baseline`保持上述六分支原绑定。
-[`family_source_revision_registry.json`](../config/family_source_revision_registry.json)是修订选择的机器权威；
-每个修订必须冻结自己的预注册、预算、runtime binding、允许的profile与source branch，不能覆盖
-`baseline`记录或把任意路径作为运行参数注入。
+每个静态连接profile只声明`source_run_resolved_design`端口绑定；prepare阶段必须从该source run读取
+resolved design，在父run中冻结`resolved_source_contract.json`和
+`upstream_resolved_design.json`，再物化实际component port并解析连接。活动runtime binding只保存稳定
+机制合同、家族handoff发布合同、source adapter和execution policy，不保存某个工况、求解器或N的
+静态source/design。两个run-local输入及其SHA是下游三个阶段的必填冻结身份，不存在optional override、
+repository fallback或无加速特例。
 
-该公开入口冻结resolved connection、composition plan、runtime binding和工程预算，并复用
-[`runtime/run_transfer.ps1`](../runtime/run_transfer.ps1)及同一组三个stage。family workflow的每个
-profile/source branch只授权冻结同源N=100母样本的compact功能运行；预算耗尽记为
-`INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`，自动重试固定为零。
+所有工况复用同一固定下游链：COMSOL `pre_pulse_interface_transport`、COMSOL `pulse_capture`、
+SIMION `analyzer_transport`。内部phase不构成独立公开入口或资格声明。执行策略当前为compact、串行
+商业求解器、失败即停、零自动重试；预算耗尽记为
+`INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`。稳定dependency inventory和implementation registry只描述
+代码机制，粒子源与设计作为run-local科学输入单独冻结。
 
-family runtime binding schema v2只冻结公共49项dependency base、家族2项overlay和单一10项
-implementation registry；运行时由base与overlay生成51项code inventory，并分别冻结两层身份，不再
-建立dependency合同的self-snapshot。
-
-这些repository-text身份由`runtime/refresh_family_repository_bindings.py`单向编译。端口、resolved、
-依赖、实现或source publication变化后只运行一次该入口，不手改下游SHA；`--check`由静态测试失败
+这些repository-text身份由`runtime/refresh_family_repository_bindings.py`单向编译。稳定合同、连接、
+依赖、实现或source adapter变化后只运行一次该入口，不手改下游SHA；`--check`由静态测试失败
 关闭。编译和运行时校验统一使用UTF-8/LF规范文本身份，因此Windows CRLF与GitHub LF checkout不会
 产生不同仓库身份；artifact、run输入和求解器结果仍使用原始字节SHA，不改变历史证据语义。
 
 ## 多极杆族同源闭合状态与声明边界
 
-三个family profile及其COMSOL/SIMION上游source branch已经完成机器合同、runtime binding、源状态和
+以下2026-07-30至2026-08-02记录是迁移前source-revision工作流的历史诊断证据，不再描述活动入口。
+当时三个family profile及其COMSOL/SIMION上游source branch完成机器合同、runtime binding、源状态和
 母样本身份的预注册。2026-07-30，六个真实分支均通过同一公开入口和固定
 COMSOL pre-pulse → COMSOL pulse-capture → SIMION analyzer链，并各自发布轻量父run：
 
@@ -97,13 +98,14 @@ oaTOF入口、脉冲时active、局部加速器出口、探测面crossing和hit�
 `INCONCLUSIVE_DIAGNOSTIC_ONLY`，不授予分辨率、优化、Candidate或Formal资格。任何加速多极杆实验
 必须作为新的单变量预注册活动，不能把本次无加速source revision差异与加速电压效应混在同一结论中。
 
-当前source-revision发布器使用schema v2：每个profile必须显式绑定旧COMSOL、混合COMSOL和旧SIMION
+当时的source-revision发布器使用schema v2：每个profile显式绑定旧COMSOL、混合COMSOL和旧SIMION
 三个父run，并发布三个`right_minus_left`有向pair、共同/差异粒子ID、局部加速器出口与探测器事件集合。
 同一profile的三条series使用共同尺度和固定bin绘图，figure JSON、PNG及终态summary均进入manifest；
-活动仓库内的实现、lock和预登记合同必须先逐字节冻结到本次`inputs/repository_snapshot/`，manifest
-不得指向会随Git变化的活动文件。发布过程始终保留`interrupted`、`failed`或`success`之一作为当前权威终态。上述
-`20260730_234500__analysis__cross__hybrid-source-revision__n100`仍是不可变schema v1历史artifact；
-读取器保持兼容，但不会把它重写为schema v2，也不得把新的方向命名倒灌到历史结果。
+活动仓库内的实现、lock和预登记合同先逐字节冻结到`inputs/repository_snapshot/`。该专用发布器、
+静态source/revision配置和对应schema现已由campaign-only入口取代并退出活动树；旧Git提交与artifact
+保留原始实现和结果，不为其维持活动兼容代码。上述
+`20260730_234500__analysis__cross__hybrid-source-revision__n100`仍是不可变schema v1历史artifact，
+不得重写或作为新的派生run输入。
 
 2026-07-31已用schema v2发布只读三源横向图组
 `20260731_030000__analysis__cross__source-triangle__n100`，状态保持
@@ -125,7 +127,7 @@ family source closure；连接级pulse/analyzer分析统一位于本integration�
 
 ## 静态门禁
 
-[`verify_integration.ps1`](../verify_integration.ps1)只运行无求解器的合同测试：profile 唯一性、公共解析、
-非空transfer composition step、adapter registry SHA、预算冻结SHA、source branch身份传播、父运行发布
-fixture、source revision注册与失败关闭及paired analysis失败关闭。它不运行COMSOL、SIMION、
-MATLAB、CAD，也不替代真实迁移等价复验或family六分支真实运行。
+[`verify_integration.ps1`](../verify_integration.ps1)只运行无求解器的合同测试：模式中性profile、run-local
+端口物化、公共解析、非空transfer composition step、单一dependency inventory、活动发布SHA、campaign
+行身份、source/design强制冻结、父运行发布和campaign comparison失败关闭。它不运行COMSOL、SIMION、
+MATLAB或CAD，也不替代真实求解器运行、数值收敛或物理资格验证。

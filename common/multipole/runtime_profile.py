@@ -485,6 +485,53 @@ def _resolve_phase_policy(
     }
 
 
+def _resolve_source_transform_policy(
+    repo_root: Path,
+    project_root: Path,
+    project_id: str,
+    campaign: dict[str, Any],
+    experiment: dict[str, Any],
+    design: dict[str, Any],
+) -> dict[str, Any]:
+    """Bind the governed v5 initial-energy transform without materializing it."""
+
+    policy = campaign["particle_source_transform_policy"]
+    frequency = float(policy["rf_frequency_Hz"])
+    design_frequency = float(design["resolved_design"]["drive"]["frequency_Hz"])
+    if not math.isclose(frequency, design_frequency, rel_tol=0, abs_tol=0):
+        raise ValueError("source-transform RF frequency differs from the resolved design")
+    target_energy = float(experiment["source_kinetic_energy_eV"])
+    authority = _resolve_particle_source(
+        repo_root, project_root, project_id, experiment["particle_source_profile_id"]
+    )
+    reference = _resolve_particle_source(
+        repo_root,
+        project_root,
+        project_id,
+        policy["n1000_reference_profile_id"],
+    )
+    authority_count = _particle_count(Path(authority["path"]))
+    if authority_count not in (100, 1000):
+        raise ValueError("source transform requires N=100 or N=1000 authority")
+    if _particle_count(Path(reference["path"])) != 1000:
+        raise ValueError("source-transform reference must contain N=1000 particles")
+    if authority_count == 1000 and authority["sha256"] != reference["sha256"]:
+        raise ValueError("N=1000 source-transform authority differs from its reference")
+    return {
+        "kind": policy["kind"],
+        "baseline_frequency_Hz": frequency,
+        "candidate_frequency_Hz": frequency,
+        "target_kinetic_energy_eV": target_energy,
+        "authority_source": authority,
+        "authority_particle_count": authority_count,
+        "n1000_reference_source": reference,
+        "formula": (
+            "preserve birth_time, position and velocity direction; scale velocity "
+            "to source_kinetic_energy_eV"
+        ),
+    }
+
+
 def _typed_base_request(design: dict[str, Any]) -> dict[str, Any]:
     request = _load(design["paths"]["design_request"])
     mode_id = design["profile"].get("mode_id")
@@ -698,7 +745,7 @@ def resolve_campaign_experiment(
         raise ValueError("campaign experiment project identity differs")
 
     downstream_terminal = None
-    if campaign["schema_version"] in (2, 3, 4):
+    if campaign["schema_version"] in (2, 3, 4, 5):
         downstream_terminal = _resolve_downstream_terminal_profile(
             repo_root, campaign["downstream_terminal_profile"]
         )
@@ -741,6 +788,18 @@ def resolve_campaign_experiment(
         )
         if phase_derivation["authority_source"]["sha256"] != source["sha256"]:
             raise ValueError("phase-policy authority source differs from the selected source")
+    source_derivation = None
+    if campaign["schema_version"] == 5:
+        source_derivation = _resolve_source_transform_policy(
+            repo_root,
+            project_root,
+            project_id,
+            campaign,
+            experiment,
+            design,
+        )
+        if source_derivation["authority_source"]["sha256"] != source["sha256"]:
+            raise ValueError("source-transform authority differs from the selected source")
     registry_paths, _, runtime_registry_path = _solver_registry_paths(
         project_root, project_id
     )
@@ -844,6 +903,17 @@ def resolve_campaign_experiment(
             result["campaign"]["simion_pa_basis_policy_sha256"] = canonical_sha256(
                 campaign["simion_pa_basis_policy"]
             )
+    if campaign["schema_version"] == 5:
+        result["campaign"]["particle_source_transform_policy_sha256"] = canonical_sha256(
+            campaign["particle_source_transform_policy"]
+        )
+        result["particle_source_derivation"] = source_derivation
+        result["simion_pa_basis_policy"] = copy.deepcopy(
+            campaign["simion_pa_basis_policy"]
+        )
+        result["campaign"]["simion_pa_basis_policy_sha256"] = canonical_sha256(
+            campaign["simion_pa_basis_policy"]
+        )
     if downstream_terminal is not None:
         result["downstream_terminal_profile"] = downstream_terminal
     return result

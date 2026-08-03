@@ -33,9 +33,15 @@ class SharedPulseGeometrySnapshotTests(unittest.TestCase):
             / "connection_profiles.json"
         )
         registry = load_connection_profile_registry(registry_path)
+        upstream = registry["profiles"][0]["upstream"]
+        upstream.pop("port_binding")
+        upstream["port_contract"] = (
+            "projects/rf_quadrupole_ion_optics/config/interfaces/provided/"
+            "rf_multipole_exit_no_acceleration_full_length.json"
+        )
         resolved = resolve_connection_profile(
             registry,
-            "rf_quadrupole_no_acceleration_full_length_direct_mating_gap_0mm",
+            "rf_quadrupole_oatof_shield_terminal_direct_mating_gap_0mm",
             repo_root=REPO_ROOT,
         )
         cls.resolved_path = Path(cls.resolved_temp.name) / "resolved_connection.json"

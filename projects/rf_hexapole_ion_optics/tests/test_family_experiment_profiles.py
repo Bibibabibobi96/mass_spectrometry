@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import unittest
 from pathlib import Path
 from typing import Any
 
+from common.contracts.file_identity import repository_text_sha256
 from common.contracts.machine_contracts import validate_schema
 from common.multipole.design_profile import resolve_design_profile
 from common.multipole.runtime_profile import resolve_runtime_profile
@@ -22,10 +22,6 @@ MODE_IDS = (
 
 def load(relative: str) -> dict[str, Any]:
     return json.loads((PROJECT_ROOT / relative).read_text(encoding="utf-8"))
-
-
-def sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
 
 
 class FamilyExperimentProfileTests(unittest.TestCase):
@@ -84,7 +80,7 @@ class FamilyExperimentProfileTests(unittest.TestCase):
         }
         self.assertEqual(aliases, {})
 
-    def test_profile_source_hashes_use_repository_lf_bytes(self) -> None:
+    def test_profile_source_hashes_use_canonical_repository_text(self) -> None:
         registry = load("config/design_profiles.json")
         current = [
             profile
@@ -94,10 +90,8 @@ class FamilyExperimentProfileTests(unittest.TestCase):
         for field in ("design_request", "design_variables", "optimization_envelope"):
             for profile in current:
                 path = PROJECT_ROOT / profile[field]
-                content = path.read_bytes()
-                self.assertNotIn(b"\r", content, profile[field])
                 self.assertEqual(
-                    hashlib.sha256(content).hexdigest().upper(),
+                    repository_text_sha256(path),
                     profile["sha256"][field],
                 )
 

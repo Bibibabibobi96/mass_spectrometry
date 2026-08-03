@@ -19,6 +19,20 @@ from common.contracts.file_identity import repository_text_sha256
 
 INTEGRATION_ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_PREFIXES = ("common/", "config/", "docs/", "integrations/", "projects/")
+ACTIVE_CONNECTION_PROFILE_IDS = {
+    "rf_quadrupole_oatof_shield_terminal_direct_mating_gap_0mm",
+    "rf_hexapole_oatof_shield_terminal_direct_mating_gap_0mm",
+    "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm",
+}
+ACTIVE_PUBLICATION_PATHS = (
+    "config/execution_adapter_profiles.json",
+    "config/execution_policy.json",
+    "config/family_source_adapter.json",
+    "config/family_runtime_dependencies.json",
+    "config/family_quadrupole_direct_mating_gap_0mm_runtime_binding.json",
+    "config/family_hexapole_direct_mating_gap_0mm_runtime_binding.json",
+    "config/family_octupole_direct_mating_gap_0mm_runtime_binding.json",
+)
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -63,15 +77,33 @@ def _target_paths(repo_root: Path) -> list[Path]:
     integration_root = repo_root / "integrations" / INTEGRATION_ROOT.name
     config_root = integration_root / "config"
     targets = {
-        path.resolve()
-        for path in config_root.glob("family_*.json")
-        if '"sha256"' in path.read_text(encoding="utf-8-sig")
+        (integration_root / relative_path).resolve()
+        for relative_path in ACTIVE_PUBLICATION_PATHS
     }
-    targets.add((config_root / "execution_adapter_profiles.json").resolve())
     profiles = _load(config_root / "connection_profiles.json")["profiles"]
     for profile in profiles:
+        if profile["connection_profile_id"] not in ACTIVE_CONNECTION_PROFILE_IDS:
+            continue
         for side in ("upstream", "downstream"):
-            targets.add((repo_root / profile[side]["port_contract"]).resolve())
+            port_contract = profile[side].get("port_contract")
+            if port_contract is not None:
+                targets.add((repo_root / port_contract).resolve())
+
+    pending = list(targets)
+    while pending:
+        path = pending.pop()
+        if not path.is_file():
+            raise FileNotFoundError(f"active publication is missing: {path}")
+        if path.suffix.lower() != ".json":
+            continue
+        document = _load(path)
+        for owner, path_key, _ in _reference_pairs(document):
+            dependency = (repo_root / owner[path_key]).resolve()
+            dependency.relative_to(repo_root.resolve())
+            if dependency.suffix.lower() != ".json" or dependency in targets:
+                continue
+            targets.add(dependency)
+            pending.append(dependency)
     return sorted(targets)
 
 

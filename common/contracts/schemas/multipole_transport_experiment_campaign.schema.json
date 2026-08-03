@@ -14,7 +14,7 @@
     "claim_limit"
   ],
   "properties": {
-    "schema_version": {"enum": [1, 2, 3, 4]},
+    "schema_version": {"enum": [1, 2, 3, 4, 5]},
     "role": {"const": "multipole_transport_experiment_campaign"},
     "family_id": {"const": "rf_multipole_ion_optics"},
     "campaign_id": {
@@ -90,6 +90,16 @@
         "n1000_reference_profile_id": {"type": "string", "minLength": 1}
       }
     },
+    "particle_source_transform_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "rf_frequency_Hz", "n1000_reference_profile_id"],
+      "properties": {
+        "kind": {"const": "preserve_phase_position_direction_and_scale_energy"},
+        "rf_frequency_Hz": {"type": "number", "exclusiveMinimum": 0},
+        "n1000_reference_profile_id": {"type": "string", "minLength": 1}
+      }
+    },
     "simion_pa_basis_policy": {
       "type": "object",
       "additionalProperties": false,
@@ -109,7 +119,7 @@
   "allOf": [
     {
       "if": {
-        "properties": {"schema_version": {"enum": [2, 3, 4]}},
+        "properties": {"schema_version": {"enum": [2, 3, 4, 5]}},
         "required": ["schema_version"]
       },
       "then": {"required": ["downstream_terminal_profile"]},
@@ -137,7 +147,6 @@
         "allOf": [
           {"not": {"required": ["design_variable_authorization"]}},
           {"not": {"required": ["particle_source_phase_policy"]}},
-          {"not": {"required": ["simion_pa_basis_policy"]}},
           {
             "properties": {
               "experiments": {
@@ -158,8 +167,15 @@
         "properties": {"schema_version": {"const": 4}},
         "required": ["schema_version"]
       },
+      "then": {"required": ["analysis_requests"]},
+      "else": {"not": {"required": ["analysis_requests"]}}
+    },
+    {
+      "if": {
+        "properties": {"schema_version": {"enum": [4, 5]}},
+        "required": ["schema_version"]
+      },
       "then": {
-        "required": ["analysis_requests"],
         "properties": {
           "experiments": {
             "items": {
@@ -172,17 +188,50 @@
         }
       },
       "else": {
+        "properties": {
+          "experiments": {
+            "items": {"not": {"required": ["case_set"]}}
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"schema_version": {"const": 5}},
+        "required": ["schema_version"]
+      },
+      "then": {
+        "required": ["particle_source_transform_policy", "simion_pa_basis_policy"],
+        "properties": {
+          "experiments": {
+            "items": {
+              "allOf": [
+                {"$ref": "#/$defs/experiment"},
+                {"required": ["source_kinetic_energy_eV"]}
+              ]
+            }
+          }
+        }
+      },
+      "else": {
         "allOf": [
-          {"not": {"required": ["analysis_requests"]}},
+          {"not": {"required": ["particle_source_transform_policy"]}},
           {
             "properties": {
               "experiments": {
-                "items": {"not": {"required": ["case_set"]}}
+                "items": {"not": {"required": ["source_kinetic_energy_eV"]}}
               }
             }
           }
         ]
       }
+    },
+    {
+      "if": {
+        "properties": {"schema_version": {"enum": [3, 4, 5]}},
+        "required": ["schema_version"]
+      },
+      "else": {"not": {"required": ["simion_pa_basis_policy"]}}
     }
   ],
   "$defs": {
@@ -263,6 +312,11 @@
         "stop_stage": {"const": "transport"},
         "case_set": {"enum": ["primary_only", "primary_and_zero_axial_control"]},
         "design_profile_id": {"type": "string", "minLength": 1},
+        "source_kinetic_energy_eV": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 100.0
+        },
         "execution_profile_id": {"type": "string", "minLength": 1},
         "design_variable_values": {
           "type": "object",

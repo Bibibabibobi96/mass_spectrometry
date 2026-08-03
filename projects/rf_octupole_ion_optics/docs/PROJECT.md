@@ -89,6 +89,11 @@ H15条件下分段加速空间RMS略增的信号；统一九臂证据见
 [`../../../docs/history/20260731__multipole-oatof-shield-terminal-h15-n100.md`](../../../docs/history/20260731__multipole-oatof-shield-terminal-h15-n100.md)。
 这是新矩形厚孔拓扑下的N=100事后工程结果，不可与旧独立末端板H15表作仅模式变化的配对比较，也不
 改变数值资格。
+
+2026-08-03补齐同一终端和H15设置下的无加速5 eV初始源后，八极杆末端加速相对分段加速把
+handoff透射提高0.29、空间RMS降低`0.0464 mm`，但角RMS增加`0.6952°`；单纯提高初始能量使透射
+从0.59降至0.39，未形成准直收益。完整12臂对照见
+[`../../../docs/history/20260803__multipole-four-mode-source-energy-h15-n100.md`](../../../docs/history/20260803__multipole-four-mode-source-energy-h15-n100.md)。
 COMSOL/SIMION分别受1200/720 s、2 GiB瞬态目录、16 GiB进程树内存、8 GiB最低
 可用内存、25 MiB compact保留和零自动重试约束；其他runtime由
 [`../config/qualification/engineering_budget.json`](../config/qualification/engineering_budget.json)

@@ -44,6 +44,7 @@ class PhaseMatchedParticleSourceTests(unittest.TestCase):
         baseline_frequency_hz: float = BASELINE_FREQUENCY_HZ,
         candidate_frequency_hz: float = CANDIDATE_FREQUENCY_HZ,
         stem: str = "derived",
+        target_kinetic_energy_ev: float | None = None,
     ) -> tuple[Path, Path, dict[str, object]]:
         output_csv = directory / f"{stem}.csv"
         output_metadata = directory / f"{stem}.json"
@@ -54,6 +55,7 @@ class PhaseMatchedParticleSourceTests(unittest.TestCase):
             baseline_frequency_hz=baseline_frequency_hz,
             candidate_frequency_hz=candidate_frequency_hz,
             n1000_reference_path=reference,
+            target_kinetic_energy_ev=target_kinetic_energy_ev,
         )
         return output_csv, output_metadata, metadata
 
@@ -116,6 +118,40 @@ class PhaseMatchedParticleSourceTests(unittest.TestCase):
             n1000_lines = n1000_csv.read_text(encoding="utf-8").splitlines()
             self.assertEqual(n100_lines[0], n1000_lines[0])
             self.assertEqual(n100_lines[1:], n1000_lines[1:101])
+
+    def test_energy_scaling_preserves_direction_state_and_prefix(self) -> None:
+        with tempfile.TemporaryDirectory() as directory_name:
+            output_csv, _, metadata = self._derive(
+                Path(directory_name),
+                candidate_frequency_hz=BASELINE_FREQUENCY_HZ,
+                target_kinetic_energy_ev=5.0,
+            )
+            original_rows = _read_rows(N100_PATH)
+            derived_rows = _read_rows(output_csv)
+            expected_scale = math.sqrt(5.0 / 2.0)
+            unchanged = (
+                "particle_id", "birth_time_s", "x_mm", "y_mm", "z_mm",
+                "mass_amu", "charge_state",
+            )
+            for original, derived in zip(original_rows, derived_rows, strict=True):
+                for column in unchanged:
+                    self.assertEqual(derived[column], original[column])
+                for column in ("vx_m_s", "vy_m_s", "vz_m_s"):
+                    self.assertAlmostEqual(
+                        float(derived[column]) / float(original[column]),
+                        expected_scale,
+                        places=12,
+                    )
+            self.assertEqual(metadata["schema_version"], 2)
+            self.assertEqual(
+                metadata["kinetic_energy_scaling"]["target_kinetic_energy_eV"],
+                5.0,
+            )
+            self.assertTrue(
+                metadata["particle_count_policy"][
+                    "derived_n100_prefix_projection_verified"
+                ]
+            )
 
     def test_rejects_invalid_frequencies(self) -> None:
         for label, baseline, candidate in (

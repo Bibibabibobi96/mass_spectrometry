@@ -13,7 +13,7 @@ from common.contracts.machine_contracts import (
     REPO_ROOT,
     validate_schema,
 )
-from common.contracts.file_identity import repository_text_sha256
+from common.contracts.file_identity import file_sha256, repository_text_sha256
 from common.integration.resolve_connection import (
     load_connection_profile_registry,
     resolve_connection_profile,
@@ -25,7 +25,8 @@ from common.integration.resolve_connection import (
 class ResolveConnectionTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
-        self.repo_root = Path(self.temporary.name)
+        self.workspace_root = Path(self.temporary.name)
+        self.repo_root = self.workspace_root / "simulation_repo"
         self.upstream_relative = "projects/upstream/config/interfaces/provided/exit.json"
         self.downstream_relative = "projects/downstream/config/interfaces/required/entry.json"
         self.upstream_path = self.repo_root / self.upstream_relative
@@ -179,6 +180,40 @@ class ResolveConnectionTests(unittest.TestCase):
             registry, "grounded_tube", repo_root=self.repo_root
         )
 
+    def _write_artifact_inputs(self) -> Path:
+        artifact_relative = Path(
+            "artifacts/projects/upstream/runs/"
+            "20260803_120000__test__cross__connection/inputs"
+        )
+        source_relative = (artifact_relative / "baseline.json").as_posix()
+        port_relative = (artifact_relative / "exit.json").as_posix()
+        registry_relative = (artifact_relative / "profiles.json").as_posix()
+        source_path = self.workspace_root / source_relative
+        port_path = self.workspace_root / port_relative
+        registry_path = self.workspace_root / registry_relative
+
+        source_path.parent.mkdir(parents=True, exist_ok=True)
+        source_path.write_bytes(
+            b'{\r\n  "interface": {"aperture_radius_mm": 2.5}\r\n}\r\n'
+        )
+        artifact_port = json.loads(json.dumps(self.upstream))
+        artifact_port["authority"] = self._authority(source_relative, source_path)
+        artifact_port["authority"]["source_sha256"] = file_sha256(source_path)
+        self._write_json(port_path, artifact_port)
+
+        artifact_profile = json.loads(json.dumps(self.profile))
+        artifact_profile["upstream"]["port_contract"] = port_relative
+        self._write_json(
+            registry_path,
+            {
+                "schema_version": 1,
+                "role": "connection_profile_registry",
+                "integration_id": "upstream_to_downstream",
+                "profiles": [artifact_profile],
+            },
+        )
+        return registry_path
+
     def test_resolves_explicit_five_tuple_and_source_hashes(self) -> None:
         resolved = self._resolve()
         self.assertEqual(
@@ -225,6 +260,158 @@ class ResolveConnectionTests(unittest.TestCase):
         )
         self.assertNotIn("transition_aperture", self.upstream)
         self.assertNotIn("transition_aperture", self.downstream)
+
+    def test_static_upstream_binding_requires_run_local_materialization(self) -> None:
+        template = json.loads(json.dumps(self.profile))
+        template["upstream"].pop("port_contract")
+        template["upstream"]["port_binding"] = "source_run_resolved_design"
+        registry = {
+            "schema_version": 1,
+            "role": "connection_profile_registry",
+            "integration_id": "upstream_to_downstream",
+            "profiles": [template],
+        }
+        validate_schema(template, "connection_profile.schema.json")
+        with self.assertRaisesRegex(ContractError, "port binding is unresolved"):
+            resolve_connection_profile(
+                registry, "grounded_tube", repo_root=self.repo_root
+            )
+
+        run_local = json.loads(json.dumps(registry))
+        upstream = run_local["profiles"][0]["upstream"]
+        upstream.pop("port_binding")
+        upstream["port_contract"] = self.upstream_relative
+        resolved = resolve_connection_profile(
+            run_local, "grounded_tube", repo_root=self.repo_root
+        )
+        self.assertEqual(resolved["compatibility"]["status"], "pass")
+
+    def test_upstream_binding_is_exclusive_and_downstream_requires_contract(self) -> None:
+        invalid_upstream = json.loads(json.dumps(self.profile))
+        invalid_upstream["upstream"]["port_binding"] = (
+            "source_run_resolved_design"
+        )
+        with self.assertRaises(ContractError):
+            validate_schema(invalid_upstream, "connection_profile.schema.json")
+
+        invalid_downstream = json.loads(json.dumps(self.profile))
+        invalid_downstream["downstream"].pop("port_contract")
+        invalid_downstream["downstream"]["port_binding"] = (
+            "source_run_resolved_design"
+        )
+        with self.assertRaises(ContractError):
+            validate_schema(invalid_downstream, "connection_profile.schema.json")
+
+    def test_active_connection_publications_are_mode_neutral(self) -> None:
+        integration_config = (
+            REPO_ROOT
+            / "integrations"
+            / "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
+            / "config"
+        )
+        active = [
+            integration_config / "connection_profiles.json",
+            integration_config / "execution_adapter_profiles.json",
+            integration_config / "experiment_campaign.json",
+            *[
+                integration_config
+                / f"family_{family}_direct_mating_gap_0mm_runtime_binding.json"
+                for family in ("quadrupole", "hexapole", "octupole")
+            ],
+        ]
+        for path in active:
+            with self.subTest(path=path.name):
+                self.assertNotIn(
+                    "no_acceleration",
+                    path.read_text(encoding="utf-8"),
+                )
+
+    def test_repository_authority_keeps_normalized_text_identity(self) -> None:
+        payload = self.upstream_source_path.read_bytes().replace(b"\r\n", b"\n")
+        self.upstream_source_path.write_bytes(payload.replace(b"\n", b"\r\n"))
+        resolved = self._resolve()
+        authority = resolved["sources"]["upstream_authority"]
+        self.assertEqual(
+            authority["sha256"],
+            repository_text_sha256(self.upstream_source_path),
+        )
+        self.assertNotEqual(authority["sha256"], file_sha256(self.upstream_source_path))
+
+    def test_artifact_registry_port_and_authority_use_raw_byte_identity(self) -> None:
+        registry_path = self._write_artifact_inputs()
+        resolved_path = self.repo_root / "output/resolved_connection.json"
+        plan_path = self.repo_root / "output/composition_plan.json"
+        write_resolved_and_plan(
+            registry_path,
+            "grounded_tube",
+            resolved_path,
+            plan_path,
+            repo_root=self.repo_root,
+        )
+        resolved = json.loads(resolved_path.read_text(encoding="utf-8"))
+        sources = resolved["sources"]
+        for name in ("profile_registry", "upstream_port", "upstream_authority"):
+            self.assertTrue(sources[name]["path"].startswith("artifacts/projects/"))
+            self.assertFalse(Path(sources[name]["path"]).is_absolute())
+        authority_path = self.workspace_root / sources["upstream_authority"]["path"]
+        self.assertEqual(sources["upstream_authority"]["sha256"], file_sha256(authority_path))
+        self.assertNotEqual(
+            sources["upstream_authority"]["sha256"],
+            repository_text_sha256(authority_path),
+        )
+        verify_composition_plan(plan_path, resolved_path, repo_root=self.repo_root)
+
+    def test_artifact_authority_rejects_stale_raw_byte_hash(self) -> None:
+        registry_path = self._write_artifact_inputs()
+        registry = load_connection_profile_registry(registry_path)
+        authority_path = self.workspace_root / registry["profiles"][0]["upstream"][
+            "port_contract"
+        ]
+        port = json.loads(authority_path.read_text(encoding="utf-8"))
+        source_path = self.workspace_root / port["authority"]["source_contract"]
+        source_path.write_bytes(source_path.read_bytes().replace(b"\r\n", b"\n"))
+        with self.assertRaisesRegex(ContractError, "authority source SHA-256 is stale"):
+            resolve_connection_profile(
+                registry, "grounded_tube", repo_root=self.repo_root
+            )
+
+    def test_rejects_workspace_top_level_and_parent_traversal(self) -> None:
+        outside = self.workspace_root / "scratch" / "profiles.json"
+        self._write_json(outside, json.loads(self.registry_path.read_text(encoding="utf-8")))
+        with self.assertRaisesRegex(ContractError, "outside repository and artifacts/projects"):
+            write_resolved_and_plan(
+                outside,
+                "grounded_tube",
+                self.repo_root / "output/resolved_connection.json",
+                self.repo_root / "output/composition_plan.json",
+                repo_root=self.repo_root,
+            )
+        traversing = self.repo_root / ".." / "scratch" / "profiles.json"
+        with self.assertRaisesRegex(ContractError, "parent traversal"):
+            write_resolved_and_plan(
+                traversing,
+                "grounded_tube",
+                self.repo_root / "output/resolved_connection.json",
+                self.repo_root / "output/composition_plan.json",
+                repo_root=self.repo_root,
+            )
+
+    def test_port_path_schemas_reject_absolute_and_parent_traversal(self) -> None:
+        for invalid in (
+            "C:/outside/exit.json",
+            "projects/upstream/../outside/exit.json",
+            "artifacts/other/exit.json",
+        ):
+            port = json.loads(json.dumps(self.upstream))
+            port["authority"]["source_contract"] = invalid
+            with self.subTest(contract="component_port", path=invalid):
+                with self.assertRaises(ContractError):
+                    validate_schema(port, "component_port.schema.json")
+            profile = json.loads(json.dumps(self.profile))
+            profile["upstream"]["port_contract"] = invalid
+            with self.subTest(contract="connection_profile", path=invalid):
+                with self.assertRaises(ContractError):
+                    validate_schema(profile, "connection_profile.schema.json")
 
     def test_writes_and_reverifies_frozen_composition_plan(self) -> None:
         resolved_path = self.repo_root / "output/resolved_connection.json"

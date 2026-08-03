@@ -14,11 +14,7 @@ $ErrorActionPreference = 'Stop'
 
 $workflowRoot = $PSScriptRoot
 $integrationRoot = (Resolve-Path (Join-Path $workflowRoot '..\..')).Path
-$registryPath =
-  Join-Path $integrationRoot 'config\execution_adapter_profiles.json'
-$sourceRevisionRegistryPath = Join-Path $integrationRoot (
-  'config\family_source_revision_registry.json'
-)
+$registryPath = Join-Path $integrationRoot 'config\execution_adapter_profiles.json'
 $plan = Get-Content -LiteralPath $CompositionPlan -Raw -Encoding UTF8 |
   ConvertFrom-Json
 $resolved = Get-Content -LiteralPath $ResolvedConnection -Raw -Encoding UTF8 |
@@ -46,16 +42,20 @@ foreach ($argument in @($steps[0].arguments)) {
 }
 $expectedArguments = @(
   'adapter_registry_sha256',
-  'source_revision_registry_path',
-  'source_revision_registry_sha256',
-  'source_revision_id',
-  'preregistration_path',
-  'preregistration_sha256',
+  'campaign_path',
+  'campaign_sha256',
+  'campaign_id',
+  'experiment_id',
+  'experiment_row_sha256',
   'runtime_binding_path',
   'runtime_binding_sha256',
   'source_branch_id',
   'resolved_budget_filename',
-  'resolved_budget_sha256'
+  'resolved_budget_sha256',
+  'resolved_source_contract_filename',
+  'resolved_source_contract_sha256',
+  'upstream_resolved_design_filename',
+  'upstream_resolved_design_sha256'
 )
 if (@($frozenArguments.Keys | Where-Object {
       $_ -notin $expectedArguments
@@ -63,10 +63,10 @@ if (@($frozenArguments.Keys | Where-Object {
     @($expectedArguments | Where-Object {
       -not $frozenArguments.ContainsKey($_)
     }).Count -ne 0) {
-  throw 'Prepared family adapter arguments differ from the closed contract.'
+  throw 'Prepared family adapter arguments differ from the campaign-only contract.'
 }
+
 $sourceBranchId = [string]$frozenArguments.source_branch_id
-$sourceRevisionId = [string]$frozenArguments.source_revision_id
 if ($sourceBranchId -notin @('comsol','simion')) {
   throw 'Prepared family source branch is invalid.'
 }
@@ -76,42 +76,51 @@ if ((Get-FileHash -LiteralPath $registryPath -Algorithm SHA256).Hash -ne
 }
 
 $repo = [IO.Path]::GetFullPath($RepoRoot)
-$expectedRevisionRegistryPath = [IO.Path]::GetFullPath(
-  (Join-Path $repo $frozenArguments.source_revision_registry_path)
+$workspaceRoot = Split-Path -Parent $repo
+$campaignPath = [IO.Path]::GetFullPath(
+  (Join-Path $repo $frozenArguments.campaign_path)
 )
-if (-not $expectedRevisionRegistryPath.Equals(
-      [IO.Path]::GetFullPath($sourceRevisionRegistryPath),
+if (-not $campaignPath.StartsWith(
+      $repo + [IO.Path]::DirectorySeparatorChar,
       [StringComparison]::OrdinalIgnoreCase
     ) -or
-    (Get-FileHash -LiteralPath $sourceRevisionRegistryPath `
-      -Algorithm SHA256).Hash -ne
-    $frozenArguments.source_revision_registry_sha256) {
-  throw 'Family source revision registry changed after preparation.'
+    -not (Test-Path -LiteralPath $campaignPath -PathType Leaf) -or
+    (Get-FileHash -LiteralPath $campaignPath -Algorithm SHA256).Hash -ne
+      $frozenArguments.campaign_sha256) {
+  throw 'Campaign path is outside the repository, missing or stale.'
 }
-$sourceRevisionRegistry = Get-Content -LiteralPath `
-  $sourceRevisionRegistryPath -Raw -Encoding UTF8 | ConvertFrom-Json
-$sourceRevisions = @($sourceRevisionRegistry.revisions | Where-Object {
-  $_.source_revision_id -eq $sourceRevisionId -and
-  $_.connection_profile_id -eq $plan.selection.connection_profile_id
+$campaign = Get-Content -LiteralPath $campaignPath -Raw -Encoding UTF8 |
+  ConvertFrom-Json
+$experiments = @($campaign.experiments | Where-Object {
+  $_.experiment_id -eq $frozenArguments.experiment_id
 })
-if ($sourceRevisions.Count -ne 1 -or
-    $sourceBranchId -notin @($sourceRevisions[0].source_branch_ids)) {
-  throw 'Prepared family source revision no longer resolves uniquely.'
+if ($campaign.role -ne 'rf_multipole_oatof_experiment_campaign' -or
+    $campaign.integration_id -ne $plan.integration_id -or
+    $campaign.campaign_id -ne $frozenArguments.campaign_id -or
+    $experiments.Count -ne 1) {
+  throw 'Campaign or experiment identity no longer resolves uniquely.'
 }
-$sourceRevision = $sourceRevisions[0]
-$preregistrationPath = [IO.Path]::GetFullPath(
-  (Join-Path $repo $frozenArguments.preregistration_path)
-)
-if ($sourceRevision.preregistration.path -ne
-      $frozenArguments.preregistration_path -or
-    $sourceRevision.preregistration.sha256 -ne
-      $frozenArguments.preregistration_sha256 -or
-    -not (Test-Path -LiteralPath $preregistrationPath -PathType Leaf) -or
-    (Get-FileHash -LiteralPath $preregistrationPath `
-      -Algorithm SHA256).Hash -ne
-      $frozenArguments.preregistration_sha256) {
-  throw 'Family source revision preregistration changed after preparation.'
+$experiment = $experiments[0]
+if ($experiment.connection_profile_id -ne
+      $plan.selection.connection_profile_id) {
+  throw 'Campaign row differs from the prepared connection.'
 }
+$rowHashCode = @'
+import hashlib, json, pathlib, sys
+campaign = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8-sig"))
+rows = [row for row in campaign["experiments"] if row["experiment_id"] == sys.argv[2]]
+if len(rows) != 1:
+    raise SystemExit("campaign experiment identity is not unique")
+payload = json.dumps(rows[0], ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+print(hashlib.sha256(payload.encode("utf-8")).hexdigest().upper())
+'@
+$experimentRowSha256 = (& $PythonExe -c $rowHashCode `
+  $campaignPath $frozenArguments.experiment_id).Trim()
+if ($LASTEXITCODE -ne 0 -or
+    $experimentRowSha256 -ne $frozenArguments.experiment_row_sha256) {
+  throw 'Campaign experiment row identity changed after preparation.'
+}
+
 $registry = Get-Content -LiteralPath $registryPath -Raw -Encoding UTF8 |
   ConvertFrom-Json
 $mappings = @($registry.mappings | Where-Object {
@@ -128,40 +137,58 @@ $expectedAdapterPath = (
 )
 if ($mapping.adapter_entrypoint -ne $expectedAdapterPath -or
     (Get-FileHash -LiteralPath $adapterPath -Algorithm SHA256).Hash -ne
-    $mapping.adapter_sha256) {
+      $mapping.adapter_sha256) {
   throw 'Family adapter implementation differs from its registry identity.'
 }
-if ($sourceRevision.runtime_binding.path -ne
+if ($mapping.runtime_binding_path -ne
       $frozenArguments.runtime_binding_path -or
-    $sourceRevision.runtime_binding.sha256 -ne
-      $frozenArguments.runtime_binding_sha256 -or
-    ($sourceRevisionId -eq 'baseline' -and (
-      $mapping.runtime_binding_path -ne
-        $frozenArguments.runtime_binding_path -or
-      $mapping.runtime_binding_sha256 -ne
-        $frozenArguments.runtime_binding_sha256
-    ))) {
-  throw 'Prepared family runtime binding differs from its revision registry.'
+    $mapping.runtime_binding_sha256 -ne
+      $frozenArguments.runtime_binding_sha256) {
+  throw 'Prepared family runtime binding differs from the active registry.'
 }
-
 $runtimeBinding = [IO.Path]::GetFullPath(
   (Join-Path $repo $frozenArguments.runtime_binding_path)
 )
 if (-not (Test-Path -LiteralPath $runtimeBinding -PathType Leaf) -or
     (Get-FileHash -LiteralPath $runtimeBinding -Algorithm SHA256).Hash -ne
-    $frozenArguments.runtime_binding_sha256) {
+      $frozenArguments.runtime_binding_sha256) {
   throw 'Family runtime binding is missing or stale.'
 }
+
 $runDirectory = [IO.Path]::GetFullPath((Split-Path -Parent $CompositionPlan))
+$resolvedSourceContractPath = [IO.Path]::GetFullPath(
+  (Join-Path $runDirectory $frozenArguments.resolved_source_contract_filename)
+)
 $resolvedBudgetPath = [IO.Path]::GetFullPath(
   (Join-Path $runDirectory $frozenArguments.resolved_budget_filename)
 )
+$upstreamResolvedDesignPath = [IO.Path]::GetFullPath(
+  (Join-Path $runDirectory $frozenArguments.upstream_resolved_design_filename)
+)
+if ($frozenArguments.resolved_source_contract_filename -ne
+      'resolved_source_contract.json' -or
+    -not (Test-Path -LiteralPath $resolvedSourceContractPath -PathType Leaf) -or
+    (Get-FileHash -LiteralPath $resolvedSourceContractPath -Algorithm SHA256).Hash -ne
+      $frozenArguments.resolved_source_contract_sha256) {
+  throw 'Prepared resolved source contract is missing or stale.'
+}
 if ($frozenArguments.resolved_budget_filename -ne
-    'resolved_engineering_budget.json' -or
+      'resolved_engineering_budget.json' -or
     -not (Test-Path -LiteralPath $resolvedBudgetPath -PathType Leaf) -or
     (Get-FileHash -LiteralPath $resolvedBudgetPath -Algorithm SHA256).Hash -ne
-    $frozenArguments.resolved_budget_sha256) {
+      $frozenArguments.resolved_budget_sha256) {
   throw 'Prepared family engineering budget is missing or stale.'
+}
+if ($frozenArguments.upstream_resolved_design_filename -ne
+      'upstream_resolved_design.json' -or
+    -not $upstreamResolvedDesignPath.StartsWith(
+      $runDirectory + [IO.Path]::DirectorySeparatorChar,
+      [StringComparison]::OrdinalIgnoreCase
+    ) -or
+    -not (Test-Path -LiteralPath $upstreamResolvedDesignPath -PathType Leaf) -or
+    (Get-FileHash -LiteralPath $upstreamResolvedDesignPath -Algorithm SHA256).Hash -ne
+      $frozenArguments.upstream_resolved_design_sha256) {
+  throw 'Upstream resolved design is outside the workspace, missing or stale.'
 }
 
 . (Join-Path $integrationRoot 'runtime\runtime_binding.ps1')
@@ -169,49 +196,70 @@ $runtime = Resolve-RfOatofRuntimeBinding -RepoRoot $repo `
   -ResolvedConnection $ResolvedConnection `
   -RuntimeBinding $runtimeBinding `
   -ExpectedConnectionProfileId $plan.selection.connection_profile_id `
-  -SourceBranchId $sourceBranchId
+  -SourceBranchId $sourceBranchId `
+  -ResolvedSourceContract $resolvedSourceContractPath `
+  -ResolvedSourceContractSha256 $frozenArguments.resolved_source_contract_sha256 `
+  -UpstreamResolvedDesign $upstreamResolvedDesignPath `
+  -UpstreamResolvedDesignSha256 $frozenArguments.upstream_resolved_design_sha256
 $budget = Get-Content -LiteralPath $resolvedBudgetPath -Raw -Encoding UTF8 |
   ConvertFrom-Json
+$runtimeLaunchedCount = if (
+  $runtime.source_record.PSObject.Properties.Name -contains
+    'launched_particle_count'
+) { [int]$runtime.source_record.launched_particle_count } else {
+  [int]$runtime.source_record.particle_count
+}
 if ($budget.role -ne 'integration_resolved_engineering_budget' -or
     $budget.integration_id -ne $plan.integration_id -or
     $budget.connection_profile_id -ne
-    $plan.selection.connection_profile_id -or
-    $budget.source_revision_id -ne $sourceRevisionId -or
+      $plan.selection.connection_profile_id -or
+    $budget.campaign_id -ne $frozenArguments.campaign_id -or
+    $budget.experiment_id -ne $frozenArguments.experiment_id -or
+    $budget.experiment_row_sha256 -ne
+      $frozenArguments.experiment_row_sha256 -or
+    $budget.policy_id -ne $campaign.resource_profile -or
     $budget.source_identity.source_branch_id -ne $sourceBranchId -or
-    $budget.source_identity.solver_id -ne
-    $runtime.source_identity.solver_id -or
-    $budget.source_identity.run_id -ne $runtime.source_identity.run_id -or
     $budget.source_identity.project_id -ne
-    $runtime.source_identity.project_id -or
+      $resolved.selection.upstream_project_id -or
+    $budget.source_identity.solver_id -ne $runtime.source_identity.solver_id -or
+    $budget.source_identity.run_id -ne $runtime.source_identity.run_id -or
+    $budget.source_identity.project_id -ne $runtime.source_identity.project_id -or
     $budget.source_identity.manifest_sha256 -ne
-    $runtime.source_identity.manifest_sha256 -or
+      $runtime.source_identity.manifest_sha256 -or
     $budget.source_identity.event_sha256 -ne
-    $runtime.source_identity.event_sha256 -or
+      $runtime.source_identity.event_sha256 -or
     $budget.source_identity.particle_source_sha256 -ne
-    $runtime.source_identity.particle_source_sha256 -or
+      $runtime.source_identity.particle_source_sha256 -or
     $budget.source_identity.metadata_sha256 -ne
-    $runtime.source_identity.metadata_sha256 -or
-    [int]$budget.particle_count -ne 100 -or
+      $runtime.source_identity.metadata_sha256 -or
+    [int]$budget.launched_particle_count -ne $runtimeLaunchedCount -or
+    [int]$budget.particle_count -ne
+      [int]$runtime.source_record.particle_count -or
+    [int]$budget.launched_particle_count -ne
+      [int]$experiment.source.launched_particle_count -or
+    [int]$budget.particle_count -ne
+      [int]$experiment.source.particle_count -or
     $budget.retention_class -ne 'compact') {
-  throw 'Family budget and runtime source identities differ before stage 1.'
+  throw 'Campaign budget and runtime source identities differ before stage 1.'
 }
 
 if ($PrepareOnly) {
   Write-Output (
-    "FAMILY_SOURCE_CLOSURE_ADAPTER=PREPARED PROFILE=" +
-    "$($plan.selection.connection_profile_id) SOURCE_BRANCH=$sourceBranchId " +
-    "SOURCE_REVISION=$sourceRevisionId"
+    'FAMILY_SOURCE_CLOSURE_ADAPTER=PREPARED ' +
+    "CAMPAIGN=$($campaign.campaign_id) EXPERIMENT=$($experiment.experiment_id)"
   )
   exit 0
 }
 if (-not $SolverAuthorized) {
   throw 'Family source-closure execution requires explicit solver authorization.'
 }
+if ($experiment.run_id -ne $RunId) {
+  throw 'Solver-authorized RunId differs from the campaign row.'
+}
 & $PythonExe -m common.contracts.artifact_naming run $RunId
 if ($LASTEXITCODE -ne 0) {
   throw 'RunId must satisfy the repository artifact naming contract.'
 }
-$workspaceRoot = Split-Path -Parent $repo
 $runsRoot = Join-Path $workspaceRoot (
   'artifacts\projects\' + $plan.integration_id + '\runs'
 )
@@ -230,46 +278,64 @@ $transferRunner = $runtime.implementation.transfer_runner
   -ResolvedEngineeringBudget $resolvedBudgetPath `
   -RuntimeBinding $runtimeBinding `
   -SourceBranchId $sourceBranchId `
+  -ResolvedSourceContract $resolvedSourceContractPath `
+  -ResolvedSourceContractSha256 $frozenArguments.resolved_source_contract_sha256 `
+  -UpstreamResolvedDesign $upstreamResolvedDesignPath `
+  -UpstreamResolvedDesignSha256 $frozenArguments.upstream_resolved_design_sha256 `
   -Stamp $RunId.Substring(0, 15) `
   -PythonExe $PythonExe
 if ($LASTEXITCODE -ne 0) {
   throw 'Family mapped RF-to-oaTOF transfer failed.'
 }
 
+$stageParticleCount = [int]$budget.launched_particle_count
+$runtimeBindingSha256 = (
+  Get-FileHash -LiteralPath $runtimeBinding -Algorithm SHA256
+).Hash
 $receipt = [ordered]@{
   schema_version = 1
   role = 'integration_family_source_closure_execution_receipt'
   integration_run_id = $RunId
+  campaign_path = $frozenArguments.campaign_path
+  campaign_sha256 = $frozenArguments.campaign_sha256
+  campaign_id = $frozenArguments.campaign_id
+  experiment_id = $frozenArguments.experiment_id
+  experiment_row_sha256 = $frozenArguments.experiment_row_sha256
   connection_profile_id = $plan.selection.connection_profile_id
   source_branch_id = $sourceBranchId
-  source_revision_id = $sourceRevisionId
   source_identity = $budget.source_identity
+  launched_particle_count = [int]$budget.launched_particle_count
+  particle_count = [int]$budget.particle_count
+  policy_id = $budget.policy_id
+  retention_class = $budget.retention_class
   composition_plan_sha256 =
     (Get-FileHash -LiteralPath $CompositionPlan -Algorithm SHA256).Hash
   resolved_connection_sha256 =
     (Get-FileHash -LiteralPath $ResolvedConnection -Algorithm SHA256).Hash
   resolved_engineering_budget_sha256 =
     (Get-FileHash -LiteralPath $resolvedBudgetPath -Algorithm SHA256).Hash
-  runtime_binding_sha256 =
-    (Get-FileHash -LiteralPath $runtimeBinding -Algorithm SHA256).Hash
+  resolved_source_contract_filename =
+    $frozenArguments.resolved_source_contract_filename
+  resolved_source_contract_sha256 =
+    $frozenArguments.resolved_source_contract_sha256
+  upstream_resolved_design_filename =
+    $frozenArguments.upstream_resolved_design_filename
+  upstream_resolved_design_sha256 =
+    $frozenArguments.upstream_resolved_design_sha256
+  runtime_binding_sha256 = $runtimeBindingSha256
   stage_run_ids = [ordered]@{
     pre_pulse_interface_transport =
-      "$($RunId.Substring(0, 15))__sim__comsol__rf-oatof-pre-pulse-interface-gap0__n100"
+      "$($RunId.Substring(0, 15))__sim__comsol__rf-oatof-pre-pulse-interface-gap0__n$stageParticleCount"
     pulse_capture =
-      "$($RunId.Substring(0, 15))__sim__comsol__rf-oatof-pulse-capture-gap0__n100"
+      "$($RunId.Substring(0, 15))__sim__comsol__rf-oatof-pulse-capture-gap0__n$stageParticleCount"
     analyzer_transport =
-      "$($RunId.Substring(0, 15))__sim__cross__rf-oatof-analyzer-transport-gap0__n100"
+      "$($RunId.Substring(0, 15))__sim__cross__rf-oatof-analyzer-transport-gap0__n$stageParticleCount"
   }
   stage_runtime_binding_sha256s = [ordered]@{
-    pre_pulse_interface_transport =
-      (Get-FileHash -LiteralPath $runtimeBinding -Algorithm SHA256).Hash
-    pulse_capture =
-      (Get-FileHash -LiteralPath $runtimeBinding -Algorithm SHA256).Hash
-    analyzer_transport =
-      (Get-FileHash -LiteralPath $runtimeBinding -Algorithm SHA256).Hash
+    pre_pulse_interface_transport = $runtimeBindingSha256
+    pulse_capture = $runtimeBindingSha256
+    analyzer_transport = $runtimeBindingSha256
   }
-  preregistration_sha256 =
-    (Get-FileHash -LiteralPath $preregistrationPath -Algorithm SHA256).Hash
   execution_status = 'completed_pending_paired_analysis'
   claim_status = 'FUNCTIONAL_SCREEN_ONLY'
 }
@@ -297,6 +363,7 @@ try {
   Pop-Location
 }
 Write-Output (
-  "FAMILY_SOURCE_CLOSURE_ADAPTER=EXECUTED RUN_ID=$RunId " +
-  "SOURCE_BRANCH=$sourceBranchId SOURCE_REVISION=$sourceRevisionId"
+  'FAMILY_SOURCE_CLOSURE_ADAPTER=EXECUTED ' +
+  "RUN_ID=$RunId CAMPAIGN=$($campaign.campaign_id) " +
+  "EXPERIMENT=$($experiment.experiment_id)"
 )

@@ -1,14 +1,18 @@
-"""Prepare one preregistered multipole-family source-closure execution."""
+"""Prepare one campaign-declared multipole-to-oaTOF execution."""
 
 from __future__ import annotations
 
 import argparse
+import copy
+import hashlib
 import json
 from pathlib import Path
+import shutil
 from typing import Any
 
-from common.contracts.file_identity import file_sha256
+from common.contracts.file_identity import file_sha256, repository_text_sha256
 from common.contracts.machine_contracts import ContractError, validate_schema
+from common.contracts.particle_count_policy import validate_standard_particle_count
 from common.integration.adapter_contract import (
     load_execution_adapter_registry,
     resolve_execution_mapping,
@@ -18,6 +22,17 @@ from common.integration.resolve_connection import (
     verify_composition_plan,
     write_resolved_and_plan,
 )
+from common.multipole.component_port import build_exit_component_port
+
+
+INTEGRATION_ID = (
+    "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
+)
+UPSTREAM_PROJECTS = {
+    "rf_quadrupole_ion_optics",
+    "rf_hexapole_ion_optics",
+    "rf_octupole_ion_optics",
+}
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -27,50 +42,187 @@ def _load(path: Path) -> dict[str, Any]:
     return value
 
 
+def _canonical_sha256(value: Any) -> str:
+    payload = json.dumps(
+        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest().upper()
+
+
 def _repo_record(root: Path, record: dict[str, str], label: str) -> Path:
     path = (root / record["path"]).resolve()
     if (
         not path.is_relative_to(root)
         or not path.is_file()
-        or file_sha256(path) != record["sha256"]
+        or repository_text_sha256(path) != record["sha256"]
     ):
         raise ContractError(f"{label} is missing, stale or escapes the repository")
     return path
 
 
-def _unique_profile(
-    document: dict[str, Any],
-    profile_id: str,
+def _workspace_path(workspace: Path, raw: str, label: str) -> Path:
+    value = Path(raw)
+    path = value.resolve() if value.is_absolute() else (workspace / value).resolve()
+    artifacts = (workspace / "artifacts").resolve()
+    if not path.is_relative_to(artifacts) or not path.is_file():
+        raise ContractError(f"{label} is missing or escapes workspace artifacts")
+    return path
+
+
+def _workspace_record(
+    workspace: Path, record: dict[str, str], label: str
+) -> Path:
+    path = _workspace_path(workspace, record["path"], label)
+    if file_sha256(path) != record["sha256"]:
+        raise ContractError(f"{label} SHA-256 is stale")
+    return path
+
+
+def _workspace_relative(path: Path, workspace: Path) -> str:
+    try:
+        return path.resolve().relative_to(workspace.resolve()).as_posix()
+    except ValueError as exc:
+        raise ContractError(f"path escapes the workspace: {path}") from exc
+
+
+def _unique_profile(document: dict[str, Any], profile_id: str) -> dict[str, Any]:
+    matches = [
+        item
+        for item in document["profiles"]
+        if item["connection_profile_id"] == profile_id
+    ]
+    if len(matches) != 1:
+        raise ContractError(f"connection profile is not unique: {profile_id}")
+    return matches[0]
+
+
+def _source_solver(manifest: dict[str, Any]) -> str:
+    software = " ".join(str(item).lower() for item in manifest.get("software", []))
+    matches = [name for name in ("comsol", "simion") if name in software]
+    if len(matches) != 1:
+        raise ContractError("source manifest solver identity is not unique")
+    return matches[0]
+
+
+def _verify_manifest_record(
+    workspace: Path,
+    record: dict[str, Any],
+    expected_path: Path,
+    expected_sha256: str,
+    label: str,
+) -> None:
+    if not record.get("exists"):
+        raise ContractError(f"source manifest {label} record is absent")
+    path = _workspace_path(workspace, str(record["path"]), label)
+    if path != expected_path.resolve() or record["sha256"] != expected_sha256:
+        raise ContractError(f"source manifest {label} identity differs")
+
+
+def _load_source_evidence(
     *,
-    role: str,
+    workspace: Path,
+    experiment: dict[str, Any],
+    expected_project_id: str,
 ) -> dict[str, Any]:
-    records = [
+    source = experiment["source"]
+    launched_count = validate_standard_particle_count(
+        int(source["launched_particle_count"])
+    )
+    selected_count = int(source["particle_count"])
+    if selected_count > launched_count:
+        raise ContractError("selected source particle count exceeds launched count")
+    manifest_path = _workspace_record(workspace, source["manifest"], "source manifest")
+    state_path = _workspace_record(workspace, source["state"], "source state")
+    particle_source_path = _workspace_record(
+        workspace, source["particle_source"], "source particle table"
+    )
+    metadata_path = _workspace_record(workspace, source["metadata"], "source metadata")
+    manifest = _load(manifest_path)
+    if (
+        manifest.get("role") != "simulation_run_manifest"
+        or manifest.get("status") != "success"
+        or manifest.get("run_id") != source["run_id"]
+        or manifest.get("project") != expected_project_id
+        or expected_project_id not in UPSTREAM_PROJECTS
+    ):
+        raise ContractError("source manifest run/project/status identity differs")
+    source_role = source["particle_source_manifest_input_role"]
+    _verify_manifest_record(
+        workspace,
+        manifest.get("inputs", {}).get(source_role, {}),
+        particle_source_path,
+        source["particle_source"]["sha256"],
+        "particle source",
+    )
+    _verify_manifest_record(
+        workspace,
+        manifest.get("inputs", {}).get("particle_source_metadata", {}),
+        metadata_path,
+        source["metadata"]["sha256"],
+        "particle source metadata",
+    )
+    matching_states = [
         record
-        for record in document["profiles"]
-        if record["connection_profile_id"] == profile_id
+        for record in manifest.get("outputs", [])
+        if record.get("sha256") == source["state"]["sha256"]
     ]
-    if len(records) != 1:
-        raise ContractError(f"{role} profile is not unique: {profile_id}")
-    return records[0]
-
-
-def _unique_revision(
-    document: dict[str, Any],
-    source_revision_id: str,
-    profile_id: str,
-) -> dict[str, Any]:
-    records = [
-        record
-        for record in document["revisions"]
-        if record["source_revision_id"] == source_revision_id
-        and record["connection_profile_id"] == profile_id
-    ]
-    if len(records) != 1:
-        raise ContractError(
-            "source revision/profile is not unique: "
-            f"{source_revision_id}/{profile_id}"
-        )
-    return records[0]
+    if len(matching_states) != 1:
+        raise ContractError("source state is not uniquely frozen by its manifest")
+    _verify_manifest_record(
+        workspace,
+        matching_states[0],
+        state_path,
+        source["state"]["sha256"],
+        "source state",
+    )
+    design_record = manifest.get("inputs", {}).get("multipole_resolved_design", {})
+    design_path = _workspace_path(
+        workspace, str(design_record.get("path", "")), "source resolved design"
+    )
+    if (
+        not design_record.get("exists")
+        or file_sha256(design_path) != design_record.get("sha256")
+    ):
+        raise ContractError("source resolved design is absent or stale")
+    resolved_design = _load(design_path)
+    validate_schema(resolved_design, "multipole_resolved_design.schema.json")
+    run_config_record = manifest.get("run_config", {})
+    run_config_path = _workspace_path(
+        workspace, str(run_config_record.get("path", "")), "source run config"
+    )
+    if (
+        not run_config_record.get("exists")
+        or file_sha256(run_config_path) != run_config_record.get("sha256")
+    ):
+        raise ContractError("source run config is absent or stale")
+    run_config = _load(run_config_path)
+    design_profile_id = run_config.get("parameters", {}).get("design_profile_id")
+    if (
+        not isinstance(design_profile_id, str)
+        or not design_profile_id
+        or resolved_design["identity"]["project_id"] != expected_project_id
+    ):
+        raise ContractError("source design profile/project identity differs")
+    terminal = resolved_design.get("downstream_terminal")
+    if (
+        not isinstance(terminal, dict)
+        or terminal.get("terminal_profile_id") != "oatof_shield_entry_gap1mm"
+        or terminal.get("surface_role") != "aperture_outer_tangent_plane"
+        or float(terminal.get("rod_end_clearance_mm", -1.0)) != 1.0
+        or terminal.get("upstream_terminal_electrode_present") is not False
+    ):
+        raise ContractError("source design does not freeze the governed oaTOF terminal")
+    return {
+        "source": source,
+        "manifest": manifest,
+        "solver_id": _source_solver(manifest),
+        "resolved_design": resolved_design,
+        "resolved_design_path": design_path,
+        "resolved_design_sha256": design_record["sha256"],
+        "design_profile_id": design_profile_id,
+        "launched_particle_count": launched_count,
+        "particle_count": selected_count,
+    }
 
 
 def prepare_family_source_closure(
@@ -78,207 +230,177 @@ def prepare_family_source_closure(
     repo_root: Path,
     profile_registry_path: Path,
     adapter_registry_path: Path,
-    preregistration_path: Path,
-    revision_registry_path: Path,
-    profile_id: str,
-    source_branch_id: str,
-    source_revision_id: str = "baseline",
+    campaign_path: Path,
+    experiment_id: str,
     resolved_output: Path,
     plan_output: Path,
 ) -> tuple[Path, Path]:
     root = repo_root.resolve()
-    if source_branch_id not in {"comsol", "simion"}:
-        raise ContractError("source_branch_id must be comsol or simion")
-
+    workspace = root.parent
+    campaign_path = campaign_path.resolve()
+    if not campaign_path.is_relative_to(root):
+        raise ContractError("integration campaign must be repository-managed")
+    campaign = _load(campaign_path)
+    validate_schema(campaign, "rf_multipole_oatof_experiment_campaign.schema.json")
+    if campaign["integration_id"] != INTEGRATION_ID:
+        raise ContractError("campaign integration identity differs")
+    identities = [item["experiment_id"] for item in campaign["experiments"]]
+    sequences = [item["sequence"] for item in campaign["experiments"]]
+    if len(identities) != len(set(identities)) or len(sequences) != len(set(sequences)):
+        raise ContractError("campaign experiment IDs and sequences must be unique")
+    matches = [item for item in campaign["experiments"] if item["experiment_id"] == experiment_id]
+    if len(matches) != 1:
+        raise ContractError("campaign experiment must resolve exactly once")
+    experiment = matches[0]
     profile_registry = load_connection_profile_registry(profile_registry_path)
-    registered_ids = {
-        profile["connection_profile_id"]
-        for profile in profile_registry["profiles"]
-    }
-    revision_registry = _load(revision_registry_path)
-    validate_schema(
-        revision_registry,
-        "integration_family_source_revision_registry.schema.json",
-    )
-    if revision_registry["integration_id"] != profile_registry["integration_id"]:
-        raise ContractError("source revision registry integration identity differs")
-    revision_keys = [
-        (
-            record["source_revision_id"],
-            record["connection_profile_id"],
-        )
-        for record in revision_registry["revisions"]
-    ]
-    if len(revision_keys) != len(set(revision_keys)):
-        raise ContractError("source revision registry contains duplicate keys")
-    revision = _unique_revision(
-        revision_registry,
-        source_revision_id,
-        profile_id,
-    )
-    if source_branch_id not in revision["source_branch_ids"]:
-        raise ContractError("source branch is not authorized by the revision")
-    selected_preregistration_path = _repo_record(
-        root,
-        revision["preregistration"],
-        "source revision preregistration",
-    )
-    if source_revision_id == "baseline" and (
-        selected_preregistration_path != preregistration_path.resolve()
-    ):
-        raise ContractError("baseline preregistration path differs")
-    preregistration = _load(selected_preregistration_path)
-    if preregistration["role"] == (
-        "integration_family_source_closure_preregistration"
-    ):
-        validate_schema(
-            preregistration,
-            "integration_family_source_closure_preregistration.schema.json",
-        )
-        preregistered_ids = {
-            profile["connection_profile_id"]
-            for profile in preregistration["profiles"]
-        }
-        if len(preregistered_ids) != 3 or not preregistered_ids.issubset(
-            registered_ids
-        ):
-            raise ContractError("family preregistration profile set differs")
-        preregistered_profile = _unique_profile(
-            preregistration,
-            profile_id,
-            role="family preregistration",
-        )
-    else:
-        validate_schema(
-            preregistration,
-            "integration_family_source_revision_preregistration.schema.json",
-        )
-        if preregistration["source_revision_id"] != source_revision_id:
-            raise ContractError("source revision preregistration identity differs")
-        preregistered_profile = preregistration["profile"]
-    if preregistration["integration_id"] != profile_registry["integration_id"]:
-        raise ContractError("family preregistration integration identity differs")
-    if source_branch_id not in preregistered_profile["source_branch_ids"]:
-        raise ContractError("source branch is not preregistered for this profile")
+    profile = _unique_profile(profile_registry, experiment["connection_profile_id"])
+    expected_project_id = profile["upstream"]["project_id"]
 
     adapter_registry = load_execution_adapter_registry(adapter_registry_path)
-    if adapter_registry["integration_id"] != profile_registry["integration_id"]:
-        raise ContractError("execution adapter integration identity differs")
     mapping = resolve_execution_mapping(
-        adapter_registry,
-        profile_id,
-        repo_root=root,
+        adapter_registry, experiment["connection_profile_id"], repo_root=root
     )
-    runtime_binding_record = revision["runtime_binding"]
+    runtime_binding_record = {
+        "path": mapping["runtime_binding_path"],
+        "sha256": mapping["runtime_binding_sha256"],
+    }
     runtime_binding_path = _repo_record(
         root, runtime_binding_record, "family runtime binding"
     )
-    if source_revision_id == "baseline" and runtime_binding_record != {
-        "path": mapping["runtime_binding_path"],
-        "sha256": mapping["runtime_binding_sha256"],
-    }:
-        raise ContractError("baseline runtime binding differs from adapter mapping")
-    if (
-        "runtime_binding" in preregistered_profile
-        and preregistered_profile["runtime_binding"] != runtime_binding_record
-    ):
-        raise ContractError("revision preregistration runtime binding differs")
     runtime_binding = _load(runtime_binding_path)
-    validate_schema(
-        runtime_binding,
-        "rf_multipole_oatof_runtime_binding.schema.json",
-    )
+    validate_schema(runtime_binding, "rf_multipole_oatof_runtime_binding.schema.json")
     if (
-        runtime_binding["connection_profile_id"] != profile_id
-        or runtime_binding["upstream_project_id"]
-        != next(
-            profile["upstream"]["project_id"]
-            for profile in profile_registry["profiles"]
-            if profile["connection_profile_id"] == profile_id
-        )
+        runtime_binding["schema_version"] != 3
+        or runtime_binding["connection_profile_id"]
+        != experiment["connection_profile_id"]
+        or runtime_binding["upstream_project_id"] != expected_project_id
     ):
-        raise ContractError("family runtime binding identity differs")
+        raise ContractError("active family runtime binding identity differs")
+    source_adapter_record = runtime_binding["contracts"]["source_adapter_contract"]
+    source_adapter_path = _repo_record(
+        root, source_adapter_record, "family source adapter"
+    )
+    source_adapter = _load(source_adapter_path)
+    validate_schema(source_adapter, "rf_multipole_oatof_source_adapter.schema.json")
+    policy_record = runtime_binding["contracts"]["execution_policy_contract"]
+    if policy_record != campaign["execution_policy"]:
+        raise ContractError("campaign and runtime execution policies differ")
+    policy_path = _repo_record(root, policy_record, "integration execution policy")
+    policy = _load(policy_path)
+    validate_schema(policy, "rf_multipole_oatof_execution_policy.schema.json")
 
-    source_contract_record = runtime_binding["contracts"]["source_contract"]
-    source_contract_path = _repo_record(
-        root,
-        source_contract_record,
-        "family source contract",
+    evidence = _load_source_evidence(
+        workspace=workspace,
+        experiment=experiment,
+        expected_project_id=expected_project_id,
     )
-    if source_contract_record != preregistered_profile["source_contract"]:
-        raise ContractError(
-            "runtime and preregistration source contracts differ"
-        )
-    source_contract = _load(source_contract_path)
-    validate_schema(
-        source_contract,
-        "rf_multipole_oatof_source_contract.schema.json",
-    )
-    if source_contract["schema_version"] != 2:
-        raise ContractError("family workflow requires source contract schema v2")
-    source_branch = source_contract["source_branches"][source_branch_id]
-    source = source_branch["source"]
-
-    budget_path = _repo_record(
-        root,
-        preregistration["engineering_budget"],
-        "family engineering budget",
-    )
-    budget = _load(budget_path)
-    budget_schema = (
-        "integration_family_source_closure_budget.schema.json"
-        if source_revision_id == "baseline"
-        else "integration_family_source_revision_budget.schema.json"
-    )
-    validate_schema(budget, budget_schema)
-    budget_profiles = {
-        item["connection_profile_id"]: item["source_contract"]
-        for item in budget["authorization"]["scope"][
-            "profile_source_contracts"
-        ]
+    source = evidence["source"]
+    solver_id = evidence["solver_id"]
+    handoff_publication_record = runtime_binding["contracts"][
+        "handoff_publication_contract"
+    ]
+    _repo_record(root, handoff_publication_record, "handoff publication contract")
+    adapter = copy.deepcopy(source_adapter["adapter"])
+    adapter["dependencies"] = {
+        "handoff_publication_contract": handoff_publication_record
     }
-    scope = budget["authorization"]["scope"]
-    if (
-        budget_profiles.get(profile_id) != source_contract_record
-        or source_branch_id not in scope["source_branch_ids"]
-        or scope["particle_count"] != source["particle_count"]
-    ):
-        raise ContractError("family budget profile or source scope differs")
+    resolved_source_contract = {
+        "schema_version": 2,
+        "role": "rf_multipole_oatof_source_contract",
+        "upstream_project_id": expected_project_id,
+        "selector": copy.deepcopy(source_adapter["selector"]),
+        "adapter": adapter,
+        "canonical_state": copy.deepcopy(source_adapter["canonical_state"]),
+        "source_branches": {
+            solver_id: {
+                "solver_id": solver_id,
+                "recorded_project_id": expected_project_id,
+                "source": copy.deepcopy(source),
+            }
+        },
+    }
+    validate_schema(
+        resolved_source_contract, "rf_multipole_oatof_source_contract.schema.json"
+    )
+    plan_output.parent.mkdir(parents=True, exist_ok=True)
+    resolved_source_contract_path = plan_output.with_name(
+        "resolved_source_contract.json"
+    )
+    resolved_source_contract_path.write_text(
+        json.dumps(resolved_source_contract, indent=2) + "\n", encoding="utf-8"
+    )
+
+    upstream_resolved_design_path = plan_output.with_name(
+        "upstream_resolved_design.json"
+    )
+    shutil.copyfile(evidence["resolved_design_path"], upstream_resolved_design_path)
+    if file_sha256(upstream_resolved_design_path) != evidence["resolved_design_sha256"]:
+        raise ContractError("frozen upstream resolved design identity differs")
+
+    upstream_port = build_exit_component_port(
+        evidence["resolved_design"],
+        design_profile_id=evidence["design_profile_id"],
+        authority_path=_workspace_relative(upstream_resolved_design_path, workspace),
+        authority_sha256=evidence["resolved_design_sha256"],
+    )
+    upstream_port_path = plan_output.with_name("resolved_upstream_port.json")
+    upstream_port_path.write_text(
+        json.dumps(upstream_port, indent=2) + "\n", encoding="utf-8"
+    )
+    resolved_registry = {
+        "schema_version": profile_registry["schema_version"],
+        "role": profile_registry["role"],
+        "integration_id": profile_registry["integration_id"],
+        "profiles": [copy.deepcopy(profile)],
+    }
+    resolved_upstream = resolved_registry["profiles"][0]["upstream"]
+    if resolved_upstream.pop("port_binding", None) != "source_run_resolved_design":
+        raise ContractError("upstream port is not runtime-bound to source design")
+    resolved_upstream["port_contract"] = _workspace_relative(
+        upstream_port_path, workspace
+    )
+    resolved_registry_path = plan_output.with_name(
+        "resolved_connection_profile_registry.json"
+    )
+    resolved_registry_path.write_text(
+        json.dumps(resolved_registry, indent=2) + "\n", encoding="utf-8"
+    )
 
     source_identity = {
-        "source_branch_id": source_branch_id,
-        "solver_id": source_branch["solver_id"],
+        "source_branch_id": solver_id,
+        "solver_id": solver_id,
         "run_id": source["run_id"],
-        "project_id": source_branch["recorded_project_id"],
+        "project_id": expected_project_id,
         "manifest_sha256": source["manifest"]["sha256"],
         "event_sha256": source["state"]["sha256"],
         "particle_source_sha256": source["particle_source"]["sha256"],
         "metadata_sha256": source["metadata"]["sha256"],
     }
+    row_sha256 = _canonical_sha256(experiment)
     resolved_budget = {
         "schema_version": 1,
         "role": "integration_resolved_engineering_budget",
-        "integration_id": profile_registry["integration_id"],
-        "connection_profile_id": profile_id,
-        "source_revision_id": source_revision_id,
+        "integration_id": INTEGRATION_ID,
+        "connection_profile_id": experiment["connection_profile_id"],
+        "campaign_id": campaign["campaign_id"],
+        "experiment_id": experiment_id,
+        "experiment_row_sha256": row_sha256,
+        "policy_id": policy["policy_id"],
         "source_identity": source_identity,
-        "particle_count": source["particle_count"],
-        "retention_class": scope["retention_class"],
-        "stage_limits": budget["authorization"]["stage_limits"],
-        "budget_path": str(budget_path),
+        "launched_particle_count": evidence["launched_particle_count"],
+        "particle_count": evidence["particle_count"],
+        "retention_class": policy["retention_class"],
+        "stage_limits": policy["stage_limits"],
+        "budget_exhaustion_result": policy["budget_exhaustion_result"],
     }
-    resolved_budget_path = plan_output.with_name(
-        "resolved_engineering_budget.json"
-    )
-    resolved_budget_path.parent.mkdir(parents=True, exist_ok=True)
+    resolved_budget_path = plan_output.with_name("resolved_engineering_budget.json")
     resolved_budget_path.write_text(
-        json.dumps(resolved_budget, indent=2) + "\n",
-        encoding="utf-8",
+        json.dumps(resolved_budget, indent=2) + "\n", encoding="utf-8"
     )
 
     resolved_path, plan_path = write_resolved_and_plan(
-        profile_registry_path,
-        profile_id,
+        resolved_registry_path,
+        experiment["connection_profile_id"],
         resolved_output,
         plan_output,
         repo_root=root,
@@ -290,17 +412,22 @@ def prepare_family_source_closure(
             "adapter": "powershell",
             "entrypoint": mapping["adapter_entrypoint"],
             "arguments": [
-                f"adapter_registry_sha256={file_sha256(adapter_registry_path)}",
-                f"source_revision_registry_path={revision_registry_path.relative_to(root).as_posix()}",
-                f"source_revision_registry_sha256={file_sha256(revision_registry_path)}",
-                f"source_revision_id={source_revision_id}",
-                f"preregistration_path={selected_preregistration_path.relative_to(root).as_posix()}",
-                f"preregistration_sha256={file_sha256(selected_preregistration_path)}",
+                f"adapter_registry_sha256={repository_text_sha256(adapter_registry_path)}",
+                f"campaign_path={campaign_path.relative_to(root).as_posix()}",
+                f"campaign_sha256={repository_text_sha256(campaign_path)}",
+                f"campaign_id={campaign['campaign_id']}",
+                f"experiment_id={experiment_id}",
+                f"experiment_row_sha256={row_sha256}",
                 f"runtime_binding_path={runtime_binding_record['path']}",
                 f"runtime_binding_sha256={runtime_binding_record['sha256']}",
-                f"source_branch_id={source_branch_id}",
+                f"source_branch_id={solver_id}",
                 "resolved_budget_filename=resolved_engineering_budget.json",
                 f"resolved_budget_sha256={file_sha256(resolved_budget_path)}",
+                "resolved_source_contract_filename=resolved_source_contract.json",
+                f"resolved_source_contract_sha256={file_sha256(resolved_source_contract_path)}",
+                "upstream_resolved_design_filename=upstream_resolved_design.json",
+                "upstream_resolved_design_sha256="
+                + evidence["resolved_design_sha256"],
             ],
         }
     ]
@@ -315,15 +442,8 @@ def main() -> int:
     parser.add_argument("--repo-root", required=True, type=Path)
     parser.add_argument("--profile-registry", required=True, type=Path)
     parser.add_argument("--adapter-registry", required=True, type=Path)
-    parser.add_argument("--preregistration", required=True, type=Path)
-    parser.add_argument("--revision-registry", required=True, type=Path)
-    parser.add_argument("--profile-id", required=True)
-    parser.add_argument("--source-revision-id", default="baseline")
-    parser.add_argument(
-        "--source-branch-id",
-        required=True,
-        choices=("comsol", "simion"),
-    )
+    parser.add_argument("--campaign", required=True, type=Path)
+    parser.add_argument("--experiment-id", required=True)
     parser.add_argument("--resolved-output", required=True, type=Path)
     parser.add_argument("--plan-output", required=True, type=Path)
     args = parser.parse_args()
@@ -331,20 +451,12 @@ def main() -> int:
         repo_root=args.repo_root,
         profile_registry_path=args.profile_registry,
         adapter_registry_path=args.adapter_registry,
-        preregistration_path=args.preregistration,
-        revision_registry_path=args.revision_registry,
-        profile_id=args.profile_id,
-        source_branch_id=args.source_branch_id,
-        source_revision_id=args.source_revision_id,
+        campaign_path=args.campaign,
+        experiment_id=args.experiment_id,
         resolved_output=args.resolved_output,
         plan_output=args.plan_output,
     )
-    print(
-        "FAMILY_SOURCE_CLOSURE_PREPARE=PASS "
-        f"PROFILE={args.profile_id} SOURCE_BRANCH={args.source_branch_id} "
-        f"SOURCE_REVISION={args.source_revision_id} "
-        f"RESOLVED={resolved} PLAN={plan}"
-    )
+    print(f"FAMILY_SOURCE_CLOSURE_PREPARE=PASS RESOLVED={resolved} PLAN={plan}")
     return 0
 
 

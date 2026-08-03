@@ -5,7 +5,12 @@ param(
   [Parameter(Mandatory)][string]$ResolvedConnection,
   [Parameter(Mandatory)][string]$ResolvedEngineeringBudget,
   [Parameter(Mandatory)][string]$RuntimeBinding,
-  [string]$SourceBranchId = '',
+  [Parameter(Mandatory)][ValidateSet('comsol','simion')]
+  [string]$SourceBranchId,
+  [Parameter(Mandatory)][string]$ResolvedSourceContract,
+  [Parameter(Mandatory)][string]$ResolvedSourceContractSha256,
+  [Parameter(Mandatory)][string]$UpstreamResolvedDesign,
+  [Parameter(Mandatory)][string]$UpstreamResolvedDesignSha256,
   [string]$PythonExe = ''
 )
 
@@ -17,7 +22,11 @@ $repoRoot = (Resolve-Path (Join-Path $integrationRoot '..\..')).Path
 $runtime = Resolve-RfOatofRuntimeBinding -RepoRoot $repoRoot `
   -ResolvedConnection $ResolvedConnection -RuntimeBinding $RuntimeBinding `
   -ExpectedConnectionProfileId $ExpectedConnectionProfileId `
-  -SourceBranchId $SourceBranchId
+  -SourceBranchId $SourceBranchId `
+  -ResolvedSourceContract $ResolvedSourceContract `
+  -ResolvedSourceContractSha256 $ResolvedSourceContractSha256 `
+  -UpstreamResolvedDesign $UpstreamResolvedDesign `
+  -UpstreamResolvedDesignSha256 $UpstreamResolvedDesignSha256
 $upstreamProjectId = $runtime.upstream_project_id
 $projectRoot = Join-Path $repoRoot "projects\$upstreamProjectId"
 $supportSource = $runtime.run_artifact_support
@@ -55,12 +64,14 @@ if (-not [bool]$pulse_captureDocument.permissions.nominal_particle_runtime_allow
   throw 'The PulseCapture contract does not authorize a qualification-limited particle runtime.'
 }
 if ([string]::IsNullOrWhiteSpace($RunId)) {
-  $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__sim__comsol__rf-oatof-pulse-capture__n100'
+  $particleCount = [int]$runtime.source_record.particle_count
+  $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') +
+    "__sim__comsol__rf-oatof-pulse-capture__n${particleCount}"
 }
 $software = @('COMSOL 6.4','MATLAB R2025b','Python 3.11')
 $package = New-RfRunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project $upstreamProjectId `
-  -Mode 'rf_to_oatof_pulse_capture_n100' -Software $software `
+  -Mode 'rf_to_oatof_pulse_capture' -Software $software `
   -RetentionContractEnabled -RetentionClass compact
 $manifestToolRoot = $repoRoot
 $resourceBudgetExceeded = $false
@@ -80,6 +91,8 @@ try {
   $pre_pulse = Join-Path $inputDir 'rf_to_oatof_pre_pulse_passive_connector.json'
   $resolvedConnection = Join-Path $inputDir 'resolved_connection.json'
   $runtimeBindingFrozen = Join-Path $inputDir 'runtime_binding.json'
+  $resolvedSourceContract = Join-Path $inputDir 'resolved_source_contract.json'
+  $rf = Join-Path $inputDir 'upstream_resolved_design.json'
   $pulsePolicy = Join-Path $inputDir 'rf_to_oatof_pulse_timing.json'
   Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'solve_pulse_capture.m') -Destination $task
   Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'build_pre_pulse_interface_transport_model.m') -Destination $geometryBuilder
@@ -89,6 +102,9 @@ try {
   Copy-Item -LiteralPath $pulse_captureSource -Destination $pulse_capture
   Copy-Item -LiteralPath $pulsePolicySource -Destination $pulsePolicy
   Copy-Item -LiteralPath $runtime.binding_path -Destination $runtimeBindingFrozen
+  Copy-Item -LiteralPath $runtime.contracts.resolved_source_contract `
+    -Destination $resolvedSourceContract
+  Copy-Item -LiteralPath $runtime.contracts.upstream_resolved_design -Destination $rf
   $pulse_captureDocument = Get-Content -LiteralPath $pulse_capture -Raw -Encoding UTF8 | ConvertFrom-Json
 
   $dependencyPublication = Publish-RfOatofDependencyInventory `
@@ -135,7 +151,6 @@ try {
   $manifestToolRoot = $snapshotRoot
   $interfaceStagePlan = $dependencySnapshotPaths['rf_interface_stage_plan']
   $sharedJoint = $dependencySnapshotPaths['rf_shared_joint_geometry']
-  $rf = $dependencySnapshotPaths['rf_resolved_design']
   $scheduler = $dependencySnapshotPaths['rf_pulse_capture_pulse_scheduler']
   $snapshotAnalysis = $dependencySnapshotPaths['rf_pulse_capture_geometry_snapshot_plotter']
   $auditAnalysis = $dependencySnapshotPaths['rf_pulse_capture_pulse_chain_auditor']
@@ -184,14 +199,14 @@ try {
     $frozenManifestVerifier,$sourceManifest,
     '--require-status','success','--require-run-id',$SourceRunId,
     '--require-project',$upstreamProjectId,
-    '--require-mode','rf_to_oatof_pre_pulse_interface_transport_n100'
+      '--require-mode','rf_to_oatof_pre_pulse_interface_transport'
   ) -FailureMessage 'The frozen PrePulse timing/source run manifest is invalid.'
   $sourceManifestDocument = Get-Content -LiteralPath $sourceManifest -Raw -Encoding UTF8 |
     ConvertFrom-Json
   if ($sourceManifestDocument.role -ne 'simulation_run_manifest' -or
       $sourceManifestDocument.status -ne 'success' -or
       $sourceManifestDocument.project -ne $upstreamProjectId -or
-      $sourceManifestDocument.mode -ne 'rf_to_oatof_pre_pulse_interface_transport_n100' -or
+      $sourceManifestDocument.mode -ne 'rf_to_oatof_pre_pulse_interface_transport' -or
       $sourceManifestDocument.run_id -ne $SourceRunId) {
     throw 'PulseCapture source manifest identity or role is invalid.'
   }
@@ -205,9 +220,9 @@ try {
     ConvertFrom-Json
   if ($sourceRunConfiguration.run_id -ne $SourceRunId -or
       $sourceRunConfiguration.project -ne $upstreamProjectId -or
-      $sourceRunConfiguration.mode -ne 'rf_to_oatof_pre_pulse_interface_transport_n100' -or
+      $sourceRunConfiguration.mode -ne 'rf_to_oatof_pre_pulse_interface_transport' -or
       -not [bool]$sourceRunConfiguration.parameters.particle_tracking) {
-    throw 'PulseCapture requires a successful PrePulse N=100 particle source run.'
+    throw 'PulseCapture requires one successful PrePulse particle source run.'
   }
   Assert-RfOatofSourceIdentityMatches `
     -Actual $sourceRunConfiguration.source_particle_identity `
@@ -314,13 +329,14 @@ try {
     schema_version = 2
     run_id = $RunId
     project = $upstreamProjectId
-    mode = 'rf_to_oatof_pulse_capture_n100'
+    mode = 'rf_to_oatof_pulse_capture'
     project_root = $repoRoot
     inputs = [ordered]@{
       task = $task; geometry_builder = $geometryBuilder; field_builder = $fieldBuilder
       runner = $runner; run_artifact_support = $support; pulse_capture_contract = $pulse_capture
       pre_pulse_contract = $pre_pulse; shared_physical_port_joint_geometry = $sharedJoint
-      rf_resolved_geometry = $rf
+      resolved_source_contract = $resolvedSourceContract
+      upstream_resolved_design = $rf
       interface_stage_plan = $interfaceStagePlan
       resolved_connection = $resolvedConnection
       runtime_binding = $runtimeBindingFrozen
@@ -328,8 +344,7 @@ try {
       snapshot_analysis = $snapshotAnalysis; audit_analysis = $auditAnalysis
       local_exit_adapter = $localExitAdapter
       code_inventory = $dependencyContract
-      dependency_contract_base = $dependencyPublication.base_path
-      dependency_contract_overlay = $dependencyPublication.overlay_path
+      dependency_contract = $dependencyPublication.dependency_contract_path
       oatof_baseline = $oaBaselineSnapshot
       oatof_baseline_matlab_compatibility = $oaBaselineMatlab
       oatof_accelerator_builder = $oaBuilderSnapshot
@@ -349,7 +364,7 @@ try {
     source_particle_identity = $sourceIdentity
     upstream_source_identity = $runtime.source_identity
     parameters = [ordered]@{
-      source_particles = [int]$resolvedPrePulseDocument.particle_runtime.source_particles
+      source_particles = [int]$runtime.source_record.particle_count
       connector_gap_mm = [double]$resolvedConnectionDocument.connector.length_mm
       connection_profile_id = [string]$sourceRunConfiguration.parameters.connection_profile_id
       source_branch_id = $runtime.source_branch_id

@@ -7,6 +7,7 @@ import copy
 import hashlib
 import json
 import math
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +18,7 @@ from common.contracts.machine_contracts import (
     sha256,
     validate_schema,
 )
-from common.contracts.file_identity import repository_text_sha256
+from common.contracts.file_identity import file_sha256, repository_text_sha256
 
 
 def _canonical_sha256(value: Any) -> str:
@@ -52,16 +53,60 @@ def _determinant(matrix: list[list[float]]) -> float:
     )
 
 
-def _repo_file(repo_root: Path, relative: str) -> Path:
+@dataclass(frozen=True)
+class _ManagedFile:
+    path: Path
+    portable_path: str
+    repository_text: bool
+
+
+def _managed_file(repo_root: Path, reference: str | Path) -> _ManagedFile:
+    """Resolve one explicit repository or workspace artifact file reference."""
     root = repo_root.resolve()
-    candidate = (root / relative).resolve()
+    workspace_root = root.parent
+    artifacts_root = (workspace_root / "artifacts" / "projects").resolve()
+    raw = Path(reference)
+    if ".." in raw.parts:
+        raise ContractError(f"connection source contains parent traversal: {reference}")
+
+    if raw.is_absolute():
+        candidate = raw.resolve()
+    else:
+        normalized = raw.as_posix()
+        base = workspace_root if normalized.startswith("artifacts/projects/") else root
+        candidate = (base / raw).resolve()
+
     try:
-        candidate.relative_to(root)
-    except ValueError as exc:
-        raise ContractError(f"connection source escapes repository: {relative}") from exc
+        relative_repo = candidate.relative_to(root)
+    except ValueError:
+        relative_repo = None
+    if relative_repo is not None:
+        managed = _ManagedFile(
+            path=candidate,
+            portable_path=relative_repo.as_posix(),
+            repository_text=True,
+        )
+    else:
+        try:
+            candidate.relative_to(artifacts_root)
+        except ValueError as exc:
+            raise ContractError(
+                f"connection source is outside repository and artifacts/projects: {reference}"
+            ) from exc
+        managed = _ManagedFile(
+            path=candidate,
+            portable_path=candidate.relative_to(workspace_root).as_posix(),
+            repository_text=False,
+        )
     if not candidate.is_file():
-        raise ContractError(f"connection source is missing: {relative}")
-    return candidate
+        raise ContractError(f"connection source is missing: {reference}")
+    return managed
+
+
+def _managed_sha256(source: _ManagedFile) -> str:
+    if source.repository_text:
+        return repository_text_sha256(source.path)
+    return file_sha256(source.path)
 
 
 def _pointer_value(document: Any, pointer: str) -> Any:
@@ -80,24 +125,26 @@ def _pointer_value(document: Any, pointer: str) -> Any:
 
 def _validate_port_authority(
     port: dict[str, Any], port_path: Path, repo_root: Path
-) -> str:
+) -> tuple[str, str]:
     authority = port["authority"]
-    source_path = _repo_file(repo_root, authority["source_contract"])
-    if source_path == port_path.resolve():
+    source = _managed_file(repo_root, authority["source_contract"])
+    if source.path == port_path.resolve():
         raise ContractError("component port cannot cite itself as physical authority")
-    source_hash = repository_text_sha256(source_path)
+    source_hash = _managed_sha256(source)
     if source_hash != authority["source_sha256"]:
         raise ContractError("component port authority source SHA-256 is stale")
-    source = load_json(source_path)
+    source_document = load_json(source.path)
     for binding in authority["bindings"]:
         port_value = _pointer_value(port, binding["port_json_pointer"])
-        source_value = _pointer_value(source, binding["source_json_pointer"])
+        source_value = _pointer_value(
+            source_document, binding["source_json_pointer"]
+        )
         if port_value != source_value:
             raise ContractError(
                 "component port authority binding value differs: "
                 f"{binding['port_json_pointer']}"
             )
-    return source_hash
+    return source_hash, source.portable_path
 
 
 def load_connection_profile_registry(path: str | Path) -> dict[str, Any]:
@@ -188,12 +235,14 @@ def _resolve_profile(
     validate_schema(profile, "connection_profile.schema.json")
     validate_schema(upstream_port, "component_port.schema.json")
     validate_schema(downstream_port, "component_port.schema.json")
-    upstream_authority_hash = _validate_port_authority(
+    upstream_authority_hash, upstream_authority_path = _validate_port_authority(
         upstream_port, upstream_path, repo_root
     )
-    downstream_authority_hash = _validate_port_authority(
+    downstream_authority_hash, downstream_authority_path = _validate_port_authority(
         downstream_port, downstream_path, repo_root
     )
+    upstream_port_source = _managed_file(repo_root, upstream_path)
+    downstream_port_source = _managed_file(repo_root, downstream_path)
 
     upstream_ref = profile["upstream"]
     downstream_ref = profile["downstream"]
@@ -331,19 +380,19 @@ def _resolve_profile(
         "sources": {
             "profile_sha256": _canonical_sha256(profile),
             "upstream_port": {
-                "path": upstream_ref["port_contract"],
-                "sha256": repository_text_sha256(upstream_path),
+                "path": upstream_port_source.portable_path,
+                "sha256": _managed_sha256(upstream_port_source),
             },
             "downstream_port": {
-                "path": downstream_ref["port_contract"],
-                "sha256": repository_text_sha256(downstream_path),
+                "path": downstream_port_source.portable_path,
+                "sha256": _managed_sha256(downstream_port_source),
             },
             "upstream_authority": {
-                "path": upstream_port["authority"]["source_contract"],
+                "path": upstream_authority_path,
                 "sha256": upstream_authority_hash,
             },
             "downstream_authority": {
-                "path": downstream_port["authority"]["source_contract"],
+                "path": downstream_authority_path,
                 "sha256": downstream_authority_hash,
             },
         },
@@ -425,9 +474,14 @@ def resolve_connection_profile(
     validate_schema(profile, "connection_profile.schema.json")
     if profile["integration_id"] != registry["integration_id"]:
         raise ContractError("connection profile integration_id differs from registry")
+    if "port_contract" not in profile["upstream"]:
+        raise ContractError(
+            "upstream port binding is unresolved: "
+            f"{profile['upstream']['port_binding']}"
+        )
     root = Path(repo_root)
-    upstream_path = _repo_file(root, profile["upstream"]["port_contract"])
-    downstream_path = _repo_file(root, profile["downstream"]["port_contract"])
+    upstream_path = _managed_file(root, profile["upstream"]["port_contract"]).path
+    downstream_path = _managed_file(root, profile["downstream"]["port_contract"]).path
     return _resolve_profile(
         profile,
         load_json(upstream_path),
@@ -464,12 +518,13 @@ def write_resolved_and_plan(
     repo_root: str | Path = REPO_ROOT,
 ) -> tuple[Path, Path]:
     root = Path(repo_root).resolve()
-    registry_file = _repo_file(root, str(registry_path))
+    registry_source = _managed_file(root, registry_path)
+    registry_file = registry_source.path
     registry = load_connection_profile_registry(registry_file)
     resolved = resolve_connection_profile(registry, profile_id, repo_root=root)
     resolved["sources"]["profile_registry"] = {
-        "path": registry_file.relative_to(root).as_posix(),
-        "sha256": repository_text_sha256(registry_file),
+        "path": registry_source.portable_path,
+        "sha256": _managed_sha256(registry_source),
     }
     validate_schema(resolved, "resolved_connection.schema.json")
     resolved_path = Path(resolved_output)
@@ -515,8 +570,8 @@ def verify_composition_plan(
         source = resolved["sources"].get(source_name)
         if source is None:
             continue
-        source_path = _repo_file(root, source["path"])
-        if source["sha256"] != repository_text_sha256(source_path):
+        source_file = _managed_file(root, source["path"])
+        if source["sha256"] != _managed_sha256(source_file):
             raise ContractError(f"resolved connection source SHA-256 is stale: {source_name}")
 
 

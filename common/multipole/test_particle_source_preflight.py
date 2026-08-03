@@ -148,6 +148,24 @@ class ParticleSourcePreflightTest(unittest.TestCase):
             result["operating_point_binding"]["operating_point_id"], "five_ev"
         )
 
+    def test_campaign_energy_override_validates_derived_5ev_source(self) -> None:
+        def five_ev(rows: list[dict[str, object]]) -> None:
+            for row in rows:
+                row["vz_m_s"] = self.speed * math.sqrt(5.0 / 2.0)
+
+        with tempfile.TemporaryDirectory() as directory:
+            source = self.write_source(directory, mutate=five_ev)
+            result = validate_source(
+                source,
+                self.resolved,
+                expected_kinetic_energy_ev=5.0,
+            )
+        self.assertEqual(result["energy_model"]["kinetic_energy_eV"], 5.0)
+        self.assertEqual(
+            result["energy_model_authority"],
+            "campaign_particle_source_derivation",
+        )
+
     def test_operating_point_binding_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             source = self.write_source(directory)

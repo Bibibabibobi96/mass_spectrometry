@@ -4,7 +4,12 @@ param(
   [Parameter(Mandatory)][string]$ResolvedConnection,
   [Parameter(Mandatory)][string]$ResolvedEngineeringBudget,
   [Parameter(Mandatory)][string]$RuntimeBinding,
-  [string]$SourceBranchId = '',
+  [Parameter(Mandatory)][ValidateSet('comsol','simion')]
+  [string]$SourceBranchId,
+  [Parameter(Mandatory)][string]$ResolvedSourceContract,
+  [Parameter(Mandatory)][string]$ResolvedSourceContractSha256,
+  [Parameter(Mandatory)][string]$UpstreamResolvedDesign,
+  [Parameter(Mandatory)][string]$UpstreamResolvedDesignSha256,
   [string]$Stamp = '',
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$PythonExe = ''
@@ -23,22 +28,32 @@ if ($Stamp -notmatch '^\d{8}_\d{6}$') { throw 'Stamp must use yyyyMMdd_HHmmss.' 
 $runtime = Resolve-RfOatofRuntimeBinding -RepoRoot $repoRoot `
   -ResolvedConnection $ResolvedConnection -RuntimeBinding $RuntimeBinding `
   -ExpectedConnectionProfileId $ConnectionProfileId `
-  -SourceBranchId $SourceBranchId
+  -SourceBranchId $SourceBranchId `
+  -ResolvedSourceContract $ResolvedSourceContract `
+  -ResolvedSourceContractSha256 $ResolvedSourceContractSha256 `
+  -UpstreamResolvedDesign $UpstreamResolvedDesign `
+  -UpstreamResolvedDesignSha256 $UpstreamResolvedDesignSha256
 $upstreamProjectId = $runtime.upstream_project_id
 $artifactRoot = Join-Path $workspaceRoot "artifacts\projects\$upstreamProjectId\runs"
 . $runtime.run_artifact_support
 $resolved = $runtime.resolved_connection
 $gapMm = [double]$resolved.connector.length_mm
 $gapLabel = ('{0:g}' -f $gapMm).Replace('.','p')
-$prePulseRunId = "${Stamp}__sim__comsol__rf-oatof-pre-pulse-interface-gap${gapLabel}__n100"
-$pulseCaptureRunId = "${Stamp}__sim__comsol__rf-oatof-pulse-capture-gap${gapLabel}__n100"
-$analyzerRunId = "${Stamp}__sim__cross__rf-oatof-analyzer-transport-gap${gapLabel}__n100"
+$particleCount = [int]$runtime.source_record.particle_count
+$populationLabel = "n$particleCount"
+$prePulseRunId = "${Stamp}__sim__comsol__rf-oatof-pre-pulse-interface-gap${gapLabel}__${populationLabel}"
+$pulseCaptureRunId = "${Stamp}__sim__comsol__rf-oatof-pulse-capture-gap${gapLabel}__${populationLabel}"
+$analyzerRunId = "${Stamp}__sim__cross__rf-oatof-analyzer-transport-gap${gapLabel}__${populationLabel}"
 
 & $runtime.implementation.pre_pulse_runner `
   -RunId $prePulseRunId -Particles -ConnectionProfileId $ConnectionProfileId `
   -ResolvedConnection $ResolvedConnection `
   -ResolvedEngineeringBudget $ResolvedEngineeringBudget `
   -RuntimeBinding $RuntimeBinding -SourceBranchId $SourceBranchId `
+  -ResolvedSourceContract $ResolvedSourceContract `
+  -ResolvedSourceContractSha256 $ResolvedSourceContractSha256 `
+  -UpstreamResolvedDesign $UpstreamResolvedDesign `
+  -UpstreamResolvedDesignSha256 $UpstreamResolvedDesignSha256 `
   -PythonExe $python
 if ($LASTEXITCODE -ne 0) { throw 'RF-to-oaTOF transfer stopped at pre_pulse_interface_transport.' }
 & $runtime.implementation.pulse_capture_runner `
@@ -47,6 +62,10 @@ if ($LASTEXITCODE -ne 0) { throw 'RF-to-oaTOF transfer stopped at pre_pulse_inte
   -ResolvedConnection $ResolvedConnection `
   -ResolvedEngineeringBudget $ResolvedEngineeringBudget `
   -RuntimeBinding $RuntimeBinding -SourceBranchId $SourceBranchId `
+  -ResolvedSourceContract $ResolvedSourceContract `
+  -ResolvedSourceContractSha256 $ResolvedSourceContractSha256 `
+  -UpstreamResolvedDesign $UpstreamResolvedDesign `
+  -UpstreamResolvedDesignSha256 $UpstreamResolvedDesignSha256 `
   -PythonExe $python
 if ($LASTEXITCODE -ne 0) { throw 'RF-to-oaTOF transfer stopped at pulse_capture.' }
 & $runtime.implementation.analyzer_transport_runner `
@@ -55,6 +74,10 @@ if ($LASTEXITCODE -ne 0) { throw 'RF-to-oaTOF transfer stopped at pulse_capture.
   -ResolvedConnection $ResolvedConnection `
   -ResolvedEngineeringBudget $ResolvedEngineeringBudget `
   -RuntimeBinding $RuntimeBinding -SourceBranchId $SourceBranchId `
+  -ResolvedSourceContract $ResolvedSourceContract `
+  -ResolvedSourceContractSha256 $ResolvedSourceContractSha256 `
+  -UpstreamResolvedDesign $UpstreamResolvedDesign `
+  -UpstreamResolvedDesignSha256 $UpstreamResolvedDesignSha256 `
   -SimionExe $SimionExe -PythonExe $python
 if ($LASTEXITCODE -ne 0) { throw 'RF-to-oaTOF transfer stopped at analyzer_transport.' }
 
@@ -67,13 +90,13 @@ if (-not (Test-Path -LiteralPath $manifestVerifier -PathType Leaf)) {
 }
 $verificationCases = @(
   [pscustomobject]@{
-    run_id=$prePulseRunId; mode='rf_to_oatof_pre_pulse_interface_transport_n100'
+    run_id=$prePulseRunId; mode='rf_to_oatof_pre_pulse_interface_transport'
   },
   [pscustomobject]@{
-    run_id=$pulseCaptureRunId; mode='rf_to_oatof_pulse_capture_n100'
+    run_id=$pulseCaptureRunId; mode='rf_to_oatof_pulse_capture'
   },
   [pscustomobject]@{
-    run_id=$analyzerRunId; mode='rf_to_oatof_analyzer_transport_n100'
+    run_id=$analyzerRunId; mode='rf_to_oatof_analyzer_transport'
   }
 )
 $environmentNames = @('PYTHONPATH','PYTHONNOUSERSITE')

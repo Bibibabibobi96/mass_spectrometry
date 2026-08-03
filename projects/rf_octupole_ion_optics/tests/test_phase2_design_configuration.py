@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import unittest
 from pathlib import Path
 from typing import Any
 
+from common.contracts.file_identity import repository_text_sha256
 from common.contracts.machine_contracts import validate_schema
 from common.multipole.design_profile import resolve_design_profile
 
@@ -86,10 +86,10 @@ class ThreeModeDesignConfigurationTests(unittest.TestCase):
         base_path = PROJECT_ROOT / "config/requests/mechanical_base.json"
         self.assertEqual(
             self.envelope["reference"]["design_request_sha256"],
-            hashlib.sha256(base_path.read_bytes()).hexdigest().upper(),
+            repository_text_sha256(base_path),
         )
 
-    def test_profile_source_hashes_use_repository_lf_bytes(self) -> None:
+    def test_profile_source_hashes_use_canonical_repository_text(self) -> None:
         current = [
             item
             for item in self.profiles["profiles"]
@@ -98,10 +98,8 @@ class ThreeModeDesignConfigurationTests(unittest.TestCase):
         for field in ("design_request", "design_variables", "optimization_envelope"):
             for item in current:
                 path = PROJECT_ROOT / item[field]
-                content = path.read_bytes()
-                self.assertNotIn(b"\r", content, item[field])
                 self.assertEqual(
-                    hashlib.sha256(content).hexdigest().upper(),
+                    repository_text_sha256(path),
                     item["sha256"][field],
                 )
 

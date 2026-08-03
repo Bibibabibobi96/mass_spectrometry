@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from common.contracts.file_identity import file_sha256
+from common.contracts.file_identity import repository_text_sha256
 from common.contracts.machine_contracts import ContractError, validate_schema
 from common.multipole.compile_design_request import (
     apply_typed_operating_mode,
@@ -61,7 +61,7 @@ def resolve_design_profile(
         "optimization_envelope": _inside(project_root, profile["optimization_envelope"]),
     }
     for label, path in paths.items():
-        if file_sha256(path) != profile["sha256"][label]:
+        if repository_text_sha256(path) != profile["sha256"][label]:
             raise ContractError(f"design profile hash is stale: {label}")
     request = json.loads(paths["design_request"].read_text(encoding="utf-8-sig"))
     resolved_design = None
@@ -75,7 +75,7 @@ def resolve_design_profile(
                 "typed design profile is missing its operating mode registry"
             ) from error
         modes_path = _inside(project_root, modes_relative)
-        if file_sha256(modes_path) != expected_modes_sha256:
+        if repository_text_sha256(modes_path) != expected_modes_sha256:
             raise ContractError("operating mode registry hash is stale")
         modes = json.loads(modes_path.read_text(encoding="utf-8-sig"))
         request = apply_typed_operating_mode(request, modes, mode_id)
@@ -88,6 +88,7 @@ def resolve_design_profile(
             provenance_root=repo_root,
             operating_mode_registry_path=modes_path,
             mode_id=mode_id,
+            repository_text_sources=True,
         )
     if request["identity"] != profile["identity"]:
         raise ContractError("design request identity differs from design profile")

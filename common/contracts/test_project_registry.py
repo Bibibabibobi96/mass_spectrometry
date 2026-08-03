@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import copy
+import json
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
+from pathlib import Path
 
 from build_project_registry import (
     DEFAULT_OUTPUT,
@@ -17,6 +21,7 @@ from build_project_registry import (
     validate_legacy_identity_mappings,
 )
 from machine_contracts import load_json, validate_schema
+from file_identity import repository_text_sha256
 
 
 def pending_location(current: str, retired: str, suffix: str) -> dict:
@@ -33,6 +38,75 @@ def pending_location(current: str, retired: str, suffix: str) -> dict:
 
 
 class ProjectRegistryTests(unittest.TestCase):
+    def test_registry_and_multipole_profile_hashes_are_lf_crlf_equivalent(
+        self,
+    ) -> None:
+        project_id = "rf_hexapole_ion_optics"
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            lf_root = base / "lf"
+            crlf_root = base / "crlf"
+            lf_project = lf_root / "projects" / project_id
+            lf_project.parent.mkdir(parents=True)
+            shutil.copytree(REPO_ROOT / "projects" / project_id, lf_project)
+            for path in lf_project.rglob("*.json"):
+                path.write_bytes(
+                    path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+                )
+
+            profiles_path = lf_project / "config" / "design_profiles.json"
+            profiles = load_json(profiles_path)
+            for profile in profiles["profiles"]:
+                request_path = lf_project / profile["design_request"]
+                envelope_path = lf_project / profile["optimization_envelope"]
+                envelope = load_json(envelope_path)
+                envelope["reference"]["design_request_sha256"] = (
+                    repository_text_sha256(request_path)
+                )
+                envelope_path.write_text(
+                    json.dumps(envelope, indent=2) + "\n",
+                    encoding="utf-8",
+                    newline="\n",
+                )
+            for profile in profiles["profiles"]:
+                profile["sha256"] = {
+                    label: repository_text_sha256(lf_project / profile[label])
+                    for label in (
+                        "design_request",
+                        "design_variables",
+                        "optimization_envelope",
+                    )
+                }
+            modes_path = lf_project / profiles["operating_mode_registry"]
+            profiles["operating_mode_registry_sha256"] = (
+                repository_text_sha256(modes_path)
+            )
+            profiles_path.write_text(
+                json.dumps(profiles, indent=2) + "\n",
+                encoding="utf-8",
+                newline="\n",
+            )
+            execution = load_json(lf_project / "config" / "execution_profiles.json")
+            for execution_profile in execution["profiles"]:
+                for step in execution_profile["steps"]:
+                    entrypoint = (lf_project / step["entrypoint"]).resolve()
+                    if not entrypoint.exists():
+                        entrypoint.parent.mkdir(parents=True, exist_ok=True)
+                        entrypoint.touch()
+
+            shutil.copytree(lf_root, crlf_root)
+            for path in (crlf_root / "projects" / project_id).rglob("*.json"):
+                path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+
+            lf_registry = build_registry(lf_root)
+            crlf_registry = build_registry(crlf_root)
+            self.assertEqual(lf_registry, crlf_registry)
+            descriptor_path = lf_project / "config" / "project.json"
+            self.assertEqual(
+                lf_registry["generated_from"][0]["sha256"],
+                repository_text_sha256(descriptor_path),
+            )
+
     def test_multipole_registration_uses_one_consistent_profile_identity(self) -> None:
         identities = [
             {

@@ -3,16 +3,20 @@
   "role": "rf_to_oatof_pre_pulse_interface_transport",
   "status": "functional_unqualified",
   "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
-  "consumer_scope": "rf_multipole_no_acceleration_full_length_family",
+  "consumer_scope": "rf_multipole_registered_handoff_family",
   "phase": "pre_pulse_interface_transport",
   "topology_source": "resolved_connection",
   "inputs": {
     "explicit_dependencies": "runtime_binding.contracts.dependency_contract",
-    "rf_resolved_geometry": "runtime_binding.contracts.upstream_resolved_design",
+    "source_contract": "run_input:resolved_source_contract",
+    "rf_resolved_geometry": "run_input:upstream_resolved_design",
     "oatof_baseline": "dependency_contract:oatof_baseline"
   },
   "field_runtime": {
-    "included_bases": ["axial_dc", "time_dependent_rf"],
+    "included_bases": [
+      "axial_dc",
+      "time_dependent_rf"
+    ],
     "pulse_enabled": false,
     "magnetic_field_enabled": false,
     "collision_or_space_charge_enabled": false,
@@ -33,6 +37,7 @@
   },
   "particle_runtime": {
     "source_particles": 100,
+    "source_particle_count_policy": "runtime_selected_handoff_rows",
     "source_identity": "runtime_binding.contracts.source_contract.source_branches[source_branch_id]",
     "clock_epoch_id": "instrument_clock_epoch_v1",
     "rf_steps_per_period": 80,
@@ -47,8 +52,8 @@
     "minimum_oatof_entry_crossings": 1,
     "dense_trajectories_saved": false,
     "audit_tolerances": {
-      "plane_residual_mm": 1e-9,
-      "clock_residual_us": 1e-9,
+      "plane_residual_mm": 1e-09,
+      "clock_residual_us": 1e-09,
       "energy_velocity_relative_residual": 1e-10
     }
   },

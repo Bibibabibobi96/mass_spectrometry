@@ -143,6 +143,32 @@ class RuntimeProfileTests(unittest.TestCase):
             "content_addressed_geometry_basis",
         )
 
+    def test_campaign_v5_binds_governed_n100_energy_transform_for_each_family(self) -> None:
+        cases = (
+            ("rf_quadrupole_ion_optics", "quad_noacc_5ev_h15_n100"),
+            ("rf_hexapole_ion_optics", "hex_noacc_5ev_h15_n100"),
+            ("rf_octupole_ion_optics", "oct_noacc_5ev_h15_n100"),
+        )
+        for project_id, experiment_id in cases:
+            with self.subTest(project_id=project_id):
+                resolved = resolve_campaign_experiment(
+                    REPO_ROOT,
+                    project_id,
+                    Path("20260803__multipole_noacc_5ev_h15_n100.json"),
+                    experiment_id,
+                )
+                derivation = resolved["particle_source_derivation"]
+                self.assertEqual(derivation["target_kinetic_energy_eV"], 5.0)
+                self.assertEqual(derivation["authority_particle_count"], 100)
+                scope = resolved["engineering_budget"]["inline_contract"][
+                    "pilot_authorization"
+                ]["scope"]
+                self.assertEqual(scope["particle_count"], 100)
+                self.assertNotIn(
+                    "campaign_design_variables",
+                    resolved["design_profile_resolution"],
+                )
+
     def test_historical_campaign_v1_and_v2_remain_resolvable(self) -> None:
         cases = (
             (

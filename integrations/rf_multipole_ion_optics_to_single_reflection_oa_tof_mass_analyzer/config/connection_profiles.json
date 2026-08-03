@@ -6,11 +6,11 @@
     {
       "schema_version": 1,
       "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
-      "connection_profile_id": "rf_quadrupole_no_acceleration_full_length_direct_mating_gap_0mm",
+      "connection_profile_id": "rf_quadrupole_oatof_shield_terminal_direct_mating_gap_0mm",
       "upstream": {
         "project_id": "rf_quadrupole_ion_optics",
         "port_id": "rf_multipole_exit",
-        "port_contract": "projects/rf_quadrupole_ion_optics/config/interfaces/provided/rf_multipole_exit_no_acceleration_full_length.json"
+        "port_binding": "source_run_resolved_design"
       },
       "downstream": {
         "project_id": "single_reflection_oa_tof_mass_analyzer",
@@ -55,11 +55,11 @@
     {
       "schema_version": 1,
       "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
-      "connection_profile_id": "rf_hexapole_no_acceleration_full_length_direct_mating_gap_0mm",
+      "connection_profile_id": "rf_hexapole_oatof_shield_terminal_direct_mating_gap_0mm",
       "upstream": {
         "project_id": "rf_hexapole_ion_optics",
         "port_id": "rf_multipole_exit",
-        "port_contract": "projects/rf_hexapole_ion_optics/config/interfaces/provided/rf_multipole_exit.json"
+        "port_binding": "source_run_resolved_design"
       },
       "downstream": {
         "project_id": "single_reflection_oa_tof_mass_analyzer",
@@ -104,11 +104,11 @@
     {
       "schema_version": 1,
       "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
-      "connection_profile_id": "rf_octupole_no_acceleration_full_length_direct_mating_gap_0mm",
+      "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm",
       "upstream": {
         "project_id": "rf_octupole_ion_optics",
         "port_id": "rf_multipole_exit",
-        "port_contract": "projects/rf_octupole_ion_optics/config/interfaces/provided/rf_multipole_exit.json"
+        "port_binding": "source_run_resolved_design"
       },
       "downstream": {
         "project_id": "single_reflection_oa_tof_mass_analyzer",

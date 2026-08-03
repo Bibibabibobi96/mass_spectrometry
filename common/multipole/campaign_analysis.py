@@ -19,10 +19,16 @@ from common.multipole.numerical_qualification import run_data
 
 MODES = {
     "no_acceleration",
+    "no_acceleration_5ev",
     "segmented_acceleration",
     "exit_aperture_plate_acceleration",
 }
 PAIR_DEFINITIONS = (
+    (
+        "initial_5ev_vs_initial_2ev",
+        "no_acceleration",
+        "no_acceleration_5ev",
+    ),
     (
         "segmented_vs_no_acceleration",
         "no_acceleration",
@@ -37,6 +43,11 @@ PAIR_DEFINITIONS = (
         "exit_aperture_plate_vs_segmented",
         "segmented_acceleration",
         "exit_aperture_plate_acceleration",
+    ),
+    (
+        "segmented_vs_initial_5ev",
+        "no_acceleration_5ev",
+        "segmented_acceleration",
     ),
 )
 
@@ -698,8 +709,14 @@ def compare_pair(
 ) -> dict[str, Any]:
     if (
         no_acceleration["project_id"] != segmented["project_id"]
-        or no_acceleration["particle_source_sha256"]
-        != segmented["particle_source_sha256"]
+        or no_acceleration.get(
+            "particle_source_authority_sha256",
+            no_acceleration["particle_source_sha256"],
+        )
+        != segmented.get(
+            "particle_source_authority_sha256",
+            segmented["particle_source_sha256"],
+        )
     ):
         raise ValueError("paired campaign arms differ in project or particle source")
     centroid_shift = math.hypot(
@@ -741,7 +758,12 @@ def compare_modes(
 
     if (
         left["project_id"] != right["project_id"]
-        or left["particle_source_sha256"] != right["particle_source_sha256"]
+        or left.get(
+            "particle_source_authority_sha256", left["particle_source_sha256"]
+        )
+        != right.get(
+            "particle_source_authority_sha256", right["particle_source_sha256"]
+        )
     ):
         raise ValueError("paired campaign arms differ in project or particle source")
     fields = (
@@ -818,7 +840,7 @@ def analyze(arms: list[tuple[str, str, str, Path]]) -> dict[str, Any]:
 
 def markdown_report(document: dict[str, Any]) -> str:
     lines = [
-        "# 多极杆无加速、分段加速与出口带孔接口板加速 H15 对照",
+        "# 多极杆 H15 多模式与初始能量对照",
         "",
         "本报告为 N=100 SIMION 事后工程描述。全部指标取规范 handoff 事件；"
         "它不证明数值收敛、最优设计、求解器等价、Candidate 或 Formal 资格。",

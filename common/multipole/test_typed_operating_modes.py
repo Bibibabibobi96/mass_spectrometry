@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from common.contracts.file_identity import file_sha256
+from common.contracts.file_identity import repository_text_sha256
 from common.contracts.machine_contracts import ContractError, validate_schema
 from common.multipole.compile_design_request import (
     MultipoleDesignCompileError,
@@ -100,7 +100,11 @@ class TypedOperatingModeTests(unittest.TestCase):
         catalog_path = config / "design_variables.json"
         envelope_path = config / "optimization_envelope.json"
         modes_path = config / "operating_modes.json"
-        base_path.write_text(json.dumps(base), encoding="utf-8")
+        base_path.write_text(
+            json.dumps(base, indent=2) + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
         catalog = multipole_catalog(
             PROJECT_ID,
             "config/requests/mechanical_base.json",
@@ -126,7 +130,11 @@ class TypedOperatingModeTests(unittest.TestCase):
                 }
             )
             catalog["variables"].append(variable)
-        catalog_path.write_text(json.dumps(catalog), encoding="utf-8")
+        catalog_path.write_text(
+            json.dumps(catalog, indent=2) + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
         envelope_path.write_text(
             json.dumps(
                 {
@@ -139,7 +147,7 @@ class TypedOperatingModeTests(unittest.TestCase):
                     "policy": "The mechanical baseline is governed once.",
                     "reference": {
                         "design_request": "config/requests/mechanical_base.json",
-                        "design_request_sha256": file_sha256(base_path),
+                        "design_request_sha256": repository_text_sha256(base_path),
                     },
                     "constraints": [
                         {
@@ -152,15 +160,21 @@ class TypedOperatingModeTests(unittest.TestCase):
                             "description": "Keep r0 inside the governed catalog.",
                         }
                     ],
-                }
-            ),
+                },
+                indent=2,
+            ) + "\n",
             encoding="utf-8",
+            newline="\n",
         )
-        modes_path.write_text(json.dumps(operating_modes()), encoding="utf-8")
+        modes_path.write_text(
+            json.dumps(operating_modes(), indent=2) + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
         common_hashes = {
-            "design_request": file_sha256(base_path),
-            "design_variables": file_sha256(catalog_path),
-            "optimization_envelope": file_sha256(envelope_path),
+            "design_request": repository_text_sha256(base_path),
+            "design_variables": repository_text_sha256(catalog_path),
+            "optimization_envelope": repository_text_sha256(envelope_path),
         }
         profiles = {
             "schema_version": 2,
@@ -168,7 +182,7 @@ class TypedOperatingModeTests(unittest.TestCase):
             "project_id": PROJECT_ID,
             "family_id": "rf_multipole_ion_optics",
             "operating_mode_registry": "config/operating_modes.json",
-            "operating_mode_registry_sha256": file_sha256(modes_path),
+            "operating_mode_registry_sha256": repository_text_sha256(modes_path),
             "profiles": [
                 {
                     "design_profile_id": f"{mode['mode_id']}_profile",
@@ -193,6 +207,32 @@ class TypedOperatingModeTests(unittest.TestCase):
         )
         return base_path, profiles
 
+    def test_profile_resolution_accepts_crlf_repository_sources(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.build_repository(root)
+            config = root / "projects" / PROJECT_ID / "config"
+            source_paths = (
+                config / "requests" / "mechanical_base.json",
+                config / "design_variables.json",
+                config / "optimization_envelope.json",
+                config / "operating_modes.json",
+            )
+            for path in source_paths:
+                path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+            resolved = resolve_design_profile(
+                root,
+                PROJECT_ID,
+                "segmented_profile",
+            )["resolved_design"]
+            source_hashes = {
+                source["sha256"] for source in resolved["sources"]
+            }
+            self.assertEqual(
+                source_hashes,
+                {repository_text_sha256(path) for path in source_paths},
+            )
+
     def test_three_profiles_share_one_governed_mechanical_baseline(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -206,7 +246,7 @@ class TypedOperatingModeTests(unittest.TestCase):
                     profile["sha256"]["design_request"]
                     for profile in profiles["profiles"]
                 },
-                {file_sha256(base_path)},
+                {repository_text_sha256(base_path)},
             )
             resolved = {
                 mode: resolve_design_profile(
@@ -257,7 +297,7 @@ class TypedOperatingModeTests(unittest.TestCase):
                 self.assertTrue(
                     any(
                         source["label"] == "design_request"
-                        and source["sha256"] == file_sha256(base_path)
+                        and source["sha256"] == repository_text_sha256(base_path)
                         for source in item["sources"]
                     )
                 )
@@ -266,6 +306,7 @@ class TypedOperatingModeTests(unittest.TestCase):
                     request_path=base_path,
                     source_root=root,
                     expected_identity=item["identity"],
+                    repository_text_sources=True,
                 )
             self.assertEqual(physical_segments[0], physical_segments[1])
             self.assertEqual(physical_segments[1], physical_segments[2])

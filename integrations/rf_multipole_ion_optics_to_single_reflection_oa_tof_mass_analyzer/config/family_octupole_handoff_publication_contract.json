@@ -7,7 +7,7 @@
   },
   "geometry": {
     "axial_plane_mm": 80.6,
-    "absolute_tolerance_mm": 1e-9,
+    "absolute_tolerance_mm": 1e-09,
     "require_positive_axial_velocity": true
   },
   "population": {
@@ -25,6 +25,6 @@
     "species_policy": "frozen_particle_source_mass_and_charge",
     "particle_weight": 1,
     "phase_reference_id": "multipole_rf_drive",
-    "clock_tolerance_us": 1e-9
+    "clock_tolerance_us": 1e-09
   }
 }

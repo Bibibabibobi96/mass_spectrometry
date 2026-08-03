@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "role": "rf_multipole_oatof_experiment_campaign",
+  "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+  "campaign_id": "octupole_segmented_vs_quadrupole_noacc_5ev_n100",
+  "status": "authorized",
+  "execution_policy": {
+    "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_policy.json",
+    "sha256": "EF8D30796357A59318AF3BE31D09CB9135CE10C544AB697FAA60E23E3ECEDA49"
+  },
+  "claim_limit": "Functional N=100 downstream comparison only; no convergence, optimization, resolution, Candidate or Formal claim.",
+  "experiments": [
+    {
+      "sequence": 1,
+      "experiment_id": "octupole_segmented_acceleration_simion",
+      "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm",
+      "run_id": "20260803_191000__sim__cross__oct-segmented-oatof__n41",
+      "source": {
+        "run_id": "20260731_210700__sim__simion__oct-segmented-oatof-terminal-h15-n100",
+        "launched_particle_count": 100,
+        "particle_count": 41,
+        "particle_source_manifest_input_role": "particle_source",
+        "manifest": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260731_210700__sim__simion__oct-segmented-oatof-terminal-h15-n100/run_manifest.json", "sha256": "D53C711F3890C4B2CCF5E75D3191E9A6CA56497DC1E84EE878454D9AC45CFBC6"},
+        "state": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260731_210700__sim__simion__oct-segmented-oatof-terminal-h15-n100/results/particle_states__axial_acceleration_rf_on.csv", "sha256": "7E0F905529187AC2195136F62D4018FFCE0AA43FF4B44BF0E7608B4CAECB47A1"},
+        "particle_source": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260731_210700__sim__simion__oct-segmented-oatof-terminal-h15-n100/inputs/particle_source.csv", "sha256": "0125C3AB02B2321EF26A3A913CF6EC04325FD0D48597D2CB439D0CE42411662F"},
+        "metadata": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260731_210700__sim__simion__oct-segmented-oatof-terminal-h15-n100/inputs/particle_source_metadata.json", "sha256": "018CAC1BEC4387DE2F29E95A8EF57A52F50EB4CB99218DA635A79EED407F5E7C"}
+      }
+    },
+    {
+      "sequence": 2,
+      "experiment_id": "quadrupole_noacc_5ev_simion",
+      "connection_profile_id": "rf_quadrupole_oatof_shield_terminal_direct_mating_gap_0mm",
+      "run_id": "20260803_191500__sim__cross__quad-noacc-5ev-oatof__n94",
+      "source": {
+        "run_id": "20260803_141000__sim__simion__quad-noacc-5ev-h15-n100",
+        "launched_particle_count": 100,
+        "particle_count": 94,
+        "particle_source_manifest_input_role": "particle_source",
+        "manifest": {"path": "artifacts/projects/rf_quadrupole_ion_optics/runs/20260803_141000__sim__simion__quad-noacc-5ev-h15-n100/run_manifest.json", "sha256": "B59A218F480181ED5E687148C47DD8A1611DBCECFBBF8B1F693CE2A779C4719E"},
+        "state": {"path": "artifacts/projects/rf_quadrupole_ion_optics/runs/20260803_141000__sim__simion__quad-noacc-5ev-h15-n100/results/particle_states__rf_on.csv", "sha256": "53DF0CB6CC8D10CB6F760769D9A6BECD4B42FA6C223C74B58F948BAEB454F036"},
+        "particle_source": {"path": "artifacts/projects/rf_quadrupole_ion_optics/runs/20260803_141000__sim__simion__quad-noacc-5ev-h15-n100/inputs/particle_source.csv", "sha256": "7C71B34D8442F59237FAE7C77DC0C33643B7F6BD3E5C14493E309A68C45FAE8B"},
+        "metadata": {"path": "artifacts/projects/rf_quadrupole_ion_optics/runs/20260803_141000__sim__simion__quad-noacc-5ev-h15-n100/inputs/particle_source_metadata.json", "sha256": "04974F3AC88172956DA9FD82D43B0CBA970ECE5F12A0A3E97C0B85BCC17FD7E6"}
+      }
+    }
+  ]
+}

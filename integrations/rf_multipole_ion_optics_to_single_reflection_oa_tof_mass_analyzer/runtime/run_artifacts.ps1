@@ -202,7 +202,7 @@ function Initialize-RfIntegrationStageBudget {
       $document.integration_id -ne $ExpectedIntegrationId -or
       $document.connection_profile_id -ne $ExpectedConnectionProfileId -or
       $document.retention_class -ne 'compact' -or
-      [int]$document.particle_count -ne 100) {
+      [int]$document.particle_count -lt 1) {
     throw 'Resolved integration engineering-budget identity differs.'
   }
   if ($document.stage_limits.PSObject.Properties.Name -notcontains $StageId) {

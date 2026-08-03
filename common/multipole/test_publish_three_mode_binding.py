@@ -172,6 +172,20 @@ class ThreeModeBindingPublisherTests(unittest.TestCase):
             1,
         )
 
+    def test_ignores_explicit_lost_handoff_rows_when_survivors_exist(self) -> None:
+        self._write_csv(
+            self.state,
+            PARTICLE_STATE_COLUMNS,
+            [
+                self._state_row(1, "handoff", "transmitted", 1.0),
+                self._state_row(2, "handoff", "lost", 1.0),
+            ],
+        )
+        publish_handoff(self.state, self.source, self.output, contract=self.contract)
+        self.assertEqual(
+            validate_component_particle_state_csv(self.output)["particles"], 1
+        )
+
     def test_rejects_unknown_handoff_particle_identity(self) -> None:
         self._write_csv(
             self.state,
@@ -237,7 +251,7 @@ class ThreeModeBindingPublisherTests(unittest.TestCase):
             ),
             "status": (
                 [self._state_row(1, "handoff", "lost", 1.0)],
-                "status differs",
+                "no selected handoff rows",
             ),
             "plane": (
                 [

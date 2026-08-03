@@ -14,8 +14,8 @@
     "schema_version": {"const": 1},
     "integration_id": {"$ref": "#/$defs/identifier"},
     "connection_profile_id": {"$ref": "#/$defs/identifier"},
-    "upstream": {"$ref": "#/$defs/endpoint"},
-    "downstream": {"$ref": "#/$defs/endpoint"},
+    "upstream": {"$ref": "#/$defs/upstream_endpoint"},
+    "downstream": {"$ref": "#/$defs/downstream_endpoint"},
     "coupling_mode": {"enum": ["state_handoff", "field_overlap", "monolithic_joint_solve"]},
     "spatial_registration": {
       "type": "object",
@@ -107,17 +107,33 @@
       "type": "array", "minItems": 3, "maxItems": 3,
       "items": {"type": "number"}
     },
-    "endpoint": {
+    "port_contract": {
+      "type": "string",
+      "pattern": "^(?:projects/[a-z][a-z0-9_]*|artifacts/projects/[a-z][a-z0-9_]*)(?:/(?!\\.{1,2}(?:/|$))[A-Za-z0-9._-]+)+\\.json$"
+    },
+    "upstream_endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project_id", "port_id"],
+      "properties": {
+        "project_id": {"$ref": "#/$defs/identifier"},
+        "port_id": {"$ref": "#/$defs/identifier"},
+        "port_contract": {"$ref": "#/$defs/port_contract"},
+        "port_binding": {"const": "source_run_resolved_design"}
+      },
+      "oneOf": [
+        {"required": ["port_contract"], "not": {"required": ["port_binding"]}},
+        {"required": ["port_binding"], "not": {"required": ["port_contract"]}}
+      ]
+    },
+    "downstream_endpoint": {
       "type": "object",
       "additionalProperties": false,
       "required": ["project_id", "port_id", "port_contract"],
       "properties": {
         "project_id": {"$ref": "#/$defs/identifier"},
         "port_id": {"$ref": "#/$defs/identifier"},
-        "port_contract": {
-          "type": "string",
-          "pattern": "^projects/[a-z][a-z0-9_]*(?:/[A-Za-z0-9._-]+)+\\.json$"
-        }
+        "port_contract": {"$ref": "#/$defs/port_contract"}
       }
     }
   }
