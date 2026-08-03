@@ -31,6 +31,7 @@
 | [四极杆](quadrupole.md) | Mathieu 方程、稳定区、质量尺度、分辨率和质量过滤验证 | 当前项目参数与状态 |
 | [高阶多极杆](higher_multipoles.md) | 六极杆、八极杆及更高阶多极杆的场、伪势、选型和验证 | 四极杆稳定图长推导 |
 | [碰撞与模型](collisions.md) | 碰撞、冷却、RF加热、算法层级和碰撞验证 | 未经批准的数据集和项目当前结论 |
+| [出口相空间控制](exit_phase_space_control.md) | 出口匹配、准直、边缘场、轴向加速、发射度与接口评价 | 项目当前结果、阈值或最优参数 |
 
 文件按物理模型边界拆分，而不是按每个公式拆分。完整的 L0–L5 定义只在[共同理论](foundations.md#模型保真度层级)维护，本入口不复制第二份定义。
 
@@ -44,6 +45,7 @@
 | 设计 RF-only 四极离子导向器 | [四极杆](quadrupole.md)；有气体时再读[碰撞与模型](collisions.md) |
 | 设计六极杆或八极杆 | [共同理论](foundations.md) → [高阶多极杆](higher_multipoles.md) |
 | 加入缓冲气体、冷却或反应池 | [碰撞与模型](collisions.md) → 目标项目机器合同 |
+| 减小出口束斑或角度并匹配下游接口 | [出口相空间控制](exit_phase_space_control.md) → 目标项目 `docs/PROJECT.md` 与机器合同 |
 | 修改 COMSOL、SIMION 或 CAD 实现 | 目标项目 `docs/PROJECT.md` → 对应软件文档 |
 
 ## 全局约定速览

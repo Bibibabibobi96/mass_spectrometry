@@ -47,8 +47,12 @@ fallback。已关闭的逐臂profile、预登记和专用测试不再位于活�
 
 ## 下一步
 
-1. 使用当前12个runtime profile和声明式campaign入口完成真正需要的N=100/N=1000实验，不恢复一次性
+1. 出口准直筛选按[通用出口相空间方法](../../../docs/multipoles/exit_phase_space_control.md)执行：以既有
+   `segmented_rod_axial_acceleration`为首选基线，在固定总电位差和非变化合同下优化分段电位分配；
+   canonical handoff为主评价面，杆端只作边缘场诊断，terminal传输和损失作为硬约束。候选通过该筛选
+   后才运行完整oaTOF链。
+2. 使用当前12个runtime profile和声明式campaign入口完成真正需要的N=100/N=1000实验，不恢复一次性
    solver/mesh诊断profile。
-2. 以家族六指标判断下游可接受性，同时显式保留数值收敛未豁免状态。
-3. 需要新的网格或求解器研究时，新建有窄变量轴、资源帽和终止条件的campaign；不得复制旧JSON后改SHA。
-4. 只有新证据通过当前资格合同后，才讨论Candidate/Formal提升。
+3. 以家族六指标判断下游可接受性，同时显式保留数值收敛未豁免状态。
+4. 需要新的网格或求解器研究时，新建有窄变量轴、资源帽和终止条件的campaign；不得复制旧JSON后改SHA。
+5. 只有新证据通过当前资格合同后，才讨论Candidate/Formal提升。
