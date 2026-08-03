@@ -140,6 +140,6 @@ try {
   }
   if ($cleanupOutput -and (Test-Path -LiteralPath $validationRoot) -and
       @(Get-ChildItem -LiteralPath $validationRoot -Force).Count -eq 0) {
-    Remove-Item -LiteralPath $validationRoot -Force
+    Remove-Item -LiteralPath $validationRoot -Force -ErrorAction SilentlyContinue
   }
 }

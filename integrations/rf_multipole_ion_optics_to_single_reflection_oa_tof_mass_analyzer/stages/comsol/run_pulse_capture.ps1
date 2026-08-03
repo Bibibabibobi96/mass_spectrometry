@@ -170,7 +170,7 @@ try {
 
   $requiredSnapshotIds = @(
     'rf_interface_stage_plan',
-    'rf_shared_joint_geometry','rf_resolved_design',
+    'rf_shared_joint_geometry',
     'rf_pulse_capture_pulse_scheduler','rf_pulse_capture_geometry_snapshot_plotter',
     'rf_pulse_capture_pulse_chain_auditor','rf_pulse_capture_local_exit_adapter',
     'common_component_particle_state','common_particle_physics',

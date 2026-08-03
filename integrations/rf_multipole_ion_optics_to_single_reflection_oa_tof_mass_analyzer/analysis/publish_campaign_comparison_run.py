@@ -195,7 +195,11 @@ def _load_case_inputs(
     ):
         raise ContractError(f"{label} parent profile/source identity differs")
 
-    campaign_path = _workspace_path(parent_config.get("campaign_path", ""), workspace_root)
+    campaign_value = parent_config.get("campaign_path", "")
+    campaign_path = Path(str(campaign_value))
+    if not campaign_path.is_absolute():
+        campaign_path = repo_root / campaign_path
+    campaign_path = campaign_path.resolve()
     if (
         not campaign_path.is_relative_to(repo_root)
         or not campaign_path.is_file()
@@ -301,8 +305,12 @@ def _load_case_inputs(
     stage = analyzer[0]
     stage_root = _workspace_path(stage.get("path", ""), workspace_root)
     terminal_manifest_path = stage_root / "run_manifest.json"
+    stage_project = parent_config["source_particle_identity"]["project_id"]
+    expected_stage_runs_root = (
+        workspace_root / "artifacts" / "projects" / stage_project / "runs"
+    ).resolve()
     if (
-        stage_root.parent != runs_root
+        stage_root.parent != expected_stage_runs_root
         or stage.get("run_id") != stage_root.name
         or not terminal_manifest_path.is_file()
         or stage.get("manifest_sha256") != file_sha256(terminal_manifest_path)

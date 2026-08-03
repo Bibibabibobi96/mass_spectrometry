@@ -16,6 +16,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 REPO_ROOT = Path(__file__).resolve().parents[3]
 INTEGRATION_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_ROOT = INTEGRATION_ROOT / "config"
+ADAPTER = INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
 FAMILIES = ("quadrupole", "hexapole", "octupole")
 
 
@@ -61,6 +62,12 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
         serialized = json.dumps(policy)
         for forbidden in ("particle_count", "source_run", "operating_mode"):
             self.assertNotIn(forbidden, serialized)
+
+    def test_adapter_uses_frozen_execution_policy_authority(self) -> None:
+        adapter = ADAPTER.read_text(encoding="utf-8-sig")
+        self.assertIn("$runtime.contracts.execution_policy_contract", adapter)
+        self.assertIn("$executionPolicy.policy_id", adapter)
+        self.assertNotIn("$campaign.resource_profile", adapter)
 
     def test_active_bindings_reference_only_stable_source_and_policy(self) -> None:
         expected_dependencies = (

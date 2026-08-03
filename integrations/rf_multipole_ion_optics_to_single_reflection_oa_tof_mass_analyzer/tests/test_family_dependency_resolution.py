@@ -20,12 +20,12 @@ def load(path: Path) -> dict[str, object]:
 
 
 class FamilyDependencyResolutionTests(unittest.TestCase):
-    def test_single_stable_49_item_inventory(self) -> None:
+    def test_single_stable_52_item_inventory(self) -> None:
         inventory = load(INVENTORY)
         dependencies = inventory["dependencies"]
         ids = [item["id"] for item in dependencies]
         run_inputs = [item["run_input_name"] for item in dependencies]
-        self.assertEqual(len(dependencies), 49)
+        self.assertEqual(len(dependencies), 52)
         self.assertEqual(len(ids), len(set(ids)))
         self.assertEqual(len(run_inputs), len(set(run_inputs)))
         self.assertEqual(

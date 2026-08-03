@@ -147,6 +147,44 @@
       ]
     },
     {
+      "id": "oatof_accelerator_simion_builder",
+      "provider_scope": "project",
+      "provider_project": "single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "projects/single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/simion/accelerator/build_accelerator_variant.lua",
+      "frozen_filename": "runtime_snapshot/projects/single_reflection_oa_tof_mass_analyzer/simion/accelerator/build_accelerator_variant.lua",
+      "compatibility_frozen_filename": "simion_accelerator_builder.lua",
+      "run_input_name": "oatof_accelerator_simion_builder",
+      "consumers": [
+        "analyzer_transport"
+      ]
+    },
+    {
+      "id": "oatof_accelerator_simion_gem",
+      "provider_scope": "project",
+      "provider_project": "single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "projects/single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/simion/accelerator/oatof_accelerator_3d.gem",
+      "frozen_filename": "runtime_snapshot/projects/single_reflection_oa_tof_mass_analyzer/simion/accelerator/oatof_accelerator_3d.gem",
+      "compatibility_frozen_filename": "simion_accelerator.gem",
+      "run_input_name": "oatof_accelerator_simion_gem",
+      "consumers": [
+        "analyzer_transport"
+      ]
+    },
+    {
+      "id": "rf_simion_interface_transport_comparator",
+      "provider_scope": "integration",
+      "provider_project": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/analysis/compare_simion_interface_transport.py",
+      "frozen_filename": "runtime_snapshot/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/analysis/compare_simion_interface_transport.py",
+      "run_input_name": "rf_simion_interface_transport_comparator",
+      "consumers": [
+        "analyzer_transport"
+      ]
+    },
+    {
       "id": "rf_interface_stage_plan",
       "provider_scope": "integration",
       "provider_project": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
@@ -169,7 +207,8 @@
       "run_input_name": "rf_shared_joint_geometry",
       "consumers": [
         "pre_pulse_interface_transport",
-        "pulse_capture"
+        "pulse_capture",
+        "analyzer_transport"
       ]
     },
     {

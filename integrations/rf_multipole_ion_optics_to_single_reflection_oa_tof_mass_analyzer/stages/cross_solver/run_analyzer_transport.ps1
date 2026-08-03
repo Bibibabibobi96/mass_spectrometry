@@ -12,6 +12,11 @@ param(
   [Parameter(Mandatory)][string]$ResolvedSourceContractSha256,
   [Parameter(Mandatory)][string]$UpstreamResolvedDesign,
   [Parameter(Mandatory)][string]$UpstreamResolvedDesignSha256,
+  [ValidateSet('local_accelerator_exit','oatof_entry')]
+  [string]$SourceEvent = 'local_accelerator_exit',
+  [string]$ReferencePulseCaptureRunId = '',
+  [string]$InterfacePaSourceRunId = '',
+  [string]$InterfacePaDirectory = '',
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$PythonExe = ''
 )
@@ -194,11 +199,18 @@ function Get-AnalyzerTransportReleaseAssetRecord {
   }
 }
 
+$interfaceDiagnostic = $SourceEvent -eq 'oatof_entry'
+if ($interfaceDiagnostic -and [string]::IsNullOrWhiteSpace($ReferencePulseCaptureRunId)) {
+  throw 'oatof_entry source requires one reference COMSOL PulseCapture run.'
+}
+$runMode = if ($interfaceDiagnostic) {
+  'rf_to_oatof_simion_interface_transport'
+} else { 'rf_to_oatof_analyzer_transport' }
 $software = @('COMSOL 6.4','SIMION 2020','Python 3.11')
 $package = New-RfRunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot $artifactRoot -RunId $RunId `
   -Project $upstreamProjectId `
-  -Mode 'rf_to_oatof_analyzer_transport' -Software $software `
+  -Mode $runMode -Software $software `
   -RetentionContractEnabled -RetentionClass compact `
   -AdditionalDirectories @('simion')
 $python = $package.python
@@ -207,6 +219,16 @@ $resourceBudgetExceeded = $false
 $snapshotRoot = Join-Path $package.input_dir 'runtime_snapshot'
 $manifestToolRoot = $snapshotRoot
 $snapshotReady = $false
+$stageTimingPath = Join-Path $package.log_dir 'stage_timings.json'
+$stageTimings = [ordered]@{}
+$stageTimer = [Diagnostics.Stopwatch]::StartNew()
+$totalTimer = [Diagnostics.Stopwatch]::StartNew()
+
+function Complete-AnalyzerTransportStageTiming {
+  param([Parameter(Mandatory)][string]$Name)
+  $stageTimings[$Name] = [math]::Round($stageTimer.Elapsed.TotalSeconds, 3)
+  $stageTimer.Restart()
+}
 
 try {
   if (-not (Test-Path -LiteralPath $SimionExe -PathType Leaf)) {
@@ -286,6 +308,8 @@ try {
     'oatof_handoff_pulse_program_builder',
     'oatof_formal_lua','oatof_handoff_pulse_extension_lua',
     'oatof_simion_log_analyzer_wrapper','oatof_solver_diagnostics',
+    'oatof_accelerator_simion_builder','oatof_accelerator_simion_gem',
+    'rf_simion_interface_transport_comparator','rf_shared_joint_geometry',
     'common_rigid_transform','common_particle_physics',
     'common_component_particle_state','common_component_particle_state_schema',
     'common_file_identity','common_artifact_retention',
@@ -321,6 +345,17 @@ try {
     $dependencySnapshotPaths['oatof_handoff_pulse_extension_lua']
   $frozenSolverDiagnostics =
     $dependencySnapshotPaths['oatof_solver_diagnostics']
+  $frozenAcceleratorBuilder =
+    $dependencyCompatibilityPaths['oatof_accelerator_simion_builder']
+  $frozenAcceleratorGem =
+    $dependencyCompatibilityPaths['oatof_accelerator_simion_gem']
+  if ([string]::IsNullOrWhiteSpace($frozenAcceleratorBuilder) -or
+      [string]::IsNullOrWhiteSpace($frozenAcceleratorGem)) {
+    throw 'SIMION accelerator builder compatibility paths are missing.'
+  }
+  $frozenInterfaceComparator =
+    $dependencySnapshotPaths['rf_simion_interface_transport_comparator']
+  $frozenSharedJoint = $dependencySnapshotPaths['rf_shared_joint_geometry']
   . $dependencySnapshotPaths['common_resource_budget_support']
   $snapshotReady = $true
   Invoke-AnalyzerTransportSnapshotPython -Python $python -SnapshotRoot $snapshotRoot `
@@ -339,14 +374,18 @@ try {
       $frozenManifestVerifier,$sourceManifestPath,
       '--require-status','success','--require-run-id',$SourceRunId,
       '--require-project',$upstreamProjectId,
-      '--require-mode','rf_to_oatof_pulse_capture'
+      '--require-mode',$(if ($interfaceDiagnostic) {
+        'rf_to_oatof_pre_pulse_interface_transport'
+      } else { 'rf_to_oatof_pulse_capture' })
     ) -FailureMessage 'The frozen PulseCapture source run manifest is invalid.'
   $sourceManifest = Get-Content -LiteralPath $sourceManifestPath `
     -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($sourceManifest.role -ne 'simulation_run_manifest' -or
       $sourceManifest.status -ne 'success' -or
       $sourceManifest.project -ne $upstreamProjectId -or
-      $sourceManifest.mode -ne 'rf_to_oatof_pulse_capture' -or
+      $sourceManifest.mode -ne $(if ($interfaceDiagnostic) {
+        'rf_to_oatof_pre_pulse_interface_transport'
+      } else { 'rf_to_oatof_pulse_capture' }) -or
       $sourceManifest.run_id -ne $SourceRunId) {
     throw 'PulseCapture source manifest identity or role is invalid.'
   }
@@ -360,16 +399,37 @@ try {
     -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($sourceConfig.run_id -ne $SourceRunId -or
       $sourceConfig.project -ne $upstreamProjectId -or
-      $sourceConfig.mode -ne 'rf_to_oatof_pulse_capture') {
+      $sourceConfig.mode -ne $(if ($interfaceDiagnostic) {
+        'rf_to_oatof_pre_pulse_interface_transport'
+      } else { 'rf_to_oatof_pulse_capture' })) {
     throw 'Downstream continuation requires the frozen PulseCapture shared-clock source.'
   }
   Assert-RfOatofSourceIdentityMatches `
-    -Actual $sourceConfig.upstream_source_identity `
+    -Actual $(if ($interfaceDiagnostic) {
+      $sourceConfig.source_particle_identity
+    } else { $sourceConfig.upstream_source_identity }) `
     -Expected $runtime.source_identity `
     -Role 'Analyzer upstream particle source'
-  $pulseTimeUs = [double]$sourceConfig.parameters.pulse_time_us
-  $pulseWidthUs = [double]$sourceConfig.parameters.pulse_width_us
-  if ([bool]$sourceConfig.parameters.pulse_capture_stage_passed) {
+  $referencePulseRun = $null
+  if ($interfaceDiagnostic) {
+    $referencePulseRun = Resolve-RfDirectChildDirectory -ParentRoot $runsRoot `
+      -ChildName $ReferencePulseCaptureRunId -Role 'ReferencePulseCaptureRunId'
+    $referencePulseConfig = Get-Content -LiteralPath `
+      (Join-Path $referencePulseRun 'run_config.json') -Raw -Encoding UTF8 |
+      ConvertFrom-Json
+    if ($referencePulseConfig.mode -ne 'rf_to_oatof_pulse_capture' -or
+        $referencePulseConfig.parameters.connection_profile_id -ne
+          $ExpectedConnectionProfileId) {
+      throw 'Reference PulseCapture run identity differs.'
+    }
+    $pulseTimeUs = [double]$referencePulseConfig.parameters.pulse_time_us
+    $pulseWidthUs = [double]$referencePulseConfig.parameters.pulse_width_us
+  } else {
+    $pulseTimeUs = [double]$sourceConfig.parameters.pulse_time_us
+    $pulseWidthUs = [double]$sourceConfig.parameters.pulse_width_us
+  }
+  if (-not $interfaceDiagnostic -and
+      [bool]$sourceConfig.parameters.pulse_capture_stage_passed) {
     throw 'Functional PulseCapture source must not claim qualified PulseCapture PASS.'
   }
   $connectionProfileId = [string]$sourceConfig.parameters.connection_profile_id
@@ -391,20 +451,53 @@ try {
   $sourceSummaryIdentity = Copy-RfManifestBoundFile -SourceRunRoot $source `
     -SourcePath $sourceSummaryOriginal -Destination $sourceSummary `
     -ManifestRecord $sourceSummaryRecord -Role 'source summary'
-  $sourceCanonicalOriginal = Join-Path $source `
-    'results\pulse_capture_local_accelerator_exit.csv'
-  $sourceCanonicalRecord = Get-RfManifestOutputRecord -Manifest $sourceManifest `
-    -ExpectedPath $sourceCanonicalOriginal -Role 'canonical local exit'
+  $sourceCanonicalOriginal = Join-Path $source $(if ($interfaceDiagnostic) {
+    'inputs\canonical_rf_exit_at_pre_pulse_connector.csv'
+  } else { 'results\pulse_capture_local_accelerator_exit.csv' })
+  $sourceCanonicalRecord = if ($interfaceDiagnostic) {
+    $sourceManifest.inputs.particle_source
+  } else {
+    Get-RfManifestOutputRecord -Manifest $sourceManifest `
+      -ExpectedPath $sourceCanonicalOriginal -Role "canonical $SourceEvent"
+  }
   $sourceCanonical = Join-Path $package.input_dir 'source_canonical.csv'
   $sourceCanonicalIdentity = Copy-RfManifestBoundFile -SourceRunRoot $source `
     -SourcePath $sourceCanonicalOriginal -Destination $sourceCanonical `
-    -ManifestRecord $sourceCanonicalRecord -Role 'canonical local exit'
+    -ManifestRecord $sourceCanonicalRecord -Role "canonical $SourceEvent"
+
+  $comsolReferenceExit = $null
+  $referencePulseManifestPath = $null
+  if ($interfaceDiagnostic) {
+    $referenceManifestOriginal = Join-Path $referencePulseRun 'run_manifest.json'
+    $referencePulseManifestPath = Join-Path $package.input_dir `
+      'reference_pulse_capture_manifest.json'
+    $referenceManifest = Get-Content -LiteralPath $referenceManifestOriginal `
+      -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($referenceManifest.status -ne 'success' -or
+        $referenceManifest.mode -ne 'rf_to_oatof_pulse_capture') {
+      throw 'Reference PulseCapture manifest is not a successful current run.'
+    }
+    Copy-RfStableFile -SourceRunRoot $referencePulseRun `
+      -SourcePath $referenceManifestOriginal `
+      -Destination $referencePulseManifestPath `
+      -Role 'reference PulseCapture manifest' | Out-Null
+    $referenceExitOriginal = Join-Path $referencePulseRun `
+      'results\pulse_capture_local_accelerator_exit.csv'
+    $referenceExitRecord = Get-RfManifestOutputRecord -Manifest $referenceManifest `
+      -ExpectedPath $referenceExitOriginal -Role 'reference COMSOL local exit'
+    $comsolReferenceExit = Join-Path $package.input_dir `
+      'reference_comsol_local_accelerator_exit.csv'
+    Copy-RfManifestBoundFile -SourceRunRoot $referencePulseRun `
+      -SourcePath $referenceExitOriginal -Destination $comsolReferenceExit `
+      -ManifestRecord $referenceExitRecord -Role 'reference COMSOL local exit' |
+      Out-Null
+  }
 
   $runtimeDir = Join-Path $package.run_dir 'simion'
   $canonical = Join-Path $package.input_dir `
-    'canonical_local_accelerator_exit.csv'
+    "canonical_${SourceEvent}.csv"
   $ion = Join-Path $package.input_dir `
-    'local_accelerator_exit_instrument_clock.ion'
+    "${SourceEvent}_instrument_clock.ion"
   $rowMap = Join-Path $package.input_dir 'row_map.csv'
   $adapterMetadata = Join-Path $package.input_dir `
     'simion_adapter_metadata.json'
@@ -418,6 +511,10 @@ try {
   if ($analyzerParticleCount -lt 1) {
     throw 'Canonical analyzer input contains no particles.'
   }
+  Complete-AnalyzerTransportStageTiming -Name 'runtime_snapshot_source_freeze_and_adapter'
+  # SIMION 2020 constrains this UI default to at least 100. The explicit ION
+  # file remains authoritative for the actual number of particles flown.
+  $simionDefaultParticleCount = [Math]::Max(100, $analyzerParticleCount)
 
   $formalProjectRoot = Join-Path $workspaceRoot 'artifacts\projects\single_reflection_oa_tof_mass_analyzer'
   $formalRoot = Join-Path $formalProjectRoot 'formal'
@@ -505,6 +602,90 @@ try {
       '--extension',$frozenPulseExtension,'--output',$runtimeProgram,
       '--metadata',$programMetadata
     ) -FailureMessage 'Shared-clock oaTOF pulse program build failed.'
+  Complete-AnalyzerTransportStageTiming -Name 'formal_release_validation_copy_and_program_build'
+
+  $interfacePa0 = $null
+  $interfacePaOutputs = @()
+  if ($interfaceDiagnostic) {
+    if ([string]::IsNullOrWhiteSpace($InterfacePaSourceRunId)) {
+      $baselineDocument = Get-Content -LiteralPath $frozenGeometry -Raw -Encoding UTF8 |
+        ConvertFrom-Json
+      $jointDocument = Get-Content -LiteralPath $frozenSharedJoint -Raw -Encoding UTF8 |
+        ConvertFrom-Json
+      $geometry = $baselineDocument.geometry_mm
+      $build = $baselineDocument.simion_geometry_build.accelerator
+      $accelerator = $baselineDocument.geometry_derivation.accelerator
+      $voltage = $baselineDocument.electrodes_V
+      $port = $jointDocument.port_sweep
+      $interfacePaRoot = if ([string]::IsNullOrWhiteSpace($InterfacePaDirectory)) {
+        $runtimeDir
+      } else {
+        [IO.Path]::GetFullPath($InterfacePaDirectory)
+      }
+      New-Item -ItemType Directory -Path $interfacePaRoot -Force | Out-Null
+      $interfacePaSharp = Join-Path $interfacePaRoot 'interface_accelerator.pa#'
+      $interfaceBuildUsage = Join-Path $package.log_dir 'interface_pa_resource_usage.json'
+      $interfaceBuildStdout = Join-Path $package.log_dir 'interface_pa.stdout.log'
+      $interfaceBuildStderr = Join-Path $package.log_dir 'interface_pa.stderr.log'
+      $interfacePa0 = Join-Path $interfacePaRoot 'interface_accelerator.pa0'
+      if (-not (Test-Path -LiteralPath $interfacePa0 -PathType Leaf)) {
+        $buildResult = Invoke-ResourceBudgetedProcess `
+          -ResolvedBudgetPath $budgetBinding.stage_budget -RunDir $package.run_dir `
+          -UsagePath $interfaceBuildUsage -FilePath $SimionExe `
+          -WorkingDirectory $interfacePaRoot -RedirectStandardOutput $interfaceBuildStdout `
+          -RedirectStandardError $interfaceBuildStderr -ArgumentList @(
+          '--nogui','lua',$frozenAcceleratorBuilder,$frozenAcceleratorGem,
+          $interfacePaSharp,([string]$build.cell_xy_mm),([string]$build.cell_z_mm),
+          ([string]$geometry.accelerator_bore_half),
+          ([string]$geometry.accelerator_ring_width),
+          ([string]$geometry.accelerator_insulation_gap),
+          ([string]$geometry.accelerator_rear_clearance),
+          ([string]$geometry.accelerator_shield_wall),'0.5',
+          ([string]$build.max_gib),([string]$build.back_domain_margin_mm),
+          ([string]$build.front_domain_margin_mm),([string]$build.grid_phase_z_mm),
+          ([string]$accelerator.d1_mm),([string]$accelerator.d2_mm),
+          ([string]$baselineDocument.rings.accelerator_count),
+          ([string]$geometry.accelerator_repeller_thickness),
+          ([string]$geometry.accelerator_ring_thickness),
+          ([string]$geometry.accelerator_front_vacuum_margin),
+          ([string]$voltage.repeller),([string]$voltage.grid1),'1',
+          ([string]$port.selected_n100_candidate_full_width_y_mm),
+          ([string]$port.full_height_z_mm),
+          ([string]($accelerator.d1_mm / 2.0))
+          )
+        if ($buildResult.exit_code -ne 0) {
+          throw "SIMION interface PA build failed: $interfaceBuildStderr"
+        }
+      }
+      $interfacePaOutputs = @(Get-ChildItem -LiteralPath $interfacePaRoot -File |
+        Where-Object { $_.Name -like 'interface_accelerator.pa*' } |
+        ForEach-Object { $_.FullName })
+    } else {
+      $paRun = Resolve-RfDirectChildDirectory -ParentRoot $runsRoot `
+        -ChildName $InterfacePaSourceRunId -Role 'InterfacePaSourceRunId'
+      $paManifest = Get-Content -LiteralPath (Join-Path $paRun 'run_manifest.json') `
+        -Raw -Encoding UTF8 | ConvertFrom-Json
+      $records = @($paManifest.outputs | Where-Object {
+        [IO.Path]::GetFileName([string]$_.path) -like 'interface_accelerator.pa*'
+      })
+      if ($paManifest.status -ne 'success' -or $records.Count -lt 3) {
+        throw 'Reusable interface PA run is unsuccessful or incomplete.'
+      }
+      foreach ($record in $records) {
+        $sourcePa = [IO.Path]::GetFullPath([string]$record.path)
+        $targetPa = Join-Path $runtimeDir ([IO.Path]::GetFileName($sourcePa))
+        Copy-RfManifestBoundFile -SourceRunRoot $paRun -SourcePath $sourcePa `
+          -Destination $targetPa -ManifestRecord $record -Role 'reused interface PA' |
+          Out-Null
+        $interfacePaOutputs += $targetPa
+      }
+      $interfacePa0 = Join-Path $runtimeDir 'interface_accelerator.pa0'
+    }
+    if (-not (Test-Path -LiteralPath $interfacePa0 -PathType Leaf)) {
+      throw 'SIMION interface accelerator PA0 is absent.'
+    }
+  }
+  Complete-AnalyzerTransportStageTiming -Name 'interface_pa_prepare'
 
   $sourceIdentity = [ordered]@{
     run_id = $SourceRunId
@@ -517,7 +698,7 @@ try {
     schema_version = 2
     run_id = $RunId
     project = $upstreamProjectId
-    mode = 'rf_to_oatof_analyzer_transport'
+    mode = $runMode
     project_root = $repoRoot
     inputs = [ordered]@{
       runner = $runner
@@ -574,6 +755,8 @@ try {
     )
     parameters = [ordered]@{
       source_run_id = $SourceRunId
+      source_event = $SourceEvent
+      reference_pulse_capture_run_id = $ReferencePulseCaptureRunId
       connection_profile_id = $connectionProfileId
       source_branch_id = $runtime.source_branch_id
       authoritative_frame_id = 'oatof_global'
@@ -581,6 +764,8 @@ try {
       position_projection_applied = $false
       pulse_time_us = $pulseTimeUs
       pulse_width_us = $pulseWidthUs
+      analyzer_particle_count = $analyzerParticleCount
+      simion_default_particle_count = $simionDefaultParticleCount
       dense_trajectories_saved = $false
       pulse_capture_stage_passed = $false
     }
@@ -591,25 +776,45 @@ try {
     }
     formal_gate_passed = $false
   }
+  if ($interfaceDiagnostic) {
+    $runConfiguration.inputs.reference_pulse_capture_manifest =
+      $referencePulseManifestPath
+    $runConfiguration.inputs.reference_comsol_local_accelerator_exit =
+      $comsolReferenceExit
+    $runConfiguration.parameters.interface_pa_source_run_id =
+      $InterfacePaSourceRunId
+    $runConfiguration.parameters.interface_pa_sha256 =
+      (Get-FileHash -LiteralPath $interfacePa0 -Algorithm SHA256).Hash
+    $runConfiguration.parameters.interface_port_mode =
+      'real_rectangular_side_port'
+  }
   Write-RfJson -Path $package.run_config -Depth 10 -Value $runConfiguration
   Write-RfJson -Path $package.summary -Value ([ordered]@{
     schema_version = 1
-    role = 'rf_to_oatof_analyzer_transport_summary'
+    role = if ($interfaceDiagnostic) {
+      'rf_to_oatof_simion_interface_transport_summary'
+    } else { 'rf_to_oatof_analyzer_transport_summary' }
     status = 'interrupted'
     reason = 'Frozen inputs recorded; SIMION continuation not yet complete.'
   })
   Write-RfFrozenRunManifest -Python $python -FrozenRepoRoot $manifestToolRoot `
     -RunConfig $package.run_config -Status interrupted -Software $software
+  Complete-AnalyzerTransportStageTiming -Name 'run_configuration_publication'
 
   $stdout = Join-Path $package.log_dir 'simion.stdout.log'
   $stderr = Join-Path $package.log_dir 'simion.stderr.log'
-  $processResult = Invoke-ResourceBudgetedProcess `
-    -ResolvedBudgetPath $budgetBinding.stage_budget `
-    -RunDir $package.run_dir -UsagePath $resourceUsage `
-    -FilePath $SimionExe -WorkingDirectory $runtimeDir `
-    -RedirectStandardOutput $stdout -RedirectStandardError $stderr `
-    -ArgumentList @(
-      '--default-num-particles',([string]$analyzerParticleCount),'--nogui','fly',
+  $oldAcceleratorOverride = $env:OATOF_ACCELERATOR_PA_OVERRIDE
+  try {
+    if ($interfaceDiagnostic) {
+      $env:OATOF_ACCELERATOR_PA_OVERRIDE = $interfacePa0
+    }
+    $processResult = Invoke-ResourceBudgetedProcess `
+      -ResolvedBudgetPath $budgetBinding.stage_budget `
+      -RunDir $package.run_dir -UsagePath $resourceUsage `
+      -FilePath $SimionExe -WorkingDirectory $runtimeDir `
+      -RedirectStandardOutput $stdout -RedirectStandardError $stderr `
+      -ArgumentList @(
+      '--default-num-particles',([string]$simionDefaultParticleCount),'--nogui','fly',
       '--trajectory-quality','8','--retain-trajectories','0',
       '--particles',$ion,'--programs','1',
       '--adjustable','trajectory_quality=8',
@@ -618,8 +823,11 @@ try {
       '--adjustable','handoff_pulse_mode=1',
       '--adjustable',("handoff_pulse_time_us={0:R}" -f $pulseTimeUs),
       '--adjustable',("handoff_pulse_width_us={0:R}" -f $pulseWidthUs),
-      $runtimeIob
-    )
+        $runtimeIob
+      )
+  } finally {
+    $env:OATOF_ACCELERATOR_PA_OVERRIDE = $oldAcceleratorOverride
+  }
   if ($processResult.resource_budget_exceeded) {
     $resourceBudgetExceeded = $true
     throw "SIMION downstream resource budget exceeded: $($processResult.limit_name)"
@@ -627,6 +835,7 @@ try {
   if ($processResult.exit_code -ne 0) {
     throw "SIMION downstream continuation failed: $stderr"
   }
+  Complete-AnalyzerTransportStageTiming -Name 'simion_particle_flight'
   $downstream = Join-Path $package.result_dir `
     'simion_downstream_particles.csv'
   Invoke-AnalyzerTransportSnapshotPython -Python $python -SnapshotRoot $snapshotRoot `
@@ -638,44 +847,78 @@ try {
       '--particle-csv',$downstream,'--allow-incomplete-census'
     ) -FailureMessage 'Frozen SIMION log analysis failed.'
 
-  $metrics = Join-Path $package.result_dir 'analyzer_transport_metrics.json'
-  $figure = Join-Path $package.result_dir `
-    'analyzer_transport_functional_chain.png'
-  Invoke-AnalyzerTransportSnapshotPython -Python $python -SnapshotRoot $snapshotRoot `
-    -Arguments @(
-      $frozenAnalyzer,'--source-summary',$sourceSummary,
-      '--canonical',$canonical,'--ion',$ion,'--row-map',$rowMap,
-      '--downstream',$downstream,'--stdout',$stdout,
-      '--pulse-time-us',([string]$pulseTimeUs),
-      '--pulse-width-us',([string]$pulseWidthUs),
-      '--geometry-contract',$frozenGeometry,
-      '--output',$metrics,'--figure',$figure
-    ) -FailureMessage 'PulseCapture end-to-end functional audit failed.'
+  $metrics = Join-Path $package.result_dir $(if ($interfaceDiagnostic) {
+    'simion_comsol_interface_transport_comparison.json'
+  } else { 'analyzer_transport_metrics.json' })
+  $figure = $null
+  $simionExit = $null
+  if ($interfaceDiagnostic) {
+    $simionExit = Join-Path $package.result_dir `
+      'simion_local_accelerator_exit.csv'
+    Invoke-AnalyzerTransportSnapshotPython -Python $python `
+      -SnapshotRoot $snapshotRoot -Arguments @(
+        $frozenInterfaceComparator,'--log',$stdout,'--row-map',$rowMap,
+        '--canonical-input',$canonical,'--comsol-exit',$comsolReferenceExit,
+        '--output',$metrics,'--simion-exit',$simionExit
+      ) -FailureMessage 'SIMION/COMSOL interface transport comparison failed.'
+  } else {
+    $figure = Join-Path $package.result_dir `
+      'analyzer_transport_functional_chain.png'
+    Invoke-AnalyzerTransportSnapshotPython -Python $python -SnapshotRoot $snapshotRoot `
+      -Arguments @(
+        $frozenAnalyzer,'--source-summary',$sourceSummary,
+        '--canonical',$canonical,'--ion',$ion,'--row-map',$rowMap,
+        '--downstream',$downstream,'--stdout',$stdout,
+        '--pulse-time-us',([string]$pulseTimeUs),
+        '--pulse-width-us',([string]$pulseWidthUs),
+        '--geometry-contract',$frozenGeometry,
+        '--output',$metrics,'--figure',$figure
+      ) -FailureMessage 'PulseCapture end-to-end functional audit failed.'
+  }
   $result = Get-Content -LiteralPath $metrics -Raw -Encoding UTF8 |
     ConvertFrom-Json
-  $runConfiguration.parameters.particle_count =
-    [int]$result.census.local_accelerator_exit
+  $runConfiguration.parameters.particle_count = if ($interfaceDiagnostic) {
+    [int]$result.simion.particles
+  } else { [int]$result.census.local_accelerator_exit }
   Write-RfJson -Path $package.run_config -Depth 10 -Value $runConfiguration
   Write-RfJson -Path $package.summary -Depth 8 -Value ([ordered]@{
     schema_version = 1
-    role = 'rf_to_oatof_analyzer_transport_summary'
+    role = if ($interfaceDiagnostic) {
+      'rf_to_oatof_simion_interface_transport_summary'
+    } else { 'rf_to_oatof_analyzer_transport_summary' }
     status = 'success'
     functional_audit = $result.status
-    census = $result.census
+    census = if ($interfaceDiagnostic) { [ordered]@{
+      oatof_entry = [int]$result.source_particles
+      local_accelerator_exit = [int]$result.simion.particles
+    } } else { $result.census }
     source_run_id = $SourceRunId
-    figure = 'results/analyzer_transport_functional_chain.png'
+    figure = if ($interfaceDiagnostic) { $null } else {
+      'results/analyzer_transport_functional_chain.png'
+    }
     pulse_capture_stage_passed = $false
     resolution_claim_allowed = $false
     formal_gate_passed = $false
   })
+  Complete-AnalyzerTransportStageTiming -Name 'solver_log_analysis_and_comparison'
+  $stageTimings.total_through_results =
+    [math]::Round($totalTimer.Elapsed.TotalSeconds, 3)
+  Write-RfJson -Path $stageTimingPath -Depth 4 -Value ([ordered]@{
+    schema_version = 1
+    role = 'rf_to_oatof_analyzer_transport_stage_timings'
+    units = 'seconds'
+    stages = $stageTimings
+  })
   $outputs = @(
     $canonical,$ion,$rowMap,$adapterMetadata,$programMetadata,$runtimeProgram,
-    $downstream,$metrics,$figure,$stdout,$stderr,$resourceUsage,$package.summary
+    $downstream,$metrics,$figure,$simionExit,$stdout,$stderr,$resourceUsage,
+    $stageTimingPath,$package.summary
   )
   $retentionActions = Apply-RunArtifactRetention -Python $python `
     -RepoRoot $manifestToolRoot -RunConfig $package.run_config
   $outputs = @($outputs | Where-Object {
-    Test-Path -LiteralPath $_ -PathType Leaf
+    -not [string]::IsNullOrWhiteSpace([string]$_) -and
+    (Test-Path -LiteralPath $_ -PathType Leaf)
   })
   $outputs += $retentionActions
   if (-not (Complete-ResourceUsage `
@@ -687,17 +930,26 @@ try {
   Write-RfFrozenRunManifest -Python $python -FrozenRepoRoot $manifestToolRoot `
     -RunConfig $package.run_config -Status success -Software $software `
     -Outputs $outputs
-  Write-Output (
-    "ANALYZER_TRANSPORT=PASS RUN_ID=$RunId " +
-    "HITS=$($result.census.detector_hit)/" +
-    "$($result.census.local_accelerator_exit)"
-  )
+  if ($interfaceDiagnostic) {
+    Write-Output (
+      "SIMION_INTERFACE_TRANSPORT=PASS RUN_ID=$RunId " +
+      "LOCAL_EXIT=$($result.simion.particles)/$($result.source_particles)"
+    )
+  } else {
+    Write-Output (
+      "ANALYZER_TRANSPORT=PASS RUN_ID=$RunId " +
+      "HITS=$($result.census.detector_hit)/" +
+      "$($result.census.local_accelerator_exit)"
+    )
+  }
 } catch {
   if ($snapshotReady) {
     Complete-RfFrozenFailedRun -Python $python `
       -FrozenRepoRoot $manifestToolRoot `
       -RunConfig $package.run_config -Summary $package.summary `
-      -SummaryRole 'rf_to_oatof_analyzer_transport_summary' `
+      -SummaryRole $(if ($interfaceDiagnostic) {
+        'rf_to_oatof_simion_interface_transport_summary'
+      } else { 'rf_to_oatof_analyzer_transport_summary' }) `
       -Reason $_.Exception.Message -Software $software `
       -Status $(if ($resourceBudgetExceeded) { 'interrupted' } else { 'failed' }) `
       -FailureClass $(if ($resourceBudgetExceeded) {
@@ -709,7 +961,9 @@ try {
   } else {
     Write-RfJson -Path $package.summary -Value ([ordered]@{
       schema_version = 1
-      role = 'rf_to_oatof_analyzer_transport_summary'
+      role = if ($interfaceDiagnostic) {
+        'rf_to_oatof_simion_interface_transport_summary'
+      } else { 'rf_to_oatof_analyzer_transport_summary' }
       status = 'failed'
       reason = $_.Exception.Message
       manifest_written = $false

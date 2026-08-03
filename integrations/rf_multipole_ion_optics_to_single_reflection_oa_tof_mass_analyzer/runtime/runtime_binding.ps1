@@ -119,7 +119,9 @@ function Resolve-RfOatofDependencyContract {
     'oatof_formal_validation','oatof_simion_stable_entry',
     'oatof_handoff_pulse_program_builder','oatof_formal_lua',
     'oatof_handoff_pulse_extension_lua','oatof_simion_log_analyzer_wrapper',
-    'oatof_solver_diagnostics','rf_interface_stage_plan',
+    'oatof_solver_diagnostics','oatof_accelerator_simion_builder',
+    'oatof_accelerator_simion_gem','rf_simion_interface_transport_comparator',
+    'rf_interface_stage_plan',
     'rf_shared_joint_geometry','rf_pulse_capture_pulse_scheduler',
     'rf_pulse_capture_geometry_snapshot_plotter',
     'rf_pulse_capture_pulse_chain_auditor',
@@ -156,9 +158,9 @@ function Resolve-RfOatofDependencyContract {
   $frozenFilenames = @(
     $allDependencies | ForEach-Object { [string]$_.frozen_filename }
   )
-  if (@($allIds | Select-Object -Unique).Count -ne 49 -or
-      @($runInputNames | Select-Object -Unique).Count -ne 49 -or
-      @($frozenFilenames | Select-Object -Unique).Count -ne 49) {
+  if (@($allIds | Select-Object -Unique).Count -ne 52 -or
+      @($runInputNames | Select-Object -Unique).Count -ne 52 -or
+      @($frozenFilenames | Select-Object -Unique).Count -ne 52) {
     throw 'Resolved family dependency inventory contains duplicate identities or paths.'
   }
   foreach ($dependency in $allDependencies) {
@@ -219,8 +221,8 @@ function Publish-RfOatofDependencyInventory {
       sha256 = $contractIdentity.sha256
     }
   }
-  if (@($inventory.dependencies).Count -ne 49) {
-    throw "$Role resolved code inventory must contain exactly 49 dependencies."
+  if (@($inventory.dependencies).Count -ne 52) {
+    throw "$Role resolved code inventory must contain exactly 52 dependencies."
   }
   $inventoryPath = Join-Path $InputDir 'code_inventory.json'
   $inventoryJson = $inventory | ConvertTo-Json -Depth 20

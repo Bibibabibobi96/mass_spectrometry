@@ -203,6 +203,9 @@ $runtime = Resolve-RfOatofRuntimeBinding -RepoRoot $repo `
   -UpstreamResolvedDesignSha256 $frozenArguments.upstream_resolved_design_sha256
 $budget = Get-Content -LiteralPath $resolvedBudgetPath -Raw -Encoding UTF8 |
   ConvertFrom-Json
+$executionPolicy = Get-Content `
+  -LiteralPath $runtime.contracts.execution_policy_contract `
+  -Raw -Encoding UTF8 | ConvertFrom-Json
 $runtimeLaunchedCount = if (
   $runtime.source_record.PSObject.Properties.Name -contains
     'launched_particle_count'
@@ -217,7 +220,7 @@ if ($budget.role -ne 'integration_resolved_engineering_budget' -or
     $budget.experiment_id -ne $frozenArguments.experiment_id -or
     $budget.experiment_row_sha256 -ne
       $frozenArguments.experiment_row_sha256 -or
-    $budget.policy_id -ne $campaign.resource_profile -or
+    $budget.policy_id -ne $executionPolicy.policy_id -or
     $budget.source_identity.source_branch_id -ne $sourceBranchId -or
     $budget.source_identity.project_id -ne
       $resolved.selection.upstream_project_id -or
@@ -288,7 +291,7 @@ if ($LASTEXITCODE -ne 0) {
   throw 'Family mapped RF-to-oaTOF transfer failed.'
 }
 
-$stageParticleCount = [int]$budget.launched_particle_count
+$stageParticleCount = [int]$budget.particle_count
 $runtimeBindingSha256 = (
   Get-FileHash -LiteralPath $runtimeBinding -Algorithm SHA256
 ).Hash

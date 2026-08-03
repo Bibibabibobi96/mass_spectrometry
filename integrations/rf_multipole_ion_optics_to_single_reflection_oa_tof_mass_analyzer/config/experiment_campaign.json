@@ -2,7 +2,7 @@
   "schema_version": 1,
   "role": "rf_multipole_oatof_experiment_campaign",
   "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
-  "campaign_id": "octupole_segmented_vs_quadrupole_noacc_5ev_n100",
+  "campaign_id": "octupole_segmented_vs_quadrupole_noacc_5ev_current_n100",
   "status": "authorized",
   "execution_policy": {
     "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_policy.json",
@@ -12,34 +12,34 @@
   "experiments": [
     {
       "sequence": 1,
-      "experiment_id": "octupole_segmented_acceleration_simion",
+      "experiment_id": "octupole_segmented_acceleration_current_simion",
       "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm",
-      "run_id": "20260803_191000__sim__cross__oct-segmented-oatof__n41",
+      "run_id": "20260803_215000__sim__cross__oct-segmented-oatof-current__n41",
       "source": {
-        "run_id": "20260731_210700__sim__simion__oct-segmented-oatof-terminal-h15-n100",
+        "run_id": "20260803_213000__sim__simion__oct-segmented-oatof-current-h15-n100",
         "launched_particle_count": 100,
         "particle_count": 41,
         "particle_source_manifest_input_role": "particle_source",
-        "manifest": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260731_210700__sim__simion__oct-segmented-oatof-terminal-h15-n100/run_manifest.json", "sha256": "D53C711F3890C4B2CCF5E75D3191E9A6CA56497DC1E84EE878454D9AC45CFBC6"},
-        "state": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260731_210700__sim__simion__oct-segmented-oatof-terminal-h15-n100/results/particle_states__axial_acceleration_rf_on.csv", "sha256": "7E0F905529187AC2195136F62D4018FFCE0AA43FF4B44BF0E7608B4CAECB47A1"},
-        "particle_source": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260731_210700__sim__simion__oct-segmented-oatof-terminal-h15-n100/inputs/particle_source.csv", "sha256": "0125C3AB02B2321EF26A3A913CF6EC04325FD0D48597D2CB439D0CE42411662F"},
-        "metadata": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260731_210700__sim__simion__oct-segmented-oatof-terminal-h15-n100/inputs/particle_source_metadata.json", "sha256": "018CAC1BEC4387DE2F29E95A8EF57A52F50EB4CB99218DA635A79EED407F5E7C"}
+        "manifest": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260803_213000__sim__simion__oct-segmented-oatof-current-h15-n100/run_manifest.json", "sha256": "CD2CBBB445D86D31E69F8178F01C736539BEB3600D7C471F7DBBA31AB8E52B0F"},
+        "state": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260803_213000__sim__simion__oct-segmented-oatof-current-h15-n100/results/particle_states__axial_acceleration_rf_on.csv", "sha256": "7E0F905529187AC2195136F62D4018FFCE0AA43FF4B44BF0E7608B4CAECB47A1"},
+        "particle_source": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260803_213000__sim__simion__oct-segmented-oatof-current-h15-n100/inputs/particle_source.csv", "sha256": "A8721EAB49AC15904DE6D1B135C0B16D98022E68B46710313575F356F1F984CF"},
+        "metadata": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260803_213000__sim__simion__oct-segmented-oatof-current-h15-n100/inputs/particle_source_metadata.json", "sha256": "1028F7C4A4AB2A009285EBFA45AD86DAC1E4600F611BD73CE8ED2A6D3A4E2FCC"}
       }
     },
     {
       "sequence": 2,
-      "experiment_id": "quadrupole_noacc_5ev_simion",
+      "experiment_id": "quadrupole_noacc_5ev_current_simion",
       "connection_profile_id": "rf_quadrupole_oatof_shield_terminal_direct_mating_gap_0mm",
-      "run_id": "20260803_191500__sim__cross__quad-noacc-5ev-oatof__n94",
+      "run_id": "20260803_215100__sim__cross__quad-noacc-5ev-oatof-current__n94",
       "source": {
-        "run_id": "20260803_141000__sim__simion__quad-noacc-5ev-h15-n100",
+        "run_id": "20260803_213100__sim__simion__quad-noacc-5ev-oatof-current-h15-n100",
         "launched_particle_count": 100,
         "particle_count": 94,
         "particle_source_manifest_input_role": "particle_source",
-        "manifest": {"path": "artifacts/projects/rf_quadrupole_ion_optics/runs/20260803_141000__sim__simion__quad-noacc-5ev-h15-n100/run_manifest.json", "sha256": "B59A218F480181ED5E687148C47DD8A1611DBCECFBBF8B1F693CE2A779C4719E"},
-        "state": {"path": "artifacts/projects/rf_quadrupole_ion_optics/runs/20260803_141000__sim__simion__quad-noacc-5ev-h15-n100/results/particle_states__rf_on.csv", "sha256": "53DF0CB6CC8D10CB6F760769D9A6BECD4B42FA6C223C74B58F948BAEB454F036"},
-        "particle_source": {"path": "artifacts/projects/rf_quadrupole_ion_optics/runs/20260803_141000__sim__simion__quad-noacc-5ev-h15-n100/inputs/particle_source.csv", "sha256": "7C71B34D8442F59237FAE7C77DC0C33643B7F6BD3E5C14493E309A68C45FAE8B"},
-        "metadata": {"path": "artifacts/projects/rf_quadrupole_ion_optics/runs/20260803_141000__sim__simion__quad-noacc-5ev-h15-n100/inputs/particle_source_metadata.json", "sha256": "04974F3AC88172956DA9FD82D43B0CBA970ECE5F12A0A3E97C0B85BCC17FD7E6"}
+        "manifest": {"path": "artifacts/projects/rf_quadrupole_ion_optics/runs/20260803_213100__sim__simion__quad-noacc-5ev-oatof-current-h15-n100/run_manifest.json", "sha256": "313AB12DC021A9FD469C18D20DA0CEF3FF78E849DA4BEB3800D17CCA68AA9AAC"},
+        "state": {"path": "artifacts/projects/rf_quadrupole_ion_optics/runs/20260803_213100__sim__simion__quad-noacc-5ev-oatof-current-h15-n100/results/particle_states__rf_on.csv", "sha256": "53DF0CB6CC8D10CB6F760769D9A6BECD4B42FA6C223C74B58F948BAEB454F036"},
+        "particle_source": {"path": "artifacts/projects/rf_quadrupole_ion_optics/runs/20260803_213100__sim__simion__quad-noacc-5ev-oatof-current-h15-n100/inputs/particle_source.csv", "sha256": "7C71B34D8442F59237FAE7C77DC0C33643B7F6BD3E5C14493E309A68C45FAE8B"},
+        "metadata": {"path": "artifacts/projects/rf_quadrupole_ion_optics/runs/20260803_213100__sim__simion__quad-noacc-5ev-oatof-current-h15-n100/inputs/particle_source_metadata.json", "sha256": "B0B248D0BCE14B9FF90A244E1CC52CB6B76400B9280B3FAA50DFD2C7A17D2875"}
       }
     }
   ]

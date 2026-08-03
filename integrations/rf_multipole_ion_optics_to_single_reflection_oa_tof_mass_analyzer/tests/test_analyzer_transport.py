@@ -12,6 +12,9 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     analyze_analyzer_transport as analyze,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis import (
+    compare_simion_interface_transport as interface_compare,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis import (
     write_oatof_simion_input as adapter,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis import (
@@ -52,6 +55,33 @@ def write_csv(path: Path, fields: list[str], rows: list[dict[str, object]]) -> N
 
 
 class AnalyzerTransportTests(unittest.TestCase):
+    def test_compares_real_port_local_exit_by_particle_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.csv"
+            comsol = root / "comsol.csv"
+            row = canonical_row(7)
+            row["state_event"] = "oatof_entry"
+            write_csv(source, csv_columns(), [row])
+            exit_row = dict(row)
+            exit_row["state_event"] = "local_accelerator_exit"
+            write_csv(comsol, csv_columns(), [exit_row])
+            row_map = root / "row_map.csv"
+            write_csv(row_map, ["solver_row_index", "particle_id"], [
+                {"solver_row_index": 1, "particle_id": 7}
+            ])
+            log = root / "simion.log"
+            log.write_text(
+                "TRACE: local_accelerator_exit ion=1 instrument_time_us=36.75 "
+                "x_mm=-47 y_mm=0.2 z_mm=4.87 vx_mm_per_us=4 "
+                "vy_mm_per_us=0.3 vz_mm_per_us=58\n",
+                encoding="utf-8",
+            )
+            result, rows = interface_compare.compare(log, row_map, source, comsol)
+            self.assertEqual(result["paired_particle_count"], 1)
+            self.assertEqual(result["simion"]["particles"], 1)
+            self.assertEqual(rows[0]["particle_id"], 7)
+
     def _formal_release_fixture(self, root: Path) -> tuple[Path, ...]:
         formal = root / "formal" / "simion"
         formal.mkdir(parents=True)
@@ -267,8 +297,8 @@ class AnalyzerTransportTests(unittest.TestCase):
             "$frozenProgramBuilder,'--formal',$frozenFormalLua"
         )
         simion = runner.index(
-            "Invoke-ResourceBudgetedProcess `\n"
-            "    -ResolvedBudgetPath $budgetBinding.stage_budget"
+            "$processResult = Invoke-ResourceBudgetedProcess `\n"
+            "      -ResolvedBudgetPath $budgetBinding.stage_budget"
         )
         diagnostics = runner.index(
             "$frozenSolverDiagnostics,'analyze-simion-log'"
@@ -288,6 +318,14 @@ class AnalyzerTransportTests(unittest.TestCase):
         self.assertLess(simion, diagnostics)
         self.assertLess(diagnostics, analyzer)
         self.assertIn("-FilePath $SimionExe", runner[simion:])
+        self.assertIn(
+            "$simionDefaultParticleCount = [Math]::Max(100, $analyzerParticleCount)",
+            runner,
+        )
+        self.assertIn(
+            "'--default-num-particles',([string]$simionDefaultParticleCount)",
+            runner,
+        )
 
         for dependency_id in (
             "rf_analyzer_transport_simion_input_adapter",
@@ -312,10 +350,8 @@ class AnalyzerTransportTests(unittest.TestCase):
         self.assertIn("$env:PYTHONPATH = $SnapshotRoot", runner)
         self.assertIn("$env:PYTHONNOUSERSITE = '1'", runner)
         self.assertIn("Push-Location -LiteralPath $SnapshotRoot", runner)
-        self.assertIn(
-            "--require-mode','rf_to_oatof_pulse_capture'",
-            runner,
-        )
+        self.assertIn("'rf_to_oatof_pulse_capture'", runner)
+        self.assertIn("'rf_to_oatof_pre_pulse_interface_transport'", runner)
         self.assertIn("Get-RfManifestOutputRecord", runner)
         self.assertIn("Copy-RfManifestBoundFile", runner)
         self.assertIn("$frozenFormalReleaseValidator", runner)
@@ -379,7 +415,7 @@ class AnalyzerTransportTests(unittest.TestCase):
         self.assertLess(frozen_parse, selection)
         self.assertLess(selection, ordinary_copy)
         self.assertIn("$contractIdentity = Copy-RfStableFile", runtime)
-        self.assertIn("resolved code inventory must contain exactly 49", runtime)
+        self.assertIn("resolved code inventory must contain exactly 52", runtime)
         self.assertIn("path = $contractRelative", runtime)
         self.assertNotIn("base = [ordered]@{", runtime)
         self.assertNotIn("overlay = [ordered]@{", runtime)

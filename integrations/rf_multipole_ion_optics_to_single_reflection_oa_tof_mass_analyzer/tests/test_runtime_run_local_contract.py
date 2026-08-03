@@ -8,6 +8,9 @@ import unittest
 
 INTEGRATION_ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_BINDING = INTEGRATION_ROOT / "runtime" / "runtime_binding.ps1"
+WORKFLOW_ENTRY = (
+    INTEGRATION_ROOT / "workflows" / "family_source_closure" / "execute.ps1"
+)
 RUNNERS = (
     INTEGRATION_ROOT / "runtime" / "run_transfer.ps1",
     INTEGRATION_ROOT / "stages" / "comsol" / "run_pre_pulse_interface_transport.ps1",
@@ -58,6 +61,22 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
             text = path.read_text(encoding="utf-8")
             self.assertIn("resolved_source_contract", text, path)
             self.assertIn("upstream_resolved_design", text, path)
+
+    def test_pulse_capture_uses_run_local_design_not_repository_inventory(self) -> None:
+        text = RUNNERS[2].read_text(encoding="utf-8")
+        self.assertIn(
+            "Copy-Item -LiteralPath $runtime.contracts.upstream_resolved_design "
+            "-Destination $rf",
+            text.replace("`\n    ", ""),
+        )
+        self.assertNotIn("'rf_resolved_design'", text)
+
+    def test_validate_cleanup_tolerates_parallel_empty_root_removal(self) -> None:
+        self.assertIn(
+            "Remove-Item -LiteralPath $validationRoot -Force "
+            "-ErrorAction SilentlyContinue",
+            WORKFLOW_ENTRY.read_text(encoding="utf-8"),
+        )
 
 
 if __name__ == "__main__":

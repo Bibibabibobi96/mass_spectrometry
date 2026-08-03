@@ -228,7 +228,7 @@ def publish_family_source_closure_run(
         expected_run_id = (
             run_id[:15]
             + STAGES[phase]["run_stem"]
-            + str(launched_particle_count)
+            + str(particle_count)
         )
         binding_hash = stage_runtime_binding_sha256s[phase]
         if (

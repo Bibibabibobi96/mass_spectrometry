@@ -81,7 +81,10 @@ def build_current_parent(root: Path) -> tuple[Path, Path, str]:
         },
     )
 
-    terminal_root = runs / terminal_id
+    terminal_root = (
+        workspace / "artifacts" / "projects" /
+        source_identity["project_id"] / "runs" / terminal_id
+    )
     terminal_config_path = terminal_root / "run_config.json"
     write_json(
         terminal_config_path,
@@ -183,6 +186,17 @@ def build_current_parent(root: Path) -> tuple[Path, Path, str]:
         },
     )
     return repo, runs, parent_id
+
+
+def make_campaign_path_repo_relative(repo: Path, runs: Path, parent_id: str) -> None:
+    config_path = runs / parent_id / "run_config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["campaign_path"] = "campaign.json"
+    write_json(config_path, config)
+    manifest_path = runs / parent_id / "run_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["run_config"] = record(config_path)
+    write_json(manifest_path, manifest)
 
 
 class CampaignComparisonFixture:
@@ -294,6 +308,18 @@ class PublishCampaignComparisonRunTests(unittest.TestCase):
                 label="historical",
                 parent_run_id=parent_id,
             )
+
+    def test_loads_repository_relative_campaign_path(self) -> None:
+        repo, runs, parent_id = build_current_parent(Path(self.temporary.name))
+        make_campaign_path_repo_relative(repo, runs, parent_id)
+        loaded = publisher._load_case_inputs(
+            repo_root=repo,
+            workspace_root=repo.parent,
+            runs_root=runs,
+            label="current",
+            parent_run_id=parent_id,
+        )
+        self.assertEqual(loaded.parent_config["campaign_path"], "campaign.json")
 
     def test_rejects_csv_census_mismatch(self) -> None:
         summary = json.loads(self.first.parent_summary.read_text(encoding="utf-8"))
