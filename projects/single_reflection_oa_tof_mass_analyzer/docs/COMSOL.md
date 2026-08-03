@@ -7,7 +7,7 @@
 ## 活动入口
 
 - 具名生产入口：`../comsol/run_oatof_model.m`
-- 模型树构建器：`../comsol/ms_oaTOF_two_stage_ringstack_reflectron.m`
+- 模型树内部实现：`../comsol/oatof_build_model_core.m`，不作为位置参数公开入口
 - MATLAB单元：`../tests/comsol/test_support/run_oatof_matlab_unit_tests.m`
 - Formal写入合同：`../tests/comsol/test_support/run_oatof_formal_write_contract_tests.m`
 - N=100候选功能：`../tests/comsol/run_n100_candidate_functional.ps1`

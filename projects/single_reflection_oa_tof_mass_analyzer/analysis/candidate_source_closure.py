@@ -36,7 +36,6 @@ RELATIVE_PATHS = (
     "projects/single_reflection_oa_tof_mass_analyzer/cad/ms_export_oatof_to_solidworks.m",
     "projects/single_reflection_oa_tof_mass_analyzer/cad/oatof_cad_export_manifest.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/configure_oatof_segmented_output.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/comsol/ms_oaTOF_two_stage_ringstack_reflectron.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_accelerator_geometry.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_detector_geometry.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_drift_geometry.m",

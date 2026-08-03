@@ -11,7 +11,7 @@
     "resolved_connection": "runtime_resolved_connection",
     "oatof_baseline": "dependency_contract:oatof_baseline",
     "downstream_terminal_profile_registry": "config/downstream_terminal_profiles.json",
-    "downstream_terminal_profile_id": "oatof_shield_entry_gap1mm"
+    "downstream_terminal_profile_id": "oatof_shield_terminal"
   },
   "physical_boundaries": {
     "source_exit_surface": {
@@ -60,7 +60,7 @@
     },
     "terminal_electrode": {
       "owner": "downstream",
-      "terminal_profile_id": "oatof_shield_entry_gap1mm",
+      "terminal_profile_id": "oatof_shield_terminal",
       "component_id": "single_reflection_oa_tof_mass_analyzer",
       "geometry_tag": "accelshield",
       "serves_as_multipole_exit_aperture_electrode": true,

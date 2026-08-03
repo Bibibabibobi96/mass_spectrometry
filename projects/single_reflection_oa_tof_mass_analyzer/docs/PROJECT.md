@@ -23,9 +23,10 @@ resolved、分析和资产合同管理；实现细节见[`COMSOL.md`](COMSOL.md)
   [`history快照`](history/20260802__formal-simion-integrity-recovery.md)。
 - 当前Formal加速器为闭合屏蔽结构，没有RF注入侧孔。RF项目的S2/S3候选链没有修改本项目baseline、
   MPH、SIMION包或CAD，也不构成整机Formal连接。
-- RF四极杆离子光学到本分析器的0 mm与1 mm连接profile已以冻结N=100源完成真实COMSOL→SIMION重跑，
-  并对只读oracle实现源身份、五级census和四组离散粒子事件集合精确一致。该结论只关闭零物理变化的
-  功能迁移；本项目Formal资产保持只读且未被连接运行修改，连续相空间和整机资格仍未评价。
+- RF四、六、八极杆到本分析器的活动连接统一使用模式中性的屏蔽罩端面profile；`direct_mating_gap=0 mm`
+  表示不存在独立连接器间隙，杆末端到屏蔽罩外表面的物理净距仍为`1 mm`。当前campaign已跑通八极杆
+  分段加速与四极杆5 eV无加速两行N=100功能链；更早的四极杆0/1 mm迁移结果只作为历史证据。该结论
+  不授予连续相空间、收敛、分辨率或整机Formal资格，也未修改本项目Formal资产。
 
 当前生命周期、capability与Formal asset状态均为`formal`。历史资产和旧结论只按其原始manifest
 身份保留，不能替代或改写当前release。

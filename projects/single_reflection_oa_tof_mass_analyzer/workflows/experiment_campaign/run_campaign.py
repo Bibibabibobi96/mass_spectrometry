@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from functools import partial
 import json
 from pathlib import Path
 
@@ -27,6 +28,7 @@ def main() -> None:
     action.add_argument("--experiment-id")
     action.add_argument("--all", action="store_true")
     parser.add_argument("--campaign-run-id")
+    parser.add_argument("--simion-exe", type=Path)
     args = parser.parse_args()
 
     if args.status:
@@ -41,6 +43,8 @@ def main() -> None:
         return
     if not args.campaign_run_id:
         parser.error("execution requires --campaign-run-id")
+    if args.simion_exe is None:
+        parser.error("execution requires --simion-exe")
 
     # Machine/runtime evidence is intentionally outside CI artifacts. Validate it
     # before execute_campaign is allowed to allocate campaign or child evidence.
@@ -50,7 +54,7 @@ def main() -> None:
         args.campaign_run_id,
         experiment_id=args.experiment_id,
         run_all=args.all,
-        candidate_executor=execute_request,
+        candidate_executor=partial(execute_request, simion_executable=args.simion_exe),
     )
     print(
         f"OATOF_CAMPAIGN={summary['status'].upper()} "

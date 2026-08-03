@@ -15,7 +15,6 @@ Python版本、隔离环境和重建方法只以仓库根
 - Candidate只生成Lua/Fly2文本。候选SIMION IOB若未来需要，必须以带role和SHA-256 provenance的非Formal run input冻结；不得读取、复制或推断Formal资产。
 
 - 机器数据定义：`../config/analysis_contract.json`。
-- 迁移基准身份与旧MATLAB参考：`../config/analysis_baselines.json`。
 - 当前正式COMSOL/SIMION同源闭合记录：`../config/formal_validation.json`。
 - 双区正交加速器一阶时间聚焦：`accelerator_time_focus.py`，公式来源为
   `../docs/theory/oaaccelerator_time_focus.md`。
@@ -47,12 +46,9 @@ Python版本、隔离环境和重建方法只以仓库根
   `reference_analysis.py`。
 - 回归门禁：`verify_reference_analysis.ps1`。
 
-回归门禁先验证当前`formal_validation.json`，核对物理/分析契约哈希、固定ION表、正式IOB、
-N=1000两侧逐粒子CSV以及Python比较指标，防止现役正式结果与外部artifacts静默漂移。随后审计
-`analysis_baselines.json`中的迁移历史：`active`条目缺失或身份不符必须失败；
-`retired_historical_record`保留旧SHA和参考数值作为来源记录，外部归档已删除时明确报告
-`RETIRED_ARTIFACT_UNAVAILABLE`，不再构成当前Formal依赖；若退役文件仍存在，仍须通过原SHA、
-大小、行数和指标校验。
+回归门禁验证当前`formal_validation.json`，核对物理/分析契约哈希、固定ION表、正式IOB、
+N=1000两侧逐粒子CSV以及Python比较指标，防止现役正式结果与外部artifacts静默漂移。
+退役迁移数据只保留在Git历史和历史说明中，不再进入现役门禁或运行时依赖。
 
 Formal只有一个公共入口：
 `../workflows/formal_reference/run_formal_validation.ps1 -Phase Validate|Publish|Verify`。
@@ -73,9 +69,7 @@ SIMION并完成统一分析；`Publish`只接受冻结的promotion request和独
 .\projects\single_reflection_oa_tof_mass_analyzer\analysis\verify_reference_analysis.ps1
 ```
 
-默认严格验证当前Formal N=1000资产及其SHA，再审计四个退役迁移数据集；退役文件仍可用时才
-重算统一指标、谱图、落点图和固定粒子COMSOL/SIMION峰形对比。每次结果写入仓库外独立的
-`artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/<run_id>/results/`，并同时生成三件套。
+默认只读验证当前Formal N=1000资产、契约哈希和已发布比较指标，不创建新的run或重复分析产物。
 
 分析单个CSV或GUI导出的XLSX：
 

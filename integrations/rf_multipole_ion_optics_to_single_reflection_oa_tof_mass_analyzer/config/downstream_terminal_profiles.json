@@ -10,7 +10,7 @@
   ],
   "profiles": [
     {
-      "terminal_profile_id": "oatof_shield_entry_gap1mm",
+      "terminal_profile_id": "oatof_shield_terminal",
       "owner": "downstream",
       "surface_role": "aperture_outer_tangent_plane",
       "rod_end_clearance_mm": 1.0,

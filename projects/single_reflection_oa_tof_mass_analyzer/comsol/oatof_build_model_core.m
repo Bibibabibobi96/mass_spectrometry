@@ -2,9 +2,7 @@ function result = oatof_build_model_core(mass_amu, label, solver_mode, field_mod
 projectRoot = fileparts(fileparts(mfilename('fullpath')));
 repositoryRoot = fileparts(fileparts(projectRoot));
 addpath(projectRoot, fullfile(repositoryRoot, 'common', 'comsol'));
-if nargin < 18
-    contract_path = '';
-end
+assert(~isempty(contract_path), 'oatof_build_model_core requires a resolved contract path.');
 contract = load_oatof_contract(contract_path);
 geometryMm = contract.geometry_mm;
 acceleratorDesign = contract.geometry_derivation.accelerator;
@@ -121,50 +119,26 @@ if ~(isscalar(n_rings2) && n_rings2 >= 1 && n_rings2 == fix(n_rings2))
     error('n_rings2 must be a positive integer.');
 end
 % Stable named execution consumes the coupled longitudinal voltage and
-% stage-2 length from the resolved contract. Only legacy positional scans
-% retain the historical local-reflectron derivation below.
+% stage-2 length from the resolved contract.
 d2_margin_fraction = reflectronDesign.stage2_margin_fraction;
 reflectron_total_drift_m = reflectronDesign.total_field_free_length_mm/1000;
 reflectron_stage1_m = d1_mm/1000;
 if ~(reflectron_stage1_m > 0 && reflectron_stage1_m < reflectron_total_drift_m/4)
     error('d1_mm=%g violates 0<d1<L/4=%gmm', d1_mm, reflectron_total_drift_m/4*1000);
 end
-% An explicit resolved contract is authoritative for candidate execution.
-% The legacy positional builder historically re-derived reflectron voltages
-% and stage-2 length from d1; retaining that behavior without this branch
-% silently discarded candidate compensation-voltage overrides.  Use the
-% frozen candidate values and recompute the actual fields they imply.
-if ~isempty(contract_path)
-    if isfield(reflectronDesign, 'nominal_energy_per_charge_V')
-        reflectron_incident_energy_ev = reflectronDesign.nominal_energy_per_charge_V;
-    else
-        reflectron_incident_energy_ev = reflectronDesign.incident_energy_eV;
-    end
-    d2_mm = geometryMm.L_stage2;
-    reflectron_midgrid_voltage_v = voltageV.midgrid;
-    reflectron_backplate_voltage_v = voltageV.backplate;
-    reflectron_stage1_field_vpm = reflectron_midgrid_voltage_v/reflectron_stage1_m;
-    reflectron_stage2_field_vpm = (reflectron_backplate_voltage_v-reflectron_midgrid_voltage_v)/(d2_mm/1000);
-    reflectron_stage2_min_mm = ...
-        ((reflectron_incident_energy_ev-reflectron_midgrid_voltage_v)/reflectron_stage2_field_vpm)*1000;
+% The resolved contract is authoritative for candidate and Formal execution.
+if isfield(reflectronDesign, 'nominal_energy_per_charge_V')
+    reflectron_incident_energy_ev = reflectronDesign.nominal_energy_per_charge_V;
 else
-    % Legacy positional scans retain the historical local-reflectron
-    % derivation. Stable named execution always supplies a resolved contract.
     reflectron_incident_energy_ev = reflectronDesign.incident_energy_eV;
-    reflectron_midgrid_voltage_v = 2*reflectron_incident_energy_ev* ...
-        (reflectron_total_drift_m+2*reflectron_stage1_m)/(3*reflectron_total_drift_m);
-    reflectron_stage1_field_vpm = reflectron_midgrid_voltage_v/reflectron_stage1_m;
-    reflectron_stage2_field_vpm = 12*reflectron_incident_energy_ev* ...
-        (sqrt(3)*sqrt(reflectron_total_drift_m)+sqrt(reflectron_total_drift_m-4*reflectron_stage1_m)) / ...
-        (sqrt(3)*reflectron_total_drift_m^1.5 + 8*sqrt(3)*sqrt(reflectron_total_drift_m)*reflectron_stage1_m + ...
-         3*reflectron_total_drift_m*sqrt(reflectron_total_drift_m-4*reflectron_stage1_m));
-    reflectron_stage2_min_mm = ((reflectron_incident_energy_ev-reflectron_midgrid_voltage_v)/reflectron_stage2_field_vpm)*1000;
-    % Derive all physical quantities from the unrounded value first. Only the
-    % resulting engineering geometry is rounded to baseline.json precision.
-    d2_raw_mm = reflectron_stage2_min_mm*(1+d2_margin_fraction);
-    reflectron_backplate_voltage_v = reflectron_midgrid_voltage_v + reflectron_stage2_field_vpm*(d2_raw_mm/1000);
-    d2_mm = round(d2_raw_mm, reflectronDesign.engineering_length_decimals_mm);
 end
+d2_mm = geometryMm.L_stage2;
+reflectron_midgrid_voltage_v = voltageV.midgrid;
+reflectron_backplate_voltage_v = voltageV.backplate;
+reflectron_stage1_field_vpm = reflectron_midgrid_voltage_v/reflectron_stage1_m;
+reflectron_stage2_field_vpm = (reflectron_backplate_voltage_v-reflectron_midgrid_voltage_v)/(d2_mm/1000);
+reflectron_stage2_min_mm = ...
+    ((reflectron_incident_energy_ev-reflectron_midgrid_voltage_v)/reflectron_stage2_field_vpm)*1000;
 fprintf('[d1 scan] d1=%gmm -> U1(V_mid)=%.4fV, E1=%.4fV/m, E2=%.4fV/m, V_mirror=%.4fV, d2_min=%.2fmm, d2(adaptive,+%.0f%%)=%.2fmm\n', ...
     d1_mm, reflectron_midgrid_voltage_v, reflectron_stage1_field_vpm, reflectron_stage2_field_vpm, ...
     reflectron_backplate_voltage_v, reflectron_stage2_min_mm, d2_margin_fraction*100, d2_mm);

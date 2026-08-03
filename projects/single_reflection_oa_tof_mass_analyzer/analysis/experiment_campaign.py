@@ -194,7 +194,6 @@ def _authorization_blockers(
     runtime = authorities["candidate_runtime"]
     if (
         runtime.get("role") != "oa_tof_candidate_runtime"
-        or not runtime.get("simion_executable")
         or not runtime.get("simion_template_run_id")
     ):
         blockers.append("candidate runtime authority is incomplete")

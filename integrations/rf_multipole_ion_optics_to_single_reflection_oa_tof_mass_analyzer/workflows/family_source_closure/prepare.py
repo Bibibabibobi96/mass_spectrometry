@@ -206,7 +206,7 @@ def _load_source_evidence(
     terminal = resolved_design.get("downstream_terminal")
     if (
         not isinstance(terminal, dict)
-        or terminal.get("terminal_profile_id") != "oatof_shield_entry_gap1mm"
+        or terminal.get("terminal_profile_id") != "oatof_shield_terminal"
         or terminal.get("surface_role") != "aperture_outer_tangent_plane"
         or float(terminal.get("rod_end_clearance_mm", -1.0)) != 1.0
         or terminal.get("upstream_terminal_electrode_present") is not False

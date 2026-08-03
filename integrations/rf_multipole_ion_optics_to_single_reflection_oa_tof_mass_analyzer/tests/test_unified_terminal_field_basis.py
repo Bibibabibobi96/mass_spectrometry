@@ -26,7 +26,7 @@ class UnifiedTerminalFieldBasisTests(unittest.TestCase):
         validate_schema(registry, "multipole_downstream_terminal_profiles.schema.json")
         self.assertEqual(len(registry["profiles"]), 1)
         profile = registry["profiles"][0]
-        self.assertEqual(profile["terminal_profile_id"], "oatof_shield_entry_gap1mm")
+        self.assertEqual(profile["terminal_profile_id"], "oatof_shield_terminal")
         self.assertEqual(profile["outer_envelope"]["width_mm"], 38.0)
         self.assertEqual(profile["outer_envelope"]["height_mm"], 38.0)
         self.assertEqual(profile["electrode_thickness_mm"], 4.0)

@@ -16,7 +16,6 @@ $contractPath = Join-Path $componentDir 'config\resolved_geometry.json'
 $resolvedLuaPath = Join-Path $componentDir 'simion\workbench\formal\oatof_resolved.lua'
 $comsolSourceDir = Join-Path $componentDir 'comsol'
 $comsolSources = @(
-  (Join-Path $comsolSourceDir 'ms_oaTOF_two_stage_ringstack_reflectron.m'),
   (Join-Path $comsolSourceDir 'run_oatof_model.m')
 ) + @(Get-ChildItem -LiteralPath $comsolSourceDir -Filter 'oatof_*.m' -File |
   Select-Object -ExpandProperty FullName)
@@ -231,9 +230,11 @@ Assert-Contains $comsol 'char(options.OutputModelPath), char(contractPath)' 'COM
 Assert-Contains $comsol "p.set('detector_radius', sprintf('%.12g[mm]', geometryMm.detector_radius)" 'COMSOL detector radius parameter'
 Assert-Contains $comsol "p.set('E_mean_eV', sprintf('%.12g[V]', contract.validation_target.initial_energy_mean_ev)" 'COMSOL mean initial energy'
 Assert-Contains $comsol "p.set('flight_tube_wall', sprintf('%.12g[mm]', geometryMm.flight_tube_wall)" 'COMSOL shield wall thickness'
-Assert-Contains $comsol 'd2_raw_mm = reflectron_stage2_min_mm*(1+d2_margin_fraction);' 'COMSOL unrounded physical stage2 derivation'
-Assert-Contains $comsol 'reflectron_backplate_voltage_v = reflectron_midgrid_voltage_v + reflectron_stage2_field_vpm*(d2_raw_mm/1000);' 'COMSOL voltage derivation before engineering rounding'
-Assert-Contains $comsol 'd2_mm = round(d2_raw_mm, reflectronDesign.engineering_length_decimals_mm);' 'COMSOL baseline engineering-length precision'
+Assert-Contains $comsol "assert(~isempty(contract_path), 'oatof_build_model_core requires a resolved contract path.');" 'COMSOL mandatory resolved contract'
+Assert-Contains $comsol 'd2_mm = geometryMm.L_stage2;' 'COMSOL resolved stage2 geometry'
+Assert-Contains $comsol 'reflectron_midgrid_voltage_v = voltageV.midgrid;' 'COMSOL resolved midgrid voltage'
+Assert-Contains $comsol 'reflectron_backplate_voltage_v = voltageV.backplate;' 'COMSOL resolved backplate voltage'
+Assert-NotContains $comsol 'd2_raw_mm =' 'COMSOL local stage2 rederivation'
 Assert-Contains $comsol "p.set('L_refl', sprintf('%.12g[mm]', d1_mm+d2_mm)" 'COMSOL reflectron serialization precision'
 Assert-Contains $comsol "if nargin < 9 || isempty(ring_thickness_mm)" 'COMSOL backplate-thickness default branch'
 Assert-Contains $comsol "ring_thickness_mm = geometryMm.ring_thickness;" 'COMSOL backplate-thickness default'

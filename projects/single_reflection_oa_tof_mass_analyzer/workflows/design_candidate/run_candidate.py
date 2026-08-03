@@ -32,7 +32,7 @@ EXECUTION_PROFILES = PROJECT_ROOT / "config" / "execution_profiles.json"
 def validate_candidate_runtime(
     artifact_project_root: Path | None = None,
 ) -> dict[str, Any]:
-    """Validate the machine binding and its registered SIMION template."""
+    """Validate the registered SIMION template binding."""
     artifact_root = (
         artifact_project_root
         or WORKSPACE_ROOT / "artifacts" / "projects" / "single_reflection_oa_tof_mass_analyzer"
@@ -40,9 +40,6 @@ def validate_candidate_runtime(
     runtime = load_json(RUNTIME_CONFIG)
     if runtime.get("role") != "oa_tof_candidate_runtime":
         raise ValueError("candidate runtime config has an unsupported role")
-    executable = Path(str(runtime.get("simion_executable", "")))
-    if not executable.is_file():
-        raise ValueError("candidate SIMION executable is absent")
     template_run_id = str(runtime.get("simion_template_run_id", ""))
     validate_run_id(template_run_id)
     template = artifact_root / "runs" / template_run_id
@@ -169,6 +166,7 @@ def execute_request(
     request_path: Path,
     run_id: str,
     *,
+    simion_executable: Path,
     particle_source_seed: int,
     artifact_project_root: Path | None = None,
     reuse_parent: Path | None = None,
@@ -177,6 +175,7 @@ def execute_request(
     campaign_table: Path | None = None,
     campaign_selection: Path | None = None,
 ) -> tuple[Path, dict[str, Any]]:
+    executable = simion_executable.resolve(strict=True)
     plan = prepare_execution(
         request_path,
         run_id,
@@ -185,7 +184,6 @@ def execute_request(
         campaign_table=campaign_table,
         campaign_selection=campaign_selection,
     )
-    runtime = load_json(RUNTIME_CONFIG)
     kwargs: dict[str, Any] = {
         "reuse_parent": reuse_parent,
         "reuse_through": reuse_through,
@@ -194,7 +192,7 @@ def execute_request(
         kwargs["stage_executor"] = stage_executor
     return run_candidate_workflow(
         plan,
-        runtime["simion_executable"],
+        str(executable),
         **kwargs,
     )
 
@@ -204,6 +202,7 @@ def main() -> None:
     parser.add_argument("--request", required=True, type=Path)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--particle-source-seed", required=True, type=int)
+    parser.add_argument("--simion-exe", type=Path)
     parser.add_argument("--reuse-parent", type=Path)
     parser.add_argument("--reuse-through", choices=REUSABLE_STAGES)
     parser.add_argument("--dry-run", action="store_true")
@@ -221,10 +220,12 @@ def main() -> None:
         if args.dry_run:
             print(f"OATOF_CANDIDATE=EXECUTION_READY PLAN={plan}")
             return
-        runtime = load_json(RUNTIME_CONFIG)
+        if args.simion_exe is None:
+            parser.error("execution requires --simion-exe")
+        simion_executable = args.simion_exe.resolve(strict=True)
         run_root, summary = run_candidate_workflow(
             plan,
-            runtime["simion_executable"],
+            str(simion_executable),
             reuse_parent=args.reuse_parent,
             reuse_through=args.reuse_through,
         )

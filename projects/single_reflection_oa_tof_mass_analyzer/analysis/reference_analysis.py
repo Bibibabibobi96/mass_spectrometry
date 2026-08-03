@@ -11,7 +11,6 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.reference_analysis
     audit_simion_recording,
     main,
     read_particle_table,
-    verify_baselines,
 )
 
 __all__ = [
@@ -23,7 +22,6 @@ __all__ = [
     "audit_simion_recording",
     "main",
     "read_particle_table",
-    "verify_baselines",
 ]
 
 

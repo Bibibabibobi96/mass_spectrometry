@@ -11,7 +11,6 @@ class FormalReferenceWorkflowLayoutTests(unittest.TestCase):
     def test_production_entries_have_one_non_test_location(self):
         workflow_root = PROJECT_ROOT / "workflows" / "formal_reference"
         moved_names = {
-            "run_coupled_baseline_validation.ps1",
             "run_formal_validation.ps1",
             "verify_geometry_contract.ps1",
             "verify_geometry_derivation.py",
@@ -119,6 +118,14 @@ class FormalReferenceWorkflowLayoutTests(unittest.TestCase):
         )
         self.assertFalse(
             (PROJECT_ROOT / "analysis" / "promote_formal_vnext.py").exists()
+        )
+        self.assertFalse(
+            (
+                PROJECT_ROOT
+                / "workflows"
+                / "formal_reference"
+                / "run_coupled_baseline_validation.ps1"
+            ).exists()
         )
         self.assertTrue(
             (PROJECT_ROOT / "analysis" / "publish_formal_release.py").is_file()

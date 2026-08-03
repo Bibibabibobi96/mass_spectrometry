@@ -21,7 +21,7 @@
     },
     "pre_pulse_builder": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/stages/comsol/build_pre_pulse_interface_transport_model.m",
-      "sha256": "918311AB12B39684E1325DBAD35958AC867018D453E311E523D0A7B07493B209"
+      "sha256": "241EB23C9E7B3C8E2F04C9F4D7DE27835CA93FE1700E43608A310B0E8C5E3057"
     },
     "pre_pulse_field_preparer": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/stages/comsol/prepare_pre_pulse_interface_transport_field_model.m",

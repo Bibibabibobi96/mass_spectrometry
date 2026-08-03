@@ -18,11 +18,10 @@
 `RunId`和`-SolverAuthorized`，并由adapter串行调用其冻结入口。公共层不会从两个project ID猜测端口、
 自动发明连接器、复制物理参数或执行profile中未冻结的命令；缺少adapter、RunId或授权均失败关闭。
 
-`adapter_contract.py`只为当前执行映射和工程预算提供窄合同：映射可声明profile ID、adapter路径及
-runtime binding，不允许几何、电压或粒子参数。具体integration负责把映射SHA和路径冻结进
-composition plan，并在执行前再次核对。`resolve_integration_engineering_budget(...)`复核integration、
-profile、同源粒子身份和compact留存后，只返回该次profile的三个stage硬帽；它复用公共进程树监控器，
-不建立integration私有资源门禁。
+`adapter_contract.py`只为当前执行映射提供窄合同：映射可声明profile ID、adapter路径及runtime
+binding，不允许几何、电压或粒子参数。具体integration负责把映射SHA和路径冻结进composition plan，
+并在执行前再次核对。工程预算由各integration的campaign行和execution policy共同解析为run-local
+输入；公共连接层不保留旧的profile专用预算合同。
 
 port是项目物理合同的发布视图，不是第二权威。每个port必须通过`authority.source_contract`和
 `source_sha256`锁定仓库内来源，并用`bindings`逐项声明port JSON Pointer与source JSON Pointer；

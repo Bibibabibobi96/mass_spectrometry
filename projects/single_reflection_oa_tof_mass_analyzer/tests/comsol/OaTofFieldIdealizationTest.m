@@ -13,11 +13,16 @@ classdef OaTofFieldIdealizationTest < matlab.unittest.TestCase
             testCase.verifyEqual(actual.canonical, "real");
         end
 
-        function legacyRegionRemainsCompatible(testCase)
-            actual = oatof_parse_field_idealization("ideal_reflectron");
+        function canonicalReflectronRegionExpands(testCase)
+            actual = oatof_parse_field_idealization("ideal:reflectron.all");
             expected = false(4, 3);
             expected(3:4, :) = true;
             testCase.verifyEqual(actual.mask, expected);
+        end
+
+        function legacyAliasIsRejected(testCase)
+            testCase.verifyError(@() oatof_parse_field_idealization("ideal_reflectron"), ...
+                'oaTOF:InvalidFieldIdealization');
         end
 
         function arbitraryCombinationIsComposable(testCase)

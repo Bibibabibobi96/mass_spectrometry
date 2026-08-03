@@ -60,7 +60,7 @@ def terminal_registry() -> dict:
         "allowed_upstream_project_ids": [PROJECT_ID],
         "profiles": [
             {
-                "terminal_profile_id": "oatof_shield_entry_gap1mm",
+                "terminal_profile_id": "oatof_shield_terminal",
                 "owner": "downstream",
                 "surface_role": "aperture_outer_tangent_plane",
                 "rod_end_clearance_mm": 1.0,
@@ -167,14 +167,14 @@ class DownstreamTerminalCompositionTest(unittest.TestCase):
         validate_schema(registry, "multipole_downstream_terminal_profiles.schema.json")
         selected = select_downstream_terminal_profile(
             registry,
-            "oatof_shield_entry_gap1mm",
+            "oatof_shield_terminal",
             upstream_project_id=PROJECT_ID,
         )
         self.assertEqual(selected["owner"], "downstream")
         with self.assertRaisesRegex(DownstreamTerminalError, "does not allow"):
             select_downstream_terminal_profile(
                 registry,
-                "oatof_shield_entry_gap1mm",
+                "oatof_shield_terminal",
                 upstream_project_id="rf_octupole_ion_optics",
             )
 

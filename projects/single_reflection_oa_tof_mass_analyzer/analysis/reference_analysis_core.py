@@ -6,9 +6,6 @@ Analyze one CSV or GUI-exported XLSX::
 
     python reference_analysis.py single INPUT --mass 524 --output OUTPUT
 
-Verify all frozen migration baselines::
-
-    python reference_analysis.py verify-baselines
 """
 
 from __future__ import annotations
@@ -52,7 +49,6 @@ DEFAULT_DETECTOR_CENTER_X_MM = float(
     _physical_geometry["coordinate_convention"]["detector_x"]
 )
 DEFAULT_DETECTOR_CENTER_Y_MM = 0.0
-DEFAULT_BASELINES = PROJECT_DIR / "config" / "analysis_baselines.json"
 
 
 def sha256_file(path: Path) -> str:
@@ -1281,226 +1277,6 @@ def analyze_comparison(
     return result
 
 
-def _relative_difference_pct(value: float, reference: float) -> float:
-    return 100.0 * (value - reference) / reference
-
-
-def _check_reference_values(
-    actual: dict[str, Any],
-    expected: dict[str, Any],
-    relative_tolerance: float,
-    absolute_tolerance: float,
-) -> dict[str, dict[str, Any]]:
-    checks: dict[str, dict[str, Any]] = {}
-    for key, expected_value in expected.items():
-        actual_value = actual[key]
-        if isinstance(expected_value, int) and not isinstance(expected_value, bool):
-            passed = int(actual_value) == expected_value
-        else:
-            passed = bool(
-                np.isclose(
-                    float(actual_value),
-                    float(expected_value),
-                    rtol=relative_tolerance,
-                    atol=absolute_tolerance,
-                )
-            )
-        checks[key] = {
-            "actual": actual_value,
-            "expected": expected_value,
-            "pass": passed,
-        }
-    return checks
-
-
-def verify_baselines(
-    manifest_path: Path = DEFAULT_BASELINES,
-    output_dir: Path | None = None,
-) -> dict[str, Any]:
-    with manifest_path.open("r", encoding="utf-8") as stream:
-        manifest = json.load(stream)
-    contract_path = manifest_path.parent / manifest["analysis_contract"]
-    artifact_project = (
-        REPO_ROOT.parent / "artifacts" / manifest["artifact_project_relative"]
-    )
-    if output_dir is None:
-        output_dir = artifact_project / "results" / "reference_analysis" / "baseline"
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    tolerance = manifest["canonical_tolerance"]
-    relative_tolerance = float(tolerance["relative"])
-    absolute_tolerance = float(tolerance["absolute"])
-
-    results_by_id: dict[str, dict[str, Any]] = {}
-    entry_reports: list[dict[str, Any]] = []
-    overall_pass = True
-    for entry in manifest["entries"]:
-        lifecycle_status = entry.get("lifecycle_status", "active")
-        if lifecycle_status not in {"active", "retired_historical_record"}:
-            raise ValueError(
-                f"Unsupported analysis baseline lifecycle_status for {entry['id']}: "
-                f"{lifecycle_status}"
-            )
-        missing_policy = entry.get("missing_artifact_policy", "fail")
-        allowed_missing_policy = (
-            {"fail"}
-            if lifecycle_status == "active"
-            else {"retired_record_only"}
-        )
-        if missing_policy not in allowed_missing_policy:
-            raise ValueError(
-                f"Unsupported analysis baseline missing_artifact_policy for "
-                f"{entry['id']}: {missing_policy}"
-            )
-        input_path = artifact_project / entry["relative_path"]
-        identity = {
-            "exists": input_path.is_file(),
-            "bytes_match": False,
-            "sha256_match": False,
-            "rows_match": False,
-        }
-        report: dict[str, Any] = {
-            "id": entry["id"],
-            "lifecycle_status": lifecycle_status,
-            "missing_artifact_policy": missing_policy,
-            "path": str(input_path),
-            "identity": identity,
-        }
-        if input_path.is_file():
-            identity["bytes_match"] = input_path.stat().st_size == int(entry["bytes"])
-            identity["sha256_match"] = sha256_file(input_path) == entry["sha256"]
-            frame, _ = read_particle_table(input_path)
-            identity["rows_match"] = len(frame) == int(entry["rows"])
-            result = analyze_single(
-                input_path,
-                output_dir / entry["id"],
-                float(entry["nominal_mass_Da"]),
-                label=entry["id"],
-                contract_path=contract_path,
-            )
-            results_by_id[entry["id"]] = result
-            legacy = entry.get("legacy_matlab_reference", {})
-            metrics = result["metrics"]
-            report["canonical_metrics"] = metrics
-            report["canonical_reference_checks"] = _check_reference_values(
-                metrics,
-                entry["canonical_reference"],
-                relative_tolerance,
-                absolute_tolerance,
-            )
-            report["legacy_matlab_reference"] = legacy
-            report["canonical_vs_legacy_difference_pct"] = {
-                "mean_tof_us": _relative_difference_pct(metrics["mean_tof_us"], legacy["mean_tof_us"]),
-                "std_tof_ns": _relative_difference_pct(metrics["std_tof_ns"], legacy["std_tof_ns"]),
-                "fwhm_mass_Da": _relative_difference_pct(metrics["direct_fwhm_mass_Da"], legacy["fwhm_mass_Da"]),
-                "mass_resolution": _relative_difference_pct(metrics["mass_resolution"], legacy["mass_resolution"]),
-            }
-        elif lifecycle_status == "retired_historical_record":
-            report["status"] = "RETIRED_ARTIFACT_UNAVAILABLE"
-            report["note"] = (
-                "Historical identity and reference values are retained for provenance; "
-                "the retired external artifact is not a current Formal dependency."
-            )
-            entry_reports.append(report)
-            continue
-        canonical_checks = report.get("canonical_reference_checks", {})
-        entry_pass = all(identity.values()) and all(
-            check["pass"] for check in canonical_checks.values()
-        )
-        report["status"] = "PASS" if entry_pass else "FAIL"
-        overall_pass = overall_pass and entry_pass
-        entry_reports.append(report)
-
-    comparison_reports: list[dict[str, Any]] = []
-    entries = {entry["id"]: entry for entry in manifest["entries"]}
-    for comparison in manifest.get("comparisons", []):
-        lifecycle_status = comparison.get("lifecycle_status", "active")
-        if lifecycle_status not in {"active", "retired_historical_record"}:
-            raise ValueError(
-                f"Unsupported analysis comparison lifecycle_status for "
-                f"{comparison['id']}: {lifecycle_status}"
-            )
-        left_entry = entries[comparison["left"]]
-        right_entry = entries[comparison["right"]]
-        left_path = artifact_project / left_entry["relative_path"]
-        right_path = artifact_project / right_entry["relative_path"]
-        if not left_path.is_file() or not right_path.is_file():
-            if lifecycle_status != "retired_historical_record":
-                overall_pass = False
-                comparison_reports.append(
-                    {
-                        "id": comparison["id"],
-                        "lifecycle_status": lifecycle_status,
-                        "status": "FAIL",
-                        "error": "Active comparison input artifact is unavailable.",
-                    }
-                )
-                continue
-            comparison_reports.append(
-                {
-                    "id": comparison["id"],
-                    "lifecycle_status": lifecycle_status,
-                    "status": "RETIRED_ARTIFACT_UNAVAILABLE",
-                    "note": (
-                        "Historical comparison values are retained for provenance; "
-                        "retired input artifacts are not current Formal dependencies."
-                    ),
-                }
-            )
-            continue
-        result = analyze_comparison(
-            left_path,
-            right_path,
-            output_dir / comparison["id"],
-            float(left_entry["nominal_mass_Da"]),
-            left_label=left_entry["solver"],
-            right_label=right_entry["solver"],
-            paired_particle_ids_required=bool(comparison["paired_particle_ids_required"]),
-            bootstrap_resamples=int(
-                comparison.get("bootstrap", {}).get("resamples", 0)
-            ),
-            bootstrap_seed=int(
-                comparison.get("bootstrap", {}).get("seed", 20260715)
-            ),
-            contract_path=contract_path,
-        )
-        legacy = comparison.get("legacy_matlab_reference", {})
-        canonical = result["comparison"]
-        canonical_checks = _check_reference_values(
-            canonical,
-            comparison["canonical_reference"],
-            relative_tolerance,
-            absolute_tolerance,
-        )
-        comparison_pass = all(check["pass"] for check in canonical_checks.values())
-        overall_pass = overall_pass and comparison_pass
-        comparison_reports.append(
-            {
-                "id": comparison["id"],
-                "status": "PASS" if comparison_pass else "FAIL",
-                "canonical": canonical,
-                "canonical_reference_checks": canonical_checks,
-                "legacy_matlab_reference": legacy,
-                "canonical_minus_legacy": {
-                    key: canonical[key] - legacy[key] for key in legacy
-                },
-            }
-        )
-
-    verification = {
-        "schema_version": int(manifest["schema_version"]),
-        "status": "PASS" if overall_pass else "FAIL",
-        "manifest": str(manifest_path.resolve()),
-        "manifest_sha256": sha256_file(manifest_path),
-        "artifact_project": str(artifact_project),
-        "entries": entry_reports,
-        "comparisons": comparison_reports,
-        "runtime": runtime_provenance(contract_path),
-    }
-    write_json(output_dir / "baseline_verification.json", verification)
-    return verification
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -1550,9 +1326,6 @@ def build_parser() -> argparse.ArgumentParser:
     compare.add_argument("--bootstrap-resamples", type=int, default=0)
     compare.add_argument("--bootstrap-seed", type=int, default=20260715)
 
-    baselines = subparsers.add_parser("verify-baselines", help="Verify frozen migration baselines")
-    baselines.add_argument("--manifest", type=Path, default=DEFAULT_BASELINES)
-    baselines.add_argument("--output", type=Path, required=True)
     return parser
 
 
@@ -1611,7 +1384,7 @@ def main(argv: list[str] | None = None) -> int:
                 arguments.bootstrap_seed,
             )
         else:
-            result = verify_baselines(arguments.manifest, arguments.output)
+            raise AssertionError(f"unsupported command: {arguments.command}")
     except Exception as error:  # CLI gate must return a nonzero status with a concise cause.
         print(f"STATUS=FAIL\nERROR={type(error).__name__}: {error}", file=sys.stderr)
         return 1

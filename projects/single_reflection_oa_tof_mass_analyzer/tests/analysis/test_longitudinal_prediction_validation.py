@@ -45,12 +45,11 @@ class LongitudinalPredictionValidationTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("config', 'resolved_geometry.json", entry)
         self.assertIn("char(options.OutputModelPath), char(contractPath)", entry)
-        explicit_branch = builder.index("if ~isempty(contract_path)")
-        legacy_read = builder.index(
-            "reflectron_incident_energy_ev = reflectronDesign.incident_energy_eV;",
-            explicit_branch,
+        self.assertIn(
+            "assert(~isempty(contract_path)",
+            builder,
         )
-        self.assertGreater(legacy_read, explicit_branch)
+        self.assertNotIn("Legacy positional scans", builder)
 
 
 if __name__ == "__main__":

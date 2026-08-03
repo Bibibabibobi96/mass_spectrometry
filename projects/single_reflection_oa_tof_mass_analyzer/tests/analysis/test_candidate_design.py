@@ -98,7 +98,6 @@ class CandidateDesignTests(unittest.TestCase):
                 json.dumps(
                     {
                         "role": "oa_tof_candidate_runtime",
-                        "simion_executable": sys.executable,
                         "simion_template_run_id": registration.name,
                     }
                 ),
@@ -314,16 +313,16 @@ class CandidateDesignTests(unittest.TestCase):
                 plan["consumers"]["comsol"]["arguments"]["ContractPath"], str(contract_path.resolve())
             )
 
-    def test_comsol_explicit_contract_consumes_reflectron_voltage_overrides(self):
+    def test_comsol_contract_is_the_only_reflectron_voltage_source(self):
         source = (PROJECT_ROOT / "comsol" / "oatof_build_model_core.m").read_text(
             encoding="utf-8"
         )
-        contract_branch = source.split("if ~isempty(contract_path)", 1)[1].split(
-            "fprintf('[d1 scan]", 1
-        )[0]
-        self.assertIn("reflectron_midgrid_voltage_v = voltageV.midgrid", contract_branch)
-        self.assertIn("reflectron_backplate_voltage_v = voltageV.backplate", contract_branch)
-        self.assertIn("d2_mm = geometryMm.L_stage2", contract_branch)
+        self.assertIn("requires a resolved contract path", source)
+        self.assertIn("reflectron_midgrid_voltage_v = voltageV.midgrid", source)
+        self.assertIn("reflectron_backplate_voltage_v = voltageV.backplate", source)
+        self.assertIn("d2_mm = geometryMm.L_stage2", source)
+        self.assertNotIn("if ~isempty(contract_path)", source)
+        self.assertNotIn("Legacy positional", source)
 
     def test_solidworks_step_import_binds_clean_part_template_temporarily(self):
         source = (REPO_ROOT / "common" / "solidworks" / "import_step_to_solidworks.py").read_text(
@@ -665,7 +664,6 @@ class CandidateDesignTests(unittest.TestCase):
                 json.dumps(
                     {
                         "role": "oa_tof_candidate_runtime",
-                        "simion_executable": sys.executable,
                         "simion_template_run_id": registration.name,
                     }
                 ),
@@ -729,7 +727,6 @@ class CandidateDesignTests(unittest.TestCase):
                 json.dumps(
                     {
                         "role": "oa_tof_candidate_runtime",
-                        "simion_executable": sys.executable,
                         "simion_template_run_id": registration.name,
                     }
                 ),
@@ -1311,7 +1308,6 @@ class CandidateDesignTests(unittest.TestCase):
     def test_formal_asset_entrypoints_preflight_before_paths_or_runs(self):
         scripts = [
             PROJECT_ROOT / "workflows" / "formal_reference" / "verify_geometry_contract.ps1",
-            PROJECT_ROOT / "workflows" / "formal_reference" / "run_coupled_baseline_validation.ps1",
             PROJECT_ROOT / "workflows" / "mass_spectrum_candidate" / "run_mass_spectrum_candidate.ps1",
             PROJECT_ROOT / "tests" / "simion" / "run_n100_source_build_and_track.ps1",
         ]
@@ -1700,7 +1696,6 @@ class CandidateDesignTests(unittest.TestCase):
                 json.dumps(
                     {
                         "role": "oa_tof_candidate_runtime",
-                        "simion_executable": sys.executable,
                         "simion_template_run_id": registration.name,
                     }
                 ),
@@ -1711,6 +1706,7 @@ class CandidateDesignTests(unittest.TestCase):
                 parent, _ = candidate_entry.execute_request(
                     request,
                     "20260727_170410__test__cross__entry-reuse-parent",
+                    simion_executable=Path(sys.executable),
                     particle_source_seed=20260720,
                     artifact_project_root=artifact_root,
                     stage_executor=self.native_fake_executor([]),
@@ -1719,6 +1715,7 @@ class CandidateDesignTests(unittest.TestCase):
                 same_seed_child, _ = candidate_entry.execute_request(
                     request,
                     "20260727_170420__test__cross__entry-reuse-same-seed",
+                    simion_executable=Path(sys.executable),
                     particle_source_seed=20260720,
                     artifact_project_root=artifact_root,
                     reuse_parent=parent,
@@ -1730,6 +1727,7 @@ class CandidateDesignTests(unittest.TestCase):
                     candidate_entry.execute_request(
                         request,
                         "20260727_170430__test__cross__entry-reuse-different-seed",
+                        simion_executable=Path(sys.executable),
                         particle_source_seed=20260721,
                         artifact_project_root=artifact_root,
                         reuse_parent=parent,
