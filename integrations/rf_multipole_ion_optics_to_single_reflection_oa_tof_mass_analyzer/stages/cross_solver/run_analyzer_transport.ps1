@@ -12,7 +12,7 @@ param(
   [Parameter(Mandatory)][string]$ResolvedSourceContractSha256,
   [Parameter(Mandatory)][string]$UpstreamResolvedDesign,
   [Parameter(Mandatory)][string]$UpstreamResolvedDesignSha256,
-  [ValidateSet('local_accelerator_exit','oatof_entry')]
+  [ValidateSet('local_accelerator_exit','simion_local_accelerator_exit','oatof_entry')]
   [string]$SourceEvent = 'local_accelerator_exit',
   [string]$ReferencePulseCaptureRunId = '',
   [string]$InterfacePaSourceRunId = '',
@@ -200,6 +200,14 @@ function Get-AnalyzerTransportReleaseAssetRecord {
 }
 
 $interfaceDiagnostic = $SourceEvent -eq 'oatof_entry'
+$simionGrid2Replay = $SourceEvent -eq 'simion_local_accelerator_exit'
+$expectedSourceMode = if ($interfaceDiagnostic) {
+  'rf_to_oatof_pre_pulse_interface_transport'
+} elseif ($simionGrid2Replay) {
+  'rf_to_oatof_simion_interface_transport'
+} else {
+  'rf_to_oatof_pulse_capture'
+}
 if ($interfaceDiagnostic -and [string]::IsNullOrWhiteSpace($ReferencePulseCaptureRunId)) {
   throw 'oatof_entry source requires one reference COMSOL PulseCapture run.'
 }
@@ -309,7 +317,8 @@ try {
     'oatof_formal_lua','oatof_handoff_pulse_extension_lua',
     'oatof_simion_log_analyzer_wrapper','oatof_solver_diagnostics',
     'oatof_accelerator_simion_builder','oatof_accelerator_simion_gem',
-    'rf_simion_interface_transport_comparator','rf_shared_joint_geometry',
+    'rf_simion_interface_transport_comparator',
+    'rf_simion_grid2_state_materializer','rf_shared_joint_geometry',
     'common_rigid_transform','common_particle_physics',
     'common_component_particle_state','common_component_particle_state_schema',
     'common_file_identity','common_artifact_retention',
@@ -329,6 +338,8 @@ try {
   $frozenManifestVerifier =
     $dependencySnapshotPaths['common_verify_run_manifest']
   $frozenAdapter = $dependencySnapshotPaths['rf_analyzer_transport_simion_input_adapter']
+  $frozenGrid2Materializer =
+    $dependencySnapshotPaths['rf_simion_grid2_state_materializer']
   $frozenAnalyzer = $dependencySnapshotPaths['rf_analyzer_transport_analyzer']
   $frozenFormalReleaseValidator =
     $dependencySnapshotPaths['rf_oatof_formal_release_validator']
@@ -374,18 +385,14 @@ try {
       $frozenManifestVerifier,$sourceManifestPath,
       '--require-status','success','--require-run-id',$SourceRunId,
       '--require-project',$upstreamProjectId,
-      '--require-mode',$(if ($interfaceDiagnostic) {
-        'rf_to_oatof_pre_pulse_interface_transport'
-      } else { 'rf_to_oatof_pulse_capture' })
+      '--require-mode',$expectedSourceMode
     ) -FailureMessage 'The frozen PulseCapture source run manifest is invalid.'
   $sourceManifest = Get-Content -LiteralPath $sourceManifestPath `
     -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($sourceManifest.role -ne 'simulation_run_manifest' -or
       $sourceManifest.status -ne 'success' -or
       $sourceManifest.project -ne $upstreamProjectId -or
-      $sourceManifest.mode -ne $(if ($interfaceDiagnostic) {
-        'rf_to_oatof_pre_pulse_interface_transport'
-      } else { 'rf_to_oatof_pulse_capture' }) -or
+      $sourceManifest.mode -ne $expectedSourceMode -or
       $sourceManifest.run_id -ne $SourceRunId) {
     throw 'PulseCapture source manifest identity or role is invalid.'
   }
@@ -399,9 +406,7 @@ try {
     -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($sourceConfig.run_id -ne $SourceRunId -or
       $sourceConfig.project -ne $upstreamProjectId -or
-      $sourceConfig.mode -ne $(if ($interfaceDiagnostic) {
-        'rf_to_oatof_pre_pulse_interface_transport'
-      } else { 'rf_to_oatof_pulse_capture' })) {
+      $sourceConfig.mode -ne $expectedSourceMode) {
     throw 'Downstream continuation requires the frozen PulseCapture shared-clock source.'
   }
   Assert-RfOatofSourceIdentityMatches `
@@ -451,8 +456,32 @@ try {
   $sourceSummaryIdentity = Copy-RfManifestBoundFile -SourceRunRoot $source `
     -SourcePath $sourceSummaryOriginal -Destination $sourceSummary `
     -ManifestRecord $sourceSummaryRecord -Role 'source summary'
+  $analysisSourceSummary = $sourceSummary
+  if ($simionGrid2Replay) {
+    $analysisSourceSummary = Join-Path $package.input_dir `
+      'analyzer_source_summary.json'
+    $simionSourceSummary = Get-Content -LiteralPath $sourceSummary `
+      -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($simionSourceSummary.status -ne 'success' -or
+        [int]$simionSourceSummary.census.local_accelerator_exit -le 0) {
+      throw 'SIMION grid2 replay requires a successful non-empty interface result.'
+    }
+    Write-RfJson -Path $analysisSourceSummary -Value ([ordered]@{
+      schema_version = 1
+      role = 'rf_to_oatof_grid2_replay_source_summary'
+      status = 'success'
+      source_particles = [int]$simionSourceSummary.census.oatof_entry
+      oatof_entry_crossings = [int]$simionSourceSummary.census.oatof_entry
+      active_at_pulse = [int]$simionSourceSummary.census.local_accelerator_exit
+      local_accelerator_exit = [int]$simionSourceSummary.census.local_accelerator_exit
+      source_run_id = $SourceRunId
+      source_solver = 'simion'
+    })
+  }
   $sourceCanonicalOriginal = Join-Path $source $(if ($interfaceDiagnostic) {
     'inputs\canonical_rf_exit_at_pre_pulse_connector.csv'
+  } elseif ($simionGrid2Replay) {
+    'results\simion_local_accelerator_exit.csv'
   } else { 'results\pulse_capture_local_accelerator_exit.csv' })
   $sourceCanonicalRecord = if ($interfaceDiagnostic) {
     $sourceManifest.inputs.particle_source
@@ -464,6 +493,29 @@ try {
   $sourceCanonicalIdentity = Copy-RfManifestBoundFile -SourceRunRoot $source `
     -SourcePath $sourceCanonicalOriginal -Destination $sourceCanonical `
     -ManifestRecord $sourceCanonicalRecord -Role "canonical $SourceEvent"
+  $adapterSourceCanonical = $sourceCanonical
+  $sourceCanonicalTemplate = $null
+  if ($simionGrid2Replay) {
+    $sourceCanonicalTemplateOriginal = Join-Path $source `
+      'inputs\canonical_oatof_entry.csv'
+    $sourceCanonicalTemplateRecord = Get-RfManifestOutputRecord `
+      -Manifest $sourceManifest -ExpectedPath $sourceCanonicalTemplateOriginal `
+      -Role 'SIMION grid2 canonical template'
+    $sourceCanonicalTemplate = Join-Path $package.input_dir `
+      'source_canonical_template.csv'
+    Copy-RfManifestBoundFile -SourceRunRoot $source `
+      -SourcePath $sourceCanonicalTemplateOriginal `
+      -Destination $sourceCanonicalTemplate `
+      -ManifestRecord $sourceCanonicalTemplateRecord `
+      -Role 'SIMION grid2 canonical template' | Out-Null
+    $adapterSourceCanonical = Join-Path $package.input_dir `
+      'materialized_simion_local_accelerator_exit.csv'
+    Invoke-AnalyzerTransportSnapshotPython -Python $python `
+      -SnapshotRoot $snapshotRoot -Arguments @(
+        $frozenGrid2Materializer,'--template',$sourceCanonicalTemplate,
+        '--trace',$sourceCanonical,'--output',$adapterSourceCanonical
+      ) -FailureMessage 'SIMION grid2 canonical materialization failed.'
+  }
 
   $comsolReferenceExit = $null
   $referencePulseManifestPath = $null
@@ -503,7 +555,7 @@ try {
     'simion_adapter_metadata.json'
   Invoke-AnalyzerTransportSnapshotPython -Python $python -SnapshotRoot $snapshotRoot `
     -Arguments @(
-      $frozenAdapter,'--source',$sourceCanonical,
+      $frozenAdapter,'--source',$adapterSourceCanonical,
       '--canonical-output',$canonical,'--ion-output',$ion,
       '--row-map-output',$rowMap,'--metadata-output',$adapterMetadata
     ) -FailureMessage 'Canonical-to-SIMION adapter failed.'
@@ -714,7 +766,9 @@ try {
       resolved_integration_engineering_budget = $budgetBinding.frozen_budget
       resolved_stage_resource_budget = $budgetBinding.stage_budget
       source_summary = $sourceSummary
+      analyzer_source_summary = $analysisSourceSummary
       source_canonical = $sourceCanonical
+      analyzer_source_canonical = $adapterSourceCanonical
       canonical = $canonical
       ion = $ion
       row_map = $rowMap
@@ -787,6 +841,10 @@ try {
       (Get-FileHash -LiteralPath $interfacePa0 -Algorithm SHA256).Hash
     $runConfiguration.parameters.interface_port_mode =
       'real_rectangular_side_port'
+  } elseif ($simionGrid2Replay) {
+    $runConfiguration.inputs.source_canonical_template =
+      $sourceCanonicalTemplate
+    $runConfiguration.parameters.grid2_source_solver = 'simion'
   }
   Write-RfJson -Path $package.run_config -Depth 10 -Value $runConfiguration
   Write-RfJson -Path $package.summary -Value ([ordered]@{
@@ -866,7 +924,7 @@ try {
       'analyzer_transport_functional_chain.png'
     Invoke-AnalyzerTransportSnapshotPython -Python $python -SnapshotRoot $snapshotRoot `
       -Arguments @(
-        $frozenAnalyzer,'--source-summary',$sourceSummary,
+        $frozenAnalyzer,'--source-summary',$analysisSourceSummary,
         '--canonical',$canonical,'--ion',$ion,'--row-map',$rowMap,
         '--downstream',$downstream,'--stdout',$stdout,
         '--pulse-time-us',([string]$pulseTimeUs),

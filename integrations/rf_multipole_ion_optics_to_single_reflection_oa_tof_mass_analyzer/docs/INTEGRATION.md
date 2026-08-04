@@ -146,6 +146,37 @@ SIMION与COMSOL的电极边界、理想栅网处理和脉冲电位时序；不�
 `20260803_235901__analysis__cross__grid2-aligned-current__n100`发布横向比较图及每个工况的六面板检查点
 图。分析保持`POSTHOC_DESCRIPTIVE / INCONCLUSIVE_DIAGNOSTIC_ONLY`，不用于工况性能排序。
 
+## 2026-08-04 中间求解器差异向oaTOF传播实验
+
+控制实验固定同一份多极杆canonical handoff、连接合同、绝对脉冲时钟和物理`accelerator_grid2`面；
+SIMION与COMSOL分别完成“连续接地屏蔽接口+脉冲加速器”运输。两个grid2状态随后都停止并重新释放到
+同一套Formal oaTOF SIMION PA、IOB/Lua、trajectory quality和分析代码中，因而下游唯一物理输入差异
+是grid2相空间。SIMION旧11列诊断输出由冻结的materializer按`particle_id`与原始canonical状态连接，
+恢复为经过schema、时钟、派生能量和身份校验的完整grid2 canonical状态；没有沿用接口诊断run中grid2
+之后的连续轨迹。
+
+|源工况|中间求解器|handoff→grid2|grid2→检测器命中|handoff→检测器命中|检测器质心RMS半径 / mm|到达绝对时间标准差 / us|
+|---|---|---:|---:|---:|---:|---:|
+|八极杆分段加速|SIMION|34/41 = 82.93%|34/34 = 100.00%|82.93%|3.6670|0.001701|
+|八极杆分段加速|COMSOL|33/41 = 80.49%|11/33 = 33.33%|26.83%|19.9551|0.161391|
+|四极杆无加速5 eV|SIMION|34/94 = 36.17%|34/34 = 100.00%|36.17%|8.9632|0.017383|
+|四极杆无加速5 eV|COMSOL|35/94 = 37.23%|3/35 = 8.57%|3.19%|15.7506|0.284719|
+
+在grid2共同粒子上，八极杆/四极杆的配对位置向量RMS差为0.6768/0.5718 mm，速度向量RMS差为
+5494/5502 m/s，能量RMS差为279.53/271.50 eV，绝对时间RMS差为0.02054/0.02267 us。传播到
+共同检测命中粒子后，落点向量RMS差扩大到27.53 mm（11粒子）和24.60 mm（3粒子），绝对到达
+时间RMS差为0.2013和0.3031 us。两工况中COMSOL命中的粒子均为SIMION命中集合的子集。
+
+最终共同下游run为`20260804_095200__sim__cross__oct-comsol-grid2-common-oatof__n33`、
+`20260804_094500__sim__cross__oct-simion-grid2-common-oatof__n34`、
+`20260804_095000__sim__cross__quad-comsol-grid2-common-oatof__n35`和
+`20260804_095100__sim__cross__quad-simion-grid2-common-oatof__n34`；配对分析run为
+`20260804_100000__analysis__cross__middle-solver-grid2-propagation__n100`。结果说明当前中间求解器差异
+足以主导oaTOF接受度和到达时间分布，但不能据此判定哪个求解器更准确。N不大、未做网格/时间步收敛，
+且SIMION grid2事件速度取自事件步末、共同下游采用grid2重启；因此结论保持
+`INCONCLUSIVE_DIAGNOSTIC_ONLY`。下一步必须用步长敏感性与“SIMION连续运输减grid2重启”回归量化这两项
+边界误差，再检查电极边界、理想栅网和脉冲电位实现。
+
 ## 已关闭迁移
 
 旧四极杆S2/S3迁移等价workflow已在功能等价闭合后退出活动树；专用profile、执行器、adapter、

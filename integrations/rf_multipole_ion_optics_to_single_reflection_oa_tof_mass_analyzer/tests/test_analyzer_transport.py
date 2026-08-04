@@ -15,6 +15,12 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     compare_simion_interface_transport as interface_compare,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis import (
+    materialize_simion_grid2_state as grid2_state,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis import (
+    compare_grid2_solver_propagation as propagation,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis import (
     write_oatof_simion_input as adapter,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis import (
@@ -55,6 +61,69 @@ def write_csv(path: Path, fields: list[str], rows: list[dict[str, object]]) -> N
 
 
 class AnalyzerTransportTests(unittest.TestCase):
+    def test_compares_grid2_solver_difference_and_common_downstream(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            comsol = root / "comsol.csv"
+            simion = root / "simion.csv"
+            write_csv(comsol, csv_columns(), [canonical_row(7)])
+            write_csv(simion, grid2_state.TRACE_COLUMNS, [{
+                "particle_id": 7, "instrument_time_us": 36.8,
+                "x": -46.5, "y": 0.2, "z": 4.87,
+                "vx": 4100, "vy": 300, "vz": 58000,
+                "ax": 4, "ay": 0.3, "energy": 1700,
+            }])
+            row_map = root / "row_map.csv"
+            write_csv(row_map, ["solver_row_index", "particle_id"], [{
+                "solver_row_index": 1, "particle_id": 7,
+            }])
+            fields = ["Ion", "Hit", "InstrumentTimeUs", "XMm", "YMm", "RadiusMm", "TofUs"]
+            simion_down = root / "simion_down.csv"
+            comsol_down = root / "comsol_down.csv"
+            write_csv(simion_down, fields, [{
+                "Ion": 1, "Hit": "True", "InstrumentTimeUs": 70.0,
+                "XMm": 48, "YMm": 1, "RadiusMm": 1, "TofUs": 30,
+            }])
+            write_csv(comsol_down, fields, [{
+                "Ion": 1, "Hit": "True", "InstrumentTimeUs": 70.2,
+                "XMm": 50, "YMm": 2, "RadiusMm": 2, "TofUs": 30.2,
+            }])
+            middle = root / "middle.json"
+            middle.write_text(json.dumps({"simion_minus_comsol": {"mean_energy_eV": 1}}))
+            result = propagation.compare(
+                label="fixture", handoff_count=2,
+                simion_grid2_path=simion, comsol_grid2_path=comsol,
+                simion_downstream_path=simion_down, simion_row_map_path=row_map,
+                comsol_downstream_path=comsol_down, comsol_row_map_path=row_map,
+                middle_comparison_path=middle,
+            )
+            self.assertEqual(result["detector_identity"]["common_hit_particles"], 1)
+            self.assertAlmostEqual(
+                result["detector_paired_difference"]["position_vector_rms_difference_mm"],
+                5 ** 0.5,
+            )
+
+    def test_materializes_simion_grid2_trace_as_canonical_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            template = root / "template.csv"
+            trace = root / "trace.csv"
+            output = root / "grid2.csv"
+            write_csv(template, csv_columns(), [canonical_row(7)])
+            write_csv(trace, grid2_state.TRACE_COLUMNS, [{
+                "particle_id": 7, "instrument_time_us": 37.0,
+                "x": -45.0, "y": 0.1, "z": -0.129,
+                "vx": 4200, "vy": 200, "vz": 60000,
+                "ax": 4.0, "ay": 0.2, "energy": 1.0,
+            }])
+            self.assertEqual(grid2_state.materialize(template, trace, output), 1)
+            with output.open(encoding="utf-8") as handle:
+                row = next(csv.DictReader(handle))
+            self.assertEqual(row["state_event"], "local_accelerator_exit")
+            self.assertEqual(row["position_x_mm"], "-45.0")
+            self.assertEqual(row["velocity_z_m_s"], "60000")
+            self.assertAlmostEqual(float(row["particle_age_us"]), 36.25)
+
     def test_compares_real_port_local_exit_by_particle_identity(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -291,7 +360,7 @@ class AnalyzerTransportTests(unittest.TestCase):
             "Copy-RfManifestBoundFile -SourceRunRoot $source"
         )
         adapter = runner.index(
-            "$frozenAdapter,'--source',$sourceCanonical"
+            "$frozenAdapter,'--source',$adapterSourceCanonical"
         )
         program = runner.index(
             "$frozenProgramBuilder,'--formal',$frozenFormalLua"
@@ -304,7 +373,7 @@ class AnalyzerTransportTests(unittest.TestCase):
             "$frozenSolverDiagnostics,'analyze-simion-log'"
         )
         analyzer = runner.index(
-            "$frozenAnalyzer,'--source-summary',$sourceSummary"
+            "$frozenAnalyzer,'--source-summary',$analysisSourceSummary"
         )
         self.assertLess(selection, snapshot)
         self.assertLess(snapshot, naming)
@@ -324,6 +393,19 @@ class AnalyzerTransportTests(unittest.TestCase):
         )
         self.assertIn(
             "'--default-num-particles',([string]$simionDefaultParticleCount)",
+            runner,
+        )
+        self.assertIn(
+            "'simion_local_accelerator_exit'", runner
+        )
+        self.assertIn(
+            "'rf_to_oatof_simion_interface_transport'", runner
+        )
+        self.assertIn(
+            "'results\\simion_local_accelerator_exit.csv'", runner
+        )
+        self.assertIn(
+            "if ($interfaceDiagnostic) {\n      $env:OATOF_ACCELERATOR_PA_OVERRIDE",
             runner,
         )
 
@@ -415,7 +497,7 @@ class AnalyzerTransportTests(unittest.TestCase):
         self.assertLess(frozen_parse, selection)
         self.assertLess(selection, ordinary_copy)
         self.assertIn("$contractIdentity = Copy-RfStableFile", runtime)
-        self.assertIn("resolved code inventory must contain exactly 52", runtime)
+        self.assertIn("resolved code inventory must contain exactly 53", runtime)
         self.assertIn("path = $contractRelative", runtime)
         self.assertNotIn("base = [ordered]@{", runtime)
         self.assertNotIn("overlay = [ordered]@{", runtime)
