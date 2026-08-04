@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "role": "rf_multipole_oatof_experiment_campaign",
+  "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+  "campaign_id": "octupole_simion_aperture050_integrated_n1000",
+  "status": "authorized",
+  "execution_policy": {
+    "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_policy.json",
+    "sha256": "EF8D30796357A59318AF3BE31D09CB9135CE10C544AB697FAA60E23E3ECEDA49"
+  },
+  "claim_limit": "One N=1000-mother-sample octupole SIMION to integrated SIMION 0.5 x 0.5 mm aperture diagnostic; no COMSOL, scan, convergence, Candidate or Formal claim.",
+  "experiments": [
+    {
+      "sequence": 1,
+      "experiment_id": "octupole_segmented_aperture050_simion",
+      "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm",
+      "run_id": "20260804_113500__sim__cross__oct-aperture050-integrated__n459",
+      "source": {
+        "run_id": "20260804_112000__sim__simion__oct-segmented-aperture050__n1000",
+        "launched_particle_count": 1000,
+        "particle_count": 459,
+        "particle_source_manifest_input_role": "particle_source",
+        "manifest": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260804_112000__sim__simion__oct-segmented-aperture050__n1000/run_manifest.json",
+          "sha256": "F45342669963FC136912E0327155EE70AFEC4253F83036C90A43FB1A51B06ECA"
+        },
+        "state": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260804_112000__sim__simion__oct-segmented-aperture050__n1000/results/particle_states__axial_acceleration_rf_on.csv",
+          "sha256": "6F9488BE15EB22BA037260083202AD6EF635C351B51C043B5BAB6AB175EB1953"
+        },
+        "particle_source": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260804_112000__sim__simion__oct-segmented-aperture050__n1000/inputs/particle_source.csv",
+          "sha256": "302C03DC29737CE9D46EB1A8D258DB2A8D3C0F8B6A53F7702A33B1ECF9D5320D"
+        },
+        "metadata": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260804_112000__sim__simion__oct-segmented-aperture050__n1000/inputs/particle_source_metadata.json",
+          "sha256": "08B02F84B35E61E2E330BF0DECBBB426CA21D69EE049CEB25609B1CF0E486E44"
+        },
+        "handoff_publication_contract": {
+          "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/octupole_handoff_publication_n1000.json",
+          "sha256": "BF3DD74CE90CFE4E9811FECADE8F38D95C9DF16E61C1828D52889135094616A4"
+        }
+      }
+    }
+  ]
+}

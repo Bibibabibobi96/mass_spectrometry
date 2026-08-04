@@ -21,6 +21,9 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 INTEGRATION_ROOT = REPO_ROOT / "integrations" / INTEGRATION_ID
 CONFIG_ROOT = INTEGRATION_ROOT / "config"
 CAMPAIGN_PATH = CONFIG_ROOT / "experiment_campaign.json"
+N1000_CAMPAIGN_PATH = (
+    CONFIG_ROOT / "diagnostics" / "octupole_simion_aperture050_n1000_campaign.json"
+)
 PROFILE_REGISTRY = CONFIG_ROOT / "connection_profiles.json"
 ADAPTER_REGISTRY = CONFIG_ROOT / "execution_adapter_profiles.json"
 
@@ -58,6 +61,22 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         self.assertEqual(len(experiment_ids), len(set(experiment_ids)))
         self.assertEqual(len(sequences), len(set(sequences)))
         self.assertEqual(len(run_ids), len(set(run_ids)))
+
+    def test_n1000_campaign_freezes_population_specific_handoff_contract(self) -> None:
+        campaign = load(N1000_CAMPAIGN_PATH)
+        validate_schema(campaign, "rf_multipole_oatof_experiment_campaign.schema.json")
+        source = campaign["experiments"][0]["source"]
+        record = source["handoff_publication_contract"]
+        contract = load(REPO_ROOT / record["path"])
+        self.assertEqual(source["launched_particle_count"], 1000)
+        self.assertEqual(
+            contract["population"]["expected_source_particle_count"],
+            source["launched_particle_count"],
+        )
+        self.assertEqual(
+            contract["canonical_state"]["source_component_id"],
+            "rf_octupole_ion_optics",
+        )
 
     def test_prepare_rejects_campaign_outside_repository(self) -> None:
         with tempfile.TemporaryDirectory(dir=REPO_ROOT.parent) as directory:

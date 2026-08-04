@@ -27,7 +27,8 @@
         "particle_count": {"type": "integer", "minimum": 1, "maximum": 1000},
         "particle_source_manifest_input_role": {"type": "string", "minLength": 1},
         "manifest": {"$ref": "#/$defs/file"}, "state": {"$ref": "#/$defs/file"},
-        "particle_source": {"$ref": "#/$defs/file"}, "metadata": {"$ref": "#/$defs/file"}
+        "particle_source": {"$ref": "#/$defs/file"}, "metadata": {"$ref": "#/$defs/file"},
+        "handoff_publication_contract": {"$ref": "#/$defs/file"}
       }
     },
     "experiment": {

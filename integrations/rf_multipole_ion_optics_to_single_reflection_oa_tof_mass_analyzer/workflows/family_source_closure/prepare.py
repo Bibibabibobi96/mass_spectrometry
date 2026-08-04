@@ -296,14 +296,36 @@ def prepare_family_source_closure(
     )
     source = evidence["source"]
     solver_id = evidence["solver_id"]
-    handoff_publication_record = runtime_binding["contracts"][
-        "handoff_publication_contract"
-    ]
-    _repo_record(root, handoff_publication_record, "handoff publication contract")
+    handoff_publication_record = source.get(
+        "handoff_publication_contract",
+        runtime_binding["contracts"]["handoff_publication_contract"],
+    )
+    handoff_publication_path = _repo_record(
+        root, handoff_publication_record, "handoff publication contract"
+    )
+    handoff_publication = _load(handoff_publication_path)
+    if (
+        handoff_publication.get("schema_version") != 1
+        or handoff_publication.get("role")
+        != "multipole_handoff_publication_contract"
+        or handoff_publication.get("population", {}).get(
+            "expected_source_particle_count"
+        )
+        != source["launched_particle_count"]
+        or handoff_publication.get("canonical_state", {}).get(
+            "source_component_id"
+        )
+        != expected_project_id
+    ):
+        raise ContractError(
+            "handoff publication contract differs from the selected source population"
+        )
     adapter = copy.deepcopy(source_adapter["adapter"])
     adapter["dependencies"] = {
         "handoff_publication_contract": handoff_publication_record
     }
+    resolved_source = copy.deepcopy(source)
+    resolved_source.pop("handoff_publication_contract", None)
     resolved_source_contract = {
         "schema_version": 2,
         "role": "rf_multipole_oatof_source_contract",
@@ -315,7 +337,7 @@ def prepare_family_source_closure(
             solver_id: {
                 "solver_id": solver_id,
                 "recorded_project_id": expected_project_id,
-                "source": copy.deepcopy(source),
+                "source": resolved_source,
             }
         },
     }

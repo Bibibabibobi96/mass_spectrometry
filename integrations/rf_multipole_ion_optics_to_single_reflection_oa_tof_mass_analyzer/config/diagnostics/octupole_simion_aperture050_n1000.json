@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "role": "simion_interface_aperture_diagnostic_contract",
+  "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+  "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm",
+  "preregistered_before_interface_run": true,
+  "aperture": {
+    "shape": "rectangle",
+    "full_width_mm": 0.5,
+    "full_height_mm": 0.5
+  },
+  "fixed_controls": {
+    "source_family": "octupole",
+    "upstream_solver": "simion",
+    "downstream_solver": "simion",
+    "mother_sample_size": 1000,
+    "pulse_schedule_policy": "reuse_frozen_current_octupole_absolute_pulse_clock",
+    "trajectory_quality": 8
+  },
+  "claim_limit": "Single-aperture diagnostic only; historical 1.0 x 0.9 mm N=100 results are non-paired context, not an N=1000 aperture-effect control."
+}

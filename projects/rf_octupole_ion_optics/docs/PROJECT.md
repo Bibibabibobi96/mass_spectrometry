@@ -61,8 +61,8 @@ COMSOL空间档在`MESH_COMPLETE`后以19.180 GB超过17.180 GB进程树帽，�
 出口孔板加速N=100 baseline已在两求解器保持100/100传输和精确粒子身份；SIMION空间档也
 保持100/100，RMS半径、发散角和平均能量相对baseline分别变化约`0.67%`、`6.72%`和`0.80%`。
 COMSOL空间档在`MESH_COMPLETE`后以17.181 GB超过17.180 GB进程树帽，记为
-`INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`，不重跑、不抬帽。当前没有授权任何商业求解器运行；
-时间档、N=1000和完整矩阵仍未授权。出口孔板功能能量增益使用下游terminal/census状态；跨求解器
+`INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`，不重跑、不抬帽。时间档和完整N=1000资格矩阵仍未授权；
+2026-08-04仅执行一个分段加速N=1000 oaTOF孔径诊断，不扩展其资格。出口孔板功能能量增益使用下游terminal/census状态；跨求解器
 连续诊断使用规范handoff状态，两者不得混作同一观察面。出口孔板身份和资源结论登记在
 `../config/qualification/n100_exit_aperture_plate_acceleration_qualification.json`。
 完整身份登记在
@@ -89,6 +89,13 @@ H15条件下分段加速空间RMS略增的信号；统一九臂证据见
 [`../../../docs/history/20260731__multipole-oatof-shield-terminal-h15-n100.md`](../../../docs/history/20260731__multipole-oatof-shield-terminal-h15-n100.md)。
 这是新矩形厚孔拓扑下的N=100事后工程结果，不可与旧独立末端板H15表作仅模式变化的配对比较，也不
 改变数值资格。
+
+2026-08-04分段杆轴向加速N=1000 SIMION诊断得到459/1000 canonical handoff；固定该459粒子群比较
+oaTOF接口孔后，1.0×0.9 mm与0.5×0.5 mm分别有396和90粒子穿过接口并全部到达检测器，总传输率为
+39.6%和9.0%。规范direct-KDE FWHM分别为2.195和3.549 ns，R分别为6979和4317；小孔没有改善
+分辨率。完整空间分布、理想N=1000基线对照、限制和运行索引见integration文档及analysis run
+`20260804_132000__analysis__cross__oct-aperture-comparison__n1000`。该单样本、单网格、两孔径结果保持
+`INCONCLUSIVE_DIAGNOSTIC_ONLY`，不闭合数值资格或下游接受尺度。
 
 2026-08-03补齐同一终端和H15设置下的无加速5 eV初始源后，八极杆末端加速相对分段加速把
 handoff透射提高0.29、空间RMS降低`0.0464 mm`，但角RMS增加`0.6952°`；单纯提高初始能量使透射

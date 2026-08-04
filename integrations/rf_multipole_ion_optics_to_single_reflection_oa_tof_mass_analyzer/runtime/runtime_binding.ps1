@@ -484,14 +484,21 @@ function Resolve-RfOatofRuntimeBinding {
     -Role 'Runtime family source adapter dependencies'
   $publicationRecord =
     $sourceContract.adapter.dependencies.handoff_publication_contract
-  if ([string]$publicationRecord.path -ne
-        [string]$binding.contracts.handoff_publication_contract.path -or
-      ([string]$publicationRecord.sha256).ToUpperInvariant() -ne
-        ([string]$binding.contracts.handoff_publication_contract.sha256).ToUpperInvariant()) {
-    throw 'Resolved source handoff publication contract differs from the stable binding.'
+  $selectedPublicationContract = Resolve-RfOatofBoundFile -Root $repo `
+    -Record $publicationRecord -Role 'runtime handoff publication contract'
+  $publicationContract = Get-Content -LiteralPath $selectedPublicationContract `
+    -Raw -Encoding UTF8 | ConvertFrom-Json
+  if ([int]$publicationContract.schema_version -ne 1 -or
+      [string]$publicationContract.role -ne
+        'multipole_handoff_publication_contract' -or
+      [int]$publicationContract.population.expected_source_particle_count -ne
+        [int]$sourceRecord.launched_particle_count -or
+      [string]$publicationContract.canonical_state.source_component_id -ne
+        $upstreamProjectId) {
+    throw 'Resolved source handoff publication contract differs from the selected source population.'
   }
   $sourceAdapterDependencies = [ordered]@{
-    handoff_publication_contract = $contractPaths.handoff_publication_contract
+    handoff_publication_contract = $selectedPublicationContract
   }
   $expectedCanonicalFrameId =
     [string]$resolved.port_geometry.upstream.coordinate_frame.frame_id

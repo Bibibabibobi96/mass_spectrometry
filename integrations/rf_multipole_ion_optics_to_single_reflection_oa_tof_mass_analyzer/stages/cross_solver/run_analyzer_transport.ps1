@@ -17,6 +17,7 @@ param(
   [string]$ReferencePulseCaptureRunId = '',
   [string]$InterfacePaSourceRunId = '',
   [string]$InterfacePaDirectory = '',
+  [string]$InterfaceApertureContract = '',
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$PythonExe = ''
 )
@@ -201,13 +202,16 @@ function Get-AnalyzerTransportReleaseAssetRecord {
 
 $interfaceDiagnostic = $SourceEvent -eq 'oatof_entry'
 $simionGrid2Replay = $SourceEvent -eq 'simion_local_accelerator_exit'
-$expectedSourceMode = if ($interfaceDiagnostic) {
-  'rf_to_oatof_pre_pulse_interface_transport'
+$expectedSourceModes = @(if ($interfaceDiagnostic) {
+  @(
+    'rf_to_oatof_pre_pulse_interface_transport',
+    'rf_to_oatof_pre_pulse_interface_transport_no_pulse_field'
+  )
 } elseif ($simionGrid2Replay) {
-  'rf_to_oatof_simion_interface_transport'
+  @('rf_to_oatof_simion_interface_transport')
 } else {
-  'rf_to_oatof_pulse_capture'
-}
+  @('rf_to_oatof_pulse_capture')
+})
 if ($interfaceDiagnostic -and [string]::IsNullOrWhiteSpace($ReferencePulseCaptureRunId)) {
   throw 'oatof_entry source requires one reference COMSOL PulseCapture run.'
 }
@@ -263,6 +267,39 @@ try {
     -Destination $resolvedSourceContractFrozen
   Copy-Item -LiteralPath $runtime.contracts.upstream_resolved_design `
     -Destination $upstreamResolvedDesignFrozen
+  $interfaceApertureContractFrozen = $null
+  $interfaceAperture = $null
+  if ($interfaceDiagnostic) {
+    $resolvedConnectionDocument = Get-Content -LiteralPath `
+      $resolvedConnectionFrozen -Raw -Encoding UTF8 | ConvertFrom-Json
+    $interfaceAperture = $resolvedConnectionDocument.transition_aperture
+    if ([string]$interfaceAperture.shape -ne 'rectangle') {
+      throw 'SIMION interface PA requires a rectangular resolved aperture.'
+    }
+    if (-not [string]::IsNullOrWhiteSpace($InterfaceApertureContract)) {
+      $interfaceApertureContractSource =
+        (Resolve-Path -LiteralPath $InterfaceApertureContract).Path
+      $interfaceApertureOverride = Get-Content -LiteralPath `
+        $interfaceApertureContractSource -Raw -Encoding UTF8 | ConvertFrom-Json
+      if ([int]$interfaceApertureOverride.schema_version -ne 1 -or
+          [string]$interfaceApertureOverride.role -ne
+            'simion_interface_aperture_diagnostic_contract' -or
+          [string]$interfaceApertureOverride.integration_id -ne
+            'rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer' -or
+          [string]$interfaceApertureOverride.connection_profile_id -ne
+            $ExpectedConnectionProfileId -or
+          [string]$interfaceApertureOverride.aperture.shape -ne 'rectangle' -or
+          [double]$interfaceApertureOverride.aperture.full_width_mm -le 0 -or
+          [double]$interfaceApertureOverride.aperture.full_height_mm -le 0) {
+        throw 'SIMION interface aperture diagnostic contract is invalid.'
+      }
+      $interfaceAperture = $interfaceApertureOverride.aperture
+      $interfaceApertureContractFrozen = Join-Path $package.input_dir `
+        'interface_aperture_contract.json'
+      Copy-Item -LiteralPath $interfaceApertureContractSource `
+        -Destination $interfaceApertureContractFrozen
+    }
+  }
 
   $dependencyPublication = Publish-RfOatofDependencyInventory `
     -Runtime $runtime -RepoRoot $repoRoot -InputDir $package.input_dir `
@@ -366,7 +403,6 @@ try {
   }
   $frozenInterfaceComparator =
     $dependencySnapshotPaths['rf_simion_interface_transport_comparator']
-  $frozenSharedJoint = $dependencySnapshotPaths['rf_shared_joint_geometry']
   . $dependencySnapshotPaths['common_resource_budget_support']
   $snapshotReady = $true
   Invoke-AnalyzerTransportSnapshotPython -Python $python -SnapshotRoot $snapshotRoot `
@@ -380,19 +416,25 @@ try {
   $sourceManifestIdentity = Copy-RfStableFile -SourceRunRoot $source `
     -SourcePath $sourceManifestOriginal -Destination $sourceManifestPath `
     -Role 'source run manifest'
+  $sourceManifestVerificationArguments = @(
+    $frozenManifestVerifier,$sourceManifestPath,
+    '--require-status','success','--require-run-id',$SourceRunId,
+    '--require-project',$upstreamProjectId
+  )
+  if (-not $interfaceDiagnostic) {
+    $sourceManifestVerificationArguments += @(
+      '--require-mode',$expectedSourceModes[0]
+    )
+  }
   Invoke-AnalyzerTransportSnapshotPython -Python $python -SnapshotRoot $snapshotRoot `
-    -Arguments @(
-      $frozenManifestVerifier,$sourceManifestPath,
-      '--require-status','success','--require-run-id',$SourceRunId,
-      '--require-project',$upstreamProjectId,
-      '--require-mode',$expectedSourceMode
-    ) -FailureMessage 'The frozen PulseCapture source run manifest is invalid.'
+    -Arguments $sourceManifestVerificationArguments `
+    -FailureMessage 'The frozen PulseCapture source run manifest is invalid.'
   $sourceManifest = Get-Content -LiteralPath $sourceManifestPath `
     -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($sourceManifest.role -ne 'simulation_run_manifest' -or
       $sourceManifest.status -ne 'success' -or
       $sourceManifest.project -ne $upstreamProjectId -or
-      $sourceManifest.mode -ne $expectedSourceMode -or
+      $sourceManifest.mode -notin $expectedSourceModes -or
       $sourceManifest.run_id -ne $SourceRunId) {
     throw 'PulseCapture source manifest identity or role is invalid.'
   }
@@ -406,15 +448,31 @@ try {
     -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($sourceConfig.run_id -ne $SourceRunId -or
       $sourceConfig.project -ne $upstreamProjectId -or
-      $sourceConfig.mode -ne $expectedSourceMode) {
+      $sourceConfig.mode -notin $expectedSourceModes) {
     throw 'Downstream continuation requires the frozen PulseCapture shared-clock source.'
   }
-  Assert-RfOatofSourceIdentityMatches `
-    -Actual $(if ($interfaceDiagnostic) {
+  $fieldOnlyInterfaceSource = $interfaceDiagnostic -and
+    $sourceConfig.mode -eq
+      'rf_to_oatof_pre_pulse_interface_transport_no_pulse_field'
+  if ($fieldOnlyInterfaceSource) {
+    $sourceResolvedContract = [IO.Path]::GetFullPath(
+      [string]$sourceConfig.inputs.resolved_source_contract
+    )
+    if ((Get-FileHash -LiteralPath $sourceResolvedContract -Algorithm SHA256).Hash -ne
+        $ResolvedSourceContractSha256.ToUpperInvariant()) {
+      throw 'Field-only interface source resolved contract differs.'
+    }
+  } else {
+    $actualAnalyzerSourceIdentity = if ($interfaceDiagnostic) {
       $sourceConfig.source_particle_identity
-    } else { $sourceConfig.upstream_source_identity }) `
-    -Expected $runtime.source_identity `
-    -Role 'Analyzer upstream particle source'
+    } else {
+      $sourceConfig.upstream_source_identity
+    }
+    Assert-RfOatofSourceIdentityMatches `
+      -Actual $actualAnalyzerSourceIdentity `
+      -Expected $runtime.source_identity `
+      -Role 'Analyzer upstream particle source'
+  }
   $referencePulseRun = $null
   if ($interfaceDiagnostic) {
     $referencePulseRun = Resolve-RfDirectChildDirectory -ParentRoot $runsRoot `
@@ -662,13 +720,10 @@ try {
     if ([string]::IsNullOrWhiteSpace($InterfacePaSourceRunId)) {
       $baselineDocument = Get-Content -LiteralPath $frozenGeometry -Raw -Encoding UTF8 |
         ConvertFrom-Json
-      $jointDocument = Get-Content -LiteralPath $frozenSharedJoint -Raw -Encoding UTF8 |
-        ConvertFrom-Json
       $geometry = $baselineDocument.geometry_mm
       $build = $baselineDocument.simion_geometry_build.accelerator
       $accelerator = $baselineDocument.geometry_derivation.accelerator
       $voltage = $baselineDocument.electrodes_V
-      $port = $jointDocument.port_sweep
       $interfacePaRoot = if ([string]::IsNullOrWhiteSpace($InterfacePaDirectory)) {
         $runtimeDir
       } else {
@@ -701,8 +756,8 @@ try {
           ([string]$geometry.accelerator_ring_thickness),
           ([string]$geometry.accelerator_front_vacuum_margin),
           ([string]$voltage.repeller),([string]$voltage.grid1),'1',
-          ([string]$port.selected_n100_candidate_full_width_y_mm),
-          ([string]$port.full_height_z_mm),
+          ([string]$interfaceAperture.full_width_mm),
+          ([string]$interfaceAperture.full_height_mm),
           ([string]($accelerator.d1_mm / 2.0))
           )
         if ($buildResult.exit_code -ne 0) {
@@ -759,6 +814,7 @@ try {
       resolved_connection = $resolvedConnectionFrozen
       resolved_source_contract = $resolvedSourceContractFrozen
       upstream_resolved_design = $upstreamResolvedDesignFrozen
+      interface_aperture_contract = $interfaceApertureContractFrozen
       code_inventory = $dependencyContract
       dependency_contract = $dependencyPublication.dependency_contract_path
       source_run_manifest = $sourceManifestPath
@@ -841,6 +897,10 @@ try {
       (Get-FileHash -LiteralPath $interfacePa0 -Algorithm SHA256).Hash
     $runConfiguration.parameters.interface_port_mode =
       'real_rectangular_side_port'
+    $runConfiguration.parameters.interface_port_full_width_mm =
+      [double]$interfaceAperture.full_width_mm
+    $runConfiguration.parameters.interface_port_full_height_mm =
+      [double]$interfaceAperture.full_height_mm
   } elseif ($simionGrid2Replay) {
     $runConfiguration.inputs.source_canonical_template =
       $sourceCanonicalTemplate

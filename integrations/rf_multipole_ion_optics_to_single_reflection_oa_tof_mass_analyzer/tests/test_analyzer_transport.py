@@ -443,6 +443,29 @@ class AnalyzerTransportTests(unittest.TestCase):
             "if ($interfaceDiagnostic) {\n      $env:OATOF_ACCELERATOR_PA_OVERRIDE",
             runner,
         )
+        self.assertIn("[string]$InterfaceApertureContract = ''", runner)
+        self.assertIn(
+            "rf_to_oatof_pre_pulse_interface_transport_no_pulse_field",
+            runner,
+        )
+        self.assertIn("$sourceManifest.mode -notin $expectedSourceModes", runner)
+        self.assertIn("$sourceConfig.mode -notin $expectedSourceModes", runner)
+        self.assertIn("$actualAnalyzerSourceIdentity", runner)
+        self.assertIn("$fieldOnlyInterfaceSource", runner)
+        self.assertIn("Field-only interface source resolved contract differs.", runner)
+        self.assertIn(
+            "$interfaceAperture = $resolvedConnectionDocument.transition_aperture",
+            runner,
+        )
+        self.assertIn(
+            "([string]$interfaceAperture.full_width_mm)", runner
+        )
+        self.assertIn(
+            "([string]$interfaceAperture.full_height_mm)", runner
+        )
+        self.assertNotIn(
+            "([string]$port.selected_n100_candidate_full_width_y_mm)", runner
+        )
 
         for dependency_id in (
             "rf_analyzer_transport_simion_input_adapter",

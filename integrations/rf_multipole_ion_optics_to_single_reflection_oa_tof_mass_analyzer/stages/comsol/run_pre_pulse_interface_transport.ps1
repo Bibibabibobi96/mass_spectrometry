@@ -230,8 +230,10 @@ try {
   $resourceUsage = Join-Path $logDir 'resource_usage.json'
 
   $contractDocument = Get-Content -LiteralPath $contract -Raw -Encoding UTF8 | ConvertFrom-Json
-  if ($Particles) {
-    $sourceContractDocument = $runtime.resolved_source_contract
+  # Publish the runtime-selected canonical source for both solver modes.  The
+  # Particles switch controls COMSOL particle tracking, not whether the frozen
+  # field run can serve as an audited source for the SIMION interface stage.
+  $sourceContractDocument = $runtime.resolved_source_contract
     $sourceRecord = $runtime.source_record
     $recordedProjectId = $runtime.recorded_project_id
     if ($contractDocument.particle_runtime.source_particle_count_policy -ne
@@ -315,8 +317,9 @@ try {
           -Algorithm SHA256
       ).Hash
     }
-    $particleOutput = Join-Path $resultDir 'pre_pulse_interface_transport_particles.csv'
-  }
+    $particleOutput = if ($Particles) {
+      Join-Path $resultDir 'pre_pulse_interface_transport_particles.csv'
+    } else { $null }
   $metrics = Join-Path $resultDir 'pre_pulse_no_pulse_field_metrics.json'
   $samples = Join-Path $resultDir 'pre_pulse_no_pulse_field_samples.csv'
   $report = Join-Path $logDir 'comsol_pre_pulse_no_pulse_field.txt'
@@ -352,7 +355,7 @@ try {
       resolved_budget_sha256 = $budgetBinding.resolved_budget_sha256
       stage_budget_sha256 = $budgetBinding.stage_budget_sha256
     }
-    source_particle_identity = if ($Particles) { $sourceParticleIdentity } else { $null }
+    source_particle_identity = $sourceParticleIdentity
     parameters = [ordered]@{
       connector_gap_mm = $gapMm
       connection_profile_id = $ConnectionProfileId
