@@ -21,6 +21,9 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     plot_grid2_downstream_six_panel as six_panel,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis import (
+    plot_ideal_actual_resolution_gap as resolution_gap,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis import (
     compare_grid2_solver_propagation as propagation,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis import (
@@ -64,6 +67,15 @@ def write_csv(path: Path, fields: list[str], rows: list[dict[str, object]]) -> N
 
 
 class AnalyzerTransportTests(unittest.TestCase):
+    def test_resolution_gap_proxy_uses_mass_time_factor(self) -> None:
+        result = resolution_gap._resolution_proxy([30.0, 30.002])
+        expected_sigma_ns = 2 ** 0.5
+        self.assertAlmostEqual(result["sample_sigma_tof_ns"], expected_sigma_ns)
+        self.assertAlmostEqual(
+            result["mass_resolution_gaussian_fwhm_proxy"],
+            30.001 * 1000 / (2 * six_panel.FWHM_FACTOR * expected_sigma_ns),
+        )
+
     def test_six_panel_resolution_uses_detected_analyzer_tof(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

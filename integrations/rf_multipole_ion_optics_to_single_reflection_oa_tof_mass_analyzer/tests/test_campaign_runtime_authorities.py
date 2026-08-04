@@ -138,6 +138,7 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
         self.assertIn(
             "rf_oatof_grid2_downstream_six_panel_resolution_v1", identities
         )
+        self.assertIn("rf_oatof_ideal_actual_resolution_gap_v1", identities)
         self.assertTrue(
             all(row["claim_class"] != "FORMAL" for row in capabilities)
         )

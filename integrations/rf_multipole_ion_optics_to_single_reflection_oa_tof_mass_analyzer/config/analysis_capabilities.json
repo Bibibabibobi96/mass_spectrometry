@@ -39,6 +39,14 @@
       "required_event_plane": "diagnostic_events.local_accelerator_exit",
       "fixed_output_role": "results/<case>_six_panel.png",
       "claim_class": "UNQUALIFIED_DIAGNOSTIC_ONLY"
+    },
+    {
+      "capability_id": "rf_oatof_ideal_actual_resolution_gap_v1",
+      "consumer": "analysis/plot_ideal_actual_resolution_gap.py",
+      "scope": "ideal source volume versus multipole-fed pulse position, grid2 angle-energy state, TOF error and resolution gap",
+      "required_event_plane": "diagnostic_events.local_accelerator_exit",
+      "fixed_output_role": "results/ideal_actual_resolution_gap_six_panel.png",
+      "claim_class": "UNQUALIFIED_DIAGNOSTIC_ONLY"
     }
   ]
 }
