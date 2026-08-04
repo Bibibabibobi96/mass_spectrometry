@@ -153,6 +153,21 @@ oracle/prereg配置和schema均不再是当前入口。完整处置、保留边�
 [2026-08-01 活动兼容层退役](../../../docs/history/20260801__active-compatibility-retirement.md)。当前只保留
 family source closure；连接级pulse/analyzer分析统一位于本integration的`analysis/`，不提供四极杆旧路径wrapper。
 
+## 开放任务
+
+1. **评估联合前端两阶段架构。** 当前物理三阶段为“粒子源至多极杆handoff、handoff至
+   `accelerator_grid2`、grid2至oaTOF检测面”；现有执行还把中段拆为pre-pulse与pulse-capture两个
+   内部run。候选两阶段应把多极杆、连续接地屏蔽结构、接口孔和脉冲加速器组成同一前端物理域，从
+   原始多极杆粒子源连续积分至grid2，再由第二阶段完成oaTOF运输；旧handoff、oaTOF入口、脉冲时刻和
+   grid2只保留为同一run内的诊断检查点，不作为重新释放边界。
+   COMSOL与SIMION须分别实现同源联合前端，并以固定N=100母样本、设计、RF相位、绝对时钟、脉冲合同
+   和数值profile完成“同求解器两阶段减三阶段”及“两阶段COMSOL减SIMION”的逐粒子配对；同时记录
+   冷/热场或PA构建、粒子积分、峰值内存、暂存体积和最终保留量。关闭条件是：两种求解器均发布通过
+   manifest复核的grid2 canonical状态，旧handoff处不再发生外部状态重启，两阶段与三阶段差异及当前
+   grid2求解器差异均得到有边界的数值解释，并明确决定两阶段是否成为生产主链以及三阶段的诊断保留
+   或退役范围。完成上述门禁前，当前family source closure仍是唯一活动入口；不得把架构简化、功能
+   贯通或任一N=100结果表述为收敛、优化、Candidate或Formal资格。
+
 ## 静态门禁
 
 [`verify_integration.ps1`](../verify_integration.ps1)只运行无求解器的合同测试：模式中性profile、run-local
