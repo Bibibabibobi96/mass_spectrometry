@@ -292,6 +292,42 @@ direct-KDE FWHM为2.755/2.520 ns，R为12841/14042，看似改善9.36%。但在�
 `INCONCLUSIVE_DIAGNOSTIC_ONLY`。新analysis run还发布了图例正确的0.5×0.5 mm空间六子图；既有
 求解器run未被原地改写。
 
+### 加速前相空间的受控理想条件反事实
+
+正式诊断入口
+[`workflows/resolution_attribution/execute.ps1`](../workflows/resolution_attribution/execute.ps1)
+实现根[`VALIDATION_METHODS`](../../../docs/VALIDATION_METHODS.md#受控理想条件反事实法)定义的
+受控理想条件反事实法。它从一个已验证的单流程run冻结脉冲左极限与检测器共同粒子群，先运行不改变
+状态的restart control，再在相同四PA、绝对脉冲时刻、数值设置和direct-KDE算法下逐臂替换预登记条件。
+当前profile
+[`resolution_attribution_counterfactual.json`](../config/resolution_attribution_counterfactual.json)
+固定加速方向为全局z、横向为全局x/y，并区分理想边缘分布匹配、z--vz线性协方差消除、单能化、
+组合干预和非工程化的相空间坍缩上限。所有臂保留原始粒子身份，不能把不同幸存者造成的峰宽变化写成
+聚焦改善。
+
+同一N=1000母样本的1.0×0.9 mm闭合连接器基准在脉冲前有495个共同检测粒子；七臂真实SIMION run
+`20260804_210300__sim__simion__rf-oatof-resolution-counterfactual__n1000__r02`保持七臂均495/495命中。
+restart control相对连续链的逐粒子检测时刻RMS差为0.01981 ns，direct-KDE FWHM只差−0.288%，说明
+本次重启扰动远小于主要反事实效应。
+
+|反事实臂|脉冲前主要变化|direct-KDE FWHM / ns|相对restart control|R|
+|---|---|---:|---:|---:|
+|restart control|无|2.7474|基准|12878|
+|理想加速方向位置|z边缘分布匹配理想源，σz `0.4937→0.2885 mm`|2.2155|−19.36%|15969|
+|理想横向位置|x/y匹配理想源，σx/y `0.8210/0.5561→0.2876/0.2838 mm`|2.7542|+0.25%|12846|
+|消除加速方向协方差|z、vz均值/标准差不变，只令线性相关`0.8515→0`|3.8820|+41.30%|9114|
+|脉冲前单能化|动能σ `0.02535→0 eV`，保持速度方向|2.7469|−0.02%|12880|
+|理想z并消除协方差|上述两项组合|3.6855|+34.15%|9600|
+|z/vz坍缩上限|z和vz均设为各自均值|0.02868|−98.96%|1233568|
+
+结果确认加速方向相空间是当前TOF峰宽的主导敏感方向，但修正了“现有z--vz相关性本身有害”的猜想：
+当前强正相关提供了明显补偿，直接消除会恶化峰宽；把z边缘分布匹配到理想源只能使当前峰宽减少约五分之一，
+峰宽，且峰仍为双模态。横向边缘分布和脉冲前能散对固定共同群几乎没有直接影响。非工程化的z/vz
+坍缩把峰压到0.02868 ns，只能证明剩余差距主要驻留在加速方向高维相空间及其非线性结构，不能作为
+可实现性能或Formal分辨率。脉冲后出口能散仍可作为该相空间经加速产生的中介量，不能与上游z/vz
+原因重复计数。本结果是单母样本、单离散的`CONTROLLED_COUNTERFACTUAL_DIAGNOSTIC_ONLY`，不闭合
+数值收敛、统计泛化、Candidate或Formal资格。
+
 ## 已关闭迁移
 
 旧四极杆S2/S3迁移等价workflow已在功能等价闭合后退出活动树；专用profile、执行器、adapter、
@@ -308,6 +344,10 @@ family source closure；连接级pulse/analyzer分析统一位于本integration�
    和R只作单网格诊断，不授予Candidate或Formal资格。
 2. **决定是否扩展COMSOL连续前端。** 当前新增策略只在SIMION闭合；若需要跨求解器判断，须另行授权
    同源COMSOL连续域，并与本次SIMION整体前端使用相同几何、绝对时钟、脉冲和逐粒子检查点。
+3. **把分辨率归因诊断接入campaign选择。** 当前受控理想条件反事实已有独立正式入口和单样本真实
+   SIMION证据；下一步在campaign schema中增加具名diagnostic profile选择，并补相邻数值档或第二母
+   样本，预登记不确定度与组合臂策略。关闭条件是campaign只选择能力ID、每臂独立冻结身份与预算，且
+   diagnostic结果不能晋升或反写baseline。
 
 ## 静态门禁
 

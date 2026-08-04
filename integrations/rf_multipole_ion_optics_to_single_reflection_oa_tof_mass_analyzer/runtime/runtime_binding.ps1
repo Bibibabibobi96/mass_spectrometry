@@ -362,6 +362,7 @@ function Resolve-RfOatofRuntimeBinding {
     runtime_binding_support = 'runtime/runtime_binding.ps1'
     transfer_runner = 'runtime/run_transfer.ps1'
     single_flight_runner = 'runtime/run_single_flight.ps1'
+    single_flight_asset_support = 'runtime/single_flight_assets.ps1'
     pre_pulse_runner = 'stages/comsol/run_pre_pulse_interface_transport.ps1'
     pre_pulse_builder = 'stages/comsol/build_pre_pulse_interface_transport_model.m'
     pre_pulse_field_preparer = 'stages/comsol/prepare_pre_pulse_interface_transport_field_model.m'

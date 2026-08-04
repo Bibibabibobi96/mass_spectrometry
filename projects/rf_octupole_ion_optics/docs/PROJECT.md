@@ -115,6 +115,17 @@ oaTOF接口孔后，1.0×0.9 mm与0.5×0.5 mm分别有396和90粒子穿过接口
 `20260804_182000__analysis__cross__single-flight-aperture-comparison__n1000`；该单样本、单离散结果仍为
 `INCONCLUSIVE_DIAGNOSTIC_ONLY`，不改变本项目数值资格。
 
+同一1.0×0.9 mm基准随后以495个脉冲前/检测器共同粒子完成七臂受控理想条件反事实。restart control
+相对连续链的逐粒子检测时刻RMS差0.01981 ns、FWHM差−0.288%；只把全局z分布匹配到理想源使
+direct-KDE FWHM从2.7474降至2.2155 ns（−19.36%），只匹配x/y为2.7542 ns（+0.25%），去除脉冲前
+能散为2.7469 ns（−0.02%）。当前z--vz线性相关为0.8515；在保持vz均值和标准差时消除该相关反而使
+FWHM增至3.8820 ns（+41.30%），说明它主要提供补偿而不是制造展宽。把z/vz同时压到均值的非工程化
+上限得到0.02868 ns，只支持“主要剩余敏感性位于加速方向高维相空间及其非线性结构”，不能作为可实现
+分辨率。机器证据为run
+`20260804_210300__sim__simion__rf-oatof-resolution-counterfactual__n1000__r02`；方法、完整七臂表和
+声明边界见integration文档。结论保持`CONTROLLED_COUNTERFACTUAL_DIAGNOSTIC_ONLY`，不闭合数值、
+统计、Candidate或Formal资格。
+
 2026-08-03补齐同一终端和H15设置下的无加速5 eV初始源后，八极杆末端加速相对分段加速把
 handoff透射提高0.29、空间RMS降低`0.0464 mm`，但角RMS增加`0.6952°`；单纯提高初始能量使透射
 从0.59降至0.39，未形成准直收益。完整12臂对照见

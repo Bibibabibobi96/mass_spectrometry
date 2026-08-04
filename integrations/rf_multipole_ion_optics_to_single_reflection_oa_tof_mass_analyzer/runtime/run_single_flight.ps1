@@ -21,6 +21,7 @@ $repoRoot = (Resolve-Path (Join-Path $integrationRoot '..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 . (Join-Path $PSScriptRoot 'runtime_binding.ps1')
+. (Join-Path $PSScriptRoot 'single_flight_assets.ps1')
 $runtime = Resolve-RfOatofRuntimeBinding -RepoRoot $repoRoot `
   -ResolvedConnection $ResolvedConnection -RuntimeBinding $RuntimeBinding `
   -ExpectedConnectionProfileId $ConnectionProfileId -SourceBranchId $SourceBranchId `
@@ -39,24 +40,6 @@ function Invoke-SingleFlightPython {
     Push-Location -LiteralPath $repoRoot
     try { & $python @Arguments; if ($LASTEXITCODE -ne 0) { throw $Failure } } finally { Pop-Location }
   } finally { Restore-RfEnvironment -Names @('PYTHONPATH','PYTHONNOUSERSITE') -Snapshot $saved }
-}
-
-function Copy-FormalPaSet {
-  param([Parameter(Mandatory)][string]$FormalDir,[Parameter(Mandatory)][string]$Destination)
-  $inventory = Import-Csv -LiteralPath (Join-Path $FormalDir 'SHA256SUMS.csv')
-  $pattern = '^(oatof_ideal_grounded\.(iob|con)|(flight_tube_ground|reflectron|accelerator|detector_ground)\.pa(-surf|#|\d+))$'
-  $records = @($inventory | Where-Object { $_.file -match $pattern })
-  if (@($records | Where-Object { $_.file -eq 'oatof_ideal_grounded.iob' }).Count -ne 1) {
-    throw 'Formal oaTOF inventory has no unique IOB.'
-  }
-  foreach ($record in $records) {
-    $source = Join-Path $FormalDir ([string]$record.file)
-    if (-not (Test-Path -LiteralPath $source -PathType Leaf) -or
-        (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -ne ([string]$record.sha256).ToUpperInvariant()) {
-      throw "Formal oaTOF asset identity differs: $($record.file)"
-    }
-    Copy-Item -LiteralPath $source -Destination (Join-Path $Destination ([string]$record.file))
-  }
 }
 
 if (-not (Test-Path -LiteralPath $SimionExe -PathType Leaf)) { throw "SIMION is missing: $SimionExe" }
@@ -142,7 +125,7 @@ try {
 
   $runtimeDir = Join-Path $package.run_dir 'simion'
   $formalDir = Join-Path $workspaceRoot 'artifacts\projects\single_reflection_oa_tof_mass_analyzer\formal\simion'
-  Copy-FormalPaSet -FormalDir $formalDir -Destination $runtimeDir
+  Copy-RfOatofFormalPaSet -FormalDir $formalDir -Destination $runtimeDir
   $formalLua = Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer\simion\workbench\formal\oatof_ideal_grounded.lua'
   $pulseLua = Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer\simion\workbench\candidates\oatof_handoff_pulse.lua'
   $program = Join-Path $runtimeDir 'oatof_ideal_grounded.lua'
