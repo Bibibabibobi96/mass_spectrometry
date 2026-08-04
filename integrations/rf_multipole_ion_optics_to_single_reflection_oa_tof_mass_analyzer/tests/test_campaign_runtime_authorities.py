@@ -55,6 +55,7 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
                 "pre_pulse_interface_transport",
                 "pulse_capture",
                 "analyzer_transport",
+                "single_flight_transport",
             },
         )
         for stage in policy["stage_limits"].values():

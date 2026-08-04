@@ -252,6 +252,9 @@ def prepare_family_source_closure(
     if len(matches) != 1:
         raise ContractError("campaign experiment must resolve exactly once")
     experiment = matches[0]
+    execution_strategy = experiment.get(
+        "execution_strategy", "staged_three_stage"
+    )
     profile_registry = load_connection_profile_registry(profile_registry_path)
     profile = _unique_profile(profile_registry, experiment["connection_profile_id"])
     expected_project_id = profile["upstream"]["project_id"]
@@ -296,6 +299,8 @@ def prepare_family_source_closure(
     )
     source = evidence["source"]
     solver_id = evidence["solver_id"]
+    if execution_strategy == "simion_single_flight" and solver_id != "simion":
+        raise ContractError("SIMION single-flight execution requires a SIMION source run")
     handoff_publication_record = source.get(
         "handoff_publication_contract",
         runtime_binding["contracts"]["handoff_publication_contract"],
@@ -399,6 +404,11 @@ def prepare_family_source_closure(
         "metadata_sha256": source["metadata"]["sha256"],
     }
     row_sha256 = _canonical_sha256(experiment)
+    execution_particle_count = (
+        evidence["launched_particle_count"]
+        if execution_strategy == "simion_single_flight"
+        else evidence["particle_count"]
+    )
     resolved_budget = {
         "schema_version": 1,
         "role": "integration_resolved_engineering_budget",
@@ -407,10 +417,11 @@ def prepare_family_source_closure(
         "campaign_id": campaign["campaign_id"],
         "experiment_id": experiment_id,
         "experiment_row_sha256": row_sha256,
+        "execution_strategy": execution_strategy,
         "policy_id": policy["policy_id"],
         "source_identity": source_identity,
         "launched_particle_count": evidence["launched_particle_count"],
-        "particle_count": evidence["particle_count"],
+        "particle_count": execution_particle_count,
         "retention_class": policy["retention_class"],
         "stage_limits": policy["stage_limits"],
         "budget_exhaustion_result": policy["budget_exhaustion_result"],
@@ -440,6 +451,7 @@ def prepare_family_source_closure(
                 f"campaign_id={campaign['campaign_id']}",
                 f"experiment_id={experiment_id}",
                 f"experiment_row_sha256={row_sha256}",
+                f"execution_strategy={execution_strategy}",
                 f"runtime_binding_path={runtime_binding_record['path']}",
                 f"runtime_binding_sha256={runtime_binding_record['sha256']}",
                 f"source_branch_id={solver_id}",

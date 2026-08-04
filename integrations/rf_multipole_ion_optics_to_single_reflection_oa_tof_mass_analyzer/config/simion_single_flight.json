@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "role": "rf_oatof_simion_single_flight_configuration",
+  "cell_mm": 0.2,
+  "rf_steps_per_period": 160,
+  "pulse_time_us": 39.58788438081105,
+  "pulse_width_us": 1.0,
+  "trajectory_quality": 8,
+  "maximum_time_of_flight_us": 90.0,
+  "retention_class": "compact"
+}

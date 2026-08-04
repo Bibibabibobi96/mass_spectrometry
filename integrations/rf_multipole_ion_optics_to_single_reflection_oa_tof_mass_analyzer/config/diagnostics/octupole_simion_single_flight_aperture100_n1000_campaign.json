@@ -2,19 +2,20 @@
   "schema_version": 1,
   "role": "rf_multipole_oatof_experiment_campaign",
   "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
-  "campaign_id": "octupole_simion_aperture050_integrated_n1000",
+  "campaign_id": "octupole_simion_single_flight_aperture100_n1000",
   "status": "authorized",
   "execution_policy": {
     "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_policy.json",
     "sha256": "B5AD2687C3D1B3CFE1F332C593F69BE3AFE55D749CB28815EB5C110207478FF3"
   },
-  "claim_limit": "One N=1000-mother-sample octupole SIMION to integrated SIMION 0.5 x 0.5 mm aperture diagnostic; no COMSOL, scan, convergence, Candidate or Formal claim.",
+  "claim_limit": "One continuous SIMION flight of the frozen N=1000 octupole mother sample through the 1.0 x 0.9 mm directly mated frontend and current Formal oaTOF downstream; paired diagnostic comparison only, no Candidate or Formal claim.",
   "experiments": [
     {
       "sequence": 1,
-      "experiment_id": "octupole_segmented_aperture050_simion",
+      "experiment_id": "octupole_segmented_aperture100_simion_single_flight",
+      "execution_strategy": "simion_single_flight",
       "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm",
-      "run_id": "20260804_113500__sim__cross__oct-aperture050-integrated__n459",
+      "run_id": "20260804_142000__sim__cross__oct-single-flight-aperture100__n1000",
       "source": {
         "run_id": "20260804_112000__sim__simion__oct-segmented-aperture050__n1000",
         "launched_particle_count": 1000,

@@ -37,6 +37,7 @@
       "properties": {
         "sequence": {"type": "integer", "minimum": 1},
         "experiment_id": {"$ref": "#/$defs/id"},
+        "execution_strategy": {"enum": ["staged_three_stage", "simion_single_flight"]},
         "connection_profile_id": {"$ref": "#/$defs/id"},
         "run_id": {"type": "string", "minLength": 1},
         "source": {"$ref": "#/$defs/source"}

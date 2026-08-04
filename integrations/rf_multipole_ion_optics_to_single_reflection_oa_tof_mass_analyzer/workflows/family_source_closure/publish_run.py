@@ -32,6 +32,17 @@ STAGES = {
         "mode": "rf_to_oatof_analyzer_transport",
     },
 }
+SINGLE_FLIGHT_STAGES = {
+    "single_flight_transport": {
+        "run_stem": "__sim__simion__rf-oatof-single-flight-gap0__n",
+        "mode": "rf_to_oatof_simion_single_flight",
+    }
+}
+STAGES_BY_STRATEGY = {
+    "staged_three_stage": STAGES,
+    "simion_single_flight": SINGLE_FLIGHT_STAGES,
+}
+ALL_STAGE_CONTRACTS = {**STAGES, **SINGLE_FLIGHT_STAGES}
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -76,7 +87,7 @@ def _verify_stage(
     return {
         "phase": next(
             phase
-            for phase, contract in STAGES.items()
+            for phase, contract in ALL_STAGE_CONTRACTS.items()
             if contract["mode"] == mode
         ),
         "run_id": run_id,
@@ -147,6 +158,10 @@ def publish_family_source_closure_run(
     resolved = _load(resolved_path)
     plan = _load(plan_path)
     budget = _load(budget_path)
+    execution_strategy = receipt.get("execution_strategy", "staged_three_stage")
+    if execution_strategy not in STAGES_BY_STRATEGY:
+        raise ContractError("family parent execution strategy is invalid")
+    stage_contracts = STAGES_BY_STRATEGY[execution_strategy]
     if (
         receipt.get("role")
         != "integration_family_source_closure_execution_receipt"
@@ -175,6 +190,7 @@ def publish_family_source_closure_run(
         or resolved["selection"]["connection_profile_id"] != profile_id
         or budget["connection_profile_id"] != profile_id
         or budget["source_identity"] != receipt["source_identity"]
+        or budget.get("execution_strategy", "staged_three_stage") != execution_strategy
         or budget["source_identity"]["source_branch_id"] != source_branch_id
         or any(budget[key] != receipt[key] for key in campaign_keys)
         or receipt.get("campaign_sha256") is None
@@ -218,16 +234,16 @@ def publish_family_source_closure_run(
     )
     if (
         not isinstance(stage_run_ids, dict)
-        or set(stage_run_ids) != set(STAGES)
+        or set(stage_run_ids) != set(stage_contracts)
         or not isinstance(stage_runtime_binding_sha256s, dict)
-        or set(stage_runtime_binding_sha256s) != set(STAGES)
+        or set(stage_runtime_binding_sha256s) != set(stage_contracts)
     ):
         raise ContractError("family receipt stage identities are incomplete")
-    for phase in STAGES:
+    for phase in stage_contracts:
         validate_run_id(stage_run_ids[phase])
         expected_run_id = (
             run_id[:15]
-            + STAGES[phase]["run_stem"]
+            + stage_contracts[phase]["run_stem"]
             + str(particle_count)
         )
         binding_hash = stage_runtime_binding_sha256s[phase]
@@ -248,7 +264,7 @@ def publish_family_source_closure_run(
         / "runs"
     )
     stages = []
-    for phase, contract in STAGES.items():
+    for phase, contract in stage_contracts.items():
         stage_run_id = stage_run_ids[phase]
         stages.append(
             _verify_stage(
@@ -260,10 +276,12 @@ def publish_family_source_closure_run(
             )
         )
 
-    pre_pulse_config = _load(
+    first_stage_config = _load(
         workspace_root / stages[0]["path"] / "run_config.json"
     )
-    pre_pulse_source = pre_pulse_config.get("source_particle_identity")
+    pre_pulse_source = first_stage_config.get(
+        "source_particle_identity" if execution_strategy == "staged_three_stage" else "upstream_source_identity"
+    )
     required_source_keys = (
         "source_branch_id",
         "solver_id",
@@ -282,15 +300,19 @@ def publish_family_source_closure_run(
         )
     ):
         raise ContractError(
-            "family pre-pulse and parent source identities differ"
+            "family first stage and parent source identities differ"
         )
     _verify_stage_chain_identity(
         stage=stages[0],
         workspace_root=workspace_root,
         receipt=receipt,
-        expected_source_field="source_particle_identity",
+        expected_source_field=(
+            "source_particle_identity"
+            if execution_strategy == "staged_three_stage"
+            else "upstream_source_identity"
+        ),
         expected_runtime_binding_sha256=stage_runtime_binding_sha256s[
-            "pre_pulse_interface_transport"
+            stages[0]["phase"]
         ],
     )
     for stage in stages[1:]:
@@ -305,7 +327,7 @@ def publish_family_source_closure_run(
         )
 
     analyzer_summary = _load(
-        workspace_root / stages[2]["path"] / "summary.json"
+        workspace_root / stages[-1]["path"] / "summary.json"
     )
     run_config = {
         "schema_version": 2,
@@ -341,6 +363,7 @@ def publish_family_source_closure_run(
         "experiment_id": receipt["experiment_id"],
         "experiment_row_sha256": receipt["experiment_row_sha256"],
         "source_branch_id": source_branch_id,
+        "execution_strategy": execution_strategy,
         "launched_particle_count": launched_particle_count,
         "particle_count": particle_count,
         "policy_id": receipt["policy_id"],
@@ -366,7 +389,8 @@ def publish_family_source_closure_run(
         "launched_particle_count": launched_particle_count,
         "particle_count": particle_count,
         "policy_id": receipt["policy_id"],
-        "stage_runs_verified": 3,
+        "execution_strategy": execution_strategy,
+        "stage_runs_verified": len(stages),
         "census": analyzer_summary.get("census"),
         "claim_status": "FUNCTIONAL_SCREEN_ONLY",
         "paired_analysis_status": "NOT_RUN",

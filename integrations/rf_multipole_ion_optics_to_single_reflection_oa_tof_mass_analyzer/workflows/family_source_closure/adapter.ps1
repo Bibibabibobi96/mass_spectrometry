@@ -47,6 +47,7 @@ $expectedArguments = @(
   'campaign_id',
   'experiment_id',
   'experiment_row_sha256',
+  'execution_strategy',
   'runtime_binding_path',
   'runtime_binding_sha256',
   'source_branch_id',
@@ -69,6 +70,10 @@ if (@($frozenArguments.Keys | Where-Object {
 $sourceBranchId = [string]$frozenArguments.source_branch_id
 if ($sourceBranchId -notin @('comsol','simion')) {
   throw 'Prepared family source branch is invalid.'
+}
+$executionStrategy = [string]$frozenArguments.execution_strategy
+if ($executionStrategy -notin @('staged_three_stage','simion_single_flight')) {
+  throw 'Prepared family execution strategy is invalid.'
 }
 if ((Get-FileHash -LiteralPath $registryPath -Algorithm SHA256).Hash -ne
     $frozenArguments.adapter_registry_sha256) {
@@ -101,6 +106,12 @@ if ($campaign.role -ne 'rf_multipole_oatof_experiment_campaign' -or
   throw 'Campaign or experiment identity no longer resolves uniquely.'
 }
 $experiment = $experiments[0]
+$campaignExecutionStrategy = if (
+  $experiment.PSObject.Properties.Name -contains 'execution_strategy'
+) { [string]$experiment.execution_strategy } else { 'staged_three_stage' }
+if ($campaignExecutionStrategy -ne $executionStrategy) {
+  throw 'Campaign execution strategy changed after preparation.'
+}
 if ($experiment.connection_profile_id -ne
       $plan.selection.connection_profile_id) {
   throw 'Campaign row differs from the prepared connection.'
@@ -212,6 +223,9 @@ $runtimeLaunchedCount = if (
 ) { [int]$runtime.source_record.launched_particle_count } else {
   [int]$runtime.source_record.particle_count
 }
+$expectedExecutionParticleCount = if ($executionStrategy -eq 'simion_single_flight') {
+  $runtimeLaunchedCount
+} else { [int]$runtime.source_record.particle_count }
 if ($budget.role -ne 'integration_resolved_engineering_budget' -or
     $budget.integration_id -ne $plan.integration_id -or
     $budget.connection_profile_id -ne
@@ -236,12 +250,11 @@ if ($budget.role -ne 'integration_resolved_engineering_budget' -or
     $budget.source_identity.metadata_sha256 -ne
       $runtime.source_identity.metadata_sha256 -or
     [int]$budget.launched_particle_count -ne $runtimeLaunchedCount -or
-    [int]$budget.particle_count -ne
-      [int]$runtime.source_record.particle_count -or
+    [int]$budget.particle_count -ne $expectedExecutionParticleCount -or
+    $budget.execution_strategy -ne $executionStrategy -or
     [int]$budget.launched_particle_count -ne
       [int]$experiment.source.launched_particle_count -or
-    [int]$budget.particle_count -ne
-      [int]$experiment.source.particle_count -or
+    [int]$budget.particle_count -ne $expectedExecutionParticleCount -or
     $budget.retention_class -ne 'compact') {
   throw 'Campaign budget and runtime source identities differ before stage 1.'
 }
@@ -274,21 +287,28 @@ if (-not $runDirectory.Equals(
   throw 'Family execution directory must be the canonical parent run.'
 }
 
-$transferRunner = $runtime.implementation.transfer_runner
-& $transferRunner `
-  -ConnectionProfileId $plan.selection.connection_profile_id `
-  -ResolvedConnection $ResolvedConnection `
-  -ResolvedEngineeringBudget $resolvedBudgetPath `
-  -RuntimeBinding $runtimeBinding `
-  -SourceBranchId $sourceBranchId `
-  -ResolvedSourceContract $resolvedSourceContractPath `
-  -ResolvedSourceContractSha256 $frozenArguments.resolved_source_contract_sha256 `
-  -UpstreamResolvedDesign $upstreamResolvedDesignPath `
-  -UpstreamResolvedDesignSha256 $frozenArguments.upstream_resolved_design_sha256 `
-  -Stamp $RunId.Substring(0, 15) `
-  -PythonExe $PythonExe
+$runnerArguments = @{
+  ConnectionProfileId = $plan.selection.connection_profile_id
+  ResolvedConnection = $ResolvedConnection
+  ResolvedEngineeringBudget = $resolvedBudgetPath
+  RuntimeBinding = $runtimeBinding
+  SourceBranchId = $sourceBranchId
+  ResolvedSourceContract = $resolvedSourceContractPath
+  ResolvedSourceContractSha256 = $frozenArguments.resolved_source_contract_sha256
+  UpstreamResolvedDesign = $upstreamResolvedDesignPath
+  UpstreamResolvedDesignSha256 = $frozenArguments.upstream_resolved_design_sha256
+  PythonExe = $PythonExe
+}
+if ($executionStrategy -eq 'simion_single_flight') {
+  $singleFlightRunId = "$($RunId.Substring(0, 15))__sim__simion__rf-oatof-single-flight-gap0__n$expectedExecutionParticleCount"
+  $runnerArguments.RunId = $singleFlightRunId
+  & $runtime.implementation.single_flight_runner @runnerArguments
+} else {
+  $runnerArguments.Stamp = $RunId.Substring(0, 15)
+  & $runtime.implementation.transfer_runner @runnerArguments
+}
 if ($LASTEXITCODE -ne 0) {
-  throw 'Family mapped RF-to-oaTOF transfer failed.'
+  throw "Family mapped RF-to-oaTOF $executionStrategy execution failed."
 }
 
 $stageParticleCount = [int]$budget.particle_count
@@ -304,6 +324,7 @@ $receipt = [ordered]@{
   campaign_id = $frozenArguments.campaign_id
   experiment_id = $frozenArguments.experiment_id
   experiment_row_sha256 = $frozenArguments.experiment_row_sha256
+  execution_strategy = $executionStrategy
   connection_profile_id = $plan.selection.connection_profile_id
   source_branch_id = $sourceBranchId
   source_identity = $budget.source_identity
@@ -326,19 +347,23 @@ $receipt = [ordered]@{
   upstream_resolved_design_sha256 =
     $frozenArguments.upstream_resolved_design_sha256
   runtime_binding_sha256 = $runtimeBindingSha256
-  stage_run_ids = [ordered]@{
+  stage_run_ids = if ($executionStrategy -eq 'simion_single_flight') { [ordered]@{
+    single_flight_transport = $singleFlightRunId
+  } } else { [ordered]@{
     pre_pulse_interface_transport =
       "$($RunId.Substring(0, 15))__sim__comsol__rf-oatof-pre-pulse-interface-gap0__n$stageParticleCount"
     pulse_capture =
       "$($RunId.Substring(0, 15))__sim__comsol__rf-oatof-pulse-capture-gap0__n$stageParticleCount"
     analyzer_transport =
       "$($RunId.Substring(0, 15))__sim__cross__rf-oatof-analyzer-transport-gap0__n$stageParticleCount"
-  }
-  stage_runtime_binding_sha256s = [ordered]@{
+  } }
+  stage_runtime_binding_sha256s = if ($executionStrategy -eq 'simion_single_flight') { [ordered]@{
+    single_flight_transport = $runtimeBindingSha256
+  } } else { [ordered]@{
     pre_pulse_interface_transport = $runtimeBindingSha256
     pulse_capture = $runtimeBindingSha256
     analyzer_transport = $runtimeBindingSha256
-  }
+  } }
   execution_status = 'completed_pending_paired_analysis'
   claim_status = 'FUNCTIONAL_SCREEN_ONLY'
 }
