@@ -57,6 +57,9 @@ fallback。已关闭的逐臂profile、预登记和专用测试不再位于活�
 
 ## 下一步
 
+屏蔽罩及包含外壳的端部组合电极已固定为0 V，设计变量不再开放屏蔽电位；后续连接oaTOF时由campaign
+显式选择公共接地圆套筒+带孔法兰profile。
+
 1. 出口准直筛选按[通用出口相空间方法](../../../docs/multipoles/exit_phase_space_control.md)执行：维持
    `segmented_rod_axial_acceleration`的P0 RF基线，在固定总电位差和非变化合同下优化更直接控制出口
    轴向场的分段电位分配或端部几何；

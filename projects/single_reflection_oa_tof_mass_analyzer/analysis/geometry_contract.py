@@ -8,6 +8,8 @@ import math
 from pathlib import Path
 from typing import Any
 
+from common.multipole.grounded_shield import require_grounded_potential
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 BASELINE_PATH = PROJECT_ROOT / "config" / "baseline.json"
@@ -39,6 +41,7 @@ def _require_exact_keys(document: dict[str, Any], allowed: set[str], label: str)
 
 
 def _validate_layers(baseline: dict[str, Any], science: dict[str, Any], numerics: dict[str, Any]) -> None:
+    require_grounded_potential(baseline["electrodes_V"]["shield"], "oaTOF shield")
     if "seed" in baseline.get("particle_source", {}):
         raise ValueError("science baseline must not contain particle_source.seed; freeze it in the run instance")
     _require_exact_keys(science, {"schema_version", "role", "mode", "contract_layers", "particle"}, "science contract")

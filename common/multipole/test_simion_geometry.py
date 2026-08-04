@@ -94,6 +94,15 @@ def resolved_design(
 class SimionGeometryTests(unittest.TestCase):
     def test_composed_downstream_terminal_replaces_legacy_exit_electrodes(self) -> None:
         source = resolved_design("cylindrical_bore", 0.0)
+        source["axial_dc"] = {
+            "entrance_reference_sleeve": {
+                "inner_radius_mm": 0.8,
+                "outer_radius_mm": 1.0,
+                "upstream_face_z_mm": 0.0,
+                "downstream_face_z_mm": 1.9,
+                "minimum_insulation_gap_mm": 0.2,
+            }
+        }
         source["downstream_terminal"] = {
             "owner": "downstream",
             "surface_plane_z_mm": 16.0,
@@ -118,6 +127,8 @@ class SimionGeometryTests(unittest.TestCase):
         self.assertIn("box3d(0.5,0.45,20.2,-0.5,-0.45,20)", gem)
         self.assertNotIn("GUI-visible numerical absorber", gem)
         self.assertNotIn("; connector_shape=", gem)
+        self.assertIn("Functional source-reference sleeve", gem)
+        self.assertIn("e(6)", gem)
 
     def test_cli_accepts_xyz_and_rejects_mixed_cell_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

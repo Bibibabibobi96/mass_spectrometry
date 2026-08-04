@@ -7,7 +7,7 @@
   "downstream_terminal_profile": {
     "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
     "terminal_profile_id": "oatof_shield_terminal",
-    "registry_sha256": "A16813FEEE26FF3EBB481F7451C40E98B7F4E1CB979D8219BE7BF805DEDA9CF1"
+    "registry_sha256": "B8CB0FC62DE7726DBA022C86A0E2B01478481599E6511D4246911EDBD2D865E9"
   },
   "design_variable_authorization": {
     "allowed_variable_ids": ["rf_amplitude", "rf_frequency"],

@@ -352,7 +352,7 @@
           "properties": {
             "role": {"const": "rectangular_reference_static_electrodes"},
             "entrance_aperture_plate_and_connector_V": {"type": "number"},
-            "exit_outer_enclosure_and_connector_V": {"type": "number"},
+            "exit_outer_enclosure_and_connector_V": {"const": 0.0},
             "physical_detector_V": {"type": "number"}
           }
         },
@@ -366,8 +366,8 @@
           ],
           "properties": {
             "role": {"const": "cylindrical_shield_static_electrodes"},
-            "shield_entrance_outer_endcap_aperture_plate_connector_V": {"type": "number"},
-            "exit_outer_endcap_aperture_plate_connector_V": {"type": "number"}
+            "shield_entrance_outer_endcap_aperture_plate_connector_V": {"const": 0.0},
+            "exit_outer_endcap_aperture_plate_connector_V": {"const": 0.0}
           }
         }
       ]

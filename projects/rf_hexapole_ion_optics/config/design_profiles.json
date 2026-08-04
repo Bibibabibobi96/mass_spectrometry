@@ -14,8 +14,8 @@
       "optimization_envelope": "config/optimization_envelope.json",
       "sha256": {
         "design_request": "9358BE0D815C281EC8721F07CA39909AE832D92EAAB7C5D502E03F1E728145C1",
-        "design_variables": "9780DFC58129062B737A802D644A541EBBE7702CDE26946A64F0C8AF39A5DD83",
-        "optimization_envelope": "D7945D7D2F7807F8CF8373266F8512DEE6F0FED9A5C060B9D698475CA463EB69"
+        "design_variables": "2D23A0B727725E5BEC8EA209D5D30EA6E32D69D7077AD067858843CA03B7B025",
+        "optimization_envelope": "61ADB876E23D5F7C4D5A486A36C14C10BB1717E3CB0AB0650C9FF000E3B58B8F"
       },
       "identity": {
         "project_id": "rf_hexapole_ion_optics",
@@ -37,8 +37,8 @@
       "optimization_envelope": "config/optimization_envelope.json",
       "sha256": {
         "design_request": "9358BE0D815C281EC8721F07CA39909AE832D92EAAB7C5D502E03F1E728145C1",
-        "design_variables": "9780DFC58129062B737A802D644A541EBBE7702CDE26946A64F0C8AF39A5DD83",
-        "optimization_envelope": "D7945D7D2F7807F8CF8373266F8512DEE6F0FED9A5C060B9D698475CA463EB69"
+        "design_variables": "2D23A0B727725E5BEC8EA209D5D30EA6E32D69D7077AD067858843CA03B7B025",
+        "optimization_envelope": "61ADB876E23D5F7C4D5A486A36C14C10BB1717E3CB0AB0650C9FF000E3B58B8F"
       },
       "identity": {
         "project_id": "rf_hexapole_ion_optics",
@@ -60,8 +60,8 @@
       "optimization_envelope": "config/optimization_envelope.json",
       "sha256": {
         "design_request": "9358BE0D815C281EC8721F07CA39909AE832D92EAAB7C5D502E03F1E728145C1",
-        "design_variables": "9780DFC58129062B737A802D644A541EBBE7702CDE26946A64F0C8AF39A5DD83",
-        "optimization_envelope": "D7945D7D2F7807F8CF8373266F8512DEE6F0FED9A5C060B9D698475CA463EB69"
+        "design_variables": "2D23A0B727725E5BEC8EA209D5D30EA6E32D69D7077AD067858843CA03B7B025",
+        "optimization_envelope": "61ADB876E23D5F7C4D5A486A36C14C10BB1717E3CB0AB0650C9FF000E3B58B8F"
       },
       "identity": {
         "project_id": "rf_hexapole_ion_optics",

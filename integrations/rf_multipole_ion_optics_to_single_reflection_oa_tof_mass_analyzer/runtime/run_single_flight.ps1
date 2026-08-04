@@ -86,10 +86,14 @@ try {
   $upstreamFrozen = Join-Path $package.input_dir 'upstream_resolved_design.json'
   $sourceContractFrozen = Join-Path $package.input_dir 'resolved_source_contract.json'
   $runtimeBindingFrozen = Join-Path $package.input_dir 'runtime_binding.json'
+  $oatofGeometry = Join-Path $package.input_dir 'oatof_resolved_geometry.json'
   Copy-Item -LiteralPath $runtime.resolved_connection_path -Destination $resolvedFrozen
   Copy-Item -LiteralPath $runtime.contracts.upstream_resolved_design -Destination $upstreamFrozen
   Copy-Item -LiteralPath $runtime.contracts.resolved_source_contract -Destination $sourceContractFrozen
   Copy-Item -LiteralPath $runtime.binding_path -Destination $runtimeBindingFrozen
+  Copy-RfStableFile -SourceRunRoot $repoRoot `
+    -SourcePath (Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer\config\resolved_geometry.json') `
+    -Destination $oatofGeometry -Role 'oaTOF resolved geometry' | Out-Null
 
   $motherSource = Join-Path $package.input_dir 'mother_particle_source.csv'
   Copy-RfStableFile -SourceRunRoot $workspaceRoot -SourcePath $runtime.source_particle_source `
@@ -103,7 +107,7 @@ try {
   $frontendContract = Join-Path $package.input_dir 'single_flight_frontend_contract.json'
   Invoke-SingleFlightPython -Arguments @('-m',
     'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_frontend',
-    '--upstream',$upstreamFrozen,'--oatof',(Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer\config\resolved_geometry.json'),
+    '--upstream',$upstreamFrozen,'--oatof',$oatofGeometry,
     '--connection',$resolvedFrozen,'--gem',$frontendGem,'--contract',$frontendContract,
     '--cell-mm',([string]$settings.cell_mm)) -Failure 'Single-flight frontend compilation failed.'
   $frontendHash = (Get-FileHash -LiteralPath $frontendGem -Algorithm SHA256).Hash
@@ -151,7 +155,7 @@ try {
 
   $runConfiguration = [ordered]@{
     schema_version=2; run_id=$RunId; project=$runtime.upstream_project_id; mode='rf_to_oatof_simion_single_flight'; project_root=$repoRoot
-    inputs=[ordered]@{ configuration=$configuration; runtime_binding=$runtimeBindingFrozen; resolved_connection=$resolvedFrozen; resolved_source_contract=$sourceContractFrozen; upstream_resolved_design=$upstreamFrozen; resolved_integration_engineering_budget=$budget.frozen_budget; resolved_stage_resource_budget=$budget.stage_budget; mother_particle_source=$motherSource; initial_global_state=$globalSource; ion=$ion; frontend_gem=$frontendGem; frontend_contract=$frontendContract; program_metadata=$programMetadata }
+    inputs=[ordered]@{ configuration=$configuration; runtime_binding=$runtimeBindingFrozen; resolved_connection=$resolvedFrozen; resolved_source_contract=$sourceContractFrozen; upstream_resolved_design=$upstreamFrozen; oatof_resolved_geometry=$oatofGeometry; resolved_integration_engineering_budget=$budget.frozen_budget; resolved_stage_resource_budget=$budget.stage_budget; mother_particle_source=$motherSource; initial_global_state=$globalSource; ion=$ion; frontend_gem=$frontendGem; frontend_contract=$frontendContract; program_metadata=$programMetadata }
     upstream_source_identity=$runtime.source_identity
     parameters=[ordered]@{ connection_profile_id=$ConnectionProfileId; source_branch_id=$SourceBranchId; launched_particle_count=$launched; particle_count=$launched; aperture_width_mm=1.0; aperture_height_mm=0.9; rod_end_to_accelerator_shield_mm=1.0; surrounded_transition=$true; pulse_time_us=[double]$settings.pulse_time_us; pulse_width_us=[double]$settings.pulse_width_us; frontend_gem_sha256=$frontendHash; frontend_pa0_sha256=(Get-FileHash -LiteralPath $cachePa0 -Algorithm SHA256).Hash }
     artifact_retention=[ordered]@{policy_version=1;class='compact';reason=$null}; formal_gate_passed=$false
@@ -185,13 +189,20 @@ try {
     'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.analyze_single_flight',
     '--log',$stdout,'--launched',([string]$launched),'--mass-amu','100','--checkpoints',$checkpoints,'--summary',$package.summary) `
     -Failure 'Single-flight log analysis failed.'
+  $sixPanel = Join-Path $package.result_dir 'single_flight_spatial_six_panel.png'
+  $sixPanelMetadata = Join-Path $package.result_dir 'single_flight_spatial_six_panel_metadata.json'
+  Invoke-SingleFlightPython -Arguments @('-m',
+    'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.plot_single_flight_spatial_six_panel',
+    '--initial',$globalSource,'--checkpoints',$checkpoints,'--upstream',$upstreamFrozen,
+    '--frontend',$frontendContract,'--oatof',$oatofGeometry,'--output',$sixPanel,
+    '--metadata',$sixPanelMetadata) -Failure 'Single-flight six-panel spatial diagnostic failed.'
   $result = Get-Content -LiteralPath $package.summary -Raw -Encoding UTF8 | ConvertFrom-Json
   $runConfiguration.parameters.multipole_handoff_count = [int]$result.census.multipole_handoff
   $runConfiguration.parameters.local_accelerator_exit_count = [int]$result.census.local_accelerator_exit
   $runConfiguration.parameters.detector_crossing_count = [int]$result.census.detector_crossing
   Write-RfJson -Path $package.run_config -Depth 10 -Value $runConfiguration
   $retentionActions = Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config
-  $outputs = @($checkpoints,$stdout,$stderr,$resourceUsage,$package.summary,$retentionActions) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
+  $outputs = @($checkpoints,$sixPanel,$sixPanelMetadata,$stdout,$stderr,$resourceUsage,$package.summary,$retentionActions) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
   if (-not (Complete-ResourceUsage -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir -UsagePath $resourceUsage)) { $resourceBudgetExceeded=$true; throw 'Single-flight compact retained-byte budget exceeded.' }
   Write-RfFrozenRunManifest -Python $python -FrozenRepoRoot $repoRoot -RunConfig $package.run_config -Status success -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
   Write-Output "SIMION_SINGLE_FLIGHT=PASS RUN_ID=$RunId DETECTOR=$($result.census.detector_crossing)/$launched"

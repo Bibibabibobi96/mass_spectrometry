@@ -622,6 +622,7 @@ try{
     $physicalDetectorVoltage=$exitVoltage
   }
   $segmentedLua='';$groundElectrodeId=3;$outputElectrodeId=4
+  $entranceReferenceElectrodeId=0;$entranceReferenceVoltage=$entranceVoltage
   $physicalDetectorElectrodeId=if($rectangular){5}else{4}
   if($hasDownstreamTerminal){
     $axialDc=$design.axial_dc
@@ -645,7 +646,9 @@ try{
     $groundElectrodeId=[int]$maxRodElectrode+1
     $outputElectrodeId=$groundElectrodeId+1
     $physicalDetectorElectrodeId=$outputElectrodeId+1
+    $entranceReferenceElectrodeId=$physicalDetectorElectrodeId+1
     $entranceVoltage=[double]$axialDc.upstream_shield_potential_V
+    $entranceReferenceVoltage=[double]$axialDc.entrance_reference_sleeve.potential_V
     $exitVoltage=[double]$axialDc.terminal_electrode_potential_V
     $physicalDetectorVoltage=$exitVoltage
   }elseif($segmentedRodGeometry){
@@ -837,6 +840,8 @@ has_electrode_4=true, has_electrode_5=$($rectangular.ToString().ToLowerInvariant
 $segmentedLua ground_electrode_id=$groundElectrodeId, ground_reference_v=$entranceVoltage,
 output_electrode_id=$outputElectrodeId, output_reference_v=$exitVoltage,
 physical_detector_electrode_id=$physicalDetectorElectrodeId,
+entrance_reference_electrode_id=$entranceReferenceElectrodeId,
+entrance_reference_v=$entranceReferenceVoltage,
 maximum_time_us=$MaximumTimeUs, trajectory_plane_step_mm=$resolvedCellMmZ,
 rod_z_min_mm=$($geometry.rod_z_min), rod_z_max_mm=$($geometry.rod_z_max),
 rod_exit_plane_mm=$($geometry.rod_z_max), handoff_plane_mm=$handoffPlaneMm,

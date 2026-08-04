@@ -8,7 +8,7 @@
   "policy": "The complete request is immutable at execution; candidate generation may only change cataloged fields within these bounds before recompilation.",
   "reference": {
     "design_request": "config/requests/mass_filter.json",
-    "design_request_sha256": "766FABB2F5ED3BB8E69FA100B89BE0758AD7F3870710F836F6B434C5FE5B8820"
+    "design_request_sha256": "A98E5EC63EFB9C1A9A621CBD0A558960FCE41D7957308A60345A75DCFB4D66CB"
   },
   "constraints": [
     {

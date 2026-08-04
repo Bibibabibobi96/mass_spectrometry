@@ -339,10 +339,9 @@ class MultipoleDesignCompilerTest(unittest.TestCase):
         plate_request["axial_drive"]["topology"] = (
             "exit_aperture_plate_potential_step"
         )
-        plate_request["static_electrodes_V"][
-            "exit_outer_enclosure_and_connector_V"
-        ] = -3.0
-        plate_request["static_electrodes_V"]["physical_detector_V"] = -3.0
+        plate_request["drive"]["common_mode_offset_V"] = 3.0
+        plate_request["segmentation"]["entrance_common_mode_V"] = 3.0
+        plate_request["segmentation"]["exit_common_mode_V"] = 3.0
 
         segmented_request = copy.deepcopy(none_request)
         segmented_request["axial_drive"]["topology"] = (
@@ -398,7 +397,7 @@ class MultipoleDesignCompilerTest(unittest.TestCase):
                     "axial_acceleration"
                 ]["derived"]["segments"]
             ],
-            [0.0, 0.0, 0.0, 0.0],
+            [3.0, 3.0, 3.0, 3.0],
         )
         self.assertEqual(
             [
@@ -428,23 +427,12 @@ class MultipoleDesignCompilerTest(unittest.TestCase):
                 resolved[name]["axial_drive"]["predicted_energy_gain_eV"], 3.0
             )
 
-    def test_legacy_off_none_preserves_project_static_reference_reporting(self) -> None:
+    def test_non_grounded_shield_reference_is_rejected(self) -> None:
         request = design_request(segmentation={"strategy": "off"})
         request["axial_drive"]["topology"] = "none"
         request["static_electrodes_V"]["exit_outer_enclosure_and_connector_V"] = -100.0
-        request["static_electrodes_V"]["physical_detector_V"] = -1500.0
-        resolved = self.compile(request)
-        self.assertEqual(resolved["segmentation"]["strategy"], "off")
-        self.assertEqual(
-            resolved["axial_drive"],
-            {
-                "topology": "none",
-                "source_reference_V": 0.0,
-                "output_reference_V": -100.0,
-                "predicted_energy_gain_eV": 100.0,
-                "predicted_output_energy_eV": 102.0,
-            },
-        )
+        with self.assertRaises(MultipoleDesignCompileError):
+            self.compile(request)
 
     def test_none_and_plate_fail_when_segment_bias_differs_from_drive_common_mode(self) -> None:
         for topology in ("none", "exit_aperture_plate_potential_step"):
@@ -461,11 +449,6 @@ class MultipoleDesignCompilerTest(unittest.TestCase):
                 )
                 request["drive"]["common_mode_offset_V"] = 0.0
                 request["axial_drive"]["topology"] = topology
-                if topology == "exit_aperture_plate_potential_step":
-                    request["static_electrodes_V"][
-                        "exit_outer_enclosure_and_connector_V"
-                    ] = -3.0
-                    request["static_electrodes_V"]["physical_detector_V"] = -3.0
                 with self.assertRaisesRegex(
                     MultipoleDesignCompileError,
                     "every physical rod segment common mode",
@@ -505,10 +488,13 @@ class MultipoleDesignCompilerTest(unittest.TestCase):
                     request["drive"]["common_mode_offset_V"] = 0.0
                     request["axial_drive"]["topology"] = topology
                     if topology == "exit_aperture_plate_potential_step":
-                        request["static_electrodes_V"][
-                            "exit_outer_enclosure_and_connector_V"
-                        ] = -3.0
-                        request["static_electrodes_V"]["physical_detector_V"] = -3.0
+                        request["drive"]["common_mode_offset_V"] = 3.0
+                        if strategy == "uniform":
+                            request["segmentation"]["entrance_common_mode_V"] = 3.0
+                            request["segmentation"]["exit_common_mode_V"] = 3.0
+                        else:
+                            for segment in request["segmentation"]["segments"]:
+                                segment["common_mode_V"] = 3.0
                     elif topology == "segmented_rod_axial_acceleration":
                         if strategy == "uniform":
                             request["segmentation"]["exit_common_mode_V"] = -3.0

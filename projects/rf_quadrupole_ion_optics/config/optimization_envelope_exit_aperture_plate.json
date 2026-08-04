@@ -8,17 +8,16 @@
   "policy": "This envelope preserves the N=100 functional exit-aperture-plate reference; it does not qualify convergence or mechanical implementation.",
   "reference": {
     "design_request": "config/requests/exit_aperture_plate.json",
-    "design_request_sha256": "2E4D810DAF55088683430FDB1CEF7AB90283802672D2CEEE821C256B7AC1F5B5"
+    "design_request_sha256": "76768AEAD3D785DCF376E64B522993BA81D78EA04BD0E7FC295911681CB15568"
   },
   "constraints": [
     {
       "constraint_id": "exit_aperture_plate_reference_bounds",
       "kind": "bounded_variable",
       "request_json_pointers": [
-        "/geometry_mm/rod_radius_ratio",
-        "/static_electrodes_V/exit_outer_enclosure_and_connector_V"
+        "/geometry_mm/rod_radius_ratio"
       ],
-      "description": "The rod ratio and exit-aperture-plate output reference remain inside the governed catalog bounds."
+      "description": "The rod ratio remains inside the governed catalog bounds; all shield structures are fixed at 0 V."
     }
   ]
 }

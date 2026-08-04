@@ -217,6 +217,9 @@ oaTOF handoff与pulse_capture local-exit仍保留其坐标和事件语义，但c
 
 ## 开放任务
 
+所有活动屏蔽罩/参考外壳现固定为0 V，非零屏蔽输入由公共Schema拒绝；旧`-100 V`出口外壳质量过滤
+参考已失效，须在接地外壳配置下重新完成N=100功能响应后才能恢复该证据声明。
+
 1. 出口准直筛选按[通用出口相空间方法](../../../docs/multipoles/exit_phase_space_control.md)执行：以既有
    `segmented_rod_axial_acceleration`为首选基线，在固定总电位差和非变化合同下优化分段电位分配；
    canonical handoff为主评价面，杆端只作边缘场诊断，terminal传输和损失作为硬约束。候选通过该筛选

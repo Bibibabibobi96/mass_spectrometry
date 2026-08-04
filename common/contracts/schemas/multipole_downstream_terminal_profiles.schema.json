@@ -21,7 +21,7 @@
           "terminal_profile_id", "owner", "surface_role",
           "rod_end_clearance_mm", "upstream_enclosure_end_plane_binding",
           "electrode_thickness_mm", "outer_envelope", "aperture",
-          "terminal_potential_V"
+          "upstream_entrance_reference_sleeve", "terminal_potential_V"
         ],
         "properties": {
           "terminal_profile_id": {"$ref": "#/$defs/identifier"},
@@ -51,7 +51,24 @@
               "height_axis": {"const": "multipole_y"}
             }
           },
-          "terminal_potential_V": {"type": "number"}
+          "upstream_entrance_reference_sleeve": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "profile_id", "potential_binding", "inner_radius_mm",
+              "outer_radius_mm", "minimum_insulation_gap_mm",
+              "downstream_rod_clearance_mm"
+            ],
+            "properties": {
+              "profile_id": {"const": "source_reference_sleeve_v1"},
+              "potential_binding": {"const": "segmentation.entrance_common_mode_V"},
+              "inner_radius_mm": {"type": "number", "exclusiveMinimum": 0},
+              "outer_radius_mm": {"type": "number", "exclusiveMinimum": 0},
+              "minimum_insulation_gap_mm": {"type": "number", "exclusiveMinimum": 0},
+              "downstream_rod_clearance_mm": {"type": "number", "exclusiveMinimum": 0}
+            }
+          },
+        "terminal_potential_V": {"const": 0.0}
         }
       }
     }

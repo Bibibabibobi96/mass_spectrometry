@@ -58,8 +58,7 @@
         "/segmentation/intersegment_gap_mm",
         "/segmentation/entrance_common_mode_V",
         "/segmentation/exit_common_mode_V",
-        "/segmentation/output_reference_V",
-        "/static_electrodes_V/exit_outer_endcap_aperture_plate_connector_V"
+        "/segmentation/output_reference_V"
       ],
       "description": "Every optimizable numeric request field must remain within the catalog range expressed in its declared unit."
     },

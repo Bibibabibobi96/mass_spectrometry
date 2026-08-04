@@ -43,15 +43,23 @@ function Write-VerifiedRunManifest {
   if([string]::IsNullOrWhiteSpace($Manifest)){
     $Manifest=Join-Path (Split-Path -Parent $RunConfig) 'run_manifest.json'
   }
+  $manifestDirectory=Split-Path -Parent $Manifest
+  $manifestName=[IO.Path]::GetFileNameWithoutExtension($Manifest)
+  $manifestExtension=[IO.Path]::GetExtension($Manifest)
+  $candidateManifest=Join-Path $manifestDirectory `
+    ('.{0}.{1}.candidate{2}'-f$manifestName,[guid]::NewGuid().ToString('N'),$manifestExtension)
   try{
     Write-RunManifest -Python $Python -RepoRoot $RepoRoot -RunConfig $RunConfig `
-      -Status $Status -Software $Software -Manifest $Manifest -Outputs $Outputs -PassThru
+      -Status $Status -Software $Software -Manifest $candidateManifest -Outputs $Outputs -PassThru
+    & $Python (Join-Path $RepoRoot 'common\contracts\verify_run_manifest.py') `
+      $candidateManifest --require-status $Status
+    if($LASTEXITCODE-ne 0){throw "Could not verify $Status run manifest."}
+    Move-Item -LiteralPath $candidateManifest -Destination $Manifest -Force
   }catch{
-    throw "Could not write $Status run manifest."
+    throw "Could not publish verified $Status run manifest: $($_.Exception.Message)"
+  }finally{
+    Remove-Item -LiteralPath $candidateManifest -Force -ErrorAction SilentlyContinue
   }
-  & $Python (Join-Path $RepoRoot 'common\contracts\verify_run_manifest.py') `
-    $Manifest --require-status $Status
-  if($LASTEXITCODE-ne 0){throw "Could not verify $Status run manifest."}
 }
 
 function Write-TerminalRunRecord {

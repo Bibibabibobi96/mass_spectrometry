@@ -42,9 +42,9 @@ def operating_modes() -> dict:
             {
                 "mode_id": "exit_plate",
                 "axial_drive_topology": "exit_aperture_plate_potential_step",
-                "rod_segment_entrance_common_mode_V": 0.0,
-                "rod_segment_exit_common_mode_V": 0.0,
-                "exit_aperture_plate_and_connector_V": -3.0,
+                "rod_segment_entrance_common_mode_V": 3.0,
+                "rod_segment_exit_common_mode_V": 3.0,
+                "exit_aperture_plate_and_connector_V": 0.0,
             },
             {
                 "mode_id": "segmented",
@@ -112,10 +112,6 @@ class TypedOperatingModeTests(unittest.TestCase):
         voltage_variables = (
             ("segment_entrance_v", "/segmentation/entrance_common_mode_V"),
             ("segment_exit_v", "/segmentation/exit_common_mode_V"),
-            (
-                "exit_interface_v",
-                "/static_electrodes_V/exit_outer_endcap_aperture_plate_connector_V",
-            ),
         )
         for variable_id, pointer in voltage_variables:
             variable = copy.deepcopy(catalog["variables"][0])
@@ -279,7 +275,22 @@ class TypedOperatingModeTests(unittest.TestCase):
                         ]["electrodes"]
                     ]
                 )
-                self.assertEqual(item["drive"], resolved["none"]["drive"])
+                self.assertEqual(
+                    {key: value for key, value in item["drive"].items() if key != "common_mode_offset_V"},
+                    {key: value for key, value in resolved["none"]["drive"].items() if key != "common_mode_offset_V"},
+                )
+                self.assertEqual(
+                    item["static_electrodes_V"][
+                        "shield_entrance_outer_endcap_aperture_plate_connector_V"
+                    ],
+                    0.0,
+                )
+                self.assertEqual(
+                    item["static_electrodes_V"][
+                        "exit_outer_endcap_aperture_plate_connector_V"
+                    ],
+                    0.0,
+                )
                 self.assertEqual(
                     item["particle_source"],
                     resolved["none"]["particle_source"],
@@ -326,7 +337,10 @@ class TypedOperatingModeTests(unittest.TestCase):
                 ],
                 [0.0, -1.0, -2.0, -3.0],
             )
-            for mode in ("none", "exit_plate"):
+            for mode, expected_common_modes in (
+                ("none", [0.0, 0.0, 0.0, 0.0]),
+                ("exit_plate", [3.0, 3.0, 3.0, 3.0]),
+            ):
                 self.assertEqual(
                     [
                         segment["common_mode_V"]
@@ -334,7 +348,7 @@ class TypedOperatingModeTests(unittest.TestCase):
                             "axial_acceleration"
                         ]["derived"]["segments"]
                     ],
-                    [0.0, 0.0, 0.0, 0.0],
+                    expected_common_modes,
                 )
 
     def test_mode_vocabulary_rejects_unknown_and_geometry_fields(self) -> None:

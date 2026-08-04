@@ -7,18 +7,18 @@
   },
   "governance": {
     "design_variables_sha256": "AA6FAFFA57E61DE4115A8DFB9D226083B6121C54B983FC01DC9D4646F54979C2",
-    "optimization_envelope_sha256": "980E199DE3AA440029BBAAF1AA9946615D2AD179D766C46F6D068133C1154A2F",
-    "design_request_file_sha256": "766FABB2F5ED3BB8E69FA100B89BE0758AD7F3870710F836F6B434C5FE5B8820"
+    "optimization_envelope_sha256": "2E194AB0A47BB59DEFAA9A03D72DDA154FF93A271F1EA15EE23C1E6909666A8B",
+    "design_request_file_sha256": "A98E5EC63EFB9C1A9A621CBD0A558960FCE41D7957308A60345A75DCFB4D66CB"
   },
   "request": {
     "request_id": "quadrupole_mass_filter_reference",
-    "sha256": "881B947CD53B1F9DB1E5ED4C5DA66E5278BC1DA6286307F7A55841A86036E62C"
+    "sha256": "62FFC78E5094BB0EBEB58EA09120825A73E78676AFE9B60C04C9C307948A7FAD"
   },
   "sources": [
     {
       "label": "design_request",
       "path": "projects/rf_quadrupole_ion_optics/config/requests/mass_filter.json",
-      "sha256": "766FABB2F5ED3BB8E69FA100B89BE0758AD7F3870710F836F6B434C5FE5B8820"
+      "sha256": "A98E5EC63EFB9C1A9A621CBD0A558960FCE41D7957308A60345A75DCFB4D66CB"
     },
     {
       "label": "design_variables",
@@ -28,7 +28,7 @@
     {
       "label": "optimization_envelope",
       "path": "projects/rf_quadrupole_ion_optics/config/optimization_envelope_mass_filter.json",
-      "sha256": "980E199DE3AA440029BBAAF1AA9946615D2AD179D766C46F6D068133C1154A2F"
+      "sha256": "2E194AB0A47BB59DEFAA9A03D72DDA154FF93A271F1EA15EE23C1E6909666A8B"
     }
   ],
   "identity": {
@@ -155,14 +155,14 @@
   "axial_drive": {
     "topology": "none",
     "source_reference_V": 0.0,
-    "output_reference_V": -100.0,
-    "predicted_energy_gain_eV": 100.0,
-    "predicted_output_energy_eV": 102.0
+    "output_reference_V": 0.0,
+    "predicted_energy_gain_eV": 0.0,
+    "predicted_output_energy_eV": 2.0
   },
   "static_electrodes_V": {
     "role": "rectangular_reference_static_electrodes",
     "entrance_aperture_plate_and_connector_V": 0.0,
-    "exit_outer_enclosure_and_connector_V": -100.0,
+    "exit_outer_enclosure_and_connector_V": 0.0,
     "physical_detector_V": -1500.0
   },
   "particle_source": {
@@ -180,5 +180,5 @@
     "axial_acceleration": null,
     "segmented_rod_array": null
   },
-  "resolved_sha256": "A27C5AAF3BD369E0EE6AF0222F84238AC453A6C25E130F88CCAC3D1729A435E1"
+  "resolved_sha256": "1B4DB82404243902690A67F1AEE2B5696B8FA5F728C2624BE0BB8EBBDFF8F459"
 }

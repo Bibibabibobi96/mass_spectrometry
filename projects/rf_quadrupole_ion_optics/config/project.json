@@ -54,7 +54,7 @@
         "exit_connector_length", "exit_census_offset",
         "rf_amplitude", "dc_amplitude", "common_mode_offset", "rf_frequency", "rf_phase",
         "segment_count", "intersegment_gap", "segment_entrance_common_mode",
-        "segment_exit_common_mode", "segment_output_reference", "exit_interface_common_mode"
+        "segment_exit_common_mode", "segment_output_reference"
       ]
     },
     {

@@ -42,7 +42,17 @@
       "properties": {
         "length_mm": {"type": "number", "minimum": 0},
         "inner_radius_mm": {"type": "number", "exclusiveMinimum": 0},
-        "wall_thickness_mm": {"type": "number", "minimum": 0}
+        "wall_thickness_mm": {"type": "number", "minimum": 0},
+        "shield_connection_profile_id": {
+          "const": "grounded_circular_to_rectangular_shield_v1"
+        },
+        "aperture_reducer_profile_id": {
+          "const": "grounded_rectangular_aperture_reducer_v1"
+        },
+        "shield_potential_V": {"const": 0.0},
+        "flange_thickness_binding": {
+          "const": "oatof.geometry_mm.accelerator_shield_wall"
+        }
       }
     },
     "transition_aperture": {

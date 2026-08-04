@@ -12,15 +12,15 @@
     },
     {
       "descriptor": "projects/rf_hexapole_ion_optics/config/project.json",
-      "sha256": "65F2C7B8125A953E37A9AC53CCA24FA22CCE4665B7778FE292DFBC7610B607B0"
+      "sha256": "318FB3300BB4EBCBE4F66DAA781882E073BFE17D2B3842A4EACAB9FEB49DA6DD"
     },
     {
       "descriptor": "projects/rf_octupole_ion_optics/config/project.json",
-      "sha256": "68FE9A5FFDDDFD66479A6D41E6758DFC17CE2ECEF6F55425527BDF83274D78F0"
+      "sha256": "0F48C0340C4C80D1D5BDEEB292DC51E8BBEB226E5C3DC75E3866D664468B4E27"
     },
     {
       "descriptor": "projects/rf_quadrupole_ion_optics/config/project.json",
-      "sha256": "5D19642AA384C1037A27F0CB21E33DB205948FCDA0FD1103D4A2E4418445F5ED"
+      "sha256": "8CFB5B07EBDDC1944F3EE0AF5F56B168C98AA6BF4B26AE8DC98F466123C96C8A"
     },
     {
       "descriptor": "projects/single_reflection_oa_tof_mass_analyzer/config/project.json",
@@ -277,8 +277,7 @@
             "intersegment_gap",
             "segment_entrance_common_mode",
             "segment_exit_common_mode",
-            "segment_output_reference",
-            "exit_interface_common_mode"
+            "segment_output_reference"
           ]
         }
       ],
@@ -413,8 +412,7 @@
             "intersegment_gap",
             "segment_entrance_common_mode",
             "segment_exit_common_mode",
-            "segment_output_reference",
-            "exit_interface_static_potential"
+            "segment_output_reference"
           ]
         }
       ],
@@ -521,8 +519,7 @@
             "intersegment_gap",
             "segment_entrance_common_mode",
             "segment_exit_common_mode",
-            "segment_output_reference",
-            "exit_interface_common_mode"
+            "segment_output_reference"
           ]
         },
         {

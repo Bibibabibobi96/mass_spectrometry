@@ -6,8 +6,8 @@
     "version": 2
   },
   "governance": {
-    "design_variables_sha256": "9780DFC58129062B737A802D644A541EBBE7702CDE26946A64F0C8AF39A5DD83",
-    "optimization_envelope_sha256": "D7945D7D2F7807F8CF8373266F8512DEE6F0FED9A5C060B9D698475CA463EB69",
+    "design_variables_sha256": "2D23A0B727725E5BEC8EA209D5D30EA6E32D69D7077AD067858843CA03B7B025",
+    "optimization_envelope_sha256": "61ADB876E23D5F7C4D5A486A36C14C10BB1717E3CB0AB0650C9FF000E3B58B8F",
     "design_request_file_sha256": "9358BE0D815C281EC8721F07CA39909AE832D92EAAB7C5D502E03F1E728145C1"
   },
   "request": {
@@ -23,7 +23,7 @@
     {
       "label": "design_variables",
       "path": "projects/rf_hexapole_ion_optics/config/design_variables.json",
-      "sha256": "9780DFC58129062B737A802D644A541EBBE7702CDE26946A64F0C8AF39A5DD83"
+      "sha256": "2D23A0B727725E5BEC8EA209D5D30EA6E32D69D7077AD067858843CA03B7B025"
     },
     {
       "label": "operating_mode_registry__no_acceleration_full_length",
@@ -33,7 +33,7 @@
     {
       "label": "optimization_envelope",
       "path": "projects/rf_hexapole_ion_optics/config/optimization_envelope.json",
-      "sha256": "D7945D7D2F7807F8CF8373266F8512DEE6F0FED9A5C060B9D698475CA463EB69"
+      "sha256": "61ADB876E23D5F7C4D5A486A36C14C10BB1717E3CB0AB0650C9FF000E3B58B8F"
     }
   ],
   "identity": {
@@ -592,5 +592,5 @@
       ]
     }
   },
-  "resolved_sha256": "37C2ED1858B1A707E09DA9229932D7CE27A7ED2B9A8EC49560C3557239B15B5F"
+  "resolved_sha256": "CE51D2D2AB68456A5A0FAE6C516F3B32B22952337C32F6A2EB846D659E1D2D80"
 }

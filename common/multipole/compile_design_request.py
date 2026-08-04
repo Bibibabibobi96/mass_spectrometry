@@ -436,11 +436,8 @@ def _resolve_axial_drive(
         )
         output_reference = float(resolved_acceleration["output_reference_V"])
     elif topology == "exit_aperture_plate_potential_step":
-        source_reference, output_reference = _static_reference_voltages(request)
-        if not math.isclose(source_reference, rod_reference, rel_tol=0, abs_tol=1e-12):
-            raise MultipoleDesignCompileError(
-                "exit aperture-plate source reference must equal the rod common mode"
-            )
+        _, output_reference = _static_reference_voltages(request)
+        source_reference = rod_reference
         static = request["static_electrodes_V"]
         if (
             request["geometry_mm"]["enclosure"]["model"]
@@ -697,11 +694,11 @@ def apply_typed_operating_mode(
             "typed operating modes require one uniform physical rod segmentation baseline"
         )
     mode = selected[0]
+    topology = mode["axial_drive_topology"]
     if registry["schema_version"] == 2:
         terminal_voltage = float(registry["terminal_reference_V"])
         entrance_relative = float(mode["rod_entrance_relative_to_terminal_V"])
         exit_relative = float(mode["rod_exit_relative_to_terminal_V"])
-        topology = mode["axial_drive_topology"]
         if topology == "none" and not (
             math.isclose(entrance_relative, 0.0, rel_tol=0, abs_tol=1e-12)
             and math.isclose(exit_relative, 0.0, rel_tol=0, abs_tol=1e-12)
@@ -735,11 +732,11 @@ def apply_typed_operating_mode(
     request["drive"]["common_mode_offset_V"] = entrance_voltage
     static = request["static_electrodes_V"]
     if static["role"] == "cylindrical_shield_static_electrodes":
-        static["shield_entrance_outer_endcap_aperture_plate_connector_V"] = entrance_voltage
-        static["exit_outer_endcap_aperture_plate_connector_V"] = terminal_voltage
+        static["shield_entrance_outer_endcap_aperture_plate_connector_V"] = 0.0
+        static["exit_outer_endcap_aperture_plate_connector_V"] = 0.0
     elif static["role"] == "rectangular_reference_static_electrodes":
         static["entrance_aperture_plate_and_connector_V"] = entrance_voltage
-        static["exit_outer_enclosure_and_connector_V"] = terminal_voltage
+        static["exit_outer_enclosure_and_connector_V"] = 0.0
         static["physical_detector_V"] = terminal_voltage
     else:
         raise MultipoleDesignCompileError(

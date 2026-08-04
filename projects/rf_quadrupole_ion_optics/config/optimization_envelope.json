@@ -8,7 +8,7 @@
   "policy": "One governed envelope covers the shared mechanical base and the three typed electrical modes. Identity, geometry and voltage bounds remain mandatory.",
   "reference": {
     "design_request": "config/requests/baseline.json",
-    "design_request_sha256": "A75721393601D18A0BE4C1B05E91A23AA13F6AC16DE605D9AEB2606AFD7468A3"
+    "design_request_sha256": "D9DFE4BE34D7BF5F177FB505FDBB1E3315EC114898C88297F5432B4A073D5FCD"
   },
   "constraints": [
     {
@@ -58,8 +58,7 @@
         "/segmentation/intersegment_gap_mm",
         "/segmentation/entrance_common_mode_V",
         "/segmentation/exit_common_mode_V",
-        "/segmentation/output_reference_V",
-        "/static_electrodes_V/exit_outer_endcap_aperture_plate_connector_V"
+        "/segmentation/output_reference_V"
       ],
       "description": "Every optimizable numeric request field must remain within the catalog range expressed in its declared unit."
     },

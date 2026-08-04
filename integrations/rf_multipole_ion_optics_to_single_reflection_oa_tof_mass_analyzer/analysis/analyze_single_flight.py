@@ -14,7 +14,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.peak_metrics impor
 
 
 STATE_PATTERN = re.compile(
-    r"TRACE: (?P<event>single_flight_handoff|local_accelerator_exit) "
+    r"TRACE: (?P<event>source_release|single_flight_handoff|pre_pulse_state|local_accelerator_exit) "
     r"ion=(?P<ion>\d+) instrument_time_us=(?P<t>[-+0-9.eE]+) "
     r"x_mm=(?P<x>[-+0-9.eE]+) y_mm=(?P<y>[-+0-9.eE]+) z_mm=(?P<z>[-+0-9.eE]+) "
     r"vx_mm_per_us=(?P<vx>[-+0-9.eE]+) vy_mm_per_us=(?P<vy>[-+0-9.eE]+) "
@@ -35,7 +35,12 @@ def analyze(log_path: Path, launched: int, mass_amu: float) -> tuple[list[dict[s
     for line in log_path.read_text(encoding="utf-8-sig", errors="replace").splitlines():
         match = STATE_PATTERN.search(line)
         if match:
-            event = "multipole_handoff" if match["event"] == "single_flight_handoff" else "local_accelerator_exit"
+            event = {
+                "source_release": "source_release",
+                "single_flight_handoff": "multipole_handoff",
+                "pre_pulse_state": "pre_pulse_state",
+                "local_accelerator_exit": "local_accelerator_exit",
+            }[match["event"]]
             key = (int(match["ion"]), event)
             if key in seen:
                 raise ValueError(f"duplicate checkpoint: particle={key[0]} event={event}")
@@ -62,7 +67,10 @@ def analyze(log_path: Path, launched: int, mass_amu: float) -> tuple[list[dict[s
         if match:
             pulse_times.append(float(match["t"]))
     rows.sort(key=lambda row: (int(row["particle_id"]), str(row["event"])))
-    counts = {event: sum(row["event"] == event for row in rows) for event in ("multipole_handoff", "local_accelerator_exit", "detector_crossing")}
+    counts = {event: sum(row["event"] == event for row in rows) for event in (
+        "source_release", "multipole_handoff", "pre_pulse_state",
+        "local_accelerator_exit", "detector_crossing",
+    )}
     if launched < 1 or any(int(row["particle_id"]) < 1 or int(row["particle_id"]) > launched for row in rows):
         raise ValueError("logged particle identity is outside the launched mother sample")
     detector_times = np.asarray([float(row["instrument_time_us"]) for row in rows if row["event"] == "detector_crossing"])
@@ -82,6 +90,7 @@ def analyze(log_path: Path, launched: int, mass_amu: float) -> tuple[list[dict[s
         "pulse_first_observed_us": min(pulse_times) if pulse_times else None,
         "instrument_clock_peak": resolution,
         "instrument_clock_peak_is_resolution_claim": False,
+        "spatial_six_panel": "results/single_flight_spatial_six_panel.png",
         "formal_gate_passed": False,
     }
     return rows, summary

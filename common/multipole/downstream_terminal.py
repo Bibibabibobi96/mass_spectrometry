@@ -16,6 +16,7 @@ from common.multipole.compile_design_request import (
     canonical_sha256,
     resolved_design_sha256,
 )
+from common.multipole.grounded_shield import require_grounded_potential
 
 
 TERMINAL_PROFILE_SCHEMA = "multipole_downstream_terminal_profiles.schema.json"
@@ -117,7 +118,8 @@ def compose_downstream_terminal(
     required_profile_fields = {
         "terminal_profile_id", "owner", "surface_role", "rod_end_clearance_mm",
         "upstream_enclosure_end_plane_binding", "electrode_thickness_mm",
-        "outer_envelope", "aperture", "terminal_potential_V",
+        "outer_envelope", "aperture", "upstream_entrance_reference_sleeve",
+        "terminal_potential_V",
     }
     if set(profile) != required_profile_fields:
         raise DownstreamTerminalError("terminal profile fields differ")
@@ -133,6 +135,10 @@ def compose_downstream_terminal(
         profile["rod_end_clearance_mm"], profile["electrode_thickness_mm"],
         profile["outer_envelope"]["width_mm"], profile["outer_envelope"]["height_mm"],
         profile["aperture"]["width_mm"], profile["aperture"]["height_mm"],
+        profile["upstream_entrance_reference_sleeve"]["inner_radius_mm"],
+        profile["upstream_entrance_reference_sleeve"]["outer_radius_mm"],
+        profile["upstream_entrance_reference_sleeve"]["minimum_insulation_gap_mm"],
+        profile["upstream_entrance_reference_sleeve"]["downstream_rod_clearance_mm"],
         profile["terminal_potential_V"],
     ]
     if not all(
@@ -166,8 +172,14 @@ def compose_downstream_terminal(
         raise DownstreamTerminalError(
             "upstream enclosure end plane intersects rods or downstream terminal"
         )
-    terminal_potential = float(profile["terminal_potential_V"])
-    source_static, output_static = _static_references(resolved)
+    try:
+        terminal_potential = require_grounded_potential(
+            profile["terminal_potential_V"], "downstream shield terminal"
+        )
+        require_grounded_potential(output_static := _static_references(resolved)[1], "upstream output shield")
+        require_grounded_potential(_static_references(resolved)[0], "upstream entrance shield")
+    except ValueError as error:
+        raise DownstreamTerminalError(str(error)) from error
     if not math.isclose(output_static, terminal_potential, rel_tol=0, abs_tol=_ABS_TOL):
         raise DownstreamTerminalError(
             "resolved output reference differs from downstream terminal potential"
@@ -183,9 +195,24 @@ def compose_downstream_terminal(
         )
     rod_electrodes = _rod_electrode_potentials(resolved)
     entrance_rod_potential = rod_electrodes[0]["potential_V"]
-    if not math.isclose(source_static, entrance_rod_potential, rel_tol=0, abs_tol=_ABS_TOL):
+    sleeve_profile = profile["upstream_entrance_reference_sleeve"]
+    enclosure = resolved["geometry_mm"]["enclosure"]
+    entrance = resolved["interfaces_mm"]["entrance"]
+    sleeve_inner = float(sleeve_profile["inner_radius_mm"])
+    sleeve_outer = float(sleeve_profile["outer_radius_mm"])
+    insulation_gap = float(sleeve_profile["minimum_insulation_gap_mm"])
+    sleeve_upstream = float(enclosure["entrance_outer_endcap_upstream_face_z_mm"])
+    sleeve_downstream = (
+        float(resolved["geometry_mm"]["rod_z_min"])
+        - float(sleeve_profile["downstream_rod_clearance_mm"])
+    )
+    if not (
+        0.0 < sleeve_inner < sleeve_outer
+        and sleeve_outer + insulation_gap < float(entrance["aperture_radius_mm"])
+        and sleeve_upstream < float(entrance["release_plane_z_mm"]) < sleeve_downstream
+    ):
         raise DownstreamTerminalError(
-            "upstream static reference differs from the entrance rod potential"
+            "entrance reference sleeve does not enclose the release plane with insulation clearance"
         )
 
     base_hash = resolved["resolved_sha256"]
@@ -212,8 +239,18 @@ def compose_downstream_terminal(
     }
     resolved["axial_dc"] = {
         "rod_electrodes": rod_electrodes,
-        "upstream_shield_potential_V": entrance_rod_potential,
+        "upstream_shield_potential_V": 0.0,
         "entrance_plate_potential_V": entrance_rod_potential,
+        "entrance_reference_sleeve": {
+            "profile_id": sleeve_profile["profile_id"],
+            "role": "functional_source_reference_not_shield",
+            "potential_V": entrance_rod_potential,
+            "inner_radius_mm": sleeve_inner,
+            "outer_radius_mm": sleeve_outer,
+            "upstream_face_z_mm": sleeve_upstream,
+            "downstream_face_z_mm": sleeve_downstream,
+            "minimum_insulation_gap_mm": insulation_gap,
+        },
         "terminal_electrode_potential_V": terminal_potential,
     }
     resolved["resolved_sha256"] = resolved_design_sha256(resolved)

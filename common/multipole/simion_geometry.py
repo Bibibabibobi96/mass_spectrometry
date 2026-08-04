@@ -114,6 +114,10 @@ def render_gem(
         ground_electrode = 3
         output_electrode = 4 if downstream_terminal is not None else 3
     numerical_census_marker_electrode = output_electrode + 1
+    entrance_reference_electrode = numerical_census_marker_electrode + 1
+    entrance_reference = resolved.get("axial_dc", {}).get(
+        "entrance_reference_sleeve"
+    )
     outer = float(enclosure["shield_outer_radius_mm"])
     inner = float(enclosure["shield_inner_radius_mm"])
     z_min = float(enclosure["vacuum_z_min_mm"])
@@ -167,12 +171,40 @@ def render_gem(
         f"    within {{ cylinder(0,0,{shield_end_z:.12g},{outer:.12g},,{shield_span:.12g}) }}",
         f"    notin_inside {{ cylinder(0,0,{shield_end_z+dz:.12g},{inner:.12g},,{shield_span+2*dz:.12g}) }}",
         "  } }",
-        f"  e({ground_electrode}) {{ fill {{ within {{ cylinder(0,0,{float(enclosure['entrance_outer_endcap_downstream_face_z_mm']):.12g},{outer:.12g},,{float(enclosure['entrance_outer_endcap_downstream_face_z_mm'])-float(enclosure['entrance_outer_endcap_upstream_face_z_mm']):.12g}) }} }} }}",
+    ])
+    entrance_endcap_min = float(enclosure["entrance_outer_endcap_upstream_face_z_mm"])
+    entrance_endcap_max = float(enclosure["entrance_outer_endcap_downstream_face_z_mm"])
+    lines.extend([
+        f"  e({ground_electrode}) {{ fill {{",
+        f"    within {{ cylinder(0,0,{entrance_endcap_max:.12g},{outer:.12g},,{entrance_endcap_max-entrance_endcap_min:.12g}) }}",
+    ])
+    if entrance_reference is not None:
+        insulated_radius = (
+            float(entrance_reference["outer_radius_mm"])
+            + float(entrance_reference["minimum_insulation_gap_mm"])
+        )
+        lines.append(
+            f"    notin_inside {{ cylinder(0,0,{entrance_endcap_max+dz:.12g},{insulated_radius:.12g},,{entrance_endcap_max-entrance_endcap_min+2*dz:.12g}) }}"
+        )
+    lines.extend([
+        "  } }",
         f"  e({ground_electrode}) {{ fill {{",
         f"    within {{ cylinder(0,0,{interface['entrance_plate_z_max']:.12g},{outer:.12g},,{interface['entrance_plate_z_max']-interface['entrance_plate_z_min']:.12g}) }}",
         f"    notin_inside {{ cylinder(0,0,{interface['entrance_plate_z_max']+dz:.12g},{interface['entrance_aperture_radius']:.12g},,{interface['entrance_plate_z_max']-interface['entrance_plate_z_min']+2*dz:.12g}) }}",
         "  } }",
     ])
+    if entrance_reference is not None:
+        ref_upstream = float(entrance_reference["upstream_face_z_mm"])
+        ref_downstream = float(entrance_reference["downstream_face_z_mm"])
+        ref_inner = float(entrance_reference["inner_radius_mm"])
+        ref_outer = float(entrance_reference["outer_radius_mm"])
+        lines.extend([
+            "  ; Functional source-reference sleeve; this is not a shield electrode.",
+            f"  e({entrance_reference_electrode}) {{ fill {{",
+            f"    within {{ cylinder(0,0,{ref_downstream:.12g},{ref_outer:.12g},,{ref_downstream-ref_upstream:.12g}) }}",
+            f"    notin_inside {{ cylinder(0,0,{ref_downstream+dz:.12g},{ref_inner:.12g},,{ref_downstream-ref_upstream+2*dz:.12g}) }}",
+            "  } }",
+        ])
     if downstream_terminal is None:
         lines.extend([
             f"  e({output_electrode}) {{ fill {{ within {{ cylinder(0,0,{float(enclosure['exit_outer_endcap_downstream_face_z_mm']):.12g},{outer:.12g},,{float(enclosure['exit_outer_endcap_downstream_face_z_mm'])-float(enclosure['exit_outer_endcap_upstream_face_z_mm']):.12g}) }} }} }}",

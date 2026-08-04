@@ -257,11 +257,16 @@ COMSOL `mesh_build` runtime profile声明正整数`maximum_mesh_cells`；旧预�
 可选参数只包含网格、cell size、时间步、最大时间、轨迹质量、工具路径、run identity和证据合同。
 COMSOL与SIMION消费同一resolved hash、杆阵列、enclosure、interfaces、segmentation、完整drive和
 `static_electrodes_V`。矩形参考拓扑显式绑定入口/出口带孔接口板、连接器及局部参考外壳电势；圆柱
-拓扑显式绑定全长屏蔽、入口/出口外壳封闭端盖、带孔接口板和连接器电势。质量过滤器的
-0/-100/-1500 V因此不再来自
-项目旧mode或求解器默认值。SIMION
+拓扑显式绑定全长屏蔽、入口/出口外壳封闭端盖、带孔接口板和连接器电势。所有包含屏蔽罩或外部参考
+外壳的组合字段必须精确为`0 V`；Schema、编译器和下游终端组合器均拒绝非零值，设计变量目录也不再
+开放屏蔽电位。杆体common mode、独立功能板和物理探测器仍是不同电极，不由接地规则代替。SIMION
 Lua对`sine`与`cosine`显式分支，未知波形失败；两组电压保持
 `common_mode ± (DC + RF waveform)`。分段设计的两个功能arm保持同一几何和RF，只改变axial scale。
+
+公共连接件`grounded_circular_to_rectangular_shield_v1`由
+[`grounded_shield.py`](grounded_shield.py)生成接地圆套筒和带矩形孔的接地法兰，用于闭合圆形多极杆罩与
+方形下游罩。具体实验仍由integration的connection profile/campaign显式选择；未选择单流程策略时不改变
+既有分阶段工作流。
 
 COMSOL数值profile必须显式声明`electric_potential_element_order`，当前活动四/六/八极杆profile统一
 使用`quadratic`，不得依赖供应商默认阶次。稳态线性求解器由同一公共runner选择`mumps`、`pardiso`

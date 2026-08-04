@@ -81,7 +81,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             "rf_octupole_ion_optics",
         )
 
-    def test_single_flight_campaign_prepares_all_n1000_particles(self) -> None:
+    def test_superseded_non_grounded_single_flight_source_is_rejected(self) -> None:
         source_run = (
             REPO_ROOT.parent / "artifacts/projects/rf_octupole_ion_optics/runs"
             / "20260804_112000__sim__simion__oct-segmented-aperture050__n1000"
@@ -92,20 +92,16 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             dir=REPO_ROOT.parent / "artifacts/projects/rf_octupole_ion_optics"
         ) as directory:
             output = Path(directory)
-            _, plan_path = prepare_family_source_closure(
-                repo_root=REPO_ROOT,
-                profile_registry_path=PROFILE_REGISTRY,
-                adapter_registry_path=ADAPTER_REGISTRY,
-                campaign_path=SINGLE_FLIGHT_CAMPAIGN_PATH,
-                experiment_id="octupole_segmented_aperture100_simion_single_flight",
-                resolved_output=output / "resolved.json",
-                plan_output=output / "plan.json",
-            )
-            budget = load(output / "resolved_engineering_budget.json")
-            plan = load(plan_path)
-        self.assertEqual(budget["execution_strategy"], "simion_single_flight")
-        self.assertEqual(budget["particle_count"], 1000)
-        self.assertIn("execution_strategy=simion_single_flight", plan["execution_steps"][0]["arguments"])
+            with self.assertRaisesRegex(ContractError, "0.0 was expected"):
+                prepare_family_source_closure(
+                    repo_root=REPO_ROOT,
+                    profile_registry_path=PROFILE_REGISTRY,
+                    adapter_registry_path=ADAPTER_REGISTRY,
+                    campaign_path=SINGLE_FLIGHT_CAMPAIGN_PATH,
+                    experiment_id="octupole_segmented_aperture100_simion_single_flight",
+                    resolved_output=output / "resolved.json",
+                    plan_output=output / "plan.json",
+                )
 
     def test_prepare_rejects_campaign_outside_repository(self) -> None:
         with tempfile.TemporaryDirectory(dir=REPO_ROOT.parent) as directory:

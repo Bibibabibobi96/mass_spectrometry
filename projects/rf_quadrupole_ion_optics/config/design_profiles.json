@@ -56,9 +56,9 @@
       "design_variables": "config/design_variables_nonsegmented.json",
       "optimization_envelope": "config/optimization_envelope_mass_filter.json",
       "sha256": {
-        "design_request": "766FABB2F5ED3BB8E69FA100B89BE0758AD7F3870710F836F6B434C5FE5B8820",
+        "design_request": "A98E5EC63EFB9C1A9A621CBD0A558960FCE41D7957308A60345A75DCFB4D66CB",
         "design_variables": "AA6FAFFA57E61DE4115A8DFB9D226083B6121C54B983FC01DC9D4646F54979C2",
-        "optimization_envelope": "980E199DE3AA440029BBAAF1AA9946615D2AD179D766C46F6D068133C1154A2F"
+        "optimization_envelope": "2E194AB0A47BB59DEFAA9A03D72DDA154FF93A271F1EA15EE23C1E6909666A8B"
       },
       "identity": {
         "project_id": "rf_quadrupole_ion_optics",
@@ -78,9 +78,9 @@
       "design_variables": "config/design_variables_explicit_axial.json",
       "optimization_envelope": "config/optimization_envelope_explicit_axial.json",
       "sha256": {
-        "design_request": "1020454F3C31D8F4FD14731F548A98B317AE05DAD1160737069776E324124614",
+        "design_request": "E0E1B2832E4B20663E8F3238A1BEA71FBB0D4F9D00983E50087313046F4B21A5",
         "design_variables": "246876497BA5EF678805A2DD2F65075FD40AB2814B5344C295E78F5FC4B0DED2",
-        "optimization_envelope": "217140E9CD67767BDE1C1E0E9D4C4A1736004D3C0D1343CFDC3587D1A339BA87"
+        "optimization_envelope": "7EF0827EFC546EB742A7BE28A1D9C25074B996735D37A5AC2CD10403011457FD"
       },
       "identity": {
         "project_id": "rf_quadrupole_ion_optics",
@@ -100,9 +100,9 @@
       "design_variables": "config/design_variables_exit_aperture_plate.json",
       "optimization_envelope": "config/optimization_envelope_exit_aperture_plate.json",
       "sha256": {
-        "design_request": "2E4D810DAF55088683430FDB1CEF7AB90283802672D2CEEE821C256B7AC1F5B5",
-        "design_variables": "62B054BDA4EC5752B2771A7042E773CB2420856CF7309300C3ADAB043E077434",
-        "optimization_envelope": "B1E745671FE77D42CC73CB6ADF46B10B7BE5A833BDA1A4C6B65C187F0620B5CB"
+        "design_request": "76768AEAD3D785DCF376E64B522993BA81D78EA04BD0E7FC295911681CB15568",
+        "design_variables": "D92F58E0F543A51CAF602119A2DC6A369CF3B4A2205CF84B40621B3F6D630F6F",
+        "optimization_envelope": "80A642F483D724A66903B75078E77A6A6FEF983B45C25A2603AA4B08EDDC7DE0"
       },
       "identity": {
         "project_id": "rf_quadrupole_ion_optics",
@@ -123,9 +123,9 @@
       "design_variables": "config/design_variables.json",
       "optimization_envelope": "config/optimization_envelope.json",
       "sha256": {
-        "design_request": "A75721393601D18A0BE4C1B05E91A23AA13F6AC16DE605D9AEB2606AFD7468A3",
-        "design_variables": "181F635F984704F21FAB35F2AC607EDAABCC9F8FD8ACDCC0B311D32E40E61357",
-        "optimization_envelope": "1991154C64D643BA46CA2DE081DCF29CD5E73CCEDFAEF835E43843DD04C981F6"
+        "design_request": "D9DFE4BE34D7BF5F177FB505FDBB1E3315EC114898C88297F5432B4A073D5FCD",
+        "design_variables": "61F43FFCD3102E87446272646F17D31E021F44A606371B56C550626D5582AEC8",
+        "optimization_envelope": "7CD5AFC24B8C34AF70E6C82F9BA333668689ACF637860B293CDACD72B341F703"
       },
       "identity": {
         "project_id": "rf_quadrupole_ion_optics",
@@ -146,9 +146,9 @@
       "design_variables": "config/design_variables.json",
       "optimization_envelope": "config/optimization_envelope.json",
       "sha256": {
-        "design_request": "A75721393601D18A0BE4C1B05E91A23AA13F6AC16DE605D9AEB2606AFD7468A3",
-        "design_variables": "181F635F984704F21FAB35F2AC607EDAABCC9F8FD8ACDCC0B311D32E40E61357",
-        "optimization_envelope": "1991154C64D643BA46CA2DE081DCF29CD5E73CCEDFAEF835E43843DD04C981F6"
+        "design_request": "D9DFE4BE34D7BF5F177FB505FDBB1E3315EC114898C88297F5432B4A073D5FCD",
+        "design_variables": "61F43FFCD3102E87446272646F17D31E021F44A606371B56C550626D5582AEC8",
+        "optimization_envelope": "7CD5AFC24B8C34AF70E6C82F9BA333668689ACF637860B293CDACD72B341F703"
       },
       "identity": {
         "project_id": "rf_quadrupole_ion_optics",
@@ -169,9 +169,9 @@
       "design_variables": "config/design_variables.json",
       "optimization_envelope": "config/optimization_envelope.json",
       "sha256": {
-        "design_request": "A75721393601D18A0BE4C1B05E91A23AA13F6AC16DE605D9AEB2606AFD7468A3",
-        "design_variables": "181F635F984704F21FAB35F2AC607EDAABCC9F8FD8ACDCC0B311D32E40E61357",
-        "optimization_envelope": "1991154C64D643BA46CA2DE081DCF29CD5E73CCEDFAEF835E43843DD04C981F6"
+        "design_request": "D9DFE4BE34D7BF5F177FB505FDBB1E3315EC114898C88297F5432B4A073D5FCD",
+        "design_variables": "61F43FFCD3102E87446272646F17D31E021F44A606371B56C550626D5582AEC8",
+        "optimization_envelope": "7CD5AFC24B8C34AF70E6C82F9BA333668689ACF637860B293CDACD72B341F703"
       },
       "identity": {
         "project_id": "rf_quadrupole_ion_optics",

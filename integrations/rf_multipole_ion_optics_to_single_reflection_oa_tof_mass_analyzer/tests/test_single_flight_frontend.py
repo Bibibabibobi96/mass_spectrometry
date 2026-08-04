@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import copy
 import unittest
 from pathlib import Path
 
@@ -34,19 +35,39 @@ class SingleFlightFrontendTests(unittest.TestCase):
                 / "inputs/resolved_connection.json"
             ).read_text(encoding="utf-8-sig")
         )
+        cls.upstream = copy.deepcopy(cls.upstream)
+        cls.upstream["axial_dc"]["upstream_shield_potential_V"] = 0.0
+        cls.upstream["axial_dc"]["entrance_reference_sleeve"] = {
+            "profile_id": "source_reference_sleeve_v1",
+            "role": "functional_source_reference_not_shield",
+            "potential_V": 3.0,
+            "inner_radius_mm": 1.0,
+            "outer_radius_mm": 1.4,
+            "upstream_face_z_mm": -2.5,
+            "downstream_face_z_mm": -0.1,
+            "minimum_insulation_gap_mm": 0.2,
+        }
+        cls.upstream["downstream_terminal"]["terminal_potential_V"] = 0.0
+        cls.connection["connector"].update(
+            {
+                "shield_connection_profile_id": "grounded_circular_to_rectangular_shield_v1",
+                "shield_potential_V": 0.0,
+                "flange_thickness_binding": "oatof.geometry_mm.accelerator_shield_wall",
+            }
+        )
 
-    def test_compiles_disjoint_shield_and_accelerator_voltage_ids(self) -> None:
+    def test_compiles_one_grounded_shield_and_connector_electrode(self) -> None:
         gem, contract = compile_frontend(self.upstream, self.oatof, self.connection)
-        self.assertEqual(contract["electrodes"]["multipole_shield_id"], 9)
+        self.assertEqual(contract["electrodes"]["grounded_shield_id"], 9)
         self.assertEqual(contract["electrodes"]["accelerator_grid2_id"], 17)
-        self.assertEqual(contract["electrodes"]["accelerator_ground_id"], 18)
-        self.assertIn("9=multipole shield", gem)
-        self.assertIn("18=accelerator ground", gem)
+        self.assertIn("9=all grounded shields and connector", gem)
+        self.assertEqual(contract["electrodes"]["entrance_reference_sleeve_id"], 18)
+        self.assertIn("e(18)", gem)
+        self.assertIn("Functional source-reference sleeve", gem)
         self.assertNotIn("Numerical absorber", gem)
         self.assertNotIn(",1,-90) { cylinder", gem)
         self.assertIn(",1,90) { cylinder", gem)
-        self.assertEqual(gem.count("e(9)"), 2)
-        self.assertEqual(gem.count("e(18)"), 3)
+        self.assertGreaterEqual(gem.count("e(9)"), 6)
 
     def test_preserves_direct_mating_aperture_and_global_origin(self) -> None:
         _, contract = compile_frontend(self.upstream, self.oatof, self.connection)
@@ -56,17 +77,74 @@ class SingleFlightFrontendTests(unittest.TestCase):
             contract["junction_enclosure"],
             {
                 "rod_end_to_accelerator_shield_mm": 1.0,
-                "insulated_shield_seam_length_mm": 0.5,
-                "surrounded_radially": True,
+                "profile_gap_mm": 0.0,
+                "topology": "grounded_circular_sleeve_with_apertured_flange",
+                "shield_potential_V": 0.0,
+                "grounded_sleeve_length_mm": 0.5,
+                "flange_thickness_mm": 4.0,
+                "full_radial_enclosure": True,
+                "shared_ground_electrode_id": 9,
             },
         )
         self.assertLessEqual(contract["dimensions"]["nx"] * contract["dimensions"]["ny"] * contract["dimensions"]["nz"], 30_000_000)
 
-    def test_rejects_nonzero_gap(self) -> None:
+    def test_positive_gap_extends_the_closed_grounded_sleeve(self) -> None:
         connection = json.loads(json.dumps(self.connection))
         connection["connector"]["length_mm"] = 1.0
-        with self.assertRaisesRegex(ValueError, "zero gap"):
+        connection["spatial_registration"]["expected_gap_mm"] = 1.0
+        connection["spatial_registration"]["translation_mm"][0] -= 1.0
+        _, contract = compile_frontend(self.upstream, self.oatof, connection)
+        self.assertEqual(contract["junction_enclosure"]["profile_gap_mm"], 1.0)
+        self.assertEqual(
+            contract["junction_enclosure"]["grounded_sleeve_length_mm"], 1.5
+        )
+        self.assertEqual(
+            contract["junction_enclosure"]["rod_end_to_accelerator_shield_mm"], 2.0
+        )
+
+    def test_grounded_reducer_can_narrow_but_not_enlarge_terminal_aperture(self) -> None:
+        connection = copy.deepcopy(self.connection)
+        connection["transition_aperture"]["full_width_mm"] = 0.5
+        connection["transition_aperture"]["full_height_mm"] = 0.5
+        connection["connector"]["aperture_reducer_profile_id"] = (
+            "grounded_rectangular_aperture_reducer_v1"
+        )
+        _, contract = compile_frontend(self.upstream, self.oatof, connection)
+        self.assertEqual(
+            contract["aperture"],
+            {"shape": "rectangular", "width_mm": 0.5, "height_mm": 0.5},
+        )
+        self.assertEqual(
+            contract["aperture_reducer"],
+            {
+                "present": True,
+                "profile_id": "grounded_rectangular_aperture_reducer_v1",
+                "potential_V": 0.0,
+                "terminal_envelope_width_mm": 1.0,
+                "terminal_envelope_height_mm": 0.9,
+            },
+        )
+        connection["transition_aperture"]["full_width_mm"] = 1.1
+        with self.assertRaisesRegex(ValueError, "cannot enlarge"):
             compile_frontend(self.upstream, self.oatof, connection)
+
+    def test_rejects_uncontracted_aperture_mismatch(self) -> None:
+        connection = copy.deepcopy(self.connection)
+        connection["transition_aperture"]["full_width_mm"] = 0.5
+        with self.assertRaisesRegex(ValueError, "requires the governed grounded reducer"):
+            compile_frontend(self.upstream, self.oatof, connection)
+
+    def test_rejects_gap_that_disagrees_with_registration(self) -> None:
+        connection = json.loads(json.dumps(self.connection))
+        connection["connector"]["length_mm"] = 1.0
+        with self.assertRaisesRegex(ValueError, "gap and length"):
+            compile_frontend(self.upstream, self.oatof, connection)
+
+    def test_rejects_non_grounded_shield(self) -> None:
+        upstream = copy.deepcopy(self.upstream)
+        upstream["axial_dc"]["upstream_shield_potential_V"] = 3.0
+        with self.assertRaisesRegex(ValueError, "exactly 0 V"):
+            compile_frontend(upstream, self.oatof, self.connection)
 
 
 if __name__ == "__main__":

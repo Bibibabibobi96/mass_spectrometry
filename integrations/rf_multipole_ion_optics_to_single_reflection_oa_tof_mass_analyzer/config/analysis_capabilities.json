@@ -4,6 +4,20 @@
   "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
   "capabilities": [
     {
+      "capability_id": "rf_oatof_single_flight_aperture_comparison_v1",
+      "consumer": "analysis/compare_single_flight_apertures.py",
+      "scope": "paired event identity, spatial residual, transmission and direct-KDE resolution comparison for two continuous-flight grounded aperture profiles",
+      "fixed_output_role": "results/single_flight_aperture_comparison.png",
+      "claim_class": "engineering_diagnostic"
+    },
+    {
+      "capability_id": "rf_oatof_single_flight_spatial_six_panel_v1",
+      "consumer": "analysis/plot_single_flight_spatial_six_panel.py",
+      "scope": "continuous-flight release, handoff, pre-pulse, accelerator-exit and detector spatial snapshots with governed component outlines",
+      "fixed_output_role": "results/single_flight_spatial_six_panel.png",
+      "claim_class": "engineering_diagnostic"
+    },
+    {
       "capability_id": "rf_oatof_pulse_geometry_snapshot_v1",
       "consumer": "analysis/plot_shared_pulse_geometry_snapshot.py",
       "scope": "COMSOL particle positions and losses immediately before the shared pulse",

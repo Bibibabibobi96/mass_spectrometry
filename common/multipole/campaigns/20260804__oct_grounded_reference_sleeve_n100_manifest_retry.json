@@ -1,0 +1,64 @@
+{
+  "schema_version": 5,
+  "role": "multipole_transport_experiment_campaign",
+  "family_id": "rf_multipole_ion_optics",
+  "campaign_id": "20260804__oct_grounded_reference_sleeve_n100_manifest_retry",
+  "preregistered_before_run": true,
+  "downstream_terminal_profile": {
+    "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+    "terminal_profile_id": "oatof_shield_terminal",
+    "registry_sha256": "B8CB0FC62DE7726DBA022C86A0E2B01478481599E6511D4246911EDBD2D865E9"
+  },
+  "particle_source_transform_policy": {
+    "kind": "preserve_phase_position_direction_and_scale_energy",
+    "rf_frequency_Hz": 1100000.0,
+    "n1000_reference_profile_id": "family_mother_sample_v1_n1000"
+  },
+  "simion_pa_basis_policy": {
+    "kind": "content_addressed_geometry_basis",
+    "reuse_scope": "same_project_same_fingerprint"
+  },
+  "experiments": [
+    {
+      "experiment_id": "oct_grounded_reference_sleeve_n100_manifest_retry",
+      "project_id": "rf_octupole_ion_optics",
+      "authorized_run_id": "20260804_172500__sim__simion__oct-grounded-reference-sleeve__n100",
+      "solver": "simion",
+      "stop_stage": "transport",
+      "case_set": "primary_only",
+      "design_profile_id": "segmented_rod_axial_acceleration",
+      "source_kinetic_energy_eV": 2.0,
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "baseline_finite_3d",
+      "simion_solver_numerics": {
+        "kind": "inline",
+        "numerics_id": "campaign_h15_r015_z020_t160",
+        "values": {
+          "cell_mm_xyz": {"x": 0.15, "y": 0.15, "z": 0.2},
+          "trajectory_quality": 10,
+          "trajectory": {"rf_steps_per_period": 160, "maximum_global_time_us": 80.0}
+        }
+      },
+      "retention_class": "compact",
+      "resource_authorization": {
+        "authorized": true,
+        "limits": {
+          "wall_clock_seconds_by_solver": {"comsol": 1800, "simion": 2400},
+          "transient_run_directory_bytes": 8589934592,
+          "process_tree_working_set_bytes": 8589934592,
+          "minimum_system_available_memory_bytes": 8589934592,
+          "compact_final_retained_bytes": 26214400,
+          "maximum_pa_grid_points": 35000000,
+          "automatic_retry_count": 0
+        },
+        "full_matrix_authorization": {
+          "authorized": false,
+          "reason": "Only this N=100 manifest-publication retry is authorized before N=1000."
+        },
+        "budget_exhaustion_result": "Stop without retry and record the exhausted limit."
+      },
+      "claim_limit": "N=100 manifest-publication retry of the grounded-shield entrance-reference-sleeve preflight; no convergence, Candidate or Formal claim."
+    }
+  ],
+  "claim_limit": "One new immutable N=100 run verifies the corrected manifest publication path before N=1000."
+}

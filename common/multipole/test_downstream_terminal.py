@@ -80,6 +80,14 @@ def terminal_registry() -> dict:
                     "width_axis": "multipole_x",
                     "height_axis": "multipole_y",
                 },
+                "upstream_entrance_reference_sleeve": {
+                    "profile_id": "source_reference_sleeve_v1",
+                    "potential_binding": "segmentation.entrance_common_mode_V",
+                    "inner_radius_mm": 1.0,
+                    "outer_radius_mm": 1.4,
+                    "minimum_insulation_gap_mm": 0.2,
+                    "downstream_rod_clearance_mm": 0.1,
+                },
                 "terminal_potential_V": 0.0,
             }
         ],
@@ -186,7 +194,7 @@ class DownstreamTerminalCompositionTest(unittest.TestCase):
             compose_downstream_terminal(composed, profile)
         wrong_voltage = copy.deepcopy(profile)
         wrong_voltage["terminal_potential_V"] = -3.0
-        with self.assertRaisesRegex(DownstreamTerminalError, "output reference differs"):
+        with self.assertRaisesRegex(DownstreamTerminalError, "must be exactly 0 V"):
             compose_downstream_terminal(resolved, wrong_voltage)
         intersecting = copy.deepcopy(resolved)
         intersecting["interfaces_mm"]["exit"]["aperture_plate_upstream_face_z_mm"] = 81.0

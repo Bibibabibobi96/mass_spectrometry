@@ -62,7 +62,7 @@
   "static_electrodes_V": {
     "role": "rectangular_reference_static_electrodes",
     "entrance_aperture_plate_and_connector_V": 0.0,
-    "exit_outer_enclosure_and_connector_V": -100.0,
+    "exit_outer_enclosure_and_connector_V": 0.0,
     "physical_detector_V": -1500.0
   },
   "particle_source": {

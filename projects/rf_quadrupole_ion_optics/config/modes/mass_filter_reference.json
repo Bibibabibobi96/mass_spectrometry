@@ -28,7 +28,7 @@
   },
   "static_electrodes_V": {
     "entrance_plate": 0.0,
-    "exit_enclosure": -100.0,
+    "exit_enclosure": 0.0,
     "physical_detector_V": -1500.0
   },
   "functional_screen": {

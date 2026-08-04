@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.file_identity import file_sha256
+from common.multipole.grounded_shield import require_grounded_potential
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -28,6 +29,12 @@ def build_extension(
         raise ValueError("single-flight Program requires a multipole resolved design")
     if frontend.get("role") != "rf_oatof_simion_single_flight_frontend_contract":
         raise ValueError("single-flight Program requires a frontend contract")
+    require_grounded_potential(
+        upstream["axial_dc"]["upstream_shield_potential_V"], "multipole shield"
+    )
+    require_grounded_potential(
+        frontend["junction_enclosure"]["shield_potential_V"], "frontend shield connection"
+    )
     drive = upstream["drive"]
     if drive["waveform"] != "cosine":
         raise ValueError("single-flight Program currently requires the frozen cosine RF waveform")
@@ -41,6 +48,8 @@ def build_extension(
         int(item["electrode_id"]): float(item["potential_V"])
         for item in upstream["axial_dc"]["rod_electrodes"]
     }
+    entrance_reference = upstream["axial_dc"]["entrance_reference_sleeve"]
+    entrance_reference_v = float(entrance_reference["potential_V"])
     origin = frontend["instance_origin_mm"]
     handoff_x = frontend["source_exit_center_mm"]["x"]
     lines = [
@@ -75,7 +84,7 @@ def build_extension(
             "local function single_flight_set_frontend_voltages()",
             "  local rf=single_flight_rf_peak_v*math.cos(single_flight_omega*ion_time_of_flight)",
             "  for id,item in pairs(single_flight_rods) do adj_elect[id]=item.dc+item.sign*rf end",
-            f"  adj_elect[9]={_lua_number(upstream['axial_dc']['upstream_shield_potential_V'])}",
+            "  adj_elect[9]=0",
             "  local pulse_on=handoff_pulse_mode==0 or (handoff_pulse_mode==1 and",
             "    ion_time_of_flight>=handoff_pulse_time_us and",
             "    ion_time_of_flight<handoff_pulse_time_us+handoff_pulse_width_us)",
@@ -86,7 +95,8 @@ def build_extension(
             "  adj_elect[14]=pulse_on and V_grid1*3/6 or handoff_pulse_pre_all_v",
             "  adj_elect[15]=pulse_on and V_grid1*2/6 or handoff_pulse_pre_all_v",
             "  adj_elect[16]=pulse_on and V_grid1*1/6 or handoff_pulse_pre_all_v",
-            "  adj_elect[17]=0; adj_elect[18]=0",
+            "  adj_elect[17]=0",
+            f"  adj_elect[18]={_lua_number(entrance_reference_v)}",
             "end",
             "function segment.initialize_run()",
             "  single_flight_base_initialize_run()",
@@ -96,11 +106,12 @@ def build_extension(
             "  ai.az,ai.el,ai.rt,ai.scale=0,0,0,1",
             "  local initial={}",
             "  for id,item in pairs(single_flight_rods) do initial[id]=item.dc end",
-            f"  initial[9]={_lua_number(upstream['axial_dc']['upstream_shield_potential_V'])}",
+            "  initial[9]=0",
             "  initial[10]=0; initial[11]=0; initial[12]=0; initial[13]=0; initial[14]=0",
-            "  initial[15]=0; initial[16]=0; initial[17]=0; initial[18]=0",
+            "  initial[15]=0; initial[16]=0; initial[17]=0",
+            f"  initial[18]={_lua_number(entrance_reference_v)}",
             "  ai.pa:fast_adjust(initial)",
-            "  single_flight_previous={}; single_flight_handoff_reported={}",
+            "  single_flight_previous={}; single_flight_handoff_reported={}; single_flight_prepulse_reported={}",
             "  if trajectory_log_enable~=0 then",
             "    print(string.format('TRACE: single_flight_contract frontend_origin=(%.12g,%.12g,%.12g) handoff_x=%.12g rf_peak_v=%.12g frequency_hz=%.12g',ai.x,ai.y,ai.z,single_flight_handoff_x,single_flight_rf_peak_v,single_flight_frequency_hz))",
             "  end",
@@ -111,6 +122,9 @@ def build_extension(
             "function segment.initialize()",
             "  single_flight_base_initialize()",
             "  single_flight_previous[ion_number]={t=ion_time_of_flight,x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm}",
+            "  if trajectory_log_enable~=0 then",
+            "    print(string.format('TRACE: source_release ion=%d instrument_time_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g',ion_number,ion_time_of_flight,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm))",
+            "  end",
             "end",
             "function segment.tstep_adjust()",
             "  single_flight_base_tstep_adjust()",
@@ -122,6 +136,14 @@ def build_extension(
             "function segment.other_actions()",
             "  single_flight_base_other_actions()",
             "  local p=single_flight_previous[ion_number]",
+            "  if p and not single_flight_prepulse_reported[ion_number] and p.t<handoff_pulse_time_us and ion_time_of_flight>=handoff_pulse_time_us then",
+            "    local f=(handoff_pulse_time_us-p.t)/(ion_time_of_flight-p.t)",
+            "    local xc=p.x+f*(ion_px_mm-p.x); local yc=p.y+f*(ion_py_mm-p.y); local zc=p.z+f*(ion_pz_mm-p.z)",
+            "    single_flight_prepulse_reported[ion_number]=true",
+            "    if trajectory_log_enable~=0 then",
+            "      print(string.format('TRACE: pre_pulse_state ion=%d instrument_time_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g',ion_number,handoff_pulse_time_us,xc,yc,zc,ion_vx_mm,ion_vy_mm,ion_vz_mm))",
+            "    end",
+            "  end",
             "  if p and not single_flight_handoff_reported[ion_number] and p.x<single_flight_handoff_x and ion_px_mm>=single_flight_handoff_x and ion_vx_mm>0 then",
             "    local f=(single_flight_handoff_x-p.x)/(ion_px_mm-p.x)",
             "    local tc=p.t+f*(ion_time_of_flight-p.t)",
