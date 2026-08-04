@@ -135,6 +135,9 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
         identities = [row["capability_id"] for row in capabilities]
         self.assertEqual(len(identities), len(set(identities)))
         self.assertIn("rf_oatof_chain_checkpoint_six_panel_v1", identities)
+        self.assertIn(
+            "rf_oatof_grid2_downstream_six_panel_resolution_v1", identities
+        )
         self.assertTrue(
             all(row["claim_class"] != "FORMAL" for row in capabilities)
         )

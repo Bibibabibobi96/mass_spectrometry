@@ -31,6 +31,14 @@
       "required_event_plane": "diagnostic_events.local_accelerator_exit",
       "fixed_output_role": "results/<case>__chain_checkpoint_diagnostics.png",
       "claim_class": "UNQUALIFIED_DIAGNOSTIC_ONLY"
+    },
+    {
+      "capability_id": "rf_oatof_grid2_downstream_six_panel_resolution_v1",
+      "consumer": "analysis/plot_grid2_downstream_six_panel.py",
+      "scope": "per-branch grid2 phase space, detector acceptance and Gaussian analyzer-TOF FWHM resolution proxy",
+      "required_event_plane": "diagnostic_events.local_accelerator_exit",
+      "fixed_output_role": "results/<case>_six_panel.png",
+      "claim_class": "UNQUALIFIED_DIAGNOSTIC_ONLY"
     }
   ]
 }

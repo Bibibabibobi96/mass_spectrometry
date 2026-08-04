@@ -18,6 +18,9 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     materialize_simion_grid2_state as grid2_state,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis import (
+    plot_grid2_downstream_six_panel as six_panel,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis import (
     compare_grid2_solver_propagation as propagation,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis import (
@@ -61,6 +64,26 @@ def write_csv(path: Path, fields: list[str], rows: list[dict[str, object]]) -> N
 
 
 class AnalyzerTransportTests(unittest.TestCase):
+    def test_six_panel_resolution_uses_detected_analyzer_tof(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            canonical = root / "canonical.csv"
+            downstream = root / "downstream.csv"
+            write_csv(canonical, csv_columns(), [canonical_row(1), canonical_row(2)])
+            write_csv(
+                downstream,
+                ["Hit", "TofUs"],
+                [{"Hit": "True", "TofUs": 30.0},
+                 {"Hit": "True", "TofUs": 30.002}],
+            )
+            result = six_panel.analyze(canonical, downstream)
+            resolution = result["resolution"]
+            self.assertEqual(resolution["hit_particles"], 2)
+            self.assertAlmostEqual(
+                resolution["sample_sigma_analyzer_tof_ns"], 2 ** 0.5
+            )
+            self.assertFalse(result["claims"]["resolution_claim_allowed"])
+
     def test_compares_grid2_solver_difference_and_common_downstream(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
