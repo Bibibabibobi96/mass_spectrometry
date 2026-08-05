@@ -10,6 +10,9 @@ param(
   [Parameter(Mandatory)][string]$ResolvedSourceContractSha256,
   [Parameter(Mandatory)][string]$UpstreamResolvedDesign,
   [Parameter(Mandatory)][string]$UpstreamResolvedDesignSha256,
+  [string]$OatofResolvedGeometry = '',
+  [string]$PulseSchedule = '',
+  [string]$LayoutProfileId = '',
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$PythonExe = ''
 )
@@ -65,6 +68,12 @@ try {
   if ($settings.role -ne 'rf_oatof_simion_single_flight_configuration' -or [double]$settings.cell_mm -le 0) {
     throw 'Single-flight numerical configuration is invalid.'
   }
+  $hasGovernedLayout = -not [string]::IsNullOrWhiteSpace($LayoutProfileId)
+  if ($hasGovernedLayout -ne (
+      -not [string]::IsNullOrWhiteSpace($OatofResolvedGeometry) -and
+      -not [string]::IsNullOrWhiteSpace($PulseSchedule))) {
+    throw 'Single-flight layout profile, resolved geometry and pulse schedule must be supplied together.'
+  }
   $resolvedFrozen = Join-Path $package.input_dir 'resolved_connection.json'
   $upstreamFrozen = Join-Path $package.input_dir 'upstream_resolved_design.json'
   $sourceContractFrozen = Join-Path $package.input_dir 'resolved_source_contract.json'
@@ -74,9 +83,32 @@ try {
   Copy-Item -LiteralPath $runtime.contracts.upstream_resolved_design -Destination $upstreamFrozen
   Copy-Item -LiteralPath $runtime.contracts.resolved_source_contract -Destination $sourceContractFrozen
   Copy-Item -LiteralPath $runtime.binding_path -Destination $runtimeBindingFrozen
-  Copy-RfStableFile -SourceRunRoot $repoRoot `
-    -SourcePath (Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer\config\resolved_geometry.json') `
+  $oatofGeometrySource = if ($hasGovernedLayout) {
+    [IO.Path]::GetFullPath($OatofResolvedGeometry)
+  } else {
+    Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer\config\resolved_geometry.json'
+  }
+  Copy-RfStableFile -SourceRunRoot $(if ($hasGovernedLayout) {$workspaceRoot} else {$repoRoot}) `
+    -SourcePath $oatofGeometrySource `
     -Destination $oatofGeometry -Role 'oaTOF resolved geometry' | Out-Null
+  $pulseScheduleFrozen = $null
+  $pulseTimeUs = [double]$settings.pulse_time_us
+  $pulseWidthUs = [double]$settings.pulse_width_us
+  if ($hasGovernedLayout) {
+    $pulseScheduleFrozen = Join-Path $package.input_dir 'resolved_single_flight_pulse_schedule.json'
+    Copy-RfStableFile -SourceRunRoot $workspaceRoot -SourcePath $PulseSchedule `
+      -Destination $pulseScheduleFrozen -Role 'single-flight pulse schedule' | Out-Null
+    $pulseScheduleDocument = Get-Content -LiteralPath $pulseScheduleFrozen -Raw -Encoding UTF8 |
+      ConvertFrom-Json
+    if ($pulseScheduleDocument.role -ne 'rf_oatof_single_flight_multipole_handoff_pulse_schedule' -or
+        $pulseScheduleDocument.layout_profile_id -ne $LayoutProfileId -or
+        [double]$pulseScheduleDocument.derived_pulse_time_us -le 0 -or
+        [double]$pulseScheduleDocument.pulse_width_us -le 0) {
+      throw 'Governed single-flight pulse schedule identity differs.'
+    }
+    $pulseTimeUs = [double]$pulseScheduleDocument.derived_pulse_time_us
+    $pulseWidthUs = [double]$pulseScheduleDocument.pulse_width_us
+  }
 
   $motherSource = Join-Path $package.input_dir 'mother_particle_source.csv'
   Copy-RfStableFile -SourceRunRoot $workspaceRoot -SourcePath $runtime.source_particle_source `
@@ -188,9 +220,9 @@ try {
 
   $runConfiguration = [ordered]@{
     schema_version=2; run_id=$RunId; project=$runtime.upstream_project_id; mode='rf_to_oatof_simion_single_flight'; project_root=$repoRoot
-    inputs=[ordered]@{ configuration=$configuration; runtime_binding=$runtimeBindingFrozen; resolved_connection=$resolvedFrozen; resolved_source_contract=$sourceContractFrozen; upstream_resolved_design=$upstreamFrozen; oatof_resolved_geometry=$oatofGeometry; resolved_integration_engineering_budget=$budget.frozen_budget; resolved_stage_resource_budget=$budget.stage_budget; mother_particle_source=$motherSource; initial_global_state=$globalSource; ion=$ion; frontend_gem=$frontendGem; frontend_contract=$frontendContract; frontend_aperture_topology_support=$apertureTopologySupport; frontend_aperture_topology_verifier=$apertureVerifier; program_metadata=$programMetadata }
+    inputs=[ordered]@{ configuration=$configuration; runtime_binding=$runtimeBindingFrozen; resolved_connection=$resolvedFrozen; resolved_source_contract=$sourceContractFrozen; upstream_resolved_design=$upstreamFrozen; oatof_resolved_geometry=$oatofGeometry; pulse_schedule=$pulseScheduleFrozen; resolved_integration_engineering_budget=$budget.frozen_budget; resolved_stage_resource_budget=$budget.stage_budget; mother_particle_source=$motherSource; initial_global_state=$globalSource; ion=$ion; frontend_gem=$frontendGem; frontend_contract=$frontendContract; frontend_aperture_topology_support=$apertureTopologySupport; frontend_aperture_topology_verifier=$apertureVerifier; program_metadata=$programMetadata }
     upstream_source_identity=$runtime.source_identity
-    parameters=[ordered]@{ connection_profile_id=$ConnectionProfileId; source_branch_id=$SourceBranchId; launched_particle_count=$launched; particle_count=$launched; aperture_width_mm=$apertureWidthMm; aperture_height_mm=$apertureHeightMm; aperture_boolean_boundary_policy=[string]$apertureDiscretization.boolean_boundary_policy; aperture_grid_warnings=$apertureGridWarnings; frontend_open_aperture_column_count=[int]$apertureTopology.open_column_count; frontend_aperture_guard_electrode_check_passed=[bool]$apertureTopology.guard_electrode_check_passed; frontend_aperture_topology_report_sha256=(Get-FileHash -LiteralPath $apertureTopologyReport -Algorithm SHA256).Hash; rod_end_to_accelerator_shield_mm=1.0; surrounded_transition=$true; pulse_time_us=[double]$settings.pulse_time_us; pulse_width_us=[double]$settings.pulse_width_us; frontend_gem_sha256=$frontendHash; frontend_pa0_sha256=(Get-FileHash -LiteralPath $cachePa0 -Algorithm SHA256).Hash }
+    parameters=[ordered]@{ connection_profile_id=$ConnectionProfileId; source_branch_id=$SourceBranchId; layout_profile_id=$(if($hasGovernedLayout){$LayoutProfileId}else{$null}); launched_particle_count=$launched; particle_count=$launched; aperture_width_mm=$apertureWidthMm; aperture_height_mm=$apertureHeightMm; aperture_boolean_boundary_policy=[string]$apertureDiscretization.boolean_boundary_policy; aperture_grid_warnings=$apertureGridWarnings; frontend_open_aperture_column_count=[int]$apertureTopology.open_column_count; frontend_aperture_guard_electrode_check_passed=[bool]$apertureTopology.guard_electrode_check_passed; frontend_aperture_topology_report_sha256=(Get-FileHash -LiteralPath $apertureTopologyReport -Algorithm SHA256).Hash; rod_end_to_accelerator_shield_mm=1.0; surrounded_transition=$true; accelerator_axis_x_mm=[double]((Get-Content -LiteralPath $oatofGeometry -Raw -Encoding UTF8 | ConvertFrom-Json).coordinate_convention.accelerator_axis_x); pulse_time_us=$pulseTimeUs; pulse_width_us=$pulseWidthUs; frontend_gem_sha256=$frontendHash; frontend_pa0_sha256=(Get-FileHash -LiteralPath $cachePa0 -Algorithm SHA256).Hash }
     artifact_retention=[ordered]@{policy_version=1;class='compact';reason=$null}; formal_gate_passed=$false
   }
   Write-RfJson -Path $package.run_config -Depth 10 -Value $runConfiguration
@@ -209,8 +241,9 @@ try {
       '--trajectory-quality',([string]$settings.trajectory_quality),'--retain-trajectories','0','--particles',$ion,'--programs','1',
       '--adjustable',("trajectory_quality={0}" -f $settings.trajectory_quality),'--adjustable','trajectory_log_enable=1',
       '--adjustable',("diagnostic_max_tof_us={0:R}" -f [double]$settings.maximum_time_of_flight_us),
-      '--adjustable','handoff_pulse_mode=1','--adjustable',("handoff_pulse_time_us={0:R}" -f [double]$settings.pulse_time_us),
-      '--adjustable',("handoff_pulse_width_us={0:R}" -f [double]$settings.pulse_width_us),
+      '--adjustable','handoff_pulse_mode=1','--adjustable',("handoff_pulse_time_us={0:R}" -f $pulseTimeUs),
+      '--adjustable',("handoff_pulse_width_us={0:R}" -f $pulseWidthUs),
+      '--adjustable',("accelerator_axis_x_mm={0:R}" -f [double]$runConfiguration.parameters.accelerator_axis_x_mm),
       '--adjustable',("single_flight_rf_steps={0}" -f [int]$settings.rf_steps_per_period),
       (Join-Path $runtimeDir 'oatof_ideal_grounded.iob'))
   } finally { $env:OATOF_ACCELERATOR_PA_OVERRIDE = $oldOverride }

@@ -44,6 +44,32 @@ def _matrix_vector(matrix: list[list[float]], vector: list[float]) -> list[float
     return [_dot(row, vector) for row in matrix]
 
 
+def derive_direct_mating_translation(
+    rotation_upstream_to_downstream: list[list[float]],
+    upstream_center_mm: list[float],
+    downstream_center_mm: list[float],
+) -> list[float]:
+    """Return the rigid translation that makes two port centers coincide."""
+    if (
+        len(rotation_upstream_to_downstream) != 3
+        or any(len(row) != 3 for row in rotation_upstream_to_downstream)
+        or len(upstream_center_mm) != 3
+        or len(downstream_center_mm) != 3
+    ):
+        raise ContractError("direct-mating translation requires 3D rotation and centers")
+    values = [
+        float(value)
+        for row in rotation_upstream_to_downstream
+        for value in row
+    ] + [float(value) for value in upstream_center_mm + downstream_center_mm]
+    if not all(math.isfinite(value) for value in values):
+        raise ContractError("direct-mating translation inputs must be finite")
+    transformed = _matrix_vector(
+        rotation_upstream_to_downstream, list(map(float, upstream_center_mm))
+    )
+    return _subtract(list(map(float, downstream_center_mm)), transformed)
+
+
 def _determinant(matrix: list[list[float]]) -> float:
     a, b, c = matrix
     return (

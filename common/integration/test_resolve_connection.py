@@ -15,6 +15,7 @@ from common.contracts.machine_contracts import (
 )
 from common.contracts.file_identity import file_sha256, repository_text_sha256
 from common.integration.resolve_connection import (
+    derive_direct_mating_translation,
     load_connection_profile_registry,
     resolve_connection_profile,
     verify_composition_plan,
@@ -23,6 +24,15 @@ from common.integration.resolve_connection import (
 
 
 class ResolveConnectionTests(unittest.TestCase):
+    def test_direct_mating_translation_is_derived_from_both_port_centers(self) -> None:
+        rotation = [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
+        self.assertEqual(
+            derive_direct_mating_translation(
+                rotation, [0.0, 0.0, 80.6], [-88.0, 0.0, -18.4]
+            ),
+            [-168.6, 0.0, -18.4],
+        )
+
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.workspace_root = Path(self.temporary.name)

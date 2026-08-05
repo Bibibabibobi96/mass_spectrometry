@@ -18,11 +18,17 @@ from common.integration.adapter_contract import (
     resolve_execution_mapping,
 )
 from common.integration.resolve_connection import (
+    derive_direct_mating_translation,
     load_connection_profile_registry,
     verify_composition_plan,
     write_resolved_and_plan,
 )
 from common.multipole.component_port import build_exit_component_port
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_layout import (
+    compile_geometry_and_port,
+    derive_pulse_schedule,
+    select_profile,
+)
 
 
 INTEGRATION_ID = (
@@ -215,6 +221,7 @@ def _load_source_evidence(
     return {
         "source": source,
         "manifest": manifest,
+        "state_path": state_path,
         "solver_id": _source_solver(manifest),
         "resolved_design": resolved_design,
         "resolved_design_path": design_path,
@@ -386,6 +393,49 @@ def prepare_family_source_closure(
     resolved_upstream["port_contract"] = _workspace_relative(
         upstream_port_path, workspace
     )
+    layout_files: dict[str, Path] | None = None
+    if campaign["schema_version"] == 2:
+        if execution_strategy != "simion_single_flight":
+            raise ContractError("single-flight layout profiles require SIMION single flight")
+        layout_registry_path = (
+            root / "integrations" / INTEGRATION_ID / "config" /
+            "single_flight_layout_profiles.json"
+        )
+        layout_profile = select_profile(
+            _load(layout_registry_path), experiment["single_flight_layout_profile_id"]
+        )
+        base_geometry_path = (
+            root / "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json"
+        )
+        base_downstream_port_path = (root / profile["downstream"]["port_contract"]).resolve()
+        geometry, downstream_port, _ = compile_geometry_and_port(
+            _load(base_geometry_path), _load(base_downstream_port_path), layout_profile
+        )
+        geometry_path = plan_output.with_name("resolved_oatof_geometry.json")
+        geometry_path.write_text(json.dumps(geometry, indent=2) + "\n", encoding="utf-8")
+        downstream_port["authority"]["source_contract"] = _workspace_relative(
+            geometry_path, workspace
+        )
+        downstream_port["authority"]["source_sha256"] = file_sha256(geometry_path)
+        downstream_port_path = plan_output.with_name("resolved_downstream_port.json")
+        downstream_port_path.write_text(
+            json.dumps(downstream_port, indent=2) + "\n", encoding="utf-8"
+        )
+        validate_schema(downstream_port, "component_port.schema.json")
+        resolved_registry["profiles"][0]["downstream"]["port_contract"] = (
+            _workspace_relative(downstream_port_path, workspace)
+        )
+        registration = resolved_registry["profiles"][0]["spatial_registration"]
+        registration["translation_mm"] = derive_direct_mating_translation(
+            registration["rotation_upstream_to_downstream"],
+            upstream_port["mating_surface"]["center_mm"],
+            downstream_port["mating_surface"]["center_mm"],
+        )
+        layout_files = {
+            "registry": layout_registry_path,
+            "geometry": geometry_path,
+            "downstream_port": downstream_port_path,
+        }
     resolved_registry_path = plan_output.with_name(
         "resolved_connection_profile_registry.json"
     )
@@ -438,6 +488,14 @@ def prepare_family_source_closure(
         plan_output,
         repo_root=root,
     )
+    if layout_files is not None:
+        schedule = derive_pulse_schedule(
+            evidence["state_path"], _load(resolved_path), _load(layout_files["geometry"]),
+            layout_profile,
+        )
+        schedule_path = plan_output.with_name("resolved_single_flight_pulse_schedule.json")
+        schedule_path.write_text(json.dumps(schedule, indent=2) + "\n", encoding="utf-8")
+        layout_files["schedule"] = schedule_path
     plan = _load(plan_path)
     plan["execution_steps"] = [
         {
@@ -462,7 +520,14 @@ def prepare_family_source_closure(
                 "upstream_resolved_design_filename=upstream_resolved_design.json",
                 "upstream_resolved_design_sha256="
                 + evidence["resolved_design_sha256"],
-            ],
+            ] + ([] if layout_files is None else [
+                f"layout_profile_id={experiment['single_flight_layout_profile_id']}",
+                "resolved_oatof_geometry_filename=resolved_oatof_geometry.json",
+                f"resolved_oatof_geometry_sha256={file_sha256(layout_files['geometry'])}",
+                "resolved_single_flight_pulse_schedule_filename=resolved_single_flight_pulse_schedule.json",
+                f"resolved_single_flight_pulse_schedule_sha256={file_sha256(layout_files['schedule'])}",
+                f"single_flight_layout_registry_sha256={repository_text_sha256(layout_files['registry'])}",
+            ]),
         }
     ]
     validate_schema(plan, "composition_plan.schema.json")

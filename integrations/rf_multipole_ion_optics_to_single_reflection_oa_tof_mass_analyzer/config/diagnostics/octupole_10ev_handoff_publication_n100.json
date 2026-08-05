@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "role": "multipole_handoff_publication_contract",
+  "selector": {"event": "handoff", "status": "transmitted"},
+  "geometry": {
+    "axial_plane_mm": 80.6,
+    "absolute_tolerance_mm": 1e-09,
+    "require_positive_axial_velocity": true
+  },
+  "population": {
+    "expected_source_particle_count": 100,
+    "source_particle_id_policy": "contiguous_one_based",
+    "handoff_particle_id_policy": "unique_subset_of_source"
+  },
+  "canonical_state": {
+    "state_event": "canonical_handoff",
+    "frame_id": "multipole_cartesian_z_axis_v1",
+    "clock_epoch_id": "instrument_clock_epoch_v1",
+    "source_component_id": "rf_octupole_ion_optics",
+    "target_component_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+    "lineage_policy": "root_birth_time_plus_component_elapsed_time",
+    "species_policy": "frozen_particle_source_mass_and_charge",
+    "particle_weight": 1,
+    "phase_reference_id": "multipole_rf_drive",
+    "clock_tolerance_us": 1e-09
+  }
+}

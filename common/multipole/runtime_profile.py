@@ -745,7 +745,7 @@ def resolve_campaign_experiment(
         raise ValueError("campaign experiment project identity differs")
 
     downstream_terminal = None
-    if campaign["schema_version"] in (2, 3, 4, 5):
+    if campaign["schema_version"] in (2, 3, 4, 5, 6):
         downstream_terminal = _resolve_downstream_terminal_profile(
             repo_root, campaign["downstream_terminal_profile"]
         )
@@ -753,7 +753,7 @@ def resolve_campaign_experiment(
     design = resolve_design_profile(
         repo_root, project_id, experiment["design_profile_id"]
     )
-    if campaign["schema_version"] in (3, 4):
+    if campaign["schema_version"] in (3, 4, 6):
         design = _compile_campaign_design_candidate(
             repo_root,
             project_id,
@@ -789,7 +789,7 @@ def resolve_campaign_experiment(
         if phase_derivation["authority_source"]["sha256"] != source["sha256"]:
             raise ValueError("phase-policy authority source differs from the selected source")
     source_derivation = None
-    if campaign["schema_version"] == 5:
+    if campaign["schema_version"] in (5, 6):
         source_derivation = _resolve_source_transform_policy(
             repo_root,
             project_root,
@@ -888,10 +888,11 @@ def resolve_campaign_experiment(
             "runtime_profile_registry_sha256": _sha256(runtime_registry_path),
         },
     }
-    if campaign["schema_version"] in (3, 4):
+    if campaign["schema_version"] in (3, 4, 6):
         result["campaign"]["design_variable_authorization_sha256"] = canonical_sha256(
             campaign["design_variable_authorization"]
         )
+    if campaign["schema_version"] in (3, 4):
         result["campaign"]["particle_source_phase_policy_sha256"] = canonical_sha256(
             campaign["particle_source_phase_policy"]
         )
@@ -903,7 +904,7 @@ def resolve_campaign_experiment(
             result["campaign"]["simion_pa_basis_policy_sha256"] = canonical_sha256(
                 campaign["simion_pa_basis_policy"]
             )
-    if campaign["schema_version"] == 5:
+    if campaign["schema_version"] in (5, 6):
         result["campaign"]["particle_source_transform_policy_sha256"] = canonical_sha256(
             campaign["particle_source_transform_policy"]
         )

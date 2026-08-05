@@ -169,6 +169,36 @@ class RuntimeProfileTests(unittest.TestCase):
                     resolved["design_profile_resolution"],
                 )
 
+    def test_campaign_v6_combines_source_transform_and_segment_voltage_variables(self) -> None:
+        resolved = resolve_campaign_experiment(
+            REPO_ROOT,
+            "rf_octupole_ion_optics",
+            Path("20260805__oct_segmented_10ev_h15.json"),
+            "oct_segmented_10ev_h15_n100",
+        )
+        applied = resolved["design_profile_resolution"]["campaign_design_variables"][
+            "applied_values"
+        ]
+        self.assertEqual(
+            {key: value["value"] for key, value in applied.items()},
+            {
+                "segment_entrance_common_mode": 8.0,
+                "segment_exit_common_mode": 0.0,
+                "segment_output_reference": 0.0,
+            },
+        )
+        self.assertEqual(
+            resolved["particle_source_derivation"]["target_kinetic_energy_eV"], 2.0
+        )
+        self.assertRegex(
+            resolved["campaign"]["design_variable_authorization_sha256"],
+            r"^[A-F0-9]{64}$",
+        )
+        self.assertRegex(
+            resolved["campaign"]["particle_source_transform_policy_sha256"],
+            r"^[A-F0-9]{64}$",
+        )
+
     def test_historical_campaign_v1_and_v2_remain_resolvable(self) -> None:
         cases = (
             (

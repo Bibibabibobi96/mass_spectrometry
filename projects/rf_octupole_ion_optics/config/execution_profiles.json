@@ -4,11 +4,16 @@
   "project_id": "rf_octupole_ion_optics",
   "profiles": [
     {
-      "profile_id": "finite_3d_design_compile_static",
+      "profile_id": "simion_transport_campaign_engineering",
       "capability_id": "octupole_finite_3d_transport",
       "mode": "finite_3d_no_collision",
-      "evidence_levels": ["static"],
-      "supported_objectives": ["transmission_fraction", "exit_rms_radius", "maximum_rod_radius"],
+      "evidence_levels": ["plan"],
+      "supported_objectives": [
+        "transmission_fraction",
+        "exit_rms_radius",
+        "exit_rms_divergence",
+        "exit_energy_spread"
+      ],
       "supported_operating_points": [
         {"mass": {"value": 100.0, "unit": "Da"}, "charge_state": 1}
       ],
@@ -26,12 +31,19 @@
         "segment_exit_common_mode", "segment_output_reference"
       ],
       "supported_constraints": [
-        "locked_multipole_identity", "catalog_variable_bounds", "positive_rod_span",
-        "nonoverlapping_interfaces", "segmented_length_conservation",
-        "supported_connector_shapes"
+        "locked_multipole_identity",
+        "catalog_variable_bounds",
+        "campaign_variable_bounds",
+        "phase_matched_particle_source",
+        "downstream_terminal_geometry"
       ],
-      "deliverable_outputs": ["validation_report"],
-      "required_bindings": ["compiled_output_path"],
+      "deliverable_outputs": [
+        "simulation_results",
+        "simion_model",
+        "validation_report",
+        "interface_state"
+      ],
+      "required_bindings": ["campaign_path", "experiment_id"],
       "steps": [
         {
           "step_id": "static_gate",
@@ -42,28 +54,21 @@
           "arguments": ["-PythonExe", "{python_exe}"]
         },
         {
-          "step_id": "compile_design_request",
-          "kind": "analyze",
-          "shell": "python",
-          "entrypoint": "../../common/multipole/compile_design_request.py",
-          "run_id_template": null,
+          "step_id": "simion_campaign_run",
+          "kind": "run",
+          "shell": "powershell",
+          "entrypoint": "../../common/multipole/run_simion_transport_campaign.ps1",
+          "run_id_template": "{authorized_run_id}",
           "arguments": [
-            "--request", "config/requests/mechanical_base.json",
-            "--design-variables", "config/design_variables.json",
-            "--optimization-envelope", "config/optimization_envelope.json",
-            "--operating-mode-registry", "config/operating_modes.json",
-            "--mode-id", "no_acceleration_full_length",
-            "--provenance-root", "../..",
-            "--output", "{compiled_output_path}",
-            "--project-id", "rf_octupole_ion_optics",
-            "--radial-order-n", "4",
-            "--electrode-count", "8"
+            "-CampaignPath", "{campaign_path}",
+            "-ExperimentId", "{experiment_id}",
+            "-PythonExe", "{python_exe}"
           ]
         }
       ],
       "limitations": [
-        "This governed profile only validates and compiles a solver-neutral request.",
-        "It does not invoke COMSOL, SIMION, CAD or claim Candidate qualification."
+        "Only explicitly preregistered SIMION engineering rows may run through this profile.",
+        "A successful run does not establish numerical convergence, cross-solver equivalence or Candidate maturity."
       ]
     }
   ]

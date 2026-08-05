@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "role": "rf_oatof_single_flight_layout_profile_registry",
+  "profiles": [
+    {
+      "layout_profile_id": "symmetric_10ev_injection_diagnostic",
+      "method": "symmetric_axis_speed_scaling_v1",
+      "reference_injection_energy_eV": 5.0,
+      "target_injection_energy_eV": 10.0,
+      "pulse_timing_method": "multipole_handoff_ballistic_centroid_v1",
+      "claim_status": "INCONCLUSIVE_DIAGNOSTIC_ONLY"
+    }
+  ]
+}

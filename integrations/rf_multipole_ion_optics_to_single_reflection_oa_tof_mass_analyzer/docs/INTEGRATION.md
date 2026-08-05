@@ -315,6 +315,21 @@ x截面417在孔邻域221个采样点中`OPEN=0`，而上游相邻截面416为`O
 且y边缘不在网格节点，机器合同已记录两项离散警告；因此本run只关闭“假开孔”功能缺陷，不证明孔型
 连续几何精确或网格收敛，也不授予Candidate/Formal资格。
 
+### 注入能量驱动的共享单流程布局
+
+单流程实验campaign schema v2可选择连接层共享的`single_flight_layout_profile_id`。当前
+`symmetric_10ev_injection_diagnostic`只开放原生目标注入能量；共享编译器从正式5 eV布局按速度平方根
+派生oaTOF加速器轴线、镜像探测器和下游入口端口，公共direct-mating函数再由两端口中心与既定旋转
+求平移，并交回connection resolver复核。派生坐标不能由四/六/八极杆实验行分别覆写。脉冲时刻消费
+所选源run的真实handoff状态和有限壁幸存队列，不由目标能量常数单独决定。
+
+10 eV N=1000连续run `20260805_152000__sim__simion__rf-oatof-single-flight-gap0__n1000`使用
+`x_accel=-69.0136218438 mm`、`x_detector=+69.0136218438 mm`和脉冲`31.8136698715 us`，得到
+`1000→711→612→612→612`。相对5 eV同孔对照，角度和脉冲前σz降低，但脉冲参考R只提高约0.93%；
+完整配对结果、run索引和结论边界见
+[`../../../docs/history/20260805__octupole-10ev-single-flight.md`](../../../docs/history/20260805__octupole-10ev-single-flight.md)。
+`multipole_handoff`仍只是同一次连续SIMION flight中的截面checkpoint，不表示分阶段导出或再注入。
+
 ### 加速前相空间的受控理想条件反事实
 
 正式诊断入口

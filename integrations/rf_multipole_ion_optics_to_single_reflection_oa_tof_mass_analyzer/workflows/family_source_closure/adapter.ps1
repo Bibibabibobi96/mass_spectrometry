@@ -58,6 +58,17 @@ $expectedArguments = @(
   'upstream_resolved_design_filename',
   'upstream_resolved_design_sha256'
 )
+$layoutArgumentNames = @(
+  'layout_profile_id',
+  'resolved_oatof_geometry_filename',
+  'resolved_oatof_geometry_sha256',
+  'resolved_single_flight_pulse_schedule_filename',
+  'resolved_single_flight_pulse_schedule_sha256',
+  'single_flight_layout_registry_sha256'
+)
+if ($frozenArguments.ContainsKey('layout_profile_id')) {
+  $expectedArguments += $layoutArgumentNames
+}
 if (@($frozenArguments.Keys | Where-Object {
       $_ -notin $expectedArguments
     }).Count -ne 0 -or
@@ -176,6 +187,32 @@ $resolvedBudgetPath = [IO.Path]::GetFullPath(
 $upstreamResolvedDesignPath = [IO.Path]::GetFullPath(
   (Join-Path $runDirectory $frozenArguments.upstream_resolved_design_filename)
 )
+$resolvedOatofGeometryPath = $null
+$resolvedPulseSchedulePath = $null
+if ([int]$campaign.schema_version -eq 2) {
+  $resolvedOatofGeometryPath = [IO.Path]::GetFullPath(
+    (Join-Path $runDirectory $frozenArguments.resolved_oatof_geometry_filename)
+  )
+  $resolvedPulseSchedulePath = [IO.Path]::GetFullPath(
+    (Join-Path $runDirectory $frozenArguments.resolved_single_flight_pulse_schedule_filename)
+  )
+  $layoutRegistryPath = Join-Path $integrationRoot 'config\single_flight_layout_profiles.json'
+  if ([string]$experiment.single_flight_layout_profile_id -ne
+      [string]$frozenArguments.layout_profile_id -or
+      $frozenArguments.resolved_oatof_geometry_filename -ne 'resolved_oatof_geometry.json' -or
+      -not (Test-Path -LiteralPath $resolvedOatofGeometryPath -PathType Leaf) -or
+      (Get-FileHash -LiteralPath $resolvedOatofGeometryPath -Algorithm SHA256).Hash -ne
+        $frozenArguments.resolved_oatof_geometry_sha256 -or
+      $frozenArguments.resolved_single_flight_pulse_schedule_filename -ne
+        'resolved_single_flight_pulse_schedule.json' -or
+      -not (Test-Path -LiteralPath $resolvedPulseSchedulePath -PathType Leaf) -or
+      (Get-FileHash -LiteralPath $resolvedPulseSchedulePath -Algorithm SHA256).Hash -ne
+        $frozenArguments.resolved_single_flight_pulse_schedule_sha256 -or
+      (Get-FileHash -LiteralPath $layoutRegistryPath -Algorithm SHA256).Hash -ne
+        $frozenArguments.single_flight_layout_registry_sha256) {
+    throw 'Prepared single-flight layout or pulse schedule is missing or stale.'
+  }
+}
 if ($frozenArguments.resolved_source_contract_filename -ne
       'resolved_source_contract.json' -or
     -not (Test-Path -LiteralPath $resolvedSourceContractPath -PathType Leaf) -or
@@ -303,6 +340,11 @@ $retrySuffix = if ($RunId -match '(__r\d{2})$') { $Matches[1] } else { '' }
 if ($executionStrategy -eq 'simion_single_flight') {
   $singleFlightRunId = "$($RunId.Substring(0, 15))__sim__simion__rf-oatof-single-flight-gap0__n$expectedExecutionParticleCount$retrySuffix"
   $runnerArguments.RunId = $singleFlightRunId
+  if ([int]$campaign.schema_version -eq 2) {
+    $runnerArguments.OatofResolvedGeometry = $resolvedOatofGeometryPath
+    $runnerArguments.PulseSchedule = $resolvedPulseSchedulePath
+    $runnerArguments.LayoutProfileId = [string]$frozenArguments.layout_profile_id
+  }
   & $runtime.implementation.single_flight_runner @runnerArguments
 } else {
   $runnerArguments.Stamp = $RunId.Substring(0, 15)
