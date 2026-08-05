@@ -422,7 +422,15 @@ if(-not(Test-Path -LiteralPath (Join-Path $repoPath '.git'))){throw "Not a Git w
 if(-not(Test-Path -LiteralPath $languageDefinitionPath -PathType Leaf)){
   throw "CLOC_LANGUAGE_DEFINITION_MISSING: $languageDefinitionPath"
 }
-$clocCommand=Get-Command $ClocExe -ErrorAction SilentlyContinue
+$workspaceCloc=Join-Path (
+  Split-Path -Parent $repoPath
+) '.tools\cloc\2.10\cloc.exe'
+$clocRequest=if($ClocExe-eq'cloc' -and (Test-Path -LiteralPath $workspaceCloc -PathType Leaf)){
+  $workspaceCloc
+}else{
+  $ClocExe
+}
+$clocCommand=Get-Command $clocRequest -ErrorAction SilentlyContinue
 if($null-eq$clocCommand -and $ClocExe-eq'cloc'){
   $originalPath=$env:PATH
   try{

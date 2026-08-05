@@ -9,7 +9,7 @@ $errors = [Collections.Generic.List[string]]::new()
 
 $allowedWorkspaceEntries = @(
   '.agents','.claude','.comsol_runtime','.comsol_server_config','.git','.idea',
-  '.matlab_pref','.matlab_pref25','.mcp.json','AGENTS.md','CLAUDE.md',
+  '.matlab_pref','.matlab_pref25','.mcp.json','.tools','AGENTS.md','CLAUDE.md',
   'README.md','artifacts','simulation_repo'
 )
 $workspaceManaged =
@@ -31,6 +31,19 @@ if ($workspaceManaged) {
     foreach ($entry in Get-ChildItem -Force -LiteralPath $artifactsRoot) {
       if ($entry.Name -ne 'projects' -or -not $entry.PSIsContainer) {
         $errors.Add("artifacts root contains unregistered entry: $($entry.Name)")
+      }
+    }
+  }
+  $toolsRoot = Join-Path $workspaceRoot '.tools'
+  if ((Test-Path -LiteralPath $toolsRoot) -and
+      -not (Test-Path -LiteralPath $toolsRoot -PathType Container)) {
+    $errors.Add('workspace tool cache must be a directory: .tools')
+  } elseif (Test-Path -LiteralPath $toolsRoot -PathType Container) {
+    $allowedToolEntries = @('cloc','cloc\2.10','cloc\2.10\cloc.exe')
+    foreach ($entry in Get-ChildItem -Force -Recurse -LiteralPath $toolsRoot) {
+      $relative = [IO.Path]::GetRelativePath($toolsRoot, $entry.FullName)
+      if ($relative -notin $allowedToolEntries) {
+        $errors.Add("workspace tool cache contains unregistered entry: $relative")
       }
     }
   }

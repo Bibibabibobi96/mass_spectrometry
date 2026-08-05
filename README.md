@@ -220,7 +220,8 @@ simulation_repo/
 
 仓库的管理边界包含其父工作区`mass_spectrometry/`，不只包含Git源码树。工作区顶层只允许：
 发现入口`AGENTS.md`、`README.md`、`CLAUDE.md`，源码根`simulation_repo/`，产物根`artifacts/`，以及
-明确列入`common/verify_repository_hygiene.ps1`的本机Agent、IDE、COMSOL和MATLAB状态。缓存、安装器、
+固定工具缓存`.tools/`和明确列入`common/verify_repository_hygiene.ps1`的本机Agent、IDE、COMSOL和
+MATLAB状态。`.tools/`当前只允许`cloc/2.10/cloc.exe`；缓存、安装器、
 一次性审计、会话交接、探针输出和任意临时目录不得直接留在工作区顶层。`artifacts/`顶层只允许
 `projects/`；项目run、scratch、cache、archive和formal仍按下节的唯一结构管理。新增顶层职责必须先
 修改本节和现有卫生门禁，不能通过临时命名或扩大通配符绕过。

@@ -120,7 +120,9 @@ Agent实现或审查workflow时必须应用该合同，并按项目README路由�
   vendor/third-party、run目录、任意`docs/history/`只读载荷和仓库根`scratch/`；不得把忽略的或
   排除目录中的untracked产物计入，也不得因普通活动目录恰好名为`archive`而整类排除。统一只读入口为
   `common/report_cloc_delta.ps1 -Base <sha> [-Current <sha|WORKTREE>]`；CLOC不可用时必须明确失败，不得用
-  `wc`、自制行计数或其他口径冒充。纯文档任务可在报告中写`CLOC_DELTA=N/A (docs-only)`。
+  `wc`、自制行计数或其他口径冒充。默认解析顺序为显式`-ClocExe`、工作区外层固定工具缓存
+  `.tools/cloc/2.10/cloc.exe`、系统`PATH`；固定缓存不进入Git，避免依赖WinGet版本化用户目录的执行
+  权限。纯文档任务可在报告中写`CLOC_DELTA=N/A (docs-only)`。
 - 完成一次或多次测试后，最终交接必须给出测试报告。常规单阶段任务通常控制在**1000 tokens以内**；
   这是篇幅指引而非硬性上限。任务包含多个独立阶段、执行时间较长并产生较多需要比较的结果、存在
   失败排查或数据完整性风险、需要说明复现边界，或用户明确要求详细报告时，可以合理超过。篇幅由

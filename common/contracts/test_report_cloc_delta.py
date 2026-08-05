@@ -26,6 +26,12 @@ def _run(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
 
 
 class ClocDeltaReportTests(unittest.TestCase):
+    def test_default_resolution_prefers_the_workspace_pinned_cloc(self) -> None:
+        source = REPORT_SCRIPT.read_text(encoding="utf-8-sig")
+        pinned = source.index(".tools\\cloc\\2.10\\cloc.exe")
+        path_lookup = source.index("Get-Command $clocRequest")
+        self.assertLess(pinned, path_lookup)
+
     def _initialize_repo(self, root: Path) -> None:
         (root / "src").mkdir()
         (root / "config").mkdir()
