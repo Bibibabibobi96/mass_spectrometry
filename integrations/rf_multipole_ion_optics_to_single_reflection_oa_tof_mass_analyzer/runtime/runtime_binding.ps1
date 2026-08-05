@@ -419,11 +419,16 @@ function Resolve-RfOatofRuntimeBinding {
       $sourceContract.upstream_project_id -ne $upstreamProjectId) {
     throw 'Runtime source contract identity differs from the upstream project.'
   }
+  $expectedSourceContractFields = @(
+    'schema_version','role','upstream_project_id','selector','adapter',
+    'canonical_state','source_branches'
+  )
+  if ($sourceContract.PSObject.Properties.Name -contains 'design_reference') {
+    $expectedSourceContractFields += 'design_reference'
+  }
   Assert-RfOatofExactProperties -Object $sourceContract `
-    -Expected @(
-      'schema_version','role','upstream_project_id','selector','adapter',
-      'canonical_state','source_branches'
-    ) -Role 'Runtime resolved source contract'
+    -Expected $expectedSourceContractFields `
+    -Role 'Runtime resolved source contract'
   if ($sourceContract.source_branches.PSObject.Properties.Name -notcontains
       $SourceBranchId) {
     throw 'Resolved source contract omits the selected comsol or simion branch.'
@@ -583,13 +588,30 @@ function Resolve-RfOatofRuntimeBinding {
     throw 'Runtime source manifest omits its particle source or outputs.'
   }
   $manifestParticleSource = $sourceManifestDocument.inputs.$particleSourceRole
+  $designManifestDocument = $sourceManifestDocument
+  if ($sourceContract.PSObject.Properties.Name -contains 'design_reference') {
+    Assert-RfOatofExactProperties -Object $sourceContract.design_reference `
+      -Expected @('run_id','manifest') -Role 'Runtime design reference'
+    $designManifestPath = Resolve-RfOatofBoundFile -Root $repo `
+      -Record $sourceContract.design_reference.manifest `
+      -Role 'runtime design-reference manifest' -AllowWorkspaceArtifact
+    $designManifestDocument = Get-Content -LiteralPath $designManifestPath `
+      -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($designManifestDocument.role -ne 'simulation_run_manifest' -or
+        $designManifestDocument.status -ne 'success' -or
+        $designManifestDocument.project -ne $recordedProjectId -or
+        $designManifestDocument.run_id -ne
+          $sourceContract.design_reference.run_id) {
+      throw 'Runtime design-reference manifest identity differs.'
+    }
+  }
   $manifestResolvedDesign =
-    $sourceManifestDocument.inputs.PSObject.Properties['multipole_resolved_design']
+    $designManifestDocument.inputs.PSObject.Properties['multipole_resolved_design']
   if ($null -eq $manifestResolvedDesign -or
       -not [bool]$manifestResolvedDesign.Value.exists -or
       ([string]$manifestResolvedDesign.Value.sha256).ToUpperInvariant() -ne
         $UpstreamResolvedDesignSha256.ToUpperInvariant()) {
-    throw 'Runtime source manifest does not freeze the selected upstream resolved design.'
+    throw 'Runtime design authority does not freeze the selected upstream resolved design.'
   }
   $manifestStateMatches = @(
     $sourceManifestDocument.outputs | Where-Object {

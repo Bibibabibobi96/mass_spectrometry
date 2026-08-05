@@ -67,7 +67,10 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
             "revision-registry",
         ):
             self.assertNotIn(obsolete, execute_source)
-        self.assertIn('shutil.copyfile(evidence["resolved_design_path"]', prepare_source)
+        self.assertIn(
+            'shutil.copyfile(design_evidence["resolved_design_path"]',
+            prepare_source,
+        )
         self.assertIn('resolved_upstream.pop("port_binding", None)', prepare_source)
         self.assertIn(
             '"upstream_resolved_design_filename=upstream_resolved_design.json"',

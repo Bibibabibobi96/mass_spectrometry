@@ -162,6 +162,13 @@ terminal/handoff能量只保留为接口诊断。入口参考套筒现为`1.5 mm
 [`../../../docs/history/20260805__octupole-15mm-sleeve-accelerator-energy.md`](../../../docs/history/20260805__octupole-15mm-sleeve-accelerator-energy.md)；
 结果保持`INCONCLUSIVE_DIAGNOSTIC_ONLY`，旧N=1000结果不转用于当前几何。
 
+当前1.5 mm套筒末端方案随后完成N=1000 SIMION单流程：
+`1000→968→950→948→948`，总检测传输94.8%。handoff正交加速方向角度σ为`1.81390°`，脉冲前
+σz为`0.54583 mm`，仍约为理想1 mm均匀源σ的1.89倍；加速器内动能为
+`10.01783±0.05134 eV`（n=950）。因此优势是高传输和正确目标能量，不是更小的角度或z空间展宽。
+完整证据、TOF和束斑诊断见
+[`../../../docs/history/20260805__octupole-terminal-15mm-sleeve-single-flight-n1000.md`](../../../docs/history/20260805__octupole-terminal-15mm-sleeve-single-flight-n1000.md)。
+
 2026-08-03补齐同一终端和H15设置下的无加速5 eV初始源后，八极杆末端加速相对分段加速把
 handoff透射提高0.29、空间RMS降低`0.0464 mm`，但角RMS增加`0.6952°`；单纯提高初始能量使透射
 从0.59降至0.39，未形成准直收益。完整12臂对照见

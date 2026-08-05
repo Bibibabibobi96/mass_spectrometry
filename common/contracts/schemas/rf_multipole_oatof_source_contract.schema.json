@@ -59,6 +59,7 @@
             }
           ]
         },
+        "design_reference": {"$ref": "#/$defs/design_reference"},
         "source_branches": {
           "type": "object",
           "additionalProperties": false,
@@ -224,6 +225,15 @@
         "state": {"$ref": "#/$defs/file"},
         "particle_source": {"$ref": "#/$defs/file"},
         "metadata": {"$ref": "#/$defs/file"}
+      }
+    },
+    "design_reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "manifest"],
+      "properties": {
+        "run_id": {"type": "string", "minLength": 1},
+        "manifest": {"$ref": "#/$defs/file"}
       }
     },
     "identifier": {

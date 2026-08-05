@@ -308,6 +308,18 @@ def prepare_family_source_closure(
     solver_id = evidence["solver_id"]
     if execution_strategy == "simion_single_flight" and solver_id != "simion":
         raise ContractError("SIMION single-flight execution requires a SIMION source run")
+    design_evidence = evidence
+    design_reference = experiment.get("single_flight_design_reference")
+    if design_reference is not None:
+        if execution_strategy != "simion_single_flight":
+            raise ContractError("design references are only valid for SIMION single flight")
+        design_evidence = _load_source_evidence(
+            workspace=workspace,
+            experiment={"source": design_reference},
+            expected_project_id=expected_project_id,
+        )
+        if design_evidence["solver_id"] != "simion":
+            raise ContractError("single-flight design reference requires a SIMION run")
     handoff_publication_record = source.get(
         "handoff_publication_contract",
         runtime_binding["contracts"]["handoff_publication_contract"],
@@ -353,6 +365,11 @@ def prepare_family_source_closure(
             }
         },
     }
+    if design_reference is not None:
+        resolved_source_contract["design_reference"] = {
+            "run_id": design_reference["run_id"],
+            "manifest": copy.deepcopy(design_reference["manifest"]),
+        }
     validate_schema(
         resolved_source_contract, "rf_multipole_oatof_source_contract.schema.json"
     )
@@ -367,15 +384,15 @@ def prepare_family_source_closure(
     upstream_resolved_design_path = plan_output.with_name(
         "upstream_resolved_design.json"
     )
-    shutil.copyfile(evidence["resolved_design_path"], upstream_resolved_design_path)
-    if file_sha256(upstream_resolved_design_path) != evidence["resolved_design_sha256"]:
+    shutil.copyfile(design_evidence["resolved_design_path"], upstream_resolved_design_path)
+    if file_sha256(upstream_resolved_design_path) != design_evidence["resolved_design_sha256"]:
         raise ContractError("frozen upstream resolved design identity differs")
 
     upstream_port = build_exit_component_port(
-        evidence["resolved_design"],
-        design_profile_id=evidence["design_profile_id"],
+        design_evidence["resolved_design"],
+        design_profile_id=design_evidence["design_profile_id"],
         authority_path=_workspace_relative(upstream_resolved_design_path, workspace),
-        authority_sha256=evidence["resolved_design_sha256"],
+        authority_sha256=design_evidence["resolved_design_sha256"],
     )
     upstream_port_path = plan_output.with_name("resolved_upstream_port.json")
     upstream_port_path.write_text(
@@ -490,7 +507,7 @@ def prepare_family_source_closure(
     )
     if layout_files is not None:
         schedule = derive_pulse_schedule(
-            evidence["state_path"], _load(resolved_path), _load(layout_files["geometry"]),
+            design_evidence["state_path"], _load(resolved_path), _load(layout_files["geometry"]),
             layout_profile,
         )
         schedule_path = plan_output.with_name("resolved_single_flight_pulse_schedule.json")
@@ -519,7 +536,7 @@ def prepare_family_source_closure(
                 f"resolved_source_contract_sha256={file_sha256(resolved_source_contract_path)}",
                 "upstream_resolved_design_filename=upstream_resolved_design.json",
                 "upstream_resolved_design_sha256="
-                + evidence["resolved_design_sha256"],
+                + design_evidence["resolved_design_sha256"],
             ] + ([] if layout_files is None else [
                 f"layout_profile_id={experiment['single_flight_layout_profile_id']}",
                 "resolved_oatof_geometry_filename=resolved_oatof_geometry.json",

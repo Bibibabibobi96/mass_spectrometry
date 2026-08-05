@@ -354,6 +354,15 @@ RF与oaTOF脉冲基底把它固定为零增量；因此它既不是接地外壳�
 `-0.00093 eV`。两方案达到相同目标能量，末端方案本次优势是传输，不是额外能量。完整证据与限制见
 [`../../../docs/history/20260805__octupole-15mm-sleeve-accelerator-energy.md`](../../../docs/history/20260805__octupole-15mm-sleeve-accelerator-energy.md)。
 
+同一修正几何的N=1000 SIMION单流程run
+`20260805_183000__sim__simion__rf-oatof-single-flight-gap0__n1000`得到
+`1000→968→950→948→948`，总检测传输94.8%。handoff正交加速方向角度σ为`1.81390°`，脉冲前
+σz为`0.54583 mm`；加速器内动能为`10.01783±0.05134 eV`（n=950）。末端方案高传输且能量正确，
+但角度和z空间展宽仍未闭合。campaign直接复用N=1000规范母样本，并用既有N=100成功run冻结当前
+resolved design及脉冲参考，不先执行重复的N=1000上游运输；runtime分别校验母样本来源与设计来源
+manifest。完整诊断见
+[`../../../docs/history/20260805__octupole-terminal-15mm-sleeve-single-flight-n1000.md`](../../../docs/history/20260805__octupole-terminal-15mm-sleeve-single-flight-n1000.md)。
+
 ### 加速前相空间的受控理想条件反事实
 
 正式诊断入口

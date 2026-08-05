@@ -46,6 +46,10 @@ def compile_campaign(repo_root: Path, campaign_path: Path) -> dict[str, Any]:
     for experiment in campaign.get("experiments", []):
         source = experiment.get("source", {})
         records.extend(source[role] for role in SOURCE_FILE_ROLES if role in source)
+        reference = experiment.get("single_flight_design_reference", {})
+        records.extend(
+            reference[role] for role in SOURCE_FILE_ROLES if role in reference
+        )
     for record in records:
         path, repository_text = _resolve_record(repo_root, record)
         record["sha256"] = (

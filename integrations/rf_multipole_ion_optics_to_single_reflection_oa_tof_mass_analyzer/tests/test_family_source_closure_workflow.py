@@ -27,6 +27,10 @@ N1000_CAMPAIGN_PATH = (
 SINGLE_FLIGHT_CAMPAIGN_PATH = (
     CONFIG_ROOT / "diagnostics" / "octupole_simion_single_flight_aperture100_n1000_campaign.json"
 )
+TERMINAL_DESIGN_REFERENCE_CAMPAIGN_PATH = (
+    CONFIG_ROOT / "diagnostics"
+    / "octupole_terminal_15mm_sleeve_single_flight_n1000_campaign.json"
+)
 PROFILE_REGISTRY = CONFIG_ROOT / "connection_profiles.json"
 ADAPTER_REGISTRY = CONFIG_ROOT / "execution_adapter_profiles.json"
 
@@ -80,6 +84,44 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             contract["canonical_state"]["source_component_id"],
             "rf_octupole_ion_optics",
         )
+
+    def test_single_flight_can_reuse_population_with_a_frozen_design_reference(self) -> None:
+        campaign = load(TERMINAL_DESIGN_REFERENCE_CAMPAIGN_PATH)
+        validate_schema(campaign, "rf_multipole_oatof_experiment_campaign.schema.json")
+        experiment = campaign["experiments"][0]
+        self.assertEqual(experiment["source"]["launched_particle_count"], 1000)
+        self.assertEqual(
+            experiment["single_flight_design_reference"]["launched_particle_count"],
+            100,
+        )
+        reference_run = (
+            REPO_ROOT.parent / "artifacts/projects/rf_octupole_ion_optics/runs"
+            / experiment["single_flight_design_reference"]["run_id"]
+        )
+        if not reference_run.is_dir():
+            self.skipTest("local corrected terminal design reference is unavailable")
+        with tempfile.TemporaryDirectory(
+            dir=REPO_ROOT.parent / "artifacts/projects/rf_octupole_ion_optics"
+        ) as directory:
+            output = Path(directory)
+            _, plan = prepare_family_source_closure(
+                repo_root=REPO_ROOT,
+                profile_registry_path=PROFILE_REGISTRY,
+                adapter_registry_path=ADAPTER_REGISTRY,
+                campaign_path=TERMINAL_DESIGN_REFERENCE_CAMPAIGN_PATH,
+                experiment_id=experiment["experiment_id"],
+                resolved_output=output / "resolved.json",
+                plan_output=output / "plan.json",
+            )
+            design = load(plan.with_name("upstream_resolved_design.json"))
+            source_contract = load(plan.with_name("resolved_source_contract.json"))
+            sleeve = design["axial_dc"]["entrance_reference_sleeve"]
+            self.assertEqual(sleeve["inner_radius_mm"], 0.75)
+            self.assertEqual(sleeve["downstream_face_z_mm"], 0.0)
+            self.assertEqual(
+                source_contract["design_reference"]["run_id"],
+                experiment["single_flight_design_reference"]["run_id"],
+            )
 
     def test_superseded_non_grounded_single_flight_source_is_rejected(self) -> None:
         source_run = (
