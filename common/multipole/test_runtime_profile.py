@@ -199,6 +199,30 @@ class RuntimeProfileTests(unittest.TestCase):
             r"^[A-F0-9]{64}$",
         )
 
+    def test_terminal_10ev_campaign_keeps_all_rods_at_eight_volts(self) -> None:
+        resolved = resolve_campaign_experiment(
+            REPO_ROOT,
+            "rf_octupole_ion_optics",
+            Path("20260805__oct_terminal_10ev_h15.json"),
+            "oct_terminal_10ev_h15_n100",
+        )
+        design = resolved["design_profile_resolution"]["resolved_design"]
+        segments = design["segmentation"]["axial_acceleration"]["derived"][
+            "segments"
+        ]
+        self.assertEqual(
+            design["axial_drive"],
+            {
+                "topology": "exit_aperture_plate_potential_step",
+                "source_reference_V": 8.0,
+                "output_reference_V": 0.0,
+                "predicted_energy_gain_eV": 8.0,
+                "predicted_output_energy_eV": 10.0,
+            },
+        )
+        self.assertEqual([segment["common_mode_V"] for segment in segments], [8.0] * 4)
+        self.assertEqual(design["axial_dc"]["terminal_electrode_potential_V"], 0.0)
+
     def test_historical_campaign_v1_and_v2_remain_resolvable(self) -> None:
         cases = (
             (

@@ -498,10 +498,13 @@ class SimionRunnerContractTests(unittest.TestCase):
     def test_primary_only_case_set_skips_control_and_records_null_control(self) -> None:
         runner = RUNNER.read_text(encoding="utf-8")
         self.assertIn(
-            "[ValidateSet('primary_and_zero_axial_control','primary_only')]",
+            "[ValidateSet('primary_and_zero_axial_control','primary_and_rf_off_energy_control','primary_only')]",
             runner,
         )
         self.assertIn("if($CaseSet-eq'primary_and_zero_axial_control')", runner)
+        self.assertIn("elseif($CaseSet-eq'primary_and_rf_off_energy_control')", runner)
+        self.assertIn("$control=Invoke-TransportCase $controlName 0 1", runner)
+        self.assertIn("role='multipole_simion_rf_off_energy_control_metrics'", runner)
         self.assertIn("case_set=$CaseSet", runner)
         self.assertIn("$control=$null;$controlName=$null", runner)
         self.assertIn(

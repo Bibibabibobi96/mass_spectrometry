@@ -22,7 +22,7 @@ param(
   [ValidateRange(4,10000)][int]$RfStepsPerPeriod=80,
   [ValidateRange(0,100)][int]$TrajectoryQuality=10,
   [ValidateRange(0.001,1000000)][double]$MaximumTimeUs=80.0,
-  [ValidateSet('primary_and_zero_axial_control','primary_only')]
+  [ValidateSet('primary_and_zero_axial_control','primary_and_rf_off_energy_control','primary_only')]
   [string]$CaseSet='primary_and_zero_axial_control',
   [ValidateSet('compact','qualification','solver_review')][string]$RetentionClass='compact',
   [string]$RetentionReason='',
@@ -902,6 +902,21 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
         [Math]::Abs([double]$metricsDoc.accelerated_transmission-$primaryHandoffTransmission)-gt 1e-12 -or
         [Math]::Abs([double]$metricsDoc.control_transmission-$controlHandoffTransmission)-gt 1e-12
       ){throw 'SIMION paired metrics transmission differs from the raw handoff states.'}
+    }elseif($CaseSet-eq'primary_and_rf_off_energy_control'){
+      $controlName=$(if($exitAperturePlateStep){'exit_aperture_plate_acceleration_rf_off'}else{'axial_acceleration_rf_off'})
+      $control=Invoke-TransportCase $controlName 0 1
+      $controlHandoffTransmission=@(Import-Csv -LiteralPath (
+        Join-Path $resultDir "particle_states__$controlName.csv"
+      )|Where-Object{$_.event-eq'handoff'-and$_.status-eq'transmitted'}).Count/[double]$control.particles
+      $metrics=Join-Path $resultDir 'rf_off_energy_control_metrics.json'
+      [ordered]@{schema_version=1;role='multipole_simion_rf_off_energy_control_metrics';status='UNQUALIFIED';
+        project_id=$ProjectId;parent_resolved_design_sha256=$resolvedHash;model_level='L3';
+        case_set=$CaseSet;primary_case_id=$primaryName;control_case_id=$controlName;
+        cases=[ordered]@{rf_on=(ConvertTo-TransportMetricCase $primary);rf_off=(ConvertTo-TransportMetricCase $control)};
+        primary_handoff_transmission=$primaryHandoffTransmission;
+        control_handoff_transmission=$controlHandoffTransmission;
+        claim_limit='RF-off energy-conservation diagnostic only; no evidence or qualification claim.'}|
+        ConvertTo-Json -Depth 8|Set-Content -LiteralPath $metrics -Encoding UTF8
     }else{
       $metrics=Join-Path $resultDir 'primary_transport_metrics.json'
       [ordered]@{schema_version=1;role='multipole_simion_primary_transport_metrics';status='UNQUALIFIED';
@@ -917,7 +932,7 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
     $primary=Invoke-TransportCase $primaryName 1 0
     $primaryMetricCase=ConvertTo-TransportMetricCase $primary
     $metrics=Join-Path $resultDir 'finite_3d_transport_metrics.json'
-    if($CaseSet-eq'primary_and_zero_axial_control'){
+    if($CaseSet-in @('primary_and_zero_axial_control','primary_and_rf_off_energy_control')){
       $control=Invoke-TransportCase $controlName 0 0
       $controlMetricCase=ConvertTo-TransportMetricCase $control
       [ordered]@{schema_version=1;role='multipole_simion_finite_3d_transport_metrics';status='UNQUALIFIED';

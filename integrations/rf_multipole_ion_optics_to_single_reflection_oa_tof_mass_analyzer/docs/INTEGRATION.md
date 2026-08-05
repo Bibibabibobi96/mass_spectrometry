@@ -330,6 +330,15 @@ x截面417在孔邻域221个采样点中`OPEN=0`，而上游相邻截面416为`O
 [`../../../docs/history/20260805__octupole-10ev-single-flight.md`](../../../docs/history/20260805__octupole-10ev-single-flight.md)。
 `multipole_handoff`仍只是同一次连续SIMION flight中的截面checkpoint，不表示分阶段导出或再注入。
 
+末端阶跃 N=1000 连续run
+`20260805_134000__sim__simion__rf-oatof-single-flight-gap0__n1000`得到
+`1000→967→948→948→948`，direct-KDE FWHM为2.1940 ns、脉冲参考R为7104；相对分段10 eV
+连续run的`1000→711→612→612→612`和2.7299 ns，它表现为更高产额和更窄诊断峰，但handoff角度σ
+与脉冲前σz由`1.15464°/0.46245 mm`恶化为`1.75191°/0.51764 mm`。RF-off共同粒子对照进一步
+证明两拓扑虽然使用相同`+8 V`入口套筒，同一源点的实际静电势降却约为`7.705/7.991 V`；因此这不是
+严格等初始点电势的10 eV拓扑对照，不授予性能结论。完整证据和修复条件见
+[`../../../docs/history/20260805__octupole-terminal-10ev-single-flight.md`](../../../docs/history/20260805__octupole-terminal-10ev-single-flight.md)。
+
 ### 加速前相空间的受控理想条件反事实
 
 正式诊断入口

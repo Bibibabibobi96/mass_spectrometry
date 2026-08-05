@@ -24,7 +24,7 @@ function Invoke-MultipoleProjectFinite3dTransport {
     [string]$RetentionReason = '',
     [string]$PythonExe = '',
     [string]$ReferenceComsolRunId = '',
-    [ValidateSet('primary_and_zero_axial_control', 'primary_only')]
+    [ValidateSet('primary_and_zero_axial_control', 'primary_and_rf_off_energy_control', 'primary_only')]
     [string]$CaseSet = 'primary_and_zero_axial_control',
     [string]$SimionExe = ''
   )

@@ -50,7 +50,7 @@
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "items": {"enum": ["rf_amplitude", "rf_frequency", "segment_entrance_common_mode", "segment_exit_common_mode", "segment_output_reference"]}
+          "items": {"enum": ["rf_amplitude", "rf_frequency", "common_mode_offset", "segment_entrance_common_mode", "segment_exit_common_mode", "segment_output_reference"]}
         },
         "variable_limits": {
           "type": "array",
@@ -60,7 +60,7 @@
             "additionalProperties": false,
             "required": ["variable_id", "unit", "minimum", "maximum"],
             "properties": {
-              "variable_id": {"enum": ["rf_amplitude", "rf_frequency", "segment_entrance_common_mode", "segment_exit_common_mode", "segment_output_reference"]},
+              "variable_id": {"enum": ["rf_amplitude", "rf_frequency", "common_mode_offset", "segment_entrance_common_mode", "segment_exit_common_mode", "segment_output_reference"]},
               "unit": {"enum": ["V", "Hz"]},
               "minimum": {"type": "number"},
               "maximum": {"type": "number"}
@@ -336,7 +336,7 @@
         },
         "solver": {"const": "simion"},
         "stop_stage": {"const": "transport"},
-        "case_set": {"enum": ["primary_only", "primary_and_zero_axial_control"]},
+        "case_set": {"enum": ["primary_only", "primary_and_zero_axial_control", "primary_and_rf_off_energy_control"]},
         "design_profile_id": {"type": "string", "minLength": 1},
         "source_kinetic_energy_eV": {
           "type": "number",
@@ -350,6 +350,7 @@
           "properties": {
             "rf_amplitude": {"type": "number"},
             "rf_frequency": {"type": "number"},
+            "common_mode_offset": {"type": "number"},
             "segment_entrance_common_mode": {"type": "number"},
             "segment_exit_common_mode": {"type": "number"},
             "segment_output_reference": {"type": "number"}
