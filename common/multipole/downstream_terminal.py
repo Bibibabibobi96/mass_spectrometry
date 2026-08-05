@@ -146,8 +146,11 @@ def compose_downstream_terminal(
         and math.isfinite(float(value)) for value in numeric_values
     ):
         raise DownstreamTerminalError("terminal profile numbers must be finite")
-    if any(float(value) <= 0 for value in numeric_values[:-1]):
+    positive_dimensions = numeric_values[:-2]
+    if any(float(value) <= 0 for value in positive_dimensions):
         raise DownstreamTerminalError("terminal profile dimensions must be positive")
+    if float(profile["upstream_entrance_reference_sleeve"]["downstream_rod_clearance_mm"]) < 0:
+        raise DownstreamTerminalError("reference sleeve downstream rod clearance must be nonnegative")
     outer = profile["outer_envelope"]
     aperture = profile["aperture"]
     if outer.get("shape") != "rectangular":

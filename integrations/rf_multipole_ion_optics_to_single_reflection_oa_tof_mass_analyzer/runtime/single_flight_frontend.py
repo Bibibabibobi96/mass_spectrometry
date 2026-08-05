@@ -17,6 +17,7 @@ from common.multipole.grounded_shield import (
 MULTIPOLE_SHIELD_ELECTRODE = 9
 ACCELERATOR_ELECTRODE_OFFSET = 9
 ENTRANCE_REFERENCE_ELECTRODE = 18
+ENTRANCE_PLATE_ELECTRODE = 19
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -213,7 +214,7 @@ def compile_frontend(
             f"    within {{ locate({_fmt(entrance_max)},{_fmt(center_y)},{_fmt(center_z)},1,90) {{ cylinder(0,0,0,{_fmt(outer_radius)},,{_fmt(entrance_max-entrance_min)}) }} }}",
             f"    notin_inside {{ locate({_fmt(entrance_max+cell_mm)},{_fmt(center_y)},{_fmt(center_z)},1,90) {{ cylinder(0,0,0,{_fmt(insulated_radius)},,{_fmt(entrance_max-entrance_min+2*cell_mm)}) }} }}",
             "  } }",
-            f"  e({MULTIPOLE_SHIELD_ELECTRODE}) {{ fill {{",
+            f"  e({ENTRANCE_PLATE_ELECTRODE}) {{ fill {{",
             f"    within {{ locate({_fmt(entrance_plate_max)},{_fmt(center_y)},{_fmt(center_z)},1,90) {{ cylinder(0,0,0,{_fmt(outer_radius)},,{_fmt(entrance_plate_max-entrance_plate_min)}) }} }}",
             f"    notin_inside {{ locate({_fmt(entrance_plate_max+cell_mm)},{_fmt(center_y)},{_fmt(center_z)},1,90) {{ cylinder(0,0,0,{_fmt(entrance_radius)},,{_fmt(entrance_plate_max-entrance_plate_min+2*cell_mm)}) }} }}",
             "  } }",
@@ -331,6 +332,7 @@ def compile_frontend(
             "accelerator_ring_ids": list(range(12, 17)),
             "accelerator_grid2_id": 17,
             "entrance_reference_sleeve_id": ENTRANCE_REFERENCE_ELECTRODE,
+            "entrance_plate_id": ENTRANCE_PLATE_ELECTRODE,
         },
         "entrance_reference_sleeve": dict(sleeve),
     }

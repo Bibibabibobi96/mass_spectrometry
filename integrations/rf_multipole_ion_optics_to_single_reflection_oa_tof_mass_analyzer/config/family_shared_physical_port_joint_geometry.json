@@ -115,6 +115,7 @@
     "axial_dc": {
       "always_enabled": true,
       "rod_common_mode_source": "rf_resolved_geometry:/axial_dc/rod_electrodes",
+      "entrance_reference_sleeve_potential_source": "rf_resolved_geometry:/axial_dc/entrance_reference_sleeve/potential_V",
       "upstream_grounded_hardware_source": "rf_resolved_geometry:/axial_dc",
       "terminal_electrode_potential_source": "rf_resolved_geometry:/axial_dc/terminal_electrode_potential_V",
       "all_oatof_pulse_electrodes_V": 0.0

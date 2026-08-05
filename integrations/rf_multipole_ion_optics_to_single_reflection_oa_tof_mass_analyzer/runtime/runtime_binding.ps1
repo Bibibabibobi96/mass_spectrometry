@@ -362,21 +362,6 @@ function Resolve-RfOatofRuntimeBinding {
     throw 'Run-local upstream resolved design project identity differs.'
   }
 
-  $implementationPaths = [ordered]@{
-    run_artifact_support = 'runtime/run_artifacts.ps1'
-    runtime_binding_support = 'runtime/runtime_binding.ps1'
-    transfer_runner = 'runtime/run_transfer.ps1'
-    single_flight_runner = 'runtime/run_single_flight.ps1'
-    single_flight_frontend = 'runtime/single_flight_frontend.py'
-    single_flight_asset_support = 'runtime/single_flight_assets.ps1'
-    pre_pulse_runner = 'stages/comsol/run_pre_pulse_interface_transport.ps1'
-    pre_pulse_builder = 'stages/comsol/build_pre_pulse_interface_transport_model.m'
-    pre_pulse_field_preparer = 'stages/comsol/prepare_pre_pulse_interface_transport_field_model.m'
-    pre_pulse_field_solver = 'stages/comsol/solve_pre_pulse_interface_transport_field.m'
-    pulse_capture_runner = 'stages/comsol/run_pulse_capture.ps1'
-    pulse_capture_solver = 'stages/comsol/solve_pulse_capture.m'
-    analyzer_transport_runner = 'stages/cross_solver/run_analyzer_transport.ps1'
-  }
   $implementationBindingPath = Resolve-RfOatofBoundFile -Root $repo `
     -Record $binding.implementation_binding -Role 'runtime implementation binding'
   $implementationBinding = Get-Content -LiteralPath $implementationBindingPath `
@@ -390,17 +375,37 @@ function Resolve-RfOatofRuntimeBinding {
       $implementationBinding.integration_id -ne $script:RfOatofIntegrationId) {
     throw 'Runtime implementation registry identity differs.'
   }
-  Assert-RfOatofExactProperties -Object $implementationBinding.implementation `
-    -Expected @($implementationPaths.Keys) -Role 'Runtime implementation binding'
-  $implementation = [ordered]@{}
   $integrationRelativeRoot = (
     'integrations/' + $script:RfOatofIntegrationId + '/'
   )
-  foreach ($name in $implementationPaths.Keys) {
-    $expectedPath = $integrationRelativeRoot + $implementationPaths[$name]
-    $record = $implementationBinding.implementation.$name
-    if ([string]$record.path -ne $expectedPath) {
-      throw "Runtime implementation path differs for $name."
+  $implementationRecords = @(
+    $implementationBinding.implementation.PSObject.Properties
+  )
+  $requiredImplementationRoles = @(
+    'run_artifact_support','runtime_binding_support','transfer_runner',
+    'single_flight_runner','pre_pulse_runner','pulse_capture_runner',
+    'analyzer_transport_runner'
+  )
+  $availableImplementationRoles = @(
+    $implementationRecords | ForEach-Object { [string]$_.Name }
+  )
+  foreach ($name in $requiredImplementationRoles) {
+    if ($availableImplementationRoles -notcontains $name) {
+      throw "Runtime implementation binding is missing required role: $name"
+    }
+  }
+  $implementation = [ordered]@{}
+  foreach ($property in $implementationRecords) {
+    $name = [string]$property.Name
+    $record = $property.Value
+    Assert-RfOatofExactProperties -Object $record -Expected @('path','sha256') `
+      -Role "Runtime implementation $name"
+    if ($name -notmatch '^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$' -or
+        -not ([string]$record.path).StartsWith(
+          $integrationRelativeRoot,
+          [StringComparison]::Ordinal
+        )) {
+      throw "Runtime implementation role or integration-local path differs: $name"
     }
     $implementation[$name] = Resolve-RfOatofBoundFile -Root $repo `
       -Record $record -Role "runtime implementation $name"

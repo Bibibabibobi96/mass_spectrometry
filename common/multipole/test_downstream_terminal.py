@@ -212,6 +212,29 @@ class DownstreamTerminalCompositionTest(unittest.TestCase):
         with self.assertRaises(ContractError):
             validate_schema(invalid, "multipole_downstream_terminal_profiles.schema.json")
 
+    def test_reference_sleeve_may_be_axially_coplanar_with_radially_clear_rods(self) -> None:
+        resolved = compile_mode("segmented_rod_axial_acceleration")
+        profile = terminal_registry()["profiles"][0]
+        sleeve = profile["upstream_entrance_reference_sleeve"]
+        sleeve["inner_radius_mm"] = 0.75
+        sleeve["downstream_rod_clearance_mm"] = 0.0
+        registry = terminal_registry()
+        registry["profiles"][0] = profile
+        validate_schema(registry, "multipole_downstream_terminal_profiles.schema.json")
+        composed = compose_downstream_terminal(resolved, profile)
+        self.assertEqual(
+            composed["axial_dc"]["entrance_reference_sleeve"]["inner_radius_mm"],
+            0.75,
+        )
+        self.assertEqual(
+            composed["axial_dc"]["entrance_reference_sleeve"]["downstream_face_z_mm"],
+            resolved["geometry_mm"]["rod_z_min"],
+        )
+
+        sleeve["downstream_rod_clearance_mm"] = -0.1
+        with self.assertRaisesRegex(DownstreamTerminalError, "nonnegative"):
+            compose_downstream_terminal(resolved, profile)
+
 
 if __name__ == "__main__":
     unittest.main()

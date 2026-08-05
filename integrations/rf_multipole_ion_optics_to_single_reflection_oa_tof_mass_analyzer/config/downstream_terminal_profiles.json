@@ -31,10 +31,10 @@
       "upstream_entrance_reference_sleeve": {
         "profile_id": "source_reference_sleeve_v1",
         "potential_binding": "segmentation.entrance_common_mode_V",
-        "inner_radius_mm": 1.0,
+        "inner_radius_mm": 0.75,
         "outer_radius_mm": 1.4,
         "minimum_insulation_gap_mm": 0.2,
-        "downstream_rod_clearance_mm": 0.1
+        "downstream_rod_clearance_mm": 0.0
       },
       "terminal_potential_V": 0.0
     }

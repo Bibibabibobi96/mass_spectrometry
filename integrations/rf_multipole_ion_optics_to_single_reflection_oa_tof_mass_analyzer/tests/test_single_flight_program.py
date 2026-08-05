@@ -22,6 +22,7 @@ class SingleFlightProgramTests(unittest.TestCase):
         connection = json.loads((REPO.parent / "artifacts/projects/rf_octupole_ion_optics/runs/20260804_125500__sim__simion__oct-aperture100x090-interface__n459/inputs/resolved_connection.json").read_text(encoding="utf-8-sig"))
         upstream = copy.deepcopy(upstream)
         upstream["axial_dc"]["upstream_shield_potential_V"] = 0.0
+        upstream["axial_dc"]["entrance_plate_potential_V"] = 3.0
         upstream["axial_dc"]["entrance_reference_sleeve"] = {
             "profile_id": "source_reference_sleeve_v1",
             "role": "functional_source_reference_not_shield",
@@ -44,6 +45,7 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertIn("adj_elect[10]=pulse_on and V_repeller", extension)
         self.assertIn("adj_elect[17]=0", extension)
         self.assertIn("adj_elect[18]=3", extension)
+        self.assertIn("adj_elect[19]=3", extension)
         self.assertIn("single_flight_handoff", extension)
         self.assertIn("TRACE: source_release", extension)
         self.assertIn("TRACE: pre_pulse_state", extension)

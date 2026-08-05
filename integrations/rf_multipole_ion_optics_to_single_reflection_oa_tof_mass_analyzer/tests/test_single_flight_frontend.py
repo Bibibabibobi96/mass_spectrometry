@@ -37,6 +37,7 @@ class SingleFlightFrontendTests(unittest.TestCase):
         )
         cls.upstream = copy.deepcopy(cls.upstream)
         cls.upstream["axial_dc"]["upstream_shield_potential_V"] = 0.0
+        cls.upstream["axial_dc"]["entrance_plate_potential_V"] = 3.0
         cls.upstream["axial_dc"]["entrance_reference_sleeve"] = {
             "profile_id": "source_reference_sleeve_v1",
             "role": "functional_source_reference_not_shield",
@@ -62,7 +63,9 @@ class SingleFlightFrontendTests(unittest.TestCase):
         self.assertEqual(contract["electrodes"]["accelerator_grid2_id"], 17)
         self.assertIn("9=all grounded shields and connector", gem)
         self.assertEqual(contract["electrodes"]["entrance_reference_sleeve_id"], 18)
+        self.assertEqual(contract["electrodes"]["entrance_plate_id"], 19)
         self.assertIn("e(18)", gem)
+        self.assertIn("e(19)", gem)
         self.assertIn("Functional source-reference sleeve", gem)
         self.assertNotIn("Numerical absorber", gem)
         self.assertNotIn(",1,-90) { cylinder", gem)

@@ -90,6 +90,41 @@ class UnifiedTerminalFieldBasisTests(unittest.TestCase):
         self.assertIn("'terminal_electrode_tag', 'accelshield'", source)
         self.assertIn("~resolvedTerminal.upstream_terminal_electrode_present", source)
 
+    def test_builder_materializes_the_governed_source_reference_sleeve(self) -> None:
+        builder = (
+            STAGE_ROOT / "build_pre_pulse_interface_transport_model.m"
+        ).read_text(encoding="utf-8")
+        preparer = (
+            STAGE_ROOT / "prepare_pre_pulse_interface_transport_field_model.m"
+        ).read_text(encoding="utf-8")
+        joint = load_json(CONFIG_ROOT / "family_shared_physical_port_joint_geometry.json")
+
+        for token in (
+            "entrance_reference_sleeve",
+            "source_reference_sleeve_v1",
+            "functional_source_reference_not_shield",
+            "sleeveUpstreamZ = rf.axial_dc.entrance_reference_sleeve.upstream_face_z_mm",
+            "upstreamSurface.center_mm(3)-sleeveUpstreamZ",
+            "rf.segmentation.segmented_rod_array.electrodes",
+            "add_segmented_rf_rods",
+            "segment_count*numel(g.rod_array.rods)",
+            "'rf_axial_drive_topology', rf.axial_drive.topology",
+            "'rf_entrance_plate_potential_V', rf.axial_dc.entrance_plate_potential_V",
+            "geom.feature.create('refsleeve', 'Difference')",
+            "'entrance_reference_sleeve_tag', 'refsleeve'",
+        ):
+            self.assertIn(token, builder)
+        self.assertIn("set_potential(esAxial, 'source_reference_sleeve'", preparer)
+        self.assertIn("set_potential(esAxial, 'entrance_plate'", preparer)
+        self.assertIn("set_potential(esOatof, 'g_source_reference_sleeve'", preparer)
+        self.assertIn("{context.entrance_reference_sleeve_tag}", preparer)
+        self.assertEqual(
+            joint["field_basis"]["axial_dc"][
+                "entrance_reference_sleeve_potential_source"
+            ],
+            "rf_resolved_geometry:/axial_dc/entrance_reference_sleeve/potential_V",
+        )
+
     def test_field_model_uses_three_orthogonal_bases(self) -> None:
         preparer = (
             STAGE_ROOT / "prepare_pre_pulse_interface_transport_field_model.m"

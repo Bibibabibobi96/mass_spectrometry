@@ -2,7 +2,7 @@
   "schema_version": 6,
   "role": "multipole_transport_experiment_campaign",
   "family_id": "rf_multipole_ion_optics",
-  "campaign_id": "20260805__oct_terminal_10ev_h15",
+  "campaign_id": "20260805__oct_15mm_sleeve_8v_entrance_rf_off_n100",
   "preregistered_before_run": true,
   "downstream_terminal_profile": {
     "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
@@ -17,10 +17,30 @@
       "common_mode_offset"
     ],
     "variable_limits": [
-      {"variable_id": "segment_entrance_common_mode", "unit": "V", "minimum": 8.0, "maximum": 8.0},
-      {"variable_id": "segment_exit_common_mode", "unit": "V", "minimum": 8.0, "maximum": 8.0},
-      {"variable_id": "segment_output_reference", "unit": "V", "minimum": 0.0, "maximum": 0.0},
-      {"variable_id": "common_mode_offset", "unit": "V", "minimum": 8.0, "maximum": 8.0}
+      {
+        "variable_id": "segment_entrance_common_mode",
+        "unit": "V",
+        "minimum": 8.0,
+        "maximum": 8.0
+      },
+      {
+        "variable_id": "segment_exit_common_mode",
+        "unit": "V",
+        "minimum": 0.0,
+        "maximum": 8.0
+      },
+      {
+        "variable_id": "segment_output_reference",
+        "unit": "V",
+        "minimum": 0.0,
+        "maximum": 0.0
+      },
+      {
+        "variable_id": "common_mode_offset",
+        "unit": "V",
+        "minimum": 8.0,
+        "maximum": 8.0
+      }
     ]
   },
   "particle_source_transform_policy": {
@@ -34,12 +54,12 @@
   },
   "experiments": [
     {
-      "experiment_id": "oct_terminal_10ev_h15_n100",
+      "experiment_id": "oct_terminal_15mm_sleeve_8v_entrance_rf_off_n100",
       "project_id": "rf_octupole_ion_optics",
-      "authorized_run_id": "20260805_132000__sim__simion__oct-terminal-10ev-h15__n100",
+      "authorized_run_id": "20260805_172000__sim__simion__oct-terminal-15mm-sleeve-8v-entrance__n100",
       "solver": "simion",
       "stop_stage": "transport",
-      "case_set": "primary_only",
+      "case_set": "primary_and_rf_off_energy_control",
       "design_profile_id": "exit_aperture_plate_acceleration",
       "source_kinetic_energy_eV": 2.0,
       "execution_profile_id": "simion_transport_campaign_engineering",
@@ -55,16 +75,26 @@
         "kind": "inline",
         "numerics_id": "campaign_h15_r015_z020_t160",
         "values": {
-          "cell_mm_xyz": {"x": 0.15, "y": 0.15, "z": 0.2},
+          "cell_mm_xyz": {
+            "x": 0.15,
+            "y": 0.15,
+            "z": 0.2
+          },
           "trajectory_quality": 10,
-          "trajectory": {"rf_steps_per_period": 160, "maximum_global_time_us": 80.0}
+          "trajectory": {
+            "rf_steps_per_period": 160,
+            "maximum_global_time_us": 80.0
+          }
         }
       },
       "retention_class": "compact",
       "resource_authorization": {
         "authorized": true,
         "limits": {
-          "wall_clock_seconds_by_solver": {"comsol": 1800, "simion": 2400},
+          "wall_clock_seconds_by_solver": {
+            "comsol": 1800,
+            "simion": 2400
+          },
           "transient_run_directory_bytes": 8589934592,
           "process_tree_working_set_bytes": 8589934592,
           "minimum_system_available_memory_bytes": 8589934592,
@@ -74,44 +104,54 @@
         },
         "full_matrix_authorization": {
           "authorized": false,
-          "reason": "Only the preregistered N=100 functional and N=1000 diagnostic rows are authorized."
+          "reason": "Only the two preregistered N=100 corrected-boundary controls are authorized."
         },
         "budget_exhaustion_result": "Stop without retry and record the exhausted limit."
       },
-      "claim_limit": "N=100 SIMION functional check of a 2 eV source accelerated to nominal 10 eV by one 8 V terminal step from an equipotential octupole rod set; no convergence, Candidate or Formal claim."
+      "claim_limit": "N=100 paired RF-on/RF-off SIMION check of the terminal topology with a 1.5 mm-ID coplanar sleeve and independent +8 V entrance plate; diagnostic only."
     },
     {
-      "experiment_id": "oct_terminal_10ev_h15_n1000",
+      "experiment_id": "oct_segmented_15mm_sleeve_8v_entrance_rf_off_n100",
       "project_id": "rf_octupole_ion_optics",
-      "authorized_run_id": "20260805_132100__sim__simion__oct-terminal-10ev-h15__n1000",
+      "authorized_run_id": "20260805_172100__sim__simion__oct-segmented-15mm-sleeve-8v-entrance__n100",
       "solver": "simion",
       "stop_stage": "transport",
-      "case_set": "primary_only",
-      "design_profile_id": "exit_aperture_plate_acceleration",
+      "case_set": "primary_and_rf_off_energy_control",
+      "design_profile_id": "segmented_rod_axial_acceleration",
       "source_kinetic_energy_eV": 2.0,
       "execution_profile_id": "simion_transport_campaign_engineering",
       "design_variable_values": {
         "segment_entrance_common_mode": 8.0,
-        "segment_exit_common_mode": 8.0,
+        "segment_exit_common_mode": 0.0,
         "segment_output_reference": 0.0,
         "common_mode_offset": 8.0
       },
-      "particle_source_profile_id": "family_mother_sample_v1_n1000",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
       "comsol_solver_numerics_profile_id": "baseline_finite_3d",
       "simion_solver_numerics": {
         "kind": "inline",
         "numerics_id": "campaign_h15_r015_z020_t160",
         "values": {
-          "cell_mm_xyz": {"x": 0.15, "y": 0.15, "z": 0.2},
+          "cell_mm_xyz": {
+            "x": 0.15,
+            "y": 0.15,
+            "z": 0.2
+          },
           "trajectory_quality": 10,
-          "trajectory": {"rf_steps_per_period": 160, "maximum_global_time_us": 80.0}
+          "trajectory": {
+            "rf_steps_per_period": 160,
+            "maximum_global_time_us": 80.0
+          }
         }
       },
       "retention_class": "compact",
       "resource_authorization": {
         "authorized": true,
         "limits": {
-          "wall_clock_seconds_by_solver": {"comsol": 1800, "simion": 2400},
+          "wall_clock_seconds_by_solver": {
+            "comsol": 1800,
+            "simion": 2400
+          },
           "transient_run_directory_bytes": 8589934592,
           "process_tree_working_set_bytes": 8589934592,
           "minimum_system_available_memory_bytes": 8589934592,
@@ -121,12 +161,12 @@
         },
         "full_matrix_authorization": {
           "authorized": false,
-          "reason": "Only the preregistered N=100 functional and N=1000 diagnostic rows are authorized."
+          "reason": "Only the two preregistered N=100 corrected-boundary controls are authorized."
         },
         "budget_exhaustion_result": "Stop without retry and record the exhausted limit."
       },
-      "claim_limit": "N=1000 SIMION diagnostic of a 2 eV source accelerated to nominal 10 eV by one 8 V terminal step from an equipotential octupole rod set; angular and spatial distributions only, no convergence, Candidate or Formal claim."
+      "claim_limit": "N=100 paired RF-on/RF-off SIMION check of the segmented topology with a 1.5 mm-ID coplanar sleeve and independent +8 V entrance plate; diagnostic only."
     }
   ],
-  "claim_limit": "Two-stage SIMION diagnostic of the terminal-step 10 eV octupole-output hypothesis. An equipotential +8 V rod set and the existing 0 V downstream terminal replace the segmented 8-to-0 V staircase; no numerical-convergence, cross-solver, Candidate or Formal claim."
+  "claim_limit": "Paired diagnostic of source-potential equality after correcting the entrance plate electrode in both solvers; no convergence, Candidate or Formal claim."
 }

@@ -129,6 +129,7 @@ class SimionGeometryTests(unittest.TestCase):
         self.assertNotIn("; connector_shape=", gem)
         self.assertIn("Functional source-reference sleeve", gem)
         self.assertIn("e(6)", gem)
+        self.assertIn("e(7) { fill {\n    within { cylinder(0,0,1.5,10,,0.5) }", gem)
 
     def test_cli_accepts_xyz_and_rejects_mixed_cell_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

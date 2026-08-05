@@ -253,7 +253,9 @@ try {
   $checkpoints = Join-Path $package.result_dir 'single_flight_particle_checkpoints.csv'
   Invoke-SingleFlightPython -Arguments @('-m',
     'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.analyze_single_flight',
-    '--log',$stdout,'--launched',([string]$launched),'--mass-amu','100','--checkpoints',$checkpoints,'--summary',$package.summary) `
+    '--log',$stdout,'--launched',([string]$launched),'--mass-amu','100',
+    '--geometry',$oatofGeometry,'--pulse-time-us',([string]$pulseTimeUs),
+    '--checkpoints',$checkpoints,'--summary',$package.summary) `
     -Failure 'Single-flight log analysis failed.'
   $sixPanel = Join-Path $package.result_dir 'single_flight_spatial_six_panel.png'
   $sixPanelMetadata = Join-Path $package.result_dir 'single_flight_spatial_six_panel_metadata.json'

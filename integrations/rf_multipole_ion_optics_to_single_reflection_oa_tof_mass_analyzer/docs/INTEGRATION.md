@@ -39,6 +39,12 @@ SIMION `analyzer_transport`。内部phase不构成独立公开入口或资格声
 关闭。编译和运行时校验统一使用UTF-8/LF规范文本身份，因此Windows CRLF与GitHub LF checkout不会
 产生不同仓库身份；artifact、run输入和求解器结果仍使用原始字节SHA，不改变历史证据语义。
 
+campaign来源artifact使用独立显式冻结入口
+`workflows/family_source_closure/refresh_campaign_source_bindings.py`。它从已声明路径读取原始字节并统一
+生成manifest、状态、母样本和元数据SHA；`--check`只验证不写入。若campaign任一目标run已经发布
+最终manifest，入口禁止改变该campaign，只允许检查。执行前prepare仍独立验证source manifest中的
+输入/输出、run/project/status和resolved design关系，因此刷新SHA不能把任意无关文件变成合法来源。
+
 ## 多极杆族同源闭合状态与声明边界
 
 以下2026-07-30至2026-08-02记录是迁移前source-revision工作流的历史诊断证据，不再描述活动入口。
@@ -330,14 +336,23 @@ x截面417在孔邻域221个采样点中`OPEN=0`，而上游相邻截面416为`O
 [`../../../docs/history/20260805__octupole-10ev-single-flight.md`](../../../docs/history/20260805__octupole-10ev-single-flight.md)。
 `multipole_handoff`仍只是同一次连续SIMION flight中的截面checkpoint，不表示分阶段导出或再注入。
 
-末端阶跃 N=1000 连续run
-`20260805_134000__sim__simion__rf-oatof-single-flight-gap0__n1000`得到
-`1000→967→948→948→948`，direct-KDE FWHM为2.1940 ns、脉冲参考R为7104；相对分段10 eV
-连续run的`1000→711→612→612→612`和2.7299 ns，它表现为更高产额和更窄诊断峰，但handoff角度σ
-与脉冲前σz由`1.15464°/0.46245 mm`恶化为`1.75191°/0.51764 mm`。RF-off共同粒子对照进一步
-证明两拓扑虽然使用相同`+8 V`入口套筒，同一源点的实际静电势降却约为`7.705/7.991 V`；因此这不是
-严格等初始点电势的10 eV拓扑对照，不授予性能结论。完整证据和修复条件见
-[`../../../docs/history/20260805__octupole-terminal-10ev-single-flight.md`](../../../docs/history/20260805__octupole-terminal-10ev-single-flight.md)。
+联合COMSOL前端构建器现在显式消费`axial_dc.entrance_reference_sleeve`，把
+`source_reference_sleeve_v1`生成为独立`refsleeve`实体选择。轴向DC基底按resolved电势驱动该套筒，
+RF与oaTOF脉冲基底把它固定为零增量；因此它既不是接地外壳，也不会在其他场基底中被遗漏。
+
+目标注入能量的机器观察面固定为连续链`pre_pulse_state`：样本必须位于oaTOF repeller与grid1之间、
+处于加速器孔内且不晚于脉冲时刻。分析器直接从三维速度写出`kinetic_energy_eV`，并在summary中记录
+区域、时序、样本数、均值、样本标准差和目标误差；`terminal`或`multipole_handoff`能量明确不得用于
+目标能量验证。旧N=1000末端阶跃run及RF-off末端面能量只保留为旧接口诊断，不再回答是否达到10 eV。
+
+修正后的入口参考套筒内径为`1.5 mm`，范围`z=-2.5..0 mm`，与杆端共面；套筒和oaTOF入口板均为
+`+8 V`。N=100连续SIMION末端/分段run分别为
+`20260805_173000__sim__simion__rf-oatof-single-flight-gap0__n100`和
+`20260805_173100__sim__simion__rf-oatof-single-flight-gap0__n100`，census为
+`100→99→98→98→98`与`100→74→64→64→64`。加速器内动能为
+`10.02390±0.05540 eV`和`10.02481±0.06896 eV`；共同64粒子的末端减分段配对均值差为
+`-0.00093 eV`。两方案达到相同目标能量，末端方案本次优势是传输，不是额外能量。完整证据与限制见
+[`../../../docs/history/20260805__octupole-15mm-sleeve-accelerator-energy.md`](../../../docs/history/20260805__octupole-15mm-sleeve-accelerator-energy.md)。
 
 ### 加速前相空间的受控理想条件反事实
 

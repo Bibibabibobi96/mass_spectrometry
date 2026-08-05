@@ -7,6 +7,7 @@ import copy
 import hashlib
 import json
 from pathlib import Path
+import re
 import sys
 from typing import Any, Iterator
 
@@ -84,6 +85,11 @@ def _target_paths(repo_root: Path) -> list[Path]:
         (integration_root / relative_path).resolve()
         for relative_path in ACTIVE_PUBLICATION_PATHS
     }
+    campaign_root = repo_root / "common" / "multipole" / "campaigns"
+    for path in campaign_root.glob("*.json"):
+        document = _load(path)
+        if isinstance(document.get("downstream_terminal_profile"), dict):
+            targets.add(path.resolve())
     profiles = _load(config_root / "connection_profiles.json")["profiles"]
     for profile in profiles:
         if profile["connection_profile_id"] not in ACTIVE_CONNECTION_PROFILE_IDS:
@@ -127,6 +133,38 @@ def compile_publications(repo_root: Path) -> dict[Path, bytes]:
             raise ValueError(f"repository binding cycle includes {path}")
         visiting.add(path)
         document = copy.deepcopy(documents[path])
+        terminal_binding = document.get("downstream_terminal_profile")
+        if isinstance(terminal_binding, dict):
+            integration_registry = _load(root / "integrations" / "registry.json")
+            matches = [
+                item for item in integration_registry["integrations"]
+                if item["integration_id"] == terminal_binding.get("integration_id")
+            ]
+            if len(matches) != 1:
+                raise ValueError("downstream-terminal integration is not unique")
+            registry_path = (
+                root / matches[0]["downstream_terminal_profile_registry"]
+            ).resolve()
+            registry_path.relative_to(root)
+            registry_sha256 = repository_text_sha256(registry_path)
+            terminal_binding["registry_sha256"] = registry_sha256
+            if path.parent == root / "common" / "multipole" / "campaigns":
+                original = path.read_text(encoding="utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
+                pattern = re.compile(
+                    r'("downstream_terminal_profile"\s*:\s*\{.*?'
+                    r'"registry_sha256"\s*:\s*")[A-F0-9]{64}("\s*)',
+                    re.DOTALL,
+                )
+                rendered, count = pattern.subn(
+                    rf"\g<1>{registry_sha256}\g<2>", original, count=1
+                )
+                if count != 1:
+                    raise ValueError(
+                        f"downstream-terminal campaign binding is not unique: {path}"
+                    )
+                visiting.remove(path)
+                compiled[path] = rendered.encode("utf-8")
+                return compiled[path]
         for owner, path_key, hash_key in _reference_pairs(document):
             dependency = (root / owner[path_key]).resolve()
             dependency.relative_to(root)

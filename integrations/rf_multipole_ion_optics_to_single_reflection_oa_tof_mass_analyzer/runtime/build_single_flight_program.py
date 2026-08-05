@@ -50,6 +50,7 @@ def build_extension(
     }
     entrance_reference = upstream["axial_dc"]["entrance_reference_sleeve"]
     entrance_reference_v = float(entrance_reference["potential_V"])
+    entrance_plate_v = float(upstream["axial_dc"]["entrance_plate_potential_V"])
     origin = frontend["instance_origin_mm"]
     handoff_x = frontend["source_exit_center_mm"]["x"]
     lines = [
@@ -97,6 +98,7 @@ def build_extension(
             "  adj_elect[16]=pulse_on and V_grid1*1/6 or handoff_pulse_pre_all_v",
             "  adj_elect[17]=0",
             f"  adj_elect[18]={_lua_number(entrance_reference_v)}",
+            f"  adj_elect[19]={_lua_number(entrance_plate_v)}",
             "end",
             "function segment.initialize_run()",
             "  single_flight_base_initialize_run()",
@@ -110,6 +112,7 @@ def build_extension(
             "  initial[10]=0; initial[11]=0; initial[12]=0; initial[13]=0; initial[14]=0",
             "  initial[15]=0; initial[16]=0; initial[17]=0",
             f"  initial[18]={_lua_number(entrance_reference_v)}",
+            f"  initial[19]={_lua_number(entrance_plate_v)}",
             "  ai.pa:fast_adjust(initial)",
             "  single_flight_previous={}; single_flight_handoff_reported={}; single_flight_prepulse_reported={}",
             "  if trajectory_log_enable~=0 then",

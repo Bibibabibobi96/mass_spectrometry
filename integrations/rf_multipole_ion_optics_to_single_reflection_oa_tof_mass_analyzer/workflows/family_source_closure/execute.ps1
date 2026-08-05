@@ -50,6 +50,13 @@ if (-not $campaignPath.StartsWith(
     -not (Test-Path -LiteralPath $campaignPath -PathType Leaf)) {
   throw 'Campaign must be one repository-managed file.'
 }
+& $PythonExe -m (
+  'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.' +
+  'workflows.family_source_closure.refresh_campaign_source_bindings'
+) --repo-root $repoRoot --campaign $campaignPath --check
+if ($LASTEXITCODE -ne 0) {
+  throw 'Campaign source bindings must be refreshed before execution.'
+}
 $campaignDocument = Get-Content -LiteralPath $campaignPath -Raw -Encoding UTF8 |
   ConvertFrom-Json
 $experimentRows = @($campaignDocument.experiments | Where-Object {

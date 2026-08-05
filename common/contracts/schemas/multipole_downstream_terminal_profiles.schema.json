@@ -65,7 +65,7 @@
               "inner_radius_mm": {"type": "number", "exclusiveMinimum": 0},
               "outer_radius_mm": {"type": "number", "exclusiveMinimum": 0},
               "minimum_insulation_gap_mm": {"type": "number", "exclusiveMinimum": 0},
-              "downstream_rod_clearance_mm": {"type": "number", "exclusiveMinimum": 0}
+              "downstream_rod_clearance_mm": {"type": "number", "minimum": 0}
             }
           },
         "terminal_potential_V": {"const": 0.0}

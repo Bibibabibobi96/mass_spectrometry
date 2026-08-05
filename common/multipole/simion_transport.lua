@@ -253,6 +253,10 @@ function segment.init_p_values()
       set_electrode_voltage(run_config.entrance_reference_electrode_id,
         axial_scale * run_config.entrance_reference_v)
     end
+    if run_config.entrance_plate_electrode_id and run_config.entrance_plate_electrode_id > 0 then
+      set_electrode_voltage(run_config.entrance_plate_electrode_id,
+        axial_scale * run_config.entrance_plate_v)
+    end
     return
   end
   local static_scale = run_config.scale_static_boundaries and axial_scale or 1
@@ -285,6 +289,10 @@ function segment.fast_adjust()
     if run_config.entrance_reference_electrode_id and run_config.entrance_reference_electrode_id > 0 then
       set_electrode_voltage(run_config.entrance_reference_electrode_id,
         axial_scale * run_config.entrance_reference_v)
+    end
+    if run_config.entrance_plate_electrode_id and run_config.entrance_plate_electrode_id > 0 then
+      set_electrode_voltage(run_config.entrance_plate_electrode_id,
+        axial_scale * run_config.entrance_plate_v)
     end
     return
   end

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -29,6 +30,38 @@ class SingleFlightAnalysisTests(unittest.TestCase):
         self.assertEqual(summary["census"], {"launched": 3, "source_release": 1, "multipole_handoff": 1, "pre_pulse_state": 1, "local_accelerator_exit": 1, "detector_crossing": 1})
         self.assertIsNone(summary["instrument_clock_peak"])
         self.assertFalse(summary["instrument_clock_peak_is_resolution_claim"])
+        pre_pulse = next(row for row in rows if row["event"] == "pre_pulse_state")
+        self.assertGreater(pre_pulse["kinetic_energy_eV"], 0.0)
+
+    def test_target_energy_uses_pre_pulse_state_inside_accelerator(self) -> None:
+        text = "\n".join([
+            "TRACE: single_flight_handoff ion=1 instrument_time_us=9 x_mm=-88 y_mm=0 z_mm=-18.4 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
+            "TRACE: pre_pulse_state ion=1 instrument_time_us=10 x_mm=-69 y_mm=0 z_mm=-18.4 vx_mm_per_us=4.392 vy_mm_per_us=0 vz_mm_per_us=0",
+            "TRACE: handoff_pulse_on ion=1 instrument_time_us=10",
+        ])
+        geometry = {
+            "coordinate_convention": {"accelerator_axis_x": -69.0},
+            "geometry_mm": {
+                "accelerator_repeller_z": -19.9,
+                "accelerator_grid1_z": -16.9,
+                "accelerator_bore_half": 5.0,
+            },
+            "single_flight_layout_derivation": {"target_injection_energy_eV": 10.0},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = root / "log.txt"
+            model = root / "geometry.json"
+            log.write_text(text, encoding="utf-8")
+            model.write_text(json.dumps(geometry), encoding="utf-8")
+            rows, summary = analyze(log, 1, 100.0, model, 10.0)
+        validation = summary["injection_energy_validation"]
+        self.assertEqual(validation["sampling_event"], "pre_pulse_state")
+        self.assertEqual(validation["sample_count"], 1)
+        self.assertFalse(validation["terminal_or_handoff_energy_is_target_validation"])
+        handoff = next(row for row in rows if row["event"] == "multipole_handoff")
+        sample = next(row for row in rows if row["event"] == "pre_pulse_state")
+        self.assertNotEqual(handoff["kinetic_energy_eV"], sample["kinetic_energy_eV"])
 
 
 if __name__ == "__main__":

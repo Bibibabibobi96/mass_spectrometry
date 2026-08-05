@@ -118,6 +118,11 @@ def render_gem(
     entrance_reference = resolved.get("axial_dc", {}).get(
         "entrance_reference_sleeve"
     )
+    entrance_plate_electrode = (
+        entrance_reference_electrode + 1
+        if entrance_reference is not None
+        else ground_electrode
+    )
     outer = float(enclosure["shield_outer_radius_mm"])
     inner = float(enclosure["shield_inner_radius_mm"])
     z_min = float(enclosure["vacuum_z_min_mm"])
@@ -188,7 +193,7 @@ def render_gem(
         )
     lines.extend([
         "  } }",
-        f"  e({ground_electrode}) {{ fill {{",
+        f"  e({entrance_plate_electrode}) {{ fill {{",
         f"    within {{ cylinder(0,0,{interface['entrance_plate_z_max']:.12g},{outer:.12g},,{interface['entrance_plate_z_max']-interface['entrance_plate_z_min']:.12g}) }}",
         f"    notin_inside {{ cylinder(0,0,{interface['entrance_plate_z_max']+dz:.12g},{interface['entrance_aperture_radius']:.12g},,{interface['entrance_plate_z_max']-interface['entrance_plate_z_min']+2*dz:.12g}) }}",
         "  } }",

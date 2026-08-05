@@ -127,6 +127,45 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
     def test_active_publication_closure_is_fresh(self) -> None:
         self.assertEqual(publication_differences(REPO_ROOT), [])
 
+    def test_multipole_campaign_terminal_registry_hashes_are_compiled(self) -> None:
+        targets = {
+            path.relative_to(REPO_ROOT).as_posix()
+            for path in compile_publications(REPO_ROOT)
+        }
+        self.assertIn(
+            "common/multipole/campaigns/"
+            "20260805__oct_15mm_sleeve_8v_entrance_rf_off_n100.json",
+            targets,
+        )
+
+    def test_single_flight_program_builder_is_runtime_bound(self) -> None:
+        implementation = load(CONFIG_ROOT / "family_runtime_implementation.json")
+        self.assertEqual(
+            implementation["implementation"]["single_flight_program_builder"]["path"],
+            (
+                "integrations/"
+                "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
+                "runtime/build_single_flight_program.py"
+            ),
+        )
+        runtime_binding = (
+            INTEGRATION_ROOT / "runtime" / "runtime_binding.ps1"
+        ).read_text(encoding="utf-8-sig")
+        self.assertIn(
+            "'single_flight_runner','pre_pulse_runner','pulse_capture_runner'",
+            runtime_binding,
+        )
+        self.assertIn("foreach ($property in $implementationRecords)", runtime_binding)
+        self.assertNotIn("-Expected @($implementationPaths.Keys)", runtime_binding)
+        self.assertEqual(
+            implementation["implementation"]["single_flight_source"]["path"],
+            (
+                "integrations/"
+                "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
+                "runtime/single_flight_source.py"
+            ),
+        )
+
     def test_single_flight_run_metadata_uses_compiled_aperture_parameters(self) -> None:
         runner = (
             INTEGRATION_ROOT / "runtime" / "run_single_flight.ps1"
