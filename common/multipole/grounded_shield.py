@@ -5,6 +5,10 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from common.simion.aperture import (
+    resolve_rectangular_aperture_discretization,
+)
+
 
 GROUND_POTENTIAL_V = 0.0
 
@@ -34,6 +38,8 @@ def render_grounded_circular_to_rectangular_connection(
     aperture_width_mm: float,
     aperture_height_mm: float,
     cell_mm: float,
+    pa_origin_y_mm: float,
+    pa_origin_z_mm: float,
 ) -> tuple[list[str], dict[str, Any]]:
     """Render a closed grounded sleeve and apertured flange in an x-axis GEM frame."""
     values = {
@@ -61,6 +67,23 @@ def render_grounded_circular_to_rectangular_connection(
 
     fmt = lambda value: format(float(value), ".12g")
     flange_x_max_mm = sleeve_x_max_mm + flange_thickness_mm
+    aperture_discretization = resolve_rectangular_aperture_discretization(
+        mechanical_width_mm=aperture_width_mm,
+        mechanical_height_mm=aperture_height_mm,
+        cell_mm=cell_mm,
+        flange_x_min_mm=sleeve_x_max_mm,
+        flange_x_max_mm=flange_x_max_mm,
+        center_y_mm=center_y_mm,
+        center_z_mm=center_z_mm,
+        pa_origin_y_mm=pa_origin_y_mm,
+        pa_origin_z_mm=pa_origin_z_mm,
+    )
+    numerical_aperture_width_mm = aperture_discretization[
+        "numerical_carve_width_mm"
+    ]
+    numerical_aperture_height_mm = aperture_discretization[
+        "numerical_carve_height_mm"
+    ]
     locate = f"locate({fmt(flange_x_max_mm)},{fmt(center_y_mm)},{fmt(center_z_mm)},1,90)"
     sleeve_length = sleeve_x_max_mm - sleeve_x_min_mm
     lines: list[str] = []
@@ -78,7 +101,7 @@ def render_grounded_circular_to_rectangular_connection(
         [
             f"  e({electrode_id}) {{ fill {{",
             f"    within {{ {locate} {{ cylinder(0,0,0,{fmt(outer_radius_mm)},,{fmt(flange_thickness_mm)}) }} }}",
-            f"    notin {{ centered_box3D({fmt(flange_start+flange_thickness_mm/2)},{fmt(center_y_mm)},{fmt(center_z_mm)},{fmt(flange_thickness_mm+2*cell_mm)},{fmt(aperture_width_mm)},{fmt(aperture_height_mm)}) }}",
+            f"    notin_inside_or_on {{ centered_box3D({fmt(flange_start+flange_thickness_mm/2)},{fmt(center_y_mm)},{fmt(center_z_mm)},{fmt(flange_thickness_mm+2*cell_mm)},{fmt(numerical_aperture_width_mm)},{fmt(numerical_aperture_height_mm)}) }}",
             "  } }",
         ]
     )
@@ -89,4 +112,5 @@ def render_grounded_circular_to_rectangular_connection(
         "flange_thickness_mm": round(flange_thickness_mm, 12),
         "full_radial_enclosure": True,
         "shared_ground_electrode_id": electrode_id,
+        "aperture_discretization": aperture_discretization,
     }

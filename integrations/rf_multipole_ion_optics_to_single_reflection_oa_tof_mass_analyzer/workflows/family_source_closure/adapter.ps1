@@ -299,8 +299,9 @@ $runnerArguments = @{
   UpstreamResolvedDesignSha256 = $frozenArguments.upstream_resolved_design_sha256
   PythonExe = $PythonExe
 }
+$retrySuffix = if ($RunId -match '(__r\d{2})$') { $Matches[1] } else { '' }
 if ($executionStrategy -eq 'simion_single_flight') {
-  $singleFlightRunId = "$($RunId.Substring(0, 15))__sim__simion__rf-oatof-single-flight-gap0__n$expectedExecutionParticleCount"
+  $singleFlightRunId = "$($RunId.Substring(0, 15))__sim__simion__rf-oatof-single-flight-gap0__n$expectedExecutionParticleCount$retrySuffix"
   $runnerArguments.RunId = $singleFlightRunId
   & $runtime.implementation.single_flight_runner @runnerArguments
 } else {
@@ -351,11 +352,11 @@ $receipt = [ordered]@{
     single_flight_transport = $singleFlightRunId
   } } else { [ordered]@{
     pre_pulse_interface_transport =
-      "$($RunId.Substring(0, 15))__sim__comsol__rf-oatof-pre-pulse-interface-gap0__n$stageParticleCount"
+      "$($RunId.Substring(0, 15))__sim__comsol__rf-oatof-pre-pulse-interface-gap0__n$stageParticleCount$retrySuffix"
     pulse_capture =
-      "$($RunId.Substring(0, 15))__sim__comsol__rf-oatof-pulse-capture-gap0__n$stageParticleCount"
+      "$($RunId.Substring(0, 15))__sim__comsol__rf-oatof-pulse-capture-gap0__n$stageParticleCount$retrySuffix"
     analyzer_transport =
-      "$($RunId.Substring(0, 15))__sim__cross__rf-oatof-analyzer-transport-gap0__n$stageParticleCount"
+      "$($RunId.Substring(0, 15))__sim__cross__rf-oatof-analyzer-transport-gap0__n$stageParticleCount$retrySuffix"
   } }
   stage_runtime_binding_sha256s = if ($executionStrategy -eq 'simion_single_flight') { [ordered]@{
     single_flight_transport = $runtimeBindingSha256

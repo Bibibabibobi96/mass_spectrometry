@@ -129,6 +129,11 @@ function Resolve-RfOatofDependencyContract {
     'rf_pulse_capture_local_exit_adapter',
     'rf_analyzer_transport_simion_input_adapter',
     'rf_analyzer_transport_analyzer','rf_oatof_formal_release_validator',
+    'common_simion_aperture_discretization_schema',
+    'common_simion_aperture_discretizer',
+    'common_simion_aperture_topology_support',
+    'common_simion_aperture_topology_verifier',
+    'common_grounded_shield_connector',
     'common_connection_profile_schema','common_component_port_schema',
     'common_resolved_connection_schema','common_machine_contracts',
     'common_particle_state','common_particle_count_policy',
@@ -159,9 +164,9 @@ function Resolve-RfOatofDependencyContract {
   $frozenFilenames = @(
     $allDependencies | ForEach-Object { [string]$_.frozen_filename }
   )
-  if (@($allIds | Select-Object -Unique).Count -ne 53 -or
-      @($runInputNames | Select-Object -Unique).Count -ne 53 -or
-      @($frozenFilenames | Select-Object -Unique).Count -ne 53) {
+  if (@($allIds | Select-Object -Unique).Count -ne 58 -or
+      @($runInputNames | Select-Object -Unique).Count -ne 58 -or
+      @($frozenFilenames | Select-Object -Unique).Count -ne 58) {
     throw 'Resolved family dependency inventory contains duplicate identities or paths.'
   }
   foreach ($dependency in $allDependencies) {
@@ -222,8 +227,8 @@ function Publish-RfOatofDependencyInventory {
       sha256 = $contractIdentity.sha256
     }
   }
-  if (@($inventory.dependencies).Count -ne 53) {
-    throw "$Role resolved code inventory must contain exactly 53 dependencies."
+  if (@($inventory.dependencies).Count -ne 58) {
+    throw "$Role resolved code inventory must contain exactly 58 dependencies."
   }
   $inventoryPath = Join-Path $InputDir 'code_inventory.json'
   $inventoryJson = $inventory | ConvertTo-Json -Depth 20
@@ -362,6 +367,7 @@ function Resolve-RfOatofRuntimeBinding {
     runtime_binding_support = 'runtime/runtime_binding.ps1'
     transfer_runner = 'runtime/run_transfer.ps1'
     single_flight_runner = 'runtime/run_single_flight.ps1'
+    single_flight_frontend = 'runtime/single_flight_frontend.py'
     single_flight_asset_support = 'runtime/single_flight_assets.ps1'
     pre_pulse_runner = 'stages/comsol/run_pre_pulse_interface_transport.ps1'
     pre_pulse_builder = 'stages/comsol/build_pre_pulse_interface_transport_model.m'

@@ -127,6 +127,38 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
     def test_active_publication_closure_is_fresh(self) -> None:
         self.assertEqual(publication_differences(REPO_ROOT), [])
 
+    def test_single_flight_run_metadata_uses_compiled_aperture_parameters(self) -> None:
+        runner = (
+            INTEGRATION_ROOT / "runtime" / "run_single_flight.ps1"
+        ).read_text(encoding="utf-8-sig")
+        self.assertIn(
+            "$apertureHeightMm = [double]$frontendGeometry.aperture.height_mm",
+            runner,
+        )
+        self.assertIn("aperture_height_mm=$apertureHeightMm", runner)
+        self.assertNotIn("aperture_height_mm=0.9", runner)
+
+    def test_single_flight_fails_closed_on_compiled_pa_aperture_topology(self) -> None:
+        runner = (
+            INTEGRATION_ROOT / "runtime" / "run_single_flight.ps1"
+        ).read_text(encoding="utf-8-sig")
+        verifier = (
+            REPO_ROOT / "common/simion/verify_aperture_topology.lua"
+        ).read_text(encoding="utf-8-sig")
+        self.assertIn("compiled_pa_open_column_check_required", runner)
+        self.assertIn("verify_simion_aperture_topology.lua", runner)
+        self.assertIn("simion_aperture_topology_support.ps1", runner)
+        self.assertIn("Invoke-SimionCompiledApertureTopologyCheck", runner)
+        self.assertIn("frontend_open_aperture_column_count", runner)
+        refine = runner.index("'--nogui','--noprompt','refine',$cachePaSharp")
+        audit = runner.index("Invoke-SimionCompiledApertureTopologyCheck")
+        flight = runner.index("'--nogui','--noprompt','fly'")
+        self.assertLess(refine, audit)
+        self.assertLess(audit, flight)
+        self.assertIn("open_columns > 0", verifier)
+        self.assertIn("for ix = ix_min, ix_max", verifier)
+        self.assertIn("pa:point(ix, iy, iz)", verifier)
+
     def test_analysis_capabilities_are_unique_and_lifecycle_bounded(self) -> None:
         catalog = load(CONFIG_ROOT / "analysis_capabilities.json")
         self.assertEqual(

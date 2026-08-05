@@ -93,12 +93,37 @@ try {
     '--upstream',$upstreamFrozen,'--oatof',$oatofGeometry,
     '--connection',$resolvedFrozen,'--gem',$frontendGem,'--contract',$frontendContract,
     '--cell-mm',([string]$settings.cell_mm)) -Failure 'Single-flight frontend compilation failed.'
+  $frontendGeometry = Get-Content -LiteralPath $frontendContract -Raw -Encoding UTF8 |
+    ConvertFrom-Json
+  $apertureWidthMm = [double]$frontendGeometry.aperture.width_mm
+  $apertureHeightMm = [double]$frontendGeometry.aperture.height_mm
+  $apertureDiscretization = $frontendGeometry.junction_enclosure.aperture_discretization
+  if (-not $apertureDiscretization.compiled_pa_open_column_check_required -or
+      [double]$apertureDiscretization.mechanical_width_mm -ne $apertureWidthMm -or
+      [double]$apertureDiscretization.mechanical_height_mm -ne $apertureHeightMm) {
+    throw 'Single-flight aperture discretization contract is incomplete or inconsistent.'
+  }
+  $apertureGridWarnings = @($apertureDiscretization.grid_alignment.warnings)
+  foreach ($warningCode in $apertureGridWarnings) {
+    Write-Warning "SIMION aperture discretization warning: $warningCode"
+  }
+  $apertureVerifier = Join-Path $package.input_dir 'verify_simion_aperture_topology.lua'
+  Copy-RfStableFile -SourceRunRoot $repoRoot `
+    -SourcePath (Join-Path $repoRoot 'common\simion\verify_aperture_topology.lua') `
+    -Destination $apertureVerifier -Role 'compiled PA aperture topology verifier' | Out-Null
+  $apertureTopologySupport = Join-Path $package.input_dir 'simion_aperture_topology_support.ps1'
+  Copy-RfStableFile -SourceRunRoot $repoRoot `
+    -SourcePath (Join-Path $repoRoot 'common\simion\aperture_topology_support.ps1') `
+    -Destination $apertureTopologySupport -Role 'shared SIMION aperture topology entry' | Out-Null
+  . $apertureTopologySupport
+  $apertureTopologyReport = Join-Path $package.result_dir 'frontend_aperture_topology_check.json'
   $frontendHash = (Get-FileHash -LiteralPath $frontendGem -Algorithm SHA256).Hash
   $cacheRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer\cache\simion_single_flight_frontend'
   $cacheDir = Join-Path $cacheRoot $frontendHash.ToLowerInvariant()
   New-Item -ItemType Directory -Path $cacheDir -Force | Out-Null
   $cacheGem = Join-Path $cacheDir 'frontend.gem'; $cachePaSharp = Join-Path $cacheDir 'frontend.pa#'; $cachePa0 = Join-Path $cacheDir 'frontend.pa0'
-  if (-not (Test-Path -LiteralPath $cachePa0 -PathType Leaf)) {
+  $frontendRefineRequired = -not (Test-Path -LiteralPath $cachePa0 -PathType Leaf)
+  if ($frontendRefineRequired) {
     Copy-Item -LiteralPath $frontendGem -Destination $cacheGem -Force
     $gem2pa = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
       -UsagePath (Join-Path $package.log_dir 'frontend_gem2pa_resource_usage.json') -FilePath $SimionExe `
@@ -107,6 +132,9 @@ try {
       -ArgumentList @('--nogui','--noprompt','gem2pa',$cacheGem,$cachePaSharp)
     if ($gem2pa.resource_budget_exceeded) { $resourceBudgetExceeded=$true; throw 'Frontend GEM conversion exceeded its resource budget.' }
     if ($gem2pa.exit_code -ne 0) { throw 'Frontend GEM conversion failed.' }
+  }
+
+  if ($frontendRefineRequired) {
     $refine = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
       -UsagePath (Join-Path $package.log_dir 'frontend_refine_resource_usage.json') -FilePath $SimionExe `
       -WorkingDirectory $cacheDir -RedirectStandardOutput (Join-Path $package.log_dir 'frontend_refine.stdout.log') `
@@ -115,6 +143,28 @@ try {
     if ($refine.resource_budget_exceeded) { $resourceBudgetExceeded=$true; throw 'Frontend refinement exceeded its resource budget.' }
     if ($refine.exit_code -ne 0 -or -not (Test-Path -LiteralPath $cachePa0 -PathType Leaf)) { throw 'Frontend PA refinement failed.' }
   }
+
+  $topologyResult = Invoke-SimionCompiledApertureTopologyCheck `
+    -PaPath $cachePa0 -ReportPath $apertureTopologyReport -VerifierPath $apertureVerifier `
+    -OriginXmm ([double]$frontendGeometry.instance_origin_mm.x) `
+    -OriginYmm ([double]$frontendGeometry.instance_origin_mm.y) `
+    -OriginZmm ([double]$frontendGeometry.instance_origin_mm.z) `
+    -CellMm ([double]$frontendGeometry.cell_mm_xyz.x) `
+    -FlangeXMinMm ([double]$apertureDiscretization.flange_x_min_mm) `
+    -FlangeXMaxMm ([double]$apertureDiscretization.flange_x_max_mm) `
+    -CenterYmm ([double]$frontendGeometry.source_exit_center_mm.y) `
+    -CenterZmm ([double]$frontendGeometry.source_exit_center_mm.z) `
+    -MechanicalWidthMm $apertureWidthMm -MechanicalHeightMm $apertureHeightMm `
+    -BooleanBoundaryPolicy ([string]$apertureDiscretization.boolean_boundary_policy) `
+    -InvokeVerifier {
+      param($verifierPath)
+      Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
+        -UsagePath (Join-Path $package.log_dir 'frontend_aperture_topology_resource_usage.json') -FilePath $SimionExe `
+        -WorkingDirectory $cacheDir -RedirectStandardOutput (Join-Path $package.log_dir 'frontend_aperture_topology.stdout.log') `
+        -RedirectStandardError (Join-Path $package.log_dir 'frontend_aperture_topology.stderr.log') `
+        -ArgumentList @('--nogui','--noprompt','lua',$verifierPath)
+    }
+  $apertureTopology = $topologyResult.audit
 
   $ion = Join-Path $package.input_dir 'single_flight_mother_sample.ion'
   $globalSource = Join-Path $package.input_dir 'single_flight_initial_global_state.csv'
@@ -138,9 +188,9 @@ try {
 
   $runConfiguration = [ordered]@{
     schema_version=2; run_id=$RunId; project=$runtime.upstream_project_id; mode='rf_to_oatof_simion_single_flight'; project_root=$repoRoot
-    inputs=[ordered]@{ configuration=$configuration; runtime_binding=$runtimeBindingFrozen; resolved_connection=$resolvedFrozen; resolved_source_contract=$sourceContractFrozen; upstream_resolved_design=$upstreamFrozen; oatof_resolved_geometry=$oatofGeometry; resolved_integration_engineering_budget=$budget.frozen_budget; resolved_stage_resource_budget=$budget.stage_budget; mother_particle_source=$motherSource; initial_global_state=$globalSource; ion=$ion; frontend_gem=$frontendGem; frontend_contract=$frontendContract; program_metadata=$programMetadata }
+    inputs=[ordered]@{ configuration=$configuration; runtime_binding=$runtimeBindingFrozen; resolved_connection=$resolvedFrozen; resolved_source_contract=$sourceContractFrozen; upstream_resolved_design=$upstreamFrozen; oatof_resolved_geometry=$oatofGeometry; resolved_integration_engineering_budget=$budget.frozen_budget; resolved_stage_resource_budget=$budget.stage_budget; mother_particle_source=$motherSource; initial_global_state=$globalSource; ion=$ion; frontend_gem=$frontendGem; frontend_contract=$frontendContract; frontend_aperture_topology_support=$apertureTopologySupport; frontend_aperture_topology_verifier=$apertureVerifier; program_metadata=$programMetadata }
     upstream_source_identity=$runtime.source_identity
-    parameters=[ordered]@{ connection_profile_id=$ConnectionProfileId; source_branch_id=$SourceBranchId; launched_particle_count=$launched; particle_count=$launched; aperture_width_mm=1.0; aperture_height_mm=0.9; rod_end_to_accelerator_shield_mm=1.0; surrounded_transition=$true; pulse_time_us=[double]$settings.pulse_time_us; pulse_width_us=[double]$settings.pulse_width_us; frontend_gem_sha256=$frontendHash; frontend_pa0_sha256=(Get-FileHash -LiteralPath $cachePa0 -Algorithm SHA256).Hash }
+    parameters=[ordered]@{ connection_profile_id=$ConnectionProfileId; source_branch_id=$SourceBranchId; launched_particle_count=$launched; particle_count=$launched; aperture_width_mm=$apertureWidthMm; aperture_height_mm=$apertureHeightMm; aperture_boolean_boundary_policy=[string]$apertureDiscretization.boolean_boundary_policy; aperture_grid_warnings=$apertureGridWarnings; frontend_open_aperture_column_count=[int]$apertureTopology.open_column_count; frontend_aperture_guard_electrode_check_passed=[bool]$apertureTopology.guard_electrode_check_passed; frontend_aperture_topology_report_sha256=(Get-FileHash -LiteralPath $apertureTopologyReport -Algorithm SHA256).Hash; rod_end_to_accelerator_shield_mm=1.0; surrounded_transition=$true; pulse_time_us=[double]$settings.pulse_time_us; pulse_width_us=[double]$settings.pulse_width_us; frontend_gem_sha256=$frontendHash; frontend_pa0_sha256=(Get-FileHash -LiteralPath $cachePa0 -Algorithm SHA256).Hash }
     artifact_retention=[ordered]@{policy_version=1;class='compact';reason=$null}; formal_gate_passed=$false
   }
   Write-RfJson -Path $package.run_config -Depth 10 -Value $runConfiguration

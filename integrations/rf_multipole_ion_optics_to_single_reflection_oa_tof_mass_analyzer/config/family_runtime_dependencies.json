@@ -5,7 +5,8 @@
   "consumer_ids": [
     "pre_pulse_interface_transport",
     "pulse_capture",
-    "analyzer_transport"
+    "analyzer_transport",
+    "single_flight_transport"
   ],
   "dependencies": [
     {
@@ -306,6 +307,66 @@
       "run_input_name": "rf_oatof_formal_release_validator",
       "consumers": [
         "analyzer_transport"
+      ]
+    },
+    {
+      "id": "common_simion_aperture_discretization_schema",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/schemas/simion_rectangular_aperture_discretization.schema.json",
+      "frozen_filename": "runtime_snapshot/common/contracts/schemas/simion_rectangular_aperture_discretization.schema.json",
+      "run_input_name": "common_simion_aperture_discretization_schema",
+      "consumers": [
+        "single_flight_transport"
+      ]
+    },
+    {
+      "id": "common_simion_aperture_discretizer",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/simion/aperture.py",
+      "frozen_filename": "runtime_snapshot/common/simion/aperture.py",
+      "run_input_name": "common_simion_aperture_discretizer",
+      "consumers": [
+        "single_flight_transport"
+      ]
+    },
+    {
+      "id": "common_simion_aperture_topology_support",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/simion/aperture_topology_support.ps1",
+      "frozen_filename": "runtime_snapshot/common/simion/aperture_topology_support.ps1",
+      "run_input_name": "common_simion_aperture_topology_support",
+      "consumers": [
+        "single_flight_transport"
+      ]
+    },
+    {
+      "id": "common_simion_aperture_topology_verifier",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/simion/verify_aperture_topology.lua",
+      "frozen_filename": "runtime_snapshot/common/simion/verify_aperture_topology.lua",
+      "run_input_name": "common_simion_aperture_topology_verifier",
+      "consumers": [
+        "single_flight_transport"
+      ]
+    },
+    {
+      "id": "common_grounded_shield_connector",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/multipole/grounded_shield.py",
+      "frozen_filename": "runtime_snapshot/common/multipole/grounded_shield.py",
+      "run_input_name": "common_grounded_shield_connector",
+      "consumers": [
+        "single_flight_transport"
       ]
     },
     {

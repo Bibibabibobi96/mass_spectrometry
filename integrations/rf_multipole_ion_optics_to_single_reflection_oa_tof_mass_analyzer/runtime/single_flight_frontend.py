@@ -253,14 +253,19 @@ def compile_frontend(
         aperture_width_mm=port_width,
         aperture_height_mm=port_height,
         cell_mm=cell_mm,
+        pa_origin_y_mm=y_min,
+        pa_origin_z_mm=z_min,
     )
     lines.extend(connection_lines)
+    aperture_discretization = connection_contract["aperture_discretization"]
+    numerical_port_width = float(aperture_discretization["numerical_carve_width_mm"])
+    numerical_port_height = float(aperture_discretization["numerical_carve_height_mm"])
     lines.extend(
         [
             f"  e({MULTIPOLE_SHIELD_ELECTRODE}) {{ fill {{",
             f"    within {{ {_box(axis_x, axis_y, shield_center_z, shield_outer_width, shield_outer_width, shield_span_z)} }}",
             f"    notin {{ {_box(axis_x, axis_y, shield_center_z, shield_inner_width, shield_inner_width, shield_span_z)} }}",
-            f"    notin {{ {_box(negative_x_face+shield_wall/2, center_y, center_z, shield_wall+2*cell_mm, port_width, port_height)} }}",
+            f"    notin_inside_or_on {{ {_box(negative_x_face+shield_wall/2, center_y, center_z, shield_wall+2*cell_mm, numerical_port_width, numerical_port_height)} }}",
             "  } }",
             f"  e({MULTIPOLE_SHIELD_ELECTRODE}) {{ fill {{ within {{ {_box(axis_x, axis_y, shield_back_z+shield_wall/2, shield_outer_width, shield_outer_width, shield_wall)} }} }} }}",
         ]

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -43,6 +44,11 @@ STAGES_BY_STRATEGY = {
     "simion_single_flight": SINGLE_FLIGHT_STAGES,
 }
 ALL_STAGE_CONTRACTS = {**STAGES, **SINGLE_FLIGHT_STAGES}
+
+
+def _retry_suffix(run_id: str) -> str:
+    match = re.search(r"(__r\d{2})$", run_id)
+    return match.group(1) if match else ""
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -245,6 +251,7 @@ def publish_family_source_closure_run(
             run_id[:15]
             + stage_contracts[phase]["run_stem"]
             + str(particle_count)
+            + _retry_suffix(run_id)
         )
         binding_hash = stage_runtime_binding_sha256s[phase]
         if (

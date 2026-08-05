@@ -31,6 +31,9 @@ PROFILE_IDS = {
 PROFILE_IDS.add(
     "rf_octupole_oatof_shield_terminal_aperture_050x050_direct_mating_gap_0mm"
 )
+PROFILE_IDS.add(
+    "rf_octupole_oatof_shield_terminal_aperture_050x020_direct_mating_gap_0mm"
+)
 
 
 def load(path: Path) -> dict[str, object]:

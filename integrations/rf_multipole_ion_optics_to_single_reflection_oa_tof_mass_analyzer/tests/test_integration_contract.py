@@ -73,6 +73,7 @@ class IntegrationProfileContractTests(unittest.TestCase):
                 "rf_hexapole_oatof_shield_terminal_direct_mating_gap_0mm",
                 "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm",
                 "rf_octupole_oatof_shield_terminal_aperture_050x050_direct_mating_gap_0mm",
+                "rf_octupole_oatof_shield_terminal_aperture_050x020_direct_mating_gap_0mm",
             },
         )
         for profile_id in sorted(self.profiles):

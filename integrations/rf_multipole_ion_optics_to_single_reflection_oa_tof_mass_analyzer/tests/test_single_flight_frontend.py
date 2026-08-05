@@ -84,6 +84,42 @@ class SingleFlightFrontendTests(unittest.TestCase):
                 "flange_thickness_mm": 4.0,
                 "full_radial_enclosure": True,
                 "shared_ground_electrode_id": 9,
+                "aperture_discretization": {
+                    "schema_version": 1,
+                    "role": "simion_rectangular_aperture_discretization",
+                    "mechanical_width_mm": 1.0,
+                    "mechanical_height_mm": 0.9,
+                    "cell_mm": 0.2,
+                    "boolean_boundary_policy": "exclude_shape_inside_or_on_v1",
+                    "numerical_carve_width_mm": 1.0,
+                    "numerical_carve_height_mm": 0.9,
+                    "compiled_pa_open_column_check_required": True,
+                    "flange_x_min_mm": -67.8,
+                    "flange_x_max_mm": -63.8,
+                    "grid_alignment": {
+                        "width_cells": 5.0,
+                        "height_cells": 4.5,
+                        "width_is_integer_cell_multiple": True,
+                        "height_is_integer_cell_multiple": False,
+                        "edge_grid_coordinates": {
+                            "y_min": 103.5,
+                            "y_max": 108.5,
+                            "z_min": 104.25,
+                            "z_max": 108.75,
+                        },
+                        "edges_on_grid_nodes": {
+                            "y_min": False,
+                            "y_max": False,
+                            "z_min": False,
+                            "z_max": False,
+                        },
+                        "warnings": [
+                            "aperture_height_not_integer_cell_multiple",
+                            "aperture_y_edges_not_on_grid_nodes",
+                            "aperture_z_edges_not_on_grid_nodes",
+                        ],
+                    },
+                },
             },
         )
         self.assertLessEqual(contract["dimensions"]["nx"] * contract["dimensions"]["ny"] * contract["dimensions"]["nz"], 30_000_000)
@@ -127,6 +163,62 @@ class SingleFlightFrontendTests(unittest.TestCase):
         connection["transition_aperture"]["full_width_mm"] = 1.1
         with self.assertRaisesRegex(ValueError, "cannot enlarge"):
             compile_frontend(self.upstream, self.oatof, connection)
+
+    def test_grounded_reducer_parameters_support_independent_z_aperture(self) -> None:
+        connection = copy.deepcopy(self.connection)
+        connection["transition_aperture"]["full_width_mm"] = 0.5
+        connection["transition_aperture"]["full_height_mm"] = 0.2
+        connection["connector"]["aperture_reducer_profile_id"] = (
+            "grounded_rectangular_aperture_reducer_v1"
+        )
+        gem, contract = compile_frontend(self.upstream, self.oatof, connection)
+        self.assertEqual(
+            contract["aperture"],
+            {"shape": "rectangular", "width_mm": 0.5, "height_mm": 0.2},
+        )
+        self.assertIn(
+            "notin_inside_or_on { centered_box3D(-65.8,0,-18.4291868034,4.4,0.5,0.2)",
+            gem,
+        )
+        self.assertGreaterEqual(gem.count("notin_inside_or_on"), 2)
+        self.assertEqual(
+            contract["junction_enclosure"]["aperture_discretization"],
+            {
+                "schema_version": 1,
+                "role": "simion_rectangular_aperture_discretization",
+                "mechanical_width_mm": 0.5,
+                "mechanical_height_mm": 0.2,
+                "cell_mm": 0.2,
+                "boolean_boundary_policy": "exclude_shape_inside_or_on_v1",
+                "numerical_carve_width_mm": 0.5,
+                "numerical_carve_height_mm": 0.2,
+                "compiled_pa_open_column_check_required": True,
+                "flange_x_min_mm": -67.8,
+                "flange_x_max_mm": -63.8,
+                "grid_alignment": {
+                    "width_cells": 2.5,
+                    "height_cells": 1.0,
+                    "width_is_integer_cell_multiple": False,
+                    "height_is_integer_cell_multiple": True,
+                    "edge_grid_coordinates": {
+                        "y_min": 104.75,
+                        "y_max": 107.25,
+                        "z_min": 106.0,
+                        "z_max": 107.0,
+                    },
+                    "edges_on_grid_nodes": {
+                        "y_min": False,
+                        "y_max": False,
+                        "z_min": True,
+                        "z_max": True,
+                    },
+                    "warnings": [
+                        "aperture_width_not_integer_cell_multiple",
+                        "aperture_y_edges_not_on_grid_nodes",
+                    ],
+                },
+            },
+        )
 
     def test_rejects_uncontracted_aperture_mismatch(self) -> None:
         connection = copy.deepcopy(self.connection)

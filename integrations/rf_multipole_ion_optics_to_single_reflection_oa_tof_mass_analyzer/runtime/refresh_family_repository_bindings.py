@@ -24,6 +24,7 @@ ACTIVE_CONNECTION_PROFILE_IDS = {
     "rf_hexapole_oatof_shield_terminal_direct_mating_gap_0mm",
     "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm",
     "rf_octupole_oatof_shield_terminal_aperture_050x050_direct_mating_gap_0mm",
+    "rf_octupole_oatof_shield_terminal_aperture_050x020_direct_mating_gap_0mm",
 }
 ACTIVE_PUBLICATION_PATHS = (
     "config/execution_adapter_profiles.json",
@@ -34,6 +35,7 @@ ACTIVE_PUBLICATION_PATHS = (
     "config/family_hexapole_direct_mating_gap_0mm_runtime_binding.json",
     "config/family_octupole_direct_mating_gap_0mm_runtime_binding.json",
     "config/family_octupole_aperture_050x050_direct_mating_gap_0mm_runtime_binding.json",
+    "config/family_octupole_aperture_050x020_direct_mating_gap_0mm_runtime_binding.json",
 )
 
 

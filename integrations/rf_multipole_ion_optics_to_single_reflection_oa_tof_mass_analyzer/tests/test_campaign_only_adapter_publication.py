@@ -96,6 +96,7 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
             self.assertNotIn(obsolete, source)
         self.assertIn("json.dumps(rows[0], ensure_ascii=False, sort_keys=True", source)
         self.assertIn("$stageParticleCount = [int]$budget.particle_count", source)
+        self.assertIn("$retrySuffix = if ($RunId -match", source)
 
     def test_parent_publication_is_n_neutral_and_preserves_both_counts(self) -> None:
         with tempfile.TemporaryDirectory(dir=REPO_ROOT.parent) as directory:
@@ -110,7 +111,7 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
             )
             fixture_campaign.parent.mkdir(parents=True)
             write_json(fixture_campaign, {"role": "campaign_fixture"})
-            run_id = "20260803_220000__sim__cross__campaign-parent__n1000"
+            run_id = "20260803_220000__sim__cross__campaign-parent__n1000__r02"
             run_dir = (
                 workspace
                 / "artifacts"
@@ -181,7 +182,12 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                 },
             )
             stage_ids = {
-                phase: run_id[:15] + contract["run_stem"] + str(selected_count)
+                phase: (
+                    run_id[:15]
+                    + contract["run_stem"]
+                    + str(selected_count)
+                    + "__r02"
+                )
                 for phase, contract in STAGES.items()
             }
             runtime_sha = file_sha256(runtime)

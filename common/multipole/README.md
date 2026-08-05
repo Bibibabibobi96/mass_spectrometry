@@ -266,7 +266,8 @@ Lua对`sine`与`cosine`显式分支，未知波形失败；两组电压保持
 公共连接件`grounded_circular_to_rectangular_shield_v1`由
 [`grounded_shield.py`](grounded_shield.py)生成接地圆套筒和带矩形孔的接地法兰，用于闭合圆形多极杆罩与
 方形下游罩。具体实验仍由integration的connection profile/campaign显式选择；未选择单流程策略时不改变
-既有分阶段工作流。
+既有分阶段工作流。其开孔离散与编译PA贯通判据不在多极杆层私有实现，而统一服从
+[`../simion/README.md`](../simion/README.md)的仓库级SIMION连接开孔入口。
 
 COMSOL数值profile必须显式声明`electric_potential_element_order`，当前活动四/六/八极杆profile统一
 使用`quadratic`，不得依赖供应商默认阶次。稳态线性求解器由同一公共runner选择`mumps`、`pardiso`
