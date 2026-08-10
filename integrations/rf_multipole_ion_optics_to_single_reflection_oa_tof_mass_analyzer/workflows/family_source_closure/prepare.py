@@ -447,6 +447,15 @@ def prepare_family_source_closure(
         layout_profile = select_profile(
             _load(layout_registry_path), experiment["single_flight_layout_profile_id"]
         )
+        experiment_overrides = experiment.get("single_flight_design_overrides", [])
+        if experiment_overrides:
+            inherited = list(layout_profile.get("design_overrides", []))
+            variables = [item["variable"] for item in inherited + experiment_overrides]
+            if len(variables) != len(set(variables)):
+                raise ContractError("single-flight design override variable is duplicated")
+            layout_profile["design_overrides"] = inherited + copy.deepcopy(
+                experiment_overrides
+            )
         base_geometry_path = (
             root / "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json"
         )

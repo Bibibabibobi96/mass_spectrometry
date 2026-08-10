@@ -116,6 +116,14 @@ run-local目录重建`frontend_pa`、`flight_tube_pa`或`reflectron_pa`中实际
 接受区不匹配；已有z-vz相关性总体有利，不能直接消除。结果仍缺相邻PA网格和RF时间步，只是
 `CONTROLLED_COUNTERFACTUAL_DIAGNOSTIC_ONLY`。
 
+加速器自由量现可由实验行的`single_flight_design_overrides`声明；省略时继承layout/base resolved
+默认值，聚焦面、平移、反射器和罩体等派生量仍禁止直接指定。N=1000单飞在PA准备完成后自动拆成
+5批并行并合并全局粒子编号。两组4.0 mm `d1`三维诊断进一步排除了实体容纳不足：长焦点漂移的
+1700 V行虽有991/1000命中，但成为双峰且R降至8999.75；保持160 V/mm和0.344 mm紧凑焦点漂移的
+1600 V行有995/1000命中、单峰R=19176.67，仍比3.0 mm基准低1.24%。因此当前2.2 mm稳态束已基本
+位于stage1实体范围内，不能以增大d1替代三维时间接受优化。候选PA必须复制formal资产后在run-local
+重建；不得用可写硬链接跨越formal边界。
+
 目标能量只能在连续链`pre_pulse_state`、且粒子位于repeller与grid1之间时验证。
 `terminal`或`multipole_handoff`能量只作接口诊断。
 
@@ -135,8 +143,8 @@ run-local目录重建`frontend_pa`、`flight_tube_pa`或`reflectron_pa`中实际
 1. 对当前连续单流程补相邻PA网格和RF时间步，关闭孔边缘离散与峰宽敏感性；未完成前保持
    `INCONCLUSIVE_DIAGNOSTIC_ONLY`。
 2. 若需要跨求解器结论，另行授权同几何、同源、同绝对时钟和同checkpoint的COMSOL连续前端。
-3. 在参数合同内优先优化加速器d1、d2与repeller/grid1电压，使理论编译器自动重算聚焦面和反射器，
-   目标是扩大或匹配当前z分布的时间聚焦接受区；随后用第二母样本确认，不直接指定派生量。
+3. 保持d1=3.0 mm基准，先在紧凑焦点漂移附近优化d2与repeller/grid1场比；4.0 mm两行已经证明
+   单纯扩大实体间距无收益。理论编译器必须自动重算聚焦面和反射器，不直接指定派生量。
 4. 新的2 mm、3 mm或其他源宽必须各自形成受治理layout profile并重建受影响PA；不能从2.2 mm
    无收益结果直接外推。
 

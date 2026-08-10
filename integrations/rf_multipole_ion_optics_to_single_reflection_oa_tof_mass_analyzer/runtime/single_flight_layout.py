@@ -122,6 +122,12 @@ def compile_geometry_and_port(
         "family_experiment_port": True,
     }
     port["mating_surface"]["center_mm"][0] = port_x
+    port["mating_surface"]["center_mm"][1] = float(
+        geometry["particle_source"]["center_y_mm"]
+    )
+    port["mating_surface"]["center_mm"][2] = float(
+        geometry["particle_source"]["center_z_mm"]
+    )
     return geometry, port, {
         "accelerator_axis_x_mm": axis_x,
         "detector_x_mm": detector_x,

@@ -16,6 +16,13 @@ INTEGRATION = REPO / "integrations/rf_multipole_ion_optics_to_single_reflection_
 
 
 class SingleFlightLayoutTests(unittest.TestCase):
+    def test_formal_pa_assets_cross_runtime_boundary_by_value(self) -> None:
+        support = (
+            INTEGRATION / "runtime" / "single_flight_assets.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertIn("Copy-Item -LiteralPath $source -Destination $target", support)
+        self.assertNotIn("ItemType HardLink", support)
+
     def test_10ev_profile_derives_linked_layout_from_one_energy_parameter(self) -> None:
         registry = json.loads(
             (INTEGRATION / "config/single_flight_layout_profiles.json").read_text()
@@ -34,6 +41,12 @@ class SingleFlightLayoutTests(unittest.TestCase):
         self.assertAlmostEqual(values["entry_port_x_mm"], expected_axis - 19.0)
         self.assertEqual(resolved["particle_source"]["center_x_mm"], expected_axis)
         self.assertEqual(derived_port["mating_surface"]["center_mm"][0], expected_axis - 19.0)
+        self.assertEqual(
+            resolved["single_flight_layout_derivation"]["design_compilation"][
+                "changed_variables"
+            ],
+            [],
+        )
 
     def test_source_z22_profile_compiles_coupled_reflectron_candidate(self) -> None:
         registry = json.loads(
@@ -46,7 +59,7 @@ class SingleFlightLayoutTests(unittest.TestCase):
             (REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/interfaces/required/oatof_accelerator_entry.json").read_text()
         )
         profile = select_profile(registry, "symmetric_10ev_source_z22_diagnostic")
-        resolved, _, _ = compile_geometry_and_port(geometry, port, profile)
+        resolved, derived_port, _ = compile_geometry_and_port(geometry, port, profile)
         derivation = resolved["geometry_derivation"]["reflectron"]
         self.assertEqual(resolved["particle_source"]["size_z_mm"], 2.2)
         self.assertEqual(
@@ -92,7 +105,7 @@ class SingleFlightLayoutTests(unittest.TestCase):
             {"variable": "accelerator_stage1_length", "value": 3.5, "unit": "mm"},
             {"variable": "flight_length", "value": 550.0, "unit": "mm"},
         ]
-        resolved, _, _ = compile_geometry_and_port(geometry, port, profile)
+        resolved, derived_port, _ = compile_geometry_and_port(geometry, port, profile)
         compilation = resolved["single_flight_layout_derivation"][
             "design_compilation"
         ]
@@ -108,6 +121,10 @@ class SingleFlightLayoutTests(unittest.TestCase):
             resolved["geometry_derivation"]["accelerator"]["d1_mm"], 3.5
         )
         self.assertEqual(resolved["geometry_mm"]["L_flight"], 550.0)
+        self.assertEqual(
+            derived_port["mating_surface"]["center_mm"][2],
+            resolved["particle_source"]["center_z_mm"],
+        )
 
 
 if __name__ == "__main__":

@@ -384,7 +384,7 @@ try {
     schema_version=2; run_id=$RunId; project=$runtime.upstream_project_id; mode='rf_to_oatof_simion_single_flight'; project_root=$repoRoot
     inputs=[ordered]@{ configuration=$configuration; runtime_binding=$runtimeBindingFrozen; resolved_connection=$resolvedFrozen; resolved_source_contract=$sourceContractFrozen; upstream_resolved_design=$upstreamFrozen; oatof_resolved_geometry=$oatofGeometry; pulse_schedule=$pulseScheduleFrozen; resolved_integration_engineering_budget=$budget.frozen_budget; resolved_stage_resource_budget=$budget.stage_budget; mother_particle_source=$motherSource; initial_global_state=$globalSource; ion=$ion; frontend_gem=$frontendGem; frontend_contract=$frontendContract; frontend_aperture_topology_support=$apertureTopologySupport; frontend_aperture_topology_verifier=$apertureVerifier; program_metadata=$programMetadata; candidate_flight_tube_builder=$flightTubeBuilderFrozen; candidate_flight_tube_gem=$flightTubeGemFrozen; candidate_reflectron_builder=$reflectronBuilderFrozen; candidate_reflectron_gem=$reflectronGemFrozen }
     upstream_source_identity=$runtime.source_identity
-    parameters=[ordered]@{ connection_profile_id=$ConnectionProfileId; source_branch_id=$SourceBranchId; layout_profile_id=$(if($hasGovernedLayout){$LayoutProfileId}else{$null}); clock_basis=[string]$settings.clock_basis; launched_particle_count=$launched; particle_count=$launched; aperture_width_mm=$apertureWidthMm; aperture_height_mm=$apertureHeightMm; aperture_boolean_boundary_policy=[string]$apertureDiscretization.boolean_boundary_policy; aperture_grid_warnings=$apertureGridWarnings; frontend_open_aperture_column_count=[int]$apertureTopology.open_column_count; frontend_aperture_guard_electrode_check_passed=[bool]$apertureTopology.guard_electrode_check_passed; frontend_aperture_topology_report_sha256=(Get-FileHash -LiteralPath $apertureTopologyReport -Algorithm SHA256).Hash; rod_end_to_accelerator_shield_mm=1.0; surrounded_transition=$true; accelerator_axis_x_mm=[double]$oatofGeometryDocument.coordinate_convention.accelerator_axis_x; pulse_time_us=$pulseTimeUs; pulse_width_us=$pulseWidthUs; design_compilation=$(if($null -ne $layoutDerivation){$layoutDerivation.design_compilation}else{$null}); source_release_full_width_mm=[double]$oatofGeometryDocument.particle_source.size_z_mm; reflectron_stage2_length_mm=[double]$oatofGeometryDocument.geometry_mm.L_stage2; reflectron_midgrid_voltage_V=[double]$oatofGeometryDocument.electrodes_V.midgrid; reflectron_backplate_voltage_V=[double]$oatofGeometryDocument.electrodes_V.backplate; reflectron_pa0_sha256=(Get-FileHash -LiteralPath $reflectronPa0 -Algorithm SHA256).Hash; frontend_gem_sha256=$frontendHash; frontend_pa0_sha256=(Get-FileHash -LiteralPath $cachePa0 -Algorithm SHA256).Hash }
+    parameters=[ordered]@{ connection_profile_id=$ConnectionProfileId; source_branch_id=$SourceBranchId; layout_profile_id=$(if($hasGovernedLayout){$LayoutProfileId}else{$null}); clock_basis=[string]$settings.clock_basis; launched_particle_count=$launched; particle_count=$launched; execution_batch_count=$(if($launched -ge [int]$settings.batching_policy.enabled_at_particle_count){[int]$settings.batching_policy.default_batch_count}else{1}); execution_batches_parallel=$(if($launched -ge [int]$settings.batching_policy.enabled_at_particle_count){[bool]$settings.batching_policy.parallel_after_cache_warmup}else{$false}); aperture_width_mm=$apertureWidthMm; aperture_height_mm=$apertureHeightMm; aperture_boolean_boundary_policy=[string]$apertureDiscretization.boolean_boundary_policy; aperture_grid_warnings=$apertureGridWarnings; frontend_open_aperture_column_count=[int]$apertureTopology.open_column_count; frontend_aperture_guard_electrode_check_passed=[bool]$apertureTopology.guard_electrode_check_passed; frontend_aperture_topology_report_sha256=(Get-FileHash -LiteralPath $apertureTopologyReport -Algorithm SHA256).Hash; rod_end_to_accelerator_shield_mm=1.0; surrounded_transition=$true; accelerator_axis_x_mm=[double]$oatofGeometryDocument.coordinate_convention.accelerator_axis_x; pulse_time_us=$pulseTimeUs; pulse_width_us=$pulseWidthUs; design_compilation=$(if($null -ne $layoutDerivation){$layoutDerivation.design_compilation}else{$null}); source_release_full_width_mm=[double]$oatofGeometryDocument.particle_source.size_z_mm; reflectron_stage2_length_mm=[double]$oatofGeometryDocument.geometry_mm.L_stage2; reflectron_midgrid_voltage_V=[double]$oatofGeometryDocument.electrodes_V.midgrid; reflectron_backplate_voltage_V=[double]$oatofGeometryDocument.electrodes_V.backplate; reflectron_pa0_sha256=(Get-FileHash -LiteralPath $reflectronPa0 -Algorithm SHA256).Hash; frontend_gem_sha256=$frontendHash; frontend_pa0_sha256=(Get-FileHash -LiteralPath $cachePa0 -Algorithm SHA256).Hash }
     artifact_retention=[ordered]@{policy_version=1;class='compact';reason=$null}; formal_gate_passed=$false
   }
   Write-RfJson -Path $package.run_config -Depth 10 -Value $runConfiguration
@@ -392,32 +392,126 @@ try {
   Write-RfFrozenRunManifest -Python $python -FrozenRepoRoot $repoRoot -RunConfig $package.run_config -Status interrupted -Software @('SIMION 2020','Python 3.11')
   $snapshotReady = $true
 
-  $stdout = Join-Path $package.log_dir 'simion.stdout.log'; $stderr = Join-Path $package.log_dir 'simion.stderr.log'
+  $batchCount = [int]$runConfiguration.parameters.execution_batch_count
+  if ($batchCount -gt 1 -and (
+      $batchCount -ne 5 -or
+      -not [bool]$runConfiguration.parameters.execution_batches_parallel)) {
+    throw 'N=1000 single flight requires five parallel execution batches.'
+  }
+  $ionLines = @(Get-Content -LiteralPath $ion -Encoding UTF8)
+  if ($ionLines.Count -ne $launched) {
+    throw 'Single-flight ion row count differs from the launched mother sample.'
+  }
+  $batchRecords = @()
+  $quotient = [Math]::Floor($launched / $batchCount)
+  $remainder = $launched % $batchCount
+  $offset = 0
+  foreach ($batchIndex in 1..$batchCount) {
+    $count = $quotient + $(if ($batchIndex -le $remainder) { 1 } else { 0 })
+    $batchIon = Join-Path $package.input_dir (
+      'single_flight_mother_sample__batch{0:D2}.ion' -f $batchIndex
+    )
+    [IO.File]::WriteAllLines(
+      $batchIon,
+      [string[]]$ionLines[$offset..($offset + $count - 1)],
+      [Text.UTF8Encoding]::new($false)
+    )
+    $batchRecords += [pscustomobject]@{
+      index = $batchIndex
+      count = $count
+      offset = $offset
+      ion = $batchIon
+      stdout = Join-Path $package.log_dir (
+        'simion__batch{0:D2}.stdout.log' -f $batchIndex
+      )
+      stderr = Join-Path $package.log_dir (
+        'simion__batch{0:D2}.stderr.log' -f $batchIndex
+      )
+      usage = Join-Path $package.log_dir (
+        'resource_usage__batch{0:D2}.json' -f $batchIndex
+      )
+    }
+    $offset += $count
+  }
+  $stdoutFiles = @($batchRecords | ForEach-Object { $_.stdout })
+  $stderrFiles = @($batchRecords | ForEach-Object { $_.stderr })
+  $resourceUsageFiles = @($batchRecords | ForEach-Object { $_.usage })
   $oldOverride = $env:OATOF_ACCELERATOR_PA_OVERRIDE
   try {
     $env:OATOF_ACCELERATOR_PA_OVERRIDE = $cachePa0
-    $fly = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
-      -UsagePath $resourceUsage -FilePath $SimionExe -WorkingDirectory $runtimeDir `
-      -RedirectStandardOutput $stdout -RedirectStandardError $stderr -ArgumentList @(
-      '--default-num-particles',([string][Math]::Max(100,$launched)),'--nogui','--noprompt','fly',
-      '--trajectory-quality',([string]$settings.trajectory_quality),'--retain-trajectories','0','--particles',$ion,'--programs','1',
-      '--adjustable',("trajectory_quality={0}" -f $settings.trajectory_quality),'--adjustable','trajectory_log_enable=1',
-      '--adjustable',("diagnostic_max_tof_us={0:R}" -f [double]$settings.maximum_time_of_flight_us),
-      '--adjustable','handoff_pulse_mode=1','--adjustable',("handoff_pulse_time_us={0:R}" -f $pulseTimeUs),
-      '--adjustable',("handoff_pulse_width_us={0:R}" -f $pulseWidthUs),
-      '--adjustable',("single_flight_rf_steps={0}" -f [int]$settings.rf_steps_per_period),
-      (Join-Path $runtimeDir 'oatof_ideal_grounded.iob'))
+    $jobs = @()
+    foreach ($batch in $batchRecords) {
+      $payload = [pscustomobject]@{
+        support = Join-Path $repoRoot 'common\multipole\resource_budget_support.ps1'
+        budget = $budget.stage_budget
+        run_dir = $package.run_dir
+        usage = $batch.usage
+        executable = $SimionExe
+        working_directory = $runtimeDir
+        stdout = $batch.stdout
+        stderr = $batch.stderr
+        accelerator_pa = $cachePa0
+        arguments = [string[]]@(
+          '--default-num-particles',([string][Math]::Max(100,[int]$batch.count)),
+          '--nogui','--noprompt','fly',
+          '--trajectory-quality',([string]$settings.trajectory_quality),
+          '--retain-trajectories','0','--particles',$batch.ion,'--programs','1',
+          '--adjustable',("trajectory_quality={0}" -f $settings.trajectory_quality),
+          '--adjustable','trajectory_log_enable=1',
+          '--adjustable',("diagnostic_max_tof_us={0:R}" -f [double]$settings.maximum_time_of_flight_us),
+          '--adjustable','handoff_pulse_mode=1',
+          '--adjustable',("handoff_pulse_time_us={0:R}" -f $pulseTimeUs),
+          '--adjustable',("handoff_pulse_width_us={0:R}" -f $pulseWidthUs),
+          '--adjustable',("single_flight_rf_steps={0}" -f [int]$settings.rf_steps_per_period),
+          (Join-Path $runtimeDir 'oatof_ideal_grounded.iob')
+        )
+      }
+      $jobs += Start-Job -ArgumentList $payload -ScriptBlock {
+        param($item)
+        . $item.support
+        $env:OATOF_ACCELERATOR_PA_OVERRIDE = $item.accelerator_pa
+        Invoke-ResourceBudgetedProcess `
+          -ResolvedBudgetPath $item.budget -RunDir $item.run_dir `
+          -UsagePath $item.usage -FilePath $item.executable `
+          -WorkingDirectory $item.working_directory `
+          -RedirectStandardOutput $item.stdout `
+          -RedirectStandardError $item.stderr `
+          -ArgumentList ([string[]]$item.arguments)
+      }
+    }
+    try {
+      foreach ($job in $jobs) {
+        $fly = Receive-Job -Job $job -Wait
+        if ($job.State -ne 'Completed' -or $null -eq $fly) {
+          throw 'Single-flight SIMION batch job failed.'
+        }
+        if ($fly.resource_budget_exceeded) {
+          $resourceBudgetExceeded = $true
+          throw 'Single-flight SIMION batch exceeded its resource budget.'
+        }
+        if ($fly.exit_code -ne 0) {
+          throw 'Single-flight SIMION batch failed.'
+        }
+      }
+    } finally {
+      $jobs | Remove-Job -Force -ErrorAction SilentlyContinue
+    }
   } finally { $env:OATOF_ACCELERATOR_PA_OVERRIDE = $oldOverride }
-  if ($fly.resource_budget_exceeded) { $resourceBudgetExceeded=$true; throw 'Single-flight SIMION run exceeded its resource budget.' }
-  if ($fly.exit_code -ne 0) { throw "Single-flight SIMION run failed: $stderr" }
 
   $checkpoints = Join-Path $package.result_dir 'single_flight_particle_checkpoints.csv'
-  Invoke-SingleFlightPython -Arguments @('-m',
+  $analysisArguments = @('-m',
     'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.analyze_single_flight',
-    '--log',$stdout,'--launched',([string]$launched),'--mass-amu','100',
+    '--launched',([string]$launched),'--mass-amu','100',
     '--geometry',$oatofGeometry,'--pulse-time-us',([string]$pulseTimeUs),
     '--clock-basis',([string]$settings.clock_basis),
-    '--checkpoints',$checkpoints,'--summary',$package.summary) `
+    '--checkpoints',$checkpoints,'--summary',$package.summary)
+  foreach ($batch in $batchRecords) {
+    $analysisArguments += @(
+      '--log',$batch.stdout,
+      '--batch-particle-count',([string]$batch.count)
+    )
+  }
+  Invoke-SingleFlightPython -Arguments $analysisArguments `
     -Failure 'Single-flight log analysis failed.'
   $sixPanel = Join-Path $package.result_dir 'single_flight_spatial_six_panel.png'
   $sixPanelMetadata = Join-Path $package.result_dir 'single_flight_spatial_six_panel_metadata.json'
@@ -432,8 +526,10 @@ try {
   $runConfiguration.parameters.detector_crossing_count = [int]$result.census.detector_crossing
   Write-RfJson -Path $package.run_config -Depth 10 -Value $runConfiguration
   $retentionActions = Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config
-  $outputs = @($checkpoints,$sixPanel,$sixPanelMetadata,$stdout,$stderr,$resourceUsage,$flightTubeBuildStdout,$flightTubeBuildStderr,$reflectronBuildStdout,$reflectronBuildStderr,$package.summary,$retentionActions) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
-  if (-not (Complete-ResourceUsage -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir -UsagePath $resourceUsage)) { $resourceBudgetExceeded=$true; throw 'Single-flight compact retained-byte budget exceeded.' }
+  $outputs = @($checkpoints,$sixPanel,$sixPanelMetadata) + $stdoutFiles + $stderrFiles + $resourceUsageFiles + @($flightTubeBuildStdout,$flightTubeBuildStderr,$reflectronBuildStdout,$reflectronBuildStderr,$package.summary,$retentionActions) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
+  foreach ($usage in $resourceUsageFiles) {
+    if (-not (Complete-ResourceUsage -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir -UsagePath $usage)) { $resourceBudgetExceeded=$true; throw 'Single-flight compact retained-byte budget exceeded.' }
+  }
   Write-RfFrozenRunManifest -Python $python -FrozenRepoRoot $repoRoot -RunConfig $package.run_config -Status success -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
   Write-Output "SIMION_SINGLE_FLIGHT=PASS RUN_ID=$RunId DETECTOR=$($result.census.detector_crossing)/$launched"
 } catch {

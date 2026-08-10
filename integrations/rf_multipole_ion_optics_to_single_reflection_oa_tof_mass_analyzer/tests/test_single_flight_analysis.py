@@ -88,6 +88,27 @@ class SingleFlightAnalysisTests(unittest.TestCase):
         self.assertTrue(summary["detector_native_time_offset_applied"])
         self.assertEqual(summary["detector_time_basis"], "instrument_time_us")
 
+    def test_five_batch_logs_receive_global_particle_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            logs = []
+            for batch_index in range(5):
+                log = root / f"batch{batch_index + 1}.txt"
+                log.write_text(
+                    "TRACE: source_release ion=1 instrument_time_us=0 "
+                    "x_mm=0 y_mm=0 z_mm=0 vx_mm_per_us=1 "
+                    "vy_mm_per_us=0 vz_mm_per_us=0\n"
+                    f"TRACE: detector_crossing ion=1 t={70 + batch_index * 0.01} "
+                    "x=1 y=0 z=0\n",
+                    encoding="utf-8",
+                )
+                logs.append(log)
+            rows, summary = analyze(logs, 5, 100.0, batch_particle_counts=[1] * 5)
+        self.assertEqual(
+            sorted({row["particle_id"] for row in rows}), [1, 2, 3, 4, 5]
+        )
+        self.assertEqual(summary["census"]["detector_crossing"], 5)
+
     def test_absolute_clock_rejects_detector_without_birth_time(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             log = Path(directory) / "log.txt"

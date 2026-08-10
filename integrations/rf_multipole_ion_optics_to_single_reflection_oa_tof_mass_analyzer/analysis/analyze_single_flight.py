@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 import csv
 import json
 import re
@@ -34,19 +35,39 @@ COLUMNS = [
 
 
 def analyze(
-    log_path: Path,
+    log_path: Path | Sequence[Path],
     launched: int,
     mass_amu: float,
     geometry_path: Path | None = None,
     pulse_time_us: float | None = None,
     clock_basis: str = "legacy_relative_time",
+    batch_particle_counts: Sequence[int] | None = None,
 ) -> tuple[list[dict[str, object]], dict[str, object]]:
     if clock_basis not in {"legacy_relative_time", "absolute_birth_time"}:
         raise ValueError("unknown single-flight clock basis")
+    log_paths = [log_path] if isinstance(log_path, Path) else list(log_path)
+    if batch_particle_counts is None:
+        batch_particle_counts = [launched]
+    if (
+        len(log_paths) != len(batch_particle_counts)
+        or any(count < 1 for count in batch_particle_counts)
+        or sum(batch_particle_counts) != launched
+    ):
+        raise ValueError("single-flight batch log/count identity differs")
     rows: list[dict[str, object]] = []
     seen: set[tuple[int, str]] = set()
     pulse_times: list[float] = []
-    for line in log_path.read_text(encoding="utf-8-sig", errors="replace").splitlines():
+    offset = 0
+    lines: list[tuple[str, int, int]] = []
+    for path, count in zip(log_paths, batch_particle_counts, strict=True):
+        lines.extend(
+            (line, offset, count)
+            for line in path.read_text(
+                encoding="utf-8-sig", errors="replace"
+            ).splitlines()
+        )
+        offset += count
+    for line, particle_offset, batch_count in lines:
         match = STATE_PATTERN.search(line)
         if match:
             event = {
@@ -55,7 +76,10 @@ def analyze(
                 "pre_pulse_state": "pre_pulse_state",
                 "local_accelerator_exit": "local_accelerator_exit",
             }[match["event"]]
-            key = (int(match["ion"]), event)
+            local_id = int(match["ion"])
+            if not 1 <= local_id <= batch_count:
+                raise ValueError("logged particle identity is outside its batch")
+            key = (local_id + particle_offset, event)
             if key in seen:
                 raise ValueError(f"duplicate checkpoint: particle={key[0]} event={event}")
             seen.add(key)
@@ -74,7 +98,10 @@ def analyze(
             continue
         match = DETECTOR_PATTERN.search(line)
         if match:
-            key = (int(match["ion"]), "detector_crossing")
+            local_id = int(match["ion"])
+            if not 1 <= local_id <= batch_count:
+                raise ValueError("logged particle identity is outside its batch")
+            key = (local_id + particle_offset, "detector_crossing")
             if key in seen:
                 raise ValueError(f"duplicate detector crossing: particle={key[0]}")
             seen.add(key)
@@ -225,7 +252,8 @@ def analyze(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--log", required=True, type=Path)
+    parser.add_argument("--log", required=True, action="append", type=Path)
+    parser.add_argument("--batch-particle-count", action="append", type=int)
     parser.add_argument("--launched", required=True, type=int)
     parser.add_argument("--mass-amu", required=True, type=float)
     parser.add_argument("--geometry", type=Path)
@@ -245,6 +273,7 @@ def main() -> int:
         args.geometry,
         args.pulse_time_us,
         args.clock_basis,
+        args.batch_particle_count,
     )
     args.checkpoints.parent.mkdir(parents=True, exist_ok=True)
     with args.checkpoints.open("w", encoding="utf-8", newline="") as handle:

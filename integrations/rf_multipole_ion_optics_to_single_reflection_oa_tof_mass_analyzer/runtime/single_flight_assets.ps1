@@ -22,14 +22,9 @@ function Copy-RfOatofFormalPaSet {
       throw "Formal oaTOF asset identity differs: $($record.file)"
     }
     $target = Join-Path $Destination ([string]$record.file)
-    if ([string]$record.file -match '\.pa(-surf|#|\d+)$') {
-      try {
-        New-Item -ItemType HardLink -Path $target -Target $source -ErrorAction Stop | Out-Null
-      } catch {
-        Copy-Item -LiteralPath $source -Destination $target
-      }
-    } else {
-      Copy-Item -LiteralPath $source -Destination $target
-    }
+    # Runtime candidate builders may replace same-named PA files.  A hard link
+    # would mutate the formal authority as well, so formal assets must cross this
+    # boundary by value.
+    Copy-Item -LiteralPath $source -Destination $target
   }
 }

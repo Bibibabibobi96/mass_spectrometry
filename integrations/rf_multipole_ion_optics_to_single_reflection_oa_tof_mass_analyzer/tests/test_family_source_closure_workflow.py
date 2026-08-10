@@ -31,6 +31,9 @@ TERMINAL_DESIGN_REFERENCE_CAMPAIGN_PATH = (
     CONFIG_ROOT / "diagnostics"
     / "octupole_terminal_15mm_sleeve_single_flight_n1000_campaign.json"
 )
+Z_ACCEPTANCE_CAMPAIGN_PATH = (
+    CONFIG_ROOT / "diagnostics" / "octupole_z_acceptance_d1_4mm_n1000_campaign.json"
+)
 PROFILE_REGISTRY = CONFIG_ROOT / "connection_profiles.json"
 ADAPTER_REGISTRY = CONFIG_ROOT / "execution_adapter_profiles.json"
 
@@ -44,6 +47,25 @@ def write_json(path: Path, value: object) -> None:
 
 
 class FamilySourceClosureWorkflowTests(unittest.TestCase):
+    def test_single_flight_design_overrides_are_optional_contract_data(self) -> None:
+        default_campaign = load(SINGLE_FLIGHT_CAMPAIGN_PATH)
+        self.assertNotIn(
+            "single_flight_design_overrides", default_campaign["experiments"][0]
+        )
+        candidate = load(Z_ACCEPTANCE_CAMPAIGN_PATH)
+        validate_schema(
+            candidate, "rf_multipole_oatof_experiment_campaign.schema.json"
+        )
+        overrides = candidate["experiments"][0]["single_flight_design_overrides"]
+        self.assertEqual(
+            [item["variable"] for item in overrides],
+            [
+                "accelerator_stage1_length",
+                "accelerator_stage2_length",
+                "accelerator_grid1_voltage",
+            ],
+        )
+
     def test_campaign_rows_select_registered_runtime_bound_profiles(self) -> None:
         campaign = load(CAMPAIGN_PATH)
         validate_schema(campaign, "rf_multipole_oatof_experiment_campaign.schema.json")
