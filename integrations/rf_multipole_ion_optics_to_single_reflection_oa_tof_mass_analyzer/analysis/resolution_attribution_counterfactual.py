@@ -12,7 +12,11 @@ from typing import Any
 import numpy as np
 
 from common.contracts.file_identity import file_sha256
-from common.contracts.particle_physics import kinetic_energy_ev
+from common.contracts.particle_physics import (
+    AMU_KG,
+    ELEMENTARY_CHARGE_C,
+    kinetic_energy_ev,
+)
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.peak_metrics import (
     compute_peak_metrics,
 )
@@ -120,6 +124,14 @@ def _validate_profile(profile: dict[str, Any]) -> list[str]:
         {"arm_id": "ideal_multipole_axis_position", "intervention": "quantile_match_centered_global_x_to_ideal_source_shape"},
         {"arm_id": "remove_acceleration_covariance", "intervention": "remove_linear_global_z_global_vz_covariance_preserve_vz_mean_and_sample_sigma"},
         {"arm_id": "monoenergetic", "intervention": "scale_each_velocity_vector_to_cohort_mean_kinetic_energy"},
+        {"arm_id": "current_layout_ideal_source", "intervention": "scale_formal_positions_to_target_source_extents_and_apply_observed_energy_along_positive_global_x"},
+        {"arm_id": "formal_focus_mapped_layout_source", "intervention": "translate_formal_positions_and_apply_observed_energy_along_positive_global_x", "solver_profile_id": "formal_reflectron"},
+        {"arm_id": "exact_formal_field_mapped_layout_source", "intervention": "translate_formal_positions_and_apply_observed_energy_along_positive_global_x", "solver_profile_id": "formal_reflectron", "frontend_profile_id": "formal_accelerator"},
+        {"arm_id": "formal_ideal_source", "intervention": "translate_formal_positions_and_apply_formal_energy_along_positive_global_x"},
+        {"arm_id": "formal_positions_observed_velocities", "intervention": "translate_formal_positions_preserve_observed_velocity_vectors"},
+        {"arm_id": "observed_positions_formal_kinematics", "intervention": "preserve_observed_positions_apply_formal_energy_along_positive_global_x"},
+        {"arm_id": "observed_positions_axialized_velocities", "intervention": "preserve_observed_positions_and_energy_set_direction_positive_global_x"},
+        {"arm_id": "observed_positions_formal_energy_observed_directions", "intervention": "preserve_observed_positions_and_directions_apply_formal_energy"},
         {"arm_id": "ideal_acceleration_position_remove_covariance", "intervention": "quantile_match_centered_global_z_then_remove_linear_global_z_global_vz_covariance"},
         {"arm_id": "collapse_acceleration_velocity_residual", "intervention": "project_global_vz_onto_observed_linear_global_z_global_vz_relation"},
         {"arm_id": "delay_pulse_one_eighth_rf_period", "intervention": "delay_pulse_from_frozen_pre_pulse_state", "pulse_delay_rf_periods": 0.125},
@@ -216,19 +228,112 @@ def _cohort(
     return ids, state, mother_sample_count
 
 
-def _ideal_coordinates(path: Path) -> dict[str, np.ndarray]:
+def _ideal_source(path: Path) -> dict[str, np.ndarray]:
     columns, rows = _load_csv(path)
-    required = {"initial_x_mm", "initial_y_mm", "initial_z_mm"}
+    required = {
+        "particle_id",
+        "initial_x_mm",
+        "initial_y_mm",
+        "initial_z_mm",
+        "initial_energy_eV",
+    }
     if not required.issubset(columns) or len(rows) < 3:
         raise ValueError("ideal source mapping lacks required spatial columns")
-    return {
-        axis: np.asarray([float(row[f"initial_{axis}_mm"]) for row in rows], dtype=float)
-        for axis in "xyz"
+    particle_ids = np.asarray([int(row["particle_id"]) for row in rows], dtype=int)
+    if len(set(particle_ids)) != particle_ids.size:
+        raise ValueError("ideal source mapping particle identities are not unique")
+    ideal = {
+        "particle_id": particle_ids,
+        **{
+            axis: np.asarray(
+                [float(row[f"initial_{axis}_mm"]) for row in rows], dtype=float
+            )
+            for axis in "xyz"
+        },
+        "energy": np.asarray(
+            [float(row["initial_energy_eV"]) for row in rows], dtype=float
+        ),
     }
+    if not all(np.all(np.isfinite(values)) for key, values in ideal.items() if key != "particle_id"):
+        raise ValueError("ideal source mapping must be finite")
+    return ideal
+
+
+def _source_geometry(geometry_path: Path) -> tuple[np.ndarray, np.ndarray]:
+    geometry = _load_json(geometry_path)
+    source = geometry.get("particle_source")
+    if not isinstance(source, dict):
+        raise ValueError("resolved geometry lacks particle source")
+    center = np.asarray(
+        [source.get(f"center_{axis}_mm") for axis in "xyz"], dtype=float
+    )
+    size = np.asarray(
+        [source.get(f"size_{axis}_mm") for axis in "xyz"], dtype=float
+    )
+    if not np.all(np.isfinite(center)) or not np.all(np.isfinite(size)) or np.any(size <= 0):
+        raise ValueError("resolved particle-source center and size must be finite")
+    return center, size
+
+
+def _formal_samples(
+    ideal: dict[str, np.ndarray], source_ids: np.ndarray
+) -> np.ndarray:
+    row_by_id = {
+        int(particle_id): index
+        for index, particle_id in enumerate(ideal["particle_id"])
+    }
+    missing = sorted(set(int(value) for value in source_ids) - set(row_by_id))
+    if missing:
+        raise ValueError(f"ideal source mapping lacks particle ids: {missing[:5]}")
+    indices = [row_by_id[int(source_id)] for source_id in source_ids]
+    return np.column_stack(
+        [ideal[axis][indices] for axis in "xyz"] + [ideal["energy"][indices]]
+    )
+
+
+def _translated_formal_positions(
+    formal_samples: np.ndarray,
+    formal_center: np.ndarray,
+    target_center: np.ndarray,
+) -> np.ndarray:
+    return formal_samples[:, :3] + target_center - formal_center
+
+
+def _scaled_formal_positions(
+    formal_samples: np.ndarray,
+    formal_center: np.ndarray,
+    formal_size: np.ndarray,
+    target_center: np.ndarray,
+    target_size: np.ndarray,
+) -> np.ndarray:
+    normalized = (formal_samples[:, :3] - formal_center) / formal_size
+    return target_center + normalized * target_size
+
+
+def _speed_for_energy(energy_ev: np.ndarray, mass_amu: float) -> np.ndarray:
+    if mass_amu <= 0 or np.any(energy_ev <= 0):
+        raise ValueError("positive mass and energy are required")
+    return np.sqrt(2.0 * energy_ev * ELEMENTARY_CHARGE_C / (mass_amu * AMU_KG))
+
+
+def _set_energy_preserve_direction(
+    velocities: np.ndarray, energy_ev: np.ndarray, mass_amu: float
+) -> np.ndarray:
+    norms = np.linalg.norm(velocities, axis=1)
+    if np.any(norms <= 0):
+        raise ValueError("velocity direction requires positive speed")
+    return velocities / norms[:, None] * _speed_for_energy(energy_ev, mass_amu)[:, None]
 
 
 def _apply_arm(
-    arm_id: str, observed: np.ndarray, ideal: dict[str, np.ndarray]
+    arm_id: str,
+    observed: np.ndarray,
+    ideal: dict[str, np.ndarray],
+    formal_samples: np.ndarray,
+    formal_center: np.ndarray,
+    formal_size: np.ndarray,
+    target_center: np.ndarray,
+    target_size: np.ndarray,
 ) -> np.ndarray:
     result = observed.copy()
     if arm_id == "observed_restart_control":
@@ -256,6 +361,59 @@ def _apply_arm(
         if np.any(energies <= 0):
             raise ValueError("monoenergetic intervention requires positive energy")
         result[:, 4:7] *= np.sqrt(target / energies)[:, None]
+    if arm_id == "current_layout_ideal_source":
+        result[:, 1:4] = _scaled_formal_positions(
+            formal_samples,
+            formal_center,
+            formal_size,
+            target_center,
+            target_size,
+        )
+        energies = np.asarray(
+            [kinetic_energy_ev(row[7], row[4], row[5], row[6]) for row in observed]
+        )
+        result[:, 4:7] = 0.0
+        result[:, 4] = _speed_for_energy(energies, float(observed[0, 7]))
+    if arm_id in {
+        "formal_focus_mapped_layout_source",
+        "exact_formal_field_mapped_layout_source",
+    }:
+        result[:, 1:4] = _translated_formal_positions(
+            formal_samples, formal_center, target_center
+        )
+        energies = np.asarray(
+            [kinetic_energy_ev(row[7], row[4], row[5], row[6]) for row in observed]
+        )
+        result[:, 4:7] = 0.0
+        result[:, 4] = _speed_for_energy(energies, float(observed[0, 7]))
+    formal_positions = {
+        "formal_ideal_source",
+        "formal_positions_observed_velocities",
+    }
+    if arm_id in formal_positions:
+        result[:, 1:4] = _translated_formal_positions(
+            formal_samples, formal_center, target_center
+        )
+    formal_energy = {
+        "formal_ideal_source",
+        "observed_positions_formal_kinematics",
+        "observed_positions_formal_energy_observed_directions",
+    }
+    if arm_id in formal_energy:
+        energies = formal_samples[:, 3]
+        if arm_id == "observed_positions_formal_energy_observed_directions":
+            result[:, 4:7] = _set_energy_preserve_direction(
+                observed[:, 4:7], energies, float(observed[0, 7])
+            )
+        else:
+            result[:, 4:7] = 0.0
+            result[:, 4] = _speed_for_energy(energies, float(observed[0, 7]))
+    if arm_id == "observed_positions_axialized_velocities":
+        energies = np.asarray(
+            [kinetic_energy_ev(row[7], row[4], row[5], row[6]) for row in observed]
+        )
+        result[:, 4:7] = 0.0
+        result[:, 4] = _speed_for_energy(energies, float(observed[0, 7]))
     if arm_id == "collapse_acceleration_velocity_residual":
         result[:, 6] = _collapse_linear_residual(result[:, 3], result[:, 6])
     if arm_id == "collapsed_acceleration_phase_space_upper_bound":
@@ -268,6 +426,8 @@ def prepare(
     profile_path: Path,
     checkpoints_path: Path,
     ideal_source_path: Path,
+    formal_geometry_path: Path,
+    target_geometry_path: Path,
     output_dir: Path,
     mass_amu: float,
     charge_state: int,
@@ -279,7 +439,10 @@ def prepare(
     source_ids, observed, mother_sample_count = _cohort(
         checkpoints_path, mass_amu, charge_state
     )
-    ideal = _ideal_coordinates(ideal_source_path)
+    ideal = _ideal_source(ideal_source_path)
+    formal_samples = _formal_samples(ideal, source_ids)
+    formal_center, formal_size = _source_geometry(formal_geometry_path)
+    target_center, target_size = _source_geometry(target_geometry_path)
     if any("pulse_delay_rf_periods" in arm for arm in profile["arms"]):
         if rf_frequency_hz is None or rf_frequency_hz <= 0:
             raise ValueError("pulse-delay arms require a positive RF frequency")
@@ -289,7 +452,16 @@ def prepare(
     arm_records: list[dict[str, Any]] = []
     arm_profile = {arm["arm_id"]: arm for arm in profile["arms"]}
     for arm_id in arm_ids:
-        state = _apply_arm(arm_id, observed, ideal)
+        state = _apply_arm(
+            arm_id,
+            observed,
+            ideal,
+            formal_samples,
+            formal_center,
+            formal_size,
+            target_center,
+            target_size,
+        )
         state_path = output_dir / f"{arm_id}__source_state.csv"
         state_rows: list[dict[str, str]] = []
         ion_rows: list[list[str]] = []
@@ -365,6 +537,12 @@ def prepare(
                     * 1.0e6 / float(rf_frequency_hz)
                     if rf_frequency_hz is not None else 0.0
                 ),
+                "solver_profile_id": arm_profile[arm_id].get(
+                    "solver_profile_id", "current_downstream"
+                ),
+                "frontend_profile_id": arm_profile[arm_id].get(
+                    "frontend_profile_id", "combined_frontend"
+                ),
             }
         )
     manifest = {
@@ -374,6 +552,8 @@ def prepare(
         "profile_sha256": file_sha256(profile_path),
         "baseline_checkpoints_sha256": file_sha256(checkpoints_path),
         "ideal_source_sha256": file_sha256(ideal_source_path),
+        "formal_geometry_sha256": file_sha256(formal_geometry_path),
+        "target_geometry_sha256": file_sha256(target_geometry_path),
         "mother_sample_particle_count": mother_sample_count,
         "paired_cohort_particles": int(source_ids.size),
         "pulse_time_us": float(observed[0, 0]),
@@ -582,6 +762,8 @@ def main() -> int:
     prepare_parser.add_argument("--profile", required=True, type=Path)
     prepare_parser.add_argument("--checkpoints", required=True, type=Path)
     prepare_parser.add_argument("--ideal-source", required=True, type=Path)
+    prepare_parser.add_argument("--formal-geometry", required=True, type=Path)
+    prepare_parser.add_argument("--target-geometry", required=True, type=Path)
     prepare_parser.add_argument("--output-dir", required=True, type=Path)
     prepare_parser.add_argument("--mass-amu", required=True, type=float)
     prepare_parser.add_argument("--charge-state", required=True, type=int)
@@ -604,6 +786,8 @@ def main() -> int:
             args.profile,
             args.checkpoints,
             args.ideal_source,
+            args.formal_geometry,
+            args.target_geometry,
             args.output_dir,
             args.mass_amu,
             args.charge_state,

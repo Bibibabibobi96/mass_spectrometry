@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "role": "rf_oatof_resolution_attribution_counterfactual_profile",
-  "profile_id": "pre_pulse_phase_space_attribution_v2",
+  "profile_id": "pre_pulse_phase_space_attribution_v3",
   "source_event": "pre_pulse_state",
   "cohort_policy": "source_event_and_baseline_detector_intersection",
   "acceleration_axis": "global_z",
@@ -34,6 +34,41 @@
     {
       "arm_id": "monoenergetic",
       "intervention": "scale_each_velocity_vector_to_cohort_mean_kinetic_energy"
+    },
+    {
+      "arm_id": "current_layout_ideal_source",
+      "intervention": "scale_formal_positions_to_target_source_extents_and_apply_observed_energy_along_positive_global_x"
+    },
+    {
+      "arm_id": "formal_focus_mapped_layout_source",
+      "intervention": "translate_formal_positions_and_apply_observed_energy_along_positive_global_x",
+      "solver_profile_id": "formal_reflectron"
+    },
+    {
+      "arm_id": "exact_formal_field_mapped_layout_source",
+      "intervention": "translate_formal_positions_and_apply_observed_energy_along_positive_global_x",
+      "solver_profile_id": "formal_reflectron",
+      "frontend_profile_id": "formal_accelerator"
+    },
+    {
+      "arm_id": "formal_ideal_source",
+      "intervention": "translate_formal_positions_and_apply_formal_energy_along_positive_global_x"
+    },
+    {
+      "arm_id": "formal_positions_observed_velocities",
+      "intervention": "translate_formal_positions_preserve_observed_velocity_vectors"
+    },
+    {
+      "arm_id": "observed_positions_formal_kinematics",
+      "intervention": "preserve_observed_positions_apply_formal_energy_along_positive_global_x"
+    },
+    {
+      "arm_id": "observed_positions_axialized_velocities",
+      "intervention": "preserve_observed_positions_and_energy_set_direction_positive_global_x"
+    },
+    {
+      "arm_id": "observed_positions_formal_energy_observed_directions",
+      "intervention": "preserve_observed_positions_and_directions_apply_formal_energy"
     },
     {
       "arm_id": "ideal_acceleration_position_remove_covariance",

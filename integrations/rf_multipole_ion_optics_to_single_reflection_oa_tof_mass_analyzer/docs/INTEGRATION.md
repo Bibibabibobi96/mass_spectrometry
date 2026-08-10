@@ -112,8 +112,18 @@ run-local目录重建`frontend_pa`、`flight_tube_pa`或`reflectron_pa`中实际
 `20260810_221000__sim__simion__rf-oatof-resolution-screen__n1000`。保持当前中心、只把z宽度匹配到
 理想源形状时，FWHM降低28.93%、R提高40.70%至27223.97；单能化变化−0.07%，收窄x或x-y使R
 分别降低3.83%和3.97%，去除z-vz协方差使R降低42.11%，完全压缩z-vz线性残差只提高4.51%且变为
-双峰。延迟1/8或1/4 RF周期同时降低R和传输。因此当前第一主因是正交加速z空间宽度与时间聚焦
-接受区不匹配；已有z-vz相关性总体有利，不能直接消除。结果仍缺相邻PA网格和RF时间步，只是
+双峰。延迟1/8或1/4 RF周期同时降低R和传输。这个结论只在固定combined frontend场内成立：z宽度是
+源相空间中最强单变量，但已有z-vz相关性总体有利，不能直接消除。
+
+后续同一996粒子正式场桥接
+`20260811_003000__sim__simion__rf-oatof-exact-formal-field-bridge__n1000`改变了总体归因。当前
+`1×1×2.2 mm、10 eV、+x、零角度`理想布局源在当前PA中为996/996、`R=11240.50`；把源恢复为
+Formal 1 mm形状并使用Formal反射器仍只有996/996、`R=12014.18`。保持后一源和反射器不变，只把
+槽3从combined frontend切换为冻结Formal accelerator PA后，996/996且`R=115493.38`。该峰为双模且
+10 eV能散远窄于Formal，115493不能作为新Formal或优化值；但同源、同反射器的9.61倍差异直接把
+当前最大阻挡因素定位到combined frontend加速器场/离散，而不是多极杆源、脉冲相位或反射器。
+完整受控矩阵与失败关闭边界见
+[正式场归因记录](../../../docs/history/20260811__oatof-resolution-formal-field-attribution.md)。结果仍是
 `CONTROLLED_COUNTERFACTUAL_DIAGNOSTIC_ONLY`。
 
 加速器自由量现可由实验行的`single_flight_design_overrides`声明；省略时继承layout/base resolved
@@ -128,8 +138,9 @@ run-local目录重建`frontend_pa`、`flight_tube_pa`或`reflectron_pa`中实际
 同一N=1000母样本的0.20/0.15/0.125 mm前端网格得到R=19176.67/18528.85/17685.52；逐级细化
 没有收敛，且最细网格比0.20 mm低7.78%，说明当前0.20 mm结果偏乐观而非造成低R的主因。0.125 mm
 下将真实加速器场替换为理论分段均匀场后，传输仍为999/1000，但FWHM由2.190 ns增至3.110 ns、
-R由17685.52降至12451.71。故真实三维加速器场不是当前约2万与理想约4万差距的阻碍；它反而在
-部分补偿现有脉冲前z-vz相空间。完整运行与失败运行处置见
+R由17685.52降至12451.71。该负结果只证明简化分段均匀场不是有效oracle；后续Formal PA桥接已推翻
+“当前三维场不是阻碍”的旧解释，并把combined frontend场/离散列为当前首要问题。完整运行与失败
+运行处置见
 [网格及理想场记录](../../../docs/history/20260810__oatof-frontend-grid-and-ideal-field.md)。
 
 目标能量只能在连续链`pre_pulse_state`、且粒子位于repeller与grid1之间时验证。
@@ -148,8 +159,10 @@ R由17685.52降至12451.71。故真实三维加速器场不是当前约2万与�
 
 ## 开放任务
 
-1. 前端网格已证实影响峰宽但尚未收敛；补0.10 mm或Richardson序列，并补RF时间步，关闭数值
-   敏感性前保持`INCONCLUSIVE_DIAGNOSTIC_ONLY`。
+1. 以Formal accelerator的`xy=0.25 mm、z=0.05 mm`和局部场为oracle，优先建立保持多极杆+加速器
+   整体PA的加速方向细化profile；先比较同源Formal场桥接的局部场与峰宽，再决定采用各向异性网格、
+   局部几何等价修正或其他整体PA实现。现有0.20/0.15/0.125 mm各向同性序列未收敛，不能继续把
+   0.10 mm单点当作充分关闭条件。
 2. 若需要跨求解器结论，另行授权同几何、同源、同绝对时钟和同checkpoint的COMSOL连续前端。
 3. 保持d1=3.0 mm基准，先在紧凑焦点漂移附近优化d2与repeller/grid1场比；4.0 mm两行已经证明
    单纯扩大实体间距无收益。理论编译器必须自动重算聚焦面和反射器，不直接指定派生量。

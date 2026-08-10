@@ -78,15 +78,29 @@ class ResolutionAttributionCounterfactualTests(unittest.TestCase):
                     writer.writerow([particle_id, "detector_crossing", 20 + particle_id / 1000, 0, 0, 0, "", "", ""])
             with ideal.open("w", encoding="utf-8", newline="") as handle:
                 writer = csv.writer(handle, lineterminator="\n")
-                writer.writerow(["initial_x_mm", "initial_y_mm", "initial_z_mm"])
-                for value in (-0.5, -0.1, 0.1, 0.5):
-                    writer.writerow([value, value / 2, value / 3])
+                writer.writerow([
+                    "particle_id", "initial_x_mm", "initial_y_mm",
+                    "initial_z_mm", "initial_energy_eV"
+                ])
+                for particle_id, value in enumerate((-0.5, -0.1, 0.1, 0.5), 1):
+                    writer.writerow([particle_id, value, value / 2, value / 3, 4 + particle_id / 10])
+            formal_geometry = root / "formal_geometry.json"
+            formal_geometry.write_text(json.dumps({"particle_source": {
+                "center_x_mm": 0.0, "center_y_mm": 0.0, "center_z_mm": 0.0,
+                "size_x_mm": 1.0, "size_y_mm": 1.0, "size_z_mm": 1.0
+            }}), encoding="utf-8")
+            target_geometry = root / "target_geometry.json"
+            target_geometry.write_text(json.dumps({"particle_source": {
+                "center_x_mm": 10.0, "center_y_mm": 20.0, "center_z_mm": 30.0,
+                "size_x_mm": 2.0, "size_y_mm": 3.0, "size_z_mm": 4.0
+            }}), encoding="utf-8")
             result = prepare(
-                PROFILE, checkpoints, ideal, root / "prepared", 100.0, 1,
+                PROFILE, checkpoints, ideal, formal_geometry, target_geometry,
+                root / "prepared", 100.0, 1,
                 1.1e6, 4,
             )
             self.assertEqual(result["paired_cohort_particles"], 4)
-            self.assertEqual(len(result["arms"]), 11)
+            self.assertEqual(len(result["arms"]), 19)
             for arm in result["arms"]:
                 state = root / "prepared" / arm["state_file"]
                 with state.open(encoding="utf-8", newline="") as handle:
@@ -98,7 +112,51 @@ class ResolutionAttributionCounterfactualTests(unittest.TestCase):
                     sum(batch["particles"] for batch in arm["execution_batches"]), 4
                 )
             manifest = json.loads((root / "prepared" / "prepared_arms.json").read_text(encoding="utf-8"))
-            self.assertEqual(manifest["profile_id"], "pre_pulse_phase_space_attribution_v2")
+            self.assertEqual(manifest["profile_id"], "pre_pulse_phase_space_attribution_v3")
+            formal_state = root / "prepared" / "formal_ideal_source__source_state.csv"
+            with formal_state.open(encoding="utf-8", newline="") as handle:
+                formal_rows = list(csv.DictReader(handle))
+            self.assertEqual(
+                [float(row["x_mm"]) for row in formal_rows],
+                [9.5, 9.9, 10.1, 10.5],
+            )
+            self.assertEqual(
+                [float(row["y_mm"]) for row in formal_rows],
+                [19.75, 19.95, 20.05, 20.25],
+            )
+            np.testing.assert_allclose(
+                [float(row["kinetic_energy_eV"]) for row in formal_rows],
+                [4.1, 4.2, 4.3, 4.4],
+                rtol=0.0,
+                atol=1e-12,
+            )
+            self.assertTrue(all(float(row["vx_m_s"]) > 0 for row in formal_rows))
+            self.assertTrue(all(float(row["vy_m_s"]) == 0 for row in formal_rows))
+            self.assertTrue(all(float(row["vz_m_s"]) == 0 for row in formal_rows))
+            layout_state = root / "prepared" / "current_layout_ideal_source__source_state.csv"
+            with layout_state.open(encoding="utf-8", newline="") as handle:
+                layout_rows = list(csv.DictReader(handle))
+            self.assertEqual(
+                [float(row["x_mm"]) for row in layout_rows],
+                [9.0, 9.8, 10.2, 11.0],
+            )
+            self.assertEqual(
+                [float(row["z_mm"]) for row in layout_rows],
+                [29.333333333333332, 29.866666666666667,
+                 30.133333333333333, 30.666666666666668],
+            )
+            self.assertTrue(all(float(row["vy_m_s"]) == 0 for row in layout_rows))
+            self.assertTrue(all(float(row["vz_m_s"]) == 0 for row in layout_rows))
+            prepared_arm = next(
+                arm for arm in result["arms"]
+                if arm["arm_id"] == "formal_focus_mapped_layout_source"
+            )
+            self.assertEqual(prepared_arm["solver_profile_id"], "formal_reflectron")
+            exact_arm = next(
+                arm for arm in result["arms"]
+                if arm["arm_id"] == "exact_formal_field_mapped_layout_source"
+            )
+            self.assertEqual(exact_arm["frontend_profile_id"], "formal_accelerator")
 
     def test_state_summary_uses_null_for_undefined_correlation(self) -> None:
         rows = [

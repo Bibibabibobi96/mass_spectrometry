@@ -302,6 +302,11 @@ def main() -> int:
     parser.add_argument("--initial-global-state", type=Path)
     parser.add_argument("--terminate-after-pulse", action="store_true")
     parser.add_argument(
+        "--frontend-program-profile",
+        default="combined_frontend",
+        choices=("combined_frontend", "formal_accelerator"),
+    )
+    parser.add_argument(
         "--clock-basis",
         default="legacy_relative_time",
         choices=("legacy_relative_time", "absolute_birth_time"),
@@ -316,17 +321,19 @@ def main() -> int:
     pulse = args.pulse_extension.read_text(encoding="utf-8-sig")
     if formal.count("simion.workbench_program()") != 1 or "segment.fast_adjust" not in pulse:
         raise ValueError("frozen oaTOF Program inputs differ from the expected contract")
-    extension = build_extension(
-        _load(args.upstream),
-        _load(args.frontend_contract),
-        birth_times_us=(
-            load_birth_times(args.initial_global_state)
-            if args.initial_global_state is not None
-            else None
-        ),
-        clock_basis=args.clock_basis,
-        terminate_after_pulse=args.terminate_after_pulse,
-    )
+    extension = ""
+    if args.frontend_program_profile == "combined_frontend":
+        extension = build_extension(
+            _load(args.upstream),
+            _load(args.frontend_contract),
+            birth_times_us=(
+                load_birth_times(args.initial_global_state)
+                if args.initial_global_state is not None
+                else None
+            ),
+            clock_basis=args.clock_basis,
+            terminate_after_pulse=args.terminate_after_pulse,
+        )
     output = formal.rstrip() + "\n\n" + pulse.strip() + "\n" + extension
     if output.count("simion.workbench_program()") != 1:
         raise ValueError("combined single-flight Program must declare one workbench")
@@ -347,6 +354,7 @@ def main() -> int:
             else None
         ),
         "clock_basis": args.clock_basis,
+        "frontend_program_profile": args.frontend_program_profile,
         "terminate_after_pulse": args.terminate_after_pulse,
         "output_sha256": file_sha256(args.output),
     }

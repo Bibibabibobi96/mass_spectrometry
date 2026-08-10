@@ -65,6 +65,25 @@ function Assert-VerifiedSourceRun {
   ) -Failure "Source run manifest verification failed: $ExpectedRunId"
 }
 
+function Copy-AttributionReflectronPaFamily {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$SourceDirectory,
+    [Parameter(Mandatory)][string]$DestinationDirectory
+  )
+  $sources = @(Get-ChildItem -LiteralPath $SourceDirectory `
+    -Filter 'reflectron.pa*' -File)
+  if ($sources.Count -lt 2) {
+    throw 'Reflectron PA family is incomplete.'
+  }
+  Get-ChildItem -LiteralPath $DestinationDirectory -Filter 'reflectron.pa*' `
+    -File | Remove-Item -Force
+  foreach ($source in $sources) {
+    Copy-Item -LiteralPath $source.FullName `
+      -Destination (Join-Path $DestinationDirectory $source.Name)
+  }
+}
+
 if (-not (Test-Path -LiteralPath $SimionExe -PathType Leaf)) {
   throw "SIMION is missing: $SimionExe"
 }
@@ -148,6 +167,29 @@ try {
   Copy-RfStableFile -SourceRunRoot $idealRoot `
     -SourcePath (Join-Path $idealRoot 'results\source_mapping_particles.csv') `
     -Destination $idealSource -Role 'ideal source mapping' | Out-Null
+  $formalGeometry = Join-Path $package.input_dir `
+    'formal_oatof_resolved_geometry.json'
+  Copy-RfStableFile -SourceRunRoot $idealRoot `
+    -SourcePath (Join-Path $idealRoot 'inputs\simion\resolved_geometry.json') `
+    -Destination $formalGeometry -Role 'formal oaTOF resolved geometry' | Out-Null
+  $formalGeometryContract = Get-Content -LiteralPath $formalGeometry `
+    -Raw -Encoding UTF8 | ConvertFrom-Json
+  $invariantCulture = [Globalization.CultureInfo]::InvariantCulture
+  [double]$formalBackplateVoltageValue = `
+    $formalGeometryContract.electrodes_V.backplate
+  [double]$formalStage2LengthValue = `
+    $formalGeometryContract.geometry_mm.L_stage2
+  [double]$formalBackplateZValue = (
+    $formalGeometryContract.geometry_mm.L_flight +
+    $formalGeometryContract.geometry_mm.L_reflectron
+  )
+  $formalBackplateVoltage = $formalBackplateVoltageValue.ToString(
+    'R',$invariantCulture
+  )
+  $formalStage2Length = $formalStage2LengthValue.ToString(
+    'R',$invariantCulture
+  )
+  $formalBackplateZ = $formalBackplateZValue.ToString('R',$invariantCulture)
   foreach ($name in @(
       'upstream_resolved_design.json',
       'single_flight_frontend_contract.json',
@@ -186,11 +228,33 @@ try {
       -not $singleFlightSettings.batching_policy.parallel_after_cache_warmup) {
     throw 'N=1000 attribution requires the governed five-batch parallel policy.'
   }
+  $frontendGridProfileId = if (
+    $baselineConfig.parameters.PSObject.Properties.Name -contains
+      'frontend_grid_profile_id'
+  ) {
+    [string]$baselineConfig.parameters.frontend_grid_profile_id
+  } else {
+    [string]$singleFlightSettings.default_frontend_grid_profile_id
+  }
+  $frontendGridProfiles = @(
+    $singleFlightSettings.frontend_grid_profiles | Where-Object {
+      $_.profile_id -eq $frontendGridProfileId
+    }
+  )
+  if ($frontendGridProfiles.Count -ne 1) {
+    throw 'Baseline frontend grid profile cannot be resolved uniquely.'
+  }
+  $maxParallelBatches = [int]$frontendGridProfiles[0].max_parallel_batches
+  if ($maxParallelBatches -lt 1 -or $maxParallelBatches -gt $executionBatchCount) {
+    throw 'Frontend grid profile parallel-batch limit differs.'
+  }
   Invoke-AttributionPython -Arguments @(
     '-m',
     'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.resolution_attribution_counterfactual',
     'prepare','--profile',$profile,'--checkpoints',$baselineCheckpoints,
-    '--ideal-source',$idealSource,'--output-dir',$preparedDir,
+    '--ideal-source',$idealSource,'--formal-geometry',$formalGeometry,
+    '--target-geometry',(Join-Path $package.input_dir `
+      'oatof_resolved_geometry.json'),'--output-dir',$preparedDir,
     '--mass-amu','100','--charge-state','1',
     '--rf-frequency-hz',([string][double]$upstream.drive.frequency_Hz),
     '--execution-batch-count',([string]$executionBatchCount)
@@ -209,6 +273,11 @@ try {
   $formalDir = Join-Path $workspaceRoot `
     'artifacts\projects\single_reflection_oa_tof_mass_analyzer\formal\simion'
   Copy-RfOatofFormalPaSet -FormalDir $formalDir -Destination $runtimeDir
+  $formalReflectronDir = Join-Path $package.run_dir `
+    'simion_profiles\formal_reflectron'
+  New-Item -ItemType Directory -Path $formalReflectronDir | Out-Null
+  Get-ChildItem -LiteralPath $runtimeDir -Filter 'reflectron.pa*' -File | `
+    Copy-Item -Destination $formalReflectronDir
   $downstreamCacheRoot = Join-Path $workspaceRoot `
     'artifacts\projects\rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer\cache\simion_oatof_downstream_pa'
   $expectedReflectronHash = [string]$baselineConfig.parameters.reflectron_pa0_sha256
@@ -220,17 +289,9 @@ try {
   if ($null -eq $cachedReflectronPa0) {
     throw 'Baseline reflectron PA cache identity differs.'
   }
-  foreach ($source in Get-ChildItem -LiteralPath $cachedReflectronPa0.DirectoryName `
-      -Filter 'reflectron.pa*' -File) {
-    $target = Join-Path $runtimeDir $source.Name
-    if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Force }
-    try {
-      New-Item -ItemType HardLink -Path $target -Target $source.FullName `
-        -ErrorAction Stop | Out-Null
-    } catch {
-      Copy-Item -LiteralPath $source.FullName -Destination $target -Force
-    }
-  }
+  $currentReflectronDir = $cachedReflectronPa0.DirectoryName
+  Copy-AttributionReflectronPaFamily -SourceDirectory $currentReflectronDir `
+    -DestinationDirectory $runtimeDir
   $program = Join-Path $runtimeDir 'oatof_ideal_grounded.lua'
   $programMetadata = Join-Path $package.input_dir `
     'single_flight_program_build.json'
@@ -247,6 +308,32 @@ try {
     '--oatof',(Join-Path $package.input_dir 'oatof_resolved_geometry.json'),
     '--output',$program,'--metadata',$programMetadata
   ) -Failure 'Counterfactual single-flight Program build failed.'
+  $combinedFrontendProgramDir = Join-Path $package.run_dir `
+    'simion_profiles\combined_frontend'
+  $formalAcceleratorProgramDir = Join-Path $package.run_dir `
+    'simion_profiles\formal_accelerator'
+  New-Item -ItemType Directory -Path $combinedFrontendProgramDir | Out-Null
+  New-Item -ItemType Directory -Path $formalAcceleratorProgramDir | Out-Null
+  Copy-Item -LiteralPath $program -Destination $combinedFrontendProgramDir
+  $formalAcceleratorProgram = Join-Path $formalAcceleratorProgramDir `
+    'oatof_ideal_grounded.lua'
+  $formalAcceleratorProgramMetadata = Join-Path $package.input_dir `
+    'formal_accelerator_program_build.json'
+  Invoke-AttributionPython -Arguments @(
+    '-m',
+    'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.build_single_flight_program',
+    '--formal',(Join-Path $repoRoot `
+      'projects\single_reflection_oa_tof_mass_analyzer\simion\workbench\formal\oatof_ideal_grounded.lua'),
+    '--pulse-extension',(Join-Path $repoRoot `
+      'projects\single_reflection_oa_tof_mass_analyzer\simion\workbench\candidates\oatof_handoff_pulse.lua'),
+    '--upstream',(Join-Path $package.input_dir 'upstream_resolved_design.json'),
+    '--frontend-contract',(Join-Path $package.input_dir `
+      'single_flight_frontend_contract.json'),
+    '--oatof',(Join-Path $package.input_dir 'oatof_resolved_geometry.json'),
+    '--frontend-program-profile','formal_accelerator',
+    '--output',$formalAcceleratorProgram,
+    '--metadata',$formalAcceleratorProgramMetadata
+  ) -Failure 'Formal-accelerator attribution Program build failed.'
 
   $frontendHash = ([string]$baselineConfig.parameters.frontend_gem_sha256).ToLowerInvariant()
   $frontendPa0 = Join-Path $workspaceRoot (
@@ -269,6 +356,7 @@ try {
       single_flight_configuration = $singleFlightConfiguration
       baseline_checkpoints = $baselineCheckpoints
       ideal_source = $idealSource
+      formal_oatof_resolved_geometry = $formalGeometry
       prepared_arms = Join-Path $preparedDir 'prepared_arms.json'
       upstream_resolved_design = Join-Path $package.input_dir `
         'upstream_resolved_design.json'
@@ -280,6 +368,7 @@ try {
       resolved_integration_engineering_budget = $budget.frozen_budget
       resolved_stage_resource_budget = $budget.stage_budget
       program_metadata = $programMetadata
+      formal_accelerator_program_metadata = $formalAcceleratorProgramMetadata
     }
     source_runs = [ordered]@{
       continuous_baseline_run_id = $BaselineRunId
@@ -290,7 +379,9 @@ try {
       paired_cohort_particles = [int]$prepared.paired_cohort_particles
       arm_count = @($prepared.arms).Count
       execution_batch_count = $executionBatchCount
-      execution_batches_parallel = $true
+      execution_batches_parallel = ($maxParallelBatches -gt 1)
+      max_parallel_batches = $maxParallelBatches
+      frontend_grid_profile_id = $frontendGridProfileId
       pulse_time_us = [double]$prepared.pulse_time_us
       trajectory_quality = 8
       maximum_time_of_flight_us = 90.0
@@ -322,70 +413,126 @@ try {
     $env:OATOF_ACCELERATOR_PA_OVERRIDE = $frontendPa0
     $resourceSupport = Join-Path $repoRoot `
       'common\multipole\resource_budget_support.ps1'
+    $activeSolverProfileId = 'current_downstream'
+    $activeFrontendProgramProfileId = 'combined_frontend'
     foreach ($arm in $prepared.arms) {
       $armId = [string]$arm.arm_id
-      $jobs = @()
-      foreach ($batch in $arm.execution_batches) {
-        $batchIndex = [int]$batch.batch_index
-        $stem = '{0}__batch{1:D2}' -f $armId,$batchIndex
-        $payload = [pscustomobject]@{
-          support = $resourceSupport
-          budget = $budget.stage_budget
-          run_dir = $package.run_dir
-          usage = Join-Path $package.log_dir "$stem.resource_usage.json"
-          executable = $SimionExe
-          working_directory = $runtimeDir
-          stdout = Join-Path $package.log_dir "$stem.stdout.log"
-          stderr = Join-Path $package.log_dir "$stem.stderr.log"
-          arguments = [string[]]@(
-            '--default-num-particles',([string][Math]::Max(100,[int]$batch.particles)),
-            '--nogui','--noprompt','fly','--trajectory-quality','8',
-            '--retain-trajectories','0',
-            '--particles',(Join-Path $preparedDir ([string]$batch.ion_file)),
-            '--programs','1','--adjustable','trajectory_quality=8',
-            '--adjustable','trajectory_log_enable=1',
-            '--adjustable','diagnostic_max_tof_us=90',
+      $solverProfileId = [string]$arm.solver_profile_id
+      $frontendProfileId = [string]$arm.frontend_profile_id
+      $frontendOverrides = @()
+      if ($frontendProfileId -eq 'combined_frontend') {
+        $env:OATOF_ACCELERATOR_PA_OVERRIDE = $frontendPa0
+        $frontendOverrides = @(
+          '--adjustable','single_flight_rf_steps=160'
+        )
+      } elseif ($frontendProfileId -eq 'formal_accelerator') {
+        $env:OATOF_ACCELERATOR_PA_OVERRIDE = Join-Path $runtimeDir `
+          'accelerator.pa0'
+      } else {
+        throw "Unknown attribution frontend profile: $frontendProfileId"
+      }
+      if ($activeFrontendProgramProfileId -ne $frontendProfileId) {
+        $programSourceDirectory = if (
+          $frontendProfileId -eq 'formal_accelerator'
+        ) {
+          $formalAcceleratorProgramDir
+        } else {
+          $combinedFrontendProgramDir
+        }
+        Copy-Item -LiteralPath (Join-Path $programSourceDirectory `
+          'oatof_ideal_grounded.lua') -Destination $program -Force
+        $activeFrontendProgramProfileId = $frontendProfileId
+      }
+      $reflectronOverrides = @()
+      if ($solverProfileId -eq 'formal_reflectron') {
+        if ($activeSolverProfileId -ne $solverProfileId) {
+          Copy-AttributionReflectronPaFamily `
+            -SourceDirectory $formalReflectronDir `
+            -DestinationDirectory $runtimeDir
+          $activeSolverProfileId = $solverProfileId
+        }
+        $reflectronOverrides = @(
+          '--adjustable',"V_backplate=$formalBackplateVoltage",
+          '--adjustable',"reflectron_stage2_length_mm=$formalStage2Length",
+          '--adjustable',"reflectron_backplate_z_mm=$formalBackplateZ"
+        )
+      } elseif ($solverProfileId -eq 'current_downstream') {
+        if ($activeSolverProfileId -ne $solverProfileId) {
+          Copy-AttributionReflectronPaFamily `
+            -SourceDirectory $currentReflectronDir `
+            -DestinationDirectory $runtimeDir
+          $activeSolverProfileId = $solverProfileId
+        }
+      } else {
+        throw "Unknown attribution solver profile: $solverProfileId"
+      }
+      $batches = @($arm.execution_batches)
+      for ($offset = 0; $offset -lt $batches.Count; `
+          $offset += $maxParallelBatches) {
+        $jobs = @()
+        foreach ($batch in @($batches | Select-Object `
+            -Skip $offset -First $maxParallelBatches)) {
+          $batchIndex = [int]$batch.batch_index
+          $stem = '{0}__batch{1:D2}' -f $armId,$batchIndex
+          $payload = [pscustomobject]@{
+            support = $resourceSupport
+            budget = $budget.stage_budget
+            run_dir = $package.run_dir
+            usage = Join-Path $package.log_dir "$stem.resource_usage.json"
+            executable = $SimionExe
+            working_directory = $runtimeDir
+            stdout = Join-Path $package.log_dir "$stem.stdout.log"
+            stderr = Join-Path $package.log_dir "$stem.stderr.log"
+            arguments = [string[]](@(
+              '--default-num-particles',([string][Math]::Max(100,[int]$batch.particles)),
+              '--nogui','--noprompt','fly','--trajectory-quality','8',
+              '--retain-trajectories','0',
+              '--particles',(Join-Path $preparedDir ([string]$batch.ion_file)),
+              '--programs','1','--adjustable','trajectory_quality=8',
+              '--adjustable','trajectory_log_enable=1',
+              '--adjustable','diagnostic_max_tof_us=90',
             '--adjustable','handoff_pulse_mode=1',
             '--adjustable',(
-              'handoff_pulse_time_us={0:R}' -f [double]$arm.pulse_time_us
-            ),
-            '--adjustable','handoff_pulse_width_us=1',
-            '--adjustable','single_flight_rf_steps=160',
-            (Join-Path $runtimeDir 'oatof_ideal_grounded.iob')
-          )
-        }
-        $jobs += Start-Job -ArgumentList $payload -ScriptBlock {
-          param($item)
-          . $item.support
-          Invoke-ResourceBudgetedProcess `
-            -ResolvedBudgetPath $item.budget -RunDir $item.run_dir `
-            -UsagePath $item.usage -FilePath $item.executable `
-            -WorkingDirectory $item.working_directory `
-            -RedirectStandardOutput $item.stdout `
-            -RedirectStandardError $item.stderr `
-            -ArgumentList ([string[]]$item.arguments)
-        }
-      }
-      try {
-        foreach ($job in $jobs) {
-          $fly = Receive-Job -Job $job -Wait
-          if ($job.State -ne 'Completed' -or $null -eq $fly) {
-            throw "Counterfactual SIMION batch job failed: $armId"
+                'handoff_pulse_time_us={0:R}' -f [double]$arm.pulse_time_us
+              ),
+              '--adjustable','handoff_pulse_width_us=1'
+            ) + $frontendOverrides + $reflectronOverrides + @(
+              (Join-Path $runtimeDir 'oatof_ideal_grounded.iob')
+            ))
           }
-          if ($fly.resource_budget_exceeded) {
-            $resourceBudgetExceeded = $true
-            throw "Counterfactual SIMION batch exceeded its resource budget: $armId"
-          }
-          if ($fly.exit_code -ne 0) {
-            throw "Counterfactual SIMION batch failed: $armId"
+          $jobs += Start-Job -ArgumentList $payload -ScriptBlock {
+            param($item)
+            . $item.support
+            Invoke-ResourceBudgetedProcess `
+              -ResolvedBudgetPath $item.budget -RunDir $item.run_dir `
+              -UsagePath $item.usage -FilePath $item.executable `
+              -WorkingDirectory $item.working_directory `
+              -RedirectStandardOutput $item.stdout `
+              -RedirectStandardError $item.stderr `
+              -ArgumentList ([string[]]$item.arguments)
           }
         }
-      } finally {
-        $jobs | Remove-Job -Force -ErrorAction SilentlyContinue
+        try {
+          foreach ($job in $jobs) {
+            $fly = Receive-Job -Job $job -Wait
+            if ($job.State -ne 'Completed' -or $null -eq $fly) {
+              throw "Counterfactual SIMION batch job failed: $armId"
+            }
+            if ($fly.resource_budget_exceeded) {
+              $resourceBudgetExceeded = $true
+              throw "Counterfactual SIMION batch exceeded its resource budget: $armId"
+            }
+            if ($fly.exit_code -ne 0) {
+              throw "Counterfactual SIMION batch failed: $armId"
+            }
+          }
+        } finally {
+          $jobs | Remove-Job -Force -ErrorAction SilentlyContinue
+        }
       }
       Write-Output (
         "RESOLUTION_ATTRIBUTION_ARM=PASS ARM=$armId " +
-        "BATCHES=$executionBatchCount PARALLEL=true"
+        "BATCHES=$executionBatchCount MAX_PARALLEL=$maxParallelBatches"
       )
     }
   } finally {
