@@ -113,6 +113,11 @@ campaign receipt完整。两行SIMION均100/100命中；名义行/诊断行飞�
 表明midgrid电压对时间聚焦高度敏感，并支持保留理论名义值；它不含COMSOL粒子级比较、统计重复或数值
 收敛，仍是`candidate_accepted_not_promoted`，不构成Formal性能资格。
 
+跨项目2.2 mm理论源z全宽候选已用参数合同自动闭合反射器二级长度与电压，并在不修改Formal的前提下
+重建run-local反射器PA。N=1000连续SIMION传输保持948/1000，质量分辨率变化−0.30%，没有观察到
+实际性能收益；它只验证自动重构机制。完整参数、运行索引和声明边界见
+[`../../../docs/history/20260810__oatof-source-z22-auto-rebuild.md`](../../../docs/history/20260810__oatof-source-z22-auto-rebuild.md)。
+
 ## 已知兼容边界
 
 - COMSOL 6.4当前模型在极小求解粒子数路径存在非单调原生不稳定；日常使用N=100，逻辑小样本仅在

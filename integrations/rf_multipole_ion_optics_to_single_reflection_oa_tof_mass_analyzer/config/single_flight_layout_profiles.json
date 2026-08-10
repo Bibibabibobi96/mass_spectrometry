@@ -9,6 +9,21 @@
       "target_injection_energy_eV": 10.0,
       "pulse_timing_method": "multipole_handoff_ballistic_centroid_v1",
       "claim_status": "INCONCLUSIVE_DIAGNOSTIC_ONLY"
+    },
+    {
+      "layout_profile_id": "symmetric_10ev_source_z22_diagnostic",
+      "method": "symmetric_axis_speed_scaling_v1",
+      "reference_injection_energy_eV": 5.0,
+      "target_injection_energy_eV": 10.0,
+      "pulse_timing_method": "multipole_handoff_ballistic_centroid_v1",
+      "design_overrides": [
+        {
+          "variable": "source_release_full_width",
+          "value": 2.2,
+          "unit": "mm"
+        }
+      ],
+      "claim_status": "INCONCLUSIVE_DIAGNOSTIC_ONLY"
     }
   ]
 }

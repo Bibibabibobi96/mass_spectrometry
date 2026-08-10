@@ -28,8 +28,10 @@ resolved design，在父run中冻结`resolved_source_contract.json`和
 静态source/design。两个run-local输入及其SHA是下游三个阶段的必填冻结身份，不存在optional override、
 repository fallback或无加速特例。
 
-所有工况复用同一固定下游链：COMSOL `pre_pulse_interface_transport`、COMSOL `pulse_capture`、
-SIMION `analyzer_transport`。内部phase不构成独立公开入口或资格声明。执行策略当前为compact、串行
+下游链由campaign的`execution_strategy`显式选择：`staged_three_stage`使用COMSOL
+`pre_pulse_interface_transport`、COMSOL `pulse_capture`和SIMION `analyzer_transport`；
+`simion_single_flight`在同一次Fly中连续完成多极杆、脉冲加速、无场漂移、反射和检测。内部phase或
+checkpoint不构成独立公开入口、粒子再释放或资格声明。执行策略当前为compact、串行
 商业求解器、失败即停、零自动重试；预算耗尽记为
 `INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`。稳定dependency inventory和implementation registry只描述
 代码机制，粒子源与设计作为run-local科学输入单独冻结。
@@ -262,7 +264,9 @@ Formal分辨率声明。459粒子的直接COMSOL轨迹臂超过1200 s预算并�
 整体前端机器合同固定1.0×0.9 mm矩形孔、杆体末端至加速器屏蔽罩外端面1.000 mm，并保证这1 mm
 过渡段径向被屏蔽结构包围。campaign所选connection profile必须声明公共
 `grounded_circular_to_rectangular_shield_v1`：它生成0.500 mm接地圆套筒及与oaTOF罩壁同厚的带孔接地
-法兰，并将多极杆罩、连接件和加速器罩合并为同一个0 V电极9；功能电极仍为10至17，不再建立电极18。
+法兰，并将多极杆罩、连接件和加速器罩合并为同一个0 V电极9。整体前端电极映射为杆1至8、接地罩9、
+加速器10至17、入口参考套筒18和入口板19；编号的机器权威是每次运行生成并冻结的
+`single_flight_frontend_contract.json`，本文只保留识别性摘要。
 任何一侧或连接profile声明非0 V屏蔽都会在GEM/Program生成前失败关闭。
 
 旧子run `20260804_142000__sim__simion__rf-oatof-single-flight-gap0__n1000`使用已被取代的3 V/0 V
@@ -329,6 +333,13 @@ x截面417在孔邻域221个采样点中`OPEN=0`，而上游相邻截面416为`O
 求平移，并交回connection resolver复核。派生坐标不能由四/六/八极杆实验行分别覆写。脉冲时刻消费
 所选源run的真实handoff状态和有限壁幸存队列，不由目标能量常数单独决定。
 
+布局profile可通过`design_overrides`只指定
+[`design_variables.json`](../../../projects/single_reflection_oa_tof_mass_analyzer/config/design_variables.json)
+登记的自由连续量或整数离散量；`derived`变量禁止直接赋值，`topology`变量必须使用专用编译器。
+编译器按加速器时间聚焦和加速器—反射器耦合公式自动闭合电极位置、能量包络、反射器二级长度/电压及
+屏蔽边界，并生成`frontend_pa/flight_tube_pa/reflectron_pa`重建计划。运行时把resolved合同值绑定到
+run-local Lua默认值，并只重建实际发生几何变化的PA；Formal资产不被修改。
+
 10 eV N=1000连续run `20260805_152000__sim__simion__rf-oatof-single-flight-gap0__n1000`使用
 `x_accel=-69.0136218438 mm`、`x_detector=+69.0136218438 mm`和脉冲`31.8136698715 us`，得到
 `1000→711→612→612→612`。相对5 eV同孔对照，角度和脉冲前σz降低，但脉冲参考R只提高约0.93%；
@@ -362,6 +373,13 @@ RF与oaTOF脉冲基底把它固定为零增量；因此它既不是接地外壳�
 resolved design及脉冲参考，不先执行重复的N=1000上游运输；runtime分别校验母样本来源与设计来源
 manifest。完整诊断见
 [`../../../docs/history/20260805__octupole-terminal-15mm-sleeve-single-flight-n1000.md`](../../../docs/history/20260805__octupole-terminal-15mm-sleeve-single-flight-n1000.md)。
+
+第一项参数化候选只把理论源z全宽从1.0改为2.2 mm。公式自动把能量包络从1920–2080扩为
+1824–2176 eV、反射器二级长度从96.1563增至116.6151 mm、背板电压从2531.1999增至
+2723.1999 V，并只重建反射器PA。N=1000连续SIMION仍为`1000→968→950→948→948`；质量分辨率
+由17421.9变为17369.5（−0.30%），脉冲前σz、加速器出口角度和反射深度没有实质变化。候选证明自动
+重构链有效，但当前真实束流未触及扩大包络，因此没有性能收益。完整证据见
+[`../../../docs/history/20260810__oatof-source-z22-auto-rebuild.md`](../../../docs/history/20260810__oatof-source-z22-auto-rebuild.md)。
 
 ### 加速前相空间的受控理想条件反事实
 

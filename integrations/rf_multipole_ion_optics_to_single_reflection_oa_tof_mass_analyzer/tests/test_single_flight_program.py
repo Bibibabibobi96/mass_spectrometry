@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import json
 import copy
+import re
 import unittest
 from pathlib import Path
 
-from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.build_single_flight_program import build_extension
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.build_single_flight_program import (
+    bind_oatof_adjustables,
+    build_extension,
+)
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_frontend import compile_frontend
 
 
@@ -13,6 +17,28 @@ REPO = Path(__file__).resolve().parents[3]
 
 
 class SingleFlightProgramTests(unittest.TestCase):
+    def test_resolved_oatof_values_are_bound_into_program_defaults(self) -> None:
+        formal = (
+            REPO / "projects/single_reflection_oa_tof_mass_analyzer/simion/"
+            "workbench/formal/oatof_ideal_grounded.lua"
+        ).read_text()
+        oatof = json.loads(
+            (REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/"
+             "resolved_geometry.json").read_text()
+        )
+        oatof["geometry_mm"]["L_stage2"] = 116.6151
+        oatof["geometry_mm"]["L_reflectron"] = 236.6151
+        oatof["electrodes_V"]["backplate"] = 2723.1999
+        bound = bind_oatof_adjustables(formal, oatof)
+        for name, expected in {
+            "V_backplate": 2723.1999,
+            "reflectron_stage2_length_mm": 116.6151,
+            "reflectron_backplate_z_mm": 836.6151,
+        }.items():
+            match = re.search(rf"(?m)^adjustable {name}=([^\r\n]+)$", bound)
+            self.assertIsNotNone(match)
+            self.assertAlmostEqual(float(match.group(1)), expected)
+
     def test_frontend_electrode_schedule_keeps_rf_and_pulse_in_one_instance(self) -> None:
         run = REPO.parent / "artifacts/projects/rf_octupole_ion_optics/runs/20260804_112000__sim__simion__oct-segmented-aperture050__n1000"
         if not run.is_dir():

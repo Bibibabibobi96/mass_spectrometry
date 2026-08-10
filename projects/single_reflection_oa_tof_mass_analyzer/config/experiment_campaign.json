@@ -33,7 +33,7 @@
     },
     "design_variable_catalog": {
       "path": "config/design_variables.json",
-      "sha256": "AD9CD7C349A4602CE9665FBA12F83FABCC5173BB24B2F5C77CBA05D303609252"
+      "sha256": "39DDD1947C6029C8606782E8B9A0B37F72559D2A37D23050E4A96DC1D6CB91BB"
     },
     "optimization_envelope": {
       "path": "config/optimization_envelope.json",

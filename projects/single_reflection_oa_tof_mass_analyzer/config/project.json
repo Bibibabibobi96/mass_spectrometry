@@ -72,6 +72,8 @@
         "accelerator_front_vacuum_margin",
         "accelerator_exit_grid_half_width",
         "flight_length",
+        "source_release_full_width",
+        "reflectron_stage1_length",
         "reflectron_bore_radius",
         "reflectron_ring_outer_radius",
         "reflectron_ring_thickness",

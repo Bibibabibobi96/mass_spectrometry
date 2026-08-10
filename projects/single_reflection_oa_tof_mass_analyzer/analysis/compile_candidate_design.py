@@ -154,7 +154,13 @@ def _derive_reflectron_for_flight_length(baseline: dict[str, Any]) -> None:
 
 def _derive_shield_bounds(baseline: dict[str, Any]) -> None:
     geometry = baseline["geometry_mm"]
-    near = geometry["accelerator_repeller_z"] - geometry["shield_near_endcap_gap"] - geometry["shield_endcap_thickness"]
+    near = (
+        geometry["accelerator_repeller_z"]
+        - geometry["accelerator_repeller_thickness"]
+        - geometry["accelerator_rear_clearance"]
+        - geometry["accelerator_shield_wall"]
+        - geometry["shield_near_endcap_gap"]
+    )
     far = geometry["L_flight"] + geometry["L_reflectron"] + geometry["ring_thickness"] + geometry["shield_axial_gap"]
     geometry["shield_bore_z_min"] = near
     geometry["shield_bore_z_max"] = far
@@ -185,6 +191,106 @@ def _validate_invariants(baseline: dict[str, Any]) -> None:
         raise ValueError("reflectron length identity failed")
     if not math.isclose(geometry["L_accel"], accelerator["d1_mm"] + accelerator["d2_mm"], abs_tol=1e-10):
         raise ValueError("accelerator length identity failed")
+
+
+def compile_design_overrides(
+    base_contract: dict[str, Any], overrides: list[dict[str, Any]]
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Apply catalog variables and automatically close all theoretical dependencies."""
+    catalog = load_json(CATALOG_PATH)
+    validate_schema(catalog, "design_variable_catalog.schema.json")
+    definitions = {item["variable_id"]: item for item in catalog["variables"]}
+    values: dict[str, float | int] = {}
+    for item in overrides:
+        variable_id = str(item["variable"])
+        if variable_id in values:
+            raise ValueError(f"duplicate design override: {variable_id}")
+        definition = definitions.get(variable_id)
+        if definition is None:
+            raise ValueError(f"unknown design override: {variable_id}")
+        if definition["kind"] == "derived":
+            raise ValueError(f"derived variable cannot be specified: {variable_id}")
+        if definition["kind"] == "topology":
+            raise ValueError(
+                f"topology variable requires a dedicated compiler: {variable_id}"
+            )
+        if item["unit"] != definition["unit"]:
+            raise ValueError(f"unit mismatch for {variable_id}")
+        value = float(item["value"])
+        if not math.isfinite(value) or not definition["minimum"] <= value <= definition["maximum"]:
+            raise ValueError(f"design override outside compilation bounds: {variable_id}")
+        if definition["kind"] == "integer":
+            if not value.is_integer():
+                raise ValueError(f"integer design override required: {variable_id}")
+            values[variable_id] = int(value)
+        else:
+            values[variable_id] = value
+
+    candidate = copy.deepcopy(base_contract)
+    reflectron_voltage_ids = {
+        "reflectron_midgrid_voltage", "reflectron_backplate_voltage"
+    }
+    for variable_id, value in values.items():
+        if variable_id not in reflectron_voltage_ids:
+            pointer_set(candidate, definitions[variable_id]["json_pointer"], value)
+    accelerator_focus_inputs = {
+        "accelerator_repeller_voltage", "accelerator_grid1_voltage",
+        "accelerator_stage1_length", "accelerator_stage2_length",
+    }
+    if accelerator_focus_inputs & values.keys():
+        _derive_accelerator_focus(candidate)
+    coupled_longitudinal_inputs = accelerator_focus_inputs | {
+        "flight_length", "reflectron_stage1_length", "source_release_full_width"
+    }
+    if coupled_longitudinal_inputs & values.keys():
+        _derive_reflectron_for_flight_length(candidate)
+    if values:
+        _derive_shield_bounds(candidate)
+    for variable_id in reflectron_voltage_ids & values.keys():
+        pointer_set(
+            candidate, definitions[variable_id]["json_pointer"], values[variable_id]
+        )
+    _validate_invariants(candidate)
+
+    changed = []
+    rebuild_effects: set[str] = set()
+    for variable_id, value in values.items():
+        definition = definitions[variable_id]
+        before = pointer_get(base_contract, definition["json_pointer"])
+        after = pointer_get(candidate, definition["json_pointer"])
+        if before != after:
+            changed.append({
+                "variable": variable_id, "before": before, "after": after,
+                "unit": definition["unit"],
+            })
+            rebuild_effects.update(definition["rebuild_effects"])
+    rebuild_plan = {
+        "frontend_pa": bool(
+            accelerator_focus_inputs & values.keys()
+            or any(name.startswith("accelerator_") and "voltage" not in name
+                   for name in values)
+        ),
+        "flight_tube_pa": bool(
+            accelerator_focus_inputs & values.keys()
+            or {"flight_length", "accelerator_shield_wall_thickness",
+             "accelerator_rear_clearance", "accelerator_repeller_thickness",
+             "reflectron_shield_inner_radius",
+             "reflectron_shield_wall_thickness",
+             "reflectron_shield_endcap_thickness",
+             "reflectron_shield_near_endcap_gap"} & values.keys()
+        ),
+        "reflectron_pa": bool(
+            coupled_longitudinal_inputs & values.keys()
+            or any(name.startswith("reflectron_") and "voltage" not in name
+                   for name in values)
+        ),
+    }
+    return candidate, {
+        "method": "catalog_design_overrides_with_theory_closure_v1",
+        "changed_variables": changed,
+        "rebuild_effects": sorted(rebuild_effects),
+        "simion_rebuild_plan": rebuild_plan,
+    }
 
 
 def _envelope_excesses(baseline: dict[str, Any], envelope: dict[str, Any]) -> list[str]:
@@ -273,6 +379,12 @@ def compile_proposal(proposal_path: Path) -> tuple[dict[str, Any], dict[str, Any
         definition = definitions.get(variable_id)
         if definition is None:
             raise ValueError(f"candidate variable is absent from the catalog: {variable_id}")
+        if definition["kind"] == "derived":
+            raise ValueError(f"derived variable cannot be proposed: {variable_id}")
+        if definition["kind"] == "topology":
+            raise ValueError(
+                f"topology variable requires a dedicated compiler: {variable_id}"
+            )
         if item["unit"] != definition["unit"]:
             raise ValueError(f"unit mismatch for {variable_id}: {item['unit']} != {definition['unit']}")
         value = item["value"]
@@ -299,7 +411,9 @@ def compile_proposal(proposal_path: Path) -> tuple[dict[str, Any], dict[str, Any
     }
     if accelerator_focus_inputs & values.keys():
         _derive_accelerator_focus(candidate)
-    longitudinal_inputs = accelerator_focus_inputs | {"flight_length"}
+    longitudinal_inputs = accelerator_focus_inputs | {
+        "flight_length", "reflectron_stage1_length", "source_release_full_width"
+    }
     if longitudinal_inputs & values.keys():
         _derive_reflectron_for_flight_length(candidate)
     if values:

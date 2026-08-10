@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import re
 from typing import Any
 
 from common.contracts.file_identity import file_sha256
@@ -20,6 +21,64 @@ def _load(path: Path) -> dict[str, Any]:
 
 def _lua_number(value: float) -> str:
     return format(float(value), ".17g")
+
+
+def bind_oatof_adjustables(formal: str, oatof: dict[str, Any]) -> str:
+    """Bind resolved geometry into Program defaults without SIMION CLI name limits."""
+    geometry = oatof["geometry_mm"]
+    accelerator = oatof["geometry_derivation"]["accelerator"]
+    voltage = oatof["electrodes_V"]
+    rings = oatof["rings"]
+    coordinate = oatof["coordinate_convention"]
+    values = {
+        "V_repeller": voltage["repeller"],
+        "V_grid1": voltage["grid1"],
+        "V_mid": voltage["midgrid"],
+        "V_backplate": voltage["backplate"],
+        "accelerator_assembly_translation_z_mm": geometry["accelerator_repeller_z"],
+        "accelerator_stage1_length_mm": accelerator["d1_mm"],
+        "accelerator_stage2_length_mm": accelerator["d2_mm"],
+        "accelerator_ring_count": rings["accelerator_count"],
+        "accelerator_repeller_front_z_mm": geometry["accelerator_repeller_z"],
+        "accelerator_grid1_z_mm": geometry["accelerator_grid1_z"],
+        "accelerator_grid2_z_mm": geometry["accelerator_grid2_z"],
+        "accelerator_focus_drift_mm": accelerator["focus_drift_after_grid2_mm"],
+        "reflectron_entgrid_z_mm": geometry["L_flight"],
+        "field_free_one_way_length_mm": geometry["L_flight"],
+        "reflectron_stage1_length_mm": geometry["L_stage1"],
+        "reflectron_stage2_length_mm": geometry["L_stage2"],
+        "reflectron_stage1_ring_count": rings["stage1_count"],
+        "reflectron_stage2_ring_count": rings["stage2_count"],
+        "reflectron_midgrid_z_mm": geometry["L_flight"] + geometry["L_stage1"],
+        "reflectron_backplate_z_mm": geometry["L_flight"] + geometry["L_reflectron"],
+        "reflectron_grid_radius_mm": geometry["ring_outer_r"],
+        "accelerator_axis_x_mm": coordinate["accelerator_axis_x"],
+        "accelerator_bore_half_mm": geometry["accelerator_bore_half"],
+        "accelerator_ring_width_mm": geometry["accelerator_ring_width"],
+        "accelerator_insulation_gap_mm": geometry["accelerator_insulation_gap"],
+        "accelerator_shield_wall_mm": geometry["accelerator_shield_wall"],
+        "accelerator_rear_insulation_gap_mm": geometry["accelerator_rear_clearance"],
+        "accelerator_repeller_thickness_mm": geometry["accelerator_repeller_thickness"],
+        "accelerator_instance_z_mm": (
+            geometry["accelerator_repeller_z"]
+            - geometry["accelerator_repeller_thickness"]
+            - geometry["accelerator_rear_clearance"]
+            - geometry["accelerator_shield_wall"]
+        ),
+        "flight_tube_inner_radius_mm": geometry["flight_tube_r"],
+        "flight_tube_shield_wall_mm": geometry["flight_tube_wall"],
+        "flight_tube_near_endcap_gap_mm": geometry["shield_near_endcap_gap"],
+        "flight_tube_far_endcap_gap_mm": geometry["shield_axial_gap"],
+        "flight_tube_endcap_thickness_mm": geometry["shield_endcap_thickness"],
+        "reflectron_backplate_thickness_mm": geometry["ring_thickness"],
+    }
+    bound = formal
+    for name, value in values.items():
+        pattern = rf"(?m)^(adjustable\s+{re.escape(name)}\s*=)[^\r\n]+$"
+        bound, count = re.subn(pattern, rf"\g<1>{_lua_number(value)}", bound)
+        if count != 1:
+            raise ValueError(f"formal Program adjustable is not unique: {name}")
+    return bound
 
 
 def build_extension(
@@ -171,10 +230,14 @@ def main() -> int:
     parser.add_argument("--pulse-extension", required=True, type=Path)
     parser.add_argument("--upstream", required=True, type=Path)
     parser.add_argument("--frontend-contract", required=True, type=Path)
+    parser.add_argument("--oatof", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--metadata", required=True, type=Path)
     args = parser.parse_args()
-    formal = args.formal.read_text(encoding="utf-8-sig")
+    oatof = _load(args.oatof)
+    formal = bind_oatof_adjustables(
+        args.formal.read_text(encoding="utf-8-sig"), oatof
+    )
     pulse = args.pulse_extension.read_text(encoding="utf-8-sig")
     if formal.count("simion.workbench_program()") != 1 or "segment.fast_adjust" not in pulse:
         raise ValueError("frozen oaTOF Program inputs differ from the expected contract")
@@ -192,6 +255,7 @@ def main() -> int:
         "pulse_extension_sha256": file_sha256(args.pulse_extension),
         "upstream_sha256": file_sha256(args.upstream),
         "frontend_contract_sha256": file_sha256(args.frontend_contract),
+        "oatof_sha256": file_sha256(args.oatof),
         "output_sha256": file_sha256(args.output),
     }
     args.metadata.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8", newline="\n")

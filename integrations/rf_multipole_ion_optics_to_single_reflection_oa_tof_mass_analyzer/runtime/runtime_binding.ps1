@@ -120,7 +120,10 @@ function Resolve-RfOatofDependencyContract {
     'oatof_handoff_pulse_program_builder','oatof_formal_lua',
     'oatof_handoff_pulse_extension_lua','oatof_simion_log_analyzer_wrapper',
     'oatof_solver_diagnostics','oatof_accelerator_simion_builder',
-    'oatof_accelerator_simion_gem','rf_simion_interface_transport_comparator',
+    'oatof_accelerator_simion_gem','oatof_candidate_design_compiler',
+    'oatof_design_variable_catalog','oatof_reflectron_simion_builder',
+    'oatof_reflectron_simion_gem','oatof_flight_tube_simion_builder',
+    'oatof_flight_tube_simion_gem','rf_simion_interface_transport_comparator',
     'rf_simion_grid2_state_materializer',
     'rf_interface_stage_plan',
     'rf_shared_joint_geometry','rf_pulse_capture_pulse_scheduler',
@@ -164,9 +167,9 @@ function Resolve-RfOatofDependencyContract {
   $frozenFilenames = @(
     $allDependencies | ForEach-Object { [string]$_.frozen_filename }
   )
-  if (@($allIds | Select-Object -Unique).Count -ne 58 -or
-      @($runInputNames | Select-Object -Unique).Count -ne 58 -or
-      @($frozenFilenames | Select-Object -Unique).Count -ne 58) {
+  if (@($allIds | Select-Object -Unique).Count -ne 64 -or
+      @($runInputNames | Select-Object -Unique).Count -ne 64 -or
+      @($frozenFilenames | Select-Object -Unique).Count -ne 64) {
     throw 'Resolved family dependency inventory contains duplicate identities or paths.'
   }
   foreach ($dependency in $allDependencies) {

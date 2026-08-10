@@ -11,6 +11,9 @@ from typing import Any
 
 from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import ContractError, validate_schema
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.compile_candidate_design import (
+    compile_design_overrides,
+)
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -44,6 +47,9 @@ def select_profile(registry: dict[str, Any], profile_id: str) -> dict[str, Any]:
     target = float(profile["target_injection_energy_eV"])
     if not (math.isfinite(reference) and math.isfinite(target) and reference > 0 and target > 0):
         raise ContractError("single-flight injection energies must be finite and positive")
+    overrides = profile.get("design_overrides", [])
+    if not isinstance(overrides, list):
+        raise ContractError("single-flight design overrides must be a list")
     return profile
 
 
@@ -69,7 +75,26 @@ def compile_geometry_and_port(
     port_offset = base_port_x - base_axis
     port_x = axis_x + port_offset
 
-    geometry = copy.deepcopy(base_geometry)
+    overrides = profile.get("design_overrides", [])
+    if overrides:
+        try:
+            geometry, design_derivation = compile_design_overrides(
+                base_geometry, overrides
+            )
+        except (KeyError, TypeError, ValueError) as error:
+            raise ContractError(f"single-flight design compilation failed: {error}") from error
+    else:
+        geometry = copy.deepcopy(base_geometry)
+        design_derivation = {
+            "method": "catalog_design_overrides_with_theory_closure_v1",
+            "changed_variables": [],
+            "rebuild_effects": [],
+            "simion_rebuild_plan": {
+                "frontend_pa": False,
+                "flight_tube_pa": False,
+                "reflectron_pa": False,
+            },
+        }
     geometry["coordinate_convention"]["accelerator_axis_x"] = axis_x
     geometry["coordinate_convention"]["detector_x"] = detector_x
     geometry["coordinate_convention"]["origin"] = (
@@ -87,6 +112,7 @@ def compile_geometry_and_port(
         "detector_x_mm": detector_x,
         "entry_port_x_mm": port_x,
         "claim_status": profile["claim_status"],
+        "design_compilation": design_derivation,
     }
 
     port = copy.deepcopy(base_port)

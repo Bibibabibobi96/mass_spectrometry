@@ -137,6 +137,26 @@
       "rebuild_effects": ["theory", "resolved", "comsol", "simion", "cad"]
     },
     {
+      "variable_id": "source_release_full_width",
+      "label": "Source release full width along acceleration z",
+      "kind": "continuous",
+      "optimization_role": "tof_envelope",
+      "json_pointer": "/particle_source/size_z_mm",
+      "unit": "mm", "minimum": 0.01, "maximum": 100.0,
+      "compile_status": "candidate_contract",
+      "rebuild_effects": ["theory", "resolved", "comsol", "simion"]
+    },
+    {
+      "variable_id": "reflectron_stage1_length",
+      "label": "Reflectron first-stage length",
+      "kind": "continuous",
+      "optimization_role": "tof_envelope",
+      "json_pointer": "/geometry_mm/L_stage1",
+      "unit": "mm", "minimum": 1.0, "maximum": 2000.0,
+      "compile_status": "candidate_contract",
+      "rebuild_effects": ["theory", "resolved", "comsol", "simion", "cad"]
+    },
+    {
       "variable_id": "reflectron_bore_radius",
       "label": "Reflectron clear bore radius",
       "kind": "continuous",

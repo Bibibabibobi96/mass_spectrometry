@@ -6,13 +6,15 @@ GEM/Lua/Fly2维护；Python不直接解析MPH或PA。
 ## 执行环境
 
 Python版本、隔离环境和重建方法只以仓库根
-[`README.md`](../../../README.md#python-311-分析环境)为权威；本目录不维护第二份工具链说明。
+[`README.md`](../../../README.md#正式工具链基线)为权威；本目录不维护第二份工具链说明。
 依赖声明和锁定版本分别为仓库根`pyproject.toml`与`requirements-lock.txt`。
 
 ## 权威边界
 
 - 正式解析只接受三层输入：`config/baseline.json`与`config/modes/formal.json`（科学）、`config/formal_solver_numerics.json`（COMSOL/SIMION数值）、以及每次run显式冻结的粒子seed。resolver拒绝旧的跨层字段；`resolved_geometry.json`仅为三源的派生产物。
-- Candidate只生成Lua/Fly2文本。候选SIMION IOB若未来需要，必须以带role和SHA-256 provenance的非Formal run input冻结；不得读取、复制或推断Formal资产。
+- Candidate的prepare阶段只生成受控文本和执行计划；完整workflow随后按计划构建并冻结真实PA/IOB、
+  COMSOL、SIMION和CAD证据。候选资产必须带role和SHA-256 provenance且保持非Formal；不得改写或
+  反向推断Formal资产。
 
 - 机器数据定义：`../config/analysis_contract.json`。
 - 当前正式COMSOL/SIMION同源闭合记录：`../config/formal_validation.json`。
