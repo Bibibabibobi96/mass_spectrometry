@@ -10,7 +10,9 @@ function Invoke-SimionCompiledApertureTopologyCheck {
     [Parameter(Mandatory)][double]$OriginXmm,
     [Parameter(Mandatory)][double]$OriginYmm,
     [Parameter(Mandatory)][double]$OriginZmm,
-    [Parameter(Mandatory)][double]$CellMm,
+    [Parameter(Mandatory)][double]$CellMmX,
+    [Parameter(Mandatory)][double]$CellMmY,
+    [Parameter(Mandatory)][double]$CellMmZ,
     [Parameter(Mandatory)][double]$FlangeXMinMm,
     [Parameter(Mandatory)][double]$FlangeXMaxMm,
     [Parameter(Mandatory)][double]$CenterYmm,
@@ -21,8 +23,9 @@ function Invoke-SimionCompiledApertureTopologyCheck {
     [Parameter(Mandatory)][scriptblock]$InvokeVerifier
   )
 
-  if ($CellMm -le 0 -or $MechanicalWidthMm -lt $CellMm -or
-      $MechanicalHeightMm -lt $CellMm) {
+  if ($CellMmX -le 0 -or $CellMmY -le 0 -or $CellMmZ -le 0 -or
+      $MechanicalWidthMm -lt $CellMmY -or
+      $MechanicalHeightMm -lt $CellMmZ) {
     throw 'SIMION aperture width and height must each be at least one positive cell.'
   }
   if ($FlangeXMaxMm -lt $FlangeXMinMm) {
@@ -44,7 +47,9 @@ function Invoke-SimionCompiledApertureTopologyCheck {
     SIMION_APERTURE_ORIGIN_X_MM = $OriginXmm.ToString('R',$invariant)
     SIMION_APERTURE_ORIGIN_Y_MM = $OriginYmm.ToString('R',$invariant)
     SIMION_APERTURE_ORIGIN_Z_MM = $OriginZmm.ToString('R',$invariant)
-    SIMION_APERTURE_CELL_MM = $CellMm.ToString('R',$invariant)
+    SIMION_APERTURE_CELL_MM_X = $CellMmX.ToString('R',$invariant)
+    SIMION_APERTURE_CELL_MM_Y = $CellMmY.ToString('R',$invariant)
+    SIMION_APERTURE_CELL_MM_Z = $CellMmZ.ToString('R',$invariant)
     SIMION_APERTURE_FLANGE_X_MIN_MM = $FlangeXMinMm.ToString('R',$invariant)
     SIMION_APERTURE_FLANGE_X_MAX_MM = $FlangeXMaxMm.ToString('R',$invariant)
     SIMION_APERTURE_CENTER_Y_MM = $CenterYmm.ToString('R',$invariant)

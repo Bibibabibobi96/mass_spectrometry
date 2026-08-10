@@ -79,13 +79,21 @@ try {
   })
   if ($settings.role -ne 'rf_oatof_simion_single_flight_configuration' -or
       $gridProfiles.Count -ne 1 -or
-      [double]$gridProfiles[0].cell_mm -le 0 -or
+      @($gridProfiles[0].cell_mm_xyz.PSObject.Properties.Name).Count -ne 3 -or
+      @($gridProfiles[0].cell_mm_xyz.PSObject.Properties.Name | Where-Object {
+        $_ -notin @('x','y','z')
+      }).Count -ne 0 -or
+      [double]$gridProfiles[0].cell_mm_xyz.x -le 0 -or
+      [double]$gridProfiles[0].cell_mm_xyz.y -le 0 -or
+      [double]$gridProfiles[0].cell_mm_xyz.z -le 0 -or
       [int]$gridProfiles[0].max_parallel_batches -lt 1 -or
       [int]$gridProfiles[0].max_parallel_batches -gt 5 -or
       [string]$settings.clock_basis -notin @('legacy_relative_time','absolute_birth_time')) {
     throw 'Single-flight numerical configuration is invalid.'
   }
-  $frontendCellMm = [double]$gridProfiles[0].cell_mm
+  $frontendCellMmX = [double]$gridProfiles[0].cell_mm_xyz.x
+  $frontendCellMmY = [double]$gridProfiles[0].cell_mm_xyz.y
+  $frontendCellMmZ = [double]$gridProfiles[0].cell_mm_xyz.z
   $maxParallelBatches = [int]$gridProfiles[0].max_parallel_batches
   $selectedFieldProfileId = if ([string]::IsNullOrWhiteSpace($AcceleratorFieldProfileId)) {
     [string]$settings.default_accelerator_field_profile_id
@@ -179,7 +187,10 @@ try {
     'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_frontend',
     '--upstream',$upstreamFrozen,'--oatof',$oatofGeometry,
     '--connection',$resolvedFrozen,'--gem',$frontendGem,'--contract',$frontendContract,
-    '--cell-mm',([string]$frontendCellMm)) -Failure 'Single-flight frontend compilation failed.'
+    '--cell-mm-x',([string]$frontendCellMmX),
+    '--cell-mm-y',([string]$frontendCellMmY),
+    '--cell-mm-z',([string]$frontendCellMmZ)) `
+    -Failure 'Single-flight frontend compilation failed.'
   $frontendGeometry = Get-Content -LiteralPath $frontendContract -Raw -Encoding UTF8 |
     ConvertFrom-Json
   $apertureWidthMm = [double]$frontendGeometry.aperture.width_mm
@@ -236,7 +247,9 @@ try {
     -OriginXmm ([double]$frontendGeometry.instance_origin_mm.x) `
     -OriginYmm ([double]$frontendGeometry.instance_origin_mm.y) `
     -OriginZmm ([double]$frontendGeometry.instance_origin_mm.z) `
-    -CellMm ([double]$frontendGeometry.cell_mm_xyz.x) `
+    -CellMmX ([double]$frontendGeometry.cell_mm_xyz.x) `
+    -CellMmY ([double]$frontendGeometry.cell_mm_xyz.y) `
+    -CellMmZ ([double]$frontendGeometry.cell_mm_xyz.z) `
     -FlangeXMinMm ([double]$apertureDiscretization.flange_x_min_mm) `
     -FlangeXMaxMm ([double]$apertureDiscretization.flange_x_max_mm) `
     -CenterYmm ([double]$frontendGeometry.source_exit_center_mm.y) `
@@ -408,7 +421,7 @@ try {
     schema_version=2; run_id=$RunId; project=$runtime.upstream_project_id; mode='rf_to_oatof_simion_single_flight'; project_root=$repoRoot
     inputs=[ordered]@{ configuration=$configuration; runtime_binding=$runtimeBindingFrozen; resolved_connection=$resolvedFrozen; resolved_source_contract=$sourceContractFrozen; upstream_resolved_design=$upstreamFrozen; oatof_resolved_geometry=$oatofGeometry; pulse_schedule=$pulseScheduleFrozen; resolved_integration_engineering_budget=$budget.frozen_budget; resolved_stage_resource_budget=$budget.stage_budget; mother_particle_source=$motherSource; initial_global_state=$globalSource; ion=$ion; frontend_gem=$frontendGem; frontend_contract=$frontendContract; frontend_aperture_topology_support=$apertureTopologySupport; frontend_aperture_topology_verifier=$apertureVerifier; program_metadata=$programMetadata; candidate_flight_tube_builder=$flightTubeBuilderFrozen; candidate_flight_tube_gem=$flightTubeGemFrozen; candidate_reflectron_builder=$reflectronBuilderFrozen; candidate_reflectron_gem=$reflectronGemFrozen }
     upstream_source_identity=$runtime.source_identity
-    parameters=[ordered]@{ connection_profile_id=$ConnectionProfileId; source_branch_id=$SourceBranchId; layout_profile_id=$(if($hasGovernedLayout){$LayoutProfileId}else{$null}); frontend_grid_profile_id=$selectedGridProfileId; frontend_cell_mm=$frontendCellMm; accelerator_field_profile_id=$selectedFieldProfileId; single_flight_ideal_accel_enable=$idealAcceleratorEnable; max_parallel_batches=$maxParallelBatches; clock_basis=[string]$settings.clock_basis; launched_particle_count=$launched; particle_count=$launched; execution_batch_count=$(if($launched -ge [int]$settings.batching_policy.enabled_at_particle_count){[int]$settings.batching_policy.default_batch_count}else{1}); execution_batches_parallel=$(if($launched -ge [int]$settings.batching_policy.enabled_at_particle_count){[bool]$settings.batching_policy.parallel_after_cache_warmup}else{$false}); aperture_width_mm=$apertureWidthMm; aperture_height_mm=$apertureHeightMm; aperture_boolean_boundary_policy=[string]$apertureDiscretization.boolean_boundary_policy; aperture_grid_warnings=$apertureGridWarnings; frontend_open_aperture_column_count=[int]$apertureTopology.open_column_count; frontend_aperture_guard_electrode_check_passed=[bool]$apertureTopology.guard_electrode_check_passed; frontend_aperture_topology_report_sha256=(Get-FileHash -LiteralPath $apertureTopologyReport -Algorithm SHA256).Hash; rod_end_to_accelerator_shield_mm=1.0; surrounded_transition=$true; accelerator_axis_x_mm=[double]$oatofGeometryDocument.coordinate_convention.accelerator_axis_x; pulse_time_us=$pulseTimeUs; pulse_width_us=$pulseWidthUs; design_compilation=$(if($null -ne $layoutDerivation){$layoutDerivation.design_compilation}else{$null}); source_release_full_width_mm=[double]$oatofGeometryDocument.particle_source.size_z_mm; reflectron_stage2_length_mm=[double]$oatofGeometryDocument.geometry_mm.L_stage2; reflectron_midgrid_voltage_V=[double]$oatofGeometryDocument.electrodes_V.midgrid; reflectron_backplate_voltage_V=[double]$oatofGeometryDocument.electrodes_V.backplate; reflectron_pa0_sha256=(Get-FileHash -LiteralPath $reflectronPa0 -Algorithm SHA256).Hash; frontend_gem_sha256=$frontendHash; frontend_pa0_sha256=(Get-FileHash -LiteralPath $cachePa0 -Algorithm SHA256).Hash }
+    parameters=[ordered]@{ connection_profile_id=$ConnectionProfileId; source_branch_id=$SourceBranchId; layout_profile_id=$(if($hasGovernedLayout){$LayoutProfileId}else{$null}); frontend_grid_profile_id=$selectedGridProfileId; frontend_cell_mm_xyz=[ordered]@{x=$frontendCellMmX;y=$frontendCellMmY;z=$frontendCellMmZ}; accelerator_field_profile_id=$selectedFieldProfileId; single_flight_ideal_accel_enable=$idealAcceleratorEnable; max_parallel_batches=$maxParallelBatches; clock_basis=[string]$settings.clock_basis; launched_particle_count=$launched; particle_count=$launched; execution_batch_count=$(if($launched -ge [int]$settings.batching_policy.enabled_at_particle_count){[int]$settings.batching_policy.default_batch_count}else{1}); execution_batches_parallel=$(if($launched -ge [int]$settings.batching_policy.enabled_at_particle_count){[bool]$settings.batching_policy.parallel_after_cache_warmup}else{$false}); aperture_width_mm=$apertureWidthMm; aperture_height_mm=$apertureHeightMm; aperture_boolean_boundary_policy=[string]$apertureDiscretization.boolean_boundary_policy; aperture_grid_warnings=$apertureGridWarnings; frontend_open_aperture_column_count=[int]$apertureTopology.open_column_count; frontend_aperture_guard_electrode_check_passed=[bool]$apertureTopology.guard_electrode_check_passed; frontend_aperture_topology_report_sha256=(Get-FileHash -LiteralPath $apertureTopologyReport -Algorithm SHA256).Hash; rod_end_to_accelerator_shield_mm=1.0; surrounded_transition=$true; accelerator_axis_x_mm=[double]$oatofGeometryDocument.coordinate_convention.accelerator_axis_x; pulse_time_us=$pulseTimeUs; pulse_width_us=$pulseWidthUs; design_compilation=$(if($null -ne $layoutDerivation){$layoutDerivation.design_compilation}else{$null}); source_release_full_width_mm=[double]$oatofGeometryDocument.particle_source.size_z_mm; reflectron_stage2_length_mm=[double]$oatofGeometryDocument.geometry_mm.L_stage2; reflectron_midgrid_voltage_V=[double]$oatofGeometryDocument.electrodes_V.midgrid; reflectron_backplate_voltage_V=[double]$oatofGeometryDocument.electrodes_V.backplate; reflectron_pa0_sha256=(Get-FileHash -LiteralPath $reflectronPa0 -Algorithm SHA256).Hash; frontend_gem_sha256=$frontendHash; frontend_pa0_sha256=(Get-FileHash -LiteralPath $cachePa0 -Algorithm SHA256).Hash }
     artifact_retention=[ordered]@{policy_version=1;class='compact';reason=$null}; formal_gate_passed=$false
   }
   Write-RfJson -Path $package.run_config -Depth 10 -Value $runConfiguration

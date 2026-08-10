@@ -12,7 +12,7 @@ def resolve_rectangular_aperture_discretization(
     *,
     mechanical_width_mm: float,
     mechanical_height_mm: float,
-    cell_mm: float,
+    cell_mm_xyz: dict[str, float],
     flange_x_min_mm: float,
     flange_x_max_mm: float,
     center_y_mm: float,
@@ -21,10 +21,17 @@ def resolve_rectangular_aperture_discretization(
     pa_origin_z_mm: float,
 ) -> dict[str, Any]:
     """Validate an aperture and return its shared GEM/compiled-PA contract."""
+    if set(cell_mm_xyz) != {"x", "y", "z"}:
+        raise ValueError("SIMION aperture cell_mm_xyz must contain exactly x, y and z")
+    cell_x_mm = float(cell_mm_xyz["x"])
+    cell_y_mm = float(cell_mm_xyz["y"])
+    cell_z_mm = float(cell_mm_xyz["z"])
     values = (
         mechanical_width_mm,
         mechanical_height_mm,
-        cell_mm,
+        cell_x_mm,
+        cell_y_mm,
+        cell_z_mm,
         flange_x_min_mm,
         flange_x_max_mm,
         center_y_mm,
@@ -34,39 +41,46 @@ def resolve_rectangular_aperture_discretization(
     )
     if not all(math.isfinite(float(value)) for value in values):
         raise ValueError("SIMION aperture dimensions and bounds must be finite")
-    if min(mechanical_width_mm, mechanical_height_mm, cell_mm) <= 0:
+    if min(
+        mechanical_width_mm,
+        mechanical_height_mm,
+        cell_x_mm,
+        cell_y_mm,
+        cell_z_mm,
+    ) <= 0:
         raise ValueError("SIMION aperture dimensions and cell size must be positive")
     if flange_x_max_mm < flange_x_min_mm:
         raise ValueError("SIMION aperture flange bounds are reversed")
-    if mechanical_width_mm < cell_mm or mechanical_height_mm < cell_mm:
+    if mechanical_width_mm < cell_y_mm or mechanical_height_mm < cell_z_mm:
         raise ValueError(
             "SIMION aperture width and height must each be at least one SIMION cell"
         )
 
-    width_cells = mechanical_width_mm / cell_mm
-    height_cells = mechanical_height_mm / cell_mm
+    width_cells = mechanical_width_mm / cell_y_mm
+    height_cells = mechanical_height_mm / cell_z_mm
     edge_coordinates = {
         "y_min": (center_y_mm - mechanical_width_mm / 2 - pa_origin_y_mm)
-        / cell_mm,
+        / cell_y_mm,
         "y_max": (center_y_mm + mechanical_width_mm / 2 - pa_origin_y_mm)
-        / cell_mm,
+        / cell_y_mm,
         "z_min": (center_z_mm - mechanical_height_mm / 2 - pa_origin_z_mm)
-        / cell_mm,
+        / cell_z_mm,
         "z_max": (center_z_mm + mechanical_height_mm / 2 - pa_origin_z_mm)
-        / cell_mm,
+        / cell_z_mm,
     }
 
-    def on_integer(value: float) -> bool:
+    def on_integer(value: float, cell_mm: float) -> bool:
         tolerance_cells = max(
             1e-9 / cell_mm,
             16 * math.ulp(max(abs(value), 1.0)),
         )
         return abs(value - round(value)) <= tolerance_cells
 
-    width_integer = on_integer(width_cells)
-    height_integer = on_integer(height_cells)
+    width_integer = on_integer(width_cells, cell_y_mm)
+    height_integer = on_integer(height_cells, cell_z_mm)
     edge_alignment = {
-        name: on_integer(value) for name, value in edge_coordinates.items()
+        name: on_integer(value, cell_y_mm if name.startswith("y_") else cell_z_mm)
+        for name, value in edge_coordinates.items()
     }
     warnings: list[str] = []
     if not width_integer:
@@ -79,11 +93,15 @@ def resolve_rectangular_aperture_discretization(
         warnings.append("aperture_z_edges_not_on_grid_nodes")
 
     contract = {
-        "schema_version": 1,
+        "schema_version": 2,
         "role": "simion_rectangular_aperture_discretization",
         "mechanical_width_mm": round(mechanical_width_mm, 12),
         "mechanical_height_mm": round(mechanical_height_mm, 12),
-        "cell_mm": round(cell_mm, 12),
+        "cell_mm_xyz": {
+            "x": round(cell_x_mm, 12),
+            "y": round(cell_y_mm, 12),
+            "z": round(cell_z_mm, 12),
+        },
         "boolean_boundary_policy": "exclude_shape_inside_or_on_v1",
         "numerical_carve_width_mm": round(mechanical_width_mm, 12),
         "numerical_carve_height_mm": round(mechanical_height_mm, 12),

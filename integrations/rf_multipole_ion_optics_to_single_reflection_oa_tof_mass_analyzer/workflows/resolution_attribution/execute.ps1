@@ -3,6 +3,9 @@ param(
   [Parameter(Mandatory)][string]$RunId,
   [Parameter(Mandatory)][string]$BaselineRunId,
   [Parameter(Mandatory)][string]$IdealRunId,
+  [string]$FrontendRunId = '',
+  [string[]]$ArmId = @(),
+  [string]$ReferenceArmId = '',
   [string]$BaselineAggregateRoot = '',
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$PythonExe = ''
@@ -90,10 +93,17 @@ if (-not (Test-Path -LiteralPath $SimionExe -PathType Leaf)) {
 $baselineRoot = Join-Path $workspaceRoot (
   "artifacts\projects\rf_octupole_ion_optics\runs\$BaselineRunId"
 )
+$selectedFrontendRunId = if ($FrontendRunId) { $FrontendRunId } else { $BaselineRunId }
+$frontendRoot = Join-Path $workspaceRoot (
+  "artifacts\projects\rf_octupole_ion_optics\runs\$selectedFrontendRunId"
+)
 $idealRoot = Join-Path $workspaceRoot (
   "artifacts\projects\single_reflection_oa_tof_mass_analyzer\runs\$IdealRunId"
 )
 Assert-VerifiedSourceRun -RunRoot $baselineRoot -ExpectedRunId $BaselineRunId `
+  -ExpectedProject 'rf_octupole_ion_optics' `
+  -ExpectedMode 'rf_to_oatof_simion_single_flight'
+Assert-VerifiedSourceRun -RunRoot $frontendRoot -ExpectedRunId $selectedFrontendRunId `
   -ExpectedProject 'rf_octupole_ion_optics' `
   -ExpectedMode 'rf_to_oatof_simion_single_flight'
 Assert-VerifiedSourceRun -RunRoot $idealRoot -ExpectedRunId $IdealRunId `
@@ -115,6 +125,38 @@ try {
   $baselineConfig = Get-Content -LiteralPath (
     Join-Path $baselineRoot 'run_config.json'
   ) -Raw -Encoding UTF8 | ConvertFrom-Json
+  $frontendConfig = Get-Content -LiteralPath (
+    Join-Path $frontendRoot 'run_config.json'
+  ) -Raw -Encoding UTF8 | ConvertFrom-Json
+  foreach ($name in @(
+      'upstream_resolved_design.json',
+      'oatof_resolved_geometry.json'
+  )) {
+    $baselineIdentity = (Get-FileHash -LiteralPath (
+      Join-Path $baselineRoot "inputs\$name"
+    ) -Algorithm SHA256).Hash
+    $frontendIdentity = (Get-FileHash -LiteralPath (
+      Join-Path $frontendRoot "inputs\$name"
+    ) -Algorithm SHA256).Hash
+    if ($baselineIdentity -ne $frontendIdentity) {
+      throw "Frontend source run changes frozen physical input: $name"
+    }
+  }
+  $baselineConnection = Get-Content -LiteralPath (
+    Join-Path $baselineRoot 'inputs\resolved_connection.json'
+  ) -Raw -Encoding UTF8 | ConvertFrom-Json
+  $frontendConnection = Get-Content -LiteralPath (
+    Join-Path $frontendRoot 'inputs\resolved_connection.json'
+  ) -Raw -Encoding UTF8 | ConvertFrom-Json
+  $baselineConnection.PSObject.Properties.Remove('sources')
+  $frontendConnection.PSObject.Properties.Remove('sources')
+  $baselinePhysicalConnection = $baselineConnection | ConvertTo-Json `
+    -Depth 100 -Compress
+  $frontendPhysicalConnection = $frontendConnection | ConvertTo-Json `
+    -Depth 100 -Compress
+  if ($baselinePhysicalConnection -cne $frontendPhysicalConnection) {
+    throw 'Frontend source run changes frozen physical input: resolved_connection.json'
+  }
   $baselineCheckpointsSource = Join-Path $baselineRoot `
     'results\single_flight_particle_checkpoints.csv'
   $baselineCheckpointRoot = $baselineRoot
@@ -192,7 +234,6 @@ try {
   $formalBackplateZ = $formalBackplateZValue.ToString('R',$invariantCulture)
   foreach ($name in @(
       'upstream_resolved_design.json',
-      'single_flight_frontend_contract.json',
       'resolved_connection.json',
       'oatof_resolved_geometry.json'
   )) {
@@ -201,6 +242,12 @@ try {
       -Destination (Join-Path $package.input_dir $name) `
       -Role "baseline frozen $name" | Out-Null
   }
+  Copy-RfStableFile -SourceRunRoot $frontendRoot `
+    -SourcePath (Join-Path $frontendRoot `
+      'inputs\single_flight_frontend_contract.json') `
+    -Destination (Join-Path $package.input_dir `
+      'single_flight_frontend_contract.json') `
+    -Role 'selected frontend frozen contract' | Out-Null
   $upstream = Get-Content -LiteralPath (
     Join-Path $package.input_dir 'upstream_resolved_design.json'
   ) -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -229,10 +276,10 @@ try {
     throw 'N=1000 attribution requires the governed five-batch parallel policy.'
   }
   $frontendGridProfileId = if (
-    $baselineConfig.parameters.PSObject.Properties.Name -contains
+    $frontendConfig.parameters.PSObject.Properties.Name -contains
       'frontend_grid_profile_id'
   ) {
-    [string]$baselineConfig.parameters.frontend_grid_profile_id
+    [string]$frontendConfig.parameters.frontend_grid_profile_id
   } else {
     [string]$singleFlightSettings.default_frontend_grid_profile_id
   }
@@ -242,13 +289,13 @@ try {
     }
   )
   if ($frontendGridProfiles.Count -ne 1) {
-    throw 'Baseline frontend grid profile cannot be resolved uniquely.'
+    throw 'Selected frontend grid profile cannot be resolved uniquely.'
   }
   $maxParallelBatches = [int]$frontendGridProfiles[0].max_parallel_batches
   if ($maxParallelBatches -lt 1 -or $maxParallelBatches -gt $executionBatchCount) {
     throw 'Frontend grid profile parallel-batch limit differs.'
   }
-  Invoke-AttributionPython -Arguments @(
+  $prepareArguments = @(
     '-m',
     'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.resolution_attribution_counterfactual',
     'prepare','--profile',$profile,'--checkpoints',$baselineCheckpoints,
@@ -258,7 +305,12 @@ try {
     '--mass-amu','100','--charge-state','1',
     '--rf-frequency-hz',([string][double]$upstream.drive.frequency_Hz),
     '--execution-batch-count',([string]$executionBatchCount)
-  ) -Failure 'Counterfactual arm preparation failed.'
+  )
+  foreach ($selectedArmId in $ArmId) {
+    $prepareArguments += @('--arm-id',$selectedArmId)
+  }
+  Invoke-AttributionPython -Arguments $prepareArguments `
+    -Failure 'Counterfactual arm preparation failed.'
   $prepared = Get-Content -LiteralPath (
     Join-Path $preparedDir 'prepared_arms.json'
   ) -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -267,6 +319,10 @@ try {
   }
   if ($prepared.mother_sample_particle_count -ne $motherSampleParticleCount) {
     throw 'Prepared mother-sample count differs from the governed baseline.'
+  }
+  if ($ReferenceArmId -and
+      @($prepared.arms.arm_id) -notcontains $ReferenceArmId) {
+    throw "Reference arm was not prepared: $ReferenceArmId"
   }
 
   $runtimeDir = Join-Path $package.run_dir 'simion'
@@ -335,15 +391,15 @@ try {
     '--metadata',$formalAcceleratorProgramMetadata
   ) -Failure 'Formal-accelerator attribution Program build failed.'
 
-  $frontendHash = ([string]$baselineConfig.parameters.frontend_gem_sha256).ToLowerInvariant()
+  $frontendHash = ([string]$frontendConfig.parameters.frontend_gem_sha256).ToLowerInvariant()
   $frontendPa0 = Join-Path $workspaceRoot (
     'artifacts\projects\rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer' +
     "\cache\simion_single_flight_frontend\$frontendHash\frontend.pa0"
   )
   if (-not (Test-Path -LiteralPath $frontendPa0 -PathType Leaf) -or
       (Get-FileHash -LiteralPath $frontendPa0 -Algorithm SHA256).Hash -ne
-      ([string]$baselineConfig.parameters.frontend_pa0_sha256).ToUpperInvariant()) {
-    throw 'Baseline frontend PA cache identity differs.'
+      ([string]$frontendConfig.parameters.frontend_pa0_sha256).ToUpperInvariant()) {
+    throw 'Selected frontend PA cache identity differs.'
   }
   $runConfiguration = [ordered]@{
     schema_version = 2
@@ -372,6 +428,7 @@ try {
     }
     source_runs = [ordered]@{
       continuous_baseline_run_id = $BaselineRunId
+      frontend_run_id = $selectedFrontendRunId
       ideal_reference_run_id = $IdealRunId
     }
     parameters = [ordered]@{
@@ -386,8 +443,8 @@ try {
       trajectory_quality = 8
       maximum_time_of_flight_us = 90.0
       rf_steps_per_period = 160
-      frontend_gem_sha256 = ([string]$baselineConfig.parameters.frontend_gem_sha256)
-      frontend_pa0_sha256 = ([string]$baselineConfig.parameters.frontend_pa0_sha256)
+      frontend_gem_sha256 = ([string]$frontendConfig.parameters.frontend_gem_sha256)
+      frontend_pa0_sha256 = ([string]$frontendConfig.parameters.frontend_pa0_sha256)
     }
     artifact_retention = [ordered]@{
       policy_version = 1
@@ -416,7 +473,7 @@ try {
     $activeSolverProfileId = 'current_downstream'
     $activeFrontendProgramProfileId = 'combined_frontend'
     foreach ($arm in $prepared.arms) {
-      $armId = [string]$arm.arm_id
+      $currentArmId = [string]$arm.arm_id
       $solverProfileId = [string]$arm.solver_profile_id
       $frontendProfileId = [string]$arm.frontend_profile_id
       $frontendOverrides = @()
@@ -473,7 +530,7 @@ try {
         foreach ($batch in @($batches | Select-Object `
             -Skip $offset -First $maxParallelBatches)) {
           $batchIndex = [int]$batch.batch_index
-          $stem = '{0}__batch{1:D2}' -f $armId,$batchIndex
+          $stem = '{0}__batch{1:D2}' -f $currentArmId,$batchIndex
           $payload = [pscustomobject]@{
             support = $resourceSupport
             budget = $budget.stage_budget
@@ -516,14 +573,14 @@ try {
           foreach ($job in $jobs) {
             $fly = Receive-Job -Job $job -Wait
             if ($job.State -ne 'Completed' -or $null -eq $fly) {
-              throw "Counterfactual SIMION batch job failed: $armId"
+              throw "Counterfactual SIMION batch job failed: $currentArmId"
             }
             if ($fly.resource_budget_exceeded) {
               $resourceBudgetExceeded = $true
-              throw "Counterfactual SIMION batch exceeded its resource budget: $armId"
+              throw "Counterfactual SIMION batch exceeded its resource budget: $currentArmId"
             }
             if ($fly.exit_code -ne 0) {
-              throw "Counterfactual SIMION batch failed: $armId"
+              throw "Counterfactual SIMION batch failed: $currentArmId"
             }
           }
         } finally {
@@ -531,7 +588,7 @@ try {
         }
       }
       Write-Output (
-        "RESOLUTION_ATTRIBUTION_ARM=PASS ARM=$armId " +
+        "RESOLUTION_ATTRIBUTION_ARM=PASS ARM=$currentArmId " +
         "BATCHES=$executionBatchCount MAX_PARALLEL=$maxParallelBatches"
       )
     }
@@ -540,6 +597,13 @@ try {
   }
 
   $analysisDir = Join-Path $package.result_dir 'resolution_attribution'
+  $selectedReferenceArmId = if ($ReferenceArmId) {
+    $ReferenceArmId
+  } elseif (@($prepared.arms.arm_id) -contains 'observed_restart_control') {
+    'observed_restart_control'
+  } else {
+    [string]$prepared.arms[0].arm_id
+  }
   Invoke-AttributionPython -Arguments @(
     '-m',
     'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.resolution_attribution_counterfactual',
@@ -547,7 +611,8 @@ try {
     '--prepared',(Join-Path $preparedDir 'prepared_arms.json'),
     '--baseline-checkpoints',$baselineCheckpoints,
     '--logs-dir',$package.log_dir,'--output-dir',$analysisDir,
-    '--baseline-clock-basis',$baselineClockBasis
+    '--baseline-clock-basis',$baselineClockBasis,
+    '--reference-arm-id',$selectedReferenceArmId
   ) -Failure 'Counterfactual result analysis failed.'
   Copy-Item -LiteralPath (Join-Path $analysisDir `
     'resolution_attribution.json') -Destination $package.summary -Force

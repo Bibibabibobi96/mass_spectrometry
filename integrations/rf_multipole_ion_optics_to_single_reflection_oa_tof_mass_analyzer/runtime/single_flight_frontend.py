@@ -50,15 +50,24 @@ def compile_frontend(
     oatof: dict[str, Any],
     connection: dict[str, Any],
     *,
-    cell_mm: float = 0.2,
+    cell_mm_xyz: dict[str, float] | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Return a composite GEM and its placement/electrode contract."""
+    cells = {"x": 0.2, "y": 0.2, "z": 0.2} if cell_mm_xyz is None else cell_mm_xyz
+    if set(cells) != {"x", "y", "z"}:
+        raise ValueError("single-flight frontend cell_mm_xyz must contain exactly x, y and z")
+    cell_x_mm, cell_y_mm, cell_z_mm = (
+        float(cells[axis]) for axis in ("x", "y", "z")
+    )
     if upstream.get("role") != "multipole_resolved_design_do_not_edit":
         raise ValueError("upstream input is not a multipole resolved design")
     if oatof.get("role") != "oa_tof_resolved_contract_do_not_edit":
         raise ValueError("oaTOF input is not a resolved geometry contract")
-    if cell_mm <= 0:
-        raise ValueError("single-flight frontend cell size must be positive")
+    if not all(
+        math.isfinite(value) and value > 0
+        for value in (cell_x_mm, cell_y_mm, cell_z_mm)
+    ):
+        raise ValueError("single-flight frontend cell sizes must be finite and positive")
     connector = connection.get("connector", {})
     connector_length = float(connector.get("length_mm", -1.0))
     if connector_length < 0:
@@ -154,22 +163,26 @@ def compile_frontend(
     negative_x_face = axis_x - shield_outer_width / 2
     _require_close(negative_x_face, exit_x, "mated shield face")
 
-    x_min = exit_x - math.ceil((exit_x - source_x_min + cell_mm) / cell_mm) * cell_mm
-    x_max = axis_x + shield_outer_width / 2 + cell_mm
-    y_min = -math.ceil((outer_radius + cell_mm) / cell_mm) * cell_mm
+    x_min = exit_x - math.ceil(
+        (exit_x - source_x_min + cell_x_mm) / cell_x_mm
+    ) * cell_x_mm
+    x_max = axis_x + shield_outer_width / 2 + cell_x_mm
+    y_min = -math.ceil((outer_radius + cell_y_mm) / cell_y_mm) * cell_y_mm
     y_max = -y_min
-    physical_z_min = min(center_z - outer_radius, shield_back_z) - cell_mm
-    z_min = grid2_z - math.ceil((grid2_z - physical_z_min) / cell_mm) * cell_mm
-    z_max = max(center_z + outer_radius, grid2_z) + cell_mm
-    nx = math.ceil((x_max - x_min) / cell_mm) + 1
-    ny = math.ceil((y_max - y_min) / cell_mm) + 1
-    nz = math.ceil((z_max - z_min) / cell_mm) + 1
+    physical_z_min = min(center_z - outer_radius, shield_back_z) - cell_z_mm
+    z_min = grid2_z - math.ceil(
+        (grid2_z - physical_z_min) / cell_z_mm
+    ) * cell_z_mm
+    z_max = max(center_z + outer_radius, grid2_z) + cell_z_mm
+    nx = math.ceil((x_max - x_min) / cell_x_mm) + 1
+    ny = math.ceil((y_max - y_min) / cell_y_mm) + 1
+    nz = math.ceil((z_max - z_min) / cell_z_mm) + 1
 
     lines = [
         "; Generated single-flight multipole + oaTOF accelerator frontend; do not edit.",
         f"; upstream_resolved_sha256={upstream['resolved_sha256']}",
         "; electrode 1..8=multipole rods; 9=all grounded shields and connector; 10..17=oaTOF accelerator; 18=functional entrance-reference sleeve",
-        f"pa_define({nx},{ny},{nz},planar,none,electrostatic,,{_fmt(cell_mm)},{_fmt(cell_mm)},{_fmt(cell_mm)},surface=fractional)",
+        f"pa_define({nx},{ny},{nz},planar,none,electrostatic,,{_fmt(cell_x_mm)},{_fmt(cell_y_mm)},{_fmt(cell_z_mm)},surface=fractional)",
         f"locate({_fmt(-x_min)},{_fmt(-y_min)},{_fmt(-z_min)}) {{",
     ]
     for rod in rods:
@@ -189,7 +202,7 @@ def compile_frontend(
         [
             f"  e({MULTIPOLE_SHIELD_ELECTRODE}) {{ fill {{",
             f"    within {{ locate({_fmt(shield_x_max)},{_fmt(center_y)},{_fmt(center_z)},1,90) {{ cylinder(0,0,0,{_fmt(outer_radius)},,{_fmt(shield_length)}) }} }}",
-            f"    notin_inside {{ locate({_fmt(shield_x_max+cell_mm)},{_fmt(center_y)},{_fmt(center_z)},1,90) {{ cylinder(0,0,0,{_fmt(inner_radius)},,{_fmt(shield_length+2*cell_mm)}) }} }}",
+            f"    notin_inside {{ locate({_fmt(shield_x_max+cell_x_mm)},{_fmt(center_y)},{_fmt(center_z)},1,90) {{ cylinder(0,0,0,{_fmt(inner_radius)},,{_fmt(shield_length+2*cell_x_mm)}) }} }}",
             "  } }",
         ]
     )
@@ -212,16 +225,16 @@ def compile_frontend(
         [
             f"  e({MULTIPOLE_SHIELD_ELECTRODE}) {{ fill {{",
             f"    within {{ locate({_fmt(entrance_max)},{_fmt(center_y)},{_fmt(center_z)},1,90) {{ cylinder(0,0,0,{_fmt(outer_radius)},,{_fmt(entrance_max-entrance_min)}) }} }}",
-            f"    notin_inside {{ locate({_fmt(entrance_max+cell_mm)},{_fmt(center_y)},{_fmt(center_z)},1,90) {{ cylinder(0,0,0,{_fmt(insulated_radius)},,{_fmt(entrance_max-entrance_min+2*cell_mm)}) }} }}",
+            f"    notin_inside {{ locate({_fmt(entrance_max+cell_x_mm)},{_fmt(center_y)},{_fmt(center_z)},1,90) {{ cylinder(0,0,0,{_fmt(insulated_radius)},,{_fmt(entrance_max-entrance_min+2*cell_x_mm)}) }} }}",
             "  } }",
             f"  e({ENTRANCE_PLATE_ELECTRODE}) {{ fill {{",
             f"    within {{ locate({_fmt(entrance_plate_max)},{_fmt(center_y)},{_fmt(center_z)},1,90) {{ cylinder(0,0,0,{_fmt(outer_radius)},,{_fmt(entrance_plate_max-entrance_plate_min)}) }} }}",
-            f"    notin_inside {{ locate({_fmt(entrance_plate_max+cell_mm)},{_fmt(center_y)},{_fmt(center_z)},1,90) {{ cylinder(0,0,0,{_fmt(entrance_radius)},,{_fmt(entrance_plate_max-entrance_plate_min+2*cell_mm)}) }} }}",
+            f"    notin_inside {{ locate({_fmt(entrance_plate_max+cell_x_mm)},{_fmt(center_y)},{_fmt(center_z)},1,90) {{ cylinder(0,0,0,{_fmt(entrance_radius)},,{_fmt(entrance_plate_max-entrance_plate_min+2*cell_x_mm)}) }} }}",
             "  } }",
             "  ; Functional source-reference sleeve; this is not a shield electrode.",
             f"  e({ENTRANCE_REFERENCE_ELECTRODE}) {{ fill {{",
             f"    within {{ locate({_fmt(sleeve_max)},{_fmt(center_y)},{_fmt(center_z)},1,90) {{ cylinder(0,0,0,{_fmt(sleeve_outer)},,{_fmt(sleeve_max-sleeve_min)}) }} }}",
-            f"    notin_inside {{ locate({_fmt(sleeve_max+cell_mm)},{_fmt(center_y)},{_fmt(center_z)},1,90) {{ cylinder(0,0,0,{_fmt(sleeve_inner)},,{_fmt(sleeve_max-sleeve_min+2*cell_mm)}) }} }}",
+            f"    notin_inside {{ locate({_fmt(sleeve_max+cell_x_mm)},{_fmt(center_y)},{_fmt(center_z)},1,90) {{ cylinder(0,0,0,{_fmt(sleeve_inner)},,{_fmt(sleeve_max-sleeve_min+2*cell_x_mm)}) }} }}",
             "  } }",
         ]
     )
@@ -253,7 +266,7 @@ def compile_frontend(
         inner_radius_mm=inner_radius,
         aperture_width_mm=port_width,
         aperture_height_mm=port_height,
-        cell_mm=cell_mm,
+        cell_mm_xyz={"x": cell_x_mm, "y": cell_y_mm, "z": cell_z_mm},
         pa_origin_y_mm=y_min,
         pa_origin_z_mm=z_min,
     )
@@ -266,7 +279,7 @@ def compile_frontend(
             f"  e({MULTIPOLE_SHIELD_ELECTRODE}) {{ fill {{",
             f"    within {{ {_box(axis_x, axis_y, shield_center_z, shield_outer_width, shield_outer_width, shield_span_z)} }}",
             f"    notin {{ {_box(axis_x, axis_y, shield_center_z, shield_inner_width, shield_inner_width, shield_span_z)} }}",
-            f"    notin_inside_or_on {{ {_box(negative_x_face+shield_wall/2, center_y, center_z, shield_wall+2*cell_mm, numerical_port_width, numerical_port_height)} }}",
+            f"    notin_inside_or_on {{ {_box(negative_x_face+shield_wall/2, center_y, center_z, shield_wall+2*cell_x_mm, numerical_port_width, numerical_port_height)} }}",
             "  } }",
             f"  e({MULTIPOLE_SHIELD_ELECTRODE}) {{ fill {{ within {{ {_box(axis_x, axis_y, shield_back_z+shield_wall/2, shield_outer_width, shield_outer_width, shield_wall)} }} }} }}",
         ]
@@ -286,7 +299,7 @@ def compile_frontend(
         f"  e({ACCELERATOR_ELECTRODE_OFFSET+1}) {{ fill {{ within {{ {_box(axis_x,axis_y,repeller_front_z-repeller_thickness/2,electrode_width,electrode_width,repeller_thickness)} }} }} }}"
     )
     lines.append(
-        f"  e({ACCELERATOR_ELECTRODE_OFFSET+2}) {{ fill {{ within {{ {_box(axis_x,axis_y,grid1_z,electrode_width,electrode_width,cell_mm)} }} }} }}"
+        f"  e({ACCELERATOR_ELECTRODE_OFFSET+2}) {{ fill {{ within {{ {_box(axis_x,axis_y,grid1_z,electrode_width,electrode_width,cell_z_mm)} }} }} }}"
     )
     for ring_index in range(1, ring_count + 1):
         ring_z = grid1_z + ring_index * ring_pitch
@@ -294,12 +307,12 @@ def compile_frontend(
             [
                 f"  e({ACCELERATOR_ELECTRODE_OFFSET+2+ring_index}) {{ fill {{",
                 f"    within {{ {_box(axis_x,axis_y,ring_z,electrode_width,electrode_width,ring_thickness)} }}",
-                f"    notin {{ {_box(axis_x,axis_y,ring_z,bore_width,bore_width,ring_thickness+cell_mm)} }}",
+                f"    notin {{ {_box(axis_x,axis_y,ring_z,bore_width,bore_width,ring_thickness+cell_z_mm)} }}",
                 "  } }",
             ]
         )
     lines.append(
-        f"  e({ACCELERATOR_ELECTRODE_OFFSET+3+ring_count}) {{ fill {{ within {{ {_box(axis_x,axis_y,grid2_z,shield_inner_width,shield_inner_width,cell_mm)} }} }} }}"
+        f"  e({ACCELERATOR_ELECTRODE_OFFSET+3+ring_count}) {{ fill {{ within {{ {_box(axis_x,axis_y,grid2_z,shield_inner_width,shield_inner_width,cell_z_mm)} }} }} }}"
     )
     lines.extend(["}", ""])
 
@@ -307,7 +320,7 @@ def compile_frontend(
         "schema_version": 1,
         "role": "rf_oatof_simion_single_flight_frontend_contract",
         "frame_id": "oatof_global",
-        "cell_mm_xyz": {"x": cell_mm, "y": cell_mm, "z": cell_mm},
+        "cell_mm_xyz": {"x": cell_x_mm, "y": cell_y_mm, "z": cell_z_mm},
         "dimensions": {"nx": nx, "ny": ny, "nz": nz},
         "instance_origin_mm": {"x": x_min, "y": y_min, "z": z_min},
         "source_exit_center_mm": {"x": exit_x, "y": center_y, "z": center_z},
@@ -346,10 +359,15 @@ def main() -> int:
     parser.add_argument("--connection", required=True, type=Path)
     parser.add_argument("--gem", required=True, type=Path)
     parser.add_argument("--contract", required=True, type=Path)
-    parser.add_argument("--cell-mm", type=float, default=0.2)
+    parser.add_argument("--cell-mm-x", type=float, default=0.2)
+    parser.add_argument("--cell-mm-y", type=float, default=0.2)
+    parser.add_argument("--cell-mm-z", type=float, default=0.2)
     args = parser.parse_args()
     gem, contract = compile_frontend(
-        _load(args.upstream), _load(args.oatof), _load(args.connection), cell_mm=args.cell_mm
+        _load(args.upstream),
+        _load(args.oatof),
+        _load(args.connection),
+        cell_mm_xyz={"x": args.cell_mm_x, "y": args.cell_mm_y, "z": args.cell_mm_z},
     )
     args.gem.parent.mkdir(parents=True, exist_ok=True)
     args.contract.parent.mkdir(parents=True, exist_ok=True)

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "role": "rf_oatof_resolution_attribution_counterfactual_profile",
-  "profile_id": "pre_pulse_phase_space_attribution_v3",
+  "profile_id": "pre_pulse_phase_space_attribution_v4",
   "source_event": "pre_pulse_state",
   "cohort_policy": "source_event_and_baseline_detector_intersection",
   "acceleration_axis": "global_z",
@@ -77,6 +77,10 @@
     {
       "arm_id": "collapse_acceleration_velocity_residual",
       "intervention": "project_global_vz_onto_observed_linear_global_z_global_vz_relation"
+    },
+    {
+      "arm_id": "ideal_acceleration_position_preserve_observed_linear_slope",
+      "intervention": "quantile_match_centered_global_z_then_project_global_vz_with_observed_linear_slope"
     },
     {
       "arm_id": "delay_pulse_one_eighth_rf_period",

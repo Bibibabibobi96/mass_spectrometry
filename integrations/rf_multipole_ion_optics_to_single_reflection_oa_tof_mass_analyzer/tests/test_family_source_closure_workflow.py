@@ -37,6 +37,10 @@ Z_ACCEPTANCE_CAMPAIGN_PATH = (
 GRID_CONVERGENCE_CAMPAIGN_PATH = (
     CONFIG_ROOT / "diagnostics" / "octupole_frontend_grid_convergence_n1000_campaign.json"
 )
+ACCELERATION_AXIS_GRID_CAMPAIGN_PATH = (
+    CONFIG_ROOT / "diagnostics"
+    / "octupole_frontend_acceleration_axis_grid_n1000_campaign.json"
+)
 IDEAL_FIELD_CAMPAIGN_PATH = (
     CONFIG_ROOT / "diagnostics" / "octupole_accelerator_ideal_field_n1000_campaign.json"
 )
@@ -94,8 +98,12 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             for row in campaign["experiments"]
         ]
         self.assertEqual(
-            [profiles[profile_id]["cell_mm"] for profile_id in selected],
-            [0.2, 0.15, 0.125],
+            [profiles[profile_id]["cell_mm_xyz"] for profile_id in selected],
+            [
+                {"x": 0.2, "y": 0.2, "z": 0.2},
+                {"x": 0.15, "y": 0.15, "z": 0.15},
+                {"x": 0.125, "y": 0.125, "z": 0.125},
+            ],
         )
         frozen_physics = [
             (
@@ -106,6 +114,37 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             for row in campaign["experiments"]
         ]
         self.assertTrue(all(item == frozen_physics[0] for item in frozen_physics))
+
+    def test_acceleration_axis_grid_campaign_changes_only_z_discretization(self) -> None:
+        campaign = load(ACCELERATION_AXIS_GRID_CAMPAIGN_PATH)
+        validate_schema(
+            campaign, "rf_multipole_oatof_experiment_campaign.schema.json"
+        )
+        configuration = load(CONFIG_ROOT / "simion_single_flight.json")
+        profiles = {
+            item["profile_id"]: item
+            for item in configuration["frontend_grid_profiles"]
+        }
+        rows = campaign["experiments"]
+        cells = [
+            profiles[row["single_flight_frontend_grid_profile_id"]]["cell_mm_xyz"]
+            for row in rows
+        ]
+        self.assertEqual(cells, [
+            {"x": 0.2, "y": 0.2, "z": 0.1},
+            {"x": 0.2, "y": 0.2, "z": 0.05},
+        ])
+        self.assertTrue(all("single_flight_design_overrides" not in row for row in rows))
+        frozen_physics = [
+            (
+                row["single_flight_layout_profile_id"],
+                row["single_flight_particle_source"],
+                row["source"],
+                row["single_flight_design_reference"],
+            )
+            for row in rows
+        ]
+        self.assertEqual(frozen_physics[0], frozen_physics[1])
 
     def test_unknown_frontend_grid_profile_is_rejected_before_execution(self) -> None:
         campaign = load(GRID_CONVERGENCE_CAMPAIGN_PATH)
@@ -128,6 +167,46 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                     resolved_output=root / "resolved.json",
                     plan_output=root / "plan.json",
                 )
+
+    def test_pulse_offset_is_a_governed_campaign_value_with_zero_default(self) -> None:
+        campaign = load(GRID_CONVERGENCE_CAMPAIGN_PATH)
+        experiment = campaign["experiments"][0]
+        source_run = (
+            REPO_ROOT.parent / "artifacts/projects/rf_octupole_ion_optics/runs"
+            / experiment["single_flight_design_reference"]["run_id"]
+        )
+        if not source_run.is_dir():
+            self.skipTest("local single-flight design reference is unavailable")
+        experiment["single_flight_pulse_offset_rf_periods"] = -0.125
+        validate_schema(
+            campaign, "rf_multipole_oatof_experiment_campaign.schema.json"
+        )
+        with tempfile.TemporaryDirectory(dir=CONFIG_ROOT) as config_directory, \
+                tempfile.TemporaryDirectory(
+                    dir=REPO_ROOT.parent / "artifacts/projects/rf_octupole_ion_optics"
+                ) as output_directory:
+            campaign_path = Path(config_directory) / "campaign.json"
+            write_json(campaign_path, campaign)
+            output = Path(output_directory)
+            prepare_family_source_closure(
+                repo_root=REPO_ROOT,
+                profile_registry_path=PROFILE_REGISTRY,
+                adapter_registry_path=ADAPTER_REGISTRY,
+                campaign_path=campaign_path,
+                experiment_id=experiment["experiment_id"],
+                resolved_output=output / "resolved.json",
+                plan_output=output / "plan.json",
+            )
+            schedule = load(output / "resolved_single_flight_pulse_schedule.json")
+            self.assertEqual(schedule["pulse_offset_rf_periods"], -0.125)
+            self.assertLess(
+                schedule["derived_pulse_time_us"],
+                schedule["base_derived_pulse_time_us"],
+            )
+            self.assertAlmostEqual(
+                schedule["base_predicted_centroid_error_x_mm"], 0.0, places=9
+            )
+            self.assertNotEqual(schedule["predicted_centroid_error_x_mm"], 0.0)
 
     def test_single_flight_design_overrides_are_optional_contract_data(self) -> None:
         default_campaign = load(SINGLE_FLIGHT_CAMPAIGN_PATH)

@@ -88,11 +88,11 @@ class SingleFlightFrontendTests(unittest.TestCase):
                 "full_radial_enclosure": True,
                 "shared_ground_electrode_id": 9,
                 "aperture_discretization": {
-                    "schema_version": 1,
+                    "schema_version": 2,
                     "role": "simion_rectangular_aperture_discretization",
                     "mechanical_width_mm": 1.0,
                     "mechanical_height_mm": 0.9,
-                    "cell_mm": 0.2,
+                    "cell_mm_xyz": {"x": 0.2, "y": 0.2, "z": 0.2},
                     "boolean_boundary_policy": "exclude_shape_inside_or_on_v1",
                     "numerical_carve_width_mm": 1.0,
                     "numerical_carve_height_mm": 0.9,
@@ -187,11 +187,11 @@ class SingleFlightFrontendTests(unittest.TestCase):
         self.assertEqual(
             contract["junction_enclosure"]["aperture_discretization"],
             {
-                "schema_version": 1,
+                "schema_version": 2,
                 "role": "simion_rectangular_aperture_discretization",
                 "mechanical_width_mm": 0.5,
                 "mechanical_height_mm": 0.2,
-                "cell_mm": 0.2,
+                "cell_mm_xyz": {"x": 0.2, "y": 0.2, "z": 0.2},
                 "boolean_boundary_policy": "exclude_shape_inside_or_on_v1",
                 "numerical_carve_width_mm": 0.5,
                 "numerical_carve_height_mm": 0.2,
@@ -228,6 +228,37 @@ class SingleFlightFrontendTests(unittest.TestCase):
         connection["transition_aperture"]["full_width_mm"] = 0.5
         with self.assertRaisesRegex(ValueError, "requires the governed grounded reducer"):
             compile_frontend(self.upstream, self.oatof, connection)
+
+    def test_acceleration_axis_grid_can_be_refined_without_transverse_refinement(self) -> None:
+        baseline_gem, baseline = compile_frontend(
+            self.upstream, self.oatof, self.connection
+        )
+        refined_gem, refined = compile_frontend(
+            self.upstream,
+            self.oatof,
+            self.connection,
+            cell_mm_xyz={"x": 0.2, "y": 0.2, "z": 0.05},
+        )
+        self.assertEqual(refined["cell_mm_xyz"], {"x": 0.2, "y": 0.2, "z": 0.05})
+        self.assertEqual(refined["dimensions"]["nx"], baseline["dimensions"]["nx"])
+        self.assertEqual(refined["dimensions"]["ny"], baseline["dimensions"]["ny"])
+        self.assertGreater(refined["dimensions"]["nz"], 3 * baseline["dimensions"]["nz"])
+        self.assertIn(",0.2,0.2,0.05,surface=fractional)", refined_gem)
+        self.assertNotEqual(refined_gem, baseline_gem)
+
+    def test_rejects_incomplete_or_nonpositive_axis_grid(self) -> None:
+        for cells in (
+            {"x": 0.2, "y": 0.2},
+            {"x": 0.2, "y": 0.2, "z": 0.0},
+        ):
+            with self.subTest(cells=cells):
+                with self.assertRaisesRegex(ValueError, "cell"):
+                    compile_frontend(
+                        self.upstream,
+                        self.oatof,
+                        self.connection,
+                        cell_mm_xyz=cells,
+                    )
 
     def test_rejects_gap_that_disagrees_with_registration(self) -> None:
         connection = json.loads(json.dumps(self.connection))

@@ -141,7 +141,20 @@ def derive_pulse_schedule(
     resolved_connection: dict[str, Any],
     geometry: dict[str, Any],
     profile: dict[str, Any],
+    *,
+    pulse_offset_rf_periods: float = 0.0,
+    rf_frequency_hz: float | None = None,
 ) -> dict[str, Any]:
+    if not math.isfinite(pulse_offset_rf_periods) or not (
+        -0.5 <= pulse_offset_rf_periods <= 0.5
+    ):
+        raise ContractError("single-flight pulse RF-period offset is outside contract")
+    if pulse_offset_rf_periods != 0.0 and (
+        rf_frequency_hz is None
+        or not math.isfinite(rf_frequency_hz)
+        or rf_frequency_hz <= 0.0
+    ):
+        raise ContractError("pulse RF-period offset requires a positive RF frequency")
     with state_path.open(encoding="utf-8-sig", newline="") as handle:
         rows = [
             row for row in csv.DictReader(handle)
@@ -191,14 +204,27 @@ def derive_pulse_schedule(
     ) / len(cohort)
     target_x = float(geometry["particle_source"]["center_x_mm"])
     pulse_time = (1000.0 * (target_x - center[0]) + mean_vx_t) / mean_vx
+    base_pulse_time = pulse_time
+    base_predicted = [
+        center[0] + float(item["vx_m_s"]) *
+        (base_pulse_time - float(item["time_us"])) / 1000.0
+        for item in cohort
+    ]
+    base_centroid_error = sum(base_predicted) / len(base_predicted) - target_x
+    if not math.isclose(base_centroid_error, 0.0, rel_tol=0, abs_tol=1e-9):
+        raise ContractError("derived single-flight pulse does not center the cohort")
+    pulse_offset_us = (
+        pulse_offset_rf_periods * 1.0e6 / float(rf_frequency_hz)
+        if pulse_offset_rf_periods != 0.0
+        else 0.0
+    )
+    pulse_time += pulse_offset_us
     predicted = [
         center[0] + float(item["vx_m_s"]) *
         (pulse_time - float(item["time_us"])) / 1000.0
         for item in cohort
     ]
     centroid_error = sum(predicted) / len(predicted) - target_x
-    if not math.isclose(centroid_error, 0.0, rel_tol=0, abs_tol=1e-9):
-        raise ContractError("derived single-flight pulse does not center the cohort")
     return {
         "schema_version": 1,
         "role": "rf_oatof_single_flight_multipole_handoff_pulse_schedule",
@@ -216,6 +242,10 @@ def derive_pulse_schedule(
         "mean_kinetic_energy_eV": sum(float(item["energy_eV"]) for item in cohort) / len(cohort),
         "target_centroid_x_mm": target_x,
         "entry_surface_x_mm": center[0],
+        "base_derived_pulse_time_us": base_pulse_time,
+        "base_predicted_centroid_error_x_mm": base_centroid_error,
+        "pulse_offset_rf_periods": pulse_offset_rf_periods,
+        "pulse_offset_us": pulse_offset_us,
         "derived_pulse_time_us": pulse_time,
         "pulse_width_us": 1.0,
         "predicted_centroid_error_x_mm": centroid_error,

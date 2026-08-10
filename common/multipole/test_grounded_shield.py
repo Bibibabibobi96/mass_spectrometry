@@ -32,7 +32,7 @@ class GroundedShieldTests(unittest.TestCase):
             inner_radius_mm=20.276,
             aperture_width_mm=1.0,
             aperture_height_mm=0.9,
-            cell_mm=0.2,
+            cell_mm_xyz={"x": 0.2, "y": 0.2, "z": 0.2},
             pa_origin_y_mm=-21.2,
             pa_origin_z_mm=-39.7,
         )
@@ -56,7 +56,7 @@ class GroundedShieldTests(unittest.TestCase):
             inner_radius_mm=20.276,
             aperture_width_mm=0.5,
             aperture_height_mm=0.2,
-            cell_mm=0.2,
+            cell_mm_xyz={"x": 0.2, "y": 0.2, "z": 0.2},
             pa_origin_y_mm=-2.0,
             pa_origin_z_mm=-20.5,
         )
@@ -100,7 +100,7 @@ class GroundedShieldTests(unittest.TestCase):
             "center_z_mm": -18.4,
             "outer_radius_mm": 20.776,
             "inner_radius_mm": 20.276,
-            "cell_mm": 0.2,
+            "cell_mm_xyz": {"x": 0.2, "y": 0.2, "z": 0.2},
             "pa_origin_y_mm": -2.0,
             "pa_origin_z_mm": -20.5,
         }

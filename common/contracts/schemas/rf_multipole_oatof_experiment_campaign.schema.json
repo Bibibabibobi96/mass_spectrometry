@@ -59,6 +59,11 @@
         "single_flight_layout_profile_id": {"$ref": "#/$defs/id"},
         "single_flight_frontend_grid_profile_id": {"$ref": "#/$defs/id"},
         "single_flight_accelerator_field_profile_id": {"$ref": "#/$defs/id"},
+        "single_flight_pulse_offset_rf_periods": {
+          "type": "number",
+          "minimum": -0.5,
+          "maximum": 0.5
+        },
         "single_flight_design_overrides": {
           "type": "array",
           "minItems": 1,

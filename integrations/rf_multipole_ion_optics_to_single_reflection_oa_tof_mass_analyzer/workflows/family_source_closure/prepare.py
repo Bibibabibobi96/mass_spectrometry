@@ -263,6 +263,11 @@ def prepare_family_source_closure(
     execution_strategy = experiment.get(
         "execution_strategy", "staged_three_stage"
     )
+    pulse_offset_rf_periods = float(
+        experiment.get("single_flight_pulse_offset_rf_periods", 0.0)
+    )
+    if pulse_offset_rf_periods != 0.0 and execution_strategy != "simion_single_flight":
+        raise ContractError("pulse RF-period offsets require SIMION single flight")
     frontend_grid_profile_id = experiment.get(
         "single_flight_frontend_grid_profile_id"
     )
@@ -586,6 +591,10 @@ def prepare_family_source_closure(
         schedule = derive_pulse_schedule(
             design_evidence["state_path"], _load(resolved_path), _load(layout_files["geometry"]),
             layout_profile,
+            pulse_offset_rf_periods=pulse_offset_rf_periods,
+            rf_frequency_hz=float(
+                design_evidence["resolved_design"]["drive"]["frequency_Hz"]
+            ),
         )
         schedule_path = plan_output.with_name("resolved_single_flight_pulse_schedule.json")
         schedule_path.write_text(json.dumps(schedule, indent=2) + "\n", encoding="utf-8")

@@ -134,6 +134,7 @@ def _validate_profile(profile: dict[str, Any]) -> list[str]:
         {"arm_id": "observed_positions_formal_energy_observed_directions", "intervention": "preserve_observed_positions_and_directions_apply_formal_energy"},
         {"arm_id": "ideal_acceleration_position_remove_covariance", "intervention": "quantile_match_centered_global_z_then_remove_linear_global_z_global_vz_covariance"},
         {"arm_id": "collapse_acceleration_velocity_residual", "intervention": "project_global_vz_onto_observed_linear_global_z_global_vz_relation"},
+        {"arm_id": "ideal_acceleration_position_preserve_observed_linear_slope", "intervention": "quantile_match_centered_global_z_then_project_global_vz_with_observed_linear_slope"},
         {"arm_id": "delay_pulse_one_eighth_rf_period", "intervention": "delay_pulse_from_frozen_pre_pulse_state", "pulse_delay_rf_periods": 0.125},
         {"arm_id": "delay_pulse_one_quarter_rf_period", "intervention": "delay_pulse_from_frozen_pre_pulse_state", "pulse_delay_rf_periods": 0.25},
         {"arm_id": "collapsed_acceleration_phase_space_upper_bound", "intervention": "set_global_z_and_global_vz_to_cohort_means"},
@@ -190,6 +191,22 @@ def _collapse_linear_residual(z: np.ndarray, vz: np.ndarray) -> np.ndarray:
     mean_vz = float(np.mean(vz))
     beta = float(np.dot(centered_z, vz - mean_vz) / denominator)
     return mean_vz + beta * centered_z
+
+
+def _project_observed_linear_slope(
+    observed_z: np.ndarray,
+    observed_vz: np.ndarray,
+    target_z: np.ndarray,
+) -> np.ndarray:
+    centered_observed_z = observed_z - np.mean(observed_z)
+    denominator = float(np.dot(centered_observed_z, centered_observed_z))
+    if denominator <= 0:
+        raise ValueError("acceleration-position variance must be positive")
+    mean_vz = float(np.mean(observed_vz))
+    beta = float(
+        np.dot(centered_observed_z, observed_vz - mean_vz) / denominator
+    )
+    return mean_vz + beta * (target_z - np.mean(target_z))
 
 
 def _cohort(
@@ -341,6 +358,7 @@ def _apply_arm(
     if arm_id in {
         "ideal_acceleration_position",
         "ideal_acceleration_position_remove_covariance",
+        "ideal_acceleration_position_preserve_observed_linear_slope",
     }:
         result[:, 3] = _quantile_match_centered(result[:, 3], ideal["z"])
     if arm_id == "ideal_transverse_positions":
@@ -416,6 +434,10 @@ def _apply_arm(
         result[:, 4] = _speed_for_energy(energies, float(observed[0, 7]))
     if arm_id == "collapse_acceleration_velocity_residual":
         result[:, 6] = _collapse_linear_residual(result[:, 3], result[:, 6])
+    if arm_id == "ideal_acceleration_position_preserve_observed_linear_slope":
+        result[:, 6] = _project_observed_linear_slope(
+            observed[:, 3], observed[:, 6], result[:, 3]
+        )
     if arm_id == "collapsed_acceleration_phase_space_upper_bound":
         result[:, 3] = float(np.mean(result[:, 3]))
         result[:, 6] = float(np.mean(result[:, 6]))
@@ -433,9 +455,17 @@ def prepare(
     charge_state: int,
     rf_frequency_hz: float | None = None,
     execution_batch_count: int = 5,
+    selected_arm_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     profile = _load_json(profile_path)
-    arm_ids = _validate_profile(profile)
+    profile_arm_ids = _validate_profile(profile)
+    arm_ids = profile_arm_ids if selected_arm_ids is None else selected_arm_ids
+    if not arm_ids:
+        raise ValueError("selected resolution-attribution arms cannot be empty")
+    if len(arm_ids) != len(set(arm_ids)):
+        raise ValueError("selected resolution-attribution arms must be unique")
+    if any(arm_id not in profile_arm_ids for arm_id in arm_ids):
+        raise ValueError("selected resolution-attribution arm is unknown")
     source_ids, observed, mother_sample_count = _cohort(
         checkpoints_path, mass_amu, charge_state
     )
@@ -594,12 +624,27 @@ def summarize(
     logs_dir: Path,
     output_dir: Path,
     baseline_clock_basis: str = "legacy_relative_time",
+    reference_arm_id: str | None = None,
 ) -> dict[str, Any]:
     profile = _load_json(profile_path)
-    arm_ids = _validate_profile(profile)
+    profile_arm_ids = _validate_profile(profile)
     prepared = _load_json(prepared_path)
     if prepared.get("role") != "rf_oatof_resolution_attribution_prepared_arms":
         raise ValueError("prepared counterfactual identity differs")
+    arm_ids = [str(arm["arm_id"]) for arm in prepared.get("arms", [])]
+    if (
+        not arm_ids
+        or len(arm_ids) != len(set(arm_ids))
+        or any(arm_id not in profile_arm_ids for arm_id in arm_ids)
+    ):
+        raise ValueError("prepared counterfactual arm selection differs")
+    reference_arm_id = reference_arm_id or (
+        "observed_restart_control"
+        if "observed_restart_control" in arm_ids
+        else arm_ids[0]
+    )
+    if reference_arm_id not in arm_ids:
+        raise ValueError("resolution-attribution reference arm is not selected")
     particles = int(prepared["paired_cohort_particles"])
     mass_amu = float(prepared["mass_amu"])
     source_dir = prepared_path.parent
@@ -678,33 +723,38 @@ def summarize(
         writer.writeheader()
         writer.writerows(checkpoint_rows)
     metric_by_id = {item["arm_id"]: item for item in metrics}
-    control = metric_by_id["observed_restart_control"]
-    control_detector = detector_by_arm["observed_restart_control"]
+    reference = metric_by_id[reference_arm_id]
+    reference_detector = detector_by_arm[reference_arm_id]
     comparisons: list[dict[str, Any]] = []
     for arm_id in arm_ids:
         item = metric_by_id[arm_id]
-        common_ids = sorted(set(control_detector) & set(detector_by_arm[arm_id]))
+        common_ids = sorted(set(reference_detector) & set(detector_by_arm[arm_id]))
         paired_delta = np.asarray(
-            [detector_by_arm[arm_id][pid] - control_detector[pid] for pid in common_ids]
+            [
+                detector_by_arm[arm_id][pid] - reference_detector[pid]
+                for pid in common_ids
+            ]
         )
+        centered_delta = paired_delta - np.mean(paired_delta) if paired_delta.size else paired_delta
         item_peak = item["peak"]
-        control_peak = control["peak"]
+        reference_peak = reference["peak"]
         comparisons.append(
             {
                 "arm_id": arm_id,
-                "common_detector_particles_vs_restart_control": len(common_ids),
-                "detector_particle_delta_vs_restart_control": item["detector_particles"]
-                - control["detector_particles"],
-                "direct_fwhm_change_pct_vs_restart_control": 100.0
+                "reference_arm_id": reference_arm_id,
+                "common_detector_particles_vs_reference": len(common_ids),
+                "detector_particle_delta_vs_reference": item["detector_particles"]
+                - reference["detector_particles"],
+                "direct_fwhm_change_pct_vs_reference": 100.0
                 * (
                     item_peak["direct_fwhm_tof_ns"]
-                    / control_peak["direct_fwhm_tof_ns"]
+                    / reference_peak["direct_fwhm_tof_ns"]
                     - 1.0
                 ) if item_peak is not None else None,
-                "resolution_change_pct_vs_restart_control": 100.0
+                "resolution_change_pct_vs_reference": 100.0
                 * (
                     item_peak["mass_resolution"]
-                    / control_peak["mass_resolution"]
+                    / reference_peak["mass_resolution"]
                     - 1.0
                 ) if item_peak is not None else None,
                 "paired_detector_time_mean_delta_ns": float(np.mean(paired_delta) * 1000.0)
@@ -715,24 +765,30 @@ def summarize(
                 )
                 if paired_delta.size
                 else None,
+                "paired_detector_time_centered_rms_delta_ns": float(
+                    math.sqrt(float(np.mean(np.square(centered_delta)))) * 1000.0
+                )
+                if centered_delta.size
+                else None,
             }
         )
-    baseline_common = sorted(set(control_detector) & set(baseline_detector))
+    baseline_common = sorted(set(reference_detector) & set(baseline_detector))
     baseline_times = np.asarray([baseline_detector[pid] for pid in baseline_common])
     baseline_peak, _ = compute_peak_metrics(baseline_times, mass_amu)
     restart_delta = np.asarray(
-        [control_detector[pid] - baseline_detector[pid] for pid in baseline_common]
+        [reference_detector[pid] - baseline_detector[pid] for pid in baseline_common]
     )
     summary = {
-        "schema_version": 1,
+        "schema_version": 2,
         "role": "rf_oatof_resolution_attribution_counterfactual_summary",
         "status": "success",
         "claim_class": "CONTROLLED_COUNTERFACTUAL_DIAGNOSTIC_ONLY",
         "claim_limit": profile["claim_limit"],
         "profile_id": profile["profile_id"],
+        "reference_arm_id": reference_arm_id,
         "paired_cohort_particles": particles,
         "baseline_continuous_peak": baseline_peak,
-        "restart_control": {
+        "reference_vs_baseline": {
             "common_detector_particles": len(baseline_common),
             "paired_detector_time_mean_delta_ns": float(np.mean(restart_delta) * 1000.0),
             "paired_detector_time_rms_delta_ns": float(
@@ -740,7 +796,7 @@ def summarize(
             ),
             "direct_fwhm_change_pct": 100.0
             * (
-                control["peak"]["direct_fwhm_tof_ns"]
+                reference["peak"]["direct_fwhm_tof_ns"]
                 / baseline_peak["direct_fwhm_tof_ns"]
                 - 1.0
             ),
@@ -769,12 +825,14 @@ def main() -> int:
     prepare_parser.add_argument("--charge-state", required=True, type=int)
     prepare_parser.add_argument("--rf-frequency-hz", required=True, type=float)
     prepare_parser.add_argument("--execution-batch-count", type=int, default=5)
+    prepare_parser.add_argument("--arm-id", action="append", dest="selected_arm_ids")
     summarize_parser = subparsers.add_parser("summarize")
     summarize_parser.add_argument("--profile", required=True, type=Path)
     summarize_parser.add_argument("--prepared", required=True, type=Path)
     summarize_parser.add_argument("--baseline-checkpoints", required=True, type=Path)
     summarize_parser.add_argument("--logs-dir", required=True, type=Path)
     summarize_parser.add_argument("--output-dir", required=True, type=Path)
+    summarize_parser.add_argument("--reference-arm-id")
     summarize_parser.add_argument(
         "--baseline-clock-basis",
         choices=("legacy_relative_time", "absolute_birth_time"),
@@ -793,6 +851,7 @@ def main() -> int:
             args.charge_state,
             args.rf_frequency_hz,
             args.execution_batch_count,
+            args.selected_arm_ids,
         )
         print(
             "RESOLUTION_ATTRIBUTION_PREPARE=PASS "
@@ -806,6 +865,7 @@ def main() -> int:
             args.logs_dir,
             args.output_dir,
             args.baseline_clock_basis,
+            args.reference_arm_id,
         )
         print(
             "RESOLUTION_ATTRIBUTION_SUMMARY=PASS "
