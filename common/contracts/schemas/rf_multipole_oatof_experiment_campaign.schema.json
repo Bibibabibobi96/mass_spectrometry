@@ -57,6 +57,8 @@
         "experiment_id": {"$ref": "#/$defs/id"},
         "execution_strategy": {"enum": ["staged_three_stage", "simion_single_flight"]},
         "single_flight_layout_profile_id": {"$ref": "#/$defs/id"},
+        "single_flight_frontend_grid_profile_id": {"$ref": "#/$defs/id"},
+        "single_flight_accelerator_field_profile_id": {"$ref": "#/$defs/id"},
         "single_flight_design_overrides": {
           "type": "array",
           "minItems": 1,

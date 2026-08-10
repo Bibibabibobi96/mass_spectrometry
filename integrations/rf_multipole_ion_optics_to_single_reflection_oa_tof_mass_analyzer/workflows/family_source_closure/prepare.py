@@ -263,6 +263,46 @@ def prepare_family_source_closure(
     execution_strategy = experiment.get(
         "execution_strategy", "staged_three_stage"
     )
+    frontend_grid_profile_id = experiment.get(
+        "single_flight_frontend_grid_profile_id"
+    )
+    if frontend_grid_profile_id is not None:
+        if execution_strategy != "simion_single_flight":
+            raise ContractError(
+                "single-flight frontend grid profiles require SIMION single flight"
+            )
+        numerical_configuration = _load(
+            root / "integrations" / INTEGRATION_ID / "config" /
+            "simion_single_flight.json"
+        )
+        grid_profiles = [
+            item for item in numerical_configuration["frontend_grid_profiles"]
+            if item["profile_id"] == frontend_grid_profile_id
+        ]
+        if len(grid_profiles) != 1:
+            raise ContractError(
+                "single-flight frontend grid profile must resolve exactly once"
+            )
+    accelerator_field_profile_id = experiment.get(
+        "single_flight_accelerator_field_profile_id"
+    )
+    if accelerator_field_profile_id is not None:
+        if execution_strategy != "simion_single_flight":
+            raise ContractError(
+                "single-flight accelerator field profiles require SIMION single flight"
+            )
+        numerical_configuration = _load(
+            root / "integrations" / INTEGRATION_ID / "config" /
+            "simion_single_flight.json"
+        )
+        field_profiles = [
+            item for item in numerical_configuration["accelerator_field_profiles"]
+            if item["profile_id"] == accelerator_field_profile_id
+        ]
+        if len(field_profiles) != 1:
+            raise ContractError(
+                "single-flight accelerator field profile must resolve exactly once"
+            )
     profile_registry = load_connection_profile_registry(profile_registry_path)
     profile = _unique_profile(profile_registry, experiment["connection_profile_id"])
     expected_project_id = profile["upstream"]["project_id"]
@@ -586,6 +626,12 @@ def prepare_family_source_closure(
                 "resolved_single_flight_pulse_schedule_filename=resolved_single_flight_pulse_schedule.json",
                 f"resolved_single_flight_pulse_schedule_sha256={file_sha256(layout_files['schedule'])}",
                 f"single_flight_layout_registry_sha256={repository_text_sha256(layout_files['registry'])}",
+            ]) + ([] if "single_flight_frontend_grid_profile_id" not in experiment else [
+                "single_flight_frontend_grid_profile_id="
+                + experiment["single_flight_frontend_grid_profile_id"],
+            ]) + ([] if "single_flight_accelerator_field_profile_id" not in experiment else [
+                "single_flight_accelerator_field_profile_id="
+                + experiment["single_flight_accelerator_field_profile_id"],
             ]),
         }
     ]

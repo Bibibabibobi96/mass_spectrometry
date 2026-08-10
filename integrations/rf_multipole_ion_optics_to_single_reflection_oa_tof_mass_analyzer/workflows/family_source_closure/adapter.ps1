@@ -78,6 +78,12 @@ $sourceOverrideArgumentNames = @(
 if ($frozenArguments.ContainsKey('single_flight_particle_source_path')) {
   $expectedArguments += $sourceOverrideArgumentNames
 }
+if ($frozenArguments.ContainsKey('single_flight_frontend_grid_profile_id')) {
+  $expectedArguments += 'single_flight_frontend_grid_profile_id'
+}
+if ($frozenArguments.ContainsKey('single_flight_accelerator_field_profile_id')) {
+  $expectedArguments += 'single_flight_accelerator_field_profile_id'
+}
 if (@($frozenArguments.Keys | Where-Object {
       $_ -notin $expectedArguments
     }).Count -ne 0 -or
@@ -371,6 +377,22 @@ if ($executionStrategy -eq 'simion_single_flight') {
     $runnerArguments.OatofResolvedGeometry = $resolvedOatofGeometryPath
     $runnerArguments.PulseSchedule = $resolvedPulseSchedulePath
     $runnerArguments.LayoutProfileId = [string]$frozenArguments.layout_profile_id
+  }
+  if ($frozenArguments.ContainsKey('single_flight_frontend_grid_profile_id')) {
+    if ([string]$experiment.single_flight_frontend_grid_profile_id -ne
+        [string]$frozenArguments.single_flight_frontend_grid_profile_id) {
+      throw 'Single-flight frontend grid profile changed after preparation.'
+    }
+    $runnerArguments.FrontendGridProfileId =
+      [string]$frozenArguments.single_flight_frontend_grid_profile_id
+  }
+  if ($frozenArguments.ContainsKey('single_flight_accelerator_field_profile_id')) {
+    if ([string]$experiment.single_flight_accelerator_field_profile_id -ne
+        [string]$frozenArguments.single_flight_accelerator_field_profile_id) {
+      throw 'Single-flight accelerator field profile changed after preparation.'
+    }
+    $runnerArguments.AcceleratorFieldProfileId =
+      [string]$frozenArguments.single_flight_accelerator_field_profile_id
   }
   if ($null -ne $singleFlightParticleSourcePath) {
     $runnerArguments.MotherParticleSource = $singleFlightParticleSourcePath

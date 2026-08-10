@@ -13,6 +13,8 @@ param(
   [string]$OatofResolvedGeometry = '',
   [string]$PulseSchedule = '',
   [string]$LayoutProfileId = '',
+  [string]$FrontendGridProfileId = '',
+  [string]$AcceleratorFieldProfileId = '',
   [string]$MotherParticleSource = '',
   [string]$MotherParticleSourceSha256 = '',
   [int]$MotherParticleCount = 0,
@@ -69,11 +71,33 @@ try {
   $configuration = Join-Path $package.input_dir 'simion_single_flight.json'
   Copy-RfStableFile -SourceRunRoot $repoRoot -SourcePath $configurationSource -Destination $configuration -Role 'single-flight configuration' | Out-Null
   $settings = Get-Content -LiteralPath $configuration -Raw -Encoding UTF8 | ConvertFrom-Json
+  $selectedGridProfileId = if ([string]::IsNullOrWhiteSpace($FrontendGridProfileId)) {
+    [string]$settings.default_frontend_grid_profile_id
+  } else { $FrontendGridProfileId }
+  $gridProfiles = @($settings.frontend_grid_profiles | Where-Object {
+    [string]$_.profile_id -eq $selectedGridProfileId
+  })
   if ($settings.role -ne 'rf_oatof_simion_single_flight_configuration' -or
-      [double]$settings.cell_mm -le 0 -or
+      $gridProfiles.Count -ne 1 -or
+      [double]$gridProfiles[0].cell_mm -le 0 -or
+      [int]$gridProfiles[0].max_parallel_batches -lt 1 -or
+      [int]$gridProfiles[0].max_parallel_batches -gt 5 -or
       [string]$settings.clock_basis -notin @('legacy_relative_time','absolute_birth_time')) {
     throw 'Single-flight numerical configuration is invalid.'
   }
+  $frontendCellMm = [double]$gridProfiles[0].cell_mm
+  $maxParallelBatches = [int]$gridProfiles[0].max_parallel_batches
+  $selectedFieldProfileId = if ([string]::IsNullOrWhiteSpace($AcceleratorFieldProfileId)) {
+    [string]$settings.default_accelerator_field_profile_id
+  } else { $AcceleratorFieldProfileId }
+  $fieldProfiles = @($settings.accelerator_field_profiles | Where-Object {
+    [string]$_.profile_id -eq $selectedFieldProfileId
+  })
+  if ($fieldProfiles.Count -ne 1 -or
+      [int]$fieldProfiles[0].single_flight_ideal_accel_enable -notin @(0,1)) {
+    throw 'Single-flight accelerator field profile is invalid.'
+  }
+  $idealAcceleratorEnable = [int]$fieldProfiles[0].single_flight_ideal_accel_enable
   $hasGovernedLayout = -not [string]::IsNullOrWhiteSpace($LayoutProfileId)
   if ($hasGovernedLayout -ne (
       -not [string]::IsNullOrWhiteSpace($OatofResolvedGeometry) -and
@@ -155,7 +179,7 @@ try {
     'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_frontend',
     '--upstream',$upstreamFrozen,'--oatof',$oatofGeometry,
     '--connection',$resolvedFrozen,'--gem',$frontendGem,'--contract',$frontendContract,
-    '--cell-mm',([string]$settings.cell_mm)) -Failure 'Single-flight frontend compilation failed.'
+    '--cell-mm',([string]$frontendCellMm)) -Failure 'Single-flight frontend compilation failed.'
   $frontendGeometry = Get-Content -LiteralPath $frontendContract -Raw -Encoding UTF8 |
     ConvertFrom-Json
   $apertureWidthMm = [double]$frontendGeometry.aperture.width_mm
@@ -384,7 +408,7 @@ try {
     schema_version=2; run_id=$RunId; project=$runtime.upstream_project_id; mode='rf_to_oatof_simion_single_flight'; project_root=$repoRoot
     inputs=[ordered]@{ configuration=$configuration; runtime_binding=$runtimeBindingFrozen; resolved_connection=$resolvedFrozen; resolved_source_contract=$sourceContractFrozen; upstream_resolved_design=$upstreamFrozen; oatof_resolved_geometry=$oatofGeometry; pulse_schedule=$pulseScheduleFrozen; resolved_integration_engineering_budget=$budget.frozen_budget; resolved_stage_resource_budget=$budget.stage_budget; mother_particle_source=$motherSource; initial_global_state=$globalSource; ion=$ion; frontend_gem=$frontendGem; frontend_contract=$frontendContract; frontend_aperture_topology_support=$apertureTopologySupport; frontend_aperture_topology_verifier=$apertureVerifier; program_metadata=$programMetadata; candidate_flight_tube_builder=$flightTubeBuilderFrozen; candidate_flight_tube_gem=$flightTubeGemFrozen; candidate_reflectron_builder=$reflectronBuilderFrozen; candidate_reflectron_gem=$reflectronGemFrozen }
     upstream_source_identity=$runtime.source_identity
-    parameters=[ordered]@{ connection_profile_id=$ConnectionProfileId; source_branch_id=$SourceBranchId; layout_profile_id=$(if($hasGovernedLayout){$LayoutProfileId}else{$null}); clock_basis=[string]$settings.clock_basis; launched_particle_count=$launched; particle_count=$launched; execution_batch_count=$(if($launched -ge [int]$settings.batching_policy.enabled_at_particle_count){[int]$settings.batching_policy.default_batch_count}else{1}); execution_batches_parallel=$(if($launched -ge [int]$settings.batching_policy.enabled_at_particle_count){[bool]$settings.batching_policy.parallel_after_cache_warmup}else{$false}); aperture_width_mm=$apertureWidthMm; aperture_height_mm=$apertureHeightMm; aperture_boolean_boundary_policy=[string]$apertureDiscretization.boolean_boundary_policy; aperture_grid_warnings=$apertureGridWarnings; frontend_open_aperture_column_count=[int]$apertureTopology.open_column_count; frontend_aperture_guard_electrode_check_passed=[bool]$apertureTopology.guard_electrode_check_passed; frontend_aperture_topology_report_sha256=(Get-FileHash -LiteralPath $apertureTopologyReport -Algorithm SHA256).Hash; rod_end_to_accelerator_shield_mm=1.0; surrounded_transition=$true; accelerator_axis_x_mm=[double]$oatofGeometryDocument.coordinate_convention.accelerator_axis_x; pulse_time_us=$pulseTimeUs; pulse_width_us=$pulseWidthUs; design_compilation=$(if($null -ne $layoutDerivation){$layoutDerivation.design_compilation}else{$null}); source_release_full_width_mm=[double]$oatofGeometryDocument.particle_source.size_z_mm; reflectron_stage2_length_mm=[double]$oatofGeometryDocument.geometry_mm.L_stage2; reflectron_midgrid_voltage_V=[double]$oatofGeometryDocument.electrodes_V.midgrid; reflectron_backplate_voltage_V=[double]$oatofGeometryDocument.electrodes_V.backplate; reflectron_pa0_sha256=(Get-FileHash -LiteralPath $reflectronPa0 -Algorithm SHA256).Hash; frontend_gem_sha256=$frontendHash; frontend_pa0_sha256=(Get-FileHash -LiteralPath $cachePa0 -Algorithm SHA256).Hash }
+    parameters=[ordered]@{ connection_profile_id=$ConnectionProfileId; source_branch_id=$SourceBranchId; layout_profile_id=$(if($hasGovernedLayout){$LayoutProfileId}else{$null}); frontend_grid_profile_id=$selectedGridProfileId; frontend_cell_mm=$frontendCellMm; accelerator_field_profile_id=$selectedFieldProfileId; single_flight_ideal_accel_enable=$idealAcceleratorEnable; max_parallel_batches=$maxParallelBatches; clock_basis=[string]$settings.clock_basis; launched_particle_count=$launched; particle_count=$launched; execution_batch_count=$(if($launched -ge [int]$settings.batching_policy.enabled_at_particle_count){[int]$settings.batching_policy.default_batch_count}else{1}); execution_batches_parallel=$(if($launched -ge [int]$settings.batching_policy.enabled_at_particle_count){[bool]$settings.batching_policy.parallel_after_cache_warmup}else{$false}); aperture_width_mm=$apertureWidthMm; aperture_height_mm=$apertureHeightMm; aperture_boolean_boundary_policy=[string]$apertureDiscretization.boolean_boundary_policy; aperture_grid_warnings=$apertureGridWarnings; frontend_open_aperture_column_count=[int]$apertureTopology.open_column_count; frontend_aperture_guard_electrode_check_passed=[bool]$apertureTopology.guard_electrode_check_passed; frontend_aperture_topology_report_sha256=(Get-FileHash -LiteralPath $apertureTopologyReport -Algorithm SHA256).Hash; rod_end_to_accelerator_shield_mm=1.0; surrounded_transition=$true; accelerator_axis_x_mm=[double]$oatofGeometryDocument.coordinate_convention.accelerator_axis_x; pulse_time_us=$pulseTimeUs; pulse_width_us=$pulseWidthUs; design_compilation=$(if($null -ne $layoutDerivation){$layoutDerivation.design_compilation}else{$null}); source_release_full_width_mm=[double]$oatofGeometryDocument.particle_source.size_z_mm; reflectron_stage2_length_mm=[double]$oatofGeometryDocument.geometry_mm.L_stage2; reflectron_midgrid_voltage_V=[double]$oatofGeometryDocument.electrodes_V.midgrid; reflectron_backplate_voltage_V=[double]$oatofGeometryDocument.electrodes_V.backplate; reflectron_pa0_sha256=(Get-FileHash -LiteralPath $reflectronPa0 -Algorithm SHA256).Hash; frontend_gem_sha256=$frontendHash; frontend_pa0_sha256=(Get-FileHash -LiteralPath $cachePa0 -Algorithm SHA256).Hash }
     artifact_retention=[ordered]@{policy_version=1;class='compact';reason=$null}; formal_gate_passed=$false
   }
   Write-RfJson -Path $package.run_config -Depth 10 -Value $runConfiguration
@@ -439,9 +463,11 @@ try {
   $oldOverride = $env:OATOF_ACCELERATOR_PA_OVERRIDE
   try {
     $env:OATOF_ACCELERATOR_PA_OVERRIDE = $cachePa0
-    $jobs = @()
-    foreach ($batch in $batchRecords) {
-      $payload = [pscustomobject]@{
+    for ($waveStart = 0; $waveStart -lt $batchRecords.Count; $waveStart += $maxParallelBatches) {
+      $waveEnd = [Math]::Min($waveStart + $maxParallelBatches - 1,$batchRecords.Count - 1)
+      $jobs = @()
+      foreach ($batch in @($batchRecords[$waveStart..$waveEnd])) {
+        $payload = [pscustomobject]@{
         support = Join-Path $repoRoot 'common\multipole\resource_budget_support.ps1'
         budget = $budget.stage_budget
         run_dir = $package.run_dir
@@ -460,41 +486,43 @@ try {
           '--adjustable','trajectory_log_enable=1',
           '--adjustable',("diagnostic_max_tof_us={0:R}" -f [double]$settings.maximum_time_of_flight_us),
           '--adjustable','handoff_pulse_mode=1',
+          '--adjustable',("sf_ideal_accel_enable={0}" -f $idealAcceleratorEnable),
           '--adjustable',("handoff_pulse_time_us={0:R}" -f $pulseTimeUs),
           '--adjustable',("handoff_pulse_width_us={0:R}" -f $pulseWidthUs),
           '--adjustable',("single_flight_rf_steps={0}" -f [int]$settings.rf_steps_per_period),
           (Join-Path $runtimeDir 'oatof_ideal_grounded.iob')
         )
       }
-      $jobs += Start-Job -ArgumentList $payload -ScriptBlock {
-        param($item)
-        . $item.support
-        $env:OATOF_ACCELERATOR_PA_OVERRIDE = $item.accelerator_pa
-        Invoke-ResourceBudgetedProcess `
-          -ResolvedBudgetPath $item.budget -RunDir $item.run_dir `
-          -UsagePath $item.usage -FilePath $item.executable `
-          -WorkingDirectory $item.working_directory `
-          -RedirectStandardOutput $item.stdout `
-          -RedirectStandardError $item.stderr `
-          -ArgumentList ([string[]]$item.arguments)
-      }
-    }
-    try {
-      foreach ($job in $jobs) {
-        $fly = Receive-Job -Job $job -Wait
-        if ($job.State -ne 'Completed' -or $null -eq $fly) {
-          throw 'Single-flight SIMION batch job failed.'
-        }
-        if ($fly.resource_budget_exceeded) {
-          $resourceBudgetExceeded = $true
-          throw 'Single-flight SIMION batch exceeded its resource budget.'
-        }
-        if ($fly.exit_code -ne 0) {
-          throw 'Single-flight SIMION batch failed.'
+        $jobs += Start-Job -ArgumentList $payload -ScriptBlock {
+          param($item)
+          . $item.support
+          $env:OATOF_ACCELERATOR_PA_OVERRIDE = $item.accelerator_pa
+          Invoke-ResourceBudgetedProcess `
+            -ResolvedBudgetPath $item.budget -RunDir $item.run_dir `
+            -UsagePath $item.usage -FilePath $item.executable `
+            -WorkingDirectory $item.working_directory `
+            -RedirectStandardOutput $item.stdout `
+            -RedirectStandardError $item.stderr `
+            -ArgumentList ([string[]]$item.arguments)
         }
       }
-    } finally {
-      $jobs | Remove-Job -Force -ErrorAction SilentlyContinue
+      try {
+        foreach ($job in $jobs) {
+          $fly = Receive-Job -Job $job -Wait
+          if ($job.State -ne 'Completed' -or $null -eq $fly) {
+            throw 'Single-flight SIMION batch job failed.'
+          }
+          if ($fly.resource_budget_exceeded) {
+            $resourceBudgetExceeded = $true
+            throw 'Single-flight SIMION batch exceeded its resource budget.'
+          }
+          if ($fly.exit_code -ne 0) {
+            throw 'Single-flight SIMION batch failed.'
+          }
+        }
+      } finally {
+        $jobs | Remove-Job -Force -ErrorAction SilentlyContinue
+      }
     }
   } finally { $env:OATOF_ACCELERATOR_PA_OVERRIDE = $oldOverride }
 

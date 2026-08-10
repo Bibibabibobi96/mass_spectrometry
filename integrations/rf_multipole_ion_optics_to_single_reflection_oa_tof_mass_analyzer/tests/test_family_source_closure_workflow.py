@@ -34,6 +34,12 @@ TERMINAL_DESIGN_REFERENCE_CAMPAIGN_PATH = (
 Z_ACCEPTANCE_CAMPAIGN_PATH = (
     CONFIG_ROOT / "diagnostics" / "octupole_z_acceptance_d1_4mm_n1000_campaign.json"
 )
+GRID_CONVERGENCE_CAMPAIGN_PATH = (
+    CONFIG_ROOT / "diagnostics" / "octupole_frontend_grid_convergence_n1000_campaign.json"
+)
+IDEAL_FIELD_CAMPAIGN_PATH = (
+    CONFIG_ROOT / "diagnostics" / "octupole_accelerator_ideal_field_n1000_campaign.json"
+)
 PROFILE_REGISTRY = CONFIG_ROOT / "connection_profiles.json"
 ADAPTER_REGISTRY = CONFIG_ROOT / "execution_adapter_profiles.json"
 
@@ -47,6 +53,82 @@ def write_json(path: Path, value: object) -> None:
 
 
 class FamilySourceClosureWorkflowTests(unittest.TestCase):
+    def test_ideal_accelerator_field_is_a_registered_counterfactual(self) -> None:
+        campaign = load(IDEAL_FIELD_CAMPAIGN_PATH)
+        validate_schema(
+            campaign, "rf_multipole_oatof_experiment_campaign.schema.json"
+        )
+        row = campaign["experiments"][0]
+        configuration = load(CONFIG_ROOT / "simion_single_flight.json")
+        profiles = {
+            item["profile_id"]: item
+            for item in configuration["accelerator_field_profiles"]
+        }
+        self.assertEqual(
+            configuration["default_accelerator_field_profile_id"],
+            "accelerator_real_pa",
+        )
+        selected = profiles[row["single_flight_accelerator_field_profile_id"]]
+        self.assertEqual(selected["single_flight_ideal_accel_enable"], 1)
+        self.assertEqual(
+            row["single_flight_frontend_grid_profile_id"],
+            "frontend_isotropic_0125",
+        )
+
+    def test_grid_convergence_campaign_uses_registered_single_variable_profiles(self) -> None:
+        campaign = load(GRID_CONVERGENCE_CAMPAIGN_PATH)
+        validate_schema(
+            campaign, "rf_multipole_oatof_experiment_campaign.schema.json"
+        )
+        configuration = load(CONFIG_ROOT / "simion_single_flight.json")
+        profiles = {
+            item["profile_id"]: item
+            for item in configuration["frontend_grid_profiles"]
+        }
+        self.assertEqual(
+            configuration["default_frontend_grid_profile_id"],
+            "frontend_isotropic_020",
+        )
+        selected = [
+            row["single_flight_frontend_grid_profile_id"]
+            for row in campaign["experiments"]
+        ]
+        self.assertEqual(
+            [profiles[profile_id]["cell_mm"] for profile_id in selected],
+            [0.2, 0.15, 0.125],
+        )
+        frozen_physics = [
+            (
+                row["single_flight_layout_profile_id"],
+                row["single_flight_design_overrides"],
+                row["single_flight_particle_source"],
+            )
+            for row in campaign["experiments"]
+        ]
+        self.assertTrue(all(item == frozen_physics[0] for item in frozen_physics))
+
+    def test_unknown_frontend_grid_profile_is_rejected_before_execution(self) -> None:
+        campaign = load(GRID_CONVERGENCE_CAMPAIGN_PATH)
+        campaign["experiments"][0][
+            "single_flight_frontend_grid_profile_id"
+        ] = "missing_grid_profile"
+        with tempfile.TemporaryDirectory(dir=CONFIG_ROOT) as directory:
+            root = Path(directory)
+            campaign_path = root / "campaign.json"
+            write_json(campaign_path, campaign)
+            with self.assertRaisesRegex(
+                ContractError, "grid profile must resolve exactly once"
+            ):
+                prepare_family_source_closure(
+                    repo_root=REPO_ROOT,
+                    profile_registry_path=PROFILE_REGISTRY,
+                    adapter_registry_path=ADAPTER_REGISTRY,
+                    campaign_path=campaign_path,
+                    experiment_id="octupole_frontend_grid_020_n1000",
+                    resolved_output=root / "resolved.json",
+                    plan_output=root / "plan.json",
+                )
+
     def test_single_flight_design_overrides_are_optional_contract_data(self) -> None:
         default_campaign = load(SINGLE_FLIGHT_CAMPAIGN_PATH)
         self.assertNotIn(

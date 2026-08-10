@@ -89,6 +89,11 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertIn("math.cos(single_flight_omega*instrument_time_us)", extension)
         self.assertIn("single_flight_terminate_after_pulse=1", extension)
         self.assertIn("instrument_time_us>=handoff_pulse_time_us then ion_splat=1", extension)
+        self.assertIn("adjustable sf_ideal_accel_enable=0", extension)
+        self.assertIn("single_flight_base_efield_adjust()", extension)
+        self.assertIn("sf_ideal_accel_enable==0 or ion_instance~=3", extension)
+        self.assertIn("math.abs(ion_px_mm-accelerator_axis_x_mm)>accelerator_bore_half_mm", extension)
+        self.assertIn("not single_flight_pulse_is_on() then return", extension)
 
     def test_birth_times_are_loaded_as_contiguous_instrument_times(self) -> None:
         import tempfile
