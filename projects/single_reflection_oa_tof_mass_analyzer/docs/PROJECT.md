@@ -21,14 +21,9 @@ resolved、分析和资产合同管理；实现细节见[`COMSOL.md`](COMSOL.md)
   解数组漂移；恢复后全Formal哈希与运行时门禁通过，四份Formal合同及既有资格身份未改变。SIMION活动
   入口现只运行manifest验证后的scratch副本，完整处置见
   [`history快照`](history/20260802__formal-simion-integrity-recovery.md)。
-- 当前Formal加速器为闭合屏蔽结构，没有RF注入侧孔。RF项目的S2/S3候选链没有修改本项目baseline、
-  MPH、SIMION包或CAD，也不构成整机Formal连接。
-- RF四、六、八极杆到本分析器的活动连接统一使用模式中性的屏蔽罩端面profile；`direct_mating_gap=0 mm`
-  表示不存在独立连接器间隙，杆末端到屏蔽罩外表面的物理净距仍为`1 mm`。当前campaign已跑通八极杆
-  单流程选择；新公共圆套筒+带孔法兰连接器与本项目屏蔽罩共用0 V，baseline、候选编译器和集成生成器
-  都拒绝非0 V屏蔽。本项目独立Formal PA不因该可选集成几何而改写。
-  分段加速与四极杆5 eV无加速两行N=100功能链；更早的四极杆0/1 mm迁移结果只作为历史证据。该结论
-  不授予连续相空间、收敛、分辨率或整机Formal资格，也未修改本项目Formal资产。
+- 当前Formal加速器为闭合屏蔽结构，没有RF注入侧孔。RF多极杆连接使用run-local组合几何，不修改
+  本项目baseline、MPH、SIMION包或CAD。连接策略、接地屏蔽、当前结果与资格边界只查
+  [integration当前文档](../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/INTEGRATION.md)。
 
 当前生命周期、capability与Formal asset状态均为`formal`。历史资产和旧结论只按其原始manifest
 身份保留，不能替代或改写当前release。
@@ -113,10 +108,9 @@ campaign receipt完整。两行SIMION均100/100命中；名义行/诊断行飞�
 表明midgrid电压对时间聚焦高度敏感，并支持保留理论名义值；它不含COMSOL粒子级比较、统计重复或数值
 收敛，仍是`candidate_accepted_not_promoted`，不构成Formal性能资格。
 
-跨项目2.2 mm理论源z全宽候选已用参数合同自动闭合反射器二级长度与电压，并在不修改Formal的前提下
-重建run-local反射器PA。N=1000连续SIMION传输保持948/1000，质量分辨率变化−0.30%，没有观察到
-实际性能收益；它只验证自动重构机制。完整参数、运行索引和声明边界见
-[`../../../docs/history/20260810__oatof-source-z22-auto-rebuild.md`](../../../docs/history/20260810__oatof-source-z22-auto-rebuild.md)。
+跨项目2.2 mm理论源宽候选只验证了变量合同、理论闭合和run-local PA自动重构；没有修改本项目Formal，
+也不改变Formal资格。完整结果只查
+[integration当前文档](../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/INTEGRATION.md)。
 
 ## 已知兼容边界
 

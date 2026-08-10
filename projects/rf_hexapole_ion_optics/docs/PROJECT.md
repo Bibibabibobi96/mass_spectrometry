@@ -60,11 +60,9 @@ fallback。已关闭的逐臂profile、预登记和专用测试不再位于活�
 屏蔽罩及包含外壳的端部组合电极已固定为0 V，设计变量不再开放屏蔽电位；后续连接oaTOF时由campaign
 显式选择公共接地圆套筒+带孔法兰profile。
 
-1. 出口准直筛选按[通用出口相空间方法](../../../docs/multipoles/exit_phase_space_control.md)执行：维持
-   `segmented_rod_axial_acceleration`的P0 RF基线，在固定总电位差和非变化合同下优化更直接控制出口
-   轴向场的分段电位分配或端部几何；
-   canonical handoff为主评价面，杆端只作边缘场诊断，terminal传输和损失作为硬约束。候选通过该筛选
-   后才运行完整oaTOF链。
+1. 按[通用出口相空间方法](../../../docs/multipoles/exit_phase_space_control.md)建立具名筛选campaign；
+   当前P0 RF基线在新合同批准前不变。关闭条件是冻结真实下游接受尺度、唯一变量、损失约束、共同
+   幸存者分析和相邻数值档。
 2. 使用当前12个runtime profile和声明式campaign入口完成真正需要的N=100/N=1000实验，不恢复一次性
    solver/mesh诊断profile。
 3. 以家族六指标判断下游可接受性，同时显式保留数值收敛未豁免状态。

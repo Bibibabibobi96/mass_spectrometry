@@ -61,7 +61,9 @@ RF多极杆离子光学→单次反射oa-TOF的活动实现由
 规定的项目端口、公共解析器和
 `rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer`实例承载。本项目required port描述
 对上游粒子、入口面、公共电位、场边界和时钟的接受要求。当前连接状态、oracle结论与资格边界只查
-[`docs/PROJECT.md`](docs/PROJECT.md)和对应integration文档，本入口不复制运行结论。
+[`docs/PROJECT.md`](docs/PROJECT.md)和
+[`integration当前文档`](../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/INTEGRATION.md)，
+本入口不复制运行结论。
 
 ## 目录职责
 

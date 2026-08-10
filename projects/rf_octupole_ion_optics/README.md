@@ -1,93 +1,44 @@
 # RF八极杆离子光学
 
-本项目是`rf_multipole_ion_optics`家族的独立八极杆设计线。当前机器状态、资格边界和未决事项以
-[`docs/PROJECT.md`](docs/PROJECT.md)为准；共享编译、typed operating mode、粒子状态及三模式发散方法
-以[`../../common/multipole/README.md`](../../common/multipole/README.md)为准。
+本项目是RF多极杆家族的八极杆设计线。当前参数、资格、有效结论和开放任务只以
+[`docs/PROJECT.md`](docs/PROJECT.md)为准；本页只负责导航。
 
-## 固定阅读顺序
+## 阅读顺序
 
 1. 仓库根[`README.md`](../../README.md)。
 2. 本项目[`docs/PROJECT.md`](docs/PROJECT.md)。
-3. 仅在需要理论背景时读取
-   [`../../docs/multipoles/foundations.md`](../../docs/multipoles/foundations.md)和
-   [`../../docs/multipoles/higher_multipoles.md`](../../docs/multipoles/higher_multipoles.md)。
+3. 共享实现与术语：[`common/multipole/README.md`](../../common/multipole/README.md)。
+4. 理论背景：
+   [共同理论](../../docs/multipoles/foundations.md)和
+   [高阶多极杆](../../docs/multipoles/higher_multipoles.md)。
+5. 跨器件单流程：
+   [RF多极杆→oaTOF integration](../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/README.md)。
 
-## 当前机器权威
+## 机器权威
 
-- 单一机械请求：[`config/requests/mechanical_base.json`](config/requests/mechanical_base.json)。
-- 单一变量目录与包络：
-  [`config/design_variables.json`](config/design_variables.json)和
-  [`config/optimization_envelope.json`](config/optimization_envelope.json)。
-- typed电气模式：[`config/operating_modes.json`](config/operating_modes.json)。
-- 三个规范design profile：
-  [`config/design_profiles.json`](config/design_profiles.json)。
-- `config/project.json`的注册身份由全部design profile的一致identity给出；L1/L2/L3均由公共
-  resolver/compiler读取规范profile，不再维护项目级历史baseline。
-- runtime、粒子源和求解器数值：
-  [`config/runtime_profiles.json`](config/runtime_profiles.json)、
-  [`config/particle_source_profiles.json`](config/particle_source_profiles.json)、
-  [`config/comsol_solver_numerics.json`](config/comsol_solver_numerics.json)和
-  [`config/simion_solver_numerics.json`](config/simion_solver_numerics.json)。
-- N=100三档收敛预登记及三模式发散前置合同：
-  [`config/qualification/n100_convergence_preregistration.json`](config/qualification/n100_convergence_preregistration.json)
-  和
-  [`config/qualification/three_mode_dispersion_preregistration.json`](config/qualification/three_mode_dispersion_preregistration.json)。
-- 无加速混合网格粒子收敛活动：
-  [`config/qualification/comsol_hybrid_no_acceleration_particle_convergence_preregistration.json`](config/qualification/comsol_hybrid_no_acceleration_particle_convergence_preregistration.json)
-  与独立预算合同；具体已执行 arm、关闭状态和后续授权只以该预登记及
-  [`docs/PROJECT.md`](docs/PROJECT.md)为准，本页不复制运行状态。
-- 家族暂时工程推进指标：
-  [`../../common/multipole/engineering_progression_acceptance.json`](../../common/multipole/engineering_progression_acceptance.json)；
-  本项目只引用，不复制阈值、状态或判定。
+| 职责 | 入口 |
+|---|---|
+| 身份 | [`config/project.json`](config/project.json) |
+| 机械request | [`config/requests/mechanical_base.json`](config/requests/mechanical_base.json) |
+| 变量与包络 | [`config/design_variables.json`](config/design_variables.json)、[`config/optimization_envelope.json`](config/optimization_envelope.json) |
+| typed模式与设计profile | [`config/operating_modes.json`](config/operating_modes.json)、[`config/design_profiles.json`](config/design_profiles.json) |
+| runtime与源 | [`config/runtime_profiles.json`](config/runtime_profiles.json)、[`config/particle_source_profiles.json`](config/particle_source_profiles.json) |
+| 求解器数值 | [`config/comsol_solver_numerics.json`](config/comsol_solver_numerics.json)、[`config/simion_solver_numerics.json`](config/simion_solver_numerics.json) |
+| 资格 | [`config/qualification/`](config/qualification/) |
 
-三个且仅三个规范模式为`no_acceleration_full_length`、`segmented_rod_axial_acceleration`和
-`exit_aperture_plate_acceleration`。设计及runtime兼容别名已经退役；solver numerics中同名的
-`baseline_finite_3d`仍是数值profile，不是设计模式。
+活动设计只有`no_acceleration_full_length`、`segmented_rod_axial_acceleration`和
+`exit_aperture_plate_acceleration`三个规范模式。几何、电气值和运行终态不在README复制。
 
-runtime命名与四/六极杆一致：N=100 baseline直接使用完整mode ID；空间和时间加密分别追加
-`_n100_spatial_refined`、`_n100_temporal_refined`；N=1000追加`_n1000`。solver numerics ID固定为
-`baseline_finite_3d`、`n100_spatial_refined`和`n100_temporal_refined`。
+## 执行
 
-## 冻结机械基线
+- COMSOL：[`analysis/run_finite_3d_transport.ps1`](analysis/run_finite_3d_transport.ps1)
+- SIMION：[`analysis/run_simion_finite_3d_transport.ps1`](analysis/run_simion_finite_3d_transport.ps1)
+- 静态门禁：[`verify_project.ps1`](verify_project.ps1)
 
-杆范围为`z=0..79.6 mm`，`r0=4 mm`，杆半径比为`0.5`。四个导体段各长`19.6 mm`，由三个
-`0.4 mm`间隙分隔。释放面为`z=-1.5 mm`，入口带孔接口板两面为`-1.0/-0.5 mm`；出口带孔接口板
-两面为`80.1/80.6 mm`，规范交接面为`80.6 mm`，近接口统计面为`81.1 mm`。
+入口只接受具名runtime profile。产物只写
+`artifacts/projects/rf_octupole_ion_optics/`；历史证据只按项目descriptor的
+`archived_verified`位置读取。
 
-三模式只允许电气差异：无加速杆段和两端接口板均为`0 V`；分段加速四段依次为
-`0/-1/-2/-3 V`且出口板为`-3 V`；出口板加速的四段均为`0 V`且出口板为`-3 V`。任何几何、
-RF、粒子源或非变化数值差异都会使配对实验失效。
+## History索引
 
-## 运行与资格边界
-
-- COMSOL薄wrapper：[`analysis/run_finite_3d_transport.ps1`](analysis/run_finite_3d_transport.ps1)。
-- SIMION薄wrapper：
-  [`analysis/run_simion_finite_3d_transport.ps1`](analysis/run_simion_finite_3d_transport.ps1)。
-- 静态门禁：[`verify_project.ps1`](verify_project.ps1)。
-
-baseline pilot后登记的N=100三档只包含相邻的空间、时间离散比较：COMSOL局部最大单元
-`0.5→0.35 mm`、每RF周期`80→160`步；SIMION全局cell`0.4→0.3 mm`、每RF周期`40→80`步。
-空间比较先选择相邻网格，时间比较随后固定COMSOL `0.35 mm`和SIMION `0.3 mm`。不得事后改变输入、
-观察量或接受尺度。
-
-当前完成的实验臂、资源终态、连续量边界与商业运行授权只以
-[`docs/PROJECT.md`](docs/PROJECT.md)为准。本入口不复制运行结果或开放任务。项目合同不能把求解器
-运行、Candidate或Formal状态从旧证据继承到新机械基线。
-
-项目preregistration只冻结母样本、几何、电压和三份资格前置合同。每个求解器必须在三种模式真实运行
-并验证canonical handoff-state路径、SHA和solver-numerics SHA之后，才能生成符合公共schema的正式
-dispersion binding；缺少真实状态时固定失败关闭，不允许用占位路径或哈希。
-现有preregistration还没有在运行前冻结公共方法要求的bootstrap seed和resample数，因此已完成的N=100
-run不能事后发布为正式dispersion binding；公共发布器必须在创建输出前失败关闭。未来统计实验须先登记
-这两个值再运行，不能回填到既有证据。既有run已另行生成两份明确标为`POSTHOC_DESCRIPTIVE`的
-点估计报告；统一比较见
-[`../../docs/history/20260729__multipole-three-mode-posthoc-n100.md`](../../docs/history/20260729__multipole-three-mode-posthoc-n100.md)。
-
-运行产物只进入`artifacts/projects/rf_octupole_ion_optics/runs/`，不进入Git。改名前证据已按项目
-descriptor的`archived_verified`位置只读迁入具名archive；解析器不再回退旧顶层路径。旧证据不得
-接收新参数或覆盖上述机器权威。
-
-## 历史
-
-- [`docs/history/20260723__pre-n100-multipole-functional-evidence.md`](docs/history/20260723__pre-n100-multipole-functional-evidence.md)：
-  N=100仓库级口径和当前typed机械合同生效前的功能证据，只读且不授予当前资格。
+- [N=100规范前功能证据](docs/history/20260723__pre-n100-multipole-functional-evidence.md)

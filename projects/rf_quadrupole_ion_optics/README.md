@@ -60,6 +60,8 @@ RF四极杆离子光学→单次反射oa-TOF物理连接属于
 退出活动树；当前四、六、八极杆同源功能闭合统一使用该integration内的
 [`workflows/family_source_closure/execute.ps1`](../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/workflows/family_source_closure/execute.ps1)；
 内部stage不构成独立公开入口。
+当前流程、电极映射和资格边界见
+[`INTEGRATION.md`](../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/INTEGRATION.md)。
 
 ## 目录职责
 

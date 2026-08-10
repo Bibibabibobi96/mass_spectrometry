@@ -1,154 +1,65 @@
-# oa-TOF SIMION复现参数交接单
+# oa-TOF SIMION复现交接
 
-版本：2026-07-29拆层合同下的正式vNext release。单位：长度mm，电压V，质量amu，能量eV。
+本文件是面向GUI复核人员的**派生导航**，不是参数权威，也不能驱动Candidate、PA重建或Formal发布。
+精确几何、电压、网格、粒子和资产SHA必须在复现时从下列机器合同读取；若本文与合同冲突，以合同为准。
 
-本文件用于将SolidWorks/CAD中没有表达的理想栅网、SIMION数值网格、电压和粒子释放条件交给复现人员。
-物理参数来自`config/baseline.json`；SIMION实现不得反向修改这些数值。
+## 权威输入
 
-## 1. 坐标系
+| 职责 | 机器合同 |
+|---|---|
+| 物理设计 | [`baseline.json`](../config/baseline.json) |
+| Formal科学模式 | [`modes/formal.json`](../config/modes/formal.json) |
+| 求解器数值 | [`formal_solver_numerics.json`](../config/formal_solver_numerics.json) |
+| resolved几何 | [`resolved_geometry.json`](../config/resolved_geometry.json) |
+| Formal资产清单 | [`formal_assets.json`](../config/formal_assets.json) |
+| SIMION稳定入口 | [`simion_stable_entry.json`](../config/simion_stable_entry.json) |
+| 冻结验证结果 | [`formal_validation.json`](../config/formal_validation.json) |
 
-- 全局`+z`：从加速器repeller指向反射器。
-- 全局原点：检测器有效面中心与精确一阶时间聚焦面，`z=0`。
-- 加速器中心轴：`(x,y)=(-48.8,0)`。
-- 无场管和反射器中心轴：`(x,y)=(0,0)`。
-- 检测器有效面中心：`(x,y,z)=(48.8,0,0)`。
-- 所有栅网均为理想透明电极面；不得用“实心板开大孔”代替。
+完整参数由`baseline + formal science + solver numerics → resolved`单向派生。不要从本文件抄录旧电极表
+后分别手改GEM、Lua或IOB。
 
-## 2. 理想栅网
+## 坐标与四PA
 
-| 名称 | 中心位置 `(x,y,z)` | 有效外形 | 电压 |
-|---|---:|---:|---:|
-| grid1 | `(-48.8,0,-16.92918680341103)` | 方形`20×20` | `1760` |
-| grid2，加速器出口 | `(-48.8,0,-0.12918680341103)` | 方形`30×30` | `0` |
-| entgrid，反射器入口 | `(0,0,600)` | 圆形，半径`350`，直径`700` | `0` |
-| midgrid | `(0,0,720)` | 圆形，半径`300`，直径`600` | `1628.8001` |
+- 全局`+z`从加速器指向反射器，检测有效面中心和一阶时间焦点为全局`z=0`。
+- 正式独立oaTOF Workbench恰好有4个实例：
+  `1 flight_tube`、`2 reflectron`、`3 accelerator`、`4 detector`。
+- 实例顺序、GUI priority、PA路径和数组身份以Formal manifest与稳定入口为准。
+- detector PA是GUI可见数值终止层，不是机械检测器厚度。
+- grid1、grid2、entgrid和midgrid是理想透明栅网；SIMION数值层必须由Program透明跨越。
 
-COMSOL把这些栅网表达为零厚度内部边界。SIMION把它们表达为一个网格平面厚的数值电极，
-粒子依靠同名Program透明跨越。运行时必须启用Program；禁止把数值网格厚度解释为实际机械厚度。
-正式Program对加速器`grid1/grid2`和反射器`entgrid/midgrid`均使用`0.0001 mm`跨越距离；两个
-分组覆盖参数必须保持该值，除非正在执行明确标注的数值诊断。
+RF多极杆集成的第3槽可以替换为combined frontend，但那是run-local integration候选，不是本项目独立
+Formal包。其电极映射和PA重构只查
+[integration当前文档](../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/INTEGRATION.md)。
 
-## 3. 加速器电极
+## GUI复核步骤
 
-所有加速器电极横向中心均为`(-48.8,0)`。
+1. 复制完整Formal SIMION目录，不单独移动IOB或只复制`pa0`。
+2. 先用`simion_stable_entry.json`和asset manifest复核IOB、CON、Lua、Fly2、ION及全部PA家族SHA。
+3. 打开IOB，确认4个PA实例、角色、相对路径、变换、数组尺寸和GUI priority与manifest一致。
+4. 确认Program与Data Recording均启用；关闭设置窗口不等于Disable Program。
+5. 核对栅网跨越、Fast Adjust电极角色、detector捕获参数和trajectory quality。
+6. 日常功能使用机器合同绑定的N=100前缀；峰形、尾部和Formal统计使用同源N=1000。
+7. 保存Ion Number、TOF、位置、PA instance和Event，运行后用
+   `formal_validation.json`而不是本文数值进行复核。
 
-| 电极 | z位置 | 外形 | 电压 |
-|---|---:|---:|---:|
-| repeller | 范围`-20.92918680341103…-19.92918680341103` | 实心方板`20×20×1` | `2240` |
-| 加速环1 | 中心`-14.12918680341103` | 外`20×20`、方孔`10×10`、厚`1` | `1466.6666667` |
-| 加速环2 | 中心`-11.32918680341103` | 同上 | `1173.3333333` |
-| 加速环3 | 中心`-8.52918680341103` | 同上 | `880` |
-| 加速环4 | 中心`-5.72918680341103` | 同上 | `586.6666667` |
-| 加速环5 | 中心`-2.92918680341103` | 同上 | `293.3333333` |
-| grid1 | `-16.92918680341103` | 方形透明栅网`20×20` | `1760` |
-| grid2 | `-0.12918680341103` | 方形透明栅网`30×30` | `0` |
+## PA重建
 
-加速器接地屏蔽罩内截面`30×30`、外截面`38×38`、壁厚`4`，电压`0`。
-repeller后表面在`z=-20.92918680341103`，接地后盖前表面在
-`z=-25.92918680341103`，绝缘距离`5`。
+正式GEM使用`surface=fractional`。Refine必须从头执行并使用
+`formal_solver_numerics.json`给出的convergence；不得Resume旧解。完整PA家族和`.pa-surf`必须保留，
+因为Lua Fast Adjust依赖各电极数组。
 
-## 4. 反射器电极
+任何源宽、加速器、无场长度或反射器变量变化都属于隔离Candidate。候选编译器根据变量目录自动重算
+理论派生量和rebuild plan，只重建run-local受影响PA；通过Candidate、GUI和独立晋升前，不得覆盖Formal。
 
-所有反射器环均以`(x,y)=(0,0)`为轴，内半径`250`、外半径`300`、厚度`5`。
-表中z为全局中心坐标。
+## 复现完成条件
 
-| 电极 | z中心 | 电压 |
-|---|---:|---:|
-| entgrid | `600.0000000` | `0` |
-| 一级环1 | `610.9090909` | `148.0727364` |
-| 一级环2 | `621.8181818` | `296.1454727` |
-| 一级环3 | `632.7272727` | `444.2182091` |
-| 一级环4 | `643.6363636` | `592.2909455` |
-| 一级环5 | `654.5454545` | `740.3636818` |
-| 一级环6 | `665.4545455` | `888.4364182` |
-| 一级环7 | `676.3636364` | `1036.5091545` |
-| 一级环8 | `687.2727273` | `1184.5818909` |
-| 一级环9 | `698.1818182` | `1332.6546273` |
-| 一级环10 | `709.0909091` | `1480.7273636` |
-| midgrid | `720.0000000` | `1628.8001` |
-| 二级环1 | `736.0260500` | `1779.2000667` |
-| 二级环2 | `752.0521000` | `1929.6000333` |
-| 二级环3 | `768.0781500` | `2080.0000000` |
-| 二级环4 | `784.1042000` | `2230.3999667` |
-| 二级环5 | `800.1302500` | `2380.7999333` |
-| backplate | 前表面`816.1563`，范围`816.1563…821.1563` | `2531.1999` |
+文件存在不等于复现。至少需要：
 
-backplate为半径`300`、厚度`5`的实心圆盘。外部一体式封闭屏蔽罩内半径`350`、外半径`360`，
-侧壁及两端盖厚度均为`10`，电压`0`。检测器电压为`0`。
+- manifest与全部输入SHA通过；
+- IOB重开后4实例、路径、变换和priority正确；
+- Program/Recording真实启用；
+- PA Refine设置和完整数组族一致；
+- 固定粒子表真实Fly完成；
+- 输出由项目正式分析与门禁复核。
 
-## 5. 正式PA网格与Refine精度
-
-当前正式IOB实际加载的四个PA如下。GUI priority number越大越优先；Lua/Data Recording槽位是
-另一类标识，但本IOB模板中两者编号一致，必须分别核对后再实飞确认。
-
-| Workbench槽位 / `PA instance` | GUI优先级 | PA角色 | 类型 | 网格数 | 每网格尺寸 | 说明 |
-|---:|---:|---|---|---:|---:|---|
-| 1 | 1 | flight_tube | 2D cylindrical | `661×361×1` | 轴向`1.0`、径向`1.0` | 最低优先级的连续接地无场管和近端盖 |
-| 2 | 2 | reflectron | 2D cylindrical | `1126×361×1` | 轴向`0.25`、径向`1.0` | 高于飞行管屏蔽罩的反射场 |
-| 3 | 3 | accelerator | 3D Cartesian | `153×153×601` | `dx=0.25, dy=0.25, dz=0.05` | 日常正式加速器，不得被无场管遮蔽 |
-| 4 | 4 | detector | 3D Cartesian | `165×165×36` | `dx=0.5, dy=0.5, dz=0.01` | 0.1 mm后向吸收层；最高优先级的GUI可见终止层 |
-
-检测器有效前表面固定在`z=0`，前/背PA余量为`0.2/0.05 mm`。正式Program参数为
-`detector_tstep_enable=1`、`detector_capture_arm_distance_mm=100`、
-`detector_capture_depth_mm=0.02`；它只截短真正跨面的单步，不采用连续细步进。
-
-所有GEM均使用`surface=fractional`。每个PA从头Refine，不续算旧结果：
-
-```text
-refine --resume=0 --convergence=5e-7 <array.pa#>
-```
-
-GUI Refine时也应使用相同的收敛目标`5e-7`并关闭Resume。不得只写“Refine完成”而不记录网格尺寸、
-网格数和convergence。加速器的轴向收敛参考为`dx=dy=0.25, dz=0.025`，只用于收敛检查，
-不替换上述日常正式`dz=0.05`入口。
-
-Refine后必须保留完整PA家族及`.pa-surf`：加速器需要`pa0…pa9`，反射器需要`pa0…pa19`，
-无场管和检测器需要`pa0…pa1`。只发送`pa0`不能支持正式Program中的Fast Adjust。
-
-## 6. 离子初始条件和可直接加载文件
-
-复现当前正式N=100检查粒子表时，在SIMION Define Particles中直接加载：
-
-```text
-formal/simion/oatof_comsol_524amu_gaussian_N100.ion
-```
-
-该ION文件固定了100个粒子的质量、电荷、逐粒子初始位置和能量：
-
-- 质量`524 amu`，电荷`+1`；
-- 初始体积：`x=-49.3…-48.3`、`y=-0.5…0.5`、
-  `z=-18.92918680341103…-17.92918680341103`；
-- 初始能量：均值`5`、标准差`0.4`的正值高斯样本；
-- 初始方向：`+x`，ION表中的azimuth/elevation均为`0/0`。
-
-GUI正式统计N=1000分布定义位于：
-
-```text
-formal/simion/oatof_ideal_grounded.fly2
-```
-
-正式工作台和Program分别为：
-
-```text
-formal/simion/oatof_ideal_grounded.iob
-formal/simion/oatof_ideal_grounded.lua
-```
-
-N=100 ION文件SHA-256：
-`6287A54475008111A7F8AF87329F8AD08911066A564C508CFD424577D693229E`。
-
-## 7. 运行检查
-
-1. 复制整个`formal/simion/`目录，不要只挑选PA0或单独移动IOB；IOB引用同目录PA。
-2. IOB加载后确认恰好有4个槽位，依次为：`1 flight_tube`、`2 reflectron`、`3 accelerator`、
-   `4 detector`；对应GUI优先级也依次为`1、2、3、4`。
-3. Program必须开启；关闭Program设置窗口可以，Disable Program不可以。
-4. `trajectory quality=8`。
-5. 日常检查使用固定N=100 ION文件；峰形、FWHM和正式统计使用同源N=1000，N=100可由其确定性
-   前缀复用。N=5000只用于明确的性能或统计收敛专项。
-6. 记录结果时至少保存Ion Number、TOF、X/Y/Z、PA instance和Event；当前正式运行命中应来自槽位4。
-7. 当前正式SIMION N=1000参考：1000/1000命中，平均TOF`71.3536115331 us`，直接质量FWHM
-   `0.010994078427 Da`，`R=47662.02`；机器权威以`config/formal_validation.json`为准。
-
-注意：单独发送CAD、ION或一个PA0都不足以复现结果。可复现交付至少要包含IOB、CON、Lua、Fly2、
-固定ION文件、四套完整PA家族及本交接单。
+当前Formal性能、资格和兼容边界只查[`PROJECT.md`](PROJECT.md)。

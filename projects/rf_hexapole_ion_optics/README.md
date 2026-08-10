@@ -26,6 +26,8 @@
   [`config/simion_solver_numerics.json`](config/simion_solver_numerics.json)
 - 资格合同：[`config/qualification/`](config/qualification/)
 - 公共家族合同：[`../../common/multipole/README.md`](../../common/multipole/README.md)
+- 跨器件连接：
+  [RF多极杆→oaTOF integration](../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/README.md)
 - 家族工程推进指标：
   [`../../common/multipole/engineering_progression_acceptance.json`](../../common/multipole/engineering_progression_acceptance.json)
 
