@@ -1,14 +1,15 @@
 {
   "schema_version": 1,
   "role": "rf_oatof_resolution_attribution_counterfactual_profile",
-  "profile_id": "pre_pulse_phase_space_attribution_v1",
+  "profile_id": "pre_pulse_phase_space_attribution_v2",
   "source_event": "pre_pulse_state",
   "cohort_policy": "source_event_and_baseline_detector_intersection",
   "acceleration_axis": "global_z",
   "transverse_axes": ["global_x", "global_y"],
   "random_seed": 20260804,
   "peak_metric": "canonical_direct_gaussian_kde_fwhm",
-  "claim_limit": "Controlled diagnostic on one frozen N=1000 mother sample and one numerical setting; no numerical-convergence, Candidate, Formal, or universal causal claim.",
+  "pulse_delay_reference": "upstream_resolved_design.drive.frequency_Hz",
+  "claim_limit": "Controlled diagnostic on one frozen N=200 screening or N=1000 confirmation sample and one numerical setting; no numerical-convergence, Candidate, Formal, or universal causal claim.",
   "arms": [
     {
       "arm_id": "observed_restart_control",
@@ -16,11 +17,15 @@
     },
     {
       "arm_id": "ideal_acceleration_position",
-      "intervention": "quantile_match_global_z_to_ideal_source"
+      "intervention": "quantile_match_centered_global_z_to_ideal_source_shape"
     },
     {
       "arm_id": "ideal_transverse_positions",
-      "intervention": "quantile_match_global_x_and_y_to_ideal_source"
+      "intervention": "quantile_match_centered_global_x_and_y_to_ideal_source_shape"
+    },
+    {
+      "arm_id": "ideal_multipole_axis_position",
+      "intervention": "quantile_match_centered_global_x_to_ideal_source_shape"
     },
     {
       "arm_id": "remove_acceleration_covariance",
@@ -32,7 +37,21 @@
     },
     {
       "arm_id": "ideal_acceleration_position_remove_covariance",
-      "intervention": "quantile_match_global_z_then_remove_linear_global_z_global_vz_covariance"
+      "intervention": "quantile_match_centered_global_z_then_remove_linear_global_z_global_vz_covariance"
+    },
+    {
+      "arm_id": "collapse_acceleration_velocity_residual",
+      "intervention": "project_global_vz_onto_observed_linear_global_z_global_vz_relation"
+    },
+    {
+      "arm_id": "delay_pulse_one_eighth_rf_period",
+      "intervention": "delay_pulse_from_frozen_pre_pulse_state",
+      "pulse_delay_rf_periods": 0.125
+    },
+    {
+      "arm_id": "delay_pulse_one_quarter_rf_period",
+      "intervention": "delay_pulse_from_frozen_pre_pulse_state",
+      "pulse_delay_rf_periods": 0.25
     },
     {
       "arm_id": "collapsed_acceleration_phase_space_upper_bound",

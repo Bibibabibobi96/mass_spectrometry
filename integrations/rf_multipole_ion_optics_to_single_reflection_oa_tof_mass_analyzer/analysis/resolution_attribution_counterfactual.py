@@ -88,6 +88,7 @@ def _validate_profile(profile: dict[str, Any]) -> list[str]:
         "transverse_axes",
         "random_seed",
         "peak_metric",
+        "pulse_delay_reference",
         "claim_limit",
         "arms",
     }
@@ -105,30 +106,30 @@ def _validate_profile(profile: dict[str, Any]) -> list[str]:
         or profile.get("random_seed") != 20260804
         or profile.get("peak_metric")
         != "canonical_direct_gaussian_kde_fwhm"
+        or profile.get("pulse_delay_reference")
+        != "upstream_resolved_design.drive.frequency_Hz"
     ):
         raise ValueError("resolution-attribution profile identity differs")
     arms = profile.get("arms")
     if not isinstance(arms, list) or not arms:
         raise ValueError("resolution-attribution profile has no arms")
-    expected = {
-        "observed_restart_control": "none",
-        "ideal_acceleration_position": "quantile_match_global_z_to_ideal_source",
-        "ideal_transverse_positions": "quantile_match_global_x_and_y_to_ideal_source",
-        "remove_acceleration_covariance": "remove_linear_global_z_global_vz_covariance_preserve_vz_mean_and_sample_sigma",
-        "monoenergetic": "scale_each_velocity_vector_to_cohort_mean_kinetic_energy",
-        "ideal_acceleration_position_remove_covariance": "quantile_match_global_z_then_remove_linear_global_z_global_vz_covariance",
-        "collapsed_acceleration_phase_space_upper_bound": "set_global_z_and_global_vz_to_cohort_means",
-    }
+    expected = [
+        {"arm_id": "observed_restart_control", "intervention": "none"},
+        {"arm_id": "ideal_acceleration_position", "intervention": "quantile_match_centered_global_z_to_ideal_source_shape"},
+        {"arm_id": "ideal_transverse_positions", "intervention": "quantile_match_centered_global_x_and_y_to_ideal_source_shape"},
+        {"arm_id": "ideal_multipole_axis_position", "intervention": "quantile_match_centered_global_x_to_ideal_source_shape"},
+        {"arm_id": "remove_acceleration_covariance", "intervention": "remove_linear_global_z_global_vz_covariance_preserve_vz_mean_and_sample_sigma"},
+        {"arm_id": "monoenergetic", "intervention": "scale_each_velocity_vector_to_cohort_mean_kinetic_energy"},
+        {"arm_id": "ideal_acceleration_position_remove_covariance", "intervention": "quantile_match_centered_global_z_then_remove_linear_global_z_global_vz_covariance"},
+        {"arm_id": "collapse_acceleration_velocity_residual", "intervention": "project_global_vz_onto_observed_linear_global_z_global_vz_relation"},
+        {"arm_id": "delay_pulse_one_eighth_rf_period", "intervention": "delay_pulse_from_frozen_pre_pulse_state", "pulse_delay_rf_periods": 0.125},
+        {"arm_id": "delay_pulse_one_quarter_rf_period", "intervention": "delay_pulse_from_frozen_pre_pulse_state", "pulse_delay_rf_periods": 0.25},
+        {"arm_id": "collapsed_acceleration_phase_space_upper_bound", "intervention": "set_global_z_and_global_vz_to_cohort_means"},
+    ]
     arm_ids = [str(item.get("arm_id", "")) for item in arms]
     if (
-        arm_ids != list(expected)
+        arms != expected
         or len(set(arm_ids)) != len(arm_ids)
-        or any(
-            not isinstance(item, dict)
-            or set(item) != {"arm_id", "intervention"}
-            or item.get("intervention") != expected[item["arm_id"]]
-            for item in arms
-        )
     ):
         raise ValueError("resolution-attribution arm registry differs")
     return arm_ids
@@ -142,6 +143,11 @@ def _quantile_match(values: np.ndarray, reference: np.ndarray) -> np.ndarray:
     matched = np.empty_like(values, dtype=float)
     matched[order] = np.quantile(reference, probabilities, method="linear")
     return matched
+
+
+def _quantile_match_centered(values: np.ndarray, reference: np.ndarray) -> np.ndarray:
+    matched = _quantile_match(values, reference)
+    return matched - float(np.mean(matched)) + float(np.mean(values))
 
 
 def _remove_linear_covariance(z: np.ndarray, vz: np.ndarray) -> np.ndarray:
@@ -164,11 +170,21 @@ def _remove_linear_covariance(z: np.ndarray, vz: np.ndarray) -> np.ndarray:
     return adjusted
 
 
+def _collapse_linear_residual(z: np.ndarray, vz: np.ndarray) -> np.ndarray:
+    centered_z = z - np.mean(z)
+    denominator = float(np.dot(centered_z, centered_z))
+    if denominator <= 0:
+        raise ValueError("acceleration-position variance must be positive")
+    mean_vz = float(np.mean(vz))
+    beta = float(np.dot(centered_z, vz - mean_vz) / denominator)
+    return mean_vz + beta * centered_z
+
+
 def _cohort(
     checkpoints_path: Path, mass_amu: float, charge_state: int
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, int]:
     columns, rows = _load_csv(checkpoints_path)
-    if columns != CHECKPOINT_COLUMNS:
+    if not set(CHECKPOINT_COLUMNS).issubset(columns):
         raise ValueError("baseline checkpoint columns differ")
     pre = {int(row["particle_id"]): row for row in rows if row["event"] == "pre_pulse_state"}
     detector_ids = {
@@ -196,7 +212,8 @@ def _cohort(
     )
     if not np.all(np.isfinite(state)) or not np.allclose(state[:, 0], state[0, 0]):
         raise ValueError("pre-pulse cohort must be finite and share one absolute pulse time")
-    return ids, state
+    mother_sample_count = len({int(row["particle_id"]) for row in rows})
+    return ids, state, mother_sample_count
 
 
 def _ideal_coordinates(path: Path) -> dict[str, np.ndarray]:
@@ -220,10 +237,12 @@ def _apply_arm(
         "ideal_acceleration_position",
         "ideal_acceleration_position_remove_covariance",
     }:
-        result[:, 3] = _quantile_match(result[:, 3], ideal["z"])
+        result[:, 3] = _quantile_match_centered(result[:, 3], ideal["z"])
     if arm_id == "ideal_transverse_positions":
-        result[:, 1] = _quantile_match(result[:, 1], ideal["x"])
-        result[:, 2] = _quantile_match(result[:, 2], ideal["y"])
+        result[:, 1] = _quantile_match_centered(result[:, 1], ideal["x"])
+        result[:, 2] = _quantile_match_centered(result[:, 2], ideal["y"])
+    if arm_id == "ideal_multipole_axis_position":
+        result[:, 1] = _quantile_match_centered(result[:, 1], ideal["x"])
     if arm_id in {
         "remove_acceleration_covariance",
         "ideal_acceleration_position_remove_covariance",
@@ -237,6 +256,8 @@ def _apply_arm(
         if np.any(energies <= 0):
             raise ValueError("monoenergetic intervention requires positive energy")
         result[:, 4:7] *= np.sqrt(target / energies)[:, None]
+    if arm_id == "collapse_acceleration_velocity_residual":
+        result[:, 6] = _collapse_linear_residual(result[:, 3], result[:, 6])
     if arm_id == "collapsed_acceleration_phase_space_upper_bound":
         result[:, 3] = float(np.mean(result[:, 3]))
         result[:, 6] = float(np.mean(result[:, 6]))
@@ -250,17 +271,26 @@ def prepare(
     output_dir: Path,
     mass_amu: float,
     charge_state: int,
+    rf_frequency_hz: float | None = None,
+    execution_batch_count: int = 5,
 ) -> dict[str, Any]:
     profile = _load_json(profile_path)
     arm_ids = _validate_profile(profile)
-    source_ids, observed = _cohort(checkpoints_path, mass_amu, charge_state)
+    source_ids, observed, mother_sample_count = _cohort(
+        checkpoints_path, mass_amu, charge_state
+    )
     ideal = _ideal_coordinates(ideal_source_path)
+    if any("pulse_delay_rf_periods" in arm for arm in profile["arms"]):
+        if rf_frequency_hz is None or rf_frequency_hz <= 0:
+            raise ValueError("pulse-delay arms require a positive RF frequency")
+    if execution_batch_count < 1 or execution_batch_count > source_ids.size:
+        raise ValueError("execution batch count differs")
     output_dir.mkdir(parents=True, exist_ok=False)
     arm_records: list[dict[str, Any]] = []
+    arm_profile = {arm["arm_id"]: arm for arm in profile["arms"]}
     for arm_id in arm_ids:
         state = _apply_arm(arm_id, observed, ideal)
         state_path = output_dir / f"{arm_id}__source_state.csv"
-        ion_path = output_dir / f"{arm_id}.ion"
         state_rows: list[dict[str, str]] = []
         ion_rows: list[list[str]] = []
         for simulation_id, (source_id, row) in enumerate(zip(source_ids, state), start=1):
@@ -303,16 +333,38 @@ def prepare(
             writer = csv.DictWriter(handle, fieldnames=ARM_STATE_COLUMNS, lineterminator="\n")
             writer.writeheader()
             writer.writerows(state_rows)
-        with ion_path.open("w", encoding="utf-8", newline="") as handle:
-            csv.writer(handle, lineterminator="\n").writerows(ion_rows)
+        batch_records: list[dict[str, Any]] = []
+        quotient, remainder = divmod(len(ion_rows), execution_batch_count)
+        offset = 0
+        for batch_index in range(1, execution_batch_count + 1):
+            count = quotient + (1 if batch_index <= remainder else 0)
+            ion_path = output_dir / f"{arm_id}__batch{batch_index:02d}.ion"
+            with ion_path.open("w", encoding="utf-8", newline="") as handle:
+                csv.writer(handle, lineterminator="\n").writerows(
+                    ion_rows[offset : offset + count]
+                )
+            batch_records.append(
+                {
+                    "batch_index": batch_index,
+                    "simulation_particle_id_offset": offset,
+                    "particles": count,
+                    "ion_file": ion_path.name,
+                    "ion_sha256": file_sha256(ion_path),
+                }
+            )
+            offset += count
         arm_records.append(
             {
                 "arm_id": arm_id,
                 "particles": len(state_rows),
                 "state_file": state_path.name,
                 "state_sha256": file_sha256(state_path),
-                "ion_file": ion_path.name,
-                "ion_sha256": file_sha256(ion_path),
+                "execution_batches": batch_records,
+                "pulse_time_us": float(observed[0, 0]) + (
+                    float(arm_profile[arm_id].get("pulse_delay_rf_periods", 0.0))
+                    * 1.0e6 / float(rf_frequency_hz)
+                    if rf_frequency_hz is not None else 0.0
+                ),
             }
         )
     manifest = {
@@ -322,9 +374,11 @@ def prepare(
         "profile_sha256": file_sha256(profile_path),
         "baseline_checkpoints_sha256": file_sha256(checkpoints_path),
         "ideal_source_sha256": file_sha256(ideal_source_path),
-        "mother_sample_particle_count": 1000,
+        "mother_sample_particle_count": mother_sample_count,
         "paired_cohort_particles": int(source_ids.size),
         "pulse_time_us": float(observed[0, 0]),
+        "rf_frequency_hz": rf_frequency_hz,
+        "execution_batch_count": execution_batch_count,
         "mass_amu": mass_amu,
         "charge_state": charge_state,
         "arms": arm_records,
@@ -359,6 +413,7 @@ def summarize(
     baseline_checkpoints_path: Path,
     logs_dir: Path,
     output_dir: Path,
+    baseline_clock_basis: str = "legacy_relative_time",
 ) -> dict[str, Any]:
     profile = _load_json(profile_path)
     arm_ids = _validate_profile(profile)
@@ -369,10 +424,17 @@ def summarize(
     mass_amu = float(prepared["mass_amu"])
     source_dir = prepared_path.parent
     baseline_columns, baseline_rows = _load_csv(baseline_checkpoints_path)
-    if baseline_columns != CHECKPOINT_COLUMNS:
+    if not set(CHECKPOINT_COLUMNS).issubset(baseline_columns):
         raise ValueError("baseline checkpoint columns differ")
+    if baseline_clock_basis not in {"legacy_relative_time", "absolute_birth_time"}:
+        raise ValueError("baseline clock basis differs")
+    release_times = {
+        int(row["particle_id"]): float(row["instrument_time_us"])
+        for row in baseline_rows if row["event"] == "source_release"
+    }
     baseline_detector = {
         int(row["particle_id"]): float(row["instrument_time_us"])
+        + (release_times[int(row["particle_id"])] if baseline_clock_basis == "absolute_birth_time" else 0.0)
         for row in baseline_rows
         if row["event"] == "detector_crossing"
     }
@@ -380,6 +442,7 @@ def summarize(
     checkpoint_rows: list[dict[str, object]] = []
     metrics: list[dict[str, Any]] = []
     detector_by_arm: dict[str, dict[int, float]] = {}
+    prepared_by_id = {arm["arm_id"]: arm for arm in prepared["arms"]}
     for arm_id in arm_ids:
         state_columns, state_rows = _load_csv(source_dir / f"{arm_id}__source_state.csv")
         if state_columns != ARM_STATE_COLUMNS or len(state_rows) != particles:
@@ -388,7 +451,17 @@ def summarize(
             int(row["simulation_particle_id"]): int(row["source_particle_id"])
             for row in state_rows
         }
-        rows, arm_summary = analyze(logs_dir / f"{arm_id}.stdout.log", particles, mass_amu)
+        rows: list[dict[str, object]] = []
+        for batch in prepared_by_id[arm_id]["execution_batches"]:
+            batch_rows, _ = analyze(
+                logs_dir / f"{arm_id}__batch{int(batch['batch_index']):02d}.stdout.log",
+                int(batch["particles"]),
+                mass_amu,
+            )
+            offset = int(batch["simulation_particle_id_offset"])
+            for row in batch_rows:
+                row["particle_id"] = int(row["particle_id"]) + offset
+                rows.append(row)
         detector: dict[int, float] = {}
         for row in rows:
             simulation_id = int(row["particle_id"])
@@ -404,9 +477,11 @@ def summarize(
             if row["event"] == "detector_crossing":
                 detector[source_id] = float(row["instrument_time_us"])
         detector_by_arm[arm_id] = detector
-        peak = arm_summary["instrument_clock_peak"]
-        if peak is None:
-            raise ValueError(f"counterfactual arm has no measurable peak: {arm_id}")
+        detector_times = np.asarray(list(detector.values()), dtype=float)
+        peak = (
+            compute_peak_metrics(detector_times, mass_amu)[0]
+            if detector_times.size >= 3 else None
+        )
         metrics.append(
             {
                 "arm_id": arm_id,
@@ -432,6 +507,8 @@ def summarize(
         paired_delta = np.asarray(
             [detector_by_arm[arm_id][pid] - control_detector[pid] for pid in common_ids]
         )
+        item_peak = item["peak"]
+        control_peak = control["peak"]
         comparisons.append(
             {
                 "arm_id": arm_id,
@@ -440,16 +517,16 @@ def summarize(
                 - control["detector_particles"],
                 "direct_fwhm_change_pct_vs_restart_control": 100.0
                 * (
-                    item["peak"]["direct_fwhm_tof_ns"]
-                    / control["peak"]["direct_fwhm_tof_ns"]
+                    item_peak["direct_fwhm_tof_ns"]
+                    / control_peak["direct_fwhm_tof_ns"]
                     - 1.0
-                ),
+                ) if item_peak is not None else None,
                 "resolution_change_pct_vs_restart_control": 100.0
                 * (
-                    item["peak"]["mass_resolution"]
-                    / control["peak"]["mass_resolution"]
+                    item_peak["mass_resolution"]
+                    / control_peak["mass_resolution"]
                     - 1.0
-                ),
+                ) if item_peak is not None else None,
                 "paired_detector_time_mean_delta_ns": float(np.mean(paired_delta) * 1000.0)
                 if paired_delta.size
                 else None,
@@ -508,12 +585,19 @@ def main() -> int:
     prepare_parser.add_argument("--output-dir", required=True, type=Path)
     prepare_parser.add_argument("--mass-amu", required=True, type=float)
     prepare_parser.add_argument("--charge-state", required=True, type=int)
+    prepare_parser.add_argument("--rf-frequency-hz", required=True, type=float)
+    prepare_parser.add_argument("--execution-batch-count", type=int, default=5)
     summarize_parser = subparsers.add_parser("summarize")
     summarize_parser.add_argument("--profile", required=True, type=Path)
     summarize_parser.add_argument("--prepared", required=True, type=Path)
     summarize_parser.add_argument("--baseline-checkpoints", required=True, type=Path)
     summarize_parser.add_argument("--logs-dir", required=True, type=Path)
     summarize_parser.add_argument("--output-dir", required=True, type=Path)
+    summarize_parser.add_argument(
+        "--baseline-clock-basis",
+        choices=("legacy_relative_time", "absolute_birth_time"),
+        default="legacy_relative_time",
+    )
     args = parser.parse_args()
     if args.command == "prepare":
         result = prepare(
@@ -523,6 +607,8 @@ def main() -> int:
             args.output_dir,
             args.mass_amu,
             args.charge_state,
+            args.rf_frequency_hz,
+            args.execution_batch_count,
         )
         print(
             "RESOLUTION_ATTRIBUTION_PREPARE=PASS "
@@ -535,6 +621,7 @@ def main() -> int:
             args.baseline_checkpoints,
             args.logs_dir,
             args.output_dir,
+            args.baseline_clock_basis,
         )
         print(
             "RESOLUTION_ATTRIBUTION_SUMMARY=PASS "

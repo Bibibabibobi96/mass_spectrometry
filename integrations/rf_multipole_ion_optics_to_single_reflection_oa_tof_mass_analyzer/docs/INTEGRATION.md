@@ -108,9 +108,13 @@ run-local目录重建`frontend_pa`、`flight_tube_pa`或`reflectron_pa`中实际
 `ion_time_of_flight`误标成绝对探测时刻，得到的`R=49.54`及基于该时刻的x条件筛选结论均已失效；
 逐粒子补回`source_release`仪器时刻后，同一真实轨迹为直接FWHM `1.97584 ns`、`R=19417.37`。
 修正后能散与单独角度的线性解释量均约1%或更低，位置三分量为6.63%；完整`xyz-vxyz`相空间为
-22.67%。当前主要物理嫌疑是加速方向`z-vz`相空间相对理论时间聚焦接受线的残差，而不是总能散、
-单独x宽度或总发散角。该结果仍缺相邻PA网格、RF时间步和当前样本的逐因素SIMION重放，只是
-`DIAGNOSTIC_ONLY`。
+22.67%。随后以同一996粒子共同队列完成N=1000、每臂5批并行的SIMION受控重放
+`20260810_221000__sim__simion__rf-oatof-resolution-screen__n1000`。保持当前中心、只把z宽度匹配到
+理想源形状时，FWHM降低28.93%、R提高40.70%至27223.97；单能化变化−0.07%，收窄x或x-y使R
+分别降低3.83%和3.97%，去除z-vz协方差使R降低42.11%，完全压缩z-vz线性残差只提高4.51%且变为
+双峰。延迟1/8或1/4 RF周期同时降低R和传输。因此当前第一主因是正交加速z空间宽度与时间聚焦
+接受区不匹配；已有z-vz相关性总体有利，不能直接消除。结果仍缺相邻PA网格和RF时间步，只是
+`CONTROLLED_COUNTERFACTUAL_DIAGNOSTIC_ONLY`。
 
 目标能量只能在连续链`pre_pulse_state`、且粒子位于repeller与grid1之间时验证。
 `terminal`或`multipole_handoff`能量只作接口诊断。
@@ -131,8 +135,8 @@ run-local目录重建`frontend_pa`、`flight_tube_pa`或`reflectron_pa`中实际
 1. 对当前连续单流程补相邻PA网格和RF时间步，关闭孔边缘离散与峰宽敏感性；未完成前保持
    `INCONCLUSIVE_DIAGNOSTIC_ONLY`。
 2. 若需要跨求解器结论，另行授权同几何、同源、同绝对时钟和同checkpoint的COMSOL连续前端。
-3. 用修正后的绝对探测时钟对当前稳态母样本执行逐因素SIMION重放，优先比较`z`、`vz`、二者残差和
-   组合臂；随后补第二母样本或预登记不确定度。
+3. 在参数合同内优先优化加速器d1、d2与repeller/grid1电压，使理论编译器自动重算聚焦面和反射器，
+   目标是扩大或匹配当前z分布的时间聚焦接受区；随后用第二母样本确认，不直接指定派生量。
 4. 新的2 mm、3 mm或其他源宽必须各自形成受治理layout profile并重建受影响PA；不能从2.2 mm
    无收益结果直接外推。
 

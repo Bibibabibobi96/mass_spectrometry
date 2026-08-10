@@ -3,6 +3,7 @@ param(
   [Parameter(Mandatory)][string]$RunId,
   [Parameter(Mandatory)][string]$BaselineRunId,
   [Parameter(Mandatory)][string]$IdealRunId,
+  [string]$BaselineAggregateRoot = '',
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$PythonExe = ''
 )
@@ -95,11 +96,42 @@ try {
   $baselineConfig = Get-Content -LiteralPath (
     Join-Path $baselineRoot 'run_config.json'
   ) -Raw -Encoding UTF8 | ConvertFrom-Json
-  if ($baselineConfig.parameters.launched_particle_count -ne 1000 -or
+  $baselineCheckpointsSource = Join-Path $baselineRoot `
+    'results\single_flight_particle_checkpoints.csv'
+  $baselineCheckpointRoot = $baselineRoot
+  $baselineClockBasis = [string]$baselineConfig.parameters.clock_basis
+  $motherSampleParticleCount = [int]$baselineConfig.parameters.launched_particle_count
+  $baselineAggregate = $null
+  if ($BaselineAggregateRoot) {
+    $aggregateRoot = (Resolve-Path -LiteralPath $BaselineAggregateRoot).Path
+    $baselineCheckpointRoot = $aggregateRoot
+    $aggregateSummaryPath = Join-Path $aggregateRoot 'summary.json'
+    $baselineCheckpointsSource = Join-Path $aggregateRoot 'particle_checkpoints.csv'
+    $baselineAggregate = Get-Content -LiteralPath $aggregateSummaryPath `
+      -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($baselineAggregate.status -ne 'success' -or
+        $baselineAggregate.role -ne 'rf_oatof_batched_single_flight_aggregate' -or
+        $baselineAggregate.census.launched -ne 1000 -or
+        $baselineAggregate.batching.batch_count -ne 5 -or
+        $baselineAggregate.detector_time_basis -ne 'instrument_time_us' -or
+        (Get-FileHash -LiteralPath $baselineCheckpointsSource -Algorithm SHA256).Hash -ne
+          [string]$baselineAggregate.checkpoints_sha256) {
+      throw 'Baseline aggregate identity or checkpoint hash differs.'
+    }
+    $baselineGeometryHash = (Get-FileHash -LiteralPath (
+      Join-Path $baselineRoot 'inputs\oatof_resolved_geometry.json'
+    ) -Algorithm SHA256).Hash
+    if ($baselineGeometryHash -ne [string]$baselineAggregate.batching.same_geometry_sha256) {
+      throw 'Baseline template geometry differs from the five-batch aggregate.'
+    }
+    $baselineClockBasis = 'legacy_relative_time'
+    $motherSampleParticleCount = 1000
+  }
+  if ($baselineConfig.parameters.launched_particle_count -notin @(200,1000) -or
       $baselineConfig.parameters.aperture_width_mm -ne 1.0 -or
       $baselineConfig.parameters.aperture_height_mm -ne 0.9 -or
       -not $baselineConfig.parameters.surrounded_transition) {
-    throw 'Baseline run is not the frozen N=1000, 1.0 x 0.9 mm closed-connector case.'
+    throw 'Baseline run is not a frozen N=200 screening or N=1000, 1.0 x 0.9 mm closed-connector case.'
   }
   $profileSource = Join-Path $integrationRoot `
     'config\resolution_attribution_counterfactual.json'
@@ -109,9 +141,8 @@ try {
     -Destination $profile -Role 'resolution-attribution profile' | Out-Null
   $baselineCheckpoints = Join-Path $package.input_dir `
     'baseline_single_flight_particle_checkpoints.csv'
-  Copy-RfStableFile -SourceRunRoot $baselineRoot `
-    -SourcePath (Join-Path $baselineRoot `
-      'results\single_flight_particle_checkpoints.csv') `
+  Copy-RfStableFile -SourceRunRoot $baselineCheckpointRoot `
+    -SourcePath $baselineCheckpointsSource `
     -Destination $baselineCheckpoints -Role 'baseline particle checkpoints' | Out-Null
   $idealSource = Join-Path $package.input_dir 'ideal_source_mapping_particles.csv'
   Copy-RfStableFile -SourceRunRoot $idealRoot `
@@ -122,12 +153,15 @@ try {
       'single_flight_frontend_contract.json',
       'resolved_connection.json',
       'oatof_resolved_geometry.json'
-    )) {
+  )) {
     Copy-RfStableFile -SourceRunRoot $baselineRoot `
       -SourcePath (Join-Path $baselineRoot "inputs\$name") `
       -Destination (Join-Path $package.input_dir $name) `
       -Role "baseline frozen $name" | Out-Null
   }
+  $upstream = Get-Content -LiteralPath (
+    Join-Path $package.input_dir 'upstream_resolved_design.json'
+  ) -Raw -Encoding UTF8 | ConvertFrom-Json
   $budget = Initialize-RfIntegrationStageBudget `
     -ResolvedBudget (Join-Path $baselineRoot `
       'inputs\resolved_integration_engineering_budget.json') `
@@ -139,25 +173,64 @@ try {
     -StageId 'single_flight_transport' -Solver simion
 
   $preparedDir = Join-Path $package.input_dir 'counterfactual_arms'
+  $singleFlightConfiguration = Join-Path $package.input_dir `
+    'simion_single_flight.json'
+  Copy-RfStableFile -SourceRunRoot $repoRoot `
+    -SourcePath (Join-Path $integrationRoot 'config\simion_single_flight.json') `
+    -Destination $singleFlightConfiguration `
+    -Role 'single-flight execution configuration' | Out-Null
+  $singleFlightSettings = Get-Content -LiteralPath $singleFlightConfiguration `
+    -Raw -Encoding UTF8 | ConvertFrom-Json
+  $executionBatchCount = [int]$singleFlightSettings.batching_policy.default_batch_count
+  if ($executionBatchCount -ne 5 -or
+      -not $singleFlightSettings.batching_policy.parallel_after_cache_warmup) {
+    throw 'N=1000 attribution requires the governed five-batch parallel policy.'
+  }
   Invoke-AttributionPython -Arguments @(
     '-m',
     'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.resolution_attribution_counterfactual',
     'prepare','--profile',$profile,'--checkpoints',$baselineCheckpoints,
     '--ideal-source',$idealSource,'--output-dir',$preparedDir,
-    '--mass-amu','100','--charge-state','1'
+    '--mass-amu','100','--charge-state','1',
+    '--rf-frequency-hz',([string][double]$upstream.drive.frequency_Hz),
+    '--execution-batch-count',([string]$executionBatchCount)
   ) -Failure 'Counterfactual arm preparation failed.'
   $prepared = Get-Content -LiteralPath (
     Join-Path $preparedDir 'prepared_arms.json'
   ) -Raw -Encoding UTF8 | ConvertFrom-Json
-  if ($prepared.mother_sample_particle_count -ne 1000 -or
-      $prepared.paired_cohort_particles -lt 3) {
+  if ($prepared.paired_cohort_particles -lt 3) {
     throw 'Prepared counterfactual cohort identity differs.'
+  }
+  if ($prepared.mother_sample_particle_count -ne $motherSampleParticleCount) {
+    throw 'Prepared mother-sample count differs from the governed baseline.'
   }
 
   $runtimeDir = Join-Path $package.run_dir 'simion'
   $formalDir = Join-Path $workspaceRoot `
     'artifacts\projects\single_reflection_oa_tof_mass_analyzer\formal\simion'
   Copy-RfOatofFormalPaSet -FormalDir $formalDir -Destination $runtimeDir
+  $downstreamCacheRoot = Join-Path $workspaceRoot `
+    'artifacts\projects\rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer\cache\simion_oatof_downstream_pa'
+  $expectedReflectronHash = [string]$baselineConfig.parameters.reflectron_pa0_sha256
+  $cachedReflectronPa0 = Get-ChildItem -LiteralPath $downstreamCacheRoot `
+    -Recurse -Filter 'reflectron.pa0' -File | Where-Object {
+      (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash -eq
+        $expectedReflectronHash
+    } | Select-Object -First 1
+  if ($null -eq $cachedReflectronPa0) {
+    throw 'Baseline reflectron PA cache identity differs.'
+  }
+  foreach ($source in Get-ChildItem -LiteralPath $cachedReflectronPa0.DirectoryName `
+      -Filter 'reflectron.pa*' -File) {
+    $target = Join-Path $runtimeDir $source.Name
+    if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Force }
+    try {
+      New-Item -ItemType HardLink -Path $target -Target $source.FullName `
+        -ErrorAction Stop | Out-Null
+    } catch {
+      Copy-Item -LiteralPath $source.FullName -Destination $target -Force
+    }
+  }
   $program = Join-Path $runtimeDir 'oatof_ideal_grounded.lua'
   $programMetadata = Join-Path $package.input_dir `
     'single_flight_program_build.json'
@@ -171,6 +244,7 @@ try {
     '--upstream',(Join-Path $package.input_dir 'upstream_resolved_design.json'),
     '--frontend-contract',(Join-Path $package.input_dir `
       'single_flight_frontend_contract.json'),
+    '--oatof',(Join-Path $package.input_dir 'oatof_resolved_geometry.json'),
     '--output',$program,'--metadata',$programMetadata
   ) -Failure 'Counterfactual single-flight Program build failed.'
 
@@ -192,6 +266,7 @@ try {
     project_root = $repoRoot
     inputs = [ordered]@{
       profile = $profile
+      single_flight_configuration = $singleFlightConfiguration
       baseline_checkpoints = $baselineCheckpoints
       ideal_source = $idealSource
       prepared_arms = Join-Path $preparedDir 'prepared_arms.json'
@@ -211,9 +286,11 @@ try {
       ideal_reference_run_id = $IdealRunId
     }
     parameters = [ordered]@{
-      mother_sample_particle_count = 1000
+      mother_sample_particle_count = $motherSampleParticleCount
       paired_cohort_particles = [int]$prepared.paired_cohort_particles
       arm_count = @($prepared.arms).Count
+      execution_batch_count = $executionBatchCount
+      execution_batches_parallel = $true
       pulse_time_us = [double]$prepared.pulse_time_us
       trajectory_quality = 8
       maximum_time_of_flight_us = 90.0
@@ -243,41 +320,73 @@ try {
   $oldOverride = $env:OATOF_ACCELERATOR_PA_OVERRIDE
   try {
     $env:OATOF_ACCELERATOR_PA_OVERRIDE = $frontendPa0
+    $resourceSupport = Join-Path $repoRoot `
+      'common\multipole\resource_budget_support.ps1'
     foreach ($arm in $prepared.arms) {
       $armId = [string]$arm.arm_id
-      $stdout = Join-Path $package.log_dir "$armId.stdout.log"
-      $stderr = Join-Path $package.log_dir "$armId.stderr.log"
-      $usage = Join-Path $package.log_dir "$armId.resource_usage.json"
-      $fly = Invoke-ResourceBudgetedProcess `
-        -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
-        -UsagePath $usage -FilePath $SimionExe -WorkingDirectory $runtimeDir `
-        -RedirectStandardOutput $stdout -RedirectStandardError $stderr `
-        -ArgumentList @(
-          '--default-num-particles',([string][Math]::Max(
-            100,[int]$prepared.paired_cohort_particles
-          )),
-          '--nogui','--noprompt','fly','--trajectory-quality','8',
-          '--retain-trajectories','0',
-          '--particles',(Join-Path $preparedDir ([string]$arm.ion_file)),
-          '--programs','1','--adjustable','trajectory_quality=8',
-          '--adjustable','trajectory_log_enable=1',
-          '--adjustable','diagnostic_max_tof_us=90',
-          '--adjustable','handoff_pulse_mode=1',
-          '--adjustable',(
-            'handoff_pulse_time_us={0:R}' -f [double]$prepared.pulse_time_us
-          ),
-          '--adjustable','handoff_pulse_width_us=1',
-          '--adjustable','single_flight_rf_steps=160',
-          (Join-Path $runtimeDir 'oatof_ideal_grounded.iob')
-        )
-      if ($fly.resource_budget_exceeded) {
-        $resourceBudgetExceeded = $true
-        throw "Counterfactual arm exceeded its resource budget: $armId"
+      $jobs = @()
+      foreach ($batch in $arm.execution_batches) {
+        $batchIndex = [int]$batch.batch_index
+        $stem = '{0}__batch{1:D2}' -f $armId,$batchIndex
+        $payload = [pscustomobject]@{
+          support = $resourceSupport
+          budget = $budget.stage_budget
+          run_dir = $package.run_dir
+          usage = Join-Path $package.log_dir "$stem.resource_usage.json"
+          executable = $SimionExe
+          working_directory = $runtimeDir
+          stdout = Join-Path $package.log_dir "$stem.stdout.log"
+          stderr = Join-Path $package.log_dir "$stem.stderr.log"
+          arguments = [string[]]@(
+            '--default-num-particles',([string][Math]::Max(100,[int]$batch.particles)),
+            '--nogui','--noprompt','fly','--trajectory-quality','8',
+            '--retain-trajectories','0',
+            '--particles',(Join-Path $preparedDir ([string]$batch.ion_file)),
+            '--programs','1','--adjustable','trajectory_quality=8',
+            '--adjustable','trajectory_log_enable=1',
+            '--adjustable','diagnostic_max_tof_us=90',
+            '--adjustable','handoff_pulse_mode=1',
+            '--adjustable',(
+              'handoff_pulse_time_us={0:R}' -f [double]$arm.pulse_time_us
+            ),
+            '--adjustable','handoff_pulse_width_us=1',
+            '--adjustable','single_flight_rf_steps=160',
+            (Join-Path $runtimeDir 'oatof_ideal_grounded.iob')
+          )
+        }
+        $jobs += Start-Job -ArgumentList $payload -ScriptBlock {
+          param($item)
+          . $item.support
+          Invoke-ResourceBudgetedProcess `
+            -ResolvedBudgetPath $item.budget -RunDir $item.run_dir `
+            -UsagePath $item.usage -FilePath $item.executable `
+            -WorkingDirectory $item.working_directory `
+            -RedirectStandardOutput $item.stdout `
+            -RedirectStandardError $item.stderr `
+            -ArgumentList ([string[]]$item.arguments)
+        }
       }
-      if ($fly.exit_code -ne 0) {
-        throw "Counterfactual SIMION arm failed: $armId"
+      try {
+        foreach ($job in $jobs) {
+          $fly = Receive-Job -Job $job -Wait
+          if ($job.State -ne 'Completed' -or $null -eq $fly) {
+            throw "Counterfactual SIMION batch job failed: $armId"
+          }
+          if ($fly.resource_budget_exceeded) {
+            $resourceBudgetExceeded = $true
+            throw "Counterfactual SIMION batch exceeded its resource budget: $armId"
+          }
+          if ($fly.exit_code -ne 0) {
+            throw "Counterfactual SIMION batch failed: $armId"
+          }
+        }
+      } finally {
+        $jobs | Remove-Job -Force -ErrorAction SilentlyContinue
       }
-      Write-Output "RESOLUTION_ATTRIBUTION_ARM=PASS ARM=$armId"
+      Write-Output (
+        "RESOLUTION_ATTRIBUTION_ARM=PASS ARM=$armId " +
+        "BATCHES=$executionBatchCount PARALLEL=true"
+      )
     }
   } finally {
     $env:OATOF_ACCELERATOR_PA_OVERRIDE = $oldOverride
@@ -290,7 +399,8 @@ try {
     'summarize','--profile',$profile,
     '--prepared',(Join-Path $preparedDir 'prepared_arms.json'),
     '--baseline-checkpoints',$baselineCheckpoints,
-    '--logs-dir',$package.log_dir,'--output-dir',$analysisDir
+    '--logs-dir',$package.log_dir,'--output-dir',$analysisDir,
+    '--baseline-clock-basis',$baselineClockBasis
   ) -Failure 'Counterfactual result analysis failed.'
   Copy-Item -LiteralPath (Join-Path $analysisDir `
     'resolution_attribution.json') -Destination $package.summary -Force
@@ -302,9 +412,6 @@ try {
     (Join-Path $analysisDir 'counterfactual_particle_checkpoints.csv'),
     $retentionActions
   )
-  $outputs += @(Get-ChildItem -LiteralPath $package.log_dir -File | ForEach-Object {
-    $_.FullName
-  })
   Write-RfFrozenRunManifest -Python $python -FrozenRepoRoot $repoRoot `
     -RunConfig $package.run_config -Status success `
     -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
