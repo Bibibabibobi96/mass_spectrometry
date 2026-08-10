@@ -13,6 +13,10 @@ param(
   [string]$OatofResolvedGeometry = '',
   [string]$PulseSchedule = '',
   [string]$LayoutProfileId = '',
+  [string]$MotherParticleSource = '',
+  [string]$MotherParticleSourceSha256 = '',
+  [int]$MotherParticleCount = 0,
+  [ValidateSet('governed_upstream_source','steady_candidate_pool','pulse_eligible_conditional')][string]$SamplingMode = 'governed_upstream_source',
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$PythonExe = ''
 )
@@ -65,7 +69,9 @@ try {
   $configuration = Join-Path $package.input_dir 'simion_single_flight.json'
   Copy-RfStableFile -SourceRunRoot $repoRoot -SourcePath $configurationSource -Destination $configuration -Role 'single-flight configuration' | Out-Null
   $settings = Get-Content -LiteralPath $configuration -Raw -Encoding UTF8 | ConvertFrom-Json
-  if ($settings.role -ne 'rf_oatof_simion_single_flight_configuration' -or [double]$settings.cell_mm -le 0) {
+  if ($settings.role -ne 'rf_oatof_simion_single_flight_configuration' -or
+      [double]$settings.cell_mm -le 0 -or
+      [string]$settings.clock_basis -notin @('legacy_relative_time','absolute_birth_time')) {
     throw 'Single-flight numerical configuration is invalid.'
   }
   $hasGovernedLayout = -not [string]::IsNullOrWhiteSpace($LayoutProfileId)
@@ -97,11 +103,13 @@ try {
     $oatofGeometryDocument.single_flight_layout_derivation
   } else { $null }
   $hasReflectronRebuild = (
+    $SamplingMode -ne 'steady_candidate_pool' -and
     $null -ne $layoutDerivation -and
     $null -ne $layoutDerivation.PSObject.Properties['design_compilation'] -and
     [bool]$layoutDerivation.design_compilation.simion_rebuild_plan.reflectron_pa
   )
   $hasFlightTubeRebuild = (
+    $SamplingMode -ne 'steady_candidate_pool' -and
     $null -ne $layoutDerivation -and
     $null -ne $layoutDerivation.PSObject.Properties['design_compilation'] -and
     [bool]$layoutDerivation.design_compilation.simion_rebuild_plan.flight_tube_pa
@@ -126,9 +134,17 @@ try {
   }
 
   $motherSource = Join-Path $package.input_dir 'mother_particle_source.csv'
-  Copy-RfStableFile -SourceRunRoot $workspaceRoot -SourcePath $runtime.source_particle_source `
-    -Destination $motherSource -Role 'N1000 mother particle source' | Out-Null
-  $launched = [int]$runtime.source_record.launched_particle_count
+  $hasMotherOverride = -not [string]::IsNullOrWhiteSpace($MotherParticleSource)
+  if ($hasMotherOverride -ne (-not [string]::IsNullOrWhiteSpace($MotherParticleSourceSha256) -and $MotherParticleCount -gt 0)) {
+    throw 'Single-flight mother-source override identity is incomplete.'
+  }
+  $sourceToCopy = if ($hasMotherOverride) { [IO.Path]::GetFullPath($MotherParticleSource) } else { $runtime.source_particle_source }
+  Copy-RfStableFile -SourceRunRoot $(if ($hasMotherOverride) {$repoRoot} else {$workspaceRoot}) -SourcePath $sourceToCopy `
+    -Destination $motherSource -Role 'single-flight mother particle source' | Out-Null
+  if ($hasMotherOverride -and (Get-FileHash -LiteralPath $motherSource -Algorithm SHA256).Hash -ne $MotherParticleSourceSha256) {
+    throw 'Single-flight mother-source override hash differs.'
+  }
+  $launched = if ($hasMotherOverride) { $MotherParticleCount } else { [int]$runtime.source_record.launched_particle_count }
   if (@(Import-Csv -LiteralPath $motherSource).Count -ne $launched) {
     throw 'Single-flight mother sample count differs from source authority.'
   }
@@ -232,14 +248,52 @@ try {
   $flightTubeGemFrozen = $null
   $flightTubeBuildStdout = $null
   $flightTubeBuildStderr = $null
+  $downstreamCacheRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer\cache\simion_oatof_downstream_pa'
+  $geometryHash = (Get-FileHash -LiteralPath $oatofGeometry -Algorithm SHA256).Hash
+  $flightTubeBuilderSource = Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer\simion\workbench\build_flight_tube_variant.lua'
+  $flightTubeGemSource = Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer\simion\workbench\oatof_flight_tube_ground.gem'
+  $reflectronBuilderSource = Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer\simion\reflectron\build_reflectron_variant.lua'
+  $reflectronGemSource = Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer\simion\reflectron\oatof_reflectron_ideal_10_5.gem'
+  function Get-ContentAddressedPaPath {
+    param([Parameter(Mandatory)][string]$Kind,[Parameter(Mandatory)][string]$Builder,[Parameter(Mandatory)][string]$Gem)
+    $identity = "$geometryHash|$((Get-FileHash -LiteralPath $Builder -Algorithm SHA256).Hash)|$((Get-FileHash -LiteralPath $Gem -Algorithm SHA256).Hash)"
+    $key = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($identity))).ToLowerInvariant()
+    return Join-Path (Join-Path $downstreamCacheRoot $key) "$Kind.pa0"
+  }
+  $flightTubeCachePa0 = Get-ContentAddressedPaPath -Kind 'flight_tube_ground' -Builder $flightTubeBuilderSource -Gem $flightTubeGemSource
+  $reflectronCachePa0 = Get-ContentAddressedPaPath -Kind 'reflectron' -Builder $reflectronBuilderSource -Gem $reflectronGemSource
+  $flightTubeCacheDir = Split-Path -Parent $flightTubeCachePa0
+  $reflectronCacheDir = Split-Path -Parent $reflectronCachePa0
+  function Use-ReadOnlyPaCacheFamily {
+    param([Parameter(Mandatory)][string]$CacheDirectory,[Parameter(Mandatory)][string]$Pattern)
+    foreach ($source in Get-ChildItem -LiteralPath $CacheDirectory -Filter $Pattern -File) {
+      $target = Join-Path $runtimeDir $source.Name
+      if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Force }
+      try {
+        New-Item -ItemType HardLink -Path $target -Target $source.FullName -ErrorAction Stop | Out-Null
+      } catch {
+        Copy-Item -LiteralPath $source.FullName -Destination $target -Force
+      }
+    }
+  }
+  if ($hasFlightTubeRebuild -and (Test-Path -LiteralPath $flightTubeCachePa0 -PathType Leaf)) {
+    Use-ReadOnlyPaCacheFamily -CacheDirectory $flightTubeCacheDir -Pattern 'flight_tube_ground.pa*'
+    $hasFlightTubeRebuild = $false
+  }
+  if ($hasReflectronRebuild -and
+      (Test-Path -LiteralPath $reflectronCachePa0 -PathType Leaf) -and
+      (Test-Path -LiteralPath (Join-Path $reflectronCacheDir 'reflectron.pa1') -PathType Leaf)) {
+    Use-ReadOnlyPaCacheFamily -CacheDirectory $reflectronCacheDir -Pattern 'reflectron.pa*'
+    $hasReflectronRebuild = $false
+  }
   if ($hasFlightTubeRebuild) {
     $flightTubeBuilderFrozen = Join-Path $package.input_dir 'build_flight_tube_variant.lua'
     $flightTubeGemFrozen = Join-Path $package.input_dir 'oatof_flight_tube_ground.gem'
     Copy-RfStableFile -SourceRunRoot $repoRoot `
-      -SourcePath (Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer\simion\workbench\build_flight_tube_variant.lua') `
+      -SourcePath $flightTubeBuilderSource `
       -Destination $flightTubeBuilderFrozen -Role 'candidate flight-tube SIMION builder' | Out-Null
     Copy-RfStableFile -SourceRunRoot $repoRoot `
-      -SourcePath (Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer\simion\workbench\oatof_flight_tube_ground.gem') `
+      -SourcePath $flightTubeGemSource `
       -Destination $flightTubeGemFrozen -Role 'candidate flight-tube SIMION GEM' | Out-Null
     $flightTubeBuildStdout = Join-Path $package.log_dir 'flight_tube_build.stdout.log'
     $flightTubeBuildStderr = Join-Path $package.log_dir 'flight_tube_build.stderr.log'
@@ -266,15 +320,17 @@ try {
         -not (Test-Path -LiteralPath (Join-Path $runtimeDir 'flight_tube_ground.pa0') -PathType Leaf)) {
       throw 'Candidate flight-tube PA build failed.'
     }
+    New-Item -ItemType Directory -Path $flightTubeCacheDir -Force | Out-Null
+    Get-ChildItem -LiteralPath $runtimeDir -Filter 'flight_tube_ground.pa*' -File | Copy-Item -Destination $flightTubeCacheDir -Force
   }
   if ($hasReflectronRebuild) {
     $reflectronBuilderFrozen = Join-Path $package.input_dir 'build_reflectron_variant.lua'
     $reflectronGemFrozen = Join-Path $package.input_dir 'oatof_reflectron_ideal_10_5.gem'
     Copy-RfStableFile -SourceRunRoot $repoRoot `
-      -SourcePath (Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer\simion\reflectron\build_reflectron_variant.lua') `
+      -SourcePath $reflectronBuilderSource `
       -Destination $reflectronBuilderFrozen -Role 'candidate reflectron SIMION builder' | Out-Null
     Copy-RfStableFile -SourceRunRoot $repoRoot `
-      -SourcePath (Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer\simion\reflectron\oatof_reflectron_ideal_10_5.gem') `
+      -SourcePath $reflectronGemSource `
       -Destination $reflectronGemFrozen -Role 'candidate reflectron SIMION GEM' | Out-Null
     $reflectronBuildStdout = Join-Path $package.log_dir 'reflectron_build.stdout.log'
     $reflectronBuildStderr = Join-Path $package.log_dir 'reflectron_build.stderr.log'
@@ -307,23 +363,28 @@ try {
         -not (Test-Path -LiteralPath $reflectronPa0 -PathType Leaf)) {
       throw 'Candidate reflectron PA build failed.'
     }
+    New-Item -ItemType Directory -Path $reflectronCacheDir -Force | Out-Null
+    Get-ChildItem -LiteralPath $runtimeDir -Filter 'reflectron.pa*' -File | Copy-Item -Destination $reflectronCacheDir -Force
   }
   $formalLua = Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer\simion\workbench\formal\oatof_ideal_grounded.lua'
   $pulseLua = Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer\simion\workbench\candidates\oatof_handoff_pulse.lua'
   $program = Join-Path $runtimeDir 'oatof_ideal_grounded.lua'
   $programMetadata = Join-Path $package.input_dir 'single_flight_program_build.json'
-  Invoke-SingleFlightPython -Arguments @('-m',
+  $programArguments = @('-m',
     'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.build_single_flight_program',
     '--formal',$formalLua,'--pulse-extension',$pulseLua,'--upstream',$upstreamFrozen,
     '--frontend-contract',$frontendContract,'--oatof',$oatofGeometry,
-    '--output',$program,'--metadata',$programMetadata) `
+    '--initial-global-state',$globalSource,'--clock-basis',([string]$settings.clock_basis),
+    '--output',$program,'--metadata',$programMetadata)
+  if ($SamplingMode -eq 'steady_candidate_pool') { $programArguments += '--terminate-after-pulse' }
+  Invoke-SingleFlightPython -Arguments $programArguments `
     -Failure 'Single-flight Program build failed.'
 
   $runConfiguration = [ordered]@{
     schema_version=2; run_id=$RunId; project=$runtime.upstream_project_id; mode='rf_to_oatof_simion_single_flight'; project_root=$repoRoot
     inputs=[ordered]@{ configuration=$configuration; runtime_binding=$runtimeBindingFrozen; resolved_connection=$resolvedFrozen; resolved_source_contract=$sourceContractFrozen; upstream_resolved_design=$upstreamFrozen; oatof_resolved_geometry=$oatofGeometry; pulse_schedule=$pulseScheduleFrozen; resolved_integration_engineering_budget=$budget.frozen_budget; resolved_stage_resource_budget=$budget.stage_budget; mother_particle_source=$motherSource; initial_global_state=$globalSource; ion=$ion; frontend_gem=$frontendGem; frontend_contract=$frontendContract; frontend_aperture_topology_support=$apertureTopologySupport; frontend_aperture_topology_verifier=$apertureVerifier; program_metadata=$programMetadata; candidate_flight_tube_builder=$flightTubeBuilderFrozen; candidate_flight_tube_gem=$flightTubeGemFrozen; candidate_reflectron_builder=$reflectronBuilderFrozen; candidate_reflectron_gem=$reflectronGemFrozen }
     upstream_source_identity=$runtime.source_identity
-    parameters=[ordered]@{ connection_profile_id=$ConnectionProfileId; source_branch_id=$SourceBranchId; layout_profile_id=$(if($hasGovernedLayout){$LayoutProfileId}else{$null}); launched_particle_count=$launched; particle_count=$launched; aperture_width_mm=$apertureWidthMm; aperture_height_mm=$apertureHeightMm; aperture_boolean_boundary_policy=[string]$apertureDiscretization.boolean_boundary_policy; aperture_grid_warnings=$apertureGridWarnings; frontend_open_aperture_column_count=[int]$apertureTopology.open_column_count; frontend_aperture_guard_electrode_check_passed=[bool]$apertureTopology.guard_electrode_check_passed; frontend_aperture_topology_report_sha256=(Get-FileHash -LiteralPath $apertureTopologyReport -Algorithm SHA256).Hash; rod_end_to_accelerator_shield_mm=1.0; surrounded_transition=$true; accelerator_axis_x_mm=[double]$oatofGeometryDocument.coordinate_convention.accelerator_axis_x; pulse_time_us=$pulseTimeUs; pulse_width_us=$pulseWidthUs; design_compilation=$(if($null -ne $layoutDerivation){$layoutDerivation.design_compilation}else{$null}); source_release_full_width_mm=[double]$oatofGeometryDocument.particle_source.size_z_mm; reflectron_stage2_length_mm=[double]$oatofGeometryDocument.geometry_mm.L_stage2; reflectron_midgrid_voltage_V=[double]$oatofGeometryDocument.electrodes_V.midgrid; reflectron_backplate_voltage_V=[double]$oatofGeometryDocument.electrodes_V.backplate; reflectron_pa0_sha256=(Get-FileHash -LiteralPath $reflectronPa0 -Algorithm SHA256).Hash; frontend_gem_sha256=$frontendHash; frontend_pa0_sha256=(Get-FileHash -LiteralPath $cachePa0 -Algorithm SHA256).Hash }
+    parameters=[ordered]@{ connection_profile_id=$ConnectionProfileId; source_branch_id=$SourceBranchId; layout_profile_id=$(if($hasGovernedLayout){$LayoutProfileId}else{$null}); clock_basis=[string]$settings.clock_basis; launched_particle_count=$launched; particle_count=$launched; aperture_width_mm=$apertureWidthMm; aperture_height_mm=$apertureHeightMm; aperture_boolean_boundary_policy=[string]$apertureDiscretization.boolean_boundary_policy; aperture_grid_warnings=$apertureGridWarnings; frontend_open_aperture_column_count=[int]$apertureTopology.open_column_count; frontend_aperture_guard_electrode_check_passed=[bool]$apertureTopology.guard_electrode_check_passed; frontend_aperture_topology_report_sha256=(Get-FileHash -LiteralPath $apertureTopologyReport -Algorithm SHA256).Hash; rod_end_to_accelerator_shield_mm=1.0; surrounded_transition=$true; accelerator_axis_x_mm=[double]$oatofGeometryDocument.coordinate_convention.accelerator_axis_x; pulse_time_us=$pulseTimeUs; pulse_width_us=$pulseWidthUs; design_compilation=$(if($null -ne $layoutDerivation){$layoutDerivation.design_compilation}else{$null}); source_release_full_width_mm=[double]$oatofGeometryDocument.particle_source.size_z_mm; reflectron_stage2_length_mm=[double]$oatofGeometryDocument.geometry_mm.L_stage2; reflectron_midgrid_voltage_V=[double]$oatofGeometryDocument.electrodes_V.midgrid; reflectron_backplate_voltage_V=[double]$oatofGeometryDocument.electrodes_V.backplate; reflectron_pa0_sha256=(Get-FileHash -LiteralPath $reflectronPa0 -Algorithm SHA256).Hash; frontend_gem_sha256=$frontendHash; frontend_pa0_sha256=(Get-FileHash -LiteralPath $cachePa0 -Algorithm SHA256).Hash }
     artifact_retention=[ordered]@{policy_version=1;class='compact';reason=$null}; formal_gate_passed=$false
   }
   Write-RfJson -Path $package.run_config -Depth 10 -Value $runConfiguration
@@ -355,6 +416,7 @@ try {
     'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.analyze_single_flight',
     '--log',$stdout,'--launched',([string]$launched),'--mass-amu','100',
     '--geometry',$oatofGeometry,'--pulse-time-us',([string]$pulseTimeUs),
+    '--clock-basis',([string]$settings.clock_basis),
     '--checkpoints',$checkpoints,'--summary',$package.summary) `
     -Failure 'Single-flight log analysis failed.'
   $sixPanel = Join-Path $package.result_dir 'single_flight_spatial_six_panel.png'

@@ -9,6 +9,7 @@ from pathlib import Path
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.build_single_flight_program import (
     bind_oatof_adjustables,
     build_extension,
+    load_birth_times,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_frontend import compile_frontend
 
@@ -66,7 +67,13 @@ class SingleFlightProgramTests(unittest.TestCase):
             "flange_thickness_binding": "oatof.geometry_mm.accelerator_shield_wall",
         })
         _, frontend = compile_frontend(upstream, oatof, connection)
-        extension = build_extension(upstream, frontend)
+        extension = build_extension(
+            upstream,
+            frontend,
+            birth_times_us=[0.25, 1.0],
+            clock_basis="absolute_birth_time",
+            terminate_after_pulse=True,
+        )
         self.assertIn("adj_elect[9]=0", extension)
         self.assertIn("adj_elect[10]=pulse_on and V_repeller", extension)
         self.assertIn("adj_elect[17]=0", extension)
@@ -76,6 +83,23 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertIn("TRACE: source_release", extension)
         self.assertIn("TRACE: pre_pulse_state", extension)
         self.assertIn("single_flight_rf_steps=160", extension)
+        self.assertIn("single_flight_absolute_birth_clock=1", extension)
+        self.assertIn("return birth+ion_time_of_flight", extension)
+        self.assertNotIn("ion_time_of_flight=birth", extension)
+        self.assertIn("math.cos(single_flight_omega*instrument_time_us)", extension)
+        self.assertIn("single_flight_terminate_after_pulse=1", extension)
+        self.assertIn("instrument_time_us>=handoff_pulse_time_us then ion_splat=1", extension)
+
+    def test_birth_times_are_loaded_as_contiguous_instrument_times(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "state.csv"
+            path.write_text(
+                "particle_id,instrument_time_us\n1,0.25\n2,1.5\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(load_birth_times(path), [0.25, 1.5])
 
 
 if __name__ == "__main__":

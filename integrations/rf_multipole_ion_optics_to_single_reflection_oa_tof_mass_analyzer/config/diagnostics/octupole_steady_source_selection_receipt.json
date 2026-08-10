@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "role": "rf_oatof_steady_state_source_selection_receipt",
+  "method": "detector_blind_prepulse_geometric_conditioning",
+  "physics_scope": {
+    "continuous_entrance_injection": true,
+    "rf_phase_uniform_over_one_period": true,
+    "pulse_phase_locked": true,
+    "collisions_enabled": false,
+    "space_charge_enabled": false
+  },
+  "selection_seed": 2026081002,
+  "candidate_launched_count": 2000,
+  "candidate_eligible_count": 1623,
+  "raw_pulse_capture_fraction": 0.8115,
+  "selected_count": 1000,
+  "selection_uses_detector_outcome": false,
+  "batches": [
+    {
+      "batch_index": 1,
+      "source_path": "common/multipole/sources/rf_multipole_steady_candidate_v1_batch01_500.csv",
+      "source_sha256": "F3D9A443534E53B0F8DEB89DAFCBF343F47E3DB5C840527D66ADCAD85FECEAAC",
+      "checkpoint_path": "artifacts/projects/rf_octupole_ion_optics/runs/20260810_184000__sim__simion__rf-oatof-single-flight-gap0__n500/results/single_flight_particle_checkpoints.csv",
+      "checkpoint_sha256": "20F381F44B064B4DC9F4211A961E1DF2743D3228271DE4F9CD8AC2D97AE550C1",
+      "launched_count": 500,
+      "eligible_count": 411
+    },
+    {
+      "batch_index": 2,
+      "source_path": "common/multipole/sources/rf_multipole_steady_candidate_v1_batch02_500.csv",
+      "source_sha256": "540E11E66675CC576AFDA21C6BCE8F5C33BFCD676BDF3736DBB05EF339F565AC",
+      "checkpoint_path": "artifacts/projects/rf_octupole_ion_optics/runs/20260810_184100__sim__simion__rf-oatof-single-flight-gap0__n500/results/single_flight_particle_checkpoints.csv",
+      "checkpoint_sha256": "5D23692514210519FB3EB465F983C166F9E5E31706F1E435D1BC1D7DC28FD280",
+      "launched_count": 500,
+      "eligible_count": 400
+    },
+    {
+      "batch_index": 3,
+      "source_path": "common/multipole/sources/rf_multipole_steady_candidate_v1_batch03_500.csv",
+      "source_sha256": "CE5152CDE99A4314FA2805DFE06FD59C9D563C0CCE9365CA52B3DE0BBEF81C78",
+      "checkpoint_path": "artifacts/projects/rf_octupole_ion_optics/runs/20260810_184200__sim__simion__rf-oatof-single-flight-gap0__n500/results/single_flight_particle_checkpoints.csv",
+      "checkpoint_sha256": "3FF544C2154032345CFA457D98873726E5AE752A23E8745D348742964161172D",
+      "launched_count": 500,
+      "eligible_count": 411
+    },
+    {
+      "batch_index": 4,
+      "source_path": "common/multipole/sources/rf_multipole_steady_candidate_v1_batch04_500.csv",
+      "source_sha256": "2245276B46AD4CB527A59344CF9F1216AD6A4D0F62F8D8F6348E1F0DFEA8B79F",
+      "checkpoint_path": "artifacts/projects/rf_octupole_ion_optics/runs/20260810_184300__sim__simion__rf-oatof-single-flight-gap0__n500/results/single_flight_particle_checkpoints.csv",
+      "checkpoint_sha256": "9F5A10F019EBE2CA5CB7FBDC285EC9F05D825348836D1E5F141CBD01C301A971",
+      "launched_count": 500,
+      "eligible_count": 401
+    }
+  ],
+  "selected_lineage_sha256": "68A8558ACE3C67469E5435F4C728911D742F956A9AF65EB2BAC19F1969BA7F18",
+  "output_path": "common/multipole/sources/rf_multipole_steady_pulse_eligible_v1_1000.csv",
+  "output_sha256": "E291DC6C69DC4E1304F901A3D70F8D2DC2F3FFABB5DA472AD97F461B140EC5D4",
+  "execution_batch_count": 5,
+  "execution_batches": [
+    {
+      "batch_index": 1,
+      "global_particle_id_offset": 0,
+      "particle_count": 200,
+      "path": "common/multipole/sources/rf_multipole_steady_pulse_eligible_v1_batch01_200.csv",
+      "sha256": "C0E71E6981BC0AB64E00E93909BE3D4BF5D0DC7E268CBF4930802C5870513051"
+    },
+    {
+      "batch_index": 2,
+      "global_particle_id_offset": 200,
+      "particle_count": 200,
+      "path": "common/multipole/sources/rf_multipole_steady_pulse_eligible_v1_batch02_200.csv",
+      "sha256": "6EAA5DAE0436EC08532171BB0C615442DB45B8E0F3D3557C27CD537F58BAE05A"
+    },
+    {
+      "batch_index": 3,
+      "global_particle_id_offset": 400,
+      "particle_count": 200,
+      "path": "common/multipole/sources/rf_multipole_steady_pulse_eligible_v1_batch03_200.csv",
+      "sha256": "0154FA5D34227E5C62A7727020DAD3BC6085D01DFC1A3579C4133DE11CE4B7FE"
+    },
+    {
+      "batch_index": 4,
+      "global_particle_id_offset": 600,
+      "particle_count": 200,
+      "path": "common/multipole/sources/rf_multipole_steady_pulse_eligible_v1_batch04_200.csv",
+      "sha256": "AFCB5BC5E24DBA273663FF4A356DF5D37958F7B78FA105CE1690A21667002CA4"
+    },
+    {
+      "batch_index": 5,
+      "global_particle_id_offset": 800,
+      "particle_count": 200,
+      "path": "common/multipole/sources/rf_multipole_steady_pulse_eligible_v1_batch05_200.csv",
+      "sha256": "2CB95DD658264F3A9E08FF72A69E3D0CE3DD924144BAFCA5E089BB457DD701DA"
+    }
+  ]
+}

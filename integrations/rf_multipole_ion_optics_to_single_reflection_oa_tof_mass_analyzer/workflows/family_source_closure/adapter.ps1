@@ -69,6 +69,15 @@ $layoutArgumentNames = @(
 if ($frozenArguments.ContainsKey('layout_profile_id')) {
   $expectedArguments += $layoutArgumentNames
 }
+$sourceOverrideArgumentNames = @(
+  'single_flight_particle_source_path',
+  'single_flight_particle_source_sha256',
+  'single_flight_particle_source_count',
+  'single_flight_sampling_mode'
+)
+if ($frozenArguments.ContainsKey('single_flight_particle_source_path')) {
+  $expectedArguments += $sourceOverrideArgumentNames
+}
 if (@($frozenArguments.Keys | Where-Object {
       $_ -notin $expectedArguments
     }).Count -ne 0 -or
@@ -117,6 +126,23 @@ if ($campaign.role -ne 'rf_multipole_oatof_experiment_campaign' -or
   throw 'Campaign or experiment identity no longer resolves uniquely.'
 }
 $experiment = $experiments[0]
+$singleFlightParticleSourcePath = $null
+if ($frozenArguments.ContainsKey('single_flight_particle_source_path')) {
+  $singleFlightParticleSourcePath = [IO.Path]::GetFullPath(
+    (Join-Path $repo $frozenArguments.single_flight_particle_source_path)
+  )
+  $declaredSource = $experiment.single_flight_particle_source
+  if ($null -eq $declaredSource -or
+      [string]$declaredSource.path -ne $frozenArguments.single_flight_particle_source_path -or
+      [string]$declaredSource.sha256 -ne $frozenArguments.single_flight_particle_source_sha256 -or
+      [int]$declaredSource.particle_count -ne [int]$frozenArguments.single_flight_particle_source_count -or
+      [string]$declaredSource.sampling_mode -ne $frozenArguments.single_flight_sampling_mode -or
+      -not $singleFlightParticleSourcePath.StartsWith($repo + [IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase) -or
+      -not (Test-Path -LiteralPath $singleFlightParticleSourcePath -PathType Leaf) -or
+      (Get-FileHash -LiteralPath $singleFlightParticleSourcePath -Algorithm SHA256).Hash -ne $frozenArguments.single_flight_particle_source_sha256) {
+    throw 'Single-flight particle-source override is missing or stale.'
+  }
+}
 $campaignExecutionStrategy = if (
   $experiment.PSObject.Properties.Name -contains 'execution_strategy'
 ) { [string]$experiment.execution_strategy } else { 'staged_three_stage' }
@@ -261,7 +287,9 @@ $runtimeLaunchedCount = if (
   [int]$runtime.source_record.particle_count
 }
 $expectedExecutionParticleCount = if ($executionStrategy -eq 'simion_single_flight') {
-  $runtimeLaunchedCount
+  if ($null -ne $singleFlightParticleSourcePath) {
+    [int]$frozenArguments.single_flight_particle_source_count
+  } else { $runtimeLaunchedCount }
 } else { [int]$runtime.source_record.particle_count }
 if ($budget.role -ne 'integration_resolved_engineering_budget' -or
     $budget.integration_id -ne $plan.integration_id -or
@@ -286,11 +314,10 @@ if ($budget.role -ne 'integration_resolved_engineering_budget' -or
       $runtime.source_identity.particle_source_sha256 -or
     $budget.source_identity.metadata_sha256 -ne
       $runtime.source_identity.metadata_sha256 -or
-    [int]$budget.launched_particle_count -ne $runtimeLaunchedCount -or
+    [int]$budget.launched_particle_count -ne $expectedExecutionParticleCount -or
     [int]$budget.particle_count -ne $expectedExecutionParticleCount -or
     $budget.execution_strategy -ne $executionStrategy -or
-    [int]$budget.launched_particle_count -ne
-      [int]$experiment.source.launched_particle_count -or
+    [int]$budget.launched_particle_count -ne $expectedExecutionParticleCount -or
     [int]$budget.particle_count -ne $expectedExecutionParticleCount -or
     $budget.retention_class -ne 'compact') {
   throw 'Campaign budget and runtime source identities differ before stage 1.'
@@ -344,6 +371,12 @@ if ($executionStrategy -eq 'simion_single_flight') {
     $runnerArguments.OatofResolvedGeometry = $resolvedOatofGeometryPath
     $runnerArguments.PulseSchedule = $resolvedPulseSchedulePath
     $runnerArguments.LayoutProfileId = [string]$frozenArguments.layout_profile_id
+  }
+  if ($null -ne $singleFlightParticleSourcePath) {
+    $runnerArguments.MotherParticleSource = $singleFlightParticleSourcePath
+    $runnerArguments.MotherParticleSourceSha256 = $frozenArguments.single_flight_particle_source_sha256
+    $runnerArguments.MotherParticleCount = [int]$frozenArguments.single_flight_particle_source_count
+    $runnerArguments.SamplingMode = $frozenArguments.single_flight_sampling_mode
   }
   & $runtime.implementation.single_flight_runner @runnerArguments
 } else {

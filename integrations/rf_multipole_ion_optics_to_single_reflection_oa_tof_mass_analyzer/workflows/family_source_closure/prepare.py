@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import csv
 import hashlib
 import json
 from pathlib import Path
@@ -305,6 +306,31 @@ def prepare_family_source_closure(
         expected_project_id=expected_project_id,
     )
     source = evidence["source"]
+    single_flight_source = experiment.get("single_flight_particle_source")
+    single_flight_source_path = None
+    if single_flight_source is not None:
+        if execution_strategy != "simion_single_flight":
+            raise ContractError("single-flight particle-source overrides require SIMION single flight")
+        single_flight_source_path = _repo_record(
+            root, single_flight_source, "single-flight particle source"
+        )
+        with single_flight_source_path.open(encoding="utf-8-sig", newline="") as handle:
+            source_rows = list(csv.DictReader(handle))
+        expected_columns = [
+            "particle_id", "birth_time_s", "x_mm", "y_mm", "z_mm",
+            "vx_m_s", "vy_m_s", "vz_m_s", "mass_amu", "charge_state",
+        ]
+        if not source_rows or list(source_rows[0]) != expected_columns:
+            raise ContractError("single-flight particle source columns differ")
+        if len(source_rows) != int(single_flight_source["particle_count"]):
+            raise ContractError("single-flight particle source count differs")
+        if [int(row["particle_id"]) for row in source_rows] != list(range(1, len(source_rows) + 1)):
+            raise ContractError("single-flight particle source IDs must be contiguous")
+        if single_flight_source["sampling_mode"] == "pulse_eligible_conditional":
+            receipt = single_flight_source.get("selection_receipt")
+            if receipt is None:
+                raise ContractError("conditional source requires a selection receipt")
+            _repo_record(root, receipt, "single-flight selection receipt")
     solver_id = evidence["solver_id"]
     if execution_strategy == "simion_single_flight" and solver_id != "simion":
         raise ContractError("SIMION single-flight execution requires a SIMION source run")
@@ -472,7 +498,9 @@ def prepare_family_source_closure(
     }
     row_sha256 = _canonical_sha256(experiment)
     execution_particle_count = (
-        evidence["launched_particle_count"]
+        int(single_flight_source["particle_count"])
+        if single_flight_source is not None
+        else evidence["launched_particle_count"]
         if execution_strategy == "simion_single_flight"
         else evidence["particle_count"]
     )
@@ -487,7 +515,7 @@ def prepare_family_source_closure(
         "execution_strategy": execution_strategy,
         "policy_id": policy["policy_id"],
         "source_identity": source_identity,
-        "launched_particle_count": evidence["launched_particle_count"],
+        "launched_particle_count": execution_particle_count,
         "particle_count": execution_particle_count,
         "retention_class": policy["retention_class"],
         "stage_limits": policy["stage_limits"],
@@ -537,7 +565,12 @@ def prepare_family_source_closure(
                 "upstream_resolved_design_filename=upstream_resolved_design.json",
                 "upstream_resolved_design_sha256="
                 + design_evidence["resolved_design_sha256"],
-            ] + ([] if layout_files is None else [
+            ] + ([] if single_flight_source is None else [
+                f"single_flight_particle_source_path={single_flight_source['path']}",
+                f"single_flight_particle_source_sha256={single_flight_source['sha256']}",
+                f"single_flight_particle_source_count={single_flight_source['particle_count']}",
+                f"single_flight_sampling_mode={single_flight_source['sampling_mode']}",
+            ]) + ([] if layout_files is None else [
                 f"layout_profile_id={experiment['single_flight_layout_profile_id']}",
                 "resolved_oatof_geometry_filename=resolved_oatof_geometry.json",
                 f"resolved_oatof_geometry_sha256={file_sha256(layout_files['geometry'])}",

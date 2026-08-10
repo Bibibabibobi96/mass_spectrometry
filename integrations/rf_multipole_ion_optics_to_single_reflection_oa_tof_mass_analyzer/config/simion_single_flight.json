@@ -1,6 +1,15 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "role": "rf_oatof_simion_single_flight_configuration",
+  "clock_basis": "absolute_birth_time",
+  "batching_policy": {
+    "enabled_at_particle_count": 1000,
+    "default_batch_count": 5,
+    "parallel_after_cache_warmup": true,
+    "cache_warmup_batch_count": 1,
+    "equivalence_requires_collisions_disabled": true,
+    "equivalence_requires_space_charge_disabled": true
+  },
   "cell_mm": 0.2,
   "rf_steps_per_period": 160,
   "pulse_time_us": 39.58788438081105,

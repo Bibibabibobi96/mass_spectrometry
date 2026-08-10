@@ -11,6 +11,7 @@ RUNTIME_BINDING = INTEGRATION_ROOT / "runtime" / "runtime_binding.ps1"
 WORKFLOW_ENTRY = (
     INTEGRATION_ROOT / "workflows" / "family_source_closure" / "execute.ps1"
 )
+SINGLE_FLIGHT_RUNNER = INTEGRATION_ROOT / "runtime" / "run_single_flight.ps1"
 RUNNERS = (
     INTEGRATION_ROOT / "runtime" / "run_transfer.ps1",
     INTEGRATION_ROOT / "stages" / "comsol" / "run_pre_pulse_interface_transport.ps1",
@@ -77,6 +78,11 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
             "-ErrorAction SilentlyContinue",
             WORKFLOW_ENTRY.read_text(encoding="utf-8"),
         )
+
+    def test_pulse_only_candidate_pilot_skips_downstream_pa_rebuilds(self) -> None:
+        text = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        self.assertEqual(text.count("$SamplingMode -ne 'steady_candidate_pool' -and"), 2)
+        self.assertIn("$programArguments += '--terminate-after-pulse'", text)
 
 
 if __name__ == "__main__":

@@ -14,6 +14,7 @@ local base_terminate = segment.terminate
 local pulse_reported = {}
 local previous_state = {}
 local local_exit_reported = {}
+local handoff_instrument_time_us = function() return ion_time_of_flight end
 
 function segment.initialize_run()
   base_initialize_run()
@@ -34,9 +35,10 @@ end
 
 function segment.fast_adjust()
   if ion_instance ~= 3 or handoff_pulse_mode == 0 then return end
+  local instrument_time_us = handoff_instrument_time_us()
   local pulse_on = handoff_pulse_mode == 1
-    and ion_time_of_flight >= handoff_pulse_time_us
-    and ion_time_of_flight < handoff_pulse_time_us + handoff_pulse_width_us
+    and instrument_time_us >= handoff_pulse_time_us
+    and instrument_time_us < handoff_pulse_time_us + handoff_pulse_width_us
   adj_elect01 = pulse_on and V_repeller or handoff_pulse_pre_all_v
   adj_elect02 = pulse_on and V_grid1 or handoff_pulse_pre_all_v
   adj_elect03 = pulse_on and V_grid1 * 5 / 6 or handoff_pulse_pre_all_v
@@ -51,13 +53,14 @@ end
 function segment.tstep_adjust()
   base_tstep_adjust()
   if handoff_pulse_mode == 1 then
+    local instrument_time_us = handoff_instrument_time_us()
     local edge = nil
-    if ion_time_of_flight < handoff_pulse_time_us then edge = handoff_pulse_time_us
-    elseif ion_time_of_flight < handoff_pulse_time_us + handoff_pulse_width_us then
+    if instrument_time_us < handoff_pulse_time_us then edge = handoff_pulse_time_us
+    elseif instrument_time_us < handoff_pulse_time_us + handoff_pulse_width_us then
       edge = handoff_pulse_time_us + handoff_pulse_width_us
     end
     if edge then
-      local remaining = edge - ion_time_of_flight
+      local remaining = edge - instrument_time_us
       if ion_time_step > remaining then ion_time_step = remaining end
     end
   end
@@ -65,6 +68,7 @@ end
 
 function segment.other_actions()
   base_other_actions()
+  local instrument_time_us = handoff_instrument_time_us()
   local previous = previous_state[ion_number]
   if previous and not local_exit_reported[ion_number]
       and previous.z < accelerator_grid2_z_mm
@@ -72,7 +76,7 @@ function segment.other_actions()
     local fraction = (accelerator_grid2_z_mm - previous.z) /
       (ion_pz_mm - previous.z)
     local crossing_time = previous.t + fraction *
-      (ion_time_of_flight - previous.t)
+      (instrument_time_us - previous.t)
     local crossing_x = previous.x + fraction * (ion_px_mm - previous.x)
     local crossing_y = previous.y + fraction * (ion_py_mm - previous.y)
     local_exit_reported[ion_number] = true
@@ -83,14 +87,14 @@ function segment.other_actions()
     end
   end
   previous_state[ion_number] = {
-    t=ion_time_of_flight, x=ion_px_mm, y=ion_py_mm, z=ion_pz_mm
+    t=instrument_time_us, x=ion_px_mm, y=ion_py_mm, z=ion_pz_mm
   }
   if handoff_pulse_mode == 1 and not pulse_reported[ion_number]
-      and ion_time_of_flight >= handoff_pulse_time_us then
+      and instrument_time_us >= handoff_pulse_time_us then
     pulse_reported[ion_number] = true
     if trajectory_log_enable ~= 0 then
       print(string.format('TRACE: handoff_pulse_on ion=%d instrument_time_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g',
-        ion_number, ion_time_of_flight, ion_px_mm, ion_py_mm, ion_pz_mm,
+        ion_number, instrument_time_us, ion_px_mm, ion_py_mm, ion_pz_mm,
         ion_vx_mm, ion_vy_mm, ion_vz_mm))
     end
   end
@@ -99,7 +103,7 @@ end
 function segment.terminate()
   if handoff_pulse_mode == 1 and trajectory_log_enable ~= 0 then
     print(string.format('TRACE: handoff_terminal_raw ion=%d instance=%d instrument_time_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g',
-      ion_number, ion_instance, ion_time_of_flight, ion_px_mm, ion_py_mm, ion_pz_mm,
+      ion_number, ion_instance, handoff_instrument_time_us(), ion_px_mm, ion_py_mm, ion_pz_mm,
       ion_vx_mm, ion_vy_mm, ion_vz_mm))
   end
   base_terminate()

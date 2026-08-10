@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 from pathlib import Path
 import re
@@ -21,6 +22,21 @@ def _load(path: Path) -> dict[str, Any]:
 
 def _lua_number(value: float) -> str:
     return format(float(value), ".17g")
+
+
+def load_birth_times(path: Path) -> list[float]:
+    """Load contiguous per-particle instrument birth times in microseconds."""
+    with path.open(encoding="utf-8-sig", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    if not rows:
+        raise ValueError("single-flight initial state is empty")
+    actual_ids = [int(row["particle_id"]) for row in rows]
+    if actual_ids != list(range(1, len(rows) + 1)):
+        raise ValueError("single-flight initial-state particle IDs must be contiguous")
+    values = [float(row["instrument_time_us"]) for row in rows]
+    if any(value < 0 for value in values):
+        raise ValueError("single-flight birth times must be non-negative")
+    return values
 
 
 def bind_oatof_adjustables(formal: str, oatof: dict[str, Any]) -> str:
@@ -82,7 +98,12 @@ def bind_oatof_adjustables(formal: str, oatof: dict[str, Any]) -> str:
 
 
 def build_extension(
-    upstream: dict[str, Any], frontend: dict[str, Any]
+    upstream: dict[str, Any],
+    frontend: dict[str, Any],
+    *,
+    birth_times_us: list[float] | None = None,
+    clock_basis: str = "legacy_relative_time",
+    terminate_after_pulse: bool = False,
 ) -> str:
     if upstream.get("role") != "multipole_resolved_design_do_not_edit":
         raise ValueError("single-flight Program requires a multipole resolved design")
@@ -112,6 +133,10 @@ def build_extension(
     entrance_plate_v = float(upstream["axial_dc"]["entrance_plate_potential_V"])
     origin = frontend["instance_origin_mm"]
     handoff_x = frontend["source_exit_center_mm"]["x"]
+    if clock_basis not in {"legacy_relative_time", "absolute_birth_time"}:
+        raise ValueError(f"unknown single-flight clock basis: {clock_basis}")
+    if clock_basis == "absolute_birth_time" and not birth_times_us:
+        raise ValueError("absolute birth clock requires per-particle birth times")
     lines = [
         "",
         "-- BEGIN RF-OATOF SINGLE-FLIGHT EXTENSION",
@@ -129,9 +154,18 @@ def build_extension(
         "local single_flight_base_other_actions=segment.other_actions",
         "local single_flight_previous={}",
         "local single_flight_handoff_reported={}",
+        "local single_flight_birth_time_us={",
+    ]
+    if birth_times_us:
+        for particle_id, value in enumerate(birth_times_us, start=1):
+            lines.append(f"  [{particle_id}]={_lua_number(value)},")
+    lines.extend([
+        "}",
+        f"local single_flight_absolute_birth_clock={1 if clock_basis == 'absolute_birth_time' else 0}",
+        f"local single_flight_terminate_after_pulse={1 if terminate_after_pulse else 0}",
         "local single_flight_omega=single_flight_frequency_hz*1e-6*2*math.pi",
         "local single_flight_rods={",
-    ]
+    ])
     for electrode_id in range(1, 9):
         item = unique[electrode_id]
         sign = 1 if int(item["electrode_group"]) == 1 else -1
@@ -141,13 +175,21 @@ def build_extension(
     lines.extend(
         [
             "}",
+            "local function single_flight_instrument_time_us()",
+            "  if single_flight_absolute_birth_clock==0 then return ion_time_of_flight end",
+            "  local birth=single_flight_birth_time_us[ion_number]",
+            "  assert(birth~=nil,'absolute single-flight clock is missing particle birth time')",
+            "  return birth+ion_time_of_flight",
+            "end",
+            "handoff_instrument_time_us=single_flight_instrument_time_us",
             "local function single_flight_set_frontend_voltages()",
-            "  local rf=single_flight_rf_peak_v*math.cos(single_flight_omega*ion_time_of_flight)",
+            "  local instrument_time_us=single_flight_instrument_time_us()",
+            "  local rf=single_flight_rf_peak_v*math.cos(single_flight_omega*instrument_time_us)",
             "  for id,item in pairs(single_flight_rods) do adj_elect[id]=item.dc+item.sign*rf end",
             "  adj_elect[9]=0",
             "  local pulse_on=handoff_pulse_mode==0 or (handoff_pulse_mode==1 and",
-            "    ion_time_of_flight>=handoff_pulse_time_us and",
-            "    ion_time_of_flight<handoff_pulse_time_us+handoff_pulse_width_us)",
+            "    instrument_time_us>=handoff_pulse_time_us and",
+            "    instrument_time_us<handoff_pulse_time_us+handoff_pulse_width_us)",
             "  adj_elect[10]=pulse_on and V_repeller or handoff_pulse_pre_all_v",
             "  adj_elect[11]=pulse_on and V_grid1 or handoff_pulse_pre_all_v",
             "  adj_elect[12]=pulse_on and V_grid1*5/6 or handoff_pulse_pre_all_v",
@@ -183,9 +225,10 @@ def build_extension(
             "end",
             "function segment.initialize()",
             "  single_flight_base_initialize()",
-            "  single_flight_previous[ion_number]={t=ion_time_of_flight,x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm}",
+            "  local instrument_time_us=single_flight_instrument_time_us()",
+            "  single_flight_previous[ion_number]={t=instrument_time_us,x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm}",
             "  if trajectory_log_enable~=0 then",
-            "    print(string.format('TRACE: source_release ion=%d instrument_time_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g',ion_number,ion_time_of_flight,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm))",
+            "    print(string.format('TRACE: source_release ion=%d instrument_time_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g',ion_number,instrument_time_us,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm))",
             "  end",
             "end",
             "function segment.tstep_adjust()",
@@ -198,8 +241,9 @@ def build_extension(
             "function segment.other_actions()",
             "  single_flight_base_other_actions()",
             "  local p=single_flight_previous[ion_number]",
-            "  if p and not single_flight_prepulse_reported[ion_number] and p.t<handoff_pulse_time_us and ion_time_of_flight>=handoff_pulse_time_us then",
-            "    local f=(handoff_pulse_time_us-p.t)/(ion_time_of_flight-p.t)",
+            "  local instrument_time_us=single_flight_instrument_time_us()",
+            "  if p and not single_flight_prepulse_reported[ion_number] and p.t<handoff_pulse_time_us and instrument_time_us>=handoff_pulse_time_us then",
+            "    local f=(handoff_pulse_time_us-p.t)/(instrument_time_us-p.t)",
             "    local xc=p.x+f*(ion_px_mm-p.x); local yc=p.y+f*(ion_py_mm-p.y); local zc=p.z+f*(ion_pz_mm-p.z)",
             "    single_flight_prepulse_reported[ion_number]=true",
             "    if trajectory_log_enable~=0 then",
@@ -208,14 +252,15 @@ def build_extension(
             "  end",
             "  if p and not single_flight_handoff_reported[ion_number] and p.x<single_flight_handoff_x and ion_px_mm>=single_flight_handoff_x and ion_vx_mm>0 then",
             "    local f=(single_flight_handoff_x-p.x)/(ion_px_mm-p.x)",
-            "    local tc=p.t+f*(ion_time_of_flight-p.t)",
+            "    local tc=p.t+f*(instrument_time_us-p.t)",
             "    local yc=p.y+f*(ion_py_mm-p.y); local zc=p.z+f*(ion_pz_mm-p.z)",
             "    single_flight_handoff_reported[ion_number]=true",
             "    if trajectory_log_enable~=0 then",
             "      print(string.format('TRACE: single_flight_handoff ion=%d instrument_time_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g',ion_number,tc,single_flight_handoff_x,yc,zc,ion_vx_mm,ion_vy_mm,ion_vz_mm))",
             "    end",
             "  end",
-            "  single_flight_previous[ion_number]={t=ion_time_of_flight,x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm}",
+            "  single_flight_previous[ion_number]={t=instrument_time_us,x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm}",
+            "  if single_flight_terminate_after_pulse~=0 and instrument_time_us>=handoff_pulse_time_us then ion_splat=1 end",
             "end",
             "-- END RF-OATOF SINGLE-FLIGHT EXTENSION",
             "",
@@ -231,6 +276,13 @@ def main() -> int:
     parser.add_argument("--upstream", required=True, type=Path)
     parser.add_argument("--frontend-contract", required=True, type=Path)
     parser.add_argument("--oatof", required=True, type=Path)
+    parser.add_argument("--initial-global-state", type=Path)
+    parser.add_argument("--terminate-after-pulse", action="store_true")
+    parser.add_argument(
+        "--clock-basis",
+        default="legacy_relative_time",
+        choices=("legacy_relative_time", "absolute_birth_time"),
+    )
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--metadata", required=True, type=Path)
     args = parser.parse_args()
@@ -241,7 +293,17 @@ def main() -> int:
     pulse = args.pulse_extension.read_text(encoding="utf-8-sig")
     if formal.count("simion.workbench_program()") != 1 or "segment.fast_adjust" not in pulse:
         raise ValueError("frozen oaTOF Program inputs differ from the expected contract")
-    extension = build_extension(_load(args.upstream), _load(args.frontend_contract))
+    extension = build_extension(
+        _load(args.upstream),
+        _load(args.frontend_contract),
+        birth_times_us=(
+            load_birth_times(args.initial_global_state)
+            if args.initial_global_state is not None
+            else None
+        ),
+        clock_basis=args.clock_basis,
+        terminate_after_pulse=args.terminate_after_pulse,
+    )
     output = formal.rstrip() + "\n\n" + pulse.strip() + "\n" + extension
     if output.count("simion.workbench_program()") != 1:
         raise ValueError("combined single-flight Program must declare one workbench")
@@ -256,6 +318,13 @@ def main() -> int:
         "upstream_sha256": file_sha256(args.upstream),
         "frontend_contract_sha256": file_sha256(args.frontend_contract),
         "oatof_sha256": file_sha256(args.oatof),
+        "initial_global_state_sha256": (
+            file_sha256(args.initial_global_state)
+            if args.initial_global_state is not None
+            else None
+        ),
+        "clock_basis": args.clock_basis,
+        "terminate_after_pulse": args.terminate_after_pulse,
         "output_sha256": file_sha256(args.output),
     }
     args.metadata.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8", newline="\n")

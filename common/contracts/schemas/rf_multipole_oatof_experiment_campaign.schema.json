@@ -38,6 +38,17 @@
         "handoff_publication_contract": {"$ref": "#/$defs/file"}
       }
     },
+    "single_flight_particle_source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "sha256", "particle_count", "sampling_mode"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha"},
+        "particle_count": {"type": "integer", "minimum": 1, "maximum": 10000},
+        "sampling_mode": {"enum": ["steady_candidate_pool", "pulse_eligible_conditional"]},
+        "selection_receipt": {"$ref": "#/$defs/file"}
+      }
+    },
     "experiment": {
       "type": "object", "additionalProperties": false,
       "required": ["sequence", "experiment_id", "connection_profile_id", "run_id", "source"],
@@ -47,6 +58,7 @@
         "execution_strategy": {"enum": ["staged_three_stage", "simion_single_flight"]},
         "single_flight_layout_profile_id": {"$ref": "#/$defs/id"},
         "single_flight_design_reference": {"$ref": "#/$defs/source"},
+        "single_flight_particle_source": {"$ref": "#/$defs/single_flight_particle_source"},
         "connection_profile_id": {"$ref": "#/$defs/id"},
         "run_id": {"type": "string", "minLength": 1},
         "source": {"$ref": "#/$defs/source"}
