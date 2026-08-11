@@ -201,6 +201,21 @@ Formal资格。代表证据为
 solver birth为0，绝对仪器时刻由重建Program的逐粒子表恢复；ION初始实例必须为5。复用连续Program
 的原始出生表、把绝对时刻同时写入ION首列，或仍从实例3初始化，都会使脉冲/局部Fast Adjust失配。
 
+当前 detector-blind eligible cohort 的线性拟合为`z-vz Pearson r=0.8332`、斜率
+`154.999 m/s/mm`、残差σ`46.360 m/s`。受治理扩展固定加速器几何、出口电压、名义静电能量和
+焦面，反算`V_repeller/V_grid1`；再把实际能量及一、二阶时间导数传给反射器求解器，固定反射器
+几何反算`V_mid/V_backplate`。公式唯一入口为
+[线性z-vz耦合理论](../../../projects/single_reflection_oa_tof_mass_analyzer/docs/theory/z_vz_linear_phase_space_coupling.md)，
+机器入口为[`accelerator_phase_space_match.json`](../config/accelerator_phase_space_match.json)；诊断workflow用
+`-AcceleratorPhaseSpaceMatch -AcceleratorPhaseSpaceMatchStage coupled_reflectron`开启，省略时不改变默认流程。
+
+N=1000母样本的449粒子成对重放得到：当前基准`R=18528.39`；线性加速器—反射器耦合
+`R=22159.24`；再叠加内部环`cubic=160 V`真实场补偿为`R=24826.31`，三者均449/449命中。
+后一结果没有超过此前保持原反射器电压的`R≈24960.78`，所以理论扩展相对基准提高33.99%，但
+理想一维二阶反算尚不能替代实际三维场校正。证据run为
+`20260812_001500__sim__simion__rf-oatof-linear-coupled__n1000__r02`；资格仍是
+`CONTROLLED_COUNTERFACTUAL_DIAGNOSTIC_ONLY`，正式连续注入采用前还需在理论工作点附近完成受治理校正。
+
 目标能量只能在连续链`pre_pulse_state`、且粒子位于repeller与grid1之间时验证。
 `terminal`或`multipole_handoff`能量只作接口诊断。
 

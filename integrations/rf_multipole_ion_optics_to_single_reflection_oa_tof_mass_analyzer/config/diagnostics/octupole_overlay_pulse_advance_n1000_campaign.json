@@ -1,0 +1,56 @@
+{
+  "schema_version": 2,
+  "role": "rf_multipole_oatof_experiment_campaign",
+  "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+  "campaign_id": "octupole_overlay_pulse_advance_n1000",
+  "status": "authorized",
+  "execution_policy": {
+    "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_policy.json",
+    "sha256": "B5AD2687C3D1B3CFE1F332C593F69BE3AFE55D749CB28815EB5C110207478FF3"
+  },
+  "claim_limit": "Two-point N=1000 five-batch SIMION screen varying only the extraction-pulse time in the accelerator-local z=0.05 mm overlay; compare natural-source capture and single-peak resolution, with no convergence, Candidate or Formal claim.",
+  "experiments": [
+    {
+      "sequence": 1,
+      "experiment_id": "octupole_overlay_pulse_advance_00625rf_n1000",
+      "execution_strategy": "simion_single_flight",
+      "single_flight_layout_profile_id": "symmetric_10ev_injection_diagnostic",
+      "single_flight_frontend_grid_profile_id": "frontend_isotropic_020_accelerator_overlay_z005",
+      "single_flight_pulse_offset_rf_periods": -0.0625,
+      "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm",
+      "run_id": "20260811_212000__sim__cross__oct-overlay-phase-a00625__n1000",
+      "source": {
+        "run_id": "20260805_150100__sim__simion__oct-segmented-10ev-h15__n1000",
+        "launched_particle_count": 1000,
+        "particle_count": 577,
+        "particle_source_manifest_input_role": "particle_source",
+        "manifest": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_150100__sim__simion__oct-segmented-10ev-h15__n1000/run_manifest.json", "sha256": "44355DD9CA45F973767F0A2F3DA18EC8F010F398CE61EDB239722B258F9088E7"},
+        "state": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_150100__sim__simion__oct-segmented-10ev-h15__n1000/results/particle_states__axial_acceleration_rf_on.csv", "sha256": "F8F77CFA0A3A21D06BC779FAAC2CB2F066AC38BBC986E3A6A60F28A1E58AE409"},
+        "particle_source": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_150100__sim__simion__oct-segmented-10ev-h15__n1000/inputs/particle_source.csv", "sha256": "302C03DC29737CE9D46EB1A8D258DB2A8D3C0F8B6A53F7702A33B1ECF9D5320D"},
+        "metadata": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_150100__sim__simion__oct-segmented-10ev-h15__n1000/inputs/particle_source_metadata.json", "sha256": "954D2D069A07EC8CD39CF40691682A053B05FBC20884D02462BDDD57862CD2F6"},
+        "handoff_publication_contract": {"path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/octupole_handoff_publication_n1000.json", "sha256": "BF3DD74CE90CFE4E9811FECADE8F38D95C9DF16E61C1828D52889135094616A4"}
+      }
+    },
+    {
+      "sequence": 2,
+      "experiment_id": "octupole_overlay_pulse_advance_0125rf_n1000",
+      "execution_strategy": "simion_single_flight",
+      "single_flight_layout_profile_id": "symmetric_10ev_injection_diagnostic",
+      "single_flight_frontend_grid_profile_id": "frontend_isotropic_020_accelerator_overlay_z005",
+      "single_flight_pulse_offset_rf_periods": -0.125,
+      "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm",
+      "run_id": "20260811_212100__sim__cross__oct-overlay-phase-a0125__n1000",
+      "source": {
+        "run_id": "20260805_150100__sim__simion__oct-segmented-10ev-h15__n1000",
+        "launched_particle_count": 1000,
+        "particle_count": 577,
+        "particle_source_manifest_input_role": "particle_source",
+        "manifest": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_150100__sim__simion__oct-segmented-10ev-h15__n1000/run_manifest.json", "sha256": "44355DD9CA45F973767F0A2F3DA18EC8F010F398CE61EDB239722B258F9088E7"},
+        "state": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_150100__sim__simion__oct-segmented-10ev-h15__n1000/results/particle_states__axial_acceleration_rf_on.csv", "sha256": "F8F77CFA0A3A21D06BC779FAAC2CB2F066AC38BBC986E3A6A60F28A1E58AE409"},
+        "particle_source": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_150100__sim__simion__oct-segmented-10ev-h15__n1000/inputs/particle_source.csv", "sha256": "302C03DC29737CE9D46EB1A8D258DB2A8D3C0F8B6A53F7702A33B1ECF9D5320D"},
+        "metadata": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_150100__sim__simion__oct-segmented-10ev-h15__n1000/inputs/particle_source_metadata.json", "sha256": "954D2D069A07EC8CD39CF40691682A053B05FBC20884D02462BDDD57862CD2F6"},
+        "handoff_publication_contract": {"path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/octupole_handoff_publication_n1000.json", "sha256": "BF3DD74CE90CFE4E9811FECADE8F38D95C9DF16E61C1828D52889135094616A4"}
+      }
+    }
+  ]
+}

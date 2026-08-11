@@ -50,7 +50,7 @@
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "items": {"enum": ["rf_amplitude", "rf_frequency", "common_mode_offset", "segment_entrance_common_mode", "segment_exit_common_mode", "segment_output_reference"]}
+          "items": {"enum": ["rf_amplitude", "rf_frequency", "rf_phase", "common_mode_offset", "segment_entrance_common_mode", "segment_exit_common_mode", "segment_output_reference"]}
         },
         "variable_limits": {
           "type": "array",
@@ -60,8 +60,8 @@
             "additionalProperties": false,
             "required": ["variable_id", "unit", "minimum", "maximum"],
             "properties": {
-              "variable_id": {"enum": ["rf_amplitude", "rf_frequency", "common_mode_offset", "segment_entrance_common_mode", "segment_exit_common_mode", "segment_output_reference"]},
-              "unit": {"enum": ["V", "Hz"]},
+              "variable_id": {"enum": ["rf_amplitude", "rf_frequency", "rf_phase", "common_mode_offset", "segment_entrance_common_mode", "segment_exit_common_mode", "segment_output_reference"]},
+              "unit": {"enum": ["V", "Hz", "rad"]},
               "minimum": {"type": "number"},
               "maximum": {"type": "number"}
             }
@@ -350,6 +350,7 @@
           "properties": {
             "rf_amplitude": {"type": "number"},
             "rf_frequency": {"type": "number"},
+            "rf_phase": {"type": "number"},
             "common_mode_offset": {"type": "number"},
             "segment_entrance_common_mode": {"type": "number"},
             "segment_exit_common_mode": {"type": "number"},

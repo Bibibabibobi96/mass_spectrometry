@@ -47,6 +47,46 @@ class AcceleratorState:
     focus_is_downstream: bool
 
 
+@dataclass(frozen=True)
+class PhaseSpaceMatchedVoltagePair:
+    """Fixed-geometry voltage pair matched to a measured axial phase-space slope."""
+
+    repeller_v: float
+    intermediate_v: float
+    exit_v: float
+    gap1_voltage_drop_v: float
+    nominal_energy_per_charge_v: float
+    release_position_mm: float
+    mean_initial_velocity_m_per_s: float
+    velocity_slope_m_per_s_per_mm: float
+    focus_drift_mm: float
+    time_derivative_s_per_mm: float
+
+
+@dataclass(frozen=True)
+class LinearPhaseSpaceTimingCoefficients:
+    """Local timing coefficients along ``v_z(x)=v_c+kappa*(x-x_c)``.
+
+    ``first_derivative`` and ``second_derivative`` are derivatives of the
+    normalized accelerator time with respect to the *actual* energy per charge
+    along the fitted phase-space line.  They can therefore replace the static
+    source derivatives in the coupled reflectron solver.
+    """
+
+    electrostatic_energy_per_charge_v: float
+    actual_energy_per_charge_v: float
+    velocity_energy_root_v_sqrt: float
+    velocity_slope_energy_root_v_sqrt_per_mm: float
+    energy_position_first_v_per_mm: float
+    energy_position_second_v_per_mm2: float
+    normalized_time_energy_first_mm_per_v_sqrt_v: float
+    normalized_time_energy_second_mm_per_v2_sqrt_v: float
+    normalized_time_position_first_per_sqrt_v: float
+    normalized_time_position_second_per_mm_sqrt_v: float
+    first_derivative_at_focus: float
+    second_derivative_at_focus: float
+
+
 def _as_finite_float(value: Any, name: str) -> float:
     result = float(value)
     if not math.isfinite(result):
@@ -260,6 +300,279 @@ def time_to_plane_s(
     )
     mass_over_charge_si = mu * ATOMIC_MASS_CONSTANT_KG / ELEMENTARY_CHARGE_C
     return 1.0e-3 * math.sqrt(mass_over_charge_si / 2.0) * tau
+
+
+def time_to_fixed_plane_s(
+    repeller_v: float,
+    intermediate_v: float,
+    gap1_mm: float,
+    gap2_mm: float,
+    release_position_mm: float,
+    initial_velocity_m_per_s: float,
+    focus_drift_mm: float,
+    mass_to_charge_th: float,
+    *,
+    exit_v: float = 0.0,
+) -> float:
+    """Return exact 1-D time from a moving ion in gap 1 to a fixed focus plane."""
+
+    state = accelerator_state(
+        repeller_v,
+        intermediate_v,
+        gap1_mm,
+        gap2_mm,
+        exit_v=exit_v,
+        release_position_mm=release_position_mm,
+        require_downstream_focus=False,
+    )
+    drift = _as_finite_float(focus_drift_mm, "focus_drift_mm")
+    velocity = _as_finite_float(
+        initial_velocity_m_per_s, "initial_velocity_m_per_s"
+    )
+    mu = _as_finite_float(mass_to_charge_th, "mass_to_charge_th")
+    _require_positive(mu, "mass_to_charge_th")
+    if drift < 0.0:
+        raise PhysicsContractError("focus_drift_mm must be >= 0")
+
+    mass_over_charge_si = mu * ATOMIC_MASS_CONSTANT_KG / ELEMENTARY_CHARGE_C
+    acceleration1 = state.field1_v_per_mm * 1000.0 / mass_over_charge_si
+    acceleration2 = state.field2_v_per_mm * 1000.0 / mass_over_charge_si
+    distance1_m = (gap1_mm - release_position_mm) * 1.0e-3
+    distance2_m = gap2_mm * 1.0e-3
+    discriminant1 = velocity * velocity + 2.0 * acceleration1 * distance1_m
+    if discriminant1 <= 0.0:
+        raise PhysicsContractError("ion does not cross accelerator region 1")
+    velocity1 = math.sqrt(discriminant1)
+    time1 = (velocity1 - velocity) / acceleration1
+    velocity2 = math.sqrt(
+        velocity1 * velocity1 + 2.0 * acceleration2 * distance2_m
+    )
+    time2 = (velocity2 - velocity1) / acceleration2
+    return time1 + time2 + drift * 1.0e-3 / velocity2
+
+
+def linear_phase_space_timing_coefficients(
+    accelerator: AcceleratorState,
+    mass_to_charge_th: float,
+    mean_initial_velocity_m_per_s: float,
+    velocity_slope_m_per_s_per_mm: float,
+    focus_drift_mm: float,
+) -> LinearPhaseSpaceTimingCoefficients:
+    """Return first/second energy derivatives for a fitted linear ``z-vz`` beam.
+
+    The independent coordinate is the accelerator release coordinate in mm.  The
+    electrostatic energy is augmented by the incoming axial kinetic energy,
+    ``W_actual = W_electrostatic + chi**2``, where
+    ``chi = vz*sqrt((m/q)/2)``.  The returned derivatives use the repository's
+    normalized-time unit, mm/sqrt(V).
+    """
+
+    mu = _as_finite_float(mass_to_charge_th, "mass_to_charge_th")
+    velocity = _as_finite_float(
+        mean_initial_velocity_m_per_s, "mean_initial_velocity_m_per_s"
+    )
+    slope = _as_finite_float(
+        velocity_slope_m_per_s_per_mm, "velocity_slope_m_per_s_per_mm"
+    )
+    drift = _as_finite_float(focus_drift_mm, "focus_drift_mm")
+    _require_positive(mu, "mass_to_charge_th")
+    if drift < 0.0:
+        raise PhysicsContractError("focus_drift_mm must be >= 0")
+
+    mass_over_charge_si = mu * ATOMIC_MASS_CONSTANT_KG / ELEMENTARY_CHARGE_C
+    velocity_scale = math.sqrt(mass_over_charge_si / 2.0)
+    chi = velocity * velocity_scale
+    beta = slope * velocity_scale
+    electrostatic_energy = accelerator.nominal_energy_per_charge_v
+    actual_energy = electrostatic_energy + chi * chi
+    if actual_energy <= accelerator.intermediate_relative_v:
+        raise PhysicsContractError(
+            "actual nominal energy must exceed the intermediate potential"
+        )
+
+    energy_first = -accelerator.field1_v_per_mm + 2.0 * chi * beta
+    if abs(energy_first) <= 1.0e-15:
+        raise PhysicsContractError(
+            "actual energy is locally stationary in release position; energy "
+            "derivatives are singular"
+        )
+    energy_second = 2.0 * beta * beta
+    s2 = math.sqrt(actual_energy - accelerator.intermediate_relative_v)
+    s3 = math.sqrt(actual_energy)
+    e1 = accelerator.field1_v_per_mm
+    e2 = accelerator.field2_v_per_mm
+
+    b1 = (
+        1.0 / (e1 * s2)
+        + (1.0 / s3 - 1.0 / s2) / e2
+        - drift / (2.0 * s3**3)
+    )
+    b2 = (
+        -1.0 / (2.0 * e1 * s2**3)
+        + (1.0 / s2**3 - 1.0 / s3**3) / (2.0 * e2)
+        + 3.0 * drift / (4.0 * s3**5)
+    )
+    position_first = energy_first * b1 - 2.0 * beta / e1
+    position_second = energy_second * b1 + energy_first * energy_first * b2
+    first = position_first / energy_first
+    second = (
+        position_second * energy_first - position_first * energy_second
+    ) / energy_first**3
+
+    return LinearPhaseSpaceTimingCoefficients(
+        electrostatic_energy_per_charge_v=electrostatic_energy,
+        actual_energy_per_charge_v=actual_energy,
+        velocity_energy_root_v_sqrt=chi,
+        velocity_slope_energy_root_v_sqrt_per_mm=beta,
+        energy_position_first_v_per_mm=energy_first,
+        energy_position_second_v_per_mm2=energy_second,
+        normalized_time_energy_first_mm_per_v_sqrt_v=b1,
+        normalized_time_energy_second_mm_per_v2_sqrt_v=b2,
+        normalized_time_position_first_per_sqrt_v=position_first,
+        normalized_time_position_second_per_mm_sqrt_v=position_second,
+        first_derivative_at_focus=first,
+        second_derivative_at_focus=second,
+    )
+
+
+def match_phase_space_voltage_pair(
+    gap1_mm: float,
+    gap2_mm: float,
+    release_position_mm: float,
+    mean_initial_velocity_m_per_s: float,
+    velocity_slope_m_per_s_per_mm: float,
+    focus_drift_mm: float,
+    mass_to_charge_th: float,
+    nominal_energy_per_charge_v: float,
+    *,
+    exit_v: float = 0.0,
+    voltage_drop_bounds_v: tuple[float, float] = (10.0, 1500.0),
+    derivative_step_mm: float = 1.0e-4,
+    derivative_tolerance_s_per_mm: float = 1.0e-15,
+) -> PhaseSpaceMatchedVoltagePair:
+    """Solve the stage-1 voltage drop for first-order ``z-vz`` time matching.
+
+    Geometry, the fixed downstream focus plane, exit voltage, and nominal final
+    energy at the measured mean release position remain fixed.  Only the repeller
+    and intermediate-grid voltages are derived.  The root condition is the total
+    time derivative along the measured linear phase-space relation.
+    """
+
+    gap1 = _as_finite_float(gap1_mm, "gap1_mm")
+    gap2 = _as_finite_float(gap2_mm, "gap2_mm")
+    release = _as_finite_float(release_position_mm, "release_position_mm")
+    velocity = _as_finite_float(
+        mean_initial_velocity_m_per_s, "mean_initial_velocity_m_per_s"
+    )
+    slope = _as_finite_float(
+        velocity_slope_m_per_s_per_mm, "velocity_slope_m_per_s_per_mm"
+    )
+    drift = _as_finite_float(focus_drift_mm, "focus_drift_mm")
+    mu = _as_finite_float(mass_to_charge_th, "mass_to_charge_th")
+    nominal_energy = _as_finite_float(
+        nominal_energy_per_charge_v, "nominal_energy_per_charge_v"
+    )
+    exit_potential = _as_finite_float(exit_v, "exit_v")
+    step = _as_finite_float(derivative_step_mm, "derivative_step_mm")
+    tolerance = _as_finite_float(
+        derivative_tolerance_s_per_mm, "derivative_tolerance_s_per_mm"
+    )
+    for value, name in (
+        (gap1, "gap1_mm"),
+        (gap2, "gap2_mm"),
+        (mu, "mass_to_charge_th"),
+        (nominal_energy, "nominal_energy_per_charge_v"),
+        (step, "derivative_step_mm"),
+        (tolerance, "derivative_tolerance_s_per_mm"),
+    ):
+        _require_positive(value, name)
+    if not step < min(release, gap1 - release):
+        raise PhysicsContractError(
+            "derivative_step_mm must remain inside accelerator gap 1"
+        )
+    if drift < 0.0:
+        raise PhysicsContractError("focus_drift_mm must be >= 0")
+    if len(voltage_drop_bounds_v) != 2:
+        raise PhysicsContractError("voltage_drop_bounds_v must contain two values")
+    lower = _as_finite_float(voltage_drop_bounds_v[0], "voltage_drop_bounds_v[0]")
+    upper = _as_finite_float(voltage_drop_bounds_v[1], "voltage_drop_bounds_v[1]")
+    if not 0.0 < lower < upper:
+        raise PhysicsContractError("voltage-drop bounds must satisfy 0 < lower < upper")
+
+    def voltages(voltage_drop: float) -> tuple[float, float]:
+        # W = Vrep - E1*s at the measured mean release position.
+        repeller = exit_potential + nominal_energy + voltage_drop * release / gap1
+        intermediate = repeller - voltage_drop
+        if intermediate <= exit_potential:
+            raise PhysicsContractError(
+                "voltage-drop search makes the intermediate grid non-accelerating"
+            )
+        return repeller, intermediate
+
+    def derivative(voltage_drop: float) -> float:
+        repeller, intermediate = voltages(voltage_drop)
+        before = time_to_fixed_plane_s(
+            repeller,
+            intermediate,
+            gap1,
+            gap2,
+            release - step,
+            velocity - slope * step,
+            drift,
+            mu,
+            exit_v=exit_potential,
+        )
+        after = time_to_fixed_plane_s(
+            repeller,
+            intermediate,
+            gap1,
+            gap2,
+            release + step,
+            velocity + slope * step,
+            drift,
+            mu,
+            exit_v=exit_potential,
+        )
+        return (after - before) / (2.0 * step)
+
+    lower_value = derivative(lower)
+    upper_value = derivative(upper)
+    if lower_value == 0.0:
+        root = lower
+    elif upper_value == 0.0:
+        root = upper
+    elif lower_value * upper_value > 0.0:
+        raise PhysicsContractError(
+            "phase-space time derivative has no bracketed voltage-drop root"
+        )
+    else:
+        for _ in range(100):
+            root = 0.5 * (lower + upper)
+            value = derivative(root)
+            if abs(value) <= tolerance:
+                break
+            if lower_value * value <= 0.0:
+                upper = root
+            else:
+                lower = root
+                lower_value = value
+        else:
+            raise PhysicsContractError("phase-space voltage match did not converge")
+
+    repeller, intermediate = voltages(root)
+    residual = derivative(root)
+    return PhaseSpaceMatchedVoltagePair(
+        repeller_v=repeller,
+        intermediate_v=intermediate,
+        exit_v=exit_potential,
+        gap1_voltage_drop_v=root,
+        nominal_energy_per_charge_v=nominal_energy,
+        release_position_mm=release,
+        mean_initial_velocity_m_per_s=velocity,
+        velocity_slope_m_per_s_per_mm=slope,
+        focus_drift_mm=drift,
+        time_derivative_s_per_mm=residual,
+    )
 
 
 def compact_exit_focus_bound(

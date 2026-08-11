@@ -6,10 +6,17 @@ import argparse
 import csv
 import json
 import math
+import os
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 from common.contracts.file_identity import file_sha256
 from common.contracts.particle_physics import (
@@ -19,6 +26,14 @@ from common.contracts.particle_physics import (
 )
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.peak_metrics import (
     compute_peak_metrics,
+)
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_time_focus import (
+    accelerator_state,
+    linear_phase_space_timing_coefficients,
+    match_phase_space_voltage_pair,
+)
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.oatof_oaaccelerator_coupling import (
+    solve_coupled_reflectron_from_accelerator_derivatives,
 )
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.rf_handoff_adapter import (
     encode_simion_accelerator_velocity,
@@ -148,6 +163,108 @@ def _validate_profile(profile: dict[str, Any]) -> list[str]:
     return arm_ids
 
 
+def _validate_accelerator_match_profile(profile: dict[str, Any]) -> None:
+    expected_keys = {
+        "schema_version",
+        "role",
+        "profile_id",
+        "source_event",
+        "cohort_policy",
+        "matching_method",
+        "fixed_constraints",
+        "solver",
+        "probes",
+        "ring_shape_probes",
+        "coupled_reflectron_probes",
+        "claim_limit",
+    }
+    if (
+        set(profile) != expected_keys
+        or profile.get("schema_version") != 1
+        or profile.get("role") != "rf_oatof_accelerator_phase_space_match_profile"
+        or profile.get("source_event") != "pre_pulse_state"
+        or profile.get("cohort_policy") != "source_event_and_pulse_eligibility"
+        or profile.get("matching_method")
+        != "measured_linear_z_vz_fixed_geometry_fixed_nominal_energy_v1"
+        or profile.get("fixed_constraints")
+        != [
+            "accelerator_geometry",
+            "accelerator_exit_voltage",
+            "mean_final_energy_per_charge",
+            "focus_plane",
+            "reflectron_geometry",
+        ]
+    ):
+        raise ValueError("accelerator phase-space match profile identity differs")
+    solver = profile.get("solver")
+    if not isinstance(solver, dict) or set(solver) != {
+        "derivative_step_mm",
+        "derivative_tolerance_s_per_mm",
+        "voltage_drop_bounds_V",
+    }:
+        raise ValueError("accelerator phase-space match solver contract differs")
+    bounds = solver["voltage_drop_bounds_V"]
+    if (
+        not isinstance(bounds, list)
+        or len(bounds) != 2
+        or not 0.0 < float(bounds[0]) < float(bounds[1])
+        or float(solver["derivative_step_mm"]) <= 0.0
+        or float(solver["derivative_tolerance_s_per_mm"]) <= 0.0
+    ):
+        raise ValueError("accelerator phase-space match solver values differ")
+    probes = profile.get("probes")
+    if not isinstance(probes, list) or not probes:
+        raise ValueError("accelerator phase-space match probes are empty")
+    expected_probe_keys = {"arm_id", "voltage_drop_offset_V"}
+    ids = []
+    offsets = []
+    for probe in probes:
+        if not isinstance(probe, dict) or set(probe) != expected_probe_keys:
+            raise ValueError("accelerator phase-space match probe contract differs")
+        ids.append(str(probe["arm_id"]))
+        offsets.append(float(probe["voltage_drop_offset_V"]))
+    if (
+        len(ids) != len(set(ids))
+        or any(not arm_id.startswith("accelerator_phase_match_") for arm_id in ids)
+        or len(offsets) != len(set(offsets))
+        or 0.0 not in offsets
+    ):
+        raise ValueError("accelerator phase-space match probe registry differs")
+    ring_probes = profile.get("ring_shape_probes")
+    if not isinstance(ring_probes, list) or not ring_probes:
+        raise ValueError("accelerator ring-shape probes are empty")
+    ring_ids = []
+    ring_pairs = []
+    for probe in ring_probes:
+        if not isinstance(probe, dict) or set(probe) != {
+            "arm_id", "quadratic_V", "cubic_V"
+        }:
+            raise ValueError("accelerator ring-shape probe contract differs")
+        ring_ids.append(str(probe["arm_id"]))
+        ring_pairs.append((float(probe["quadratic_V"]), float(probe["cubic_V"])))
+    if (
+        len(ring_ids) != len(set(ring_ids))
+        or len(ring_pairs) != len(set(ring_pairs))
+        or any(not arm_id.startswith("accelerator_ring_shape_") for arm_id in ring_ids)
+    ):
+        raise ValueError("accelerator ring-shape probe registry differs")
+    coupled_probes = profile.get("coupled_reflectron_probes")
+    if not isinstance(coupled_probes, list) or not coupled_probes:
+        raise ValueError("coupled reflectron probes are empty")
+    coupled_ids = []
+    for probe in coupled_probes:
+        if not isinstance(probe, dict) or set(probe) != {
+            "arm_id", "quadratic_V", "cubic_V"
+        }:
+            raise ValueError("coupled reflectron probe contract differs")
+        coupled_ids.append(str(probe["arm_id"]))
+    if (
+        len(coupled_ids) != len(set(coupled_ids))
+        or any(not arm_id.startswith("accelerator_reflectron_coupled_") for arm_id in coupled_ids)
+    ):
+        raise ValueError("coupled reflectron probe registry differs")
+
+
 def _quantile_match(values: np.ndarray, reference: np.ndarray) -> np.ndarray:
     if values.size < 2 or reference.size < 2:
         raise ValueError("quantile matching requires at least two values")
@@ -210,16 +327,33 @@ def _project_observed_linear_slope(
 
 
 def _cohort(
-    checkpoints_path: Path, mass_amu: float, charge_state: int
+    checkpoints_path: Path,
+    mass_amu: float,
+    charge_state: int,
+    cohort_policy: str = "source_event_and_baseline_detector_intersection",
 ) -> tuple[np.ndarray, np.ndarray, int]:
     columns, rows = _load_csv(checkpoints_path)
     if not set(CHECKPOINT_COLUMNS).issubset(columns):
         raise ValueError("baseline checkpoint columns differ")
     pre = {int(row["particle_id"]): row for row in rows if row["event"] == "pre_pulse_state"}
-    detector_ids = {
-        int(row["particle_id"]) for row in rows if row["event"] == "detector_crossing"
-    }
-    ids = np.asarray(sorted(set(pre) & detector_ids), dtype=int)
+    if cohort_policy == "source_event_and_baseline_detector_intersection":
+        detector_ids = {
+            int(row["particle_id"])
+            for row in rows
+            if row["event"] == "detector_crossing"
+        }
+        selected_ids = set(pre) & detector_ids
+    elif cohort_policy == "source_event_and_pulse_eligibility":
+        if "pulse_eligibility" not in columns:
+            raise ValueError("pulse-eligibility cohort requires its checkpoint column")
+        selected_ids = {
+            particle_id
+            for particle_id, row in pre.items()
+            if row["pulse_eligibility"] == "eligible"
+        }
+    else:
+        raise ValueError("unsupported counterfactual cohort policy")
+    ids = np.asarray(sorted(selected_ids), dtype=int)
     if ids.size < 3:
         raise ValueError("paired pre-pulse/detector cohort is too small")
     state = np.asarray(
@@ -475,23 +609,186 @@ def prepare(
     selected_arm_ids: list[str] | None = None,
     initial_pa_instance: int = 3,
     solver_birth_time_us: float | None = None,
+    accelerator_match_profile_path: Path | None = None,
+    accelerator_match_stage: str = "voltage",
 ) -> dict[str, Any]:
     profile = _load_json(profile_path)
     profile_arm_ids = _validate_profile(profile)
-    arm_ids = profile_arm_ids if selected_arm_ids is None else selected_arm_ids
+    match_profile = (
+        _load_json(accelerator_match_profile_path)
+        if accelerator_match_profile_path is not None
+        else None
+    )
+    if match_profile is not None:
+        _validate_accelerator_match_profile(match_profile)
+        if accelerator_match_stage not in {"voltage", "ring_shape", "coupled_reflectron"}:
+            raise ValueError("accelerator match stage differs")
+    arm_ids = (
+        (["observed_restart_control"] if match_profile is not None else profile_arm_ids)
+        if selected_arm_ids is None
+        else list(selected_arm_ids)
+    )
     if not arm_ids:
         raise ValueError("selected resolution-attribution arms cannot be empty")
     if len(arm_ids) != len(set(arm_ids)):
         raise ValueError("selected resolution-attribution arms must be unique")
     if any(arm_id not in profile_arm_ids for arm_id in arm_ids):
         raise ValueError("selected resolution-attribution arm is unknown")
+    cohort_policy = (
+        str(match_profile["cohort_policy"])
+        if match_profile is not None
+        else str(profile["cohort_policy"])
+    )
     source_ids, observed, mother_sample_count = _cohort(
-        checkpoints_path, mass_amu, charge_state
+        checkpoints_path, mass_amu, charge_state, cohort_policy
     )
     ideal = _ideal_source(ideal_source_path)
     formal_samples = _formal_samples(ideal, source_ids)
     formal_center, formal_size = _source_geometry(formal_geometry_path)
     target_center, target_size = _source_geometry(target_geometry_path)
+    target_geometry = _load_json(target_geometry_path)
+    generated_arms: dict[str, dict[str, Any]] = {}
+    accelerator_match: dict[str, Any] | None = None
+    if match_profile is not None:
+        acceleration = target_geometry["geometry_derivation"]["accelerator"]
+        electrodes = target_geometry["electrodes_V"]
+        repeller_z = float(acceleration["canonical_repeller_z_mm"])
+        release_position = float(np.mean(observed[:, 3])) - repeller_z
+        centered_z = observed[:, 3] - np.mean(observed[:, 3])
+        denominator = float(np.dot(centered_z, centered_z))
+        if denominator <= 0.0:
+            raise ValueError("phase-space matching requires nonzero z variance")
+        mean_vz = float(np.mean(observed[:, 6]))
+        velocity_slope = float(
+            np.dot(centered_z, observed[:, 6] - mean_vz) / denominator
+        )
+        nominal_energy = float(
+            target_geometry["geometry_derivation"]["reflectron"]
+            ["nominal_energy_per_charge_V"]
+        )
+        solver = match_profile["solver"]
+        match = match_phase_space_voltage_pair(
+            float(acceleration["d1_mm"]),
+            float(acceleration["d2_mm"]),
+            release_position,
+            mean_vz,
+            velocity_slope,
+            float(acceleration["focus_drift_after_grid2_mm"]),
+            mass_amu / abs(charge_state),
+            nominal_energy,
+            exit_v=float(electrodes["grid2"]),
+            voltage_drop_bounds_v=tuple(
+                float(value) for value in solver["voltage_drop_bounds_V"]
+            ),
+            derivative_step_mm=float(solver["derivative_step_mm"]),
+            derivative_tolerance_s_per_mm=float(
+                solver["derivative_tolerance_s_per_mm"]
+            ),
+        )
+        accelerator_match = asdict(match)
+        accelerator_match["profile_id"] = match_profile["profile_id"]
+        accelerator_match["profile_sha256"] = file_sha256(
+            accelerator_match_profile_path
+        )
+        accelerator_match["cohort_policy"] = cohort_policy
+        accelerator_match["arms"] = []
+        coupled_solution = None
+        if accelerator_match_stage == "coupled_reflectron":
+            matched_state = accelerator_state(
+                match.repeller_v,
+                match.intermediate_v,
+                float(acceleration["d1_mm"]),
+                float(acceleration["d2_mm"]),
+                exit_v=match.exit_v,
+                release_position_mm=release_position,
+                require_downstream_focus=False,
+            )
+            coefficients = linear_phase_space_timing_coefficients(
+                matched_state,
+                mass_amu / abs(charge_state),
+                mean_vz,
+                velocity_slope,
+                float(acceleration["focus_drift_after_grid2_mm"]),
+            )
+            local_release = observed[:, 3] - repeller_z
+            electrostatic_energy = (
+                matched_state.repeller_relative_v
+                - matched_state.field1_v_per_mm * local_release
+            )
+            mass_over_charge_si = (
+                mass_amu / abs(charge_state) * AMU_KG / ELEMENTARY_CHARGE_C
+            )
+            actual_energy = electrostatic_energy + 0.5 * mass_over_charge_si * observed[:, 6] ** 2
+            geometry = target_geometry["geometry_mm"]
+            coupled_solution = solve_coupled_reflectron_from_accelerator_derivatives(
+                coefficients.actual_energy_per_charge_v,
+                float(geometry["L_stage1"]),
+                float(geometry["L_flight"]),
+                float(geometry["L_flight"]),
+                coefficients.first_derivative_at_focus,
+                coefficients.second_derivative_at_focus,
+                energy_min_v=float(np.min(actual_energy)),
+                energy_max_v=float(np.max(actual_energy)),
+            )
+            if coupled_solution.required_stage2_depth_mm > float(geometry["L_stage2"]):
+                raise ValueError("coupled reflectron solution exceeds fixed stage-2 length")
+            accelerator_match["linear_phase_space_coefficients"] = asdict(coefficients)
+            accelerator_match["actual_energy_envelope_V"] = {
+                "minimum": float(np.min(actual_energy)),
+                "nominal": coefficients.actual_energy_per_charge_v,
+                "maximum": float(np.max(actual_energy)),
+            }
+            accelerator_match["coupled_reflectron"] = asdict(coupled_solution)
+        probes = {
+            "voltage": match_profile["probes"],
+            "ring_shape": match_profile["ring_shape_probes"],
+            "coupled_reflectron": match_profile["coupled_reflectron_probes"],
+        }[accelerator_match_stage]
+        for probe in probes:
+            arm_id = str(probe["arm_id"])
+            voltage_drop_offset = float(probe.get("voltage_drop_offset_V", 0.0))
+            voltage_drop = match.gap1_voltage_drop_v + voltage_drop_offset
+            repeller_v = (
+                match.exit_v
+                + nominal_energy
+                + voltage_drop * release_position / float(acceleration["d1_mm"])
+            )
+            intermediate_v = repeller_v - voltage_drop
+            if not repeller_v > intermediate_v > match.exit_v:
+                raise ValueError("accelerator match probe violates voltage ordering")
+            generated_arms[arm_id] = {
+                "arm_id": arm_id,
+                "intervention": "none",
+                "solver_profile_id": "current_downstream",
+                "frontend_profile_id": "combined_frontend",
+                "accelerator_voltage_override": {
+                    "repeller_V": repeller_v,
+                    "grid1_V": intermediate_v,
+                    "grid2_V": match.exit_v,
+                    "gap1_voltage_drop_V": voltage_drop,
+                    "voltage_drop_offset_V": voltage_drop_offset,
+                },
+                "accelerator_ring_shape_override": (
+                    {
+                        "quadratic_V": float(probe["quadratic_V"]),
+                        "cubic_V": float(probe["cubic_V"]),
+                    }
+                    if accelerator_match_stage in {"ring_shape", "coupled_reflectron"}
+                    else None
+                ),
+                "reflectron_voltage_override": (
+                    {
+                        "midgrid_V": coupled_solution.stage1_voltage_drop_v,
+                        "backplate_V": coupled_solution.stage1_voltage_drop_v
+                        + coupled_solution.stage2_field_v_per_mm
+                        * float(target_geometry["geometry_mm"]["L_stage2"]),
+                    }
+                    if coupled_solution is not None
+                    else None
+                ),
+            }
+            accelerator_match["arms"].append(generated_arms[arm_id])
+        arm_ids.extend(generated_arms)
     if any("pulse_delay_rf_periods" in arm for arm in profile["arms"]):
         if rf_frequency_hz is None or rf_frequency_hz <= 0:
             raise ValueError("pulse-delay arms require a positive RF frequency")
@@ -504,16 +801,21 @@ def prepare(
     output_dir.mkdir(parents=True, exist_ok=False)
     arm_records: list[dict[str, Any]] = []
     arm_profile = {arm["arm_id"]: arm for arm in profile["arms"]}
+    arm_profile.update(generated_arms)
     for arm_id in arm_ids:
-        state = _apply_arm(
-            arm_id,
-            observed,
-            ideal,
-            formal_samples,
-            formal_center,
-            formal_size,
-            target_center,
-            target_size,
+        state = (
+            observed.copy()
+            if arm_id in generated_arms
+            else _apply_arm(
+                arm_id,
+                observed,
+                ideal,
+                formal_samples,
+                formal_center,
+                formal_size,
+                target_center,
+                target_size,
+            )
         )
         state_path = output_dir / f"{arm_id}__source_state.csv"
         state_rows: list[dict[str, str]] = []
@@ -599,6 +901,15 @@ def prepare(
                 "frontend_profile_id": arm_profile[arm_id].get(
                     "frontend_profile_id", "combined_frontend"
                 ),
+                "accelerator_voltage_override": arm_profile[arm_id].get(
+                    "accelerator_voltage_override"
+                ),
+                "accelerator_ring_shape_override": arm_profile[arm_id].get(
+                    "accelerator_ring_shape_override"
+                ),
+                "reflectron_voltage_override": arm_profile[arm_id].get(
+                    "reflectron_voltage_override"
+                ),
             }
         )
     manifest = {
@@ -606,6 +917,11 @@ def prepare(
         "role": "rf_oatof_resolution_attribution_prepared_arms",
         "profile_id": profile["profile_id"],
         "profile_sha256": file_sha256(profile_path),
+        "cohort_policy": cohort_policy,
+        "accelerator_match": accelerator_match,
+        "accelerator_match_stage": (
+            accelerator_match_stage if match_profile is not None else None
+        ),
         "baseline_checkpoints_sha256": file_sha256(checkpoints_path),
         "ideal_source_sha256": file_sha256(ideal_source_path),
         "formal_geometry_sha256": file_sha256(formal_geometry_path),
@@ -645,6 +961,90 @@ def _state_summary(rows: list[dict[str, str]]) -> dict[str, float | None]:
     }
 
 
+def _write_phase_space_diagnostic(
+    rows: list[dict[str, str]],
+    output_dir: Path,
+    prepared_path: Path,
+    cohort_policy: str,
+) -> dict[str, Any]:
+    z = np.asarray([float(row["z_mm"]) for row in rows], dtype=float)
+    vz = np.asarray([float(row["vz_m_s"]) for row in rows], dtype=float)
+    if z.size < 3 or not np.all(np.isfinite(z)) or not np.all(np.isfinite(vz)):
+        raise ValueError("phase-space diagnostic requires three finite z-vz states")
+    centered_z = z - np.mean(z)
+    denominator = float(np.dot(centered_z, centered_z))
+    if denominator <= 0.0:
+        raise ValueError("phase-space diagnostic requires nonzero z variance")
+    mean_vz = float(np.mean(vz))
+    slope = float(np.dot(centered_z, vz - mean_vz) / denominator)
+    fitted = mean_vz + slope * centered_z
+    residual = vz - fitted
+    pearson = float(np.corrcoef(z, vz)[0, 1])
+
+    fig, axes = plt.subplots(1, 2, figsize=(7.2, 3.2), constrained_layout=True)
+    axes[0].scatter(
+        centered_z, vz, s=14, alpha=0.62, color="#0072B2", marker="o",
+        linewidths=0.25, edgecolors="white", label=f"eligible (N={z.size})",
+    )
+    order = np.argsort(centered_z, kind="stable")
+    axes[0].plot(
+        centered_z[order], fitted[order], color="#D55E00", linewidth=1.4,
+        label=f"linear fit: slope={slope:.1f} m s⁻¹ mm⁻¹",
+    )
+    axes[0].axvline(0.0, color="#777777", linewidth=0.7, linestyle="--")
+    axes[0].set(
+        xlabel="Centered z (mm)",
+        ylabel="Pre-pulse vz (m/s)",
+        title=f"A  z–vz phase space (r={pearson:.3f})",
+    )
+    axes[0].legend(frameon=False, fontsize=8)
+
+    axes[1].scatter(
+        centered_z, residual, s=14, alpha=0.62, color="#009E73", marker="s",
+        linewidths=0.25, edgecolors="white",
+    )
+    axes[1].axhline(0.0, color="#777777", linewidth=0.8, linestyle="--")
+    axes[1].set(
+        xlabel="Centered z (mm)",
+        ylabel="Linear-fit vz residual (m/s)",
+        title=f"B  Residual thickness (σ={np.std(residual, ddof=1):.1f} m/s)",
+    )
+    for axis in axes:
+        axis.grid(alpha=0.18)
+    figure_path = output_dir / "pre_pulse_z_vz_phase_space.png"
+    pending_figure = figure_path.with_name(f".{figure_path.name}.pending.png")
+    fig.savefig(pending_figure, dpi=220, format="png", facecolor="white")
+    plt.close(fig)
+    os.replace(pending_figure, figure_path)
+    metadata = {
+        "schema_version": 1,
+        "role": "rf_oatof_pre_pulse_z_vz_phase_space_diagnostic",
+        "capability_id": "rf_oatof_pre_pulse_z_vz_phase_space_v1",
+        "source_prepared_arms_sha256": file_sha256(prepared_path),
+        "cohort_policy": cohort_policy,
+        "particle_count": int(z.size),
+        "frame_id": "oatof_global_centered_at_pulse_cohort_mean_z",
+        "position_unit": "mm",
+        "velocity_unit": "m/s",
+        "filter": "pre_pulse_state and pulse_eligibility=eligible; no detector filter",
+        "linear_fit": {
+            "mean_global_z_mm": float(np.mean(z)),
+            "mean_vz_m_per_s": mean_vz,
+            "slope_m_per_s_per_mm": slope,
+            "pearson_r": pearson,
+            "residual_sample_sigma_m_per_s": float(np.std(residual, ddof=1)),
+        },
+        "figure": figure_path.name,
+        "figure_sha256": file_sha256(figure_path),
+        "style": "publication_double_183x81mm_220dpi",
+    }
+    metadata_path = output_dir / "pre_pulse_z_vz_phase_space_metadata.json"
+    metadata_path.write_text(
+        json.dumps(metadata, indent=2) + "\n", encoding="utf-8", newline="\n"
+    )
+    return {**metadata, "metadata": metadata_path.name}
+
+
 def _checkpoint_detector_times(
     rows: list[dict[str, str]],
 ) -> dict[int, float]:
@@ -682,10 +1082,15 @@ def summarize(
     if prepared.get("role") != "rf_oatof_resolution_attribution_prepared_arms":
         raise ValueError("prepared counterfactual identity differs")
     arm_ids = [str(arm["arm_id"]) for arm in prepared.get("arms", [])]
+    generated_arm_ids = {
+        str(arm["arm_id"])
+        for arm in (prepared.get("accelerator_match") or {}).get("arms", [])
+    }
+    allowed_arm_ids = set(profile_arm_ids) | generated_arm_ids
     if (
         not arm_ids
         or len(arm_ids) != len(set(arm_ids))
-        or any(arm_id not in profile_arm_ids for arm_id in arm_ids)
+        or any(arm_id not in allowed_arm_ids for arm_id in arm_ids)
     ):
         raise ValueError("prepared counterfactual arm selection differs")
     reference_arm_id = reference_arm_id or (
@@ -712,6 +1117,18 @@ def summarize(
     metrics: list[dict[str, Any]] = []
     detector_by_arm: dict[str, dict[int, float]] = {}
     prepared_by_id = {arm["arm_id"]: arm for arm in prepared["arms"]}
+    phase_space_diagnostic = None
+    if prepared.get("accelerator_match") is not None:
+        observed_state_path = source_dir / "observed_restart_control__source_state.csv"
+        observed_columns, observed_rows = _load_csv(observed_state_path)
+        if observed_columns != ARM_STATE_COLUMNS:
+            raise ValueError("observed phase-space source-state identity differs")
+        phase_space_diagnostic = _write_phase_space_diagnostic(
+            observed_rows,
+            output_dir,
+            prepared_path,
+            str(prepared["cohort_policy"]),
+        )
     for arm_id in arm_ids:
         state_columns, state_rows = _load_csv(source_dir / f"{arm_id}__source_state.csv")
         if state_columns != ARM_STATE_COLUMNS or len(state_rows) != particles:
@@ -774,6 +1191,15 @@ def summarize(
                 "detector_particles": len(detector),
                 "source_state": _state_summary(state_rows),
                 "peak": peak,
+                "accelerator_voltage_override": prepared_by_id[arm_id].get(
+                    "accelerator_voltage_override"
+                ),
+                "accelerator_ring_shape_override": prepared_by_id[arm_id].get(
+                    "accelerator_ring_shape_override"
+                ),
+                "reflectron_voltage_override": prepared_by_id[arm_id].get(
+                    "reflectron_voltage_override"
+                ),
             }
         )
     with (output_dir / "counterfactual_particle_checkpoints.csv").open(
@@ -845,6 +1271,9 @@ def summarize(
         "claim_class": "CONTROLLED_COUNTERFACTUAL_DIAGNOSTIC_ONLY",
         "claim_limit": profile["claim_limit"],
         "profile_id": profile["profile_id"],
+        "cohort_policy": prepared.get("cohort_policy", profile["cohort_policy"]),
+        "accelerator_match": prepared.get("accelerator_match"),
+        "phase_space_diagnostic": phase_space_diagnostic,
         "reference_arm_id": reference_arm_id,
         "paired_cohort_particles": particles,
         "baseline_continuous_peak": baseline_peak,
@@ -887,6 +1316,12 @@ def main() -> int:
     prepare_parser.add_argument("--execution-batch-count", type=int, default=5)
     prepare_parser.add_argument("--initial-pa-instance", type=int, choices=(3, 5), default=3)
     prepare_parser.add_argument("--solver-birth-time-us", type=float)
+    prepare_parser.add_argument("--accelerator-match-profile", type=Path)
+    prepare_parser.add_argument(
+        "--accelerator-match-stage",
+        choices=("voltage", "ring_shape", "coupled_reflectron"),
+        default="voltage",
+    )
     prepare_parser.add_argument("--arm-id", action="append", dest="selected_arm_ids")
     summarize_parser = subparsers.add_parser("summarize")
     summarize_parser.add_argument("--profile", required=True, type=Path)
@@ -916,6 +1351,8 @@ def main() -> int:
             args.selected_arm_ids,
             args.initial_pa_instance,
             args.solver_birth_time_us,
+            args.accelerator_match_profile,
+            args.accelerator_match_stage,
         )
         print(
             "RESOLUTION_ATTRIBUTION_PREPARE=PASS "

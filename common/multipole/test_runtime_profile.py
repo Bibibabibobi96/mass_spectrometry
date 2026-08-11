@@ -199,6 +199,25 @@ class RuntimeProfileTests(unittest.TestCase):
             r"^[A-F0-9]{64}$",
         )
 
+    def test_campaign_v6_accepts_governed_rf_phase(self) -> None:
+        resolved = resolve_campaign_experiment(
+            REPO_ROOT,
+            "rf_octupole_ion_optics",
+            Path("20260811__oct_rf_phase_p90_h15_n1000.json"),
+            "oct_rf_phase_p90_h15_n1000",
+        )
+        applied = resolved["design_profile_resolution"]["campaign_design_variables"][
+            "applied_values"
+        ]
+        self.assertEqual(applied["rf_phase"]["unit"], "rad")
+        self.assertAlmostEqual(applied["rf_phase"]["value"], 1.5707963267948966)
+        self.assertAlmostEqual(
+            resolved["design_profile_resolution"]["resolved_design"]["drive"][
+                "phase_rad"
+            ],
+            1.5707963267948966,
+        )
+
     def test_terminal_10ev_campaign_keeps_all_rods_at_eight_volts(self) -> None:
         resolved = resolve_campaign_experiment(
             REPO_ROOT,

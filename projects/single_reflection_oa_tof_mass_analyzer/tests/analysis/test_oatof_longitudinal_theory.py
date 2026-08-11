@@ -6,10 +6,14 @@ from pathlib import Path
 
 
 PROJECT_DIR = Path(__file__).resolve().parents[2]
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_time_focus import accelerator_state
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_time_focus import (
+    accelerator_state,
+    linear_phase_space_timing_coefficients,
+)
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.oatof_oaaccelerator_coupling import (
     coupled_normalized_flight_time_mm_sqrt_v,
     derive as derive_coupled,
+    solve_coupled_reflectron_from_accelerator_derivatives,
     source_position_samples,
 )
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.reflectron_dual_stage_solver import (
@@ -62,12 +66,40 @@ def _github_math_blocks(lines: list[str], name: str) -> list[str]:
 
 
 class OatofLongitudinalTheoryTest(unittest.TestCase):
+    def test_linear_phase_space_derivatives_recalculate_reflectron(self) -> None:
+        accelerator = accelerator_state(
+            2247.5764701146,
+            1756.4419427890,
+            3.0,
+            16.8,
+            release_position_mm=1.5122728479,
+            require_downstream_focus=False,
+        )
+        coefficients = linear_phase_space_timing_coefficients(
+            accelerator, 100.0, 2.7185555, 154.9992858, 0.129186803
+        )
+        solution = solve_coupled_reflectron_from_accelerator_derivatives(
+            coefficients.actual_energy_per_charge_v,
+            120.0,
+            600.0,
+            600.0,
+            coefficients.first_derivative_at_focus,
+            coefficients.second_derivative_at_focus,
+            energy_min_v=1920.0,
+            energy_max_v=2080.0,
+        )
+        self.assertAlmostEqual(solution.stage1_voltage_drop_v, 1629.5783461, places=6)
+        self.assertAlmostEqual(solution.stage2_field_v_per_mm, 9.38952716, places=7)
+        self.assertLess(abs(solution.total_first_derivative_residual), 1.0e-15)
+        self.assertLess(abs(solution.total_second_derivative_residual), 1.0e-15)
+
     def test_theory_markdown_uses_github_safe_math_fences(self) -> None:
         theory_dir = PROJECT_DIR / "docs" / "theory"
         expected_block_counts = {
             "oaaccelerator_time_focus.md": 40,
             "dual_stage_reflectron.md": 40,
             "oatof_oaaccelerator_coupling.md": 41,
+            "z_vz_linear_phase_space_coupling.md": 15,
         }
         all_blocks: dict[str, list[str]] = {}
         for name, expected_count in expected_block_counts.items():

@@ -54,10 +54,10 @@ class CoupledReflectronSolution:
     low_energy_reaches_stage2: bool
     accelerator_first_derivative_at_focus: float
     accelerator_second_derivative_at_focus: float
-    accelerator_third_derivative_at_focus: float
+    accelerator_third_derivative_at_focus: float | None
     total_first_derivative_residual: float
     total_second_derivative_residual: float
-    total_third_derivative: float
+    total_third_derivative: float | None
     root_iterations: int
 
 
@@ -334,20 +334,32 @@ def _find_coupled_root(
     return root, final_candidate[1], bisection_iterations
 
 
-def solve_coupled_reflectron_fields(
-    accelerator: AcceleratorState,
+def solve_coupled_reflectron_from_accelerator_derivatives(
+    nominal_energy_per_charge_v: float,
     stage1_length_mm: float,
     upstream_from_accelerator_focus_mm: float,
     downstream_to_detector_mm: float,
+    accelerator_first_derivative: float,
+    accelerator_second_derivative: float,
     *,
+    accelerator_third_derivative: float | None = None,
     energy_min_v: float | None = None,
     energy_max_v: float | None = None,
     stage2_margin_fraction: float = 0.0,
     stage2_margin_mm: float = 0.0,
-    require_accelerator_focus: bool = True,
 ) -> CoupledReflectronSolution:
-    """Solve global first- and second-order conditions for the coupled 1D system."""
+    """Solve the reflectron from externally derived accelerator coefficients.
 
+    This is the integration boundary for measured phase-space models.  In
+    particular, a linear ``z-vz`` fit supplies its actual nominal energy and the
+    first two normalized-time derivatives without pretending that ions start at
+    rest.  Geometry and voltage feasibility checks remain identical to the static
+    source solver.
+    """
+
+    w0 = _finite_float(
+        nominal_energy_per_charge_v, "nominal_energy_per_charge_v"
+    )
     d1 = _finite_float(stage1_length_mm, "stage1_length_mm")
     upstream = _finite_float(
         upstream_from_accelerator_focus_mm,
@@ -356,51 +368,41 @@ def solve_coupled_reflectron_fields(
     downstream = _finite_float(
         downstream_to_detector_mm, "downstream_to_detector_mm"
     )
+    acc_first = _finite_float(
+        accelerator_first_derivative, "accelerator_first_derivative"
+    )
+    acc_second = _finite_float(
+        accelerator_second_derivative, "accelerator_second_derivative"
+    )
+    acc_third = (
+        None
+        if accelerator_third_derivative is None
+        else _finite_float(
+            accelerator_third_derivative, "accelerator_third_derivative"
+        )
+    )
+    _positive(w0, "nominal_energy_per_charge_v")
     _positive(d1, "stage1_length_mm")
     if upstream < 0.0 or downstream < 0.0:
         raise PhysicsContractError("field-free path lengths must be >= 0")
     total_length = upstream + downstream
     _positive(total_length, "total_field_free_length_mm")
 
-    w0 = accelerator.nominal_energy_per_charge_v
     w_min = w0 if energy_min_v is None else _finite_float(energy_min_v, "energy_min_v")
     w_max = w0 if energy_max_v is None else _finite_float(energy_max_v, "energy_max_v")
-    if not accelerator.intermediate_relative_v < w_min <= w0 <= w_max:
-        raise PhysicsContractError(
-            "energy envelope must remain above the accelerator intermediate potential"
-        )
-
-    acc_first, acc_second, acc_third = accelerator_normalized_derivatives_at_focus(
-        w0, accelerator
-    )
-    focus_scale = max(
-        1.0,
-        abs(1.0 / (accelerator.field1_v_per_mm * math.sqrt(w0 - accelerator.intermediate_relative_v))),
-    )
-    if require_accelerator_focus and abs(acc_first) > 1.0e-10 * focus_scale:
-        raise PhysicsContractError(
-            "accelerator plane is not its first-order time focus; L_up cannot use the "
-            "focus-plane semantic"
-        )
+    if not 0.0 < w_min <= w0 <= w_max:
+        raise PhysicsContractError("energy envelope must satisfy 0 < min <= nominal <= max")
 
     u1, field2, iterations = _find_coupled_root(
-        w0,
-        d1,
-        total_length,
-        w_min,
-        acc_first,
-        acc_second,
+        w0, d1, total_length, w_min, acc_first, acc_second
     )
     field1 = u1 / d1
-    low_reaches = w_min > u1
-    if not low_reaches:
+    if not w_min > u1:
         raise PhysicsContractError(
             "low-energy tail turns in reflectron stage 1; two-stage coupled model invalid"
         )
 
-    margin_fraction = _finite_float(
-        stage2_margin_fraction, "stage2_margin_fraction"
-    )
+    margin_fraction = _finite_float(stage2_margin_fraction, "stage2_margin_fraction")
     margin_mm = _finite_float(stage2_margin_mm, "stage2_margin_mm")
     if margin_fraction < 0.0 or margin_mm < 0.0:
         raise PhysicsContractError("stage-2 margins must be >= 0")
@@ -412,8 +414,13 @@ def solve_coupled_reflectron_fields(
     )
     total_first = acc_first + ref_first
     total_second = acc_second + ref_second
-    total_third = acc_third + reflectron_normalized_third_derivative(
-        w0, total_length, u1, field1, field2
+    total_third = (
+        None
+        if acc_third is None
+        else acc_third
+        + reflectron_normalized_third_derivative(
+            w0, total_length, u1, field1, field2
+        )
     )
     remaining = w0 - u1
     second_scale = max(
@@ -441,7 +448,7 @@ def solve_coupled_reflectron_fields(
         required_stage2_depth_mm=required_depth,
         energy_min_v=w_min,
         energy_max_v=w_max,
-        low_energy_reaches_stage2=low_reaches,
+        low_energy_reaches_stage2=True,
         accelerator_first_derivative_at_focus=acc_first,
         accelerator_second_derivative_at_focus=acc_second,
         accelerator_third_derivative_at_focus=acc_third,
@@ -449,6 +456,54 @@ def solve_coupled_reflectron_fields(
         total_second_derivative_residual=total_second,
         total_third_derivative=total_third,
         root_iterations=iterations,
+    )
+
+
+def solve_coupled_reflectron_fields(
+    accelerator: AcceleratorState,
+    stage1_length_mm: float,
+    upstream_from_accelerator_focus_mm: float,
+    downstream_to_detector_mm: float,
+    *,
+    energy_min_v: float | None = None,
+    energy_max_v: float | None = None,
+    stage2_margin_fraction: float = 0.0,
+    stage2_margin_mm: float = 0.0,
+    require_accelerator_focus: bool = True,
+) -> CoupledReflectronSolution:
+    """Solve global first- and second-order conditions for the coupled 1D system."""
+    w0 = accelerator.nominal_energy_per_charge_v
+    w_min = w0 if energy_min_v is None else _finite_float(energy_min_v, "energy_min_v")
+    w_max = w0 if energy_max_v is None else _finite_float(energy_max_v, "energy_max_v")
+    if not accelerator.intermediate_relative_v < w_min <= w0 <= w_max:
+        raise PhysicsContractError(
+            "energy envelope must remain above the accelerator intermediate potential"
+        )
+
+    acc_first, acc_second, acc_third = accelerator_normalized_derivatives_at_focus(
+        w0, accelerator
+    )
+    focus_scale = max(
+        1.0,
+        abs(1.0 / (accelerator.field1_v_per_mm * math.sqrt(w0 - accelerator.intermediate_relative_v))),
+    )
+    if require_accelerator_focus and abs(acc_first) > 1.0e-10 * focus_scale:
+        raise PhysicsContractError(
+            "accelerator plane is not its first-order time focus; L_up cannot use the "
+            "focus-plane semantic"
+        )
+    return solve_coupled_reflectron_from_accelerator_derivatives(
+        w0,
+        stage1_length_mm,
+        upstream_from_accelerator_focus_mm,
+        downstream_to_detector_mm,
+        acc_first,
+        acc_second,
+        accelerator_third_derivative=acc_third,
+        energy_min_v=w_min,
+        energy_max_v=w_max,
+        stage2_margin_fraction=stage2_margin_fraction,
+        stage2_margin_mm=stage2_margin_mm,
     )
 
 

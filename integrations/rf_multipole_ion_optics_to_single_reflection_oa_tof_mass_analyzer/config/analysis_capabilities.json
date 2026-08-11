@@ -61,6 +61,13 @@
       "required_event_plane": "diagnostic_events.local_accelerator_exit",
       "fixed_output_role": "results/ideal_actual_resolution_gap_six_panel.png",
       "claim_class": "UNQUALIFIED_DIAGNOSTIC_ONLY"
+    },
+    {
+      "capability_id": "rf_oatof_pre_pulse_z_vz_phase_space_v1",
+      "consumer": "analysis/resolution_attribution_counterfactual.py",
+      "scope": "detector-blind pre-pulse z-vz scatter, measured linear trend and residual thickness for the pulse-eligible cohort",
+      "fixed_output_role": "results/resolution_attribution/pre_pulse_z_vz_phase_space.png",
+      "claim_class": "CONTROLLED_COUNTERFACTUAL_DIAGNOSTIC_ONLY"
     }
   ]
 }

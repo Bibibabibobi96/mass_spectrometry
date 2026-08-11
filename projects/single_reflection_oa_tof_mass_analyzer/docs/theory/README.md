@@ -6,6 +6,7 @@
 按问题读取：
 
 - 双区正交加速器一阶空间聚焦：`oaaccelerator_time_focus.md`；
+- 多极杆实测线性 `z-v_z` 相空间扩展：`z_vz_linear_phase_space_coupling.md`；
 - 二级反射镜局部一、二阶能量聚焦：`dual_stage_reflectron.md`；
 - 从释放到探测面的整机纵向耦合：`oatof_oaaccelerator_coupling.md`。
 

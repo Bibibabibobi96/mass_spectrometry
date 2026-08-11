@@ -6,10 +6,70 @@ from pathlib import Path
 
 
 PROJECT_DIR = Path(__file__).resolve().parents[2]
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_time_focus import derive, focus_drift_mm
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_time_focus import (
+    accelerator_state,
+    derive,
+    focus_drift_mm,
+    linear_phase_space_timing_coefficients,
+    match_phase_space_voltage_pair,
+    time_to_fixed_plane_s,
+)
 
 
 class AcceleratorTimeFocusTest(unittest.TestCase):
+    def test_linear_phase_space_coefficients_match_fixed_focus_solution(self) -> None:
+        state = accelerator_state(
+            2247.5764701146,
+            1756.4419427890,
+            3.0,
+            16.8,
+            release_position_mm=1.5122728479,
+            require_downstream_focus=False,
+        )
+        coefficients = linear_phase_space_timing_coefficients(
+            state,
+            100.0,
+            2.7185555,
+            154.9992858,
+            0.129186803,
+        )
+        self.assertAlmostEqual(
+            coefficients.actual_energy_per_charge_v, 2000.00000383091, places=9
+        )
+        self.assertLess(abs(coefficients.first_derivative_at_focus), 5.0e-12)
+        self.assertAlmostEqual(
+            coefficients.second_derivative_at_focus, 4.0173991396e-7, places=15
+        )
+
+    def test_moving_source_match_preserves_nominal_energy_and_fixed_geometry(self) -> None:
+        match = match_phase_space_voltage_pair(
+            3.0,
+            16.8,
+            1.51351888746295,
+            3.1764566087244,
+            155.507788709969,
+            0.12918680341103,
+            100.0,
+            2000.0,
+        )
+        self.assertAlmostEqual(match.gap1_voltage_drop_v, 491.10791847, places=5)
+        self.assertAlmostEqual(match.repeller_v, 2247.76703680, places=5)
+        self.assertAlmostEqual(match.intermediate_v, 1756.65911833, places=5)
+        energy = match.repeller_v - (
+            match.gap1_voltage_drop_v / 3.0 * match.release_position_mm
+        )
+        self.assertAlmostEqual(energy, 2000.0, places=10)
+        self.assertLess(abs(match.time_derivative_s_per_mm), 1.0e-15)
+
+    def test_fixed_plane_time_accepts_nonzero_initial_velocity(self) -> None:
+        moving = time_to_fixed_plane_s(
+            2240.0, 1760.0, 3.0, 16.8, 1.5, 100.0, 0.12918680341103, 100.0
+        )
+        resting = time_to_fixed_plane_s(
+            2240.0, 1760.0, 3.0, 16.8, 1.5, 0.0, 0.12918680341103, 100.0
+        )
+        self.assertLess(moving, resting)
+
     def test_formal_engineering_rounding_has_submicron_focus_residual(self) -> None:
         drift = focus_drift_mm(2240.0, 1760.0, 3.0, 16.83)
         self.assertAlmostEqual(drift, 0.000544666187299)

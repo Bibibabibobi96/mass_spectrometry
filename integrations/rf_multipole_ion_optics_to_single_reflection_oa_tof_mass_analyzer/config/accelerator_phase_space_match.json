@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "role": "rf_oatof_accelerator_phase_space_match_profile",
+  "profile_id": "fixed_geometry_measured_z_vz_match_v1",
+  "source_event": "pre_pulse_state",
+  "cohort_policy": "source_event_and_pulse_eligibility",
+  "matching_method": "measured_linear_z_vz_fixed_geometry_fixed_nominal_energy_v1",
+  "fixed_constraints": [
+    "accelerator_geometry",
+    "accelerator_exit_voltage",
+    "mean_final_energy_per_charge",
+    "focus_plane",
+    "reflectron_geometry"
+  ],
+  "solver": {
+    "derivative_step_mm": 0.0001,
+    "derivative_tolerance_s_per_mm": 1e-15,
+    "voltage_drop_bounds_V": [100.0, 1200.0]
+  },
+  "probes": [
+    {
+      "arm_id": "accelerator_phase_match_m040",
+      "voltage_drop_offset_V": -40.0
+    },
+    {
+      "arm_id": "accelerator_phase_match_m020",
+      "voltage_drop_offset_V": -20.0
+    },
+    {
+      "arm_id": "accelerator_phase_match_m010",
+      "voltage_drop_offset_V": -10.0
+    },
+    {
+      "arm_id": "accelerator_phase_match_center",
+      "voltage_drop_offset_V": 0.0
+    },
+    {
+      "arm_id": "accelerator_phase_match_p010",
+      "voltage_drop_offset_V": 10.0
+    },
+    {
+      "arm_id": "accelerator_phase_match_p020",
+      "voltage_drop_offset_V": 20.0
+    },
+    {
+      "arm_id": "accelerator_phase_match_p040",
+      "voltage_drop_offset_V": 40.0
+    }
+  ],
+  "ring_shape_probes": [
+    {
+      "arm_id": "accelerator_ring_shape_c_p160",
+      "quadratic_V": 0.0,
+      "cubic_V": 160.0
+    },
+    {
+      "arm_id": "accelerator_ring_shape_c_p240",
+      "quadratic_V": 0.0,
+      "cubic_V": 240.0
+    },
+    {
+      "arm_id": "accelerator_ring_shape_c_p320",
+      "quadratic_V": 0.0,
+      "cubic_V": 320.0
+    },
+    {
+      "arm_id": "accelerator_ring_shape_c_p400",
+      "quadratic_V": 0.0,
+      "cubic_V": 400.0
+    },
+    {
+      "arm_id": "accelerator_ring_shape_c_p480",
+      "quadratic_V": 0.0,
+      "cubic_V": 480.0
+    },
+    {
+      "arm_id": "accelerator_ring_shape_q_m040_c_p240",
+      "quadratic_V": -40.0,
+      "cubic_V": 240.0
+    },
+    {
+      "arm_id": "accelerator_ring_shape_q_p040_c_p240",
+      "quadratic_V": 40.0,
+      "cubic_V": 240.0
+    },
+    {
+      "arm_id": "accelerator_ring_shape_q_p080_c_p240",
+      "quadratic_V": 80.0,
+      "cubic_V": 240.0
+    },
+    {
+      "arm_id": "accelerator_ring_shape_q_p120_c_p240",
+      "quadratic_V": 120.0,
+      "cubic_V": 240.0
+    }
+  ],
+  "coupled_reflectron_probes": [
+    {
+      "arm_id": "accelerator_reflectron_coupled_linear",
+      "quadratic_V": 0.0,
+      "cubic_V": 0.0
+    },
+    {
+      "arm_id": "accelerator_reflectron_coupled_linear_c_p160",
+      "quadratic_V": 0.0,
+      "cubic_V": 160.0
+    }
+  ],
+  "claim_limit": "Detector-blind paired replay of the pulse-eligible cohort at one frozen geometry and numerical profile. A selected voltage pair requires a full continuous-injection N=1000 confirmation for transmission and peak claims."
+}

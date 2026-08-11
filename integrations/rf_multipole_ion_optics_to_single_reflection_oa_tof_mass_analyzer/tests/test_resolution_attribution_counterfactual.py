@@ -18,15 +18,34 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     _quantile_match_centered,
     _state_summary,
     _validate_profile,
+    _write_phase_space_diagnostic,
     prepare,
 )
 
 
 PROFILE = Path(__file__).parents[1] / "config" / "resolution_attribution_counterfactual.json"
+MATCH_PROFILE = Path(__file__).parents[1] / "config" / "accelerator_phase_space_match.json"
 WORKFLOW = Path(__file__).parents[1] / "workflows" / "resolution_attribution" / "execute.ps1"
 
 
 class ResolutionAttributionCounterfactualTests(unittest.TestCase):
+    def test_phase_space_diagnostic_publishes_traceable_figure(self) -> None:
+        rows = [
+            {"z_mm": str(z), "vz_m_s": str(5.0 + 100.0 * z + residual)}
+            for z, residual in ((-0.2, -2.0), (-0.1, 1.0), (0.1, -1.0), (0.2, 2.0))
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            prepared = root / "prepared_arms.json"
+            prepared.write_text("{}\n", encoding="utf-8")
+            metadata = _write_phase_space_diagnostic(
+                rows, root, prepared, "source_event_and_pulse_eligibility"
+            )
+            self.assertEqual(metadata["particle_count"], 4)
+            self.assertTrue((root / metadata["figure"]).is_file())
+            self.assertTrue((root / metadata["metadata"]).is_file())
+            self.assertEqual(len(metadata["figure_sha256"]), 64)
+
     def test_checkpoint_detector_time_is_not_offset_by_release_time_twice(self) -> None:
         rows = [
             {"particle_id": "1", "event": "source_release", "instrument_time_us": "0.4"},
@@ -306,6 +325,126 @@ class ResolutionAttributionCounterfactualTests(unittest.TestCase):
                     selected_arm_ids=["not_an_arm"],
                 )
 
+    def test_phase_space_match_uses_all_pulse_eligible_particles(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            checkpoints = root / "checkpoints.csv"
+            ideal = root / "ideal.csv"
+            with checkpoints.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.writer(handle, lineterminator="\n")
+                writer.writerow([
+                    "particle_id", "event", "instrument_time_us", "x_mm", "y_mm",
+                    "z_mm", "vx_mm_per_us", "vy_mm_per_us", "vz_mm_per_us",
+                    "pulse_eligibility",
+                ])
+                for particle_id in range(1, 6):
+                    z = -18.8 + 0.2 * particle_id
+                    vz = 0.02 * particle_id
+                    eligibility = "eligible" if particle_id <= 4 else "ineligible"
+                    writer.writerow([
+                        particle_id, "pre_pulse_state", 10, -69, 0, z,
+                        2, 0, vz, eligibility,
+                    ])
+                    if particle_id <= 2:
+                        writer.writerow([
+                            particle_id, "detector_crossing", 20, 0, 0, 0,
+                            "", "", "", "",
+                        ])
+            with ideal.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.writer(handle, lineterminator="\n")
+                writer.writerow([
+                    "particle_id", "initial_x_mm", "initial_y_mm",
+                    "initial_z_mm", "initial_energy_eV",
+                ])
+                for particle_id in range(1, 6):
+                    writer.writerow([particle_id, 0, 0, 0, 5])
+            source = {
+                "particle_source": {
+                    "center_x_mm": 0.0, "center_y_mm": 0.0,
+                    "center_z_mm": -18.42918680341103,
+                    "size_x_mm": 1.0, "size_y_mm": 1.0, "size_z_mm": 1.0,
+                }
+            }
+            formal_geometry = root / "formal_geometry.json"
+            formal_geometry.write_text(json.dumps(source), encoding="utf-8")
+            target_geometry = root / "target_geometry.json"
+            target_geometry.write_text(json.dumps({
+                **source,
+                "geometry_derivation": {
+                    "accelerator": {
+                        "d1_mm": 3.0,
+                        "d2_mm": 16.8,
+                        "canonical_repeller_z_mm": -19.92918680341103,
+                        "focus_drift_after_grid2_mm": 0.12918680341103,
+                    },
+                    "reflectron": {"nominal_energy_per_charge_V": 2000.0},
+                },
+                "geometry_mm": {
+                    "L_flight": 600.0,
+                    "L_stage1": 120.0,
+                    "L_stage2": 96.1563,
+                },
+                "electrodes_V": {
+                    "grid2": 0.0,
+                    "midgrid": 1628.8001,
+                    "backplate": 2531.1999,
+                },
+            }), encoding="utf-8")
+            result = prepare(
+                PROFILE, checkpoints, ideal, formal_geometry, target_geometry,
+                root / "prepared", 100.0, 1, 1.1e6, 4,
+                selected_arm_ids=["observed_restart_control"],
+                accelerator_match_profile_path=MATCH_PROFILE,
+            )
+            self.assertEqual(result["cohort_policy"], "source_event_and_pulse_eligibility")
+            self.assertEqual(result["paired_cohort_particles"], 4)
+            self.assertEqual(len(result["arms"]), 8)
+            state = root / "prepared" / "observed_restart_control__source_state.csv"
+            with state.open(encoding="utf-8", newline="") as handle:
+                source_ids = [int(row["source_particle_id"]) for row in csv.DictReader(handle)]
+            self.assertEqual(source_ids, [1, 2, 3, 4])
+            release = result["accelerator_match"]["release_position_mm"]
+            for arm in result["arms"][1:]:
+                voltage = arm["accelerator_voltage_override"]
+                nominal = voltage["repeller_V"] - (
+                    voltage["gap1_voltage_drop_V"] * release / 3.0
+                )
+                self.assertAlmostEqual(nominal, 2000.0, places=10)
+            ring_result = prepare(
+                PROFILE, checkpoints, ideal, formal_geometry, target_geometry,
+                root / "prepared_ring", 100.0, 1, 1.1e6, 4,
+                selected_arm_ids=["observed_restart_control"],
+                accelerator_match_profile_path=MATCH_PROFILE,
+                accelerator_match_stage="ring_shape",
+            )
+            self.assertEqual(ring_result["accelerator_match_stage"], "ring_shape")
+            self.assertEqual(len(ring_result["arms"]), 10)
+            control = next(
+                arm for arm in ring_result["arms"]
+                if arm["arm_id"] == "accelerator_ring_shape_c_p160"
+            )
+            self.assertEqual(
+                control["accelerator_ring_shape_override"],
+                {"quadratic_V": 0.0, "cubic_V": 160.0},
+            )
+            coupled_result = prepare(
+                PROFILE, checkpoints, ideal, formal_geometry, target_geometry,
+                root / "prepared_coupled", 100.0, 1, 1.1e6, 4,
+                selected_arm_ids=["observed_restart_control"],
+                accelerator_match_profile_path=MATCH_PROFILE,
+                accelerator_match_stage="coupled_reflectron",
+            )
+            self.assertEqual(coupled_result["accelerator_match_stage"], "coupled_reflectron")
+            self.assertEqual(len(coupled_result["arms"]), 3)
+            coupled_arm = next(
+                arm for arm in coupled_result["arms"]
+                if arm["arm_id"] == "accelerator_reflectron_coupled_linear"
+            )
+            self.assertGreater(coupled_arm["reflectron_voltage_override"]["midgrid_V"], 0.0)
+            self.assertGreater(
+                coupled_arm["reflectron_voltage_override"]["backplate_V"],
+                coupled_arm["reflectron_voltage_override"]["midgrid_V"],
+            )
     def test_state_summary_uses_null_for_undefined_correlation(self) -> None:
         rows = [
             {

@@ -6,6 +6,9 @@ param(
   [string]$FrontendRunId = '',
   [string[]]$ArmId = @(),
   [string]$ReferenceArmId = '',
+  [switch]$AcceleratorPhaseSpaceMatch,
+  [ValidateSet('voltage','ring_shape','coupled_reflectron')]
+  [string]$AcceleratorPhaseSpaceMatchStage = 'voltage',
   [string]$BaselineAggregateRoot = '',
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$PythonExe = ''
@@ -229,6 +232,17 @@ try {
     'resolution_attribution_counterfactual.json'
   Copy-RfStableFile -SourceRunRoot $repoRoot -SourcePath $profileSource `
     -Destination $profile -Role 'resolution-attribution profile' | Out-Null
+  $acceleratorMatchProfile = $null
+  if ($AcceleratorPhaseSpaceMatch) {
+    $acceleratorMatchProfileSource = Join-Path $integrationRoot `
+      'config\accelerator_phase_space_match.json'
+    $acceleratorMatchProfile = Join-Path $package.input_dir `
+      'accelerator_phase_space_match.json'
+    Copy-RfStableFile -SourceRunRoot $repoRoot `
+      -SourcePath $acceleratorMatchProfileSource `
+      -Destination $acceleratorMatchProfile `
+      -Role 'accelerator phase-space match profile' | Out-Null
+  }
   $baselineCheckpoints = Join-Path $package.input_dir `
     'baseline_single_flight_particle_checkpoints.csv'
   Copy-RfStableFile -SourceRunRoot $baselineCheckpointRoot `
@@ -344,6 +358,12 @@ try {
   )
   foreach ($selectedArmId in $ArmId) {
     $prepareArguments += @('--arm-id',$selectedArmId)
+  }
+  if ($null -ne $acceleratorMatchProfile) {
+    $prepareArguments += @(
+      '--accelerator-match-profile',$acceleratorMatchProfile,
+      '--accelerator-match-stage',$AcceleratorPhaseSpaceMatchStage
+    )
   }
   if ($null -ne $solverBirthTimeUs) {
     $prepareArguments += @('--solver-birth-time-us',([string]$solverBirthTimeUs))
@@ -523,6 +543,7 @@ try {
     project_root = $repoRoot
     inputs = [ordered]@{
       profile = $profile
+      accelerator_phase_space_match_profile = $acceleratorMatchProfile
       single_flight_configuration = $singleFlightConfiguration
       baseline_checkpoints = $baselineCheckpoints
       ideal_source = $idealSource
@@ -570,6 +591,10 @@ try {
       accelerator_overlay_pa0_sha256 = $overlayPa0Hash
       accelerator_overlay_iob_sha256 = $overlayIobHash
       accelerator_overlay_program_sha256 = $overlayProgramHash
+      accelerator_phase_space_match_enabled = [bool]$AcceleratorPhaseSpaceMatch
+      accelerator_phase_space_match_stage = $(if ($AcceleratorPhaseSpaceMatch) {
+        $AcceleratorPhaseSpaceMatchStage
+      } else {$null})
     }
     artifact_retention = [ordered]@{
       policy_version = 1
@@ -626,6 +651,41 @@ try {
         $activeFrontendProgramProfileId = $frontendProfileId
       }
       $reflectronOverrides = @()
+      $acceleratorOverrides = @()
+      if ($null -ne $arm.accelerator_voltage_override) {
+        [double]$armRepellerVoltage = `
+          $arm.accelerator_voltage_override.repeller_V
+        [double]$armGrid1Voltage = `
+          $arm.accelerator_voltage_override.grid1_V
+        $acceleratorOverrides = @(
+          '--adjustable',(
+            'V_repeller={0}' -f $armRepellerVoltage.ToString(
+              'R',$invariantCulture
+            )
+          ),
+          '--adjustable',(
+            'V_grid1={0}' -f $armGrid1Voltage.ToString(
+              'R',$invariantCulture
+            )
+          )
+        )
+      }
+      if ($null -ne $arm.accelerator_ring_shape_override) {
+        [double]$ringQuadraticVoltage = `
+          $arm.accelerator_ring_shape_override.quadratic_V
+        [double]$ringCubicVoltage = `
+          $arm.accelerator_ring_shape_override.cubic_V
+        $acceleratorOverrides += @(
+          '--adjustable',(
+            'accelerator_ring_quadratic_V={0}' -f `
+              $ringQuadraticVoltage.ToString('R',$invariantCulture)
+          ),
+          '--adjustable',(
+            'accelerator_ring_cubic_V={0}' -f `
+              $ringCubicVoltage.ToString('R',$invariantCulture)
+          )
+        )
+      }
       if ($solverProfileId -eq 'formal_reflectron') {
         if ($activeSolverProfileId -ne $solverProfileId) {
           Copy-AttributionPaFamily `
@@ -647,6 +707,24 @@ try {
         }
       } else {
         throw "Unknown attribution solver profile: $solverProfileId"
+      }
+      if ($null -ne $arm.reflectron_voltage_override) {
+        if ($solverProfileId -ne 'current_downstream') {
+          throw 'Coupled reflectron voltage override requires current downstream geometry.'
+        }
+        [double]$armMidgridVoltage = `
+          $arm.reflectron_voltage_override.midgrid_V
+        [double]$armBackplateVoltage = `
+          $arm.reflectron_voltage_override.backplate_V
+        $reflectronOverrides += @(
+          '--adjustable',(
+            'V_mid={0}' -f $armMidgridVoltage.ToString('R',$invariantCulture)
+          ),
+          '--adjustable',(
+            'V_backplate={0}' -f `
+              $armBackplateVoltage.ToString('R',$invariantCulture)
+          )
+        )
       }
       $batches = @($arm.execution_batches)
       for ($offset = 0; $offset -lt $batches.Count; `
@@ -678,7 +756,8 @@ try {
                 'handoff_pulse_time_us={0:R}' -f [double]$arm.pulse_time_us
               ),
               '--adjustable','handoff_pulse_width_us=1'
-            ) + $frontendOverrides + $reflectronOverrides + @(
+            ) + $frontendOverrides + $reflectronOverrides + `
+              $acceleratorOverrides + @(
               (Join-Path $runtimeDir 'oatof_ideal_grounded.iob')
             ))
           }
