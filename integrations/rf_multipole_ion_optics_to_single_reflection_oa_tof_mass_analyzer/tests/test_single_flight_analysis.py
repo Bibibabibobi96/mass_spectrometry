@@ -185,6 +185,117 @@ class SingleFlightAnalysisTests(unittest.TestCase):
         self.assertEqual(classified[2], "upstream_of_repeller")
         self.assertEqual(classified[3], "outside_transverse_bore")
 
+    def test_three_axis_window_reports_a_detector_blind_subpopulation_peak(self) -> None:
+        lines = []
+        positions = [
+            (-69.0, 0.0, -18.4),
+            (-69.4, 0.4, -18.8),
+            (-68.6, -0.4, -18.0),
+            (-68.4, 0.0, -18.4),
+        ]
+        for particle_id, (x_mm, y_mm, z_mm) in enumerate(positions, 1):
+            lines.append(
+                f"TRACE: pre_pulse_state ion={particle_id} instrument_time_us=10 "
+                f"x_mm={x_mm} y_mm={y_mm} z_mm={z_mm} "
+                "vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0"
+            )
+            lines.append(
+                f"TRACE: detector_crossing ion={particle_id} "
+                f"t={70 + particle_id * 0.01} x=49 y=0 z=19.83"
+            )
+        geometry = {
+            "particle_source": {
+                "center_x_mm": -69.0,
+                "center_y_mm": 0.0,
+                "center_z_mm": -18.4,
+            },
+            "coordinate_convention": {"accelerator_axis_x": -69.0},
+            "geometry_mm": {
+                "accelerator_repeller_z": -19.9,
+                "accelerator_grid1_z": -16.9,
+                "accelerator_bore_half": 5.0,
+            },
+        }
+        profile = {
+            "profile_id": "ideal_source_box_1mm_xyz",
+            "event": "pre_pulse_state",
+            "axes": {
+                axis: {
+                    "center_binding": f"particle_source.center_{axis}_mm",
+                    "full_width_mm": 1.0,
+                }
+                for axis in ("x", "y", "z")
+            },
+            "selection_uses_detector_outcome": False,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = root / "log.txt"
+            model = root / "geometry.json"
+            log.write_text("\n".join(lines), encoding="utf-8")
+            model.write_text(json.dumps(geometry), encoding="utf-8")
+            _, summary = analyze(
+                log, 4, 100.0, model, 10.0,
+                spatial_window_profile=profile,
+                population_denominator_count=6,
+                eligible_population_count=4,
+            )
+        window = summary["spatial_window_peak"]
+        self.assertEqual(window["selected_count"], 3)
+        self.assertEqual(window["detected_count"], 3)
+        self.assertFalse(window["selection_uses_detector_outcome"])
+        self.assertEqual(window["axis_semantics"]["acceleration_direction"], "z")
+        self.assertIsNotNone(window["instrument_clock_peak"])
+        self.assertEqual(
+            summary["source_population"]["efficiency_denominator"],
+            "candidate_population_count",
+        )
+        self.assertEqual(
+            summary["transmission"]["detector_fraction_of_candidate_population"],
+            4 / 6,
+        )
+        population = summary["source_population"]
+        self.assertEqual(
+            population["simulation_population_basis"],
+            "pulse_eligible_conditional_population",
+        )
+        self.assertEqual(population["simulated_population_count"], 4)
+        self.assertEqual(population["pulse_eligible_population_count"], 4)
+        self.assertEqual(population["simulated_fraction_of_candidate_population"], 4 / 6)
+        self.assertEqual(population["simulated_fraction_of_pulse_eligible_population"], 1.0)
+
+    def test_full_population_derives_pulse_eligible_count_from_observed_state(self) -> None:
+        lines = [
+            "TRACE: source_release ion=1 instrument_time_us=0 x_mm=-69 y_mm=0 z_mm=-18 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
+            "TRACE: source_release ion=2 instrument_time_us=0 x_mm=-69 y_mm=0 z_mm=-18 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
+            "TRACE: pre_pulse_state ion=1 instrument_time_us=1 x_mm=-69 y_mm=0 z_mm=-18 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
+            "TRACE: pre_pulse_state ion=2 instrument_time_us=1 x_mm=-69 y_mm=6 z_mm=-18 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
+            "TRACE: detector_crossing ion=1 t=2 x=0 y=0 z=0",
+        ]
+        geometry = {
+            "coordinate_convention": {"accelerator_axis_x": -69.0},
+            "geometry_mm": {
+                "accelerator_repeller_z": -19.9,
+                "accelerator_grid1_z": -16.9,
+                "accelerator_bore_half": 5.0,
+            },
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = root / "log.txt"
+            model = root / "geometry.json"
+            log.write_text("\n".join(lines), encoding="utf-8")
+            model.write_text(json.dumps(geometry), encoding="utf-8")
+            _, summary = analyze(log, 2, 100.0, model, 10.0)
+
+        population = summary["source_population"]
+        self.assertEqual(population["simulation_population_basis"], "candidate_full_population")
+        self.assertEqual(population["simulated_population_count"], 2)
+        self.assertEqual(population["pulse_eligible_population_count"], 1)
+        self.assertEqual(population["raw_pulse_capture_fraction"], 0.5)
+        self.assertEqual(population["simulated_fraction_of_candidate_population"], 1.0)
+        self.assertIsNone(population["simulated_fraction_of_pulse_eligible_population"])
+
 
 if __name__ == "__main__":
     unittest.main()

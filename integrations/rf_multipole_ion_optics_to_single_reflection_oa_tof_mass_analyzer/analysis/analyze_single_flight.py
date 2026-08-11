@@ -43,6 +43,9 @@ def analyze(
     clock_basis: str = "legacy_relative_time",
     batch_particle_counts: Sequence[int] | None = None,
     initial_global_state_path: Path | None = None,
+    spatial_window_profile: dict[str, object] | None = None,
+    population_denominator_count: int | None = None,
+    eligible_population_count: int | None = None,
 ) -> tuple[list[dict[str, object]], dict[str, object]]:
     if clock_basis not in {"legacy_relative_time", "absolute_birth_time"}:
         raise ValueError("unknown single-flight clock basis")
@@ -187,6 +190,7 @@ def analyze(
         resolution = peak
     injection_energy_validation = None
     pulse_capture = None
+    geometry = None
     if geometry_path is not None:
         geometry = json.loads(geometry_path.read_text(encoding="utf-8-sig"))
         dimensions = geometry["geometry_mm"]
@@ -260,14 +264,132 @@ def analyze(
             "mean_target_error_eV": None if target is None or not len(energies) else float(np.mean(energies) - float(target)),
             "terminal_or_handoff_energy_is_target_validation": False,
         }
+    spatial_window_peak = None
+    if spatial_window_profile is not None:
+        if geometry is None:
+            raise ValueError("spatial-window analysis requires resolved geometry")
+        event = str(spatial_window_profile.get("event", ""))
+        axes = spatial_window_profile.get("axes")
+        if event not in {"source_release", "multipole_handoff", "pre_pulse_state", "local_accelerator_exit"}:
+            raise ValueError("spatial-window event is invalid")
+        if not isinstance(axes, dict) or not axes or set(axes) - {"x", "y", "z"}:
+            raise ValueError("spatial-window axes are invalid")
+        bounds: dict[str, dict[str, float | str]] = {}
+        for axis, specification in axes.items():
+            if not isinstance(specification, dict):
+                raise ValueError("spatial-window axis specification is invalid")
+            expected_binding = f"particle_source.center_{axis}_mm"
+            if specification.get("center_binding") != expected_binding:
+                raise ValueError("spatial-window center binding is invalid")
+            width = float(specification["full_width_mm"])
+            if width <= 0:
+                raise ValueError("spatial-window width must be positive")
+            center = float(geometry["particle_source"][f"center_{axis}_mm"])
+            bounds[axis] = {
+                "center_binding": expected_binding,
+                "center_mm": center,
+                "full_width_mm": width,
+                "minimum_mm": center - width / 2.0,
+                "maximum_mm": center + width / 2.0,
+            }
+        event_rows = [row for row in rows if row["event"] == event]
+        selected_ids = {
+            int(row["particle_id"])
+            for row in event_rows
+            if all(
+                float(bound["minimum_mm"]) <= float(row[f"{axis}_mm"]) <=
+                float(bound["maximum_mm"])
+                for axis, bound in bounds.items()
+            )
+        }
+        selected_detector_times = np.asarray([
+            float(row["instrument_time_us"])
+            for row in rows
+            if row["event"] == "detector_crossing"
+            and int(row["particle_id"]) in selected_ids
+        ])
+        selected_peak = None
+        if selected_detector_times.size >= 3:
+            selected_peak, _ = compute_peak_metrics(selected_detector_times, mass_amu)
+        spatial_window_peak = {
+            "profile_id": spatial_window_profile["profile_id"],
+            "event": event,
+            "axis_semantics": {
+                "acceleration_direction": "z",
+                "non_acceleration_directions": ["x", "y"],
+            },
+            "bounds": bounds,
+            "selection_uses_detector_outcome": False,
+            "event_population_count": len(event_rows),
+            "selected_count": len(selected_ids),
+            "selected_fraction_of_event_population": (
+                len(selected_ids) / len(event_rows) if event_rows else None
+            ),
+            "detected_count": int(selected_detector_times.size),
+            "conditional_detector_efficiency": (
+                selected_detector_times.size / len(selected_ids) if selected_ids else None
+            ),
+            "instrument_clock_peak": selected_peak,
+            "mass_resolution_ratio_to_all_detected": (
+                None if selected_peak is None or resolution is None else
+                selected_peak["mass_resolution"] / resolution["mass_resolution"]
+            ),
+            "is_causal_counterfactual": False,
+        }
+    if population_denominator_count is None:
+        population_denominator_count = launched
+    full_candidate_population_simulated = launched == population_denominator_count
+    if eligible_population_count is None:
+        eligible_population_count = (
+            pulse_capture["counts"]["eligible"]
+            if full_candidate_population_simulated and pulse_capture is not None
+            else launched
+        )
+    if not 0 <= eligible_population_count <= population_denominator_count:
+        raise ValueError("source population counts are inconsistent")
+    if not 0 < launched <= population_denominator_count:
+        raise ValueError("simulated population count is inconsistent")
+    if not full_candidate_population_simulated and launched > eligible_population_count:
+        raise ValueError("conditional population exceeds the pulse-eligible population")
+    if (
+        full_candidate_population_simulated
+        and pulse_capture is not None
+        and eligible_population_count != pulse_capture["counts"]["eligible"]
+    ):
+        raise ValueError("pulse-eligible count conflicts with the observed full population")
     summary = {
-        "schema_version": 2,
+        "schema_version": 3,
         "role": "rf_oatof_simion_single_flight_summary",
         "status": "success",
         "census": {"launched": launched, **counts},
         "transmission": {
             "multipole_handoff_fraction": counts["multipole_handoff"] / launched,
             "detector_fraction": counts["detector_crossing"] / launched,
+            "detector_fraction_of_candidate_population": (
+                counts["detector_crossing"] / population_denominator_count
+            ),
+        },
+        "source_population": {
+            "candidate_population_count": population_denominator_count,
+            "pulse_eligible_population_count": eligible_population_count,
+            "simulated_population_count": launched,
+            "simulation_population_basis": (
+                "candidate_full_population"
+                if full_candidate_population_simulated
+                else "pulse_eligible_conditional_population"
+            ),
+            "raw_pulse_capture_fraction": (
+                eligible_population_count / population_denominator_count
+            ),
+            "simulated_fraction_of_candidate_population": (
+                launched / population_denominator_count
+            ),
+            "simulated_fraction_of_pulse_eligible_population": (
+                None
+                if full_candidate_population_simulated
+                else launched / eligible_population_count
+            ),
+            "efficiency_denominator": "candidate_population_count",
         },
         "pulse_first_observed_us": min(pulse_times) if pulse_times else None,
         "clock_basis": clock_basis,
@@ -277,6 +399,7 @@ def analyze(
         "instrument_clock_peak_is_resolution_claim": False,
         "injection_energy_validation": injection_energy_validation,
         "pulse_capture": pulse_capture,
+        "spatial_window_peak": spatial_window_peak,
         "spatial_six_panel": "results/single_flight_spatial_six_panel.png",
         "formal_gate_passed": False,
     }
@@ -292,6 +415,10 @@ def main() -> int:
     parser.add_argument("--geometry", type=Path)
     parser.add_argument("--pulse-time-us", type=float)
     parser.add_argument("--initial-global-state", type=Path)
+    parser.add_argument("--configuration", type=Path)
+    parser.add_argument("--spatial-window-profile-id")
+    parser.add_argument("--population-denominator-count", type=int)
+    parser.add_argument("--eligible-population-count", type=int)
     parser.add_argument(
         "--clock-basis",
         default="legacy_relative_time",
@@ -300,6 +427,20 @@ def main() -> int:
     parser.add_argument("--checkpoints", required=True, type=Path)
     parser.add_argument("--summary", required=True, type=Path)
     args = parser.parse_args()
+    spatial_window_profile = None
+    if args.spatial_window_profile_id is not None:
+        if args.configuration is None:
+            parser.error("--spatial-window-profile-id requires --configuration")
+        configuration = json.loads(
+            args.configuration.read_text(encoding="utf-8-sig")
+        )
+        matches = [
+            profile for profile in configuration.get("spatial_window_profiles", [])
+            if profile.get("profile_id") == args.spatial_window_profile_id
+        ]
+        if len(matches) != 1:
+            parser.error("spatial-window profile must resolve exactly once")
+        spatial_window_profile = matches[0]
     rows, summary = analyze(
         args.log,
         args.launched,
@@ -309,6 +450,9 @@ def main() -> int:
         args.clock_basis,
         args.batch_particle_count,
         args.initial_global_state,
+        spatial_window_profile,
+        args.population_denominator_count,
+        args.eligible_population_count,
     )
     args.checkpoints.parent.mkdir(parents=True, exist_ok=True)
     with args.checkpoints.open("w", encoding="utf-8", newline="") as handle:

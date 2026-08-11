@@ -271,23 +271,49 @@ def prepare_family_source_closure(
     frontend_grid_profile_id = experiment.get(
         "single_flight_frontend_grid_profile_id"
     )
+    single_flight_configuration = _load(
+        root / "integrations" / INTEGRATION_ID / "config" /
+        "simion_single_flight.json"
+    )
     if frontend_grid_profile_id is not None:
         if execution_strategy != "simion_single_flight":
             raise ContractError(
                 "single-flight frontend grid profiles require SIMION single flight"
             )
-        numerical_configuration = _load(
-            root / "integrations" / INTEGRATION_ID / "config" /
-            "simion_single_flight.json"
-        )
         grid_profiles = [
-            item for item in numerical_configuration["frontend_grid_profiles"]
+            item for item in single_flight_configuration["frontend_grid_profiles"]
             if item["profile_id"] == frontend_grid_profile_id
         ]
         if len(grid_profiles) != 1:
             raise ContractError(
                 "single-flight frontend grid profile must resolve exactly once"
             )
+    oatof_numerical_profile_id = experiment.get(
+        "single_flight_oatof_numerical_profile_id"
+    )
+    oatof_numerical_profile = None
+    if oatof_numerical_profile_id is not None:
+        if execution_strategy != "simion_single_flight":
+            raise ContractError("oaTOF numerical profiles require SIMION single flight")
+        matches = [
+            item for item in single_flight_configuration["oatof_numerical_profiles"]
+            if item["profile_id"] == oatof_numerical_profile_id
+        ]
+        if len(matches) != 1:
+            raise ContractError("oaTOF numerical profile must resolve exactly once")
+        oatof_numerical_profile = matches[0]
+    spatial_window_profile_id = experiment.get(
+        "single_flight_spatial_window_profile_id"
+    )
+    if spatial_window_profile_id is not None:
+        if execution_strategy != "simion_single_flight":
+            raise ContractError("spatial-window profiles require SIMION single flight")
+        matches = [
+            item for item in single_flight_configuration["spatial_window_profiles"]
+            if item["profile_id"] == spatial_window_profile_id
+        ]
+        if len(matches) != 1:
+            raise ContractError("spatial-window profile must resolve exactly once")
     accelerator_field_profile_id = experiment.get(
         "single_flight_accelerator_field_profile_id"
     )
@@ -296,12 +322,8 @@ def prepare_family_source_closure(
             raise ContractError(
                 "single-flight accelerator field profiles require SIMION single flight"
             )
-        numerical_configuration = _load(
-            root / "integrations" / INTEGRATION_ID / "config" /
-            "simion_single_flight.json"
-        )
         field_profiles = [
-            item for item in numerical_configuration["accelerator_field_profiles"]
+            item for item in single_flight_configuration["accelerator_field_profiles"]
             if item["profile_id"] == accelerator_field_profile_id
         ]
         if len(field_profiles) != 1:
@@ -353,6 +375,7 @@ def prepare_family_source_closure(
     source = evidence["source"]
     single_flight_source = experiment.get("single_flight_particle_source")
     single_flight_source_path = None
+    selection_receipt = None
     if single_flight_source is not None:
         if execution_strategy != "simion_single_flight":
             raise ContractError("single-flight particle-source overrides require SIMION single flight")
@@ -375,7 +398,17 @@ def prepare_family_source_closure(
             receipt = single_flight_source.get("selection_receipt")
             if receipt is None:
                 raise ContractError("conditional source requires a selection receipt")
-            _repo_record(root, receipt, "single-flight selection receipt")
+            receipt_path = _repo_record(
+                root, receipt, "single-flight selection receipt"
+            )
+            selection_receipt = _load(receipt_path)
+            if (
+                selection_receipt.get("selected_count") != len(source_rows)
+                or selection_receipt.get("candidate_eligible_count", 0) < len(source_rows)
+                or selection_receipt.get("candidate_launched_count", 0)
+                < selection_receipt.get("candidate_eligible_count", 0)
+            ):
+                raise ContractError("conditional-source receipt population differs")
     solver_id = evidence["solver_id"]
     if execution_strategy == "simion_single_flight" and solver_id != "simion":
         raise ContractError("SIMION single-flight execution requires a SIMION source run")
@@ -508,6 +541,14 @@ def prepare_family_source_closure(
         geometry, downstream_port, _ = compile_geometry_and_port(
             _load(base_geometry_path), _load(base_downstream_port_path), layout_profile
         )
+        if oatof_numerical_profile is not None:
+            reflectron_mesh = oatof_numerical_profile["reflectron_cell_mm"]
+            geometry["simion_geometry_build"]["reflectron"]["cell_axial_mm"] = float(
+                reflectron_mesh["axial"]
+            )
+            geometry["simion_geometry_build"]["reflectron"]["cell_radial_mm"] = float(
+                reflectron_mesh["radial"]
+            )
         geometry_path = plan_output.with_name("resolved_oatof_geometry.json")
         geometry_path.write_text(json.dumps(geometry, indent=2) + "\n", encoding="utf-8")
         downstream_port["authority"]["source_contract"] = _workspace_relative(
@@ -628,6 +669,11 @@ def prepare_family_source_closure(
                 f"single_flight_particle_source_sha256={single_flight_source['sha256']}",
                 f"single_flight_particle_source_count={single_flight_source['particle_count']}",
                 f"single_flight_sampling_mode={single_flight_source['sampling_mode']}",
+            ]) + ([] if selection_receipt is None else [
+                "single_flight_population_denominator_count="
+                + str(selection_receipt["candidate_launched_count"]),
+                "single_flight_eligible_population_count="
+                + str(selection_receipt["candidate_eligible_count"]),
             ]) + ([] if layout_files is None else [
                 f"layout_profile_id={experiment['single_flight_layout_profile_id']}",
                 "resolved_oatof_geometry_filename=resolved_oatof_geometry.json",
@@ -638,6 +684,12 @@ def prepare_family_source_closure(
             ]) + ([] if "single_flight_frontend_grid_profile_id" not in experiment else [
                 "single_flight_frontend_grid_profile_id="
                 + experiment["single_flight_frontend_grid_profile_id"],
+            ]) + ([] if "single_flight_oatof_numerical_profile_id" not in experiment else [
+                "single_flight_oatof_numerical_profile_id="
+                + experiment["single_flight_oatof_numerical_profile_id"],
+            ]) + ([] if "single_flight_spatial_window_profile_id" not in experiment else [
+                "single_flight_spatial_window_profile_id="
+                + experiment["single_flight_spatial_window_profile_id"],
             ]) + ([] if "single_flight_accelerator_field_profile_id" not in experiment else [
                 "single_flight_accelerator_field_profile_id="
                 + experiment["single_flight_accelerator_field_profile_id"],

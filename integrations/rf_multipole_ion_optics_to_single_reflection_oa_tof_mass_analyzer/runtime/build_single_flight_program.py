@@ -97,6 +97,20 @@ def bind_oatof_adjustables(formal: str, oatof: dict[str, Any]) -> str:
     return bound
 
 
+def disable_redundant_ground_fast_adjust(formal: str) -> str:
+    """Keep grounded single-electrode PAs read-only in parallel flights."""
+
+    block = " r:fast_adjust(reflectron_voltages)\n t:fast_adjust{[1]=0}\n d:fast_adjust{[1]=0}"
+    replacement = (
+        " r:fast_adjust(reflectron_voltages)\n"
+        " -- Flight-tube and detector PA0 are frozen at 0 V; re-adjusting them is\n"
+        " -- redundant and unsafe when parallel SIMION processes share run inputs."
+    )
+    if formal.count(block) != 1:
+        raise ValueError("formal grounded-PA fast-adjust block is not unique")
+    return formal.replace(block, replacement)
+
+
 def build_extension(
     upstream: dict[str, Any],
     frontend: dict[str, Any],
@@ -317,9 +331,9 @@ def main() -> int:
     parser.add_argument("--metadata", required=True, type=Path)
     args = parser.parse_args()
     oatof = _load(args.oatof)
-    formal = bind_oatof_adjustables(
+    formal = disable_redundant_ground_fast_adjust(bind_oatof_adjustables(
         args.formal.read_text(encoding="utf-8-sig"), oatof
-    )
+    ))
     pulse = args.pulse_extension.read_text(encoding="utf-8-sig")
     if formal.count("simion.workbench_program()") != 1 or "segment.fast_adjust" not in pulse:
         raise ValueError("frozen oaTOF Program inputs differ from the expected contract")

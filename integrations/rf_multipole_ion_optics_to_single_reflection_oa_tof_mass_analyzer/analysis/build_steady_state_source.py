@@ -34,10 +34,11 @@ def build(
     checkpoint_paths: list[Path],
     output_path: Path,
     receipt_path: Path,
-    target_count: int = 1000,
+    target_count: int | None = 1000,
     seed: int = SELECTION_SEED,
     batch_directory: Path | None = None,
     batch_count: int = 5,
+    selection_mode: str = "random_subset",
 ) -> dict[str, object]:
     if len(source_paths) != len(checkpoint_paths) or not source_paths:
         raise ValueError("source and checkpoint batches must pair one-to-one")
@@ -73,10 +74,20 @@ def build(
             "launched_count": len(source_rows),
             "eligible_count": len(eligible_ids),
         })
-    if len(candidates) < target_count:
-        raise ValueError("candidate pool contains too few pulse-eligible ions")
-    random.Random(seed).shuffle(candidates)
-    selected = candidates[:target_count]
+    if selection_mode == "all_eligible":
+        if target_count is not None:
+            raise ValueError("all-eligible selection must not declare a target count")
+        selected = candidates
+    elif selection_mode == "random_subset":
+        if target_count is None or target_count < 1:
+            raise ValueError("random-subset selection requires a positive target count")
+        if len(candidates) < target_count:
+            raise ValueError("candidate pool contains too few pulse-eligible ions")
+        random.Random(seed).shuffle(candidates)
+        selected = candidates[:target_count]
+    else:
+        raise ValueError("unknown steady-source selection mode")
+    selected_count = len(selected)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=SOURCE_COLUMNS, lineterminator="\n")
@@ -85,42 +96,56 @@ def build(
             writer.writerow(dict(row, particle_id=str(particle_id)))
     output_batches: list[dict[str, object]] = []
     if batch_directory is not None:
-        if target_count % batch_count:
-            raise ValueError("selected source must divide evenly into execution batches")
+        if batch_count < 1 or batch_count > selected_count:
+            raise ValueError("execution batch count is outside selected population")
         batch_directory.mkdir(parents=True, exist_ok=True)
-        size = target_count // batch_count
+        quotient, remainder = divmod(selected_count, batch_count)
+        start = 0
         for batch_index in range(batch_count):
-            path = batch_directory / f"rf_multipole_steady_pulse_eligible_v1_batch{batch_index + 1:02d}_{size}.csv"
+            size = quotient + (1 if batch_index < remainder else 0)
+            path = batch_directory / (
+                f"{output_path.stem}_batch{batch_index + 1:02d}_{size}.csv"
+            )
             with path.open("w", encoding="utf-8", newline="") as handle:
                 writer = csv.DictWriter(handle, fieldnames=SOURCE_COLUMNS, lineterminator="\n")
                 writer.writeheader()
                 for local_id, (_, _, row) in enumerate(
-                    selected[batch_index * size : (batch_index + 1) * size], 1
+                    selected[start : start + size], 1
                 ):
                     writer.writerow(dict(row, particle_id=str(local_id)))
             output_batches.append({
                 "batch_index": batch_index + 1,
-                "global_particle_id_offset": batch_index * size,
+                "global_particle_id_offset": start,
                 "particle_count": size,
                 "path": _portable_receipt_path(path),
                 "sha256": sha256(path),
             })
+            start += size
     receipt: dict[str, object] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "role": "rf_oatof_steady_state_source_selection_receipt",
         "method": "detector_blind_prepulse_geometric_conditioning",
-        "physics_scope": {
+        "candidate_injection_contract": {
             "continuous_entrance_injection": True,
             "rf_phase_uniform_over_one_period": True,
             "pulse_phase_locked": True,
             "collisions_enabled": False,
             "space_charge_enabled": False,
         },
-        "selection_seed": seed,
+        "selected_population_contract": {
+            "population": "all_detector_blind_pulse_eligible_particles",
+            "conditional_on": "inside_open_accelerator_stage1_at_pulse",
+            "rf_phase_uniformity_claim": False,
+            "independent_particle_equivalence": True,
+            "efficiency_denominator": "candidate_launched_count",
+        },
+        "selection_mode": selection_mode,
+        "selection_seed": seed if selection_mode == "random_subset" else None,
         "candidate_launched_count": sum(int(batch["launched_count"]) for batch in batches),
         "candidate_eligible_count": len(candidates),
         "raw_pulse_capture_fraction": len(candidates) / sum(int(batch["launched_count"]) for batch in batches),
-        "selected_count": target_count,
+        "selected_count": selected_count,
+        "unselected_eligible_count": len(candidates) - selected_count,
         "selection_uses_detector_outcome": False,
         "batches": batches,
         "selected_lineage_sha256": hashlib.sha256(
@@ -145,14 +170,21 @@ def main() -> int:
     parser.add_argument("--checkpoints", action="append", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--receipt", required=True, type=Path)
-    parser.add_argument("--target-count", type=int, default=1000)
+    parser.add_argument("--target-count", type=int)
+    parser.add_argument(
+        "--selection-mode",
+        choices=("random_subset", "all_eligible"),
+        default="random_subset",
+    )
     parser.add_argument("--batch-directory", type=Path)
     parser.add_argument("--batch-count", type=int, default=5)
     args = parser.parse_args()
     receipt = build(
         args.source, args.checkpoints, args.output, args.receipt,
-        args.target_count, batch_directory=args.batch_directory,
-        batch_count=args.batch_count,
+        1000 if args.selection_mode == "random_subset" and args.target_count is None
+        else args.target_count,
+        batch_directory=args.batch_directory, batch_count=args.batch_count,
+        selection_mode=args.selection_mode,
     )
     print(
         "STEADY_STATE_SOURCE=PASS "

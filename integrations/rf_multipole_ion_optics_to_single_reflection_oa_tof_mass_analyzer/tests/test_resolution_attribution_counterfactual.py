@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.resolution_attribution_counterfactual import (
+    _checkpoint_detector_times,
     _remove_linear_covariance,
     _collapse_linear_residual,
     _project_observed_linear_slope,
@@ -24,6 +25,13 @@ WORKFLOW = Path(__file__).parents[1] / "workflows" / "resolution_attribution" / 
 
 
 class ResolutionAttributionCounterfactualTests(unittest.TestCase):
+    def test_checkpoint_detector_time_is_not_offset_by_release_time_twice(self) -> None:
+        rows = [
+            {"particle_id": "1", "event": "source_release", "instrument_time_us": "0.4"},
+            {"particle_id": "1", "event": "detector_crossing", "instrument_time_us": "76.7"},
+        ]
+        self.assertEqual(_checkpoint_detector_times(rows), {1: 76.7})
+
     def test_n1000_workflow_uses_governed_process_parallel_batches(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8-sig")
         self.assertIn("Start-Job", workflow)

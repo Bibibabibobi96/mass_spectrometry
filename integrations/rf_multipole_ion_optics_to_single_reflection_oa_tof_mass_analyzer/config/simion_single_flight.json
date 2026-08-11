@@ -1,5 +1,5 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "role": "rf_oatof_simion_single_flight_configuration",
   "clock_basis": "absolute_birth_time",
   "batching_policy": {
@@ -41,6 +41,32 @@
       "cell_mm_xyz": {"x": 0.2, "y": 0.2, "z": 0.05},
       "max_parallel_batches": 1,
       "role": "acceleration_axis_convergence"
+    }
+  ],
+  "default_oatof_numerical_profile_id": "oatof_formal_mesh",
+  "oatof_numerical_profiles": [
+    {
+      "profile_id": "oatof_formal_mesh",
+      "reflectron_cell_mm": {"axial": 0.25, "radial": 1.0},
+      "role": "default"
+    },
+    {
+      "profile_id": "oatof_reflectron_z010_r100",
+      "reflectron_cell_mm": {"axial": 0.1, "radial": 1.0},
+      "role": "same_grid_source_comparison"
+    }
+  ],
+  "spatial_window_profiles": [
+    {
+      "profile_id": "ideal_source_box_1mm_xyz",
+      "event": "pre_pulse_state",
+      "axes": {
+        "x": {"center_binding": "particle_source.center_x_mm", "full_width_mm": 1.0},
+        "y": {"center_binding": "particle_source.center_y_mm", "full_width_mm": 1.0},
+        "z": {"center_binding": "particle_source.center_z_mm", "full_width_mm": 1.0}
+      },
+      "selection_uses_detector_outcome": false,
+      "role": "ideal_source_extent_diagnostic"
     }
   ],
   "default_accelerator_field_profile_id": "accelerator_real_pa",

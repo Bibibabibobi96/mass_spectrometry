@@ -78,8 +78,20 @@ $sourceOverrideArgumentNames = @(
 if ($frozenArguments.ContainsKey('single_flight_particle_source_path')) {
   $expectedArguments += $sourceOverrideArgumentNames
 }
+if ($frozenArguments.ContainsKey('single_flight_population_denominator_count')) {
+  $expectedArguments += @(
+    'single_flight_population_denominator_count',
+    'single_flight_eligible_population_count'
+  )
+}
 if ($frozenArguments.ContainsKey('single_flight_frontend_grid_profile_id')) {
   $expectedArguments += 'single_flight_frontend_grid_profile_id'
+}
+if ($frozenArguments.ContainsKey('single_flight_oatof_numerical_profile_id')) {
+  $expectedArguments += 'single_flight_oatof_numerical_profile_id'
+}
+if ($frozenArguments.ContainsKey('single_flight_spatial_window_profile_id')) {
+  $expectedArguments += 'single_flight_spatial_window_profile_id'
 }
 if ($frozenArguments.ContainsKey('single_flight_accelerator_field_profile_id')) {
   $expectedArguments += 'single_flight_accelerator_field_profile_id'
@@ -386,6 +398,22 @@ if ($executionStrategy -eq 'simion_single_flight') {
     $runnerArguments.FrontendGridProfileId =
       [string]$frozenArguments.single_flight_frontend_grid_profile_id
   }
+  if ($frozenArguments.ContainsKey('single_flight_oatof_numerical_profile_id')) {
+    if ([string]$experiment.single_flight_oatof_numerical_profile_id -ne
+        [string]$frozenArguments.single_flight_oatof_numerical_profile_id) {
+      throw 'Single-flight oaTOF numerical profile changed after preparation.'
+    }
+    $runnerArguments.OatofNumericalProfileId =
+      [string]$frozenArguments.single_flight_oatof_numerical_profile_id
+  }
+  if ($frozenArguments.ContainsKey('single_flight_spatial_window_profile_id')) {
+    if ([string]$experiment.single_flight_spatial_window_profile_id -ne
+        [string]$frozenArguments.single_flight_spatial_window_profile_id) {
+      throw 'Single-flight spatial-window profile changed after preparation.'
+    }
+    $runnerArguments.SpatialWindowProfileId =
+      [string]$frozenArguments.single_flight_spatial_window_profile_id
+  }
   if ($frozenArguments.ContainsKey('single_flight_accelerator_field_profile_id')) {
     if ([string]$experiment.single_flight_accelerator_field_profile_id -ne
         [string]$frozenArguments.single_flight_accelerator_field_profile_id) {
@@ -399,6 +427,12 @@ if ($executionStrategy -eq 'simion_single_flight') {
     $runnerArguments.MotherParticleSourceSha256 = $frozenArguments.single_flight_particle_source_sha256
     $runnerArguments.MotherParticleCount = [int]$frozenArguments.single_flight_particle_source_count
     $runnerArguments.SamplingMode = $frozenArguments.single_flight_sampling_mode
+    if ($frozenArguments.ContainsKey('single_flight_population_denominator_count')) {
+      $runnerArguments.PopulationDenominatorCount =
+        [int]$frozenArguments.single_flight_population_denominator_count
+      $runnerArguments.EligiblePopulationCount =
+        [int]$frozenArguments.single_flight_eligible_population_count
+    }
   }
   & $runtime.implementation.single_flight_runner @runnerArguments
 } else {

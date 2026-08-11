@@ -9,6 +9,7 @@ from pathlib import Path
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.build_single_flight_program import (
     bind_oatof_adjustables,
     build_extension,
+    disable_redundant_ground_fast_adjust,
     load_birth_times,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_frontend import compile_frontend
@@ -18,6 +19,16 @@ REPO = Path(__file__).resolve().parents[3]
 
 
 class SingleFlightProgramTests(unittest.TestCase):
+    def test_parallel_program_does_not_readjust_frozen_ground_pas(self) -> None:
+        formal = (
+            REPO / "projects/single_reflection_oa_tof_mass_analyzer/simion/"
+            "workbench/formal/oatof_ideal_grounded.lua"
+        ).read_text()
+        prepared = disable_redundant_ground_fast_adjust(formal)
+        self.assertIn("r:fast_adjust(reflectron_voltages)", prepared)
+        self.assertNotIn("t:fast_adjust{[1]=0}", prepared)
+        self.assertNotIn("d:fast_adjust{[1]=0}", prepared)
+
     def test_resolved_oatof_values_are_bound_into_program_defaults(self) -> None:
         formal = (
             REPO / "projects/single_reflection_oa_tof_mass_analyzer/simion/"

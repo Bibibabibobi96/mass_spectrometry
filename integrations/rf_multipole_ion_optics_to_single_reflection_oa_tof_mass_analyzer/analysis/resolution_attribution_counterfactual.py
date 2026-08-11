@@ -617,6 +617,17 @@ def _state_summary(rows: list[dict[str, str]]) -> dict[str, float | None]:
     }
 
 
+def _checkpoint_detector_times(
+    rows: list[dict[str, str]],
+) -> dict[int, float]:
+    """Return canonical instrument-clock detector times from checkpoint rows."""
+    return {
+        int(row["particle_id"]): float(row["instrument_time_us"])
+        for row in rows
+        if row["event"] == "detector_crossing"
+    }
+
+
 def summarize(
     profile_path: Path,
     prepared_path: Path,
@@ -653,16 +664,10 @@ def summarize(
         raise ValueError("baseline checkpoint columns differ")
     if baseline_clock_basis not in {"legacy_relative_time", "absolute_birth_time"}:
         raise ValueError("baseline clock basis differs")
-    release_times = {
-        int(row["particle_id"]): float(row["instrument_time_us"])
-        for row in baseline_rows if row["event"] == "source_release"
-    }
-    baseline_detector = {
-        int(row["particle_id"]): float(row["instrument_time_us"])
-        + (release_times[int(row["particle_id"])] if baseline_clock_basis == "absolute_birth_time" else 0.0)
-        for row in baseline_rows
-        if row["event"] == "detector_crossing"
-    }
+    # analyze_single_flight writes canonical instrument-clock time into every
+    # checkpoint row.  clock_basis records how that value was obtained; it is
+    # not an instruction to add source_release a second time here.
+    baseline_detector = _checkpoint_detector_times(baseline_rows)
     output_dir.mkdir(parents=True, exist_ok=False)
     checkpoint_rows: list[dict[str, object]] = []
     metrics: list[dict[str, Any]] = []

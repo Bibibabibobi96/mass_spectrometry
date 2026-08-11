@@ -14,11 +14,15 @@ param(
   [string]$PulseSchedule = '',
   [string]$LayoutProfileId = '',
   [string]$FrontendGridProfileId = '',
+  [string]$OatofNumericalProfileId = '',
+  [string]$SpatialWindowProfileId = '',
   [string]$AcceleratorFieldProfileId = '',
   [string]$MotherParticleSource = '',
   [string]$MotherParticleSourceSha256 = '',
   [int]$MotherParticleCount = 0,
-  [ValidateSet('governed_upstream_source','steady_candidate_pool','pulse_eligible_conditional')][string]$SamplingMode = 'governed_upstream_source',
+  [int]$PopulationDenominatorCount = 0,
+  [int]$EligiblePopulationCount = 0,
+  [ValidateSet('governed_upstream_source','steady_candidate_pool','continuous_injection_full_population','pulse_eligible_conditional')][string]$SamplingMode = 'governed_upstream_source',
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$PythonExe = ''
 )
@@ -95,6 +99,28 @@ try {
   $frontendCellMmY = [double]$gridProfiles[0].cell_mm_xyz.y
   $frontendCellMmZ = [double]$gridProfiles[0].cell_mm_xyz.z
   $maxParallelBatches = [int]$gridProfiles[0].max_parallel_batches
+  $selectedOatofNumericalProfileId = if ([string]::IsNullOrWhiteSpace($OatofNumericalProfileId)) {
+    [string]$settings.default_oatof_numerical_profile_id
+  } else { $OatofNumericalProfileId }
+  $oatofNumericalProfiles = @($settings.oatof_numerical_profiles | Where-Object {
+    [string]$_.profile_id -eq $selectedOatofNumericalProfileId
+  })
+  if ($oatofNumericalProfiles.Count -ne 1 -or
+      [double]$oatofNumericalProfiles[0].reflectron_cell_mm.axial -le 0 -or
+      [double]$oatofNumericalProfiles[0].reflectron_cell_mm.radial -le 0) {
+    throw 'Single-flight oaTOF numerical profile is invalid.'
+  }
+  $spatialWindowProfiles = if ([string]::IsNullOrWhiteSpace($SpatialWindowProfileId)) {
+    @()
+  } else {
+    @($settings.spatial_window_profiles | Where-Object {
+      [string]$_.profile_id -eq $SpatialWindowProfileId
+    })
+  }
+  if (-not [string]::IsNullOrWhiteSpace($SpatialWindowProfileId) -and
+      $spatialWindowProfiles.Count -ne 1) {
+    throw 'Single-flight spatial-window profile is invalid.'
+  }
   $selectedFieldProfileId = if ([string]::IsNullOrWhiteSpace($AcceleratorFieldProfileId)) {
     [string]$settings.default_accelerator_field_profile_id
   } else { $AcceleratorFieldProfileId }
@@ -131,6 +157,12 @@ try {
     -Destination $oatofGeometry -Role 'oaTOF resolved geometry' | Out-Null
   $oatofGeometryDocument = Get-Content -LiteralPath $oatofGeometry -Raw -Encoding UTF8 |
     ConvertFrom-Json
+  if ([double]$oatofGeometryDocument.simion_geometry_build.reflectron.cell_axial_mm -ne
+      [double]$oatofNumericalProfiles[0].reflectron_cell_mm.axial -or
+      [double]$oatofGeometryDocument.simion_geometry_build.reflectron.cell_radial_mm -ne
+      [double]$oatofNumericalProfiles[0].reflectron_cell_mm.radial) {
+    throw 'Frozen oaTOF geometry differs from the selected numerical profile.'
+  }
   $layoutDerivation = if ($hasGovernedLayout) {
     $oatofGeometryDocument.single_flight_layout_derivation
   } else { $null }
@@ -177,6 +209,11 @@ try {
     throw 'Single-flight mother-source override hash differs.'
   }
   $launched = if ($hasMotherOverride) { $MotherParticleCount } else { [int]$runtime.source_record.launched_particle_count }
+  if ($SamplingMode -eq 'pulse_eligible_conditional' -and
+      ($PopulationDenominatorCount -lt $EligiblePopulationCount -or
+       $EligiblePopulationCount -lt $launched)) {
+    throw 'Conditional-source population counts are inconsistent.'
+  }
   if (@(Import-Csv -LiteralPath $motherSource).Count -ne $launched) {
     throw 'Single-flight mother sample count differs from source authority.'
   }
@@ -473,7 +510,7 @@ try {
     schema_version=2; run_id=$RunId; project=$runtime.upstream_project_id; mode='rf_to_oatof_simion_single_flight'; project_root=$repoRoot
     inputs=[ordered]@{ configuration=$configuration; runtime_binding=$runtimeBindingFrozen; resolved_connection=$resolvedFrozen; resolved_source_contract=$sourceContractFrozen; upstream_resolved_design=$upstreamFrozen; oatof_resolved_geometry=$oatofGeometry; pulse_schedule=$pulseScheduleFrozen; resolved_integration_engineering_budget=$budget.frozen_budget; resolved_stage_resource_budget=$budget.stage_budget; mother_particle_source=$motherSource; initial_global_state=$globalSource; ion=$ion; frontend_gem=$frontendGem; frontend_contract=$frontendContract; frontend_aperture_topology_support=$apertureTopologySupport; frontend_aperture_topology_verifier=$apertureVerifier; program_metadata=$programMetadata; candidate_flight_tube_builder=$flightTubeBuilderFrozen; candidate_flight_tube_gem=$flightTubeGemFrozen; candidate_reflectron_builder=$reflectronBuilderFrozen; candidate_reflectron_gem=$reflectronGemFrozen; candidate_reflectron_refiner=$reflectronRefinerFrozen }
     upstream_source_identity=$runtime.source_identity
-    parameters=[ordered]@{ connection_profile_id=$ConnectionProfileId; source_branch_id=$SourceBranchId; layout_profile_id=$(if($hasGovernedLayout){$LayoutProfileId}else{$null}); frontend_grid_profile_id=$selectedGridProfileId; frontend_cell_mm_xyz=[ordered]@{x=$frontendCellMmX;y=$frontendCellMmY;z=$frontendCellMmZ}; accelerator_field_profile_id=$selectedFieldProfileId; single_flight_ideal_accel_enable=$idealAcceleratorEnable; max_parallel_batches=$maxParallelBatches; clock_basis=[string]$settings.clock_basis; launched_particle_count=$launched; particle_count=$launched; execution_batch_count=$(if($launched -ge [int]$settings.batching_policy.enabled_at_particle_count){[int]$settings.batching_policy.default_batch_count}else{1}); execution_batches_parallel=$(if($launched -ge [int]$settings.batching_policy.enabled_at_particle_count){[bool]$settings.batching_policy.parallel_after_cache_warmup}else{$false}); aperture_width_mm=$apertureWidthMm; aperture_height_mm=$apertureHeightMm; aperture_boolean_boundary_policy=[string]$apertureDiscretization.boolean_boundary_policy; aperture_grid_warnings=$apertureGridWarnings; frontend_open_aperture_column_count=[int]$apertureTopology.open_column_count; frontend_aperture_guard_electrode_check_passed=[bool]$apertureTopology.guard_electrode_check_passed; frontend_aperture_topology_report_sha256=(Get-FileHash -LiteralPath $apertureTopologyReport -Algorithm SHA256).Hash; rod_end_to_accelerator_shield_mm=1.0; surrounded_transition=$true; accelerator_axis_x_mm=[double]$oatofGeometryDocument.coordinate_convention.accelerator_axis_x; pulse_time_us=$pulseTimeUs; pulse_width_us=$pulseWidthUs; design_compilation=$(if($null -ne $layoutDerivation){$layoutDerivation.design_compilation}else{$null}); source_release_full_width_mm=[double]$oatofGeometryDocument.particle_source.size_z_mm; reflectron_stage2_length_mm=[double]$oatofGeometryDocument.geometry_mm.L_stage2; reflectron_midgrid_voltage_V=[double]$oatofGeometryDocument.electrodes_V.midgrid; reflectron_backplate_voltage_V=[double]$oatofGeometryDocument.electrodes_V.backplate; reflectron_pa0_sha256=(Get-FileHash -LiteralPath $reflectronPa0 -Algorithm SHA256).Hash; frontend_gem_sha256=$frontendHash; frontend_pa0_sha256=(Get-FileHash -LiteralPath $cachePa0 -Algorithm SHA256).Hash }
+    parameters=[ordered]@{ connection_profile_id=$ConnectionProfileId; source_branch_id=$SourceBranchId; layout_profile_id=$(if($hasGovernedLayout){$LayoutProfileId}else{$null}); frontend_grid_profile_id=$selectedGridProfileId; frontend_cell_mm_xyz=[ordered]@{x=$frontendCellMmX;y=$frontendCellMmY;z=$frontendCellMmZ}; oatof_numerical_profile_id=$selectedOatofNumericalProfileId; spatial_window_profile_id=$(if($spatialWindowProfiles.Count -eq 1){$SpatialWindowProfileId}else{$null}); accelerator_field_profile_id=$selectedFieldProfileId; single_flight_ideal_accel_enable=$idealAcceleratorEnable; max_parallel_batches=$maxParallelBatches; clock_basis=[string]$settings.clock_basis; launched_particle_count=$launched; particle_count=$launched; population_denominator_count=$(if($PopulationDenominatorCount -gt 0){$PopulationDenominatorCount}else{$launched}); eligible_population_count=$(if($EligiblePopulationCount -gt 0){$EligiblePopulationCount}else{$null}); population_basis=$(if($SamplingMode -eq 'continuous_injection_full_population'){'candidate_full_population'}elseif($SamplingMode -eq 'pulse_eligible_conditional'){'pulse_eligible_conditional_population'}else{'source_contract_population'}); execution_batch_count=$(if($launched -ge [int]$settings.batching_policy.enabled_at_particle_count){[int]$settings.batching_policy.default_batch_count}else{1}); execution_batches_parallel=$(if($launched -ge [int]$settings.batching_policy.enabled_at_particle_count){[bool]$settings.batching_policy.parallel_after_cache_warmup}else{$false}); aperture_width_mm=$apertureWidthMm; aperture_height_mm=$apertureHeightMm; aperture_boolean_boundary_policy=[string]$apertureDiscretization.boolean_boundary_policy; aperture_grid_warnings=$apertureGridWarnings; frontend_open_aperture_column_count=[int]$apertureTopology.open_column_count; frontend_aperture_guard_electrode_check_passed=[bool]$apertureTopology.guard_electrode_check_passed; frontend_aperture_topology_report_sha256=(Get-FileHash -LiteralPath $apertureTopologyReport -Algorithm SHA256).Hash; rod_end_to_accelerator_shield_mm=1.0; surrounded_transition=$true; accelerator_axis_x_mm=[double]$oatofGeometryDocument.coordinate_convention.accelerator_axis_x; pulse_time_us=$pulseTimeUs; pulse_width_us=$pulseWidthUs; design_compilation=$(if($null -ne $layoutDerivation){$layoutDerivation.design_compilation}else{$null}); source_release_full_width_mm=[double]$oatofGeometryDocument.particle_source.size_z_mm; reflectron_stage2_length_mm=[double]$oatofGeometryDocument.geometry_mm.L_stage2; reflectron_midgrid_voltage_V=[double]$oatofGeometryDocument.electrodes_V.midgrid; reflectron_backplate_voltage_V=[double]$oatofGeometryDocument.electrodes_V.backplate; reflectron_pa0_sha256=(Get-FileHash -LiteralPath $reflectronPa0 -Algorithm SHA256).Hash; frontend_gem_sha256=$frontendHash; frontend_pa0_sha256=(Get-FileHash -LiteralPath $cachePa0 -Algorithm SHA256).Hash }
     artifact_retention=[ordered]@{policy_version=1;class='compact';reason=$null}; formal_gate_passed=$false
   }
   Write-RfJson -Path $package.run_config -Depth 10 -Value $runConfiguration
@@ -601,6 +638,18 @@ try {
     '--clock-basis',([string]$settings.clock_basis),
     '--initial-global-state',$globalSource,
     '--checkpoints',$checkpoints,'--summary',$package.summary)
+  if ($PopulationDenominatorCount -gt 0) {
+    $analysisArguments += @(
+      '--population-denominator-count',([string]$PopulationDenominatorCount),
+      '--eligible-population-count',([string]$EligiblePopulationCount)
+    )
+  }
+  if ($spatialWindowProfiles.Count -eq 1) {
+    $analysisArguments += @(
+      '--configuration',$configuration,
+      '--spatial-window-profile-id',$SpatialWindowProfileId
+    )
+  }
   foreach ($batch in $batchRecords) {
     $analysisArguments += @(
       '--log',$batch.stdout,
