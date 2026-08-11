@@ -152,6 +152,17 @@ class SingleFlightProgramTests(unittest.TestCase):
             )
             self.assertEqual(load_birth_times(path), [0.25, 1.5])
 
+    def test_replay_birth_times_use_contiguous_simulation_particle_ids(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "replay_state.csv"
+            path.write_text(
+                "simulation_particle_id,instrument_time_us\n1,31.8\n2,31.8\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(load_birth_times(path), [31.8, 31.8])
+
 
 if __name__ == "__main__":
     unittest.main()

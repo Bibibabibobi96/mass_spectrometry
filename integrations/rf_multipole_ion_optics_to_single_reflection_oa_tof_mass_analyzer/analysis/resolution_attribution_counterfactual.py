@@ -247,28 +247,45 @@ def _cohort(
 
 def _ideal_source(path: Path) -> dict[str, np.ndarray]:
     columns, rows = _load_csv(path)
-    required = {
-        "particle_id",
-        "initial_x_mm",
-        "initial_y_mm",
-        "initial_z_mm",
-        "initial_energy_eV",
+    mapping_columns = {
+        "particle_id": "particle_id",
+        "x": "initial_x_mm",
+        "y": "initial_y_mm",
+        "z": "initial_z_mm",
+        "energy": "initial_energy_eV",
     }
-    if not required.issubset(columns) or len(rows) < 3:
+    formal_columns = {
+        "particle_id": "Ion",
+        "x": "X0Mm",
+        "y": "Y0Mm",
+        "z": "Z0Mm",
+        "energy": "EnergyEv",
+    }
+    selected = next(
+        (
+            candidate
+            for candidate in (mapping_columns, formal_columns)
+            if set(candidate.values()).issubset(columns)
+        ),
+        None,
+    )
+    if selected is None or len(rows) < 3:
         raise ValueError("ideal source mapping lacks required spatial columns")
-    particle_ids = np.asarray([int(row["particle_id"]) for row in rows], dtype=int)
+    particle_ids = np.asarray(
+        [int(row[selected["particle_id"]]) for row in rows], dtype=int
+    )
     if len(set(particle_ids)) != particle_ids.size:
         raise ValueError("ideal source mapping particle identities are not unique")
     ideal = {
         "particle_id": particle_ids,
         **{
             axis: np.asarray(
-                [float(row[f"initial_{axis}_mm"]) for row in rows], dtype=float
+                [float(row[selected[axis]]) for row in rows], dtype=float
             )
             for axis in "xyz"
         },
         "energy": np.asarray(
-            [float(row["initial_energy_eV"]) for row in rows], dtype=float
+            [float(row[selected["energy"]]) for row in rows], dtype=float
         ),
     }
     if not all(np.all(np.isfinite(values)) for key, values in ideal.items() if key != "particle_id"):
@@ -456,6 +473,8 @@ def prepare(
     rf_frequency_hz: float | None = None,
     execution_batch_count: int = 5,
     selected_arm_ids: list[str] | None = None,
+    initial_pa_instance: int = 3,
+    solver_birth_time_us: float | None = None,
 ) -> dict[str, Any]:
     profile = _load_json(profile_path)
     profile_arm_ids = _validate_profile(profile)
@@ -478,6 +497,10 @@ def prepare(
             raise ValueError("pulse-delay arms require a positive RF frequency")
     if execution_batch_count < 1 or execution_batch_count > source_ids.size:
         raise ValueError("execution batch count differs")
+    if initial_pa_instance not in {3, 5}:
+        raise ValueError("initial PA instance must be the combined frontend or overlay")
+    if solver_birth_time_us is not None and solver_birth_time_us < 0:
+        raise ValueError("solver birth time must be non-negative")
     output_dir.mkdir(parents=True, exist_ok=False)
     arm_records: list[dict[str, Any]] = []
     arm_profile = {arm["arm_id"]: arm for arm in profile["arms"]}
@@ -518,7 +541,10 @@ def prepare(
             )
             ion_rows.append(
                 [
-                    format(time_us, ".17g"),
+                    format(
+                        time_us if solver_birth_time_us is None else solver_birth_time_us,
+                        ".17g",
+                    ),
                     format(mass, ".17g"),
                     str(int(charge)),
                     format(x, ".17g"),
@@ -528,7 +554,7 @@ def prepare(
                     format(elevation, ".17g"),
                     format(energy, ".17g"),
                     "1",
-                    "3",
+                    str(initial_pa_instance),
                 ]
             )
         with state_path.open("w", encoding="utf-8", newline="") as handle:
@@ -586,6 +612,8 @@ def prepare(
         "target_geometry_sha256": file_sha256(target_geometry_path),
         "mother_sample_particle_count": mother_sample_count,
         "paired_cohort_particles": int(source_ids.size),
+        "initial_pa_instance": initial_pa_instance,
+        "solver_birth_time_us": solver_birth_time_us,
         "pulse_time_us": float(observed[0, 0]),
         "rf_frequency_hz": rf_frequency_hz,
         "execution_batch_count": execution_batch_count,
@@ -626,6 +654,17 @@ def _checkpoint_detector_times(
         for row in rows
         if row["event"] == "detector_crossing"
     }
+
+
+def _canonical_replay_detector_time(
+    native_time_us: float,
+    instrument_birth_time_us: float,
+    solver_birth_time_us: float | None,
+) -> float:
+    """Restore the instrument epoch when solver and physical births differ."""
+    if solver_birth_time_us is None:
+        return native_time_us
+    return native_time_us + instrument_birth_time_us - solver_birth_time_us
 
 
 def summarize(
@@ -681,6 +720,12 @@ def summarize(
             int(row["simulation_particle_id"]): int(row["source_particle_id"])
             for row in state_rows
         }
+        instrument_birth = {
+            int(row["simulation_particle_id"]): float(row["instrument_time_us"])
+            for row in state_rows
+        }
+        solver_birth = prepared.get("solver_birth_time_us")
+        solver_birth = float(solver_birth) if solver_birth is not None else None
         rows: list[dict[str, object]] = []
         for batch in prepared_by_id[arm_id]["execution_batches"]:
             batch_rows, _ = analyze(
@@ -696,16 +741,26 @@ def summarize(
         for row in rows:
             simulation_id = int(row["particle_id"])
             source_id = source_map[simulation_id]
+            canonical_time = float(row["instrument_time_us"])
+            if row["event"] == "detector_crossing":
+                canonical_time = _canonical_replay_detector_time(
+                    canonical_time,
+                    instrument_birth[simulation_id],
+                    solver_birth,
+                )
             checkpoint_rows.append(
                 {
                     "arm_id": arm_id,
                     "simulation_particle_id": simulation_id,
                     "source_particle_id": source_id,
-                    **{key: row[key] for key in RESULT_COLUMNS[3:]},
+                    **{
+                        key: canonical_time if key == "instrument_time_us" else row[key]
+                        for key in RESULT_COLUMNS[3:]
+                    },
                 }
             )
             if row["event"] == "detector_crossing":
-                detector[source_id] = float(row["instrument_time_us"])
+                detector[source_id] = canonical_time
         detector_by_arm[arm_id] = detector
         detector_times = np.asarray(list(detector.values()), dtype=float)
         peak = (
@@ -830,6 +885,8 @@ def main() -> int:
     prepare_parser.add_argument("--charge-state", required=True, type=int)
     prepare_parser.add_argument("--rf-frequency-hz", required=True, type=float)
     prepare_parser.add_argument("--execution-batch-count", type=int, default=5)
+    prepare_parser.add_argument("--initial-pa-instance", type=int, choices=(3, 5), default=3)
+    prepare_parser.add_argument("--solver-birth-time-us", type=float)
     prepare_parser.add_argument("--arm-id", action="append", dest="selected_arm_ids")
     summarize_parser = subparsers.add_parser("summarize")
     summarize_parser.add_argument("--profile", required=True, type=Path)
@@ -857,6 +914,8 @@ def main() -> int:
             args.rf_frequency_hz,
             args.execution_batch_count,
             args.selected_arm_ids,
+            args.initial_pa_instance,
+            args.solver_birth_time_us,
         )
         print(
             "RESOLUTION_ATTRIBUTION_PREPARE=PASS "

@@ -30,7 +30,10 @@ def load_birth_times(path: Path) -> list[float]:
         rows = list(csv.DictReader(handle))
     if not rows:
         raise ValueError("single-flight initial state is empty")
-    actual_ids = [int(row["particle_id"]) for row in rows]
+    id_column = (
+        "particle_id" if "particle_id" in rows[0] else "simulation_particle_id"
+    )
+    actual_ids = [int(row[id_column]) for row in rows]
     if actual_ids != list(range(1, len(rows) + 1)):
         raise ValueError("single-flight initial-state particle IDs must be contiguous")
     values = [float(row["instrument_time_us"]) for row in rows]

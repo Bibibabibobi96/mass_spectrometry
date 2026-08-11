@@ -68,18 +68,19 @@ function Assert-VerifiedSourceRun {
   ) -Failure "Source run manifest verification failed: $ExpectedRunId"
 }
 
-function Copy-AttributionReflectronPaFamily {
+function Copy-AttributionPaFamily {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)][string]$SourceDirectory,
-    [Parameter(Mandatory)][string]$DestinationDirectory
+    [Parameter(Mandatory)][string]$DestinationDirectory,
+    [Parameter(Mandatory)][string]$BaseName
   )
   $sources = @(Get-ChildItem -LiteralPath $SourceDirectory `
-    -Filter 'reflectron.pa*' -File)
+    -Filter "$BaseName.pa*" -File)
   if ($sources.Count -lt 2) {
-    throw 'Reflectron PA family is incomplete.'
+    throw "$BaseName PA family is incomplete."
   }
-  Get-ChildItem -LiteralPath $DestinationDirectory -Filter 'reflectron.pa*' `
+  Get-ChildItem -LiteralPath $DestinationDirectory -Filter "$BaseName.pa*" `
     -File | Remove-Item -Force
   foreach ($source in $sources) {
     Copy-Item -LiteralPath $source.FullName `
@@ -97,18 +98,42 @@ $selectedFrontendRunId = if ($FrontendRunId) { $FrontendRunId } else { $Baseline
 $frontendRoot = Join-Path $workspaceRoot (
   "artifacts\projects\rf_octupole_ion_optics\runs\$selectedFrontendRunId"
 )
-$idealRoot = Join-Path $workspaceRoot (
-  "artifacts\projects\single_reflection_oa_tof_mass_analyzer\runs\$IdealRunId"
-)
+$formalArtifactRoot = Join-Path $workspaceRoot `
+  'artifacts\projects\single_reflection_oa_tof_mass_analyzer\formal'
+$formalValidationSource = Join-Path $repoRoot `
+  'projects\single_reflection_oa_tof_mass_analyzer\config\formal_validation.json'
 Assert-VerifiedSourceRun -RunRoot $baselineRoot -ExpectedRunId $BaselineRunId `
   -ExpectedProject 'rf_octupole_ion_optics' `
   -ExpectedMode 'rf_to_oatof_simion_single_flight'
 Assert-VerifiedSourceRun -RunRoot $frontendRoot -ExpectedRunId $selectedFrontendRunId `
   -ExpectedProject 'rf_octupole_ion_optics' `
   -ExpectedMode 'rf_to_oatof_simion_single_flight'
-Assert-VerifiedSourceRun -RunRoot $idealRoot -ExpectedRunId $IdealRunId `
-  -ExpectedProject 'single_reflection_oa_tof_mass_analyzer' `
-  -ExpectedMode 'formal_vnext_zero_change_validation'
+$formalValidation = Get-Content -LiteralPath $formalValidationSource `
+  -Raw -Encoding UTF8 | ConvertFrom-Json
+$formalIdealSource = Join-Path $formalArtifactRoot 'results\simion_particles.csv'
+$formalGeometrySource = Join-Path $formalArtifactRoot `
+  'simion\resolved_geometry.json'
+$formalDeliveryManifest = Join-Path $formalArtifactRoot 'simion\run_manifest.json'
+if ($formalValidation.run_id -ne $IdealRunId -or
+    $formalValidation.status -ne 'formal_cross_solver_validation' -or
+    (Get-FileHash -LiteralPath $formalIdealSource -Algorithm SHA256).Hash -ne
+      [string]$formalValidation.simion.particle_csv_sha256 -or
+    (Get-FileHash -LiteralPath $formalDeliveryManifest -Algorithm SHA256).Hash -ne
+      [string]$formalValidation.simion.delivery_manifest_sha256) {
+  throw 'Published Formal ideal-source identity differs.'
+}
+$formalDelivery = Get-Content -LiteralPath $formalDeliveryManifest `
+  -Raw -Encoding UTF8 | ConvertFrom-Json
+$formalGeometryRecords = @($formalDelivery.assets.PSObject.Properties | Where-Object {
+  $_.Value.path -eq 'resolved_geometry.json'
+})
+if ($formalDelivery.release_id -ne $IdealRunId -or
+    $formalDelivery.status -ne 'success' -or
+    $formalGeometryRecords.Count -ne 1 -or
+    (Get-FileHash -LiteralPath $formalGeometrySource -Algorithm SHA256).Hash -ne
+      [string]$formalGeometryRecords[0].Value.sha256) {
+  throw 'Published Formal resolved-geometry identity differs.'
+}
 
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_octupole_ion_optics'
 $package = New-RfRunPackage -Python $python -RepoRoot $repoRoot `
@@ -128,6 +153,10 @@ try {
   $frontendConfig = Get-Content -LiteralPath (
     Join-Path $frontendRoot 'run_config.json'
   ) -Raw -Encoding UTF8 | ConvertFrom-Json
+  $frontendOverlayEnabled = (
+    $frontendConfig.parameters.PSObject.Properties.Name -contains
+      'accelerator_overlay_enabled'
+  ) -and [bool]$frontendConfig.parameters.accelerator_overlay_enabled
   foreach ($name in @(
       'upstream_resolved_design.json',
       'oatof_resolved_geometry.json'
@@ -206,14 +235,18 @@ try {
     -SourcePath $baselineCheckpointsSource `
     -Destination $baselineCheckpoints -Role 'baseline particle checkpoints' | Out-Null
   $idealSource = Join-Path $package.input_dir 'ideal_source_mapping_particles.csv'
-  Copy-RfStableFile -SourceRunRoot $idealRoot `
-    -SourcePath (Join-Path $idealRoot 'results\source_mapping_particles.csv') `
+  Copy-RfStableFile -SourceRunRoot $formalArtifactRoot `
+    -SourcePath $formalIdealSource `
     -Destination $idealSource -Role 'ideal source mapping' | Out-Null
   $formalGeometry = Join-Path $package.input_dir `
     'formal_oatof_resolved_geometry.json'
-  Copy-RfStableFile -SourceRunRoot $idealRoot `
-    -SourcePath (Join-Path $idealRoot 'inputs\simion\resolved_geometry.json') `
+  Copy-RfStableFile -SourceRunRoot $formalArtifactRoot `
+    -SourcePath $formalGeometrySource `
     -Destination $formalGeometry -Role 'formal oaTOF resolved geometry' | Out-Null
+  $formalValidationInput = Join-Path $package.input_dir 'formal_validation.json'
+  Copy-RfStableFile -SourceRunRoot $repoRoot `
+    -SourcePath $formalValidationSource -Destination $formalValidationInput `
+    -Role 'published Formal validation binding' | Out-Null
   $formalGeometryContract = Get-Content -LiteralPath $formalGeometry `
     -Raw -Encoding UTF8 | ConvertFrom-Json
   $invariantCulture = [Globalization.CultureInfo]::InvariantCulture
@@ -295,6 +328,8 @@ try {
   if ($maxParallelBatches -lt 1 -or $maxParallelBatches -gt $executionBatchCount) {
     throw 'Frontend grid profile parallel-batch limit differs.'
   }
+  $initialPaInstance = if ($frontendOverlayEnabled) { 5 } else { 3 }
+  $solverBirthTimeUs = if ($frontendOverlayEnabled) { 0.0 } else { $null }
   $prepareArguments = @(
     '-m',
     'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.resolution_attribution_counterfactual',
@@ -304,10 +339,14 @@ try {
       'oatof_resolved_geometry.json'),'--output-dir',$preparedDir,
     '--mass-amu','100','--charge-state','1',
     '--rf-frequency-hz',([string][double]$upstream.drive.frequency_Hz),
-    '--execution-batch-count',([string]$executionBatchCount)
+    '--execution-batch-count',([string]$executionBatchCount),
+    '--initial-pa-instance',([string]$initialPaInstance)
   )
   foreach ($selectedArmId in $ArmId) {
     $prepareArguments += @('--arm-id',$selectedArmId)
+  }
+  if ($null -ne $solverBirthTimeUs) {
+    $prepareArguments += @('--solver-birth-time-us',([string]$solverBirthTimeUs))
   }
   Invoke-AttributionPython -Arguments $prepareArguments `
     -Failure 'Counterfactual arm preparation failed.'
@@ -324,6 +363,13 @@ try {
       @($prepared.arms.arm_id) -notcontains $ReferenceArmId) {
     throw "Reference arm was not prepared: $ReferenceArmId"
   }
+  if ($frontendOverlayEnabled -and @(
+      $prepared.arms | Where-Object {
+        $_.frontend_profile_id -ne 'combined_frontend'
+      }
+    ).Count -gt 0) {
+    throw 'Accelerator-overlay attribution supports only combined_frontend arms.'
+  }
 
   $runtimeDir = Join-Path $package.run_dir 'simion'
   $formalDir = Join-Path $workspaceRoot `
@@ -337,59 +383,127 @@ try {
   $downstreamCacheRoot = Join-Path $workspaceRoot `
     'artifacts\projects\rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer\cache\simion_oatof_downstream_pa'
   $expectedReflectronHash = [string]$baselineConfig.parameters.reflectron_pa0_sha256
-  $cachedReflectronPa0 = Get-ChildItem -LiteralPath $downstreamCacheRoot `
-    -Recurse -Filter 'reflectron.pa0' -File | Where-Object {
-      (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash -eq
-        $expectedReflectronHash
-    } | Select-Object -First 1
-  if ($null -eq $cachedReflectronPa0) {
-    throw 'Baseline reflectron PA cache identity differs.'
+  $formalReflectronPa0 = Join-Path $formalReflectronDir 'reflectron.pa0'
+  if ((Get-FileHash -LiteralPath $formalReflectronPa0 `
+      -Algorithm SHA256).Hash -eq $expectedReflectronHash) {
+    $currentReflectronDir = $formalReflectronDir
+  } else {
+    $cachedReflectronPa0 = Get-ChildItem -LiteralPath $downstreamCacheRoot `
+      -Recurse -Filter 'reflectron.pa0' -File | Where-Object {
+        (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash -eq
+          $expectedReflectronHash
+      } | Select-Object -First 1
+    if ($null -eq $cachedReflectronPa0) {
+      throw 'Baseline reflectron PA cache identity differs.'
+    }
+    $currentReflectronDir = $cachedReflectronPa0.DirectoryName
   }
-  $currentReflectronDir = $cachedReflectronPa0.DirectoryName
-  Copy-AttributionReflectronPaFamily -SourceDirectory $currentReflectronDir `
-    -DestinationDirectory $runtimeDir
+  Copy-AttributionPaFamily -SourceDirectory $currentReflectronDir `
+    -DestinationDirectory $runtimeDir -BaseName 'reflectron'
   $program = Join-Path $runtimeDir 'oatof_ideal_grounded.lua'
   $programMetadata = Join-Path $package.input_dir `
     'single_flight_program_build.json'
-  Invoke-AttributionPython -Arguments @(
-    '-m',
-    'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.build_single_flight_program',
-    '--formal',(Join-Path $repoRoot `
-      'projects\single_reflection_oa_tof_mass_analyzer\simion\workbench\formal\oatof_ideal_grounded.lua'),
-    '--pulse-extension',(Join-Path $repoRoot `
-      'projects\single_reflection_oa_tof_mass_analyzer\simion\workbench\candidates\oatof_handoff_pulse.lua'),
-    '--upstream',(Join-Path $package.input_dir 'upstream_resolved_design.json'),
-    '--frontend-contract',(Join-Path $package.input_dir `
-      'single_flight_frontend_contract.json'),
-    '--oatof',(Join-Path $package.input_dir 'oatof_resolved_geometry.json'),
-    '--output',$program,'--metadata',$programMetadata
-  ) -Failure 'Counterfactual single-flight Program build failed.'
+  $overlayContract = $null
+  $overlayPa0Hash = $null
+  $overlayIobHash = $null
+  $overlayProgramHash = $null
+  if ($frontendOverlayEnabled) {
+    $overlayContract = Join-Path $package.input_dir `
+      'accelerator_overlay_contract.json'
+    Copy-RfStableFile -SourceRunRoot $frontendRoot `
+      -SourcePath (Join-Path $frontendRoot `
+        'inputs\accelerator_overlay_contract.json') `
+      -Destination $overlayContract `
+      -Role 'selected accelerator-overlay contract' | Out-Null
+    $runtimeIob = Join-Path $runtimeDir 'oatof_ideal_grounded.iob'
+    Copy-Item -LiteralPath (Join-Path $frontendRoot `
+      'simion\oatof_ideal_grounded.iob') -Destination $runtimeIob -Force
+    $replayClockState = Join-Path $preparedDir `
+      ([string]$prepared.arms[0].state_file)
+    Invoke-AttributionPython -Arguments @(
+      '-m',
+      'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.build_single_flight_program',
+      '--formal',(Join-Path $repoRoot `
+        'projects\single_reflection_oa_tof_mass_analyzer\simion\workbench\formal\oatof_ideal_grounded.lua'),
+      '--pulse-extension',(Join-Path $repoRoot `
+        'projects\single_reflection_oa_tof_mass_analyzer\simion\workbench\candidates\oatof_handoff_pulse.lua'),
+      '--upstream',(Join-Path $package.input_dir 'upstream_resolved_design.json'),
+      '--frontend-contract',(Join-Path $package.input_dir `
+        'single_flight_frontend_contract.json'),
+      '--accelerator-overlay-contract',$overlayContract,
+      '--oatof',(Join-Path $package.input_dir 'oatof_resolved_geometry.json'),
+      '--initial-global-state',$replayClockState,
+      '--clock-basis','absolute_birth_time',
+      '--output',$program,'--metadata',$programMetadata
+    ) -Failure 'Accelerator-overlay replay Program build failed.'
+    $overlayCacheRoot = Join-Path $workspaceRoot (
+      'artifacts\projects\' +
+      'rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer\' +
+      'cache\simion_accelerator_overlay'
+    )
+    $expectedOverlayPa0Hash = (
+      [string]$frontendConfig.parameters.accelerator_overlay_pa0_sha256
+    ).ToUpperInvariant()
+    $cachedOverlayPa0 = @(Get-ChildItem -LiteralPath $overlayCacheRoot `
+      -Recurse -Filter 'accelerator_overlay.pa0' -File | Where-Object {
+        (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash -eq
+          $expectedOverlayPa0Hash
+      })
+    if ($cachedOverlayPa0.Count -ne 1) {
+      throw 'Selected accelerator-overlay PA cache identity differs.'
+    }
+    Copy-AttributionPaFamily `
+      -SourceDirectory $cachedOverlayPa0[0].DirectoryName `
+      -DestinationDirectory $runtimeDir -BaseName 'accelerator_overlay'
+    $overlayPa0Hash = $expectedOverlayPa0Hash
+    $overlayIobHash = (Get-FileHash -LiteralPath $runtimeIob `
+      -Algorithm SHA256).Hash
+    $overlayProgramHash = (Get-FileHash -LiteralPath $program `
+      -Algorithm SHA256).Hash
+  } else {
+    Invoke-AttributionPython -Arguments @(
+      '-m',
+      'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.build_single_flight_program',
+      '--formal',(Join-Path $repoRoot `
+        'projects\single_reflection_oa_tof_mass_analyzer\simion\workbench\formal\oatof_ideal_grounded.lua'),
+      '--pulse-extension',(Join-Path $repoRoot `
+        'projects\single_reflection_oa_tof_mass_analyzer\simion\workbench\candidates\oatof_handoff_pulse.lua'),
+      '--upstream',(Join-Path $package.input_dir 'upstream_resolved_design.json'),
+      '--frontend-contract',(Join-Path $package.input_dir `
+        'single_flight_frontend_contract.json'),
+      '--oatof',(Join-Path $package.input_dir 'oatof_resolved_geometry.json'),
+      '--output',$program,'--metadata',$programMetadata
+    ) -Failure 'Counterfactual single-flight Program build failed.'
+  }
   $combinedFrontendProgramDir = Join-Path $package.run_dir `
     'simion_profiles\combined_frontend'
   $formalAcceleratorProgramDir = Join-Path $package.run_dir `
     'simion_profiles\formal_accelerator'
   New-Item -ItemType Directory -Path $combinedFrontendProgramDir | Out-Null
-  New-Item -ItemType Directory -Path $formalAcceleratorProgramDir | Out-Null
   Copy-Item -LiteralPath $program -Destination $combinedFrontendProgramDir
-  $formalAcceleratorProgram = Join-Path $formalAcceleratorProgramDir `
-    'oatof_ideal_grounded.lua'
-  $formalAcceleratorProgramMetadata = Join-Path $package.input_dir `
-    'formal_accelerator_program_build.json'
-  Invoke-AttributionPython -Arguments @(
-    '-m',
-    'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.build_single_flight_program',
-    '--formal',(Join-Path $repoRoot `
-      'projects\single_reflection_oa_tof_mass_analyzer\simion\workbench\formal\oatof_ideal_grounded.lua'),
-    '--pulse-extension',(Join-Path $repoRoot `
-      'projects\single_reflection_oa_tof_mass_analyzer\simion\workbench\candidates\oatof_handoff_pulse.lua'),
-    '--upstream',(Join-Path $package.input_dir 'upstream_resolved_design.json'),
-    '--frontend-contract',(Join-Path $package.input_dir `
-      'single_flight_frontend_contract.json'),
-    '--oatof',(Join-Path $package.input_dir 'oatof_resolved_geometry.json'),
-    '--frontend-program-profile','formal_accelerator',
-    '--output',$formalAcceleratorProgram,
-    '--metadata',$formalAcceleratorProgramMetadata
-  ) -Failure 'Formal-accelerator attribution Program build failed.'
+  $formalAcceleratorProgramMetadata = $null
+  if (-not $frontendOverlayEnabled) {
+    New-Item -ItemType Directory -Path $formalAcceleratorProgramDir | Out-Null
+    $formalAcceleratorProgram = Join-Path $formalAcceleratorProgramDir `
+      'oatof_ideal_grounded.lua'
+    $formalAcceleratorProgramMetadata = Join-Path $package.input_dir `
+      'formal_accelerator_program_build.json'
+    Invoke-AttributionPython -Arguments @(
+      '-m',
+      'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.build_single_flight_program',
+      '--formal',(Join-Path $repoRoot `
+        'projects\single_reflection_oa_tof_mass_analyzer\simion\workbench\formal\oatof_ideal_grounded.lua'),
+      '--pulse-extension',(Join-Path $repoRoot `
+        'projects\single_reflection_oa_tof_mass_analyzer\simion\workbench\candidates\oatof_handoff_pulse.lua'),
+      '--upstream',(Join-Path $package.input_dir 'upstream_resolved_design.json'),
+      '--frontend-contract',(Join-Path $package.input_dir `
+        'single_flight_frontend_contract.json'),
+      '--oatof',(Join-Path $package.input_dir 'oatof_resolved_geometry.json'),
+      '--frontend-program-profile','formal_accelerator',
+      '--output',$formalAcceleratorProgram,
+      '--metadata',$formalAcceleratorProgramMetadata
+    ) -Failure 'Formal-accelerator attribution Program build failed.'
+  }
 
   $frontendHash = ([string]$frontendConfig.parameters.frontend_gem_sha256).ToLowerInvariant()
   $frontendPa0 = Join-Path $workspaceRoot (
@@ -413,6 +527,7 @@ try {
       baseline_checkpoints = $baselineCheckpoints
       ideal_source = $idealSource
       formal_oatof_resolved_geometry = $formalGeometry
+      formal_validation = $formalValidationInput
       prepared_arms = Join-Path $preparedDir 'prepared_arms.json'
       upstream_resolved_design = Join-Path $package.input_dir `
         'upstream_resolved_design.json'
@@ -425,6 +540,10 @@ try {
       resolved_stage_resource_budget = $budget.stage_budget
       program_metadata = $programMetadata
       formal_accelerator_program_metadata = $formalAcceleratorProgramMetadata
+      accelerator_overlay_contract = $overlayContract
+      replay_clock_state = $(if ($frontendOverlayEnabled) {
+        $replayClockState
+      } else {$null})
     }
     source_runs = [ordered]@{
       continuous_baseline_run_id = $BaselineRunId
@@ -434,6 +553,8 @@ try {
     parameters = [ordered]@{
       mother_sample_particle_count = $motherSampleParticleCount
       paired_cohort_particles = [int]$prepared.paired_cohort_particles
+      initial_pa_instance = $initialPaInstance
+      solver_birth_time_us = $solverBirthTimeUs
       arm_count = @($prepared.arms).Count
       execution_batch_count = $executionBatchCount
       execution_batches_parallel = ($maxParallelBatches -gt 1)
@@ -445,6 +566,10 @@ try {
       rf_steps_per_period = 160
       frontend_gem_sha256 = ([string]$frontendConfig.parameters.frontend_gem_sha256)
       frontend_pa0_sha256 = ([string]$frontendConfig.parameters.frontend_pa0_sha256)
+      accelerator_overlay_enabled = $frontendOverlayEnabled
+      accelerator_overlay_pa0_sha256 = $overlayPa0Hash
+      accelerator_overlay_iob_sha256 = $overlayIobHash
+      accelerator_overlay_program_sha256 = $overlayProgramHash
     }
     artifact_retention = [ordered]@{
       policy_version = 1
@@ -503,9 +628,9 @@ try {
       $reflectronOverrides = @()
       if ($solverProfileId -eq 'formal_reflectron') {
         if ($activeSolverProfileId -ne $solverProfileId) {
-          Copy-AttributionReflectronPaFamily `
+          Copy-AttributionPaFamily `
             -SourceDirectory $formalReflectronDir `
-            -DestinationDirectory $runtimeDir
+            -DestinationDirectory $runtimeDir -BaseName 'reflectron'
           $activeSolverProfileId = $solverProfileId
         }
         $reflectronOverrides = @(
@@ -515,9 +640,9 @@ try {
         )
       } elseif ($solverProfileId -eq 'current_downstream') {
         if ($activeSolverProfileId -ne $solverProfileId) {
-          Copy-AttributionReflectronPaFamily `
+          Copy-AttributionPaFamily `
             -SourceDirectory $currentReflectronDir `
-            -DestinationDirectory $runtimeDir
+            -DestinationDirectory $runtimeDir -BaseName 'reflectron'
           $activeSolverProfileId = $solverProfileId
         }
       } else {

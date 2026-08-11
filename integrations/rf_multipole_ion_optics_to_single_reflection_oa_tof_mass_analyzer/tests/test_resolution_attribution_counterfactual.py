@@ -10,6 +10,8 @@ import numpy as np
 
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.resolution_attribution_counterfactual import (
     _checkpoint_detector_times,
+    _canonical_replay_detector_time,
+    _ideal_source,
     _remove_linear_covariance,
     _collapse_linear_residual,
     _project_observed_linear_slope,
@@ -32,6 +34,16 @@ class ResolutionAttributionCounterfactualTests(unittest.TestCase):
         ]
         self.assertEqual(_checkpoint_detector_times(rows), {1: 76.7})
 
+    def test_replay_detector_time_restores_instrument_epoch_once(self) -> None:
+        self.assertAlmostEqual(
+            _canonical_replay_detector_time(31.1705, 31.8137, 0.0),
+            62.9842,
+        )
+        self.assertEqual(
+            _canonical_replay_detector_time(62.9842, 31.8137, None),
+            62.9842,
+        )
+
     def test_n1000_workflow_uses_governed_process_parallel_batches(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8-sig")
         self.assertIn("Start-Job", workflow)
@@ -46,6 +58,36 @@ class ResolutionAttributionCounterfactualTests(unittest.TestCase):
         self.assertIn("Reference arm was not prepared", workflow)
         self.assertIn("$currentArmId = [string]$arm.arm_id", workflow)
         self.assertNotIn("$armId = [string]$arm.arm_id", workflow)
+
+    def test_workflow_reuses_the_frozen_five_instance_overlay_runtime(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8-sig")
+        self.assertIn("$frontendOverlayEnabled", workflow)
+        self.assertIn("simion\\oatof_ideal_grounded.iob", workflow)
+        self.assertIn("Accelerator-overlay replay Program build failed.", workflow)
+        self.assertIn("accelerator_overlay_pa0_sha256", workflow)
+        self.assertIn("-BaseName 'accelerator_overlay'", workflow)
+        self.assertIn("'--initial-global-state',$replayClockState", workflow)
+        self.assertIn("'--clock-basis','absolute_birth_time'", workflow)
+        self.assertIn(
+            "Accelerator-overlay attribution supports only combined_frontend arms.",
+            workflow,
+        )
+
+    def test_formal_published_particle_schema_is_an_ideal_source(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "formal_particles.csv"
+            with source.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.writer(handle, lineterminator="\n")
+                writer.writerow(
+                    ["Ion", "X0Mm", "Y0Mm", "Z0Mm", "EnergyEv", "Hit"]
+                )
+                writer.writerows(
+                    [[1, -1, 2, 3, 4.1, True], [2, 0, 3, 4, 4.2, True], [3, 1, 4, 5, 4.3, True]]
+                )
+            ideal = _ideal_source(source)
+            np.testing.assert_array_equal(ideal["particle_id"], [1, 2, 3])
+            np.testing.assert_allclose(ideal["x"], [-1, 0, 1])
+            np.testing.assert_allclose(ideal["energy"], [4.1, 4.2, 4.3])
 
     def test_centered_quantile_match_preserves_current_geometry_center(self) -> None:
         values = np.asarray([-70.0, -69.0, -68.0])
@@ -135,8 +177,12 @@ class ResolutionAttributionCounterfactualTests(unittest.TestCase):
                 PROFILE, checkpoints, ideal, formal_geometry, target_geometry,
                 root / "prepared", 100.0, 1,
                 1.1e6, 4,
+                initial_pa_instance=5,
+                solver_birth_time_us=0.0,
             )
             self.assertEqual(result["paired_cohort_particles"], 4)
+            self.assertEqual(result["initial_pa_instance"], 5)
+            self.assertEqual(result["solver_birth_time_us"], 0.0)
             self.assertEqual(len(result["arms"]), 20)
             for arm in result["arms"]:
                 state = root / "prepared" / arm["state_file"]
@@ -148,6 +194,11 @@ class ResolutionAttributionCounterfactualTests(unittest.TestCase):
                 self.assertEqual(
                     sum(batch["particles"] for batch in arm["execution_batches"]), 4
                 )
+                first_ion = root / "prepared" / arm["execution_batches"][0]["ion_file"]
+                with first_ion.open(encoding="utf-8", newline="") as handle:
+                    first_ion_row = next(csv.reader(handle))
+                    self.assertEqual(first_ion_row[0], "0")
+                    self.assertEqual(first_ion_row[-1], "5")
             manifest = json.loads((root / "prepared" / "prepared_arms.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["profile_id"], "pre_pulse_phase_space_attribution_v4")
             formal_state = root / "prepared" / "formal_ideal_source__source_state.csv"

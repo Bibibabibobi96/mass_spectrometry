@@ -188,6 +188,19 @@ PA分解和保护区未造成可观测的系统偏移。随后只把局部加速
 [`octupole_accelerator_overlay_identity_n100_campaign.json`](../config/diagnostics/octupole_accelerator_overlay_identity_n100_campaign.json)与
 [`octupole_accelerator_overlay_z005_n100_campaign.json`](../config/diagnostics/octupole_accelerator_overlay_z005_n100_campaign.json)。
 
+局部0.05 mm加速器PA的N=1000连续确认得到`1000→706→612→495→495`、单峰
+`R=17334.95`。同一495粒子脉冲前状态重放为495/495、单峰`R=17667.74`，相对连续基线TOF
+FWHM变化−1.88%、平均TOF差0.007 ns；这证明五实例重放的场、时钟和初始实例已经闭合。把同一队列
+替换为Formal 1 mm³空间分布、保持当前逐粒子`9.9893±0.0532 eV`能量并令`vy=vz=0`后，495/495
+命中，直接FWHM分辨率升至`R=93522.37`。因此当前局部细化场仍支持高分辨率，主要差距来自真实束的
+脉冲前相空间；但理想源峰被KDE识别为3个显著模态，该数值只作受控反事实诊断，不授予单峰、收敛或
+Formal资格。代表证据为
+`20260811_230000__sim__simion__rf-oatof-resolution-attribution__n1000__r10`。
+
+该重放入口必须把`instrument_time_us`与SIMION ION首列的solver birth time分开：局部PA内直接出生时
+solver birth为0，绝对仪器时刻由重建Program的逐粒子表恢复；ION初始实例必须为5。复用连续Program
+的原始出生表、把绝对时刻同时写入ION首列，或仍从实例3初始化，都会使脉冲/局部Fast Adjust失配。
+
 目标能量只能在连续链`pre_pulse_state`、且粒子位于repeller与grid1之间时验证。
 `terminal`或`multipole_handoff`能量只作接口诊断。
 
@@ -204,9 +217,9 @@ PA分解和保护区未造成可观测的系统偏移。随后只把局部加速
 
 ## 开放任务
 
-1. 保持多极杆+加速器整体物理装配和单次Fly；局部PA已闭合同网格身份和N=100的0.05 mm功能链，
-   进入任何性能或生产判断前仍须按粒子数合同完成N=1000配对统计，并确认局部场结果与冻结Formal
-   加速器oracle的一致性。不得把N=100功能结果直接当成生产候选。
+1. 保持多极杆+加速器整体物理装配和单次Fly；局部PA已完成N=1000配对统计和理想源高分辨诊断。
+   进入生产或Formal判断前，仍须用同一冻结源比较局部场与Formal加速器oracle，并确认理想源多模态
+   对直接FWHM的稳定性；当前结果不得作为数值收敛或生产候选。
 2. 若需要跨求解器结论，另行授权同几何、同源、同绝对时钟和同checkpoint的COMSOL连续前端。
 3. 保持d1=3.0 mm基准，先以冻结真实束构造保持/扫描`z-vz`相空间椭圆的源匹配反事实，再筛选
    repeller/grid1场比并用完整连续注入母样本确认；不得把`vz=0`或独立1 mm立方源预设为理想答案。
