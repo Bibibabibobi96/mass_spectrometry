@@ -76,14 +76,78 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
             downstream = (
                 project / "cache" / "simion_oatof_downstream_pa" / ("b" * 64)
             )
+            overlay = (
+                project / "cache" / "simion_accelerator_overlay" / ("c" * 64)
+            )
             frontend.mkdir(parents=True)
             downstream.mkdir(parents=True)
+            overlay.mkdir(parents=True)
             (frontend / "frontend.pa0").write_text("pa\n", encoding="utf-8")
             (downstream / "reflectron.pa0").write_text("pa\n", encoding="utf-8")
             (downstream / "reflectron.pa1").write_text("basis\n", encoding="utf-8")
+            (overlay / "accelerator_overlay.gem").write_text(
+                "gem\n", encoding="utf-8"
+            )
+            for electrode in range(20):
+                (overlay / f"accelerator_overlay.pa{electrode}").write_text(
+                    f"basis {electrode}\n", encoding="utf-8"
+                )
+            write_json(
+                overlay / "cache_manifest.json",
+                {
+                    "schema_version": 1,
+                    "role": "simion_accelerator_overlay_pa_cache",
+                    "cache_key": "c" * 64,
+                    "basis_count": 20,
+                },
+            )
+            write_json(
+                overlay / "basis_build.json",
+                {
+                    "schema_version": 1,
+                    "role": "simion_accelerator_overlay_basis_build",
+                    "status": "pass",
+                    "basis_array_count": 20,
+                },
+            )
             verify_cache(project)
             (frontend.parent / "not-a-hash").mkdir()
             with self.assertRaisesRegex(AssertionError, "content-addressed"):
+                verify_cache(project)
+
+    def test_accelerator_overlay_cache_rejects_wrong_basis_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory) / "integration"
+            overlay = (
+                project / "cache" / "simion_accelerator_overlay" / ("d" * 64)
+            )
+            overlay.mkdir(parents=True)
+            (overlay / "accelerator_overlay.gem").write_text(
+                "gem\n", encoding="utf-8"
+            )
+            for electrode in range(20):
+                (overlay / f"accelerator_overlay.pa{electrode}").write_text(
+                    f"basis {electrode}\n", encoding="utf-8"
+                )
+            write_json(
+                overlay / "cache_manifest.json",
+                {
+                    "schema_version": 1,
+                    "role": "simion_accelerator_overlay_pa_cache",
+                    "cache_key": "d" * 64,
+                    "basis_count": 20,
+                },
+            )
+            write_json(
+                overlay / "basis_build.json",
+                {
+                    "schema_version": 1,
+                    "role": "simion_accelerator_overlay_pa_cache",
+                    "status": "pass",
+                    "basis_array_count": 20,
+                },
+            )
+            with self.assertRaisesRegex(AssertionError, "cache identity differs"):
                 verify_cache(project)
 
     def make_formal(

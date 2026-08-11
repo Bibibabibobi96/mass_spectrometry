@@ -84,6 +84,29 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         self.assertEqual(text.count("$SamplingMode -ne 'steady_candidate_pool' -and"), 2)
         self.assertIn("$programArguments += '--terminate-after-pulse'", text)
 
+    def test_overlay_cache_is_staged_and_reuses_the_basis_report(self) -> None:
+        text = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        self.assertIn("'.build-' + [guid]::NewGuid().ToString('N')", text)
+        self.assertIn(
+            "Move-Item -LiteralPath $overlayBuildDir -Destination $overlayCacheDir",
+            text,
+        )
+        self.assertIn(
+            "$overlayCacheBasisReport = Join-Path $overlayCacheDir "
+            "'basis_build.json'",
+            text,
+        )
+        self.assertIn(
+            "Copy-Item -LiteralPath $overlayCacheBasisReport "
+            "-Destination $overlayBasisReport",
+            text,
+        )
+        self.assertNotIn(
+            "Copy-Item -LiteralPath $overlayCacheManifest "
+            "-Destination $overlayBasisReport",
+            text,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

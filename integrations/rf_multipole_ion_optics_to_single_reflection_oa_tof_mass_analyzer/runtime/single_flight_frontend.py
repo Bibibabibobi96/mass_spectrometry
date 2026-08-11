@@ -45,6 +45,148 @@ def _require_close(actual: float, expected: float, label: str) -> None:
         raise ValueError(f"{label} differs: actual={actual}, expected={expected}")
 
 
+def _render_accelerator_local_geometry(
+    geometry: dict[str, float | int], *, cell_x_mm: float, cell_z_mm: float
+) -> list[str]:
+    """Render the accelerator-owned geometry shared by coarse and overlay PAs."""
+    axis_x = float(geometry["axis_x_mm"])
+    axis_y = float(geometry["axis_y_mm"])
+    lines = [
+        f"  e({MULTIPOLE_SHIELD_ELECTRODE}) {{ fill {{",
+        f"    within {{ {_box(axis_x, axis_y, float(geometry['shield_center_z_mm']), float(geometry['shield_outer_width_mm']), float(geometry['shield_outer_width_mm']), float(geometry['shield_span_z_mm']))} }}",
+        f"    notin {{ {_box(axis_x, axis_y, float(geometry['shield_center_z_mm']), float(geometry['shield_inner_width_mm']), float(geometry['shield_inner_width_mm']), float(geometry['shield_span_z_mm']))} }}",
+        f"    notin_inside_or_on {{ {_box(float(geometry['negative_x_face_mm'])+float(geometry['shield_wall_mm'])/2, float(geometry['port_center_y_mm']), float(geometry['port_center_z_mm']), float(geometry['shield_wall_mm'])+2*cell_x_mm, float(geometry['numerical_port_width_mm']), float(geometry['numerical_port_height_mm']))} }}",
+        "  } }",
+        f"  e({MULTIPOLE_SHIELD_ELECTRODE}) {{ fill {{ within {{ {_box(axis_x, axis_y, float(geometry['shield_back_z_mm'])+float(geometry['shield_wall_mm'])/2, float(geometry['shield_outer_width_mm']), float(geometry['shield_outer_width_mm']), float(geometry['shield_wall_mm']))} }} }} }}",
+        f"  e({ACCELERATOR_ELECTRODE_OFFSET+1}) {{ fill {{ within {{ {_box(axis_x,axis_y,float(geometry['repeller_front_z_mm'])-float(geometry['repeller_thickness_mm'])/2,float(geometry['electrode_width_mm']),float(geometry['electrode_width_mm']),float(geometry['repeller_thickness_mm']))} }} }} }}",
+        f"  e({ACCELERATOR_ELECTRODE_OFFSET+2}) {{ fill {{ within {{ {_box(axis_x,axis_y,float(geometry['grid1_z_mm']),float(geometry['electrode_width_mm']),float(geometry['electrode_width_mm']),cell_z_mm)} }} }} }}",
+    ]
+    ring_count = int(geometry["ring_count"])
+    ring_pitch = float(geometry["ring_pitch_mm"])
+    for ring_index in range(1, ring_count + 1):
+        ring_z = float(geometry["grid1_z_mm"]) + ring_index * ring_pitch
+        lines.extend(
+            [
+                f"  e({ACCELERATOR_ELECTRODE_OFFSET+2+ring_index}) {{ fill {{",
+                f"    within {{ {_box(axis_x,axis_y,ring_z,float(geometry['electrode_width_mm']),float(geometry['electrode_width_mm']),float(geometry['ring_thickness_mm']))} }}",
+                f"    notin {{ {_box(axis_x,axis_y,ring_z,float(geometry['bore_width_mm']),float(geometry['bore_width_mm']),float(geometry['ring_thickness_mm'])+cell_z_mm)} }}",
+                "  } }",
+            ]
+        )
+    lines.append(
+        f"  e({ACCELERATOR_ELECTRODE_OFFSET+3+ring_count}) {{ fill {{ within {{ {_box(axis_x,axis_y,float(geometry['grid2_z_mm']),float(geometry['shield_inner_width_mm']),float(geometry['shield_inner_width_mm']),cell_z_mm)} }} }} }}"
+    )
+    return lines
+
+
+def _aligned_index(value: float, origin: float, cell: float, label: str) -> int:
+    coordinate = (value - origin) / cell
+    nearest = round(coordinate)
+    if not math.isclose(coordinate, nearest, abs_tol=1e-8):
+        raise ValueError(f"accelerator overlay {label} is not aligned to the coarse grid")
+    return int(nearest)
+
+
+def compile_accelerator_overlay(
+    frontend: dict[str, Any], *, cell_mm_xyz: dict[str, float]
+) -> tuple[str, dict[str, Any]]:
+    """Compile a local accelerator PA whose boundary is supplied by the coarse PA."""
+    if frontend.get("role") != "rf_oatof_simion_single_flight_frontend_contract":
+        raise ValueError("accelerator overlay requires a compiled frontend contract")
+    if set(cell_mm_xyz) != {"x", "y", "z"}:
+        raise ValueError("accelerator overlay cell_mm_xyz must contain exactly x, y and z")
+    fine = {axis: float(cell_mm_xyz[axis]) for axis in ("x", "y", "z")}
+    coarse = {axis: float(frontend["cell_mm_xyz"][axis]) for axis in ("x", "y", "z")}
+    if not all(math.isfinite(value) and value > 0 for value in fine.values()):
+        raise ValueError("accelerator overlay cell sizes must be finite and positive")
+    if not math.isclose(coarse["x"], coarse["y"], abs_tol=1e-12) or not math.isclose(
+        coarse["y"], coarse["z"], abs_tol=1e-12
+    ):
+        raise ValueError("accelerator overlay requires an isotropic coarse frontend PA")
+    if not math.isclose(fine["x"], fine["y"], abs_tol=1e-12):
+        raise ValueError("accelerator overlay must preserve x-y transverse grid symmetry")
+    if not math.isclose(fine["x"], coarse["x"], abs_tol=1e-12) or fine["z"] > coarse["z"]:
+        raise ValueError("accelerator overlay may only refine z on the governed coarse x-y grid")
+
+    geometry = dict(frontend["accelerator_local_region"])
+    origin = frontend["instance_origin_mm"]
+    half_width = float(geometry["shield_outer_width_mm"]) / 2
+    bounds = {
+        "x_min": float(geometry["negative_x_face_mm"]),
+        "x_max": float(geometry["axis_x_mm"]) + half_width + coarse["x"],
+        "y_min": float(geometry["axis_y_mm"]) - half_width - coarse["y"],
+        "y_max": float(geometry["axis_y_mm"]) + half_width + coarse["y"],
+        "z_min": float(geometry["shield_back_z_mm"]) - coarse["z"],
+        # Keep one non-electrode coarse cell beyond grid2 before the outer
+        # Dirichlet face; the overlay is suppressed in the outer guard cell.
+        "z_max": float(geometry["grid2_z_mm"]) + 2 * coarse["z"],
+    }
+    for axis in ("x", "y", "z"):
+        _aligned_index(bounds[f"{axis}_min"], float(origin[axis]), coarse[axis], f"{axis}_min")
+        _aligned_index(bounds[f"{axis}_max"], float(origin[axis]), coarse[axis], f"{axis}_max")
+    dimensions: dict[str, int] = {}
+    for axis in ("x", "y", "z"):
+        span = bounds[f"{axis}_max"] - bounds[f"{axis}_min"]
+        coordinate = span / fine[axis]
+        nearest = round(coordinate)
+        if not math.isclose(coordinate, nearest, abs_tol=1e-8):
+            raise ValueError(f"accelerator overlay {axis} span is not aligned to the fine grid")
+        dimensions[f"n{axis}"] = int(nearest) + 1
+
+    missing_physical_electrodes = [*range(1, 9), ENTRANCE_REFERENCE_ELECTRODE]
+    boundary_sentinels = [
+        f"  e({electrode_id}) {{ fill {{ within {{ "
+        f"{_box(bounds['x_min'], bounds['y_min'] + offset * fine['y'], bounds['z_min'], fine['x']/2, fine['y']/2, fine['z']/2)}"
+        " } } }"
+        for offset, electrode_id in enumerate(missing_physical_electrodes, start=1)
+    ]
+    lines = [
+        "; Generated boundary-coupled accelerator overlay; do not edit.",
+        "; outer faces are replaced by coarse-PA Dirichlet basis values before Refine",
+        f"pa_define({dimensions['nx']},{dimensions['ny']},{dimensions['nz']},planar,none,electrostatic,,{_fmt(fine['x'])},{_fmt(fine['y'])},{_fmt(fine['z'])},surface=fractional)",
+        f"locate({_fmt(-bounds['x_min'])},{_fmt(-bounds['y_min'])},{_fmt(-bounds['z_min'])}) {{",
+        *_render_accelerator_local_geometry(
+            geometry, cell_x_mm=fine["x"], cell_z_mm=fine["z"]
+        ),
+        "  ; Boundary-only sentinels make SIMION initialize absent pa1..pa8 and pa18.",
+        *boundary_sentinels,
+        f"  e({ENTRANCE_PLATE_ELECTRODE}) {{ fill {{ within {{ {_box(bounds['x_min'],bounds['y_min'],bounds['z_min'],fine['x']/2,fine['y']/2,fine['z']/2)} }} }} }}",
+        "}",
+        "",
+    ]
+    contract = {
+        "schema_version": 1,
+        "role": "rf_oatof_simion_accelerator_overlay_contract",
+        "frame_id": frontend["frame_id"],
+        "cell_mm_xyz": fine,
+        "dimensions": dimensions,
+        "instance_origin_mm": {
+            "x": bounds["x_min"],
+            "y": bounds["y_min"],
+            "z": bounds["z_min"],
+        },
+        "instance_bounds_mm": bounds,
+        "active_bounds_mm": {
+            f"{axis}_{side}": bounds[f"{axis}_{side}"]
+            + (coarse[axis] if side == "min" else -coarse[axis])
+            for axis in ("x", "y", "z")
+            for side in ("min", "max")
+        },
+        "boundary_condition": {
+            "mode": "coarse_electrode_basis_dirichlet_v1",
+            "faces": ["x_min", "x_max", "y_min", "y_max", "z_min", "z_max"],
+            "coarse_frontend_role": frontend["role"],
+            "basis_electrode_ids": list(range(0, ENTRANCE_PLATE_ELECTRODE + 1)),
+        },
+        "electrodes": dict(frontend["electrodes"]),
+        "boundary_family_sentinel_electrode_ids": [
+            *missing_physical_electrodes,
+            ENTRANCE_PLATE_ELECTRODE,
+        ],
+    }
+    return "\n".join(lines), contract
+
+
 def compile_frontend(
     upstream: dict[str, Any],
     oatof: dict[str, Any],
@@ -274,17 +416,6 @@ def compile_frontend(
     aperture_discretization = connection_contract["aperture_discretization"]
     numerical_port_width = float(aperture_discretization["numerical_carve_width_mm"])
     numerical_port_height = float(aperture_discretization["numerical_carve_height_mm"])
-    lines.extend(
-        [
-            f"  e({MULTIPOLE_SHIELD_ELECTRODE}) {{ fill {{",
-            f"    within {{ {_box(axis_x, axis_y, shield_center_z, shield_outer_width, shield_outer_width, shield_span_z)} }}",
-            f"    notin {{ {_box(axis_x, axis_y, shield_center_z, shield_inner_width, shield_inner_width, shield_span_z)} }}",
-            f"    notin_inside_or_on {{ {_box(negative_x_face+shield_wall/2, center_y, center_z, shield_wall+2*cell_x_mm, numerical_port_width, numerical_port_height)} }}",
-            "  } }",
-            f"  e({MULTIPOLE_SHIELD_ELECTRODE}) {{ fill {{ within {{ {_box(axis_x, axis_y, shield_back_z+shield_wall/2, shield_outer_width, shield_outer_width, shield_wall)} }} }} }}",
-        ]
-    )
-
     electrode_width = 2 * (
         float(geometry["accelerator_bore_half"])
         + float(geometry["accelerator_ring_width"])
@@ -295,29 +426,41 @@ def compile_frontend(
     ring_count = int(oatof["rings"]["accelerator_count"])
     ring_pitch = stage2 / (ring_count + 1)
     ring_thickness = float(geometry["accelerator_ring_thickness"])
-    lines.append(
-        f"  e({ACCELERATOR_ELECTRODE_OFFSET+1}) {{ fill {{ within {{ {_box(axis_x,axis_y,repeller_front_z-repeller_thickness/2,electrode_width,electrode_width,repeller_thickness)} }} }} }}"
-    )
-    lines.append(
-        f"  e({ACCELERATOR_ELECTRODE_OFFSET+2}) {{ fill {{ within {{ {_box(axis_x,axis_y,grid1_z,electrode_width,electrode_width,cell_z_mm)} }} }} }}"
-    )
-    for ring_index in range(1, ring_count + 1):
-        ring_z = grid1_z + ring_index * ring_pitch
-        lines.extend(
-            [
-                f"  e({ACCELERATOR_ELECTRODE_OFFSET+2+ring_index}) {{ fill {{",
-                f"    within {{ {_box(axis_x,axis_y,ring_z,electrode_width,electrode_width,ring_thickness)} }}",
-                f"    notin {{ {_box(axis_x,axis_y,ring_z,bore_width,bore_width,ring_thickness+cell_z_mm)} }}",
-                "  } }",
-            ]
+    accelerator_local_region: dict[str, float | int] = {
+        "axis_x_mm": axis_x,
+        "axis_y_mm": axis_y,
+        "shield_center_z_mm": shield_center_z,
+        "shield_outer_width_mm": shield_outer_width,
+        "shield_inner_width_mm": shield_inner_width,
+        "shield_span_z_mm": shield_span_z,
+        "negative_x_face_mm": negative_x_face,
+        "shield_wall_mm": shield_wall,
+        "shield_back_z_mm": shield_back_z,
+        "port_center_y_mm": center_y,
+        "port_center_z_mm": center_z,
+        "numerical_port_width_mm": numerical_port_width,
+        "numerical_port_height_mm": numerical_port_height,
+        "electrode_width_mm": electrode_width,
+        "bore_width_mm": bore_width,
+        "repeller_front_z_mm": repeller_front_z,
+        "repeller_thickness_mm": repeller_thickness,
+        "grid1_z_mm": grid1_z,
+        "grid2_z_mm": grid2_z,
+        "ring_count": ring_count,
+        "ring_pitch_mm": ring_pitch,
+        "ring_thickness_mm": ring_thickness,
+    }
+    lines.extend(
+        _render_accelerator_local_geometry(
+            accelerator_local_region,
+            cell_x_mm=cell_x_mm,
+            cell_z_mm=cell_z_mm,
         )
-    lines.append(
-        f"  e({ACCELERATOR_ELECTRODE_OFFSET+3+ring_count}) {{ fill {{ within {{ {_box(axis_x,axis_y,grid2_z,shield_inner_width,shield_inner_width,cell_z_mm)} }} }} }}"
     )
     lines.extend(["}", ""])
 
     contract = {
-        "schema_version": 1,
+        "schema_version": 2,
         "role": "rf_oatof_simion_single_flight_frontend_contract",
         "frame_id": "oatof_global",
         "cell_mm_xyz": {"x": cell_x_mm, "y": cell_y_mm, "z": cell_z_mm},
@@ -348,6 +491,7 @@ def compile_frontend(
             "entrance_plate_id": ENTRANCE_PLATE_ELECTRODE,
         },
         "entrance_reference_sleeve": dict(sleeve),
+        "accelerator_local_region": accelerator_local_region,
     }
     return "\n".join(lines), contract
 
@@ -362,6 +506,11 @@ def main() -> int:
     parser.add_argument("--cell-mm-x", type=float, default=0.2)
     parser.add_argument("--cell-mm-y", type=float, default=0.2)
     parser.add_argument("--cell-mm-z", type=float, default=0.2)
+    parser.add_argument("--overlay-gem", type=Path)
+    parser.add_argument("--overlay-contract", type=Path)
+    parser.add_argument("--overlay-cell-mm-x", type=float)
+    parser.add_argument("--overlay-cell-mm-y", type=float)
+    parser.add_argument("--overlay-cell-mm-z", type=float)
     args = parser.parse_args()
     gem, contract = compile_frontend(
         _load(args.upstream),
@@ -373,6 +522,33 @@ def main() -> int:
     args.contract.parent.mkdir(parents=True, exist_ok=True)
     args.gem.write_text(gem, encoding="utf-8", newline="\n")
     args.contract.write_text(json.dumps(contract, indent=2) + "\n", encoding="utf-8", newline="\n")
+    overlay_requested = args.overlay_gem is not None or args.overlay_contract is not None
+    if overlay_requested:
+        if args.overlay_gem is None or args.overlay_contract is None or any(
+            value is None
+            for value in (
+                args.overlay_cell_mm_x,
+                args.overlay_cell_mm_y,
+                args.overlay_cell_mm_z,
+            )
+        ):
+            raise ValueError("accelerator overlay output and all three cell sizes are required")
+        overlay_gem, overlay_contract = compile_accelerator_overlay(
+            contract,
+            cell_mm_xyz={
+                "x": args.overlay_cell_mm_x,
+                "y": args.overlay_cell_mm_y,
+                "z": args.overlay_cell_mm_z,
+            },
+        )
+        args.overlay_gem.parent.mkdir(parents=True, exist_ok=True)
+        args.overlay_contract.parent.mkdir(parents=True, exist_ok=True)
+        args.overlay_gem.write_text(overlay_gem, encoding="utf-8", newline="\n")
+        args.overlay_contract.write_text(
+            json.dumps(overlay_contract, indent=2) + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
     print(f"SINGLE_FLIGHT_FRONTEND=PASS GEM={args.gem} CONTRACT={args.contract}")
     return 0
 

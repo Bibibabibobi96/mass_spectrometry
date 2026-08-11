@@ -1,0 +1,95 @@
+-- Initialize and boundary-couple a local accelerator fast-adjust PA family.
+-- The coarse and fine arrays are axis-aligned in the same workbench frame.
+-- Usage:
+--   simion.exe --nogui --noprompt lua build_accelerator_overlay_basis.lua
+--     coarse.pa0 fine.pa# coarse_ox coarse_oy coarse_oz
+--     fine_ox fine_oy fine_oz maximum_electrode report.json
+
+local coarse_pa0=assert(arg[1], 'coarse PA0 is required')
+local fine_pa_sharp=assert(arg[2], 'fine PA# is required')
+local coarse_origin={
+  assert(tonumber(arg[3]), 'coarse origin x is invalid'),
+  assert(tonumber(arg[4]), 'coarse origin y is invalid'),
+  assert(tonumber(arg[5]), 'coarse origin z is invalid'),
+}
+local fine_origin={
+  assert(tonumber(arg[6]), 'fine origin x is invalid'),
+  assert(tonumber(arg[7]), 'fine origin y is invalid'),
+  assert(tonumber(arg[8]), 'fine origin z is invalid'),
+}
+local maximum_electrode=assert(tonumber(arg[9]), 'maximum electrode is invalid')
+local report_path=assert(arg[10], 'report path is required')
+assert(maximum_electrode>=1 and maximum_electrode==math.floor(maximum_electrode),
+  'maximum electrode must be a positive integer')
+assert(coarse_pa0:match('%.pa0$'), 'coarse input must end in .pa0')
+assert(fine_pa_sharp:match('%.pa#$'), 'fine input must end in .pa#')
+
+local function indexed(path,index)
+  if path:match('%.pa0$') then return path:gsub('0$',tostring(index)) end
+  return path:gsub('#$',tostring(index))
+end
+
+-- Create every paN without doing a real Refine.  This is the same supported
+-- technique used by SIMION's bundled resistive/lens2_pa0_build.lua example.
+simion.pas:close()
+local initializer=simion.pas:open(fine_pa_sharp)
+initializer:refine{convergence=1E+6}
+simion.pas:close()
+
+local total_boundary_points=0
+local maximum_copy_residual=0
+for basis=0,maximum_electrode do
+  local coarse_path=indexed(coarse_pa0,basis)
+  local fine_path=indexed(fine_pa_sharp,basis)
+  simion.pas:close()
+  local coarse=simion.pas:open(coarse_path)
+  local fine=simion.pas:open(fine_path)
+  local seen={}
+  local count=0
+  local function copy(ix,iy,iz)
+    local key=ix..':'..iy..':'..iz
+    if seen[key] then return end
+    seen[key]=true
+    local wx=fine_origin[1]+ix*fine.dx_mm
+    local wy=fine_origin[2]+iy*fine.dy_mm
+    local wz=fine_origin[3]+iz*fine.dz_mm
+    local cx=(wx-coarse_origin[1])/coarse.dx_mm
+    local cy=(wy-coarse_origin[2])/coarse.dy_mm
+    local cz=(wz-coarse_origin[3])/coarse.dz_mm
+    assert(coarse:inside_vc(cx,cy,cz),string.format(
+      'fine boundary escapes coarse PA basis=%d world=(%.12g,%.12g,%.12g)',
+      basis,wx,wy,wz))
+    local value=coarse:potential_vc(cx,cy,cz)
+    assert(value==value and math.abs(value)<math.huge,
+      'coarse boundary interpolation returned a non-finite value')
+    fine:point(ix,iy,iz,value,true)
+    local residual=math.abs(fine:potential(ix,iy,iz)-value)
+    if residual>maximum_copy_residual then maximum_copy_residual=residual end
+    count=count+1
+  end
+  for iz=0,fine.nz-1 do for iy=0,fine.ny-1 do
+    copy(0,iy,iz); copy(fine.nx-1,iy,iz)
+  end end
+  for iz=0,fine.nz-1 do for ix=0,fine.nx-1 do
+    copy(ix,0,iz); copy(ix,fine.ny-1,iz)
+  end end
+  for iy=0,fine.ny-1 do for ix=0,fine.nx-1 do
+    copy(ix,iy,0); copy(ix,iy,fine.nz-1)
+  end end
+  fine:save()
+  total_boundary_points=total_boundary_points+count
+  print(string.format(
+    'OVERLAY_BASIS: basis=%d boundary_points=%d coarse=%s fine=%s',
+    basis,count,coarse_path,fine_path))
+end
+simion.pas:close()
+
+local report=assert(io.open(report_path,'w'))
+report:write(string.format(
+  '{\n  "schema_version": 1,\n  "role": "simion_accelerator_overlay_basis_build",\n  "status": "pass",\n  "maximum_electrode_id": %d,\n  "basis_array_count": %d,\n  "boundary_point_write_count": %d,\n  "maximum_immediate_copy_residual_V": %.17g\n}\n',
+  maximum_electrode,maximum_electrode+1,total_boundary_points,
+  maximum_copy_residual))
+report:close()
+print(string.format(
+  'ACCELERATOR_OVERLAY_BASIS=PASS BASIS_COUNT=%d BOUNDARY_WRITES=%d',
+  maximum_electrode+1,total_boundary_points))

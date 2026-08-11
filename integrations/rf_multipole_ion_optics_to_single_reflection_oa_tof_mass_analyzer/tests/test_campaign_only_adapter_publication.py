@@ -13,6 +13,7 @@ from common.contracts.file_identity import file_sha256
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.publish_run import (
     INTEGRATION_ID,
     STAGES,
+    publish_family_source_closure_failure,
     publish_family_source_closure_run,
 )
 
@@ -301,6 +302,80 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
             self.assertEqual(parent_summary["particle_count"], 41)
             self.assertNotIn("source_revision_id", parent_config)
             self.assertNotIn("source_revision_id", parent_summary)
+
+    def test_failed_parent_publication_preserves_prepared_inputs(self) -> None:
+        with tempfile.TemporaryDirectory(dir=REPO_ROOT.parent) as directory:
+            workspace = Path(directory)
+            fixture_repo = workspace / "simulation_repo"
+            fixture_repo.mkdir()
+            run_id = "20260811_120000__sim__cross__failed-parent__n100__r01"
+            run_dir = (
+                workspace
+                / "artifacts"
+                / "projects"
+                / INTEGRATION_ID
+                / "runs"
+                / run_id
+            )
+            run_dir.mkdir(parents=True)
+            profile_id = "rf_octupole_oatof_direct_mating_gap_0mm"
+            resolved = run_dir / "resolved_connection.json"
+            plan = run_dir / "composition_plan.json"
+            budget = run_dir / "resolved_engineering_budget.json"
+            write_json(
+                resolved,
+                {
+                    "integration_id": INTEGRATION_ID,
+                    "selection": {"connection_profile_id": profile_id},
+                },
+            )
+            write_json(
+                plan,
+                {
+                    "integration_id": INTEGRATION_ID,
+                    "selection": {"connection_profile_id": profile_id},
+                },
+            )
+            write_json(
+                budget,
+                {
+                    "connection_profile_id": profile_id,
+                    "campaign_id": "failure_test",
+                    "experiment_id": "failure_row",
+                    "experiment_row_sha256": "A" * 64,
+                    "execution_strategy": "simion_single_flight",
+                    "launched_particle_count": 100,
+                    "particle_count": 100,
+                    "retention_class": "compact",
+                },
+            )
+            with patch(
+                "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.publish_run.subprocess.run",
+                return_value=SimpleNamespace(returncode=0, stdout="", stderr=""),
+            ):
+                publish_family_source_closure_failure(
+                    repo_root=fixture_repo,
+                    workspace_root=workspace,
+                    integration_run_dir=run_dir,
+                    resolved_path=resolved,
+                    plan_path=plan,
+                    budget_path=budget,
+                    terminal_status="failed",
+                    reason="governed child failed",
+                )
+            config = json.loads(
+                (run_dir / "run_config.json").read_text(encoding="utf-8")
+            )
+            summary = json.loads(
+                (run_dir / "summary.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(config["inputs"]["composition_plan"], (
+                f"artifacts/projects/{INTEGRATION_ID}/runs/{run_id}/"
+                "composition_plan.json"
+            ))
+            self.assertEqual(summary["status"], "failed")
+            self.assertFalse(summary["threshold_result_eligible"])
+            self.assertEqual(summary["reason"], "governed child failed")
 
 
 if __name__ == "__main__":

@@ -91,6 +91,7 @@ def verify_cache(project: Path, verify_hashes: bool = False) -> None:
     if not cache.exists():
         return
     allowed = {
+        "simion_accelerator_overlay",
         "simion_pa_basis",
         "simion_oatof_downstream_pa",
         "simion_single_flight_frontend",
@@ -131,6 +132,7 @@ def verify_cache(project: Path, verify_hashes: bool = False) -> None:
             raise AssertionError(f"{basis}: cache inventory differs")
 
     for cache_name, required_name in (
+        ("simion_accelerator_overlay", "accelerator_overlay.pa0"),
         ("simion_oatof_downstream_pa", None),
         ("simion_single_flight_frontend", "frontend.pa0"),
     ):
@@ -151,6 +153,32 @@ def verify_cache(project: Path, verify_hashes: bool = False) -> None:
                 stem = next(iter(stems))
                 if not any(name.startswith(stem + ".pa") for name in files):
                     raise AssertionError(f"{entry}: downstream PA family is incomplete")
+            elif cache_name == "simion_accelerator_overlay":
+                required = {
+                    "accelerator_overlay.gem",
+                    "basis_build.json",
+                    "cache_manifest.json",
+                    *(f"accelerator_overlay.pa{electrode}" for electrode in range(20)),
+                }
+                if not required.issubset(files):
+                    raise AssertionError(f"{entry}: accelerator overlay PA family is incomplete")
+                manifest = json.loads(
+                    (entry / "cache_manifest.json").read_text(encoding="utf-8-sig")
+                )
+                basis = json.loads(
+                    (entry / "basis_build.json").read_text(encoding="utf-8-sig")
+                )
+                if (
+                    manifest.get("schema_version") != 1
+                    or manifest.get("role") != "simion_accelerator_overlay_pa_cache"
+                    or manifest.get("cache_key") != entry.name
+                    or manifest.get("basis_count") != 20
+                    or basis.get("schema_version") != 1
+                    or basis.get("role") != "simion_accelerator_overlay_basis_build"
+                    or basis.get("status") != "pass"
+                    or basis.get("basis_array_count") != 20
+                ):
+                    raise AssertionError(f"{entry}: accelerator overlay cache identity differs")
 
 
 def legacy_identity(repository_root: Path, project_id: str) -> dict | None:

@@ -21,15 +21,27 @@
     },
     "single_flight_runner": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/run_single_flight.ps1",
-      "sha256": "575F27AEDB4194CF585AAC145E7CCA7E55452709AEDA21096315BC045399378B"
+      "sha256": "7E3BD45569AC9C8D5E2A71A1E3B5E9B9C829C57796B8FEFEAA3D9D43015A55FF"
     },
     "single_flight_frontend": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/single_flight_frontend.py",
-      "sha256": "F2EE64931E2E7326B0CB886D709E10236CD888989CE7F83B3BD3280162FD3AD8"
+      "sha256": "5730C22CC885CD7BFFABF2810CE2BFA6341A76315AF6A37842E65CCD60E8A828"
     },
     "single_flight_program_builder": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/build_single_flight_program.py",
-      "sha256": "D2305FFF5B750CAEAA6BC5783BB87E8801CB55FA35A35877C4292C7950E8FD6F"
+      "sha256": "85D7F9A019E0208F5BC800D4C8C1B8193C129B60E5D37415678C3F892853ABCA"
+    },
+    "single_flight_overlay_basis_builder": {
+      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/build_accelerator_overlay_basis.lua",
+      "sha256": "A668414BCDC674DE482F78204B971B0F7D01ED95C5EE057781317513885ADD30"
+    },
+    "single_flight_overlay_iob_builder": {
+      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/build_single_flight_overlay_iob.lua",
+      "sha256": "38DD090A17E6BC992731BEE9BFF0599EA98CC77E959E2DA9426CD2D9AC710A73"
+    },
+    "single_flight_overlay_interface_verifier": {
+      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/verify_accelerator_overlay_interface.lua",
+      "sha256": "3D9924A1400DA0DE9D52E51D39D84F23AD8576800137A567BD0125FAAB9DF913"
     },
     "single_flight_source": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/single_flight_source.py",

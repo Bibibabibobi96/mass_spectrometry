@@ -445,11 +445,128 @@ def publish_family_source_closure_run(
     return manifest_path
 
 
+def publish_family_source_closure_failure(
+    *,
+    repo_root: Path,
+    workspace_root: Path,
+    integration_run_dir: Path,
+    resolved_path: Path,
+    plan_path: Path,
+    budget_path: Path,
+    terminal_status: str,
+    reason: str,
+) -> Path:
+    """Terminalize a prepared parent run when its governed child chain fails."""
+
+    if terminal_status not in {"failed", "interrupted"}:
+        raise ContractError("failure publication requires failed or interrupted")
+    run_dir = integration_run_dir.resolve()
+    run_id = run_dir.name
+    validate_run_id(run_id)
+    resolved = _load(resolved_path)
+    plan = _load(plan_path)
+    budget = _load(budget_path)
+    profile_id = plan.get("selection", {}).get("connection_profile_id")
+    if (
+        resolved.get("integration_id") != INTEGRATION_ID
+        or plan.get("integration_id") != INTEGRATION_ID
+        or resolved.get("selection", {}).get("connection_profile_id") != profile_id
+        or budget.get("connection_profile_id") != profile_id
+    ):
+        raise ContractError("failed parent prepared identities differ")
+    frozen_names = (
+        "composition_plan.json",
+        "resolved_connection.json",
+        "resolved_engineering_budget.json",
+        "resolved_source_contract.json",
+        "upstream_resolved_design.json",
+        "resolved_oatof_geometry.json",
+        "resolved_single_flight_pulse_schedule.json",
+    )
+    frozen_inputs = {
+        name.removesuffix(".json"): _portable(run_dir / name, workspace_root)
+        for name in frozen_names
+        if (run_dir / name).is_file()
+    }
+    run_config = {
+        "schema_version": 2,
+        "run_id": run_id,
+        "project": INTEGRATION_ID,
+        "mode": "multipole_family_source_closure",
+        "project_root": str(workspace_root.resolve()),
+        "inputs": frozen_inputs,
+        "connection_profile_id": profile_id,
+        "campaign_id": budget.get("campaign_id"),
+        "experiment_id": budget.get("experiment_id"),
+        "experiment_row_sha256": budget.get("experiment_row_sha256"),
+        "execution_strategy": budget.get("execution_strategy"),
+        "launched_particle_count": budget.get("launched_particle_count"),
+        "particle_count": budget.get("particle_count"),
+        "artifact_retention": {
+            "policy_version": 1,
+            "class": budget.get("retention_class", "compact"),
+            "reason": None,
+        },
+        "formal_gate_passed": False,
+    }
+    summary = {
+        "schema_version": 1,
+        "role": "integration_family_source_closure_summary",
+        "status": terminal_status,
+        "reason": reason,
+        "failure_stage": "governed_child_execution_or_publication",
+        "threshold_result_eligible": False,
+        "connection_profile_id": profile_id,
+        "campaign_id": budget.get("campaign_id"),
+        "experiment_id": budget.get("experiment_id"),
+        "execution_strategy": budget.get("execution_strategy"),
+        "formal_gate_passed": False,
+    }
+    run_config_path = run_dir / "run_config.json"
+    summary_path = run_dir / "summary.json"
+    run_config_path.write_text(
+        json.dumps(run_config, indent=2) + "\n", encoding="utf-8"
+    )
+    summary_path.write_text(
+        json.dumps(summary, indent=2) + "\n", encoding="utf-8"
+    )
+    manifest_path = run_dir / "run_manifest.json"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "common.contracts.write_run_manifest",
+            "--run-config",
+            str(run_config_path),
+            "--manifest",
+            str(manifest_path),
+            "--status",
+            terminal_status,
+            "--software",
+            f"Python {sys.version_info.major}.{sys.version_info.minor}",
+            "--output",
+            str(summary_path),
+        ],
+        cwd=repo_root,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if completed.returncode != 0:
+        raise ContractError(
+            "failed family parent manifest publication failed: "
+            + (completed.stdout + completed.stderr).strip()
+        )
+    return manifest_path
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo-root", required=True, type=Path)
     parser.add_argument("--integration-run-dir", required=True, type=Path)
-    parser.add_argument("--receipt", required=True, type=Path)
+    parser.add_argument("--receipt", type=Path)
     parser.add_argument("--resolved-connection", required=True, type=Path)
     parser.add_argument("--composition-plan", required=True, type=Path)
     parser.add_argument(
@@ -457,17 +574,37 @@ def main() -> int:
         required=True,
         type=Path,
     )
+    parser.add_argument(
+        "--terminal-status", choices=("failed", "interrupted")
+    )
+    parser.add_argument("--failure-reason")
     args = parser.parse_args()
     repo_root = args.repo_root.resolve()
-    manifest = publish_family_source_closure_run(
-        repo_root=repo_root,
-        workspace_root=repo_root.parent,
-        integration_run_dir=args.integration_run_dir.resolve(),
-        receipt_path=args.receipt.resolve(),
-        resolved_path=args.resolved_connection.resolve(),
-        plan_path=args.composition_plan.resolve(),
-        budget_path=args.resolved_engineering_budget.resolve(),
-    )
+    if args.failure_reason is not None:
+        if args.terminal_status is None or args.receipt is not None:
+            parser.error("failure publication requires status and forbids receipt")
+        manifest = publish_family_source_closure_failure(
+            repo_root=repo_root,
+            workspace_root=repo_root.parent,
+            integration_run_dir=args.integration_run_dir.resolve(),
+            resolved_path=args.resolved_connection.resolve(),
+            plan_path=args.composition_plan.resolve(),
+            budget_path=args.resolved_engineering_budget.resolve(),
+            terminal_status=args.terminal_status,
+            reason=args.failure_reason,
+        )
+    else:
+        if args.receipt is None or args.terminal_status is not None:
+            parser.error("success publication requires receipt only")
+        manifest = publish_family_source_closure_run(
+            repo_root=repo_root,
+            workspace_root=repo_root.parent,
+            integration_run_dir=args.integration_run_dir.resolve(),
+            receipt_path=args.receipt.resolve(),
+            resolved_path=args.resolved_connection.resolve(),
+            plan_path=args.composition_plan.resolve(),
+            budget_path=args.resolved_engineering_budget.resolve(),
+        )
     print(f"FAMILY_SOURCE_CLOSURE_PUBLICATION=PASS MANIFEST={manifest}")
     return 0
 

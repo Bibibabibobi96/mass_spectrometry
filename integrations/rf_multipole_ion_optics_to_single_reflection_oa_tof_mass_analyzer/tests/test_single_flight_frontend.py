@@ -5,7 +5,10 @@ import copy
 import unittest
 from pathlib import Path
 
-from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_frontend import compile_frontend
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_frontend import (
+    compile_accelerator_overlay,
+    compile_frontend,
+)
 
 
 REPO = Path(__file__).resolve().parents[3]
@@ -245,6 +248,64 @@ class SingleFlightFrontendTests(unittest.TestCase):
         self.assertGreater(refined["dimensions"]["nz"], 3 * baseline["dimensions"]["nz"])
         self.assertIn(",0.2,0.2,0.05,surface=fractional)", refined_gem)
         self.assertNotEqual(refined_gem, baseline_gem)
+
+    def test_accelerator_overlay_refines_only_local_acceleration_axis(self) -> None:
+        _, frontend = compile_frontend(self.upstream, self.oatof, self.connection)
+        gem, overlay = compile_accelerator_overlay(
+            frontend, cell_mm_xyz={"x": 0.2, "y": 0.2, "z": 0.05}
+        )
+        self.assertEqual(
+            overlay["role"], "rf_oatof_simion_accelerator_overlay_contract"
+        )
+        self.assertEqual(overlay["cell_mm_xyz"], {"x": 0.2, "y": 0.2, "z": 0.05})
+        self.assertEqual(
+            overlay["instance_origin_mm"]["x"],
+            frontend["accelerator_local_region"]["negative_x_face_mm"],
+        )
+        self.assertEqual(
+            overlay["boundary_condition"]["mode"],
+            "coarse_electrode_basis_dirichlet_v1",
+        )
+        self.assertEqual(
+            overlay["boundary_condition"]["basis_electrode_ids"], list(range(20))
+        )
+        self.assertAlmostEqual(
+            overlay["active_bounds_mm"]["z_max"],
+            frontend["accelerator_local_region"]["grid2_z_mm"] + 0.2,
+        )
+        self.assertLess(overlay["dimensions"]["nx"], frontend["dimensions"]["nx"])
+        self.assertIn(",0.2,0.2,0.05,surface=fractional)", gem)
+        self.assertIn("Boundary-only sentinels", gem)
+        self.assertEqual(
+            overlay["boundary_family_sentinel_electrode_ids"],
+            [1, 2, 3, 4, 5, 6, 7, 8, 18, 19],
+        )
+        for electrode_id in [1, 2, 3, 4, 5, 6, 7, 8, 18, 19]:
+            self.assertIn(f"e({electrode_id})", gem)
+
+    def test_accelerator_overlay_supports_same_grid_identity_validation(self) -> None:
+        _, frontend = compile_frontend(self.upstream, self.oatof, self.connection)
+        _, overlay = compile_accelerator_overlay(
+            frontend, cell_mm_xyz={"x": 0.2, "y": 0.2, "z": 0.2}
+        )
+        self.assertEqual(overlay["cell_mm_xyz"], frontend["cell_mm_xyz"])
+
+    def test_accelerator_overlay_rejects_asymmetric_coarse_or_transverse_grid(self) -> None:
+        _, asymmetric = compile_frontend(
+            self.upstream,
+            self.oatof,
+            self.connection,
+            cell_mm_xyz={"x": 0.2, "y": 0.2, "z": 0.1},
+        )
+        with self.assertRaisesRegex(ValueError, "isotropic coarse"):
+            compile_accelerator_overlay(
+                asymmetric, cell_mm_xyz={"x": 0.2, "y": 0.2, "z": 0.05}
+            )
+        _, frontend = compile_frontend(self.upstream, self.oatof, self.connection)
+        with self.assertRaisesRegex(ValueError, "x-y transverse"):
+            compile_accelerator_overlay(
+                frontend, cell_mm_xyz={"x": 0.2, "y": 0.1, "z": 0.05}
+            )
 
     def test_rejects_incomplete_or_nonpositive_axis_grid(self) -> None:
         for cells in (

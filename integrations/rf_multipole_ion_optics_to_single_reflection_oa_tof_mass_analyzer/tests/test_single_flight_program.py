@@ -7,12 +7,16 @@ import unittest
 from pathlib import Path
 
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.build_single_flight_program import (
+    allow_accelerator_overlay_instance,
     bind_oatof_adjustables,
     build_extension,
     disable_redundant_ground_fast_adjust,
     load_birth_times,
 )
-from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_frontend import compile_frontend
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_frontend import (
+    compile_accelerator_overlay,
+    compile_frontend,
+)
 
 
 REPO = Path(__file__).resolve().parents[3]
@@ -28,6 +32,16 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertIn("r:fast_adjust(reflectron_voltages)", prepared)
         self.assertNotIn("t:fast_adjust{[1]=0}", prepared)
         self.assertNotIn("d:fast_adjust{[1]=0}", prepared)
+
+    def test_overlay_workbench_requires_gui_visible_fifth_instance(self) -> None:
+        formal = (
+            REPO / "projects/single_reflection_oa_tof_mass_analyzer/simion/"
+            "workbench/formal/oatof_ideal_grounded.lua"
+        ).read_text()
+        prepared = allow_accelerator_overlay_instance(formal)
+        self.assertIn("#simion.wb.instances==5", prepared)
+        self.assertIn("accelerator_overlay%.pa0", prepared)
+        self.assertNotIn("#simion.wb.instances==4", prepared)
 
     def test_resolved_oatof_values_are_bound_into_program_defaults(self) -> None:
         formal = (
@@ -109,6 +123,23 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertIn("sf_ideal_accel_enable==0 or ion_instance~=3", extension)
         self.assertIn("math.abs(ion_px_mm-accelerator_axis_x_mm)>accelerator_bore_half_mm", extension)
         self.assertIn("not single_flight_pulse_is_on() then return", extension)
+
+        _, overlay = compile_accelerator_overlay(
+            frontend, cell_mm_xyz={"x": 0.2, "y": 0.2, "z": 0.05}
+        )
+        overlay_extension = build_extension(
+            upstream,
+            frontend,
+            birth_times_us=[0.25, 1.0],
+            clock_basis="absolute_birth_time",
+            overlay=overlay,
+        )
+        self.assertIn("local single_flight_overlay_enabled=1", overlay_extension)
+        self.assertIn("simion.wb.instances[5]", overlay_extension)
+        self.assertIn("function segment.instance_adjust()", overlay_extension)
+        self.assertIn("di:inside_wc(ion_px_mm,ion_py_mm,ion_pz_mm)", overlay_extension)
+        self.assertIn("ion_pz_mm>=single_flight_overlay_active_z_max", overlay_extension)
+        self.assertIn("ion_instance==5", overlay_extension)
 
     def test_birth_times_are_loaded_as_contiguous_instrument_times(self) -> None:
         import tempfile

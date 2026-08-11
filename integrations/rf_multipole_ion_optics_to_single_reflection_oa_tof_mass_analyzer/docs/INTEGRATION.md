@@ -176,6 +176,18 @@ Formal或数值收敛结论。
 [网格及理想场记录](../../../docs/history/20260810__oatof-frontend-grid-and-ideal-field.md)保留，不再用于
 否定网格影响。
 
+为避免全局各向异性网格同时改变多极杆横向场，单次Fly现支持边界耦合的局部加速器PA：完整多极杆、
+连接器和加速器继续由0.20 mm各向同性粗PA覆盖，局部PA通过20个逐电极基函数复制六面Dirichlet边界，
+并在出口人工边界前用重叠保护区回退粗PA。方法合同只在
+[跨项目连接架构](../../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md#simion粗全局pa与局部细pa耦合)维护。
+N=100同网格对照保持`100→75→66→56→56`，探测TOF配对RMS为0.0160 ns、最大差0.0825 ns，证明
+PA分解和保护区未造成可观测的系统偏移。随后只把局部加速器z网格改为0.05 mm，census仍完全相同，
+相对同网格对照的探测TOF平均变化−1.806 ns、去均值配对RMS为2.058 ns；该差异不再混入多极杆网格
+变化。冷构建真实墙钟535.8 s，缓存3.53 GiB，Fly加载峰值工作集约7.73 GiB；N=100结果只授予功能
+和隔离归因，不构成分辨率或收敛声明。机器入口为
+[`octupole_accelerator_overlay_identity_n100_campaign.json`](../config/diagnostics/octupole_accelerator_overlay_identity_n100_campaign.json)与
+[`octupole_accelerator_overlay_z005_n100_campaign.json`](../config/diagnostics/octupole_accelerator_overlay_z005_n100_campaign.json)。
+
 目标能量只能在连续链`pre_pulse_state`、且粒子位于repeller与grid1之间时验证。
 `terminal`或`multipole_handoff`能量只作接口诊断。
 
@@ -192,8 +204,9 @@ Formal或数值收敛结论。
 
 ## 开放任务
 
-1. 保持多极杆+加速器整体物理装配和单次Fly，解决全局各向异性网格对多极杆横向场的混淆；不得把
-   z=0.05 mm完整束直接当成生产候选。局部/叠加PA方案须先证明场线性分解和边界不被重复计算。
+1. 保持多极杆+加速器整体物理装配和单次Fly；局部PA已闭合同网格身份和N=100的0.05 mm功能链，
+   进入任何性能或生产判断前仍须按粒子数合同完成N=1000配对统计，并确认局部场结果与冻结Formal
+   加速器oracle的一致性。不得把N=100功能结果直接当成生产候选。
 2. 若需要跨求解器结论，另行授权同几何、同源、同绝对时钟和同checkpoint的COMSOL连续前端。
 3. 保持d1=3.0 mm基准，先以冻结真实束构造保持/扫描`z-vz`相空间椭圆的源匹配反事实，再筛选
    repeller/grid1场比并用完整连续注入母样本确认；不得把`vz=0`或独立1 mm立方源预设为理想答案。

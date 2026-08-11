@@ -111,6 +111,24 @@ def disable_redundant_ground_fast_adjust(formal: str) -> str:
     return formal.replace(block, replacement)
 
 
+def allow_accelerator_overlay_instance(formal: str) -> str:
+    """Extend the frozen four-instance workbench assertion for local PA overlay."""
+
+    assertion = (
+        "assert(#simion.wb.instances==4, "
+        "'formal workbench must contain four PA instances')"
+    )
+    replacement = (
+        "assert(#simion.wb.instances==5, "
+        "'overlay workbench must contain five PA instances')\n"
+        " assert(simion.wb.instances[5].filename:match('accelerator_overlay%.pa0$'),\n"
+        "   'instance 5 must be the boundary-coupled accelerator overlay')"
+    )
+    if formal.count(assertion) != 1:
+        raise ValueError("formal workbench instance assertion is not unique")
+    return formal.replace(assertion, replacement)
+
+
 def build_extension(
     upstream: dict[str, Any],
     frontend: dict[str, Any],
@@ -118,6 +136,7 @@ def build_extension(
     birth_times_us: list[float] | None = None,
     clock_basis: str = "legacy_relative_time",
     terminate_after_pulse: bool = False,
+    overlay: dict[str, Any] | None = None,
 ) -> str:
     if upstream.get("role") != "multipole_resolved_design_do_not_edit":
         raise ValueError("single-flight Program requires a multipole resolved design")
@@ -146,6 +165,15 @@ def build_extension(
     entrance_reference_v = float(entrance_reference["potential_V"])
     entrance_plate_v = float(upstream["axial_dc"]["entrance_plate_potential_V"])
     origin = frontend["instance_origin_mm"]
+    overlay_origin = None
+    overlay_active = None
+    if overlay is not None:
+        if overlay.get("role") != "rf_oatof_simion_accelerator_overlay_contract":
+            raise ValueError("single-flight Program requires an accelerator overlay contract")
+        if overlay["boundary_condition"]["mode"] != "coarse_electrode_basis_dirichlet_v1":
+            raise ValueError("single-flight Program received an unknown overlay boundary mode")
+        overlay_origin = overlay["instance_origin_mm"]
+        overlay_active = overlay["active_bounds_mm"]
     handoff_x = frontend["source_exit_center_mm"]["x"]
     if clock_basis not in {"legacy_relative_time", "absolute_birth_time"}:
         raise ValueError(f"unknown single-flight clock basis: {clock_basis}")
@@ -163,11 +191,22 @@ def build_extension(
         f"local single_flight_frontend_origin_x={_lua_number(origin['x'])}",
         f"local single_flight_frontend_origin_y={_lua_number(origin['y'])}",
         f"local single_flight_frontend_origin_z={_lua_number(origin['z'])}",
+        f"local single_flight_overlay_enabled={1 if overlay is not None else 0}",
+        f"local single_flight_overlay_origin_x={_lua_number(overlay_origin['x'] if overlay_origin else 0)}",
+        f"local single_flight_overlay_origin_y={_lua_number(overlay_origin['y'] if overlay_origin else 0)}",
+        f"local single_flight_overlay_origin_z={_lua_number(overlay_origin['z'] if overlay_origin else 0)}",
+        f"local single_flight_overlay_active_x_min={_lua_number(overlay_active['x_min'] if overlay_active else 0)}",
+        f"local single_flight_overlay_active_x_max={_lua_number(overlay_active['x_max'] if overlay_active else 0)}",
+        f"local single_flight_overlay_active_y_min={_lua_number(overlay_active['y_min'] if overlay_active else 0)}",
+        f"local single_flight_overlay_active_y_max={_lua_number(overlay_active['y_max'] if overlay_active else 0)}",
+        f"local single_flight_overlay_active_z_min={_lua_number(overlay_active['z_min'] if overlay_active else 0)}",
+        f"local single_flight_overlay_active_z_max={_lua_number(overlay_active['z_max'] if overlay_active else 0)}",
         f"local single_flight_handoff_x={_lua_number(handoff_x)}",
         "local single_flight_base_initialize_run=segment.initialize_run",
         "local single_flight_base_initialize=segment.initialize",
         "local single_flight_base_tstep_adjust=segment.tstep_adjust",
         "local single_flight_base_efield_adjust=segment.efield_adjust",
+        "local single_flight_base_instance_adjust=segment.instance_adjust",
         "local single_flight_base_other_actions=segment.other_actions",
         "local single_flight_previous={}",
         "local single_flight_handoff_reported={}",
@@ -237,13 +276,29 @@ def build_extension(
             f"  initial[18]={_lua_number(entrance_reference_v)}",
             f"  initial[19]={_lua_number(entrance_plate_v)}",
             "  ai.pa:fast_adjust(initial)",
+            "  if single_flight_overlay_enabled~=0 then",
+            "    local oi=simion.wb.instances[5]",
+            "    assert(oi and oi.filename:match('accelerator_overlay%.pa0$'),'accelerator overlay instance is missing')",
+            "    oi.x,oi.y,oi.z=single_flight_overlay_origin_x,single_flight_overlay_origin_y,single_flight_overlay_origin_z",
+            "    oi.az,oi.el,oi.rt,oi.scale=0,0,0,1",
+            "    oi.pa:fast_adjust(initial)",
+            "  end",
             "  single_flight_previous={}; single_flight_handoff_reported={}; single_flight_prepulse_reported={}",
             "  if trajectory_log_enable~=0 then",
             "    print(string.format('TRACE: single_flight_contract frontend_origin=(%.12g,%.12g,%.12g) handoff_x=%.12g rf_peak_v=%.12g frequency_hz=%.12g',ai.x,ai.y,ai.z,single_flight_handoff_x,single_flight_rf_peak_v,single_flight_frequency_hz))",
             "  end",
             "end",
             "function segment.fast_adjust()",
-            "  if ion_instance==3 then single_flight_set_frontend_voltages() end",
+            "  if ion_instance==3 or (single_flight_overlay_enabled~=0 and ion_instance==5) then single_flight_set_frontend_voltages() end",
+            "end",
+            "function segment.instance_adjust()",
+            "  if single_flight_base_instance_adjust then single_flight_base_instance_adjust() end",
+            "  if single_flight_overlay_enabled==0 or ion_instance~=5 then return end",
+            "  local di=simion.wb.instances[4]",
+            "  if sf_ideal_accel_enable~=0 or di:inside_wc(ion_px_mm,ion_py_mm,ion_pz_mm) or",
+            "      ion_px_mm<=single_flight_overlay_active_x_min or ion_px_mm>=single_flight_overlay_active_x_max or",
+            "      ion_py_mm<=single_flight_overlay_active_y_min or ion_py_mm>=single_flight_overlay_active_y_max or",
+            "      ion_pz_mm<=single_flight_overlay_active_z_min or ion_pz_mm>=single_flight_overlay_active_z_max then ion_instance=0 end",
             "end",
             "function segment.initialize()",
             "  single_flight_base_initialize()",
@@ -255,7 +310,7 @@ def build_extension(
             "end",
             "function segment.tstep_adjust()",
             "  single_flight_base_tstep_adjust()",
-            "  if ion_instance==3 then",
+            "  if ion_instance==3 or (single_flight_overlay_enabled~=0 and ion_instance==5) then",
             "    local rf_step=1e6/single_flight_frequency_hz/single_flight_rf_steps",
             "    if ion_time_step>rf_step then ion_time_step=rf_step end",
             "  end",
@@ -314,6 +369,7 @@ def main() -> int:
     parser.add_argument("--pulse-extension", required=True, type=Path)
     parser.add_argument("--upstream", required=True, type=Path)
     parser.add_argument("--frontend-contract", required=True, type=Path)
+    parser.add_argument("--accelerator-overlay-contract", type=Path)
     parser.add_argument("--oatof", required=True, type=Path)
     parser.add_argument("--initial-global-state", type=Path)
     parser.add_argument("--terminate-after-pulse", action="store_true")
@@ -334,6 +390,8 @@ def main() -> int:
     formal = disable_redundant_ground_fast_adjust(bind_oatof_adjustables(
         args.formal.read_text(encoding="utf-8-sig"), oatof
     ))
+    if args.accelerator_overlay_contract is not None:
+        formal = allow_accelerator_overlay_instance(formal)
     pulse = args.pulse_extension.read_text(encoding="utf-8-sig")
     if formal.count("simion.workbench_program()") != 1 or "segment.fast_adjust" not in pulse:
         raise ValueError("frozen oaTOF Program inputs differ from the expected contract")
@@ -349,6 +407,11 @@ def main() -> int:
             ),
             clock_basis=args.clock_basis,
             terminate_after_pulse=args.terminate_after_pulse,
+            overlay=(
+                _load(args.accelerator_overlay_contract)
+                if args.accelerator_overlay_contract is not None
+                else None
+            ),
         )
     output = formal.rstrip() + "\n\n" + pulse.strip() + "\n" + extension
     if output.count("simion.workbench_program()") != 1:
@@ -363,6 +426,11 @@ def main() -> int:
         "pulse_extension_sha256": file_sha256(args.pulse_extension),
         "upstream_sha256": file_sha256(args.upstream),
         "frontend_contract_sha256": file_sha256(args.frontend_contract),
+        "accelerator_overlay_contract_sha256": (
+            file_sha256(args.accelerator_overlay_contract)
+            if args.accelerator_overlay_contract is not None
+            else None
+        ),
         "oatof_sha256": file_sha256(args.oatof),
         "initial_global_state_sha256": (
             file_sha256(args.initial_global_state)

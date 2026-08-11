@@ -139,9 +139,35 @@ try {
     if ($PrepareOnly) { $arguments.PrepareOnly = $true }
     if ($SolverAuthorized) { $arguments.SolverAuthorized = $true }
   }
-  & $commonExecute @arguments
-  if ($LASTEXITCODE -ne 0) {
-    throw 'Family source-closure execution boundary failed.'
+  try {
+    & $commonExecute @arguments
+    if ($LASTEXITCODE -ne 0) {
+      throw 'Family source-closure execution boundary failed.'
+    }
+  } catch {
+    $executionError = $_
+    $terminalManifest = Join-Path $outputRoot 'run_manifest.json'
+    $budgetPath = Join-Path $outputRoot 'resolved_engineering_budget.json'
+    if ($SolverAuthorized -and
+        -not (Test-Path -LiteralPath $terminalManifest -PathType Leaf) -and
+        (Test-Path -LiteralPath $resolvedPath -PathType Leaf) -and
+        (Test-Path -LiteralPath $planPath -PathType Leaf) -and
+        (Test-Path -LiteralPath $budgetPath -PathType Leaf)) {
+      & $PythonExe -m (
+        'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.' +
+        'workflows.family_source_closure.publish_run'
+      ) --repo-root $repoRoot `
+        --integration-run-dir $outputRoot `
+        --resolved-connection $resolvedPath `
+        --composition-plan $planPath `
+        --resolved-engineering-budget $budgetPath `
+        --terminal-status failed `
+        --failure-reason $executionError.Exception.Message
+      if ($LASTEXITCODE -ne 0) {
+        Write-Warning 'Failed to terminalize the parent integration run after child failure.'
+      }
+    }
+    throw $executionError
   }
 } finally {
   if ($cleanupOutput -and (Test-Path -LiteralPath $outputRoot)) {
