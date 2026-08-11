@@ -28,6 +28,10 @@ local stage1_ring_count = assert(tonumber(arg[16]), 'invalid stage-1 ring count'
 local stage2_ring_count = assert(tonumber(arg[17]), 'invalid stage-2 ring count')
 local midgrid_voltage = assert(tonumber(arg[18]), 'invalid midgrid voltage')
 local backplate_voltage = assert(tonumber(arg[19]), 'invalid backplate voltage')
+local build_mode = arg[20] or 'refine-all'
+assert(build_mode == 'refine-all' or build_mode == 'initialize-only' or
+  build_mode == 'alignment-only',
+  'build mode must be refine-all, initialize-only or alignment-only')
 local bore_end = backplate_front+backplate_thickness+far_clearance
 local axial_span = bore_end+far_cap_thickness
 local radial_span = inner_radius+wall
@@ -53,10 +57,57 @@ assert(stage1_ring_count>=1 and stage1_ring_count==math.floor(stage1_ring_count)
 assert(stage2_ring_count>=1 and stage2_ring_count==math.floor(stage2_ring_count),
   'stage2_ring_count must be a positive integer')
 
+-- Fractional surfaces allow the build to continue when a mechanical edge is
+-- between nodes, but the discretization must remain visible in the run log.
+local aligned_edge_count,off_grid_edge_count=0,0
+local function report_edge(axis,label,value,cell)
+  local grid_coordinate=value/cell
+  local nearest_grid_coordinate=math.floor(grid_coordinate+0.5)
+  local offset=value-nearest_grid_coordinate*cell
+  if math.abs(grid_coordinate-nearest_grid_coordinate)<=1e-8 then
+    aligned_edge_count=aligned_edge_count+1
+  else
+    off_grid_edge_count=off_grid_edge_count+1
+    print(string.format(
+      'WARNING: reflectron_geometry_edge_not_on_grid_node axis=%s label=%s value_mm=%.12g cell_mm=%.12g grid_coordinate=%.12g nearest_node_mm=%.12g offset_mm=%+.12g fractional_surface=enabled action=continue',
+      axis,label,value,cell,grid_coordinate,nearest_grid_coordinate*cell,offset))
+  end
+end
+report_edge('radial','axis',0,mmgu_radial)
+report_edge('radial','bore_radius',bore_radius,mmgu_radial)
+report_edge('radial','ring_outer_radius',ring_outer_radius,mmgu_radial)
+report_edge('radial','shield_inner_radius',inner_radius,mmgu_radial)
+report_edge('radial','shield_outer_radius',inner_radius+wall,mmgu_radial)
+report_edge('axial','entrance_grid',0,mmgu_axial)
+local ring_thickness=backplate_thickness
+for ring_index=1,stage1_ring_count do
+  local center=ring_index*stage1_length/(stage1_ring_count+1)
+  report_edge('axial','stage1_ring_'..ring_index..'_front',center-ring_thickness/2,mmgu_axial)
+  report_edge('axial','stage1_ring_'..ring_index..'_back',center+ring_thickness/2,mmgu_axial)
+end
+report_edge('axial','midgrid',stage1_length,mmgu_axial)
+for ring_index=1,stage2_ring_count do
+  local center=stage1_length+ring_index*stage2_length/(stage2_ring_count+1)
+  report_edge('axial','stage2_ring_'..ring_index..'_front',center-ring_thickness/2,mmgu_axial)
+  report_edge('axial','stage2_ring_'..ring_index..'_back',center+ring_thickness/2,mmgu_axial)
+end
+report_edge('axial','backplate_front',backplate_front,mmgu_axial)
+report_edge('axial','backplate_back',backplate_front+backplate_thickness,mmgu_axial)
+report_edge('axial','shield_far_cap_front',bore_end,mmgu_axial)
+report_edge('axial','shield_far_cap_back',axial_span,mmgu_axial)
+print(string.format(
+  'BUILD: grid_alignment aligned_edges=%d off_grid_edges=%d policy=warn_and_continue fractional_surface=enabled',
+  aligned_edge_count,off_grid_edge_count))
+if build_mode == 'alignment-only' then
+  print('BUILD: ALIGNMENT_CHECK_PASS')
+  return
+end
+
 local nx = math.ceil(axial_span/mmgu_axial) + 1
 local ny = math.ceil(radial_span/mmgu_radial) + 1
--- Nineteen basis arrays plus PA0, PA# and fractional-surface metadata.
-local estimated_gib = nx*ny*8*21.25/1024^3
+-- Dynamic basis-array estimate including the independent grounded shield.
+local estimated_array_factor=stage1_ring_count+stage2_ring_count+6.25
+local estimated_gib = nx*ny*8*estimated_array_factor/1024^3
 print(string.format(
   'BUILD: dimensions=%dx%dx1 cell_mm=(%.12g,%.12g) span_mm=(%.12g,%.12g) bore_end_mm=%.12g estimated_total_GiB=%.6f limit_GiB=%.6f',
   nx,ny,mmgu_axial,mmgu_radial,axial_span,radial_span,
@@ -86,6 +137,16 @@ simion.command(string.format('gem2pa %q %q',staged_source,output))
 _G.var=nil
 os.remove(staged_source)
 os.remove(staged_source:gsub('%.gem$','.processed.gem'))
+if build_mode == 'initialize-only' then
+  simion.pas:close()
+  local pa=simion.pas:open(output)
+  -- SIMION's bundled resistive/lens2_pa0_build.lua uses a deliberately
+  -- unreachable objective to create PA0 and every basis PA without refining.
+  pa:refine{convergence=1E+6}
+  simion.pas:close()
+  print('BUILD: INITIALIZED')
+  return
+end
 simion.command(string.format(
   'refine --resume=0 --convergence=5e-7 %q',output))
 local voltage_assignments={'1=0'}

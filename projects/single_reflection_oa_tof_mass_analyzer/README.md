@@ -36,25 +36,30 @@
 冻结路径只属于run instance；候选不得反写baseline或Formal资产。当前项目生命周期为
 `formal`；当前Formal release、资格边界与开放任务详见PROJECT。
 
+参数不在文档复制：可调性、类型与约束只查[`config/design_variables.json`](config/design_variables.json)，
+默认值只查[`config/baseline.json`](config/baseline.json)，数值设置只查
+[`config/formal_solver_numerics.json`](config/formal_solver_numerics.json)；执行入口见下表。
+
 ## 活动入口
 
-- COMSOL生产：[`comsol/run_oatof_model.m`](comsol/run_oatof_model.m)
-- SIMION交付构建：[`simion/workbench/build_formal_delivery.ps1`](simion/workbench/build_formal_delivery.ps1)
-- Candidate唯一入口：[`workflows/design_candidate/run_candidate.py`](workflows/design_candidate/run_candidate.py)
-- Candidate campaign唯一入口：
-  [`workflows/experiment_campaign/run_campaign.py`](workflows/experiment_campaign/run_campaign.py)；
-  从仓库根以
-  `python -m projects.single_reflection_oa_tof_mass_analyzer.workflows.experiment_campaign.run_campaign`
-  调用；`--status`和`--receipt`只读，执行必须显式选择`--experiment-id`或`--all`
-- Formal验证、发布与复核唯一入口（`-Phase Validate|Publish|Verify`）：
-  [`workflows/formal_reference/run_formal_validation.ps1`](workflows/formal_reference/run_formal_validation.ps1)
-- 五质量候选：
-  [`workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1`](workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1)
-- 当前Formal跨求解器诊断：
-  [`workflows/cross_solver_diagnostics/run_cross_solver_diagnostics.ps1`](workflows/cross_solver_diagnostics/run_cross_solver_diagnostics.ps1)；
-  从唯一Formal资产身份导出轴场、同坐标三维场和代表粒子轨迹，只发布diagnostic结果
-- CAD入口：[`cad/ms_export_oatof_to_solidworks.m`](cad/ms_export_oatof_to_solidworks.m)
-- 项目门禁：`verify_project.ps1 -Level Static|Candidate|Formal`
+| 用途 | 唯一入口 | 合同或资格边界 |
+|---|---|---|
+| COMSOL生产 | [`comsol/run_oatof_model.m`](comsol/run_oatof_model.m) | `config/baseline.json`与显式Candidate合同 |
+| SIMION交付构建 | [`simion/workbench/build_formal_delivery.ps1`](simion/workbench/build_formal_delivery.ps1) | Formal只读；Candidate输出不得反写Formal |
+| 单个结构Candidate | [`workflows/design_candidate/run_candidate.py`](workflows/design_candidate/run_candidate.py) | 获批request、显式seed、完整COMSOL/SIMION/CAD链 |
+| 预注册Candidate campaign | [`workflows/experiment_campaign/run_campaign.py`](workflows/experiment_campaign/run_campaign.py) | `config/experiment_campaign.json`；执行须显式选择实验或`--all` |
+| Formal验证、发布、复核 | [`workflows/formal_reference/run_formal_validation.ps1`](workflows/formal_reference/run_formal_validation.ps1) | `-Phase Validate|Publish|Verify` |
+| 五质量候选 | [`workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1`](workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1) | 五个固定质量点，不自动推广Formal |
+| Formal跨求解器诊断 | [`workflows/cross_solver_diagnostics/run_cross_solver_diagnostics.ps1`](workflows/cross_solver_diagnostics/run_cross_solver_diagnostics.ps1) | 只读冻结场与轨迹，只发布diagnostic结果 |
+| 加速器横向场均匀性 | [`workflows/accelerator_transverse_field_uniformity/run_accelerator_transverse_field_uniformity.ps1`](workflows/accelerator_transverse_field_uniformity/run_accelerator_transverse_field_uniformity.ps1) | 只读Formal COMSOL保存场，不重求粒子 |
+| oaTOF径向紧凑化 | [`workflows/radial_compaction/run_campaign.py`](workflows/radial_compaction/run_campaign.py) | [`config/radial_compaction_campaign.json`](config/radial_compaction_campaign.json)；SIMION-only Candidate，不自动推广Formal |
+| 反射器电压场补偿 | [`workflows/reflectron_voltage_compensation/run_compensation.py`](workflows/reflectron_voltage_compensation/run_compensation.py) | 固定端点、单调环电压；复用PA，以5×200并行比较原场/补偿场/理想场 |
+| CAD导出 | [`cad/ms_export_oatof_to_solidworks.m`](cad/ms_export_oatof_to_solidworks.m) | 读取指定模型与合同 |
+| 项目门禁 | `verify_project.ps1 -Level Static|Candidate|Formal` | 按证据等级执行 |
+
+所有workflow从本表导航；目录内不再复制合同和资格说明。命令行细节由入口的`--help`/参数块给出，
+SIMION运行边界见[`docs/SIMION.md`](docs/SIMION.md)，Formal与开放任务见[`docs/PROJECT.md`](docs/PROJECT.md)。
+Candidate campaign的仓库模块入口为`workflows.experiment_campaign.run_campaign`。
 
 RF多极杆离子光学→单次反射oa-TOF的活动实现由
 [`../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md`](../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md)

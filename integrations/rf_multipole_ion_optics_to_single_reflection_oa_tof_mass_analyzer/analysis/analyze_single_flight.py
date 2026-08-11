@@ -42,6 +42,7 @@ def analyze(
     pulse_time_us: float | None = None,
     clock_basis: str = "legacy_relative_time",
     batch_particle_counts: Sequence[int] | None = None,
+    initial_global_state_path: Path | None = None,
 ) -> tuple[list[dict[str, object]], dict[str, object]]:
     if clock_basis not in {"legacy_relative_time", "absolute_birth_time"}:
         raise ValueError("unknown single-flight clock basis")
@@ -116,6 +117,38 @@ def analyze(
         match = PULSE_PATTERN.search(line)
         if match:
             pulse_times.append(float(match["t"]))
+    if initial_global_state_path is not None:
+        with initial_global_state_path.open(encoding="utf-8-sig", newline="") as handle:
+            initial_rows = list(csv.DictReader(handle))
+        if len(initial_rows) != launched:
+            raise ValueError("initial global state row count differs from launched particles")
+        traced_release_ids = {
+            int(row["particle_id"])
+            for row in rows
+            if row["event"] == "source_release"
+        }
+        for initial in initial_rows:
+            particle_id = int(initial["particle_id"])
+            if particle_id in traced_release_ids:
+                continue
+            vx = float(initial["velocity_x_m_s"]) / 1000.0
+            vy = float(initial["velocity_y_m_s"]) / 1000.0
+            vz = float(initial["velocity_z_m_s"]) / 1000.0
+            rows.append({
+                "particle_id": particle_id,
+                "event": "source_release",
+                "instrument_time_us": float(initial["instrument_time_us"]),
+                "x_mm": float(initial["position_x_mm"]),
+                "y_mm": float(initial["position_y_mm"]),
+                "z_mm": float(initial["position_z_mm"]),
+                "vx_mm_per_us": vx,
+                "vy_mm_per_us": vy,
+                "vz_mm_per_us": vz,
+                "kinetic_energy_eV": kinetic_energy_ev(
+                    mass_amu, 1000.0 * vx, 1000.0 * vy, 1000.0 * vz
+                ),
+                "pulse_eligibility": "",
+            })
     detector_offset_applied = False
     if clock_basis == "absolute_birth_time":
         birth_times = {
@@ -258,6 +291,7 @@ def main() -> int:
     parser.add_argument("--mass-amu", required=True, type=float)
     parser.add_argument("--geometry", type=Path)
     parser.add_argument("--pulse-time-us", type=float)
+    parser.add_argument("--initial-global-state", type=Path)
     parser.add_argument(
         "--clock-basis",
         default="legacy_relative_time",
@@ -274,6 +308,7 @@ def main() -> int:
         args.pulse_time_us,
         args.clock_basis,
         args.batch_particle_count,
+        args.initial_global_state,
     )
     args.checkpoints.parent.mkdir(parents=True, exist_ok=True)
     with args.checkpoints.open("w", encoding="utf-8", newline="") as handle:

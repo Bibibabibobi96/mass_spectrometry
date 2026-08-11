@@ -5,6 +5,9 @@
   "optimization_strategy": "expandable_reference_envelope_compaction",
   "envelope_contract": "config/optimization_envelope.json",
   "range_policy": "Variables move bidirectionally inside static compilation-safety bounds. TOF candidates must also remain inside the separately versioned optimization envelope; accelerator variables are exempt from the TOF compaction envelope. Bounds are not a validated feasible or optimal physics domain.",
+  "manufacturing_constraints": {
+    "reflectron_minimum_axial_ring_gap_mm": 1.0
+  },
   "variables": [
     {
       "variable_id": "accelerator_ring_thickness",
@@ -301,6 +304,7 @@
     "reflectron_radial_order",
     "detector_inside_shield",
     "reflectron_ring_nonoverlap",
+    "reflectron_minimum_axial_ring_gap",
     "reflectron_length_identity",
     "accelerator_length_identity",
     "shield_axial_bounds_derived"

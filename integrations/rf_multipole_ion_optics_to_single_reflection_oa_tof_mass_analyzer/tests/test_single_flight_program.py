@@ -74,6 +74,10 @@ class SingleFlightProgramTests(unittest.TestCase):
             clock_basis="absolute_birth_time",
             terminate_after_pulse=True,
         )
+        self.assertIn("OATOF_SINGLE_FLIGHT_PARTICLE_ID_OFFSET", extension)
+        self.assertIn(
+            "single_flight_birth_time_us[global_particle_id]", extension
+        )
         self.assertIn("adj_elect[9]=0", extension)
         self.assertIn("adj_elect[10]=pulse_on and V_repeller", extension)
         self.assertIn("adj_elect[17]=0", extension)

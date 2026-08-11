@@ -76,6 +76,13 @@ local INSTANCE_ACCELERATOR=3
 local INSTANCE_DETECTOR=4
 local accelerator_pa_override=os.getenv('OATOF_ACCELERATOR_PA_OVERRIDE')
 local accelerator_pa_override_loaded=false
+-- Process-local workflow switch avoids rebuilding an existing IOB merely to
+-- extend its saved adjustable-variable list.
+local reflectron_voltage_compensation_enable=
+ tonumber(os.getenv('OATOF_REFLECTRON_VOLTAGE_COMPENSATION') or '0')
+assert(reflectron_voltage_compensation_enable==0 or
+  reflectron_voltage_compensation_enable==1,
+  'OATOF_REFLECTRON_VOLTAGE_COMPENSATION must be 0 or 1')
 local function write_load_contract_report()
  local path=os.getenv('OATOF_SIMION_PROGRAM_LOAD_REPORT')
  if not path or path=='' then return end
@@ -204,15 +211,40 @@ function segment.initialize_run()
   a:fast_adjust(accelerator_voltages)
  end
  local reflectron_voltages={[1]=0}
+ local voltage_profile=nil
+ if reflectron_voltage_compensation_enable~=0 then
+  local voltage_profile_stream=assert(io.open('reflectron_voltage_profile.lua','r'),
+    'reflectron voltage compensation enabled but profile file is missing')
+  voltage_profile_stream:close()
+  voltage_profile=assert(dofile('reflectron_voltage_profile.lua'))
+  assert(voltage_profile.schema_version==1,'unsupported reflectron voltage-profile schema')
+  assert(voltage_profile.stage1_count==reflectron_stage1_ring_count and
+    voltage_profile.stage2_count==reflectron_stage2_ring_count,
+    'reflectron voltage-profile ring counts do not match the geometry contract')
+ end
+ local previous_voltage=0
  for ring_index=1,reflectron_stage1_ring_count do
-  reflectron_voltages[1+ring_index]=
-   V_mid*ring_index/(reflectron_stage1_ring_count+1)
+  local ring_voltage=voltage_profile and
+    voltage_profile.stage1_ring_voltages_V[ring_index] or
+    V_mid*ring_index/(reflectron_stage1_ring_count+1)
+  assert(type(ring_voltage)=='number' and ring_voltage+1e-9>=previous_voltage and
+    ring_voltage>=-1e-9 and ring_voltage<=V_mid+1e-9,
+    'stage-1 reflectron voltage profile must be monotone inside fixed endpoints')
+  reflectron_voltages[1+ring_index]=ring_voltage
+  previous_voltage=ring_voltage
  end
  local midgrid_electrode=2+reflectron_stage1_ring_count
  reflectron_voltages[midgrid_electrode]=V_mid
+ previous_voltage=V_mid
  for ring_index=1,reflectron_stage2_ring_count do
-  reflectron_voltages[midgrid_electrode+ring_index]=V_mid+
-   (V_backplate-V_mid)*ring_index/(reflectron_stage2_ring_count+1)
+  local ring_voltage=voltage_profile and
+    voltage_profile.stage2_ring_voltages_V[ring_index] or
+    V_mid+(V_backplate-V_mid)*ring_index/(reflectron_stage2_ring_count+1)
+  assert(type(ring_voltage)=='number' and ring_voltage+1e-9>=previous_voltage and
+    ring_voltage>=V_mid-1e-9 and ring_voltage<=V_backplate+1e-9,
+    'stage-2 reflectron voltage profile must be monotone inside fixed endpoints')
+  reflectron_voltages[midgrid_electrode+ring_index]=ring_voltage
+  previous_voltage=ring_voltage
  end
  reflectron_voltages[midgrid_electrode+reflectron_stage2_ring_count+1]=V_backplate
  reflectron_voltages[midgrid_electrode+reflectron_stage2_ring_count+2]=0
@@ -221,7 +253,7 @@ function segment.initialize_run()
  d:fast_adjust{[1]=0}
  if trajectory_log_enable~=0 then
   print(string.format('TRACE: pa_mesh reflectron=%dx%dx%d@(%.12g,%.12g,%.12g) accelerator=%dx%dx%d@(%.12g,%.12g,%.12g) flight_tube=%dx%dx%d@(%.12g,%.12g,%.12g) detector=%dx%dx%d@(%.12g,%.12g,%.12g)',r.nx,r.ny,r.nz,r.dx_mm,r.dy_mm,r.dz_mm,a.nx,a.ny,a.nz,a.dx_mm,a.dy_mm,a.dz_mm,t.nx,t.ny,t.nz,t.dx_mm,t.dy_mm,t.dz_mm,d.nx,d.ny,d.nz,d.dx_mm,d.dy_mm,d.dz_mm))
-  print(string.format('TRACE: field_mode accelerator_fast_adjust=%d ideal_accel=%d ideal_stage1=%d ideal_stage2=%d ideal_accel_ez=%d ideal_drift_ez=%d ideal_stage1_ez=%d ideal_stage2_ez=%d trajectory_quality=%d',accelerator_fast_adjust_enable,ideal_accel_enable,ideal_refl_stage1_enable,ideal_refl_stage2_enable,ideal_accel_ez_enable,ideal_drift_ez_enable,ideal_refl_stage1_ez_enable,ideal_refl_stage2_ez_enable,sim_trajectory_quality))
+  print(string.format('TRACE: field_mode accelerator_fast_adjust=%d reflectron_voltage_compensation=%d ideal_accel=%d ideal_stage1=%d ideal_stage2=%d ideal_accel_ez=%d ideal_drift_ez=%d ideal_stage1_ez=%d ideal_stage2_ez=%d trajectory_quality=%d',accelerator_fast_adjust_enable,reflectron_voltage_compensation_enable,ideal_accel_enable,ideal_refl_stage1_enable,ideal_refl_stage2_enable,ideal_accel_ez_enable,ideal_drift_ez_enable,ideal_refl_stage1_ez_enable,ideal_refl_stage2_ez_enable,sim_trajectory_quality))
  end
 end
 local function grid_planes()

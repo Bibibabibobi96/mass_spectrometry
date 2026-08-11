@@ -190,7 +190,7 @@ class CandidateDesignTests(unittest.TestCase):
     def test_flight_compaction_requires_internal_reoptimization(self):
         request = self.base_request()
         request["design_variables"] = ["flight_length"]
-        with self.assertRaisesRegex(ValueError, "stage-2 rings overlap"):
+        with self.assertRaisesRegex(ValueError, "stage-2 ring gap"):
             self.compile(request, [{"variable": "flight_length", "value": 300.0, "unit": "mm"}])
 
         request["design_variables"] = ["flight_length", "reflectron_ring_thickness"]
@@ -257,6 +257,44 @@ class CandidateDesignTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "radial order"):
             self.compile(request, [{"variable": "reflectron_bore_radius", "value": 320.0, "unit": "mm"}])
 
+    def test_shared_shield_radius_contains_offset_detector(self):
+        request = self.base_request()
+        request["constraints"] = []
+        request["design_variables"] = [
+            "reflectron_bore_radius",
+            "reflectron_ring_outer_radius",
+            "reflectron_shield_inner_radius",
+        ]
+        with self.assertRaisesRegex(
+            ValueError, "shared flight-tube/reflectron shield inner radius"
+        ):
+            self.compile(
+                request,
+                [
+                    {"variable": "reflectron_bore_radius", "value": 25.0, "unit": "mm"},
+                    {"variable": "reflectron_ring_outer_radius", "value": 60.0, "unit": "mm"},
+                    {"variable": "reflectron_shield_inner_radius", "value": 88.0, "unit": "mm"},
+                ],
+            )
+
+    def test_shared_shield_radius_accepts_exact_transverse_envelope(self):
+        request = self.base_request()
+        request["constraints"] = []
+        request["design_variables"] = [
+            "reflectron_bore_radius",
+            "reflectron_ring_outer_radius",
+            "reflectron_shield_inner_radius",
+        ]
+        candidate, _, _ = self.compile(
+            request,
+            [
+                {"variable": "reflectron_bore_radius", "value": 25.0, "unit": "mm"},
+                {"variable": "reflectron_ring_outer_radius", "value": 60.0, "unit": "mm"},
+                {"variable": "reflectron_shield_inner_radius", "value": 88.8, "unit": "mm"},
+            ],
+        )
+        self.assertEqual(candidate["geometry_mm"]["flight_tube_r"], 88.8)
+
     def test_larger_tof_requests_envelope_review_instead_of_being_impossible(self):
         request = self.base_request()
         request["constraints"] = []
@@ -284,7 +322,12 @@ class CandidateDesignTests(unittest.TestCase):
             )
             resolved = (output / "simion" / "oatof_resolved.lua").read_text(encoding="utf-8")
             fly2 = (output / "simion" / "oatof_ideal_grounded.fly2").read_text(encoding="utf-8")
-            self.assertIn(sha256(PROJECT_ROOT / "config" / "formal_solver_numerics.json"), resolved)
+            frozen = json.loads(
+                (PROJECT_ROOT / "config" / "resolved_geometry.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertIn(frozen["inputs"]["solver_numerics_sha256"], resolved)
             self.assertIn("seed(20260713)", fly2)
             self.assertFalse((output / "simion" / "oatof_ideal_grounded.iob").exists())
             self.assertEqual(plan["status"], "STATIC_INPUTS_READY")

@@ -278,6 +278,7 @@ try {
   Copy-RfOatofFormalPaSet -FormalDir $formalDir -Destination $runtimeDir
   $reflectronBuilderFrozen = $null
   $reflectronGemFrozen = $null
+  $reflectronRefinerFrozen = $null
   $reflectronPa0 = Join-Path $runtimeDir 'reflectron.pa0'
   $reflectronBuildStdout = $null
   $reflectronBuildStderr = $null
@@ -291,14 +292,16 @@ try {
   $flightTubeGemSource = Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer\simion\workbench\oatof_flight_tube_ground.gem'
   $reflectronBuilderSource = Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer\simion\reflectron\build_reflectron_variant.lua'
   $reflectronGemSource = Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer\simion\reflectron\oatof_reflectron_ideal_10_5.gem'
+  $reflectronRefinerSource = Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer\simion\reflectron\refine_single_pa.lua'
   function Get-ContentAddressedPaPath {
-    param([Parameter(Mandatory)][string]$Kind,[Parameter(Mandatory)][string]$Builder,[Parameter(Mandatory)][string]$Gem)
-    $identity = "$geometryHash|$((Get-FileHash -LiteralPath $Builder -Algorithm SHA256).Hash)|$((Get-FileHash -LiteralPath $Gem -Algorithm SHA256).Hash)"
+    param([Parameter(Mandatory)][string]$Kind,[Parameter(Mandatory)][string]$Builder,[Parameter(Mandatory)][string]$Gem,[string]$Additional='')
+    $additionalHash = if ([string]::IsNullOrWhiteSpace($Additional)) { '' } else { (Get-FileHash -LiteralPath $Additional -Algorithm SHA256).Hash }
+    $identity = "$geometryHash|$((Get-FileHash -LiteralPath $Builder -Algorithm SHA256).Hash)|$((Get-FileHash -LiteralPath $Gem -Algorithm SHA256).Hash)|$additionalHash"
     $key = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($identity))).ToLowerInvariant()
     return Join-Path (Join-Path $downstreamCacheRoot $key) "$Kind.pa0"
   }
   $flightTubeCachePa0 = Get-ContentAddressedPaPath -Kind 'flight_tube_ground' -Builder $flightTubeBuilderSource -Gem $flightTubeGemSource
-  $reflectronCachePa0 = Get-ContentAddressedPaPath -Kind 'reflectron' -Builder $reflectronBuilderSource -Gem $reflectronGemSource
+  $reflectronCachePa0 = Get-ContentAddressedPaPath -Kind 'reflectron' -Builder $reflectronBuilderSource -Gem $reflectronGemSource -Additional $reflectronRefinerSource
   $flightTubeCacheDir = Split-Path -Parent $flightTubeCachePa0
   $reflectronCacheDir = Split-Path -Parent $reflectronCachePa0
   function Use-ReadOnlyPaCacheFamily {
@@ -369,6 +372,10 @@ try {
     Copy-RfStableFile -SourceRunRoot $repoRoot `
       -SourcePath $reflectronGemSource `
       -Destination $reflectronGemFrozen -Role 'candidate reflectron SIMION GEM' | Out-Null
+    $reflectronRefinerFrozen = Join-Path $package.input_dir 'refine_single_pa.lua'
+    Copy-RfStableFile -SourceRunRoot $repoRoot `
+      -SourcePath $reflectronRefinerSource `
+      -Destination $reflectronRefinerFrozen -Role 'candidate reflectron segmented refiner' | Out-Null
     $reflectronBuildStdout = Join-Path $package.log_dir 'reflectron_build.stdout.log'
     $reflectronBuildStderr = Join-Path $package.log_dir 'reflectron_build.stderr.log'
     $geometry = $oatofGeometryDocument.geometry_mm
@@ -391,14 +398,59 @@ try {
         ([string]$geometry.L_stage2),([string]$geometry.bore_r),
         ([string]$geometry.ring_outer_r),([string]$rings.stage1_count),
         ([string]$rings.stage2_count),([string]$voltage.midgrid),
-        ([string]$voltage.backplate))
+        ([string]$voltage.backplate),'initialize-only')
     if ($reflectronBuild.resource_budget_exceeded) {
       $resourceBudgetExceeded=$true
       throw 'Candidate reflectron PA build exceeded its resource budget.'
     }
-    if ($reflectronBuild.exit_code -ne 0 -or
+    if ($reflectronBuild.exit_code -ne 0) {
+      throw 'Candidate reflectron PA initialization failed.'
+    }
+    $maximumReflectronElectrode = 4 + [int]$rings.stage1_count + [int]$rings.stage2_count
+    foreach ($electrode in 0..$maximumReflectronElectrode) {
+      $singlePa = Join-Path $runtimeDir "reflectron.pa$electrode"
+      $singleRefine = Invoke-ResourceBudgetedProcess `
+        -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
+        -UsagePath (Join-Path $package.log_dir "reflectron_refine_pa${electrode}_resource_usage.json") `
+        -FilePath $SimionExe -WorkingDirectory $runtimeDir `
+        -RedirectStandardOutput (Join-Path $package.log_dir "reflectron_refine_pa${electrode}.stdout.log") `
+        -RedirectStandardError (Join-Path $package.log_dir "reflectron_refine_pa${electrode}.stderr.log") `
+        -ArgumentList @('--nogui','--noprompt','lua',$reflectronRefinerFrozen,$singlePa,'5e-7')
+      if ($singleRefine.resource_budget_exceeded) {
+        $resourceBudgetExceeded=$true
+        throw "Candidate reflectron pa$electrode refine exceeded its resource budget."
+      }
+      if ($singleRefine.exit_code -ne 0) {
+        throw "Candidate reflectron pa$electrode segmented refine failed."
+      }
+    }
+    $assignments = @('1=0')
+    foreach ($ringIndex in 1..([int]$rings.stage1_count)) {
+      $assignments += "$(1+$ringIndex)=$($voltage.midgrid*$ringIndex/([int]$rings.stage1_count+1))"
+    }
+    $midgridElectrode = 2 + [int]$rings.stage1_count
+    $assignments += "$midgridElectrode=$($voltage.midgrid)"
+    foreach ($ringIndex in 1..([int]$rings.stage2_count)) {
+      $electrode = $midgridElectrode + $ringIndex
+      $ringVoltage = $voltage.midgrid + ($voltage.backplate-$voltage.midgrid)*$ringIndex/([int]$rings.stage2_count+1)
+      $assignments += "$electrode=$ringVoltage"
+    }
+    $assignments += "$(3+[int]$rings.stage1_count+[int]$rings.stage2_count)=$($voltage.backplate)"
+    $assignments += "$maximumReflectronElectrode=0"
+    $fastAdjust = Invoke-ResourceBudgetedProcess `
+      -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
+      -UsagePath (Join-Path $package.log_dir 'reflectron_fast_adjust_resource_usage.json') `
+      -FilePath $SimionExe -WorkingDirectory $runtimeDir `
+      -RedirectStandardOutput (Join-Path $package.log_dir 'reflectron_fast_adjust.stdout.log') `
+      -RedirectStandardError (Join-Path $package.log_dir 'reflectron_fast_adjust.stderr.log') `
+      -ArgumentList @('--nogui','--noprompt','fastadj',$reflectronPa0,($assignments -join ','))
+    if ($fastAdjust.resource_budget_exceeded) {
+      $resourceBudgetExceeded=$true
+      throw 'Candidate reflectron fast-adjust exceeded its resource budget.'
+    }
+    if ($fastAdjust.exit_code -ne 0 -or
         -not (Test-Path -LiteralPath $reflectronPa0 -PathType Leaf)) {
-      throw 'Candidate reflectron PA build failed.'
+      throw 'Candidate reflectron fast-adjust failed.'
     }
     New-Item -ItemType Directory -Path $reflectronCacheDir -Force | Out-Null
     Get-ChildItem -LiteralPath $runtimeDir -Filter 'reflectron.pa*' -File | Copy-Item -Destination $reflectronCacheDir -Force
@@ -419,7 +471,7 @@ try {
 
   $runConfiguration = [ordered]@{
     schema_version=2; run_id=$RunId; project=$runtime.upstream_project_id; mode='rf_to_oatof_simion_single_flight'; project_root=$repoRoot
-    inputs=[ordered]@{ configuration=$configuration; runtime_binding=$runtimeBindingFrozen; resolved_connection=$resolvedFrozen; resolved_source_contract=$sourceContractFrozen; upstream_resolved_design=$upstreamFrozen; oatof_resolved_geometry=$oatofGeometry; pulse_schedule=$pulseScheduleFrozen; resolved_integration_engineering_budget=$budget.frozen_budget; resolved_stage_resource_budget=$budget.stage_budget; mother_particle_source=$motherSource; initial_global_state=$globalSource; ion=$ion; frontend_gem=$frontendGem; frontend_contract=$frontendContract; frontend_aperture_topology_support=$apertureTopologySupport; frontend_aperture_topology_verifier=$apertureVerifier; program_metadata=$programMetadata; candidate_flight_tube_builder=$flightTubeBuilderFrozen; candidate_flight_tube_gem=$flightTubeGemFrozen; candidate_reflectron_builder=$reflectronBuilderFrozen; candidate_reflectron_gem=$reflectronGemFrozen }
+    inputs=[ordered]@{ configuration=$configuration; runtime_binding=$runtimeBindingFrozen; resolved_connection=$resolvedFrozen; resolved_source_contract=$sourceContractFrozen; upstream_resolved_design=$upstreamFrozen; oatof_resolved_geometry=$oatofGeometry; pulse_schedule=$pulseScheduleFrozen; resolved_integration_engineering_budget=$budget.frozen_budget; resolved_stage_resource_budget=$budget.stage_budget; mother_particle_source=$motherSource; initial_global_state=$globalSource; ion=$ion; frontend_gem=$frontendGem; frontend_contract=$frontendContract; frontend_aperture_topology_support=$apertureTopologySupport; frontend_aperture_topology_verifier=$apertureVerifier; program_metadata=$programMetadata; candidate_flight_tube_builder=$flightTubeBuilderFrozen; candidate_flight_tube_gem=$flightTubeGemFrozen; candidate_reflectron_builder=$reflectronBuilderFrozen; candidate_reflectron_gem=$reflectronGemFrozen; candidate_reflectron_refiner=$reflectronRefinerFrozen }
     upstream_source_identity=$runtime.source_identity
     parameters=[ordered]@{ connection_profile_id=$ConnectionProfileId; source_branch_id=$SourceBranchId; layout_profile_id=$(if($hasGovernedLayout){$LayoutProfileId}else{$null}); frontend_grid_profile_id=$selectedGridProfileId; frontend_cell_mm_xyz=[ordered]@{x=$frontendCellMmX;y=$frontendCellMmY;z=$frontendCellMmZ}; accelerator_field_profile_id=$selectedFieldProfileId; single_flight_ideal_accel_enable=$idealAcceleratorEnable; max_parallel_batches=$maxParallelBatches; clock_basis=[string]$settings.clock_basis; launched_particle_count=$launched; particle_count=$launched; execution_batch_count=$(if($launched -ge [int]$settings.batching_policy.enabled_at_particle_count){[int]$settings.batching_policy.default_batch_count}else{1}); execution_batches_parallel=$(if($launched -ge [int]$settings.batching_policy.enabled_at_particle_count){[bool]$settings.batching_policy.parallel_after_cache_warmup}else{$false}); aperture_width_mm=$apertureWidthMm; aperture_height_mm=$apertureHeightMm; aperture_boolean_boundary_policy=[string]$apertureDiscretization.boolean_boundary_policy; aperture_grid_warnings=$apertureGridWarnings; frontend_open_aperture_column_count=[int]$apertureTopology.open_column_count; frontend_aperture_guard_electrode_check_passed=[bool]$apertureTopology.guard_electrode_check_passed; frontend_aperture_topology_report_sha256=(Get-FileHash -LiteralPath $apertureTopologyReport -Algorithm SHA256).Hash; rod_end_to_accelerator_shield_mm=1.0; surrounded_transition=$true; accelerator_axis_x_mm=[double]$oatofGeometryDocument.coordinate_convention.accelerator_axis_x; pulse_time_us=$pulseTimeUs; pulse_width_us=$pulseWidthUs; design_compilation=$(if($null -ne $layoutDerivation){$layoutDerivation.design_compilation}else{$null}); source_release_full_width_mm=[double]$oatofGeometryDocument.particle_source.size_z_mm; reflectron_stage2_length_mm=[double]$oatofGeometryDocument.geometry_mm.L_stage2; reflectron_midgrid_voltage_V=[double]$oatofGeometryDocument.electrodes_V.midgrid; reflectron_backplate_voltage_V=[double]$oatofGeometryDocument.electrodes_V.backplate; reflectron_pa0_sha256=(Get-FileHash -LiteralPath $reflectronPa0 -Algorithm SHA256).Hash; frontend_gem_sha256=$frontendHash; frontend_pa0_sha256=(Get-FileHash -LiteralPath $cachePa0 -Algorithm SHA256).Hash }
     artifact_retention=[ordered]@{policy_version=1;class='compact';reason=$null}; formal_gate_passed=$false
@@ -490,6 +542,7 @@ try {
         stdout = $batch.stdout
         stderr = $batch.stderr
         accelerator_pa = $cachePa0
+        particle_id_offset = [int]$batch.offset
         arguments = [string[]]@(
           '--default-num-particles',([string][Math]::Max(100,[int]$batch.count)),
           '--nogui','--noprompt','fly',
@@ -510,6 +563,7 @@ try {
           param($item)
           . $item.support
           $env:OATOF_ACCELERATOR_PA_OVERRIDE = $item.accelerator_pa
+          $env:OATOF_SINGLE_FLIGHT_PARTICLE_ID_OFFSET = [string]$item.particle_id_offset
           Invoke-ResourceBudgetedProcess `
             -ResolvedBudgetPath $item.budget -RunDir $item.run_dir `
             -UsagePath $item.usage -FilePath $item.executable `
@@ -545,6 +599,7 @@ try {
     '--launched',([string]$launched),'--mass-amu','100',
     '--geometry',$oatofGeometry,'--pulse-time-us',([string]$pulseTimeUs),
     '--clock-basis',([string]$settings.clock_basis),
+    '--initial-global-state',$globalSource,
     '--checkpoints',$checkpoints,'--summary',$package.summary)
   foreach ($batch in $batchRecords) {
     $analysisArguments += @(

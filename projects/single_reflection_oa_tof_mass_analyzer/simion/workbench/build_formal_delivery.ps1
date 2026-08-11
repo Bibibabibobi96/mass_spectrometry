@@ -7,7 +7,11 @@ param(
   [string]$ContractPath = '',
   [string]$CandidateBaselinePath = '',
   [string]$CandidateTextDir = '',
+  [string]$ReusableComponentDir = '',
+  [string]$ReuseComponents = '',
+  [string]$ReusableParticleDir = '',
   [string]$ParticleSeed = '',
+  [switch]$ResumeRefinedReflectron,
   [switch]$DeferRunFinalization
 )
 
@@ -34,6 +38,17 @@ $candidateMode = -not [string]::IsNullOrWhiteSpace($ContractPath)
 if (-not $candidateMode) { Assert-OaTofFormalAssetsReadable -ProjectRoot $projectRoot }
 if ($candidateMode -and [string]::IsNullOrWhiteSpace($TemplateIob)) { throw 'Candidate build requires an explicit frozen non-Formal TemplateIob.' }
 if ($candidateMode -and $TemplateIob -match '(?i)formal') { throw 'Candidate TemplateIob must not reference a Formal path.' }
+$reuseComponentNames = @($ReuseComponents -split ',' | ForEach-Object { $_.Trim().ToLowerInvariant() } | Where-Object { $_ })
+$unknownReuseComponents = @($reuseComponentNames | Where-Object { $_ -notin @('accelerator','reflectron','flight_tube','detector') })
+if ($unknownReuseComponents.Count -gt 0) { throw "Unknown reusable SIMION component: $($unknownReuseComponents -join ', ')" }
+if ($reuseComponentNames.Count -gt 0) {
+  if (-not $candidateMode) { throw 'SIMION component reuse is available only for Candidate builds.' }
+  if ([string]::IsNullOrWhiteSpace($ReusableComponentDir) -or
+      -not (Test-Path -LiteralPath $ReusableComponentDir -PathType Container)) {
+    throw 'ReusableComponentDir must identify an existing SIMION delivery directory.'
+  }
+  $ReusableComponentDir = (Resolve-Path -LiteralPath $ReusableComponentDir).Path
+}
 if ($ParticleSeed -notmatch '^-?\d+$') { throw 'ParticleSeed is required and must be an explicit integer run-instance input.' }
 $particleSeedValue = [int]$ParticleSeed
 if ($candidateMode) {
@@ -70,7 +85,7 @@ if (-not $outputFull.StartsWith($runsRoot, [StringComparison]::OrdinalIgnoreCase
 }
 if (Test-Path -LiteralPath $outputFull) {
   $existing = @(Get-ChildItem -LiteralPath $outputFull -Force)
-  if (-not $DeferRunFinalization -or $existing.Count -ne 0) {
+  if (-not $DeferRunFinalization -or ($existing.Count -ne 0 -and -not $ResumeRefinedReflectron)) {
     throw "Output directory already exists or is not empty; no automatic overwrite is allowed: $outputFull"
   }
 }
@@ -103,8 +118,67 @@ function Invoke-SimionLua([string]$Script, [object[]]$Arguments) {
   }
 }
 
+function Copy-ReusablePaSet([string]$Stem) {
+  $files = @(Get-ChildItem -LiteralPath $ReusableComponentDir -File | Where-Object { $_.Name -like "$Stem.pa*" })
+  if (-not ($files.Name -contains "$Stem.pa#") -or -not ($files.Name -contains "$Stem.pa0")) {
+    throw "Reusable SIMION component is incomplete: $Stem"
+  }
+  foreach ($file in $files) {
+    Copy-Item -LiteralPath $file.FullName -Destination (Join-Path $outputFull $file.Name)
+  }
+}
+
+function Assert-CompleteRefinedReflectronSet([int]$MaxElectrode) {
+  $base = Join-Path $outputFull 'reflectron.pa#'
+  if (-not (Test-Path -LiteralPath $base -PathType Leaf)) {
+    throw 'Cannot resume reflectron: reflectron.pa# is missing.'
+  }
+  $basisBytes = (Get-Item -LiteralPath $base).Length
+  foreach ($electrode in 1..$MaxElectrode) {
+    $path = Join-Path $outputFull "reflectron.pa$electrode"
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf) -or
+        (Get-Item -LiteralPath $path).Length -ne $basisBytes) {
+      throw "Cannot resume reflectron: pa$electrode is missing or incomplete."
+    }
+  }
+  if (-not (Test-Path -LiteralPath (Join-Path $outputFull 'reflectron.pa0') -PathType Leaf)) {
+    throw 'Cannot resume reflectron: reflectron.pa0 is missing.'
+  }
+}
+
+function Invoke-ReflectronFastAdjust([int]$MaxElectrode) {
+  $assignments = @('1=0')
+  foreach ($ringIndex in 1..([int]$contract.rings.stage1_count)) {
+    $assignments += "$(1+$ringIndex)=$($voltage.midgrid*$ringIndex/([int]$contract.rings.stage1_count+1))"
+  }
+  $midgridElectrode = 2 + [int]$contract.rings.stage1_count
+  $assignments += "$midgridElectrode=$($voltage.midgrid)"
+  foreach ($ringIndex in 1..([int]$contract.rings.stage2_count)) {
+    $electrode = $midgridElectrode + $ringIndex
+    $ringVoltage = $voltage.midgrid + ($voltage.backplate-$voltage.midgrid)*$ringIndex/([int]$contract.rings.stage2_count+1)
+    $assignments += "$electrode=$ringVoltage"
+  }
+  $assignments += "$(3+[int]$contract.rings.stage1_count+[int]$contract.rings.stage2_count)=$($voltage.backplate)"
+  $assignments += "$MaxElectrode=0"
+  & $SimionExe --nogui --noprompt fastadj (Join-Path $outputFull 'reflectron.pa0') ($assignments -join ',')
+  if ($LASTEXITCODE -ne 0) { throw "Reflectron fast-adjust failed with exit code ${LASTEXITCODE}." }
+}
+
+function Invoke-SegmentedReflectronRefine([int]$MaxElectrode) {
+  $singleRefiner = Join-Path $projectRoot 'simion\reflectron\refine_single_pa.lua'
+  foreach ($electrode in 0..$MaxElectrode) {
+    Invoke-SimionLua $singleRefiner @(
+      (Join-Path $outputFull "reflectron.pa$electrode"), 5e-7
+    )
+  }
+}
+
 $acceleratorStem = Join-Path $outputFull 'accelerator.pa#'
-Invoke-SimionLua (Join-Path $projectRoot 'simion\accelerator\build_accelerator_variant.lua') @(
+if ($reuseComponentNames -contains 'accelerator') {
+  Copy-ReusablePaSet 'accelerator'
+}
+else {
+  Invoke-SimionLua (Join-Path $projectRoot 'simion\accelerator\build_accelerator_variant.lua') @(
   (Join-Path $projectRoot 'simion\accelerator\oatof_accelerator_3d.gem'), $acceleratorStem,
   $build.accelerator.cell_xy_mm, $build.accelerator.cell_z_mm,
   $geometry.accelerator_bore_half, $geometry.accelerator_ring_width,
@@ -115,45 +189,89 @@ Invoke-SimionLua (Join-Path $projectRoot 'simion\accelerator\build_accelerator_v
   $accelerator.d1_mm, $accelerator.d2_mm, $contract.rings.accelerator_count,
   $geometry.accelerator_repeller_thickness, $geometry.accelerator_ring_thickness,
   $geometry.accelerator_front_vacuum_margin, $voltage.repeller, $voltage.grid1
-)
+  )
+}
 
 $reflectronStem = Join-Path $outputFull 'reflectron.pa#'
-Invoke-SimionLua (Join-Path $projectRoot 'simion\reflectron\build_reflectron_variant.lua') @(
+$maxReflectronElectrode = 4 + [int]$contract.rings.stage1_count + [int]$contract.rings.stage2_count
+if ($ResumeRefinedReflectron) {
+  if (-not $candidateMode -or -not $DeferRunFinalization) {
+    throw 'ResumeRefinedReflectron requires a deferred Candidate build.'
+  }
+  Assert-CompleteRefinedReflectronSet $maxReflectronElectrode
+  Invoke-SegmentedReflectronRefine $maxReflectronElectrode
+  Invoke-ReflectronFastAdjust $maxReflectronElectrode
+}
+elseif ($reuseComponentNames -contains 'reflectron') {
+  Copy-ReusablePaSet 'reflectron'
+}
+else {
+  Invoke-SimionLua (Join-Path $projectRoot 'simion\reflectron\build_reflectron_variant.lua') @(
   (Join-Path $projectRoot 'simion\reflectron\oatof_reflectron_ideal_10_5.gem'), $reflectronStem,
   $build.reflectron.cell_axial_mm, $build.reflectron.cell_radial_mm,
   $build.reflectron.max_gib, $geometry.flight_tube_r, $geometry.flight_tube_wall,
   $geometry.L_reflectron, $geometry.ring_thickness, $geometry.shield_axial_gap,
   $geometry.shield_endcap_thickness, $geometry.L_stage1, $geometry.L_stage2,
   $geometry.bore_r, $geometry.ring_outer_r, $contract.rings.stage1_count,
-  $contract.rings.stage2_count, $voltage.midgrid, $voltage.backplate
-)
+  $contract.rings.stage2_count, $voltage.midgrid, $voltage.backplate,
+  'initialize-only'
+  )
+  Assert-CompleteRefinedReflectronSet $maxReflectronElectrode
+  Invoke-SegmentedReflectronRefine $maxReflectronElectrode
+  Invoke-ReflectronFastAdjust $maxReflectronElectrode
+}
 
 $flightTubeStem = Join-Path $outputFull 'flight_tube_ground.pa#'
-Invoke-SimionLua (Join-Path $projectRoot 'simion\workbench\build_flight_tube_variant.lua') @(
+if ($reuseComponentNames -contains 'flight_tube') {
+  Copy-ReusablePaSet 'flight_tube_ground'
+}
+else {
+  Invoke-SimionLua (Join-Path $projectRoot 'simion\workbench\build_flight_tube_variant.lua') @(
   (Join-Path $projectRoot 'simion\workbench\oatof_flight_tube_ground.gem'), $flightTubeStem,
   $build.flight_tube.cell_axial_mm, $build.flight_tube.cell_radial_mm,
   $build.flight_tube.max_gib, $geometry.flight_tube_r, $geometry.flight_tube_wall,
   $geometry.shield_endcap_thickness, $geometry.shield_outer_z_min, $geometry.L_flight
-)
+  )
+}
 
 $detectorStem = Join-Path $outputFull 'detector_ground.pa#'
-Invoke-SimionLua (Join-Path $projectRoot 'simion\workbench\build_detector_variant.lua') @(
+if ($reuseComponentNames -contains 'detector') {
+  Copy-ReusablePaSet 'detector_ground'
+}
+else {
+  Invoke-SimionLua (Join-Path $projectRoot 'simion\workbench\build_detector_variant.lua') @(
   (Join-Path $projectRoot 'simion\workbench\oatof_detector_ground.gem'), $detectorStem,
   $detector.cell_xy_mm, $detector.cell_z_mm, $detector.active_radius_mm,
   $detector.absorber_thickness_mm, $detector.front_margin_z_mm,
   $detector.back_margin_z_mm, $build.detector.margin_xy_mm, $build.detector.max_mib
-)
+  )
+}
 
 $ionGenerator = Join-Path $PSScriptRoot 'generate_comsol_consistent_ions.ps1'
-foreach ($particleCount in @(100, 1000)) {
-  $ionPath = Join-Path $outputFull "oatof_comsol_524amu_gaussian_N$particleCount.ion"
-  & $ionGenerator -N $particleCount -MassAmu $contract.validation_target.mass_amu -Charge 1 `
-    -EnergyMeanEv $contract.validation_target.initial_energy_mean_ev `
-    -EnergyStdEv $contract.validation_target.initial_energy_sigma_ev `
-    -HalfWidthXmm ($source.size_x_mm/2) -HalfWidthYmm ($source.size_y_mm/2) `
-    -HalfWidthZmm ($source.size_z_mm/2) -CenterXmm $source.center_x_mm `
-    -CenterYmm $source.center_y_mm -CenterZmm $source.center_z_mm `
-    -Seed $particleSeedValue -Output $ionPath | Out-Null
+if (-not [string]::IsNullOrWhiteSpace($ReusableParticleDir)) {
+  if (-not $candidateMode -or -not (Test-Path -LiteralPath $ReusableParticleDir -PathType Container)) {
+    throw 'ReusableParticleDir is available only for Candidate builds and must identify an existing directory.'
+  }
+  foreach ($particleCount in @(100, 1000)) {
+    $name = "oatof_comsol_524amu_gaussian_N$particleCount.ion"
+    $sourceIon = Join-Path $ReusableParticleDir $name
+    if (-not (Test-Path -LiteralPath $sourceIon -PathType Leaf)) {
+      throw "Reusable particle table is missing: $sourceIon"
+    }
+    Copy-Item -LiteralPath $sourceIon -Destination (Join-Path $outputFull $name)
+  }
+}
+else {
+  foreach ($particleCount in @(100, 1000)) {
+    $ionPath = Join-Path $outputFull "oatof_comsol_524amu_gaussian_N$particleCount.ion"
+    & $ionGenerator -N $particleCount -MassAmu $contract.validation_target.mass_amu -Charge 1 `
+      -EnergyMeanEv $contract.validation_target.initial_energy_mean_ev `
+      -EnergyStdEv $contract.validation_target.initial_energy_sigma_ev `
+      -HalfWidthXmm ($source.size_x_mm/2) -HalfWidthYmm ($source.size_y_mm/2) `
+      -HalfWidthZmm ($source.size_z_mm/2) -CenterXmm $source.center_x_mm `
+      -CenterYmm $source.center_y_mm -CenterZmm $source.center_z_mm `
+      -Seed $particleSeedValue -Output $ionPath | Out-Null
+  }
 }
 $n100Ion = Join-Path $outputFull 'oatof_comsol_524amu_gaussian_N100.ion'
 $n1000Ion = Join-Path $outputFull 'oatof_comsol_524amu_gaussian_N1000.ion'
@@ -230,7 +348,7 @@ $hashes = Get-ChildItem -LiteralPath $outputFull -File | Where-Object {
 }
 $hashes | Export-Csv -LiteralPath $shaPath -NoTypeInformation -Encoding UTF8
 $summaryPath = if ($DeferRunFinalization) { Join-Path $outputFull 'stage_summary.json' } else { Join-Path $runRoot 'summary.json' }
-[ordered]@{schema_version=1;role='oa_tof_simion_delivery_summary';status='success';delivery_dir='simion';run_finalization_deferred=[bool]$DeferRunFinalization} |
+[ordered]@{schema_version=1;role='oa_tof_simion_delivery_summary';status='success';delivery_dir='simion';run_finalization_deferred=[bool]$DeferRunFinalization;reused_components=$reuseComponentNames;reusable_component_dir=$ReusableComponentDir;resumed_refined_reflectron=[bool]$ResumeRefinedReflectron} |
   ConvertTo-Json -Depth 3 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
 if (-not $DeferRunFinalization) {
   & $python $manifestScript --run-config $runConfigPath --manifest (Join-Path $runRoot 'run_manifest.json') --status success --software 'SIMION 2020' `

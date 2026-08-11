@@ -119,6 +119,33 @@ class SingleFlightAnalysisTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "lacks source-release times"):
                 analyze(log, 1, 100.0, clock_basis="absolute_birth_time")
 
+    def test_absolute_clock_recovers_release_from_frozen_initial_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = root / "log.txt"
+            initial = root / "initial.csv"
+            log.write_text(
+                "TRACE: detector_crossing ion=1 t=70.5 x=69 y=0 z=0",
+                encoding="utf-8",
+            )
+            initial.write_text(
+                "particle_id,instrument_time_us,mass_amu,charge_state,"
+                "position_x_mm,position_y_mm,position_z_mm,velocity_x_m_s,"
+                "velocity_y_m_s,velocity_z_m_s,kinetic_energy_eV\n"
+                "1,0.25,100,1,-70,0,-18,4000,0,0,8.29\n",
+                encoding="utf-8",
+            )
+            rows, summary = analyze(
+                log,
+                1,
+                100.0,
+                clock_basis="absolute_birth_time",
+                initial_global_state_path=initial,
+            )
+        detector = next(row for row in rows if row["event"] == "detector_crossing")
+        self.assertEqual(detector["instrument_time_us"], 70.75)
+        self.assertEqual(summary["census"]["source_release"], 1)
+
     def test_classifies_physical_pulse_capture_without_rejecting_losses(self) -> None:
         text = "\n".join([
             "TRACE: pre_pulse_state ion=1 instrument_time_us=10 x_mm=-69 y_mm=0 z_mm=-18.4 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",

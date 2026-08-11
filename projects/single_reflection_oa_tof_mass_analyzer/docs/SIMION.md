@@ -10,6 +10,9 @@
 - 文本入口：`../simion/workbench/formal/oatof_ideal_grounded.lua/.fly2`
 - 交付构建：`../simion/workbench/build_formal_delivery.ps1`
 - 参数化几何Candidate门禁：`../simion/workbench/run_parameterized_geometry_smoke.ps1`
+- 径向压缩与环数补偿：`../workflows/radial_compaction/run_campaign.py`，合同为
+  `../config/radial_compaction_campaign.json`
+- 反射器电压场补偿：`../workflows/reflectron_voltage_compensation/run_compensation.py`
 - N=100源码构建与跟踪：`../tests/simion/run_n100_source_build_and_track.ps1`
 - IOB运行时合同：`../simion/workbench/verify_iob_runtime_contract.ps1`
 - 稳定资产身份：`../config/simion_stable_entry.json`
@@ -42,6 +45,10 @@ Program不通过动态实例调整补救错误排序。正式trajectory quality�
 日常加速器网格为`xy=0.25 mm,z=0.05 mm`，`z=0.025 mm`只作轴向收敛参考。透明栅网数值跨越距离
 为`0.0001 mm`；除PROJECT所列重启条件外不继续扫描以追平单一指标。
 
+反射器为二维轴对称PA；网格只查`../config/formal_solver_numerics.json`，制造约束只查
+`../config/design_variables.json`。构建器逐项检查环、栅、背板和屏蔽罩边缘是否落在网格节点；不对齐时
+记录`reflectron_geometry_edge_not_on_grid_node`警告但继续使用fractional-surface离散，不圆整理论几何。
+
 ## Candidate与交付纪律
 
 Candidate文本由`workflows/design_candidate/prepare_candidate_consumers.py`生成；PA、IOB、Fly和run
@@ -52,6 +59,11 @@ GUI布局，必须在Fly前被真实Candidate PA替换。
 `build_formal_delivery.ps1`只输出到run；晋升为独立事务。交付必须包含同basename Program/Fly2、四套
 完整PA家族、固定ION、manifest和SHA清单。移动或重建后必须重新加载IOB并验证四实例、优先级、
 trajectory quality和资产哈希。
+
+电压补偿入口从固定PA导出fast-adjust基函数，在入口/中间栅/背板电压固定且环电压单调的条件下，
+最小化实际轴向电势与理论分段线性电势的偏差。无派生profile或功能关闭时使用原线性分压；开启时
+SIMION校验环数、范围和单调性后应用profile。同一PA以5×200并行分别计算原场、补偿场和理想反射场，
+合并N=1000后用direct-KDE验收。固定PA的静电响应线性，一次受约束求解即可；几何变化才重新导出基函数。
 
 ## GUI验收
 
@@ -64,5 +76,8 @@ GUI必须可见并可编辑四实例、Fast Adjust电压、实例坐标、Fly2�
 - `.wgem`受许可证限制时使用已验收的SIMION 2020 legacy-GEM模板；许可证升级并完成隔离GUI/结构复验
   前不迁移生产路线。
 - 真实丝网局部单元尚未实现；理想栅网和真实丝网结果不得混为同一baseline。
+- SIMION 2020在真实分数表面反射器连续Refine至约`pa18`时可非确定性以`0xC0000005`退出；这不是
+  二维PA尺寸或固定电极数硬上限。生产构建先初始化全部解数组，再让每个`paN`在独立SIMION进程中
+  Refine，最后fast-adjust；恢复已有半成品时也必须逐个重新Refine，不能只凭文件存在判断收敛。
 - 已关闭的PA网格相位、跳转距离、Ez替换、宽质量timeout及性能缩放实验只从同日history快照与来源
   manifest追溯，不保留在current实施说明。

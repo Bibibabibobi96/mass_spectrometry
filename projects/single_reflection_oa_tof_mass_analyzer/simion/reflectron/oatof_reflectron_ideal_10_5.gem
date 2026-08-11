@@ -50,7 +50,7 @@ e($(2+stage1_ring_count+ring_index)) { fill{within{box($(stage1_length+ring_inde
 ; Backplate front is the exact derived reflectron length.
 e($(3+stage1_ring_count+stage2_ring_count)) { fill{within{box($(backplate_front),0,$(backplate_front+backplate_thickness),$(ring_outer_radius))}} }
 
-; e19: grounded 10 mm side wall plus the full 10 mm far end cap.
+; Grounded side wall plus the full far end cap use an independent electrode.
 ; The side wall starts at the reflectron entrance and joins the matching
 ; field-free shield PA without an axial gap.
 e($(4+stage1_ring_count+stage2_ring_count)) {

@@ -174,12 +174,47 @@ def _validate_invariants(baseline: dict[str, Any]) -> None:
     rings = baseline["rings"]
     if not geometry["bore_r"] < geometry["ring_outer_r"] < geometry["flight_tube_r"]:
         raise ValueError("reflectron radial order must be bore < ring outer radius < shield inner radius")
-    if geometry["detector_radius"] > geometry["flight_tube_r"]:
-        raise ValueError("detector radius must lie inside the shield")
-    if geometry["ring_thickness"] >= geometry["L_stage1"] / (rings["stage1_count"] + 1):
-        raise ValueError("stage-1 rings overlap at the requested count and thickness")
-    if geometry["ring_thickness"] >= geometry["L_stage2"] / (rings["stage2_count"] + 1):
-        raise ValueError("stage-2 rings overlap at the requested count and thickness")
+    convention = baseline["coordinate_convention"]
+    reflectron_axis_x = float(convention["reflectron_axis"][0])
+    detector_outer_radius = (
+        abs(float(convention["detector_x"]) - reflectron_axis_x)
+        + float(geometry["detector_radius"])
+    )
+    accelerator_outer_half_width = (
+        float(geometry["accelerator_bore_half"])
+        + float(geometry["accelerator_ring_width"])
+        + float(geometry["accelerator_insulation_gap"])
+        + float(geometry["accelerator_shield_wall"])
+    )
+    accelerator_outer_radius = (
+        abs(float(convention["accelerator_axis_x"]) - reflectron_axis_x)
+        + accelerator_outer_half_width
+    )
+    required_shield_inner_radius = max(
+        detector_outer_radius, accelerator_outer_radius
+    )
+    if geometry["flight_tube_r"] < required_shield_inner_radius:
+        raise ValueError(
+            "shared flight-tube/reflectron shield inner radius cannot contain "
+            f"the transverse hardware envelope: required>={required_shield_inner_radius:g} mm"
+        )
+    minimum_ring_gap = float(
+        load_json(CATALOG_PATH)["manufacturing_constraints"][
+            "reflectron_minimum_axial_ring_gap_mm"
+        ]
+    )
+    stage1_gap = geometry["L_stage1"] / (rings["stage1_count"] + 1) - geometry["ring_thickness"]
+    stage2_gap = geometry["L_stage2"] / (rings["stage2_count"] + 1) - geometry["ring_thickness"]
+    if stage1_gap + 1e-12 < minimum_ring_gap:
+        raise ValueError(
+            "stage-1 ring gap violates the manufacturing minimum: "
+            f"actual={stage1_gap:g} mm required>={minimum_ring_gap:g} mm"
+        )
+    if stage2_gap + 1e-12 < minimum_ring_gap:
+        raise ValueError(
+            "stage-2 ring gap violates the manufacturing minimum: "
+            f"actual={stage2_gap:g} mm required>={minimum_ring_gap:g} mm"
+        )
     accelerator = baseline["geometry_derivation"]["accelerator"]
     if geometry["accelerator_ring_thickness"] >= accelerator["d2_mm"] / (rings["accelerator_count"] + 1):
         raise ValueError("accelerator rings overlap at the requested count and thickness")
