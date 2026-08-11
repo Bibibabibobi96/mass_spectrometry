@@ -90,13 +90,18 @@ def verify_cache(project: Path, verify_hashes: bool = False) -> None:
     cache = project / "cache"
     if not cache.exists():
         return
-    unexpected = {entry.name for entry in cache.iterdir()} - {"simion_pa_basis"}
+    allowed = {
+        "simion_pa_basis",
+        "simion_oatof_downstream_pa",
+        "simion_single_flight_frontend",
+    }
+    unexpected = {entry.name for entry in cache.iterdir()} - allowed
     if unexpected:
         raise AssertionError(f"{project.name}: unexpected cache entries: {sorted(unexpected)}")
     basis_root = cache / "simion_pa_basis"
-    if not basis_root.exists():
-        return
-    for basis in (item for item in basis_root.iterdir() if item.is_dir()):
+    for basis in (
+        item for item in basis_root.iterdir() if item.is_dir()
+    ) if basis_root.exists() else ():
         if re.fullmatch(r"[A-F0-9]{64}", basis.name) is None:
             raise AssertionError(f"{basis}: invalid PA-basis fingerprint directory")
         manifest_path = basis / "manifest.json"
@@ -124,6 +129,28 @@ def verify_cache(project: Path, verify_hashes: bool = False) -> None:
         actual = {item.name for item in basis.iterdir() if item.is_file()}
         if actual != expected:
             raise AssertionError(f"{basis}: cache inventory differs")
+
+    for cache_name, required_name in (
+        ("simion_oatof_downstream_pa", None),
+        ("simion_single_flight_frontend", "frontend.pa0"),
+    ):
+        content_root = cache / cache_name
+        if not content_root.exists():
+            continue
+        for entry in content_root.iterdir():
+            if not entry.is_dir() or re.fullmatch(r"[a-f0-9]{64}", entry.name) is None:
+                raise AssertionError(f"{entry}: invalid content-addressed cache entry")
+            files = {item.name for item in entry.iterdir() if item.is_file()}
+            if required_name is not None and required_name not in files:
+                raise AssertionError(f"{entry}: required cached PA is missing")
+            if cache_name == "simion_oatof_downstream_pa":
+                pa0_files = [name for name in files if name.endswith(".pa0")]
+                stems = {name[:-4] for name in pa0_files}
+                if len(stems) != 1:
+                    raise AssertionError(f"{entry}: downstream PA identity is ambiguous")
+                stem = next(iter(stems))
+                if not any(name.startswith(stem + ".pa") for name in files):
+                    raise AssertionError(f"{entry}: downstream PA family is incomplete")
 
 
 def legacy_identity(repository_root: Path, project_id: str) -> dict | None:

@@ -67,6 +67,25 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, "cache inventory differs"):
                 verify_cache(project, verify_hashes=True)
 
+    def test_integration_pa_caches_are_registered_and_content_addressed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory) / "integration"
+            frontend = (
+                project / "cache" / "simion_single_flight_frontend" / ("a" * 64)
+            )
+            downstream = (
+                project / "cache" / "simion_oatof_downstream_pa" / ("b" * 64)
+            )
+            frontend.mkdir(parents=True)
+            downstream.mkdir(parents=True)
+            (frontend / "frontend.pa0").write_text("pa\n", encoding="utf-8")
+            (downstream / "reflectron.pa0").write_text("pa\n", encoding="utf-8")
+            (downstream / "reflectron.pa1").write_text("basis\n", encoding="utf-8")
+            verify_cache(project)
+            (frontend.parent / "not-a-hash").mkdir()
+            with self.assertRaisesRegex(AssertionError, "content-addressed"):
+                verify_cache(project)
+
     def make_formal(
         self,
         artifacts: Path,

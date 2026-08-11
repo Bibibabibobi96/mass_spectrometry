@@ -73,10 +73,12 @@ if ($ValidateOnly) {
   $validationRoot = Join-Path $workspaceRoot (
     'artifacts\projects\' +
     'rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer\' +
-    'validation_tmp'
+    'scratch'
   )
   $outputRoot = Join-Path $validationRoot (
-    'validate-' + [guid]::NewGuid().ToString('N')
+    (Get-Date -Format 'yyyyMMdd_HHmmss') +
+    '__repo__family-source-validation-' +
+    [guid]::NewGuid().ToString('N').Substring(0, 8)
   )
 } elseif ($PrepareOnly) {
   $outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
