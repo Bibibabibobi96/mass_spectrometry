@@ -216,6 +216,20 @@ N=1000母样本的449粒子成对重放得到：当前基准`R=18528.39`；线�
 `20260812_001500__sim__simion__rf-oatof-linear-coupled__n1000__r02`；资格仍是
 `CONTROLLED_COUNTERFACTUAL_DIAGNOSTIC_ONLY`，正式连续注入采用前还需在理论工作点附近完成受治理校正。
 
+`-AcceleratorPhaseSpaceMatchStage actual_slope`用真实三维检测时间直接校准实测`z-vz`相关方向的
+一阶斜率。四点预扫描见`20260812_020000__sim__simion__rf-oatof-actual-slope-zero__n1000__r02`；
+最终`cubic=200 V`、一级电压降偏置`+19.8 V`在449/449命中下得到`+0.00249 ns/mm`，比原场
+`-2.60036 ns/mm`的绝对值低99.90%。该点为双峰且`R=13238.97`，故仅作为“一阶项已归零”的
+诊断证据，不替换当前高分辨单峰参数。最终证据run为同前缀`r03`。
+
+同一准备结果还分别报告名义参考源窗口和一级物理间隙。当前eligible 449粒子的局部z范围为
+`0.460–2.585 mm`，全数位于`0–3 mm`一级间隙；覆盖该样本所需的最小中心对称全宽为
+`2.171 mm`，但1 mm名义窗口只含321粒子。因此无需增大加速器间距。已有d1=4 mm试验也未支持
+放大间距：最佳单峰仍比d1=3 mm基准低1.24%。`ideal_source_z_1mm`使用既有detector-blind空间窗口
+功能只限制加速方向：连续N=1000基准中选中456/612、命中359，`R=23180`，较全命中队列高
+33.7%；原`ideal_source_box_1mm_xyz`选中并命中49粒子，`R=38290`。这说明z展宽重要，但横向
+范围及其相空间耦合也不能忽略。
+
 目标能量只能在连续链`pre_pulse_state`、且粒子位于repeller与grid1之间时验证。
 `terminal`或`multipole_handoff`能量只作接口诊断。
 

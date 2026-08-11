@@ -176,6 +176,7 @@ def _validate_accelerator_match_profile(profile: dict[str, Any]) -> None:
         "probes",
         "ring_shape_probes",
         "coupled_reflectron_probes",
+        "actual_slope_probes",
         "claim_limit",
     }
     if (
@@ -263,6 +264,31 @@ def _validate_accelerator_match_profile(profile: dict[str, Any]) -> None:
         or any(not arm_id.startswith("accelerator_reflectron_coupled_") for arm_id in coupled_ids)
     ):
         raise ValueError("coupled reflectron probe registry differs")
+    slope_probes = profile.get("actual_slope_probes")
+    if not isinstance(slope_probes, list) or not slope_probes:
+        raise ValueError("actual 3D slope probes are empty")
+    slope_ids = []
+    slope_tuples = []
+    for probe in slope_probes:
+        if not isinstance(probe, dict) or set(probe) != {
+            "arm_id", "voltage_drop_offset_V", "quadratic_V", "cubic_V"
+        }:
+            raise ValueError("actual 3D slope probe contract differs")
+        slope_ids.append(str(probe["arm_id"]))
+        slope_tuples.append(
+            (
+                float(probe["voltage_drop_offset_V"]),
+                float(probe["quadratic_V"]),
+                float(probe["cubic_V"]),
+            )
+        )
+    if (
+        len(slope_ids) != len(set(slope_ids))
+        or len(slope_tuples) != len(set(slope_tuples))
+        or any(not arm_id.startswith("accelerator_actual_slope_") for arm_id in slope_ids)
+        or not all(np.all(np.isfinite(values)) for values in slope_tuples)
+    ):
+        raise ValueError("actual 3D slope probe registry differs")
 
 
 def _quantile_match(values: np.ndarray, reference: np.ndarray) -> np.ndarray:
@@ -621,7 +647,9 @@ def prepare(
     )
     if match_profile is not None:
         _validate_accelerator_match_profile(match_profile)
-        if accelerator_match_stage not in {"voltage", "ring_shape", "coupled_reflectron"}:
+        if accelerator_match_stage not in {
+            "voltage", "ring_shape", "coupled_reflectron", "actual_slope"
+        }:
             raise ValueError("accelerator match stage differs")
     arm_ids = (
         (["observed_restart_control"] if match_profile is not None else profile_arm_ids)
@@ -692,6 +720,46 @@ def prepare(
         )
         accelerator_match["cohort_policy"] = cohort_policy
         accelerator_match["arms"] = []
+        local_z = observed[:, 3] - repeller_z
+        gap1_width = float(acceleration["d1_mm"])
+        nominal_width = float(target_size[2])
+        nominal_center = float(target_center[2]) - repeller_z
+        physical_mask = (local_z > 0.0) & (local_z < gap1_width)
+        nominal_mask = (
+            np.abs(local_z - nominal_center) <= 0.5 * nominal_width
+        )
+        minimum_centered_width = 2.0 * float(
+            np.max(np.abs(local_z - nominal_center))
+        )
+        accelerator_match["source_acceptance"] = {
+            "coordinate": "local_z_from_repeller_mm",
+            "physical_gap": {
+                "minimum_mm": 0.0,
+                "maximum_mm": gap1_width,
+                "width_mm": gap1_width,
+                "inside_particles": int(np.count_nonzero(physical_mask)),
+                "inside_fraction": float(np.mean(physical_mask)),
+                "all_particles_inside": bool(np.all(physical_mask)),
+            },
+            "nominal_reference_source_window": {
+                "center_mm": nominal_center,
+                "full_width_mm": nominal_width,
+                "minimum_mm": nominal_center - 0.5 * nominal_width,
+                "maximum_mm": nominal_center + 0.5 * nominal_width,
+                "inside_particles": int(np.count_nonzero(nominal_mask)),
+                "inside_fraction": float(np.mean(nominal_mask)),
+                "all_particles_inside": bool(np.all(nominal_mask)),
+            },
+            "observed_cohort": {
+                "particles": int(local_z.size),
+                "minimum_mm": float(np.min(local_z)),
+                "maximum_mm": float(np.max(local_z)),
+                "full_span_mm": float(np.ptp(local_z)),
+                "sigma_mm": float(np.std(local_z, ddof=1)),
+                "minimum_centered_full_width_mm": minimum_centered_width,
+            },
+            "geometry_change_required": not bool(np.all(physical_mask)),
+        }
         coupled_solution = None
         if accelerator_match_stage == "coupled_reflectron":
             matched_state = accelerator_state(
@@ -743,6 +811,7 @@ def prepare(
             "voltage": match_profile["probes"],
             "ring_shape": match_profile["ring_shape_probes"],
             "coupled_reflectron": match_profile["coupled_reflectron_probes"],
+            "actual_slope": match_profile["actual_slope_probes"],
         }[accelerator_match_stage]
         for probe in probes:
             arm_id = str(probe["arm_id"])
@@ -773,7 +842,9 @@ def prepare(
                         "quadratic_V": float(probe["quadratic_V"]),
                         "cubic_V": float(probe["cubic_V"]),
                     }
-                    if accelerator_match_stage in {"ring_shape", "coupled_reflectron"}
+                    if accelerator_match_stage in {
+                        "ring_shape", "coupled_reflectron", "actual_slope"
+                    }
                     else None
                 ),
                 "reflectron_voltage_override": (
@@ -1067,6 +1138,54 @@ def _canonical_replay_detector_time(
     return native_time_us + instrument_birth_time_us - solver_birth_time_us
 
 
+def _phase_space_time_transfer(
+    state_rows: list[dict[str, str]], detector: dict[int, float]
+) -> dict[str, Any] | None:
+    """Fit detector time against the detected source cohort's actual z-vz plane."""
+    selected = [
+        row for row in state_rows
+        if int(row["source_particle_id"]) in detector
+    ]
+    if len(selected) < 3:
+        return None
+    z = np.asarray([float(row["z_mm"]) for row in selected], dtype=float)
+    vz = np.asarray([float(row["vz_m_s"]) for row in selected], dtype=float)
+    time_ns = np.asarray(
+        [detector[int(row["source_particle_id"])] * 1000.0 for row in selected],
+        dtype=float,
+    )
+    z_centered = z - np.mean(z)
+    vz_centered = vz - np.mean(vz)
+    z_variance = float(np.dot(z_centered, z_centered))
+    if z_variance <= 0.0:
+        return None
+    velocity_slope = float(np.dot(z_centered, vz_centered) / z_variance)
+    design = np.column_stack((np.ones(z.size), z_centered, vz_centered))
+    coefficients, _, rank, _ = np.linalg.lstsq(design, time_ns, rcond=None)
+    if rank < 3:
+        return None
+    fitted = design @ coefficients
+    residual = time_ns - fitted
+    total = time_ns - np.mean(time_ns)
+    total_ss = float(np.dot(total, total))
+    r_squared = (
+        1.0 - float(np.dot(residual, residual)) / total_ss
+        if total_ss > 0.0 else None
+    )
+    partial_z = float(coefficients[1])
+    partial_vz = float(coefficients[2])
+    return {
+        "detected_particles": len(selected),
+        "velocity_slope_m_per_s_per_mm": velocity_slope,
+        "partial_time_z_ns_per_mm": partial_z,
+        "partial_time_vz_ns_per_m_per_s": partial_vz,
+        "actual_linear_z_vz_time_slope_ns_per_mm": (
+            partial_z + velocity_slope * partial_vz
+        ),
+        "linear_model_r_squared": r_squared,
+    }
+
+
 def summarize(
     profile_path: Path,
     prepared_path: Path,
@@ -1190,6 +1309,9 @@ def summarize(
                 "source_particles": particles,
                 "detector_particles": len(detector),
                 "source_state": _state_summary(state_rows),
+                "phase_space_time_transfer": _phase_space_time_transfer(
+                    state_rows, detector
+                ),
                 "peak": peak,
                 "accelerator_voltage_override": prepared_by_id[arm_id].get(
                     "accelerator_voltage_override"
@@ -1319,7 +1441,7 @@ def main() -> int:
     prepare_parser.add_argument("--accelerator-match-profile", type=Path)
     prepare_parser.add_argument(
         "--accelerator-match-stage",
-        choices=("voltage", "ring_shape", "coupled_reflectron"),
+        choices=("voltage", "ring_shape", "coupled_reflectron", "actual_slope"),
         default="voltage",
     )
     prepare_parser.add_argument("--arm-id", action="append", dest="selected_arm_ids")

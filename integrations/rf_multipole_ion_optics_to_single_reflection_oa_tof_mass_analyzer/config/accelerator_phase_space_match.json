@@ -106,5 +106,13 @@
       "cubic_V": 160.0
     }
   ],
+  "actual_slope_probes": [
+    {
+      "arm_id": "accelerator_actual_slope_zero_c200_o0198",
+      "voltage_drop_offset_V": 19.8,
+      "quadratic_V": 0.0,
+      "cubic_V": 200.0
+    }
+  ],
   "claim_limit": "Detector-blind paired replay of the pulse-eligible cohort at one frozen geometry and numerical profile. A selected voltage pair requires a full continuous-injection N=1000 confirmation for transmission and peak claims."
 }

@@ -89,6 +89,15 @@
       },
       "selection_uses_detector_outcome": false,
       "role": "ideal_source_extent_diagnostic"
+    },
+    {
+      "profile_id": "ideal_source_z_1mm",
+      "event": "pre_pulse_state",
+      "axes": {
+        "z": {"center_binding": "particle_source.center_z_mm", "full_width_mm": 1.0}
+      },
+      "selection_uses_detector_outcome": false,
+      "role": "acceleration_direction_extent_diagnostic"
     }
   ],
   "default_accelerator_field_profile_id": "accelerator_real_pa",

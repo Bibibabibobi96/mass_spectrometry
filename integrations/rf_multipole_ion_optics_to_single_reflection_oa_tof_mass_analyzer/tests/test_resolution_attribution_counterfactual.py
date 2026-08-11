@@ -12,6 +12,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     _checkpoint_detector_times,
     _canonical_replay_detector_time,
     _ideal_source,
+    _phase_space_time_transfer,
     _remove_linear_covariance,
     _collapse_linear_residual,
     _project_observed_linear_slope,
@@ -29,6 +30,26 @@ WORKFLOW = Path(__file__).parents[1] / "workflows" / "resolution_attribution" / 
 
 
 class ResolutionAttributionCounterfactualTests(unittest.TestCase):
+    def test_phase_space_time_transfer_reports_actual_correlated_slope(self) -> None:
+        rows = []
+        detector = {}
+        for particle_id, (z, residual) in enumerate(
+            zip((-1.0, -0.5, 0.5, 1.0), (1.0, -1.0, -1.0, 1.0)),
+            start=1,
+        ):
+            vz = 10.0 + 2.0 * z + residual
+            rows.append({
+                "source_particle_id": str(particle_id),
+                "z_mm": str(z),
+                "vz_m_s": str(vz),
+            })
+            detector[particle_id] = (100.0 + 3.0 * z + 0.5 * vz) / 1000.0
+        result = _phase_space_time_transfer(rows, detector)
+        self.assertIsNotNone(result)
+        self.assertAlmostEqual(
+            result["actual_linear_z_vz_time_slope_ns_per_mm"], 4.0
+        )
+
     def test_phase_space_diagnostic_publishes_traceable_figure(self) -> None:
         rows = [
             {"z_mm": str(z), "vz_m_s": str(5.0 + 100.0 * z + residual)}
@@ -399,6 +420,9 @@ class ResolutionAttributionCounterfactualTests(unittest.TestCase):
             self.assertEqual(result["cohort_policy"], "source_event_and_pulse_eligibility")
             self.assertEqual(result["paired_cohort_particles"], 4)
             self.assertEqual(len(result["arms"]), 8)
+            acceptance = result["accelerator_match"]["source_acceptance"]
+            self.assertTrue(acceptance["physical_gap"]["all_particles_inside"])
+            self.assertFalse(acceptance["geometry_change_required"])
             state = root / "prepared" / "observed_restart_control__source_state.csv"
             with state.open(encoding="utf-8", newline="") as handle:
                 source_ids = [int(row["source_particle_id"]) for row in csv.DictReader(handle)]
@@ -445,6 +469,19 @@ class ResolutionAttributionCounterfactualTests(unittest.TestCase):
                 coupled_arm["reflectron_voltage_override"]["backplate_V"],
                 coupled_arm["reflectron_voltage_override"]["midgrid_V"],
             )
+            slope_result = prepare(
+                PROFILE, checkpoints, ideal, formal_geometry, target_geometry,
+                root / "prepared_slope", 100.0, 1, 1.1e6, 4,
+                selected_arm_ids=["observed_restart_control"],
+                accelerator_match_profile_path=MATCH_PROFILE,
+                accelerator_match_stage="actual_slope",
+            )
+            self.assertEqual(slope_result["accelerator_match_stage"], "actual_slope")
+            self.assertEqual(len(slope_result["arms"]), 2)
+            self.assertTrue(all(
+                arm["accelerator_ring_shape_override"] is not None
+                for arm in slope_result["arms"][1:]
+            ))
     def test_state_summary_uses_null_for_undefined_correlation(self) -> None:
         rows = [
             {

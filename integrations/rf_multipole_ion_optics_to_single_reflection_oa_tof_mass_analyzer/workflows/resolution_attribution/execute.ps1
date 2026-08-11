@@ -7,7 +7,7 @@ param(
   [string[]]$ArmId = @(),
   [string]$ReferenceArmId = '',
   [switch]$AcceleratorPhaseSpaceMatch,
-  [ValidateSet('voltage','ring_shape','coupled_reflectron')]
+  [ValidateSet('voltage','ring_shape','coupled_reflectron','actual_slope')]
   [string]$AcceleratorPhaseSpaceMatchStage = 'voltage',
   [string]$BaselineAggregateRoot = '',
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
