@@ -26,6 +26,7 @@ run ID、seed、冻结路径和候选override只属于run instance，不能写�
 | 三栅加速器一阶时间聚焦 | `accelerator_time_focus.py` | `../docs/theory/oaaccelerator_time_focus.md` |
 | 双级反射器闭式解 | `reflectron_dual_stage_solver.py` | `../docs/theory/dual_stage_reflectron.md` |
 | 加速器—反射器纵向耦合 | `oatof_oaaccelerator_coupling.py` | `../docs/theory/oatof_oaaccelerator_coupling.md` |
+| Arm 8轴上全理论解析闭合 | `verify_axial_ideal_closure.py` | 复用上述耦合理论与统一`peak_metrics.py` |
 | 参数候选编译 | `compile_candidate_design.py` | design-variable catalog与优化包络 |
 
 候选只允许修改变量目录登记的连续量或整数离散量。理论派生量由编译器重算，拓扑变量使用专用编译
@@ -87,4 +88,7 @@ request和独立GUI/CAD evidence；`Verify`只读复核当前Formal。禁止手�
 - MATLAB图只作GUI展示，正式统计必须与冻结Python实现核对。
 - 修改加速器电压、间距、源宽、无场长度或反射器参数时，必须重新运行理论闭合并按rebuild plan更新
   所有受影响实现。
+- Arm 8解析闭合通过`python -m projects.single_reflection_oa_tof_mass_analyzer.analysis.verify_axial_ideal_closure
+  ../config/diagnostics/axial_ideal_arm8_analytic_closure.json --output <receipt.json>`运行。receipt明确标记为
+  solver-independent analytic closure，不得表述为SIMION、COMSOL或Formal结果。
 - 通用代码只有第二个项目实际复用后才能上移`common/`。

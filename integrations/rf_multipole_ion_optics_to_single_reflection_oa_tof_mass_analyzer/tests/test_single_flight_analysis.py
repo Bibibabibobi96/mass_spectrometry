@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from common.contracts.particle_physics import kinetic_energy_ev
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.analyze_single_flight import analyze
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.plot_single_flight_spatial_six_panel import marker_area
 
@@ -27,7 +28,9 @@ class SingleFlightAnalysisTests(unittest.TestCase):
             path.write_text(text, encoding="utf-8")
             rows, summary = analyze(path, 3, 100.0)
         self.assertEqual({row["particle_id"] for row in rows}, {2})
-        self.assertEqual(summary["census"], {"launched": 3, "source_release": 1, "multipole_handoff": 1, "pre_pulse_state": 1, "local_accelerator_exit": 1, "detector_crossing": 1})
+        self.assertEqual(summary["census"]["launched"], 3)
+        self.assertEqual(summary["census"]["detector_crossing"], 1)
+        self.assertEqual(summary["census"]["reflectron_turning_point"], 0)
         self.assertIsNone(summary["instrument_clock_peak"])
         self.assertFalse(summary["instrument_clock_peak_is_resolution_claim"])
         pre_pulse = next(row for row in rows if row["event"] == "pre_pulse_state")
@@ -86,7 +89,9 @@ class SingleFlightAnalysisTests(unittest.TestCase):
         ]
         self.assertEqual(detector_times, [70.75, 70.75])
         self.assertTrue(summary["detector_native_time_offset_applied"])
-        self.assertEqual(summary["detector_time_basis"], "instrument_time_us")
+        self.assertEqual(
+            summary["detector_time_basis"], "instrument_time_us_diagnostic_only"
+        )
 
     def test_five_batch_logs_receive_global_particle_ids(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -227,6 +232,12 @@ class SingleFlightAnalysisTests(unittest.TestCase):
                 for axis in ("x", "y", "z")
             },
             "selection_uses_detector_outcome": False,
+            "field_error_budget": {
+                "derivation": "frozen_test_budget",
+                "tof_error_budget_ns": 0.537,
+                "frozen_before_particle_outcomes": True,
+            },
+            "minimum_pulse_eligible_coverage": 0.70,
         }
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -243,9 +254,10 @@ class SingleFlightAnalysisTests(unittest.TestCase):
         window = summary["spatial_window_peak"]
         self.assertEqual(window["selected_count"], 3)
         self.assertEqual(window["detected_count"], 3)
+        self.assertEqual(window["pulse_eligible_coverage_fraction"], 0.75)
         self.assertFalse(window["selection_uses_detector_outcome"])
         self.assertEqual(window["axis_semantics"]["acceleration_direction"], "z")
-        self.assertIsNotNone(window["instrument_clock_peak"])
+        self.assertIsNotNone(window["pulse_effective_peak"])
         self.assertEqual(
             summary["source_population"]["efficiency_denominator"],
             "candidate_population_count",
@@ -295,6 +307,148 @@ class SingleFlightAnalysisTests(unittest.TestCase):
         self.assertEqual(population["raw_pulse_capture_fraction"], 0.5)
         self.assertEqual(population["simulated_fraction_of_candidate_population"], 1.0)
         self.assertIsNone(population["simulated_fraction_of_pulse_eligible_population"])
+
+    def test_five_dimensional_window_uses_forward_velocity_angles(self) -> None:
+        lines = []
+        for particle_id, (vx, vy, vz) in enumerate(
+            [(0.1, 0.1, 10), (-0.1, 0, 10), (0, -0.1, 10), (0, 0, -10)], 1
+        ):
+            lines.append(
+                f"TRACE: pre_pulse_state ion={particle_id} instrument_time_us=10 "
+                f"x_mm=-69 y_mm=0 z_mm=-18.4 vx_mm_per_us={vx} "
+                f"vy_mm_per_us={vy} vz_mm_per_us={vz}"
+            )
+            if particle_id < 4:
+                lines.append(
+                    f"TRACE: detector_crossing ion={particle_id} "
+                    f"t={70 + particle_id * 0.01} x=0 y=0 z=0"
+                )
+        geometry = {
+            "particle_source": {
+                "center_x_mm": -69.0, "center_y_mm": 0.0,
+                "center_z_mm": -18.4,
+            },
+            "coordinate_convention": {"accelerator_axis_x": -69.0},
+            "geometry_mm": {
+                "accelerator_repeller_z": -19.9,
+                "accelerator_grid1_z": -16.9,
+                "accelerator_bore_half": 20.0,
+            },
+        }
+        profile = {
+            "profile_id": "theoretical_5d_window",
+            "event": "pre_pulse_state",
+            "axes": {
+                axis: {
+                    "center_binding": f"particle_source.center_{axis}_mm",
+                    "full_width_mm": 1.0,
+                }
+                for axis in ("x", "y", "z")
+            } | {
+                axis: {
+                    "center_binding": "theory_source_center_angle_deg",
+                    "center_deg": 0.0,
+                    "full_width_deg": 4.0,
+                }
+                for axis in ("angle_x", "angle_y")
+            },
+            "selection_uses_detector_outcome": False,
+            "field_error_budget": {
+                "derivation": "synthetic_grid_field_error_budget",
+                "tof_error_budget_ns": 0.537,
+                "frozen_before_particle_outcomes": True,
+            },
+            "minimum_pulse_eligible_coverage": 0.70,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = root / "log.txt"
+            model = root / "geometry.json"
+            log.write_text("\n".join(lines), encoding="utf-8")
+            model.write_text(json.dumps(geometry), encoding="utf-8")
+            _, summary = analyze(
+                log, 4, 100.0, model, 10.0, spatial_window_profile=profile
+            )
+        window = summary["spatial_window_peak"]
+        self.assertEqual(window["selected_count"], 3)
+        self.assertEqual(window["pulse_eligible_coverage_fraction"], 0.75)
+        self.assertIn("angle_x", window["bounds"])
+        self.assertFalse(window["selection_uses_detector_outcome"])
+
+    def test_pulse_effective_peak_and_reflectron_common_cohort(self) -> None:
+        lines = ["TRACE: handoff_pulse_on ion=1 instrument_time_us=10"]
+        for particle_id in range(1, 5):
+            times = [20, 30, 40, 50, 60]
+            events = [
+                "accelerator_focus_forward", "reflectron_entrance_forward",
+                "reflectron_midgrid_forward", "reflectron_turning_point",
+                "reflectron_exit_return",
+            ]
+            for index, (event, time_us) in enumerate(zip(events, times, strict=True)):
+                z_mm = [0, 600, 720, 800, 600][index]
+                vz = 0 if event == "reflectron_turning_point" else (10 if index < 3 else -10)
+                lines.append(
+                    f"TRACE: {event} ion={particle_id} particle_id={particle_id} "
+                    f"instrument_time_us={time_us + particle_id * 0.001} "
+                    f"tof_since_pulse_us={time_us - 10 + particle_id * 0.001} "
+                    f"x_mm={particle_id} y_mm=0 z_mm={z_mm} "
+                    f"vx_mm_per_us=1 vy_mm_per_us=0 vz_mm_per_us={vz} "
+                    f"kinetic_energy_eV={kinetic_energy_ev(100, 1000, 0, 1000 * vz):.12g} "
+                    "survival_status=alive"
+                )
+            lines.append(
+                f"TRACE: detector_crossing ion={particle_id} "
+                f"t={70 + particle_id * 0.001} x=0 y=0 z=0"
+            )
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "log.txt"
+            log.write_text("\n".join(lines), encoding="utf-8")
+            _, summary = analyze(log, 4, 100.0, pulse_time_us=10.0)
+        self.assertEqual(
+            summary["resolution_time_basis"],
+            "detector_time_minus_pulse_effective_time",
+        )
+        self.assertIsNotNone(summary["pulse_effective_peak"])
+        self.assertIsNotNone(summary["instrument_clock_peak"])
+        self.assertFalse(summary["instrument_clock_peak_is_resolution_claim"])
+        common = summary["post_focus_common_cohort"]
+        self.assertEqual(common["reflectron_common_cohort_count"], 4)
+        self.assertEqual(common["detector_paired_cohort_count"], 4)
+        self.assertEqual(len(common["segments"]), 5)
+        first_segment = common["segments"][0]
+        self.assertEqual(
+            first_segment["linear_regression_degrees_of_freedom"],
+            4 - first_segment["linear_regression_rank"],
+        )
+        self.assertIsNone(first_segment["linear_regression_residual_sigma_ns"])
+        self.assertEqual(
+            first_segment["linear_regression_status"],
+            "insufficient_rank_or_residual_degrees_of_freedom",
+        )
+
+    def test_rejects_reflectron_checkpoint_out_of_order(self) -> None:
+        text = "\n".join([
+            "TRACE: reflectron_entrance_forward ion=1 particle_id=1 instrument_time_us=20 tof_since_pulse_us=10 x_mm=0 y_mm=0 z_mm=600 vx_mm_per_us=0 vy_mm_per_us=0 vz_mm_per_us=1",
+            "TRACE: reflectron_turning_point ion=1 particle_id=1 instrument_time_us=30 tof_since_pulse_us=20 x_mm=0 y_mm=0 z_mm=700 vx_mm_per_us=0 vy_mm_per_us=0 vz_mm_per_us=0",
+        ])
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "log.txt"
+            log.write_text(text, encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "sequence is not a prefix"):
+                analyze(log, 1, 100.0, pulse_time_us=10.0)
+
+    def test_rejects_logged_energy_that_disagrees_with_velocity(self) -> None:
+        text = (
+            "TRACE: reflectron_entrance_forward ion=1 particle_id=1 "
+            "instrument_time_us=20 tof_since_pulse_us=10 "
+            "x_mm=0 y_mm=0 z_mm=600 vx_mm_per_us=1 vy_mm_per_us=0 "
+            "vz_mm_per_us=1 kinetic_energy_eV=999 survival_status=alive"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "log.txt"
+            log.write_text(text, encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "kinetic energy differs"):
+                analyze(log, 1, 100.0, pulse_time_us=10.0)
 
 
 if __name__ == "__main__":

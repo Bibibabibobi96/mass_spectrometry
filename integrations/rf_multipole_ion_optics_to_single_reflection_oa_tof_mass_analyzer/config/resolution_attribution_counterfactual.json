@@ -40,6 +40,18 @@
       "intervention": "scale_formal_positions_to_target_source_extents_and_apply_observed_energy_along_positive_global_x"
     },
     {
+      "arm_id": "current_layout_ideal_1mm_vz0",
+      "intervention": "analytic_1mm_global_z_line_monoenergetic_10ev_zero_global_vz"
+    },
+    {
+      "arm_id": "current_layout_ideal_1mm_linear_z_vz",
+      "intervention": "analytic_1mm_global_z_line_monoenergetic_10ev_theory_linear_global_z_vz"
+    },
+    {
+      "arm_id": "current_layout_ideal_finite_interval_linear_z_vz",
+      "intervention": "analytic_run_local_finite_interval_xyz_monoenergetic_10ev_theory_linear_global_z_vz"
+    },
+    {
       "arm_id": "formal_focus_mapped_layout_source",
       "intervention": "translate_formal_positions_and_apply_observed_energy_along_positive_global_x",
       "solver_profile_id": "formal_reflectron"

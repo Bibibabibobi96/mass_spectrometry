@@ -24,10 +24,11 @@ foreach ($file in $markdownFiles) {
     $lines = @(Get-Content -LiteralPath $file.FullName -Encoding UTF8)
     $relative = $file.FullName.Substring($repoRoot.Length + 1)
     $relativeGit = $relative -replace '\\', '/'
-    $requiresMathFence = $relativeGit -in @(
+    $requiresGithubMathFence = $relativeGit -in @(
         'projects/single_reflection_oa_tof_mass_analyzer/docs/theory/oaaccelerator_time_focus.md',
         'projects/single_reflection_oa_tof_mass_analyzer/docs/theory/dual_stage_reflectron.md',
-        'projects/single_reflection_oa_tof_mass_analyzer/docs/theory/oatof_oaaccelerator_coupling.md'
+        'projects/single_reflection_oa_tof_mass_analyzer/docs/theory/oatof_oaaccelerator_coupling.md',
+        'projects/single_reflection_oa_tof_mass_analyzer/docs/theory/z_vz_linear_phase_space_coupling.md'
     )
     $h1Count = 0
     $previousLevel = 0
@@ -56,6 +57,7 @@ foreach ($file in $markdownFiles) {
     $fenceInfo = ''
     $inMathFence = $false
     $inDollarDisplayMath = $false
+    $githubMathFenceCount = 0
     $lineNumber = 0
     $bareLatexPattern = '\\(?:mathrm|frac|sqrt|tau|Delta|operatorname|left|right|begin|end|text|ell|' +
         'partial|alpha|beta|rho|eta|equiv|propto|int|sum|mu|sigma|omega|cdot|times|pm|approx|' +
@@ -78,16 +80,15 @@ foreach ($file in $markdownFiles) {
             if ($inMathFence -and $fenceMarker -cne '```') {
                 Add-DocError "$relative`:$lineNumber`: GitHub math fences must use three backticks"
             }
+            if ($inMathFence) { $githubMathFenceCount++ }
             continue
         }
 
         if ($line.Trim() -ceq '$$') {
-            if ($requiresMathFence) {
-                Add-DocError "$relative`:$lineNumber`: multiline display math must use a GitHub math fence"
+            if ($requiresGithubMathFence) {
+                Add-DocError "$relative`:$lineNumber`: display math must use a GitHub math fence; dollar display delimiters are forbidden"
             }
-            else {
-                $inDollarDisplayMath = -not $inDollarDisplayMath
-            }
+            $inDollarDisplayMath = -not $inDollarDisplayMath
             continue
         }
         if ($line -match '\$\$') {
@@ -121,8 +122,39 @@ foreach ($file in $markdownFiles) {
     if ($inDollarDisplayMath) {
         Add-DocError "$relative`: unclosed display-math dollar delimiter"
     }
+    if ($requiresGithubMathFence -and $githubMathFenceCount -eq 0) {
+        Add-DocError "$relative`: expected at least one GitHub math fence"
+    }
 
     $raw = [System.IO.File]::ReadAllText($file.FullName, $utf8)
+    if ($relativeGit -eq 'projects/single_reflection_oa_tof_mass_analyzer/docs/theory/oaaccelerator_time_focus.md' -and
+        $raw -notmatch '(?m)^```math\r?\nW_\{2\}\(x\)=W\(x\)-V_G=E_\{A1\}\(g_1-x\)\.\r?\n```$') {
+        Add-DocError "$relative`: the W_2(x) reference equation must remain in a rendered display-math block"
+    }
+    if ($relativeGit -eq 'projects/single_reflection_oa_tof_mass_analyzer/docs/theory/oaaccelerator_time_focus.md' -and
+        $raw -notmatch '(?s)```math\r?\n\\widetilde V_R = V_R-V_X,.*?\r?\n```') {
+        Add-DocError "$relative`: the widetilde voltage reference equations must remain in rendered display math"
+    }
+    if ($relativeGit -eq 'projects/single_reflection_oa_tof_mass_analyzer/docs/theory/dual_stage_reflectron.md' -and
+        $raw -notmatch '\$ℓ_1\$、\$ℓ_2\$') {
+        Add-DocError "$relative`: reflectron stage lengths must remain inline math, not code or plain text"
+    }
+    if ($relativeGit -eq 'projects/single_reflection_oa_tof_mass_analyzer/docs/theory/oatof_oaaccelerator_coupling.md' -and
+        $raw -notmatch '(?m)^E_\{A1\}=\\frac\{V_R-V_G\}\{g_1\},$') {
+        Add-DocError "$relative`: the E_A1 reference equation must remain in rendered display math"
+    }
+    if ($relativeGit -eq 'projects/single_reflection_oa_tof_mass_analyzer/docs/theory/z_vz_linear_phase_space_coupling.md' -and
+        $raw -notmatch '(?s)```math\r?\n\\chi\(x\)=[^\r\n]*\r?\n\\mathcal W\(x\)=[^\r\n]*\r?\n.*?```') {
+        Add-DocError "$relative`: the chi(x)/mathcal W(x) reference equations must remain in a rendered display-math block"
+    }
+    if ($relativeGit -eq 'projects/single_reflection_oa_tof_mass_analyzer/docs/PROJECT.md') {
+        if ($raw -notmatch '(?m)^t_\{\\mathrm\{TOF\}\}=t_\{\\mathrm\{detector\}\}-t_\{\\mathrm\{pulse,effective\}\}\.$') {
+            Add-DocError "$relative`: the authoritative oa-TOF pulse-relative clock equation is missing"
+        }
+        if ($raw -notmatch 'instrument_clock_peak_is_resolution_claim=false') {
+            Add-DocError "$relative`: the absolute instrument clock resolution-claim prohibition is missing"
+        }
+    }
     $matches = [regex]::Matches($raw, '!?(?:\[[^\]]*\])\((?<target>[^)]+)\)')
     foreach ($match in $matches) {
         $target = $match.Groups['target'].Value.Trim().Trim('<', '>')

@@ -59,25 +59,23 @@ resolved、分析和资产合同管理；实现细节见[`COMSOL.md`](COMSOL.md)
 通过冻结的Formal验证合同与独立GUI/CAD evidence；它是当前拆层合同下的可信Formal参考点，
 不把单一分辨率差异解释为需要通过单独调网格、时间步或quality追平的目标。
 
-### 2026-08-10同资产CPU复测
-
-更换`Intel Core i7-8700`为`Intel Core i9-9900K`后，run
-`20260810_121500__benchmark__cross__cpu-formal-n1000`在不修改物理、数值设置或Formal资产的条件下，
-使用哈希相同的MPH、N=1000离子表和SIMION IOB完成真实串行复测：
-
-| 工作负载 | i7-8700 (s) | i9-9900K (s) | 用时缩短 | 加速比 |
-|---|---:|---:|---:|---:|
-| COMSOL N=1000粒子重追迹 | 789.936 | 657.307 | 16.8% | 1.20x |
-| SIMION N=1000 Fly | 34.42 | 25.35 | 26.4% | 1.36x |
-| SIMION PA Refine，34个数组 | 248.14 | 212.64 | 14.3% | 1.17x |
-
-COMSOL仍为1000/1000命中，逐离子合同字段一致，位置最大差小于`8.7e-9 mm`；SIMION Fly仍为
-1000/1000命中且数值粒子字段逐项完全一致。PA重建的34个数组和353874次迭代数完全相同，42个生成
-文件中41个SHA一致，只有组合输出`accelerator.pa0`未逐字节一致；因此PA结果只能声明为同工作量
-性能复测，不能声明全包字节级复现。以上均为性能证据，不改变当前Formal身份或资格。
+同资产CPU复测确认换用i9-9900K可缩短COMSOL粒子重追迹、SIMION Fly和PA Refine墙钟时间，且不改变
+已核验的粒子结果；它只属于性能证据，不改变Formal身份。精确时序与哈希见run
+`20260810_121500__benchmark__cross__cpu-formal-n1000`的manifest和summary。
 
 质量分辨率统一定义为`R=m/FWHM_m`；窄峰时间域等价式为`R=T/(2·FWHM_t)`。近似高斯时才允许以
 `2.3548×sigma`代替直接半高宽。
+
+分辨率的唯一飞行时间时钟定义为
+
+$$
+t_{\mathrm{TOF}}=t_{\mathrm{detector}}-t_{\mathrm{pulse,effective}}.
+$$
+
+正交加速脉冲的有效提取时刻是oa-TOF时间零点。多极杆中脉冲前的离子生成、驻留和传输时间不得
+计入oa-TOF分辨率，只能通过脉冲瞬间的位置、速度、能量和相位空间分布影响结果。absolute
+instrument clock仅用于调度与诊断，禁止作为分辨率声明；集成分析输出必须保持
+`instrument_clock_peak_is_resolution_claim=false`。
 
 ## 当前能力与边界
 
@@ -90,23 +88,18 @@ COMSOL仍为1000/1000命中，逐离子合同字段一致，位置最大差小�
 | Formal当前设计 | vNext同源N=1000、COMSOL/SIMION/CAD及GUI证据原子冻结 | Formal |
 | RF四极杆离子光学→本项目接口 | 下游只读分析器消费 | 整机Formal BLOCKED |
 
-统一Formal跨求解器诊断入口已由成功run
-`20260801_011500__analysis__cross__formal-diagnostics`完成真实只读验收：轴场比较覆盖源区101点、完整
-加速段389点和反射器863点，同坐标三维场覆盖当前SIMION加速器PA共同插值域内75点，代表轨迹固定为
-18/52/97号粒子。源区、完整加速段和反射器内部轴向场RMS相对差分别为`0.8437%`、`5.1833%`和
-`0.000204%`；75点轴向分量RMS相对差为`10.3674%`。这些是无接受阈值的diagnostic结果，`PASS`只
-表示导出、坐标配对、分析和manifest执行成功，不表示场或轨迹等价，也不改变Formal资格。
+统一Formal跨求解器诊断已完成真实只读验收，覆盖轴场、同坐标三维场和冻结代表轨迹。它没有预注册
+场差接受阈值，成功只表示导出、坐标配对、分析和manifest闭合，不表示场或轨迹等价，也不改变Formal
+资格。精确采样数和差异只查run `20260801_011500__analysis__cross__formal-diagnostics`。
 
 Candidate唯一公开入口为`../workflows/design_candidate/run_candidate.py`；必须提供获批request、run ID和
 显式seed，依次执行粒子表、COMSOL、SIMION、CAD和结构验收。成功结果固定为
 `candidate_accepted_not_promoted`，不含晋升。晋升必须由独立事务完成。
 
-首个声明式campaign `20260802_130000__sim__cross__midgrid-campaign`已完成：1628.8001 V名义行和
-1600 V诊断行均以同一seed、N=100串行通过COMSOL、SIMION、SolidWorks与结构验收，两个子manifest和
-campaign receipt完整。两行SIMION均100/100命中；名义行/诊断行飞行时间标准差分别为0.234492 ns和
-46.486615 ns，FWHM分辨率分别为64610.15和325.67，而最大命中半径仅相差0.00286 mm。该固定样本结果
-表明midgrid电压对时间聚焦高度敏感，并支持保留理论名义值；它不含COMSOL粒子级比较、统计重复或数值
-收敛，仍是`candidate_accepted_not_promoted`，不构成Formal性能资格。
+首个声明式midgrid campaign以同seed、N=100完成COMSOL、SIMION、SolidWorks与结构验收。诊断电压
+显著破坏时间聚焦而未明显改变最大命中半径，支持保留理论名义值；它不含COMSOL粒子级比较、统计重复
+或数值收敛，仍是`candidate_accepted_not_promoted`。完整数值与授权边界见
+[`history/20260802__reflectron-midgrid-campaign-authorization.md`](history/20260802__reflectron-midgrid-campaign-authorization.md)。
 
 跨项目2.2 mm理论源宽候选只验证了变量合同、理论闭合和run-local PA自动重构；没有修改本项目Formal，
 也不改变Formal资格。完整结果只查

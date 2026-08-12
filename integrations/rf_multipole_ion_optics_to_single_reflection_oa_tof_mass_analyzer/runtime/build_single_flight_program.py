@@ -11,6 +11,9 @@ from typing import Any
 
 from common.contracts.file_identity import file_sha256
 from common.multipole.grounded_shield import require_grounded_potential
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.arm8_simion_solver_closure import (
+    full_domain_piecewise_field_lua,
+)
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -187,6 +190,17 @@ def build_extension(
         "-- BEGIN RF-OATOF SINGLE-FLIGHT EXTENSION",
         "adjustable single_flight_enable=1",
         "adjustable sf_ideal_accel_enable=0",
+        "adjustable sf_ideal_accel_stage1_enable=0",
+        "adjustable sf_ideal_accel_stage2_enable=0",
+        "adjustable sf_arm8_global_field_enable=0",
+        "local sf_stage1_env=assert(tonumber(os.getenv('OATOF_IDEAL_ACCEL_STAGE1_ENABLE') or '0'),'invalid stage1 env')",
+        "local sf_stage2_env=assert(tonumber(os.getenv('OATOF_IDEAL_ACCEL_STAGE2_ENABLE') or '0'),'invalid stage2 env')",
+        "local sf_refl_stage1_env=assert(tonumber(os.getenv('OATOF_IDEAL_REFLECTRON_STAGE1_ENABLE') or '0'),'invalid reflectron stage1 env')",
+        "local sf_refl_stage2_env=assert(tonumber(os.getenv('OATOF_IDEAL_REFLECTRON_STAGE2_ENABLE') or '0'),'invalid reflectron stage2 env')",
+        "local sf_arm8_global_env=assert(tonumber(os.getenv('OATOF_ARM8_GLOBAL_FIELD_ENABLE') or '0'),'invalid Arm8 global field env')",
+        "assert((sf_stage1_env==0 or sf_stage1_env==1) and (sf_stage2_env==0 or sf_stage2_env==1),'ideal accelerator stage env must be binary')",
+        "assert((sf_refl_stage1_env==0 or sf_refl_stage1_env==1) and (sf_refl_stage2_env==0 or sf_refl_stage2_env==1),'ideal reflectron stage env must be binary')",
+        "assert(sf_arm8_global_env==0 or sf_arm8_global_env==1,'Arm8 global field env must be binary')",
         f"adjustable single_flight_rf_peak_v={_lua_number(drive['rf_amplitude_V_zero_to_peak_per_group'])}",
         f"adjustable single_flight_frequency_hz={_lua_number(drive['frequency_Hz'])}",
         "adjustable single_flight_rf_steps=160",
@@ -215,6 +229,13 @@ def build_extension(
         "local single_flight_base_other_actions=segment.other_actions",
         "local single_flight_previous={}",
         "local single_flight_handoff_reported={}",
+        "local single_flight_prepulse_reported={}",
+        "local single_flight_grid1_forward_reported={}",
+        "local single_flight_focus_forward_reported={}",
+        "local single_flight_reflectron_entrance_reported={}",
+        "local single_flight_reflectron_midgrid_reported={}",
+        "local single_flight_reflectron_turning_reported={}",
+        "local single_flight_reflectron_exit_reported={}",
         "local single_flight_birth_time_us={",
     ]
     if birth_times_us:
@@ -244,6 +265,13 @@ def build_extension(
             "  return birth+ion_time_of_flight",
             "end",
             "handoff_instrument_time_us=single_flight_instrument_time_us",
+            "local function single_flight_trace_checkpoint(event,t,x,y,z,vx,vy,vz)",
+            "  if trajectory_log_enable==0 then return end",
+            "  local global_particle_id=ion_number+single_flight_particle_id_offset",
+            "  local tof_since_pulse_us=t-handoff_pulse_time_us",
+            "  local kinetic_energy_eV=0.0051821348263402529*ion_mass*(vx*vx+vy*vy+vz*vz)",
+            "  print(string.format('TRACE: %s ion=%d particle_id=%d instrument_time_us=%.12g tof_since_pulse_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g kinetic_energy_eV=%.12g survival_status=alive',event,ion_number,global_particle_id,t,tof_since_pulse_us,x,y,z,vx,vy,vz,kinetic_energy_eV))",
+            "end",
             "local function single_flight_pulse_is_on()",
             "  local instrument_time_us=single_flight_instrument_time_us()",
             "  return handoff_pulse_mode==0 or (handoff_pulse_mode==1 and",
@@ -275,6 +303,16 @@ def build_extension(
             "end",
             "function segment.initialize_run()",
             "  single_flight_base_initialize_run()",
+            "  sf_ideal_accel_stage1_enable=sf_stage1_env",
+            "  sf_ideal_accel_stage2_enable=sf_stage2_env",
+            "  ideal_refl_stage1_enable=sf_refl_stage1_env",
+            "  ideal_refl_stage2_enable=sf_refl_stage2_env",
+            "  sf_arm8_global_field_enable=sf_arm8_global_env",
+            "  assert(sf_ideal_accel_stage1_enable==sf_stage1_env and sf_ideal_accel_stage2_enable==sf_stage2_env,'ideal accelerator stage env was not applied')",
+            "  if trajectory_log_enable~=0 then print(string.format('TRACE: pulse_resolution_accelerator_stage_mode stage1=%d stage2=%d',sf_ideal_accel_stage1_enable,sf_ideal_accel_stage2_enable)) end",
+            "  if trajectory_log_enable~=0 then print(string.format('TRACE: pulse_resolution_reflectron_stage_mode stage1=%d stage2=%d',ideal_refl_stage1_enable,ideal_refl_stage2_enable)) end",
+            "  if trajectory_log_enable~=0 then print(string.format('TRACE: pulse_resolution_arm8_global_field enabled=%d real_pa_blending=0',sf_arm8_global_field_enable)) end",
+            "  if trajectory_log_enable~=0 then print('TRACE: pulse_resolution_overlay_policy ideal_stage_regions_disable_overlay_instance5=1 analytic_field_instance3=1') end",
             "  assert(single_flight_enable~=0,'single-flight Program requires explicit enable')",
             "  local ai=simion.wb.instances[3]",
             "  ai.x,ai.y,ai.z=single_flight_frontend_origin_x,single_flight_frontend_origin_y,single_flight_frontend_origin_z",
@@ -294,7 +332,8 @@ def build_extension(
             "    oi.az,oi.el,oi.rt,oi.scale=0,0,0,1",
             "    oi.pa:fast_adjust(initial)",
             "  end",
-            "  single_flight_previous={}; single_flight_handoff_reported={}; single_flight_prepulse_reported={}",
+            "  single_flight_previous={}; single_flight_handoff_reported={}; single_flight_prepulse_reported={}; single_flight_grid1_forward_reported={}; single_flight_focus_forward_reported={}",
+            "  single_flight_reflectron_entrance_reported={}; single_flight_reflectron_midgrid_reported={}; single_flight_reflectron_turning_reported={}; single_flight_reflectron_exit_reported={}",
             "  if trajectory_log_enable~=0 then",
             "    print(string.format('TRACE: single_flight_contract frontend_origin=(%.12g,%.12g,%.12g) handoff_x=%.12g rf_peak_v=%.12g frequency_hz=%.12g',ai.x,ai.y,ai.z,single_flight_handoff_x,single_flight_rf_peak_v,single_flight_frequency_hz))",
             "  end",
@@ -306,7 +345,9 @@ def build_extension(
             "  if single_flight_base_instance_adjust then single_flight_base_instance_adjust() end",
             "  if single_flight_overlay_enabled==0 or ion_instance~=5 then return end",
             "  local di=simion.wb.instances[4]",
-            "  if sf_ideal_accel_enable~=0 or di:inside_wc(ion_px_mm,ion_py_mm,ion_pz_mm) or",
+            "  local ideal_stage1_region=sf_ideal_accel_stage1_enable~=0 and ion_pz_mm>=accelerator_repeller_front_z_mm and ion_pz_mm<accelerator_grid1_z_mm",
+            "  local ideal_stage2_region=sf_ideal_accel_stage2_enable~=0 and ion_pz_mm>=accelerator_grid1_z_mm and ion_pz_mm<accelerator_grid2_z_mm",
+            "  if sf_arm8_global_field_enable~=0 or sf_ideal_accel_enable~=0 or ideal_stage1_region or ideal_stage2_region or di:inside_wc(ion_px_mm,ion_py_mm,ion_pz_mm) or",
             "      ion_px_mm<=single_flight_overlay_active_x_min or ion_px_mm>=single_flight_overlay_active_x_max or",
             "      ion_py_mm<=single_flight_overlay_active_y_min or ion_py_mm>=single_flight_overlay_active_y_max or",
             "      ion_pz_mm<=single_flight_overlay_active_z_min or ion_pz_mm>=single_flight_overlay_active_z_max then ion_instance=0 end",
@@ -314,13 +355,27 @@ def build_extension(
             "function segment.initialize()",
             "  single_flight_base_initialize()",
             "  local instrument_time_us=single_flight_instrument_time_us()",
-            "  single_flight_previous[ion_number]={t=instrument_time_us,x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm}",
+            "  single_flight_previous[ion_number]={t=instrument_time_us,x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm,vx=ion_vx_mm,vy=ion_vy_mm,vz=ion_vz_mm}",
             "  if trajectory_log_enable~=0 then",
             "    print(string.format('TRACE: source_release ion=%d instrument_time_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g',ion_number,instrument_time_us,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm))",
             "  end",
             "end",
             "function segment.tstep_adjust()",
             "  single_flight_base_tstep_adjust()",
+            "  if (sf_ideal_accel_enable~=0 or sf_ideal_accel_stage1_enable~=0 or sf_ideal_accel_stage2_enable~=0) and ion_instance==3 and single_flight_pulse_is_on() and ion_vz_mm>0 then",
+            "    local next_plane=nil; local E=0",
+            "    if ion_pz_mm<accelerator_grid1_z_mm then next_plane=accelerator_grid1_z_mm; E=(V_repeller-V_grid1)/(accelerator_grid1_z_mm-accelerator_repeller_front_z_mm)",
+            "    elseif ion_pz_mm<accelerator_grid2_z_mm then next_plane=accelerator_grid2_z_mm; E=V_grid1/(accelerator_grid2_z_mm-accelerator_grid1_z_mm)",
+            "    elseif ion_pz_mm<accelerator_grid2_z_mm+accelerator_focus_drift_mm then next_plane=accelerator_grid2_z_mm+accelerator_focus_drift_mm end",
+            "    if next_plane~=nil then",
+            "      local distance=next_plane-ion_pz_mm",
+            "      local acceleration=ion_charge*96.4853321233*E/ion_mass",
+            "      local crossing_time",
+            "      if math.abs(acceleration)>1e-15 then crossing_time=(-ion_vz_mm+math.sqrt(ion_vz_mm^2+2*acceleration*distance))/acceleration",
+            "      else crossing_time=distance/ion_vz_mm end",
+            "      if crossing_time>0 and ion_time_step>crossing_time then ion_time_step=crossing_time end",
+            "    end",
+            "  end",
             "  if ion_instance==3 or (single_flight_overlay_enabled~=0 and ion_instance==5) then",
             "    local rf_step=1e6/single_flight_frequency_hz/single_flight_rf_steps",
             "    if ion_time_step>rf_step then ion_time_step=rf_step end",
@@ -328,14 +383,14 @@ def build_extension(
             "end",
             "function segment.efield_adjust()",
             "  single_flight_base_efield_adjust()",
-            "  if sf_ideal_accel_enable==0 or ion_instance~=3 or",
+            "  if (sf_ideal_accel_enable==0 and sf_ideal_accel_stage1_enable==0 and sf_ideal_accel_stage2_enable==0) or ion_instance~=3 or",
             "      not single_flight_pulse_is_on() then return end",
             "  if math.abs(ion_px_mm-accelerator_axis_x_mm)>accelerator_bore_half_mm or",
             "      math.abs(ion_py_mm-accelerator_axis_y_mm)>accelerator_bore_half_mm then return end",
             "  local z,E=ion_pz_mm,nil",
-            "  if z>=accelerator_repeller_front_z_mm and z<accelerator_grid1_z_mm then",
+            "  if z>=accelerator_repeller_front_z_mm and z<accelerator_grid1_z_mm and (sf_ideal_accel_enable~=0 or sf_ideal_accel_stage1_enable~=0) then",
             "    E=(V_repeller-V_grid1)/(accelerator_grid1_z_mm-accelerator_repeller_front_z_mm)",
-            "  elseif z>=accelerator_grid1_z_mm and z<accelerator_grid2_z_mm then",
+            "  elseif z>=accelerator_grid1_z_mm and z<accelerator_grid2_z_mm and (sf_ideal_accel_enable~=0 or sf_ideal_accel_stage2_enable~=0) then",
             "    E=V_grid1/(accelerator_grid2_z_mm-accelerator_grid1_z_mm)",
             "  end",
             "  if E~=nil then",
@@ -364,7 +419,58 @@ def build_extension(
             "      print(string.format('TRACE: single_flight_handoff ion=%d instrument_time_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g',ion_number,tc,single_flight_handoff_x,yc,zc,ion_vx_mm,ion_vy_mm,ion_vz_mm))",
             "    end",
             "  end",
-            "  single_flight_previous[ion_number]={t=instrument_time_us,x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm}",
+            "  if p and not single_flight_grid1_forward_reported[ion_number] and p.z<accelerator_grid1_z_mm and ion_pz_mm>=accelerator_grid1_z_mm and ion_vz_mm>0 then",
+            "    local f=(accelerator_grid1_z_mm-p.z)/(ion_pz_mm-p.z)",
+            "    local tc=p.t+f*(instrument_time_us-p.t)",
+            "    local xc=p.x+f*(ion_px_mm-p.x); local yc=p.y+f*(ion_py_mm-p.y)",
+            "    single_flight_grid1_forward_reported[ion_number]=true",
+            "    if trajectory_log_enable~=0 then",
+            "      print(string.format('TRACE: accelerator_grid1_forward ion=%d instrument_time_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g',ion_number,tc,xc,yc,accelerator_grid1_z_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm))",
+            "    end",
+            "  end",
+            "  local focus_z=accelerator_grid2_z_mm+accelerator_focus_drift_mm",
+            "  if p and not single_flight_focus_forward_reported[ion_number] and p.z<focus_z and ion_pz_mm>=focus_z and ion_vz_mm>0 then",
+            "    local f=(focus_z-p.z)/(ion_pz_mm-p.z)",
+            "    local tc=p.t+f*(instrument_time_us-p.t)",
+            "    local xc=p.x+f*(ion_px_mm-p.x); local yc=p.y+f*(ion_py_mm-p.y)",
+            "    single_flight_focus_forward_reported[ion_number]=true",
+            "    if trajectory_log_enable~=0 then",
+            "      print(string.format('TRACE: accelerator_focus_forward ion=%d instrument_time_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g',ion_number,tc,xc,yc,focus_z,ion_vx_mm,ion_vy_mm,ion_vz_mm))",
+            "    end",
+            "  end",
+            "  if p and not single_flight_reflectron_entrance_reported[ion_number] and p.z<reflectron_entgrid_z_mm and ion_pz_mm>=reflectron_entgrid_z_mm and ion_vz_mm>0 then",
+            "    local f=(reflectron_entgrid_z_mm-p.z)/(ion_pz_mm-p.z)",
+            "    local tc=p.t+f*(instrument_time_us-p.t)",
+            "    local xc=p.x+f*(ion_px_mm-p.x); local yc=p.y+f*(ion_py_mm-p.y)",
+            "    local vxc=p.vx+f*(ion_vx_mm-p.vx); local vyc=p.vy+f*(ion_vy_mm-p.vy); local vzc=p.vz+f*(ion_vz_mm-p.vz)",
+            "    single_flight_reflectron_entrance_reported[ion_number]=true",
+            "    single_flight_trace_checkpoint('reflectron_entrance_forward',tc,xc,yc,reflectron_entgrid_z_mm,vxc,vyc,vzc)",
+            "  end",
+            "  if p and single_flight_reflectron_entrance_reported[ion_number] and not single_flight_reflectron_midgrid_reported[ion_number] and p.z<reflectron_midgrid_z_mm and ion_pz_mm>=reflectron_midgrid_z_mm and ion_vz_mm>0 then",
+            "    local f=(reflectron_midgrid_z_mm-p.z)/(ion_pz_mm-p.z)",
+            "    local tc=p.t+f*(instrument_time_us-p.t)",
+            "    local xc=p.x+f*(ion_px_mm-p.x); local yc=p.y+f*(ion_py_mm-p.y)",
+            "    local vxc=p.vx+f*(ion_vx_mm-p.vx); local vyc=p.vy+f*(ion_vy_mm-p.vy); local vzc=p.vz+f*(ion_vz_mm-p.vz)",
+            "    single_flight_reflectron_midgrid_reported[ion_number]=true",
+            "    single_flight_trace_checkpoint('reflectron_midgrid_forward',tc,xc,yc,reflectron_midgrid_z_mm,vxc,vyc,vzc)",
+            "  end",
+            "  if p and single_flight_reflectron_midgrid_reported[ion_number] and not single_flight_reflectron_turning_reported[ion_number] and p.vz>0 and ion_vz_mm<=0 then",
+            "    local f=p.vz/(p.vz-ion_vz_mm)",
+            "    local tc=p.t+f*(instrument_time_us-p.t)",
+            "    local xc=p.x+f*(ion_px_mm-p.x); local yc=p.y+f*(ion_py_mm-p.y); local zc=p.z+f*(ion_pz_mm-p.z)",
+            "    local vxc=p.vx+f*(ion_vx_mm-p.vx); local vyc=p.vy+f*(ion_vy_mm-p.vy)",
+            "    single_flight_reflectron_turning_reported[ion_number]=true",
+            "    single_flight_trace_checkpoint('reflectron_turning_point',tc,xc,yc,zc,vxc,vyc,0)",
+            "  end",
+            "  if p and single_flight_reflectron_turning_reported[ion_number] and not single_flight_reflectron_exit_reported[ion_number] and p.z>reflectron_entgrid_z_mm and ion_pz_mm<=reflectron_entgrid_z_mm and ion_vz_mm<0 then",
+            "    local f=(reflectron_entgrid_z_mm-p.z)/(ion_pz_mm-p.z)",
+            "    local tc=p.t+f*(instrument_time_us-p.t)",
+            "    local xc=p.x+f*(ion_px_mm-p.x); local yc=p.y+f*(ion_py_mm-p.y)",
+            "    local vxc=p.vx+f*(ion_vx_mm-p.vx); local vyc=p.vy+f*(ion_vy_mm-p.vy); local vzc=p.vz+f*(ion_vz_mm-p.vz)",
+            "    single_flight_reflectron_exit_reported[ion_number]=true",
+            "    single_flight_trace_checkpoint('reflectron_exit_return',tc,xc,yc,reflectron_entgrid_z_mm,vxc,vyc,vzc)",
+            "  end",
+            "  single_flight_previous[ion_number]={t=instrument_time_us,x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm,vx=ion_vx_mm,vy=ion_vy_mm,vz=ion_vz_mm}",
             "  if single_flight_terminate_after_pulse~=0 and instrument_time_us>=handoff_pulse_time_us then ion_splat=1 end",
             "end",
             "-- END RF-OATOF SINGLE-FLIGHT EXTENSION",
@@ -383,6 +489,7 @@ def main() -> int:
     parser.add_argument("--accelerator-overlay-contract", type=Path)
     parser.add_argument("--oatof", required=True, type=Path)
     parser.add_argument("--initial-global-state", type=Path)
+    parser.add_argument("--arm8-global-field-contract", type=Path)
     parser.add_argument("--terminate-after-pulse", action="store_true")
     parser.add_argument(
         "--frontend-program-profile",
@@ -425,6 +532,22 @@ def main() -> int:
             ),
         )
     output = formal.rstrip() + "\n\n" + pulse.strip() + "\n" + extension
+    if args.arm8_global_field_contract is not None:
+        arm8_contract = _load(args.arm8_global_field_contract)
+        if (
+            arm8_contract.get("role") != "rf_oatof_arm8_simion_solver_closure_contract"
+            or arm8_contract.get("potential", {}).get("real_pa_field_blending_allowed") is not False
+        ):
+            raise ValueError("Arm-8 global field contract is not a no-blending closure authority")
+        output += "\n-- BEGIN REAL-BEAM ARM8 GLOBAL THEORETICAL FIELD\n"
+        output += full_domain_piecewise_field_lua(
+            arm8_contract["potential"],
+            prefix="sf_arm8",
+            enable_expression=(
+                "sf_arm8_global_field_enable~=0 and single_flight_pulse_is_on()"
+            ),
+        )
+        output += "\n-- END REAL-BEAM ARM8 GLOBAL THEORETICAL FIELD\n"
     if output.count("simion.workbench_program()") != 1:
         raise ValueError("combined single-flight Program must declare one workbench")
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -446,6 +569,11 @@ def main() -> int:
         "initial_global_state_sha256": (
             file_sha256(args.initial_global_state)
             if args.initial_global_state is not None
+            else None
+        ),
+        "arm8_global_field_contract_sha256": (
+            file_sha256(args.arm8_global_field_contract)
+            if args.arm8_global_field_contract is not None
             else None
         ),
         "clock_basis": args.clock_basis,

@@ -13,6 +13,16 @@ from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import ContractError, validate_schema
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.compile_candidate_design import (
     compile_design_overrides,
+    derive_accelerator_outer_envelope_min_z,
+    derive_shield_bounds,
+)
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_time_focus import (
+    accelerator_state,
+    linear_phase_space_timing_coefficients,
+    match_finite_phase_space_interval,
+)
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.oatof_oaaccelerator_coupling import (
+    solve_coupled_reflectron_from_accelerator_derivatives,
 )
 
 
@@ -92,6 +102,115 @@ def compile_geometry_and_port(
             "simion_rebuild_plan": {
                 "frontend_pa": False,
                 "flight_tube_pa": False,
+                "reflectron_pa": False,
+            },
+        }
+    finite_profile_path = profile.get("finite_interval_accelerator_profile")
+    if finite_profile_path is not None:
+        if overrides:
+            raise ContractError(
+                "finite-interval accelerator profile owns the source-width design"
+            )
+        match_profile = _load((Path(__file__).resolve().parents[1] / finite_profile_path).resolve())
+        finite = match_profile["finite_interval_design"]
+        frozen = match_profile["frozen_phase_space_input"]
+        accelerator = geometry["geometry_derivation"]["accelerator"]
+        nominal_energy = geometry["geometry_derivation"]["reflectron"][
+            "nominal_energy_per_charge_V"
+        ]
+        solution = match_finite_phase_space_interval(
+            float(accelerator["d1_mm"]),
+            float(accelerator["d2_mm"]),
+            float(frozen["release_position_mm"]),
+            float(finite["source_full_width_mm"]),
+            float(frozen["mean_initial_velocity_m_per_s"]),
+            float(frozen["velocity_slope_m_per_s_per_mm"]),
+            float(frozen["mass_to_charge_Th"]),
+            float(nominal_energy),
+            exit_v=float(geometry["electrodes_V"]["grid2"]),
+            voltage_drop_bounds_v=tuple(
+                float(value) for value in match_profile["solver"]["voltage_drop_bounds_V"]
+            ),
+            sample_count=int(finite["sample_count"]),
+            voltage_tolerance_v=float(finite["voltage_tolerance_V"]),
+        )
+        geometry["electrodes_V"]["repeller"] = solution.repeller_v
+        geometry["electrodes_V"]["grid1"] = solution.intermediate_v
+        geometry["geometry_mm"]["accelerator_repeller_z"] = solution.canonical_repeller_z_mm
+        geometry["geometry_mm"]["accelerator_grid1_z"] = solution.canonical_grid1_z_mm
+        geometry["geometry_mm"]["accelerator_grid2_z"] = solution.canonical_grid2_z_mm
+        geometry["particle_source"]["center_z_mm"] = (
+            solution.canonical_repeller_z_mm + solution.source_center_mm
+        )
+        geometry["particle_source"]["center_z_rule"] = (
+            "geometry_derivation.accelerator.finite_interval_theory."
+            "canonical_repeller_z_mm + source_center_mm"
+        )
+        geometry["particle_source"]["size_z_mm"] = solution.source_full_width_mm
+        accelerator_state_value = accelerator_state(
+            solution.repeller_v,
+            solution.intermediate_v,
+            float(accelerator["d1_mm"]),
+            float(accelerator["d2_mm"]),
+            exit_v=solution.exit_v,
+            release_position_mm=solution.source_center_mm,
+            require_downstream_focus=False,
+        )
+        coefficients = linear_phase_space_timing_coefficients(
+            accelerator_state_value,
+            float(frozen["mass_to_charge_Th"]),
+            solution.mean_initial_velocity_m_per_s,
+            solution.velocity_slope_m_per_s_per_mm,
+            solution.focus_drift_mm,
+        )
+        half_energy_range = solution.stage1_field_v_per_mm * (
+            solution.source_full_width_mm / 2.0
+        )
+        coupled = solve_coupled_reflectron_from_accelerator_derivatives(
+            coefficients.actual_energy_per_charge_v,
+            float(geometry["geometry_mm"]["L_stage1"]),
+            float(geometry["geometry_mm"]["L_flight"]),
+            float(geometry["geometry_mm"]["L_flight"]),
+            coefficients.first_derivative_at_focus,
+            coefficients.second_derivative_at_focus,
+            energy_min_v=solution.nominal_energy_per_charge_v - half_energy_range,
+            energy_max_v=solution.nominal_energy_per_charge_v + half_energy_range,
+        )
+        if coupled.required_stage2_depth_mm > float(geometry["geometry_mm"]["L_stage2"]):
+            raise ContractError(
+                "finite-interval coupled reflectron exceeds the retained stage-2 length"
+            )
+        geometry["electrodes_V"]["midgrid"] = coupled.stage1_voltage_drop_v
+        geometry["electrodes_V"]["backplate"] = (
+            coupled.stage1_voltage_drop_v
+            + coupled.stage2_field_v_per_mm * float(geometry["geometry_mm"]["L_stage2"])
+        )
+        accelerator.update({
+            "canonical_repeller_z_mm": solution.canonical_repeller_z_mm,
+            "canonical_grid1_z_mm": solution.canonical_grid1_z_mm,
+            "canonical_grid2_z_mm": solution.canonical_grid2_z_mm,
+            "canonical_focus_z_mm": 0.0,
+            "focus_drift_after_grid2_mm": solution.focus_drift_mm,
+            "finite_interval_theory": {
+                **solution.__dict__,
+                "profile_path": finite_profile_path,
+                "linear_phase_space_coefficients": coefficients.__dict__,
+                "coupled_reflectron": coupled.__dict__,
+            },
+        })
+        derive_shield_bounds(
+            geometry, derive_accelerator_outer_envelope_min_z(geometry)
+        )
+        design_derivation = {
+            "method": "finite_interval_uniform_two_field_theory_v1",
+            "changed_variables": ["source_release_full_width"],
+            "rebuild_effects": [
+                "accelerator_voltage", "accelerator_axial_position",
+                "reflectron_voltage",
+            ],
+            "simion_rebuild_plan": {
+                "frontend_pa": True,
+                "flight_tube_pa": True,
                 "reflectron_pa": False,
             },
         }

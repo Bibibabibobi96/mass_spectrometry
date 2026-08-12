@@ -42,6 +42,150 @@ UPSTREAM_PROJECTS = {
 }
 
 
+def validate_pulse_resolution_optimization_campaign(
+    campaign: dict[str, Any], *, execution_requested: bool,
+    experiment: dict[str, Any] | None = None,
+) -> None:
+    """Validate cross-field optimization semantics before any solver input is read."""
+    contract = campaign.get("pulse_resolution_optimization")
+    if contract is None:
+        return
+    arms = contract["attribution_arms"]
+    if [arm["sequence"] for arm in arms] != list(range(1, 9)):
+        raise ContractError("pulse-resolution attribution arms must be ordered 1 through 8")
+    expected_matrix = [
+        ("real_beam_all_real", "real_beam", "all_real", "real"),
+        ("real_beam_ideal_stage1", "real_beam", "ideal_stage1", "real"),
+        ("real_beam_ideal_stage1_stage2", "real_beam", "ideal_stage1_stage2", "real"),
+        ("real_beam_all_ideal", "real_beam", "ideal_accelerator", "ideal"),
+        ("finite_source_all_real", "finite_interval_2p2mm_theory_source", "all_real", "real"),
+        ("finite_source_ideal_accelerator", "finite_interval_2p2mm_theory_source", "ideal_accelerator", "real"),
+        ("finite_source_all_ideal", "finite_interval_2p2mm_theory_source", "ideal_accelerator", "ideal"),
+        ("axial_source_all_ideal", "on_axis_longitudinal_ideal_source", "ideal_accelerator", "ideal"),
+    ]
+    observed_matrix = [
+        (arm["arm_id"], arm["source_model"], arm["accelerator_field"], arm["reflectron_field"])
+        for arm in arms
+    ]
+    if observed_matrix != expected_matrix:
+        raise ContractError("pulse-resolution attribution matrix differs")
+    if [arm["implementation_status"] for arm in arms] != (
+        ["executable_registration"] + ["executable_paired_screening"] * 2
+        + ["executable_paired_screening_with_arm8_closure"]
+        + ["planning_only_until_adapter_support"] * 4
+    ):
+        raise ContractError("pulse-resolution executable-arm status matrix differs")
+    screening = contract["screening_promotion"]
+    if screening["axial_ideal_closure_arm_id"] != arms[-1]["arm_id"]:
+        raise ContractError("axial ideal closure stop rule must bind attribution arm 8")
+    gates = contract["acceptance_gates"]
+    expected_gates = {
+        "full_beam": ("all_pulse_eligible_particles", 20000, 0.806),
+        "theoretical_window": (
+            "detector_blind_theoretical_acceptance_window", 30000, 0.537
+        ),
+    }
+    for gate_id, expected in expected_gates.items():
+        gate = gates[gate_id]
+        observed = (
+            gate["population_basis"], gate["mass_resolution_minimum"],
+            gate["direct_fwhm_maximum_ns"],
+        )
+        if observed != expected:
+            raise ContractError(f"pulse-resolution {gate_id} gate differs")
+    prohibited = set(contract["optimization_constraints"]["derived_variables_prohibited"])
+    expected_prohibited = {
+        "absolute_electrode_voltages", "focus_plane", "source_center",
+        "reflectron_endpoints", "ring_baseline_voltages", "shield_position",
+    }
+    if prohibited != expected_prohibited:
+        raise ContractError("pulse-resolution derived-variable prohibition differs")
+    if execution_requested:
+        if experiment is None:
+            raise ContractError("pulse-resolution execution requires a selected row")
+        baseline_row = (
+            experiment.get("pulse_resolution_attribution_arm_id")
+            == "real_beam_all_real"
+            and experiment.get("pulse_resolution_execution_mode")
+            == "screening_prefix_n100_baseline_registration"
+            and experiment.get("single_flight_accelerator_field_profile_id")
+            == "accelerator_real_pa"
+        )
+        paired_row = (
+            experiment.get("pulse_resolution_attribution_arm_id")
+            == "real_beam_ideal_stage1"
+            and experiment.get("pulse_resolution_execution_mode")
+            == "screening_prefix_n100_paired_candidate"
+            and experiment.get("single_flight_accelerator_field_profile_id")
+            == "accelerator_ideal_stage1_real_stage2"
+            and experiment.get("pulse_resolution_baseline_result") is not None
+        )
+        paired_stage12_row = (
+            experiment.get("pulse_resolution_attribution_arm_id")
+            == "real_beam_ideal_stage1_stage2"
+            and experiment.get("pulse_resolution_execution_mode")
+            == "screening_prefix_n100_paired_candidate"
+            and experiment.get("single_flight_accelerator_field_profile_id")
+            == "accelerator_ideal_stage1_stage2_real_reflectron"
+            and experiment.get("pulse_resolution_baseline_result") is not None
+        )
+        deprecated_all_ideal_row = (
+            experiment.get("pulse_resolution_attribution_arm_id") == "real_beam_all_ideal"
+            and experiment.get("pulse_resolution_execution_mode")
+            == "screening_prefix_n100_paired_candidate"
+            and experiment.get("single_flight_accelerator_field_profile_id")
+            == "accelerator_ideal_stage1_stage2_ideal_reflectron"
+            and experiment.get("pulse_resolution_deprecated_counterfactual") is True
+        )
+        paired_all_ideal_row = (
+            experiment.get("pulse_resolution_attribution_arm_id") == "real_beam_all_ideal"
+            and experiment.get("pulse_resolution_execution_mode")
+            == "screening_prefix_n100_paired_candidate"
+            and experiment.get("single_flight_accelerator_field_profile_id")
+            == "arm8_closed_global_piecewise_theoretical_field"
+            and experiment.get("pulse_resolution_baseline_result") is not None
+            and all(experiment.get(key) is not None for key in (
+                "pulse_resolution_axial_ideal_closure_receipt",
+                "pulse_resolution_arm8_simion_closure_result",
+                "pulse_resolution_arm8_simion_closure_manifest",
+                "pulse_resolution_arm8_simion_closure_contract",
+            ))
+        )
+        if deprecated_all_ideal_row:
+            raise ContractError("deprecated hard-mask real-beam all-ideal experiment is non-executable")
+        if experiment.get("execution_strategy") != "simion_single_flight" or not (
+            baseline_row or paired_row or paired_stage12_row or paired_all_ideal_row
+        ):
+            raise ContractError("pulse-resolution N=100 experiment is not executable")
+
+
+SCREENING_SOURCE_COLUMNS = [
+    "particle_id", "birth_time_s", "x_mm", "y_mm", "z_mm",
+    "vx_m_s", "vy_m_s", "vz_m_s", "mass_amu", "charge_state",
+]
+
+
+def write_pulse_resolution_screening_prefix(
+    source_path: Path, output_path: Path, *, mother_count: int, prefix_count: int,
+) -> str:
+    """Write the deterministic governed mother-sample prefix with no sampling."""
+    if not 0 < prefix_count <= mother_count:
+        raise ContractError("pulse-resolution prefix count is invalid")
+    with source_path.open(encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        rows, columns = list(reader), reader.fieldnames
+    if columns != SCREENING_SOURCE_COLUMNS or len(rows) != mother_count:
+        raise ContractError("pulse-resolution mother source is not canonical N=1000")
+    if [int(row["particle_id"]) for row in rows] != list(range(1, mother_count + 1)):
+        raise ContractError("pulse-resolution mother-source IDs must be contiguous")
+    with output_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=SCREENING_SOURCE_COLUMNS,
+                                lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(rows[:prefix_count])
+    return file_sha256(output_path)
+
+
 def _load(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8-sig"))
     if not isinstance(value, dict):
@@ -260,9 +404,49 @@ def prepare_family_source_closure(
     if len(matches) != 1:
         raise ContractError("campaign experiment must resolve exactly once")
     experiment = matches[0]
+    validate_pulse_resolution_optimization_campaign(
+        campaign, execution_requested=True, experiment=experiment
+    )
     execution_strategy = experiment.get(
         "execution_strategy", "staged_three_stage"
     )
+    if experiment.get("single_flight_accelerator_field_profile_id") == (
+        "arm8_closed_global_piecewise_theoretical_field"
+    ):
+        records = {
+            key: _workspace_record(workspace, experiment[key], key)
+            for key in (
+                "pulse_resolution_axial_ideal_closure_receipt",
+                "pulse_resolution_arm8_simion_closure_result",
+                "pulse_resolution_arm8_simion_closure_manifest",
+                "pulse_resolution_arm8_simion_closure_contract",
+            )
+        }
+        analytic = _load(records["pulse_resolution_axial_ideal_closure_receipt"])
+        result = _load(records["pulse_resolution_arm8_simion_closure_result"])
+        manifest = _load(records["pulse_resolution_arm8_simion_closure_manifest"])
+        closure = _load(records["pulse_resolution_arm8_simion_closure_contract"])
+        if (
+            analytic.get("receipt_role") != "axial_ideal_arm8_solver_independent_analytic_closure"
+            or analytic.get("status") != "pass"
+            or not analytic.get("all_assertions_passed")
+            or float(analytic.get("peak_metrics", {}).get("mass_resolution", 0)) < 30000
+            or float(analytic.get("peak_metrics", {}).get("direct_fwhm_tof_ns", 1)) > 0.537
+            or result.get("role") != "rf_oatof_arm8_simion_solver_closure_result"
+            or result.get("status") != "pass"
+            or not result.get("all_assertions_passed")
+            or int(result.get("particles", 0)) != 101
+            or float(result.get("pulse_effective_peak", {}).get("mass_resolution", 0)) < 30000
+            or float(result.get("pulse_effective_peak", {}).get("direct_fwhm_tof_ns", 1)) > 0.537
+            or manifest.get("role") != "rf_oatof_arm8_simion_solver_closure_n101_manifest"
+            or manifest.get("status") != "success"
+            or int(manifest.get("solver", {}).get("detector_hits", 0)) != 101
+            or manifest.get("output_sha256", {}).get("solver_closure_receipt") != experiment["pulse_resolution_arm8_simion_closure_result"]["sha256"]
+            or closure.get("role") != "rf_oatof_arm8_simion_solver_closure_contract"
+            or closure.get("analytic_receipt", {}).get("sha256") != experiment["pulse_resolution_axial_ideal_closure_receipt"]["sha256"]
+            or closure.get("potential", {}).get("real_pa_field_blending_allowed") is not False
+        ):
+            raise ContractError("Arm8 analytic/SIMION full-domain closure evidence differs")
     pulse_offset_rf_periods = float(
         experiment.get("single_flight_pulse_offset_rf_periods", 0.0)
     )
@@ -373,6 +557,21 @@ def prepare_family_source_closure(
         expected_project_id=expected_project_id,
     )
     source = evidence["source"]
+    pulse_contract = campaign.get("pulse_resolution_optimization")
+    pulse_prefix_path = None
+    pulse_prefix_sha256 = None
+    if pulse_contract is not None:
+        pulse_prefix_path = plan_output.parent / "inputs" / (
+            "pulse_resolution_arm1_all_real_screening_prefix_n100.csv"
+        )
+        pulse_prefix_path.parent.mkdir(parents=True, exist_ok=True)
+        pulse_prefix_sha256 = write_pulse_resolution_screening_prefix(
+            _workspace_record(workspace, source["particle_source"],
+                              "pulse-resolution mother source"),
+            pulse_prefix_path,
+            mother_count=int(pulse_contract["population_contract"]["mother_sample_count"]),
+            prefix_count=int(pulse_contract["population_contract"]["screening_prefix_count"]),
+        )
     single_flight_source = experiment.get("single_flight_particle_source")
     single_flight_source_path = None
     selection_receipt = None
@@ -592,7 +791,85 @@ def prepare_family_source_closure(
         "metadata_sha256": source["metadata"]["sha256"],
     }
     row_sha256 = _canonical_sha256(experiment)
+    registration_receipt_path = None
+    registration_receipt_sha256 = None
+    if pulse_contract is not None:
+        with pulse_prefix_path.open(encoding="utf-8", newline="") as handle:
+            prefix_ids = [int(row["particle_id"]) for row in csv.DictReader(handle)]
+        if prefix_ids != list(range(1, 101)):
+            raise ContractError("pulse-resolution frozen prefix IDs differ")
+        paired_candidate = experiment["pulse_resolution_execution_mode"] == (
+            "screening_prefix_n100_paired_candidate"
+        )
+        if paired_candidate:
+            baseline_record = experiment["pulse_resolution_baseline_result"]
+            baseline_path = _workspace_record(
+                workspace, baseline_record, "pulse-resolution baseline result"
+            )
+            baseline = _load(baseline_path)
+            if (
+                baseline.get("role") != "rf_oatof_pulse_resolution_baseline_result"
+                or baseline.get("experiment_id") != "pulse_resolution_baseline"
+                or baseline.get("arm", {}).get("arm_id") != "real_beam_all_real"
+                or baseline.get("prefix", {}).get("ordered_particle_ids") != prefix_ids
+            ):
+                raise ContractError("paired screening baseline result identity differs")
+            registration_receipt_path = plan_output.parent / "inputs" / (
+                "pulse_resolution_baseline_result_reference.json"
+            )
+            shutil.copy2(baseline_path, registration_receipt_path)
+            registration_receipt_sha256 = file_sha256(registration_receipt_path)
+        else:
+            registration_receipt = {
+            "schema_version": 1,
+            "role": "rf_oatof_pulse_resolution_baseline_registration_authority",
+            "campaign_id": campaign["campaign_id"],
+            "campaign_sha256": repository_text_sha256(campaign_path),
+            "experiment_id": experiment_id,
+            "experiment_row_sha256": row_sha256,
+            "physical_arm": {
+                "arm_id": "real_beam_all_real",
+                "description": (
+                    "real multipole beam + real accelerator field + real reflectron "
+                    "field, deterministic N=100 prefix baseline registration"
+                ),
+            },
+            "mother_sample": {
+                "run_id": source["run_id"],
+                "manifest": source["manifest"],
+                "particle_source": source["particle_source"],
+                "particle_count": 1000,
+            },
+            "prefix": {
+                "path": "inputs/" + pulse_prefix_path.name,
+                "sha256": pulse_prefix_sha256,
+                "count": 100,
+                "selection_algorithm": "first_100_rows_in_frozen_file_order",
+                "selection_seed": None,
+                "ordered_particle_ids": prefix_ids,
+                "particle_id_sha256_ordered": _canonical_sha256(prefix_ids).lower(),
+            },
+            "analysis_bootstrap_seed": int(pulse_contract["bootstrap"]["seed"]),
+            "execution_status": "baseline_registered_not_candidate",
+            "solver_execution_performed": False,
+            "promotion_gate_invoked": False,
+            "promotion_status": "not_evaluated",
+            "formal_gate_passed": False,
+        }
+            registration_receipt["receipt_sha256"] = _canonical_sha256(
+                registration_receipt
+            ).lower()
+            registration_receipt_path = plan_output.parent / "inputs" / (
+                "pulse_resolution_real_beam_real_accelerator_real_reflectron_"
+                "n100_baseline_registration_authority.json"
+            )
+            registration_receipt_path.write_text(
+                json.dumps(registration_receipt, indent=2) + "\n", encoding="utf-8"
+            )
+            registration_receipt_sha256 = file_sha256(registration_receipt_path)
     execution_particle_count = (
+        int(pulse_contract["population_contract"]["screening_prefix_count"])
+        if pulse_contract is not None else
         int(single_flight_source["particle_count"])
         if single_flight_source is not None
         else evidence["launched_particle_count"]
@@ -669,6 +946,34 @@ def prepare_family_source_closure(
                 f"single_flight_particle_source_sha256={single_flight_source['sha256']}",
                 f"single_flight_particle_source_count={single_flight_source['particle_count']}",
                 f"single_flight_sampling_mode={single_flight_source['sampling_mode']}",
+            ]) + ([] if pulse_contract is None else [
+                "pulse_resolution_attribution_arm_id="
+                + experiment["pulse_resolution_attribution_arm_id"],
+                "pulse_resolution_execution_mode="
+                + experiment["pulse_resolution_execution_mode"],
+                "pulse_resolution_prefix_filename=inputs/"
+                + pulse_prefix_path.name,
+                "pulse_resolution_prefix_sha256=" + pulse_prefix_sha256,
+                "pulse_resolution_bootstrap_seed="
+                + str(pulse_contract["bootstrap"]["seed"]),
+                "pulse_resolution_registration_filename=inputs/"
+                + registration_receipt_path.name,
+                "pulse_resolution_registration_sha256="
+                + registration_receipt_sha256,
+            ]) + ([] if experiment.get("pulse_resolution_baseline_checkpoints") is None else [
+                "pulse_resolution_baseline_checkpoints_path="
+                + experiment["pulse_resolution_baseline_checkpoints"]["path"],
+                "pulse_resolution_baseline_checkpoints_sha256="
+                + experiment["pulse_resolution_baseline_checkpoints"]["sha256"],
+            ]) + ([] if experiment.get("pulse_resolution_arm8_simion_closure_contract") is None else [
+                "pulse_resolution_arm8_analytic_receipt_path=" + experiment["pulse_resolution_axial_ideal_closure_receipt"]["path"],
+                "pulse_resolution_arm8_analytic_receipt_sha256=" + experiment["pulse_resolution_axial_ideal_closure_receipt"]["sha256"],
+                "pulse_resolution_arm8_result_path=" + experiment["pulse_resolution_arm8_simion_closure_result"]["path"],
+                "pulse_resolution_arm8_result_sha256=" + experiment["pulse_resolution_arm8_simion_closure_result"]["sha256"],
+                "pulse_resolution_arm8_manifest_path=" + experiment["pulse_resolution_arm8_simion_closure_manifest"]["path"],
+                "pulse_resolution_arm8_manifest_sha256=" + experiment["pulse_resolution_arm8_simion_closure_manifest"]["sha256"],
+                "pulse_resolution_arm8_contract_path=" + experiment["pulse_resolution_arm8_simion_closure_contract"]["path"],
+                "pulse_resolution_arm8_contract_sha256=" + experiment["pulse_resolution_arm8_simion_closure_contract"]["sha256"],
             ]) + ([] if selection_receipt is None else [
                 "single_flight_population_denominator_count="
                 + str(selection_receipt["candidate_launched_count"]),

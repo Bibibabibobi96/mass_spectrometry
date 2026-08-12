@@ -114,5 +114,24 @@
       "cubic_V": 200.0
     }
   ],
+  "finite_interval_design": {
+    "arm_id": "accelerator_finite_interval_uniform_field_limit",
+    "source_full_width_mm": 2.2,
+    "sample_count": 1001,
+    "voltage_tolerance_V": 1e-8,
+    "focus_policy": "derive_linear_phase_space_first_order_drift_then_translate_to_global_zero",
+    "stage2_field_policy": "single_uniform_field",
+    "geometry_policy": "retain_stage1_stage2_and_ring_count_unless_theory_is_infeasible"
+  },
+  "frozen_phase_space_input": {
+    "run_id": "20260812_140000__sim__simion__rf-oatof-single-flight-gap0__n1000__r04",
+    "checkpoint_sha256": "381508A961A804116A32AF5A93AD8B3B812CA9742564FFACCB45E4E1223E199A",
+    "cohort": "pre_pulse_state_and_pulse_eligibility_equals_eligible",
+    "particle_count": 811,
+    "mass_to_charge_Th": 100.0,
+    "release_position_mm": 1.498375640839315,
+    "mean_initial_velocity_m_per_s": -2.9323518410018137,
+    "velocity_slope_m_per_s_per_mm": 228.80604377795845
+  },
   "claim_limit": "Detector-blind paired replay of the pulse-eligible cohort at one frozen geometry and numerical profile. A selected voltage pair requires a full continuous-injection N=1000 confirmation for transmission and peak claims."
 }

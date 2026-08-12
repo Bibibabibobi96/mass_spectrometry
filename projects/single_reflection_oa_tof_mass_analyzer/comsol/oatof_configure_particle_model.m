@@ -44,7 +44,13 @@ if use_fixed_particle_table
     assert(all(isfinite(energy_eV) & energy_eV > 0), 'Fixed particle table contains invalid energies.');
     azimuth = deg2rad(fixed_particles(:,7)); elevation = deg2rad(fixed_particles(:,8));
     speed = sqrt(2*energy_eV*1.602176e-19/m_kg);
-    velocity = [speed.*cos(elevation).*cos(azimuth), speed.*cos(elevation).*sin(azimuth), speed.*sin(elevation)];
+    local_velocity = [speed.*cos(elevation).*cos(azimuth), ...
+        speed.*cos(elevation).*sin(azimuth), speed.*sin(elevation)];
+    % The ION azimuth/elevation columns use the SIMION accelerator-local
+    % frame.  This COMSOL model uses the shared global frame, whose axes
+    % are related by (vx,vy,vz)_global=(vx,vz,-vy)_local.  Rotate once at
+    % the solver-input boundary; positions are already global coordinates.
+    velocity = [local_velocity(:,1), local_velocity(:,3), -local_velocity(:,2)];
     % Release-from-file coordinates are interpreted in the component
     % geometry length unit. geom1 uses mm, matching SIMION .ion columns
     % 4:6, so do not convert positions to SI metres. Velocity remains SI

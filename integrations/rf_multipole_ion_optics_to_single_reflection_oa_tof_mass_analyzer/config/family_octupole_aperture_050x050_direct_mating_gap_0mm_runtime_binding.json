@@ -40,6 +40,6 @@
   },
   "implementation_binding": {
     "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_runtime_implementation.json",
-    "sha256": "034D4352E94781B954B744A3275CBBDA75AE91937FD84AD68E76F573AD3A1923"
+    "sha256": "E0B0A28CA210B65085E32B36C5326DFC67B24B1F73E2FA3A64901F02817B10D8"
   }
 }

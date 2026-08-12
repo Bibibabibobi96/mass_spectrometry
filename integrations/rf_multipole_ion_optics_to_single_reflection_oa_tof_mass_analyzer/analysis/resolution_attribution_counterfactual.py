@@ -30,6 +30,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.peak_metrics impor
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_time_focus import (
     accelerator_state,
     linear_phase_space_timing_coefficients,
+    match_finite_phase_space_interval,
     match_phase_space_voltage_pair,
 )
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.oatof_oaaccelerator_coupling import (
@@ -140,6 +141,9 @@ def _validate_profile(profile: dict[str, Any]) -> list[str]:
         {"arm_id": "remove_acceleration_covariance", "intervention": "remove_linear_global_z_global_vz_covariance_preserve_vz_mean_and_sample_sigma"},
         {"arm_id": "monoenergetic", "intervention": "scale_each_velocity_vector_to_cohort_mean_kinetic_energy"},
         {"arm_id": "current_layout_ideal_source", "intervention": "scale_formal_positions_to_target_source_extents_and_apply_observed_energy_along_positive_global_x"},
+        {"arm_id": "current_layout_ideal_1mm_vz0", "intervention": "analytic_1mm_global_z_line_monoenergetic_10ev_zero_global_vz"},
+        {"arm_id": "current_layout_ideal_1mm_linear_z_vz", "intervention": "analytic_1mm_global_z_line_monoenergetic_10ev_theory_linear_global_z_vz"},
+        {"arm_id": "current_layout_ideal_finite_interval_linear_z_vz", "intervention": "analytic_run_local_finite_interval_xyz_monoenergetic_10ev_theory_linear_global_z_vz"},
         {"arm_id": "formal_focus_mapped_layout_source", "intervention": "translate_formal_positions_and_apply_observed_energy_along_positive_global_x", "solver_profile_id": "formal_reflectron"},
         {"arm_id": "exact_formal_field_mapped_layout_source", "intervention": "translate_formal_positions_and_apply_observed_energy_along_positive_global_x", "solver_profile_id": "formal_reflectron", "frontend_profile_id": "formal_accelerator"},
         {"arm_id": "formal_ideal_source", "intervention": "translate_formal_positions_and_apply_formal_energy_along_positive_global_x"},
@@ -177,6 +181,8 @@ def _validate_accelerator_match_profile(profile: dict[str, Any]) -> None:
         "ring_shape_probes",
         "coupled_reflectron_probes",
         "actual_slope_probes",
+        "finite_interval_design",
+        "frozen_phase_space_input",
         "claim_limit",
     }
     if (
@@ -289,6 +295,35 @@ def _validate_accelerator_match_profile(profile: dict[str, Any]) -> None:
         or not all(np.all(np.isfinite(values)) for values in slope_tuples)
     ):
         raise ValueError("actual 3D slope probe registry differs")
+    finite_design = profile.get("finite_interval_design")
+    if (
+        not isinstance(finite_design, dict)
+        or set(finite_design) != {
+            "arm_id", "source_full_width_mm", "sample_count", "voltage_tolerance_V",
+            "focus_policy", "stage2_field_policy", "geometry_policy",
+        }
+        or finite_design["arm_id"]
+        != "accelerator_finite_interval_uniform_field_limit"
+        or float(finite_design["source_full_width_mm"]) <= 0.0
+        or int(finite_design["sample_count"]) < 11
+        or int(finite_design["sample_count"]) % 2 == 0
+        or float(finite_design["voltage_tolerance_V"]) <= 0.0
+        or finite_design["focus_policy"]
+        != "derive_linear_phase_space_first_order_drift_then_translate_to_global_zero"
+        or finite_design["stage2_field_policy"] != "single_uniform_field"
+        or finite_design["geometry_policy"]
+        != "retain_stage1_stage2_and_ring_count_unless_theory_is_infeasible"
+    ):
+        raise ValueError("finite-interval accelerator design contract differs")
+    frozen = profile.get("frozen_phase_space_input")
+    if not isinstance(frozen, dict) or set(frozen) != {
+        "run_id", "checkpoint_sha256", "cohort", "particle_count",
+        "mass_to_charge_Th", "release_position_mm",
+        "mean_initial_velocity_m_per_s", "velocity_slope_m_per_s_per_mm",
+    } or frozen["cohort"] != (
+        "pre_pulse_state_and_pulse_eligibility_equals_eligible"
+    ) or int(frozen["particle_count"]) < 3:
+        raise ValueError("frozen accelerator phase-space input differs")
 
 
 def _quantile_match(values: np.ndarray, reference: np.ndarray) -> np.ndarray:
@@ -528,6 +563,7 @@ def _apply_arm(
     formal_size: np.ndarray,
     target_center: np.ndarray,
     target_size: np.ndarray,
+    theory_linear_z_vz: tuple[float, float] | None = None,
 ) -> np.ndarray:
     result = observed.copy()
     if arm_id == "observed_restart_control":
@@ -569,6 +605,53 @@ def _apply_arm(
         )
         result[:, 4:7] = 0.0
         result[:, 4] = _speed_for_energy(energies, float(observed[0, 7]))
+    if arm_id in {
+        "current_layout_ideal_1mm_vz0",
+        "current_layout_ideal_1mm_linear_z_vz",
+    }:
+        # A formula-validation source, not a filtered or rescaled random beam:
+        # deterministic z coverage, zero transverse extent, exactly 10 eV.
+        result[:, 1] = target_center[0]
+        result[:, 2] = target_center[1]
+        result[:, 3] = target_center[2] + np.linspace(-0.5, 0.5, len(result))
+        speeds = _speed_for_energy(
+            np.full(len(result), 10.0, dtype=float), float(observed[0, 7])
+        )
+        result[:, 4:7] = 0.0
+        if arm_id == "current_layout_ideal_1mm_linear_z_vz":
+            if theory_linear_z_vz is None:
+                raise ValueError("analytic linear source requires frozen theory z-vz")
+            mean_vz, slope = theory_linear_z_vz
+            result[:, 6] = (
+                mean_vz
+                + slope * (result[:, 3] - target_center[2])
+            )
+        if np.any(np.abs(result[:, 6]) >= speeds):
+            raise ValueError("prescribed ideal-source vz exceeds total speed")
+        result[:, 4] = np.sqrt(speeds * speeds - result[:, 6] * result[:, 6])
+    if arm_id == "current_layout_ideal_finite_interval_linear_z_vz":
+        if theory_linear_z_vz is None:
+            raise ValueError("finite-interval ideal source requires run-local theory z-vz")
+        if not math.isclose(float(target_size[2]), 2.2, rel_tol=0.0, abs_tol=1e-12):
+            raise ValueError("finite-interval ideal source requires run-local z width 2.2 mm")
+        # Preserve the governed ideal-source x/y distribution while replacing
+        # the acceleration coordinate by deterministic full-interval coverage.
+        scaled = _scaled_formal_positions(
+            formal_samples, formal_center, formal_size, target_center, target_size
+        )
+        result[:, 1:3] = scaled[:, 0:2]
+        result[:, 3] = target_center[2] + np.linspace(
+            -0.5 * target_size[2], 0.5 * target_size[2], len(result)
+        )
+        mean_vz, slope = theory_linear_z_vz
+        result[:, 6] = mean_vz + slope * (result[:, 3] - target_center[2])
+        speeds = _speed_for_energy(
+            np.full(len(result), 10.0, dtype=float), float(observed[0, 7])
+        )
+        result[:, 4:6] = 0.0
+        if np.any(np.abs(result[:, 6]) >= speeds):
+            raise ValueError("finite-interval ideal-source vz exceeds total speed")
+        result[:, 4] = np.sqrt(speeds * speeds - result[:, 6] * result[:, 6])
     if arm_id in {
         "formal_focus_mapped_layout_source",
         "exact_formal_field_mapped_layout_source",
@@ -637,6 +720,7 @@ def prepare(
     solver_birth_time_us: float | None = None,
     accelerator_match_profile_path: Path | None = None,
     accelerator_match_stage: str = "voltage",
+    diagnostic_particle_limit: int | None = None,
 ) -> dict[str, Any]:
     profile = _load_json(profile_path)
     profile_arm_ids = _validate_profile(profile)
@@ -648,7 +732,8 @@ def prepare(
     if match_profile is not None:
         _validate_accelerator_match_profile(match_profile)
         if accelerator_match_stage not in {
-            "voltage", "ring_shape", "coupled_reflectron", "actual_slope"
+            "voltage", "ring_shape", "coupled_reflectron", "actual_slope",
+            "finite_interval",
         }:
             raise ValueError("accelerator match stage differs")
     arm_ids = (
@@ -660,7 +745,22 @@ def prepare(
         raise ValueError("selected resolution-attribution arms cannot be empty")
     if len(arm_ids) != len(set(arm_ids)):
         raise ValueError("selected resolution-attribution arms must be unique")
-    if any(arm_id not in profile_arm_ids for arm_id in arm_ids):
+    generated_match_arm_ids = {
+        str(probe["arm_id"])
+        for key in (
+            "probes", "ring_shape_probes", "coupled_reflectron_probes",
+            "actual_slope_probes",
+        )
+        for probe in ((match_profile or {}).get(key) or [])
+    }
+    if match_profile is not None and match_profile.get("finite_interval_design"):
+        generated_match_arm_ids.add(
+            str(match_profile["finite_interval_design"]["arm_id"])
+        )
+    if any(
+        arm_id not in profile_arm_ids and arm_id not in generated_match_arm_ids
+        for arm_id in arm_ids
+    ):
         raise ValueError("selected resolution-attribution arm is unknown")
     cohort_policy = (
         str(match_profile["cohort_policy"])
@@ -670,11 +770,29 @@ def prepare(
     source_ids, observed, mother_sample_count = _cohort(
         checkpoints_path, mass_amu, charge_state, cohort_policy
     )
+    if diagnostic_particle_limit is not None:
+        if diagnostic_particle_limit < 3 or diagnostic_particle_limit > source_ids.size:
+            raise ValueError("diagnostic particle limit must retain 3..cohort particles")
+        source_ids = source_ids[:diagnostic_particle_limit]
+        observed = observed[:diagnostic_particle_limit]
     ideal = _ideal_source(ideal_source_path)
     formal_samples = _formal_samples(ideal, source_ids)
     formal_center, formal_size = _source_geometry(formal_geometry_path)
     target_center, target_size = _source_geometry(target_geometry_path)
     target_geometry = _load_json(target_geometry_path)
+    finite_theory = (
+        target_geometry.get("geometry_derivation", {})
+        .get("accelerator", {})
+        .get("finite_interval_theory")
+    )
+    theory_linear_z_vz = (
+        (
+            float(finite_theory["mean_initial_velocity_m_per_s"]),
+            float(finite_theory["velocity_slope_m_per_s_per_mm"]),
+        )
+        if isinstance(finite_theory, dict)
+        else None
+    )
     generated_arms: dict[str, dict[str, Any]] = {}
     accelerator_match: dict[str, Any] | None = None
     if match_profile is not None:
@@ -761,6 +879,26 @@ def prepare(
             "geometry_change_required": not bool(np.all(physical_mask)),
         }
         coupled_solution = None
+        finite_solution = None
+        if accelerator_match_stage == "finite_interval":
+            finite_design = match_profile["finite_interval_design"]
+            finite_solution = match_finite_phase_space_interval(
+                float(acceleration["d1_mm"]),
+                float(acceleration["d2_mm"]),
+                release_position,
+                float(finite_design["source_full_width_mm"]),
+                mean_vz,
+                velocity_slope,
+                mass_amu / abs(charge_state),
+                nominal_energy,
+                exit_v=float(electrodes["grid2"]),
+                voltage_drop_bounds_v=tuple(
+                    float(value) for value in solver["voltage_drop_bounds_V"]
+                ),
+                sample_count=int(finite_design["sample_count"]),
+                voltage_tolerance_v=float(finite_design["voltage_tolerance_V"]),
+            )
+            accelerator_match["finite_interval_solution"] = asdict(finite_solution)
         if accelerator_match_stage == "coupled_reflectron":
             matched_state = accelerator_state(
                 match.repeller_v,
@@ -812,11 +950,16 @@ def prepare(
             "ring_shape": match_profile["ring_shape_probes"],
             "coupled_reflectron": match_profile["coupled_reflectron_probes"],
             "actual_slope": match_profile["actual_slope_probes"],
+            "finite_interval": [match_profile["finite_interval_design"]],
         }[accelerator_match_stage]
         for probe in probes:
             arm_id = str(probe["arm_id"])
             voltage_drop_offset = float(probe.get("voltage_drop_offset_V", 0.0))
-            voltage_drop = match.gap1_voltage_drop_v + voltage_drop_offset
+            voltage_drop = (
+                finite_solution.gap1_voltage_drop_v
+                if finite_solution is not None
+                else match.gap1_voltage_drop_v + voltage_drop_offset
+            )
             repeller_v = (
                 match.exit_v
                 + nominal_energy
@@ -836,6 +979,7 @@ def prepare(
                     "grid2_V": match.exit_v,
                     "gap1_voltage_drop_V": voltage_drop,
                     "voltage_drop_offset_V": voltage_drop_offset,
+                    "second_region_field_policy": "uniform_grid1_to_grid2",
                 },
                 "accelerator_ring_shape_override": (
                     {
@@ -859,7 +1003,19 @@ def prepare(
                 ),
             }
             accelerator_match["arms"].append(generated_arms[arm_id])
-        arm_ids.extend(generated_arms)
+        if selected_arm_ids is None:
+            arm_ids.extend(generated_arms)
+        else:
+            missing = [
+                arm_id for arm_id in arm_ids
+                if arm_id not in generated_arms and arm_id not in profile_arm_ids
+            ]
+            if missing:
+                raise ValueError("selected generated accelerator arm is unavailable")
+            generated_arms = {
+                arm_id: generated_arms[arm_id]
+                for arm_id in arm_ids if arm_id in generated_arms
+            }
     if any("pulse_delay_rf_periods" in arm for arm in profile["arms"]):
         if rf_frequency_hz is None or rf_frequency_hz <= 0:
             raise ValueError("pulse-delay arms require a positive RF frequency")
@@ -886,6 +1042,7 @@ def prepare(
                 formal_size,
                 target_center,
                 target_size,
+                theory_linear_z_vz,
             )
         )
         state_path = output_dir / f"{arm_id}__source_state.csv"
@@ -1186,6 +1343,36 @@ def _phase_space_time_transfer(
     }
 
 
+def _checkpoint_time_transfer(
+    state_rows: list[dict[str, str]],
+    checkpoint_rows: list[dict[str, object]],
+    event: str,
+) -> dict[str, Any] | None:
+    """Measure one checkpoint's time spread and source-z transfer slope."""
+    source_z = {
+        int(row["simulation_particle_id"]): float(row["z_mm"])
+        for row in state_rows
+    }
+    selected = [row for row in checkpoint_rows if row["event"] == event]
+    if len(selected) < 3:
+        return None
+    z = np.asarray([source_z[int(row["particle_id"])] for row in selected])
+    time_ns = np.asarray(
+        [float(row["instrument_time_us"]) * 1000.0 for row in selected]
+    )
+    z_centered = z - np.mean(z)
+    variance = float(np.dot(z_centered, z_centered))
+    slope = (
+        float(np.dot(z_centered, time_ns - np.mean(time_ns)) / variance)
+        if variance > 0.0 else None
+    )
+    return {
+        "particles": len(selected),
+        "time_sigma_ns": float(np.std(time_ns)),
+        "source_z_time_slope_ns_per_mm": slope,
+    }
+
+
 def summarize(
     profile_path: Path,
     prepared_path: Path,
@@ -1238,7 +1425,7 @@ def summarize(
     prepared_by_id = {arm["arm_id"]: arm for arm in prepared["arms"]}
     phase_space_diagnostic = None
     if prepared.get("accelerator_match") is not None:
-        observed_state_path = source_dir / "observed_restart_control__source_state.csv"
+        observed_state_path = source_dir / f"{arm_ids[0]}__source_state.csv"
         observed_columns, observed_rows = _load_csv(observed_state_path)
         if observed_columns != ARM_STATE_COLUMNS:
             raise ValueError("observed phase-space source-state identity differs")
@@ -1312,6 +1499,13 @@ def summarize(
                 "phase_space_time_transfer": _phase_space_time_transfer(
                     state_rows, detector
                 ),
+                "checkpoint_time_transfer": {
+                    event: _checkpoint_time_transfer(state_rows, rows, event)
+                    for event in (
+                        "accelerator_grid1_forward", "local_accelerator_exit",
+                        "accelerator_focus_forward",
+                    )
+                },
                 "peak": peak,
                 "accelerator_voltage_override": prepared_by_id[arm_id].get(
                     "accelerator_voltage_override"
@@ -1441,10 +1635,14 @@ def main() -> int:
     prepare_parser.add_argument("--accelerator-match-profile", type=Path)
     prepare_parser.add_argument(
         "--accelerator-match-stage",
-        choices=("voltage", "ring_shape", "coupled_reflectron", "actual_slope"),
+        choices=(
+            "voltage", "ring_shape", "coupled_reflectron", "actual_slope",
+            "finite_interval",
+        ),
         default="voltage",
     )
     prepare_parser.add_argument("--arm-id", action="append", dest="selected_arm_ids")
+    prepare_parser.add_argument("--diagnostic-particle-limit", type=int)
     summarize_parser = subparsers.add_parser("summarize")
     summarize_parser.add_argument("--profile", required=True, type=Path)
     summarize_parser.add_argument("--prepared", required=True, type=Path)
@@ -1475,6 +1673,7 @@ def main() -> int:
             args.solver_birth_time_us,
             args.accelerator_match_profile,
             args.accelerator_match_stage,
+            args.diagnostic_particle_limit,
         )
         print(
             "RESOLUTION_ATTRIBUTION_PREPARE=PASS "

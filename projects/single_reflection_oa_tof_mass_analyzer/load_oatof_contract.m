@@ -33,8 +33,28 @@ must_be_near(g.L_reflectron, g.L_stage1 + g.L_stage2, ...
     'reflectron total length');
 must_be_near(s.center_x_mm, ...
     contract.coordinate_convention.accelerator_axis_x, 'source x/axis');
-must_be_near(s.center_z_mm, ...
-    g.accelerator_repeller_z + a.d1_mm/2, 'source center z');
+if strcmp(s.center_z_rule, ...
+        'accelerator_repeller_z + accelerator_stage1_length_mm/2')
+    expectedSourceZ = g.accelerator_repeller_z + a.d1_mm/2;
+    if abs(double(s.center_z_mm)-double(expectedSourceZ)) > 1e-10 && ...
+            isfield(a, 'finite_interval_theory')
+        theory = a.finite_interval_theory;
+        finiteIntervalSourceZ = theory.canonical_repeller_z_mm + ...
+            theory.source_center_mm;
+        if abs(double(s.center_z_mm)-double(finiteIntervalSourceZ)) <= 1e-10
+            expectedSourceZ = finiteIntervalSourceZ;
+        end
+    end
+elseif strcmp(s.center_z_rule, ...
+        ['geometry_derivation.accelerator.finite_interval_theory.' ...
+         'canonical_repeller_z_mm + source_center_mm'])
+    theory = a.finite_interval_theory;
+    expectedSourceZ = theory.canonical_repeller_z_mm + theory.source_center_mm;
+else
+    error('oatof:SourceCenterRule', ...
+        'Unsupported particle_source.center_z_rule: %s', s.center_z_rule);
+end
+must_be_near(s.center_z_mm, expectedSourceZ, 'source center z');
 end
 
 function must_be_near(actual, expected, label)

@@ -11,12 +11,47 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_time_f
     derive,
     focus_drift_mm,
     linear_phase_space_timing_coefficients,
+    match_finite_phase_space_interval,
     match_phase_space_voltage_pair,
     time_to_fixed_plane_s,
 )
 
 
 class AcceleratorTimeFocusTest(unittest.TestCase):
+    def test_finite_interval_match_preserves_uniform_second_region(self) -> None:
+        match = match_finite_phase_space_interval(
+            3.0, 16.8, 1.5122728479061323, 2.2,
+            2.7185554943246992, 154.9992858327178,
+            100.0, 2000.0,
+        )
+        self.assertAlmostEqual(match.gap1_voltage_drop_v, 316.25, places=1)
+        self.assertAlmostEqual(match.focus_drift_mm, 45.36, places=1)
+        self.assertLess(match.theoretical_rms_time_ns, 0.078)
+        self.assertLess(match.theoretical_peak_to_peak_time_ns, 0.39)
+        self.assertEqual(match.canonical_grid2_z_mm, -match.focus_drift_mm)
+        self.assertAlmostEqual(
+            match.intermediate_v / 16.8,
+            match.stage2_field_v_per_mm,
+            places=12,
+        )
+
+    def test_finite_interval_match_rejects_source_touching_electrodes(self) -> None:
+        with self.assertRaisesRegex(ValueError, "inside gap 1"):
+            match_finite_phase_space_interval(
+                3.0, 16.8, 1.5, 3.0, 0.0, 0.0, 100.0, 2000.0
+            )
+
+    def test_terminal_finite_interval_match_closes_current_linear_beam(self) -> None:
+        match = match_finite_phase_space_interval(
+            3.0, 16.8, 1.498375640839315, 2.2,
+            -2.9323518410018137, 228.80604377795845,
+            100.0, 2000.0,
+        )
+        self.assertAlmostEqual(match.gap1_voltage_drop_v, 315.0776, places=3)
+        self.assertAlmostEqual(match.focus_drift_mm, 47.5504, places=3)
+        self.assertLess(match.theoretical_rms_time_ns, 0.082)
+        self.assertLess(match.theoretical_peak_to_peak_time_ns, 0.407)
+
     def test_linear_phase_space_coefficients_match_fixed_focus_solution(self) -> None:
         state = accelerator_state(
             2247.5764701146,

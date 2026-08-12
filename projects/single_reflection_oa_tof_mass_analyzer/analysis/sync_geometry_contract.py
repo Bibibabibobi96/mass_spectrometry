@@ -58,11 +58,31 @@ def validate_resolved_contract(contract: dict) -> dict:
             geometry["L_reflectron"],
             geometry["L_stage1"] + geometry["L_stage2"],
         ),
-        "source center z": (
-            contract["particle_source"]["center_z_mm"],
-            geometry["accelerator_repeller_z"] + accelerator["d1_mm"] / 2,
-        ),
     }
+    source = contract["particle_source"]
+    if source["center_z_rule"] == "accelerator_repeller_z + accelerator_stage1_length_mm/2":
+        expected_source_z = geometry["accelerator_repeller_z"] + accelerator["d1_mm"] / 2
+        theory = accelerator.get("finite_interval_theory")
+        if theory is not None and not math.isclose(
+            source["center_z_mm"], expected_source_z, rel_tol=0.0, abs_tol=1e-10
+        ):
+            finite_interval_source_z = (
+                theory["canonical_repeller_z_mm"] + theory["source_center_mm"]
+            )
+            if math.isclose(
+                source["center_z_mm"], finite_interval_source_z,
+                rel_tol=0.0, abs_tol=1e-10,
+            ):
+                expected_source_z = finite_interval_source_z
+    elif source["center_z_rule"] == (
+        "geometry_derivation.accelerator.finite_interval_theory."
+        "canonical_repeller_z_mm + source_center_mm"
+    ):
+        theory = accelerator["finite_interval_theory"]
+        expected_source_z = theory["canonical_repeller_z_mm"] + theory["source_center_mm"]
+    else:
+        raise ValueError(f"unsupported source center rule: {source['center_z_rule']}")
+    checks["source center z"] = (source["center_z_mm"], expected_source_z)
     for label, (actual, expected) in checks.items():
         if not math.isclose(actual, expected, rel_tol=0.0, abs_tol=1e-10):
             raise ValueError(f"inconsistent {label}: {actual} != {expected}")

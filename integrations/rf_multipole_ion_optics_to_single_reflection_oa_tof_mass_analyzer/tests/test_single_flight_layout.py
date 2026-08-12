@@ -90,6 +90,66 @@ class SingleFlightLayoutTests(unittest.TestCase):
             },
         )
 
+    def test_finite_interval_profile_derives_focus_at_global_zero(self) -> None:
+        registry = json.loads(
+            (INTEGRATION / "config/single_flight_layout_profiles.json").read_text()
+        )
+        geometry = json.loads(
+            (REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json").read_text()
+        )
+        port = json.loads(
+            (REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/interfaces/required/oatof_accelerator_entry.json").read_text()
+        )
+        profile = select_profile(
+            registry, "symmetric_10ev_source_z22_finite_interval_theory"
+        )
+        resolved, derived_port, _ = compile_geometry_and_port(geometry, port, profile)
+        accelerator = resolved["geometry_derivation"]["accelerator"]
+        theory = accelerator["finite_interval_theory"]
+        self.assertEqual(resolved["particle_source"]["size_z_mm"], 2.2)
+        self.assertAlmostEqual(
+            accelerator["canonical_grid2_z_mm"]
+            + accelerator["focus_drift_after_grid2_mm"],
+            0.0,
+            places=12,
+        )
+        self.assertAlmostEqual(resolved["electrodes_V"]["repeller"], 2157.37, places=1)
+        self.assertAlmostEqual(resolved["electrodes_V"]["grid1"], 1842.29, places=1)
+        self.assertEqual(resolved["rings"]["accelerator_count"], 5)
+        self.assertLess(theory["theoretical_rms_time_ns"], 0.082)
+        self.assertAlmostEqual(resolved["electrodes_V"]["midgrid"], 1603.68, places=1)
+        self.assertGreater(
+            resolved["electrodes_V"]["backplate"],
+            resolved["electrodes_V"]["midgrid"],
+        )
+        self.assertLess(
+            theory["coupled_reflectron"]["required_stage2_depth_mm"],
+            resolved["geometry_mm"]["L_stage2"],
+        )
+        expected_near_outer = (
+            accelerator["outer_envelope_min_z_mm"]
+            - resolved["geometry_mm"]["shield_near_endcap_gap"]
+            - resolved["geometry_mm"]["shield_endcap_thickness"]
+        )
+        self.assertAlmostEqual(
+            resolved["geometry_mm"]["shield_outer_z_min"], expected_near_outer
+        )
+        self.assertEqual(
+            derived_port["mating_surface"]["center_mm"][2],
+            resolved["particle_source"]["center_z_mm"],
+        )
+        self.assertEqual(
+            resolved["particle_source"]["center_z_rule"],
+            "geometry_derivation.accelerator.finite_interval_theory."
+            "canonical_repeller_z_mm + source_center_mm",
+        )
+        self.assertEqual(
+            resolved["single_flight_layout_derivation"]["design_compilation"][
+                "simion_rebuild_plan"
+            ],
+            {"frontend_pa": True, "flight_tube_pa": True, "reflectron_pa": False},
+        )
+
     def test_generic_overrides_rebuild_linked_accelerator_and_flight_region(self) -> None:
         registry = json.loads(
             (INTEGRATION / "config/single_flight_layout_profiles.json").read_text()

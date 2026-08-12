@@ -12,6 +12,7 @@
     "status": {"const": "authorized"},
     "execution_policy": {"$ref": "#/$defs/file"},
     "claim_limit": {"type": "string", "minLength": 1},
+    "pulse_resolution_optimization": {"$ref": "#/$defs/pulse_resolution_optimization"},
     "experiments": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/experiment"}}
   },
   "allOf": [
@@ -19,6 +20,10 @@
       "if": {"properties": {"schema_version": {"const": 2}}, "required": ["schema_version"]},
       "then": {"properties": {"experiments": {"items": {"required": ["single_flight_layout_profile_id"]}}}},
       "else": {"properties": {"experiments": {"items": {"not": {"required": ["single_flight_layout_profile_id"]}}}}}
+    },
+    {
+      "if": {"required": ["pulse_resolution_optimization"]},
+      "then": {"properties": {"schema_version": {"const": 2}}}
     }
   ],
   "$defs": {
@@ -49,6 +54,163 @@
         "selection_receipt": {"$ref": "#/$defs/file"}
       }
     },
+    "pulse_resolution_optimization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "purpose", "execution_state", "clock_contract", "population_contract",
+        "stage_order", "attribution_arms", "screening_promotion", "grid_convergence",
+        "optimization_constraints", "acceptance_window", "acceptance_gates",
+        "bootstrap", "comsol_handoff"
+      ],
+      "properties": {
+        "purpose": {"const": "physical_optimization"},
+        "execution_state": {"enum": ["n100_baseline_registration_only", "n100_arm8_closed_global_field_screening"]},
+        "clock_contract": {
+          "type": "object", "additionalProperties": false,
+          "required": ["resolution_time_basis", "absolute_instrument_clock_is_resolution_claim"],
+          "properties": {
+            "resolution_time_basis": {"const": "detector_time_minus_pulse_effective_time"},
+            "absolute_instrument_clock_is_resolution_claim": {"const": false}
+          }
+        },
+        "population_contract": {
+          "type": "object", "additionalProperties": false,
+          "required": ["mother_sample_count", "screening_prefix_count", "screening_is_deterministic_prefix", "qualification_population", "random_downsampling_allowed", "parallel_batch_count"],
+          "properties": {
+            "mother_sample_count": {"const": 1000},
+            "screening_prefix_count": {"const": 100},
+            "screening_is_deterministic_prefix": {"const": true},
+            "qualification_population": {"const": "all_pulse_eligible_particles"},
+            "random_downsampling_allowed": {"const": false},
+            "parallel_batch_count": {"const": 5}
+          }
+        },
+        "stage_order": {
+          "type": "array", "prefixItems": [
+            {"const": "implementation_and_observability"},
+            {"const": "ideal_upper_bound_attribution"},
+            {"const": "local_grid_convergence"},
+            {"const": "joint_optimization"},
+            {"const": "detector_blind_acceptance_window"},
+            {"const": "simion_qualification"},
+            {"const": "comsol_handoff"}
+          ], "items": false, "minItems": 7, "maxItems": 7
+        },
+        "attribution_arms": {
+          "type": "array", "minItems": 8, "maxItems": 8,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["sequence", "arm_id", "source_model", "accelerator_field", "reflectron_field", "implementation_status"],
+            "properties": {
+              "sequence": {"type": "integer", "minimum": 1, "maximum": 8},
+              "arm_id": {"$ref": "#/$defs/id"},
+              "source_model": {"enum": ["real_beam", "finite_interval_2p2mm_theory_source", "on_axis_longitudinal_ideal_source"]},
+              "accelerator_field": {"enum": ["all_real", "ideal_stage1", "ideal_stage1_stage2", "ideal_accelerator"]},
+              "reflectron_field": {"enum": ["real", "ideal"]},
+              "implementation_status": {"enum": ["executable_registration", "executable_paired_screening", "executable_paired_screening_with_arm8_closure", "blocked_pending_axial_ideal_analytic_closure", "planning_only_until_adapter_support"]}
+            }
+          }
+        },
+        "screening_promotion": {
+          "type": "object", "additionalProperties": false,
+          "required": ["unimodal_required", "direct_fwhm_relative_improvement_minimum", "sigma_relative_improvement_minimum", "both_improvements_required", "axial_ideal_closure_arm_id", "axial_ideal_minimum_mass_resolution", "axial_ideal_failure_action"],
+          "properties": {
+            "unimodal_required": {"const": true},
+            "direct_fwhm_relative_improvement_minimum": {"const": 0.15},
+            "sigma_relative_improvement_minimum": {"const": 0.15},
+            "both_improvements_required": {"const": true},
+            "axial_ideal_closure_arm_id": {"$ref": "#/$defs/id"},
+            "axial_ideal_minimum_mass_resolution": {"const": 30000},
+            "axial_ideal_failure_action": {"const": "stop_physical_optimization_and_repair_clock_ideal_field_or_theory"}
+          }
+        },
+        "grid_convergence": {
+          "type": "object", "additionalProperties": false,
+          "required": ["mass_resolution_relative_change_maximum", "direct_fwhm_relative_change_maximum", "hit_rate_change_maximum_percentage_points", "refine_only_attributed_limiting_regions"],
+          "properties": {
+            "mass_resolution_relative_change_maximum": {"const": 0.02},
+            "direct_fwhm_relative_change_maximum": {"const": 0.02},
+            "hit_rate_change_maximum_percentage_points": {"const": 1.0},
+            "refine_only_attributed_limiting_regions": {"const": true}
+          }
+        },
+        "optimization_constraints": {
+          "type": "object", "additionalProperties": false,
+          "required": ["candidate_count_maximum", "cartesian_blind_scan_allowed", "derived_variables_prohibited", "diagnostic_variables_are_physical_optima", "external_instrument_radius_increase_allowed", "focus_global_z_mm", "reflectron_minimum_electrode_gap_mm"],
+          "properties": {
+            "candidate_count_maximum": {"const": 5},
+            "cartesian_blind_scan_allowed": {"const": false},
+            "derived_variables_prohibited": {
+              "type": "array", "minItems": 5, "uniqueItems": true,
+              "items": {"enum": ["absolute_electrode_voltages", "focus_plane", "source_center", "reflectron_endpoints", "ring_baseline_voltages", "shield_position"]}
+            },
+            "diagnostic_variables_are_physical_optima": {"const": false},
+            "external_instrument_radius_increase_allowed": {"const": false},
+            "focus_global_z_mm": {"const": 0.0},
+            "reflectron_minimum_electrode_gap_mm": {"minimum": 1.0}
+          }
+        },
+        "acceptance_window": {
+          "type": "object", "additionalProperties": false,
+          "required": ["derivation", "selection_uses_detector_outcome", "center_binding", "allowed_coordinates", "tof_error_budget_ns", "minimum_pulse_eligible_coverage", "shrink_below_minimum_coverage_allowed", "freeze_before_real_beam_application", "outside_window_remains_in_full_beam"],
+          "properties": {
+            "derivation": {"const": "synthetic_phase_space_and_real_minus_ideal_field_error_budget"},
+            "selection_uses_detector_outcome": {"const": false},
+            "center_binding": {"const": "theory_source_center"},
+            "allowed_coordinates": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["x", "y", "z", "angle_x", "angle_y"]}},
+            "tof_error_budget_ns": {"const": 0.537},
+            "minimum_pulse_eligible_coverage": {"const": 0.70},
+            "shrink_below_minimum_coverage_allowed": {"const": false},
+            "freeze_before_real_beam_application": {"const": true},
+            "outside_window_remains_in_full_beam": {"const": true}
+          }
+        },
+        "acceptance_gates": {
+          "type": "object", "additionalProperties": false,
+          "required": ["full_beam", "theoretical_window"],
+          "properties": {
+            "full_beam": {"$ref": "#/$defs/resolution_gate"},
+            "theoretical_window": {"$ref": "#/$defs/resolution_gate"}
+          }
+        },
+        "bootstrap": {
+          "type": "object", "additionalProperties": false,
+          "required": ["resample_count", "seed", "seed_policy", "point_estimate_must_pass", "confidence_level", "relative_interval_width_maximum", "unstable_action"],
+          "properties": {
+            "resample_count": {"const": 5000},
+            "seed": {"type": "integer", "minimum": 0},
+            "seed_policy": {"const": "fixed_and_recorded"},
+            "point_estimate_must_pass": {"const": true},
+            "confidence_level": {"const": 0.95},
+            "relative_interval_width_maximum": {"const": 0.10},
+            "unstable_action": {"const": "confirm_with_second_independent_n1000_mother_sample"}
+          }
+        },
+        "comsol_handoff": {
+          "type": "object", "additionalProperties": false,
+          "required": ["simion_dual_gate_required", "single_solver_session", "global_cartesian_velocity_error_limit_exclusive_m_per_s", "mass_resolution_relative_difference_maximum", "hit_rate_difference_maximum_percentage_points"],
+          "properties": {
+            "simion_dual_gate_required": {"const": true},
+            "single_solver_session": {"const": true},
+            "global_cartesian_velocity_error_limit_exclusive_m_per_s": {"const": 0.000001},
+            "mass_resolution_relative_difference_maximum": {"const": 0.10},
+            "hit_rate_difference_maximum_percentage_points": {"const": 1.0}
+          }
+        }
+      }
+    },
+    "resolution_gate": {
+      "type": "object", "additionalProperties": false,
+      "required": ["population_basis", "unimodal_required", "conditional_hit_rate_minimum", "mass_resolution_minimum", "direct_fwhm_maximum_ns"],
+      "properties": {
+        "population_basis": {"enum": ["all_pulse_eligible_particles", "detector_blind_theoretical_acceptance_window"]},
+        "unimodal_required": {"const": true},
+        "conditional_hit_rate_minimum": {"const": 0.95},
+        "mass_resolution_minimum": {"enum": [20000, 30000]},
+        "direct_fwhm_maximum_ns": {"enum": [0.806, 0.537]}
+      }
+    },
     "experiment": {
       "type": "object", "additionalProperties": false,
       "required": ["sequence", "experiment_id", "connection_profile_id", "run_id", "source"],
@@ -66,6 +228,15 @@
           "minimum": -0.5,
           "maximum": 0.5
         },
+        "pulse_resolution_attribution_arm_id": {"$ref": "#/$defs/id"},
+        "pulse_resolution_execution_mode": {"enum": ["screening_prefix_n100_baseline_registration", "screening_prefix_n100_paired_candidate", "qualification_full_n1000"]},
+        "pulse_resolution_baseline_result": {"$ref": "#/$defs/file"},
+        "pulse_resolution_baseline_checkpoints": {"$ref": "#/$defs/file"},
+        "pulse_resolution_axial_ideal_closure_receipt": {"$ref": "#/$defs/file"},
+        "pulse_resolution_arm8_simion_closure_result": {"$ref": "#/$defs/file"},
+        "pulse_resolution_arm8_simion_closure_manifest": {"$ref": "#/$defs/file"},
+        "pulse_resolution_arm8_simion_closure_contract": {"$ref": "#/$defs/file"},
+        "pulse_resolution_deprecated_counterfactual": {"type": "boolean"},
         "single_flight_design_overrides": {
           "type": "array",
           "minItems": 1,

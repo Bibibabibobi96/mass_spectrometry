@@ -104,6 +104,12 @@ def _assert_only_allowed_changes(
         if allow_ring_counts:
             document["rings"].pop("stage1_count")
             document["rings"].pop("stage2_count")
+        # This is a generated accelerator-envelope coordinate.  Older baseline
+        # contracts predate the field; candidate compilation now materializes
+        # it without changing any radial-compaction design freedom.
+        document.get("geometry_derivation", {}).get("accelerator", {}).pop(
+            "outer_envelope_min_z_mm", None
+        )
     if left != right:
         raise ValueError("candidate changed a non-authorized geometry, source, voltage or solver value")
 

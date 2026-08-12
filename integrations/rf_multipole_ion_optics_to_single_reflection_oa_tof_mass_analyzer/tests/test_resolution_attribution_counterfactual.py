@@ -10,6 +10,7 @@ import numpy as np
 
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.resolution_attribution_counterfactual import (
     _checkpoint_detector_times,
+    _checkpoint_time_transfer,
     _canonical_replay_detector_time,
     _ideal_source,
     _phase_space_time_transfer,
@@ -30,6 +31,39 @@ WORKFLOW = Path(__file__).parents[1] / "workflows" / "resolution_attribution" / 
 
 
 class ResolutionAttributionCounterfactualTests(unittest.TestCase):
+    def test_checkpoint_time_transfer_reports_focus_spread_and_slope(self) -> None:
+        states = [
+            {"simulation_particle_id": str(index), "z_mm": str(z)}
+            for index, z in enumerate((-1.0, 0.0, 1.0), start=1)
+        ]
+        checkpoints = [
+            {
+                "particle_id": index,
+                "event": "accelerator_focus_forward",
+                "instrument_time_us": 40.0 + (2.0 * z) / 1000.0,
+            }
+            for index, z in enumerate((-1.0, 0.0, 1.0), start=1)
+        ]
+        result = _checkpoint_time_transfer(
+            states, checkpoints, "accelerator_focus_forward"
+        )
+        self.assertIsNotNone(result)
+        self.assertAlmostEqual(result["source_z_time_slope_ns_per_mm"], 2.0)
+        self.assertAlmostEqual(result["time_sigma_ns"], np.std([-2.0, 0.0, 2.0]))
+
+    def test_execution_governs_ideal_accelerator_field_mode(self) -> None:
+        execution = (
+            Path(__file__).resolve().parents[1]
+            / "workflows/resolution_attribution/execute.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertIn("single_flight_ideal_accel_enable", execution)
+        self.assertIn("'ideal_stage1','ideal_stage2','ideal_piecewise'", execution)
+        self.assertIn("$effectiveIdealAcceleratorEnabled", execution)
+        self.assertIn("elseif ($AcceleratorFieldMode -eq 'ideal_piecewise')", execution)
+        self.assertIn(
+            '"sf_ideal_accel_enable=$effectiveIdealAcceleratorEnabled"', execution
+        )
+
     def test_phase_space_time_transfer_reports_actual_correlated_slope(self) -> None:
         rows = []
         detector = {}
@@ -213,17 +247,26 @@ class ResolutionAttributionCounterfactualTests(unittest.TestCase):
                 "center_x_mm": 10.0, "center_y_mm": 20.0, "center_z_mm": 30.0,
                 "size_x_mm": 2.0, "size_y_mm": 3.0, "size_z_mm": 4.0
             }}), encoding="utf-8")
+            available_arm_ids = [
+                arm["arm_id"]
+                for arm in json.loads(PROFILE.read_text(encoding="utf-8"))["arms"]
+                if arm["arm_id"] not in {
+                    "current_layout_ideal_1mm_linear_z_vz",
+                    "current_layout_ideal_finite_interval_linear_z_vz",
+                }
+            ]
             result = prepare(
                 PROFILE, checkpoints, ideal, formal_geometry, target_geometry,
                 root / "prepared", 100.0, 1,
                 1.1e6, 4,
+                selected_arm_ids=available_arm_ids,
                 initial_pa_instance=5,
                 solver_birth_time_us=0.0,
             )
             self.assertEqual(result["paired_cohort_particles"], 4)
             self.assertEqual(result["initial_pa_instance"], 5)
             self.assertEqual(result["solver_birth_time_us"], 0.0)
-            self.assertEqual(len(result["arms"]), 20)
+            self.assertEqual(len(result["arms"]), 21)
             for arm in result["arms"]:
                 state = root / "prepared" / arm["state_file"]
                 with state.open(encoding="utf-8", newline="") as handle:
@@ -419,7 +462,7 @@ class ResolutionAttributionCounterfactualTests(unittest.TestCase):
             )
             self.assertEqual(result["cohort_policy"], "source_event_and_pulse_eligibility")
             self.assertEqual(result["paired_cohort_particles"], 4)
-            self.assertEqual(len(result["arms"]), 8)
+            self.assertEqual(len(result["arms"]), 1)
             acceptance = result["accelerator_match"]["source_acceptance"]
             self.assertTrue(acceptance["physical_gap"]["all_particles_inside"])
             self.assertFalse(acceptance["geometry_change_required"])
@@ -428,7 +471,18 @@ class ResolutionAttributionCounterfactualTests(unittest.TestCase):
                 source_ids = [int(row["source_particle_id"]) for row in csv.DictReader(handle)]
             self.assertEqual(source_ids, [1, 2, 3, 4])
             release = result["accelerator_match"]["release_position_mm"]
-            for arm in result["arms"][1:]:
+            selected_probe = prepare(
+                PROFILE, checkpoints, ideal, formal_geometry, target_geometry,
+                root / "prepared_probe", 100.0, 1, 1.1e6, 4,
+                selected_arm_ids=["accelerator_phase_match_m010"],
+                accelerator_match_profile_path=MATCH_PROFILE,
+            )
+            self.assertEqual(len(selected_probe["arms"]), 1)
+            self.assertEqual(
+                selected_probe["arms"][0]["arm_id"],
+                "accelerator_phase_match_m010",
+            )
+            for arm in selected_probe["arms"]:
                 voltage = arm["accelerator_voltage_override"]
                 nominal = voltage["repeller_V"] - (
                     voltage["gap1_voltage_drop_V"] * release / 3.0
@@ -442,15 +496,7 @@ class ResolutionAttributionCounterfactualTests(unittest.TestCase):
                 accelerator_match_stage="ring_shape",
             )
             self.assertEqual(ring_result["accelerator_match_stage"], "ring_shape")
-            self.assertEqual(len(ring_result["arms"]), 10)
-            control = next(
-                arm for arm in ring_result["arms"]
-                if arm["arm_id"] == "accelerator_ring_shape_c_p160"
-            )
-            self.assertEqual(
-                control["accelerator_ring_shape_override"],
-                {"quadratic_V": 0.0, "cubic_V": 160.0},
-            )
+            self.assertEqual(len(ring_result["arms"]), 1)
             coupled_result = prepare(
                 PROFILE, checkpoints, ideal, formal_geometry, target_geometry,
                 root / "prepared_coupled", 100.0, 1, 1.1e6, 4,
@@ -459,16 +505,7 @@ class ResolutionAttributionCounterfactualTests(unittest.TestCase):
                 accelerator_match_stage="coupled_reflectron",
             )
             self.assertEqual(coupled_result["accelerator_match_stage"], "coupled_reflectron")
-            self.assertEqual(len(coupled_result["arms"]), 3)
-            coupled_arm = next(
-                arm for arm in coupled_result["arms"]
-                if arm["arm_id"] == "accelerator_reflectron_coupled_linear"
-            )
-            self.assertGreater(coupled_arm["reflectron_voltage_override"]["midgrid_V"], 0.0)
-            self.assertGreater(
-                coupled_arm["reflectron_voltage_override"]["backplate_V"],
-                coupled_arm["reflectron_voltage_override"]["midgrid_V"],
-            )
+            self.assertEqual(len(coupled_result["arms"]), 1)
             slope_result = prepare(
                 PROFILE, checkpoints, ideal, formal_geometry, target_geometry,
                 root / "prepared_slope", 100.0, 1, 1.1e6, 4,
@@ -477,11 +514,18 @@ class ResolutionAttributionCounterfactualTests(unittest.TestCase):
                 accelerator_match_stage="actual_slope",
             )
             self.assertEqual(slope_result["accelerator_match_stage"], "actual_slope")
-            self.assertEqual(len(slope_result["arms"]), 2)
-            self.assertTrue(all(
-                arm["accelerator_ring_shape_override"] is not None
-                for arm in slope_result["arms"][1:]
-            ))
+            self.assertEqual(len(slope_result["arms"]), 1)
+            finite_result = prepare(
+                PROFILE, checkpoints, ideal, formal_geometry, target_geometry,
+                root / "prepared_finite", 100.0, 1, 1.1e6, 4,
+                selected_arm_ids=["observed_restart_control"],
+                accelerator_match_profile_path=MATCH_PROFILE,
+                accelerator_match_stage="finite_interval",
+            )
+            self.assertEqual(finite_result["accelerator_match_stage"], "finite_interval")
+            self.assertEqual(len(finite_result["arms"]), 1)
+            solution = finite_result["accelerator_match"]["finite_interval_solution"]
+            self.assertEqual(solution["source_full_width_mm"], 2.2)
     def test_state_summary_uses_null_for_undefined_correlation(self) -> None:
         rows = [
             {
@@ -502,6 +546,16 @@ class ResolutionAttributionCounterfactualTests(unittest.TestCase):
         profile["unregistered_override"] = True
         with self.assertRaisesRegex(ValueError, "profile identity differs"):
             _validate_profile(profile)
+
+    def test_workflow_replays_geometry_addressed_flight_tube(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("$flightTubeCacheIdentity", workflow)
+        self.assertIn("$baselineOatofGeometry", workflow)
+        self.assertIn("-SourceDirectory $currentFlightTubeDir `", workflow)
+        self.assertIn("-BaseName 'flight_tube_ground'", workflow)
+        self.assertIn("Baseline flight-tube PA cache identity differs.", workflow)
+        self.assertIn("('cf_b{0:D2}.ion' -f $batchIndex)", workflow)
+        self.assertIn("'--particles',$runtimeIon", workflow)
 
 
 if __name__ == "__main__":

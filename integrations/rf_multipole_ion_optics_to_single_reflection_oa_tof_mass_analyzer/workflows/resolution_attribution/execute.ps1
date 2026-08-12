@@ -6,9 +6,12 @@ param(
   [string]$FrontendRunId = '',
   [string[]]$ArmId = @(),
   [string]$ReferenceArmId = '',
+  [ValidateSet('inherit','real','ideal_stage1','ideal_stage2','ideal_piecewise')]
+  [string]$AcceleratorFieldMode = 'inherit',
   [switch]$AcceleratorPhaseSpaceMatch,
-  [ValidateSet('voltage','ring_shape','coupled_reflectron','actual_slope')]
+  [ValidateSet('voltage','ring_shape','coupled_reflectron','actual_slope','finite_interval')]
   [string]$AcceleratorPhaseSpaceMatchStage = 'voltage',
+  [ValidateRange(0,1000)][int]$DiagnosticParticleLimit = 0,
   [string]$BaselineAggregateRoot = '',
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$PythonExe = ''
@@ -160,6 +163,20 @@ try {
     $frontendConfig.parameters.PSObject.Properties.Name -contains
       'accelerator_overlay_enabled'
   ) -and [bool]$frontendConfig.parameters.accelerator_overlay_enabled
+  $baselineIdealAcceleratorEnabled = if (
+    $baselineConfig.parameters.PSObject.Properties.Name -contains
+      'single_flight_ideal_accel_enable'
+  ) {
+    [int]$baselineConfig.parameters.single_flight_ideal_accel_enable
+  } else { 0 }
+  if ($baselineIdealAcceleratorEnabled -notin @(0,1)) {
+    throw 'Baseline ideal-accelerator field flag differs.'
+  }
+  $effectiveIdealAcceleratorEnabled = if ($AcceleratorFieldMode -eq 'inherit') {
+    $baselineIdealAcceleratorEnabled
+  } elseif ($AcceleratorFieldMode -eq 'ideal_piecewise') { 1 } else { 0 }
+  $effectiveIdealStage1Enabled = [int]($AcceleratorFieldMode -eq 'ideal_stage1')
+  $effectiveIdealStage2Enabled = [int]($AcceleratorFieldMode -eq 'ideal_stage2')
   foreach ($name in @(
       'upstream_resolved_design.json',
       'oatof_resolved_geometry.json'
@@ -359,6 +376,9 @@ try {
   foreach ($selectedArmId in $ArmId) {
     $prepareArguments += @('--arm-id',$selectedArmId)
   }
+  if ($DiagnosticParticleLimit -gt 0) {
+    $prepareArguments += @('--diagnostic-particle-limit',([string]$DiagnosticParticleLimit))
+  }
   if ($null -ne $acceleratorMatchProfile) {
     $prepareArguments += @(
       '--accelerator-match-profile',$acceleratorMatchProfile,
@@ -395,13 +415,48 @@ try {
   $formalDir = Join-Path $workspaceRoot `
     'artifacts\projects\single_reflection_oa_tof_mass_analyzer\formal\simion'
   Copy-RfOatofFormalPaSet -FormalDir $formalDir -Destination $runtimeDir
+  # Geometry-changing baselines must replay the exact downstream flight tube
+  # selected by run_single_flight.ps1.  The compact source run intentionally
+  # does not retain PA files, so resolve its immutable content-addressed cache
+  # identity from the same frozen geometry/builder/GEM tuple.
+  $downstreamCacheRoot = Join-Path $workspaceRoot `
+    'artifacts\projects\rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer\cache\simion_oatof_downstream_pa'
+  $baselineRebuildsFlightTube = (
+    $baselineConfig.parameters.PSObject.Properties.Name -contains
+      'design_compilation'
+  ) -and $null -ne $baselineConfig.parameters.design_compilation -and
+    [bool]$baselineConfig.parameters.design_compilation.simion_rebuild_plan.flight_tube_pa
+  if ($baselineRebuildsFlightTube) {
+    $baselineOatofGeometry = Join-Path $package.input_dir `
+      'oatof_resolved_geometry.json'
+    $flightTubeBuilderSource = Join-Path $repoRoot `
+      'projects\single_reflection_oa_tof_mass_analyzer\simion\workbench\build_flight_tube_variant.lua'
+    $flightTubeGemSource = Join-Path $repoRoot `
+      'projects\single_reflection_oa_tof_mass_analyzer\simion\workbench\oatof_flight_tube_ground.gem'
+    $flightTubeCacheIdentity = @(
+      (Get-FileHash -LiteralPath $baselineOatofGeometry -Algorithm SHA256).Hash,
+      (Get-FileHash -LiteralPath $flightTubeBuilderSource -Algorithm SHA256).Hash,
+      (Get-FileHash -LiteralPath $flightTubeGemSource -Algorithm SHA256).Hash,
+      ''
+    ) -join '|'
+    $flightTubeCacheKey = [Convert]::ToHexString(
+      [Security.Cryptography.SHA256]::HashData(
+        [Text.Encoding]::UTF8.GetBytes($flightTubeCacheIdentity)
+      )
+    ).ToLowerInvariant()
+    $currentFlightTubeDir = Join-Path $downstreamCacheRoot $flightTubeCacheKey
+    if (-not (Test-Path -LiteralPath (Join-Path $currentFlightTubeDir `
+        'flight_tube_ground.pa0') -PathType Leaf)) {
+      throw 'Baseline flight-tube PA cache identity differs.'
+    }
+    Copy-AttributionPaFamily -SourceDirectory $currentFlightTubeDir `
+      -DestinationDirectory $runtimeDir -BaseName 'flight_tube_ground'
+  }
   $formalReflectronDir = Join-Path $package.run_dir `
     'simion_profiles\formal_reflectron'
   New-Item -ItemType Directory -Path $formalReflectronDir | Out-Null
   Get-ChildItem -LiteralPath $runtimeDir -Filter 'reflectron.pa*' -File | `
     Copy-Item -Destination $formalReflectronDir
-  $downstreamCacheRoot = Join-Path $workspaceRoot `
-    'artifacts\projects\rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer\cache\simion_oatof_downstream_pa'
   $expectedReflectronHash = [string]$baselineConfig.parameters.reflectron_pa0_sha256
   $formalReflectronPa0 = Join-Path $formalReflectronDir 'reflectron.pa0'
   if ((Get-FileHash -LiteralPath $formalReflectronPa0 `
@@ -574,6 +629,9 @@ try {
     parameters = [ordered]@{
       mother_sample_particle_count = $motherSampleParticleCount
       paired_cohort_particles = [int]$prepared.paired_cohort_particles
+      diagnostic_particle_limit = $(if ($DiagnosticParticleLimit -gt 0) {
+        $DiagnosticParticleLimit
+      } else {$null})
       initial_pa_instance = $initialPaInstance
       solver_birth_time_us = $solverBirthTimeUs
       arm_count = @($prepared.arms).Count
@@ -595,6 +653,11 @@ try {
       accelerator_phase_space_match_stage = $(if ($AcceleratorPhaseSpaceMatch) {
         $AcceleratorPhaseSpaceMatchStage
       } else {$null})
+      accelerator_field_mode = $AcceleratorFieldMode
+      inherited_single_flight_ideal_accel_enable = $baselineIdealAcceleratorEnabled
+      effective_single_flight_ideal_accel_enable = $effectiveIdealAcceleratorEnabled
+      effective_single_flight_ideal_stage1_enable = $effectiveIdealStage1Enabled
+      effective_single_flight_ideal_stage2_enable = $effectiveIdealStage2Enabled
     }
     artifact_retention = [ordered]@{
       policy_version = 1
@@ -630,7 +693,10 @@ try {
       if ($frontendProfileId -eq 'combined_frontend') {
         $env:OATOF_ACCELERATOR_PA_OVERRIDE = $frontendPa0
         $frontendOverrides = @(
-          '--adjustable','single_flight_rf_steps=160'
+          '--adjustable','single_flight_rf_steps=160',
+          '--adjustable',("sf_ideal_accel_enable=$effectiveIdealAcceleratorEnabled"),
+          '--adjustable',("sf_ideal_accel_stage1_enable=$effectiveIdealStage1Enabled"),
+          '--adjustable',("sf_ideal_accel_stage2_enable=$effectiveIdealStage2Enabled")
         )
       } elseif ($frontendProfileId -eq 'formal_accelerator') {
         $env:OATOF_ACCELERATOR_PA_OVERRIDE = Join-Path $runtimeDir `
@@ -734,6 +800,13 @@ try {
             -Skip $offset -First $maxParallelBatches)) {
           $batchIndex = [int]$batch.batch_index
           $stem = '{0}__batch{1:D2}' -f $currentArmId,$batchIndex
+          # SIMION's particle-file loader still fails on otherwise valid long
+          # Windows paths.  Give every batch a short run-local alias; the
+          # governed source remains frozen under inputs/counterfactual_arms.
+          $runtimeIon = Join-Path $runtimeDir `
+            ('cf_b{0:D2}.ion' -f $batchIndex)
+          Copy-Item -LiteralPath (Join-Path $preparedDir `
+            ([string]$batch.ion_file)) -Destination $runtimeIon -Force
           $payload = [pscustomobject]@{
             support = $resourceSupport
             budget = $budget.stage_budget
@@ -747,7 +820,7 @@ try {
               '--default-num-particles',([string][Math]::Max(100,[int]$batch.particles)),
               '--nogui','--noprompt','fly','--trajectory-quality','8',
               '--retain-trajectories','0',
-              '--particles',(Join-Path $preparedDir ([string]$batch.ion_file)),
+              '--particles',$runtimeIon,
               '--programs','1','--adjustable','trajectory_quality=8',
               '--adjustable','trajectory_log_enable=1',
               '--adjustable','diagnostic_max_tof_us=90',

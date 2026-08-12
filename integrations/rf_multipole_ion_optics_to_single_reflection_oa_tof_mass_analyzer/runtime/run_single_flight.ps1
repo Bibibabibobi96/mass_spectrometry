@@ -22,6 +22,22 @@ param(
   [int]$MotherParticleCount = 0,
   [int]$PopulationDenominatorCount = 0,
   [int]$EligiblePopulationCount = 0,
+  [int]$BootstrapResamples = 0,
+  [int]$BootstrapSeed = 20260812,
+  [switch]$ResolutionQualification,
+  [switch]$PulseResolutionN100Screening,
+  [string]$PulseResolutionCampaign = '',
+  [string]$PulseResolutionCampaignSha256 = '',
+  [string]$PulseResolutionExperimentRowSha256 = '',
+  [string]$PulseResolutionArmId = '',
+  [string]$PulseResolutionExecutionMode = '',
+  [string]$PulseResolutionPrefixPlanRoot = '',
+  [string]$PulseResolutionRegistrationAuthority = '',
+  [string]$PulseResolutionRegistrationAuthoritySha256 = '',
+  [string]$PulseResolutionBaselineCheckpoints = '',
+  [string]$PulseResolutionBaselineCheckpointsSha256 = '',
+  [string]$PulseResolutionArm8GlobalFieldContract = '',
+  [string]$PulseResolutionArm8GlobalFieldContractSha256 = '',
   [ValidateSet('governed_upstream_source','steady_candidate_pool','continuous_injection_full_population','pulse_eligible_conditional')][string]$SamplingMode = 'governed_upstream_source',
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$PythonExe = ''
@@ -56,6 +72,41 @@ function Invoke-SingleFlightPython {
 }
 
 if (-not (Test-Path -LiteralPath $SimionExe -PathType Leaf)) { throw "SIMION is missing: $SimionExe" }
+if ($ResolutionQualification -and $BootstrapResamples -ne 5000) {
+  throw 'Resolution qualification requires exactly 5000 bootstrap resamples.'
+}
+if ($BootstrapResamples -lt 0) { throw 'Bootstrap resamples must be nonnegative.' }
+if ($PulseResolutionN100Screening) {
+  $planRoot = [IO.Path]::GetFullPath($PulseResolutionPrefixPlanRoot)
+  $expectedPrefix = Join-Path $planRoot `
+    'inputs\pulse_resolution_arm1_all_real_screening_prefix_n100.csv'
+  $isBaseline = $PulseResolutionArmId -eq 'real_beam_all_real' -and
+    $PulseResolutionExecutionMode -eq 'screening_prefix_n100_baseline_registration' -and
+    $AcceleratorFieldProfileId -eq 'accelerator_real_pa'
+  $isPairedStage1 = $PulseResolutionArmId -eq 'real_beam_ideal_stage1' -and
+    $PulseResolutionExecutionMode -eq 'screening_prefix_n100_paired_candidate' -and
+    $AcceleratorFieldProfileId -eq 'accelerator_ideal_stage1_real_stage2'
+  $isPairedStage12 = $PulseResolutionArmId -eq 'real_beam_ideal_stage1_stage2' -and
+    $PulseResolutionExecutionMode -eq 'screening_prefix_n100_paired_candidate' -and
+    $AcceleratorFieldProfileId -eq 'accelerator_ideal_stage1_stage2_real_reflectron'
+  $isPairedAllIdeal = $PulseResolutionArmId -eq 'real_beam_all_ideal' -and
+    $PulseResolutionExecutionMode -eq 'screening_prefix_n100_paired_candidate' -and
+    $AcceleratorFieldProfileId -eq 'arm8_closed_global_piecewise_theoretical_field' -and
+    -not [string]::IsNullOrWhiteSpace($PulseResolutionArm8GlobalFieldContract)
+  if (-not ($isBaseline -or $isPairedStage1 -or $isPairedStage12 -or $isPairedAllIdeal) -or
+      $MotherParticleCount -ne 100 -or
+      $SamplingMode -ne 'continuous_injection_full_population' -or
+      $BootstrapResamples -ne 0 -or $ResolutionQualification -or
+      [string]::IsNullOrWhiteSpace($PulseResolutionCampaign) -or
+      [string]::IsNullOrWhiteSpace($PulseResolutionCampaignSha256) -or
+      [string]::IsNullOrWhiteSpace($PulseResolutionExperimentRowSha256) -or
+      -not ([IO.Path]::GetFullPath($MotherParticleSource)).Equals(
+        [IO.Path]::GetFullPath($expectedPrefix),
+        [StringComparison]::OrdinalIgnoreCase
+      )) {
+    throw 'Real multipole beam + real accelerator field + real reflectron field deterministic N=100 baseline result contract differs.'
+  }
+}
 $artifactRoot = Join-Path $workspaceRoot "artifacts\projects\$($runtime.upstream_project_id)"
 $package = New-RfRunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project $runtime.upstream_project_id -Mode 'rf_to_oatof_simion_single_flight' `
@@ -150,10 +201,19 @@ try {
     [string]$_.profile_id -eq $selectedFieldProfileId
   })
   if ($fieldProfiles.Count -ne 1 -or
-      [int]$fieldProfiles[0].single_flight_ideal_accel_enable -notin @(0,1)) {
+      [int]$fieldProfiles[0].single_flight_ideal_accel_enable -notin @(0,1) -or
+      [int]$fieldProfiles[0].single_flight_ideal_accel_stage1_enable -notin @(0,1) -or
+      [int]$fieldProfiles[0].single_flight_ideal_accel_stage2_enable -notin @(0,1)) {
     throw 'Single-flight accelerator field profile is invalid.'
   }
   $idealAcceleratorEnable = [int]$fieldProfiles[0].single_flight_ideal_accel_enable
+  $idealAcceleratorStage1Enable =
+    [int]$fieldProfiles[0].single_flight_ideal_accel_stage1_enable
+  $idealAcceleratorStage2Enable =
+    [int]$fieldProfiles[0].single_flight_ideal_accel_stage2_enable
+  $idealReflectronStage1Enable = if ($fieldProfiles[0].PSObject.Properties.Name -contains 'single_flight_ideal_reflectron_stage1_enable') { [int]$fieldProfiles[0].single_flight_ideal_reflectron_stage1_enable } else { 0 }
+  $idealReflectronStage2Enable = if ($fieldProfiles[0].PSObject.Properties.Name -contains 'single_flight_ideal_reflectron_stage2_enable') { [int]$fieldProfiles[0].single_flight_ideal_reflectron_stage2_enable } else { 0 }
+  $arm8GlobalFieldEnable = if ($fieldProfiles[0].PSObject.Properties.Name -contains 'single_flight_arm8_global_field_enable') { [int]$fieldProfiles[0].single_flight_arm8_global_field_enable } else { 0 }
   $hasGovernedLayout = -not [string]::IsNullOrWhiteSpace($LayoutProfileId)
   if ($hasGovernedLayout -ne (
       -not [string]::IsNullOrWhiteSpace($OatofResolvedGeometry) -and
@@ -225,7 +285,10 @@ try {
     throw 'Single-flight mother-source override identity is incomplete.'
   }
   $sourceToCopy = if ($hasMotherOverride) { [IO.Path]::GetFullPath($MotherParticleSource) } else { $runtime.source_particle_source }
-  Copy-RfStableFile -SourceRunRoot $(if ($hasMotherOverride) {$repoRoot} else {$workspaceRoot}) -SourcePath $sourceToCopy `
+  $motherSourceRoot = if ($PulseResolutionN100Screening) {
+    [IO.Path]::GetFullPath($PulseResolutionPrefixPlanRoot)
+  } elseif ($hasMotherOverride) { $repoRoot } else { $workspaceRoot }
+  Copy-RfStableFile -SourceRunRoot $motherSourceRoot -SourcePath $sourceToCopy `
     -Destination $motherSource -Role 'single-flight mother particle source' | Out-Null
   if ($hasMotherOverride -and (Get-FileHash -LiteralPath $motherSource -Algorithm SHA256).Hash -ne $MotherParticleSourceSha256) {
     throw 'Single-flight mother-source override hash differs.'
@@ -238,6 +301,44 @@ try {
   }
   if (@(Import-Csv -LiteralPath $motherSource).Count -ne $launched) {
     throw 'Single-flight mother sample count differs from source authority.'
+  }
+  $campaignFrozen = $null
+  $sourceIdentity = $null
+  $registrationAuthorityFrozen = $null
+  if ($PulseResolutionN100Screening) {
+    $campaignFrozen = Join-Path $package.input_dir 'pulse_resolution_optimization_campaign.json'
+    Copy-RfStableFile -SourceRunRoot $repoRoot -SourcePath $PulseResolutionCampaign `
+      -Destination $campaignFrozen -Role 'pulse-resolution campaign' | Out-Null
+    if ((Get-FileHash -LiteralPath $campaignFrozen -Algorithm SHA256).Hash -ne
+        $PulseResolutionCampaignSha256) { throw 'Pulse-resolution campaign SHA differs.' }
+    $registrationAuthorityFrozen = Join-Path $package.input_dir `
+      'pulse_resolution_baseline_registration_authority.json'
+    Copy-RfStableFile -SourceRunRoot ([IO.Path]::GetFullPath($PulseResolutionPrefixPlanRoot)) `
+      -SourcePath $PulseResolutionRegistrationAuthority `
+      -Destination $registrationAuthorityFrozen `
+      -Role 'pulse-resolution baseline registration authority' | Out-Null
+    if ((Get-FileHash -LiteralPath $registrationAuthorityFrozen -Algorithm SHA256).Hash -ne
+        $PulseResolutionRegistrationAuthoritySha256) {
+      throw 'Pulse-resolution baseline registration authority SHA differs.'
+    }
+    $sourceIdentity = Join-Path $package.input_dir 'pulse_resolution_source_identity.json'
+    $registrationSourceIdentity = [ordered]@{}
+    foreach ($property in $runtime.source_identity.PSObject.Properties) {
+      $registrationSourceIdentity[$property.Name] = $property.Value
+    }
+    $registrationSourceIdentity.mother_sample_count = 1000
+    $registrationSourceIdentity.mother_particle_source_sha256 =
+      [string]$runtime.source_identity.particle_source_sha256
+    Write-RfJson -Path $sourceIdentity -Depth 10 -Value $registrationSourceIdentity
+  }
+  $arm8GlobalFieldContractFrozen = $null
+  if ($arm8GlobalFieldEnable -eq 1) {
+    $arm8GlobalFieldContractFrozen = Join-Path $package.input_dir 'arm8_global_field_contract.json'
+    Copy-RfStableFile -SourceRunRoot $workspaceRoot -SourcePath $PulseResolutionArm8GlobalFieldContract `
+      -Destination $arm8GlobalFieldContractFrozen -Role 'Arm8 global field closure contract' | Out-Null
+    if ((Get-FileHash -LiteralPath $arm8GlobalFieldContractFrozen -Algorithm SHA256).Hash -ne $PulseResolutionArm8GlobalFieldContractSha256) {
+      throw 'Arm8 global field closure contract SHA differs.'
+    }
   }
 
   $frontendGem = Join-Path $package.input_dir 'single_flight_frontend.gem'
@@ -368,7 +469,12 @@ try {
       -Destination $overlayInterfaceVerifierFrozen -Role 'accelerator overlay interface verifier' | Out-Null
     $overlayBasisReport = Join-Path $package.result_dir 'accelerator_overlay_basis_build.json'
     if (-not $overlayFamilyComplete) {
-      $overlayBuildDir = Join-Path $overlayCacheRoot ('.' + $overlayKey + '.build-' + [guid]::NewGuid().ToString('N'))
+      # SIMION 2020's GEM compiler on Windows has a legacy path-length limit.
+      # Keep staging non-hidden and short; the completed family is still
+      # atomically renamed to the full content-hash cache key.
+      $overlayBuildDir = Join-Path $overlayCacheRoot (
+        'b-' + [guid]::NewGuid().ToString('N').Substring(0,12)
+      )
       if ([IO.Path]::GetFullPath((Split-Path -Parent $overlayBuildDir)) -ne [IO.Path]::GetFullPath($overlayCacheRoot)) {
         throw 'Overlay cache staging directory escaped the governed cache root.'
       }
@@ -705,6 +811,9 @@ try {
     '--output',$program,'--metadata',$programMetadata)
   if ($SamplingMode -eq 'steady_candidate_pool') { $programArguments += '--terminate-after-pulse' }
   if ($overlayEnabled) { $programArguments += @('--accelerator-overlay-contract',$overlayContract) }
+  if ($null -ne $arm8GlobalFieldContractFrozen) {
+    $programArguments += @('--arm8-global-field-contract',$arm8GlobalFieldContractFrozen)
+  }
   Invoke-SingleFlightPython -Arguments $programArguments `
     -Failure 'Single-flight Program build failed.'
 
@@ -714,6 +823,25 @@ try {
     upstream_source_identity=$runtime.source_identity
     parameters=[ordered]@{ connection_profile_id=$ConnectionProfileId; source_branch_id=$SourceBranchId; layout_profile_id=$(if($hasGovernedLayout){$LayoutProfileId}else{$null}); frontend_grid_profile_id=$selectedGridProfileId; frontend_cell_mm_xyz=[ordered]@{x=$frontendCellMmX;y=$frontendCellMmY;z=$frontendCellMmZ}; accelerator_overlay_enabled=$overlayEnabled; accelerator_overlay_cell_mm_xyz=$(if($overlayEnabled){[ordered]@{x=$overlayCellMmX;y=$overlayCellMmY;z=$overlayCellMmZ}}else{$null}); accelerator_overlay_boundary_mode=$(if($overlayEnabled){'coarse_electrode_basis_dirichlet_v1'}else{$null}); oatof_numerical_profile_id=$selectedOatofNumericalProfileId; spatial_window_profile_id=$(if($spatialWindowProfiles.Count -eq 1){$SpatialWindowProfileId}else{$null}); accelerator_field_profile_id=$selectedFieldProfileId; single_flight_ideal_accel_enable=$idealAcceleratorEnable; max_parallel_batches=$maxParallelBatches; clock_basis=[string]$settings.clock_basis; launched_particle_count=$launched; particle_count=$launched; population_denominator_count=$(if($PopulationDenominatorCount -gt 0){$PopulationDenominatorCount}else{$launched}); eligible_population_count=$(if($EligiblePopulationCount -gt 0){$EligiblePopulationCount}else{$null}); population_basis=$(if($SamplingMode -eq 'continuous_injection_full_population'){'candidate_full_population'}elseif($SamplingMode -eq 'pulse_eligible_conditional'){'pulse_eligible_conditional_population'}else{'source_contract_population'}); execution_batch_count=$(if($launched -ge [int]$settings.batching_policy.enabled_at_particle_count){[int]$settings.batching_policy.default_batch_count}else{1}); execution_batches_parallel=$(if($launched -ge [int]$settings.batching_policy.enabled_at_particle_count){[bool]$settings.batching_policy.parallel_after_cache_warmup}else{$false}); aperture_width_mm=$apertureWidthMm; aperture_height_mm=$apertureHeightMm; aperture_boolean_boundary_policy=[string]$apertureDiscretization.boolean_boundary_policy; aperture_grid_warnings=$apertureGridWarnings; frontend_open_aperture_column_count=[int]$apertureTopology.open_column_count; frontend_aperture_guard_electrode_check_passed=[bool]$apertureTopology.guard_electrode_check_passed; frontend_aperture_topology_report_sha256=(Get-FileHash -LiteralPath $apertureTopologyReport -Algorithm SHA256).Hash; rod_end_to_accelerator_shield_mm=1.0; surrounded_transition=$true; accelerator_axis_x_mm=[double]$oatofGeometryDocument.coordinate_convention.accelerator_axis_x; pulse_time_us=$pulseTimeUs; pulse_width_us=$pulseWidthUs; design_compilation=$(if($null -ne $layoutDerivation){$layoutDerivation.design_compilation}else{$null}); source_release_full_width_mm=[double]$oatofGeometryDocument.particle_source.size_z_mm; reflectron_stage2_length_mm=[double]$oatofGeometryDocument.geometry_mm.L_stage2; reflectron_midgrid_voltage_V=[double]$oatofGeometryDocument.electrodes_V.midgrid; reflectron_backplate_voltage_V=[double]$oatofGeometryDocument.electrodes_V.backplate; reflectron_pa0_sha256=(Get-FileHash -LiteralPath $reflectronPa0 -Algorithm SHA256).Hash; frontend_gem_sha256=$frontendHash; frontend_pa0_sha256=(Get-FileHash -LiteralPath $cachePa0 -Algorithm SHA256).Hash; accelerator_overlay_pa0_sha256=$(if($overlayEnabled){(Get-FileHash -LiteralPath $overlayCachePa0 -Algorithm SHA256).Hash}else{$null}) }
     artifact_retention=[ordered]@{policy_version=1;class='compact';reason=$null}; formal_gate_passed=$false
+  }
+  if ($PulseResolutionN100Screening) {
+    $runConfiguration.inputs.pulse_resolution_campaign = $campaignFrozen
+    $runConfiguration.inputs.pulse_resolution_source_identity = $sourceIdentity
+    $runConfiguration.inputs.pulse_resolution_baseline_registration_authority =
+      $registrationAuthorityFrozen
+    $runConfiguration.parameters.pulse_resolution_physical_arm = $PulseResolutionArmId
+    $runConfiguration.parameters.single_flight_ideal_accel_stage1_enable =
+      $idealAcceleratorStage1Enable
+    $runConfiguration.parameters.single_flight_ideal_accel_stage2_enable =
+      $idealAcceleratorStage2Enable
+    $runConfiguration.parameters.single_flight_ideal_reflectron_stage1_enable = $idealReflectronStage1Enable
+    $runConfiguration.parameters.single_flight_ideal_reflectron_stage2_enable = $idealReflectronStage2Enable
+    $runConfiguration.parameters.single_flight_arm8_global_field_enable = $arm8GlobalFieldEnable
+    $runConfiguration.parameters.pulse_resolution_mother_sample_count = 1000
+    $runConfiguration.parameters.pulse_resolution_screening_prefix_count = 100
+    $runConfiguration.parameters.pulse_resolution_selection_rule =
+      'deterministic_first_n_rows'
+    $runConfiguration.parameters.pulse_resolution_screening_is_random = $false
   }
   Write-RfJson -Path $package.run_config -Depth 10 -Value $runConfiguration
   Write-RfJson -Path $package.summary -Value ([ordered]@{schema_version=1;role=$summaryRole;status='interrupted';reason='Frozen inputs recorded; SIMION flight not complete.'})
@@ -781,6 +909,11 @@ try {
         stdout = $batch.stdout
         stderr = $batch.stderr
         accelerator_pa = $cachePa0
+        ideal_stage1 = $idealAcceleratorStage1Enable
+        ideal_stage2 = $idealAcceleratorStage2Enable
+        ideal_reflectron_stage1 = $idealReflectronStage1Enable
+        ideal_reflectron_stage2 = $idealReflectronStage2Enable
+        arm8_global_field = $arm8GlobalFieldEnable
         particle_id_offset = [int]$batch.offset
         arguments = [string[]]@(
           '--default-num-particles',([string][Math]::Max(100,[int]$batch.count)),
@@ -792,6 +925,8 @@ try {
           '--adjustable',("diagnostic_max_tof_us={0:R}" -f [double]$settings.maximum_time_of_flight_us),
           '--adjustable','handoff_pulse_mode=1',
           '--adjustable',("sf_ideal_accel_enable={0}" -f $idealAcceleratorEnable),
+          '--adjustable',("sf_ideal_accel_stage1_enable={0}" -f $idealAcceleratorStage1Enable),
+          '--adjustable',("sf_ideal_accel_stage2_enable={0}" -f $idealAcceleratorStage2Enable),
           '--adjustable',("handoff_pulse_time_us={0:R}" -f $pulseTimeUs),
           '--adjustable',("handoff_pulse_width_us={0:R}" -f $pulseWidthUs),
           '--adjustable',("single_flight_rf_steps={0}" -f [int]$settings.rf_steps_per_period),
@@ -802,6 +937,11 @@ try {
           param($item)
           . $item.support
           $env:OATOF_ACCELERATOR_PA_OVERRIDE = $item.accelerator_pa
+          $env:OATOF_IDEAL_ACCEL_STAGE1_ENABLE = [string]$item.ideal_stage1
+          $env:OATOF_IDEAL_ACCEL_STAGE2_ENABLE = [string]$item.ideal_stage2
+          $env:OATOF_IDEAL_REFLECTRON_STAGE1_ENABLE = [string]$item.ideal_reflectron_stage1
+          $env:OATOF_IDEAL_REFLECTRON_STAGE2_ENABLE = [string]$item.ideal_reflectron_stage2
+          $env:OATOF_ARM8_GLOBAL_FIELD_ENABLE = [string]$item.arm8_global_field
           $env:OATOF_SINGLE_FLIGHT_PARTICLE_ID_OFFSET = [string]$item.particle_id_offset
           Invoke-ResourceBudgetedProcess `
             -ResolvedBudgetPath $item.budget -RunDir $item.run_dir `
@@ -838,6 +978,8 @@ try {
     '--launched',([string]$launched),'--mass-amu','100',
     '--geometry',$oatofGeometry,'--pulse-time-us',([string]$pulseTimeUs),
     '--clock-basis',([string]$settings.clock_basis),
+    '--bootstrap-resamples',([string]$BootstrapResamples),
+    '--bootstrap-seed',([string]$BootstrapSeed),
     '--initial-global-state',$globalSource,
     '--checkpoints',$checkpoints,'--summary',$package.summary)
   if ($PopulationDenominatorCount -gt 0) {
@@ -860,6 +1002,21 @@ try {
   }
   Invoke-SingleFlightPython -Arguments $analysisArguments `
     -Failure 'Single-flight log analysis failed.'
+  if ($ResolutionQualification) {
+    $qualificationSummary = Get-Content -LiteralPath $package.summary -Raw -Encoding UTF8 | ConvertFrom-Json
+    $bootstrapRecords = @($qualificationSummary.full_pulse_eligible_bootstrap)
+    if ($null -ne $qualificationSummary.spatial_window_peak) {
+      $bootstrapRecords += @($qualificationSummary.spatial_window_peak.bootstrap)
+    }
+    if ($bootstrapRecords.Count -lt 2 -or @($bootstrapRecords | Where-Object {
+          [string]$_.status -ne 'computed' -or
+          [int]$_.resamples_requested -ne 5000 -or
+          [int]$_.resamples_valid -lt 4750 -or
+          [double]$_.relative_95pct_interval_width -gt 0.10
+        }).Count -ne 0) {
+      throw 'Resolution qualification bootstrap acceptance failed.'
+    }
+  }
   $sixPanel = Join-Path $package.result_dir 'single_flight_spatial_six_panel.png'
   $sixPanelMetadata = Join-Path $package.result_dir 'single_flight_spatial_six_panel_metadata.json'
   Invoke-SingleFlightPython -Arguments @('-m',
@@ -868,12 +1025,79 @@ try {
     '--frontend',$frontendContract,'--oatof',$oatofGeometry,'--output',$sixPanel,
     '--metadata',$sixPanelMetadata) -Failure 'Single-flight six-panel spatial diagnostic failed.'
   $result = Get-Content -LiteralPath $package.summary -Raw -Encoding UTF8 | ConvertFrom-Json
+  $baselineReceipt = $null
+  $promotionReceipt = $null
+  if ($PulseResolutionN100Screening) {
+    $resultName = if ($PulseResolutionArmId -eq 'real_beam_all_real') {
+      'pulse_resolution_real_beam_all_real_n100_baseline_result.json'
+    } elseif ($PulseResolutionArmId -eq 'real_beam_ideal_stage1') {
+      'pulse_resolution_real_beam_ideal_stage1_n100_candidate_result.json'
+    } elseif ($PulseResolutionArmId -eq 'real_beam_ideal_stage1_stage2') { 'pulse_resolution_real_beam_ideal_stage1_stage2_n100_candidate_result.json' } else { 'pulse_resolution_real_beam_arm8_closed_global_theory_n100_candidate_result.json' }
+    $baselineReceipt = Join-Path $package.result_dir $resultName
+    $receiptArguments = @('-m',
+      'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.register_n100_baseline',
+      '--campaign',$campaignFrozen,
+      '--campaign-sha256',$PulseResolutionCampaignSha256,
+      '--experiment-row-sha256',$PulseResolutionExperimentRowSha256,
+      '--experiment-id',$(if($PulseResolutionArmId -eq 'real_beam_all_real'){'pulse_resolution_baseline'}elseif($PulseResolutionArmId -eq 'real_beam_ideal_stage1'){'pulse_resolution_real_beam_ideal_stage1_real_stage2_real_reflectron_n100'}elseif($PulseResolutionArmId -eq 'real_beam_ideal_stage1_stage2'){'pulse_resolution_real_beam_ideal_stage1_stage2_real_reflectron_n100'}else{'pulse_resolution_real_beam_arm8_closed_global_theory_n100'}),
+      '--arm-id',$PulseResolutionArmId,'--execution-mode',$PulseResolutionExecutionMode,
+      '--summary',$package.summary,'--checkpoints',$checkpoints,
+      '--source-identity',$sourceIdentity,'--prefix',$motherSource,
+      '--prefix-plan-path','inputs/pulse_resolution_arm1_all_real_screening_prefix_n100.csv',
+      '--prefix-sha256',$MotherParticleSourceSha256,
+      '--registration-authority',$registrationAuthorityFrozen,
+      '--registration-authority-sha256',$PulseResolutionRegistrationAuthoritySha256,
+      '--output',$baselineReceipt)
+    if ($PulseResolutionArmId -ne 'real_beam_all_real') {
+      if (-not (Test-Path -LiteralPath $PulseResolutionBaselineCheckpoints -PathType Leaf) -or
+          (Get-FileHash -LiteralPath $PulseResolutionBaselineCheckpoints -Algorithm SHA256).Hash -ne
+            $PulseResolutionBaselineCheckpointsSha256) {
+        throw 'Paired baseline checkpoints SHA differs.'
+      }
+      $promotionReceipt = Join-Path $package.result_dir (
+        $(if($PulseResolutionArmId -eq 'real_beam_all_ideal'){'pulse_resolution_real_beam_arm8_closed_global_theory_n100_eligible_only_promotion_receipt.json'}else{'pulse_resolution_' + $PulseResolutionArmId + '_n100_promotion_receipt.json'})
+      )
+      $receiptArguments += @('--baseline-checkpoints',$PulseResolutionBaselineCheckpoints,
+        '--promotion-receipt',$promotionReceipt)
+    }
+    Invoke-SingleFlightPython -Arguments $receiptArguments `
+      -Failure 'N=100 pulse-resolution result receipt failed.'
+    $registration = Get-Content -LiteralPath $baselineReceipt -Raw -Encoding UTF8 |
+      ConvertFrom-Json
+    $expectedStatus = if ($PulseResolutionArmId -eq 'real_beam_all_real') {
+      'baseline_registered_not_candidate'
+    } else { 'candidate_screening_complete_not_qualified' }
+    if ($registration.execution_status -ne $expectedStatus -or
+        $registration.formal_gate_passed) {
+      throw 'N=100 screening result receipt differs.'
+    }
+    $result | Add-Member -NotePropertyName pulse_resolution_registration `
+      -NotePropertyValue ([ordered]@{
+        execution_status=$expectedStatus
+        receipt=('results/' + $resultName)
+        receipt_sha256=(Get-FileHash -LiteralPath $baselineReceipt -Algorithm SHA256).Hash
+      }) -Force
+    if ($null -ne $promotionReceipt) {
+      $promotion = Get-Content -LiteralPath $promotionReceipt -Raw -Encoding UTF8 |
+        ConvertFrom-Json
+      $result | Add-Member -NotePropertyName pulse_resolution_promotion `
+        -NotePropertyValue ([ordered]@{
+          decision=[string]$promotion.decision
+          population_count=[int]$promotion.pairing.population_count
+          eligible_paired_count=[int]$promotion.pairing.eligible_paired_count
+          failure_codes=@($promotion.failure_reasons | ForEach-Object { [string]$_.code })
+          receipt=('results/' + [IO.Path]::GetFileName($promotionReceipt))
+          receipt_sha256=(Get-FileHash -LiteralPath $promotionReceipt -Algorithm SHA256).Hash
+        }) -Force
+    }
+    Write-RfJson -Path $package.summary -Depth 10 -Value $result
+  }
   $runConfiguration.parameters.multipole_handoff_count = [int]$result.census.multipole_handoff
   $runConfiguration.parameters.local_accelerator_exit_count = [int]$result.census.local_accelerator_exit
   $runConfiguration.parameters.detector_crossing_count = [int]$result.census.detector_crossing
   Write-RfJson -Path $package.run_config -Depth 10 -Value $runConfiguration
   $retentionActions = Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config
-  $outputs = @($checkpoints,$sixPanel,$sixPanelMetadata) + $stdoutFiles + $stderrFiles + $resourceUsageFiles + @($flightTubeBuildStdout,$flightTubeBuildStderr,$reflectronBuildStdout,$reflectronBuildStderr,$package.summary,$retentionActions) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
+  $outputs = @($checkpoints,$sixPanel,$sixPanelMetadata,$baselineReceipt,$promotionReceipt) + $stdoutFiles + $stderrFiles + $resourceUsageFiles + @($flightTubeBuildStdout,$flightTubeBuildStderr,$reflectronBuildStdout,$reflectronBuildStderr,$package.summary,$retentionActions) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
   foreach ($usage in $resourceUsageFiles) {
     if (-not (Complete-ResourceUsage -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir -UsagePath $usage)) { $resourceBudgetExceeded=$true; throw 'Single-flight compact retained-byte budget exceeded.' }
   }

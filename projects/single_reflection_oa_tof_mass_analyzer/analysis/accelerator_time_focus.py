@@ -64,6 +64,32 @@ class PhaseSpaceMatchedVoltagePair:
 
 
 @dataclass(frozen=True)
+class FiniteIntervalMatchedVoltagePair:
+    """Uniform-field voltage pair minimizing time spread over a finite source width."""
+
+    repeller_v: float
+    intermediate_v: float
+    exit_v: float
+    gap1_voltage_drop_v: float
+    stage1_field_v_per_mm: float
+    stage2_field_v_per_mm: float
+    nominal_energy_per_charge_v: float
+    source_center_mm: float
+    source_full_width_mm: float
+    source_minimum_mm: float
+    source_maximum_mm: float
+    mean_initial_velocity_m_per_s: float
+    velocity_slope_m_per_s_per_mm: float
+    focus_drift_mm: float
+    sample_count: int
+    theoretical_rms_time_ns: float
+    theoretical_peak_to_peak_time_ns: float
+    canonical_repeller_z_mm: float
+    canonical_grid1_z_mm: float
+    canonical_grid2_z_mm: float
+
+
+@dataclass(frozen=True)
 class LinearPhaseSpaceTimingCoefficients:
     """Local timing coefficients along ``v_z(x)=v_c+kappa*(x-x_c)``.
 
@@ -349,6 +375,187 @@ def time_to_fixed_plane_s(
     )
     time2 = (velocity2 - velocity1) / acceleration2
     return time1 + time2 + drift * 1.0e-3 / velocity2
+
+
+def match_finite_phase_space_interval(
+    gap1_mm: float,
+    gap2_mm: float,
+    source_center_mm: float,
+    source_full_width_mm: float,
+    mean_initial_velocity_m_per_s: float,
+    velocity_slope_m_per_s_per_mm: float,
+    mass_to_charge_th: float,
+    nominal_energy_per_charge_v: float,
+    *,
+    exit_v: float = 0.0,
+    voltage_drop_bounds_v: tuple[float, float] = (100.0, 1200.0),
+    sample_count: int = 1001,
+    voltage_tolerance_v: float = 1.0e-8,
+) -> FiniteIntervalMatchedVoltagePair:
+    """Minimize ideal two-uniform-field timing RMS over a finite linear ``z-vz`` interval.
+
+    Only the first-gap voltage drop is varied.  The nominal energy at the source
+    centre, geometry, exit voltage and focus plane remain fixed; consequently the
+    complete second region remains one uniform field.  The result is a numerical
+    limit of this declared one-dimensional model, not a three-dimensional or
+    full-instrument resolution limit.
+    """
+    gap1 = _as_finite_float(gap1_mm, "gap1_mm")
+    gap2 = _as_finite_float(gap2_mm, "gap2_mm")
+    center = _as_finite_float(source_center_mm, "source_center_mm")
+    width = _as_finite_float(source_full_width_mm, "source_full_width_mm")
+    mean_velocity = _as_finite_float(
+        mean_initial_velocity_m_per_s, "mean_initial_velocity_m_per_s"
+    )
+    slope = _as_finite_float(
+        velocity_slope_m_per_s_per_mm, "velocity_slope_m_per_s_per_mm"
+    )
+    mu = _as_finite_float(mass_to_charge_th, "mass_to_charge_th")
+    energy = _as_finite_float(
+        nominal_energy_per_charge_v, "nominal_energy_per_charge_v"
+    )
+    exit_potential = _as_finite_float(exit_v, "exit_v")
+    tolerance = _as_finite_float(voltage_tolerance_v, "voltage_tolerance_v")
+    for value, name in (
+        (gap1, "gap1_mm"), (gap2, "gap2_mm"), (width, "source_full_width_mm"),
+        (mu, "mass_to_charge_th"), (energy, "nominal_energy_per_charge_v"),
+        (tolerance, "voltage_tolerance_v"),
+    ):
+        _require_positive(value, name)
+    if sample_count < 11 or sample_count % 2 == 0:
+        raise PhysicsContractError(
+            "sample_count must be an odd integer >= 11"
+        )
+    source_minimum = center - width / 2.0
+    source_maximum = center + width / 2.0
+    if not 0.0 < source_minimum < source_maximum < gap1:
+        raise PhysicsContractError("finite source interval must lie inside gap 1")
+    if len(voltage_drop_bounds_v) != 2:
+        raise PhysicsContractError("voltage_drop_bounds_v must contain two values")
+    lower, upper = (
+        _as_finite_float(voltage_drop_bounds_v[0], "voltage_drop_bounds_v[0]"),
+        _as_finite_float(voltage_drop_bounds_v[1], "voltage_drop_bounds_v[1]"),
+    )
+    if not 0.0 < lower < upper:
+        raise PhysicsContractError("voltage-drop bounds must satisfy 0 < lower < upper")
+
+    positions = [
+        source_minimum + width * index / (sample_count - 1)
+        for index in range(sample_count)
+    ]
+
+    def voltage_pair(voltage_drop: float) -> tuple[float, float]:
+        repeller = exit_potential + energy + voltage_drop * center / gap1
+        intermediate = repeller - voltage_drop
+        if intermediate <= exit_potential:
+            raise PhysicsContractError(
+                "finite-interval search makes the intermediate grid non-accelerating"
+            )
+        return repeller, intermediate
+
+    derivative_step = min(1.0e-4, width / 1000.0)
+
+    def derived_focus_drift(voltage_drop: float) -> float:
+        repeller, intermediate = voltage_pair(voltage_drop)
+        before_position = center - derivative_step
+        after_position = center + derivative_step
+        before_velocity = mean_velocity - slope * derivative_step
+        after_velocity = mean_velocity + slope * derivative_step
+
+        def derivative_at(drift_mm: float) -> float:
+            before = time_to_fixed_plane_s(
+                repeller, intermediate, gap1, gap2, before_position,
+                before_velocity, drift_mm, mu, exit_v=exit_potential,
+            )
+            after = time_to_fixed_plane_s(
+                repeller, intermediate, gap1, gap2, after_position,
+                after_velocity, drift_mm, mu, exit_v=exit_potential,
+            )
+            return (after - before) / (2.0 * derivative_step)
+
+        derivative_at_zero = derivative_at(0.0)
+        derivative_at_one = derivative_at(1.0)
+        slope_per_mm = derivative_at_one - derivative_at_zero
+        if abs(slope_per_mm) <= 1.0e-30:
+            raise PhysicsContractError("finite-interval focus derivative is singular")
+        drift = -derivative_at_zero / slope_per_mm
+        if drift < 0.0:
+            raise PhysicsContractError("finite-interval focus lies upstream of grid2")
+        return drift
+
+    def timing_metrics(voltage_drop: float) -> tuple[float, float, float]:
+        repeller, intermediate = voltage_pair(voltage_drop)
+        try:
+            drift = derived_focus_drift(voltage_drop)
+        except PhysicsContractError:
+            return math.inf, math.inf, math.nan
+        times_ns = [
+            time_to_fixed_plane_s(
+                repeller, intermediate, gap1, gap2, position,
+                mean_velocity + slope * (position - center), drift, mu,
+                exit_v=exit_potential,
+            ) * 1.0e9
+            for position in positions
+        ]
+        mean_time = sum(times_ns) / sample_count
+        rms = math.sqrt(
+            sum((value - mean_time) ** 2 for value in times_ns) / sample_count
+        )
+        return rms, max(times_ns) - min(times_ns), drift
+
+    # The declared problem has one physical degree of freedom.  A dense bracket
+    # search prevents an assumed starting point from selecting the candidate;
+    # golden-section refinement then resolves the best bracket deterministically.
+    bracket_count = 201
+    bracket_values = [
+        lower + (upper - lower) * index / (bracket_count - 1)
+        for index in range(bracket_count)
+    ]
+    bracket_objectives = [timing_metrics(value)[0] for value in bracket_values]
+    if not any(math.isfinite(value) for value in bracket_objectives):
+        raise PhysicsContractError("finite-interval voltage optimization is infeasible")
+    best_index = min(range(bracket_count), key=bracket_objectives.__getitem__)
+    left = bracket_values[max(0, best_index - 1)]
+    right = bracket_values[min(bracket_count - 1, best_index + 1)]
+    ratio = (math.sqrt(5.0) - 1.0) / 2.0
+    c = right - ratio * (right - left)
+    d = left + ratio * (right - left)
+    fc = timing_metrics(c)[0]
+    fd = timing_metrics(d)[0]
+    while right - left > tolerance:
+        if fc <= fd:
+            right, d, fd = d, c, fc
+            c = right - ratio * (right - left)
+            fc = timing_metrics(c)[0]
+        else:
+            left, c, fc = c, d, fd
+            d = left + ratio * (right - left)
+            fd = timing_metrics(d)[0]
+    optimum = (left + right) / 2.0
+    rms_ns, peak_to_peak_ns, drift = timing_metrics(optimum)
+    repeller, intermediate = voltage_pair(optimum)
+    return FiniteIntervalMatchedVoltagePair(
+        repeller_v=repeller,
+        intermediate_v=intermediate,
+        exit_v=exit_potential,
+        gap1_voltage_drop_v=optimum,
+        stage1_field_v_per_mm=optimum / gap1,
+        stage2_field_v_per_mm=(intermediate - exit_potential) / gap2,
+        nominal_energy_per_charge_v=energy,
+        source_center_mm=center,
+        source_full_width_mm=width,
+        source_minimum_mm=source_minimum,
+        source_maximum_mm=source_maximum,
+        mean_initial_velocity_m_per_s=mean_velocity,
+        velocity_slope_m_per_s_per_mm=slope,
+        focus_drift_mm=drift,
+        sample_count=sample_count,
+        theoretical_rms_time_ns=rms_ns,
+        theoretical_peak_to_peak_time_ns=peak_to_peak_ns,
+        canonical_repeller_z_mm=-(drift + gap2 + gap1),
+        canonical_grid1_z_mm=-(drift + gap2),
+        canonical_grid2_z_mm=-drift,
+    )
 
 
 def linear_phase_space_timing_coefficients(

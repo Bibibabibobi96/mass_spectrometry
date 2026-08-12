@@ -22,6 +22,41 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 REPO = Path(__file__).resolve().parents[3]
 
 
+def _minimal_program_contracts() -> tuple[dict[str, object], dict[str, object]]:
+    upstream = {
+        "role": "multipole_resolved_design_do_not_edit",
+        "drive": {
+            "waveform": "cosine",
+            "rf_amplitude_V_zero_to_peak_per_group": 100.0,
+            "frequency_Hz": 1.0e6,
+        },
+        "segmentation": {
+            "segmented_rod_array": {
+                "electrodes": [
+                    {"electrode_id": electrode_id, "electrode_group": 1 + electrode_id % 2}
+                    for electrode_id in range(1, 9)
+                ]
+            }
+        },
+        "axial_dc": {
+            "upstream_shield_potential_V": 0.0,
+            "rod_electrodes": [
+                {"electrode_id": electrode_id, "potential_V": 0.0}
+                for electrode_id in range(1, 9)
+            ],
+            "entrance_reference_sleeve": {"potential_V": 0.0},
+            "entrance_plate_potential_V": 0.0,
+        },
+    }
+    frontend = {
+        "role": "rf_oatof_simion_single_flight_frontend_contract",
+        "junction_enclosure": {"shield_potential_V": 0.0},
+        "instance_origin_mm": {"x": 0.0, "y": 0.0, "z": 0.0},
+        "source_exit_center_mm": {"x": -1.0, "y": 0.0, "z": 0.0},
+    }
+    return upstream, frontend
+
+
 class SingleFlightProgramTests(unittest.TestCase):
     def test_parallel_program_does_not_readjust_frozen_ground_pas(self) -> None:
         formal = (
@@ -111,6 +146,7 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertIn("single_flight_handoff", extension)
         self.assertIn("TRACE: source_release", extension)
         self.assertIn("TRACE: pre_pulse_state", extension)
+        self.assertIn("TRACE: accelerator_grid1_forward", extension)
         self.assertIn("single_flight_rf_steps=160", extension)
         self.assertIn("adjustable accelerator_ring_quadratic_V=0", extension)
         self.assertIn("adjustable accelerator_ring_cubic_V=0", extension)
@@ -123,10 +159,16 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertIn("single_flight_terminate_after_pulse=1", extension)
         self.assertIn("instrument_time_us>=handoff_pulse_time_us then ion_splat=1", extension)
         self.assertIn("adjustable sf_ideal_accel_enable=0", extension)
+        self.assertIn("adjustable sf_ideal_accel_stage1_enable=0", extension)
+        self.assertIn("adjustable sf_ideal_accel_stage2_enable=0", extension)
         self.assertIn("single_flight_base_efield_adjust()", extension)
-        self.assertIn("sf_ideal_accel_enable==0 or ion_instance~=3", extension)
+        self.assertIn("sf_ideal_accel_stage1_enable==0 and sf_ideal_accel_stage2_enable==0", extension)
         self.assertIn("math.abs(ion_px_mm-accelerator_axis_x_mm)>accelerator_bore_half_mm", extension)
         self.assertIn("not single_flight_pulse_is_on() then return", extension)
+        self.assertIn("next_plane=accelerator_grid1_z_mm", extension)
+        self.assertIn("next_plane=accelerator_grid2_z_mm", extension)
+        self.assertIn("ion_charge*96.4853321233*E/ion_mass", extension)
+        self.assertIn("ion_time_step=crossing_time", extension)
 
         _, overlay = compile_accelerator_overlay(
             frontend, cell_mm_xyz={"x": 0.2, "y": 0.2, "z": 0.05}
@@ -156,6 +198,47 @@ class SingleFlightProgramTests(unittest.TestCase):
             )
             self.assertEqual(load_birth_times(path), [0.25, 1.5])
 
+    def test_reflectron_checkpoints_are_ordered_particle_resolved_states(self) -> None:
+        upstream, frontend = _minimal_program_contracts()
+        extension = build_extension(upstream, frontend)
+        checkpoint_events = [
+            "reflectron_entrance_forward",
+            "reflectron_midgrid_forward",
+            "reflectron_turning_point",
+            "reflectron_exit_return",
+        ]
+        checkpoint_offsets = [extension.index(name) for name in checkpoint_events]
+        self.assertEqual(checkpoint_offsets, sorted(checkpoint_offsets))
+        for name in checkpoint_events:
+            self.assertEqual(
+                extension.count(f"single_flight_trace_checkpoint('{name}'"), 1
+            )
+        self.assertIn(
+            "particle_id=%d instrument_time_us=%.12g tof_since_pulse_us=%.12g",
+            extension,
+        )
+        self.assertIn(
+            "kinetic_energy_eV=%.12g survival_status=alive", extension
+        )
+        self.assertIn(
+            "global_particle_id=ion_number+single_flight_particle_id_offset",
+            extension,
+        )
+        self.assertIn(
+            "single_flight_reflectron_midgrid_reported[ion_number] and not "
+            "single_flight_reflectron_turning_reported[ion_number] and p.vz>0",
+            extension,
+        )
+        self.assertIn(
+            "single_flight_reflectron_turning_reported[ion_number]=true",
+            extension,
+        )
+        self.assertIn(
+            "single_flight_reflectron_turning_reported[ion_number] and not "
+            "single_flight_reflectron_exit_reported",
+            extension,
+        )
+
     def test_replay_birth_times_use_contiguous_simulation_particle_ids(self) -> None:
         import tempfile
 
@@ -166,6 +249,18 @@ class SingleFlightProgramTests(unittest.TestCase):
                 encoding="utf-8",
             )
             self.assertEqual(load_birth_times(path), [31.8, 31.8])
+
+    def test_ideal_stage_switches_are_process_local_and_disable_overlay(self) -> None:
+        text = (REPO / "integrations" /
+                "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer" /
+                "runtime" / "build_single_flight_program.py").read_text(encoding="utf-8")
+        self.assertIn("OATOF_IDEAL_ACCEL_STAGE1_ENABLE", text)
+        self.assertIn("pulse_resolution_accelerator_stage_mode", text)
+        self.assertIn("ideal_stage1_region", text)
+        self.assertIn("ideal_stage2_region", text)
+        self.assertIn("ideal_stage_regions_disable_overlay_instance5=1", text)
+        self.assertIn("OATOF_IDEAL_REFLECTRON_STAGE1_ENABLE", text)
+        self.assertIn("pulse_resolution_reflectron_stage_mode", text)
 
 
 if __name__ == "__main__":

@@ -152,13 +152,28 @@ def _derive_reflectron_for_flight_length(baseline: dict[str, Any]) -> None:
     )
 
 
-def _derive_shield_bounds(baseline: dict[str, Any]) -> None:
+def derive_accelerator_outer_envelope_min_z(baseline: dict[str, Any]) -> float:
+    """Return the accelerator assembly's upstream-most outer-envelope coordinate."""
     geometry = baseline["geometry_mm"]
-    near = (
+    endpoint = (
         geometry["accelerator_repeller_z"]
         - geometry["accelerator_repeller_thickness"]
         - geometry["accelerator_rear_clearance"]
         - geometry["accelerator_shield_wall"]
+    )
+    baseline["geometry_derivation"]["accelerator"][
+        "outer_envelope_min_z_mm"
+    ] = endpoint
+    return endpoint
+
+
+def derive_shield_bounds(
+    baseline: dict[str, Any], accelerator_outer_envelope_min_z_mm: float
+) -> None:
+    """Derive shield bounds from component envelope endpoints only."""
+    geometry = baseline["geometry_mm"]
+    near = (
+        accelerator_outer_envelope_min_z_mm
         - geometry["shield_near_endcap_gap"]
     )
     far = geometry["L_flight"] + geometry["L_reflectron"] + geometry["ring_thickness"] + geometry["shield_axial_gap"]
@@ -280,7 +295,9 @@ def compile_design_overrides(
     if coupled_longitudinal_inputs & values.keys():
         _derive_reflectron_for_flight_length(candidate)
     if values:
-        _derive_shield_bounds(candidate)
+        derive_shield_bounds(
+            candidate, derive_accelerator_outer_envelope_min_z(candidate)
+        )
     for variable_id in reflectron_voltage_ids & values.keys():
         pointer_set(
             candidate, definitions[variable_id]["json_pointer"], values[variable_id]
@@ -452,7 +469,9 @@ def compile_proposal(proposal_path: Path) -> tuple[dict[str, Any], dict[str, Any
     if longitudinal_inputs & values.keys():
         _derive_reflectron_for_flight_length(candidate)
     if values:
-        _derive_shield_bounds(candidate)
+        derive_shield_bounds(
+            candidate, derive_accelerator_outer_envelope_min_z(candidate)
+        )
     for variable_id, item in values.items():
         if variable_id in reflectron_voltage_ids:
             pointer_set(candidate, definitions[variable_id]["json_pointer"], item["value"])

@@ -22,6 +22,7 @@ arguments
     options.DriftTimestepNs (1,1) double = NaN
     options.OutputModelPath (1,1) string = ""
     options.ContractPath (1,1) string = ""
+    options.AllowParticleLoss (1,1) logical = false
 end
 
 projectRoot = fileparts(fileparts(mfilename('fullpath')));
@@ -70,7 +71,7 @@ result = oatof_build_model_core( ...
     options.ReflectronStage1RingCount, options.AcceleratorBoreHalfMm, ...
     char(options.FixedParticleTable), options.FineTimestepNs, ...
     options.AcceleratorMeshHmaxMm, options.DriftTimestepNs, ...
-    char(options.OutputModelPath), char(contractPath));
+    char(options.OutputModelPath), char(contractPath), options.AllowParticleLoss);
 end
 
 function options = apply_defaults(options, contract)

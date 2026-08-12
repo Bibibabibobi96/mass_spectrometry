@@ -86,7 +86,8 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
 
     def test_overlay_cache_is_staged_and_reuses_the_basis_report(self) -> None:
         text = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
-        self.assertIn("'.build-' + [guid]::NewGuid().ToString('N')", text)
+        self.assertIn("'b-' + [guid]::NewGuid().ToString('N').Substring(0,12)", text)
+        self.assertIn("legacy path-length limit", text)
         self.assertIn(
             "Move-Item -LiteralPath $overlayBuildDir -Destination $overlayCacheDir",
             text,
@@ -106,6 +107,28 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
             "-Destination $overlayBasisReport",
             text,
         )
+
+    def test_resolution_qualification_requires_full_bootstrap(self) -> None:
+        text = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        self.assertIn("[int]$BootstrapResamples = 0", text)
+        self.assertIn("[switch]$ResolutionQualification", text)
+        self.assertIn("$BootstrapResamples -ne 5000", text)
+        self.assertIn("'--bootstrap-resamples'", text)
+        self.assertIn("[int]$_.resamples_valid -lt 4750", text)
+        self.assertIn(
+            "[double]$_.relative_95pct_interval_width -gt 0.10", text
+        )
+
+    def test_paired_n100_stage_switches_are_process_local(self) -> None:
+        text = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        self.assertIn("OATOF_IDEAL_ACCEL_STAGE1_ENABLE", text)
+        self.assertIn("OATOF_IDEAL_ACCEL_STAGE2_ENABLE", text)
+        self.assertIn("single_flight_ideal_accel_stage1_enable", text)
+        self.assertIn("PulseResolutionBaselineCheckpointsSha256", text)
+        self.assertIn("pulse_resolution_real_beam_ideal_stage1_n100_candidate_result.json", text)
+        self.assertIn("if ($PulseResolutionArmId -ne 'real_beam_all_real')", text)
+        self.assertIn("execution_status=$expectedStatus", text)
+        self.assertIn("$PulseResolutionArmId + '_n100_promotion_receipt.json'", text)
 
 
 if __name__ == "__main__":
