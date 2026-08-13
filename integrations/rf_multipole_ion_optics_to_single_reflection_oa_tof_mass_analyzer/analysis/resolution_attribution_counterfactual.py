@@ -144,6 +144,8 @@ def _validate_profile(profile: dict[str, Any]) -> list[str]:
         {"arm_id": "current_layout_ideal_1mm_vz0", "intervention": "analytic_1mm_global_z_line_monoenergetic_10ev_zero_global_vz"},
         {"arm_id": "current_layout_ideal_1mm_linear_z_vz", "intervention": "analytic_1mm_global_z_line_monoenergetic_10ev_theory_linear_global_z_vz"},
         {"arm_id": "current_layout_ideal_finite_interval_linear_z_vz", "intervention": "analytic_run_local_finite_interval_xyz_monoenergetic_10ev_theory_linear_global_z_vz"},
+        {"arm_id": "current_layout_ideal_finite_interval_axis_linear_z_vz", "intervention": "analytic_run_local_finite_interval_axis_monoenergetic_10ev_theory_linear_global_z_vz"},
+        {"arm_id": "current_layout_ideal_axis_2p2mm_linear_z_vz", "intervention": "analytic_axis_2p2mm_monoenergetic_10ev_run_local_theory_linear_global_z_vz"},
         {"arm_id": "formal_focus_mapped_layout_source", "intervention": "translate_formal_positions_and_apply_observed_energy_along_positive_global_x", "solver_profile_id": "formal_reflectron"},
         {"arm_id": "exact_formal_field_mapped_layout_source", "intervention": "translate_formal_positions_and_apply_observed_energy_along_positive_global_x", "solver_profile_id": "formal_reflectron", "frontend_profile_id": "formal_accelerator"},
         {"arm_id": "formal_ideal_source", "intervention": "translate_formal_positions_and_apply_formal_energy_along_positive_global_x"},
@@ -182,6 +184,7 @@ def _validate_accelerator_match_profile(profile: dict[str, Any]) -> None:
         "coupled_reflectron_probes",
         "actual_slope_probes",
         "finite_interval_design",
+        "finite_interval_coupled_probes",
         "frozen_phase_space_input",
         "claim_limit",
     }
@@ -315,6 +318,23 @@ def _validate_accelerator_match_profile(profile: dict[str, Any]) -> None:
         != "retain_stage1_stage2_and_ring_count_unless_theory_is_infeasible"
     ):
         raise ValueError("finite-interval accelerator design contract differs")
+    coupled_finite = profile.get("finite_interval_coupled_probes")
+    if (
+        not isinstance(coupled_finite, list)
+        or len(coupled_finite) != 2
+        or {item.get("coupled_reflectron_enabled") for item in coupled_finite}
+        != {False, True}
+        or any(
+            set(item) != {
+                "arm_id", "source_intervention_arm_id",
+                "coupled_reflectron_enabled",
+            }
+            or item["source_intervention_arm_id"]
+            != "current_layout_ideal_finite_interval_axis_linear_z_vz"
+            for item in coupled_finite
+        )
+    ):
+        raise ValueError("finite-interval coupled probe contract differs")
     frozen = profile.get("frozen_phase_space_input")
     if not isinstance(frozen, dict) or set(frozen) != {
         "run_id", "checkpoint_sha256", "cohort", "particle_count",
@@ -629,19 +649,34 @@ def _apply_arm(
         if np.any(np.abs(result[:, 6]) >= speeds):
             raise ValueError("prescribed ideal-source vz exceeds total speed")
         result[:, 4] = np.sqrt(speeds * speeds - result[:, 6] * result[:, 6])
-    if arm_id == "current_layout_ideal_finite_interval_linear_z_vz":
+    if arm_id in {
+        "current_layout_ideal_finite_interval_linear_z_vz",
+        "current_layout_ideal_finite_interval_axis_linear_z_vz",
+        "current_layout_ideal_axis_2p2mm_linear_z_vz",
+    }:
         if theory_linear_z_vz is None:
             raise ValueError("finite-interval ideal source requires run-local theory z-vz")
-        if not math.isclose(float(target_size[2]), 2.2, rel_tol=0.0, abs_tol=1e-12):
+        if arm_id != "current_layout_ideal_axis_2p2mm_linear_z_vz" and not math.isclose(
+            float(target_size[2]), 2.2, rel_tol=0.0, abs_tol=1e-12
+        ):
             raise ValueError("finite-interval ideal source requires run-local z width 2.2 mm")
         # Preserve the governed ideal-source x/y distribution while replacing
         # the acceleration coordinate by deterministic full-interval coverage.
         scaled = _scaled_formal_positions(
             formal_samples, formal_center, formal_size, target_center, target_size
         )
-        result[:, 1:3] = scaled[:, 0:2]
+        if arm_id == "current_layout_ideal_finite_interval_linear_z_vz":
+            result[:, 1:3] = scaled[:, 0:2]
+        else:
+            result[:, 1] = target_center[0]
+            result[:, 2] = target_center[1]
+        source_width_mm = (
+            2.2
+            if arm_id == "current_layout_ideal_axis_2p2mm_linear_z_vz"
+            else target_size[2]
+        )
         result[:, 3] = target_center[2] + np.linspace(
-            -0.5 * target_size[2], 0.5 * target_size[2], len(result)
+            -0.5 * source_width_mm, 0.5 * source_width_mm, len(result)
         )
         mean_vz, slope = theory_linear_z_vz
         result[:, 6] = mean_vz + slope * (result[:, 3] - target_center[2])
@@ -733,7 +768,7 @@ def prepare(
         _validate_accelerator_match_profile(match_profile)
         if accelerator_match_stage not in {
             "voltage", "ring_shape", "coupled_reflectron", "actual_slope",
-            "finite_interval",
+            "finite_interval", "finite_interval_coupled",
         }:
             raise ValueError("accelerator match stage differs")
     arm_ids = (
@@ -749,7 +784,7 @@ def prepare(
         str(probe["arm_id"])
         for key in (
             "probes", "ring_shape_probes", "coupled_reflectron_probes",
-            "actual_slope_probes",
+            "actual_slope_probes", "finite_interval_coupled_probes",
         )
         for probe in ((match_profile or {}).get(key) or [])
     }
@@ -899,6 +934,107 @@ def prepare(
                 voltage_tolerance_v=float(finite_design["voltage_tolerance_V"]),
             )
             accelerator_match["finite_interval_solution"] = asdict(finite_solution)
+        if accelerator_match_stage == "finite_interval_coupled":
+            if theory_linear_z_vz is None:
+                raise ValueError("finite-interval coupled stage requires frozen theory z-vz")
+            finite_design = match_profile["finite_interval_design"]
+            theory_mean_vz, theory_velocity_slope = theory_linear_z_vz
+            theory_release_position = target_center[2] - repeller_z
+            finite_solution = match_finite_phase_space_interval(
+                float(acceleration["d1_mm"]),
+                float(acceleration["d2_mm"]),
+                theory_release_position,
+                float(finite_design["source_full_width_mm"]),
+                theory_mean_vz,
+                theory_velocity_slope,
+                mass_amu / abs(charge_state),
+                nominal_energy,
+                exit_v=float(electrodes["grid2"]),
+                voltage_drop_bounds_v=tuple(
+                    float(value) for value in solver["voltage_drop_bounds_V"]
+                ),
+                sample_count=int(finite_design["sample_count"]),
+                voltage_tolerance_v=float(finite_design["voltage_tolerance_V"]),
+            )
+            fixed_focus_match = match_phase_space_voltage_pair(
+                float(acceleration["d1_mm"]),
+                float(acceleration["d2_mm"]),
+                theory_release_position,
+                theory_mean_vz,
+                theory_velocity_slope,
+                float(acceleration["focus_drift_after_grid2_mm"]),
+                mass_amu / abs(charge_state),
+                nominal_energy,
+                exit_v=float(electrodes["grid2"]),
+                voltage_drop_bounds_v=tuple(
+                    float(value) for value in solver["voltage_drop_bounds_V"]
+                ),
+                derivative_step_mm=float(solver["derivative_step_mm"]),
+                derivative_tolerance_s_per_mm=float(
+                    solver["derivative_tolerance_s_per_mm"]
+                ),
+            )
+            matched_state = accelerator_state(
+                fixed_focus_match.repeller_v,
+                fixed_focus_match.intermediate_v,
+                float(acceleration["d1_mm"]),
+                float(acceleration["d2_mm"]),
+                exit_v=fixed_focus_match.exit_v,
+                release_position_mm=theory_release_position,
+                require_downstream_focus=False,
+            )
+            coefficients = linear_phase_space_timing_coefficients(
+                matched_state,
+                mass_amu / abs(charge_state),
+                theory_mean_vz,
+                theory_velocity_slope,
+                float(acceleration["focus_drift_after_grid2_mm"]),
+            )
+            source_positions = target_center[2] + np.linspace(
+                -0.5 * finite_solution.source_full_width_mm,
+                0.5 * finite_solution.source_full_width_mm,
+                int(finite_design["sample_count"]),
+            )
+            source_velocities = (
+                finite_solution.mean_initial_velocity_m_per_s
+                + finite_solution.velocity_slope_m_per_s_per_mm
+                * (source_positions - target_center[2])
+            )
+            local_release = source_positions - repeller_z
+            electrostatic_energy = (
+                matched_state.repeller_relative_v
+                - matched_state.field1_v_per_mm * local_release
+            )
+            mass_over_charge_si = (
+                mass_amu / abs(charge_state) * AMU_KG / ELEMENTARY_CHARGE_C
+            )
+            actual_energy = (
+                electrostatic_energy
+                + 0.5 * mass_over_charge_si * source_velocities ** 2
+            )
+            geometry = target_geometry["geometry_mm"]
+            coupled_solution = solve_coupled_reflectron_from_accelerator_derivatives(
+                coefficients.actual_energy_per_charge_v,
+                float(geometry["L_stage1"]),
+                float(geometry["L_flight"]),
+                float(geometry["L_flight"]),
+                coefficients.first_derivative_at_focus,
+                coefficients.second_derivative_at_focus,
+                energy_min_v=float(np.min(actual_energy)),
+                energy_max_v=float(np.max(actual_energy)),
+            )
+            if coupled_solution.required_stage2_depth_mm > float(geometry["L_stage2"]):
+                raise ValueError("finite-interval coupled reflectron exceeds fixed stage-2 length")
+            match = fixed_focus_match
+            accelerator_match["finite_interval_solution"] = asdict(finite_solution)
+            accelerator_match["fixed_focus_match"] = asdict(fixed_focus_match)
+            accelerator_match["linear_phase_space_coefficients"] = asdict(coefficients)
+            accelerator_match["actual_energy_envelope_V"] = {
+                "minimum": float(np.min(actual_energy)),
+                "nominal": coefficients.actual_energy_per_charge_v,
+                "maximum": float(np.max(actual_energy)),
+            }
+            accelerator_match["coupled_reflectron"] = asdict(coupled_solution)
         if accelerator_match_stage == "coupled_reflectron":
             matched_state = accelerator_state(
                 match.repeller_v,
@@ -951,6 +1087,7 @@ def prepare(
             "coupled_reflectron": match_profile["coupled_reflectron_probes"],
             "actual_slope": match_profile["actual_slope_probes"],
             "finite_interval": [match_profile["finite_interval_design"]],
+            "finite_interval_coupled": match_profile["finite_interval_coupled_probes"],
         }[accelerator_match_stage]
         for probe in probes:
             arm_id = str(probe["arm_id"])
@@ -958,12 +1095,14 @@ def prepare(
             voltage_drop = (
                 finite_solution.gap1_voltage_drop_v
                 if finite_solution is not None
+                and accelerator_match_stage == "finite_interval"
                 else match.gap1_voltage_drop_v + voltage_drop_offset
             )
             repeller_v = (
                 match.exit_v
                 + nominal_energy
-                + voltage_drop * release_position / float(acceleration["d1_mm"])
+                + voltage_drop * match.release_position_mm
+                / float(acceleration["d1_mm"])
             )
             intermediate_v = repeller_v - voltage_drop
             if not repeller_v > intermediate_v > match.exit_v:
@@ -971,6 +1110,7 @@ def prepare(
             generated_arms[arm_id] = {
                 "arm_id": arm_id,
                 "intervention": "none",
+                "source_intervention_arm_id": probe.get("source_intervention_arm_id"),
                 "solver_profile_id": "current_downstream",
                 "frontend_profile_id": "combined_frontend",
                 "accelerator_voltage_override": {
@@ -999,6 +1139,7 @@ def prepare(
                         * float(target_geometry["geometry_mm"]["L_stage2"]),
                     }
                     if coupled_solution is not None
+                    and bool(probe.get("coupled_reflectron_enabled", True))
                     else None
                 ),
             }
@@ -1030,11 +1171,11 @@ def prepare(
     arm_profile = {arm["arm_id"]: arm for arm in profile["arms"]}
     arm_profile.update(generated_arms)
     for arm_id in arm_ids:
-        state = (
-            observed.copy()
-            if arm_id in generated_arms
-            else _apply_arm(
-                arm_id,
+        source_arm_id = arm_profile[arm_id].get(
+            "source_intervention_arm_id", arm_id
+        )
+        state = _apply_arm(
+                source_arm_id,
                 observed,
                 ideal,
                 formal_samples,
@@ -1044,7 +1185,6 @@ def prepare(
                 target_size,
                 theory_linear_z_vz,
             )
-        )
         state_path = output_dir / f"{arm_id}__source_state.csv"
         state_rows: list[dict[str, str]] = []
         ion_rows: list[list[str]] = []
@@ -1646,7 +1786,7 @@ def main() -> int:
         "--accelerator-match-stage",
         choices=(
             "voltage", "ring_shape", "coupled_reflectron", "actual_slope",
-            "finite_interval",
+            "finite_interval", "finite_interval_coupled",
         ),
         default="voltage",
     )

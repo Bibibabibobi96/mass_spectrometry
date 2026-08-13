@@ -9,7 +9,7 @@ param(
   [ValidateSet('inherit','real','ideal_stage1','ideal_stage2','ideal_piecewise')]
   [string]$AcceleratorFieldMode = 'inherit',
   [switch]$AcceleratorPhaseSpaceMatch,
-  [ValidateSet('voltage','ring_shape','coupled_reflectron','actual_slope','finite_interval')]
+  [ValidateSet('voltage','ring_shape','coupled_reflectron','actual_slope','finite_interval','finite_interval_coupled')]
   [string]$AcceleratorPhaseSpaceMatchStage = 'voltage',
   [ValidateRange(0,1000)][int]$DiagnosticParticleLimit = 0,
   [string]$BaselineAggregateRoot = '',

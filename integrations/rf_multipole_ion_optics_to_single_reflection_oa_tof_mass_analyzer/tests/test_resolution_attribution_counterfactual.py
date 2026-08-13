@@ -269,6 +269,8 @@ class ResolutionAttributionCounterfactualTests(unittest.TestCase):
                 if arm["arm_id"] not in {
                     "current_layout_ideal_1mm_linear_z_vz",
                     "current_layout_ideal_finite_interval_linear_z_vz",
+                    "current_layout_ideal_finite_interval_axis_linear_z_vz",
+                    "current_layout_ideal_axis_2p2mm_linear_z_vz",
                 }
             ]
             result = prepare(
@@ -442,7 +444,7 @@ class ResolutionAttributionCounterfactualTests(unittest.TestCase):
                 "particle_source": {
                     "center_x_mm": 0.0, "center_y_mm": 0.0,
                     "center_z_mm": -18.42918680341103,
-                    "size_x_mm": 1.0, "size_y_mm": 1.0, "size_z_mm": 1.0,
+                    "size_x_mm": 1.0, "size_y_mm": 1.0, "size_z_mm": 2.2,
                 }
             }
             formal_geometry = root / "formal_geometry.json"
@@ -456,6 +458,10 @@ class ResolutionAttributionCounterfactualTests(unittest.TestCase):
                         "d2_mm": 16.8,
                         "canonical_repeller_z_mm": -19.92918680341103,
                         "focus_drift_after_grid2_mm": 0.12918680341103,
+                        "finite_interval_theory": {
+                            "mean_initial_velocity_m_per_s": 0.0,
+                            "velocity_slope_m_per_s_per_mm": 10.0,
+                        },
                     },
                     "reflectron": {"nominal_energy_per_charge_V": 2000.0},
                 },
@@ -542,6 +548,28 @@ class ResolutionAttributionCounterfactualTests(unittest.TestCase):
             self.assertEqual(len(finite_result["arms"]), 1)
             solution = finite_result["accelerator_match"]["finite_interval_solution"]
             self.assertEqual(solution["source_full_width_mm"], 2.2)
+            finite_coupled = prepare(
+                PROFILE, checkpoints, ideal, formal_geometry, target_geometry,
+                root / "prepared_finite_coupled", 100.0, 1, 1.1e6, 4,
+                selected_arm_ids=[
+                    "finite_interval_axis_fixed_focus_accelerator",
+                    "finite_interval_axis_fixed_focus_accelerator_coupled_reflectron",
+                ],
+                accelerator_match_profile_path=MATCH_PROFILE,
+                accelerator_match_stage="finite_interval_coupled",
+            )
+            self.assertEqual(len(finite_coupled["arms"]), 2)
+            fixed = finite_coupled["accelerator_match"]["fixed_focus_match"]
+            for arm in finite_coupled["arms"]:
+                voltage = arm["accelerator_voltage_override"]
+                self.assertAlmostEqual(voltage["repeller_V"], fixed["repeller_v"])
+                state = root / "prepared_finite_coupled" / arm["state_file"]
+                with state.open(encoding="utf-8", newline="") as handle:
+                    rows = list(csv.DictReader(handle))
+                self.assertTrue(all(float(row["x_mm"]) == 0.0 for row in rows))
+                self.assertTrue(all(float(row["y_mm"]) == 0.0 for row in rows))
+            self.assertIsNone(finite_coupled["arms"][0]["reflectron_voltage_override"])
+            self.assertIsNotNone(finite_coupled["arms"][1]["reflectron_voltage_override"])
     def test_state_summary_uses_null_for_undefined_correlation(self) -> None:
         rows = [
             {

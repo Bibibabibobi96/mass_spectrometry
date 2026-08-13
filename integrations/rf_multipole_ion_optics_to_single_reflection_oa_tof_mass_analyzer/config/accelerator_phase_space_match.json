@@ -123,6 +123,18 @@
     "stage2_field_policy": "single_uniform_field",
     "geometry_policy": "retain_stage1_stage2_and_ring_count_unless_theory_is_infeasible"
   },
+  "finite_interval_coupled_probes": [
+    {
+      "arm_id": "finite_interval_axis_fixed_focus_accelerator",
+      "source_intervention_arm_id": "current_layout_ideal_finite_interval_axis_linear_z_vz",
+      "coupled_reflectron_enabled": false
+    },
+    {
+      "arm_id": "finite_interval_axis_fixed_focus_accelerator_coupled_reflectron",
+      "source_intervention_arm_id": "current_layout_ideal_finite_interval_axis_linear_z_vz",
+      "coupled_reflectron_enabled": true
+    }
+  ],
   "frozen_phase_space_input": {
     "run_id": "20260812_140000__sim__simion__rf-oatof-single-flight-gap0__n1000__r04",
     "checkpoint_sha256": "381508A961A804116A32AF5A93AD8B3B812CA9742564FFACCB45E4E1223E199A",

@@ -52,6 +52,14 @@
       "intervention": "analytic_run_local_finite_interval_xyz_monoenergetic_10ev_theory_linear_global_z_vz"
     },
     {
+      "arm_id": "current_layout_ideal_finite_interval_axis_linear_z_vz",
+      "intervention": "analytic_run_local_finite_interval_axis_monoenergetic_10ev_theory_linear_global_z_vz"
+    },
+    {
+      "arm_id": "current_layout_ideal_axis_2p2mm_linear_z_vz",
+      "intervention": "analytic_axis_2p2mm_monoenergetic_10ev_run_local_theory_linear_global_z_vz"
+    },
+    {
       "arm_id": "formal_focus_mapped_layout_source",
       "intervention": "translate_formal_positions_and_apply_observed_energy_along_positive_global_x",
       "solver_profile_id": "formal_reflectron"
