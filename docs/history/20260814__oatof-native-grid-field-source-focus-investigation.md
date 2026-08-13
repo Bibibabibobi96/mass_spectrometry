@@ -39,9 +39,9 @@ canonical clock由冻结source birth authority加solver-local elapsed只物化�
 |短焦实际场源A/B `20260813_162000__sim__simion__r100-real-vs-ideal-source__n806`|806|真实观察源`R=9227.424, FWHM=1.689096 ns, 1 mode`；独立1 mm立方`vz=0`源`R=5762.252, 2.704860 ns, 2 modes`|任意“更理想”的独立源未必保留真实`z-vz`补偿|
 |短焦1 mm理论线性源场A/B `20260813_162500...n77` / `20260813_163000...n77`|77|真实场`R=15028.088, 1.074719 ns`；全理想加速场`R=81182.600, 0.198941 ns`，均单峰|短焦理论有效，实际加速场形是强限制|
 |长焦2.2 mm理论线性源场A/B `20260813_163500...n70` / `20260813_164000...n70`|70|真实场`R=10975.323, 1.468338 ns`；理想场`R=9794.285, 1.645369 ns`，均单峰|长焦损失不是简单“真实场更差”；小N且非高斯|
-|同2.2 mm轴上源、理想加速场跨结构|70|长焦`R=10345.193, FWHM=1.557749 ns`；短焦`R=10385.74`，相差约0.39%|早期`81182`与约`10k`差异主要来自源宽，不是焦距本身|
-|长焦method comparator A/B/C|835|旧epsilon真实场`R=3948.519`；native真实场`R=87941.400`；native理想加速场`R=199314.100`但5 modes|A→B是栅网/PA实施bundle，B→C才是同资产场A/B；C不是最高单峰|
-|短焦场`2x2` analysis `20260813_220000__analysis__stage-field-2x2-canonical__n1000`|1000|焦面Stage1/Stage2/交互平均效应`-0.050745/+0.337887/-0.015788 ns`|Stage2是焦面主限制；paired deltas有效|
+|同2.2 mm轴上源、理想加速场跨结构|短焦77/长焦70|长焦`R=10345.193, FWHM=1.557749 ns`；短焦`R=10385.74`，相差约0.39%|非逐粒配对，仅描述性支持结构影响小；早期`81182`与约`10k`差异主要来自源宽|
+|长焦method comparator A/B/C|835|旧epsilon真实场`R=3948.519`；native真实场`R=87941.400`；native理想加速场`R=199314.100`但5 modes|实际冻结1 mm历史线性源、长焦架构名义接受宽2.2 mm；A→B是实施bundle，B→C才是同资产场A/B|
+|短焦场`2x2` analysis `20260813_220000__analysis__stage-field-2x2-canonical__n1000`|1000|焦面Stage1/Stage2/交互平均效应`-0.050745/+0.337887/-0.015788 ns`|只在该短焦理想源2x2焦面中Stage2主导；paired deltas有效|
 |accelerator `dz` analysis `20260813_224000__analysis__cross__rr-accelerator-dz-convergence-n1000`|1000|焦面均值偏移`+0.001089 ns`、paired sigma`0.039935 ns`；探测器`+0.003546/0.039869 ns`|均值门PASS、sigma门FAIL；`0.05 mm`未证明空间收敛|
 |T.Qual analysis `20260814_030000__analysis__python__rr-tqual8-vs108-paired-n100__r03`|100|焦面`+0.002293/0.038453 ns`；detector q8/q108 `R=33043.15/31137.60`|轨迹质量主门FAIL；差值与dz效应同量级|
 |whole-stage `20260814_003500__analysis__cross__oct-whole-short-long-postselection__n1000`|共同eligible 695|长焦`R=8470.653,1.902422 ns,1 mode`；短焦`R=8410.717,1.920195 ns,2 modes`|真实束整机下两者接近；不支持焦距单因果解释|
@@ -49,6 +49,9 @@ canonical clock由冻结source birth authority加solver-local elapsed只物化�
 `2x2`原artifact把absolute instrument clock代入质量换算，所列旧R只允许作为legacy diagnostic，明确
 `forbidden_for_resolution_claim`。按共同pulse-effective时钟重算的RR/IR/RI/II正式诊断R依次为
 `44805.57/62185.18/28033.04/27691.31`；FWHM与场的粒子级paired deltas不受该绝对钟换算错误影响。
+对应焦面sigma为`0.061034/0.057767/0.003808/0.020389 ns`：Stage2 ideal使RR→RI强改善，Stage1 ideal
+的RR→IR几乎不变。该结论严格限定于短焦理想线性源N=1000的焦面，不覆盖早期真实束粗PA链中
+Stage1/grid1数值边界层的主要限制；四臂终端均为多峰，pulse-effective R在后续反射器补偿下不单调。
 
 whole-stage比较冻结母源SHA
 `302C03DC29737CE9D46EB1A8D258DB2A8D3C0F8B6A53F7702A33B1ECF9D5320D`、原生一行栅网、真实加速器/
@@ -86,6 +89,8 @@ q派生r01/r02及method-comparator早期r03/r04均保持superseded。绝对instr
 method comparator的A为历史旧epsilon/teleport实现，B/C正式native child为
 `20260813_183000__sim__simion__rf-oatof-single-flight-gap0__n835__r05`和
 `20260813_183100__sim__simion__rf-oatof-single-flight-gap0__n835__r05`；早期r03/r04失败并被取代。
+A/B/C实际冻结pre-pulse源是1.0 mm linear `z-vz` N=835（SHA-256前缀`70FA`）；2.2 mm只表示长焦
+architecture的名义接受/full width，不是该比较器的实际源宽。
 A/B/C的pulse-effective FWHM和mode依次为`4.082080 ns/2`、`0.1832504 ns/1`、
 `0.0808527 ns/5`。各summary内absolute-clock R `9528.83/212248/481052`均禁止用于分辨率声明；两个
 native parent只获得`FUNCTIONAL_SCREEN_ONLY`，paired analysis未运行。
@@ -101,7 +106,7 @@ native parent只获得`FUNCTIONAL_SCREEN_ONLY`，paired analysis未运行。
 - 原生一行栅网证明官方表面语义下的功能链闭合，但没有证明真实丝网、PA空间收敛或整机性能。
 - 短焦1 mm线性源显示理想加速场可达很窄峰；长焦2.2 mm的高阶有限区间残差使理想场本身不再显著优于
   真实场。因此“短长焦巨大差异”首先是源宽/源-结构匹配问题，不能归结为焦距或漏改电压。
-- `2x2`把焦面主要场敏感性定位到Stage2；但`dz`和T.Qual均未过预声明sigma门，现有q8/dz0.05
+- 短焦理想源`2x2`把该总体的焦面主要场敏感性定位到Stage2；但`dz`和T.Qual均未过预声明sigma门，现有q8/dz0.05
   结果不能称数值收敛。两类数值效应与场效应必须分开报告。
 - whole-stage同真实束的短长焦R相近，说明局部轴上理论优势没有直接转化为真实六维束整机优势。
 - 当前Functional证据可用；数值收敛、Candidate性能、Formal、SIMION/COMSOL一致性和最终优化资格均为
