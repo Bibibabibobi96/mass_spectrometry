@@ -1,0 +1,338 @@
+{
+  "schema_version": 2,
+  "role": "rf_multipole_oatof_experiment_campaign",
+  "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+  "campaign_id": "short_focus_winner_field_region_attribution_n1000",
+  "status": "authorized",
+  "execution_policy": {
+    "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_policy.json",
+    "sha256": "B5AD2687C3D1B3CFE1F332C593F69BE3AFE55D749CB28815EB5C110207478FF3"
+  },
+  "claim_limit": "Fixed winner offset 0 2x2 stage-field attribution: RR is reused from manifest-bound r03, while IR, RI and II are new N=1000 five-batch arms. The global ideal-piecewise run is an extra upper-bound oracle, not a matrix arm. Pulse timing is frozen; detector and resolution are post-report only.",
+  "experiments": [
+    {
+      "sequence": 1,
+      "experiment_id": "short_focus_winner_ideal_stage1_n1000",
+      "execution_strategy": "simion_single_flight",
+      "single_flight_layout_profile_id": "theory_source_z10_d1_3",
+      "single_flight_frontend_grid_profile_id": "frontend_isotropic_020_accelerator_overlay_z005",
+      "single_flight_oatof_numerical_profile_id": "oatof_reflectron_z010_r100",
+      "single_flight_spatial_window_profile_id": "accelerator_xy_open_bore",
+      "single_flight_accelerator_field_profile_id": "accelerator_ideal_stage1_real_stage2",
+      "single_flight_pulse_offset_rf_periods": 0.0,
+      "single_flight_design_overrides": [
+        {
+          "variable": "reflectron_bore_radius",
+          "value": 35.0,
+          "unit": "mm"
+        },
+        {
+          "variable": "reflectron_ring_outer_radius",
+          "value": 70.0,
+          "unit": "mm"
+        },
+        {
+          "variable": "reflectron_ring_thickness",
+          "value": 2.0,
+          "unit": "mm"
+        },
+        {
+          "variable": "reflectron_stage1_electrode_count",
+          "value": 8,
+          "unit": "count"
+        },
+        {
+          "variable": "reflectron_stage2_electrode_count",
+          "value": 15,
+          "unit": "count"
+        },
+        {
+          "variable": "reflectron_shield_inner_radius",
+          "value": 100.0,
+          "unit": "mm"
+        }
+      ],
+      "architecture_generation_id": "short_focus_1mm_theory_v1",
+      "source_profile_id": "short_focus_1mm_ideal_linear_z_vz_entry_n1000_v1",
+      "field_overlay_id": "accelerator_overlay_z005",
+      "source_release_mode": "continuous_frontend",
+      "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm",
+      "run_id": "20260813_212000__sim__cross__short-winner-ideal-stage1__n1000__r03",
+      "single_flight_particle_source": {
+        "path": "common/multipole/sources/rf_oatof_short_focus_ideal_linear_z_vz_entry_n1000.csv",
+        "sha256": "446332EFF94EA3C65BC5E79FCEC458E7681DF8E235AE28B5039F801590AD22D5",
+        "particle_count": 1000,
+        "sampling_mode": "continuous_injection_full_population"
+      },
+      "source": {
+        "run_id": "20260805_132000__sim__simion__oct-terminal-10ev-h15__n100",
+        "launched_particle_count": 100,
+        "particle_count": 90,
+        "particle_source_manifest_input_role": "particle_source",
+        "manifest": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_132000__sim__simion__oct-terminal-10ev-h15__n100/run_manifest.json",
+          "sha256": "93516E9E5DF43589647CDF9598DE4421505ECED8F3B0E608920F47D44A50D1A4"
+        },
+        "state": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_132000__sim__simion__oct-terminal-10ev-h15__n100/results/particle_states__exit_aperture_plate_acceleration_rf_on.csv",
+          "sha256": "9501E8FEB53CDD6D95CD16E77F7964B7A742692A49F019B6AE2598165ADAA9A8"
+        },
+        "particle_source": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_132000__sim__simion__oct-terminal-10ev-h15__n100/inputs/particle_source.csv",
+          "sha256": "A8721EAB49AC15904DE6D1B135C0B16D98022E68B46710313575F356F1F984CF"
+        },
+        "metadata": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_132000__sim__simion__oct-terminal-10ev-h15__n100/inputs/particle_source_metadata.json",
+          "sha256": "E2F21072F97355FE6F57FEF461ECE86E453082F91DCEEBD0963A27F636627FD7"
+        },
+        "handoff_publication_contract": {
+          "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/octupole_10ev_handoff_publication_n100.json",
+          "sha256": "FFBD85CCB14489E3DB5F3FEF1EC59821CA44BA8548959AA14FF61834C8E23F19"
+        }
+      }
+    },
+    {
+      "sequence": 2,
+      "experiment_id": "short_focus_winner_ideal_stage2_n1000",
+      "execution_strategy": "simion_single_flight",
+      "single_flight_layout_profile_id": "theory_source_z10_d1_3",
+      "single_flight_frontend_grid_profile_id": "frontend_isotropic_020_accelerator_overlay_z005",
+      "single_flight_oatof_numerical_profile_id": "oatof_reflectron_z010_r100",
+      "single_flight_spatial_window_profile_id": "accelerator_xy_open_bore",
+      "single_flight_accelerator_field_profile_id": "accelerator_real_stage1_ideal_stage2",
+      "single_flight_pulse_offset_rf_periods": 0.0,
+      "single_flight_design_overrides": [
+        {
+          "variable": "reflectron_bore_radius",
+          "value": 35.0,
+          "unit": "mm"
+        },
+        {
+          "variable": "reflectron_ring_outer_radius",
+          "value": 70.0,
+          "unit": "mm"
+        },
+        {
+          "variable": "reflectron_ring_thickness",
+          "value": 2.0,
+          "unit": "mm"
+        },
+        {
+          "variable": "reflectron_stage1_electrode_count",
+          "value": 8,
+          "unit": "count"
+        },
+        {
+          "variable": "reflectron_stage2_electrode_count",
+          "value": 15,
+          "unit": "count"
+        },
+        {
+          "variable": "reflectron_shield_inner_radius",
+          "value": 100.0,
+          "unit": "mm"
+        }
+      ],
+      "architecture_generation_id": "short_focus_1mm_theory_v1",
+      "source_profile_id": "short_focus_1mm_ideal_linear_z_vz_entry_n1000_v1",
+      "field_overlay_id": "accelerator_overlay_z005",
+      "source_release_mode": "continuous_frontend",
+      "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm",
+      "run_id": "20260813_213000__sim__cross__short-winner-ideal-stage2__n1000__r01",
+      "single_flight_particle_source": {
+        "path": "common/multipole/sources/rf_oatof_short_focus_ideal_linear_z_vz_entry_n1000.csv",
+        "sha256": "446332EFF94EA3C65BC5E79FCEC458E7681DF8E235AE28B5039F801590AD22D5",
+        "particle_count": 1000,
+        "sampling_mode": "continuous_injection_full_population"
+      },
+      "source": {
+        "run_id": "20260805_132000__sim__simion__oct-terminal-10ev-h15__n100",
+        "launched_particle_count": 100,
+        "particle_count": 90,
+        "particle_source_manifest_input_role": "particle_source",
+        "manifest": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_132000__sim__simion__oct-terminal-10ev-h15__n100/run_manifest.json",
+          "sha256": "93516E9E5DF43589647CDF9598DE4421505ECED8F3B0E608920F47D44A50D1A4"
+        },
+        "state": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_132000__sim__simion__oct-terminal-10ev-h15__n100/results/particle_states__exit_aperture_plate_acceleration_rf_on.csv",
+          "sha256": "9501E8FEB53CDD6D95CD16E77F7964B7A742692A49F019B6AE2598165ADAA9A8"
+        },
+        "particle_source": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_132000__sim__simion__oct-terminal-10ev-h15__n100/inputs/particle_source.csv",
+          "sha256": "A8721EAB49AC15904DE6D1B135C0B16D98022E68B46710313575F356F1F984CF"
+        },
+        "metadata": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_132000__sim__simion__oct-terminal-10ev-h15__n100/inputs/particle_source_metadata.json",
+          "sha256": "E2F21072F97355FE6F57FEF461ECE86E453082F91DCEEBD0963A27F636627FD7"
+        },
+        "handoff_publication_contract": {
+          "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/octupole_10ev_handoff_publication_n100.json",
+          "sha256": "FFBD85CCB14489E3DB5F3FEF1EC59821CA44BA8548959AA14FF61834C8E23F19"
+        }
+      }
+    },
+    {
+      "sequence": 3,
+      "experiment_id": "short_focus_winner_ideal_stage1_stage2_n1000",
+      "execution_strategy": "simion_single_flight",
+      "single_flight_layout_profile_id": "theory_source_z10_d1_3",
+      "single_flight_frontend_grid_profile_id": "frontend_isotropic_020_accelerator_overlay_z005",
+      "single_flight_oatof_numerical_profile_id": "oatof_reflectron_z010_r100",
+      "single_flight_spatial_window_profile_id": "accelerator_xy_open_bore",
+      "single_flight_accelerator_field_profile_id": "accelerator_ideal_stage1_stage2_real_reflectron",
+      "single_flight_pulse_offset_rf_periods": 0.0,
+      "single_flight_design_overrides": [
+        {
+          "variable": "reflectron_bore_radius",
+          "value": 35.0,
+          "unit": "mm"
+        },
+        {
+          "variable": "reflectron_ring_outer_radius",
+          "value": 70.0,
+          "unit": "mm"
+        },
+        {
+          "variable": "reflectron_ring_thickness",
+          "value": 2.0,
+          "unit": "mm"
+        },
+        {
+          "variable": "reflectron_stage1_electrode_count",
+          "value": 8,
+          "unit": "count"
+        },
+        {
+          "variable": "reflectron_stage2_electrode_count",
+          "value": 15,
+          "unit": "count"
+        },
+        {
+          "variable": "reflectron_shield_inner_radius",
+          "value": 100.0,
+          "unit": "mm"
+        }
+      ],
+      "architecture_generation_id": "short_focus_1mm_theory_v1",
+      "source_profile_id": "short_focus_1mm_ideal_linear_z_vz_entry_n1000_v1",
+      "field_overlay_id": "accelerator_overlay_z005",
+      "source_release_mode": "continuous_frontend",
+      "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm",
+      "run_id": "20260813_214000__sim__cross__short-winner-ideal-stage1-stage2__n1000__r01",
+      "single_flight_particle_source": {
+        "path": "common/multipole/sources/rf_oatof_short_focus_ideal_linear_z_vz_entry_n1000.csv",
+        "sha256": "446332EFF94EA3C65BC5E79FCEC458E7681DF8E235AE28B5039F801590AD22D5",
+        "particle_count": 1000,
+        "sampling_mode": "continuous_injection_full_population"
+      },
+      "source": {
+        "run_id": "20260805_132000__sim__simion__oct-terminal-10ev-h15__n100",
+        "launched_particle_count": 100,
+        "particle_count": 90,
+        "particle_source_manifest_input_role": "particle_source",
+        "manifest": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_132000__sim__simion__oct-terminal-10ev-h15__n100/run_manifest.json",
+          "sha256": "93516E9E5DF43589647CDF9598DE4421505ECED8F3B0E608920F47D44A50D1A4"
+        },
+        "state": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_132000__sim__simion__oct-terminal-10ev-h15__n100/results/particle_states__exit_aperture_plate_acceleration_rf_on.csv",
+          "sha256": "9501E8FEB53CDD6D95CD16E77F7964B7A742692A49F019B6AE2598165ADAA9A8"
+        },
+        "particle_source": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_132000__sim__simion__oct-terminal-10ev-h15__n100/inputs/particle_source.csv",
+          "sha256": "A8721EAB49AC15904DE6D1B135C0B16D98022E68B46710313575F356F1F984CF"
+        },
+        "metadata": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_132000__sim__simion__oct-terminal-10ev-h15__n100/inputs/particle_source_metadata.json",
+          "sha256": "E2F21072F97355FE6F57FEF461ECE86E453082F91DCEEBD0963A27F636627FD7"
+        },
+        "handoff_publication_contract": {
+          "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/octupole_10ev_handoff_publication_n100.json",
+          "sha256": "FFBD85CCB14489E3DB5F3FEF1EC59821CA44BA8548959AA14FF61834C8E23F19"
+        }
+      }
+    },
+    {
+      "sequence": 4,
+      "experiment_id": "short_focus_winner_ideal_piecewise_oracle_n1000",
+      "execution_strategy": "simion_single_flight",
+      "single_flight_layout_profile_id": "theory_source_z10_d1_3",
+      "single_flight_frontend_grid_profile_id": "frontend_isotropic_020_accelerator_overlay_z005",
+      "single_flight_oatof_numerical_profile_id": "oatof_reflectron_z010_r100",
+      "single_flight_spatial_window_profile_id": "accelerator_xy_open_bore",
+      "single_flight_accelerator_field_profile_id": "accelerator_ideal_piecewise_uniform",
+      "single_flight_pulse_offset_rf_periods": 0.0,
+      "single_flight_design_overrides": [
+        {
+          "variable": "reflectron_bore_radius",
+          "value": 35.0,
+          "unit": "mm"
+        },
+        {
+          "variable": "reflectron_ring_outer_radius",
+          "value": 70.0,
+          "unit": "mm"
+        },
+        {
+          "variable": "reflectron_ring_thickness",
+          "value": 2.0,
+          "unit": "mm"
+        },
+        {
+          "variable": "reflectron_stage1_electrode_count",
+          "value": 8,
+          "unit": "count"
+        },
+        {
+          "variable": "reflectron_stage2_electrode_count",
+          "value": 15,
+          "unit": "count"
+        },
+        {
+          "variable": "reflectron_shield_inner_radius",
+          "value": 100.0,
+          "unit": "mm"
+        }
+      ],
+      "architecture_generation_id": "short_focus_1mm_theory_v1",
+      "source_profile_id": "short_focus_1mm_ideal_linear_z_vz_entry_n1000_v1",
+      "field_overlay_id": "accelerator_overlay_z005",
+      "source_release_mode": "continuous_frontend",
+      "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm",
+      "run_id": "20260813_191000__sim__cross__short-winner-ideal-piecewise__n1000",
+      "single_flight_particle_source": {
+        "path": "common/multipole/sources/rf_oatof_short_focus_ideal_linear_z_vz_entry_n1000.csv",
+        "sha256": "446332EFF94EA3C65BC5E79FCEC458E7681DF8E235AE28B5039F801590AD22D5",
+        "particle_count": 1000,
+        "sampling_mode": "continuous_injection_full_population"
+      },
+      "source": {
+        "run_id": "20260805_132000__sim__simion__oct-terminal-10ev-h15__n100",
+        "launched_particle_count": 100,
+        "particle_count": 90,
+        "particle_source_manifest_input_role": "particle_source",
+        "manifest": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_132000__sim__simion__oct-terminal-10ev-h15__n100/run_manifest.json",
+          "sha256": "93516E9E5DF43589647CDF9598DE4421505ECED8F3B0E608920F47D44A50D1A4"
+        },
+        "state": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_132000__sim__simion__oct-terminal-10ev-h15__n100/results/particle_states__exit_aperture_plate_acceleration_rf_on.csv",
+          "sha256": "9501E8FEB53CDD6D95CD16E77F7964B7A742692A49F019B6AE2598165ADAA9A8"
+        },
+        "particle_source": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_132000__sim__simion__oct-terminal-10ev-h15__n100/inputs/particle_source.csv",
+          "sha256": "A8721EAB49AC15904DE6D1B135C0B16D98022E68B46710313575F356F1F984CF"
+        },
+        "metadata": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_132000__sim__simion__oct-terminal-10ev-h15__n100/inputs/particle_source_metadata.json",
+          "sha256": "E2F21072F97355FE6F57FEF461ECE86E453082F91DCEEBD0963A27F636627FD7"
+        },
+        "handoff_publication_contract": {
+          "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/octupole_10ev_handoff_publication_n100.json",
+          "sha256": "FFBD85CCB14489E3DB5F3FEF1EC59821CA44BA8548959AA14FF61834C8E23F19"
+        }
+      }
+    }
+  ]
+}

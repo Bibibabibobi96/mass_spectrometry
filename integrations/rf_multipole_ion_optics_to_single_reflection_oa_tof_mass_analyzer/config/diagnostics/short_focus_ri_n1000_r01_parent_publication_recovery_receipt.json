@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "role": "rf_oatof_family_parent_publication_recovery_receipt",
+  "status": "child_success_parent_publication_failed",
+  "recovery_scope": "bind_completed_solver_child_without_solver_reexecution_or_child_mutation",
+  "solver_reexecuted": false,
+  "campaign_id": "short_focus_winner_field_region_attribution_n1000",
+  "experiment_id": "short_focus_winner_ideal_stage2_n1000",
+  "parent_run": {
+    "run_id": "20260813_213000__sim__cross__short-winner-ideal-stage2__n1000__r01",
+    "terminal_status": "failed",
+    "failure_reason": "family parent frozen campaign inputs differ",
+    "manifest_path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260813_213000__sim__cross__short-winner-ideal-stage2__n1000__r01/run_manifest.json",
+    "manifest_sha256": "D5C0B5C085C645E7B1CE90DB9630FEC242429590DDA67BA52731EB208B40F486",
+    "execution_receipt_path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260813_213000__sim__cross__short-winner-ideal-stage2__n1000__r01/execution_receipt.json",
+    "execution_receipt_sha256": "A9B735FCED500983C0CD391CBAFA189613F7328D4AF535AE135928DAE3274011"
+  },
+  "completed_child_run": {
+    "run_id": "20260813_213000__sim__simion__rf-oatof-single-flight-gap0__n1000__r01",
+    "project_id": "rf_octupole_ion_optics",
+    "manifest_path": "artifacts/projects/rf_octupole_ion_optics/runs/20260813_213000__sim__simion__rf-oatof-single-flight-gap0__n1000__r01/run_manifest.json",
+    "manifest_sha256": "965CE5BA8C1FAD1822ACD29FA1DB96C856A72B780F452E1EA6AFD9201C1CE608",
+    "summary_path": "artifacts/projects/rf_octupole_ion_optics/runs/20260813_213000__sim__simion__rf-oatof-single-flight-gap0__n1000__r01/summary.json",
+    "summary_sha256": "0B5322EA9170E55938C5D01D4CD33EF8BD32CB9004ED51E87600838452E44338",
+    "run_config_sha256": "9D210494E86DC033A8733862617EE2D252B7E93EF3A7767D3538B8D3482D89B2",
+    "status": "success",
+    "launched_particle_count": 1000,
+    "detector_crossing_count": 1000
+  },
+  "governance_note": "The failed parent remains immutable and is not promoted to success. This receipt preserves the successful child as manifest-bound derived evidence after parent-only publication failure."
+}

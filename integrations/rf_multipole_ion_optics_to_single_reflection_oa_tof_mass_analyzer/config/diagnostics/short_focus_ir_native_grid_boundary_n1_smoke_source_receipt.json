@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "role": "rf_oatof_deterministic_prefix_smoke_source_receipt",
+  "purpose": "runtime_boundary_state_machine_smoke_only",
+  "mother_source": {
+    "path": "common/multipole/sources/rf_oatof_short_focus_ideal_linear_z_vz_entry_n1000.csv",
+    "sha256": "446332EFF94EA3C65BC5E79FCEC458E7681DF8E235AE28B5039F801590AD22D5",
+    "particle_count": 1000
+  },
+  "derived_source": {
+    "path": "common/multipole/sources/rf_oatof_short_focus_ideal_linear_z_vz_entry_n1_smoke.csv",
+    "sha256": "FB1AEE8DFE1CF0BF1729C96CD56381CC63990F6FF7AB91F09EE3825B2A8440E8",
+    "particle_count": 1
+  },
+  "derivation": "header_plus_first_data_row_exact_byte_content_with_lf_repository_text",
+  "particle_ids": [1],
+  "preserved_columns": ["particle_id", "birth_time_s", "x_mm", "y_mm", "z_mm", "vx_m_s", "vy_m_s", "vz_m_s", "mass_amu", "charge_state"],
+  "physics_and_numerics_authority": "short_focus_winner_ideal_stage1_n1000"
+}

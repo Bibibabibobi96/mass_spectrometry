@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "role": "rf_oatof_paired_numerical_convergence_design",
+  "status": "prepared_not_executed",
+  "baseline": {
+    "arm": "RR",
+    "run_id": "20260813_170000__sim__simion__rf-oatof-single-flight-gap0__n1000__r03",
+    "evidence": "manifest-bound canonical-clock derived reanalysis",
+    "accelerator_overlay_dz_mm": 0.05
+  },
+  "new_arm": {
+    "experiment_id": "short_focus_rr_accelerator_dz0025_n1000",
+    "accelerator_overlay_dz_mm": 0.025,
+    "only_changed_factor": "accelerator_overlay.cell_mm_xyz.z"
+  },
+  "frozen": ["mother source SHA and ordered IDs 1..1000", "pulse offset 0 RF", "geometry", "real accelerator field", "reflectron z=0.1 mm/r=1.0 mm mesh", "trajectory_quality=8", "rf_steps_per_period=160"],
+  "integer_alignment_audit": {
+    "fine_grid_origin_z_mm": -80.15653076887548,
+    "fine_dz_mm": 0.025,
+    "plane_indices": {"shield_back": 8, "repeller_front": 408, "grid1": 528, "grid2": 1200},
+    "grid_phase_varied": false,
+    "reason": "all physical planes are already integer-aligned; shifting phase would change the governed PA/IOB placement rather than isolate discretization"
+  },
+  "decision_thresholds": {
+    "reference_stage2_focus_main_effect_ns": 0.3378871363500548,
+    "primary_max_absolute_paired_mean_shift_at_focus_ns": 0.03378871363500548,
+    "primary_max_paired_sample_sigma_at_focus_ns": 0.03378871363500548,
+    "scale": "10 percent of the measured stage2 focus main effect",
+    "strong_convergence_scale_ns": 0.01689435681750274,
+    "secondary_reports": ["all checkpoint paired mean and sample sigma", "detector direct FWHM and mass resolution", "KDE mode count"]
+  },
+  "deferred_ofat": {
+    "trajectory_quality": "Repository runner has one global governed value (8), no campaign-row override; a higher-value test requires a separately governed configuration identity.",
+    "rf_time_step_cap": "Repository runner has one global governed rf_steps_per_period value (160), no campaign-row override; a 320-step test requires a separately governed configuration identity.",
+    "grid_phase": "audit only; not an invariant physical-geometry-preserving campaign factor"
+  },
+  "cost": {
+    "new_solver_runs": 1,
+    "particles": 1000,
+    "batches": 5,
+    "overlay_axial_nodes_relative_to_baseline": 2.0,
+    "max_parallel_batches": 1,
+    "assets_rebuilt": ["accelerator overlay GEM", "PA electrode basis/cache", "overlay IOB"],
+    "assets_reused": ["coarse frontend PA", "reflectron PA", "mother source", "geometry"]
+  }
+}

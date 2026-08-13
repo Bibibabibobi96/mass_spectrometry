@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "role": "rf_oatof_profile_derived_transient_disk_budget_revision",
+  "status": "prepared_not_executed",
+  "failed_run_id": "20260813_221000__sim__simion__rf-oatof-single-flight-gap0__n1000__r01",
+  "failure": {
+    "reason": "Overlay IOB build exceeded its resource budget.",
+    "old_limit_bytes": 6442450944,
+    "measured_run_directory_bytes": 8922869360,
+    "overlay_pa_family": {"file_count": 21, "bytes": 7576322852, "representative_file_bytes": 360777412},
+    "coarse_frontend_pa_bytes": 1238726816,
+    "iob_bytes": 20926
+  },
+  "revised_formula": {
+    "expression": "ceil((grid_points*8*21+coarse_frontend_and_iob_bytes)*1.15)",
+    "grid_dimensions": {"nx": 192, "ny": 193, "nz": 1217},
+    "grid_points": 45097152,
+    "bytes_per_grid_point": 8,
+    "pa_family_file_count": 21,
+    "coarse_frontend_and_iob_bytes": 1346547434,
+    "headroom_factor": 1.15,
+    "purpose": "profile-derived estimate, not a run-id-specific bypass"
+  },
+  "cache_reuse": {
+    "cache_key": "db7378d4eb7c2f507ebdaf29e510982623fddd90df8bd003745f9ed3e54a7542",
+    "pa0_sha256": "466A25199A1BA1228187172C49E9F50563263DEB019510ADCDEA64C7B1CDFDEE",
+    "expected_behavior": "content-addressed overlay cache hit; no GEM/refine repetition"
+  },
+  "superseded_validation_run_id": "20260813_222000__sim__cross__short-rr-accel-dz0025__n1000__r02",
+  "new_parent_run_id": "20260813_223000__sim__cross__short-rr-accel-dz0025__n1000__r03",
+  "solver_reexecuted": false
+}

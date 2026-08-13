@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "role": "rf_oatof_particle_specific_diagnostic_source_receipt",
+  "purpose": "reproduce_n1000_ir_batch04_grid1_lock",
+  "mother_source": {"path": "common/multipole/sources/rf_oatof_short_focus_ideal_linear_z_vz_entry_n1000.csv", "sha256": "446332EFF94EA3C65BC5E79FCEC458E7681DF8E235AE28B5039F801590AD22D5", "particle_count": 1000},
+  "selected_global_particle_id": 715,
+  "original_batch_identity": {"batch_index": 4, "global_particle_id_offset": 600, "local_ion_number": 115},
+  "derived_source": {"path": "common/multipole/sources/rf_oatof_short_focus_ideal_linear_z_vz_entry_global715_n1_diagnostic.csv", "sha256": "9615ACDC023DBCF8634AD00904354B286146A120A53665675D00AE18DF5B4067", "particle_count": 1, "solver_local_particle_id": 1},
+  "derivation": "copy mother row global particle 715 exactly except deterministic solver-local particle_id renumbering 715 to 1",
+  "diagnostic_trace_status": "removed_after_distance_and_representability_diagnosis",
+  "physics_and_numerics_authority": "short_focus_winner_ideal_stage1_n1000"
+}

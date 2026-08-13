@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "role": "rf_oatof_single_flight_particle_source_profile",
+  "profile_id": "short_focus_1mm_ideal_linear_z_vz_entry_n1000_v1",
+  "particle_source": {
+    "path": "common/multipole/sources/rf_oatof_short_focus_ideal_linear_z_vz_entry_n1000.csv",
+    "sha256": "446332EFF94EA3C65BC5E79FCEC458E7681DF8E235AE28B5039F801590AD22D5",
+    "particle_count": 1000,
+    "sampling_mode": "continuous_injection_full_population"
+  },
+  "release_contract": {
+    "mode": "continuous_frontend",
+    "surface": "oatof_frontend_mating_open_vacuum_entry",
+    "global_x_mm": -88.01362184380704,
+    "nominal_pulse_time_us": 45.40674277644788,
+    "same_rows_for_all_pulse_offsets": true,
+    "full_rf_octupole_transport_claimed": false
+  },
+  "ideal_state_at_nominal_pulse": {
+    "center_x_mm": -69.01362184380704,
+    "center_y_mm": 0.0,
+    "center_z_mm": -68.45815512803617,
+    "full_width_z_mm": 1.0,
+    "transverse_extent_mm": 0.0,
+    "energy_eV": 10.0,
+    "vz_mean_m_per_s": -2.9323518410018137,
+    "vz_slope_m_per_s_per_mm": 228.80604377795845
+  },
+  "generation": {
+    "script": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/analysis/build_short_focus_ideal_source.py",
+    "sampling": "deterministic inclusive ascending z lattice with 1000 rows",
+    "random_seed_used": false
+  }
+}
