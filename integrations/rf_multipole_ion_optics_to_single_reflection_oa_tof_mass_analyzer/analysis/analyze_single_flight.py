@@ -30,7 +30,7 @@ DETECTOR_PATTERN = re.compile(
     r"TRACE: detector_crossing ion=(?P<ion>\d+) t=(?P<t>[-+0-9.eE]+) "
     r"x=(?P<x>[-+0-9.eE]+) y=(?P<y>[-+0-9.eE]+) z=(?P<z>[-+0-9.eE]+)"
 )
-PULSE_PATTERN = re.compile(r"TRACE: handoff_pulse_on(?: ion=\d+)? instrument_time_us=(?P<t>[-+0-9.eE]+)")
+PULSE_PATTERN = re.compile(r"TRACE: handoff_pulse_on instrument_time_us=(?P<t>[-+0-9.eE]+)")
 COLUMNS = [
     "particle_id", "event", "instrument_time_us", "x_mm", "y_mm", "z_mm",
     "vx_mm_per_us", "vy_mm_per_us", "vz_mm_per_us", "kinetic_energy_eV",

@@ -14,6 +14,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     _canonical_replay_detector_time,
     _ideal_source,
     _phase_space_time_transfer,
+    _pulse_relative_peak,
     _remove_linear_covariance,
     _collapse_linear_residual,
     _project_observed_linear_slope,
@@ -31,6 +32,13 @@ WORKFLOW = Path(__file__).parents[1] / "workflows" / "resolution_attribution" / 
 
 
 class ResolutionAttributionCounterfactualTests(unittest.TestCase):
+    def test_resolution_peak_uses_detector_minus_effective_pulse_time(self) -> None:
+        detector = np.asarray([75.0, 75.001, 75.002, 75.003])
+        peak = _pulse_relative_peak(detector, 45.0, 100.0)
+        self.assertIsNotNone(peak)
+        self.assertAlmostEqual(peak["mean_tof_us"], 30.0015)
+        self.assertLess(peak["mass_resolution"], 100000.0)
+
     def test_checkpoint_time_transfer_reports_focus_spread_and_slope(self) -> None:
         states = [
             {"simulation_particle_id": str(index), "z_mm": str(z)}
@@ -123,6 +131,11 @@ class ResolutionAttributionCounterfactualTests(unittest.TestCase):
         self.assertIn("Start-Job", workflow)
         self.assertNotIn("Start-ThreadJob", workflow)
 
+    def test_workflow_accepts_frozen_n100_screening_baseline(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8-sig")
+        self.assertIn("-notin @(100,200,1000)", workflow)
+        self.assertIn("N=100/N=200 screening", workflow)
+
     def test_workflow_can_pair_a_frozen_source_with_a_selected_frontend(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8-sig")
         self.assertIn("$FrontendRunId", workflow)
@@ -139,6 +152,9 @@ class ResolutionAttributionCounterfactualTests(unittest.TestCase):
         self.assertIn("simion\\oatof_ideal_grounded.iob", workflow)
         self.assertIn("Accelerator-overlay replay Program build failed.", workflow)
         self.assertIn("accelerator_overlay_pa0_sha256", workflow)
+        self.assertIn("cache_manifest.json", workflow)
+        self.assertIn("cacheManifest.frontend_pa0_sha256", workflow)
+        self.assertIn("cacheManifest.overlay_gem_sha256", workflow)
         self.assertIn("-BaseName 'accelerator_overlay'", workflow)
         self.assertIn("'--initial-global-state',$replayClockState", workflow)
         self.assertIn("'--clock-basis','absolute_birth_time'", workflow)

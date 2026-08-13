@@ -237,11 +237,11 @@ try {
     $baselineClockBasis = 'legacy_relative_time'
     $motherSampleParticleCount = 1000
   }
-  if ($baselineConfig.parameters.launched_particle_count -notin @(200,1000) -or
+  if ($baselineConfig.parameters.launched_particle_count -notin @(100,200,1000) -or
       $baselineConfig.parameters.aperture_width_mm -ne 1.0 -or
       $baselineConfig.parameters.aperture_height_mm -ne 0.9 -or
       -not $baselineConfig.parameters.surrounded_transition) {
-    throw 'Baseline run is not a frozen N=200 screening or N=1000, 1.0 x 0.9 mm closed-connector case.'
+    throw 'Baseline run is not a frozen N=100/N=200 screening or N=1000, 1.0 x 0.9 mm closed-connector case.'
   }
   $profileSource = Join-Path $integrationRoot `
     'config\resolution_attribution_counterfactual.json'
@@ -521,8 +521,19 @@ try {
     ).ToUpperInvariant()
     $cachedOverlayPa0 = @(Get-ChildItem -LiteralPath $overlayCacheRoot `
       -Recurse -Filter 'accelerator_overlay.pa0' -File | Where-Object {
+        $cacheManifestPath = Join-Path $_.DirectoryName 'cache_manifest.json'
+        if (-not (Test-Path -LiteralPath $cacheManifestPath -PathType Leaf)) {
+          return $false
+        }
+        $cacheManifest = Get-Content -LiteralPath $cacheManifestPath `
+          -Raw -Encoding UTF8 | ConvertFrom-Json
         (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash -eq
-          $expectedOverlayPa0Hash
+          $expectedOverlayPa0Hash -and
+        [string]$cacheManifest.frontend_pa0_sha256 -eq
+          [string]$frontendConfig.parameters.frontend_pa0_sha256 -and
+        [string]$cacheManifest.overlay_gem_sha256 -eq
+          (Get-FileHash -LiteralPath (Join-Path $frontendRoot `
+            'inputs\accelerator_overlay.gem') -Algorithm SHA256).Hash
       })
     if ($cachedOverlayPa0.Count -ne 1) {
       throw 'Selected accelerator-overlay PA cache identity differs.'

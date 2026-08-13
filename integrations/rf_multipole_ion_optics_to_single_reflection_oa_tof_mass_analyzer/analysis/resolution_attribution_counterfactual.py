@@ -1373,6 +1373,17 @@ def _checkpoint_time_transfer(
     }
 
 
+def _pulse_relative_peak(
+    detector_times_us: np.ndarray, pulse_time_us: float, mass_amu: float
+) -> dict[str, Any] | None:
+    """Compute the resolution peak from detector time minus effective pulse time."""
+    return (
+        compute_peak_metrics(detector_times_us - pulse_time_us, mass_amu)[0]
+        if detector_times_us.size >= 3
+        else None
+    )
+
+
 def summarize(
     profile_path: Path,
     prepared_path: Path,
@@ -1408,6 +1419,7 @@ def summarize(
         raise ValueError("resolution-attribution reference arm is not selected")
     particles = int(prepared["paired_cohort_particles"])
     mass_amu = float(prepared["mass_amu"])
+    pulse_time_us = float(prepared["pulse_time_us"])
     source_dir = prepared_path.parent
     baseline_columns, baseline_rows = _load_csv(baseline_checkpoints_path)
     if not set(CHECKPOINT_COLUMNS).issubset(baseline_columns):
@@ -1486,10 +1498,7 @@ def summarize(
                 detector[source_id] = canonical_time
         detector_by_arm[arm_id] = detector
         detector_times = np.asarray(list(detector.values()), dtype=float)
-        peak = (
-            compute_peak_metrics(detector_times, mass_amu)[0]
-            if detector_times.size >= 3 else None
-        )
+        peak = _pulse_relative_peak(detector_times, pulse_time_us, mass_amu)
         metrics.append(
             {
                 "arm_id": arm_id,
@@ -1576,7 +1585,7 @@ def summarize(
         )
     baseline_common = sorted(set(reference_detector) & set(baseline_detector))
     baseline_times = np.asarray([baseline_detector[pid] for pid in baseline_common])
-    baseline_peak, _ = compute_peak_metrics(baseline_times, mass_amu)
+    baseline_peak = _pulse_relative_peak(baseline_times, pulse_time_us, mass_amu)
     restart_delta = np.asarray(
         [reference_detector[pid] - baseline_detector[pid] for pid in baseline_common]
     )

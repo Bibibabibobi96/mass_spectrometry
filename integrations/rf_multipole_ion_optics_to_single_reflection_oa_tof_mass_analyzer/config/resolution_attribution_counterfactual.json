@@ -9,7 +9,7 @@
   "random_seed": 20260804,
   "peak_metric": "canonical_direct_gaussian_kde_fwhm",
   "pulse_delay_reference": "upstream_resolved_design.drive.frequency_Hz",
-  "claim_limit": "Controlled diagnostic on one frozen N=200 screening or N=1000 confirmation sample and one numerical setting; no numerical-convergence, Candidate, Formal, or universal causal claim.",
+  "claim_limit": "Controlled diagnostic on one frozen N=100/N=200 screening or N=1000 confirmation sample and one numerical setting; no numerical-convergence, Candidate, Formal, or universal causal claim.",
   "arms": [
     {
       "arm_id": "observed_restart_control",
