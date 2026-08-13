@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "role": "whole_stage_short_long_postselection_design_receipt",
+  "status": "prepared_not_executed",
+  "common_mother": {"sha256":"302C03DC29737CE9D46EB1A8D258DB2A8D3C0F8B6A53F7702A33B1ECF9D5320D","ordered_particle_ids":"1..1000","release_mode":"continuous_frontend","release_boundary":"multipole entrance"},
+  "long_focus": {"layout_profile_id":"symmetric_10ev_source_z22_finite_interval_theory","selected_offset_rf_periods":0.0625,"selector_receipt":"config/diagnostics/octupole_whole_stage_native_pulse_pair_n1000_selector_receipt.json","postselection_run_id":"20260813_233000__analysis__cross__oct-whole-native-pulse-p00625-postselection__n1000","reuse_status":"complete"},
+  "short_focus": {"layout_profile_id":"theory_source_z10_d1_3","campaign":"config/diagnostics/octupole_whole_stage_short_focus_native_pulse_pair_n1000_campaign.json","pulse_offsets_rf_periods":[0.0,0.0625],"selection_profile_id":"accelerator_xy_open_bore","selection_order":["maximize_accepted_count","minimize_normalized_2d_centroid_distance","maximize_5pct_normalized_edge_margin","maximize_minimum_normalized_edge_margin"],"detector_results_used":false,"postselection_status":"blocked_until_both_children_complete"},
+  "comparison_contract": {"cohort_basis":"existing_layout_specific_ideal_stage1_acceptance_with_detector_blind_xy_open_bore_metrics","selection_profile_id":"accelerator_xy_open_bore","resolution_time_basis":"detector_time_minus_pulse_effective_time","do_not_require_same_particle_ids_after_layout_specific_acceptance":true,"report_common_mother_and_layout_specific_census_separately":true},
+  "prohibited_substitutions": ["ideal_entry_source","handoff_restart","pre_pulse_restart","reuse_long_focus_pulse_winner_without_short_focus_selection","detector_outcome_based_selection"]
+}

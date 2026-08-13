@@ -242,6 +242,7 @@ A/B中，局部细PA把焦面时间σ从4.431降至1.472 ns，焦面z斜率从+6
 - [前端网格与旧理想场诊断](../../../docs/history/20260810__oatof-frontend-grid-and-ideal-field.md)
 - [Formal场归因](../../../docs/history/20260811__oatof-resolution-formal-field-attribution.md)
 - [有限区间、理想场与局部PA里程碑](../../../docs/history/20260812__oatof-finite-interval-focus-diagnostics.md)
+- [RR轨迹质量q8/q108配对检查准备](../../../docs/history/20260814__oatof-rr-trajectory-quality-paired-check.md)
 
 ## 开放任务
 
@@ -257,6 +258,16 @@ A/B中，局部细PA把焦面时间σ从4.431降至1.472 ns，焦面z斜率从+6
    接地罩边界；这些检查以及机器合同中的跨求解器差异门槛全部通过后，才能关闭复现任务。
 
 ## 静态门禁
+
+### 时钟权威与历史隔离
+
+新single-flight run只接受`canonical_instrument_time_us`：冻结source state的`instrument_time_us`是唯一
+birth authority，SIMION `.ion`局部时钟固定从0开始，Lua只物化一次`birth + elapsed`，后续analyzer与
+五批aggregate纯透传该时间。单位、basis、authority SHA缺失或冲突均在preflight失败；新campaign不得
+选择legacy relative/absolute兼容模式。`resolution_attribution`和history audit中仍出现的legacy枚举仅
+用于解释既有run，冻结为只读迁移范围，不得被活动campaign或single-flight runner调用。后续分批迁移
+清单为：历史resolution attribution CLI、旧counterfactual分析参数、旧oaTOF输入writer；迁移须保持原
+evidence字节与解释结果，不在本次当前N=1000链修复中批量改写。
 
 [`verify_integration.ps1`](../verify_integration.ps1)只验证连接、端口、profile、冻结身份和失败关闭逻辑；
 不运行商业求解器，也不替代物理资格。

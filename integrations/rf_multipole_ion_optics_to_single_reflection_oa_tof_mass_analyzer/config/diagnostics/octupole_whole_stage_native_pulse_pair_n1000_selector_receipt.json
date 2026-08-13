@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "role": "rf_oatof_detector_blind_pulse_offset_selection_receipt",
+  "selection_order": [
+    "maximize_accepted_count",
+    "minimize_normalized_2d_centroid_distance",
+    "maximize_5pct_normalized_edge_margin",
+    "maximize_minimum_normalized_edge_margin",
+    "minimize_offset_rf_periods"
+  ],
+  "selection_uses_detector_outcome": false,
+  "detector_results_used": false,
+  "selected_offset_rf_periods": 0.0625,
+  "candidates_ranked": [
+    {
+      "offset_rf_periods": 0.0625,
+      "summary_path": "C:\\Users\\Liao\\mass_spectrometry\\artifacts\\projects\\rf_octupole_ion_optics\\runs\\20260813_230100__sim__simion__rf-oatof-single-flight-gap0__n1000__r01\\summary.json",
+      "summary_sha256": "3703873132B7208398F2D5CC43A21D1850CF6B4854AD67E5152431E6F77894E4",
+      "reanalysis_provenance": null,
+      "accepted_count": 695,
+      "normalized_2d_centroid_distance": 0.4224895274632964,
+      "quantile_normalized_edge_margin": 0.1738627307174079,
+      "minimum_normalized_edge_margin": 0.0038767636014085836
+    },
+    {
+      "offset_rf_periods": 0.0,
+      "summary_path": "C:\\Users\\Liao\\mass_spectrometry\\artifacts\\projects\\rf_octupole_ion_optics\\runs\\20260813_230000__sim__simion__rf-oatof-single-flight-gap0__n1000__r01\\summary.json",
+      "summary_sha256": "ED894D349A76A3BD341DAE5A5E89543E2BD2929627C671D3C4A9F82337E5C2AA",
+      "reanalysis_provenance": null,
+      "accepted_count": 685,
+      "normalized_2d_centroid_distance": 0.46398857641304114,
+      "quantile_normalized_edge_margin": 0.1780889081014095,
+      "minimum_normalized_edge_margin": 0.021194219861408216
+    }
+  ]
+}

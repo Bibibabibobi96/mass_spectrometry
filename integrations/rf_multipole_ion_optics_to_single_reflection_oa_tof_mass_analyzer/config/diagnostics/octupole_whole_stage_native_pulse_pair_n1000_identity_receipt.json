@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "role": "diagnostic_campaign_identity_receipt",
+  "campaign_id": "octupole_whole_stage_native_pulse_pair_n1000",
+  "preparation_status": "prepared_not_executed",
+  "parent_whole_stage_run": {
+    "run_id": "20260813_060000__sim__simion__rf-oatof-stage1-overlay-z005__n1000__r01",
+    "manifest_sha256": "E5E36F5F05E3A5932098F9C1AE0EB9492E110BDC505E9485C2E21F09D10888F2",
+    "mother_source_path": "artifacts/projects/rf_octupole_ion_optics/runs/20260813_060000__sim__simion__rf-oatof-stage1-overlay-z005__n1000__r01/inputs/mother_particle_source.csv",
+    "mother_source_sha256": "302C03DC29737CE9D46EB1A8D258DB2A8D3C0F8B6A53F7702A33B1ECF9D5320D",
+    "ordered_particle_ids": "1..1000",
+    "source_release_boundary": "multipole entrance",
+    "builder_source_binding": "The governed upstream source.particle_source has the identical SHA-256 and is copied because row-level overrides may not escape the repository root."
+  },
+  "frozen_physics": {
+    "layout_profile_id": "symmetric_10ev_source_z22_finite_interval_theory",
+    "architecture_generation_id": "finite_interval_2p2mm_matched_voltage_v1",
+    "frontend_grid_profile_id": "frontend_isotropic_020_accelerator_overlay_z005",
+    "oatof_numerical_profile_id": "oatof_formal_mesh",
+    "accelerator_field_profile_id": "accelerator_real_pa",
+    "reflectron_field": "real_pa",
+    "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm"
+  },
+  "current_head_runtime_contract": {
+    "clock_basis": "canonical_instrument_time_us",
+    "grid_method": "native_one_row_ideal_grids",
+    "rf_steps_per_period": 160,
+    "trajectory_quality": 8,
+    "source_release_mode": "continuous_frontend"
+  },
+  "paired_variable": {
+    "field": "single_flight_pulse_offset_rf_periods",
+    "values": [0.0, 0.0625],
+    "positive_sign_semantics": "pulse delay"
+  },
+  "selection_contract": {
+    "profile_id": "accelerator_xy_open_bore",
+    "detector_blind": true,
+    "ranking_order": ["count", "centroid", "edge_margin"],
+    "detector_transmission_and_resolution": "post_selection_only"
+  },
+  "prohibited_substitutions": [
+    "multipole_handoff_restart",
+    "pre_pulse_restart",
+    "historical_segmented_source_state",
+    "short_focus_1mm_geometry",
+    "detector_outcome_based_selection"
+  ]
+}
