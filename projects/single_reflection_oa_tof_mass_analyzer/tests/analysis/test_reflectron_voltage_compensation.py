@@ -57,7 +57,8 @@ class ReflectronVoltageCompensationTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("reflectron_geometry_edge_not_on_grid_node", builder)
         self.assertIn("policy=warn_and_continue", builder)
-        self.assertIn("fractional_surface=enabled", builder)
+        self.assertIn("surface=none action=continue", builder)
+        self.assertNotIn("fractional_surface=enabled", builder)
 
 
 if __name__ == "__main__":

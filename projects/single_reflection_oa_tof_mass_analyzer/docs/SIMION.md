@@ -42,12 +42,33 @@ Program不通过动态实例调整补救错误排序。正式trajectory quality�
 本项目文档中的“SIMION detector marker”统一译为**数值终止标记**：它帮助GUI显示并产生终止事件，
 不是机械探测器实体；有效探测面、数值标记和terminal事件三者不得互称。
 
-日常加速器网格为`xy=0.25 mm,z=0.05 mm`，`z=0.025 mm`只作轴向收敛参考。透明栅网数值跨越距离
-为`0.0001 mm`；除PROJECT所列重启条件外不继续扫描以追平单一指标。
+日常加速器网格为`xy=0.25 mm,z=0.05 mm`，`z=0.025 mm`只作轴向收敛参考。当前生成链把
+grid1、grid2、entgrid与midgrid统一声明为SIMION官方理想透明栅：**零grid-unit厚度的一行电极点**；
+目标语义是参与Refine的Dirichlet边界且由SIMION原生穿过，Program不得用固定距离搬运粒子或补偿TOF。
+Candidate SIMION门禁通过`run_parameterized_geometry_smoke.ps1`隔离构建正式加速器与反射器PA，使用官方
+`simion.pas`/`pa:point()` API写出四栅raw-PA单行receipt，并要求冻结单粒子原生穿越计数为
+`grid1/grid2/entgrid/midgrid=1/1/2/2`后命中探测器；TRACE方向判定只服务该冻结正向发射单粒子smoke，
+不是通用轨迹事件定位器。该门禁直接读取正式numerics合同，固定加速器`0.25/0.25/0.05 mm`与反射器
+`0.25/1.0 mm`网格，不提供粗网格fallback，并保存gem2pa、raw审计、refine、fast-adjust、反射器构建和
+单粒子Fly的墙钟耗时receipt。真实丝网属于独立物理候选，须建立单独几何/profile并重新验证传输、场和收敛，
+不能复用一行理想栅路径。
+
+Candidate run `20260813_160656__gate__simion__native-ideal-grid__smoke`已真实PASS：四栅raw row依次为
+`260/596/0/480`且各仅一行，单粒子原生穿越计数为`1/1/2/2`并命中探测器。加速器builder墙钟
+`168.329 s`（其中Refine `164 s`），反射器builder `32.170 s`（Refine `32 s`），组合raw-PA receipt
+`3.908 s`，单粒子Fly `0.472 s`。这是隔离的Candidate功能验收，不晋升或改写当前Formal包，也不证明
+真实丝网、网格收敛、N=100/1000传输或分辨率资格。
 
 反射器为二维轴对称PA；网格只查`../config/formal_solver_numerics.json`，制造约束只查
-`../config/design_variables.json`。构建器逐项检查环、栅、背板和屏蔽罩边缘是否落在网格节点；不对齐时
-记录`reflectron_geometry_edge_not_on_grid_node`警告但继续使用fractional-surface离散，不圆整理论几何。
+`../config/design_variables.json`。包含理想栅的加速器和反射器PA均使用SIMION官方ideal-grid示例采用的
+PA级`surface=none`语义；四个零宽栅必须严格落在raw节点，普通厚环、背板和屏蔽罩边缘不对齐时记录
+`reflectron_geometry_edge_not_on_grid_node`警告并按raw网格离散。`surface`是PA级选项，本项目不伪造
+按电极混合surface元数据。
+
+官方依据（查阅`2026-08-13`，目标版本SIMION 2020）为SIMION Grid/PA说明
+<https://simion.com/info/grid.html>及本机随安装提供的
+`examples/geometry/parallel_plate_capacitor_2d.gem`：官方示例以节点对齐的一行零宽电极和PA级
+`surface=none`表达100%透明理想栅。本项目采用该路径；一行栅必须落在raw PA节点，真实丝网不在其适用域。
 
 ## Candidate与交付纪律
 

@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import json
 from pathlib import Path
 
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.sync_geometry_contract import (
+    PROJECT_ROOT,
     frozen_fly2_seed,
     load_contract,
     render_fly2,
+    render_numerics_authority_document,
 )
+from common.contracts.machine_contracts import sha256
 
 
 class SyncGeometryContractTests(unittest.TestCase):
@@ -37,6 +41,14 @@ class SyncGeometryContractTests(unittest.TestCase):
             fly2.write_text("seed(1)\nseed(2)\n", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "exactly one"):
                 frozen_fly2_seed(fly2)
+
+    def test_campaign_numerics_authority_is_compiled_by_the_same_sync_chain(self) -> None:
+        campaign = PROJECT_ROOT / "config" / "experiment_campaign.json"
+        rendered = json.loads(render_numerics_authority_document(campaign))
+        self.assertEqual(
+            rendered["authorities"]["solver_numerics"]["sha256"],
+            sha256(PROJECT_ROOT / "config" / "formal_solver_numerics.json"),
+        )
 
 
 if __name__ == "__main__":

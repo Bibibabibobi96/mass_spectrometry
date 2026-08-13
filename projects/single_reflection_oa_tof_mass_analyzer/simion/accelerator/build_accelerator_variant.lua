@@ -36,6 +36,13 @@ local interface_port_enable = tonumber(arg[23] or '0')
 local interface_port_width_y = tonumber(arg[24] or '0')
 local interface_port_height_z = tonumber(arg[25] or '0')
 local interface_port_center_z = tonumber(arg[26] or tostring(stage1_length/2))
+local function timed_stage(name,action)
+  local started=os.time()
+  print(string.format('BUILD_TIMING: stage=%s event=start utc=%s',name,os.date('!%Y-%m-%dT%H:%M:%SZ',started)))
+  action()
+  local finished=os.time()
+  print(string.format('BUILD_TIMING: stage=%s event=complete utc=%s wall_seconds=%d',name,os.date('!%Y-%m-%dT%H:%M:%SZ',finished),finished-started))
+end
 local shield_outer_width = 2*(bore_half+ring_width+insulation_gap+shield_wall)
 local xy_span = shield_outer_width+2*vacuum_margin
 local geometry_z_min = -repeller_thickness-rear_gap-shield_wall
@@ -84,6 +91,48 @@ end
 assert(stage1_length+stage2_length < z_max,
   'grid2 must remain inside the PA domain; increase front_domain_margin')
 
+local grid1_gu=(-z_min+stage1_length+grid_phase_z)/mmgu_z
+local grid2_gu=(-z_min+stage1_length+stage2_length+grid_phase_z)/mmgu_z
+assert(math.abs(grid1_gu-math.floor(grid1_gu+0.5))<1e-8,
+  'grid1 zero-width sheet must lie on a raw PA row')
+assert(math.abs(grid2_gu-math.floor(grid2_gu+0.5))<1e-8,
+  'grid2 zero-width sheet must lie on a raw PA row')
+
+local aligned_edge_count,off_grid_edge_count,max_abs_offset=0,0,0
+local function report_edge(axis,label,value,cell)
+  local grid_coordinate=(axis=='z' and (value-z_min+grid_phase_z) or value)/cell
+  local nearest_grid_coordinate=math.floor(grid_coordinate+0.5)
+  local raw_origin=axis=='z' and z_min-grid_phase_z or 0
+  local nearest_node=raw_origin+nearest_grid_coordinate*cell
+  local offset=value-nearest_node
+  max_abs_offset=math.max(max_abs_offset,math.abs(offset))
+  if math.abs(grid_coordinate-nearest_grid_coordinate)<=1e-8 then
+    aligned_edge_count=aligned_edge_count+1
+  else
+    off_grid_edge_count=off_grid_edge_count+1
+    print(string.format(
+      'WARNING: accelerator_geometry_edge_not_on_grid_node axis=%s label=%s value_mm=%.12g cell_mm=%.12g grid_coordinate=%.12g nearest_node_mm=%.12g offset_mm=%+.12g surface=none action=continue',
+      axis,label,value,cell,grid_coordinate,nearest_node,offset))
+  end
+end
+report_edge('z','repeller_back',-repeller_thickness,mmgu_z)
+report_edge('z','repeller_front',0,mmgu_z)
+report_edge('z','grid1',stage1_length,mmgu_z)
+for ring_index=1,ring_count do
+  local center=stage1_length+ring_index*stage2_length/(ring_count+1)
+  report_edge('z','ring_'..ring_index..'_front',center-ring_thickness/2,mmgu_z)
+  report_edge('z','ring_'..ring_index..'_back',center+ring_thickness/2,mmgu_z)
+end
+report_edge('z','grid2',stage1_length+stage2_length,mmgu_z)
+for _,edge in ipairs({
+  {'bore_half',bore_half},{'electrode_half',bore_half+ring_width},
+  {'shield_inner_half',bore_half+ring_width+insulation_gap},
+  {'shield_outer_half',bore_half+ring_width+insulation_gap+shield_wall}
+}) do report_edge('xy',edge[1],edge[2],mmgu_xy) end
+print(string.format(
+  'BUILD: grid_alignment aligned_edges=%d off_grid_edges=%d max_abs_offset_mm=%.12g policy=warn_and_continue surface=none',
+  aligned_edge_count,off_grid_edge_count,max_abs_offset))
+
 local nx = math.floor(xy_span/mmgu_xy + 0.5) + 1
 local ny = nx
 local nz = math.floor(z_span/mmgu_z + 0.5) + 1
@@ -120,11 +169,37 @@ _G.var={mmgu_xy=mmgu_xy,mmgu_z=mmgu_z,xy_span=xy_span,z_min=z_min,z_span=z_span,
   stage1_length=stage1_length,stage2_length=stage2_length,
   ring_count=ring_count,repeller_thickness=repeller_thickness,
   ring_thickness=ring_thickness,front_vacuum_margin=front_vacuum_margin}
-simion.command(string.format('gem2pa %q %q',staged_source,output))
+timed_stage('gem2pa',function()
+  simion.command(string.format('gem2pa %q %q',staged_source,output))
+end)
 _G.var=nil
 os.remove(staged_source)
 os.remove(staged_source:gsub('%.gem$','.processed.gem'))
-simion.command(string.format('refine --resume=0 --convergence=5e-7 %q',output))
+local function audit_raw_grid(electrode_id,label,expected_row)
+  simion.pas:close()
+  local pa=assert(simion.pas:open(output))
+  local rows,point_count={},0
+  for z=0,pa.nz-1 do for y=0,pa.ny-1 do for x=0,pa.nx-1 do
+    local potential,is_electrode=pa:point(x,y,z)
+    if is_electrode and math.abs(potential-electrode_id)<1e-9 then
+      rows[z]=true; point_count=point_count+1
+    end
+  end end end
+  local row_count,actual_row=0,nil
+  for row in pairs(rows) do row_count=row_count+1; actual_row=row end
+  pa:close()
+  assert(point_count>0,string.format('%s electrode %d has zero raw PA points',label,electrode_id))
+  assert(row_count==1,string.format('%s electrode %d occupies %d raw PA rows',label,electrode_id,row_count))
+  assert(actual_row==expected_row,string.format('%s electrode %d raw row %d differs from expected %d',label,electrode_id,actual_row,expected_row))
+  print(string.format('BUILD: native_grid_raw_pa grid=%s electrode=%d row=%d points=%d',label,electrode_id,actual_row,point_count))
+end
+timed_stage('raw_grid_audit',function()
+  audit_raw_grid(2,'grid1',math.floor(grid1_gu+0.5))
+  audit_raw_grid(3+ring_count,'grid2',math.floor(grid2_gu+0.5))
+end)
+timed_stage('refine',function()
+  simion.command(string.format('refine --resume=0 --convergence=5e-7 %q',output))
+end)
 local voltage_assignments={string.format('1=%.12g',repeller_voltage),
   string.format('2=%.12g',grid1_voltage)}
 for ring_index=1,ring_count do
@@ -133,5 +208,7 @@ for ring_index=1,ring_count do
 end
 voltage_assignments[#voltage_assignments+1]=string.format('%d=0',3+ring_count)
 voltage_assignments[#voltage_assignments+1]=string.format('%d=0',4+ring_count)
-simion.command(string.format('fastadj %q %s',output:gsub('#$','0'),table.concat(voltage_assignments,',')))
+timed_stage('fastadj',function()
+  simion.command(string.format('fastadj %q %s',output:gsub('#$','0'),table.concat(voltage_assignments,',')))
+end)
 print('BUILD: PASS')

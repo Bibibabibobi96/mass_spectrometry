@@ -222,6 +222,14 @@ FWHM由`0.19894 ns`增至`1.55509 ns`。短结构2.2 mm源换实际场后焦面�
 [跨项目连接架构](../../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md#simion粗全局pa与局部细pa耦合)维护。
 N=100同网格身份对照的探测TOF配对RMS为0.0160 ns，未发现PA分解造成的系统偏移。
 
+加速器grid1/grid2与反射器entgrid/midgrid现统一由Formal GEM及run-local frontend声明为SIMION官方
+零grid-unit厚度的一行理想透明电极点；Program对四面均不得执行epsilon越层、粒子位移或TOF补偿。
+项目Candidate SIMION门禁会隔离重建加速器/反射器PA，以官方PA API写四栅单行raw-PA receipt，并要求
+冻结单粒子按`1/1/2/2`原生穿越四栅后命中探测器。真实丝网仍是未来独立几何/profile；旧PA与既有run
+不会被改写。该门禁已由`20260813_160656__gate__simion__native-ideal-grid__smoke`真实PASS：四栅raw row为
+`260/596/0/480`，原生穿越`1/1/2/2`后命中探测器；该证据只闭合官方一行理想栅Candidate功能路径，
+不授予集成链、数值收敛、N=100/1000传输、分辨率或Formal资格。
+
 最新N=1000自然注入得到`1000→961→817`（接口→探测器）。在同一冻结808粒子、同几何和同电压的
 A/B中，局部细PA把焦面时间σ从4.431降至1.472 ns，焦面z斜率从+6.419降至+1.921 ns/mm，单峰
 分辨率从`R=8427`提高到`R=20883`，接近“仅一级理想”的`R=21792`。这证明局部细化是当前有效

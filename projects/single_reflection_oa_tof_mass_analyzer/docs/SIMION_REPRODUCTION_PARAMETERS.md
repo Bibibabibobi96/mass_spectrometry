@@ -25,7 +25,7 @@
   `1 flight_tube`、`2 reflectron`、`3 accelerator`、`4 detector`。
 - 实例顺序、GUI priority、PA路径和数组身份以Formal manifest与稳定入口为准。
 - detector PA是GUI可见数值终止层，不是机械检测器厚度。
-- grid1、grid2、entgrid和midgrid是理想透明栅网；SIMION数值层必须由Program透明跨越。
+- grid1、grid2、entgrid和midgrid统一使用SIMION官方零grid-unit厚度构造；编译后的raw PA应各形成一行电极点并由SIMION原生穿越，Program不得移动粒子或补偿飞行时间。
 
 RF多极杆集成的第3槽可以替换为combined frontend，但那是run-local integration候选，不是本项目独立
 Formal包。其电极映射和PA重构只查
@@ -44,9 +44,9 @@ Formal包。其电极映射和PA重构只查
 
 ## PA重建
 
-正式GEM使用`surface=fractional`。Refine必须从头执行并使用
-`formal_solver_numerics.json`给出的convergence；不得Resume旧解。完整PA家族和`.pa-surf`必须保留，
-因为Lua Fast Adjust依赖各电极数组。
+包含四个理想栅的加速器和反射器GEM采用SIMION官方ideal-grid路线的PA级`surface=none`；生成的完整
+PA家族必须包含`pa#`和`pa0..paN`，不得要求或生成`.pa-surf`。Refine必须从头执行并使用
+`formal_solver_numerics.json`给出的convergence，不得Resume旧解；Lua Fast Adjust仍依赖完整电极基函数数组。
 
 任何源宽、加速器、无场长度或反射器变量变化都属于隔离Candidate。候选编译器根据变量目录自动重算
 理论派生量和rebuild plan，只重建run-local受影响PA；通过Candidate、GUI和独立晋升前，不得覆盖Formal。

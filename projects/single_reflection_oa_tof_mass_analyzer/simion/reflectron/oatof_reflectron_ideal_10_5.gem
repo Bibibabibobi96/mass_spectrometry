@@ -29,9 +29,11 @@
 # local nx = math.ceil(outer_end/mmgu_axial) + 1
 # local ny = math.ceil(outer_radius/mmgu_radial) + 1
 pa_define($(nx),$(ny),1,cylindrical,y,electrostatic,,
-          $(mmgu_axial),$(mmgu_radial),$(mmgu_radial),surface=fractional)
+          $(mmgu_axial),$(mmgu_radial),$(mmgu_radial),surface=none)
 
-; e1: entgrid, ideal transparent one-grid-point electrode sheet, 0 V.
+; SIMION official ideal-grid construction: a zero-GU-thick sheet becomes one
+; raw-PA electrode-point row and provides native 100% particle transmission.
+; e1: entgrid, 0 V.
 e(1) { fill{within{box(0,0,0,$(inner_radius))}} }
 
 ; Stage-1 rings are centered at equal pitch and share one thickness/radius family.
@@ -39,7 +41,8 @@ e(1) { fill{within{box(0,0,0,$(inner_radius))}} }
 e($(1+ring_index)) { fill{within{box($(ring_index*stage1_pitch-ring_thickness/2),$(bore_radius),$(ring_index*stage1_pitch+ring_thickness/2),$(ring_outer_radius))}} }
 # end
 
-; Midgrid electrode number follows stage-1 ring count.
+; Midgrid uses the same official zero-GU-thick, one-row native construction.
+; Its electrode number follows stage-1 ring count.
 e($(2+stage1_ring_count)) { fill{within{box($(stage1_length),0,$(stage1_length),$(ring_outer_radius))}} }
 
 ; Stage-2 rings use the same construction and are linked to stage-2 length.

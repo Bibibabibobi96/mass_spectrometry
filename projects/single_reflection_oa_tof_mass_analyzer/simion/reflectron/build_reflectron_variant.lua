@@ -29,6 +29,13 @@ local stage2_ring_count = assert(tonumber(arg[17]), 'invalid stage-2 ring count'
 local midgrid_voltage = assert(tonumber(arg[18]), 'invalid midgrid voltage')
 local backplate_voltage = assert(tonumber(arg[19]), 'invalid backplate voltage')
 local build_mode = arg[20] or 'refine-all'
+local function timed_stage(name,action)
+  local started=os.time()
+  print(string.format('BUILD_TIMING: stage=%s event=start utc=%s',name,os.date('!%Y-%m-%dT%H:%M:%SZ',started)))
+  action()
+  local finished=os.time()
+  print(string.format('BUILD_TIMING: stage=%s event=complete utc=%s wall_seconds=%d',name,os.date('!%Y-%m-%dT%H:%M:%SZ',finished),finished-started))
+end
 assert(build_mode == 'refine-all' or build_mode == 'initialize-only' or
   build_mode == 'alignment-only',
   'build mode must be refine-all, initialize-only or alignment-only')
@@ -57,19 +64,20 @@ assert(stage1_ring_count>=1 and stage1_ring_count==math.floor(stage1_ring_count)
 assert(stage2_ring_count>=1 and stage2_ring_count==math.floor(stage2_ring_count),
   'stage2_ring_count must be a positive integer')
 
--- Fractional surfaces allow the build to continue when a mechanical edge is
--- between nodes, but the discretization must remain visible in the run log.
-local aligned_edge_count,off_grid_edge_count=0,0
+-- surface=none snaps ordinary thick geometry to raw nodes, so discretization
+-- remains visible in the log. Zero-width ideal grids must align exactly.
+local aligned_edge_count,off_grid_edge_count,max_abs_offset=0,0,0
 local function report_edge(axis,label,value,cell)
   local grid_coordinate=value/cell
   local nearest_grid_coordinate=math.floor(grid_coordinate+0.5)
   local offset=value-nearest_grid_coordinate*cell
+  max_abs_offset=math.max(max_abs_offset,math.abs(offset))
   if math.abs(grid_coordinate-nearest_grid_coordinate)<=1e-8 then
     aligned_edge_count=aligned_edge_count+1
   else
     off_grid_edge_count=off_grid_edge_count+1
     print(string.format(
-      'WARNING: reflectron_geometry_edge_not_on_grid_node axis=%s label=%s value_mm=%.12g cell_mm=%.12g grid_coordinate=%.12g nearest_node_mm=%.12g offset_mm=%+.12g fractional_surface=enabled action=continue',
+      'WARNING: reflectron_geometry_edge_not_on_grid_node axis=%s label=%s value_mm=%.12g cell_mm=%.12g grid_coordinate=%.12g nearest_node_mm=%.12g offset_mm=%+.12g surface=none action=continue',
       axis,label,value,cell,grid_coordinate,nearest_grid_coordinate*cell,offset))
   end
 end
@@ -79,6 +87,8 @@ report_edge('radial','ring_outer_radius',ring_outer_radius,mmgu_radial)
 report_edge('radial','shield_inner_radius',inner_radius,mmgu_radial)
 report_edge('radial','shield_outer_radius',inner_radius+wall,mmgu_radial)
 report_edge('axial','entrance_grid',0,mmgu_axial)
+assert(math.abs(0/mmgu_axial-math.floor(0/mmgu_axial+0.5))<=1e-8,
+  'entrance-grid zero-width sheet must lie on a raw PA row')
 local ring_thickness=backplate_thickness
 for ring_index=1,stage1_ring_count do
   local center=ring_index*stage1_length/(stage1_ring_count+1)
@@ -86,6 +96,8 @@ for ring_index=1,stage1_ring_count do
   report_edge('axial','stage1_ring_'..ring_index..'_back',center+ring_thickness/2,mmgu_axial)
 end
 report_edge('axial','midgrid',stage1_length,mmgu_axial)
+assert(math.abs(stage1_length/mmgu_axial-math.floor(stage1_length/mmgu_axial+0.5))<=1e-8,
+  'midgrid zero-width sheet must lie on a raw PA row')
 for ring_index=1,stage2_ring_count do
   local center=stage1_length+ring_index*stage2_length/(stage2_ring_count+1)
   report_edge('axial','stage2_ring_'..ring_index..'_front',center-ring_thickness/2,mmgu_axial)
@@ -96,8 +108,8 @@ report_edge('axial','backplate_back',backplate_front+backplate_thickness,mmgu_ax
 report_edge('axial','shield_far_cap_front',bore_end,mmgu_axial)
 report_edge('axial','shield_far_cap_back',axial_span,mmgu_axial)
 print(string.format(
-  'BUILD: grid_alignment aligned_edges=%d off_grid_edges=%d policy=warn_and_continue fractional_surface=enabled',
-  aligned_edge_count,off_grid_edge_count))
+  'BUILD: grid_alignment aligned_edges=%d off_grid_edges=%d max_abs_offset_mm=%.12g policy=warn_and_continue surface=none',
+  aligned_edge_count,off_grid_edge_count,max_abs_offset))
 if build_mode == 'alignment-only' then
   print('BUILD: ALIGNMENT_CHECK_PASS')
   return
@@ -133,10 +145,34 @@ _G.var={
   bore_radius=bore_radius,ring_outer_radius=ring_outer_radius,
   stage1_ring_count=stage1_ring_count,stage2_ring_count=stage2_ring_count
 }
-simion.command(string.format('gem2pa %q %q',staged_source,output))
+timed_stage('gem2pa',function()
+  simion.command(string.format('gem2pa %q %q',staged_source,output))
+end)
 _G.var=nil
 os.remove(staged_source)
 os.remove(staged_source:gsub('%.gem$','.processed.gem'))
+local function audit_raw_grid(electrode_id,label,expected_row)
+  simion.pas:close()
+  local pa=assert(simion.pas:open(output))
+  local rows,point_count={},0
+  for z=0,pa.nz-1 do for y=0,pa.ny-1 do for x=0,pa.nx-1 do
+    local potential,is_electrode=pa:point(x,y,z)
+    if is_electrode and math.abs(potential-electrode_id)<1e-9 then
+      rows[x]=true; point_count=point_count+1
+    end
+  end end end
+  local row_count,actual_row=0,nil
+  for row in pairs(rows) do row_count=row_count+1; actual_row=row end
+  pa:close()
+  assert(point_count>0,string.format('%s electrode %d has zero raw PA points',label,electrode_id))
+  assert(row_count==1,string.format('%s electrode %d occupies %d raw PA rows',label,electrode_id,row_count))
+  assert(actual_row==expected_row,string.format('%s electrode %d raw row %d differs from expected %d',label,electrode_id,actual_row,expected_row))
+  print(string.format('BUILD: native_grid_raw_pa grid=%s electrode=%d row=%d points=%d',label,electrode_id,actual_row,point_count))
+end
+timed_stage('raw_grid_audit',function()
+  audit_raw_grid(1,'entgrid',0)
+  audit_raw_grid(2+stage1_ring_count,'midgrid',math.floor(stage1_length/mmgu_axial+0.5))
+end)
 if build_mode == 'initialize-only' then
   simion.pas:close()
   local pa=simion.pas:open(output)
@@ -147,8 +183,10 @@ if build_mode == 'initialize-only' then
   print('BUILD: INITIALIZED')
   return
 end
-simion.command(string.format(
-  'refine --resume=0 --convergence=5e-7 %q',output))
+timed_stage('refine',function()
+  simion.command(string.format(
+    'refine --resume=0 --convergence=5e-7 %q',output))
+end)
 local voltage_assignments={'1=0'}
 for ring_index=1,stage1_ring_count do
   voltage_assignments[#voltage_assignments+1]=string.format('%d=%.12g',1+ring_index,
@@ -162,5 +200,7 @@ for ring_index=1,stage2_ring_count do
 end
 voltage_assignments[#voltage_assignments+1]=string.format('%d=%.12g',midgrid_electrode+stage2_ring_count+1,backplate_voltage)
 voltage_assignments[#voltage_assignments+1]=string.format('%d=0',midgrid_electrode+stage2_ring_count+2)
-simion.command(string.format('fastadj %q %s',output:gsub('#$','0'),table.concat(voltage_assignments,',')))
+timed_stage('fastadj',function()
+  simion.command(string.format('fastadj %q %s',output:gsub('#$','0'),table.concat(voltage_assignments,',')))
+end)
 print('BUILD: PASS')

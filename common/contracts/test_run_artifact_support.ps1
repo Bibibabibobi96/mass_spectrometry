@@ -56,6 +56,29 @@ try {
   Assert-Equal $failedSummary.reason 'synthetic failure' 'Failed summary reason changed.'
   Assert-Equal $failedManifest.status 'failed' 'Failed manifest status changed.'
 
+  $v2FailedDir = Join-Path (Join-Path $testRoot 'runs') '20260723_170004__test__cross__native-grid-failure__n1'
+  New-Item -ItemType Directory -Path (Join-Path $v2FailedDir 'simion') -Force | Out-Null
+  $v2Config = Join-Path $v2FailedDir 'run_config.json'
+  $v2Summary = Join-Path $v2FailedDir 'summary.json'
+  Write-RunJson -Path $v2Config -Value ([ordered]@{
+    schema_version=2;run_id=(Split-Path -Leaf $v2FailedDir);project='single_reflection_oa_tof_mass_analyzer'
+    mode='native_ideal_grid_smoke';project_root=$repoRoot;inputs=[ordered]@{}
+    artifact_retention=[ordered]@{policy_version=1;class='compact';reason=$null}
+  })
+  'synthetic builder failure' | Set-Content -LiteralPath (Join-Path $v2FailedDir 'simion\accelerator_builder.stderr.log') -Encoding UTF8
+  Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $v2Config -Summary $v2Summary `
+    -SummaryRole 'oa_tof_native_ideal_grid_smoke_summary' -SummarySchemaVersion 2 `
+    -Reason 'grid2 electrode has zero raw PA points' -FailureClass 'native_ideal_grid_smoke_failed' `
+    -FailureStage 'accelerator_raw_pa_family_or_grid_row_audit' -ThresholdResultEligible $false `
+    -Software @('synthetic SIMION')
+  $v2FailedSummary = Get-Content -LiteralPath $v2Summary -Raw -Encoding UTF8 | ConvertFrom-Json
+  $v2FailedManifest = Get-Content -LiteralPath (Join-Path $v2FailedDir 'run_manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+  Assert-Equal $v2FailedSummary.schema_version 2 'Failed native-grid summary schema changed.'
+  Assert-Equal $v2FailedSummary.failure_stage 'accelerator_raw_pa_family_or_grid_row_audit' 'Failed native-grid stage changed.'
+  Assert-Equal $v2FailedSummary.threshold_result_eligible $false 'Failed native-grid result became threshold eligible.'
+  Assert-Equal $v2FailedManifest.status 'failed' 'Failed native-grid manifest status changed.'
+  Assert-Equal $v2FailedManifest.artifact_retention.class 'compact' 'Failed native-grid retention changed.'
+
   $successDir = Join-Path $testRoot '20260723_170002__test__cross__lifecycle-success__n100'
   New-Item -ItemType Directory -Path $successDir -Force | Out-Null
   $successConfig = Join-Path $successDir 'run_config.json'
@@ -106,8 +129,9 @@ try {
   } catch {
     $writeError = $_.Exception.Message
   }
-  Assert-Equal $writeError 'Could not write failed run manifest.' `
-    'Manifest write failure message changed.'
+  if ($writeError -notlike 'Could not publish verified failed run manifest:*') {
+    throw "Manifest write failure message changed. Actual='$writeError'"
+  }
 
   $timeoutRejected = $false
   try {

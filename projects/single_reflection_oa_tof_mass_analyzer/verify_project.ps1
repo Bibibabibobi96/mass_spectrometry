@@ -48,7 +48,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Python analysis tests failed.' }
 if ($Level -eq 'Candidate') {
   if ($CandidateTarget -eq 'SIMION') {
     $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
-    $runId = "${stamp}__gate__simion__parameterized-geometry__smoke"
+    $runId = "${stamp}__gate__simion__native-ideal-grid__smoke"
     $output = Join-Path $workspaceRoot "artifacts\projects\single_reflection_oa_tof_mass_analyzer\runs\$runId\simion"
     & (Join-Path $projectRoot 'simion\workbench\run_parameterized_geometry_smoke.ps1') -SimionExe $SimionExe -OutputDir $output -RunId $runId
     if ($LASTEXITCODE -ne 0) { throw 'Candidate SIMION geometry build failed.' }

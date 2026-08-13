@@ -48,7 +48,12 @@ def _require_close(actual: float, expected: float, label: str) -> None:
 def _render_accelerator_local_geometry(
     geometry: dict[str, float | int], *, cell_x_mm: float, cell_z_mm: float
 ) -> list[str]:
-    """Render the accelerator-owned geometry shared by coarse and overlay PAs."""
+    """Render accelerator geometry with native one-row ideal grids.
+
+    SIMION treats a zero-grid-unit-thick electrode as one electrode-point row:
+    it contributes to Refine but particles pass through it. A real wire mesh
+    is a different physical profile and must not be routed through this helper.
+    """
     axis_x = float(geometry["axis_x_mm"])
     axis_y = float(geometry["axis_y_mm"])
     lines = [
@@ -59,7 +64,8 @@ def _render_accelerator_local_geometry(
         "  } }",
         f"  e({MULTIPOLE_SHIELD_ELECTRODE}) {{ fill {{ within {{ {_box(axis_x, axis_y, float(geometry['shield_back_z_mm'])+float(geometry['shield_wall_mm'])/2, float(geometry['shield_outer_width_mm']), float(geometry['shield_outer_width_mm']), float(geometry['shield_wall_mm']))} }} }} }}",
         f"  e({ACCELERATOR_ELECTRODE_OFFSET+1}) {{ fill {{ within {{ {_box(axis_x,axis_y,float(geometry['repeller_front_z_mm'])-float(geometry['repeller_thickness_mm'])/2,float(geometry['electrode_width_mm']),float(geometry['electrode_width_mm']),float(geometry['repeller_thickness_mm']))} }} }} }}",
-        f"  e({ACCELERATOR_ELECTRODE_OFFSET+2}) {{ fill {{ within {{ {_box(axis_x,axis_y,float(geometry['grid1_z_mm']),float(geometry['electrode_width_mm']),float(geometry['electrode_width_mm']),cell_z_mm)} }} }} }}",
+        "  ; Zero-grid-unit sheets are one-row ideal 100% transmission grids.",
+        f"  e({ACCELERATOR_ELECTRODE_OFFSET+2}) {{ fill {{ within {{ {_box(axis_x,axis_y,float(geometry['grid1_z_mm']),float(geometry['electrode_width_mm']),float(geometry['electrode_width_mm']),0.0)} }} }} }}",
     ]
     ring_count = int(geometry["ring_count"])
     ring_pitch = float(geometry["ring_pitch_mm"])
@@ -74,7 +80,7 @@ def _render_accelerator_local_geometry(
             ]
         )
     lines.append(
-        f"  e({ACCELERATOR_ELECTRODE_OFFSET+3+ring_count}) {{ fill {{ within {{ {_box(axis_x,axis_y,float(geometry['grid2_z_mm']),float(geometry['shield_inner_width_mm']),float(geometry['shield_inner_width_mm']),cell_z_mm)} }} }} }}"
+        f"  e({ACCELERATOR_ELECTRODE_OFFSET+3+ring_count}) {{ fill {{ within {{ {_box(axis_x,axis_y,float(geometry['grid2_z_mm']),float(geometry['shield_inner_width_mm']),float(geometry['shield_inner_width_mm']),0.0)} }} }} }}"
     )
     return lines
 
@@ -143,7 +149,7 @@ def compile_accelerator_overlay(
     lines = [
         "; Generated boundary-coupled accelerator overlay; do not edit.",
         "; outer faces are replaced by coarse-PA Dirichlet basis values before Refine",
-        f"pa_define({dimensions['nx']},{dimensions['ny']},{dimensions['nz']},planar,none,electrostatic,,{_fmt(fine['x'])},{_fmt(fine['y'])},{_fmt(fine['z'])},surface=fractional)",
+        f"pa_define({dimensions['nx']},{dimensions['ny']},{dimensions['nz']},planar,none,electrostatic,,{_fmt(fine['x'])},{_fmt(fine['y'])},{_fmt(fine['z'])},surface=none)",
         f"locate({_fmt(-bounds['x_min'])},{_fmt(-bounds['y_min'])},{_fmt(-bounds['z_min'])}) {{",
         *_render_accelerator_local_geometry(
             geometry, cell_x_mm=fine["x"], cell_z_mm=fine["z"]
@@ -324,7 +330,7 @@ def compile_frontend(
         "; Generated single-flight multipole + oaTOF accelerator frontend; do not edit.",
         f"; upstream_resolved_sha256={upstream['resolved_sha256']}",
         "; electrode 1..8=multipole rods; 9=all grounded shields and connector; 10..17=oaTOF accelerator; 18=functional entrance-reference sleeve",
-        f"pa_define({nx},{ny},{nz},planar,none,electrostatic,,{_fmt(cell_x_mm)},{_fmt(cell_y_mm)},{_fmt(cell_z_mm)},surface=fractional)",
+        f"pa_define({nx},{ny},{nz},planar,none,electrostatic,,{_fmt(cell_x_mm)},{_fmt(cell_y_mm)},{_fmt(cell_z_mm)},surface=none)",
         f"locate({_fmt(-x_min)},{_fmt(-y_min)},{_fmt(-z_min)}) {{",
     ]
     for rod in rods:
@@ -492,6 +498,11 @@ def compile_frontend(
         },
         "entrance_reference_sleeve": dict(sleeve),
         "accelerator_local_region": accelerator_local_region,
+        "ideal_grid_model": {
+            "model_id": "simion_one_row_zero_width_native_transmission",
+            "grid_roles": ["accelerator_grid1", "accelerator_grid2"],
+            "real_wire_mesh_requires_separate_profile": True,
+        },
     }
     return "\n".join(lines), contract
 

@@ -1,7 +1,6 @@
 param(
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$RunId = '',
-  [double]$IdealGridEpsilonMm = 0.03,
   [switch]$ReuseExisting,
   [switch]$ForceFlights
 )
@@ -15,7 +14,7 @@ $projectRoot = Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analy
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\single_reflection_oa_tof_mass_analyzer'
 $formalDir = Join-Path $artifactRoot 'formal\simion'
 $pythonExe = Join-Path $repoRoot '.venv\Scripts\python.exe'
-if (-not $RunId) { $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__test__simion__accelerator-grid-phase__eps0030' }
+if (-not $RunId) { $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__test__simion__accelerator-grid-phase' }
 & $pythonExe (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
 if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
 $runDir = Join-Path $artifactRoot "runs\$RunId"
@@ -130,7 +129,6 @@ foreach ($case in $cases) {
         $args = @('--nogui','fly','--trajectory-quality','8','--retain-trajectories','0','--particles',$run.Ion,
           '--adjustable','trajectory_quality=8','--adjustable','trajectory_log_enable=1',
           '--adjustable','accelerator_fast_adjust_enable=0',
-          '--adjustable',("ideal_grid_epsilon_mm={0}" -f $IdealGridEpsilonMm),
           '--adjustable',("accelerator_pa_back_margin_mm={0}" -f $case.Back),
           '--adjustable',("accelerator_pa_grid_phase_z_mm={0}" -f $case.Phase),$candidateIob)
         if ($run.N -gt 1) {
@@ -161,7 +159,7 @@ foreach ($case in $cases) {
 
 $manifest = [pscustomobject]@{
   schema_version=1
-  ideal_grid_epsilon_mm=$IdealGridEpsilonMm
+  ideal_grid_model='simion_one_row_zero_width_native_transmission'
   cases=$manifestCases
 }
 $manifestPath = Join-Path $runDir 'grid_phase_manifest.json'
@@ -169,7 +167,7 @@ $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $manifestPath -En
 & $pythonExe -m projects.single_reflection_oa_tof_mass_analyzer.analysis.analyze_accelerator_grid_phase $manifestPath --output $resultDir
 if ($LASTEXITCODE -ne 0) { throw "Grid-phase Python analysis failed with exit code $LASTEXITCODE" }
 $runConfig = Join-Path $runDir 'run_config.json'
-[ordered]@{schema_version=1;run_id=$RunId;project='single_reflection_oa_tof_mass_analyzer';mode='accelerator_grid_phase';project_root=$projectRoot;inputs=[ordered]@{formal_iob=(Join-Path $formalDir 'oatof_ideal_grounded.iob');resolved_geometry='config/resolved_geometry.json'};formal_gate_passed=$false;ideal_grid_epsilon_mm=$IdealGridEpsilonMm} |
+[ordered]@{schema_version=1;run_id=$RunId;project='single_reflection_oa_tof_mass_analyzer';mode='accelerator_grid_phase';project_root=$projectRoot;inputs=[ordered]@{formal_iob=(Join-Path $formalDir 'oatof_ideal_grounded.iob');resolved_geometry='config/resolved_geometry.json'};formal_gate_passed=$false;ideal_grid_model='simion_one_row_zero_width_native_transmission'} |
   ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $runConfig -Encoding UTF8
 $summaryPath = Join-Path $runDir 'summary.json'
 [ordered]@{schema_version=1;role='oa_tof_accelerator_grid_phase_summary';status='success';case_count=$manifestCases.Count;results='results'} |

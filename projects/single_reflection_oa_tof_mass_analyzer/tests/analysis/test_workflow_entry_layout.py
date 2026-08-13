@@ -133,6 +133,121 @@ class WorkflowEntryLayoutTests(unittest.TestCase):
             gate,
         )
 
+    def test_candidate_simion_runner_governs_native_ideal_grid_receipts(self):
+        runner = (
+            PROJECT_ROOT / "simion" / "workbench" / "run_parameterized_geometry_smoke.ps1"
+        ).read_text(encoding="utf-8")
+        program = (
+            PROJECT_ROOT / "simion" / "workbench" / "formal" / "oatof_ideal_grounded.lua"
+        ).read_text(encoding="utf-8")
+        inspector = (
+            PROJECT_ROOT
+            / "tests"
+            / "simion"
+            / "test_support"
+            / "inspect_native_ideal_grid_rows.lua"
+        ).read_text(encoding="utf-8")
+        self.assertIn("native_ideal_grid_raw_pa_receipt.json", runner)
+        self.assertIn("native_ideal_grid_crossing_receipt.json", runner)
+        self.assertIn("schema_version=2", runner)
+        self.assertIn("'entgrid:return'=1", runner)
+        self.assertIn("'midgrid:return'=1", runner)
+        self.assertIn("TRACE: native_grid_crossing", program)
+        self.assertIn("simion.pas:open", inspector)
+        self.assertIn("pa:point(x,y,z)", inspector)
+        self.assertIn("count==1", inspector)
+        self.assertIn("$acceleratorBuild.cell_xy_mm, $acceleratorBuild.cell_z_mm", runner)
+        self.assertIn("$reflectronBuild.cell_axial_mm, $reflectronBuild.cell_radial_mm", runner)
+        self.assertIn("$acceleratorBuild.max_gib", runner)
+        self.assertIn("$reflectronBuild.max_gib", runner)
+        self.assertIn("authority_sha256=$numericsSha256", runner)
+        self.assertIn("estimated_gib=$acceleratorEstimatedGib", runner)
+        self.assertNotIn("$geometry.accelerator_shield_wall, 0, 0.1", runner)
+        self.assertIn("native_ideal_grid_stage_timing_receipt.json", runner)
+        self.assertIn("native_ideal_grid_geometry_alignment_receipt.json", runner)
+        self.assertIn("analysis\\validate_simion_pa_family.py", runner)
+        self.assertIn("post_build_family_validation", runner)
+        self.assertIn("Highest=$expectedAcceleratorElectrodes", runner)
+        self.assertIn("Highest=$expectedReflectronElectrodes", runner)
+        self.assertIn("BUILD_TIMING: stage=%s event=complete", (
+            PROJECT_ROOT / "simion" / "accelerator" / "build_accelerator_variant.lua"
+        ).read_text(encoding="utf-8"))
+        self.assertIn("Complete-FailedRun", runner)
+        self.assertIn("FailureStage $failureStage", runner)
+        self.assertIn("ThresholdResultEligible $false", runner)
+        self.assertLess(runner.index("Write-RunJson -Value $runConfig"), runner.index("Invoke-Builder"))
+
+    def test_native_grid_builders_hard_fail_grids_and_warn_for_ordinary_edges(self):
+        accelerator = (
+            PROJECT_ROOT / "simion" / "accelerator" / "build_accelerator_variant.lua"
+        ).read_text(encoding="utf-8")
+        reflectron = (
+            PROJECT_ROOT / "simion" / "reflectron" / "build_reflectron_variant.lua"
+        ).read_text(encoding="utf-8")
+
+        for required in (
+            "grid1 zero-width sheet must lie on a raw PA row",
+            "grid2 zero-width sheet must lie on a raw PA row",
+        ):
+            self.assertIn(required, accelerator)
+        self.assertLess(
+            accelerator.index("grid1 zero-width sheet"),
+            accelerator.index("timed_stage('gem2pa'"),
+        )
+        self.assertIn("accelerator_geometry_edge_not_on_grid_node", accelerator)
+        self.assertIn("surface=none action=continue", accelerator)
+        for required in (
+            "entrance-grid zero-width sheet must lie on a raw PA row",
+            "midgrid zero-width sheet must lie on a raw PA row",
+        ):
+            self.assertIn(required, reflectron)
+        self.assertIn("reflectron_geometry_edge_not_on_grid_node", reflectron)
+        self.assertIn("surface=none action=continue", reflectron)
+        self.assertNotIn("fractional_surface=enabled", reflectron)
+
+    def test_simion_accelerator_uses_native_one_row_ideal_grids(self):
+        gem = (
+            PROJECT_ROOT / "simion" / "accelerator" / "oatof_accelerator_3d.gem"
+        ).read_text(encoding="utf-8")
+        program = (
+            PROJECT_ROOT / "simion" / "workbench" / "formal" / "oatof_ideal_grounded.lua"
+        ).read_text(encoding="utf-8")
+        numerics = json.loads(
+            (PROJECT_ROOT / "config" / "formal_solver_numerics.json").read_text(
+                encoding="utf-8"
+            )
+        )["simion"]
+
+        self.assertIn("$(electrode_width/2),$(electrode_width/2),$(stage1_length))", gem)
+        self.assertIn("$(shield_inner_width/2),$(shield_inner_width/2),$(stage1_length+stage2_length))", gem)
+        self.assertIn("surface=none", gem)
+        self.assertNotIn("surface=fractional", gem)
+        self.assertNotIn(
+            "$(electrode_width),$(electrode_width),$(mmgu_z))",
+            gem,
+        )
+        self.assertNotIn(
+            "$(shield_inner_width),$(shield_inner_width),$(mmgu_z))",
+            gem,
+        )
+        for retired in (
+            "ideal_grid_epsilon_mm",
+            "accelerator_grid_epsilon_mm",
+            "reflectron_grid_epsilon_mm",
+            "grid_planes",
+            "inside_grid",
+            "grid_jump",
+            "jumped",
+            "ion_pz_mm=post",
+        ):
+            self.assertNotIn(retired, program)
+        self.assertEqual(
+            numerics["ideal_grid_model"],
+            "simion_one_row_zero_width_native_transmission",
+        )
+        self.assertNotIn("accelerator_grid_epsilon_mm", numerics)
+        self.assertNotIn("reflectron_grid_epsilon_mm", numerics)
+
     def test_cross_solver_diagnostics_uses_current_formal_instance_roles(self):
         workflow = (
             PROJECT_ROOT

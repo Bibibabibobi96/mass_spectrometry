@@ -29,7 +29,7 @@
     },
     "solver_numerics": {
       "path": "config/formal_solver_numerics.json",
-      "sha256": "C5AC206901B4D9E4EB7E3A3923060AF6B332FC43A2BAC8C65CFD75FBDE54A1FB"
+      "sha256": "408797DA7470A9713B8C248583C4E46AABE96D7A894BE163C71968F6E2753B7A"
     },
     "design_variable_catalog": {
       "path": "config/design_variables.json",
@@ -74,7 +74,11 @@
       "experiment_id": "midgrid_reference",
       "authorized_run_id": "20260802_130100__sim__cross__midgrid-reference",
       "variation_values": [
-        {"axis_id": "reflectron_midgrid_voltage", "value": 1628.8001, "unit": "V"}
+        {
+          "axis_id": "reflectron_midgrid_voltage",
+          "value": 1628.8001,
+          "unit": "V"
+        }
       ]
     },
     {
@@ -82,7 +86,11 @@
       "experiment_id": "midgrid_diagnostic",
       "authorized_run_id": "20260802_130200__sim__cross__midgrid-diagnostic",
       "variation_values": [
-        {"axis_id": "reflectron_midgrid_voltage", "value": 1600.0, "unit": "V"}
+        {
+          "axis_id": "reflectron_midgrid_voltage",
+          "value": 1600.0,
+          "unit": "V"
+        }
       ]
     }
   ]

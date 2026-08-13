@@ -74,6 +74,24 @@ class SingleFlightFrontendTests(unittest.TestCase):
         self.assertNotIn(",1,-90) { cylinder", gem)
         self.assertIn(",1,90) { cylinder", gem)
         self.assertGreaterEqual(gem.count("e(9)"), 6)
+        self.assertEqual(
+            contract["ideal_grid_model"]["model_id"],
+            "simion_one_row_zero_width_native_transmission",
+        )
+        self.assertEqual(
+            contract["ideal_grid_model"]["grid_roles"],
+            ["accelerator_grid1", "accelerator_grid2"],
+        )
+        self.assertTrue(
+            contract["ideal_grid_model"][
+                "real_wire_mesh_requires_separate_profile"
+            ]
+        )
+        grid1 = contract["accelerator_local_region"]["grid1_z_mm"]
+        grid2 = contract["accelerator_local_region"]["grid2_z_mm"]
+        self.assertIn(f",{grid1:.12g},", gem)
+        self.assertIn(f",{grid2:.12g},", gem)
+        self.assertGreaterEqual(gem.count(",0) } } }"), 2)
 
     def test_preserves_direct_mating_aperture_and_global_origin(self) -> None:
         _, contract = compile_frontend(self.upstream, self.oatof, self.connection)
@@ -246,7 +264,8 @@ class SingleFlightFrontendTests(unittest.TestCase):
         self.assertEqual(refined["dimensions"]["nx"], baseline["dimensions"]["nx"])
         self.assertEqual(refined["dimensions"]["ny"], baseline["dimensions"]["ny"])
         self.assertGreater(refined["dimensions"]["nz"], 3 * baseline["dimensions"]["nz"])
-        self.assertIn(",0.2,0.2,0.05,surface=fractional)", refined_gem)
+        self.assertIn(",0.2,0.2,0.05,surface=none)", refined_gem)
+        self.assertNotIn("surface=fractional", refined_gem)
         self.assertNotEqual(refined_gem, baseline_gem)
 
     def test_accelerator_overlay_refines_only_local_acceleration_axis(self) -> None:
@@ -258,6 +277,7 @@ class SingleFlightFrontendTests(unittest.TestCase):
             overlay["role"], "rf_oatof_simion_accelerator_overlay_contract"
         )
         self.assertEqual(overlay["cell_mm_xyz"], {"x": 0.2, "y": 0.2, "z": 0.05})
+        self.assertGreaterEqual(gem.count(",0) } } }"), 2)
         self.assertEqual(
             overlay["instance_origin_mm"]["x"],
             frontend["accelerator_local_region"]["negative_x_face_mm"],
@@ -274,7 +294,8 @@ class SingleFlightFrontendTests(unittest.TestCase):
             frontend["accelerator_local_region"]["grid2_z_mm"] + 0.2,
         )
         self.assertLess(overlay["dimensions"]["nx"], frontend["dimensions"]["nx"])
-        self.assertIn(",0.2,0.2,0.05,surface=fractional)", gem)
+        self.assertIn(",0.2,0.2,0.05,surface=none)", gem)
+        self.assertNotIn("surface=fractional", gem)
         self.assertIn("Boundary-only sentinels", gem)
         self.assertEqual(
             overlay["boundary_family_sentinel_electrode_ids"],

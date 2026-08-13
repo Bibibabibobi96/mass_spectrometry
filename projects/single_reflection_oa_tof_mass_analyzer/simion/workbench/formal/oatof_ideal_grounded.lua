@@ -5,9 +5,6 @@ adjustable V_repeller=2240.0
 adjustable V_grid1=1760.0
 adjustable V_mid=1628.8001
 adjustable V_backplate=2531.1999
-adjustable ideal_grid_epsilon_mm=0.0001
-adjustable accelerator_grid_epsilon_mm=0.0001
-adjustable reflectron_grid_epsilon_mm=0.0001
 adjustable accelerator_fast_adjust_enable=1.0
 adjustable ideal_accel_enable=0.0
 adjustable ideal_refl_stage1_enable=0.0
@@ -256,21 +253,6 @@ function segment.initialize_run()
   print(string.format('TRACE: field_mode accelerator_fast_adjust=%d reflectron_voltage_compensation=%d ideal_accel=%d ideal_stage1=%d ideal_stage2=%d ideal_accel_ez=%d ideal_drift_ez=%d ideal_stage1_ez=%d ideal_stage2_ez=%d trajectory_quality=%d',accelerator_fast_adjust_enable,reflectron_voltage_compensation_enable,ideal_accel_enable,ideal_refl_stage1_enable,ideal_refl_stage2_enable,ideal_accel_ez_enable,ideal_drift_ez_enable,ideal_refl_stage1_ez_enable,ideal_refl_stage2_ez_enable,sim_trajectory_quality))
  end
 end
-local function grid_planes()
- local electrode_half=accelerator_bore_half_mm+accelerator_ring_width_mm
- local shield_inner_half=electrode_half+accelerator_insulation_gap_mm
- return {
-  {name='grid1',group='accelerator',z=accelerator_grid1_z_mm,shape='square',cx=accelerator_axis_x_mm,cy=accelerator_axis_y_mm,half=electrode_half},
-  {name='grid2',group='accelerator',z=accelerator_grid2_z_mm,shape='square',cx=accelerator_axis_x_mm,cy=accelerator_axis_y_mm,half=shield_inner_half},
-  {name='entgrid',group='reflectron',z=reflectron_entgrid_z_mm,shape='circle',cx=reflectron_axis_x_mm,cy=reflectron_axis_y_mm,radius=flight_tube_inner_radius_mm},
-  {name='midgrid',group='reflectron',z=reflectron_midgrid_z_mm,shape='circle',cx=reflectron_axis_x_mm,cy=reflectron_axis_y_mm,radius=reflectron_grid_radius_mm}
- }
-end
-local function inside_grid(g,x,y)
- local dx,dy=x-g.cx,y-g.cy
- if g.shape=='square' then return math.abs(dx)<=g.half and math.abs(dy)<=g.half end
- return dx*dx+dy*dy<=g.radius*g.radius
-end
 function segment.efield_adjust()
  local z,E,axis,replace_all=ion_pz_mm,nil,nil,false
  if ideal_accel_enable~=0 or ideal_accel_ez_enable~=0 then
@@ -304,17 +286,16 @@ function segment.efield_adjust()
   if axis=='x' then ion_dvoltsx_gu=-E*pi.pa.dx_mm*pi.scale else ion_dvoltsz_gu=-E*pi.pa.dz_mm*pi.scale end
  end
 end
-local last_z,last_x,last_y,last_t,jumped={},{},{},{},{}
+local last_z,last_x,last_y,last_t={},{},{},{}
 local diagnostic_plane_hit={}
 local detector_crossed={}
 local timed_out={}
-local grid_jump_count={}
 local max_z={}
 local step_count={}
 function segment.initialize()
  local n=ion_number
  last_z[n],last_x[n],last_y[n],last_t[n]=ion_pz_mm,ion_px_mm,ion_py_mm,ion_time_of_flight
- max_z[n]=ion_pz_mm; step_count[n]=0; diagnostic_plane_hit[n]=false; detector_crossed[n]=false; timed_out[n]=false; grid_jump_count[n]={}
+ max_z[n]=ion_pz_mm; step_count[n]=0; diagnostic_plane_hit[n]=false; detector_crossed[n]=false; timed_out[n]=false
  if trajectory_log_enable~=0 then print('TRACE: ion,t_us,x_mm,y_mm,z_mm,vx_mm_us,vy_mm_us,vz_mm_us,instance,event') end
 end
 function segment.tstep_adjust()
@@ -341,24 +322,23 @@ function segment.other_actions()
  if trajectory_log_enable~=0 and step_count[n]%math.max(1,trajectory_log_stride)==0 then
   print(string.format('TRACE: %d,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%d,step',n,ion_time_of_flight,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm,ion_instance))
  end
+ if trajectory_log_enable~=0 then
+  local function report_native_grid_crossing(name,plane)
+   if zp<plane and z>=plane and vz>0 then
+    print(string.format('TRACE: native_grid_crossing ion=%d grid=%s direction=forward z_mm=%.12g',n,name,plane))
+   elseif zp>plane and z<=plane and vz<0 then
+    print(string.format('TRACE: native_grid_crossing ion=%d grid=%s direction=return z_mm=%.12g',n,name,plane))
+   end
+  end
+  report_native_grid_crossing('grid1',accelerator_grid1_z_mm)
+  report_native_grid_crossing('grid2',accelerator_grid2_z_mm)
+  report_native_grid_crossing('entgrid',reflectron_entgrid_z_mm)
+  report_native_grid_crossing('midgrid',reflectron_midgrid_z_mm)
+ end
  if not diagnostic_plane_hit[n] and zp>diagnostic_return_plane_z_mm and z<=diagnostic_return_plane_z_mm and vz<0 then
   diagnostic_plane_hit[n]=true
   if trajectory_log_enable~=0 then
    print(string.format('TRACE: diagnostic_return_plane ion=%d t=%.12g x=%.12g y=%.12g z=%.12g vz=%.12g zmax=%.12g',n,ion_time_of_flight,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vz_mm,max_z[n]))
-  end
- end
- for _,g in ipairs(grid_planes()) do
-  local override=g.group=='accelerator' and accelerator_grid_epsilon_mm or reflectron_grid_epsilon_mm
-  local eps=override>0 and override or ideal_grid_epsilon_mm
-  local k=tostring(n)..':'..g.name; local d=vz>=0 and 1 or -1
-  local pre,post=g.z-d*eps,g.z+d*eps
-  if jumped[k] and math.abs(z-g.z)>4*eps then jumped[k]=nil end
-  if inside_grid(g,ion_px_mm,ion_py_mm) and not jumped[k] and ((d>0 and zp<pre and z>=pre) or (d<0 and zp>pre and z<=pre)) then
-   if math.abs(vz)<1e-12 then error('grid jump with zero axial velocity') end
-   ion_time_of_flight=ion_time_of_flight+math.abs(post-z)/math.abs(vz)
-   grid_jump_count[n]=grid_jump_count[n] or {}
-   grid_jump_count[n][g.name]=(grid_jump_count[n][g.name] or 0)+1
-   ion_pz_mm=post; jumped[k]=true; break
   end
  end
  last_z[n],last_x[n],last_y[n],last_t[n]=ion_pz_mm,ion_px_mm,ion_py_mm,ion_time_of_flight
@@ -372,10 +352,8 @@ function segment.terminate()
  if timed_out[n] or detector_crossed[n] then return end
  if ion_instance~=INSTANCE_DETECTOR then
   if trajectory_log_enable~=0 then
-   local gc=grid_jump_count[n] or {}
-   print(string.format('TRACE: non_detector_splat ion=%d instance=%d t=%.12g x=%.12g y=%.12g z=%.12g zmax=%.12g jumps grid1=%d grid2=%d entgrid=%d midgrid=%d',
-    n,ion_instance,ion_time_of_flight,ion_px_mm,ion_py_mm,ion_pz_mm,max_z[n] or ion_pz_mm,
-    gc.grid1 or 0,gc.grid2 or 0,gc.entgrid or 0,gc.midgrid or 0))
+   print(string.format('TRACE: non_detector_splat ion=%d instance=%d t=%.12g x=%.12g y=%.12g z=%.12g zmax=%.12g',
+    n,ion_instance,ion_time_of_flight,ion_px_mm,ion_py_mm,ion_pz_mm,max_z[n] or ion_pz_mm))
   end
   return
  end
@@ -388,13 +366,12 @@ function segment.terminate()
  local yc=ion_py_mm+ion_vy_mm*dt
  local dx,dy=xc-detector_x_mm,yc-detector_y_mm
  local radius=math.sqrt(dx*dx+dy*dy)
- local gc=grid_jump_count[n] or {}
  if trajectory_log_enable~=0 then
   print(string.format('TRACE: detector_splat_raw ion=%d t=%.12g x=%.12g y=%.12g z=%.12g vz=%.12g correction_ns=%.12g',n,raw_t,raw_x,raw_y,raw_z,ion_vz_mm,dt*1000))
   print(string.format('TRACE: detector_crossing ion=%d t=%.12g x=%.12g y=%.12g z=%.12g r=%.12g zmax=%.12g',n,tc,xc,yc,detector_z_mm,radius,max_z[n] or ion_pz_mm))
  end
  assert(radius<=detector_radius_mm+simion.wb.instances[INSTANCE_DETECTOR].pa.dx_mm, 'detector PA splat lies outside the physical disk')
  if trajectory_log_enable~=0 then
-  print(string.format('TRACE: detector_hit_entity ion=%d instance=%d jumps grid1=%d grid2=%d entgrid=%d midgrid=%d',n,INSTANCE_DETECTOR,gc.grid1 or 0,gc.grid2 or 0,gc.entgrid or 0,gc.midgrid or 0))
+  print(string.format('TRACE: detector_hit_entity ion=%d instance=%d',n,INSTANCE_DETECTOR))
  end
 end

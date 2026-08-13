@@ -11,7 +11,7 @@
     },
     "solver_numerics": {
       "path": "config/formal_solver_numerics.json",
-      "sha256": "4F35840B846D414D259A421B3C6E422B44F55F24F5EE1954A70EA5EC7B0E8B29"
+      "sha256": "408797DA7470A9713B8C248583C4E46AABE96D7A894BE163C71968F6E2753B7A"
     },
     "reference_result": {
       "run_id": "20260810_121500__benchmark__cross__cpu-formal-n1000",
@@ -28,7 +28,10 @@
     "trajectory_quality": 8,
     "shared_shield_rule": "The field-free and reflectron shields use the same geometry_mm.flight_tube_r and geometry_mm.flight_tube_wall values.",
     "fixed_shield_wall_mm": 10.0,
-    "default_reflectron_mesh_mm": {"axial": 0.1, "radial": 1.0},
+    "default_reflectron_mesh_mm": {
+      "axial": 0.1,
+      "radial": 1.0
+    },
     "fixed_dimensions_policy": "Only bore_r, ring_outer_r and the shared flight_tube_r change during the radius screen. The compensation phase may change ring counts and explicitly declared reflectron ring thickness or outer-radius scan values. A case may explicitly override only the reflectron axial cell size; all other geometry, source, endpoint voltage and solver values remain byte-value identical to baseline."
   },
   "acceptance": {
@@ -42,56 +45,253 @@
     "rationale": "PA refinement is serialized to limit memory and write contention; independent N=1000 flights run with the established five-worker default."
   },
   "radius_screen": [
-    {"case_id": "shield260", "bore_radius_mm": 160.0, "ring_outer_radius_mm": 210.0, "shared_shield_inner_radius_mm": 260.0},
-    {"case_id": "shield200", "bore_radius_mm": 110.0, "ring_outer_radius_mm": 160.0, "shared_shield_inner_radius_mm": 200.0},
-    {"case_id": "shield150", "bore_radius_mm": 70.0, "ring_outer_radius_mm": 110.0, "shared_shield_inner_radius_mm": 150.0},
-    {"case_id": "shield190", "bore_radius_mm": 102.0, "ring_outer_radius_mm": 150.0, "shared_shield_inner_radius_mm": 190.0},
-    {"case_id": "shield180", "bore_radius_mm": 94.0, "ring_outer_radius_mm": 140.0, "shared_shield_inner_radius_mm": 180.0},
-    {"case_id": "shield170", "bore_radius_mm": 86.0, "ring_outer_radius_mm": 130.0, "shared_shield_inner_radius_mm": 170.0},
-    {"case_id": "shield160", "bore_radius_mm": 78.0, "ring_outer_radius_mm": 120.0, "shared_shield_inner_radius_mm": 160.0},
-    {"case_id": "shield120", "bore_radius_mm": 50.0, "ring_outer_radius_mm": 85.0, "shared_shield_inner_radius_mm": 120.0},
-    {"case_id": "shield100", "bore_radius_mm": 35.0, "ring_outer_radius_mm": 70.0, "shared_shield_inner_radius_mm": 100.0},
-    {"case_id": "shield090", "bore_radius_mm": 25.0, "ring_outer_radius_mm": 60.0, "shared_shield_inner_radius_mm": 90.0}
+    {
+      "case_id": "shield260",
+      "bore_radius_mm": 160.0,
+      "ring_outer_radius_mm": 210.0,
+      "shared_shield_inner_radius_mm": 260.0
+    },
+    {
+      "case_id": "shield200",
+      "bore_radius_mm": 110.0,
+      "ring_outer_radius_mm": 160.0,
+      "shared_shield_inner_radius_mm": 200.0
+    },
+    {
+      "case_id": "shield150",
+      "bore_radius_mm": 70.0,
+      "ring_outer_radius_mm": 110.0,
+      "shared_shield_inner_radius_mm": 150.0
+    },
+    {
+      "case_id": "shield190",
+      "bore_radius_mm": 102.0,
+      "ring_outer_radius_mm": 150.0,
+      "shared_shield_inner_radius_mm": 190.0
+    },
+    {
+      "case_id": "shield180",
+      "bore_radius_mm": 94.0,
+      "ring_outer_radius_mm": 140.0,
+      "shared_shield_inner_radius_mm": 180.0
+    },
+    {
+      "case_id": "shield170",
+      "bore_radius_mm": 86.0,
+      "ring_outer_radius_mm": 130.0,
+      "shared_shield_inner_radius_mm": 170.0
+    },
+    {
+      "case_id": "shield160",
+      "bore_radius_mm": 78.0,
+      "ring_outer_radius_mm": 120.0,
+      "shared_shield_inner_radius_mm": 160.0
+    },
+    {
+      "case_id": "shield120",
+      "bore_radius_mm": 50.0,
+      "ring_outer_radius_mm": 85.0,
+      "shared_shield_inner_radius_mm": 120.0
+    },
+    {
+      "case_id": "shield100",
+      "bore_radius_mm": 35.0,
+      "ring_outer_radius_mm": 70.0,
+      "shared_shield_inner_radius_mm": 100.0
+    },
+    {
+      "case_id": "shield090",
+      "bore_radius_mm": 25.0,
+      "ring_outer_radius_mm": 60.0,
+      "shared_shield_inner_radius_mm": 90.0
+    }
   ],
   "ideal_field_attribution": {
     "execute_for_failed_radius_cases": true,
-    "modes": ["ideal_stage1", "ideal_stage2", "ideal_reflectron", "ideal_all"],
+    "modes": [
+      "ideal_stage1",
+      "ideal_stage2",
+      "ideal_reflectron",
+      "ideal_all"
+    ],
     "interpretation": "Recovery with ideal_reflectron isolates radius-induced reflectron/edge-field distortion; recovery only with ideal_all indicates a coupled accelerator-to-reflectron effect."
   },
   "ring_count_compensation": {
     "target_case_id": "shield100",
-    "ideal_field_diagnostic_case_ids": ["shield100_rings5_15_grid010"],
+    "ideal_field_diagnostic_case_ids": [
+      "shield100_rings5_15_grid010"
+    ],
     "execute_when_target_fails": true,
     "additional_trigger": "The target must retain full transmission and ideal_reflectron must recover at least 95 percent of the reference direct-KDE resolution. Stage-isolation identified stage 2 as dominant. Probe exactly one new basis-array extent at a time and stop on the first native failure.",
     "cases": [
-      {"case_id": "shield100_rings8_7", "stage1_count": 8, "stage2_count": 7},
-      {"case_id": "shield100_rings7_8", "stage1_count": 7, "stage2_count": 8},
-      {"case_id": "shield100_rings6_9", "stage1_count": 6, "stage2_count": 9},
-      {"case_id": "shield100_rings5_10", "stage1_count": 5, "stage2_count": 10},
-      {"case_id": "shield100_rings5_10_grid040", "stage1_count": 5, "stage2_count": 10, "reflectron_cell_axial_mm": 0.4},
-      {"case_id": "shield100_rings4_11", "stage1_count": 4, "stage2_count": 11},
-      {"case_id": "shield100_rings3_12", "stage1_count": 3, "stage2_count": 12},
-      {"case_id": "shield100_rings2_13", "stage1_count": 2, "stage2_count": 13},
-      {"case_id": "shield100_rings1_14", "stage1_count": 1, "stage2_count": 14},
-      {"case_id": "shield100_rings5_11_grid040", "stage1_count": 5, "stage2_count": 11, "reflectron_cell_axial_mm": 0.4},
-      {"case_id": "shield100_rings5_12_grid040", "stage1_count": 5, "stage2_count": 12, "reflectron_cell_axial_mm": 0.4},
-      {"case_id": "shield100_rings5_13_grid040", "stage1_count": 5, "stage2_count": 13, "reflectron_cell_axial_mm": 0.4},
-      {"case_id": "shield100_rings5_14_grid040", "stage1_count": 5, "stage2_count": 14, "reflectron_cell_axial_mm": 0.4},
-      {"case_id": "shield100_rings5_15_grid040", "stage1_count": 5, "stage2_count": 15, "reflectron_cell_axial_mm": 0.4},
-      {"case_id": "shield100_rings3_15_grid010", "stage1_count": 3, "stage2_count": 15, "reflectron_cell_axial_mm": 0.1},
-      {"case_id": "shield100_rings4_15_grid010", "stage1_count": 4, "stage2_count": 15, "reflectron_cell_axial_mm": 0.1},
-      {"case_id": "shield100_rings5_15_grid010", "stage1_count": 5, "stage2_count": 15, "reflectron_cell_axial_mm": 0.1},
-      {"case_id": "shield100_rings6_15_grid010", "stage1_count": 6, "stage2_count": 15, "reflectron_cell_axial_mm": 0.1},
-      {"case_id": "shield100_rings7_15_grid010", "stage1_count": 7, "stage2_count": 15, "reflectron_cell_axial_mm": 0.1},
-      {"case_id": "shield100_rings8_15_grid010", "stage1_count": 8, "stage2_count": 15, "reflectron_cell_axial_mm": 0.1}
-      ,{"case_id": "shield100_rings8_15_t2_grid010", "stage1_count": 8, "stage2_count": 15, "ring_thickness_mm": 2.0, "reflectron_cell_axial_mm": 0.1}
-      ,{"case_id": "shield100_rings8_15_t2_grid005", "stage1_count": 8, "stage2_count": 15, "ring_thickness_mm": 2.0, "reflectron_cell_axial_mm": 0.05}
-      ,{"case_id": "shield100_rings8_15_t3_grid010", "stage1_count": 8, "stage2_count": 15, "ring_thickness_mm": 3.0, "reflectron_cell_axial_mm": 0.1}
-      ,{"case_id": "shield100_rings8_15_t4_grid010", "stage1_count": 8, "stage2_count": 15, "ring_thickness_mm": 4.0, "reflectron_cell_axial_mm": 0.1}
-      ,{"case_id": "shield100_rings8_15_outer050_grid010", "stage1_count": 8, "stage2_count": 15, "ring_outer_radius_mm": 50.0, "reflectron_cell_axial_mm": 0.1}
-      ,{"case_id": "shield100_rings8_15_outer060_grid010", "stage1_count": 8, "stage2_count": 15, "ring_outer_radius_mm": 60.0, "reflectron_cell_axial_mm": 0.1}
-      ,{"case_id": "shield100_rings8_15_outer080_grid010", "stage1_count": 8, "stage2_count": 15, "ring_outer_radius_mm": 80.0, "reflectron_cell_axial_mm": 0.1}
-      ,{"case_id": "shield100_rings8_15_outer090_grid010", "stage1_count": 8, "stage2_count": 15, "ring_outer_radius_mm": 90.0, "reflectron_cell_axial_mm": 0.1}
+      {
+        "case_id": "shield100_rings8_7",
+        "stage1_count": 8,
+        "stage2_count": 7
+      },
+      {
+        "case_id": "shield100_rings7_8",
+        "stage1_count": 7,
+        "stage2_count": 8
+      },
+      {
+        "case_id": "shield100_rings6_9",
+        "stage1_count": 6,
+        "stage2_count": 9
+      },
+      {
+        "case_id": "shield100_rings5_10",
+        "stage1_count": 5,
+        "stage2_count": 10
+      },
+      {
+        "case_id": "shield100_rings5_10_grid040",
+        "stage1_count": 5,
+        "stage2_count": 10,
+        "reflectron_cell_axial_mm": 0.4
+      },
+      {
+        "case_id": "shield100_rings4_11",
+        "stage1_count": 4,
+        "stage2_count": 11
+      },
+      {
+        "case_id": "shield100_rings3_12",
+        "stage1_count": 3,
+        "stage2_count": 12
+      },
+      {
+        "case_id": "shield100_rings2_13",
+        "stage1_count": 2,
+        "stage2_count": 13
+      },
+      {
+        "case_id": "shield100_rings1_14",
+        "stage1_count": 1,
+        "stage2_count": 14
+      },
+      {
+        "case_id": "shield100_rings5_11_grid040",
+        "stage1_count": 5,
+        "stage2_count": 11,
+        "reflectron_cell_axial_mm": 0.4
+      },
+      {
+        "case_id": "shield100_rings5_12_grid040",
+        "stage1_count": 5,
+        "stage2_count": 12,
+        "reflectron_cell_axial_mm": 0.4
+      },
+      {
+        "case_id": "shield100_rings5_13_grid040",
+        "stage1_count": 5,
+        "stage2_count": 13,
+        "reflectron_cell_axial_mm": 0.4
+      },
+      {
+        "case_id": "shield100_rings5_14_grid040",
+        "stage1_count": 5,
+        "stage2_count": 14,
+        "reflectron_cell_axial_mm": 0.4
+      },
+      {
+        "case_id": "shield100_rings5_15_grid040",
+        "stage1_count": 5,
+        "stage2_count": 15,
+        "reflectron_cell_axial_mm": 0.4
+      },
+      {
+        "case_id": "shield100_rings3_15_grid010",
+        "stage1_count": 3,
+        "stage2_count": 15,
+        "reflectron_cell_axial_mm": 0.1
+      },
+      {
+        "case_id": "shield100_rings4_15_grid010",
+        "stage1_count": 4,
+        "stage2_count": 15,
+        "reflectron_cell_axial_mm": 0.1
+      },
+      {
+        "case_id": "shield100_rings5_15_grid010",
+        "stage1_count": 5,
+        "stage2_count": 15,
+        "reflectron_cell_axial_mm": 0.1
+      },
+      {
+        "case_id": "shield100_rings6_15_grid010",
+        "stage1_count": 6,
+        "stage2_count": 15,
+        "reflectron_cell_axial_mm": 0.1
+      },
+      {
+        "case_id": "shield100_rings7_15_grid010",
+        "stage1_count": 7,
+        "stage2_count": 15,
+        "reflectron_cell_axial_mm": 0.1
+      },
+      {
+        "case_id": "shield100_rings8_15_grid010",
+        "stage1_count": 8,
+        "stage2_count": 15,
+        "reflectron_cell_axial_mm": 0.1
+      },
+      {
+        "case_id": "shield100_rings8_15_t2_grid010",
+        "stage1_count": 8,
+        "stage2_count": 15,
+        "ring_thickness_mm": 2.0,
+        "reflectron_cell_axial_mm": 0.1
+      },
+      {
+        "case_id": "shield100_rings8_15_t2_grid005",
+        "stage1_count": 8,
+        "stage2_count": 15,
+        "ring_thickness_mm": 2.0,
+        "reflectron_cell_axial_mm": 0.05
+      },
+      {
+        "case_id": "shield100_rings8_15_t3_grid010",
+        "stage1_count": 8,
+        "stage2_count": 15,
+        "ring_thickness_mm": 3.0,
+        "reflectron_cell_axial_mm": 0.1
+      },
+      {
+        "case_id": "shield100_rings8_15_t4_grid010",
+        "stage1_count": 8,
+        "stage2_count": 15,
+        "ring_thickness_mm": 4.0,
+        "reflectron_cell_axial_mm": 0.1
+      },
+      {
+        "case_id": "shield100_rings8_15_outer050_grid010",
+        "stage1_count": 8,
+        "stage2_count": 15,
+        "ring_outer_radius_mm": 50.0,
+        "reflectron_cell_axial_mm": 0.1
+      },
+      {
+        "case_id": "shield100_rings8_15_outer060_grid010",
+        "stage1_count": 8,
+        "stage2_count": 15,
+        "ring_outer_radius_mm": 60.0,
+        "reflectron_cell_axial_mm": 0.1
+      },
+      {
+        "case_id": "shield100_rings8_15_outer080_grid010",
+        "stage1_count": 8,
+        "stage2_count": 15,
+        "ring_outer_radius_mm": 80.0,
+        "reflectron_cell_axial_mm": 0.1
+      },
+      {
+        "case_id": "shield100_rings8_15_outer090_grid010",
+        "stage1_count": 8,
+        "stage2_count": 15,
+        "ring_outer_radius_mm": 90.0,
+        "reflectron_cell_axial_mm": 0.1
+      }
     ]
   }
 }

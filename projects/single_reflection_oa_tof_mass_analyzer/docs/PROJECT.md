@@ -109,8 +109,11 @@ Candidate唯一公开入口为`../workflows/design_candidate/run_candidate.py`�
 
 - COMSOL 6.4当前模型在极小求解粒子数路径存在非单调原生不稳定；日常使用N=100，逻辑小样本仅在
   无粒子间耦合时由同源N=100承载后分析前缀。该绕行不属于开放调查。
-- SIMION透明栅网以`0.0001 mm`数值距离越过一格厚数值层。现有传输与资产门禁接受该实现；只有要求
-  更严格逐粒子闭合、PA/栅网改变后出现相位敏感，或误splat时才重启自适应越层研究。
+- SIMION四个理想透明栅统一使用官方零grid-unit厚度的一行raw-PA电极点并由引擎原生穿越；任何Program
+  epsilon越层、粒子位移或TOF补偿均被静态门禁禁止。Candidate SIMION门禁保存raw-PA行数与冻结单粒子
+  `1/1/2/2`穿越receipt；真实丝网必须使用独立物理profile。Candidate run
+  `20260813_160656__gate__simion__native-ideal-grid__smoke`已以SIMION 2020真实构建和飞行闭合该门禁：
+  grid1/grid2/entgrid/midgrid分别仅占raw row `260/596/0/480`，冻结单粒子原生穿越`1/1/2/2`并命中探测器。
 - 当前许可证不能使用SIMION 2026 `.wgem`，Candidate使用已验收的SIMION 2020 legacy-GEM四槽模板；
   许可证升级并完成隔离GUI/结构复验前不迁移路线。
 
@@ -125,7 +128,6 @@ Candidate唯一公开入口为`../workflows/design_candidate/run_candidate.py`�
    检查点、相空间、TOF和场诊断；为保留能力建立单一版本化能力目录、固定输入/输出角色和统一分析
    run生命周期，未入目录的实现须归类为测试、迁移历史或删除候选。关闭条件是活动入口不再各自维护
    重叠绘图代码，campaign只声明能力ID和受控参数，且现有Formal/Candidate证据不被重写。
-
 开放任务只写未完成动作和关闭条件。已完成的Candidate bootstrap、路径修复、receipt治理、历史失败
 run和非零变量复验全部冻结在同日PROJECT history快照。
 

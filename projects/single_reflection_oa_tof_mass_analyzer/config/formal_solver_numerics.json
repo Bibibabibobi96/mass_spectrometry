@@ -23,8 +23,7 @@
   },
   "simion": {
     "trajectory_quality": 8,
-    "accelerator_grid_epsilon_mm": 0.0001,
-    "reflectron_grid_epsilon_mm": 0.0001,
+    "ideal_grid_model": "simion_one_row_zero_width_native_transmission",
     "program_required": true,
     "trajectory_log_default_enabled": false,
     "geometry_build": {

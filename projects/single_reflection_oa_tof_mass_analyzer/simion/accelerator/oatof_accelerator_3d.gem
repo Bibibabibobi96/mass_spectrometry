@@ -48,11 +48,12 @@
 # local ny = nx
 # local nz = math.floor(z_span/mmgu_z + 0.5) + 1
 
-; Fractional surfaces locate the numerical electrode interface at the actual
-; physical plane. This is required before the ideal-grid particle jump can use
-; a sub-grid numerical buffer without treating 0.5 mm as physical thickness.
+; The entire PA uses SIMION's default surface=none semantics, matching the
+; bundled ideal-grid example. Every zero-width grid is raw-node aligned and is
+; audited after GEM compilation. A future real wire mesh requires a separate
+; geometry/profile and must not reuse this path.
 pa_define($(nx), $(ny), $(nz), planar,none,electrostatic,,
-          $(mmgu_xy),$(mmgu_xy),$(mmgu_z), surface=fractional)
+          $(mmgu_xy),$(mmgu_xy),$(mmgu_z), surface=none)
 
 locate($(cx),$(cy),$(cz)) {
   ; GEM coordinates are millimetres; pa_define converts them to grid units.
@@ -75,8 +76,9 @@ locate($(cx),$(cy),$(cz)) {
   ; Repeller and grid1 share the charged-electrode outer width.
   e(1) { fill { within { centered_box3D(0,0,$(-repeller_thickness/2), $(electrode_width),$(electrode_width),$(repeller_thickness)) } } }
 
-  ; SIMION one-grid-point electrode sheets: fields see the grids, ions pass through.
-  e(2) { fill { within { centered_box3D(0,0,$(stage1_length), $(electrode_width),$(electrode_width),$(mmgu_z)) } } }
+  ; Project 3D expression of SIMION's documented equal-endpoint, grid-aligned
+  ; zero-width grid semantics. The builder must prove its raw-PA row and points.
+  e(2) { fill { within { box3D($(-electrode_width/2),$(-electrode_width/2),$(stage1_length),$(electrode_width/2),$(electrode_width/2),$(stage1_length)) } } }
 
   ; Square extraction rings are generated from count, stage length and common thickness.
 # for ring_index=1,ring_count do
@@ -85,5 +87,5 @@ locate($(cx),$(cy),$(cz)) {
 
   ; Second ideal grid at local z=stage1_length+stage2_length.
   ; Grounded exit grid covers the derived shield opening.
-  e($(3+ring_count)) { fill { within { centered_box3D(0,0,$(stage1_length+stage2_length), $(shield_inner_width),$(shield_inner_width),$(mmgu_z)) } } }
+  e($(3+ring_count)) { fill { within { box3D($(-shield_inner_width/2),$(-shield_inner_width/2),$(stage1_length+stage2_length),$(shield_inner_width/2),$(shield_inner_width/2),$(stage1_length+stage2_length)) } } }
 }

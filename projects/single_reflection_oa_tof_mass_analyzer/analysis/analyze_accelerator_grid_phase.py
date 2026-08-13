@@ -140,7 +140,7 @@ def main() -> int:
             "expanded_domain_margin_back_front_mm": [0.2, 0.2],
             "grid_phases_mm": [0.0, 0.0125, 0.025, 0.0375],
             "fixed_particles": 100,
-            "ideal_grid_epsilon_mm": float(manifest["ideal_grid_epsilon_mm"]),
+            "ideal_grid_model": str(manifest["ideal_grid_model"]),
             "mechanical_geometry_changed": False,
             "independent_variable": "accelerator geometry phase relative to a fixed SIMION axial grid",
         },
@@ -174,8 +174,8 @@ def main() -> int:
         reference_span = float(reference_aggregate["phase_mean_tof_span_ns"])
         result["robustness_vs_reference"] = {
             "reference_path": str(args.robustness_reference.resolve()),
-            "reference_ideal_grid_epsilon_mm": float(
-                reference_result["design"]["ideal_grid_epsilon_mm"]
+            "reference_ideal_grid_model": str(
+                reference_result["design"]["ideal_grid_model"]
             ),
             "mean_tof_span_absolute_difference_ns": abs(
                 phase_tof_span_ns - reference_span
@@ -188,8 +188,8 @@ def main() -> int:
             ),
             "current_phase_fwhm_span_pct": phase_fwhm_span_pct,
             "interpretation": (
-                "Mean-TOF phase sensitivity is robust across grid-jump buffers; "
-                "direct FWHM remains buffer-sensitive."
+                "Mean-TOF phase sensitivity is compared only with a supplied "
+                "native one-row ideal-grid reference."
             ),
         }
 
@@ -232,7 +232,7 @@ def main() -> int:
         axis.grid(alpha=0.3)
     fig.suptitle(
         "SIMION accelerator grid-phase diagnostic: "
-        f"dz=0.05 mm, margins=0.2 mm, grid jump={manifest['ideal_grid_epsilon_mm']:.3f} mm"
+        f"dz=0.05 mm, margins=0.2 mm, grid={manifest['ideal_grid_model']}"
     )
     fig.savefig(args.output / "accelerator_grid_phase_diagnostics.png", dpi=180)
     plt.close(fig)

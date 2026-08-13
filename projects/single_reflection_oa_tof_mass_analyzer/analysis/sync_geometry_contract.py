@@ -9,6 +9,7 @@ the same contract and committed. ``--check`` is the stale-file gate and
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import re
@@ -22,6 +23,11 @@ CONTRACT_PATH = PROJECT_ROOT / "config" / "baseline.json"
 RESOLVED_LUA_PATH = PROJECT_ROOT / "simion" / "workbench" / "formal" / "oatof_resolved.lua"
 PROGRAM_PATH = PROJECT_ROOT / "simion" / "workbench" / "formal" / "oatof_ideal_grounded.lua"
 FLY2_PATH = PROJECT_ROOT / "simion" / "workbench" / "formal" / "oatof_ideal_grounded.fly2"
+NUMERICS_PATH = PROJECT_ROOT / "config" / "formal_solver_numerics.json"
+NUMERICS_AUTHORITY_DOCUMENTS = (
+    PROJECT_ROOT / "config" / "experiment_campaign.json",
+    PROJECT_ROOT / "config" / "radial_compaction_campaign.json",
+)
 BEGIN = "-- BEGIN GENERATED BASELINE ADJUSTABLES"
 END = "-- END GENERATED BASELINE ADJUSTABLES"
 
@@ -140,9 +146,6 @@ def generated_adjustables(contract: dict) -> str:
         ("V_grid1", voltage["grid1"]),
         ("V_mid", voltage["midgrid"]),
         ("V_backplate", voltage["backplate"]),
-        ("ideal_grid_epsilon_mm", min(runtime["accelerator_grid_epsilon_mm"], runtime["reflectron_grid_epsilon_mm"])),
-        ("accelerator_grid_epsilon_mm", runtime["accelerator_grid_epsilon_mm"]),
-        ("reflectron_grid_epsilon_mm", runtime["reflectron_grid_epsilon_mm"]),
         ("accelerator_fast_adjust_enable", 1),
         ("ideal_accel_enable", 0),
         ("ideal_refl_stage1_enable", 0),
@@ -214,6 +217,20 @@ def render_program(contract: dict) -> str:
     if not pattern.search(source):
         raise ValueError(f"generated markers are missing from {PROGRAM_PATH}")
     return pattern.sub(block, source, count=1)
+
+
+def render_numerics_authority_document(path: Path) -> str:
+    source = path.read_text(encoding="utf-8")
+    document = json.loads(source)
+    authority = document["authorities"]["solver_numerics"]
+    if authority.get("path") != "config/formal_solver_numerics.json":
+        raise ValueError(f"unexpected solver-numerics authority path in {path}")
+    old_sha = authority["sha256"]
+    new_sha = hashlib.sha256(NUMERICS_PATH.read_bytes()).hexdigest().upper()
+    marker = f'"sha256": "{old_sha}"'
+    if source.count(marker) != 1:
+        raise ValueError(f"solver-numerics SHA marker is not unique in {path}")
+    return source.replace(marker, f'"sha256": "{new_sha}"', 1)
 
 
 def frozen_fly2_seed(path: Path = FLY2_PATH) -> int:
@@ -297,6 +314,10 @@ def main() -> None:
             (RESOLVED_LUA_PATH, render_resolved_lua(contract)),
             (PROGRAM_PATH, render_program(contract)),
             (FLY2_PATH, render_fly2(contract, particle_source_seed=source_seed)),
+            *(
+                (path, render_numerics_authority_document(path))
+                for path in NUMERICS_AUTHORITY_DOCUMENTS
+            ),
         )
         if update(path, content, args.write)
     ]

@@ -8,7 +8,7 @@ return {
     mode="config/modes/formal.json",
     mode_sha256="40842C72515AB70AC0C848AA87CACEB91FBB437E4EAEB7F92FBDBAA47DC88446",
     solver_numerics="config/formal_solver_numerics.json",
-    solver_numerics_sha256="C5AC206901B4D9E4EB7E3A3923060AF6B332FC43A2BAC8C65CFD75FBDE54A1FB"
+    solver_numerics_sha256="408797DA7470A9713B8C248583C4E46AABE96D7A894BE163C71968F6E2753B7A"
   },
   coordinate_convention={
     frame_id="oatof_global",
@@ -137,8 +137,7 @@ return {
   },
   simion_runtime={
     trajectory_quality=8,
-    accelerator_grid_epsilon_mm=0.0001,
-    reflectron_grid_epsilon_mm=0.0001,
+    ideal_grid_model="simion_one_row_zero_width_native_transmission",
     program_required=true,
     trajectory_log_default_enabled=false,
     geometry_build={

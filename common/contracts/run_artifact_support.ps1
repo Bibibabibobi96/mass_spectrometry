@@ -273,6 +273,9 @@ function Complete-FailedRun {
     [Parameter(Mandatory)][string[]]$Software,
     [ValidateSet('failed','interrupted')][string]$Status='failed',
     [string]$FailureClass='',
+    [int]$SummarySchemaVersion=1,
+    [string]$FailureStage='',
+    [Nullable[bool]]$ThresholdResultEligible=$null,
     [string[]]$AdditionalOutputs=@(),
     [string]$ResourceUsagePath=''
   )
@@ -286,10 +289,16 @@ function Complete-FailedRun {
   }}
   Write-RunJson -Path $RunConfig -Value $document
   $summaryDocument=[ordered]@{
-    schema_version=1;role=$SummaryRole;status=$Status;reason=$Reason
+    schema_version=$SummarySchemaVersion;role=$SummaryRole;status=$Status;reason=$Reason
   }
   if(-not[string]::IsNullOrWhiteSpace($FailureClass)){
     $summaryDocument.failure_class=$FailureClass
+  }
+  if(-not[string]::IsNullOrWhiteSpace($FailureStage)){
+    $summaryDocument.failure_stage=$FailureStage
+  }
+  if($null-ne$ThresholdResultEligible){
+    $summaryDocument.threshold_result_eligible=[bool]$ThresholdResultEligible
   }
   Write-RunJson -Path $Summary -Value $summaryDocument
   $retentionActions=$null
