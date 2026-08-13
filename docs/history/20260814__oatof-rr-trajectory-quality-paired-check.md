@@ -1,4 +1,4 @@
-# oaTOF真实反射器轨迹质量配对检查准备（2026-08-14）
+# oaTOF真实反射器轨迹质量配对检查（2026-08-14）
 
 > `DOC_STATUS: ARCHIVED_READ_ONLY`
 
@@ -42,7 +42,7 @@ checkpoint闭合。机器数值权威不是`resolved_geometry`内继承的几何
 `tqual_108=108`配置和stdout中的`TRACE ... trajectory_quality=108`；派生receipt显式记录上述路径与SHA。
 
 manifest-bound配对结果位于
-`C:\Users\Liao\mass_spectrometry\artifacts\projects\rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer\runs\20260814_030000__analysis__python__rr-tqual8-vs108-paired-n100__r02`。
+`C:\Users\Liao\mass_spectrometry\artifacts\projects\rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer\runs\20260814_030000__analysis__python__rr-tqual8-vs108-paired-n100__r03`。
 q8探测器时钟采用canonical receipt导出的`rr_canonical_checkpoints.csv`（SHA-256
 `FCB931C9E67C268CBA038CAE9D37D057FD593108949FD7317EBF8A654D233612`），避免旧detector-blind
 reanalysis的非canonical探测器绝对钟。

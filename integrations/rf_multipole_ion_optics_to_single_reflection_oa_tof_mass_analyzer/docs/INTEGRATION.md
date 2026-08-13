@@ -243,6 +243,7 @@ A/B中，局部细PA把焦面时间σ从4.431降至1.472 ns，焦面z斜率从+6
 - [Formal场归因](../../../docs/history/20260811__oatof-resolution-formal-field-attribution.md)
 - [有限区间、理想场与局部PA里程碑](../../../docs/history/20260812__oatof-finite-interval-focus-diagnostics.md)
 - [RR轨迹质量q8/q108配对检查准备](../../../docs/history/20260814__oatof-rr-trajectory-quality-paired-check.md)
+- [原生栅网、源/场、数值与短长焦全过程](../../../docs/history/20260814__oatof-native-grid-field-source-focus-investigation.md)
 
 ## 开放任务
 
