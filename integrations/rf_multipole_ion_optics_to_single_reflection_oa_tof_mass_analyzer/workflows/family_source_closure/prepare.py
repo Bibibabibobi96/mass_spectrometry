@@ -486,6 +486,16 @@ def prepare_family_source_closure(
         if len(matches) != 1:
             raise ContractError("oaTOF numerical profile must resolve exactly once")
         oatof_numerical_profile = matches[0]
+    trajectory_quality_profile_id = experiment.get(
+        "single_flight_trajectory_quality_profile_id"
+    )
+    if trajectory_quality_profile_id is not None:
+        matches = [
+            item for item in single_flight_configuration["trajectory_quality_profiles"]
+            if item["profile_id"] == trajectory_quality_profile_id
+        ]
+        if len(matches) != 1:
+            raise ContractError("trajectory-quality profile must resolve exactly once")
     spatial_window_profile_id = experiment.get(
         "single_flight_spatial_window_profile_id"
     )
@@ -906,6 +916,8 @@ def prepare_family_source_closure(
         if pulse_contract is not None else
         int(single_flight_source["particle_count"])
         if single_flight_source is not None
+        else int(pre_pulse_source_state["particle_count"])
+        if pre_pulse_source_state is not None
         else evidence["launched_particle_count"]
         if execution_strategy == "simion_single_flight"
         else evidence["particle_count"]
@@ -927,6 +939,47 @@ def prepare_family_source_closure(
         "stage_limits": policy["stage_limits"],
         "budget_exhaustion_result": policy["budget_exhaustion_result"],
     }
+    if frontend_grid_profile_id is not None and grid_profiles[0].get(
+        "accelerator_overlay"
+    ):
+        estimate = grid_profiles[0]["accelerator_overlay"].get(
+            "transient_disk_estimate"
+        )
+        if estimate is not None:
+            dimensions = estimate["overlay_grid_dimensions"]
+            grid_points = (
+                int(dimensions["nx"])
+                * int(dimensions["ny"])
+                * int(dimensions["nz"])
+            )
+            pa_family_bytes = (
+                grid_points
+                * int(estimate["bytes_per_grid_point"])
+                * int(estimate["overlay_pa_family_file_count"])
+            )
+            transient_bytes = round(
+                (
+                    pa_family_bytes
+                    + int(estimate["coarse_frontend_and_iob_bytes"])
+                )
+                * float(estimate["headroom_factor"])
+            )
+            resolved_budget["stage_limits"]["single_flight_transport"][
+                "transient_run_directory_bytes"
+            ] = max(
+                transient_bytes,
+                int(
+                    resolved_budget["stage_limits"]["single_flight_transport"][
+                        "transient_run_directory_bytes"
+                    ]
+                ),
+            )
+            resolved_budget["transient_disk_estimate"] = {
+                "profile_id": frontend_grid_profile_id,
+                "formula": "ceil((grid_points*bytes_per_grid_point*pa_family_file_count+coarse_frontend_and_iob_bytes)*headroom_factor)",
+                "grid_points": grid_points,
+                "estimated_bytes": transient_bytes,
+            }
     resolved_budget_path = plan_output.with_name("resolved_engineering_budget.json")
     resolved_budget_path.write_text(
         json.dumps(resolved_budget, indent=2) + "\n", encoding="utf-8"
@@ -1044,6 +1097,9 @@ def prepare_family_source_closure(
             ]) + ([] if "single_flight_oatof_numerical_profile_id" not in experiment else [
                 "single_flight_oatof_numerical_profile_id="
                 + experiment["single_flight_oatof_numerical_profile_id"],
+            ]) + ([] if "single_flight_trajectory_quality_profile_id" not in experiment else [
+                "single_flight_trajectory_quality_profile_id="
+                + experiment["single_flight_trajectory_quality_profile_id"],
             ]) + ([] if "single_flight_spatial_window_profile_id" not in experiment else [
                 "single_flight_spatial_window_profile_id="
                 + experiment["single_flight_spatial_window_profile_id"],

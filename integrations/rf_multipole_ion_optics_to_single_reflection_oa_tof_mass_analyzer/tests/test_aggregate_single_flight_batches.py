@@ -13,7 +13,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 
 
 class AggregateSingleFlightBatchTests(unittest.TestCase):
-    def test_legacy_absolute_clock_rows_receive_detector_birth_offset(self) -> None:
+    def test_canonical_clock_rows_are_aggregated_without_birth_offset(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             run_roots = []
@@ -33,7 +33,7 @@ class AggregateSingleFlightBatchTests(unittest.TestCase):
                     writer = csv.writer(handle, lineterminator="\n")
                     writer.writerow(["particle_id", "event", "instrument_time_us"])
                     writer.writerow([1, "source_release", birth])
-                    writer.writerow([1, "detector_crossing", 70.4 - birth + index * 1e-6])
+                    writer.writerow([1, "detector_crossing", 70.4 + index * 1e-6])
                 (run / "summary.json").write_text(
                     json.dumps({
                         "status": "success",
@@ -46,6 +46,7 @@ class AggregateSingleFlightBatchTests(unittest.TestCase):
                             "detector_crossing": 1,
                         },
                         "pulse_first_observed_us": 40.0,
+                        "detector_time_basis": "canonical_instrument_time_us",
                         "pulse_capture": {
                             "counts": {
                                 "eligible": 1,
@@ -60,7 +61,7 @@ class AggregateSingleFlightBatchTests(unittest.TestCase):
                     encoding="utf-8",
                 )
                 (run / "run_config.json").write_text(
-                    json.dumps({"parameters": {"clock_basis": "absolute_birth_time"}}),
+                    json.dumps({"parameters": {"clock_basis": "canonical_instrument_time_us"}}),
                     encoding="utf-8",
                 )
                 run_roots.append(run)
@@ -85,7 +86,7 @@ class AggregateSingleFlightBatchTests(unittest.TestCase):
                 root / "summary.json",
             )
         self.assertLess(result["instrument_clock_peak"]["std_tof_ns"], 0.002)
-        self.assertEqual(result["detector_time_basis"], "instrument_time_us")
+        self.assertEqual(result["detector_time_basis"], "canonical_instrument_time_us")
 
 
 if __name__ == "__main__":

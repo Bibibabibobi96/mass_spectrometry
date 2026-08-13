@@ -200,6 +200,19 @@ LiveLink、SIMION Lua/GEM、PowerShell及跨软件数据合同。仓库架构、
 
 ## 3. 单位、坐标与机器合同
 
+### Canonical instrument clock authority
+
+- 每条跨项目事件链必须由`common/contracts/schemas/canonical_clock_authority.schema.json`声明唯一
+  instrument epoch/time权威、显式`us`单位、time basis和权威文件SHA-256；machine contract只声明
+  能力与contract identity，experiment只引用冻结birth authority与pulse-schedule身份，integration
+  receipt只验证一次映射，不得复制时间值成为第二权威。
+- 求解器局部时间必须从`0 us`开始。adapter只允许一次计算
+  `instrument_time_us = authority epoch + solver local elapsed_us`；ION、Lua、CSV等派生表示不得分别设置
+  birth epoch，禁止重复加epoch、按否定字符串猜测basis或缺字段回退默认值。
+- handoff必须原样继承`clock_epoch_id`与`instrument_time_us`。单位、basis、authority SHA缺失、冲突或
+  不明时preflight必须失败关闭。旧relative-time入口只可用于已有历史证据的只读解释，不得成为新run、
+  新campaign或production runner的可选模式。
+
 - 系统边界的数值字段必须在字段名或Schema中显式单位，不得隐式混用mm/m、µs/s、eV/J或Da/kg。
 - 不强制把所有内部量转换为SI。选择能减少转换和数值错误的项目canonical单位，并在边界只转换一次。
 - 坐标合同必须给出frame身份、轴方向、原点、旋转和平移；位置应用旋转和平移，速度只应用旋转，

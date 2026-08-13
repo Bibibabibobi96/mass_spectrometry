@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import tempfile
 import unittest
@@ -71,6 +72,8 @@ class SingleFlightAnalysisTests(unittest.TestCase):
 
     def test_particle_pulse_callbacks_do_not_override_effective_pulse_time(self) -> None:
         text = "\n".join([
+            "TRACE: source_release ion=1 instrument_time_us=0 x_mm=-69 y_mm=0 z_mm=-18.4 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
+            "TRACE: source_release ion=2 instrument_time_us=0 x_mm=-69 y_mm=0 z_mm=-18.3 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
             "TRACE: pre_pulse_state ion=1 instrument_time_us=10 x_mm=-69 y_mm=0 z_mm=-18.4 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
             "TRACE: pre_pulse_state ion=2 instrument_time_us=10 x_mm=-69 y_mm=0 z_mm=-18.3 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
             "TRACE: handoff_pulse_on ion=1 instrument_time_us=10.000001",
@@ -85,7 +88,7 @@ class SingleFlightAnalysisTests(unittest.TestCase):
         self.assertEqual(summary["pulse_effective_time_us"], 10.0)
         self.assertIsNone(summary["pulse_first_observed_us"])
 
-    def test_absolute_clock_adds_birth_time_to_native_detector_time(self) -> None:
+    def test_canonical_clock_does_not_add_birth_time_to_detector_time(self) -> None:
         text = "\n".join([
             "TRACE: source_release ion=1 instrument_time_us=0.25 x_mm=-70 y_mm=0 z_mm=-18 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
             "TRACE: source_release ion=2 instrument_time_us=0.75 x_mm=-70 y_mm=0 z_mm=-18 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
@@ -96,7 +99,7 @@ class SingleFlightAnalysisTests(unittest.TestCase):
             log = Path(directory) / "log.txt"
             log.write_text(text, encoding="utf-8")
             rows, summary = analyze(
-                log, 2, 100.0, clock_basis="absolute_birth_time"
+                log, 2, 100.0
             )
         detector_times = [
             row["instrument_time_us"]
@@ -104,9 +107,8 @@ class SingleFlightAnalysisTests(unittest.TestCase):
             if row["event"] == "detector_crossing"
         ]
         self.assertEqual(detector_times, [70.75, 70.75])
-        self.assertTrue(summary["detector_native_time_offset_applied"])
         self.assertEqual(
-            summary["detector_time_basis"], "instrument_time_us_diagnostic_only"
+            summary["detector_time_basis"], "canonical_instrument_time_us"
         )
 
     def test_five_batch_logs_receive_global_particle_ids(self) -> None:
@@ -130,17 +132,17 @@ class SingleFlightAnalysisTests(unittest.TestCase):
         )
         self.assertEqual(summary["census"]["detector_crossing"], 5)
 
-    def test_absolute_clock_rejects_detector_without_birth_time(self) -> None:
+    def test_rejects_noncanonical_local_elapsed_basis(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             log = Path(directory) / "log.txt"
             log.write_text(
                 "TRACE: detector_crossing ion=1 t=70 x=69 y=0 z=0",
                 encoding="utf-8",
             )
-            with self.assertRaisesRegex(ValueError, "lacks source-release times"):
-                analyze(log, 1, 100.0, clock_basis="absolute_birth_time")
+            with self.assertRaisesRegex(ValueError, "requires canonical instrument time"):
+                analyze(log, 1, 100.0, clock_basis="local_elapsed_us")
 
-    def test_absolute_clock_recovers_release_from_frozen_initial_state(self) -> None:
+    def test_canonical_clock_recovers_release_from_frozen_initial_state(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             log = root / "log.txt"
@@ -160,15 +162,67 @@ class SingleFlightAnalysisTests(unittest.TestCase):
                 log,
                 1,
                 100.0,
-                clock_basis="absolute_birth_time",
                 initial_global_state_path=initial,
             )
         detector = next(row for row in rows if row["event"] == "detector_crossing")
         self.assertEqual(detector["instrument_time_us"], 70.75)
         self.assertEqual(summary["census"]["source_release"], 1)
 
+    def test_prepulse_restart_synthesizes_analysis_only_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = root / "log.txt"
+            initial = root / "initial.csv"
+            log.write_text("", encoding="utf-8")
+            initial.write_text(
+                "particle_id,instrument_time_us,mass_amu,charge_state,"
+                "position_x_mm,position_y_mm,position_z_mm,velocity_x_m_s,"
+                "velocity_y_m_s,velocity_z_m_s,kinetic_energy_eV\n"
+                "1,45.5,100,1,-69,0,-66,4392.842636759329,0,0,10\n",
+                encoding="utf-8",
+            )
+            digest = hashlib.sha256(initial.read_bytes()).hexdigest()
+            rows, summary = analyze(
+                log, 1, 100.0, pulse_time_us=45.5,
+                initial_global_state_path=initial,
+                source_release_mode="pre_pulse_restart",
+                initial_global_state_sha256=digest,
+            )
+        checkpoint = next(row for row in rows if row["event"] == "pre_pulse_state")
+        self.assertEqual(checkpoint["instrument_time_us"], 45.5)
+        self.assertEqual(checkpoint["pulse_effective_elapsed_us"], 0.0)
+        self.assertEqual(
+            checkpoint["checkpoint_provenance"],
+            "pre_pulse_restart_initial_global_state",
+        )
+        self.assertEqual(
+            summary["pre_pulse_state_provenance"],
+            "pre_pulse_restart_initial_global_state",
+        )
+
+    def test_prepulse_restart_rejects_unbound_initial_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = root / "log.txt"
+            initial = root / "initial.csv"
+            log.write_text("", encoding="utf-8")
+            initial.write_text(
+                "particle_id,instrument_time_us,mass_amu,charge_state,"
+                "position_x_mm,position_y_mm,position_z_mm,velocity_x_m_s,"
+                "velocity_y_m_s,velocity_z_m_s,kinetic_energy_eV\n"
+                "1,45.5,100,1,-69,0,-66,4392.842636759329,0,0,10\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "manifest-bound"):
+                analyze(
+                    log, 1, 100.0, pulse_time_us=45.5,
+                    initial_global_state_path=initial,
+                    source_release_mode="pre_pulse_restart",
+                )
+
     def test_classifies_physical_pulse_capture_without_rejecting_losses(self) -> None:
         text = "\n".join([
+            "TRACE: source_release ion=1 instrument_time_us=0 x_mm=-69 y_mm=0 z_mm=-18.4 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
             "TRACE: pre_pulse_state ion=1 instrument_time_us=10 x_mm=-69 y_mm=0 z_mm=-18.4 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
             "TRACE: pre_pulse_state ion=2 instrument_time_us=10 x_mm=-69 y_mm=0 z_mm=-20.0 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
             "TRACE: pre_pulse_state ion=3 instrument_time_us=10 x_mm=-60 y_mm=0 z_mm=-18.4 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
@@ -206,7 +260,7 @@ class SingleFlightAnalysisTests(unittest.TestCase):
         self.assertEqual(classified[2], "upstream_of_repeller")
         self.assertEqual(classified[3], "outside_transverse_bore")
 
-    def test_three_axis_window_reports_a_detector_blind_subpopulation_peak(self) -> None:
+    def test_three_axis_window_reports_only_detector_blind_spatial_metrics(self) -> None:
         lines = []
         positions = [
             (-69.0, 0.0, -18.4),
@@ -215,6 +269,11 @@ class SingleFlightAnalysisTests(unittest.TestCase):
             (-68.4, 0.0, -18.4),
         ]
         for particle_id, (x_mm, y_mm, z_mm) in enumerate(positions, 1):
+            lines.append(
+                f"TRACE: source_release ion={particle_id} instrument_time_us=0 "
+                f"x_mm={x_mm} y_mm={y_mm} z_mm={z_mm} "
+                "vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0"
+            )
             lines.append(
                 f"TRACE: pre_pulse_state ion={particle_id} instrument_time_us=10 "
                 f"x_mm={x_mm} y_mm={y_mm} z_mm={z_mm} "
@@ -268,12 +327,18 @@ class SingleFlightAnalysisTests(unittest.TestCase):
                 eligible_population_count=4,
             )
         window = summary["spatial_window_peak"]
+        self.assertNotIn("pulse_effective_peak", window)
+        self.assertNotIn("bootstrap", window)
+        self.assertNotIn("mass_resolution_ratio_to_full_pulse_eligible", window)
+        self.assertIsNone(summary["pulse_effective_peak"])
+        self.assertIsNone(summary["full_pulse_eligible_bootstrap"])
+        self.assertFalse(
+            summary["detector_clock_diagnostic"]["peak_metrics_computed"]
+        )
         self.assertEqual(window["selected_count"], 3)
-        self.assertEqual(window["detected_count"], 3)
         self.assertEqual(window["pulse_eligible_coverage_fraction"], 0.75)
         self.assertFalse(window["selection_uses_detector_outcome"])
         self.assertEqual(window["axis_semantics"]["acceleration_direction"], "z")
-        self.assertIsNotNone(window["pulse_effective_peak"])
         self.assertEqual(
             summary["source_population"]["efficiency_denominator"],
             "candidate_population_count",
@@ -329,6 +394,11 @@ class SingleFlightAnalysisTests(unittest.TestCase):
         for particle_id, (vx, vy, vz) in enumerate(
             [(0.1, 0.1, 10), (-0.1, 0, 10), (0, -0.1, 10), (0, 0, -10)], 1
         ):
+            lines.append(
+                f"TRACE: source_release ion={particle_id} instrument_time_us=0 "
+                f"x_mm=-69 y_mm=0 z_mm=-18.4 vx_mm_per_us={vx} "
+                f"vy_mm_per_us={vy} vz_mm_per_us={vz}"
+            )
             lines.append(
                 f"TRACE: pre_pulse_state ion={particle_id} instrument_time_us=10 "
                 f"x_mm=-69 y_mm=0 z_mm=-18.4 vx_mm_per_us={vx} "
@@ -394,6 +464,11 @@ class SingleFlightAnalysisTests(unittest.TestCase):
     def test_pulse_effective_peak_and_reflectron_common_cohort(self) -> None:
         lines = ["TRACE: handoff_pulse_on ion=1 instrument_time_us=10"]
         for particle_id in range(1, 5):
+            lines.append(
+                f"TRACE: source_release ion={particle_id} instrument_time_us=0 "
+                "x_mm=0 y_mm=0 z_mm=0 vx_mm_per_us=1 "
+                "vy_mm_per_us=0 vz_mm_per_us=1"
+            )
             times = [20, 30, 40, 50, 60]
             events = [
                 "accelerator_focus_forward", "reflectron_entrance_forward",

@@ -19,6 +19,7 @@ param(
   [double]$ExpectedShieldInnerRadiusMm = 0,
   [string]$FrontendGridProfileId = '',
   [string]$OatofNumericalProfileId = '',
+  [string]$TrajectoryQualityProfileId = '',
   [string]$SpatialWindowProfileId = '',
   [string]$AcceleratorFieldProfileId = '',
   [string]$SourceProfileId = '',
@@ -153,7 +154,7 @@ try {
       [double]$gridProfiles[0].cell_mm_xyz.z -le 0 -or
       [int]$gridProfiles[0].max_parallel_batches -lt 1 -or
       [int]$gridProfiles[0].max_parallel_batches -gt 5 -or
-      [string]$settings.clock_basis -notin @('legacy_relative_time','absolute_birth_time')) {
+    [string]$settings.clock_basis -ne 'canonical_instrument_time_us') {
     throw 'Single-flight numerical configuration is invalid.'
   }
   $frontendCellMmX = [double]$gridProfiles[0].cell_mm_xyz.x
@@ -172,7 +173,7 @@ try {
   if ($overlayEnabled) {
     $overlayProfile = $gridProfiles[0].accelerator_overlay
     if (@($overlayProfile.PSObject.Properties.Name | Where-Object {
-          $_ -notin @('enabled','cell_mm_xyz','boundary_mode')
+          $_ -notin @('enabled','cell_mm_xyz','boundary_mode','transient_disk_estimate')
         }).Count -ne 0 -or
         [string]$overlayProfile.boundary_mode -ne 'coarse_electrode_basis_dirichlet_v1' -or
         $frontendCellMmX -ne $frontendCellMmY -or $frontendCellMmY -ne $frontendCellMmZ) {
@@ -198,6 +199,17 @@ try {
       [double]$oatofNumericalProfiles[0].reflectron_cell_mm.radial -le 0) {
     throw 'Single-flight oaTOF numerical profile is invalid.'
   }
+  $selectedTrajectoryQualityProfileId = if ([string]::IsNullOrWhiteSpace($TrajectoryQualityProfileId)) {
+    'tqual_8'
+  } else { $TrajectoryQualityProfileId }
+  $trajectoryQualityProfiles = @($settings.trajectory_quality_profiles | Where-Object {
+    [string]$_.profile_id -eq $selectedTrajectoryQualityProfileId
+  })
+  if ($trajectoryQualityProfiles.Count -ne 1 -or
+      [int]$trajectoryQualityProfiles[0].trajectory_quality -notin @(8,108)) {
+    throw 'Single-flight trajectory-quality profile is invalid.'
+  }
+  $trajectoryQuality = [int]$trajectoryQualityProfiles[0].trajectory_quality
   $spatialWindowProfiles = @(if ([string]::IsNullOrWhiteSpace($SpatialWindowProfileId)) {
   } else {
     $settings.spatial_window_profiles | Where-Object {
@@ -842,7 +854,7 @@ try {
     'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.build_single_flight_program',
     '--formal',$formalLua,'--pulse-extension',$pulseLua,'--upstream',$upstreamFrozen,
     '--frontend-contract',$frontendContract,'--oatof',$oatofGeometry,
-    '--initial-global-state',$globalSource,'--clock-basis',([string]$settings.clock_basis),
+    '--initial-global-state',$globalSource,
     '--output',$program,'--metadata',$programMetadata)
   if ($SamplingMode -eq 'steady_candidate_pool') { $programArguments += '--terminate-after-pulse' }
   if ($overlayEnabled) { $programArguments += @('--accelerator-overlay-contract',$overlayContract) }
@@ -953,9 +965,9 @@ try {
         arguments = [string[]]@(
           '--default-num-particles',([string][Math]::Max(100,[int]$batch.count)),
           '--nogui','--noprompt','fly',
-          '--trajectory-quality',([string]$settings.trajectory_quality),
+          '--trajectory-quality',([string]$trajectoryQuality),
           '--retain-trajectories','0','--particles',$batch.ion,'--programs','1',
-          '--adjustable',("trajectory_quality={0}" -f $settings.trajectory_quality),
+          '--adjustable',("trajectory_quality={0}" -f $trajectoryQuality),
           '--adjustable','trajectory_log_enable=1',
           '--adjustable',("diagnostic_max_tof_us={0:R}" -f [double]$settings.maximum_time_of_flight_us),
           '--adjustable','handoff_pulse_mode=1',
@@ -1016,6 +1028,8 @@ try {
     '--bootstrap-resamples',([string]$BootstrapResamples),
     '--bootstrap-seed',([string]$BootstrapSeed),
     '--initial-global-state',$globalSource,
+    '--source-release-mode',$SourceReleaseMode,
+    '--initial-global-state-sha256',((Get-FileHash -LiteralPath $globalSource -Algorithm SHA256).Hash),
     '--checkpoints',$checkpoints,'--summary',$package.summary)
   if ($PopulationDenominatorCount -gt 0) {
     $analysisArguments += @(

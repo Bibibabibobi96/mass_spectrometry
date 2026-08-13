@@ -131,10 +131,10 @@ class SingleFlightProgramTests(unittest.TestCase):
             upstream,
             frontend,
             birth_times_us=[0.25, 1.0],
-            clock_basis="absolute_birth_time",
             terminate_after_pulse=True,
         )
         self.assertIn("OATOF_SINGLE_FLIGHT_PARTICLE_ID_OFFSET", extension)
+        self.assertNotIn("OATOF_ACCEL_PLANE_DIAGNOSTIC_PARTICLE_ID", extension)
         self.assertIn(
             "single_flight_birth_time_us[global_particle_id]", extension
         )
@@ -152,7 +152,7 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertIn("adjustable accelerator_ring_cubic_V=0", extension)
         self.assertIn("single_flight_accelerator_ring_voltage(1)", extension)
         self.assertIn("endpoint_zero*(2*fraction-1)", extension)
-        self.assertIn("single_flight_absolute_birth_clock=1", extension)
+        self.assertNotIn("single_flight_absolute_birth_clock", extension)
         self.assertIn("return birth+ion_time_of_flight", extension)
         self.assertNotIn("ion_time_of_flight=birth", extension)
         self.assertIn("math.cos(single_flight_omega*instrument_time_us)", extension)
@@ -169,6 +169,42 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertIn("next_plane=accelerator_grid2_z_mm", extension)
         self.assertIn("ion_charge*96.4853321233*E/ion_mass", extension)
         self.assertIn("ion_time_step=crossing_time", extension)
+        self.assertIn("local single_flight_accel_plane_state={}", extension)
+        self.assertIn("single_flight_accel_state_for_current_particle()", extension)
+        self.assertIn("if state==nil then", extension)
+        self.assertIn("state=initialized", extension)
+        self.assertIn("accelerator plane state is invalid", extension)
+        self.assertNotIn("accelerator plane state is missing", extension)
+        self.assertIn("state[stage]='willhit'", extension)
+        self.assertIn("plane_state[stage]='hitting'", extension)
+        self.assertIn("plane_state[stage]='hitted'", extension)
+        self.assertIn("local crossed=p.z<plane and ion_pz_mm>=plane", extension)
+        self.assertIn("plane_state[stage..'_oa_count']==1", extension)
+        self.assertNotIn("accelerator_plane_tstep_diagnostic", extension)
+        self.assertNotIn("accelerator_plane_other_actions_diagnostic", extension)
+        self.assertIn("local coordinate_tolerance=32*2.2204460492503131e-16", extension)
+        self.assertIn("status=='willhit' and ion_vz_mm>0", extension)
+        self.assertIn("math.abs(distance)<=coordinate_tolerance", extension)
+        self.assertIn("ion_time_step=0", extension)
+        self.assertIn("state[stage]='hitting'", extension)
+        self.assertIn("plane_state[stage]='hitted'", extension)
+        self.assertIn("if not repeated_plane_evaluation then", extension)
+        self.assertNotIn("repeated_plane_evaluation then return", extension)
+        self.assertIn("accelerator plane crossing estimate made no representable time progress", extension)
+        self.assertNotIn("landing did not reach its governed boundary", extension)
+        self.assertIn("ion_pz_mm>=accelerator_repeller_front_z_mm", extension)
+        self.assertNotIn("accelerator_focus_drift_mm then next_plane", extension)
+        self.assertNotIn("ion_pz_mm=next_plane", extension)
+        stage1_gate = (
+            "(sf_ideal_accel_enable~=0 or sf_ideal_accel_stage1_enable~=0) "
+            "and ion_pz_mm>=accelerator_repeller_front_z_mm"
+        )
+        stage2_gate = (
+            "(sf_ideal_accel_enable~=0 or sf_ideal_accel_stage2_enable~=0) "
+            "and ion_pz_mm>=accelerator_grid1_z_mm"
+        )
+        self.assertIn(stage1_gate, extension)
+        self.assertIn(stage2_gate, extension)
 
         _, overlay = compile_accelerator_overlay(
             frontend, cell_mm_xyz={"x": 0.2, "y": 0.2, "z": 0.05}
@@ -177,7 +213,6 @@ class SingleFlightProgramTests(unittest.TestCase):
             upstream,
             frontend,
             birth_times_us=[0.25, 1.0],
-            clock_basis="absolute_birth_time",
             overlay=overlay,
         )
         self.assertIn("local single_flight_overlay_enabled=1", overlay_extension)
@@ -198,9 +233,52 @@ class SingleFlightProgramTests(unittest.TestCase):
             )
             self.assertEqual(load_birth_times(path), [0.25, 1.5])
 
+    def test_delayed_continuous_birth_initializes_plane_state_on_first_tstep(self) -> None:
+        upstream, frontend = _minimal_program_contracts()
+        extension = build_extension(upstream, frontend, birth_times_us=[41.079981])
+        initializer = extension.index(
+            "local function single_flight_accel_state_for_current_particle()"
+        )
+        tstep = extension.index("function segment.tstep_adjust()", initializer)
+        first_tstep_call = extension.index(
+            "local state=single_flight_accel_state_for_current_particle()", tstep
+        )
+        self.assertGreater(first_tstep_call, tstep)
+        self.assertIn(
+            "initialized_time=ion_time_of_flight,initialized_instance=ion_instance",
+            extension,
+        )
+
+    def test_plane_lifecycle_observes_crossing_only_after_completed_step(self) -> None:
+        upstream, frontend = _minimal_program_contracts()
+        extension = build_extension(upstream, frontend, birth_times_us=[41.079981])
+        tstep = extension.index("function segment.tstep_adjust()")
+        other_actions = extension.index("function segment.other_actions()", tstep)
+        request = extension.index("state[stage]='willhit'", tstep, other_actions)
+        observe = extension.index("plane_state[stage]='hitting'", other_actions)
+        finish = extension.index("plane_state[stage]='hitted'", observe)
+        self.assertLess(request, other_actions)
+        self.assertLess(other_actions, observe)
+        self.assertLess(observe, finish)
+        self.assertNotIn("pending_status=='willhit'", extension[tstep:other_actions])
+
+    def test_unrepresentable_spatial_progress_uses_one_zero_step_state_confirmation(self) -> None:
+        upstream, frontend = _minimal_program_contracts()
+        extension = build_extension(upstream, frontend, birth_times_us=[41.081286])
+        tstep = extension.index("function segment.tstep_adjust()")
+        other_actions = extension.index("function segment.other_actions()", tstep)
+        zero_request = extension.index("ion_time_step=0", tstep, other_actions)
+        hitting = extension.index("state[stage]='hitting'", tstep, other_actions)
+        hitted = extension.index("plane_state[stage]='hitted'", other_actions)
+        self.assertLess(hitting, zero_request)
+        self.assertLess(zero_request, other_actions)
+        self.assertLess(other_actions, hitted)
+        self.assertIn("state[stage..'_zero_step_count']==1", extension)
+        self.assertNotIn("ion_pz_mm=next_plane", extension)
+
     def test_reflectron_checkpoints_are_ordered_particle_resolved_states(self) -> None:
         upstream, frontend = _minimal_program_contracts()
-        extension = build_extension(upstream, frontend)
+        extension = build_extension(upstream, frontend, birth_times_us=[0.0])
         checkpoint_events = [
             "reflectron_entrance_forward",
             "reflectron_midgrid_forward",

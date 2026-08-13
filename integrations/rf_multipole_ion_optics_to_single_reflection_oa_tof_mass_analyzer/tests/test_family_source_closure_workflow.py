@@ -57,6 +57,43 @@ def write_json(path: Path, value: object) -> None:
 
 
 class FamilySourceClosureWorkflowTests(unittest.TestCase):
+    def test_native_grid_short_focus_row_rebuilds_current_reflectron(self) -> None:
+        campaign_path = (
+            CONFIG_ROOT / "diagnostics" /
+            "octupole_native_grid_short_focus_r100_n100_campaign.json"
+        )
+        campaign = load(campaign_path)
+        validate_schema(campaign, "rf_multipole_oatof_experiment_campaign.schema.json")
+        row = campaign["experiments"][0]
+        self.assertIn("native-grid diagnostic", campaign["claim_limit"])
+        self.assertNotIn("Candidate claim", campaign["claim_limit"])
+        self.assertEqual(row["single_flight_layout_profile_id"], "theory_source_z10_d1_3")
+        self.assertEqual(row["single_flight_frontend_grid_profile_id"], "frontend_isotropic_020_accelerator_overlay_z005")
+        self.assertEqual(row["single_flight_oatof_numerical_profile_id"], "oatof_reflectron_z010_r100")
+        self.assertEqual(row["source"]["launched_particle_count"], 100)
+        scratch = (
+            REPO_ROOT.parent / "artifacts" / "projects" / INTEGRATION_ID / "scratch"
+        )
+        scratch.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=scratch) as directory:
+            output = Path(directory)
+            prepare_family_source_closure(
+                repo_root=REPO_ROOT,
+                profile_registry_path=PROFILE_REGISTRY,
+                adapter_registry_path=ADAPTER_REGISTRY,
+                campaign_path=campaign_path,
+                experiment_id=row["experiment_id"],
+                resolved_output=output / "resolved.json",
+                plan_output=output / "plan.json",
+            )
+            geometry = load(output / "resolved_oatof_geometry.json")
+        rebuild = geometry["single_flight_layout_derivation"]["design_compilation"][
+            "simion_rebuild_plan"
+        ]
+        self.assertTrue(rebuild["frontend_pa"])
+        self.assertTrue(rebuild["flight_tube_pa"])
+        self.assertTrue(rebuild["reflectron_pa"])
+
     def test_ideal_accelerator_field_is_a_registered_counterfactual(self) -> None:
         campaign = load(IDEAL_FIELD_CAMPAIGN_PATH)
         validate_schema(

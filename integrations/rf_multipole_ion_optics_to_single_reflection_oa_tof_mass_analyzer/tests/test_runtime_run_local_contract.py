@@ -108,6 +108,32 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
             text,
         )
 
+    def test_dz0025_profile_keeps_coarse_grid_isotropic_and_refines_only_z(self) -> None:
+        import json
+
+        settings = json.loads(
+            (INTEGRATION_ROOT / "config" / "simion_single_flight.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        profile = next(
+            item for item in settings["frontend_grid_profiles"]
+            if item["profile_id"] == "frontend_isotropic_020_accelerator_overlay_z0025"
+        )
+        self.assertEqual(profile["cell_mm_xyz"], {"x": 0.2, "y": 0.2, "z": 0.2})
+        self.assertEqual(
+            profile["accelerator_overlay"]["cell_mm_xyz"],
+            {"x": 0.2, "y": 0.2, "z": 0.025},
+        )
+        self.assertEqual(
+            profile["accelerator_overlay"]["boundary_mode"],
+            "coarse_electrode_basis_dirichlet_v1",
+        )
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        self.assertIn("'transient_disk_estimate'", runner)
+        self.assertIn("$frontendCellMmX -ne $frontendCellMmY", runner)
+        self.assertIn("$overlayCellMmX -ne $frontendCellMmX", runner)
+
     def test_resolution_qualification_requires_full_bootstrap(self) -> None:
         text = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
         self.assertIn("[int]$BootstrapResamples = 0", text)

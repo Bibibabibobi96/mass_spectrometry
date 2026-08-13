@@ -45,11 +45,9 @@ def aggregate(
             raise ValueError("batch summary status or count differs")
         summaries.append(summary)
         run_config = _load(run_root / "run_config.json")
-        clock_basis = run_config["parameters"].get(
-            "clock_basis", "legacy_relative_time"
-        )
-        if clock_basis not in {"legacy_relative_time", "absolute_birth_time"}:
-            raise ValueError("batch clock basis differs")
+        clock_basis = run_config["parameters"].get("clock_basis")
+        if clock_basis != "canonical_instrument_time_us":
+            raise ValueError("batch clock basis is not canonical instrument time")
         geometry_hashes.add(file_sha256(run_root / "inputs/oatof_resolved_geometry.json"))
         pulse_times.add(round(float(summary["pulse_first_observed_us"]), 9))
         offset = int(expected["global_particle_id_offset"])
@@ -64,27 +62,8 @@ def aggregate(
                 raise ValueError("batch checkpoint columns differ")
             for row in reader:
                 batch_rows.append(row)
-        if (
-            clock_basis == "absolute_birth_time"
-            and summary.get("detector_time_basis") != "instrument_time_us"
-        ):
-            birth_times = {
-                int(row["particle_id"]): float(row["instrument_time_us"])
-                for row in batch_rows
-                if row["event"] == "source_release"
-            }
-            for row in batch_rows:
-                if row["event"] == "detector_crossing":
-                    particle_id = int(row["particle_id"])
-                    if particle_id not in birth_times:
-                        raise ValueError(
-                            "absolute detector clock correction lacks source release"
-                        )
-                    row["instrument_time_us"] = format(
-                        float(row["instrument_time_us"])
-                        + birth_times[particle_id],
-                        ".17g",
-                    )
+        if summary.get("detector_time_basis") != "canonical_instrument_time_us":
+            raise ValueError("batch checkpoints are not canonical instrument time")
         for row in batch_rows:
             row["particle_id"] = str(int(row["particle_id"]) + offset)
             combined.append(row)
@@ -137,7 +116,7 @@ def aggregate(
             "selection_uses_detector_outcome": False,
         },
         "instrument_clock_peak": peak,
-        "detector_time_basis": "instrument_time_us",
+        "detector_time_basis": "canonical_instrument_time_us",
         "instrument_clock_peak_is_resolution_claim": False,
         "checkpoints_sha256": file_sha256(checkpoints_output),
     }

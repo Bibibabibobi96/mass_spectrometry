@@ -5,12 +5,14 @@ from __future__ import annotations
 import argparse
 from collections.abc import Sequence
 import csv
+import hashlib
 import json
 import re
 from pathlib import Path
 
 import numpy as np
 
+from common.contracts.file_identity import file_sha256
 from common.contracts.particle_physics import kinetic_energy_ev
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.peak_metrics import (
     bootstrap_resolution_distribution,
@@ -34,7 +36,8 @@ PULSE_PATTERN = re.compile(r"TRACE: handoff_pulse_on instrument_time_us=(?P<t>[-
 COLUMNS = [
     "particle_id", "event", "instrument_time_us", "x_mm", "y_mm", "z_mm",
     "vx_mm_per_us", "vy_mm_per_us", "vz_mm_per_us", "kinetic_energy_eV",
-    "pulse_eligibility", "tof_since_pulse_us", "survival_status",
+    "pulse_eligibility", "pulse_effective_elapsed_us", "survival_status",
+    "checkpoint_provenance",
 ]
 
 POST_FOCUS_EVENTS = (
@@ -227,7 +230,7 @@ def analyze(
     mass_amu: float,
     geometry_path: Path | None = None,
     pulse_time_us: float | None = None,
-    clock_basis: str = "legacy_relative_time",
+    clock_basis: str = "canonical_instrument_time_us",
     batch_particle_counts: Sequence[int] | None = None,
     initial_global_state_path: Path | None = None,
     spatial_window_profile: dict[str, object] | None = None,
@@ -235,12 +238,48 @@ def analyze(
     eligible_population_count: int | None = None,
     bootstrap_resamples: int = 0,
     bootstrap_seed: int = 20260812,
+    source_release_mode: str = "continuous_frontend",
+    initial_global_state_sha256: str | None = None,
+    source_run_manifest_path: Path | None = None,
+    post_selection_detector_metrics: bool = False,
 ) -> tuple[list[dict[str, object]], dict[str, object]]:
-    if clock_basis not in {"legacy_relative_time", "absolute_birth_time"}:
-        raise ValueError("unknown single-flight clock basis")
+    if clock_basis != "canonical_instrument_time_us":
+        raise ValueError("new single-flight analysis requires canonical instrument time")
     if bootstrap_resamples < 0:
         raise ValueError("bootstrap resamples must be non-negative")
+    if source_release_mode not in {"continuous_frontend", "pre_pulse_restart"}:
+        raise ValueError("unknown single-flight source release mode")
     log_paths = [log_path] if isinstance(log_path, Path) else list(log_path)
+    reanalysis_provenance = None
+    if source_run_manifest_path is not None:
+        manifest = json.loads(source_run_manifest_path.read_text(encoding="utf-8-sig"))
+        bound_outputs = {
+            str(Path(item["path"]).resolve()): str(item["sha256"]).upper()
+            for item in manifest.get("outputs", [])
+            if item.get("exists") is True and item.get("sha256")
+        }
+        log_records = []
+        for path in log_paths:
+            resolved = str(path.resolve())
+            digest = file_sha256(path)
+            if bound_outputs.get(resolved) != digest:
+                raise ValueError("reanalysis log is not bound by the source run manifest")
+            log_records.append({"path": resolved, "sha256": digest})
+        reanalysis_provenance = {
+            "role": "manifest_bound_single_flight_spatial_reanalysis",
+            "source_run_id": manifest["run_id"],
+            "source_run_status": manifest["status"],
+            "source_run_manifest": {
+                "path": str(source_run_manifest_path.resolve()),
+                "sha256": file_sha256(source_run_manifest_path),
+            },
+            "source_logs": log_records,
+            "analyzer": {
+                "path": str(Path(__file__).resolve()),
+                "sha256": file_sha256(Path(__file__)),
+            },
+            "claim_limit": "detector_blind_spatial_selection_only",
+        }
     if batch_particle_counts is None:
         batch_particle_counts = [launched]
     if (
@@ -312,7 +351,7 @@ def analyze(
                 "vx_mm_per_us": vx, "vy_mm_per_us": vy, "vz_mm_per_us": vz,
                 "kinetic_energy_eV": recomputed_energy,
                 "pulse_eligibility": "",
-                "tof_since_pulse_us": (
+                "pulse_effective_elapsed_us": (
                     float(match["tof_since_pulse"])
                     if match["tof_since_pulse"] is not None else ""
                 ),
@@ -329,23 +368,37 @@ def analyze(
                 raise ValueError(f"duplicate detector crossing: particle={key[0]}")
             seen.add(key)
             rows.append({
-                "particle_id": key[0], "event": key[1], "instrument_time_us": float(match["t"]),
+                "particle_id": key[0], "event": key[1],
+                "solver_local_elapsed_us": float(match["t"]),
+                "instrument_time_us": "",
                 "x_mm": float(match["x"]), "y_mm": float(match["y"]), "z_mm": float(match["z"]),
                 "vx_mm_per_us": "", "vy_mm_per_us": "", "vz_mm_per_us": "",
                 "kinetic_energy_eV": "",
                 "pulse_eligibility": "",
-                "tof_since_pulse_us": "",
+                "pulse_effective_elapsed_us": "",
                 "survival_status": "detected",
             })
             continue
         match = PULSE_PATTERN.search(line)
         if match:
             pulse_times.append(float(match["t"]))
+    pre_pulse_state_provenance = None
     if initial_global_state_path is not None:
+        if source_release_mode == "pre_pulse_restart":
+            if initial_global_state_sha256 is None:
+                raise ValueError("pre-pulse restart analysis requires the manifest-bound initial-state SHA256")
+            actual_sha256 = hashlib.sha256(initial_global_state_path.read_bytes()).hexdigest()
+            if actual_sha256.lower() != initial_global_state_sha256.lower():
+                raise ValueError("initial global state SHA256 differs from the manifest-bound identity")
+            if pulse_time_us is None:
+                raise ValueError("pre-pulse restart analysis requires the effective pulse time")
         with initial_global_state_path.open(encoding="utf-8-sig", newline="") as handle:
-            initial_rows = list(csv.DictReader(handle))
+            reader = csv.DictReader(handle)
+            initial_rows = list(reader)
         if len(initial_rows) != launched:
             raise ValueError("initial global state row count differs from launched particles")
+        if [int(row["particle_id"]) for row in initial_rows] != list(range(1, launched + 1)):
+            raise ValueError("initial global state particle IDs are not contiguous and ordered")
         traced_release_ids = {
             int(row["particle_id"])
             for row in rows
@@ -372,33 +425,27 @@ def analyze(
                     mass_amu, 1000.0 * vx, 1000.0 * vy, 1000.0 * vz
                 ),
                 "pulse_eligibility": "",
-                "tof_since_pulse_us": "",
+                "pulse_effective_elapsed_us": "",
                 "survival_status": "alive",
             })
-    detector_offset_applied = False
-    if clock_basis == "absolute_birth_time":
-        birth_times = {
-            int(row["particle_id"]): float(row["instrument_time_us"])
-            for row in rows
-            if row["event"] == "source_release"
-        }
-        detector_rows = [row for row in rows if row["event"] == "detector_crossing"]
-        missing = sorted(
-            int(row["particle_id"])
-            for row in detector_rows
-            if int(row["particle_id"]) not in birth_times
-        )
-        if missing:
-            raise ValueError(
-                "absolute detector clock correction lacks source-release times: "
-                + ",".join(map(str, missing[:10]))
-            )
-        for row in detector_rows:
-            particle_id = int(row["particle_id"])
-            row["instrument_time_us"] = (
-                float(row["instrument_time_us"]) + birth_times[particle_id]
-            )
-        detector_offset_applied = True
+        if source_release_mode == "pre_pulse_restart":
+            if any(abs(float(row["instrument_time_us"]) - pulse_time_us) > 1e-9 for row in initial_rows):
+                raise ValueError("pre-pulse restart initial-state clock differs from the pulse time")
+            if any(row["event"] == "pre_pulse_state" for row in rows):
+                raise ValueError("pre-pulse restart log already contains pre_pulse_state checkpoints")
+            release_by_id = {
+                int(row["particle_id"]): row
+                for row in rows if row["event"] == "source_release"
+            }
+            for particle_id in range(1, launched + 1):
+                state = release_by_id[particle_id]
+                rows.append({
+                    **state,
+                    "event": "pre_pulse_state",
+                    "pulse_effective_elapsed_us": 0.0,
+                    "checkpoint_provenance": "pre_pulse_restart_initial_global_state",
+                })
+            pre_pulse_state_provenance = "pre_pulse_restart_initial_global_state"
     rows.sort(key=lambda row: (int(row["particle_id"]), str(row["event"])))
     _validate_reflectron_event_order(rows)
     counts = {event: sum(row["event"] == event for row in rows) for event in (
@@ -411,13 +458,24 @@ def analyze(
         raise ValueError("logged particle identity is outside the launched mother sample")
     effective_pulse_time_us = _resolve_pulse_time_us(pulse_time_us, pulse_times)
     detector_rows = [row for row in rows if row["event"] == "detector_crossing"]
+    birth_times = {
+        int(row["particle_id"]): float(row["instrument_time_us"])
+        for row in rows if row["event"] == "source_release"
+    }
+    for row in detector_rows:
+        particle_id = int(row["particle_id"])
+        if particle_id not in birth_times:
+            raise ValueError("detector canonical clock lacks source birth authority")
+        row["instrument_time_us"] = (
+            birth_times[particle_id] + float(row.pop("solver_local_elapsed_us"))
+        )
     for row in rows:
         if effective_pulse_time_us is not None:
             computed = float(row["instrument_time_us"]) - effective_pulse_time_us
-            reported = row["tof_since_pulse_us"]
+            reported = row["pulse_effective_elapsed_us"]
             if reported != "" and abs(float(reported) - computed) > 1e-8:
                 raise ValueError("logged pulse-effective checkpoint time is inconsistent")
-            row["tof_since_pulse_us"] = computed
+            row["pulse_effective_elapsed_us"] = computed
     instrument_detector_times = np.asarray(
         [float(row["instrument_time_us"]) for row in detector_rows], dtype=float
     )
@@ -544,11 +602,27 @@ def analyze(
                 width = float(specification["full_width_deg"])
                 unit = "deg"
             else:
-                expected_binding = f"particle_source.center_{axis}_mm"
-                if specification.get("center_binding") != expected_binding:
+                binding = specification.get("center_binding")
+                source_binding = f"particle_source.center_{axis}_mm"
+                accelerator_binding = f"coordinate_convention.accelerator_axis_{axis}"
+                if binding == source_binding:
+                    center = float(geometry["particle_source"][f"center_{axis}_mm"])
+                elif binding == accelerator_binding and axis in {"x", "y"}:
+                    center = float(
+                        geometry["coordinate_convention"].get(
+                            f"accelerator_axis_{axis}", 0.0
+                        )
+                    )
+                else:
                     raise ValueError("spatial-window center binding is invalid")
-                center = float(geometry["particle_source"][f"center_{axis}_mm"])
-                width = float(specification["full_width_mm"])
+                expected_binding = str(binding)
+                width_binding = specification.get("full_width_binding")
+                if width_binding == "geometry_mm.accelerator_bore_diameter":
+                    width = 2.0 * float(geometry["geometry_mm"]["accelerator_bore_half"])
+                elif width_binding is None:
+                    width = float(specification["full_width_mm"])
+                else:
+                    raise ValueError("spatial-window width binding is invalid")
                 unit = "mm"
             if width <= 0:
                 raise ValueError("spatial-window width must be positive")
@@ -565,10 +639,18 @@ def analyze(
             if row["event"] == "pre_pulse_state"
             and row["pulse_eligibility"] == "eligible"
         }
+        population_basis = str(
+            spatial_window_profile.get("population_basis", "pulse_eligible")
+        )
+        if population_basis not in {"pulse_eligible", "all_event_particles"}:
+            raise ValueError("spatial-window population basis is invalid")
         event_rows = [
             row for row in rows
             if row["event"] == event
-            and int(row["particle_id"]) in pulse_eligible_ids
+            and (
+                population_basis == "all_event_particles"
+                or int(row["particle_id"]) in pulse_eligible_ids
+            )
         ]
         selected_ids = {
             int(row["particle_id"])
@@ -595,18 +677,41 @@ def analyze(
         coverage = len(selected_ids) / len(event_rows) if event_rows else None
         if coverage is None or coverage < minimum_coverage:
             raise ValueError("spatial-window pulse-eligible coverage is below its frozen minimum")
-        selected_detector_times = np.asarray([
-            float(row["tof_since_pulse_us"])
-            for row in rows
-            if row["event"] == "detector_crossing"
-            and int(row["particle_id"]) in selected_ids
-        ]) if effective_pulse_time_us is not None else np.asarray([], dtype=float)
-        selected_peak, selected_bootstrap = _peak_summary(
-            selected_detector_times,
-            mass_amu,
-            bootstrap_resamples=bootstrap_resamples,
-            bootstrap_seed=bootstrap_seed,
-        )
+        transverse_axes = [axis for axis in ("x", "y") if axis in bounds]
+        selected_event_rows = [
+            row for row in event_rows if int(row["particle_id"]) in selected_ids
+        ]
+        selection_metrics = None
+        if transverse_axes and selected_event_rows:
+            centroid_terms = []
+            for axis in transverse_axes:
+                bound = bounds[axis]
+                centroid = float(np.mean([
+                    float(row[f"{axis}_mm"]) for row in selected_event_rows
+                ]))
+                half_width = float(bound["full_width_mm"]) / 2.0
+                centroid_terms.append(
+                    ((centroid - float(bound["center_mm"])) / half_width) ** 2
+                )
+            margins = np.asarray([
+                min(
+                    min(
+                        float(row[f"{axis}_mm"]) - float(bounds[axis]["minimum_mm"]),
+                        float(bounds[axis]["maximum_mm"]) - float(row[f"{axis}_mm"]),
+                    ) / (float(bounds[axis]["full_width_mm"]) / 2.0)
+                    for axis in transverse_axes
+                )
+                for row in selected_event_rows
+            ])
+            selection_metrics = {
+                "population_basis": population_basis,
+                "accepted_count": len(selected_ids),
+                "normalized_2d_centroid_distance": float(np.sqrt(sum(centroid_terms))),
+                "minimum_normalized_edge_margin": float(np.min(margins)),
+                "normalized_edge_margin_quantile": 0.05,
+                "quantile_normalized_edge_margin": float(np.quantile(margins, 0.05)),
+                "detector_results_used": False,
+            }
         spatial_window_peak = {
             "profile_id": spatial_window_profile["profile_id"],
             "event": event,
@@ -619,18 +724,14 @@ def analyze(
             "field_error_budget": field_error_budget,
             "minimum_pulse_eligible_coverage": minimum_coverage,
             "event_population_count": len(event_rows),
+            "population_basis": population_basis,
             "selected_count": len(selected_ids),
             "pulse_eligible_coverage_fraction": coverage,
             "selected_fraction_of_event_population": (
                 len(selected_ids) / len(event_rows) if event_rows else None
             ),
-            "detected_count": int(selected_detector_times.size),
-            "conditional_detector_efficiency": (
-                selected_detector_times.size / len(selected_ids) if selected_ids else None
-            ),
-            "pulse_effective_peak": selected_peak,
-            "bootstrap": selected_bootstrap,
             "is_causal_counterfactual": False,
+            "detector_blind_selection_metrics": selection_metrics,
         }
     if population_denominator_count is None:
         population_denominator_count = launched
@@ -663,24 +764,24 @@ def analyze(
         eligible_ids = set(range(1, launched + 1))
     eligible_detector_tof = np.asarray(
         [
-            float(row["tof_since_pulse_us"])
+            float(row["pulse_effective_elapsed_us"])
             for row in detector_rows
             if int(row["particle_id"]) in eligible_ids
         ],
         dtype=float,
     ) if effective_pulse_time_us is not None else np.asarray([], dtype=float)
-    pulse_effective_peak, full_bootstrap = _peak_summary(
-        eligible_detector_tof,
-        mass_amu,
-        bootstrap_resamples=bootstrap_resamples,
-        bootstrap_seed=bootstrap_seed,
+    detector_blind_spatial_selection = (
+        spatial_window_profile is not None and not post_selection_detector_metrics
     )
-    if spatial_window_peak is not None:
-        selected_peak = spatial_window_peak["pulse_effective_peak"]
-        spatial_window_peak["mass_resolution_ratio_to_full_pulse_eligible"] = (
-            None if selected_peak is None or pulse_effective_peak is None else
-            float(selected_peak["mass_resolution"])
-            / float(pulse_effective_peak["mass_resolution"])
+    if detector_blind_spatial_selection:
+        pulse_effective_peak = None
+        full_bootstrap = None
+    else:
+        pulse_effective_peak, full_bootstrap = _peak_summary(
+            eligible_detector_tof,
+            mass_amu,
+            bootstrap_resamples=bootstrap_resamples,
+            bootstrap_seed=bootstrap_seed,
         )
     segment_diagnostics = _segment_diagnostics(rows, eligible_ids)
     detected_eligible_count = len(
@@ -744,8 +845,17 @@ def analyze(
         "resolution_time_basis": "detector_time_minus_pulse_effective_time",
         "pulse_effective_peak": pulse_effective_peak,
         "full_pulse_eligible_bootstrap": full_bootstrap,
-        "detector_time_basis": "instrument_time_us_diagnostic_only",
-        "detector_native_time_offset_applied": detector_offset_applied,
+        "detector_clock_diagnostic": {
+            "basis": "detector_time_minus_pulse_effective_time",
+            "sample_count": int(eligible_detector_tof.size),
+            "nonpositive_count": int(np.count_nonzero(eligible_detector_tof <= 0)),
+            "used_for_spatial_selection": False,
+            "peak_metrics_computed": not detector_blind_spatial_selection,
+        },
+        "reanalysis_provenance": reanalysis_provenance,
+        "detector_time_basis": "canonical_instrument_time_us",
+        "detector_pulse_effective_time_basis": "pulse_effective_elapsed_us",
+        "pre_pulse_state_provenance": pre_pulse_state_provenance,
         "instrument_clock_peak": instrument_clock_peak,
         "instrument_clock_peak_is_resolution_claim": False,
         "injection_energy_validation": injection_energy_validation,
@@ -767,6 +877,14 @@ def main() -> int:
     parser.add_argument("--geometry", type=Path)
     parser.add_argument("--pulse-time-us", type=float)
     parser.add_argument("--initial-global-state", type=Path)
+    parser.add_argument(
+        "--source-release-mode",
+        default="continuous_frontend",
+        choices=("continuous_frontend", "pre_pulse_restart"),
+    )
+    parser.add_argument("--initial-global-state-sha256")
+    parser.add_argument("--source-run-manifest", type=Path)
+    parser.add_argument("--post-selection-detector-metrics", action="store_true")
     parser.add_argument("--configuration", type=Path)
     parser.add_argument("--spatial-window-profile-id")
     parser.add_argument("--population-denominator-count", type=int)
@@ -775,8 +893,8 @@ def main() -> int:
     parser.add_argument("--bootstrap-seed", type=int, default=20260812)
     parser.add_argument(
         "--clock-basis",
-        default="legacy_relative_time",
-        choices=("legacy_relative_time", "absolute_birth_time"),
+        default="canonical_instrument_time_us",
+        choices=("canonical_instrument_time_us",),
     )
     parser.add_argument("--checkpoints", required=True, type=Path)
     parser.add_argument("--summary", required=True, type=Path)
@@ -809,6 +927,10 @@ def main() -> int:
         args.eligible_population_count,
         args.bootstrap_resamples,
         args.bootstrap_seed,
+        args.source_release_mode,
+        args.initial_global_state_sha256,
+        args.source_run_manifest,
+        args.post_selection_detector_metrics,
     )
     args.checkpoints.parent.mkdir(parents=True, exist_ok=True)
     with args.checkpoints.open("w", encoding="utf-8", newline="") as handle:

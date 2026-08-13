@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/canonical_clock_authority.schema.json",
+  "title": "Canonical instrument clock authority",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "role", "clock_epoch_id", "instrument_time_unit",
+    "canonical_time_basis", "authority", "solver_local_time_basis",
+    "adapter_materialization", "handoff_policy", "legacy_new_campaign_allowed"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "canonical_clock_authority"},
+    "clock_epoch_id": {"type": "string", "minLength": 1},
+    "instrument_time_unit": {"const": "us"},
+    "canonical_time_basis": {"const": "instrument_epoch_absolute_time"},
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "field"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9A-F]{64}$"},
+        "field": {"const": "instrument_time_us"}
+      }
+    },
+    "solver_local_time_basis": {"const": "elapsed_time_from_zero_us"},
+    "adapter_materialization": {"const": "instrument_time_us_equals_authority_epoch_plus_solver_elapsed_once"},
+    "handoff_policy": {"const": "preserve_instrument_time_us_and_clock_epoch_id"},
+    "legacy_new_campaign_allowed": {"const": false}
+  }
+}

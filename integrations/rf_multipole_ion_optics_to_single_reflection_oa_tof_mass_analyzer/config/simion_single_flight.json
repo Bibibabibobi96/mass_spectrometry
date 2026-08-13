@@ -1,7 +1,7 @@
 {
   "schema_version": 5,
   "role": "rf_oatof_simion_single_flight_configuration",
-  "clock_basis": "absolute_birth_time",
+  "clock_basis": "canonical_instrument_time_us",
   "batching_policy": {
     "enabled_at_particle_count": 1000,
     "default_batch_count": 5,
@@ -70,6 +70,25 @@
       },
       "max_parallel_batches": 2,
       "role": "accelerator_local_refinement_candidate"
+    },
+    {
+      "profile_id": "frontend_isotropic_020_accelerator_overlay_z0025",
+      "field_overlay_id": "accelerator_overlay_z0025",
+      "cell_mm_xyz": {"x": 0.2, "y": 0.2, "z": 0.2},
+      "accelerator_overlay": {
+        "enabled": true,
+        "cell_mm_xyz": {"x": 0.2, "y": 0.2, "z": 0.025},
+        "boundary_mode": "coarse_electrode_basis_dirichlet_v1",
+        "transient_disk_estimate": {
+          "overlay_grid_dimensions": {"nx": 192, "ny": 193, "nz": 1217},
+          "overlay_pa_family_file_count": 21,
+          "bytes_per_grid_point": 8,
+          "coarse_frontend_and_iob_bytes": 1346547434,
+          "headroom_factor": 1.15
+        }
+      },
+      "max_parallel_batches": 1,
+      "role": "accelerator_local_numerical_convergence"
     }
   ],
   "default_oatof_numerical_profile_id": "oatof_formal_mesh",
@@ -85,7 +104,28 @@
       "role": "same_grid_source_comparison"
     }
   ],
+  "trajectory_quality_profiles": [
+    {"profile_id": "tqual_8", "trajectory_quality": 8, "role": "default"},
+    {"profile_id": "tqual_108", "trajectory_quality": 108, "role": "paired_numerical_diagnostic"}
+  ],
   "spatial_window_profiles": [
+    {
+      "profile_id": "accelerator_xy_open_bore",
+      "event": "pre_pulse_state",
+      "population_basis": "all_event_particles",
+      "axes": {
+        "x": {"center_binding": "coordinate_convention.accelerator_axis_x", "full_width_binding": "geometry_mm.accelerator_bore_diameter"},
+        "y": {"center_binding": "coordinate_convention.accelerator_axis_y", "full_width_binding": "geometry_mm.accelerator_bore_diameter"}
+      },
+      "selection_uses_detector_outcome": false,
+      "field_error_budget": {
+        "derivation": "mechanical_open_accelerator_bore_acceptance",
+        "tof_error_budget_ns": 0.537,
+        "frozen_before_particle_outcomes": true
+      },
+      "minimum_pulse_eligible_coverage": 0.01,
+      "role": "detector_blind_pulse_offset_selection"
+    },
     {
       "profile_id": "ideal_source_box_1mm_xyz",
       "event": "pre_pulse_state",
@@ -141,6 +181,13 @@
       "single_flight_ideal_accel_stage1_enable": 1,
       "single_flight_ideal_accel_stage2_enable": 0,
       "role": "paired_n100_controlled_counterfactual"
+    },
+    {
+      "profile_id": "accelerator_real_stage1_ideal_stage2",
+      "single_flight_ideal_accel_enable": 0,
+      "single_flight_ideal_accel_stage1_enable": 0,
+      "single_flight_ideal_accel_stage2_enable": 1,
+      "role": "paired_n1000_field_region_attribution"
     },
     {
       "profile_id": "accelerator_ideal_stage1_stage2_real_reflectron",

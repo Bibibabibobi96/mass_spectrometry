@@ -252,6 +252,7 @@
         "single_flight_layout_profile_id": {"$ref": "#/$defs/id"},
         "single_flight_frontend_grid_profile_id": {"$ref": "#/$defs/id"},
         "single_flight_oatof_numerical_profile_id": {"$ref": "#/$defs/id"},
+        "single_flight_trajectory_quality_profile_id": {"enum": ["tqual_8", "tqual_108"]},
         "single_flight_spatial_window_profile_id": {"$ref": "#/$defs/id"},
         "single_flight_accelerator_field_profile_id": {"$ref": "#/$defs/id"},
         "architecture_generation_id": {"$ref": "#/$defs/id"},

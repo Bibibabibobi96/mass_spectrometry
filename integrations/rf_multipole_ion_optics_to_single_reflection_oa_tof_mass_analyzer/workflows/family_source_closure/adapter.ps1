@@ -15,6 +15,7 @@ $ErrorActionPreference = 'Stop'
 $workflowRoot = $PSScriptRoot
 $integrationRoot = (Resolve-Path (Join-Path $workflowRoot '..\..')).Path
 $registryPath = Join-Path $integrationRoot 'config\execution_adapter_profiles.json'
+. (Join-Path $integrationRoot 'runtime\runtime_binding.ps1')
 $plan = Get-Content -LiteralPath $CompositionPlan -Raw -Encoding UTF8 |
   ConvertFrom-Json
 $resolved = Get-Content -LiteralPath $ResolvedConnection -Raw -Encoding UTF8 |
@@ -94,6 +95,9 @@ if ($frozenArguments.ContainsKey('single_flight_frontend_grid_profile_id')) {
 if ($frozenArguments.ContainsKey('single_flight_oatof_numerical_profile_id')) {
   $expectedArguments += 'single_flight_oatof_numerical_profile_id'
 }
+if ($frozenArguments.ContainsKey('single_flight_trajectory_quality_profile_id')) {
+  $expectedArguments += 'single_flight_trajectory_quality_profile_id'
+}
 if ($frozenArguments.ContainsKey('single_flight_spatial_window_profile_id')) {
   $expectedArguments += 'single_flight_spatial_window_profile_id'
 }
@@ -166,7 +170,7 @@ if (-not $campaignPath.StartsWith(
       [StringComparison]::OrdinalIgnoreCase
     ) -or
     -not (Test-Path -LiteralPath $campaignPath -PathType Leaf) -or
-    (Get-FileHash -LiteralPath $campaignPath -Algorithm SHA256).Hash -ne
+    (Get-RfOatofRepositoryTextSha256 -Path $campaignPath) -ne
       $frozenArguments.campaign_sha256) {
   throw 'Campaign path is outside the repository, missing or stale.'
 }
@@ -548,7 +552,6 @@ if ($frozenArguments.upstream_resolved_design_filename -ne
   throw 'Upstream resolved design is outside the workspace, missing or stale.'
 }
 
-. (Join-Path $integrationRoot 'runtime\runtime_binding.ps1')
 $runtime = Resolve-RfOatofRuntimeBinding -RepoRoot $repo `
   -ResolvedConnection $ResolvedConnection `
   -RuntimeBinding $runtimeBinding `
@@ -573,6 +576,8 @@ $expectedExecutionParticleCount = if ($executionStrategy -eq 'simion_single_flig
   if ($pulseN100Screening) { 100 }
   elseif ($null -ne $singleFlightParticleSourcePath) {
     [int]$frozenArguments.single_flight_particle_source_count
+  } elseif ($null -ne $prePulseSourceStatePath) {
+    [int]$frozenArguments.pre_pulse_source_state_count
   } else { $runtimeLaunchedCount }
 } else { [int]$runtime.source_record.particle_count }
 if ($budget.role -ne 'integration_resolved_engineering_budget' -or
@@ -675,6 +680,14 @@ if ($executionStrategy -eq 'simion_single_flight') {
     }
     $runnerArguments.OatofNumericalProfileId =
       [string]$frozenArguments.single_flight_oatof_numerical_profile_id
+  }
+  if ($frozenArguments.ContainsKey('single_flight_trajectory_quality_profile_id')) {
+    if ([string]$experiment.single_flight_trajectory_quality_profile_id -ne
+        [string]$frozenArguments.single_flight_trajectory_quality_profile_id) {
+      throw 'Single-flight trajectory-quality profile changed after preparation.'
+    }
+    $runnerArguments.TrajectoryQualityProfileId =
+      [string]$frozenArguments.single_flight_trajectory_quality_profile_id
   }
   if ($frozenArguments.ContainsKey('single_flight_spatial_window_profile_id')) {
     if ([string]$experiment.single_flight_spatial_window_profile_id -ne

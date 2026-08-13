@@ -70,6 +70,21 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
         self.assertIn("$executionPolicy.policy_id", adapter)
         self.assertNotIn("$campaign.resource_profile", adapter)
 
+    def test_adapter_uses_repository_text_identity_for_campaign(self) -> None:
+        adapter = ADAPTER.read_text(encoding="utf-8-sig")
+        self.assertIn(
+            "(Get-RfOatofRepositoryTextSha256 -Path $campaignPath) -ne",
+            adapter,
+        )
+        campaign_guard = adapter.split("$campaignPath =", 1)[1].split(
+            "$campaign =", 1
+        )[0]
+        self.assertNotIn("Get-FileHash -LiteralPath $campaignPath", campaign_guard)
+        self.assertLess(
+            adapter.index("runtime\\runtime_binding.ps1"),
+            adapter.index("$campaignPath ="),
+        )
+
     def test_active_bindings_reference_only_stable_source_and_policy(self) -> None:
         expected_dependencies = (
             "integrations/"

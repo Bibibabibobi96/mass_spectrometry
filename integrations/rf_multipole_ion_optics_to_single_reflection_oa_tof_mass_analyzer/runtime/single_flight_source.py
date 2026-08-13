@@ -38,6 +38,11 @@ GLOBAL_COLUMNS = [
     "velocity_z_m_s",
     "kinetic_energy_eV",
 ]
+ATTRIBUTION_COLUMNS = [
+    "simulation_particle_id", "source_particle_id", "arm_id",
+    "instrument_time_us", "mass_amu", "charge_state", "x_mm", "y_mm",
+    "z_mm", "vx_m_s", "vy_m_s", "vz_m_s", "kinetic_energy_eV",
+]
 
 
 def materialize_pre_pulse_restart(
@@ -48,31 +53,43 @@ def materialize_pre_pulse_restart(
         raise ValueError("pre-pulse restart clock or PA instance is invalid")
     with source_path.open(encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
-        if reader.fieldnames != GLOBAL_COLUMNS:
+        if reader.fieldnames not in (GLOBAL_COLUMNS, ATTRIBUTION_COLUMNS):
             raise ValueError("pre-pulse source-state columns differ from the global contract")
         rows = list(reader)
-    if not rows or [int(row["particle_id"]) for row in rows] != list(
+    attribution = reader.fieldnames == ATTRIBUTION_COLUMNS
+    id_key = "simulation_particle_id" if attribution else "particle_id"
+    if not rows or [int(row[id_key]) for row in rows] != list(
         range(1, len(rows) + 1)
     ):
         raise ValueError("pre-pulse source-state IDs must be contiguous and ordered")
     ion_rows: list[list[str]] = []
+    global_rows: list[dict[str, str]] = []
     for row in rows:
         if abs(float(row["instrument_time_us"]) - pulse_time_us) > 1e-9:
             raise ValueError("pre-pulse source-state clock differs from the pulse time")
-        velocity = tuple(float(row[f"velocity_{axis}_m_s"]) for axis in "xyz")
+        velocity = tuple(float(row[f"v{axis}_m_s"] if attribution else row[f"velocity_{axis}_m_s"]) for axis in "xyz")
         mass = float(row["mass_amu"])
         energy = kinetic_energy_ev(mass, *velocity)
         if abs(energy - float(row["kinetic_energy_eV"])) > 1e-9:
             raise ValueError("pre-pulse source-state kinetic energy differs")
         azimuth, elevation = encode_simion_accelerator_velocity(velocity)
         ion_rows.append([
-            format(pulse_time_us, ".17g"), format(mass, ".17g"),
+            "0", format(mass, ".17g"),
             str(int(row["charge_state"])),
-            *(format(float(row[f"position_{axis}_mm"]), ".17g") for axis in "xyz"),
+            *(format(float(row[f"{axis}_mm"] if attribution else row[f"position_{axis}_mm"]), ".17g") for axis in "xyz"),
             format(azimuth, ".17g"), format(elevation, ".17g"),
             format(energy, ".17g"), "1", str(initial_pa_instance),
         ])
-    return ion_rows, rows
+        global_rows.append({
+            "particle_id": str(int(row[id_key])),
+            "instrument_time_us": format(pulse_time_us, ".17g"),
+            "mass_amu": format(mass, ".17g"),
+            "charge_state": str(int(row["charge_state"])),
+            **{f"position_{axis}_mm": format(float(row[f"{axis}_mm"] if attribution else row[f"position_{axis}_mm"]), ".17g") for axis in "xyz"},
+            **{f"velocity_{axis}_m_s": format(value, ".17g") for axis, value in zip("xyz", velocity)},
+            "kinetic_energy_eV": format(energy, ".17g"),
+        })
+    return ion_rows, global_rows
 
 
 def materialize(
@@ -111,7 +128,7 @@ def materialize(
         azimuth, elevation = encode_simion_accelerator_velocity((vx, vy, vz))
         ion_rows.append(
             [
-                format(time_us, ".17g"),
+                "0",
                 format(mass, ".17g"),
                 str(charge),
                 format(x, ".17g"),

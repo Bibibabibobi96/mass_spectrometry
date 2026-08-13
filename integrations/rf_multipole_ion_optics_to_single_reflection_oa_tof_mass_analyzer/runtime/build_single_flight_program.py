@@ -139,8 +139,7 @@ def build_extension(
     upstream: dict[str, Any],
     frontend: dict[str, Any],
     *,
-    birth_times_us: list[float] | None = None,
-    clock_basis: str = "legacy_relative_time",
+    birth_times_us: list[float],
     terminate_after_pulse: bool = False,
     overlay: dict[str, Any] | None = None,
 ) -> str:
@@ -181,10 +180,8 @@ def build_extension(
         overlay_origin = overlay["instance_origin_mm"]
         overlay_active = overlay["active_bounds_mm"]
     handoff_x = frontend["source_exit_center_mm"]["x"]
-    if clock_basis not in {"legacy_relative_time", "absolute_birth_time"}:
-        raise ValueError(f"unknown single-flight clock basis: {clock_basis}")
-    if clock_basis == "absolute_birth_time" and not birth_times_us:
-        raise ValueError("absolute birth clock requires per-particle birth times")
+    if not birth_times_us:
+        raise ValueError("canonical instrument clock requires per-particle birth times")
     lines = [
         "",
         "-- BEGIN RF-OATOF SINGLE-FLIGHT EXTENSION",
@@ -236,6 +233,20 @@ def build_extension(
         "local single_flight_reflectron_midgrid_reported={}",
         "local single_flight_reflectron_turning_reported={}",
         "local single_flight_reflectron_exit_reported={}",
+        "-- Native plane landing follows SIMION Example test_plane lifecycle:",
+        "-- tstep requests landing; other_actions observes the completed crossing.",
+        "-- Position tolerance is state-comparison-only; positions are never changed.",
+        "local single_flight_accel_plane_state={}",
+        "local function single_flight_accel_state_for_current_particle()",
+        "  local state=single_flight_accel_plane_state[ion_number]",
+        "  if state==nil then",
+        "    state={stage1=ion_pz_mm>=accelerator_grid1_z_mm and 'hitted' or 'approaching',stage2=ion_pz_mm>=accelerator_grid2_z_mm and 'hitted' or 'approaching',initialized_time=ion_time_of_flight,initialized_instance=ion_instance}",
+        "    single_flight_accel_plane_state[ion_number]=state",
+        "    if trajectory_log_enable~=0 then print(string.format('TRACE: accelerator_plane_hit_state ion=%d state=initialized t=%.12g z=%.17g instance=%d',ion_number,ion_time_of_flight,ion_pz_mm,ion_instance)) end",
+        "  end",
+        "  assert((state.stage1=='approaching' or state.stage1=='willhit' or state.stage1=='hitting' or state.stage1=='hitted') and (state.stage2=='approaching' or state.stage2=='willhit' or state.stage2=='hitting' or state.stage2=='hitted'),'accelerator plane state is invalid')",
+        "  return state",
+        "end",
         "local single_flight_birth_time_us={",
     ]
     if birth_times_us:
@@ -243,7 +254,6 @@ def build_extension(
             lines.append(f"  [{particle_id}]={_lua_number(value)},")
     lines.extend([
         "}",
-        f"local single_flight_absolute_birth_clock={1 if clock_basis == 'absolute_birth_time' else 0}",
         f"local single_flight_terminate_after_pulse={1 if terminate_after_pulse else 0}",
         "local single_flight_omega=single_flight_frequency_hz*1e-6*2*math.pi",
         "local single_flight_rods={",
@@ -258,7 +268,6 @@ def build_extension(
         [
             "}",
             "local function single_flight_instrument_time_us()",
-            "  if single_flight_absolute_birth_clock==0 then return ion_time_of_flight end",
             "  local global_particle_id=ion_number+single_flight_particle_id_offset",
             "  local birth=single_flight_birth_time_us[global_particle_id]",
             "  assert(birth~=nil,'absolute single-flight clock is missing particle birth time')",
@@ -332,7 +341,7 @@ def build_extension(
             "    oi.az,oi.el,oi.rt,oi.scale=0,0,0,1",
             "    oi.pa:fast_adjust(initial)",
             "  end",
-            "  single_flight_previous={}; single_flight_handoff_reported={}; single_flight_prepulse_reported={}; single_flight_grid1_forward_reported={}; single_flight_focus_forward_reported={}",
+            "  single_flight_previous={}; single_flight_handoff_reported={}; single_flight_prepulse_reported={}; single_flight_grid1_forward_reported={}; single_flight_focus_forward_reported={}; single_flight_accel_plane_state={}",
             "  single_flight_reflectron_entrance_reported={}; single_flight_reflectron_midgrid_reported={}; single_flight_reflectron_turning_reported={}; single_flight_reflectron_exit_reported={}",
             "  if trajectory_log_enable~=0 then",
             "    print(string.format('TRACE: single_flight_contract frontend_origin=(%.12g,%.12g,%.12g) handoff_x=%.12g rf_peak_v=%.12g frequency_hz=%.12g',ai.x,ai.y,ai.z,single_flight_handoff_x,single_flight_rf_peak_v,single_flight_frequency_hz))",
@@ -355,6 +364,7 @@ def build_extension(
             "function segment.initialize()",
             "  single_flight_base_initialize()",
             "  local instrument_time_us=single_flight_instrument_time_us()",
+            "  single_flight_accel_state_for_current_particle()",
             "  single_flight_previous[ion_number]={t=instrument_time_us,x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm,vx=ion_vx_mm,vy=ion_vy_mm,vz=ion_vz_mm}",
             "  if trajectory_log_enable~=0 then",
             "    print(string.format('TRACE: source_release ion=%d instrument_time_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g',ion_number,instrument_time_us,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm))",
@@ -362,18 +372,31 @@ def build_extension(
             "end",
             "function segment.tstep_adjust()",
             "  single_flight_base_tstep_adjust()",
-            "  if (sf_ideal_accel_enable~=0 or sf_ideal_accel_stage1_enable~=0 or sf_ideal_accel_stage2_enable~=0) and ion_instance==3 and single_flight_pulse_is_on() and ion_vz_mm>0 then",
-            "    local next_plane=nil; local E=0",
-            "    if ion_pz_mm<accelerator_grid1_z_mm then next_plane=accelerator_grid1_z_mm; E=(V_repeller-V_grid1)/(accelerator_grid1_z_mm-accelerator_repeller_front_z_mm)",
-            "    elseif ion_pz_mm<accelerator_grid2_z_mm then next_plane=accelerator_grid2_z_mm; E=V_grid1/(accelerator_grid2_z_mm-accelerator_grid1_z_mm)",
-            "    elseif ion_pz_mm<accelerator_grid2_z_mm+accelerator_focus_drift_mm then next_plane=accelerator_grid2_z_mm+accelerator_focus_drift_mm end",
-            "    if next_plane~=nil then",
+            "  if ion_instance==3 and single_flight_pulse_is_on() and ion_vz_mm>0 then",
+            "    local state=single_flight_accel_state_for_current_particle()",
+            "    local repeated_plane_evaluation=state.last_eval_time==ion_time_of_flight and state.last_eval_instance==ion_instance",
+            "    if not repeated_plane_evaluation then",
+            "    state.last_eval_time=ion_time_of_flight; state.last_eval_instance=ion_instance",
+            "    local stage,next_plane,E=nil,nil,0",
+            "    if (sf_ideal_accel_enable~=0 or sf_ideal_accel_stage1_enable~=0) and ion_pz_mm>=accelerator_repeller_front_z_mm and ion_pz_mm<accelerator_grid1_z_mm then stage='stage1'; next_plane=accelerator_grid1_z_mm; E=(V_repeller-V_grid1)/(accelerator_grid1_z_mm-accelerator_repeller_front_z_mm)",
+            "    elseif (sf_ideal_accel_enable~=0 or sf_ideal_accel_stage2_enable~=0) and ion_pz_mm>=accelerator_grid1_z_mm and ion_pz_mm<accelerator_grid2_z_mm then stage='stage2'; next_plane=accelerator_grid2_z_mm; E=V_grid1/(accelerator_grid2_z_mm-accelerator_grid1_z_mm) end",
+            "    if stage~=nil then",
+            "      local status=state[stage]",
             "      local distance=next_plane-ion_pz_mm",
+            "      local coordinate_tolerance=32*2.2204460492503131e-16*math.max(1,math.abs(next_plane))",
+            "      if status=='willhit' and ion_vz_mm>0 and math.abs(distance)<=coordinate_tolerance then",
+            "        state[stage]='hitting'; state[stage..'_zero_step_count']=(state[stage..'_zero_step_count'] or 0)+1",
+            "        assert(state[stage..'_zero_step_count']==1,'accelerator plane hitting requested more than one zero-step confirmation')",
+            "        ion_time_step=0",
+            "      elseif status=='approaching' or status=='willhit' then",
             "      local acceleration=ion_charge*96.4853321233*E/ion_mass",
             "      local crossing_time",
             "      if math.abs(acceleration)>1e-15 then crossing_time=(-ion_vz_mm+math.sqrt(ion_vz_mm^2+2*acceleration*distance))/acceleration",
             "      else crossing_time=distance/ion_vz_mm end",
-            "      if crossing_time>0 and ion_time_step>crossing_time then ion_time_step=crossing_time end",
+            "      assert(crossing_time>0,'accelerator plane crossing estimate made no representable time progress')",
+            "      if ion_time_step>=crossing_time then state[stage]='willhit'; state[stage..'_request_time']=ion_time_of_flight; state[stage..'_request_z']=ion_pz_mm; ion_time_step=crossing_time end",
+            "      end",
+            "    end",
             "    end",
             "  end",
             "  if ion_instance==3 or (single_flight_overlay_enabled~=0 and ion_instance==5) then",
@@ -402,6 +425,27 @@ def build_extension(
             "  single_flight_base_other_actions()",
             "  local p=single_flight_previous[ion_number]",
             "  local instrument_time_us=single_flight_instrument_time_us()",
+            "  local plane_state=single_flight_accel_state_for_current_particle()",
+            "  if p then",
+            "    for _,stage in ipairs({'stage1','stage2'}) do",
+            "      local plane=stage=='stage1' and accelerator_grid1_z_mm or accelerator_grid2_z_mm",
+            "      local status=plane_state[stage]",
+            "      local crossed=p.z<plane and ion_pz_mm>=plane and ion_vz_mm>0",
+            "      if status=='willhit' and crossed then",
+            "        assert(instrument_time_us>p.t,'accelerator plane crossing made no representable time progress')",
+            "        plane_state[stage]='hitting'; plane_state[stage..'_oa_time']=instrument_time_us; plane_state[stage..'_oa_count']=(plane_state[stage..'_oa_count'] or 0)+1",
+            "        assert(plane_state[stage..'_oa_count']==1,'accelerator plane crossing was observed more than once')",
+            "        if trajectory_log_enable~=0 then print(string.format('TRACE: accelerator_plane_hit_state ion=%d stage=%s state=hitting t=%.12g z=%.17g oa_count=%d',ion_number,stage,instrument_time_us,ion_pz_mm,plane_state[stage..'_oa_count'])) end",
+            "      elseif status=='hitting' then",
+            "        if plane_state[stage..'_zero_step_count'] then",
+            "          assert(ion_vz_mm>0 and (plane-ion_pz_mm)<=32*2.2204460492503131e-16*math.max(1,math.abs(plane)),'accelerator plane zero-step confirmation is outside the governed boundary tolerance')",
+            "          plane_state[stage..'_oa_count']=(plane_state[stage..'_oa_count'] or 0)+1",
+            "          assert(plane_state[stage..'_oa_count']==1,'accelerator plane zero-step confirmation was observed more than once')",
+            "        end",
+            "        plane_state[stage]='hitted'",
+            "      end",
+            "    end",
+            "  end",
             "  if p and not single_flight_prepulse_reported[ion_number] and p.t<handoff_pulse_time_us and instrument_time_us>=handoff_pulse_time_us then",
             "    local f=(handoff_pulse_time_us-p.t)/(instrument_time_us-p.t)",
             "    local xc=p.x+f*(ion_px_mm-p.x); local yc=p.y+f*(ion_py_mm-p.y); local zc=p.z+f*(ion_pz_mm-p.z)",
@@ -488,18 +532,13 @@ def main() -> int:
     parser.add_argument("--frontend-contract", required=True, type=Path)
     parser.add_argument("--accelerator-overlay-contract", type=Path)
     parser.add_argument("--oatof", required=True, type=Path)
-    parser.add_argument("--initial-global-state", type=Path)
+    parser.add_argument("--initial-global-state", required=True, type=Path)
     parser.add_argument("--arm8-global-field-contract", type=Path)
     parser.add_argument("--terminate-after-pulse", action="store_true")
     parser.add_argument(
         "--frontend-program-profile",
         default="combined_frontend",
         choices=("combined_frontend", "formal_accelerator"),
-    )
-    parser.add_argument(
-        "--clock-basis",
-        default="legacy_relative_time",
-        choices=("legacy_relative_time", "absolute_birth_time"),
     )
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--metadata", required=True, type=Path)
@@ -518,12 +557,7 @@ def main() -> int:
         extension = build_extension(
             _load(args.upstream),
             _load(args.frontend_contract),
-            birth_times_us=(
-                load_birth_times(args.initial_global_state)
-                if args.initial_global_state is not None
-                else None
-            ),
-            clock_basis=args.clock_basis,
+            birth_times_us=load_birth_times(args.initial_global_state),
             terminate_after_pulse=args.terminate_after_pulse,
             overlay=(
                 _load(args.accelerator_overlay_contract)
@@ -576,7 +610,7 @@ def main() -> int:
             if args.arm8_global_field_contract is not None
             else None
         ),
-        "clock_basis": args.clock_basis,
+        "clock_basis": "canonical_instrument_time_us",
         "frontend_program_profile": args.frontend_program_profile,
         "terminate_after_pulse": args.terminate_after_pulse,
         "output_sha256": file_sha256(args.output),
