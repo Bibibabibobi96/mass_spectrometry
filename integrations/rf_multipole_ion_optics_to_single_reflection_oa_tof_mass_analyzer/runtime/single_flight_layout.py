@@ -51,6 +51,8 @@ def select_profile(registry: dict[str, Any], profile_id: str) -> dict[str, Any]:
         profile.get("method") != "symmetric_axis_speed_scaling_v1"
         or profile.get("pulse_timing_method")
         != "multipole_handoff_ballistic_centroid_v1"
+        or not isinstance(profile.get("architecture_generation_id"), str)
+        or not profile["architecture_generation_id"]
     ):
         raise ContractError("single-flight layout method is unsupported")
     reference = float(profile["reference_injection_energy_eV"])
@@ -107,7 +109,17 @@ def compile_geometry_and_port(
         }
     finite_profile_path = profile.get("finite_interval_accelerator_profile")
     if finite_profile_path is not None:
-        if overrides:
+        finite_owned_variables = {
+            "accelerator_stage1_length",
+            "accelerator_stage2_length",
+            "source_release_full_width",
+            "accelerator_repeller_voltage",
+            "accelerator_grid1_voltage",
+        }
+        conflicting_overrides = [
+            item for item in overrides if item.get("variable") in finite_owned_variables
+        ]
+        if conflicting_overrides:
             raise ContractError(
                 "finite-interval accelerator profile owns the source-width design"
             )
@@ -115,14 +127,31 @@ def compile_geometry_and_port(
         finite = match_profile["finite_interval_design"]
         frozen = match_profile["frozen_phase_space_input"]
         accelerator = geometry["geometry_derivation"]["accelerator"]
+        stage1_length_mm = float(
+            profile.get("accelerator_stage1_length_mm", accelerator["d1_mm"])
+        )
+        source_full_width_mm = float(
+            profile.get(
+                "finite_interval_source_full_width_mm",
+                finite["source_full_width_mm"],
+            )
+        )
+        if stage1_length_mm <= 0 or source_full_width_mm <= 0:
+            raise ContractError(
+                "finite-interval stage-1 length and source width must be positive"
+            )
+        accelerator["d1_mm"] = stage1_length_mm
+        geometry["geometry_mm"]["L_accel"] = (
+            stage1_length_mm + float(accelerator["d2_mm"])
+        )
         nominal_energy = geometry["geometry_derivation"]["reflectron"][
             "nominal_energy_per_charge_V"
         ]
         solution = match_finite_phase_space_interval(
-            float(accelerator["d1_mm"]),
+            stage1_length_mm,
             float(accelerator["d2_mm"]),
             float(frozen["release_position_mm"]),
-            float(finite["source_full_width_mm"]),
+            source_full_width_mm,
             float(frozen["mean_initial_velocity_m_per_s"]),
             float(frozen["velocity_slope_m_per_s_per_mm"]),
             float(frozen["mass_to_charge_Th"]),
@@ -186,6 +215,11 @@ def compile_geometry_and_port(
             + coupled.stage2_field_v_per_mm * float(geometry["geometry_mm"]["L_stage2"])
         )
         accelerator.update({
+            "rule": (
+                f"Set d1={stage1_length_mm:g} mm and solve the finite source interval "
+                "accelerator voltages, axial translation, and coupled reflectron "
+                "voltages from the frozen first- and second-order timing model."
+            ),
             "canonical_repeller_z_mm": solution.canonical_repeller_z_mm,
             "canonical_grid1_z_mm": solution.canonical_grid1_z_mm,
             "canonical_grid2_z_mm": solution.canonical_grid2_z_mm,
@@ -203,7 +237,9 @@ def compile_geometry_and_port(
         )
         design_derivation = {
             "method": "finite_interval_uniform_two_field_theory_v1",
-            "changed_variables": ["source_release_full_width"],
+            "changed_variables": [
+                "accelerator_stage1_length", "source_release_full_width"
+            ],
             "rebuild_effects": [
                 "accelerator_voltage", "accelerator_axial_position",
                 "reflectron_voltage",
@@ -211,7 +247,9 @@ def compile_geometry_and_port(
             "simion_rebuild_plan": {
                 "frontend_pa": True,
                 "flight_tube_pa": True,
-                "reflectron_pa": False,
+                "reflectron_pa": bool(
+                    design_derivation["simion_rebuild_plan"]["reflectron_pa"]
+                ),
             },
         }
     geometry["coordinate_convention"]["accelerator_axis_x"] = axis_x
@@ -222,6 +260,7 @@ def compile_geometry_and_port(
     geometry["particle_source"]["center_x_mm"] = axis_x
     geometry["single_flight_layout_derivation"] = {
         "layout_profile_id": profile["layout_profile_id"],
+        "architecture_generation_id": profile["architecture_generation_id"],
         "method": profile["method"],
         "reference_injection_energy_eV": float(profile["reference_injection_energy_eV"]),
         "target_injection_energy_eV": float(profile["target_injection_energy_eV"]),

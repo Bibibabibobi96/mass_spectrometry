@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "role": "rf_multipole_oatof_radial_factor_attribution_matrix",
+  "campaign_id": "radial_factor_attribution_v1",
+  "status": "planning_only_until_adapter_support",
+  "execution_authorized": false,
+  "existing_execution_entry": "projects/single_reflection_oa_tof_mass_analyzer/workflows/radial_compaction/run_campaign.py",
+  "claim_limit": "This is a solver-neutral preregistration. It grants no solver, publication, Candidate, Formal, or leaderboard authority.",
+  "frozen_context": {
+    "source_run_id": "20260805_150100__sim__simion__oct-segmented-10ev-h15__n1000",
+    "source_manifest_sha256": "44355DD9CA45F973767F0A2F3DA18EC8F010F398CE61EDB239722B258F9088E7",
+    "source_state_sha256": "F8F77CFA0A3A21D06BC779FAAC2CB2F066AC38BBC986E3A6A60F28A1E58AE409",
+    "particle_source_sha256": "302C03DC29737CE9D46EB1A8D258DB2A8D3C0F8B6A53F7702A33B1ECF9D5320D",
+    "resolution_time_basis": "detector_time_minus_pulse_effective_time",
+    "population_basis": "all_pulse_eligible_particles",
+    "same_ordered_particle_ids_required": true,
+    "single_flight_layout_profile_id": "symmetric_10ev_injection_diagnostic",
+    "frontend_grid_profile_id": "frontend_isotropic_020_accelerator_overlay_z005",
+    "accelerator_field_profile_id": "accelerator_real_pa",
+    "voltage_policy": "inherit_one_frozen_base_request_without_overrides",
+    "factor_matrix_reflectron_axial_cell_mm": 0.1
+  },
+  "design_profiles": [
+    {"id":"compact_10_5_t5_s100","bore_r_mm":35,"ring_outer_r_mm":70,"shield_inner_r_mm":100,"stage1_rings":10,"stage2_rings":5,"ring_thickness_mm":5,"reflectron_axial_cell_mm":0.1},
+    {"id":"compact_8_15_t5_s100","bore_r_mm":35,"ring_outer_r_mm":70,"shield_inner_r_mm":100,"stage1_rings":8,"stage2_rings":15,"ring_thickness_mm":5,"reflectron_axial_cell_mm":0.1},
+    {"id":"compact_8_15_t2_s100","bore_r_mm":35,"ring_outer_r_mm":70,"shield_inner_r_mm":100,"stage1_rings":8,"stage2_rings":15,"ring_thickness_mm":2,"reflectron_axial_cell_mm":0.1},
+    {"id":"compact_8_15_t2_s180","bore_r_mm":35,"ring_outer_r_mm":70,"shield_inner_r_mm":180,"stage1_rings":8,"stage2_rings":15,"ring_thickness_mm":2,"reflectron_axial_cell_mm":0.1},
+    {"id":"compact_8_15_t2_s350","bore_r_mm":35,"ring_outer_r_mm":70,"shield_inner_r_mm":350,"stage1_rings":8,"stage2_rings":15,"ring_thickness_mm":2,"reflectron_axial_cell_mm":0.1},
+    {"id":"large_bundle_8_15_t2_s350","bore_r_mm":250,"ring_outer_r_mm":300,"shield_inner_r_mm":350,"stage1_rings":8,"stage2_rings":15,"ring_thickness_mm":2,"reflectron_axial_cell_mm":0.1},
+    {"id":"large_anchor_10_5_t5_s350","bore_r_mm":250,"ring_outer_r_mm":300,"shield_inner_r_mm":350,"stage1_rings":10,"stage2_rings":5,"ring_thickness_mm":5,"reflectron_axial_cell_mm":0.1}
+  ],
+  "contrasts": {
+    "shield_only": ["compact_8_15_t2_s100","compact_8_15_t2_s180","compact_8_15_t2_s350"],
+    "radial_electrode_bundle": ["compact_8_15_t2_s350","large_bundle_8_15_t2_s350"],
+    "r100_topology_sequence": ["compact_10_5_t5_s100","compact_8_15_t5_s100","compact_8_15_t2_s100"],
+    "large_anchor": "large_anchor_10_5_t5_s350"
+  },
+  "grid_convergence": {
+    "applies_after_n1000_promotion": true,
+    "physical_design_frozen": true,
+    "reflectron_axial_cell_mm": [0.2, 0.1, 0.05],
+    "mass_resolution_relative_change_maximum": 0.02,
+    "direct_fwhm_relative_change_maximum": 0.02,
+    "hit_rate_change_maximum_percentage_points": 1.0
+  },
+  "promotion": {
+    "screening_count": 100,
+    "qualification_count": 1000,
+    "screening_is_deterministic_prefix": true,
+    "n100_is_ranking_authority": false,
+    "same_ordered_particle_ids_required": true,
+    "large_anchor_retained": true,
+    "promotion_requires_all_contrast_arms_complete": true
+  }
+}

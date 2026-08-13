@@ -14,36 +14,42 @@
   "frontend_grid_profiles": [
     {
       "profile_id": "frontend_isotropic_020",
+      "field_overlay_id": "none",
       "cell_mm_xyz": {"x": 0.2, "y": 0.2, "z": 0.2},
       "max_parallel_batches": 5,
       "role": "default"
     },
     {
       "profile_id": "frontend_isotropic_015",
+      "field_overlay_id": "none",
       "cell_mm_xyz": {"x": 0.15, "y": 0.15, "z": 0.15},
       "max_parallel_batches": 2,
       "role": "numerical_convergence"
     },
     {
       "profile_id": "frontend_isotropic_0125",
+      "field_overlay_id": "none",
       "cell_mm_xyz": {"x": 0.125, "y": 0.125, "z": 0.125},
       "max_parallel_batches": 1,
       "role": "numerical_convergence"
     },
     {
       "profile_id": "frontend_acceleration_z010",
+      "field_overlay_id": "none",
       "cell_mm_xyz": {"x": 0.2, "y": 0.2, "z": 0.1},
       "max_parallel_batches": 2,
       "role": "superseded_global_anisotropy_diagnostic"
     },
     {
       "profile_id": "frontend_acceleration_z005",
+      "field_overlay_id": "none",
       "cell_mm_xyz": {"x": 0.2, "y": 0.2, "z": 0.05},
       "max_parallel_batches": 1,
       "role": "superseded_global_anisotropy_diagnostic"
     },
     {
       "profile_id": "frontend_isotropic_020_accelerator_overlay_same_grid",
+      "field_overlay_id": "accelerator_overlay_same_grid",
       "cell_mm_xyz": {"x": 0.2, "y": 0.2, "z": 0.2},
       "accelerator_overlay": {
         "enabled": true,
@@ -55,6 +61,7 @@
     },
     {
       "profile_id": "frontend_isotropic_020_accelerator_overlay_z005",
+      "field_overlay_id": "accelerator_overlay_z005",
       "cell_mm_xyz": {"x": 0.2, "y": 0.2, "z": 0.2},
       "accelerator_overlay": {
         "enabled": true,

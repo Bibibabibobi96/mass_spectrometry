@@ -4,6 +4,7 @@
   "profiles": [
     {
       "layout_profile_id": "symmetric_10ev_injection_diagnostic",
+      "architecture_generation_id": "short_focus_1mm_pre_voltage_change_v1",
       "method": "symmetric_axis_speed_scaling_v1",
       "reference_injection_energy_eV": 5.0,
       "target_injection_energy_eV": 10.0,
@@ -12,6 +13,7 @@
     },
     {
       "layout_profile_id": "symmetric_10ev_source_z22_diagnostic",
+      "architecture_generation_id": "finite_interval_2p2mm_matched_voltage_v1",
       "method": "symmetric_axis_speed_scaling_v1",
       "reference_injection_energy_eV": 5.0,
       "target_injection_energy_eV": 10.0,
@@ -27,11 +29,84 @@
     },
     {
       "layout_profile_id": "symmetric_10ev_source_z22_finite_interval_theory",
+      "architecture_generation_id": "finite_interval_2p2mm_matched_voltage_v1",
       "method": "symmetric_axis_speed_scaling_v1",
       "reference_injection_energy_eV": 5.0,
       "target_injection_energy_eV": 10.0,
       "pulse_timing_method": "multipole_handoff_ballistic_centroid_v1",
       "finite_interval_accelerator_profile": "config/accelerator_phase_space_match.json",
+      "claim_status": "INCONCLUSIVE_DIAGNOSTIC_ONLY"
+    },
+    {
+      "layout_profile_id": "theory_source_z10_d1_3",
+      "architecture_generation_id": "short_focus_1mm_theory_v1",
+      "method": "symmetric_axis_speed_scaling_v1",
+      "reference_injection_energy_eV": 5.0,
+      "target_injection_energy_eV": 10.0,
+      "pulse_timing_method": "multipole_handoff_ballistic_centroid_v1",
+      "finite_interval_accelerator_profile": "config/accelerator_phase_space_match.json",
+      "finite_interval_source_full_width_mm": 1.0,
+      "accelerator_stage1_length_mm": 3.0,
+      "claim_status": "INCONCLUSIVE_DIAGNOSTIC_ONLY"
+    },
+    {
+      "layout_profile_id": "theory_source_z10_d1_4",
+      "architecture_generation_id": "short_focus_1mm_theory_v1",
+      "method": "symmetric_axis_speed_scaling_v1",
+      "reference_injection_energy_eV": 5.0,
+      "target_injection_energy_eV": 10.0,
+      "pulse_timing_method": "multipole_handoff_ballistic_centroid_v1",
+      "finite_interval_accelerator_profile": "config/accelerator_phase_space_match.json",
+      "finite_interval_source_full_width_mm": 1.0,
+      "accelerator_stage1_length_mm": 4.0,
+      "claim_status": "INCONCLUSIVE_DIAGNOSTIC_ONLY"
+    },
+    {
+      "layout_profile_id": "theory_source_z10_d1_5",
+      "architecture_generation_id": "short_focus_1mm_theory_v1",
+      "method": "symmetric_axis_speed_scaling_v1",
+      "reference_injection_energy_eV": 5.0,
+      "target_injection_energy_eV": 10.0,
+      "pulse_timing_method": "multipole_handoff_ballistic_centroid_v1",
+      "finite_interval_accelerator_profile": "config/accelerator_phase_space_match.json",
+      "finite_interval_source_full_width_mm": 1.0,
+      "accelerator_stage1_length_mm": 5.0,
+      "claim_status": "INCONCLUSIVE_DIAGNOSTIC_ONLY"
+    },
+    {
+      "layout_profile_id": "theory_source_z22_d1_3",
+      "architecture_generation_id": "finite_interval_2p2mm_matched_voltage_v1",
+      "method": "symmetric_axis_speed_scaling_v1",
+      "reference_injection_energy_eV": 5.0,
+      "target_injection_energy_eV": 10.0,
+      "pulse_timing_method": "multipole_handoff_ballistic_centroid_v1",
+      "finite_interval_accelerator_profile": "config/accelerator_phase_space_match.json",
+      "finite_interval_source_full_width_mm": 2.2,
+      "accelerator_stage1_length_mm": 3.0,
+      "claim_status": "INCONCLUSIVE_DIAGNOSTIC_ONLY"
+    },
+    {
+      "layout_profile_id": "theory_source_z22_d1_4",
+      "architecture_generation_id": "finite_interval_2p2mm_matched_voltage_v1",
+      "method": "symmetric_axis_speed_scaling_v1",
+      "reference_injection_energy_eV": 5.0,
+      "target_injection_energy_eV": 10.0,
+      "pulse_timing_method": "multipole_handoff_ballistic_centroid_v1",
+      "finite_interval_accelerator_profile": "config/accelerator_phase_space_match.json",
+      "finite_interval_source_full_width_mm": 2.2,
+      "accelerator_stage1_length_mm": 4.0,
+      "claim_status": "INCONCLUSIVE_DIAGNOSTIC_ONLY"
+    },
+    {
+      "layout_profile_id": "theory_source_z22_d1_5",
+      "architecture_generation_id": "finite_interval_2p2mm_matched_voltage_v1",
+      "method": "symmetric_axis_speed_scaling_v1",
+      "reference_injection_energy_eV": 5.0,
+      "target_injection_energy_eV": 10.0,
+      "pulse_timing_method": "multipole_handoff_ballistic_centroid_v1",
+      "finite_interval_accelerator_profile": "config/accelerator_phase_space_match.json",
+      "finite_interval_source_full_width_mm": 2.2,
+      "accelerator_stage1_length_mm": 5.0,
       "claim_status": "INCONCLUSIVE_DIAGNOSTIC_ONLY"
     }
   ]

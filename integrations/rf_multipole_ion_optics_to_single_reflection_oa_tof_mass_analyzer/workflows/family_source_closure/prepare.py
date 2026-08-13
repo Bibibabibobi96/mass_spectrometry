@@ -514,6 +514,34 @@ def prepare_family_source_closure(
             raise ContractError(
                 "single-flight accelerator field profile must resolve exactly once"
             )
+    source_release_mode = experiment.get("source_release_mode")
+    architecture_generation_id = experiment.get("architecture_generation_id")
+    source_profile_id = experiment.get("source_profile_id")
+    field_overlay_id = experiment.get("field_overlay_id")
+    pre_pulse_source_state = experiment.get("pre_pulse_source_state")
+    identity_values = (
+        architecture_generation_id, source_profile_id, field_overlay_id,
+        source_release_mode,
+    )
+    if any(value is not None for value in identity_values) and not all(
+        isinstance(value, str) and value for value in identity_values
+    ):
+        raise ContractError("single-flight architecture/source/field/release identity is incomplete")
+    if (
+        field_overlay_id is not None
+        and frontend_grid_profile_id is not None
+        and grid_profiles[0].get("field_overlay_id") != field_overlay_id
+    ):
+        raise ContractError("frontend grid field-overlay identity differs")
+    pre_pulse_source_path = None
+    if source_release_mode == "pre_pulse_restart":
+        if execution_strategy != "simion_single_flight" or pre_pulse_source_state is None:
+            raise ContractError("pre-pulse restart requires a governed source-state record")
+        pre_pulse_source_path = _workspace_record(
+            workspace, pre_pulse_source_state, "pre-pulse source state"
+        )
+    elif pre_pulse_source_state is not None:
+        raise ContractError("pre-pulse source state requires pre-pulse restart mode")
     profile_registry = load_connection_profile_registry(profile_registry_path)
     profile = _unique_profile(profile_registry, experiment["connection_profile_id"])
     expected_project_id = profile["upstream"]["project_id"]
@@ -724,6 +752,12 @@ def prepare_family_source_closure(
         layout_profile = select_profile(
             _load(layout_registry_path), experiment["single_flight_layout_profile_id"]
         )
+        if (
+            architecture_generation_id is not None
+            and layout_profile["architecture_generation_id"]
+            != architecture_generation_id
+        ):
+            raise ContractError("layout profile architecture generation differs")
         experiment_overrides = experiment.get("single_flight_design_overrides", [])
         if experiment_overrides:
             inherited = list(layout_profile.get("design_overrides", []))
@@ -981,11 +1015,29 @@ def prepare_family_source_closure(
                 + str(selection_receipt["candidate_eligible_count"]),
             ]) + ([] if layout_files is None else [
                 f"layout_profile_id={experiment['single_flight_layout_profile_id']}",
+                "architecture_generation_id="
+                + layout_profile["architecture_generation_id"],
                 "resolved_oatof_geometry_filename=resolved_oatof_geometry.json",
                 f"resolved_oatof_geometry_sha256={file_sha256(layout_files['geometry'])}",
                 "resolved_single_flight_pulse_schedule_filename=resolved_single_flight_pulse_schedule.json",
                 f"resolved_single_flight_pulse_schedule_sha256={file_sha256(layout_files['schedule'])}",
                 f"single_flight_layout_registry_sha256={repository_text_sha256(layout_files['registry'])}",
+                "resolved_oatof_bore_radius_mm="
+                + format(float(geometry["geometry_mm"]["bore_r"]), ".17g"),
+                "resolved_oatof_ring_outer_radius_mm="
+                + format(float(geometry["geometry_mm"]["ring_outer_r"]), ".17g"),
+                "resolved_oatof_shield_inner_radius_mm="
+                + format(float(geometry["geometry_mm"]["flight_tube_r"]), ".17g"),
+            ]) + ([] if source_release_mode is None else [
+                "source_profile_id=" + source_profile_id,
+                "field_overlay_id=" + field_overlay_id,
+                "source_release_mode=" + source_release_mode,
+            ]) + ([] if pre_pulse_source_path is None else [
+                "pre_pulse_source_state_path="
+                + _workspace_relative(pre_pulse_source_path, workspace),
+                "pre_pulse_source_state_sha256=" + pre_pulse_source_state["sha256"],
+                "pre_pulse_source_state_count="
+                + str(pre_pulse_source_state["particle_count"]),
             ]) + ([] if "single_flight_frontend_grid_profile_id" not in experiment else [
                 "single_flight_frontend_grid_profile_id="
                 + experiment["single_flight_frontend_grid_profile_id"],

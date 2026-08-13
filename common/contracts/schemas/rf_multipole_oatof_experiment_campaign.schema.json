@@ -54,6 +54,17 @@
         "selection_receipt": {"$ref": "#/$defs/file"}
       }
     },
+    "pre_pulse_source_state": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "sha256", "particle_count", "coordinate_frame", "release_event"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha"},
+        "particle_count": {"type": "integer", "minimum": 1, "maximum": 10000},
+        "coordinate_frame": {"const": "oatof_global_cartesian"},
+        "release_event": {"const": "pre_pulse_state"}
+      }
+    },
     "pulse_resolution_optimization": {
       "type": "object",
       "additionalProperties": false,
@@ -214,6 +225,26 @@
     "experiment": {
       "type": "object", "additionalProperties": false,
       "required": ["sequence", "experiment_id", "connection_profile_id", "run_id", "source"],
+      "allOf": [
+        {
+          "if": {"required": ["architecture_generation_id"]},
+          "then": {"required": ["source_profile_id", "field_overlay_id", "source_release_mode"]}
+        },
+        {
+          "if": {
+            "properties": {"source_release_mode": {"const": "pre_pulse_restart"}},
+            "required": ["source_release_mode"]
+          },
+          "then": {"required": ["architecture_generation_id", "source_profile_id", "field_overlay_id", "pre_pulse_source_state"]}
+        },
+        {
+          "if": {"required": ["pre_pulse_source_state"]},
+          "then": {
+            "properties": {"source_release_mode": {"const": "pre_pulse_restart"}},
+            "required": ["source_release_mode"]
+          }
+        }
+      ],
       "properties": {
         "sequence": {"type": "integer", "minimum": 1},
         "experiment_id": {"$ref": "#/$defs/id"},
@@ -223,6 +254,11 @@
         "single_flight_oatof_numerical_profile_id": {"$ref": "#/$defs/id"},
         "single_flight_spatial_window_profile_id": {"$ref": "#/$defs/id"},
         "single_flight_accelerator_field_profile_id": {"$ref": "#/$defs/id"},
+        "architecture_generation_id": {"$ref": "#/$defs/id"},
+        "source_profile_id": {"$ref": "#/$defs/id"},
+        "field_overlay_id": {"$ref": "#/$defs/id"},
+        "source_release_mode": {"enum": ["continuous_frontend", "pre_pulse_restart"]},
+        "pre_pulse_source_state": {"$ref": "#/$defs/pre_pulse_source_state"},
         "single_flight_pulse_offset_rf_periods": {
           "type": "number",
           "minimum": -0.5,

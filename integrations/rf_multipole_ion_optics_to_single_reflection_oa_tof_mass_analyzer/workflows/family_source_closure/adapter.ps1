@@ -60,8 +60,12 @@ $expectedArguments = @(
 )
 $layoutArgumentNames = @(
   'layout_profile_id',
+  'architecture_generation_id',
   'resolved_oatof_geometry_filename',
   'resolved_oatof_geometry_sha256',
+  'resolved_oatof_bore_radius_mm',
+  'resolved_oatof_ring_outer_radius_mm',
+  'resolved_oatof_shield_inner_radius_mm',
   'resolved_single_flight_pulse_schedule_filename',
   'resolved_single_flight_pulse_schedule_sha256',
   'single_flight_layout_registry_sha256'
@@ -95,6 +99,15 @@ if ($frozenArguments.ContainsKey('single_flight_spatial_window_profile_id')) {
 }
 if ($frozenArguments.ContainsKey('single_flight_accelerator_field_profile_id')) {
   $expectedArguments += 'single_flight_accelerator_field_profile_id'
+}
+if ($frozenArguments.ContainsKey('source_release_mode')) {
+  $expectedArguments += @('source_profile_id','field_overlay_id','source_release_mode')
+}
+if ($frozenArguments.ContainsKey('pre_pulse_source_state_path')) {
+  $expectedArguments += @(
+    'pre_pulse_source_state_path','pre_pulse_source_state_sha256',
+    'pre_pulse_source_state_count'
+  )
 }
 if ($frozenArguments.ContainsKey('pulse_resolution_attribution_arm_id')) {
   $expectedArguments += @(
@@ -264,6 +277,38 @@ if ($frozenArguments.ContainsKey('single_flight_particle_source_path')) {
       -not (Test-Path -LiteralPath $singleFlightParticleSourcePath -PathType Leaf) -or
       (Get-FileHash -LiteralPath $singleFlightParticleSourcePath -Algorithm SHA256).Hash -ne $frozenArguments.single_flight_particle_source_sha256) {
     throw 'Single-flight particle-source override is missing or stale.'
+  }
+}
+$prePulseSourceStatePath = $null
+if ($frozenArguments.ContainsKey('source_release_mode')) {
+  if ([string]$experiment.architecture_generation_id -ne
+        $frozenArguments.architecture_generation_id -or
+      [string]$experiment.source_profile_id -ne $frozenArguments.source_profile_id -or
+      [string]$experiment.field_overlay_id -ne $frozenArguments.field_overlay_id -or
+      [string]$experiment.source_release_mode -ne $frozenArguments.source_release_mode) {
+    throw 'Campaign architecture/source/field/release identity changed after preparation.'
+  }
+  if ($frozenArguments.source_release_mode -eq 'pre_pulse_restart') {
+    if (-not $frozenArguments.ContainsKey('pre_pulse_source_state_path')) {
+      throw 'Pre-pulse restart lacks a frozen source state.'
+    }
+    $prePulseSourceStatePath = [IO.Path]::GetFullPath(
+      (Join-Path $workspaceRoot $frozenArguments.pre_pulse_source_state_path)
+    )
+    $artifactRoot = [IO.Path]::GetFullPath((Join-Path $workspaceRoot 'artifacts'))
+    if (-not $prePulseSourceStatePath.StartsWith(
+          $artifactRoot + [IO.Path]::DirectorySeparatorChar,
+          [StringComparison]::OrdinalIgnoreCase) -or
+        -not (Test-Path -LiteralPath $prePulseSourceStatePath -PathType Leaf) -or
+        (Get-FileHash -LiteralPath $prePulseSourceStatePath -Algorithm SHA256).Hash -ne
+          $frozenArguments.pre_pulse_source_state_sha256 -or
+        [int]$experiment.pre_pulse_source_state.particle_count -ne
+          [int]$frozenArguments.pre_pulse_source_state_count) {
+      throw 'Pre-pulse source-state identity is missing, stale or outside artifacts.'
+    }
+  } elseif ($frozenArguments.source_release_mode -ne 'continuous_frontend' -or
+            $frozenArguments.ContainsKey('pre_pulse_source_state_path')) {
+    throw 'Source release mode and pre-pulse source-state identity differ.'
   }
 }
 $campaignExecutionStrategy = if (
@@ -442,8 +487,15 @@ if ([int]$campaign.schema_version -eq 2) {
     (Join-Path $runDirectory $frozenArguments.resolved_single_flight_pulse_schedule_filename)
   )
   $layoutRegistryPath = Join-Path $integrationRoot 'config\single_flight_layout_profiles.json'
+  $declaredArchitectureGeneration = if (
+    $experiment.PSObject.Properties.Name -contains 'architecture_generation_id'
+  ) { [string]$experiment.architecture_generation_id } else {
+    [string]$frozenArguments.architecture_generation_id
+  }
   if ([string]$experiment.single_flight_layout_profile_id -ne
       [string]$frozenArguments.layout_profile_id -or
+      $declaredArchitectureGeneration -ne
+        [string]$frozenArguments.architecture_generation_id -or
       $frozenArguments.resolved_oatof_geometry_filename -ne 'resolved_oatof_geometry.json' -or
       -not (Test-Path -LiteralPath $resolvedOatofGeometryPath -PathType Leaf) -or
       (Get-FileHash -LiteralPath $resolvedOatofGeometryPath -Algorithm SHA256).Hash -ne
@@ -456,6 +508,18 @@ if ([int]$campaign.schema_version -eq 2) {
       (Get-FileHash -LiteralPath $layoutRegistryPath -Algorithm SHA256).Hash -ne
         $frozenArguments.single_flight_layout_registry_sha256) {
     throw 'Prepared single-flight layout or pulse schedule is missing or stale.'
+  }
+  $geometryDocument = Get-Content -LiteralPath $resolvedOatofGeometryPath -Raw -Encoding UTF8 |
+    ConvertFrom-Json
+  if ([string]$geometryDocument.single_flight_layout_derivation.architecture_generation_id -ne
+        [string]$frozenArguments.architecture_generation_id -or
+      [double]$geometryDocument.geometry_mm.bore_r -ne
+        [double]$frozenArguments.resolved_oatof_bore_radius_mm -or
+      [double]$geometryDocument.geometry_mm.ring_outer_r -ne
+        [double]$frozenArguments.resolved_oatof_ring_outer_radius_mm -or
+      [double]$geometryDocument.geometry_mm.flight_tube_r -ne
+        [double]$frozenArguments.resolved_oatof_shield_inner_radius_mm) {
+    throw 'Prepared oaTOF geometry identity differs.'
   }
 }
 if ($frozenArguments.resolved_source_contract_filename -ne
@@ -556,10 +620,6 @@ if (-not $SolverAuthorized) {
 if ($experiment.run_id -ne $RunId) {
   throw 'Solver-authorized RunId differs from the campaign row.'
 }
-& $PythonExe -m common.contracts.artifact_naming run $RunId
-if ($LASTEXITCODE -ne 0) {
-  throw 'RunId must satisfy the repository artifact naming contract.'
-}
 $runsRoot = Join-Path $workspaceRoot (
   'artifacts\projects\' + $plan.integration_id + '\runs'
 )
@@ -591,6 +651,14 @@ if ($executionStrategy -eq 'simion_single_flight') {
     $runnerArguments.OatofResolvedGeometry = $resolvedOatofGeometryPath
     $runnerArguments.PulseSchedule = $resolvedPulseSchedulePath
     $runnerArguments.LayoutProfileId = [string]$frozenArguments.layout_profile_id
+    $runnerArguments.ArchitectureGenerationId =
+      [string]$frozenArguments.architecture_generation_id
+    $runnerArguments.ExpectedBoreRadiusMm =
+      [double]$frozenArguments.resolved_oatof_bore_radius_mm
+    $runnerArguments.ExpectedRingOuterRadiusMm =
+      [double]$frozenArguments.resolved_oatof_ring_outer_radius_mm
+    $runnerArguments.ExpectedShieldInnerRadiusMm =
+      [double]$frozenArguments.resolved_oatof_shield_inner_radius_mm
   }
   if ($frozenArguments.ContainsKey('single_flight_frontend_grid_profile_id')) {
     if ([string]$experiment.single_flight_frontend_grid_profile_id -ne
@@ -623,6 +691,18 @@ if ($executionStrategy -eq 'simion_single_flight') {
     }
     $runnerArguments.AcceleratorFieldProfileId =
       [string]$frozenArguments.single_flight_accelerator_field_profile_id
+  }
+  if ($frozenArguments.ContainsKey('source_release_mode')) {
+    $runnerArguments.SourceProfileId = [string]$frozenArguments.source_profile_id
+    $runnerArguments.FieldOverlayId = [string]$frozenArguments.field_overlay_id
+    $runnerArguments.SourceReleaseMode = [string]$frozenArguments.source_release_mode
+    if ($null -ne $prePulseSourceStatePath) {
+      $runnerArguments.PrePulseSourceState = $prePulseSourceStatePath
+      $runnerArguments.PrePulseSourceStateSha256 =
+        [string]$frozenArguments.pre_pulse_source_state_sha256
+      $runnerArguments.PrePulseSourceStateCount =
+        [int]$frozenArguments.pre_pulse_source_state_count
+    }
   }
   if ($null -ne $singleFlightParticleSourcePath) {
     $runnerArguments.MotherParticleSource = $singleFlightParticleSourcePath

@@ -13,10 +13,20 @@ param(
   [string]$OatofResolvedGeometry = '',
   [string]$PulseSchedule = '',
   [string]$LayoutProfileId = '',
+  [string]$ArchitectureGenerationId = '',
+  [double]$ExpectedBoreRadiusMm = 0,
+  [double]$ExpectedRingOuterRadiusMm = 0,
+  [double]$ExpectedShieldInnerRadiusMm = 0,
   [string]$FrontendGridProfileId = '',
   [string]$OatofNumericalProfileId = '',
   [string]$SpatialWindowProfileId = '',
   [string]$AcceleratorFieldProfileId = '',
+  [string]$SourceProfileId = '',
+  [string]$FieldOverlayId = '',
+  [ValidateSet('continuous_frontend','pre_pulse_restart')][string]$SourceReleaseMode = 'continuous_frontend',
+  [string]$PrePulseSourceState = '',
+  [string]$PrePulseSourceStateSha256 = '',
+  [int]$PrePulseSourceStateCount = 0,
   [string]$MotherParticleSource = '',
   [string]$MotherParticleSourceSha256 = '',
   [int]$MotherParticleCount = 0,
@@ -152,6 +162,10 @@ try {
   $maxParallelBatches = [int]$gridProfiles[0].max_parallel_batches
   $overlayEnabled = $null -ne $gridProfiles[0].PSObject.Properties['accelerator_overlay'] -and
     [bool]$gridProfiles[0].accelerator_overlay.enabled
+  $resolvedFieldOverlayId = [string]$gridProfiles[0].field_overlay_id
+  if ($FieldOverlayId -and $FieldOverlayId -ne $resolvedFieldOverlayId) {
+    throw 'Single-flight field-overlay identity differs from the selected grid profile.'
+  }
   $overlayCellMmX = $null
   $overlayCellMmY = $null
   $overlayCellMmZ = $null
@@ -248,6 +262,13 @@ try {
   $layoutDerivation = if ($hasGovernedLayout) {
     $oatofGeometryDocument.single_flight_layout_derivation
   } else { $null }
+  if ($hasGovernedLayout -and (
+      [string]$layoutDerivation.architecture_generation_id -ne $ArchitectureGenerationId -or
+      [double]$oatofGeometryDocument.geometry_mm.bore_r -ne $ExpectedBoreRadiusMm -or
+      [double]$oatofGeometryDocument.geometry_mm.ring_outer_r -ne $ExpectedRingOuterRadiusMm -or
+      [double]$oatofGeometryDocument.geometry_mm.flight_tube_r -ne $ExpectedShieldInnerRadiusMm)) {
+    throw 'Frozen oaTOF architecture generation or radius identity differs.'
+  }
   $hasReflectronRebuild = (
     $SamplingMode -ne 'steady_candidate_pool' -and
     $null -ne $layoutDerivation -and
@@ -279,21 +300,30 @@ try {
     $pulseWidthUs = [double]$pulseScheduleDocument.pulse_width_us
   }
 
+  $isPrePulseRestart = $SourceReleaseMode -eq 'pre_pulse_restart'
+  if ($isPrePulseRestart -ne (-not [string]::IsNullOrWhiteSpace($PrePulseSourceState) -and
+      -not [string]::IsNullOrWhiteSpace($PrePulseSourceStateSha256) -and
+      $PrePulseSourceStateCount -gt 0)) {
+    throw 'Pre-pulse restart source-state identity is incomplete.'
+  }
   $motherSource = Join-Path $package.input_dir 'mother_particle_source.csv'
   $hasMotherOverride = -not [string]::IsNullOrWhiteSpace($MotherParticleSource)
   if ($hasMotherOverride -ne (-not [string]::IsNullOrWhiteSpace($MotherParticleSourceSha256) -and $MotherParticleCount -gt 0)) {
     throw 'Single-flight mother-source override identity is incomplete.'
   }
-  $sourceToCopy = if ($hasMotherOverride) { [IO.Path]::GetFullPath($MotherParticleSource) } else { $runtime.source_particle_source }
+  $sourceToCopy = if ($isPrePulseRestart) { [IO.Path]::GetFullPath($PrePulseSourceState) } elseif ($hasMotherOverride) { [IO.Path]::GetFullPath($MotherParticleSource) } else { $runtime.source_particle_source }
   $motherSourceRoot = if ($PulseResolutionN100Screening) {
     [IO.Path]::GetFullPath($PulseResolutionPrefixPlanRoot)
-  } elseif ($hasMotherOverride) { $repoRoot } else { $workspaceRoot }
+  } elseif ($isPrePulseRestart) { $workspaceRoot } elseif ($hasMotherOverride) { $repoRoot } else { $workspaceRoot }
   Copy-RfStableFile -SourceRunRoot $motherSourceRoot -SourcePath $sourceToCopy `
     -Destination $motherSource -Role 'single-flight mother particle source' | Out-Null
-  if ($hasMotherOverride -and (Get-FileHash -LiteralPath $motherSource -Algorithm SHA256).Hash -ne $MotherParticleSourceSha256) {
+  if ($isPrePulseRestart -and (Get-FileHash -LiteralPath $motherSource -Algorithm SHA256).Hash -ne $PrePulseSourceStateSha256) {
+    throw 'Pre-pulse restart source-state hash differs.'
+  }
+  if ($hasMotherOverride -and -not $isPrePulseRestart -and (Get-FileHash -LiteralPath $motherSource -Algorithm SHA256).Hash -ne $MotherParticleSourceSha256) {
     throw 'Single-flight mother-source override hash differs.'
   }
-  $launched = if ($hasMotherOverride) { $MotherParticleCount } else { [int]$runtime.source_record.launched_particle_count }
+  $launched = if ($isPrePulseRestart) { $PrePulseSourceStateCount } elseif ($hasMotherOverride) { $MotherParticleCount } else { [int]$runtime.source_record.launched_particle_count }
   if ($SamplingMode -eq 'pulse_eligible_conditional' -and
       ($PopulationDenominatorCount -lt $EligiblePopulationCount -or
        $EligiblePopulationCount -lt $launched)) {
@@ -570,9 +600,14 @@ try {
 
   $ion = Join-Path $package.input_dir 'single_flight_mother_sample.ion'
   $globalSource = Join-Path $package.input_dir 'single_flight_initial_global_state.csv'
-  Invoke-SingleFlightPython -Arguments @('-m',
+  $sourceArguments = @('-m',
     'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_source',
-    '--source',$motherSource,'--connection',$resolvedFrozen,'--ion',$ion,'--global-state',$globalSource) `
+    '--source',$motherSource,'--connection',$resolvedFrozen,'--ion',$ion,'--global-state',$globalSource,
+    '--source-release-mode',$SourceReleaseMode)
+  if ($isPrePulseRestart) {
+    $sourceArguments += @('--pulse-time-us',([string]$pulseTimeUs))
+  }
+  Invoke-SingleFlightPython -Arguments $sourceArguments `
     -Failure 'Single-flight source materialization failed.'
 
   $runtimeDir = Join-Path $package.run_dir 'simion'
@@ -821,7 +856,7 @@ try {
     schema_version=2; run_id=$RunId; project=$runtime.upstream_project_id; mode='rf_to_oatof_simion_single_flight'; project_root=$repoRoot
     inputs=[ordered]@{ configuration=$configuration; runtime_binding=$runtimeBindingFrozen; resolved_connection=$resolvedFrozen; resolved_source_contract=$sourceContractFrozen; upstream_resolved_design=$upstreamFrozen; oatof_resolved_geometry=$oatofGeometry; pulse_schedule=$pulseScheduleFrozen; resolved_integration_engineering_budget=$budget.frozen_budget; resolved_stage_resource_budget=$budget.stage_budget; mother_particle_source=$motherSource; initial_global_state=$globalSource; ion=$ion; frontend_gem=$frontendGem; frontend_contract=$frontendContract; accelerator_overlay_gem=$overlayGem; accelerator_overlay_contract=$overlayContract; accelerator_overlay_basis_builder=$overlayBasisBuilderFrozen; accelerator_overlay_refiner=$overlayRefinerFrozen; accelerator_overlay_interface_verifier=$overlayInterfaceVerifierFrozen; accelerator_overlay_iob_builder=$overlayIobBuilderFrozen; accelerator_overlay_iob_container=$overlayIobContainerFrozen; accelerator_overlay_iob_container_gems=$overlayIobContainerGemFrozen; accelerator_overlay_basis_report=$overlayBasisReport; accelerator_overlay_interface_report=$overlayInterfaceReport; frontend_aperture_topology_support=$apertureTopologySupport; frontend_aperture_topology_verifier=$apertureVerifier; program_metadata=$programMetadata; candidate_flight_tube_builder=$flightTubeBuilderFrozen; candidate_flight_tube_gem=$flightTubeGemFrozen; candidate_reflectron_builder=$reflectronBuilderFrozen; candidate_reflectron_gem=$reflectronGemFrozen; candidate_reflectron_refiner=$reflectronRefinerFrozen }
     upstream_source_identity=$runtime.source_identity
-    parameters=[ordered]@{ connection_profile_id=$ConnectionProfileId; source_branch_id=$SourceBranchId; layout_profile_id=$(if($hasGovernedLayout){$LayoutProfileId}else{$null}); frontend_grid_profile_id=$selectedGridProfileId; frontend_cell_mm_xyz=[ordered]@{x=$frontendCellMmX;y=$frontendCellMmY;z=$frontendCellMmZ}; accelerator_overlay_enabled=$overlayEnabled; accelerator_overlay_cell_mm_xyz=$(if($overlayEnabled){[ordered]@{x=$overlayCellMmX;y=$overlayCellMmY;z=$overlayCellMmZ}}else{$null}); accelerator_overlay_boundary_mode=$(if($overlayEnabled){'coarse_electrode_basis_dirichlet_v1'}else{$null}); oatof_numerical_profile_id=$selectedOatofNumericalProfileId; spatial_window_profile_id=$(if($spatialWindowProfiles.Count -eq 1){$SpatialWindowProfileId}else{$null}); accelerator_field_profile_id=$selectedFieldProfileId; single_flight_ideal_accel_enable=$idealAcceleratorEnable; max_parallel_batches=$maxParallelBatches; clock_basis=[string]$settings.clock_basis; launched_particle_count=$launched; particle_count=$launched; population_denominator_count=$(if($PopulationDenominatorCount -gt 0){$PopulationDenominatorCount}else{$launched}); eligible_population_count=$(if($EligiblePopulationCount -gt 0){$EligiblePopulationCount}else{$null}); population_basis=$(if($SamplingMode -eq 'continuous_injection_full_population'){'candidate_full_population'}elseif($SamplingMode -eq 'pulse_eligible_conditional'){'pulse_eligible_conditional_population'}else{'source_contract_population'}); execution_batch_count=$(if($launched -ge [int]$settings.batching_policy.enabled_at_particle_count){[int]$settings.batching_policy.default_batch_count}else{1}); execution_batches_parallel=$(if($launched -ge [int]$settings.batching_policy.enabled_at_particle_count){[bool]$settings.batching_policy.parallel_after_cache_warmup}else{$false}); aperture_width_mm=$apertureWidthMm; aperture_height_mm=$apertureHeightMm; aperture_boolean_boundary_policy=[string]$apertureDiscretization.boolean_boundary_policy; aperture_grid_warnings=$apertureGridWarnings; frontend_open_aperture_column_count=[int]$apertureTopology.open_column_count; frontend_aperture_guard_electrode_check_passed=[bool]$apertureTopology.guard_electrode_check_passed; frontend_aperture_topology_report_sha256=(Get-FileHash -LiteralPath $apertureTopologyReport -Algorithm SHA256).Hash; rod_end_to_accelerator_shield_mm=1.0; surrounded_transition=$true; accelerator_axis_x_mm=[double]$oatofGeometryDocument.coordinate_convention.accelerator_axis_x; pulse_time_us=$pulseTimeUs; pulse_width_us=$pulseWidthUs; design_compilation=$(if($null -ne $layoutDerivation){$layoutDerivation.design_compilation}else{$null}); source_release_full_width_mm=[double]$oatofGeometryDocument.particle_source.size_z_mm; reflectron_stage2_length_mm=[double]$oatofGeometryDocument.geometry_mm.L_stage2; reflectron_midgrid_voltage_V=[double]$oatofGeometryDocument.electrodes_V.midgrid; reflectron_backplate_voltage_V=[double]$oatofGeometryDocument.electrodes_V.backplate; reflectron_pa0_sha256=(Get-FileHash -LiteralPath $reflectronPa0 -Algorithm SHA256).Hash; frontend_gem_sha256=$frontendHash; frontend_pa0_sha256=(Get-FileHash -LiteralPath $cachePa0 -Algorithm SHA256).Hash; accelerator_overlay_pa0_sha256=$(if($overlayEnabled){(Get-FileHash -LiteralPath $overlayCachePa0 -Algorithm SHA256).Hash}else{$null}) }
+    parameters=[ordered]@{ connection_profile_id=$ConnectionProfileId; source_branch_id=$SourceBranchId; layout_profile_id=$(if($hasGovernedLayout){$LayoutProfileId}else{$null}); architecture_generation_id=$(if($hasGovernedLayout){$ArchitectureGenerationId}else{$null}); source_profile_id=$(if($SourceProfileId){$SourceProfileId}else{$null}); field_overlay_id=$resolvedFieldOverlayId; source_release_mode=$SourceReleaseMode; bore_radius_mm=[double]$oatofGeometryDocument.geometry_mm.bore_r; ring_outer_radius_mm=[double]$oatofGeometryDocument.geometry_mm.ring_outer_r; shield_inner_radius_mm=[double]$oatofGeometryDocument.geometry_mm.flight_tube_r; frontend_grid_profile_id=$selectedGridProfileId; frontend_cell_mm_xyz=[ordered]@{x=$frontendCellMmX;y=$frontendCellMmY;z=$frontendCellMmZ}; accelerator_overlay_enabled=$overlayEnabled; accelerator_overlay_cell_mm_xyz=$(if($overlayEnabled){[ordered]@{x=$overlayCellMmX;y=$overlayCellMmY;z=$overlayCellMmZ}}else{$null}); accelerator_overlay_boundary_mode=$(if($overlayEnabled){'coarse_electrode_basis_dirichlet_v1'}else{$null}); oatof_numerical_profile_id=$selectedOatofNumericalProfileId; spatial_window_profile_id=$(if($spatialWindowProfiles.Count -eq 1){$SpatialWindowProfileId}else{$null}); accelerator_field_profile_id=$selectedFieldProfileId; single_flight_ideal_accel_enable=$idealAcceleratorEnable; max_parallel_batches=$maxParallelBatches; clock_basis=[string]$settings.clock_basis; launched_particle_count=$launched; particle_count=$launched; population_denominator_count=$(if($PopulationDenominatorCount -gt 0){$PopulationDenominatorCount}else{$launched}); eligible_population_count=$(if($EligiblePopulationCount -gt 0){$EligiblePopulationCount}else{$null}); population_basis=$(if($SamplingMode -eq 'continuous_injection_full_population'){'candidate_full_population'}elseif($SamplingMode -eq 'pulse_eligible_conditional'){'pulse_eligible_conditional_population'}else{'source_contract_population'}); execution_batch_count=$(if($launched -ge [int]$settings.batching_policy.enabled_at_particle_count){[int]$settings.batching_policy.default_batch_count}else{1}); execution_batches_parallel=$(if($launched -ge [int]$settings.batching_policy.enabled_at_particle_count){[bool]$settings.batching_policy.parallel_after_cache_warmup}else{$false}); aperture_width_mm=$apertureWidthMm; aperture_height_mm=$apertureHeightMm; aperture_boolean_boundary_policy=[string]$apertureDiscretization.boolean_boundary_policy; aperture_grid_warnings=$apertureGridWarnings; frontend_open_aperture_column_count=[int]$apertureTopology.open_column_count; frontend_aperture_guard_electrode_check_passed=[bool]$apertureTopology.guard_electrode_check_passed; frontend_aperture_topology_report_sha256=(Get-FileHash -LiteralPath $apertureTopologyReport -Algorithm SHA256).Hash; rod_end_to_accelerator_shield_mm=1.0; surrounded_transition=$true; accelerator_axis_x_mm=[double]$oatofGeometryDocument.coordinate_convention.accelerator_axis_x; pulse_time_us=$pulseTimeUs; pulse_width_us=$pulseWidthUs; design_compilation=$(if($null -ne $layoutDerivation){$layoutDerivation.design_compilation}else{$null}); source_release_full_width_mm=[double]$oatofGeometryDocument.particle_source.size_z_mm; reflectron_stage2_length_mm=[double]$oatofGeometryDocument.geometry_mm.L_stage2; reflectron_midgrid_voltage_V=[double]$oatofGeometryDocument.electrodes_V.midgrid; reflectron_backplate_voltage_V=[double]$oatofGeometryDocument.electrodes_V.backplate; reflectron_pa0_sha256=(Get-FileHash -LiteralPath $reflectronPa0 -Algorithm SHA256).Hash; frontend_gem_sha256=$frontendHash; frontend_pa0_sha256=(Get-FileHash -LiteralPath $cachePa0 -Algorithm SHA256).Hash; accelerator_overlay_pa0_sha256=$(if($overlayEnabled){(Get-FileHash -LiteralPath $overlayCachePa0 -Algorithm SHA256).Hash}else{$null}) }
     artifact_retention=[ordered]@{policy_version=1;class='compact';reason=$null}; formal_gate_passed=$false
   }
   if ($PulseResolutionN100Screening) {

@@ -40,6 +40,41 @@ GLOBAL_COLUMNS = [
 ]
 
 
+def materialize_pre_pulse_restart(
+    source_path: Path, pulse_time_us: float, initial_pa_instance: int = 3,
+) -> tuple[list[list[str]], list[dict[str, str]]]:
+    """Materialize an oaTOF-global pre-pulse state without upstream remapping."""
+    if pulse_time_us < 0 or initial_pa_instance not in {3, 5}:
+        raise ValueError("pre-pulse restart clock or PA instance is invalid")
+    with source_path.open(encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        if reader.fieldnames != GLOBAL_COLUMNS:
+            raise ValueError("pre-pulse source-state columns differ from the global contract")
+        rows = list(reader)
+    if not rows or [int(row["particle_id"]) for row in rows] != list(
+        range(1, len(rows) + 1)
+    ):
+        raise ValueError("pre-pulse source-state IDs must be contiguous and ordered")
+    ion_rows: list[list[str]] = []
+    for row in rows:
+        if abs(float(row["instrument_time_us"]) - pulse_time_us) > 1e-9:
+            raise ValueError("pre-pulse source-state clock differs from the pulse time")
+        velocity = tuple(float(row[f"velocity_{axis}_m_s"]) for axis in "xyz")
+        mass = float(row["mass_amu"])
+        energy = kinetic_energy_ev(mass, *velocity)
+        if abs(energy - float(row["kinetic_energy_eV"])) > 1e-9:
+            raise ValueError("pre-pulse source-state kinetic energy differs")
+        azimuth, elevation = encode_simion_accelerator_velocity(velocity)
+        ion_rows.append([
+            format(pulse_time_us, ".17g"), format(mass, ".17g"),
+            str(int(row["charge_state"])),
+            *(format(float(row[f"position_{axis}_mm"]), ".17g") for axis in "xyz"),
+            format(azimuth, ".17g"), format(elevation, ".17g"),
+            format(energy, ".17g"), "1", str(initial_pa_instance),
+        ])
+    return ion_rows, rows
+
+
 def materialize(
     source_path: Path,
     connection: dict[str, object],
@@ -113,9 +148,22 @@ def main() -> int:
     parser.add_argument("--connection", required=True, type=Path)
     parser.add_argument("--ion", required=True, type=Path)
     parser.add_argument("--global-state", required=True, type=Path)
+    parser.add_argument(
+        "--source-release-mode",
+        choices=("continuous_frontend", "pre_pulse_restart"),
+        default="continuous_frontend",
+    )
+    parser.add_argument("--pulse-time-us", type=float)
     args = parser.parse_args()
     connection = json.loads(args.connection.read_text(encoding="utf-8-sig"))
-    ion_rows, global_rows = materialize(args.source, connection)
+    if args.source_release_mode == "pre_pulse_restart":
+        if args.pulse_time_us is None:
+            raise ValueError("pre-pulse restart requires the pulse time")
+        ion_rows, global_rows = materialize_pre_pulse_restart(
+            args.source, args.pulse_time_us
+        )
+    else:
+        ion_rows, global_rows = materialize(args.source, connection)
     args.ion.parent.mkdir(parents=True, exist_ok=True)
     args.global_state.parent.mkdir(parents=True, exist_ok=True)
     with args.ion.open("w", encoding="utf-8", newline="") as handle:
