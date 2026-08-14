@@ -68,6 +68,14 @@ Program共用的纯Lua drive kernel；它经`family_runtime_dependencies.json`�
 不得另设固定值。完整收口与回归收据见
 [公共RF drive kernel记录](../../../docs/history/20260815__multipole-common-simion-rf-drive-kernel.md)。
 
+RF母样本到oaTOF全局粒子状态及SIMION方向角的投影由integration
+`runtime/rf_handoff_adapter.py`唯一拥有。该模块只负责solver-row与particle ID顺序闭合、oaTOF全局
+速度与SIMION加速器PA方向角互转，以及速度/动能一致性；位置与instrument time由邻接的
+`write_oatof_simion_input.py`和`single_flight_source.py`校验。连续single-flight、pre-pulse/analyzer
+staged transport及counterfactual分析共同消费这一API；连接状态投影边界不得依赖oaTOF项目内同义
+adapter。oaTOF项目只发布required port、resolved几何及分析器组件，不保存RF→oaTOF连接专用副本；
+integration继续允许调用oaTOF项目发布的理论和设计编译API。
+
 single-flight Program由一个integration assembler唯一声明Workbench和九类`segment.*`callback。项目
 Candidate analyzer component只拥有oaTOF实例、基础场、静态电压和detector行为；integration pulse/
 frontend hooks只拥有规范instrument clock、RF→pulse编排和基于SIMION官方callback机制的项目落面hook；resolved-region

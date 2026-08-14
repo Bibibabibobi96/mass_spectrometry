@@ -39,7 +39,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_time_f
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.oatof_oaaccelerator_coupling import (
     solve_coupled_reflectron_from_accelerator_derivatives,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.rf_handoff_adapter import (
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.rf_handoff_adapter import (
     encode_simion_accelerator_velocity,
 )
 

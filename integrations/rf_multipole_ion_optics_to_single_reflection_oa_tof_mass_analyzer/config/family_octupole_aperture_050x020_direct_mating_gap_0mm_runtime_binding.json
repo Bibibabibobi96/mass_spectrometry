@@ -7,7 +7,7 @@
   "contracts": {
     "dependency_contract": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_runtime_dependencies.json",
-      "sha256": "0E7C73CAEECD44DA97E85B122F3F5A4AB0425DD260244C5D499AA4DBC8266809"
+      "sha256": "6A39BD3D5BA40DDC10424B182ACEA6AA4F08DD8886B022EA5553E8C4E3BAAB23"
     },
     "pre_pulse_contract": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_pre_pulse_interface_transport.json",
@@ -40,6 +40,6 @@
   },
   "implementation_binding": {
     "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_runtime_implementation.json",
-    "sha256": "DA39986F11E356A2123E5770A3A7C840A7BFBB5C315781836E48F2F9FC269EC5"
+    "sha256": "31A40B32DB4EDDEFAB5D5ADF1ADBCDDF45CC19E616937BC0B99A404A3260B97A"
   }
 }

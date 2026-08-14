@@ -15,7 +15,7 @@ from common.contracts.component_particle_state import (
     validate_component_particle_state_csv,
 )
 from common.contracts.file_identity import file_sha256
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.rf_handoff_adapter import (
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.rf_handoff_adapter import (
     encode_simion_accelerator_velocity,
     ordered_solver_identity_map,
     validate_ion_velocity_adapter,

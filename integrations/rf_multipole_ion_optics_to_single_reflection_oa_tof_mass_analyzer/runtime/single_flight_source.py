@@ -15,7 +15,7 @@ from common.contracts.particle_physics import (
     ELEMENTARY_CHARGE_C,
     kinetic_energy_ev,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.rf_handoff_adapter import (
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.rf_handoff_adapter import (
     encode_simion_accelerator_velocity,
 )
 

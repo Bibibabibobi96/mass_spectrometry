@@ -29,6 +29,9 @@ resolved、分析和资产合同管理；实现细节见[`COMSOL.md`](COMSOL.md)
   纯hooks；组件不声明Workbench/callback、电极setter、pulse时序或SIMION原生时钟。历史Formal Program
   字节未修改，仍只服务项目Formal与staged analyzer transport；该组件及唯一integration assembler的
   直接Lua验证不改变本项目Formal资格。
+- RF母样本到oaTOF粒子状态和SIMION方向角的连接专用adapter现由integration唯一拥有；本项目不再保存
+  `analysis/rf_handoff_adapter.py`副本。required port、resolved几何和项目分析器组件仍是本项目对外边界，
+  该所有权整理不改变粒子状态、时钟、Formal资产或资格。
 
 当前生命周期、capability与Formal asset状态均为`formal`。历史资产和旧结论只按其原始manifest
 身份保留，不能替代或改写当前release。

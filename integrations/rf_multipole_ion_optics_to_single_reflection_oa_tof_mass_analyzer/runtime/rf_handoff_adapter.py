@@ -1,4 +1,4 @@
-"""Validate the RF-to-oaTOF particle identity and SIMION state adapter."""
+"""Validate the integration-owned RF-to-oaTOF SIMION state projection."""
 
 from __future__ import annotations
 

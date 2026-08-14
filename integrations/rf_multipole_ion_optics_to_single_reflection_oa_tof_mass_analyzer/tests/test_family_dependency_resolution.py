@@ -81,6 +81,32 @@ if ([string]::Join("`n", @($inventory.dependencies.id)) -ne [string]::Join("`n",
         self.assertIn("common_multipole_simion_geometry", ids)
         self.assertIn("rf_single_flight_electrode_contract", ids)
         by_id = {item["id"]: item for item in dependencies}
+        handoff_adapter = by_id["rf_oatof_handoff_adapter"]
+        self.assertEqual(handoff_adapter["provider_scope"], "integration")
+        self.assertEqual(
+            handoff_adapter["source_repo_path"],
+            "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
+            "runtime/rf_handoff_adapter.py",
+        )
+        self.assertEqual(
+            handoff_adapter["consumers"],
+            [
+                "pre_pulse_interface_transport",
+                "analyzer_transport",
+                "single_flight_transport",
+            ],
+        )
+        self.assertEqual(
+            by_id["rf_analyzer_transport_simion_input_adapter"]["consumers"],
+            ["pre_pulse_interface_transport", "analyzer_transport"],
+        )
+        self.assertFalse(
+            (
+                REPO_ROOT
+                / "projects/single_reflection_oa_tof_mass_analyzer/analysis/"
+                "rf_handoff_adapter.py"
+            ).exists()
+        )
         for successor in (
             "oatof_analyzer_component",
             "rf_single_flight_pulse_hook",

@@ -28,7 +28,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis import (
     write_oatof_simion_input as oatof_writer,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.rf_handoff_adapter import (
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.rf_handoff_adapter import (
     decode_simion_accelerator_velocity,
 )
 

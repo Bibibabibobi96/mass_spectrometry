@@ -347,7 +347,7 @@ try {
   $requiredSnapshotIds = @(
     'rf_analyzer_transport_simion_input_adapter','rf_analyzer_transport_analyzer',
     'rf_oatof_formal_release_validator',
-    'oatof_rf_handoff_adapter',
+    'rf_oatof_handoff_adapter',
     'oatof_baseline','oatof_resolved_geometry','oatof_formal_validation',
     'oatof_simion_stable_entry',
     'oatof_handoff_pulse_program_builder',
