@@ -387,6 +387,10 @@ metrics、numerics、summary和manifest用于成对比较；只有少数最终�
 快照，不回写旧档案中的“当前”。项目README以紧凑`History索引`列出全部扁平Markdown入口，供人和
 门禁发现；索引只列链接，不复制每份历史的结论、运行数字或时间线。
 
+新建history中的配置注册表、结果矩阵和正文简称必须应用开发标准的
+[科学配置规范名称与结果身份](docs/DEVELOPMENT_STANDARDS.md#科学配置规范名称与结果身份)；既有只读
+history仍按该标准记录映射，不回写原始证据。
+
 current文档必须保持可执行的当前视图。满足以下任一条件时，在同一主题提交中冻结日期化history并
 收缩current：
 
